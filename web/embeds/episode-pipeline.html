@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <script>if(window.self!==window.top||new URLSearchParams(location.search).get('embedded')==='1'||new URLSearchParams(location.hash.slice(1)).get('embedded')==='1')document.documentElement.classList.add('workspace-embedded');</script>
+  <title>剧集制片 | Gods' Workbench</title>
+  <link rel="stylesheet" href="/static/css/base/workspace-pages.css?v=v0.0.1-alpha-2026&m1=20260810d">
+  <link rel="stylesheet" href="/static/css/base/signal-flow.css?v=v0.0.1-alpha-2026&sf=20260826&wf=20260826">
+  <link rel="stylesheet" href="/static/css/base/hardware-design-system.css?v=v0.0.1-alpha-2026">
+  <link rel="stylesheet" href="/static/css/pages/episode-pipeline.css?v=v0.0.1-alpha-2026&m8=liquid-metal-v35">
+  <link rel="stylesheet" href="/static/css/pages/episode-video-script.css?v=20260916">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" rel="stylesheet">
+  <link rel="stylesheet" href="/static/css/base/tailwind-utilities.css?v=v0.0.1-alpha-2026">
+  <script src="/static/vendor/js/tailwindcss-cdn.js?v=3.4.17&amp;build=d11003b2f6fb"></script>
+  <script id="tailwind-config">
+    tailwind.config = {
+      darkMode: "class",
+      theme: {
+        extend: {
+          colors: {
+            "primary": "#dfc384",
+            "primary-container": "#fcdf9d",
+            "on-primary": "#1a1308",
+            "secondary": "#d7c59f",
+            "tertiary": "#c3e7ff",
+            "gold-primary": "#dfc384",
+            "gold-light": "#fcdf9d",
+            "gold-dim": "#947a57",
+            "gold-shadow": "rgba(223, 195, 132, 0.15)",
+            "chassis-bg": "#090a0d",
+            "panel-dark": "#101217",
+            "surface-dim": "#07080a",
+            "surface-container": "#121316",
+            "surface-high": "#181a20",
+            "card-start": "#171920",
+            "card-end": "#0f1115",
+            "bay-inset": "#0a0b0e",
+            "metal-border": "rgba(223, 195, 132, 0.22)",
+            "metal-border-dim": "rgba(255, 255, 255, 0.08)",
+            "brand-green": "#22c55e",
+            "brand-red": "#ef4444",
+            "brand-orange": "#f97316",
+            "brand-cyan": "#38bdf8",
+            "on-surface": "#e3e2e6",
+            "on-surface-variant": "#9ca3af"
+          },
+          fontFamily: {
+            mono: ["Source Han Sans CN", "monospace"],
+            outfit: ["Source Han Sans CN", "sans-serif"],
+            manrope: ["Source Han Sans CN", "sans-serif"],
+            headline: ["Source Han Sans CN", "Noto Sans SC", "sans-serif"]
+          },
+          boxShadow: {
+            "chassis": "0 20px 40px -10px rgba(0,0,0,0.9), inset 0 1px 1px rgba(255,255,255,0.06)",
+            "bay": "inset 0 3px 8px rgba(0,0,0,0.92), inset 0 1px 2px rgba(0,0,0,0.8), 0 1px 0 rgba(255,255,255,0.04)",
+            "gold-glow": "0 0 12px rgba(223, 195, 132, 0.35)",
+            "gold-button": "0 4px 14px rgba(223, 195, 132, 0.25), inset 0 1px 1px rgba(255,255,255,0.4)"
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    .carbon-mesh-bg {
+      background-color: #101217;
+      background-image: radial-gradient(circle at 50% 50%, rgba(223, 195, 132, 0.04) 1px, transparent 1px);
+      background-size: 8px 8px;
+    }
+    .champagne-card {
+      background: linear-gradient(175deg, #171920 0%, #101217 60%, #0c0d10 100%) !important;
+      border: 1px solid rgba(223, 195, 132, 0.18) !important;
+      box-shadow: 0 12px 28px rgba(0,0,0,0.8), inset 0 1px 1px rgba(255,255,255,0.07) !important;
+    }
+    .bay-inset {
+      background: #08090b !important;
+      box-shadow: inset 0 3px 8px rgba(0,0,0,0.95), inset 0 1px 2px rgba(0,0,0,0.8), 0 1px 0 rgba(255,255,255,0.03) !important;
+      border: 1px solid rgba(255,255,255,0.05) !important;
+    }
+  </style>
+</head>
+<body class="gw-signal gw-page--episode-pipeline">
+  <a class="skip-link" href="#episodePipeline">跳至剧集制片内容</a>
+  <main class="workspace-page episode-page">
+    <header class="episode-header">
+      <nav id="episodeStepNav" class="episode-stepbar workflow-steps" role="tablist" aria-label="剧集四步工作流" hidden aria-hidden="true"></nav>
+    </header>
+
+    <section class="episode-create panel" id="createPanel" hidden aria-labelledby="createTitle">
+      <div class="panel-heading">
+        <div><h2 id="createTitle">新建剧集流水线</h2><p>剧集会绑定当前项目，四个阶段共享同一组持久任务。</p></div>
+        <button class="icon-button" type="button" id="closeCreate" aria-label="关闭新建表单" title="关闭">×</button>
+      </div>
+      <form id="createForm" class="episode-form">
+        <div class="form-grid">
+          <label>剧集名称<input name="title" required maxlength="200" value="第一集"></label>
+          <label>剧集提示词库<select name="prompt_library_id" id="promptLibrary" required></select></label>
+          <label class="wide">创作种子<textarea name="seed" maxlength="20000" rows="4" placeholder="人物、冲突、场景和情绪线索"></textarea></label>
+        </div>
+        <div class="form-actions"><span class="form-error" id="createError" role="alert"></span><button class="btn" type="button" id="cancelCreate">取消</button><button class="btn primary" type="submit">创建流水线</button></div>
+      </form>
+    </section>
+
+    <section id="episodePipeline" tabindex="-1" aria-live="polite">
+      <div class="episode-loading panel">正在读取项目和流水线…</div>
+    </section>
+    <dialog id="assetDetailDialog" class="asset-detail-dialog" data-floating-surface="episode-asset-detail" data-floating-kind="native-dialog" data-floating-content=".asset-detail-shell" data-floating-dismiss="outside" data-floating-escape="close-only" aria-label="资产详情"></dialog>
+    <dialog id="assetImageDialog" class="asset-image-dialog" data-floating-surface="episode-asset-image" data-floating-kind="native-dialog" data-floating-content=".asset-image-shell" data-floating-dismiss="outside" data-floating-escape="close-only" aria-label="资产图片预览"></dialog>
+    <div class="episode-degradation" id="episodeDegradation" role="status" aria-live="polite" hidden></div>
+    <div class="episode-toast" id="episodeToast" role="status" aria-live="polite"></div>
+  </main>
+  <script src="/static/js/core/i18n.js?v=v0.0.1-alpha-2026"></script>
+  <script src="/static/js/core/floating-dismissal.js?v=v0.0.1-alpha-2026&m3=floating-dismissal"></script>
+  <script src="/static/js/core/workspace-common.js?v=v0.0.1-alpha-2026"></script>
+  <script src="/static/js/core/aura-trace.js?v=20260916"></script>
+  <script src="/static/js/modules/episode-liquid-metal.js?v=v0.0.1-alpha-2026&m9=liquid-metal-v36"></script>
+  <script src="/static/js/modules/episode-pipeline.js?v=v0.0.1-alpha-2026&m9=script-text-route-v1"></script>
+</body>
+</html>

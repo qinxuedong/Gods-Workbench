@@ -1,0 +1,28 @@
+{
+  "detail_comment": "非空素材库黄金夹具：库-分类-条目三层稳定 ID 结构。",
+  "library": {
+    "version": 2,
+    "active_library_id": "library_default",
+    "libraries": [
+      {
+        "library_id": "library_default",
+        "name": "默认资产库",
+        "version": 2,
+        "created_at": "2026-09-22T06:00:00Z",
+        "updated_at": "2026-09-22T06:00:00Z",
+        "categories": [
+          {
+            "category_id": "category_image",
+            "library_id": "library_default",
+            "name": "图片",
+            "type": "image",
+            "version": 1,
+            "created_at": "2026-09-22T06:00:00Z",
+            "updated_at": "2026-09-22T06:00:00Z",
+            "items": []
+          }
+        ]
+      }
+    ]
+  }
+}

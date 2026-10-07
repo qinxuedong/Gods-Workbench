@@ -1,0 +1,28 @@
+{
+  "module": "asset_auth",
+  "contract_version": "phase11-b1-1",
+  "block": "B1",
+  "path_count": 10,
+  "method_path_count": 10,
+  "cleanroom_boundary": {
+    "bootstrap_default": "closed",
+    "token_plaintext_storage": false,
+    "token_plaintext_audit": false,
+    "stable_ids": true
+  },
+  "bootstrap_default_enabled": false,
+  "token_plaintext_exposed": false,
+  "audit_token_plaintext": false,
+  "cas_expected_version_required": true,
+  "error_statuses": {
+    "unauthenticated": 401,
+    "forbidden": 403,
+    "conflict": 409
+  },
+  "stable_id_prefixes": {
+    "user_id": "usr-",
+    "team_id": "team-",
+    "approval_id": "ap-",
+    "token_id": "tok-"
+  }
+}

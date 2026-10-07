@@ -1,0 +1,720 @@
+<!DOCTYPE html>
+<html lang="zh-CN" class="h-full overflow-hidden">
+<head>
+  <link rel="stylesheet" href="/static/vendor/css/fonts.css?v=v0.0.1-alpha-2026">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>系统与工程配置 · Gods' Workbench</title>
+  <script src="/static/vendor/js/tailwindcss-cdn.js?v=3.4.17&amp;build=d11003b2f6fb"></script>
+  <script src="/static/vendor/js/lucide.js?v=1.16.0"></script>
+  <link rel="stylesheet" href="/static/css/base/hardware-design-system.css">
+  <link rel="stylesheet" href="/static/css/pages/directory-settings.css?v=20261007">
+  <style>
+    /* 拟物滑动开关适配原有 settings.js 的 .toggle.on 逻辑 */
+    .toggle {
+      width: 44px;
+      height: 22px;
+      border-radius: 9999px;
+      background: #090a0e;
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      box-shadow: inset 0 2px 4px rgba(0,0,0,0.9);
+      position: relative;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      padding: 2px;
+      transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+    .toggle i {
+      display: block;
+      width: 16px;
+      height: 16px;
+      border-radius: 50%;
+      background: linear-gradient(180deg, #ffffff 0%, #cbd5e1 100%);
+      box-shadow: 0 1px 3px rgba(0,0,0,0.7);
+      transform: translateX(0);
+      transition: transform 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+    .toggle.on {
+      background: #0d1219;
+      border-color: rgba(223, 195, 132, 0.5);
+      box-shadow: inset 0 2px 4px rgba(0,0,0,0.9), 0 0 10px rgba(223, 195, 132, 0.25);
+    }
+    .toggle.on i {
+      transform: translateX(20px);
+      background: linear-gradient(180deg, #fae2c8 0%, #dfc384 50%, #947a57 100%);
+      box-shadow: 0 0 10px rgba(223, 195, 132, 0.8), 0 2px 4px rgba(0,0,0,0.8);
+    }
+
+    /* 选项卡面板激活与隐藏控制 */
+    [data-panel] {
+      display: none !important;
+    }
+    [data-panel].active {
+      display: flex !important;
+    }
+
+    /* 侧边分区按钮激活态 */
+    [data-section].active {
+      background: linear-gradient(180deg, #272c38 0%, #151821 100%);
+      color: #dfc384;
+      border: 1px solid rgba(223, 195, 132, 0.4);
+      box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.2), 0 0 12px rgba(223, 195, 132, 0.2);
+    }
+
+    /* 提示词来源行条拟物卡片 */
+    .prompt-source-row {
+      display: grid;
+      grid-template-columns: 44px minmax(0, 1fr) auto;
+      align-items: center;
+      gap: 12px;
+      padding: 12px 14px;
+      border-radius: 12px;
+      background: #080a0e;
+      border: 1px solid rgba(223, 195, 132, 0.12);
+      box-shadow: inset 0 2px 5px rgba(0, 0, 0, 0.95);
+      transition: all 0.15s ease;
+    }
+    .prompt-source-row.is-disabled {
+      opacity: 0.55;
+      filter: grayscale(0.6);
+    }
+    .prompt-source-row:hover {
+      border-color: rgba(223, 195, 132, 0.35);
+    }
+    .prompt-source-title {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .prompt-source-badge {
+      font-size: 9px;
+      padding: 1px 6px;
+      border-radius: 4px;
+      background: rgba(223, 195, 132, 0.15);
+      color: #dfc384;
+      border: 1px solid rgba(223, 195, 132, 0.3);
+      font-family: "Source Han Sans CN", monospace;
+    }
+    .prompt-source-meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-top: 5px;
+      font-family: "Source Han Sans CN", monospace;
+      font-size: 10px;
+      color: #94a3b8;
+    }
+    .prompt-source-actions details {
+      position: relative;
+    }
+    .prompt-source-actions summary {
+      cursor: pointer;
+      outline: none;
+      font-size: 11px;
+      color: #dfc384;
+      padding: 4px 8px;
+      border-radius: 6px;
+      border: 1px solid rgba(223, 195, 132, 0.2);
+      background: #0e1117;
+      list-style: none;
+    }
+    .prompt-source-actions summary::-webkit-details-marker {
+      display: none;
+    }
+    .prompt-source-details {
+      position: absolute;
+      right: 0;
+      top: 32px;
+      width: 280px;
+      padding: 10px;
+      border-radius: 8px;
+      background: #0d1017;
+      border: 1px solid rgba(223, 195, 132, 0.3);
+      box-shadow: 0 10px 25px rgba(0,0,0,0.9);
+      z-index: 30;
+      font-family: "Source Han Sans CN", monospace;
+      font-size: 10px;
+      color: #cbd5e1;
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+    }
+    .prompt-source-details code {
+      color: #dfc384;
+      word-break: break-all;
+    }
+  </style>
+</head>
+<body class="gw-shell bg-[#090a0d] text-slate-200 antialiased h-screen flex flex-col justify-between select-none overflow-hidden px-5">
+
+  <!-- ======================================================================= -->
+  <!-- TOPBAR MASTER DECK: 旗舰双层顶栏机架                                       -->
+  <!-- ======================================================================= -->
+  <header class="h-[116px] topbar-master-deck border-b border-white/10 px-3 flex flex-col justify-between shrink-0 z-40 relative select-none overflow-hidden py-2" style="min-height: 116px;">
+    <div class="absolute inset-0 pointer-events-none z-10 oled-ambient-pixel"></div>
+    <div class="absolute inset-0 pointer-events-none z-20 bg-gradient-to-b from-white/[0.07] via-transparent to-black/80"></div>
+    <div class="absolute bottom-0 left-0 right-0 h-px topbar-ambient-edge z-20"></div>
+
+    <!-- UPPER DECK: 电源、Logo、双 UV 仪表与系统状态 -->
+    <div class="master-deck-upper flex items-center justify-between relative z-30 px-1 pt-0.5">
+
+      <!-- LEFT: 主电源与品牌铭牌 -->
+      <div class="flex items-center space-x-2 shrink-0">
+                <!-- 智能体核心按钮 (原关机键位置) -->
+        <button class="w-8 h-8 rounded-full bg-gradient-to-tr from-cyan-400 via-fuchsia-500 to-amber-300 p-0.5 shadow-[0_0_12px_rgba(236,72,153,0.7),0_0_6px_rgba(34,211,238,0.9)] hover:scale-110 active:scale-95 transition flex items-center justify-center cursor-pointer shrink-0 launch-orb-btn" title="智能体核心总线 (Agent Core)">
+          <div class="w-full h-full rounded-full bg-black/85 flex items-center justify-center">
+            <div class="w-3 h-3 rounded-full bg-gradient-to-r from-cyan-300 to-pink-400 animate-spin"></div>
+          </div>
+        </button>
+        <div class="h-4 w-px bg-white/10"></div>
+        <div class="flex items-center space-x-1.5">
+          <span class="font-bold text-sm tracking-wider text-slate-100 uppercase">GODS'</span>
+          <span class="font-mono font-bold text-sm text-[#dfc384] tracking-widest">WORKBENCH</span>
+          <span class="text-[10px] font-mono px-2 py-0.5 rounded bg-black/60 border border-[#dfc384]/30 text-[#eddab3]">SYS.02 PRO</span>
+        </div>
+        <div class="flex items-center space-x-1.5 px-2 py-0.5 rounded-md bg-[#0a0c10] border border-white/10 shadow-inner">
+          <span class="text-[9px] font-mono text-amber-300 font-semibold" id="gwOnlineStatus" data-gw-degradation="not_integrated" title="读取真实探针 GET /api/observability/health">探测中…</span>
+            <span class="relative flex h-2 w-2">
+              <span class="relative inline-flex rounded-full h-2 w-2 bg-amber-400 animate-pulse shadow-[0_0_6px_#f59e0b]"></span>
+            </span>
+        </div>
+
+        <!-- CPU 模拟电平表 -->
+        <div class="trapezoid-uv-housing ml-1.5" title="CPU 负载监视表">
+          <div class="uv-dial-backlight"></div>
+          <svg class="absolute inset-0 w-full h-full pointer-events-none z-10" viewBox="0 0 148 48">
+            <path d="M 2 8 A 6 6 0 0 1 8 2 L 134 2 A 4 4 0 0 1 138 5 L 146 43 A 4 4 0 0 1 142 47 L 8 47 A 6 6 0 0 1 2 41 Z"
+                  fill="#0b0d13" stroke="#2e3547" stroke-width="1.5" stroke-linejoin="round" />
+            <text x="10" y="11" font-family="'Source Han Sans CN', monospace" font-size="7.5" font-weight="700" fill="#dfc384" letter-spacing="0.5">CPU</text>
+            <path d="M 48.32 39.66 A 27 27 0 0 1 99.68 39.66" fill="none" stroke="rgba(255,255,255,0.22)" stroke-width="0.8" />
+            <path d="M 92.48 28.32 A 27 27 0 0 1 99.68 39.66" fill="none" stroke="#ef4444" stroke-width="1.6" stroke-linecap="round" />
+            <polygon id="svgNeedleCPU" points="73.3,48 74.7,48 74.3,19 73.7,19" fill="#ffffff" filter="drop-shadow(0 0 2.5px #fae2c8)" transform="rotate(-11.5 74 48)" />
+          </svg>
+          <div class="uv-bottom-hub">
+            <span class="uv-hub-percent text-[#fae2c8]" id="cpuValText">未接入</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- CENTER: 当前控制台模式标题 -->
+      <div class="flex items-center space-x-2 shrink-0">
+        <div class="flex items-center space-x-1.5 bg-[#07080b] px-3 py-1 rounded-lg border border-white/10 shadow-inner">
+          <button class="text-slate-400 hover:text-[#dfc384] p-0.5 transition"><i data-lucide="chevron-left" class="w-3.5 h-3.5"></i></button>
+          <div class="flex items-center space-x-2 px-1.5">
+            <span class="w-1.5 h-1.5 rounded-full bg-[#dfc384] shadow-[0_0_6px_#dfc384] animate-pulse"></span>
+        <span class="text-[10px] font-mono font-bold text-[#eddab3] tracking-wider" data-gw-header-prefix="SYSTEM CONFIGURATION &amp; HARDWARE DECK" data-gw-degradation="not_integrated">SYSTEM CONFIGURATION &amp; HARDWARE DECK · 读取中…</span>
+          </div>
+          <button class="text-slate-400 hover:text-[#dfc384] p-0.5 transition"><i data-lucide="chevron-right" class="w-3.5 h-3.5"></i></button>
+        </div>
+      </div>
+
+      <!-- RIGHT: RAM 仪表与时钟 -->
+      <div class="master-deck-upper-right flex items-center space-x-2 shrink-0">
+        <!-- RAM 模拟仪表 -->
+        <div class="trapezoid-uv-housing mr-1.5" title="RAM 内存监视表">
+          <div class="uv-dial-backlight"></div>
+          <svg class="absolute inset-0 w-full h-full pointer-events-none z-10" viewBox="0 0 148 48">
+            <path d="M 146 8 A 6 6 0 0 0 140 2 L 14 2 A 4 4 0 0 0 10 5 L 2 43 A 4 4 0 0 0 6 47 L 140 47 A 6 6 0 0 0 146 41 Z"
+                  fill="#0b0d13" stroke="#2e3547" stroke-width="1.5" stroke-linejoin="round" />
+            <text x="138" y="11" text-anchor="end" font-family="'Source Han Sans CN', monospace" font-size="7.5" font-weight="700" fill="#dfc384" letter-spacing="0.5">RAM</text>
+            <path d="M 48.32 39.66 A 27 27 0 0 1 99.68 39.66" fill="none" stroke="rgba(255,255,255,0.22)" stroke-width="0.8" />
+            <path d="M 92.48 28.32 A 27 27 0 0 1 99.68 39.66" fill="none" stroke="#ef4444" stroke-width="1.6" stroke-linecap="round" />
+            <polygon id="svgNeedleRAM" points="73.3,48 74.7,48 74.3,19 73.7,19" fill="#ffffff" filter="drop-shadow(0 0 2.5px #38bdf8)" transform="rotate(22.4 74 48)" />
+          </svg>
+          <div class="uv-bottom-hub">
+            <span class="uv-hub-percent text-cyan-300" id="ramValText">未接入</span>
+          </div>
+        </div>
+
+        <!-- 播控按键组 -->
+        <div class="flex items-center space-x-1 bg-[#090b0e] p-1 rounded-lg border border-white/5">
+          <button class="hw-round-btn w-7 h-7" title="停止"><div class="hw-round-inner w-4 h-4"><div class="w-1.5 h-1.5 bg-slate-400 rounded-sm"></div></div></button>
+          <button class="hw-round-btn active w-7 h-7" title="运行"><div class="hw-round-inner w-4 h-4"><svg class="w-2.5 h-2.5 text-[#dfc384]" fill="currentColor" viewBox="0 0 24 24"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg></div></button>
+          <button class="hw-round-btn w-7 h-7" title="下一步"><div class="hw-round-inner w-4 h-4"><i data-lucide="skip-forward" class="w-2.5 h-2.5 text-slate-400"></i></div></button>
+        </div>
+
+        <div class="h-4 w-px bg-white/10"></div>
+
+        <!-- 数码时钟与状态 -->
+        <div class="px-2.5 py-1.5 rounded bg-[#06070a] border border-[#dfc384]/30 font-mono text-xs text-[#eddab3] font-bold shadow-inner flex items-center space-x-1.5">
+          <span class="w-1.5 h-1.5 rounded-full bg-[#dfc384] shadow-[0_0_6px_#dfc384]"></span>
+          <span id="masterDeckClock">00:00:00</span>
+        </div>
+        <button type="button" id="masterDeckDate" class="shrink-0 min-w-[76px] px-2.5 py-1.5 rounded bg-[#06070a] border border-[#dfc384]/45 font-mono text-xs text-[#eddab3] font-bold shadow-inner flex items-center justify-center space-x-1.5 hover:border-[#dfc384] transition" title="打开项目排期日历" aria-label="打开项目排期日历"><i data-lucide="calendar-days" class="w-3.5 h-3.5 text-[#dfc384]" aria-hidden="true"></i><span class="text-slate-500 uppercase" id="masterDeckDateMonth">---</span><span id="masterDeckDateDay">--</span></button>
+      </div>
+    </div>
+
+    <!-- LOWER DECK: 胶囊跑道导航条 -->
+    <div class="recessed-deck-slot h-11 rounded-lg flex items-center justify-between px-2.5 relative z-30">
+      <div class="flex items-center space-x-2 shrink-0" id="navPillsGroup">
+        <a href="index.html" class="pill-capsule-inactive px-3.5 py-1.5 text-xs tracking-wide font-medium flex items-center space-x-1.5 nav-pill-btn cursor-pointer" title="首页 · 控制台">
+          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" viewBox="0 0 24 24">
+            <path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path>
+            <polyline points="9 22 9 12 15 12 15 22"></polyline>
+          </svg>
+          <span>首页 · 控制台</span>
+        </a>
+        <a href="projects.html" class="pill-capsule-inactive px-3.5 py-1.5 text-xs tracking-wide font-medium flex items-center space-x-1.5 nav-pill-btn cursor-pointer" title="项目中心">
+          <i data-lucide="folder-kanban" class="w-3.5 h-3.5"></i>
+          <span>项目中心</span>
+        </a>
+        <a href="workshop.html" class="pill-capsule-inactive px-3.5 py-1.5 text-xs tracking-wide font-medium flex items-center space-x-1.5 nav-pill-btn cursor-pointer" title="影视工坊">
+          <i data-lucide="film" class="w-3.5 h-3.5"></i>
+          <span>影视工坊</span>
+        </a>
+        <a href="production.html" class="pill-capsule-inactive px-3.5 py-1.5 text-xs tracking-wide font-medium flex items-center space-x-1.5 nav-pill-btn cursor-pointer" title="剧集制片">
+          <i data-lucide="clapperboard" class="w-3.5 h-3.5"></i>
+          <span>剧集制片</span>
+        </a>
+        <a href="agents.html" class="pill-capsule-inactive px-3.5 py-1.5 text-xs tracking-wide font-medium flex items-center space-x-1.5 nav-pill-btn cursor-pointer" title="智能体">
+          <i data-lucide="bot" class="w-3.5 h-3.5"></i>
+          <span>智能体</span>
+        </a>
+        <a href="storyboard.html?view=canvas" class="pill-capsule-inactive px-3.5 py-1.5 text-xs tracking-wide font-medium flex items-center space-x-1.5 nav-pill-btn cursor-pointer" title="画布">
+          <i data-lucide="layout-grid" class="w-3.5 h-3.5"></i>
+          <span>画布/工具</span>
+        </a>
+        <a href="assets.html" class="pill-capsule-inactive px-3.5 py-1.5 text-xs tracking-wide font-medium flex items-center space-x-1.5 nav-pill-btn cursor-pointer" title="资产库">
+          <i data-lucide="database" class="w-3.5 h-3.5"></i>
+          <span>资产库</span>
+        </a>
+        <a href="collab.html" class="pill-capsule-inactive px-3.5 py-1.5 text-xs tracking-wide flex items-center space-x-1.5 nav-pill-btn cursor-pointer" title="协作">
+          <i data-lucide="users" class="w-3.5 h-3.5"></i>
+          <span>协作</span>
+        </a>
+        <a href="workflow-workbench.html" class="pill-capsule-inactive px-3.5 py-1.5 text-xs tracking-wide font-medium flex items-center space-x-1.5 nav-pill-btn cursor-pointer" title="工作流">
+          <i data-lucide="workflow" class="w-3.5 h-3.5"></i><span>工作流</span>
+        </a>
+        <a href="settings.html" class="pill-capsule-active px-3.5 py-1.5 text-xs tracking-wide flex items-center space-x-1.5 nav-pill-btn cursor-pointer" title="系统设置" aria-pressed="true">
+          <i data-lucide="settings" class="w-3.5 h-3.5"></i>
+          <span>设置</span>
+        </a>
+      </div>
+
+      <!-- 右侧局部保存状态显示 (兼容 settings.js #saveState) -->
+      <div class="flex items-center space-x-3 shrink-0">
+        <div class="flex items-center space-x-1.5 px-2.5 py-1 rounded bg-black/60 border border-white/10 font-mono text-[9px]">
+          <span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
+          <span class="text-slate-400">STORAGE:</span>
+          <span class="text-[#dfc384] font-bold" id="saveState">LOCAL SETTINGS</span>
+        </div>
+        <button type="button" id="topbarUnifiedTrashBtn" class="hw-mini-knob-box group cursor-pointer relative" title="统一回收站（制片工程与素材库全局回收池）" aria-label="打开统一回收站">
+          <div class="hw-mini-knob border border-[#dfc384]/40 hover:border-[#dfc384] transition">
+            <div class="hw-mini-knob-arc" style="border-top-color: #ef4444; border-right-color: #f59e0b;"></div>
+            <div class="hw-mini-knob-inner flex items-center justify-center text-[#eddab3]"><i data-lucide="trash-2" class="w-3.5 h-3.5 text-[#dfc384]"></i></div>
+          </div>
+        </button>
+        <!-- 拟物头像键帽 (原智能体核心位置，替换左下角登录用户，无文字只显头像) -->
+        <div class="hw-avatar-keycap ml-1 cursor-pointer hover:scale-105 active:scale-95 transition" title="认证状态未接入：点击打开认证中心查看真实登录状态" data-gw-identity="unverified">
+          <div class="hw-avatar-keycap-inner">
+            <i data-lucide="shield-check" class="w-4 h-4 text-[#eddab3]"></i>
+          </div>
+          <span class="hw-avatar-keycap-status"></span>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <!-- ======================================================================= -->
+  <!-- MAIN WORKSPACE: 曜石钛金拟物设置主工作台                                   -->
+  <!-- ======================================================================= -->
+  <main class="flex-1 p-3 min-h-0 flex gap-3 overflow-hidden">
+
+    <!-- LEFT: 导航与分区总线 (Width: 240px) -->
+    <aside class="w-60 flex flex-col h-full shrink-0 champagne-card p-2.5 space-y-3">
+      <div class="px-2 pt-1">
+        <div class="text-[9px] font-mono tracking-widest text-[#dfc384] uppercase font-bold">CONTROL BUS</div>
+        <div class="text-xs font-bold text-slate-100 mt-0.5">设置分区与配置模块</div>
+      </div>
+
+      <!-- 核心分区切换按键 (内部平滑切换，无外链跳转) -->
+      <nav class="space-y-1 settings-index" aria-label="设置分区">
+        <button type="button" data-section="general" class="w-full flex items-center space-x-2.5 px-3 py-2 rounded-lg text-xs font-medium text-slate-300 hover:text-white transition active cursor-pointer">
+          <i data-lucide="sliders" class="w-4 h-4 text-[#dfc384]"></i>
+          <span>通用与外观偏好</span>
+        </button>
+        <button type="button" data-section="directories" class="w-full flex items-center space-x-2.5 px-3 py-2 rounded-lg text-xs font-medium text-slate-300 hover:text-white transition cursor-pointer">
+          <i data-lucide="folder-cog" class="w-4 h-4 text-amber-300"></i>
+          <span>目录设置</span>
+        </button>
+        <button type="button" data-section="prompt-sources" class="w-full flex items-center space-x-2.5 px-3 py-2 rounded-lg text-xs font-medium text-slate-300 hover:text-white transition cursor-pointer">
+          <i data-lucide="sparkles" class="w-4 h-4 text-cyan-400"></i>
+          <span>提示词来源 (本地快照)</span>
+        </button>
+        <button type="button" data-section="api-settings" class="w-full flex items-center space-x-2.5 px-3 py-2 rounded-lg text-xs font-medium text-slate-300 hover:text-white transition cursor-pointer">
+          <i data-lucide="key" class="w-4 h-4 text-amber-400"></i>
+          <span>API 与密钥配置</span>
+        </button>
+        <button type="button" data-section="permissions" class="w-full flex items-center space-x-2.5 px-3 py-2 rounded-lg text-xs font-medium text-slate-300 hover:text-white transition cursor-pointer">
+          <i data-lucide="shield-check" class="w-4 h-4 text-emerald-400"></i>
+          <span>席位与资产权限</span>
+        </button>
+      </nav>
+
+      <!-- 底部硬件固件信息指示卡 -->
+      <div class="mt-auto bay-inset p-2.5 rounded-xl text-[10px] font-mono text-slate-400 space-y-1">
+        <div class="flex justify-between text-slate-300">
+          <span>DECK HW:</span>
+          <span class="text-[#dfc384] font-bold">Workbench.0-SKEUO</span>
+        </div>
+        <div class="flex justify-between">
+          <span>PROTOCOL:</span>
+          <span class="text-emerald-400">HTTP/REST</span>
+        </div>
+      </div>
+    </aside>
+
+    <!-- RIGHT: 主内容配置视窗 (Flex-1) -->
+    <div class="flex-1 champagne-card p-4 flex flex-col h-full overflow-hidden">
+
+      <!-- 分区 1: 通用设置与外观 (data-panel="general") -->
+      <section class="active h-full flex flex-col overflow-y-auto pr-1" data-panel="general">
+        <div class="mb-4">
+          <h2 class="text-lg font-bold text-slate-100 flex items-center space-x-2">
+            <i data-lucide="sliders" class="w-5 h-5 text-[#dfc384]"></i>
+            <span>通用工作台与工程环境设置</span>
+          </h2>
+          <p class="text-xs text-slate-400 mt-1 font-mono">启动偏好、视觉主题、团队命名规则与系统状态</p>
+        </div>
+
+        <!-- 四大拟物硬件控制槽 -->
+        <div class="grid grid-cols-2 gap-4">
+
+          <!-- 槽 1: 启动与任务行为 -->
+          <div class="bay-inset p-4 rounded-xl space-y-3.5">
+            <div class="flex items-center space-x-2 pb-2 border-b border-white/5">
+              <i data-lucide="power" class="w-4 h-4 text-[#dfc384]"></i>
+              <h3 class="text-xs font-bold text-slate-200">启动与任务行为</h3>
+            </div>
+
+            <!-- 默认启动页 -->
+            <div class="flex items-center justify-between">
+              <div>
+                <strong class="text-xs text-slate-200 block">默认启动页</strong>
+                <p class="text-[11px] text-slate-400">打开工作台时首先加载的视图</p>
+              </div>
+              <select id="defaultPage" class="bg-[#0e1117] border border-white/10 rounded-lg px-2.5 py-1 text-xs text-slate-200 focus:outline-none focus:border-[#dfc384]">
+                <option value="index">首页 · 控制台</option>
+                <option value="projects">项目中心</option>
+                <option value="zimage">图像生成</option>
+                <option value="storyboard">分镜画布</option>
+              </select>
+            </div>
+
+            <!-- 中心自动刷新 -->
+            <div class="flex items-center justify-between pt-1">
+              <div>
+                <strong class="text-xs text-slate-200 block">中心自动刷新</strong>
+                <p class="text-[11px] text-slate-400">每 5 秒同步后台任务与运行日志</p>
+              </div>
+              <button class="toggle on" data-setting="task_refresh" aria-label="中心自动刷新" aria-pressed="true">
+                <i></i>
+              </button>
+            </div>
+
+            <!-- 恢复上次页面 -->
+            <div class="flex items-center justify-between pt-1">
+              <div>
+                <strong class="text-xs text-slate-200 block">恢复上次页面</strong>
+                <p class="text-[11px] text-slate-400">重新打开时自动定位到最近工作位置</p>
+              </div>
+              <button class="toggle on" data-setting="restore_page" aria-label="恢复上次页面" aria-pressed="true">
+                <i></i>
+              </button>
+            </div>
+          </div>
+
+          <!-- 槽 2: 外观与语言 -->
+          <div class="bay-inset p-4 rounded-xl space-y-3.5">
+            <div class="flex items-center space-x-2 pb-2 border-b border-white/5">
+              <i data-lucide="palette" class="w-4 h-4 text-cyan-400"></i>
+              <h3 class="text-xs font-bold text-slate-200">界面外观与显示偏好</h3>
+            </div>
+
+            <!-- 深色模式 -->
+            <div class="flex items-center justify-between">
+              <div>
+                <strong class="text-xs text-slate-200 block">深色模式 (曜石香槟金)</strong>
+                <p class="text-[11px] text-slate-400">切换全局界面拟物暗黑科技主题</p>
+              </div>
+              <button class="toggle on" id="themeToggle" aria-label="深色模式" aria-pressed="true">
+                <i></i>
+              </button>
+            </div>
+
+            <!-- 界面语言 -->
+            <div class="flex items-center justify-between pt-1">
+              <div>
+                <strong class="text-xs text-slate-200 block">界面语言</strong>
+                <p class="text-[11px] text-slate-400">当前支持中文与英文双语切换</p>
+              </div>
+              <button class="tactile-keycap px-3 py-1.5 rounded-lg text-xs font-medium text-slate-200 hover:text-white" id="languageToggle">
+                切换语言
+              </button>
+            </div>
+
+            <!-- 减少动态效果 -->
+            <div class="flex items-center justify-between pt-1">
+              <div>
+                <strong class="text-xs text-slate-200 block">减少动态效果</strong>
+                <p class="text-[11px] text-slate-400">降低复杂过渡动效与高光呼吸强度</p>
+              </div>
+              <button class="toggle" data-setting="reduce_motion" aria-label="减少动态效果" aria-pressed="false">
+                <i></i>
+              </button>
+            </div>
+          </div>
+
+          <!-- 槽 3: 团队偏好 -->
+          <div class="bay-inset p-4 rounded-xl space-y-3.5">
+            <div class="flex items-center space-x-2 pb-2 border-b border-white/5">
+              <i data-lucide="users" class="w-4 h-4 text-amber-400"></i>
+              <h3 class="text-xs font-bold text-slate-200">团队偏好与服务端同步</h3>
+            </div>
+
+            <!-- 命名规则 -->
+            <div class="flex items-center justify-between">
+              <div>
+                <strong class="text-xs text-slate-200 block">命名规则模板</strong>
+                <p class="text-[11px] text-slate-400">资产导出与归档文件名模板</p>
+              </div>
+              <input type="text" id="teamNaming" aria-label="命名规则" class="bg-[#0e1117] border border-white/10 rounded-lg px-2.5 py-1 text-xs text-slate-200 font-mono w-48 focus:outline-none focus:border-[#dfc384]" placeholder="{project}_{entity}_{version}">
+            </div>
+
+            <!-- 默认审阅范围 -->
+            <div class="flex items-center justify-between pt-1">
+              <div>
+                <strong class="text-xs text-slate-200 block">默认审阅范围</strong>
+                <p class="text-[11px] text-slate-400">新建审阅流与评审任务的默认可见性</p>
+              </div>
+              <select id="teamVisibility" class="bg-[#0e1117] border border-white/10 rounded-lg px-2.5 py-1 text-xs text-slate-200 focus:outline-none focus:border-[#dfc384]">
+                <option value="team">团队成员 (全组公开)</option>
+                <option value="shared">公开分享 (外链许可)</option>
+                <option value="private">仅自己 (私有工作草稿)</option>
+              </select>
+            </div>
+
+            <!-- 保存同步操作 -->
+            <div class="flex items-center justify-between pt-2 border-t border-white/5">
+              <span class="text-[10px] font-mono text-slate-500">端点: /api/asset-registry/preferences/team</span>
+              <button class="px-3.5 py-1.5 rounded-lg bg-gradient-to-r from-[#dfc384]/20 to-[#dfc384]/30 border border-[#dfc384]/50 text-[#eddab3] text-xs font-bold hover:brightness-110 active:scale-95 transition" id="btnSaveTeamPrefs">
+                保存同步
+              </button>
+            </div>
+          </div>
+
+          <!-- 槽 4: 系统运行信息 -->
+          <div class="bay-inset p-4 rounded-xl space-y-3">
+            <div class="flex items-center space-x-2 pb-2 border-b border-white/5">
+              <i data-lucide="info" class="w-4 h-4 text-emerald-400"></i>
+              <h3 class="text-xs font-bold text-slate-200">系统信息与版本状态</h3>
+            </div>
+            <div id="systemInfo" class="space-y-2 text-xs font-mono text-slate-300">
+              <div class="flex items-center space-x-2 text-slate-400">
+                <div class="w-3 h-3 border-2 border-[#dfc384] border-t-transparent rounded-full animate-spin"></div>
+                <span>正在读取后端系统信息...</span>
+              </div>
+            </div>
+          </div>
+
+        </div>
+      </section>
+
+      <!-- 分区: 目录设置 (data-panel="directories") -->
+      <section class="h-full flex flex-col overflow-hidden directory-settings-panel" data-panel="directories">
+        <iframe title="目录设置" class="directory-settings-frame w-full h-full border-0 bg-transparent" src="/static/asset-manager.html?settings=directories&embedded=1" loading="lazy"></iframe>
+      </section>
+
+      <!-- 分区 2: 提示词来源 (data-panel="prompt-sources") -->
+      <section class="h-full flex flex-col overflow-y-auto pr-1" data-panel="prompt-sources">
+        <div class="flex items-center justify-between mb-4 pb-3 border-b border-white/10">
+          <div>
+            <h2 class="text-lg font-bold text-slate-100 flex items-center space-x-2">
+              <i data-lucide="sparkles" class="w-5 h-5 text-cyan-400"></i>
+              <span>本地提示词来源快照管理</span>
+            </h2>
+            <p class="text-xs text-slate-400 mt-0.5">管理随应用分发的本地提示词源。所有条目来自固定本地快照，离线纯本地运行。</p>
+          </div>
+          <span id="promptSourceSnapshotState" class="px-2.5 py-1 rounded bg-black/50 border border-white/10 font-mono text-[10px] text-[#dfc384]">正在读取</span>
+        </div>
+
+        <!-- 政策说明框 -->
+        <div class="bay-inset p-3 rounded-xl mb-3 flex items-center space-x-3 border border-cyan-500/20">
+          <i data-lucide="shield-check" class="w-5 h-5 text-cyan-400 shrink-0"></i>
+          <div class="text-xs text-slate-300">
+            <strong class="text-slate-100 block">固定本地快照策略</strong>
+            <span class="text-slate-400 text-[11px]">仅读取 <code>/static/prompt-registry/</code> 内的 manifest 和来源文件，关闭来源后资产中心与画布会立即隐藏对应条目。</span>
+          </div>
+        </div>
+
+        <!-- 动态来源列表容器 -->
+        <div id="promptSourceList" class="space-y-2.5 flex-1 overflow-y-auto pr-1">
+          <div class="bay-inset p-4 rounded-xl text-center text-xs font-mono text-slate-400">
+            正在读取本地来源清单…
+          </div>
+        </div>
+      </section>
+
+      <!-- 分区 3: API 与密钥配置 (data-panel="api-settings") -->
+      <section class="h-full flex flex-col overflow-hidden" data-panel="api-settings">
+        <div class="flex items-center justify-between mb-2.5 pb-2.5 border-b border-white/10 shrink-0">
+          <div>
+            <h2 class="text-base font-bold text-slate-100 flex items-center space-x-2">
+              <i data-lucide="key" class="w-4 h-4 text-amber-400"></i>
+              <span>API 平台与大模型密钥配置</span>
+            </h2>
+            <p class="text-[11px] text-slate-400 mt-0.5 font-mono">配置各推理服务商地址、模型矩阵、即梦/GPT/Antigravity CLI 及本地密钥环境</p>
+          </div>
+          <div class="flex items-center space-x-2">
+            <span class="px-2 py-0.5 rounded bg-black/60 border border-white/10 font-mono text-[9px] text-[#dfc384]">SECURE ENV</span>
+            <a href="/static/pages/settings.html?section=api-settings" class="tactile-keycap px-2.5 py-1 rounded text-[10px] text-slate-300 hover:text-white flex items-center space-x-1" title="在当前 Workbench 设置中配置">
+              <i data-lucide="external-link" class="w-3 h-3"></i>
+              <span>打开 Workbench 设置面板</span>
+            </a>
+          </div>
+        </div>
+        <div class="flex-1 w-full h-full min-h-0 bay-inset rounded-xl overflow-hidden border border-white/10 relative">
+          <iframe id="iframeApiSettings" src="/static/api-settings.html?embedded=1" class="w-full h-full border-0 bg-transparent" title="API与密钥配置视窗"></iframe>
+        </div>
+      </section>
+
+      <!-- 分区 5: 席位与资产权限 (data-panel="permissions") -->
+      <section class="h-full flex flex-col overflow-hidden" data-panel="permissions">
+        <div class="flex items-center justify-between mb-2.5 pb-2.5 border-b border-white/10 shrink-0">
+          <div>
+            <h2 class="text-base font-bold text-slate-100 flex items-center space-x-2">
+              <i data-lucide="users" class="w-4 h-4 text-[#dfc384]"></i>
+              <span>团队协同席位与资产权限治理</span>
+            </h2>
+            <p class="text-[11px] text-slate-400 mt-0.5 font-mono">真实路由: /api/asset-auth/teams · /api/asset-auth/users</p>
+          </div>
+          <div class="flex items-center space-x-2">
+            <span class="px-2 py-0.5 rounded bg-black/60 border border-[#dfc384]/30 font-mono text-[9px] text-[#eddab3]">AUTH & RBAC</span>
+            <button type="button" onclick="HardwareDeck.loadTeamModalData('panelTeamList')" class="tactile-keycap px-2.5 py-1 rounded text-[10px] text-[#eddab3] hover:text-white flex items-center space-x-1" title="刷新席位列表">
+              <i data-lucide="refresh-cw" class="w-3 h-3"></i>
+              <span>刷新状态</span>
+            </button>
+          </div>
+        </div>
+        <div class="flex-1 w-full h-full min-h-0 bay-inset rounded-xl p-4 overflow-y-auto border border-white/10 relative space-y-4">
+          <!-- 快捷直达卡片 -->
+          <div class="grid grid-cols-2 gap-3">
+            <a href="/static/pages/collab.html" class="bay-inset p-3 rounded-xl flex items-center justify-between group hover:border-[#dfc384]/40 transition border border-white/5">
+              <div class="flex items-center space-x-2.5">
+                <div class="w-8 h-8 rounded-lg bg-[#dfc384]/15 border border-[#dfc384]/30 flex items-center justify-center text-[#eddab3]">
+                  <i data-lucide="network" class="w-4 h-4"></i>
+                </div>
+                <div>
+                  <div class="font-bold text-slate-200 group-hover:text-[#eddab3] transition text-xs">实时协同工作台</div>
+                  <div class="text-[9px] font-mono text-slate-400">/static/pages/collab.html</div>
+                </div>
+              </div>
+              <i data-lucide="chevron-right" class="w-4 h-4 text-slate-500 group-hover:text-[#eddab3] transition"></i>
+            </a>
+
+            <a href="/static/pages/assets.html" class="bay-inset p-3 rounded-xl flex items-center justify-between group hover:border-[#dfc384]/40 transition border border-white/5">
+              <div class="flex items-center space-x-2.5">
+                <div class="w-8 h-8 rounded-lg bg-cyan-500/15 border border-cyan-500/30 flex items-center justify-center text-cyan-300">
+                  <i data-lucide="shield-alert" class="w-4 h-4"></i>
+                </div>
+                <div>
+                  <div class="font-bold text-slate-200 group-hover:text-cyan-300 transition text-xs">权限与团队审批</div>
+                  <div class="text-[9px] font-mono text-slate-400">/static/pages/assets.html</div>
+                </div>
+              </div>
+              <i data-lucide="external-link" class="w-4 h-4 text-slate-500 group-hover:text-cyan-300 transition"></i>
+            </a>
+          </div>
+
+          <!-- 当前登录席位状态与权限详情 -->
+          <div class="bay-inset p-3 rounded-xl border border-white/5 space-y-2">
+            <div class="flex items-center justify-between text-[11px] font-bold text-slate-200 pb-2 border-b border-white/5">
+              <div class="flex items-center space-x-2">
+                <i data-lucide="shield-check" class="w-4 h-4 text-emerald-400"></i>
+                <span>当前席位凭据与治理策略</span>
+              </div>
+              <span class="text-[9px] font-mono text-amber-300 px-2 py-0.5 rounded bg-amber-500/10 border border-amber-500/20" id="settingsSessionBadge" data-gw-degradation="not_integrated">SESSION 读取中…</span>
+            </div>
+            <div class="grid grid-cols-3 gap-2 text-xs">
+              <div class="p-2 rounded-lg bg-black/40 border border-white/5">
+                <div class="text-[9px] text-slate-400 font-mono">席位角色</div>
+                <div class="font-bold text-slate-400 mt-0.5" id="settingsSeatRole" data-gw-degradation="not_integrated">读取 /api/asset-auth/status…</div>
+              </div>
+              <div class="p-2 rounded-lg bg-black/40 border border-white/5">
+                <div class="text-[9px] text-slate-400 font-mono">鉴权通道</div>
+                <div class="font-bold text-slate-400 mt-0.5" id="settingsAuthChannel" data-gw-degradation="not_integrated">读取中…</div>
+              </div>
+              <div class="p-2 rounded-lg bg-black/40 border border-white/5">
+                <div class="text-[9px] text-slate-400 font-mono">响应延时</div>
+                <div class="font-bold text-slate-400 font-mono mt-0.5" id="settingsAuthLatency" data-gw-degradation="not_integrated">未测量</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 动态团队席位成员列表 (对接 /api/asset-auth/teams 与 /api/asset-auth/users) -->
+          <div class="space-y-2">
+            <div class="flex items-center justify-between">
+              <span class="text-[11px] font-bold text-[#dfc384] font-mono">团队空间与席位成员</span>
+              <span class="text-[9px] font-mono text-slate-500">未接入时明说「未接入」，不伪造席位</span>
+            </div>
+            <div id="panelTeamList" class="space-y-2">
+              <div class="bay-inset p-2.5 rounded-xl flex items-center justify-between border-l-2 border-[#dfc384]">
+                <div class="flex items-center space-x-2.5">
+                  <div class="w-7 h-7 rounded-full bg-[#dfc384] text-black font-bold flex items-center justify-center text-[10px]">AD</div>
+                  <div>
+                    <div class="font-bold text-slate-400 text-xs">席位列表待读取</div>
+                    <div class="text-[9px] font-mono text-slate-500">未接入时本行会明说「未接入」，不伪造管理员席位</div>
+                  </div>
+                </div>
+                <span class="text-[9px] font-mono text-amber-300" data-gw-degradation="not_integrated">未接入</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="pt-2 border-t border-white/10 flex items-center justify-between text-[9px] font-mono text-slate-500">
+            <span>团队与用户管理 API: /api/asset-auth/teams · /api/asset-auth/users</span>
+            <span>Gods' Workbench 安全鉴权模块</span>
+          </div>
+        </div>
+      </section>
+
+    </div>
+  </main>
+
+  <!-- 载入脚本 -->
+  <script src="/static/js/core/workspace-common.js?v=v0.0.1-alpha-2026"></script>
+  <script src="/static/js/core/floating-dismissal.js?v=v0.0.1-alpha-2026&m3=floating-dismissal"></script>
+  <script src="/static/js/modules/directory-settings-nav.js?v=20260917"></script>
+  <script src="/static/js/core/degradation.js?v=v0.0.1-alpha-2026"></script>
+  <script src="/static/js/controllers/settings.js?v=v0.0.1-alpha-2026&m3=directories-20260916"></script>
+  <script src="/static/js/core/hardware-telemetry.js"></script>
+
+  <!-- 拟物仪表微动态与图标初始化 -->
+  <script>
+    document.addEventListener('DOMContentLoaded', () => {
+      if (window.lucide) window.lucide.createIcons();
+      if (window.HardwareDeck && window.HardwareDeck.loadTeamModalData) {
+        window.HardwareDeck.loadTeamModalData('panelTeamList');
+      }
+
+      // 数码时钟
+      function updateClock() {
+        const now = new Date();
+        const parts = new Intl.DateTimeFormat('en-US', { timeZone: 'Asia/Shanghai', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false }).formatToParts(now);
+        const str = `${parts.find(part => part.type === 'hour')?.value || '00'}:${parts.find(part => part.type === 'minute')?.value || '00'}:${parts.find(part => part.type === 'second')?.value || '00'}`;
+        const el = document.getElementById('masterDeckClock');
+        if (el) el.textContent = str;
+      }
+      setInterval(updateClock, 1000);
+      updateClock();
+
+
+      // CPU/RAM 遥测由 /static/js/core/hardware-telemetry.js 统一接线（真实数据源
+      // GET /api/observability/health 的 hardware_telemetry 组件读数）。
+      // 此处不再重复写入「未接入」，避免覆盖真实读数或造成假降级。
+    });
+  </script>
+<script src="/static/js/core/workbench-shell.js"></script>
+</body>
+</html>

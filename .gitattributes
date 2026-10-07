@@ -1,0 +1,23 @@
+# 统一行尾与文本判定，保证 Windows / Linux 检出一致，并让哈希登记绑定内容而非平台表示。
+* text=auto eol=lf
+
+# 明确二进制（避免被当作文本做行尾转换）
+*.otf binary
+*.ttf binary
+*.woff binary
+*.woff2 binary
+*.eot binary
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.webp binary
+*.bmp binary
+*.ico binary
+*.mp3 binary
+*.wav binary
+*.ogg binary
+*.mp4 binary
+*.mov binary
+*.zip binary
+*.gz binary

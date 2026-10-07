@@ -1,0 +1,28 @@
+# -*- coding: utf-8 -*-
+# Phase 12 A4 媒体处理与缩略图洁净室接口目录
+meta:
+  version: p12-a4-1
+  distribution: NOT AUTHORIZED FOR PUBLIC DISTRIBUTION
+  data_policy: "仅在允许根目录内读取真实文件；真实执行 PIL 缩略图与 ffmpeg 波形/转码；远端抓取做 s3rver-side req forgery 防护。"
+  auth: {unauthorized: 401, readonly_write: 403, not_found: 404, invalid_request: 400, payload_too_large: 413}
+  path_policy: "本机文件必须经 resolve_within_roots()；未配置 GW_ALLOWED_ROOTS 一律 403 LOCAL_FILE_ACCESS_NOT_ADMITTED；源文件只回显 relative_display()，输出使用相对 GW_DATA_DIR 的完整路径供下载。"
+  fail_closed: "ffmpeg/PIL/httpx 缺失或异常 → 503，data_status=not_integrated，绝不伪造。"
+  output_policy: "输出落盘于 GW_DATA_DIR/media_output/**；output 返回相对 GW_DATA_DIR 的完整路径，不是仅文件名；download-output仅允许OUTPUT-ACCESS-CONTRACT.md的四个产物命名空间，拒绝内部状态/绝对路径/链接。"
+  cache_policy: "新分镜保存media_output/storyboards/{asset_id}/frame_秒_毫秒.png；定向删除只匹配精确ID目录和生成名。缩略图有asset_id时用该稳定ID，否则兼容源名；无ID跨根同名缓存隔离不在本次通过范围。所有组件拒绝链接/Junction，删除先预检，部分失败如实返回，旧混用frame保留并明示legacy_shared_frames_preserved。"
+  job_policy: "generate-background 真实执行后返回稳定 tjob_NNNN 与 poll_hint=/api/asset-thumbnails/jobs/{job_id}，状态落盘可回读。"
+  ssrf_policy: "远端 URL 只接受 http/https；拒绝内网/回环/链路本地/保留网段；GET 不跟随重定向且不使用环境代理；URL禁止凭据；仅接受2xx响应，分块读取期间执行16MB上限。本地协议夹具保留127.0.0.1/localhost准入，不宣称生产网络完整隔离。"
+interfaces:
+  - {name: get_asset_proxy_settings, method: GET, path: /api/asset-proxy/settings}
+  - {name: patch_asset_proxy_settings, method: PATCH, path: /api/asset-proxy/settings}
+  - {name: get_asset_thumbnail_settings, method: GET, path: /api/asset-thumbnails/settings}
+  - {name: patch_asset_thumbnail_settings, method: PATCH, path: /api/asset-thumbnails/settings}
+  - {name: post_asset_thumbnail_delete, method: POST, path: /api/asset-thumbnails/delete}
+  - {name: post_asset_thumbnail_delete_storyboards, method: POST, path: /api/asset-thumbnails/delete-storyboards}
+  - {name: post_asset_thumbnail_generate, method: POST, path: /api/asset-thumbnails/generate}
+  - {name: post_asset_thumbnail_generate_background, method: POST, path: /api/asset-thumbnails/generate-background}
+  - {name: get_asset_thumbnail_job, method: GET, path: /api/asset-thumbnails/jobs/{p}}
+  - {name: get_audio_waveform_data, method: GET, path: /api/audio-waveform-data}
+  - {name: get_download_output, method: GET, path: /api/download-output}
+  - {name: get_media_preview, method: GET, path: /api/media-preview}
+  - {name: get_media_transcode, method: GET, path: /api/media-transcode}
+  - {name: post_online_image, method: POST, path: /api/online-image}

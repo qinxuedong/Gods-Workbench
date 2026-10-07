@@ -1,0 +1,93 @@
+meta:
+  source: "Phase 12 R3 服务商协议证据与设计审核（要求 3）"
+  review_status: "frozen-for-implementation-pending-independent-review"
+  distribution: "NOT AUTHORIZED FOR PUBLIC DISTRIBUTION"
+  cleanroom_notice: "仅使用服务端服务商配置引用及 Chat Completions 返回的真实 usage；不读取旧仓，不推算 token。"
+
+service: chat_metrics
+version: p12-r3-2
+protocol: chat_completions
+
+runtime_configuration:
+  environment_variable: GW_PROVIDER_RUNTIME_JSON
+  shape: "object 映射 provider_id -> {base_url, api_key_env, model | models, default_model?, video_protocol?}"
+  base_url: "允许填写 API 根地址，或以单个 /v1 结尾的地址；路径拼接器会将 /v1/chat/completions 合成为恰好一个 /v1，不会产生 /v1/v1；禁止包含查询串和片段。共享 api_endpoint_url 供后续协议路径复用。"
+  constraints:
+    api_key_env: "只允许环境变量名称，不允许密钥值；密钥值在服务端按引用读取"
+    models: "仅服务端配置允许的模型可执行；单模型配置固定使用该模型"
+    video_protocol: "本轮共享解析只识别 newapi_video，不实现视频调用"
+  legacy_environment:
+    provider_id: legacy_environment
+    variables: [GW_CHAT_BASE_URL, GW_CHAT_API_KEY, GW_CHAT_MODEL]
+    semantics: "仅在未指定 provider_id 时启用单模型兼容；显式指定未知 provider_id 时不得回退。"
+
+limits:
+  max_completion_tokens: 512
+  request_timeout_seconds: 30
+  max_concurrent_requests_per_process: 2
+  automatic_retry: false
+  streaming: false
+
+interfaces:
+  - name: chat_configuration
+    method: GET
+    path: /api/chat/config
+    authentication: "Bearer/OIDC gw_session；认证主体需具备读取权限"
+    side_effects: "只解析本地服务端环境配置，不发起外网探测或模型生成"
+    response:
+      configured: boolean
+      configuration_status: "configured | not_configured | misconfigured"
+      default_provider_id: "string | null"
+      providers: "数组，元素字段为 {provider_id, models, default_model, configured, source, video_protocol}"
+      forbidden_response_fields: [base_url, api_key, api_key_env, raw]
+
+  - name: end_to_end_output_throughput
+    methods: [POST]
+    paths: [/api/chat, /api/chat/agent]
+    billing: "仅在已认证编辑权限主体明确提交用户动作后调用上游；可能产生费用，UI须确认且禁止自动重试。"
+    request:
+      provider_id: "可选字符串；必须解析到服务端持有的服务商映射"
+      model: "可选字符串；必须位于服务端持有的模型允许列表中"
+      base_url: forbidden
+      credential_fields: forbidden
+      client_provider_label: "provider字段不得作为路由或归属来源"
+      client_output_token_limit: "忽略或拒绝客户端覆盖；服务端固定512"
+    response:
+      provider_id: "由服务端解析得到的 provider_id（旧配置对应 legacy_environment）"
+      model: "由服务端解析得到的允许模型；不得信任上游或客户端提供的标签"
+      metrics:
+        kind: end_to_end_output_tokens_per_second
+        provider_id: "由服务端解析得到的字符串"
+        model: "由服务端解析得到的字符串"
+        output_tokens: "integer >= 0 | null"
+        elapsed_seconds: "finite number > 0 | null"
+        tokens_per_second: "finite number >= 0 | null"
+        usage_source: chat_completions.usage.completion_tokens
+        unavailable_reason: "null | usage_missing | usage_invalid | elapsed_invalid | rate_invalid"
+    measurement:
+      start: "在发出非流式 HTTP 请求前立即读取 time.monotonic()"
+      end: "收到完整响应体后立即读取 time.monotonic()"
+      output_tokens: "仅接受 JSON 中严格为整数的 usage.completion_tokens；bool、浮点数、字符串、负数或缺失值均视为不可用"
+      rate: "仅当 output_tokens 与 elapsed_seconds 均通过校验时计算 output_tokens / elapsed_seconds；有效的零 token 结果返回 0"
+      failure: "发生 HTTP、网络、超时或配置错误时，metrics 置为 null 并明确给出 unavailable_reason；客户端清除上一条读数"
+      terminology: "端到端 output tokens/s 包含服务商、网络及等待耗时，不代表流式解码速度"
+      raw: "不得返回、记录或持久化任意上游 raw 响应"
+    errors:
+      envelope: "{detail: {code, message, metrics}}"
+      statuses: [400, 401, 403, 503]
+      no_retry: "发生超时或上游结果不确定时不得自动重试；下一次可能计费的调用必须由用户再次操作。"
+
+ui_requirements:
+  page_load: "仅调用 GET /api/chat/config；不得通过 POST 发起 ping 或模型生成"
+  user_action: "可能产生费用时先向用户确认；请求处理中禁用重复提交"
+  home_selection: "首页仅展示公开配置摘要中的可用 Provider/model；多个服务商没有默认值时必须手动选择，POST携带该provider_id/model，配置失效清空选择与标签；40秒停止等待且无自动重试。"
+  selection_change: "切换服务商或模型后立即清除之前的吞吐量和延迟读数"
+  failure: "清除过期读数，并展示 null/unavailable_reason；不得虚构延迟或 token 数"
+
+acceptance_tests:
+  - "受控 HTTP 响应中的 usage 有效且单调时钟可控时，应准确计算 completion_tokens / elapsed_seconds"
+  - "usage 缺失、为负数、bool、浮点数、字符串、NaN 或 infinity，以及 elapsed 为零或非有限值时，均不得产生 tokens/s"
+  - "响应和 metrics 不得包含上游 raw、服务商密钥、api_key_env 或客户端提供的服务商标签"
+  - "未知服务商或模型不得回退到 legacy GW_CHAT_* 配置，也不得借此改写服务商归属"
+  - "Home/Agents 页面加载时不得自动发送网络 POST；用户明确点击后最多发送一次请求"
+  - "发生超时、HTTP 失败、并发容量限制，或切换服务商/模型时，清除之前的读数"

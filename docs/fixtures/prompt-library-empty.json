@@ -1,0 +1,8 @@
+{
+  "detail_comment": "空提示词库黄金夹具：libraries 必须为空数组且 active_library_id 为 null，禁止伪造或返回演示提示词内容。",
+  "library": {
+    "version": 1,
+    "active_library_id": null,
+    "libraries": []
+  }
+}

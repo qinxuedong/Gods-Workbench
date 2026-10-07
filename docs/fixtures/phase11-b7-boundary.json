@@ -1,0 +1,1 @@
+{"block":"B7","path_count":5,"method_path_count":6,"prohibited_operations":["fake_pipeline","fake_stage","fake_status","fake_cancel"]}

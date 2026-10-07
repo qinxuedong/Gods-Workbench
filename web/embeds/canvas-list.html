@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-studio-scale="off">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>项目工作台</title>
+    <script>
+        (function(){
+            try {
+                var params = new URLSearchParams(location.search);
+                if(params.get('embedded') === '1' || new URLSearchParams(location.hash.slice(1)).get('embedded') === '1') {
+                    document.documentElement.classList.add('workspace-embedded');
+                }
+                if(params.get('layout') === 'overview') {
+                    document.documentElement.dataset.canvasListLayout = 'overview';
+                    document.title = '画布总览';
+                }
+                var theme = localStorage.getItem('studio_theme') || localStorage.getItem('canvas_theme') || localStorage.getItem('theme') || 'dark';
+                document.documentElement.setAttribute('data-theme', theme === 'dark' ? 'dark' : 'light');
+                if(theme === 'dark') {
+                    document.documentElement.classList.add('studio-theme-dark');
+                    document.documentElement.classList.add('theme-dark');
+                }
+            } catch(e) {}
+        })();
+    </script>
+    <link rel="stylesheet" href="/static/css/base/tailwind-utilities.css?v=v0.0.1-alpha-2026">
+    <script src="/static/vendor/js/lucide.js?v=v0.0.1-alpha-2026"></script>
+    <script src="/static/js/core/theme.js?v=v0.0.1-alpha-2026"></script>
+    <script src="/static/js/core/touch-mouse.js?v=v0.0.1-alpha-2026"></script>
+    <script src="/static/js/core/i18n.js?v=v0.0.1-alpha-2026"></script>
+    <script src="/static/js/core/floating-dismissal.js?v=v0.0.1-alpha-2026&m3=floating-dismissal"></script>
+    <link rel="stylesheet" href="/static/css/pages/canvas-list.css?v=v0.0.1-alpha-2026&canvas=20260907-toolbar-row">
+    <link id="canvasLegacyTheme" rel="stylesheet" href="/static/css/base/theme.css?v=v0.0.1-alpha-2026">
+    <link id="canvasLegacySignal" rel="stylesheet" href="/static/css/base/signal-flow.css?v=v0.0.1-alpha-2026&sf=20260831-generator-canvas-actions">
+    <link rel="stylesheet" href="/static/css/pages/canvas-overview.css?v=20260916-stitch-black-gold-v3">
+    <script>
+        if (document.documentElement.dataset.canvasListLayout === 'overview') {
+            document.getElementById('canvasLegacyTheme').disabled = true;
+            document.getElementById('canvasLegacySignal').disabled = true;
+        }
+    </script>
+</head>
+<body class="gw-signal gw-page--canvas">
+    <script>
+        if (document.documentElement.dataset.canvasListLayout === 'overview') {
+            document.body.className = 'canvas-overview-page';
+        }
+    </script>
+    <div id="workspace" class="workspace">
+        <!-- LEFT: project sidebar -->
+        <aside id="sidebar" class="ws-sidebar is-open">
+            <div class="ws-side-head">
+                <div class="ws-side-title">项目</div>
+                <button id="newProjectBtn" class="ws-side-add" type="button" title="新建画布" aria-label="新建画布">
+                    <i data-lucide="plus" class="w-4 h-4"></i>
+                    <span class="ws-side-add-label">新建画布</span>
+                </button>
+            </div>
+            <div id="newProjectRow" class="ws-newproj-row" data-floating-surface="canvas-list-new-project" data-floating-kind="panel" data-floating-content="self" data-floating-dismiss="outside" data-floating-escape="close-only">
+                <input id="newProjectInput" class="ws-newproj-input" type="text" maxlength="60" placeholder="项目名称">
+                <button id="newProjectConfirm" class="ws-mini-btn primary" type="button" title="确定" aria-label="确定"><i data-lucide="check" class="w-3.5 h-3.5"></i></button>
+                <button id="newProjectCancel" class="ws-mini-btn" type="button" data-floating-close title="取消" aria-label="取消"><i data-lucide="x" class="w-3.5 h-3.5"></i></button>
+            </div>
+            <div id="projectList" class="ws-project-list"></div>
+            <div class="ws-side-foot">
+            </div>
+        </aside>
+
+        <!-- RIGHT: board -->
+        <main class="ws-main">
+            <!-- Action header: keep the controls together without an empty rule row. -->
+            <div class="ws-topbar-right ws-board-actions ws-board-toolbar canvas-overview-toolbar" role="toolbar" aria-label="画布操作">
+                <div class="canvas-overview-toolbar-leading">
+                    <button id="newCanvasBtn" class="ws-primary-btn hw-create-btn" type="button"><i data-lucide="plus" class="w-4 h-4"></i><span id="newCanvasLabel">新建画布</span></button>
+                    <button id="archiveEntry" class="ws-icon-btn ws-archive-entry bay-inset" type="button" title="画布归档" aria-label="画布归档" aria-controls="archivePanel" aria-expanded="false"><i data-lucide="archive" class="w-3.5 h-3.5"></i><span class="ws-archive-label">画布归档</span><span id="archiveBadge" class="ws-trash-badge">0</span></button>
+                    <span class="canvas-overview-toolbar-divider" aria-hidden="true"></span>
+                    <div id="canvasFilterGroup" class="ws-canvas-filter-group" role="group" aria-label="画布类型筛选">
+                        <button class="ws-filter-btn active" type="button" data-canvas-filter="all" aria-pressed="true"><span>全部画布</span><span class="ws-filter-count" id="filterCountAll">0</span></button>
+                        <button class="ws-filter-btn" type="button" data-canvas-filter="classic" aria-pressed="false"><span class="canvas-overview-filter-dot normal"></span><span>普通画布</span><span class="ws-filter-count" id="filterCountClassic">0</span><span class="canvas-overview-filter-detail" id="filterCountClassicDetail">（常规/智能）</span></button>
+                        <button class="ws-filter-btn project-filter" type="button" data-canvas-filter="project" aria-pressed="false"><span class="canvas-overview-filter-dot project"></span><span>项目画布</span><span class="ws-filter-count" id="filterCountProject">0</span></button>
+                        <button class="ws-filter-btn reference-filter" type="button" data-canvas-filter="reference" aria-pressed="false"><span class="canvas-overview-filter-dot reference"></span><span>参考画布</span><span class="ws-filter-count" id="filterCountReference">0</span></button>
+                    </div>
+                    <button id="pasteCanvasBtn" class="ws-paste-btn" type="button" title="粘贴到此项目" style="display:none"><i data-lucide="clipboard-paste" class="w-4 h-4"></i><span>粘贴到此项目</span></button>
+                </div>
+                <div class="canvas-overview-toolbar-trailing">
+                    <label class="canvas-overview-search bay-inset" for="canvasOverviewSearch">
+                        <i data-lucide="search" class="w-3.5 h-3.5" aria-hidden="true"></i>
+                        <input id="canvasOverviewSearch" type="search" placeholder="搜索画布名称 / ID..." autocomplete="off">
+                    </label>
+                    <label class="canvas-overview-sort" for="canvasOverviewSort">
+                        <i data-lucide="arrow-up-down" class="w-3 h-3" aria-hidden="true"></i>
+                        <select id="canvasOverviewSort" aria-label="排序画布">
+                            <option value="updated">最近修改</option>
+                            <option value="created">创建时间</option>
+                            <option value="name">名称 A-Z</option>
+                        </select>
+                        <i data-lucide="chevron-down" class="w-3 h-3 canvas-overview-sort-chevron" aria-hidden="true"></i>
+                    </label>
+                    <div class="canvas-overview-density" role="group" aria-label="卡片密度">
+                        <button type="button" data-canvas-overview-density="grid" title="网格视图" aria-label="网格视图" aria-pressed="true"><i data-lucide="layout-grid" class="w-3.5 h-3.5"></i></button>
+                        <button type="button" data-canvas-overview-density="compact" title="紧凑视图" aria-label="紧凑视图" aria-pressed="false"><i data-lucide="stretch-horizontal" class="w-3.5 h-3.5"></i></button>
+                    </div>
+                    <div id="canvasOverviewTrashHost" class="canvas-overview-trash-host"></div>
+                    <button id="canvasOverviewRefresh" class="ws-icon-btn canvas-overview-refresh" type="button" title="刷新画布" aria-label="刷新画布"><i data-lucide="refresh-cw" class="w-4 h-4"></i></button>
+                    <button id="boardResetView" class="ws-icon-btn ws-legacy-board-control" type="button" title="重置视图" aria-label="重置视图" aria-hidden="true" tabindex="-1"><i data-lucide="locate-fixed" class="w-4 h-4"></i></button>
+                    <button id="boardRefresh" class="ws-icon-btn ws-legacy-board-control" type="button" title="刷新" aria-label="刷新" aria-hidden="true" tabindex="-1"><i data-lucide="refresh-cw" class="w-4 h-4"></i></button>
+                </div>
+            </div>
+
+            <!-- Board (finite cards; Shift+wheel zoom) -->
+            <div id="board" class="ws-board">
+                <div id="boardWorld" class="ws-board-world"></div>
+                <div id="boardEmptyHint" class="ws-board-empty">
+                    <div class="ws-board-empty-icon"><i data-lucide="mouse-pointer-click" class="w-7 h-7"></i></div>
+                    <div class="ws-board-empty-text">暂无画布</div>
+                    <div class="ws-board-empty-sub">为当前项目创建第一块画布</div>
+                    <div class="ws-board-empty-actions">
+                        <button id="emptyCreateCanvasBtn" class="ws-primary-btn" type="button"><i data-lucide="plus" class="w-4 h-4"></i><span>新建画布</span></button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Trash panel (overlay over the board area) -->
+            <div id="trashPanel" class="ws-trash-panel" hidden data-floating-surface="canvas-trash-panel" data-floating-kind="panel" data-floating-content="self" data-floating-dismiss="outside" data-floating-escape="close-only">
+                <div class="ws-trash-head">
+                    <div class="ws-trash-head-title"><i data-lucide="trash-2" class="w-4 h-4"></i><span>回收站</span></div>
+                    <button id="trashClose" class="ws-icon-btn" type="button" data-floating-close title="关闭" aria-label="关闭"><i data-lucide="x" class="w-4 h-4"></i></button>
+                </div>
+                <div class="ws-trash-note"><i data-lucide="info" class="w-3.5 h-3.5"></i><span>回收站中的画布会在 30 天后自动清理。</span></div>
+                <div id="trashList" class="ws-trash-list"></div>
+            </div>
+
+            <div id="archiveBackdrop" class="ws-archive-backdrop" style="display:none"></div>
+            <div id="archivePanel" class="ws-trash-panel ws-archive-dialog" role="dialog" aria-modal="true" aria-labelledby="archivePanelTitle" data-floating-surface="canvas-archive-panel" data-floating-kind="modal" data-floating-content=".ws-trash-head, .ws-trash-note, .ws-trash-list" data-floating-dismiss="outside" data-floating-escape="close-only">
+                <div class="ws-trash-head">
+                    <div class="ws-trash-head-title"><i data-lucide="archive" class="w-4 h-4"></i><span id="archivePanelTitle">画布归档</span></div>
+                    <button id="archiveClose" class="ws-icon-btn" type="button" data-floating-close title="关闭" aria-label="关闭"><i data-lucide="x" class="w-4 h-4"></i></button>
+                </div>
+                <div class="ws-trash-note ws-archive-note"><i data-lucide="info" class="w-3.5 h-3.5"></i><span>归档画布不会出现在工作区，可随时召回。</span></div>
+                <div id="archiveList" class="ws-trash-list"></div>
+            </div>
+
+            <div id="boardStatus" class="ws-status"></div>
+            <footer id="canvasOverviewFooter" class="canvas-overview-footer" aria-live="polite">
+                <div class="canvas-overview-summary">
+                    <span class="canvas-overview-source" id="canvasOverviewSource"><i data-lucide="loader-circle" class="w-3.5 h-3.5" aria-hidden="true"></i><span>正在加载画布</span></span>
+                    <span class="canvas-overview-footer-separator" aria-hidden="true">|</span>
+                    <span>总画布: <strong id="overviewTotalCount">0</strong> 项</span>
+                    <span class="canvas-overview-footer-separator" aria-hidden="true">|</span>
+                    <span class="canvas-overview-footer-stat"><span class="canvas-overview-filter-dot normal"></span>普通: <strong id="overviewNormalCount">0</strong><small id="overviewNormalDetail">（常规/智能）</small></span>
+                    <span class="canvas-overview-footer-stat project"><span class="canvas-overview-filter-dot project"></span>项目: <strong id="overviewProjectCount">0</strong></span>
+                    <span class="canvas-overview-footer-stat reference"><span class="canvas-overview-filter-dot reference"></span>参考: <strong id="overviewReferenceCount">0</strong></span>
+                </div>
+                <div class="canvas-overview-footer-system">
+                    <span>API 状态: <strong id="overviewApiState">待连接</strong></span>
+                    <span class="canvas-overview-footer-separator" aria-hidden="true">|</span>
+                    <span class="canvas-overview-footer-mark">GODS' WORKBENCH · SYS-0908</span>
+                </div>
+            </footer>
+        </main>
+    </div>
+    <script>
+        if (document.documentElement.dataset.canvasListLayout === 'overview') {
+            document.querySelector('.canvas-overview-toolbar').classList.remove('ws-topbar-right', 'ws-board-actions', 'ws-board-toolbar');
+            const overviewTrashHost = document.getElementById('canvasOverviewTrashHost');
+            const overviewTrashEntry = document.getElementById('trashEntry');
+            if (overviewTrashHost && overviewTrashEntry) overviewTrashHost.appendChild(overviewTrashEntry);
+        }
+    </script>
+    <script type="module" src="/static/js/modules/canvas-list/api.js?v=v0.0.1-alpha-2026&m3=f1b"></script>
+    <script src="/static/js/core/degradation.js?v=v0.0.1-alpha-2026"></script>
+    <script defer src="/static/js/modules/canvas-list.js?v=v0.0.1-alpha-2026&m3=20260916-stitch-black-gold-v3&f1b=20260821a"></script>
+</body>
+</html>

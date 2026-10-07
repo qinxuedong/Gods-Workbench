@@ -1,0 +1,140 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Python 3.11 tests and hygiene
+    runs-on: ubuntu-latest
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 配置 Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: |
+            requirements.lock
+            requirements.lock.hashes
+
+      - name: 安装运行期与测试依赖（消费哈希锁）
+        # A-04：安装口径改为**哈希锁 + --require-hashes**，而不是只装区间依赖。
+        # requirements.lock.hashes 为跨平台双段：Windows 段本机 CPython 3.11.9 实测，
+        # Linux 段由 python:3.11-slim (CPython 3.11.16 / x86_64) 实测，两段均非伪造。
+        # ubuntu-latest 按本平台哈希校验；uvloop 带环境标记，仅非 Windows 安装。
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install --require-hashes -r requirements.lock.hashes
+
+      - name: 验证关键依赖可导入
+        run: python -c "import fastapi, httpx, pydantic, pytest, uvicorn, psutil, multipart, PIL; print('依赖导入通过:', fastapi.__version__, pydantic.__version__, uvicorn.__version__, psutil.__version__, PIL.__version__)"
+
+      - name: 校验哈希锁与版本锁一致
+        # 防止两把锁漂移：哈希锁的 (name, version) 集合必须等于版本锁主表。
+        run: |
+          python - <<'PY'
+          import re
+          from pathlib import Path
+
+          def pairs(text, pattern):
+              found = {}
+              for line in text.splitlines():
+                  line = line.strip()
+                  if not line or line.startswith("#"):
+                      continue
+                  m = re.match(pattern, line)
+                  if m:
+                      found[m.group(1).replace("_", "-").lower()] = m.group(2)
+              return found
+
+          ver = pairs(Path("requirements.lock").read_text(encoding="utf-8"),
+                      r"^([A-Za-z0-9_.\-]+)==([^;\s]+)\s*$")
+          hsh = pairs(Path("requirements.lock.hashes").read_text(encoding="utf-8"),
+                      r"^([A-Za-z0-9_.\-]+)==([^;\s]+)(?:\s*;[^#]*?)?\s+--hash=")
+          # uvloop 只在非 Windows 安装，属平台差异登记项：允许仅出现在哈希锁中。
+          platform_only = {"uvloop"}
+          only_ver = sorted(set(ver) - set(hsh))
+          only_hsh = sorted(set(hsh) - set(ver) - platform_only)
+          drift = sorted(k for k in set(ver) & set(hsh) if ver[k] != hsh[k])
+          if only_ver or only_hsh or drift:
+              print("版本锁/哈希锁不一致：")
+              print("  仅版本锁有:", only_ver)
+              print("  仅哈希锁有:", only_hsh)
+              print("  版本漂移:", [(k, ver[k], hsh[k]) for k in drift])
+              raise SystemExit(1)
+          # 每个版本锁条目必须在哈希锁中至少有一个 --hash
+          lock_text = Path("requirements.lock").read_text(encoding="utf-8")
+          hash_text = Path("requirements.lock.hashes").read_text(encoding="utf-8")
+          hash_names = {
+              m.group(1).replace("_", "-").lower()
+              for m in re.finditer(r"^([A-Za-z0-9_.\-]+)==[^;\s]+\s+--hash=", hash_text, re.M | re.I)
+          }
+          bad = sorted(k for k in ver if k not in hash_names)
+          if bad:
+              print("以下条目在哈希锁中缺少 --hash:", bad)
+              raise SystemExit(1)
+          print(f"两锁一致：{len(ver)} 个组件版本匹配，且均有 sha256 哈希；"
+                f"平台差异项 {sorted(platform_only)}。")
+          PY
+
+      - name: 运行全量测试
+        run: python -m pytest -v --no-header -p no:cacheprovider
+
+      - name: 扫描二进制白名单
+        if: ${{ always() }}
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import sys
+          import subprocess
+
+          banned_extensions = {
+              # 图片 / 截图
+              ".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".ico", ".svg",
+              # 字体（仅 3 条思源黑体白名单例外）
+              ".ttf", ".otf", ".woff", ".woff2", ".eot",
+              # 音频 / 视频
+              ".mp3", ".wav", ".ogg", ".mp4", ".mov", ".avi", ".mkv",
+              # 压缩包
+              ".zip", ".gz", ".7z", ".rar", ".tar", ".tgz", ".bz2", ".xz",
+              # 可执行文件 / 动态库 / 安装包 / 脚本二进制
+              ".exe", ".dll", ".so", ".dylib", ".bin", ".msi", ".app",
+              ".bat", ".cmd", ".com", ".scr",
+              # 文档类二进制（本地策略超集；与 tests/hygiene/cleanroom_extensions.py 逐项一致）
+              ".pdf",
+          }
+          allowlist = {
+              "start.bat",
+              "web/vendor/fonts/SourceHanSansCN-Bold.otf",
+              "web/vendor/fonts/SourceHanSansCN-Medium.otf",
+              "web/vendor/fonts/SourceHanSansCN-Normal.otf",
+          }
+          violations = []
+          # 已跟踪文件不受忽略规则豁免；只排除未跟踪且已忽略的本地运行产物。
+          tracked = subprocess.check_output(
+              ["git", "ls-files", "-z", "--cached", "--others", "--exclude-standard"],
+              text=True, encoding="utf-8",
+          ).split("\0")
+          for relative in sorted(set(tracked) - {""}):
+              path = Path(relative)
+              if not path.is_file():
+                  continue
+              if path.suffix.lower() in banned_extensions and relative not in allowlist:
+                  violations.append(relative)
+          if violations:
+              print("发现不在白名单内的二进制资源:")
+              print("\n".join(sorted(violations)))
+              sys.exit(1)
+          print("二进制白名单扫描通过；允许项仅为根 start.bat 和 3 个 Source Han Sans CN 字体精确路径。")
+          PY

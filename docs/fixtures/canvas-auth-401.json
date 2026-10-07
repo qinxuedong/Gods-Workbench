@@ -1,0 +1,6 @@
+{
+  "detail": {
+    "code": "UNAUTHORIZED",
+    "message": "会话失效，请重新登录"
+  }
+}

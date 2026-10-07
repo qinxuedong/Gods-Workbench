@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <script>if(window.self!==window.top||new URLSearchParams(location.search).get('embedded')==='1'||new URLSearchParams(location.hash.slice(1)).get('embedded')==='1')document.documentElement.classList.add('workspace-embedded');</script>
+  <title data-i18n="taskCenter.documentTitle">运行观测中心 | Gods' Workbench</title>
+  <link rel="stylesheet" href="/static/css/base/workspace-pages.css?v=v0.0.1-alpha-2026&m1=20260829">
+  <link rel="stylesheet" href="/static/css/base/signal-flow.css?v=v0.0.1-alpha-2026&sf=20260831-task-center-refresh">
+  <script src="/static/vendor/js/lucide.js?v=v0.0.1-alpha-2026"></script>
+</head>
+<body class="gw-signal gw-page--task-center">
+  <main class="workspace-page center-page">
+    <a class="skip-link" href="#observabilityContent" data-i18n="taskCenter.skipToContent">跳到观测内容</a>
+    <header class="topbar">
+      <div class="top-actions">
+      </div>
+    </header>
+
+    <header class="center-titlebar">
+      <div class="task-center-refresh-actions">
+        <button class="btn small icon-text" type="button" data-refresh aria-label="刷新观测数据" data-i18n-aria-label="taskCenter.refreshData" data-i18n-title="taskCenter.refreshData"><i data-lucide="refresh-cw" aria-hidden="true"></i><span data-i18n="taskCenter.refresh">刷新</span></button>
+        <button class="btn small" type="button" data-start-index hidden>重建素材索引</button>
+        <span class="mono muted" id="refreshState" aria-live="polite" data-i18n="taskCenter.loading">正在载入</span>
+      </div>
+    </header>
+
+    <section class="observability-toolbar" aria-label="观测筛选" data-i18n-aria-label="taskCenter.filterToolbar">
+      <div class="observability-filter-group">
+        <label class="observability-field"><span data-i18n="taskCenter.timeRange">时间范围</span><select id="observationRange"><option value="15m" data-i18n="taskCenter.range15m">15 分钟</option><option value="1h" data-i18n="taskCenter.range1h">1 小时</option><option value="24h" data-i18n="taskCenter.range24h">24 小时</option></select></label>
+        <label class="observability-field"><span data-i18n="taskCenter.source">来源</span><select id="observationSource"><option value="all" data-i18n="taskCenter.allSources">全部来源</option></select></label>
+        <label class="observability-field"><span data-i18n="taskCenter.level">级别</span><select id="observationLevel"><option value="all" data-i18n="taskCenter.allLevels">全部级别</option><option value="info" data-i18n="taskCenter.levelInfo">信息</option><option value="warn" data-i18n="taskCenter.levelWarning">警告</option><option value="error" data-i18n="taskCenter.levelError">错误</option></select></label>
+        <label class="observability-field"><span data-i18n="taskCenter.status">状态</span><select id="observationStatus"><option value="all" data-i18n="taskCenter.allStatuses">全部状态</option><option value="running" data-i18n="taskCenter.tabRunning">运行中</option><option value="queued" data-i18n="taskCenter.tabQueued">排队</option><option value="succeeded" data-i18n="taskCenter.tabSucceeded">已完成</option><option value="failed" data-i18n="taskCenter.tabFailed">失败</option><option value="degraded" data-i18n="taskCenter.degraded">降级</option></select></label>
+        <label class="observability-field observability-id-field"><span data-i18n="taskCenter.stableId">稳定 ID</span><input id="observationStableId" type="search" autocomplete="off" data-i18n-placeholder="taskCenter.stableIdPlaceholder" placeholder="job_id / asset_id / project_id"></label>
+      </div>
+      <div class="observability-scope" id="observationScope" aria-live="polite"></div>
+    </section>
+
+    <div class="observability-notice" id="observabilityNotice" role="status" aria-live="polite"></div>
+    <nav class="observability-tabs" id="observationViews" role="tablist" aria-label="观测视图" data-i18n-aria-label="taskCenter.viewNavigation">
+      <button class="observability-tab active" id="observation-tab-overview" role="tab" type="button" data-view="overview" aria-controls="observation-panel-overview" aria-selected="true"><i data-lucide="layout-dashboard" aria-hidden="true"></i><span data-i18n="taskCenter.viewOverview">总览</span></button>
+      <button class="observability-tab" id="observation-tab-tasks" role="tab" type="button" data-view="tasks" aria-controls="observation-panel-tasks" aria-selected="false"><i data-lucide="list-checks" aria-hidden="true"></i><span data-i18n="taskCenter.viewTasks">任务</span></button>
+      <button class="observability-tab" id="observation-tab-logs" role="tab" type="button" data-view="logs" aria-controls="observation-panel-logs" aria-selected="false"><i data-lucide="scroll-text" aria-hidden="true"></i><span data-i18n="taskCenter.viewLogs">日志</span></button>
+      <button class="observability-tab" id="observation-tab-metrics" role="tab" type="button" data-view="metrics" aria-controls="observation-panel-metrics" aria-selected="false"><i data-lucide="chart-no-axes-combined" aria-hidden="true"></i><span data-i18n="taskCenter.viewMetrics">指标</span></button>
+    </nav>
+
+    <div class="observability-content" id="observabilityContent">
+      <section class="observability-view active" id="observation-panel-overview" role="tabpanel" data-view-panel="overview" aria-labelledby="observation-tab-overview overviewHeading" tabindex="0">
+        <div class="observability-main-grid">
+          <div class="observability-primary">
+            <header class="view-heading" style="display:none;"><div style="display:none;"><h2 id="overviewHeading" data-i18n="taskCenter.viewOverview">总览</h2><p data-i18n="taskCenter.overviewSubtitle">当前时间范围内的任务、失败、队列和接口延迟</p></div><span class="mono" id="overviewUpdated" style="display:none;">—</span></header>
+            <div class="overview-summary" id="overviewSummary"><div class="summary-item"><span data-i18n="taskCenter.summaryAll">任务总数</span><strong>—</strong><small data-i18n="taskCenter.waitingForData">等待真实数据</small></div><div class="summary-item"><span data-i18n="taskCenter.summaryFailed">失败</span><strong>—</strong><small data-i18n="taskCenter.waitingForData">等待真实数据</small></div><div class="summary-item"><span data-i18n="taskCenter.queueDepth">队列深度</span><strong>—</strong><small data-i18n="taskCenter.waitingForData">等待真实数据</small></div><div class="summary-item"><span data-i18n="taskCenter.p95Latency">接口 p95</span><strong>—</strong><small data-i18n="taskCenter.waitingForData">等待真实数据</small></div></div>
+            <section class="observability-panel asset-volume-panel"><header class="panel-heading"><div><h3 data-i18n="taskCenter.assetVolumes">资产统计</h3><p data-i18n="taskCenter.assetVolumesSubtitle">按素材类型聚合数据条目数，横向柱状图按 data_items_total 降序</p></div><span class="mono" id="assetVolumeCount">—</span></header><div class="asset-volume-chart" id="assetVolumeTable" role="table" aria-label="资产统计" data-i18n-aria-label="taskCenter.assetVolumes"><div class="asset-volume-columns" role="row"><span role="columnheader" data-i18n="taskCenter.assetVolumeTypeHeader">素材类型</span><span role="columnheader" aria-label="横向柱状图" data-i18n="taskCenter.assetVolumeBarHeader" data-i18n-aria-label="taskCenter.assetVolumeBarAccessibleLabel">数据量</span><span role="columnheader" aria-label="数据量" data-i18n="taskCenter.assetVolumeValueHeader" data-i18n-aria-label="taskCenter.assetVolumeValueAccessibleLabel">数据量</span></div><div class="asset-volume-data asset-volume-list" id="assetVolumeChart" role="rowgroup" aria-live="polite" aria-atomic="true"><div class="asset-volume-state-row" role="row"><div class="data-gap" role="cell" aria-colspan="3" data-i18n="taskCenter.waitingForData">等待真实数据</div></div></div><div id="assetVolumeSentinel" style="height:1px;width:100%;pointer-events:none;"></div></div><div class="load-more-row asset-volume-more" style="display:none !important;"><button class="btn small" type="button" id="loadMoreAssetVolumes" aria-controls="assetVolumeChart" disabled><i data-lucide="chevron-down" aria-hidden="true"></i><span data-i18n="taskCenter.loadMore">加载更多</span></button><span class="mono muted" id="assetVolumeCursorState"></span></div></section>
+            <section class="observability-panel longtask-panel"><header class="panel-heading"><div><h3 data-i18n="taskCenter.longTasks">长时任务进度</h3><p data-i18n="taskCenter.longTasksSubtitle">导入素材、素材缩略图、视频转码等长时任务的真实加载进度</p></div><span class="mono" id="longTaskCount" role="status" aria-live="polite" aria-atomic="true">—</span></header><div class="longtask-list" id="longTaskProgress" role="region" aria-label="长时任务进度" data-i18n-aria-label="taskCenter.longTasks" aria-live="polite" aria-atomic="true"><div class="data-gap" data-i18n="taskCenter.waitingForData">等待真实数据</div></div></section>
+            <section class="observability-panel task-stall-alert-panel" id="taskStallAlertPanel" aria-labelledby="taskStallAlertHeading" hidden><header class="panel-heading"><div><h3 id="taskStallAlertHeading">长期任务告警</h3></div><span class="mono" id="taskStallAlertCount" role="status" aria-live="polite" aria-atomic="true">—</span></header><div class="task-stall-alerts" id="taskStallAlerts" role="region" aria-labelledby="taskStallAlertHeading" aria-live="polite" aria-atomic="true"></div></section>
+            <div class="overview-charts">
+              <section class="observability-panel chart-panel"><header class="panel-heading"><div><h3 data-i18n="taskCenter.responseBytes">响应字节</h3><p data-i18n="taskCenter.responseBytesSubtitle">真实响应体字节样本，非吞吐率</p></div><span class="mono" id="throughputValue">—</span></header><div class="chart-wrap" id="throughputChart" role="img" aria-label="响应字节趋势" data-i18n-aria-label="taskCenter.responseBytes"><div class="data-gap" data-i18n="taskCenter.noSeries">暂无历史指标序列</div></div></section>
+              <section class="observability-panel chart-panel"><header class="panel-heading"><div><h3 data-i18n="taskCenter.latencySample">搜索耗时样本</h3><p data-i18n="taskCenter.latencySubtitle">真实搜索耗时样本，单位毫秒；总览 p95 来自后端聚合</p></div><span class="mono" id="latencyValue">—</span></header><div class="chart-wrap" id="latencyChart" role="img" aria-label="搜索耗时趋势" data-i18n-aria-label="taskCenter.latencySample"><div class="data-gap" data-i18n="taskCenter.noSeries">暂无历史指标序列</div></div></section>
+            </div>
+            <section class="observability-panel activity-panel"><header class="panel-heading"><div><h3 data-i18n="taskCenter.activity">活动时间线</h3><p data-i18n="taskCenter.activitySubtitle">统一事件投影的安全摘要</p></div><button class="text-button" type="button" data-view-target="logs" data-i18n="taskCenter.viewAllEvents">查看全部事件</button></header><div class="event-list compact" id="overviewEvents"><div class="data-gap" data-i18n="taskCenter.waitingForData">等待真实数据</div></div></section>
+          </div>
+          <aside class="observability-rail">
+            <section class="observability-panel rail-panel"><header class="panel-heading"><div><h3 data-i18n="taskCenter.sourcesHealth">来源健康</h3><p data-i18n="taskCenter.sourcesSubtitle">查询来源及旁车状态</p></div><span class="mono" id="sourceHealthCount">—</span></header><div class="health-list" id="healthList"><div class="data-gap" data-i18n="taskCenter.waitingForData">等待真实数据</div></div></section>
+            <section class="observability-panel rail-panel"><header class="panel-heading"><div><h3 data-i18n="taskCenter.activeFailures">活跃失败</h3><p data-i18n="taskCenter.failuresSubtitle">可通过稳定 ID 继续定位</p></div></header><div class="failure-list" id="failureList"><div class="data-gap" data-i18n="taskCenter.noFailures">当前没有可显示的失败任务</div></div></section>
+            <section class="observability-panel rail-panel context-panel"><header class="panel-heading"><div><h3 data-i18n="taskCenter.filterContext">筛选上下文</h3><p data-i18n="taskCenter.contextSubtitle">当前请求发送给观测查询层的范围</p></div></header><dl class="context-list" id="contextList"></dl></section>
+          </aside>
+        </div>
+      </section>
+
+      <section class="observability-view" id="observation-panel-tasks" role="tabpanel" data-view-panel="tasks" aria-labelledby="observation-tab-tasks tasksHeading" tabindex="0" hidden>
+        <section class="observability-panel full-panel task-view-panel"><header class="view-heading"><div><h2 id="tasksHeading" data-i18n="taskCenter.viewTasks">任务</h2><p data-i18n="taskCenter.tasksSubtitle">任务状态、进度和稳定关系</p></div><span class="mono" id="taskCount">—</span></header><div class="task-table-wrap"><table class="task-table"><thead><tr><th data-i18n="taskCenter.taskSource">任务 / 来源</th><th data-i18n="taskCenter.type">类型</th><th data-i18n="taskCenter.status">状态</th><th data-i18n="taskCenter.progressLabel">进度</th><th data-i18n="taskCenter.updated">更新时间</th><th data-i18n="taskCenter.actions">操作</th></tr></thead><tbody id="taskRows"><tr><td colspan="6" class="data-gap" data-i18n="taskCenter.waitingForData">等待真实数据</td></tr></tbody></table></div><div class="load-more-row"><button class="btn small" type="button" id="loadMoreTasks" disabled><i data-lucide="chevron-down" aria-hidden="true"></i><span data-i18n="taskCenter.loadMore">加载更多</span></button><span class="mono muted" id="taskCursorState"></span></div></section>
+      </section>
+
+      <section class="observability-view" id="observation-panel-logs" role="tabpanel" data-view-panel="logs" aria-labelledby="observation-tab-logs logsHeading" tabindex="0" hidden>
+        <section class="observability-panel full-panel log-view-panel"><header class="view-heading"><div><h2 id="logsHeading" data-i18n="taskCenter.viewLogs">日志</h2><p data-i18n="taskCenter.logsSubtitle">仅显示统一投影返回的安全事件摘要</p></div><span class="mono" id="logCount">—</span></header><div class="event-list" id="logRows"><div class="data-gap" data-i18n="taskCenter.waitingForData">等待真实数据</div></div><div class="load-more-row"><button class="btn small" type="button" id="loadMoreEvents" disabled><i data-lucide="chevron-down" aria-hidden="true"></i><span data-i18n="taskCenter.loadMore">加载更多</span></button><span class="mono muted" id="cursorState"></span></div></section>
+      </section>
+
+      <section class="observability-view" id="observation-panel-metrics" role="tabpanel" data-view-panel="metrics" aria-labelledby="observation-tab-metrics metricsHeading" tabindex="0" hidden>
+        <div class="metrics-grid"><section class="observability-panel chart-panel metric-large"><header class="view-heading"><div><h2 id="metricsHeading" data-i18n="taskCenter.viewMetrics">指标</h2><p data-i18n="taskCenter.metricsSubtitle">只有后端返回历史序列时才绘制趋势</p></div><span class="mono" id="metricsUpdated">—</span></header><div class="metric-chart-grid"><div><header class="panel-heading"><h3 data-i18n="taskCenter.responseBytes">响应字节</h3><span class="mono" id="metricThroughputValue">—</span></header><div class="chart-wrap tall" id="metricThroughputChart" role="img" aria-label="响应字节趋势" data-i18n-aria-label="taskCenter.responseBytes"><div class="data-gap" data-i18n="taskCenter.noSeries">暂无历史指标序列</div></div></div><div><header class="panel-heading"><h3 data-i18n="taskCenter.latencySample">搜索耗时样本</h3><span class="mono" id="metricLatencyValue">—</span></header><div class="chart-wrap tall" id="metricLatencyChart" role="img" aria-label="搜索耗时趋势" data-i18n-aria-label="taskCenter.latencySample"><div class="data-gap" data-i18n="taskCenter.noSeries">暂无历史指标序列</div></div></div></div></section><section class="observability-panel metric-notes"><header class="panel-heading"><div><h3 data-i18n="taskCenter.metricAvailability">数据可用性</h3><p data-i18n="taskCenter.metricAvailabilitySubtitle">指标缺口和来源降级会在这里明确标记</p></div></header><div id="metricAvailability"><div class="data-gap" data-i18n="taskCenter.waitingForData">等待真实数据</div></div></section></div>
+      </section>
+    </div>
+  </main>
+
+  <dialog class="task-detail-dialog" id="taskDetail" data-floating-surface="task-detail" data-floating-kind="native-dialog" data-floating-content=".task-detail-shell" data-floating-dismiss="outside" data-floating-escape="close-only" aria-labelledby="taskDetailTitle">
+    <div class="task-detail-shell" data-floating-content><header class="task-detail-head"><div><h2 id="taskDetailTitle" data-i18n="taskCenter.taskDetails">任务详情</h2><p id="taskDetailSubtitle"></p></div><button class="btn small icon-text" type="button" data-close-task-detail data-floating-close><i data-lucide="x" aria-hidden="true"></i><span data-i18n="common.close">关闭</span></button></header><div class="task-detail-body" id="taskDetailBody"></div></div>
+  </dialog>
+  <div class="production-toast" id="taskToast" role="status" aria-live="polite" aria-atomic="true"></div>
+  <script src="/static/js/core/i18n.js?v=v0.0.1-alpha-2026&m1=20260829"></script>
+  <script src="/static/js/core/floating-dismissal.js?v=v0.0.1-alpha-2026&m3=floating-dismissal"></script>
+  <script src="/static/js/core/workspace-common.js?v=v0.0.1-alpha-2026&m1=20260810d"></script>
+  <script src="/static/js/core/degradation.js?v=v0.0.1-alpha-2026"></script>
+  <script src="/static/js/modules/task-center.js?v=v0.0.1-alpha-2026&m3=20260901-stalled-jobs"></script>
+</body>
+</html>

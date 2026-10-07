@@ -1,0 +1,65 @@
+/**
+ * Copyright 2026 Gods-Workbench Authors
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+(function(){
+    if(!window.StudioI18n) return;
+    window.StudioI18n.register({
+        "common.apiSettings": { zh: "API 设置", en: "API Settings" },
+        "common.darkMode": { zh: "黑夜模式", en: "Dark Mode" },
+        "common.lightMode": { zh: "白天模式", en: "Light Mode" },
+        "common.language": { zh: "中文", en: "English" },
+        "common.cancel": { zh: "取消", en: "Cancel" },
+        "common.confirm": { zh: "确定", en: "Confirm" },
+        "common.save": { zh: "保存", en: "Save" },
+        "common.delete": { zh: "删除", en: "Delete" },
+        "common.edit": { zh: "编辑", en: "Edit" },
+        "common.run": { zh: "运行", en: "Run" },
+        "common.running": { zh: "运行中", en: "Running" },
+        "common.custom": { zh: "自定义", en: "Custom" },
+        "common.close": { zh: "关闭", en: "Close" },
+        "common.loading": { zh: "加载中...", en: "Loading..." },
+        "common.requestFailed": { zh: "请求失败 ({status})", en: "Request failed ({status})" },
+        "common.justNow": { zh: "刚刚", en: "Just now" },
+        "common.minutesAgo": { zh: "{count} 分钟前", en: "{count} minutes ago" },
+        "common.hoursAgo": { zh: "{count} 小时前", en: "{count} hours ago" },
+        "common.daysAgo": { zh: "{count} 天前", en: "{count} days ago" },
+        "common.project": { zh: "项目主页", en: "Project" },
+        "common.moreSettings": { zh: "更多设置", en: "More Settings" },
+        "update.available": { zh: "发现更新", en: "Update Available" },
+        "update.openProject": { zh: "打开项目", en: "Open Project" },
+        "update.oneClick": { zh: "一键更新", en: "Update" },
+        "update.versionLine": { zh: "本地 {local} · 最新 {remote}", en: "Local {local} · Latest {remote}" },
+        "nav.imageGen": { zh: "图像生成", en: "Image Generation" },
+        "nav.textToImage": { zh: "文生图", en: "Text to Image" },
+        "nav.localTools": { zh: "本地功能", en: "Local Tools" },
+        "nav.enhance": { zh: "细节增强", en: "Enhance" },
+        "nav.imageEdit": { zh: "图片编辑", en: "Image Edit" },
+        "nav.angle": { zh: "角度控制", en: "Angle Control" },
+        "nav.online": { zh: "在线生图", en: "Online Image" },
+        "nav.gpt": { zh: "GPT 对话", en: "GPT Chat" },
+        "nav.canvas": { zh: "画布/工具", en: "Canvas / Tools" },
+        "nav.assetManager": { zh: "素材库", en: "Assets" },
+        "bulk.manage": { zh: "管理", en: "Manage" },
+        "bulk.selectAll": { zh: "全选", en: "Select All" },
+        "bulk.deselectAll": { zh: "取消全选", en: "Deselect All" },
+        "bulk.deleteSelected": { zh: "删除所选", en: "Delete" },
+        "bulk.exit": { zh: "完成", en: "Done" },
+        "bulk.selectedCount": { zh: "已选 {n} 张", en: "{n} selected" },
+        "bulk.deleteConfirm": { zh: "确认删除选中的 {n} 张图片？此操作不可恢复。", en: "Delete the selected {n} image(s)? This cannot be undone." },
+        "bulk.deleting": { zh: "删除中…", en: "Deleting…" },
+        "bulk.noSelection": { zh: "请先选择要删除的图片", en: "Select images to delete first" }
+    });
+})();

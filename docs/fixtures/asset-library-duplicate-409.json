@@ -1,0 +1,6 @@
+{
+  "detail": {
+    "code": "DUPLICATE_LIBRARY_NAME",
+    "message": "素材库名称已存在：默认资产库"
+  }
+}

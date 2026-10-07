@@ -1,0 +1,36 @@
+# Local and generated artifacts
+.env
+.env.*
+*.log
+*.tmp
+*.cache
+
+# Editor and operating-system files
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Build and test outputs
+dist/
+build/
+coverage/
+node_modules/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# 代理工具 hook 会话状态（非项目资产）
+.mimosa/
+
+# 本地开发、运行与调研产物（完全不入库）
+.local/
+
+# 本地 AI 智能代理作业宪章（仅留本地，不推送远端）
+AGENTS.md
+
+# 本地临时调试与接口探针脚本（仅留本地，由 .local/probes/ 接管）
+tools/_probe_*.py
+_hg_check.py
+
+

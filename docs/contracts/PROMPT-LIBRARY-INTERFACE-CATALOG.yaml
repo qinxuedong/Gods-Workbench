@@ -1,0 +1,285 @@
+meta:
+  source: "洁净室自有设计（由主代理依据 docs/contracts/ASSET-LIBRARY-INTERFACE-CATALOG.yaml 的同族语义、根 AGENTS.md 与前端 web/js/asset-manager/api.js 调用面收敛）"
+  review_status: "coordinator_frozen_pending_independent_review"
+  distribution: "NOT AUTHORIZED FOR PUBLIC DISTRIBUTION"
+  cleanroom_notice: "仅记录 method/path/body/status/schema/错误/验收语义；不含旧仓源码结构或实现细节。"
+
+service: prompt_library
+version: p12-a3-2
+# Phase 12 持久化修订：保持本契约原有 7 个端点与 CAS 范围；仅更新库/分类状态生命周期。
+persistence_boundary: "库、分类、活动库、目录版本及 ID 高水位存入 core.storage.JsonState 命名空间 prompt_library_tree；同一数据目录重启恢复，单实例一致性。"
+migration_boundary: "旧条目数据不删除、不猜测补造旧父库；首次升级根据遗留条目父 ID 保留序号高水位，避免新库/分类复用遗留 plib_NNNN/pcat_NNNN。遗留孤儿条目仅保留原始引用，不自动绑定。"
+child_integrity: "创建/更新条目必须引用已存在父库；分类必须存在且属于该父库。存在条目的父库/分类不可删除；错误分别使用 404 LIBRARY_NOT_FOUND/CATEGORY_NOT_FOUND 与 409 LIBRARY_NOT_EMPTY/CATEGORY_NOT_EMPTY。"
+# 冻结说明（Phase 10C，2026-09-22）
+# 本契约授权 7 个提示词库/分类端点；Phase 12 持久化修订不扩展端点范围。
+# 条目 CRUD 与批量删除由 PROMPT-LIBRARY-B8-ITEM-INTERFACE-CATALOG.yaml 单独授权；其他 /api/prompt-libraries/* 端点仍属
+# KNOWN_UNIMPLEMENTED，未获契约授权，本模块不得顺带实现。
+# 明确禁止：本阶段不得伪造提示词内容——任何响应（含种子与空库）都不得返回
+# 演示提示词文本、随机文本或 uuid 生成的伪内容；条目 CRUD 未实现，
+# 故本阶段一切条目集合与提示词正/负文本字段均不出现或恒为空数组。
+
+decisions:
+  stable_ids:
+    decision: "对外字段一律使用稳定 ID：library_id / category_id"
+    rationale: "根 AGENTS.md 3.1 强制统一稳定 ID 命名；本实体族不引入 id / pid / cid 等别名。"
+    id_format: "确定性前缀序号字符串：library_id = plib_NNNN（4 位补零），category_id = pcat_NNNN；禁止随机数、uuid 或时间戳作为外部 ID。"
+    frontend_compat: "前端读取创建响应中的 library（快照）、prompt_library.library_id、category.category_id；读取 GET 响应的 library 快照与 active_library_id。本阶段未改动前端，兼容读取口径保持不变。"
+  forbidden_fabrication:
+    decision: "不得伪造提示词内容"
+    rationale: "洁净室零伪造口径（对齐 Phase 10B）：本阶段不实现条目 CRUD，服务端没有任何真实提示词文本来源。"
+    enforcement: "空库必须返回 libraries: []；种子只允许结构（空库 / 空分类）；响应中不得出现 positive / negative / scene 等提示词文本文段，不得引入 random / uuid4 等生成器。"
+  create_status_code:
+    decision: "创建成功返回 201（提示词库与分类一致）"
+    rationale: "与既有 POST /api/asset-library/libraries、POST /api/asset-library/categories 的 201 语义保持一致。"
+  empty_library:
+    decision: "空目录返回 libraries: [] 且 active_library_id: null；不自动创建默认库、不返回演示数据"
+    rationale: "洁净室禁止伪造提示词内容；前端 promptLibraries() 已有「系统提示词库」本地兜底展示逻辑，服务端空响应不会造成白屏。"
+  cas_scope:
+    decision: "CAS 粒度：创建库校验顶层目录版本 version；创建分类校验父库版本；重命名/删除库校验目标库版本；重命名/删除分类校验目标分类版本"
+    rationale: "根宪章 3.2 要求编辑类写入携带 expected_version；创建分类与库结构变更必然改变父对象版本，故与父对象绑定。"
+  expected_version_source:
+    decision: "POST / PATCH 的 expected_version 位于请求体；DELETE 无请求体，expected_version 位于查询串"
+    rationale: "前端 deletePromptLibrary / deletePromptLibraryCategory 以空体 DELETE 调用，删除的 CAS 期望值只能经查询串传入。"
+  duplicate_names:
+    decision: "同一作用域内重名（库名全局唯一、分类名同库唯一）返回 409 DUPLICATE_LIBRARY_NAME / DUPLICATE_CATEGORY_NAME，比较规则为 trim 后大小写不敏感"
+    rationale: "与 Phase 10A 素材库口径一致，避免出现仅大小写或首尾空白不同的重复库/分类。"
+  delete_library_semantics:
+    decision: "删除仍含分类的提示词库返回 409 LIBRARY_NOT_EMPTY，禁止静默级联删除"
+    rationale: "级联删除属破坏性且不可逆，必须由调用方先显式清空分类；失败关闭优于静默丢数据。"
+  delete_category_semantics:
+    decision: "删除分类仅移除该分类结构本身；分类不含条目（本阶段无条目 CRUD），故不存在级联条目删除"
+    rationale: "本阶段条目 CRUD 未实现，分类下恒无条目，删除分类不涉及任何提示词文本丢失。"
+  version_increment:
+    decision: "创建成功后：新建对象自身 version=1，父库 version += 1（分类操作），顶层目录 version += 1；重命名/删除成功后：目标对象 version += 1（删除为移除），父库与目录 version 同步 += 1"
+    rationale: "父库与目录均可被并发结构操作修改，必须同步递增才能让 CAS 生效。"
+  error_codes:
+    decision: "错误码表：401 UNAUTHORIZED；403 FORBIDDEN；404 LIBRARY_NOT_FOUND / CATEGORY_NOT_FOUND；409 VERSION_CONFLICT / DUPLICATE_LIBRARY_NAME / DUPLICATE_CATEGORY_NAME / LIBRARY_NOT_EMPTY；400 INVALID_REQUEST"
+    rationale: "401 复用 core.errors.UnauthorizedException，错误码为纯 ASCII **全大写** UNAUTHORIZED（12 字节），与既有 core/errors.py 及 docs/fixtures/canvas-auth-401.json 逐字一致；P10-R-1 已按用户 2026-09-23 裁决 A（以实现为准）收口——真实差异为纯 ASCII 大小写，非同形字，此前描述有误，现已更正为纯 ASCII 大小写差异。其余错误经统一错误包外层 detail.code/message 返回。"
+
+interfaces:
+  - name: get_prompt_libraries
+    method: GET
+    path: /api/prompt-libraries
+    body: null
+    status:
+      - 200
+      - 401
+      - 403
+    schema:
+      response_200:
+        library:
+          version: integer
+          active_library_id: "string | null"
+          libraries:
+            - library_id: string
+              name: string
+              version: integer
+              created_at: "string(datetime)"
+              updated_at: "string(datetime)"
+              categories:
+                - category_id: string
+                  library_id: string
+                  name: string
+                  version: integer
+                  created_at: "string(datetime)"
+                  updated_at: "string(datetime)"
+    errors:
+      401: "未认证，需重新登录"
+      403: "无读取权限"
+    acceptance: "按当前身份返回可见提示词库树；空目录必须返回 libraries: [] 且 active_library_id: null，不得返回演示或伪造提示词内容；任何条目与提示词文本字段都不得出现。"
+
+  - name: create_prompt_library
+    method: POST
+    path: /api/prompt-libraries
+    body:
+      name: string
+      expected_version: "integer | optional（缺省时不校验顶层目录版本）"
+    status:
+      - 201
+      - 400
+      - 401
+      - 403
+      - 409
+    schema:
+      response_201:
+        prompt_library:
+          library_id: string
+          name: string
+          version: integer
+          created_at: "string(datetime)"
+          updated_at: "string(datetime)"
+          categories: array
+        library:
+          version: integer
+          active_library_id: "string | null"
+          libraries: array
+    errors:
+      400: "名称缺失、空白或长度超过 128 字符"
+      401: "未认证"
+      403: "无写权限（只读角色）"
+      409: "DUPLICATE_LIBRARY_NAME 或 VERSION_CONFLICT"
+    acceptance: "创建成功后返回稳定 library_id（plib_NNNN），且顶层目录 version 递增；重名或 CAS 不一致必须失败关闭。"
+
+  - name: rename_prompt_library
+    method: PATCH
+    path: /api/prompt-libraries/{library_id}
+    body:
+      name: string
+      expected_version: "integer | optional（缺省时不校验目标库版本）"
+    status:
+      - 200
+      - 400
+      - 401
+      - 403
+      - 404
+      - 409
+    schema:
+      response_200:
+        prompt_library:
+          library_id: string
+          name: string
+          version: integer
+        library:
+          version: integer
+          active_library_id: "string | null"
+          libraries: array
+    errors:
+      400: "名称缺失、空白或长度超过 128 字符"
+      401: "未认证"
+      403: "无写权限（只读角色）"
+      404: "LIBRARY_NOT_FOUND 目标库不存在"
+      409: "DUPLICATE_LIBRARY_NAME 或 VERSION_CONFLICT"
+    acceptance: "重命名成功后目标库 version 与顶层目录 version 递增；目标库不存在、重名或 CAS 不一致必须失败关闭。"
+
+  - name: delete_prompt_library
+    method: DELETE
+    path: /api/prompt-libraries/{library_id}
+    body: null
+    query:
+      expected_version: "integer | optional（缺省时不校验目标库版本）"
+    status:
+      - 200
+      - 400
+      - 401
+      - 403
+      - 404
+      - 409
+    schema:
+      response_200:
+        library:
+          version: integer
+          active_library_id: "string | null"
+          libraries: array
+    errors:
+      400: "expected_version 非法（非正整数）"
+      401: "未认证"
+      403: "无写权限（只读角色）"
+      404: "LIBRARY_NOT_FOUND 目标库不存在"
+      409: "LIBRARY_NOT_EMPTY（库内仍有分类）或 VERSION_CONFLICT"
+    acceptance: "删除成功后目标库从树中移除且顶层目录 version 递增；库内仍有分类必须返回 409 LIBRARY_NOT_EMPTY 且树保持不变，不得静默级联删除。"
+
+  - name: create_prompt_library_category
+    method: POST
+    path: /api/prompt-libraries/categories
+    body:
+      library_id: string
+      name: string
+      expected_version: "integer | optional（缺省时不校验父库版本）"
+    status:
+      - 201
+      - 400
+      - 401
+      - 403
+      - 404
+      - 409
+    schema:
+      response_201:
+        category:
+          category_id: string
+          library_id: string
+          name: string
+          version: integer
+          created_at: "string(datetime)"
+          updated_at: "string(datetime)"
+        library:
+          version: integer
+          active_library_id: "string | null"
+          libraries: array
+    errors:
+      400: "缺字段、名称非法或长度超过 128 字符"
+      401: "未认证"
+      403: "无写权限（只读角色）"
+      404: "LIBRARY_NOT_FOUND 父库不存在"
+      409: "DUPLICATE_CATEGORY_NAME 或 VERSION_CONFLICT"
+    acceptance: "创建成功后返回稳定 category_id（pcat_NNNN），父库与顶层目录 version 递增；父库不存在、重名或 CAS 不一致必须失败关闭。"
+
+  - name: rename_prompt_library_category
+    method: PATCH
+    path: /api/prompt-libraries/categories/{category_id}
+    body:
+      name: string
+      expected_version: "integer | optional（缺省时不校验目标分类版本）"
+    status:
+      - 200
+      - 400
+      - 401
+      - 403
+      - 404
+      - 409
+    schema:
+      response_200:
+        category:
+          category_id: string
+          library_id: string
+          name: string
+          version: integer
+        library:
+          version: integer
+          active_library_id: "string | null"
+          libraries: array
+    errors:
+      400: "名称缺失、空白或长度超过 128 字符"
+      401: "未认证"
+      403: "无写权限（只读角色）"
+      404: "CATEGORY_NOT_FOUND 目标分类不存在"
+      409: "DUPLICATE_CATEGORY_NAME 或 VERSION_CONFLICT"
+    acceptance: "重命名成功后目标分类 version 与父库 version 递增；目标分类不存在、同库重名或 CAS 不一致必须失败关闭。"
+
+  - name: delete_prompt_library_category
+    method: DELETE
+    path: /api/prompt-libraries/categories/{category_id}
+    body: null
+    query:
+      expected_version: "integer | optional（缺省时不校验目标分类版本）"
+    status:
+      - 200
+      - 400
+      - 401
+      - 403
+      - 404
+      - 409
+    schema:
+      response_200:
+        library:
+          version: integer
+          active_library_id: "string | null"
+          libraries: array
+    errors:
+      400: "expected_version 非法（非正整数）"
+      401: "未认证"
+      403: "无写权限（只读角色）"
+      404: "CATEGORY_NOT_FOUND 目标分类不存在"
+      409: "VERSION_CONFLICT"
+    acceptance: "删除成功后目标分类从父库移除，父库与顶层目录 version 递增；目标分类不存在或 CAS 不一致必须失败关闭。"
+
+implemented_in_phase12_a3:
+  note: "2026-09-26 Phase 12 A3：条目 CRUD 与批量删除已按 docs/contracts/PROMPT-LIBRARY-B8-ITEM-INTERFACE-CATALOG.yaml（p12-a3-1）真实接入并落盘；旧的「必须不可用」反向断言已被取代。"
+  paths:
+    - "GET /api/prompt-libraries/items"
+    - "POST /api/prompt-libraries/items"
+    - "PATCH /api/prompt-libraries/items/{item_id}"
+    - "DELETE /api/prompt-libraries/items/{item_id}"
+    - "POST /api/prompt-libraries/items/delete"
+  item_id_format: "pitem_NNNN（复用既有前缀，不自创第二套体系）"
+  tests: "tests/contracts/prompts/test_phase11_b8_prompt_items.py"
+

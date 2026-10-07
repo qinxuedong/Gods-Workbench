@@ -1,0 +1,6 @@
+{
+  "block": "B4",
+  "code_families": ["ASSET_LIBRARY_NOT_INTEGRATED", "ASSET_CONTENT_NOT_INTEGRATED", "LOCAL_ASSETS_NOT_INTEGRATED", "STORAGE_FILES_NOT_INTEGRATED"],
+  "required_detail": ["endpoint", "unavailable", "data_status"],
+  "data_status": "not_integrated"
+}

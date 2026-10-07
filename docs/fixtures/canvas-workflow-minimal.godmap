@@ -1,0 +1,14 @@
+{
+  "format": "godmap",
+  "version": "1.0",
+  "payload": {
+    "canvas_id": "cv-0001",
+    "nodes": [
+      {"entity_id": "nd-0001", "kind": "input"},
+      {"entity_id": "nd-0002", "kind": "output"}
+    ],
+    "connections": [
+      {"connection_id": "ln-0001", "from": "nd-0001", "to": "nd-0002"}
+    ]
+  }
+}

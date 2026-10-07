@@ -1,0 +1,475 @@
+# 2026-09-29：依据重整计划同步三态数据根；接口字段不变，运行入口等待 T5 验收。
+# PDF分页、中文、附件与限制详见 TEXT-PDF-EXPORT-CONTRACT.md。
+# -*- coding: utf-8 -*-
+meta:
+  source: "Phase 12 A2 素材注册表真实后端接入"
+  review_status: "implementation_pending_independent_review"
+  distribution: "NOT AUTHORIZED FOR PUBLIC DISTRIBUTION"
+  cleanroom_notice: "不复制旧仓实现；本机文件仅限 GW_ALLOWED_ROOTS；外部依赖缺失一律 503，不伪造成功。"
+service: asset_registry
+version: p12-a2-3
+decisions:
+  stable_ids: "对外只使用 asset_id、version_id、folder_id、job_id、project_id、entity_id、gate_id、tag_id、preset_id、template_id 等稳定字段；ID 由 core.storage.next_sequence() 确定性递增，禁止 uuid/随机。"
+  real_store: "素材/关系/标签/图片版本/预设/目录模板/项目实体与门/回收站/远程素材/索引配置落盘到 core.storage.JsonState 命名空间 asset_registry（GW_DATA_DIR；测试为每例 tmp_path/data，开发为 .local/runtime-dev/data，生产为 %LOCALAPPDATA%/GodsWorkbench/data）；重启可恢复。"
+  evidence_boundary: "单实例 JSON 落盘只保证单进程一致性；多 worker / 多实例并发写属部署方职责，本块未闭环。"
+  cas: "所有写操作接受 expected_version；与当前 revision 不一致返回 409 VERSION_CONFLICT，附 expected_version/current_version，禁止静默覆盖；目录模板记录写以template_cas为准。"
+  asset_list_query: "GET assets支持kind、archived、名称query/search、project_id、tag（tag_id或标签名）、include_tags/exclude_tags（逗号分隔，包含取全部匹配），category为image/video/audio/document/model/font/other按kind归类。sort支持newest/oldest/name/size_desc；省略时保持asset_id升序。view仅card/grid/list布局提示，不改变数据，其他值400。未知分类返回空结果，不忽略过滤。"
+  additional_filters: "recent_days为1到36500的整数，筛选UTC当日零点往前指定天数后创建的记录，日期边界绑定游标指纹。root_id/collection_id未建立关联模型，非空时400 UNSUPPORTED_OPTION，不静默忽略。"
+  facets_counts: "facets的kinds/categories返回name/count实际计数组，tags附真实引用数count；前端统计不得从字符串条目推断为零。"
+  asset_list_cursor: "next_cursor为绑定查询指纹和集合revision的base64url(JSON)分页位置；格式错误/查询不一致400 INVALID_CURSOR，集合变更409 VERSION_CONFLICT；cursor与非零offset同时提供时必须一致；不使用未验证的客户端游标授权访问。"
+  template_cas: "目录模板使用记录级version（旧记录缺字段时为1），PATCH/归档/默认必须携带expected_version；过期409，缺失或非整数400；成功递增真实记录版本。创建时expected_version若提供仍校验集合revision。默认切换会递增被取消默认记录的version。"
+  template_fields: "name/project_type/directory_tree/slot_mapping创建、更新、GET保持一致落盘；folders是directory_tree兼容别名，同时提供且不一致返回400；目录为相对路径字符串数组，映射值须指向已声明目录；未知更新字段400。"
+  auth: "读取端点要求认证；写入/治理端点先做角色检查；OIDC / local_account 模式下角色来自服务端身份，不信任请求头。"
+  fail_closed: "本机文件访问未配置 GW_ALLOWED_ROOTS 即 403 LOCAL_FILE_ACCESS_NOT_ADMITTED；越界 403 PATH_OUTSIDE_ALLOWED_ROOTS；ffmpeg/ffprobe、可读媒体、允许根目录缺失返回 503，data_status=not_integrated/degraded；不回显原始绝对路径。"
+  import_semantics: "multipart 上传真实落盘到 GW_DATA_DIR/registry_uploads（服务端生成文件名）；JSON 批量登记只登记元数据，不猜测文件内容。"
+  archive_semantics: "POST /assets/archive 是前端「打包下载」入口：真实把已登记本地文件打包为 zip；无任何可打包文件返回 503 NO_LOCAL_FILES。"
+  pdf_semantics: "POST /assets/export-pdf 用纯标准库生成合法 PDF，不引入 reportlab。"
+  media_semantics: "GET .../media 与 .../image-versions/{version_id}/media 返回真实文件字节流；无媒体返回 503 MEDIA_NOT_AVAILABLE。video/frame|storyboard|clip 调用真实 ffmpeg/ffprobe，缺失即 503。"
+  index_semantics: "POST /reindex 与 /index/sync 真实遍历 GW_ALLOWED_ROOTS；未配置根目录返回 503 INDEX_SOURCE_NOT_AVAILABLE；不删除任何文件。"
+  remote_semantics: "POST /remote-assets 用 httpx 真实 HEAD 探测；失败如实记录 data_status=degraded + data_gaps，不编造 content-type/size；非本机地址必须 https，按解析主机和DNS检查受限网段；拒绝URL内凭据，不跟随重定向，不把3xx标为探测成功。"
+  open_local_semantics: "POST .../open-local 只做路径准入校验，不调用 explorer/start/subprocess 启动任何外部程序。"
+  canvas_boundary: "画布闭环（canvases/{id}/restore、purge-expired）只登记真实操作条目，画布状态不伪造；data_gaps 明示 canvas_store_not_connected。项目回收恢复已复用项目中心状态机，不再属于记录式占位。"
+interfaces:
+
+  - name: get_api_asset_registry
+    method: GET
+    path: /api/asset-registry
+    body: null
+    status: [200, 400, 401, 403, 404, 409, 413, 503]
+    response_200: "返回真实注册表总览（assets/features/backend=json-state）"
+    acceptance: "统一错误包 {detail:{code,message,...}}；写入必须可读回，删除必须不再返回；缺依赖 503 不得静默假成功"
+  - name: get_api_asset_registry_assets
+    method: GET
+    path: /api/asset-registry/assets
+    body: null
+    status: [200, 400, 401, 403, 404, 409, 413, 503]
+    response_200: "返回真实分页（items/total/total_known/has_more/next_offset）"
+    acceptance: "统一错误包 {detail:{code,message,...}}；写入必须可读回，删除必须不再返回；缺依赖 503 不得静默假成功"
+  - name: post_api_asset_registry_assets_archive
+    method: POST
+    path: /api/asset-registry/assets/archive
+    body: "JSON object（multipart 仅 import 支持 file 字段）；未认证先 401，越界/缺依赖再失败关闭"
+    status: [200, 400, 401, 403, 404, 409, 413, 503]
+    response_503: {code: NO_LOCAL_FILES, unavailable: true, endpoint: /api/asset-registry, message: "所选素材没有可打包的本地文件"}
+    acceptance: "统一错误包 {detail:{code,message,...}}；写入必须可读回，删除必须不再返回；缺依赖 503 不得静默假成功"
+  - name: post_api_asset_registry_assets_export_pdf
+    method: POST
+    path: /api/asset-registry/assets/export-pdf
+    body: "JSON object（multipart 仅 import 支持 file 字段）；未认证先 401，越界/缺依赖再失败关闭"
+    status: [200, 400, 401, 403, 404, 409, 413, 503]
+    response_200: "返回合法 PDF 字节流（%PDF- 开头、%%EOF 结尾）"
+    acceptance: "统一错误包 {detail:{code,message,...}}；写入必须可读回，删除必须不再返回；缺依赖 503 不得静默假成功"
+  - name: post_api_asset_registry_assets_import
+    method: POST
+    path: /api/asset-registry/assets/import
+    body: "JSON object（multipart 仅 import 支持 file 字段）；未认证先 401，越界/缺依赖再失败关闭"
+    status: [200, 400, 401, 403, 404, 409, 413, 503]
+    response_200: "真实落盘并返回稳定 asset_id；multipart 上传写入 GW_DATA_DIR/registry_uploads"
+    acceptance: "统一错误包 {detail:{code,message,...}}；写入必须可读回，删除必须不再返回；缺依赖 503 不得静默假成功"
+  - name: post_api_asset_registry_assets_relations
+    method: POST
+    path: /api/asset-registry/assets/relations
+    body: "JSON object（multipart 仅 import 支持 file 字段）；未认证先 401，越界/缺依赖再失败关闭"
+    status: [200, 400, 401, 403, 404, 409, 413, 503]
+    response_200: "建立关系并返回 relation_id；未登记 asset_id 返回 404"
+    acceptance: "统一错误包 {detail:{code,message,...}}；写入必须可读回，删除必须不再返回；缺依赖 503 不得静默假成功"
+  - name: post_api_asset_registry_assets_resolve_reference
+    method: POST
+    path: /api/asset-registry/assets/resolve-reference
+    body: "JSON object（multipart 仅 import 支持 file 字段）；未认证先 401，越界/缺依赖再失败关闭"
+    status: [200, 400, 401, 403, 404, 409, 413, 503]
+    response_200: "解析已登记 asset_id；未登记返回 404 ASSET_NOT_FOUND"
+    acceptance: "统一错误包 {detail:{code,message,...}}；写入必须可读回，删除必须不再返回；缺依赖 503 不得静默假成功"
+  - name: post_api_asset_registry_assets_tags
+    method: POST
+    path: /api/asset-registry/assets/tags
+    body: "JSON object（multipart 仅 import 支持 file 字段）；未认证先 401，越界/缺依赖再失败关闭"
+    status: [200, 400, 401, 403, 404, 409, 413, 503]
+    response_200: "落盘标签并回读资产，返回 assets 快照"
+    acceptance: "统一错误包 {detail:{code,message,...}}；写入必须可读回，删除必须不再返回；缺依赖 503 不得静默假成功"
+  - name: get_api_asset_registry_assets_asset_id
+    method: GET
+    path: /api/asset-registry/assets/{asset_id}
+    body: null
+    status: [200, 400, 401, 403, 404, 409, 413, 503]
+    response_200: "返回真实 asset；不存在 404 ASSET_NOT_FOUND"
+    acceptance: "统一错误包 {detail:{code,message,...}}；写入必须可读回，删除必须不再返回；缺依赖 503 不得静默假成功"
+  - name: patch_api_asset_registry_assets_asset_id
+    method: PATCH
+    path: /api/asset-registry/assets/{asset_id}
+    body: "JSON object（multipart 仅 import 支持 file 字段）；未认证先 401，越界/缺依赖再失败关闭"
+    status: [200, 400, 401, 403, 404, 409, 413, 503]
+    response_200: "更新并落盘，返回更新后 asset（version 递增）"
+    acceptance: "统一错误包 {detail:{code,message,...}}；写入必须可读回，删除必须不再返回；缺依赖 503 不得静默假成功"
+  - name: delete_api_asset_registry_assets_asset_id
+    method: DELETE
+    path: /api/asset-registry/assets/{asset_id}
+    body: "JSON object（multipart 仅 import 支持 file 字段）；未认证先 401，越界/缺依赖再失败关闭"
+    status: [200, 400, 401, 403, 404, 409, 413, 503]
+    response_200: "移入回收站并返回 recycle_entry_id；随后读接口返回 404"
+    acceptance: "统一错误包 {detail:{code,message,...}}；写入必须可读回，删除必须不再返回；缺依赖 503 不得静默假成功"
+  - name: get_api_asset_registry_assets_asset_id_image_versions
+    method: GET
+    path: /api/asset-registry/assets/{asset_id}/image-versions
+    body: null
+    status: [200, 400, 401, 403, 404, 409, 413, 503]
+    response_200: "返回真实版本列表；资产不存在 404"
+    acceptance: "统一错误包 {detail:{code,message,...}}；写入必须可读回，删除必须不再返回；缺依赖 503 不得静默假成功"
+  - name: post_api_asset_registry_assets_asset_id_image_versions
+    method: POST
+    path: /api/asset-registry/assets/{asset_id}/image-versions
+    body: "JSON object（multipart 仅 import 支持 file 字段）；未认证先 401，越界/缺依赖再失败关闭"
+    status: [200, 400, 401, 403, 404, 409, 413, 503]
+    response_200: "落盘图片版本（含 edit/canvas_id），返回稳定 version_id"
+    acceptance: "统一错误包 {detail:{code,message,...}}；写入必须可读回，删除必须不再返回；缺依赖 503 不得静默假成功"
+  - name: patch_api_asset_registry_assets_asset_id_image_versions_version_id
+    method: PATCH
+    path: /api/asset-registry/assets/{asset_id}/image-versions/{version_id}
+    body: "JSON object（multipart 仅 import 支持 file 字段）；未认证先 401，越界/缺依赖再失败关闭"
+    status: [200, 400, 401, 403, 404, 409, 413, 503]
+    response_200: "更新 label/hidden 并落盘"
+    acceptance: "统一错误包 {detail:{code,message,...}}；写入必须可读回，删除必须不再返回；缺依赖 503 不得静默假成功"
+  - name: delete_api_asset_registry_assets_asset_id_image_versions_version_id
+    method: DELETE
+    path: /api/asset-registry/assets/{asset_id}/image-versions/{version_id}
+    body: "JSON object（multipart 仅 import 支持 file 字段）；未认证先 401，越界/缺依赖再失败关闭"
+    status: [200, 400, 401, 403, 404, 409, 413, 503]
+    response_200: "删除版本；随后不再返回该版本"
+    acceptance: "统一错误包 {detail:{code,message,...}}；写入必须可读回，删除必须不再返回；缺依赖 503 不得静默假成功"
+  - name: get_api_asset_registry_assets_asset_id_image_versions_version_id_media
+    method: GET
+    path: /api/asset-registry/assets/{asset_id}/image-versions/{version_id}/media
+    body: null
+    status: [200, 400, 401, 403, 404, 409, 413, 503]
+    response_200: "返回真实文件字节流（Content-Type 按扩展名）；无可读文件时 503，不伪造 URL"
+    response_503: {code: MEDIA_NOT_AVAILABLE, unavailable: true, endpoint: /api/asset-registry, message: "该版本没有可读取的媒体文件"}
+    acceptance: "统一错误包 {detail:{code,message,...}}；写入必须可读回，删除必须不再返回；缺依赖 503 不得静默假成功"
+  - name: get_api_asset_registry_assets_asset_id_media
+    method: GET
+    path: /api/asset-registry/assets/{asset_id}/media
+    body: null
+    status: [200, 400, 401, 403, 404, 409, 413, 503]
+    response_200: "返回真实文件字节流（Content-Type 按扩展名）；无可读文件时 503，不伪造 URL"
+    response_503: {code: MEDIA_NOT_AVAILABLE, unavailable: true, endpoint: /api/asset-registry, message: "该素材没有可读取的媒体文件"}
+    acceptance: "统一错误包 {detail:{code,message,...}}；写入必须可读回，删除必须不再返回；缺依赖 503 不得静默假成功"
+  - name: post_api_asset_registry_assets_asset_id_open_local
+    method: POST
+    path: /api/asset-registry/assets/{asset_id}/open-local
+    body: "JSON object（multipart 仅 import 支持 file 字段）；未认证先 401，越界/缺依赖再失败关闭"
+    status: [200, 400, 401, 403, 404, 409, 413, 503]
+    response_200: "只做路径准入校验；返回 display_path（相对允许根）、exists、opened=false"
+    acceptance: "统一错误包 {detail:{code,message,...}}；写入必须可读回，删除必须不再返回；缺依赖 503 不得静默假成功"
+  - name: delete_api_asset_registry_assets_asset_id_relations_related_asset_id
+    method: DELETE
+    path: /api/asset-registry/assets/{asset_id}/relations/{related_asset_id}
+    body: "JSON object（multipart 仅 import 支持 file 字段）；未认证先 401，越界/缺依赖再失败关闭"
+    status: [200, 400, 401, 403, 404, 409, 413, 503]
+    response_200: "删除关系；不存在返回 404 RELATION_NOT_FOUND"
+    acceptance: "统一错误包 {detail:{code,message,...}}；写入必须可读回，删除必须不再返回；缺依赖 503 不得静默假成功"
+  - name: delete_api_asset_registry_assets_asset_id_tags_tag_id
+    method: DELETE
+    path: /api/asset-registry/assets/{asset_id}/tags/{tag_id}
+    body: "JSON object（multipart 仅 import 支持 file 字段）；未认证先 401，越界/缺依赖再失败关闭"
+    status: [200, 400, 401, 403, 404, 409, 413, 503]
+    response_200: "删除标签并回读 asset"
+    acceptance: "统一错误包 {detail:{code,message,...}}；写入必须可读回，删除必须不再返回；缺依赖 503 不得静默假成功"
+  - name: post_api_asset_registry_assets_asset_id_video_clip
+    method: POST
+    path: /api/asset-registry/assets/{asset_id}/video/clip
+    body: "JSON object（multipart 仅 import 支持 file 字段）；未认证先 401，越界/缺依赖再失败关闭"
+    status: [200, 400, 401, 403, 404, 409, 413, 503]
+    response_503: {code: MEDIA_PROCESS_FAILED, unavailable: true, endpoint: /api/asset-registry, message: "ffmpeg 缺失或剪辑失败"}
+    acceptance: "统一错误包 {detail:{code,message,...}}；写入必须可读回，删除必须不再返回；缺依赖 503 不得静默假成功"
+  - name: get_api_asset_registry_assets_asset_id_video_frame
+    method: GET
+    path: /api/asset-registry/assets/{asset_id}/video/frame
+    body: null
+    status: [200, 400, 401, 403, 404, 409, 413, 503]
+    response_200: "返回真实文件字节流（Content-Type 按扩展名）；无可读文件时 503，不伪造 URL"
+    response_503: {code: MEDIA_PROCESS_FAILED, unavailable: true, endpoint: /api/asset-registry, message: "ffmpeg/ffprobe 缺失或抽帧失败"}
+    acceptance: "统一错误包 {detail:{code,message,...}}；写入必须可读回，删除必须不再返回；缺依赖 503 不得静默假成功"
+  - name: get_api_asset_registry_assets_asset_id_video_storyboard
+    method: GET
+    path: /api/asset-registry/assets/{asset_id}/video/storyboard
+    body: null
+    status: [200, 400, 401, 403, 404, 409, 413, 503]
+    response_200: "返回真实文件字节流（Content-Type 按扩展名）；无可读文件时 503，不伪造 URL"
+    response_503: {code: MEDIA_PROCESS_FAILED, unavailable: true, endpoint: /api/asset-registry, message: "ffmpeg/ffprobe 缺失或分镜失败"}
+    acceptance: "统一错误包 {detail:{code,message,...}}；写入必须可读回，删除必须不再返回；缺依赖 503 不得静默假成功"
+  - name: get_api_asset_registry_facets
+    method: GET
+    path: /api/asset-registry/facets
+    body: null
+    status: [200, 400, 401, 403, 404, 409, 413, 503]
+    response_200: "返回由真实资产/标签聚合出的筛选维度"
+    acceptance: "统一错误包 {detail:{code,message,...}}；写入必须可读回，删除必须不再返回；缺依赖 503 不得静默假成功"
+  - name: get_api_asset_registry_folders
+    method: GET
+    path: /api/asset-registry/folders
+    body: null
+    status: [200, 400, 401, 403, 404, 409, 413, 503]
+    response_200: "返回真实文件夹登记"
+    acceptance: "统一错误包 {detail:{code,message,...}}；写入必须可读回，删除必须不再返回；缺依赖 503 不得静默假成功"
+  - name: post_api_asset_registry_folders
+    method: POST
+    path: /api/asset-registry/folders
+    body: "JSON object（multipart 仅 import 支持 file 字段）；未认证先 401，越界/缺依赖再失败关闭"
+    status: [200, 400, 401, 403, 404, 409, 413, 503]
+    response_200: "创建文件夹并返回 folders 列表"
+    acceptance: "统一错误包 {detail:{code,message,...}}；写入必须可读回，删除必须不再返回；缺依赖 503 不得静默假成功"
+  - name: post_api_asset_registry_governance_asset_trash_entry_id_restore
+    method: POST
+    path: /api/asset-registry/governance/asset-trash/{entry_id}/restore
+    body: "JSON object（multipart 仅 import 支持 file 字段）；未认证先 401，越界/缺依赖再失败关闭"
+    status: [200, 400, 401, 403, 404, 409, 413, 503]
+    response_200: "恢复回收站条目；不存在 404 RECYCLE_ENTRY_NOT_FOUND"
+    acceptance: "统一错误包 {detail:{code,message,...}}；写入必须可读回，删除必须不再返回；缺依赖 503 不得静默假成功"
+  - name: post_api_asset_registry_governance_assets_asset_id_restore
+    method: POST
+    path: /api/asset-registry/governance/assets/{asset_id}/restore
+    body: "JSON object（multipart 仅 import 支持 file 字段）；未认证先 401，越界/缺依赖再失败关闭"
+    status: [200, 400, 401, 403, 404, 409, 413, 503]
+    response_200: "取消归档并落盘；不存在 404 ASSET_NOT_FOUND"
+    acceptance: "统一错误包 {detail:{code,message,...}}；写入必须可读回，删除必须不再返回；缺依赖 503 不得静默假成功"
+  - name: post_api_asset_registry_governance_audit_outbox_reconcile
+    method: POST
+    path: /api/asset-registry/governance/audit-outbox/reconcile
+    body: "JSON object（multipart 仅 import 支持 file 字段）；未认证先 401，越界/缺依赖再失败关闭"
+    status: [200, 400, 401, 403, 404, 409, 413, 503]
+    response_200: "真实重放 pending outbox，返回 replayed 列表"
+    acceptance: "统一错误包 {detail:{code,message,...}}；写入必须可读回，删除必须不再返回；缺依赖 503 不得静默假成功"
+  - name: post_api_asset_registry_governance_canvases_purge_expired
+    method: POST
+    path: /api/asset-registry/governance/canvases/purge-expired
+    body: "JSON object（multipart 仅 import 支持 file 字段）；未认证先 401，越界/缺依赖再失败关闭"
+    status: [200, 400, 401, 403, 404, 409, 413, 503]
+    response_200: "只登记真实操作条目（画布状态不伪造），返回 data_gaps=canvas_store_not_connected"
+    acceptance: "统一错误包 {detail:{code,message,...}}；写入必须可读回，删除必须不再返回；缺依赖 503 不得静默假成功"
+  - name: post_api_asset_registry_governance_canvases_canvas_id_restore
+    method: POST
+    path: /api/asset-registry/governance/canvases/{canvas_id}/restore
+    body: "JSON object（multipart 仅 import 支持 file 字段）；未认证先 401，越界/缺依赖再失败关闭"
+    status: [200, 400, 401, 403, 404, 409, 413, 503]
+    response_200: "只登记真实操作条目（画布状态不伪造），返回 data_gaps=canvas_store_not_connected"
+    acceptance: "统一错误包 {detail:{code,message,...}}；写入必须可读回，删除必须不再返回；缺依赖 503 不得静默假成功"
+  - name: get_api_asset_registry_governance_cascade_preview
+    method: GET
+    path: /api/asset-registry/governance/cascade-preview
+    body: null
+    status: [200, 400, 401, 403, 404, 409, 413, 503]
+    response_200: "target_type=asset 时真实计算引用项目；其他域返回空集 + data_gaps=governance_store_not_connected"
+    acceptance: "统一错误包 {detail:{code,message,...}}；写入必须可读回，删除必须不再返回；缺依赖 503 不得静默假成功"
+  - name: post_api_asset_registry_governance_operations
+    method: POST
+    path: /api/asset-registry/governance/operations
+    body: "JSON object（multipart 仅 import 支持 file 字段）；未认证先 401，越界/缺依赖再失败关闭"
+    status: [200, 400, 401, 403, 404, 409, 413, 503]
+    response_200: "登记治理操作条目并落盘"
+    acceptance: "统一错误包 {detail:{code,message,...}}；写入必须可读回，删除必须不再返回；缺依赖 503 不得静默假成功"
+  - name: get_api_asset_registry_governance_overview
+    method: GET
+    path: /api/asset-registry/governance/overview
+    body: null
+    status: [200, 400, 401, 403, 404, 409, 413, 503]
+    response_200: "返回真实归档资产与 outbox 统计"
+    acceptance: "统一错误包 {detail:{code,message,...}}；写入必须可读回，删除必须不再返回；缺依赖 503 不得静默假成功"
+  - name: post_api_asset_registry_index_sync
+    method: POST
+    path: /api/asset-registry/index/sync
+    body: "JSON object（multipart 仅 import 支持 file 字段）；未认证先 401，越界/缺依赖再失败关闭"
+    status: [200, 400, 401, 403, 404, 409, 413, 503]
+    response_503: {code: INDEX_SOURCE_NOT_AVAILABLE, unavailable: true, endpoint: /api/asset-registry, message: "未配置允许根目录，无法同步索引"}
+    acceptance: "统一错误包 {detail:{code,message,...}}；写入必须可读回，删除必须不再返回；缺依赖 503 不得静默假成功"
+  - name: get_api_asset_registry_preferences_team
+    method: GET
+    path: /api/asset-registry/preferences/team
+    body: null
+    status: [200, 400, 401, 403, 404, 409, 413, 503]
+    response_200: "返回落盘的团队偏好"
+    acceptance: "统一错误包 {detail:{code,message,...}}；写入必须可读回，删除必须不再返回；缺依赖 503 不得静默假成功"
+  - name: patch_api_asset_registry_preferences_team
+    method: PATCH
+    path: /api/asset-registry/preferences/team
+    body: "JSON object（multipart 仅 import 支持 file 字段）；未认证先 401，越界/缺依赖再失败关闭"
+    status: [200, 400, 401, 403, 404, 409, 413, 503]
+    response_200: "落盘团队偏好并递增自身 version"
+    acceptance: "统一错误包 {detail:{code,message,...}}；写入必须可读回，删除必须不再返回；缺依赖 503 不得静默假成功"
+  - name: get_api_asset_registry_presets
+    method: GET
+    path: /api/asset-registry/presets
+    body: null
+    status: [200, 400, 401, 403, 404, 409, 413, 503]
+    response_200: "返回落盘预设"
+    acceptance: "统一错误包 {detail:{code,message,...}}；写入必须可读回，删除必须不再返回；缺依赖 503 不得静默假成功"
+  - name: post_api_asset_registry_presets
+    method: POST
+    path: /api/asset-registry/presets
+    body: "JSON object（multipart 仅 import 支持 file 字段）；未认证先 401，越界/缺依赖再失败关闭"
+    status: [200, 400, 401, 403, 404, 409, 413, 503]
+    response_200: "创建预设并返回 preset（含 id 别名）"
+    acceptance: "统一错误包 {detail:{code,message,...}}；写入必须可读回，删除必须不再返回；缺依赖 503 不得静默假成功"
+  - name: delete_api_asset_registry_presets_preset_id
+    method: DELETE
+    path: /api/asset-registry/presets/{preset_id}
+    body: "JSON object（multipart 仅 import 支持 file 字段）；未认证先 401，越界/缺依赖再失败关闭"
+    status: [200, 400, 401, 403, 404, 409, 413, 503]
+    response_200: "删除预设；不存在 404 PRESET_NOT_FOUND"
+    acceptance: "统一错误包 {detail:{code,message,...}}；写入必须可读回，删除必须不再返回；缺依赖 503 不得静默假成功"
+  - name: get_api_asset_registry_project_directory_templates
+    method: GET
+    path: /api/asset-registry/project-directory-templates
+    body: null
+    status: [200, 400, 401, 403, 404, 409, 413, 503]
+    response_200: "返回落盘目录模板（含 id/directory_tree/folder_count）"
+    acceptance: "统一错误包 {detail:{code,message,...}}；写入必须可读回，删除必须不再返回；缺依赖 503 不得静默假成功"
+  - name: post_api_asset_registry_project_directory_templates
+    method: POST
+    path: /api/asset-registry/project-directory-templates
+    body: "JSON object（multipart 仅 import 支持 file 字段）；未认证先 401，越界/缺依赖再失败关闭"
+    status: [200, 400, 401, 403, 404, 409, 413, 503]
+    response_200: "创建目录模板并返回 template 视图（id/directory_tree/folder_count）"
+    acceptance: "统一错误包 {detail:{code,message,...}}；写入必须可读回，删除必须不再返回；缺依赖 503 不得静默假成功"
+  - name: patch_api_asset_registry_project_directory_templates_template_id
+    method: PATCH
+    path: /api/asset-registry/project-directory-templates/{template_id}
+    body: "JSON object（multipart 仅 import 支持 file 字段）；未认证先 401，越界/缺依赖再失败关闭"
+    status: [200, 400, 401, 403, 404, 409, 413, 503]
+    response_200: "更新目录模板并落盘"
+    acceptance: "统一错误包 {detail:{code,message,...}}；写入必须可读回，删除必须不再返回；缺依赖 503 不得静默假成功"
+  - name: post_api_asset_registry_project_directory_templates_template_id_archive
+    method: POST
+    path: /api/asset-registry/project-directory-templates/{template_id}/archive
+    body: "JSON object（multipart 仅 import 支持 file 字段）；未认证先 401，越界/缺依赖再失败关闭"
+    status: [200, 400, 401, 403, 404, 409, 413, 503]
+    response_200: "归档/取消归档模板"
+    acceptance: "统一错误包 {detail:{code,message,...}}；写入必须可读回，删除必须不再返回；缺依赖 503 不得静默假成功"
+  - name: post_api_asset_registry_project_directory_templates_template_id_default
+    method: POST
+    path: /api/asset-registry/project-directory-templates/{template_id}/default
+    body: "JSON object（multipart 仅 import 支持 file 字段）；未认证先 401，越界/缺依赖再失败关闭"
+    status: [200, 400, 401, 403, 404, 409, 413, 503]
+    response_200: "设为唯一默认模板"
+    acceptance: "统一错误包 {detail:{code,message,...}}；写入必须可读回，删除必须不再返回；缺依赖 503 不得静默假成功"
+  - name: patch_api_asset_registry_project_entities_entity_id
+    method: PATCH
+    path: /api/asset-registry/project-entities/{entity_id}
+    body: "JSON object（multipart 仅 import 支持 file 字段）；未认证先 401，越界/缺依赖再失败关闭"
+    status: [200, 400, 401, 403, 404, 409, 413, 503]
+    response_200: "更新项目实体；不存在 404 ENTITY_NOT_FOUND"
+    acceptance: "统一错误包 {detail:{code,message,...}}；写入必须可读回，删除必须不再返回；缺依赖 503 不得静默假成功"
+  - name: patch_api_asset_registry_project_gates_gate_id
+    method: PATCH
+    path: /api/asset-registry/project-gates/{gate_id}
+    body: "JSON object（multipart 仅 import 支持 file 字段）；未认证先 401，越界/缺依赖再失败关闭"
+    status: [200, 400, 401, 403, 404, 409, 413, 503]
+    response_200: "更新项目门；不存在 404 GATE_NOT_FOUND"
+    acceptance: "统一错误包 {detail:{code,message,...}}；写入必须可读回，删除必须不再返回；缺依赖 503 不得静默假成功"
+  - name: post_api_asset_registry_project_recycle_project_id_restore
+    method: POST
+    path: /api/asset-registry/project-recycle/{project_id}/restore
+    body: "JSON object（multipart 仅 import 支持 file 字段）；未认证先 401，越界/缺依赖再失败关闭"
+    status: [200, 400, 401, 403, 404, 409, 413, 503]
+    response_200: "要求治理权限和正整数expected_version；真实调用项目中心CAS恢复，返回project_id/version/restored/project；未知项目404，旧版本或非回收状态409，缺失/非法版本400。成功后GET项目不再有deleted_at/archived_at"
+    acceptance: "统一错误包 {detail:{code,message,...}}；写入必须可读回，删除必须不再返回；缺依赖 503 不得静默假成功"
+  - name: post_api_asset_registry_projects_project_id_assets
+    method: POST
+    path: /api/asset-registry/projects/{project_id}/assets
+    body: "JSON object（multipart 仅 import 支持 file 字段）；未认证先 401，越界/缺依赖再失败关闭"
+    status: [200, 400, 401, 403, 404, 409, 413, 503]
+    response_200: "关联已登记资产到项目；未登记 asset_id 返回 404（不静默跳过）"
+    acceptance: "统一错误包 {detail:{code,message,...}}；写入必须可读回，删除必须不再返回；缺依赖 503 不得静默假成功"
+  - name: post_api_asset_registry_projects_project_id_entities
+    method: POST
+    path: /api/asset-registry/projects/{project_id}/entities
+    body: "JSON object（multipart 仅 import 支持 file 字段）；未认证先 401，越界/缺依赖再失败关闭"
+    status: [200, 400, 401, 403, 404, 409, 413, 503]
+    response_200: "创建项目实体并返回 entity 视图"
+    acceptance: "统一错误包 {detail:{code,message,...}}；写入必须可读回，删除必须不再返回；缺依赖 503 不得静默假成功"
+  - name: get_api_asset_registry_recycle_bin
+    method: GET
+    path: /api/asset-registry/recycle-bin
+    body: null
+    status: [200, 400, 401, 403, 404, 409, 413, 503]
+    response_200: "返回真实回收站条目"
+    acceptance: "统一错误包 {detail:{code,message,...}}；写入必须可读回，删除必须不再返回；缺依赖 503 不得静默假成功"
+  - name: post_api_asset_registry_recycle_bin_entry_id_restore
+    method: POST
+    path: /api/asset-registry/recycle-bin/{entry_id}/restore
+    body: "JSON object（multipart 仅 import 支持 file 字段）；未认证先 401，越界/缺依赖再失败关闭"
+    status: [200, 400, 401, 403, 404, 409, 413, 503]
+    response_200: "恢复回收站条目并落盘"
+    acceptance: "统一错误包 {detail:{code,message,...}}；写入必须可读回，删除必须不再返回；缺依赖 503 不得静默假成功"
+  - name: post_api_asset_registry_reindex
+    method: POST
+    path: /api/asset-registry/reindex
+    body: "JSON object（multipart 仅 import 支持 file 字段）；未认证先 401，越界/缺依赖再失败关闭"
+    status: [200, 400, 401, 403, 404, 409, 413, 503]
+    response_503: {code: INDEX_SOURCE_NOT_AVAILABLE, unavailable: true, endpoint: /api/asset-registry, message: "未配置允许根目录，无法建立索引"}
+    acceptance: "统一错误包 {detail:{code,message,...}}；写入必须可读回，删除必须不再返回；缺依赖 503 不得静默假成功"
+  - name: get_api_asset_registry_remote_assets
+    method: GET
+    path: /api/asset-registry/remote-assets
+    body: null
+    status: [200, 400, 401, 403, 404, 409, 413, 503]
+    response_200: "返回真实远程素材登记（含 degraded 标记）"
+    acceptance: "统一错误包 {detail:{code,message,...}}；写入必须可读回，删除必须不再返回；缺依赖 503 不得静默假成功"
+  - name: post_api_asset_registry_remote_assets
+    method: POST
+    path: /api/asset-registry/remote-assets
+    body: "JSON object（multipart 仅 import 支持 file 字段）；未认证先 401，越界/缺依赖再失败关闭"
+    status: [200, 400, 401, 403, 404, 409, 413, 503]
+    response_200: "httpx 真实 HEAD 探测；失败记 data_status=degraded + data_gaps，不编造元数据"
+    acceptance: "统一错误包 {detail:{code,message,...}}；写入必须可读回，删除必须不再返回；缺依赖 503 不得静默假成功"
+  - name: delete_api_asset_registry_remote_assets_asset_id
+    method: DELETE
+    path: /api/asset-registry/remote-assets/{asset_id}
+    body: "JSON object（multipart 仅 import 支持 file 字段）；未认证先 401，越界/缺依赖再失败关闭"
+    status: [200, 400, 401, 403, 404, 409, 413, 503]
+    response_200: "删除远程登记；不存在 404 REMOTE_ASSET_NOT_FOUND"
+    acceptance: "统一错误包 {detail:{code,message,...}}；写入必须可读回，删除必须不再返回；缺依赖 503 不得静默假成功"
+  - name: patch_api_asset_registry_settings_features_feature_id
+    method: PATCH
+    path: /api/asset-registry/settings/features/{feature_id}
+    body: "JSON object（multipart 仅 import 支持 file 字段）；未认证先 401，越界/缺依赖再失败关闭"
+    status: [200, 400, 401, 403, 404, 409, 413, 503]
+    response_200: "切换真实能力开关并回读 features；未知 id 404 FEATURE_NOT_FOUND"
+    acceptance: "统一错误包 {detail:{code,message,...}}；写入必须可读回，删除必须不再返回；缺依赖 503 不得静默假成功"
+  - name: patch_api_asset_registry_settings_index_automation
+    method: PATCH
+    path: /api/asset-registry/settings/index-automation
+    body: "JSON object（multipart 仅 import 支持 file 字段）；未认证先 401，越界/缺依赖再失败关闭"
+    status: [200, 400, 401, 403, 404, 409, 413, 503]
+    response_200: "落盘索引自动化配置；interval_minutes<1 返回 400"
+    acceptance: "统一错误包 {detail:{code,message,...}}；写入必须可读回，删除必须不再返回；缺依赖 503 不得静默假成功"
+  - name: get_api_asset_registry_status
+    method: GET
+    path: /api/asset-registry/status
+    body: null
+    status: [200, 400, 401, 403, 404, 409, 413, 503]
+    response_200: "返回真实 revision/assets_count/overview.features/overview.index_automation"
+    acceptance: "统一错误包 {detail:{code,message,...}}；写入必须可读回，删除必须不再返回；缺依赖 503 不得静默假成功"
+  - name: get_api_asset_registry_workspace_jobs_job_id
+    method: GET
+    path: /api/asset-registry/workspace-jobs/{job_id}
+    body: null
+    status: [200, 400, 401, 403, 404, 409, 413, 503]
+    response_200: "返回真实任务；不存在 404 WORKSPACE_JOB_NOT_FOUND"
+    acceptance: "统一错误包 {detail:{code,message,...}}；写入必须可读回，删除必须不再返回；缺依赖 503 不得静默假成功"
+  - name: post_api_asset_registry_workspace_jobs_job_id_action
+    method: POST
+    path: /api/asset-registry/workspace-jobs/{job_id}/{action}
+    body: "JSON object（multipart 仅 import 支持 file 字段）；未认证先 401，越界/缺依赖再失败关闭"
+    status: [200, 400, 401, 403, 404, 409, 413, 503]
+    response_200: "切换真实任务状态；未登记 job_id 404 WORKSPACE_JOB_NOT_FOUND；非法 action 400"
+    acceptance: "统一错误包 {detail:{code,message,...}}；写入必须可读回，删除必须不再返回；缺依赖 503 不得静默假成功"
+fixture_contract:
+  empty_registry: "docs/fixtures/phase11-b3-empty-registry.json"
+  fail_closed: "docs/fixtures/phase11-b3-fail-closed.json"
+  route_matrix: "docs/fixtures/phase11-b3-route-matrix.json"
+data_gaps:
+  - "asset_registry_source_not_connected"
+  - "media_storage_not_connected"
+  - "local_file_access_not_admitted"
+  - "remote_asset_source_not_connected"
+  - "asset_index_not_connected"
+  - "governance_store_not_connected"

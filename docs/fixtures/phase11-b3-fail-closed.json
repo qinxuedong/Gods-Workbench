@@ -1,0 +1,9 @@
+{
+  "status": 503,
+  "detail": {
+    "code": "ASSET_REGISTRY_NOT_INTEGRATED",
+    "unavailable": true,
+    "data_status": "not_integrated",
+    "endpoint": "/api/asset-registry/assets/import"
+  }
+}

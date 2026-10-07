@@ -1,0 +1,16 @@
+{
+  "projects": [
+    {
+      "project_id": "prj-0001",
+      "name": "示例项目 A",
+      "project_type": "film",
+      "stage": "production",
+      "progress": 68,
+      "start_at": 1780000000000,
+      "due_at": 1781200000000,
+      "version": 3,
+      "archived_at": null,
+      "deleted_at": null
+    }
+  ]
+}

@@ -1,0 +1,25 @@
+{
+  "categories": [
+    {
+      "id": "smart",
+      "name": "智能画布",
+      "count": 0
+    },
+    {
+      "id": "classic",
+      "name": "普通画布",
+      "count": 0
+    },
+    {
+      "id": "reference",
+      "name": "参考画布",
+      "count": 0
+    }
+  ],
+  "canvases": [],
+  "items": [],
+  "data_status": "not_integrated",
+  "data_gaps": [
+    "canvas_asset_index_source_not_integrated"
+  ]
+}

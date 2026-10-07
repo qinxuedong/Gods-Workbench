@@ -1,0 +1,8 @@
+{
+  "block": "B4",
+  "path_count": 30,
+  "method_path_count": 40,
+  "data_policy": "洁净室不读取本机路径、不联网、不执行外部进程、不伪造资产或任务",
+  "read_policy": "认证后只返回显式未接入状态",
+  "write_policy": "编辑权限检查后统一返回 503"
+}

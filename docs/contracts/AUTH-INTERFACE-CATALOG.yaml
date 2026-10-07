@@ -1,0 +1,211 @@
+meta:
+  source: "Phase 11 洁净室 B1 重新定义；前端调用点与现有认证行为契约"
+  review_status: "user_directed_remediation_input_pending_independent_release_review"
+  distribution: "NOT AUTHORIZED FOR PUBLIC DISTRIBUTION"
+  cleanroom_notice: "本契约不复制旧仓实现；仅冻结接口语义。"
+
+service: asset_auth
+version: phase11-b1-1
+phase12_extensions:
+  team_messages: "详见 TEAM-MESSAGES-INTERFACE-CATALOG.yaml phase12-team-messages-1；新 GET/POST messages 路径在 /api/asset-auth/teams/{team_id}/messages"
+  authenticated_identity_binding: "local_account/OIDC 从服务端 AuthContext 精确建立身份引用，不接受客户端指定 user_id/role/subject；旧 external_subject payload 不建立身份绑定"
+
+shared:
+  ids:
+    user_id: string
+    team_id: string
+    approval_id: string
+    token_id: string
+  errors:
+    400: "请求参数不合法或状态转换不允许"
+    401: "未认证或会话失效"
+    403: "权限不足"
+    404: "目标用户、团队或审批不存在"
+    409: "版本冲突或重复状态操作"
+    422: "请求体字段校验失败"
+  security:
+    credentials: "不得在响应、日志或 Cookie 中返回令牌原文"
+    csrf: "写操作必须使用服务端会话和同源策略"
+    audit: "用户、团队、成员、令牌和审批写操作必须产生可审计事件；事件不得包含令牌原文"
+    bootstrap: "默认关闭；仅 GW_AUTH_BOOTSTRAP_ENABLED/GW_AUTH_BOOTSTRAP_WINDOW 显式开启，且可由 GW_AUTH_BOOTSTRAP_UNTIL 限时；配置错误失败关闭"
+    oidc_management_auth: "OIDC 模式支持服务端 gw_session 或 Authorization Bearer；请求头 X-User-Role 与请求体 role/external_subject 不得覆盖服务端主体"
+
+interfaces:
+  - name: bootstrap_auth
+    method: POST
+    path: /api/asset-auth/bootstrap
+    body:
+      display_name: string
+      role: "enum(admin|governor|editor|reviewer|readonly)"
+    status: [201, 400, 401, 403, 409, 422]
+    response:
+      user:
+        user_id: string
+        display_name: string
+        role: string
+      session: "object | null"
+    acceptance: "默认关闭；仅显式初始化窗口执行，未开启返回 403/503；初始化完成后重复调用必须 409，不得绕过外部 IdP 或既有会话策略。"
+
+  - name: list_operation_approvals
+    method: GET
+    path: /api/asset-auth/operation-approvals
+    query:
+      status: "string | optional"
+      limit: "integer(1..100) | optional"
+      cursor: "string | optional"
+    status: [200, 401, 403]
+    response:
+      approvals: "array"
+      next_cursor: "string | null"
+    acceptance: "只返回当前主体有权查看的审批记录，分页稳定且不泄露其他团队数据。"
+
+  - name: update_operation_approval
+    method: PUT
+    path: /api/asset-auth/operation-approvals/{approval_id}
+    body:
+      decision: "enum(approved|rejected|cancelled)"
+      expected_version: integer
+      reason: "string | optional"
+    status: [200, 401, 403, 404, 409, 422]
+    response:
+      approval:
+        approval_id: string
+        version: integer
+        status: string
+    acceptance: "必须 CAS 更新；重复相同决定幂等，冲突返回 409。"
+
+  - name: list_teams
+    method: GET
+    path: /api/asset-auth/teams
+    status: [200, 401, 403]
+    response:
+      teams: "array"
+    acceptance: "仅返回当前主体有权查看的团队。"
+
+  - name: create_team
+    method: POST
+    path: /api/asset-auth/teams
+    body:
+      name: string
+      description: "string | optional"
+    status: [201, 400, 401, 403, 409, 422]
+    response:
+      team:
+        team_id: string
+        name: string
+        version: integer
+    acceptance: "创建团队返回稳定 team_id 和 version；同名冲突不得静默覆盖。"
+
+  - name: delete_team
+    method: DELETE
+    path: /api/asset-auth/teams/{team_id}
+    body:
+      expected_version: integer
+    status: [204, 401, 403, 404, 409, 422]
+    response: null
+    acceptance: "团队删除必须 CAS；存在成员或关联资源时必须按契约拒绝或进入明确的归档状态。"
+
+  - name: update_team_members
+    method: PUT
+    path: /api/asset-auth/teams/{team_id}/members
+    body:
+      user_id: string
+      role: "enum(admin|governor|editor|reviewer|readonly)"
+      expected_version: integer
+    status: [200, 401, 403, 404, 409, 422]
+    response:
+      membership:
+        team_id: string
+        user_id: string
+        role: string
+        version: integer
+    acceptance: "成员添加或角色更新必须 CAS、幂等并校验团队边界。"
+
+  - name: delete_team_member
+    method: DELETE
+    path: /api/asset-auth/teams/{team_id}/members/{user_id}
+    body:
+      expected_version: integer
+    status: [204, 401, 403, 404, 409, 422]
+    response: null
+    acceptance: "成员移除必须校验治理权限和 expected_version，不得删除最后一个 owner。"
+
+  - name: create_token
+    method: POST
+    path: /api/asset-auth/tokens
+    body:
+      name: string
+      scopes: "array[string]"
+      expires_at: "string(datetime) | null"
+    status: [201, 400, 401, 403, 422]
+    response:
+      token:
+        token_id: string
+        name: string
+        token: "string (仅创建响应一次)"
+        expires_at: "string(datetime) | null"
+    acceptance: "令牌原文仅在创建响应返回一次；服务端不得持久化或日志回显明文。"
+
+  - name: list_users
+    method: GET
+    path: /api/asset-auth/users
+    status: [200, 401, 403]
+    response:
+      users: "array"
+    acceptance: "用户列表必须按当前主体权限过滤，不能返回令牌、认证码或敏感 IdP claims。"
+
+  - name: create_user
+    method: POST
+    path: /api/asset-auth/users
+    body:
+      display_name: string
+      role: "enum(admin|governor|editor|reviewer|readonly)"
+      external_subject: "string | optional"
+    status: [201, 400, 401, 403, 409, 422]
+    response:
+      user:
+        user_id: string
+        display_name: string
+        role: string
+        version: integer
+    acceptance: "用户创建必须绑定受信身份来源，不得通过客户端自报角色提权。"
+
+  - name: update_user
+    method: PATCH
+    path: /api/asset-auth/users/{user_id}
+    body:
+      display_name: "string | optional"
+      role: "enum(admin|governor|editor|reviewer|readonly) | optional"
+      expected_version: integer
+    status: [200, 401, 403, 404, 409, 422]
+    response:
+      user:
+        user_id: string
+        display_name: string
+        role: string
+        version: integer
+    acceptance: "用户更新必须 CAS；OIDC 模式下角色来源不得被 X-User-Role 或请求体覆盖。"
+
+  - name: delete_user
+    method: DELETE
+    path: /api/asset-auth/users/{user_id}
+    body:
+      expected_version: integer
+    status: [204, 401, 403, 404, 409, 422]
+    response: null
+    acceptance: "用户删除必须 CAS、可审计，且不得删除最后一个 owner。"
+
+  - name: get_authenticated_identity_binding
+    method: GET
+    path: /api/asset-auth/identity-binding
+    status: [200, 401, 503]
+    response: {bound: boolean, user_id: "string | null"}
+    acceptance: "仅回读当前受信 AuthContext 的身份绑定状态。"
+
+  - name: bind_authenticated_identity
+    method: POST
+    path: /api/asset-auth/identity-binding
+    body: "空对象；拒绝附加客户端字段"
+    status: [200, 201, 401, 403, 409, 422, 503]
+    response: {user_id: string, display_name: string, role: string, created: boolean}
+    acceptance: "重放同一可信身份幂等；local_account复用账户user_id，OIDC由服务端分配治理user_id；不授予团队成员资格。"

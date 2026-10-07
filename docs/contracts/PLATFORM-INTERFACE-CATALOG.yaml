@@ -1,0 +1,332 @@
+meta:
+  source: "本仓冻结前端调用面与洁净室运行边界"
+  review_status: "phase12-cli-closure-awaiting-independent-review"
+  distribution: "NOT AUTHORIZED FOR PUBLIC DISTRIBUTION"
+  cleanroom_notice: "本契约不复制旧仓实现；外部 CLI/Provider 未完成准入时必须失败关闭，不得伪造成功。"
+service: platform_ai
+version: p12-r3-1
+
+security:
+  authentication: "所有端点要求 Authorization Bearer 或 OIDC 服务端 gw_session；缺失返回 401。"
+  authorization: "CLI 帮助按 editor 及以上；Dreamina 本机共享账户的 login/logout/user_credit 与状态观察仅限 admin/governor，且登录状态仅限发起主体读取。"
+  no_external_side_effect: "Dreamina 操作仅在 GW_CLI_EXECUTION=1 且唯一候选 dreamina 命令存在时执行；固定 argv；仅支持单进程/单worker，非分布式互斥；上传真实落盘到 GW_DATA_DIR；不回显登录原始输出、device_code、token 或 cookie。"
+  error_envelope: "错误统一为 {detail: {code, message, ...}}。"
+
+truthfulness:
+  cli_status: "Codex/Gemini仅可观察PATH中命令位置；Dreamina状态只读单进程最后一次操作观测；均不代表实时登录或服务可用。"
+  not_integrated_codes:
+    - CHAT_NOT_INTEGRATED
+    - CLI_HELP_NOT_INTEGRATED
+    - JIMENG_CREDIT_NOT_INTEGRATED
+    - JIMENG_LOGIN_NOT_INTEGRATED
+  fail_closed_status: 503
+  cli_execution_gate: "GW_CLI_EXECUTION=1 且 shutil.which() 命中固定候选命令（codex；gemini|gemini-cli|antigravity；Dreamina仅dreamina，拒绝jimeng别名）才真实执行；argv固定；Dreamina login最多300s、其他Dreamina命令最多30s、合并输出最多实际读取64KiB；shell=false；Windows隐藏控制台。"
+  cli_execution_errors: "Dreamina执行失败/超时503 CLI_COMMAND_FAILED或CLI_COMMAND_TIMEOUT，不重试、不回显原始输出；非零login只标记last_operation_failed=true且logged_in=null/result_unknown=true，绝不推断false；仅login真实退出0可记录true，仅logout真实退出0可记录false；status 200只表示本进程最后一次操作观察。"
+  upload_policy: "multipart/form-data；文件真实落盘 GW_DATA_DIR/ai_uploads，返回稳定 upl_NNNN 与 /api/download-output 下载 URL；空文件 400。"
+
+interfaces:
+  - name: ai_upload
+    method: POST
+    path: /api/ai/upload
+    body: "multipart/form-data（files 或 file）；真实落盘"
+    status: [200, 400, 401, 403]
+    response_200:
+      files: "array（file_id/name/size_bytes/display_path/url/created_at）"
+      count: integer
+      data_status: ok
+    errors:
+      400: "INVALID_REQUEST 非 multipart 或未收到文件"
+      401: "未认证"
+      403: "无写权限（只读角色）"
+    acceptance: "真实接收文件并落盘 GW_DATA_DIR/ai_uploads，返回稳定 upl_NNNN 与真实下载 URL；不编造文件。"
+
+  - name: app_info
+    method: GET
+    path: /api/app-info
+    body: null
+    status: [200, 401]
+    response_200:
+      name: string
+      version: string
+      runtime: cleanroom
+      python_version: string
+      platform: string
+      auth_mode: string
+      release_authorized: false
+      data_status: ok
+      data_gaps: array
+    acceptance: "只返回源码/运行时可证明信息，不宣称外部 Provider 或发布授权已就绪。"
+
+  - name: chat_configuration
+    method: GET
+    path: /api/chat/config
+    body: null
+    status: [200, 401, 403]
+    response_200:
+      configured: boolean
+      configuration_status: "configured | not_configured | misconfigured"
+      default_provider_id: "string | null（仅来自服务端运行配置）"
+      providers: "array（provider_id/models/default_model/configured/source/video_protocol；不含 base_url、密钥值或密钥环境变量名）"
+      data_status: "ok | not_integrated"
+      data_gaps: array
+    acceptance: "只读取服务端 GW_PROVIDER_RUNTIME_JSON 或兼容 GW_CHAT_* 配置；不做网络探测、不触发生成或收费调用。"
+
+  - name: chat
+    method: POST
+    path: /api/chat
+    body:
+      message: string
+      provider_id: "string | optional（必须匹配服务端 Provider 运行配置；客户端 provider 标签不用于路由）"
+      model: "string | optional（必须属于服务端模型允许列表；单模型配置使用服务端固定模型）"
+      mode: "string | optional（仅兼容字段，不作为服务端路由依据）"
+      legacy_fields: "允许前端兼容字段；base_url 与任何凭据字段一律拒绝；不接受客户端 max_completion_tokens 覆盖"
+    status: [200, 400, 401, 403, 503]
+    response_200:
+      reply: "string（仅取 Chat Completions choices 文本，不返回上游 raw）"
+      provider_id: "string（服务端配置核实，旧环境兼容时为 legacy_environment）"
+      model: "string（服务端允许列表核实值）"
+      status_code: integer
+      agent: false
+      metrics:
+        kind: end_to_end_output_tokens_per_second
+        provider_id: "string（服务端配置核实）"
+        model: "string（服务端配置核实）"
+        output_tokens: "integer >= 0 | null"
+        elapsed_seconds: "有限数且 > 0 | null"
+        tokens_per_second: "有限数且 >= 0 | null"
+        usage_source: chat_completions.usage.completion_tokens
+        unavailable_reason: "null | usage_missing | usage_invalid | elapsed_invalid | rate_invalid"
+      data_status: ok
+    response_error:
+      detail:
+        code: "CHAT_NOT_INTEGRATED | CHAT_PROVIDER_FAILED | CHAT_PROVIDER_NOT_CONFIGURED | CHAT_PROVIDER_SELECTION_REQUIRED | CHAT_MODEL_NOT_CONFIGURED | CHAT_CAPACITY_EXCEEDED | INVALID_REQUEST"
+        message: string
+        metrics: "吞吐不可用时 output_tokens/elapsed_seconds/tokens_per_second 为 null，unavailable_reason 为明确安全原因；不包含上游 raw 或秘密"
+    acceptance: "仅服务端解析的Provider base_url/api_key_env/model配置可以路由；禁止客户端 base_url/key/provider 标签覆盖。Chat Completions 设置 max_completion_tokens=512、超时30s、进程内并发上限2，超限失败且不自动重试；计时使用完整非流式响应体前后的 monotonic，usage 只接受非bool、非负整数 completion_tokens，缺失/非法不估算。吞吐是端到端指标，不宣称解码速度。"
+
+  - name: chat_agent
+    method: POST
+    path: /api/chat/agent
+    body: "与 /api/chat 相同，并允许 agent_id/agent_route 等非敏感兼容字段；绝不将其作为 Provider 配置或可执行指令"
+    status: [200, 400, 401, 403, 503]
+    response_200:
+      reply: "string（仅 Chat Completions choices 文本，不返回上游 raw）"
+      provider_id: "string（服务端配置核实）"
+      model: "string（服务端允许列表核实值）"
+      status_code: integer
+      agent: true
+      metrics: "与 /api/chat 完全相同的端到端输出吞吐结构"
+      data_status: ok
+    response_error:
+      detail:
+        code: "CHAT_NOT_INTEGRATED | CHAT_PROVIDER_FAILED | CHAT_PROVIDER_NOT_CONFIGURED | CHAT_PROVIDER_SELECTION_REQUIRED | CHAT_MODEL_NOT_CONFIGURED | CHAT_CAPACITY_EXCEEDED | INVALID_REQUEST"
+        message: string
+        metrics: "空指标须包含明确 unavailable_reason；不得携带 raw 或秘密"
+    acceptance: "同 /api/chat 的配置引用、固定输出上限、超时、并发和usage语义；页面加载不得调用该POST，失败或配置切换清除旧读数。"
+
+  - name: codex_status
+    method: GET
+    path: /api/codex/status
+    body: null
+    status: [200, 401]
+    response_200:
+      protocol: codex
+      installed: boolean
+      path: "string | null"
+      version: "null（未执行 CLI）"
+      execution_enabled: false
+      data_status: "observed | not_integrated"
+    acceptance: "只查询 PATH，不执行 codex。"
+
+  - name: codex_help
+    method: POST
+    path: /api/codex/help
+    body:
+      command: "string | optional（仅作数据校验，绝不进入 argv）"
+    status: [200, 400, 401, 403, 503]
+    response_200:
+      protocol: codex
+      command: "--help（固定参数）"
+      returncode: integer
+      text: "真实帮助文本"
+      data_status: ok
+    errors:
+      503: "CLI_HELP_NOT_INTEGRATED 未启用 GW_CLI_EXECUTION=1 或未命中命令 / 执行失败"
+    acceptance: "门禁通过时执行固定 `<cli> --help`；未启用一律 503，不执行调用方命令文本。"
+
+  - name: gemini_cli_status
+    method: GET
+    path: /api/gemini-cli/status
+    body: null
+    status: [200, 401]
+    response_200:
+      protocol: gemini-cli
+      installed: boolean
+      path: "string | null"
+      version: "null（未执行 CLI）"
+      execution_enabled: false
+      data_status: "observed | not_integrated"
+    acceptance: "只查询 PATH，不执行 gemini/antigravity。"
+
+  - name: gemini_cli_help
+    method: POST
+    path: /api/gemini-cli/help
+    body:
+      command: "string | optional（仅作数据校验，绝不进入 argv）"
+    status: [200, 400, 401, 403, 503]
+    response_200:
+      protocol: gemini-cli
+      command: "--help（固定参数）"
+      returncode: integer
+      text: "真实帮助文本"
+      data_status: ok
+    errors:
+      503: "CLI_HELP_NOT_INTEGRATED 未启用 GW_CLI_EXECUTION=1 或未命中命令 / 执行失败"
+    acceptance: "门禁通过时执行固定 `<cli> --help`；未启用一律 503。"
+
+  - name: jimeng_credit
+    method: GET
+    path: /api/jimeng/credit
+    body: null
+    status: [200, 401, 403, 409, 503]
+    authorization: "仅admin/governor；单次显式执行固定 user_credit。"
+    response_200:
+      protocol: jimeng
+      cli_name: dreamina
+      command: user_credit
+      returncode: 0
+      raw: "真实余额命令数据；不是登录状态证明"
+      data_status: ok
+    errors:
+      403: "非治理角色或非本次操作主体"
+      409: "共享本机 CLI 另一个操作正在运行"
+      503: "JIMENG_CREDIT_NOT_INTEGRATED/CLI_COMMAND_FAILED/CLI_COMMAND_TIMEOUT；不回显stderr/stdout"
+    acceptance: "门禁通过时只执行固定 dreamina user_credit；未启用/命令缺失一律503，不伪造余额，不据成功余额调用推断实时登录状态。"
+
+  - name: jimeng_help
+    method: POST
+    path: /api/jimeng/help
+    body:
+      command: "string | optional（仅作数据校验，绝不进入 argv）"
+    status: [200, 400, 401, 403, 503]
+    response_200:
+      protocol: jimeng
+      command: "--help（固定参数）"
+      returncode: integer
+      text: "真实帮助文本"
+      data_status: ok
+    errors:
+      503: "CLI_HELP_NOT_INTEGRATED 未启用或命令缺失 / 执行失败"
+    acceptance: "门禁通过时只允许唯一候选 dreamina 执行固定 `--help`；jimeng别名不准入。"
+
+  - name: jimeng_login_start
+    method: POST
+    path: /api/jimeng/login/start
+    body: null
+    status: [200, 401, 403, 409, 503]
+    authorization: "仅admin/governor；发起主体必须为稳定认证subject。"
+    response_200:
+      protocol: jimeng
+      cli_name: dreamina
+      command: login
+      running: boolean
+      logged_in: "boolean | null；仅以实际退出码观测"
+      result_unknown: boolean
+      last_operation: login
+      last_operation_failed: boolean
+      state: "starting | running | awaiting_authorization | unrecognized_output | logged_in | operation_failed | result_unknown | output_limit_exceeded"
+      observed_at: "string | null"
+      returncode: "integer | null"
+      verification_uri: "string | null；仅解析命名字段、HTTPS、host来自GW_DREAMINA_VERIFICATION_HOSTS、无userinfo/query/fragment"
+      user_code: "string | null；仅解析命名字段"
+      data_status: "degraded | ok | failed"
+    errors:
+      403: "非治理角色、无稳定subject或异主体读取保护"
+      409: "其他主体的登录在途；相同主体重复start返回同一观察、不重复启动"
+      503: "JIMENG_LOGIN_NOT_INTEGRATED/CLI_START_FAILED；未启动时失败关闭"
+    headers: "Cache-Control: no-store, no-cache, must-revalidate, private；Pragma: no-cache。"
+    acceptance: "固定 dreamina login 使用单实例后台Popen；HTTP200仅表示接管/观察进程，不证明登录。只向发起主体显示verification_uri/user_code，不回显原始输出/device_code/token/cookie；login最多300秒、总输出最多64KiB实际字节，超时/超量主动回收并保持状态unknown。"
+
+  - name: jimeng_login_status
+    method: GET
+    path: /api/jimeng/login/status
+    body: null
+    status: [200, 401, 403]
+    authorization: "仅admin/governor；有主体归属的观测只允许该发起主体读取。"
+    response_200:
+      logged_in: "boolean | null；进程启动/重启/失败时unknown"
+      running: boolean
+      result_unknown: boolean
+      last_operation: "login | logout | user_credit | null"
+      last_operation_failed: boolean
+      state: "unknown | starting | running | awaiting_authorization | unrecognized_output | logged_in | logged_out | operation_failed | result_unknown | output_limit_exceeded"
+      source: "none | last_operation"
+      observed_at: "string | null"
+      returncode: "integer | null"
+      verification_uri: "string | null；仅本主体且仅在running时可见"
+      user_code: "string | null；仅本主体且仅在running时可见"
+      data_status: "not_integrated | degraded | ok | failed"
+    headers: "Cache-Control: no-store, no-cache, must-revalidate, private；Pragma: no-cache。"
+    acceptance: "只读取本进程最近一次真实操作，不调用未知status命令、不读外部OAuth文件；终态/失败/超时/logout后清空授权材料；初始/重启unknown，不把操作观察升级为实时登录状态。"
+
+  - name: jimeng_logout
+    method: POST
+    path: /api/jimeng/logout
+    body: null
+    status: [200, 401, 403, 409, 503]
+    authorization: "仅admin/governor；发起主体必须为稳定认证subject。"
+    response_200:
+      protocol: jimeng
+      cli_name: dreamina
+      command: logout
+      returncode: 0
+      logged_in: false
+      running: false
+      last_operation: logout
+      observed_at: string
+      source: last_operation
+      data_status: ok
+    errors:
+      403: "非治理角色或非本次操作主体"
+      409: "登录进程运行中时拒绝登出，不隐式取消"
+      503: "JIMENG_LOGIN_NOT_INTEGRATED/CLI_COMMAND_FAILED/CLI_COMMAND_TIMEOUT；失败后状态unknown，不推断已退出"
+    headers: "Cache-Control: no-store, no-cache, must-revalidate, private；Pragma: no-cache。"
+    acceptance: "只执行固定 dreamina logout；仅退出码0可记录logged_in=false，非零/超时不能推断已退出，且清除旧verification_uri/user_code。"
+
+  - name: jimeng_status
+    method: GET
+    path: /api/jimeng/status
+    body: null
+    status: [200, 401, 403]
+    authorization: "仅admin/governor；复用login/status主体隔离。"
+    response_200:
+      logged_in: "boolean | null"
+      running: boolean
+      result_unknown: boolean
+      last_operation: "login | logout | user_credit | null"
+      state: string
+      verification_uri: "string | null"
+      user_code: "string | null"
+      data_status: "not_integrated | degraded | ok | failed"
+    headers: "Cache-Control: no-store, no-cache, must-revalidate, private；Pragma: no-cache。"
+    acceptance: "兼容路径只读同一个单实例登录控制器，状态/主体隔离与login/status一致。"
+
+  - name: projects_compat_list
+    method: GET
+    path: /api/projects
+    body: null
+    status: [200, 401]
+    response_200:
+      projects: "项目中心 ProjectItem 数组"
+    acceptance: "与 /api/asset-registry/projects 共享同一真值，不制造第二套项目存储。"
+
+  - name: projects_compat_get
+    method: GET
+    path: /api/projects/{project_id}
+    body: null
+    status: [200, 401, 404]
+    response_200:
+      project: "ProjectItem"
+    errors:
+      404: "PROJECT_NOT_FOUND"
+    acceptance: "读取稳定 project_id；不存在返回标准 404。"

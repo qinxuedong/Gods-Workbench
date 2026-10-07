@@ -1,0 +1,15 @@
+{
+  "configured": false,
+  "revision": 1,
+  "dirs": {},
+  "defaults": {},
+  "extra_local_dirs": [],
+  "extra_local_entries": [],
+  "local_library_names": {},
+  "local_library_order": [],
+  "local_libraries": [],
+  "data_status": "not_configured",
+  "data_gaps": [
+    "storage_settings_source_not_integrated"
+  ]
+}

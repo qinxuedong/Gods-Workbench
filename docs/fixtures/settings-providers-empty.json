@@ -1,0 +1,9 @@
+{
+  "providers": [],
+  "revision": 1,
+  "configured": false,
+  "data_status": "not_configured",
+  "data_gaps": [
+    "provider_registry_source_not_integrated"
+  ]
+}

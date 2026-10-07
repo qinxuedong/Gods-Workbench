@@ -1,0 +1,214 @@
+{
+  "meta": {
+    "version": "remediation-1",
+    "source": "old-repo-readonly-research-main-31371df",
+    "review_status": "user_directed_remediation_input_pending_independent_release_review",
+    "distribution": "NOT AUTHORIZED FOR PUBLIC DISTRIBUTION"
+  },
+  "fixtures": [
+    {
+      "id": "phase11-b1-boundary-v1",
+      "file": "phase11-b1-boundary.json",
+      "kind": "contract-boundary",
+      "purpose": "认证、团队与令牌管理的最小洁净室边界；禁止回显或持久化令牌原文"
+    },
+    {
+      "id": "projects-hub-list-active-v1",
+      "file": "projects-hub-list-active.json",
+      "kind": "api-response",
+      "purpose": "项目中心活跃列表最小返回样本"
+    },
+    {
+      "id": "projects-hub-create-request-v1",
+      "file": "projects-hub-create-request.json",
+      "kind": "api-request",
+      "purpose": "项目创建最小请求体样本"
+    },
+    {
+      "id": "projects-hub-update-conflict-409-v1",
+      "file": "projects-hub-update-conflict-409.json",
+      "kind": "api-response",
+      "purpose": "项目编辑 CAS 冲突错误样本"
+    },
+    {
+      "id": "canvas-workflow-minimal-json-v1",
+      "file": "canvas-workflow-minimal.json",
+      "kind": "workflow",
+      "purpose": "普通/智能画布可共享的最小拓扑样本"
+    },
+    {
+      "id": "canvas-workflow-minimal-godmap-v1",
+      "file": "canvas-workflow-minimal.godmap",
+      "kind": "workflow",
+      "purpose": ".godmap 最小读写样本"
+    },
+    {
+      "id": "canvas-save-conflict-409-v1",
+      "file": "canvas-save-conflict-409.json",
+      "kind": "api-response",
+      "purpose": "画布保存冲突样本"
+    },
+    {
+      "id": "canvas-task-accepted-202-v1",
+      "file": "canvas-task-accepted-202.json",
+      "kind": "api-response",
+      "purpose": "智能画布异步任务受理样本"
+    },
+    {
+      "id": "canvas-auth-401-v1",
+      "file": "canvas-auth-401.json",
+      "kind": "api-response",
+      "purpose": "未认证错误样本"
+    },
+    {
+      "id": "canvas-forbidden-403-v1",
+      "file": "canvas-forbidden-403.json",
+      "kind": "api-response",
+      "purpose": "权限不足错误样本"
+    },
+    {
+      "id": "asset-library-empty-v1",
+      "file": "asset-library-empty.json",
+      "kind": "api-response",
+      "purpose": "素材库空库响应样本（禁止伪造素材）"
+    },
+    {
+      "id": "asset-library-with-library-category-v1",
+      "file": "asset-library-with-library-category.json",
+      "kind": "api-response",
+      "purpose": "素材库非空库树样本（库-分类-条目稳定 ID）"
+    },
+    {
+      "id": "asset-library-create-library-request-v1",
+      "file": "asset-library-create-library-request.json",
+      "kind": "api-request",
+      "purpose": "创建素材库最小请求样本"
+    },
+    {
+      "id": "asset-library-create-category-request-v1",
+      "file": "asset-library-create-category-request.json",
+      "kind": "api-request",
+      "purpose": "创建素材库分类最小请求样本"
+    },
+    {
+      "id": "asset-library-conflict-409-v1",
+      "file": "asset-library-conflict-409.json",
+      "kind": "api-response",
+      "purpose": "素材库 CAS 版本冲突错误样本"
+    },
+    {
+      "id": "asset-library-duplicate-409-v1",
+      "file": "asset-library-duplicate-409.json",
+      "kind": "api-response",
+      "purpose": "素材库重名冲突错误样本"
+    },
+    {
+      "id": "observability-empty-not-integrated-v1",
+      "file": "observability-empty-not-integrated.json",
+      "kind": "api-response",
+      "purpose": "观测阶段无数据时的诚实空响应样本（空数组 + data_status=not_integrated，禁止伪造）"
+    },
+    {
+      "id": "observability-health-truthful-v1",
+      "file": "observability-health-truthful.json",
+      "kind": "api-response",
+      "purpose": "观测阶段健康检查如实状态样本（未接入组件必须为 not_integrated，不得恒为 ok）"
+    },
+    {
+      "id": "prompt-library-empty-v1",
+      "file": "prompt-library-empty.json",
+      "kind": "api-response",
+      "purpose": "提示词库空库响应样本（libraries 必须为空数组且 active_library_id 为 null，禁止伪造提示词内容）"
+    },
+    {
+      "id": "prompt-library-with-empty-category-v1",
+      "file": "prompt-library-with-empty-category.json",
+      "kind": "api-response",
+      "purpose": "提示词库非空结构样本（库-分类两层稳定 ID；分类为空结构，不含条目集合与提示词文本字段）"
+    },
+    {
+      "id": "prompt-library-create-request-v1",
+      "file": "prompt-library-create-request.json",
+      "kind": "api-request",
+      "purpose": "创建提示词库最小请求样本"
+    },
+    {
+      "id": "prompt-library-conflict-409-v1",
+      "file": "prompt-library-conflict-409.json",
+      "kind": "api-response",
+      "purpose": "提示词库 CAS 版本冲突错误样本"
+    },
+    {
+      "id": "prompt-library-not-empty-409-v1",
+      "file": "prompt-library-not-empty-409.json",
+      "kind": "api-response",
+      "purpose": "提示词库非空删除冲突错误样本（LIBRARY_NOT_EMPTY，禁止静默级联删除）"
+    },
+    {
+      "id": "settings-providers-empty-v1",
+      "file": "settings-providers-empty.json",
+      "kind": "api-response",
+      "purpose": "设置页 providers 默认空列表样本（不得预置任何厂商条目）"
+    },
+    {
+      "id": "settings-storage-unconfigured-v1",
+      "file": "settings-storage-unconfigured.json",
+      "kind": "api-response",
+      "purpose": "设置页存储设置未配置样本（configured=false，不得伪造根目录）"
+    },
+    {
+      "id": "settings-storage-conflict-409-v1",
+      "file": "settings-storage-conflict-409.json",
+      "kind": "api-response",
+      "purpose": "设置页存储设置 CAS 冲突错误样本"
+    },
+    {
+      "id": "settings-provider-probe-not-integrated-v1",
+      "file": "settings-provider-probe-not-integrated.json",
+      "kind": "api-response",
+      "purpose": "设置页探测端点未接入错误样本（503 PROVIDER_PROBE_NOT_INTEGRATED）"
+    },
+    {
+      "id": "settings-structure-conflict-409-v1",
+      "file": "settings-structure-conflict-409.json",
+      "kind": "api-response",
+      "purpose": "设置页素材结构 CAS 冲突错误样本"
+    },
+    {
+      "id": "canvas-closure-trash-empty-v1",
+      "file": "canvas-closure-trash-empty.json",
+      "kind": "api-response",
+      "purpose": "画布闭环回收站空列表响应（空集合必须为空，禁止伪造演示条目）"
+    },
+    {
+      "id": "canvas-closure-cas-conflict-409-v1",
+      "file": "canvas-closure-cas-conflict-409.json",
+      "kind": "api-response",
+      "purpose": "画布闭环画布元信息 CAS 版本冲突响应（CANVAS_VERSION_CONFLICT）"
+    },
+    {
+      "id": "canvas-closure-asset-index-empty-v1",
+      "file": "canvas-closure-asset-index-empty.json",
+      "kind": "api-response",
+      "purpose": "画布闭环素材索引空快照（三类（smart / classic / reference）计数均为 0、canvases/items 为空，data_status=not_integrated，禁止伪造素材条目）"
+    },
+    {
+      "id": "canvas-closure-shared-folders-empty-v1",
+      "file": "canvas-closure-shared-folders-empty.json",
+      "kind": "api-response",
+      "purpose": "画布闭环共享文件夹空列表响应（folders 为空、revision 稳定，禁止伪造目录条目）"
+    },
+    {
+      "id": "canvas-closure-video-tasks-empty-v1",
+      "file": "canvas-closure-video-tasks-empty.json",
+      "kind": "api-response",
+      "purpose": "画布闭环视频任务空列表响应（video_tasks 为空，data_status=not_integrated，禁止伪造任务/进度）"
+    },
+    {
+      "id": "canvas-closure-video-task-not-integrated-v1",
+      "file": "canvas-closure-video-task-not-integrated.json",
+      "kind": "api-response",
+      "purpose": "画布闭环视频任务创建 fail-closed 说明（503 VIDEO_RENDERER_NOT_INTEGRATED，禁止伪造 task_id/progress/eta/url）"
+    }
+  ]
+}

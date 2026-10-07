@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="gw-user-id" content="{{ user_id }}">
+    <script>if(window.self!==window.top||new URLSearchParams(location.search).get('embedded')==='1'||new URLSearchParams(location.hash.slice(1)).get('embedded')==='1')document.documentElement.classList.add('workspace-embedded');</script>
+    <script>if(new URLSearchParams(location.search).get('vault')==='1')document.documentElement.classList.add('vault-shell-embedded');</script>
+    <title>素材库管理</title>
+    <script>
+        (function(){
+            try {
+                var theme = localStorage.getItem('studio_theme') || localStorage.getItem('canvas_theme') || localStorage.getItem('theme') || 'dark';
+                document.documentElement.setAttribute('data-theme', theme === 'dark' ? 'dark' : 'light');
+                if(theme === 'dark') {
+                    document.documentElement.classList.add('studio-theme-dark');
+                    document.documentElement.classList.add('theme-dark');
+                }
+            } catch(e) {}
+        })();
+    </script>
+    <script src="/static/vendor/js/lucide.js?v=v0.0.1-alpha-2026"></script>
+    <script src="/static/js/core/theme.js?v=v0.0.1-alpha-2026"></script>
+    <script src="/static/js/core/floating-dismissal.js?v=v0.0.1-alpha-2026&m3=floating-dismissal"></script>
+    <link rel="stylesheet" href="/static/css/base/theme.css?v=v0.0.1-alpha-2026">
+    <link rel="stylesheet" href="/static/css/pages/asset-manager.css?v=v0.0.1-alpha-2026&m3=prompt-source-20260823&sf=20260828-registry-zoom">
+    <link rel="stylesheet" href="/static/css/pages/asset-review.css?v=v0.0.1-alpha-2026&m3=modal-host-a">
+    <link rel="stylesheet" href="/static/css/base/signal-flow.css?v=v0.0.1-alpha-2026&sf=20260827-asset-detail">
+    <link rel="stylesheet" href="/static/css/pages/asset-manager-coverflow.css?v=v0.0.1-alpha-2026&m3=coverflow">
+    <link rel="stylesheet" href="/static/css/pages/context-tree-animations.css?v=v0.0.1-alpha-2026&pb=phase-b">
+    <link rel="stylesheet" href="/static/css/pages/context-hotkey-feedback.css?v=v0.0.1-alpha-2026&pb=phase-b">
+    <link rel="stylesheet" href="/static/css/pages/asset-vault.css?v=20260916">
+    <link rel="stylesheet" href="/static/css/pages/directory-settings.css?v=20261007">
+    <script>if(new URLSearchParams(location.search).get('settings')==='directories')document.documentElement.classList.add('directory-settings-page');</script>
+</head>
+<body class="gw-signal gw-page--asset-manager">
+    <div class="asset-page">
+        <header class="asset-page-head">
+            <div class="asset-page-heading">
+                <div class="asset-breadcrumbs">
+                    <div class="asset-heading-row">
+                    </div>
+                </div>
+            </div>
+            <div class="asset-head-actions"></div>
+        </header>
+
+        <div id="assetBoardTabs" class="asset-tabs" role="tablist" aria-label="资产中心看板"></div>
+
+        <main id="assetManagerRoot" class="asset-manager-root"></main>
+    </div>
+
+    <input id="assetUploadInput" type="file" accept="image/*,video/*,audio/*,.jpg,.jpeg,.png,.gif,.webp,.bmp,.tiff,.tif,.heic,.heif,.avif,.raw,.svg,.eps,.psd,.ai,.cdr,.txt,.csv,.tsv,.json,.xml,.html,.htm,.md,.rtf,.doc,.docx,.odt,.ppt,.pptx,.odp,.xls,.xlsx,.ods,.pdf,.stl,.3mf,.obj,.fbx,.gltf,.glb,.usd,.usdz,.step,.stp,.iges,.igs,.dxf,.ply,.3ds,.dae,.ifc,.wrl,.vrml,.blend,.c4d,.max,.ma,.mb,.ttf,.otf,.ttc,.otc,.woff,.woff2,.mp4,.webm,.mov,.m4v,.avi,.mkv,.flv,.mts,.m2ts,.wmv,.mpeg,.mpg,.ts,.mxf,.vob,.ogv,.3gp,.zip,application/pdf,application/postscript,application/json,application/zip" multiple hidden>
+    <script src="/static/js/core/context-hotkeys.js?v=v0.0.1-alpha-2026&pb=phase-b"></script>
+    <script src="/static/js/core/context-prefetch.js?v=v0.0.1-alpha-2026&pc=phase-c"></script>
+    <script type="module" src="/static/js/modules/asset-manager/coverflow.js?v=v0.0.1-alpha-2026&m3=coverflow"></script>
+    <script type="module" src="/static/js/modules/asset-manager.js?v=v0.0.1-alpha-2026&m1=prompt-source-20260823&z=20260828-registry-zoom"></script>
+    <script type="module" src="/static/js/modules/asset-review/api.js?v=v0.0.1-alpha-2026&m3=f1b"></script>
+    <script type="module" src="/static/js/modules/asset-auth/api.js?v=v0.0.1-alpha-2026&m3=team-delete-a"></script>
+    <script defer src="/static/js/modules/asset-review.js?v=v0.0.1-alpha-2026&m1=20260810f&m3=auth-sync-c"></script>
+</body>
+</html>

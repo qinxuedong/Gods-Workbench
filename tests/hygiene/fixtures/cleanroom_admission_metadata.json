@@ -1,0 +1,716 @@
+{
+  "schema": "gw.cleanroom-admission/v1",
+  "as_of": "2026-10-07",
+  "release_authorized": true,
+  "purpose": "新仓当前准入边界、来源分类和排除项的机器可读登记；不保存旧仓正文、凭据或授权账本正文。",
+  "accepted_roots": [
+    {
+      "path": "docs/behavior",
+      "classification": "frozen_behavior_contract",
+      "authorization_basis": "cleanroom_frozen_input",
+      "admission": "accepted"
+    },
+    {
+      "path": "docs/contracts",
+      "classification": "frozen_interface_contract",
+      "authorization_basis": "cleanroom_frozen_input",
+      "admission": "accepted"
+    },
+    {
+      "path": "docs/fixtures",
+      "classification": "golden_fixture",
+      "authorization_basis": "cleanroom_frozen_input",
+      "admission": "accepted"
+    }
+  ],
+  "curated_files": [
+    {
+      "path": "docs/design/DESIGN-SYSTEM-GUIDE.md",
+      "classification": "curated_design_system",
+      "authorization_basis": "H01_user_decision_2026-09-29",
+      "admission": "accepted"
+    },
+    {
+      "path": "docs/governance/PROJECT-GOVERNANCE.md",
+      "classification": "curated_project_governance",
+      "authorization_basis": "H01_user_decision_2026-09-29",
+      "admission": "accepted"
+    },
+    {
+      "path": "docs/contracts/PROVIDER-PROTOCOL-BOUNDARIES.md",
+      "classification": "curated_provider_boundary",
+      "authorization_basis": "H01_user_decision_2026-09-29",
+      "admission": "accepted"
+    }
+  ],
+  "excluded_roots": [
+    {
+      "path": "docs/provenance",
+      "classification": "historical_source_and_authorization_material",
+      "status": "excluded",
+      "reason": "H01_other_docs_subdirectories_not_migrated",
+      "admission": "excluded"
+    },
+    {
+      "path": "docs/reports",
+      "classification": "historical_execution_material",
+      "status": "excluded",
+      "reason": "H01_other_docs_subdirectories_not_migrated",
+      "admission": "excluded"
+    }
+  ],
+  "excluded_artifacts": [
+    {
+      "source_path": "web/system-prompts/infinite-canvas-prompt-templates.md",
+      "delivery_url": "/static/system-prompts/infinite-canvas-prompt-templates.md",
+      "status": "excluded_and_absent",
+      "body_present": false,
+      "reason": "quarantined_input_not_admitted_to_runtime_or_delivery"
+    },
+    {
+      "source_path": "docs/behavior/PLUGIN-PROTOCOL-SPEC.md",
+      "status": "excluded_by_cleanroom_guardrail",
+      "body_present": false,
+      "reason": "explicit_exclusion_in_AGENTS_md"
+    }
+  ],
+  "admitted_files": [
+    {
+      "path": "docs/behavior/BEHAVIOR-SPEC-CANVAS.md",
+      "classification": "frozen_behavior_contract",
+      "authorization_basis": "cleanroom_frozen_input",
+      "sha256": "a905b61b8650c65d7c358d41a1c774a7574a583a02c9cb7f142f7b87867382f4",
+      "admission": "accepted"
+    },
+    {
+      "path": "docs/behavior/BEHAVIOR-SPEC-PRODUCTION-PROJECTS-HUB.md",
+      "classification": "frozen_behavior_contract",
+      "authorization_basis": "cleanroom_frozen_input",
+      "sha256": "d9e637f1452f5e5b6cbb4608f707d2c0daf990ee6f34a3c0d9ce5a6a30e85a4d",
+      "admission": "accepted"
+    },
+    {
+      "path": "docs/behavior/BEHAVIOR-SPEC-SMART-CANVAS.md",
+      "classification": "frozen_behavior_contract",
+      "authorization_basis": "cleanroom_frozen_input",
+      "sha256": "4fbf4c30c063049a6cf5e7ae826de1332f352ccb5506086cd4353288e77ec348",
+      "admission": "accepted"
+    },
+    {
+      "path": "docs/behavior/README.md",
+      "classification": "frozen_behavior_contract",
+      "authorization_basis": "cleanroom_frozen_input",
+      "sha256": "1384c77e3ef4ac42fe7967767acd253849522bf6a5cd90230b07bc0061c7e7fd",
+      "admission": "accepted"
+    },
+    {
+      "path": "docs/contracts/ASSET-LIBRARY-B4-INTERFACE-CATALOG.yaml",
+      "classification": "frozen_interface_contract",
+      "authorization_basis": "cleanroom_frozen_input",
+      "sha256": "6f6d8749b2a2a1bf8bcad94b379eeea376712760828e96b5c45b72b9a58efa7e",
+      "admission": "accepted"
+    },
+    {
+      "path": "docs/contracts/ASSET-LIBRARY-INTERFACE-CATALOG.yaml",
+      "classification": "frozen_interface_contract",
+      "authorization_basis": "cleanroom_frozen_input",
+      "sha256": "4f601058597520910a82a2d052842c763e77e609c2674ea21b951bc3f9e3d4cd",
+      "admission": "accepted"
+    },
+    {
+      "path": "docs/contracts/ASSET-REGISTRY-INTERFACE-CATALOG.yaml",
+      "classification": "frozen_interface_contract",
+      "authorization_basis": "cleanroom_frozen_input",
+      "sha256": "60c8e528aa4683e688ef0344d872cbb97265fe8d7639ae0fed8574bb83ea0d34",
+      "admission": "accepted"
+    },
+    {
+      "path": "docs/contracts/ASSET-REVIEW-INTERFACE-CATALOG.yaml",
+      "classification": "frozen_interface_contract",
+      "authorization_basis": "cleanroom_frozen_input",
+      "sha256": "dc65286706956981f64e3915b416928c96e99f6ce4e6868e91e0d0136e005840",
+      "admission": "accepted"
+    },
+    {
+      "path": "docs/contracts/AUDIT-OUTBOX-LOCAL-SINK-CONTRACT.md",
+      "classification": "frozen_interface_contract",
+      "authorization_basis": "cleanroom_frozen_input",
+      "sha256": "a415e60fc38f3789bb315b0c6f4dd7bac4e540d6ca06906056597c30bf66ca01",
+      "admission": "accepted"
+    },
+    {
+      "path": "docs/contracts/AUTH-INTERFACE-CATALOG.yaml",
+      "classification": "frozen_interface_contract",
+      "authorization_basis": "cleanroom_frozen_input",
+      "sha256": "be85b21ebf74c5a1ed06be3d27cd43b01b99109ce22c1aaabd07edb6347a7ae8",
+      "admission": "accepted"
+    },
+    {
+      "path": "docs/contracts/CANVAS-CLOSURE-INTERFACE-CATALOG.yaml",
+      "classification": "frozen_interface_contract",
+      "authorization_basis": "cleanroom_frozen_input",
+      "sha256": "37be71e03b2539a390b8d5afc542741177ea705e91dbc883f2fcb23ab10a6491",
+      "admission": "accepted"
+    },
+    {
+      "path": "docs/contracts/CANVAS-INTERFACE-CATALOG.yaml",
+      "classification": "frozen_interface_contract",
+      "authorization_basis": "cleanroom_frozen_input",
+      "sha256": "d64751788efec4fd1a97896e9f8d2e2bfdbda86ca4aea591632d5c703c611d47",
+      "admission": "accepted"
+    },
+    {
+      "path": "docs/contracts/CHAT-METRICS-INTERFACE-CATALOG.yaml",
+      "classification": "frozen_interface_contract",
+      "authorization_basis": "cleanroom_frozen_input",
+      "sha256": "501b0136aba45a07e938d907e986b51bd28094f4960790081a0df0eb17f46be9",
+      "admission": "accepted"
+    },
+    {
+      "path": "docs/contracts/EPISODE-PIPELINE-INTERFACE-CATALOG.yaml",
+      "classification": "frozen_interface_contract",
+      "authorization_basis": "cleanroom_frozen_input",
+      "sha256": "e49983a56fb2936df386a3da8f3fc73e07c046e1f64aa78267b128c715a42332",
+      "admission": "accepted"
+    },
+    {
+      "path": "docs/contracts/LOCAL-ACCOUNT-AUTH-2026-09-26.md",
+      "classification": "frozen_interface_contract",
+      "authorization_basis": "cleanroom_frozen_input",
+      "sha256": "f88d1fce7599332c2e58be99abed385f65f0808453550bf3ce46d44f7118d412",
+      "admission": "accepted"
+    },
+    {
+      "path": "docs/contracts/LOCAL-ACCOUNT-INTERFACE-CATALOG.yaml",
+      "classification": "frozen_interface_contract",
+      "authorization_basis": "cleanroom_frozen_input",
+      "sha256": "eb77547c5f581af39c237786b8b57cf3cd5921a7ad431b09d3cad6df7e07e34e",
+      "admission": "accepted"
+    },
+    {
+      "path": "docs/contracts/LOCAL-ASSET-INTERFACE-CATALOG.yaml",
+      "classification": "frozen_interface_contract",
+      "authorization_basis": "cleanroom_frozen_input",
+      "sha256": "c17256041139f80f94391e6eb849b9c7b548cc1111f08a65c6ecd2b9c455ad82",
+      "admission": "accepted"
+    },
+    {
+      "path": "docs/contracts/MEDIA-INTERFACE-CATALOG.yaml",
+      "classification": "frozen_interface_contract",
+      "authorization_basis": "cleanroom_frozen_input",
+      "sha256": "5c9862395d95c1b82d32e0dc1234c45fd019dfafbe68ac903c04b23e0bb4dab1",
+      "admission": "accepted"
+    },
+    {
+      "path": "docs/contracts/OBSERVABILITY-INTERFACE-CATALOG.yaml",
+      "classification": "frozen_interface_contract",
+      "authorization_basis": "cleanroom_frozen_input",
+      "sha256": "b1d6d7ba2bb6d6c5d900927c3bbd3509469321febda5184189a43f226c9dc534",
+      "admission": "accepted"
+    },
+    {
+      "path": "docs/contracts/OUTPUT-ACCESS-CONTRACT.md",
+      "classification": "frozen_interface_contract",
+      "authorization_basis": "cleanroom_frozen_input",
+      "sha256": "1bcb26f484287eaffed1f3aaa81c1e824df0a52e99e6d9de68c68ef8c753e750",
+      "admission": "accepted"
+    },
+    {
+      "path": "docs/contracts/PLATFORM-INTERFACE-CATALOG.yaml",
+      "classification": "frozen_interface_contract",
+      "authorization_basis": "cleanroom_frozen_input",
+      "sha256": "2c0b747cfa1da44a3fc1657e00dc12c02e458a7b7a025b192c679f767ac59904",
+      "admission": "accepted"
+    },
+    {
+      "path": "docs/contracts/PROJECT-PERSISTENCE-GATES-CONTRACT.md",
+      "classification": "frozen_interface_contract",
+      "authorization_basis": "cleanroom_frozen_input",
+      "sha256": "7b025a97e9d221aed5a9e8945a160bb1c5dcc5d587aa3121b22a5ce091019384",
+      "admission": "accepted"
+    },
+    {
+      "path": "docs/contracts/PROJECTS-HUB-INTERFACE-CATALOG.yaml",
+      "classification": "frozen_interface_contract",
+      "authorization_basis": "cleanroom_frozen_input",
+      "sha256": "2bc11363021150fb16822b75eab1fcf0a3d84ee17efcb5b95f482fd0dc7b71ac",
+      "admission": "accepted"
+    },
+    {
+      "path": "docs/contracts/PROMPT-LIBRARY-B8-ITEM-INTERFACE-CATALOG.yaml",
+      "classification": "frozen_interface_contract",
+      "authorization_basis": "cleanroom_frozen_input",
+      "sha256": "d56c544bf8e80938d8494c42913fef5ad604fa11405204e37babbb2ec69bbfaa",
+      "admission": "accepted"
+    },
+    {
+      "path": "docs/contracts/PROMPT-LIBRARY-INTERFACE-CATALOG.yaml",
+      "classification": "frozen_interface_contract",
+      "authorization_basis": "cleanroom_frozen_input",
+      "sha256": "90306e9b392319113bbc6224b96b29a847b7483fcbd43b729fe8f4d39a1d1d51",
+      "admission": "accepted"
+    },
+    {
+      "path": "docs/contracts/PROVIDER-PROTOCOL-BOUNDARIES.md",
+      "classification": "curated_provider_boundary",
+      "authorization_basis": "H01_user_decision_2026-09-29",
+      "sha256": "6f1a28c90b1ea7254185eabdc86552ab8ac5fd6a36fa8ea0183d7ec56a73b7c3",
+      "admission": "accepted"
+    },
+    {
+      "path": "docs/contracts/PUBLIC-SHARE-INTERFACE-CATALOG.yaml",
+      "classification": "frozen_interface_contract",
+      "authorization_basis": "cleanroom_frozen_input",
+      "sha256": "b4216ba659e3248340541af43716ce50859d757b2197d42f73d88a10664db393",
+      "admission": "accepted"
+    },
+    {
+      "path": "docs/contracts/README.md",
+      "classification": "frozen_interface_contract",
+      "authorization_basis": "cleanroom_frozen_input",
+      "sha256": "d9629d0fbede01af27b5f7b2cf3d22381540f016d8efe3b9812dfa10dfb1127f",
+      "admission": "accepted"
+    },
+    {
+      "path": "docs/contracts/REGISTRY-INDEX-JOBS-CONTRACT.md",
+      "classification": "frozen_interface_contract",
+      "authorization_basis": "cleanroom_frozen_input",
+      "sha256": "3bb10d58eafa16fddf0eb278945efc06f8fa4fe30b642ec8057b3bba10c7a6cb",
+      "admission": "accepted"
+    },
+    {
+      "path": "docs/contracts/SETTINGS-INTERFACE-CATALOG.yaml",
+      "classification": "frozen_interface_contract",
+      "authorization_basis": "cleanroom_frozen_input",
+      "sha256": "01b78dd7e5af69bea3e8418de7226cfeecd10c9b510340a4d50ebed68d674f02",
+      "admission": "accepted"
+    },
+    {
+      "path": "docs/contracts/TEAM-MESSAGES-INTERFACE-CATALOG.yaml",
+      "classification": "frozen_interface_contract",
+      "authorization_basis": "cleanroom_frozen_input",
+      "sha256": "ff507a2b5f39134431a0daa8b8ca38b2345ce16921aacb8749f5f86eca978436",
+      "admission": "accepted"
+    },
+    {
+      "path": "docs/contracts/TEXT-PDF-EXPORT-CONTRACT.md",
+      "classification": "frozen_interface_contract",
+      "authorization_basis": "cleanroom_frozen_input",
+      "sha256": "598a8f0220f2bb5de745cb514f3f3214e3b852ca7eb4058706427291ca2a43cb",
+      "admission": "accepted"
+    },
+    {
+      "path": "docs/contracts/VIDEO-TASKS-INTERFACE-CATALOG.yaml",
+      "classification": "frozen_interface_contract",
+      "authorization_basis": "cleanroom_frozen_input",
+      "sha256": "9cadb0cdbcefbb5b93d0fd3d15ed8c0cddf93ee6016cdf5631b00f2f5394ced9",
+      "admission": "accepted"
+    },
+    {
+      "path": "docs/contracts/agent/agent-contracts-v1.schema.json",
+      "classification": "frozen_interface_contract",
+      "authorization_basis": "user_integration_request_2026-10-07",
+      "sha256": "b4089181b6d69fa0b48fd1d5a33213dfac34aed6c8b3e4c996d51eaf25eac925",
+      "admission": "accepted"
+    },
+    {
+      "path": "docs/design/DESIGN-SYSTEM-GUIDE.md",
+      "classification": "curated_design_system",
+      "authorization_basis": "H01_user_decision_2026-09-29",
+      "sha256": "d0677839175096a5b3fa3860ea855d179e093c8cf2e5b0652e7d6a3ef9ec02dd",
+      "admission": "accepted"
+    },
+    {
+      "path": "docs/fixtures/GOLDEN-FIXTURE-MANIFEST.json",
+      "classification": "golden_fixture",
+      "authorization_basis": "cleanroom_frozen_input",
+      "sha256": "70001a36276073d83d1bc145048a0e1686888912c902c337a1f4b9e46d5279b7",
+      "admission": "accepted"
+    },
+    {
+      "path": "docs/fixtures/README.md",
+      "classification": "golden_fixture",
+      "authorization_basis": "cleanroom_frozen_input",
+      "sha256": "b53e28de6239de1837c19bf0459bf02b3e38e7e0dad9dde619e26c6fcd1baf5e",
+      "admission": "accepted"
+    },
+    {
+      "path": "docs/fixtures/asset-library-conflict-409.json",
+      "classification": "golden_fixture",
+      "authorization_basis": "cleanroom_frozen_input",
+      "sha256": "8da00c03e0f8e0b470856dad50cd2ceae603566fd49ac93e053dd3b5ffdd412f",
+      "admission": "accepted"
+    },
+    {
+      "path": "docs/fixtures/asset-library-create-category-request.json",
+      "classification": "golden_fixture",
+      "authorization_basis": "cleanroom_frozen_input",
+      "sha256": "4e7f36a137ad258cfee264d69f24731d8bfc2b9b4652584e83dad403d4e89188",
+      "admission": "accepted"
+    },
+    {
+      "path": "docs/fixtures/asset-library-create-library-request.json",
+      "classification": "golden_fixture",
+      "authorization_basis": "cleanroom_frozen_input",
+      "sha256": "4cf064675f2373f0a7e9a3850ab0bfe96eba644086c6ab88303e42c731f465d9",
+      "admission": "accepted"
+    },
+    {
+      "path": "docs/fixtures/asset-library-duplicate-409.json",
+      "classification": "golden_fixture",
+      "authorization_basis": "cleanroom_frozen_input",
+      "sha256": "43bce4a8af20ca283b859d9f27e289c21769e5cade3bdcc12d618d4d25ce7aec",
+      "admission": "accepted"
+    },
+    {
+      "path": "docs/fixtures/asset-library-empty.json",
+      "classification": "golden_fixture",
+      "authorization_basis": "cleanroom_frozen_input",
+      "sha256": "f2e4ac97159f3b9809261a9a5d690bdb1241049006b5aac14b2b059ebb33509d",
+      "admission": "accepted"
+    },
+    {
+      "path": "docs/fixtures/asset-library-with-library-category.json",
+      "classification": "golden_fixture",
+      "authorization_basis": "cleanroom_frozen_input",
+      "sha256": "5511da6bb582248a79d19085b48b056836391f5c567f2e2625249b3fc4ab41f0",
+      "admission": "accepted"
+    },
+    {
+      "path": "docs/fixtures/canvas-auth-401.json",
+      "classification": "golden_fixture",
+      "authorization_basis": "cleanroom_frozen_input",
+      "sha256": "c388b7dec4eb4f59ff046e1561e4c8dd3b840f7369f9619492fd35e4ffd20709",
+      "admission": "accepted"
+    },
+    {
+      "path": "docs/fixtures/canvas-closure-asset-index-empty.json",
+      "classification": "golden_fixture",
+      "authorization_basis": "cleanroom_frozen_input",
+      "sha256": "a7636e5aadd51863fbb5595ce7cb84722c5db925345df816db97f199f542cc92",
+      "admission": "accepted"
+    },
+    {
+      "path": "docs/fixtures/canvas-closure-cas-conflict-409.json",
+      "classification": "golden_fixture",
+      "authorization_basis": "cleanroom_frozen_input",
+      "sha256": "dbab3af4e921cd340f9808d49d0bf701f73ddcb5acee61b4e6aae9e298d52f04",
+      "admission": "accepted"
+    },
+    {
+      "path": "docs/fixtures/canvas-closure-shared-folders-empty.json",
+      "classification": "golden_fixture",
+      "authorization_basis": "cleanroom_frozen_input",
+      "sha256": "8f06891eae02c4b84b4aa51439e631d3e5e194e30517abcec92e0f60c77f928b",
+      "admission": "accepted"
+    },
+    {
+      "path": "docs/fixtures/canvas-closure-trash-empty.json",
+      "classification": "golden_fixture",
+      "authorization_basis": "cleanroom_frozen_input",
+      "sha256": "c0ad2fb420e262dabcf619462347e320b49b70c87b8488df795515ad7b54564d",
+      "admission": "accepted"
+    },
+    {
+      "path": "docs/fixtures/canvas-closure-video-task-not-integrated.json",
+      "classification": "golden_fixture",
+      "authorization_basis": "cleanroom_frozen_input",
+      "sha256": "7dfd2b27291881d32b15ecb27c539d00bbce899ae72543ebb2f564f2a205e4cc",
+      "admission": "accepted"
+    },
+    {
+      "path": "docs/fixtures/canvas-closure-video-tasks-empty.json",
+      "classification": "golden_fixture",
+      "authorization_basis": "cleanroom_frozen_input",
+      "sha256": "380cb268e9d5461c9facdffcbfa142fcd1a61da9f3942cae2e36f88839cbfb0b",
+      "admission": "accepted"
+    },
+    {
+      "path": "docs/fixtures/canvas-forbidden-403.json",
+      "classification": "golden_fixture",
+      "authorization_basis": "cleanroom_frozen_input",
+      "sha256": "ea6810bf6c67ca3434f5f5567db9d64ac09fb00b839afaa548e03c2c49892151",
+      "admission": "accepted"
+    },
+    {
+      "path": "docs/fixtures/canvas-save-conflict-409.json",
+      "classification": "golden_fixture",
+      "authorization_basis": "cleanroom_frozen_input",
+      "sha256": "04085f8ff24fa7624160c64f10d024fd7ebc6f3298d33664003fa598bd982ab8",
+      "admission": "accepted"
+    },
+    {
+      "path": "docs/fixtures/canvas-task-accepted-202.json",
+      "classification": "golden_fixture",
+      "authorization_basis": "cleanroom_frozen_input",
+      "sha256": "c4aec062dfedbaa13667b8ed72d361c5a7e83f5a2f41f0f600d0f61430a60934",
+      "admission": "accepted"
+    },
+    {
+      "path": "docs/fixtures/canvas-workflow-minimal.godmap",
+      "classification": "golden_fixture",
+      "authorization_basis": "cleanroom_frozen_input",
+      "sha256": "3ca8a708e372d529ea3b8ef90af21e42589d209fe33edbe736b15103ae6afbc7",
+      "admission": "accepted"
+    },
+    {
+      "path": "docs/fixtures/canvas-workflow-minimal.json",
+      "classification": "golden_fixture",
+      "authorization_basis": "cleanroom_frozen_input",
+      "sha256": "75fd768f0bc73314531070504986a8a3b19ac8122b2c8f3836010672a2a97726",
+      "admission": "accepted"
+    },
+    {
+      "path": "docs/fixtures/observability-empty-not-integrated.json",
+      "classification": "golden_fixture",
+      "authorization_basis": "cleanroom_frozen_input",
+      "sha256": "2f9dc65dc87b43c36141d536312b218451a8ad601a2eb0bc9b6e096050521310",
+      "admission": "accepted"
+    },
+    {
+      "path": "docs/fixtures/observability-health-truthful.json",
+      "classification": "golden_fixture",
+      "authorization_basis": "cleanroom_frozen_input",
+      "sha256": "5f83628f18e1f9cdcdb16d39b3bb8ed37f337a7871130971c251aae27e41e11f",
+      "admission": "accepted"
+    },
+    {
+      "path": "docs/fixtures/phase11-b1-boundary.json",
+      "classification": "golden_fixture",
+      "authorization_basis": "cleanroom_frozen_input",
+      "sha256": "197ab93675c801d5a3047874c204ed84a076a129f3dbe64ba0108021f26f9700",
+      "admission": "accepted"
+    },
+    {
+      "path": "docs/fixtures/phase11-b2-app-info.json",
+      "classification": "golden_fixture",
+      "authorization_basis": "cleanroom_frozen_input",
+      "sha256": "299ab235ec77fe89f03d564d0cf4db242d99c01fb50367e517158d63d59592a1",
+      "admission": "accepted"
+    },
+    {
+      "path": "docs/fixtures/phase11-b2-chat-not-integrated.json",
+      "classification": "golden_fixture",
+      "authorization_basis": "cleanroom_frozen_input",
+      "sha256": "971c4ab7185108a506e75815596bae7b64ff30b250c318f41c7eebab7071f51f",
+      "admission": "accepted"
+    },
+    {
+      "path": "docs/fixtures/phase11-b2-cli-observation.json",
+      "classification": "golden_fixture",
+      "authorization_basis": "cleanroom_frozen_input",
+      "sha256": "792fe38ff9a4408a0a1373635cdba84cce6683d1190c8e6aff11136f3dbd1bfd",
+      "admission": "accepted"
+    },
+    {
+      "path": "docs/fixtures/phase11-b2-project-compat-list.json",
+      "classification": "golden_fixture",
+      "authorization_basis": "cleanroom_frozen_input",
+      "sha256": "bcdea4c15953b35b75664728c0425a66a5229a1eba682c0dcd98ef9908ba3b80",
+      "admission": "accepted"
+    },
+    {
+      "path": "docs/fixtures/phase11-b3-empty-registry.json",
+      "classification": "golden_fixture",
+      "authorization_basis": "cleanroom_frozen_input",
+      "sha256": "54894391de4f464ae46aeae21e799a78ddd12a530bfd5b9ec817d464fab916be",
+      "admission": "accepted"
+    },
+    {
+      "path": "docs/fixtures/phase11-b3-fail-closed.json",
+      "classification": "golden_fixture",
+      "authorization_basis": "cleanroom_frozen_input",
+      "sha256": "3392a515fe05a1abd9e996b68da5eb643944fce48848f5ec98fd1341066a407e",
+      "admission": "accepted"
+    },
+    {
+      "path": "docs/fixtures/phase11-b3-route-matrix.json",
+      "classification": "golden_fixture",
+      "authorization_basis": "cleanroom_frozen_input",
+      "sha256": "d8657f84a2528e8bbafe5bc0d5e559add600e88d6153630d38ab2b22350265f2",
+      "admission": "accepted"
+    },
+    {
+      "path": "docs/fixtures/phase11-b4-cleanroom-boundary.json",
+      "classification": "golden_fixture",
+      "authorization_basis": "cleanroom_frozen_input",
+      "sha256": "0b4f42f0346fc3bc6c3b37ea233174d6f670f3ae4533005c4f7d86b4e039c2ea",
+      "admission": "accepted"
+    },
+    {
+      "path": "docs/fixtures/phase11-b4-empty-state.json",
+      "classification": "golden_fixture",
+      "authorization_basis": "cleanroom_frozen_input",
+      "sha256": "4460357af589112b139d3f42e6ce889160d0f06b764dd49de40fbdec3d4c8f84",
+      "admission": "accepted"
+    },
+    {
+      "path": "docs/fixtures/phase11-b4-fail-closed.json",
+      "classification": "golden_fixture",
+      "authorization_basis": "cleanroom_frozen_input",
+      "sha256": "abb32c269257dbfbfdd9fe575d30ff8dd36120b2f51d67b24a1f009221d2e0ee",
+      "admission": "accepted"
+    },
+    {
+      "path": "docs/fixtures/phase11-b4-route-matrix.json",
+      "classification": "golden_fixture",
+      "authorization_basis": "cleanroom_frozen_input",
+      "sha256": "905547d16a60da6f9fa01c2d934e672ecec4ef76c3bcab94b9c3aeb6ac6b7c87",
+      "admission": "accepted"
+    },
+    {
+      "path": "docs/fixtures/phase11-b5-async-policy.json",
+      "classification": "golden_fixture",
+      "authorization_basis": "cleanroom_frozen_input",
+      "sha256": "ee5d01390f80c3e89f398ccde13e3b7714ba80c6c0992eedf36818b2b7ad07be",
+      "admission": "accepted"
+    },
+    {
+      "path": "docs/fixtures/phase11-b5-fail-closed.json",
+      "classification": "golden_fixture",
+      "authorization_basis": "cleanroom_frozen_input",
+      "sha256": "b33b0ee7529d523bce64ab1c2415e5f944f070e3eb1f7d00e0f81dce6b32c24c",
+      "admission": "accepted"
+    },
+    {
+      "path": "docs/fixtures/phase11-b5-media-boundary.json",
+      "classification": "golden_fixture",
+      "authorization_basis": "cleanroom_frozen_input",
+      "sha256": "e7729ad04a742c01850172780c237ef4b97f45b62c21dbdb019f1acbcd86b364",
+      "admission": "accepted"
+    },
+    {
+      "path": "docs/fixtures/phase11-b6-boundary.json",
+      "classification": "golden_fixture",
+      "authorization_basis": "cleanroom_frozen_input",
+      "sha256": "561d29437a0fe3417aca039bd93cbd38f9e73d1bcb7db2d32f964d71d1b1995e",
+      "admission": "accepted"
+    },
+    {
+      "path": "docs/fixtures/phase11-b6-fail-closed.json",
+      "classification": "golden_fixture",
+      "authorization_basis": "cleanroom_frozen_input",
+      "sha256": "e33eb80123c78175a8e7e22a1e904b925e98da23387a77482092faedf99cf35f",
+      "admission": "accepted"
+    },
+    {
+      "path": "docs/fixtures/phase11-b7-boundary.json",
+      "classification": "golden_fixture",
+      "authorization_basis": "cleanroom_frozen_input",
+      "sha256": "86133e4fa7418b719087f8d31706d3bec14c3dd2563aaba810073da16458e95b",
+      "admission": "accepted"
+    },
+    {
+      "path": "docs/fixtures/phase11-b8-boundary.json",
+      "classification": "golden_fixture",
+      "authorization_basis": "cleanroom_frozen_input",
+      "sha256": "0b84fcf179aa4f302e0d2b8edd6edb24154b3ac48f4d679f2732abea88a9f796",
+      "admission": "accepted"
+    },
+    {
+      "path": "docs/fixtures/phase11-b9-boundary.json",
+      "classification": "golden_fixture",
+      "authorization_basis": "cleanroom_frozen_input",
+      "sha256": "08109ffa94bf9bb04c69891154b41580ac2a615650ba6b973572f62d71d2b786",
+      "admission": "accepted"
+    },
+    {
+      "path": "docs/fixtures/projects-hub-create-request.json",
+      "classification": "golden_fixture",
+      "authorization_basis": "cleanroom_frozen_input",
+      "sha256": "73420371d19cad3299b359d5bd8599e43f054631799c042a71c53915742e1c31",
+      "admission": "accepted"
+    },
+    {
+      "path": "docs/fixtures/projects-hub-list-active.json",
+      "classification": "golden_fixture",
+      "authorization_basis": "cleanroom_frozen_input",
+      "sha256": "bcdea4c15953b35b75664728c0425a66a5229a1eba682c0dcd98ef9908ba3b80",
+      "admission": "accepted"
+    },
+    {
+      "path": "docs/fixtures/projects-hub-update-conflict-409.json",
+      "classification": "golden_fixture",
+      "authorization_basis": "cleanroom_frozen_input",
+      "sha256": "1090cb5af53cf085153767ca1571798ca071014124e780fda2d983aa2d714378",
+      "admission": "accepted"
+    },
+    {
+      "path": "docs/fixtures/prompt-library-conflict-409.json",
+      "classification": "golden_fixture",
+      "authorization_basis": "cleanroom_frozen_input",
+      "sha256": "aff6fb5e6c0baef1a211ca4ca0eafa9b39e9204b07b3713567a29a271732aa10",
+      "admission": "accepted"
+    },
+    {
+      "path": "docs/fixtures/prompt-library-create-request.json",
+      "classification": "golden_fixture",
+      "authorization_basis": "cleanroom_frozen_input",
+      "sha256": "e5dfa7ec160350353b28bf7657c5784376515cd468a08be433b6fbffb3f4b8f8",
+      "admission": "accepted"
+    },
+    {
+      "path": "docs/fixtures/prompt-library-empty.json",
+      "classification": "golden_fixture",
+      "authorization_basis": "cleanroom_frozen_input",
+      "sha256": "ced1c343db8cdcae0614afb023499bb52263fe338b5509b7b2e94c5c759e548a",
+      "admission": "accepted"
+    },
+    {
+      "path": "docs/fixtures/prompt-library-not-empty-409.json",
+      "classification": "golden_fixture",
+      "authorization_basis": "cleanroom_frozen_input",
+      "sha256": "edab001c87199f301082bc5ab705695da4da686fe38ee197829a5a970100611c",
+      "admission": "accepted"
+    },
+    {
+      "path": "docs/fixtures/prompt-library-with-empty-category.json",
+      "classification": "golden_fixture",
+      "authorization_basis": "cleanroom_frozen_input",
+      "sha256": "3408af71e24b16624e5e4fd7d783c82c7acef6fa7b2188bf1d00eb37795b58f6",
+      "admission": "accepted"
+    },
+    {
+      "path": "docs/fixtures/settings-provider-probe-not-integrated.json",
+      "classification": "golden_fixture",
+      "authorization_basis": "cleanroom_frozen_input",
+      "sha256": "6cf0bbb50b9f7867a52b87e3354336f2edbc8e9ba065733b453e2eecc04791b1",
+      "admission": "accepted"
+    },
+    {
+      "path": "docs/fixtures/settings-providers-empty.json",
+      "classification": "golden_fixture",
+      "authorization_basis": "cleanroom_frozen_input",
+      "sha256": "e68729accf71a870e5d5a3942f9e08bda2846884f3be4e2cf7e3806e08e9cea0",
+      "admission": "accepted"
+    },
+    {
+      "path": "docs/fixtures/settings-storage-conflict-409.json",
+      "classification": "golden_fixture",
+      "authorization_basis": "cleanroom_frozen_input",
+      "sha256": "6fd5f6ac0b5dc31396607ff1e48ec44a0e61ab33c151ff8472f8b5e0cd4000d9",
+      "admission": "accepted"
+    },
+    {
+      "path": "docs/fixtures/settings-storage-unconfigured.json",
+      "classification": "golden_fixture",
+      "authorization_basis": "cleanroom_frozen_input",
+      "sha256": "7a578c71ff56e5e8e46410adb397cc83008cf89c98645af17037c8fc042d9fda",
+      "admission": "accepted"
+    },
+    {
+      "path": "docs/fixtures/settings-structure-conflict-409.json",
+      "classification": "golden_fixture",
+      "authorization_basis": "cleanroom_frozen_input",
+      "sha256": "0fd622082d9faa11f777f75d01f02ede0deb027bbdfa78bea660d30b69bd3af0",
+      "admission": "accepted"
+    },
+    {
+      "path": "docs/governance/PROJECT-GOVERNANCE.md",
+      "classification": "curated_project_governance",
+      "authorization_basis": "H01_user_decision_2026-09-29",
+      "sha256": "2e7b8a4a317179aa6531e43103da9f5711cfc3fa4e934fc7c22fb2e1e51656e5",
+      "admission": "accepted"
+    }
+  ]
+}

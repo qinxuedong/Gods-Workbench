@@ -1,0 +1,5 @@
+{
+  "job_id": "job-0001",
+  "state": "accepted",
+  "poll_hint": "/api/jobs/job-0001"
+}

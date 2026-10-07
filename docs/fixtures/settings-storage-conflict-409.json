@@ -1,0 +1,8 @@
+{
+  "detail": {
+    "code": "VERSION_CONFLICT",
+    "message": "存储设置版本冲突（期望 1，当前 2），请重新读取后重试",
+    "expected_version": 1,
+    "current_version": 2
+  }
+}

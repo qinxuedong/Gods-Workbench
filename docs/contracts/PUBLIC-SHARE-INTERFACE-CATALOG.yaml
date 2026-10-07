@@ -1,0 +1,21 @@
+# Phase 12 A3 分享与公开访问接口目录
+meta:
+  version: p12-a3-2
+  distribution: NOT AUTHORIZED FOR PUBLIC DISTRIBUTION
+  data_backend: "core.storage.JsonState 命名空间 asset_review（落盘，重启可恢复；单实例一致性）"
+  unavailable_status: 503
+  explicit_limit: "token 只在本地生效：本地分享，未接公网托管；多 worker 限流一致性未保证"
+  security: "公开访问按 token 哈希+操作独立持久限流；每 60 秒最多 120 次；桶最多 2048 个；请求体最多 16 KiB；限流写入失败时失败关闭"
+  token_storage: "share_token 为不透明令牌，服务端只存 SHA-256 哈希；明文仅在创建响应返回一次"
+  ticket: "access 成功后签发当前唯一有效票据；评论/审批票据位于请求 JSON；媒体票据只位于 X-Share-Ticket；票据不进 URL"
+  expiry: "expires_at 可为 null、Unix 毫秒正整数或带时区 ISO-8601；规范化为 UTC；meta/access/comment/approval/media 到期均返回 410 SHARE_EXPIRED"
+  media: "仅本机素材注册表路径；Raster 图片/音视频按白名单 inline；SVG/HTML/未知类型拒绝；PDF/TXT仅允许下载权限下 attachment；成功/错误/Range 均 private, no-store 且 nosniff"
+  review_link: "评论/审批读回严格按 share_id+asset_id；显式绑定 session_id 时写入同一 asset_review 状态，访客审批只记结论不推动私有会话状态机"
+  public_page: "GET /share/{share_token} 返回匿名页面外壳，no-store/no-referrer/nosniff；不授予媒体权限，API仍需token及票据。创建链接使用一次性响应token字段，缺失时拒绝生成链接。"
+  frontend_contract: "meta→{available,requires_password,title,expires_at}；access→{share,assets:[{asset_id,media_url,review:{comments,approvals}}],ticket}；comment→{comment}；approval→{approval}；媒体响应为有界 Blob 下载"
+interfaces:
+  - {name: get_public_share, method: GET, path: /api/public/shares/{share_token}}
+  - {name: post_public_share_access, method: POST, path: /api/public/shares/{share_token}/access}
+  - {name: put_public_share_approval, method: PUT, path: /api/public/shares/{share_token}/approvals}
+  - {name: post_public_share_comment, method: POST, path: /api/public/shares/{share_token}/comments}
+  - {name: get_public_share_media, method: GET, path: /api/public/shares/{share_token}/assets/{asset_id}/media}

@@ -1,0 +1,1055 @@
+<!DOCTYPE html>
+<html lang="zh-CN" class="h-full overflow-hidden">
+<head>
+  <link rel="stylesheet" href="/static/vendor/css/fonts.css?v=v0.0.1-alpha-2026">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>项目中心 · Gods' Workbench</title>
+
+  <!-- Tailwind CSS & Lucide Icons -->
+  <script src="/static/vendor/js/tailwindcss-cdn.js?v=3.4.17&amp;build=d11003b2f6fb"></script>
+  <script src="/static/vendor/js/lucide.js?v=1.16.0"></script>
+
+
+  <!-- Gods' Workbench 拟物科技公共硬件设计系统 -->
+  <link rel="stylesheet" href="/static/css/base/hardware-design-system.css">
+  <link rel="stylesheet" href="/static/css/pages/project-date-range.css">
+  <style>
+    /* 参考图2：细致斜向碳纤维/金属网孔微纹理 */
+    .carbon-mesh-bg {
+      background-image: repeating-linear-gradient(
+        45deg,
+        rgba(255, 255, 255, 0.018) 0,
+        rgba(255, 255, 255, 0.018) 1px,
+        transparent 0,
+        transparent 4px
+      );
+    }
+    .hw-mini-knob-box {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+    .hw-mini-knob {
+      width: 36px;
+      height: 36px;
+      border-radius: 50%;
+      background: #08090d;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      box-shadow: inset 0 2px 4px rgba(0,0,0,0.9);
+      position: relative;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+    }
+    .hw-mini-knob-arc {
+      position: absolute;
+      inset: 2px;
+      border-radius: 50%;
+      border: 2px solid transparent;
+      border-top-color: #dfc384;
+      border-right-color: #dfc384;
+      filter: drop-shadow(0 0 4px rgba(223, 195, 132, 0.8));
+      transform: rotate(30deg);
+    }
+    .hw-mini-knob-inner {
+      width: 24px;
+      height: 24px;
+      border-radius: 50%;
+      background: linear-gradient(180deg, #242834 0%, #12141a 100%);
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      box-shadow: 0 2px 4px rgba(0,0,0,0.8);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 8px;
+      font-weight: 700;
+      color: #dfc384;
+    }
+    .hw-master-dial-housing {
+      width: 50px;
+      height: 50px;
+      border-radius: 50%;
+      background: #06070a;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      box-shadow: inset 0 4px 10px rgba(0, 0, 0, 0.98), 0 2px 6px rgba(0, 0, 0, 0.7);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      position: relative;
+    }
+    .hw-dial-halo-trough {
+      position: absolute;
+      inset: 2px;
+      border-radius: 50%;
+      border: 2px solid transparent;
+      border-top-color: #dfc384;
+      border-left-color: #dfc384;
+      filter: drop-shadow(0 0 5px rgba(223, 195, 132, 0.8));
+      transform: rotate(45deg);
+    }
+    .hw-knob-cylinder {
+      width: 36px;
+      height: 36px;
+      border-radius: 50%;
+      background: radial-gradient(circle, #2d3240 0%, #171a22 65%, #0c0e13 100%);
+      border: 1px solid rgba(255, 255, 255, 0.16);
+      box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.35), 0 4px 10px rgba(0, 0, 0, 0.95);
+      position: relative;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+    }
+    .hw-knob-indicator-dot {
+      position: absolute;
+      top: 3px;
+      width: 3px;
+      height: 3px;
+      border-radius: 50%;
+      background: #ffffff;
+      box-shadow: 0 0 6px #fae2c8, 0 0 2px #dfc384;
+    }
+    .hw-knob-center-inset {
+      width: 22px;
+      height: 22px;
+      border-radius: 50%;
+      background: #0a0c10;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      box-shadow: inset 0 2px 5px rgba(0, 0, 0, 0.95);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #dfc384;
+      font-size: 7.5px;
+      font-weight: 800;
+    }
+    .launch-orb-btn {
+      filter: hue-rotate(0deg);
+      transition: transform 0.15s ease, box-shadow 0.15s ease, filter 0.15s ease;
+    }
+    .launch-orb-btn:hover { filter: hue-rotate(30deg) brightness(1.2); }
+    .launch-orb-btn:active { transform: scale(0.92) !important; }
+    @keyframes orbCoreFloat {
+      0%   { transform: scale(0.88) translateY(0.5px); opacity: 0.85; }
+      100% { transform: scale(1.08) translateY(-0.5px); opacity: 1; }
+    }
+
+    /* 方形大尺寸预览图 (110px*110px，支持卡片 240px 高度紧凑精致排版) */
+    .proj-card-thumb {
+      width: 110px;
+      height: 110px;
+      border-radius: 10px;
+      overflow: hidden;
+      border: 1px solid rgba(223, 195, 132, 0.35);
+      background: #040507;
+      box-shadow: 0 4px 14px rgba(0, 0, 0, 0.8), inset 0 1px 0 rgba(255, 255, 255, 0.1);
+      flex-shrink: 0;
+      position: relative;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .proj-card-thumb img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      object-position: center center;
+      display: block;
+      transition: transform 0.3s ease;
+    }
+    .project-card-item:hover .proj-card-thumb img {
+      transform: scale(1.05);
+    }
+    .project-card-item {
+      height: 240px !important;
+      min-height: 240px !important;
+      max-height: 240px !important;
+      box-sizing: border-box !important;
+    }
+    .proj-card-thumb-placeholder {
+      width: 100%;
+      height: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: radial-gradient(circle at center, #1c2230 0%, #06070a 100%);
+      color: #dfc384;
+    }
+
+    /* 项目卡片项：精确高度 240px，精炼拟物机架，支持滚轮平滑翻页 */
+    .project-card-item {
+      height: 240px !important;
+      min-height: 240px !important;
+      max-height: 240px !important;
+      flex-shrink: 0 !important;
+      box-sizing: border-box;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      transition: all 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+      cursor: pointer;
+      position: relative;
+      overflow: hidden;
+    }
+    .project-card-item:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 14px 34px rgba(0, 0, 0, 0.95), 0 0 20px rgba(223, 195, 132, 0.22);
+    }
+    .project-card-item.active {
+      border-color: rgba(223, 195, 132, 0.75) !important;
+      background: linear-gradient(135deg, rgba(223, 195, 132, 0.09) 0%, rgba(12, 14, 20, 0.98) 100%) !important;
+      box-shadow: 0 16px 36px rgba(0, 0, 0, 0.95), 0 0 24px rgba(223, 195, 132, 0.28), inset 0 1px 0 rgba(255, 255, 255, 0.2) !important;
+    }
+    .project-card-item.active::before {
+      content: '';
+      position: absolute;
+      left: 0;
+      top: 14px;
+      bottom: 14px;
+      width: 4px;
+      background: linear-gradient(180deg, #fae2c8 0%, #dfc384 50%, #b8823f 100%);
+      border-radius: 0 4px 4px 0;
+      box-shadow: 0 0 12px #dfc384, 0 0 4px #fae2c8;
+    }
+
+    /* 定制香槟金曜石极细平滑滚轮翻页通道 */
+    #projectsCardsStream {
+      scroll-behavior: smooth;
+      scrollbar-width: thin;
+      scrollbar-color: rgba(223, 195, 132, 0.35) rgba(10, 12, 16, 0.6);
+      scroll-padding: 12px;
+    }
+    #projectsCardsStream::-webkit-scrollbar {
+      width: 6px;
+    }
+    #projectsCardsStream::-webkit-scrollbar-track {
+      background: rgba(10, 12, 16, 0.7);
+      border-radius: 9999px;
+    }
+    #projectsCardsStream::-webkit-scrollbar-thumb {
+      background: linear-gradient(180deg, rgba(223, 195, 132, 0.5) 0%, rgba(148, 122, 87, 0.4) 100%);
+      border-radius: 9999px;
+      border: 1px solid rgba(0, 0, 0, 0.5);
+    }
+    #projectsCardsStream::-webkit-scrollbar-thumb:hover {
+      background: rgba(223, 195, 132, 0.8);
+    }
+  </style>
+<body class="gw-shell bg-[#090a0d] text-slate-200 antialiased h-screen flex flex-col select-none overflow-hidden px-5">
+
+  <!-- ========================================================================= -->
+  <!-- 1. TOP MASTER DECK: 旗舰拟物双层机架 (放大1.2倍, h-[116px])                  -->
+  <!-- ========================================================================= -->
+  <header class="h-[116px] topbar-master-deck border-b border-white/10 px-3 flex flex-col justify-between shrink-0 z-40 relative select-none overflow-hidden py-2" style="min-height: 116px;">
+
+    <!-- OLED Ambient Pixel Texture & Glass Sheen Overlay -->
+    <div class="absolute inset-0 pointer-events-none z-10 oled-ambient-pixel"></div>
+    <div class="absolute inset-0 pointer-events-none z-20 bg-gradient-to-b from-white/[0.07] via-transparent to-black/80"></div>
+    <div class="absolute bottom-0 left-0 right-0 h-px topbar-ambient-edge z-20"></div>
+
+    <!-- UPPER DECK: 系统监控与双模拟VU电平表 (放大1.2倍) -->
+    <div class="flex items-center justify-between relative z-30 px-1 pt-0.5">
+
+      <!-- LEFT: 智能体核心 (原关机键位置) + 标志 + 状态指示 + 左侧CPU电平表 -->
+      <div class="flex items-center space-x-2.5 shrink-0">
+        <!-- 智能体核心按钮 (原关机键位置) -->
+        <button class="w-8 h-8 rounded-full bg-gradient-to-tr from-cyan-400 via-fuchsia-500 to-amber-300 p-0.5 shadow-[0_0_12px_rgba(236,72,153,0.7),0_0_6px_rgba(34,211,238,0.9)] hover:scale-110 active:scale-95 transition flex items-center justify-center cursor-pointer shrink-0 launch-orb-btn" title="智能体核心总线 (Agent Core)">
+          <div class="w-full h-full rounded-full bg-black/85 flex items-center justify-center">
+            <div class="w-3 h-3 rounded-full bg-gradient-to-r from-cyan-300 to-pink-400 animate-spin"></div>
+          </div>
+        </button>
+
+        <div class="h-5 w-px bg-white/10"></div>
+
+        <!-- 品牌徽标与机架ID (放大1.2倍) -->
+        <div class="flex items-center space-x-1.5">
+          <span class="font-bold text-sm tracking-wider text-slate-100 uppercase">GODS'</span>
+          <span class="font-mono font-bold text-sm text-[#dfc384] tracking-widest">WORKBENCH</span>
+          <span class="text-[10px] font-mono px-2 py-0.5 rounded bg-black/60 border border-[#dfc384]/30 text-[#eddab3]">SYS.02 PRO</span>
+        </div>
+
+        <!-- 在线状态胶囊 (放大1.2倍) -->
+        <div class="flex items-center space-x-1.5 px-2.5 py-1 rounded-md bg-[#0a0c10] border border-white/10 shadow-inner">
+          <span class="text-[9px] font-mono text-amber-300 font-semibold" id="gwOnlineStatus" data-gw-degradation="not_integrated" title="读取真实探针 GET /api/observability/health">探测中…</span>
+            <span class="relative flex h-2 w-2">
+              <span class="relative inline-flex rounded-full h-2 w-2 bg-amber-400 animate-pulse shadow-[0_0_6px_#f59e0b]"></span>
+            </span>
+        </div>
+
+        <!-- 日期铭牌 (放大1.2倍) -->
+        <!-- 左侧 CPU UV 表 -->
+        <div class="trapezoid-uv-housing ml-1.5" title="CPU 负载监视表">
+          <div class="uv-dial-backlight"></div>
+          <svg class="absolute inset-0 w-full h-full pointer-events-none z-10" viewBox="0 0 148 48">
+            <path d="M 2 8 A 6 6 0 0 1 8 2 L 134 2 A 4 4 0 0 1 138 5 L 146 43 A 4 4 0 0 1 142 47 L 8 47 A 6 6 0 0 1 2 41 Z"
+                  fill="#0b0d13" stroke="#2e3547" stroke-width="1.5" stroke-linejoin="round" />
+            <text x="10" y="11" font-family="'Source Han Sans CN', monospace" font-size="7.5" font-weight="700" fill="#dfc384" letter-spacing="0.5">CPU</text>
+            <path d="M 48.32 39.66 A 27 27 0 0 1 99.68 39.66" fill="none" stroke="rgba(255,255,255,0.22)" stroke-width="0.8" />
+            <path d="M 92.48 28.32 A 27 27 0 0 1 99.68 39.66" fill="none" stroke="#ef4444" stroke-width="1.6" stroke-linecap="round" />
+            <polygon id="svgNeedleCPU" points="73.3,48 74.7,48 74.3,19 73.7,19" fill="#ffffff" filter="drop-shadow(0 0 2.5px #fae2c8)" transform="rotate(-11.5 74 48)" />
+          </svg>
+          <div class="uv-bottom-hub">
+            <span class="uv-hub-percent text-[#fae2c8]" id="cpuValText">未接入</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- CENTER: 系统中央总线引擎 -->
+      <div class="flex items-center space-x-2 shrink-0">
+        <div class="flex items-center space-x-2 bg-[#07080b] px-3.5 py-1.5 rounded-lg border border-white/10 shadow-inner">
+          <button class="text-slate-400 hover:text-[#dfc384] p-0.5 transition"><i data-lucide="chevron-left" class="w-4 h-4"></i></button>
+          <div class="flex items-center space-x-2 px-1.5">
+            <span class="w-1.5 h-1.5 rounded-full bg-[#dfc384] shadow-[0_0_6px_#dfc384] animate-pulse"></span>
+            <span class="text-[11px] font-mono font-bold text-[#eddab3] tracking-wider">PROJECT ASSET MASTER DECK</span>
+          </div>
+          <button class="text-slate-400 hover:text-[#dfc384] p-0.5 transition"><i data-lucide="chevron-right" class="w-4 h-4"></i></button>
+        </div>
+      </div>
+
+      <!-- RIGHT: 右侧RAM电平表 + 播控 + 时钟 + 返回首页 -->
+      <div class="flex items-center space-x-2.5 shrink-0">
+        <div class="trapezoid-uv-housing mr-1.5" title="RAM 内存监视表">
+          <div class="uv-dial-backlight"></div>
+          <svg class="absolute inset-0 w-full h-full pointer-events-none z-10" viewBox="0 0 148 48">
+            <path d="M 146 8 A 6 6 0 0 0 140 2 L 14 2 A 4 4 0 0 0 10 5 L 2 43 A 4 4 0 0 0 6 47 L 140 47 A 6 6 0 0 0 146 41 Z"
+                  fill="#0b0d13" stroke="#2e3547" stroke-width="1.5" stroke-linejoin="round" />
+            <text x="138" y="11" text-anchor="end" font-family="'Source Han Sans CN', monospace" font-size="7.5" font-weight="700" fill="#dfc384" letter-spacing="0.5">RAM</text>
+            <path d="M 48.32 39.66 A 27 27 0 0 1 99.68 39.66" fill="none" stroke="rgba(255,255,255,0.22)" stroke-width="0.8" />
+            <path d="M 92.48 28.32 A 27 27 0 0 1 99.68 39.66" fill="none" stroke="#ef4444" stroke-width="1.6" stroke-linecap="round" />
+            <polygon id="svgNeedleRAM" points="73.3,48 74.7,48 74.3,19 73.7,19" fill="#ffffff" filter="drop-shadow(0 0 2.5px #38bdf8)" transform="rotate(25.9 74 48)" />
+          </svg>
+          <div class="uv-bottom-hub">
+            <span class="uv-hub-percent text-cyan-300" id="ramValText">未接入</span>
+          </div>
+        </div>
+
+        <!-- 播控按键组 (放大1.2倍) -->
+        <div class="flex items-center space-x-1.5 bg-[#090b0e] p-1 rounded-lg border border-white/5">
+          <button class="hw-round-btn w-7 h-7" title="停止"><div class="hw-round-inner w-5 h-5"><div class="w-2 h-2 bg-slate-400 rounded-sm"></div></div></button>
+          <button class="hw-round-btn active w-7 h-7" title="运行"><div class="hw-round-inner w-5 h-5"><svg class="w-3 h-3 text-[#dfc384]" fill="currentColor" viewBox="0 0 24 24"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg></div></button>
+          <button class="hw-round-btn w-7 h-7" title="下一步"><div class="hw-round-inner w-5 h-5"><i data-lucide="skip-forward" class="w-3 h-3 text-slate-400"></i></div></button>
+        </div>
+
+        <div class="h-5 w-px bg-white/10"></div>
+
+        <!-- 数码时钟 (放大1.2倍) -->
+        <div class="px-2.5 py-1.5 rounded bg-[#06070a] border border-[#dfc384]/30 font-mono text-xs text-[#eddab3] font-bold shadow-inner flex items-center space-x-1.5">
+          <span class="w-1.5 h-1.5 rounded-full bg-[#dfc384] shadow-[0_0_6px_#dfc384]"></span>
+          <span id="masterDeckClock">00:00:00</span>
+        </div>
+        <button type="button" id="masterDeckDate" class="shrink-0 min-w-[76px] px-2.5 py-1.5 rounded bg-[#06070a] border border-[#dfc384]/45 font-mono text-xs text-[#eddab3] font-bold shadow-inner flex items-center justify-center space-x-1.5 hover:border-[#dfc384] transition" title="打开项目排期日历" aria-label="打开项目排期日历"><i data-lucide="calendar-days" class="w-3.5 h-3.5 text-[#dfc384]" aria-hidden="true"></i><span class="text-slate-500 uppercase" id="masterDeckDateMonth">---</span><span id="masterDeckDateDay">--</span></button>
+      </div>
+    </div>
+
+    <!-- LOWER DECK: 交互控件带 (Navigation Pills & Sliders, 放大至 h-11, 44px) -->
+    <div class="recessed-deck-slot h-11 rounded-lg flex items-center justify-between px-2.5 relative z-30">
+
+      <!-- LEFT: 胶囊导航按键 (放大1.2倍) -->
+      <div class="flex items-center space-x-2 shrink-0" id="navPillsGroup">
+        <a href="index.html" class="pill-capsule-inactive px-3.5 py-1.5 text-xs tracking-wide font-medium flex items-center space-x-1.5 nav-pill-btn cursor-pointer" title="首页 · 控制台">
+          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" viewBox="0 0 24 24">
+            <path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path>
+            <polyline points="9 22 9 12 15 12 15 22"></polyline>
+          </svg>
+          <span>首页 · 控制台</span>
+        </a>
+
+        <a href="projects.html" class="pill-capsule-active px-3.5 py-1.5 text-xs tracking-wide flex items-center space-x-1.5 nav-pill-btn cursor-pointer" title="项目中心">
+          <i data-lucide="folder-kanban" class="w-3.5 h-3.5"></i>
+          <span>项目中心</span>
+        </a>
+
+        <a href="workshop.html" class="pill-capsule-inactive px-3.5 py-1.5 text-xs tracking-wide font-medium flex items-center space-x-1.5 nav-pill-btn cursor-pointer" title="影视工坊">
+          <i data-lucide="film" class="w-3.5 h-3.5"></i>
+          <span>影视工坊</span>
+        </a>
+
+        <a href="production.html" class="pill-capsule-inactive px-3.5 py-1.5 text-xs tracking-wide font-medium flex items-center space-x-1.5 nav-pill-btn cursor-pointer" title="剧集制片">
+          <i data-lucide="clapperboard" class="w-3.5 h-3.5"></i>
+          <span>剧集制片</span>
+        </a>
+
+        <a href="agents.html" class="pill-capsule-inactive px-3.5 py-1.5 text-xs tracking-wide font-medium flex items-center space-x-1.5 nav-pill-btn cursor-pointer" title="智能体">
+          <i data-lucide="bot" class="w-3.5 h-3.5"></i>
+          <span>智能体</span>
+        </a>
+
+        <a href="storyboard.html?view=canvas" class="pill-capsule-inactive px-3.5 py-1.5 text-xs tracking-wide font-medium flex items-center space-x-1.5 nav-pill-btn cursor-pointer" title="画布">
+          <i data-lucide="layout-grid" class="w-3.5 h-3.5"></i>
+          <span>画布/工具</span>
+        </a>
+
+        <a href="assets.html" class="pill-capsule-inactive px-3.5 py-1.5 text-xs tracking-wide font-medium flex items-center space-x-1.5 nav-pill-btn cursor-pointer" title="资产库">
+          <i data-lucide="database" class="w-3.5 h-3.5"></i>
+          <span>资产库</span>
+        </a>
+
+        <a href="collab.html" class="pill-capsule-inactive px-3.5 py-1.5 text-xs tracking-wide font-medium flex items-center space-x-1.5 nav-pill-btn cursor-pointer" title="协作">
+          <i data-lucide="users" class="w-3.5 h-3.5"></i>
+          <span>协作</span>
+        </a>
+        <a href="workflow-workbench.html" class="pill-capsule-inactive px-3.5 py-1.5 text-xs tracking-wide font-medium flex items-center space-x-1.5 nav-pill-btn cursor-pointer" title="工作流">
+          <i data-lucide="workflow" class="w-3.5 h-3.5"></i><span>工作流</span>
+        </a>
+
+        <a href="index.html?view=settings" class="pill-capsule-inactive px-3.5 py-1.5 text-xs tracking-wide font-medium flex items-center space-x-1.5 nav-pill-btn cursor-pointer" title="系统设置">
+          <i data-lucide="settings" class="w-3.5 h-3.5"></i>
+          <span>设置</span>
+        </a>
+      </div>
+
+      <!-- CENTER: 激光发光推子 (放大1.2倍) -->
+      <div class="flex items-center space-x-4 shrink-0">
+        <div class="flex items-center space-x-2">
+          <span class="text-[10px] font-mono text-slate-400 font-bold">FLUX</span>
+          <div class="hw-fader-track-horizontal w-28">
+            <div class="hw-fader-glow-bar" style="width: 0%;"></div>
+            <div class="hw-fader-thumb-3d" style="left: 0%;"></div>
+          </div>
+          <span class="text-[10px] font-mono text-amber-300 font-bold" id="gpuUtilReadout" data-gw-degradation="not_integrated" title="真实数据源：GET /api/observability/health 的 gpu_telemetry 检查项">未接入</span>
+        </div>
+
+        <div class="flex items-center space-x-2">
+          <span class="text-[10px] font-mono text-slate-400 font-bold">VRAM</span>
+          <div class="hw-fader-track-horizontal w-24">
+            <div class="hw-fader-glow-bar" style="width: 0%; background: linear-gradient(90deg, #38bdf8 0%, #2dd4bf 100%)"></div>
+            <div class="hw-fader-thumb-3d" style="left: 0%;"></div>
+          </div>
+          <span class="text-[10px] font-mono text-amber-300 font-bold" id="gpuVramReadout" data-gw-degradation="not_integrated" title="真实数据源：GET /api/observability/health 的 gpu_telemetry 检查项">未接入</span>
+        </div>
+      </div>
+
+      <!-- RIGHT: PRE/POST 开关 + 统一回收站 + 拟物头像键帽 -->
+      <div class="flex items-center space-x-3 shrink-0">
+        <div class="flex items-center space-x-1.5">
+          <span class="text-[9px] font-mono text-slate-400 font-bold">PRE</span>
+          <div class="hw-slide-toggle active" id="topbarToggle" onclick="this.classList.toggle('active')">
+            <div class="hw-slide-peg"></div>
+          </div>
+          <span class="text-[9px] font-mono text-[#dfc384] font-bold">POST</span>
+        </div>
+
+        <div class="h-4 w-px bg-white/10"></div>
+
+        <!-- 拟物金属垃圾桶按钮：统一回收站入口（整合制片项目与全局素材库回收站） -->
+        <button class="hw-mini-knob-box group cursor-pointer relative" id="topbarUnifiedTrashBtn" onclick="WorkbenchProjects.openGlobalTrashDrawer()" title="统一回收站（制片工程与素材库全局回收池）">
+          <div class="hw-mini-knob border border-[#dfc384]/40 hover:border-[#dfc384] hover:shadow-[0_0_10px_rgba(223,195,132,0.4)] transition">
+            <div class="hw-mini-knob-arc" style="border-top-color: #ef4444; border-right-color: #f59e0b;"></div>
+            <div class="hw-mini-knob-inner flex items-center justify-center text-[#eddab3] group-hover:text-amber-300">
+              <i data-lucide="trash-2" class="w-3.5 h-3.5 text-[#dfc384] group-hover:text-amber-300 transition"></i>
+            </div>
+          </div>
+          <!-- 琥珀微型红点角标 -->
+          <span id="topbarTrashBadge" class="absolute -top-1 -right-1 w-3.5 h-3.5 rounded-full bg-red-500 border border-black text-[8px] font-mono text-white flex items-center justify-center leading-none shadow-[0_0_6px_#ef4444] hidden">0</span>
+        </button>
+
+        <div class="h-4 w-px bg-white/10"></div>
+
+        <!-- 拟物头像键帽 (原智能体核心位置，替换左下角登录用户，无文字只显头像) -->
+        <div class="hw-avatar-keycap ml-1 cursor-pointer hover:scale-105 active:scale-95 transition" title="认证状态未接入：点击打开认证中心查看真实登录状态" role="button" tabindex="0" aria-label="打开认证中心" data-gw-identity="unverified">
+          <div class="hw-avatar-keycap-inner">
+            <i data-lucide="shield-check" class="w-4 h-4 text-[#eddab3]"></i>
+          </div>
+          <span class="hw-avatar-keycap-status"></span>
+        </div>
+      </div>
+
+    </div>
+  </header>
+
+  <!-- ========================================================================= -->
+  <!-- 2. MAIN SHELL (Sidebar + Kanban Workspace)                                -->
+  <!-- ========================================================================= -->
+  <div class="flex-1 flex overflow-hidden min-h-0">
+
+    <!-- ----------------------------------------------------------------------- -->
+    <!-- LEFT CONSOLE DOCK: 上下文工作流总线                                           -->
+    <!-- ----------------------------------------------------------------------- -->
+    <aside class="w-64 bg-[#08090d] border-r border-[#191c24] flex flex-col shrink-0 z-30 h-full min-h-0">
+      <div class="flex-1 flex flex-col min-h-0 relative" id="contextBusContainer">
+        <!-- Tree Header -->
+        <div class="p-2 border-b border-white/5 shrink-0">
+          <div class="w-full flex items-center justify-between px-3 py-2 rounded-xl bg-[#141720] border border-[#dfc384]/35 text-[#eddab3] text-xs font-semibold shadow-[0_0_12px_rgba(223,195,132,0.12)] relative">
+            <span class="absolute left-0 top-2 bottom-2 w-1 bg-[#dfc384] rounded-r shadow-[0_0_8px_#dfc384]"></span>
+            <div class="flex items-center space-x-2.5">
+              <i data-lucide="git-branch" class="w-4 h-4 text-[#dfc384]"></i>
+              <span class="font-semibold tracking-wide">项目工程工作流总线</span>
+            </div>
+            <button class="text-slate-400 hover:text-[#dfc384] p-1 rounded-lg hover:bg-white/5 transition" title="刷新总线" onclick="WorkbenchProjects.load()">
+              <i data-lucide="refresh-cw" class="w-3 h-3"></i>
+            </button>
+          </div>
+        </div>
+
+        <!-- Scrollable Flow Graph -->
+        <div class="flex-1 overflow-y-auto p-2 pr-2 relative space-y-4">
+          <!-- Continuous Bus Trunk Line -->
+          <div class="absolute left-3.5 top-2 bottom-4 w-[1.5px] bg-gradient-to-b from-[#dfc384] via-[#dfc384]/40 to-transparent pointer-events-none"></div>
+
+          <!-- 1. NODE 01: 院线长片 -->
+          <div class="relative pl-5">
+            <div class="absolute left-[-6px] top-[17px] w-[6px] h-[1.5px] bg-[#dfc384]/60 pointer-events-none"></div>
+            <div data-project-type="film" class="tree-node-card px-2.5 py-1.5 flex items-center justify-between group cursor-pointer" onclick="WorkbenchProjects.filterType('film', this)">
+              <div class="card-connector-pin"></div>
+              <div class="flex items-center space-x-1.5 min-w-0">
+                <span class="text-[8px] font-mono text-[#dfc384] font-bold px-1 py-0.5 rounded bg-[#dfc384]/15 border border-[#dfc384]/30 shrink-0">01</span>
+                <span class="text-[10px] font-semibold text-slate-100 truncate">《神谕之地》院线长片</span>
+              </div>
+              <span class="text-[7.5px] font-mono px-1 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 shrink-0 flex items-center space-x-0.5">
+                <span>act</span>
+                <i data-lucide="check" class="w-2 h-2"></i>
+              </span>
+            </div>
+            <div class="ml-3 pl-3 border-l border-[#dfc384]/35 space-y-3 mt-3 pt-0.5 relative">
+              <div class="relative flex items-center">
+                <div class="absolute -left-3 top-1/2 -translate-y-1/2 w-3 h-[1px] bg-[#dfc384]/40 pointer-events-none"></div>
+                <div class="w-full tree-node-card px-2.5 py-1.5 flex items-center justify-between text-[9.5px]">
+                  <div class="card-connector-pin"></div>
+                  <span class="text-slate-300 truncate">1.1 概念剧照调色</span>
+                  <span class="text-[8px] font-mono text-amber-300 shrink-0" id="projStageAssets" data-gw-degradation="not_integrated" title="真实数据源：/api/episode-pipelines 的 assets 阶段状态">读取中…</span>
+                </div>
+              </div>
+              <div class="relative space-y-3">
+                <div class="flex items-center">
+                  <div class="absolute -left-3 top-1/2 -translate-y-1/2 w-3 h-[1px] bg-[#dfc384]/40 pointer-events-none"></div>
+                  <div class="w-full tree-node-card px-2.5 py-1.5 flex items-center justify-between text-[9.5px]">
+                    <div class="card-connector-pin"></div>
+                    <span class="text-[#eddab3] font-medium truncate">1.2 故事板分镜矩阵</span>
+                    <span class="text-[8px] font-mono text-amber-300 shrink-0" id="projStageVideo" data-gw-degradation="not_integrated" title="真实数据源：/api/episode-pipelines 的 video 阶段状态">读取中…</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 2. NODE 02: 赛博短剧 -->
+          <div class="relative pl-5">
+            <div class="absolute left-[-6px] top-[17px] w-[6px] h-[1.5px] bg-[#dfc384]/50 pointer-events-none"></div>
+            <div data-project-type="series" class="tree-node-card px-2.5 py-1.5 flex items-center justify-between cursor-pointer" onclick="WorkbenchProjects.filterType('series', this)">
+              <div class="card-connector-pin"></div>
+              <div class="flex items-center space-x-1.5 min-w-0">
+                <span class="text-[8px] font-mono text-[#eddab3] font-bold px-1 py-0.5 rounded bg-white/5 border border-white/10 shrink-0">02</span>
+                <span class="text-[10px] font-semibold text-slate-200 truncate">《霓虹脉冲2099》短剧</span>
+              </div>
+              <span class="text-[7.5px] font-mono px-1 py-0.5 rounded-full bg-cyan-500/15 text-cyan-400 border border-cyan-500/30 shrink-0">run</span>
+            </div>
+          </div>
+
+          <!-- 3. NODE 03: 概念PV -->
+          <div class="relative pl-5">
+            <div class="absolute left-[-6px] top-[17px] w-[6px] h-[1.5px] bg-amber-500/40 pointer-events-none"></div>
+            <div data-project-type="other" class="tree-node-card px-2.5 py-1.5 flex items-center justify-between cursor-pointer" onclick="WorkbenchProjects.filterType('other', this)">
+              <div class="card-connector-pin"></div>
+              <div class="flex items-center space-x-1.5 min-w-0">
+                <span class="text-[8px] font-mono text-slate-400 font-bold px-1 py-0.5 rounded bg-white/5 border border-white/10 shrink-0">03</span>
+                <span class="text-[10px] font-semibold text-slate-300 truncate">《深渊回响》先导概念</span>
+              </div>
+              <span class="text-[7.5px] font-mono px-1 py-0.5 rounded-full bg-amber-500/15 text-amber-300 border border-amber-500/30 shrink-0">plan</span>
+            </div>
+          </div>
+
+          <!-- 4. NODE 04: 已归档 -->
+          <div class="relative pl-5">
+            <div class="absolute left-[-6px] top-[17px] w-[6px] h-[1.5px] bg-blue-400/40 pointer-events-none"></div>
+            <div data-project-scope="archived" class="tree-node-card px-2.5 py-1.5 flex items-center justify-between cursor-pointer" onclick="WorkbenchProjects.toggleArchived(this)">
+              <div class="card-connector-pin"></div>
+              <div class="flex items-center space-x-1.5 min-w-0">
+                <span class="text-[8px] font-mono text-blue-400 font-bold px-1 py-0.5 rounded bg-blue-500/10 border border-blue-500/20 shrink-0">04</span>
+                <span class="text-[10px] font-semibold text-slate-400 truncate">已归档发行剧集 (8)</span>
+              </div>
+              <span class="text-[7.5px] font-mono px-1 py-0.5 rounded-full bg-blue-500/15 text-blue-400 border border-blue-500/30 shrink-0">arch</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </aside>
+
+    <main class="flex-1 p-2.5 min-h-0 overflow-hidden flex flex-col space-y-2">
+
+      <!-- TOP CONTROL & FILTER BAR -->
+      <section class="champagne-card p-2 shrink-0 flex items-center justify-between">
+        <!-- 搜索与分类胶囊 -->
+        <div class="flex items-center space-x-2.5">
+          <div class="bay-inset px-2.5 py-1 rounded-xl flex items-center space-x-2 border border-[#dfc384]/30 w-64">
+            <i data-lucide="search" class="w-3.5 h-3.5 text-[#dfc384]"></i>
+            <input type="text" id="projectSearchInput" placeholder="搜索项目代号、剧本或镜头..." class="bg-transparent border-0 text-xs font-mono text-slate-100 placeholder-slate-500 focus:ring-0 focus:outline-none p-0 w-full" oninput="WorkbenchProjects.search(this.value)">
+          </div>
+
+          <!-- 分类筛选胶囊 -->
+          <div class="flex items-center space-x-1 text-[10px] font-mono" id="filterCapsulesGroup">
+            <button class="pill-capsule-active px-2.5 py-0.5 cursor-pointer filter-pill-btn" data-scope="active" onclick="WorkbenchProjects.filterScope('active', this)">全部 (<span id="countActive">0</span>)</button>
+            <button class="pill-capsule-inactive px-2.5 py-0.5 text-slate-300 cursor-pointer filter-pill-btn" data-type="film" onclick="WorkbenchProjects.filterType('film', this)">制作中</button>
+            <button class="pill-capsule-inactive px-2.5 py-0.5 text-slate-400 cursor-pointer filter-pill-btn" data-type="series" onclick="WorkbenchProjects.filterType('series', this)">渲染中</button>
+            <button class="pill-capsule-inactive px-2.5 py-0.5 text-slate-400 cursor-pointer filter-pill-btn" data-type="other" onclick="WorkbenchProjects.filterType('other', this)">待审阅</button>
+            <button class="pill-capsule-inactive px-2.5 py-0.5 text-slate-400 cursor-pointer filter-pill-btn" data-scope="archived" onclick="WorkbenchProjects.filterScope('archived', this)">已归档 (<span id="countArchived">0</span>)</button>
+          </div>
+        </div>
+
+        <!-- 视图切换与主操作按钮 -->
+        <div class="flex items-center space-x-2">
+          <div class="hw-segmented-group">
+            <button class="hw-segmented-btn active" id="viewBtnGrid" title="网格视图" onclick="WorkbenchProjects.switchView('grid')"><i data-lucide="grid" class="w-3.5 h-3.5"></i></button>
+            <button class="hw-segmented-btn" id="viewBtnTable" title="列表视图" onclick="WorkbenchProjects.switchView('table')"><i data-lucide="list" class="w-3.5 h-3.5"></i></button>
+            <a href="storyboard.html" class="hw-segmented-btn flex items-center" title="分镜排期矩阵"><i data-lucide="calendar" class="w-3.5 h-3.5"></i></a>
+          </div>
+
+          <div class="h-4 w-px bg-white/10"></div>
+
+          <button class="tactile-keycap px-3 py-1.5 rounded-xl flex items-center space-x-1.5 group cursor-pointer" title="新建项目" onclick="HardwareDeck.openModal('newProjectModal')">
+            <div class="hw-round-btn w-4 h-4"><div class="hw-round-inner w-3 h-3"><i data-lucide="plus" class="w-2.5 h-2.5 text-[#dfc384]"></i></div></div>
+            <span class="text-xs font-bold text-[#eddab3]">新建项目</span>
+          </button>
+        </div>
+      </section>
+
+      <!-- MAIN WORKBENCH: 项目卡片网格独立平滑滚动视口 (前3个横排，后续分排展示，卡片高度240px) -->
+      <div class="flex-1 min-h-0 overflow-y-auto pr-1 select-none" id="projectsGridViewContainer">
+        <!-- UPPER: 项目卡片网格流 -->
+        <div class="w-full flex flex-col space-y-2.5 pb-2" id="projectsCardsStream">
+          <!-- 由 WorkbenchProjects 动态渲染3列曜石机架项目卡片流 -->
+        </div>
+      </div>
+
+      <!-- TABLE VIEW CONTAINER (默认隐藏) -->
+      <div class="champagne-card p-3 flex-1 min-h-0 overflow-y-auto hidden" id="projectTableView">
+        <table class="w-full text-left text-xs font-mono">
+          <thead class="border-b border-white/10 text-slate-400 text-[10px]">
+            <tr>
+              <th class="pb-2">工程代号与名称</th>
+              <th class="pb-2">类型</th>
+              <th class="pb-2">阶段状态</th>
+              <th class="pb-2">制作进度</th>
+              <th class="pb-2">分镜 / 镜头</th>
+              <th class="pb-2">更新时间</th>
+              <th class="pb-2 text-right">操作</th>
+            </tr>
+          </thead>
+          <tbody id="projectTableBody" class="divide-y divide-white/5 text-slate-200"></tbody>
+        </table>
+      </div>
+
+      <!-- PERMANENT LOWER DOCK: 常驻底部硬件控制台 (12列横向拟物机架，紧凑 120px 高度，100% 完整常驻视口) -->
+      <div class="w-full grid grid-cols-12 gap-2 pt-1.5 border-t border-white/10 shrink-0 select-none" id="projectsPermanentBottomDeck">
+
+        <!-- 1. GPU 集群算力分配 (Span 5，2x2 极速双列微型矩阵 + 显存旋钮) -->
+        <div class="col-span-5">
+          <section class="champagne-card p-2 flex flex-col justify-between h-full">
+            <div class="flex items-center justify-between pb-1 mb-1 border-b border-white/5">
+              <div class="flex items-center space-x-2">
+                <i data-lucide="server" class="w-3.5 h-3.5 text-[#dfc384]"></i>
+                <h3 class="text-xs font-semibold text-slate-100">GPU 算力集群状态</h3>
+              </div>
+              <!-- 真实数据源：GET /api/observability/health 的 gpu_telemetry；不可用才显式降级。 -->
+              <span class="text-[8.5px] font-mono text-amber-300 flex items-center" id="gpuClusterStatus" data-gw-degradation="not_integrated" title="真实数据源：GET /api/observability/health">
+                <span class="w-1.5 h-1.5 rounded-full bg-amber-400 mr-1 animate-pulse"></span>
+                GPU 遥测读取中…
+              </span>
+            </div>
+
+            <!-- GPU 设备列表：由真实 gpu_telemetry.devices 渲染，无真实设备时明说未接入 -->
+            <div class="grid grid-cols-2 gap-1 mb-1" id="gpuDeviceGrid"></div>
+            </div>
+
+            <!-- 旋钮微调显存保护与自动降载 -->
+            <div class="pt-1 border-t border-white/5 flex items-center justify-between">
+              <div class="flex items-center space-x-2">
+                <div class="hw-master-dial-housing w-7 h-7">
+                  <div class="hw-knob-cylinder w-5 h-5" id="masterKnobEl">
+                    <div class="hw-knob-indicator-dot" style="top: 1px; width: 2px; height: 2px;"></div>
+                    <div class="hw-knob-center-inset w-3 h-3 text-[5.5px]">85</div>
+                  </div>
+                </div>
+                <div class="text-[8.5px] font-mono text-slate-300 font-semibold">
+                  <span id="gpuVramCapReadout" data-gw-degradation="not_integrated" title="真实数据源：gpu_telemetry.devices[].memory_total_mib">VRAM 上限未接入</span>
+                </div>
+              </div>
+
+              <!-- 自动降载滑动开关 -->
+              <div class="flex items-center space-x-1.5">
+                <span class="text-[7.5px] font-mono text-slate-400">AUTO-SCALE</span>
+                <div class="hw-slide-toggle active" style="transform: scale(0.85); transform-origin: right center;" onclick="this.classList.toggle('active')">
+                  <div class="hw-slide-peg"></div>
+                </div>
+              </div>
+            </div>
+          </section>
+        </div>
+
+        <!-- 2. 活跃渲染任务队列 (Span 4) -->
+        <div class="col-span-4">
+          <section class="champagne-card p-2 h-full flex flex-col justify-between">
+            <div class="flex items-center justify-between pb-1 mb-1 border-b border-white/5">
+              <div class="flex items-center space-x-2">
+                <i data-lucide="layers" class="w-3.5 h-3.5 text-[#dfc384]"></i>
+                <h3 class="text-xs font-semibold text-slate-100">渲染批处理流水线</h3>
+              </div>
+              <button class="text-[8.5px] font-mono font-bold text-cyan-300 hover:underline cursor-pointer" id="activeTasksCountBadge" onclick="HardwareDeck.openDrawer('taskCenterDrawer')" title="真实作业队列 /api/observability/tasks">读取中…</button>
+            </div>
+
+            <!-- 真实作业队列容器：内容由 /api/observability/tasks 驱动，不含静态示例任务。 -->
+            <div class="space-y-1" id="workbenchActiveTasksContainer">
+              <div class="bay-inset p-3 rounded-xl border border-white/10 text-center text-[9px] font-mono text-slate-400" role="status">读取真实作业队列…</div>
+            </div>
+          </section>
+        </div>
+
+        <!-- 3. 快速立项点火台 (Span 3) -->
+        <div class="col-span-3">
+          <section class="champagne-card p-2 h-full flex items-center justify-between">
+            <div>
+              <div class="text-xs font-bold text-slate-200">智能体立项助理</div>
+              <div class="text-[8px] font-mono text-slate-500 mt-0.5">自动装配剧本与分镜模组</div>
+              <div class="text-[7.5px] font-mono text-slate-400 mt-1 flex items-center">
+                <span class="w-1.5 h-1.5 rounded-full bg-slate-500 mr-1" id="projectDispatchLed"></span>
+                <span id="projectDispatchStatus" title="真实数据源：POST /api/asset-registry/projects">待命</span>
+              </div>
+            </div>
+            <!-- 彩虹 AI 微球发射按钮 -->
+            <button class="launch-orb-btn shrink-0 cursor-pointer" title="一键立项点火" onclick="HardwareDeck.openModal('newProjectModal')" style="
+              width: 36px; height: 36px; border-radius: 50%;
+              background: conic-gradient(from 0deg, #22d3ee, #a855f7, #f59e0b, #ec4899, #22d3ee);
+              padding: 2.5px;
+              box-shadow: 0 0 14px rgba(236,72,153,0.65), 0 0 8px rgba(34,211,238,0.75), 0 0 24px rgba(168,85,247,0.4);
+              transition: transform 0.15s ease, box-shadow 0.15s ease;
+            ">
+              <div style="width:100%;height:100%;border-radius:50%;background:rgba(5,5,10,0.88);display:flex;align-items:center;justify-content:center;">
+                <div style="width:14px;height:14px;border-radius:50%;
+                  background: radial-gradient(circle at 35% 35%, #67e8f9, #a855f7 55%, #f59e0b);
+                  box-shadow: 0 0 6px rgba(103,232,249,0.8), 0 0 3px rgba(168,85,247,0.6);
+                  animation: orbCoreFloat 2.8s ease-in-out infinite alternate;"></div>
+              </div>
+            </button>
+          </section>
+        </div>
+
+      </div>
+
+    </main>
+  </div>
+
+  <!-- 快速立项模态框 (#newProjectModal) -->
+  <div class="hw-modal-backdrop" id="newProjectModal">
+    <div class="hw-modal-dialog w-[480px] p-4 text-slate-200">
+      <div class="flex items-center justify-between pb-2 mb-3 border-b border-white/10">
+        <div class="flex items-center space-x-2">
+          <i data-lucide="folder-plus" class="w-4 h-4 text-[#dfc384]"></i>
+          <h3 class="text-sm font-bold text-slate-100">创建新影视制片工程</h3>
+        </div>
+        <button class="text-slate-400 hover:text-white" onclick="HardwareDeck.closeModal('newProjectModal')">
+          <i data-lucide="x" class="w-4 h-4"></i>
+        </button>
+      </div>
+
+      <form onsubmit="WorkbenchProjects.handleCreateProject(event)" class="space-y-3 text-xs">
+        <div>
+          <label class="block text-[10px] font-mono text-slate-400 mb-1">工程代号 / 项目名称</label>
+          <input type="text" id="newProjectNameInput" required placeholder="例如：《深渊回响 · 先导概念片》" class="w-full bg-[#0a0c10] border border-white/10 rounded-lg px-2.5 py-1.5 text-xs text-slate-100 focus:outline-none focus:border-[#dfc384]">
+        </div>
+
+        <div class="grid grid-cols-2 gap-2">
+          <div>
+            <label class="block text-[10px] font-mono text-slate-400 mb-1">项目类型</label>
+            <select id="newProjectTypeSelect" class="w-full bg-[#0a0c10] border border-white/10 rounded-lg px-2 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-[#dfc384]">
+              <option value="film">院线长片 (Film)</option>
+              <option value="series">连续短剧 (Series)</option>
+              <option value="other">概念艺术与PV (PV/Art)</option>
+            </select>
+          </div>
+          <div>
+            <label class="block text-[10px] font-mono text-slate-400 mb-1">色彩构图标准</label>
+            <select class="w-full bg-[#0a0c10] border border-white/10 rounded-lg px-2 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-[#dfc384]">
+              <option>ACEScg · 2.39:1 宽银幕</option>
+              <option>Rec.709 · 16:9 标清</option>
+              <option>9:16 竖屏短剧集</option>
+            </select>
+          </div>
+        </div>
+
+        <div>
+          <label class="block text-[10px] font-mono text-slate-400 mb-1">项目简述与背景设想</label>
+          <textarea id="newProjectDescInput" rows="2" placeholder="输入世界观设定与初版叙事方向..." class="w-full bg-[#0a0c10] border border-white/10 rounded-lg px-2.5 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-[#dfc384]"></textarea>
+        </div>
+
+        <div>
+          <label class="block text-[10px] font-mono text-slate-400 mb-1" for="newProjectGatesInput">初始阶段门（可选）</label>
+          <textarea id="newProjectGatesInput" rows="2" placeholder="每行一项，格式：code|阶段名称；例如：script|剧本评审" class="w-full bg-[#0a0c10] border border-white/10 rounded-lg px-2.5 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-[#dfc384]"></textarea>
+          <p class="mt-1 text-[9px] text-slate-500">门只在本次立项事务中创建；最多32项。重试相同内容会复用同一请求键。</p>
+        </div>
+
+        <div class="project-date-range-field" data-project-date-range>
+          <label class="block text-[10px] font-mono text-slate-400 mb-1">项目排期</label>
+          <button type="button" class="tactile-keycap project-date-range-trigger" data-date-range-trigger aria-haspopup="dialog" aria-expanded="false"><i data-lucide="calendar-days" class="w-4 h-4"></i><span class="project-date-range-label" data-date-range-label>选择项目排期</span></button>
+          <input type="hidden" id="newProjectStartAt" data-date-range-start>
+          <input type="hidden" id="newProjectDueAt" data-date-range-end>
+          <div class="project-date-range-popover" data-date-range-popover hidden></div>
+        </div>
+
+        <div class="pt-2 border-t border-white/10 flex justify-end space-x-2">
+          <button type="button" class="px-3 py-1.5 rounded-lg text-xs font-mono text-slate-400 hover:text-white" onclick="HardwareDeck.closeModal('newProjectModal')">取消</button>
+          <button type="submit" class="tactile-keycap px-4 py-1.5 rounded-lg text-xs font-bold text-[#eddab3]">立即立项</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- 任务中心滑出抽屉 (#taskCenterDrawer) -->
+  <div class="hw-drawer-backdrop" id="taskCenterDrawer-backdrop"></div>
+  <aside class="hw-drawer-panel" id="taskCenterDrawer">
+    <div class="p-3.5 border-b border-white/10 flex items-center justify-between shrink-0 bg-[#0d0f14]">
+      <div class="flex items-center space-x-2">
+        <i data-lucide="layers" class="w-4 h-4 text-[#dfc384]"></i>
+        <h3 class="text-xs font-bold text-slate-100 uppercase tracking-wider">渲染队列与后台任务流水线</h3>
+      </div>
+      <button class="text-slate-400 hover:text-white" onclick="HardwareDeck.closeDrawer('taskCenterDrawer')">
+        <i data-lucide="x" class="w-4 h-4"></i>
+      </button>
+    </div>
+
+    <div class="p-3 overflow-y-auto space-y-2 flex-1 text-xs">
+      <!-- 任务中心抽屉内容：由 /api/observability/tasks 真实驱动。 -->
+      <div class="space-y-2" id="workbenchTaskCenterDrawerList">
+        <div class="bay-inset p-2.5 rounded-xl border border-white/10 text-center text-[10px] font-mono text-slate-400" role="status">读取真实作业队列…</div>
+      </div>
+    </div>
+  </aside>
+
+  <!-- 团队席位模态框 (#teamModal) -->
+  <div class="hw-modal-backdrop" id="teamModal">
+    <div class="hw-modal-dialog w-[480px] p-4 text-slate-200" id="teamModalDialog">
+      <div class="flex items-center justify-between pb-2 mb-3 border-b border-white/10">
+        <div class="flex items-center space-x-2">
+          <i data-lucide="users" class="w-4 h-4 text-[#dfc384]"></i>
+          <h3 class="text-sm font-bold text-slate-100">团队与协同席位治理</h3>
+        </div>
+        <button type="button" class="hw-modal-close text-slate-400 hover:text-white" onclick="HardwareDeck.closeModal('teamModal')">
+          <i data-lucide="x" class="w-4 h-4"></i>
+        </button>
+      </div>
+
+      <div class="space-y-3 text-xs">
+        <div class="grid grid-cols-2 gap-2">
+          <a href="/static/pages/collab.html" class="bay-inset p-2 rounded-xl flex items-center justify-between group hover:border-[#dfc384]/40 transition border border-white/5">
+            <div class="flex items-center space-x-2">
+              <div class="w-6 h-6 rounded bg-[#dfc384]/15 border border-[#dfc384]/30 flex items-center justify-center text-[#eddab3]">
+                <i data-lucide="network" class="w-3.5 h-3.5"></i>
+              </div>
+              <div>
+                <div class="font-bold text-slate-200 group-hover:text-[#eddab3] transition">实时协同工作台</div>
+                <div class="text-[8.5px] font-mono text-slate-400">/static/pages/collab.html</div>
+              </div>
+            </div>
+            <i data-lucide="chevron-right" class="w-3.5 h-3.5 text-slate-500 group-hover:text-[#eddab3] transition"></i>
+          </a>
+
+          <a href="/static/pages/assets.html" class="bay-inset p-2 rounded-xl flex items-center justify-between group hover:border-[#dfc384]/40 transition border border-white/5">
+            <div class="flex items-center space-x-2">
+              <div class="w-6 h-6 rounded bg-cyan-500/15 border border-cyan-500/30 flex items-center justify-center text-cyan-300">
+                <i data-lucide="shield-alert" class="w-3.5 h-3.5"></i>
+              </div>
+              <div>
+                <div class="font-bold text-slate-200 group-hover:text-cyan-300 transition">权限与团队审批</div>
+                <div class="text-[8.5px] font-mono text-slate-400">/static/pages/assets.html</div>
+              </div>
+            </div>
+            <i data-lucide="chevron-right" class="w-3.5 h-3.5 text-slate-500 group-hover:text-cyan-300 transition"></i>
+          </a>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 项目治理操作二次确认模态框 (#projectActionModal) -->
+  <div class="hw-modal-backdrop" id="projectActionModal">
+    <div class="hw-modal-dialog w-[480px] p-4 text-slate-200" id="projectActionModalDialog">
+      <div class="flex items-center justify-between pb-2 mb-3 border-b border-white/10">
+        <div class="flex items-center space-x-2">
+          <i id="actionModalIcon" data-lucide="alert-triangle" class="w-4 h-4 text-[#dfc384]"></i>
+          <h3 class="text-sm font-bold text-slate-100" id="actionModalTitle">项目操作确认</h3>
+        </div>
+        <button type="button" class="hw-modal-close text-slate-400 hover:text-white cursor-pointer" onclick="HardwareDeck.closeModal('projectActionModal')">
+          <i data-lucide="x" class="w-4 h-4"></i>
+        </button>
+      </div>
+
+      <div class="space-y-3 text-xs">
+        <div class="bay-inset p-3 rounded-xl border border-white/5 space-y-1.5">
+          <div class="text-[12px] font-bold text-[#eddab3] flex items-center space-x-1.5">
+            <span class="w-1.5 h-1.5 rounded-full bg-[#dfc384] shadow-[0_0_6px_#dfc384]"></span>
+            <span id="actionModalProjectName">项目：未指定</span>
+          </div>
+          <p class="text-[11.5px] text-slate-300 leading-relaxed font-normal" id="actionModalDesc">说明文本</p>
+        </div>
+
+        <!-- 针对删除到统一回收站的醒目安全说明 -->
+        <div id="actionModalSafetyNotice" class="p-2.5 rounded-lg bg-emerald-500/10 border border-emerald-500/25 flex items-start space-x-2">
+          <i data-lucide="shield-check" class="w-4 h-4 text-emerald-400 shrink-0 mt-0.5"></i>
+          <div class="text-[10px] text-emerald-300 leading-tight">
+            <strong>非物理直接删除保护：</strong>
+            <span>项目及其关联资产仅移动至统一回收站隔离停放，保留稳定工程 ID 与关联关系，随时可在统一回收站中一键安全恢复。</span>
+          </div>
+        </div>
+
+        <div class="pt-2 border-t border-white/10 flex justify-end space-x-2">
+          <button type="button" class="px-3 py-1.5 rounded-lg text-xs font-mono text-slate-400 hover:text-white cursor-pointer" onclick="HardwareDeck.closeModal('projectActionModal')">取消</button>
+          <button type="button" id="actionModalConfirmBtn" class="tactile-keycap px-4 py-1.5 rounded-lg text-xs font-bold cursor-pointer" onclick="WorkbenchProjects.executeConfirmedAction()">确定执行</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 编辑制片工程模态框 (#editProjectModal) -->
+  <div class="hw-modal-backdrop" id="editProjectModal">
+    <div class="hw-modal-dialog w-[520px] p-4 text-slate-200">
+      <div class="flex items-center justify-between pb-2 mb-3 border-b border-white/10">
+        <div class="flex items-center space-x-2">
+          <i data-lucide="edit-3" class="w-4 h-4 text-[#dfc384]"></i>
+          <h3 class="text-sm font-bold text-slate-100">编辑制片工程信息</h3>
+        </div>
+        <button type="button" class="text-slate-400 hover:text-white cursor-pointer" onclick="HardwareDeck.closeModal('editProjectModal')">
+          <i data-lucide="x" class="w-4 h-4"></i>
+        </button>
+      </div>
+
+      <form onsubmit="WorkbenchProjects.handleUpdateProject(event)" class="space-y-3 text-xs" id="editProjectForm">
+        <input type="hidden" id="editProjectId">
+        <input type="hidden" id="editProjectVersion">
+
+        <div>
+          <label class="block text-[10px] font-mono text-slate-400 mb-1">工程代号 / 项目名称</label>
+          <input type="text" id="editProjectNameInput" required placeholder="例如：《神谕之地：纪元重启》" class="w-full bg-[#0a0c10] border border-white/10 rounded-lg px-2.5 py-1.5 text-xs text-slate-100 focus:outline-none focus:border-[#dfc384]">
+        </div>
+
+        <div class="grid grid-cols-2 gap-2">
+          <div>
+            <label class="block text-[10px] font-mono text-slate-400 mb-1">内容类型</label>
+            <select id="editProjectTypeSelect" class="w-full bg-[#0a0c10] border border-white/10 rounded-lg px-2 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-[#dfc384]">
+              <option value="film">院线长片 (Film)</option>
+              <option value="series">连续短剧 (Series)</option>
+              <option value="other">概念艺术与PV (PV/Art)</option>
+            </select>
+          </div>
+          <div>
+            <label class="block text-[10px] font-mono text-slate-400 mb-1">当前制片阶段</label>
+            <select id="editProjectStageSelect" class="w-full bg-[#0a0c10] border border-white/10 rounded-lg px-2 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-[#dfc384]">
+              <option value="planning">1. 概念立项 (Planning)</option>
+              <option value="storyboard">2. 故事板分镜 (Storyboard)</option>
+              <option value="production">3. 生成制片 (Production)</option>
+              <option value="review">4. 审核定剪 (Review)</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-3 gap-2">
+          <div>
+            <label class="block text-[10px] font-mono text-slate-400 mb-1">分镜场次数</label>
+            <input type="number" id="editProjectScenesInput" min="1" max="999" class="w-full bg-[#0a0c10] border border-white/10 rounded-lg px-2.5 py-1.5 text-xs text-slate-100 focus:outline-none focus:border-[#dfc384]">
+          </div>
+          <div>
+            <label class="block text-[10px] font-mono text-slate-400 mb-1">预估镜头数</label>
+            <input type="number" id="editProjectShotsInput" min="1" max="9999" class="w-full bg-[#0a0c10] border border-white/10 rounded-lg px-2.5 py-1.5 text-xs text-slate-100 focus:outline-none focus:border-[#dfc384]">
+          </div>
+          <div>
+            <label class="block text-[10px] font-mono text-slate-400 mb-1">总制作进度 (%)</label>
+            <input type="number" id="editProjectProgressInput" min="0" max="100" class="w-full bg-[#0a0c10] border border-white/10 rounded-lg px-2.5 py-1.5 text-xs text-slate-100 focus:outline-none focus:border-[#dfc384]">
+          </div>
+        </div>
+
+        <div>
+          <label class="block text-[10px] font-mono text-slate-400 mb-1" for="newProjectGatesInput">初始阶段门（可选）</label>
+          <textarea id="newProjectGatesInput" rows="2" placeholder="每行一项，格式：code|阶段名称；例如：script|剧本评审" class="w-full bg-[#0a0c10] border border-white/10 rounded-lg px-2.5 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-[#dfc384]"></textarea>
+          <p class="mt-1 text-[9px] text-slate-500">门只在本次立项事务中创建；最多32项。重试相同内容会复用同一请求键。</p>
+        </div>
+
+        <div class="project-date-range-field" data-project-date-range>
+          <label class="block text-[10px] font-mono text-slate-400 mb-1">项目排期</label>
+          <button type="button" class="tactile-keycap project-date-range-trigger" data-date-range-trigger aria-haspopup="dialog" aria-expanded="false"><i data-lucide="calendar-days" class="w-4 h-4"></i><span class="project-date-range-label" data-date-range-label>选择项目排期</span></button>
+          <input type="hidden" id="editProjectStartAt" data-date-range-start>
+          <input type="hidden" id="editProjectDueAt" data-date-range-end>
+          <div class="project-date-range-popover" data-date-range-popover hidden></div>
+        </div>
+
+        <div>
+          <label class="block text-[10px] font-mono text-slate-400 mb-1">世界观设定与剧情大纲</label>
+          <textarea id="editProjectDescInput" rows="3" placeholder="完善项目剧情叙事与美学规格描述..." class="w-full bg-[#0a0c10] border border-white/10 rounded-lg px-2.5 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-[#dfc384]"></textarea>
+        </div>
+
+        <div class="pt-2 border-t border-white/10 flex justify-end space-x-2">
+          <button type="button" class="px-3 py-1.5 rounded-lg text-xs font-mono text-slate-400 hover:text-white cursor-pointer" onclick="HardwareDeck.closeModal('editProjectModal')">取消</button>
+          <button type="submit" class="tactile-keycap px-4 py-1.5 rounded-lg text-xs font-bold text-[#eddab3] cursor-pointer">保存修改</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- 全局统一回收站抽屉舱 (#unifiedGlobalTrashDrawer) -->
+  <div class="hw-drawer-backdrop" id="unifiedGlobalTrashDrawer-backdrop" onclick="HardwareDeck.closeDrawer('unifiedGlobalTrashDrawer')"></div>
+  <aside class="hw-drawer-panel w-[min(1120px,92vw)]" id="unifiedGlobalTrashDrawer">
+    <div class="p-3.5 border-b border-white/10 flex items-center justify-between shrink-0 bg-[#0d0f14]">
+      <div class="flex items-center space-x-2.5">
+        <div class="w-7 h-7 rounded-lg bg-red-500/15 border border-red-500/30 flex items-center justify-center text-red-400">
+          <i data-lucide="trash-2" class="w-4 h-4"></i>
+        </div>
+        <div>
+          <h3 class="text-xs font-bold text-slate-100 tracking-wider">全局统一回收站 · 内容资产治理舱</h3>
+          <p class="text-[9px] font-mono text-slate-500">非物理软删除隔离停放池 · 支持随时无损安全恢复</p>
+        </div>
+      </div>
+      <button class="text-slate-400 hover:text-white cursor-pointer" onclick="HardwareDeck.closeDrawer('unifiedGlobalTrashDrawer')">
+        <i data-lucide="x" class="w-4 h-4"></i>
+      </button>
+    </div>
+
+    <!-- 顶部筛选：全部 / 项目 / 画布 / 资产 -->
+    <div class="px-3 pt-2.5 pb-2 bg-[#090b0f] border-b border-white/5 flex items-center justify-between">
+      <div class="flex items-center space-x-1 text-[10px] font-mono" id="globalTrashTabs">
+        <button class="pill-capsule-active px-2.5 py-0.5 cursor-pointer filter-pill-btn" id="trashTabAll" onclick="WorkbenchProjects.switchGlobalTrashTab('all')">
+          全部 (<span id="trashCountAll">0</span>)
+        </button>
+        <button class="pill-capsule-inactive px-2.5 py-0.5 text-slate-400 cursor-pointer filter-pill-btn" id="trashTabProjects" onclick="WorkbenchProjects.switchGlobalTrashTab('projects')">
+          项目 (<span id="trashCountProjects">0</span>)
+        </button>
+        <button class="pill-capsule-inactive px-2.5 py-0.5 text-slate-400 cursor-pointer filter-pill-btn" id="trashTabCanvases" onclick="WorkbenchProjects.switchGlobalTrashTab('canvases')">
+          画布 (<span id="trashCountCanvases">0</span>)
+        </button>
+        <button class="pill-capsule-inactive px-2.5 py-0.5 text-slate-400 cursor-pointer filter-pill-btn" id="trashTabAssets" onclick="WorkbenchProjects.switchGlobalTrashTab('assets')">
+          资产 (<span id="trashCountAssets">0</span>)
+        </button>
+      </div>
+
+      <a href="/static/pages/projects.html?openTrash=1" class="text-[9px] font-mono text-[#dfc384] hover:underline flex items-center space-x-1" title="打开 Workbench 统一回收站">
+        <span>高级审计</span>
+        <i data-lucide="external-link" class="w-2.5 h-2.5"></i>
+      </a>
+    </div>
+
+    <!-- 抽屉内容列表容器 -->
+    <div class="p-3 overflow-y-auto space-y-2.5 flex-1 text-xs" id="globalTrashContainer">
+      <!-- 由 WorkbenchProjects 动态填充回收条目 -->
+    </div>
+
+    <!-- 抽屉底栏安全说明与刷新 -->
+    <div class="p-2.5 bg-[#08090d] border-t border-white/5 flex items-center justify-between shrink-0 text-[9.5px] font-mono text-slate-400">
+      <div class="flex items-center space-x-1.5 text-emerald-400">
+        <i data-lucide="shield-check" class="w-3.5 h-3.5"></i>
+        <span>所有条目均保留元数据与哈希映射，永不静默物理销毁</span>
+      </div>
+      <button class="tactile-keycap px-2.5 py-1 rounded text-[9px] text-[#eddab3] cursor-pointer" onclick="WorkbenchProjects.refreshGlobalTrash()">
+        刷新回收池
+      </button>
+    </div>
+  </aside>
+
+  <!-- 全局拟物黑金 Toast 悬浮通知容器 -->
+  <div id="workbenchToastContainer" class="fixed top-5 right-5 z-50 flex flex-col space-y-2 pointer-events-none"></div>
+
+  <!-- Scripts -->
+  <script src="/static/js/core/degradation.js?v=v0.0.1-alpha-2026"></script>
+  <script src="/static/js/core/hardware-telemetry.js"></script>
+<script src="/static/js/core/task-queue.js"></script>
+  <script src="/static/js/modules/project-date-range.js"></script>
+  <script src="/static/js/controllers/projects-controller.js"></script>
+<script src="/static/js/core/workbench-shell.js"></script>
+</body>
+</html>

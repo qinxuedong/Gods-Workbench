@@ -1,0 +1,59 @@
+{
+  "meta": {
+    "id": "observability-health-truthful-v1",
+    "purpose": "观测阶段健康检查如实状态样本（未接入组件不得谎报 ok）",
+    "contract": "docs/contracts/OBSERVABILITY-INTERFACE-CATALOG.yaml",
+    "contract_version": "p10b-frozen-1"
+  },
+  "status": "partial",
+  "data_status": "degraded",
+  "checks": [
+    {
+      "name": "projects",
+      "status": "ok",
+      "message_safe": "ProjectsService 可用"
+    },
+    {
+      "name": "canvas",
+      "status": "ok",
+      "message_safe": "GodCanvasService 可用"
+    },
+    {
+      "name": "asset_library",
+      "status": "ok",
+      "message_safe": "AssetLibraryService 可用"
+    },
+    {
+      "name": "audit_buffer",
+      "status": "ok",
+      "message_safe": "审计环形缓冲可读"
+    },
+    {
+      "name": "hardware_telemetry",
+      "status": "not_integrated",
+      "message_safe": "未接入宿主机 CPU/内存/磁盘遥测数据源"
+    },
+    {
+      "name": "metrics_series",
+      "status": "not_integrated",
+      "message_safe": "未接入指标时间序列存储（无真实序列数据源）"
+    },
+    {
+      "name": "source_registry",
+      "status": "not_integrated",
+      "message_safe": "未接入可观测性数据源注册表"
+    },
+    {
+      "name": "asset_volume_index",
+      "status": "not_integrated",
+      "message_safe": "未接入素材体积统计索引"
+    }
+  ],
+  "buffered_audit_events": 0,
+  "data_gaps": [
+    "未接入宿主机 CPU/内存/磁盘遥测数据源",
+    "未接入指标时间序列存储（无真实序列数据源）",
+    "未接入可观测性数据源注册表",
+    "未接入素材体积统计索引"
+  ]
+}

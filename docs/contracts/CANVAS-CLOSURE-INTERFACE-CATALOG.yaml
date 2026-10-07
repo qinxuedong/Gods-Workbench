@@ -1,0 +1,535 @@
+meta:
+  source: "洁净室自有设计（依据根 AGENTS.md 3.1/3.2/3.3、docs/governance/TASK-NOTES-2026-09-18.md 功能域表与前端 web/js/{canvas-list/api.js,asset-manager/api.js,episode-pipeline.js} 调用面实测收敛）"
+  review_status: "coordinator_frozen_pending_independent_review"
+  distribution: "NOT AUTHORIZED FOR PUBLIC DISTRIBUTION"
+  cleanroom_notice: "仅记录 method/path/body/status/schema/错误/验收语义；不含旧仓源码结构或实现细节。"
+
+service: canvas_closure
+version: p10e-frozen-1
+
+# 冻结说明（Phase 10E，2026-09-22）
+# 本契约是「画布闭环」阶段的最小实现授权范围，覆盖画布素材索引、参考画布、
+# 共享文件夹、视频任务与画布生命周期（元信息/归档/回收站/素材挂接）。
+# 其余相邻端点（/api/asset-registry/assets*、/api/local-assets*、/api/storage-files*、
+# /api/asset-reviews*、/api/asset-thumbnails*、/api/jimeng*、
+# /api/asset-auth/{users,teams,tokens,operation-approvals}*、/api/asset-content*）
+# 仍属 KNOWN_UNIMPLEMENTED，未获契约授权，本阶段不得顺带实现，并由契约测试显式反向断言。
+
+decisions:
+  stable_ids:
+    decision: "对外稳定 ID：画布用 canvas_id，共享文件夹用 folder_id（fold_NNNN），视频任务用 job_id，素材用 asset_id"
+    rationale: "根 AGENTS.md 3.1 强制统一稳定 ID；禁止 pid / cid / id 等别名作为生产实体字段。"
+    id_format: "folder_id 为确定性前缀序号字符串（4 位补零，fold_0001 起），禁止随机数、uuid 或时间戳作为外部 ID。"
+    frontend_compat: "前端 canvas-list.js 的 normalizeCanvas() 读取 value.id || value.canvas_id、value.project || value.project_id；asset-manager.js 读取 data.folder.id、canvas.id。故画布与文件夹投影**额外**输出 id/project 兼容字段，权威字段 canvas_id/project_id/folder_id 同时存在，服务端判定一律以权威字段为准。"
+  forbidden_fabrication:
+    decision: "不得伪造画布闭环数据"
+    rationale: "洁净室零伪造口径（对齐 Phase 10B/10C/10D）。"
+    enforcement: "GET /api/canvas-assets 的 items 在素材注册表未接入时必须为空数组并给 data_gaps；GET /api/reference-canvases、GET /api/shared-folders 与 GET /api/canvases/trash 无内容时必须是空数组，不得预置演示条目；视频任务依 VIDEO-TASKS 独立契约执行。"
+  video_contract_superseded:
+    decision: "视频端点已由 docs/contracts/VIDEO-TASKS-INTERFACE-CATALOG.yaml 冻结契约取代；仅本节旧视频语义停止适用，其他画布闭环语义不变。"
+    rationale: "Phase 12 新增真实远端生成和本地 FFmpeg 导出，必须使用持久 job_id 状态机而非旧 503 占位。"
+    legacy_error_code: "VIDEO_RENDERER_NOT_INTEGRATED（仅历史版本）"
+    list_semantics: "视频列表返回当前主体可见任务；任务状态、错误和产物按 VIDEO-TASKS 契约执行。"
+  fail_closed_capabilities:
+    decision: "下列能力本阶段无真实后端，必须 503 fail-closed，禁止假成功"
+    rationale: "无真实实现时返回 200/201 会让前端误以为文件已生成、目录已扫描或素材已挂接。"
+    errors:
+      - "POST /api/canvas-assets/download -> 503 CANVAS_ASSET_DOWNLOAD_NOT_INTEGRATED"
+      - "POST /api/canvases/assets -> 503 CANVAS_ASSET_ATTACH_NOT_INTEGRATED"
+      - "POST /api/shared-folders/import -> 503 SHARED_FOLDER_IMPORT_NOT_INTEGRATED"
+      - "GET /api/shared-folders/{folder_id}/tree -> 目标不存在 404 SHARED_FOLDER_NOT_FOUND；存在则 503 SHARED_FOLDER_TREE_NOT_INTEGRATED"
+  cas_scope:
+    decision: "CAS 粒度：PATCH/POST /api/canvases/{canvas_id}/meta 校验画布 version；POST /api/canvases/{canvas_id}/touch 校验画布 version；DELETE /api/canvases/{canvas_id} 与 /api/canvases/{canvas_id}/purge 校验画布 version 或回收站前置条件；POST /api/reference-canvases 覆盖既有画布时校验目标画布 version"
+    rationale: "根 AGENTS.md 3.2 要求写入类操作携带 expected_version，版本不一致必须 409，禁止静默覆盖。"
+  expected_version_source:
+    decision: "expected_version 一律可选（缺省表示不校验）：请求体为主；touch 与回收站删除同时接受查询串 expected_version 以兼容前端既有调用面"
+    rationale: "canvas-list/api.js 的 canvasMetaWritePayload() 在请求体发送 expected_version；deleteCanvas/purgeCanvas/archiveCanvas 不发送版本，故服务端必须允许缺省而非伪造版本。"
+  version_conflict_codes:
+    decision: "409 错误码：画布生命周期统一 CANVAS_VERSION_CONFLICT（复用 core/errors.py CanvasVersionConflictException）"
+    rationale: "画布冲突沿用既有权威错误码，便于前端与既有 god-canvas 契约统一处理；未入回收站即彻底删除另用 409 CANVAS_NOT_IN_TRASH。"
+  auth_and_permissions:
+    decision: "认证与权限：读端点需认证（401 UNAUTHORIZED / 403 FORBIDDEN）；写端点需写权限（401 / 403）"
+    rationale: "复用 core/auth.py 的 require_authenticated / require_edit_access，不自造权限体系；401 码沿用 core/errors.py 既有权威值。"
+  error_codes:
+    decision: "错误码表：400 INVALID_REQUEST / INVALID_CANVAS_OPERATION / INVALID_SHARED_FOLDER_PATH；401 UNAUTHORIZED；403 FORBIDDEN；404 CANVAS_NOT_FOUND / SHARED_FOLDER_NOT_FOUND / VIDEO_TASK_NOT_FOUND；409 CANVAS_VERSION_CONFLICT / CANVAS_NOT_IN_TRASH / CANVAS_KIND_MISMATCH；503 VIDEO_RENDERER_NOT_INTEGRATED / CANVAS_ASSET_DOWNLOAD_NOT_INTEGRATED / CANVAS_ASSET_ATTACH_NOT_INTEGRATED / SHARED_FOLDER_IMPORT_NOT_INTEGRATED / SHARED_FOLDER_TREE_NOT_INTEGRATED"
+    rationale: "外层结构统一为标准错误包：detail 内至少含 code 与 message。"
+  forbidden_neighbors:
+    decision: "禁止实现相邻未授权端点"
+    rationale: "洁净室范围控制；未授权端点必须保持 404/405。"
+    paths:
+      - "GET /api/asset-registry/assets"
+      - "PATCH /api/asset-registry/assets/{asset_id}"
+      - "POST /api/asset-registry/assets/archive"
+      - "GET /api/local-assets"
+      - "POST /api/local-assets/upload"
+      - "GET /api/storage-files"
+      - "POST /api/storage-files/delete"
+      - "GET /api/asset-reviews/sessions"
+      - "POST /api/asset-thumbnails/generate"
+      - "GET /api/jimeng/status"
+      - "GET /api/asset-content"
+      - "GET /api/asset-auth/teams"
+  method_aliases:
+    decision: "方法别名：/api/canvases/{canvas_id}/meta 同时接受 POST（前端实测）与 PATCH（任务书声明）；/api/canvases/{canvas_id}/purge 同时接受 DELETE（前端实测）与 POST（任务书声明）"
+    rationale: "任务书与前端调用面方法不一致；本契约以两方法并存最小化破坏，且两种方法共享同一实现与同一守卫，不产生行为差异。"
+    canonical:
+      meta: "POST"
+      purge: "DELETE"
+
+interfaces:
+  - name: get_canvas_assets
+    method: GET
+    path: /api/canvas-assets
+    body: null
+    status:
+      - 200
+      - 401
+      - 403
+    schema:
+      response_200:
+        categories: array
+        canvases: array
+        items: array
+        data_status: "string（not_integrated）"
+        data_gaps: array
+    errors:
+      401: "未认证"
+      403: "角色不合法"
+    acceptance: "canvases 来自真实画布服务投影；素材注册表未接入时 items 必须为 [] 且 data_gaps 非空，禁止编造素材条目。"
+
+  - name: download_canvas_assets
+    method: POST
+    path: /api/canvas-assets/download
+    body:
+      asset_ids: "array | optional"
+      filename: "string | optional"
+    status:
+      - 401
+      - 403
+      - 503
+    schema:
+      response_503:
+        detail:
+          code: string
+          message: string
+          data_status: string
+          data_gaps: array
+    errors:
+      401: "未认证"
+      403: "无写权限（只读角色）"
+      503: "CANVAS_ASSET_DOWNLOAD_NOT_INTEGRATED 打包下载未接入"
+    acceptance: "无真实文件后端时必须 503；绝不返回伪造压缩包或伪造下载 URL。"
+
+  - name: list_reference_canvases
+    method: GET
+    path: /api/reference-canvases
+    body: null
+    status:
+      - 200
+      - 401
+      - 403
+    schema:
+      response_200:
+        canvases: array
+        data_status: string
+        data_gaps: array
+    errors:
+      401: "未认证"
+      403: "角色不合法"
+    acceptance: "无参考画布时 canvases 必须为 []；不得预置演示参考画布。"
+
+  - name: save_reference_canvas
+    method: POST
+    path: /api/reference-canvases
+    body:
+      canvas_id: "string | optional（缺省为新建）"
+      title: string
+      items: "array（调用方提交的条目）"
+      annotations: "array | optional"
+      drawings: "array | optional"
+      groups: "array | optional"
+      viewport: "object | optional"
+      expected_version: "integer | optional（覆盖既有画布时校验）"
+    status:
+      - 201
+      - 400
+      - 401
+      - 403
+      - 404
+      - 409
+    schema:
+      response_201:
+        canvas:
+          canvas_id: string
+          title: string
+          kind: "reference"
+          version: integer
+    errors:
+      400: "title 缺失或为空"
+      401: "未认证"
+      403: "无写权限（只读角色）"
+      404: "CANVAS_NOT_FOUND 目标画布不存在"
+      409: "CANVAS_VERSION_CONFLICT 或 CANVAS_KIND_MISMATCH 目标不是参考画布"
+    acceptance: "只登记调用方提交的内容；新建后 kind 为 reference 且返回稳定 canvas_id；不编造素材 URL 或缩略图。"
+
+  - name: list_shared_folders
+    method: GET
+    path: /api/shared-folders
+    body: null
+    status:
+      - 200
+      - 401
+      - 403
+    schema:
+      response_200:
+        folders: array
+        revision: integer
+        data_status: string
+        data_gaps: array
+    errors:
+      401: "未认证"
+      403: "角色不合法"
+    acceptance: "无登记时 folders 必须为 []；同一路径重复登记返回既有登记，不重复占位。"
+
+  - name: create_shared_folder
+    method: POST
+    path: /api/shared-folders
+    body:
+      path: "string（项目目录内相对路径）"
+      name: "string | optional"
+    status:
+      - 201
+      - 400
+      - 401
+      - 403
+    schema:
+      response_201:
+        folder:
+          folder_id: string
+          name: string
+          path: string
+    errors:
+      400: "INVALID_SHARED_FOLDER_PATH 绝对路径 / 上跳路径 / 用户主目录简写"
+      401: "未认证"
+      403: "无写权限（只读角色）"
+    acceptance: "只登记路径，不扫描目录、不复制文件；返回稳定 folder_id（fold_NNNN）。"
+
+  - name: import_shared_folder_items
+    method: POST
+    path: /api/shared-folders/import
+    body:
+      library_id: "string | optional"
+      category_id: "string | optional"
+      folder_id: "string | optional"
+      paths: "array | optional"
+    status:
+      - 401
+      - 403
+      - 503
+    errors:
+      401: "未认证"
+      403: "无写权限（只读角色）"
+      503: "SHARED_FOLDER_IMPORT_NOT_INTEGRATED 导入未接入"
+    acceptance: "无真实文件复制与素材库写入能力时必须 503；绝不返回伪造导入条数。"
+
+  - name: get_shared_folder_tree
+    method: GET
+    path: /api/shared-folders/{folder_id}/tree
+    body: null
+    status:
+      - 401
+      - 403
+      - 404
+      - 503
+    errors:
+      401: "未认证"
+      403: "角色不合法"
+      404: "SHARED_FOLDER_NOT_FOUND 目标登记不存在"
+      503: "SHARED_FOLDER_TREE_NOT_INTEGRATED 目录扫描未接入"
+    acceptance: "未接入真实目录扫描时必须 503；绝不返回空假目录树或编造文件条目。"
+
+  - name: delete_shared_folder
+    method: DELETE
+    path: /api/shared-folders/{folder_id}
+    body: null
+    status:
+      - 200
+      - 401
+      - 403
+      - 404
+    schema:
+      response_200:
+        deleted_folder_id: string
+        revision: integer
+    errors:
+      401: "未认证"
+      403: "无写权限（只读角色）"
+      404: "SHARED_FOLDER_NOT_FOUND 目标登记不存在"
+    acceptance: "只移除登记，不删除磁盘文件；revision 递增。"
+
+  - name: list_video_tasks
+    method: GET
+    path: /api/video-tasks
+    body: null
+    status:
+      - 200
+      - 401
+      - 403
+    schema:
+      response_200:
+        items: "当前主体可见视频任务数组"
+        data_status: "ok"
+    errors:
+      401: "未认证"
+      403: "角色不合法"
+    acceptance: "兼容路径已由 VIDEO-TASKS-INTERFACE-CATALOG.yaml 取代；不再返回 data_status=not_integrated。"
+
+  - name: create_video_task
+    method: POST
+    path: /api/video-tasks
+    body:
+      prompt: "string | optional"
+      provider_id: "string | optional"
+      model: "string | optional"
+      duration: "number | optional"
+      aspect_ratio: "string | optional"
+      production_context: "object | optional"
+    status:
+      - 202
+      - 400
+      - 401
+      - 403
+      - 409
+      - 422
+      - 503
+    errors:
+      401: "未认证"
+      403: "无项目视频访问权限（只读角色或无项目 owner 授权）"
+      409: "IDEMPOTENCY_CONFLICT 同键异参"
+      503: "VIDEO_PROVIDER_NOT_CONFIGURED 无服务端视频 Provider 配置"
+    acceptance: "新视频生成请求、幂等、job_id、poll_hint 与状态转换以 VIDEO-TASKS-INTERFACE-CATALOG.yaml 为准。"
+
+  - name: get_video_task
+    method: GET
+    path: /api/video-tasks/{job_id}
+    body: null
+    status:
+      - 401
+      - 403
+      - 404
+    errors:
+      401: "未认证"
+      403: "角色不合法"
+      404: "VIDEO_TASK_NOT_FOUND 任务不存在"
+    acceptance: "任务仅对创建主体可见；详情和产物授权规则以 VIDEO-TASKS-INTERFACE-CATALOG.yaml 为准。"
+
+  - name: update_canvas_meta
+    method: POST
+    path: /api/canvases/{canvas_id}/meta
+    body:
+      title: "string | optional"
+      entity_id: "string | optional"
+      project_id: "string | optional"
+      project: "string | optional（前端既有别名，等价 project_id）"
+      icon: "string | optional"
+      board_x: "number | optional"
+      board_y: "number | optional"
+      expected_version: "integer | optional"
+      expected_revision: "integer | optional（前端既有别名，等价 expected_version）"
+      base_updated_at: "number | optional"
+    status:
+      - 200
+      - 400
+      - 401
+      - 403
+      - 404
+      - 409
+    schema:
+      response_200:
+        canvas:
+          canvas_id: string
+          id: "string（前端兼容别名，等于 canvas_id）"
+          project_id: string
+          project: "string（前端兼容别名，等于 project_id）"
+          version: integer
+          governance_version: integer
+          kind: string
+          deleted_at: "number | null"
+          archived_at: "number | null"
+    errors:
+      400: "字段类型不合法"
+      401: "未认证"
+      403: "无写权限（只读角色）"
+      404: "CANVAS_NOT_FOUND 目标画布不存在"
+      409: "CANVAS_VERSION_CONFLICT 画布 version 不一致"
+    acceptance: "更新成功后 version 递增；CAS 不一致必须 409，禁止静默覆盖。"
+
+  - name: update_canvas_meta_patch_alias
+    method: PATCH
+    path: /api/canvases/{canvas_id}/meta
+    body:
+      title: "string | optional"
+      expected_version: "integer | optional"
+    status:
+      - 200
+      - 400
+      - 401
+      - 403
+      - 404
+      - 409
+    errors:
+      401: "未认证"
+      403: "无写权限（只读角色）"
+      404: "CANVAS_NOT_FOUND 目标画布不存在"
+      409: "CANVAS_VERSION_CONFLICT 画布 version 不一致"
+    acceptance: "与 POST 别名共享同一实现与同一守卫，不产生行为差异。"
+
+  - name: touch_canvas
+    method: POST
+    path: /api/canvases/{canvas_id}/touch
+    body:
+      expected_version: "integer | optional（也可经查询串传入）"
+    query:
+      operation: "string（archive | unarchive，必填）"
+      expected_version: "integer | optional"
+    status:
+      - 200
+      - 400
+      - 401
+      - 403
+      - 404
+      - 409
+    schema:
+      response_200:
+        canvas:
+          canvas_id: string
+          version: integer
+          archived_at: "number | null"
+    errors:
+      400: "INVALID_CANVAS_OPERATION operation 非法"
+      401: "未认证"
+      403: "无写权限（只读角色）"
+      404: "CANVAS_NOT_FOUND 目标画布不存在"
+      409: "CANVAS_VERSION_CONFLICT 画布 version 不一致"
+    acceptance: "只翻转归档状态，不改拓扑内容，且必须递增 version；不得借 touch 绕过 CAS。"
+
+  - name: list_canvas_trash
+    method: GET
+    path: /api/canvases/trash
+    body: null
+    query:
+      view: "string | optional（deleted 缺省 | archived）"
+    status:
+      - 200
+      - 400
+      - 401
+      - 403
+    schema:
+      response_200:
+        canvases: array
+        data_status: string
+        data_gaps: array
+    errors:
+      400: "INVALID_REQUEST view 非法"
+      401: "未认证"
+      403: "角色不合法"
+    acceptance: "回收站与归档互相独立；无内容时 canvases 必须为 []，不得返回演示条目。"
+
+  - name: attach_canvas_assets
+    method: POST
+    path: /api/canvases/assets
+    body:
+      asset_ids: array
+      canvas_id: "string | optional"
+      new_title: "string | optional"
+      new_kind: "string | optional"
+      expected_version: "integer | optional"
+    status:
+      - 401
+      - 403
+      - 503
+    errors:
+      401: "未认证"
+      403: "无写权限（只读角色）"
+      503: "CANVAS_ASSET_ATTACH_NOT_INTEGRATED 素材注册表未接入"
+    acceptance: "素材注册表未接入时必须 503；绝不伪造已挂接素材或 added 计数。"
+
+  - name: trash_canvas
+    method: DELETE
+    path: /api/canvases/{canvas_id}
+    body: null
+    query:
+      expected_version: "integer | optional"
+    status:
+      - 200
+      - 400
+      - 401
+      - 403
+      - 404
+      - 409
+    schema:
+      response_200:
+        canvas:
+          canvas_id: string
+          version: integer
+          deleted_at: number
+    errors:
+      400: "expected_version 非法（非正整数）"
+      401: "未认证"
+      403: "无写权限（只读角色）"
+      404: "CANVAS_NOT_FOUND 目标画布不存在"
+      409: "CANVAS_VERSION_CONFLICT 画布 version 不一致"
+    acceptance: "软删除：移入回收站而不物理删除，可经既有 /api/canvases/{canvas_id}/restore 恢复；version 递增。"
+
+  - name: purge_canvas
+    method: DELETE
+    path: /api/canvases/{canvas_id}/purge
+    body: null
+    status:
+      - 200
+      - 401
+      - 403
+      - 404
+      - 409
+    schema:
+      response_200:
+        canvas_id: string
+        version: integer
+        purged: boolean
+    errors:
+      401: "未认证"
+      403: "无写权限（只读角色）"
+      404: "CANVAS_NOT_FOUND 目标画布不存在"
+      409: "CANVAS_NOT_IN_TRASH 目标未入回收站，拒绝越权直删"
+    acceptance: "仅允许彻底删除回收站中的画布；成功后从画布服务与拓扑中移除。"
+
+  - name: purge_canvas_post_alias
+    method: POST
+    path: /api/canvases/{canvas_id}/purge
+    body: null
+    status:
+      - 200
+      - 401
+      - 403
+      - 404
+      - 409
+    errors:
+      401: "未认证"
+      403: "无写权限（只读角色）"
+      404: "CANVAS_NOT_FOUND 目标画布不存在"
+      409: "CANVAS_NOT_IN_TRASH 目标未入回收站，拒绝越权直删"
+    acceptance: "与 DELETE 别名共享同一实现与同一守卫，不产生行为差异。"
+
+unimplemented:
+  note: "下列相邻端点未获本阶段契约授权，属 KNOWN_UNIMPLEMENTED；契约测试显式反向断言其保持 404/405。"
+  paths:
+    - "GET /api/asset-registry/assets"
+    - "PATCH /api/asset-registry/assets/{asset_id}"
+    - "GET /api/local-assets"
+    - "GET /api/storage-files"
+    - "GET /api/asset-reviews/sessions"
+    - "POST /api/asset-thumbnails/generate"
+    - "GET /api/jimeng/status"
+    - "GET /api/asset-content"
+    - "GET /api/asset-auth/teams"
+

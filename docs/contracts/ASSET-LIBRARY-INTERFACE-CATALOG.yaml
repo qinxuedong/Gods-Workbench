@@ -1,0 +1,142 @@
+meta:
+  source: "洁净室自有设计（由主代理依据 docs/governance/asset-library-draft-2026-09-22/ 草案与前端 js/asset-manager/api.js 调用面收敛）"
+  review_status: "coordinator_frozen_pending_independent_review"
+  distribution: "NOT AUTHORIZED FOR PUBLIC DISTRIBUTION"
+  cleanroom_notice: "仅记录 method/path/body/status/schema/错误/验收语义；不含旧仓源码结构或实现细节。"
+
+service: asset_library
+version: p10a-frozen-1
+
+# 冻结说明（Phase 10A，2026-09-22）
+# 本契约是「素材库」阶段的最小实现授权范围，仅覆盖下列 3 个端点。
+# 其余 /api/asset-library/* 端点（items/library 明细/分类明细/workflows/upload）仍属
+# KNOWN_UNIMPLEMENTED，未获契约授权，不得顺带实现。
+decisions:
+  stable_ids:
+    decision: "对外字段一律使用稳定 ID：library_id / category_id / asset_id"
+    rationale: "根 AGENTS.md §3.1 强制统一稳定 ID 命名，禁止 id/pid/cid 别名。"
+    frontend_compat: "前端 js/asset-manager.js 以 `x.library_id || x.id` 形式兼容读取，旧 localStorage 自定义看板状态保持可用。"
+  create_status_code:
+    decision: "创建成功返回 201（library 与 category 一致）"
+    rationale: "与既有 POST /api/asset-registry/projects 的 201 语义保持一致。"
+  empty_library:
+    decision: "空库返回 libraries: []，active_library_id: null；不自动创建默认库、不返回演示数据"
+    rationale: "洁净室禁止伪造素材；前端已有「默认资产库」本地兜底展示逻辑。"
+  cas_scope:
+    decision: "库级 CAS：POST /libraries 使用顶层目录版本 version；POST /categories 使用父库版本 expected_version"
+    rationale: "根宪章要求编辑/归档类写入带 expected_version；创建分类必然改变父库结构。"
+  duplicate_names:
+    decision: "同一作用域内重名（库名全局唯一、分类名同库唯一）返回 409 DUPLICATE_LIBRARY_NAME / DUPLICATE_CATEGORY_NAME，比较规则为 trim 后大小写不敏感"
+    rationale: "避免出现仅大小写不同的重复库/分类，且错误语义与 409 家族一致。"
+  version_increment:
+    decision: "创建成功后：新建对象自身 version=1；父库 version += 1；顶层目录 version += 1"
+    rationale: "父库与目录均可被并发创建操作修改，必须同步递增才能让 CAS 生效。"
+
+interfaces:
+  - name: get_asset_library
+    method: GET
+    path: /api/asset-library
+    body: null
+    status:
+      - 200
+      - 401
+      - 403
+    schema:
+      response_200:
+        library:
+          version: integer
+          active_library_id: "string | null"
+          libraries:
+            - library_id: string
+              name: string
+              version: integer
+              created_at: "string(datetime)"
+              updated_at: "string(datetime)"
+              categories:
+                - category_id: string
+                  library_id: string
+                  name: string
+                  type: "enum(image|workflow)"
+                  version: integer
+                  created_at: "string(datetime)"
+                  updated_at: "string(datetime)"
+                  items:
+                    - asset_id: string
+                      library_id: string
+                      category_id: string
+                      name: string
+                      url: "string | null"
+                      created_at: "string(datetime)"
+    errors:
+      401: "未认证，需重新登录"
+      403: "无读取权限"
+      409: "保留（本读取端点不返回）"
+    acceptance: "按当前身份返回可见素材库树；空库必须返回 libraries: [] 且 active_library_id: null，不得返回演示或伪造素材。"
+
+  - name: create_asset_library
+    method: POST
+    path: /api/asset-library/libraries
+    body:
+      name: string
+      expected_version: "integer | optional（缺省时不校验顶层目录版本）"
+    status:
+      - 201
+      - 400
+      - 401
+      - 403
+      - 409
+    schema:
+      response_201:
+        library:
+          library_id: string
+          name: string
+          version: integer
+          created_at: "string(datetime)"
+          updated_at: "string(datetime)"
+          categories: array
+        asset_library:
+          version: integer
+          active_library_id: "string | null"
+    errors:
+      400: "名称缺失、空白或长度超过 128 字符"
+      401: "未认证"
+      403: "无写权限（只读角色）"
+      409: "DUPLICATE_LIBRARY_NAME 或 VERSION_CONFLICT"
+    acceptance: "创建成功后返回稳定 library_id，且父目录 version 递增；重名或 CAS 不一致必须失败关闭。"
+
+  - name: create_asset_library_category
+    method: POST
+    path: /api/asset-library/categories
+    body:
+      library_id: string
+      name: string
+      type: "enum(image|workflow)"
+      expected_version: "integer | optional（缺省时不校验父库版本）"
+    status:
+      - 201
+      - 400
+      - 401
+      - 403
+      - 404
+      - 409
+    schema:
+      response_201:
+        category:
+          category_id: string
+          library_id: string
+          name: string
+          type: "enum(image|workflow)"
+          version: integer
+          created_at: "string(datetime)"
+          updated_at: "string(datetime)"
+          items: array
+        library:
+          library_id: string
+          version: integer
+    errors:
+      400: "缺字段、名称非法或 type 不在枚举内"
+      401: "未认证"
+      403: "无写权限（只读角色）"
+      404: "LIBRARY_NOT_FOUND 父库不存在"
+      409: "DUPLICATE_CATEGORY_NAME 或 VERSION_CONFLICT"
+    acceptance: "创建成功后返回稳定 category_id，且父库 version 递增；父库不存在或 CAS 不一致必须失败关闭。"

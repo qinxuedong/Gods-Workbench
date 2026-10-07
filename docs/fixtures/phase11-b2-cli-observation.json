@@ -1,0 +1,11 @@
+{
+  "protocol": "codex",
+  "installed": false,
+  "path": null,
+  "version": null,
+  "execution_enabled": false,
+  "data_status": "not_integrated",
+  "data_gaps": [
+    "cli_execution_not_admitted"
+  ]
+}

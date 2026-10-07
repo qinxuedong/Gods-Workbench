@@ -1,0 +1,6 @@
+{
+  "detail": {
+    "code": "VIDEO_RENDERER_NOT_INTEGRATED",
+    "message": "视频渲染后端尚未接入，本阶段不接收视频任务"
+  }
+}

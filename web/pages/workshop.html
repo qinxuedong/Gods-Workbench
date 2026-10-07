@@ -1,0 +1,1325 @@
+<!DOCTYPE html>
+<html lang="zh-CN" class="h-full overflow-hidden">
+<head>
+  <link rel="stylesheet" href="/static/vendor/css/fonts.css?v=v0.0.1-alpha-2026">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>影视工坊 · Gods' Workbench</title>
+  <!-- Tailwind CSS & Lucide Icons -->
+  <script src="/static/vendor/js/tailwindcss-cdn.js?v=3.4.17&amp;build=d11003b2f6fb"></script>
+  <script src="/static/vendor/js/lucide.js?v=1.16.0"></script>
+  <!-- Gods' Workbench 拟物科技公共硬件设计系统 -->
+  <link rel="stylesheet" href="/static/css/base/hardware-design-system.css">
+  <style>
+    /* 拟物科技物理背灯步骤胶囊 */
+    .step-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 16px;
+      border-radius: 9999px;
+      font-size: 11.5px;
+      font-weight: 700;
+      transition: all 0.18s cubic-bezier(0.16, 1, 0.3, 1);
+      cursor: pointer;
+      user-select: none;
+      position: relative;
+    }
+    .step-badge.active {
+      background: radial-gradient(ellipse 80% 65% at 50% 50%, #ffffff 0%, #fff2dc 25%, #f5cf92 55%, #dfac64 80%, #b8823f 100%);
+      border: 1px solid rgba(255, 255, 255, 0.85);
+      border-bottom-color: rgba(223, 195, 132, 0.5);
+      box-shadow:
+        0 8px 22px 1px rgba(223, 195, 132, 0.68),
+        0 14px 28px 2px rgba(186, 147, 91, 0.42),
+        0 3px 6px rgba(0, 0, 0, 0.6),
+        inset 0 1.5px 1.5px rgba(255, 255, 255, 0.98),
+        inset 0 -1.5px 2px rgba(120, 80, 25, 0.35);
+      color: #1a1308;
+      transform: translateY(-1px);
+    }
+    .step-badge.active i {
+      color: #1a1308 !important;
+    }
+    .step-badge.inactive {
+      background: linear-gradient(180deg, #1d212b 0%, #111319 100%);
+      border: 1px solid rgba(255, 255, 255, 0.10);
+      box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.14),
+        0 3px 7px rgba(0, 0, 0, 0.7);
+      color: #94a3b8;
+    }
+    .step-badge.inactive:hover {
+      background: linear-gradient(180deg, #262b38 0%, #151821 100%);
+      border-color: rgba(223, 195, 132, 0.45);
+      color: #eddab3;
+      box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.22),
+        0 0 14px rgba(223, 195, 132, 0.25);
+    }
+    .step-badge.inactive:active {
+      transform: translateY(1px);
+      box-shadow: inset 0 2px 4px rgba(0,0,0,0.85);
+    }
+    .step-status-tag {
+      font-size: 9px;
+      font-family: "Source Han Sans CN", monospace;
+      padding: 1.5px 7px;
+      border-radius: 9999px;
+      font-weight: 800;
+      letter-spacing: 0.04em;
+    }
+    .step-badge.active .step-status-tag {
+      background: #0f1218;
+      color: #dfc384;
+      border: 1px solid rgba(0, 0, 0, 0.4);
+      box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.8);
+    }
+    .step-badge.inactive .step-status-succeeded {
+      background: rgba(16, 185, 129, 0.18);
+      color: #34d399;
+      border: 1px solid rgba(16, 185, 129, 0.35);
+    }
+    .step-badge.inactive .step-status-running {
+      background: rgba(245, 158, 11, 0.18);
+      color: #fbbf24;
+      border: 1px solid rgba(245, 158, 11, 0.35);
+    }
+    .step-badge.inactive .step-status-queued {
+      background: rgba(148, 163, 184, 0.14);
+      color: #94a3b8;
+      border: 1px solid rgba(148, 163, 184, 0.25);
+    }
+  </style>
+</head>
+<body class="gw-shell bg-[#090a0d] text-slate-200 antialiased h-screen flex flex-col justify-between select-none overflow-hidden px-5">
+
+  <!-- ========================================================================= -->
+  <!-- 1. TOP MASTER DECK: 旗舰拟物双层机架 (h-24, 96px)                            -->
+  <!-- ========================================================================= -->
+  <header class="h-[116px] topbar-master-deck border-b border-white/10 px-3 flex flex-col justify-between shrink-0 z-40 relative select-none overflow-hidden py-2" style="min-height: 116px;">
+
+    <!-- OLED Ambient Pixel Texture & Glass Sheen Overlay -->
+    <div class="absolute inset-0 pointer-events-none z-10 oled-ambient-pixel"></div>
+    <div class="absolute inset-0 pointer-events-none z-20 bg-gradient-to-b from-white/[0.07] via-transparent to-black/80"></div>
+    <div class="absolute bottom-0 left-0 right-0 h-px topbar-ambient-edge z-20"></div>
+
+    <!-- UPPER DECK: 系统监控与双模拟VU电平表 -->
+    <div class="flex items-center justify-between relative z-30 px-1 pt-0.5">
+
+      <!-- LEFT: 电源键 + 标志 + 状态指示 + 左侧CPU电平表 -->
+      <div class="flex items-center space-x-2 shrink-0">
+                <!-- 智能体核心按钮 (原关机键位置) -->
+        <button class="w-8 h-8 rounded-full bg-gradient-to-tr from-cyan-400 via-fuchsia-500 to-amber-300 p-0.5 shadow-[0_0_12px_rgba(236,72,153,0.7),0_0_6px_rgba(34,211,238,0.9)] hover:scale-110 active:scale-95 transition flex items-center justify-center cursor-pointer shrink-0 launch-orb-btn" title="智能体核心总线 (Agent Core)">
+          <div class="w-full h-full rounded-full bg-black/85 flex items-center justify-center">
+            <div class="w-3 h-3 rounded-full bg-gradient-to-r from-cyan-300 to-pink-400 animate-spin"></div>
+          </div>
+        </button>
+
+        <div class="h-4 w-px bg-white/10"></div>
+
+        <!-- 品牌徽标与机架ID -->
+        <div class="flex items-center space-x-1.5">
+          <span class="font-bold text-sm tracking-wider text-slate-100 uppercase">GODS'</span>
+          <span class="font-mono font-bold text-sm text-[#dfc384] tracking-widest">WORKBENCH</span>
+          <span class="text-[10px] font-mono px-2 py-0.5 rounded bg-black/60 border border-[#dfc384]/30 text-[#eddab3]">SYS.02 PRO</span>
+        </div>
+
+        <!-- 在线状态胶囊 -->
+        <div class="flex items-center space-x-1.5 px-2 py-0.5 rounded-md bg-[#0a0c10] border border-white/10 shadow-inner">
+          <span class="text-[9px] font-mono text-amber-300 font-semibold" id="gwOnlineStatus" data-gw-degradation="not_integrated" title="读取真实探针 GET /api/observability/health">探测中…</span>
+            <span class="relative flex h-2 w-2">
+              <span class="relative inline-flex rounded-full h-2 w-2 bg-amber-400 animate-pulse shadow-[0_0_6px_#f59e0b]"></span>
+            </span>
+        </div>
+
+        <!-- 左侧 CPU UV 表 -->
+        <div class="trapezoid-uv-housing ml-1.5" title="CPU 负载监视表">
+          <div class="uv-dial-backlight"></div>
+          <svg class="absolute inset-0 w-full h-full pointer-events-none z-10" viewBox="0 0 148 48">
+            <path d="M 2 8 A 6 6 0 0 1 8 2 L 134 2 A 4 4 0 0 1 138 5 L 146 43 A 4 4 0 0 1 142 47 L 8 47 A 6 6 0 0 1 2 41 Z"
+                  fill="#0b0d13" stroke="#2e3547" stroke-width="1.5" stroke-linejoin="round" />
+            <text x="10" y="11" font-family="'Source Han Sans CN', monospace" font-size="7.5" font-weight="700" fill="#dfc384" letter-spacing="0.5">CPU</text>
+            <path d="M 48.32 39.66 A 27 27 0 0 1 99.68 39.66" fill="none" stroke="rgba(255,255,255,0.22)" stroke-width="0.8" />
+            <path d="M 92.48 28.32 A 27 27 0 0 1 99.68 39.66" fill="none" stroke="#ef4444" stroke-width="1.6" stroke-linecap="round" />
+            <polygon id="svgNeedleCPU" points="73.3,48 74.7,48 74.3,19 73.7,19" fill="#ffffff" filter="drop-shadow(0 0 2.5px #fae2c8)" transform="rotate(-11.5 74 48)" />
+          </svg>
+          <div class="uv-bottom-hub">
+            <span class="uv-hub-percent text-[#fae2c8]" id="cpuValText">未接入</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- CENTER: 系统中央总线引擎与当前项目 -->
+      <div class="flex items-center space-x-2 shrink-0">
+        <div class="flex items-center space-x-1.5 bg-[#07080b] px-3 py-1 rounded-lg border border-white/10 shadow-inner">
+          <button class="text-slate-400 hover:text-[#dfc384] p-0.5 transition cursor-pointer" onclick="WorkbenchWorkshop.prevProject()" title="切换至上一个项目"><i data-lucide="chevron-left" class="w-3.5 h-3.5"></i></button>
+          <div class="flex items-center space-x-2 px-1.5">
+            <span class="w-1.5 h-1.5 rounded-full bg-[#dfc384] shadow-[0_0_6px_#dfc384] animate-pulse"></span>
+            <span class="text-[10px] font-mono font-bold text-[#eddab3] tracking-wider" id="workshopProjectTitle">《神谕之地》· 影视工坊流水线</span>
+          </div>
+          <button class="text-slate-400 hover:text-[#dfc384] p-0.5 transition cursor-pointer" onclick="WorkbenchWorkshop.nextProject()" title="切换至下一个项目"><i data-lucide="chevron-right" class="w-3.5 h-3.5"></i></button>
+        </div>
+      </div>
+
+      <!-- RIGHT: 右侧RAM电平表 + 播控 + 时钟 + 返回首页 -->
+      <div class="flex items-center space-x-2 shrink-0">
+        <div class="trapezoid-uv-housing mr-1.5" title="RAM 内存监视表">
+          <div class="uv-dial-backlight"></div>
+          <svg class="absolute inset-0 w-full h-full pointer-events-none z-10" viewBox="0 0 148 48">
+            <path d="M 146 8 A 6 6 0 0 0 140 2 L 14 2 A 4 4 0 0 0 10 5 L 2 43 A 4 4 0 0 0 6 47 L 140 47 A 6 6 0 0 0 146 41 Z"
+                  fill="#0b0d13" stroke="#2e3547" stroke-width="1.5" stroke-linejoin="round" />
+            <text x="138" y="11" text-anchor="end" font-family="'Source Han Sans CN', monospace" font-size="7.5" font-weight="700" fill="#dfc384" letter-spacing="0.5">RAM</text>
+            <path d="M 48.32 39.66 A 27 27 0 0 1 99.68 39.66" fill="none" stroke="rgba(255,255,255,0.22)" stroke-width="0.8" />
+            <path d="M 92.48 28.32 A 27 27 0 0 1 99.68 39.66" fill="none" stroke="#ef4444" stroke-width="1.6" stroke-linecap="round" />
+            <polygon id="svgNeedleRAM" points="73.3,48 74.7,48 74.3,19 73.7,19" fill="#ffffff" filter="drop-shadow(0 0 2.5px #38bdf8)" transform="rotate(25.9 74 48)" />
+          </svg>
+          <div class="uv-bottom-hub">
+            <span class="uv-hub-percent text-cyan-300" id="ramValText">未接入</span>
+          </div>
+        </div>
+
+        <!-- 播控按键组 -->
+        <div class="flex items-center space-x-1 bg-[#090b0e] p-1 rounded-lg border border-white/5">
+          <button class="hw-round-btn w-7 h-7" title="停止"><div class="hw-round-inner w-4 h-4"><div class="w-1.5 h-1.5 bg-slate-400 rounded-sm"></div></div></button>
+          <button class="hw-round-btn active w-7 h-7" title="运行"><div class="hw-round-inner w-4 h-4"><svg class="w-2.5 h-2.5 text-[#dfc384]" fill="currentColor" viewBox="0 0 24 24"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg></div></button>
+          <button class="hw-round-btn w-7 h-7" title="下一步"><div class="hw-round-inner w-4 h-4"><i data-lucide="skip-forward" class="w-2.5 h-2.5 text-slate-400"></i></div></button>
+        </div>
+
+        <div class="h-4 w-px bg-white/10"></div>
+
+        <!-- 数码时钟 -->
+        <div class="px-2.5 py-1.5 rounded bg-[#06070a] border border-[#dfc384]/30 font-mono text-xs text-[#eddab3] font-bold shadow-inner flex items-center space-x-1.5">
+          <span class="w-1.5 h-1.5 rounded-full bg-[#dfc384] shadow-[0_0_6px_#dfc384]"></span>
+          <span id="masterDeckClock">00:00:00</span>
+        </div>
+        <button type="button" id="masterDeckDate" class="shrink-0 min-w-[76px] px-2.5 py-1.5 rounded bg-[#06070a] border border-[#dfc384]/45 font-mono text-xs text-[#eddab3] font-bold shadow-inner flex items-center justify-center space-x-1.5 hover:border-[#dfc384] transition" title="打开项目排期日历" aria-label="打开项目排期日历"><i data-lucide="calendar-days" class="w-3.5 h-3.5 text-[#dfc384]" aria-hidden="true"></i><span class="text-slate-500 uppercase" id="masterDeckDateMonth">---</span><span id="masterDeckDateDay">--</span></button>
+      </div>
+    </div>
+
+    <!-- LOWER DECK: 交互控件带 (Navigation Pills & Sliders) -->
+    <div class="recessed-deck-slot h-11 rounded-lg flex items-center justify-between px-2.5 relative z-30">
+
+      <!-- LEFT: 胶囊导航按键 -->
+      <div class="flex items-center space-x-2 shrink-0" id="navPillsGroup">
+        <a href="index.html" class="pill-capsule-inactive px-3.5 py-1.5 text-xs tracking-wide font-medium flex items-center space-x-1.5 nav-pill-btn cursor-pointer" title="首页 · 控制台">
+          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" viewBox="0 0 24 24">
+            <path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path>
+            <polyline points="9 22 9 12 15 12 15 22"></polyline>
+          </svg>
+          <span>首页 · 控制台</span>
+        </a>
+
+        <a href="projects.html" class="pill-capsule-inactive px-3.5 py-1.5 text-xs tracking-wide font-medium flex items-center space-x-1.5 nav-pill-btn cursor-pointer" title="项目中心">
+          <i data-lucide="folder-kanban" class="w-3.5 h-3.5"></i>
+          <span>项目中心</span>
+        </a>
+
+        <a href="workshop.html" class="pill-capsule-active px-3.5 py-1.5 text-xs tracking-wide flex items-center space-x-1.5 nav-pill-btn cursor-pointer" title="影视工坊">
+          <i data-lucide="film" class="w-3.5 h-3.5"></i>
+          <span>影视工坊</span>
+        </a>
+
+        <a href="production.html" class="pill-capsule-inactive px-3.5 py-1.5 text-xs tracking-wide font-medium flex items-center space-x-1.5 nav-pill-btn cursor-pointer" title="剧集制片">
+          <i data-lucide="clapperboard" class="w-3.5 h-3.5"></i>
+          <span>剧集制片</span>
+        </a>
+
+        <a href="agents.html" class="pill-capsule-inactive px-3.5 py-1.5 text-xs tracking-wide font-medium flex items-center space-x-1.5 nav-pill-btn cursor-pointer" title="智能体">
+          <i data-lucide="bot" class="w-3.5 h-3.5"></i>
+          <span>智能体</span>
+        </a>
+
+        <a href="storyboard.html?view=canvas" class="pill-capsule-inactive px-3.5 py-1.5 text-xs tracking-wide font-medium flex items-center space-x-1.5 nav-pill-btn cursor-pointer" title="画布">
+          <i data-lucide="layout-grid" class="w-3.5 h-3.5"></i>
+          <span>画布/工具</span>
+        </a>
+
+        <a href="assets.html" class="pill-capsule-inactive px-3.5 py-1.5 text-xs tracking-wide font-medium flex items-center space-x-1.5 nav-pill-btn cursor-pointer" title="资产库">
+          <i data-lucide="database" class="w-3.5 h-3.5"></i>
+          <span>资产库</span>
+        </a>
+
+        <a href="collab.html" class="pill-capsule-inactive px-3.5 py-1.5 text-xs tracking-wide font-medium flex items-center space-x-1.5 nav-pill-btn cursor-pointer" title="协作">
+          <i data-lucide="users" class="w-3.5 h-3.5"></i>
+          <span>协作</span>
+        </a>
+        <a href="workflow-workbench.html" class="pill-capsule-inactive px-3.5 py-1.5 text-xs tracking-wide font-medium flex items-center space-x-1.5 nav-pill-btn cursor-pointer" title="工作流">
+          <i data-lucide="workflow" class="w-3.5 h-3.5"></i><span>工作流</span>
+        </a>
+
+        <a href="index.html?view=settings" class="pill-capsule-inactive px-3.5 py-1.5 text-xs tracking-wide font-medium flex items-center space-x-1.5 nav-pill-btn cursor-pointer" title="系统设置">
+          <i data-lucide="settings" class="w-3.5 h-3.5"></i>
+          <span>设置</span>
+        </a>
+      </div>
+
+      <!-- CENTER & RIGHT: 状态指示 -->
+      <div class="flex items-center space-x-3 shrink-0">
+        <div class="flex items-center space-x-1 text-[9px] font-mono text-slate-400" id="workshopBusStatus" data-gw-degradation="not_integrated" title="真实数据源：GET /api/episode-pipelines">
+          <span class="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse"></span>
+          <span id="workshopBusStatusText">PIPELINE ENGINE BUS: 探测中…</span>
+        </div>
+        <button type="button" id="topbarUnifiedTrashBtn" class="hw-mini-knob-box group cursor-pointer relative" title="统一回收站（制片工程与素材库全局回收池）" aria-label="打开统一回收站">
+          <div class="hw-mini-knob border border-[#dfc384]/40 hover:border-[#dfc384] transition">
+            <div class="hw-mini-knob-arc" style="border-top-color: #ef4444; border-right-color: #f59e0b;"></div>
+            <div class="hw-mini-knob-inner flex items-center justify-center text-[#eddab3]"><i data-lucide="trash-2" class="w-3.5 h-3.5 text-[#dfc384]"></i></div>
+          </div>
+        </button>
+        <!-- 拟物头像键帽 (原智能体核心位置，替换左下角登录用户，无文字只显头像) -->
+        <div class="hw-avatar-keycap ml-1 cursor-pointer hover:scale-105 active:scale-95 transition" title="认证状态未接入：点击打开认证中心查看真实登录状态" data-gw-identity="unverified">
+          <div class="hw-avatar-keycap-inner">
+            <i data-lucide="shield-check" class="w-4 h-4 text-[#eddab3]"></i>
+          </div>
+          <span class="hw-avatar-keycap-status"></span>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <!-- ========================================================================= -->
+  <!-- 2. MAIN WORKSPACE WITH WORKFLOW BUS DOCK                                  -->
+  <!-- ========================================================================= -->
+  <div class="flex-1 flex overflow-hidden min-h-0">
+    <!-- ----------------------------------------------------------------------- -->
+    <!-- LEFT CONSOLE DOCK: 影视工坊工作流总线 (Workshop Workflow Bus)                 -->
+    <!-- ----------------------------------------------------------------------- -->
+    <aside class="w-64 bg-[#08090d] border-r border-[#191c24] flex flex-col shrink-0 z-30 h-full min-h-0">
+      <div class="flex-1 flex flex-col min-h-0 relative" id="contextBusContainer">
+        <!-- Tree Header -->
+        <div class="p-2 border-b border-white/5 shrink-0">
+          <div class="w-full flex items-center justify-between px-3 py-2 rounded-xl bg-[#141720] border border-[#dfc384]/35 text-[#eddab3] text-xs font-semibold shadow-[0_0_12px_rgba(223,195,132,0.12)] relative">
+            <span class="absolute left-0 top-2 bottom-2 w-1 bg-[#dfc384] rounded-r shadow-[0_0_8px_#dfc384]"></span>
+            <div class="flex items-center space-x-2.5">
+              <i data-lucide="git-branch" class="w-4 h-4 text-[#dfc384]"></i>
+              <span class="font-semibold tracking-wide">工坊生产工作流总线</span>
+            </div>
+            <button class="text-slate-400 hover:text-[#dfc384] p-1 rounded-lg hover:bg-white/5 transition" title="刷新流水线" onclick="WorkbenchWorkshop.refreshPipeline()">
+              <i data-lucide="rotate-cw" class="w-3 h-3"></i>
+            </button>
+          </div>
+        </div>
+
+        <!-- Scrollable Flow Graph -->
+        <div class="flex-1 overflow-y-auto p-2 pr-2 relative space-y-4">
+          <!-- Continuous Bus Trunk Line -->
+          <div class="absolute left-3.5 top-2 bottom-4 w-[1.5px] bg-gradient-to-b from-[#dfc384] via-[#dfc384]/40 to-transparent pointer-events-none"></div>
+
+          <!-- 0. 阶段 00: 项目分集 (Episodes) -->
+          <div class="relative pl-5">
+            <div class="absolute left-[-6px] top-[17px] w-[6px] h-[1.5px] bg-[#dfc384]/60 pointer-events-none"></div>
+            <div class="tree-node-card active px-2.5 py-1.5 flex items-center justify-between group cursor-pointer" id="stepBtn-episodes" onclick="WorkbenchWorkshop.switchStep('episodes')">
+              <div class="card-connector-pin"></div>
+              <div class="flex items-center space-x-1.5 min-w-0">
+                <span class="text-[8px] font-mono text-[#dfc384] font-bold px-1 py-0.5 rounded bg-[#dfc384]/15 border border-[#dfc384]/30 shrink-0">EP</span>
+                <i data-lucide="film" class="w-3.5 h-3.5 text-[#dfc384] group-hover:text-[#dfc384]"></i>
+                <span class="text-[10px] font-semibold text-slate-100 truncate">项目分集</span>
+              </div>
+              <span id="episodesCountBadge" class="text-[7.5px] font-mono px-1.5 py-0.5 rounded-full bg-[#dfc384]/15 text-[#eddab3] border border-[#dfc384]/30 shrink-0">
+                0集
+              </span>
+            </div>
+          </div>
+
+          <!-- 1. 阶段 01: 剧本生成 -->
+          <div class="relative pl-5">
+            <div class="absolute left-[-6px] top-[17px] w-[6px] h-[1.5px] bg-[#dfc384]/60 pointer-events-none"></div>
+            <div class="tree-node-card px-2.5 py-1.5 flex items-center justify-between group cursor-pointer" id="stepBtn-script" onclick="WorkbenchWorkshop.switchStep('script')">
+              <div class="card-connector-pin"></div>
+              <div class="flex items-center space-x-1.5 min-w-0">
+                <span class="text-[8px] font-mono text-[#dfc384] font-bold px-1 py-0.5 rounded bg-[#dfc384]/15 border border-[#dfc384]/30 shrink-0">01</span>
+                <i data-lucide="file-text" class="w-3.5 h-3.5 text-slate-400 group-hover:text-[#dfc384]"></i>
+                <span class="text-[10px] font-semibold text-slate-100 truncate">剧本生成</span>
+              </div>
+              <span class="text-[7.5px] font-mono px-1 py-0.5 rounded-full bg-slate-500/15 text-slate-400 border border-slate-500/30 shrink-0">
+                wait
+              </span>
+            </div>
+          </div>
+
+          <!-- 2. 阶段 02: 资产生成 -->
+          <div class="relative pl-5">
+            <div class="absolute left-[-6px] top-[17px] w-[6px] h-[1.5px] bg-[#dfc384]/60 pointer-events-none"></div>
+            <div class="tree-node-card px-2.5 py-1.5 flex items-center justify-between group cursor-pointer" id="stepBtn-assets" onclick="WorkbenchWorkshop.switchStep('assets')">
+              <div class="card-connector-pin"></div>
+              <div class="flex items-center space-x-1.5 min-w-0">
+                <span class="text-[8px] font-mono text-[#dfc384] font-bold px-1 py-0.5 rounded bg-[#dfc384]/15 border border-[#dfc384]/30 shrink-0">02</span>
+                <i data-lucide="palette" class="w-3.5 h-3.5 text-slate-400 group-hover:text-[#dfc384]"></i>
+                <span class="text-[10px] font-semibold text-slate-100 truncate">资产生成</span>
+              </div>
+              <span class="text-[7.5px] font-mono px-1 py-0.5 rounded-full bg-slate-500/15 text-slate-400 border border-slate-500/30 shrink-0">
+                wait
+              </span>
+            </div>
+          </div>
+
+          <!-- 3. 阶段 03: 分镜脚本 -->
+          <div class="relative pl-5">
+            <div class="absolute left-[-6px] top-[17px] w-[6px] h-[1.5px] bg-[#dfc384]/60 pointer-events-none"></div>
+            <div class="tree-node-card px-2.5 py-1.5 flex items-center justify-between group cursor-pointer" id="stepBtn-video" onclick="WorkbenchWorkshop.switchStep('video')">
+              <div class="card-connector-pin"></div>
+              <div class="flex items-center space-x-1.5 min-w-0">
+                <span class="text-[8px] font-mono text-[#dfc384] font-bold px-1 py-0.5 rounded bg-[#dfc384]/15 border border-[#dfc384]/30 shrink-0">03</span>
+                <i data-lucide="layout-grid" class="w-3.5 h-3.5 text-slate-400 group-hover:text-[#dfc384]"></i>
+                <span class="text-[10px] font-semibold text-slate-100 truncate">分镜脚本</span>
+              </div>
+              <span class="text-[7.5px] font-mono px-1 py-0.5 rounded-full bg-slate-500/15 text-slate-400 border border-slate-500/30 shrink-0">
+                wait
+              </span>
+            </div>
+          </div>
+
+          <!-- 4. 阶段 04: 视频脚本 -->
+          <div class="relative pl-5">
+            <div class="absolute left-[-6px] top-[17px] w-[6px] h-[1.5px] bg-[#dfc384]/60 pointer-events-none"></div>
+            <div class="tree-node-card px-2.5 py-1.5 flex items-center justify-between group cursor-pointer" id="stepBtn-audio_compose" onclick="WorkbenchWorkshop.switchStep('audio_compose')">
+              <div class="card-connector-pin"></div>
+              <div class="flex items-center space-x-1.5 min-w-0">
+                <span class="text-[8px] font-mono text-[#dfc384] font-bold px-1 py-0.5 rounded bg-[#dfc384]/15 border border-[#dfc384]/30 shrink-0">04</span>
+                <i data-lucide="video" class="w-3.5 h-3.5 text-slate-400 group-hover:text-[#dfc384]"></i>
+                <span class="text-[10px] font-semibold text-slate-100 truncate">视频脚本</span>
+              </div>
+              <span class="text-[7.5px] font-mono px-1 py-0.5 rounded-full bg-slate-500/15 text-slate-400 border border-slate-500/30 shrink-0">
+                wait
+              </span>
+            </div>
+          </div>
+
+          <!-- 独立工具入口: 分镜画布 -->
+          <div class="relative pl-5">
+            <div class="absolute left-[-6px] top-[17px] w-[6px] h-[1.5px] bg-[#dfc384]/60 pointer-events-none"></div>
+            <div id="stepBtn-storyboard" class="tree-node-card px-2.5 py-1.5 flex items-center justify-between group text-slate-300 hover:text-white cursor-pointer" onclick="WorkbenchWorkshop.switchStep('storyboard')" title="在右侧打开分镜画布">
+              <div class="card-connector-pin"></div>
+              <div class="flex items-center space-x-1.5 min-w-0">
+                <span class="text-[8px] font-mono text-[#dfc384] font-bold px-1 py-0.5 rounded bg-[#dfc384]/15 border border-[#dfc384]/30 shrink-0">工具</span>
+                <i data-lucide="layout-dashboard" class="w-3.5 h-3.5 text-slate-400 group-hover:text-[#dfc384]"></i>
+                <span class="text-[10px] font-semibold truncate">分镜画布</span>
+              </div>
+              <i data-lucide="arrow-up-right" class="w-3 h-3 text-slate-500 group-hover:text-[#dfc384]"></i>
+            </div>
+          </div>
+
+          <!-- 快捷跳转入口: 剧集制片监视器 -->
+          <div class="relative pl-5 pt-4 border-t border-white/5">
+            <a href="production.html" id="gotoProductionLink" class="w-full tree-node-card px-2.5 py-1.5 flex items-center justify-between group text-slate-300 hover:text-white">
+              <div class="card-connector-pin"></div>
+              <div class="flex items-center space-x-2 min-w-0">
+                <i data-lucide="clapperboard" class="w-3.5 h-3.5 text-[#dfc384]"></i>
+                <span class="text-[10px] font-semibold">进入制片监视器</span>
+              </div>
+              <i data-lucide="arrow-up-right" class="w-3 h-3 text-slate-500 group-hover:text-[#dfc384]"></i>
+            </a>
+          </div>
+        </div>
+
+        </div>
+    </aside>
+
+    <!-- ----------------------------------------------------------------------- -->
+    <!-- MAIN EMBEDDED PIPELINE ENGINE & EPISODES CONTAINER                      -->
+    <!-- ----------------------------------------------------------------------- -->
+    <main class="flex-1 w-full h-full min-h-0 relative overflow-hidden bg-[#090a0d] flex flex-col">
+      <!-- 剧集卡片列表控制台 (当 step === 'episodes' 时展示) -->
+      <div id="episodesView" class="w-full h-full overflow-y-auto p-6 flex flex-col space-y-6">
+        <!-- 头部标题与控制条 -->
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-5 border-b border-white/10 shrink-0">
+          <div>
+            <div class="flex items-center space-x-2.5">
+              <span class="w-2.5 h-2.5 rounded-full bg-[#dfc384] shadow-[0_0_8px_#dfc384]"></span>
+              <h1 class="text-lg font-bold tracking-wide text-slate-100 font-sans" id="episodesHeaderTitle">项目分集控制台</h1>
+              <span id="episodesTotalCountTag" class="text-xs font-mono px-2 py-0.5 rounded-md bg-[#dfc384]/15 text-[#eddab3] border border-[#dfc384]/30">0 个分集</span>
+            </div>
+            <p class="text-xs text-slate-400 mt-1">选择或创建剧集，正式进入剧本大纲、角色资产、分镜脚本与成片制作流水线</p>
+          </div>
+          <div class="flex items-center space-x-3 shrink-0">
+            <button type="button" onclick="WorkbenchWorkshop.refreshPipeline()" class="px-3 py-1.5 rounded-lg border border-white/10 bg-[#12151d] text-xs text-slate-300 hover:text-white hover:border-[#dfc384]/50 transition flex items-center space-x-1.5">
+              <i data-lucide="rotate-cw" class="w-3.5 h-3.5"></i>
+              <span>刷新分集</span>
+            </button>
+            <button type="button" onclick="WorkbenchWorkshop.openNewEpisodeModal()" class="px-4 py-1.5 rounded-lg bg-gradient-to-r from-[#dfc384] to-[#c29d58] text-[#0a0c10] text-xs font-bold shadow-[0_0_12px_rgba(223,195,132,0.3)] hover:brightness-110 active:scale-95 transition flex items-center space-x-1.5 cursor-pointer">
+              <i data-lucide="plus" class="w-4 h-4 stroke-[2.5]"></i>
+              <span>新建分集</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- 剧集卡片网格容器 -->
+        <div id="episodesGrid" class="flex-1 w-full min-h-0">
+          <div class="flex items-center justify-center py-20 text-slate-500 text-xs">
+            <i data-lucide="loader-2" class="w-5 h-5 animate-spin mr-2 text-[#dfc384]"></i>
+            <span>正在读取分集列表...</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- 流水线嵌入视图 (当 step !== 'episodes' 时展示) -->
+      <iframe id="pipelineIframe" class="w-full h-full border-0 bg-[#090a0d] hidden" src="about:blank"></iframe>
+    </main>
+  </div>
+
+  <!-- 新建分集模态框 -->
+  <div id="newEpisodeModal" class="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm hidden flex items-center justify-center p-4">
+    <div class="w-full max-w-lg rounded-2xl bg-[#0e1118] border border-[#dfc384]/40 shadow-[0_16px_40px_rgba(0,0,0,0.8)] overflow-hidden flex flex-col">
+      <div class="px-5 py-4 border-b border-white/10 flex items-center justify-between bg-[#141822]">
+        <div class="flex items-center space-x-2">
+          <i data-lucide="film" class="w-4 h-4 text-[#dfc384]"></i>
+          <h3 class="text-sm font-bold text-slate-100">创建新分集 (New Episode)</h3>
+        </div>
+        <button type="button" onclick="WorkbenchWorkshop.closeNewEpisodeModal()" class="text-slate-400 hover:text-white p-1 rounded-md transition cursor-pointer">
+          <i data-lucide="x" class="w-4 h-4"></i>
+        </button>
+      </div>
+
+      <form id="newEpisodeForm" onsubmit="WorkbenchWorkshop.handleCreateEpisode(event)" class="p-5 space-y-4">
+        <div>
+          <label class="block text-xs font-semibold text-slate-300 mb-1.5">所属项目</label>
+          <input type="text" id="newEpisodeProjectName" disabled class="w-full px-3 py-2 text-xs rounded-lg bg-[#07080b] border border-white/10 text-slate-400 font-mono" value="当前项目" />
+        </div>
+
+        <div>
+          <label class="block text-xs font-semibold text-slate-300 mb-1.5">分集标题 <span class="text-rose-400">*</span></label>
+          <input type="text" id="newEpisodeTitle" required placeholder="如：第 1 集：命运启程" class="w-full px-3 py-2 text-xs rounded-lg bg-[#07080b] border border-white/15 text-slate-100 placeholder-slate-500 focus:border-[#dfc384] focus:outline-none transition" />
+        </div>
+
+        <div>
+          <label class="block text-xs font-semibold text-slate-300 mb-1.5">创作种子 / 故事主旨大纲 (可选)</label>
+          <textarea id="newEpisodeSeed" rows="4" placeholder="简述该集的核心事件、人物冲突、戏剧转折点或基调..." class="w-full px-3 py-2 text-xs rounded-lg bg-[#07080b] border border-white/15 text-slate-100 placeholder-slate-500 focus:border-[#dfc384] focus:outline-none transition resize-none"></textarea>
+        </div>
+
+        <div class="pt-2 flex items-center justify-end space-x-3 border-t border-white/5">
+          <button type="button" onclick="WorkbenchWorkshop.closeNewEpisodeModal()" class="px-4 py-2 rounded-lg text-xs text-slate-400 hover:text-slate-200 border border-white/10 hover:bg-white/5 transition cursor-pointer">
+            取消
+          </button>
+          <button type="submit" id="btnSubmitEpisode" class="px-5 py-2 rounded-lg bg-gradient-to-r from-[#dfc384] to-[#c29d58] text-[#0a0c10] text-xs font-bold shadow-[0_0_12px_rgba(223,195,132,0.3)] hover:brightness-110 active:scale-95 transition flex items-center space-x-1.5 cursor-pointer">
+            <i data-lucide="sparkles" class="w-3.5 h-3.5"></i>
+            <span>立即创建并进入剧本流水线</span>
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <script>
+    const WorkbenchWorkshop = (function() {
+      const params = new URLSearchParams(window.location.search);
+      let projectId = params.get('project_id') || localStorage.getItem('workspace_project_id') || 'proj-01';
+      let pipelineId = params.get('pipeline_id') || '';
+      // 若没有显式指定 step，且没有 pipeline_id，默认优先展示 'episodes' 剧集管理；否则默认进入指定 step 或 script
+      let currentStep = params.get('step') || (pipelineId ? 'script' : 'episodes');
+      let cachedProjectName = localStorage.getItem('workspace_project_name') || '';
+      let clockTimer = null;
+      let boundWorkspaceRoot = null;
+      let lifecycleGeneration = 0;
+      let requestEpoch = 0;
+      let active = false;
+      let projectsRequestController = null;
+      let episodesRequestController = null;
+      let messageHandler = null;
+      let popstateHandler = null;
+
+      let episodes = [];
+      let isLoadingEpisodes = false;
+
+      // 内置示例项目目录：**仅用于占位显示**。当后端项目目录不可用时，
+      // 标题与状态位会显式标注「示例（未接入）」，绝不把它当作真实后端工程写入 projects。
+      const demoProjectCatalog = {
+        'proj-01': { id: 'proj-01', name: '《神谕之地》' },
+        'proj-02': { id: 'proj-02', name: '《赛博修真：重构法则》' },
+        'proj-03': { id: 'proj-03', name: '《钛金纪元：序幕》' },
+        'proj-05': { id: 'proj-05', name: '《霓虹脉冲 2099》' }
+      };
+
+      // 项目目录：一律来自真实后端。后端不可用时为 []，由 projectsDegradation 显式标记，
+      // 禁用「内置工程库」静默兜底（历史缺陷：伪造 proj-01..proj-05 工程名）。
+      let projects = [];
+      let projectsDegradation = null;
+      let episodesDegradation = null;
+      // projectId 允许来自 URL/localStorage；缺省仅作为路由占位，不代表后端存在该工程。
+      if (projectId && !projects.some(p => p.id === projectId)) {
+        projects.unshift({ id: projectId, name: cachedProjectName || (demoProjectCatalog[projectId] || {}).name || projectId, placeholder: true });
+      }
+
+      function escapeHtml(str) {
+        if (!str) return '';
+        return String(str)
+          .replace(/&/g, '&amp;')
+          .replace(/</g, '&lt;')
+          .replace(/>/g, '&gt;')
+          .replace(/"/g, '&quot;')
+          .replace(/'/g, '&#039;');
+      }
+
+      // 统一「无后端时显式降级」工具（复用页面末尾加载的 window.GWDegradation）。
+      // 口径：404/501 且无标准错误包 -> 未接入；503 -> 服务暂时不可用；其余 -> 如实报错。
+      const degradationApi = () => window.GWDegradation || null;
+
+      const degradationMessage = (kind, status) => {
+        const api = degradationApi();
+        if (api) {
+          if (kind === 'not_integrated') return `${api.NOT_INTEGRATED_MESSAGE}（HTTP ${status}）`;
+          if (kind === 'service_unavailable') return `${api.SERVICE_UNAVAILABLE_MESSAGE}（HTTP ${status}）`;
+        }
+        if (kind === 'not_integrated') return `该功能尚未接入后端（未纳入当前切片）（HTTP ${status}）`;
+        if (kind === 'service_unavailable') return `后端服务暂时不可用，请稍后重试（HTTP ${status}）`;
+        return `请求失败（HTTP ${status}）`;
+      };
+
+      async function classifyFetchFailure(res) {
+        let data = null;
+        try { data = await res.json(); } catch (_) { data = null; }
+        const api = degradationApi();
+        if (api && typeof api.classifyResponse === 'function') {
+          const verdict = api.classifyResponse(res, data);
+          return { kind: verdict.kind, status: verdict.status, message: verdict.message };
+        }
+        const detailValue = data ? data.detail : undefined;
+        const isEnvelope = Boolean(detailValue) && typeof detailValue === 'object';
+        const isDefaultText = typeof detailValue === 'string' && /^(not found|not implemented)$/i.test(detailValue.trim());
+        const isBusinessText = typeof detailValue === 'string' && detailValue.trim() && !isDefaultText;
+        let kind = 'error';
+        if (res.status === 503) kind = 'service_unavailable';
+        else if ([404, 501].indexOf(res.status) !== -1 && !isEnvelope && !isBusinessText) kind = 'not_integrated';
+        return { kind: kind, status: res.status, message: degradationMessage(kind, res.status) };
+      }
+
+      // 显式降级占位（带 data-gw-degradation 标记，便于契约测试与人工核验）。
+      function degradationNoticeHtml(degradation, extraHint) {
+        const api = degradationApi();
+        const hint = extraHint ? `<span class="block mt-1 text-[9px] text-slate-500">${escapeHtml(extraHint)}</span>` : '';
+        if (api && typeof api.noticeHtml === 'function') {
+          return api.noticeHtml(degradation.kind, degradation.message) + hint;
+        }
+        return `<div class="bay-inset p-3 rounded-xl border border-white/10 text-center text-[10px] font-mono text-slate-400" role="status" data-gw-degradation="${escapeHtml(degradation.kind)}"><span class="block">${escapeHtml(degradation.message)}</span>${hint}</div>`;
+      }
+
+      function formatTime(iso) {
+        if (!iso) return '刚刚';
+        try {
+          const d = new Date(iso);
+          if (isNaN(d.getTime())) return '刚刚';
+          return `${d.getMonth() + 1}月${d.getDate()}日 ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+        } catch (_) {
+          return '刚刚';
+        }
+      }
+
+      function getStatusBadgeClass(status) {
+        switch (status) {
+          case 'succeeded':
+          case 'completed':
+            return 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30';
+          case 'running':
+            return 'bg-amber-500/15 text-amber-400 border border-amber-500/30 animate-pulse';
+          case 'failed':
+            return 'bg-rose-500/15 text-rose-400 border border-rose-500/30';
+          default:
+            return 'bg-slate-500/15 text-slate-400 border border-slate-500/30';
+        }
+      }
+
+      function getStatusLabel(status) {
+        switch (status) {
+          case 'succeeded':
+          case 'completed':
+            return '已完成';
+          case 'running':
+            return '进行中';
+          case 'failed':
+            return '执行失败';
+          default:
+            return '就绪草稿';
+        }
+      }
+
+      const API_PROJECTS = '/api/asset-registry/projects';
+      const API_PROJECTS_FALLBACK = '/api/projects';
+
+      function requestIsCurrent(generation, epoch, requestProjectId = null) {
+        return active && lifecycleGeneration === generation && requestEpoch === epoch
+          && (!requestProjectId || projectId === requestProjectId);
+      }
+
+      function invalidateRequests({ abortProjects = true, abortEpisodes = true } = {}) {
+        requestEpoch += 1;
+        if (abortProjects) projectsRequestController?.abort();
+        if (abortEpisodes) episodesRequestController?.abort();
+      }
+
+      async function fetchProjects() {
+        projectsDegradation = null;
+        const generation = lifecycleGeneration;
+        const epoch = requestEpoch;
+        projectsRequestController?.abort();
+        const controller = new AbortController();
+        projectsRequestController = controller;
+        const keepPlaceholder = projects.filter(p => p.placeholder);
+        try {
+          let res = await fetch(`${API_PROJECTS}?archived=false`, { credentials: 'same-origin', signal: controller.signal });
+          let data = null;
+          if (res.ok) {
+            data = await res.json();
+          } else {
+            res = await fetch(API_PROJECTS_FALLBACK, { credentials: 'same-origin', signal: controller.signal });
+            if (res.ok) data = await res.json();
+          }
+          if (!requestIsCurrent(generation, epoch)) return;
+          if (!res.ok) {
+            const failure = await classifyFetchFailure(res);
+            if (!requestIsCurrent(generation, epoch)) return;
+            projectsDegradation = { kind: failure.kind, message: failure.message };
+            projects = keepPlaceholder;
+          } else {
+            const list = data?.projects || data || [];
+            const real = (Array.isArray(list) ? list : []).map(p => {
+              const pid = p && (p.id || p.project_id);
+              return pid ? { id: pid, name: p.name || pid } : null;
+            }).filter(Boolean);
+            projects = real.concat(keepPlaceholder.filter(ph => !real.some(r => r.id === ph.id)));
+          }
+
+          if (!requestIsCurrent(generation, epoch)) return;
+          if (projectId && !projects.some(p => p.id === projectId)) {
+            try {
+              let pRes = await fetch(`${API_PROJECTS}/${encodeURIComponent(projectId)}`, { credentials: 'same-origin', signal: controller.signal });
+              if (!pRes.ok) {
+                pRes = await fetch(`${API_PROJECTS_FALLBACK}/${encodeURIComponent(projectId)}`, { credentials: 'same-origin', signal: controller.signal });
+              }
+              if (!requestIsCurrent(generation, epoch)) return;
+              if (pRes.ok) {
+                const pData = await pRes.json();
+                const projObj = pData?.project || pData;
+                const projId = projObj && (projObj.id || projObj.project_id);
+                if (projId) {
+                  projects.unshift({ id: projId, name: projObj.name || projId });
+                  cachedProjectName = projObj.name || projId;
+                  try { localStorage.setItem('workspace_project_name', cachedProjectName); } catch (_) {}
+                }
+              }
+            } catch (error) {
+              if (error?.name !== 'AbortError') { /* 详情读取失败不阻断主目录 */ }
+            }
+          }
+        } catch (e) {
+          if (e?.name === 'AbortError' || !requestIsCurrent(generation, epoch)) return;
+          console.warn('读取远端工程目录失败（网络异常）:', e);
+          projectsDegradation = { kind: 'service_unavailable', message: degradationMessage('service_unavailable', 0) };
+          projects = keepPlaceholder;
+        } finally {
+          if (projectsRequestController === controller) projectsRequestController = null;
+        }
+        if (requestIsCurrent(generation, epoch)) updateProjectDisplay();
+      }
+
+      function updateProjectDisplay() {
+        const titleEl = document.getElementById('workshopProjectTitle');
+        const headerTitleEl = document.getElementById('episodesHeaderTitle');
+        const current = projects.find(p => p.id === projectId) || { id: projectId, name: cachedProjectName || projectId };
+        // 显式降级：后端项目目录不可用时不得假装这是真实工程。
+        const degraded = Boolean(projectsDegradation);
+        const suffix = degraded ? '（示例 · 未接入）' : '';
+
+        if (titleEl) {
+          titleEl.textContent = `${current.name}${suffix} · 影视工坊流水线`;
+        }
+        if (headerTitleEl) {
+          headerTitleEl.textContent = `${current.name}${suffix} · 项目分集`;
+        }
+
+        document.querySelectorAll('#navPillsGroup a, #gotoProductionLink').forEach(a => {
+          const href = a.getAttribute('href');
+          if (href && !href.startsWith('http') && !href.startsWith('#')) {
+            const url = new URL(href, window.location.origin);
+            url.searchParams.set('project_id', projectId);
+            a.setAttribute('href', url.pathname.split('/').pop() + url.search);
+          }
+        });
+      }
+
+      const API_EPISODES = '/api/episode-pipelines';
+
+      async function fetchEpisodes() {
+        if (!projectId || !active) return false;
+        const requestProjectId = projectId;
+        const generation = lifecycleGeneration;
+        const epoch = requestEpoch;
+        episodesRequestController?.abort();
+        const controller = new AbortController();
+        episodesRequestController = controller;
+        episodesDegradation = null;
+        isLoadingEpisodes = true;
+        try {
+          const res = await fetch(`${API_EPISODES}?project_id=${encodeURIComponent(requestProjectId)}`, {
+            credentials: 'same-origin', signal: controller.signal
+          });
+          if (!requestIsCurrent(generation, epoch, requestProjectId)) return false;
+          if (res.ok) {
+            const data = await res.json();
+            if (!requestIsCurrent(generation, epoch, requestProjectId)) return false;
+            episodes = Array.isArray(data?.pipelines) ? data.pipelines : [];
+          } else {
+            const failure = await classifyFetchFailure(res);
+            if (!requestIsCurrent(generation, epoch, requestProjectId)) return false;
+            episodesDegradation = { kind: failure.kind, message: failure.message };
+            episodes = [];
+          }
+          return true;
+        } catch (e) {
+          if (e?.name === 'AbortError' || !requestIsCurrent(generation, epoch, requestProjectId)) return false;
+          console.warn('获取分集流水线失败（网络异常）:', e);
+          episodesDegradation = { kind: 'service_unavailable', message: degradationMessage('service_unavailable', 0) };
+          episodes = [];
+          return true;
+        } finally {
+          if (episodesRequestController === controller) episodesRequestController = null;
+          if (requestIsCurrent(generation, epoch, requestProjectId)) {
+            isLoadingEpisodes = false;
+        syncWorkshopBusStatus();
+            renderEpisodes();
+            updateStepButtons(currentStep);
+          }
+        }
+      }
+
+  // 真实总线状态位：只依据 fetchEpisodes 的真实结果（episodes / episodesDegradation）。
+  function syncWorkshopBusStatus() {
+    const box = document.getElementById('workshopBusStatus');
+    const text = document.getElementById('workshopBusStatusText');
+    if (!box || !text) return;
+    if (episodesDegradation) {
+      const kind = episodesDegradation.kind === 'service_unavailable' ? 'service_unavailable' : 'not_integrated';
+      box.setAttribute('data-gw-degradation', kind);
+      text.textContent = 'PIPELINE ENGINE BUS: ' + (kind === 'service_unavailable' ? '暂不可用' : '未接入') + '（' + episodesDegradation.message + '）';
+      return;
+    }
+    box.removeAttribute('data-gw-degradation');
+    text.textContent = 'PIPELINE ENGINE BUS: 已接入 · ' + episodes.length + ' 条流水线';
+  }
+
+      function renderEpisodes() {
+        const grid = document.getElementById('episodesGrid');
+        const countTag = document.getElementById('episodesTotalCountTag');
+        if (countTag) {
+          countTag.textContent = `${episodes.length} 个分集`;
+        }
+        if (!grid) return;
+
+        if (episodes.length === 0 && episodesDegradation) {
+          // 显式降级：不得把「分集接口未接入 / 不可用」伪装成「该项目没有分集」。
+          grid.innerHTML = `<div class="w-full max-w-xl mx-auto py-16 px-4">`
+            + degradationNoticeHtml(episodesDegradation, '分集列表未取到；本页不会展示任何伪造的分集数据。')
+            + `</div>`;
+          window.lucide?.createIcons();
+          return;
+        }
+
+        if (episodes.length === 0) {
+          // 当前项目确实没有分集：显示新建分集引导卡片
+          grid.innerHTML = `
+            <div class="w-full flex items-center justify-center py-16 px-4">
+              <div onclick="WorkbenchWorkshop.openNewEpisodeModal()" class="w-full max-w-lg p-10 rounded-2xl border-2 border-dashed border-[#dfc384]/35 bg-[#0e1118]/80 hover:bg-[#141822] hover:border-[#dfc384] transition-all duration-300 cursor-pointer group flex flex-col items-center text-center shadow-[0_8px_30px_rgba(0,0,0,0.6)]">
+                <div class="w-16 h-16 rounded-2xl bg-[#dfc384]/10 border border-[#dfc384]/30 flex items-center justify-center text-[#dfc384] mb-4 group-hover:scale-110 transition-transform">
+                  <i data-lucide="clapperboard" class="w-8 h-8"></i>
+                </div>
+                <h3 class="text-base font-bold text-slate-100 group-hover:text-[#eddab3] mb-2">当前项目尚未创建分集</h3>
+                <p class="text-xs text-slate-400 mb-6 leading-relaxed max-w-sm">点击此处创建第 1 集，即可正式进入剧本生成、角色资产提炼与分镜流水线</p>
+                <span class="px-5 py-2.5 rounded-lg bg-gradient-to-r from-[#dfc384] to-[#c29d58] text-[#0a0c10] text-xs font-bold shadow-[0_0_16px_rgba(223,195,132,0.35)] group-hover:brightness-110 flex items-center space-x-2">
+                  <i data-lucide="plus" class="w-4 h-4 stroke-[2.5]"></i>
+                  <span>新建第 1 集并生成剧本</span>
+                </span>
+              </div>
+            </div>
+          `;
+          window.lucide?.createIcons();
+          return;
+        }
+
+        // 当前项目有分集：网格形式展示卡片，末尾附带新建卡片
+        let html = '<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5 pb-8">';
+        episodes.forEach((ep, idx) => {
+          const epNum = `EP.${String(idx + 1).padStart(2, '0')}`;
+          const epTitle = ep.title || `第 ${idx + 1} 集`;
+          const seedDesc = (ep.seed || '').trim() || '暂无剧情种子梗概，进入工作台后可直接编写或生成大纲';
+          const percent = ep.progress?.percent || 0;
+          const isCurrentActive = ep.pipeline_id === pipelineId;
+
+          html += `
+            <div onclick="WorkbenchWorkshop.openEpisode('${ep.pipeline_id}')" class="group relative rounded-xl border ${isCurrentActive ? 'border-[#dfc384] shadow-[0_0_20px_rgba(223,195,132,0.2)]' : 'border-white/10'} bg-[#0e1118] hover:border-[#dfc384]/70 hover:shadow-[0_10px_26px_rgba(0,0,0,0.6)] p-5 flex flex-col justify-between transition-all duration-200 cursor-pointer overflow-hidden min-h-[220px]">
+              <div class="space-y-3">
+                <div class="flex items-center justify-between">
+                  <div class="flex items-center space-x-2">
+                    <span class="font-mono text-xs font-bold text-[#dfc384] px-2 py-0.5 rounded bg-[#dfc384]/15 border border-[#dfc384]/30">${epNum}</span>
+                    ${isCurrentActive ? '<span class="text-[9px] font-mono text-emerald-400 bg-emerald-500/10 px-1.5 py-0.5 rounded border border-emerald-500/20">当前</span>' : ''}
+                  </div>
+                  <span class="text-[10px] font-medium px-2 py-0.5 rounded-full ${getStatusBadgeClass(ep.status)}">
+                    ${getStatusLabel(ep.status)}
+                  </span>
+                </div>
+
+                <div>
+                  <h4 class="text-sm font-bold text-slate-100 group-hover:text-[#eddab3] line-clamp-1 transition">${escapeHtml(epTitle)}</h4>
+                  <p class="text-xs text-slate-400 mt-1 line-clamp-2 leading-relaxed">${escapeHtml(seedDesc)}</p>
+                </div>
+
+                <div class="space-y-1 pt-1">
+                  <div class="flex justify-between text-[10px] font-mono text-slate-500">
+                    <span>流水线阶段</span>
+                    <span class="text-[#dfc384] font-semibold">${percent}%</span>
+                  </div>
+                  <div class="w-full h-1.5 bg-black/50 rounded-full overflow-hidden border border-white/5">
+                    <div class="h-full bg-gradient-to-r from-[#dfc384] to-emerald-400 rounded-full transition-all duration-300" style="width: ${percent}%"></div>
+                  </div>
+                </div>
+              </div>
+
+              <div class="pt-4 mt-3 border-t border-white/5 flex items-center justify-between">
+                <span class="text-[10px] font-mono text-slate-500">
+                  ${formatTime(ep.updated_at || ep.created_at)}
+                </span>
+                <span class="text-xs font-semibold text-[#dfc384] group-hover:translate-x-1 transition-transform flex items-center space-x-1">
+                  <span>进入剧本流水线</span>
+                  <i data-lucide="arrow-right" class="w-3.5 h-3.5"></i>
+                </span>
+              </div>
+            </div>
+          `;
+        });
+
+        // 追加新建卡片
+        html += `
+          <div onclick="WorkbenchWorkshop.openNewEpisodeModal()" class="rounded-xl border-2 border-dashed border-white/15 hover:border-[#dfc384]/70 bg-[#0c0e14]/50 hover:bg-[#12151e] p-6 flex flex-col items-center justify-center text-center transition cursor-pointer group min-h-[220px]">
+            <div class="w-12 h-12 rounded-xl bg-white/5 group-hover:bg-[#dfc384]/15 border border-white/10 group-hover:border-[#dfc384]/40 flex items-center justify-center text-slate-400 group-hover:text-[#dfc384] mb-3 transition">
+              <i data-lucide="plus" class="w-6 h-6 stroke-[2.5]"></i>
+            </div>
+            <span class="text-xs font-bold text-slate-300 group-hover:text-[#eddab3] transition">新建下一分集</span>
+            <span class="text-[10px] text-slate-500 mt-1">创建新 EP 并开启剧本流水线</span>
+          </div>
+        `;
+        html += '</div>';
+        grid.innerHTML = html;
+        window.lucide?.createIcons();
+      }
+
+      function openEpisode(targetPipelineId) {
+        if (!targetPipelineId) return;
+        pipelineId = targetPipelineId;
+        switchStep('script');
+      }
+
+      function openNewEpisodeModal() {
+        const current = projects.find(p => p.id === projectId) || { id: projectId, name: cachedProjectName || projectId };
+        const modal = document.getElementById('newEpisodeModal');
+        const projNameInput = document.getElementById('newEpisodeProjectName');
+        const titleInput = document.getElementById('newEpisodeTitle');
+        const seedInput = document.getElementById('newEpisodeSeed');
+
+        if (projNameInput) projNameInput.value = `${current.name} (${projectId})`;
+        if (titleInput) {
+          titleInput.value = `第 ${episodes.length + 1} 集`;
+          setTimeout(() => titleInput.focus(), 100);
+        }
+        if (seedInput) seedInput.value = '';
+
+        if (modal) modal.classList.remove('hidden');
+        window.lucide?.createIcons();
+      }
+
+      function closeNewEpisodeModal() {
+        const modal = document.getElementById('newEpisodeModal');
+        if (modal) modal.classList.add('hidden');
+      }
+
+      async function handleCreateEpisode(e) {
+        if (e) e.preventDefault();
+        const titleInput = document.getElementById('newEpisodeTitle');
+        const seedInput = document.getElementById('newEpisodeSeed');
+        const title = titleInput?.value.trim();
+        const seed = seedInput?.value.trim() || '';
+
+        if (!title) return;
+
+        const btn = document.getElementById('btnSubmitEpisode');
+        if (btn) {
+          btn.disabled = true;
+          btn.innerHTML = '<i data-lucide="loader-2" class="w-3.5 h-3.5 animate-spin"></i><span>正在创建并初始化...</span>';
+          window.lucide?.createIcons();
+        }
+
+        try {
+          const payload = {
+            project_id: projectId,
+            title: title,
+            seed: seed,
+            prompt_library_id: 'episode',
+            prompt_item_ids: {}
+          };
+          const idempotencyKey = (window.crypto && crypto.randomUUID) ? crypto.randomUUID() : ('ep-' + Date.now() + '-' + Math.random().toString(36).slice(2, 9));
+          const res = await fetch('/api/episode-pipelines', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Idempotency-Key': idempotencyKey
+            },
+            credentials: 'same-origin',
+            body: JSON.stringify(payload)
+          });
+
+          if (!res.ok) {
+            const errData = await res.json().catch(() => ({}));
+            let errMsg = '创建分集失败，请稍后重试';
+            if (errData && errData.detail) {
+              if (typeof errData.detail === 'string') {
+                errMsg = errData.detail;
+              } else if (errData.detail.message) {
+                errMsg = errData.detail.message;
+              } else {
+                errMsg = JSON.stringify(errData.detail);
+              }
+            } else if (errData && errData.message) {
+              errMsg = errData.message;
+            }
+            alert(errMsg);
+            return;
+          }
+
+          const created = await res.json();
+          closeNewEpisodeModal();
+
+          const newPipelineId = created.pipeline_id || created.id || '';
+          if (newPipelineId) {
+            pipelineId = newPipelineId;
+            // 自动进入剧本生成流水线
+            switchStep('script');
+          } else {
+            await fetchEpisodes();
+          }
+        } catch (err) {
+          console.error('创建分集异常:', err);
+          alert('网络通信异常，创建分集失败');
+        } finally {
+          if (btn) {
+            btn.disabled = false;
+            btn.innerHTML = '<i data-lucide="sparkles" class="w-3.5 h-3.5"></i><span>立即创建并进入剧本流水线</span>';
+            window.lucide?.createIcons();
+          }
+        }
+      }
+
+      function updateStepButtons(step) {
+        const epBtn = document.getElementById('stepBtn-episodes');
+        const epBadge = document.getElementById('episodesCountBadge');
+
+        if (step === 'episodes') {
+          if (epBtn) epBtn.className = 'tree-node-card active px-2.5 py-1.5 flex items-center justify-between group cursor-pointer';
+          if (epBadge) {
+            epBadge.className = 'text-[7.5px] font-mono px-1 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 shrink-0 flex items-center space-x-0.5';
+            epBadge.innerHTML = '<span>act</span><i data-lucide="check" class="w-2 h-2"></i>';
+          }
+        } else {
+          if (epBtn) epBtn.className = 'tree-node-card px-2.5 py-1.5 flex items-center justify-between group cursor-pointer';
+          if (epBadge) {
+            // 显式降级：分集数不可知时显示「—」，不得把 0 当成真实结果。
+            if (episodesDegradation) {
+              epBadge.className = 'text-[7.5px] font-mono px-1.5 py-0.5 rounded-full bg-slate-500/15 text-slate-400 border border-slate-500/30 shrink-0';
+              epBadge.textContent = '—';
+            } else {
+              epBadge.className = 'text-[7.5px] font-mono px-1.5 py-0.5 rounded-full bg-[#dfc384]/15 text-[#eddab3] border border-[#dfc384]/30 shrink-0';
+              epBadge.textContent = `${episodes.length}集`;
+            }
+          }
+        }
+
+        const stepOrder = ['script', 'assets', 'video', 'audio_compose', 'storyboard'];
+        const activeIdx = stepOrder.indexOf(step);
+
+        stepOrder.forEach((k, idx) => {
+          const btn = document.getElementById(`stepBtn-${k}`);
+          if (btn) {
+            const badge = btn.querySelector('.font-mono:last-child');
+            if (k === step) {
+              btn.className = 'tree-node-card active px-2.5 py-1.5 flex items-center justify-between group cursor-pointer';
+              if (badge) {
+                badge.className = 'text-[7.5px] font-mono px-1 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 shrink-0 flex items-center space-x-0.5';
+                badge.innerHTML = '<span>act</span><i data-lucide="check" class="w-2 h-2"></i>';
+              }
+            } else if (activeIdx !== -1 && idx < activeIdx) {
+              btn.className = 'tree-node-card px-2.5 py-1.5 flex items-center justify-between group cursor-pointer';
+              if (badge) {
+                badge.className = 'text-[7.5px] font-mono px-1 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 shrink-0';
+                badge.textContent = 'done';
+              }
+            } else {
+              btn.className = 'tree-node-card px-2.5 py-1.5 flex items-center justify-between group cursor-pointer';
+              if (badge) {
+                badge.className = 'text-[7.5px] font-mono px-1 py-0.5 rounded-full bg-slate-500/15 text-slate-400 border border-slate-500/30 shrink-0';
+                badge.textContent = 'wait';
+              }
+            }
+          }
+        });
+        window.lucide?.createIcons();
+      }
+
+      function switchStep(step, initial = false, skipEpisodesFetch = false) {
+        currentStep = step;
+        updateStepButtons(step);
+
+        const episodesView = document.getElementById('episodesView');
+        const pipelineIframe = document.getElementById('pipelineIframe');
+
+        // 更新浏览器地址栏
+        const url = new URL(window.location.href);
+        url.searchParams.set('project_id', projectId);
+        url.searchParams.set('step', step);
+        if (pipelineId) {
+          url.searchParams.set('pipeline_id', pipelineId);
+        } else {
+          url.searchParams.delete('pipeline_id');
+        }
+        window.history.replaceState({}, '', url.toString());
+
+        if (step === 'episodes') {
+          if (episodesView) episodesView.classList.remove('hidden');
+          if (pipelineIframe) pipelineIframe.classList.add('hidden');
+          if (!skipEpisodesFetch) fetchEpisodes();
+          return;
+        }
+
+        // 分镜画布作为总线常驻工具，直接在右侧工作区内嵌现有画布页面。
+        if (step === 'storyboard') {
+          if (episodesView) episodesView.classList.add('hidden');
+          if (pipelineIframe) {
+            pipelineIframe.classList.remove('hidden');
+            const targetUrl = `/static/pages/storyboard.html?project_id=${encodeURIComponent(projectId)}&embedded=1`;
+            if (pipelineIframe.src !== new URL(targetUrl, window.location.origin).href) pipelineIframe.src = targetUrl;
+          }
+          return;
+        }
+
+        // 处于流水线具体阶段 (script / assets / video / audio_compose)
+        if (episodesView) episodesView.classList.add('hidden');
+        if (pipelineIframe) pipelineIframe.classList.remove('hidden');
+
+        // 若当前尚未指定 pipelineId，且已有分集，优先选中第一集
+        if (!pipelineId && episodes.length > 0) {
+          pipelineId = episodes[0].pipeline_id;
+          url.searchParams.set('pipeline_id', pipelineId);
+          window.history.replaceState({}, '', url.toString());
+        }
+
+        // 如果完全没有任何分集，则无法进入流水线，智能引导至分集页面
+        if (!pipelineId && episodes.length === 0 && !initial) {
+          fetchEpisodes().then(() => {
+            if (episodes.length === 0) {
+              switchStep('episodes');
+            } else {
+              pipelineId = episodes[0].pipeline_id;
+              switchStep(step);
+            }
+          });
+          return;
+        }
+
+        if (pipelineIframe) {
+          let targetUrl = `/static/episode-pipeline.html?embedded=1&project_id=${encodeURIComponent(projectId)}&step=${encodeURIComponent(step)}`;
+          if (pipelineId) targetUrl += `&pipeline_id=${encodeURIComponent(pipelineId)}`;
+
+          try {
+            if (!initial && pipelineIframe.contentWindow && typeof pipelineIframe.contentWindow.switchStep === 'function') {
+              pipelineIframe.contentWindow.switchStep(step);
+            } else if (!initial && pipelineIframe.contentWindow && pipelineIframe.contentWindow.location.pathname.includes('episode-pipeline.html')) {
+              pipelineIframe.contentWindow.postMessage({ type: 'navigate-step', step }, '*');
+            } else {
+              pipelineIframe.src = targetUrl;
+            }
+          } catch (err) {
+            pipelineIframe.src = targetUrl;
+          }
+        }
+      }
+
+      function switchProject(targetId) {
+        if (!targetId) return;
+        if (targetId === projectId) return;
+        projectId = targetId;
+        pipelineId = '';
+        invalidateRequests();
+        localStorage.setItem('workspace_project_id', projectId);
+        const cur = projects.find(p => p.id === projectId);
+        if (cur && cur.name) {
+          localStorage.setItem('workspace_project_name', cur.name);
+          cachedProjectName = cur.name;
+        }
+
+        updateProjectDisplay();
+        const targetProjectId = projectId;
+        const targetGeneration = lifecycleGeneration;
+        const targetEpoch = requestEpoch;
+        fetchEpisodes().then(() => {
+          if (requestIsCurrent(targetGeneration, targetEpoch, targetProjectId)) {
+            switchStep('episodes', false, true);
+          }
+        });
+      }
+
+      // 显式降级：项目目录不可用/为空时，切换按钮不得静默抛异常（历史缺陷：undefined.id）。
+      function canSwitchProject() {
+        if (projectsDegradation) {
+          console.warn('项目目录未接入 / 不可用，已禁用项目切换：', projectsDegradation.message);
+          return false;
+        }
+        return projects.length > 1;
+      }
+
+      function prevProject() {
+        if (!canSwitchProject()) return;
+        const idx = projects.findIndex(p => p.id === projectId);
+        const prevIdx = idx <= 0 ? projects.length - 1 : idx - 1;
+        switchProject(projects[prevIdx].id);
+      }
+
+      function nextProject() {
+        if (!canSwitchProject()) return;
+        const idx = projects.findIndex(p => p.id === projectId);
+        const nextIdx = (idx + 1) % projects.length;
+        switchProject(projects[nextIdx].id);
+      }
+
+      function refreshPipeline() {
+        if (currentStep === 'episodes') {
+          fetchEpisodes();
+        } else {
+          const iframe = document.getElementById('pipelineIframe');
+          if (iframe) {
+            iframe.contentWindow?.location.reload();
+          }
+        }
+      }
+
+      function updateClock() {
+        const clockEl = document.getElementById('masterDeckClock');
+        if (clockEl) {
+          const now = new Date();
+          const parts = new Intl.DateTimeFormat('en-US', { timeZone: 'Asia/Shanghai', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false }).formatToParts(now);
+          clockEl.textContent = `${parts.find(part => part.type === 'hour')?.value || '00'}:${parts.find(part => part.type === 'minute')?.value || '00'}:${parts.find(part => part.type === 'second')?.value || '00'}`;
+        }
+      }
+
+      function syncRouteState() {
+        const routeParams = new URLSearchParams(window.location.search);
+        const nextProjectId = routeParams.get('project_id') || localStorage.getItem('workspace_project_id') || 'proj-01';
+        const projectChanged = nextProjectId !== projectId;
+        if (projectChanged) invalidateRequests();
+        projectId = nextProjectId;
+        pipelineId = routeParams.get('pipeline_id') || '';
+        currentStep = routeParams.get('step') || (pipelineId ? 'script' : 'episodes');
+        if (projectId && !projects.some(p => p.id === projectId)) {
+          const placeholderName = cachedProjectName || (demoProjectCatalog[projectId] || {}).name || projectId;
+          projects.unshift({ id: projectId, name: placeholderName, placeholder: true });
+        }
+        return projectChanged;
+      }
+
+      function bindLifecycleListeners() {
+        if (!messageHandler) {
+          messageHandler = event => {
+            if (!active || !window.location.pathname.endsWith('/workshop.html')) return;
+            if (event.data?.type === 'episode-step-changed' && event.data.step) {
+              updateStepButtons(event.data.step);
+              const url = new URL(window.location.href);
+              url.searchParams.set('project_id', projectId);
+              url.searchParams.set('step', event.data.step);
+              window.history.replaceState({}, '', url.toString());
+            } else if (event.data?.type === 'episode-open-project-board') {
+              const board = new URL('/static/pages/projects.html', location.origin);
+              const pid = String(event.data.projectId || '');
+              if (pid) board.searchParams.set('project_id', pid);
+              location.assign(board.href);
+            }
+          };
+          window.addEventListener('message', messageHandler);
+        }
+        if (!popstateHandler) {
+          popstateHandler = () => {
+            if (!active || !window.location.pathname.endsWith('/workshop.html')) return;
+            const uParams = new URLSearchParams(window.location.search);
+            const popStep = uParams.get('step') || 'episodes';
+            const popProj = uParams.get('project_id') || projectId;
+            if (popProj !== projectId) {
+              switchProject(popProj);
+            } else if (popStep !== currentStep) {
+              switchStep(popStep);
+            }
+          };
+          window.addEventListener('popstate', popstateHandler);
+        }
+      }
+
+      function dispose() {
+        active = false;
+        lifecycleGeneration += 1;
+        invalidateRequests();
+        if (clockTimer) {
+          clearInterval(clockTimer);
+          clockTimer = null;
+        }
+        if (messageHandler) {
+          window.removeEventListener('message', messageHandler);
+          messageHandler = null;
+        }
+        if (popstateHandler) {
+          window.removeEventListener('popstate', popstateHandler);
+          popstateHandler = null;
+        }
+        boundWorkspaceRoot = null;
+      }
+
+      function rebind() {
+        const workspaceRoot = document.getElementById('episodesView');
+        const rootChanged = workspaceRoot !== boundWorkspaceRoot;
+        if (!active) {
+          lifecycleGeneration += 1;
+          active = true;
+          bindLifecycleListeners();
+        }
+        const projectChanged = syncRouteState();
+        localStorage.setItem('workspace_project_id', projectId);
+        updateProjectDisplay();
+        switchStep(currentStep, true, true);
+        boundWorkspaceRoot = workspaceRoot;
+        if (rootChanged || projectChanged) {
+          fetchProjects();
+          fetchEpisodes();
+        }
+        updateClock();
+        if (!clockTimer) clockTimer = setInterval(updateClock, 1000);
+        window.lucide?.createIcons();
+      }
+
+      function init() {
+        rebind();
+      }
+
+      return {
+        init,
+        rebind,
+        dispose,
+        switchStep,
+        switchProject,
+        prevProject,
+        nextProject,
+        refreshPipeline,
+        openEpisode,
+        openNewEpisodeModal,
+        closeNewEpisodeModal,
+        handleCreateEpisode
+      };
+    })();
+
+    window.WorkbenchWorkshop = WorkbenchWorkshop;
+    document.addEventListener('DOMContentLoaded', WorkbenchWorkshop.init);
+  </script>
+<script src="/static/js/core/degradation.js?v=v0.0.1-alpha-2026"></script>
+<script src="/static/js/core/hardware-telemetry.js"></script>
+<script src="/static/js/core/workbench-shell.js"></script>
+</body>
+</html>

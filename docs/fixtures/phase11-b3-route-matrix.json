@@ -1,0 +1,251 @@
+{
+  "block": "B3",
+  "path_count": 52,
+  "method_path_count": 61,
+  "routes": [
+    {
+      "method": "GET",
+      "path": "/api/asset-registry"
+    },
+    {
+      "method": "GET",
+      "path": "/api/asset-registry/assets"
+    },
+    {
+      "method": "POST",
+      "path": "/api/asset-registry/assets/archive"
+    },
+    {
+      "method": "POST",
+      "path": "/api/asset-registry/assets/export-pdf"
+    },
+    {
+      "method": "POST",
+      "path": "/api/asset-registry/assets/import"
+    },
+    {
+      "method": "POST",
+      "path": "/api/asset-registry/assets/relations"
+    },
+    {
+      "method": "POST",
+      "path": "/api/asset-registry/assets/resolve-reference"
+    },
+    {
+      "method": "POST",
+      "path": "/api/asset-registry/assets/tags"
+    },
+    {
+      "method": "GET",
+      "path": "/api/asset-registry/assets/{asset_id}"
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/asset-registry/assets/{asset_id}"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/asset-registry/assets/{asset_id}"
+    },
+    {
+      "method": "GET",
+      "path": "/api/asset-registry/assets/{asset_id}/image-versions"
+    },
+    {
+      "method": "POST",
+      "path": "/api/asset-registry/assets/{asset_id}/image-versions"
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/asset-registry/assets/{asset_id}/image-versions/{version_id}"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/asset-registry/assets/{asset_id}/image-versions/{version_id}"
+    },
+    {
+      "method": "GET",
+      "path": "/api/asset-registry/assets/{asset_id}/image-versions/{version_id}/media"
+    },
+    {
+      "method": "GET",
+      "path": "/api/asset-registry/assets/{asset_id}/media"
+    },
+    {
+      "method": "POST",
+      "path": "/api/asset-registry/assets/{asset_id}/open-local"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/asset-registry/assets/{asset_id}/relations/{related_asset_id}"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/asset-registry/assets/{asset_id}/tags/{tag_id}"
+    },
+    {
+      "method": "POST",
+      "path": "/api/asset-registry/assets/{asset_id}/video/clip"
+    },
+    {
+      "method": "GET",
+      "path": "/api/asset-registry/assets/{asset_id}/video/frame"
+    },
+    {
+      "method": "GET",
+      "path": "/api/asset-registry/assets/{asset_id}/video/storyboard"
+    },
+    {
+      "method": "GET",
+      "path": "/api/asset-registry/facets"
+    },
+    {
+      "method": "GET",
+      "path": "/api/asset-registry/folders"
+    },
+    {
+      "method": "POST",
+      "path": "/api/asset-registry/folders"
+    },
+    {
+      "method": "POST",
+      "path": "/api/asset-registry/governance/asset-trash/{entry_id}/restore"
+    },
+    {
+      "method": "POST",
+      "path": "/api/asset-registry/governance/assets/{asset_id}/restore"
+    },
+    {
+      "method": "POST",
+      "path": "/api/asset-registry/governance/audit-outbox/reconcile"
+    },
+    {
+      "method": "POST",
+      "path": "/api/asset-registry/governance/canvases/purge-expired"
+    },
+    {
+      "method": "POST",
+      "path": "/api/asset-registry/governance/canvases/{canvas_id}/restore"
+    },
+    {
+      "method": "GET",
+      "path": "/api/asset-registry/governance/cascade-preview"
+    },
+    {
+      "method": "POST",
+      "path": "/api/asset-registry/governance/operations"
+    },
+    {
+      "method": "GET",
+      "path": "/api/asset-registry/governance/overview"
+    },
+    {
+      "method": "POST",
+      "path": "/api/asset-registry/index/sync"
+    },
+    {
+      "method": "GET",
+      "path": "/api/asset-registry/preferences/team"
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/asset-registry/preferences/team"
+    },
+    {
+      "method": "GET",
+      "path": "/api/asset-registry/presets"
+    },
+    {
+      "method": "POST",
+      "path": "/api/asset-registry/presets"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/asset-registry/presets/{preset_id}"
+    },
+    {
+      "method": "GET",
+      "path": "/api/asset-registry/project-directory-templates"
+    },
+    {
+      "method": "POST",
+      "path": "/api/asset-registry/project-directory-templates"
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/asset-registry/project-directory-templates/{template_id}"
+    },
+    {
+      "method": "POST",
+      "path": "/api/asset-registry/project-directory-templates/{template_id}/archive"
+    },
+    {
+      "method": "POST",
+      "path": "/api/asset-registry/project-directory-templates/{template_id}/default"
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/asset-registry/project-entities/{entity_id}"
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/asset-registry/project-gates/{gate_id}"
+    },
+    {
+      "method": "POST",
+      "path": "/api/asset-registry/project-recycle/{project_id}/restore"
+    },
+    {
+      "method": "POST",
+      "path": "/api/asset-registry/projects/{project_id}/assets"
+    },
+    {
+      "method": "POST",
+      "path": "/api/asset-registry/projects/{project_id}/entities"
+    },
+    {
+      "method": "GET",
+      "path": "/api/asset-registry/recycle-bin"
+    },
+    {
+      "method": "POST",
+      "path": "/api/asset-registry/recycle-bin/{entry_id}/restore"
+    },
+    {
+      "method": "POST",
+      "path": "/api/asset-registry/reindex"
+    },
+    {
+      "method": "GET",
+      "path": "/api/asset-registry/remote-assets"
+    },
+    {
+      "method": "POST",
+      "path": "/api/asset-registry/remote-assets"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/asset-registry/remote-assets/{asset_id}"
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/asset-registry/settings/features/{feature_id}"
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/asset-registry/settings/index-automation"
+    },
+    {
+      "method": "GET",
+      "path": "/api/asset-registry/status"
+    },
+    {
+      "method": "GET",
+      "path": "/api/asset-registry/workspace-jobs/{job_id}"
+    },
+    {
+      "method": "POST",
+      "path": "/api/asset-registry/workspace-jobs/{job_id}/{action}"
+    }
+  ]
+}

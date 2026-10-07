@@ -1,0 +1,176 @@
+meta:
+  source: "旧仓库只读研究（main=31371df）与公开文档"
+  review_status: "user_directed_remediation_input_pending_independent_release_review"
+  distribution: "NOT AUTHORIZED FOR PUBLIC DISTRIBUTION"
+  cleanroom_notice: "仅记录 method/path/body/status/schema/错误/验收语义。"
+
+service: canvas_and_smart_canvas
+version: remediation-2
+
+interfaces:
+  - name: list_canvases
+    method: GET
+    path: /api/canvases
+    body: null
+    status:
+      - 200
+      - 401
+      - 403
+    schema:
+      request_query:
+        project_id: string
+      response_200:
+        canvases:
+          - canvas_id: string
+            title: string
+            project_id: string
+            version: integer
+            mode: "enum(classic|smart)"
+    errors:
+      401: "未认证"
+      403: "无项目访问权限"
+    acceptance: "仅返回当前项目可见画布。"
+
+  - name: create_canvas
+    method: POST
+    path: /api/canvases
+    body:
+      project_id: string
+      title: string
+      mode: "enum(classic|smart)"
+      initial_payload: "object | optional"
+    status:
+      - 200
+      - 201
+      - 400
+      - 401
+      - 403
+    schema:
+      response_200_201:
+        canvas:
+          canvas_id: string
+          version: integer
+    errors:
+      400: "参数不合法"
+    acceptance: "创建后返回稳定 canvas_id。"
+
+  - name: update_canvas_topology
+    method: PATCH
+    path: /api/canvases/{canvas_id}
+    body:
+      expected_version: integer
+      nodes: array
+      connections: array
+      references: "object | optional"
+    status:
+      - 200
+      - 400
+      - 401
+      - 403
+      - 404
+      - 409
+    schema:
+      response_200:
+        canvas:
+          canvas_id: string
+          version: integer
+    errors:
+      409: "CAS 冲突（版本不一致）"
+      403: "无写权限"
+      401: "未认证"
+    acceptance: "版本一致时写入成功并递增版本；冲突必须返回 409。"
+
+  - name: restore_canvas
+    method: POST
+    path: /api/canvases/{canvas_id}/restore
+    body:
+      expected_version: integer
+    status:
+      - 200
+      - 401
+      - 403
+      - 404
+      - 409
+    schema:
+      response_200:
+        canvas:
+          canvas_id: string
+          version: integer
+    errors:
+      409: "恢复时版本冲突或状态冲突"
+    acceptance: "恢复成功后画布重新可见并可按权限写入。"
+
+  - name: import_canvas_workflow
+    method: POST
+    path: /api/canvases/{canvas_id}/workflow/import
+    body:
+      content: "UTF-8 文本（JSON 或 .godmap）"
+    query:
+      format: "enum(json|godmap)"
+      merge_mode: "enum(replace|insert)"
+      expected_version: integer
+    status:
+      - 200
+      - 400
+      - 401
+      - 403
+      - 409
+    schema:
+      response_200:
+        canvas:
+          canvas_id: string
+          version: integer
+        import_report:
+          nodes_imported: integer
+          connections_imported: integer
+          warnings: array
+    errors:
+      400: "文件结构不合法或不支持的格式"
+      409: "CAS 冲突"
+    acceptance: "导入必须进行结构校验；非法拓扑不得写入。"
+
+  - name: export_canvas_workflow
+    method: POST
+    path: /api/canvases/{canvas_id}/workflow/export
+    body:
+      format: "enum(json|godmap)"
+      include_resources: boolean
+    status:
+      - 200
+      - 400
+      - 401
+      - 403
+      - 404
+    schema:
+      response_200:
+        body: "原始 JSON 或 .godmap 文本"
+        content_type: "application/json"
+    errors:
+      400: "不支持的格式或资源内嵌选项"
+      403: "无导出权限"
+    acceptance: "当前最小切片的 JSON/.godmap 导出结果可被导入接口完整回放。"
+
+  - name: run_smart_canvas_task
+    method: POST
+    path: /api/canvases/{canvas_id}/tasks
+    body:
+      expected_version: "integer | optional"
+      entry_nodes: array
+      run_mode: "enum(single|cascade)"
+      inputs: object
+    status:
+      - 202
+      - 400
+      - 401
+      - 403
+      - 404
+      - 409
+    schema:
+      response_202:
+        job_id: string
+        state: "accepted"
+        poll_hint: string
+    errors:
+      202: "异步受理，不代表失败"
+      409: "版本冲突或运行前置条件不满足"
+    acceptance: "受理必须返回 202，并携带稳定 job_id 与 poll_hint。"

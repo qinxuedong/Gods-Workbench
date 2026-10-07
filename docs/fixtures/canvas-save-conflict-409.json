@@ -1,0 +1,9 @@
+{
+  "detail": {
+    "code": "CANVAS_VERSION_CONFLICT",
+    "message": "画布版本冲突，请刷新后重试",
+    "expected_version": 11,
+    "current_version": 12,
+    "canvas_id": "cv-0001"
+  }
+}

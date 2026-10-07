@@ -1,0 +1,385 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <title data-i18n="governance.documentTitle">全局内容治理与回收站 · Gods' Workbench</title>
+  <link rel="stylesheet" href="/static/css/base/workspace-pages.css?v=v0.0.1-alpha-2026">
+  <link rel="stylesheet" href="/static/css/base/signal-flow.css?v=v0.0.1-alpha-2026&sf=20260826">
+
+  <style>
+    .sr-only {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      padding: 0;
+      margin: -1px;
+      overflow: hidden;
+      clip: rect(0, 0, 0, 0);
+      white-space: nowrap;
+      border: 0;
+    }
+    .gov-stat-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 16px;
+      margin-bottom: 24px;
+    }
+    .gov-stat-card {
+      background: var(--bg-card, #1e1e24);
+      border: 1px solid var(--border-subtle, rgba(255,255,255,0.08));
+      border-radius: var(--radius-md, 8px);
+      padding: 16px 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .gov-stat-card span {
+      font-size: 13px;
+      color: var(--text-muted, #8b8b99);
+    }
+    .gov-stat-card strong {
+      font-size: 24px;
+      font-weight: 600;
+      color: var(--text-primary, #ffffff);
+      font-family: var(--font-mono, monospace);
+    }
+    .gov-toolbar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 12px;
+      margin-bottom: 16px;
+    }
+    .gov-tabs {
+      display: flex;
+      gap: 8px;
+      border-bottom: 1px solid var(--border-subtle, rgba(255,255,255,0.08));
+      margin-bottom: 20px;
+      padding-bottom: 2px;
+    }
+    .gov-tab {
+      background: transparent;
+      border: none;
+      border-bottom: 2px solid transparent;
+      color: var(--text-muted, #8b8b99);
+      padding: 8px 16px;
+      font-size: 14px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+    .gov-tab:hover {
+      color: var(--text-primary, #ffffff);
+    }
+    .gov-tab.active {
+      color: var(--color-primary, #4f7cff);
+      border-bottom-color: var(--color-primary, #4f7cff);
+    }
+    .gov-panel {
+      display: none;
+    }
+    .gov-panel.active {
+      display: block;
+    }
+    .gov-card-section {
+      background: var(--bg-card, #1e1e24);
+      border: 1px solid var(--border-subtle, rgba(255,255,255,0.08));
+      border-radius: var(--radius-md, 8px);
+      padding: 20px;
+      margin-bottom: 20px;
+    }
+    .gov-card-section h3 {
+      margin: 0 0 12px 0;
+      font-size: 16px;
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .gov-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+      text-align: left;
+    }
+    .gov-table th {
+      padding: 10px 12px;
+      color: var(--text-muted, #8b8b99);
+      border-bottom: 1px solid var(--border-subtle, rgba(255,255,255,0.08));
+      font-weight: 500;
+    }
+    .gov-table td {
+      padding: 12px;
+      border-bottom: 1px solid var(--border-subtle, rgba(255,255,255,0.04));
+      color: var(--text-primary, #ffffff);
+    }
+    .gov-table tr:hover td {
+      background: rgba(255,255,255,0.02);
+    }
+    .gov-table .empty-td {
+      text-align: center;
+      color: var(--text-muted, #8b8b99);
+      padding: 32px 12px;
+    }
+    .gov-badge {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 4px;
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      font-family: var(--font-mono, monospace);
+    }
+    .gov-badge.asset { background: rgba(79,124,255,0.15); color: #789eff; }
+    .gov-badge.project { background: rgba(52,199,89,0.15); color: #5cd87e; }
+    .gov-badge.canvas { background: rgba(255,149,0,0.15); color: #ffa938; }
+    .gov-badge.pending { background: rgba(255,204,0,0.15); color: #ffd633; }
+    .gov-badge.done { background: rgba(52,199,89,0.15); color: #5cd87e; }
+    .gov-badge.failed { background: rgba(255,59,48,0.15); color: #ff6b60; }
+    .gov-form-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 16px;
+      margin-bottom: 16px;
+    }
+    .gov-form-item {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .gov-form-item label {
+      font-size: 12px;
+      font-weight: 500;
+      color: var(--text-muted, #8b8b99);
+    }
+    .gov-form-item input, .gov-form-item select, .gov-form-item textarea {
+      background: var(--bg-canvas, #141418);
+      border: 1px solid var(--border-subtle, rgba(255,255,255,0.12));
+      border-radius: 6px;
+      color: var(--text-primary, #ffffff);
+      padding: 8px 12px;
+      font-size: 13px;
+      font-family: inherit;
+    }
+    .gov-form-item textarea {
+      font-family: var(--font-mono, monospace);
+      resize: vertical;
+      min-height: 80px;
+    }
+    .gov-preview-box {
+      background: var(--bg-canvas, #141418);
+      border: 1px dashed var(--border-subtle, rgba(255,255,255,0.15));
+      border-radius: 6px;
+      padding: 14px 16px;
+      margin-top: 12px;
+      font-size: 13px;
+      color: var(--text-primary, #ffffff);
+    }
+    .btn.danger {
+      background: var(--color-danger, #e53935);
+      color: #fff;
+    }
+    .btn.danger:hover {
+      background: #d32f2f;
+    }
+  </style>
+</head>
+<body class="gw-signal gw-page--governance">
+  <main class="workspace-page center-page">
+    <header class="topbar">
+      <div class="top-actions">
+        <span class="mono muted" id="govRoleBadge" data-i18n="governance.adminOnly">仅管理员</span>
+      </div>
+    </header>
+
+    <header class="center-titlebar">
+      <div>
+        <h1 data-i18n="governance.heading">全局内容治理</h1>
+        <p data-i18n="governance.subheading">跨项目、团队与存储根的素材/项目/画布统一回收、恢复、级联防冲突与事务审计</p>
+      </div>
+      <div style="display:flex;gap:8px;">
+        <button class="btn" id="btnReconcileAudit" type="button" data-i18n="governance.reconcileAudit">重放挂起审计</button>
+        <button class="btn danger" id="btnPurgeExpiredCanvases" type="button" data-i18n="governance.purgeExpired">清理过期画布</button>
+      </div>
+    </header>
+
+    <!-- 统计卡片 -->
+    <div class="gov-stat-grid">
+      <div class="gov-stat-card">
+        <span data-i18n="governance.statRecycledAssets">已回收素材</span>
+        <strong id="statAssetsCount">0</strong>
+      </div>
+      <div class="gov-stat-card">
+        <span data-i18n="governance.statArchivedProjects">已归档项目</span>
+        <strong id="statProjectsCount">0</strong>
+      </div>
+      <div class="gov-stat-card">
+        <span data-i18n="governance.statRecycledCanvases">已回收画布</span>
+        <strong id="statCanvasesCount">0</strong>
+      </div>
+      <div class="gov-stat-card">
+        <span data-i18n="governance.statPendingOutbox">挂起审计事务</span>
+        <strong id="statPendingOutboxCount">0</strong>
+      </div>
+    </div>
+
+    <!-- 选项卡 -->
+    <nav class="gov-tabs" id="govTabs" role="tablist">
+      <button class="gov-tab active" id="gov-tab-trash" data-tab="trash" role="tab" aria-selected="true" aria-controls="panelTrash" tabindex="0" data-i18n="governance.tabTrash">统一回收站</button>
+      <button class="gov-tab" id="gov-tab-operations" data-tab="operations" role="tab" aria-selected="false" aria-controls="panelOperations" tabindex="-1" data-i18n="governance.tabOperations">全局操作台</button>
+      <button class="gov-tab" id="gov-tab-audit" data-tab="audit" role="tab" aria-selected="false" aria-controls="panelAudit" tabindex="-1" data-i18n="governance.tabAudit">审计与事务</button>
+    </nav>
+
+    <!-- 面板 1：统一回收站 -->
+    <section class="gov-panel active" id="panelTrash" role="tabpanel" aria-labelledby="gov-tab-trash">
+      <!-- 素材回收 -->
+      <div class="gov-card-section">
+        <h3>
+          <span data-i18n="governance.assetRecycleList">素材回收列表</span>
+          <span class="mono muted" id="assetTrashCount">0</span>
+        </h3>
+        <table class="gov-table">
+          <thead>
+            <tr>
+              <th data-i18n="governance.assetEntryId">条目 ID / 资产 ID</th>
+              <th data-i18n="governance.originalName">原名称</th>
+              <th data-i18n="governance.storageRoot">存储根</th>
+              <th data-i18n="governance.recycledAt">回收时间</th>
+              <th data-i18n="governance.hashSummary">哈希摘要</th>
+              <th data-i18n="governance.actions">操作</th>
+            </tr>
+          </thead>
+          <tbody id="assetTrashRows">
+            <tr><td colspan="6" class="empty-td" data-i18n="governance.loadingAssetTrash">正在载入素材回收条目…</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- 归档项目 -->
+      <div class="gov-card-section">
+        <h3>
+          <span data-i18n="governance.archivedProjects">已归档项目</span>
+          <span class="mono muted" id="projectTrashCount">0</span>
+        </h3>
+        <table class="gov-table">
+          <thead>
+            <tr>
+              <th data-i18n="governance.projectId">项目 ID</th>
+              <th data-i18n="governance.projectName">项目名称</th>
+              <th data-i18n="governance.entityCount">条目数</th>
+              <th data-i18n="governance.archiveVersion">归档版本</th>
+              <th data-i18n="governance.actions">操作</th>
+            </tr>
+          </thead>
+          <tbody id="projectTrashRows">
+            <tr><td colspan="5" class="empty-td" data-i18n="governance.loadingArchivedProjects">正在载入归档项目…</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- 已回收画布 -->
+      <div class="gov-card-section">
+        <h3>
+          <span data-i18n="governance.recycledCanvases">已回收画布（30 天保留期）</span>
+          <span class="mono muted" id="canvasTrashCount">0</span>
+        </h3>
+        <table class="gov-table">
+          <thead>
+            <tr>
+              <th data-i18n="governance.canvasId">画布 ID</th>
+              <th data-i18n="governance.canvasTitle">标题</th>
+              <th data-i18n="governance.deletedAt">删除时间</th>
+              <th data-i18n="governance.retentionExpiry">保留到期</th>
+              <th data-i18n="governance.actions">操作</th>
+            </tr>
+          </thead>
+          <tbody id="canvasTrashRows">
+            <tr><td colspan="5" class="empty-td" data-i18n="governance.loadingCanvasTrash">正在载入已回收画布…</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- 面板 2：全局操作分派 -->
+    <section class="gov-panel" id="panelOperations" role="tabpanel" aria-labelledby="gov-tab-operations">
+      <div class="gov-card-section">
+        <h3 data-i18n="governance.operationsHeading">全局内容操作（需管理员权限与事务审计）</h3>
+        <form id="govOpForm">
+          <div class="gov-form-grid">
+            <div class="gov-form-item">
+              <label for="opTargetType" data-i18n="governance.targetTypeLabel">目标类型</label>
+              <select id="opTargetType" required>
+                <option value="asset" data-i18n="governance.targetAsset">素材资产</option>
+                <option value="project" data-i18n="governance.targetProject">项目</option>
+                <option value="entity" data-i18n="governance.targetEntity">项目条目</option>
+                <option value="canvas" data-i18n="governance.targetCanvas">画布</option>
+              </select>
+            </div>
+            <div class="gov-form-item">
+              <label for="opOperation" data-i18n="governance.operationTypeLabel">操作类型</label>
+              <select id="opOperation" required>
+                <option value="edit" data-i18n="governance.operationEdit">编辑或重命名</option>
+                <option value="close" data-i18n="governance.operationClose">关闭或归档</option>
+                <option value="reopen" data-i18n="governance.operationReopen">重新打开</option>
+                <option value="group" data-i18n="governance.operationGroup">加入分组</option>
+                <option value="ungroup" data-i18n="governance.operationUngroup">移出分组</option>
+                <option value="move" data-i18n="governance.operationMove">移动排序或容器</option>
+                <option value="copy" data-i18n="governance.operationCopy">复制</option>
+              </select>
+            </div>
+            <div class="gov-form-item">
+              <label for="opTargetId" data-i18n="governance.targetIdLabel">目标稳定 ID</label>
+              <input type="text" id="opTargetId" data-i18n-placeholder="governance.targetIdPlaceholder" placeholder="例如 asset_id / project_id / entity_id" required>
+            </div>
+          </div>
+          <div class="gov-form-item" style="margin-bottom:16px;">
+            <label for="opParamsJson" data-i18n="governance.paramsLabel">操作参数 JSON</label>
+            <textarea id="opParamsJson" data-i18n-placeholder="governance.paramsPlaceholder" placeholder='{"name": "新名称", "expected_version": 1}'></textarea>
+          </div>
+          <div style="display:flex;gap:8px;">
+            <button type="button" class="btn" id="btnPreviewImpact" data-i18n="governance.previewImpact">预览级联影响</button>
+            <button type="submit" class="btn primary" id="btnExecuteOp" data-i18n="governance.executeOperation">执行操作</button>
+          </div>
+        </form>
+        <div id="opPreviewBox" class="gov-preview-box" style="display:none;"></div>
+        <div id="opResultBox" class="gov-preview-box" style="display:none;margin-top:12px;"></div>
+      </div>
+    </section>
+
+    <!-- 面板 3：审计事务与日志 -->
+    <section class="gov-panel" id="panelAudit" role="tabpanel" aria-labelledby="gov-tab-audit">
+      <div class="gov-card-section">
+        <h3 data-i18n="governance.auditOutboxHeading">审计 Outbox 队列状态</h3>
+        <p class="muted" style="margin-bottom:12px;font-size:13px;" data-i18n="governance.auditOutboxDescription">Outbox 机制保证业务操作与审计日志最终一致；若发生异常崩溃，可重放处理未决事务。</p>
+        <div id="auditOutboxStatusArea" style="font-size:13px;" data-i18n="governance.checkingAuditOutbox">正在检测 Outbox 状态…</div>
+      </div>
+    </section>
+  </main>
+
+  <!-- 确认弹窗 -->
+  <dialog class="task-detail-dialog" id="govConfirmDialog" data-floating-surface="governance-confirm" data-floating-kind="native-dialog" data-floating-content=".task-detail-shell" data-floating-dismiss="outside" data-floating-escape="close-only" aria-labelledby="govConfirmTitle" aria-describedby="govConfirmSubtitle">
+    <div class="task-detail-shell" data-floating-content>
+      <header class="task-detail-head">
+        <div><h2 id="govConfirmTitle" data-i18n="governance.confirmationTitle">操作确认</h2><p id="govConfirmSubtitle"></p></div>
+        <button class="btn small" type="button" id="btnGovConfirmClose" data-floating-close data-i18n="governance.closeDialog">关闭</button>
+      </header>
+      <div class="task-detail-body" id="govConfirmBody"></div>
+      <div class="sr-only" id="govConfirmStatus" role="status" aria-live="polite" aria-atomic="true"></div>
+      <footer style="display:flex;justify-content:flex-end;gap:8px;padding:16px 20px;border-top:1px solid var(--border-subtle, rgba(255,255,255,0.08));">
+        <button class="btn" type="button" id="btnGovConfirmCancel" data-floating-close data-i18n="governance.cancelOperation">取消</button>
+        <button class="btn primary" type="button" id="btnGovConfirmOk" data-i18n="governance.confirmExecute">确认执行</button>
+      </footer>
+    </div>
+  </dialog>
+
+  <div class="production-toast" id="govToast" role="status" aria-live="polite" aria-atomic="true"></div>
+
+  <script src="/static/js/core/i18n.js?v=v0.0.1-alpha-2026&m2=20260813b"></script>
+  <script src="/static/js/core/floating-dismissal.js?v=v0.0.1-alpha-2026&m3=floating-dismissal"></script>
+  <script src="/static/js/core/workspace-common.js?v=v0.0.1-alpha-2026"></script>
+  <script src="/static/js/core/degradation.js?v=v0.0.1-alpha-2026"></script>
+  <script src="/static/js/modules/governance.js?v=v0.0.1-alpha-2026&m2=20260813b"></script>
+</body>
+</html>

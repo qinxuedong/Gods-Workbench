@@ -1,0 +1,22 @@
+# Phase 12 A3 剧集流水线接口目录
+meta:
+  version: p12-a3-1
+  distribution: NOT AUTHORIZED FOR PUBLIC DISTRIBUTION
+  data_backend: "core.storage.JsonState 命名空间 episode_pipeline（落盘，重启可恢复；单实例一致性）"
+  unavailable_status: 503
+  unavailable_code: EPISODE_PIPELINE_NOT_INTEGRATED
+  canvas_boundary: "本块不涉及画布域"
+  explicit_limit: "阶段 start/complete/cancel 只推进状态机，本阶段不触发任何真实渲染、不调用外部模型、不生成媒体产物"
+  id_format: "pipeline_id=ep-NNNN；stage_id=stg-NNNN；均确定性序号"
+  stage_model: "keys=[script,assets,video,audio_compose]，创建流水线时一次性按序建立 4 个阶段"
+  stage_status: "pending → running → completed/cancelled；失败为 failed"
+  illegal_transition: "409 INVALID_STATE_TRANSITION（未启动直接完成、重复启动、终态再操作）"
+  cas_granularity: "start/cancel 支持 expected_version，按阶段 version 校验；不一致 409 VERSION_CONFLICT"
+  frontend_contract: "create→pipeline 对象本身（前端读 data.pipeline_id）；list→{pipelines:[...]}；detail→payload.pipeline||payload；stage 字段 stage/label/status/version/result/production_context/prompt_item_id；前端以阶段 key 调用，契约路径参数为 stage_id，服务端二者都接受"
+interfaces:
+  - {name: get_episode_pipelines, method: GET, path: /api/episode-pipelines}
+  - {name: post_episode_pipelines, method: POST, path: /api/episode-pipelines}
+  - {name: get_episode_pipeline, method: GET, path: /api/episode-pipelines/{p}}
+  - {name: post_episode_stage_cancel, method: POST, path: /api/episode-pipelines/{p}/stages/{p}/cancel}
+  - {name: post_episode_stage_complete, method: POST, path: /api/episode-pipelines/{p}/stages/{p}/complete}
+  - {name: post_episode_stage_start, method: POST, path: /api/episode-pipelines/{p}/stages/{p}/start}

@@ -1,0 +1,275 @@
+meta:
+  source: "旧仓库只读研究（main=31371df）与公开文档"
+  review_status: "user_directed_remediation_input_pending_independent_release_review"
+  distribution: "NOT AUTHORIZED FOR PUBLIC DISTRIBUTION"
+  cleanroom_notice: "本目录仅记录接口语义，不包含旧源码结构或实现细节。"
+
+service: projects_hub
+version: remediation-1
+
+interfaces:
+  - name: list_projects
+    method: GET
+    path: /api/asset-registry/projects
+    body: null
+    status:
+      - 200
+      - 401
+      - 403
+    schema:
+      request_query:
+        archived: "boolean | optional"
+        deleted: "boolean | optional"
+      response_200:
+        projects:
+          - project_id: string
+            name: string
+            project_type: "enum(film|series|other)"
+            stage: string
+            progress: number
+            start_at: "integer | null"
+            due_at: "integer | null"
+            version: integer
+            archived_at: "string(datetime) | null"
+            deleted_at: "string(datetime) | null"
+    errors:
+      401: "未认证，需重新登录"
+      403: "无读取权限"
+    acceptance: "按查询条件返回对应生命周期集合，空结果返回空数组。"
+
+  - name: create_project
+    method: POST
+    path: /api/asset-registry/projects
+    body:
+      name: string
+      project_type: "enum(film|series|other)"
+      description: "string | optional"
+      start_at: "integer | null | optional"
+      due_at: "integer | null | optional"
+      client_request_id: "string(8..128) | optional; gates存在时必填"
+      gates: "array<object> | optional; 最多32项，按输入顺序创建"
+      gate.code: "string(1..64); 字母数字/下划线/短横线，trim后小写去重"
+      gate.name: "string(1..120)"
+    status:
+      - 200
+      - 201
+      - 400
+      - 401
+      - 403
+      - 409
+    schema:
+      response_200_201:
+        project:
+          project_id: string
+          version: integer
+    errors:
+      400: "请求体不合法或缺少必填字段"
+      401: "未认证"
+      403: "无创建权限"
+      409: "同主体同幂等键对应不同请求内容"
+    acceptance: "创建成功后返回稳定 project_id；同键重试不重复创建项目或门。"
+
+  - name: update_project
+    method: PATCH
+    path: /api/asset-registry/projects/{project_id}
+    body:
+      name: "string | optional"
+      stage: "string | optional"
+      scenes: "integer | optional"
+      shots: "integer | optional"
+      progress: "integer(0..100) | optional"
+      description: "string | optional"
+      start_at: "integer | null | optional"
+      due_at: "integer | null | optional"
+      expected_version: integer
+    status:
+      - 200
+      - 400
+      - 401
+      - 403
+      - 404
+      - 409
+    schema:
+      response_200:
+        project:
+          project_id: string
+          version: integer
+    errors:
+      409: "CAS 版本冲突"
+      403: "无编辑权限"
+      401: "未认证"
+    acceptance: "expected_version 匹配时更新成功并返回新版本；冲突必须返回 409。"
+
+  - name: archive_project
+    method: DELETE
+    path: /api/asset-registry/projects/{project_id}
+    body:
+      expected_version: integer
+    status:
+      - 200
+      - 401
+      - 403
+      - 404
+      - 409
+    schema:
+      response_200:
+        project:
+          project_id: string
+          version: integer
+          archived_at: "string(datetime)"
+    errors:
+      409: "CAS 冲突"
+      403: "无治理权限"
+    acceptance: "归档成功后项目进入只读生命周期。"
+
+  - name: unarchive_project
+    method: POST
+    path: /api/asset-registry/governance/projects/{project_id}/restore
+    body:
+      expected_version: integer
+    status:
+      - 200
+      - 401
+      - 403
+      - 404
+      - 409
+    schema:
+      response_200:
+        project:
+          project_id: string
+          version: integer
+          archived_at: null
+    errors:
+      409: "CAS 冲突"
+      403: "无治理权限"
+    acceptance: "恢复后项目返回活跃集合。"
+
+  - name: move_project_to_trash
+    method: POST
+    path: /api/asset-registry/projects/{project_id}/trash
+    body:
+      expected_version: integer
+    status:
+      - 200
+      - 401
+      - 403
+      - 404
+      - 409
+    schema:
+      response_200:
+        project:
+          project_id: string
+          version: integer
+          deleted_at: "string(datetime)"
+    errors:
+      409: "CAS 冲突或生命周期不满足前置条件"
+    acceptance: "仅允许治理流程下的逻辑删除（回收站隔离）。"
+
+  - name: restore_project_from_trash
+    method: POST
+    path: /api/asset-registry/projects/{project_id}/trash/restore
+    body:
+      expected_version: integer
+    status:
+      - 200
+      - 401
+      - 403
+      - 404
+      - 409
+    schema:
+      response_200:
+        project:
+          project_id: string
+          version: integer
+          deleted_at: null
+    errors:
+      409: "CAS 冲突"
+    acceptance: "恢复成功后项目可再次参与导航与编辑。"
+
+  - name: list_project_gates
+    method: GET
+    path: /api/asset-registry/projects/{project_id}/gates
+    body: null
+    status:
+      - 200
+      - 401
+      - 404
+    schema:
+      response_200:
+        project_id: string
+        gates:
+          - gate_id: string
+            project_id: string
+            code: string
+            name: string
+            state: "enum(pending|approved|changes_requested)"
+            version: integer
+            note: "string | null"
+            created_at: "string(datetime)"
+            updated_at: "string(datetime) | null"
+        data_status: string
+    errors:
+      401: "未认证"
+      404: "项目不存在"
+    acceptance: "owner或治理角色读取有序门集合；其他已认证主体得到空集合，不泄露门信息。"
+
+  - name: get_project_gate
+    method: GET
+    path: /api/asset-registry/project-gates/{gate_id}
+    body: null
+    status:
+      - 200
+      - 401
+      - 404
+    schema:
+      response_200:
+        gate:
+          gate_id: string
+          project_id: string
+          code: string
+          name: string
+          state: "enum(pending|approved|changes_requested)"
+          version: integer
+          note: "string | null"
+          created_at: "string(datetime)"
+          updated_at: "string(datetime) | null"
+        data_status: string
+    errors:
+      401: "未认证"
+      404: "未知门或无权读取，统一隐藏"
+    acceptance: "详情无权访问与未知gate_id使用相同404错误包。"
+
+  - name: update_project_gate
+    method: PATCH
+    path: /api/asset-registry/project-gates/{gate_id}
+    body:
+      state: "enum(pending|approved|changes_requested)"
+      expected_version: integer
+      note: "string(0..1000) | optional"
+    status:
+      - 200
+      - 400
+      - 401
+      - 403
+      - 404
+      - 409
+    schema:
+      response_200:
+        gate:
+          gate_id: string
+          project_id: string
+          code: string
+          name: string
+          state: "enum(pending|approved|changes_requested)"
+          version: integer
+          note: "string | null"
+          created_at: "string(datetime)"
+          updated_at: "string(datetime) | null"
+        data_status: string
+    errors:
+      400: "状态、备注或expected_version不合法"
+      401: "未认证"
+      403: "权限不足、状态迁移受限或归档/回收项目只读"
+      404: "未知门或无权访问，统一隐藏"
+      409: "VERSION_CONFLICT或INVALID_GATE_TRANSITION"
+    acceptance: "owner按门自身CAS版本更新；已批准撤回须治理角色与非空备注。"

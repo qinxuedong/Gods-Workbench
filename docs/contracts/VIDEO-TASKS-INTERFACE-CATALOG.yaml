@@ -1,0 +1,108 @@
+version: "1.0"
+contract_id: VIDEO-TASKS-INTERFACE-CATALOG
+status: frozen_for_implementation
+updated_at: "2026-09-27"
+summary: "统一视频远端生成与本地 FFmpeg 导出任务契约；替代 CANVAS-CLOSURE 中视频端点仅 503 的旧适用条件。"
+source_evidence: "docs/contracts/PROVIDER-PROTOCOL-BOUNDARIES.md；仅支持配置标记为 newapi_video 的 New API unified-video 协议。"
+security:
+  identity:
+    actor_key: "服务端认证后生成的 identity_domain + subject；不得使用请求体 author/user/role。local_dev 主体仅限开发模式，不视为生产持久账户。"
+    project_access: "视频操作要求主体对项目拥有持久 owner 或显式 grant；新项目创建时由服务端绑定创建主体。无 ACL 证明的历史项目须由 admin/governor 显式授权，不得以全局 editor 推断。"
+    task_observation: "既有任务详情/列表仅按持久actor_key隔离；取消还需当前可写角色。项目真源暂不可用不得阻断原主体观察或止损。产物读取、创建、授权和执行仍需项目真源与ACL来源验证。"
+    canvas_access: "canvas_id 必须存在且其 project_id 等于经授权的 project_id。"
+    entity_access: "entity_id 必须是该项目画布当前拓扑节点或项目实体记录中的实体；请求上下文不可自证关联。"
+    asset_access: "导出 asset_id 必须在资产注册表真实存在、有本地媒体路径且路径位于 GW_ALLOWED_ROOTS；仅对主体有权访问的 project 操作。"
+  errors: "统一外层 detail.code/message；401 未认证，403 无权，404 隐藏非本主体任务/产物，409 幂等键异参或状态冲突，422 参数非法，503 无配置/依赖不可用。"
+  idempotency: "Idempotency-Key 或 client_request_id 必填；唯一域为 actor_key + operation + key。同键同规范化请求返回原 job_id；同键异参 409 IDEMPOTENCY_CONFLICT。创建远端超时标记 interrupted/result_unknown，不自动重发。"
+  artifact: "媒体产物只通过鉴权端点读取，不置于静态目录。下载 Provider 产物时不转发 Provider Bearer，校验 HTTPS/HTTP 地址策略、DNS/IP、重定向、大小和总超时。"
+  ffmpeg: "仅使用服务器映射的有限 preset 与经 ACL/资产注册表解析的本地 asset_id；不接受命令、参数、URL、输入或输出路径。输出只落在仓库外服务数据目录，采用唯一名，不覆盖既有文件。"
+operations:
+  - id: video-generation
+    method: POST
+    path: /api/video-tasks
+    auth: authenticated_project_writer
+    response_status: 202
+    request:
+      required_headers: [Authorization, Idempotency-Key]
+      fields:
+        prompt: {type: string, min_length: 1, max_length: 20000}
+        provider_id: {type: string}
+        model: {type: string}
+        duration: {type: number, min: 0.1, max: 120, description: "必须原样传至上游；不默认为固定时长。"}
+        aspect_ratio: {type: string, enum: ["16:9", "9:16", "1:1"]}
+        production_context:
+          type: object
+          required: [project_id, canvas_id, entity_id]
+          fields: {project_id: string, canvas_id: string, entity_id: string}
+    response: {job_id: string, poll_hint: string, status: queued}
+    upstream:
+      adapter: newapi_video
+      create: "POST {base_url}/v1/video/generations"
+      poll: "GET {base_url}/v1/video/generations/{upstream_task_id}"
+      state_map: {queued: queued, in_progress: running, completed: download_and_ffprobe, failed: failed}
+      cancellation: "本地停止发布结果；New API 公开协议未保证远端取消与退费，不宣称已取消上游。"
+  - id: video-export
+    method: POST
+    path: /api/video-exports
+    auth: authenticated_project_writer
+    response_status: 202
+    request:
+      required_headers: [Authorization, Idempotency-Key]
+      fields:
+        asset_ids: {type: array[string], min_items: 1, max_items: 8}
+        project_id: {type: string}
+        canvas_id: {type: string}
+        entity_id: {type: string}
+        preset: {type: string, enum: ["h264_720p_30fps", "h264_1080p_30fps"]}
+    response: {job_id: string, poll_hint: string, status: queued}
+  - id: video-task-list
+    method: GET
+    path: /api/video-tasks
+    auth: authenticated
+    response: {items: "本主体可见任务的数组", data_status: ok}
+  - id: video-task-read
+    method: GET
+    path: /api/video-tasks/{job_id}
+    auth: authenticated_owner
+    response_fields: [job_id, operation, status, poll_hint, project_id, canvas_id, entity_id, asset_id, error, created_at, updated_at]
+  - id: video-task-cancel
+    method: POST
+    path: /api/video-tasks/{job_id}/cancel
+    auth: authenticated_owner
+    response_fields: [job_id, status, remote_cancelled, remote_may_continue_or_bill]
+  - id: video-artifact-content
+    method: GET
+    path: /api/video-tasks/{job_id}/content
+    auth: authenticated_owner
+    query:
+      download: {type: boolean, default: false, description: "false 返回 inline 供播放器预览；true 返回 attachment 下载。"}
+    response: "本地媒体流；仅 succeeded 且 ffprobe 验证通过时可读。Content-Disposition 默认为 inline；download=true 时为 attachment。"
+states:
+  enum: [queued, running, succeeded, failed, canceled, interrupted]
+  transitions:
+    - "queued -> running | canceled | interrupted | failed"
+    - "running -> succeeded | failed | canceled | interrupted"
+    - "终态不可再变更；取消先原子落终态，迟到 Provider 响应不得发布产物。"
+  recovery:
+    - "先持久化，再调度；幂等占用、状态变化和产物登记由 SQLite 事务保护。"
+    - "重启时有上游 task_id 的任务可恢复为只查询上游；从不重发生成请求。"
+    - "本地 FFmpeg 中的 running 任务重启后变 interrupted；不报告估算进度。"
+    - "创建请求结果未知时保留 interrupted 与 result_unknown=true，禁止自动重提计费请求。"
+  verification:
+    - "成功前将输入/结果安全落到仓库外数据目录，并执行 ffprobe，确认视频流、尺寸和时长后才公开 URL。"
+    - "取消须终止本地 FFmpeg 子进程并清理本任务的临时文件；不得删除其他任务产物。"
+limits:
+  workers: 2
+  poll_interval_seconds: 2
+  remote_create_timeout_seconds: 30
+  remote_poll_timeout_seconds: 20
+  download_timeout_seconds: 60
+  max_download_bytes: 536870912
+  ffmpeg_timeout_seconds: 600
+  ffprobe_timeout_seconds: 30
+  output_directory: "%TEMP%/gods-workbench/video"
+  database_directory: "%TEMP%/gods-workbench/video"
+compatibility:
+  replaces: "CANVAS-CLOSURE-INTERFACE-CATALOG.yaml 中 /api/video-tasks 仅支持 503 VIDEO_RENDERER_NOT_INTEGRATED 的旧视频端点状态；非视频 closure 端点不受影响。"
+  episode_pipeline: "阶段推进本身不触发生成；仅显式视频生成按钮创建付费任务。"
+  acceptance_boundary: "受控 HTTP 服务成功仅验证协议路径，不代表真实商业 Provider 已验收；真实上游需单独由部署环境现场验证。"

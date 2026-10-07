@@ -1,0 +1,1849 @@
+:root {
+  --episode-bg: #090a0d;
+  --episode-surface: #0f1117;
+  --episode-surface-2: #141720;
+  --episode-surface-3: #171920;
+  --episode-ink: #f0eee9;
+  --episode-muted: #94a3b8;
+  --episode-line: rgba(223, 195, 132, 0.18);
+  --episode-line-soft: rgba(255, 255, 255, 0.08);
+  --episode-accent: #dfc384;
+  --episode-accent-strong: #fcdf9d;
+  --episode-green: #22c55e;
+  --episode-warning: #f97316;
+  --episode-danger: #ef4444;
+  --episode-blue: #dfc384;
+}
+* { box-sizing: border-box; }
+html,
+html body.gw-signal.gw-page--episode-pipeline,
+body.gw-page--episode-pipeline,
+main.episode-page {
+  scroll-behavior: smooth;
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
+  height: auto !important;
+  min-height: 100vh !important;
+}
+/* 优雅曜石香槟金滚轮滑轨与滑块 */
+html body.gw-signal.gw-page--episode-pipeline::-webkit-scrollbar,
+html::-webkit-scrollbar {
+  width: 8px;
+}
+html body.gw-signal.gw-page--episode-pipeline::-webkit-scrollbar-track,
+html::-webkit-scrollbar-track {
+  background: #090a0d;
+}
+html body.gw-signal.gw-page--episode-pipeline::-webkit-scrollbar-thumb,
+html::-webkit-scrollbar-thumb {
+  background: rgba(223, 195, 132, 0.28);
+  border-radius: 4px;
+  border: 1px solid rgba(223, 195, 132, 0.35);
+}
+html body.gw-signal.gw-page--episode-pipeline::-webkit-scrollbar-thumb:hover,
+html::-webkit-scrollbar-thumb:hover {
+  background: rgba(223, 195, 132, 0.55);
+}
+body { margin: 0; background: var(--episode-bg); color: var(--episode-ink); font: 14px/1.5 "Source Han Sans CN", "Microsoft YaHei", system-ui, sans-serif; }
+.episode-page { min-height: 100vh; padding: var(--gw-space-section, 32px) var(--gw-space-outer, 24px) 64px; max-width: 1760px; margin: 0 auto; background: var(--episode-bg); }
+body.is-script-step .episode-header,
+body.is-assets-step .episode-header,
+body.is-embedded .episode-header,
+body.is-script-step #episodeStepNav,
+body.is-assets-step #episodeStepNav,
+body.is-embedded #episodeStepNav {
+  display: none !important;
+}
+body.is-script-step,
+body.is-assets-step,
+html:has(body.is-script-step),
+html:has(body.is-assets-step) {
+  overflow-y: auto !important;
+  height: auto !important;
+  min-height: 100% !important;
+}
+body.is-script-step main.episode-page,
+body.is-assets-step main.episode-page,
+body.is-embedded main.episode-page {
+  padding: 16px 20px 48px !important;
+  max-width: 100% !important;
+  margin: 0 !important;
+  background: transparent !important;
+  height: auto !important;
+  min-height: 100% !important;
+}
+body.is-script-step #episodePipeline,
+body.is-assets-step #episodePipeline {
+  width: 100% !important;
+  max-width: 100% !important;
+}
+body.is-script-step .episode-page select,
+body.is-script-step .episode-page input,
+body.is-script-step .episode-page textarea,
+body.is-assets-step .episode-page select,
+body.is-assets-step .episode-page input,
+body.is-assets-step .episode-page textarea {
+  border: initial;
+  box-shadow: none !important;
+}
+.episode-header { position: sticky; top: 0; z-index: 20; display: flex; align-items: center; gap: 18px; margin-bottom: 18px; padding: 10px 0; background: var(--episode-bg); border-bottom: 1px solid var(--episode-line); box-shadow: 0 10px 18px -16px rgba(0, 0, 0, .85); }
+#createPanel, #episodePipeline, .episode-page .panel, .stage { scroll-margin-top: 96px; }
+.episode-brand { min-width: 0; }
+.breadcrumbs { display: flex; gap: 16px; color: var(--episode-muted); font-size: 12px; margin-bottom: 9px; }
+.breadcrumbs span + span::before { content: "/"; margin-right: 16px; color: var(--episode-line); }
+.episode-header h1 { margin: 0; font: 700 28px/1.15 "Source Han Sans CN", "Microsoft YaHei", sans-serif; letter-spacing: -.025em; text-wrap: balance; }
+.episode-header p { margin: 7px 0 0; color: var(--episode-muted); max-width: 70ch; }
+/* 顶栏单区：四步 stepbar（v3.1 项目名并入 kicker 行，顶栏右侧不再有项目元素）。
+   stepbar 需以 #id 特异性覆盖 signal-flow.css 中对 .workflow-steps/.workflow-step 的
+   !important 栅格与尺寸。 */
+html body.gw-signal.gw-page--episode-pipeline #episodeStepNav.episode-stepbar { flex: 1 1 auto; min-width: 0; margin: 0 18px; display: grid; grid-template-columns: repeat(4, 100px) !important; justify-content: safe center !important; gap: 200px !important; padding: 0 !important; overflow-x: auto; scrollbar-width: thin; }
+html body.gw-signal.gw-page--episode-pipeline #episodeStepNav[hidden] { display: none !important; }
+/* 需求 25 反馈修订 v3：按钮高 42px、最小列宽 75px（v2 的减半/加倍反向调整），
+   内容上下两行（strong 标签在上、small 状态在下）水平垂直居中；删除数字序号；
+   border-radius 999px 使 CSS 胶囊轮廓与液态金属 SDF 端帽（半径 = 高度一半）
+   几何一致，按下/悬停光效轮廓与按钮轮廓重合。 */
+html body.gw-signal.gw-page--episode-pipeline #episodeStepNav .workflow-step { min-height: 42px !important; min-width: 0 !important; padding: 4px 10px !important; display: flex !important; flex-direction: column !important; align-items: center !important; justify-content: center !important; gap: 2px !important; text-align: center !important; border-radius: 999px !important; }
+html body.gw-signal.gw-page--episode-pipeline #episodeStepNav .workflow-step strong { white-space: nowrap; font-size: 12px !important; line-height: 1.2 !important; }
+html body.gw-signal.gw-page--episode-pipeline #episodeStepNav .workflow-step small { white-space: nowrap; font-size: 10px !important; line-height: 1.2 !important; }
+html body.gw-signal.gw-page--episode-pipeline #episodeStepNav .workflow-step:focus-visible { outline: 2px solid var(--episode-accent); outline-offset: 2px; }
+.episode-page select, .episode-page input, .episode-page textarea { width: 100%; border: 1px solid rgba(255, 255, 255, 0.1) !important; border-radius: 6px !important; background: #08090d !important; color: var(--episode-ink) !important; padding: 9px 11px; font: inherit; box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.8) !important; }
+.episode-page textarea { resize: vertical; }
+.episode-page select { height: 38px; }
+.episode-page input::placeholder, .episode-page textarea::placeholder { color: #6b7280; }
+.episode-page input:focus-visible, .episode-page select:focus-visible, .episode-page textarea:focus-visible, .episode-page button:focus-visible { outline: 1px solid var(--episode-accent); outline-offset: 1px; border-color: var(--episode-accent) !important; }
+.panel { background: linear-gradient(180deg, #13151c 0%, #0a0b10 100%) !important; border: 1px solid rgba(223, 195, 132, 0.2) !important; border-radius: 12px !important; box-shadow: 0 8px 30px rgba(0, 0, 0, 0.8), inset 0 1px 0 rgba(255, 255, 255, 0.06) !important; }
+.pipeline-shell { padding: 24px; background: linear-gradient(180deg, #13151c 0%, #0a0b10 100%) !important; border: 1px solid rgba(223, 195, 132, 0.22) !important; border-radius: 12px !important; }
+.episode-create { margin-bottom: 20px; padding: 18px; }
+.panel-heading { display: flex; justify-content: space-between; gap: 16px; align-items: start; border-bottom: 1px solid var(--episode-line); padding-bottom: 13px; }
+.panel-heading h2 { margin: 0; font-size: 18px; }
+.panel-heading p { margin: 4px 0 0; color: var(--episode-muted); }
+.icon-button { border: 0; background: transparent; color: var(--episode-muted); width: 34px; height: 34px; font-size: 22px; cursor: pointer; }
+.episode-form { padding-top: 17px; }
+.form-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(220px, .7fr); gap: 14px; }
+.form-grid label { display: grid; gap: 6px; font-weight: 700; }
+.form-grid .wide { grid-column: 1 / -1; }
+.form-actions { display: flex; justify-content: flex-end; align-items: center; gap: 10px; margin-top: 16px; }
+.form-error { flex: 1; color: var(--episode-danger); min-height: 22px; }
+.episode-loading { min-height: 180px; display: grid; place-items: center; color: var(--episode-muted); }
+.episode-empty { padding: 54px 24px; text-align: center; }
+.episode-empty h2 { margin: 0 0 8px; font-size: 20px; }
+.episode-empty p { color: var(--episode-muted); margin: 0 auto 18px; max-width: 56ch; }
+.pipeline-shell { padding: 22px; }
+.pipeline-title-row { display: flex; align-items: start; justify-content: space-between; gap: 20px; border-bottom: 1px solid var(--episode-line); padding-bottom: 18px; }
+.pipeline-status-side { display: flex; align-items: center; gap: 9px; flex: 0 0 auto; padding-top: 1px; }
+/* v3.2：卡片左上「剧集制片 / 项目名」标题行（原 kicker 字号 2 倍，标题字体栈），
+   其下为待开始 chip 与整体进度；EP01-集名称为信息卡主标题。 */
+.pipeline-title-side { display: flex; flex-direction: column; gap: 10px; flex: 0 0 auto; min-width: 0; }
+.pipeline-page-title { margin: 0; font: 700 22px/1.2 "Source Han Sans CN", "Microsoft YaHei", sans-serif; letter-spacing: -.01em; overflow-wrap: anywhere; }
+/* signal-flow.css 以 (0,2,2)+!important 把 .pipeline-title-row h2 压到 --sf-fs-title(15px)，
+   需以 #episodePipeline 提升至 (1,2,2) 夺回字号：页标题 22px（kicker 的 2 倍），
+   EP 集名标题保持视觉主标题 24px。 */
+html body.gw-signal.gw-page--episode-pipeline #episodePipeline .pipeline-page-title { font-size: 22px !important; }
+html body.gw-signal.gw-page--episode-pipeline #episodePipeline .pipeline-episode-title { font-size: 24px !important; }
+/* v3.3-2：「剧集制片」前缀用现有链接蓝（与原提示词链路行同色系），项目名保持 ink 色。 */
+.pipeline-page-title .accent { color: var(--episode-blue); }
+.stage-kicker { color: var(--episode-green); font: 700 11px/1.3 "Source Han Sans CN", Consolas, monospace; letter-spacing: .08em; text-transform: uppercase; }
+.pipeline-title-row h2 { margin: 6px 0 0; font: 700 24px/1.2 "Source Han Sans CN", "Microsoft YaHei", sans-serif; text-wrap: balance; }
+.pipeline-title-row p { margin: 8px 0 0; color: var(--episode-muted); max-width: 80ch; overflow-wrap: anywhere; }
+.pipeline-title-row p span { color: var(--episode-blue); font-size: 12px; }
+.pipeline-meta-side { display: grid; justify-items: end; gap: 7px; color: var(--episode-muted); white-space: nowrap; }
+.pipeline-meta-side select { width: 200px; height: 34px; font-size: 12px; }
+.status { display: inline-flex; align-items: center; gap: 6px; min-height: 26px; padding: 3px 9px; border: 1px solid var(--episode-line); border-radius: 999px; background: #0c0e13; color: var(--episode-muted); font-size: 12px; font-weight: 700; white-space: nowrap; }
+.status i { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+.status.succeeded { color: var(--episode-green); border-color: rgba(24,201,139,.55); background: rgba(24,201,139,.08); }
+.status.running { color: var(--episode-warning); border-color: rgba(243,180,49,.55); background: rgba(243,180,49,.08); }
+.status.failed, .status.canceled, .status.interrupted { color: var(--episode-danger); border-color: rgba(228,108,102,.55); background: rgba(228,108,102,.08); }
+.status.cancel_requested { color: #d69b40; border-color: rgba(214,155,64,.58); background: rgba(214,155,64,.1); }
+.workflow-steps { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; padding: 18px 0 14px; }
+.workflow-step { min-width: 0; min-height: var(--gw-row-height, 56px); display: grid; grid-template-columns: 32px 1fr; grid-template-rows: auto auto; column-gap: 10px; align-items: center; text-align: left; border: 1px solid var(--episode-line); border-radius: 3px; background: var(--episode-surface-3); color: var(--episode-ink); padding: 10px 12px; cursor: pointer; transition: border-color .18s ease, background .18s ease, transform .18s ease; }
+.workflow-step:hover { border-color: var(--episode-accent); transform: translateY(-1px); }
+.workflow-step.is-active { border-color: var(--episode-accent); background: #2a2118; }
+.workflow-step > span { grid-row: 1 / -1; align-self: center; color: var(--episode-accent); font: 700 16px/1 "Source Han Sans CN", Consolas, monospace; }
+.workflow-step strong { font-size: 14px; }
+.workflow-step small { color: var(--episode-muted); font-size: 11px; }
+.workflow-step.succeeded small { color: var(--episode-green); }
+.workflow-step.running small { color: var(--episode-warning); }
+.pipeline-progress { height: 3px; background: var(--episode-line-soft); overflow: hidden; }
+.pipeline-progress span { display: block; height: 100%; background: var(--episode-green); transition: width .25s ease; }
+.stage-stack { display: grid; gap: 16px; margin-top: 18px; }
+.stage { background: var(--episode-surface-3); border: 1px solid var(--episode-line); border-radius: 3px; padding: 18px; min-width: 0; scroll-margin-top: 16px; }
+.stage.succeeded { border-color: rgba(24,201,139,.55); }
+.stage.running { border-color: rgba(243,180,49,.7); }
+.stage.failed, .stage.canceled, .stage.interrupted { border-color: rgba(228,108,102,.65); }
+.stage-heading { display: flex; justify-content: space-between; gap: 16px; align-items: start; padding-bottom: 14px; border-bottom: 1px solid var(--episode-line-soft); }
+.stage-heading-tools { display: flex; align-items: end; justify-content: flex-end; gap: 10px; flex-wrap: wrap; }
+.stage-model-picker { display: grid; gap: 4px; min-width: 220px; color: var(--episode-muted); font-size: 11px; font-weight: 700; }
+.stage-model-picker select { width: 100%; min-width: 220px; height: 34px; padding: 6px 9px; font-size: 12px; }
+.stage-heading h2 { margin: 5px 0 0; font-size: 20px; }
+.stage-heading p { margin: 5px 0 0; color: var(--episode-muted); font-size: 12px; overflow-wrap: anywhere; }
+.stage-heading .status { flex: 0 0 auto; }
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
+.script-grid { display: grid; grid-template-columns: minmax(0, .92fr) minmax(0, 1.08fr); gap: 16px; margin-top: 16px; }
+.editor-pane, .result-pane, .review-panel { min-width: 0; background: linear-gradient(175deg, #171920 0%, #101217 60%, #0c0d10 100%); border: 1px solid var(--episode-line); box-shadow: 0 12px 28px rgba(0,0,0,0.8), inset 0 1px 1px rgba(255,255,255,0.07); padding: 15px; border-radius: 8px; }
+.field-label, .inline-fields label, .shot-card label, .video-script-card label { color: var(--episode-muted); font-size: 12px; }
+.script-input-heading { display: flex; align-items: end; justify-content: space-between; gap: 12px; }
+.script-mode-picker { display: grid; gap: 5px; width: min(100%, 290px); color: var(--episode-muted); font-size: 12px; }
+.script-mode-picker select { width: 100%; min-height: 36px; padding: 7px 9px; }
+.script-input { min-height: 220px; margin-top: 7px; }
+.inline-fields { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 9px; margin-top: 10px; }
+.inline-fields label { display: grid; gap: 5px; }
+.inline-fields input { height: 34px; padding: 7px 9px; }
+.helper { color: var(--episode-muted); margin: 9px 0 0; font-size: 12px; }
+.pane-heading { display: flex; align-items: start; justify-content: space-between; gap: 12px; margin-bottom: 9px; }
+.pane-heading h3, .pane-heading h4 { margin: 0; font-size: 15px; }
+.pane-heading span { color: var(--episode-muted); font-size: 12px; }
+.result-dot, .review-agent { color: var(--episode-green) !important; }
+.result-editor { min-height: 300px; background: #171312 !important; border-color: #4d3d2f !important; }
+.result-actions, .stage-actions, .review-actions, .story-step-actions, .stage-footer { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+.review-panel { margin-top: 16px; }
+.review-empty, .step-empty, .video-script-empty { color: var(--episode-muted); border: 1px dashed var(--episode-line); padding: 18px; }
+.review-summary { display: flex; align-items: center; gap: 22px; padding: 12px; background: #171312; border: 1px solid #4d3d2f; }
+.review-summary > div { display: grid; gap: 3px; }
+.review-summary span { color: var(--episode-muted); font-size: 11px; }
+.review-summary strong { color: var(--episode-green); font: 700 25px/1 "Source Han Sans CN", sans-serif; }
+.review-summary strong small { color: var(--episode-muted); font: 400 11px/1 "Source Han Sans CN", sans-serif; }
+.review-summary time { margin-left: auto; color: var(--episode-muted); font-size: 11px; }
+.review-decision { font-size: 13px; }
+.review-decision.pass { color: var(--episode-green); }
+.review-decision.revise { color: var(--episode-warning); }
+.review-note { color: var(--episode-ink); margin: 12px 0; }
+.review-dimensions { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+.review-dimensions div { display: flex; justify-content: space-between; gap: 8px; padding: 9px; border: 1px solid var(--episode-line-soft); color: var(--episode-muted); font-size: 12px; }
+.review-dimensions strong { color: var(--episode-green); }
+.stage-loading { display: flex; align-items: center; gap: 9px; margin: 12px 0 0; padding: 9px 11px; border: 1px solid rgba(243,180,49,.48); background: rgba(243,180,49,.08); color: var(--episode-warning); font-size: 12px; }
+.loading-spinner { display: inline-block; width: 15px; height: 15px; flex: 0 0 15px; border: 2px solid rgba(243,180,49,.28); border-top-color: var(--episode-warning); border-radius: 50%; animation: episode-spin .8s linear infinite; }
+.inline-loading { display: inline-flex; align-items: center; gap: 5px; color: var(--episode-warning); white-space: nowrap; }
+.inline-loading .loading-spinner { width: 11px; height: 11px; flex-basis: 11px; border-width: 1.5px; }
+@keyframes episode-spin { to { transform: rotate(360deg); } }
+.review-result { display: grid; gap: 10px; }
+.review-result-title { color: var(--episode-text); font-size: 18px; font-weight: 800; padding: 2px 0 1px; }
+.review-top-grid { display: grid; grid-template-columns: minmax(180px, .58fr) minmax(0, 1.42fr); gap: 10px; }
+.review-card { min-width: 0; padding: 13px; border: 1px solid var(--episode-line-soft); background: #171312; }
+.review-card-title { margin-bottom: 9px; color: var(--episode-green); font-size: 12px; font-weight: 700; }
+.review-score-card { display: grid; align-content: start; gap: 8px; }
+.review-score-card > strong { color: var(--episode-green); font: 700 34px/1 "Source Han Sans CN", sans-serif; }
+.review-score-card > strong small { color: var(--episode-muted); font: 400 12px/1 "Source Han Sans CN", sans-serif; }
+.review-score-card .review-decision { width: fit-content; }
+.review-score-card time { color: var(--episode-muted); font-size: 11px; }
+.review-dimension-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+.review-dimension-item { min-height: 82px; padding: 9px; border: 1px solid #4d3d2f; background: #1b1513; }
+.review-dimension-item > div { display: flex; align-items: baseline; justify-content: space-between; gap: 7px; }
+.review-dimension-item strong { color: var(--episode-ink); font-size: 12px; }
+.review-dimension-item b { color: var(--episode-green); font: 700 17px/1 "Source Han Sans CN", sans-serif; }
+.review-dimension-item p { margin: 8px 0 0; color: var(--episode-muted); font-size: 11px; line-height: 1.45; }
+.review-summary-card p { margin: 0; color: var(--episode-ink); line-height: 1.65; }
+.review-list { display: grid; gap: 7px; margin: 0; padding-left: 19px; color: var(--episode-ink); line-height: 1.55; }
+.review-list li::marker { color: var(--episode-accent); }
+.review-priority-list li::marker { color: var(--episode-green); font-weight: 700; }
+.review-surgery-card, .review-examples-card { display: grid; gap: 9px; }
+.review-surgery-row { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; padding: 10px; border: 1px solid var(--episode-line-soft); background: #1b1513; }
+.review-surgery-row span { color: var(--episode-green); font-size: 11px; font-weight: 700; }
+.review-surgery-row p { margin: 5px 0 0; color: var(--episode-ink); font-size: 12px; line-height: 1.5; white-space: pre-wrap; }
+.review-example-body { padding: 10px; border: 1px solid var(--episode-line-soft); background: #1b1513; }
+.review-example-body p { margin: 0 0 6px; color: var(--episode-ink); line-height: 1.55; white-space: pre-wrap; }
+.review-example-body p:last-child { margin-bottom: 0; }
+.history-strip { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 14px; color: var(--episode-muted); font-size: 12px; }
+.history-strip button { border: 1px solid var(--episode-line); border-radius: 3px; background: transparent; color: var(--episode-blue); padding: 5px 8px; cursor: pointer; font-size: 11px; }
+.asset-toolbar, .video-script-intro { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 15px 0; border-bottom: 1px solid var(--episode-line-soft); }
+.asset-toolbar-summary { display: grid; gap: 10px; min-width: 0; }
+.asset-toolbar-actions { display: flex; align-items: end; justify-content: flex-end; gap: 10px; flex-wrap: wrap; }
+.asset-toolbar-actions .stage-actions { margin-top: 0; }
+.asset-toolbar-actions .stage-model-picker { min-width: 250px; }
+.asset-toolbar strong, .video-script-intro strong { display: block; font-size: 15px; }
+.asset-toolbar span, .video-script-intro p { display: block; margin: 3px 0 0; color: var(--episode-muted); font-size: 12px; }
+.asset-group-filter { display: flex; flex-wrap: wrap; gap: 6px; }
+.asset-group-button { display: inline-flex; align-items: center; gap: 6px; min-height: 30px; padding: 0 9px; border: 1px solid var(--episode-line); border-radius: 3px; background: transparent; color: var(--episode-muted); font: 700 11px/1 "Source Han Sans CN", "Microsoft YaHei", sans-serif; cursor: pointer; }
+.asset-group-button:hover, .asset-group-button:focus-visible { border-color: var(--episode-accent); color: var(--episode-ink); }
+.asset-group-button.is-active { border-color: var(--episode-accent-strong); background: rgba(242,140,22,.14); color: var(--episode-ink); }
+.asset-group-button span { margin: 0; color: var(--episode-green); font: 700 11px/1 "Source Han Sans CN", Consolas, monospace; }
+.asset-grid { display: flex; gap: 10px; overflow-x: auto; padding: 16px 2px 8px; scroll-snap-type: x proximity; scrollbar-width: thin; }
+.asset-card { position: relative; flex: 0 0 min(320px, calc((100% - 20px) / 3)); min-width: 270px; border: 1px solid var(--episode-line); background: linear-gradient(175deg, #171920 0%, #101217 60%, #0c0d10 100%); box-shadow: 0 12px 28px rgba(0,0,0,0.8), inset 0 1px 1px rgba(255,255,255,0.07); scroll-snap-align: start; }
+.asset-card:focus-visible { outline: 2px solid var(--episode-accent); outline-offset: 2px; }
+.asset-card.is-ready { border-color: rgba(24,201,139,.6); }
+.asset-preview { aspect-ratio: 16 / 9; background: #08090b; border-bottom: 1px solid var(--episode-line); display: grid; place-items: center; overflow: hidden; cursor: zoom-in; }
+.asset-preview img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.asset-placeholder { display: grid; gap: 3px; place-items: center; color: var(--episode-muted); font-size: 12px; }
+.asset-placeholder-loading .inline-loading { font-size: 11px; }
+.asset-placeholder-loading::before { display: none; }
+.asset-placeholder::before { content: "◫"; color: var(--episode-accent); font-size: 25px; }
+.asset-placeholder small { font-size: 10px; }
+.asset-card-body { padding: 11px; }
+.asset-card-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
+.asset-card-title { display: grid; gap: 4px; min-width: 0; }
+.asset-card-title strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.asset-card-meta { display: flex; align-items: center; gap: 7px; min-width: 0; }
+.asset-type { color: var(--episode-accent); font-size: 11px; }
+.asset-status-text { color: var(--episode-muted); font-size: 11px; white-space: nowrap; }
+.asset-generate-button { flex: 0 0 auto; min-height: 31px; padding: 0 9px; font-size: 11px; }
+.asset-card p { min-height: 43px; margin: 8px 0 0; color: var(--episode-muted); font-size: 12px; line-height: 1.45; overflow-wrap: anywhere; }
+.asset-card-actions { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 9px; }
+.asset-type-bottom { color: var(--episode-accent); font-size: 11px; font-weight: 700; }
+.asset-card-actions .btn { min-height: 31px; font-size: 11px; padding: 0 9px; }
+.asset-empty { padding: 34px 20px; text-align: center; border: 1px dashed var(--episode-line); }
+.asset-empty-mark { color: var(--episode-accent); font-size: 30px; }
+.asset-empty h3, .asset-empty h4 { margin: 4px 0; font-size: 16px; }
+.asset-empty p { color: var(--episode-muted); margin: 0 auto; max-width: 55ch; }
+.asset-filter-empty { margin-top: 16px; padding: 24px; border: 1px dashed var(--episode-line); color: var(--episode-muted); text-align: center; }
+.asset-detail-dialog, .asset-image-dialog { width: min(900px, calc(100vw - 32px)); max-width: 900px; max-height: min(820px, calc(100vh - 32px)); padding: 0; border: 1px solid var(--episode-line); border-radius: 4px; background: var(--episode-surface); color: var(--episode-ink); box-shadow: 0 8px 24px rgba(0,0,0,.32); }
+.asset-detail-dialog::backdrop, .asset-image-dialog::backdrop { background: rgba(5,9,13,.72); }
+.asset-detail-shell, .asset-image-shell { display: grid; gap: 0; min-width: 0; }
+.asset-detail-head, .asset-image-head { display: flex; align-items: start; justify-content: space-between; gap: 16px; padding: 18px 20px; border-bottom: 1px solid var(--episode-line); }
+.asset-detail-kicker { color: var(--episode-green); font: 700 11px/1.3 "Source Han Sans CN", Consolas, monospace; }
+.asset-detail-head h2 { margin: 5px 0 0; font-size: 20px; }
+.asset-detail-head p { margin: 4px 0 0; color: var(--episode-muted); font-size: 12px; }
+.asset-detail-body { display: grid; grid-template-columns: minmax(260px, .95fr) minmax(300px, 1.05fr); gap: 16px; padding: 18px 20px; }
+.asset-detail-media { min-height: 260px; display: grid; place-items: center; border: 1px solid var(--episode-line-soft); background: #08090b; overflow: hidden; }
+.asset-detail-media img { width: 100%; height: 100%; min-height: 260px; object-fit: contain; cursor: zoom-in; }
+.asset-detail-fields { display: grid; align-content: start; gap: 10px; }
+.asset-detail-fields label { display: grid; gap: 5px; color: var(--episode-muted); font-size: 12px; }
+.asset-detail-fields textarea { min-height: 190px; resize: vertical; }
+.asset-detail-actions { display: flex; align-items: center; gap: 8px; padding: 14px 20px 18px; border-top: 1px solid var(--episode-line-soft); }
+.asset-detail-actions > span { flex: 1; }
+.asset-image-dialog { width: min(1120px, calc(100vw - 32px)); max-width: 1120px; background: #090a0d; }
+.asset-image-shell { padding: 14px; }
+.asset-image-head { padding: 0 0 10px; border-bottom: 1px solid var(--episode-line-soft); }
+.asset-image-shell > img { display: block; width: 100%; max-height: calc(100vh - 130px); object-fit: contain; margin: 14px auto 8px; }
+.asset-image-shell > p { margin: 0; color: var(--episode-muted); font-size: 11px; text-align: center; }
+.storyboard-steps { display: grid; grid-template-columns: minmax(220px, .8fr) minmax(0, 1.35fr) minmax(220px, .8fr); gap: 12px; margin-top: 16px; }
+.story-step { min-width: 0; border: 1px solid var(--episode-line); background: linear-gradient(175deg, #171920 0%, #101217 60%, #0c0d10 100%); box-shadow: 0 12px 28px rgba(0,0,0,0.8), inset 0 1px 1px rgba(255,255,255,0.07); padding: 13px; border-radius: 8px; }
+.story-step-outline { grid-column: 1 / -1; }
+.story-step-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.story-step-head span { color: var(--episode-accent); font: 700 11px "Source Han Sans CN", Consolas, monospace; }
+.story-step-head b { margin-left: auto; color: var(--episode-green); font-size: 11px; }
+.story-step-head b.story-step-warning { color: var(--episode-warning); }
+.story-step p { color: var(--episode-muted); font-size: 12px; margin: 9px 0; }
+.story-step textarea { min-height: 128px; font-size: 12px; }
+.outline-editor-grid { display: grid; grid-template-columns: minmax(280px, .88fr) minmax(0, 1.12fr); gap: 12px; margin-top: 13px; }
+.outline-source, .outline-structured { min-width: 0; border: 1px solid var(--episode-line-soft); background: #0a0c10; padding: 12px; border-radius: 6px; }
+.outline-pane-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; color: var(--episode-green); font-size: 13px; }
+.outline-pane-heading span { color: var(--episode-muted); font-size: 11px; }
+.outline-source-editor { min-height: 330px; margin-top: 9px; background: #171312 !important; border-color: #4d3d2f !important; color: var(--episode-ink); line-height: 1.6; resize: vertical; }
+.outline-fields { display: grid; gap: 9px; margin-top: 9px; }
+.outline-field { min-width: 0; border: 1px solid var(--episode-line); background: #0e1015; padding: 9px; border-radius: 6px; }
+.outline-field-head { display: flex; align-items: center; justify-content: space-between; gap: 9px; }
+.outline-field-head label, .outline-field-head > span { color: var(--episode-accent); font-size: 11px; font-weight: 700; }
+.outline-field textarea { min-height: 62px; margin-top: 7px; background: #08090b; line-height: 1.55; }
+.outline-field.is-expanded textarea { min-height: 170px; }
+.outline-expand { flex: 0 0 auto; min-height: 24px; padding: 2px 8px; border: 1px solid rgba(244,166,42,.65); border-radius: 3px; background: transparent; color: var(--episode-accent); font-size: 11px; cursor: pointer; }
+.outline-expand:hover, .outline-expand:focus-visible { background: rgba(244,166,42,.12); }
+.outline-act-list { display: grid; gap: 7px; margin-top: 7px; }
+.outline-act-list label { display: grid; grid-template-columns: 54px minmax(0, 1fr); align-items: start; gap: 8px; color: var(--episode-muted); font-size: 11px; }
+.outline-act-list textarea { margin-top: 0; min-height: 46px; }
+.shot-list { display: grid; gap: 9px; max-height: 680px; overflow: auto; padding-right: 2px; }
+.shot-card { border: 1px solid var(--episode-line-soft); background: #171312; padding: 10px; }
+.shot-head { display: flex; justify-content: space-between; gap: 8px; color: var(--episode-green); font-size: 11px; }
+.shot-head span { color: var(--episode-muted); }
+.shot-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 7px; margin-top: 8px; }
+.shot-fields label, .shot-wide { display: grid; gap: 4px; }
+.shot-card input, .shot-card textarea { padding: 6px 7px; font-size: 12px; }
+.shot-wide { margin-top: 7px; }
+.video-script-list { display: grid; gap: 12px; margin-top: 16px; }
+.video-script-card { border: 1px solid var(--episode-line); background: linear-gradient(175deg, #171920 0%, #101217 60%, #0c0d10 100%); box-shadow: 0 12px 28px rgba(0,0,0,0.8), inset 0 1px 1px rgba(255,255,255,0.07); padding: 13px; border-radius: 8px; }
+.video-script-head { display: flex; justify-content: space-between; gap: 12px; color: var(--episode-green); margin-bottom: 10px; }
+.video-script-head span { color: var(--episode-muted); font-size: 11px; }
+.video-script-card label { display: grid; gap: 5px; margin-top: 9px; }
+.video-script-card textarea { font-family: "Source Han Sans CN", "Microsoft YaHei", sans-serif; font-size: 12px; }
+.btn { border: 1px solid var(--episode-line); border-radius: 3px; min-height: 38px; padding: 0 14px; background: transparent; color: var(--episode-ink); font: 700 13px/1 "Source Han Sans CN", "Microsoft YaHei", sans-serif; cursor: pointer; transition: background .18s ease, border-color .18s ease, color .18s ease; }
+.btn:hover { background: var(--episode-surface-2); border-color: var(--episode-blue); }
+.btn.primary { border-color: var(--episode-accent-strong); background: var(--episode-accent-strong); color: #15110b; }
+.btn.primary:hover { background: var(--episode-accent); border-color: var(--episode-accent); }
+.btn.danger { border-color: rgba(228,108,102,.65); color: var(--episode-danger); }
+.btn.danger:hover { background: rgba(228,108,102,.1); border-color: var(--episode-danger); }
+.btn:disabled { opacity: .45; cursor: not-allowed; }
+.episode-toast { position: fixed; top: 18px; right: 24px; z-index: 30; max-width: min(520px, calc(100vw - 32px)); background: #12141a; border: 1px solid var(--episode-accent); color: var(--episode-ink); border-radius: 3px; padding: 12px 16px; opacity: 0; transform: translateY(-8px); pointer-events: none; box-shadow: 0 6px 14px rgba(0,0,0,.22); transition: opacity .18s ease, transform .18s ease; }
+.episode-toast.visible { opacity: 1; transform: translateY(0); }
+.episode-toast.error { border-color: var(--episode-danger); color: #ffd6d2; }
+@media (max-width: 1160px) { .episode-page { padding: 24px 20px 50px; } .script-grid, .storyboard-steps, .outline-editor-grid { grid-template-columns: 1fr; } .story-step { min-height: 0; } }
+@media (max-width: 760px) { .episode-page { padding: 17px 12px 40px; } .episode-header { flex-wrap: wrap; align-items: center; gap: 10px 14px; padding: 8px 0; } html body.gw-signal.gw-page--episode-pipeline #episodeStepNav.episode-stepbar { flex-basis: 100%; order: 3; margin: 2px 0 0; } .pipeline-shell { padding: 14px; } .pipeline-title-row { flex-direction: column; } .pipeline-status-side { flex-wrap: wrap; } .pipeline-meta-side { justify-items: start; width: 100%; } .pipeline-meta-side select { width: 100%; } .workflow-steps { grid-template-columns: repeat(2, minmax(0, 1fr)); } .stage { padding: 13px; } .stage-heading { flex-direction: column; } .stage-heading-tools { align-items: stretch; justify-content: stretch; width: 100%; } .stage-model-picker, .stage-model-picker select { min-width: 0; width: 100%; } .script-input-heading { align-items: stretch; flex-direction: column; } .script-mode-picker { width: 100%; } .inline-fields, .review-dimensions { grid-template-columns: 1fr; } .asset-toolbar, .video-script-intro { align-items: stretch; flex-direction: column; } .asset-toolbar-actions { align-items: stretch; flex-direction: column; width: 100%; } .asset-toolbar-actions .stage-model-picker, .asset-toolbar-actions .stage-model-picker select { min-width: 0; width: 100%; } .asset-card { flex-basis: 280px; } .asset-card p { min-height: 0; } .asset-detail-body { grid-template-columns: 1fr; } .asset-detail-media { min-height: 200px; } .asset-detail-media img { min-height: 200px; } .asset-detail-actions { flex-wrap: wrap; } .asset-detail-actions > span { display: none; } .review-summary { flex-wrap: wrap; gap: 14px; } .review-summary time { width: 100%; margin-left: 0; } .form-grid { grid-template-columns: 1fr; } .form-grid .wide { grid-column: auto; } .form-actions { flex-wrap: wrap; justify-content: stretch; } .form-actions .btn { flex: 1 1 120px; } }
+
+/* 窄屏 sticky 修复：signal-flow.css @media (max-width: 620px) 给 html/body 设 overflow-x:hidden !important，
+   hidden 会使 body 成为滚动容器，后代的 position:sticky 只锚定在永不滚动的 body scrollport 上，顶栏吸顶失效。
+   改用 clip（不创建滚动容器）保留「禁止第二横向画布」的原始意图，sticky 恢复；仅作用于本页 body。
+   v3.1：顶栏工具栏移除后 stepbar 右缘贴近视口，canvas 的 56px 辉光余量在桌面宽度也会超出
+   文档滚动区（scrollWidth > innerWidth），故将 body 的 overflow-x: clip 提升为全宽度生效。 */
+html body.gw-signal.gw-page--episode-pipeline { overflow-x: clip !important; }
+
+/* ========================================================================= */
+/* Gods' Workbench 曜石香槟金拟物科技硬件机架设计系统 (Hardware Design System)     */
+/* 彻底中和 signal-flow 青冷扁平样式，重塑剧集制片四步流水线全部视觉元素          */
+/* ========================================================================= */
+
+:root {
+  --gold-flare: #fae2c8;
+  --gold-light: #eddab3;
+  --gold-primary: #dfc384;
+  --gold-medium: #c9ad6e;
+  --gold-bronze: #947a57;
+  --gold-shadow: #6f654c;
+  --gold-dim: rgba(223, 195, 132, 0.16);
+  --gold-glow: rgba(223, 195, 132, 0.35);
+  --chassis-bg: #090a0d;
+  --panel-dark: #101217;
+
+  --episode-bg: #090a0d;
+  --episode-surface: #0e1015;
+  --episode-surface-2: #141720;
+  --episode-surface-3: #161922;
+  --episode-ink: #eddab3;
+  --episode-muted: #94a3b8;
+  --episode-line: rgba(223, 195, 132, 0.2);
+  --episode-line-soft: rgba(223, 195, 132, 0.12);
+  --episode-accent: #dfc384;
+  --episode-accent-strong: #fae2c8;
+  --episode-green: #34d399;
+  --episode-warning: #fbbf24;
+  --episode-danger: #f87171;
+  --episode-blue: #38bdf8;
+}
+
+/* 1. 彻底覆写 signal-flow 注入的青色和冷蓝变量 */
+html body.gw-signal.gw-page--episode-pipeline {
+  --sf-bg: #090a0d !important;
+  --sf-sidebar: #0b0d12 !important;
+  --sf-surface: #0e1015 !important;
+  --sf-content: #101217 !important;
+  --sf-raised: #141720 !important;
+  --sf-line: rgba(223, 195, 132, 0.2) !important;
+  --sf-line-strong: rgba(223, 195, 132, 0.35) !important;
+  --sf-text: #f1f5f9 !important;
+  --sf-muted: #94a3b8 !important;
+  --sf-faint: #64748b !important;
+  --sf-cyan: #dfc384 !important;
+  --sf-cyan-hover: #fae2c8 !important;
+  --sf-cyan-soft: rgba(223, 195, 132, 0.16) !important;
+  --sf-cyan-soft-subtle: rgba(223, 195, 132, 0.08) !important;
+  --sf-mint: #34d399 !important;
+  --sf-amber: #fbbf24 !important;
+  --sf-coral: #f87171 !important;
+  --sf-indigo: #c084fc !important;
+  --sf-on-accent: #1a1308 !important;
+
+  background: #090a0d radial-gradient(circle at 50% 0%, rgba(223, 195, 132, 0.06) 0%, transparent 70%) !important;
+  background-color: #090a0d !important;
+  color: #eddab3 !important;
+  font-family: "Source Han Sans CN", -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif !important;
+  overflow-x: clip !important;
+}
+
+.episode-page {
+  max-width: none !important;
+  padding: 16px 20px 48px !important;
+}
+
+/* 2. 拟物硬件机架：双层曜石底板 + 香槟金切削微光外框 + 沉稳投影 */
+html body.gw-signal.gw-page--episode-pipeline :is(
+  .panel,
+  .pipeline-shell,
+  .stage,
+  .editor-pane,
+  .result-pane,
+  .review-panel,
+  .asset-card,
+  .shot-card,
+  .video-script-card,
+  .story-step,
+  .outline-source,
+  .outline-structured,
+  .review-summary,
+  .review-card,
+  .review-dimension-item,
+  .review-surgery-row,
+  .review-example-body,
+  .outline-field
+) {
+  background: linear-gradient(165deg, #151821 0%, #0d0f14 100%) !important;
+  background-color: #0d0f14 !important;
+  border: 1px solid rgba(223, 195, 132, 0.2) !important;
+  border-top: 1px solid rgba(223, 195, 132, 0.42) !important;
+  border-left: 1px solid rgba(223, 195, 132, 0.28) !important;
+  border-radius: 12px !important;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.85), inset 0 1px 0 rgba(255, 255, 255, 0.08) !important;
+  color: #eddab3 !important;
+  position: relative !important;
+}
+
+/* 头部下沉横梁分割线 */
+html body.gw-signal.gw-page--episode-pipeline :is(
+  .panel-heading,
+  .stage-heading,
+  .pane-heading,
+  .pipeline-title-row,
+  .asset-toolbar,
+  .video-script-intro
+) {
+  border-bottom: 1px solid rgba(223, 195, 132, 0.18) !important;
+}
+
+/* 标题 typography */
+html body.gw-signal.gw-page--episode-pipeline :is(
+  .pipeline-title-row h2,
+  .stage-heading h2,
+  .panel-heading h2,
+  .pane-heading h3,
+  .pane-heading h4,
+  .review-result-title,
+  .asset-toolbar strong,
+  .video-script-intro strong
+) {
+  color: #f8fafc !important;
+  font-family: "Source Han Sans CN", sans-serif !important;
+  font-weight: 700 !important;
+  letter-spacing: -0.01em !important;
+}
+
+html body.gw-signal.gw-page--episode-pipeline :is(.stage-kicker, .asset-detail-kicker) {
+  color: #dfc384 !important;
+  font-family: "Source Han Sans CN", monospace !important;
+  font-weight: 700 !important;
+}
+
+/* 3. 拟物化输入控件重构：凹陷嵌槽 (Bay-Inset) 质感 */
+html body.gw-signal.gw-page--episode-pipeline :is(
+  select,
+  input,
+  textarea,
+  .result-editor,
+  .outline-source-editor,
+  .outline-field textarea
+) {
+  background: #08090d !important;
+  background-color: #08090d !important;
+  border: 1px solid rgba(223, 195, 132, 0.2) !important;
+  border-radius: 6px !important;
+  color: #f1f5f9 !important;
+  box-shadow: inset 0 2px 6px rgba(0, 0, 0, 0.95), 0 1px 0 rgba(255, 255, 255, 0.04) !important;
+  font-family: "Source Han Sans CN", monospace !important;
+  font-size: 13px !important;
+  line-height: 1.55 !important;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease !important;
+}
+
+html body.gw-signal.gw-page--episode-pipeline :is(
+  select,
+  input,
+  textarea,
+  .result-editor,
+  .outline-source-editor,
+  .outline-field textarea
+):focus-visible {
+  outline: none !important;
+  border-color: rgba(223, 195, 132, 0.85) !important;
+  box-shadow: inset 0 2px 6px rgba(0, 0, 0, 0.95), 0 0 14px rgba(223, 195, 132, 0.35) !important;
+}
+
+html body.gw-signal.gw-page--episode-pipeline :is(input::placeholder, textarea::placeholder) {
+  color: #64748b !important;
+}
+
+/* 4. 拟物按钮系统全面重构 (彻底消除青色 Cyan，换为纯正香槟金发光背灯与曜石触感按键) */
+
+/* 4.1 主要行动按键：香槟金发光物理长圆胶囊 (Champagne Gold Backlit Capsule) */
+html body.gw-signal.gw-page--episode-pipeline :is(
+  .btn.primary,
+  .asset-generate-button
+) {
+  background: radial-gradient(ellipse 85% 70% at 50% 50%, #ffffff 0%, #fff2dc 22%, #f5cf92 50%, #dfac64 78%, #b8823f 100%) !important;
+  background-color: #dfac64 !important;
+  border: 1px solid rgba(255, 255, 255, 0.85) !important;
+  border-bottom: 1px solid rgba(223, 195, 132, 0.6) !important;
+  box-shadow: 0 6px 20px 2px rgba(223, 195, 132, 0.65), 0 2px 4px rgba(0, 0, 0, 0.7), inset 0 1.5px 1.5px rgba(255, 255, 255, 0.95), inset 0 -1.5px 2px rgba(120, 80, 25, 0.4) !important;
+  color: #1a1308 !important;
+  font-family: "Source Han Sans CN", sans-serif !important;
+  font-weight: 800 !important;
+  border-radius: 9999px !important;
+  letter-spacing: 0.03em !important;
+  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.4) !important;
+  cursor: pointer !important;
+  transition: all 0.15s cubic-bezier(0.4, 0, 0.2, 1) !important;
+}
+
+html body.gw-signal.gw-page--episode-pipeline :is(
+  .btn.primary:hover,
+  .asset-generate-button:hover,
+  .btn.primary:focus-visible,
+  .asset-generate-button:focus-visible
+) {
+  filter: brightness(1.08) !important;
+  box-shadow: 0 8px 26px 3px rgba(223, 195, 132, 0.85), 0 2px 4px rgba(0, 0, 0, 0.7), inset 0 2px 2px rgba(255, 255, 255, 1) !important;
+  transform: translateY(-1px) !important;
+  color: #1a1308 !important;
+  outline: none !important;
+}
+
+html body.gw-signal.gw-page--episode-pipeline :is(
+  .btn.primary:active,
+  .asset-generate-button:active
+) {
+  transform: translateY(1px) !important;
+  box-shadow: inset 0 2px 6px rgba(0, 0, 0, 0.9), 0 2px 8px rgba(223, 195, 132, 0.4) !important;
+}
+
+/* 4.2 常规拟物曜石触感按键 (Tactile Keycaps) */
+html body.gw-signal.gw-page--episode-pipeline :is(
+  .btn,
+  .icon-button,
+  .asset-group-button,
+  .outline-expand,
+  .history-strip button
+) {
+  background: linear-gradient(180deg, #181a22 0%, #0d0e13 100%) !important;
+  background-color: #0d0e13 !important;
+  border: 1px solid rgba(223, 195, 132, 0.22) !important;
+  border-radius: 6px !important;
+  color: #eddab3 !important;
+  font-family: "Source Han Sans CN", sans-serif !important;
+  font-weight: 700 !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12), 0 2px 4px rgba(0, 0, 0, 0.6) !important;
+  cursor: pointer !important;
+  transition: all 0.12s ease !important;
+}
+
+html body.gw-signal.gw-page--episode-pipeline :is(
+  .btn:hover,
+  .icon-button:hover,
+  .asset-group-button:hover,
+  .outline-expand:hover,
+  .history-strip button:hover,
+  .btn:focus-visible,
+  .icon-button:focus-visible
+) {
+  background: linear-gradient(180deg, #222530 0%, #13151c 100%) !important;
+  border-color: rgba(223, 195, 132, 0.55) !important;
+  color: #ffffff !important;
+  box-shadow: 0 0 12px rgba(223, 195, 132, 0.25), inset 0 1px 0 rgba(255, 255, 255, 0.2) !important;
+  outline: none !important;
+}
+
+html body.gw-signal.gw-page--episode-pipeline :is(
+  .btn:active,
+  .icon-button:active,
+  .asset-group-button:active
+) {
+  transform: translateY(1px) !important;
+  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.85) !important;
+}
+
+/* 4.3 警示按键 (Danger Button) */
+html body.gw-signal.gw-page--episode-pipeline .btn.danger {
+  background: linear-gradient(180deg, #2e1416 0%, #17090b 100%) !important;
+  border: 1px solid rgba(248, 113, 113, 0.45) !important;
+  color: #fca5a5 !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.1), 0 0 10px rgba(248, 113, 113, 0.2) !important;
+}
+
+html body.gw-signal.gw-page--episode-pipeline .btn.danger:hover {
+  background: linear-gradient(180deg, #3d1b1e 0%, #200d0f 100%) !important;
+  border-color: rgba(248, 113, 113, 0.75) !important;
+  color: #ffffff !important;
+  box-shadow: 0 0 14px rgba(248, 113, 113, 0.35) !important;
+}
+
+/* 5. 状态芯片与指示灯 (Status Chips & LEDs) */
+html body.gw-signal.gw-page--episode-pipeline .status {
+  background: #080a0e !important;
+  border: 1px solid rgba(223, 195, 132, 0.2) !important;
+  border-radius: 9999px !important;
+  color: #94a3b8 !important;
+  font-family: "Source Han Sans CN", monospace !important;
+  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.8) !important;
+}
+
+html body.gw-signal.gw-page--episode-pipeline .status.succeeded {
+  border-color: rgba(52, 211, 153, 0.5) !important;
+  color: #34d399 !important;
+  background: rgba(16, 185, 129, 0.12) !important;
+  box-shadow: 0 0 10px rgba(52, 211, 153, 0.2), inset 0 1px 2px rgba(0, 0, 0, 0.6) !important;
+}
+
+html body.gw-signal.gw-page--episode-pipeline .status.running {
+  border-color: rgba(251, 191, 36, 0.6) !important;
+  color: #fbbf24 !important;
+  background: rgba(245, 158, 11, 0.12) !important;
+  box-shadow: 0 0 10px rgba(251, 191, 36, 0.25), inset 0 1px 2px rgba(0, 0, 0, 0.6) !important;
+}
+
+html body.gw-signal.gw-page--episode-pipeline .status:is(.failed, .canceled, .interrupted) {
+  border-color: rgba(248, 113, 113, 0.6) !important;
+  color: #f87171 !important;
+  background: rgba(239, 68, 68, 0.12) !important;
+  box-shadow: 0 0 10px rgba(248, 113, 113, 0.25), inset 0 1px 2px rgba(0, 0, 0, 0.6) !important;
+}
+
+html body.gw-signal.gw-page--episode-pipeline .pipeline-progress {
+  height: 6px !important;
+  background: #06070a !important;
+  border: 1px solid rgba(223, 195, 132, 0.14) !important;
+  border-radius: 9999px !important;
+  overflow: hidden !important;
+  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.95) !important;
+}
+
+html body.gw-signal.gw-page--episode-pipeline .pipeline-progress span {
+  background: linear-gradient(90deg, #dfc384 0%, #34d399 100%) !important;
+  box-shadow: 0 0 10px rgba(223, 195, 132, 0.6) !important;
+}
+
+/* 6. 四阶段专属面板细节精修 */
+
+/* 6.1 【剧本生成】大纲、正文与审核面板 */
+html body.gw-signal.gw-page--episode-pipeline :is(
+  .review-decision.pass,
+  .review-score-card > strong,
+  .review-summary strong,
+  .review-dimensions strong,
+  .review-dimension-item b
+) {
+  color: #34d399 !important;
+  font-family: "Source Han Sans CN", monospace !important;
+  text-shadow: 0 0 10px rgba(52, 211, 153, 0.35) !important;
+}
+
+html body.gw-signal.gw-page--episode-pipeline :is(
+  .review-decision.revise,
+  .review-list li::marker
+) {
+  color: #fbbf24 !important;
+}
+
+html body.gw-signal.gw-page--episode-pipeline :is(
+  .review-card-title,
+  .review-agent,
+  .result-dot,
+  .review-surgery-row span
+) {
+  color: #dfc384 !important;
+  font-weight: 700 !important;
+}
+
+/* 6.2 【资产生成】资产分组按键、卡片托盘与预览凹槽 */
+html body.gw-signal.gw-page--episode-pipeline .asset-group-button.is-active {
+  background: linear-gradient(180deg, #2c251a 0%, #16120b 100%) !important;
+  border: 1px solid rgba(223, 195, 132, 0.75) !important;
+  box-shadow: 0 0 12px rgba(223, 195, 132, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.2) !important;
+  color: #fae2c8 !important;
+}
+
+html body.gw-signal.gw-page--episode-pipeline :is(
+  .asset-group-button span,
+  .asset-group-button.is-active span
+) {
+  color: #dfc384 !important;
+  font-family: "Source Han Sans CN", monospace !important;
+}
+
+html body.gw-signal.gw-page--episode-pipeline .asset-card {
+  border-radius: 12px !important;
+  overflow: hidden !important;
+}
+
+html body.gw-signal.gw-page--episode-pipeline .asset-card.is-ready {
+  border-color: rgba(52, 211, 153, 0.6) !important;
+}
+
+html body.gw-signal.gw-page--episode-pipeline :is(.asset-preview, .asset-detail-media) {
+  background: #06070a !important;
+  background-color: #06070a !important;
+  border-bottom: 1px solid rgba(223, 195, 132, 0.2) !important;
+}
+
+html body.gw-signal.gw-page--episode-pipeline .asset-placeholder {
+  color: #94a3b8 !important;
+}
+
+html body.gw-signal.gw-page--episode-pipeline .asset-placeholder::before {
+  content: "◫" !important;
+  color: #dfc384 !important;
+  font-size: 26px !important;
+}
+
+html body.gw-signal.gw-page--episode-pipeline :is(.asset-type, .asset-type-bottom) {
+  color: #dfc384 !important;
+  font-weight: 700 !important;
+}
+
+/* 6.3 【分镜脚本】分镜卡片与故事步骤 */
+html body.gw-signal.gw-page--episode-pipeline .story-step-head span {
+  color: #dfc384 !important;
+  font-family: "Source Han Sans CN", monospace !important;
+  font-weight: 700 !important;
+}
+
+html body.gw-signal.gw-page--episode-pipeline .story-step-head b {
+  color: #34d399 !important;
+}
+
+html body.gw-signal.gw-page--episode-pipeline .shot-head {
+  color: #dfc384 !important;
+  font-family: "Source Han Sans CN", monospace !important;
+  font-weight: 700 !important;
+}
+
+/* 6.4 【视频脚本】视频脚本列表与提示词卡片 */
+html body.gw-signal.gw-page--episode-pipeline .video-script-head {
+  color: #dfc384 !important;
+  font-family: "Source Han Sans CN", monospace !important;
+  font-weight: 700 !important;
+}
+
+/* 7. 对话框与弹窗 (Dialogs) */
+html body.gw-signal.gw-page--episode-pipeline :is(.asset-detail-dialog, .asset-image-dialog) {
+  border: 1px solid rgba(223, 195, 132, 0.35) !important;
+  border-radius: 14px !important;
+  background: #0d0f14 !important;
+  color: #eddab3 !important;
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.95), 0 0 25px rgba(223, 195, 132, 0.15) !important;
+}
+
+html body.gw-signal.gw-page--episode-pipeline :is(.asset-detail-dialog, .asset-image-dialog)::backdrop {
+  background: rgba(4, 5, 8, 0.85) !important;
+  backdrop-filter: blur(8px) !important;
+}
+
+html body.gw-signal.gw-page--episode-pipeline .episode-toast {
+  background: #12141a !important;
+  border: 1px solid rgba(223, 195, 132, 0.4) !important;
+  color: #eddab3 !important;
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.8) !important;
+}
+
+/* 8. 隐藏旧版废弃元素与顶栏冗余 */
+html body.gw-signal.gw-page--episode-pipeline #episodeStepNav,
+#episodeStepNav,
+.episode-stepbar,
+.skip-link,
+.breadcrumbs,
+canvas.episode-liquid-canvas {
+  display: none !important;
+}
+
+.episode-header {
+  display: none !important;
+  margin-bottom: 0 !important;
+  padding: 0 !important;
+  border-bottom: none !important;
+}
+
+.pipeline-page-title .accent {
+  color: #dfc384 !important;
+}
+
+.pipeline-title-row p span {
+  color: #eddab3 !important;
+}
+
+/* ========================================================================= */
+/* 9. Stitch 拟物科技机架专有原生纯 CSS 系统 (防外部 CDN 崩溃与 SVG 爆屏)    */
+/* ========================================================================= */
+
+.champagne-card {
+  background: linear-gradient(175deg, #171920 0%, #101217 60%, #0c0d10 100%) !important;
+  border: 1px solid rgba(223, 195, 132, 0.18) !important;
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.8), inset 0 1px 1px rgba(255, 255, 255, 0.07) !important;
+}
+
+.bay-inset {
+  background: #08090b !important;
+  box-shadow: inset 0 3px 8px rgba(0, 0, 0, 0.95), inset 0 1px 2px rgba(0, 0, 0, 0.8), 0 1px 0 rgba(255, 255, 255, 0.03) !important;
+  border: 1px solid rgba(255, 255, 255, 0.05) !important;
+}
+
+/* 双舱工作台机架原生栅格 (左 5 份，右 7 份) */
+.stitch-workstation-grid {
+  display: grid !important;
+  grid-template-columns: minmax(0, 5fr) minmax(0, 7fr) !important;
+  gap: 20px !important;
+  align-items: stretch !important;
+  width: 100% !important;
+}
+
+@media (max-width: 1100px) {
+  .stitch-workstation-grid {
+    grid-template-columns: 1fr !important;
+  }
+}
+
+.stitch-console-left,
+.stitch-viewport-right {
+  display: flex !important;
+  flex-direction: column !important;
+  justify-content: space-between !important;
+  gap: 16px !important;
+  min-width: 0 !important;
+  box-sizing: border-box !important;
+}
+
+/* 物理旋钮三联阵列 */
+.knob-array {
+  display: grid !important;
+  grid-template-columns: repeat(3, 1fr) !important;
+  gap: 8px !important;
+  width: 100% !important;
+  box-sizing: border-box !important;
+}
+
+.knob-item {
+  display: flex !important;
+  flex-direction: column !important;
+  align-items: center !important;
+  gap: 6px !important;
+  cursor: pointer !important;
+  user-select: none !important;
+}
+
+/* 旋钮外轮廓：强制物理尺寸 64px 绝对不可摧毁，禁止任何溢出 */
+.knob-dial {
+  width: 64px !important;
+  height: 64px !important;
+  min-width: 64px !important;
+  min-height: 64px !important;
+  max-width: 64px !important;
+  max-height: 64px !important;
+  position: relative !important;
+  border-radius: 9999px !important;
+  background-color: #181a22 !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.8), inset 0 1px 2px rgba(255, 255, 255, 0.15) !important;
+  overflow: hidden !important;
+  box-sizing: border-box !important;
+  transition: transform 0.15s ease, border-color 0.2s ease !important;
+}
+
+.knob-item:hover .knob-dial {
+  border: 1px solid rgba(223, 195, 132, 0.35) !important;
+  transform: scale(1.02) !important;
+}
+
+/* 旋钮内部 SVG 强制绝对居中并严格限制 64px */
+.knob-dial svg {
+  width: 64px !important;
+  height: 64px !important;
+  min-width: 64px !important;
+  min-height: 64px !important;
+  max-width: 64px !important;
+  max-height: 64px !important;
+  position: absolute !important;
+  inset: 0 !important;
+  pointer-events: none !important;
+  display: block !important;
+}
+
+/* 旋钮内芯物理尺寸 44px */
+.knob-core {
+  width: 44px !important;
+  height: 44px !important;
+  min-width: 44px !important;
+  min-height: 44px !important;
+  border-radius: 9999px !important;
+  background-color: #101217 !important;
+  box-shadow: inset 0 2px 3px rgba(255, 255, 255, 0.1), 0 3px 6px rgba(0, 0, 0, 0.9) !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  position: relative !important;
+  pointer-events: none !important;
+  z-index: 2 !important;
+}
+
+/* 仪表盘圆形刻度物理约束 128px */
+.gauge-dial {
+  width: 128px !important;
+  height: 128px !important;
+  min-width: 128px !important;
+  min-height: 128px !important;
+  max-width: 128px !important;
+  max-height: 128px !important;
+  position: relative !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+}
+
+.gauge-dial svg {
+  width: 128px !important;
+  height: 128px !important;
+  display: block !important;
+  transform: rotate(-90deg) !important;
+  pointer-events: none !important;
+}
+
+/* 原生香槟金高光按键 */
+.btn-stitch-primary {
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  gap: 8px !important;
+  padding: 8px 18px !important;
+  border-radius: 6px !important;
+  background: linear-gradient(180deg, #e5ca8f 0%, #bfa15d 100%) !important;
+  color: #12141a !important;
+  font-family: "Source Han Sans CN", monospace !important;
+  font-size: 11px !important;
+  font-weight: 700 !important;
+  text-transform: uppercase !important;
+  letter-spacing: 0.05em !important;
+  border: 1px solid rgba(255, 255, 255, 0.3) !important;
+  box-shadow: 0 4px 14px rgba(223, 195, 132, 0.3), inset 0 1px 1px rgba(255, 255, 255, 0.5) !important;
+  cursor: pointer !important;
+  transition: filter 0.15s ease, transform 0.1s ease !important;
+}
+
+.btn-stitch-primary:hover {
+  filter: brightness(1.1) !important;
+}
+
+.btn-stitch-primary:active {
+  transform: translateY(1px) !important;
+}
+
+/* 原生机架次级曜石按键 */
+.btn-stitch-secondary {
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  gap: 8px !important;
+  padding: 8px 16px !important;
+  border-radius: 6px !important;
+  background: linear-gradient(180deg, #181b24 0%, #0d0f14 100%) !important;
+  color: #eddab3 !important;
+  font-family: "Source Han Sans CN", monospace !important;
+  font-size: 11px !important;
+  letter-spacing: 0.05em !important;
+  border: 1px solid rgba(223, 195, 132, 0.2) !important;
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.6), inset 0 1px 0 rgba(255, 255, 255, 0.1) !important;
+  cursor: pointer !important;
+  transition: background 0.15s ease, border-color 0.15s ease, transform 0.1s ease !important;
+}
+
+.btn-stitch-secondary:hover {
+  background: linear-gradient(180deg, #222633 0%, #12141b 100%) !important;
+  border-color: rgba(223, 195, 132, 0.45) !important;
+  color: #ffffff !important;
+}
+
+.btn-stitch-secondary:active {
+  transform: translateY(1px) !important;
+}
+
+/* 原生送审高光点火按键 */
+.btn-stitch-ignite {
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  gap: 10px !important;
+  padding: 8px 20px !important;
+  border-radius: 6px !important;
+  background: linear-gradient(135deg, #dfc384 0%, #f4e1b9 50%, #c9ad6e 100%) !important;
+  color: #121417 !important;
+  font-family: "Source Han Sans CN", sans-serif !important;
+  font-size: 13px !important;
+  font-weight: 800 !important;
+  letter-spacing: 0.06em !important;
+  border: 1px solid rgba(255, 255, 255, 0.4) !important;
+  box-shadow: 0 6px 18px rgba(223, 195, 132, 0.35), inset 0 1px 2px rgba(255, 255, 255, 0.6) !important;
+  cursor: pointer !important;
+  transition: filter 0.15s ease, transform 0.1s ease !important;
+}
+  grid-template-columns: minmax(0, 5fr) minmax(0, 7fr) !important;
+  gap: 20px !important;
+  align-items: stretch !important;
+  width: 100% !important;
+}
+
+@media (max-width: 1100px) {
+  .stitch-workstation-grid {
+    grid-template-columns: 1fr !important;
+  }
+}
+
+.stitch-console-left,
+.stitch-viewport-right {
+  display: flex !important;
+  flex-direction: column !important;
+  justify-content: space-between !important;
+  gap: 16px !important;
+  min-width: 0 !important;
+  box-sizing: border-box !important;
+}
+
+/* 物理旋钮三联阵列 */
+.knob-array {
+  display: grid !important;
+  grid-template-columns: repeat(3, 1fr) !important;
+  gap: 8px !important;
+  width: 100% !important;
+  box-sizing: border-box !important;
+}
+
+.knob-item {
+  display: flex !important;
+  flex-direction: column !important;
+  align-items: center !important;
+  gap: 6px !important;
+  cursor: pointer !important;
+  user-select: none !important;
+}
+
+/* 旋钮外轮廓：强制物理尺寸 64px 绝对不可摧毁，禁止任何溢出 */
+.knob-dial {
+  width: 64px !important;
+  height: 64px !important;
+  min-width: 64px !important;
+  min-height: 64px !important;
+  max-width: 64px !important;
+  max-height: 64px !important;
+  position: relative !important;
+  border-radius: 9999px !important;
+  background-color: #181a22 !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.8), inset 0 1px 2px rgba(255, 255, 255, 0.15) !important;
+  overflow: hidden !important;
+  box-sizing: border-box !important;
+  transition: transform 0.15s ease, border-color 0.2s ease !important;
+}
+
+.knob-item:hover .knob-dial {
+  border: 1px solid rgba(223, 195, 132, 0.35) !important;
+  transform: scale(1.02) !important;
+}
+
+/* 旋钮内部 SVG 强制绝对居中并严格限制 64px */
+.knob-dial svg {
+  width: 64px !important;
+  height: 64px !important;
+  min-width: 64px !important;
+  min-height: 64px !important;
+  max-width: 64px !important;
+  max-height: 64px !important;
+  position: absolute !important;
+  inset: 0 !important;
+  pointer-events: none !important;
+  display: block !important;
+}
+
+/* 旋钮内芯物理尺寸 44px */
+.knob-core {
+  width: 44px !important;
+  height: 44px !important;
+  min-width: 44px !important;
+  min-height: 44px !important;
+  border-radius: 9999px !important;
+  background-color: #101217 !important;
+  box-shadow: inset 0 2px 3px rgba(255, 255, 255, 0.1), 0 3px 6px rgba(0, 0, 0, 0.9) !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  position: relative !important;
+  pointer-events: none !important;
+  z-index: 2 !important;
+}
+
+/* 仪表盘圆形刻度物理约束 128px */
+.gauge-dial {
+  width: 128px !important;
+  height: 128px !important;
+  min-width: 128px !important;
+  min-height: 128px !important;
+  max-width: 128px !important;
+  max-height: 128px !important;
+  position: relative !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+}
+
+.gauge-dial svg {
+  width: 128px !important;
+  height: 128px !important;
+  display: block !important;
+  transform: rotate(-90deg) !important;
+  pointer-events: none !important;
+}
+
+/* 原生香槟金高光按键 */
+.btn-stitch-primary {
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  gap: 8px !important;
+  padding: 8px 18px !important;
+  border-radius: 6px !important;
+  background: linear-gradient(180deg, #e5ca8f 0%, #bfa15d 100%) !important;
+  color: #12141a !important;
+  font-family: "Source Han Sans CN", monospace !important;
+  font-size: 11px !important;
+  font-weight: 700 !important;
+  text-transform: uppercase !important;
+  letter-spacing: 0.05em !important;
+  border: 1px solid rgba(255, 255, 255, 0.3) !important;
+  box-shadow: 0 4px 14px rgba(223, 195, 132, 0.3), inset 0 1px 1px rgba(255, 255, 255, 0.5) !important;
+  cursor: pointer !important;
+  transition: filter 0.15s ease, transform 0.1s ease !important;
+}
+
+.btn-stitch-primary:hover {
+  filter: brightness(1.1) !important;
+}
+
+.btn-stitch-primary:active {
+  transform: translateY(1px) !important;
+}
+
+/* 原生机架次级曜石按键 */
+.btn-stitch-secondary {
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  gap: 8px !important;
+  padding: 8px 16px !important;
+  border-radius: 6px !important;
+  background: linear-gradient(180deg, #181b24 0%, #0d0f14 100%) !important;
+  color: #eddab3 !important;
+  font-family: "Source Han Sans CN", monospace !important;
+  font-size: 11px !important;
+  letter-spacing: 0.05em !important;
+  border: 1px solid rgba(223, 195, 132, 0.2) !important;
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.6), inset 0 1px 0 rgba(255, 255, 255, 0.1) !important;
+  cursor: pointer !important;
+  transition: background 0.15s ease, border-color 0.15s ease, transform 0.1s ease !important;
+}
+
+.btn-stitch-secondary:hover {
+  background: linear-gradient(180deg, #222633 0%, #12141b 100%) !important;
+  border-color: rgba(223, 195, 132, 0.45) !important;
+  color: #ffffff !important;
+}
+
+.btn-stitch-secondary:active {
+  transform: translateY(1px) !important;
+}
+
+/* 原生送审高光点火按键 */
+.btn-stitch-ignite {
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  gap: 10px !important;
+  padding: 8px 20px !important;
+  border-radius: 6px !important;
+  background: linear-gradient(135deg, #dfc384 0%, #f4e1b9 50%, #c9ad6e 100%) !important;
+  color: #121417 !important;
+  font-family: "Source Han Sans CN", sans-serif !important;
+  font-size: 13px !important;
+  font-weight: 800 !important;
+  letter-spacing: 0.06em !important;
+  border: 1px solid rgba(255, 255, 255, 0.4) !important;
+  box-shadow: 0 6px 18px rgba(223, 195, 132, 0.35), inset 0 1px 2px rgba(255, 255, 255, 0.6) !important;
+  cursor: pointer !important;
+  transition: filter 0.15s ease, transform 0.1s ease !important;
+}
+
+.btn-stitch-ignite:hover {
+  filter: brightness(1.12) !important;
+}
+
+.btn-stitch-ignite:active {
+  transform: scale(0.97) !important;
+}
+
+/* ========================================================================= */
+/* 10. 原生高精对齐机架系统 (消除残缺工具类导致的堆叠与错位)                  */
+/* ========================================================================= */
+
+/* 顶部子机架横向两端对齐 */
+.stitch-sub-header {
+  display: flex !important;
+  flex-direction: row !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  gap: 16px !important;
+  flex-wrap: wrap !important;
+  padding: 12px 18px !important;
+  margin-bottom: 18px !important;
+  width: 100% !important;
+  box-sizing: border-box !important;
+}
+
+.stitch-sub-header-left {
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 6px !important;
+  min-width: 0 !important;
+}
+
+.stitch-sub-header-left-title {
+  display: flex !important;
+  align-items: center !important;
+  gap: 10px !important;
+}
+
+.stitch-sub-header-left-meta {
+  display: flex !important;
+  align-items: center !important;
+  gap: 8px !important;
+  font-family: "Source Han Sans CN", sans-serif !important;
+  font-size: 12px !important;
+  color: #9ca3af !important;
+}
+
+.stitch-sub-header-right {
+  display: flex !important;
+  align-items: center !important;
+  gap: 12px !important;
+  margin-left: auto !important;
+  flex-shrink: 0 !important;
+}
+
+/* 卡片标头统一两端对齐 */
+.stitch-card-header {
+  display: flex !important;
+  flex-direction: row !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  padding-bottom: 10px !important;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08) !important;
+  width: 100% !important;
+  box-sizing: border-box !important;
+}
+
+.stitch-card-header-left {
+  display: flex !important;
+  align-items: center !important;
+  gap: 8px !important;
+  min-width: 0 !important;
+}
+
+.stitch-card-header-right {
+  display: flex !important;
+  align-items: center !important;
+  gap: 10px !important;
+  flex-shrink: 0 !important;
+}
+
+/* 表单 Label 统一两端对齐 (标题靠左，指示/计数靠右) */
+.stitch-label-row {
+  display: flex !important;
+  flex-direction: row !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  font-family: "Source Han Sans CN", monospace !important;
+  font-size: 10px !important;
+  color: #9ca3af !important;
+  text-transform: uppercase !important;
+  letter-spacing: 0.05em !important;
+  margin-bottom: 6px !important;
+  width: 100% !important;
+  box-sizing: border-box !important;
+}
+
+/* 旋钮列高精度对齐 */
+.knob-array {
+  display: grid !important;
+  grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+  gap: 12px !important;
+  width: 100% !important;
+  box-sizing: border-box !important;
+}
+
+.knob-item {
+  display: flex !important;
+  flex-direction: column !important;
+  align-items: center !important;
+  justify-content: center !important;
+  gap: 8px !important;
+  width: 100% !important;
+  text-align: center !important;
+}
+
+.knob-label-title {
+  font-family: "Source Han Sans CN", monospace !important;
+  font-size: 11px !important;
+  font-weight: 600 !important;
+  color: #9ca3af !important;
+  text-transform: uppercase !important;
+  letter-spacing: 0.05em !important;
+  white-space: nowrap !important;
+  line-height: 1 !important;
+}
+
+.knob-val-badge {
+  background: #101217 !important;
+  border: 1px solid rgba(223, 195, 132, 0.25) !important;
+  border-radius: 4px !important;
+  padding: 3px 8px !important;
+  white-space: nowrap !important;
+  box-shadow: inset 0 1px 2px rgba(0,0,0,0.8) !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  max-width: 100% !important;
+  box-sizing: border-box !important;
+}
+
+.knob-val-badge span {
+  font-family: "Source Han Sans CN", monospace !important;
+  font-size: 10px !important;
+  font-weight: 600 !important;
+  color: #fcdf9d !important;
+  white-space: nowrap !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+  line-height: 1 !important;
+}
+
+/* 操作按键组对齐 */
+.stitch-actions-row {
+  display: flex !important;
+  flex-direction: row !important;
+  align-items: center !important;
+  gap: 12px !important;
+  width: 100% !important;
+  padding-top: 4px !important;
+  box-sizing: border-box !important;
+}
+
+.stitch-actions-row button {
+  flex: 1 !important;
+  min-height: 38px !important;
+}
+
+/* 右舱底部视窗页脚两端对齐 */
+.stitch-viewport-footer {
+  display: flex !important;
+  flex-direction: row !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  padding-top: 10px !important;
+  border-top: 1px solid rgba(255, 255, 255, 0.08) !important;
+  width: 100% !important;
+  box-sizing: border-box !important;
+}
+
+/* 历史版本栏两端对齐 */
+.stitch-history-bar {
+  display: flex !important;
+  flex-direction: row !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  gap: 12px !important;
+  margin-top: 20px !important;
+  padding: 10px 14px !important;
+  border-radius: 6px !important;
+  background: #0b0c10 !important;
+  border: 1px solid rgba(255, 255, 255, 0.06) !important;
+  font-family: "Source Han Sans CN", monospace !important;
+  font-size: 11px !important;
+  width: 100% !important;
+  box-sizing: border-box !important;
+}
+
+.stitch-history-left {
+  display: flex !important;
+  align-items: center !important;
+  gap: 8px !important;
+  flex-wrap: wrap !important;
+}
+
+/* 系统页脚两端对齐 */
+.stitch-footer-bar {
+  display: flex !important;
+  flex-direction: row !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  margin-top: 16px !important;
+  padding-top: 12px !important;
+  padding-bottom: 8px !important;
+  border-top: 1px solid rgba(255, 255, 255, 0.06) !important;
+  font-family: "Source Han Sans CN", monospace !important;
+  font-size: 10px !important;
+  color: #6b7280 !important;
+  width: 100% !important;
+  box-sizing: border-box !important;
+}
+
+/* ========================================================================= */
+/* STITCH SKEUOMORPHIC BLACK-GOLD WORKSTATION ENGINE (OFFLINE ROBUST CSS)   */
+/* ========================================================================= */
+
+.stage-script {
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 20px !important;
+  width: 100% !important;
+  box-sizing: border-box !important;
+}
+
+/* 顶舱 */
+.stitch-deck-top {
+  display: flex !important;
+  flex-direction: row !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  gap: 16px !important;
+  padding: 14px 18px !important;
+  border-radius: 8px !important;
+  background: linear-gradient(180deg, #13151b 0%, #0c0d12 100%) !important;
+  border: 1px solid rgba(223, 195, 132, 0.18) !important;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.7), inset 0 1px 1px rgba(255, 255, 255, 0.05) !important;
+  box-sizing: border-box !important;
+}
+
+/* 主双舱工作台栅格：坚决 5:7 并排 */
+.stitch-workstation-grid {
+  display: grid !important;
+  grid-template-columns: minmax(0, 5fr) minmax(0, 7fr) !important;
+  gap: 20px !important;
+  width: 100% !important;
+  box-sizing: border-box !important;
+}
+
+@media (max-width: 1024px) {
+  .stitch-workstation-grid {
+    grid-template-columns: 1fr !important;
+  }
+}
+
+/* 通用香槟金拟物卡片 */
+.champagne-card {
+  background: linear-gradient(180deg, #13151b 0%, #0c0d12 100%) !important;
+  border: 1px solid rgba(223, 195, 132, 0.18) !important;
+  border-radius: 8px !important;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.7), inset 0 1px 1px rgba(255, 255, 255, 0.05) !important;
+  box-sizing: border-box !important;
+}
+
+/* 内嵌机舱凹槽 */
+.bay-inset {
+  background: #08090d !important;
+  border: 1px solid rgba(255, 255, 255, 0.05) !important;
+  box-shadow: inset 0 2px 5px rgba(0, 0, 0, 0.85) !important;
+  border-radius: 6px !important;
+  box-sizing: border-box !important;
+}
+
+/* 左舱控制台 */
+.stitch-console-left {
+  display: flex !important;
+  flex-direction: column !important;
+  justify-content: space-between !important;
+  gap: 16px !important;
+  padding: 16px !important;
+  box-sizing: border-box !important;
+}
+
+/* 右舱视窗 */
+.stitch-viewport-right {
+  display: flex !important;
+  flex-direction: column !important;
+  justify-content: space-between !important;
+  gap: 12px !important;
+  padding: 16px !important;
+  box-sizing: border-box !important;
+}
+
+/* 按钮与排版对齐 */
+.stitch-actions-row {
+  display: flex !important;
+  flex-direction: row !important;
+  align-items: center !important;
+  gap: 12px !important;
+  width: 100% !important;
+  padding-top: 4px !important;
+  box-sizing: border-box !important;
+}
+
+.btn-stitch-primary {
+  flex: 1 !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  gap: 8px !important;
+  padding: 10px 14px !important;
+  border-radius: 6px !important;
+  background: linear-gradient(180deg, #e5ca8f 0%, #bfa15d 100%) !important;
+  color: #12141a !important;
+  font-family: "Source Han Sans CN", monospace !important;
+  font-size: 11px !important;
+  font-weight: 700 !important;
+  text-transform: uppercase !important;
+  letter-spacing: 0.05em !important;
+  border: none !important;
+  box-shadow: 0 4px 12px rgba(223, 195, 132, 0.25), inset 0 1px 1px rgba(255, 255, 255, 0.4) !important;
+  cursor: pointer !important;
+  transition: all 0.15s ease !important;
+}
+
+.btn-stitch-primary:hover {
+  filter: brightness(1.1) !important;
+}
+
+.btn-stitch-secondary {
+  flex: 1 !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  gap: 8px !important;
+  padding: 10px 14px !important;
+  border-radius: 6px !important;
+  background: #181b24 !important;
+  color: #e2e8f0 !important;
+  font-family: "Source Han Sans CN", monospace !important;
+  font-size: 11px !important;
+  text-transform: uppercase !important;
+  letter-spacing: 0.05em !important;
+  border: 1px solid rgba(255, 255, 255, 0.06) !important;
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.6) !important;
+  cursor: pointer !important;
+  transition: all 0.15s ease !important;
+}
+
+.btn-stitch-secondary:hover {
+  background: #202430 !important;
+  color: #ffffff !important;
+}
+
+.btn-stitch-ignite {
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 10px !important;
+  padding: 8px 20px !important;
+  border-radius: 6px !important;
+  background: linear-gradient(90deg, #dfc384 0%, #f4e1b9 100%) !important;
+  color: #121417 !important;
+  font-family: "Source Han Sans CN", sans-serif !important;
+  font-size: 13px !important;
+  font-weight: 700 !important;
+  text-transform: uppercase !important;
+  letter-spacing: 0.08em !important;
+  border: none !important;
+  box-shadow: 0 6px 18px rgba(223, 195, 132, 0.35), inset 0 1px 2px rgba(255, 255, 255, 0.6) !important;
+  cursor: pointer !important;
+  transition: all 0.15s ease !important;
+}
+
+.btn-stitch-ignite:hover {
+  filter: brightness(1.12) !important;
+  box-shadow: 0 8px 22px rgba(223, 195, 132, 0.45), inset 0 1px 2px rgba(255, 255, 255, 0.8) !important;
+}
+
+/* 旋钮 3 列并排阵列 */
+.knob-array-grid {
+  display: grid !important;
+  grid-template-columns: repeat(3, 1fr) !important;
+  gap: 8px !important;
+  text-align: center !important;
+}
+
+/* 审核机架 */
+.stitch-audit-grid {
+  display: grid !important;
+  grid-template-columns: minmax(0, 3fr) minmax(0, 9fr) !important;
+  gap: 16px !important;
+  width: 100% !important;
+}
+
+@media (max-width: 900px) {
+  .stitch-audit-grid {
+    grid-template-columns: 1fr !important;
+  }
+}
+
+.stitch-dimensions-grid {
+  display: grid !important;
+  grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+  gap: 12px !important;
+}
+
+@media (max-width: 1200px) {
+  .stitch-dimensions-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  }
+}
+
+.stitch-problems-grid {
+  display: grid !important;
+  grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  gap: 10px !important;
+  padding-top: 4px !important;
+}
+
+@media (max-width: 900px) {
+  .stitch-problems-grid {
+    grid-template-columns: 1fr !important;
+  }
+}
+
+/* ===================================================================== */
+/* STAGE 02: 资产生成 曜石黑金微晶拟物科技机架 (Design System 02_16_9)    */
+/* ===================================================================== */
+
+.milled-screw {
+  width: 6px;
+  height: 6px;
+  border-radius: 9999px;
+  background: radial-gradient(circle at 35% 35%, #2a2e3b, #0d0f14);
+  box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.15), 0 1px 2px rgba(0, 0, 0, 0.9);
+  position: relative;
+  display: inline-block;
+  pointer-events: none;
+}
+.milled-screw::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 4px;
+  height: 0.75px;
+  background: #050608;
+  transform: translate(-50%, -50%) rotate(45deg);
+}
+
+/* 资产卡片滑轨容器横向滚动与阴影 */
+#cardsSliderRack {
+  scrollbar-width: thin;
+  scrollbar-color: #1e222c #060709;
+}
+#cardsSliderRack::-webkit-scrollbar {
+  height: 6px;
+}
+#cardsSliderRack::-webkit-scrollbar-track {
+  background: #06070a;
+  border-radius: 3px;
+}
+#cardsSliderRack::-webkit-scrollbar-thumb {
+  background: #1c202b;
+  border-radius: 3px;
+  border: 1px solid rgba(255, 255, 255, 0.05);
+}
+#cardsSliderRack::-webkit-scrollbar-thumb:hover {
+  background: #dfc384;
+}
+
+/* 触觉拟物卡片微动与阴影 */
+.asset-rack-card {
+  transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1), border-color 0.2s ease, box-shadow 0.2s ease;
+}
+.asset-rack-card:hover {
+  border-color: rgba(223, 195, 132, 0.35) !important;
+  box-shadow: 0 18px 36px rgba(0, 0, 0, 0.9), 0 0 16px rgba(223, 195, 132, 0.12), inset 0 1px 1px rgba(255, 255, 255, 0.12) !important;
+}
+
+/* 拟物推子与光纤导轨 */
+#hardwareTrack {
+  user-select: none;
+}
+#trackThumb {
+  transition: transform 0.15s ease;
+}
+#trackThumb:active {
+  cursor: grabbing;
+}
+
+/* ===================================================================== */
+/* STAGE 03: 分镜脚本 曜石黑金双舱拟物工作台 (Design System 03_16_9)     */
+/* ===================================================================== */
+
+.is-video-step body,
+body.is-video-step {
+  background-color: #090a0d !important;
+  color: #e3e2e6 !important;
+  user-select: none;
+}
+
+.is-video-step ::-webkit-scrollbar {
+  width: 5px;
+  height: 5px;
+}
+.is-video-step ::-webkit-scrollbar-track {
+  background: #060709;
+}
+.is-video-step ::-webkit-scrollbar-thumb {
+  background: #1f232d;
+  border-radius: 2px;
+}
+.is-video-step ::-webkit-scrollbar-thumb:hover {
+  background: #dfc384;
+}
+
+.metallic-bevel {
+  border: 1px solid rgba(223, 195, 132, 0.16);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.04) 0%, rgba(0, 0, 0, 0.45) 100%);
+}
+
+.gold-radial-flare {
+  background: radial-gradient(circle at 50% 0%, rgba(223, 195, 132, 0.15) 0%, transparent 70%);
+}
+
+.chassis-groove {
+  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.9), 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+
+/* 大纲字段折叠展开 */
+[data-outline-field-wrap].is-collapsed .outline-field-body {
+  display: none !important;
+}
+[data-outline-field-wrap]:not(.is-collapsed) .outline-field-body {
+  display: block !important;
+}
+
+/* 镜头卡片微交互与金属边框高亮 */
+.storyboard-shot-card {
+  transition: border-color 0.2s ease, box-shadow 0.2s ease, transform 0.15s ease;
+}
+.storyboard-shot-card:hover {
+  border-color: rgba(223, 195, 132, 0.35) !important;
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.85), 0 0 14px rgba(223, 195, 132, 0.15) !important;
+}
+
+/* 审片综合决策印章 */
+.decision-stamp {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.25rem 0.75rem;
+  font-family: "Source Han Sans CN", monospace;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  border-radius: 4px;
+  text-transform: uppercase;
+  border: 1.5px solid currentColor;
+  box-shadow: 0 0 12px currentColor;
+}
+.decision-stamp.passed {
+  color: #34d399;
+  background: rgba(52, 211, 153, 0.12);
+  border-color: #34d399;
+}
+.decision-stamp.failed {
+  color: #fbbf24;
+  background: rgba(251, 191, 36, 0.12);
+  border-color: #fbbf24;
+}
+
+/* ===== 显式降级：未接入后端时的可见提示（Phase 9T） =====
+   背景（用户 2026-09-21 裁决第 3 项）：本页 `/api/prompt-libraries`、`/api/providers` 等
+   后端端点尚未纳入当前切片，原实现静默回落到内置演示数据；此处提供可见的降级清单容器样式。
+   证据边界：仅为样式与可见性，不改变任何数据语义。 */
+.episode-degradation{
+  display:flex;
+  flex-wrap:wrap;
+  gap:6px;
+  margin:0 0 12px;
+  padding:8px 10px;
+  border:1px solid rgba(245,158,11,.32);
+  border-radius:10px;
+  background:rgba(245,158,11,.06);
+}
+.episode-degradation[hidden]{display:none;}
+.episode-degradation span{
+  font-family:ui-monospace,SFMono-Regular,Menlo,monospace;
+  font-size:10px;
+  letter-spacing:.02em;
+  color:#fcd34d;
+}
+.episode-degradation span[data-gw-degradation="not_integrated"]{color:#cbd5e1;}

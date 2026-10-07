@@ -1,0 +1,6 @@
+{
+  "detail": {
+    "code": "LIBRARY_NOT_EMPTY",
+    "message": "提示词库 plib_default 仍包含 1 个分类，请先清空后再删除"
+  }
+}

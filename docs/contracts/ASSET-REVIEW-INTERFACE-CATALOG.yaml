@@ -1,0 +1,26 @@
+# PDF分页、中文、附件与限制详见 TEXT-PDF-EXPORT-CONTRACT.md。
+# Phase 12 A3 资产审查与交付接口目录
+meta:
+  version: p12-a3-1
+  distribution: NOT AUTHORIZED FOR PUBLIC DISTRIBUTION
+  data_backend: "core.storage.JsonState 命名空间 asset_review（落盘，重启可恢复；单实例一致性）"
+  unavailable_status: 503
+  unavailable_code: ASSET_REVIEW_NOT_INTEGRATED
+  canvas_boundary: "本块不涉及画布域（canvas_id 相关能力明确排除）"
+  id_format: "session_id=rs-NNNN；comment_id=rc-NNNN；delivery_id=dlv-NNNN；share_id=shr-NNNN；均确定性序号，禁止随机数/uuid"
+  share_token: "secrets.token_urlsafe(32)，服务端只存 SHA-256 哈希，明文仅创建响应返回一次"
+  state_machine: "会话 open → delivered → approved/rejected；评论 open ⇄ resolved；非法流转 409 INVALID_STATE_TRANSITION（未交付即审批同样 409）"
+  cas_granularity: "集合以 revision 做 CAS，单对象以 version 做 CAS；冲突 409 VERSION_CONFLICT"
+  fail_closed: "本块不依赖 ffmpeg/Provider/允许根目录；导出 PDF 由纯标准库生成（真实字节），失败关闭而不是伪造"
+  not_found_codes: "404 SESSION_NOT_FOUND / COMMENT_NOT_FOUND / DELIVERY_NOT_FOUND；分享令牌查不到 404 SHARE_NOT_FOUND"
+  frontend_contract: "list→{sessions:[...]}；create→{session:{...}}（前端读 created.session.id）；detail→{session,comments,approvals,delivery,asset}；comment.created_at 为数字 epoch 毫秒；delivery→{delivery:{id}}；export→application/pdf 附件"
+interfaces:
+  - {name: get_review_sessions, method: GET, path: /api/asset-reviews/sessions}
+  - {name: post_review_sessions, method: POST, path: /api/asset-reviews/sessions}
+  - {name: get_review_session, method: GET, path: /api/asset-reviews/sessions/{p}}
+  - {name: post_review_delivery, method: POST, path: /api/asset-reviews/sessions/{p}/delivery}
+  - {name: post_review_delivery_export, method: POST, path: /api/asset-reviews/deliveries/{p}/export}
+  - {name: post_review_comment, method: POST, path: /api/asset-reviews/sessions/{p}/comments}
+  - {name: put_review_approval, method: PUT, path: /api/asset-reviews/sessions/{p}/approval}
+  - {name: post_review_share, method: POST, path: /api/asset-reviews/shares}
+  - {name: patch_review_comment, method: PATCH, path: /api/asset-reviews/comments/{p}}

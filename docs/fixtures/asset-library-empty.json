@@ -1,0 +1,8 @@
+{
+  "detail_comment": "空素材库黄金夹具：libraries 必须为空数组且 active_library_id 为 null，禁止伪造或返回演示素材。",
+  "library": {
+    "version": 1,
+    "active_library_id": null,
+    "libraries": []
+  }
+}

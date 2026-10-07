@@ -1,0 +1,520 @@
+.directory-settings-panel { display: flex !important; flex: 1 1 auto; width: 100%; min-width: 0; min-height: 0; height: 100%; overflow: hidden; }
+.directory-settings-frame { flex: 1 1 auto; width: 100%; height: 100%; min-width: 0; min-height: 0; border: 0; display: block; }
+html.directory-settings-page { height: 100%; background: #090a0d; }
+.directory-settings-page body {
+  --panel: #090a0d;
+  --card: #0d0f15;
+  --card-gradient: linear-gradient(165deg, #171920 0%, #0f1115 100%);
+  --soft: #0e1117;
+  --text: #e2e8f0;
+  --muted: #8892a4;
+  --faint: #64748b;
+  --line: rgba(255, 255, 255, 0.08);
+  --line-gold: rgba(223, 195, 132, 0.22);
+  --line-gold-bright: rgba(250, 226, 200, 0.42);
+  --gold-primary: #dfc384;
+  --gold-bright: #fae2c8;
+  --gold-dark: #b8823f;
+  --strong-text: #1a1308;
+  background: var(--panel);
+  color: var(--text);
+  margin: 0;
+  font-family: "Source Han Sans CN", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+}
+.directory-settings-page .asset-page { display: none !important; }
+
+/* 目录设置工作台主容器 */
+.directory-page {
+  padding: 14px 18px 24px;
+  max-width: 1040px;
+  margin: 0 auto;
+  font-size: 12px;
+  letter-spacing: 0;
+  box-sizing: border-box;
+}
+
+/* 顶部标题栏 */
+.directory-page-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding-bottom: 12px;
+  margin-bottom: 12px;
+  border-bottom: 1px solid var(--line-gold);
+}
+.directory-page h1 {
+  font-size: 14px;
+  font-weight: 700;
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--gold-bright);
+}
+.directory-page h1 svg {
+  color: var(--gold-primary);
+  width: 16px;
+  height: 16px;
+}
+
+.directory-page fieldset { margin: 0; padding: 0; border: 0; min-width: 0; }
+.directory-page fieldset:disabled { opacity: .65; }
+
+/* 拟物硬件沉槽分区卡片 (Bay-inset 风格) */
+.directory-page .asset-pref-section {
+  padding: 12px 14px;
+  margin: 0 0 10px 0;
+  border: 1px solid var(--line-gold);
+  border-top-color: var(--line-gold-bright);
+  border-radius: 12px;
+  background: var(--card-gradient);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.6), inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  box-sizing: border-box;
+}
+
+/* 分区标题 */
+.directory-page .asset-pref-title {
+  font-size: 12px;
+  font-weight: 700;
+  margin-bottom: 9px;
+  color: #eddab3;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+.directory-page .asset-pref-title > svg {
+  color: var(--gold-primary);
+  width: 14px;
+  height: 14px;
+}
+.directory-page .asset-pref-title small {
+  font-size: 10px;
+  font-weight: normal;
+  color: var(--muted);
+  font-family: monospace;
+}
+
+/* 网格排版 */
+.directory-page .storage-dir-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px 14px;
+}
+.directory-page .storage-dir-row {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.directory-page .storage-dir-row > span {
+  color: #cbd5e1;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+/* 输入框组合条 */
+.directory-page .directory-input-row {
+  display: flex;
+  align-items: stretch;
+  gap: 6px;
+  min-width: 0;
+}
+.directory-page .directory-input-row input {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+/* 紧凑型文件夹选择按键 */
+.directory-page .directory-picker-btn {
+  width: 32px;
+  min-width: 32px;
+  height: 32px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  border: 1px solid rgba(223, 195, 132, 0.35);
+  background: linear-gradient(180deg, #1f2430 0%, #12151d 100%);
+  color: var(--gold-primary);
+  cursor: pointer;
+  transition: all 0.15s ease;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.1), 0 2px 5px rgba(0, 0, 0, 0.5);
+}
+.directory-page .directory-picker-btn:hover {
+  background: linear-gradient(180deg, #2a3142 0%, #171b26 100%);
+  border-color: var(--gold-bright);
+  color: #fae2c8;
+  box-shadow: 0 0 10px rgba(223, 195, 132, 0.35);
+}
+.directory-page .directory-picker-btn:active {
+  transform: translateY(1px);
+}
+.directory-page .directory-picker-btn svg {
+  width: 14px;
+  height: 14px;
+}
+
+/* 统一输入框与选择框高度与风格 (标准 32px) */
+.directory-page :is(input, select) {
+  box-sizing: border-box;
+  width: 100%;
+  height: 32px;
+  min-width: 0;
+  padding: 0 10px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  color: #f1f5f9;
+  background: #080a0e;
+  font-size: 11.5px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  letter-spacing: 0;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+.directory-page input[readonly] {
+  color: #64748b;
+  background: #050609;
+  border-color: rgba(255, 255, 255, 0.05);
+}
+.directory-page :is(input, select):focus {
+  outline: none;
+  border-color: rgba(223, 195, 132, 0.65);
+  box-shadow: 0 0 8px rgba(223, 195, 132, 0.25);
+}
+.directory-page :is(button, a):focus-visible {
+  outline: 2px solid var(--gold-primary);
+  outline-offset: 2px;
+}
+
+/* 说明小提示 */
+.directory-page .board-settings-hint {
+  background: none;
+  border: 0;
+  margin: 6px 0 0;
+  padding: 0;
+  font-size: 10.5px;
+  line-height: 1.5;
+  color: var(--faint);
+}
+
+/* 缓存目录选项卡片 */
+.directory-page .thumbnail-cache-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.directory-page .thumbnail-cache-option {
+  flex: 1 1 190px;
+  border: 1px solid rgba(223, 195, 132, 0.2);
+  border-radius: 8px;
+  min-height: 42px;
+  padding: 8px 10px;
+  background: linear-gradient(170deg, #161922 0%, #0d0f15 100%);
+  color: var(--text);
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  text-align: left;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+.directory-page .thumbnail-cache-option:hover {
+  border-color: rgba(223, 195, 132, 0.45);
+  background: linear-gradient(170deg, #1d212d 0%, #10131b 100%);
+}
+.directory-page .thumbnail-cache-option.is-active {
+  color: var(--gold-bright);
+  border-color: rgba(223, 195, 132, 0.75);
+  background: linear-gradient(180deg, #241e14 0%, #14110a 100%);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12), 0 0 12px rgba(223, 195, 132, 0.22);
+}
+.directory-page .thumbnail-cache-option strong {
+  display: block;
+  font-size: 11.5px;
+  font-weight: 700;
+}
+.directory-page .thumbnail-cache-option small {
+  display: block;
+  font-size: 10px;
+  color: var(--muted);
+  margin-top: 2px;
+  font-family: monospace;
+}
+.directory-page .thumbnail-cache-option svg {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+  color: var(--gold-primary);
+}
+.directory-page .thumbnail-cache-directory {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+/* 按钮通用硬件微调 (黑金拟物按键体系) */
+.directory-page .asset-btn {
+  min-height: 30px;
+  height: 30px;
+  border-radius: 8px;
+  padding: 0 12px;
+  border: 1px solid rgba(223, 195, 132, 0.3);
+  font-size: 11px;
+  font-weight: 600;
+  background: linear-gradient(180deg, #1d212b 0%, #111319 100%);
+  color: #eddab3;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.1), 0 2px 5px rgba(0, 0, 0, 0.6);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.directory-page .asset-btn:hover {
+  background: linear-gradient(180deg, #262c3a 0%, #161922 100%);
+  border-color: rgba(223, 195, 132, 0.6);
+  color: #fff;
+  box-shadow: 0 0 10px rgba(223, 195, 132, 0.25);
+}
+.directory-page .asset-btn:active {
+  transform: translateY(1px);
+}
+.directory-page .asset-btn.primary {
+  background: linear-gradient(180deg, #fae2c8 0%, #dfc384 50%, #b8823f 100%);
+  color: var(--strong-text);
+  border: 1px solid rgba(255, 255, 255, 0.85);
+  box-shadow: 0 4px 14px rgba(223, 195, 132, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.7);
+  font-weight: 700;
+  font-size: 11.5px;
+}
+.directory-page .asset-btn.primary:hover {
+  filter: brightness(1.08);
+  box-shadow: 0 4px 18px rgba(223, 195, 132, 0.65);
+}
+.directory-page .asset-btn:disabled {
+  opacity: .5;
+  cursor: wait;
+}
+
+.directory-page .storage-settings-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 10px;
+  padding: 0;
+  background: none;
+  border: 0;
+}
+.directory-page .directory-status {
+  padding: 8px 0;
+  min-height: 18px;
+  font-size: 11px;
+  color: var(--muted);
+  font-family: monospace;
+  overflow-wrap: anywhere;
+}
+.directory-page .directory-error {
+  color: #f87171;
+  padding: 8px 12px;
+  font-size: 11.5px;
+  border-radius: 8px;
+  background: rgba(239, 68, 68, 0.1);
+  border: 1px solid rgba(239, 68, 68, 0.25);
+  margin-bottom: 10px;
+}
+.directory-page .directory-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding-top: 6px;
+}
+.directory-page .directory-footer .asset-btn {
+  flex-shrink: 0;
+}
+.directory-page .directory-registered {
+  display: grid;
+  gap: 6px;
+  margin-top: 8px;
+}
+.directory-page .directory-registered div {
+  display: flex;
+  gap: 12px;
+  font-size: 11px;
+  color: var(--muted);
+}
+.directory-page .directory-registered code {
+  overflow-wrap: anywhere;
+  min-width: 0;
+  font-size: 10.5px;
+  color: var(--gold-primary);
+}
+
+/* ========================================================================= */
+/* 挂载与确认目录拟物弹窗 (Directory Mount Modal)                              */
+/* ========================================================================= */
+.directory-mount-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.75);
+  backdrop-filter: blur(4px);
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.directory-mount-modal {
+  max-width: 520px;
+  width: 92%;
+  margin: auto;
+  background: linear-gradient(170deg, #171a23 0%, #0c0e14 100%) !important;
+  border: 1px solid rgba(223, 195, 132, 0.35) !important;
+  border-top-color: rgba(250, 226, 200, 0.6) !important;
+  border-radius: 14px !important;
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.95), 0 0 25px rgba(223, 195, 132, 0.15) !important;
+  overflow: hidden;
+  box-sizing: border-box;
+}
+.directory-mount-head {
+  padding: 14px 16px;
+  border-bottom: 1px solid rgba(223, 195, 132, 0.18);
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+.directory-mount-title-group {
+  display: flex;
+  flex-direction: column;
+}
+.directory-mount-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: #fae2c8;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.directory-mount-title svg {
+  color: var(--gold-primary);
+  width: 15px;
+  height: 15px;
+  flex-shrink: 0;
+}
+.directory-mount-subtitle {
+  font-size: 10.5px;
+  color: #8892a4;
+  margin-top: 3px;
+  line-height: 1.4;
+}
+.directory-mount-close-btn {
+  background: none;
+  border: none;
+  color: #8892a4;
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s ease;
+}
+.directory-mount-close-btn:hover {
+  color: #fae2c8;
+  background: rgba(255, 255, 255, 0.08);
+}
+.directory-mount-close-btn svg {
+  width: 15px;
+  height: 15px;
+}
+.directory-mount-body {
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  box-sizing: border-box;
+}
+.directory-mount-folder-chip {
+  background: #090c12;
+  border: 1px solid rgba(223, 195, 132, 0.25);
+  border-radius: 8px;
+  padding: 7px 12px;
+  font-size: 11.5px;
+  color: #dfc384;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.directory-mount-folder-chip svg {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+}
+.directory-mount-field {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.directory-mount-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: #cbd5e1;
+}
+.directory-mount-input {
+  box-sizing: border-box;
+  width: 100%;
+  height: 32px;
+  background: #080a0e;
+  border: 1px solid rgba(223, 195, 132, 0.45);
+  border-radius: 8px;
+  padding: 0 10px;
+  color: #f8fafc;
+  font-size: 11.5px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+.directory-mount-input:focus {
+  outline: none;
+  border-color: #dfc384;
+  box-shadow: 0 0 10px rgba(223, 195, 132, 0.3);
+}
+.directory-mount-hint {
+  font-size: 10px;
+  color: #64748b;
+  line-height: 1.4;
+}
+.directory-mount-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 4px;
+}
+.directory-mount-actions .asset-btn {
+  min-height: 30px;
+  height: 30px;
+  border-radius: 8px;
+  padding: 0 14px;
+  font-size: 11px;
+  font-weight: 600;
+}
+.directory-mount-actions .asset-btn.primary {
+  background: linear-gradient(180deg, #fae2c8 0%, #dfc384 50%, #b8823f 100%);
+  color: #1a1308;
+  border: 1px solid rgba(255, 255, 255, 0.8);
+  box-shadow: 0 4px 14px rgba(223, 195, 132, 0.45);
+  font-weight: 700;
+}
+.directory-mount-actions .asset-btn.primary:hover {
+  filter: brightness(1.08);
+  box-shadow: 0 4px 18px rgba(223, 195, 132, 0.65);
+}
+
+@media(max-width: 700px) {
+  .directory-page { padding: 12px 10px; }
+  .directory-page .storage-dir-grid, .directory-page .thumbnail-cache-directory { grid-template-columns: minmax(0, 1fr); }
+  .directory-page-header, .directory-page .directory-footer { align-items: flex-start; flex-wrap: wrap; }
+  .directory-page h1 { font-size: 13.5px; }
+}

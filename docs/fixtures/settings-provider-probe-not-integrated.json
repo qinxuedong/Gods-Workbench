@@ -1,0 +1,6 @@
+{
+  "detail": {
+    "code": "PROVIDER_PROBE_NOT_INTEGRATED",
+    "message": "POST /api/providers/test-connection 在本阶段无真实外网探测能力，已按洁净室口径拒绝执行；未返回任何模型列表 / 连通性结论 / 延迟数字。"
+  }
+}

@@ -1,0 +1,526 @@
+/* Gods Workbench - 曜石香槟金拟物化统一皮肤 (Obsidian & Champagne Gold Hardware Theme) */
+
+:root,
+html,
+body,
+body.studio-theme-dark,
+html.studio-theme-dark body,
+html.workspace-embedded body,
+.api-settings-page,
+.gw-page--api-settings {
+  --bg: #090a0d !important;
+  --panel: #101218 !important;
+  --soft: #171a22 !important;
+  --line: rgba(223, 195, 132, 0.16) !important;
+  --line-strong: rgba(223, 195, 132, 0.35) !important;
+  --text: #eddab3 !important;
+  --muted: #94a3b8 !important;
+  --faint: #64748b !important;
+  --accent: #dfc384 !important;
+  --sf-bg: #090a0d !important;
+  --sf-surface: #101218 !important;
+  --sf-content: #171a22 !important;
+  --sf-raised: #141720 !important;
+  --sf-line: rgba(223, 195, 132, 0.16) !important;
+  --sf-line-strong: rgba(223, 195, 132, 0.35) !important;
+  --sf-text: #eddab3 !important;
+  --sf-muted: #94a3b8 !important;
+  --sf-faint: #64748b !important;
+  --sf-cyan: #dfc384 !important;
+  --sf-cyan-hover: #fae2c8 !important;
+  background-color: #090a0d !important;
+  color: #eddab3 !important;
+  font-family: "Source Han Sans CN", -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif !important;
+}
+
+body {
+  background: #090a0d radial-gradient(circle at 50% 0%, rgba(223, 195, 132, 0.05) 0%, transparent 70%) !important;
+  margin: 0 !important;
+}
+
+/* 统一页面容器 */
+.page {
+  background: transparent !important;
+  padding: 20px 20px 60px !important;
+}
+
+.wrap {
+  max-width: 1280px !important;
+  margin: 0 auto !important;
+}
+
+/* 侧边栏与卡片面板：曜石黑 + 香槟金微光倒角，统一圆角 12px */
+.layout > .sidebar, .ws-sidebar, aside.sidebar, .side-card {
+  background-color: #0e1016 !important;
+  background: #0e1016 !important;
+  border: 1px solid rgba(223, 195, 132, 0.22) !important;
+  border-radius: 12px !important;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.7), inset 0 1px 0 rgba(255, 255, 255, 0.05) !important;
+  color: #eddab3 !important;
+}
+
+.side-section-title, .side-title {
+  color: #dfc384 !important;
+  font-family: "Source Han Sans CN", monospace !important;
+  font-size: 9.5px !important;
+  letter-spacing: 0.08em !important;
+  text-transform: uppercase !important;
+}
+
+
+/* 隐藏所有网站 / 服务商图片 Logo 图标，改用文字展示 */
+
+
+
+.provider-card-banner img,
+.provider-card-banner .ms-icon-light,
+.provider-card-banner .ms-icon-dark,
+.provider-card-banner .volcengine-icon,
+.provider-card-banner .lingjing-icon,
+.provider-card-banner svg:not(.lucide) {
+  display: none !important;
+}
+
+/* 纯文字徽标 / 回退文本常驻显示并以香槟金拟物排版 */
+.provider-card-banner .provider-logo-fallback {
+  display: inline-block !important;
+  font-size: 11.5px !important;
+  font-weight: 700 !important;
+  color: #eddab3 !important;
+  letter-spacing: 0.02em !important;
+}
+
+.provider-card-banner.active .provider-logo-fallback {
+  color: #fae2c8 !important;
+  font-weight: 800 !important;
+}
+
+/* 去掉侧边卡片中可能存在的网站图片图标与多余圆点，纯文字清爽呈现 */
+.provider-card .provider-mark img,
+.provider-card .provider-mark svg {
+  display: none !important;
+}
+
+.provider-card .provider-mark {
+  display: none !important;
+}
+
+/* 列表卡片项目 (平台项、工作流项)：统一圆角 10px，统一卡片高度与对齐 */
+.provider-card, .workflow-card {
+  background-color: rgba(255, 255, 255, 0.03) !important;
+  background: rgba(255, 255, 255, 0.03) !important;
+  border: 1px solid rgba(255, 255, 255, 0.08) !important;
+  border-radius: 10px !important;
+  color: #94a3b8 !important;
+  transition: all 0.16s ease !important;
+  min-height: 38px !important;
+  padding: 6px 10px !important;
+  box-sizing: border-box !important;
+  display: flex !important;
+  align-items: center !important;
+  width: 100% !important;
+}
+
+.provider-card.provider-card-banner {
+  justify-content: space-between !important;
+  padding: 7px 12px !important;
+}
+
+.provider-banner-inner {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  width: 100% !important;
+}
+
+.provider-protocol-pill {
+  font-size: 9px !important;
+  padding: 1.5px 6px !important;
+  border-radius: 6px !important;
+  background: rgba(223, 195, 132, 0.12) !important;
+  color: #dfc384 !important;
+  border: 1px solid rgba(223, 195, 132, 0.25) !important;
+  font-family: "Source Han Sans CN", monospace !important;
+  letter-spacing: 0.04em !important;
+}
+
+.provider-card:hover, .workflow-card:hover {
+  background-color: rgba(223, 195, 132, 0.08) !important;
+  background: rgba(223, 195, 132, 0.08) !important;
+  border-color: rgba(223, 195, 132, 0.45) !important;
+  color: #fae2c8 !important;
+}
+
+.provider-card.active, .workflow-card.active {
+  background-color: #171b25 !important;
+  background: linear-gradient(165deg, #222735 0%, #12151d 100%) !important;
+  border: 1px solid rgba(223, 195, 132, 0.85) !important;
+  box-shadow: 0 0 12px rgba(223, 195, 132, 0.25), inset 0 1px 0 rgba(255, 255, 255, 0.2) !important;
+  color: #dfc384 !important;
+}
+
+.provider-card .provider-name, .workflow-card .workflow-name {
+  font-size: 11.5px !important;
+  font-weight: 700 !important;
+  color: #eddab3 !important;
+}
+
+.provider-card.active .provider-name, .workflow-card.active .workflow-name {
+  color: #fae2c8 !important;
+  font-weight: 800 !important;
+}
+
+.provider-card .provider-meta, .workflow-card .workflow-meta {
+  font-size: 9.5px !important;
+  color: #717d8f !important;
+}
+
+.workflow-icon {
+  background: #08090d !important;
+  border: 1px solid rgba(223, 195, 132, 0.25) !important;
+  color: #dfc384 !important;
+  border-radius: 7px !important;
+  width: 24px !important;
+  height: 24px !important;
+}
+
+/* 主内容区域与面板 (Blocks & Cards)：统一圆角 12px，对齐边框 */
+.content-head,
+.content-body,
+.block,
+.graph-card,
+#settingsContent .block,
+.provider-onboarding-card,
+.recommend-card,
+.recommend-platform-card,
+.onboarding-step-panel,
+.popup-panel,
+.picker-modal,
+.side-card {
+  background-color: #101219 !important;
+  background: linear-gradient(180deg, #141722 0%, #0d0f15 100%) !important;
+  border: 1px solid rgba(223, 195, 132, 0.2) !important;
+  border-top: 1px solid rgba(223, 195, 132, 0.35) !important;
+  border-radius: 12px !important;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.7), inset 0 1px 0 rgba(255, 255, 255, 0.06) !important;
+  color: #eddab3 !important;
+}
+
+.content-head {
+  padding: 14px 18px !important;
+}
+
+.block {
+  padding: 16px 20px !important;
+}
+
+.editor-title, .block-title, .popup-title, section h2, section h3 {
+  color: #fae2c8 !important;
+  font-weight: 800 !important;
+  letter-spacing: -0.01em !important;
+  font-size: 15px !important;
+}
+
+.editor-sub, .block-desc, .popup-sub {
+  color: #8392a5 !important;
+  font-size: 10.5px !important;
+}
+
+.label {
+  font-size: 10.5px !important;
+  color: #94a3b8 !important;
+}
+
+
+/* 输入框与控件：深黑曜石拟物嵌槽，高度与字号等比缩减 10% */
+
+
+
+input,
+select,
+textarea,
+.field-frame,
+.key-panel,
+.model-row,
+.provider-key-item,
+.lora-row,
+.input-row {
+  background-color: #07090c !important;
+  background: #07090c !important;
+  border: 1px solid rgba(255, 255, 255, 0.12) !important;
+  border-radius: 8px !important;
+  color: #eddab3 !important;
+  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.9) !important;
+  font-family: "Source Han Sans CN", monospace !important;
+  font-size: 11px !important;
+}
+
+.field-frame input,
+input[type="text"],
+input[type="password"],
+select {
+  height: 31px !important;
+  font-size: 11px !important;
+}
+
+input:focus, textarea:focus, select:focus,
+.field-frame:focus-within {
+  border-color: rgba(223, 195, 132, 0.8) !important;
+  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.9), 0 0 8px rgba(223, 195, 132, 0.25) !important;
+  outline: none !important;
+}
+
+.field-frame input, .key-input-line input {
+  background: transparent !important;
+  background-color: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+  color: #eddab3 !important;
+}
+
+input::placeholder, textarea::placeholder {
+  color: #555e6d !important;
+  -webkit-text-fill-color: #555e6d !important;
+  font-size: 10.5px !important;
+}
+
+/* =========================================================================
+   统一按钮系统：高度 31px，缩小 10%，统一圆角 7px，统一字号 11px
+   ========================================================================= */
+
+/* 1. 香槟金拟物实体主按钮 (保存、确认等主要操作) */
+.action-btn.save-btn,
+.api-page-save-btn,
+button.save-btn,
+#saveBtn,
+.onboarding-save-btn,
+.recommend-guide-save-btn {
+  height: 31px !important;
+  min-height: 31px !important;
+  padding: 0 14px !important;
+  background-color: #dfc384 !important;
+  background: radial-gradient(ellipse 75% 65% at 50% 50%, #ffffff 0%, #fff2dc 25%, #f5cf92 55%, #dfac64 80%, #b8823f 100%) !important;
+  border: 1px solid rgba(255, 255, 255, 0.8) !important;
+  border-bottom-color: rgba(223, 195, 132, 0.4) !important;
+  box-shadow: 0 3px 10px rgba(223, 195, 132, 0.45), 0 1.5px 3px rgba(0, 0, 0, 0.6), inset 0 1px 1px rgba(255, 255, 255, 0.95) !important;
+  color: #1a1308 !important;
+  font-size: 11px !important;
+  font-weight: 800 !important;
+  border-radius: 7px !important;
+  cursor: pointer !important;
+  transition: all 0.15s ease !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  gap: 5px !important;
+  box-sizing: border-box !important;
+}
+
+.action-btn.save-btn:hover,
+.api-page-save-btn:hover,
+button.save-btn:hover,
+#saveBtn:hover {
+  filter: brightness(1.08) !important;
+  box-shadow: 0 4px 14px rgba(223, 195, 132, 0.6), 0 2px 4px rgba(0, 0, 0, 0.7) !important;
+  color: #0d0a04 !important;
+}
+
+.action-btn.save-btn:active,
+#saveBtn:active {
+  transform: translateY(1px) !important;
+  box-shadow: 0 1px 4px rgba(223, 195, 132, 0.4), inset 0 1px 1px rgba(255, 255, 255, 0.8) !important;
+}
+
+
+/* 2. 次级拟物触感按钮 (统一高 31px、圆角 7px、文字 11px) */
+
+
+
+.side-add-btn,
+.add-provider-btn,
+.ws-side-add,
+.add-btn,
+.tool-btn,
+.cli-quick-btn,
+.api-link-btn,
+.recommend-guide-key-btn,
+.onboarding-key-btn,
+.onboarding-fill-btn,
+.action-btn.primary-btn,
+#fetchModelsBtn,
+.upload-btn,
+.ghost-btn,
+.action-btn:not(.save-btn):not(.danger-btn),
+button.action-btn:not(.save-btn):not(.danger-btn),
+#openPickerBtn,
+#testUrlBtn,
+#probeAsyncBtn {
+  height: 31px !important;
+  min-height: 31px !important;
+  padding: 0 12px !important;
+  background-color: #161822 !important;
+  background: linear-gradient(180deg, #1f232e 0%, #11131a 100%) !important;
+  border: 1px solid rgba(223, 195, 132, 0.24) !important;
+  border-radius: 7px !important;
+  color: #eddab3 !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.1), 0 2px 4px rgba(0, 0, 0, 0.6) !important;
+  font-size: 11px !important;
+  font-weight: 600 !important;
+  transition: all 0.12s ease !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  gap: 5px !important;
+  box-sizing: border-box !important;
+  cursor: pointer !important;
+}
+
+.side-add-btn:hover,
+.add-provider-btn:hover,
+.ws-side-add:hover,
+.add-btn:hover,
+.tool-btn:hover,
+.cli-quick-btn:hover,
+.api-link-btn:hover,
+.upload-btn:hover,
+.ghost-btn:hover,
+.action-btn:not(.save-btn):not(.danger-btn):hover,
+#openPickerBtn:hover,
+#testUrlBtn:hover,
+#probeAsyncBtn:hover {
+  border-color: rgba(223, 195, 132, 0.6) !important;
+  color: #fae2c8 !important;
+  background: linear-gradient(180deg, #272c3a 0%, #151822 100%) !important;
+  box-shadow: 0 0 8px rgba(223, 195, 132, 0.25) !important;
+}
+
+/* 3. 方形操作图标按钮 (Key 动作 / 删改 / 缩放) */
+.key-btn,
+.icon-btn,
+.graph-ctrl-btn {
+  width: 31px !important;
+  height: 31px !important;
+  min-width: 31px !important;
+  min-height: 31px !important;
+  padding: 0 !important;
+  border-radius: 7px !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  background: #141722 !important;
+  border: 1px solid rgba(223, 195, 132, 0.22) !important;
+  color: #eddab3 !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08), 0 2px 4px rgba(0, 0, 0, 0.5) !important;
+  transition: all 0.12s ease !important;
+  cursor: pointer !important;
+}
+
+.key-btn:hover,
+.icon-btn:hover,
+.graph-ctrl-btn:hover {
+  border-color: rgba(223, 195, 132, 0.6) !important;
+  color: #fae2c8 !important;
+  background: #1e2230 !important;
+}
+
+/* 4. 危险按钮 (删除) */
+.action-btn.danger-btn,
+.key-btn.key-clear,
+.api-page-delete-btn {
+  height: 31px !important;
+  min-height: 31px !important;
+  padding: 0 12px !important;
+  background-color: rgba(239, 68, 68, 0.12) !important;
+  background: rgba(239, 68, 68, 0.12) !important;
+  border: 1px solid rgba(239, 68, 68, 0.35) !important;
+  color: #fca5a5 !important;
+  font-size: 11px !important;
+  font-weight: 600 !important;
+  border-radius: 7px !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  gap: 5px !important;
+  box-sizing: border-box !important;
+  cursor: pointer !important;
+}
+
+.key-btn.key-clear {
+  padding: 0 !important;
+  width: 31px !important;
+}
+
+.action-btn.danger-btn:hover,
+.key-btn.key-clear:hover,
+.api-page-delete-btn:hover {
+  background-color: rgba(239, 68, 68, 0.25) !important;
+  background: rgba(239, 68, 68, 0.25) !important;
+  border-color: rgba(239, 68, 68, 0.65) !important;
+  color: #fee2e2 !important;
+}
+
+
+/* 辅助文本、代码与标签 */
+
+
+
+.hint,
+.cli-quick-note,
+.ms-hint,
+.apimart-hint,
+.volcengine-hint {
+  color: #717d8f !important;
+  font-size: 10px !important;
+}
+
+.inline-code, code {
+  background-color: #06080b !important;
+  background: #06080b !important;
+  border: 1px solid rgba(223, 195, 132, 0.2) !important;
+  color: #dfc384 !important;
+  border-radius: 4px !important;
+  padding: 1px 5px !important;
+  font-family: "Source Han Sans CN", monospace !important;
+  font-size: 10.5px !important;
+}
+
+/* 预览卡片与浮层面板 */
+#previewCard, .preview-empty {
+  background: #090a0e !important;
+  border: 1px dashed rgba(223, 195, 132, 0.25) !important;
+  border-radius: 10px !important;
+  color: #8392a5 !important;
+  font-size: 11px !important;
+}
+
+
+.graph-svg-wrap {
+  background: #07080c !important;
+  border: 1px solid rgba(223, 195, 132, 0.22) !important;
+  border-radius: 10px !important;
+}
+
+.gnode rect {
+  fill: #12151e !important;
+  stroke: rgba(223, 195, 132, 0.3) !important;
+}
+
+.gnode:hover rect {
+  stroke: #dfc384 !important;
+  filter: drop-shadow(0 0 6px rgba(223, 195, 132, 0.4)) !important;
+}
+
+.gnode.is-active rect, .gnode:focus-visible rect {
+  stroke: #fae2c8 !important;
+  stroke-width: 2.5px !important;
+}
+
+.gnode .gn-title {
+  fill: #eddab3 !important;
+  font-size: 10.5px !important;
+}
+
+.gnode .gn-sub {
+  fill: #94a3b8 !important;
+  font-size: 8.5px !important;
+}

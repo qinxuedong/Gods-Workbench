@@ -1,0 +1,60 @@
+{
+  "meta": {
+    "id": "observability-empty-not-integrated-v1",
+    "purpose": "观测阶段无数据时的诚实空响应样本（禁止伪造遥测/事件/波形）",
+    "contract": "docs/contracts/OBSERVABILITY-INTERFACE-CATALOG.yaml",
+    "contract_version": "p10b-frozen-1"
+  },
+  "series": {
+    "data_status": "not_integrated",
+    "series": {},
+    "metrics": [],
+    "requested_metrics": [],
+    "data_gap": "未接入指标时间序列存储，禁止伪造波形，故返回空序列",
+    "start_ms": null,
+    "end_ms": null,
+    "data_gaps": [
+      "未接入指标时间序列存储，禁止伪造波形，故返回空序列"
+    ]
+  },
+  "events": {
+    "data_status": "ok",
+    "items": [],
+    "total": 0,
+    "limit": 50,
+    "has_more": false,
+    "next_cursor": null,
+    "data_gaps": []
+  },
+  "tasks": {
+    "data_status": "ok",
+    "items": [],
+    "total": 0,
+    "limit": 50,
+    "has_more": false,
+    "next_cursor": null,
+    "data_gaps": []
+  },
+  "sources": {
+    "data_status": "not_integrated",
+    "items": [],
+    "total": 0,
+    "limit": 50,
+    "has_more": false,
+    "next_cursor": null,
+    "data_gaps": [
+      "未接入可观测性数据源注册表，故返回空数组"
+    ]
+  },
+  "asset_volumes": {
+    "data_status": "not_integrated",
+    "items": [],
+    "total": 0,
+    "limit": 50,
+    "has_more": false,
+    "next_cursor": null,
+    "data_gaps": [
+      "未接入素材体积统计索引，故返回空数组"
+    ]
+  }
+}

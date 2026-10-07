@@ -1,0 +1,6 @@
+{
+  "detail": {
+    "code": "FORBIDDEN",
+    "message": "无当前项目写权限"
+  }
+}

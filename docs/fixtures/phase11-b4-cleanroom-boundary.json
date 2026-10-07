@@ -1,0 +1,5 @@
+{
+  "block": "B4",
+  "prohibited_operations": ["local_file_read", "network_request", "external_process", "fake_success"],
+  "expected": "503 after authentication/authorization"
+}

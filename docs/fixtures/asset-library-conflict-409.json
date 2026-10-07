@@ -1,0 +1,8 @@
+{
+  "detail": {
+    "code": "VERSION_CONFLICT",
+    "message": "素材库版本冲突，请重新读取后重试",
+    "expected_version": 1,
+    "current_version": 2
+  }
+}

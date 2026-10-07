@@ -1,0 +1,41 @@
+# 2026-09-29：依据重整计划同步三态数据根；接口字段不变，运行入口等待 T5 验收。
+# 本地数据库账户登录增量契约，用户于2026-09-26确认。
+module: local-account-auth
+scope: 本机账户初始化及密码登录；不修改既有 OIDC 登录接口。
+identity:
+  auth_context_subject: "已验证 local_users.user_id"
+  team_message_identity_domain: "local_account"
+  governance_binding: "治理用户 identity_domain 与 identity_subject 必须精确匹配；不使用 owner_subject 或 username 回退"
+  authority: "账户数据库对有效会话和当前角色权威；治理库仅持有身份引用与团队授权，不持久化令牌/密码"
+endpoints:
+  - method: GET
+    path: /api/asset-auth/identity-binding
+    response: bound和user_id；只读查询当前账户精确绑定状态
+    guard: 当前local_account服务端会话
+    errors: [401, 503]
+  - method: POST
+    path: /api/asset-auth/identity-binding
+    request: 空对象，禁止客户端指定user_id、role、identity_domain或subject
+    response: 201首次创建，200同一身份幂等重放；返回user_id/display_name/role/created
+    guard: 当前local_account服务端会话；治理user_id复用可信账户user_id；不自动加入团队
+    errors: [401, 403, 409, 422, 503]
+  - method: POST
+    path: /api/asset-auth/local/setup
+    request: username 和 password；禁止额外权限字段
+    response: 201及HttpOnly会话Cookie；principal角色固定为admin
+    guard: local_account模式、同源、回环客户端及回环主机、数据库无账户
+    errors: [400, 403, 409]
+  - method: POST
+    path: /api/asset-auth/local/login
+    request: username 和 password
+    response: 200及轮换后的HttpOnly会话Cookie
+    guard: local_account模式、同源、数据库密码哈希校验
+    errors: [400, 401, 403, 429]
+team_messages:
+  contract: TEAM-MESSAGES-INTERFACE-CATALOG.yaml
+  state_file: GW_DATA_DIR/team_messages.sqlite3；测试使用每例 tmp_path/data，开发使用 .local/runtime-dev/data，生产使用 %LOCALAPPDATA%/GodsWorkbench/data
+  account_db_remains_authority: true
+  bearer_or_cookie_material_persisted: false
+  authorization_rechecked_each_request: true
+  bootstrap_reset_on_server_start: false
+  corrupted_existing_db_behavior: "503；不得按空库开放bootstrap"

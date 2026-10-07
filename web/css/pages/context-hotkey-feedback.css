@@ -1,0 +1,33 @@
+/* ===== Hotkey Feedback Toast ===== */
+
+.context-hotkey-feedback {
+  position: fixed;
+  bottom: 24px;
+  left: 50%;
+  transform: translateX(-50%) translateY(100px);
+  padding: 12px 20px;
+  background-color: rgba(15, 23, 42, 0.95);
+  border: 1px solid rgba(56, 189, 248, 0.3);
+  border-radius: 8px;
+  color: #F8FAFC;
+  font-size: 14px;
+  font-weight: 500;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+  opacity: 0;
+  transition: transform 300ms cubic-bezier(0.4, 0, 0.2, 1),
+              opacity 300ms cubic-bezier(0.4, 0, 0.2, 1);
+  pointer-events: none;
+  z-index: 10000;
+  backdrop-filter: blur(8px);
+}
+
+.context-hotkey-feedback.show {
+  transform: translateX(-50%) translateY(0);
+  opacity: 1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .context-hotkey-feedback {
+    transition-duration: 0.01ms;
+  }
+}

@@ -1,0 +1,117 @@
+# 2026-09-29：依据重整计划同步三态数据根；接口字段不变，运行入口等待 T5 验收。
+meta:
+  source: "Phase 12 团队消息设计审核 Required R1-R2/R5；精确冻结团队身份、消息权限和 SQLite 原子边界"
+  review_status: "implementation_contract_frozen_2026-09-27"
+  distribution: "NOT AUTHORIZED FOR PUBLIC DISTRIBUTION"
+  cleanroom_notice: "只冻结本仓接口与存储语义，不复制旧仓实现；与 asset_auth 既有认证模式复用同一 AuthContext。"
+
+service: team_messages
+version: phase12-team-messages-2
+
+shared:
+  ids:
+    team_id: "既有稳定团队 ID"
+    user_id: "既有治理用户 ID；只由 identity_domain + identity_subject 精确绑定得到"
+    message_id: "服务端按团队稳定序号生成 msg-<team_id>-<sequence>；同团队序号唯一，不随机生成业务 ID"
+    sequence: "每团队从 1 单调递增的有符号 64 位整数"
+  identity:
+    author_source: "仅使用 require_authenticated 返回的服务端 AuthContext；body/header 不接受 author_user_id、role、identity_domain 或成员资格"
+    local_account: "identity_domain=local_account；identity_subject=账户 user_id；必须精确匹配治理用户 identity_domain + identity_subject"
+    oidc: "identity_domain=oidc:<当前受信配置 issuer 原文>；identity_subject=已验签 JWT sub（Cookie 会话中仅接受服务端保存的该 sub）；禁止按 owner_subject、username 别名或未限定域的 subject 匹配"
+    local_dev: "identity_domain=local_dev；仅开发/测试模式；不是持久生产账户"
+    explicit_binding: "POST /api/asset-auth/identity-binding 仅以当前已认证 AuthContext 建立/读取身份引用；无 body 身份字段。local_account 的治理 user_id 直接等于账户 user_id；OIDC 由服务端生成 user_id；绑定不自动授予团队成员资格"
+    no_mapping: "认证成功但没有唯一身份绑定时，消息读取/发送返回 403；不自动创建治理用户或团队成员"
+  access_matrix:
+    read:
+      global_admin: "可读任意现存团队；读取时仍须当前认证成功"
+      global_governor: "可读任意现存团队；读取时仍须当前认证成功"
+      team_owner: "团队 owner_user_id 精确等于当前绑定 user_id 时可读"
+      team_member: "任意当前成员角色 admin|governor|editor|reviewer|readonly 均可读"
+      others: "返回 404 TEAM_NOT_FOUND，避免泄漏团队存在性"
+    write:
+      global_admin_or_governor: "显式治理写权限；可向任意现存团队发送，不伪装成成员；作者仍为精确绑定的治理 user_id"
+      global_editor: "仅在当前团队成员角色为 admin|governor|editor 时可发送"
+      global_reviewer_or_readonly: "一律不可发送，即使团队成员角色可写"
+      team_reviewer_or_readonly: "global editor 不得绕过团队只读角色"
+      membership_required: "除 global admin/governor 明确治理覆盖外，发送必须是当前团队成员；owner 身份本身不替代写角色。新建团队时如创建者已精确绑定，则将其登记为 team admin 成员"
+    revocation: "每次 GET/POST 都在当前事务重新检查团队存在、当前绑定、当前成员/owner 与权限；成员删除或降为只读后，旧幂等键不得绕过检查"
+  errors:
+    400: "参数格式或互斥分页参数不合法"
+    401: "未认证或会话失效"
+    403: "已认证但无唯一身份绑定或权限不足"
+    404: "团队不存在或当前主体不可见"
+    409: "同幂等键对应了不同规范化请求文本"
+    422: "字段类型、长度或取值不合法"
+    503: "team_messages.sqlite3 缺失时初始化失败、既存库损坏/版本不受支持、不可读或事务写入失败"
+
+storage:
+  file: "GW_DATA_DIR/team_messages.sqlite3；测试使用每例 tmp_path/data，开发使用 .local/runtime-dev/data，生产使用 %LOCALAPPDATA%/GodsWorkbench/data"
+  persisted: ["schema_version", "bootstrap_complete", "governance_users身份引用", "teams(owner_user_id/version)", "team_members(role/team_version)", "messages", "idempotency_records"]
+  credentials: "不存储 Bearer、Cookie、账户会话令牌、OIDC JWT 或密码"
+  transaction: "团队身份/成员/owner/bootstrap状态与消息存放于同一 SQLite；SQLite BEGIN IMMEDIATE + AuthManagementStore 单实例 RLock 内，先检查当前认证映射/团队读写权限，再查幂等记录或追加消息；成员/owner/bootstrap/团队变更也在同一锁内更新同一数据库"
+  initialization: "仅物理文件不存在时允许创建空 schema；既存文件必须 quick_check=ok 且 schema_version 精确匹配，否则 503，禁止重建或按空库开放 bootstrap"
+  failure: "写失败不得返回成功，且失败请求不能留下可见内存变更；不从既有进程内字典静默回填覆盖持久状态"
+  reset: "仅 pytest 显式调用 reset_for_tests；生产启动永不重置"
+  deployment: "SQLite 单实例、单应用进程；多 worker/多实例未获支持"
+  legacy_memory: "旧进程内数据在首次迁移时不可恢复；新库按空库初始化，不宣称恢复历史团队/消息；已存在损坏库关闭写入与 bootstrap"
+
+interfaces:
+  - name: list_team_messages
+    method: GET
+    path: /api/asset-auth/teams/{team_id}/messages
+    query:
+      limit: "integer 1..100，默认 100"
+      after_sequence: "integer >=0；排他，返回 sequence > after_sequence；与 cursor 互斥"
+      cursor: "可选不透明 base64url(team_id + ':' + sequence)；绑定当前 path team_id，排他且返回 sequence > cursor.sequence；跨团队/非法 cursor 返回 400；大于已分配序列的 cursor 返回 422"
+    response:
+      team_id: string
+      messages: "sequence 升序数组，每项为 message_id/team_id/author_user_id/text/created_at/sequence"
+      can_send: "boolean；同一读事务按当前认证全局角色与团队成员角色计算，仅供UI禁用提示，POST仍重新鉴权，不作为能力令牌"
+      next_cursor: "仅当本页恰好达到 limit 时返回最后一项的 team-bound cursor，否则 null"
+      next_after_sequence: "本页最后 sequence；空页时等于输入 after_sequence/cursor sequence（首次空页为 0）"
+    status: [200, 400, 401, 403, 404, 422, 503]
+    acceptance: "同一 SQLite 读事务检查最新权限后再分页；历史和增量轮询执行相同读取权限，不使用秒级时间戳作游标。"
+
+  - name: get_authenticated_identity_binding
+    method: GET
+    path: /api/asset-auth/identity-binding
+    response: {bound: boolean, user_id: string | null}
+    status: [200, 401, 503]
+    acceptance: "只查询当前已认证主体的精确绑定状态，不创建或修改身份。"
+
+  - name: bind_authenticated_identity
+    method: POST
+    path: /api/asset-auth/identity-binding
+    body: "空对象；禁止身份、user_id、角色等客户端字段"
+    response:
+      user_id: string
+      display_name: string
+      role: string
+      created: boolean
+    status: [200, 201, 400, 401, 403, 409, 422, 503]
+    acceptance: "仅由当前服务端 AuthContext 的受信域+subject 建立唯一引用；同一绑定重复调用200；local_account 的 user_id复用账户 user_id，OIDC生成user_id；只建立身份引用，不添加团队成员、不提升认证角色。供首次本地管理员显式启用团队协作身份。"
+
+  - name: create_team_message
+    method: POST
+    path: /api/asset-auth/teams/{team_id}/messages
+    body:
+      text: "string，Unicode code point 数 1..2000；全空白拒绝；保留原始文本，不作 HTML 解释"
+      client_request_id: "string，ASCII 字母/数字/._:-，长度 1..128；按(team_id,精确绑定 author_user_id,client_request_id) 唯一"
+    response:
+      message_id: string
+      team_id: string
+      author_user_id: string
+      text: string
+      created_at: "服务器 UTC RFC3339，至少毫秒精度"
+      sequence: integer
+      replayed: boolean
+    status: [201, 200, 400, 401, 403, 404, 409, 422, 503]
+    acceptance: "201 为首次追加，200 为同键同文本重放；先重新认证并检查最新团队权限，再查询幂等记录。同键异文本为 409 MESSAGE_IDEMPOTENCY_CONFLICT。sequence 在同一事务中递增；SQLite 故障一律 503。"
+
+frontend:
+  page: "/v2/collab"
+  requirements:
+    - "真实读取当前可见团队，选择真实 team_id；无团队显示创建/选择提示，不造假团队或消息"
+    - "读取历史、POST 真实文本和 client_request_id、展示服务端作者与排序"
+    - "按 next_after_sequence 轮询增量；页面离开 dispose/停止定时器，返回时重新 bind 并从真实最新 sequence 读取"
+    - "消息仅用 textContent 渲染，不插入 HTML；显示认证/权限/服务不可用等标准错误"

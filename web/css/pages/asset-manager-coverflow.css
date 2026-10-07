@@ -1,0 +1,441 @@
+/* Asset-center Coverflow. The fullscreen surface intentionally sits above the
+   editor overlay (2600) and below fatal error surfaces (4010). */
+.gw-coverflow-overlay {
+    --gw-coverflow-z-modal: 2700;
+    position: fixed;
+    z-index: var(--gw-coverflow-z-modal);
+    inset: 0;
+    display: grid;
+    place-items: stretch;
+    padding: 14px;
+    overflow: hidden;
+    background: var(--sf-bg);
+    color: var(--sf-text);
+    isolation: isolate;
+}
+
+.gw-coverflow-backdrop,
+.gw-coverflow-veil {
+    position: absolute;
+    z-index: 0;
+    inset: -40px;
+    width: calc(100% + 80px);
+    height: calc(100% + 80px);
+    pointer-events: none;
+}
+
+.gw-coverflow-backdrop {
+    object-fit: cover;
+    filter: blur(30px) saturate(.92) brightness(.92);
+    transform: scale(1.06);
+}
+
+.gw-coverflow-veil {
+    z-index: 1;
+    background: color-mix(in srgb, var(--sf-bg) 52%, transparent);
+    opacity: .56;
+    mix-blend-mode: screen;
+}
+
+.gw-coverflow {
+    position: relative;
+    z-index: 2;
+    min-width: 0;
+    min-height: 0;
+    display: grid;
+    grid-template-rows: 48px minmax(0, 1fr) 44px;
+    overflow: hidden;
+    background: color-mix(in srgb, var(--sf-content) 58%, transparent);
+    backdrop-filter: blur(8px);
+    border: 1px solid var(--sf-line);
+    border-radius: var(--sf-radius-panel);
+    font-family: var(--sf-font-ui);
+}
+
+.gw-coverflow-header,
+.gw-coverflow-caption {
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 0 14px;
+    background: color-mix(in srgb, var(--sf-raised) 82%, transparent);
+    border-color: var(--sf-line);
+}
+
+.gw-coverflow-header {
+    border-bottom: 1px solid var(--sf-line);
+}
+
+.gw-coverflow-caption {
+    border-top: 1px solid var(--sf-line);
+}
+
+.gw-coverflow-heading {
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.gw-coverflow-heading > svg {
+    flex: 0 0 auto;
+    width: 16px;
+    height: 16px;
+    color: var(--sf-cyan);
+}
+
+.gw-coverflow-header-actions {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.gw-coverflow-heading strong,
+.gw-coverflow-caption strong {
+    min-width: 0;
+    overflow: hidden;
+    color: var(--sf-text);
+    font-size: 12px;
+    line-height: 1.2;
+    font-weight: 750;
+    letter-spacing: 0;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.gw-coverflow-count {
+    flex: 0 0 auto;
+    color: var(--sf-muted);
+    font: 11px/1 var(--sf-font-mono);
+}
+
+.gw-coverflow-control {
+    flex: 0 0 auto;
+    width: 40px;
+    height: 40px;
+    min-width: 40px;
+    min-height: 40px;
+    display: inline-grid;
+    place-items: center;
+    border: 1px solid var(--sf-line-strong);
+    border-radius: var(--sf-radius-control);
+    background: var(--sf-surface);
+    color: var(--sf-text);
+    cursor: pointer;
+}
+
+.gw-coverflow-control svg {
+    width: 18px;
+    height: 18px;
+}
+
+.gw-coverflow-control:hover {
+    border-color: var(--sf-cyan);
+    background: color-mix(in srgb, var(--sf-cyan) 12%, var(--sf-surface));
+    color: var(--sf-cyan);
+}
+
+.gw-coverflow-control:focus-visible,
+.gw-coverflow-slide:focus-visible {
+    outline: 2px solid var(--sf-cyan);
+    outline-offset: 3px;
+}
+
+.gw-coverflow-stage {
+    --gw-coverflow-drag: 0px;
+    position: relative;
+    min-width: 0;
+    min-height: 0;
+    display: grid;
+    grid-template-columns: 56px minmax(0, 1fr) 56px;
+    align-items: center;
+    gap: 10px;
+    padding: 20px;
+    overflow: hidden;
+    touch-action: none;
+    user-select: none;
+    perspective: 1150px;
+}
+
+.gw-coverflow-stage.is-dragging {
+    cursor: grabbing;
+}
+
+.gw-coverflow-track {
+    position: relative;
+    z-index: 1;
+    min-width: 0;
+    min-height: 0;
+    height: 100%;
+    overflow: visible;
+    transform-style: preserve-3d;
+}
+
+.gw-coverflow-stage > .gw-coverflow-control {
+    position: relative;
+    z-index: 2;
+}
+
+.gw-coverflow-slide {
+    --gw-coverflow-x: 0vw;
+    --gw-coverflow-z: 0px;
+    --gw-coverflow-rotate: 0deg;
+    --gw-coverflow-scale: 1;
+    --gw-coverflow-opacity: 1;
+    --gw-coverflow-gray: 0;
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: min(58vw, 880px, calc(max(0px, 100dvh - 168px) * 16 / 9));
+    height: auto;
+    aspect-ratio: 16 / 9;
+    max-width: 100%;
+    max-height: 100%;
+    padding: 0;
+    overflow: hidden;
+    border: 0;
+    border-radius: var(--sf-radius-control);
+    background: transparent;
+    opacity: var(--gw-coverflow-opacity);
+    cursor: pointer;
+    transform: translate3d(calc(-50% + var(--gw-coverflow-x) + var(--gw-coverflow-drag)), -50%, var(--gw-coverflow-z)) rotateY(var(--gw-coverflow-rotate)) scale(var(--gw-coverflow-scale));
+    transform-style: preserve-3d;
+    transition: transform 220ms cubic-bezier(.16, 1, .3, 1), opacity 180ms ease-out;
+}
+
+.gw-coverflow-slide img,
+.gw-coverflow-slide video {
+    width: 100%;
+    height: 100%;
+    display: block;
+    object-fit: contain;
+    background: var(--sf-bg);
+    filter: grayscale(var(--gw-coverflow-gray)) brightness(calc(1 - var(--gw-coverflow-gray) * .32));
+    transition: filter 180ms ease-out;
+}
+
+.gw-coverflow-slide.is-current {
+    cursor: default;
+}
+
+.gw-coverflow-slide.is-current img,
+.gw-coverflow-slide.is-current video {
+    filter: none;
+}
+
+.gw-coverflow-drag-handle {
+    position: absolute;
+    z-index: 3;
+    right: 10px;
+    bottom: 10px;
+    width: 44px;
+    height: 44px;
+    min-width: 44px;
+    min-height: 44px;
+    border: 1px solid color-mix(in srgb, var(--sf-line) 78%, transparent);
+    border-radius: var(--sf-radius-control);
+    background: color-mix(in srgb, var(--sf-surface) 82%, transparent);
+    color: var(--sf-text);
+    display: grid;
+    place-items: center;
+    cursor: grab;
+    touch-action: none;
+}
+
+.gw-coverflow-drag-handle:hover {
+    border-color: var(--sf-cyan);
+    background: color-mix(in srgb, var(--sf-cyan) 14%, var(--sf-surface));
+}
+
+.gw-coverflow-drag-handle:active {
+    cursor: grabbing;
+}
+
+.gw-coverflow-drag-handle svg {
+    width: 16px;
+    height: 16px;
+}
+
+.gw-coverflow-add-to-reference-canvas {
+    width: 44px;
+    height: 44px;
+    min-width: 44px;
+    min-height: 44px;
+}
+
+.gw-coverflow-slide.is-unavailable::after {
+    position: absolute;
+    inset: 0;
+    display: grid;
+    place-items: center;
+    content: '图片不可用';
+    background: var(--sf-raised);
+    color: var(--sf-muted);
+    font-size: 12px;
+}
+
+.gw-coverflow-empty {
+    align-self: center;
+    justify-self: center;
+    margin: 0;
+    color: var(--sf-muted);
+    font-size: 13px;
+}
+
+.asset-image-editor-shell.gw-coverflow-embedded-host {
+    grid-template-rows: 62px auto minmax(0, 1fr) 300px 48px !important;
+}
+
+.asset-image-editor-shell.gw-coverflow-embedded-host > footer {
+    grid-row: 5;
+}
+
+.gw-coverflow--embedded {
+    --gw-coverflow-embedded-height: 300px;
+    grid-row: 4;
+    height: var(--gw-coverflow-embedded-height);
+    border-right: 0;
+    border-bottom: 0;
+    border-left: 0;
+    border-radius: 0;
+    background: var(--sf-surface);
+}
+
+.gw-coverflow--embedded .gw-coverflow-header {
+    min-height: 36px;
+    padding: 0 12px;
+}
+
+.gw-coverflow--embedded .gw-coverflow-stage {
+    grid-template-columns: 44px minmax(0, 1fr) 44px;
+    gap: 4px;
+    padding: 8px 12px;
+    perspective: 850px;
+}
+
+.gw-coverflow--embedded .gw-coverflow-slide {
+    width: min(42vw, 336px, calc(max(0px, var(--gw-coverflow-embedded-height) - 109px) * 16 / 9));
+    height: auto;
+}
+
+.gw-coverflow--embedded .gw-coverflow-caption {
+    min-height: 34px;
+    padding: 0 12px;
+}
+
+.gw-coverflow--embedded .gw-coverflow-control {
+    width: 36px;
+    height: 36px;
+    min-width: 36px;
+    min-height: 36px;
+}
+
+.gw-coverflow--embedded .gw-coverflow-add-to-reference-canvas {
+    width: 44px;
+    height: 44px;
+    min-width: 44px;
+    min-height: 44px;
+}
+
+@media (max-width: 760px) {
+    .gw-coverflow-overlay {
+        padding: 8px;
+    }
+
+    .gw-coverflow-stage {
+        grid-template-columns: 44px minmax(0, 1fr) 44px;
+        padding: 12px 8px;
+    }
+
+    .gw-coverflow-slide {
+        width: min(72vw, 620px, calc(max(0px, 100dvh - 168px) * 16 / 9));
+        height: auto;
+    }
+
+    .asset-image-editor-shell.gw-coverflow-embedded-host {
+        grid-template-rows: 58px auto minmax(0, 1fr) min(260px, 38vh) 42px !important;
+    }
+
+    .gw-coverflow--embedded {
+        --gw-coverflow-embedded-height: min(260px, 38dvh);
+        height: var(--gw-coverflow-embedded-height);
+    }
+}
+
+@media (max-width: 560px) {
+    .gw-coverflow-header,
+    .gw-coverflow-caption {
+        padding: 0 10px;
+    }
+
+    .gw-coverflow-slide {
+        width: min(82vw, calc(max(0px, 100dvh - 168px) * 16 / 9));
+        height: auto;
+    }
+
+    .gw-coverflow-stage {
+        grid-template-columns: 40px minmax(0, 1fr) 40px;
+        gap: 2px;
+        padding: 8px 4px;
+    }
+
+    .gw-coverflow-control {
+        width: 40px;
+        height: 40px;
+        min-width: 40px;
+        min-height: 40px;
+    }
+
+    .asset-image-editor-shell.gw-coverflow-embedded-host {
+        grid-template-rows: 56px auto minmax(0, 1fr) min(220px, 38dvh) !important;
+    }
+
+    .asset-detail-media-canvas-shell.gw-coverflow-embedded-host {
+        grid-template-rows: auto minmax(0, 1fr) min(220px, 38dvh);
+    }
+
+    .asset-image-editor-shell.gw-coverflow-embedded-host > footer {
+        display: none;
+    }
+
+    .gw-coverflow--embedded {
+        grid-row: 4;
+        --gw-coverflow-embedded-height: min(220px, 38dvh);
+        height: var(--gw-coverflow-embedded-height);
+    }
+
+    .asset-detail-media-canvas-shell.gw-coverflow-embedded-host > .gw-coverflow--embedded {
+        grid-row: 3;
+    }
+
+    .gw-coverflow--embedded .gw-coverflow-slide {
+        width: min(66vw, 299px, calc(max(0px, var(--gw-coverflow-embedded-height) - 109px) * 16 / 9));
+        height: auto;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .gw-coverflow-slide,
+    .gw-coverflow-slide img,
+    .gw-coverflow-slide video {
+        transition: none;
+    }
+}
+
+@media (forced-colors: active) {
+    .gw-coverflow-overlay,
+    .gw-coverflow,
+    .gw-coverflow-header,
+    .gw-coverflow-caption,
+    .gw-coverflow-control,
+    .gw-coverflow-slide img,
+    .gw-coverflow-slide video {
+        background: Canvas;
+        border-color: CanvasText;
+        color: CanvasText;
+        forced-color-adjust: auto;
+    }
+}

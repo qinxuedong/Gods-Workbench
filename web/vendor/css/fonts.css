@@ -1,0 +1,24 @@
+/* 字体声明：仅保留思源黑体（Source Han Sans CN）三个字重。 */
+@font-face {
+  font-family: "Source Han Sans CN";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('/static/vendor/fonts/SourceHanSansCN-Normal.otf') format("opentype");
+}
+
+@font-face {
+  font-family: "Source Han Sans CN";
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url('/static/vendor/fonts/SourceHanSansCN-Medium.otf') format("opentype");
+}
+
+@font-face {
+  font-family: "Source Han Sans CN";
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url('/static/vendor/fonts/SourceHanSansCN-Bold.otf') format("opentype");
+}

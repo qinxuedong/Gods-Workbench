@@ -1,0 +1,21 @@
+# Phase 12 A3 提示词条目接口目录
+meta:
+  version: p12-a3-2
+  distribution: NOT AUTHORIZED FOR PUBLIC DISTRIBUTION
+  data_backend: "库/分类使用 prompt_library_tree，条目使用 prompt_library 两个 core.storage.JsonState 命名空间；同一 GW_DATA_DIR 重启可恢复，单实例一致性"
+  unavailable_status: 503
+  unavailable_code: PROMPT_LIBRARY_ITEMS_NOT_INTEGRATED
+  explicit_limit: "提示词库、分类与条目均持久化；库/分类契约见 PROMPT-LIBRARY-INTERFACE-CATALOG.yaml。本模块不生成任何提示词文本。"
+  id_format: "item_id=pitem_NNNN，复用既有提示词 ID 家族前缀（plib_NNNN/pcat_NNNN），禁止自创第二套体系"
+  cas_granularity: "集合以 revision 做 CAS，单条目以 version 做 CAS；冲突 409 VERSION_CONFLICT"
+  not_found_codes: "404 ITEM_NOT_FOUND"
+  frontend_contract: "create/update→{prompt_item:{...},item:{...}}；delete→{deleted,item_id,revision}；删除后 GET 不再返回该条目"
+  parent_child_integrity: "创建或更新条目时 library_id 必须指向已持久化父库；category_id 可空，非空时必须属于该 library_id。未知/已删除父库返回 404 LIBRARY_NOT_FOUND，未知/跨库分类返回 404 CATEGORY_NOT_FOUND。"
+  deletion_guard: "仍被条目引用的提示词库或分类不可删除，返回 409 LIBRARY_NOT_EMPTY 或 CATEGORY_NOT_EMPTY；不级联删除条目。"
+  legacy_migration: "升级不删除既有条目；首次建树时保留遗留 plib_NNNN/pcat_NNNN 高水位，遗留孤儿条目不自动挂到新库。"
+  restart_acceptance: "独立 Python 进程分别创建并读回父库/分类/条目；更新第二条后第一条保持原值；重启后新库不得复用旧库 ID 或读取旧库条目。"interfaces:
+  - {name: get_prompt_items, method: GET, path: /api/prompt-libraries/items}
+  - {name: post_prompt_item, method: POST, path: /api/prompt-libraries/items}
+  - {name: post_prompt_items_delete, method: POST, path: /api/prompt-libraries/items/delete}
+  - {name: patch_prompt_item, method: PATCH, path: /api/prompt-libraries/items/{p}}
+  - {name: delete_prompt_item, method: DELETE, path: /api/prompt-libraries/items/{p}}

@@ -1,0 +1,12 @@
+{
+  "block": "B4",
+  "data_status": "not_integrated",
+  "unavailable": true,
+  "data_gaps": [
+    "asset_library_source_not_connected",
+    "local_asset_source_not_connected"
+  ],
+  "assets": [],
+  "libraries": [],
+  "files": []
+}
