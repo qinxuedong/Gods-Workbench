@@ -15,11 +15,13 @@
 
 ## 2. 接口目录清单 (YAML Interface Catalogs)
 
-包含 `AUTH-INTERFACE-CATALOG.yaml`、`PROJECTS-HUB-INTERFACE-CATALOG.yaml`、`CANVAS-INTERFACE-CATALOG.yaml`、`ASSET-LIBRARY-INTERFACE-CATALOG.yaml`、`ASSET-REGISTRY-INTERFACE-CATALOG.yaml`、`VIDEO-TASKS-INTERFACE-CATALOG.yaml`、`PROMPT-LIBRARY-INTERFACE-CATALOG.yaml`、`TEAM-MESSAGES-INTERFACE-CATALOG.yaml`、`SETTINGS-INTERFACE-CATALOG.yaml` 等机器可读接口目录。
+包含 `AUTH-INTERFACE-CATALOG.yaml`、`PROJECTS-HUB-INTERFACE-CATALOG.yaml`、`CANVAS-INTERFACE-CATALOG.yaml`、`AGENT-WORKBENCH-INTERFACE-CATALOG.yaml`、`ASSET-LIBRARY-INTERFACE-CATALOG.yaml`、`ASSET-REGISTRY-INTERFACE-CATALOG.yaml`、`VIDEO-TASKS-INTERFACE-CATALOG.yaml`、`PROMPT-LIBRARY-INTERFACE-CATALOG.yaml`、`TEAM-MESSAGES-INTERFACE-CATALOG.yaml`、`SETTINGS-INTERFACE-CATALOG.yaml` 等机器可读接口目录。
+
+Agent-host 目录定义隔离 Agent 到 Workbench 的 HTTP 适配及共享任务查询分支；宿主负责人已签认采用选项 B（扩展宿主 TaskStatus），将 `waiting_review`、`paused` 纳入顶层 7 态任务模型并实现 1:1 精确投影。共享 `/api/jobs/{job_id}` 路径的通用任务契约仍由画布目录所有。
 
 ## 3. 门禁要求
 
 1. 核心 ID 统一为 `project_id`、`canvas_id`、`entity_id`、`job_id`、`asset_id`。
-2. 错误响应统一包装为 `{"detail": {"code": "...", "message": "..."}}`；未认证 401，越权 403，CAS 版本冲突 409。
+2. 错误响应统一包装为 `{"detail": {"code": "...", "message": "..."}}`；未认证 401，权限不足默认 403，明确登记的资源隐藏端点可将未知与越权统一为 404，CAS 版本冲突 409。
 3. 所有契约文件必须在 `tests/hygiene/fixtures/cleanroom_admission_metadata.json` 中登记准入。
 

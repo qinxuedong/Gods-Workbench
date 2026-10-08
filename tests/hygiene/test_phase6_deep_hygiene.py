@@ -26,7 +26,7 @@ def test_repo_wide_zero_binary_assets():
     # 禁用扩展名清单来自**唯一事实来源**，禁止在此自带字面量（历史曾漂移 27 vs 39）。
     banned_extensions = BANNED_EXTENSIONS
 
-    ignored_dirs = {".git", ".pytest_cache", "__pycache__", ".venv", "venv", ".idea", ".vscode"}
+    ignored_dirs = {".git", ".pytest_cache", "__pycache__", ".venv", "venv", ".idea", ".vscode", ".local", ".agents"}
 
     violating_files = []
     for path in REPO_ROOT.rglob("*"):

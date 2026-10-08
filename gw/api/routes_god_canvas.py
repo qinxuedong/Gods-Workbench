@@ -19,10 +19,13 @@
 """
 
 from typing import Optional
+from uuid import uuid4
 from fastapi import APIRouter, Header, Query, Request, Response, status
 
-from gw.core.auth import require_edit_access
-from gw.core.errors import UnauthorizedException
+from gw.core.auth import require_authenticated, require_edit_access
+from gw.core.errors import CleanroomException, UnauthorizedException
+from gw.agent_runtime.errors import DomainError
+from gw.agent_runtime.models import ErrorCode, Identifier
 from gw.god_canvas.models import (
     CanvasCreateRequest,
     CanvasExportRequest,
@@ -35,11 +38,50 @@ from gw.god_canvas.models import (
     CanvasTopologyUpdateRequest,
 )
 from gw.god_canvas.service import default_god_canvas_service
-from gw.god_canvas.tasks import SmartCanvasTaskRequest, SmartCanvasTaskResponse
+from gw.god_canvas.tasks import SmartCanvasTaskRequest, SmartCanvasTaskResponse, TaskStatus
 from gw.projects_hub.models import CasVersionRequest
 
 router = APIRouter(prefix="/api/canvases", tags=["god-canvas"])
 jobs_router = APIRouter(prefix="/api/jobs", tags=["god-canvas-jobs"])
+
+_AGENT_RUN_TO_TASK_STATUS = {
+    "queued": TaskStatus.ACCEPTED.value,
+    "running": TaskStatus.RUNNING.value,
+    "waiting_review": TaskStatus.WAITING_REVIEW.value,
+    "paused": TaskStatus.PAUSED.value,
+    "succeeded": TaskStatus.COMPLETED.value,
+    "failed": TaskStatus.FAILED.value,
+    "cancelled": TaskStatus.CANCELLED.value,
+}
+_TERMINAL_AGENT_RUN_STATUSES = frozenset({"succeeded", "failed", "cancelled"})
+
+
+def agent_run_job_payload(job_id: str, run, *, accepted_response: bool = False) -> dict:
+    """Project Agent's seven internal states onto the seven Workbench job states."""
+    agent_status = getattr(run.status, "value", str(run.status))
+    state = TaskStatus.ACCEPTED.value if accepted_response else _AGENT_RUN_TO_TASK_STATUS.get(agent_status)
+    if state is None:
+        raise CleanroomException(503, "AGENT_JOB_STATUS_UNSUPPORTED", "任务状态暂不可用")
+    poll_hint = f"/api/jobs/{job_id}"
+    if not accepted_response and agent_status in _TERMINAL_AGENT_RUN_STATUSES:
+        poll_hint = None
+    task = SmartCanvasTaskResponse(
+        job_id=job_id,
+        state=state,
+        poll_hint=poll_hint,
+    ).model_dump(mode="json")
+    task.update({
+        "agent_status": agent_status,
+        "run_id": run.run_id.root,
+        "version": run.version.root,
+        "stage": run.current_stage.value if run.current_stage is not None else None,
+        "agent_poll_hint": {
+            "status_uri": f"/api/agent/runs/{run.run_id.root}",
+            "events_uri": f"/api/agent/runs/{run.run_id.root}/events",
+            "suggested_interval_ms": 2000,
+        },
+    })
+    return task
 
 
 # ----------------------------------------------------------------------
@@ -214,6 +256,50 @@ def run_smart_canvas_task(
     summary="查询异步任务状态",
     status_code=status.HTTP_200_OK,
 )
-def get_smart_job_status(job_id: str):
-    """根据 job_id 查询智能画布任务状态。"""
+async def get_smart_job_status(
+    job_id: str,
+    request: Request,
+    authorization: Optional[str] = Header(None),
+    x_user_role: str = Header("editor", alias="X-User-Role"),
+):
+    """查询 Workbench job；Agent job 先复核当前Cookie主体和项目权限。"""
+    if job_id.startswith("job_agent_"):
+        auth = require_authenticated(authorization, x_user_role)
+        unavailable_request_id = uuid4().hex
+        integration = getattr(request.app.state, "agent_integration", None)
+        if integration is None:
+            raise DomainError(
+                ErrorCode.PROJECT_UNAVAILABLE,
+                "任务不存在或当前主体不可访问",
+                request_id=unavailable_request_id,
+            )
+        _, fingerprint = await integration.authenticate_request(auth)
+        mapping = integration.get_agent_job_binding(job_id)
+        run_id = mapping.get("run_id") if mapping is not None else None
+        if not isinstance(run_id, str) or not run_id:
+            raise DomainError(
+                ErrorCode.PROJECT_UNAVAILABLE,
+                "任务不存在或当前主体不可访问",
+                request_id=unavailable_request_id,
+            )
+        try:
+            context = await integration.context_for_run(
+                auth, fingerprint, run_id, unavailable_request_id, edit_required=False,
+            )
+            run = await integration.use_case.get_run(context, Identifier(run_id))
+        except CleanroomException as exc:
+            if exc.status_code not in {403, 404}:
+                raise
+            raise DomainError(
+                ErrorCode.PROJECT_UNAVAILABLE,
+                "任务不存在或当前主体不可访问",
+                request_id=unavailable_request_id,
+            ) from None
+        if run is None:
+            raise DomainError(
+                ErrorCode.PROJECT_UNAVAILABLE,
+                "任务不存在或当前主体不可访问",
+                request_id=unavailable_request_id,
+            )
+        return agent_run_job_payload(job_id, run)
     return default_god_canvas_service.get_job(job_id)

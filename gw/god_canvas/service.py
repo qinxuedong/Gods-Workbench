@@ -777,7 +777,9 @@ class GodCanvasService:
             # 终端状态不可再变更
             allowed_transitions = {
                 "accepted": {"running", "cancelled"},
-                "running": {"completed", "failed", "cancelled"},
+                "running": {"waiting_review", "paused", "completed", "failed", "cancelled"},
+                "waiting_review": {"running", "paused", "completed", "failed", "cancelled"},
+                "paused": {"running", "failed", "cancelled"},
             }
             terminal_states = {"completed", "failed", "cancelled"}
             if job.state in terminal_states:

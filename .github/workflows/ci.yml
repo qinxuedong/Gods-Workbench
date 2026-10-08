@@ -90,6 +90,9 @@ jobs:
       - name: 运行全量测试
         run: python -m pytest -v --no-header -p no:cacheprovider
 
+      - name: 运行 Agent Tasks 前端回归测试
+        run: node --test tests/frontend/agent-tasks.test.mjs
+
       - name: 扫描二进制白名单
         if: ${{ always() }}
         shell: bash

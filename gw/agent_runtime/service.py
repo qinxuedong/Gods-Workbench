@@ -8,7 +8,7 @@ import json
 import uuid
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 from typing import Any
 
 from gw.agent_runtime.errors import DomainError
@@ -103,6 +103,14 @@ class ProposedAction:
     kind: str
     capability: str
     arguments: Mapping[str, Any]
+
+
+@dataclass(frozen=True, slots=True)
+class _ReleasedReviewEvidence:
+    review: ReviewRecord
+    artifact: ArtifactRef
+    approval: ApprovalRecord | None
+    content: str
 
 
 class _LeaseSession:
@@ -1638,10 +1646,86 @@ class AgentRuntimeService:
         """Build a domain export only after the runtime proves exact release authority."""
         if self.artifact_exporter is None:
             raise DomainError(ErrorCode.CAPABILITY_UNSUPPORTED, "No business export capability is registered.", request_id=run_id.root)
+        evidence = await self._resolve_released_review_evidence(run_id, review_id, artifact_version_id)
+        payload = await self.artifact_exporter.export(
+            evidence.artifact,
+            evidence.content,
+            evidence.review,
+            is_current=True,
+            release=True,
+            approval=evidence.approval,
+            format=format,
+        )
+        if payload.artifact_version_id.root != artifact_version_id.root or payload.review_id.root != review_id.root:
+            raise DomainError(ErrorCode.VALIDATION_FAILED, "The export capability returned a payload bound to a different artifact or review.", request_id=run_id.root)
+        return payload
+
+    async def export_formats_for_review(
+        self,
+        run_id: Identifier,
+        review_id: Identifier,
+        artifact_version_id: Identifier,
+    ) -> tuple[TextExportFormat, ...]:
+        """Report formats without invoking the serializer or weakening its gate."""
+        if self.artifact_exporter is None:
+            return ()
+        from gw.agent_episode.exports import (
+            ExportRejected,
+            parse_episode_text_artifact,
+            supported_export_formats,
+        )
+
+        try:
+            evidence = await self._resolve_released_review_evidence(run_id, review_id, artifact_version_id)
+        except DomainError:
+            return ()
+
+        matching_attempts = [
+            attempt
+            for attempt in await self.repository.get_attempts(run_id)
+            if attempt.run_id.root == run_id.root
+            and attempt.status is AttemptStatus.succeeded
+            and attempt.review_id is not None
+            and attempt.review_id.root == review_id.root
+            and attempt.output_artifact_version_id is not None
+            and attempt.output_artifact_version_id.root == artifact_version_id.root
+        ]
+        if len(matching_attempts) != 1:
+            return ()
+        try:
+            stage, _ = parse_episode_text_artifact(
+                evidence.content,
+                expected_stage=matching_attempts[0].stage,
+            )
+        except ExportRejected:
+            return ()
+        return supported_export_formats(stage)
+
+    async def _resolve_released_review_evidence(
+        self,
+        run_id: Identifier,
+        review_id: Identifier,
+        artifact_version_id: Identifier,
+    ) -> _ReleasedReviewEvidence:
+        """Resolve the shared exact-version gate used by export and capability reads."""
         reviews = await self.repository.get_reviews(run_id)
-        review = next((item for item in reversed(reviews) if item.review_id.root == review_id.root and item.artifact.version_id.root == artifact_version_id.root), None)
+        review = next((
+            item for item in reversed(reviews)
+            if item.run_id.root == run_id.root
+            and item.review_id.root == review_id.root
+            and item.artifact.version_id.root == artifact_version_id.root
+        ), None)
         if review is None:
             raise DomainError(ErrorCode.ARTIFACT_STALE, "The requested review does not bind to this artifact version.", request_id=run_id.root)
+        if not review.program_validation_passed or review.overall_score_decimal is None:
+            raise DomainError(ErrorCode.ARTIFACT_STALE, "Only a program-valid review with an exact persisted score can be exported.", request_id=run_id.root)
+        try:
+            exact_score = Decimal(review.overall_score_decimal)
+        except (InvalidOperation, ValueError, TypeError) as exc:
+            raise DomainError(ErrorCode.ARTIFACT_STALE, "The exact persisted review score is invalid.", request_id=run_id.root) from exc
+        if not exact_score.is_finite() or exact_score < 0 or exact_score > 10:
+            raise DomainError(ErrorCode.ARTIFACT_STALE, "The exact persisted review score is outside the supported range.", request_id=run_id.root)
+
         current_artifact = await self._matching_artifact(review)
         if current_artifact is None:
             raise DomainError(ErrorCode.ARTIFACT_STALE, "The reviewed artifact lifecycle or revision is stale.", request_id=run_id.root)
@@ -1651,35 +1735,37 @@ class AgentRuntimeService:
         active_config = self._active_config(state)
         if self.policy.registered_rule_version is not None and review.rule_version.root != active_config.scoring_rule_version.root:
             raise DomainError(ErrorCode.ARTIFACT_STALE, "The review used a scoring rule that is not current for this run.", request_id=run_id.root)
+        if not is_current:
+            raise DomainError(ErrorCode.ARTIFACT_STALE, "The reviewed artifact is historical or no longer current.", request_id=run_id.root)
+
+        approval_matches = bool(
+            approval is not None
+            and approval.run_id.root == run_id.root
+            and approval.review_id.root == review_id.root
+            and approval.artifact_version_id.root == artifact_version_id.root
+            and approval.decision.value in {"approve", "override"}
+        )
         if state.get("mode") == "automatic":
-            release = (
-                is_current
-                and artifact_version_id.root in state.get("released_versions", [])
+            released = (
+                artifact_version_id.root in state.get("released_versions", [])
                 and review.conclusion is ReviewConclusion.pass_
-                and Decimal(review.overall_score_decimal or str(review.overall_score)) >= Decimal(str(self._active_config(state).pass_score))
+                and exact_score >= Decimal(str(active_config.pass_score))
             )
             approval = None
         else:
-            release = bool(is_current and approval and approval.decision.value in {"approve", "override"})
-        if not is_current:
-            raise DomainError(ErrorCode.ARTIFACT_STALE, "The reviewed artifact is historical or no longer current.", request_id=run_id.root)
-        if not release:
+            released = state.get("mode") == "approval" and approval_matches
+        if not released:
             raise DomainError(ErrorCode.MANUAL_REVIEW_REQUIRED, "The exact review and artifact version have not been released.", request_id=run_id.root)
+
         content = await self.artifacts.read_content(current_artifact.artifact_id, current_artifact.version_id)
-        if content is None:
-            raise DomainError(ErrorCode.ARTIFACT_STALE, "The exact artifact body is unavailable.", request_id=run_id.root)
-        payload = await self.artifact_exporter.export(
-            current_artifact,
-            content,
-            review,
-            is_current=is_current,
-            release=release,
+        if content is None or hashlib.sha256(content.encode("utf-8")).hexdigest() != current_artifact.content_hash.root:
+            raise DomainError(ErrorCode.ARTIFACT_STALE, "The exact artifact body is unavailable or failed its immutable hash check.", request_id=run_id.root)
+        return _ReleasedReviewEvidence(
+            review=review,
+            artifact=current_artifact,
             approval=approval,
-            format=format,
+            content=content,
         )
-        if payload.artifact_version_id.root != artifact_version_id.root or payload.review_id.root != review_id.root:
-            raise DomainError(ErrorCode.VALIDATION_FAILED, "The export capability returned a payload bound to a different artifact or review.", request_id=run_id.root)
-        return payload
 
     async def list_events(self, run_id: Identifier, cursor: Identifier | None = None, limit: int = 100):
         return await self.repository.read_events(run_id, cursor, limit)

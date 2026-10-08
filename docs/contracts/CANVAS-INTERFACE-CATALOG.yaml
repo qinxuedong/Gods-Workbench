@@ -174,3 +174,25 @@ interfaces:
       202: "异步受理，不代表失败"
       409: "版本冲突或运行前置条件不满足"
     acceptance: "受理必须返回 202，并携带稳定 job_id 与 poll_hint。"
+
+  - name: get_smart_job_status
+    method: GET
+    path: /api/jobs/{job_id}
+    body: null
+    status:
+      - 200
+      - 401
+      - 404
+      - 503
+    schema:
+      response_200:
+        job_id: string
+        state: "enum(accepted|running|waiting_review|paused|completed|failed|cancelled)"
+        poll_hint: "string | null"
+        result: "object | null"
+        error: "string | null"
+    errors:
+      401: "Agent job 分支要求当前 Cookie 会话"
+      404: "任务不存在；Agent job 分支对越权资源统一隐藏为 404"
+      503: "Agent run 状态无法安全投影"
+    acceptance: "Workbench 共享任务查询入口；Agent 专用响应扩展见 AGENT-WORKBENCH-INTERFACE-CATALOG.yaml。"

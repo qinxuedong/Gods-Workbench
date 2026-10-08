@@ -262,6 +262,7 @@ def test_static_layer_has_no_legacy_integration_markers(repo_root: Path):
     # 契约，不是被删除的经典集成入口。仅对精确的工作流页面/控制器放行，其他静态层
     # 仍保持旧集成标记禁入。
     workflow_scope_paths = {
+        Path("web/pages/workflow.html"),
         Path("web/pages/workflow-workbench.html"),
         Path("web/js/controllers/workflow-controller.js"),
     }
@@ -285,7 +286,7 @@ def test_static_layer_has_no_legacy_integration_markers(repo_root: Path):
 # 登记只保存当前新仓的分类、准入依据和规范化哈希；不保存旧仓源码、提示词正文、
 # 凭据或完整历史授权账本。历史材料继续留在洁净源仓，不因测试需要复制进新仓。
 ADMISSION_METADATA_PATH = "tests/hygiene/fixtures/cleanroom_admission_metadata.json"
-ADMISSION_METADATA_SHA256 = "49e66bb46c73a8484c2675fdd0ecd0b3c6aa83c82bd1341644da4c4021e83caf"
+ADMISSION_METADATA_SHA256 = "0e2c389b37116732c8e0de229847105ab87cc6af5ebc451aabdce3bcec307b0b"
 QUARANTINED_PROMPT_ORIGINAL_PATH = "web/system-prompts/infinite-canvas-prompt-templates.md"
 QUARANTINED_PROMPT_URL = "/static/system-prompts/infinite-canvas-prompt-templates.md"
 
@@ -435,7 +436,7 @@ def test_admission_metadata_hashes_match_current_files(repo_root: Path):
     """当前准入文件哈希必须与机器登记一致；不复用旧 Phase-2 账本。"""
     metadata = _load_admission_metadata(repo_root)
     entries = metadata.get("admitted_files", [])
-    assert len(entries) == 91, "当前准入登记数量必须与 H01 实物集合一致"
+    assert len(entries) == 92, "当前准入登记数量必须与 H01 实物集合一致"
     for entry in entries:
         path = repo_root / entry["path"]
         assert path.is_file(), f"准入文件缺失: {entry['path']}"

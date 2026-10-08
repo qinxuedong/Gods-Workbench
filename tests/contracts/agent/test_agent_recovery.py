@@ -18,6 +18,8 @@ from gw.agent_episode.scoring import STAGE_WEIGHTS
 from gw.agent_runtime.graph import LangGraphRuntimeExecutor
 from gw.agent_runtime.models import (
     ApprovalRecord,
+    ArtifactSourceRef,
+    ArtifactVersionInput,
     DispatchState,
     FinishReason,
     Identifier,
@@ -40,11 +42,17 @@ ORIGIN_HEADERS = {"Origin": "http://localhost"}
 class FakeGateway:
     """Typed model seam that returns deterministic text and never calls a provider."""
 
-    def __init__(self, *, unknown_first: bool = False, block_first: bool = False) -> None:
+    def __init__(
+        self, *, unknown_first: bool = False, block_first: bool = False,
+        block_third: bool = False,
+    ) -> None:
         self.unknown_first = unknown_first
         self.block_first = block_first
+        self.block_third = block_third
         self.first_started = threading.Event()
         self.release_first = threading.Event()
+        self.third_started = threading.Event()
+        self.release_third = threading.Event()
         self._lock = threading.Lock()
         self._calls: list[ModelInvocationRequest] = []
 
@@ -75,6 +83,10 @@ class FakeGateway:
         if call_number == 1 and self.block_first:
             self.first_started.set()
             while not self.release_first.is_set():
+                await asyncio.sleep(0.005)
+        if call_number == 3 and self.block_third:
+            self.third_started.set()
+            while not self.release_third.is_set():
                 await asyncio.sleep(0.005)
         if call_number == 1 and self.unknown_first:
             raise RuntimeError("synthetic unknown provider outcome")
@@ -136,6 +148,7 @@ def _new_app(tmp_path, monkeypatch, gateway: FakeGateway):
     monkeypatch.setenv("GW_VIDEO_DATA_DIR", str(video_root))
     monkeypatch.setenv("GW_AUTH_MODE", "local_account")
     monkeypatch.setenv("GW_DISABLE_AGENT_INTEGRATION", "0")
+    monkeypatch.setenv("GW_AGENT_MAX_MODEL_CALLS_PER_RUN", "16")
 
     from gw.api.agent_integration import build_agent_integration
     from gw.api.app import create_app
@@ -187,19 +200,28 @@ def _setup_owner_and_project(client: TestClient) -> tuple[str, str]:
     return session_cookie, created.json()["project"]["project_id"]
 
 
-def _create_run(client: TestClient, project_id: str, *, key: str = "agent-recovery-create-1") -> str:
+def _create_run(
+    client: TestClient, project_id: str, *, key: str = "agent-recovery-create-1",
+    mode: str = "approval",
+) -> str:
+    profiles = client.get("/api/agent/config").json()["profiles"]
+    profile_id = next(item["config_snapshot_id"] for item in profiles if item["mode"] == mode)
     response = client.post("/api/agent/runs", json={
         "project_id": project_id,
         "user_goal": "Complete a synthetic recovery test brief.",
         "provider_id": "fake",
         "model": "fake-model",
-        "mode": "approval",
+        "mode": mode,
+        "config_snapshot_id": profile_id,
+        "input_artifact_refs": [],
         "idempotency_key": key,
         "request_id": f"request:{key}",
     })
     assert response.status_code == 202, response.text
     payload = response.json()
-    assert payload["job_id"] == payload["run_id"]
+    assert isinstance(payload.get("job_id"), str) and payload["job_id"].startswith("job_agent_")
+    assert payload["job_id"] != payload["run_id"]
+    assert payload["poll_hint"] == f"/api/jobs/{payload['job_id']}"
     assert payload["status"] == "queued"
     assert payload["version"] == 0
     return payload["run_id"]
@@ -388,6 +410,43 @@ def test_review_cas_race_and_approval_survive_app_recreation(tmp_path, monkeypat
         assert recovered[0].reason.root == "synthetic concurrent reviewer decision"
 
 
+def test_read_only_get_does_not_rebind_revoked_session_after_relogin(tmp_path, monkeypatch) -> None:
+    gateway = FakeGateway()
+    app = _new_app(tmp_path, monkeypatch, gateway)
+    with _open_client(app) as client:
+        old_cookie, project_id = _setup_owner_and_project(client)
+        run_id = _create_run(client, project_id, key="agent-read-no-rebind-1")
+        integration = client.app.state.agent_integration
+        binding = integration.get_binding(run_id)
+        original_fingerprint = hashlib.sha256(old_cookie.encode("utf-8")).hexdigest()
+        assert binding["session_fingerprint"] == original_fingerprint
+
+        logout = client.post("/api/asset-auth/logout")
+        assert logout.status_code == 204, logout.text
+        login = client.post(
+            "/api/asset-auth/local/login",
+            json={"username": "agent-owner", "password": PASSWORD},
+        )
+        assert login.status_code == 200, login.text
+        new_cookie = client.cookies.get("gw_session")
+        assert isinstance(new_cookie, str) and new_cookie != old_cookie
+
+        status = client.get(f"/api/agent/runs/{run_id}")
+        assert status.status_code == 200, status.text
+        assert status.json()["run_id"] == run_id
+
+        binding_after_read = integration.get_binding(run_id)
+        assert binding_after_read["session_fingerprint"] == original_fingerprint
+        still_revoked = client.portal.call(
+            integration.authorize_background,
+            Identifier(project_id),
+            Identifier(binding["actor_id"]),
+            Identifier(run_id),
+        )
+        assert still_revoked is False
+        assert gateway.calls == []
+
+
 def test_unknown_model_send_is_not_replayed_after_app_recreation(tmp_path, monkeypatch) -> None:
     gateway = FakeGateway(unknown_first=True)
     app = _new_app(tmp_path, monkeypatch, gateway)
@@ -462,4 +521,133 @@ def test_authority_revocation_during_planner_blocks_next_dispatch(tmp_path, monk
         )
         assert run.status is RunStatus.paused
         assert len(gateway.calls) == 1
+
+
+@pytest.mark.parametrize("authority_change", ["logout", "role_downgrade", "project_archive"])
+def test_authority_revocation_while_reviewer_waits_blocks_automatic_release(
+    tmp_path, monkeypatch, authority_change,
+) -> None:
+    gateway = FakeGateway(block_third=True)
+    app = _new_app(tmp_path, monkeypatch, gateway)
+    with _open_client(app) as client:
+        _, project_id = _setup_owner_and_project(client)
+        run_id = _create_run(
+            client, project_id, key=f"agent-review-revoke-{authority_change}-1", mode="automatic",
+        )
+        integration = client.app.state.agent_integration
+        worker_future = client.portal.start_task_soon(integration.worker.run_once)
+        assert gateway.third_started.wait(timeout=10), "reviewer dispatch did not reach the fake gateway"
+        assert len(gateway.calls) == 3
+        assert "dimension_scores" in (gateway.calls[2].output_schema or {}).get("properties", {})
+
+        try:
+            if authority_change == "logout":
+                revoked = client.post("/api/asset-auth/logout")
+                assert revoked.status_code == 204, revoked.text
+            elif authority_change == "role_downgrade":
+                with sqlite3.connect(os.environ["GW_LOCAL_AUTH_DB"]) as db:
+                    db.execute("UPDATE local_users SET role='readonly' WHERE username='agent-owner'")
+            else:
+                archived = client.request(
+                    "DELETE",
+                    f"/api/asset-registry/projects/{project_id}",
+                    json={"expected_version": 1},
+                )
+                assert archived.status_code == 200, archived.text
+        finally:
+            gateway.release_third.set()
+
+        worker_future.result(timeout=10)
+        run = client.portal.call(integration.repository.read_run_by_id, Identifier(run_id))
+        state = client.portal.call(integration.repository.read_runtime_state, Identifier(run_id)) or {}
+        assert run.status is RunStatus.paused
+        assert len(gateway.calls) == 3
+        assert state.get("mode") == "automatic"
+        assert state.get("released_versions", []) == []
+        assert client.portal.call(integration.repository.get_reviews, Identifier(run_id)) == []
+        with sqlite3.connect(tmp_path / "data" / "agent" / "runtime.sqlite3") as db:
+            approvals = db.execute("SELECT approval_json FROM approvals WHERE run_id=?", (run_id,)).fetchall()
+        assert approvals == []
+
+
+def test_stale_source_while_reviewer_waits_blocks_automatic_release(tmp_path, monkeypatch) -> None:
+    gateway = FakeGateway(block_third=True)
+    app = _new_app(tmp_path, monkeypatch, gateway)
+    with _open_client(app) as client:
+        _, project_id = _setup_owner_and_project(client)
+        run_id = _create_run(client, project_id, key="agent-review-source-stale-1", mode="automatic")
+        integration = client.app.state.agent_integration
+        source = client.portal.call(
+            integration.service.artifacts.create_version,
+            ArtifactVersionInput(
+                artifact_id=Identifier(f"source-{run_id}"),
+                parent_version_id=None,
+                content="Synthetic source for reviewer currentness coverage.",
+                metadata={"run_id": run_id, "runtime_stage": "source_fixture"},
+                source_refs=[],
+                idempotency_key=Identifier(f"source-fixture:{run_id}"),
+            ),
+        )
+        state = client.portal.call(integration.repository.read_runtime_state, Identifier(run_id)) or {}
+        state["initial_artifact_refs"] = [ArtifactSourceRef(
+            artifact_id=source.artifact_id, version_id=source.version_id,
+        ).model_dump(mode="json")]
+        with sqlite3.connect(tmp_path / "data" / "agent" / "runtime.sqlite3") as db:
+            db.execute(
+                "UPDATE runs SET state_json=? WHERE run_id=?",
+                (json.dumps(state, ensure_ascii=False, sort_keys=True), run_id),
+            )
+
+        worker_future = client.portal.start_task_soon(integration.worker.run_once)
+        assert gateway.third_started.wait(timeout=10), "reviewer dispatch did not reach the fake gateway"
+        assert len(gateway.calls) == 3
+        attempts = client.portal.call(integration.repository.get_attempts, Identifier(run_id))
+        assert len(attempts) == 1
+        assert [item.root for item in attempts[0].input_artifact_version_ids] == [source.version_id.root]
+
+        try:
+            client.portal.call(
+                integration.service.artifacts.move_to_trash,
+                source.artifact_id,
+                source.revision.root,
+            )
+        finally:
+            gateway.release_third.set()
+
+        worker_future.result(timeout=10)
+        run = client.portal.call(integration.repository.read_run_by_id, Identifier(run_id))
+        current_state = client.portal.call(integration.repository.read_runtime_state, Identifier(run_id)) or {}
+        assert run.status is not RunStatus.succeeded
+        assert current_state.get("released_versions", []) == []
+        assert client.portal.call(integration.repository.get_reviews, Identifier(run_id)) == []
+
+
+def test_fenced_lease_while_reviewer_waits_blocks_automatic_release(tmp_path, monkeypatch) -> None:
+    gateway = FakeGateway(block_third=True)
+    app = _new_app(tmp_path, monkeypatch, gateway)
+    with _open_client(app) as client:
+        _, project_id = _setup_owner_and_project(client)
+        run_id = _create_run(client, project_id, key="agent-review-fenced-lease-1", mode="automatic")
+        integration = client.app.state.agent_integration
+        worker_future = client.portal.start_task_soon(integration.worker.run_once)
+        assert gateway.third_started.wait(timeout=10), "reviewer dispatch did not reach the fake gateway"
+        assert len(gateway.calls) == 3
+
+        with sqlite3.connect(tmp_path / "data" / "agent" / "runtime.sqlite3") as db:
+            row = db.execute(
+                "SELECT owner_id,generation FROM leases WHERE run_id=?", (run_id,),
+            ).fetchone()
+            assert row is not None
+            db.execute(
+                "UPDATE leases SET owner_id=?,generation=? WHERE run_id=?",
+                ("runtime:test-fencer", row[1] + 1, run_id),
+            )
+
+        gateway.release_third.set()
+        worker_future.result(timeout=10)
+        run = client.portal.call(integration.repository.read_run_by_id, Identifier(run_id))
+        state = client.portal.call(integration.repository.read_runtime_state, Identifier(run_id)) or {}
+        assert run.status is not RunStatus.succeeded
+        assert state.get("released_versions", []) == []
+        assert client.portal.call(integration.repository.get_reviews, Identifier(run_id)) == []
 

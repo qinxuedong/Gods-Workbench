@@ -6,7 +6,7 @@ import json
 from collections.abc import Mapping, Sequence
 from typing import Any
 
-from gw.agent_episode.exports import ExportFormatMismatch
+from gw.agent_episode.exports import ExportFormatMismatch, supported_export_formats
 from gw.core.auth import AuthContext
 from gw.core.errors import CleanroomException
 from gw.projects_hub.service import ProjectsService, owner_key_for_context
@@ -59,6 +59,8 @@ def decode_auth_context(context: RequestContext) -> AuthContext:
 class HostIdentityProjectAdapter:
     """Resolve project ownership from the host's current account identity."""
 
+    _ARCHIVED_READ_ACTIONS = {"agent.run.read", "agent.run.export"}
+
     def __init__(self, projects: ProjectsService) -> None:
         self.projects = projects
 
@@ -70,7 +72,19 @@ class HostIdentityProjectAdapter:
     ) -> bool:
         if not action.root.startswith("agent."):
             return False
-        return await self.project_is_available(context)
+        if not await self.project_is_available(context):
+            return False
+        auth = decode_auth_context(context)
+        try:
+            project = self.projects.get_owned_project(
+                context.project_id.root,
+                owner_key_for_context(auth),
+            )
+        except CleanroomException:
+            return False
+        if project.archived_at is not None:
+            return action.root in self._ARCHIVED_READ_ACTIONS
+        return True
 
     async def project_is_available(self, context: RequestContext) -> bool:
         auth = decode_auth_context(context)
@@ -172,13 +186,14 @@ class RuntimeAgentUseCase:
         if content is None or hashlib.sha256(content.encode("utf-8")).hexdigest() != review.artifact.content_hash.root:
             raise DomainError(ErrorCode.ARTIFACT_STALE, "The exact artifact body is unavailable or failed its immutable hash check.", request_id=context.request_id.root)
         stage = self._review_stage(content)
-        format_by_stage = {
-            StageId.full_script.value: TextExportFormat.markdown,
-            StageId.storyboard_text.value: TextExportFormat.csv,
-            StageId.delivery_check.value: TextExportFormat.json,
-        }
-        export_format = format_by_stage.get(stage)
-        return None if export_format is None else await self.service.export_reviewed_artifact(run_id, review.review_id, artifact_version_id, export_format)
+        try:
+            parsed_stage = StageId(stage)
+        except ValueError:
+            return None
+        supported = supported_export_formats(parsed_stage)
+        if not supported:
+            return None
+        return await self.service.export_reviewed_artifact(run_id, review.review_id, artifact_version_id, supported[0])
 
     async def read_review_candidate(self, context: RequestContext, run_id: Identifier, review_id: Identifier, artifact_version_id: Identifier) -> ReviewCandidateRead:
         run = await self._required_run(context, run_id, "agent.run.read", context.request_id.root)

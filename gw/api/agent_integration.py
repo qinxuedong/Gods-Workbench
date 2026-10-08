@@ -3,9 +3,11 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import contextvars
 import hashlib
 import inspect
 import json
+import os
 import uuid
 from collections.abc import Callable, Mapping
 from datetime import datetime, timezone
@@ -51,6 +53,7 @@ from gw.core.auth import AuthContext, EDIT_ROLES, KNOWN_ROLES, oidc_session_trus
 from gw.core.config import AUTH_MODE_LOCAL_ACCOUNT, AUTH_MODE_OIDC, load_runtime_auth_config
 from gw.core.errors import CleanroomException, ForbiddenException, UnauthorizedException
 from gw.core.runtime_paths import RuntimePathError, RuntimePaths, resolve_runtime_paths
+from gw.core.storage import next_sequence
 from gw.projects_hub import service as projects_service_module
 from gw.projects_hub.service import ProjectsService, owner_key_for_context
 from gw.settings import chat as chat_runtime
@@ -63,6 +66,21 @@ def _token_fingerprint(session_id: str) -> str:
 def _model_ref(provider_id: str, model: str) -> Identifier:
     raw = json.dumps([provider_id, model], ensure_ascii=True, separators=(",", ":")).encode("utf-8")
     return Identifier("gw-chat:" + base64.urlsafe_b64encode(raw).decode("ascii").rstrip("="))
+
+
+_MODEL_CALL_LIMIT_ENV = "GW_AGENT_MAX_MODEL_CALLS_PER_RUN"
+AGENT_JOB_ID_PREFIX = "job_agent_"
+
+
+def _configured_model_call_limit() -> int | None:
+    raw = os.environ.get(_MODEL_CALL_LIMIT_ENV)
+    if not isinstance(raw, str) or not raw or not raw.isascii() or not raw.isdecimal():
+        return None
+    try:
+        value = int(raw)
+    except ValueError:
+        return None
+    return value if value > 0 else None
 
 
 def _decode_model_ref(value: Identifier) -> tuple[str, str]:
@@ -169,54 +187,187 @@ class HostChatModelGateway:
 
 
 class UnknownCostBudget:
-    """Fail on malformed bounds and record every model operation as unknown-cost."""
+    """Atomically enforce a durable per-run call ceiling; monetary cost stays unknown."""
 
-    def __init__(self, database: SQLiteDatabase) -> None:
+    _ACTIVE_STATES = ("reserved_unknown", "unknown")
+
+    def __init__(self, database: SQLiteDatabase, max_model_calls_per_run: int | None = None) -> None:
         self.database = database
+        self.max_model_calls_per_run = max_model_calls_per_run
+        self._active_run_id: contextvars.ContextVar[str | None] = contextvars.ContextVar(
+            f"agent_budget_run_{id(self)}", default=None,
+        )
+
+    def bind_run(self, run_id: Identifier):
+        return self._active_run_id.set(run_id.root)
+
+    def reset_run(self, token: contextvars.Token[str | None]) -> None:
+        self._active_run_id.reset(token)
+
+    @staticmethod
+    def _run_id_for_operation(operation_id: str) -> str | None:
+        parts = operation_id.split(":", 3)
+        if len(parts) != 4 or parts[0] != "episode" or not parts[1]:
+            return None
+        try:
+            return Identifier(parts[1]).root
+        except Exception:
+            return None
+
+    @staticmethod
+    def _legacy_run_id_from_invocations(db: Any, operation_id: str) -> str | None:
+        tables = db.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='invocations'"
+        ).fetchone()
+        if tables is None:
+            return None
+        columns = {row["name"] for row in db.execute("PRAGMA table_info(invocations)").fetchall()}
+        operation_columns = [name for name in ("idempotency_key", "operation_id") if name in columns]
+        if not operation_columns or "run_id" not in columns:
+            return None
+        run_ids: set[str] = set()
+        for operation_column in operation_columns:
+            rows = db.execute(
+                f"SELECT DISTINCT run_id FROM invocations WHERE {operation_column}=? LIMIT 2",
+                (operation_id,),
+            ).fetchall()
+            run_ids.update(str(row["run_id"]) for row in rows if row["run_id"] is not None)
+            if len(run_ids) > 1:
+                return None
+        if len(run_ids) != 1:
+            return None
+        try:
+            return Identifier(next(iter(run_ids))).root
+        except Exception:
+            return None
+
+    @staticmethod
+    def _decision(state: BudgetState, message: str) -> BudgetDecision:
+        return BudgetDecision(
+            state=state,
+            amount=None,
+            currency=None,
+            reason=Reason(message),
+        )
+
+    @staticmethod
+    def _ledger_operation_id(db: Any, operation_id: str, run_id: str, *, embedded_run_id: str | None) -> str:
+        if embedded_run_id is not None:
+            return operation_id
+        legacy = db.execute(
+            "SELECT run_id FROM host_agent_budget_ledger WHERE operation_id=?",
+            (operation_id,),
+        ).fetchone()
+        if legacy is not None and legacy["run_id"] == run_id:
+            return operation_id
+        return f"{operation_id}:{run_id}"
 
     async def reserve(self, request: BudgetReservationRequest) -> BudgetDecision:
         if request.upper_bound_amount is not None or not request.unknown_reason:
             from gw.agent_runtime.models import ErrorCode
             raise DomainError(ErrorCode.VALIDATION_FAILED, "Host pricing is unavailable; only an explicit unknown-cost reservation is allowed.", request_id=request.operation_id.root)
-        with self.database.connect() as db:
-            db.execute(
-                "INSERT INTO host_agent_budget_ledger(operation_id, state, reason, updated_at) VALUES(?, 'reserved_unknown', ?, ?) "
-                "ON CONFLICT(operation_id) DO NOTHING",
-                (request.operation_id.root, request.unknown_reason.root, utc_now().isoformat()),
+        limit = self.max_model_calls_per_run
+        embedded_run_id = self._run_id_for_operation(request.operation_id.root)
+        active_run_id = self._active_run_id.get()
+        if embedded_run_id is not None and active_run_id is not None and embedded_run_id != active_run_id:
+            return self._decision(BudgetState.denied, "The model operation run identity does not match its dispatch context.")
+        run_id = embedded_run_id or active_run_id
+        if limit is None or run_id is None:
+            return self._decision(BudgetState.denied, "A valid server-side per-run model call limit and run identity are required.")
+        db = self.database.transaction()
+        try:
+            ledger_operation_id = self._ledger_operation_id(
+                db, request.operation_id.root, run_id, embedded_run_id=embedded_run_id,
             )
-        return BudgetDecision(
-            state=BudgetState.allowed,
-            amount=None,
-            currency=None,
-            reason=Reason("Provider pricing is not configured; the monetary amount is unknown."),
-        )
+            existing = db.execute(
+                "SELECT run_id,state FROM host_agent_budget_ledger WHERE operation_id=?",
+                (ledger_operation_id,),
+            ).fetchone()
+            if existing is not None and existing["run_id"] not in (None, run_id):
+                self.database.close_rollback(db)
+                return self._decision(BudgetState.denied, "The model operation is already bound to another run.")
+
+            active_count = int(db.execute(
+                "SELECT COUNT(*) FROM host_agent_budget_ledger "
+                "WHERE state IN ('reserved_unknown','unknown') AND (run_id=? OR run_id IS NULL)",
+                (run_id,),
+            ).fetchone()[0])
+            is_active = existing is not None and existing["state"] in self._ACTIVE_STATES
+            if active_count > limit or (active_count >= limit and not is_active):
+                self.database.close_rollback(db)
+                return self._decision(BudgetState.denied, "The server-side per-run model call limit has been reached; monetary cost remains unknown.")
+
+            now = utc_now().isoformat()
+            db.execute(
+                "INSERT INTO host_agent_budget_ledger(operation_id, run_id, state, reason, updated_at) "
+                "VALUES(?, ?, 'reserved_unknown', ?, ?) "
+                "ON CONFLICT(operation_id) DO UPDATE SET run_id=excluded.run_id, state='reserved_unknown', reason=excluded.reason, updated_at=excluded.updated_at",
+                (ledger_operation_id, run_id, request.unknown_reason.root, now),
+            )
+            self.database.close_commit(db)
+        except Exception:
+            self.database.close_rollback(db)
+            raise
+        return self._decision(BudgetState.allowed, "Provider pricing is not configured; the monetary amount is unknown.")
 
     async def settle(self, settlement: BudgetSettlement) -> BudgetDecision:
-        with self.database.connect() as db:
+        embedded_run_id = self._run_id_for_operation(settlement.operation_id.root)
+        run_id = embedded_run_id or self._active_run_id.get()
+        if run_id is None:
+            ledger_operation_id = settlement.operation_id.root
+            run_id = None
+        else:
+            ledger_operation_id = None
+        db = self.database.transaction()
+        try:
+            if run_id is not None:
+                ledger_operation_id = self._ledger_operation_id(
+                    db, settlement.operation_id.root, run_id, embedded_run_id=embedded_run_id,
+                )
             db.execute(
-                "INSERT INTO host_agent_budget_ledger(operation_id, state, reason, updated_at) VALUES(?, 'unknown', ?, ?) "
-                "ON CONFLICT(operation_id) DO UPDATE SET state='unknown', reason=excluded.reason, updated_at=excluded.updated_at",
-                (settlement.operation_id.root, settlement.unknown_reason.root if settlement.unknown_reason else "Monetary settlement is unavailable.", utc_now().isoformat()),
+                "INSERT INTO host_agent_budget_ledger(operation_id, run_id, state, reason, updated_at) VALUES(?, ?, 'unknown', ?, ?) "
+                "ON CONFLICT(operation_id) DO UPDATE SET run_id=COALESCE(host_agent_budget_ledger.run_id, excluded.run_id), state='unknown', reason=excluded.reason, updated_at=excluded.updated_at",
+                (ledger_operation_id, run_id, settlement.unknown_reason.root if settlement.unknown_reason else "Monetary settlement is unavailable.", utc_now().isoformat()),
             )
-        return BudgetDecision(
-            state=BudgetState.allowed,
-            amount=None,
-            currency=None,
-            reason=Reason("Provider pricing is not configured; the monetary amount is unknown."),
-        )
+            self.database.close_commit(db)
+        except Exception:
+            self.database.close_rollback(db)
+            raise
+        return self._decision(BudgetState.allowed, "Provider pricing is not configured; the monetary amount is unknown.")
 
     async def release_unspent(self, operation_id: Identifier) -> BudgetDecision:
-        with self.database.connect() as db:
+        embedded_run_id = self._run_id_for_operation(operation_id.root)
+        run_id = embedded_run_id or self._active_run_id.get()
+        db = self.database.transaction()
+        try:
+            ledger_operation_id = (
+                operation_id.root if run_id is None
+                else self._ledger_operation_id(db, operation_id.root, run_id, embedded_run_id=embedded_run_id)
+            )
             db.execute(
                 "UPDATE host_agent_budget_ledger SET state='released_unknown', updated_at=? WHERE operation_id=?",
-                (utc_now().isoformat(), operation_id.root),
+                (utc_now().isoformat(), ledger_operation_id),
             )
-        return BudgetDecision(
-            state=BudgetState.allowed,
-            amount=None,
-            currency=None,
-            reason=Reason("Provider pricing is not configured; the monetary amount is unknown."),
-        )
+            self.database.close_commit(db)
+        except Exception:
+            self.database.close_rollback(db)
+            raise
+        return self._decision(BudgetState.allowed, "Provider pricing is not configured; the monetary amount is unknown.")
+
+
+class _HostSafeInvocationDispatcher(SafeInvocationDispatcher):
+    """Bind the active run for provider operations that carry placeholder IDs."""
+
+    def __init__(self, repository: Any, gateway: Any, budget: UnknownCostBudget) -> None:
+        super().__init__(repository, gateway, budget)
+        self.host_budget = budget
+
+    async def invoke(self, run_id: Identifier, request: ModelInvocationRequest, **kwargs: Any) -> ModelInvocationResult:
+        token = self.host_budget.bind_run(run_id)
+        try:
+            return await super().invoke(run_id, request, **kwargs)
+        finally:
+            self.host_budget.reset_run(token)
 
 
 class AgentIntegration:
@@ -232,6 +383,7 @@ class AgentIntegration:
         gateway: Any,
         model_resolver: Callable[[str | None, str | None], Mapping[str, str]],
         configuration_provider: Callable[[], Mapping[str, Any]],
+        max_model_calls_per_run: int | None = None,
         start_worker: bool = True,
     ) -> None:
         self.database = database
@@ -242,6 +394,7 @@ class AgentIntegration:
         self.gateway = gateway
         self.model_resolver = model_resolver
         self.configuration_provider = configuration_provider
+        self.max_model_calls_per_run = max_model_calls_per_run
         self.start_worker_enabled = start_worker
         # Covers the durable run row and its host identity binding as one
         # single-process unit. The worker takes the same lock only while it
@@ -277,15 +430,83 @@ class AgentIntegration:
                     request_fingerprint TEXT NOT NULL,
                     request_json TEXT NOT NULL,
                     run_id TEXT,
+                    job_id TEXT,
                     PRIMARY KEY(project_id, actor_id, identity_domain, idempotency_key)
                 );
                 CREATE TABLE IF NOT EXISTS host_agent_budget_ledger (
                     operation_id TEXT PRIMARY KEY,
+                    run_id TEXT,
                     state TEXT NOT NULL,
                     reason TEXT NOT NULL,
                     updated_at TEXT NOT NULL
                 );
             """)
+            # Serialize migration inspection and ALTER/ID backfill so concurrent
+            # processes cannot both observe the legacy schema and allocate the
+            # same first sequence value or duplicate a column migration.
+            db.execute("BEGIN IMMEDIATE")
+            try:
+                create_key_columns = {
+                    row["name"] for row in db.execute("PRAGMA table_info(host_agent_create_keys)").fetchall()
+                }
+                if "job_id" not in create_key_columns:
+                    db.execute("ALTER TABLE host_agent_create_keys ADD COLUMN job_id TEXT")
+                existing_job_ids = [
+                    str(row["job_id"])
+                    for row in db.execute(
+                        "SELECT job_id FROM host_agent_create_keys WHERE job_id IS NOT NULL"
+                    ).fetchall()
+                ]
+                legacy_keys = db.execute(
+                    "SELECT project_id,actor_id,identity_domain,idempotency_key "
+                    "FROM host_agent_create_keys WHERE job_id IS NULL "
+                    "ORDER BY project_id,actor_id,identity_domain,idempotency_key"
+                ).fetchall()
+                for row in legacy_keys:
+                    job_id = next_sequence(AGENT_JOB_ID_PREFIX, iter(existing_job_ids))
+                    db.execute(
+                        "UPDATE host_agent_create_keys SET job_id=? "
+                        "WHERE project_id=? AND actor_id=? AND identity_domain=? AND idempotency_key=? "
+                        "AND job_id IS NULL",
+                        (job_id, row["project_id"], row["actor_id"], row["identity_domain"], row["idempotency_key"]),
+                    )
+                    existing_job_ids.append(job_id)
+                db.execute(
+                    "CREATE UNIQUE INDEX IF NOT EXISTS ix_host_agent_create_keys_job_id "
+                    "ON host_agent_create_keys(job_id) WHERE job_id IS NOT NULL"
+                )
+                db.execute(
+                    "CREATE UNIQUE INDEX IF NOT EXISTS ix_host_agent_create_keys_run_id "
+                    "ON host_agent_create_keys(run_id) WHERE run_id IS NOT NULL"
+                )
+                budget_columns = {
+                    row["name"] for row in db.execute("PRAGMA table_info(host_agent_budget_ledger)").fetchall()
+                }
+                if "run_id" not in budget_columns:
+                    db.execute("ALTER TABLE host_agent_budget_ledger ADD COLUMN run_id TEXT")
+                # Backfill ledgers written before run_id became explicit. Any row
+                # that cannot be attributed remains NULL and conservatively counts
+                # against every run in reserve().
+                legacy = db.execute(
+                    "SELECT operation_id FROM host_agent_budget_ledger WHERE run_id IS NULL"
+                ).fetchall()
+                for row in legacy:
+                    run_id = UnknownCostBudget._run_id_for_operation(row["operation_id"])
+                    if run_id is None:
+                        run_id = UnknownCostBudget._legacy_run_id_from_invocations(db, row["operation_id"])
+                    if run_id is not None:
+                        db.execute(
+                            "UPDATE host_agent_budget_ledger SET run_id=? WHERE operation_id=? AND run_id IS NULL",
+                            (run_id, row["operation_id"]),
+                        )
+                db.execute(
+                    "CREATE INDEX IF NOT EXISTS ix_host_agent_budget_run_state "
+                    "ON host_agent_budget_ledger(run_id, state)"
+                )
+                db.commit()
+            except Exception:
+                db.rollback()
+                raise
 
     def _load_profiles(self) -> None:
         with self.database.connect() as db:
@@ -327,16 +548,38 @@ class AgentIntegration:
                     continue
             if allowed:
                 providers.append({"provider_id": provider_id, "models": allowed})
-        ready = bool(providers)
+        provider_ready = bool(providers)
+        call_limit_ready = self.max_model_calls_per_run is not None
+        ready = provider_ready and call_limit_ready
         default_provider_id = raw.get("default_provider_id")
         if default_provider_id not in {provider["provider_id"] for provider in providers}:
             default_provider_id = providers[0]["provider_id"] if len(providers) == 1 else None
+
+        profiles: list[dict[str, str]] = []
+        for provider in providers:
+            for model in provider["models"]:
+                for mode in (Mode.approval, Mode.automatic):
+                    profile = self._new_content_addressed_profile(
+                        mode=mode, provider_id=provider["provider_id"], model=model,
+                    )
+                    version = profile.config_snapshot_id.root
+                    profiles.append({
+                        "config_snapshot_id": version,
+                        "version": version,
+                        "provider_id": provider["provider_id"],
+                        "model": model,
+                        "mode": mode.value,
+                    })
         return {
             "ready": ready,
             "configured": ready,
-            "reason": None if ready else "provider_configuration_missing_or_invalid",
+            "reason": None if ready else (
+                "model_call_limit_missing_or_invalid" if not call_limit_ready
+                else "provider_configuration_missing_or_invalid"
+            ),
             "default_provider_id": default_provider_id,
             "providers": providers,
+            "profiles": profiles,
             "capabilities": {
                 "modes": [Mode.automatic.value, Mode.approval.value],
                 "typed_messages": True,
@@ -344,6 +587,7 @@ class AgentIntegration:
                 "manual_review": True,
                 "revision_limit": 8,
                 "rollback_limit": 3,
+                "max_model_calls_per_run": self.max_model_calls_per_run,
                 "cost_state": "unknown",
             },
         }
@@ -366,6 +610,69 @@ class AgentIntegration:
         with self.database.connect() as db:
             row = db.execute("SELECT * FROM host_agent_bindings WHERE run_id=?", (run_id,)).fetchone()
         return dict(row) if row else None
+
+    @staticmethod
+    def _next_agent_job_id(db: Any) -> str:
+        existing = (
+            str(row["job_id"])
+            for row in db.execute(
+                "SELECT job_id FROM host_agent_create_keys WHERE job_id IS NOT NULL"
+            ).fetchall()
+        )
+        return next_sequence(AGENT_JOB_ID_PREFIX, existing)
+
+    def job_id_for_run(self, run_id: str) -> str:
+        """Return the durable Workbench job ID associated with an Agent run."""
+        with self.database.connect() as db:
+            rows = db.execute(
+                "SELECT job_id FROM host_agent_create_keys WHERE run_id=? LIMIT 2",
+                (run_id,),
+            ).fetchall()
+        if len(rows) != 1:
+            raise CleanroomException(503, "AGENT_JOB_MAPPING_UNAVAILABLE", "任务稳定标识映射不可用")
+        job_id = rows[0]["job_id"]
+        if isinstance(job_id, str) and job_id.startswith(AGENT_JOB_ID_PREFIX):
+            return job_id
+
+        db = self.database.transaction()
+        try:
+            row = db.execute(
+                "SELECT project_id,actor_id,identity_domain,idempotency_key,job_id "
+                "FROM host_agent_create_keys WHERE run_id=?",
+                (run_id,),
+            ).fetchone()
+            if row is None:
+                raise CleanroomException(503, "AGENT_JOB_MAPPING_UNAVAILABLE", "任务稳定标识映射不可用")
+            job_id = row["job_id"]
+            if not isinstance(job_id, str) or not job_id.startswith(AGENT_JOB_ID_PREFIX):
+                job_id = self._next_agent_job_id(db)
+                db.execute(
+                    "UPDATE host_agent_create_keys SET job_id=? WHERE project_id=? AND actor_id=? "
+                    "AND identity_domain=? AND idempotency_key=? AND job_id IS NULL",
+                    (job_id, row["project_id"], row["actor_id"], row["identity_domain"], row["idempotency_key"]),
+                )
+                current = db.execute(
+                    "SELECT job_id FROM host_agent_create_keys WHERE project_id=? AND actor_id=? "
+                    "AND identity_domain=? AND idempotency_key=?",
+                    (row["project_id"], row["actor_id"], row["identity_domain"], row["idempotency_key"]),
+                ).fetchone()
+                job_id = current["job_id"] if current is not None else None
+            if not isinstance(job_id, str) or not job_id.startswith(AGENT_JOB_ID_PREFIX):
+                raise CleanroomException(503, "AGENT_JOB_MAPPING_UNAVAILABLE", "任务稳定标识映射不可用")
+            self.database.close_commit(db)
+            return job_id
+        except Exception:
+            self.database.close_rollback(db)
+            raise
+
+    def get_agent_job_binding(self, job_id: str) -> dict[str, str | None] | None:
+        """Read only the persisted external-ID mapping; callers must authorize before exposing it."""
+        with self.database.connect() as db:
+            row = db.execute(
+                "SELECT project_id,actor_id,identity_domain,run_id FROM host_agent_create_keys WHERE job_id=?",
+                (job_id,),
+            ).fetchone()
+        return dict(row) if row is not None else None
 
     def _write_binding(self, *, run_id: str, project_id: str, auth: AuthContext, fingerprint: str, profile_id: str) -> None:
         if not auth.subject or not auth.identity_domain:
@@ -425,6 +732,8 @@ class AgentIntegration:
             raise CleanroomException(404, "PROJECT_NOT_FOUND", "项目不存在") from None
         if project.deleted_at is not None:
             raise CleanroomException(404, "PROJECT_NOT_FOUND", "项目不存在")
+        if edit_required and project.archived_at is not None:
+            raise ForbiddenException("项目已归档，智能体任务只读")
         return principal
 
     async def request_context(self, auth: AuthContext, principal: Mapping[str, Any], fingerprint: str, project_id: str, request_id: str, *, edit_required: bool = True) -> Any:
@@ -456,13 +765,14 @@ class AgentIntegration:
             from gw.agent_runtime.models import ErrorCode
             raise DomainError(ErrorCode.PROJECT_UNAVAILABLE, "任务不存在或当前主体不可访问", request_id=request_id)
         self._verify_auth_for_project(auth, fingerprint, binding["project_id"], edit_required=edit_required)
-        self._write_binding(
-            run_id=run_id,
-            project_id=binding["project_id"],
-            auth=auth,
-            fingerprint=fingerprint,
-            profile_id=binding["profile_id"],
-        )
+        if edit_required:
+            self._write_binding(
+                run_id=run_id,
+                project_id=binding["project_id"],
+                auth=auth,
+                fingerprint=fingerprint,
+                profile_id=binding["profile_id"],
+            )
         return await self.request_context(auth, {}, fingerprint, binding["project_id"], request_id, edit_required=edit_required)
 
     async def authorize_background(self, project_id: Identifier, actor_id: Identifier, run_id: Identifier | None = None) -> bool:
@@ -516,7 +826,39 @@ class AgentIntegration:
             created_at=utc_now(),
         )
 
-    def persist_profile(self, profile: ConfigSnapshot) -> None:
+    def _new_content_addressed_profile(self, *, mode: Mode, provider_id: str, model: str) -> ConfigSnapshot:
+        draft = self._new_profile(mode=mode, provider_id=provider_id, model=model, profile_id="cfg:pending")
+        content = draft.model_dump(mode="json", exclude={"config_snapshot_id", "created_at"})
+        canonical = json.dumps(content, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+        profile_id = "cfg:" + hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+        return draft.model_copy(update={"config_snapshot_id": Identifier(profile_id)})
+
+    def persist_current_profile(
+        self,
+        profile_id: str,
+        *,
+        summary: Mapping[str, Any] | None = None,
+    ) -> ConfigSnapshot | None:
+        current = summary if summary is not None else self.config_summary()
+        option = next((
+            item for item in current.get("profiles", [])
+            if isinstance(item, Mapping) and item.get("config_snapshot_id") == profile_id
+        ), None)
+        if option is None:
+            return None
+        try:
+            profile = self._new_content_addressed_profile(
+                mode=Mode(option["mode"]),
+                provider_id=option["provider_id"],
+                model=option["model"],
+            )
+        except (KeyError, TypeError, ValueError):
+            return None
+        if profile.config_snapshot_id.root != profile_id:
+            return None
+        return self.persist_profile(profile)
+
+    def persist_profile(self, profile: ConfigSnapshot) -> ConfigSnapshot:
         encoded = profile.model_dump_json()
         with self.database.connect() as db:
             db.execute("INSERT INTO host_agent_profiles(config_id,config_json) VALUES(?,?) ON CONFLICT(config_id) DO NOTHING", (profile.config_snapshot_id.root, encoded))
@@ -524,8 +866,89 @@ class AgentIntegration:
         stored = ConfigSnapshot.model_validate_json(row["config_json"])
         self.use_case.profiles[stored.config_snapshot_id.root] = stored
         self.service.config_profiles[stored.config_snapshot_id.root] = stored
+        return stored
 
-    async def create_run(self, auth: AuthContext, fingerprint: str, *, project_id: str, user_goal: str, provider_id: str | None, model: str | None, mode: str, idempotency_key: str, request_id: str) -> Any:
+    async def read_configuration_replay(
+        self,
+        *,
+        run_id: str,
+        expected_version: int,
+        idempotency_key: str,
+        config_snapshot_id: str,
+    ) -> Any | None:
+        """Read only an exact prior apply-config result for an expired profile."""
+        profile = self._load_profile(config_snapshot_id)
+        if profile is None:
+            return None
+        from gw.agent_runtime.repository import _fingerprint
+        request_fingerprint = _fingerprint({
+            "op": "apply-config",
+            "run_id": run_id,
+            "expected_version": expected_version,
+            "profile": profile.model_dump(mode="json"),
+        })
+        return await self.repository.read_idempotent_result(
+            Identifier(run_id), Identifier(idempotency_key), request_fingerprint,
+        )
+
+    def _load_profile(self, profile_id: str) -> ConfigSnapshot | None:
+        profile = self.use_case.profiles.get(profile_id) or self.service.config_profiles.get(profile_id)
+        if profile is None:
+            with self.database.connect() as db:
+                row = db.execute(
+                    "SELECT config_json FROM host_agent_profiles WHERE config_id=?",
+                    (profile_id,),
+                ).fetchone()
+            if row is None:
+                return None
+            profile = ConfigSnapshot.model_validate_json(row["config_json"])
+        if profile.config_snapshot_id.root != profile_id:
+            return None
+        self.use_case.profiles[profile_id] = profile
+        self.service.config_profiles[profile_id] = profile
+        return profile
+
+    @staticmethod
+    def _create_request_fingerprint(
+        *, project_id: str, user_goal: str, provider_id: str, model: str,
+        mode: Mode, config_snapshot_id: str, input_artifact_refs: list[str],
+        auth: AuthContext,
+    ) -> str:
+        canonical = {
+            "project_id": project_id,
+            "user_goal": user_goal,
+            "provider_id": provider_id,
+            "model": model,
+            "mode": mode.value,
+            "config_snapshot_id": config_snapshot_id,
+            "input_artifact_refs": input_artifact_refs,
+            "actor_id": auth.subject,
+            "identity_domain": auth.identity_domain,
+        }
+        return hashlib.sha256(json.dumps(
+            canonical, ensure_ascii=False, sort_keys=True, separators=(",", ":"),
+        ).encode()).hexdigest()
+
+    @staticmethod
+    def _legacy_create_request_fingerprint(
+        *, project_id: str, user_goal: str, provider_id: str, model: str,
+        mode: Mode, auth: AuthContext,
+    ) -> str:
+        """Fingerprint format written before profile and artifact refs were included."""
+        canonical = {
+            "project_id": project_id,
+            "user_goal": user_goal,
+            "provider_id": provider_id,
+            "model": model,
+            "mode": mode.value,
+            "actor_id": auth.subject,
+            "identity_domain": auth.identity_domain,
+        }
+        return hashlib.sha256(json.dumps(
+            canonical, ensure_ascii=False, sort_keys=True, separators=(",", ":"),
+        ).encode()).hexdigest()
+
+    async def create_run(self, auth: AuthContext, fingerprint: str, *, project_id: str, user_goal: str, provider_id: str | None, model: str | None, mode: str, config_snapshot_id: str, input_artifact_refs: list[str], idempotency_key: str, request_id: str) -> Any:
         async with self.run_lock:
             return await self._create_run_locked(
                 auth,
@@ -535,75 +958,144 @@ class AgentIntegration:
                 provider_id=provider_id,
                 model=model,
                 mode=mode,
+                config_snapshot_id=config_snapshot_id,
+                input_artifact_refs=input_artifact_refs,
                 idempotency_key=idempotency_key,
                 request_id=request_id,
             )
 
-    async def _create_run_locked(self, auth: AuthContext, fingerprint: str, *, project_id: str, user_goal: str, provider_id: str | None, model: str | None, mode: str, idempotency_key: str, request_id: str) -> Any:
+    async def _create_run_locked(self, auth: AuthContext, fingerprint: str, *, project_id: str, user_goal: str, provider_id: str | None, model: str | None, mode: str, config_snapshot_id: str, input_artifact_refs: list[str], idempotency_key: str, request_id: str) -> Any:
         self._verify_auth_for_project(auth, fingerprint, project_id)
+        if input_artifact_refs:
+            raise CleanroomException(
+                400,
+                "AGENT_INPUT_ARTIFACT_REFS_UNSUPPORTED",
+                "输入产物引用尚未接入同项目权限校验与消费链路；请传空列表",
+            )
         try:
-            selected_provider, selected_model = self.resolve_model(provider_id, model)
             selected_mode = Mode(mode)
-        except CleanroomException:
-            raise
         except ValueError:
             raise CleanroomException(400, "INVALID_REQUEST", "任务模式不合法") from None
-        except Exception:
-            raise CleanroomException(503, "AGENT_NOT_INTEGRATED", "服务端模型配置不可用，任务未排队") from None
 
-        canonical = {
-            "project_id": project_id,
-            "user_goal": user_goal,
-            "provider_id": selected_provider,
-            "model": selected_model,
-            "mode": selected_mode.value,
-            "actor_id": auth.subject,
-            "identity_domain": auth.identity_domain,
-        }
-        request_fingerprint = hashlib.sha256(json.dumps(canonical, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
         key = (project_id, auth.subject, auth.identity_domain, idempotency_key)
         with self.database.connect() as db:
             prior = db.execute(
                 "SELECT request_fingerprint,request_json,run_id FROM host_agent_create_keys WHERE project_id=? AND actor_id=? AND identity_domain=? AND idempotency_key=?",
                 key,
             ).fetchone()
-        if prior and prior["request_fingerprint"] != request_fingerprint:
-            from gw.agent_runtime.models import ErrorCode
-            raise DomainError(ErrorCode.IDEMPOTENCY_CONFLICT, "创建幂等键已用于不同请求", request_id=request_id)
-        if prior:
-            request_model = __import__("gw.agent_runtime.models", fromlist=["CreateRunRequest"]).CreateRunRequest.model_validate_json(prior["request_json"])
+
+        from gw.agent_runtime.models import CreateRunRequest, NonEmptyText
+        if prior is not None:
+            request_model = CreateRunRequest.model_validate_json(prior["request_json"])
             profile_id = request_model.config_snapshot_id.root
+            profile = self._load_profile(profile_id)
+            if profile is None:
+                raise CleanroomException(503, "AGENT_NOT_INTEGRATED", "已受理任务的配置快照不可恢复，未重复排队")
+            try:
+                selected_provider, selected_model = _decode_model_ref(profile.model_ref)
+            except (ValueError, TypeError, json.JSONDecodeError):
+                raise CleanroomException(503, "AGENT_NOT_INTEGRATED", "已受理任务的配置快照不可恢复，未重复排队") from None
+            if (
+                request_model.project_id.root != project_id
+                or request_model.user_goal.root != user_goal
+                or request_model.mode is not selected_mode
+                or request_model.config_snapshot_id.root != config_snapshot_id
+                or request_model.idempotency_key.root != idempotency_key
+                or request_model.input_artifact_refs
+                or profile.mode is not selected_mode
+                or (provider_id is not None and provider_id != selected_provider)
+                or (model is not None and model != selected_model)
+            ):
+                from gw.agent_runtime.models import ErrorCode
+                raise DomainError(ErrorCode.IDEMPOTENCY_CONFLICT, "创建幂等键已用于不同请求", request_id=request_id)
+            request_fingerprint = self._create_request_fingerprint(
+                project_id=request_model.project_id.root,
+                user_goal=request_model.user_goal.root,
+                provider_id=selected_provider,
+                model=selected_model,
+                mode=request_model.mode,
+                config_snapshot_id=profile_id,
+                input_artifact_refs=[],
+                auth=auth,
+            )
+            legacy_fingerprint = self._legacy_create_request_fingerprint(
+                project_id=request_model.project_id.root,
+                user_goal=request_model.user_goal.root,
+                provider_id=selected_provider,
+                model=selected_model,
+                mode=request_model.mode,
+                auth=auth,
+            )
+            if prior["request_fingerprint"] not in {request_fingerprint, legacy_fingerprint}:
+                from gw.agent_runtime.models import ErrorCode
+                raise DomainError(ErrorCode.IDEMPOTENCY_CONFLICT, "创建幂等键已用于不同请求", request_id=request_id)
         else:
-            profile_id = "cfg:" + hashlib.sha256(("\0".join(key) + "\0" + request_fingerprint).encode("utf-8")).hexdigest()[:48]
-            profile = self._new_profile(mode=selected_mode, provider_id=selected_provider, model=selected_model, profile_id=profile_id)
-            self.persist_profile(profile)
-            from gw.agent_runtime.models import CreateRunRequest, NonEmptyText
+            summary = self.config_summary()
+            if not summary["ready"]:
+                raise CleanroomException(503, "AGENT_NOT_INTEGRATED", "没有可用的服务端模型配置，任务未排队")
+            selected_profile = next((
+                item for item in summary["profiles"]
+                if item["config_snapshot_id"] == config_snapshot_id
+            ), None)
+            if selected_profile is None:
+                raise CleanroomException(400, "AGENT_CONFIG_PROFILE_UNAVAILABLE", "配置快照未知或已过期，任务未排队")
+            profile = self.persist_current_profile(config_snapshot_id, summary=summary)
+            if profile is None:
+                raise CleanroomException(400, "AGENT_CONFIG_PROFILE_UNAVAILABLE", "配置快照未知或已过期，任务未排队")
+            selected_provider = selected_profile["provider_id"]
+            selected_model = selected_profile["model"]
+            if (selected_profile["mode"] != selected_mode.value
+                    or (provider_id is not None and provider_id != selected_provider)
+                    or (model is not None and model != selected_model)):
+                raise CleanroomException(400, "AGENT_CONFIG_PROFILE_MISMATCH", "所选配置快照与 provider、model 或 mode 不一致")
+
+            request_fingerprint = self._create_request_fingerprint(
+                project_id=project_id,
+                user_goal=user_goal,
+                provider_id=selected_provider,
+                model=selected_model,
+                mode=selected_mode,
+                config_snapshot_id=config_snapshot_id,
+                input_artifact_refs=input_artifact_refs,
+                auth=auth,
+            )
             request_model = CreateRunRequest(
                 contract_version="1",
                 request_id=Identifier(request_id),
                 project_id=Identifier(project_id),
                 user_goal=NonEmptyText(user_goal),
-                input_artifact_refs=[],
+                input_artifact_refs=input_artifact_refs,
                 mode=selected_mode,
                 idempotency_key=Identifier(idempotency_key),
-                config_snapshot_id=Identifier(profile_id),
+                config_snapshot_id=Identifier(config_snapshot_id),
             )
-            with self.database.connect() as db:
+            db = self.database.transaction()
+            try:
+                reserved_job_id = self._next_agent_job_id(db)
                 db.execute(
-                    "INSERT INTO host_agent_create_keys(project_id,actor_id,identity_domain,idempotency_key,request_fingerprint,request_json,run_id) VALUES(?,?,?,?,?,?,NULL) ON CONFLICT DO NOTHING",
-                    (*key, request_fingerprint, request_model.model_dump_json()),
+                    "INSERT INTO host_agent_create_keys(project_id,actor_id,identity_domain,idempotency_key,request_fingerprint,request_json,run_id,job_id) "
+                    "VALUES(?,?,?,?,?,?,NULL,?) ON CONFLICT DO NOTHING",
+                    (*key, request_fingerprint, request_model.model_dump_json(), reserved_job_id),
                 )
                 current = db.execute(
-                    "SELECT request_fingerprint,request_json FROM host_agent_create_keys WHERE project_id=? AND actor_id=? AND identity_domain=? AND idempotency_key=?",
+                    "SELECT request_fingerprint,request_json,job_id FROM host_agent_create_keys "
+                    "WHERE project_id=? AND actor_id=? AND identity_domain=? AND idempotency_key=?",
                     key,
                 ).fetchone()
+                self.database.close_commit(db)
+            except Exception:
+                self.database.close_rollback(db)
+                raise
+            if current is None or not isinstance(current["job_id"], str):
+                raise CleanroomException(503, "AGENT_JOB_MAPPING_UNAVAILABLE", "任务稳定标识映射不可用")
             if current["request_fingerprint"] != request_fingerprint:
                 from gw.agent_runtime.models import ErrorCode
                 raise DomainError(ErrorCode.IDEMPOTENCY_CONFLICT, "创建幂等键已用于不同请求", request_id=request_id)
-            request_model = __import__("gw.agent_runtime.models", fromlist=["CreateRunRequest"]).CreateRunRequest.model_validate_json(current["request_json"])
+            request_model = CreateRunRequest.model_validate_json(current["request_json"])
             profile_id = request_model.config_snapshot_id.root
+            if self._load_profile(profile_id) is None:
+                raise CleanroomException(503, "AGENT_NOT_INTEGRATED", "服务端配置快照不可恢复，任务未排队")
 
-        self.persist_profile(self.use_case.profiles.get(profile_id) or self.service.config_profiles[profile_id])
         run = await self.service.create_run(request_model)
         self._write_binding(
             run_id=run.run_id.root,
@@ -612,11 +1104,24 @@ class AgentIntegration:
             fingerprint=fingerprint,
             profile_id=profile_id,
         )
-        with self.database.connect() as db:
+        db = self.database.transaction()
+        try:
             db.execute(
-                "UPDATE host_agent_create_keys SET run_id=? WHERE project_id=? AND actor_id=? AND identity_domain=? AND idempotency_key=?",
-                (run.run_id.root, *key),
+                "UPDATE host_agent_create_keys SET run_id=? WHERE project_id=? AND actor_id=? "
+                "AND identity_domain=? AND idempotency_key=? AND (run_id IS NULL OR run_id=?)",
+                (run.run_id.root, *key, run.run_id.root),
             )
+            current = db.execute(
+                "SELECT run_id,job_id FROM host_agent_create_keys WHERE project_id=? AND actor_id=? "
+                "AND identity_domain=? AND idempotency_key=?",
+                key,
+            ).fetchone()
+            if current is None or current["run_id"] != run.run_id.root or not current["job_id"]:
+                raise CleanroomException(503, "AGENT_JOB_MAPPING_UNAVAILABLE", "任务稳定标识映射不可用")
+            self.database.close_commit(db)
+        except Exception:
+            self.database.close_rollback(db)
+            raise
         return run
 
     def cost_ledger(self, run_id: str) -> dict[str, Any]:
@@ -667,7 +1172,9 @@ def build_agent_integration(
         },
         registered_rule_version=Identifier(SCORING_RULE_VERSION),
     )
-    dispatcher = SafeInvocationDispatcher(repo, bridge, UnknownCostBudget(runtime_db))
+    model_call_limit = _configured_model_call_limit()
+    budget = UnknownCostBudget(runtime_db, model_call_limit)
+    dispatcher = _HostSafeInvocationDispatcher(repo, bridge, budget)
     from gw.agent_episode.exports import EpisodeArtifactExporter
     from gw.agent_runtime.service import AgentRuntimeService
     service = AgentRuntimeService(
@@ -691,6 +1198,7 @@ def build_agent_integration(
         gateway=model_gateway,
         model_resolver=model_resolver or chat_runtime.resolve_agent_model,
         configuration_provider=configuration_provider or chat_runtime.public_configuration,
+        max_model_calls_per_run=model_call_limit,
         start_worker=start_worker,
     )
     integration_ref["value"] = integration

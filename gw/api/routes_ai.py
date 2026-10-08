@@ -85,7 +85,7 @@ class CliHelpRequest(BaseModel):
 
 
 class AgentCreateRunRequest(BaseModel):
-    """浏览器Cookie身份下创建一个持久Agent job。"""
+    """浏览器Cookie身份下创建一个持久Agent运行。"""
 
     model_config = ConfigDict(extra="forbid")
     project_id: str = Field(..., min_length=1, max_length=256, pattern=r"^\S(?:.*\S)?$")
@@ -95,6 +95,8 @@ class AgentCreateRunRequest(BaseModel):
     mode: Literal["approval", "automatic"] = "approval"
     idempotency_key: str = Field(..., min_length=8, max_length=128, pattern=r"^[A-Za-z0-9_.:-]+$")
     request_id: str = Field(..., min_length=1, max_length=128, pattern=r"^\S(?:.*\S)?$")
+    config_snapshot_id: str = Field(..., min_length=1, max_length=256, pattern=r"^\S(?:.*\S)?$")
+    input_artifact_refs: list[str] = Field(..., max_length=128)
 
     @field_validator("user_goal")
     @classmethod
@@ -112,6 +114,12 @@ class AgentMutationRequest(BaseModel):
     expected_version: StrictInt = Field(..., ge=0)
     idempotency_key: str = Field(..., min_length=8, max_length=128, pattern=r"^[A-Za-z0-9_.:-]+$")
     request_id: str = Field(..., min_length=1, max_length=128, pattern=r"^\S(?:.*\S)?$")
+
+
+class AgentConfigurationRequest(AgentMutationRequest):
+    """选择一个服务端发布的不可变配置快照。"""
+
+    config_snapshot_id: str = Field(..., min_length=1, max_length=256, pattern=r"^\S(?:.*\S)?$")
 
 
 class AgentReviewRequest(BaseModel):
@@ -179,26 +187,29 @@ async def _agent_identity(request: Request, authorization: Optional[str], x_user
     return integration, auth, fingerprint
 
 
-def _agent_run_payload(run: Any, integration: Any) -> dict[str, Any]:
+def _agent_run_payload(run: Any, integration: Any, *, accepted_response: bool = False) -> dict[str, Any]:
+    from gw.api.routes_god_canvas import agent_run_job_payload
+
     run_id = run.run_id.root
+    job_id = integration.job_id_for_run(run_id)
     paused = getattr(run.paused_reason, "root", None) if run.paused_reason is not None else None
     stage = run.current_stage.value if run.current_stage is not None else None
+    projected = agent_run_job_payload(job_id, run, accepted_response=accepted_response)
     return {
-        "job_id": run_id,
+        **projected,
         "run_id": run_id,
         "project_id": run.project_id.root,
         "status": run.status.value,
         "stage": stage,
         "version": run.version.root,
-        "poll_hint": f"/api/agent/runs/{run_id}",
         "paused_reason": paused,
         "cost_ledger": integration.cost_ledger(run_id),
     }
 
 
-def _agent_context(integration: Any, auth: Any, fingerprint: str, job_id: str, request_id: str, *, edit_required: bool):
+def _agent_context(integration: Any, auth: Any, fingerprint: str, run_id: str, request_id: str, *, edit_required: bool):
     return integration.context_for_run(
-        auth, fingerprint, job_id, request_id, edit_required=edit_required,
+        auth, fingerprint, run_id, request_id, edit_required=edit_required,
     )
 
 
@@ -228,31 +239,33 @@ async def create_agent_run(
         provider_id=payload.provider_id,
         model=payload.model,
         mode=payload.mode,
+        config_snapshot_id=payload.config_snapshot_id,
+        input_artifact_refs=payload.input_artifact_refs,
         idempotency_key=payload.idempotency_key,
         request_id=payload.request_id,
     )
-    return JSONResponse(status_code=202, content=_agent_run_payload(run, integration))
+    return JSONResponse(status_code=202, content=_agent_run_payload(run, integration, accepted_response=True))
 
 
-@router.get("/api/agent/runs/{job_id}", summary="读取Agent运行状态")
+@router.get("/api/agent/runs/{run_id}", summary="读取Agent运行状态")
 async def get_agent_run(
-    job_id: str,
+    run_id: str,
     request: Request,
     request_id: str = Query(default_factory=lambda: uuid.uuid4().hex, min_length=1, max_length=128, pattern=r"^\S(?:.*\S)?$"),
     authorization: Optional[str] = Header(None),
     x_user_role: str = Header("editor", alias="X-User-Role"),
 ):
     integration, auth, fingerprint = await _agent_identity(request, authorization, x_user_role)
-    context = await _agent_context(integration, auth, fingerprint, job_id, request_id, edit_required=False)
-    run = await integration.use_case.get_run(context, Identifier(job_id))
+    context = await _agent_context(integration, auth, fingerprint, run_id, request_id, edit_required=False)
+    run = await integration.use_case.get_run(context, Identifier(run_id))
     if run is None:
         raise DomainError(ErrorCode.PROJECT_UNAVAILABLE, "任务不存在或当前主体不可访问", request_id=request_id)
     return _agent_run_payload(run, integration)
 
 
-@router.get("/api/agent/runs/{job_id}/events", summary="按版本读取Agent事件")
+@router.get("/api/agent/runs/{run_id}/events", summary="按版本读取Agent事件")
 async def get_agent_events(
-    job_id: str,
+    run_id: str,
     request: Request,
     after_version: int = Query(default=0, ge=0),
     cursor: Optional[str] = Query(None, min_length=1, max_length=256, pattern=r"^\S(?:.*\S)?$"),
@@ -262,20 +275,20 @@ async def get_agent_events(
     x_user_role: str = Header("editor", alias="X-User-Role"),
 ):
     integration, auth, fingerprint = await _agent_identity(request, authorization, x_user_role)
-    context = await _agent_context(integration, auth, fingerprint, job_id, request_id, edit_required=False)
-    run_id = Identifier(job_id)
+    context = await _agent_context(integration, auth, fingerprint, run_id, request_id, edit_required=False)
+    run_ref = Identifier(run_id)
     if cursor:
-        page = await integration.use_case.list_events(context, run_id, Identifier(cursor), limit)
+        page = await integration.use_case.list_events(context, run_ref, Identifier(cursor), limit)
         events = page.events
     else:
-        page = await integration.use_case.list_events(context, run_id, None, min(limit, 1000))
+        page = await integration.use_case.list_events(context, run_ref, None, min(limit, 1000))
         events = []
         page_cursor = page.next_cursor
         while True:
             events.extend(item for item in page.events if item.version.root > after_version)
             if len(events) >= limit or page_cursor is None:
                 break
-            page = await integration.use_case.list_events(context, run_id, page_cursor, min(limit, 1000))
+            page = await integration.use_case.list_events(context, run_ref, page_cursor, min(limit, 1000))
             page_cursor = page.next_cursor
         events = events[:limit]
     last_cursor = events[-1].event_id.root if events else cursor
@@ -287,17 +300,17 @@ async def get_agent_events(
     }
 
 
-@router.get("/api/agent/runs/{job_id}/candidate", summary="读取当前人工审核候选")
+@router.get("/api/agent/runs/{run_id}/candidate", summary="读取当前人工审核候选")
 async def get_agent_candidate(
-    job_id: str,
+    run_id: str,
     request: Request,
     request_id: str = Query(default_factory=lambda: uuid.uuid4().hex, min_length=1, max_length=128, pattern=r"^\S(?:.*\S)?$"),
     authorization: Optional[str] = Header(None),
     x_user_role: str = Header("editor", alias="X-User-Role"),
 ):
     integration, auth, fingerprint = await _agent_identity(request, authorization, x_user_role)
-    context = await _agent_context(integration, auth, fingerprint, job_id, request_id, edit_required=False)
-    run = await integration.use_case.get_run(context, Identifier(job_id))
+    context = await _agent_context(integration, auth, fingerprint, run_id, request_id, edit_required=False)
+    run = await integration.use_case.get_run(context, Identifier(run_id))
     if run is None:
         raise DomainError(ErrorCode.PROJECT_UNAVAILABLE, "任务不存在或当前主体不可访问", request_id=request_id)
     state = await integration.service.repository.read_runtime_state(run.run_id) or {}
@@ -314,17 +327,17 @@ async def get_agent_candidate(
     return {"candidate": candidate.model_dump(mode="json")}
 
 
-@router.get("/api/agent/runs/{job_id}/reviews", summary="读取Agent审核与人工决策记录")
+@router.get("/api/agent/runs/{run_id}/reviews", summary="读取Agent审核与人工决策记录")
 async def get_agent_reviews(
-    job_id: str,
+    run_id: str,
     request: Request,
     request_id: str = Query(default_factory=lambda: uuid.uuid4().hex, min_length=1, max_length=128, pattern=r"^\S(?:.*\S)?$"),
     authorization: Optional[str] = Header(None),
     x_user_role: str = Header("editor", alias="X-User-Role"),
 ):
     integration, auth, fingerprint = await _agent_identity(request, authorization, x_user_role)
-    context = await _agent_context(integration, auth, fingerprint, job_id, request_id, edit_required=False)
-    run = await integration.use_case.get_run(context, Identifier(job_id))
+    context = await _agent_context(integration, auth, fingerprint, run_id, request_id, edit_required=False)
+    run = await integration.use_case.get_run(context, Identifier(run_id))
     if run is None:
         raise DomainError(ErrorCode.PROJECT_UNAVAILABLE, "任务不存在或当前主体不可访问", request_id=request_id)
     reviews = await integration.service.repository.get_reviews(run.run_id)
@@ -333,30 +346,37 @@ async def get_agent_reviews(
         approval = await integration.service.repository.get_approval_for_artifact(
             run.run_id, review.review_id, review.artifact.version_id,
         )
+        export_formats = await integration.service.export_formats_for_review(
+            run.run_id, review.review_id, review.artifact.version_id,
+        )
         items.append({
             "review": review.model_dump(mode="json"),
             "approval": approval.model_dump(mode="json") if approval is not None else None,
+            "export_formats": [
+                "exact-json" if export_format is TextExportFormat.json else export_format.value
+                for export_format in export_formats
+            ],
         })
     return {"reviews": items}
 
 
-@router.get("/api/agent/runs/{job_id}/clarifications", summary="读取待答澄清问题")
+@router.get("/api/agent/runs/{run_id}/clarifications", summary="读取待答澄清问题")
 async def get_agent_clarifications(
-    job_id: str,
+    run_id: str,
     request: Request,
     request_id: str = Query(default_factory=lambda: uuid.uuid4().hex, min_length=1, max_length=128, pattern=r"^\S(?:.*\S)?$"),
     authorization: Optional[str] = Header(None),
     x_user_role: str = Header("editor", alias="X-User-Role"),
 ):
     integration, auth, fingerprint = await _agent_identity(request, authorization, x_user_role)
-    context = await _agent_context(integration, auth, fingerprint, job_id, request_id, edit_required=False)
-    value = await integration.use_case.read_clarifications(context, Identifier(job_id))
+    context = await _agent_context(integration, auth, fingerprint, run_id, request_id, edit_required=False)
+    value = await integration.use_case.read_clarifications(context, Identifier(run_id))
     return value.model_dump(mode="json")
 
 
-@router.get("/api/agent/runs/{job_id}/artifacts", summary="读取Agent产物版本目录")
+@router.get("/api/agent/runs/{run_id}/artifacts", summary="读取Agent产物版本目录")
 async def get_agent_artifacts(
-    job_id: str,
+    run_id: str,
     request: Request,
     limit: int = Query(default=100, ge=1, le=500),
     cursor: Optional[str] = Query(None, min_length=1, max_length=256, pattern=r"^\S(?:.*\S)?$"),
@@ -365,9 +385,9 @@ async def get_agent_artifacts(
     x_user_role: str = Header("editor", alias="X-User-Role"),
 ):
     integration, auth, fingerprint = await _agent_identity(request, authorization, x_user_role)
-    context = await _agent_context(integration, auth, fingerprint, job_id, request_id, edit_required=False)
+    context = await _agent_context(integration, auth, fingerprint, run_id, request_id, edit_required=False)
     artifacts, next_cursor = await integration.use_case.list_artifacts(
-        context, Identifier(job_id), Identifier(cursor) if cursor else None, limit,
+        context, Identifier(run_id), Identifier(cursor) if cursor else None, limit,
     )
     return {
         "artifacts": [item.model_dump(mode="json") for item in artifacts],
@@ -375,9 +395,9 @@ async def get_agent_artifacts(
     }
 
 
-@router.get("/api/agent/runs/{job_id}/export", summary="按精确审核与产物版本导出")
+@router.get("/api/agent/runs/{run_id}/export", summary="按精确审核与产物版本导出")
 async def export_agent_artifact(
-    job_id: str,
+    run_id: str,
     request: Request,
     format: Literal["exact-json", "markdown", "csv"],
     review_id: str = Query(..., min_length=1, max_length=256, pattern=r"^\S(?:.*\S)?$"),
@@ -389,10 +409,10 @@ async def export_agent_artifact(
     from urllib.parse import quote
 
     integration, auth, fingerprint = await _agent_identity(request, authorization, x_user_role)
-    context = await _agent_context(integration, auth, fingerprint, job_id, request_id, edit_required=False)
+    context = await _agent_context(integration, auth, fingerprint, run_id, request_id, edit_required=False)
     selected_format = TextExportFormat.json if format == "exact-json" else TextExportFormat(format)
     payload = await integration.use_case.export_episode(
-        context, Identifier(job_id), Identifier(review_id), Identifier(artifact_version_id), selected_format,
+        context, Identifier(run_id), Identifier(review_id), Identifier(artifact_version_id), selected_format,
     )
     safe_name = quote(payload.filename.replace("\\", "_").replace("/", "_"), safe="-_.")
     return Response(
@@ -406,9 +426,9 @@ async def export_agent_artifact(
     )
 
 
-async def _agent_mutation_context(request: Request, authorization: Optional[str], x_user_role: str, job_id: str, request_id: str):
+async def _agent_mutation_context(request: Request, authorization: Optional[str], x_user_role: str, run_id: str, request_id: str):
     integration, auth, fingerprint = await _agent_identity(request, authorization, x_user_role)
-    context = await _agent_context(integration, auth, fingerprint, job_id, request_id, edit_required=True)
+    context = await _agent_context(integration, auth, fingerprint, run_id, request_id, edit_required=True)
     return integration, context
 
 
@@ -420,37 +440,72 @@ def _agent_versioned_mutation(payload: AgentMutationRequest) -> VersionedMutatio
     )
 
 
-@router.post("/api/agent/runs/{job_id}/pause", summary="暂停Agent后续阶段")
-async def pause_agent_run(job_id: str, payload: AgentMutationRequest, request: Request, authorization: Optional[str] = Header(None), x_user_role: str = Header("editor", alias="X-User-Role")):
-    integration, context = await _agent_mutation_context(request, authorization, x_user_role, job_id, payload.request_id)
-    run = await integration.use_case.pause_run(context, Identifier(job_id), _agent_versioned_mutation(payload))
+@router.post("/api/agent/runs/{run_id}/configuration", summary="为暂停运行应用服务端不可变配置")
+async def apply_agent_configuration(
+    run_id: str,
+    payload: AgentConfigurationRequest,
+    request: Request,
+    authorization: Optional[str] = Header(None),
+    x_user_role: str = Header("editor", alias="X-User-Role"),
+):
+    integration, context = await _agent_mutation_context(
+        request, authorization, x_user_role, run_id, payload.request_id,
+    )
+    profile = integration.persist_current_profile(payload.config_snapshot_id)
+    if profile is None:
+        replay = await integration.read_configuration_replay(
+            run_id=run_id,
+            expected_version=payload.expected_version,
+            idempotency_key=payload.idempotency_key,
+            config_snapshot_id=payload.config_snapshot_id,
+        )
+        if replay is not None:
+            return _agent_run_payload(replay, integration)
+        raise DomainError(
+            ErrorCode.CAPABILITY_UNSUPPORTED,
+            "配置快照未知或已过期，无法应用",
+            request_id=payload.request_id,
+        )
+    run = await integration.use_case.apply_configuration(
+        context,
+        Identifier(run_id),
+        _agent_versioned_mutation(payload),
+        Identifier(payload.config_snapshot_id),
+    )
     return _agent_run_payload(run, integration)
 
 
-@router.post("/api/agent/runs/{job_id}/resume", summary="恢复Agent运行")
-async def resume_agent_run(job_id: str, payload: AgentMutationRequest, request: Request, authorization: Optional[str] = Header(None), x_user_role: str = Header("editor", alias="X-User-Role")):
-    integration, context = await _agent_mutation_context(request, authorization, x_user_role, job_id, payload.request_id)
-    run = await integration.use_case.resume_run(context, Identifier(job_id), _agent_versioned_mutation(payload))
+@router.post("/api/agent/runs/{run_id}/pause", summary="暂停Agent后续阶段")
+async def pause_agent_run(run_id: str, payload: AgentMutationRequest, request: Request, authorization: Optional[str] = Header(None), x_user_role: str = Header("editor", alias="X-User-Role")):
+    integration, context = await _agent_mutation_context(request, authorization, x_user_role, run_id, payload.request_id)
+    run = await integration.use_case.pause_run(context, Identifier(run_id), _agent_versioned_mutation(payload))
     return _agent_run_payload(run, integration)
 
 
-@router.post("/api/agent/runs/{job_id}/cancel", summary="终止Agent后续阶段")
-async def cancel_agent_run(job_id: str, payload: AgentMutationRequest, request: Request, authorization: Optional[str] = Header(None), x_user_role: str = Header("editor", alias="X-User-Role")):
-    integration, context = await _agent_mutation_context(request, authorization, x_user_role, job_id, payload.request_id)
-    run = await integration.use_case.cancel_run(context, Identifier(job_id), _agent_versioned_mutation(payload))
+@router.post("/api/agent/runs/{run_id}/resume", summary="恢复Agent运行")
+async def resume_agent_run(run_id: str, payload: AgentMutationRequest, request: Request, authorization: Optional[str] = Header(None), x_user_role: str = Header("editor", alias="X-User-Role")):
+    integration, context = await _agent_mutation_context(request, authorization, x_user_role, run_id, payload.request_id)
+    run = await integration.use_case.resume_run(context, Identifier(run_id), _agent_versioned_mutation(payload))
     return _agent_run_payload(run, integration)
 
 
-@router.post("/api/agent/runs/{job_id}/review", summary="提交绑定精确审核版本的人工作用")
-async def decide_agent_review(job_id: str, payload: AgentReviewRequest, request: Request, authorization: Optional[str] = Header(None), x_user_role: str = Header("editor", alias="X-User-Role")):
-    integration, context = await _agent_mutation_context(request, authorization, x_user_role, job_id, payload.request_id)
+@router.post("/api/agent/runs/{run_id}/cancel", summary="终止Agent后续阶段")
+async def cancel_agent_run(run_id: str, payload: AgentMutationRequest, request: Request, authorization: Optional[str] = Header(None), x_user_role: str = Header("editor", alias="X-User-Role")):
+    integration, context = await _agent_mutation_context(request, authorization, x_user_role, run_id, payload.request_id)
+    run = await integration.use_case.cancel_run(context, Identifier(run_id), _agent_versioned_mutation(payload))
+    return _agent_run_payload(run, integration)
+
+
+@router.post("/api/agent/runs/{run_id}/review", summary="提交绑定精确审核版本的人工作用")
+async def decide_agent_review(run_id: str, payload: AgentReviewRequest, request: Request, authorization: Optional[str] = Header(None), x_user_role: str = Header("editor", alias="X-User-Role")):
+    integration, context = await _agent_mutation_context(request, authorization, x_user_role, run_id, payload.request_id)
     decision = ApprovalDecision.reject if payload.decision == "revise" else ApprovalDecision(payload.decision)
     await integration.use_case.submit_review_decision(
         context,
         ReviewDecisionRequest(
             request_id=Identifier(payload.request_id),
             idempotency_key=Identifier(payload.idempotency_key),
-            run_id=Identifier(job_id),
+            run_id=Identifier(run_id),
             review_id=Identifier(payload.review_id),
             artifact_version_id=Identifier(payload.artifact_version_id),
             expected_version=Version(payload.expected_version),
@@ -458,23 +513,23 @@ async def decide_agent_review(job_id: str, payload: AgentReviewRequest, request:
             reason=payload.reason,
         ),
     )
-    run_id = Identifier(job_id)
+    run_ref = Identifier(run_id)
     approval = await integration.service.repository.get_approval_for_artifact(
-        run_id, Identifier(payload.review_id), Identifier(payload.artifact_version_id),
+        run_ref, Identifier(payload.review_id), Identifier(payload.artifact_version_id),
     )
-    run = await integration.use_case.get_run(context, run_id)
+    run = await integration.use_case.get_run(context, run_ref)
     return {
         "approval": approval.model_dump(mode="json") if isinstance(approval, ApprovalRecord) else None,
         "run": _agent_run_payload(run, integration) if run is not None else None,
     }
 
 
-@router.post("/api/agent/runs/{job_id}/clarifications", summary="提交精确澄清问题的回答")
-async def answer_agent_clarification(job_id: str, payload: AgentClarificationRequest, request: Request, authorization: Optional[str] = Header(None), x_user_role: str = Header("editor", alias="X-User-Role")):
-    integration, context = await _agent_mutation_context(request, authorization, x_user_role, job_id, payload.request_id)
+@router.post("/api/agent/runs/{run_id}/clarifications", summary="提交精确澄清问题的回答")
+async def answer_agent_clarification(run_id: str, payload: AgentClarificationRequest, request: Request, authorization: Optional[str] = Header(None), x_user_role: str = Header("editor", alias="X-User-Role")):
+    integration, context = await _agent_mutation_context(request, authorization, x_user_role, run_id, payload.request_id)
     result = await integration.use_case.submit_clarification(
         context,
-        Identifier(job_id),
+        Identifier(run_id),
         ClarificationAnswerRequest(
             expected_version=Version(payload.expected_version),
             idempotency_key=Identifier(payload.idempotency_key),
@@ -485,16 +540,16 @@ async def answer_agent_clarification(job_id: str, payload: AgentClarificationReq
     return _agent_run_payload(result, integration)
 
 
-@router.post("/api/agent/runs/{job_id}/rollback", summary="申请绑定CAS版本的阶段回退")
-async def rollback_agent_run(job_id: str, payload: AgentRollbackRequest, request: Request, authorization: Optional[str] = Header(None), x_user_role: str = Header("editor", alias="X-User-Role")):
-    integration, context = await _agent_mutation_context(request, authorization, x_user_role, job_id, payload.request_id)
+@router.post("/api/agent/runs/{run_id}/rollback", summary="申请绑定CAS版本的阶段回退")
+async def rollback_agent_run(run_id: str, payload: AgentRollbackRequest, request: Request, authorization: Optional[str] = Header(None), x_user_role: str = Header("editor", alias="X-User-Role")):
+    integration, context = await _agent_mutation_context(request, authorization, x_user_role, run_id, payload.request_id)
     try:
         target_stage = StageId(payload.target_stage)
     except ValueError:
         raise CleanroomException(400, "INVALID_REQUEST", "回退阶段不合法") from None
     result = await integration.use_case.request_rollback(
         context,
-        Identifier(job_id),
+        Identifier(run_id),
         target_stage=target_stage,
         mutation=VersionedMutation(
             expected_version=Version(payload.expected_version),

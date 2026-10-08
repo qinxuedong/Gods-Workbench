@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="zh-CN" class="h-full overflow-hidden">
 <head>
   <link rel="stylesheet" href="/static/vendor/css/fonts.css?v=v0.0.1-alpha-2026">
@@ -146,7 +146,7 @@
           <i data-lucide="users" class="w-3.5 h-3.5"></i>
           <span>协作</span>
         </a>
-        <a href="workflow-workbench.html" class="pill-capsule-inactive px-3.5 py-1.5 text-xs tracking-wide font-medium flex items-center space-x-1.5 nav-pill-btn cursor-pointer" title="工作流">
+        <a href="workflow.html" class="pill-capsule-inactive px-3.5 py-1.5 text-xs tracking-wide font-medium flex items-center space-x-1.5 nav-pill-btn cursor-pointer" title="工作流">
           <i data-lucide="workflow" class="w-3.5 h-3.5"></i><span>工作流</span>
         </a>
         <a href="index.html?view=settings" class="pill-capsule-inactive px-3.5 py-1.5 text-xs tracking-wide font-medium flex items-center space-x-1.5 nav-pill-btn cursor-pointer" title="系统设置">
@@ -287,7 +287,9 @@
               <label class="block text-slate-400">创作目标
                 <textarea id="agentTaskGoal" rows="3" maxlength="16000" required class="block w-full mt-1 rounded bg-black/50 border border-white/10 px-2 py-1 text-slate-100" placeholder="描述故事、人物、目标时长和交付要求"></textarea>
               </label>
-              <label class="block text-slate-400">推进方式<select id="agentTaskMode" class="block w-full mt-1 rounded bg-black/50 border border-white/10 px-2 py-1 text-slate-100"><option value="approval">逐阶段审批</option><option value="automatic">自动达标推进</option></select></label>
+              <label class="block text-slate-400">服务端任务配置档案
+                <select id="agentTaskConfigProfile" class="block w-full mt-1 rounded bg-black/50 border border-white/10 px-2 py-1 text-slate-100" required aria-label="服务端任务配置档案"><option value="">读取服务端配置中…</option></select>
+              </label>
               <p class="text-[9px] text-amber-200/80">提交后会启动服务器配置的真实模型任务，可能计费。调配、创作、审核和返修阶段均可能调用模型；失败不自动重试，费用金额未知且无总额上限。</p>
               <button id="agentTaskCreate" type="submit" class="tactile-keycap w-full py-1.5 rounded-lg text-xs font-bold text-[#eddab3]">创建六阶段任务</button>
             </form>
@@ -299,7 +301,9 @@
                 <button id="agentTaskPause" type="button" disabled class="tactile-keycap px-2 py-1 rounded">暂停</button>
                 <button id="agentTaskResume" type="button" disabled class="tactile-keycap px-2 py-1 rounded">恢复</button>
                 <button id="agentTaskCancel" type="button" disabled class="tactile-keycap px-2 py-1 rounded">终止</button>
+                <button id="agentTaskApplyConfiguration" type="button" disabled class="tactile-keycap px-2 py-1 rounded">为暂停任务应用所选配置</button>
               </div>
+              <p class="text-[9px] text-slate-400">配置选项来自服务端 allowlist；只有暂停任务可应用新配置。</p>
               <p class="text-[9px] text-amber-200/80">暂停或终止会阻止后续阶段；已发出的模型请求无法撤回，仍可能完成并计费。</p>
               <div id="agentTaskReview" hidden class="space-y-2 border-t border-white/10 pt-2">
                 <p id="agentTaskReviewScore" class="text-[#eddab3]"></p>

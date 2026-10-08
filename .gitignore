@@ -33,4 +33,8 @@ AGENTS.md
 tools/_probe_*.py
 _hg_check.py
 
+# 本地 AI Agent 专属技能（仅留本地，永远不提交远端）
+.agents/
+
+
 

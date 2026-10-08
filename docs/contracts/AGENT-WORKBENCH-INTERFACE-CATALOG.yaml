@@ -1,0 +1,97 @@
+meta:
+  source: "Gods-Workbench 本地 Agent 接入实现"
+  review_status: "signed_off_by_host_owner"
+  distribution: "INTERNAL CONTRACT; not release acceptance"
+  scope: "仅描述 Workbench HTTP 适配层，不改变 Agent 领域 run_id 与状态机"
+
+service: agent_workbench_adapter
+version: 1
+
+interfaces:
+  - name: create_agent_run
+    method: POST
+    path: /api/agent/runs
+    body:
+      project_id: string
+      user_goal: string
+      provider_id: "string | optional"
+      model: "string | optional"
+      mode: "enum(approval|automatic)"
+      config_snapshot_id: string
+      input_artifact_refs: "array[string] (must be empty until reference authorization is integrated)"
+      idempotency_key: string
+      request_id: string
+    status:
+      - 202
+      - 400
+      - 401
+      - 403
+      - 409
+      - 503
+    schema:
+      response_202:
+        job_id: "stable Workbench identifier; distinct from run_id"
+        run_id: "stable Agent domain identifier"
+        state: accepted
+        agent_status: "enum(queued|running|waiting_review|paused|succeeded|failed|cancelled)"
+        poll_hint: "/api/jobs/{job_id}"
+        agent_poll_hint:
+          status_uri: "/api/agent/runs/{run_id}"
+          events_uri: "/api/agent/runs/{run_id}/events"
+          suggested_interval_ms: 2000
+    errors:
+      400: "请求或当前配置档案不合法"
+      401: "当前 Cookie 会话无效"
+      403: "主体无项目创建权限"
+      409: "同一幂等键已用于不同请求"
+      503: "Agent 集成或服务端配置未就绪；任务未受理"
+    acceptance: "重复提交同一幂等请求返回同一持久 job_id 和 run_id；旧版本指纹仅在持久请求字段与配置匹配时兼容重放。"
+
+  - name: get_agent_job_status
+    method: GET
+    path: /api/jobs/{job_id}
+    applies_when: "job_id begins with job_agent_"
+    status:
+      - 200
+      - 401
+      - 404
+    schema:
+      response_200:
+        job_id: string
+        run_id: string
+        state: "enum(accepted|running|waiting_review|paused|completed|failed|cancelled)"
+        agent_status: "enum(queued|running|waiting_review|paused|succeeded|failed|cancelled)"
+        version: integer
+        stage: "string | null"
+        poll_hint: "string | null"
+        agent_poll_hint:
+          status_uri: string
+          events_uri: string
+          suggested_interval_ms: integer
+    errors:
+      401: "当前 Cookie 会话无效"
+      404: "任务不存在或当前主体无权读取；故意统一响应以隐藏任务存在性"
+    acceptance: "Agent 分支在读取状态前校验当前 Cookie 主体、身份域及项目所有权；终态时 Workbench poll_hint 为 null。此 Agent 专用 404 隐藏策略是通用 403 规则的端点例外。"
+
+task_status_projection:
+  review_status: "signed_off_by_host_owner; 选项B扩展宿主TaskStatus已签认并实施"
+  agent_to_workbench:
+    queued: accepted
+    running: running
+    waiting_review: waiting_review
+    paused: paused
+    succeeded: completed
+    failed: failed
+    cancelled: cancelled
+  preserve_agent_status: true
+  terminal_agent_statuses:
+    - succeeded
+    - failed
+    - cancelled
+  terminal_poll_hint: null
+
+ownership:
+  source_of_truth: "Agent run 状态机；Workbench job_id 只作稳定外部关联键"
+  durable_mapping: "host_agent_create_keys.job_id -> run_id"
+  shared_observability_list: "not included until actor/project-filtered enumeration is defined"
+  related_canvas_contract: "CANVAS-INTERFACE-CATALOG.yaml: run_smart_canvas_task"

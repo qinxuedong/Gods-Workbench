@@ -156,7 +156,14 @@
       "path": "docs/contracts/CANVAS-INTERFACE-CATALOG.yaml",
       "classification": "frozen_interface_contract",
       "authorization_basis": "cleanroom_frozen_input",
-      "sha256": "d64751788efec4fd1a97896e9f8d2e2bfdbda86ca4aea591632d5c703c611d47",
+      "sha256": "d724b7f05527acacbb31097ad518e41dd97c838267544afeea6cdd6a5960b536",
+      "admission": "accepted"
+    },
+    {
+      "path": "docs/contracts/AGENT-WORKBENCH-INTERFACE-CATALOG.yaml",
+      "classification": "frozen_interface_contract",
+      "authorization_basis": "user_integration_request_2026-10-08",
+      "sha256": "20ac189e6e03b3257e75262677c109278e2ebf0a0b3b0ab787c1c1b1dea61bfe",
       "admission": "accepted"
     },
     {
@@ -268,7 +275,7 @@
       "path": "docs/contracts/README.md",
       "classification": "frozen_interface_contract",
       "authorization_basis": "cleanroom_frozen_input",
-      "sha256": "d9629d0fbede01af27b5f7b2cf3d22381540f016d8efe3b9812dfa10dfb1127f",
+      "sha256": "7ee80b0358da9835fdf8082f933b6e590a23d0e728254d5d2f01dd6c856f5989",
       "admission": "accepted"
     },
     {

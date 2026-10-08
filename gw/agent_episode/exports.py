@@ -20,7 +20,14 @@ from gw.agent_runtime.models import (
 )
 from gw.agent_runtime.ports import ExportPayload
 
-from .models import DeliveryCheckContent, EpisodeScoreResult, FullScriptContent, STAGE_CONTENT_MODELS, StoryboardTextContent
+from .models import (
+    DeliveryCheckContent,
+    EpisodeModel,
+    EpisodeScoreResult,
+    FullScriptContent,
+    STAGE_CONTENT_MODELS,
+    StoryboardTextContent,
+)
 from .scoring import SCORING_RULE_VERSION, approval_matches_current_review
 
 
@@ -30,6 +37,41 @@ class ExportRejected(ValueError):
 
 class ExportFormatMismatch(ExportRejected):
     """A supported business format was requested for the wrong episode stage."""
+
+
+_STAGE_EXPORT_FORMATS: dict[StageId, tuple[TextExportFormat, ...]] = {
+    StageId.full_script: (TextExportFormat.markdown,),
+    StageId.storyboard_text: (TextExportFormat.csv,),
+    StageId.delivery_check: (TextExportFormat.json,),
+}
+
+
+def supported_export_formats(stage: StageId) -> tuple[TextExportFormat, ...]:
+    """Return the formats the episode serializer supports for one stage."""
+    return _STAGE_EXPORT_FORMATS.get(stage, ())
+
+
+def parse_episode_text_artifact(
+    content: str,
+    *,
+    expected_stage: StageId | None = None,
+) -> tuple[StageId, EpisodeModel]:
+    """Validate a frozen stage payload without generating a business export."""
+    try:
+        envelope = json.loads(content)
+        stage = StageId(envelope["stage"])
+        raw_payload = envelope["content"]
+    except (ValueError, TypeError, KeyError, json.JSONDecodeError) as exc:
+        raise ExportRejected("content is not a supported episode text artifact") from exc
+    if expected_stage is not None and stage is not expected_stage:
+        raise ExportRejected("artifact stage does not match its durable stage attempt")
+    if envelope.get("schema_version") != 1 or not isinstance(raw_payload, dict):
+        raise ExportRejected("content is not a supported episode text artifact")
+    try:
+        payload = STAGE_CONTENT_MODELS[stage].model_validate(raw_payload)
+    except (KeyError, ValueError, TypeError) as exc:
+        raise ExportRejected("content does not match its frozen episode stage schema") from exc
+    return stage, payload
 
 
 class EpisodeArtifactExporter:
@@ -69,25 +111,17 @@ class EpisodeArtifactExporter:
             raise ExportRejected("the exact persisted review score is unavailable")
         try:
             score = Decimal(review.overall_score_decimal)
-            envelope = json.loads(content)
-            stage = StageId(envelope["stage"])
-            raw_payload = envelope["content"]
-        except (InvalidOperation, ValueError, TypeError, KeyError, json.JSONDecodeError) as exc:
+        except (InvalidOperation, ValueError, TypeError) as exc:
             raise ExportRejected("content or its exact review score is invalid") from exc
         if not score.is_finite() or score < 0 or score > 10:
             raise ExportRejected("the persisted review score is outside the supported range")
-        if envelope.get("schema_version") != 1 or not isinstance(raw_payload, dict):
-            raise ExportRejected("content is not a supported episode text artifact")
-        try:
-            payload = STAGE_CONTENT_MODELS[stage].model_validate(raw_payload)
-        except (KeyError, ValueError, TypeError) as exc:
-            raise ExportRejected("content does not match its frozen episode stage schema") from exc
+        stage, payload = parse_episode_text_artifact(content)
+        if format not in supported_export_formats(stage):
+            raise ExportFormatMismatch("The requested export format is not supported for this episode stage")
 
         version = re.sub(r"[^A-Za-z0-9._-]", "-", artifact.version_id.root)[:64] or "version"
         score_text = str(score)
         if format is TextExportFormat.markdown:
-            if stage is not StageId.full_script:
-                raise ExportFormatMismatch("Markdown export requires a full_script artifact")
             script = FullScriptContent.model_validate(payload.model_dump(mode="json"))
             release_meta = f"approval_id={approval.approval_id.root}" if approval else "release=automatic"
             metadata = (
@@ -104,8 +138,6 @@ class EpisodeArtifactExporter:
             body = ("\n".join(lines).rstrip() + "\n").encode("utf-8")
             media_type, extension, stem = "text/markdown; charset=utf-8", "md", "full-script"
         elif format is TextExportFormat.csv:
-            if stage is not StageId.storyboard_text:
-                raise ExportFormatMismatch("CSV export requires a storyboard_text artifact")
             storyboard = StoryboardTextContent.model_validate(payload.model_dump(mode="json"))
             stream = io.StringIO(newline="")
             writer = csv.writer(stream, lineterminator="\r\n", quoting=csv.QUOTE_MINIMAL)
@@ -124,8 +156,6 @@ class EpisodeArtifactExporter:
             body = ("\ufeff" + stream.getvalue()).encode("utf-8")
             media_type, extension, stem = "text/csv; charset=utf-8", "csv", "storyboard"
         elif format is TextExportFormat.json:
-            if stage is not StageId.delivery_check:
-                raise ExportFormatMismatch("JSON export requires a delivery_check artifact")
             document = {
                 "schema_version": 1,
                 "stage": stage.value,

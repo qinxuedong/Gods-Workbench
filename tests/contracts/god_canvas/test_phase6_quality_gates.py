@@ -282,3 +282,33 @@ def test_security_auth_and_role_downgrade_matrix():
     assert res_editor.state == "accepted"
     res_admin = service.submit_smart_task("cv-0001", req, authorization="Bearer cleanroom-test", user_role="admin")
     assert res_admin.state == "accepted"
+
+
+def test_extended_task_status_transitions():
+    """验证 7 态模型扩展状态：waiting_review 与 paused 的流转、非终端保留 poll_hint 及终态阻断。"""
+    service = GodCanvasService(seed_golden_fixture=True)
+    req = SmartCanvasTaskRequest(entry_nodes=["nd-0001"])
+    task = service.submit_smart_task("cv-0001", req, authorization="Bearer cleanroom-test", user_role="editor")
+    job_id = task.job_id
+
+    # accepted -> running
+    service.update_job_state(job_id, state="running")
+
+    # running -> waiting_review
+    job_review = service.update_job_state(job_id, state="waiting_review")
+    assert job_review.state == "waiting_review"
+    assert job_review.poll_hint == f"/api/jobs/{job_id}"
+
+    # waiting_review -> running
+    service.update_job_state(job_id, state="running")
+
+    # running -> paused
+    job_paused = service.update_job_state(job_id, state="paused")
+    assert job_paused.state == "paused"
+    assert job_paused.poll_hint == f"/api/jobs/{job_id}"
+
+    # paused -> running -> completed
+    service.update_job_state(job_id, state="running")
+    job_completed = service.update_job_state(job_id, state="completed")
+    assert job_completed.state == "completed"
+    assert job_completed.poll_hint is None

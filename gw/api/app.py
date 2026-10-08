@@ -93,19 +93,46 @@ async def _app_lifespan(app: FastAPI):
     生产与开发默认保持启用，且该开关不会改变任何路由契约或错误处理形状。
     """
     integration_enabled = os.getenv("GW_DISABLE_AGENT_INTEGRATION", "").strip() != "1"
-    if integration_enabled:
-        from gw.api.agent_integration import start_agent_integration, stop_agent_integration
-        await start_agent_integration(app)
+    stop_integration = None
+    primary_error = None
     try:
+        if integration_enabled:
+            try:
+                from gw.api.agent_integration import start_agent_integration, stop_agent_integration
+                stop_integration = stop_agent_integration
+                await start_agent_integration(app)
+            except (ImportError, ModuleNotFoundError) as dep_err:
+                import logging
+                logging.getLogger("gw.api.app").warning(
+                    "Agent 集成因缺少可选运行期依赖未启动 (%s)，应用在兼容模式下正常运行", dep_err
+                )
         yield
+    except BaseException as error:
+        primary_error = error
+        raise
     finally:
+        cleanup_errors = []
+        if stop_integration is not None:
+            try:
+                await stop_integration(app)
+            except BaseException as error:
+                cleanup_errors.append(error)
         try:
-            if integration_enabled:
-                await stop_agent_integration(app)
-        finally:
             # FastAPI 0.141 起应用对象不再提供 add_event_handler。
             from gw.asset_registry.index_jobs import shutdown as shutdown_index_jobs
             shutdown_index_jobs()
+        except BaseException as error:
+            cleanup_errors.append(error)
+
+        if cleanup_errors:
+            cleanup_error = (
+                cleanup_errors[0]
+                if len(cleanup_errors) == 1
+                else BaseExceptionGroup("Agent integration cleanup failed", cleanup_errors)
+            )
+            if primary_error is not None:
+                raise primary_error from cleanup_error
+            raise cleanup_error
 
 
 def create_app(*, agent_integration_factory=None) -> FastAPI:
