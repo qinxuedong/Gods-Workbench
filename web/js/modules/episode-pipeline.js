@@ -214,8 +214,8 @@
       return `<div class="h-full flex flex-col items-center justify-center text-center p-8 text-neutral-500 gap-3 min-h-[260px]">
         ${iconSvg('description', 'w-10 h-10 text-gold-dim/40')}
         <div class="flex flex-col gap-1">
-          <span class="font-outfit text-[15px] text-neutral-300 font-medium">暂无剧本正文</span>
-          <span class="font-manrope text-[12px] text-neutral-500">在左侧机架配置参数并点击「生成剧本」，或切换「编辑源码」模式直接撰写</span>
+          <span class="font-display gw-type-body-md text-neutral-300 font-medium">暂无剧本正文</span>
+          <span class="font-body gw-type-body-sm text-neutral-500">在左侧机架配置参数并点击「生成剧本」，或切换「编辑源码」模式直接撰写</span>
         </div>
       </div>`;
     }
@@ -240,22 +240,22 @@
       if (line.startsWith('# ')) {
         flushAction();
         html += `<div class="flex items-center justify-between pb-2 border-b border-white/5">
-          <h2 class="font-outfit text-[17px] font-bold text-gold-light tracking-tight">${esc(line)}</h2>
-          <span class="font-mono text-[9px] text-neutral-500 uppercase">DRAFT REV 1.4</span>
+          <h2 class="font-display gw-type-body-lg font-bold text-gold-light tracking-tight">${esc(line)}</h2>
+          <span class="font-mono gw-type-body-sm text-neutral-500">DRAFT REV 1.4</span>
         </div>`;
       } else if (line.startsWith('> ')) {
         flushAction();
-        html += `<div class="p-2 rounded bg-[#0b0d11] border border-white/5 font-mono text-[11px] text-neutral-400 flex flex-col gap-1">
+        html += `<div class="p-2 rounded bg-[#0b0d11] border border-white/5 font-mono gw-type-body-sm text-neutral-400 flex flex-col gap-1">
           <p><span class="text-gold-dim">&gt; 提示：</span>${esc(line.slice(2))}</p>
         </div>`;
       } else if (line.startsWith('## ')) {
         flushAction();
         html += `<div class="flex flex-col gap-2 pt-2 border-t border-white/5">
-          <h3 class="font-mono text-[12px] font-bold text-gold-primary tracking-wide">${esc(line)}</h3>
+          <h3 class="font-mono gw-type-body-sm font-bold text-gold-primary">${esc(line)}</h3>
         </div>`;
       } else if (line.startsWith('**出场人物：') || line.startsWith('出场人物：')) {
         flushAction();
-        html += `<p class="font-mono text-[11px] text-neutral-500">${esc(line)}</p>`;
+        html += `<p class="font-mono gw-type-body-sm text-neutral-500">${esc(line)}</p>`;
       } else if (line.startsWith('△') || line.startsWith('▲') || line.startsWith('- ')) {
         actionBuffer.push(esc(line));
       } else {
@@ -333,13 +333,13 @@
       const barWidth = isNum ? Math.min(100, Math.max(5, numScore)) : 0;
       return `<div class="bay-inset p-3 rounded flex flex-col justify-between gap-1.5">
         <div class="flex items-center justify-between">
-          <span class="font-outfit text-[12px] text-neutral-300 font-medium">${esc(label)}</span>
-          <span class="font-mono text-[13px] ${colorClass} font-bold">${esc(String(dim.score))}</span>
+          <span class="font-display gw-type-body-sm text-neutral-300 font-medium">${esc(label)}</span>
+          <span class="font-mono gw-type-body-md ${colorClass} font-bold">${esc(String(dim.score))}</span>
         </div>
         <div class="w-full h-1.5 bg-[#171a22] rounded-full overflow-hidden">
           <div class="h-full ${barColor}" style="width: ${barWidth}%;"></div>
         </div>
-        <p class="font-manrope text-[11px] text-neutral-400 line-clamp-2 leading-tight">${esc(dim.comment || '维度检验通过。')}</p>
+        <p class="font-body gw-type-body-sm text-neutral-400 line-clamp-2 leading-tight">${esc(dim.comment || '维度检验通过。')}</p>
       </div>`;
     }).join('');
 
@@ -347,11 +347,11 @@
       return `<div class="flex items-start gap-2 bg-[#0c0d12] p-2 rounded border border-white/5">
         <span class="w-1.5 h-1.5 rounded-full ${prob.red ? 'bg-brand-red shadow-[0_0_6px_#ef4444]' : 'bg-brand-orange shadow-[0_0_6px_#f97316]'} mt-1.5 shrink-0"></span>
         <div class="flex flex-col">
-          <span class="font-mono text-[11px] text-neutral-200 font-semibold">${esc(prob.title)}</span>
-          <span class="font-manrope text-[10px] text-neutral-400">${esc(prob.desc)}</span>
+          <span class="font-mono gw-type-body-sm text-neutral-200 font-semibold">${esc(prob.title)}</span>
+          <span class="font-body gw-type-body-sm text-neutral-400">${esc(prob.desc)}</span>
         </div>
       </div>`;
-    }).join('') : `<div class="col-span-2 p-3 text-center text-neutral-500 font-manrope text-[12px] bg-[#0c0d12] rounded border border-white/5">暂无待处理问题。剧本生成或编辑后点击右侧「送审 (SUBMIT AUDIT)」，AI 审计员将在此输出问题排查与针对性修改清单。</div>`;
+    }).join('') : `<div class="col-span-2 p-3 text-center text-neutral-500 font-body gw-type-body-sm bg-[#0c0d12] rounded border border-white/5">暂无待处理问题。剧本生成或编辑后点击右侧「送审 (SUBMIT AUDIT)」，AI 审计员将在此输出问题排查与针对性修改清单。</div>`;
 
     return `<section class="stage stage-script ${statusClass(stage.status)} w-full flex flex-col gap-5" id="stage-script">
       <!-- Top Hardware Sub-Header Bay -->
@@ -359,23 +359,23 @@
         <div class="flex flex-col gap-1">
           <div class="flex items-center gap-2.5">
             <span class="w-2 h-2 rounded-full bg-gold-primary shadow-[0_0_8px_#dfc384]"></span>
-            <span class="font-mono text-[11px] uppercase tracking-widest text-gold-dim font-bold">STAGE PROTOCOL 01</span>
+            <span class="font-mono gw-type-body-smst text-gold-dim font-bold">STAGE PROTOCOL 01</span>
             <span class="text-neutral-600 font-mono">/</span>
-            <span class="font-outfit text-[14px] text-gold-light font-semibold tracking-wide">剧本生成 (SCRIPT PLANNING)</span>
+            <span class="font-display gw-type-body-md text-gold-light font-semibold">剧本生成 (SCRIPT PLANNING)</span>
           </div>
-          <div class="flex items-center gap-2 text-neutral-400 font-manrope text-[12px]">
+          <div class="flex items-center gap-2 text-neutral-400 font-body gw-type-body-sm">
             ${iconSvg('hub', 'w-3.5 h-3.5 text-gold-primary')}
             <span>提示词链路：<strong class="text-neutral-200 font-medium">${esc(promptSource(pipeline, stage))}</strong></span>
-            <span class="px-1.5 py-0.5 rounded bg-[#090a0d] font-mono text-[9px] text-gold-dim border border-white/5">SYNAPSE OK</span>
+            <span class="px-1.5 py-0.5 rounded bg-[#090a0d] font-mono gw-type-body-sm text-gold-dim border border-white/5">SYNAPSE OK</span>
           </div>
         </div>
         <!-- Model Selector Chiseled Socket -->
         <div class="bay-inset px-3 py-1.5 rounded flex items-center gap-3">
           <div class="flex flex-col">
-            <span class="font-mono text-[9px] text-neutral-500 uppercase tracking-wider">NEURAL ENGINE COUPLER</span>
+            <span class="font-mono gw-type-body-sm text-neutral-500r">NEURAL ENGINE COUPLER</span>
             <div class="flex items-center gap-2">
               ${iconSvg('memory', 'w-4 h-4 text-gold-primary')}
-              <select class="bg-transparent text-neutral-200 font-mono text-[12px] tracking-wide font-medium focus:outline-none cursor-pointer border-none p-0" data-stage-model="script" aria-label="选择剧本模型" ${models.length ? '' : 'disabled'}>
+              <select class="bg-transparent text-neutral-200 font-mono gw-type-body-md font-medium focus:outline-none cursor-pointer border-none p-0" data-stage-model="script" aria-label="选择剧本模型" ${models.length ? '' : 'disabled'}>
                 ${models.length ? models.map(item => `<option class="bg-[#101217] text-neutral-200" value="${esc(`${item.provider_id}:::${item.model}`)}"${item.provider_id === selectedModel.provider_id && item.model === selectedModel.model ? ' selected' : ''}>${esc(item.provider_name)} / ${esc(item.label)}</option>`).join('') : '<option class="bg-[#101217]">未配置模型</option>'}
               </select>
             </div>
@@ -383,7 +383,7 @@
           <div class="h-6 w-px bg-white/10"></div>
           <div class="flex items-center gap-1.5 bg-[#141720] px-2.5 py-1 rounded border border-gold-primary/30 shadow-[0_0_8px_rgba(223,195,132,0.15)]">
             <span class="w-1.5 h-1.5 rounded-full ${statusLedColor}"></span>
-            <span class="font-mono text-[10px] text-gold-light font-bold uppercase tracking-wider">${esc(statusText(stage.status))}</span>
+            <span class="font-mono gw-type-body-sm text-gold-light font-boldr">${esc(statusText(stage.status))}</span>
           </div>
         </div>
       </section>
@@ -396,19 +396,19 @@
           <div class="flex items-center justify-between pb-2 border-b border-white/5">
             <div class="flex items-center gap-2">
               ${iconSvg('tune', 'w-4 h-4 text-gold-primary')}
-              <span class="font-outfit text-[15px] text-neutral-200 font-bold tracking-wide">剧本生成参数机架</span>
+              <span class="font-display gw-type-body-md text-neutral-200 font-bold">剧本生成参数机架</span>
             </div>
-            <span class="font-mono text-[10px] text-gold-dim uppercase tracking-widest">SLOT A-01</span>
+            <span class="font-mono gw-type-body-sm text-gold-dimst">SLOT A-01</span>
           </div>
 
           <!-- Ingest Mode Selector -->
           <div class="flex flex-col gap-1.5">
-            <label class="font-mono text-[10px] text-neutral-400 uppercase tracking-wider flex justify-between">
+            <label class="font-mono gw-type-body-md text-neutral-400r flex justify-between">
               <span>生成逻辑模式 (INGEST MODE)</span>
               <span class="text-gold-dim">${esc(selectedMode.key.toUpperCase())}</span>
             </label>
             <div class="relative">
-              <select class="w-full appearance-none bg-[#090a0d] text-neutral-200 font-mono text-[12px] px-3 py-2 rounded border border-white/5 shadow-inner focus:outline-none focus:border-gold-primary/40 cursor-pointer" data-script-mode aria-label="选择生成逻辑模式">
+              <select class="w-full appearance-none bg-[#090a0d] text-neutral-200 font-mono gw-type-body-md px-3 py-2 rounded border border-white/5 shadow-inner focus:outline-none focus:border-gold-primary/40 cursor-pointer" data-script-mode aria-label="选择生成逻辑模式">
                 ${modeOptions}
               </select>
               ${iconSvg('unfold_more', 'w-4 h-4 absolute right-2.5 top-2.5 text-neutral-500 pointer-events-none')}
@@ -417,25 +417,25 @@
 
           <!-- Chiseled Text Input Bay -->
           <div class="flex flex-col gap-1.5">
-            <label class="font-mono text-[10px] text-neutral-400 uppercase tracking-wider flex justify-between">
+            <label class="font-mono gw-type-body-md text-neutral-400r flex justify-between">
               <span>剧本母题与输入标头 (INGEST CAVITY)</span>
               <span class="font-mono text-neutral-500" id="scriptDraftCharCount">CHARS: ${charCount}/120</span>
             </label>
             <div class="bay-inset p-1.5 rounded">
-              <textarea class="w-full bg-transparent text-neutral-200 font-manrope text-[13px] p-2 focus:outline-none placeholder:text-neutral-600 resize-none tracking-wide" data-script-draft placeholder="输入全集核心叙事核心..." rows="3">${esc(data.scriptDraft || pipeline.seed || '')}</textarea>
+              <textarea class="w-full bg-transparent text-neutral-200 font-body gw-type-body-md p-2 focus:outline-none placeholder:text-neutral-600 resize-none" data-script-draft placeholder="输入全集核心叙事核心..." rows="3">${esc(data.scriptDraft || pipeline.seed || '')}</textarea>
             </div>
           </div>
 
           <!-- Tactile Hardware Knobs & Precision Sliders (3 Knobs Array) -->
           <div class="bay-inset p-3.5 rounded flex flex-col gap-3.5">
             <div class="flex items-center justify-between">
-              <span class="font-mono text-[9px] text-gold-dim uppercase tracking-widest">ANALOG ACTUATOR RACK</span>
-              <span class="font-mono text-[9px] text-brand-orange">CALIBRATION PASS</span>
+              <span class="font-mono gw-type-body-sm text-gold-dimst">ANALOG ACTUATOR RACK</span>
+              <span class="font-mono gw-type-body-sm text-brand-orange">CALIBRATION PASS</span>
             </div>
             <div class="knob-array-grid">
               <!-- Knob 1: Genre (题材预设) -->
               <div class="flex flex-col items-center gap-1.5">
-                <span class="font-mono text-[10px] text-neutral-400 uppercase">题材预设</span>
+                <span class="font-mono gw-type-body-sm text-neutral-400">题材预设</span>
                 <div class="relative w-16 h-16 rounded-full bg-[#181a22] flex items-center justify-center shadow-[0_6px_16px_rgba(0,0,0,0.8),inset_0_1px_2px_rgba(255,255,255,0.15)] cursor-pointer group" data-knob="genre" role="button" tabindex="0" title="点击切换题材预设">
                   <svg class="absolute inset-0 w-full h-full pointer-events-none" style="transform: rotate(${genreAngle}deg);" viewBox="0 0 64 64">
                     <circle cx="32" cy="32" fill="none" r="26" stroke="#252934" stroke-dasharray="2 4" stroke-width="2.5"></circle>
@@ -447,14 +447,14 @@
                   </div>
                 </div>
                 <div class="bg-[#121419] px-2 py-0.5 rounded border border-white/5">
-                  <span class="font-mono text-[10px] text-gold-light font-semibold">${esc(currentGenre)}</span>
+                  <span class="font-mono gw-type-body-sm text-gold-light font-semibold">${esc(currentGenre)}</span>
                 </div>
                 <input type="hidden" data-script-genre value="${esc(currentGenre)}">
               </div>
 
               <!-- Knob 2: Style (视听风格) -->
               <div class="flex flex-col items-center gap-1.5">
-                <span class="font-mono text-[10px] text-neutral-400 uppercase">视听风格</span>
+                <span class="font-mono gw-type-body-sm text-neutral-400">视听风格</span>
                 <div class="relative w-16 h-16 rounded-full bg-[#181a22] flex items-center justify-center shadow-[0_6px_16px_rgba(0,0,0,0.8),inset_0_1px_2px_rgba(255,255,255,0.15)] cursor-pointer group" data-knob="style" role="button" tabindex="0" title="点击切换视听风格">
                   <svg class="absolute inset-0 w-full h-full pointer-events-none" style="transform: rotate(${styleAngle}deg);" viewBox="0 0 64 64">
                     <circle cx="32" cy="32" fill="none" r="26" stroke="#252934" stroke-dasharray="2 4" stroke-width="2.5"></circle>
@@ -466,14 +466,14 @@
                   </div>
                 </div>
                 <div class="bg-[#121419] px-2 py-0.5 rounded border border-white/5">
-                  <span class="font-mono text-[10px] text-gold-light font-semibold">${esc(currentStyle)}</span>
+                  <span class="font-mono gw-type-body-sm text-gold-light font-semibold">${esc(currentStyle)}</span>
                 </div>
                 <input type="hidden" data-script-style value="${esc(currentStyle)}">
               </div>
 
               <!-- Knob 3: Duration (单集时长) -->
               <div class="flex flex-col items-center gap-1.5">
-                <span class="font-mono text-[10px] text-neutral-400 uppercase">单集时长</span>
+                <span class="font-mono gw-type-body-sm text-neutral-400">单集时长</span>
                 <div class="relative w-16 h-16 rounded-full bg-[#181a22] flex items-center justify-center shadow-[0_6px_16px_rgba(0,0,0,0.8),inset_0_1px_2px_rgba(255,255,255,0.15)] cursor-pointer group" data-knob="duration" role="button" tabindex="0" title="点击切换单集时长">
                   <svg class="absolute inset-0 w-full h-full pointer-events-none" style="transform: rotate(${durationAngle}deg);" viewBox="0 0 64 64">
                     <circle cx="32" cy="32" fill="none" r="26" stroke="#252934" stroke-dasharray="2 4" stroke-width="2.5"></circle>
@@ -485,7 +485,7 @@
                   </div>
                 </div>
                 <div class="bg-[#121419] px-2 py-0.5 rounded border border-white/5">
-                  <span class="font-mono text-[10px] text-gold-light font-semibold">${esc(currentDuration)}</span>
+                  <span class="font-mono gw-type-body-sm text-gold-light font-semibold">${esc(currentDuration)}</span>
                 </div>
                 <input type="hidden" data-script-duration value="${esc(currentDuration)}">
               </div>
@@ -493,7 +493,7 @@
 
             <!-- Physical Linear Slider Track -->
             <div class="flex flex-col gap-1 pt-1">
-              <div class="flex justify-between font-mono text-[9px] text-neutral-400">
+              <div class="flex justify-between font-mono gw-type-body-sm text-neutral-400">
                 <span>DENSITY BUS</span>
                 <span data-script-pacing-label>PACING: ${esc(currentPacing)} SPEED</span>
               </div>
@@ -509,13 +509,13 @@
 
           <!-- Generate and automatically save the resulting script version. -->
           <div class="flex items-center gap-3 pt-1">
-            <button class="btn-stitch-primary flex-1 flex items-center justify-center gap-2 py-2 px-3 rounded bg-gradient-to-b from-[#e5ca8f] to-[#bfa15d] text-[#12141a] font-mono text-[11px] uppercase font-bold tracking-wider hover:brightness-110 shadow-[0_4px_12px_rgba(223,195,132,0.25),inset_0_1px_1px_rgba(255,255,255,0.4)] active:translate-y-px transition-all cursor-pointer" type="button" data-stage-${stage.status === 'queued' ? 'start' : 'retry'}="script" data-pipeline-id="${esc(pipeline.pipeline_id)}" ${generatingScript ? 'disabled aria-busy="true"' : ''}>
+            <button class="btn-stitch-primary flex-1 flex items-center justify-center gap-2 py-2 px-3 rounded bg-gradient-to-b from-[#e5ca8f] to-[#bfa15d] text-[#12141a] font-mono gw-type-body-md font-boldr hover:brightness-110 shadow-[0_4px_12px_rgba(223,195,132,0.25),inset_0_1px_1px_rgba(255,255,255,0.4)] active:translate-y-px transition-all cursor-pointer" type="button" data-stage-${stage.status === 'queued' ? 'start' : 'retry'}="script" data-pipeline-id="${esc(pipeline.pipeline_id)}" ${generatingScript ? 'disabled aria-busy="true"' : ''}>
               ${iconSvg(hasGeneratedScript ? 'replay' : 'play_arrow', 'w-4 h-4')}
               <span>${generatingScript ? '生成中…' : hasGeneratedScript ? '重新生成' : '生成剧本'}</span>
             </button>
           </div>
 
-          <p class="font-mono text-[9px] text-neutral-500 leading-tight">
+          <p class="font-mono gw-type-body-sm text-neutral-500 leading-tight">
             当前模式调用: ${esc(promptDocument(pipeline, selectedMode.prompt).name)}。生成请求直接发送至当前选中文本模型，结果会自动回写到右侧视窗并归档为剧本资产。
           </p>
         </section>
@@ -527,35 +527,35 @@
             <div class="flex items-center gap-2.5">
               <div class="flex items-center gap-1.5 bg-[#090a0d] px-2 py-0.5 rounded border border-white/5">
                 <span class="w-1.5 h-1.5 rounded-full bg-gold-primary shadow-[0_0_6px_#dfc384]"></span>
-                <span class="font-mono text-[9px] text-gold-primary font-bold uppercase tracking-widest">LIVE CRT BUFFER</span>
+                <span class="font-mono gw-type-body-sm text-gold-primary font-boldst">LIVE CRT BUFFER</span>
               </div>
-              <span class="font-outfit text-[14px] text-neutral-200 font-semibold tracking-wide">生成结果视窗 (${output ? '已回写，可继续编辑' : '完成生成后显示'})</span>
+              <span class="font-display gw-type-body-md text-neutral-200 font-semibold">生成结果视窗 (${output ? '已回写，可继续编辑' : '完成生成后显示'})</span>
             </div>
             <div class="flex items-center gap-2.5">
-              <button type="button" class="text-[10px] font-mono px-2 py-0.5 rounded bg-[#101218] hover:bg-[#1a1d26] text-gold-dim border border-white/10 cursor-pointer" data-toggle-script-editor title="在富文本排版与纯文本源码编辑之间切换">
+              <button type="button" class="gw-type-body-md font-mono px-2 py-0.5 rounded bg-[#101218] hover:bg-[#1a1d26] text-gold-dim border border-white/10 cursor-pointer" data-toggle-script-editor title="在富文本排版与纯文本源码编辑之间切换">
                 ${state.scriptEditorMode === 'edit' ? '预览排版' : '编辑源码'}
               </button>
-              <span class="font-mono text-[10px] text-gold-dim">BUFFER ID: SCR-${esc(pipeline.pipeline_id.slice(-5).toUpperCase())}</span>
+              <span class="font-mono gw-type-body-sm text-gold-dim">BUFFER ID: SCR-${esc(pipeline.pipeline_id.slice(-5).toUpperCase())}</span>
               <div class="flex items-center gap-1.5 bg-[#090a0d] px-2 py-0.5 rounded border border-white/5">
                 <span class="w-1.5 h-1.5 rounded-full ${output ? 'bg-brand-green' : 'bg-neutral-600'}"></span>
-                <span class="font-mono text-[9px] text-neutral-300 font-bold">${output ? '已保存' : '待就绪'}</span>
+                <span class="font-mono gw-type-body-sm text-neutral-300 font-bold">${output ? '已保存' : '待就绪'}</span>
               </div>
             </div>
           </div>
 
           <!-- Screenplay Document Scrollport -->
-          <div class="bay-inset p-3.5 rounded h-[340px] overflow-y-auto flex flex-col gap-3 font-manrope text-[13px] leading-relaxed select-text">
-            ${state.scriptEditorMode === 'edit' ? `<textarea class="w-full h-full bg-transparent text-neutral-200 font-mono text-[12px] leading-relaxed p-1 focus:outline-none placeholder:text-neutral-600 resize-none tracking-wide select-text custom-scrollbar" data-script-output placeholder="剧本正文会显示在这里，生成完成后支持在此直接编辑与随时保存...">${esc(output)}</textarea>` : formatScreenplayHtml(output, pipeline)}
+          <div class="bay-inset p-3.5 rounded h-[340px] overflow-y-auto flex flex-col gap-3 font-body gw-type-body-sm leading-relaxed select-text">
+            ${state.scriptEditorMode === 'edit' ? `<textarea class="w-full h-full bg-transparent text-neutral-200 font-mono gw-type-body-sm leading-relaxed p-1 focus:outline-none placeholder:text-neutral-600 resize-none select-text custom-scrollbar" data-script-output placeholder="剧本正文会显示在这里，生成完成后支持在此直接编辑与随时保存...">${esc(output)}</textarea>` : formatScreenplayHtml(output, pipeline)}
           </div>
 
           <!-- Action Footer: Checksum & High-End Submit Audit Ignition Button -->
           <div class="flex items-center justify-between pt-2 border-t border-white/5">
             <div class="flex items-center gap-2">
               ${iconSvg('terminal', 'w-3.5 h-3.5 text-neutral-500')}
-              <span class="font-mono text-[10px] text-neutral-500">CHECKSUM: 0x${checksum(output || pipeline.pipeline_id)}</span>
+              <span class="font-mono gw-type-body-sm text-neutral-500">CHECKSUM: 0x${checksum(output || pipeline.pipeline_id)}</span>
             </div>
             <!-- Submit Audit Button -->
-            <button class="btn-stitch-ignite flex items-center gap-2.5 px-5 py-2 rounded bg-gradient-to-r from-[#dfc384] to-[#f4e1b9] text-[#121417] font-outfit text-[13px] font-bold tracking-wider uppercase hover:brightness-110 shadow-[0_6px_18px_rgba(223,195,132,0.35),inset_0_1px_2px_rgba(255,255,255,0.6)] active:scale-95 transition-all cursor-pointer" type="button" data-script-review>
+            <button class="btn-stitch-ignite flex items-center gap-2.5 px-5 py-2 rounded bg-gradient-to-r from-[#dfc384] to-[#f4e1b9] text-[#121417] font-display gw-type-body-md font-boldr hover:brightness-110 shadow-[0_6px_18px_rgba(223,195,132,0.35),inset_0_1px_2px_rgba(255,255,255,0.6)] active:scale-95 transition-all cursor-pointer" type="button" data-script-review>
               ${iconSvg('cyclone', 'w-[18px] h-[18px]', 18)}
               <span>送审 (SUBMIT AUDIT)</span>
             </button>
@@ -571,19 +571,19 @@
         <div class="flex items-center justify-between pb-2 border-b border-white/5">
           <div class="flex items-center gap-2.5">
             <div class="w-2 h-2 rounded-full ${isPass ? 'bg-brand-green shadow-[0_0_8px_#22c55e]' : 'bg-brand-red shadow-[0_0_8px_#ef4444]'}"></div>
-            <span class="font-outfit text-[15px] text-neutral-200 font-bold tracking-wide">审核结果机架面板</span>
-            <span class="font-mono text-[10px] text-gold-dim">[AUDIT AGENT 审计总线]</span>
+            <span class="font-display gw-type-body-md text-neutral-200 font-bold">审核结果机架面板</span>
+            <span class="font-mono gw-type-body-sm text-gold-dim">[AUDIT AGENT 审计总线]</span>
           </div>
           <div class="flex items-center gap-2 bg-[#090a0d] px-2.5 py-1 rounded border border-white/5">
-            <span class="font-mono text-[9px] text-neutral-500 uppercase">PROTOCOL</span>
-            <span class="font-mono text-[10px] text-gold-primary">AUDIT_CRITIQUE_MK4</span>
+            <span class="font-mono gw-type-body-sm text-neutral-500">PROTOCOL</span>
+            <span class="font-mono gw-type-body-sm text-gold-primary">AUDIT_CRITIQUE_MK4</span>
           </div>
         </div>
         <!-- Telemetry Master Grid -->
         <div class="stitch-audit-grid">
           <!-- Left Dial: Composite Score Gauge (3 Cols) -->
           <div class="bay-inset p-3.5 rounded flex flex-col items-center justify-center relative">
-            <span class="font-mono text-[10px] text-neutral-400 uppercase tracking-widest mb-2">综合质量评分 (OVERALL)</span>
+            <span class="font-mono gw-type-body-sm text-neutral-400st mb-2">综合质量评分 (OVERALL)</span>
             <!-- Amber Gold Circular Dial -->
             <div class="relative w-32 h-32 flex items-center justify-center">
               <svg class="w-full h-full -rotate-90 pointer-events-none" viewBox="0 0 100 100">
@@ -591,17 +591,17 @@
                 <circle class="drop-shadow-[0_0_8px_rgba(223,195,132,0.4)]" cx="50" cy="50" fill="none" r="40" stroke="${hasReview ? (isPass ? '#22c55e' : '#dfc384') : '#333742'}" stroke-dasharray="${dashLength} 260" stroke-linecap="round" stroke-width="7"></circle>
               </svg>
               <div class="absolute flex flex-col items-center">
-                <span class="font-outfit text-[34px] font-bold text-gold-light tracking-tighter leading-none">${scoreVal}</span>
-                <span class="font-mono text-[9px] text-neutral-500 mt-0.5">/ 100 PTS</span>
+                <span class="font-display gw-type-headline-lg font-bold text-gold-lighter leading-none">${scoreVal}</span>
+                <span class="font-mono gw-type-body-sm text-neutral-500 mt-0.5">/ 100 PTS</span>
               </div>
             </div>
             <!-- Warning Plaque Badge -->
             <div class="mt-2.5 flex flex-col items-center gap-0.5 ${hasReview ? (isPass ? 'bg-brand-green/10 border border-brand-green/30' : 'bg-brand-red/10 border border-brand-red/30') : 'bg-neutral-800/40 border border-white/10'} px-3 py-1 rounded">
               <div class="flex items-center gap-1.5 ${hasReview ? (isPass ? 'text-brand-green' : 'text-brand-red') : 'text-neutral-400'}">
                 ${iconSvg(hasReview ? (isPass ? 'check_circle' : 'warning') : 'schedule', 'w-3.5 h-3.5')}
-                <span class="font-mono text-[10px] font-bold tracking-wider uppercase">${hasReview ? (isPass ? '审核通过' : '审核未通过') : '待送审'}</span>
+                <span class="font-mono gw-type-body-md font-boldr">${hasReview ? (isPass ? '审核通过' : '审核未通过') : '待送审'}</span>
               </div>
-              <span class="font-mono text-[8px] text-neutral-400">${esc(review?.at ? dateTime(review.at) : '等待发起送审')}</span>
+              <span class="font-mono gw-type-body-sm text-neutral-400">${esc(review?.at ? dateTime(review.at) : '等待发起送审')}</span>
             </div>
           </div>
           <!-- Right Multi-Channel Gauge Array: 6 Dimensions (9 Cols) -->
@@ -612,11 +612,11 @@
         <!-- 4 Critical Revision Checklist Cards -->
         <div class="bay-inset p-3 rounded flex flex-col gap-2">
           <div class="flex items-center justify-between pb-1.5 border-b border-white/5">
-            <span class="font-mono text-[10px] text-brand-red uppercase tracking-wider font-bold flex items-center gap-1.5">
+            <span class="font-mono gw-type-body-sm text-brand-redr font-bold flex items-center gap-1.5">
               ${iconSvg('flag', 'w-3.5 h-3.5')}
               <span>审计核心问题排查清单 (CRITICAL ISSUES DETECTED)</span>
             </span>
-            <span class="font-mono text-[9px] text-neutral-500">${problems.length} ENTRIES PENDING REVISION</span>
+            <span class="font-mono gw-type-body-sm text-neutral-500">${problems.length} ENTRIES PENDING REVISION</span>
           </div>
           <div class="stitch-problems-grid">
             ${problemCards}
@@ -625,11 +625,11 @@
 
         <!-- Bottom Action Bar for Revision & Next -->
         <div class="flex items-center justify-end gap-3 pt-2 border-t border-white/5">
-          <button class="btn-stitch-secondary flex items-center gap-2 py-2 px-4 rounded bg-[#181b24] hover:bg-[#202430] text-neutral-200 font-mono text-[11px] uppercase tracking-wider border border-white/5 shadow-[0_4px_10px_rgba(0,0,0,0.6)] cursor-pointer" type="button" data-revise-script>
+          <button class="btn-stitch-secondary flex items-center gap-2 py-2 px-4 rounded bg-[#181b24] hover:bg-[#202430] text-neutral-200 font-mono gw-type-body-mdr border border-white/5 shadow-[0_4px_10px_rgba(0,0,0,0.6)] cursor-pointer" type="button" data-revise-script>
             ${iconSvg('auto_fix_high', 'w-4 h-4 text-gold-primary')}
             <span>按意见修改</span>
           </button>
-          <button class="btn-stitch-primary flex items-center gap-2 py-2 px-4 rounded bg-gradient-to-b from-[#e5ca8f] to-[#bfa15d] text-[#12141a] font-mono text-[11px] uppercase font-bold tracking-wider hover:brightness-110 shadow-[0_4px_12px_rgba(223,195,132,0.25)] cursor-pointer" type="button" data-confirm-next>
+          <button class="btn-stitch-primary flex items-center gap-2 py-2 px-4 rounded bg-gradient-to-b from-[#e5ca8f] to-[#bfa15d] text-[#12141a] font-mono gw-type-body-md font-boldr hover:brightness-110 shadow-[0_4px_12px_rgba(223,195,132,0.25)] cursor-pointer" type="button" data-confirm-next>
             <span>确认，进入下一步</span>
             ${iconSvg('arrow_forward', 'w-4 h-4')}
           </button>
@@ -645,11 +645,11 @@
             ${data.history.filter(item => item.type === 'script-review' || item.type === 'script-generated' || item.type === 'script-revised').slice(0, 8).map(item => `<button type="button" class="px-2 py-0.5 rounded bg-[#161820] hover:bg-[#222633] text-neutral-300 border border-white/5 cursor-pointer" data-history-item="${esc(item.at)}">${esc(item.type === 'script-review' ? `审核 ${item.score}分` : item.type === 'script-revised' ? '按意见修改' : '生成版本')} · ${esc(dateTime(item.at))}</button>`).join('') || '<span class="text-neutral-600">首次生成后将保留历史版本</span>'}
           </div>
         </div>
-        <span class="text-neutral-600 uppercase text-[9px]">ROLLBACK READY</span>
+        <span class="text-neutral-600 gw-type-body-sm">ROLLBACK READY</span>
       </div>
 
       <!-- Footer Strip -->
-      <footer class="w-full mt-6 pt-3 pb-1 border-t border-white/5 flex items-center justify-between text-neutral-500 font-mono text-[10px]">
+      <footer class="w-full mt-6 pt-3 pb-1 border-t border-white/5 flex items-center justify-between text-neutral-500 font-mono gw-type-body-sm">
         <div class="flex items-center gap-3">
           <span class="text-gold-dim">GODS' WORKBENCH ARCHITECTURE</span>
           <span>SYS-REV 4.8.2-NEO</span>
@@ -676,15 +676,15 @@
       ${groups.map(grp => {
         const isActive = selected === grp.key;
         if (isActive) {
-          return `<button class="relative px-3.5 py-1.5 rounded-lg bg-[#181c26] text-primary font-mono text-xs font-bold shadow-[0_2px_8px_rgba(0,0,0,0.6),inset_0_1px_1px_rgba(255,255,255,0.15)] flex items-center gap-2 border border-primary/30 cursor-pointer" type="button" role="tab" aria-selected="true" data-asset-group="${esc(grp.key)}" data-pipeline-id="${esc(pipeline.pipeline_id)}">
+          return `<button class="relative px-3.5 py-1.5 rounded-lg bg-[#181c26] text-primary font-mono gw-type-body-md font-bold shadow-[0_2px_8px_rgba(0,0,0,0.6),inset_0_1px_1px_rgba(255,255,255,0.15)] flex items-center gap-2 border border-primary/30 cursor-pointer" type="button" role="tab" aria-selected="true" data-asset-group="${esc(grp.key)}" data-pipeline-id="${esc(pipeline.pipeline_id)}">
             <span>${esc(grp.label)}</span>
-            <span class="px-1.5 py-0.5 rounded-full bg-primary text-[#1a1308] text-[10px] font-bold">${grp.count}</span>
+            <span class="px-1.5 py-0.5 rounded-full bg-primary text-[#1a1308] gw-type-body-md font-bold">${grp.count}</span>
             <span class="absolute -bottom-1 left-1/2 -translate-x-1/2 w-8 h-[2px] bg-primary rounded-full blur-[1px]"></span>
           </button>`;
         } else {
-          return `<button class="px-3.5 py-1.5 rounded-lg text-[#888173] hover:text-[#d3cbbe] font-mono text-xs transition-all flex items-center gap-2 cursor-pointer hover:bg-white/5" type="button" role="tab" aria-selected="false" data-asset-group="${esc(grp.key)}" data-pipeline-id="${esc(pipeline.pipeline_id)}">
+          return `<button class="px-3.5 py-1.5 rounded-lg text-[#888173] hover:text-[#d3cbbe] font-mono gw-type-body-md transition-all flex items-center gap-2 cursor-pointer hover:bg-white/5" type="button" role="tab" aria-selected="false" data-asset-group="${esc(grp.key)}" data-pipeline-id="${esc(pipeline.pipeline_id)}">
             <span>${esc(grp.label)}</span>
-            <span class="px-1.5 py-0.5 rounded-full bg-[#101218] text-[#71695b] text-[10px]">${grp.count}</span>
+            <span class="px-1.5 py-0.5 rounded-full bg-[#101218] text-[#71695b] gw-type-body-sm">${grp.count}</span>
           </button>`;
         }
       }).join('')}
@@ -702,17 +702,17 @@
     if (isRunning) {
       statusBadge = `<div class="flex items-center gap-1.5 bg-[#050609] px-2.5 py-1 rounded border border-[#1b1f2b] shadow-[inset_0_1px_2px_rgba(0,0,0,0.8)]">
         <span class="w-2 h-2 rounded-full bg-primary animate-ping"></span>
-        <span class="font-mono text-[10px] text-primary font-bold uppercase tracking-wider">● 生成中</span>
+        <span class="font-mono gw-type-body-sm text-primary font-boldr">● 生成中</span>
       </div>`;
     } else if (isReady) {
       statusBadge = `<div class="flex items-center gap-1.5 bg-[#050609] px-2.5 py-1 rounded border border-[#1b1f2b] shadow-[inset_0_1px_2px_rgba(0,0,0,0.8)]">
         <span class="w-2 h-2 rounded-full bg-emerald-400 shadow-[0_0_6px_#34d399]"></span>
-        <span class="font-mono text-[10px] text-emerald-400 font-bold uppercase tracking-wider">已就绪</span>
+        <span class="font-mono gw-type-body-sm text-emerald-400 font-boldr">已就绪</span>
       </div>`;
     } else {
       statusBadge = `<div class="flex items-center gap-1.5 bg-[#050609] px-2.5 py-1 rounded border border-[#1b1f2b] shadow-[inset_0_1px_2px_rgba(0,0,0,0.8)]">
         <span class="w-2 h-2 rounded-full bg-[#625c50]"></span>
-        <span class="font-mono text-[10px] text-[#8a8274] font-bold uppercase tracking-wider">待生成</span>
+        <span class="font-mono gw-type-body-sm text-[#8a8274] font-boldr">待生成</span>
       </div>`;
     }
 
@@ -738,23 +738,23 @@
       viewPort = `<div class="relative w-full h-[220px] rounded-lg bg-[#050608] border border-[#1e2330] overflow-hidden shadow-[inset_0_3px_8px_rgba(0,0,0,0.95)] cursor-pointer group-hover:border-primary/40 transition-colors" data-asset-image data-pipeline-id="${pipelineId}" data-asset-id="${assetId}">
         <img class="w-full h-full object-cover object-center group-hover:scale-105 transition-transform duration-500" src="${esc(asset.preview)}" alt="${esc(asset.name)}" loading="lazy" title="双击查看大图">
         <div class="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-[#06070a] via-[#06070a]/80 to-transparent p-2 flex items-center justify-between pointer-events-none">
-          <span class="font-mono text-[10px] text-primary font-bold">RENDER TILE: 09/09</span>
-          <span class="font-mono text-[9px] text-[#938b7d]">LATENT READY</span>
+          <span class="font-mono gw-type-body-sm text-primary font-bold">RENDER TILE: 09/09</span>
+          <span class="font-mono gw-type-body-sm text-[#938b7d]">LATENT READY</span>
         </div>
       </div>`;
     } else if (isRunning) {
       viewPort = `<div class="w-full h-[220px] rounded-lg bg-[#050608] border border-[#1e2330] overflow-hidden shadow-[inset_0_3px_8px_rgba(0,0,0,0.95)] flex flex-col items-center justify-center gap-2">
         <div class="w-10 h-10 rounded-full border-2 border-primary/30 border-t-primary animate-spin"></div>
-        <span class="font-mono text-xs text-primary tracking-widest uppercase font-bold">渲染采样中...</span>
-        <span class="font-mono text-[10px] text-[#716a5e]">LATENT SAMPLING 32/40</span>
+        <span class="font-mono gw-type-body-sm text-primaryst font-bold">渲染采样中...</span>
+        <span class="font-mono gw-type-body-sm text-[#716a5e]">LATENT SAMPLING 32/40</span>
       </div>`;
     } else {
       viewPort = `<div class="w-full h-[220px] rounded-lg bg-[#050608] border border-[#1c202c] shadow-[inset_0_3px_8px_rgba(0,0,0,0.95)] flex flex-col items-center justify-center gap-2 text-[#797365] group-hover:${typeColor} transition-colors cursor-pointer" data-asset-preview data-pipeline-id="${pipelineId}" data-asset-id="${assetId}">
         <div class="w-12 h-12 rounded-full bg-[#12151e] border border-[#232837] flex items-center justify-center shadow-[inset_0_1px_2px_rgba(255,255,255,0.08),0_4px_8px_rgba(0,0,0,0.7)] group-hover:border-primary/40 group-hover:scale-105 transition-all">
           ${iconSvg(typeIcon, 'w-6 h-6 text-current', 24)}
         </div>
-        <span class="font-mono text-xs tracking-widest uppercase font-bold">待生成图片</span>
-        <span class="font-mono text-[10px] text-[#554f44]">双击卡片查看设定</span>
+        <span class="font-mono gw-type-body-smst font-bold">待生成图片</span>
+        <span class="font-mono gw-type-body-sm text-[#554f44]">双击卡片查看设定</span>
       </div>`;
     }
 
@@ -772,25 +772,25 @@
       <div class="flex flex-col gap-3">
         <div class="flex items-center justify-between">
           ${statusBadge}
-          <span class="font-mono text-[10px] text-[#736c5f]">ASSET_ID #${idFormatted}</span>
+          <span class="font-mono gw-type-body-sm text-[#736c5f]">ASSET_ID #${idFormatted}</span>
         </div>
 
         ${viewPort}
 
         <div class="flex flex-col gap-1">
           <div class="flex items-center justify-between">
-            <h3 class="font-headline text-base font-bold text-[#f5ebd7] truncate" title="${esc(asset.name)}">${esc(asset.name)}</h3>
-            <span class="px-2 py-0.5 rounded bg-[#151822] border border-[#282d3c] font-mono text-[10px] ${typeColor} font-bold">${esc(typeLabel)}</span>
+            <h3 class="font-display gw-type-body-lg font-bold text-[#f5ebd7] truncate" title="${esc(asset.name)}">${esc(asset.name)}</h3>
+            <span class="px-2 py-0.5 rounded bg-[#151822] border border-[#282d3c] font-mono gw-type-body-sm ${typeColor} font-bold">${esc(typeLabel)}</span>
           </div>
-          <p class="text-xs text-[#9e9686] line-clamp-2 leading-relaxed" title="${esc(asset.prompt)}">${esc(asset.prompt)}</p>
+          <p class="gw-type-body-sm text-[#9e9686] line-clamp-2 leading-relaxed" title="${esc(asset.prompt)}">${esc(asset.prompt)}</p>
         </div>
       </div>
 
       <div class="flex items-center gap-2 pt-2 border-t border-[#191c26]">
-        <button class="asset-generate-button flex-1 py-2 rounded-lg ${genBtnClass} font-mono text-xs font-bold active:translate-y-px transition-all flex items-center justify-center gap-1.5 cursor-pointer" type="button" data-asset-generate="${assetId}" data-pipeline-id="${pipelineId}" ${isRunning ? 'disabled' : ''}>
+        <button class="asset-generate-button flex-1 py-2 rounded-lg ${genBtnClass} font-mono gw-type-body-md font-bold active:translate-y-px transition-all flex items-center justify-center gap-1.5 cursor-pointer" type="button" data-asset-generate="${assetId}" data-pipeline-id="${pipelineId}" ${isRunning ? 'disabled' : ''}>
           ${genBtnInner}
         </button>
-        <button class="px-3 py-2 rounded-lg bg-[#141720] hover:bg-[#1c202d] text-[#b3aa9a] hover:text-[#f0eae1] border border-[#272d3e] shadow-[0_2px_6px_rgba(0,0,0,0.6)] active:translate-y-px transition-all font-mono text-xs font-medium cursor-pointer" type="button" data-asset-upload="${assetId}" data-pipeline-id="${pipelineId}">
+        <button class="px-3 py-2 rounded-lg bg-[#141720] hover:bg-[#1c202d] text-[#b3aa9a] hover:text-[#f0eae1] border border-[#272d3e] shadow-[0_2px_6px_rgba(0,0,0,0.6)] active:translate-y-px transition-all font-mono gw-type-body-md font-medium cursor-pointer" type="button" data-asset-upload="${assetId}" data-pipeline-id="${pipelineId}">
           上传本地
         </button>
       </div>
@@ -885,25 +885,25 @@
         <div class="flex flex-wrap items-center justify-between gap-4 pb-3 border-b border-[#181b24]">
           <div class="flex flex-col gap-1">
             <div class="flex items-center gap-2">
-              <span class="px-2 py-0.5 rounded bg-[#171a23] text-primary font-mono text-[10px] font-bold uppercase tracking-wider border border-primary/20">STEP MODULE 02</span>
-              <span class="font-mono text-[10px] text-[#7c7567]">NODE PIPELINE: ASSET_EXTRACT_V4</span>
+              <span class="px-2 py-0.5 rounded bg-[#171a23] text-primary font-mono gw-type-body-md font-boldr border border-primary/20">STEP MODULE 02</span>
+              <span class="font-mono gw-type-body-sm text-[#7c7567]">NODE PIPELINE: ASSET_EXTRACT_V4</span>
             </div>
             <div class="flex items-baseline gap-3">
-              <h1 class="font-headline text-xl lg:text-2xl font-bold tracking-tight text-[#f2ede4]">资产生成</h1>
-              <span class="text-xs text-primary/90 font-medium">${esc(promptLink)}</span>
+              <h1 class="font-display gw-type-headline-md font-bold text-[#f2ede4]">资产生成</h1>
+              <span class="gw-type-body-sm text-primary/90 font-normal">${esc(promptLink)}</span>
             </div>
           </div>
 
           <div class="flex items-center gap-3">
             <div class="flex items-center gap-1.5 bg-[#06070a] p-1 rounded-lg border border-[#181b24] shadow-[inset_0_2px_4px_rgba(0,0,0,0.85)]">
-              <button class="px-2 py-0.5 rounded text-[10px] font-mono text-[#8a8274] hover:text-[#f2ede4] hover:bg-[#141722] transition-colors flex items-center gap-1 cursor-pointer" type="button" data-goto-step="script" title="返回上一步：01 剧本生成">
+              <button class="px-2 py-0.5 rounded gw-type-body-md font-mono text-[#8a8274] hover:text-[#f2ede4] hover:bg-[#141722] transition-colors flex items-center gap-1 cursor-pointer" type="button" data-goto-step="script" title="返回上一步：01 剧本生成">
                 ${iconSvg('arrow_back', 'w-3 h-3')}
                 <span>01 剧本</span>
               </button>
-              <span class="text-[#2e3444] text-xs">/</span>
-              <span class="px-2 py-0.5 rounded bg-[#161923] text-[10px] font-mono font-bold text-primary border border-primary/25 shadow-[inset_0_1px_1px_rgba(255,255,255,0.06)]">02 资产</span>
-              <span class="text-[#2e3444] text-xs">/</span>
-              <button class="px-2 py-0.5 rounded text-[10px] font-mono text-[#8a8274] hover:text-[#f2ede4] hover:bg-[#141722] transition-colors flex items-center gap-1 cursor-pointer" type="button" data-goto-step="video" title="进入下一步：03 分镜脚本">
+              <span class="text-[#2e3444] gw-type-body-sm">/</span>
+              <span class="px-2 py-0.5 rounded bg-[#161923] gw-type-body-sm font-mono font-bold text-primary border border-primary/25 shadow-[inset_0_1px_1px_rgba(255,255,255,0.06)]">02 资产</span>
+              <span class="text-[#2e3444] gw-type-body-sm">/</span>
+              <button class="px-2 py-0.5 rounded gw-type-body-md font-mono text-[#8a8274] hover:text-[#f2ede4] hover:bg-[#141722] transition-colors flex items-center gap-1 cursor-pointer" type="button" data-goto-step="video" title="进入下一步：03 分镜脚本">
                 <span>03 分镜</span>
                 ${iconSvg('arrow_forward', 'w-3 h-3')}
               </button>
@@ -911,8 +911,8 @@
 
             <div class="flex items-center gap-2.5 bg-[#06070a] px-3 py-1.5 rounded-lg border border-[#181b24] shadow-[inset_0_2px_4px_rgba(0,0,0,0.9)]">
               <div class="flex flex-col text-right">
-                <span class="font-mono text-[9px] text-[#716a5e] uppercase">COMPUTE BUS</span>
-                <span class="font-mono text-xs text-amber-300 font-bold" data-gw-degradation="not_integrated" title="未接入硬件遥测端点，无真实算力数据">未接入</span>
+                <span class="font-mono gw-type-body-sm text-[#716a5e]">COMPUTE BUS</span>
+                <span class="font-mono gw-type-body-sm text-amber-300 font-bold" data-gw-degradation="not_integrated" title="未接入硬件遥测端点，无真实算力数据">未接入</span>
               </div>
               <div class="w-1.5 h-6 bg-[#13161f] rounded-full overflow-hidden flex flex-col justify-end p-0.5">
                 <div class="w-full h-4/5 bg-[#ffb689] rounded-full shadow-[0_0_6px_#ffb689]"></div>
@@ -920,8 +920,8 @@
             </div>
             <div class="flex items-center gap-2.5 bg-[#06070a] px-3 py-1.5 rounded-lg border border-[#181b24] shadow-[inset_0_2px_4px_rgba(0,0,0,0.9)]">
               <div class="flex flex-col text-right">
-                <span class="font-mono text-[9px] text-[#716a5e] uppercase">VRAM CACHE</span>
-                <span class="font-mono text-xs text-amber-300 font-bold" data-gw-degradation="not_integrated" title="未接入显存遥测端点，无真实显存占用数据">未接入</span>
+                <span class="font-mono gw-type-body-sm text-[#716a5e]">VRAM CACHE</span>
+                <span class="font-mono gw-type-body-sm text-amber-300 font-bold" data-gw-degradation="not_integrated" title="未接入显存遥测端点，无真实显存占用数据">未接入</span>
               </div>
               <span class="w-2 h-2 rounded-full bg-primary animate-pulse shadow-[0_0_8px_#dfc384]"></span>
             </div>
@@ -931,30 +931,30 @@
         <div class="grid grid-cols-1 lg:grid-cols-12 gap-3.5 items-center">
           <div class="lg:col-span-5 bg-[#07080c] p-2.5 rounded-lg border border-[#191c26] shadow-[inset_0_2px_5px_rgba(0,0,0,0.85)] flex flex-col gap-1.5">
             <div class="flex items-center justify-between">
-              <span class="font-mono text-[10px] text-[#857d6d] uppercase tracking-wider">文本模型 (EXTRACTION ENGINE)</span>
-              <span class="flex items-center gap-1 font-mono text-[10px] text-amber-300" data-gw-degradation="not_integrated" title="未连接任何模型服务，未验证任何模型可用性">
+              <span class="font-mono gw-type-body-sm text-[#857d6d]r">文本模型 (EXTRACTION ENGINE)</span>
+              <span class="flex items-center gap-1 font-mono gw-type-body-sm text-amber-300" data-gw-degradation="not_integrated" title="未连接任何模型服务，未验证任何模型可用性">
                 <span class="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse shadow-[0_0_5px_#f59e0b]"></span>未接入
               </span>
             </div>
             <div class="flex items-center justify-between bg-[#11131a] px-3 py-2 rounded border border-[#232734]">
               <div class="flex items-center gap-2 truncate">
                 ${iconSvg('terminal', 'w-4 h-4 text-[#7a8194] shrink-0')}
-                <span class="font-mono text-xs font-semibold text-[#f0eae1] truncate">${esc(textModelDisplay)}</span>
+                <span class="font-mono gw-type-body-sm font-semibold text-[#f0eae1] truncate">${esc(textModelDisplay)}</span>
               </div>
-              <span class="font-mono text-[9px] px-2 py-0.5 rounded bg-amber-500/10 text-amber-300 border border-amber-500/30 font-bold shrink-0" data-gw-degradation="not_integrated" title="未连接任何模型服务，未验证任何模型可用性">未接入</span>
+              <span class="font-mono gw-type-body-sm px-2 py-0.5 rounded bg-amber-500/10 text-amber-300 border border-amber-500/30 font-bold shrink-0" data-gw-degradation="not_integrated" title="未连接任何模型服务，未验证任何模型可用性">未接入</span>
             </div>
           </div>
 
           <div class="lg:col-span-7 bg-[#07080c] p-2.5 rounded-lg border border-[#191c26] shadow-[inset_0_2px_5px_rgba(0,0,0,0.85)] flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
             <div class="flex flex-col gap-1.5 flex-1 min-w-0">
               <div class="flex items-center justify-between">
-                <span class="font-mono text-[10px] text-[#857d6d] uppercase tracking-wider">图片模型 (卡片生图 / LATENT DIFFUSION)</span>
-                <span class="font-mono text-[10px] text-amber-300" data-gw-degradation="not_integrated" title="未读取任何真实随机种子">未读取种子</span>
+                <span class="font-mono gw-type-body-sm text-[#857d6d]r">图片模型 (卡片生图 / LATENT DIFFUSION)</span>
+                <span class="font-mono gw-type-body-sm text-amber-300" data-gw-degradation="not_integrated" title="未读取任何真实随机种子">未读取种子</span>
               </div>
               <div class="relative flex items-center justify-between bg-[#11131a] px-3 py-2 rounded border border-[#232734] hover:border-primary/40 transition-all cursor-pointer">
                 <div class="flex items-center gap-2 truncate flex-1 min-w-0 pointer-events-none">
                   ${iconSvg('view_in_ar', 'w-4 h-4 text-primary shrink-0')}
-                  <span class="font-mono text-xs font-bold text-[#f5efe5] truncate">${esc(imgModelDisplay)}</span>
+                  <span class="font-mono gw-type-body-md font-bold text-[#f5efe5] truncate">${esc(imgModelDisplay)}</span>
                 </div>
                 <select class="absolute inset-0 opacity-0 cursor-pointer w-full h-full z-10" data-stage-model="asset_image" aria-label="选择图片模型">
                   ${imgModelOptions}
@@ -966,11 +966,11 @@
             <div class="flex items-center gap-2 pt-2 sm:pt-0 shrink-0">
               <button class="px-3 py-2 rounded-lg bg-[#141720] hover:bg-[#1a1e2a] text-[#dfc384] border border-[#2c3242] shadow-[0_3px_8px_rgba(0,0,0,0.6),inset_0_1px_1px_rgba(255,255,255,0.08)] active:translate-y-px transition-all flex items-center gap-1.5 cursor-pointer" type="button" data-assets-refresh data-pipeline-id="${esc(pipeline.pipeline_id)}" ${extracting ? 'disabled' : ''}>
                 ${iconSvg('refresh', `w-3.5 h-3.5 ${extracting ? 'animate-spin' : ''}`)}
-                <span class="font-mono text-[11px] font-bold tracking-wider">${extracting ? '提取中...' : '重新提取'}</span>
+                <span class="font-mono gw-type-body-md font-boldr">${extracting ? '提取中...' : '重新提取'}</span>
               </button>
               <button class="px-4 py-2 rounded-lg bg-gradient-to-b from-[#fcdf9d] to-[#dfc384] text-[#1a1308] font-bold shadow-[0_4px_12px_rgba(223,195,132,0.35),inset_0_1px_1px_rgba(255,255,255,0.6)] active:translate-y-px transition-all flex items-center gap-1.5 hover:brightness-105 cursor-pointer" type="button" data-stage-retry="assets" data-pipeline-id="${esc(pipeline.pipeline_id)}">
                 ${iconSvg('bolt', 'w-4 h-4 text-current')}
-                <span class="font-mono text-[11px] font-bold tracking-wider uppercase">重新执行</span>
+                <span class="font-mono gw-type-body-md font-boldr">重新执行</span>
               </button>
             </div>
           </div>
@@ -981,10 +981,10 @@
       <div class="flex flex-wrap items-center justify-between gap-4 px-1">
         <div class="flex flex-col gap-0.5">
           <div class="flex items-center gap-2.5">
-            <h2 class="font-headline text-lg font-bold text-[#f4eee4]">${totalCount ? `${totalCount} 项设定资产` : '剧本资产尚未提取'}</h2>
-            <span class="px-2 py-0.5 rounded bg-[#13161f] text-[#827a6c] font-mono text-[10px] uppercase border border-[#212634]">AUTO-PARSED</span>
+            <h2 class="font-display gw-type-headline-sm font-medium text-[#f4eee4]">${totalCount ? `${totalCount} 项设定资产` : '剧本资产尚未提取'}</h2>
+            <span class="px-2 py-0.5 rounded bg-[#13161f] text-[#827a6c] font-mono gw-type-body-sm border border-[#212634]">AUTO-PARSED</span>
           </div>
-          <p class="text-xs text-[#9c9484]">文本模型提取角色骨架、场景构筑和关键道具设定档案；图片模型负责渲染视觉锚定卡片。</p>
+          <p class="gw-type-body-sm text-[#9c9484]">文本模型提取角色骨架、场景构筑和关键道具设定档案；图片模型负责渲染视觉锚定卡片。</p>
         </div>
         ${totalCount ? assetGroupFilter(pipeline, data) : ''}
       </div>
@@ -1001,7 +1001,7 @@
         ` : `
           <div class="w-full py-16 flex flex-col items-center justify-center gap-3 bg-[#0a0c10] rounded-xl border border-white/5 text-neutral-400">
             ${iconSvg('inbox', 'w-8 h-8 text-neutral-600')}
-            <span class="font-mono text-sm">当前分组暂无资产</span>
+            <span class="font-mono gw-type-body-md">当前分组暂无资产</span>
           </div>
         `) : `
           <div class="w-full py-16 px-6 bg-[#0b0d12] rounded-xl border border-[#1f232e] shadow-[0_12px_28px_rgba(0,0,0,0.8)] flex flex-col items-center justify-center text-center gap-4 relative">
@@ -1011,10 +1011,10 @@
               ${iconSvg('auto_fix_high', 'w-7 h-7 text-primary')}
             </div>
             <div class="flex flex-col gap-1">
-              <h3 class="font-headline text-lg font-bold text-[#f2ede4]">从已确认剧本提取资产</h3>
-              <p class="text-xs text-[#9c9484] max-w-md">点击“重新提取”或“根据剧本生成资产”，由资产提取 agent 读取剧本并创建可编辑的提示词卡片。</p>
+              <h3 class="font-display gw-type-headline-sm font-medium text-[#f2ede4]">从已确认剧本提取资产</h3>
+              <p class="gw-type-body-sm text-[#9c9484] max-w-md">点击“重新提取”或“根据剧本生成资产”，由资产提取 agent 读取剧本并创建可编辑的提示词卡片。</p>
             </div>
-            <button class="px-5 py-2.5 rounded-lg bg-gradient-to-b from-[#fcdf9d] via-[#dfc384] to-[#c7a760] text-[#1a1308] font-mono text-xs font-bold shadow-[0_6px_20px_rgba(223,195,132,0.4),inset_0_1px_1px_rgba(255,255,255,0.7)] hover:brightness-105 active:translate-y-px transition-all flex items-center gap-2 cursor-pointer" type="button" data-assets-refresh data-pipeline-id="${esc(pipeline.pipeline_id)}">
+            <button class="px-5 py-2.5 rounded-lg bg-gradient-to-b from-[#fcdf9d] via-[#dfc384] to-[#c7a760] text-[#1a1308] font-mono gw-type-body-md font-bold shadow-[0_6px_20px_rgba(223,195,132,0.4),inset_0_1px_1px_rgba(255,255,255,0.7)] hover:brightness-105 active:translate-y-px transition-all flex items-center gap-2 cursor-pointer" type="button" data-assets-refresh data-pipeline-id="${esc(pipeline.pipeline_id)}">
               ${iconSvg('play_arrow', 'w-4 h-4 text-current')}
               <span>根据剧本提取资产</span>
             </button>
@@ -1027,7 +1027,7 @@
         <div class="flex-1 w-full flex items-center gap-3">
           <div class="flex items-center gap-1.5 text-[#857e6f]">
             ${iconSvg('tune', 'w-4 h-4 text-[#857e6f]')}
-            <span class="font-mono text-[10px] uppercase tracking-wider font-bold">TRACK NAV</span>
+            <span class="font-mono gw-type-body-smr font-bold">TRACK NAV</span>
           </div>
           <div class="relative flex-1 h-3 bg-[#050608] rounded-full p-0.5 border border-[#1a1d27] shadow-[inset_0_2px_4px_rgba(0,0,0,0.95)] cursor-pointer" id="hardwareTrack" title="点击或拖动滑块平移卡片机架">
             <div class="h-full bg-gradient-to-r from-primary/30 to-primary rounded-full w-1/4 shadow-[0_0_8px_#dfc384]" id="trackFilament"></div>
@@ -1035,27 +1035,27 @@
               <div class="w-3 h-0.5 bg-primary rounded-full shadow-[0_0_4px_#dfc384]"></div>
             </div>
           </div>
-          <span class="font-mono text-[10px] text-[#736c5e]">BAY POS: 01-${String(Math.min(visibleAssets.length, 6)).padStart(2, '0')} / ${String(totalCount).padStart(2, '0')}</span>
+          <span class="font-mono gw-type-body-sm text-[#736c5e]">BAY POS: 01-${String(Math.min(visibleAssets.length, 6)).padStart(2, '0')} / ${String(totalCount).padStart(2, '0')}</span>
         </div>
 
         <div class="flex items-center gap-3 w-full md:w-auto justify-end">
           <div class="hidden sm:flex items-center gap-2 bg-[#050608] px-3 py-1.5 rounded-lg border border-[#191c26] shadow-[inset_0_2px_4px_rgba(0,0,0,0.85)]">
             ${iconSvg('thermostat', 'w-4 h-4 text-[#ffb689]')}
-            <span class="font-mono text-[10px] text-[#736c5f] uppercase">CORE TEMP</span>
-            <span class="font-mono text-[11px] text-[#ffb689] font-bold">58°C OPTIMAL</span>
+            <span class="font-mono gw-type-body-sm text-[#736c5f]">CORE TEMP</span>
+            <span class="font-mono gw-type-body-sm text-[#ffb689] font-bold">58°C OPTIMAL</span>
           </div>
 
-          <button class="px-4 py-2.5 rounded-lg bg-[#141722] hover:bg-[#1c2230] border border-[#2e3447] text-[#c9cbd2] font-mono text-xs font-semibold shadow-[0_2px_8px_rgba(0,0,0,0.5)] active:translate-y-px transition-all flex items-center gap-1.5 cursor-pointer" type="button" data-goto-step="script" title="返回剧本生成">
+          <button class="px-4 py-2.5 rounded-lg bg-[#141722] hover:bg-[#1c2230] border border-[#2e3447] text-[#c9cbd2] font-mono gw-type-body-md font-semibold shadow-[0_2px_8px_rgba(0,0,0,0.5)] active:translate-y-px transition-all flex items-center gap-1.5 cursor-pointer" type="button" data-goto-step="script" title="返回剧本生成">
             ${iconSvg('arrow_back', 'w-3.5 h-3.5 text-[#8b909f]')}
             <span>上一步：剧本</span>
           </button>
 
-          <button class="px-5 py-2.5 rounded-lg bg-gradient-to-b from-[#fcdf9d] via-[#dfc384] to-[#c7a760] text-[#1a1308] font-mono text-xs font-bold shadow-[0_6px_20px_rgba(223,195,132,0.4),inset_0_1px_1px_rgba(255,255,255,0.7)] hover:brightness-105 active:translate-y-px active:shadow-[inset_0_2px_6px_rgba(0,0,0,0.7)] transition-all flex items-center gap-2 cursor-pointer ${pendingCount === 0 ? 'opacity-70' : ''}" type="button" data-batch-generate-assets data-pipeline-id="${esc(pipeline.pipeline_id)}">
+          <button class="px-5 py-2.5 rounded-lg bg-gradient-to-b from-[#fcdf9d] via-[#dfc384] to-[#c7a760] text-[#1a1308] font-mono gw-type-body-md font-bold shadow-[0_6px_20px_rgba(223,195,132,0.4),inset_0_1px_1px_rgba(255,255,255,0.7)] hover:brightness-105 active:translate-y-px active:shadow-[inset_0_2px_6px_rgba(0,0,0,0.7)] transition-all flex items-center gap-2 cursor-pointer ${pendingCount === 0 ? 'opacity-70' : ''}" type="button" data-batch-generate-assets data-pipeline-id="${esc(pipeline.pipeline_id)}">
             ${iconSvg('playlist_play', 'w-4 h-4 text-current')}
-            <span class="tracking-wide">${pendingCount > 0 ? `批量生成剩余 ${pendingCount} 项资产` : '已全部生成完毕'}</span>
+            <span class="font-body">${pendingCount > 0 ? `批量生成剩余 ${pendingCount} 项资产` : '已全部生成完毕'}</span>
           </button>
 
-          <button class="px-4 py-2.5 rounded-lg bg-gradient-to-r from-[#1c2233] to-[#252c40] hover:from-[#232b40] hover:to-[#2e3752] border border-[#dfc384]/40 text-[#dfc384] font-mono text-xs font-bold shadow-[0_4px_14px_rgba(0,0,0,0.6)] active:translate-y-px transition-all flex items-center gap-1.5 cursor-pointer group" type="button" data-goto-step="video" title="确认资产并进入分镜脚本">
+          <button class="px-4 py-2.5 rounded-lg bg-gradient-to-r from-[#1c2233] to-[#252c40] hover:from-[#232b40] hover:to-[#2e3752] border border-[#dfc384]/40 text-[#dfc384] font-mono gw-type-body-md font-bold shadow-[0_4px_14px_rgba(0,0,0,0.6)] active:translate-y-px transition-all flex items-center gap-1.5 cursor-pointer group" type="button" data-goto-step="video" title="确认资产并进入分镜脚本">
             <span>下一步：分镜</span>
             ${iconSvg('arrow_forward', 'w-3.5 h-3.5 text-primary group-hover:translate-x-0.5 transition-transform')}
           </button>
@@ -1063,7 +1063,7 @@
       </footer>
 
       <!-- 底板信息条 -->
-      <div class="w-full bg-[#060709] border-t border-[#14161f] py-2 px-6 flex items-center justify-between text-[10px] font-mono text-[#575246]">
+      <div class="w-full bg-[#060709] border-t border-[#14161f] py-2 px-6 flex items-center justify-between gw-type-body-sm font-mono text-[#575246]">
         <div class="flex items-center gap-3">
           <span class="text-[#7c7567]">GODS' WORKBENCH ARCHITECTURE</span>
           <span>SYS-REV 4.8.2-NEO</span>
@@ -1084,14 +1084,14 @@
     const options = modelOptions(modelKind);
     const selected = selectedProviderModel(pipeline, stage.stage, modelKind);
     return `<div class="flex items-center bg-[#07080c] border border-[#242735] px-3 py-1.5 rounded-lg shadow-inner gap-2.5">
-      <span class="font-mono text-[10px] text-[#717688] uppercase tracking-wider">文本推理模型</span>
-      <select class="bg-[#14161f] border border-gold-primary/30 text-gold-light font-mono text-[11px] font-semibold rounded px-2 py-0.5 focus:outline-none focus:border-gold-primary cursor-pointer" data-stage-model="video" aria-label="选择文本推理模型" ${options.length ? '' : 'disabled'}>
+      <span class="font-mono gw-type-body-sm text-[#717688]r">文本推理模型</span>
+      <select class="bg-[#14161f] border border-gold-primary/30 text-gold-light font-mono gw-type-body-md font-semibold rounded px-2 py-0.5 focus:outline-none focus:border-gold-primary cursor-pointer" data-stage-model="video" aria-label="选择文本推理模型" ${options.length ? '' : 'disabled'}>
         ${options.length ? options.map(item => `<option value="${esc(`${item.provider_id}:::${item.model}`)}"${item.provider_id === selected.provider_id && item.model === selected.model ? ' selected' : ''}>${esc(item.provider_name)} / ${esc(item.label)}</option>`).join('') : '<option>未配置模型</option>'}
       </select>
       <div class="h-4 w-px bg-[#20232f]"></div>
       <div class="flex items-center gap-1.5 pl-0.5">
         <span class="w-2 h-2 rounded-full bg-amber-400 shadow-[0_0_8px_#f59e0b] animate-pulse"></span>
-        <span class="font-mono text-[10px] text-amber-300 font-bold uppercase tracking-wider" data-gw-degradation="not_integrated" title="未接入任何模型服务，无法判定就绪状态">未接入</span>
+        <span class="font-mono gw-type-body-sm text-amber-300 font-boldr" data-gw-degradation="not_integrated" title="未接入任何模型服务，无法判定就绪状态">未接入</span>
       </div>
     </div>`;
   }
@@ -1100,18 +1100,18 @@
     return `<div class="w-full bg-[#11131a] rounded-lg p-3 border border-outline hover:border-gold-primary/40 transition-all shadow-md group" data-outline-field-wrap="${esc(key)}">
       <div class="flex items-center justify-between pb-2 border-b border-[#181a24]">
         <div class="flex items-center gap-2">
-          <span class="font-mono text-[10px] px-2 py-0.5 bg-gold-primary/20 text-gold-light font-extrabold border border-gold-primary/40 rounded">${esc(num)}</span>
-          <span class="font-outfit font-bold text-[13px] text-gold-light tracking-wide">${esc(label)}</span>
-          <span class="font-mono text-[9px] text-[#6d7283]">${esc(tag)}</span>
+          <span class="font-mono gw-type-body-sm px-2 py-0.5 bg-gold-primary/20 text-gold-light font-extrabold border border-gold-primary/40 rounded">${esc(num)}</span>
+          <span class="font-display font-bold gw-type-body-md text-gold-light">${esc(label)}</span>
+          <span class="font-mono gw-type-body-sm text-[#6d7283]">${esc(tag)}</span>
         </div>
-        <button class="flex items-center gap-1 px-2 py-0.5 bg-[#090a0e] hover:bg-[#161822] rounded border border-[#20232e] text-[#8e93a4] hover:text-gold-light font-mono text-[9px] transition-all cursor-pointer" type="button" data-outline-expand aria-expanded="true">
+        <button class="flex items-center gap-1 px-2 py-0.5 bg-[#090a0e] hover:bg-[#161822] rounded border border-[#20232e] text-[#8e93a4] hover:text-gold-light font-mono gw-type-body-md transition-all cursor-pointer" type="button" data-outline-expand aria-expanded="true">
           <span>收起</span>
           ${iconSvg('unfold_more', 'w-3 h-3 text-gold-dim')}
         </button>
       </div>
       <div class="outline-field-body pt-2.5">
         <div class="bg-[#08090d] p-2.5 rounded border border-[#181a24] shadow-inner">
-          <textarea class="w-full bg-transparent border-0 text-[#d4d8e5] text-[12px] leading-relaxed font-sans focus:outline-none focus:ring-0 resize-y" data-outline-field="${esc(key)}" rows="3" placeholder="${esc(placeholder)}">${esc(value)}</textarea>
+          <textarea class="w-full bg-transparent border-0 text-[#d4d8e5] gw-type-body-sm leading-relaxed font-body focus:outline-none focus:ring-0 resize-y" data-outline-field="${esc(key)}" rows="3" placeholder="${esc(placeholder)}">${esc(value)}</textarea>
         </div>
       </div>
     </div>`;
@@ -1121,19 +1121,19 @@
     return `<div class="w-full bg-[#11131a] rounded-lg p-3 border border-outline hover:border-gold-primary/40 transition-all shadow-md" data-outline-field-wrap="fiveActs">
       <div class="flex items-center justify-between pb-2 border-b border-[#181a24]">
         <div class="flex items-center gap-2">
-          <span class="font-mono text-[10px] px-2 py-0.5 bg-[#1e2230] text-gold-light font-extrabold border border-[#2e3448] rounded">04</span>
-          <span class="font-outfit font-bold text-[13px] text-gold-light tracking-wide">五幕结构 (每行一条逐条展开)</span>
-          <span class="font-mono text-[9px] text-[#6d7283]">5-ACT DRAMATIC BEATS</span>
+          <span class="font-mono gw-type-body-sm px-2 py-0.5 bg-[#1e2230] text-gold-light font-extrabold border border-[#2e3448] rounded">04</span>
+          <span class="font-display font-bold gw-type-body-md text-gold-light">五幕结构 (每行一条逐条展开)</span>
+          <span class="font-mono gw-type-body-sm text-[#6d7283]">5-ACT DRAMATIC BEATS</span>
         </div>
-        <button class="flex items-center gap-1 px-2 py-0.5 bg-[#090a0e] hover:bg-[#161822] rounded border border-[#20232e] text-[#8e93a4] hover:text-gold-light font-mono text-[9px] transition-all cursor-pointer" type="button" data-outline-expand aria-expanded="true">
+        <button class="flex items-center gap-1 px-2 py-0.5 bg-[#090a0e] hover:bg-[#161822] rounded border border-[#20232e] text-[#8e93a4] hover:text-gold-light font-mono gw-type-body-md transition-all cursor-pointer" type="button" data-outline-expand aria-expanded="true">
           <span>收起</span>
           ${iconSvg('unfold_more', 'w-3 h-3 text-gold-dim')}
         </button>
       </div>
       <div class="outline-field-body flex flex-col gap-2 pt-2.5">
         ${acts.map((act, index) => `<div class="flex items-start gap-2.5 bg-[#08090d] p-2 rounded border border-[#181a24] shadow-inner">
-          <span class="font-mono text-[10px] ${index === 1 ? 'bg-gold-primary/20 text-gold-light border-gold-primary/40' : index === 2 ? 'bg-amber-500/20 text-amber-300 border-amber-500/40' : 'bg-[#161822] text-[#8c91a4] border-[#252838]'} border px-2 py-0.5 rounded shrink-0 font-bold">第 ${index + 1} 幕</span>
-          <textarea class="flex-1 bg-transparent border-0 text-[#c2c6d4] text-[12px] leading-relaxed focus:outline-none focus:ring-0 resize-y" data-outline-act="${index}" rows="2" placeholder="第 ${index + 1} 幕推进情节">${esc(act)}</textarea>
+          <span class="font-mono gw-type-body-sm ${index === 1 ? 'bg-gold-primary/20 text-gold-light border-gold-primary/40' : index === 2 ? 'bg-amber-500/20 text-amber-300 border-amber-500/40' : 'bg-[#161822] text-[#8c91a4] border-[#252838]'} border px-2 py-0.5 rounded shrink-0 font-bold">第 ${index + 1} 幕</span>
+          <textarea class="flex-1 bg-transparent border-0 text-[#c2c6d4] gw-type-body-sm leading-relaxed focus:outline-none focus:ring-0 resize-y" data-outline-act="${index}" rows="2" placeholder="第 ${index + 1} 幕推进情节">${esc(act)}</textarea>
         </div>`).join('')}
       </div>
     </div>`;
@@ -1145,47 +1145,47 @@
       <div class="flex items-center justify-between pb-2 border-b border-[#1c1f2b]">
         <div class="flex items-center gap-2">
           <span class="w-2 h-2 rounded-full bg-gold-primary shadow-[0_0_6px_#dfc384]"></span>
-          <span class="font-mono text-xs font-bold text-gold-light">分镜 #${String(index + 1).padStart(2, '0')}</span>
-          <span class="font-mono text-[10px] px-1.5 py-0.5 bg-[#1b1e2a] text-[#a0a5b8] border border-[#2b3042] rounded">${esc(shot.shotType || 'A')} 类镜头</span>
+          <span class="font-mono gw-type-body-sm font-bold text-gold-light">分镜 #${String(index + 1).padStart(2, '0')}</span>
+          <span class="font-mono gw-type-body-sm px-1.5 py-0.5 bg-[#1b1e2a] text-[#a0a5b8] border border-[#2b3042] rounded">${esc(shot.shotType || 'A')} 类镜头</span>
         </div>
         <div class="flex items-center gap-1.5 bg-[#090a0e] px-2.5 py-0.5 rounded border border-[#1f222e]">
           ${iconSvg('timer', 'w-3.5 h-3.5 text-gold-dim')}
-          <span class="font-mono text-[11px] text-gold-primary font-bold">${Number(shot.duration || 8)}s</span>
+          <span class="font-mono gw-type-body-sm text-gold-primary font-bold">${Number(shot.duration || 8)}s</span>
         </div>
       </div>
 
       <!-- 参数调整格栅：标题、机位、景别、运动、转场 -->
-      <div class="grid grid-cols-2 sm:grid-cols-5 gap-2 font-mono text-[11px]">
+      <div class="grid grid-cols-2 sm:grid-cols-5 gap-2 font-mono gw-type-body-sm">
         <div class="flex flex-col gap-1 col-span-2 sm:col-span-1">
-          <span class="text-[9px] text-[#6d7283]">镜头标题</span>
-          <input class="bg-[#090b10] border border-[#222532] focus:border-gold-primary/50 text-[#e1e4ed] px-2 py-1 rounded text-[11px] focus:outline-none" data-shot-field="title" data-shot-id="${esc(shot.id)}" value="${esc(shot.title)}" placeholder="镜头简述">
+          <span class="gw-type-body-sm text-[#6d7283]">镜头标题</span>
+          <input class="bg-[#090b10] border border-[#222532] focus:border-gold-primary/50 text-[#e1e4ed] px-2 py-1 rounded gw-type-body-md focus:outline-none" data-shot-field="title" data-shot-id="${esc(shot.id)}" value="${esc(shot.title)}" placeholder="镜头简述">
         </div>
         <div class="flex flex-col gap-1">
-          <span class="text-[9px] text-[#6d7283]">机位视点</span>
-          <input class="bg-[#090b10] border border-[#222532] focus:border-gold-primary/50 text-[#e1e4ed] px-2 py-1 rounded text-[11px] focus:outline-none" data-shot-field="camera" data-shot-id="${esc(shot.id)}" value="${esc(shot.camera)}" placeholder="如 平视/仰拍">
+          <span class="gw-type-body-sm text-[#6d7283]">机位视点</span>
+          <input class="bg-[#090b10] border border-[#222532] focus:border-gold-primary/50 text-[#e1e4ed] px-2 py-1 rounded gw-type-body-md focus:outline-none" data-shot-field="camera" data-shot-id="${esc(shot.id)}" value="${esc(shot.camera)}" placeholder="如 平视/仰拍">
         </div>
         <div class="flex flex-col gap-1">
-          <span class="text-[9px] text-[#6d7283]">景别规模</span>
-          <input class="bg-[#090b10] border border-[#222532] focus:border-gold-primary/50 text-[#e1e4ed] px-2 py-1 rounded text-[11px] focus:outline-none" data-shot-field="scene" data-shot-id="${esc(shot.id)}" value="${esc(shot.scene)}" placeholder="如 特写/中景">
+          <span class="gw-type-body-sm text-[#6d7283]">景别规模</span>
+          <input class="bg-[#090b10] border border-[#222532] focus:border-gold-primary/50 text-[#e1e4ed] px-2 py-1 rounded gw-type-body-md focus:outline-none" data-shot-field="scene" data-shot-id="${esc(shot.id)}" value="${esc(shot.scene)}" placeholder="如 特写/中景">
         </div>
         <div class="flex flex-col gap-1">
-          <span class="text-[9px] text-[#6d7283]">运镜动作</span>
-          <input class="bg-[#090b10] border border-[#222532] focus:border-gold-primary/50 text-[#e1e4ed] px-2 py-1 rounded text-[11px] focus:outline-none" data-shot-field="movement" data-shot-id="${esc(shot.id)}" value="${esc(shot.movement)}" placeholder="如 推进/固定">
+          <span class="gw-type-body-sm text-[#6d7283]">运镜动作</span>
+          <input class="bg-[#090b10] border border-[#222532] focus:border-gold-primary/50 text-[#e1e4ed] px-2 py-1 rounded gw-type-body-md focus:outline-none" data-shot-field="movement" data-shot-id="${esc(shot.id)}" value="${esc(shot.movement)}" placeholder="如 推进/固定">
         </div>
         <div class="flex flex-col gap-1">
-          <span class="text-[9px] text-[#6d7283]">转场意图</span>
-          <input class="bg-[#090b10] border border-[#222532] focus:border-gold-primary/50 text-[#e1e4ed] px-2 py-1 rounded text-[11px] focus:outline-none" data-shot-field="transition" data-shot-id="${esc(shot.id)}" value="${esc(shot.transition)}" placeholder="如 硬切/闪白">
+          <span class="gw-type-body-sm text-[#6d7283]">转场意图</span>
+          <input class="bg-[#090b10] border border-[#222532] focus:border-gold-primary/50 text-[#e1e4ed] px-2 py-1 rounded gw-type-body-md focus:outline-none" data-shot-field="transition" data-shot-id="${esc(shot.id)}" value="${esc(shot.transition)}" placeholder="如 硬切/闪白">
         </div>
       </div>
 
       <!-- 关键节拍描述区 -->
       <div class="flex flex-col gap-1">
-        <div class="flex items-center justify-between text-[10px] font-mono text-[#6d7283]">
+        <div class="flex items-center justify-between gw-type-body-sm font-mono text-[#6d7283]">
           <span>关键节拍与剧本内容 (KEY BEATS)</span>
           <span>SHOT-ID: ${esc(shot.id)}</span>
         </div>
         <div class="bg-[#07080c] p-2.5 rounded-lg border border-[#1a1c26] shadow-inner">
-          <textarea class="w-full bg-transparent border-0 text-[#d4d8e5] text-[12px] leading-relaxed focus:outline-none focus:ring-0 resize-y" data-shot-field="content" data-shot-id="${esc(shot.id)}" rows="3" placeholder="填写该镜头的关键动作、台词与身位节拍">${esc(shot.content || shot.beats)}</textarea>
+          <textarea class="w-full bg-transparent border-0 text-[#d4d8e5] gw-type-body-sm leading-relaxed focus:outline-none focus:ring-0 resize-y" data-shot-field="content" data-shot-id="${esc(shot.id)}" rows="3" placeholder="填写该镜头的关键动作、台词与身位节拍">${esc(shot.content || shot.beats)}</textarea>
         </div>
       </div>
     </article>`;
@@ -1198,24 +1198,24 @@
         <div class="flex items-center justify-between pb-2 border-b border-[#1f222e]">
           <div class="flex items-center gap-2">
             <div class="w-2 h-2 rounded-full bg-gold-primary shadow-[0_0_8px_#dfc384]"></div>
-            <span class="font-outfit font-bold text-[13px] text-white tracking-wider">原始剧本监视器</span>
-            <span class="font-mono text-[10px] text-gold-dim">[CANON-TXT-01]</span>
+            <span class="font-display font-bold gw-type-body-md text-whiter">原始剧本监视器</span>
+            <span class="font-mono gw-type-body-sm text-gold-dim">[CANON-TXT-01]</span>
           </div>
           <div class="flex items-center gap-2">
-            <button class="flex items-center gap-1 px-2.5 py-0.5 bg-[#11131a] hover:bg-[#1a1d28] border border-[#2b2e3c] rounded text-gold-light font-mono text-[10px] transition-all shadow-sm" type="button" data-goto-step="script" title="返回剧本生成修改源文本">
+            <button class="flex items-center gap-1 px-2.5 py-0.5 bg-[#11131a] hover:bg-[#1a1d28] border border-[#2b2e3c] rounded text-gold-light font-mono gw-type-body-md transition-all shadow-sm" type="button" data-goto-step="script" title="返回剧本生成修改源文本">
               ${iconSvg('history_edu', 'w-3 h-3 text-gold-dim')}
               <span>来源脚本</span>
             </button>
           </div>
         </div>
 
-        <div class="w-full bg-[#06070a] border border-[#1a1c26] rounded-lg p-4 shadow-[inset_0_3px_10px_rgba(0,0,0,0.95),inset_0_1px_2px_rgba(0,0,0,0.9)] overflow-y-auto max-h-[640px] flex flex-col gap-3 font-mono text-[12px] leading-relaxed select-text">
+        <div class="w-full bg-[#06070a] border border-[#1a1c26] rounded-lg p-4 shadow-[inset_0_3px_10px_rgba(0,0,0,0.95),inset_0_1px_2px_rgba(0,0,0,0.9)] overflow-y-auto max-h-[640px] flex flex-col gap-3 font-mono gw-type-body-sm leading-relaxed select-text">
           <div class="p-3 bg-gradient-to-b from-[#0f1118] to-[#090b10] border border-[#222634] rounded shadow-inner flex flex-col gap-1.5">
             <div class="flex items-center justify-between text-gold-light font-bold">
-              <span class="text-[14px] font-outfit">${esc(pipeline.title ? `# 《${pipeline.title}》` : '# 剧集创作源')}</span>
-              <span class="text-[10px] text-[#787d8e] bg-[#050608] px-2 py-0.5 rounded border border-[#191b24]">EP-CANON</span>
+              <span class="gw-type-body-md font-display">${esc(pipeline.title ? `# 《${pipeline.title}》` : '# 剧集创作源')}</span>
+              <span class="gw-type-body-sm text-[#787d8e] bg-[#050608] px-2 py-0.5 rounded border border-[#191b24]">EP-CANON</span>
             </div>
-            <div class="text-[#a4a8b8] text-[11px]"><span class="text-gold-primary font-semibold">&gt; 种子设定：</span>${esc(pipeline.seed || '尚未设定种子')}</div>
+            <div class="text-[#a4a8b8] gw-type-body-sm"><span class="text-gold-primary font-semibold">&gt; 种子设定：</span>${esc(pipeline.seed || '尚未设定种子')}</div>
           </div>
 
           <div class="prose-screenplay flex flex-col gap-3">
@@ -1226,7 +1226,7 @@
         <div class="bg-[#07080b] border border-[#181a24] p-2.5 rounded-lg shadow-inner flex items-center justify-between">
           <div class="flex items-center gap-2">
             ${iconSvg('graphic_eq', 'w-4 h-4 text-gold-dim')}
-            <span class="font-mono text-[10px] text-[#767b8d] uppercase">DENSITY INDEX</span>
+            <span class="font-mono gw-type-body-sm text-[#767b8d]">DENSITY INDEX</span>
           </div>
           <div class="flex items-center gap-2">
             <div class="flex gap-1">
@@ -1236,7 +1236,7 @@
               <div class="w-1.5 h-3 bg-amber-400 rounded-xs"></div>
               <div class="w-1.5 h-3 bg-[#1e222e] rounded-xs"></div>
             </div>
-            <span class="font-mono text-[11px] text-gold-light font-bold">+2.4 dB (HIGH-DENSITY)</span>
+            <span class="font-mono gw-type-body-sm text-gold-light font-bold">+2.4 dB (HIGH-DENSITY)</span>
           </div>
         </div>
       </section>
@@ -1246,13 +1246,13 @@
         <div class="flex items-center justify-between pb-2 border-b border-[#1f222e]">
           <div class="flex items-center gap-2">
             <div class="w-2 h-2 rounded-full bg-gold-primary shadow-[0_0_8px_#dfc384]"></div>
-            <span class="font-outfit font-bold text-[14px] text-white tracking-wider">大纲 (可编辑)</span>
-            <span class="font-mono text-[10px] text-gold-dim">PARSED STRUCTURE</span>
+            <span class="font-display font-bold gw-type-body-md text-whiter">大纲 (可编辑)</span>
+            <span class="font-mono gw-type-body-sm text-gold-dim">PARSED STRUCTURE</span>
           </div>
           <div class="flex items-center gap-2">
             <div class="flex items-center gap-1.5 bg-[#08090d] border border-[#232634] px-2 py-0.5 rounded shadow-inner">
               <span class="w-1.5 h-1.5 rounded-full ${ready ? 'bg-emerald-400 shadow-[0_0_6px_#34d399]' : 'bg-amber-400'}"></span>
-              <span class="font-mono text-[10px] ${ready ? 'text-emerald-400' : 'text-amber-300'} uppercase font-semibold">${ready ? '字段已对齐' : '待生成大纲'}</span>
+              <span class="font-mono gw-type-body-sm ${ready ? 'text-emerald-400' : 'text-amber-300'} font-semibold">${ready ? '字段已对齐' : '待生成大纲'}</span>
             </div>
           </div>
         </div>
@@ -1266,16 +1266,16 @@
         </div>
 
         <div class="w-full bg-[#07080b] border border-[#1a1c26] p-2.5 rounded-lg shadow-inner flex flex-col sm:flex-row items-center justify-between gap-3 mt-2">
-          <div class="flex items-center gap-2 font-mono text-[11px] text-[#8e93a4]">
-            <span class="material-symbols-outlined text-[15px] text-gold-dim">tune</span>
+          <div class="flex items-center gap-2 font-mono gw-type-body-sm text-[#8e93a4]">
+            <span class="material-symbols-outlined gw-type-body-md text-gold-dim">tune</span>
             <span>大纲状态：${ready ? '<b class="text-emerald-400">校验通过，可进入拆分</b>' : '<b class="text-amber-400">待校验生成</b>'}</span>
           </div>
           <div class="flex items-center gap-2">
-            <button class="px-5 py-2 rounded-lg bg-gradient-to-b from-[#fcdf9d] via-[#dfc384] to-[#b89547] text-[#120f05] font-outfit font-bold text-xs shadow-[0_0_18px_rgba(223,195,132,0.4),0_4px_10px_rgba(0,0,0,0.8),inset_0_1px_1px_rgba(255,255,255,0.6)] hover:brightness-110 active:scale-[0.98] transition-all flex items-center gap-1.5 cursor-pointer" type="button" data-outline-generate>
+            <button class="px-5 py-2 rounded-lg bg-gradient-to-b from-[#fcdf9d] via-[#dfc384] to-[#b89547] text-[#120f05] font-display font-bold gw-type-body-md shadow-[0_0_18px_rgba(223,195,132,0.4),0_4px_10px_rgba(0,0,0,0.8),inset_0_1px_1px_rgba(255,255,255,0.6)] hover:brightness-110 active:scale-[0.98] transition-all flex items-center gap-1.5 cursor-pointer" type="button" data-outline-generate>
               ${iconSvg('auto_awesome', 'w-4 h-4 text-[#120f05]')}
               <span>${ready ? '重新生成大纲' : '生成结构化大纲'}</span>
             </button>
-            ${ready ? `<button class="px-4 py-2 rounded-lg bg-[#1a1e2a] hover:bg-[#23293a] border border-gold-primary/30 text-gold-light font-outfit font-bold text-xs transition-all flex items-center gap-1 cursor-pointer" type="button" data-storyboard-substep="2">
+            ${ready ? `<button class="px-4 py-2 rounded-lg bg-[#1a1e2a] hover:bg-[#23293a] border border-gold-primary/30 text-gold-light font-display font-bold gw-type-body-md transition-all flex items-center gap-1 cursor-pointer" type="button" data-storyboard-substep="2">
               <span>前往步骤 2 拆分分镜</span>
               ${iconSvg('chevron_right', 'w-3.5 h-3.5 text-gold-primary')}
             </button>` : ''}
@@ -1295,23 +1295,23 @@
           <div class="w-2.5 h-7 rounded-full bg-gradient-to-b from-gold-light to-gold-dim shadow-[0_0_10px_rgba(223,195,132,0.5)]"></div>
           <div class="flex flex-col">
             <div class="flex items-center gap-2">
-              <h3 class="font-outfit text-base font-bold text-white tracking-wide">步骤 2 / 具体镜头节拍拆解</h3>
-              <span class="font-mono text-[10px] px-2 py-0.5 bg-gold-primary/20 text-gold-light border border-gold-primary/40 rounded font-bold">${shots.length} 镜已拆分</span>
+              <h3 class="font-display gw-type-body-lg font-bold text-white">步骤 2 / 具体镜头节拍拆解</h3>
+              <span class="font-mono gw-type-body-sm px-2 py-0.5 bg-gold-primary/20 text-gold-light border border-gold-primary/40 rounded font-bold">${shots.length} 镜已拆分</span>
             </div>
-            <span class="font-mono text-[11px] text-[#787d8e]">根据步骤1大纲，拆分具体机位、景别、运动、转场与关键节拍</span>
+            <span class="font-mono gw-type-body-sm text-[#787d8e]">根据步骤1大纲，拆分具体机位、景别、运动、转场与关键节拍</span>
           </div>
         </div>
 
         <div class="flex items-center gap-3 flex-wrap">
-          <div class="flex items-center gap-2 bg-[#090a0e] px-3 py-1.5 rounded-lg border border-[#1f222e] font-mono text-xs">
+          <div class="flex items-center gap-2 bg-[#090a0e] px-3 py-1.5 rounded-lg border border-[#1f222e] font-mono gw-type-body-sm">
             <span class="text-[#6d7283]">预估总片长:</span>
             <span class="text-gold-light font-bold">${totalDuration} 秒</span>
           </div>
-          <button class="px-4 py-1.5 rounded-lg bg-gradient-to-b from-[#fcdf9d] via-[#dfc384] to-[#b89547] text-[#120f05] font-outfit font-bold text-xs shadow hover:brightness-105 active:scale-95 transition-all flex items-center gap-1.5 cursor-pointer ${ready ? '' : 'opacity-60'}" type="button" data-shots-generate ${ready ? '' : 'disabled'}>
+          <button class="px-4 py-1.5 rounded-lg bg-gradient-to-b from-[#fcdf9d] via-[#dfc384] to-[#b89547] text-[#120f05] font-display font-bold gw-type-body-md shadow hover:brightness-105 active:scale-95 transition-all flex items-center gap-1.5 cursor-pointer ${ready ? '' : 'opacity-60'}" type="button" data-shots-generate ${ready ? '' : 'disabled'}>
             ${iconSvg('movie_edit', 'w-3.5 h-3.5 text-[#120f05]')}
             <span>${shots.length ? '重新拆分分镜' : '确认大纲并拆分分镜'}</span>
           </button>
-          ${shots.length ? `<button class="px-4 py-1.5 rounded-lg bg-[#1b1f2c] hover:bg-[#252b3d] border border-gold-primary/40 text-gold-light font-outfit font-bold text-xs transition-all flex items-center gap-1 cursor-pointer" type="button" data-storyboard-substep="3">
+          ${shots.length ? `<button class="px-4 py-1.5 rounded-lg bg-[#1b1f2c] hover:bg-[#252b3d] border border-gold-primary/40 text-gold-light font-display font-bold gw-type-body-md transition-all flex items-center gap-1 cursor-pointer" type="button" data-storyboard-substep="3">
             <span>前往步骤 3 提交审核</span>
             ${iconSvg('chevron_right', 'w-3.5 h-3.5 text-gold-primary')}
           </button>` : ''}
@@ -1324,10 +1324,10 @@
       </div>` : `<div class="w-full py-16 px-6 bg-[#08090d] rounded-xl border border-dashed border-[#242836] flex flex-col items-center justify-center text-center gap-3 shadow-inner">
         ${iconSvg('view_timeline', 'w-12 h-12 text-gold-dim/40')}
         <div class="flex flex-col gap-1 max-w-md">
-          <h4 class="font-outfit text-sm font-bold text-[#e1e4ed]">尚未生成分镜镜头组</h4>
-          <p class="font-mono text-xs text-[#6e7384]">请先在步骤 1 确认结构化大纲，然后点击上方“确认大纲并拆分分镜”，分镜师 Agent 将自动为您规划逐镜头参数。</p>
+          <h4 class="font-display gw-type-body-md font-bold text-[#e1e4ed]">尚未生成分镜镜头组</h4>
+          <p class="font-mono gw-type-body-sm text-[#6e7384]">请先在步骤 1 确认结构化大纲，然后点击上方“确认大纲并拆分分镜”，分镜师 Agent 将自动为您规划逐镜头参数。</p>
         </div>
-        <button class="mt-2 px-5 py-2 rounded-lg bg-gradient-to-b from-[#fcdf9d] via-[#dfc384] to-[#b89547] text-[#120f05] font-outfit font-bold text-xs shadow hover:brightness-105 cursor-pointer ${ready ? '' : 'opacity-60'}" type="button" data-shots-generate ${ready ? '' : 'disabled'}>
+        <button class="mt-2 px-5 py-2 rounded-lg bg-gradient-to-b from-[#fcdf9d] via-[#dfc384] to-[#b89547] text-[#120f05] font-display font-bold gw-type-body-md shadow hover:brightness-105 cursor-pointer ${ready ? '' : 'opacity-60'}" type="button" data-shots-generate ${ready ? '' : 'disabled'}>
           一键拆分具体分镜
         </button>
       </div>`}
@@ -1344,15 +1344,15 @@
           <span class="absolute -top-0.5 -right-0.5 w-3 h-3 rounded-full bg-amber-400 shadow-[0_0_8px_#f59e0b] animate-ping"></span>
         </div>
         <div class="flex flex-col gap-1.5 max-w-lg">
-          <h3 class="font-outfit text-lg font-bold text-white tracking-wide">步骤 3 / 分镜审片官审核与重拆</h3>
-          <p class="font-mono text-xs text-[#7e8498] leading-relaxed">Gods' Workbench 严格分镜审片官将对叙事清晰度、镜头连续性、可执行性、节奏控制力、资产一致性进行 0-100 分综合打分（80 分及格），并提供逐条针对性修改意见。</p>
+          <h3 class="font-display gw-type-headline-sm font-medium text-white">步骤 3 / 分镜审片官审核与重拆</h3>
+          <p class="font-mono gw-type-body-sm text-[#7e8498] leading-relaxed">Gods' Workbench 严格分镜审片官将对叙事清晰度、镜头连续性、可执行性、节奏控制力、资产一致性进行 0-100 分综合打分（80 分及格），并提供逐条针对性修改意见。</p>
         </div>
         <div class="flex items-center gap-3 mt-2">
-          <button class="px-6 py-2.5 rounded-lg bg-gradient-to-b from-[#fcdf9d] via-[#dfc384] to-[#b89547] text-[#120f05] font-outfit font-bold text-xs shadow-[0_0_20px_rgba(223,195,132,0.4)] hover:brightness-110 active:scale-95 transition-all flex items-center gap-2 cursor-pointer ${shots.length ? '' : 'opacity-60'}" type="button" data-storyboard-review ${shots.length ? '' : 'disabled'}>
+          <button class="px-6 py-2.5 rounded-lg bg-gradient-to-b from-[#fcdf9d] via-[#dfc384] to-[#b89547] text-[#120f05] font-display font-bold gw-type-body-md shadow-[0_0_20px_rgba(223,195,132,0.4)] hover:brightness-110 active:scale-95 transition-all flex items-center gap-2 cursor-pointer ${shots.length ? '' : 'opacity-60'}" type="button" data-storyboard-review ${shots.length ? '' : 'disabled'}>
             ${iconSvg('auto_awesome', 'w-4 h-4 text-[#120f05]')}
             <span>提交严格分镜审片官审核</span>
           </button>
-          <button class="px-4 py-2.5 rounded-lg bg-[#141722] hover:bg-[#1c2230] border border-[#2e3447] text-[#c9cbd2] font-mono text-xs font-semibold transition-all cursor-pointer" type="button" data-storyboard-substep="2">
+          <button class="px-4 py-2.5 rounded-lg bg-[#141722] hover:bg-[#1c2230] border border-[#2e3447] text-[#c9cbd2] font-mono gw-type-body-md font-semibold transition-all cursor-pointer" type="button" data-storyboard-substep="2">
             返回调整镜头
           </button>
         </div>
@@ -1371,13 +1371,13 @@
       <div class="grid grid-cols-1 lg:grid-cols-12 gap-4 items-center bg-[#07090e] p-4 rounded-xl border border-[#1e2230] shadow-inner">
         <!-- 综合得分 -->
         <div class="lg:col-span-3 flex flex-col items-center justify-center p-3 bg-[#0a0d14] rounded-lg border border-[#222738]">
-          <span class="font-mono text-[10px] text-[#6d7283] uppercase tracking-wider">综合审片得分</span>
+          <span class="font-mono gw-type-body-sm text-[#6d7283]r">综合审片得分</span>
           <div class="flex items-baseline gap-1 my-1">
-            <span class="font-mono text-4xl font-black ${isPassed ? 'text-emerald-400' : 'text-amber-400'}">${esc(review.score)}</span>
-            <span class="font-mono text-xs text-[#555a6a]">/ 100</span>
+            <span class="font-mono gw-type-headline-lg font-black ${isPassed ? 'text-emerald-400' : 'text-amber-400'}">${esc(review.score)}</span>
+            <span class="font-mono gw-type-body-sm text-[#555a6a]">/ 100</span>
           </div>
           <span class="decision-stamp ${isPassed ? 'passed' : 'failed'}">${isPassed ? '审核通过 PASSED' : '待修改 REVISE'}</span>
-          <span class="font-mono text-[9px] text-[#555a6a] mt-2">${esc(dateTime(review.at))}</span>
+          <span class="font-mono gw-type-body-sm text-[#555a6a] mt-2">${esc(dateTime(review.at))}</span>
         </div>
 
         <!-- 审片官总评 -->
@@ -1385,17 +1385,17 @@
           <div class="flex items-center justify-between border-b border-[#181a24] pb-1.5">
             <div class="flex items-center gap-2">
               <span class="w-2 h-2 rounded-full ${isPassed ? 'bg-emerald-400' : 'bg-amber-400'}"></span>
-              <span class="font-outfit text-sm font-bold text-gold-light">严格分镜审片官结论</span>
+              <span class="font-display gw-type-body-md font-bold text-gold-light">严格分镜审片官结论</span>
             </div>
-            <span class="font-mono text-[10px] text-[#6d7283]">REVIEW AGENT: MK-IV</span>
+            <span class="font-mono gw-type-body-sm text-[#6d7283]">REVIEW AGENT: MK-IV</span>
           </div>
-          <p class="text-xs text-[#cfd3e2] leading-relaxed select-text">${esc(summary)}</p>
+          <p class="gw-type-body-sm text-[#cfd3e2] leading-relaxed select-text">${esc(summary)}</p>
         </div>
       </div>
 
       <!-- 五维专业评分雷达网格 -->
       <div class="flex flex-col gap-2">
-        <span class="font-mono text-[11px] text-gold-dim uppercase font-bold tracking-wider">五维专业量化指标</span>
+        <span class="font-mono gw-type-body-sm text-gold-dim font-boldr">五维专业量化指标</span>
         <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-2.5">
           ${dimensions.map(item => {
             const key = String(item.key || item.name || '');
@@ -1403,7 +1403,7 @@
             const score = Number(item.score || 0);
             return `<div class="bg-[#090b10] p-3 rounded-lg border border-[#1e2230] shadow-inner flex flex-col justify-between gap-2">
               <div>
-                <div class="flex items-center justify-between font-mono text-[11px] pb-1 border-b border-[#151722]">
+                <div class="flex items-center justify-between font-mono gw-type-body-sm pb-1 border-b border-[#151722]">
                   <strong class="text-white">${esc(label)}</strong>
                   <span class="${score >= 80 ? 'text-emerald-400' : 'text-amber-400'} font-bold">${score}</span>
                 </div>
@@ -1411,7 +1411,7 @@
                   <div class="h-full ${score >= 80 ? 'bg-emerald-400' : 'bg-amber-400'} rounded-full" style="width:${Math.max(0, Math.min(100, score))}%"></div>
                 </div>
               </div>
-              <p class="text-[10px] text-[#8e93a4] leading-relaxed line-clamp-3" title="${esc(item.comment)}">${esc(item.comment || '检查完成')}</p>
+              <p class="gw-type-body-sm text-[#8e93a4] leading-relaxed line-clamp-3" title="${esc(item.comment)}">${esc(item.comment || '检查完成')}</p>
             </div>`;
           }).join('')}
         </div>
@@ -1422,13 +1422,13 @@
         <!-- 主要问题与优先级 -->
         <div class="bg-[#090b10] p-4 rounded-xl border border-[#1e2230] flex flex-col gap-2 shadow-inner">
           <div class="flex items-center justify-between pb-1.5 border-b border-[#181a24]">
-            <span class="font-outfit text-xs font-bold text-amber-300 flex items-center gap-1.5">
+            <span class="font-display gw-type-body-sm font-bold text-amber-300 flex items-center gap-1.5">
               ${iconSvg('warning', 'w-3.5 h-3.5 text-amber-400')}
               <span>检出主要问题与高危项</span>
             </span>
-            <span class="font-mono text-[9px] text-[#6d7283]">${problems.length} 项</span>
+            <span class="font-mono gw-type-body-sm text-[#6d7283]">${problems.length} 项</span>
           </div>
-          <ul class="space-y-1.5 font-mono text-[11px] text-[#cfd3e2]">
+          <ul class="space-y-1.5 font-mono gw-type-body-sm text-[#cfd3e2]">
             ${problems.map(p => `<li class="flex items-start gap-1.5"><span class="text-amber-400 mt-0.5">•</span><span>${esc(p)}</span></li>`).join('')}
           </ul>
         </div>
@@ -1436,13 +1436,13 @@
         <!-- 针对性可执行建议 -->
         <div class="bg-[#090b10] p-4 rounded-xl border border-[#1e2230] flex flex-col gap-2 shadow-inner">
           <div class="flex items-center justify-between pb-1.5 border-b border-[#181a24]">
-            <span class="font-outfit text-xs font-bold text-emerald-300 flex items-center gap-1.5">
+            <span class="font-display gw-type-body-sm font-bold text-emerald-300 flex items-center gap-1.5">
               ${iconSvg('auto_fix_high', 'w-3.5 h-3.5 text-emerald-400')}
               <span>修改建议与优化路径</span>
             </span>
-            <span class="font-mono text-[9px] text-[#6d7283]">${suggestions.length} 条</span>
+            <span class="font-mono gw-type-body-sm text-[#6d7283]">${suggestions.length} 条</span>
           </div>
-          <ul class="space-y-1.5 font-mono text-[11px] text-[#cfd3e2]">
+          <ul class="space-y-1.5 font-mono gw-type-body-sm text-[#cfd3e2]">
             ${suggestions.map(s => `<li class="flex items-start gap-1.5"><span class="text-emerald-400 mt-0.5">✓</span><span>${esc(s)}</span></li>`).join('')}
           </ul>
         </div>
@@ -1451,21 +1451,21 @@
       <!-- 审片操作按键栏 -->
       <div class="flex flex-col sm:flex-row items-center justify-between gap-3 pt-2 border-t border-[#181a24]">
         <div class="flex items-center gap-2">
-          <button class="px-4 py-2 rounded-lg bg-[#181c28] hover:bg-[#202636] border border-[#2e3448] text-gold-light font-outfit text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer" type="button" data-storyboard-review>
+          <button class="px-4 py-2 rounded-lg bg-[#181c28] hover:bg-[#202636] border border-[#2e3448] text-gold-light font-display gw-type-body-md font-bold transition-all flex items-center gap-1.5 cursor-pointer" type="button" data-storyboard-review>
             ${iconSvg('refresh', 'w-3.5 h-3.5 text-gold-primary')}
             <span>重新提交审核</span>
           </button>
-          <button class="px-4 py-2 rounded-lg bg-[#141722] hover:bg-[#1c2230] border border-[#2e3447] text-[#c9cbd2] font-mono text-xs transition-all cursor-pointer" type="button" data-storyboard-substep="2">
+          <button class="px-4 py-2 rounded-lg bg-[#141722] hover:bg-[#1c2230] border border-[#2e3447] text-[#c9cbd2] font-mono gw-type-body-md transition-all cursor-pointer" type="button" data-storyboard-substep="2">
             返回调整镜头
           </button>
         </div>
 
         <div class="flex items-center gap-3">
-          ${!isPassed ? `<button class="px-5 py-2 rounded-lg bg-gradient-to-b from-[#fcdf9d] via-[#dfc384] to-[#c7a760] text-[#1a1308] font-outfit text-xs font-bold shadow-[0_4px_14px_rgba(223,195,132,0.3)] hover:brightness-105 active:scale-95 transition-all flex items-center gap-1.5 cursor-pointer" type="button" data-revise-storyboard>
+          ${!isPassed ? `<button class="px-5 py-2 rounded-lg bg-gradient-to-b from-[#fcdf9d] via-[#dfc384] to-[#c7a760] text-[#1a1308] font-display gw-type-body-md font-bold shadow-[0_4px_14px_rgba(223,195,132,0.3)] hover:brightness-105 active:scale-95 transition-all flex items-center gap-1.5 cursor-pointer" type="button" data-revise-storyboard>
             ${iconSvg('auto_fix_high', 'w-4 h-4 text-current')}
             <span>按审核意见一键重拆分镜</span>
           </button>` : ''}
-          <button class="px-5 py-2 rounded-lg bg-gradient-to-b from-[#34d399] to-[#059669] text-white font-outfit text-xs font-bold shadow-[0_4px_14px_rgba(52,211,153,0.3)] hover:brightness-105 active:scale-95 transition-all flex items-center gap-1.5 cursor-pointer" type="button" data-complete-storyboard>
+          <button class="px-5 py-2 rounded-lg bg-gradient-to-b from-[#34d399] to-[#059669] text-white font-display gw-type-body-md font-bold shadow-[0_4px_14px_rgba(52,211,153,0.3)] hover:brightness-105 active:scale-95 transition-all flex items-center gap-1.5 cursor-pointer" type="button" data-complete-storyboard>
             <span>确认分镜，进入视频脚本</span>
             ${iconSvg('arrow_forward', 'w-4 h-4 text-white')}
           </button>
@@ -1502,12 +1502,12 @@
               <div class="w-2.5 h-8 rounded-full bg-gradient-to-b from-gold-light to-gold-dim shadow-[0_0_12px_rgba(223,195,132,0.6)]"></div>
               <div class="flex flex-col">
                 <div class="flex items-center gap-2 flex-wrap">
-                  <span class="font-outfit text-[15px] text-gold-light font-bold uppercase tracking-wider">步骤 03 / 分镜脚本</span>
+                  <span class="font-display gw-type-body-md text-gold-light font-boldr">步骤 03 / 分镜脚本</span>
                   <span class="text-gold-dim">·</span>
-                  <span class="font-mono text-[11px] text-[#8e93a4]">SHOT-PLANNING ENGINE v4.2 PRO</span>
-                  <span class="font-mono text-[9px] px-1.5 py-0.5 bg-gold-primary/20 text-gold-light border border-gold-primary/30 rounded">${ready ? 'PARSED' : 'STANDBY'}</span>
+                  <span class="font-mono gw-type-body-sm text-[#8e93a4]">SHOT-PLANNING ENGINE v4.2 PRO</span>
+                  <span class="font-mono gw-type-body-sm px-1.5 py-0.5 bg-gold-primary/20 text-gold-light border border-gold-primary/30 rounded">${ready ? 'PARSED' : 'STANDBY'}</span>
                 </div>
-                <div class="flex items-center gap-2 mt-0.5 text-[12px] text-[#9a9da8]">
+                <div class="flex items-center gap-2 mt-0.5 gw-type-body-sm text-[#9a9da8]">
                   <span>提示词链路锁定：</span>
                   <span class="font-mono text-gold-light bg-[#0a0c10] px-2 py-0.5 rounded border border-[#21242e] flex items-center gap-1.5">
                     ${iconSvg('lock', 'w-3 h-3 text-gold-primary')}
@@ -1523,12 +1523,12 @@
 
               <!-- 全局步骤快速切换胶囊 -->
               <div class="flex items-center gap-1 p-1 bg-[#090b10] border border-[#222634] rounded-lg shadow-inner">
-                <button class="px-2.5 py-1 rounded text-[11px] font-mono text-[#898e9e] hover:text-[#d1d5db] transition-all cursor-pointer" type="button" data-goto-step="script">01 剧本</button>
-                <button class="px-2.5 py-1 rounded text-[11px] font-mono text-[#898e9e] hover:text-[#d1d5db] transition-all cursor-pointer" type="button" data-goto-step="assets">02 资产</button>
-                <button class="relative px-3 py-1 rounded text-[11px] font-mono font-bold text-black bg-gradient-to-b from-[#fcdf9d] to-[#c9a65d] shadow-[0_0_12px_rgba(223,195,132,0.5),inset_0_1px_1px_rgba(255,255,255,0.4)] cursor-pointer" type="button" data-goto-step="video">
+                <button class="px-2.5 py-1 rounded gw-type-body-md font-mono text-[#898e9e] hover:text-[#d1d5db] transition-all cursor-pointer" type="button" data-goto-step="script">01 剧本</button>
+                <button class="px-2.5 py-1 rounded gw-type-body-md font-mono text-[#898e9e] hover:text-[#d1d5db] transition-all cursor-pointer" type="button" data-goto-step="assets">02 资产</button>
+                <button class="relative px-3 py-1 rounded gw-type-body-md font-mono font-bold text-black bg-gradient-to-b from-[#fcdf9d] to-[#c9a65d] shadow-[0_0_12px_rgba(223,195,132,0.5),inset_0_1px_1px_rgba(255,255,255,0.4)] cursor-pointer" type="button" data-goto-step="video">
                   03 分镜
                 </button>
-                <button class="px-2.5 py-1 rounded text-[11px] font-mono text-[#898e9e] hover:text-[#d1d5db] transition-all cursor-pointer" type="button" data-goto-step="audio_compose">04 视频</button>
+                <button class="px-2.5 py-1 rounded gw-type-body-md font-mono text-[#898e9e] hover:text-[#d1d5db] transition-all cursor-pointer" type="button" data-goto-step="audio_compose">04 视频</button>
               </div>
             </div>
           </div>
@@ -1540,32 +1540,32 @@
               <!-- Step 1 Capsule -->
               <button class="flex items-center gap-2 px-3 py-1 rounded transition-all cursor-pointer ${subStep === 1 ? 'bg-gradient-to-r from-gold-primary/25 to-gold-primary/10 border border-gold-primary/50 text-gold-light shadow-[0_0_10px_rgba(223,195,132,0.2)]' : 'bg-[#0c0d12] hover:bg-[#141620] border border-[#1f222e] text-[#808595]'}" type="button" data-storyboard-substep="1">
                 ${iconSvg('check_circle', `w-3.5 h-3.5 ${ready ? 'text-gold-primary' : 'text-[#616677]'}`)}
-                <span class="font-mono text-[11px] font-bold uppercase tracking-wider">步骤 1 大纲规划</span>
-                ${ready ? '<span class="font-mono text-[9px] bg-gold-primary text-black font-extrabold px-1.5 py-0.5 rounded">DONE</span>' : ''}
+                <span class="font-mono gw-type-body-md font-boldr">步骤 1 大纲规划</span>
+                ${ready ? '<span class="font-mono gw-type-body-sm bg-gold-primary text-black font-extrabold px-1.5 py-0.5 rounded">DONE</span>' : ''}
               </button>
 
               <!-- Step 2 Capsule -->
               <button class="flex items-center gap-2 px-3 py-1 rounded transition-all cursor-pointer ${subStep === 2 ? 'bg-gradient-to-r from-gold-primary/25 to-gold-primary/10 border border-gold-primary/50 text-gold-light shadow-[0_0_10px_rgba(223,195,132,0.2)]' : 'bg-[#0c0d12] hover:bg-[#141620] border border-[#1f222e] text-[#808595]'}" type="button" data-storyboard-substep="2">
                 ${iconSvg('movie_edit', 'w-3.5 h-3.5 text-current')}
-                <span class="font-mono text-[11px] uppercase tracking-wider">步骤 2 分镜节拍拆解</span>
-                ${shots.length ? `<span class="font-mono text-[9px] bg-[#1e2230] text-gold-light px-1.5 py-0.5 rounded font-bold">${shots.length} 镜</span>` : ''}
+                <span class="font-mono gw-type-body-smr">步骤 2 分镜节拍拆解</span>
+                ${shots.length ? `<span class="font-mono gw-type-body-sm bg-[#1e2230] text-gold-light px-1.5 py-0.5 rounded font-bold">${shots.length} 镜</span>` : ''}
               </button>
 
               <!-- Step 3 Capsule -->
               <button class="flex items-center gap-2 px-3 py-1 rounded transition-all cursor-pointer ${subStep === 3 ? 'bg-gradient-to-r from-gold-primary/25 to-gold-primary/10 border border-gold-primary/50 text-gold-light shadow-[0_0_10px_rgba(223,195,132,0.2)]' : 'bg-[#0c0d12] hover:bg-[#141620] border border-[#1f222e] text-[#808595]'}" type="button" data-storyboard-substep="3">
                 ${iconSvg('rate_review', 'w-3.5 h-3.5 text-current')}
-                <span class="font-mono text-[11px] uppercase tracking-wider">步骤 3 镜头机位与审片</span>
-                ${review ? `<span class="font-mono text-[9px] ${review.status === 'passed' ? 'bg-emerald-500/20 text-emerald-300' : 'bg-amber-500/20 text-amber-300'} px-1.5 py-0.5 rounded font-bold">${review.score}分</span>` : ''}
+                <span class="font-mono gw-type-body-smr">步骤 3 镜头机位与审片</span>
+                ${review ? `<span class="font-mono gw-type-body-sm ${review.status === 'passed' ? 'bg-emerald-500/20 text-emerald-300' : 'bg-amber-500/20 text-amber-300'} px-1.5 py-0.5 rounded font-bold">${review.score}分</span>` : ''}
               </button>
             </div>
 
             <!-- Token Budget / Telemetry Gauge -->
             <div class="flex items-center gap-2.5 bg-[#08090d] border border-[#1d202b] px-3 py-1 rounded">
-              <span class="font-mono text-[10px] text-[#717688] uppercase">TOKEN BUDGET</span>
+              <span class="font-mono gw-type-body-sm text-[#717688]">TOKEN BUDGET</span>
               <div class="w-20 h-1.5 bg-[#12141c] rounded-full overflow-hidden p-0.5">
                 <div class="h-full w-1/4 bg-gold-primary rounded-full shadow-[0_0_6px_#dfc384]"></div>
               </div>
-              <span class="font-mono text-[10px] text-gold-light font-bold">12,480 / 128K</span>
+              <span class="font-mono gw-type-body-sm text-gold-light font-bold">12,480 / 128K</span>
             </div>
           </div>
         </header>
@@ -1585,7 +1585,7 @@
       <!-- ===================================================================== -->
       <footer class="w-full bg-[#07080c] border-t border-[#1a1c26] px-6 py-3 shadow-[0_-8px_24px_rgba(0,0,0,0.85)] flex flex-col md:flex-row items-center justify-between gap-4 mt-6">
         <!-- 遥测与状态 -->
-        <div class="flex items-center gap-3 font-mono text-[11px] text-[#717688]">
+        <div class="flex items-center gap-3 font-mono gw-type-body-sm text-[#717688]">
           <div class="flex items-center gap-1.5 bg-[#0b0d13] px-2.5 py-1 rounded border border-[#1b1e2a]">
             <span class="w-2 h-2 rounded-full bg-emerald-400 shadow-[0_0_6px_#34d399]"></span>
             <span>SHOT METRIC BUS: SYNC OK</span>
@@ -1598,28 +1598,28 @@
         <!-- 动作操作区 -->
         <div class="flex items-center gap-3 w-full md:w-auto justify-end">
           <!-- 上一步：资产生成 -->
-          <button class="px-4 py-2.5 rounded-lg bg-[#141722] hover:bg-[#1c2230] border border-[#2e3447] text-[#c9cbd2] font-mono text-xs font-semibold shadow-[0_2px_8px_rgba(0,0,0,0.5)] active:translate-y-px transition-all flex items-center gap-1.5 cursor-pointer" type="button" data-goto-step="assets" title="返回资产生成">
+          <button class="px-4 py-2.5 rounded-lg bg-[#141722] hover:bg-[#1c2230] border border-[#2e3447] text-[#c9cbd2] font-mono gw-type-body-md font-semibold shadow-[0_2px_8px_rgba(0,0,0,0.5)] active:translate-y-px transition-all flex items-center gap-1.5 cursor-pointer" type="button" data-goto-step="assets" title="返回资产生成">
             ${iconSvg('arrow_back', 'w-3.5 h-3.5 text-[#8b909f]')}
             <span>上一步：资产生成</span>
           </button>
 
           <!-- 中间主行动键 (按当前子步骤动态展现) -->
-          ${subStep === 1 ? `<button class="px-5 py-2.5 rounded-lg bg-gradient-to-b from-[#fcdf9d] via-[#dfc384] to-[#c7a760] text-[#1a1308] font-outfit text-xs font-bold shadow-[0_4px_16px_rgba(223,195,132,0.4)] hover:brightness-105 active:scale-95 transition-all flex items-center gap-1.5 cursor-pointer" type="button" data-outline-generate>
+          ${subStep === 1 ? `<button class="px-5 py-2.5 rounded-lg bg-gradient-to-b from-[#fcdf9d] via-[#dfc384] to-[#c7a760] text-[#1a1308] font-display gw-type-body-md font-bold shadow-[0_4px_16px_rgba(223,195,132,0.4)] hover:brightness-105 active:scale-95 transition-all flex items-center gap-1.5 cursor-pointer" type="button" data-outline-generate>
             ${iconSvg('auto_awesome', 'w-4 h-4 text-[#1a1308]')}
             <span>${ready ? '更新大纲规划' : '生成大纲规划'}</span>
-          </button>` : subStep === 2 ? `<button class="px-5 py-2.5 rounded-lg bg-gradient-to-b from-[#fcdf9d] via-[#dfc384] to-[#c7a760] text-[#1a1308] font-outfit text-xs font-bold shadow-[0_4px_16px_rgba(223,195,132,0.4)] hover:brightness-105 active:scale-95 transition-all flex items-center gap-1.5 cursor-pointer" type="button" data-shots-generate ${ready ? '' : 'disabled'}>
+          </button>` : subStep === 2 ? `<button class="px-5 py-2.5 rounded-lg bg-gradient-to-b from-[#fcdf9d] via-[#dfc384] to-[#c7a760] text-[#1a1308] font-display gw-type-body-md font-bold shadow-[0_4px_16px_rgba(223,195,132,0.4)] hover:brightness-105 active:scale-95 transition-all flex items-center gap-1.5 cursor-pointer" type="button" data-shots-generate ${ready ? '' : 'disabled'}>
             ${iconSvg('movie_edit', 'w-4 h-4 text-[#1a1308]')}
             <span>${shots.length ? '重新拆分分镜' : '拆分具体分镜'}</span>
-          </button>` : review && review.status !== 'passed' ? `<button class="px-5 py-2.5 rounded-lg bg-gradient-to-b from-[#fcdf9d] via-[#dfc384] to-[#c7a760] text-[#1a1308] font-outfit text-xs font-bold shadow-[0_4px_16px_rgba(223,195,132,0.4)] hover:brightness-105 active:scale-95 transition-all flex items-center gap-1.5 cursor-pointer" type="button" data-revise-storyboard>
+          </button>` : review && review.status !== 'passed' ? `<button class="px-5 py-2.5 rounded-lg bg-gradient-to-b from-[#fcdf9d] via-[#dfc384] to-[#c7a760] text-[#1a1308] font-display gw-type-body-md font-bold shadow-[0_4px_16px_rgba(223,195,132,0.4)] hover:brightness-105 active:scale-95 transition-all flex items-center gap-1.5 cursor-pointer" type="button" data-revise-storyboard>
             ${iconSvg('auto_fix_high', 'w-4 h-4 text-[#1a1308]')}
             <span>按意见一键重拆分镜</span>
-          </button>` : `<button class="px-5 py-2.5 rounded-lg bg-gradient-to-b from-[#fcdf9d] via-[#dfc384] to-[#c7a760] text-[#1a1308] font-outfit text-xs font-bold shadow-[0_4px_16px_rgba(223,195,132,0.4)] hover:brightness-105 active:scale-95 transition-all flex items-center gap-1.5 cursor-pointer" type="button" data-storyboard-review ${shots.length ? '' : 'disabled'}>
+          </button>` : `<button class="px-5 py-2.5 rounded-lg bg-gradient-to-b from-[#fcdf9d] via-[#dfc384] to-[#c7a760] text-[#1a1308] font-display gw-type-body-md font-bold shadow-[0_4px_16px_rgba(223,195,132,0.4)] hover:brightness-105 active:scale-95 transition-all flex items-center gap-1.5 cursor-pointer" type="button" data-storyboard-review ${shots.length ? '' : 'disabled'}>
             ${iconSvg('auto_awesome', 'w-4 h-4 text-[#1a1308]')}
             <span>提交分镜审核</span>
           </button>`}
 
           <!-- 下一步：视频脚本 -->
-          <button class="px-4 py-2.5 rounded-lg bg-gradient-to-r from-[#1c2233] to-[#252c40] hover:from-[#232b40] hover:to-[#2e3752] border border-[#dfc384]/40 text-[#dfc384] font-mono text-xs font-bold shadow-[0_4px_14px_rgba(0,0,0,0.6)] active:translate-y-px transition-all flex items-center gap-1.5 cursor-pointer group" type="button" data-goto-step="audio_compose" title="前往视频脚本制作">
+          <button class="px-4 py-2.5 rounded-lg bg-gradient-to-r from-[#1c2233] to-[#252c40] hover:from-[#232b40] hover:to-[#2e3752] border border-[#dfc384]/40 text-[#dfc384] font-mono gw-type-body-md font-bold shadow-[0_4px_14px_rgba(0,0,0,0.6)] active:translate-y-px transition-all flex items-center gap-1.5 cursor-pointer group" type="button" data-goto-step="audio_compose" title="前往视频脚本制作">
             <span>下一步：视频脚本</span>
             ${iconSvg('arrow_forward', 'w-3.5 h-3.5 text-primary group-hover:translate-x-0.5 transition-transform')}
           </button>
@@ -1627,7 +1627,7 @@
       </footer>
 
       <!-- 底板信息条 -->
-      <div class="w-full bg-[#060709] border-t border-[#14161f] py-2 px-6 flex items-center justify-between text-[10px] font-mono text-[#575246]">
+      <div class="w-full bg-[#060709] border-t border-[#14161f] py-2 px-6 flex items-center justify-between gw-type-body-sm font-mono text-[#575246]">
         <div class="flex items-center gap-3">
           <span class="text-[#7c7567]">GODS' WORKBENCH ARCHITECTURE</span>
           <span>SYS-REV 4.8.2-NEO</span>
@@ -1793,39 +1793,39 @@
           </div>
           <div>
             <div class="flex items-center gap-2">
-              <span class="font-mono text-[10px] uppercase tracking-widest text-gold-dim font-bold">PROJECT WORKBENCH</span>
+              <span class="font-mono gw-type-body-smst text-gold-dim font-bold">PROJECT WORKBENCH</span>
               <span class="text-neutral-600 font-mono">/</span>
-              <span class="font-outfit text-[15px] text-gold-light font-bold">${esc(projectName || '未命名项目')}</span>
+              <span class="font-display gw-type-body-md text-gold-light font-bold">${esc(projectName || '未命名项目')}</span>
             </div>
-            <h2 class="font-outfit text-[18px] text-neutral-100 font-bold tracking-wide mt-0.5">从创建剧集（或者影片）开始</h2>
+            <h2 class="font-display gw-type-headline-sm text-neutral-100 font-medium mt-0.5">从创建剧集（或者影片）开始</h2>
           </div>
         </div>
         <div class="flex items-center gap-2">
-          <span class="px-2.5 py-1 rounded bg-[#090a0d] font-mono text-[10px] text-neutral-400 border border-white/5 uppercase">EMPTY PIPELINE</span>
+          <span class="px-2.5 py-1 rounded bg-[#090a0d] font-mono gw-type-body-sm text-neutral-400 border border-white/5">EMPTY PIPELINE</span>
         </div>
       </div>
 
-      <p class="font-manrope text-[13px] text-neutral-300 leading-relaxed">
+      <p class="font-body gw-type-body-md text-neutral-300 leading-relaxed">
         当前项目尚未建立剧集或影片流水线。创建首部剧集后，剧本生成、资产提取、分镜设计与视频脚本将共享整套持久化任务上下文与工程资产。
       </p>
 
       <form data-create-form class="flex flex-col gap-4 bg-[#090a0d]/80 p-5 rounded-lg border border-white/5">
         <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div class="flex flex-col gap-1.5">
-            <label class="font-mono text-[11px] text-neutral-300 uppercase tracking-wider flex items-center justify-between">
+            <label class="font-mono gw-type-body-md text-neutral-300r flex items-center justify-between">
               <span>剧集或影片名称 *</span>
               <span class="text-gold-dim font-normal">TITLE</span>
             </label>
-            <input name="title" required maxlength="200" value="第一集" placeholder="例如：第一集 / 序幕 / 宣传短片" class="w-full bg-[#12141a] text-neutral-200 font-mono text-[13px] px-3.5 py-2 rounded border border-white/10 focus:outline-none focus:border-gold-primary/60 transition-all shadow-inner">
+            <input name="title" required maxlength="200" value="第一集" placeholder="例如：第一集 / 序幕 / 宣传短片" class="w-full bg-[#12141a] text-neutral-200 font-mono gw-type-body-md px-3.5 py-2 rounded border border-white/10 focus:outline-none focus:border-gold-primary/60 transition-all shadow-inner">
           </div>
 
           <div class="flex flex-col gap-1.5">
-            <label class="font-mono text-[11px] text-neutral-300 uppercase tracking-wider flex items-center justify-between">
+            <label class="font-mono gw-type-body-md text-neutral-300r flex items-center justify-between">
               <span>绑定提示词库</span>
               <span class="text-gold-dim font-normal">PROMPT LIBRARY</span>
             </label>
             <div class="relative">
-              <select name="prompt_library_id" required class="w-full appearance-none bg-[#12141a] text-neutral-200 font-mono text-[13px] px-3.5 py-2 rounded border border-white/10 focus:outline-none focus:border-gold-primary/60 transition-all cursor-pointer">
+              <select name="prompt_library_id" required class="w-full appearance-none bg-[#12141a] text-neutral-200 font-mono gw-type-body-md px-3.5 py-2 rounded border border-white/10 focus:outline-none focus:border-gold-primary/60 transition-all cursor-pointer">
                 ${libraryOpts}
               </select>
               ${iconSvg('unfold_more', 'w-4 h-4 absolute right-3 top-2.5 text-neutral-400 pointer-events-none')}
@@ -1834,17 +1834,17 @@
         </div>
 
         <div class="flex flex-col gap-1.5">
-          <label class="font-mono text-[11px] text-neutral-300 uppercase tracking-wider flex items-center justify-between">
+          <label class="font-mono gw-type-body-md text-neutral-300r flex items-center justify-between">
             <span>创作种子 / 故事大纲</span>
             <span class="text-neutral-500 font-normal">SEED</span>
           </label>
-          <textarea name="seed" maxlength="20000" rows="3" placeholder="在此输入本集或影片的故事大纲、核心冲突与主线线索（可选）..." class="w-full bg-[#12141a] text-neutral-200 font-manrope text-[13px] p-3 rounded border border-white/10 focus:outline-none focus:border-gold-primary/60 transition-all resize-none shadow-inner"></textarea>
+          <textarea name="seed" maxlength="20000" rows="3" placeholder="在此输入本集或影片的故事大纲、核心冲突与主线线索（可选）..." class="w-full bg-[#12141a] text-neutral-200 font-body gw-type-body-md p-3 rounded border border-white/10 focus:outline-none focus:border-gold-primary/60 transition-all resize-none shadow-inner"></textarea>
         </div>
 
         <div class="flex items-center justify-between pt-2 border-t border-white/5 mt-1">
-          <span class="form-error text-brand-red font-mono text-[12px]" data-error role="alert"></span>
+          <span class="form-error text-brand-red font-mono gw-type-body-sm" data-error role="alert"></span>
           <div class="flex items-center gap-3">
-            <button class="btn-stitch-primary flex items-center gap-2 py-2 px-5 rounded bg-gradient-to-b from-[#e5ca8f] to-[#bfa15d] text-[#12141a] font-outfit text-[13px] font-bold tracking-wider hover:brightness-110 shadow-[0_4px_16px_rgba(223,195,132,0.3)] active:translate-y-px transition-all cursor-pointer" type="submit">
+            <button class="btn-stitch-primary flex items-center gap-2 py-2 px-5 rounded bg-gradient-to-b from-[#e5ca8f] to-[#bfa15d] text-[#12141a] font-display gw-type-body-md font-boldr hover:brightness-110 shadow-[0_4px_16px_rgba(223,195,132,0.3)] active:translate-y-px transition-all cursor-pointer" type="submit">
               ${iconSvg('play_arrow', 'w-4 h-4')}
               <span>创建剧集流水线并进入工坊</span>
             </button>

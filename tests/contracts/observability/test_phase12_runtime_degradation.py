@@ -118,6 +118,10 @@ const winListeners = {};
 const sandbox = {
   console, setTimeout, clearTimeout, setInterval: () => 0, clearInterval() {},
   performance, URLSearchParams, URL, AbortController, AbortSignal, Date, Math, JSON,
+  // 共享顶栏会发出认证事件；补齐DOM构造器，保留全部遥测行为断言。
+  CustomEvent: globalThis.CustomEvent || class extends Event {
+    constructor(type, options = {}) { super(type, options); this.detail = options.detail ?? null; }
+  },
   document: doc,
   localStorage: { getItem() { return null; }, setItem() {}, removeItem() {}, clear() {} },
   sessionStorage: { getItem() { return null; }, setItem() {}, removeItem() {}, clear() {} },

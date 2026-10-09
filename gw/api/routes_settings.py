@@ -49,6 +49,7 @@ from gw.settings.models import (
     StorageSettingsSnapshot,
 )
 from gw.settings import probes as provider_probes
+from gw.core.errors import CleanroomException
 from gw.settings.service import (
     default_asset_structure_service,
     default_provider_service,
@@ -125,15 +126,17 @@ def replace_providers(
     payload: Union[List[Any], Dict[str, Any], None] = Body(
         None, description="provider 数组（前端既有调用面）或 {\"providers\": [...]} 包装"
     ),
-    expected_version: Optional[int] = Query(None, ge=1, description="provider 集合 CAS 期望版本；缺省表示不校验"),
+    expected_version: Optional[int] = Query(None, ge=1, description="provider 集合 CAS 期望版本；保存时必填"),
     authorization: Optional[str] = Header(None),
     x_user_role: str = Header("editor", alias="X-User-Role", description="用户角色权限"),
 ):
-    """整体替换平台集合；要求写权限，凭据字段一律剥离，revision 不一致返回 409。"""
+    """严格验证平台集合并原子保存元数据与密文；必填CAS，凭据原文不回显。"""
     require_edit_access(authorization, x_user_role)
     # 兼容 ``{"providers": [...]}`` 包装；裸数组仍是前端既有调用面。
     if isinstance(payload, dict):
-        raw: Any = payload.get("providers", [])
+        if set(payload) != {"providers"}:
+            raise CleanroomException(400, "INVALID_REQUEST", "平台请求包装必须且只能包含providers数组")
+        raw: Any = payload["providers"]
     else:
         raw = payload
     return default_provider_service.replace(raw, expected_version)
@@ -149,14 +152,14 @@ def fetch_provider_models(
     authorization: Optional[str] = Header(None),
     x_user_role: str = Header("editor", alias="X-User-Role", description="用户角色权限"),
 ):
-    """真实 `GET {base_url}/v1/models`；网络失败 503，绝不返回伪造模型列表。"""
+    """按实际目录协议请求；根地址/版本地址均支持，不能据目录宣称生成能力。"""
     require_edit_access(authorization, x_user_role)
     return provider_probes.fetch_models(payload or {})
 
 
 @router.post(
     "/api/providers/probe-async",
-    summary="真实探测上游协议",
+    summary="同步探测模型目录（旧地址兼容）",
     status_code=status.HTTP_200_OK,
 )
 def probe_provider_async(
@@ -164,14 +167,14 @@ def probe_provider_async(
     authorization: Optional[str] = Header(None),
     x_user_role: str = Header("editor", alias="X-User-Role", description="用户角色权限"),
 ):
-    """真实请求后登记可回读任务，返回稳定 pjob_NNNN 与 poll_hint。"""
+    """请求完成后保存历史结果；兼容job_id/poll_hint，不存在后台排队。"""
     require_edit_access(authorization, x_user_role)
     return provider_probes.probe_async(payload or {})
 
 
 @router.get(
     "/api/providers/probe-async/jobs/{job_id}",
-    summary="读取协议探测任务",
+    summary="读取已完成的目录探测记录",
     status_code=status.HTTP_200_OK,
 )
 def get_provider_probe_job(
@@ -179,7 +182,7 @@ def get_provider_probe_job(
     authorization: Optional[str] = Header(None),
     x_user_role: str = Header("editor", alias="X-User-Role", description="用户角色权限"),
 ):
-    """读取 probe-async 登记的真实任务；不存在 404。"""
+    """读取旧地址下的已完成探测记录；不存在404，不承诺后台任务。"""
     require_authenticated(authorization, x_user_role)
     return provider_probes.get_probe_job(job_id)
 

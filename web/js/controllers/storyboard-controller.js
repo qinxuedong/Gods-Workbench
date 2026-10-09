@@ -96,14 +96,14 @@ window.WorkbenchStoryboard = (function () {
       <div class="champagne-card p-2.5 flex flex-col justify-between group transition hover:border-[#dfc384]/50">
         <div>
           <!-- 头部编号与景别标签 -->
-          <div class="flex items-center justify-between pb-1.5 mb-1.5 border-b border-white/5 text-xs">
+          <div class="flex items-center justify-between pb-1.5 mb-1.5 border-b border-white/5 gw-type-body-sm">
             <div class="flex items-center space-x-1.5">
-              <span class="text-[8.5px] font-mono px-1.5 py-0.5 rounded bg-black/60 border border-[#dfc384]/30 text-[#eddab3] font-bold">
+              <span class="gw-type-body-sm font-mono px-1.5 py-0.5 rounded bg-black/60 border border-[#dfc384]/30 text-[#eddab3] font-bold">
                 #${idx + 1} · ${sh.code}
               </span>
-              <span class="text-[8.5px] font-mono text-cyan-300">${sh.shotType}</span>
+              <span class="gw-type-body-sm font-mono text-cyan-300">${sh.shotType}</span>
             </div>
-            <div class="flex items-center space-x-1.5 text-[8.5px] font-mono">
+            <div class="flex items-center space-x-1.5 gw-type-body-sm font-mono">
               <span class="text-slate-400">${sh.duration}</span>
               <span class="${sh.status === 'generating' ? 'text-amber-300 animate-pulse' : (sh.status === 'not_integrated' ? 'text-slate-400' : 'text-emerald-400')}"${sh.status === 'not_integrated' ? ' data-gw-degradation="not_integrated"' : ''}>
                 ${sh.status === 'generating' ? '渲染中' : '未接入（无渲染端点）'}
@@ -114,27 +114,27 @@ window.WorkbenchStoryboard = (function () {
           <!-- 分镜构图画面 (16:9 画幅) -->
           <div class="aspect-video w-full rounded-lg overflow-hidden bg-black relative border border-white/10 mb-2">
             <img src="${sh.img}" class="w-full h-full object-cover group-hover:scale-105 transition duration-300" alt="${esc(sh.title)}">
-            <div class="absolute top-1 right-1 px-1.5 py-0.5 rounded bg-black/70 text-[8px] font-mono text-[#eddab3]">
+            <div class="absolute top-1 right-1 px-1.5 py-0.5 rounded bg-black/70 gw-type-body-sm font-mono text-[#eddab3]">
               2.39:1
             </div>
           </div>
 
           <!-- 台词对白与叙事意图 -->
-          <div class="text-xs font-bold text-slate-100 mb-1 truncate">${esc(sh.title)}</div>
-          <div class="text-[10px] text-slate-300 bg-black/40 p-1.5 rounded-lg border border-white/5 leading-relaxed font-sans mb-2">
+          <div class="gw-type-body-md font-bold text-slate-100 mb-1 truncate">${esc(sh.title)}</div>
+          <div class="gw-type-body-sm text-slate-300 bg-black/40 p-1.5 rounded-lg border border-white/5 leading-relaxed font-body mb-2">
             ${esc(sh.dialogue)}
           </div>
         </div>
 
         <!-- 底部快捷操作条 -->
-        <div class="pt-1.5 border-t border-white/5 flex items-center justify-between text-xs font-mono">
-          <div class="flex items-center space-x-2 text-slate-400 text-[9px]">
+        <div class="pt-1.5 border-t border-white/5 flex items-center justify-between gw-type-body-sm font-mono">
+          <div class="flex items-center space-x-2 text-slate-400 gw-type-body-sm">
             <button class="hover:text-white" title="上移镜头" onclick="WorkbenchStoryboard.moveShot(${idx}, -1)">&uarr;</button>
             <button class="hover:text-white" title="下移镜头" onclick="WorkbenchStoryboard.moveShot(${idx}, 1)">&darr;</button>
           </div>
           <div class="flex items-center space-x-1.5">
-            <button class="tactile-keycap px-2 py-0.5 rounded text-[8.5px] text-slate-300 hover:text-white" onclick="WorkbenchStoryboard.regenerateShot(${idx})">重绘画面</button>
-            <a href="production.html" class="tactile-keycap px-2 py-0.5 rounded text-[8.5px] text-[#eddab3]">进入制片</a>
+            <button class="tactile-keycap px-2 py-0.5 rounded gw-type-body-md text-slate-300 hover:text-white" onclick="WorkbenchStoryboard.regenerateShot(${idx})">重绘画面</button>
+            <a href="production.html" class="tactile-keycap px-2 py-0.5 rounded gw-type-body-sm text-[#eddab3]">进入制片</a>
           </div>
         </div>
 
@@ -157,7 +157,7 @@ window.WorkbenchStoryboard = (function () {
     nav.innerHTML = scenes.map(s => `
       <button type="button" class="tree-node-card w-full text-left px-2.5 py-2 ${s.active ? 'active' : ''} flex items-center justify-between">
         <span>${s.title}</span>
-        <span class="text-[8px] font-mono px-1 rounded bg-black/60 text-[#dfc384]">${s.shots}镜</span>
+        <span class="gw-type-body-sm font-mono px-1 rounded bg-black/60 text-[#dfc384]">${s.shots}镜</span>
       </button>
     `).join('');
   }

@@ -810,3 +810,4 @@ body:has(.observability-content) { background: var(--paper); }
   .asset-type-swatch,.asset-volume-fill { background: CanvasText; forced-color-adjust: none; }
   .task-progress-track:focus-visible,.asset-volume-track:focus-visible { outline-color: Highlight; }
 }
+

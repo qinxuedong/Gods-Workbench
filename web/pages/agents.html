@@ -1,6 +1,7 @@
 ﻿<!DOCTYPE html>
 <html lang="zh-CN" class="h-full overflow-hidden">
 <head>
+  <link rel="stylesheet" href="/static/css/base/hardware-tokens.css">
   <link rel="stylesheet" href="/static/vendor/css/fonts.css?v=v0.0.1-alpha-2026">
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -14,12 +15,12 @@
     .aura-trace-summary { min-width: 0; display: grid; grid-template-columns: auto auto minmax(0, 1fr); align-items: start; gap: 8px; }
     .aura-trace-summary-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .aura-trace-row.is-expanded .aura-trace-summary-text { white-space: normal; overflow: visible; }
-    .aura-trace-detail { margin: 5px 0 0 102px; max-height: 260px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; color: #cbd5e1; font: 10px/1.55 "Source Han Sans CN", monospace; }
-    .aura-trace-empty { color: #64748b; padding: 18px 8px; text-align: center; font-size: 10px; }
+    .aura-trace-detail { margin: 5px 0 0 102px; max-height: 260px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; color: #cbd5e1; font-size: var(--gw-type-body-sm); line-height: 1.55; font-family: var(--gw-font-mono); }
+    .aura-trace-empty { color: #64748b; padding: 18px 8px; text-align: center; font-size: var(--gw-type-body-sm); }
     @media (max-width: 900px) { .aura-trace-detail { margin-left: 0; } .aura-trace-summary { grid-template-columns: auto auto minmax(0, 1fr); gap: 5px; } }
   </style>
 </head>
-<body class="gw-shell bg-[#090a0d] text-slate-200 antialiased h-screen flex flex-col justify-between select-none overflow-hidden px-5">
+<body class="gw-shell bg-[#090a0d] text-slate-200 antialiased h-screen flex flex-col justify-between select-none overflow-hidden px-5 gw-type-body-md">
 
   <header class="h-[116px] topbar-master-deck border-b border-white/10 px-3 flex flex-col justify-between shrink-0 z-40 relative select-none overflow-hidden py-2" style="min-height: 116px;">
     <div class="absolute inset-0 pointer-events-none z-10 oled-ambient-pixel"></div>
@@ -36,17 +37,17 @@
         </button>
         <div class="h-4 w-px bg-white/10"></div>
         <div class="flex items-center space-x-1.5">
-          <span class="font-bold text-sm tracking-wider text-slate-100 uppercase">GODS'</span>
-          <span class="font-mono font-bold text-sm text-[#dfc384] tracking-widest">WORKBENCH</span>
-          <span class="text-[10px] font-mono px-2 py-0.5 rounded bg-black/60 border border-[#dfc384]/30 text-[#eddab3]">SYS.02 PRO</span>
+          <span class="font-bold gw-type-body-md text-slate-100">GODS'</span>
+          <span class="font-mono font-bold gw-type-body-md text-[#dfc384]">WORKBENCH</span>
+          <span class="gw-type-body-sm font-mono px-2 py-0.5 rounded bg-black/60 border border-[#dfc384]/30 text-[#eddab3]">SYS.02 PRO</span>
         </div>
         <div class="flex items-center space-x-1.5 px-2 py-0.5 rounded-md bg-[#0a0c10] border border-white/10 shadow-inner">
-          <span class="text-[9px] font-mono text-amber-300 font-semibold" id="gwOnlineStatus" data-gw-degradation="not_integrated" title="读取真实探针 GET /api/observability/health">探测中…</span>
+          <span class="gw-type-body-sm font-mono text-amber-300 font-semibold" id="gwOnlineStatus" data-gw-degradation="not_integrated" title="读取真实探针 GET /api/observability/health">探测中…</span>
             <span class="relative flex h-2 w-2">
               <span class="relative inline-flex rounded-full h-2 w-2 bg-amber-400 animate-pulse shadow-[0_0_6px_#f59e0b]"></span>
             </span>
         </div>
-        <div class="flex items-center space-x-1.5 px-2 py-0.5 rounded-md bg-[#0a0c10] border border-cyan-500/30 text-cyan-300 font-mono text-[9px] shadow-inner">
+        <div class="flex items-center space-x-1.5 px-2 py-0.5 rounded-md bg-[#0a0c10] border border-cyan-500/30 text-cyan-300 font-mono gw-type-body-sm shadow-inner">
       <span class="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse"></span>
       <span>NEURAL-HUB · 4 AGENTS</span>
     </div>
@@ -56,7 +57,7 @@
           <svg class="absolute inset-0 w-full h-full pointer-events-none z-10" viewBox="0 0 148 48">
             <path d="M 2 8 A 6 6 0 0 1 8 2 L 134 2 A 4 4 0 0 1 138 5 L 146 43 A 4 4 0 0 1 142 47 L 8 47 A 6 6 0 0 1 2 41 Z"
                   fill="#0b0d13" stroke="#2e3547" stroke-width="1.5" stroke-linejoin="round" />
-            <text x="10" y="11" font-family="'Source Han Sans CN', monospace" font-size="7.5" font-weight="700" fill="#dfc384" letter-spacing="0.5">CPU</text>
+            <text x="10" y="13" style="font-family:var(--gw-font-mono);font-size:var(--gw-type-label-md);letter-spacing:normal" font-weight="700" fill="#dfc384">CPU</text>
             <path d="M 48.32 39.66 A 27 27 0 0 1 99.68 39.66" fill="none" stroke="rgba(255,255,255,0.22)" stroke-width="0.8" />
             <path d="M 92.48 28.32 A 27 27 0 0 1 99.68 39.66" fill="none" stroke="#ef4444" stroke-width="1.6" stroke-linecap="round" />
             <polygon id="svgNeedleCPU" points="73.3,48 74.7,48 74.3,19 73.7,19" fill="#ffffff" filter="drop-shadow(0 0 2.5px #fae2c8)" transform="rotate(-11.5 74 48)" />
@@ -72,7 +73,7 @@
           <button class="text-slate-400 hover:text-[#dfc384] p-0.5 transition"><i data-lucide="chevron-left" class="w-3.5 h-3.5"></i></button>
           <div class="flex items-center space-x-2 px-1.5">
             <span class="w-1.5 h-1.5 rounded-full bg-[#dfc384] shadow-[0_0_6px_#dfc384] animate-pulse"></span>
-            <span class="text-[10px] font-mono font-bold text-[#eddab3] tracking-wider">AURA NEURAL TELEMETRY DECK · MULTI-AGENT</span>
+            <span class="gw-type-body-sm font-mono font-bold text-[#eddab3]">AURA NEURAL TELEMETRY DECK · MULTI-AGENT</span>
           </div>
           <button class="text-slate-400 hover:text-[#dfc384] p-0.5 transition"><i data-lucide="chevron-right" class="w-3.5 h-3.5"></i></button>
         </div>
@@ -84,7 +85,7 @@
           <svg class="absolute inset-0 w-full h-full pointer-events-none z-10" viewBox="0 0 148 48">
             <path d="M 146 8 A 6 6 0 0 0 140 2 L 14 2 A 4 4 0 0 0 10 5 L 2 43 A 4 4 0 0 0 6 47 L 140 47 A 6 6 0 0 0 146 41 Z"
                   fill="#0b0d13" stroke="#2e3547" stroke-width="1.5" stroke-linejoin="round" />
-            <text x="138" y="11" text-anchor="end" font-family="'Source Han Sans CN', monospace" font-size="7.5" font-weight="700" fill="#dfc384" letter-spacing="0.5">RAM</text>
+            <text x="138" y="13" text-anchor="end" style="font-family:var(--gw-font-mono);font-size:var(--gw-type-label-md);letter-spacing:normal" font-weight="700" fill="#dfc384">RAM</text>
             <path d="M 48.32 39.66 A 27 27 0 0 1 99.68 39.66" fill="none" stroke="rgba(255,255,255,0.22)" stroke-width="0.8" />
             <path d="M 92.48 28.32 A 27 27 0 0 1 99.68 39.66" fill="none" stroke="#ef4444" stroke-width="1.6" stroke-linecap="round" />
             <polygon id="svgNeedleRAM" points="73.3,48 74.7,48 74.3,19 73.7,19" fill="#ffffff" filter="drop-shadow(0 0 2.5px #38bdf8)" transform="rotate(25.9 74 48)" />
@@ -101,55 +102,55 @@
         </div>
 
         <div class="h-4 w-px bg-white/10"></div>
-        <div class="px-2.5 py-1.5 rounded bg-[#06070a] border border-[#dfc384]/30 font-mono text-xs text-[#eddab3] font-bold shadow-inner flex items-center space-x-1.5">
+        <div class="px-2.5 py-1.5 rounded bg-[#06070a] border border-[#dfc384]/30 font-mono gw-type-body-sm text-[#eddab3] font-bold shadow-inner flex items-center space-x-1.5">
           <span class="w-1.5 h-1.5 rounded-full bg-[#dfc384] shadow-[0_0_6px_#dfc384]"></span>
           <span id="masterDeckClock">00:00:00</span>
         </div>
-        <button type="button" id="masterDeckDate" class="shrink-0 min-w-[76px] px-2.5 py-1.5 rounded bg-[#06070a] border border-[#dfc384]/45 font-mono text-xs text-[#eddab3] font-bold shadow-inner flex items-center justify-center space-x-1.5 hover:border-[#dfc384] transition" title="打开项目排期日历" aria-label="打开项目排期日历"><i data-lucide="calendar-days" class="w-3.5 h-3.5 text-[#dfc384]" aria-hidden="true"></i><span class="text-slate-500 uppercase" id="masterDeckDateMonth">---</span><span id="masterDeckDateDay">--</span></button>
+        <button type="button" id="masterDeckDate" class="shrink-0 min-w-[76px] px-2.5 py-1.5 rounded bg-[#06070a] border border-[#dfc384]/45 font-mono gw-type-body-md text-[#eddab3] font-bold shadow-inner flex items-center justify-center space-x-1.5 hover:border-[#dfc384] transition" title="打开项目排期日历" aria-label="打开项目排期日历"><i data-lucide="calendar-days" class="w-3.5 h-3.5 text-[#dfc384]" aria-hidden="true"></i><span class="text-slate-500" id="masterDeckDateMonth">---</span><span id="masterDeckDateDay">--</span></button>
       </div>
     </div>
 
     <div class="recessed-deck-slot h-11 rounded-lg flex items-center justify-between px-2.5 relative z-30">
       <div class="flex items-center space-x-2 shrink-0" id="navPillsGroup">
-                <a href="index.html" class="pill-capsule-inactive px-3.5 py-1.5 text-xs tracking-wide font-medium flex items-center space-x-1.5 nav-pill-btn cursor-pointer" title="首页 · 控制台">
+                <a href="index.html" class="pill-capsule-inactive px-3.5 py-1.5 gw-type-body-sm font-medium flex items-center space-x-1.5 nav-pill-btn cursor-pointer" title="首页 · 控制台">
           <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" viewBox="0 0 24 24">
             <path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path>
             <polyline points="9 22 9 12 15 12 15 22"></polyline>
           </svg>
           <span>首页 · 控制台</span>
         </a>
-        <a href="projects.html" class="pill-capsule-inactive px-3.5 py-1.5 text-xs tracking-wide font-medium flex items-center space-x-1.5 nav-pill-btn cursor-pointer" title="项目中心">
+        <a href="projects.html" class="pill-capsule-inactive px-3.5 py-1.5 gw-type-body-sm font-medium flex items-center space-x-1.5 nav-pill-btn cursor-pointer" title="项目中心">
           <i data-lucide="folder-kanban" class="w-3.5 h-3.5"></i>
           <span>项目中心</span>
         </a>
-        <a href="workshop.html" class="pill-capsule-inactive px-3.5 py-1.5 text-xs tracking-wide font-medium flex items-center space-x-1.5 nav-pill-btn cursor-pointer" title="影视工坊">
+        <a href="workshop.html" class="pill-capsule-inactive px-3.5 py-1.5 gw-type-body-sm font-medium flex items-center space-x-1.5 nav-pill-btn cursor-pointer" title="影视工坊">
           <i data-lucide="film" class="w-3.5 h-3.5"></i>
           <span>影视工坊</span>
         </a>
-        <a href="production.html" class="pill-capsule-inactive px-3.5 py-1.5 text-xs tracking-wide font-medium flex items-center space-x-1.5 nav-pill-btn cursor-pointer" title="剧集制片">
+        <a href="production.html" class="pill-capsule-inactive px-3.5 py-1.5 gw-type-body-sm font-medium flex items-center space-x-1.5 nav-pill-btn cursor-pointer" title="剧集制片">
           <i data-lucide="clapperboard" class="w-3.5 h-3.5"></i>
           <span>剧集制片</span>
         </a>
-        <a href="agents.html" class="pill-capsule-active px-3.5 py-1.5 text-xs tracking-wide  flex items-center space-x-1.5 nav-pill-btn cursor-pointer" title="智能体">
+        <a href="agents.html" class="pill-capsule-active px-3.5 py-1.5 gw-type-body-sm flex items-center space-x-1.5 nav-pill-btn cursor-pointer" title="智能体">
           <i data-lucide="bot" class="w-3.5 h-3.5"></i>
           <span>智能体</span>
         </a>
-        <a href="storyboard.html?view=canvas" class="pill-capsule-inactive px-3.5 py-1.5 text-xs tracking-wide font-medium flex items-center space-x-1.5 nav-pill-btn cursor-pointer" title="画布">
+        <a href="storyboard.html?view=canvas" class="pill-capsule-inactive px-3.5 py-1.5 gw-type-body-sm font-medium flex items-center space-x-1.5 nav-pill-btn cursor-pointer" title="画布">
           <i data-lucide="layout-grid" class="w-3.5 h-3.5"></i>
           <span>画布/工具</span>
         </a>
-        <a href="assets.html" class="pill-capsule-inactive px-3.5 py-1.5 text-xs tracking-wide font-medium flex items-center space-x-1.5 nav-pill-btn cursor-pointer" title="资产库">
+        <a href="assets.html" class="pill-capsule-inactive px-3.5 py-1.5 gw-type-body-sm font-medium flex items-center space-x-1.5 nav-pill-btn cursor-pointer" title="资产库">
           <i data-lucide="database" class="w-3.5 h-3.5"></i>
           <span>资产库</span>
         </a>
-        <a href="collab.html" class="pill-capsule-inactive px-3.5 py-1.5 text-xs tracking-wide font-medium flex items-center space-x-1.5 nav-pill-btn cursor-pointer" title="协作">
+        <a href="collab.html" class="pill-capsule-inactive px-3.5 py-1.5 gw-type-body-sm font-medium flex items-center space-x-1.5 nav-pill-btn cursor-pointer" title="协作">
           <i data-lucide="users" class="w-3.5 h-3.5"></i>
           <span>协作</span>
         </a>
-        <a href="workflow.html" class="pill-capsule-inactive px-3.5 py-1.5 text-xs tracking-wide font-medium flex items-center space-x-1.5 nav-pill-btn cursor-pointer" title="工作流">
+        <a href="workflow.html" class="pill-capsule-inactive px-3.5 py-1.5 gw-type-body-sm font-medium flex items-center space-x-1.5 nav-pill-btn cursor-pointer" title="工作流">
           <i data-lucide="workflow" class="w-3.5 h-3.5"></i><span>工作流</span>
         </a>
-        <a href="index.html?view=settings" class="pill-capsule-inactive px-3.5 py-1.5 text-xs tracking-wide font-medium flex items-center space-x-1.5 nav-pill-btn cursor-pointer" title="系统设置">
+        <a href="index.html?view=settings" class="pill-capsule-inactive px-3.5 py-1.5 gw-type-body-sm font-medium flex items-center space-x-1.5 nav-pill-btn cursor-pointer" title="系统设置">
           <i data-lucide="settings" class="w-3.5 h-3.5"></i>
           <span>设置</span>
         </a>
@@ -157,28 +158,28 @@
 
       <div class="flex items-center space-x-4 shrink-0">
         <div class="flex items-center space-x-2">
-          <span class="text-[9px] font-mono text-slate-400 font-bold">FLOW</span>
+          <span class="gw-type-body-sm font-mono text-slate-400 font-bold">FLOW</span>
           <div class="hw-fader-track-horizontal w-28">
             <div class="hw-fader-glow-bar" style="width: 0%;"></div>
             <div class="hw-fader-thumb-3d" style="left: 0%;"></div>
           </div>
-          <span class="text-[9px] font-mono text-amber-300 font-bold" id="flowPipelineReadout" data-gw-degradation="not_integrated" title="真实数据源：GET /api/observability/health">未接入</span>
+          <span class="gw-type-body-sm font-mono text-amber-300 font-bold" id="flowPipelineReadout" data-gw-degradation="not_integrated" title="真实数据源：GET /api/observability/health">未接入</span>
         </div>
         <div class="flex items-center space-x-2">
-          <span class="text-[9px] font-mono text-slate-400 font-bold">BUFFER</span>
+          <span class="gw-type-body-sm font-mono text-slate-400 font-bold">BUFFER</span>
           <div class="hw-fader-track-horizontal w-24">
             <div class="hw-fader-glow-bar" style="width: 0%; background: linear-gradient(90deg, #38bdf8 0%, #2dd4bf 100%);"></div>
             <div class="hw-fader-thumb-3d" style="left: 0%;"></div>
           </div>
-          <span class="text-[9px] font-mono text-amber-300 font-bold" id="bufferReadout" data-gw-degradation="not_integrated" title="真实数据源：GET /api/observability/health">未接入</span>
+          <span class="gw-type-body-sm font-mono text-amber-300 font-bold" id="bufferReadout" data-gw-degradation="not_integrated" title="真实数据源：GET /api/observability/health">未接入</span>
         </div>
       </div>
 
       <div class="flex items-center space-x-3 shrink-0">
         <div class="flex items-center space-x-1.5">
-          <span class="text-[8px] font-mono text-slate-400 font-bold">AUTO</span>
+          <span class="gw-type-body-sm font-mono text-slate-400 font-bold">AUTO</span>
           <div class="hw-slide-toggle active" onclick="this.classList.toggle('active')"><div class="hw-slide-peg"></div></div>
-          <span class="text-[8px] font-mono text-[#dfc384] font-bold">MANUAL</span>
+          <span class="gw-type-body-sm font-mono text-[#dfc384] font-bold">MANUAL</span>
         </div>
         <div class="h-3.5 w-px bg-white/10"></div>
                 <!-- 拟物头像键帽 (原智能体核心位置，替换左下角登录用户，无文字只显头像) -->
@@ -196,21 +197,21 @@
     <!-- LEFT: 智能体神经元角色清单 -->
     <aside class="w-64 bg-[#08090d] border-r border-[#191c24] flex flex-col shrink-0 z-30 h-full min-h-0">
       <div class="p-2 border-b border-white/5 shrink-0">
-        <div class="w-full flex items-center justify-between px-3 py-2 rounded-xl bg-[#141720] border border-[#dfc384]/35 text-[#eddab3] text-xs font-semibold shadow-md">
+        <div class="w-full flex items-center justify-between px-3 py-2 rounded-xl bg-[#141720] border border-[#dfc384]/35 text-[#eddab3] gw-type-body-sm font-semibold shadow-md">
           <div class="flex items-center space-x-2">
             <i data-lucide="bot" class="w-4 h-4 text-[#dfc384]"></i>
             <span>智能体神经元总线</span>
           </div>
-          <span class="text-[8px] font-mono text-slate-400" id="agentBusStatus" title="仅读取服务端配置状态，不验证上游连通性">配置读取中…</span>
+          <span class="gw-type-body-sm font-mono text-slate-400" id="agentBusStatus" title="仅读取服务端配置状态，不验证上游连通性">配置读取中…</span>
         </div>
       </div>
 
-      <div class="flex-1 overflow-y-auto p-2 space-y-2 text-xs" id="agentList">
+      <div class="flex-1 overflow-y-auto p-2 space-y-2 gw-type-body-sm" id="agentList">
         <!-- 由 controller 动态加载 -->
       </div>
 
       <div class="p-2.5 bg-[#050608] border-t border-white/5 shrink-0">
-        <button class="tactile-keycap w-full py-1.5 rounded-lg text-xs font-bold text-[#eddab3] flex items-center justify-center space-x-1" onclick="WorkbenchAgents.createAgent()">
+        <button class="tactile-keycap w-full py-1.5 rounded-lg gw-type-body-md font-bold text-[#eddab3] flex items-center justify-center space-x-1" onclick="WorkbenchAgents.createAgent()">
           <i data-lucide="plus" class="w-3.5 h-3.5 text-[#dfc384]"></i>
           <span>挂载新模型智能体</span>
         </button>
@@ -226,38 +227,38 @@
           <div class="flex items-center justify-between pb-1.5 border-b border-white/5 shrink-0">
             <div class="flex items-center space-x-2">
               <span class="w-2 h-2 rounded-full bg-cyan-400 animate-ping"></span>
-              <h3 class="text-xs font-bold text-slate-100" id="currentAgentTitle">AURA · 核心调度智能体 (思维链路实时透视)</h3>
+              <h3 class="gw-type-body-lg font-bold text-slate-100" id="currentAgentTitle">AURA · 核心调度智能体 (思维链路实时透视)</h3>
             </div>
-            <div class="flex items-center space-x-2 text-[8.5px] font-mono text-slate-400">
+            <div class="flex items-center space-x-2 gw-type-body-sm font-mono text-slate-400">
               <span id="agentThroughputReadout" class="px-1.5 py-0.5 rounded bg-black/60 text-amber-300" data-gw-degradation="not_measured" title="仅在用户主动调用后按Chat Completions真实usage与服务端单调时钟计算">吞吐: 尚未测量</span>
               <span id="agentLatencyReadout" class="px-1.5 py-0.5 rounded bg-black/60 text-amber-300" data-gw-degradation="not_measured" title="显示同一次模型请求的服务端端到端耗时">时延: 尚未测量</span>
             </div>
           </div>
 
           <!-- 思维链滚动流 -->
-          <div class="flex-1 min-h-0 overflow-y-auto space-y-2 p-2 my-2 rounded-xl bay-inset font-mono text-xs" id="agentTraceStream">
+          <div class="flex-1 min-h-0 overflow-y-auto space-y-2 p-2 my-2 rounded-xl bay-inset font-mono gw-type-body-sm" id="agentTraceStream">
             <!-- 实时轨迹由 controller 驱动 -->
           </div>
 
           <!-- 服务端配置选择与显式计费告知：页面加载只读取配置，不生成模型请求。 -->
           <div class="grid grid-cols-2 gap-2 shrink-0">
-            <label class="text-[9px] font-mono text-slate-400">服务端 Provider
-              <select id="agentProviderSelect" class="block w-full mt-1 rounded bg-black/50 border border-white/10 px-2 py-1 text-xs text-slate-100" aria-label="服务端 Provider">
+            <label class="gw-type-body-sm font-mono text-slate-400">服务端 Provider
+              <select id="agentProviderSelect" class="block w-full mt-1 rounded bg-black/50 border border-white/10 px-2 py-1 gw-type-body-md text-slate-100" aria-label="服务端 Provider">
                 <option value="">配置读取中…</option>
               </select>
             </label>
-            <label class="text-[9px] font-mono text-slate-400">允许模型
-              <select id="agentModelSelect" class="block w-full mt-1 rounded bg-black/50 border border-white/10 px-2 py-1 text-xs text-slate-100" aria-label="服务端允许模型">
+            <label class="gw-type-body-sm font-mono text-slate-400">允许模型
+              <select id="agentModelSelect" class="block w-full mt-1 rounded bg-black/50 border border-white/10 px-2 py-1 gw-type-body-md text-slate-100" aria-label="服务端允许模型">
                 <option value="">等待服务端配置</option>
               </select>
             </label>
           </div>
-          <p id="agentBillingNotice" class="text-[9px] text-amber-200/80 shrink-0">点击发送会调用真实模型，可能产生费用；请求超时或失败后不会自动重试。</p>
+          <p id="agentBillingNotice" class="gw-type-body-md text-amber-200/80 shrink-0">点击发送会调用真实模型，可能产生费用；请求超时或失败后不会自动重试。</p>
 
           <!-- 调试测试输入槽；只有用户主动提交才调用模型。 -->
           <form onsubmit="WorkbenchAgents.sendTestPrompt(event)" class="bay-inset p-1 rounded-xl flex items-center space-x-2 border border-[#dfc384]/30 shrink-0">
-            <input type="text" id="agentPromptInput" placeholder="下达测试意图…" class="flex-1 bg-transparent border-0 text-xs font-mono text-slate-100 placeholder-slate-500 focus:outline-none px-2" autocomplete="off">
-            <button type="submit" id="agentSendButton" class="tactile-keycap px-3 py-1.5 rounded-lg text-xs font-bold text-[#eddab3] flex items-center space-x-1">
+            <input type="text" id="agentPromptInput" placeholder="下达测试意图…" class="flex-1 bg-transparent border-0 gw-type-body-md font-mono text-slate-100 placeholder-slate-500 focus:outline-none px-2" autocomplete="off">
+            <button type="submit" id="agentSendButton" class="tactile-keycap px-3 py-1.5 rounded-lg gw-type-body-md font-bold text-[#eddab3] flex items-center space-x-1">
               <i data-lucide="sparkles" class="w-3 h-3 text-[#dfc384]"></i>
               <span>执行测试</span>
             </button>
@@ -269,15 +270,15 @@
       <div class="col-span-4 flex flex-col h-full min-h-0 space-y-2">
         <div class="champagne-card p-2.5 flex-1 flex flex-col min-h-0 justify-between">
           <div class="flex items-center justify-between pb-1.5 border-b border-white/5 shrink-0">
-            <h3 class="text-xs font-bold text-slate-100">剧本文字任务</h3>
-            <span class="text-[8px] font-mono text-[#dfc384]">ROUTER MESH</span>
+            <h3 class="gw-type-body-lg font-bold text-slate-100">剧本文字任务</h3>
+            <span class="gw-type-body-sm font-mono text-[#dfc384]">ROUTER MESH</span>
           </div>
 
-          <div class="flex-1 min-h-0 overflow-y-auto space-y-2.5 py-2 text-xs pr-1">
+          <div class="flex-1 min-h-0 overflow-y-auto space-y-2.5 py-2 gw-type-body-sm pr-1">
             <div class="bay-inset p-2 rounded-xl">
-              <div class="text-[9px] font-mono text-slate-400 mb-1">底层主模型挂载</div>
-              <div class="text-xs font-bold text-slate-200" id="agentModelMount">等待服务端配置</div>
-              <div class="text-[8px] font-mono text-[#dfc384]">实际模型以服务端 allowlist 与本次响应为准</div>
+              <div class="gw-type-body-sm font-mono text-slate-400 mb-1">底层主模型挂载</div>
+              <div class="gw-type-body-sm font-bold text-slate-200" id="agentModelMount">等待服务端配置</div>
+              <div class="gw-type-body-sm font-mono text-[#dfc384]">实际模型以服务端 allowlist 与本次响应为准</div>
             </div>
 
             <form id="agentTaskForm" class="bay-inset p-2 rounded-xl space-y-2">
@@ -290,24 +291,24 @@
               <label class="block text-slate-400">服务端任务配置档案
                 <select id="agentTaskConfigProfile" class="block w-full mt-1 rounded bg-black/50 border border-white/10 px-2 py-1 text-slate-100" required aria-label="服务端任务配置档案"><option value="">读取服务端配置中…</option></select>
               </label>
-              <p class="text-[9px] text-amber-200/80">提交后会启动服务器配置的真实模型任务，可能计费。调配、创作、审核和返修阶段均可能调用模型；失败不自动重试，费用金额未知且无总额上限。</p>
-              <button id="agentTaskCreate" type="submit" class="tactile-keycap w-full py-1.5 rounded-lg text-xs font-bold text-[#eddab3]">创建六阶段任务</button>
+              <p class="gw-type-body-md text-amber-200/80">提交后会启动服务器配置的真实模型任务，可能计费。调配、创作、审核和返修阶段均可能调用模型；失败不自动重试，费用金额未知且无总额上限。</p>
+              <button id="agentTaskCreate" type="submit" class="tactile-keycap w-full py-1.5 rounded-lg gw-type-body-md font-bold text-[#eddab3]">创建六阶段任务</button>
             </form>
             <div class="bay-inset p-2 rounded-xl space-y-2">
               <label class="block text-slate-400">已有任务编号<input id="agentTaskRunId" class="block w-full mt-1 rounded bg-black/50 border border-white/10 px-2 py-1 text-slate-100" placeholder="输入编号可恢复查看"></label>
               <button id="agentTaskLoad" type="button" class="tactile-keycap px-2 py-1 rounded">读取任务</button>
-              <p id="agentTaskStatus" role="status" aria-live="polite" class="text-[10px] text-amber-200">等待任务接口</p>
+              <p id="agentTaskStatus" role="status" aria-live="polite" class="gw-type-body-md text-amber-200">等待任务接口</p>
               <div class="flex flex-wrap gap-1">
                 <button id="agentTaskPause" type="button" disabled class="tactile-keycap px-2 py-1 rounded">暂停</button>
                 <button id="agentTaskResume" type="button" disabled class="tactile-keycap px-2 py-1 rounded">恢复</button>
                 <button id="agentTaskCancel" type="button" disabled class="tactile-keycap px-2 py-1 rounded">终止</button>
                 <button id="agentTaskApplyConfiguration" type="button" disabled class="tactile-keycap px-2 py-1 rounded">为暂停任务应用所选配置</button>
               </div>
-              <p class="text-[9px] text-slate-400">配置选项来自服务端 allowlist；只有暂停任务可应用新配置。</p>
-              <p class="text-[9px] text-amber-200/80">暂停或终止会阻止后续阶段；已发出的模型请求无法撤回，仍可能完成并计费。</p>
+              <p class="gw-type-body-md text-slate-400">配置选项来自服务端 allowlist；只有暂停任务可应用新配置。</p>
+              <p class="gw-type-body-md text-amber-200/80">暂停或终止会阻止后续阶段；已发出的模型请求无法撤回，仍可能完成并计费。</p>
               <div id="agentTaskReview" hidden class="space-y-2 border-t border-white/10 pt-2">
                 <p id="agentTaskReviewScore" class="text-[#eddab3]"></p>
-                <pre id="agentTaskCandidate" class="whitespace-pre-wrap break-words overflow-y-auto text-[10px] text-slate-200" style="max-height:240px;user-select:text"></pre>
+                <pre id="agentTaskCandidate" class="whitespace-pre-wrap break-words overflow-y-auto gw-type-body-sm text-slate-200" style="max-height:240px;user-select:text"></pre>
                 <label class="block text-slate-400">决定理由（必填）<textarea id="agentTaskReason" rows="2" maxlength="8000" class="block w-full mt-1 rounded bg-black/50 border border-white/10 px-2 py-1 text-slate-100" placeholder="批准请简述核验结论；退回或特批需说明理由"></textarea></label>
                 <div class="flex flex-wrap gap-1"><button id="agentTaskApprove" type="button" class="tactile-keycap px-2 py-1 rounded">批准</button><button id="agentTaskReject" type="button" class="tactile-keycap px-2 py-1 rounded">退回返修</button><button id="agentTaskOverride" type="button" class="tactile-keycap px-2 py-1 rounded">低分特批</button></div>
               </div>
@@ -317,7 +318,7 @@
           </div>
 
           <div class="pt-2 border-t border-white/5 shrink-0">
-            <span class="text-[9px] text-slate-400">简报 → 大纲人物 → 完整剧本 → 分场 → 文字分镜 → 交付核验</span>
+            <span class="gw-type-body-sm text-slate-400">简报 → 大纲人物 → 完整剧本 → 分场 → 文字分镜 → 交付核验</span>
           </div>
         </div>
       </div>
@@ -326,10 +327,10 @@
   </div>
 
   <script src="/static/js/core/degradation.js?v=v0.0.1-alpha-2026"></script>
-  <script src="/static/js/core/hardware-telemetry.js"></script>
+  <script src="/static/js/core/hardware-telemetry.js?v=20261008-auth6"></script>
   <script src="/static/js/core/aura-trace.js?v=20260916"></script>
   <script src="/static/js/controllers/agents-controller.js"></script>
   <script src="/static/js/controllers/agent-tasks.js"></script>
-<script src="/static/js/core/workbench-shell.js"></script>
+<script src="/static/js/core/workbench-shell.js?v=20261009-parse-cf7"></script>
 </body>
 </html>

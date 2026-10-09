@@ -20,7 +20,13 @@ let workbenchRoot = null;
 
   function listen(target, type, handler, options) {
     target?.addEventListener(type, handler, options);
-    lifecycleListeners.push(() => target?.removeEventListener(type, handler, options));
+    const remove = () => {
+      target?.removeEventListener(type, handler, options);
+      const index = lifecycleListeners.indexOf(remove);
+      if (index >= 0) lifecycleListeners.splice(index, 1);
+    };
+    lifecycleListeners.push(remove);
+    return remove;
   }
 function wfGet(id) { return workbenchRoot?.querySelector(`#${CSS.escape(id)}`) || null; }
 function wfQuery(selector) { return workbenchRoot?.querySelector(selector) || null; }
@@ -74,6 +80,10 @@ const state = {
   activeTaskId: null,
   pollTimer: null,
   paramSaveTimer: null,
+  parameterSaves: new Map(),
+  submitting: false,
+  submissionAttempt: null,
+  pollGeneration: 0,
   clipboardHistory: loadLocalClipboardHistory(),
   mediaAssets: [],
   mediaAssetsByFilename: {},
@@ -90,6 +100,7 @@ const state = {
 const PORT_COLORS = {
   MODEL: "#dfc384",
   CLIP: "#38bdf8",
+  CONDITIONING: "#38bdf8",
   IMAGE: "#10b981",
   VIDEO: "#dfc384",
   AUDIO: "#38bdf8",
@@ -99,22 +110,14 @@ const PORT_COLORS = {
 };
 
 function loadLocalClipboardHistory() {
-  try {
-    const raw = localStorage.getItem(CLIPBOARD_STORAGE_KEY);
-    const parsed = raw ? JSON.parse(raw) : [];
-    return Array.isArray(parsed) ? parsed.filter((x) => typeof x === "string" && x.trim()) : [];
-  } catch (_) {
-    return [];
-  }
+  // 身份确认前不读取浏览器共享历史；持久历史只从主体化服务端接口召回。
+  return [];
 }
 
 function recordClipboardHistory(text) {
   const clean = String(text || "").trim();
   if (!clean) return;
   state.clipboardHistory = [clean, ...state.clipboardHistory.filter((item) => item !== clean)].slice(0, 15);
-  try {
-    localStorage.setItem(CLIPBOARD_STORAGE_KEY, JSON.stringify(state.clipboardHistory));
-  } catch (_) {}
 }
 
 function isLikelyRhLink(text) {
@@ -184,6 +187,41 @@ function getMediaModeForWidget(node, fieldName, fieldType, value) {
   return null;
 }
 
+function normalizePortList(ports) {
+  if (Array.isArray(ports)) {
+    return ports.map((p) => {
+      if (p && typeof p === "object") {
+        const name = String(p.name || p.label || "");
+        let dType = String(p.data_type || p.type || "DEFAULT");
+        if (dType === "DEFAULT") {
+          if (/model/i.test(name)) dType = "MODEL";
+          else if (/clip|positive|negative|prompt/i.test(name)) dType = "CLIP";
+          else if (/image|images|filename/i.test(name)) dType = "IMAGE";
+          else if (/latent|samples/i.test(name)) dType = "LATENT";
+          else if (/vae/i.test(name)) dType = "VAE";
+        }
+        return { name, data_type: dType };
+      }
+      return { name: String(p ?? ""), data_type: "DEFAULT" };
+    });
+  }
+  if (ports && typeof ports === "object" && ports !== null) {
+    return Object.entries(ports).map(([name, val]) => {
+      let dType = "DEFAULT";
+      if (/model/i.test(name)) dType = "MODEL";
+      else if (/clip|positive|negative|prompt/i.test(name)) dType = "CLIP";
+      else if (/image|images|filename/i.test(name)) dType = "IMAGE";
+      else if (/latent|samples/i.test(name)) dType = "LATENT";
+      else if (/vae/i.test(name)) dType = "VAE";
+      else if (Array.isArray(val)) dType = "LINK";
+      else if (typeof val === "number") dType = "INT";
+      else dType = "STRING";
+      return { name, data_type: dType };
+    });
+  }
+  return [];
+}
+
 function getMediaWidgetOfNode(node) {
   const widgets = node?.widgets || [];
   if (widgets.length === 0) return null;
@@ -197,6 +235,10 @@ function getMediaWidgetOfNode(node) {
 }
 
 function showToast(message, isError = false, actionLabel = "", onAction = null) {
+  if (typeof window.showWorkbenchToast === "function") {
+    window.showWorkbenchToast(message, isError, actionLabel, onAction, 5000);
+    return;
+  }
   const banner = wfGet("toastBanner");
   if (!banner) return;
   banner.style.borderColor = isError ? "#f43f5e" : "#dfc384";
@@ -212,7 +254,7 @@ function showToast(message, isError = false, actionLabel = "", onAction = null) 
     });
   }
   clearTimeout(banner._timer);
-  banner._timer = setTimeout(() => banner.classList.remove("show"), actionLabel ? 6000 : 3600);
+  banner._timer = setTimeout(() => banner.classList.remove("show"), 5000);
 }
 
 function escapeHtml(str) {
@@ -269,44 +311,163 @@ function expandNodePosition(node) {
 function normalizeMatureWorkflow(raw) {
   const value = raw?.workflow || raw?.document || raw;
   if (!value || !Array.isArray(value.nodes)) return value;
+
+  const rawLinks = value.links || value.connections || [];
+  const normalizedLinks = rawLinks.map((link, i) => {
+    const fromNode = String(link.from_node ?? link.source ?? "");
+    const toNode = String(link.to_node ?? link.target ?? "");
+    const rawFromSlot = link.from_slot ?? link.source_slot ?? 0;
+    const rawToSlot = link.to_slot ?? link.target_slot ?? 0;
+    const parsedFrom = typeof rawFromSlot === "number" ? rawFromSlot : parseInt(rawFromSlot, 10);
+    const parsedTo = typeof rawToSlot === "number" ? rawToSlot : parseInt(rawToSlot, 10);
+    return {
+      ...link,
+      id: link.id || `link_${i}`,
+      from_node: fromNode,
+      to_node: toNode,
+      source: fromNode,
+      target: toNode,
+      source_slot: String(rawFromSlot),
+      target_slot: String(rawToSlot),
+      from_slot: !isNaN(parsedFrom) ? parsedFrom : 0,
+      to_slot: !isNaN(parsedTo) ? parsedTo : 0,
+    };
+  });
+
   const nodes = value.nodes.map((node, index) => {
     const geometry = collapseNodePosition(node, index, value.nodes.length);
-    const inputs = node.inputs && typeof node.inputs === 'object' ? node.inputs : {};
-    const widgets = Array.isArray(node.widgets) ? node.widgets : Object.entries(inputs).map(([name, v]) => ({ name, value: v, value_type: typeof v === 'number' ? (Number.isInteger(v) ? 'int' : 'float') : typeof v === 'boolean' ? 'bool' : 'string' }));
-    return { ...node, node_id: String(node.node_id ?? node.id ?? index + 1), id: String(node.id ?? node.node_id ?? index + 1), class_type: node.class_type || node.kind || 'Node', title: node.title || node.name || node.kind || 'Node', x: geometry.x, y: geometry.y, width: geometry.width, height: geometry.height, category: node.category || 'node', widgets };
+    const inputs = node.inputs && typeof node.inputs === "object" ? node.inputs : {};
+    const widgets = Array.isArray(node.widgets)
+      ? node.widgets.map((widget, widgetIndex) => widget && typeof widget === 'object' && !Array.isArray(widget) ? widget : ({
+          name: `widget_${widgetIndex}`, label: `原生参数 ${widgetIndex + 1}`, value: widget,
+          promoted: Boolean(node.metadata?.widget_promotions?.[`widget_${widgetIndex}`]),
+          value_type: typeof widget === 'number' ? (Number.isInteger(widget) ? 'int' : 'float') : typeof widget === 'boolean' ? 'bool' : 'string',
+        }))
+      : Object.entries(inputs)
+          // 过滤掉连线引用数组（如 ["1", 0]），避免将连线数据误显示为卡片 widget
+          .filter(([_, v]) => !(Array.isArray(v) && v.length >= 2))
+          .map(([name, v]) => ({
+            name,
+            value: v,
+            value_type:
+              typeof v === "number"
+                ? Number.isInteger(v)
+                  ? "int"
+                  : "float"
+                : typeof v === "boolean"
+                ? "bool"
+                : "string",
+          }));
+
+    const nodeId = String(node.node_id ?? node.id ?? index + 1);
+
+    // 若 outputs 为空，从流出连线中推导该节点的输出端口
+    let outputs = Array.isArray(node.raw_payload?.outputs) ? node.raw_payload.outputs : node.outputs;
+    if (
+      !outputs ||
+      (Array.isArray(outputs) && outputs.length === 0) ||
+      (typeof outputs === "object" && Object.keys(outputs).length === 0)
+    ) {
+      const outgoing = normalizedLinks.filter((lk) => lk.from_node === nodeId);
+      if (outgoing.length > 0) {
+        const derived = {};
+        outgoing.forEach((lk, oIdx) => {
+          const tName = String(lk.target_slot ?? lk.to_slot ?? "out");
+          let dType = "MODEL";
+          if (/clip|positive|negative|prompt/i.test(tName)) dType = "CLIP";
+          else if (/model/i.test(tName)) dType = "MODEL";
+          else if (/latent|samples/i.test(tName)) dType = "LATENT";
+          else if (/vae/i.test(tName)) dType = "VAE";
+          else if (/image/i.test(tName)) dType = "IMAGE";
+          const portKey = String(lk.source_slot ?? lk.from_slot ?? oIdx);
+          if (!derived[portKey]) {
+            derived[portKey] = { name: dType, type: dType, data_type: dType };
+          }
+        });
+        outputs = derived;
+      }
+    }
+
+    return {
+      ...node,
+      node_id: nodeId,
+      id: nodeId,
+      class_type: node.class_type || node.kind || "Node",
+      title: node.title || node.name || node.kind || "Node",
+      x: geometry.x,
+      y: geometry.y,
+      width: geometry.width,
+      height: geometry.height,
+      category: node.category || "node",
+      inputs,
+      input_ports: Array.isArray(node.raw_payload?.inputs) ? node.raw_payload.inputs : inputs,
+      outputs: outputs || {},
+      widgets,
+    };
   });
-  const links = value.links || value.connections || [];
-  const actuatorParams = Array.isArray(value.actuator_params)
-    ? value.actuator_params
-    : deriveActuatorParamsFromWidgets(nodes);
-  return { ...value, workflow_id: value.workflow_id || raw?.workflow_id, nodes, links: links.map((link, i) => ({ ...link, from_node: String(link.from_node ?? link.source), to_node: String(link.to_node ?? link.target), from_slot: Number(link.from_slot ?? link.source_slot ?? 0), to_slot: Number(link.to_slot ?? link.target_slot ?? 0), id: link.id || String(i) })), actuator_params: actuatorParams, env_diff: value.env_diff || {}, name: value.name || 'workflow' };
+
+  const actuatorParams = deriveActuatorParamsFromWidgets(nodes, value.actuator_params);
+
+  return {
+    ...value,
+    workflow_id: value.workflow_id || raw?.workflow_id,
+    nodes,
+    links: normalizedLinks,
+    connections: normalizedLinks,
+    actuator_params: actuatorParams,
+    env_diff: value.env_diff || {},
+    name: value.name || "workflow",
+  };
 }
 
 /**
- * 提取列表以后端持久化的 widget.promoted 为准；缺省时从节点属性推导。
+ * 提取列表以节点 widget.promoted 为基准真源，与已有 actuator_params 智能合并。
  */
-function deriveActuatorParamsFromWidgets(nodes) {
-  const params = [];
+function deriveActuatorParamsFromWidgets(nodes, existingParams = []) {
+  const paramsMap = new Map();
+  if (Array.isArray(existingParams)) {
+    for (const p of existingParams) {
+      if (p && p.node_id && p.field_name) {
+        paramsMap.set(`${p.node_id}:${p.field_name}`, { ...p });
+      }
+    }
+  }
+
+  const derived = [];
   for (const node of nodes || []) {
+    const nid = String(node.node_id ?? node.id ?? "");
     for (const w of node.widgets || []) {
       if (!w || !w.promoted) continue;
-      params.push({
-        node_id: String(node.node_id),
+      const key = `${nid}:${w.name}`;
+      const existing = paramsMap.get(key) || {};
+      derived.push({
+        ...existing,
+        node_id: nid,
         field_name: String(w.name),
-        field_value: w.value,
-        label: w.label || `${node.title} · ${w.name}`,
-        value_type: w.value_type || w.field_type,
-        min_val: w.min_val,
-        max_val: w.max_val,
-        step: w.step,
-        options: w.options,
+        field_value: w.value !== undefined ? w.value : existing.field_value,
+        label: w.label || existing.label || `${node.title || node.name || "Node"} · ${w.name}`,
+        value_type: w.value_type || w.field_type || existing.value_type || "string",
+        min_val: w.min_val ?? existing.min_val,
+        max_val: w.max_val ?? existing.max_val,
+        step: w.step ?? existing.step,
+        options: w.options || existing.options,
+        class_type: node.class_type || node.kind || existing.class_type,
+        node_title: node.title || node.name || node.kind || existing.node_title,
       });
     }
   }
-  return params;
+
+  if (derived.length === 0 && Array.isArray(existingParams) && existingParams.length > 0) {
+    return existingParams;
+  }
+  return derived;
 }
 
 async function apiFetch(url, options = {}) {
+  const authRevision = window.GWAuthGate?.revision;
+  if (!window.GWAuthGate?.isAuthenticated()) {
+    const error = new Error('请先登录后使用工作流'); error.status = 401; throw error;
+  }
   const targetUrl = targetApiUrl(url, options);
   const requestOptions = { credentials: 'same-origin', ...options };
   // 后端统一以 {x, y} 形态保存节点位置：出站时把前端的扁平坐标合并回 position。
@@ -317,10 +478,10 @@ async function apiFetch(url, options = {}) {
     requestOptions.body = JSON.stringify({ name: body.name, expected_version: body.expected_version ?? currentRevision() });
   } else if (/\/item\/[^/]+\/folder$/.test(url) && options.method === 'PUT' && options.body) {
     const body = JSON.parse(options.body);
-    requestOptions.body = JSON.stringify({ folder_id: body.folder_id, payload: normalizeMatureWorkflow(state.currentWorkflow), expected_version: body.expected_version ?? currentRevision() });
+    requestOptions.body = JSON.stringify({ folder_id: body.folder_id, expected_version: body.expected_version });
   } else if (/\/item\/[^/]+\/params$/.test(url) && options.method === 'PUT' && options.body) {
     const body = JSON.parse(options.body);
-    requestOptions.body = JSON.stringify({ widget_updates: body.widget_updates || [], expected_version: body.expected_version ?? currentRevision() });
+    requestOptions.body = JSON.stringify({ widget_updates: body.widget_updates || [], positions: body.positions || [], expected_version: body.expected_version });
   } else if (/\/item\/[^/]+$/.test(url) && options.method === 'PUT' && options.body) {
     const body = JSON.parse(options.body);
     requestOptions.body = JSON.stringify({ payload: { ...normalizeMatureWorkflow(body.workflow || body), nodes: (body.workflow?.nodes || body.nodes || []).map(toBackendNode) }, expected_version: body.expected_version ?? currentRevision(), source: body.source || 'canvas' });
@@ -328,12 +489,21 @@ async function apiFetch(url, options = {}) {
   const resp = await fetch(targetUrl, requestOptions);
   const data = await resp.json().catch(() => ({}));
   if (!resp.ok) {
-    const detail = data?.detail; const msg = detail?.message || detail || data?.message || `请求失败 (${resp.status})`; throw new Error(msg);
+    const detail = data?.detail; const msg = detail?.message || detail || data?.message || `请求失败 (${resp.status})`; const error = new Error(msg); error.status = resp.status;
+    if (resp.status === 401) {
+      if (window.GWAuthGate?.revision === authRevision) { clearInterval(state.comfySyncTimer); clearInterval(state.pollTimer); }
+      window.GWAuthGate?.invalidate(401, authRevision, 'workflow');
+    }
+    throw error;
   }
+  if (window.GWAuthGate?.revision !== authRevision || !window.GWAuthGate?.isAuthenticated()) {
+    const error = new Error('登录状态已变化，请重新打开工作流'); error.status = 401; throw error;
+  }
+  if (data.data_gaps?.includes('asset_hub_registration_pending')) showToast('文档或素材已保存，统一资产登记待恢复', true);
   if (/\/export\/[^/]+$/.test(url)) return data.workflow || data;
   if (/\/auto-layout\/[^/]+$/.test(url)) return normalizeMatureWorkflow(data);
-  if (/\/compare-local\/[^/]+$/.test(url)) return normalizeMatureWorkflow(data);
-  if (url.endsWith('/list')) return { items: data.document_summaries || [], folders: [] };
+  if (/\/compare-local\/[^/]+$/.test(url)) return data;
+  if (url.endsWith('/list')) return { ...data, items: data.items || data.document_summaries || [], folders: data.folders || [] };
   if (/\/item\/[^/]+$/.test(url) || /parse-(?:link|upload)$/.test(url)) return normalizeMatureWorkflow(data);
   if (/\/folders$/.test(url) && requestOptions.method === 'POST') return data.folder || data;
   if (/\/folders\//.test(url)) return data.folder || data;
@@ -366,42 +536,102 @@ function toggleCenterColumnCollapse(forceCollapsed) {
 }
 
 async function initWorkbench() {
-  workbenchRoot = document.getElementById("workflowWorkbench");
+  const nextRoot = document.getElementById("workflowWorkbench");
+  if (workbenchRoot && workbenchRoot !== nextRoot) disposeWorkbench();
+  workbenchRoot = nextRoot;
+  if (!window.GWAuthGate || !window.GWAuthGate.isAuthenticated()) {
+    if (!window.GWAuthGate?.loaded) {
+      // 支持控制器先于公共遥测脚本完成初始化：主动启动共享认证请求，避免 wait 自身死锁。
+      try { await window.HardwareDeck?.syncAuth?.(); } catch (_) {}
+    } else {
+      try { await window.GWAuthGate?.wait?.(); } catch (_) {}
+    }
+  }
+  // 认证未知/未认证时只停止受保护初始化；不向工作台插入额外横条或占位。
+  if (!window.GWAuthGate?.isAuthenticated()) return;
+
   if (!workbenchRoot) { disposeWorkbench(); return; }
-  if (lifecycleAbortController) return;
-  lifecycleAbortController = new AbortController();
-  applyColumnCollapseState();
-  bindEvents();
+  if (state.authLoading) return;
+  if (!lifecycleAbortController) {
+    lifecycleAbortController = new AbortController();
+    applyColumnCollapseState();
+    bindEvents();
+  }
+  const initializingLifecycle = lifecycleAbortController;
+  state.authLoading = true;
+  try {
   await loadSettingsState();
+  if (initializingLifecycle !== lifecycleAbortController) return;
   await refreshMediaAssetsCache();
+  if (initializingLifecycle !== lifecycleAbortController) return;
   await refreshWorkflowList();
+  if (!window.GWAuthGate?.isAuthenticated() || initializingLifecycle !== lifecycleAbortController) return;
 
   if (state.workflows.length > 0) {
-    await selectWorkflow(state.workflows[0].workflow_id);
-  } else {
-    await handleParseLink("https://www.runninghub.cn/workflow/2104915887789797378");
+    const requested = window.location ? new URL(window.location.href).searchParams.get('id') : null;
+    await selectWorkflow(requested || state.workflows[0].workflow_id);
   }
+  // 空工作台等待用户明确导入，不擅自抓取默认 RH 源。
+  await restoreWorkflowTask();
   startComfySyncWatcher();
+  } finally { if (initializingLifecycle === lifecycleAbortController) state.authLoading = false; }
+}
+
+async function restoreWorkflowTask() {
+  try {
+    const response = await apiFetch("/api/god_workflow/tasks");
+    const requestedJob = new URLSearchParams(window.location.search).get('job_id');
+    const task = requestedJob
+      ? (response.tasks || []).find(item => (item.job_id || item.task_id) === requestedJob)
+      : (response.tasks || []).find(item => ["accepted", "running", "waiting_review", "paused", "outcome_unknown"].includes(item.status));
+    if (!task) return;
+    state.activeTaskId = task.job_id || task.task_id;
+    wfGet("taskModal")?.classList.add("open");
+    startTaskPolling(state.activeTaskId, task.target);
+  } catch (error) {
+    showToast("任务恢复查询失败，请重新打开任务面板", true);
+  }
+}
+
+function applySavedSettings(s) {
+  // 保存后立即更新掩码，并清空输入；不向页面回填密钥。
+  if (!s || typeof s !== "object") return;
+  const apiKeyHint = wfGet("maskedApiKeyHint");
+  if (apiKeyHint) {
+    apiKeyHint.textContent = s.has_rh_api_key ? `(已配置${s.rh_api_key_source === "local" ? "·本地加密" : "·环境变量"}: ${s.rh_api_key_masked})` : "(未配置)";
+    apiKeyHint.classList.toggle("active", Boolean(s.has_rh_api_key));
+  }
+  const tokenHint = wfGet("maskedTokenHint");
+  if (tokenHint) {
+    tokenHint.textContent = s.has_rh_access_token ? `(已配置${s.rh_access_token_source === "local" ? "·本地加密" : "·环境变量"}: ${s.rh_access_token_masked})` : "(未配置)";
+    tokenHint.classList.toggle("active", Boolean(s.has_rh_access_token));
+  }
+  const apiKeyInput = wfGet("inputRhApiKey");
+  if (apiKeyInput) apiKeyInput.value = "";
+  const tokenInput = wfGet("inputRhAccessToken");
+  if (tokenInput) tokenInput.value = "";
+  for (const id of ["clearRhApiKey", "clearRhAccessToken"]) {
+    const checkbox = wfGet(id);
+    if (checkbox) checkbox.checked = false;
+  }
+  state.providerStatus = s.provider_status || {};
 }
 
 async function loadSettingsState() {
   try {
     const s = await apiFetch("/api/god_workflow/settings");
-    wfGet("inputComfyUrl").value = s.comfy_url || "http://127.0.0.1:8188";
+    const comfyUrlInput = wfGet("inputComfyUrl");
+    if (comfyUrlInput) {
+      comfyUrlInput.value = (s.comfy_url || s.comfy_url_active || "").trim() || "http://127.0.0.1:8188";
+    }
     const rootInput = wfGet("inputComfyRootDir");
     if (rootInput) rootInput.value = s.comfy_root_dir || "";
-    wfGet("inputLocalModelsDir").value = s.local_models_dir || "";
-    wfGet("maskedApiKeyHint").textContent = s.has_rh_api_key
-      ? `(已配置: ${s.rh_api_key_masked})`
-      : "(未配置)";
-    wfGet("maskedTokenHint").textContent = s.has_rh_access_token
-      ? `(已配置: ${s.rh_access_token_masked})`
-      : "(未配置)";
-    if (s.comfy_url_active) {
-      wfGet("inputComfyUrl").value = s.comfy_url_active;
-    }
-    state.providerStatus = s.provider_status || {};
+    const modelsInput = wfGet("inputLocalModelsDir");
+    if (modelsInput) modelsInput.value = s.local_models_dir || "";
+
+    applySavedSettings(s);
   } catch (err) {
+    if (err.status === 401) return;
     console.warn("加载设置失败:", err);
   }
 }
@@ -426,8 +656,13 @@ async function refreshMediaAssetsCache() {
 
 async function refreshWorkflowList() {
   try {
-    const res = await apiFetch("/api/god_workflow/list");
-    state.workflows = res.items || [];
+    let res = await apiFetch("/api/god_workflow/list");
+    const items = res.items || [];
+
+    if (state.currentWorkflow?.workflow_id && !items.some((w) => w.workflow_id === state.currentWorkflow.workflow_id)) {
+      items.unshift(state.currentWorkflow);
+    }
+    state.workflows = items;
     const validIds = new Set(state.workflows.map((w) => w.workflow_id));
     if (!state._openTabsInitialized) {
       state.openWorkflowIds = state.workflows.map((w) => w.workflow_id);
@@ -452,6 +687,7 @@ async function refreshWorkflowList() {
 
 async function selectWorkflow(workflowId) {
   try {
+    if (state.currentWorkflow) await flushWorkflowParams(state.currentWorkflow.workflow_id);
     const wf = await apiFetch(`/api/god_workflow/item/${encodeURIComponent(workflowId)}`);
     setCurrentWorkflow(normalizeMatureWorkflow(wf));
   } catch (err) {
@@ -470,10 +706,10 @@ function clearEmptyWorkbenchView() {
   const selContainer = wfGet("selectedNodeContainer");
   const actContainer = wfGet("actuatorCardsContainer");
   if (selContainer) {
-    selContainer.innerHTML = `<div style="padding:18px 8px;text-align:center;color:rgba(255,255,255,0.65);font-size:10.5px;">请从左侧『工作流目录』点击打开任意工作流。</div>`;
+    selContainer.innerHTML = `<div style="padding:18px 8px;text-align:center;color:rgba(255,255,255,0.65);font-size:var(--gw-type-body-sm);">请从左侧『工作流目录』点击打开任意工作流。</div>`;
   }
   if (actContainer) {
-    actContainer.innerHTML = `<div style="padding:18px 8px;text-align:center;color:rgba(255,255,255,0.65);font-size:10.5px;">暂无激活工作流。</div>`;
+    actContainer.innerHTML = `<div style="padding:18px 8px;text-align:center;color:rgba(255,255,255,0.65);font-size:var(--gw-type-body-sm);">暂无激活工作流。</div>`;
   }
   const srcEl = wfGet("statSourceUrl");
   if (srcEl) {
@@ -560,14 +796,17 @@ async function handleRenameWorkflow(workflowId, newName) {
     return;
   }
   try {
+    await flushWorkflowParams(workflowId);
+    const target = await apiFetch(`/api/god_workflow/item/${encodeURIComponent(workflowId)}`);
     const updated = await apiFetch(`/api/god_workflow/item/${encodeURIComponent(workflowId)}/name`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name: clean }),
+      body: JSON.stringify({ name: clean, expected_version: target.revision ?? target.version }),
     });
     state.renamingWorkflowId = null;
     if (state.currentWorkflow?.workflow_id === workflowId) {
       state.currentWorkflow.name = updated.name;
+      state.currentWorkflow.version = state.currentWorkflow.revision = updated.version;
       renderHeaderTelemetry(state.currentWorkflow);
     }
     await refreshWorkflowList();
@@ -583,15 +822,25 @@ async function handleDeleteWorkflow(workflowId) {
   const target = state.workflows.find((w) => w.workflow_id === workflowId);
   const wfName = target?.name || workflowId;
   try {
+    await flushWorkflowParams(workflowId);
+    const document = await apiFetch(`/api/god_workflow/item/${encodeURIComponent(workflowId)}`);
     await apiFetch(`/api/god_workflow/item/${encodeURIComponent(workflowId)}`, {
       method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ expected_version: document.revision ?? document.version }),
     });
     state.openWorkflowIds = state.openWorkflowIds.filter((id) => id !== workflowId);
+    const wasCurrent = state.currentWorkflow?.workflow_id === workflowId;
+    if (wasCurrent) {
+      state.currentWorkflow = null;
+      state.selectedNodeId = null;
+      clearEmptyWorkbenchView();
+    }
     if (state.renamingWorkflowId === workflowId) {
       state.renamingWorkflowId = null;
     }
     await refreshWorkflowList();
-    if (state.currentWorkflow?.workflow_id === workflowId) {
+    if (wasCurrent) {
       const nextId = state.openWorkflowIds[0] || state.workflows[0]?.workflow_id || null;
       if (nextId) {
         await selectWorkflow(nextId);
@@ -688,14 +937,17 @@ async function handleDeleteFolder(folderId) {
 async function moveWorkflowToFolder(workflowId, targetFolderId) {
   if (!workflowId || !targetFolderId) return;
   try {
+    await flushWorkflowParams(workflowId);
+    const target = await apiFetch(`/api/god_workflow/item/${encodeURIComponent(workflowId)}`);
     const updatedWf = await apiFetch(`/api/god_workflow/item/${encodeURIComponent(workflowId)}/folder`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ folder_id: targetFolderId }),
+      body: JSON.stringify({ folder_id: targetFolderId, expected_version: target.revision ?? target.version }),
     });
     state.collapsedFolders.delete(targetFolderId);
     if (state.currentWorkflow?.workflow_id === workflowId) {
       state.currentWorkflow.folder_id = updatedWf.folder_id;
+      state.currentWorkflow.version = state.currentWorkflow.revision = updatedWf.version;
     }
     await refreshWorkflowList();
     const targetFolder = state.folders.find((f) => f.folder_id === targetFolderId);
@@ -782,7 +1034,7 @@ async function renderClipboardModalList() {
           </div>
           <div class="clipboard-item-text">${escapeHtml(item.text.slice(0, 280))}</div>
         </div>
-        <button type="button" class="hw-btn hw-btn-gold" style="padding:3px 9px;font-size:10px;">
+        <button type="button" class="hw-btn hw-btn-gold" style="padding:3px 9px;font-size:var(--gw-type-body-md);">
           <span>⚡ 选择并解析</span>
         </button>
       </div>
@@ -800,6 +1052,25 @@ async function renderClipboardModalList() {
       handleParseLink(chosen.text);
     });
   });
+}
+
+function showPublicWorkflowPreview(preview) {
+  const modal = wfGet('publicWorkflowPreviewModal');
+  const body = wfGet('publicWorkflowPreviewBody');
+  if (!modal || !body) return;
+  const list = (values) => (Array.isArray(values) && values.length)
+    ? `<ul>${values.map(value => `<li>${escapeHtml(String(value))}</li>`).join('')}</ul>`
+    : '<p>公开详情未提供</p>';
+  body.innerHTML = `
+    <h3>${escapeHtml(preview.name || 'RunningHub 公开信息')}</h3>
+    <p class="public-preview-notice">${escapeHtml(preview.message || '缺少原始拓扑，不能执行或导出为工作流。')}</p>
+    <p>工作流 ID：${escapeHtml(preview.workflow_id || '')}</p>
+    <section><h4>节点类型清单（${preview.node_types?.length || 0} 种）</h4>
+      <p>类型清单不代表节点实例或连接关系。</p>${list(preview.node_types)}</section>
+    <section><h4>模型清单（${preview.models?.length || 0} 项）</h4>${list(preview.models)}</section>`;
+  // 解析期间按钮被禁用，需保留控件引用，关闭时再返回已恢复的按钮。
+  modal._workflowReturnFocus = wfGet('btnParseLink');
+  modal.classList.add('open');
 }
 
 async function handleParseLink(rawLink) {
@@ -839,6 +1110,10 @@ async function handleParseLink(rawLink) {
         folder_id: state.activeFolderId || "parsed_default",
       }),
     });
+    if (wf.public_preview) {
+      showPublicWorkflowPreview(wf.public_preview);
+      return;
+    }
     if (wf.folder_id) {
       state.collapsedFolders.delete(wf.folder_id);
       state.activeFolderId = wf.folder_id;
@@ -900,37 +1175,36 @@ async function handleUploadFile(file) {
  */
 async function handleOpenInComfyUi() {
   const wf = state.currentWorkflow;
-  if (!wf) {
-    showToast("请先选择或解析一个工作流", true);
-    return;
-  }
+  const url = wf && wf.workflow_id
+    ? `/api/god_workflow/open-in-comfy/${encodeURIComponent(wf.workflow_id)}`
+    : `/api/god_workflow/open-in-comfy`;
 
   const btn = wfGet("btnOpenComfyUi");
   const origHtml = btn ? btn.innerHTML : "";
   if (btn) {
     btn.disabled = true;
-    btn.innerHTML = `<span>⏳ 正在匹配并打开...</span>`;
+    btn.innerHTML = `<span>⏳ 正在启动并打开...</span>`;
   }
 
-  showToast(`正在同步固定 ID 并匹配 ComfyUI 工作流「${wf.name}」...`);
+  showToast(wf ? `正在同步并匹配 ComfyUI 工作流「${wf.name}」...` : "正在连接并启动本地 ComfyUI...");
 
   try {
-    const res = await apiFetch(
-      `/api/god_workflow/open-in-comfy/${encodeURIComponent(wf.workflow_id)}`,
-      { method: "POST" }
-    );
-    const openUrl = res.open_url || "http://127.0.0.1:8188";
+    if (wf) await flushWorkflowParams(wf.workflow_id);
+    const res = await apiFetch(url, { method: "POST" });
+    const bridgeUrl = new URL(res.open_url);
+    const nonce = crypto.randomUUID();
+    bridgeUrl.searchParams.set('gw_nonce', nonce);
+    bridgeUrl.searchParams.set('gw_origin', window.location.origin);
+    const openUrl = bridgeUrl.href;
     const hasLiveTab = Boolean(state.comfyWindowRef && !state.comfyWindowRef.closed);
 
     let win = null;
     if (res.bridge_connected && hasLiveTab) {
-      // ComfyUI 窗口已打开且桥接心跳在线：后端已下发页内切换指令，直接聚焦原窗口即可，无需重载页面
       try {
         state.comfyWindowRef.focus();
       } catch (_) {}
       win = state.comfyWindowRef;
     } else {
-      // 复用固定命名窗口 RH_Auto_ComfyUI_Tab，避免多次点击弹出多个 ComfyUI 标签页
       win = window.open(openUrl, "RH_Auto_ComfyUI_Tab");
       if (win) {
         state.comfyWindowRef = win;
@@ -939,30 +1213,43 @@ async function handleOpenInComfyUi() {
         } catch (_) {}
       }
     }
+    state.comfyBridgeSession = wf ? { nonce, origin: bridgeUrl.origin, workflow_id: wf.workflow_id,
+      expected_version: res.expected_version, graph: res.workflow_graph, window: win,
+      principalKey: state.authPrincipalKey, expires: Date.now() + 30 * 60 * 1000 } : null;
 
-    // 刷新当前工作流状态（更新顶部 LOCAL COMFY: ONLINE 指示灯及同步修订号）
-    try {
-      const refreshedWf = await apiFetch(`/api/god_workflow/item/${encodeURIComponent(wf.workflow_id)}`);
-      setCurrentWorkflow(normalizeMatureWorkflow(refreshedWf), { autoFit: false });
-    } catch (_) {}
+    if (wf && wf.workflow_id) {
+      try {
+        const refreshedWf = await apiFetch(`/api/god_workflow/item/${encodeURIComponent(wf.workflow_id)}`);
+        setCurrentWorkflow(normalizeMatureWorkflow(refreshedWf), { autoFit: false });
+      } catch (_) {}
+    }
 
-    const statusPrefix = res.launched
-      ? "已在后台静默启动本地 ComfyUI，"
-      : res.bridge_connected && hasLiveTab
-      ? "已通过固定 ID 在已打开的 ComfyUI 中自动匹配切换至"
-      : "本地 ComfyUI 已在线，已自动匹配打开";
+    let statusPrefix = "";
+    if (res.launched) {
+      statusPrefix = "已在后台启动本地 ComfyUI，";
+    } else if (res.online) {
+      statusPrefix = "本地 ComfyUI 已在线，";
+    } else {
+      statusPrefix = "正在尝试连接本地 ComfyUI，";
+    }
+
+    const toastMsg = wf
+      ? `${statusPrefix}已发送工作流打开请求「${wf.name}」，请在 ComfyUI 确认加载`
+      : `${statusPrefix}已打开 ComfyUI 控制台`;
+
     showToast(
-      `${statusPrefix}工作流「${wf.name}」`,
+      toastMsg,
       false,
       win ? "" : "🖥️ 点击打开 ComfyUI",
       win
         ? null
         : () => {
             state.comfyWindowRef = window.open(openUrl, "RH_Auto_ComfyUI_Tab");
+            if (state.comfyBridgeSession?.nonce === nonce) state.comfyBridgeSession.window = state.comfyWindowRef;
           }
     );
   } catch (err) {
-    showToast(`打开 ComfyUI 失败: ${err.message}`, true);
+    showToast(`打开 ComfyUI 失败：${err.message}`, true);
   } finally {
     if (btn) {
       btn.disabled = false;
@@ -972,9 +1259,15 @@ async function handleOpenInComfyUi() {
 }
 
 /**
- * 监听 ComfyUI 端的保存事件与磁盘修改时间，当用户在 ComfyUI 中修改保存后自动同步回工作台
+ * 核对服务端文档版本；版本变化本身不证明来自 ComfyUI，编辑草稿优先保留。
  */
 async function checkComfySavedSyncOnce() {
+  if (!window.GWAuthGate?.isAuthenticated()) return;
+  const selected = state.currentWorkflow;
+  const hasDraft = () => {
+    const entry = selected && state.parameterSaves.get(selected.workflow_id);
+    return Boolean(entry && (entry.running || entry.pending.size || entry.positions.size));
+  };
   try {
     const res = await apiFetch("/api/god_workflow/comfy-bridge/sync-status");
     const revisions = res?.revisions || {};
@@ -986,6 +1279,7 @@ async function checkComfySavedSyncOnce() {
     for (const [wfId, revNum] of Object.entries(revisions)) {
       const rev = Number(revNum || 0);
       const prev = state.syncRevisions[wfId];
+      if (selected?.workflow_id === wfId && hasDraft()) continue;
       state.syncRevisions[wfId] = rev;
       if ((prev !== undefined && rev > prev) || syncedNow.has(wfId)) {
         updatedWfId = wfId;
@@ -997,13 +1291,14 @@ async function checkComfySavedSyncOnce() {
 
     if (updatedWfId) {
       await refreshWorkflowList();
-      if (currentUpdated && state.currentWorkflow?.workflow_id) {
+      if (currentUpdated && state.currentWorkflow === selected && !hasDraft()) {
         const latestWf = await apiFetch(
-          `/api/god_workflow/item/${encodeURIComponent(state.currentWorkflow.workflow_id)}`
+          `/api/god_workflow/item/${encodeURIComponent(selected.workflow_id)}`
         );
+        if (state.currentWorkflow !== selected || hasDraft() || Number(selected.version) >= Number(latestWf.version)) return;
         setCurrentWorkflow(latestWf, { autoFit: false });
         showToast(
-          `🔄 已自动同步 ComfyUI 保存的最新修改：「${latestWf.name}」(#${latestWf.workflow_id})`
+          `工作流版本已更新：「${latestWf.name}」(#${latestWf.workflow_id})`
         );
       }
     }
@@ -1012,6 +1307,8 @@ async function checkComfySavedSyncOnce() {
 
 function startComfySyncWatcher() {
   clearInterval(state.comfySyncTimer);
+  if (!window.GWAuthGate?.isAuthenticated()) return;
+  if (window.GWAuthGate?.paused?.has('workflow')) return;
   checkComfySavedSyncOnce();
   state.comfySyncTimer = setInterval(checkComfySavedSyncOnce, 2500);
 }
@@ -1021,7 +1318,15 @@ function startComfySyncWatcher() {
 function setCurrentWorkflow(wf, options = {}) {
   state.currentWorkflow = wf;
   if (wf.workflow_id) {
-    state.syncRevisions[wf.workflow_id] = Number(wf.sync_revision || 0);
+    const entry = state.parameterSaves.get(wf.workflow_id);
+    if (entry && !entry.running && !entry.pending.size && !entry.positions.size) entry.workflow = wf;
+    state.syncRevisions[wf.workflow_id] = Number(wf.sync_revision ?? wf.version ?? 0);
+    const existingIdx = state.workflows.findIndex((w) => w.workflow_id === wf.workflow_id);
+    if (existingIdx === -1) {
+      state.workflows.unshift(wf);
+    } else {
+      state.workflows[existingIdx] = { ...state.workflows[existingIdx], ...wf };
+    }
   }
   if (wf.workflow_id && !state.openWorkflowIds.includes(wf.workflow_id)) {
     state.openWorkflowIds.push(wf.workflow_id);
@@ -1045,7 +1350,7 @@ function setCurrentWorkflow(wf, options = {}) {
     state.selectedNodeId = (firstWithWidgets || nodes[0])?.node_id || null;
   }
 
-  const recTarget = wf.env_diff?.recommended_target || "rh_cloud";
+  const recTarget = wf.env_diff?.recommended_target || (wf.source_type === "rh_link" || wf.source === "runninghub" ? "rh_cloud" : "local_comfy");
   setExecutionTarget(recTarget);
 
   renderWorkflowCatalog();
@@ -1065,15 +1370,15 @@ function renderHeaderTelemetry(wf) {
   const compTag = wfGet("completenessTag");
 
   if (diff.local_online) {
-    comfyDot.className = "led-dot led-emerald";
+    if (comfyDot) comfyDot.className = "led-dot led-emerald";
     if (drawerTabDot) drawerTabDot.className = diff.can_run_locally ? "led-dot led-emerald" : "led-dot led-amber";
-    comfyText.textContent = diff.device_name ? `ONLINE (${diff.device_name})` : "ONLINE";
-    vramText.textContent = diff.vram_summary || "ONLINE";
+    if (comfyText) comfyText.textContent = diff.device_name ? `ONLINE (${diff.device_name})` : "ONLINE";
+    if (vramText) vramText.textContent = diff.vram_summary || "ONLINE";
   } else {
-    comfyDot.className = "led-dot led-amber";
+    if (comfyDot) comfyDot.className = "led-dot led-amber";
     if (drawerTabDot) drawerTabDot.className = "led-dot led-amber";
-    comfyText.textContent = "AUTO-START READY";
-    vramText.textContent = "STANDBY";
+    if (comfyText) comfyText.textContent = "未连接 / 待诊断";
+    if (vramText) vramText.textContent = "STANDBY";
   }
 
   const modeLabels = {
@@ -1081,12 +1386,16 @@ function renderHeaderTelemetry(wf) {
     api_prompt: "API PROMPT + DAG",
     public_metadata_only: "PUBLIC METADATA PREVIEW",
   };
-  compTag.textContent = modeLabels[wf.data_completeness] || wf.data_completeness;
+  if (compTag) compTag.textContent = modeLabels[wf.data_completeness] || wf.data_completeness || (wf.source === 'comfyui' ? 'API JSON' : '源图已载入');
 
-  wfGet("currentWorkflowSubId").textContent = `${wf.name} · #${wf.workflow_id}`;
-  wfGet("statNodesCount").textContent = String(wf.nodes?.length || 0);
-  wfGet("statWiresCount").textContent = String(wf.links?.length || 0);
-  wfGet("statParseOverhead").textContent = `${wf.parse_overhead_ms || 0}ms`;
+  const subIdEl = wfGet("currentWorkflowSubId");
+  if (subIdEl) subIdEl.textContent = `${wf.name} · #${wf.workflow_id}`;
+  const nodesCountEl = wfGet("statNodesCount");
+  if (nodesCountEl) nodesCountEl.textContent = String(wf.nodes?.length || 0);
+  const wiresCountEl = wfGet("statWiresCount");
+  if (wiresCountEl) wiresCountEl.textContent = String(wf.links?.length || wf.connections?.length || 0);
+  const parseOverheadEl = wfGet("statParseOverhead");
+  if (parseOverheadEl) parseOverheadEl.textContent = `${wf.parse_overhead_ms || 0}ms`;
 
   const srcEl = wfGet("statSourceUrl");
   if (srcEl) {
@@ -1108,10 +1417,11 @@ function renderHeaderTelemetry(wf) {
 }
 
 function getSourceBadgeText(sourceType) {
-  if (sourceType === "liblib_link") return "LIB";
-  if (sourceType === "local_file") return "LOCAL";
+  if (["liblib_link", "liblib"].includes(sourceType)) return "LIB";
+  if (["local_file", "comfyui", "canvas"].includes(sourceType)) return "LOCAL";
   if (sourceType === "plugin_ingest") return "PLUG";
-  return "RH";
+  if (["rh_link", "runninghub"].includes(sourceType)) return "RH";
+  return "--";
 }
 
 function renderWorkflowCatalog() {
@@ -1127,56 +1437,64 @@ function renderWorkflowCatalog() {
     btnCloseAll.disabled = openItems.length === 0;
   }
 
-  if (openItems.length === 0) {
-    runway.innerHTML = `<span style="font-size:10px;color:rgba(255,255,255,0.55);font-family:var(--font-mono);padding-left:4px;">暂无已打开工作流（请从左侧目录点击打开）</span>`;
-  } else {
-    runway.innerHTML = openItems
-      .map((item, idx) => {
-        const isAct = item.workflow_id === currentId;
-        const closeBtnHtml = isAct
-          ? `<span class="wf-capsule-close" data-close-wf-tab="${escapeHtml(item.workflow_id)}" title="关闭当前工作流标签">×</span>`
-          : "";
-        return `
-          <button
-            type="button"
-            class="wf-capsule ${isAct ? "active" : ""}"
-            data-wf-id="${escapeHtml(item.workflow_id)}"
-            title="${escapeHtml(item.name)}（右键可重命名或删除）"
-          >
-            <span class="led-dot ${item.can_run_locally ? "led-emerald" : "led-amber"}" style="width:6px;height:6px;"></span>
-            <span>${String(idx + 1).padStart(2, "0")}. ${escapeHtml(item.name)}</span>
-            ${closeBtnHtml}
-          </button>
-        `;
-      })
-      .join("");
+  if (runway) {
+    if (openItems.length === 0) {
+      runway.innerHTML = `<span style="font-size:var(--gw-type-body-sm);color:rgba(255,255,255,0.55);font-family:var(--gw-font-mono);font-variant-numeric:tabular-nums;padding-left:4px;">暂无已打开工作流（请从左侧目录点击打开）</span>`;
+    } else {
+      runway.innerHTML = openItems
+        .map((item, idx) => {
+          const isAct = item.workflow_id === currentId;
+          const closeBtnHtml = isAct
+            ? `<span class="wf-capsule-close" data-close-wf-tab="${escapeHtml(item.workflow_id)}" title="关闭当前工作流标签">×</span>`
+            : "";
+          return `
+            <button
+              type="button"
+              class="wf-capsule ${isAct ? "active" : ""}"
+              data-wf-id="${escapeHtml(item.workflow_id)}"
+              title="${escapeHtml(item.name)}（右键可重命名或删除）"
+            >
+              <span class="led-dot ${item.can_run_locally ? "led-emerald" : "led-amber"}" style="width:6px;height:6px;"></span>
+              <span>${String(idx + 1).padStart(2, "0")}. ${escapeHtml(item.name)}</span>
+              ${closeBtnHtml}
+            </button>
+          `;
+        })
+        .join("");
+    }
+
+    runway.querySelectorAll(".wf-capsule[data-wf-id]").forEach((btn) => {
+      const wfId = btn.getAttribute("data-wf-id");
+      btn.addEventListener("click", (e) => {
+        if (e.target.closest("[data-close-wf-tab]")) return;
+        selectWorkflow(wfId);
+      });
+      btn.addEventListener("contextmenu", (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        openWorkflowContextMenu(wfId, e.clientX, e.clientY);
+      });
+    });
+
+    runway.querySelectorAll("[data-close-wf-tab]").forEach((closeBtn) => {
+      closeBtn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        closeOpenWorkflowTab(closeBtn.getAttribute("data-close-wf-tab"));
+      });
+    });
   }
 
-  runway.querySelectorAll(".wf-capsule[data-wf-id]").forEach((btn) => {
-    const wfId = btn.getAttribute("data-wf-id");
-    btn.addEventListener("click", (e) => {
-      if (e.target.closest("[data-close-wf-tab]")) return;
-      selectWorkflow(wfId);
-    });
-    btn.addEventListener("contextmenu", (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      openWorkflowContextMenu(wfId, e.clientX, e.clientY);
-    });
-  });
-
-  runway.querySelectorAll("[data-close-wf-tab]").forEach((closeBtn) => {
-    closeBtn.addEventListener("click", (e) => {
-      e.stopPropagation();
-      closeOpenWorkflowTab(closeBtn.getAttribute("data-close-wf-tab"));
-    });
-  });
-
-  // 2. 左侧多文件夹分类工作流目录树（右侧展示紧凑来源标记 RH / LOCAL / LIB，支持右键重命名/删除与拖拽跨文件夹归类）
-  const folders =
-    state.folders.length > 0
-      ? state.folders
-      : [{ folder_id: "parsed_default", name: "已解析工作流", icon: "📥", is_system: true }];
+  // 2. 左侧多文件夹分类工作流目录树（系统默认『已解析工作流』始终置顶常驻）
+  const defaultFolder = {
+    folder_id: "parsed_default",
+    name: "已解析工作流",
+    icon: "📥",
+    is_system: true,
+  };
+  const customFolders = (state.folders || []).filter(
+    (f) => f && f.folder_id !== "parsed_default"
+  );
+  const folders = [defaultFolder, ...customFolders];
 
   const folderIds = new Set(folders.map((f) => f.folder_id));
   const groupedWfs = {};
@@ -1205,10 +1523,10 @@ function renderWorkflowCatalog() {
               class="param-input input-rename-folder"
               data-rename-input="${escapeHtml(fid)}"
               value="${escapeHtml(folder.name)}"
-              style="padding:2px 5px;font-size:10.5px;flex:1;"
+              style="padding:2px 5px;font-size:var(--gw-type-body-sm);flex:1;"
             />
-            <button type="button" class="hw-btn hw-btn-gold btn-save-rename" data-save-rename="${escapeHtml(fid)}" style="padding:1px 6px;font-size:9px;">✓</button>
-            <button type="button" class="hw-btn btn-cancel-rename" data-cancel-rename="${escapeHtml(fid)}" style="padding:1px 5px;font-size:9px;">✕</button>
+            <button type="button" class="hw-btn hw-btn-gold btn-save-rename" data-save-rename="${escapeHtml(fid)}" style="padding:1px 6px;font-size:var(--gw-type-body-md);">✓</button>
+            <button type="button" class="hw-btn btn-cancel-rename" data-cancel-rename="${escapeHtml(fid)}" style="padding:1px 5px;font-size:var(--gw-type-body-md);">✕</button>
           </div>
         `;
       } else {
@@ -1219,7 +1537,7 @@ function renderWorkflowCatalog() {
           <div class="wf-folder-header ${isActiveFolder ? "active-folder" : ""}" data-folder-header="${escapeHtml(fid)}">
             <div class="wf-folder-title-wrap">
               <span class="wf-folder-arrow">${isCollapsed ? "▸" : "▾"}</span>
-              <span style="font-size:11px;">${escapeHtml(folder.icon || "📁")}</span>
+              <span style="font-size:var(--gw-icon-size-sm);">${escapeHtml(folder.icon || "📁")}</span>
               <span class="wf-folder-name" title="${escapeHtml(folder.name)}">${escapeHtml(folder.name)}</span>
             </div>
             <div class="wf-folder-actions">
@@ -1238,7 +1556,7 @@ function renderWorkflowCatalog() {
               .map((item, idx) => {
                 const isAct = item.workflow_id === currentId;
                 const isRenamingWf = state.renamingWorkflowId === item.workflow_id;
-                const srcBadge = getSourceBadgeText(item.source_type);
+                const srcBadge = getSourceBadgeText(item.source_type || item.source);
                 if (isRenamingWf) {
                   return `
                     <div class="wf-tree-item active" data-wf-rename-row="${escapeHtml(item.workflow_id)}" style="gap:4px;">
@@ -1247,10 +1565,10 @@ function renderWorkflowCatalog() {
                         class="param-input"
                         data-rename-wf-input="${escapeHtml(item.workflow_id)}"
                         value="${escapeHtml(item.name)}"
-                        style="padding:2px 5px;font-size:10.5px;flex:1;min-width:0;"
+                        style="padding:2px 5px;font-size:var(--gw-type-body-sm);flex:1;min-width:0;"
                       />
-                      <button type="button" class="hw-btn hw-btn-gold" data-save-rename-wf="${escapeHtml(item.workflow_id)}" style="padding:1px 6px;font-size:9px;">✓</button>
-                      <button type="button" class="hw-btn" data-cancel-rename-wf="${escapeHtml(item.workflow_id)}" style="padding:1px 5px;font-size:9px;">✕</button>
+                      <button type="button" class="hw-btn hw-btn-gold" data-save-rename-wf="${escapeHtml(item.workflow_id)}" style="padding:1px 6px;font-size:var(--gw-type-body-md);">✓</button>
+                      <button type="button" class="hw-btn" data-cancel-rename-wf="${escapeHtml(item.workflow_id)}" style="padding:1px 5px;font-size:var(--gw-type-body-md);">✕</button>
                     </div>
                   `;
                 }
@@ -1262,7 +1580,7 @@ function renderWorkflowCatalog() {
                     title="${escapeHtml(item.name)}（左键打开 · 右键重命名或删除 · 拖拽移动至其他文件夹）"
                   >
                     <div style="display:flex;align-items:center;gap:5px;min-width:0;flex:1;">
-                      <span class="wf-tree-idx" style="font-family:var(--font-mono);font-size:9px;">${String(
+                      <span class="wf-tree-idx" style="font-family:var(--gw-font-mono);font-variant-numeric:tabular-nums;font-size:var(--gw-type-body-sm);">${String(
                         idx + 1
                       ).padStart(2, "0")}</span>
                       <span class="wf-tree-name">${escapeHtml(item.name)}</span>
@@ -1419,16 +1737,17 @@ function renderWorkflowCatalog() {
 
 function renderEnvironmentDiff(wf) {
   const diff = wf.env_diff || {};
-  const totalN = diff.total_nodes_required || 0;
+  const totalN = diff.required_nodes_count ?? diff.total_nodes_required ?? 0;
+  const verified = diff.status === "compared" && totalN > 0;
   const instN = diff.installed_nodes_count || 0;
-  const totalM = diff.total_models_required || 0;
+  const totalM = diff.required_models_count ?? diff.total_models_required ?? 0;
   const instM = diff.installed_models_count || 0;
 
-  wfGet("diffNodeRatio").textContent = `${instN} / ${totalN}`;
-  wfGet("diffModelRatio").textContent = `${instM} / ${totalM}`;
+  wfGet("diffNodeRatio").textContent = verified ? `${instN} / ${totalN}` : "未确认";
+  wfGet("diffModelRatio").textContent = verified ? `${instM} / ${totalM}` : "未确认";
 
-  const nPct = totalN > 0 ? Math.round((instN / totalN) * 100) : 100;
-  const mPct = totalM > 0 ? Math.round((instM / totalM) * 100) : 100;
+  const nPct = !verified ? 0 : totalN > 0 ? Math.round((instN / totalN) * 100) : 100;
+  const mPct = !verified ? 0 : totalM > 0 ? Math.round((instM / totalM) * 100) : 100;
 
   const nBar = wfGet("diffNodeBar");
   const mBar = wfGet("diffModelBar");
@@ -1467,13 +1786,16 @@ function renderEnvironmentDiff(wf) {
     `);
   }
 
-  if (cardsHtml.length === 0) {
+  if (!verified) {
+    cardsHtml.length = 0;
+    cardsHtml.push(`<div class="missing-item-card node-warn">${escapeHtml(diff.diagnostic_message || "尚未诊断，本地环境就绪状态未知")}</div>`);
+  } else if (cardsHtml.length === 0) {
     cardsHtml.push(`
       <div class="missing-item-card ready-ok">
         <div class="missing-item-head">
           <span style="font-weight:700;">✓ 本地环境 100% 齐备</span>
         </div>
-        <div style="font-size:10px;">所有节点与模型均已在本地就绪，可直接本地运行！</div>
+        <div style="font-size:var(--gw-type-body-sm);">所有节点与模型均已在本地就绪，可直接本地运行！</div>
       </div>
     `);
   }
@@ -1481,7 +1803,7 @@ function renderEnvironmentDiff(wf) {
   container.innerHTML = cardsHtml.join("");
   wfGet("diffSummaryText").textContent = diff.diagnostic_message || "";
   wfGet("recommendedTargetHint").textContent =
-    diff.recommended_target === "local_comfy" ? "推荐: 本地 ComfyUI 运行" : "推荐: RH 云端免装运行";
+    !verified ? "状态未知，请先完成诊断" : diff.recommended_target === "local_comfy" ? "推荐: 本地 ComfyUI 运行" : "推荐: RH 云端免装运行";
 }
 
 /* ==================== 4. 中部参数执行矩阵（上下2行：上行选中节点全属性+提升按钮，下行工作流提取列表） ==================== */
@@ -1586,7 +1908,7 @@ function renderSelectedNodePanel(wf) {
   if (!node) {
     if (badgeEl) badgeEl.textContent = "未选中";
     container.innerHTML = `
-      <div style="padding:18px 8px;text-align:center;color:rgba(255,255,255,0.65);font-size:10.5px;">
+      <div style="padding:18px 8px;text-align:center;color:rgba(255,255,255,0.65);font-size:var(--gw-type-body-sm);">
         请在右侧画布点击任意节点卡片（或从上方下拉框选择），即可在此读取该节点的全部内部属性并点击「⬆ 提升」提取至下方列表。
       </div>
     `;
@@ -1616,13 +1938,13 @@ function renderSelectedNodePanel(wf) {
   `;
 
   if (widgets.length === 0) {
-    const inNames = (node.inputs || []).map((p) => p.name).join(", ") || "无";
-    const outNames = (node.outputs || []).map((p) => p.name).join(", ") || "无";
+    const inNames = normalizePortList(node.input_ports || node.inputs).map((p) => p.name).join(", ") || "无";
+    const outNames = normalizePortList(node.outputs).map((p) => p.name).join(", ") || "无";
     container.innerHTML = `
       ${metaBarHtml}
-      <div class="hw-bay-row" style="padding:10px;font-size:10.5px;line-height:1.5;">
+      <div class="hw-bay-row" style="padding:10px;font-size:var(--gw-type-body-sm);line-height:1.5;">
         <div>该节点为纯信号路由/连接节点，无内部标量输入属性 (widgets)。</div>
-        <div style="font-family:var(--font-mono);font-size:9.5px;opacity:0.85;">
+        <div style="font-family:var(--gw-font-mono);font-variant-numeric:tabular-nums;font-size:var(--gw-type-body-sm);opacity:0.85;">
           ● 输入端口 (Inputs): ${escapeHtml(inNames)}<br/>
           ● 输出端口 (Outputs): ${escapeHtml(outNames)}
         </div>
@@ -1693,6 +2015,12 @@ function renderExtractedParamsList(wf) {
   const countBadge = wfGet("extractedCountBadge");
   if (!container || !wf) return;
 
+  // 健壮性兜底：如果 wf.actuator_params 为空或未包含全部已提升参数，重新从 nodes 推导合并
+  const derived = deriveActuatorParamsFromWidgets(wf.nodes, wf.actuator_params || []);
+  if (derived.length > 0 || !Array.isArray(wf.actuator_params)) {
+    wf.actuator_params = derived;
+  }
+
   const params = wf.actuator_params || [];
   if (countBadge) {
     countBadge.textContent = `${params.length} 项已提取`;
@@ -1700,7 +2028,7 @@ function renderExtractedParamsList(wf) {
 
   if (params.length === 0) {
     container.innerHTML = `
-      <div style="padding:18px 8px;text-align:center;color:rgba(255,255,255,0.65);font-size:10.5px;">
+      <div style="padding:18px 8px;text-align:center;color:rgba(255,255,255,0.65);font-size:var(--gw-type-body-sm);">
         当前『工作流提取列表』为空。<br/>请在上方『用户选中的节点』中点击任意属性左侧的「⬆ 提升」按钮将其提取至此。
       </div>
     `;
@@ -1861,10 +2189,14 @@ function bindWidgetControlsInContainer(rootContainer) {
 
       if (wObj) wObj.value = newVal;
       if (pObj) pObj.field_value = newVal;
+      if (nodeObj) { nodeObj.inputs ||= {}; nodeObj.inputs[fname] = newVal; }
 
       // 同步上下两行中所有绑定了相同 attrKey 的其余输入控件
       wfQueryAll(`[data-widget-control="${CSS.escape(attrKey)}"]`).forEach((peer) => {
-        if (peer !== inputEl) peer.value = String(newVal);
+        if (peer !== inputEl) {
+          if (vType === "bool") peer.checked = newVal;
+          else peer.value = String(newVal);
+        }
       });
 
       // 同步更新右侧画布节点卡片上的属性值或 Note 备注内容
@@ -1888,60 +2220,101 @@ function bindWidgetControlsInContainer(rootContainer) {
 async function togglePromoteWidget(nodeId, fieldName) {
   const wf = state.currentWorkflow;
   if (!wf) return;
-  const nodeObj = (wf.nodes || []).find((n) => n.node_id === nodeId);
+  const nidStr = String(nodeId);
+  const nodeObj = (wf.nodes || []).find((n) => String(n.node_id ?? n.id) === nidStr);
   if (!nodeObj) return;
-  const wObj = (nodeObj.widgets || []).find((w) => w.name === fieldName);
+  const wObj = (nodeObj.widgets || []).find((w) => String(w.name) === String(fieldName));
   if (!wObj) return;
 
   const nextPromoted = !wObj.promoted;
   wObj.promoted = nextPromoted;
 
+  // 1. 立即执行乐观更新：同步推导最新提取列表并即时重绘左右面板
+  wf.actuator_params = deriveActuatorParamsFromWidgets(wf.nodes, wf.actuator_params);
+  renderActuatorRack(wf);
+  renderNodeCanvas(wf, false);
+
   try {
-    const updatedWf = await apiFetch(
-      `/api/god_workflow/item/${encodeURIComponent(wf.workflow_id)}/params`,
-      {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          widget_updates: [
-            {
-              node_id: nodeId,
-              field_name: fieldName,
-              value: wObj.value,
-              promoted: nextPromoted,
-            },
-          ],
-        }),
-      }
-    );
-    state.currentWorkflow = updatedWf;
-    renderActuatorRack(updatedWf);
-    renderNodeCanvas(updatedWf, false);
+    schedulePersistWorkflowParams([{ node_id: nidStr, field_name: fieldName, value: wObj.value, promoted: nextPromoted }]);
+    await flushWorkflowParams(wf.workflow_id);
+    if (state.currentWorkflow?.workflow_id !== wf.workflow_id) return;
+    const updatedRaw = wf;
+    // 2. 规范化后端返回，确保 links、ports 与 actuator_params 100% 完整
+    const normalizedWf = normalizeMatureWorkflow(updatedRaw);
+    state.currentWorkflow = normalizedWf;
+    renderActuatorRack(normalizedWf);
+    renderNodeCanvas(normalizedWf, false);
     showToast(
       nextPromoted
-        ? `已将「#${nodeId} ${wObj.label || fieldName}」提升至工作流提取列表`
-        : `已从工作流提取列表移除「#${nodeId} ${wObj.label || fieldName}」`
+        ? `已将「#${nidStr} ${wObj.label || fieldName}」提升至工作流提取列表`
+        : `已从工作流提取列表移除「#${nidStr} ${wObj.label || fieldName}」`
     );
   } catch (err) {
+    // 异常时回滚乐观更新
+    wObj.promoted = !nextPromoted;
+    wf.actuator_params = deriveActuatorParamsFromWidgets(wf.nodes, wf.actuator_params);
+    renderActuatorRack(wf);
+    renderNodeCanvas(wf, false);
     showToast(err.message, true);
   }
 }
 
-function schedulePersistWorkflowParams(widgetUpdates) {
+function schedulePersistWorkflowParams(widgetUpdates, positions = []) {
   const wf = state.currentWorkflow;
   if (!wf) return;
-  clearTimeout(state.paramSaveTimer);
-  state.paramSaveTimer = setTimeout(async () => {
+  let entry = state.parameterSaves.get(wf.workflow_id);
+  if (!entry) {
+    entry = { workflow: wf, pending: new Map(), positions: new Map(), running: null, timer: null };
+    state.parameterSaves.set(wf.workflow_id, entry);
+  }
+  for (const update of widgetUpdates) {
+    const key = JSON.stringify([String(update.node_id), update.field_name]);
+    entry.pending.set(key, { ...entry.pending.get(key), ...update });
+  }
+  for (const position of positions) entry.positions.set(String(position.node_id), position);
+  clearTimeout(entry.timer);
+  entry.timer = setTimeout(() => flushWorkflowParams(wf.workflow_id).catch((err) => {
+    showToast(`参数尚未保存：${err.message}`, true);
+  }), 280);
+  state.paramSaveTimer = entry.timer;
+}
+
+async function flushWorkflowParams(workflowId) {
+  const entry = state.parameterSaves.get(workflowId);
+  if (!entry) return;
+  clearTimeout(entry.timer);
+  while (entry.running) await entry.running;
+  if (!entry.pending.size && !entry.positions.size) return;
+  const updates = [...entry.pending.values()];
+  const positions = [...entry.positions.values()];
+  entry.pending.clear();
+  entry.positions.clear();
+  entry.running = (async () => {
     try {
-      await apiFetch(`/api/god_workflow/item/${encodeURIComponent(wf.workflow_id)}/params`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ widget_updates: widgetUpdates }),
+      const saved = await apiFetch(`/api/god_workflow/item/${encodeURIComponent(workflowId)}/params`, {
+        method: "PUT", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ widget_updates: updates, positions, expected_version: entry.workflow.revision ?? entry.workflow.version }),
       });
+      // 只回写版本，保留请求期间用户的新输入，不覆盖当前另一份工作流。
+      entry.workflow.version = entry.workflow.revision = saved.version;
+      state.syncRevisions[workflowId] = saved.version;
+      if (state.currentWorkflow?.workflow_id === workflowId) {
+        state.currentWorkflow.version = state.currentWorkflow.revision = saved.version;
+      }
     } catch (err) {
-      console.warn("自动保存工作流参数失败:", err);
-    }
-  }, 280);
+      for (const update of updates) {
+        const key = JSON.stringify([String(update.node_id), update.field_name]);
+        entry.pending.set(key, { ...update, ...entry.pending.get(key) });
+      }
+      for (const position of positions) {
+        const key = String(position.node_id);
+        if (!entry.positions.has(key)) entry.positions.set(key, position);
+      }
+      throw err;
+    } finally { entry.running = null; }
+  })();
+  await entry.running;
+  if (entry.pending.size || entry.positions.size) await flushWorkflowParams(workflowId);
 }
 
 /* ==================== 4.5 外部画布加载精简契约预览与导出 ==================== */
@@ -2003,7 +2376,7 @@ function buildNodeMediaDetailHtml(node, mediaWidget, uploadMode) {
   const previewHtml = !asset
     ? `<div
         class="node-media-thumb"
-        style="display:flex;align-items:center;justify-content:center;font-size:18px;color:var(--text-muted);"
+        style="display:flex;align-items:center;justify-content:center;font-size:var(--gw-icon-size-lg);color:var(--text-muted);"
         title="本地暂未上传该文件，请点击上方「📤 上传」或「🗂️ 选择」"
       >${mediaType === "video" ? "🎬" : "🖼️"}</div>`
     : mediaType === "video" || /\.(mp4|mov|webm|mkv|avi|gif)$/i.test(filename)
@@ -2072,7 +2445,7 @@ async function applyMediaAssetToNode(nodeId, fieldName, asset) {
   renderActuatorRack(wf);
   renderNodeCanvas(wf, false);
   schedulePersistWorkflowParams([
-    { node_id: String(nodeId), field_name: actualFieldName, value: asset.filename },
+    { node_id: String(nodeId), field_name: actualFieldName, value: asset.filename, asset_id: asset.asset_id },
   ]);
   showToast(`已为节点 #${nodeId} 加载媒体: ${asset.filename}`);
 }
@@ -2096,19 +2469,10 @@ async function handleNodeMediaFileSelected(file) {
     showToast(`正在上传媒体文件: ${file.name}...`);
     const form = new FormData();
     form.append("file", file);
-    const res = await fetch("/api/god_workflow/assets/upload", {
+    const asset = await apiFetch("/api/god_workflow/assets/upload", {
       method: "POST",
       body: form,
     });
-    if (!res.ok) {
-      let msg = `HTTP ${res.status}`;
-      try {
-        const errData = await res.json();
-        msg = errData.detail || msg;
-      } catch (_) {}
-      throw new Error(msg);
-    }
-    const asset = await res.json();
     state.mediaAssetsByFilename[asset.filename] = asset;
     if (!state.mediaAssets.some((a) => a.asset_id === asset.asset_id)) {
       state.mediaAssets.unshift(asset);
@@ -2156,7 +2520,7 @@ function renderAssetLibraryGrid() {
 
   if (filtered.length === 0) {
     grid.innerHTML = `
-      <div style="grid-column: 1 / -1; padding: 28px 12px; text-align: center; color: var(--text-muted); font-size: 11px;">
+      <div style="grid-column: 1 / -1; padding: 28px 12px; text-align: center; color: var(--text-muted); font-size:var(--gw-type-body-sm);">
         当前素材库暂无匹配的图像/视频文件。<br/>可点击右上角「📤 上传新素材至库」上传本地图片或视频。
       </div>
     `;
@@ -2218,9 +2582,9 @@ function renderNodeCanvas(wf, autoFit = true) {
       const selectedClass = node.node_id === state.selectedNodeId ? "selected" : "";
       const noteClass = isNoteNode ? "note-node" : "";
 
-      const inPortsHtml = (node.inputs || [])
+      const inPortsHtml = normalizePortList(node.input_ports || node.inputs)
         .map((inp) => {
-          const color = PORT_COLORS[inp.data_type] || "#dfc384";
+          const color = PORT_COLORS[inp.data_type] || "#94a3b8";
           return `
             <div class="port-item">
               <span class="port-dot" style="background:${color};"></span>
@@ -2230,9 +2594,9 @@ function renderNodeCanvas(wf, autoFit = true) {
         })
         .join("");
 
-      const outPortsHtml = (node.outputs || [])
+      const outPortsHtml = normalizePortList(node.outputs)
         .map((outp) => {
-          const color = PORT_COLORS[outp.data_type] || "#dfc384";
+          const color = PORT_COLORS[outp.data_type] || "#94a3b8";
           return `
             <div class="port-item">
               <span>${escapeHtml(outp.name)}</span>
@@ -2447,42 +2811,102 @@ function renderSvgWires(wf) {
   const svgGroup = wfGet("svgLinksGroup");
   if (!svgGroup || !wf) return;
 
+  const canvasSvg = wfGet("canvasSvg");
+  if (canvasSvg) {
+    let maxW = 3200;
+    let maxH = 2200;
+    for (const n of wf.nodes || []) {
+      maxW = Math.max(maxW, (Number(n.x) || 0) + (Number(n.width) || 200) + 600);
+      maxH = Math.max(maxH, (Number(n.y) || 0) + (Number(n.height) || 200) + 600);
+    }
+    canvasSvg.style.width = `${maxW}px`;
+    canvasSvg.style.height = `${maxH}px`;
+  }
+
   const nodeMap = {};
   for (const n of wf.nodes || []) {
-    nodeMap[n.node_id] = n;
+    const nid = String(n.node_id ?? n.id ?? "");
+    if (nid) {
+      nodeMap[nid] = n;
+      if (n.node_id !== undefined) nodeMap[String(n.node_id)] = n;
+      if (n.id !== undefined) nodeMap[String(n.id)] = n;
+    }
   }
 
   const selId = state.selectedNodeId ? String(state.selectedNodeId) : null;
   const pathsHtml = [];
 
-  for (const lk of wf.links || []) {
-    const src = nodeMap[lk.from_node];
-    const dst = nodeMap[lk.to_node];
+  for (const lk of wf.links || wf.connections || []) {
+    const fromId = String(lk.from_node ?? lk.source ?? "");
+    const toId = String(lk.to_node ?? lk.target ?? "");
+    const src = nodeMap[fromId];
+    const dst = nodeMap[toId];
     if (!src || !dst) continue;
 
+    // 1. 计算目标节点的输入端口垂直插槽位置
+    let toSlotIdx = 0;
+    const targetName = String(lk.target_slot ?? lk.to_slot ?? "");
+    const inPorts = normalizePortList(dst.input_ports || dst.inputs);
+    const foundInIdx = inPorts.findIndex((p) => p.name === targetName);
+    if (foundInIdx >= 0) {
+      toSlotIdx = foundInIdx;
+    } else {
+      const pInt = parseInt(targetName, 10);
+      toSlotIdx = (!isNaN(pInt) && pInt >= 0) ? pInt : 0;
+    }
+
+    // 2. 计算源节点的输出端口垂直插槽位置
+    let fromSlotIdx = 0;
+    const sourceName = String(lk.source_slot ?? lk.from_slot ?? "");
+    const outPorts = normalizePortList(src.outputs);
+    const foundOutIdx = outPorts.findIndex((p) => p.name === sourceName);
+    if (foundOutIdx >= 0) {
+      fromSlotIdx = foundOutIdx;
+    } else {
+      const pInt = parseInt(sourceName, 10);
+      fromSlotIdx = (!isNaN(pInt) && pInt >= 0) ? pInt : 0;
+    }
+
     const srcWidth = isMediaUploadNode(src) ? Math.max(Number(src.width) || 195, 200) : Number(src.width) || 195;
-    const x1 = src.x + srcWidth;
-    const y1 = src.y + 38 + lk.from_slot * 17;
-    const x2 = dst.x;
-    const y2 = dst.y + 38 + lk.to_slot * 17;
+    const portPoint = (nodeId, side, slot, fallback) => {
+      const stage = wfGet('canvasStage');
+      const dot = wfQuery(`.canvas-node[data-node-id="${CSS.escape(nodeId)}"] .ports-col-${side} .port-item:nth-child(${slot + 1}) .port-dot`);
+      if (!stage?.getBoundingClientRect || !dot?.getBoundingClientRect) return fallback;
+      const bounds = stage.getBoundingClientRect(), port = dot.getBoundingClientRect();
+      const zoom = state.zoom || 1;
+      return [(port.left + port.width / 2 - bounds.left) / zoom, (port.top + port.height / 2 - bounds.top) / zoom];
+    };
+    const [x1, y1] = portPoint(fromId, 'out', fromSlotIdx, [(Number(src.x) || 0) + srcWidth, (Number(src.y) || 0) + 36 + fromSlotIdx * 17]);
+    const [x2, y2] = portPoint(toId, 'in', toSlotIdx, [Number(dst.x) || 0, (Number(dst.y) || 0) + 36 + toSlotIdx * 17]);
 
     const dx = Math.max(55, Math.abs(x2 - x1) * 0.45);
     // 路径方向固定为 src (from_node) -> dst (to_node)
     const d = `M ${x1} ${y1} C ${x1 + dx} ${y1}, ${x2 - dx} ${y2}, ${x2} ${y2}`;
 
-    const gradId = PORT_COLORS[lk.data_type]
-      ? `grad${
-          lk.data_type === "VIDEO" || lk.data_type === "ANY"
-            ? "MODEL"
-            : lk.data_type === "AUDIO"
-            ? "CLIP"
-            : lk.data_type
-        }`
-      : "gradMODEL";
-    const dotColor = PORT_COLORS[lk.data_type] || "#dfc384";
+    // 数据类型推导与渐变色匹配
+    let dType = lk.data_type || outPorts[fromSlotIdx]?.data_type || inPorts[toSlotIdx]?.data_type || "DEFAULT";
+    if (dType === "DEFAULT" || dType === "LINK") {
+      if (/clip|positive|negative|prompt/i.test(targetName)) dType = "CLIP";
+      else if (/model/i.test(targetName)) dType = "MODEL";
+      else if (/latent|samples/i.test(targetName)) dType = "LATENT";
+      else if (/vae/i.test(targetName)) dType = "VAE";
+      else if (/image/i.test(targetName)) dType = "IMAGE";
+    }
 
-    const isIncomingToSelected = selId !== null && String(lk.to_node) === selId;
-    const isOutgoingFromSelected = selId !== null && String(lk.from_node) === selId;
+    const gradId = PORT_COLORS[dType]
+      ? `grad${
+          dType === "VIDEO" || dType === "ANY"
+            ? "MODEL"
+            : dType === "AUDIO" || dType === "CONDITIONING"
+            ? "CLIP"
+            : dType
+        }`
+      : null;
+    const dotColor = PORT_COLORS[dType] || "#94a3b8";
+    const wireStroke = gradId ? `url(#${gradId})` : dotColor;
+
+    const isIncomingToSelected = selId !== null && (String(toId) === selId || String(lk.to_node) === selId);
+    const isOutgoingFromSelected = selId !== null && (String(fromId) === selId || String(lk.from_node) === selId);
     const isConnectedToSelected = isIncomingToSelected || isOutgoingFromSelected;
     const baseOpacity = selId ? (isConnectedToSelected ? "0.32" : "0.28") : "0.85";
 
@@ -2516,7 +2940,7 @@ function renderSvgWires(wf) {
     }
 
     pathsHtml.push(`
-      <path d="${d}" fill="none" stroke="url(#${gradId})" stroke-width="1" opacity="${baseOpacity}" />
+      <path d="${d}" fill="none" stroke="${wireStroke}" stroke-width="1" opacity="${baseOpacity}" />
       ${flowSpindleHtml}
       <circle cx="${x1}" cy="${y1}" r="2" fill="${dotColor}" opacity="${baseOpacity}" />
       <circle cx="${x2}" cy="${y2}" r="2" fill="${dotColor}" opacity="${baseOpacity}" />
@@ -2577,10 +3001,13 @@ function startDragNode(e, nodeId, el) {
   const onUp = () => {
     window.removeEventListener("mousemove", onMove);
     window.removeEventListener("mouseup", onUp);
+    if (nodeObj.x !== origX || nodeObj.y !== origY) {
+      schedulePersistWorkflowParams([], [{ node_id: nodeId, x: nodeObj.x, y: nodeObj.y }]);
+    }
   };
 
-  window.addEventListener("mousemove", onMove);
-  window.addEventListener("mouseup", onUp);
+  listen(window, "mousemove", onMove);
+  listen(window, "mouseup", onUp);
 }
 
 function applyCanvasTransform() {
@@ -2598,12 +3025,19 @@ async function autoLayoutCurrentNodes() {
   const wf = state.currentWorkflow;
   if (!wf || !wf.nodes) return;
   try {
+    await flushWorkflowParams(wf.workflow_id);
+    const dimensions = {};
+    wfQueryAll('.canvas-node[data-node-id]').forEach((element) => {
+      dimensions[element.dataset.nodeId] = { width: element.offsetWidth, height: element.offsetHeight };
+    });
     const updatedWf = await apiFetch(
       `/api/god_workflow/auto-layout/${encodeURIComponent(wf.workflow_id)}`,
-      { method: "POST" }
+      { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ expected_version: wf.revision ?? wf.version, node_dimensions: dimensions }) }
     );
-    state.currentWorkflow = updatedWf;
-    renderNodeCanvas(updatedWf, true);
+    const normalizedWf = normalizeMatureWorkflow(updatedWf);
+    state.currentWorkflow = normalizedWf;
+    renderNodeCanvas(normalizedWf, true);
+    renderActuatorRack(normalizedWf);
     showToast("已按 Sugiyama 双向重心交叉最小化算法重新整理节点拓扑");
   } catch (err) {
     showToast(`自动拓扑整理失败: ${err.message}`, true);
@@ -2618,13 +3052,29 @@ function setExecutionTarget(target) {
   wfGet("btnTargetLocal").classList.toggle("active", target === "local_comfy");
 }
 
+function executionSourceContext(wf) {
+  const parameters = new URLSearchParams(window.location.search);
+  const project_id = parameters.get('project_id');
+  const canvas_id = parameters.get('canvas_id');
+  if (!project_id && !canvas_id) return wf?.metadata?.source_context || {};
+  const source = {};
+  for (const field of ['project_id', 'canvas_id', 'project_version', 'canvas_version']) {
+    if (parameters.has(field)) source[field] = parameters.get(field);
+  }
+  return source;
+}
+
 async function handleExecuteWorkflow() {
+  if (state.submitting) return;
   const wf = state.currentWorkflow;
   if (!wf) {
     showToast("请先加载或解析一个工作流", true);
     return;
   }
 
+  state.submitting = true;
+  try { await flushWorkflowParams(wf.workflow_id); }
+  catch (err) { state.submitting = false; showToast(`请先处理保存失败：${err.message}`, true); return; }
   const nodeInfoList = (wf.actuator_params || []).map((p) => ({
     nodeId: String(p.node_id),
     fieldName: String(p.field_name),
@@ -2636,95 +3086,103 @@ async function handleExecuteWorkflow() {
   modal.classList.add("open");
   bodyEl.innerHTML = `
     <div class="hw-bay-row">
-      <div style="color:var(--primary);font-family:var(--font-mono);font-weight:700;">
-        ⏳ 正在向 ${state.executionTarget === "rh_cloud" ? "RunningHub 云端算力集群" : "本地 ComfyUI 引擎（若未启动将自动后台静默拉起）"} 提交任务...
+      <div style="color:var(--primary);font-family:var(--gw-font-mono);font-variant-numeric:tabular-nums;font-weight:700;">
+        ⏳ 正在向 ${state.executionTarget === "rh_cloud" ? "RunningHub 云端算力集群" : "本地 ComfyUI 引擎（需已配置并运行）"} 提交任务...
       </div>
-      <div style="font-size:11px;color:var(--text-muted);">
+      <div style="font-size:var(--gw-type-body-sm);color:var(--text-muted);">
         工作流: ${escapeHtml(wf.name)} (#${escapeHtml(wf.workflow_id)}) · 提取参数覆盖项: ${nodeInfoList.length} 项
       </div>
     </div>
   `;
 
   try {
+    const payload = JSON.stringify({ workflow_id: wf.workflow_id, expected_version: wf.revision ?? wf.version,
+      target: state.executionTarget, node_info_list: nodeInfoList, source_context: executionSourceContext(wf) });
+    // 响应丢失后保留同一请求键；收到公共任务 ID 后下一次操作才创建新键。
+    if (state.submissionAttempt?.payload !== payload) {
+      state.submissionAttempt = { payload, key: crypto.randomUUID() };
+    }
     const res = await apiFetch("/api/god_workflow/execute", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        workflow_id: wf.workflow_id,
-        target: state.executionTarget,
-        node_info_list: nodeInfoList,
-      }),
+      headers: { "Content-Type": "application/json", "Idempotency-Key": state.submissionAttempt.key },
+      body: payload,
     });
-    state.activeTaskId = res.task_id;
-    startTaskPolling(res.task_id, res.target);
+    state.activeTaskId = res.job_id || res.task_id;
+    state.submissionAttempt = null;
+    startTaskPolling(state.activeTaskId, res.target);
   } catch (err) {
     bodyEl.innerHTML = `
       <div class="missing-item-card">
-        <div style="color:var(--rose);font-weight:700;font-family:var(--font-mono);">❌ 任务提交失败</div>
-        <div style="color:var(--primary-soft);font-size:11.5px;margin-top:4px;">${escapeHtml(err.message)}</div>
+        <div style="color:var(--rose);font-weight:700;font-family:var(--gw-font-mono);font-variant-numeric:tabular-nums;">❌ 任务提交失败</div>
+        <div style="color:var(--primary-soft);font-size:var(--gw-type-body-sm);margin-top:4px;">${escapeHtml(err.message)}</div>
       </div>
     `;
-  }
+  } finally { state.submitting = false; }
+}
+
+async function openWorkflowTasks() {
+  wfGet('taskModal')?.classList.add('open');
+  try {
+    const response = await apiFetch('/api/god_workflow/tasks');
+    const tasks = response.tasks || [];
+    const selector = wfGet('workflowTaskSelect');
+    if (selector) selector.innerHTML = tasks.map(task => `<option value="${escapeHtml(task.job_id || task.task_id)}" data-target="${escapeHtml(task.target)}">${escapeHtml(task.status)} · ${escapeHtml(task.job_id || task.task_id)}</option>`).join('');
+    const selected = tasks.find(task => (task.job_id || task.task_id) === state.activeTaskId) || tasks[0];
+    if (selected) {
+      state.activeTaskId = selected.job_id || selected.task_id;
+      if (selector) selector.value = state.activeTaskId;
+      startTaskPolling(state.activeTaskId, selected.target);
+    } else wfGet('taskModalBody').textContent = '暂无任务记录';
+  } catch (error) { showToast(`任务历史读取失败：${error.message}`, true); }
 }
 
 function startTaskPolling(taskId, target) {
   clearInterval(state.pollTimer);
+  const generation = state.pollGeneration = (state.pollGeneration || 0) + 1;
   const bodyEl = wfGet("taskModalBody");
+  const terminal = new Set(["completed", "failed", "cancelled", "outcome_unknown"]);
+  const label = { accepted: "已受理", running: "执行中", waiting_review: "等待审核", paused: "已暂停", completed: "已完成", failed: "失败", cancelled: "已取消", outcome_unknown: "结果未知" };
 
+  let inFlight = false;
   const pollOnce = async () => {
+    if (inFlight) return;
+    inFlight = true;
     try {
       const statusRes = await apiFetch(`/api/god_workflow/tasks/${encodeURIComponent(taskId)}`);
-      const st = statusRes.status || "RUNNING";
-      const outputs = statusRes.outputs || [];
-
-      if (st === "SUCCESS") {
+      if (generation !== state.pollGeneration) return;
+      const sourceStatus = String(statusRes.status || "accepted").toLowerCase();
+      const st = ({ queued: "accepted", succeeded: "completed", success: "completed", canceled: "cancelled", interrupted: "cancelled", error: "failed" })[sourceStatus] || sourceStatus;
+      const collectionIncomplete = (statusRes.execution_status || st) === "completed" && statusRes.collection_status && statusRes.collection_status !== "completed";
+      const delivered = st === "completed" && !collectionIncomplete;
+      const retryButton = wfGet('btnRetryTaskCollection');
+      if (retryButton) retryButton.hidden = !collectionIncomplete;
+      const outputs = Array.isArray(statusRes.outputs) ? statusRes.outputs : [];
+      if (terminal.has(st)) {
         clearInterval(state.pollTimer);
-        const mediaHtml = outputs
-          .map((item) => {
-            const url = item.fileUrl || item.url || "";
-            return `
-              <div class="hw-bay-row" style="align-items:center;">
-                <img src="${escapeHtml(url)}" alt="Generated Output" style="max-width:100%;max-height:320px;border-radius:4px;border:1px solid var(--border-gold);" />
-                <a class="mini-link-btn" href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer">在新窗口打开原文件</a>
-              </div>
-            `;
-          })
-          .join("");
-        bodyEl.innerHTML = `
-          <div class="missing-item-card ready-ok">
-            <div style="color:var(--emerald-bright);font-weight:700;font-family:var(--font-mono);">✓ 任务执行完成 (Task ID: ${escapeHtml(taskId)})</div>
-          </div>
-          ${mediaHtml || '<div style="color:var(--text-muted);">任务已完成，无媒体输出文件返回。</div>'}
-        `;
-      } else if (st === "FAILED" || st === "ERROR") {
-        clearInterval(state.pollTimer);
-        bodyEl.innerHTML = `
-          <div class="missing-item-card">
-            <div style="color:var(--rose);font-weight:700;">❌ 任务执行中断 (${escapeHtml(st)})</div>
-            <div style="font-size:11px;color:var(--text-muted);">${escapeHtml(statusRes.message || "")}</div>
-          </div>
-        `;
-      } else {
-        bodyEl.innerHTML = `
-          <div class="hw-bay-row">
-            <div style="color:var(--compute);font-family:var(--font-mono);font-weight:700;">
-              🔄 任务正在执行中 (${escapeHtml(target === "rh_cloud" ? "RunningHub Cloud" : "Local ComfyUI")})...
-            </div>
-            <div style="font-family:var(--font-mono);font-size:10.5px;color:var(--text-muted);">
-              TASK ID: ${escapeHtml(taskId)} · 状态: ${escapeHtml(st)}
-            </div>
-          </div>
-        `;
+        const mediaHtml = outputs.filter((item) => item.registered && item.url).map((item) => {
+          const url = item.url;
+          const preview = item.media_type === 'video'
+            ? `<video src="${escapeHtml(url)}" controls preload="metadata" style="max-width:100%;max-height:320px;"></video>`
+            : item.media_type === 'document' ? `<span>${escapeHtml(item.filename || '产物文件')} · 下载原件</span>`
+            : `<img src="${escapeHtml(url)}" alt="生成产物" style="max-width:100%;max-height:320px;" />`;
+          return `<div class="hw-bay-row" style="align-items:center;">${preview}<a class="mini-link-btn" href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer">打开受控输出</a></div>`;
+        }).join("");
+        const message = statusRes.messages?.join?.("；") || (st === "outcome_unknown" ? "外部请求可能已产生副作用，请人工核实，不会自动重试。" : "");
+        bodyEl.innerHTML = `<div class="missing-item-card ${delivered ? "ready-ok" : ""}"><div style="color:${delivered ? "var(--emerald-bright)" : "var(--rose)"};font-weight:700;font-family:var(--gw-font-mono);font-variant-numeric:tabular-nums;">${escapeHtml(collectionIncomplete ? "执行已结束，输出回收未完成" : (label[st] || st))} (Job ID: ${escapeHtml(taskId)})</div><div style="font-size:var(--gw-type-body-sm);color:var(--text-muted);">${escapeHtml(message)}</div></div>${mediaHtml}`;
+        return;
       }
+      bodyEl.innerHTML = `<div class="hw-bay-row"><div style="color:var(--compute);font-family:var(--gw-font-mono);font-variant-numeric:tabular-nums;font-weight:700;">${escapeHtml(label[st] || st)} (${escapeHtml(target === "rh_cloud" ? "RunningHub Cloud" : "Local ComfyUI")})...</div><div style="font-family:var(--gw-font-mono);font-variant-numeric:tabular-nums;font-size:var(--gw-type-body-sm);color:var(--text-muted);">JOB ID: ${escapeHtml(taskId)} · 状态: ${escapeHtml(st)}</div></div>`;
     } catch (err) {
+      if (generation !== state.pollGeneration) return;
       clearInterval(state.pollTimer);
+      bodyEl.innerHTML = `<div class="missing-item-card"><div style="color:var(--rose);font-weight:700;">状态查询失败，可关闭后重试</div><div style="font-size:var(--gw-type-body-sm);color:var(--text-muted);">${escapeHtml(err.message || "请求失败")}</div></div>`;
+    } finally {
+      inFlight = false;
     }
   };
-
   pollOnce();
   state.pollTimer = setInterval(pollOnce, 3000);
 }
-
 /* ==================== 7. 事件绑定 ==================== */
 
 function setEnvDrawerOpen(isOpen) {
@@ -2735,7 +3193,101 @@ function setEnvDrawerOpen(isOpen) {
   drawer.classList.toggle("open", open);
 }
 
+function bindWorkflowOverlays() {
+  if (typeof MutationObserver === 'undefined') return;
+  const backdrops = [...wfQueryAll('.modal-backdrop')];
+  const stack = [];
+  const entries = new Map();
+  let trigger = null;
+  const controls = (modal) => [...modal.querySelectorAll('button, input, textarea, select, a[href], [tabindex]')]
+    .filter(element => !element.disabled && element.tabIndex >= 0 && element.getClientRects().length);
+  const formValues = modal => JSON.stringify([...modal.querySelectorAll('input:not([readonly]), textarea, select')]
+    .map(element => [element.id, element.type === 'checkbox' ? element.checked : element.value]));
+  const reconcile = modal => {
+    const open = modal.classList.contains('open');
+    const previous = entries.get(modal);
+    if (open && !previous) {
+      delete modal._workflowSettingsSaved;
+      const card = modal.querySelector('.modal-card') || modal;
+      card.setAttribute('role', 'dialog'); card.setAttribute('aria-modal', 'true'); card.tabIndex = -1;
+      card.setAttribute('aria-label', modal.querySelector('.modal-title')?.textContent?.trim() || '工作流对话框');
+      entries.set(modal, { trigger: modal._workflowReturnFocus || (trigger?.isConnected ? trigger : document.activeElement), values: formValues(modal) });
+      stack.push(modal);
+      (controls(modal)[0] || card).focus();
+    } else if (!open && previous) {
+      if (modal.id === 'settingsModal' && !modal._workflowSettingsSaved && previous.values !== formValues(modal) && !window.confirm('配置尚未保存，确认关闭并保留当前草稿？')) {
+        modal.classList.add('open'); return;
+      }
+      entries.delete(modal); stack.splice(stack.indexOf(modal), 1);
+      delete modal._workflowReturnFocus;
+      delete modal._workflowSettingsSaved;
+      if (previous.trigger?.isConnected && !modal.contains(previous.trigger)) previous.trigger.focus();
+    }
+  };
+  listen(workbenchRoot, 'pointerdown', event => { trigger = event.target.closest?.('button, input, textarea, select, a[href]'); }, true);
+  listen(workbenchRoot, 'keydown', event => { if (event.key === 'Enter' || event.key === ' ') trigger = document.activeElement; }, true);
+  const observer = new MutationObserver(records => { for (const { target } of records) reconcile(target); });
+  backdrops.forEach(modal => {
+    observer.observe(modal, { attributes: true, attributeFilter: ['class'] });
+    listen(modal, 'click', event => {
+      if (event.target === modal && stack.at(-1) === modal) {
+        event.preventDefault(); event.stopImmediatePropagation(); modal.classList.remove('open'); reconcile(modal);
+      }
+    });
+    reconcile(modal);
+  });
+  lifecycleListeners.push(() => observer.disconnect());
+  listen(document, 'keydown', event => {
+    const modal = stack.at(-1);
+    if (!modal) return;
+    if (event.key === 'Escape') {
+      event.preventDefault(); event.stopImmediatePropagation(); modal.classList.remove('open'); reconcile(modal);
+    } else if (event.key === 'Tab') {
+      const elements = controls(modal);
+      const first = elements[0] || modal.querySelector('.modal-card');
+      const last = elements.at(-1) || first;
+      if (!modal.contains(document.activeElement) || (event.shiftKey && document.activeElement === first) || (!event.shiftKey && document.activeElement === last)) {
+        event.preventDefault(); (event.shiftKey ? last : first)?.focus();
+      }
+    }
+  }, true);
+  listen(document, 'focusin', event => {
+    const modal = stack.at(-1);
+    if (modal && !modal.contains(event.target)) (controls(modal)[0] || modal.querySelector('.modal-card'))?.focus();
+  });
+}
+
 function bindEvents() {
+  listen(window, 'message', async event => {
+    const session = state.comfyBridgeSession;
+    if (!session || event.source !== session.window || event.origin !== session.origin || event.data?.nonce !== session.nonce ||
+        session.principalKey !== state.authPrincipalKey || !window.GWAuthGate?.isAuthenticated() || Date.now() > session.expires) return;
+    const send = value => session.window.postMessage({ ...value, nonce: session.nonce }, session.origin);
+    if (event.data.kind === 'gw-comfy-ready') {
+      send({ kind: 'gw-comfy-load', workflow_id: session.workflow_id, expected_version: session.expected_version, graph: session.graph });
+    } else if (event.data.kind === 'gw-comfy-loaded' && event.data.workflow_id === session.workflow_id) {
+      session.connected = true; showToast('ComfyUI 已确认加载工作流，可在宿主中回存');
+    } else if (event.data.kind === 'gw-comfy-error') {
+      showToast(event.data.message || 'ComfyUI 加载失败', true);
+    } else if (event.data.kind === 'gw-comfy-save' && event.data.workflow_id === session.workflow_id && !session.saving) {
+      session.saving = true;
+      try {
+        if (event.data.expected_version !== session.expected_version) throw new Error('宿主保存版本不一致');
+        const result = await apiFetch('/api/god_workflow/comfy-bridge/sync-saved', { method: 'POST',
+          headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ workflow_id: session.workflow_id,
+            expected_version: session.expected_version, workflow: event.data.graph }) });
+        if (state.comfyBridgeSession !== session) return;
+        session.expected_version = result.version;
+        send({ kind: 'gw-comfy-save-result', request_id: event.data.request_id, ok: true, version: result.version });
+        if (state.currentWorkflow?.workflow_id === session.workflow_id) await selectWorkflow(session.workflow_id);
+      } catch (error) {
+        if (state.comfyBridgeSession === session) {
+          send({ kind: 'gw-comfy-save-result', request_id: event.data.request_id, ok: false });
+          showToast(`ComfyUI 回存失败：${error.message}`, true);
+        }
+      } finally { session.saving = false; }
+    }
+  });
   // 左栏「工作流目录」、中栏「参数执行矩阵」与「本地 ComfyUI 诊断」三列统一折叠/展开事件绑定
   wfGet("btnCollapseLeftCol")?.addEventListener("click", (e) => {
     e.stopPropagation();
@@ -2795,11 +3347,21 @@ function bindEvents() {
   });
 
   // 切回工作台窗口时立即检查 ComfyUI 保存更新
-  window.addEventListener("focus", () => {
+  listen(window, "focus", () => {
     checkComfySavedSyncOnce();
   });
 
   // 工作流名称右键菜单（重命名 / 删除）事件绑定
+  wfGet('ctxEditNativeWorkflow')?.addEventListener('click', async event => {
+    event.stopPropagation();
+    const workflowId = state.contextMenuWfId;
+    closeWorkflowContextMenu();
+    if (!workflowId) return;
+    try {
+      if (state.currentWorkflow?.workflow_id !== workflowId) await selectWorkflow(workflowId);
+      await handleOpenInComfyUi();
+    } catch (error) { showToast(`原生工作流打开失败：${error.message}`, true); }
+  });
   wfGet("ctxRenameWf")?.addEventListener("click", (e) => {
     e.stopPropagation();
     if (state.contextMenuWfId) {
@@ -2812,12 +3374,12 @@ function bindEvents() {
       handleDeleteWorkflow(state.contextMenuWfId);
     }
   });
-  document.addEventListener("click", (e) => {
+  listen(document, "click", (e) => {
     if (!e.target.closest("#wfContextMenu")) {
       closeWorkflowContextMenu();
     }
   });
-  window.addEventListener("keydown", (e) => {
+  listen(window, "keydown", (e) => {
     if (e.key === "Escape") {
       closeWorkflowContextMenu();
     }
@@ -2872,7 +3434,6 @@ function bindEvents() {
   });
 
   // 第三行左侧新增：「🖥️ 打开 ComfyUI」按钮 & 「⚡ 获取并解析」按钮
-  wfGet("btnOpenComfyUi")?.addEventListener("click", handleOpenInComfyUi);
   wfGet("btnParseLink").addEventListener("click", () => handleParseLink());
 
   // 节点媒体文件隐藏上传控件 & 素材库弹窗事件
@@ -2909,12 +3470,15 @@ function bindEvents() {
   wfGet("btnOpenClipboardModal")?.addEventListener("click", () => openClipboardModal());
   wfGet("btnCloseClipboardModal")?.addEventListener("click", () => clipboardModal?.classList.remove("open"));
   wfGet("btnCloseClipboardFooter")?.addEventListener("click", () => clipboardModal?.classList.remove("open"));
+  for (const id of ['btnClosePublicWorkflowPreview', 'btnClosePublicWorkflowPreviewFooter']) {
+    wfGet(id)?.addEventListener('click', () => wfGet('publicWorkflowPreviewModal')?.classList.remove('open'));
+  }
   wfGet("btnRefreshClipboardList")?.addEventListener("click", () => renderClipboardModalList());
   clipboardModal?.addEventListener("mousedown", (e) => {
     if (e.target === clipboardModal) clipboardModal.classList.remove("open");
   });
 
-  window.addEventListener("paste", (e) => {
+  listen(window, "paste", (e) => {
     const activeTag = document.activeElement?.tagName?.toLowerCase();
     if (activeTag === "input" || activeTag === "textarea") return;
     const pasted = (e.clipboardData?.getData("text") || "").trim();
@@ -2934,11 +3498,6 @@ function bindEvents() {
     e.target.value = "";
   });
 
-  wfGet("btnReloadDemo").addEventListener("click", () => {
-    const demoUrl = "https://www.runninghub.cn/workflow/2104915887789797378";
-    handleParseLink(demoUrl);
-  });
-
   // 本地 ComfyUI 诊断列折叠与展开（与前两列完全统一）
   wfGet("btnOpenEnvDrawer")?.addEventListener("click", (e) => {
     e.stopPropagation();
@@ -2953,19 +3512,27 @@ function bindEvents() {
     if (e) e.stopPropagation();
     setEnvDrawerOpen(true);
     if (!state.currentWorkflow) return;
+    const workflowId = state.currentWorkflow.workflow_id;
     try {
       const wf = await apiFetch(
-        `/api/god_workflow/compare-local/${encodeURIComponent(state.currentWorkflow.workflow_id)}`,
+        `/api/god_workflow/compare-local/${encodeURIComponent(workflowId)}`,
         { method: "POST" }
       );
-      setCurrentWorkflow(normalizeMatureWorkflow(wf));
-      showToast("已刷新本地 ComfyUI 节点与模型对比结果");
+      // 诊断是独立报告，禁止把报告当工作流替换或改写画布。
+      if (state.currentWorkflow?.workflow_id !== workflowId) return;
+      state.currentWorkflow.env_diff = wf;
+      renderEnvironmentDiff(state.currentWorkflow);
+      showToast(wf.diagnostic_message || "诊断结果未知", wf.status !== "compared");
     } catch (err) {
+      if (state.currentWorkflow?.workflow_id === workflowId) {
+        state.currentWorkflow.env_diff = {status: "failed", diagnostic_message: err.message};
+        renderEnvironmentDiff(state.currentWorkflow);
+      }
       showToast(err.message, true);
     }
   };
-  wfGet("btnRefreshDiff").addEventListener("click", refreshDiffHandler);
-  wfGet("localComfyBadge").addEventListener("click", refreshDiffHandler);
+  wfGet("btnRefreshDiff")?.addEventListener("click", refreshDiffHandler);
+  wfGet("localComfyBadge")?.addEventListener("click", refreshDiffHandler);
 
   function nextWorkflowSeed() {
   if (globalThis.crypto?.getRandomValues) {
@@ -2978,7 +3545,7 @@ function bindEvents() {
 }
 
 
-  wfGet("btnRandomizeSeeds").addEventListener("click", () => {
+  wfGet("btnRandomizeSeeds")?.addEventListener("click", () => {
     const wf = state.currentWorkflow;
     if (!wf) return;
     const updates = [];
@@ -3005,28 +3572,28 @@ function bindEvents() {
     showToast(updates.length > 0 ? "已生成新的随机采样种子 (Seed)" : "当前工作流无可变 Seed 字段");
   });
 
-  wfGet("btnTargetRH").addEventListener("click", () => setExecutionTarget("rh_cloud"));
-  wfGet("btnTargetLocal").addEventListener("click", () => setExecutionTarget("local_comfy"));
-  wfGet("btnExecuteWorkflow").addEventListener("click", handleExecuteWorkflow);
+  wfGet("btnTargetRH")?.addEventListener("click", () => setExecutionTarget("rh_cloud"));
+  wfGet("btnTargetLocal")?.addEventListener("click", () => setExecutionTarget("local_comfy"));
+  wfGet("btnExecuteWorkflow")?.addEventListener("click", handleExecuteWorkflow);
 
-  wfGet("btnExportApiJson").addEventListener("click", () => {
+  wfGet("btnExportApiJson")?.addEventListener("click", () => {
     if (!state.currentWorkflow) return;
     window.open(workflowExportUrl(state.currentWorkflow.workflow_id, "api"), "_blank");
   });
-  wfGet("btnExportNodeList").addEventListener("click", () => {
+  wfGet("btnExportNodeList")?.addEventListener("click", () => {
     if (!state.currentWorkflow) return;
     window.open(workflowExportUrl(state.currentWorkflow.workflow_id, "node_info_list"), "_blank");
   });
 
-  wfGet("btnZoomIn").addEventListener("click", () => {
+  wfGet("btnZoomIn")?.addEventListener("click", () => {
     state.zoom = Math.min(1.8, +(state.zoom + 0.1).toFixed(2));
     applyCanvasTransform();
   });
-  wfGet("btnZoomOut").addEventListener("click", () => {
+  wfGet("btnZoomOut")?.addEventListener("click", () => {
     state.zoom = Math.max(0.25, +(state.zoom - 0.1).toFixed(2));
     applyCanvasTransform();
   });
-  wfGet("btnZoomFit").addEventListener("click", () => {
+  wfGet("btnZoomFit")?.addEventListener("click", () => {
     autoFitCanvas(state.currentWorkflow);
   });
   wfGet("btnAutoLayout").addEventListener("click", autoLayoutCurrentNodes);
@@ -3061,8 +3628,8 @@ function bindEvents() {
         }
       }
     };
-    window.addEventListener("mousemove", onMove);
-    window.addEventListener("mouseup", onUp);
+    listen(window, "mousemove", onMove);
+    listen(window, "mouseup", onUp);
   });
 
   // 支持直接将本地任意 ComfyUI 工作流文件 (.json / .png / .webp) 拖拽到画布加载
@@ -3093,36 +3660,45 @@ function bindEvents() {
 
   // 设置弹窗控制（现已移至左侧最底部）
   const settingsModal = wfGet("settingsModal");
-  wfGet("btnOpenSettings").addEventListener("click", async () => {
-    await loadSettingsState();
-    settingsModal.classList.add("open");
+  wfGet("btnOpenSettings")?.addEventListener("click", async () => {
+    try {
+      await loadSettingsState();
+    } catch (err) {
+      console.warn("加载设置状态失败:", err);
+    }
+    settingsModal?.classList.add("open");
   });
-  wfGet("btnCloseSettings").addEventListener("click", () => settingsModal.classList.remove("open"));
-  wfGet("btnCancelSettings").addEventListener("click", () => settingsModal.classList.remove("open"));
-  wfGet("btnSaveSettings").addEventListener("click", async () => {
+  wfGet("btnCloseSettings")?.addEventListener("click", () => settingsModal?.classList.remove("open"));
+  wfGet("btnCancelSettings")?.addEventListener("click", () => settingsModal?.classList.remove("open"));
+  wfGet("btnSaveSettings")?.addEventListener("click", async () => {
     const payload = {
-      comfy_url: wfGet("inputComfyUrl").value.trim(),
+      comfy_url: wfGet("inputComfyUrl")?.value?.trim() || "",
       comfy_root_dir: wfGet("inputComfyRootDir")?.value?.trim() || "",
-      local_models_dir: wfGet("inputLocalModelsDir").value.trim(),
+      local_models_dir: wfGet("inputLocalModelsDir")?.value?.trim() || "",
     };
-    const apiKeyVal = wfGet("inputRhApiKey").value.trim();
-    const tokenVal = wfGet("inputRhAccessToken").value.trim();
-    if (apiKeyVal) payload.rh_api_key = apiKeyVal;
-    if (tokenVal) payload.rh_access_token = tokenVal;
+    for (const [field, inputId, clearId] of [
+      ["rh_api_key", "inputRhApiKey", "clearRhApiKey"],
+      ["rh_access_token", "inputRhAccessToken", "clearRhAccessToken"],
+    ]) {
+      const value = wfGet(inputId)?.value?.trim() || "";
+      if (wfGet(clearId)?.checked) payload[`clear_${field}`] = true;
+      else if (value) payload[field] = value;
+    }
 
     try {
-      await apiFetch("/api/god_workflow/settings", {
+      const saved = await apiFetch("/api/god_workflow/settings", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
-      wfGet("inputRhApiKey").value = "";
-      wfGet("inputRhAccessToken").value = "";
-      settingsModal.classList.remove("open");
-      showToast("配置已保存，正在刷新工作流与本地对比状态...");
-      if (state.currentWorkflow?.source_url) {
-        await handleParseLink(state.currentWorkflow.source_url);
-      } else if (state.currentWorkflow) {
+      applySavedSettings(saved);
+      if (settingsModal) settingsModal._workflowSettingsSaved = true;
+      settingsModal?.classList.remove("open");
+      const credentialNote = saved?.has_rh_api_key || saved?.has_rh_access_token
+        ? "凭据已生效"
+        : "RH 凭据未配置，可在设置中填写";
+      showToast(`配置已保存，${credentialNote}；正在刷新工作流与本地对比状态...`);
+      if (state.currentWorkflow) {
         await refreshDiffHandler();
       }
     } catch (err) {
@@ -3130,21 +3706,186 @@ function bindEvents() {
     }
   });
 
+  // 本地目录选择交互与 Models 目录智能派生
+  function deriveModelsDirFromRoot(rootVal) {
+    if (!rootVal) return "";
+    const cleanRoot = rootVal.trim().replace(/[\\/]+$/, "");
+    if (!cleanRoot) return "";
+    const sep = cleanRoot.includes("/") ? "/" : "\\";
+    return `${cleanRoot}${sep}ComfyUI${sep}models`;
+  }
+
+  function handleRootDirInput() {
+    const rootVal = wfGet("inputComfyRootDir")?.value?.trim() || "";
+    const modelsInput = wfGet("inputLocalModelsDir");
+    if (modelsInput && !modelsInput.value.trim() && rootVal) {
+      modelsInput.value = deriveModelsDirFromRoot(rootVal);
+    }
+  }
+
+  async function handlePickLocalDirectory(targetInputId, triggerBtnId) {
+    const targetInput = wfGet(targetInputId);
+    if (!targetInput) return;
+    const triggerBtn = triggerBtnId ? wfGet(triggerBtnId) : null;
+    const originalBtnText = triggerBtn ? triggerBtn.innerHTML : "";
+
+    try {
+      if (triggerBtn) {
+        triggerBtn.innerHTML = "<span>⏳ 选择中...</span>";
+        triggerBtn.disabled = true;
+      }
+
+      // 1. 优先调用后端原生 Windows 目录选择对话框，直接获取真实的绝对路径
+      try {
+        const title = targetInputId === "inputComfyRootDir"
+          ? "选择本地 ComfyUI 安装根目录"
+          : "选择本地 ComfyUI Models 目录路径";
+        const res = await apiFetch("/api/god_workflow/browse_directory", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            initial_dir: targetInput.value.trim() || "",
+            title: title
+          })
+        });
+        if (res && res.selected_dir) {
+          targetInput.value = res.selected_dir;
+          showToast(`已选择目录：${res.selected_dir}`);
+          if (targetInputId === "inputComfyRootDir") {
+            handleRootDirInput();
+          }
+          return;
+        } else if (res && res.status === "ok") {
+          // 用户在原生对话框中点击了“取消”
+          return;
+        }
+      } catch (backendErr) {
+        console.warn("调用后端原生目录选择失败，转入浏览器前端降级方案:", backendErr);
+      }
+
+      // 2. 降级方案：尝试现代浏览器 window.showDirectoryPicker
+      if (typeof window.showDirectoryPicker === "function") {
+        try {
+          const dirHandle = await window.showDirectoryPicker({ mode: "read" });
+          if (dirHandle && dirHandle.name) {
+            const currentVal = targetInput.value.trim();
+            if (currentVal && (currentVal.includes("\\") || currentVal.includes("/"))) {
+              const sep = currentVal.includes("\\") ? "\\" : "/";
+              const parts = currentVal.split(/[/\\]/);
+              parts[parts.length - 1] = dirHandle.name;
+              targetInput.value = parts.join(sep);
+            } else {
+              targetInput.value = dirHandle.name;
+            }
+            showToast(`已选择目录：${dirHandle.name}（请核对并补全磁盘盘符绝对路径）`);
+            if (targetInputId === "inputComfyRootDir") {
+              handleRootDirInput();
+            }
+            return;
+          }
+        } catch (err) {
+          if (err.name === "AbortError") return;
+          console.warn("showDirectoryPicker 不可用或被取消:", err);
+        }
+      }
+
+      // 3. 降级方案：创建临时 webkitdirectory 文件选择框
+      const tempFileInput = document.createElement("input");
+      tempFileInput.type = "file";
+      tempFileInput.webkitdirectory = true;
+      tempFileInput.style.display = "none";
+      document.body.appendChild(tempFileInput);
+      tempFileInput.addEventListener("change", () => {
+        if (tempFileInput.files && tempFileInput.files.length > 0) {
+          const file = tempFileInput.files[0];
+          const relPath = file.webkitRelativePath || "";
+          const dirName = relPath.split("/")[0] || file.name || "";
+          if (dirName) {
+            targetInput.value = dirName;
+            showToast(`已选择目录：${dirName}（请核对磁盘盘符完整路径）`);
+            if (targetInputId === "inputComfyRootDir") {
+              handleRootDirInput();
+            }
+          }
+        }
+        document.body.removeChild(tempFileInput);
+      }, { once: true });
+    } catch (fallbackErr) {
+      showToast("无法直接调起目录选择器，已为您聚焦输入框，请直接粘贴完整目录路径", true);
+      try { targetInput.focus(); targetInput.select(); } catch (_) {}
+    } finally {
+      if (triggerBtn) {
+        triggerBtn.innerHTML = originalBtnText;
+        triggerBtn.disabled = false;
+      }
+    }
+  }
+
+  wfGet("btnBrowseComfyRootDir")?.addEventListener("click", () => handlePickLocalDirectory("inputComfyRootDir", "btnBrowseComfyRootDir"));
+  wfGet("btnBrowseLocalModelsDir")?.addEventListener("click", () => handlePickLocalDirectory("inputLocalModelsDir", "btnBrowseLocalModelsDir"));
+  wfGet("inputComfyRootDir")?.addEventListener("input", handleRootDirInput);
+  wfGet("inputComfyRootDir")?.addEventListener("change", handleRootDirInput);
+
   const taskModal = wfGet("taskModal");
-  wfGet("btnViewTaskDrawer").addEventListener("click", () => taskModal.classList.add("open"));
-  wfGet("btnCloseTaskModal").addEventListener("click", () => taskModal.classList.remove("open"));
-  wfGet("btnCloseTaskFooter").addEventListener("click", () => taskModal.classList.remove("open"));
+  wfGet("btnViewTaskDrawer")?.addEventListener("click", openWorkflowTasks);
+  wfGet('workflowTaskSelect')?.addEventListener('change', event => {
+    state.activeTaskId = event.target.value;
+    if (state.activeTaskId) startTaskPolling(state.activeTaskId, event.target.selectedOptions[0]?.dataset.target);
+  });
+  wfGet('btnRefreshWorkflowTasks')?.addEventListener('click', openWorkflowTasks);
+  wfGet('btnRetryTaskCollection')?.addEventListener('click', async event => {
+    if (!state.activeTaskId) return;
+    event.target.disabled = true;
+    try {
+      const result = await apiFetch(`/api/god_workflow/tasks/${encodeURIComponent(state.activeTaskId)}/collect`, { method: 'POST' });
+      startTaskPolling(state.activeTaskId, result.target);
+    } catch (error) { showToast(`产物回收失败：${error.message}`, true); }
+    finally { event.target.disabled = false; }
+  });
+  wfGet("btnCloseTaskModal")?.addEventListener("click", () => taskModal?.classList.remove("open"));
+  wfGet("btnCloseTaskFooter")?.addEventListener("click", () => taskModal?.classList.remove("open"));
+  bindWorkflowOverlays();
 }
 
 function disposeWorkbench() {
+  state.comfyBridgeSession = null;
+  state.authLoading = false;
   clearInterval(state.comfySyncTimer);
+  clearInterval(state.pollTimer);
   clearTimeout(state.paramSaveTimer);
+  ++state.pollGeneration;
+  for (const entry of state.parameterSaves?.values() || []) clearTimeout(entry.timer);
   lifecycleListeners.splice(0).forEach((remove) => remove());
   lifecycleAbortController?.abort();
   lifecycleAbortController = null;
   workbenchRoot = null;
 }
 function rebindWorkbench() { initWorkbench(); }
+function resetWorkflowIdentity() {
+  disposeWorkbench();
+  state.workflows = []; state.openWorkflowIds = []; state.folders = [];
+  state.currentWorkflow = null; state.selectedNodeId = null; state.activeTaskId = null;
+  state.clipboardHistory = []; state.mediaAssets = []; state.mediaAssetsByFilename = {};
+  state.parameterSaves?.clear(); state.collapsedFolders?.clear(); state.syncRevisions = {};
+  state.submissionAttempt = null; state.pendingMediaTarget = null; state._openTabsInitialized = false;
+  state.authPrincipalKey = null;
+  workbenchRoot = document.getElementById?.('workflowWorkbench') || null;
+  if (workbenchRoot) {
+    wfQueryAll('.modal-backdrop.open').forEach(modal => modal.classList.remove('open'));
+    for (const id of ['taskModalBody', 'assetLibraryGrid', 'clipboardListContainer', 'publicWorkflowPreviewBody']) { const element = wfGet(id); if (element) element.innerHTML = ''; }
+    clearEmptyWorkbenchView();
+    renderHeaderTelemetry({ name: '--', workflow_id: '--', nodes: [], connections: [], env_diff: {} });
+  }
+}
 window.WorkbenchWorkflow = Object.freeze({ init: rebindWorkbench, rebind: rebindWorkbench, dispose: disposeWorkbench });
+window.addEventListener('gw-auth-state', event => {
+  if (event.detail?.authenticated === true) {
+    const principal = event.detail.principal || {};
+    const key = JSON.stringify([principal.identity_domain || event.detail.auth_mode, principal.subject || principal.user_id || principal.username]);
+    if (state.authPrincipalKey && state.authPrincipalKey !== key) resetWorkflowIdentity();
+    state.authPrincipalKey = key;
+    rebindWorkbench();
+  } else resetWorkflowIdentity();
+});
 if (document.readyState === "loading") window.addEventListener("DOMContentLoaded", rebindWorkbench, { once: true }); else rebindWorkbench();
 

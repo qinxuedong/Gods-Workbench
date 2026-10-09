@@ -134,7 +134,11 @@ interfaces:
       installed: boolean
       path: "string | null"
       version: "null（未执行 CLI）"
-      execution_enabled: false
+      execution_enabled: "boolean（GW_CLI_EXECUTION=1的当前开关，仅观察不执行）"
+      command_candidates: "array（与执行层同源）"
+      logged_in: "null（当前未执行登录观察）"
+      generation_ready: false
+      generation_status: not_integrated
       data_status: "observed | not_integrated"
     acceptance: "只查询 PATH，不执行 codex。"
 
@@ -164,7 +168,11 @@ interfaces:
       installed: boolean
       path: "string | null"
       version: "null（未执行 CLI）"
-      execution_enabled: false
+      execution_enabled: "boolean（GW_CLI_EXECUTION=1的当前开关，仅观察不执行）"
+      command_candidates: "array（gemini / gemini-cli / antigravity，与执行层同源）"
+      logged_in: "null（未观察）"
+      generation_ready: false
+      generation_status: not_integrated
       data_status: "observed | not_integrated"
     acceptance: "只查询 PATH，不执行 gemini/antigravity。"
 
@@ -300,6 +308,12 @@ interfaces:
     status: [200, 401, 403]
     authorization: "仅admin/governor；复用login/status主体隔离。"
     response_200:
+      installed: boolean
+      path: "string | null"
+      execution_enabled: boolean
+      command_candidates: "[dreamina]"
+      generation_ready: false
+      generation_status: not_integrated
       logged_in: "boolean | null"
       running: boolean
       result_unknown: boolean
@@ -309,7 +323,7 @@ interfaces:
       user_code: "string | null"
       data_status: "not_integrated | degraded | ok | failed"
     headers: "Cache-Control: no-store, no-cache, must-revalidate, private；Pragma: no-cache。"
-    acceptance: "兼容路径只读同一个单实例登录控制器，状态/主体隔离与login/status一致。"
+    acceptance: "兼容路径合并只读PATH观察与同一个登录控制器的主体隔离结果；不启动命令。执行开关、路径、登录与生成未接入分别表达；权限和缓存策略与login/status一致。"
 
   - name: projects_compat_list
     method: GET

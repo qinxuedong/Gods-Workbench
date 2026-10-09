@@ -20,6 +20,7 @@ import {createAssetClassificationHelpers} from './asset-manager/classification.j
 import {readStoredBoolean, readStoredNumber} from './asset-manager/storage.js';
 import {formatDate, formatFileSize} from './asset-manager/formatters.js';
 import {pathCompareKey} from './asset-manager/path-utils.js';
+import {workflowAssetId, workflowLibraryId, workflowCategoryId, workflowSourceId, zipWorkflowFiles} from './asset-manager/workflow-assets.js';
 
 const root = document.getElementById('assetManagerRoot');
 const directorySettingsPage = new URLSearchParams(location.search).get('settings') === 'directories';
@@ -370,6 +371,7 @@ let selectedWorkflowId = '';
 let selectedPromptId = '';
 let selectedAssetIds = new Set();
 let selectedWorkflowIds = new Set();
+const workflowDeleteVersions = new Map();
 let selectedPromptIds = new Set();
 let assetQuery = '';
 let workflowQuery = '';
@@ -2808,7 +2810,7 @@ function activeAssetLibrary(){
 }
 function activeWorkflowLibrary(){
     const libs = assetLibraries();
-    return libs.find(lib => lib.id === activeWorkflowLibraryId) || libs[0] || null;
+    return libs.find(lib => workflowLibraryId(lib) === activeWorkflowLibraryId) || libs[0] || null;
 }
 function assetCategories(){
     return (activeAssetLibrary()?.categories || []).filter(cat => (cat.type || 'image') === 'image');
@@ -2817,7 +2819,7 @@ function workflowCategories(){
     const cats = [];
     assetLibraries().forEach(lib => {
         (lib.categories || []).filter(cat => (cat.type || '') === 'workflow').forEach(cat => {
-            cats.push({...cat, __libraryId:lib.id, __libraryName:lib.name || '资产库'});
+            cats.push({...cat, __libraryId:workflowLibraryId(lib), __libraryName:lib.name || '资产库'});
         });
     });
     return cats;
@@ -2839,8 +2841,8 @@ function assetViewSubtitle(items){
 }
 function activeWorkflowCategory(){
     const cats = workflowCategories();
-    return cats.find(cat => cat.id === activeWorkflowCategoryId && cat.__libraryId === activeWorkflowLibraryId)
-        || cats.find(cat => cat.id === activeWorkflowCategoryId)
+    return cats.find(cat => workflowCategoryId(cat) === activeWorkflowCategoryId && cat.__libraryId === activeWorkflowLibraryId)
+        || cats.find(cat => workflowCategoryId(cat) === activeWorkflowCategoryId)
         || cats[0]
         || null;
 }
@@ -2976,6 +2978,7 @@ function renderClassificationChips(item, limit=10, options={}){
         : '';
 }
 function workflowKindLabel(item){
+    if(workflowSourceId(item)) return '神工坊工作流';
     const format = String(item?.format || '').toLowerCase();
     const url = String(item?.url || '').toLowerCase();
     if(format === 'json' || url.endsWith('.json')) return 'JSON 工作流';
@@ -3527,7 +3530,7 @@ function findAssetItem(id){
 function findWorkflowItem(id){
     for(const lib of assetLibraries()) for(const cat of lib.categories || []) {
         if((cat.type || '') !== 'workflow') continue;
-        for(const item of cat.items || []) if(item.id === id) return item;
+        for(const item of cat.items || []) if(workflowAssetId(item) === id) return item;
     }
     return null;
 }
@@ -3544,7 +3547,7 @@ function selectedAsset(){
 }
 function selectedWorkflow(){
     const items = currentWorkflowItems();
-    return items.find(item => item.id === selectedWorkflowId) || items[0] || null;
+    return items.find(item => workflowAssetId(item) === selectedWorkflowId) || items[0] || null;
 }
 function selectedPrompt(){
     const items = currentPromptItems();
@@ -6219,20 +6222,20 @@ function normalizeAssetState(){
 }
 function normalizeWorkflowState(){
     const libs = assetLibraries();
-    if(!activeWorkflowLibraryId || !libs.some(lib => lib.id === activeWorkflowLibraryId)) activeWorkflowLibraryId = assetLibrary.active_library_id || libs[0]?.id || '';
+    if(!activeWorkflowLibraryId || !libs.some(lib => workflowLibraryId(lib) === activeWorkflowLibraryId)) activeWorkflowLibraryId = assetLibrary.active_library_id || workflowLibraryId(libs[0]);
     const cats = workflowCategories();
     if(
         !activeWorkflowCategoryId
-        || !cats.some(cat => cat.id === activeWorkflowCategoryId && cat.__libraryId === activeWorkflowLibraryId)
+        || !cats.some(cat => workflowCategoryId(cat) === activeWorkflowCategoryId && cat.__libraryId === activeWorkflowLibraryId)
     ){
-        activeWorkflowCategoryId = cats[0]?.id || '';
+        activeWorkflowCategoryId = workflowCategoryId(cats[0]);
         activeWorkflowLibraryId = cats[0]?.__libraryId || activeWorkflowLibraryId;
     }
-    const activeCat = cats.find(cat => cat.id === activeWorkflowCategoryId && cat.__libraryId === activeWorkflowLibraryId) || null;
+    const activeCat = cats.find(cat => workflowCategoryId(cat) === activeWorkflowCategoryId && cat.__libraryId === activeWorkflowLibraryId) || null;
     if(activeCat?.__libraryId) activeWorkflowLibraryId = activeCat.__libraryId;
     const items = currentWorkflowItems();
-    if(selectedWorkflowId && !items.some(item => item.id === selectedWorkflowId)) selectedWorkflowId = '';
-    if(!selectedWorkflowId && items.length) selectedWorkflowId = items[0].id;
+    if(selectedWorkflowId && !items.some(item => workflowAssetId(item) === selectedWorkflowId)) selectedWorkflowId = '';
+    if(!selectedWorkflowId && items.length) selectedWorkflowId = workflowAssetId(items[0]);
     selectedWorkflowIds = new Set([...selectedWorkflowIds].filter(id => findWorkflowItem(id)));
 }
 function normalizePromptState(){
@@ -6301,7 +6304,7 @@ async function loadAll(){
     // 刷新时默认回到「默认资产库」
     const libs = assetLibraries();
     activeAssetLibraryId = (libs.find(lib => lib.id === 'default') || libs[0])?.id || '';
-    activeWorkflowLibraryId = (libs.find(lib => lib.id === 'default') || libs[0])?.id || '';
+    activeWorkflowLibraryId = workflowLibraryId(libs.find(lib => workflowLibraryId(lib) === 'default') || libs[0]);
     activeAssetCategoryId = '';
     activeWorkflowCategoryId = '';
     selectedAssetId = '';
@@ -6960,7 +6963,7 @@ function renderLocalManager(){
                     ${renderLocalUploadFolderBranch(localUploadTree || {path:'', name:'全部上传', count:total, children:[]})}
                     ${renderLocalUploadSmartClassTree()}
                 </div>
-                <div class="nav-hint" style="padding:10px 12px;font-size:12px;opacity:.7;">选择图片/视频/音频文件即可上传，文件保存在项目 assets/uploads 目录。</div></section>
+                <div class="nav-hint" style="padding:10px 12px;font-size:var(--gw-type-body-sm);opacity:.7;">选择图片/视频/音频文件即可上传，文件保存在项目 assets/uploads 目录。</div></section>
             </div>
         </aside>
         <section class="asset-panel asset-content ${localUploadManageMode ? 'manage-on' : ''}">
@@ -8067,6 +8070,16 @@ function endRegistryDetailPanelResize(event){
     document.body.style.removeProperty('user-select');
     setRegistryDetailPanelWidth(registryDetailPanelWidth,true);
 }
+function workflowProvenanceLinks(item){
+    const metadata = item?.metadata || {}, source = metadata.source_context || {};
+    if(!metadata.workflow_id) return '';
+    const url = new URL('/static/pages/workflow.html', location.origin);
+    url.searchParams.set('id', metadata.workflow_id);
+    if(metadata.job_id) url.searchParams.set('job_id', metadata.job_id);
+    if(source.project_id) url.searchParams.set('project_id', source.project_id);
+    if(source.canvas_id) url.searchParams.set('canvas_id', source.canvas_id);
+    return `<div class="registry-detail-block"><strong>生成来源</strong><div class="registry-linked-board-list"><a class="registry-linked-board-button" href="${escapeAttr(url.pathname + url.search)}">${metadata.job_id ? '查看来源工作流与任务' : '编辑来源工作流'}</a>${source.project_id ? `<a class="registry-linked-board-button" href="/static/pages/projects.html?project_id=${encodeURIComponent(source.project_id)}">返回来源项目</a>` : ''}</div></div>`;
+}
 function renderRegistryDetail(){
     const item = registryDetail?.id === selectedRegistryAssetId ? registryDetail : selectedRegistryAsset();
     if(!item) return `<div class="panel-head"><div class="panel-title"><strong>资产详情</strong><span>选择素材查看</span></div><div class="panel-actions">${registryDetailPanelToggleButton()}</div></div><div class="detail-empty"><i data-lucide="library-big"></i><span>暂无资产</span></div>`;
@@ -8097,6 +8110,7 @@ function renderRegistryDetail(){
                     ${mediaType === 'video' && frameRate ? `<div class="detail-meta"><span>帧率</span><strong>${Number.isInteger(frameRate) ? frameRate : frameRate.toFixed(2)} fps</strong></div>` : ''}
                 </div>`}
                 ${classification.summary ? `<div class="detail-caption"><strong>智能描述</strong><p>${escapeHtml(classification.summary)}</p></div>` : ''}
+                ${workflowProvenanceLinks(item)}
                 ${renderRegistryEditableTags(item, 'side')}
                 ${renderRegistryRelations(item)}
                 <div class="registry-detail-block"><strong>存储位置</strong><button class="registry-storage-location" type="button" data-registry-file-reveal="${escapeAttr(item.id)}" ${storagePath && !item.is_remote ? '' : 'disabled'} title="${storagePath && !item.is_remote ? '在文件夹中显示此文件' : '位置不可用'}"><code>${escapeHtml(storagePath || '位置不可用')}</code><i data-lucide="folder-search"></i></button></div>
@@ -8315,8 +8329,8 @@ function renderWorkflowManager(){
                         </button>
                         <div class="tree-children">
                             ${cats.length ? cats.map(c => {
-                                const active = c.id === activeWorkflowCategoryId && c.__libraryId === activeWorkflowLibraryId;
-                                return `<button class="tree-row tree-child ${active ? 'active' : ''}" type="button" data-workflow-cat="${escapeAttr(c.id)}" data-workflow-cat-lib="${escapeAttr(c.__libraryId || '')}">
+                                const active = workflowCategoryId(c) === activeWorkflowCategoryId && c.__libraryId === activeWorkflowLibraryId;
+                                return `<button class="tree-row tree-child ${active ? 'active' : ''}" type="button" data-workflow-cat="${escapeAttr(workflowCategoryId(c))}" data-workflow-cat-lib="${escapeAttr(c.__libraryId || '')}">
                                 <span class="tree-elbow"></span>
                                 <span class="tree-row-icon"><i data-lucide="workflow"></i></span>
                                 <span class="tree-row-name">${escapeHtml(c.name || '工作流')}</span>
@@ -8390,8 +8404,8 @@ function renderWorkflowTreeInlineEdit(){
     </div>`;
 }
 function renderWorkflowCard(item){
-    return `<article class="asset-card workflow-card ${item.id === selectedWorkflowId ? 'active' : ''}" data-workflow-card="${escapeAttr(item.id)}" tabindex="0" role="button" aria-label="查看 ${escapeAttr(item.name || '工作流')} 详情">
-        <input class="asset-card-check" type="checkbox" data-workflow-check="${escapeAttr(item.id)}" ${selectedWorkflowIds.has(item.id) ? 'checked' : ''}>
+    return `<article class="asset-card workflow-card ${workflowAssetId(item) === selectedWorkflowId ? 'active' : ''}" data-workflow-card="${escapeAttr(workflowAssetId(item))}" tabindex="0" role="button" aria-label="查看 ${escapeAttr(item.name || '工作流')} 详情">
+        <input class="asset-card-check" type="checkbox" data-workflow-check="${escapeAttr(workflowAssetId(item))}" ${selectedWorkflowIds.has(workflowAssetId(item)) ? 'checked' : ''}>
         <div class="asset-thumb">${workflowThumb(item)}</div>
         <div class="asset-card-body">
             <div class="asset-card-name" title="${escapeAttr(item.name || '')}">${escapeHtml(item.name || 'workflow')}</div>
@@ -8401,19 +8415,21 @@ function renderWorkflowCard(item){
 }
 function renderWorkflowDetail(item){
     if(!item) return `<div class="panel-head"><div class="panel-title"><strong>工作流详情</strong><span>选择一个工作流查看详情</span></div></div><div class="detail-scroll"><div class="detail-empty"><i data-lucide="workflow"></i><span>暂无工作流</span></div></div>`;
+    const asset_id = workflowAssetId(item), workflow_id = workflowSourceId(item);
     return `
         <div class="panel-head">
             <div class="panel-title"><strong>工作流详情</strong><span>${escapeHtml(workflowKindLabel(item))}</span></div>
             <div class="panel-actions">
-                <button class="asset-icon-btn" type="button" data-workflow-download="${escapeAttr(item.id)}" title="导出工作流"><i data-lucide="download"></i></button>
-                <button class="asset-icon-btn" type="button" data-workflow-rename="${escapeAttr(item.id)}" title="重命名"><i data-lucide="pencil"></i></button>
-                <button class="asset-icon-btn danger ${pendingDeleteAssetId === item.id ? 'detail-confirm' : ''}" type="button" data-workflow-delete="${escapeAttr(item.id)}" title="${pendingDeleteAssetId === item.id ? '再次点击确认删除' : '删除'}"><i data-lucide="trash-2"></i></button>
+                ${workflow_id ? `<a class="asset-icon-btn" href="/static/pages/workflow.html?id=${encodeURIComponent(workflow_id)}" title="编辑工作流" aria-label="编辑工作流"><i data-lucide="external-link"></i></a>` : ''}
+                <button class="asset-icon-btn" type="button" data-workflow-download="${escapeAttr(asset_id)}" title="导出工作流"><i data-lucide="download"></i></button>
+                <button class="asset-icon-btn" type="button" data-workflow-rename="${escapeAttr(asset_id)}" title="重命名"><i data-lucide="pencil"></i></button>
+                <button class="asset-icon-btn danger ${pendingDeleteAssetId === asset_id ? 'detail-confirm' : ''}" type="button" data-workflow-delete="${escapeAttr(asset_id)}" title="${pendingDeleteAssetId === asset_id ? '再次点击确认删除' : '删除'}"><i data-lucide="trash-2"></i></button>
             </div>
         </div>
         <div class="detail-scroll">
             <div class="detail-media"><div class="detail-media-frame">${workflowThumb(item)}</div></div>
             <div class="detail-body">
-                <input class="detail-name-input" data-workflow-inline-name="${escapeAttr(item.id)}" type="text" value="${escapeAttr(item.name || 'workflow')}" title="直接修改名称">
+                <input class="detail-name-input" data-workflow-inline-name="${escapeAttr(asset_id)}" type="text" value="${escapeAttr(item.name || 'workflow')}" ${workflow_id ? 'readonly' : ''} title="${workflow_id ? '使用重命名按钮按文档版本保存' : '直接修改名称'}">
                 <div class="detail-meta-grid">
                     <div class="detail-meta"><span>类型</span><strong>${escapeHtml(workflowKindLabel(item))}</strong></div>
                     <div class="detail-meta"><span>创建时间</span><strong>${escapeHtml(formatDate(item.created_at))}</strong></div>
@@ -8914,19 +8930,36 @@ function downloadUrl(url, filename='download'){
 async function exportWorkflowItems(ids){
     const items = (ids || []).map(id => findWorkflowItem(id)).filter(item => item?.url);
     if(!items.length) return;
-    if(items.length === 1){
-        const item = items[0];
-        const ext = String(item.url || '').toLowerCase().split('?')[0].endsWith('.json') ? '.json' : '.zip';
-        downloadUrl(item.url, `${item.name || 'workflow'}${ext}`);
-        setStatus('已导出工作流');
-        return;
+    if(items.length > 100) throw new Error('每次最多导出100个工作流');
+    const files = [];
+    for(const item of items){
+        const workflow_id = workflowSourceId(item);
+        let content, extension;
+        if(workflow_id){
+            const graph = await apiJsonResponse(assetManagerApi.exportWorkflowDocument(workflow_id));
+            content = JSON.stringify(graph, null, 2); extension = '.json';
+        } else {
+            const url = new URL(item.url, location.origin);
+            if(url.origin !== location.origin) throw new Error('外部工作流文件请从原来源下载');
+            const response = await assetManagerApi.getWorkflowFile(url.pathname + url.search);
+            if(!response.ok) await apiJsonResponse(response);
+            content = new Uint8Array(await response.arrayBuffer());
+            if(content.length > 30 * 1024 * 1024) throw new Error('工作流文件超过导出限制');
+            if(content[0] === 0x50 && content[1] === 0x4b && content[2] === 3 && content[3] === 4){
+                extension = '.zip';
+            } else {
+                try { JSON.parse(new TextDecoder().decode(content)); extension = '.json'; }
+                catch(_) { throw new Error('工作流内容不是受支持的JSON或ZIP文件'); }
+            }
+        }
+        const name = String(item.name || 'workflow').replace(/[\\/:*?"<>|\x00-\x1f]/g, '_').slice(0, 100).replace(/\.(json|zip)$/i, '');
+        files.push({name:items.length === 1 ? name + extension : `${name}-${workflowAssetId(item)}${extension}`, content});
     }
-    const res = await assetManagerApi.downloadCanvasAssets({filename:'workflows.zip', items:items.map(item => ({url:item.url, name:item.name || 'workflow'}))});
-    if(!res.ok) throw new Error((await res.json().catch(() => ({}))).detail || '导出工作流失败');
-    const blob = await res.blob();
+    const blob = files.length === 1 ? new Blob([files[0].content], {type:files[0].name.endsWith('.json') ? 'application/json' : 'application/zip'}) : zipWorkflowFiles(files);
+    if(blob.size > 30 * 1024 * 1024) throw new Error('工作流导出包超过限制');
     const link = document.createElement('a');
     link.href = URL.createObjectURL(blob);
-    link.download = 'workflows.zip';
+    link.download = files.length === 1 ? files[0].name : 'workflows.zip';
     document.body.appendChild(link);
     link.click();
     link.remove();
@@ -9096,8 +9129,16 @@ async function pasteLocalUploadClipboard(){
 }
 async function renameWorkflowItem(id){
     const item = findWorkflowItem(id);
+    if(!item) return;
+    const workflow_id = workflowSourceId(item);
+    // 用户输入前捕获来源版本；输入期间发生并发编辑时拒绝覆盖。
+    const source = workflow_id ? await apiJsonResponse(assetManagerApi.getWorkflowDocument(workflow_id)) : null;
     const name = window.prompt('工作流名称', item?.name || '');
     if(!item || !String(name || '').trim()) return;
+    if(workflow_id){
+        await apiJsonResponse(assetManagerApi.renameWorkflowDocument(workflow_id, {name:String(name).trim(), expected_version:source.version}));
+        await loadAll(); setStatus('已重命名工作流'); return;
+    }
     const data = await apiJsonResponse(assetManagerApi.updateAssetLibraryItem(id, {name}));
     assetLibrary = data.library || assetLibrary;
     render();
@@ -9106,11 +9147,23 @@ async function renameWorkflowItem(id){
 async function deleteWorkflowItem(id){
     const item = findWorkflowItem(id);
     if(!item) return;
+    const workflow_id = workflowSourceId(item);
     if(pendingDeleteAssetId !== id){
+        if(workflow_id){
+            const source = await apiJsonResponse(assetManagerApi.getWorkflowDocument(workflow_id));
+            workflowDeleteVersions.set(id, source.version);
+        }
         pendingDeleteAssetId = id;
         render();
         setStatus('再次点击确认删除工作流');
         return;
+    }
+    if(workflow_id){
+        try {
+            await apiJsonResponse(assetManagerApi.deleteWorkflowDocument(workflow_id, workflowDeleteVersions.get(id)));
+        } finally { workflowDeleteVersions.delete(id); pendingDeleteAssetId = ''; render(); }
+        selectedWorkflowIds.delete(id); selectedWorkflowId = '';
+        await loadAll(); setStatus('已删除工作流'); return;
     }
     const data = await apiJsonResponse(assetManagerApi.deleteAssetLibraryItem(id));
     assetLibrary = data.library || assetLibrary;
@@ -9123,6 +9176,25 @@ async function deleteWorkflowItem(id){
 async function deleteSelectedWorkflows(){
     const ids = [...selectedWorkflowIds];
     if(!ids.length) return;
+    const sources = [];
+    for(const id of ids){
+        const workflow_id = workflowSourceId(findWorkflowItem(id));
+        if(!workflow_id) break;
+        const source = await apiJsonResponse(assetManagerApi.getWorkflowDocument(workflow_id));
+        sources.push({workflow_id, version:source.version});
+    }
+    if(sources.length === ids.length){
+        if(!window.confirm(`确认删除这${ids.length}个工作流文档？`)) return;
+        let removed = 0, failure = null;
+        try {
+            for(const source of sources){
+                await apiJsonResponse(assetManagerApi.deleteWorkflowDocument(source.workflow_id, source.version)); removed++;
+            }
+        } catch(error){ failure = error; }
+        selectedWorkflowIds.clear(); selectedWorkflowId = ''; await loadAll();
+        setStatus(failure ? `已删除${removed}个，其余未删除：${failure.message}` : `已删除${removed}个工作流`);
+        return;
+    }
     const data = await apiJsonResponse(assetManagerApi.deleteAssetLibraryItems({library_id:activeWorkflowLibraryId, ids}));
     assetLibrary = data.library || assetLibrary;
     selectedWorkflowIds.clear();
@@ -10454,7 +10526,7 @@ async function handleClick(event){
         render();
         return;
     }
-    if(target.closest?.('[data-workflow-select-all]')){ currentWorkflowItems().forEach(item => selectedWorkflowIds.add(item.id)); render(); return; }
+    if(target.closest?.('[data-workflow-select-all]')){ currentWorkflowItems().forEach(item => selectedWorkflowIds.add(workflowAssetId(item))); render(); return; }
     if(target.closest?.('[data-workflow-clear-selection]')){ selectedWorkflowIds.clear(); render(); return; }
     if(target.closest?.('[data-workflow-export-selected]')){ await exportWorkflowItems([...selectedWorkflowIds]); return; }
     if(target.closest?.('[data-workflow-delete-selected]')){ await deleteSelectedWorkflows(); return; }
@@ -11886,7 +11958,7 @@ function renderDetailModelInspector(item, tags, rows, url){
     const statusLabel = detailViewerState.modelInfoLoading ? '正在分析' : previewSource === 'logo' ? 'Logo 降级' : previewSource === 'default' ? '默认封面' : '预览可用';
     const statusClass = fallback ? 'is-fallback' : detailViewerState.modelInfoLoading ? 'is-loading' : 'is-ready';
     const registryMeta = detailViewerState.source === 'registry'
-        ? `<section class="asset-detail-registry-meta">${renderRegistryEditableTags(item, 'viewer')}${renderRegistryRelations(item)}</section>`
+        ? `<section class="asset-detail-registry-meta">${workflowProvenanceLinks(item)}${renderRegistryEditableTags(item, 'viewer')}${renderRegistryRelations(item)}</section>`
         : (tags.length ? `<section class="asset-detail-tags"><strong>智能分类与标签</strong><div>${tags.map(tag => `<span>${escapeHtml(tag)}</span>`).join('')}</div></section>` : '');
     return `<aside class="asset-detail-inspector asset-detail-model-inspector ${detailViewerInspectorCollapsed ? 'is-collapsed' : ''}" data-detail-inspector>
         ${renderDetailInspectorHeader()}
@@ -11922,7 +11994,7 @@ function renderDetailViewerInspectorContent(item, type, tags, rows, url, extraCo
             : `<h2>${detailViewerNameHtml(item.name)}</h2>`}<p>${escapeHtml(detailViewerSourceLabel(source, item))}</p></div>
         ${type === 'video' ? `${renderDetailVideoStoryboardPanel(item,source)}${renderDetailVideoSummary(item,source)}` : ''}
         ${inspectorRows.length ? `<dl class="asset-detail-facts">${renderDetailViewerMetaRows(inspectorRows, item)}</dl>` : ''}
-        ${source === 'registry' ? `<section class="asset-detail-registry-meta">${renderRegistryEditableTags(item, 'viewer')}${renderRegistryRelations(item)}</section>` : (tags.length ? `<section class="asset-detail-tags"><strong>智能分类与标签</strong><div>${tags.map(tag => `<span>${escapeHtml(tag)}</span>`).join('')}</div></section>` : '')}
+        ${source === 'registry' ? `<section class="asset-detail-registry-meta">${workflowProvenanceLinks(item)}${renderRegistryEditableTags(item, 'viewer')}${renderRegistryRelations(item)}</section>` : (tags.length ? `<section class="asset-detail-tags"><strong>智能分类与标签</strong><div>${tags.map(tag => `<span>${escapeHtml(tag)}</span>`).join('')}</div></section>` : '')}
         ${type === 'text' && detailViewerCanEditText(source, item) ? renderDetailTextVersions() : ''}
         ${extraContent}
         <div class="asset-detail-actions">
@@ -16278,10 +16350,10 @@ async function saveWorkflowTreeEdit(){
             setStatus('请先选择资产库');
             return;
         }
-        activeWorkflowLibraryId = lib.id || activeWorkflowLibraryId;
-        const data = await apiJsonResponse(assetManagerApi.createAssetLibraryCategory({library_id:activeWorkflowLibraryId, name, type:'workflow'}));
-        assetLibrary = data.library || assetLibrary;
-        activeWorkflowCategoryId = data.category?.id || activeWorkflowCategoryId;
+        activeWorkflowLibraryId = workflowLibraryId(lib) || activeWorkflowLibraryId;
+        const data = await apiJsonResponse(assetManagerApi.createAssetLibraryCategory({library_id:activeWorkflowLibraryId, name, type:'workflow', expected_version:lib.version}));
+        assetLibrary = data.asset_library || assetLibrary;
+        activeWorkflowCategoryId = workflowCategoryId(data.category) || activeWorkflowCategoryId;
     } else if(workflowTreeEdit.kind === 'category-rename'){
         const cat = activeWorkflowCategory();
         const categoryId = workflowTreeEdit.categoryId || cat?.id || activeWorkflowCategoryId;

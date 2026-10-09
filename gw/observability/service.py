@@ -296,10 +296,10 @@ class ObservabilityService:
     # ------------------------------------------------------------------
     # 总览
     # ------------------------------------------------------------------
-    def overview(self, filters: AppliedFilters) -> ObservabilityOverview:
+    def overview(self, filters: AppliedFilters, auth_context=None) -> ObservabilityOverview:
         """总览计数严格来自真实服务实例当前内存状态。"""
         project_counts, project_gap = self._project_counts()
-        job_counts, job_gap = self._job_counts()
+        job_counts, job_gap = self._job_counts(auth_context)
 
         gaps: List[str] = [GAP_LATENCY]
         if project_gap:
@@ -348,19 +348,21 @@ class ObservabilityService:
             None,
         )
 
-    def _job_snapshot(self) -> Tuple[List[Any], Optional[str]]:
+    def _job_snapshot(self, auth_context=None) -> Tuple[List[Any], Optional[str]]:
         """读取 god-canvas 内存任务快照；不可用时返回空清单 + 说明。"""
         reader = getattr(self._canvas, "list_jobs", None)
         if reader is None:
             return [], "GodCanvasService 未提供只读任务快照能力，任务计数降级为 0（不代表真实为 0）"
         try:
+            if auth_context is not None:
+                return list(self._canvas.list_owned_jobs(auth_context)), None
             return list(reader()), None
         except Exception:
             return [], "GodCanvasService 任务快照读取失败，任务计数降级为 0（不代表真实为 0）"
 
-    def _job_counts(self) -> Tuple[JobCounts, Optional[str]]:
+    def _job_counts(self, auth_context=None) -> Tuple[JobCounts, Optional[str]]:
         """按状态统计真实内存任务。"""
-        jobs, gap = self._job_snapshot()
+        jobs, gap = self._job_snapshot(auth_context)
         by_status: Dict[str, int] = {}
         for job in jobs:
             state = str(getattr(job, "state", "") or "unknown")
@@ -539,7 +541,7 @@ class ObservabilityService:
     # ------------------------------------------------------------------
     # 任务（真实内存任务表）
     # ------------------------------------------------------------------
-    def tasks(self, filters: AppliedFilters) -> ObservabilityListResponse:
+    def tasks(self, filters: AppliedFilters, auth_context=None) -> ObservabilityListResponse:
         """返回真实内存任务投影（当前状态快照，非历史查询）。
 
         过滤口径（**分档处理，绝不静默忽略**）：
@@ -579,7 +581,7 @@ class ObservabilityService:
             value is not None for value in (filters.start_ms, filters.end_ms)
         ) or bool(filters.range and filters.range.strip() != "all")
 
-        jobs, reader_gap = self._job_snapshot()
+        jobs, reader_gap = self._job_snapshot(auth_context)
         tasks = [self._project_task(job) for job in jobs]
         selected = [
             task
@@ -622,7 +624,7 @@ class ObservabilityService:
     # ------------------------------------------------------------------
     # 健康
     # ------------------------------------------------------------------
-    def health(self, filters: AppliedFilters) -> ObservabilityHealth:
+    def health(self, filters: AppliedFilters, auth_context=None) -> ObservabilityHealth:
         """如实反映组件可用性；未接入组件必须是 not_integrated，绝不无条件返回 ok。"""
         checks: List[HealthCheck] = []
         gaps: List[str] = []
@@ -640,7 +642,7 @@ class ObservabilityService:
                 )
             )
 
-        jobs, job_gap = self._job_snapshot()
+        jobs, job_gap = self._job_snapshot(auth_context)
         if job_gap:
             checks.append(HealthCheck(name="canvas", status="failed", message_safe=job_gap))
             gaps.append(job_gap)

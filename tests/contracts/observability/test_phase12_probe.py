@@ -13,7 +13,17 @@ from typing import Any
 import pytest
 
 ROOT = Path(__file__).resolve().parents[3]
-PROBE_PATH = ROOT / "tools" / "_probe_p12.py"
+PROBE_PATH = ROOT / ".local" / "probes" / "_probe_p12.py"
+if os.environ.get("GW_RUN_LOCAL_PHASE12_PROBE_TESTS") != "1":
+    pytest.skip(
+        "Phase 12 探针是仅本机保留的临时工具；设置 GW_RUN_LOCAL_PHASE12_PROBE_TESTS=1 后显式运行。",
+        allow_module_level=True,
+    )
+if not PROBE_PATH.is_file():
+    pytest.fail(
+        "已显式启用本地 Phase 12 探针测试，但 .local/probes/_probe_p12.py 不存在。",
+        pytrace=False,
+    )
 _SPEC = importlib.util.spec_from_file_location("phase12_probe", PROBE_PATH)
 assert _SPEC and _SPEC.loader
 probe = importlib.util.module_from_spec(_SPEC)
@@ -253,6 +263,9 @@ def _run_probe_once(output_dir: Path) -> tuple[dict[str, Any], str]:
     # 故意继承“配置已启用”的值，验证探针强制安全隔离并在退出时还原。
     environment["GW_CLI_EXECUTION"] = "1"
     environment["PYTHONUTF8"] = "1"
+    environment["PYTHONPATH"] = os.pathsep.join(
+        item for item in (str(ROOT), environment.get("PYTHONPATH", "")) if item
+    )
     prior_reports = set(output_dir.glob("phase12-probe-*.json"))
     result = subprocess.run(
         [sys.executable, str(PROBE_PATH), "--output-dir", str(output_dir)],

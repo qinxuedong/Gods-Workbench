@@ -1,6 +1,8 @@
 <!doctype html>
 <html lang="zh-CN">
 <head>
+  <link rel="stylesheet" href="/static/vendor/css/fonts.css">
+  <link rel="stylesheet" href="/static/css/base/hardware-tokens.css">
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
   <script>if(window.self!==window.top||new URLSearchParams(location.search).get('embedded')==='1'||new URLSearchParams(location.hash.slice(1)).get('embedded')==='1')document.documentElement.classList.add('workspace-embedded');</script>
@@ -10,9 +12,6 @@
   <link rel="stylesheet" href="/static/css/base/hardware-design-system.css?v=v0.0.1-alpha-2026">
   <link rel="stylesheet" href="/static/css/pages/episode-pipeline.css?v=v0.0.1-alpha-2026&m8=liquid-metal-v35">
   <link rel="stylesheet" href="/static/css/pages/episode-video-script.css?v=20260916">
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" rel="stylesheet">
   <link rel="stylesheet" href="/static/css/base/tailwind-utilities.css?v=v0.0.1-alpha-2026">
   <script src="/static/vendor/js/tailwindcss-cdn.js?v=3.4.17&amp;build=d11003b2f6fb"></script>
   <script id="tailwind-config">
@@ -48,10 +47,10 @@
             "on-surface-variant": "#9ca3af"
           },
           fontFamily: {
-            mono: ["Source Han Sans CN", "monospace"],
-            outfit: ["Source Han Sans CN", "sans-serif"],
-            manrope: ["Source Han Sans CN", "sans-serif"],
-            headline: ["Source Han Sans CN", "Noto Sans SC", "sans-serif"]
+            mono: ["var(--gw-font-mono)"],
+            outfit: ["var(--gw-font-display)"],
+            manrope: ["var(--gw-font-body)"],
+            headline: ["var(--gw-font-display)"]
           },
           boxShadow: {
             "chassis": "0 20px 40px -10px rgba(0,0,0,0.9), inset 0 1px 1px rgba(255,255,255,0.06)",
@@ -81,7 +80,7 @@
     }
   </style>
 </head>
-<body class="gw-signal gw-page--episode-pipeline">
+<body class="gw-signal gw-page--episode-pipeline gw-type-body-md">
   <a class="skip-link" href="#episodePipeline">跳至剧集制片内容</a>
   <main class="workspace-page episode-page">
     <header class="episode-header">

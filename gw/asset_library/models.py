@@ -31,6 +31,8 @@ class CategoryType(str, Enum):
 
     IMAGE = "image"
     WORKFLOW = "workflow"
+    VIDEO = "video"
+    DOCUMENT = "document"
 
 
 class AssetItem(BaseModel):

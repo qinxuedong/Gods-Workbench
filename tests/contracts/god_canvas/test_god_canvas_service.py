@@ -217,7 +217,7 @@ def test_api_god_canvas_routes_integration(client: TestClient):
     job_id = task_data["job_id"]
 
     # 5. 查询任务状态
-    resp_job = client.get(f"/api/jobs/{job_id}")
+    resp_job = client.get(f"/api/jobs/{job_id}", headers={"Authorization": "Bearer cleanroom-test"})
     assert resp_job.status_code == 200
     assert resp_job.json()["job_id"] == job_id
     assert resp_job.json()["state"] == "accepted"

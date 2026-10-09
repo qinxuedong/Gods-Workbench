@@ -50,7 +50,7 @@
     if (old?.classList.contains('gw-shell-right')) return;
     const right = document.createElement('div');
     right.className = 'gw-shell-right';
-    right.innerHTML = '<div class="gw-shell-fader"><span>FLUX</span><div class="hw-fader-track-horizontal gw-shell-fader-track"><div class="hw-fader-glow-bar" data-gw-gpu-util-fill style="width:0%"></div><div class="hw-fader-thumb-3d" data-gw-gpu-util-thumb style="left:0%"></div></div><span class="text-amber-300" data-gw-gpu-util title="真实数据源：GET /api/observability/health 的 gpu_telemetry（读取中）">读取中…</span></div><div class="gw-shell-fader"><span>VRAM</span><div class="hw-fader-track-horizontal gw-shell-fader-track"><div class="hw-fader-glow-bar" data-gw-gpu-vram-fill style="width:0%;background:linear-gradient(90deg,#38bdf8,#2dd4bf)"></div><div class="hw-fader-thumb-3d" data-gw-gpu-vram-thumb style="left:0%"></div></div><span class="text-amber-300" data-gw-gpu-vram title="真实数据源：GET /api/observability/health 的 gpu_telemetry（读取中）">读取中…</span></div><span class="h-4 w-px bg-white/10"></span><span class="text-[9px] font-mono text-slate-400">PRE</span><div class="hw-slide-toggle active" aria-label="PRE/POST"><div class="hw-slide-peg"></div></div><span class="text-[9px] font-mono text-[#dfc384]">POST</span><span class="h-4 w-px bg-white/10"></span><a id="topbarUnifiedTrashBtn" class="gw-shell-trash" href="projects.html?openTrash=1" onclick="if(window.WorkbenchProjects?.openGlobalTrashDrawer){event.preventDefault();window.WorkbenchProjects.openGlobalTrashDrawer();}" title="统一回收站" aria-label="打开统一回收站"><span class="hw-mini-knob"><span class="hw-mini-knob-arc" style="border-top-color:#ef4444;border-right-color:#f59e0b"></span><span class="hw-mini-knob-inner"><i data-lucide="trash-2" class="w-3.5 h-3.5"></i></span></span><span id="topbarTrashBadge" class="gw-shell-trash-badge" hidden>0</span></a><div class="h-4 w-px bg-white/10"></div><div class="hw-avatar-keycap" title="认证状态未接入：点击打开认证中心查看真实登录状态" role="button" tabindex="0" aria-label="打开认证中心" data-gw-identity="unverified"><div class="hw-avatar-keycap-inner"><i data-lucide="shield-check" class="w-4 h-4 text-[#eddab3]"></i></div><span class="hw-avatar-keycap-status"></span></div>';
+    right.innerHTML = '<div class="gw-shell-fader"><span>FLUX</span><div class="hw-fader-track-horizontal gw-shell-fader-track"><div class="hw-fader-glow-bar" data-gw-gpu-util-fill style="width:0%"></div><div class="hw-fader-thumb-3d" data-gw-gpu-util-thumb style="left:0%"></div></div><span class="text-amber-300" data-gw-gpu-util title="真实数据源：GET /api/observability/health 的 gpu_telemetry（读取中）">读取中…</span></div><div class="gw-shell-fader"><span>VRAM</span><div class="hw-fader-track-horizontal gw-shell-fader-track"><div class="hw-fader-glow-bar" data-gw-gpu-vram-fill style="width:0%;background:linear-gradient(90deg,#38bdf8,#2dd4bf)"></div><div class="hw-fader-thumb-3d" data-gw-gpu-vram-thumb style="left:0%"></div></div><span class="text-amber-300" data-gw-gpu-vram title="真实数据源：GET /api/observability/health 的 gpu_telemetry（读取中）">读取中…</span></div><span class="h-4 w-px bg-white/10"></span><span class="gw-type-body-md font-mono text-[#dfc384]">CF</span><button type="button" class="hw-slide-toggle" data-gw-comfy-toggle aria-pressed="false" aria-label="切换 CF 后台控制"><div class="hw-slide-peg"></div></button><span class="h-4 w-px bg-white/10"></span><a id="topbarUnifiedTrashBtn" class="gw-shell-trash" href="projects.html?openTrash=1" onclick="if(window.WorkbenchProjects?.openGlobalTrashDrawer){event.preventDefault();window.WorkbenchProjects.openGlobalTrashDrawer();}" title="统一回收站" aria-label="打开统一回收站"><span class="hw-mini-knob"><span class="hw-mini-knob-arc" style="border-top-color:#ef4444;border-right-color:#f59e0b"></span><span class="hw-mini-knob-inner"><i data-lucide="trash-2" class="w-3.5 h-3.5"></i></span></span><span id="topbarTrashBadge" class="gw-shell-trash-badge" hidden>0</span></a><div class="h-4 w-px bg-white/10"></div><div class="hw-avatar-keycap" title="认证状态未接入：点击打开认证中心查看真实登录状态" role="button" tabindex="0" aria-label="打开认证中心" data-gw-identity="unverified"><div class="hw-avatar-keycap-inner"><i data-lucide="shield-check" class="w-4 h-4 text-[#eddab3]"></i></div><span class="hw-avatar-keycap-status"></span></div>';
     old.replaceWith(right);
     // 顶栏推子是后注入的：用最近一次真实 GPU 读数立即回放，
     // 否则会一直停在「读取中」直到 15s 周期刷新（fake-degradation 空窗）。
@@ -98,9 +98,110 @@
       if (item.matches('button')) item.setAttribute('aria-pressed', String(active));
     });
   }
+
+  let comfyBusy = false;
+  let comfyPollTimer = null;
+  function notifyComfy(message, isError) {
+    if (window.showWorkbenchToast) { window.showWorkbenchToast(message, isError); return; }
+    if (window.showToast) { window.showToast(message, isError); return; }
+    let notice = document.getElementById('gwComfyNotice');
+    if (!notice) { notice = document.createElement('div'); notice.id = 'gwComfyNotice'; notice.setAttribute('role','alert'); notice.style.cssText='position:fixed;top:90px;right:20px;z-index:9999;background:#151515;color:#dfc384;padding:12px;border:1px solid #dfc384'; document.body.appendChild(notice); }
+    notice.textContent = message;
+    notice.hidden = false;
+    clearTimeout(notice._timer);
+    notice._timer = setTimeout(() => { notice.hidden = true; }, 5000);
+  }
+  function authReady() { return Boolean(window.GWAuthGate?.isAuthenticated()); }
+  function renderComfyState(data) {
+    const online = data.status === 'online' && data.highlight === true;
+    document.querySelectorAll('[data-gw-comfy-toggle]').forEach(toggle => {
+      toggle.classList.toggle('active', online);
+      toggle.setAttribute('aria-pressed', String(online));
+      // 权限由点击反馈和服务端检查处理；不要用 disabled 吞掉交互。
+      toggle.disabled = false;
+      toggle.setAttribute('aria-busy', String(comfyBusy));
+      toggle.dataset.gwComfyStatus = data.status || 'unknown';
+      toggle.title = data.status === 'unknown' ? 'CF 状态未知' : online ? 'CF 运行中，点击关闭' : 'CF 未运行，点击后台启动';
+      if (!authReady()) toggle.title = '请先登录后读取/控制 CF，点击头像打开认证中心';
+      else if (window.HardwareDeck?.authState?.principal?.role !== 'admin') toggle.title = 'CF 状态只读；启停仅限管理员';
+      const label = toggle.previousElementSibling;
+      if (label && label.textContent.trim() === 'CF') label.classList.add('text-[#dfc384]');
+    });
+  }
+  async function readComfyState() {
+    if (!authReady()) {
+      const error = new Error('请先登录后读取 CF 状态'); error.status = 401; throw error;
+    }
+    const authRevision = window.GWAuthGate?.revision;
+    const response = await fetch('/api/god_workflow/comfy-control', {credentials:'same-origin'});
+    const data = await response.json().catch(() => ({}));
+    if (response.status === 401) window.GWAuthGate?.invalidate(401, authRevision, '/api/god_workflow/comfy-control');
+    if (!response.ok) { const error = new Error(data.detail?.message || `CF 状态读取失败（HTTP ${response.status}）`); error.status = response.status; throw error; }
+    return data;
+  }
+  async function pollComfyState() {
+    if (comfyBusy || !authReady() || window.GWAuthGate?.paused?.has('/api/god_workflow/comfy-control')) {
+      if (!authReady()) renderComfyState({status:'unknown', highlight:false});
+      return;
+    }
+    comfyBusy = true;
+    try { renderComfyState(await readComfyState()); }
+    catch (error) {
+      renderComfyState({status:'unknown', highlight:false});
+      document.querySelectorAll('[data-gw-comfy-toggle]').forEach(t => { t.title = `CF 状态未知：${error.message || '读取失败'}；点击重试控制`; });
+    }
+    finally { comfyBusy = false; document.querySelectorAll('[data-gw-comfy-toggle]').forEach(t => { t.disabled = false; t.setAttribute('aria-busy', 'false'); }); }
+  }
+  async function comfyControl(toggle) {
+    if (!authReady()) {
+      if (!authReady()) { notifyComfy('请先登录后控制 CF', true); window.HardwareDeck?.openAccountModal?.(); }
+      return;
+    }
+    if (window.HardwareDeck?.authState?.principal?.role !== 'admin') { notifyComfy('CF 启停仅限管理员', true); return; }
+    if (comfyBusy) { notifyComfy('CF 正在读取状态或执行控制，请稍后重试', false); return; }
+    window.GWAuthGate?.paused?.delete('/api/god_workflow/comfy-control');
+    comfyBusy = true;
+    document.querySelectorAll('[data-gw-comfy-toggle]').forEach(t => { t.disabled = false; t.setAttribute('aria-busy', 'true'); });
+    try {
+      // 点击前重新读服务端，不能以按钮残留样式决定启动/停止。
+      const current = await readComfyState();
+      const action = current.highlight ? 'stop' : 'start';
+      let confirmation_token;
+      if (action === 'stop' && !current.managed) {
+        if (!current.can_stop || !current.confirmation_token) throw new Error('CF 进程身份未知，拒绝关闭');
+        if (!window.confirm('CF 由外部启动。确认关闭已识别的本机 CF 实例？这将中断该实例正在执行的任务。')) return;
+        confirmation_token = current.confirmation_token;
+      }
+      const authRevision = window.GWAuthGate?.revision;
+      const response = await fetch('/api/god_workflow/comfy-control', {method:'POST', credentials:'same-origin', headers:{'Content-Type':'application/json'}, body:JSON.stringify({action, confirmation_token})});
+      const data = await response.json().catch(() => ({}));
+      if (response.status === 401) window.GWAuthGate?.invalidate(401, authRevision, '/api/god_workflow/comfy-control');
+      if (data.status) renderComfyState(data);
+      if (!response.ok || !data.ok) throw new Error(data.detail?.message || data.code || 'CF 控制失败');
+      notifyComfy(action === 'stop' ? 'CF 已确认关闭' : 'CF 已确认运行', false);
+    } catch (error) {
+      notifyComfy(error.message || 'CF 控制失败', true);
+    } finally {
+      comfyBusy = false;
+      await pollComfyState();
+    }
+  }
+  function bindComfyControl() {
+    document.querySelectorAll('[data-gw-comfy-toggle]').forEach(toggle => {
+      if (toggle.dataset.gwBound) return; toggle.dataset.gwBound = '1';
+      toggle.addEventListener('click', () => comfyControl(toggle));
+    });
+    if (!comfyPollTimer) comfyPollTimer = setInterval(pollComfyState, 5000);
+    pollComfyState();
+    if (!window.__gwComfyAuthBound) {
+      window.__gwComfyAuthBound = true;
+      window.addEventListener('gw-auth-state', () => { bindComfyControl(); pollComfyState(); });
+    }
+  }
   function init() {
     seedInitialRouteScripts();
     standardRightDeck();
+    bindComfyControl();
     injectTrash();
     syncNavPills(location.href);
   }
@@ -252,6 +353,7 @@
         if (push) history.pushState({}, '', url.href);
         if (doc.title) document.title = doc.title;
         standardRightDeck();
+        bindComfyControl();
         await runRouteScripts(doc);
        refreshRouteController(url.href);
         syncNavPills(url.href);
@@ -279,6 +381,7 @@
       if (doc.title) document.title = doc.title;
       syncNavPills(url.href);
       standardRightDeck();
+      bindComfyControl();
       await runRouteScripts(doc);
        refreshRouteController(url.href);
       window.dispatchEvent(new CustomEvent('gw:route-loaded', { detail: { href: url.href } }));

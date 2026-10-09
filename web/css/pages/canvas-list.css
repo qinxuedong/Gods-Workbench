@@ -180,8 +180,8 @@ html[data-studio-scale="off"].studio-scale-managed .workspace {
     color: var(--muted);
     border: none;
     cursor: pointer;
-
-
+    
+    
     transition: all .15s var(--ease);
     user-select: none;
  font-size: var(--gw-type-body-md); line-height: var(--gw-leading-body-md); font-weight: var(--gw-weight-medium); letter-spacing: 0; text-transform: none; min-height:36px;}

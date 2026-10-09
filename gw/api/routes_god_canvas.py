@@ -302,4 +302,16 @@ async def get_smart_job_status(
                 request_id=unavailable_request_id,
             )
         return agent_run_job_payload(job_id, run)
-    return default_god_canvas_service.get_job(job_id)
+    if not job_id.startswith("job-"):
+        from gw.god_workflow import registry
+        auth = require_authenticated(authorization, x_user_role)
+        task = registry.load_task(auth, job_id)
+        return {**task, "state": task["status"], "source_domain": "workflow",
+                "poll_hint": None if task["status"] in {"completed", "failed", "cancelled", "outcome_unknown"} else f"/api/god_workflow/tasks/{job_id}"}
+    try:
+        auth = require_authenticated(authorization, x_user_role)
+    except CleanroomException as exc:
+        default_god_canvas_service._audit_job_access("query", exc.status_code)
+        raise
+    result = default_god_canvas_service.get_owned_job(job_id, auth)
+    return result.model_copy(update={"prototype": True, "durability": "process_memory", "execution_enabled": False})

@@ -120,7 +120,7 @@ window.WorkbenchAssets = (() => {
       const label = document.createElement('span');
       label.textContent = row.name;
       const count = document.createElement('span');
-      count.className = 'text-[8.5px] font-mono px-1 rounded bg-black/60 text-[#dfc384]';
+      count.className = 'gw-type-body-sm font-mono px-1 rounded bg-black/60 text-[#dfc384]';
       count.textContent = row.count;
       button.append(label, count);
       button.addEventListener('click', () => selectCategory(row.id));

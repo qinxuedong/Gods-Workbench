@@ -59,31 +59,28 @@ def test_production_smoke_frontend_static_routing():
     assert resp_css.status_code == 200
 
 
-def test_production_smoke_end_to_end_business_chain():
-    """验证核心业务主链路：项目列表 -> 画布拓扑 -> 智能任务受理。"""
-    # 1. 查询项目列表
-    resp_proj = client.get("/api/asset-registry/projects")
-    assert resp_proj.status_code == 200
-    projects_res = resp_proj.json()
-    assert "projects" in projects_res
-    assert len(projects_res["projects"]) >= 1
-    pid = next(project["project_id"] for project in projects_res["projects"] if project["project_id"] == "prj-0001")
+def test_production_smoke_end_to_end_business_chain(monkeypatch):
+    """隔离冒烟：真实归属项目 -> 画布拓扑 -> 原型任务受理与认证回读。"""
+    from gw.api import routes_god_canvas
+    from gw.core.auth import require_authenticated
+    from gw.god_canvas.service import GodCanvasService
+    from gw.god_canvas.models import CanvasCreateRequest, CanvasTopologyUpdateRequest, CanvasNode
+    from gw.projects_hub import service as projects
+    from gw.projects_hub.models import ProjectCreateRequest
 
-    # 2. 根据项目查询画布列表
-    resp_canvases = client.get(f"/api/canvases?project_id={pid}")
-    assert resp_canvases.status_code == 200
-    canvases = resp_canvases.json()
-    assert len(canvases["canvases"]) >= 1
-    cid = canvases["canvases"][0]["canvas_id"]
+    headers = {"Authorization": "Bearer cleanroom-test", "X-User-Role": "editor"}
+    context = require_authenticated(headers["Authorization"], "editor")
+    source = projects.ProjectsService(seed_golden_fixture=False)
+    project = source.create_project(ProjectCreateRequest(name="隔离烟测项目", project_type="other"), owner_key=projects.owner_key_for_context(context))
+    canvas = GodCanvasService(seed_golden_fixture=False)
+    item = canvas.create_canvas(CanvasCreateRequest(project_id=project.project_id, title="烟测画布"))
+    canvas.update_topology(item.canvas_id, CanvasTopologyUpdateRequest(expected_version=1, nodes=[CanvasNode(entity_id="smoke-node", kind="input")], connections=[]))
+    monkeypatch.setattr(projects, "default_projects_service", source)
+    monkeypatch.setattr(routes_god_canvas, "default_god_canvas_service", canvas)
+    cid = item.canvas_id
+    top = client.get(f"/api/canvases/{cid}").json()
 
-    # 3. 查询画布完整拓扑
-    resp_top = client.get(f"/api/canvases/{cid}")
-    assert resp_top.status_code == 200
-    top = resp_top.json()
-    assert "nodes" in top
-    assert "connections" in top
-
-    # 4. 提交智能任务并验证 202 Accepted
+    # 无归属黄金种子不作为可提交项目；ACL不得为烟测放宽。
     task_payload = {
         "expected_version": top["version"],
         "entry_nodes": [top["nodes"][0]["entity_id"]],
@@ -101,6 +98,6 @@ def test_production_smoke_end_to_end_business_chain():
     job_id = task_data["job_id"]
 
     # 5. 轮询任务状态
-    resp_job = client.get(f"/api/jobs/{job_id}")
+    resp_job = client.get(f"/api/jobs/{job_id}", headers=headers)
     assert resp_job.status_code == 200
     assert resp_job.json()["job_id"] == job_id

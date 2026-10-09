@@ -9,15 +9,16 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 from typing import Any
+import math
 
 # Geometry constants (canvas units).  Kept module-level so callers can document
 # the produced spacing without re-deriving it.
-LAYER_GAP_X = 300.0
-NODE_GAP_Y = 190.0
+LAYER_GAP_X = 380.0
+NODE_GAP_Y = 280.0
 ORIGIN_X = 60.0
 ORIGIN_Y = 60.0
-NOTE_GAP_Y = 150.0
-NOTE_COLUMNS = 2
+NOTE_GAP_Y = 320.0
+NOTE_COLUMNS = 3
 
 
 def _node_ids(nodes: Sequence[Mapping[str, Any]]) -> list[str]:
@@ -145,6 +146,29 @@ def compute_layout(
     if not order:
         return position
 
+    sizes = {}
+    for index, node in enumerate(nodes):
+        node_id = str(node.get("id", node.get("node_id", index)))
+        geometry = node.get("position") if isinstance(node.get("position"), Mapping) else {}
+        raw_size = (node.get("raw_payload") or {}).get("size", [200, 180])
+        if not isinstance(raw_size, (list, tuple)) or len(raw_size) < 2:
+            raw_size = [200, 180]
+        widgets = node.get("widgets") or []
+        estimated_height = max(180, 100 + len(widgets) * 30)
+        for widget in widgets if isinstance(widgets, list) else []:
+            value = widget.get("value") if isinstance(widget, Mapping) else widget
+            if isinstance(value, str) and node.get("kind") in {"Note", "MarkdownNote"}:
+                estimated_height = max(estimated_height, 100 + sum(max(1, math.ceil(len(line) / 20)) for line in value.splitlines()) * 22)
+        def dimension(value, fallback):
+            if type(value) not in (int, float) or not math.isfinite(value) or not 0 < value <= 100000:
+                return fallback
+            return float(value)
+        width = dimension(geometry.get("width", raw_size[0]), 200)
+        height = dimension(geometry.get("height", raw_size[1]), estimated_height)
+        if "height" not in geometry:
+            height = max(height, estimated_height)
+        sizes[node_id] = (width, height)
+
     connected: set[str] = set()
     edges = _edges(nodes, connections)
     for source, target in edges:
@@ -162,19 +186,29 @@ def compute_layout(
         for node in layered_nodes:
             layers.setdefault(layer_of[node], []).append(node)
         layers = _barycenter_sweep(layers, edges_subset)
+        x = ORIGIN_X
         for layer_index in sorted(layers):
             column = layers[layer_index]
-            for row, node in enumerate(column):
-                position[node] = (ORIGIN_X + layer_index * LAYER_GAP_X, ORIGIN_Y + row * NODE_GAP_Y)
+            y = ORIGIN_Y
+            for node in column:
+                position[node] = (x, y)
+                y += max(NODE_GAP_Y, sizes[node][1] + 60)
+            x += max(LAYER_GAP_X, max(sizes[node][0] for node in column) + 80)
 
     if isolated:
         base_x = ORIGIN_X
         if layered_nodes:
-            base_x = ORIGIN_X + (max(layers) + 1) * LAYER_GAP_X
-        for index, node in enumerate(isolated):
-            column = index % NOTE_COLUMNS
-            row = index // NOTE_COLUMNS
-            position[node] = (base_x + column * LAYER_GAP_X, ORIGIN_Y + row * NOTE_GAP_Y)
+            base_x = max(position[node][0] + sizes[node][0] + 80 for node in layered_nodes)
+        widths = [max([sizes[node][0] for index, node in enumerate(isolated) if index % NOTE_COLUMNS == column] or [200])
+                  for column in range(NOTE_COLUMNS)]
+        y = ORIGIN_Y
+        for start in range(0, len(isolated), NOTE_COLUMNS):
+            x = base_x
+            row = isolated[start:start + NOTE_COLUMNS]
+            for column, node in enumerate(row):
+                position[node] = (x, y)
+                x += max(LAYER_GAP_X, widths[column] + 80)
+            y += max(NOTE_GAP_Y, max(sizes[node][1] for node in row) + 60)
     return position
 
 

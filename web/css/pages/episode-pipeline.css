@@ -981,10 +981,10 @@ canvas.episode-liquid-canvas {
   background: linear-gradient(180deg, #e5ca8f 0%, #bfa15d 100%) !important;
   color: #12141a !important;
   font-family: var(--gw-font-mono) !important;
-
-
-
-
+  
+  
+  
+  
   border: 1px solid rgba(255, 255, 255, 0.3) !important;
   box-shadow: 0 4px 14px rgba(223, 195, 132, 0.3), inset 0 1px 1px rgba(255, 255, 255, 0.5) !important;
   cursor: pointer !important;
@@ -1010,8 +1010,8 @@ canvas.episode-liquid-canvas {
   background: linear-gradient(180deg, #181b24 0%, #0d0f14 100%) !important;
   color: #eddab3 !important;
   font-family: var(--gw-font-mono) !important;
-
-
+  
+  
   border: 1px solid rgba(223, 195, 132, 0.2) !important;
   box-shadow: 0 4px 10px rgba(0, 0, 0, 0.6), inset 0 1px 0 rgba(255, 255, 255, 0.1) !important;
   cursor: pointer !important;
@@ -1039,9 +1039,9 @@ canvas.episode-liquid-canvas {
   background: linear-gradient(135deg, #dfc384 0%, #f4e1b9 50%, #c9ad6e 100%) !important;
   color: #121417 !important;
   font-family: var(--gw-font-body) !important;
-
-
-
+  
+  
+  
   border: 1px solid rgba(255, 255, 255, 0.4) !important;
   box-shadow: 0 6px 18px rgba(223, 195, 132, 0.35), inset 0 1px 2px rgba(255, 255, 255, 0.6) !important;
   cursor: pointer !important;
@@ -1177,10 +1177,10 @@ canvas.episode-liquid-canvas {
   background: linear-gradient(180deg, #e5ca8f 0%, #bfa15d 100%) !important;
   color: #12141a !important;
   font-family: var(--gw-font-mono) !important;
-
-
-
-
+  
+  
+  
+  
   border: 1px solid rgba(255, 255, 255, 0.3) !important;
   box-shadow: 0 4px 14px rgba(223, 195, 132, 0.3), inset 0 1px 1px rgba(255, 255, 255, 0.5) !important;
   cursor: pointer !important;
@@ -1206,8 +1206,8 @@ canvas.episode-liquid-canvas {
   background: linear-gradient(180deg, #181b24 0%, #0d0f14 100%) !important;
   color: #eddab3 !important;
   font-family: var(--gw-font-mono) !important;
-
-
+  
+  
   border: 1px solid rgba(223, 195, 132, 0.2) !important;
   box-shadow: 0 4px 10px rgba(0, 0, 0, 0.6), inset 0 1px 0 rgba(255, 255, 255, 0.1) !important;
   cursor: pointer !important;
@@ -1235,9 +1235,9 @@ canvas.episode-liquid-canvas {
   background: linear-gradient(135deg, #dfc384 0%, #f4e1b9 50%, #c9ad6e 100%) !important;
   color: #121417 !important;
   font-family: var(--gw-font-body) !important;
-
-
-
+  
+  
+  
   border: 1px solid rgba(255, 255, 255, 0.4) !important;
   box-shadow: 0 6px 18px rgba(223, 195, 132, 0.35), inset 0 1px 2px rgba(255, 255, 255, 0.6) !important;
   cursor: pointer !important;
@@ -1333,10 +1333,10 @@ canvas.episode-liquid-canvas {
   align-items: center !important;
   justify-content: space-between !important;
   font-family: var(--gw-font-mono) !important;
-
+  
   color: #9ca3af !important;
-
-
+  
+  
   margin-bottom: 6px !important;
   width: 100% !important;
   box-sizing: border-box !important;
@@ -1363,13 +1363,13 @@ canvas.episode-liquid-canvas {
 
 .knob-label-title {
   font-family: var(--gw-font-mono) !important;
-
-
+  
+  
   color: #9ca3af !important;
-
-
+  
+  
   white-space: nowrap !important;
-
+  
  font-size: var(--gw-type-body-md) !important; line-height: var(--gw-leading-body-md) !important; font-weight: var(--gw-weight-medium) !important; letter-spacing: 0 !important; text-transform: none !important;}
 
 .knob-val-badge {
@@ -1569,10 +1569,10 @@ canvas.episode-liquid-canvas {
   background: linear-gradient(180deg, #e5ca8f 0%, #bfa15d 100%) !important;
   color: #12141a !important;
   font-family: var(--gw-font-mono) !important;
-
-
-
-
+  
+  
+  
+  
   border: none !important;
   box-shadow: 0 4px 12px rgba(223, 195, 132, 0.25), inset 0 1px 1px rgba(255, 255, 255, 0.4) !important;
   cursor: pointer !important;
@@ -1594,9 +1594,9 @@ canvas.episode-liquid-canvas {
   background: #181b24 !important;
   color: #e2e8f0 !important;
   font-family: var(--gw-font-mono) !important;
-
-
-
+  
+  
+  
   border: 1px solid rgba(255, 255, 255, 0.06) !important;
   box-shadow: 0 4px 10px rgba(0, 0, 0, 0.6) !important;
   cursor: pointer !important;
@@ -1617,10 +1617,10 @@ canvas.episode-liquid-canvas {
   background: linear-gradient(90deg, #dfc384 0%, #f4e1b9 100%) !important;
   color: #121417 !important;
   font-family: var(--gw-font-body) !important;
-
-
-
-
+  
+  
+  
+  
   border: none !important;
   box-shadow: 0 6px 18px rgba(223, 195, 132, 0.35), inset 0 1px 2px rgba(255, 255, 255, 0.6) !important;
   cursor: pointer !important;

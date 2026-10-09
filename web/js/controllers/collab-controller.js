@@ -69,7 +69,7 @@ window.WorkbenchCollab = (() => {
   function renderApprovals() {
     const page = state.approvals;
     el('collabApprovalCount').textContent = page.status === 'ready' ? '最近 ' + page.items.length + ' 条 · ' + page.items.filter(a => a.status === 'pending').length + ' 待处理' : statusText(page.status);
-    el('collabApprovalList').innerHTML = page.items.length ? page.items.map(a => '<article class="collab-approval-item"><div class="flex justify-between gap-2"><strong>' + esc(a.action || '操作申请') + '</strong><span class="text-xs">' + esc(({pending:'待审批', approved:'已通过', rejected:'已拒绝'})[a.status] || a.status) + '</span></div><p>' + esc(a.requester_name || a.requester_username || a.requested_by || '未知账户') + ' · ' + esc(dateText(a.operation_created_at || a.created_at)) + '</p></article>').join('') : empty(page, '暂无审批记录。');
+    el('collabApprovalList').innerHTML = page.items.length ? page.items.map(a => '<article class="collab-approval-item"><div class="flex justify-between gap-2"><strong>' + esc(a.action || '操作申请') + '</strong><span class="gw-type-body-sm">' + esc(({pending:'待审批', approved:'已通过', rejected:'已拒绝'})[a.status] || a.status) + '</span></div><p>' + esc(a.requester_name || a.requester_username || a.requested_by || '未知账户') + ' · ' + esc(dateText(a.operation_created_at || a.created_at)) + '</p></article>').join('') : empty(page, '暂无审批记录。');
   }
 
   function renderTaskFeed() {

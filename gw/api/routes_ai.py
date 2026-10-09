@@ -802,7 +802,11 @@ def jimeng_status(
     """兼容状态路径与登录状态共用单一控制器与主体隔离。"""
     context = require_governance_access(authorization, x_user_role)
     _set_private_cli_headers(response)
-    return cli_runtime.jimeng_login_status(context, "/api/jimeng/status")
+    path_observation = cli_status("jimeng")
+    account_observation = cli_runtime.jimeng_login_status(context, "/api/jimeng/status")
+    result = {**path_observation, **account_observation}
+    result["data_gaps"] = list(dict.fromkeys(path_observation["data_gaps"] + account_observation.get("data_gaps", [])))
+    return result
 
 
 def _set_private_cli_headers(response: Response) -> None:

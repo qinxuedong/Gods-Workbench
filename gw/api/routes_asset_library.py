@@ -26,7 +26,7 @@ workflows/upload）仍属 KNOWN_UNIMPLEMENTED，未获契约授权，本模块**
 
 from typing import Optional
 
-from fastapi import APIRouter, Header, status
+from fastapi import APIRouter, Depends, Header, status
 
 from gw.asset_library.models import (
     AssetLibraryCreateRequest,
@@ -38,7 +38,9 @@ from gw.asset_library.models import (
 from gw.asset_library.service import default_asset_library_service
 from gw.core.auth import require_authenticated, require_edit_access
 
-router = APIRouter(prefix="/api/asset-library", tags=["asset-library"])
+from gw.core.asset_visibility import asset_request_scope
+
+router = APIRouter(prefix="/api/asset-library", tags=["asset-library"], dependencies=[Depends(asset_request_scope)])
 
 
 @router.get(

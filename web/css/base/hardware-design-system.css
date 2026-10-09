@@ -1,5 +1,4 @@
-/* Gods Workbench - 曜石香槟金拟物科技设计系统 (Hardware Design System) */
-
+/* 黑金硬件设计系统：共享变量与API内嵌页使用同一来源。 */
 @import url("./hardware-tokens.css");
 
     * {
@@ -27,8 +26,17 @@
       padding: 0;
     }
 
-    .font-mono {
-      font-family: "Source Han Sans CN", monospace;
+    .font-mono, [data-mono="true"], code, pre, time, .font-telemetry {
+      font-family: var(--gw-font-mono);
+      font-variant-numeric: tabular-nums;
+    }
+
+    .font-display {
+      font-family: var(--gw-font-display);
+    }
+
+    .font-body {
+      font-family: var(--gw-font-body);
     }
 
     /* 参考图2：细致斜向碳纤维/金属网孔微纹理 (Diagonal Micro Twill) */
@@ -49,10 +57,11 @@
 .topbar-master-deck .recessed-deck-slot { min-height:44px !important; height:44px !important; }
 .topbar-master-deck #navPillsGroup { gap:8px !important; align-items:center !important; }
 .topbar-master-deck .nav-pill-btn {
-  box-sizing:border-box !important; height:32px !important; min-height:32px !important;
+  box-sizing:border-box !important; height:34px !important; min-height:34px !important;
   padding:0 14px !important; display:inline-flex !important; align-items:center !important;
   justify-content:center !important; line-height:1 !important; white-space:nowrap !important;
-  font-size:var(--gw-type-body-md) !important; font-weight:500 !important; flex:0 0 auto !important;
+  font-size:var(--gw-type-body) !important; font-weight:500 !important; flex:0 0 auto !important;
+  gap:6px !important;
 }
 
 /* GW-TYPE-01：默认字号继承与显式角色在hardware-tokens中，禁止星号覆盖。 */
@@ -72,24 +81,47 @@
 .gw-workbench :where(table tbody tr:nth-child(even), [role="row"]:nth-child(even), .list-row:nth-child(even), .table-row:nth-child(even)) {
   background-color: var(--gw-zebra-2);
 }
-.topbar-master-deck #navPillsGroup .nav-pill-btn:nth-child(1) { width:116px !important; }
-.topbar-master-deck #navPillsGroup .nav-pill-btn:nth-child(2) { width:88px !important; }
-.topbar-master-deck #navPillsGroup .nav-pill-btn:nth-child(3) { width:88px !important; }
-.topbar-master-deck #navPillsGroup .nav-pill-btn:nth-child(4) { width:88px !important; }
-.topbar-master-deck #navPillsGroup .nav-pill-btn:nth-child(5) { width:76px !important; }
-.topbar-master-deck #navPillsGroup .nav-pill-btn:nth-child(6) { width:112px !important; }
-.topbar-master-deck #storyboardNavCanvas { width:112px !important; }
-.topbar-master-deck #navPillsGroup .nav-pill-btn:nth-child(7) { width:76px !important; }
-.topbar-master-deck #navPillsGroup .nav-pill-btn:nth-child(8) { width:76px !important; }
-.topbar-master-deck #navPillsGroup .nav-pill-btn:nth-child(9) { width:64px !important; }
+.topbar-master-deck #navPillsGroup .nav-pill-btn {
+  width: auto !important;
+  min-width: 64px !important;
+  padding: 0 12px !important;
+}
+.topbar-master-deck #storyboardNavCanvas { width: auto !important; min-width: 100px !important; }
 .topbar-master-deck .nav-pill-btn svg,
-.topbar-master-deck .nav-pill-btn [data-lucide] { width:14px !important; height:14px !important; flex:0 0 14px !important; }
-.topbar-master-deck .hw-slide-toggle { width:42px !important; height:20px !important; flex:0 0 42px !important; }
-.topbar-master-deck .hw-fader-track-horizontal { height:6px !important; flex:0 0 auto !important; }
-.topbar-master-deck .hw-mini-knob-box { width:36px !important; height:42px !important; flex:0 0 36px !important; }
+.topbar-master-deck .nav-pill-btn [data-lucide] { width: 16px !important; height: 16px !important; flex: 0 0 16px !important; }
+.topbar-master-deck .hw-slide-toggle { width: 42px !important; height: 20px !important; flex: 0 0 42px !important; }
+.topbar-master-deck .hw-fader-track-horizontal { height: 6px !important; flex: 0 0 auto !important; }
+.topbar-master-deck .hw-mini-knob-box { width: 36px !important; height: 42px !important; flex: 0 0 36px !important; }
 .topbar-master-deck .master-deck-upper { min-width: 0; }
-.topbar-master-deck .master-deck-upper-right { gap: 7px !important; }
+.topbar-master-deck .master-deck-upper-right { gap: 8px !important; }
 .topbar-master-deck #masterDeckDate { display: inline-flex !important; visibility: visible !important; position: relative; z-index: 60; }
+
+/* 顶栏控件字号与清晰度对齐图1 (禁止不可读微型字) */
+.topbar-master-deck #masterDeckClock,
+.topbar-master-deck #masterDeckDate {
+  font-family: var(--gw-font-mono) !important;
+  font-size:var(--gw-type-body-md) !important;
+  font-weight: 700 !important;
+  letter-spacing: 0.04em !important;
+}
+.topbar-master-deck #gwOnlineStatus {
+  font-size:var(--gw-type-body-sm) !important;
+  font-weight: 700 !important;
+  letter-spacing: 0.04em !important;
+}
+.topbar-master-deck [data-gw-header-prefix] {
+  font-size:var(--gw-type-body-sm) !important;
+  font-weight: 700 !important;
+}
+.topbar-master-deck :is(#gpuUtilReadout, #gpuVramReadout, #cpuValText, #ramValText) {
+  font-family: var(--gw-font-mono) !important;
+  font-size:var(--gw-type-body-sm) !important;
+  font-weight: 700 !important;
+}
+.topbar-master-deck .recessed-deck-slot span:not(.nav-pill-btn *) {
+  font-size:var(--gw-type-body-sm) !important;
+  font-weight: 700 !important;
+}
 @media (max-width: 1450px) {
   .topbar-master-deck .master-deck-upper-right { margin-left: auto; }
 }
@@ -101,44 +133,44 @@
 .gw-project-calendar-dialog::backdrop { background: rgba(1,3,7,.78); backdrop-filter: blur(5px); }
 .gw-project-calendar-shell { max-height: inherit; display:flex; flex-direction:column; padding: 24px; background: linear-gradient(170deg,#151923 0%,#090b10 100%); border-radius: inherit; }
 .gw-project-calendar-head { display:flex; align-items:flex-start; justify-content:space-between; gap:20px; padding-bottom:18px; border-bottom:1px solid rgba(255,255,255,.10); }
-.gw-project-calendar-kicker { color:#dfc384; font:700 11px/1.2 "Source Han Sans CN",monospace; letter-spacing:.14em; text-transform:uppercase; }
-.gw-project-calendar-head h2 { margin:7px 0 4px; color:#f8fafc; font:700 28px/1.1 "Source Han Sans CN",sans-serif; }
-.gw-project-calendar-head p { margin:0; color:#94a3b8; font:500 12px/1.4 "Source Han Sans CN",monospace; }
-.gw-project-calendar-close { width:36px; height:36px; display:grid; place-items:center; border:1px solid rgba(223,195,132,.35); border-radius:9px; background:#080a0e; color:#dfc384; cursor:pointer; font-size:24px; line-height:1; }
+.gw-project-calendar-kicker { color:#dfc384; font:700 var(--gw-type-body-sm)/1.2 var(--gw-font-mono); letter-spacing:0; text-transform:none; }
+.gw-project-calendar-head h2 { margin:7px 0 4px; color:#f8fafc; font:700 var(--gw-type-headline-lg)/1.1 var(--gw-font-body); }
+.gw-project-calendar-head p { margin:0; color:#94a3b8; font:500 var(--gw-type-body-sm)/1.4 var(--gw-font-mono); }
+.gw-project-calendar-close { width:36px; height:36px; display:grid; place-items:center; border:1px solid rgba(223,195,132,.35); border-radius:9px; background:#080a0e; color:#dfc384; cursor:pointer; font-size:var(--gw-icon-size-title); line-height:1; }
 .gw-project-calendar-close:hover, .gw-project-calendar-close:focus-visible { border-color:#dfc384; outline:2px solid rgba(223,195,132,.25); outline-offset:2px; }
 .gw-project-calendar-body { margin-top:18px; min-height:250px; max-height:calc(100vh - 190px); overflow:auto; }
-.gw-calendar-loading, .gw-calendar-empty { min-height:220px; display:grid; place-items:center; align-content:center; gap:10px; color:#94a3b8; font:500 13px/1.4 "Source Han Sans CN",monospace; text-align:center; }
-.gw-calendar-empty strong { color:#eddab3; font-size:16px; }
+.gw-calendar-loading, .gw-calendar-empty { min-height:220px; display:grid; place-items:center; align-content:center; gap:10px; color:#94a3b8; font:400 var(--gw-type-body-sm)/var(--gw-leading-body-sm) var(--gw-font-mono); text-align:center; }
+.gw-calendar-empty strong { color:#eddab3; font-size:var(--gw-type-body-lg); }
 .gw-calendar-empty button { padding:7px 13px; border:1px solid rgba(223,195,132,.45); border-radius:7px; background:#10141c; color:#eddab3; cursor:pointer; }
-.gw-calendar-axis { display:grid; grid-template-columns:190px minmax(620px,1fr); gap:14px; align-items:end; padding:0 0 9px; color:#dfc384; font:700 10px/1.2 "Source Han Sans CN",monospace; letter-spacing:.08em; }
+.gw-calendar-axis { display:grid; grid-template-columns:190px minmax(620px,1fr); gap:14px; align-items:end; padding:0 0 9px; color:#dfc384; font:700 var(--gw-type-body-sm)/1.2 var(--gw-font-mono); letter-spacing:0; }
 .gw-calendar-axis > div { display:grid; grid-template-columns:repeat(8,1fr); color:#64748b; font-weight:500; letter-spacing:0; }
 .gw-calendar-axis > div span { text-align:center; }
 .gw-calendar-grid { position:relative; display:grid; gap:8px; padding:11px 0 8px; border-top:1px solid rgba(223,195,132,.18); background:repeating-linear-gradient(90deg, rgba(255,255,255,.045) 0, rgba(255,255,255,.045) 1px, transparent 1px, transparent 12.5%); }
 .gw-calendar-row { display:grid; grid-template-columns:190px minmax(620px,1fr); gap:14px; min-height:48px; align-items:center; }
-.gw-calendar-row > strong { overflow:hidden; padding-left:8px; color:#cbd5e1; font:600 12px/1.25 "Source Han Sans CN",sans-serif; text-overflow:ellipsis; white-space:nowrap; }
+.gw-calendar-row > strong { overflow:hidden; padding-left:8px; color:#cbd5e1; font:600 var(--gw-type-body-sm)/1.25 var(--gw-font-body); text-overflow:ellipsis; white-space:nowrap; }
 .gw-calendar-track { position:relative; height:34px; }
 .gw-calendar-bar { position:absolute; top:1px; min-width:42px; height:32px; display:flex; align-items:center; justify-content:space-between; gap:8px; padding:0 10px; overflow:hidden; border-radius:10px; cursor:pointer; text-align:left; white-space:nowrap; }
-.gw-calendar-bar span { overflow:hidden; text-overflow:ellipsis; font:700 11px/1 "Source Han Sans CN",sans-serif; }
-.gw-calendar-bar b { flex:0 0 auto; font:700 9px/1 "Source Han Sans CN",monospace; opacity:.9; }
+.gw-calendar-bar span { overflow:hidden; text-overflow:ellipsis; font:700 var(--gw-type-body-sm)/1 var(--gw-font-body); }
+.gw-calendar-bar b { flex:0 0 auto; font:700 var(--gw-type-body-sm)/1 var(--gw-font-mono); opacity:.9; }
 .gw-calendar-bar-ivory { background:linear-gradient(180deg,#fff 0%,#e1e5eb 100%); border:1px solid #fff; color:#101318; box-shadow:0 4px 12px rgba(0,0,0,.6), inset 0 1px 1px #fff; }
 .gw-calendar-bar-obsidian { background:linear-gradient(180deg,#2a3040 0%,#10131a 100%); border:1px solid rgba(223,195,132,.55); border-top-color:#fae2c8; color:#f8fafc; box-shadow:0 4px 12px rgba(0,0,0,.75), inset 0 1px 0 rgba(255,255,255,.18); }
 .gw-calendar-bar-emerald { background:linear-gradient(90deg,#0b3b30,#1b956f,#35d59f); border:1px solid #34d399; color:#fff; box-shadow:0 4px 14px rgba(16,185,129,.3), inset 0 1px 1px rgba(255,255,255,.45); }
 .gw-calendar-bar-gold { background:radial-gradient(ellipse at 50% 50%,#fff7e8 0%,#f5cf92 58%,#b8823f 100%); border:1px solid #fff; color:#1a1308; box-shadow:0 5px 16px rgba(223,195,132,.4), inset 0 1px 1px #fff; }
 .gw-calendar-bar:hover, .gw-calendar-bar:focus-visible { transform:translateY(-1px); filter:brightness(1.08); outline:2px solid rgba(223,195,132,.55); outline-offset:2px; }
 .gw-calendar-now { position:absolute; top:0; bottom:0; width:1px; z-index:3; background:#f0b45d; box-shadow:0 0 8px rgba(240,180,93,.8); pointer-events:none; }
-.gw-calendar-now b { position:absolute; top:-14px; left:4px; color:#f0b45d; font:700 8px/1 "Source Han Sans CN",monospace; }
+.gw-calendar-now b { position:absolute; top:-14px; left:4px; color:#f0b45d; font:700 var(--gw-type-body-sm)/1 var(--gw-font-mono); }
 .gw-calendar-unscheduled { margin-top:18px; padding-top:14px; border-top:1px solid rgba(255,255,255,.10); }
-.gw-calendar-unscheduled h3 { margin:0 0 9px; color:#dfc384; font:700 11px/1.2 "Source Han Sans CN",monospace; letter-spacing:.08em; text-transform:uppercase; }
+.gw-calendar-unscheduled h3 { margin:0 0 9px; color:#dfc384; font:700 var(--gw-type-body-sm)/1.2 var(--gw-font-mono); letter-spacing:0; text-transform:none; }
 .gw-calendar-unscheduled > div { display:flex; flex-wrap:wrap; gap:8px; }
 .gw-calendar-unscheduled button { min-width:220px; max-width:100%; display:flex; flex-direction:column; align-items:flex-start; gap:4px; padding:9px 11px; border:1px solid rgba(255,255,255,.12); border-radius:8px; background:#0c1017; color:#cbd5e1; cursor:pointer; text-align:left; }
 .gw-calendar-unscheduled button:hover, .gw-calendar-unscheduled button:focus-visible { border-color:rgba(223,195,132,.65); color:#eddab3; outline:2px solid rgba(223,195,132,.2); outline-offset:1px; }
-.gw-calendar-unscheduled button span { overflow:hidden; width:100%; font:600 12px/1.25 "Source Han Sans CN",sans-serif; text-overflow:ellipsis; white-space:nowrap; }
-.gw-calendar-unscheduled button small { color:#64748b; font:500 9px/1 "Source Han Sans CN",monospace; }
-.gw-project-calendar-foot { display:flex; justify-content:space-between; gap:14px; padding-top:15px; color:#64748b; font:500 10px/1.2 "Source Han Sans CN",monospace; }
+.gw-calendar-unscheduled button span { overflow:hidden; width:100%; font:600 var(--gw-type-body-sm)/1.25 var(--gw-font-body); text-overflow:ellipsis; white-space:nowrap; }
+.gw-calendar-unscheduled button small { color:#64748b; font:500 var(--gw-type-body-sm)/1 var(--gw-font-mono); }
+.gw-project-calendar-foot { display:flex; justify-content:space-between; gap:14px; padding-top:15px; color:#64748b; font:500 var(--gw-type-body-sm)/1.2 var(--gw-font-mono); }
 @media (max-width: 760px) {
   .gw-project-calendar-dialog { width:calc(100vw - 18px); }
   .gw-project-calendar-shell { padding:16px; }
-  .gw-project-calendar-head h2 { font-size:22px; }
+  .gw-project-calendar-head h2 { font-size:var(--gw-type-headline-sm);  font-weight:var(--gw-weight-medium); line-height:var(--gw-leading-headline-sm);}
   .gw-calendar-axis, .gw-calendar-row { grid-template-columns:130px minmax(560px,1fr); gap:9px; }
 }
 .gw-shell-trash { position:relative; width:36px; height:42px; display:flex; flex-direction:column; align-items:center; justify-content:center; color:#dfc384; flex:0 0 36px; }
@@ -147,7 +179,7 @@
 .gw-shell-trash .gw-shell-trash-badge { position:absolute; top:0; right:-2px; min-width:20px; min-height:20px; padding:0 3px; border-radius:99px; background:#ef4444; color:#fff; border:1px solid #08090d; font:700 var(--gw-type-body-sm)/var(--gw-leading-body-sm) var(--gw-font-mono); text-align:center; }
 .gw-shell-trash:focus-visible { outline:2px solid #dfc384; outline-offset:2px; }
 .gw-shell-right { display:flex; align-items:center; gap:12px; flex:0 0 auto; height:44px; }
-.gw-shell-right .gw-shell-fader { display:flex; align-items:center; gap:8px; font:700 10px/1 "Source Han Sans CN",monospace; color:#94a3b8; }
+.gw-shell-right .gw-shell-fader { display:flex; align-items:center; gap:8px; font:700 var(--gw-type-body-sm)/1 var(--gw-font-mono); color:#94a3b8; }
 .gw-shell-right .gw-shell-fader-track { width:96px; height:6px; }
 
 /* GW-CARD-SELECT-01: shared selected state for side-nav controls and cards. */
@@ -265,6 +297,45 @@
   outline:2px solid var(--gold-light);
   outline-offset:2px;
 }
+/* 侧边栏与树节点卡片字阶全面升阶 (对齐图1侧边栏标准：标题 14px，元数据 11.5~12px) */
+.topbar-master-deck ~ * > aside :is(.tree-node-card, [data-section], [data-asset-category]) {
+  padding: 8px 12px !important;
+  font-size: var(--gw-type-body) !important;
+  line-height: var(--gw-leading-body-md) !important;
+}
+.topbar-master-deck ~ * > aside :is(.tree-node-card, [data-section], [data-asset-category]) span:not([class*="font-mono"]) {
+  font-size: var(--gw-type-body) !important;
+}
+.topbar-master-deck ~ * > aside :is(.tree-node-card, [data-section], [data-asset-category]) span[class*="font-mono"] {
+  font-size:var(--gw-type-body-sm) !important;
+  letter-spacing: 0.04em !important;
+}
+
+/* 嵌入式搜索框、过滤胶囊与按键字号升阶 (对齐图1：输入 14px，胶囊 13px) */
+.bay-inset input {
+  font-size: var(--gw-type-body) !important;
+  line-height: var(--gw-leading-body-md) !important;
+}
+.filter-pill-btn, .pill-capsule-active, .pill-capsule-inactive {
+  font-size:var(--gw-type-body-md) !important;
+  line-height:var(--gw-leading-body-md) !important;
+  min-height:36px;
+  font-weight: 500 !important;
+}
+
+/* 全局数据表格与列表升阶 (表头 12px 加粗大写，表体 14px) */
+.gw-workbench table thead th,
+table thead th {
+  font-size:var(--gw-type-body-sm) !important;
+  font-weight: 700 !important;
+  letter-spacing: 0.04em !important;
+}
+.gw-workbench table tbody td,
+table tbody td {
+  font-size: var(--gw-type-body) !important;
+  line-height: var(--gw-leading-body-md) !important;
+}
+
 #gotoProductionLink > div:not(.card-connector-pin) { min-width:0; }
 #gotoProductionLink svg { flex-shrink:0; }
 #gotoProductionLink span { overflow-wrap:anywhere; }
@@ -438,8 +509,8 @@
       padding: 3px 9px;
       border-radius: 6px;
       color: #94a3b8;
-      font-size: 11px;
-      font-weight: 600;
+      font-size:var(--gw-type-body-sm);
+      font-weight: 700;
       background: transparent;
       border: 1px solid transparent;
       transition: all 0.12s ease;
@@ -617,9 +688,9 @@
       z-index: 15;
     }
     .uv-hub-percent {
-      font-family: "Source Han Sans CN", monospace;
-      font-size: 8.5px;
-      font-weight: 800;
+      font-family: var(--gw-font-mono);
+      font-size:var(--gw-type-body-sm);
+      font-weight: 700;
       color: #fae2c8;
       letter-spacing: 0.5px;
       text-shadow: 0 0 6px rgba(223, 195, 132, 0.9);
@@ -706,8 +777,8 @@
       align-items: center;
       justify-content: center;
       color: #dfc384;
-      font-size: 9px;
-      font-weight: 800;
+      font-size:var(--gw-type-body-sm);
+      font-weight: 700;
     }
 
     /* 参考图1 底部微型带弧形灯旋钮 (Mini Knob with Arc Glow: CUT, LEVITATE) */
@@ -749,7 +820,7 @@
       display: flex;
       align-items: center;
       justify-content: center;
-      font-size: 8px;
+      font-size:var(--gw-type-body-sm);
       font-weight: 700;
       color: #dfc384;
     }
@@ -784,6 +855,9 @@
 
     /* 触感按键 */
     .tactile-keycap {
+      font-weight: var(--gw-weight-medium);
+      line-height: var(--gw-leading-body-md);
+      min-height: 36px;
       background: linear-gradient(180deg, #1d2029 0%, #12141a 100%);
       border: 1px solid rgba(223, 195, 132, 0.18);
       box-shadow:
@@ -1155,4 +1229,98 @@
   .topbar-master-deck .master-deck-upper-right > div:nth-of-type(2) {
     display: none !important;
   }
+}
+
+/* 固定顶栏中央系统提示胶囊 */
+.topbar-toast-active {
+  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1) !important;
+  max-width: 650px !important;
+  box-shadow: 0 0 16px rgba(0, 0, 0, 0.8), inset 0 1px 2px rgba(255, 255, 255, 0.1) !important;
+}
+.topbar-toast-active.toast-info {
+  border-color: rgba(223, 195, 132, 0.7) !important;
+  box-shadow: 0 0 12px rgba(223, 195, 132, 0.25) !important;
+}
+.topbar-toast-active.toast-error {
+  border-color: rgba(244, 63, 94, 0.8) !important;
+  box-shadow: 0 0 12px rgba(244, 63, 94, 0.35) !important;
+}
+.topbar-toast-btn {
+  margin-left: 6px;
+  padding: 1px 7px;
+  border-radius: 4px;
+  font-family: var(--font-mono, monospace);
+  font-size:var(--gw-type-body-sm);
+  background: #1b1712;
+  color: #dfc384;
+  border: 1px solid rgba(223, 195, 132, 0.5);
+  cursor: pointer;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+}
+.topbar-toast-btn:hover {
+  background: #2b2214;
+  border-color: #eddab3;
+  color: #ffffff;
+}
+
+/* 顶栏工作流执行器硬件状态胶囊 */
+.telemetry-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: #08090d;
+  color: #dfc384;
+  padding: 3px 9px;
+  border-radius: 4px;
+  border: 1px solid #1e2230;
+  font-family: var(--font-mono, monospace);
+  font-size:var(--gw-type-body-sm);
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  transition: all 0.2s ease;
+  user-select: none;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.telemetry-pill:hover {
+  border-color: rgba(223, 195, 132, 0.6);
+  background: #10121a;
+}
+.telemetry-pill b {
+  font-weight: 700;
+}
+.led-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  display: inline-block;
+  flex-shrink: 0;
+}
+.led-dot.led-emerald {
+  background: #10b981;
+  box-shadow: 0 0 6px #10b981;
+}
+.led-dot.led-amber {
+  background: #f59e0b;
+  box-shadow: 0 0 6px #f59e0b;
+}
+.led-dot.led-cyan {
+  background: #06b6d4;
+  box-shadow: 0 0 6px #06b6d4;
+}
+.led-dot.led-gray {
+  background: #64748b;
+  box-shadow: none;
+}
+
+
+/* 字号上调后的可达性：顶栏横向滚动，不把右端控件裁掉。 */
+.topbar-master-deck { overflow-x:auto !important; overflow-y:hidden !important; }
+.topbar-master-deck > .flex { min-width:max-content; }
+.topbar-master-deck .recessed-deck-slot { min-width:max-content; }
+@media(max-width:900px) {
+ body.gw-shell { padding-inline:8px !important; }
+ .topbar-master-deck { flex-shrink:0; }
+ .topbar-master-deck > .flex { gap:16px; }
 }

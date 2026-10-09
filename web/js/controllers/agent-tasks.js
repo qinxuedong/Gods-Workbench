@@ -373,7 +373,7 @@
       if (event.event_id) state.eventIds.add(event.event_id);
       if (Number.isInteger(event.version)) state.eventVersion = Math.max(state.eventVersion, event.version);
       const row = document.createElement('div');
-      row.className = 'text-[10px] text-slate-300 border-b border-white/5 py-1';
+      row.className = 'gw-type-body-md text-slate-300 border-b border-white/5 py-1';
       if (event.event_id) row.dataset.eventId = event.event_id;
       row.textContent = `${event.stage || '任务'} · ${event.summary || event.event_type || '状态更新'}`;
       stream.appendChild(row);
@@ -430,13 +430,13 @@
       const group = document.createElement('div');
       group.className = 'flex flex-wrap gap-1 items-center';
       const label = document.createElement('span');
-      label.className = 'text-[9px] text-slate-400';
+      label.className = 'gw-type-body-sm text-slate-400';
       label.textContent = `可导出版本 ${review.artifact.version_id}`;
       group.appendChild(label);
       for (const [format, title] of formats) {
         const button = document.createElement('button');
         button.type = 'button';
-        button.className = 'tactile-keycap px-2 py-1 rounded text-[9px]';
+        button.className = 'tactile-keycap px-2 py-1 rounded gw-type-body-md';
         button.textContent = `导出 ${title}`;
         button.addEventListener('click', () => downloadExport(review, format));
         group.appendChild(button);

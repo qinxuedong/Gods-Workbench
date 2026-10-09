@@ -5,7 +5,7 @@ meta:
   cleanroom_notice: "仅记录 method/path/body/status/schema/错误/验收语义；不含旧仓源码结构或实现细节。"
 
 service: settings
-version: p12-r3-1
+version: p12-settings-governance-1
 
 # 冻结说明（Phase 10D，2026-09-22）
 # 本契约是「设置页」阶段的最小实现授权范围，仅覆盖下列 9 条归一化路径 / 14 个方法。
@@ -15,11 +15,16 @@ version: p12-r3-1
 
 decisions:
   provider_runtime_references:
-    decision: "运行时 Provider 仅由进程环境 GW_PROVIDER_RUNTIME_JSON 提供的 JSON 映射解析；每项只含 base_url、api_key_env 环境变量名、model 或 models/default_model，以及可选 video_protocol。base_url 可为 API 根或以单个 /v1 结尾，公共路径拼接器不得形成 /v1/v1。禁止在此映射或 API 响应保存/返回凭据值。"
-    rationale: "Provider 管理页当前不持久化凭据；服务端必须以明确运行配置引用验证 provider_id 与模型，不能把任意客户端 provider 标签绑定默认 GW_CHAT_* 环境配置。"
+    decision: "运行时Provider以设置API保存的持久集合为真源；页面同ID配置（包括禁用或未配置项）遮蔽GW_PROVIDER_RUNTIME_JSON旧项，其他环境项保留兼容。OpenAI兼容base_url缺/v1时自动补齐，已有/v1不重复；Gemini/方舟/CLI保留各自协议地址。请求侧URL/凭据不能覆盖执行配置。"
+    rationale: "管理与执行共享稳定provider_id；Chat仅使用支持OpenAI兼容协议的chat_models，视频仅在显式video_protocol=newapi_video时使用video_models，不能跨能力复用模型。"
     legacy_compatibility: "GW_CHAT_BASE_URL/GW_CHAT_API_KEY/GW_CHAT_MODEL 仅作为固定 legacy_environment 单模型兼容项；无 provider_id 的旧调用可使用，显式未知 provider_id 绝不回退到旧默认配置。"
     video_protocol: "共享解析器只登记 newapi_video 作为可识别视频协议；本轮此设置契约不授权视频端点实现。"
-    secret_policy: "api_key_env 仅是环境变量名称，密钥只在请求执行时读取，不写盘、不回显、不记日志；状态 GET 不返回 URL 或环境变量名。"
+    secret_policy: "环境映射仍仅保存api_key_env引用；设置API保存的api_key/wallet_api_key/火山AK/SK只以密文进入原子快照，不写环境文件、响应或日志。Windows使用当前用户DPAPI，POSIX使用auth根内0600受限钥文件与Fernet。跨系统用户/机器迁移需重新配置或另行受控迁移，不承诺普通复制即可恢复。配置摘要不返回URL或凭据。"
+  provider_persistence:
+    decision: "单进程providers.json原子快照同时保存元数据、revision与受保护凭据。读写前使用三態运行根校验；损坏快照拒绝读取/替换，不能退回空集合后覆盖。缺省集合仍为空。"
+    lifecycle: "非空凭据更新；未给出、空值或空字符串保持；clear_*显式清除；更新与clear不能同时给出。移除平台同步移除对应密文。读取只返回has_key/has_wallet_key/has_volcengine_access_key/has_volcengine_secret_key布尔状态，无原文或片段。"
+    request_boundary: "平台DTO字段白名单及严格类型、有界长度/模型集合/嵌套LoRA；未知字段、未知凭据别名、嵌套字典注入和冲突ID拒绝。包装必须且只能有providers字段；非法包装不得清空集合。"
+    execution_revision: "运行解析结果与已存凭据读取绑定同一集合revision。读完地址后如配置变化，旧请求不取得新密钥；探测复用已存凭据时也必须校验地址、启用状态及revision。"
   stable_ids:
     decision: "对外稳定 ID：结构体用 structure_id（strc_NNNN），存储设置用 revision，provider 用 provider_id"
     rationale: "根 AGENTS.md 3.1 强制统一稳定 ID；禁止 pid / cid / sid 等别名。"
@@ -33,7 +38,7 @@ decisions:
     decision: "providers 空列表口径：默认 GET /api/providers 返回 providers: []、configured: false 与 data_gaps"
     rationale: "无真实厂商数据源时不得预置演示条目；空列表是唯一诚实取值。"
   probe_fail_closed:
-    decision: "探测端点真实接入：POST /api/providers/{fetch-models,probe-async,test-connection} 对 https 或本机 http 做真实 HTTP 探测，失败时 fail-closed"
+    decision: "探测端点真实接入：POST /api/providers/{fetch-models,probe-async,test-connection} 对HTTPS、本机HTTP或明确配置的局域网字面IP做真实HTTP探测；局域网HTTP直连不走环境代理，失败时fail-closed"
     rationale: "无真实出网探测实现时，绝不允许返回伪造的模型列表、伪造的连通性成功或伪造的延迟数字。"
     error_code: "PROVIDER_PROBE_NOT_INTEGRATED（503）"
     real_probe_note: "如未来接入真实探测，必须默认关闭并在未启用时如实降级为同一错误码，不得静默放行。"
@@ -41,7 +46,7 @@ decisions:
     decision: "CAS 粒度：PATCH /api/storage-settings 校验存储设置 revision；PUT /api/providers 校验 provider 集合 revision；PATCH/DELETE 结构体校验目标结构 version；POST 结构体校验集合 revision；PATCH 结构体 current 校验目标结构 version"
     rationale: "根 AGENTS.md 3.2 要求写入类操作携带 expected_version，版本不一致必须 409，禁止静默覆盖。"
   expected_version_source:
-    decision: "expected_version 一律可选（缺省表示不校验）：PATCH/POST 位于请求体，DELETE 无请求体故位于查询串"
+    decision: "PUT /api/providers的expected_version在查询串必填，缺少返回400 EXPECTED_VERSION_REQUIRED；其余存量设置/结构端点保持既有可选版本契约。"
     rationale: "前端 saveStorageSettings 发送 expected_revision，deleteAssetStructure 以查询串发送 expected_version；本阶段既接受契约字段 expected_version，也接受前端既有别名 expected_revision。"
   version_conflict_codes:
     decision: "409 错误码：存储设置与 provider 集合使用 VERSION_CONFLICT；结构体使用 STRUCTURE_VERSION_CONFLICT"
@@ -140,15 +145,16 @@ endpoints:
   - name: put_providers
     method: PUT
     path: /api/providers
-    body: "array（逐项至少包含 provider_id 或调用方自带的 id）"
+    body: "array或严格{providers: array}包装；逐项ProviderEntryRequest，至少包含provider_id或调用方自带id，两者同时提供必须相同"
     query:
-      expected_version: "integer | optional（缺省时不校验 provider 集合 revision）"
+      expected_version: "integer >= 1 | required"
     status:
       - 200
       - 400
       - 401
       - 403
       - 409
+      - 503
     schema:
       response_200:
         providers: array
@@ -157,18 +163,19 @@ endpoints:
         data_status: string
         data_gaps: array
     errors:
-      400: "请求体不是数组、缺少可用 provider_id，或含重复 provider_id"
+      400: "INVALID_REQUEST：字段/包装/凭据更新意图不合法；EXPECTED_VERSION_REQUIRED：缺少CAS版本"
       401: "未认证"
       403: "无写权限（只读角色）"
       409: "VERSION_CONFLICT revision 不一致"
-    acceptance: "保存成功后 provider 集合 revision 递增；凭据类字段（key / secret / token 一类）一律不落库、不回显；revision 不一致必须 409。"
+      503: "PROVIDER_STORAGE_UNAVAILABLE或PROVIDER_CREDENTIAL_UNAVAILABLE：配置/凭据无法安全读写，未覆盖原快照"
+    acceptance: "保存成功后revision递增且重启可读；凭据仅加密持久化、不回显；配置原子提交失败不改变集合/密钥/版本。revision缺失或不一致必须拒绝，409保留前端输入，不自动重试覆盖。保存成功不代表连接或生成能力验证成功。"
 
   - name: fetch_provider_models
     method: POST
     path: /api/providers/fetch-models
     body:
       provider_id: "string | optional"
-      base_url: "string（https 或 http://127.0.0.1）"
+      base_url: "string（HTTPS、本机HTTP或局域网字面IP的HTTP/HTTPS；不支持域名解析到内网）"
       protocol: "string | optional"
       image_request_mode: "string | optional"
       credential_fields: "凭据只用不存：不入库、不回显；仅用于一次真实请求"
@@ -187,23 +194,27 @@ endpoints:
         image_models: array
         chat_models: array
         video_models: array
+        generation_verified: false
+        protocol_verified: false
+        classification_source: model_id_hint
+        data_gaps: "[generation_not_verified]"
         data_status: ok
       response_503:
         detail:
-          code: "PROVIDER_PROBE_FAILED | PROVIDER_PROBE_NOT_INTEGRATED"
+          code: "PROVIDER_PROBE_FAILED | PROVIDER_PROBE_NOT_INTEGRATED | PROVIDER_MODEL_DISCOVERY_NOT_INTEGRATED"
     errors:
       400: "INVALID_REQUEST 缺少 base_url / INVALID_URL 非绝对地址或不可解析"
       401: "未认证"
-      403: "无写权限或 URL_NOT_ALLOWED（非本机地址未使用 https）/ SSRF_BLOCKED（内网/保留网段）"
+      403: "无写权限或 URL_NOT_ALLOWED（公网HTTP）/ SSRF_BLOCKED（域名内网、链路本地、保留或多播网段）"
       503: "httpx 缺失 → PROVIDER_PROBE_NOT_INTEGRATED；上游/网络失败 → PROVIDER_PROBE_FAILED"
-    acceptance: "真实 GET {base_url}/v1/models；模型列表只能来自上游响应，网络或解析失败必须 503，绝不伪造模型条目。"
+    acceptance: "OpenAI兼容目录根地址补/v1/models，已有/v1只补/models；Gemini原生根地址补/v1beta/models、版本地址只补/models，API Key仅进x-goog-api-key请求头，分页异常/超限不得返回不完整目录。Ark/CLI目录发现未接入时明确503且不发请求。局域网准入仅用于Provider探测/配置与Chat；共享URL守卫默认仍拒绝内网，不扩展资产远端下载权限。目录和建议分类不证明生成能力；generation_verified与protocol_verified固定false。3xx不跟随，鉴权/网络/解析/空目录失败503。"
 
   - name: probe_provider_async
     method: POST
     path: /api/providers/probe-async
     body:
       provider_id: "string | optional"
-      base_url: "string（https 或 http://127.0.0.1）"
+      base_url: "string（HTTPS、本机HTTP或局域网字面IP的HTTP/HTTPS；不支持域名解析到内网）"
       protocol: "string | optional"
       credential_fields: "凭据只用不存：不入库、不回显"
     status:
@@ -219,13 +230,17 @@ endpoints:
         ok: boolean
         protocol: string
         status_code: integer
-        raw: "上游响应（已剥离凭据）"
+        raw: "仅含真实模型ID的data摘要；不透传其他上游字段"
+        execution_mode: synchronous
+        completed: true
+        generation_verified: false
+        protocol_verified: false
     errors:
       400: "INVALID_REQUEST / INVALID_URL"
       401: "未认证"
       403: "无写权限或 URL_NOT_ALLOWED / SSRF_BLOCKED"
       503: "httpx 缺失或上游不可达 → PROVIDER_PROBE_NOT_INTEGRATED / PROVIDER_PROBE_FAILED"
-    acceptance: "真实请求后登记可回读任务，返回稳定 pjob_NNNN 与 poll_hint；不得伪造协议判定成功。"
+    acceptance: "兼容旧地址的同步目录探测：请求完成后原子保存终态历史记录，返回pjob_NNNN与历史查询地址，不存在后台排队、无需轮询，不新增调度器。HTTP鉴权失败、3xx、无效JSON或空目录保存failed/ok=false；网络不可达503不宣称结果。raw仅含真实模型ID白名单，无上游任意字段或秘密；不得依据目录推断图片/视频协议或生成权限。"
 
   - name: get_provider_probe_job
     method: GET
@@ -234,14 +249,14 @@ endpoints:
     status: [200, 401, 404]
     errors:
       404: "PROVIDER_PROBE_JOB_NOT_FOUND 目标任务不存在"
-    acceptance: "返回 probe-async 登记的真实任务；不存在必须 404，不返回伪造状态。"
+    acceptance: "返回probe-async同步探测已完成的历史记录；新实例/应用重启可回读。旧记录补充同步/未验证生成语义；不存在404，不返回伪造排队或进行中状态。"
 
   - name: test_provider_connection
     method: POST
     path: /api/providers/test-connection
     body:
       provider_id: "string | optional"
-      base_url: "string（https 或 http://127.0.0.1）"
+      base_url: "string（HTTPS、本机HTTP或局域网字面IP的HTTP/HTTPS；不支持域名解析到内网）"
       protocol: "string | optional"
       credential_fields: "凭据只用不存：不入库、不回显"
     status:
@@ -258,13 +273,17 @@ endpoints:
         protocol: string
         model_count: integer
         all: array
+        generation_verified: false
+        protocol_verified: false
+        classification_source: model_id_hint
+        data_gaps: "[generation_not_verified]"
         data_status: ok
     errors:
       400: "INVALID_REQUEST / INVALID_URL"
       401: "未认证"
       403: "无写权限或 URL_NOT_ALLOWED / SSRF_BLOCKED"
       503: "httpx 缺失或上游不可达 → 不返回连通性结论或延迟数字"
-    acceptance: "真实往返并记录实测延迟；失败必须 503，绝不伪造连通性成功或延迟数字。"
+    acceptance: "沿用fetch-models实际目录适配与凭据边界，测量完整往返延迟；仅2xx且存在可解析模型返回ok=true。网络、鉴权、重定向、无效或空目录503，不允许伪造ok/latency；目录连通不等于生成权限。"
 
   - name: list_asset_structures
     method: GET

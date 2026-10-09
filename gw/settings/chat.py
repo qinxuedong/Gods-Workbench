@@ -112,7 +112,7 @@ def resolve_agent_model(provider_id: Optional[str], model: Optional[str]) -> dic
         {"provider_id": provider_id, "model": model},
         "/api/agent/runs",
     )
-    guard_provider_url(config["base_url"])
+    guard_provider_url(config["base_url"], allow_lan=True)
     return {"provider_id": config["provider_id"], "model": config["model"]}
 
 
@@ -361,7 +361,7 @@ def complete_messages(
 
     config = _resolve_config(payload or {}, endpoint)
     try:
-        base_url = guard_provider_url(config["base_url"])
+        base_url = guard_provider_url(config["base_url"], allow_lan=True)
     except CleanroomException as exc:
         metric = _metric(
             provider_id=config["provider_id"],
@@ -410,7 +410,11 @@ def complete_messages(
         }
         started_at = time.monotonic()
         try:
-            with httpx.Client(timeout=float(timeout_seconds), follow_redirects=False) as client:
+            from gw.settings.probes import is_lan_provider_url
+            client_options = {"timeout": float(timeout_seconds), "follow_redirects": False}
+            if is_lan_provider_url(base_url):
+                client_options["trust_env"] = False
+            with httpx.Client(**client_options) as client:
                 response = client.post(_completion_url(base_url), json=body, headers=headers)
             # httpx 非流式 post 在此返回时已经读完响应体；立即采样单调时钟。
             completed_at = time.monotonic()

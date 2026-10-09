@@ -106,8 +106,9 @@ def _cas(raw: Dict[str, Any], expected: Optional[int]) -> None:
 
 
 def _require(raw: Dict[str, Any], asset_id: str) -> Dict[str, Any]:
+    from gw.core.asset_visibility import asset_visible
     item = raw["assets"].get(asset_id)
-    if item is None:
+    if item is None or not asset_visible(item):
         raise CleanroomException(404, "ASSET_NOT_FOUND", "素材 %s 不存在" % asset_id)
     return item
 
@@ -179,6 +180,7 @@ def archive_assets(asset_ids: List[str], expected_version: Optional[int]) -> Dic
             item = raw["assets"].get(asset_id)
             if item is None:
                 continue
+            item = _require(raw, asset_id)
             item["archived"] = True
             item["archived_at"] = storage.now_iso()
             item["version"] = int(item.get("version", 1)) + 1
@@ -213,6 +215,9 @@ def restore_from_recycle(entry_id: str, context=None) -> Dict[str, Any]:
         if entry is None:
             raise CleanroomException(404, "RECYCLE_ENTRY_NOT_FOUND", "回收站条目不存在")
         if entry["kind"] == "asset":
+            from gw.core.asset_visibility import asset_visible
+            if not asset_visible(entry.get('payload', {})):
+                raise CleanroomException(404, 'RECYCLE_ENTRY_NOT_FOUND', '回收站条目不存在')
             if entry["asset_id"] in raw["assets"]:
                 raise CleanroomException(409, "ASSET_RESTORE_CONFLICT", "恢复目标资产已经存在")
             raw["assets"][entry["asset_id"]] = entry["payload"]
@@ -289,7 +294,8 @@ def list_assets(limit: int, offset: int, query: Optional[str], kind: Optional[st
                                      extra={"expected_version": decoded["revision"], "current_version": raw["revision"]},
                                      expose_extra_fields={"expected_version", "current_version"})
         offset = decoded["offset"]
-    items = [dict(a) for a in raw["assets"].values()]
+    from gw.core.asset_visibility import asset_visible
+    items = [dict(a) for a in raw["assets"].values() if asset_visible(a)]
     if archived is not None:
         items = [a for a in items if bool(a.get("archived")) == bool(archived)]
     if kind:
@@ -337,7 +343,8 @@ def list_assets(limit: int, offset: int, query: Optional[str], kind: Optional[st
 
 def facets() -> Dict[str, Any]:
     raw = state().read()
-    assets = list(raw["assets"].values())
+    from gw.core.asset_visibility import asset_visible
+    assets = [a for a in raw["assets"].values() if asset_visible(a)]
     kinds = Counter(str(asset.get("kind") or "unknown") for asset in assets)
     categories = Counter(_asset_category(asset) for asset in assets)
     tag_counts = Counter(tag for asset in assets for tag in set(asset.get("tags", [])))
@@ -394,6 +401,8 @@ def create_relation(from_asset_id: str, to_asset_id: str, kind: str, expected_ve
 
 def delete_relation(asset_id: str, related_asset_id: str) -> Dict[str, Any]:
     def mutate(raw: Dict[str, Any]) -> Any:
+        _require(raw, asset_id)
+        _require(raw, related_asset_id)
         before = len(raw["relations"])
         raw["relations"] = [r for r in raw["relations"]
                             if not (r["from_asset_id"] == asset_id and r["to_asset_id"] == related_asset_id)]
@@ -411,6 +420,9 @@ def delete_relation(asset_id: str, related_asset_id: str) -> Dict[str, Any]:
 
 def add_tags(asset_ids: List[str], names: List[str], expected_version: Optional[int]) -> Dict[str, Any]:
     def mutate(raw: Dict[str, Any]) -> Any:
+        for asset_id in asset_ids:
+            if asset_id in raw['assets']:
+                _require(raw, asset_id)
         _cas(raw, expected_version)
         added = []
         for name in names:
@@ -771,9 +783,7 @@ def link_project_assets(project_id: str, asset_ids: List[str], payload: Dict[str
         _cas(raw, payload.get("expected_version"))
         linked = []
         for asset_id in asset_ids:
-            item = raw["assets"].get(asset_id)
-            if item is None:
-                raise CleanroomException(404, "ASSET_NOT_FOUND", "素材 %s 未登记" % asset_id)
+            item = _require(raw, asset_id)
             item.setdefault("project_ids", [])
             if project_id not in item["project_ids"]:
                 item["project_ids"].append(project_id)
@@ -804,9 +814,10 @@ def restore_project_recycle(project_id: str, expected_version: Any) -> Dict[str,
 # ---------------------------------------------------------------------------
 
 def governance_overview() -> Dict[str, Any]:
+    from gw.core.asset_visibility import asset_visible
     raw = state().read()
     return {
-        "assets": [dict(a) for a in raw["assets"].values() if a.get("archived")],
+        "assets": [dict(a) for a in raw["assets"].values() if a.get("archived") and asset_visible(a)],
         "projects": [], "canvases": [],
         "audit_receipts": audit_sink.overview(),
         "outbox": {"pending": len([o for o in raw["outbox"].values() if o.get("state") == "pending"]),
@@ -1205,7 +1216,8 @@ def related_assets(asset_ids: List[str], kind: str, expected_version: Optional[i
 def assets_snapshot(asset_ids: List[str]) -> List[Dict[str, Any]]:
     """回读一批资产；未登记的忽略（调用方负责 404 判定）。"""
     raw = state().read()
-    return [dict(raw["assets"][a]) for a in asset_ids if a in raw["assets"]]
+    from gw.core.asset_visibility import asset_visible
+    return [dict(raw["assets"][a]) for a in asset_ids if a in raw["assets"] and asset_visible(raw['assets'][a])]
 
 
 def create_workspace_job(name: str, payload: Dict[str, Any]) -> Dict[str, Any]:
@@ -1267,3 +1279,67 @@ def export_archive(asset_ids: List[str]) -> bytes:
         for name, path in entries:
             archive.write(path, arcname=name)
     return buffer.getvalue()
+
+
+def remove_bridge_asset(asset_id: str, owner: str):
+    """桥接清理只作用于已证明归属的记录，保留原始素材和其他主体。"""
+    def mutate(raw):
+        record = raw.get("assets", {}).get(asset_id)
+        if record and record.get("metadata", {}).get("workflow_owner") == owner:
+            del raw["assets"][asset_id]
+            _bump(raw)
+    return state().mutate(mutate)
+
+
+def register_asset_record(
+    asset_id: str,
+    name: str,
+    kind: str,
+    *,
+    url: Optional[str] = None,
+    task_id: Optional[str] = None,
+    metadata: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    """在底层注册表中登记或更新资产，保证 asset_id 稳定绑定。"""
+    source_context = (metadata or {}).get("source_context", {})
+    source_project_id = source_context.get("project_id") if isinstance(source_context, dict) else None
+    has_workflow_owner = bool((metadata or {}).get("workflow_owner"))
+    def mutate(raw: Dict[str, Any]) -> Any:
+        assets = raw.setdefault("assets", {})
+        if asset_id in assets:
+            record = assets[asset_id]
+            old_owner = record.get("metadata", {}).get("workflow_owner")
+            if old_owner != (metadata or {}).get("workflow_owner") and (old_owner or (metadata or {}).get("workflow_owner")):
+                raise CleanroomException(409, "ASSET_OWNER_CONFLICT", "资产归属冲突")
+            if (not has_workflow_owner or record.get("project_id") == source_project_id) and record.get("name") == name and record.get("kind") == kind and (not url or record.get("url") == url) and (not task_id or record.get("task_id") == task_id) and all(record.get("metadata", {}).get(key) == value for key, value in (metadata or {}).items()):
+                return record
+            record["name"] = name
+            record["kind"] = kind
+            record["updated_at"] = storage.now_iso()
+            if url:
+                record["url"] = url
+            if task_id:
+                record["task_id"] = task_id
+            if metadata:
+                record.setdefault("metadata", {}).update(metadata)
+        else:
+            record = _plain_asset(
+                asset_id,
+                name,
+                kind,
+                url=url,
+                task_id=task_id,
+                metadata=metadata or {},
+            )
+            assets[asset_id] = record
+            raw.setdefault("sequences", {})[asset_id] = True
+        # 来源由工作流入口按主体/生命周期校验；项目投影与该不可变来源同步。
+        if has_workflow_owner:
+            if source_project_id:
+                record["project_id"] = source_project_id
+            else:
+                record.pop("project_id", None)
+        _bump(raw)
+        return record
+
+    return state().mutate(mutate)

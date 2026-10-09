@@ -1,6 +1,7 @@
 <!DOCTYPE html>
 <html lang="zh-CN" class="h-full overflow-hidden">
 <head>
+  <link rel="stylesheet" href="/static/css/base/hardware-tokens.css">
   <link rel="stylesheet" href="/static/vendor/css/fonts.css?v=v0.0.1-alpha-2026">
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -94,21 +95,21 @@
       gap: 8px;
     }
     .prompt-source-badge {
-      font-size: 9px;
+      font-size: var(--gw-type-body-sm);
       padding: 1px 6px;
       border-radius: 4px;
       background: rgba(223, 195, 132, 0.15);
       color: #dfc384;
       border: 1px solid rgba(223, 195, 132, 0.3);
-      font-family: "Source Han Sans CN", monospace;
+      font-family: var(--gw-font-mono);
     }
     .prompt-source-meta {
       display: flex;
       flex-wrap: wrap;
       gap: 10px;
       margin-top: 5px;
-      font-family: "Source Han Sans CN", monospace;
-      font-size: 10px;
+      font-family: var(--gw-font-mono);
+      font-size: var(--gw-type-body-sm);
       color: #94a3b8;
     }
     .prompt-source-actions details {
@@ -117,7 +118,7 @@
     .prompt-source-actions summary {
       cursor: pointer;
       outline: none;
-      font-size: 11px;
+      font-size: var(--gw-type-body-md);
       color: #dfc384;
       padding: 4px 8px;
       border-radius: 6px;
@@ -139,8 +140,8 @@
       border: 1px solid rgba(223, 195, 132, 0.3);
       box-shadow: 0 10px 25px rgba(0,0,0,0.9);
       z-index: 30;
-      font-family: "Source Han Sans CN", monospace;
-      font-size: 10px;
+      font-family: var(--gw-font-mono);
+      font-size: var(--gw-type-body-sm);
       color: #cbd5e1;
       display: flex;
       flex-direction: column;
@@ -229,8 +230,8 @@
 
     /* 状态小药丸标签 */
     .proj-status-chip {
-      font-family: "Source Han Sans CN", monospace;
-      font-size: 8.5px;
+      font-family: var(--gw-font-mono);
+      font-size: var(--gw-type-body-sm);
       font-weight: 600;
       padding: 1.5px 5px;
       border-radius: 4px;
@@ -352,7 +353,7 @@
     .hw-rocker-btn:active { transform: translateY(1px); background: #0c0e12; }
   </style>
 </head>
-<body class="gw-shell bg-[#090a0d] text-slate-200 antialiased h-screen flex flex-col justify-between select-none overflow-hidden px-5">
+<body class="gw-shell bg-[#090a0d] text-slate-200 antialiased h-screen flex flex-col justify-between select-none overflow-hidden px-5 gw-type-body-md">
 
   <!-- ========================================================================= -->
   <!-- 1. TOP MASTER DECK: 旗舰拟物双层机架 (放大1.2倍, h-[116px])                  -->
@@ -380,14 +381,14 @@
 
         <!-- 品牌徽标与机架ID (放大1.2倍) -->
         <div class="flex items-center space-x-1.5">
-          <span class="font-bold text-sm tracking-wider text-slate-100 uppercase">GODS'</span>
-          <span class="font-mono font-bold text-sm text-[#dfc384] tracking-widest">WORKBENCH</span>
-          <span class="text-[10px] font-mono px-2 py-0.5 rounded bg-black/60 border border-[#dfc384]/30 text-[#eddab3]">SYS.02 PRO</span>
+          <span class="font-bold gw-type-body-md text-slate-100">GODS'</span>
+          <span class="font-mono font-bold gw-type-body-md text-[#dfc384]">WORKBENCH</span>
+          <span class="gw-type-body-sm font-mono px-2 py-0.5 rounded bg-black/60 border border-[#dfc384]/30 text-[#eddab3]">SYS.02 PRO</span>
         </div>
 
         <!-- 在线状态胶囊 (放大1.2倍) -->
         <div class="flex items-center space-x-1.5 px-2.5 py-1 rounded-md bg-[#0a0c10] border border-white/10 shadow-inner">
-          <span class="text-[9px] font-mono text-amber-300 font-semibold" id="gwOnlineStatus" data-gw-degradation="not_integrated" title="读取真实探针 GET /api/observability/health">探测中…</span>
+          <span class="gw-type-body-sm font-mono text-amber-300 font-semibold" id="gwOnlineStatus" data-gw-degradation="not_integrated" title="读取真实探针 GET /api/observability/health">探测中…</span>
             <span class="relative flex h-2 w-2">
               <span class="relative inline-flex rounded-full h-2 w-2 bg-amber-400 animate-pulse shadow-[0_0_6px_#f59e0b]"></span>
             </span>
@@ -406,7 +407,7 @@
             </defs>
             <path d="M 2 8 A 6 6 0 0 1 8 2 L 134 2 A 4 4 0 0 1 138 5 L 146 43 A 4 4 0 0 1 142 47 L 8 47 A 6 6 0 0 1 2 41 Z"
                   fill="#0b0d13" stroke="#2e3547" stroke-width="1.5" stroke-linejoin="round" />
-            <text x="10" y="11" font-family="'Source Han Sans CN', monospace" font-size="7.5" font-weight="700" fill="#dfc384" letter-spacing="0.5">CPU</text>
+            <text x="10" y="13" style="font-family:var(--gw-font-mono);font-size:var(--gw-type-label-md);letter-spacing:normal" font-weight="700" fill="#dfc384">CPU</text>
             <path d="M 48.32 39.66 A 27 27 0 0 1 99.68 39.66" fill="none" stroke="rgba(255,255,255,0.22)" stroke-width="0.8" />
             <path d="M 92.48 28.32 A 27 27 0 0 1 99.68 39.66" fill="none" stroke="#ef4444" stroke-width="1.6" stroke-linecap="round" />
             <polygon id="svgNeedleCPU" points="73.3,48 74.7,48 74.3,19 73.7,19" fill="#ffffff" filter="drop-shadow(0 0 2.5px #fae2c8)" transform="rotate(-11.5 74 48)" />
@@ -423,7 +424,7 @@
           <button class="text-slate-400 hover:text-[#dfc384] p-0.5 transition"><i data-lucide="chevron-left" class="w-4 h-4"></i></button>
           <div class="flex items-center space-x-2 px-1.5">
             <span class="w-1.5 h-1.5 rounded-full bg-[#dfc384] shadow-[0_0_6px_#dfc384] animate-pulse"></span>
-            <span class="text-[11px] font-mono font-bold text-[#eddab3] tracking-wider" data-gw-header-prefix="AI-FLUX 引擎总线" data-gw-degradation="not_integrated">AI-FLUX 引擎总线 · 读取中…</span>
+            <span class="gw-type-body-sm font-mono font-bold text-[#eddab3]" data-gw-header-prefix="AI-FLUX 引擎总线" data-gw-degradation="not_integrated">AI-FLUX 引擎总线 · 读取中…</span>
           </div>
           <button class="text-slate-400 hover:text-[#dfc384] p-0.5 transition"><i data-lucide="chevron-right" class="w-4 h-4"></i></button>
         </div>
@@ -436,7 +437,7 @@
           <svg class="absolute inset-0 w-full h-full pointer-events-none z-10" viewBox="0 0 148 48">
             <path d="M 146 8 A 6 6 0 0 0 140 2 L 14 2 A 4 4 0 0 0 10 5 L 2 43 A 4 4 0 0 0 6 47 L 140 47 A 6 6 0 0 0 146 41 Z"
                   fill="#0b0d13" stroke="#2e3547" stroke-width="1.5" stroke-linejoin="round" />
-            <text x="138" y="11" text-anchor="end" font-family="'Source Han Sans CN', monospace" font-size="7.5" font-weight="700" fill="#dfc384" letter-spacing="0.5">RAM</text>
+            <text x="138" y="13" text-anchor="end" style="font-family:var(--gw-font-mono);font-size:var(--gw-type-label-md);letter-spacing:normal" font-weight="700" fill="#dfc384">RAM</text>
             <path d="M 48.32 39.66 A 27 27 0 0 1 99.68 39.66" fill="none" stroke="rgba(255,255,255,0.22)" stroke-width="0.8" />
             <path d="M 92.48 28.32 A 27 27 0 0 1 99.68 39.66" fill="none" stroke="#ef4444" stroke-width="1.6" stroke-linecap="round" />
             <polygon id="svgNeedleRAM" points="73.3,48 74.7,48 74.3,19 73.7,19" fill="#ffffff" filter="drop-shadow(0 0 2.5px #38bdf8)" transform="rotate(25.9 74 48)" />
@@ -456,13 +457,13 @@
         <div class="h-5 w-px bg-white/10"></div>
 
         <!-- 数码时钟 (放大1.2倍) -->
-        <div class="px-2.5 py-1.5 rounded bg-[#06070a] border border-[#dfc384]/30 font-mono text-xs text-[#eddab3] font-bold shadow-inner flex items-center space-x-1.5">
+        <div class="px-2.5 py-1.5 rounded bg-[#06070a] border border-[#dfc384]/30 font-mono gw-type-body-sm text-[#eddab3] font-bold shadow-inner flex items-center space-x-1.5">
           <span class="w-1.5 h-1.5 rounded-full bg-[#dfc384] shadow-[0_0_6px_#dfc384]"></span>
           <span id="masterDeckClock">00:00:00</span>
         </div>
-        <button type="button" id="masterDeckDate" class="shrink-0 min-w-[76px] px-2.5 py-1.5 rounded bg-[#06070a] border border-[#dfc384]/45 font-mono text-xs text-[#eddab3] font-bold shadow-inner flex items-center justify-center space-x-1.5 hover:border-[#dfc384] transition" title="打开项目排期日历" aria-label="打开项目排期日历">
+        <button type="button" id="masterDeckDate" class="shrink-0 min-w-[76px] px-2.5 py-1.5 rounded bg-[#06070a] border border-[#dfc384]/45 font-mono gw-type-body-md text-[#eddab3] font-bold shadow-inner flex items-center justify-center space-x-1.5 hover:border-[#dfc384] transition" title="打开项目排期日历" aria-label="打开项目排期日历">
           <i data-lucide="calendar-days" class="w-3.5 h-3.5 text-[#dfc384]" aria-hidden="true"></i>
-          <span class="text-slate-500 uppercase" id="masterDeckDateMonth">---</span>
+          <span class="text-slate-500" id="masterDeckDateMonth">---</span>
           <span id="masterDeckDateDay">--</span>
         </button>
       </div>
@@ -473,7 +474,7 @@
 
       <!-- LEFT: 胶囊导航按键 (放大1.2倍) -->
       <div class="flex items-center space-x-1.5 shrink-0" id="navPillsGroup">
-        <button type="button" id="navPillDashboard" aria-pressed="true" class="pill-capsule-active px-3.5 py-1.5 text-xs tracking-wide flex items-center space-x-1.5 nav-pill-btn cursor-pointer" title="首页 · 控制台" onclick="event.preventDefault(); WorkbenchHome.switchView('dashboard'); return false;">
+        <button type="button" id="navPillDashboard" aria-pressed="true" class="pill-capsule-active px-3.5 py-1.5 gw-type-body-md flex items-center space-x-1.5 nav-pill-btn cursor-pointer" title="首页 · 控制台" onclick="event.preventDefault(); WorkbenchHome.switchView('dashboard'); return false;">
           <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" viewBox="0 0 24 24">
             <path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path>
             <polyline points="9 22 9 12 15 12 15 22"></polyline>
@@ -481,45 +482,45 @@
           <span>首页 · 控制台</span>
         </button>
 
-        <a href="projects.html" class="pill-capsule-inactive px-3.5 py-1.5 text-xs tracking-wide font-medium flex items-center space-x-1 nav-pill-btn cursor-pointer" title="项目中心">
+        <a href="projects.html" class="pill-capsule-inactive px-3.5 py-1.5 gw-type-body-sm font-medium flex items-center space-x-1 nav-pill-btn cursor-pointer" title="项目中心">
           <i data-lucide="folder-kanban" class="w-3.5 h-3.5"></i>
           <span>项目中心</span>
         </a>
 
-        <a href="workshop.html" class="pill-capsule-inactive px-3.5 py-1.5 text-xs tracking-wide font-medium flex items-center space-x-1.5 nav-pill-btn cursor-pointer" title="影视工坊">
+        <a href="workshop.html" class="pill-capsule-inactive px-3.5 py-1.5 gw-type-body-sm font-medium flex items-center space-x-1.5 nav-pill-btn cursor-pointer" title="影视工坊">
           <i data-lucide="film" class="w-3.5 h-3.5"></i>
           <span>影视工坊</span>
         </a>
 
-        <a href="production.html" class="pill-capsule-inactive px-3.5 py-1.5 text-xs tracking-wide font-medium flex items-center space-x-1 nav-pill-btn cursor-pointer" title="剧集制片">
+        <a href="production.html" class="pill-capsule-inactive px-3.5 py-1.5 gw-type-body-sm font-medium flex items-center space-x-1 nav-pill-btn cursor-pointer" title="剧集制片">
           <i data-lucide="clapperboard" class="w-3.5 h-3.5"></i>
           <span>剧集制片</span>
         </a>
 
-        <a href="agents.html" class="pill-capsule-inactive px-3.5 py-1.5 text-xs tracking-wide font-medium flex items-center space-x-1 nav-pill-btn cursor-pointer" title="智能体">
+        <a href="agents.html" class="pill-capsule-inactive px-3.5 py-1.5 gw-type-body-sm font-medium flex items-center space-x-1 nav-pill-btn cursor-pointer" title="智能体">
           <i data-lucide="bot" class="w-3.5 h-3.5"></i>
           <span>智能体</span>
         </a>
 
-        <a href="storyboard.html?view=canvas" class="pill-capsule-inactive px-3.5 py-1.5 text-xs tracking-wide font-medium flex items-center space-x-1 nav-pill-btn cursor-pointer" title="画布">
+        <a href="storyboard.html?view=canvas" class="pill-capsule-inactive px-3.5 py-1.5 gw-type-body-sm font-medium flex items-center space-x-1 nav-pill-btn cursor-pointer" title="画布">
           <i data-lucide="layout-grid" class="w-3.5 h-3.5"></i>
           <span>画布/工具</span>
         </a>
 
-        <a href="assets.html" class="pill-capsule-inactive px-3.5 py-1.5 text-xs tracking-wide font-medium flex items-center space-x-1 nav-pill-btn cursor-pointer" title="资产库">
+        <a href="assets.html" class="pill-capsule-inactive px-3.5 py-1.5 gw-type-body-sm font-medium flex items-center space-x-1 nav-pill-btn cursor-pointer" title="资产库">
           <i data-lucide="database" class="w-3.5 h-3.5"></i>
           <span>资产库</span>
         </a>
 
-        <a href="collab.html" class="pill-capsule-inactive px-3.5 py-1.5 text-xs tracking-wide font-medium flex items-center space-x-1 nav-pill-btn cursor-pointer" title="协作">
+        <a href="collab.html" class="pill-capsule-inactive px-3.5 py-1.5 gw-type-body-sm font-medium flex items-center space-x-1 nav-pill-btn cursor-pointer" title="协作">
           <i data-lucide="users" class="w-3.5 h-3.5"></i>
           <span>协作</span>
         </a>
-        <a href="workflow-workbench.html" class="pill-capsule-inactive px-3.5 py-1.5 text-xs tracking-wide font-medium flex items-center space-x-1.5 nav-pill-btn cursor-pointer" title="工作流">
+        <a href="workflow.html" class="pill-capsule-inactive px-3.5 py-1.5 gw-type-body-sm font-medium flex items-center space-x-1.5 nav-pill-btn cursor-pointer" title="工作流">
           <i data-lucide="workflow" class="w-3.5 h-3.5"></i><span>工作流</span>
         </a>
 
-        <button type="button" id="navPillSettings" aria-pressed="false" class="pill-capsule-inactive px-3.5 py-1.5 text-xs tracking-wide font-medium flex items-center space-x-1.5 nav-pill-btn cursor-pointer" title="系统设置" onclick="event.preventDefault(); WorkbenchHome.switchView('settings'); return false;">
+        <button type="button" id="navPillSettings" aria-pressed="false" class="pill-capsule-inactive px-3.5 py-1.5 gw-type-body-md font-medium flex items-center space-x-1.5 nav-pill-btn cursor-pointer" title="系统设置" onclick="event.preventDefault(); WorkbenchHome.switchView('settings'); return false;">
           <i data-lucide="settings" class="w-3.5 h-3.5"></i>
           <span>设置</span>
         </button>
@@ -528,33 +529,26 @@
       <!-- CENTER: 纯净机械推子 (放大1.2倍) -->
       <div class="flex items-center space-x-4 shrink-0">
         <div class="flex items-center space-x-2">
-          <span class="text-[10px] font-mono text-slate-400 font-bold">FLUX</span>
+          <span class="gw-type-body-sm font-mono text-slate-400 font-bold">FLUX</span>
           <div class="hw-fader-track-horizontal w-28">
             <div class="hw-fader-glow-bar" style="width: 0%;"></div>
             <div class="hw-fader-thumb-3d" style="left: 0%;"></div>
           </div>
-          <span class="text-[10px] font-mono text-amber-300 font-bold" id="gpuUtilReadout" data-gw-degradation="not_integrated" title="真实数据源：GET /api/observability/health 的 gpu_telemetry 检查项">未接入</span>
+          <span class="gw-type-body-sm font-mono text-amber-300 font-bold" id="gpuUtilReadout" data-gw-degradation="not_integrated" title="真实数据源：GET /api/observability/health 的 gpu_telemetry 检查项">未接入</span>
         </div>
 
         <div class="flex items-center space-x-2">
-          <span class="text-[10px] font-mono text-slate-400 font-bold">VRAM</span>
+          <span class="gw-type-body-sm font-mono text-slate-400 font-bold">VRAM</span>
           <div class="hw-fader-track-horizontal w-24">
             <div class="hw-fader-glow-bar" style="width: 0%; background: linear-gradient(90deg, #38bdf8 0%, #2dd4bf 100%);"></div>
             <div class="hw-fader-thumb-3d" style="left: 0%;"></div>
           </div>
-          <span class="text-[10px] font-mono text-amber-300 font-bold" id="gpuVramReadout" data-gw-degradation="not_integrated" title="真实数据源：GET /api/observability/health 的 gpu_telemetry 检查项">未接入</span>
+          <span class="gw-type-body-sm font-mono text-amber-300 font-bold" id="gpuVramReadout" data-gw-degradation="not_integrated" title="真实数据源：GET /api/observability/health 的 gpu_telemetry 检查项">未接入</span>
         </div>
       </div>
 
-      <!-- RIGHT: PRE/POST 开关 + 拟物头像键帽 -->
+      <!-- RIGHT: CF 控制 + 拟物头像键帽 -->
       <div class="flex items-center space-x-3 shrink-0">
-        <div class="flex items-center space-x-1.5">
-          <span class="text-[9px] font-mono text-slate-400 font-bold">PRE</span>
-          <div class="hw-slide-toggle active" onclick="this.classList.toggle('active')">
-            <div class="hw-slide-peg"></div>
-          </div>
-          <span class="text-[9px] font-mono text-[#dfc384] font-bold">POST</span>
-        </div>
 
         <div class="h-4 w-px bg-white/10"></div>
 
@@ -580,11 +574,11 @@
       <div class="flex-1 flex flex-col min-h-0 relative overflow-hidden" id="contextBusContainer">
         <!-- Tree Header -->
         <div class="p-2 border-b border-white/5 shrink-0">
-          <div class="w-full flex items-center justify-between px-3 py-2 rounded-xl bg-[#141720] border border-[#dfc384]/35 text-[#eddab3] text-xs font-semibold shadow-[0_0_12px_rgba(223,195,132,0.12)] relative">
+          <div class="w-full flex items-center justify-between px-3 py-2 rounded-xl bg-[#141720] border border-[#dfc384]/35 text-[#eddab3] gw-type-body-sm font-semibold shadow-[0_0_12px_rgba(223,195,132,0.12)] relative">
             <span class="absolute left-0 top-2 bottom-2 w-1 bg-[#dfc384] rounded-r shadow-[0_0_8px_#dfc384]"></span>
             <div class="flex items-center space-x-2.5">
               <i data-lucide="git-branch" class="w-4 h-4 text-[#dfc384]"></i>
-              <span class="font-semibold tracking-wide">上下文工作流总线</span>
+              <span class="font-semibold">上下文工作流总线</span>
             </div>
             <button class="text-slate-400 hover:text-[#dfc384] p-1 rounded-lg hover:bg-white/5 transition" title="刷新总线" onclick="WorkbenchHome.reloadProjects()">
               <i data-lucide="refresh-cw" class="w-3 h-3"></i>
@@ -603,10 +597,10 @@
             <div class="tree-node-card active px-2.5 py-1.5 flex items-center justify-between group">
               <div class="card-connector-pin"></div>
               <div class="flex items-center space-x-1.5 min-w-0">
-                <span class="text-[8px] font-mono text-[#dfc384] font-bold px-1 py-0.5 rounded bg-[#dfc384]/15 border border-[#dfc384]/30 shrink-0">01</span>
-                <span class="text-[10px] font-semibold text-slate-100 truncate" id="busActiveProjectTitle">院线长片全流程</span>
+                <span class="gw-type-body-sm font-mono text-[#dfc384] font-bold px-1 py-0.5 rounded bg-[#dfc384]/15 border border-[#dfc384]/30 shrink-0">01</span>
+                <span class="gw-type-body-md font-semibold text-slate-100 truncate" id="busActiveProjectTitle">院线长片全流程</span>
               </div>
-              <span class="text-[7.5px] font-mono px-1 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 shrink-0 flex items-center space-x-0.5">
+              <span class="gw-type-body-sm font-mono px-1 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 shrink-0 flex items-center space-x-0.5">
                 <span>act</span>
                 <i data-lucide="check" class="w-2 h-2"></i>
               </span>
@@ -614,29 +608,29 @@
             <div class="ml-3 pl-3 border-l border-[#dfc384]/35 space-y-3 mt-3 pt-0.5 relative">
               <div class="relative flex items-center">
                 <div class="absolute -left-3 top-1/2 -translate-y-1/2 w-3 h-[1px] bg-[#dfc384]/40 pointer-events-none"></div>
-                <div class="w-full tree-node-card px-2.5 py-1.5 flex items-center justify-between text-[9.5px]">
+                <div class="w-full tree-node-card px-2.5 py-1.5 flex items-center justify-between gw-type-body-sm">
                   <div class="card-connector-pin"></div>
                   <span class="text-slate-300 truncate">1.1 剧本智能拆解</span>
-                  <span class="text-[8px] font-mono text-amber-300 shrink-0" id="busStageScript" data-gw-degradation="not_integrated" title="真实数据源：/api/episode-pipelines 的 script 阶段状态">读取中…</span>
+                  <span class="gw-type-body-sm font-mono text-amber-300 shrink-0" id="busStageScript" data-gw-degradation="not_integrated" title="真实数据源：/api/episode-pipelines 的 script 阶段状态">读取中…</span>
                 </div>
               </div>
               <div class="relative flex items-center">
                 <div class="absolute -left-3 top-1/2 -translate-y-1/2 w-3 h-[1px] bg-[#dfc384]/40 pointer-events-none"></div>
-                <div class="w-full tree-node-card px-2.5 py-1.5 flex items-center justify-between text-[9.5px]">
+                <div class="w-full tree-node-card px-2.5 py-1.5 flex items-center justify-between gw-type-body-sm">
                   <div class="card-connector-pin"></div>
                   <span class="text-[#eddab3] font-medium truncate">1.2 故事板分镜矩阵</span>
-                  <span class="text-[8px] font-mono text-amber-300 shrink-0" id="busStageVideo" data-gw-degradation="not_integrated" title="真实数据源：/api/episode-pipelines 的 video 阶段状态">读取中…</span>
+                  <span class="gw-type-body-sm font-mono text-amber-300 shrink-0" id="busStageVideo" data-gw-degradation="not_integrated" title="真实数据源：/api/episode-pipelines 的 video 阶段状态">读取中…</span>
                 </div>
               </div>
               <div class="relative flex items-center">
                 <div class="absolute -left-3 top-1/2 -translate-y-1/2 w-3 h-[1px] bg-[#dfc384]/40 pointer-events-none"></div>
-                <a href="workshop.html" class="w-full tree-node-card px-2.5 py-1.5 flex items-center justify-between text-[9.5px] cursor-pointer hover:border-[#dfc384]/60 transition" id="busWorkshopLink" title="进入当前项目的影视工坊（剧本/资产/分镜/视频 四步流水线）">
+                <a href="workshop.html" class="w-full tree-node-card px-2.5 py-1.5 flex items-center justify-between gw-type-body-sm cursor-pointer hover:border-[#dfc384]/60 transition" id="busWorkshopLink" title="进入当前项目的影视工坊（剧本/资产/分镜/视频 四步流水线）">
                   <div class="card-connector-pin"></div>
                   <div class="flex items-center space-x-1.5 truncate">
                     <i data-lucide="film" class="w-3 h-3 text-[#dfc384]"></i>
                     <span class="text-slate-200 truncate">1.3 影视工坊流水线</span>
                   </div>
-                  <span class="text-[7.5px] font-mono px-1 py-0.5 rounded bg-[#dfc384]/15 text-[#dfc384] border border-[#dfc384]/30 shrink-0">4-STEP</span>
+                  <span class="gw-type-body-sm font-mono px-1 py-0.5 rounded bg-[#dfc384]/15 text-[#dfc384] border border-[#dfc384]/30 shrink-0">4-STEP</span>
                 </a>
               </div>
             </div>
@@ -648,10 +642,10 @@
             <a href="agents.html" class="tree-node-card px-2.5 py-1.5 flex items-center justify-between cursor-pointer group hover:border-[#dfc384]/60 transition" title="进入 AURA 智能体神经中枢 (agents.html)">
               <div class="card-connector-pin"></div>
               <div class="flex items-center space-x-1.5 min-w-0">
-                <span class="text-[8px] font-mono text-[#eddab3] font-bold px-1 py-0.5 rounded bg-white/5 border border-white/10 shrink-0">02</span>
-                <span class="text-[10px] font-semibold text-slate-200 group-hover:text-[#eddab3] truncate">AURA 智能体核心</span>
+                <span class="gw-type-body-sm font-mono text-[#eddab3] font-bold px-1 py-0.5 rounded bg-white/5 border border-white/10 shrink-0">02</span>
+                <span class="gw-type-body-md font-semibold text-slate-200 group-hover:text-[#eddab3] truncate">AURA 智能体核心</span>
               </div>
-              <span class="text-[7.5px] font-mono px-1 py-0.5 rounded-full bg-amber-500/15 text-amber-300 border border-amber-500/30 shrink-0 flex items-center space-x-1" data-gw-degradation="not_integrated" title="本切片无任何真实智能体在线状态数据源，未读取任何指标">
+              <span class="gw-type-body-sm font-mono px-1 py-0.5 rounded-full bg-amber-500/15 text-amber-300 border border-amber-500/30 shrink-0 flex items-center space-x-1" data-gw-degradation="not_integrated" title="本切片无任何真实智能体在线状态数据源，未读取任何指标">
                 <span>未验证</span>
                 <i data-lucide="external-link" class="w-2.5 h-2.5 opacity-60 group-hover:opacity-100"></i>
               </span>
@@ -664,10 +658,10 @@
             <div class="tree-node-card px-2.5 py-1.5 flex items-center justify-between">
               <div class="card-connector-pin"></div>
               <div class="flex items-center space-x-1.5 min-w-0">
-                <span class="text-[8px] font-mono text-slate-400 font-bold px-1 py-0.5 rounded bg-white/5 border border-white/10 shrink-0">03</span>
-                <span class="text-[10px] font-semibold text-slate-300 truncate">GPU 渲染集群</span>
+                <span class="gw-type-body-sm font-mono text-slate-400 font-bold px-1 py-0.5 rounded bg-white/5 border border-white/10 shrink-0">03</span>
+                <span class="gw-type-body-md font-semibold text-slate-300 truncate">GPU 渲染集群</span>
               </div>
-              <span class="text-[7.5px] font-mono px-1 py-0.5 rounded-full bg-amber-500/15 text-amber-300 border border-amber-500/30 shrink-0" id="gpuClusterCountBadge" data-gw-degradation="not_integrated" title="真实数据源：GET /api/observability/health 的 gpu_telemetry.devices">未接入</span>
+              <span class="gw-type-body-sm font-mono px-1 py-0.5 rounded-full bg-amber-500/15 text-amber-300 border border-amber-500/30 shrink-0" id="gpuClusterCountBadge" data-gw-degradation="not_integrated" title="真实数据源：GET /api/observability/health 的 gpu_telemetry.devices">未接入</span>
             </div>
           </div>
         </div>
@@ -687,7 +681,7 @@
           <div class="flex items-center justify-between pb-1.5 mb-1.5 border-b border-white/5 shrink-0">
             <div class="flex items-center space-x-2">
               <i data-lucide="folder-kanban" class="w-4 h-4 text-[#dfc384]"></i>
-              <h3 class="text-xs font-semibold text-slate-100">最近制片项目</h3>
+              <h3 class="gw-type-body-lg font-semibold text-slate-100">最近制片项目</h3>
             </div>
             <div class="flex items-center space-x-2">
               <!-- 视图切换器: 网格卡片 (2列) vs 行条列表 -->
@@ -701,15 +695,15 @@
               </div>
 
               <span class="w-px h-3 bg-white/10"></span>
-              <button class="text-[9px] font-mono text-[#dfc384] hover:underline cursor-pointer" onclick="HardwareDeck.openModal('newProjectModal')">+ 新建</button>
-              <a href="projects.html" class="text-[9px] font-mono text-slate-400 hover:text-white">全部 &rarr;</a>
+              <button class="gw-type-body-md font-mono text-[#dfc384] hover:underline cursor-pointer" onclick="HardwareDeck.openModal('newProjectModal')">+ 新建</button>
+              <a href="projects.html" class="gw-type-body-sm font-mono text-slate-400 hover:text-white">全部 &rarr;</a>
             </div>
           </div>
 
           <!-- 真实项目动态挂载容器 -->
           <div class="flex-1 overflow-y-auto pr-1 min-h-0" id="workbenchRecentProjects">
             <!-- 加载中占位骨架 -->
-            <div class="bay-inset p-3 rounded-xl animate-pulse text-[10px] font-mono text-slate-500 flex items-center justify-center">
+            <div class="bay-inset p-3 rounded-xl animate-pulse gw-type-body-sm font-mono text-slate-500 flex items-center justify-center">
               <i data-lucide="loader-2" class="w-4 h-4 animate-spin mr-2 text-[#dfc384]"></i>
               <span>正在连接后端并同步项目数据...</span>
             </div>
@@ -721,15 +715,15 @@
           <div class="flex items-center justify-between pb-1.5 mb-1.5 border-b border-white/5 shrink-0">
             <div class="flex items-center space-x-2">
               <i data-lucide="database" class="w-4 h-4 text-purple-300"></i>
-              <h3 class="text-xs font-semibold text-slate-100">数字资产仓储概览</h3>
+              <h3 class="gw-type-body-lg font-semibold text-slate-100">数字资产仓储概览</h3>
             </div>
             <div class="flex items-center space-x-2">
-              <span id="assetOverviewStatus" class="text-[9px] font-mono text-emerald-400 flex items-center space-x-1">
+              <span id="assetOverviewStatus" class="gw-type-body-sm font-mono text-emerald-400 flex items-center space-x-1">
                 <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
                 <span>正常挂载</span>
               </span>
               <span class="w-px h-3 bg-white/10"></span>
-              <a href="assets.html" class="text-[9px] font-mono text-[#dfc384] hover:underline flex items-center space-x-0.5">
+              <a href="assets.html" class="gw-type-body-sm font-mono text-[#dfc384] hover:underline flex items-center space-x-0.5">
                 <span>资产金库</span>
                 <i data-lucide="arrow-right" class="w-2.5 h-2.5"></i>
               </a>
@@ -739,45 +733,45 @@
           <!-- 资产仓储容量与统计指标 -->
           <div class="grid grid-cols-4 gap-1.5 mb-2 shrink-0" id="assetCategoryCards">
             <div class="bay-inset p-1.5 rounded-lg text-center cursor-pointer hover:border-[#dfc384]/40 transition group" onclick="location.href='assets.html'">
-              <div class="text-[8px] font-mono text-slate-400 flex items-center justify-center space-x-1">
+              <div class="gw-type-body-sm font-mono text-slate-400 flex items-center justify-center space-x-1">
                 <i data-lucide="image" class="w-2.5 h-2.5 text-emerald-400"></i>
                 <span>原画/贴图</span>
               </div>
-              <div class="text-xs font-bold font-mono text-[#eddab3] mt-0.5" id="statImagesCount">1,890</div>
+              <div class="gw-type-body-sm font-bold font-mono text-[#eddab3] mt-0.5" id="statImagesCount">1,890</div>
             </div>
             <div class="bay-inset p-1.5 rounded-lg text-center cursor-pointer hover:border-[#dfc384]/40 transition group" onclick="location.href='assets.html'">
-              <div class="text-[8px] font-mono text-slate-400 flex items-center justify-center space-x-1">
+              <div class="gw-type-body-sm font-mono text-slate-400 flex items-center justify-center space-x-1">
                 <i data-lucide="box" class="w-2.5 h-2.5 text-cyan-300"></i>
                 <span>3D/模型</span>
               </div>
-              <div class="text-xs font-bold font-mono text-cyan-300 mt-0.5" id="statModelsCount">1,420</div>
+              <div class="gw-type-body-sm font-bold font-mono text-cyan-300 mt-0.5" id="statModelsCount">1,420</div>
             </div>
             <div class="bay-inset p-1.5 rounded-lg text-center cursor-pointer hover:border-[#dfc384]/40 transition group" onclick="location.href='assets.html'">
-              <div class="text-[8px] font-mono text-slate-400 flex items-center justify-center space-x-1">
+              <div class="gw-type-body-sm font-mono text-slate-400 flex items-center justify-center space-x-1">
                 <i data-lucide="film" class="w-2.5 h-2.5 text-amber-300"></i>
                 <span>视频/镜头</span>
               </div>
-              <div class="text-xs font-bold font-mono text-amber-300 mt-0.5" id="statVideosCount">380</div>
+              <div class="gw-type-body-sm font-bold font-mono text-amber-300 mt-0.5" id="statVideosCount">380</div>
             </div>
             <div class="bay-inset p-1.5 rounded-lg text-center cursor-pointer hover:border-[#dfc384]/40 transition group" onclick="location.href='assets.html'">
-              <div class="text-[8px] font-mono text-slate-400 flex items-center justify-center space-x-1">
+              <div class="gw-type-body-sm font-mono text-slate-400 flex items-center justify-center space-x-1">
                 <i data-lucide="volume-2" class="w-2.5 h-2.5 text-purple-300"></i>
                 <span>音频/音效</span>
               </div>
-              <div class="text-xs font-bold font-mono text-purple-300 mt-0.5" id="statAudiosCount">932</div>
+              <div class="gw-type-body-sm font-bold font-mono text-purple-300 mt-0.5" id="statAudiosCount">932</div>
             </div>
           </div>
 
           <!-- 最近资产流列表 (从 /api/asset-registry/assets 真实读取) -->
           <div class="flex-1 overflow-y-auto pr-1 min-h-0 space-y-1.5" id="workbenchRecentAssetsList">
-            <div class="bay-inset p-2.5 rounded-xl text-[9px] font-mono text-slate-400 text-center flex items-center justify-center space-x-1.5">
+            <div class="bay-inset p-2.5 rounded-xl gw-type-body-sm font-mono text-slate-400 text-center flex items-center justify-center space-x-1.5">
               <i data-lucide="loader" class="w-3 h-3 animate-spin text-[#dfc384]"></i>
               <span>正在读取真实资产库索引...</span>
             </div>
           </div>
 
           <!-- 底部 RAID-06 资产池与总览简报 -->
-          <div class="mt-1.5 pt-1.5 border-t border-white/5 shrink-0 flex items-center justify-between text-[8px] font-mono text-slate-400">
+          <div class="mt-1.5 pt-1.5 border-t border-white/5 shrink-0 flex items-center justify-between gw-type-body-sm font-mono text-slate-400">
             <div class="flex items-center space-x-2">
               <span>RAID-06: <strong class="text-[#eddab3]" id="statAssetPoolSize" data-gw-degradation="not_integrated">—</strong></span>
               <span class="w-px h-2 bg-white/10"></span>
@@ -799,21 +793,21 @@
           <div class="flex items-center justify-between pb-1.5 mb-1 border-b border-white/5 shrink-0">
             <a href="agents.html" class="flex items-center space-x-2 group cursor-pointer hover:opacity-90 transition" title="进入 AURA 智能体控制中枢 (agents.html)">
               <span class="w-2 h-2 rounded-full bg-emerald-400 shadow-[0_0_6px_#10b981] animate-pulse"></span>
-              <h3 class="text-xs font-semibold text-slate-100 group-hover:text-[#eddab3] flex items-center space-x-1.5">
+              <h3 class="gw-type-body-lg font-semibold text-slate-100 group-hover:text-[#eddab3] flex items-center space-x-1.5">
                 <span>AURA · 核心调度智能体机舱</span>
                 <i data-lucide="external-link" class="w-3 h-3 text-[#dfc384] opacity-70 group-hover:opacity-100"></i>
               </h3>
             </a>
-            <div class="flex items-center space-x-2 text-[9px] font-mono text-slate-400">
+            <div class="flex items-center space-x-2 gw-type-body-sm font-mono text-slate-400">
               <span class="px-1.5 py-0.5 rounded bg-black/60 border border-white/10 text-cyan-300" id="auraHeaderModelBadge">等待模型配置</span>
             </div>
           </div>
 
           <!-- 消息流容器 -->
-          <div class="flex-1 overflow-y-auto space-y-2.5 p-1 text-xs pr-1.5 min-h-0" id="workbenchChatStream">
+          <div class="flex-1 overflow-y-auto space-y-2.5 p-1 gw-type-body-sm pr-1.5 min-h-0" id="workbenchChatStream">
             <!-- 系统提示/欢迎语 -->
-            <div class="p-2.5 rounded-xl bg-[#0d1017] border border-[#dfc384]/20 text-[11px] text-slate-300 leading-relaxed font-sans">
-              <div class="flex items-center space-x-1.5 text-[9px] font-mono text-[#dfc384] font-bold mb-1">
+            <div class="p-2.5 rounded-xl bg-[#0d1017] border border-[#dfc384]/20 gw-type-body-sm text-slate-300 leading-relaxed font-sans">
+              <div class="flex items-center space-x-1.5 gw-type-body-sm font-mono text-[#dfc384] font-bold mb-1">
                 <i data-lucide="sparkles" class="w-3 h-3"></i>
                 <span id="auraBusStatus">AURA 智能体总线 · 读取中…</span>
               </div>
@@ -824,7 +818,7 @@
           <!-- 底部指令输入台 (绝对锁定于机舱底部) -->
           <div class="mt-2 pt-2 border-t border-white/5 shrink-0 space-y-2 relative">
             <!-- 快捷提示词芯片 -->
-            <div class="flex items-center space-x-1.5 overflow-x-auto pb-0.5 text-[9px] font-mono">
+            <div class="flex items-center space-x-1.5 overflow-x-auto pb-0.5 gw-type-body-sm font-mono">
               <button class="px-2 py-0.5 rounded-full bg-black/60 border border-white/10 text-slate-300 hover:border-[#dfc384] hover:text-[#eddab3] transition whitespace-nowrap" onclick="WorkbenchHome.insertChip('分析当前项目的第3幕高潮分镜戏剧冲突')"># 分析高潮分镜冲突</button>
               <button class="px-2 py-0.5 rounded-full bg-black/60 border border-white/10 text-slate-300 hover:border-[#dfc384] hover:text-[#eddab3] transition whitespace-nowrap" onclick="WorkbenchHome.insertChip('校准主角 AURA 钛金光感与面容一致性参数')"># 校准主角钛金光感</button>
               <button class="px-2 py-0.5 rounded-full bg-black/60 border border-white/10 text-slate-300 hover:border-[#dfc384] hover:text-[#eddab3] transition whitespace-nowrap" onclick="WorkbenchHome.insertChip('列出 GPU 渲染队列等待时长与显存占用')"># 检查渲染队列状态</button>
@@ -839,7 +833,7 @@
             <!-- 输入槽、拟物按键组与彩虹发射微球 -->
             <div class="bay-inset p-1.5 rounded-xl border border-[#dfc384]/30 space-y-1.5 bg-[#090b10]">
               <form id="workbenchChatForm" class="flex items-center space-x-2" onsubmit="WorkbenchHome.handleChatSubmit(event)">
-                <input type="text" id="workbenchChatInput" placeholder="向 AURA 下达创作意图、微调参数或批处理指令..." class="flex-1 bg-transparent border-0 text-xs font-mono text-slate-100 placeholder-slate-500 focus:ring-0 focus:outline-none px-1" autocomplete="off">
+                <input type="text" id="workbenchChatInput" placeholder="向 AURA 下达创作意图、微调参数或批处理指令..." class="flex-1 bg-transparent border-0 gw-type-body-md font-mono text-slate-100 placeholder-slate-500 focus:ring-0 focus:outline-none px-1" autocomplete="off">
 
                 <!-- 彩虹 AI 微球发射按钮 -->
                 <button type="submit" class="launch-orb-btn shrink-0 cursor-pointer" title="点火发射指令" style="
@@ -855,7 +849,7 @@
               </form>
 
               <!-- 拟物化三键控制栏 (上传附件 · API设置 · 尺寸) 对齐原路由 -->
-              <div class="flex items-center justify-between pt-1 border-t border-white/5 text-[10px] font-mono">
+              <div class="flex items-center justify-between pt-1 border-t border-white/5 gw-type-body-sm font-mono">
                 <div class="flex items-center space-x-1.5">
                   <!-- 1. 上传附件按键 -->
                   <button type="button" class="tactile-keycap px-2 py-1 rounded text-slate-300 hover:text-[#eddab3] flex items-center space-x-1 border border-white/10" onclick="document.getElementById('workbenchAuraAttachmentInput').click()" title="上传附件 (对齐原路由 /api/ai/upload)">
@@ -873,14 +867,14 @@
                     <!-- API / 模型快速微调弹窗 -->
                     <div id="workbenchAuraApiPopover" class="hidden absolute bottom-full left-0 mb-2 w-64 p-2 rounded-xl bg-[#0e1017] border border-[#dfc384]/40 shadow-[0_10px_25px_rgba(0,0,0,0.8)] z-50 space-y-2">
                       <div class="flex items-center justify-between pb-1 border-b border-white/10">
-                        <span class="text-[9px] font-bold text-[#dfc384]">API 平台与模型预设</span>
-                        <button type="button" onclick="WorkbenchHome.switchView('settings'); WorkbenchHome.toggleAuraApiPopover(false)" class="text-[8px] text-cyan-300 hover:underline flex items-center space-x-0.5">
+                        <span class="gw-type-body-sm font-bold text-[#dfc384]">API 平台与模型预设</span>
+                        <button type="button" onclick="WorkbenchHome.switchView('settings'); WorkbenchHome.toggleAuraApiPopover(false)" class="gw-type-body-md text-cyan-300 hover:underline flex items-center space-x-0.5">
                           <span>密钥设置</span>
                           <i data-lucide="arrow-right" class="w-2.5 h-2.5"></i>
                         </button>
                       </div>
-                      <div id="workbenchAuraModelOptions" class="space-y-1 text-[9.5px]">正在读取服务端模型配置</div>
-                      <p class="text-[9px] text-amber-300">发送消息可能产生真实模型费用；不会自动重试。</p>
+                      <div id="workbenchAuraModelOptions" class="space-y-1 gw-type-body-sm">正在读取服务端模型配置</div>
+                      <p class="gw-type-body-md text-amber-300">发送消息可能产生真实模型费用；不会自动重试。</p>
                     </div>
                   </div>
 
@@ -894,22 +888,22 @@
                     <!-- 尺寸拟物弹窗 (对齐原系统比例与分辨率规范) -->
                     <div id="workbenchAuraSizePopover" class="hidden absolute bottom-full left-0 mb-2 w-72 p-2.5 rounded-xl bg-[#0e1017] border border-[#dfc384]/40 shadow-[0_10px_25px_rgba(0,0,0,0.85)] z-50 space-y-2">
                       <div class="flex items-center justify-between pb-1 border-b border-white/10">
-                        <span class="text-[9.5px] font-bold text-[#eddab3]">尺寸与宽高比选择</span>
-                        <span class="text-[8.5px] text-slate-400 font-mono" id="workbenchAuraCurrentSizeSpec">1024 × 1024</span>
+                        <span class="gw-type-body-sm font-bold text-[#eddab3]">尺寸与宽高比选择</span>
+                        <span class="gw-type-body-sm text-slate-400 font-mono" id="workbenchAuraCurrentSizeSpec">1024 × 1024</span>
                       </div>
                       <!-- 比例矩阵网格 -->
-                      <div class="grid grid-cols-4 gap-1 text-[9px] font-mono text-center">
-                        <button type="button" class="p-1 rounded bg-[#161a24] hover:bg-[#222938] text-slate-200 border border-white/5 active" onclick="WorkbenchHome.setAuraRatio('1:1', '1024x1024')">1:1<br><span class="text-[7.5px] text-slate-400">正方形</span></button>
-                        <button type="button" class="p-1 rounded bg-[#161a24] hover:bg-[#222938] text-slate-200 border border-white/5" onclick="WorkbenchHome.setAuraRatio('16:9', '1280x720')">16:9<br><span class="text-[7.5px] text-slate-400">宽屏</span></button>
-                        <button type="button" class="p-1 rounded bg-[#161a24] hover:bg-[#222938] text-slate-200 border border-white/5" onclick="WorkbenchHome.setAuraRatio('9:16', '720x1280')">9:16<br><span class="text-[7.5px] text-slate-400">竖屏</span></button>
-                        <button type="button" class="p-1 rounded bg-[#161a24] hover:bg-[#222938] text-slate-200 border border-white/5" onclick="WorkbenchHome.setAuraRatio('2:3', '720x1080')">2:3<br><span class="text-[7.5px] text-slate-400">海报</span></button>
-                        <button type="button" class="p-1 rounded bg-[#161a24] hover:bg-[#222938] text-slate-200 border border-white/5" onclick="WorkbenchHome.setAuraRatio('3:2', '1080x720')">3:2<br><span class="text-[7.5px] text-slate-400">横图</span></button>
-                        <button type="button" class="p-1 rounded bg-[#161a24] hover:bg-[#222938] text-slate-200 border border-white/5" onclick="WorkbenchHome.setAuraRatio('3:4', '1008x1344')">3:4<br><span class="text-[7.5px] text-slate-400">小红书</span></button>
-                        <button type="button" class="p-1 rounded bg-[#161a24] hover:bg-[#222938] text-slate-200 border border-white/5" onclick="WorkbenchHome.setAuraRatio('4:3', '1344x1008')">4:3<br><span class="text-[7.5px] text-slate-400">传统</span></button>
-                        <button type="button" class="p-1 rounded bg-[#161a24] hover:bg-[#222938] text-slate-200 border border-white/5" onclick="WorkbenchHome.setAuraRatio('自动', '1024x1024')">自动<br><span class="text-[7.5px] text-cyan-400">智能</span></button>
+                      <div class="grid grid-cols-4 gap-1 gw-type-body-sm font-mono text-center">
+                        <button type="button" class="p-1 rounded bg-[#161a24] hover:bg-[#222938] text-slate-200 border border-white/5 active" onclick="WorkbenchHome.setAuraRatio('1:1', '1024x1024')">1:1<br><span class="gw-type-body-sm text-slate-400">正方形</span></button>
+                        <button type="button" class="p-1 rounded bg-[#161a24] hover:bg-[#222938] text-slate-200 border border-white/5" onclick="WorkbenchHome.setAuraRatio('16:9', '1280x720')">16:9<br><span class="gw-type-body-sm text-slate-400">宽屏</span></button>
+                        <button type="button" class="p-1 rounded bg-[#161a24] hover:bg-[#222938] text-slate-200 border border-white/5" onclick="WorkbenchHome.setAuraRatio('9:16', '720x1280')">9:16<br><span class="gw-type-body-sm text-slate-400">竖屏</span></button>
+                        <button type="button" class="p-1 rounded bg-[#161a24] hover:bg-[#222938] text-slate-200 border border-white/5" onclick="WorkbenchHome.setAuraRatio('2:3', '720x1080')">2:3<br><span class="gw-type-body-sm text-slate-400">海报</span></button>
+                        <button type="button" class="p-1 rounded bg-[#161a24] hover:bg-[#222938] text-slate-200 border border-white/5" onclick="WorkbenchHome.setAuraRatio('3:2', '1080x720')">3:2<br><span class="gw-type-body-sm text-slate-400">横图</span></button>
+                        <button type="button" class="p-1 rounded bg-[#161a24] hover:bg-[#222938] text-slate-200 border border-white/5" onclick="WorkbenchHome.setAuraRatio('3:4', '1008x1344')">3:4<br><span class="gw-type-body-sm text-slate-400">小红书</span></button>
+                        <button type="button" class="p-1 rounded bg-[#161a24] hover:bg-[#222938] text-slate-200 border border-white/5" onclick="WorkbenchHome.setAuraRatio('4:3', '1344x1008')">4:3<br><span class="gw-type-body-sm text-slate-400">传统</span></button>
+                        <button type="button" class="p-1 rounded bg-[#161a24] hover:bg-[#222938] text-slate-200 border border-white/5" onclick="WorkbenchHome.setAuraRatio('自动', '1024x1024')">自动<br><span class="gw-type-body-sm text-cyan-400">智能</span></button>
                       </div>
                       <!-- 分辨率档位 -->
-                      <div class="flex items-center justify-between pt-1 border-t border-white/10 text-[8.5px]">
+                      <div class="flex items-center justify-between pt-1 border-t border-white/10 gw-type-body-sm">
                         <span class="text-slate-400">分辨率档位:</span>
                         <div class="flex items-center space-x-1">
                           <button type="button" class="px-1.5 py-0.5 rounded bg-[#1a1e2b] text-[#dfc384] border border-[#dfc384]/30" onclick="WorkbenchHome.setAuraResolutionLevel('1K')">1K</button>
@@ -922,7 +916,7 @@
                 </div>
 
                 <!-- 右侧原路由直达标志 -->
-                <div class="text-[8px] text-slate-500 font-mono flex items-center space-x-1">
+                <div class="gw-type-body-sm text-slate-500 font-mono flex items-center space-x-1">
                   <span>ROUTER:</span>
                   <a href="agents.html" class="text-cyan-400/80 hover:text-cyan-300 hover:underline">/agents</a>
                 </div>
@@ -943,12 +937,12 @@
                 <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-cyan-400 opacity-75"></span>
                 <span class="relative inline-flex rounded-full h-2 w-2 bg-cyan-400 shadow-[0_0_6px_#38bdf8]"></span>
               </span>
-              <h3 class="text-xs font-semibold text-slate-100">正在进行的任务</h3>
+              <h3 class="gw-type-body-lg font-semibold text-slate-100">正在进行的任务</h3>
             </div>
             <div class="flex items-center space-x-1.5">
-              <span class="text-[8.5px] font-mono text-slate-400 font-bold" id="activeTasksCountBadge" title="读取真实作业队列 /api/observability/tasks">读取中…</span>
+              <span class="gw-type-body-sm font-mono text-slate-400 font-bold" id="activeTasksCountBadge" title="读取真实作业队列 /api/observability/tasks">读取中…</span>
               <span class="w-px h-2.5 bg-white/10"></span>
-              <button type="button" class="text-[8.5px] font-mono text-slate-400 hover:text-[#dfc384] transition cursor-pointer" onclick="HardwareDeck.openDrawer('taskCenterDrawer')" title="查看完整渲染与作业队列">
+              <button type="button" class="gw-type-body-md font-mono text-slate-400 hover:text-[#dfc384] transition cursor-pointer" onclick="HardwareDeck.openDrawer('taskCenterDrawer')" title="查看完整渲染与作业队列">
                 队列 &rarr;
               </button>
             </div>
@@ -956,7 +950,7 @@
 
           <!-- 真实作业队列容器：内容完全由 /api/observability/tasks 驱动，不含任何静态示例任务。 -->
           <div class="flex-1 overflow-y-auto space-y-1.5 pr-0.5 min-h-0" id="workbenchActiveTasksContainer">
-            <div class="bay-inset p-3 rounded-xl border border-white/10 text-center text-[10px] font-mono text-slate-400" role="status">
+            <div class="bay-inset p-3 rounded-xl border border-white/10 text-center gw-type-body-sm font-mono text-slate-400" role="status">
               <span class="block">读取真实作业队列…</span>
             </div>
           </div>
@@ -967,9 +961,9 @@
           <div class="flex items-center justify-between pb-1.5 mb-1 border-b border-white/5 shrink-0">
             <div class="flex items-center space-x-2">
               <i data-lucide="compass" class="w-4 h-4 text-[#dfc384]"></i>
-              <h3 class="text-xs font-semibold text-slate-100 tracking-wide">下一步行动指令 (Directives)</h3>
+              <h3 class="gw-type-body-lg font-semibold text-slate-100">下一步行动指令 (Directives)</h3>
             </div>
-            <span class="text-[8.5px] font-mono text-[#dfc384] font-bold" id="workbenchDirectivesCount">2 待办</span>
+            <span class="gw-type-body-sm font-mono text-[#dfc384] font-bold" id="workbenchDirectivesCount">2 待办</span>
           </div>
 
           <!-- 待办事项列表项 (1:1 沉浸拟物曜石质感，带翘板键与操作胶囊) -->
@@ -977,8 +971,8 @@
             <!-- 待办 1: 香槟金边框卡片 -->
             <div class="p-2 rounded-xl bay-inset border-l-2 border-[#dfc384] flex items-center justify-between bg-[#0a0c10]">
               <div class="min-w-0 pr-2">
-                <div class="text-[11px] font-semibold text-slate-200 truncate">审阅未通过剧照资产</div>
-                <div class="text-[8px] font-mono text-slate-500 mt-0.5">剧照测试 · 重新调色导出</div>
+                <div class="gw-type-body-sm font-semibold text-slate-200 truncate">审阅未通过剧照资产</div>
+                <div class="gw-type-body-sm font-mono text-slate-500 mt-0.5">剧照测试 · 重新调色导出</div>
               </div>
               <!-- 翘板微调按键 + 处理胶囊按钮 -->
               <div class="flex items-center space-x-1.5 shrink-0">
@@ -990,7 +984,7 @@
                     <i data-lucide="chevron-right" class="w-2.5 h-2.5"></i>
                   </button>
                 </div>
-                <button type="button" class="pill-capsule-inactive px-2 py-0.5 text-[8.5px] font-mono text-[#eddab3] cursor-pointer hover:border-[#dfc384] transition" onclick="location.href='assets.html'" title="立即处理该资产">
+                <button type="button" class="pill-capsule-inactive px-2 py-0.5 gw-type-body-md font-mono text-[#eddab3] cursor-pointer hover:border-[#dfc384] transition" onclick="location.href='assets.html'" title="立即处理该资产">
                   处理
                 </button>
               </div>
@@ -999,12 +993,12 @@
             <!-- 待办 2: 青色边框卡片 -->
             <div class="p-2 rounded-xl bay-inset border-l-2 border-cyan-400 flex items-center justify-between bg-[#0a0c10]">
               <div class="min-w-0 pr-2">
-                <div class="text-[11px] font-semibold text-slate-200 truncate">启动全量索引备份</div>
-                <div class="text-[8px] font-mono text-slate-500 mt-0.5">资产库 · 预估 3 分钟</div>
+                <div class="gw-type-body-sm font-semibold text-slate-200 truncate">启动全量索引备份</div>
+                <div class="gw-type-body-sm font-mono text-slate-500 mt-0.5">资产库 · 预估 3 分钟</div>
               </div>
               <!-- 启动胶囊按钮 -->
               <div class="flex items-center space-x-1.5 shrink-0">
-                <button type="button" class="pill-capsule-inactive px-2 py-0.5 text-[8.5px] font-mono text-cyan-300 border-cyan-500/30 cursor-pointer hover:border-cyan-400 transition" onclick="WorkbenchHome.triggerIndexBackup(this)" title="启动全量索引备份">
+                <button type="button" class="pill-capsule-inactive px-2 py-0.5 gw-type-body-md font-mono text-cyan-300 border-cyan-500/30 cursor-pointer hover:border-cyan-400 transition" onclick="WorkbenchHome.triggerIndexBackup(this)" title="启动全量索引备份">
                   启动
                 </button>
               </div>
@@ -1015,27 +1009,27 @@
         <!-- 3.3 第三分块：快速开始工坊 (高度缩小到 1/3，竖向 3 等分) -->
         <section class="champagne-card p-2.5 flex-1 flex flex-col justify-between min-h-0 overflow-hidden">
           <div class="flex items-center justify-between pb-1 mb-1 border-b border-white/5 shrink-0">
-            <h3 class="text-xs font-semibold text-slate-100">快速开始工坊</h3>
-            <span class="text-[8px] font-mono text-[#dfc384]">QUICK WORKFLOW</span>
+            <h3 class="gw-type-body-lg font-semibold text-slate-100">快速开始工坊</h3>
+            <span class="gw-type-body-sm font-mono text-[#dfc384]">QUICK WORKFLOW</span>
           </div>
 
           <!-- 4 颗紧凑型拟物按键 -->
           <div class="grid grid-cols-2 gap-1.5 my-auto">
             <button class="tactile-keycap p-1.5 rounded-xl flex items-center space-x-1.5 cursor-pointer group" onclick="HardwareDeck.openModal('newProjectModal')">
               <i data-lucide="folder-plus" class="w-3.5 h-3.5 text-[#dfc384] group-hover:scale-110 transition shrink-0"></i>
-              <span class="text-[9.5px] font-bold text-slate-200 truncate">新建制片</span>
+              <span class="gw-type-body-md font-bold text-slate-200 truncate">新建制片</span>
             </button>
             <a href="production.html" class="tactile-keycap p-1.5 rounded-xl flex items-center space-x-1.5 cursor-pointer group">
               <i data-lucide="clapperboard" class="w-3.5 h-3.5 text-cyan-300 group-hover:scale-110 transition shrink-0"></i>
-              <span class="text-[9.5px] font-bold text-slate-200 truncate">进入制片</span>
+              <span class="gw-type-body-md font-bold text-slate-200 truncate">进入制片</span>
             </a>
             <a href="storyboard.html" class="tactile-keycap p-1.5 rounded-xl flex items-center space-x-1.5 cursor-pointer group">
               <i data-lucide="layout-grid" class="w-3.5 h-3.5 text-amber-300 group-hover:scale-110 transition shrink-0"></i>
-              <span class="text-[9.5px] font-bold text-slate-200 truncate">分镜画布</span>
+              <span class="gw-type-body-md font-bold text-slate-200 truncate">分镜画布</span>
             </a>
             <a href="assets.html" class="tactile-keycap p-1.5 rounded-xl flex items-center space-x-1.5 cursor-pointer group">
               <i data-lucide="database" class="w-3.5 h-3.5 text-purple-300 group-hover:scale-110 transition shrink-0"></i>
-              <span class="text-[9.5px] font-bold text-slate-200 truncate">资产金库</span>
+              <span class="gw-type-body-md font-bold text-slate-200 truncate">资产金库</span>
             </a>
           </div>
 
@@ -1043,9 +1037,9 @@
           <div class="p-1.5 bay-inset rounded-xl flex items-center justify-between shrink-0 mt-1" data-gw-degradation="not_integrated">
             <div class="flex items-center space-x-1.5">
               <span class="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" id="renderBusLed"></span>
-              <span class="text-[9px] font-bold text-slate-300" id="renderBusStatus" data-gw-degradation="not_integrated">渲染总线 · 读取中…</span>
+              <span class="gw-type-body-sm font-bold text-slate-300" id="renderBusStatus" data-gw-degradation="not_integrated">渲染总线 · 读取中…</span>
             </div>
-            <button type="button" class="text-[8.5px] font-mono text-[#dfc384] hover:underline cursor-pointer" onclick="HardwareDeck.openDrawer('taskCenterDrawer')">查看队列 &rarr;</button>
+            <button type="button" class="gw-type-body-md font-mono text-[#dfc384] hover:underline cursor-pointer" onclick="HardwareDeck.openDrawer('taskCenterDrawer')">查看队列 &rarr;</button>
           </div>
         </section>
 
@@ -1060,36 +1054,36 @@
       <!-- LEFT: 导航与分区总线 (Width: 240px) -->
       <aside class="w-60 flex flex-col h-full shrink-0 champagne-card p-2.5 space-y-3">
         <div class="px-2 pt-1">
-          <div class="text-[9px] font-mono tracking-widest text-[#dfc384] uppercase font-bold">CONTROL BUS</div>
-          <div class="text-xs font-bold text-slate-100 mt-0.5">设置分区与配置模块</div>
+          <div class="gw-type-body-sm font-mono text-[#dfc384] font-bold">CONTROL BUS</div>
+          <div class="gw-type-body-sm font-bold text-slate-100 mt-0.5">设置分区与配置模块</div>
         </div>
 
         <!-- 核心分区切换按键 (内部平滑切换，无外链跳转) -->
         <nav class="space-y-1 settings-index" aria-label="设置分区">
-          <button type="button" data-section="general" class="w-full flex items-center space-x-2.5 px-3 py-2 rounded-lg text-xs font-medium text-slate-300 hover:text-white transition active cursor-pointer">
+          <button type="button" data-section="general" class="w-full flex items-center space-x-2.5 px-3 py-2 rounded-lg gw-type-body-md font-medium text-slate-300 hover:text-white transition active cursor-pointer">
             <i data-lucide="sliders" class="w-4 h-4 text-[#dfc384]"></i>
             <span>通用与外观偏好</span>
           </button>
-          <button type="button" data-section="directories" class="w-full flex items-center space-x-2.5 px-3 py-2 rounded-lg text-xs font-medium text-slate-300 hover:text-white transition cursor-pointer">
+          <button type="button" data-section="directories" class="w-full flex items-center space-x-2.5 px-3 py-2 rounded-lg gw-type-body-md font-medium text-slate-300 hover:text-white transition cursor-pointer">
             <i data-lucide="folder-cog" class="w-4 h-4 text-amber-300"></i>
             <span>目录设置</span>
           </button>
-          <button type="button" data-section="prompt-sources" class="w-full flex items-center space-x-2.5 px-3 py-2 rounded-lg text-xs font-medium text-slate-300 hover:text-white transition cursor-pointer">
+          <button type="button" data-section="prompt-sources" class="w-full flex items-center space-x-2.5 px-3 py-2 rounded-lg gw-type-body-md font-medium text-slate-300 hover:text-white transition cursor-pointer">
             <i data-lucide="sparkles" class="w-4 h-4 text-cyan-400"></i>
             <span>提示词来源 (本地快照)</span>
           </button>
-          <button type="button" data-section="api-settings" class="w-full flex items-center space-x-2.5 px-3 py-2 rounded-lg text-xs font-medium text-slate-300 hover:text-white transition cursor-pointer">
+          <button type="button" data-section="api-settings" class="w-full flex items-center space-x-2.5 px-3 py-2 rounded-lg gw-type-body-md font-medium text-slate-300 hover:text-white transition cursor-pointer">
             <i data-lucide="key" class="w-4 h-4 text-amber-400"></i>
             <span>API 与密钥配置</span>
           </button>
-          <button type="button" data-section="permissions" class="w-full flex items-center space-x-2.5 px-3 py-2 rounded-lg text-xs font-medium text-slate-300 hover:text-white transition cursor-pointer">
+          <button type="button" data-section="permissions" class="w-full flex items-center space-x-2.5 px-3 py-2 rounded-lg gw-type-body-md font-medium text-slate-300 hover:text-white transition cursor-pointer">
             <i data-lucide="shield-check" class="w-4 h-4 text-emerald-400"></i>
             <span>席位与资产权限</span>
           </button>
         </nav>
 
         <!-- 底部硬件固件信息指示卡 -->
-        <div class="mt-auto bay-inset p-2.5 rounded-xl text-[10px] font-mono text-slate-400 space-y-1">
+        <div class="mt-auto bay-inset p-2.5 rounded-xl gw-type-body-sm font-mono text-slate-400 space-y-1">
           <div class="flex justify-between text-slate-300">
             <span>DECK HW:</span>
             <span class="text-[#dfc384] font-bold">Workbench.0-SKEUO</span>
@@ -1108,14 +1102,14 @@
         <section class="active h-full flex flex-col overflow-y-auto pr-1" data-panel="general">
           <div class="mb-4 flex items-center justify-between">
             <div>
-              <h2 class="text-lg font-bold text-slate-100 flex items-center space-x-2">
+              <h2 class="gw-type-headline-sm font-medium text-slate-100 flex items-center space-x-2">
                 <i data-lucide="sliders" class="w-5 h-5 text-[#dfc384]"></i>
                 <span>通用工作台与工程环境设置</span>
               </h2>
-              <p class="text-xs text-slate-400 mt-1 font-mono">启动偏好、视觉主题、团队命名规则与系统状态</p>
+              <p class="gw-type-body-md text-slate-400 mt-1 font-mono">启动偏好、视觉主题、团队命名规则与系统状态</p>
             </div>
             <!-- 右侧局部保存状态显示 -->
-            <div class="flex items-center space-x-1.5 px-2.5 py-1 rounded bg-black/60 border border-white/10 font-mono text-[9px]">
+            <div class="flex items-center space-x-1.5 px-2.5 py-1 rounded bg-black/60 border border-white/10 font-mono gw-type-body-sm">
               <span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
               <span class="text-slate-400">STORAGE:</span>
               <span class="text-[#dfc384] font-bold" id="saveState">LOCAL SETTINGS</span>
@@ -1129,16 +1123,16 @@
             <div class="bay-inset p-4 rounded-xl space-y-3.5">
               <div class="flex items-center space-x-2 pb-2 border-b border-white/5">
                 <i data-lucide="power" class="w-4 h-4 text-[#dfc384]"></i>
-                <h3 class="text-xs font-bold text-slate-200">启动与任务行为</h3>
+                <h3 class="gw-type-body-lg font-bold text-slate-200">启动与任务行为</h3>
               </div>
 
               <!-- 默认启动页 -->
               <div class="flex items-center justify-between">
                 <div>
-                  <strong class="text-xs text-slate-200 block">默认启动页</strong>
-                  <p class="text-[11px] text-slate-400">打开工作台时首先加载的视图</p>
+                  <strong class="gw-type-body-sm text-slate-200 block">默认启动页</strong>
+                  <p class="gw-type-body-md text-slate-400">打开工作台时首先加载的视图</p>
                 </div>
-                <select id="defaultPage" class="bg-[#0e1117] border border-white/10 rounded-lg px-2.5 py-1 text-xs text-slate-200 focus:outline-none focus:border-[#dfc384]">
+                <select id="defaultPage" class="bg-[#0e1117] border border-white/10 rounded-lg px-2.5 py-1 gw-type-body-md text-slate-200 focus:outline-none focus:border-[#dfc384]">
                   <option value="index">首页 · 控制台</option>
                   <option value="projects">项目中心</option>
                   <option value="zimage">图像生成</option>
@@ -1149,8 +1143,8 @@
               <!-- 中心自动刷新 -->
               <div class="flex items-center justify-between pt-1">
                 <div>
-                  <strong class="text-xs text-slate-200 block">中心自动刷新</strong>
-                  <p class="text-[11px] text-slate-400">每 5 秒同步后台任务与运行日志</p>
+                  <strong class="gw-type-body-sm text-slate-200 block">中心自动刷新</strong>
+                  <p class="gw-type-body-md text-slate-400">每 5 秒同步后台任务与运行日志</p>
                 </div>
                 <button type="button" class="toggle on" data-setting="task_refresh" aria-label="中心自动刷新" aria-pressed="true">
                   <i></i>
@@ -1160,8 +1154,8 @@
               <!-- 恢复上次页面 -->
               <div class="flex items-center justify-between pt-1">
                 <div>
-                  <strong class="text-xs text-slate-200 block">恢复上次页面</strong>
-                  <p class="text-[11px] text-slate-400">重新打开时自动定位到最近工作位置</p>
+                  <strong class="gw-type-body-sm text-slate-200 block">恢复上次页面</strong>
+                  <p class="gw-type-body-md text-slate-400">重新打开时自动定位到最近工作位置</p>
                 </div>
                 <button type="button" class="toggle on" data-setting="restore_page" aria-label="恢复上次页面" aria-pressed="true">
                   <i></i>
@@ -1173,14 +1167,14 @@
             <div class="bay-inset p-4 rounded-xl space-y-3.5">
               <div class="flex items-center space-x-2 pb-2 border-b border-white/5">
                 <i data-lucide="palette" class="w-4 h-4 text-cyan-400"></i>
-                <h3 class="text-xs font-bold text-slate-200">界面外观与显示偏好</h3>
+                <h3 class="gw-type-body-lg font-bold text-slate-200">界面外观与显示偏好</h3>
               </div>
 
               <!-- 深色模式 -->
               <div class="flex items-center justify-between">
                 <div>
-                  <strong class="text-xs text-slate-200 block">深色模式 (曜石香槟金)</strong>
-                  <p class="text-[11px] text-slate-400">切换全局界面拟物暗黑科技主题</p>
+                  <strong class="gw-type-body-sm text-slate-200 block">深色模式 (曜石香槟金)</strong>
+                  <p class="gw-type-body-md text-slate-400">切换全局界面拟物暗黑科技主题</p>
                 </div>
                 <button type="button" class="toggle on" id="themeToggle" aria-label="深色模式" aria-pressed="true">
                   <i></i>
@@ -1190,10 +1184,10 @@
               <!-- 界面语言 -->
               <div class="flex items-center justify-between pt-1">
                 <div>
-                  <strong class="text-xs text-slate-200 block">界面语言</strong>
-                  <p class="text-[11px] text-slate-400">当前支持中文与英文双语切换</p>
+                  <strong class="gw-type-body-sm text-slate-200 block">界面语言</strong>
+                  <p class="gw-type-body-md text-slate-400">当前支持中文与英文双语切换</p>
                 </div>
-                <button type="button" class="tactile-keycap px-3 py-1.5 rounded-lg text-xs font-medium text-slate-200 hover:text-white cursor-pointer" id="languageToggle">
+                <button type="button" class="tactile-keycap px-3 py-1.5 rounded-lg gw-type-body-md font-medium text-slate-200 hover:text-white cursor-pointer" id="languageToggle">
                   切换语言
                 </button>
               </div>
@@ -1201,8 +1195,8 @@
               <!-- 减少动态效果 -->
               <div class="flex items-center justify-between pt-1">
                 <div>
-                  <strong class="text-xs text-slate-200 block">减少动态效果</strong>
-                  <p class="text-[11px] text-slate-400">降低复杂过渡动效与高光呼吸强度</p>
+                  <strong class="gw-type-body-sm text-slate-200 block">减少动态效果</strong>
+                  <p class="gw-type-body-md text-slate-400">降低复杂过渡动效与高光呼吸强度</p>
                 </div>
                 <button type="button" class="toggle" data-setting="reduce_motion" aria-label="减少动态效果" aria-pressed="false">
                   <i></i>
@@ -1214,25 +1208,25 @@
             <div class="bay-inset p-4 rounded-xl space-y-3.5">
               <div class="flex items-center space-x-2 pb-2 border-b border-white/5">
                 <i data-lucide="users" class="w-4 h-4 text-amber-400"></i>
-                <h3 class="text-xs font-bold text-slate-200">团队偏好与服务端同步</h3>
+                <h3 class="gw-type-body-lg font-bold text-slate-200">团队偏好与服务端同步</h3>
               </div>
 
               <!-- 命名规则 -->
               <div class="flex items-center justify-between">
                 <div>
-                  <strong class="text-xs text-slate-200 block">命名规则模板</strong>
-                  <p class="text-[11px] text-slate-400">资产导出与归档文件名模板</p>
+                  <strong class="gw-type-body-sm text-slate-200 block">命名规则模板</strong>
+                  <p class="gw-type-body-md text-slate-400">资产导出与归档文件名模板</p>
                 </div>
-                <input type="text" id="teamNaming" aria-label="命名规则" class="bg-[#0e1117] border border-white/10 rounded-lg px-2.5 py-1 text-xs text-slate-200 font-mono w-48 focus:outline-none focus:border-[#dfc384]" placeholder="{project}_{entity}_{version}">
+                <input type="text" id="teamNaming" aria-label="命名规则" class="bg-[#0e1117] border border-white/10 rounded-lg px-2.5 py-1 gw-type-body-md text-slate-200 font-mono w-48 focus:outline-none focus:border-[#dfc384]" placeholder="{project}_{entity}_{version}">
               </div>
 
               <!-- 默认审阅范围 -->
               <div class="flex items-center justify-between pt-1">
                 <div>
-                  <strong class="text-xs text-slate-200 block">默认审阅范围</strong>
-                  <p class="text-[11px] text-slate-400">新建审阅流与评审任务的默认可见性</p>
+                  <strong class="gw-type-body-sm text-slate-200 block">默认审阅范围</strong>
+                  <p class="gw-type-body-md text-slate-400">新建审阅流与评审任务的默认可见性</p>
                 </div>
-                <select id="teamVisibility" class="bg-[#0e1117] border border-white/10 rounded-lg px-2.5 py-1 text-xs text-slate-200 focus:outline-none focus:border-[#dfc384]">
+                <select id="teamVisibility" class="bg-[#0e1117] border border-white/10 rounded-lg px-2.5 py-1 gw-type-body-md text-slate-200 focus:outline-none focus:border-[#dfc384]">
                   <option value="team">团队成员 (全组公开)</option>
                   <option value="shared">公开分享 (外链许可)</option>
                   <option value="private">仅自己 (私有工作草稿)</option>
@@ -1241,8 +1235,8 @@
 
               <!-- 保存同步操作 -->
               <div class="flex items-center justify-between pt-2 border-t border-white/5">
-                <span class="text-[10px] font-mono text-slate-500">端点: /api/asset-registry/preferences/team</span>
-                <button type="button" class="px-3.5 py-1.5 rounded-lg bg-gradient-to-r from-[#dfc384]/20 to-[#dfc384]/30 border border-[#dfc384]/50 text-[#eddab3] text-xs font-bold hover:brightness-110 active:scale-95 transition cursor-pointer" id="btnSaveTeamPrefs">
+                <span class="gw-type-body-sm font-mono text-slate-500">端点: /api/asset-registry/preferences/team</span>
+                <button type="button" class="px-3.5 py-1.5 rounded-lg bg-gradient-to-r from-[#dfc384]/20 to-[#dfc384]/30 border border-[#dfc384]/50 text-[#eddab3] gw-type-body-md font-bold hover:brightness-110 active:scale-95 transition cursor-pointer" id="btnSaveTeamPrefs">
                   保存同步
                 </button>
               </div>
@@ -1252,9 +1246,9 @@
             <div class="bay-inset p-4 rounded-xl space-y-3">
               <div class="flex items-center space-x-2 pb-2 border-b border-white/5">
                 <i data-lucide="info" class="w-4 h-4 text-emerald-400"></i>
-                <h3 class="text-xs font-bold text-slate-200">系统信息与版本状态</h3>
+                <h3 class="gw-type-body-lg font-bold text-slate-200">系统信息与版本状态</h3>
               </div>
-              <div id="systemInfo" class="space-y-2 text-xs font-mono text-slate-300">
+              <div id="systemInfo" class="space-y-2 gw-type-body-sm font-mono text-slate-300">
                 <div class="flex items-center space-x-2 text-slate-400">
                   <div class="w-3 h-3 border-2 border-[#dfc384] border-t-transparent rounded-full animate-spin"></div>
                   <span>正在读取后端系统信息...</span>
@@ -1274,27 +1268,27 @@
         <section class="h-full flex flex-col overflow-y-auto pr-1" data-panel="prompt-sources">
           <div class="flex items-center justify-between mb-4 pb-3 border-b border-white/10">
             <div>
-              <h2 class="text-lg font-bold text-slate-100 flex items-center space-x-2">
+              <h2 class="gw-type-headline-sm font-medium text-slate-100 flex items-center space-x-2">
                 <i data-lucide="sparkles" class="w-5 h-5 text-cyan-400"></i>
                 <span>本地提示词来源快照管理</span>
               </h2>
-              <p class="text-xs text-slate-400 mt-0.5">管理随应用分发的本地提示词源。所有条目来自固定本地快照，离线纯本地运行。</p>
+              <p class="gw-type-body-md text-slate-400 mt-0.5">管理随应用分发的本地提示词源。所有条目来自固定本地快照，离线纯本地运行。</p>
             </div>
-            <span id="promptSourceSnapshotState" class="px-2.5 py-1 rounded bg-black/50 border border-white/10 font-mono text-[10px] text-[#dfc384]">正在读取</span>
+            <span id="promptSourceSnapshotState" class="px-2.5 py-1 rounded bg-black/50 border border-white/10 font-mono gw-type-body-sm text-[#dfc384]">正在读取</span>
           </div>
 
           <!-- 政策说明框 -->
           <div class="bay-inset p-3 rounded-xl mb-3 flex items-center space-x-3 border border-cyan-500/20">
             <i data-lucide="shield-check" class="w-5 h-5 text-cyan-400 shrink-0"></i>
-            <div class="text-xs text-slate-300">
+            <div class="gw-type-body-sm text-slate-300">
               <strong class="text-slate-100 block">固定本地快照策略</strong>
-              <span class="text-slate-400 text-[11px]">仅读取 <code>/static/prompt-registry/</code> 内的 manifest 和来源文件，关闭来源后资产中心与画布会立即隐藏对应条目。</span>
+              <span class="text-slate-400 gw-type-body-sm">仅读取 <code>/static/prompt-registry/</code> 内的 manifest 和来源文件，关闭来源后资产中心与画布会立即隐藏对应条目。</span>
             </div>
           </div>
 
           <!-- 动态来源列表容器 -->
           <div id="promptSourceList" class="space-y-2.5 flex-1 overflow-y-auto pr-1">
-            <div class="bay-inset p-4 rounded-xl text-center text-xs font-mono text-slate-400">
+            <div class="bay-inset p-4 rounded-xl text-center gw-type-body-sm font-mono text-slate-400">
               正在读取本地来源清单…
             </div>
           </div>
@@ -1304,15 +1298,15 @@
         <section class="h-full flex flex-col overflow-hidden" data-panel="api-settings">
           <div class="flex items-center justify-between mb-2.5 pb-2.5 border-b border-white/10 shrink-0">
             <div>
-              <h2 class="text-base font-bold text-slate-100 flex items-center space-x-2">
+              <h2 class="gw-type-headline-sm font-medium text-slate-100 flex items-center space-x-2">
                 <i data-lucide="key" class="w-4 h-4 text-amber-400"></i>
                 <span>API 平台与大模型密钥配置</span>
               </h2>
-              <p class="text-[11px] text-slate-400 mt-0.5 font-mono">配置各推理服务商地址、模型矩阵、即梦/GPT/Antigravity CLI 及本地密钥环境</p>
+              <p class="gw-type-body-md text-slate-400 mt-0.5 font-mono">配置各推理服务商地址、模型矩阵、即梦/GPT/Antigravity CLI 及本地密钥环境</p>
             </div>
             <div class="flex items-center space-x-2">
-              <span class="px-2 py-0.5 rounded bg-black/60 border border-white/10 font-mono text-[9px] text-[#dfc384]">SECURE ENV</span>
-              <a href="/static/pages/settings.html?section=api-settings" class="tactile-keycap px-2.5 py-1 rounded text-[10px] text-slate-300 hover:text-white flex items-center space-x-1" title="在 Workbench 设置中配置">
+              <span class="px-2 py-0.5 rounded bg-black/60 border border-white/10 font-mono gw-type-body-sm text-[#dfc384]">SECURE ENV</span>
+              <a href="/static/pages/settings.html?section=api-settings" class="tactile-keycap px-2.5 py-1 rounded gw-type-body-sm text-slate-300 hover:text-white flex items-center space-x-1" title="在 Workbench 设置中配置">
                 <i data-lucide="external-link" class="w-3 h-3"></i>
                 <span>前往 API 设置</span>
               </a>
@@ -1327,15 +1321,15 @@
         <section class="h-full flex flex-col overflow-hidden" data-panel="permissions">
           <div class="flex items-center justify-between mb-2.5 pb-2.5 border-b border-white/10 shrink-0">
             <div>
-              <h2 class="text-base font-bold text-slate-100 flex items-center space-x-2">
+              <h2 class="gw-type-headline-sm font-medium text-slate-100 flex items-center space-x-2">
                 <i data-lucide="users" class="w-4 h-4 text-[#dfc384]"></i>
                 <span>团队协同席位与资产权限治理</span>
               </h2>
-              <p class="text-[11px] text-slate-400 mt-0.5 font-mono">真实路由: /api/asset-auth/teams · /api/asset-auth/users</p>
+              <p class="gw-type-body-md text-slate-400 mt-0.5 font-mono">真实路由: /api/asset-auth/teams · /api/asset-auth/users</p>
             </div>
             <div class="flex items-center space-x-2">
-              <span class="px-2 py-0.5 rounded bg-black/60 border border-[#dfc384]/30 font-mono text-[9px] text-[#eddab3]">AUTH & RBAC</span>
-              <button type="button" onclick="HardwareDeck.loadTeamModalData('panelTeamList')" class="tactile-keycap px-2.5 py-1 rounded text-[10px] text-[#eddab3] hover:text-white flex items-center space-x-1" title="刷新席位列表">
+              <span class="px-2 py-0.5 rounded bg-black/60 border border-[#dfc384]/30 font-mono gw-type-body-sm text-[#eddab3]">AUTH & RBAC</span>
+              <button type="button" onclick="HardwareDeck.loadTeamModalData('panelTeamList')" class="tactile-keycap px-2.5 py-1 rounded gw-type-body-md text-[#eddab3] hover:text-white flex items-center space-x-1" title="刷新席位列表">
                 <i data-lucide="refresh-cw" class="w-3 h-3"></i>
                 <span>刷新状态</span>
               </button>
@@ -1350,8 +1344,8 @@
                     <i data-lucide="network" class="w-4 h-4"></i>
                   </div>
                   <div>
-                    <div class="font-bold text-slate-200 group-hover:text-[#eddab3] transition text-xs">实时协同工作台</div>
-                    <div class="text-[9px] font-mono text-slate-400">/static/pages/collab.html</div>
+                    <div class="font-bold text-slate-200 group-hover:text-[#eddab3] transition gw-type-body-sm">实时协同工作台</div>
+                    <div class="gw-type-body-sm font-mono text-slate-400">/static/pages/collab.html</div>
                   </div>
                 </div>
                 <i data-lucide="chevron-right" class="w-4 h-4 text-slate-500 group-hover:text-[#eddab3] transition"></i>
@@ -1363,8 +1357,8 @@
                     <i data-lucide="shield-alert" class="w-4 h-4"></i>
                   </div>
                   <div>
-                    <div class="font-bold text-slate-200 group-hover:text-cyan-300 transition text-xs">权限与团队审批</div>
-                    <div class="text-[9px] font-mono text-slate-400">/static/pages/assets.html</div>
+                    <div class="font-bold text-slate-200 group-hover:text-cyan-300 transition gw-type-body-sm">权限与团队审批</div>
+                    <div class="gw-type-body-sm font-mono text-slate-400">/static/pages/assets.html</div>
                   </div>
                 </div>
                 <i data-lucide="external-link" class="w-4 h-4 text-slate-500 group-hover:text-cyan-300 transition"></i>
@@ -1373,24 +1367,24 @@
 
             <!-- 当前登录席位状态与权限详情 -->
             <div class="bay-inset p-3 rounded-xl border border-white/5 space-y-2">
-              <div class="flex items-center justify-between text-[11px] font-bold text-slate-200 pb-2 border-b border-white/5">
+              <div class="flex items-center justify-between gw-type-body-sm font-bold text-slate-200 pb-2 border-b border-white/5">
                 <div class="flex items-center space-x-2">
                   <i data-lucide="shield-check" class="w-4 h-4 text-emerald-400"></i>
                   <span>当前席位凭据与治理策略</span>
                 </div>
-                <span class="text-[9px] font-mono text-amber-300 px-2 py-0.5 rounded bg-amber-500/10 border border-amber-500/20" id="settingsSessionBadge" data-gw-degradation="not_integrated">SESSION 读取中…</span>
+                <span class="gw-type-body-sm font-mono text-amber-300 px-2 py-0.5 rounded bg-amber-500/10 border border-amber-500/20" id="settingsSessionBadge" data-gw-degradation="not_integrated">SESSION 读取中…</span>
               </div>
-              <div class="grid grid-cols-3 gap-2 text-xs">
+              <div class="grid grid-cols-3 gap-2 gw-type-body-sm">
                 <div class="p-2 rounded-lg bg-black/40 border border-white/5">
-                  <div class="text-[9px] text-slate-400 font-mono">席位角色</div>
+                  <div class="gw-type-body-sm text-slate-400 font-mono">席位角色</div>
                   <div class="font-bold text-slate-400 mt-0.5" id="settingsSeatRole" data-gw-degradation="not_integrated">读取 /api/asset-auth/status…</div>
                 </div>
                 <div class="p-2 rounded-lg bg-black/40 border border-white/5">
-                  <div class="text-[9px] text-slate-400 font-mono">鉴权通道</div>
+                  <div class="gw-type-body-sm text-slate-400 font-mono">鉴权通道</div>
                   <div class="font-bold text-slate-400 mt-0.5" id="settingsAuthChannel" data-gw-degradation="not_integrated">读取中…</div>
                 </div>
                 <div class="p-2 rounded-lg bg-black/40 border border-white/5">
-                  <div class="text-[9px] text-slate-400 font-mono">响应延时</div>
+                  <div class="gw-type-body-sm text-slate-400 font-mono">响应延时</div>
                   <div class="font-bold text-slate-400 font-mono mt-0.5" id="settingsAuthLatency" data-gw-degradation="not_integrated">未测量</div>
                 </div>
               </div>
@@ -1399,24 +1393,24 @@
             <!-- 动态团队席位成员列表 (对接 /api/asset-auth/teams 与 /api/asset-auth/users) -->
             <div class="space-y-2">
               <div class="flex items-center justify-between">
-                <span class="text-[11px] font-bold text-[#dfc384] font-mono">团队空间与席位成员</span>
-                <span class="text-[9px] font-mono text-slate-500">未接入时明说「未接入」，不伪造席位</span>
+                <span class="gw-type-body-sm font-bold text-[#dfc384] font-mono">团队空间与席位成员</span>
+                <span class="gw-type-body-sm font-mono text-slate-500">未接入时明说「未接入」，不伪造席位</span>
               </div>
               <div id="panelTeamList" class="space-y-2">
                 <div class="bay-inset p-2.5 rounded-xl flex items-center justify-between border-l-2 border-[#dfc384]">
                   <div class="flex items-center space-x-2.5">
-                    <div class="w-7 h-7 rounded-full bg-[#dfc384] text-black font-bold flex items-center justify-center text-[10px]">AD</div>
+                    <div class="w-7 h-7 rounded-full bg-[#dfc384] text-black font-bold flex items-center justify-center gw-type-body-sm">AD</div>
                     <div>
-                      <div class="font-bold text-slate-400 text-xs">席位列表待读取</div>
-                      <div class="text-[9px] font-mono text-slate-500">未接入时本行会明说「未接入」，不伪造管理员席位</div>
+                      <div class="font-bold text-slate-400 gw-type-body-sm">席位列表待读取</div>
+                      <div class="gw-type-body-sm font-mono text-slate-500">未接入时本行会明说「未接入」，不伪造管理员席位</div>
                     </div>
                   </div>
-                  <span class="text-[9px] font-mono text-amber-300" data-gw-degradation="not_integrated">未接入</span>
+                  <span class="gw-type-body-sm font-mono text-amber-300" data-gw-degradation="not_integrated">未接入</span>
                 </div>
               </div>
             </div>
 
-            <div class="pt-2 border-t border-white/10 flex items-center justify-between text-[9px] font-mono text-slate-500">
+            <div class="pt-2 border-t border-white/10 flex items-center justify-between gw-type-body-sm font-mono text-slate-500">
               <span>团队与用户管理 API: /api/asset-auth/teams · /api/asset-auth/users</span>
               <span>Gods' Workbench 安全鉴权模块</span>
             </div>
@@ -1437,17 +1431,17 @@
       <div class="flex items-center justify-between pb-2 mb-3 border-b border-white/10">
         <div class="flex items-center space-x-2">
           <i data-lucide="settings" class="w-4 h-4 text-[#dfc384]"></i>
-          <h3 class="text-sm font-bold text-slate-100">系统与大模型设置</h3>
+          <h3 class="gw-type-body-lg font-bold text-slate-100">系统与大模型设置</h3>
         </div>
         <button class="text-slate-400 hover:text-white" onclick="HardwareDeck.closeModal('settingsModal')">
           <i data-lucide="x" class="w-4 h-4"></i>
         </button>
       </div>
 
-      <div class="space-y-3 text-xs">
+      <div class="space-y-3 gw-type-body-sm">
         <div>
-          <label class="block text-[10px] font-mono text-slate-400 mb-1">LLM 供应商模型 (Primary Model)</label>
-          <select class="w-full bg-[#0a0c10] border border-white/10 rounded-lg px-2.5 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-[#dfc384]">
+          <label class="block gw-type-body-sm font-mono text-slate-400 mb-1">LLM 供应商模型 (Primary Model)</label>
+          <select class="w-full bg-[#0a0c10] border border-white/10 rounded-lg px-2.5 py-1.5 gw-type-body-md text-slate-200 focus:outline-none focus:border-[#dfc384]">
             <option>DeepSeek V3 / R1 (官方中继)</option>
             <option>Claude 3.5 Sonnet (Direct API)</option>
             <option>OpenAI GPT-4o</option>
@@ -1456,19 +1450,19 @@
         </div>
 
         <div>
-          <label class="block text-[10px] font-mono text-slate-400 mb-1">生图引擎服务端点 (FLUX API)</label>
-          <input type="text" value="" class="w-full bg-[#0a0c10] border border-white/10 rounded-lg px-2.5 py-1.5 text-xs font-mono text-[#eddab3] focus:outline-none focus:border-[#dfc384]">
+          <label class="block gw-type-body-sm font-mono text-slate-400 mb-1">生图引擎服务端点 (FLUX API)</label>
+          <input type="text" value="" class="w-full bg-[#0a0c10] border border-white/10 rounded-lg px-2.5 py-1.5 gw-type-body-md font-mono text-[#eddab3] focus:outline-none focus:border-[#dfc384]">
         </div>
 
         <div class="grid grid-cols-2 gap-2">
           <div>
-            <label class="block text-[10px] font-mono text-slate-400 mb-1">默认发散温度 (Temperature: 0.70)</label>
+            <label class="block gw-type-body-sm font-mono text-slate-400 mb-1">默认发散温度 (Temperature: 0.70)</label>
             <div class="hw-fader-track-horizontal w-full h-1.5 mt-2">
               <div class="hw-fader-glow-bar" style="width: 0%;" data-gw-degradation="not_integrated"></div>
             </div>
           </div>
           <div>
-            <label class="block text-[10px] font-mono text-slate-400 mb-1">最大上下文窗口 (128K Token)</label>
+            <label class="block gw-type-body-sm font-mono text-slate-400 mb-1">最大上下文窗口 (128K Token)</label>
             <div class="hw-fader-track-horizontal w-full h-1.5 mt-2">
               <div class="hw-fader-glow-bar" style="width: 0%; background: #38bdf8;" data-gw-degradation="not_integrated"></div>
             </div>
@@ -1477,8 +1471,8 @@
       </div>
 
       <div class="mt-4 pt-3 border-t border-white/10 flex justify-end space-x-2">
-        <button class="px-3 py-1.5 rounded-lg text-xs font-mono text-slate-400 hover:text-white" onclick="HardwareDeck.closeModal('settingsModal')">取消</button>
-        <button class="tactile-keycap px-4 py-1.5 rounded-lg text-xs font-bold text-[#eddab3]" onclick="HardwareDeck.closeModal('settingsModal')">保存配置</button>
+        <button class="px-3 py-1.5 rounded-lg gw-type-body-md font-mono text-slate-400 hover:text-white" onclick="HardwareDeck.closeModal('settingsModal')">取消</button>
+        <button class="tactile-keycap px-4 py-1.5 rounded-lg gw-type-body-md font-bold text-[#eddab3]" onclick="HardwareDeck.closeModal('settingsModal')">保存配置</button>
       </div>
     </div>
   </div>
@@ -1489,31 +1483,31 @@
       <div class="flex items-center justify-between pb-2 mb-3 border-b border-white/10">
         <div class="flex items-center space-x-2">
           <i data-lucide="folder-plus" class="w-4 h-4 text-[#dfc384]"></i>
-          <h3 class="text-sm font-bold text-slate-100">创建新影视制片工程</h3>
+          <h3 class="gw-type-body-lg font-bold text-slate-100">创建新影视制片工程</h3>
         </div>
         <button class="text-slate-400 hover:text-white" onclick="HardwareDeck.closeModal('newProjectModal')">
           <i data-lucide="x" class="w-4 h-4"></i>
         </button>
       </div>
 
-      <form onsubmit="WorkbenchHome.handleCreateProject(event)" class="space-y-3 text-xs">
+      <form onsubmit="WorkbenchHome.handleCreateProject(event)" class="space-y-3 gw-type-body-sm">
         <div>
-          <label class="block text-[10px] font-mono text-slate-400 mb-1">工程代号 / 项目名称</label>
-          <input type="text" id="newProjectNameInput" required placeholder="例如：《星际信标 · 第01季》" class="w-full bg-[#0a0c10] border border-white/10 rounded-lg px-2.5 py-1.5 text-xs text-slate-100 focus:outline-none focus:border-[#dfc384]">
+          <label class="block gw-type-body-sm font-mono text-slate-400 mb-1">工程代号 / 项目名称</label>
+          <input type="text" id="newProjectNameInput" required placeholder="例如：《星际信标 · 第01季》" class="w-full bg-[#0a0c10] border border-white/10 rounded-lg px-2.5 py-1.5 gw-type-body-md text-slate-100 focus:outline-none focus:border-[#dfc384]">
         </div>
 
         <div class="grid grid-cols-2 gap-2">
           <div>
-            <label class="block text-[10px] font-mono text-slate-400 mb-1">项目类型</label>
-            <select id="newProjectTypeSelect" class="w-full bg-[#0a0c10] border border-white/10 rounded-lg px-2 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-[#dfc384]">
+            <label class="block gw-type-body-sm font-mono text-slate-400 mb-1">项目类型</label>
+            <select id="newProjectTypeSelect" class="w-full bg-[#0a0c10] border border-white/10 rounded-lg px-2 py-1.5 gw-type-body-md text-slate-200 focus:outline-none focus:border-[#dfc384]">
               <option value="film">院线长片 (Film)</option>
               <option value="series">连续短剧 (Series)</option>
               <option value="other">概念艺术与PV (PV/Art)</option>
             </select>
           </div>
           <div>
-            <label class="block text-[10px] font-mono text-slate-400 mb-1">色彩构图标准</label>
-            <select class="w-full bg-[#0a0c10] border border-white/10 rounded-lg px-2 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-[#dfc384]">
+            <label class="block gw-type-body-sm font-mono text-slate-400 mb-1">色彩构图标准</label>
+            <select class="w-full bg-[#0a0c10] border border-white/10 rounded-lg px-2 py-1.5 gw-type-body-md text-slate-200 focus:outline-none focus:border-[#dfc384]">
               <option>ACEScg · 2.39:1 宽银幕</option>
               <option>Rec.709 · 16:9 标清</option>
               <option>9:16 竖屏短剧集</option>
@@ -1522,12 +1516,12 @@
         </div>
 
         <div>
-          <label class="block text-[10px] font-mono text-slate-400 mb-1">项目简述与背景设想</label>
-          <textarea id="newProjectDescInput" rows="2" placeholder="输入世界观设定与初版叙事方向..." class="w-full bg-[#0a0c10] border border-white/10 rounded-lg px-2.5 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-[#dfc384]"></textarea>
+          <label class="block gw-type-body-sm font-mono text-slate-400 mb-1">项目简述与背景设想</label>
+          <textarea id="newProjectDescInput" rows="2" placeholder="输入世界观设定与初版叙事方向..." class="w-full bg-[#0a0c10] border border-white/10 rounded-lg px-2.5 py-1.5 gw-type-body-md text-slate-200 focus:outline-none focus:border-[#dfc384]"></textarea>
         </div>
 
         <div class="project-date-range-field" data-project-date-range>
-          <label class="block text-[10px] font-mono text-slate-400 mb-1">项目排期</label>
+          <label class="block gw-type-body-sm font-mono text-slate-400 mb-1">项目排期</label>
           <button type="button" class="tactile-keycap project-date-range-trigger" data-date-range-trigger aria-haspopup="dialog" aria-expanded="false"><i data-lucide="calendar-days" class="w-4 h-4"></i><span class="project-date-range-label" data-date-range-label>选择项目排期</span></button>
           <input type="hidden" id="newProjectStartAt" data-date-range-start>
           <input type="hidden" id="newProjectDueAt" data-date-range-end>
@@ -1535,8 +1529,8 @@
         </div>
 
         <div class="pt-2 border-t border-white/10 flex justify-end space-x-2">
-          <button type="button" class="px-3 py-1.5 rounded-lg text-xs font-mono text-slate-400 hover:text-white" onclick="HardwareDeck.closeModal('newProjectModal')">取消</button>
-          <button type="submit" class="tactile-keycap px-4 py-1.5 rounded-lg text-xs font-bold text-[#eddab3]">立即立项</button>
+          <button type="button" class="px-3 py-1.5 rounded-lg gw-type-body-md font-mono text-slate-400 hover:text-white" onclick="HardwareDeck.closeModal('newProjectModal')">取消</button>
+          <button type="submit" class="tactile-keycap px-4 py-1.5 rounded-lg gw-type-body-md font-bold text-[#eddab3]">立即立项</button>
         </div>
       </form>
     </div>
@@ -1548,17 +1542,17 @@
     <div class="p-3.5 border-b border-white/10 flex items-center justify-between shrink-0 bg-[#0d0f14]">
       <div class="flex items-center space-x-2">
         <i data-lucide="bell" class="w-4 h-4 text-[#dfc384]"></i>
-        <h3 class="text-xs font-bold text-slate-100 uppercase tracking-wider">任务中心与渲染队列</h3>
+        <h3 class="gw-type-body-lg font-bold text-slate-100">任务中心与渲染队列</h3>
       </div>
       <button class="text-slate-400 hover:text-white" onclick="HardwareDeck.closeDrawer('taskCenterDrawer')">
         <i data-lucide="x" class="w-4 h-4"></i>
       </button>
     </div>
 
-    <div class="p-3 overflow-y-auto space-y-2 flex-1 text-xs">
+    <div class="p-3 overflow-y-auto space-y-2 flex-1 gw-type-body-sm">
       <!-- 任务中心抽屉内容：由 /api/observability/tasks 真实驱动。 -->
       <div class="space-y-2" id="workbenchTaskCenterDrawerList">
-        <div class="bay-inset p-2.5 rounded-xl border border-white/10 text-center text-[10px] font-mono text-slate-400" role="status">读取真实作业队列…</div>
+        <div class="bay-inset p-2.5 rounded-xl border border-white/10 text-center gw-type-body-sm font-mono text-slate-400" role="status">读取真实作业队列…</div>
       </div>
     </div>
   </aside>
@@ -1569,14 +1563,14 @@
       <div class="flex items-center justify-between pb-2 mb-3 border-b border-white/10">
         <div class="flex items-center space-x-2">
           <i data-lucide="users" class="w-4 h-4 text-[#dfc384]"></i>
-          <h3 class="text-sm font-bold text-slate-100">团队与协同席位治理</h3>
+          <h3 class="gw-type-body-lg font-bold text-slate-100">团队与协同席位治理</h3>
         </div>
         <button type="button" class="hw-modal-close text-slate-400 hover:text-white" onclick="HardwareDeck.closeModal('teamModal')">
           <i data-lucide="x" class="w-4 h-4"></i>
         </button>
       </div>
 
-      <div class="space-y-3 text-xs">
+      <div class="space-y-3 gw-type-body-sm">
         <div class="grid grid-cols-2 gap-2">
           <a href="/static/pages/collab.html" class="bay-inset p-2 rounded-xl flex items-center justify-between group hover:border-[#dfc384]/40 transition border border-white/5">
             <div class="flex items-center space-x-2">
@@ -1585,7 +1579,7 @@
               </div>
               <div>
                 <div class="font-bold text-slate-200 group-hover:text-[#eddab3] transition">实时协同工作台</div>
-                <div class="text-[8.5px] font-mono text-slate-400">/static/pages/collab.html</div>
+                <div class="gw-type-body-sm font-mono text-slate-400">/static/pages/collab.html</div>
               </div>
             </div>
             <i data-lucide="chevron-right" class="w-3.5 h-3.5 text-slate-500 group-hover:text-[#eddab3] transition"></i>
@@ -1598,7 +1592,7 @@
               </div>
               <div>
                 <div class="font-bold text-slate-200 group-hover:text-cyan-300 transition">权限与团队审批</div>
-                <div class="text-[8.5px] font-mono text-slate-400">/static/pages/assets.html</div>
+                <div class="gw-type-body-sm font-mono text-slate-400">/static/pages/assets.html</div>
               </div>
             </div>
             <i data-lucide="external-link" class="w-3.5 h-3.5 text-slate-500 group-hover:text-cyan-300 transition"></i>
@@ -1608,19 +1602,19 @@
         <div id="teamModalList" class="space-y-2 max-h-60 overflow-y-auto pr-1">
           <div class="bay-inset p-2.5 rounded-xl flex items-center justify-between border-l-2 border-[#dfc384]">
             <div class="flex items-center space-x-2">
-              <div class="w-7 h-7 rounded-full bg-[#dfc384] text-black font-bold flex items-center justify-center text-[10px]">AD</div>
+              <div class="w-7 h-7 rounded-full bg-[#dfc384] text-black font-bold flex items-center justify-center gw-type-body-sm">AD</div>
               <div>
                 <div class="font-bold text-slate-400">席位列表待读取</div>
-                <div class="text-[8.5px] font-mono text-slate-500">未接入时本行会明说「未接入」</div>
+                <div class="gw-type-body-sm font-mono text-slate-500">未接入时本行会明说「未接入」</div>
               </div>
             </div>
-            <span class="text-[8.5px] font-mono text-slate-500">—</span>
+            <span class="gw-type-body-sm font-mono text-slate-500">—</span>
           </div>
         </div>
 
-        <div class="pt-2 border-t border-white/10 flex items-center justify-between text-[9px] font-mono text-slate-500">
+        <div class="pt-2 border-t border-white/10 flex items-center justify-between gw-type-body-sm font-mono text-slate-500">
           <span>真实路由: /api/asset-auth/teams · /api/asset-auth/users</span>
-          <button type="button" class="px-3 py-1.5 rounded-lg text-xs font-mono text-slate-400 hover:text-white" onclick="HardwareDeck.closeModal('teamModal')">关闭</button>
+          <button type="button" class="px-3 py-1.5 rounded-lg gw-type-body-md font-mono text-slate-400 hover:text-white" onclick="HardwareDeck.closeModal('teamModal')">关闭</button>
         </div>
       </div>
     </div>
@@ -1628,8 +1622,8 @@
 
   <!-- Scripts -->
   <script src="/static/js/core/degradation.js?v=v0.0.1-alpha-2026"></script>
-  <script src="/static/js/core/hardware-telemetry.js"></script>
-<script src="/static/js/core/task-queue.js"></script>
+  <script src="/static/js/core/hardware-telemetry.js?v=20261008-auth6"></script>
+<script src="/static/js/core/task-queue.js?v=20261008-auth6"></script>
   <script src="/static/js/modules/directory-settings-nav.js?v=20260917"></script>
   <script src="/static/js/modules/project-date-range.js"></script>
   <script src="/static/js/controllers/home-controller.js"></script>
@@ -1638,6 +1632,6 @@
       if (window.lucide) lucide.createIcons();
     });
   </script>
-<script src="/static/js/core/workbench-shell.js"></script>
+<script src="/static/js/core/workbench-shell.js?v=20261009-parse-cf7"></script>
 </body>
 </html>

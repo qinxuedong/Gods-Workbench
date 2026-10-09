@@ -179,10 +179,10 @@ def test_get_providers_empty_by_default(api_client: TestClient):
     assert body == fixture
 
 
-def test_put_providers_strips_credentials_and_accepts_frontend_id(api_client: TestClient):
-    """整体替换必须剥离凭据字段，并接受前端既有的 id 作为 provider_id。"""
+def test_put_providers_protects_credentials_and_accepts_frontend_id(api_client: TestClient):
+    """凭据加密保存但不回显，并接受前端既有id。"""
     res = api_client.put(
-        "/api/providers",
+        "/api/providers?expected_version=1",
         json=[{"id": "openai", "name": "OpenAI", "api_key": "sk-secret", "base_url": "https://api.example"}],
         headers=EDITOR,
     )
@@ -193,13 +193,14 @@ def test_put_providers_strips_credentials_and_accepts_frontend_id(api_client: Te
     item = body["providers"][0]
     assert item["provider_id"] == "openai"
     assert "api_key" not in item
+    assert item["has_key"] is True
     dumped = json.dumps(body, ensure_ascii=False)
     assert "sk-secret" not in dumped
 
 
 def test_put_providers_cas_conflict(api_client: TestClient):
     """PUT providers 错误 expected_version 必须 409。"""
-    first = api_client.put("/api/providers", json=[{"id": "a", "name": "A"}], headers=EDITOR)
+    first = api_client.put("/api/providers?expected_version=1", json=[{"id": "a", "name": "A"}], headers=EDITOR)
     assert first.status_code == 200
     conflict = api_client.put(
         "/api/providers?expected_version=1",
@@ -213,7 +214,7 @@ def test_put_providers_cas_conflict(api_client: TestClient):
 def test_put_providers_duplicate_id_rejected(api_client: TestClient):
     """重复 provider_id 必须 400。"""
     res = api_client.put(
-        "/api/providers",
+        "/api/providers?expected_version=1",
         json=[{"id": "a"}, {"provider_id": "a"}],
         headers=EDITOR,
     )

@@ -22,6 +22,29 @@
 (function(window) {
   'use strict';
 
+  // 所有受保护读请求共用这一道认证闸门；认证状态未知或未登录时不发业务请求。
+  const authGate = window.GWAuthGate = window.GWAuthGate || {
+    loaded: false,
+    authenticated: false,
+    status: 0,
+    revision: 0,
+    paused: new Set(),
+    canRead: function(endpoint) { return this.isAuthenticated() && !this.paused.has(endpoint); },
+    wait: function() {
+      if (this.isAuthenticated()) return Promise.resolve(true);
+      return HardwareDeck.syncAuth().then(() => this.isAuthenticated());
+    },
+    isAuthenticated: function() { return this.loaded && this.authenticated === true; },
+    invalidate: function(status = 401, requestRevision = this.revision, endpoint = '') {
+      // 业务 401 仅触发一次身份复核；旧请求不能覆盖新登录，复核不广播恢复以免401循环。
+      if (requestRevision !== this.revision) return;
+      if (endpoint) this.paused.add(endpoint);
+      if (this.inFlight) return;
+      return HardwareDeck.syncAuth({quiet: true});
+    }
+
+  };
+
   const HardwareDeck = {
     // 1. Clock Engine
     initClock: function(elementId = 'masterDeckClock') {
@@ -187,11 +210,14 @@
      * 只在拿到有限数值时接线（integrated=true），失败/缺失一律显式降级。
      */
     syncTelemetry: async function() {
+      if (!authGate.canRead('/api/observability/health')) return;
+      const authRevision = authGate.revision;
       try {
         const res = await fetch('/api/observability/health', {
           credentials: 'same-origin',
           cache: 'no-store'
         });
+        if (res.status === 401) { authGate.invalidate(401, authRevision, '/api/observability/health'); return; }
         if (!res.ok) throw new Error('health ' + res.status);
         const data = await res.json();
         const checks = Array.isArray(data && data.checks) ? data.checks : [];
@@ -239,13 +265,13 @@
 
       if (Number.isFinite(util) && utilNode) {
         utilNode.textContent = Math.round(util) + '%';
-        utilNode.className = 'text-[10px] font-mono text-cyan-300 font-bold';
+        utilNode.className = 'gw-type-body-sm font-mono text-cyan-300 font-bold';
         utilNode.removeAttribute('data-gw-degradation');
         utilNode.title = '真实 GPU 平均利用率（nvidia-smi，' + devices.length + ' 台设备）';
       }
       if (Number.isFinite(vram) && vramNode) {
         vramNode.textContent = Math.round(vram) + '%';
-        vramNode.className = 'text-[10px] font-mono text-cyan-300 font-bold';
+        vramNode.className = 'gw-type-body-sm font-mono text-cyan-300 font-bold';
         vramNode.removeAttribute('data-gw-degradation');
         vramNode.title = '真实显存占用率（nvidia-smi 平均值）';
       }
@@ -285,12 +311,12 @@
       if (badge) {
         if (ok && devices.length) {
           badge.textContent = devices.length + ' 台真实 GPU';
-          badge.className = 'text-[7.5px] font-mono px-1 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 shrink-0';
+          badge.className = 'gw-type-body-sm font-mono px-1 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 shrink-0';
           badge.removeAttribute('data-gw-degradation');
           badge.title = '真实 GPU 设备数（nvidia-smi）';
         } else {
           badge.textContent = '未接入';
-          badge.className = 'text-[7.5px] font-mono px-1 py-0.5 rounded-full bg-amber-500/15 text-amber-300 border border-amber-500/30 shrink-0';
+          badge.className = 'gw-type-body-sm font-mono px-1 py-0.5 rounded-full bg-amber-500/15 text-amber-300 border border-amber-500/30 shrink-0';
           badge.setAttribute('data-gw-degradation', kind);
         }
       }
@@ -299,12 +325,12 @@
       document.querySelectorAll('[data-gw-gpu-cluster]').forEach(function (el) {
         if (ok && devices.length) {
           el.textContent = devices.length + ' 台 GPU';
-          el.className = 'text-[8px] font-mono font-bold text-cyan-300 leading-tight';
+          el.className = 'gw-type-body-sm font-mono font-bold text-cyan-300 leading-tight';
           el.removeAttribute('data-gw-degradation');
           el.title = '真实 GPU 设备数（nvidia-smi，' + devices.length + ' 台）';
         } else {
           el.textContent = '未接入';
-          el.className = 'text-[8px] font-mono font-bold text-slate-500 leading-tight';
+          el.className = 'gw-type-body-sm font-mono font-bold text-slate-500 leading-tight';
           el.setAttribute('data-gw-degradation', kind);
           el.title = '无真实 GPU 遥测（nvidia-smi 不可用或未检出设备）';
         }
@@ -316,14 +342,14 @@
           grid.innerHTML = devices.map(function (d) {
             const memPct = Number.isFinite(Number(d.memory_utilization_percent))
               ? Math.round(Number(d.memory_utilization_percent)) + '%' : '—';
-            return '<div class="bay-inset py-0.5 px-1.5 rounded-md flex items-center justify-between text-[8px] font-mono">'
+            return '<div class="bay-inset py-0.5 px-1.5 rounded-md flex items-center justify-between gw-type-body-sm font-mono">'
               + '<span class="text-slate-300 truncate" title="' + String(d.name || '') + '">'
               + String(d.name || ('GPU #' + d.index)) + '</span>'
               + '<span class="text-cyan-300 font-bold">' + Math.round(Number(d.utilization_percent) || 0) + '%</span>'
               + '<span class="text-slate-400">' + memPct + '</span></div>';
           }).join('');
         } else {
-          grid.innerHTML = '<div class="col-span-2 bay-inset py-0.5 px-1.5 rounded-md text-[8px] font-mono text-amber-300" '
+          grid.innerHTML = '<div class="col-span-2 bay-inset py-0.5 px-1.5 rounded-md gw-type-body-sm font-mono text-amber-300" '
             + 'data-gw-degradation="' + kind + '">无真实 GPU 遥测（nvidia-smi 不可用或未检出设备）</div>';
         }
       }
@@ -331,7 +357,7 @@
         if (ok && devices.length) {
           const totalMib = devices.reduce(function (a, d) { return a + (Number(d.memory_total_mib) || 0); }, 0);
           capNode.textContent = 'VRAM 合计上限 ' + (totalMib / 1024).toFixed(1) + ' GiB';
-          capNode.className = 'text-[8.5px] font-mono text-slate-300 font-semibold';
+          capNode.className = 'gw-type-body-sm font-mono text-slate-300 font-semibold';
           capNode.removeAttribute('data-gw-degradation');
           capNode.title = '真实显存上限合计（nvidia-smi，' + devices.length + ' 台设备）';
         } else {
@@ -342,12 +368,12 @@
       }
       if (cluster) {
         if (ok) {
-          cluster.className = 'text-[8.5px] font-mono text-emerald-400 flex items-center';
+          cluster.className = 'gw-type-body-sm font-mono text-emerald-400 flex items-center';
           cluster.innerHTML = '<span class="w-1.5 h-1.5 rounded-full bg-emerald-400 mr-1"></span>GPU 遥测已接入（' + devices.length + ' 台）';
           cluster.removeAttribute('data-gw-degradation');
           cluster.title = '真实数据源：nvidia-smi via GET /api/observability/health';
         } else {
-          cluster.className = 'text-[8.5px] font-mono text-amber-300 flex items-center';
+          cluster.className = 'gw-type-body-sm font-mono text-amber-300 flex items-center';
           cluster.innerHTML = '<span class="w-1.5 h-1.5 rounded-full bg-amber-400 mr-1 animate-pulse"></span>'
             + (kind === 'service_unavailable' ? 'GPU 遥测暂不可用' : 'GPU 遥测未接入');
           cluster.setAttribute('data-gw-degradation', kind);
@@ -487,14 +513,17 @@
     onlineState: { kind: 'unknown', detail: '' },
 
     syncOnlineStatus: async function() {
+      if (!authGate.canRead('/api/observability/health')) return;
+      const authRevision = authGate.revision;
       const node = document.getElementById('gwOnlineStatus');
       if (!node) return;
       node.textContent = '探测中…';
       try {
         const res = await fetch('/api/observability/health', {
-          credential: 'same-origin',
+          credentials: 'same-origin',
           cache: 'no-store'
         });
+        if (res.status === 401) { authGate.invalidate(401, authRevision, '/api/observability/health'); return; }
         const body = await res.json().catch(() => ({}));
         if (!res.ok) {
           const kind = res.status === 503 ? 'service_unavailable' : 'not_integrated';
@@ -522,7 +551,7 @@
       if (container) container.querySelectorAll('span').forEach(s => { if (s !== node) leds.push(s); });
       if (kind === 'ok') {
         node.textContent = '已接入';
-        node.className = 'text-[9px] font-mono text-emerald-400 font-semibold';
+        node.className = 'gw-type-body-sm font-mono text-emerald-400 font-semibold';
         node.removeAttribute('data-gw-degradation');
         node.title = '真实探针全部通过（' + detail + '）';
         leds.forEach(s => {
@@ -532,17 +561,17 @@
         });
       } else if (kind === 'degraded') {
         node.textContent = '部分降级';
-        node.className = 'text-[9px] font-mono text-amber-300 font-semibold';
+        node.className = 'gw-type-body-sm font-mono text-amber-300 font-semibold';
         node.setAttribute('data-gw-degradation', 'degraded');
         node.title = '真实探针存在降级项（' + detail + '）';
       } else if (kind === 'service_unavailable') {
         node.textContent = '暂不可用';
-        node.className = 'text-[9px] font-mono text-amber-300 font-semibold';
+        node.className = 'gw-type-body-sm font-mono text-amber-300 font-semibold';
         node.setAttribute('data-gw-degradation', 'service_unavailable');
         node.title = '健康探测端点暂时不可用（' + detail + '）';
       } else {
         node.textContent = '未接入';
-        node.className = 'text-[9px] font-mono text-amber-300 font-semibold';
+        node.className = 'gw-type-body-sm font-mono text-amber-300 font-semibold';
         node.setAttribute('data-gw-degradation', 'not_integrated');
         node.title = '健康探测端点未接入（' + detail + '）';
       }
@@ -590,6 +619,8 @@
     },
 
     syncStageProgress: async function() {
+      if (!authGate.canRead('/api/episode-pipelines')) return;
+      const authRevision = authGate.revision;
       const targets = [
         ['busStageScript', 'script'],
         ['busStageVideo', 'video'],
@@ -612,9 +643,10 @@
           stageProjectId = fromUrl || localStorage.getItem('workspace_project_id') || 'proj-01';
         } catch (_) { stageProjectId = 'proj-01'; }
         const res = await fetch('/api/episode-pipelines?project_id=' + encodeURIComponent(stageProjectId), {
-          credential: 'same-origin',
+          credentials: 'same-origin',
           cache: 'no-store'
         });
+        if (res.status === 401) { authGate.invalidate(401, authRevision, '/api/episode-pipelines'); return; }
         const body = await res.json().catch(() => null);
         if (!res.ok) {
           const kind = res.status === 503 ? 'service_unavailable' : 'not_integrated';
@@ -649,17 +681,17 @@
           if (kind === 'ok' && byKey && byKey.__summary) {
             node.textContent = byKey.__summary.done + '/' + byKey.__summary.total + ' 阶段';
             const allDone = byKey.__summary.done === byKey.__summary.total && byKey.__summary.total > 0;
-            node.className = 'text-[9px] font-mono font-bold ' + (allDone ? 'text-emerald-400' : 'text-cyan-300');
+            node.className = 'gw-type-body-sm font-mono font-bold ' + (allDone ? 'text-emerald-400' : 'text-cyan-300');
             node.removeAttribute('data-gw-degradation');
             node.title = '真实阶段状态：' + byKey.__summary.done + '/' + byKey.__summary.total + ' 已完成（' + detail + '）';
           } else if (kind === 'empty') {
             node.textContent = '无流水线';
-            node.className = 'text-[9px] font-mono font-bold text-slate-400';
+            node.className = 'gw-type-body-sm font-mono font-bold text-slate-400';
             node.removeAttribute('data-gw-degradation');
             node.title = '真实应答确为空流水线（' + detail + '）';
           } else {
             node.textContent = kind === 'service_unavailable' ? '暂不可用' : '未接入';
-            node.className = 'text-[9px] font-mono font-bold text-amber-300';
+            node.className = 'gw-type-body-sm font-mono font-bold text-amber-300';
             node.setAttribute('data-gw-degradation', kind);
             node.title = '阶段进度读取失败（' + detail + '）';
           }
@@ -670,26 +702,26 @@
           if (stage) {
             const status = String(stage.status || '');
             node.textContent = this.stageStatusLabel(status);
-            if (status === 'completed') node.className = 'text-[8px] font-mono text-emerald-400 shrink-0';
-            else if (status === 'running') node.className = 'text-[8px] font-mono text-cyan-300 shrink-0';
-            else if (status === 'failed' || status === 'cancelled') node.className = 'text-[8px] font-mono text-rose-400 shrink-0';
-            else node.className = 'text-[8px] font-mono text-slate-400 shrink-0';
+            if (status === 'completed') node.className = 'gw-type-body-sm font-mono text-emerald-400 shrink-0';
+            else if (status === 'running') node.className = 'gw-type-body-sm font-mono text-cyan-300 shrink-0';
+            else if (status === 'failed' || status === 'cancelled') node.className = 'gw-type-body-sm font-mono text-rose-400 shrink-0';
+            else node.className = 'gw-type-body-sm font-mono text-slate-400 shrink-0';
             node.removeAttribute('data-gw-degradation');
             node.title = '真实阶段状态：' + status + '（' + detail + '）';
           } else {
             node.textContent = '无该阶段';
-            node.className = 'text-[8px] font-mono text-slate-400 shrink-0';
+            node.className = 'gw-type-body-sm font-mono text-slate-400 shrink-0';
             node.setAttribute('data-gw-degradation', 'not_integrated');
             node.title = '流水线中不含该阶段（' + detail + '）';
           }
         } else if (kind === 'empty') {
           node.textContent = '无流水线';
-          node.className = 'text-[8px] font-mono text-slate-400 shrink-0';
+          node.className = 'gw-type-body-sm font-mono text-slate-400 shrink-0';
           node.removeAttribute('data-gw-degradation');
           node.title = '真实应答确为空流水线（' + detail + '）';
         } else {
           node.textContent = kind === 'service_unavailable' ? '暂不可用' : '未接入';
-          node.className = 'text-[8px] font-mono text-amber-300 shrink-0';
+          node.className = 'gw-type-body-sm font-mono text-amber-300 shrink-0';
           node.setAttribute('data-gw-degradation', kind);
           node.title = '阶段进度读取失败（' + detail + '）';
         }
@@ -713,19 +745,23 @@
       degradationStatus: 0
     },
 
-    syncAuth: async function() {
-      // 统一「无后端时显式降级」：认证接口不可用时**绝不**伪造身份，
-      // 只把状态标记为「未接入 / 暂不可用」，由 UI 明说「未登录 · 认证服务未接入」。
+    syncAuth: async function({quiet = false} = {}) {
+      // 并发认证查询共享同一请求；失败仍保留可重试的未知态，不永久锁死工作台。
+      if (authGate.inFlight) return authGate.inFlight;
+      authGate.revision += 1;
+      if (!quiet) authGate.paused.clear();
       const authStartedAt = (window.performance && performance.now) ? performance.now() : Date.now();
+      authGate.inFlight = (async () => {
       try {
         const res = await fetch('/api/asset-auth/status', {
           credentials: 'same-origin',
-          cache: 'no-store'
+          cache: 'no-store',
+          signal: AbortSignal.timeout(15000)
         });
         const data = await res.json().catch(() => ({}));
         if (res.ok) {
           // 严格按后端契约读取；authenticated=false 时 principal 必须为 null，绝不臆造身份。
-          const authenticated = Boolean(data.authenticated);
+          const authenticated = data.authenticated === true && Boolean(data.principal);
           this.authState.auth_mode = String(data.auth_mode || 'local_account');
           this.authState.oidc_ready = Boolean(data.oidc_ready);
           this.authState.authenticated = authenticated;
@@ -737,6 +773,9 @@
           this.authState.degradation = 'ok';
           this.authState.degradationStatus = res.status;
           this.authState.loaded = true;
+          authGate.loaded = true;
+          authGate.authenticated = authenticated;
+          authGate.status = res.status;
           const nowMs = (window.performance && performance.now) ? performance.now() : Date.now();
           this.authState.latencyMs = Math.max(0, Math.round(nowMs - authStartedAt));
         } else {
@@ -746,12 +785,18 @@
         this.markAuthUnavailable(0, undefined);
       }
       this.updateAuthDOM();
+      if (!quiet || !authGate.isAuthenticated()) window.dispatchEvent(new CustomEvent('gw-auth-state', { detail: { ...this.authState } }));
+      if (!quiet && authGate.isAuthenticated()) { this.syncTelemetry(); this.syncOnlineStatus(); this.syncStageProgress(); }
+
       if (this.authState.auth_mode === 'local_account' && this.authState.setup_required && !this.setupPromptShown) {
         this.setupPromptShown = true;
         this.openAccountModal();
       } else if (document.getElementById('accountModal')?.classList.contains('open')) {
         this.renderAccountModalContent();
       }
+      return this.authState;
+      })();
+      try { return await authGate.inFlight; } finally { authGate.inFlight = null; }
     },
 
     /**
@@ -769,6 +814,9 @@
       this.authState.degradation = kind === 'service_unavailable' ? 'unavailable' : 'not_integrated';
       this.authState.degradationStatus = status;
       this.authState.loaded = true;
+      authGate.loaded = true;
+      authGate.authenticated = false;
+      authGate.status = Number(status) || 0;
     },
 
     updateAuthDOM: function() {
@@ -943,18 +991,18 @@
           <div class="flex items-center justify-between pb-2 mb-3 border-b border-white/10">
             <div class="flex items-center space-x-2">
               <i data-lucide="plug-zap" class="w-4 h-4 text-amber-300"></i>
-              <h3 class="text-sm font-bold text-slate-100">${degradedTitle}</h3>
+              <h3 class="gw-type-body-md font-bold text-slate-100">${degradedTitle}</h3>
             </div>
             <button class="text-slate-400 hover:text-white" onclick="HardwareDeck.closeModal('accountModal')">
               <i data-lucide="x" class="w-4 h-4"></i>
             </button>
           </div>
-          <div class="bay-inset p-3 rounded-xl border border-amber-500/30 text-[11px] font-mono text-amber-200" role="status" data-hw-auth-degradation="${degradedKind}">
+          <div class="bay-inset p-3 rounded-xl border border-amber-500/30 gw-type-body-sm font-mono text-amber-200" role="status" data-hw-auth-degradation="${degradedKind}">
             <span class="block">该功能尚未接入后端（未纳入当前切片）</span>
-            <span class="block mt-1 text-[9px] text-slate-500">${degradedBody}</span>
+            <span class="block mt-1 gw-type-body-sm text-slate-500">${degradedBody}</span>
           </div>
           <div class="pt-3 mt-3 border-t border-white/10 text-right">
-            <button type="button" class="px-3 py-1.5 rounded-lg text-xs font-mono text-slate-400 hover:text-white" onclick="HardwareDeck.closeModal('accountModal')">关闭</button>
+            <button type="button" class="px-3 py-1.5 rounded-lg gw-type-body-md font-mono text-slate-400 hover:text-white" onclick="HardwareDeck.closeModal('accountModal')">关闭</button>
           </div>
         `;
         if (window.lucide) window.lucide.createIcons();
@@ -968,28 +1016,28 @@
           <div class="flex items-center justify-between pb-2 mb-3 border-b border-white/10">
             <div class="flex items-center space-x-2">
               <i data-lucide="shield-check" class="w-4 h-4 text-[#dfc384]"></i>
-              <h3 class="text-sm font-bold text-slate-100">认证中心 · 账户管理</h3>
+              <h3 class="gw-type-body-md font-bold text-slate-100">认证中心 · 账户管理</h3>
             </div>
             <button class="text-slate-400 hover:text-white" onclick="HardwareDeck.closeModal('accountModal')">
               <i data-lucide="x" class="w-4 h-4"></i>
             </button>
           </div>
 
-          <div class="space-y-3 text-xs">
+          <div class="space-y-3 gw-type-body-sm">
             <div class="bay-inset p-3 rounded-xl flex items-center space-x-3 border border-[#dfc384]/20">
               <div class="w-10 h-10 rounded-full bg-gradient-to-tr from-[#dfc384] to-[#947a57] p-0.5 shadow-lg shrink-0">
-                <div class="w-full h-full rounded-full bg-[#08090d] flex items-center justify-center text-[#eddab3] font-bold text-sm">
+                <div class="w-full h-full rounded-full bg-[#08090d] flex items-center justify-center text-[#eddab3] font-bold gw-type-body-md">
                   ${(user.display_name || user.username || 'AD').substring(0, 2).toUpperCase()}
                 </div>
               </div>
               <div class="flex-1 min-w-0">
-                <div class="text-sm font-bold text-slate-100 truncate">${user.display_name || user.username}</div>
-                <div class="text-[10px] font-mono text-[#dfc384]">${roleMap[user.role] || user.role}</div>
-                <div class="text-[9px] font-mono text-slate-500 mt-0.5">账户ID: ${user.username || user.id || '—'} · 已连接后端认证服务</div>
+                <div class="gw-type-body-md font-bold text-slate-100 truncate">${user.display_name || user.username}</div>
+                <div class="gw-type-body-sm font-mono text-[#dfc384]">${roleMap[user.role] || user.role}</div>
+                <div class="gw-type-body-sm font-mono text-slate-500 mt-0.5">账户ID: ${user.username || user.id || '—'} · 已连接后端认证服务</div>
               </div>
             </div>
 
-            <div class="p-2.5 rounded-xl bg-black/40 border border-white/5 space-y-1.5 text-[10px] font-mono text-slate-400">
+            <div class="p-2.5 rounded-xl bg-black/40 border border-white/5 space-y-1.5 gw-type-body-sm font-mono text-slate-400">
               <div class="flex justify-between"><span>会话鉴权方式</span><span class="text-emerald-400">服务端会话 Cookie（HttpOnly）</span></div>
               <div class="flex justify-between"><span>角色来源</span><span class="text-slate-200">${this.authState.auth_mode === 'local_account' ? '本地账户数据库' : 'IdP 组声明映射'}</span></div>
               <div class="flex justify-between"><span>认证模式</span><span class="text-cyan-300">${escapeHtml(this.authState.auth_mode)}</span></div>
@@ -997,13 +1045,13 @@
             </div>
 
             <div class="pt-2 border-t border-white/10 flex items-center justify-between">
-              <a href="/static/pages/assets.html" class="text-[10px] font-mono text-[#dfc384] hover:underline flex items-center space-x-1">
+              <a href="/static/pages/assets.html" class="gw-type-body-sm font-mono text-[#dfc384] hover:underline flex items-center space-x-1">
                 <i data-lucide="external-link" class="w-3 h-3"></i>
                 <span>打开资产中心与团队分配</span>
               </a>
               <div class="flex items-center space-x-2">
-                <button type="button" class="px-3 py-1.5 rounded-lg text-xs font-mono text-slate-400 hover:text-white" onclick="HardwareDeck.closeModal('accountModal')">关闭</button>
-                <button type="button" class="px-3 py-1.5 rounded-lg bg-red-500/20 text-red-300 border border-red-500/40 text-xs font-bold hover:bg-red-500/30 transition" onclick="HardwareDeck.handleLogout()">退出登录</button>
+                <button type="button" class="px-3 py-1.5 rounded-lg gw-type-body-md font-mono text-slate-400 hover:text-white" onclick="HardwareDeck.closeModal('accountModal')">关闭</button>
+                <button type="button" class="px-3 py-1.5 rounded-lg bg-red-500/20 text-red-300 border border-red-500/40 gw-type-body-md font-bold hover:bg-red-500/30 transition" onclick="HardwareDeck.handleLogout()">退出登录</button>
               </div>
             </div>
           </div>
@@ -1020,26 +1068,26 @@
           <div class="flex items-center justify-between pb-2 mb-3 border-b border-white/10">
             <div class="flex items-center space-x-2">
               <i data-lucide="lock" class="w-4 h-4 text-[#dfc384]"></i>
-              <h3 class="text-sm font-bold text-slate-100">曜石身份认证 · 系统登录</h3>
+              <h3 class="gw-type-body-md font-bold text-slate-100">曜石身份认证 · 系统登录</h3>
             </div>
             <button class="text-slate-400 hover:text-white" onclick="HardwareDeck.closeModal('accountModal')">
               <i data-lucide="x" class="w-4 h-4"></i>
             </button>
           </div>
 
-          <div class="space-y-3 text-xs">
-            <div class="bay-inset p-3 rounded-xl border border-white/10 text-[10px] font-mono text-slate-400" role="status" data-hw-auth-login="${loginAvailable ? 'available' : 'disabled'}">
+          <div class="space-y-3 gw-type-body-sm">
+            <div class="bay-inset p-3 rounded-xl border border-white/10 gw-type-body-sm font-mono text-slate-400" role="status" data-hw-auth-login="${loginAvailable ? 'available' : 'disabled'}">
               <span class="block">${escapeHtml(loginHint)}</span>
-              <span class="block mt-1 text-[9px] text-slate-500">认证模式: ${escapeHtml(this.authState.auth_mode)} · 授权方式: Authorization Code + PKCE (S256)</span>
+              <span class="block mt-1 gw-type-body-sm text-slate-500">认证模式: ${escapeHtml(this.authState.auth_mode)} · 授权方式: Authorization Code + PKCE (S256)</span>
             </div>
 
-            <div id="hwLoginErrorMsg" class="text-[10px] font-mono text-red-400 hidden"></div>
+            <div id="hwLoginErrorMsg" class="gw-type-body-sm font-mono text-red-400 hidden"></div>
 
             <div class="pt-2 border-t border-white/10 flex items-center justify-between">
-              <span class="text-[9px] font-mono text-slate-500">发起端点: POST /api/asset-auth/login</span>
+              <span class="gw-type-body-sm font-mono text-slate-500">发起端点: POST /api/asset-auth/login</span>
               <div class="flex items-center space-x-2">
-                <button type="button" class="px-3 py-1.5 rounded-lg text-xs font-mono text-slate-400 hover:text-white" onclick="HardwareDeck.closeModal('accountModal')">取消</button>
-                <button type="button" id="hwLoginSubmitBtn" ${loginAvailable ? '' : 'disabled'} onclick="HardwareDeck.handleLoginSubmit(event)" class="tactile-keycap px-4 py-1.5 rounded-lg text-xs font-bold text-[#eddab3] ${loginAvailable ? '' : 'opacity-50 cursor-not-allowed'}">
+                <button type="button" class="px-3 py-1.5 rounded-lg gw-type-body-md font-mono text-slate-400 hover:text-white" onclick="HardwareDeck.closeModal('accountModal')">取消</button>
+                <button type="button" id="hwLoginSubmitBtn" ${loginAvailable ? '' : 'disabled'} onclick="HardwareDeck.handleLoginSubmit(event)" class="tactile-keycap px-4 py-1.5 rounded-lg gw-type-body-md font-bold text-[#eddab3] ${loginAvailable ? '' : 'opacity-50 cursor-not-allowed'}">
                   使用外部身份提供商登录
                 </button>
               </div>
@@ -1056,17 +1104,17 @@
       const setup = this.authState.setup_required;
       dialog.innerHTML = `
         <div class="flex items-center justify-between pb-3 mb-3 border-b border-white/10">
-          <h3 class="text-sm font-bold text-slate-100">${setup ? '首次设置 · 创建管理员' : '本地账户登录'}</h3>
+          <h3 class="gw-type-body-md font-bold text-slate-100">${setup ? '首次设置 · 创建管理员' : '本地账户登录'}</h3>
           <button type="button" aria-label="关闭登录" class="text-slate-400" onclick="HardwareDeck.closeModal('accountModal')">关闭</button>
         </div>
-        <p class="mb-3 text-xs text-slate-400">${setup ? '请设置你自己的管理员账户。没有默认密码；账户保存在本机数据库，重启后仍然有效。' : '使用本机数据库中的账号密码登录，无需外部认证服务。'}</p>
+        <p class="mb-3 gw-type-body-sm text-slate-400">${setup ? '请设置你自己的管理员账户。没有默认密码；账户保存在本机数据库，重启后仍然有效。' : '使用本机数据库中的账号密码登录，无需外部认证服务。'}</p>
         <form id="localAccountForm" class="space-y-3" onsubmit="HardwareDeck.handleLocalAccountSubmit(event)">
-          <label class="block text-xs text-slate-300" for="localUsername">账号</label>
+          <label class="block gw-type-body-md text-slate-300" for="localUsername">账号</label>
           <input id="localUsername" name="username" class="w-full bg-black/40 border border-white/20 rounded-lg p-2 text-slate-100" autocomplete="username" required minlength="3" maxlength="64" pattern="[A-Za-z0-9_.\\-]{3,64}" placeholder="3–64位字母、数字、点、短横线或下划线">
-          <label class="block text-xs text-slate-300" for="localPassword">密码</label>
+          <label class="block gw-type-body-md text-slate-300" for="localPassword">密码</label>
           <input id="localPassword" name="password" type="password" class="w-full bg-black/40 border border-white/20 rounded-lg p-2 text-slate-100" autocomplete="${setup ? 'new-password' : 'current-password'}" required minlength="8" maxlength="128" ${setup ? 'pattern="(?=.*[A-Za-z])(?=.*[0-9]).{8,128}"' : ''} placeholder="至少8位，包含字母和数字">
-          ${setup ? '<label class="block text-xs text-slate-300" for="localPasswordConfirm">确认密码</label><input id="localPasswordConfirm" type="password" class="w-full bg-black/40 border border-white/20 rounded-lg p-2 text-slate-100" autocomplete="new-password" required minlength="8" maxlength="128">' : ''}
-          <p id="localLoginError" role="alert" class="text-xs text-red-300 hidden"></p>
+          ${setup ? '<label class="block gw-type-body-md text-slate-300" for="localPasswordConfirm">确认密码</label><input id="localPasswordConfirm" type="password" class="w-full bg-black/40 border border-white/20 rounded-lg p-2 text-slate-100" autocomplete="new-password" required minlength="8" maxlength="128">' : ''}
+          <p id="localLoginError" role="alert" class="gw-type-body-sm text-red-300 hidden"></p>
           <button id="localLoginSubmit" type="submit" class="tactile-keycap w-full rounded-lg p-3 font-bold text-[#eddab3]">${setup ? '创建管理员并登录' : '登录'}</button>
         </form>`;
     },
@@ -1128,6 +1176,7 @@
           credentials: 'same-origin'
         });
         const data = await res.json().catch(() => ({}));
+
         if (!res.ok) {
           const detail = data && data.detail;
           const code = detail && typeof detail === 'object' ? detail.code : '';
@@ -1232,14 +1281,14 @@
         <div class="flex items-center justify-between pb-2 mb-3 border-b border-white/10">
           <div class="flex items-center space-x-2">
             <i data-lucide="users" class="w-4 h-4 text-[#dfc384]"></i>
-            <h3 class="text-sm font-bold text-slate-100">团队与协同席位治理</h3>
+            <h3 class="gw-type-body-md font-bold text-slate-100">团队与协同席位治理</h3>
           </div>
           <button class="text-slate-400 hover:text-white" onclick="HardwareDeck.closeModal('teamModal')">
             <i data-lucide="x" class="w-4 h-4"></i>
           </button>
         </div>
 
-        <div class="space-y-3 text-xs">
+        <div class="space-y-3 gw-type-body-sm">
           <!-- 路由快捷直达看板 -->
           <div class="grid grid-cols-2 gap-2">
             <a href="/static/pages/collab.html" class="bay-inset p-2 rounded-xl flex items-center justify-between group hover:border-[#dfc384]/40 transition border border-white/5">
@@ -1249,7 +1298,7 @@
                 </div>
                 <div>
                   <div class="font-bold text-slate-200 group-hover:text-[#eddab3] transition">实时协同工作台</div>
-                  <div class="text-[8.5px] font-mono text-slate-400">/static/pages/collab.html</div>
+                  <div class="gw-type-body-sm font-mono text-slate-400">/static/pages/collab.html</div>
                 </div>
               </div>
               <i data-lucide="chevron-right" class="w-3.5 h-3.5 text-slate-500 group-hover:text-[#eddab3] transition"></i>
@@ -1262,7 +1311,7 @@
                 </div>
                 <div>
                   <div class="font-bold text-slate-200 group-hover:text-cyan-300 transition">权限与团队审批</div>
-                  <div class="text-[8.5px] font-mono text-slate-400">/static/pages/assets.html</div>
+                  <div class="gw-type-body-sm font-mono text-slate-400">/static/pages/assets.html</div>
                 </div>
               </div>
               <i data-lucide="external-link" class="w-3.5 h-3.5 text-slate-500 group-hover:text-cyan-300 transition"></i>
@@ -1271,15 +1320,15 @@
 
           <!-- 动态成员/团队列表容器 -->
           <div id="teamModalList" class="space-y-2 max-h-60 overflow-y-auto pr-1">
-            <div class="bay-inset p-3 rounded-xl text-[10px] font-mono text-slate-400 flex items-center justify-center space-x-2">
+            <div class="bay-inset p-3 rounded-xl gw-type-body-sm font-mono text-slate-400 flex items-center justify-center space-x-2">
               <div class="w-3 h-3 border-2 border-[#dfc384] border-t-transparent rounded-full animate-spin"></div>
               <span>正在向真实后端同步团队与席位 (/api/asset-auth/teams)...</span>
             </div>
           </div>
 
-          <div class="pt-2 border-t border-white/10 flex items-center justify-between text-[9px] font-mono text-slate-500">
+          <div class="pt-2 border-t border-white/10 flex items-center justify-between gw-type-body-sm font-mono text-slate-500">
             <span>预期路由: /api/asset-auth/teams · /api/asset-auth/users（未接入时下方明示）</span>
-            <button type="button" class="px-3 py-1.5 rounded-lg text-xs font-mono text-slate-400 hover:text-white" onclick="HardwareDeck.closeModal('teamModal')">关闭</button>
+            <button type="button" class="px-3 py-1.5 rounded-lg gw-type-body-md font-mono text-slate-400 hover:text-white" onclick="HardwareDeck.closeModal('teamModal')">关闭</button>
           </div>
         </div>
       `;
@@ -1296,10 +1345,10 @@
       const renderNotice = (kind, status) => {
         const isUnavailable = kind === 'service_unavailable';
         const html = `
-          <div class="bay-inset p-2.5 rounded-xl text-center text-[10px] font-mono ${isUnavailable ? 'text-amber-300 border border-amber-500/30' : 'text-slate-400 border border-white/10'}" role="status" data-gw-degradation="${kind}">
+          <div class="bay-inset p-2.5 rounded-xl text-center gw-type-body-sm font-mono ${isUnavailable ? 'text-amber-300 border border-amber-500/30' : 'text-slate-400 border border-white/10'}" role="status" data-gw-degradation="${kind}">
             <i data-lucide="${isUnavailable ? 'cloud-off' : 'plug-zap'}" class="w-4 h-4 mx-auto mb-1 opacity-70" aria-hidden="true"></i>
             <span class="block">${isUnavailable ? '后端服务暂时不可用，请稍后重试' : '该功能尚未接入后端（未纳入当前切片）'}</span>
-            <span class="block mt-0.5 text-[9px] text-slate-500">/api/asset-auth/teams · /api/asset-auth/users（HTTP ${status}）</span>
+            <span class="block mt-0.5 gw-type-body-sm text-slate-500">/api/asset-auth/teams · /api/asset-auth/users（HTTP ${status}）</span>
           </div>`;
         containers.forEach(c => c.innerHTML = html);
         if (window.lucide) window.lucide.createIcons();
@@ -1334,10 +1383,10 @@
         if (teams.length === 0 && users.length === 0) {
           // 接口已就绪但确实没有数据：真实空态，不伪造管理员席位。
           const emptyHtml = `
-            <div class="bay-inset p-2.5 rounded-xl text-center text-[10px] font-mono text-slate-400">
+            <div class="bay-inset p-2.5 rounded-xl text-center gw-type-body-sm font-mono text-slate-400">
               <i data-lucide="users" class="w-4 h-4 mx-auto mb-1 text-slate-500" aria-hidden="true"></i>
               <span class="block">暂无团队与席位数据</span>
-              <span class="block mt-0.5 text-[9px] text-slate-500">接口已就绪；可前往 <a href="/static/pages/assets.html" class="text-[#dfc384] underline">资产管理页</a> 创建团队与成员。</span>
+              <span class="block mt-0.5 gw-type-body-sm text-slate-500">接口已就绪；可前往 <a href="/static/pages/assets.html" class="text-[#dfc384] underline">资产管理页</a> 创建团队与成员。</span>
             </div>`;
           containers.forEach(c => c.innerHTML = emptyHtml);
           if (window.lucide) window.lucide.createIcons();
@@ -1352,35 +1401,35 @@
           : { text: '未接入', cls: 'text-slate-500', degrade: true };
 
         if (teams.length > 0) {
-          html += `<div class="text-[9.5px] font-mono text-[#dfc384] font-bold mb-1">团队空间 (${teams.length})</div>`;
+          html += `<div class="gw-type-body-sm font-mono text-[#dfc384] font-bold mb-1">团队空间 (${teams.length})</div>`;
           teams.forEach(team => {
             const chip = statusChip(team.status);
             html += `
               <div class="bay-inset p-2 rounded-xl flex items-center justify-between mb-1.5 border border-white/5">
                 <div>
-                  <div class="font-bold text-slate-200 text-xs">${team.name}</div>
-                  <div class="text-[8.5px] font-mono text-slate-400">成员数: ${team.member_count || (team.members || []).length || 0}</div>
+                  <div class="font-bold text-slate-200 gw-type-body-sm">${team.name}</div>
+                  <div class="gw-type-body-sm font-mono text-slate-400">成员数: ${team.member_count || (team.members || []).length || 0}</div>
                 </div>
-                <span class="text-[8.5px] font-mono ${chip.cls}"${chip.degrade ? ' data-gw-degradation="not_integrated"' : ''}>${chip.text}</span>
+                <span class="gw-type-body-sm font-mono ${chip.cls}"${chip.degrade ? ' data-gw-degradation="not_integrated"' : ''}>${chip.text}</span>
               </div>
             `;
           });
         }
         if (users.length > 0) {
-          html += `<div class="text-[9.5px] font-mono text-[#dfc384] font-bold mt-2 mb-1">系统席位与成员 (${users.length})</div>`;
+          html += `<div class="gw-type-body-sm font-mono text-[#dfc384] font-bold mt-2 mb-1">系统席位与成员 (${users.length})</div>`;
           users.forEach(u => {
             const chip = statusChip(u.online);
             const initial = (u.display_name || u.username || 'U').substring(0, 2).toUpperCase();
             html += `
               <div class="bay-inset p-2 rounded-xl flex items-center justify-between mb-1.5 border border-white/5">
                 <div class="flex items-center space-x-2">
-                  <div class="w-6 h-6 rounded-full bg-slate-800 border border-white/10 text-[#eddab3] font-bold flex items-center justify-center text-[9px]">${initial}</div>
+                  <div class="w-6 h-6 rounded-full bg-slate-800 border border-white/10 text-[#eddab3] font-bold flex items-center justify-center gw-type-body-sm">${initial}</div>
                   <div>
-                    <div class="font-bold text-slate-200 text-[11px]">${u.display_name || u.username}</div>
-                    <div class="text-[8px] font-mono text-slate-500">${u.username} · ${u.role}</div>
+                    <div class="font-bold text-slate-200 gw-type-body-sm">${u.display_name || u.username}</div>
+                    <div class="gw-type-body-sm font-mono text-slate-500">${u.username} · ${u.role}</div>
                   </div>
                 </div>
-                <span class="text-[8.5px] font-mono ${chip.cls}"${chip.degrade ? ' data-gw-degradation="not_integrated"' : ''}>${chip.text}</span>
+                <span class="gw-type-body-sm font-mono ${chip.cls}"${chip.degrade ? ' data-gw-degradation="not_integrated"' : ''}>${chip.text}</span>
               </div>
             `;
           });
@@ -1408,24 +1457,24 @@
           <div class="flex items-center justify-between pb-2 mb-3 border-b border-white/10">
             <div class="flex items-center space-x-2">
               <i data-lucide="settings" class="w-4 h-4 text-[#dfc384]"></i>
-              <h3 class="text-sm font-bold text-slate-100">系统与工程参数控制中心</h3>
+              <h3 class="gw-type-body-md font-bold text-slate-100">系统与工程参数控制中心</h3>
             </div>
             <button class="text-slate-400 hover:text-white" onclick="HardwareDeck.closeModal('settingsModal')">
               <i data-lucide="x" class="w-4 h-4"></i>
             </button>
           </div>
 
-          <div class="space-y-3 text-xs">
+          <div class="space-y-3 gw-type-body-sm">
             <!-- 原版系统三大真实设置入口 -->
-            <div class="text-[10px] font-mono text-[#dfc384] font-bold">核心配置入口</div>
+            <div class="gw-type-body-sm font-mono text-[#dfc384] font-bold">核心配置入口</div>
             <div class="grid grid-cols-3 gap-2">
               <a href="/static/pages/settings.html?section=api-settings" class="bay-inset p-2.5 rounded-xl flex flex-col justify-between group hover:border-[#dfc384]/50 transition border border-white/5">
                 <div class="flex items-center space-x-1.5 mb-1 text-slate-100 group-hover:text-[#dfc384] transition">
                   <i data-lucide="key" class="w-3.5 h-3.5 text-[#dfc384]"></i>
-                  <span class="font-bold text-[11px]">API 设置</span>
+                  <span class="font-bold gw-type-body-sm">API 设置</span>
                 </div>
-                <div class="text-[8px] font-mono text-slate-400 leading-tight">大模型 Key 与 CLI 管理</div>
-                <div class="mt-2 flex items-center justify-between text-[8px] font-mono text-slate-500">
+                <div class="gw-type-body-sm font-mono text-slate-400 leading-tight">大模型 Key 与 CLI 管理</div>
+                <div class="mt-2 flex items-center justify-between gw-type-body-sm font-mono text-slate-500">
                   <span>/api-settings</span>
                   <i data-lucide="external-link" class="w-2.5 h-2.5"></i>
                 </div>
@@ -1434,10 +1483,10 @@
               <a href="/static/pages/settings.html" class="bay-inset p-2.5 rounded-xl flex flex-col justify-between group hover:border-amber-400/50 transition border border-white/5">
                 <div class="flex items-center space-x-1.5 mb-1 text-slate-100 group-hover:text-amber-300 transition">
                   <i data-lucide="sliders" class="w-3.5 h-3.5 text-amber-400"></i>
-                  <span class="font-bold text-[11px]">通用偏好</span>
+                  <span class="font-bold gw-type-body-sm">通用偏好</span>
                 </div>
-                <div class="text-[8px] font-mono text-slate-400 leading-tight">启动页、语言、主题与提示词快照</div>
-                <div class="mt-2 flex items-center justify-between text-[8px] font-mono text-slate-500">
+                <div class="gw-type-body-sm font-mono text-slate-400 leading-tight">启动页、语言、主题与提示词快照</div>
+                <div class="mt-2 flex items-center justify-between gw-type-body-sm font-mono text-slate-500">
                   <span>/settings</span>
                   <i data-lucide="external-link" class="w-2.5 h-2.5"></i>
                 </div>
@@ -1446,8 +1495,8 @@
 
 
             <div class="pt-2 border-t border-white/10 flex items-center justify-between">
-              <span class="text-[9px] font-mono text-slate-500">系统模式: 曜石香槟钛金拟物硬件总线 (v2.0)</span>
-              <button type="button" class="px-3 py-1.5 rounded-lg text-xs font-mono text-slate-400 hover:text-white" onclick="HardwareDeck.closeModal('settingsModal')">完成</button>
+              <span class="gw-type-body-sm font-mono text-slate-500">系统模式: 曜石香槟钛金拟物硬件总线 (v2.0)</span>
+              <button type="button" class="px-3 py-1.5 rounded-lg gw-type-body-md font-mono text-slate-400 hover:text-white" onclick="HardwareDeck.closeModal('settingsModal')">完成</button>
             </div>
           </div>
         </div>
@@ -1464,12 +1513,13 @@
     init: function() {
       this.bindAccountEntry();
       this.initClock();
-      this.initVUMeters();
-      this.syncOnlineStatus();
-      this.syncStageProgress();
-      // 若刚从 IdP 回调失败返回（?auth_error=<code>），先明示原因并清理查询参数。
+      // 先同步认证，再启动受保护遥测；未认证时保留显式未知状态。
       this.consumeAuthError();
-      this.syncAuth();
+      this.syncAuth().then(() => {
+        this.initVUMeters();
+        this.syncOnlineStatus();
+        this.syncStageProgress();
+      });
 
       // Backdrop click closes modal
       document.querySelectorAll('.hw-modal-backdrop').forEach(bd => {

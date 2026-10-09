@@ -165,8 +165,8 @@
         : (isUnauthorizedKind ? UNAUTHORIZED_MESSAGE
           : (isForbiddenKind ? FORBIDDEN_MESSAGE
             : (isConflictKind ? CONFLICT_MESSAGE : '请求失败'))));
-    var extra = detail ? '<span class="block mt-0.5 text-[9px] text-slate-500">' + escapeHtml(String(detail)) + '</span>' : '';
-    return '<div class="bay-inset p-3 rounded-xl border ' + tone + ' text-center text-[10px] font-mono" '
+    var extra = detail ? '<span class="block mt-0.5 gw-type-body-sm text-slate-500">' + escapeHtml(String(detail)) + '</span>' : '';
+    return '<div class="bay-inset p-3 rounded-xl border ' + tone + ' text-center gw-type-body-sm font-mono" '
       + 'role="status" data-gw-degradation="' + kind + '">'
       + '<i data-lucide="' + icon + '" class="w-4 h-4 mx-auto mb-1 opacity-70" aria-hidden="true"></i>'
       + '<span class="block">' + title + '</span>' + extra + '</div>';

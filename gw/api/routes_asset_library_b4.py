@@ -28,14 +28,16 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, Header, Request, Response, status
+from fastapi import APIRouter, Depends, Header, Request, Response, status
 
 from gw.asset_library import repository as repo
 from gw.asset_library.service import default_asset_library_service as library_service
 from gw.core.auth import require_authenticated, require_edit_access
 from gw.core.errors import CleanroomException
 
-router = APIRouter(tags=["asset-library-b4"])
+from gw.core.asset_visibility import asset_request_scope
+
+router = APIRouter(tags=["asset-library-b4"], dependencies=[Depends(asset_request_scope)])
 
 
 async def _body(request: Request) -> Dict[str, Any]:

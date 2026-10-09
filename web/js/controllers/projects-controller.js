@@ -54,11 +54,11 @@ window.WorkbenchProjects = (function () {
 
   function degradationNoticeHtml(degradation, extraHint) {
     const api = degradationApi();
-    const hint = extraHint ? `<div class="mt-1 text-[10px] text-slate-500">${escHtml(extraHint)}</div>` : '';
+    const hint = extraHint ? `<div class="mt-1 gw-type-body-sm text-slate-500">${escHtml(extraHint)}</div>` : '';
     if (api && typeof api.noticeHtml === 'function') {
       return api.noticeHtml(degradation.kind, degradation.message) + hint;
     }
-    return `<div class="bay-inset p-4 rounded-xl border border-white/10 text-center text-xs font-mono text-slate-400" role="status" data-gw-degradation="${escHtml(degradation.kind)}"><span class="block">${escHtml(degradation.message)}</span>${hint}</div>`;
+    return `<div class="bay-inset p-4 rounded-xl border border-white/10 text-center gw-type-body-sm font-mono text-slate-400" role="status" data-gw-degradation="${escHtml(degradation.kind)}"><span class="block">${escHtml(degradation.message)}</span>${hint}</div>`;
   }
 
   // HTML 转义（页面渲染占位文案时使用；幂等，不改变已有渲染路径）。
@@ -72,11 +72,11 @@ window.WorkbenchProjects = (function () {
     const led = document.getElementById('projectDispatchLed');
     if (!label) return;
     const map = {
-      ok: { text: '已接入', cls: 'text-[7.5px] font-mono text-emerald-400', led: 'w-1.5 h-1.5 rounded-full bg-emerald-400 mr-1' },
-      not_integrated: { text: '未接入', cls: 'text-[7.5px] font-mono text-amber-300', led: 'w-1.5 h-1.5 rounded-full bg-amber-400 mr-1 animate-pulse' },
-      service_unavailable: { text: '暂不可用', cls: 'text-[7.5px] font-mono text-amber-300', led: 'w-1.5 h-1.5 rounded-full bg-amber-400 mr-1 animate-pulse' }
+      ok: { text: '已接入', cls: 'gw-type-body-sm font-mono text-emerald-400', led: 'w-1.5 h-1.5 rounded-full bg-emerald-400 mr-1' },
+      not_integrated: { text: '未接入', cls: 'gw-type-body-sm font-mono text-amber-300', led: 'w-1.5 h-1.5 rounded-full bg-amber-400 mr-1 animate-pulse' },
+      service_unavailable: { text: '暂不可用', cls: 'gw-type-body-sm font-mono text-amber-300', led: 'w-1.5 h-1.5 rounded-full bg-amber-400 mr-1 animate-pulse' }
     };
-    const view = map[kind] || { text: '待命', cls: 'text-[7.5px] font-mono text-slate-400', led: 'w-1.5 h-1.5 rounded-full bg-slate-500 mr-1' };
+    const view = map[kind] || { text: '待命', cls: 'gw-type-body-sm font-mono text-slate-400', led: 'w-1.5 h-1.5 rounded-full bg-slate-500 mr-1' };
     label.className = view.cls;
     label.textContent = view.text;
     if (detail) label.title = detail;
@@ -150,7 +150,7 @@ window.WorkbenchProjects = (function () {
     const iconName = isSuccess ? 'check-circle' : (isWarning ? 'alert-circle' : (isDanger ? 'alert-triangle' : 'info'));
     const textColor = isSuccess ? 'text-emerald-400' : (isWarning ? 'text-amber-400' : (isDanger ? 'text-red-400' : 'text-[#eddab3]'));
 
-    toast.className = `bay-inset p-2.5 px-3.5 rounded-xl border ${borderColor} text-xs font-mono flex items-center space-x-2.5 shadow-2xl transition-all duration-300 pointer-events-auto opacity-0 translate-y-2`;
+    toast.className = `bay-inset p-2.5 px-3.5 rounded-xl border ${borderColor} gw-type-body-sm font-mono flex items-center space-x-2.5 shadow-2xl transition-all duration-300 pointer-events-auto opacity-0 translate-y-2`;
     toast.style.boxShadow = `0 8px 24px rgba(0,0,0,0.9), 0 0 12px ${glowColor}`;
     toast.style.background = 'linear-gradient(135deg, #181b24 0%, #0c0d12 100%)';
     toast.innerHTML = `
@@ -403,21 +403,21 @@ window.WorkbenchProjects = (function () {
 
     // 状态徽章
     let statusBadgeHtml = `
-      <span class="text-[7.5px] font-mono px-1 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 flex items-center space-x-0.5 shrink-0">
+      <span class="gw-type-body-sm font-mono px-1 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 flex items-center space-x-0.5 shrink-0">
         <span class="w-1 h-1 rounded-full bg-emerald-400 shadow-[0_0_4px_#34d399] animate-pulse"></span>
         <span>${stageBadge}</span>
       </span>
     `;
     if (isDeleted) {
       statusBadgeHtml = `
-        <span class="text-[7.5px] font-mono px-1 py-0.5 rounded-full bg-red-500/15 text-red-400 border border-red-500/30 flex items-center space-x-0.5 shrink-0">
+        <span class="gw-type-body-sm font-mono px-1 py-0.5 rounded-full bg-red-500/15 text-red-400 border border-red-500/30 flex items-center space-x-0.5 shrink-0">
           <span class="w-1 h-1 rounded-full bg-red-400 shadow-[0_0_4px_#ef4444]"></span>
           <span>统一回收站</span>
         </span>
       `;
     } else if (isArchived) {
       statusBadgeHtml = `
-        <span class="text-[7.5px] font-mono px-1 py-0.5 rounded-full bg-amber-500/15 text-amber-400 border border-amber-500/30 flex items-center space-x-0.5 shrink-0">
+        <span class="gw-type-body-sm font-mono px-1 py-0.5 rounded-full bg-amber-500/15 text-amber-400 border border-amber-500/30 flex items-center space-x-0.5 shrink-0">
           <span class="w-1 h-1 rounded-full bg-amber-400 shadow-[0_0_4px_#f59e0b]"></span>
           <span>已归档只读</span>
         </span>
@@ -440,33 +440,33 @@ window.WorkbenchProjects = (function () {
 
           <div class="min-w-0 flex-1 pr-1">
             <div class="flex items-center space-x-1 flex-wrap gap-y-0.5">
-              <h3 class="text-xs font-bold text-slate-100 group-hover:text-[#eddab3] tracking-wide truncate max-w-[150px]">${esc(p.name)}</h3>
+              <h3 class="gw-type-body-md font-medium text-slate-100 group-hover:text-[#eddab3] truncate max-w-[150px]">${esc(p.name)}</h3>
               ${statusBadgeHtml}
-              <span class="text-[7.5px] font-mono px-1 py-0.5 rounded bg-black/60 border border-white/10 text-[#fae2c8] shrink-0">ACEScg</span>
+              <span class="gw-type-body-sm font-mono px-1 py-0.5 rounded bg-black/60 border border-white/10 text-[#fae2c8] shrink-0">ACEScg</span>
             </div>
 
             <!-- 故事描述（1行截断以适应240px高度） -->
-            <p class="text-[9px] text-slate-300 mt-0.5 truncate font-normal leading-tight">
+            <p class="gw-type-body-md text-slate-300 mt-0.5 font-normal">
               ${esc(p.description || '剧本大纲与镜头工程深度贯通，支持实时微调与母版渲染。')}
             </p>
 
             <!-- 四格微型嵌槽 -->
             <div class="grid grid-cols-4 gap-1 mt-1">
               <div class="bay-inset px-1 py-0.5 rounded flex flex-col justify-center">
-                <span class="text-[6.5px] font-mono text-slate-400 uppercase leading-tight">镜头规模</span>
-                <span class="text-[8px] font-mono font-bold text-[#eddab3] leading-tight">${(rawNumber(p.scenes) === null || rawNumber(p.shots) === null) ? '—' : `${rawNumber(p.scenes)}场/${rawNumber(p.shots)}镜`}</span>
+                <span class="gw-type-body-sm font-mono text-slate-400 leading-tight">镜头规模</span>
+                <span class="gw-type-body-sm font-mono font-bold text-[#eddab3] leading-tight">${(rawNumber(p.scenes) === null || rawNumber(p.shots) === null) ? '—' : `${rawNumber(p.scenes)}场/${rawNumber(p.shots)}镜`}</span>
               </div>
               <div class="bay-inset px-1 py-0.5 rounded flex flex-col justify-center">
-                <span class="text-[6.5px] font-mono text-slate-400 uppercase leading-tight">资产规模</span>
-                <span class="text-[8px] font-mono font-bold text-slate-500 leading-tight" data-gw-asset-scale data-gw-degradation="not_integrated" title="真实数据源：GET /api/asset-registry/assets 的 total（全库已登记素材）">未接入</span>
+                <span class="gw-type-body-sm font-mono text-slate-400 leading-tight">资产规模</span>
+                <span class="gw-type-body-sm font-mono font-bold text-slate-500 leading-tight" data-gw-asset-scale data-gw-degradation="not_integrated" title="真实数据源：GET /api/asset-registry/assets 的 total（全库已登记素材）">未接入</span>
               </div>
               <div class="bay-inset px-1 py-0.5 rounded flex flex-col justify-center">
-                <span class="text-[6.5px] font-mono text-slate-400 uppercase leading-tight">算力集群</span>
-                <span class="text-[8px] font-mono font-bold text-slate-500 leading-tight" data-gw-gpu-cluster data-gw-degradation="not_integrated" title="真实数据源：GET /api/observability/health 的 gpu_telemetry">未接入</span>
+                <span class="gw-type-body-sm font-mono text-slate-400 leading-tight">算力集群</span>
+                <span class="gw-type-body-sm font-mono font-bold text-slate-500 leading-tight" data-gw-gpu-cluster data-gw-degradation="not_integrated" title="真实数据源：GET /api/observability/health 的 gpu_telemetry">未接入</span>
               </div>
               <div class="bay-inset px-1 py-0.5 rounded flex flex-col justify-center">
-                <span class="text-[6.5px] font-mono text-slate-400 uppercase leading-tight">更新时间</span>
-                <span class="text-[8px] font-mono font-bold text-slate-300 leading-tight">${formatTime(p.updated_at)}</span>
+                <span class="gw-type-body-sm font-mono text-slate-400 leading-tight">更新时间</span>
+                <span class="gw-type-body-sm font-mono font-bold text-slate-300 leading-tight">${formatTime(p.updated_at)}</span>
               </div>
             </div>
           </div>
@@ -476,18 +476,18 @@ window.WorkbenchProjects = (function () {
         <div class="hw-mini-knob-box shrink-0 pl-1 flex flex-col items-center justify-center">
           <div class="hw-mini-knob w-6 h-6">
             <div class="hw-mini-knob-arc" style="transform: rotate(${Math.min(180, Math.round(progress * 1.8))}deg);"></div>
-            <div class="hw-mini-knob-inner w-[1.125rem] h-[1.125rem] text-[7px]">S${(p.id.slice(-1) || '1')}</div>
+            <div class="hw-mini-knob-inner w-[1.125rem] h-[1.125rem] gw-type-body-sm">S${(p.id.slice(-1) || '1')}</div>
           </div>
-          <span class="text-[6.5px] font-mono text-[#dfc384] font-bold mt-0.5">PRIORITY</span>
+          <span class="gw-type-body-sm font-mono text-[#dfc384] font-bold mt-0.5">PRIORITY</span>
         </div>
       </div>
 
       <!-- 2. 中部：双轨总进度条（剧本分镜进度 + 制片进度） -->
       <div class="my-0.5 py-1 px-2 rounded-lg bg-[#06080c]/95 border border-white/5 shrink-0">
-        <div class="flex items-center justify-between mb-0.5 text-[7.5px] font-mono">
+        <div class="flex items-center justify-between mb-0.5 gw-type-body-sm font-mono">
           <div class="flex items-center space-x-1">
             <i data-lucide="sliders" class="w-2.5 h-2.5 text-[#dfc384]"></i>
-            <span class="font-bold text-[#eddab3] uppercase tracking-wider">双轨流水线电平</span>
+            <span class="font-bold text-[#eddab3]r">双轨流水线电平</span>
           </div>
           <span class="text-slate-400">综合: <strong class="text-emerald-400 font-bold">${progress}%</strong></span>
         </div>
@@ -495,7 +495,7 @@ window.WorkbenchProjects = (function () {
         <div class="grid grid-cols-2 gap-2">
           <!-- 轨道 1: 剧本分镜进度 -->
           <div>
-            <div class="flex items-center justify-between text-[7px] font-mono mb-0.5">
+            <div class="flex items-center justify-between gw-type-body-sm font-mono mb-0.5">
               <span class="text-slate-400">① 剧本分镜进度</span>
               <span class="text-[#eddab3] font-bold">${scriptProgress}%</span>
             </div>
@@ -506,7 +506,7 @@ window.WorkbenchProjects = (function () {
 
           <!-- 轨道 2: 制片进度 -->
           <div>
-            <div class="flex items-center justify-between text-[7px] font-mono mb-0.5">
+            <div class="flex items-center justify-between gw-type-body-sm font-mono mb-0.5">
               <span class="text-slate-400">② 制片进度</span>
               <span class="text-cyan-300 font-bold">${prodProgress}%</span>
             </div>
@@ -520,11 +520,11 @@ window.WorkbenchProjects = (function () {
       <!-- 3. 底部：主创席位 + 操作按钮组（工坊、监视、编辑、归档、删除/恢复） -->
       <div class="pt-0.5 border-t border-white/5 flex items-center justify-between shrink-0">
         <div class="flex items-center space-x-1">
-          <span class="text-[7.5px] font-mono text-slate-400 font-semibold">主创:</span>
-          <span class="text-[7.5px] font-mono px-1 py-0.5 rounded bg-[#0a0c10] border border-white/10 text-slate-200">
+          <span class="gw-type-body-sm font-mono text-slate-400 font-semibold">主创:</span>
+          <span class="gw-type-body-sm font-mono px-1 py-0.5 rounded bg-[#0a0c10] border border-white/10 text-slate-200">
             ${esc(p.owner || 'admin')}
           </span>
-          <span class="text-[7.5px] font-mono px-1 py-0.5 rounded bg-[#0a0c10] border border-white/10 text-[#eddab3]">
+          <span class="gw-type-body-sm font-mono px-1 py-0.5 rounded bg-[#0a0c10] border border-white/10 text-[#eddab3]">
             AURA
           </span>
         </div>
@@ -532,20 +532,20 @@ window.WorkbenchProjects = (function () {
         <div class="flex items-center space-x-1">
           <!-- 生产入口组：非回收站项目可用 -->
           ${!isDeleted ? `
-            <button class="tactile-keycap px-1.5 py-0.5 rounded text-[8.5px] font-bold text-[#eddab3] flex items-center space-x-0.5 cursor-pointer hover:border-[#dfc384]/70 transition"
+            <button class="tactile-keycap px-1.5 py-0.5 rounded gw-type-body-md font-bold text-[#eddab3] flex items-center space-x-0.5 cursor-pointer hover:border-[#dfc384]/70 transition"
                     onclick="event.stopPropagation(); WorkbenchProjects.openProject('${esc(p.id)}', 'workshop')"
                     title="进入影视工坊">
               <i data-lucide="film" class="w-2.5 h-2.5 text-[#dfc384]"></i>
               <span>工坊</span>
             </button>
-            <button class="tactile-keycap px-1.5 py-0.5 rounded text-[8.5px] font-bold text-slate-200 hover:text-white flex items-center space-x-0.5 cursor-pointer hover:border-cyan-400/60 transition"
+            <button class="tactile-keycap px-1.5 py-0.5 rounded gw-type-body-md font-bold text-slate-200 hover:text-white flex items-center space-x-0.5 cursor-pointer hover:border-cyan-400/60 transition"
                     onclick="event.stopPropagation(); WorkbenchProjects.openProject('${esc(p.id)}', 'production')"
                     title="进入制片监视器">
               <i data-lucide="sliders" class="w-2.5 h-2.5 text-cyan-300"></i>
               <span>监视</span>
             </button>
             <!-- 新增：编辑按钮 -->
-            <button class="tactile-keycap px-1.5 py-0.5 rounded text-[8.5px] font-bold text-amber-200/90 hover:text-[#eddab3] flex items-center space-x-0.5 cursor-pointer hover:border-[#dfc384]/80 transition"
+            <button class="tactile-keycap px-1.5 py-0.5 rounded gw-type-body-md font-bold text-amber-200/90 hover:text-[#eddab3] flex items-center space-x-0.5 cursor-pointer hover:border-[#dfc384]/80 transition"
                     onclick="event.stopPropagation(); WorkbenchProjects.openEditProject('${esc(p.id)}')"
                     title="编辑项目信息与配置参数">
               <i data-lucide="edit-3" class="w-2.5 h-2.5 text-[#dfc384]"></i>
@@ -557,7 +557,7 @@ window.WorkbenchProjects = (function () {
           <!-- 生命周期治理组 -->
           ${isDeleted ? `
             <!-- 回收站恢复 -->
-            <button class="tactile-keycap px-1.5 py-0.5 rounded text-[8.5px] font-bold text-emerald-400 hover:text-emerald-300 hover:border-emerald-500/50 flex items-center space-x-0.5 cursor-pointer transition"
+            <button class="tactile-keycap px-1.5 py-0.5 rounded gw-type-body-md font-bold text-emerald-400 hover:text-emerald-300 hover:border-emerald-500/50 flex items-center space-x-0.5 cursor-pointer transition"
                     onclick="event.stopPropagation(); WorkbenchProjects.confirmAction('restore', '${esc(p.id)}', '${esc(p.name)}', ${p.version || 1})"
                     title="从统一回收站安全恢复该工程">
               <i data-lucide="rotate-ccw" class="w-2.5 h-2.5 text-emerald-400"></i>
@@ -566,14 +566,14 @@ window.WorkbenchProjects = (function () {
           ` : `
             <!-- 归档 / 取消归档 -->
             ${isArchived ? `
-              <button class="tactile-keycap px-1 py-0.5 rounded text-[8.5px] text-slate-300 hover:text-[#eddab3] flex items-center space-x-0.5 cursor-pointer transition"
+              <button class="tactile-keycap px-1 py-0.5 rounded gw-type-body-md text-slate-300 hover:text-[#eddab3] flex items-center space-x-0.5 cursor-pointer transition"
                       onclick="event.stopPropagation(); WorkbenchProjects.confirmAction('unarchive', '${esc(p.id)}', '${esc(p.name)}', ${p.version || 1})"
                       title="取消归档">
                 <i data-lucide="archive-restore" class="w-2.5 h-2.5 text-[#dfc384]"></i>
                 <span>取消归档</span>
               </button>
             ` : `
-              <button class="tactile-keycap px-1 py-0.5 rounded text-[8.5px] text-slate-400 hover:text-[#eddab3] flex items-center space-x-0.5 cursor-pointer transition"
+              <button class="tactile-keycap px-1 py-0.5 rounded gw-type-body-md text-slate-400 hover:text-[#eddab3] flex items-center space-x-0.5 cursor-pointer transition"
                       onclick="event.stopPropagation(); WorkbenchProjects.confirmAction('archive', '${esc(p.id)}', '${esc(p.name)}', ${p.version || 1})"
                       title="归档项目">
                 <i data-lucide="archive" class="w-2.5 h-2.5 text-slate-400"></i>
@@ -582,7 +582,7 @@ window.WorkbenchProjects = (function () {
             `}
 
             <!-- 删除到统一回收站 -->
-            <button class="tactile-keycap px-1 py-0.5 rounded text-[8.5px] text-red-400/80 hover:text-red-300 hover:border-red-500/50 flex items-center space-x-0.5 cursor-pointer transition"
+            <button class="tactile-keycap px-1 py-0.5 rounded gw-type-body-md text-red-400/80 hover:text-red-300 hover:border-red-500/50 flex items-center space-x-0.5 cursor-pointer transition"
                     onclick="event.stopPropagation(); WorkbenchProjects.confirmAction('trash', '${esc(p.id)}', '${esc(p.name)}', ${p.version || 1})"
                     title="删除到统一回收站（非物理直接删除）">
               <i data-lucide="trash-2" class="w-2.5 h-2.5 text-red-400/90"></i>
@@ -611,7 +611,7 @@ window.WorkbenchProjects = (function () {
         stream.innerHTML = state.projectsDegradation
           ? degradationNoticeHtml(state.projectsDegradation, '未取到工程列表；本页不会展示任何伪造的示例工程。')
           : `
-          <div class="champagne-card p-8 text-center text-slate-500 font-mono text-xs w-full">
+          <div class="champagne-card p-8 text-center text-slate-500 font-mono gw-type-body-sm w-full">
             <i data-lucide="inbox" class="w-8 h-8 mx-auto mb-2 text-slate-600"></i>
             <div>未检索到匹配的制片工程</div>
           </div>
@@ -637,7 +637,7 @@ window.WorkbenchProjects = (function () {
           cardsHtml += `
             <div class="flex items-center space-x-2 my-3 w-full">
               <div class="h-px bg-white/10 flex-1"></div>
-              <span class="text-[9px] font-mono uppercase text-[#eddab3]/80 tracking-wider flex items-center space-x-1.5 px-2 py-0.5 rounded bg-black/40 border border-white/5">
+              <span class="gw-type-body-sm font-mono text-[#eddab3]/80r flex items-center space-x-1.5 px-2 py-0.5 rounded bg-black/40 border border-white/5">
                 <i data-lucide="layers" class="w-3 h-3 text-[#dfc384]"></i>
                 <span>储备与推进中工程 (${rest.length})</span>
               </span>
@@ -688,20 +688,20 @@ window.WorkbenchProjects = (function () {
             <td class="py-2.5 text-right">
               <div class="inline-flex items-center space-x-1.5">
                 ${!isDeleted ? `
-                  <button onclick="event.stopPropagation(); WorkbenchProjects.openProject('${encodeURIComponent(p.id)}', 'workshop')" class="tactile-keycap px-2 py-0.5 rounded text-[9px] text-[#eddab3]" title="进入影视工坊">工坊</button>
-                  <button onclick="event.stopPropagation(); WorkbenchProjects.openProject('${encodeURIComponent(p.id)}', 'production')" class="tactile-keycap px-2 py-0.5 rounded text-[9px] text-cyan-300" title="进入制片监视">制片</button>
-                  <button onclick="event.stopPropagation(); WorkbenchProjects.openEditProject('${esc(p.id)}')" class="tactile-keycap px-2 py-0.5 rounded text-[9px] text-amber-200 hover:text-white" title="编辑工程">编辑</button>
+                  <button onclick="event.stopPropagation(); WorkbenchProjects.openProject('${encodeURIComponent(p.id)}', 'workshop')" class="tactile-keycap px-2 py-0.5 rounded gw-type-body-md text-[#eddab3]" title="进入影视工坊">工坊</button>
+                  <button onclick="event.stopPropagation(); WorkbenchProjects.openProject('${encodeURIComponent(p.id)}', 'production')" class="tactile-keycap px-2 py-0.5 rounded gw-type-body-md text-cyan-300" title="进入制片监视">制片</button>
+                  <button onclick="event.stopPropagation(); WorkbenchProjects.openEditProject('${esc(p.id)}')" class="tactile-keycap px-2 py-0.5 rounded gw-type-body-md text-amber-200 hover:text-white" title="编辑工程">编辑</button>
                 ` : ''}
 
                 ${isDeleted ? `
-                  <button onclick="event.stopPropagation(); WorkbenchProjects.confirmAction('restore', '${esc(p.id)}', '${esc(p.name)}', ${p.version || 1})" class="tactile-keycap px-2 py-0.5 rounded text-[9px] text-emerald-400" title="从回收站恢复">恢复</button>
+                  <button onclick="event.stopPropagation(); WorkbenchProjects.confirmAction('restore', '${esc(p.id)}', '${esc(p.name)}', ${p.version || 1})" class="tactile-keycap px-2 py-0.5 rounded gw-type-body-md text-emerald-400" title="从回收站恢复">恢复</button>
                 ` : `
                   ${isArchived ? `
-                    <button onclick="event.stopPropagation(); WorkbenchProjects.confirmAction('unarchive', '${esc(p.id)}', '${esc(p.name)}', ${p.version || 1})" class="tactile-keycap px-2 py-0.5 rounded text-[9px] text-amber-400" title="取消归档">恢复</button>
+                    <button onclick="event.stopPropagation(); WorkbenchProjects.confirmAction('unarchive', '${esc(p.id)}', '${esc(p.name)}', ${p.version || 1})" class="tactile-keycap px-2 py-0.5 rounded gw-type-body-md text-amber-400" title="取消归档">恢复</button>
                   ` : `
-                    <button onclick="event.stopPropagation(); WorkbenchProjects.confirmAction('archive', '${esc(p.id)}', '${esc(p.name)}', ${p.version || 1})" class="tactile-keycap px-2 py-0.5 rounded text-[9px] text-slate-400 hover:text-[#dfc384]" title="归档项目">归档</button>
+                    <button onclick="event.stopPropagation(); WorkbenchProjects.confirmAction('archive', '${esc(p.id)}', '${esc(p.name)}', ${p.version || 1})" class="tactile-keycap px-2 py-0.5 rounded gw-type-body-md text-slate-400 hover:text-[#dfc384]" title="归档项目">归档</button>
                   `}
-                  <button onclick="event.stopPropagation(); WorkbenchProjects.confirmAction('trash', '${esc(p.id)}', '${esc(p.name)}', ${p.version || 1})" class="tactile-keycap px-2 py-0.5 rounded text-[9px] text-red-400 hover:text-red-300" title="删除到统一回收站（非物理直接删除）">删除</button>
+                  <button onclick="event.stopPropagation(); WorkbenchProjects.confirmAction('trash', '${esc(p.id)}', '${esc(p.name)}', ${p.version || 1})" class="tactile-keycap px-2 py-0.5 rounded gw-type-body-md text-red-400 hover:text-red-300" title="删除到统一回收站（非物理直接删除）">删除</button>
                 `}
               </div>
             </td>
@@ -880,7 +880,7 @@ window.WorkbenchProjects = (function () {
       }
       if (safetyNotice) safetyNotice.classList.remove('hidden');
       if (confirmBtn) {
-        confirmBtn.className = 'tactile-keycap px-4 py-1.5 rounded-lg text-xs font-bold text-red-400 border border-red-500/40 hover:border-red-400/80 cursor-pointer';
+        confirmBtn.className = 'tactile-keycap px-4 py-1.5 rounded-lg gw-type-body-sm font-bold text-red-400 border border-red-500/40 hover:border-red-400/80 cursor-pointer';
         confirmBtn.textContent = '确认移入回收站';
       }
     } else if (type === 'archive') {
@@ -890,7 +890,7 @@ window.WorkbenchProjects = (function () {
       }
       if (safetyNotice) safetyNotice.classList.add('hidden');
       if (confirmBtn) {
-        confirmBtn.className = 'tactile-keycap px-4 py-1.5 rounded-lg text-xs font-bold text-[#eddab3] border border-[#dfc384]/40 hover:border-[#dfc384] cursor-pointer';
+        confirmBtn.className = 'tactile-keycap px-4 py-1.5 rounded-lg gw-type-body-sm font-bold text-[#eddab3] border border-[#dfc384]/40 hover:border-[#dfc384] cursor-pointer';
         confirmBtn.textContent = '确认归档';
       }
     } else if (type === 'unarchive') {
@@ -900,7 +900,7 @@ window.WorkbenchProjects = (function () {
       }
       if (safetyNotice) safetyNotice.classList.add('hidden');
       if (confirmBtn) {
-        confirmBtn.className = 'tactile-keycap px-4 py-1.5 rounded-lg text-xs font-bold text-amber-300 border border-amber-400/40 hover:border-amber-300 cursor-pointer';
+        confirmBtn.className = 'tactile-keycap px-4 py-1.5 rounded-lg gw-type-body-sm font-bold text-amber-300 border border-amber-400/40 hover:border-amber-300 cursor-pointer';
         confirmBtn.textContent = '取消归档并激活';
       }
     } else if (type === 'restore') {
@@ -910,7 +910,7 @@ window.WorkbenchProjects = (function () {
       }
       if (safetyNotice) safetyNotice.classList.add('hidden');
       if (confirmBtn) {
-        confirmBtn.className = 'tactile-keycap px-4 py-1.5 rounded-lg text-xs font-bold text-emerald-400 border border-emerald-500/40 hover:border-emerald-400 cursor-pointer';
+        confirmBtn.className = 'tactile-keycap px-4 py-1.5 rounded-lg gw-type-body-sm font-bold text-emerald-400 border border-emerald-500/40 hover:border-emerald-400 cursor-pointer';
         confirmBtn.textContent = '确认安全恢复';
       }
     }
@@ -1418,12 +1418,12 @@ window.WorkbenchProjects = (function () {
 
     if (tab === 'all') {
       const groups = [['projects', '项目', globalTrashState.projects], ['canvases', '画布', globalTrashState.canvases], ['assets', '资产', globalTrashState.assets]];
-      container.innerHTML = groups.map(([kind, label, list]) => `<section class="space-y-1.5"><h4 class="text-[10px] font-mono text-slate-400">${label} · ${list.length}</h4>${list.length ? `<div class="space-y-1.5">${list.map(item => `<div class="bay-inset p-2.5 rounded-xl border border-white/5 flex items-center justify-between"><span class="text-xs text-slate-200 truncate">${esc(item.name || item.title || item.id)}</span><span class="text-[9px] font-mono text-slate-500">${formatTime(item.deleted_at)}</span></div>`).join('')}</div>` : '<div class="text-[10px] text-slate-600 font-mono">暂无删除内容</div>'}</section>`).join('');
+      container.innerHTML = groups.map(([kind, label, list]) => `<section class="space-y-1.5"><h4 class="gw-type-body-md font-mono text-slate-400">${label} · ${list.length}</h4>${list.length ? `<div class="space-y-1.5">${list.map(item => `<div class="bay-inset p-2.5 rounded-xl border border-white/5 flex items-center justify-between"><span class="gw-type-body-md text-slate-200 truncate">${esc(item.name || item.title || item.id)}</span><span class="gw-type-body-md font-mono text-slate-500">${formatTime(item.deleted_at)}</span></div>`).join('')}</div>` : '<div class="gw-type-body-md text-slate-600 font-mono">暂无删除内容</div>'}</section>`).join('');
     } else if (tab === 'projects') {
       const list = globalTrashState.projects;
       if (list.length === 0) {
         container.innerHTML = `
-          <div class="bay-inset p-8 text-center text-slate-500 font-mono text-xs rounded-xl">
+          <div class="bay-inset p-8 text-center text-slate-500 font-mono gw-type-body-sm rounded-xl">
             <i data-lucide="check-circle-2" class="w-7 h-7 mx-auto mb-2 text-emerald-400/60"></i>
             <div>制片工程隔离池为空，暂无已移入工程</div>
           </div>
@@ -1439,17 +1439,17 @@ window.WorkbenchProjects = (function () {
               <div class="min-w-0 flex-1 pr-3">
                 <div class="flex items-center space-x-2">
                   <span class="w-1.5 h-1.5 rounded-full bg-red-400"></span>
-                  <h4 class="text-xs font-bold text-slate-100 truncate">${esc(p.name)}</h4>
-                  <span class="text-[8px] font-mono px-1.5 py-0.5 rounded bg-red-500/15 text-red-400 border border-red-500/30">工程隔离</span>
-                  <span class="text-[8px] font-mono text-slate-400">${typeMeta.label}</span>
+                  <h4 class="gw-type-body-md font-bold text-slate-100 truncate">${esc(p.name)}</h4>
+                  <span class="gw-type-body-sm font-mono px-1.5 py-0.5 rounded bg-red-500/15 text-red-400 border border-red-500/30">工程隔离</span>
+                  <span class="gw-type-body-sm font-mono text-slate-400">${typeMeta.label}</span>
                 </div>
-                <div class="text-[9px] font-mono text-slate-400 mt-1 flex items-center space-x-3">
+                <div class="gw-type-body-sm font-mono text-slate-400 mt-1 flex items-center space-x-3">
                   <span>镜头: ${(rawNumber(p.scenes) === null || rawNumber(p.shots) === null) ? '—' : `${rawNumber(p.scenes)}场/${rawNumber(p.shots)}镜`}</span>
                   <span>隔离时间: ${formatTime(p.deleted_at)}</span>
                   <span>ID: ${esc(p.id)}</span>
                 </div>
               </div>
-              <button class="tactile-keycap px-2.5 py-1 rounded-lg text-[9.5px] font-bold text-emerald-400 hover:text-emerald-300 hover:border-emerald-500/50 flex items-center space-x-1 cursor-pointer transition shrink-0"
+              <button class="tactile-keycap px-2.5 py-1 rounded-lg gw-type-body-md font-bold text-emerald-400 hover:text-emerald-300 hover:border-emerald-500/50 flex items-center space-x-1 cursor-pointer transition shrink-0"
                       onclick="${restoreAction}"
                       title="一键安全恢复该工程">
                 <i data-lucide="rotate-ccw" class="w-3 h-3 text-emerald-400"></i>
@@ -1463,7 +1463,7 @@ window.WorkbenchProjects = (function () {
       const list = globalTrashState.assets;
       if (list.length === 0) {
         container.innerHTML = `
-          <div class="bay-inset p-8 text-center text-slate-500 font-mono text-xs rounded-xl">
+          <div class="bay-inset p-8 text-center text-slate-500 font-mono gw-type-body-sm rounded-xl">
             <i data-lucide="check-circle-2" class="w-7 h-7 mx-auto mb-2 text-emerald-400/60"></i>
             <div>素材库隔离池为空，暂无软删除资产</div>
           </div>
@@ -1474,16 +1474,16 @@ window.WorkbenchProjects = (function () {
             <div class="min-w-0 flex-1 pr-3">
               <div class="flex items-center space-x-2">
                 <span class="w-1.5 h-1.5 rounded-full bg-cyan-400"></span>
-                <h4 class="text-xs font-bold text-slate-100 truncate">${esc(a.name)}</h4>
-                <span class="text-[8px] font-mono px-1.5 py-0.5 rounded bg-cyan-500/15 text-cyan-300 border border-cyan-500/30">${esc(a.type || 'RAW')}</span>
+                <h4 class="gw-type-body-md font-bold text-slate-100 truncate">${esc(a.name)}</h4>
+                <span class="gw-type-body-sm font-mono px-1.5 py-0.5 rounded bg-cyan-500/15 text-cyan-300 border border-cyan-500/30">${esc(a.type || 'RAW')}</span>
               </div>
-              <div class="text-[9px] font-mono text-slate-400 mt-1 flex items-center space-x-3">
+              <div class="gw-type-body-sm font-mono text-slate-400 mt-1 flex items-center space-x-3">
                 <span>大小: ${esc(a.size || '未知')}</span>
                 <span>隔离时间: ${formatTime(a.deleted_at)}</span>
                 <span class="truncate max-w-[120px]">哈希: ${esc(a.hash || 'sha256:...')}</span>
               </div>
             </div>
-            <button class="tactile-keycap px-2.5 py-1 rounded-lg text-[9.5px] font-bold text-emerald-400 hover:text-emerald-300 hover:border-emerald-500/50 flex items-center space-x-1 cursor-pointer transition shrink-0"
+            <button class="tactile-keycap px-2.5 py-1 rounded-lg gw-type-body-md font-bold text-emerald-400 hover:text-emerald-300 hover:border-emerald-500/50 flex items-center space-x-1 cursor-pointer transition shrink-0"
                     onclick="WorkbenchProjects.restoreAssetFromTrash('${esc(a.id)}')"
                     title="恢复此素材到资产库">
               <i data-lucide="rotate-ccw" class="w-3 h-3 text-emerald-400"></i>
@@ -1496,7 +1496,7 @@ window.WorkbenchProjects = (function () {
       const list = globalTrashState.canvases;
       if (list.length === 0) {
         container.innerHTML = `
-          <div class="bay-inset p-8 text-center text-slate-500 font-mono text-xs rounded-xl">
+          <div class="bay-inset p-8 text-center text-slate-500 font-mono gw-type-body-sm rounded-xl">
             <i data-lucide="check-circle-2" class="w-7 h-7 mx-auto mb-2 text-emerald-400/60"></i>
             <div>工程画布隔离池为空，暂无软删除画布</div>
           </div>
@@ -1507,15 +1507,15 @@ window.WorkbenchProjects = (function () {
             <div class="min-w-0 flex-1 pr-3">
               <div class="flex items-center space-x-2">
                 <span class="w-1.5 h-1.5 rounded-full bg-purple-400"></span>
-                <h4 class="text-xs font-bold text-slate-100 truncate">${esc(c.name)}</h4>
-                <span class="text-[8px] font-mono px-1.5 py-0.5 rounded bg-purple-500/15 text-purple-300 border border-purple-500/30">画布节点</span>
+                <h4 class="gw-type-body-md font-bold text-slate-100 truncate">${esc(c.name)}</h4>
+                <span class="gw-type-body-sm font-mono px-1.5 py-0.5 rounded bg-purple-500/15 text-purple-300 border border-purple-500/30">画布节点</span>
               </div>
-              <div class="text-[9px] font-mono text-slate-400 mt-1 flex items-center space-x-3">
+              <div class="gw-type-body-sm font-mono text-slate-400 mt-1 flex items-center space-x-3">
                 <span>节点规模: ${rawNumber(c.nodes_count) === null ? '未接入' : `${rawNumber(c.nodes_count)} Nodes`}</span>
                 <span>隔离时间: ${formatTime(c.deleted_at)}</span>
               </div>
             </div>
-            <button class="tactile-keycap px-2.5 py-1 rounded-lg text-[9.5px] font-bold text-emerald-400 hover:text-emerald-300 hover:border-emerald-500/50 flex items-center space-x-1 cursor-pointer transition shrink-0"
+            <button class="tactile-keycap px-2.5 py-1 rounded-lg gw-type-body-md font-bold text-emerald-400 hover:text-emerald-300 hover:border-emerald-500/50 flex items-center space-x-1 cursor-pointer transition shrink-0"
                     onclick="WorkbenchProjects.restoreCanvasFromTrash('${esc(c.id)}')"
                     title="恢复此画布到分镜画布台">
               <i data-lucide="rotate-ccw" class="w-3 h-3 text-emerald-400"></i>
@@ -1621,7 +1621,7 @@ window.WorkbenchProjects = (function () {
       if (res.ok && body && Number.isFinite(Number(body.total))) {
         nodes.forEach(el => {
           el.textContent = Number(body.total) + ' 项';
-          el.className = 'text-[8px] font-mono font-bold text-cyan-300 leading-tight';
+          el.className = 'gw-type-body-sm font-mono font-bold text-cyan-300 leading-tight';
           el.removeAttribute('data-gw-degradation');
           el.title = '真实已登记素材总数（GET /api/asset-registry/assets 的 total）';
         });

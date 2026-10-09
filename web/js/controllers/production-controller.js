@@ -264,7 +264,7 @@ window.WorkbenchProduction = (function () {
     const scenes = state.currentEpisode.scenes || [];
     if (scenes.length === 0) {
       listContainer.innerHTML = `
-        <div class="bay-inset p-4 text-center text-slate-500 font-mono text-xs rounded-xl">
+        <div class="bay-inset p-4 text-center text-slate-500 font-mono gw-type-body-sm rounded-xl">
           <i data-lucide="layers" class="w-6 h-6 mx-auto mb-1.5 text-slate-600"></i>
           <div>本剧集暂未配置场次</div>
         </div>
@@ -304,10 +304,10 @@ window.WorkbenchProduction = (function () {
                 <div class="shot-row-item group flex items-center justify-between px-2 py-1.5 rounded-lg cursor-pointer transition ${isShotActive ? 'bg-[#dfc384]/15 border border-[#dfc384]/50 shadow-[0_0_8px_rgba(223,195,132,0.15)]' : 'bg-black/40 hover:bg-white/5 border border-white/5'}"
                      onclick="event.stopPropagation(); WorkbenchProduction.selectCatalogShot('${sc.id}', '${sh.id}')">
                   <div class="flex items-center space-x-2 min-w-0">
-                    <span class="text-[8.5px] font-mono font-bold ${isShotActive ? 'text-[#dfc384]' : 'text-slate-400'} shrink-0">${esc(sh.code)}</span>
-                    <span class="text-[9.5px] text-slate-300 truncate">${esc(sh.type)} ${esc(sh.desc)}</span>
+                    <span class="gw-type-body-sm font-mono font-bold ${isShotActive ? 'text-[#dfc384]' : 'text-slate-400'} shrink-0">${esc(sh.code)}</span>
+                    <span class="gw-type-body-sm text-slate-300 truncate">${esc(sh.type)} ${esc(sh.desc)}</span>
                   </div>
-                  <span class="text-[8px] font-mono px-1.5 py-0.5 rounded border shrink-0 ${badgeColor}">${esc(sh.status)}</span>
+                  <span class="gw-type-body-sm font-mono px-1.5 py-0.5 rounded border shrink-0 ${badgeColor}">${esc(sh.status)}</span>
                 </div>
               `;
             }).join('')}
@@ -321,14 +321,14 @@ window.WorkbenchProduction = (function () {
              onclick="WorkbenchProduction.toggleSceneCard('${sc.id}')">
           <div class="flex items-start justify-between">
             <div class="flex items-center space-x-1.5 min-w-0">
-              <span class="text-[8px] font-mono font-bold px-1.5 py-0.5 rounded bg-black/60 border border-white/10 text-slate-300 shrink-0">${esc(sc.code)}</span>
-              <h4 class="text-xs font-bold text-slate-100 truncate">${esc(sc.name)}</h4>
+              <span class="gw-type-body-sm font-mono font-bold px-1.5 py-0.5 rounded bg-black/60 border border-white/10 text-slate-300 shrink-0">${esc(sc.code)}</span>
+              <h4 class="gw-type-body-md font-bold text-slate-100 truncate">${esc(sc.name)}</h4>
             </div>
-            <span class="text-[8px] font-mono px-1.5 py-0.5 rounded shrink-0 ${statusBadgeClass}">${esc(sc.status)}</span>
+            <span class="gw-type-body-sm font-mono px-1.5 py-0.5 rounded shrink-0 ${statusBadgeClass}">${esc(sc.status)}</span>
           </div>
 
           <!-- 场次属性元数据 -->
-          <div class="flex items-center space-x-3 mt-1.5 text-[8.5px] font-mono text-slate-400">
+          <div class="flex items-center space-x-3 mt-1.5 gw-type-body-sm font-mono text-slate-400">
             <span>${Number.isFinite(Number(sc.shotsCount)) && sc.shotsCount !== null && sc.shotsCount !== '' ? `${Number(sc.shotsCount)} 镜头` : '镜头数未接入'}</span>
             <span>·</span>
             <span>${(sc.duration === null || sc.duration === undefined || sc.duration === '') ? '时长未接入' : sc.duration}</span>
@@ -341,7 +341,7 @@ window.WorkbenchProduction = (function () {
             <div class="hw-fader-track-horizontal w-full h-1">
               <div class="hw-fader-glow-bar" style="width: 0%;"></div>
             </div>
-            <div class="text-[7px] font-mono text-amber-300 mt-0.5" data-gw-degradation="not_integrated" title="本切片无真实场次渲染进度数据源，示例目录数值不作为遥测">进度未接入</div>
+            <div class="gw-type-body-sm font-mono text-amber-300 mt-0.5" data-gw-degradation="not_integrated" title="本切片无真实场次渲染进度数据源，示例目录数值不作为遥测">进度未接入</div>
           </div>
 
           ${shotsHtml}
@@ -419,9 +419,9 @@ window.WorkbenchProduction = (function () {
 
     if (btn && btn.parentElement) {
       btn.parentElement.querySelectorAll('button').forEach(b => {
-        b.className = 'pill-capsule-inactive px-2.5 py-0.5 text-[9.5px] font-mono text-slate-400 cursor-pointer ep-pill-btn';
+        b.className = 'pill-capsule-inactive px-2.5 py-0.5 gw-type-body-sm font-mono text-slate-400 cursor-pointer ep-pill-btn';
       });
-      btn.className = 'pill-capsule-active px-2.5 py-0.5 text-[9.5px] font-mono cursor-pointer ep-pill-btn';
+      btn.className = 'pill-capsule-active px-2.5 py-0.5 gw-type-body-sm font-mono cursor-pointer ep-pill-btn';
     }
 
     if (ep.scenes && ep.scenes.length > 0) {
@@ -503,9 +503,9 @@ window.WorkbenchProduction = (function () {
              onclick="WorkbenchProduction.selectShot('${sh.id}')">
           <div class="h-12 w-full rounded overflow-hidden mb-1 relative bg-black">
             <img src="${sh.img}" class="w-full h-full object-cover">
-            <span class="absolute bottom-0.5 right-0.5 text-[7px] font-mono px-1 rounded bg-black/80 text-[#eddab3]">${sh.type}</span>
+            <span class="absolute bottom-0.5 right-0.5 gw-type-body-sm font-mono px-1 rounded bg-black/80 text-[#eddab3]">${sh.type}</span>
           </div>
-          <div class="flex items-center justify-between text-[7.5px] font-mono">
+          <div class="flex items-center justify-between gw-type-body-sm font-mono">
             <span class="${isActive ? 'text-[#dfc384] font-bold' : 'text-slate-400'}">${sh.code}</span>
             <span class="${sh.status === 'queued' ? 'text-amber-300' : 'text-slate-400'}"${sh.status === 'not_integrated' ? ' data-gw-degradation="not_integrated"' : ''}>${sh.status === 'queued' ? '排队' : (sh.status === 'not_integrated' ? '未接入' : sh.status)}</span>
           </div>

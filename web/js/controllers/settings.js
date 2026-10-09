@@ -190,7 +190,7 @@
     const degraded = appResult.error || statusResult.error;
     const info = q('#systemInfo');
     if (info) info.dataset.gwDegradation = degraded ? (degraded.code === 'SERVICE_UNAVAILABLE' ? 'service_unavailable' : 'not_integrated') : 'ok';
-    q('#systemInfo').innerHTML=`<div class="summary-stat"><span>工作台版本</span><strong style="font-size:17px">${esc(appLabel)}</strong></div><div class="summary-stat"><span>资产后端</span><strong style="font-size:17px">${esc(backendLabel)}</strong></div><div class="summary-stat"><span>注册表状态</span><strong style="font-size:17px">${esc(readyLabel)}</strong></div><button class="btn" id="checkUpdate" style="margin-top:14px">检查更新</button>`;
+    q('#systemInfo').innerHTML=`<div class="summary-stat"><span>工作台版本</span><strong style="font-size:var(--gw-type-body-lg)">${esc(appLabel)}</strong></div><div class="summary-stat"><span>资产后端</span><strong style="font-size:var(--gw-type-body-lg)">${esc(backendLabel)}</strong></div><div class="summary-stat"><span>注册表状态</span><strong style="font-size:var(--gw-type-body-lg)">${esc(readyLabel)}</strong></div><button class="btn" id="checkUpdate" style="margin-top:14px">检查更新</button>`;
     q('#checkUpdate')?.addEventListener('click',()=>{try{parent.checkForUpdates(true);}catch(e){}});
   });
 

@@ -35,7 +35,8 @@ def test_video_generate_preview_export_download_browser(monkeypatch, tmp_path):
     helpers = _helpers()
     source = helpers._make_clip(tmp_path / "source.mp4", size="96x64", duration="0.7")
     provider, provider_thread, provider_url, upstream = helpers._provider_server(source)
-    helpers._runtime(monkeypatch, provider_url)
+    # 本用例改由设置API持久配置驱动，验证管理页保存与视频执行共享真源。
+    monkeypatch.delenv("GW_PROVIDER_RUNTIME_JSON", raising=False)
     monkeypatch.setenv("GW_AUTH_MODE", "local_account")
     monkeypatch.setenv("GW_LOCAL_AUTH_DB", str(tmp_path / "auth.sqlite3"))
     monkeypatch.setenv("GW_CLI_EXECUTION", "0")
@@ -94,7 +95,9 @@ def test_video_generate_preview_export_download_browser(monkeypatch, tmp_path):
                     "title": "浏览器出片"}, 201)
                 revision = call("GET", "/api/providers")["revision"]
                 call("PUT", f"/api/providers?expected_version={revision}", {"providers": [{"id": "video-test",
-                     "name": "回环验收", "enabled": True, "video_models": ["video-test-model"]}]})
+                     "name": "回环验收", "enabled": True, "base_url": provider_url,
+                     "protocol": "openai", "video_protocol": "newapi_video", "api_key": "test-secret-do-not-log",
+                     "video_models": ["video-test-model"]}]})
                 # 页面本来就将逐镜草稿保存在 localStorage；只准备输入，不注入成功或任务状态。
                 page.goto(base + "/healthz")
                 key = "gwb_episode_workspace_v2:" + pipeline["pipeline_id"]

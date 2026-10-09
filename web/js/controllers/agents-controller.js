@@ -48,14 +48,14 @@ window.WorkbenchAgents = (function () {
     list.innerHTML = state.agents.map(ag => `
       <div class="tree-node-card ${ag.active ? 'active' : ''} p-2 cursor-pointer transition" role="button" tabindex="0" onclick="WorkbenchAgents.selectAgent('${ag.id}')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();WorkbenchAgents.selectAgent('${ag.id}')}" aria-label="选择 ${esc(ag.name)}">
         <div class="flex items-center justify-between mb-1">
-          <div class="font-bold text-slate-100 text-xs truncate">${esc(ag.name)}</div>
+          <div class="font-bold text-slate-100 gw-type-body-md truncate">${esc(ag.name)}</div>
           ${ag.route ? `<a href="${esc(ag.route)}" class="text-slate-400 hover:text-[#dfc384] shrink-0" title="打开剧本架构师路由" aria-label="打开剧本架构师路由" onclick="event.stopPropagation()"><i data-lucide="external-link" class="w-3 h-3"></i></a>` : ''}
-          <span class="text-[7.5px] font-mono px-1 py-0.5 rounded-full ${ag.status === 'configured' ? 'bg-cyan-500/15 text-cyan-300 border border-cyan-500/30' : 'bg-amber-500/15 text-amber-300 border border-amber-500/30'}"${ag.status !== 'configured' ? ' data-gw-degradation="' + ag.status + '"' : ''}>
+          <span class="gw-type-body-sm font-mono px-1 py-0.5 rounded-full ${ag.status === 'configured' ? 'bg-cyan-500/15 text-cyan-300 border border-cyan-500/30' : 'bg-amber-500/15 text-amber-300 border border-amber-500/30'}"${ag.status !== 'configured' ? ' data-gw-degradation="' + ag.status + '"' : ''}>
             ${ag.status === 'configured' ? 'Provider 已配置' : (ag.status === 'not_integrated' ? '未配置' : (ag.status === 'service_unavailable' ? '配置读取失败' : '配置读取中'))}
           </span>
         </div>
-        <div class="text-[8.5px] text-slate-400 truncate mb-1">${esc(ag.role)}</div>
-        <div class="text-[8px] font-mono text-[#dfc384] truncate">${esc(ag.model)}</div>
+        <div class="gw-type-body-sm text-slate-400 truncate mb-1">${esc(ag.role)}</div>
+        <div class="gw-type-body-sm font-mono text-[#dfc384] truncate">${esc(ag.model)}</div>
       </div>
     `).join('');
   }
@@ -75,10 +75,10 @@ window.WorkbenchAgents = (function () {
 
       return `
         <div class="aura-trace-row" role="button" tabindex="0" data-aura-trace-id="${esc(t.id)}" aria-expanded="false" title="点击展开详情">
-          <div class="aura-trace-summary text-xs">
-            <span class="text-[8px] font-mono text-slate-500 shrink-0 pt-0.5">${esc(t.time)}</span>
-            <span class="text-[7.5px] font-mono px-1 py-0.5 rounded border ${tagColor} shrink-0 font-bold">${esc(t.tag)}</span>
-            <span class="aura-trace-summary-text text-slate-200 leading-relaxed font-sans">${esc(t.summary || t.text || '')}</span>
+          <div class="aura-trace-summary gw-type-body-sm">
+            <span class="gw-type-body-sm font-mono text-slate-500 shrink-0 pt-0.5">${esc(t.time)}</span>
+            <span class="gw-type-body-sm font-mono px-1 py-0.5 rounded border ${tagColor} shrink-0 font-bold">${esc(t.tag)}</span>
+            <span class="aura-trace-summary-text text-slate-200 leading-relaxed font-body">${esc(t.summary || t.text || '')}</span>
           </div>
           <pre class="aura-trace-detail" data-aura-trace-detail hidden>${esc(t.detail || t.text || t.summary || '')}</pre>
         </div>
@@ -264,17 +264,17 @@ window.WorkbenchAgents = (function () {
     if (bus) {
       if (agentProviderStatus === 'configured') {
         bus.textContent = 'Provider 已配置 · 尚未试请求';
-        bus.className = 'text-[8px] font-mono text-cyan-300';
+        bus.className = 'gw-type-body-sm font-mono text-cyan-300';
         bus.setAttribute('title', '仅 GET /api/chat/config 读取服务端配置；尚未连接或发送模型请求');
         bus.removeAttribute('data-gw-degradation');
       } else if (agentProviderStatus === 'not_integrated') {
         bus.textContent = 'Provider 未配置';
-        bus.className = 'text-[8px] font-mono text-amber-300';
+        bus.className = 'gw-type-body-sm font-mono text-amber-300';
         bus.setAttribute('title', '服务端没有可用的 Chat Provider 配置；页面加载未触发生成');
         bus.setAttribute('data-gw-degradation', 'not_integrated');
       } else {
         bus.textContent = '配置状态不可用';
-        bus.className = 'text-[8px] font-mono text-amber-300';
+        bus.className = 'gw-type-body-sm font-mono text-amber-300';
         bus.setAttribute('title', 'Chat 配置状态读取失败；页面加载未触发生成');
         bus.setAttribute('data-gw-degradation', 'service_unavailable');
       }

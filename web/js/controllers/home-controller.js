@@ -121,11 +121,11 @@ window.WorkbenchHome = (function () {
   // 显式降级占位（带 data-gw-degradation 标记，便于契约测试与人工核验）。
   function degradationNoticeHtml(degradation, extraHint) {
     const api = degradationApi();
-    const hint = extraHint ? `<span class="block mt-1 text-[9px] text-slate-500">${esc(extraHint)}</span>` : '';
+    const hint = extraHint ? `<span class="block mt-1 gw-type-body-sm text-slate-500">${esc(extraHint)}</span>` : '';
     if (api && typeof api.noticeHtml === 'function') {
       return api.noticeHtml(degradation.kind, degradation.message) + hint;
     }
-    return `<div class="bay-inset p-3 rounded-xl border border-white/10 text-center text-[10px] font-mono text-slate-400" role="status" data-gw-degradation="${esc(degradation.kind)}"><span class="block">${esc(degradation.message)}</span>${hint}</div>`;
+    return `<div class="bay-inset p-3 rounded-xl border border-white/10 text-center gw-type-body-sm font-mono text-slate-400" role="status" data-gw-degradation="${esc(degradation.kind)}"><span class="block">${esc(degradation.message)}</span>${hint}</div>`;
   }
 
 
@@ -202,7 +202,7 @@ window.WorkbenchHome = (function () {
       container.innerHTML = state.projectsDegradation
         ? degradationNoticeHtml(state.projectsDegradation, '未取到工程列表；本页不会展示任何伪造的示例工程。')
         : `
-        <div class="bay-inset p-4 rounded-xl text-center text-slate-400 text-xs">
+        <div class="bay-inset p-4 rounded-xl text-center text-slate-400 gw-type-body-sm">
           <i data-lucide="folder-open" class="w-6 h-6 mx-auto mb-1 text-slate-500"></i>
           暂无工程，点击上方“+ 新建”快速开启
         </div>
@@ -299,12 +299,12 @@ window.WorkbenchHome = (function () {
 
               <div class="flex-1 min-w-0 flex flex-col justify-between h-[70px] py-1">
                 <!-- 项目名称 -->
-                <h4 class="text-sm font-bold text-slate-100 truncate tracking-wide group-hover:text-[#eddab3] transition leading-snug" title="${esc(p.name)}">
+                <h4 class="gw-type-body-md font-bold text-slate-100 truncate group-hover:text-[#eddab3] transition leading-snug" title="${esc(p.name)}">
                   ${esc(p.name)}
                 </h4>
 
                 <!-- 小状态栏：影片类型图标 + 进行状态（规划中/制作中/已完成） -->
-                <div class="flex items-center space-x-2 text-[9px] font-mono">
+                <div class="flex items-center space-x-2 gw-type-body-sm font-mono">
                   <span class="flex items-center space-x-1 ${typeMeta.colorClass} shrink-0" title="${typeMeta.label}">
                     <i data-lucide="${typeMeta.iconName}" class="w-3.5 h-3.5"></i>
                   </span>
@@ -321,12 +321,12 @@ window.WorkbenchHome = (function () {
 
             <!-- 最下面：制作进度条与数值 + 直通影视工坊快捷按钮 -->
             <div class="mt-2.5 pt-1.5 border-t border-white/5 space-y-1">
-              <div class="flex justify-between items-center text-[9px] font-mono">
+              <div class="flex justify-between items-center gw-type-body-sm font-mono">
                 <span class="text-slate-400">制作进度</span>
                 <div class="flex items-center space-x-2">
                   ${progressHtml}
                   <a href="/static/pages/workshop.html?project_id=${encodeURIComponent(p.id)}"
-                     class="tactile-keycap px-1.5 py-0.5 rounded text-[8px] text-[#eddab3] hover:text-white flex items-center space-x-0.5"
+                     class="tactile-keycap px-1.5 py-0.5 rounded gw-type-body-sm text-[#eddab3] hover:text-white flex items-center space-x-0.5"
                      onclick="event.stopPropagation(); localStorage.setItem('workspace_project_id', '${esc(p.id)}'); localStorage.setItem('workspace_project_name', '${esc(p.name)}');"
                      title="进入该项目的影视工坊（剧本/资产/分镜/视频）">
                     <i data-lucide="film" class="w-2.5 h-2.5 text-[#dfc384]"></i>
@@ -375,13 +375,13 @@ window.WorkbenchHome = (function () {
               ${thumbnailHtml}
               <div class="min-w-0 flex-1">
                 <div class="flex items-center space-x-2">
-                  <span class="text-xs font-bold text-slate-100 truncate">${esc(p.name)}</span>
+                  <span class="gw-type-body-md font-bold text-slate-100 truncate">${esc(p.name)}</span>
                   <span class="proj-status-chip ${statusMeta.key}">
                     <span class="w-1.5 h-1.5 rounded-full ${statusMeta.dotColor}"></span>
                     <span>${statusMeta.text}</span>
                   </span>
                 </div>
-                <div class="flex items-center space-x-1.5 text-[8.5px] font-mono text-slate-400 mt-0.5">
+                <div class="flex items-center space-x-1.5 gw-type-body-sm font-mono text-slate-400 mt-0.5">
                   <i data-lucide="${typeMeta.iconName}" class="w-3 h-3 ${typeMeta.colorClass}"></i>
                   <span>${typeMeta.label}</span>
                 </div>
@@ -390,7 +390,7 @@ window.WorkbenchHome = (function () {
 
             <div class="flex items-center space-x-3 shrink-0 ml-2">
               <div class="w-20 space-y-0.5">
-                <div class="flex justify-between text-[8px] font-mono text-slate-400">
+                <div class="flex justify-between gw-type-body-sm font-mono text-slate-400">
                   <span>制作进度</span>
                   ${progressHtml}
                 </div>
@@ -399,13 +399,13 @@ window.WorkbenchHome = (function () {
                 </div>
               </div>
               <a href="/static/pages/workshop.html?project_id=${encodeURIComponent(p.id)}"
-                 class="tactile-keycap px-1.5 py-0.5 rounded text-[8px] text-[#eddab3] hover:text-white flex items-center space-x-0.5 cursor-pointer"
+                 class="tactile-keycap px-1.5 py-0.5 rounded gw-type-body-sm text-[#eddab3] hover:text-white flex items-center space-x-0.5 cursor-pointer"
                  onclick="event.stopPropagation(); localStorage.setItem('workspace_project_id', '${esc(p.id)}'); localStorage.setItem('workspace_project_name', '${esc(p.name)}');"
                  title="进入该项目的影视工坊">
                 <i data-lucide="film" class="w-2.5 h-2.5 text-[#dfc384]"></i>
                 <span>工坊</span>
               </a>
-              <span class="text-[8.5px] font-mono text-slate-500">${formatTime(p.updated_at)}</span>
+              <span class="gw-type-body-sm font-mono text-slate-500">${formatTime(p.updated_at)}</span>
             </div>
           </div>
         `;
@@ -762,7 +762,7 @@ window.WorkbenchHome = (function () {
       notice.id = 'workbenchAuraUploadNotice';
       notice.setAttribute('role', 'status');
       notice.setAttribute('data-gw-degradation', 'not_integrated');
-      notice.className = 'mb-1 px-2 py-1 rounded-lg border border-amber-500/30 text-[9px] font-mono text-amber-300';
+      notice.className = 'mb-1 px-2 py-1 rounded-lg border border-amber-500/30 gw-type-body-sm font-mono text-amber-300';
       strip.parentNode.insertBefore(notice, strip);
     }
     notice.textContent = text;
@@ -781,7 +781,7 @@ window.WorkbenchHome = (function () {
 
     strip.classList.remove('hidden');
     strip.innerHTML = auraState.attachments.map((item, idx) => `
-      <div class="bay-inset px-2 py-1 rounded-lg border border-[#dfc384]/30 flex items-center space-x-1.5 text-[9px] font-mono text-slate-200 bg-[#121620]">
+      <div class="bay-inset px-2 py-1 rounded-lg border border-[#dfc384]/30 flex items-center space-x-1.5 gw-type-body-sm font-mono text-slate-200 bg-[#121620]">
         <i data-lucide="file-warning" class="w-2.5 h-2.5 text-amber-300"></i>
         <span class="max-w-[100px] truncate" title="${esc(item.name)}">${esc(item.name)}</span>
         ${item.uploadState === 'not_uploaded' ? '<span class="px-1 rounded border border-amber-500/30 text-amber-300" title="未上传到服务器">未上传</span>' : ''}
@@ -847,7 +847,7 @@ window.WorkbenchHome = (function () {
     const attachmentsSnippet = attachedCount > 0 ? `
       <div class="flex flex-wrap gap-1 mt-1 mb-1">
         ${currentAttachments.map(a => `
-          <span class="inline-flex items-center space-x-1 px-1.5 py-0.5 rounded bg-black/40 border border-white/10 text-[8px] text-cyan-300">
+          <span class="inline-flex items-center space-x-1 px-1.5 py-0.5 rounded bg-black/40 border border-white/10 gw-type-body-sm text-cyan-300">
             <i data-lucide="paperclip" class="w-2 h-2"></i>
             <span class="truncate max-w-[80px]">${esc(a.name)}</span>
           </span>
@@ -857,9 +857,9 @@ window.WorkbenchHome = (function () {
 
     const userHtml = `
       <div id="${userMsgId}" class="flex justify-end my-2">
-        <div class="bay-inset bg-[#141721] border border-[#dfc384]/30 rounded-2xl rounded-tr-sm px-3 py-2 max-w-[85%] text-slate-100 shadow-sm text-xs">
-          <div class="text-[8px] font-mono text-[#dfc384] text-right mb-0.5 flex items-center justify-end space-x-1.5">
-            <span class="text-slate-400 font-sans">${auraState.ratio} · ${auraState.resolutionLevel}</span>
+        <div class="bay-inset bg-[#141721] border border-[#dfc384]/30 rounded-2xl rounded-tr-sm px-3 py-2 max-w-[85%] text-slate-100 shadow-sm gw-type-body-sm">
+          <div class="gw-type-body-sm font-mono text-[#dfc384] text-right mb-0.5 flex items-center justify-end space-x-1.5">
+            <span class="text-slate-400 font-body">${auraState.ratio} · ${auraState.resolutionLevel}</span>
             <span>DIRECTOR (YOU)</span>
           </div>
           ${esc(query)}
@@ -878,8 +878,8 @@ window.WorkbenchHome = (function () {
     const botMsgId = 'msg-b-' + Date.now();
     const botHtml = `
       <div id="${botMsgId}" class="flex justify-start my-2">
-        <div class="p-3 rounded-2xl rounded-tl-sm bg-[#0a0c10] border border-[#dfc384]/20 max-w-[90%] text-xs shadow-md space-y-1.5">
-          <div class="flex items-center justify-between text-[8.5px] font-mono text-[#dfc384] font-bold">
+        <div class="p-3 rounded-2xl rounded-tl-sm bg-[#0a0c10] border border-[#dfc384]/20 max-w-[90%] gw-type-body-sm shadow-md space-y-1.5">
+          <div class="flex items-center justify-between gw-type-body-sm font-mono text-[#dfc384] font-bold">
             <div class="flex items-center space-x-1.5">
               <i data-lucide="bot" class="w-3 h-3 text-[#dfc384]"></i>
               <span>AURA · 核心智能体</span>
@@ -887,7 +887,7 @@ window.WorkbenchHome = (function () {
             </div>
             <span class="text-slate-500 font-normal">${esc(selectedModel)}</span>
           </div>
-          <div class="text-slate-200 leading-relaxed font-sans aura-content">
+          <div class="text-slate-200 leading-relaxed font-body aura-content">
             <span class="text-slate-500 flex items-center space-x-1">
               <i data-lucide="loader" class="w-3 h-3 animate-spin"></i>
               <span>正在分析制片工程上下文并检索分镜矩阵...</span>
@@ -931,7 +931,7 @@ window.WorkbenchHome = (function () {
         if (botBubble) {
           botBubble.setAttribute('data-gw-degradation', failure.kind);
           botBubble.innerHTML = `<span class="text-amber-300">未能完成本次指令（未接入或服务不可用）。</span>`
-            + `<span class="block mt-1 text-[10px] text-slate-400">${esc(failure.message)}</span>`;
+            + `<span class="block mt-1 gw-type-body-sm text-slate-400">${esc(failure.message)}</span>`;
         }
       }
     } catch (e) {
@@ -939,7 +939,7 @@ window.WorkbenchHome = (function () {
       if (botBubble) {
         botBubble.setAttribute('data-gw-degradation', 'service_unavailable');
         botBubble.innerHTML = `<span class="text-amber-300">对话服务暂时不可用，请联系后端部署方。</span>`
-          + `<span class="block mt-1 text-[10px] text-slate-400">${esc(degradationMessage('service_unavailable', 0))}</span>`;
+          + `<span class="block mt-1 gw-type-body-sm text-slate-400">${esc(degradationMessage('service_unavailable', 0))}</span>`;
       }
     }
 
@@ -979,10 +979,10 @@ window.WorkbenchHome = (function () {
       }
 
       if (pillDashboard) {
-        pillDashboard.className = 'pill-capsule-inactive px-3.5 py-1.5 text-xs tracking-wide font-medium flex items-center space-x-1.5 nav-pill-btn cursor-pointer';
+        pillDashboard.className = 'pill-capsule-inactive px-3.5 py-1.5 gw-type-body-md font-medium flex items-center space-x-1.5 nav-pill-btn cursor-pointer';
       }
       if (pillSettings) {
-        pillSettings.className = 'pill-capsule-active px-3.5 py-1.5 text-xs tracking-wide flex items-center space-x-1.5 nav-pill-btn cursor-pointer';
+        pillSettings.className = 'pill-capsule-active px-3.5 py-1.5 gw-type-body-md flex items-center space-x-1.5 nav-pill-btn cursor-pointer';
         pillSettings.setAttribute('aria-pressed', 'true');
       }
       if (pillDashboard) pillDashboard.setAttribute('aria-pressed', 'false');
@@ -1006,10 +1006,10 @@ window.WorkbenchHome = (function () {
       if (contextBusAside) contextBusAside.classList.remove('hidden');
 
       if (pillDashboard) {
-        pillDashboard.className = 'pill-capsule-active px-3.5 py-1.5 text-xs tracking-wide flex items-center space-x-1.5 nav-pill-btn cursor-pointer';
+        pillDashboard.className = 'pill-capsule-active px-3.5 py-1.5 gw-type-body-md flex items-center space-x-1.5 nav-pill-btn cursor-pointer';
       }
       if (pillSettings) {
-        pillSettings.className = 'pill-capsule-inactive px-3.5 py-1.5 text-xs tracking-wide font-medium flex items-center space-x-1.5 nav-pill-btn cursor-pointer';
+        pillSettings.className = 'pill-capsule-inactive px-3.5 py-1.5 gw-type-body-md font-medium flex items-center space-x-1.5 nav-pill-btn cursor-pointer';
         pillSettings.setAttribute('aria-pressed', 'false');
       }
       if (pillDashboard) pillDashboard.setAttribute('aria-pressed', 'true');
@@ -1194,9 +1194,9 @@ window.WorkbenchHome = (function () {
             <span class="text-slate-400">硬件总线通信:</span>
             <strong class="${statusClass}">${esc(statusText)}</strong>
           </div>
-          ${degradedList.length ? `<div class="pt-1 text-[9px] font-mono text-slate-500" role="status" data-gw-degradation="${esc(degradedKind)}">${esc(degradedText)}</div>` : ''}
+          ${degradedList.length ? `<div class="pt-1 gw-type-body-sm font-mono text-slate-500" role="status" data-gw-degradation="${esc(degradedKind)}">${esc(degradedText)}</div>` : ''}
           <div class="pt-1 text-right">
-            <button class="tactile-keycap px-2 py-1 rounded text-[10px] text-slate-300 hover:text-white" onclick="alert('当前固件已是最新正式版本')">检查更新</button>
+            <button class="tactile-keycap px-2 py-1 rounded gw-type-body-md text-slate-300 hover:text-white" onclick="alert('当前固件已是最新正式版本')">检查更新</button>
           </div>
         `;
       }
@@ -1237,7 +1237,7 @@ window.WorkbenchHome = (function () {
                 </div>
               </div>
               <div class="prompt-source-actions">
-                <button type="button" class="tactile-keycap px-2 py-1 rounded text-[10px] text-slate-300" onclick="alert('已重新校验快照文件 SHA-256')">校验快照</button>
+                <button type="button" class="tactile-keycap px-2 py-1 rounded gw-type-body-md text-slate-300" onclick="alert('已重新校验快照文件 SHA-256')">校验快照</button>
               </div>
             </article>
           `;
@@ -1246,9 +1246,9 @@ window.WorkbenchHome = (function () {
         // 显式降级：读取失败不得自称已就绪或使用内置源。
         if (stateBadge) stateBadge.textContent = '未接入';
         list.innerHTML = `
-          <div class="bay-inset p-3 rounded-xl text-xs font-mono text-slate-400 text-center" role="status" data-gw-degradation="not_integrated">
+          <div class="bay-inset p-3 rounded-xl gw-type-body-sm font-mono text-slate-400 text-center" role="status" data-gw-degradation="not_integrated">
             本地提示词快照库未接入（未纳入当前切片）：未能读取 manifest.json。
-            <span class="block mt-1 text-[9px] text-slate-500">${esc(e && e.message ? e.message : '')}</span>
+            <span class="block mt-1 gw-type-body-sm text-slate-500">${esc(e && e.message ? e.message : '')}</span>
           </div>
         `;
       }
@@ -1367,11 +1367,11 @@ window.WorkbenchHome = (function () {
                     <i data-lucide="${meta.icon}" class="w-3.5 h-3.5 ${meta.color}"></i>
                   </div>
                   <div class="min-w-0">
-                    <div class="text-[11px] font-bold text-slate-200 truncate group-hover:text-[#eddab3] transition">${esc(name)}</div>
-                    <div class="text-[8px] font-mono text-slate-500">${meta.label} · ${esc(sizeStr)}</div>
+                    <div class="gw-type-body-md font-bold text-slate-200 truncate group-hover:text-[#eddab3] transition">${esc(name)}</div>
+                    <div class="gw-type-body-sm font-mono text-slate-500">${meta.label} · ${esc(sizeStr)}</div>
                   </div>
                 </div>
-                <div class="flex items-center space-x-1 shrink-0 text-[8px] font-mono text-slate-400">
+                <div class="flex items-center space-x-1 shrink-0 gw-type-body-sm font-mono text-slate-400">
                   <span class="px-1.5 py-0.5 rounded bg-black/50 border border-white/5 text-[#dfc384] group-hover:bg-[#dfc384]/20 transition">检视</span>
                 </div>
               </div>
@@ -1392,7 +1392,7 @@ window.WorkbenchHome = (function () {
         // 端点已接入且后端如实应答「确实为空」：保留中性空态，不得谎称未接入。
         if (listContainer) {
           listContainer.innerHTML = `
-            <div class="bay-inset p-3 rounded-xl text-center text-[10px] font-mono text-slate-400" role="status">
+            <div class="bay-inset p-3 rounded-xl text-center gw-type-body-sm font-mono text-slate-400" role="status">
               暂无已登记资产；后端已接入并如实返回空集合，未展示任何伪造示例。
             </div>`;
         }
@@ -1469,7 +1469,7 @@ window.WorkbenchHome = (function () {
     const origText = btn.textContent;
     btn.disabled = true;
     btn.textContent = '备份中…';
-    btn.className = 'pill-capsule-active px-2 py-0.5 text-[8.5px] font-mono text-cyan-200 border-cyan-400';
+    btn.className = 'pill-capsule-active px-2 py-0.5 gw-type-body-sm font-mono text-cyan-200 border-cyan-400';
 
     // 显式降级：只有后端真的接受任务才谈「已就绪」；未接入 / 失败一律如实告知。
     let resultText = '已就绪';
@@ -1492,7 +1492,7 @@ window.WorkbenchHome = (function () {
       setTimeout(() => {
         btn.disabled = false;
         btn.textContent = origText;
-        btn.className = 'pill-capsule-inactive px-2 py-0.5 text-[8.5px] font-mono text-cyan-300 border-cyan-500/30 cursor-pointer hover:border-cyan-400 transition';
+        btn.className = 'pill-capsule-inactive px-2 py-0.5 gw-type-body-sm font-mono text-cyan-300 border-cyan-500/30 cursor-pointer hover:border-cyan-400 transition';
       }, 1500);
     }, 1200);
   }
@@ -1513,8 +1513,8 @@ window.WorkbenchHome = (function () {
     container.innerHTML = visibleItems.map(item => `
       <div class="px-2.5 py-2 rounded-xl bay-inset border-l-2 ${item.border} flex items-center justify-between bg-[#0a0c10]">
         <div class="min-w-0 pr-1.5 flex-1">
-          <div class="text-[11px] font-semibold text-slate-100 tracking-tight whitespace-nowrap overflow-hidden text-ellipsis">${esc(item.title)}</div>
-          <div class="text-[8px] font-mono text-slate-500 mt-0.5 tracking-tight">${esc(item.subtitle)}</div>
+          <div class="gw-type-body-md font-semibold text-slate-100 whitespace-nowrap overflow-hidden text-ellipsis">${esc(item.title)}</div>
+          <div class="gw-type-body-sm font-mono text-slate-500 mt-0.5">${esc(item.subtitle)}</div>
         </div>
         <div class="flex items-center space-x-1.5 shrink-0">
           ${item.hasStepper ? `
@@ -1528,11 +1528,11 @@ window.WorkbenchHome = (function () {
             </div>
           ` : ''}
           ${item.isActionTrigger ? `
-            <button type="button" class="pill-capsule-inactive px-2 py-0.5 text-[8.5px] font-mono text-cyan-300 border-cyan-500/30 cursor-pointer hover:border-cyan-400 transition" onclick="WorkbenchHome.triggerIndexBackup(this)">
+            <button type="button" class="pill-capsule-inactive px-2 py-0.5 gw-type-body-md font-mono text-cyan-300 border-cyan-500/30 cursor-pointer hover:border-cyan-400 transition" onclick="WorkbenchHome.triggerIndexBackup(this)">
               ${item.actionText}
             </button>
           ` : `
-            <button type="button" class="pill-capsule-inactive px-2 py-0.5 text-[8.5px] font-mono text-[#eddab3] cursor-pointer hover:border-[#dfc384] transition" onclick="location.href='${item.actionHref || 'assets.html'}'">
+            <button type="button" class="pill-capsule-inactive px-2 py-0.5 gw-type-body-md font-mono text-[#eddab3] cursor-pointer hover:border-[#dfc384] transition" onclick="location.href='${item.actionHref || 'assets.html'}'">
               ${item.actionText}
             </button>
           `}
@@ -1558,7 +1558,7 @@ window.WorkbenchHome = (function () {
       applyAuraConfiguration(res.ok ? body : null);
       if (res.ok && body && body.configured === true) {
         node.textContent = 'AURA 智能体总线 · Provider 已配置（未测连接）';
-        node.className = 'text-[9px] font-mono text-cyan-300 font-bold';
+        node.className = 'gw-type-body-sm font-mono text-cyan-300 font-bold';
         node.removeAttribute('data-gw-degradation');
         node.title = '只读取 /api/chat/config；尚未验证上游连通性或发起计费请求';
         return;
@@ -1566,13 +1566,13 @@ window.WorkbenchHome = (function () {
       const status = String(body && body.configuration_status || '');
       const kind = res.ok && status === 'not_configured' ? 'not_integrated' : 'service_unavailable';
       node.textContent = 'AURA 智能体总线 · ' + (kind === 'not_integrated' ? 'Provider 未配置' : '配置状态不可用');
-      node.className = 'text-[9px] font-mono text-amber-300 font-bold';
+      node.className = 'gw-type-body-sm font-mono text-amber-300 font-bold';
       node.setAttribute('data-gw-degradation', kind);
       node.title = '只读取 /api/chat/config 的服务端配置状态（HTTP ' + res.status + '）；未触发模型生成';
     } catch (_) {
       applyAuraConfiguration(null);
       node.textContent = 'AURA 智能体总线 · 配置状态不可用';
-      node.className = 'text-[9px] font-mono text-amber-300 font-bold';
+      node.className = 'gw-type-body-sm font-mono text-amber-300 font-bold';
       node.setAttribute('data-gw-degradation', 'service_unavailable');
       node.title = 'GET /api/chat/config 请求异常；未触发模型生成';
     }

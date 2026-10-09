@@ -1,6 +1,7 @@
 <!DOCTYPE html>
 <html lang="zh-CN" class="h-full overflow-hidden">
 <head>
+  <link rel="stylesheet" href="/static/css/base/hardware-tokens.css">
   <link rel="stylesheet" href="/static/vendor/css/fonts.css?v=v0.0.1-alpha-2026">
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -15,6 +16,9 @@
   <link rel="stylesheet" href="/static/css/base/hardware-design-system.css">
   <link rel="stylesheet" href="/static/css/pages/project-date-range.css">
   <style>
+    /* 搜索及真实打开的项目表单保持完整输入高度。 */
+    #projectSearchInput, #newProjectNameInput, #newProjectTypeSelect, #editProjectNameInput, #editProjectTypeSelect, #editProjectStageSelect, #newProjectModal select { min-height:40px; line-height:var(--gw-leading-body-md); }
+
     /* 参考图2：细致斜向碳纤维/金属网孔微纹理 */
     .carbon-mesh-bg {
       background-image: repeating-linear-gradient(
@@ -63,7 +67,7 @@
       display: flex;
       align-items: center;
       justify-content: center;
-      font-size: 8px;
+      font-size:var(--gw-icon-size-sm);
       font-weight: 700;
       color: #dfc384;
     }
@@ -122,7 +126,7 @@
       align-items: center;
       justify-content: center;
       color: #dfc384;
-      font-size: 7.5px;
+      font-size: var(--gw-type-body-sm);
       font-weight: 800;
     }
     .launch-orb-btn {
@@ -237,7 +241,7 @@
       background: rgba(223, 195, 132, 0.8);
     }
   </style>
-<body class="gw-shell bg-[#090a0d] text-slate-200 antialiased h-screen flex flex-col select-none overflow-hidden px-5">
+<body class="gw-shell bg-[#090a0d] text-slate-200 antialiased h-screen flex flex-col select-none overflow-hidden px-5 gw-type-body-md">
 
   <!-- ========================================================================= -->
   <!-- 1. TOP MASTER DECK: 旗舰拟物双层机架 (放大1.2倍, h-[116px])                  -->
@@ -265,14 +269,14 @@
 
         <!-- 品牌徽标与机架ID (放大1.2倍) -->
         <div class="flex items-center space-x-1.5">
-          <span class="font-bold text-sm tracking-wider text-slate-100 uppercase">GODS'</span>
-          <span class="font-mono font-bold text-sm text-[#dfc384] tracking-widest">WORKBENCH</span>
-          <span class="text-[10px] font-mono px-2 py-0.5 rounded bg-black/60 border border-[#dfc384]/30 text-[#eddab3]">SYS.02 PRO</span>
+          <span class="font-bold gw-type-body-md text-slate-100">GODS'</span>
+          <span class="font-mono font-bold gw-type-body-md text-[#dfc384]">WORKBENCH</span>
+          <span class="gw-type-body-sm font-mono px-2 py-0.5 rounded bg-black/60 border border-[#dfc384]/30 text-[#eddab3]">SYS.02 PRO</span>
         </div>
 
         <!-- 在线状态胶囊 (放大1.2倍) -->
         <div class="flex items-center space-x-1.5 px-2.5 py-1 rounded-md bg-[#0a0c10] border border-white/10 shadow-inner">
-          <span class="text-[9px] font-mono text-amber-300 font-semibold" id="gwOnlineStatus" data-gw-degradation="not_integrated" title="读取真实探针 GET /api/observability/health">探测中…</span>
+          <span class="gw-type-body-sm font-mono text-amber-300 font-semibold" id="gwOnlineStatus" data-gw-degradation="not_integrated" title="读取真实探针 GET /api/observability/health">探测中…</span>
             <span class="relative flex h-2 w-2">
               <span class="relative inline-flex rounded-full h-2 w-2 bg-amber-400 animate-pulse shadow-[0_0_6px_#f59e0b]"></span>
             </span>
@@ -285,7 +289,7 @@
           <svg class="absolute inset-0 w-full h-full pointer-events-none z-10" viewBox="0 0 148 48">
             <path d="M 2 8 A 6 6 0 0 1 8 2 L 134 2 A 4 4 0 0 1 138 5 L 146 43 A 4 4 0 0 1 142 47 L 8 47 A 6 6 0 0 1 2 41 Z"
                   fill="#0b0d13" stroke="#2e3547" stroke-width="1.5" stroke-linejoin="round" />
-            <text x="10" y="11" font-family="'Source Han Sans CN', monospace" font-size="7.5" font-weight="700" fill="#dfc384" letter-spacing="0.5">CPU</text>
+            <text x="10" y="13" style="font-family:var(--gw-font-mono);font-size:var(--gw-type-label-md);letter-spacing:normal" font-weight="700" fill="#dfc384">CPU</text>
             <path d="M 48.32 39.66 A 27 27 0 0 1 99.68 39.66" fill="none" stroke="rgba(255,255,255,0.22)" stroke-width="0.8" />
             <path d="M 92.48 28.32 A 27 27 0 0 1 99.68 39.66" fill="none" stroke="#ef4444" stroke-width="1.6" stroke-linecap="round" />
             <polygon id="svgNeedleCPU" points="73.3,48 74.7,48 74.3,19 73.7,19" fill="#ffffff" filter="drop-shadow(0 0 2.5px #fae2c8)" transform="rotate(-11.5 74 48)" />
@@ -302,7 +306,7 @@
           <button class="text-slate-400 hover:text-[#dfc384] p-0.5 transition"><i data-lucide="chevron-left" class="w-4 h-4"></i></button>
           <div class="flex items-center space-x-2 px-1.5">
             <span class="w-1.5 h-1.5 rounded-full bg-[#dfc384] shadow-[0_0_6px_#dfc384] animate-pulse"></span>
-            <span class="text-[11px] font-mono font-bold text-[#eddab3] tracking-wider">PROJECT ASSET MASTER DECK</span>
+            <span class="gw-type-body-sm font-mono font-bold text-[#eddab3]">PROJECT ASSET MASTER DECK</span>
           </div>
           <button class="text-slate-400 hover:text-[#dfc384] p-0.5 transition"><i data-lucide="chevron-right" class="w-4 h-4"></i></button>
         </div>
@@ -315,7 +319,7 @@
           <svg class="absolute inset-0 w-full h-full pointer-events-none z-10" viewBox="0 0 148 48">
             <path d="M 146 8 A 6 6 0 0 0 140 2 L 14 2 A 4 4 0 0 0 10 5 L 2 43 A 4 4 0 0 0 6 47 L 140 47 A 6 6 0 0 0 146 41 Z"
                   fill="#0b0d13" stroke="#2e3547" stroke-width="1.5" stroke-linejoin="round" />
-            <text x="138" y="11" text-anchor="end" font-family="'Source Han Sans CN', monospace" font-size="7.5" font-weight="700" fill="#dfc384" letter-spacing="0.5">RAM</text>
+            <text x="138" y="13" text-anchor="end" style="font-family:var(--gw-font-mono);font-size:var(--gw-type-label-md);letter-spacing:normal" font-weight="700" fill="#dfc384">RAM</text>
             <path d="M 48.32 39.66 A 27 27 0 0 1 99.68 39.66" fill="none" stroke="rgba(255,255,255,0.22)" stroke-width="0.8" />
             <path d="M 92.48 28.32 A 27 27 0 0 1 99.68 39.66" fill="none" stroke="#ef4444" stroke-width="1.6" stroke-linecap="round" />
             <polygon id="svgNeedleRAM" points="73.3,48 74.7,48 74.3,19 73.7,19" fill="#ffffff" filter="drop-shadow(0 0 2.5px #38bdf8)" transform="rotate(25.9 74 48)" />
@@ -335,11 +339,11 @@
         <div class="h-5 w-px bg-white/10"></div>
 
         <!-- 数码时钟 (放大1.2倍) -->
-        <div class="px-2.5 py-1.5 rounded bg-[#06070a] border border-[#dfc384]/30 font-mono text-xs text-[#eddab3] font-bold shadow-inner flex items-center space-x-1.5">
+        <div class="px-2.5 py-1.5 rounded bg-[#06070a] border border-[#dfc384]/30 font-mono gw-type-body-sm text-[#eddab3] font-bold shadow-inner flex items-center space-x-1.5">
           <span class="w-1.5 h-1.5 rounded-full bg-[#dfc384] shadow-[0_0_6px_#dfc384]"></span>
           <span id="masterDeckClock">00:00:00</span>
         </div>
-        <button type="button" id="masterDeckDate" class="shrink-0 min-w-[76px] px-2.5 py-1.5 rounded bg-[#06070a] border border-[#dfc384]/45 font-mono text-xs text-[#eddab3] font-bold shadow-inner flex items-center justify-center space-x-1.5 hover:border-[#dfc384] transition" title="打开项目排期日历" aria-label="打开项目排期日历"><i data-lucide="calendar-days" class="w-3.5 h-3.5 text-[#dfc384]" aria-hidden="true"></i><span class="text-slate-500 uppercase" id="masterDeckDateMonth">---</span><span id="masterDeckDateDay">--</span></button>
+        <button type="button" id="masterDeckDate" class="shrink-0 min-w-[76px] px-2.5 py-1.5 rounded bg-[#06070a] border border-[#dfc384]/45 font-mono gw-type-body-md text-[#eddab3] font-bold shadow-inner flex items-center justify-center space-x-1.5 hover:border-[#dfc384] transition" title="打开项目排期日历" aria-label="打开项目排期日历"><i data-lucide="calendar-days" class="w-3.5 h-3.5 text-[#dfc384]" aria-hidden="true"></i><span class="text-slate-500" id="masterDeckDateMonth">---</span><span id="masterDeckDateDay">--</span></button>
       </div>
     </div>
 
@@ -348,7 +352,7 @@
 
       <!-- LEFT: 胶囊导航按键 (放大1.2倍) -->
       <div class="flex items-center space-x-2 shrink-0" id="navPillsGroup">
-        <a href="index.html" class="pill-capsule-inactive px-3.5 py-1.5 text-xs tracking-wide font-medium flex items-center space-x-1.5 nav-pill-btn cursor-pointer" title="首页 · 控制台">
+        <a href="index.html" class="pill-capsule-inactive px-3.5 py-1.5 gw-type-body-sm font-medium flex items-center space-x-1.5 nav-pill-btn cursor-pointer" title="首页 · 控制台">
           <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" viewBox="0 0 24 24">
             <path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path>
             <polyline points="9 22 9 12 15 12 15 22"></polyline>
@@ -356,45 +360,45 @@
           <span>首页 · 控制台</span>
         </a>
 
-        <a href="projects.html" class="pill-capsule-active px-3.5 py-1.5 text-xs tracking-wide flex items-center space-x-1.5 nav-pill-btn cursor-pointer" title="项目中心">
+        <a href="projects.html" class="pill-capsule-active px-3.5 py-1.5 gw-type-body-sm flex items-center space-x-1.5 nav-pill-btn cursor-pointer" title="项目中心">
           <i data-lucide="folder-kanban" class="w-3.5 h-3.5"></i>
           <span>项目中心</span>
         </a>
 
-        <a href="workshop.html" class="pill-capsule-inactive px-3.5 py-1.5 text-xs tracking-wide font-medium flex items-center space-x-1.5 nav-pill-btn cursor-pointer" title="影视工坊">
+        <a href="workshop.html" class="pill-capsule-inactive px-3.5 py-1.5 gw-type-body-sm font-medium flex items-center space-x-1.5 nav-pill-btn cursor-pointer" title="影视工坊">
           <i data-lucide="film" class="w-3.5 h-3.5"></i>
           <span>影视工坊</span>
         </a>
 
-        <a href="production.html" class="pill-capsule-inactive px-3.5 py-1.5 text-xs tracking-wide font-medium flex items-center space-x-1.5 nav-pill-btn cursor-pointer" title="剧集制片">
+        <a href="production.html" class="pill-capsule-inactive px-3.5 py-1.5 gw-type-body-sm font-medium flex items-center space-x-1.5 nav-pill-btn cursor-pointer" title="剧集制片">
           <i data-lucide="clapperboard" class="w-3.5 h-3.5"></i>
           <span>剧集制片</span>
         </a>
 
-        <a href="agents.html" class="pill-capsule-inactive px-3.5 py-1.5 text-xs tracking-wide font-medium flex items-center space-x-1.5 nav-pill-btn cursor-pointer" title="智能体">
+        <a href="agents.html" class="pill-capsule-inactive px-3.5 py-1.5 gw-type-body-sm font-medium flex items-center space-x-1.5 nav-pill-btn cursor-pointer" title="智能体">
           <i data-lucide="bot" class="w-3.5 h-3.5"></i>
           <span>智能体</span>
         </a>
 
-        <a href="storyboard.html?view=canvas" class="pill-capsule-inactive px-3.5 py-1.5 text-xs tracking-wide font-medium flex items-center space-x-1.5 nav-pill-btn cursor-pointer" title="画布">
+        <a href="storyboard.html?view=canvas" class="pill-capsule-inactive px-3.5 py-1.5 gw-type-body-sm font-medium flex items-center space-x-1.5 nav-pill-btn cursor-pointer" title="画布">
           <i data-lucide="layout-grid" class="w-3.5 h-3.5"></i>
           <span>画布/工具</span>
         </a>
 
-        <a href="assets.html" class="pill-capsule-inactive px-3.5 py-1.5 text-xs tracking-wide font-medium flex items-center space-x-1.5 nav-pill-btn cursor-pointer" title="资产库">
+        <a href="assets.html" class="pill-capsule-inactive px-3.5 py-1.5 gw-type-body-sm font-medium flex items-center space-x-1.5 nav-pill-btn cursor-pointer" title="资产库">
           <i data-lucide="database" class="w-3.5 h-3.5"></i>
           <span>资产库</span>
         </a>
 
-        <a href="collab.html" class="pill-capsule-inactive px-3.5 py-1.5 text-xs tracking-wide font-medium flex items-center space-x-1.5 nav-pill-btn cursor-pointer" title="协作">
+        <a href="collab.html" class="pill-capsule-inactive px-3.5 py-1.5 gw-type-body-sm font-medium flex items-center space-x-1.5 nav-pill-btn cursor-pointer" title="协作">
           <i data-lucide="users" class="w-3.5 h-3.5"></i>
           <span>协作</span>
         </a>
-        <a href="workflow-workbench.html" class="pill-capsule-inactive px-3.5 py-1.5 text-xs tracking-wide font-medium flex items-center space-x-1.5 nav-pill-btn cursor-pointer" title="工作流">
+        <a href="workflow.html" class="pill-capsule-inactive px-3.5 py-1.5 gw-type-body-sm font-medium flex items-center space-x-1.5 nav-pill-btn cursor-pointer" title="工作流">
           <i data-lucide="workflow" class="w-3.5 h-3.5"></i><span>工作流</span>
         </a>
 
-        <a href="index.html?view=settings" class="pill-capsule-inactive px-3.5 py-1.5 text-xs tracking-wide font-medium flex items-center space-x-1.5 nav-pill-btn cursor-pointer" title="系统设置">
+        <a href="index.html?view=settings" class="pill-capsule-inactive px-3.5 py-1.5 gw-type-body-sm font-medium flex items-center space-x-1.5 nav-pill-btn cursor-pointer" title="系统设置">
           <i data-lucide="settings" class="w-3.5 h-3.5"></i>
           <span>设置</span>
         </a>
@@ -403,33 +407,26 @@
       <!-- CENTER: 激光发光推子 (放大1.2倍) -->
       <div class="flex items-center space-x-4 shrink-0">
         <div class="flex items-center space-x-2">
-          <span class="text-[10px] font-mono text-slate-400 font-bold">FLUX</span>
+          <span class="gw-type-body-sm font-mono text-slate-400 font-bold">FLUX</span>
           <div class="hw-fader-track-horizontal w-28">
             <div class="hw-fader-glow-bar" style="width: 0%;"></div>
             <div class="hw-fader-thumb-3d" style="left: 0%;"></div>
           </div>
-          <span class="text-[10px] font-mono text-amber-300 font-bold" id="gpuUtilReadout" data-gw-degradation="not_integrated" title="真实数据源：GET /api/observability/health 的 gpu_telemetry 检查项">未接入</span>
+          <span class="gw-type-body-sm font-mono text-amber-300 font-bold" id="gpuUtilReadout" data-gw-degradation="not_integrated" title="真实数据源：GET /api/observability/health 的 gpu_telemetry 检查项">未接入</span>
         </div>
 
         <div class="flex items-center space-x-2">
-          <span class="text-[10px] font-mono text-slate-400 font-bold">VRAM</span>
+          <span class="gw-type-body-sm font-mono text-slate-400 font-bold">VRAM</span>
           <div class="hw-fader-track-horizontal w-24">
             <div class="hw-fader-glow-bar" style="width: 0%; background: linear-gradient(90deg, #38bdf8 0%, #2dd4bf 100%)"></div>
             <div class="hw-fader-thumb-3d" style="left: 0%;"></div>
           </div>
-          <span class="text-[10px] font-mono text-amber-300 font-bold" id="gpuVramReadout" data-gw-degradation="not_integrated" title="真实数据源：GET /api/observability/health 的 gpu_telemetry 检查项">未接入</span>
+          <span class="gw-type-body-sm font-mono text-amber-300 font-bold" id="gpuVramReadout" data-gw-degradation="not_integrated" title="真实数据源：GET /api/observability/health 的 gpu_telemetry 检查项">未接入</span>
         </div>
       </div>
 
-      <!-- RIGHT: PRE/POST 开关 + 统一回收站 + 拟物头像键帽 -->
+      <!-- RIGHT: CF 控制 + 统一回收站 + 拟物头像键帽 -->
       <div class="flex items-center space-x-3 shrink-0">
-        <div class="flex items-center space-x-1.5">
-          <span class="text-[9px] font-mono text-slate-400 font-bold">PRE</span>
-          <div class="hw-slide-toggle active" id="topbarToggle" onclick="this.classList.toggle('active')">
-            <div class="hw-slide-peg"></div>
-          </div>
-          <span class="text-[9px] font-mono text-[#dfc384] font-bold">POST</span>
-        </div>
 
         <div class="h-4 w-px bg-white/10"></div>
 
@@ -442,7 +439,7 @@
             </div>
           </div>
           <!-- 琥珀微型红点角标 -->
-          <span id="topbarTrashBadge" class="absolute -top-1 -right-1 w-3.5 h-3.5 rounded-full bg-red-500 border border-black text-[8px] font-mono text-white flex items-center justify-center leading-none shadow-[0_0_6px_#ef4444] hidden">0</span>
+          <span id="topbarTrashBadge" class="absolute -top-1 -right-1 w-3.5 h-3.5 rounded-full bg-red-500 border border-black gw-type-body-sm font-mono text-white flex items-center justify-center leading-none shadow-[0_0_6px_#ef4444] hidden">0</span>
         </button>
 
         <div class="h-4 w-px bg-white/10"></div>
@@ -471,11 +468,11 @@
       <div class="flex-1 flex flex-col min-h-0 relative" id="contextBusContainer">
         <!-- Tree Header -->
         <div class="p-2 border-b border-white/5 shrink-0">
-          <div class="w-full flex items-center justify-between px-3 py-2 rounded-xl bg-[#141720] border border-[#dfc384]/35 text-[#eddab3] text-xs font-semibold shadow-[0_0_12px_rgba(223,195,132,0.12)] relative">
+          <div class="w-full flex items-center justify-between px-3 py-2 rounded-xl bg-[#141720] border border-[#dfc384]/35 text-[#eddab3] gw-type-body-sm font-semibold shadow-[0_0_12px_rgba(223,195,132,0.12)] relative">
             <span class="absolute left-0 top-2 bottom-2 w-1 bg-[#dfc384] rounded-r shadow-[0_0_8px_#dfc384]"></span>
             <div class="flex items-center space-x-2.5">
               <i data-lucide="git-branch" class="w-4 h-4 text-[#dfc384]"></i>
-              <span class="font-semibold tracking-wide">项目工程工作流总线</span>
+              <span class="font-semibold">项目工程工作流总线</span>
             </div>
             <button class="text-slate-400 hover:text-[#dfc384] p-1 rounded-lg hover:bg-white/5 transition" title="刷新总线" onclick="WorkbenchProjects.load()">
               <i data-lucide="refresh-cw" class="w-3 h-3"></i>
@@ -494,10 +491,10 @@
             <div data-project-type="film" class="tree-node-card px-2.5 py-1.5 flex items-center justify-between group cursor-pointer" onclick="WorkbenchProjects.filterType('film', this)">
               <div class="card-connector-pin"></div>
               <div class="flex items-center space-x-1.5 min-w-0">
-                <span class="text-[8px] font-mono text-[#dfc384] font-bold px-1 py-0.5 rounded bg-[#dfc384]/15 border border-[#dfc384]/30 shrink-0">01</span>
-                <span class="text-[10px] font-semibold text-slate-100 truncate">《神谕之地》院线长片</span>
+                <span class="gw-type-body-sm font-mono text-[#dfc384] font-bold px-1 py-0.5 rounded bg-[#dfc384]/15 border border-[#dfc384]/30 shrink-0">01</span>
+                <span class="gw-type-body-md font-semibold text-slate-100 truncate">《神谕之地》院线长片</span>
               </div>
-              <span class="text-[7.5px] font-mono px-1 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 shrink-0 flex items-center space-x-0.5">
+              <span class="gw-type-body-sm font-mono px-1 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 shrink-0 flex items-center space-x-0.5">
                 <span>act</span>
                 <i data-lucide="check" class="w-2 h-2"></i>
               </span>
@@ -505,19 +502,19 @@
             <div class="ml-3 pl-3 border-l border-[#dfc384]/35 space-y-3 mt-3 pt-0.5 relative">
               <div class="relative flex items-center">
                 <div class="absolute -left-3 top-1/2 -translate-y-1/2 w-3 h-[1px] bg-[#dfc384]/40 pointer-events-none"></div>
-                <div class="w-full tree-node-card px-2.5 py-1.5 flex items-center justify-between text-[9.5px]">
+                <div class="w-full tree-node-card px-2.5 py-1.5 flex items-center justify-between gw-type-body-sm">
                   <div class="card-connector-pin"></div>
                   <span class="text-slate-300 truncate">1.1 概念剧照调色</span>
-                  <span class="text-[8px] font-mono text-amber-300 shrink-0" id="projStageAssets" data-gw-degradation="not_integrated" title="真实数据源：/api/episode-pipelines 的 assets 阶段状态">读取中…</span>
+                  <span class="gw-type-body-sm font-mono text-amber-300 shrink-0" id="projStageAssets" data-gw-degradation="not_integrated" title="真实数据源：/api/episode-pipelines 的 assets 阶段状态">读取中…</span>
                 </div>
               </div>
               <div class="relative space-y-3">
                 <div class="flex items-center">
                   <div class="absolute -left-3 top-1/2 -translate-y-1/2 w-3 h-[1px] bg-[#dfc384]/40 pointer-events-none"></div>
-                  <div class="w-full tree-node-card px-2.5 py-1.5 flex items-center justify-between text-[9.5px]">
+                  <div class="w-full tree-node-card px-2.5 py-1.5 flex items-center justify-between gw-type-body-sm">
                     <div class="card-connector-pin"></div>
                     <span class="text-[#eddab3] font-medium truncate">1.2 故事板分镜矩阵</span>
-                    <span class="text-[8px] font-mono text-amber-300 shrink-0" id="projStageVideo" data-gw-degradation="not_integrated" title="真实数据源：/api/episode-pipelines 的 video 阶段状态">读取中…</span>
+                    <span class="gw-type-body-sm font-mono text-amber-300 shrink-0" id="projStageVideo" data-gw-degradation="not_integrated" title="真实数据源：/api/episode-pipelines 的 video 阶段状态">读取中…</span>
                   </div>
                 </div>
               </div>
@@ -530,10 +527,10 @@
             <div data-project-type="series" class="tree-node-card px-2.5 py-1.5 flex items-center justify-between cursor-pointer" onclick="WorkbenchProjects.filterType('series', this)">
               <div class="card-connector-pin"></div>
               <div class="flex items-center space-x-1.5 min-w-0">
-                <span class="text-[8px] font-mono text-[#eddab3] font-bold px-1 py-0.5 rounded bg-white/5 border border-white/10 shrink-0">02</span>
-                <span class="text-[10px] font-semibold text-slate-200 truncate">《霓虹脉冲2099》短剧</span>
+                <span class="gw-type-body-sm font-mono text-[#eddab3] font-bold px-1 py-0.5 rounded bg-white/5 border border-white/10 shrink-0">02</span>
+                <span class="gw-type-body-md font-semibold text-slate-200 truncate">《霓虹脉冲2099》短剧</span>
               </div>
-              <span class="text-[7.5px] font-mono px-1 py-0.5 rounded-full bg-cyan-500/15 text-cyan-400 border border-cyan-500/30 shrink-0">run</span>
+              <span class="gw-type-body-sm font-mono px-1 py-0.5 rounded-full bg-cyan-500/15 text-cyan-400 border border-cyan-500/30 shrink-0">run</span>
             </div>
           </div>
 
@@ -543,10 +540,10 @@
             <div data-project-type="other" class="tree-node-card px-2.5 py-1.5 flex items-center justify-between cursor-pointer" onclick="WorkbenchProjects.filterType('other', this)">
               <div class="card-connector-pin"></div>
               <div class="flex items-center space-x-1.5 min-w-0">
-                <span class="text-[8px] font-mono text-slate-400 font-bold px-1 py-0.5 rounded bg-white/5 border border-white/10 shrink-0">03</span>
-                <span class="text-[10px] font-semibold text-slate-300 truncate">《深渊回响》先导概念</span>
+                <span class="gw-type-body-sm font-mono text-slate-400 font-bold px-1 py-0.5 rounded bg-white/5 border border-white/10 shrink-0">03</span>
+                <span class="gw-type-body-md font-semibold text-slate-300 truncate">《深渊回响》先导概念</span>
               </div>
-              <span class="text-[7.5px] font-mono px-1 py-0.5 rounded-full bg-amber-500/15 text-amber-300 border border-amber-500/30 shrink-0">plan</span>
+              <span class="gw-type-body-sm font-mono px-1 py-0.5 rounded-full bg-amber-500/15 text-amber-300 border border-amber-500/30 shrink-0">plan</span>
             </div>
           </div>
 
@@ -556,10 +553,10 @@
             <div data-project-scope="archived" class="tree-node-card px-2.5 py-1.5 flex items-center justify-between cursor-pointer" onclick="WorkbenchProjects.toggleArchived(this)">
               <div class="card-connector-pin"></div>
               <div class="flex items-center space-x-1.5 min-w-0">
-                <span class="text-[8px] font-mono text-blue-400 font-bold px-1 py-0.5 rounded bg-blue-500/10 border border-blue-500/20 shrink-0">04</span>
-                <span class="text-[10px] font-semibold text-slate-400 truncate">已归档发行剧集 (8)</span>
+                <span class="gw-type-body-sm font-mono text-blue-400 font-bold px-1 py-0.5 rounded bg-blue-500/10 border border-blue-500/20 shrink-0">04</span>
+                <span class="gw-type-body-md font-semibold text-slate-400 truncate">已归档发行剧集 (8)</span>
               </div>
-              <span class="text-[7.5px] font-mono px-1 py-0.5 rounded-full bg-blue-500/15 text-blue-400 border border-blue-500/30 shrink-0">arch</span>
+              <span class="gw-type-body-sm font-mono px-1 py-0.5 rounded-full bg-blue-500/15 text-blue-400 border border-blue-500/30 shrink-0">arch</span>
             </div>
           </div>
         </div>
@@ -574,11 +571,11 @@
         <div class="flex items-center space-x-2.5">
           <div class="bay-inset px-2.5 py-1 rounded-xl flex items-center space-x-2 border border-[#dfc384]/30 w-64">
             <i data-lucide="search" class="w-3.5 h-3.5 text-[#dfc384]"></i>
-            <input type="text" id="projectSearchInput" placeholder="搜索项目代号、剧本或镜头..." class="bg-transparent border-0 text-xs font-mono text-slate-100 placeholder-slate-500 focus:ring-0 focus:outline-none p-0 w-full" oninput="WorkbenchProjects.search(this.value)">
+            <input type="text" id="projectSearchInput" placeholder="搜索项目代号、剧本或镜头..." class="bg-transparent border-0 gw-type-body-md font-mono text-slate-100 placeholder-slate-500 focus:ring-0 focus:outline-none p-0 w-full" oninput="WorkbenchProjects.search(this.value)">
           </div>
 
           <!-- 分类筛选胶囊 -->
-          <div class="flex items-center space-x-1 text-[10px] font-mono" id="filterCapsulesGroup">
+          <div class="flex items-center space-x-1 gw-type-body-sm font-mono" id="filterCapsulesGroup">
             <button class="pill-capsule-active px-2.5 py-0.5 cursor-pointer filter-pill-btn" data-scope="active" onclick="WorkbenchProjects.filterScope('active', this)">全部 (<span id="countActive">0</span>)</button>
             <button class="pill-capsule-inactive px-2.5 py-0.5 text-slate-300 cursor-pointer filter-pill-btn" data-type="film" onclick="WorkbenchProjects.filterType('film', this)">制作中</button>
             <button class="pill-capsule-inactive px-2.5 py-0.5 text-slate-400 cursor-pointer filter-pill-btn" data-type="series" onclick="WorkbenchProjects.filterType('series', this)">渲染中</button>
@@ -599,7 +596,7 @@
 
           <button class="tactile-keycap px-3 py-1.5 rounded-xl flex items-center space-x-1.5 group cursor-pointer" title="新建项目" onclick="HardwareDeck.openModal('newProjectModal')">
             <div class="hw-round-btn w-4 h-4"><div class="hw-round-inner w-3 h-3"><i data-lucide="plus" class="w-2.5 h-2.5 text-[#dfc384]"></i></div></div>
-            <span class="text-xs font-bold text-[#eddab3]">新建项目</span>
+            <span class="gw-type-body-sm font-bold text-[#eddab3]">新建项目</span>
           </button>
         </div>
       </section>
@@ -614,8 +611,8 @@
 
       <!-- TABLE VIEW CONTAINER (默认隐藏) -->
       <div class="champagne-card p-3 flex-1 min-h-0 overflow-y-auto hidden" id="projectTableView">
-        <table class="w-full text-left text-xs font-mono">
-          <thead class="border-b border-white/10 text-slate-400 text-[10px]">
+        <table class="w-full text-left gw-type-body-sm font-mono">
+          <thead class="border-b border-white/10 text-slate-400 gw-type-body-sm">
             <tr>
               <th class="pb-2">工程代号与名称</th>
               <th class="pb-2">类型</th>
@@ -639,10 +636,10 @@
             <div class="flex items-center justify-between pb-1 mb-1 border-b border-white/5">
               <div class="flex items-center space-x-2">
                 <i data-lucide="server" class="w-3.5 h-3.5 text-[#dfc384]"></i>
-                <h3 class="text-xs font-semibold text-slate-100">GPU 算力集群状态</h3>
+                <h3 class="gw-type-body-lg font-semibold text-slate-100">GPU 算力集群状态</h3>
               </div>
               <!-- 真实数据源：GET /api/observability/health 的 gpu_telemetry；不可用才显式降级。 -->
-              <span class="text-[8.5px] font-mono text-amber-300 flex items-center" id="gpuClusterStatus" data-gw-degradation="not_integrated" title="真实数据源：GET /api/observability/health">
+              <span class="gw-type-body-sm font-mono text-amber-300 flex items-center" id="gpuClusterStatus" data-gw-degradation="not_integrated" title="真实数据源：GET /api/observability/health">
                 <span class="w-1.5 h-1.5 rounded-full bg-amber-400 mr-1 animate-pulse"></span>
                 GPU 遥测读取中…
               </span>
@@ -658,17 +655,17 @@
                 <div class="hw-master-dial-housing w-7 h-7">
                   <div class="hw-knob-cylinder w-5 h-5" id="masterKnobEl">
                     <div class="hw-knob-indicator-dot" style="top: 1px; width: 2px; height: 2px;"></div>
-                    <div class="hw-knob-center-inset w-3 h-3 text-[5.5px]">85</div>
+                    <div class="hw-knob-center-inset w-3 h-3 gw-type-body-sm">85</div>
                   </div>
                 </div>
-                <div class="text-[8.5px] font-mono text-slate-300 font-semibold">
+                <div class="gw-type-body-sm font-mono text-slate-300 font-semibold">
                   <span id="gpuVramCapReadout" data-gw-degradation="not_integrated" title="真实数据源：gpu_telemetry.devices[].memory_total_mib">VRAM 上限未接入</span>
                 </div>
               </div>
 
               <!-- 自动降载滑动开关 -->
               <div class="flex items-center space-x-1.5">
-                <span class="text-[7.5px] font-mono text-slate-400">AUTO-SCALE</span>
+                <span class="gw-type-body-sm font-mono text-slate-400">AUTO-SCALE</span>
                 <div class="hw-slide-toggle active" style="transform: scale(0.85); transform-origin: right center;" onclick="this.classList.toggle('active')">
                   <div class="hw-slide-peg"></div>
                 </div>
@@ -683,14 +680,14 @@
             <div class="flex items-center justify-between pb-1 mb-1 border-b border-white/5">
               <div class="flex items-center space-x-2">
                 <i data-lucide="layers" class="w-3.5 h-3.5 text-[#dfc384]"></i>
-                <h3 class="text-xs font-semibold text-slate-100">渲染批处理流水线</h3>
+                <h3 class="gw-type-body-lg font-semibold text-slate-100">渲染批处理流水线</h3>
               </div>
-              <button class="text-[8.5px] font-mono font-bold text-cyan-300 hover:underline cursor-pointer" id="activeTasksCountBadge" onclick="HardwareDeck.openDrawer('taskCenterDrawer')" title="真实作业队列 /api/observability/tasks">读取中…</button>
+              <button class="gw-type-body-md font-mono font-bold text-cyan-300 hover:underline cursor-pointer" id="activeTasksCountBadge" onclick="HardwareDeck.openDrawer('taskCenterDrawer')" title="真实作业队列 /api/observability/tasks">读取中…</button>
             </div>
 
             <!-- 真实作业队列容器：内容由 /api/observability/tasks 驱动，不含静态示例任务。 -->
             <div class="space-y-1" id="workbenchActiveTasksContainer">
-              <div class="bay-inset p-3 rounded-xl border border-white/10 text-center text-[9px] font-mono text-slate-400" role="status">读取真实作业队列…</div>
+              <div class="bay-inset p-3 rounded-xl border border-white/10 text-center gw-type-body-sm font-mono text-slate-400" role="status">读取真实作业队列…</div>
             </div>
           </section>
         </div>
@@ -699,9 +696,9 @@
         <div class="col-span-3">
           <section class="champagne-card p-2 h-full flex items-center justify-between">
             <div>
-              <div class="text-xs font-bold text-slate-200">智能体立项助理</div>
-              <div class="text-[8px] font-mono text-slate-500 mt-0.5">自动装配剧本与分镜模组</div>
-              <div class="text-[7.5px] font-mono text-slate-400 mt-1 flex items-center">
+              <div class="gw-type-body-sm font-bold text-slate-200">智能体立项助理</div>
+              <div class="gw-type-body-sm font-mono text-slate-500 mt-0.5">自动装配剧本与分镜模组</div>
+              <div class="gw-type-body-sm font-mono text-slate-400 mt-1 flex items-center">
                 <span class="w-1.5 h-1.5 rounded-full bg-slate-500 mr-1" id="projectDispatchLed"></span>
                 <span id="projectDispatchStatus" title="真实数据源：POST /api/asset-registry/projects">待命</span>
               </div>
@@ -735,31 +732,31 @@
       <div class="flex items-center justify-between pb-2 mb-3 border-b border-white/10">
         <div class="flex items-center space-x-2">
           <i data-lucide="folder-plus" class="w-4 h-4 text-[#dfc384]"></i>
-          <h3 class="text-sm font-bold text-slate-100">创建新影视制片工程</h3>
+          <h3 class="gw-type-body-lg font-bold text-slate-100">创建新影视制片工程</h3>
         </div>
         <button class="text-slate-400 hover:text-white" onclick="HardwareDeck.closeModal('newProjectModal')">
           <i data-lucide="x" class="w-4 h-4"></i>
         </button>
       </div>
 
-      <form onsubmit="WorkbenchProjects.handleCreateProject(event)" class="space-y-3 text-xs">
+      <form onsubmit="WorkbenchProjects.handleCreateProject(event)" class="space-y-3 gw-type-body-sm">
         <div>
-          <label class="block text-[10px] font-mono text-slate-400 mb-1">工程代号 / 项目名称</label>
-          <input type="text" id="newProjectNameInput" required placeholder="例如：《深渊回响 · 先导概念片》" class="w-full bg-[#0a0c10] border border-white/10 rounded-lg px-2.5 py-1.5 text-xs text-slate-100 focus:outline-none focus:border-[#dfc384]">
+          <label class="block gw-type-body-sm font-mono text-slate-400 mb-1">工程代号 / 项目名称</label>
+          <input type="text" id="newProjectNameInput" required placeholder="例如：《深渊回响 · 先导概念片》" class="w-full bg-[#0a0c10] border border-white/10 rounded-lg px-2.5 py-1.5 gw-type-body-md text-slate-100 focus:outline-none focus:border-[#dfc384]">
         </div>
 
         <div class="grid grid-cols-2 gap-2">
           <div>
-            <label class="block text-[10px] font-mono text-slate-400 mb-1">项目类型</label>
-            <select id="newProjectTypeSelect" class="w-full bg-[#0a0c10] border border-white/10 rounded-lg px-2 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-[#dfc384]">
+            <label class="block gw-type-body-sm font-mono text-slate-400 mb-1">项目类型</label>
+            <select id="newProjectTypeSelect" class="w-full bg-[#0a0c10] border border-white/10 rounded-lg px-2 py-1.5 gw-type-body-md text-slate-200 focus:outline-none focus:border-[#dfc384]">
               <option value="film">院线长片 (Film)</option>
               <option value="series">连续短剧 (Series)</option>
               <option value="other">概念艺术与PV (PV/Art)</option>
             </select>
           </div>
           <div>
-            <label class="block text-[10px] font-mono text-slate-400 mb-1">色彩构图标准</label>
-            <select class="w-full bg-[#0a0c10] border border-white/10 rounded-lg px-2 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-[#dfc384]">
+            <label class="block gw-type-body-sm font-mono text-slate-400 mb-1">色彩构图标准</label>
+            <select class="w-full bg-[#0a0c10] border border-white/10 rounded-lg px-2 py-1.5 gw-type-body-md text-slate-200 focus:outline-none focus:border-[#dfc384]">
               <option>ACEScg · 2.39:1 宽银幕</option>
               <option>Rec.709 · 16:9 标清</option>
               <option>9:16 竖屏短剧集</option>
@@ -768,18 +765,18 @@
         </div>
 
         <div>
-          <label class="block text-[10px] font-mono text-slate-400 mb-1">项目简述与背景设想</label>
-          <textarea id="newProjectDescInput" rows="2" placeholder="输入世界观设定与初版叙事方向..." class="w-full bg-[#0a0c10] border border-white/10 rounded-lg px-2.5 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-[#dfc384]"></textarea>
+          <label class="block gw-type-body-sm font-mono text-slate-400 mb-1">项目简述与背景设想</label>
+          <textarea id="newProjectDescInput" rows="2" placeholder="输入世界观设定与初版叙事方向..." class="w-full bg-[#0a0c10] border border-white/10 rounded-lg px-2.5 py-1.5 gw-type-body-md text-slate-200 focus:outline-none focus:border-[#dfc384]"></textarea>
         </div>
 
         <div>
-          <label class="block text-[10px] font-mono text-slate-400 mb-1" for="newProjectGatesInput">初始阶段门（可选）</label>
-          <textarea id="newProjectGatesInput" rows="2" placeholder="每行一项，格式：code|阶段名称；例如：script|剧本评审" class="w-full bg-[#0a0c10] border border-white/10 rounded-lg px-2.5 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-[#dfc384]"></textarea>
-          <p class="mt-1 text-[9px] text-slate-500">门只在本次立项事务中创建；最多32项。重试相同内容会复用同一请求键。</p>
+          <label class="block gw-type-body-sm font-mono text-slate-400 mb-1" for="newProjectGatesInput">初始阶段门（可选）</label>
+          <textarea id="newProjectGatesInput" rows="2" placeholder="每行一项，格式：code|阶段名称；例如：script|剧本评审" class="w-full bg-[#0a0c10] border border-white/10 rounded-lg px-2.5 py-1.5 gw-type-body-md text-slate-200 focus:outline-none focus:border-[#dfc384]"></textarea>
+          <p class="mt-1 gw-type-body-md text-slate-500">门只在本次立项事务中创建；最多32项。重试相同内容会复用同一请求键。</p>
         </div>
 
         <div class="project-date-range-field" data-project-date-range>
-          <label class="block text-[10px] font-mono text-slate-400 mb-1">项目排期</label>
+          <label class="block gw-type-body-sm font-mono text-slate-400 mb-1">项目排期</label>
           <button type="button" class="tactile-keycap project-date-range-trigger" data-date-range-trigger aria-haspopup="dialog" aria-expanded="false"><i data-lucide="calendar-days" class="w-4 h-4"></i><span class="project-date-range-label" data-date-range-label>选择项目排期</span></button>
           <input type="hidden" id="newProjectStartAt" data-date-range-start>
           <input type="hidden" id="newProjectDueAt" data-date-range-end>
@@ -787,8 +784,8 @@
         </div>
 
         <div class="pt-2 border-t border-white/10 flex justify-end space-x-2">
-          <button type="button" class="px-3 py-1.5 rounded-lg text-xs font-mono text-slate-400 hover:text-white" onclick="HardwareDeck.closeModal('newProjectModal')">取消</button>
-          <button type="submit" class="tactile-keycap px-4 py-1.5 rounded-lg text-xs font-bold text-[#eddab3]">立即立项</button>
+          <button type="button" class="px-3 py-1.5 rounded-lg gw-type-body-md font-mono text-slate-400 hover:text-white" onclick="HardwareDeck.closeModal('newProjectModal')">取消</button>
+          <button type="submit" class="tactile-keycap px-4 py-1.5 rounded-lg gw-type-body-md font-bold text-[#eddab3]">立即立项</button>
         </div>
       </form>
     </div>
@@ -800,17 +797,17 @@
     <div class="p-3.5 border-b border-white/10 flex items-center justify-between shrink-0 bg-[#0d0f14]">
       <div class="flex items-center space-x-2">
         <i data-lucide="layers" class="w-4 h-4 text-[#dfc384]"></i>
-        <h3 class="text-xs font-bold text-slate-100 uppercase tracking-wider">渲染队列与后台任务流水线</h3>
+        <h3 class="gw-type-body-lg font-bold text-slate-100">渲染队列与后台任务流水线</h3>
       </div>
       <button class="text-slate-400 hover:text-white" onclick="HardwareDeck.closeDrawer('taskCenterDrawer')">
         <i data-lucide="x" class="w-4 h-4"></i>
       </button>
     </div>
 
-    <div class="p-3 overflow-y-auto space-y-2 flex-1 text-xs">
+    <div class="p-3 overflow-y-auto space-y-2 flex-1 gw-type-body-sm">
       <!-- 任务中心抽屉内容：由 /api/observability/tasks 真实驱动。 -->
       <div class="space-y-2" id="workbenchTaskCenterDrawerList">
-        <div class="bay-inset p-2.5 rounded-xl border border-white/10 text-center text-[10px] font-mono text-slate-400" role="status">读取真实作业队列…</div>
+        <div class="bay-inset p-2.5 rounded-xl border border-white/10 text-center gw-type-body-sm font-mono text-slate-400" role="status">读取真实作业队列…</div>
       </div>
     </div>
   </aside>
@@ -821,14 +818,14 @@
       <div class="flex items-center justify-between pb-2 mb-3 border-b border-white/10">
         <div class="flex items-center space-x-2">
           <i data-lucide="users" class="w-4 h-4 text-[#dfc384]"></i>
-          <h3 class="text-sm font-bold text-slate-100">团队与协同席位治理</h3>
+          <h3 class="gw-type-body-lg font-bold text-slate-100">团队与协同席位治理</h3>
         </div>
         <button type="button" class="hw-modal-close text-slate-400 hover:text-white" onclick="HardwareDeck.closeModal('teamModal')">
           <i data-lucide="x" class="w-4 h-4"></i>
         </button>
       </div>
 
-      <div class="space-y-3 text-xs">
+      <div class="space-y-3 gw-type-body-sm">
         <div class="grid grid-cols-2 gap-2">
           <a href="/static/pages/collab.html" class="bay-inset p-2 rounded-xl flex items-center justify-between group hover:border-[#dfc384]/40 transition border border-white/5">
             <div class="flex items-center space-x-2">
@@ -837,7 +834,7 @@
               </div>
               <div>
                 <div class="font-bold text-slate-200 group-hover:text-[#eddab3] transition">实时协同工作台</div>
-                <div class="text-[8.5px] font-mono text-slate-400">/static/pages/collab.html</div>
+                <div class="gw-type-body-sm font-mono text-slate-400">/static/pages/collab.html</div>
               </div>
             </div>
             <i data-lucide="chevron-right" class="w-3.5 h-3.5 text-slate-500 group-hover:text-[#eddab3] transition"></i>
@@ -850,7 +847,7 @@
               </div>
               <div>
                 <div class="font-bold text-slate-200 group-hover:text-cyan-300 transition">权限与团队审批</div>
-                <div class="text-[8.5px] font-mono text-slate-400">/static/pages/assets.html</div>
+                <div class="gw-type-body-sm font-mono text-slate-400">/static/pages/assets.html</div>
               </div>
             </div>
             <i data-lucide="chevron-right" class="w-3.5 h-3.5 text-slate-500 group-hover:text-cyan-300 transition"></i>
@@ -866,34 +863,34 @@
       <div class="flex items-center justify-between pb-2 mb-3 border-b border-white/10">
         <div class="flex items-center space-x-2">
           <i id="actionModalIcon" data-lucide="alert-triangle" class="w-4 h-4 text-[#dfc384]"></i>
-          <h3 class="text-sm font-bold text-slate-100" id="actionModalTitle">项目操作确认</h3>
+          <h3 class="gw-type-body-lg font-bold text-slate-100" id="actionModalTitle">项目操作确认</h3>
         </div>
         <button type="button" class="hw-modal-close text-slate-400 hover:text-white cursor-pointer" onclick="HardwareDeck.closeModal('projectActionModal')">
           <i data-lucide="x" class="w-4 h-4"></i>
         </button>
       </div>
 
-      <div class="space-y-3 text-xs">
+      <div class="space-y-3 gw-type-body-sm">
         <div class="bay-inset p-3 rounded-xl border border-white/5 space-y-1.5">
-          <div class="text-[12px] font-bold text-[#eddab3] flex items-center space-x-1.5">
+          <div class="gw-type-body-sm font-bold text-[#eddab3] flex items-center space-x-1.5">
             <span class="w-1.5 h-1.5 rounded-full bg-[#dfc384] shadow-[0_0_6px_#dfc384]"></span>
             <span id="actionModalProjectName">项目：未指定</span>
           </div>
-          <p class="text-[11.5px] text-slate-300 leading-relaxed font-normal" id="actionModalDesc">说明文本</p>
+          <p class="gw-type-body-md text-slate-300 leading-relaxed font-normal" id="actionModalDesc">说明文本</p>
         </div>
 
         <!-- 针对删除到统一回收站的醒目安全说明 -->
         <div id="actionModalSafetyNotice" class="p-2.5 rounded-lg bg-emerald-500/10 border border-emerald-500/25 flex items-start space-x-2">
           <i data-lucide="shield-check" class="w-4 h-4 text-emerald-400 shrink-0 mt-0.5"></i>
-          <div class="text-[10px] text-emerald-300 leading-tight">
+          <div class="gw-type-body-sm text-emerald-300 leading-tight">
             <strong>非物理直接删除保护：</strong>
             <span>项目及其关联资产仅移动至统一回收站隔离停放，保留稳定工程 ID 与关联关系，随时可在统一回收站中一键安全恢复。</span>
           </div>
         </div>
 
         <div class="pt-2 border-t border-white/10 flex justify-end space-x-2">
-          <button type="button" class="px-3 py-1.5 rounded-lg text-xs font-mono text-slate-400 hover:text-white cursor-pointer" onclick="HardwareDeck.closeModal('projectActionModal')">取消</button>
-          <button type="button" id="actionModalConfirmBtn" class="tactile-keycap px-4 py-1.5 rounded-lg text-xs font-bold cursor-pointer" onclick="WorkbenchProjects.executeConfirmedAction()">确定执行</button>
+          <button type="button" class="px-3 py-1.5 rounded-lg gw-type-body-md font-mono text-slate-400 hover:text-white cursor-pointer" onclick="HardwareDeck.closeModal('projectActionModal')">取消</button>
+          <button type="button" id="actionModalConfirmBtn" class="tactile-keycap px-4 py-1.5 rounded-lg gw-type-body-md font-bold cursor-pointer" onclick="WorkbenchProjects.executeConfirmedAction()">确定执行</button>
         </div>
       </div>
     </div>
@@ -905,34 +902,34 @@
       <div class="flex items-center justify-between pb-2 mb-3 border-b border-white/10">
         <div class="flex items-center space-x-2">
           <i data-lucide="edit-3" class="w-4 h-4 text-[#dfc384]"></i>
-          <h3 class="text-sm font-bold text-slate-100">编辑制片工程信息</h3>
+          <h3 class="gw-type-body-lg font-bold text-slate-100">编辑制片工程信息</h3>
         </div>
         <button type="button" class="text-slate-400 hover:text-white cursor-pointer" onclick="HardwareDeck.closeModal('editProjectModal')">
           <i data-lucide="x" class="w-4 h-4"></i>
         </button>
       </div>
 
-      <form onsubmit="WorkbenchProjects.handleUpdateProject(event)" class="space-y-3 text-xs" id="editProjectForm">
+      <form onsubmit="WorkbenchProjects.handleUpdateProject(event)" class="space-y-3 gw-type-body-sm" id="editProjectForm">
         <input type="hidden" id="editProjectId">
         <input type="hidden" id="editProjectVersion">
 
         <div>
-          <label class="block text-[10px] font-mono text-slate-400 mb-1">工程代号 / 项目名称</label>
-          <input type="text" id="editProjectNameInput" required placeholder="例如：《神谕之地：纪元重启》" class="w-full bg-[#0a0c10] border border-white/10 rounded-lg px-2.5 py-1.5 text-xs text-slate-100 focus:outline-none focus:border-[#dfc384]">
+          <label class="block gw-type-body-sm font-mono text-slate-400 mb-1">工程代号 / 项目名称</label>
+          <input type="text" id="editProjectNameInput" required placeholder="例如：《神谕之地：纪元重启》" class="w-full bg-[#0a0c10] border border-white/10 rounded-lg px-2.5 py-1.5 gw-type-body-md text-slate-100 focus:outline-none focus:border-[#dfc384]">
         </div>
 
         <div class="grid grid-cols-2 gap-2">
           <div>
-            <label class="block text-[10px] font-mono text-slate-400 mb-1">内容类型</label>
-            <select id="editProjectTypeSelect" class="w-full bg-[#0a0c10] border border-white/10 rounded-lg px-2 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-[#dfc384]">
+            <label class="block gw-type-body-sm font-mono text-slate-400 mb-1">内容类型</label>
+            <select id="editProjectTypeSelect" class="w-full bg-[#0a0c10] border border-white/10 rounded-lg px-2 py-1.5 gw-type-body-md text-slate-200 focus:outline-none focus:border-[#dfc384]">
               <option value="film">院线长片 (Film)</option>
               <option value="series">连续短剧 (Series)</option>
               <option value="other">概念艺术与PV (PV/Art)</option>
             </select>
           </div>
           <div>
-            <label class="block text-[10px] font-mono text-slate-400 mb-1">当前制片阶段</label>
-            <select id="editProjectStageSelect" class="w-full bg-[#0a0c10] border border-white/10 rounded-lg px-2 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-[#dfc384]">
+            <label class="block gw-type-body-sm font-mono text-slate-400 mb-1">当前制片阶段</label>
+            <select id="editProjectStageSelect" class="w-full bg-[#0a0c10] border border-white/10 rounded-lg px-2 py-1.5 gw-type-body-md text-slate-200 focus:outline-none focus:border-[#dfc384]">
               <option value="planning">1. 概念立项 (Planning)</option>
               <option value="storyboard">2. 故事板分镜 (Storyboard)</option>
               <option value="production">3. 生成制片 (Production)</option>
@@ -943,27 +940,27 @@
 
         <div class="grid grid-cols-3 gap-2">
           <div>
-            <label class="block text-[10px] font-mono text-slate-400 mb-1">分镜场次数</label>
-            <input type="number" id="editProjectScenesInput" min="1" max="999" class="w-full bg-[#0a0c10] border border-white/10 rounded-lg px-2.5 py-1.5 text-xs text-slate-100 focus:outline-none focus:border-[#dfc384]">
+            <label class="block gw-type-body-sm font-mono text-slate-400 mb-1">分镜场次数</label>
+            <input type="number" id="editProjectScenesInput" min="1" max="999" class="w-full bg-[#0a0c10] border border-white/10 rounded-lg px-2.5 py-1.5 gw-type-body-md text-slate-100 focus:outline-none focus:border-[#dfc384]">
           </div>
           <div>
-            <label class="block text-[10px] font-mono text-slate-400 mb-1">预估镜头数</label>
-            <input type="number" id="editProjectShotsInput" min="1" max="9999" class="w-full bg-[#0a0c10] border border-white/10 rounded-lg px-2.5 py-1.5 text-xs text-slate-100 focus:outline-none focus:border-[#dfc384]">
+            <label class="block gw-type-body-sm font-mono text-slate-400 mb-1">预估镜头数</label>
+            <input type="number" id="editProjectShotsInput" min="1" max="9999" class="w-full bg-[#0a0c10] border border-white/10 rounded-lg px-2.5 py-1.5 gw-type-body-md text-slate-100 focus:outline-none focus:border-[#dfc384]">
           </div>
           <div>
-            <label class="block text-[10px] font-mono text-slate-400 mb-1">总制作进度 (%)</label>
-            <input type="number" id="editProjectProgressInput" min="0" max="100" class="w-full bg-[#0a0c10] border border-white/10 rounded-lg px-2.5 py-1.5 text-xs text-slate-100 focus:outline-none focus:border-[#dfc384]">
+            <label class="block gw-type-body-sm font-mono text-slate-400 mb-1">总制作进度 (%)</label>
+            <input type="number" id="editProjectProgressInput" min="0" max="100" class="w-full bg-[#0a0c10] border border-white/10 rounded-lg px-2.5 py-1.5 gw-type-body-md text-slate-100 focus:outline-none focus:border-[#dfc384]">
           </div>
         </div>
 
         <div>
-          <label class="block text-[10px] font-mono text-slate-400 mb-1" for="newProjectGatesInput">初始阶段门（可选）</label>
-          <textarea id="newProjectGatesInput" rows="2" placeholder="每行一项，格式：code|阶段名称；例如：script|剧本评审" class="w-full bg-[#0a0c10] border border-white/10 rounded-lg px-2.5 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-[#dfc384]"></textarea>
-          <p class="mt-1 text-[9px] text-slate-500">门只在本次立项事务中创建；最多32项。重试相同内容会复用同一请求键。</p>
+          <label class="block gw-type-body-sm font-mono text-slate-400 mb-1" for="newProjectGatesInput">初始阶段门（可选）</label>
+          <textarea id="newProjectGatesInput" rows="2" placeholder="每行一项，格式：code|阶段名称；例如：script|剧本评审" class="w-full bg-[#0a0c10] border border-white/10 rounded-lg px-2.5 py-1.5 gw-type-body-md text-slate-200 focus:outline-none focus:border-[#dfc384]"></textarea>
+          <p class="mt-1 gw-type-body-md text-slate-500">门只在本次立项事务中创建；最多32项。重试相同内容会复用同一请求键。</p>
         </div>
 
         <div class="project-date-range-field" data-project-date-range>
-          <label class="block text-[10px] font-mono text-slate-400 mb-1">项目排期</label>
+          <label class="block gw-type-body-sm font-mono text-slate-400 mb-1">项目排期</label>
           <button type="button" class="tactile-keycap project-date-range-trigger" data-date-range-trigger aria-haspopup="dialog" aria-expanded="false"><i data-lucide="calendar-days" class="w-4 h-4"></i><span class="project-date-range-label" data-date-range-label>选择项目排期</span></button>
           <input type="hidden" id="editProjectStartAt" data-date-range-start>
           <input type="hidden" id="editProjectDueAt" data-date-range-end>
@@ -971,13 +968,13 @@
         </div>
 
         <div>
-          <label class="block text-[10px] font-mono text-slate-400 mb-1">世界观设定与剧情大纲</label>
-          <textarea id="editProjectDescInput" rows="3" placeholder="完善项目剧情叙事与美学规格描述..." class="w-full bg-[#0a0c10] border border-white/10 rounded-lg px-2.5 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-[#dfc384]"></textarea>
+          <label class="block gw-type-body-sm font-mono text-slate-400 mb-1">世界观设定与剧情大纲</label>
+          <textarea id="editProjectDescInput" rows="3" placeholder="完善项目剧情叙事与美学规格描述..." class="w-full bg-[#0a0c10] border border-white/10 rounded-lg px-2.5 py-1.5 gw-type-body-md text-slate-200 focus:outline-none focus:border-[#dfc384]"></textarea>
         </div>
 
         <div class="pt-2 border-t border-white/10 flex justify-end space-x-2">
-          <button type="button" class="px-3 py-1.5 rounded-lg text-xs font-mono text-slate-400 hover:text-white cursor-pointer" onclick="HardwareDeck.closeModal('editProjectModal')">取消</button>
-          <button type="submit" class="tactile-keycap px-4 py-1.5 rounded-lg text-xs font-bold text-[#eddab3] cursor-pointer">保存修改</button>
+          <button type="button" class="px-3 py-1.5 rounded-lg gw-type-body-md font-mono text-slate-400 hover:text-white cursor-pointer" onclick="HardwareDeck.closeModal('editProjectModal')">取消</button>
+          <button type="submit" class="tactile-keycap px-4 py-1.5 rounded-lg gw-type-body-md font-bold text-[#eddab3] cursor-pointer">保存修改</button>
         </div>
       </form>
     </div>
@@ -992,8 +989,8 @@
           <i data-lucide="trash-2" class="w-4 h-4"></i>
         </div>
         <div>
-          <h3 class="text-xs font-bold text-slate-100 tracking-wider">全局统一回收站 · 内容资产治理舱</h3>
-          <p class="text-[9px] font-mono text-slate-500">非物理软删除隔离停放池 · 支持随时无损安全恢复</p>
+          <h3 class="gw-type-body-lg font-bold text-slate-100">全局统一回收站 · 内容资产治理舱</h3>
+          <p class="gw-type-body-md font-mono text-slate-500">非物理软删除隔离停放池 · 支持随时无损安全恢复</p>
         </div>
       </div>
       <button class="text-slate-400 hover:text-white cursor-pointer" onclick="HardwareDeck.closeDrawer('unifiedGlobalTrashDrawer')">
@@ -1003,7 +1000,7 @@
 
     <!-- 顶部筛选：全部 / 项目 / 画布 / 资产 -->
     <div class="px-3 pt-2.5 pb-2 bg-[#090b0f] border-b border-white/5 flex items-center justify-between">
-      <div class="flex items-center space-x-1 text-[10px] font-mono" id="globalTrashTabs">
+      <div class="flex items-center space-x-1 gw-type-body-sm font-mono" id="globalTrashTabs">
         <button class="pill-capsule-active px-2.5 py-0.5 cursor-pointer filter-pill-btn" id="trashTabAll" onclick="WorkbenchProjects.switchGlobalTrashTab('all')">
           全部 (<span id="trashCountAll">0</span>)
         </button>
@@ -1018,24 +1015,24 @@
         </button>
       </div>
 
-      <a href="/static/pages/projects.html?openTrash=1" class="text-[9px] font-mono text-[#dfc384] hover:underline flex items-center space-x-1" title="打开 Workbench 统一回收站">
+      <a href="/static/pages/projects.html?openTrash=1" class="gw-type-body-sm font-mono text-[#dfc384] hover:underline flex items-center space-x-1" title="打开 Workbench 统一回收站">
         <span>高级审计</span>
         <i data-lucide="external-link" class="w-2.5 h-2.5"></i>
       </a>
     </div>
 
     <!-- 抽屉内容列表容器 -->
-    <div class="p-3 overflow-y-auto space-y-2.5 flex-1 text-xs" id="globalTrashContainer">
+    <div class="p-3 overflow-y-auto space-y-2.5 flex-1 gw-type-body-sm" id="globalTrashContainer">
       <!-- 由 WorkbenchProjects 动态填充回收条目 -->
     </div>
 
     <!-- 抽屉底栏安全说明与刷新 -->
-    <div class="p-2.5 bg-[#08090d] border-t border-white/5 flex items-center justify-between shrink-0 text-[9.5px] font-mono text-slate-400">
+    <div class="p-2.5 bg-[#08090d] border-t border-white/5 flex items-center justify-between shrink-0 gw-type-body-sm font-mono text-slate-400">
       <div class="flex items-center space-x-1.5 text-emerald-400">
         <i data-lucide="shield-check" class="w-3.5 h-3.5"></i>
         <span>所有条目均保留元数据与哈希映射，永不静默物理销毁</span>
       </div>
-      <button class="tactile-keycap px-2.5 py-1 rounded text-[9px] text-[#eddab3] cursor-pointer" onclick="WorkbenchProjects.refreshGlobalTrash()">
+      <button class="tactile-keycap px-2.5 py-1 rounded gw-type-body-md text-[#eddab3] cursor-pointer" onclick="WorkbenchProjects.refreshGlobalTrash()">
         刷新回收池
       </button>
     </div>
@@ -1046,10 +1043,10 @@
 
   <!-- Scripts -->
   <script src="/static/js/core/degradation.js?v=v0.0.1-alpha-2026"></script>
-  <script src="/static/js/core/hardware-telemetry.js"></script>
-<script src="/static/js/core/task-queue.js"></script>
+  <script src="/static/js/core/hardware-telemetry.js?v=20261008-auth6"></script>
+<script src="/static/js/core/task-queue.js?v=20261008-auth6"></script>
   <script src="/static/js/modules/project-date-range.js"></script>
   <script src="/static/js/controllers/projects-controller.js"></script>
-<script src="/static/js/core/workbench-shell.js"></script>
+<script src="/static/js/core/workbench-shell.js?v=20261009-parse-cf7"></script>
 </body>
 </html>

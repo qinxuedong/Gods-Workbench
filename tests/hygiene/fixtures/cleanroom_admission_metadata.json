@@ -113,8 +113,8 @@
     {
       "path": "docs/contracts/ASSET-LIBRARY-INTERFACE-CATALOG.yaml",
       "classification": "frozen_interface_contract",
-      "authorization_basis": "cleanroom_frozen_input",
-      "sha256": "4f601058597520910a82a2d052842c763e77e609c2674ea21b951bc3f9e3d4cd",
+      "authorization_basis": "cleanroom_frozen_input; user_authorized_workflow_remediation_20261009",
+      "sha256": "017032d32d39d147785c24ed9cc4fea43e9328d5e65442eeb0d5e23e3de9b1d6",
       "admission": "accepted"
     },
     {
@@ -226,7 +226,7 @@
       "path": "docs/contracts/PLATFORM-INTERFACE-CATALOG.yaml",
       "classification": "frozen_interface_contract",
       "authorization_basis": "cleanroom_frozen_input",
-      "sha256": "2c0b747cfa1da44a3fc1657e00dc12c02e458a7b7a025b192c679f767ac59904",
+      "sha256": "67e34c9a57ee36f967cefd00176790700dcbc49d7e05fe58a3b329531e5c99f0",
       "admission": "accepted"
     },
     {
@@ -289,7 +289,7 @@
       "path": "docs/contracts/SETTINGS-INTERFACE-CATALOG.yaml",
       "classification": "frozen_interface_contract",
       "authorization_basis": "cleanroom_frozen_input",
-      "sha256": "01b78dd7e5af69bea3e8418de7226cfeecd10c9b510340a4d50ebed68d674f02",
+      "sha256": "355497d73ba51f35460568d1d87fb1f95371aeb7684a79c71acb47355f411a99",
       "admission": "accepted"
     },
     {

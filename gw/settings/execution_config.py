@@ -19,9 +19,11 @@ from __future__ import annotations
 import json
 import os
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Dict, Optional, Tuple
-from urllib.parse import urlsplit
+from urllib.parse import urlsplit, urlunsplit
+
+from gw.core.errors import CleanroomException
 
 PROVIDER_RUNTIME_ENV = "GW_PROVIDER_RUNTIME_JSON"
 LEGACY_PROVIDER_ID = "legacy_environment"
@@ -35,6 +37,23 @@ _PROVIDER_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
 _ENV_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]{0,127}$")
 _MODEL_ID = re.compile(r"^[^\s\x00-\x1f]{1,256}$")
 _ALLOWED_FIELDS = {"base_url", "api_key_env", "model", "models", "default_model", "video_protocol"}
+
+
+def normalize_provider_base_url(base_url: str, protocol: str = "openai") -> str:
+    """OpenAI兼容地址补单个/v1；原生协议与URL非法成分交给原有校验。"""
+    value = str(base_url or "").strip().rstrip("/")
+    if not value or protocol not in {"openai", "apimart", "grok"}:
+        return value
+    try:
+        parts = urlsplit(value)
+    except ValueError:
+        return value
+    if parts.scheme not in {"http", "https"} or not parts.netloc:
+        return value
+    path = parts.path.rstrip("/")
+    if "v1" not in path.split("/"):
+        path += "/v1"
+    return urlunsplit((parts.scheme, parts.netloc, path, parts.query, parts.fragment))
 
 
 class RuntimeConfigError(ValueError):
@@ -56,6 +75,9 @@ class RuntimeProvider:
     default_model: str
     video_protocol: Optional[str] = None
     source: str = "runtime_mapping"
+    chat_models: Optional[Tuple[str, ...]] = None
+    video_models: Optional[Tuple[str, ...]] = None
+    credential_revision: Optional[int] = None
 
 
 def _unique_object(pairs):
@@ -113,7 +135,7 @@ def _read_models(spec: dict) -> Tuple[Tuple[str, ...], str]:
     return models, default_model
 
 
-def load_provider_runtime() -> Dict[str, RuntimeProvider]:
+def _environment_runtime() -> Dict[str, RuntimeProvider]:
     """读取并严格解析 GW_PROVIDER_RUNTIME_JSON；不回显或持久化密钥。"""
     raw = os.environ.get(PROVIDER_RUNTIME_ENV, "")
     if not raw.strip():
@@ -158,6 +180,46 @@ def load_provider_runtime() -> Dict[str, RuntimeProvider]:
             video_protocol=video_protocol,
         )
     return providers
+
+
+def load_provider_runtime() -> Dict[str, RuntimeProvider]:
+    """页面保存为当前真源；同ID覆盖环境映射，未登记的环境项继续兼容。"""
+    from gw.settings.service import ProviderService
+
+    providers = _environment_runtime()
+    try:
+        snapshot = ProviderService().get_snapshot()
+        entries = snapshot.providers
+    except CleanroomException:
+        raise RuntimeConfigError("平台持久配置或凭据无法读取") from None
+    for item in entries:
+        provider_id = item["provider_id"]
+        # 页面显式禁用或尚未配置的同ID项也遮蔽旧环境，不能静默调用旧账户。
+        providers.pop(provider_id, None)
+        if not item["enabled"] or not item["base_url"] or item["protocol"] not in {"openai", "apimart", "grok"}:
+            continue
+        chat_models = tuple(model for model in item["chat_models"]
+                            if item["model_protocols"].get(model, "openai") == "openai")
+        video_models = tuple(item["video_models"]) if item.get("video_protocol") == "newapi_video" else ()
+        models = tuple(dict.fromkeys((*chat_models, *video_models)))
+        if not models:
+            continue
+        providers[provider_id] = RuntimeProvider(provider_id=provider_id, base_url=normalize_provider_base_url(item["base_url"], item["protocol"]),
+            api_key_env="", models=models, default_model=models[0], video_protocol=item.get("video_protocol"),
+            source="settings", chat_models=chat_models, video_models=video_models,
+            credential_revision=snapshot.revision)
+    return providers
+
+
+def _for_capability(provider: RuntimeProvider, capability: str) -> Optional[RuntimeProvider]:
+    if capability == "video" and provider.video_protocol != "newapi_video":
+        return None
+    models = provider.chat_models if capability == "chat" else provider.video_models
+    if models is None:
+        return provider
+    if not models:
+        return None
+    return replace(provider, models=models, default_model=models[0])
 
 
 def legacy_provider() -> Optional[RuntimeProvider]:
@@ -208,15 +270,13 @@ def resolve_provider(provider_id: Optional[str], *, capability: str = "chat") ->
             candidate = providers.get(provider_id)
         if candidate is None:
             return None
-        if capability == "video" and candidate.video_protocol != "newapi_video":
-            return None
-        return candidate
+        return _for_capability(candidate, capability)
 
     if capability == "chat" and legacy is not None:
         return legacy
     candidates = [
-        item for item in providers.values()
-        if capability != "video" or item.video_protocol == "newapi_video"
+        candidate for item in providers.values()
+        if (candidate := _for_capability(item, capability)) is not None
     ]
     if len(candidates) == 1:
         return candidates[0]
@@ -227,6 +287,15 @@ def resolve_provider(provider_id: Optional[str], *, capability: str = "chat") ->
 
 def provider_api_key(provider: RuntimeProvider) -> str:
     """只在请求执行时按引用读取秘密值；调用方不得记录或返回。"""
+    if provider.source == "settings":
+        from gw.settings.service import ProviderService
+        if provider.credential_revision is None:
+            return ""
+        try:
+            return ProviderService().credential(provider.provider_id, expected_version=provider.credential_revision)
+        except CleanroomException:
+            # 状态与执行按凭据不可用失败关闭；不输出加密异常或秘密值。
+            return ""
     return os.environ.get(provider.api_key_env, "").strip()
 
 

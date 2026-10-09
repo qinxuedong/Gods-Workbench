@@ -17,7 +17,7 @@
 本模块只提供本仓已冻结的本地事实与失败关闭边界：
 - 不执行外部 CLI，不发起网络请求，不保存上传内容或模型凭据；
 - CLI 状态最多观察本机 PATH 中的命令位置，不能据此宣称可执行或已登录；
-- 未获真实 Provider/CLI 准入的对话、上传、帮助、余额和登录操作统一 503。
+- 执行开关、登录观察与生成接入分别表达；其他操作的准入由对应路由控制。
 """
 
 from __future__ import annotations
@@ -31,6 +31,7 @@ from typing import Optional, Sequence
 from gw import __version__
 from gw.core.config import load_runtime_auth_config
 from gw.core.errors import CleanroomException
+from gw.core.cli_runtime import CLI_CANDIDATES, cli_execution_enabled
 
 
 AI_UPLOAD_NOT_INTEGRATED = "AI_UPLOAD_NOT_INTEGRATED"
@@ -50,9 +51,9 @@ class CliDescriptor:
 
 
 CLI_DESCRIPTORS = {
-    "codex": CliDescriptor("codex", "GPT CLI", ("codex",)),
-    "gemini-cli": CliDescriptor("gemini-cli", "Antigravity CLI", ("gemini", "gemini-cli", "antigravity")),
-    "jimeng": CliDescriptor("jimeng", "即梦 CLI", ("dreamina", "jimeng")),
+    "codex": CliDescriptor("codex", "GPT CLI", CLI_CANDIDATES["codex"]),
+    "gemini-cli": CliDescriptor("gemini-cli", "Gemini / Antigravity CLI", CLI_CANDIDATES["gemini-cli"]),
+    "jimeng": CliDescriptor("jimeng", "即梦 CLI", CLI_CANDIDATES["jimeng"]),
 }
 
 
@@ -70,17 +71,21 @@ def cli_status(protocol: str) -> dict:
     descriptor = CLI_DESCRIPTORS[protocol]
     path = _find_cli_path(descriptor.command_candidates)
     installed = path is not None
+    execution_enabled = cli_execution_enabled()
     return {
         "protocol": descriptor.protocol,
         "name": descriptor.display_name,
         "installed": installed,
         "path": path,
         "version": None,
-        "logged_in": False if protocol == "jimeng" else None,
-        "running": False if protocol == "jimeng" else None,
-        "execution_enabled": False,
+        "logged_in": None,
+        "running": None,
+        "execution_enabled": execution_enabled,
+        "command_candidates": list(descriptor.command_candidates),
+        "generation_ready": False,
+        "generation_status": "not_integrated",
         "data_status": "observed" if installed else "not_integrated",
-        "data_gaps": ["cli_execution_not_admitted"],
+        "data_gaps": ["cli_generation_not_integrated", "cli_login_unobserved"] + ([] if execution_enabled else ["cli_execution_disabled"]),
         "message": (
             "仅观察到本机命令路径；未执行 CLI，不能据此确认版本、登录或服务可用性。"
             if installed

@@ -28,9 +28,10 @@
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional
+from typing import Annotated, Any, Dict, List, Literal, Optional
+from urllib.parse import urlsplit
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, StringConstraints, field_validator, model_validator
 
 #: 数据可用性口径；无真实来源时必须如实标记，不得谎报 ok。
 DATA_STATUS_OK = "ok"
@@ -88,6 +89,103 @@ class ProviderSnapshot(BaseModel):
     data_gaps: List[str] = Field(default_factory=list, description="未接入 / 未配置原因")
 
 
+ProviderId = Annotated[str, StringConstraints(strict=True, pattern=r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")]
+ModelId = Annotated[str, StringConstraints(strict=True, pattern=r"^[^\s\x00-\x1f]{1,256}$")]
+Label = Annotated[str, StringConstraints(strict=True, max_length=256)]
+ModelList = Annotated[List[ModelId], Field(max_length=256)]
+Protocol = Literal["openai", "apimart", "gemini", "grok", "volcengine", "jimeng", "codex", "gemini-cli"]
+SecretInput = Annotated[str, StringConstraints(strict=True, max_length=8192)]
+
+
+class ProviderLora(BaseModel):
+    """有界LoRA配置；不允许嵌入任意字典或凭据字段。"""
+
+    model_config = ConfigDict(extra="forbid", strict=True)
+    id: ModelId
+    name: Label = ""
+    target_model: ModelId
+    strength: float = Field(0.8, ge=0, le=2)
+    enabled: bool = True
+    note: str = Field("", max_length=2048)
+
+
+class ProviderEntryRequest(BaseModel):
+    """平台元数据与显式凭据更新意图；响应不使用该输入模型。"""
+
+    model_config = ConfigDict(extra="forbid", strict=True)
+    id: Optional[ProviderId] = None
+    provider_id: Optional[ProviderId] = None
+    name: Label = ""
+    base_url: str = Field("", max_length=2048)
+    protocol: Protocol = "openai"
+    enabled: bool = True
+    primary: bool = False
+    image_models: ModelList = Field(default_factory=list)
+    chat_models: ModelList = Field(default_factory=list)
+    video_models: ModelList = Field(default_factory=list)
+    model_names: Dict[ModelId, Label] = Field(default_factory=dict)
+    model_protocols: Dict[ModelId, Literal["openai", "gemini"]] = Field(default_factory=dict)
+    image_request_mode: Literal["openai", "openai-json", "openai-video-proxy", "openai-responses", "openai-async-image", "tudou-async", "newapi-sync-image"] = "openai"
+    image_edit_route: Literal["general", "auto", "chat"] = "general"
+    video_protocol: Optional[Literal["newapi_video"]] = None
+    image_generation_endpoint: str = Field("", max_length=256, pattern=r"^(/[^?#:\s\x00-\x1f]{0,255})?$")
+    image_edit_endpoint: str = Field("", max_length=256, pattern=r"^(/[^?#:\s\x00-\x1f]{0,255})?$")
+    ms_loras: List[ProviderLora] = Field(default_factory=list, max_length=256)
+    ms_defaults_version: int = Field(0, ge=0)
+    volcengine_project_name: Label = ""
+    volcengine_region: Label = ""
+    api_key: Optional[SecretInput] = Field(None, repr=False)
+    wallet_api_key: Optional[SecretInput] = Field(None, repr=False)
+    volcengine_access_key_id: Optional[SecretInput] = Field(None, repr=False)
+    volcengine_secret_access_key: Optional[SecretInput] = Field(None, repr=False)
+    clear_key: bool = False
+    clear_wallet_key: bool = False
+    clear_volcengine_access_key_id: bool = False
+    clear_volcengine_secret_access_key: bool = False
+
+    @field_validator("base_url")
+    @classmethod
+    def validate_base_url(cls, value):
+        if not value:
+            return value
+        try:
+            parts = urlsplit(value)
+            valid = (parts.scheme in {"http", "https"} and parts.hostname
+                     and not parts.username and not parts.password and not parts.query and not parts.fragment
+                     and not any(ord(ch) < 33 for ch in value))
+            _ = parts.port
+        except ValueError:
+            valid = False
+        if not valid:
+            raise ValueError("平台地址必须为不含凭据、查询串或片段的HTTP地址")
+        return value.rstrip("/")
+
+    @model_validator(mode="after")
+    def validate_entry(self):
+        from gw.settings.execution_config import normalize_provider_base_url
+        self.base_url = normalize_provider_base_url(self.base_url, self.protocol)
+        if len(self.base_url) > 2048:
+            raise ValueError("规范化后的平台地址过长")
+        if not (self.provider_id or self.id) or (self.id and self.provider_id and self.id != self.provider_id):
+            raise ValueError("平台ID缺失或相互冲突")
+        if (self.provider_id or self.id) == "legacy_environment":
+            raise ValueError("旧环境兼容ID不能由页面创建")
+        for models in (self.image_models, self.chat_models, self.video_models):
+            if len(set(models)) != len(models):
+                raise ValueError("模型ID不能重复")
+        for secret, clear in ((self.api_key, self.clear_key), (self.wallet_api_key, self.clear_wallet_key),
+                              (self.volcengine_access_key_id, self.clear_volcengine_access_key_id),
+                              (self.volcengine_secret_access_key, self.clear_volcengine_secret_access_key)):
+            if secret and (clear or any(ord(ch) < 32 for ch in secret)):
+                raise ValueError("凭据更新意图或格式不合法")
+        if len(self.model_names) > 768 or len(self.model_protocols) > 512:
+            raise ValueError("模型映射超过上限")
+        models = set(self.image_models) | set(self.chat_models) | set(self.video_models)
+        if set(self.model_names) - models or set(self.model_protocols) - (set(self.image_models) | set(self.chat_models)):
+            raise ValueError("模型映射必须引用该平台已登记的对应模型")
+        return self
+
+
 class ProviderPutRequest(BaseModel):
     """``PUT /api/providers`` 请求体包装。
 
@@ -97,7 +195,7 @@ class ProviderPutRequest(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    providers: List[Dict[str, Any]] = Field(default_factory=list)
+    providers: List[ProviderEntryRequest] = Field(..., max_length=128)
 
 
 class AssetStructureMember(BaseModel):

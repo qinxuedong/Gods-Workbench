@@ -20,11 +20,12 @@
 
 import copy
 import json
+import logging
 import time
 import threading
 from typing import Any, Dict, List, Optional
 
-from gw.core.auth import require_edit_access
+from gw.core.auth import AuthContext, require_edit_access
 from gw.core.errors import (
     CanvasVersionConflictException,
     CleanroomException,
@@ -60,6 +61,8 @@ class GodCanvasService:
         self._canvases: Dict[str, CanvasItem] = {}
         self._topologies: Dict[str, CanvasTopology] = {}
         self._jobs: Dict[str, SmartCanvasTaskResponse] = {}
+        # 黄金种子无归属：仅内部夹具可读，HTTP不得公开。
+        self._job_owners: Dict[str, Dict[str, str]] = {}
         self._lifecycle: Dict[str, Dict[str, Any]] = {}
         self._seq = 1 if seed_golden_fixture else 0
         self._job_seq = 1 if seed_golden_fixture else 0
@@ -706,13 +709,23 @@ class GodCanvasService:
     ) -> SmartCanvasTaskResponse:
         """发起智能画布任务，返回 202 Accepted 及稳定 job_id。"""
         # 服务层也保留写权限边界，避免绕过 HTTP 路由直接提交任务。
-        require_edit_access(authorization, user_role)
+        try:
+            context = require_edit_access(authorization, user_role)
+        except CleanroomException as exc:
+            self._audit_job_access("submit", exc.status_code)
+            raise
 
         with self._lock:
             item = self._canvases.get(canvas_id)
             top = self._topologies.get(canvas_id)
             if not item or not top:
                 raise CleanroomException(status_code=404, code="CANVAS_NOT_FOUND", message=f"画布 {canvas_id} 不存在")
+
+            try:
+                owner_key = self._check_project_access(item.project_id, context)
+            except CleanroomException as exc:
+                self._audit_job_access("submit", exc.status_code, context)
+                raise
 
             # CAS 校验
             if payload.expected_version is not None and top.version != payload.expected_version:
@@ -742,7 +755,61 @@ class GodCanvasService:
                 poll_hint=poll_hint,
             )
             self._jobs[job_id] = task_resp
+            self._job_owners[job_id] = {"owner_key": owner_key, "canvas_id": canvas_id, "project_id": item.project_id}
+            self._audit_job_access("submit", 202, context)
             return task_resp
+
+    @staticmethod
+    def _audit_job_access(operation: str, status_code: int, context: Optional[AuthContext] = None) -> None:
+        """只记录操作、结果和认证模式，不记录Cookie、输入、路径或资源存在性。"""
+        from gw.projects_hub.service import owner_key_for_context
+        logging.getLogger("gw.audit").info("canvas_job_access %s", json.dumps({
+            "operation": operation, "status_code": status_code,
+            "auth_mode": context.mode if context else None,
+            "subject_key": owner_key_for_context(context) if context and context.subject and context.identity_domain else None,
+        }, sort_keys=True))
+
+    @staticmethod
+    def _check_project_access(project_id: str, context: AuthContext) -> str:
+        from gw.projects_hub import service as projects
+        owner_key = projects.owner_key_for_context(context)
+        project = projects.default_projects_service.get_owned_project(project_id, owner_key)
+        if project.deleted_at or project.archived_at:
+            raise CleanroomException(404, "JOB_NOT_FOUND", "任务不存在或不可访问")
+        return owner_key
+
+    def get_owned_job(self, job_id: str, context: AuthContext) -> SmartCanvasTaskResponse:
+        """HTTP/观测专用：主体侧表不能替代每次读取的项目真源ACL。"""
+        from gw.projects_hub.service import owner_key_for_context
+        try:
+            owner_key = owner_key_for_context(context)
+            with self._lock:
+                binding = self._job_owners.get(job_id)
+                if not binding or binding["owner_key"] != owner_key or job_id not in self._jobs:
+                    raise CleanroomException(404, "JOB_NOT_FOUND", "任务不存在或不可访问")
+                self._check_project_access(binding["project_id"], context)
+                item = self._canvases.get(binding["canvas_id"])
+                if item is None or item.project_id != binding["project_id"]:
+                    raise CleanroomException(404, "JOB_NOT_FOUND", "任务不存在或不可访问")
+                result = copy.deepcopy(self._jobs[job_id])
+        except CleanroomException as exc:
+            self._audit_job_access("query", exc.status_code, context)
+            raise
+        self._audit_job_access("query", 200, context)
+        return result
+
+    def list_owned_jobs(self, context: AuthContext) -> List[SmartCanvasTaskResponse]:
+        """观测列表使用与单任务相同的当前项目权限，不公开种子。"""
+        with self._lock:
+            job_ids = list(self._jobs)
+        result = []
+        for job_id in job_ids:
+            try:
+                result.append(self.get_owned_job(job_id, context))
+            except CleanroomException as exc:
+                if exc.status_code != 404:
+                    raise
+        return result
 
     def list_jobs(self) -> List[SmartCanvasTaskResponse]:
         """只读返回当前进程内全部任务快照（供观测层读取，不暴露内部字典）。

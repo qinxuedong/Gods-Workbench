@@ -119,6 +119,11 @@ class AssetLibraryService:
             return self._snapshot(raw)
 
     def _snapshot(self, raw: Dict[str, Any]) -> AssetLibrarySnapshot:
+        from gw.core.asset_visibility import asset_visible
+        raw = copy.deepcopy(raw)
+        for library in raw.get("libraries", {}).values():
+            for category in library.get("categories", []):
+                category["items"] = [item for item in category.get("items", []) if asset_visible(item)]
         libraries = [LibraryItem.model_validate(raw["libraries"][key])
                      for key in sorted(raw.get("libraries", {}))]
         return AssetLibrarySnapshot(
@@ -126,6 +131,14 @@ class AssetLibraryService:
             active_library_id=raw.get("active_library_id"),
             libraries=libraries,
         )
+
+    @staticmethod
+    def _visible_category(category):
+        from gw.core.asset_visibility import asset_visible
+        return {**category, "items": [item for item in category.get("items", []) if asset_visible(item)]}
+
+    def _visible_library(self, library):
+        return {**library, "categories": [self._visible_category(category) for category in library.get("categories", [])]}
 
     # ------------------------------------------------------------------
     # 内部定位与断言
@@ -151,6 +164,9 @@ class AssetLibraryService:
             for category in library.get("categories", []):
                 for item in category.get("items", []):
                     if item.get("asset_id") == asset_id:
+                        from gw.core.asset_visibility import asset_visible
+                        if not asset_visible(item):
+                            raise CleanroomException(404, "ASSET_NOT_FOUND", "素材不存在")
                         return library, category, item
         raise CleanroomException(404, "ASSET_NOT_FOUND", "素材 %s 不存在" % asset_id)
 
@@ -222,7 +238,7 @@ class AssetLibraryService:
             self._touch(raw)
             return {"category": category, "library": parent}
         result = self._mutate(mutator)
-        return CategoryItem.model_validate(result["category"]), LibraryItem.model_validate(result["library"])
+        return CategoryItem.model_validate(self._visible_category(result["category"])), LibraryItem.model_validate(self._visible_library(result["library"]))
 
     # ------------------------------------------------------------------
     # 素材库 / 分类 变更
@@ -242,11 +258,14 @@ class AssetLibraryService:
             library["updated_at"] = _now_iso()
             self._touch(raw)
             return library
-        return LibraryItem.model_validate(self._mutate(mutator))
+        return LibraryItem.model_validate(self._visible_library(self._mutate(mutator)))
 
     def delete_library(self, library_id: str, expected_version: Optional[int]) -> Dict[str, Any]:
         def mutator(raw: Dict[str, Any]) -> Any:
             library = self._library(raw, library_id)
+            from gw.core.asset_visibility import asset_visible
+            if any(not asset_visible(item) for category in library.get("categories", []) for item in category.get("items", [])):
+                raise CleanroomException(403, "PRIVATE_ASSET_BOUNDARY", "素材库包含其他主体私有资产，不能删除")
             self._check_version(expected_version, library["version"])
             del raw["libraries"][library_id]
             if raw.get("active_library_id") == library_id:
@@ -271,11 +290,14 @@ class AssetLibraryService:
             library["version"] += 1
             self._touch(raw)
             return category
-        return CategoryItem.model_validate(self._mutate(mutator))
+        return CategoryItem.model_validate(self._visible_category(self._mutate(mutator)))
 
     def delete_category(self, category_id: str, expected_version: Optional[int]) -> Dict[str, Any]:
         def mutator(raw: Dict[str, Any]) -> Any:
             library, category = self._category(raw, category_id)
+            from gw.core.asset_visibility import asset_visible
+            if any(not asset_visible(item) for item in category.get("items", [])):
+                raise CleanroomException(403, "PRIVATE_ASSET_BOUNDARY", "分类包含其他主体私有资产，不能删除")
             self._check_version(expected_version, category["version"])
             library["categories"] = [c for c in library["categories"] if c["category_id"] != category_id]
             library["version"] += 1
@@ -420,6 +442,120 @@ class AssetLibraryService:
                 self._touch(raw)
             return {"results": results, "count": len(results)}
         return self._mutate(mutator)
+
+    def ensure_default_category(
+        self, raw: Dict[str, Any], cat_type: str, default_name: str
+    ) -> Tuple[Dict[str, Any], Dict[str, Any]]:
+        """确保存在激活素材库以及指定类型的分类。返回 (library_dict, category_dict)"""
+        if not raw.get("libraries"):
+            library_id = "library_default"
+            stamp = _now_iso()
+            raw["libraries"][library_id] = {
+                "library_id": library_id,
+                "name": "默认资产库",
+                "version": 1,
+                "created_at": stamp,
+                "updated_at": stamp,
+                "categories": [],
+            }
+            raw["active_library_id"] = library_id
+            self._touch(raw)
+
+        active_id = raw.get("active_library_id") or sorted(raw["libraries"])[0]
+        library = raw["libraries"][active_id]
+
+        for cat in library.get("categories", []):
+            if cat.get("type") == cat_type:
+                return library, cat
+
+        cat_id = f"category_{cat_type}"
+        stamp = _now_iso()
+        category = {
+            "category_id": cat_id,
+            "library_id": library["library_id"],
+            "name": default_name,
+            "type": cat_type,
+            "version": 1,
+            "created_at": stamp,
+            "updated_at": stamp,
+            "items": [],
+        }
+        library.setdefault("categories", []).append(category)
+        library["version"] += 1
+        library["updated_at"] = stamp
+        self._touch(raw)
+        return library, category
+
+    def remove_bridge_item(self, asset_id: str, owner: str):
+        """仅移除指定主体的桥接投影，不删除任何原始文件。"""
+        def mutate(raw):
+            changed = False
+            for library in raw.get("libraries", {}).values():
+                for category in library.get("categories", []):
+                    before = category.get("items", [])
+                    after = [item for item in before if not (item.get("asset_id") == asset_id and item.get("workflow_owner") == owner)]
+                    if len(after) != len(before):
+                        category["items"] = after
+                        category["version"] += 1
+                        library["version"] += 1
+                        changed = True
+            if changed:
+                self._touch(raw)
+            return {"removed": changed}
+        return self._mutate(mutate)
+
+    def register_item(
+        self,
+        *,
+        asset_id: str,
+        name: str,
+        category_type: str,
+        category_name: str,
+        url: Optional[str] = None,
+        workflow_owner: Optional[str] = None,
+    ) -> AssetItem:
+        """登记或更新素材条目（保证全局稳定 asset_id 绑定）。"""
+        def mutator(raw: Dict[str, Any]) -> Any:
+            library, category = self.ensure_default_category(raw, category_type, category_name)
+            stamp = _now_iso()
+
+            existing = None
+            for it in category.get("items", []):
+                if it.get("asset_id") == asset_id:
+                    existing = it
+                    break
+
+            if existing is not None:
+                if existing.get("workflow_owner") != workflow_owner:
+                    raise CleanroomException(409, "ASSET_OWNER_CONFLICT", "资产归属冲突")
+                if existing.get("name") == name and (url is None or existing.get("url") == url):
+                    return existing
+                existing["name"] = name
+                if url is not None:
+                    existing["url"] = url
+                existing["updated_at"] = stamp
+                target_item = existing
+            else:
+                target_item = {
+                    "asset_id": asset_id,
+                    "library_id": library["library_id"],
+                    "category_id": category["category_id"],
+                    "name": name,
+                    "url": url,
+                    "created_at": stamp,
+                    "workflow_owner": workflow_owner,
+                }
+                category.setdefault("items", []).append(target_item)
+
+            category["version"] += 1
+            category["updated_at"] = stamp
+            library["version"] += 1
+            library["updated_at"] = stamp
+            self._touch(raw)
+            return target_item
+
+        result = self._mutate(mutator)
+        return AssetItem.model_validate(result)
 
 
 # 全局单例服务实例

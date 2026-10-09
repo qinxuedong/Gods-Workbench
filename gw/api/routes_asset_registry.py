@@ -28,8 +28,8 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, Body, File, Form, Header, Query, Request, Response, status, UploadFile
-from fastapi.responses import JSONResponse, StreamingResponse
+from fastapi import APIRouter, Body, Depends, File, Form, Header, Query, Request, Response, status, UploadFile
+from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 
 from gw.asset_registry import media_probe, repository as repo, index_jobs
 from gw.asset_registry.service import (
@@ -42,7 +42,9 @@ from gw.core.auth import require_authenticated, require_edit_access, require_gov
 from gw.core.errors import CleanroomException
 from gw.projects_hub.service import default_projects_service, owner_key_for_context
 
-router = APIRouter(prefix="/api/asset-registry", tags=["asset-registry"])
+from gw.core.asset_visibility import asset_request_scope
+
+router = APIRouter(prefix="/api/asset-registry", tags=["asset-registry"], dependencies=[Depends(asset_request_scope)])
 
 MAX_IMPORT_BYTES = 64 * 1024 * 1024
 
@@ -126,10 +128,11 @@ def get_registry_root(
 ):
     _read_auth(authorization, x_user_role)
     raw = repo.state().read()
+    from gw.core.asset_visibility import asset_visible
     return {
         "registry": "asset-registry",
         "revision": raw["revision"],
-        "assets": [dict(a) for a in raw["assets"].values()],
+        "assets": [dict(a) for a in raw["assets"].values() if asset_visible(a)],
         "features": repo.features_snapshot()["features"],
         "backend": "json-state",
         "data_status": DATA_STATUS_OK,
@@ -144,15 +147,17 @@ def get_registry_status(
 ):
     actor = _read_auth(authorization, x_user_role)
     raw = repo.state().read()
+    from gw.core.asset_visibility import asset_visible
+    visible_count = sum(asset_visible(asset) for asset in raw['assets'].values())
     snapshot = repo.features_snapshot()
     return {
         "ready": True,
         "backend": "json-state",
         "revision": raw["revision"],
-        "assets_count": len(raw["assets"]),
+        "assets_count": visible_count,
         "jobs": index_jobs.service().listing(actor),
         "overview": {
-            "assets": len(raw["assets"]),
+            "assets": visible_count,
             "projects": len({e.get("project_id") for e in raw["project_entities"].values()}),
             "canvases": 0,
             "roots": [],
@@ -256,9 +261,16 @@ def get_asset_media(
     authorization: Optional[str] = Header(None),
     x_user_role: str = Header("editor", alias="X-User-Role"),
 ):
-    _read_auth(authorization, x_user_role)
+    context = _read_auth(authorization, x_user_role)
     path = repo.media_file(asset_id)
     if path is None:
+        record = repo.get_asset(asset_id)
+        if record.get("metadata", {}).get("workflow_owner"):
+            from gw.god_workflow import registry as workflow_registry
+            resolved = workflow_registry.resolve_asset_file(context, asset_id)
+            if resolved:
+                private_path, asset = resolved
+                return FileResponse(private_path, media_type=asset["content_type"])
         repo._unavailable("/api/asset-registry/assets/{asset_id}/media",
                           "MEDIA_NOT_AVAILABLE", "该素材没有可读取的媒体文件")
     return Response(content=path.read_bytes(), media_type=_media_type(path),
@@ -390,8 +402,10 @@ def get_recycle_bin(
 ):
     _read_auth(authorization, x_user_role)
     raw = repo.state().read()
-    return {"items": [dict(v) for v in raw["recycle_bin"].values()],
-            "assets": [dict(v) for v in raw["recycle_bin"].values() if v.get("kind") == "asset"],
+    from gw.core.asset_visibility import asset_visible
+    visible = [dict(value) for value in raw['recycle_bin'].values() if value.get('kind') != 'asset' or asset_visible(value.get('payload', {}))]
+    return {"items": visible,
+            "assets": [value for value in visible if value.get("kind") == "asset"],
             "projects": [], "canvases": [],
             "revision": raw["revision"], "data_status": DATA_STATUS_OK, "data_gaps": []}
 

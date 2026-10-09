@@ -15,7 +15,7 @@
 
 """设置页服务层实现（Phase 10D）。
 
-严格遵循 ``docs/contracts/SETTINGS-INTERFACE-CATALOG.yaml``（version: p10d-frozen-1）：
+遵循 ``docs/contracts/SETTINGS-INTERFACE-CATALOG.yaml`` 的当前配置治理契约：
 
 - 稳定 ID：结构体 ``structure_id = strc_NNNN``（确定性序号，禁止随机数/uuid）；
   provider 标识一律来自调用方提交，服务端**绝不自造**厂商条目；
@@ -23,23 +23,27 @@
   写操作冲突一律 409（存储/平台用 VERSION_CONFLICT，结构体用 STRUCTURE_VERSION_CONFLICT）；
 - **零伪造**：无真实来源时 storage-settings 返回 ``configured: false`` + ``data_gaps``，
   providers 返回 ``providers: []``；结构成员不编造素材元数据；
-- **零凭据**：provider 凭据字段（key / secret / token / password 一类）一律剥离，
-  不落库、不回显；
-- **fail-closed**：本阶段无真实外网探测能力，探测端点如实抛 503
-  ``PROVIDER_PROBE_NOT_INTEGRATED``，绝不伪造模型列表、连通性成功或延迟数字。
+- **凭据边界**：provider 输入由严格DTO验证，显式更新的秘密仅加密落盘，
+  不回显、不写环境文件；未知凭据别名拒绝；
+- **fail-closed**：探测由probes模块执行；缺失依赖或上游失败如实返回503，
+  不伪造模型列表、连通性成功或延迟数字。
 
-证据边界：本模块为**进程内内存**存储（与 ProjectsService / AssetLibraryService /
-PromptLibraryService 同口径）。重启即丢失、多 worker 不共享；持久化与多实例一致性属部署方职责。
+证据边界：ProviderService使用三態隔离的原子JSON与受保护密文，支持重启恢复，
+仅保证单进程一致性。存储设置与素材结构服务仍为内存实现。
 """
 
 from __future__ import annotations
 
 import copy
 from datetime import datetime, timezone
+import stat
 import threading
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
+from pydantic import ValidationError
+from gw.core import storage
 from gw.core.errors import CleanroomException
+from gw.settings import credentials
 from gw.settings.models import (
     DATA_STATUS_NOT_CONFIGURED,
     DATA_STATUS_OK,
@@ -54,6 +58,7 @@ from gw.settings.models import (
     AssetStructureMember,
     AssetStructureUpdateRequest,
     ProviderSnapshot,
+    ProviderEntryRequest,
     StorageSettingsPatchRequest,
     StorageSettingsSnapshot,
 )
@@ -277,38 +282,96 @@ class StorageSettingsService:
 
 
 class ProviderService:
-    """模型平台（provider）集合的内存快照与 CAS 版本服务。"""
+    """平台与密文单快照原子落盘；各实例共享命名空间CAS锁。"""
+
+    _secrets = {
+        "api_key": ("clear_key", "has_key"),
+        "wallet_api_key": ("clear_wallet_key", "has_wallet_key"),
+        "volcengine_access_key_id": ("clear_volcengine_access_key_id", "has_volcengine_access_key"),
+        "volcengine_secret_access_key": ("clear_volcengine_secret_access_key", "has_volcengine_secret_key"),
+    }
 
     def __init__(self) -> None:
-        self._lock = threading.Lock()
-        self._revision = 1
-        self._providers: List[Dict[str, Any]] = []
+        self._state = storage.JsonState("providers", self._empty_state)
+
+    @staticmethod
+    def _empty_state():
+        # 通用JSON读器对损坏文件返回默认值；配置集合必须拒绝该降级，避免下一次保存清空。
+        if (storage.data_root() / "providers.json").exists():
+            raise CleanroomException(503, "PROVIDER_STORAGE_UNAVAILABLE", "平台配置文件无法读取，未覆盖已有配置")
+        return {"schema_version": 1, "revision": 1, "providers": [], "credentials": {}}
+
+    def _checked_state(self, state):
+        if (not isinstance(state, dict) or state.get("schema_version") != 1
+                or set(state) != {"schema_version", "revision", "providers", "credentials"}
+                or type(state.get("revision")) is not int or state["revision"] < 1
+                or not isinstance(state.get("providers"), list) or not isinstance(state.get("credentials"), dict)):
+            raise CleanroomException(503, "PROVIDER_STORAGE_UNAVAILABLE", "平台配置快照格式无效")
+        try:
+            seen = set()
+            for item in state["providers"]:
+                model = ProviderEntryRequest.model_validate(item)
+                provider_id = model.provider_id or model.id
+                if provider_id in seen or any(key in item for key in self._secrets):
+                    raise ValueError()
+                seen.add(provider_id)
+            if set(state["credentials"]) - seen:
+                raise ValueError()
+            for fields in state["credentials"].values():
+                if not isinstance(fields, dict) or set(fields) - set(self._secrets):
+                    raise ValueError()
+                if any(not isinstance(value, str) or not value for value in fields.values()):
+                    raise ValueError()
+        except (ValidationError, ValueError, TypeError):
+            raise CleanroomException(503, "PROVIDER_STORAGE_UNAVAILABLE", "平台配置快照格式无效") from None
+        return state
+
+    @staticmethod
+    def _check_files():
+        """读取与写入前拒绝目标/临时文件链接，避免通用JSON读器跟随链接。"""
+        for name in ("providers.json", "providers.json.tmp"):
+            path = storage.data_root() / name
+            try:
+                info = path.lstat()
+            except FileNotFoundError:
+                continue
+            if (not stat.S_ISREG(info.st_mode) or stat.S_ISLNK(info.st_mode)
+                    or getattr(info, "st_file_attributes", 0) & 0x400):
+                raise CleanroomException(503, "PROVIDER_STORAGE_UNAVAILABLE", "平台配置文件不允许链接或异常类型")
 
     def get_snapshot(self) -> ProviderSnapshot:
-        """返回 provider 集合真值；默认必须为空数组，不得预置厂商条目。"""
-        with self._lock:
-            return self._build_snapshot_locked()
+        self._check_files()
+        return self._snapshot(self._checked_state(self._state.read()))
 
-    def _build_snapshot_locked(self) -> ProviderSnapshot:
-        configured = bool(self._providers)
+    def _snapshot(self, state) -> ProviderSnapshot:
+        public = copy.deepcopy(state["providers"])
+        for item in public:
+            provider_id = item["provider_id"]
+            item["source"] = "settings"
+            for field, (_, flag) in self._secrets.items():
+                encrypted = state["credentials"].get(provider_id, {}).get(field)
+                item[flag] = bool(encrypted and credentials.reveal(provider_id, field, encrypted))
+        configured = bool(public)
         return ProviderSnapshot(
-            providers=copy.deepcopy(self._providers),
-            revision=self._revision,
+            providers=public,
+            revision=state["revision"],
             configured=configured,
             data_status=DATA_STATUS_OK if configured else DATA_STATUS_NOT_CONFIGURED,
             data_gaps=[] if configured else [GAP_PROVIDER_REGISTRY_SOURCE],
         )
 
     def replace(self, raw_providers: Any, expected_version: Optional[int]) -> ProviderSnapshot:
-        """整体替换 provider 集合；凭据字段一律剥离，CAS 冲突失败关闭。"""
+        """整体验证后持锁提交；空密钥保持、clear显式删除、非空密钥替换。"""
         _require_positive_version(expected_version, "provider 集合")
-        if not isinstance(raw_providers, (list, tuple)):
+        if expected_version is None:
+            raise CleanroomException(400, "EXPECTED_VERSION_REQUIRED", "保存平台配置必须携带expected_version")
+        if not isinstance(raw_providers, list) or len(raw_providers) > 128:
             raise CleanroomException(
                 status_code=400,
                 code="INVALID_REQUEST",
                 message="provider 请求体必须为数组",
             )
-        normalized: List[Dict[str, Any]] = []
+        normalized: List[ProviderEntryRequest] = []
         seen: set = set()
         for index, item in enumerate(raw_providers):
             if not isinstance(item, dict):
@@ -317,13 +380,12 @@ class ProviderService:
                     code="INVALID_REQUEST",
                     message=f"provider 第 {index + 1} 项必须为对象",
                 )
-            provider_id = str(item.get("provider_id") or item.get("id") or "").strip()
-            if not provider_id:
-                raise CleanroomException(
-                    status_code=400,
-                    code="INVALID_REQUEST",
-                    message=f"provider 第 {index + 1} 项缺少 provider_id",
-                )
+            try:
+                model = ProviderEntryRequest.model_validate(item)
+            except ValidationError:
+                # Pydantic异常包含input；不可把原文或字段值写入响应与日志。
+                raise CleanroomException(400, "INVALID_REQUEST", f"平台第{index + 1}项字段或更新意图不合法") from None
+            provider_id = model.provider_id or model.id
             if provider_id in seen:
                 raise CleanroomException(
                     status_code=400,
@@ -331,21 +393,52 @@ class ProviderService:
                     message=f"provider_id 重复：{provider_id}",
                 )
             seen.add(provider_id)
-            cleaned = strip_credential_fields(item)
-            cleaned["provider_id"] = provider_id
-            normalized.append(cleaned)
+            normalized.append(model)
 
-        with self._lock:
-            if expected_version is not None and expected_version != self._revision:
+        def commit(state):
+            self._checked_state(state)
+            if expected_version != state["revision"]:
                 raise _conflict(
                     "VERSION_CONFLICT",
                     expected_version,
-                    self._revision,
-                    f"provider 集合版本冲突（期望 {expected_version}，当前 {self._revision}），请重新读取后重试",
+                    state["revision"],
+                    "平台集合已被修改，请保留编辑内容并重新读取后重试",
                 )
-            self._providers = normalized
-            self._revision += 1
-            return self._build_snapshot_locked()
+            public, encrypted = [], {}
+            excluded = set(self._secrets) | {value[0] for value in self._secrets.values()}
+            for model in normalized:
+                provider_id = model.provider_id or model.id
+                fields = copy.deepcopy(state["credentials"].get(provider_id, {}))
+                for field, (clear, _) in self._secrets.items():
+                    if getattr(model, clear):
+                        fields.pop(field, None)
+                    elif (getattr(model, field) or "").strip():
+                        fields[field] = credentials.protect(provider_id, field, getattr(model, field).strip())
+                item = model.model_dump(exclude=excluded)
+                item["id"] = item["provider_id"] = provider_id
+                public.append(item)
+                if fields:
+                    encrypted[provider_id] = fields
+            state.update(providers=public, credentials=encrypted, revision=state["revision"] + 1)
+            return self._snapshot(state)
+
+        try:
+            self._check_files()
+            return self._state.mutate(commit)
+        except OSError:
+            raise CleanroomException(503, "PROVIDER_STORAGE_UNAVAILABLE", "平台配置未能落盘，原配置保持不变") from None
+
+    def credential(self, provider_id: str, field: str = "api_key", *, expected_version: Optional[int] = None) -> str:
+        """仅供执行服务按稳定ID读取；HTTP响应不得调用后回显原文。"""
+        if field not in self._secrets:
+            raise ValueError("凭据字段不受支持")
+        self._check_files()
+        state = self._checked_state(self._state.read())
+        if expected_version is not None and state["revision"] != expected_version:
+            raise _conflict("VERSION_CONFLICT", expected_version, state["revision"],
+                            "平台配置已变化，未使用新密钥执行旧请求，请重新开始操作")
+        encrypted = state["credentials"].get(provider_id, {}).get(field)
+        return credentials.reveal(provider_id, field, encrypted) if encrypted else ""
 
 
 class AssetStructureService:

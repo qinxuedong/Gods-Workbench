@@ -113,7 +113,16 @@ def empty_client(monkeypatch) -> TestClient:
 def seeded_client(monkeypatch) -> TestClient:
     """注入黄金夹具种子：1 个项目、1 个 accepted 任务。"""
     audit_log.reset_audit_log()
-    monkeypatch.setattr(obs_routes, "default_observability_service", _make_service(seed_projects=True, seed_canvas=True))
+    from gw.core.auth import require_authenticated
+    from gw.projects_hub import service as projects
+    from gw.projects_hub.models import ProjectCreateRequest
+    from gw.god_canvas.tasks import SmartCanvasTaskRequest
+    service = _make_service(seed_projects=False, seed_canvas=True)
+    owner = projects.owner_key_for_context(require_authenticated("Bearer cleanroom-test", "editor"))
+    service._projects.create_project(ProjectCreateRequest(name="观测归属项目", project_type="other"), owner_key=owner)
+    monkeypatch.setattr(projects, "default_projects_service", service._projects)
+    service._canvas.submit_smart_task("cv-0001", SmartCanvasTaskRequest(entry_nodes=["nd-0001"]), authorization="Bearer cleanroom-test")
+    monkeypatch.setattr(obs_routes, "default_observability_service", service)
     with TestClient(create_app()) as client:
         yield client
     audit_log.reset_audit_log()
@@ -317,7 +326,7 @@ def test_tasks_projection_uses_stable_ids(seeded_client: TestClient):
     body = seeded_client.get("/api/observability/tasks", headers=AUTH).json()
     assert len(body["items"]) == 1
     task = body["items"][0]
-    assert task["job_id"] == "job-0001"
+    assert task["job_id"] == "job-0002"
     assert task["status"] == "accepted"
     for alias in ("id", "pid", "cid", "task_id"):
         assert alias not in task, f"任务投影出现非稳定别名: {alias}"
@@ -453,7 +462,7 @@ def test_tasks_time_window_filter_discloses_snapshot_semantics(seeded_client: Te
     assert body["data_status"] == "degraded"
     assert body["data_gaps"], "未生效的时间条件必须显式披露"
     assert len(body["items"]) == 1, "应返回真实任务快照，而不是误导性的空结果"
-    assert body["items"][0]["job_id"] == "job-0001"
+    assert body["items"][0]["job_id"] == "job-0002"
     body2 = seeded_client.get("/api/observability/tasks?start_ms=1&end_ms=2", headers=AUTH).json()
     assert body2["data_status"] == "degraded"
     assert body2["data_gaps"]

@@ -2419,12 +2419,12 @@ body.gw-page--governance .btn.danger { background: rgba(255, 127, 120, .1) !impo
     box-sizing: border-box !important;
   }
 
-
+  
   /* Settings pages: stack the navigation and editor instead of allowing a
      fixed desktop column to push the editor outside the viewport. */
 
 
-
+  
   body.gw-page--api-settings .page {
     padding: 10px 12px 18px !important;
   }
@@ -3216,22 +3216,22 @@ body.gw-page--api-settings .provider-item { font-size: var(--sf-fs-body); font-w
     backdrop-filter: none !important;
   }
 
-
+  
   /*broad surface calibration. Remove that wrapper inset so their header starts
      on the same 12px baseline as the other standalone pages. */
 
 
-
+  
   html body.gw-signal.gw-page--api-settings > .page > .wrap {
     padding: 0 !important;
   }
 
-
+  
   /*pages. Their descriptions remain available in the markup but do not add a
      second line to the shared header. */
 
 
-
+  
   html body.gw-signal:is(.gw-page--api-settings) .page-head .breadcrumbs {
     display: flex !important;
     align-items: center !important;

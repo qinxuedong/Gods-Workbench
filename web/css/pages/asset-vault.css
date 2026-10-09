@@ -65,12 +65,12 @@ body.gw-signal.gw-page--asset-manager #assetBoardTabs {
 }
 body.gw-signal.gw-page--asset-manager #assetBoardTabs .asset-board-list { gap: 3px; flex-basis: 700px; }
 body.gw-signal.gw-page--asset-manager #assetBoardTabs button {
-
-
+    
+    
     padding: 0 7px !important;
     gap: 5px;
-
-
+    
+    
     border: 1px solid transparent !important;
     border-radius: 4px !important;
     background: transparent !important;
@@ -319,9 +319,9 @@ body.gw-signal.gw-page--asset-manager #assetManagerRoot:not(.asset-manager-root-
 body.gw-signal.gw-page--asset-manager #assetManagerRoot:not(.asset-manager-root-registry) .panel-title strong,
 body.gw-signal.gw-page--asset-manager #assetManagerRoot:not(.asset-manager-root-registry) .content-heading strong {
     color: var(--vault-gold-light) !important;
-
-
-
+    
+    
+    
  font-family:var(--gw-font-body) !important; font-size:var(--gw-type-headline-sm) !important; line-height:var(--gw-leading-headline-sm) !important; font-weight:var(--gw-weight-medium) !important; letter-spacing:0 !important;}
 body.gw-signal.gw-page--asset-manager #assetManagerRoot:not(.asset-manager-root-registry) .panel-title span,
 body.gw-signal.gw-page--asset-manager #assetManagerRoot:not(.asset-manager-root-registry) .content-heading span {
@@ -857,8 +857,8 @@ body.gw-signal.gw-page--asset-manager #assetManagerRoot:not(.asset-manager-root-
     border-radius: 4px;
     color: #a8b2c2;
     background: transparent;
-
-
+    
+    
  font-family:var(--gw-font-body) !important; font-size:var(--gw-type-body-sm) !important; line-height:var(--gw-leading-body-sm) !important; font-weight:var(--gw-weight-medium) !important; letter-spacing:0 !important;}
 body.gw-signal.gw-page--asset-manager #assetManagerRoot:not(.asset-manager-root-registry) .asset-smart-filter-scroll .registry-facet-basic:is(:hover,.active) {
     border-color: var(--vault-line-gold) !important;

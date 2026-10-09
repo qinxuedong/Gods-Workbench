@@ -16,11 +16,11 @@
 """Provider 真实探测服务（Phase 12 A4）。
 
 真实数据源与边界：
-- `fetch-models` 真实 `GET {base_url}/v1/models`，模型列表来自上游响应原文；
+- `fetch-models` 按声明协议读取真实模型目录，兼容版本路径与Gemini分页；
 - `test-connection` 真实往返并记录**实测**延迟（毫秒），绝不伪造数字；
-- `probe-async` 真实请求后登记可回读的探测任务（`pjob_NNNN` + poll_hint）；
+- `probe-async` 保留兼容地址，同步请求结束后登记可回读的终态历史记录；
 - 凭据（api key / token / password 一类）**只用不存**：不进落盘快照、不进响应；
-- 出网安全：非本机地址必须 `https://`；拒绝内网/回环/链路本地/保留网段（s3rver-side req forgery）；
+- 出网安全：公网要求HTTPS；Provider明确配置的局域网字面IP允许HTTP，域名内网/链路本地/保留网段仍拒绝；
 - 失败关闭：httpx 缺失 → 503 `PROVIDER_PROBE_NOT_INTEGRATED`；网络/上游失败 → 503
   `PROVIDER_PROBE_FAILED`，不返回任何伪造模型列表、连通性结论或延迟数字。
 """
@@ -32,15 +32,30 @@ import socket
 import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
-from urllib.parse import urlparse
+from urllib.parse import urlparse, urlencode
 
 from gw.core import storage
 from gw.core.errors import CleanroomException
 
 NS_PROBES = "provider_probes"
+PROBE_TIMEOUT_SECONDS = 20.0
 
-#: 允许以明文 http 访问的本机联调主机；其余主机必须 https。
+#: 本机联调主机；局域网字面IP仅由Provider调用方显式准入。
 LOOPBACK_HOSTS = frozenset({"127.0.0.1", "localhost", "::1"})
+LAN_NETWORKS = tuple(ipaddress.ip_network(value) for value in
+                     ("10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "fc00::/7"))
+
+
+def is_lan_provider_url(url: str) -> bool:
+    """仅字面局域网IP；不把域名解析结果当成用户明确选择的内网目标。"""
+    try:
+        host = urlparse(url).hostname or ""
+        if "%" in host:
+            return False
+        address = ipaddress.ip_address(host)
+    except ValueError:
+        return False
+    return any(address.version == network.version and address in network for network in LAN_NETWORKS)
 
 #: 凭据类字段（小写、去分隔符后比对），只用不存。
 _CREDENTIAL_MARKERS = (
@@ -62,7 +77,8 @@ def _is_credential_key(key: str) -> bool:
     normalized = str(key or "").strip().casefold().replace("-", "_").replace(" ", "_")
     if not normalized:
         return False
-    return any(marker in normalized for marker in _CREDENTIAL_MARKERS)
+    return (normalized in {"key", "keys"} or normalized.replace("_", "").endswith(("key", "keys"))
+            or any(marker in normalized for marker in _CREDENTIAL_MARKERS))
 
 
 def strip_credentials(value: Any) -> Any:
@@ -106,19 +122,27 @@ def _credentials(payload: Dict[str, Any]) -> Optional[str]:
     return None
 
 
-def guard_provider_url(url: str) -> str:
-    """校验 Provider base_url：只允许 https 或本机明文 http；拒绝内网/保留网段。"""
+def guard_provider_url(url: str, *, allow_lan: bool = False) -> str:
+    """默认拒绝内网；配置与探测可明确准入局域网字面IP，资产下载保持原边界。"""
     clean = str(url or "").strip()
     if not clean:
         raise CleanroomException(400, "INVALID_REQUEST", "缺少 base_url")
-    parsed = urlparse(clean)
+    try:
+        parsed = urlparse(clean)
+        port = parsed.port
+        if parsed.username is not None or parsed.password is not None or parsed.query or parsed.fragment:
+            raise ValueError()
+    except ValueError:
+        raise CleanroomException(400, "INVALID_URL", "地址不能包含账户、查询参数、片段或无效端口") from None
     if parsed.scheme not in ("http", "https") or not parsed.hostname:
         raise CleanroomException(400, "INVALID_URL", "base_url 必须是 http/https 绝对地址")
     host = parsed.hostname.strip().lower()
     if host in LOOPBACK_HOSTS:
         # 仅本机联调允许明文 http。
         return clean
-    port = parsed.port or (443 if parsed.scheme == "https" else 80)
+    if allow_lan and is_lan_provider_url(clean):
+        return clean
+    port = port or (443 if parsed.scheme == "https" else 80)
     try:
         infos = socket.getaddrinfo(host, port)
     except socket.gaierror:
@@ -131,18 +155,29 @@ def guard_provider_url(url: str) -> str:
         if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved or ip.is_multicast:
             raise CleanroomException(403, "SSRF_BLOCKED", "该地址属于受限网段，已拒绝请求")
     if parsed.scheme == "http":
-        raise CleanroomException(403, "URL_NOT_ALLOWED", "非本机 Provider 地址必须使用 https")
+        raise CleanroomException(403, "URL_NOT_ALLOWED", "公网 Provider 地址必须使用 https")
     return clean
 
 
-def _models_url(base_url: str) -> str:
-    return base_url.rstrip("/") + "/v1/models"
+def _models_url(base_url: str, protocol: str = "openai") -> str:
+    """根地址补版本段；已含版本段的地址只补models。"""
+    base = base_url.rstrip("/")
+    if base.endswith("/models"):
+        return base
+    path = urlparse(base).path.rstrip("/")
+    versions = ("/v1beta", "/v1alpha", "/v1") if protocol == "gemini" else ("/v1",)
+    if not any(path.endswith(version) for version in versions):
+        base += "/v1beta" if protocol == "gemini" else "/v1"
+    return base + "/models"
 
 
-def _headers(token: Optional[str]) -> Dict[str, str]:
+def _headers(token: Optional[str], protocol: str = "openai") -> Dict[str, str]:
     headers = {"Accept": "application/json", "User-Agent": "Gods-Workbench/cleanroom"}
     if token:
-        headers["Authorization"] = "Bearer %s" % token
+        if protocol == "gemini":
+            headers["x-goog-api-key"] = token
+        else:
+            headers["Authorization"] = "Bearer %s" % token
     return headers
 
 
@@ -157,10 +192,14 @@ def _classify(model_id: str) -> str:
     return "other"
 
 
-def _parse_models(body: Any) -> List[str]:
+def _parse_models(body: Any, token: Optional[str] = None, protocol: str = "openai") -> List[str]:
     """从上游真实响应解析模型 ID 列表；结构不符时返回空列表，不编造。"""
     items = None
-    if isinstance(body, dict):
+    if protocol == "gemini":
+        items = body.get("models") if isinstance(body, dict) else None
+        if not isinstance(items, list):
+            return []
+    elif isinstance(body, dict):
         for key in ("data", "models", "result", "items"):
             if isinstance(body.get(key), list):
                 items = body[key]
@@ -183,105 +222,128 @@ def _parse_models(body: Any) -> List[str]:
     seen = set()
     ordered = []
     for model in models:
-        if model not in seen:
+        if protocol == "gemini" and model.startswith("models/"):
+            model = model.removeprefix("models/")
+        if model not in seen and not (token and token in model):
             seen.add(model)
             ordered.append(model)
     return ordered
 
 
-def _detect_protocol(base_url: str, declared: str, models: List[str], body: Any) -> str:
-    declared = str(declared or "").strip()
-    text = ("%s %s" % (base_url, " ".join(models))).lower()
-    if "apimart" in text or (isinstance(body, dict) and body.get("task_id")):
-        return "APIMart"
-    if declared:
-        return declared
-    return "AI Platform"
-
-
 def _probe_payload(payload: Dict[str, Any]) -> Tuple[str, str, Optional[str]]:
-    base_url = str((payload or {}).get("base_url") or "").strip()
+    protocol = str((payload or {}).get("protocol") or "openai").strip().lower()
+    if protocol == "ai platform":
+        protocol = "openai"
+    if protocol in {"volcengine", "codex", "gemini-cli", "jimeng"}:
+        _unavailable("PROVIDER_MODEL_DISCOVERY_NOT_INTEGRATED", "/api/providers",
+                     "该协议未接入HTTP模型目录发现；请手动配置模型，CLI状态由专用面板查询")
+    if protocol not in {"openai", "apimart", "grok", "gemini"}:
+        raise CleanroomException(400, "UNSUPPORTED_PROVIDER_PROTOCOL", "不支持的模型目录协议")
+    from gw.settings.execution_config import normalize_provider_base_url
+    base_url = normalize_provider_base_url(str((payload or {}).get("base_url") or ""), protocol)
     token = _credentials(payload)
-    guarded = guard_provider_url(base_url)
-    return guarded, str((payload or {}).get("protocol") or ""), token
+    guarded = guard_provider_url(base_url, allow_lan=True)
+    if not token and isinstance((payload or {}).get("provider_id"), str):
+        from gw.settings.service import ProviderService
+        service = ProviderService()
+        provider_id = payload["provider_id"]
+        snapshot = service.get_snapshot()
+        saved = next((item for item in snapshot.providers if item["provider_id"] == provider_id), None)
+        if saved is not None:
+            # 已存秘密只能发到其所属平台的已存地址；编辑地址后必须保存或输入新凭据。
+            if guarded.rstrip("/") != normalize_provider_base_url(saved["base_url"], saved["protocol"]) or not saved["enabled"]:
+                raise CleanroomException(400, "PROVIDER_CONFIG_MISMATCH", "地址或启用状态与已保存配置不一致，未发送已有密钥")
+            token = service.credential(provider_id, expected_version=snapshot.revision)
+    return guarded, protocol, token
+
+
+def _request_listing(payload: Dict[str, Any], endpoint: str):
+    """一次同步目录观察；Gemini分页使用同源URL，不跟随重定向。"""
+    base_url, protocol, token = _probe_payload(payload)
+    httpx = _httpx()
+    url = _models_url(base_url, protocol)
+    started = time.perf_counter()
+    all_models = []
+    seen_pages = set()
+    client_options = {"timeout": PROBE_TIMEOUT_SECONDS, "follow_redirects": False}
+    if is_lan_provider_url(base_url):
+        client_options["trust_env"] = False
+    with httpx.Client(**client_options) as client:
+        next_url = url
+        for page in range(8):
+            try:
+                response = client.get(next_url, headers=_headers(token, protocol))
+            except Exception:
+                _unavailable("PROVIDER_PROBE_FAILED", endpoint, "连接上游模型接口失败，未确认目录或生成能力")
+            try:
+                body = response.json()
+            except Exception:
+                body = None
+            if not 200 <= response.status_code < 300:
+                all_models = []
+                break
+            models = _parse_models(body, token, protocol)
+            if not models:
+                all_models = []
+                break
+            all_models.extend(models)
+            next_page = body.get("nextPageToken") if protocol == "gemini" and isinstance(body, dict) else None
+            if not next_page:
+                break
+            if not isinstance(next_page, str) or len(next_page) > 4096 or next_page in seen_pages or (token and token in next_page) or page == 7:
+                _unavailable("PROVIDER_PROBE_FAILED", endpoint, "上游分页结果异常或超出限制，未返回不完整的模型目录")
+            seen_pages.add(next_page)
+            next_url = url + "?" + urlencode({"pageToken": next_page})
+    latency = int(round((time.perf_counter() - started) * 1000))
+    models = list(dict.fromkeys(all_models))
+    message = ("模型目录已可见；分类为建议，生成权限和接口尚未验证。" if models else
+               "上游模型目录返回HTTP %d；没有可解析模型，未确认配置可用。" % response.status_code)
+    return protocol, response.status_code, models, latency, message
+
+
+def _listing_fields(protocol: str, models: List[str]) -> Dict[str, Any]:
+    return {"protocol": protocol, "all": models, "total": len(models),
+            "image_models": [m for m in models if _classify(m) == "image"],
+            "chat_models": [m for m in models if _classify(m) == "chat"],
+            "video_models": [m for m in models if _classify(m) == "video"],
+            "generation_verified": False, "protocol_verified": False,
+            "classification_source": "model_id_hint"}
 
 
 def fetch_models(payload: Dict[str, Any]) -> Dict[str, Any]:
     """真实拉取上游模型列表；网络失败 503，绝不返回伪造列表。"""
-    base_url, declared, token = _probe_payload(payload)
-    httpx = _httpx()
-    url = _models_url(base_url)
-    try:
-        with httpx.Client(timeout=20.0, follow_redirects=False) as client:
-            response = client.get(url, headers=_headers(token))
-    except Exception:
-        _unavailable("PROVIDER_PROBE_FAILED", "/api/providers/fetch-models",
-                     "连接上游模型接口失败，未返回任何模型列表")
-    if response.status_code >= 400:
-        _unavailable("PROVIDER_PROBE_FAILED", "/api/providers/fetch-models",
-                     "上游模型接口返回错误状态 %d" % response.status_code)
-    try:
-        body = response.json()
-    except Exception:
-        body = None
-    models = _parse_models(body)
+    protocol, status_code, models, latency, message = _request_listing(payload, "/api/providers/fetch-models")
     if not models:
         _unavailable("PROVIDER_PROBE_FAILED", "/api/providers/fetch-models",
-                     "上游未返回可解析的模型列表，未编造任何模型条目")
-    image = [m for m in models if _classify(m) == "image"]
-    chat = [m for m in models if _classify(m) == "chat"]
-    video = [m for m in models if _classify(m) == "video"]
+                     message)
     return {
         "ok": True,
-        "protocol": _detect_protocol(base_url, declared, models, body),
+        **_listing_fields(protocol, models),
         "image_request_mode": str((payload or {}).get("image_request_mode") or ""),
-        "status_code": response.status_code,
-        "all": models,
-        "total": len(models),
-        "image_models": image,
-        "chat_models": chat,
-        "video_models": video,
+        "status_code": status_code,
+        "message": message,
         "model_names": {},
         "data_status": "ok",
-        "data_gaps": [],
+        "data_gaps": ["generation_not_verified"],
     }
 
 
 def test_connection(payload: Dict[str, Any]) -> Dict[str, Any]:
     """真实往返并记录实测延迟；失败 503，绝不伪造连通性或延迟数字。"""
-    base_url, declared, token = _probe_payload(payload)
-    httpx = _httpx()
-    url = _models_url(base_url)
-    started = time.perf_counter()
-    try:
-        with httpx.Client(timeout=20.0, follow_redirects=False) as client:
-            response = client.get(url, headers=_headers(token))
-    except Exception:
+    protocol, status_code, models, latency_ms, message = _request_listing(payload, "/api/providers/test-connection")
+    if not models:
         _unavailable("PROVIDER_PROBE_FAILED", "/api/providers/test-connection",
-                     "连接上游失败，未返回连通性结论或延迟数字")
-    latency_ms = int(round((time.perf_counter() - started) * 1000))
-    try:
-        body = response.json()
-    except Exception:
-        body = None
-    models = _parse_models(body) if response.status_code < 400 else []
-    if response.status_code >= 400:
-        _unavailable("PROVIDER_PROBE_FAILED", "/api/providers/test-connection",
-                     "上游返回错误状态 %d，未返回连通性结论" % response.status_code)
+                     message)
     return {
         "ok": True,
-        "status": response.status_code,
+        **_listing_fields(protocol, models),
+        "status": status_code,
         "latency_ms": latency_ms,
-        "protocol": _detect_protocol(base_url, declared, models, body),
         "image_request_mode": str((payload or {}).get("image_request_mode") or ""),
         "model_count": len(models),
-        "all": models,
-        "image_models": [m for m in models if _classify(m) == "image"],
-        "chat_models": [m for m in models if _classify(m) == "chat"],
-        "video_models": [m for m in models if _classify(m) == "video"],
-        "message": "已与上游完成真实往返，模型数量来自上游响应。",
+        "message": message,
         "data_status": "ok",
-        "data_gaps": [],
+        "data_gaps": ["generation_not_verified"],
     }
 
 
@@ -290,26 +352,11 @@ def _probe_state() -> storage.JsonState:
 
 
 def probe_async(payload: Dict[str, Any]) -> Dict[str, Any]:
-    """真实探测并登记可回读任务；返回稳定 pjob_NNNN 与 poll_hint。"""
-    base_url, declared, token = _probe_payload(payload)
-    httpx = _httpx()
-    url = _models_url(base_url)
-    try:
-        with httpx.Client(timeout=20.0, follow_redirects=False) as client:
-            response = client.get(url, headers=_headers(token))
-    except Exception:
-        _unavailable("PROVIDER_PROBE_FAILED", "/api/providers/probe-async",
-                     "连接上游失败，未返回协议判定结果")
-    try:
-        body = response.json()
-    except Exception:
-        body = None
-    models = _parse_models(body) if response.status_code < 400 else []
-    protocol = _detect_protocol(base_url, declared, models, body)
-    safe_raw = strip_credentials(body)
-    ok = response.status_code < 400
-    message = ("已与上游完成真实往返。" if ok
-               else "上游返回错误状态 %d，未判定协议成功。" % response.status_code)
+    """兼容旧地址的同步目录探测；落盘的是已完成结果，无后台排队或轮询。"""
+    protocol, status_code, models, latency, message = _request_listing(payload, "/api/providers/probe-async")
+    # 兼容raw字段名，但只持久化已解析的真实模型ID；任意上游字段及嵌套秘密不透传。
+    safe_raw = {"data": [{"id": model} for model in models]}
+    ok = bool(models)
 
     def mutate(raw: Dict[str, Any]) -> Tuple[str, Dict[str, Any]]:
         raw["sequence"] = int(raw.get("sequence", 0)) + 1
@@ -319,7 +366,11 @@ def probe_async(payload: Dict[str, Any]) -> Dict[str, Any]:
             "status": "succeeded" if ok else "failed",
             "ok": ok,
             "protocol": protocol,
-            "status_code": response.status_code,
+            "status_code": status_code,
+            "execution_mode": "synchronous",
+            "completed": True,
+            "generation_verified": False,
+            "protocol_verified": False,
             "message": message,
             "raw": safe_raw,
             "created_at": storage.now_iso(),
@@ -335,19 +386,28 @@ def probe_async(payload: Dict[str, Any]) -> Dict[str, Any]:
         "poll_hint": "/api/providers/probe-async/jobs/%s" % job_id,
         "ok": ok,
         "protocol": protocol,
-        "status_code": response.status_code,
+        "status_code": status_code,
+        "execution_mode": "synchronous",
+        "completed": True,
+        "generation_verified": False,
+        "protocol_verified": False,
         "message": message,
         "raw": safe_raw,
         "image_request_mode": str((payload or {}).get("image_request_mode") or ""),
-        "data_status": "ok",
-        "data_gaps": [],
+        "data_status": "ok" if ok else "degraded",
+        "data_gaps": ["generation_not_verified"] if ok else ["model_listing_failed", "generation_not_verified"],
     }
 
 
 def get_probe_job(job_id: str) -> Dict[str, Any]:
-    """读取 probe-async 登记的真实任务；不存在 404，不返回伪造状态。"""
+    """读取同步探测历史；不存在404，不返回伪造状态。"""
     job = _probe_state().read().get("jobs", {}).get(str(job_id))
     if not job:
         raise CleanroomException(404, "PROVIDER_PROBE_JOB_NOT_FOUND", "探测任务不存在")
-    return {"task": dict(job), "job_id": job["job_id"], "status": job["status"],
+    task = dict(job)
+    task.setdefault("execution_mode", "synchronous")
+    task.setdefault("completed", task.get("status") in {"succeeded", "failed"})
+    task.setdefault("generation_verified", False)
+    task.setdefault("protocol_verified", False)
+    return {"task": task, "job_id": task["job_id"], "status": task["status"],
             "data_status": "ok", "data_gaps": []}

@@ -1,0 +1,33 @@
+/* 主设置页仅负责外层导航与配置视窗；不覆盖API内嵌文档的控件样式。 */
+.gw-settings-page > main > div { min-width:0; }
+.gw-settings-page > main > aside nav button { font-size:var(--gw-type-body); min-height:40px; }
+.gw-settings-page > main [data-panel] h2 { font-size:var(--gw-type-section);  font-weight:var(--gw-weight-medium); line-height:var(--gw-leading-headline-sm);}
+@media (max-width:960px) {
+  .gw-settings-page .topbar-master-deck .recessed-deck-slot > #navPillsGroup { max-width:calc(100% - 96px); }
+  .gw-settings-page .topbar-master-deck .recessed-deck-slot > .gw-shell-right { max-width:88px; gap:8px; }
+  .gw-settings-page .gw-shell-right > .gw-shell-fader,
+  .gw-settings-page .gw-shell-right > span,
+  .gw-settings-page .gw-shell-right > .h-4,
+  .gw-settings-page .gw-shell-right > .hw-slide-toggle { display:none; }
+  .gw-settings-page > main { flex-direction:column; overflow:auto; }
+  .gw-settings-page > main > aside { width:100%; height:auto; }
+  .gw-settings-page > main > aside nav { display:flex; flex-wrap:wrap; gap:8px; }
+  .gw-settings-page > main > aside nav button { width:auto; min-height:44px; }
+  .gw-settings-page > main > aside > .mt-auto { display:none; }
+  .gw-settings-page > main > div { flex-shrink:0; height:calc(100dvh - 160px); }
+}
+
+/* 严格设置语义：标题/栏目/控件明确分层，非全后代覆盖。 */
+.gw-settings-page > main [data-panel] h2 { font-size:var(--gw-type-headline-md); line-height:var(--gw-leading-headline-md); font-weight:var(--gw-weight-bold); letter-spacing:0; }
+.gw-settings-page > main [data-panel] h3 { font-size:var(--gw-type-headline-sm); line-height:var(--gw-leading-headline-sm); font-weight:var(--gw-weight-medium); letter-spacing:0; }
+.gw-settings-page > main [data-panel] :is(input:not([type="checkbox"]),select,textarea) { font-size:var(--gw-type-body-md); line-height:var(--gw-leading-body-md); font-weight:var(--gw-weight-regular); min-height:40px; }
+.gw-settings-page > main [data-panel] :is(button:not(.toggle),label) { font-size:var(--gw-type-body-md); line-height:var(--gw-leading-body-md); font-weight:var(--gw-weight-medium); }
+.gw-settings-page > main [data-panel] button:not(.toggle) { min-height:36px; }
+@media (pointer:coarse) { .gw-settings-page > main [data-panel] button { min-height:44px; } }
+
+.gw-settings-page > main > aside nav button { line-height:var(--gw-leading-body-md); font-weight:var(--gw-weight-medium); }
+.gw-settings-page > main [data-panel] .bay-inset input { line-height:var(--gw-leading-body-md) !important; }
+
+.gw-settings-page [data-panel="prompt-sources"] .prompt-source-title strong { font-size:var(--gw-type-body-md); line-height:var(--gw-leading-body-md); font-weight:var(--gw-weight-medium); }
+
+.gw-settings-page > main [data-panel] p.gw-type-body-sm { font-weight:var(--gw-weight-regular); line-height:var(--gw-leading-body-sm); }

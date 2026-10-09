@@ -5,12 +5,13 @@ meta:
   cleanroom_notice: "仅记录 method/path/body/status/schema/错误/验收语义；不含旧仓源码结构或实现细节。"
 
 service: asset_library
-version: p10a-frozen-1
+version: p10a-workflow-2
 
 # 冻结说明（Phase 10A，2026-09-22）
 # 本契约是「素材库」阶段的最小实现授权范围，仅覆盖下列 3 个端点。
 # 其余 /api/asset-library/* 端点（items/library 明细/分类明细/workflows/upload）仍属
 # KNOWN_UNIMPLEMENTED，未获契约授权，不得顺带实现。
+# 2026-10-09 用户授权剩余工作流迁移：分类增补 video/document，末尾记录产物桥接相关的既有接口接线。
 decisions:
   stable_ids:
     decision: "对外字段一律使用稳定 ID：library_id / category_id / asset_id"
@@ -56,7 +57,7 @@ interfaces:
                 - category_id: string
                   library_id: string
                   name: string
-                  type: "enum(image|workflow)"
+                  type: "enum(image|workflow|video|document)"
                   version: integer
                   created_at: "string(datetime)"
                   updated_at: "string(datetime)"
@@ -110,7 +111,7 @@ interfaces:
     body:
       library_id: string
       name: string
-      type: "enum(image|workflow)"
+      type: "enum(image|workflow|video|document)"
       expected_version: "integer | optional（缺省时不校验父库版本）"
     status:
       - 201
@@ -125,7 +126,7 @@ interfaces:
           category_id: string
           library_id: string
           name: string
-          type: "enum(image|workflow)"
+          type: "enum(image|workflow|video|document)"
           version: integer
           created_at: "string(datetime)"
           updated_at: "string(datetime)"
@@ -140,3 +141,23 @@ interfaces:
       404: "LIBRARY_NOT_FOUND 父库不存在"
       409: "DUPLICATE_CATEGORY_NAME 或 VERSION_CONFLICT"
     acceptance: "创建成功后返回稳定 category_id，且父库 version 递增；父库不存在或 CAS 不一致必须失败关闭。"
+
+workflow_integration:
+  source: "用户已授权完成工作流剩余迁移与已知问题；不扩展旧素材库未实现端点"
+  ownership: "工作流和产物保留主体归属；跨主体的元数据、内容和批量写入均失败关闭"
+  registration: "双存储是持久回执补偿，不是原子事务；生成不会因桥接失败而重新提交"
+  endpoints:
+    - name: native_workflow_save
+      method: POST
+      path: /api/god_workflow/comfy-bridge/sync-saved
+      body: "workflow_id, workflow, expected_version（必填正整数）"
+      status: [200, 400, 401, 403, 404, 409]
+      response: "synced, workflow_id, version；版本冲突保持原文档和宿主草稿"
+      acceptance: "认证主体拥有来源；同源工作台校验宿主窗口/origin/nonce；每次回存按打开版本 CAS"
+    - name: collect_workflow_outputs
+      method: POST
+      path: /api/god_workflow/tasks/{task_id}/collect
+      body: null
+      status: [200, 400, 401, 403, 404, 409, 502, 503, 504]
+      response: "job_id, execution_status, collection_status, outputs"
+      acceptance: "仅重查既有真实远端任务并回收产物，不再次调用生成；已登记字节不产生重复 asset_id"

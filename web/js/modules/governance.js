@@ -132,13 +132,13 @@
       assetTbody.innerHTML = assets.map(item => `
         <tr>
           <td>
-            <div class="mono" style="font-size:12px;">${esc(item.asset_id || item.id)}</div>
+            <div class="mono" style="font-size:var(--gw-type-body-sm);">${esc(item.asset_id || item.id)}</div>
             <span class="gov-badge asset">${esc(tr('governance.assetType'))}</span>
           </td>
           <td><strong>${esc(item.original_filename || item.asset_id || tr('governance.unnamedAsset'))}</strong></td>
           <td class="mono muted">${esc(item.storage_root_id || '—')}</td>
           <td>${dateTime(item.recycled_at || item.created_at)}</td>
-          <td class="mono muted" style="font-size:11px;">${esc((item.sha256 || '').slice(0, 12))}…</td>
+          <td class="mono muted" style="font-size:var(--gw-type-body-sm);">${esc((item.sha256 || '').slice(0, 12))}…</td>
           <td>
             <button class="btn small primary btn-restore-asset" data-asset-id="${esc(item.asset_id)}" data-entry-id="${esc(item.id)}" type="button">${esc(tr('governance.restore'))}</button>
           </td>
@@ -154,7 +154,7 @@
       projectTbody.innerHTML = projects.map(item => `
         <tr>
           <td>
-            <div class="mono" style="font-size:12px;">${esc(item.id)}</div>
+            <div class="mono" style="font-size:var(--gw-type-body-sm);">${esc(item.id)}</div>
             <span class="gov-badge project">${esc(tr('governance.projectType'))}</span>
           </td>
           <td><strong>${esc(item.name || tr('governance.unnamedProject'))}</strong></td>
@@ -175,7 +175,7 @@
       canvasTbody.innerHTML = canvases.map(item => `
         <tr>
           <td>
-            <div class="mono" style="font-size:12px;">${esc(item.id)}</div>
+            <div class="mono" style="font-size:var(--gw-type-body-sm);">${esc(item.id)}</div>
             <span class="gov-badge canvas">${esc(tr('governance.canvasType'))}</span>
           </td>
           <td><strong>${esc(item.title || item.id || tr('governance.unnamedCanvas'))}</strong></td>
@@ -285,7 +285,7 @@
       previewBox.innerHTML = `
         <div style="font-weight:600;margin-bottom:6px;">📊 ${esc(tr('governance.cascadeImpactSummary'))}</div>
         <div>${esc(impact.summary || tr('governance.noSpecialCascadeImpact'))}</div>
-        <div class="mono muted" style="font-size:12px;margin-top:6px;">
+        <div class="mono muted" style="font-size:var(--gw-type-body-sm);margin-top:6px;">
           ${Object.entries(impact).filter(([key]) => !['summary', 'ok'].includes(key)).map(([key, value]) => `${esc(key)}: ${esc(value)}`).join(' | ')}
         </div>
       `;
@@ -320,8 +320,8 @@
       });
       resultBox.innerHTML = `
         <div style="font-weight:600;color:var(--color-primary,#4f7cff);margin-bottom:6px;">✅ ${esc(tr('governance.operationSucceeded'))}</div>
-        <div class="mono" style="font-size:12px;">${esc(trf('governance.operationResult', { action: res.action, entityType: targetTypeLabel(res.target_type), entityId: res.target_id }))}</div>
-        <pre class="mono" style="margin-top:8px;font-size:12px;background:rgba(0,0,0,0.3);padding:8px;border-radius:4px;">${esc(JSON.stringify(res.result, null, 2))}</pre>
+        <div class="mono" style="font-size:var(--gw-type-body-sm);">${esc(trf('governance.operationResult', { action: res.action, entityType: targetTypeLabel(res.target_type), entityId: res.target_id }))}</div>
+        <pre class="mono" style="margin-top:8px;font-size:var(--gw-type-body-sm);background:rgba(0,0,0,0.3);padding:8px;border-radius:4px;">${esc(JSON.stringify(res.result, null, 2))}</pre>
       `;
       showToast(tr('governance.operationAudited'));
       loadOverview();
@@ -379,10 +379,10 @@
       } else {
         body.innerHTML = `
           <p>${esc(trf('governance.expiredCanvasCount', { count: expired.length }))}</p>
-          <ul style="margin:8px 0 16px 20px;font-size:13px;">
+          <ul style="margin:8px 0 16px 20px;font-size:var(--gw-type-body-md);">
             ${expired.map(canvas => `<li><span class="mono">${esc(canvas.id)}</span> - ${esc(canvas.title || tr('governance.untitled'))} (${esc(trf('governance.deletedOn', { date: dateTime(canvas.deleted_at) }))})</li>`).join('')}
           </ul>
-          <label style="display:flex;align-items:center;gap:8px;font-weight:600;font-size:13px;cursor:pointer;">
+          <label style="display:flex;align-items:center;gap:8px;font-weight:600;font-size:var(--gw-type-body-md);cursor:pointer;">
             <input type="checkbox" id="chkConfirmPurge"> ${esc(tr('governance.purgeAcknowledgement'))}
           </label>
         `;

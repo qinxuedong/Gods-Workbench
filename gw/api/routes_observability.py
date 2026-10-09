@@ -155,9 +155,9 @@ def get_observability_overview(
     x_user_role: str = Header("editor", alias="X-User-Role", description="用户角色权限"),
 ):
     """项目/任务计数来自真实进程内服务；未接入指标（p95 延迟）为 null 并登记在 data_gaps。"""
-    require_authenticated(authorization, x_user_role)
+    auth = require_authenticated(authorization, x_user_role)
     return default_observability_service.overview(
-        _filters(request, range=range, limit=limit)
+        _filters(request, range=range, limit=limit), auth_context=auth
     )
 
 
@@ -257,7 +257,7 @@ def get_observability_tasks(
     x_user_role: str = Header("editor", alias="X-User-Role", description="用户角色权限"),
 ):
     """返回真实内存任务投影；无法求值的过滤条件返回空 + degraded，不静默忽略。"""
-    require_authenticated(authorization, x_user_role)
+    auth = require_authenticated(authorization, x_user_role)
     return default_observability_service.tasks(
         _filters(
             request,
@@ -273,7 +273,7 @@ def get_observability_tasks(
             cursor=cursor,
             start_ms=start_ms,
             end_ms=end_ms,
-        )
+        ), auth_context=auth
     )
 
 
@@ -289,8 +289,8 @@ def get_observability_health(
     x_user_role: str = Header("editor", alias="X-User-Role", description="用户角色权限"),
 ):
     """如实反映本进程组件可用性；不可求值组件标 not_integrated，绝不无条件返回 ok。"""
-    require_authenticated(authorization, x_user_role)
-    return default_observability_service.health(_filters(request))
+    auth = require_authenticated(authorization, x_user_role)
+    return default_observability_service.health(_filters(request), auth_context=auth)
 
 
 @router.get(

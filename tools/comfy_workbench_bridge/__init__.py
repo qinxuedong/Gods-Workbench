@@ -1,0 +1,5 @@
+"""神工坊可选 ComfyUI 浏览器桥，不注册生成节点或调用外部服务。"""
+NODE_CLASS_MAPPINGS = {}
+NODE_DISPLAY_NAME_MAPPINGS = {}
+WEB_DIRECTORY = './js'
+__all__ = ['NODE_CLASS_MAPPINGS', 'NODE_DISPLAY_NAME_MAPPINGS', 'WEB_DIRECTORY']

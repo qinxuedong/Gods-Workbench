@@ -365,6 +365,21 @@ export function createAssetManagerApi(http) {
                 credentials: 'same-origin',
             });
         },
+        getWorkflowDocument(workflowId, init = {}) {
+            return transport.request(`/api/god_workflow/item/${encodeURIComponent(workflowId)}`, {...init, credentials:'same-origin'});
+        },
+        exportWorkflowDocument(workflowId, init = {}) {
+            return transport.request(`/api/god_workflow/export/${encodeURIComponent(workflowId)}?format=litegraph`, {...init, credentials:'same-origin'});
+        },
+        getWorkflowFile(url, init = {}) {
+            return transport.request(url, {...init, credentials:'same-origin'});
+        },
+        renameWorkflowDocument(workflowId, payload, init = {}) {
+            return transport.request(`/api/god_workflow/item/${encodeURIComponent(workflowId)}/name`, {...jsonInit(payload, {...init, method:'PUT'}), credentials:'same-origin'});
+        },
+        deleteWorkflowDocument(workflowId, expectedVersion, init = {}) {
+            return transport.request(`/api/god_workflow/item/${encodeURIComponent(workflowId)}`, {...jsonInit({expected_version:expectedVersion}, {...init, method:'DELETE'}), credentials:'same-origin'});
+        },
         createAssetLibrary(payload, init = {}) {
             return transport.request('/api/asset-library/libraries', {
                 ...jsonInit(payload, {...init, method: 'POST'}),

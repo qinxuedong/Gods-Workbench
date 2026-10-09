@@ -74,11 +74,11 @@
       '<div class="flex items-center justify-between">' +
         '<div class="flex items-center space-x-1.5 min-w-0">' +
           '<span class="w-1.5 h-1.5 rounded-full ' + dot + ' shrink-0"></span>' +
-          '<span class="text-[11px] font-bold text-slate-200 truncate font-mono">' + esc((task && task.job_id) || '未知 job_id') + '</span>' +
+          '<span class="gw-type-body-md font-bold text-slate-200 truncate font-mono">' + esc((task && task.job_id) || '未知 job_id') + '</span>' +
         '</div>' +
-        '<span class="text-[8px] font-mono shrink-0 font-semibold text-slate-300">' + esc(label) + '</span>' +
+        '<span class="gw-type-body-sm font-mono shrink-0 font-semibold text-slate-300">' + esc(label) + '</span>' +
       '</div>' +
-      '<div class="flex items-center justify-between text-[7.5px] font-mono text-slate-500">' +
+      '<div class="flex items-center justify-between gw-type-body-sm font-mono text-slate-500">' +
         '<span class="truncate">' + esc((task && task.poll_hint) || '无轮询地址') + '</span>' +
         '<span class="shrink-0">' + (task && task.has_result ? '已产出结果' : '暂无结果') + '</span>' +
       '</div>' +
@@ -86,9 +86,9 @@
   }
 
   function degradationHtml(failure) {
-    return '<div class="bay-inset p-3 rounded-xl border border-white/10 text-center text-[10px] font-mono text-slate-400" role="status" data-gw-degradation="' + esc(failure.kind) + '">' +
+    return '<div class="bay-inset p-3 rounded-xl border border-white/10 text-center gw-type-body-sm font-mono text-slate-400" role="status" data-gw-degradation="' + esc(failure.kind) + '">' +
       '<span class="block">' + esc(failure.message) + '</span>' +
-      '<span class="block mt-1 text-[9px] text-slate-500">未取到真实作业队列；本页不展示任何伪造任务。</span>' +
+      '<span class="block mt-1 gw-type-body-sm text-slate-500">未取到真实作业队列；本页不展示任何伪造任务。</span>' +
     '</div>';
   }
 
@@ -102,13 +102,13 @@
     if (badge) {
       if (state.degradation) {
         badge.textContent = '队列读取失败';
-        badge.className = 'text-[8.5px] font-mono font-bold text-amber-300';
+        badge.className = 'gw-type-body-sm font-mono font-bold text-amber-300';
         badge.setAttribute('data-gw-degradation', state.degradation.kind);
         badge.setAttribute('title', state.degradation.message);
       } else if (state.loaded) {
         const activeCount = state.items.filter(t => ACTIVE_STATES.indexOf(String((t && t.status) || '')) !== -1).length;
         badge.textContent = '队列 ' + activeCount + ' / 共 ' + state.total;
-        badge.className = 'text-[8.5px] font-mono font-bold ' + (activeCount ? 'text-cyan-300' : 'text-slate-400');
+        badge.className = 'gw-type-body-sm font-mono font-bold ' + (activeCount ? 'text-cyan-300' : 'text-slate-400');
         badge.removeAttribute('data-gw-degradation');
         badge.setAttribute('title', '真实作业队列：进行中 ' + activeCount + '，总计 ' + state.total);
       }
@@ -121,14 +121,14 @@
       if (state.degradation) {
         const kind = state.degradation.kind;
         busNode.textContent = '渲染总线 · ' + (kind === 'service_unavailable' ? '暂不可用' : '未接入');
-        busNode.className = 'text-[9px] font-bold text-amber-300';
+        busNode.className = 'gw-type-body-sm font-bold text-amber-300';
         busNode.setAttribute('data-gw-degradation', kind);
         busNode.setAttribute('title', state.degradation.message);
         if (led) led.className = 'w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse';
       } else if (state.loaded) {
         const active = state.items.filter(t => ACTIVE_STATES.indexOf(String((t && t.status) || '')) !== -1).length;
         busNode.textContent = '渲染总线 · ' + active + ' 进行中 / 共 ' + state.total;
-        busNode.className = 'text-[9px] font-bold ' + (active ? 'text-cyan-300' : 'text-slate-300');
+        busNode.className = 'gw-type-body-sm font-bold ' + (active ? 'text-cyan-300' : 'text-slate-300');
         busNode.removeAttribute('data-gw-degradation');
         busNode.setAttribute('title', '真实作业队列：进行中 ' + active + '，总计 ' + state.total);
         if (led) led.className = 'w-1.5 h-1.5 rounded-full ' + (active ? 'bg-cyan-400 shadow-[0_0_6px_#38bdf8]' : 'bg-slate-500');
@@ -139,19 +139,28 @@
     let body;
     if (state.degradation) body = degradationHtml(state.degradation);
     else if (state.items.length) body = state.items.map(cardHtml).join('');
-    else body = '<div class="bay-inset p-3 rounded-xl border border-white/10 text-center text-[10px] font-mono text-slate-400" role="status"><span class="block">当前没有真实作业。</span></div>';
+    else body = '<div class="bay-inset p-3 rounded-xl border border-white/10 text-center gw-type-body-sm font-mono text-slate-400" role="status"><span class="block">当前没有真实作业。</span></div>';
     targets.forEach(node => { node.innerHTML = body; });
     if (window.lucide) window.lucide.createIcons();
   }
 
+  let reloadSequence = 0;
   async function reload() {
+    const sequence = ++reloadSequence;
+    if (!window.GWAuthGate?.isAuthenticated()) {
+      state.items = []; state.total = 0;
+      state.degradation = {kind:'unauthorized', message:'请先登录后再读取任务队列'}; render(); return;
+    }
+    const authRevision = window.GWAuthGate?.revision;
     try {
       const response = await fetch(ENDPOINT + '?range=all&limit=20', {
-        credential: 'same-origin',
+        credentials: 'same-origin',
         cache: 'no-store',
         signal: AbortSignal.timeout(15000)
       });
+      if (sequence !== reloadSequence || authRevision !== window.GWAuthGate?.revision || !window.GWAuthGate?.isAuthenticated()) return;
       if (!response.ok) {
+        if (response.status === 401) window.GWAuthGate?.invalidate(401, authRevision);
         const body = await response.json().catch(() => null);
         const kind = kindFor(response.status, body);
         state.items = [];
@@ -159,6 +168,7 @@
         state.degradation = { kind: kind, message: messageFor(kind, response.status) };
       } else {
         const data = await response.json();
+        if (sequence !== reloadSequence || authRevision !== window.GWAuthGate?.revision || !window.GWAuthGate?.isAuthenticated()) return;
         if (Array.isArray(data && data.items)) {
           state.items = data.items;
           state.total = Number.isFinite(Number(data.total)) ? Number(data.total) : data.items.length;
@@ -170,6 +180,7 @@
         }
       }
     } catch (_) {
+      if (sequence !== reloadSequence || authRevision !== window.GWAuthGate?.revision) return;
       state.items = [];
       state.total = 0;
       state.degradation = { kind: 'service_unavailable', message: messageFor('service_unavailable', 0) };
@@ -178,6 +189,7 @@
     render();
   }
 
+  window.addEventListener('gw-auth-state', reload);
   function init() {
     render();
     if (document.getElementById('workbenchActiveTasksContainer')

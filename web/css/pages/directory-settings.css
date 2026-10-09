@@ -75,8 +75,8 @@ html.directory-settings-page { height: 100%; background: #090a0d; }
 
 /* 分区标题 */
 .directory-page .asset-pref-title {
-
-
+  
+  
   margin-bottom: 9px;
   color: #eddab3;
   display: flex;
@@ -89,8 +89,8 @@ html.directory-settings-page { height: 100%; background: #090a0d; }
   height: 14px;
 }
 .directory-page .asset-pref-title small {
-
-
+  
+  
   color: var(--muted);
   font-family: var(--gw-font-mono);
  font-size: var(--gw-type-body-sm); line-height: var(--gw-leading-body-sm); font-weight:var(--gw-weight-regular); letter-spacing: 0; text-transform: none;}
@@ -109,8 +109,8 @@ html.directory-settings-page { height: 100%; background: #090a0d; }
 }
 .directory-page .storage-dir-row > span {
   color: #cbd5e1;
-
-
+  
+  
  font-size: var(--gw-type-body-md); line-height: var(--gw-leading-body-md); font-weight: var(--gw-weight-medium); letter-spacing: 0; text-transform: none;}
 
 /* 输入框组合条 */
@@ -167,9 +167,9 @@ html.directory-settings-page { height: 100%; background: #090a0d; }
   border-radius: 8px;
   color: #f1f5f9;
   background: #080a0e;
-
+  
   font-family: var(--gw-font-mono);
-
+  
   transition: border-color 0.15s ease, box-shadow 0.15s ease;
  font-size: var(--gw-type-body-md); line-height: var(--gw-leading-body-md); font-weight: var(--gw-weight-regular); letter-spacing: 0; text-transform: none; min-height:40px;}
 .directory-page input[readonly] {
@@ -262,8 +262,8 @@ html.directory-settings-page { height: 100%; background: #090a0d; }
   border-radius: 8px;
   padding: 0 12px;
   border: 1px solid rgba(223, 195, 132, 0.3);
-
-
+  
+  
   background: linear-gradient(180deg, #1d212b 0%, #111319 100%);
   color: #eddab3;
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.1), 0 2px 5px rgba(0, 0, 0, 0.6);
@@ -287,8 +287,8 @@ html.directory-settings-page { height: 100%; background: #090a0d; }
   color: var(--strong-text);
   border: 1px solid rgba(255, 255, 255, 0.85);
   box-shadow: 0 4px 14px rgba(223, 195, 132, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.7);
-
-
+  
+  
  font-size: var(--gw-type-body-md); line-height: var(--gw-leading-body-md); font-weight: var(--gw-weight-medium); letter-spacing: 0; text-transform: none; min-height:36px;}
 .directory-page .asset-btn.primary:hover {
   filter: brightness(1.08);
@@ -391,8 +391,8 @@ html.directory-settings-page { height: 100%; background: #090a0d; }
   flex-direction: column;
 }
 .directory-mount-title {
-
-
+  
+  
   color: #fae2c8;
   display: flex;
   align-items: center;
@@ -405,10 +405,10 @@ html.directory-settings-page { height: 100%; background: #090a0d; }
   flex-shrink: 0;
 }
 .directory-mount-subtitle {
-
+  
   color: #8892a4;
   margin-top: 3px;
-
+  
  font-size: var(--gw-type-body-sm); line-height: var(--gw-leading-body-sm); font-weight:var(--gw-weight-regular); letter-spacing: 0; text-transform: none;}
 .directory-mount-close-btn {
   background: none;
@@ -459,8 +459,8 @@ html.directory-settings-page { height: 100%; background: #090a0d; }
   gap: 5px;
 }
 .directory-mount-label {
-
-
+  
+  
   color: #cbd5e1;
  font-size: var(--gw-type-body-md); line-height: var(--gw-leading-body-md); font-weight: var(--gw-weight-medium); letter-spacing: 0; text-transform: none;}
 .directory-mount-input {
@@ -472,7 +472,7 @@ html.directory-settings-page { height: 100%; background: #090a0d; }
   border-radius: 8px;
   padding: 0 10px;
   color: #f8fafc;
-
+  
   font-family: var(--gw-font-mono);
   transition: border-color 0.15s ease, box-shadow 0.15s ease;
  font-size: var(--gw-type-body-md); line-height: var(--gw-leading-body-md); font-weight: var(--gw-weight-regular); letter-spacing: 0; text-transform: none; min-height:40px;}
@@ -497,8 +497,8 @@ html.directory-settings-page { height: 100%; background: #090a0d; }
   min-height:36px; height:auto;
   border-radius: 8px;
   padding: 0 14px;
-
-
+  
+  
  font-size: var(--gw-type-body-md); line-height: var(--gw-leading-body-md); font-weight: var(--gw-weight-medium); letter-spacing: 0; text-transform: none; min-height:36px;}
 .directory-mount-actions .asset-btn.primary {
   background: linear-gradient(180deg, #fae2c8 0%, #dfc384 50%, #b8823f 100%);

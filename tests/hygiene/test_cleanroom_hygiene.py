@@ -286,7 +286,7 @@ def test_static_layer_has_no_legacy_integration_markers(repo_root: Path):
 # 登记只保存当前新仓的分类、准入依据和规范化哈希；不保存旧仓源码、提示词正文、
 # 凭据或完整历史授权账本。历史材料继续留在洁净源仓，不因测试需要复制进新仓。
 ADMISSION_METADATA_PATH = "tests/hygiene/fixtures/cleanroom_admission_metadata.json"
-ADMISSION_METADATA_SHA256 = "0e2c389b37116732c8e0de229847105ab87cc6af5ebc451aabdce3bcec307b0b"
+ADMISSION_METADATA_SHA256 = "f4a117cc5d14f1165b3515b126a4050aa5bed9936f7bd1b2138fbb922596207f"
 QUARANTINED_PROMPT_ORIGINAL_PATH = "web/system-prompts/infinite-canvas-prompt-templates.md"
 QUARANTINED_PROMPT_URL = "/static/system-prompts/infinite-canvas-prompt-templates.md"
 
@@ -570,6 +570,9 @@ _HOMOGLYPH_TEXT_SUFFIXES = {
 _HOMOGLYPH_EXCLUDED_PREFIXES = (
     "web/vendor/",
     "web/prompt-registry/sources/",
+    # 本地任务证据目录内的准入语料镜像（与 web/prompt-registry/sources/ 同源，永不提交）。
+    ".local/agent_tasks/active/typography-remediation-20261009/evidence/",
+    ".local/agent_tasks/active/workflow-checkpoint-commit-20261010/",
 )
 
 
