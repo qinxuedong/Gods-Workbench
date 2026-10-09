@@ -49,7 +49,7 @@
     backdrop-filter: blur(8px);
     border: 1px solid var(--sf-line);
     border-radius: var(--sf-radius-panel);
-    font-family: var(--sf-font-ui);
+    font-family: var(--gw-font-body);
 }
 
 .gw-coverflow-header,
@@ -98,9 +98,9 @@
     min-width: 0;
     overflow: hidden;
     color: var(--sf-text);
-    font-size: 12px;
-    line-height: 1.2;
-    font-weight: 750;
+    font-size: var(--gw-type-body-sm);
+    line-height:var(--gw-leading-body-sm);
+    font-weight:var(--gw-weight-regular);
     letter-spacing: 0;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -109,7 +109,7 @@
 .gw-coverflow-count {
     flex: 0 0 auto;
     color: var(--sf-muted);
-    font: 11px/1 var(--sf-font-mono);
+    font: var(--gw-type-label-md)/1 var(--gw-font-mono);
 }
 
 .gw-coverflow-control {
@@ -274,7 +274,7 @@
     content: '图片不可用';
     background: var(--sf-raised);
     color: var(--sf-muted);
-    font-size: 12px;
+    font-size: var(--gw-type-body-sm);
 }
 
 .gw-coverflow-empty {
@@ -282,8 +282,8 @@
     justify-self: center;
     margin: 0;
     color: var(--sf-muted);
-    font-size: 13px;
-}
+    font-size: var(--gw-type-body-sm);
+ font-weight:var(--gw-weight-regular); line-height:var(--gw-leading-body-sm);}
 
 .asset-image-editor-shell.gw-coverflow-embedded-host {
     grid-template-rows: 62px auto minmax(0, 1fr) 300px 48px !important;

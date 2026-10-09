@@ -65,18 +65,18 @@ body.gw-signal.gw-page--asset-manager #assetBoardTabs {
 }
 body.gw-signal.gw-page--asset-manager #assetBoardTabs .asset-board-list { gap: 3px; flex-basis: 700px; }
 body.gw-signal.gw-page--asset-manager #assetBoardTabs button {
-    height: 27px !important;
-    min-height: 27px !important;
+
+
     padding: 0 7px !important;
     gap: 5px;
-    font-size: 10px !important;
-    letter-spacing: 0;
+
+
     border: 1px solid transparent !important;
     border-radius: 4px !important;
     background: transparent !important;
     color: var(--vault-muted) !important;
     box-shadow: none !important;
-}
+ font-family:var(--gw-font-body) !important; font-size:var(--gw-type-body-md) !important; line-height:var(--gw-leading-body-md) !important; font-weight:var(--gw-weight-medium) !important; letter-spacing:0 !important; min-height:36px !important; height:auto !important; max-height:none !important;}
 body.gw-signal.gw-page--asset-manager #assetBoardTabs svg { width: 13px; height: 13px; }
 body.gw-signal.gw-page--asset-manager #assetBoardTabs .asset-board-lock { display: none; }
 body.gw-signal.gw-page--asset-manager #assetBoardTabs .asset-board-tab.active {
@@ -91,7 +91,7 @@ body.gw-signal.gw-page--asset-manager #assetBoardTabs .asset-board-menu-actions 
     border-color: var(--vault-edge) !important;
     box-shadow: inset 0 1px rgb(255 255 255 / .08) !important;
 }
-body.gw-signal.gw-page--asset-manager #assetStatus { min-width: 0; height: 22px; padding: 0 7px; font-size: 9px; border-radius: 4px; }
+body.gw-signal.gw-page--asset-manager #assetStatus { min-width: 0; height: 22px; padding: 0 7px;  border-radius: 4px;  font-family:var(--gw-font-body); font-size:var(--gw-type-body-sm); line-height:var(--gw-leading-body-sm); font-weight:var(--gw-weight-medium); letter-spacing:0;}
 body.gw-signal.gw-page--asset-manager #assetManagerRoot {
     gap: 0 !important;
     border: 0 !important;
@@ -117,15 +117,15 @@ body.gw-signal.gw-page--asset-manager .registry-nav {
 }
 body.gw-signal.gw-page--asset-manager .registry-nav .panel-head { margin: 8px; padding: 8px; min-height: 36px; border: 1px solid var(--vault-edge); border-radius: 6px; background: var(--vault-top); }
 body.gw-signal.gw-page--asset-manager .registry-nav .panel-title { gap: 3px; }
-body.gw-signal.gw-page--asset-manager .registry-nav .panel-title strong { color: var(--vault-accent) !important; font-size: 12px; }
-body.gw-signal.gw-page--asset-manager .registry-nav .panel-title span { font-size: 9px; }
+body.gw-signal.gw-page--asset-manager .registry-nav .panel-title strong { color: var(--vault-accent) !important;   font-family:var(--gw-font-body) !important; font-size:var(--gw-type-headline-sm) !important; line-height:var(--gw-leading-headline-sm) !important; font-weight:var(--gw-weight-medium) !important; letter-spacing:0 !important;}
+body.gw-signal.gw-page--asset-manager .registry-nav .panel-title span {   font-family:var(--gw-font-body); font-size:var(--gw-type-body-sm); line-height:var(--gw-leading-body-sm); font-weight:var(--gw-weight-medium); letter-spacing:0;}
 body.gw-signal.gw-page--asset-manager .registry-nav .registry-facets { min-height: 0; padding: 4px 10px 12px; gap: 12px; }
 body.gw-signal.gw-page--asset-manager .registry-nav .registry-facet-section { border-bottom: 1px solid var(--vault-line); padding-bottom: 6px; }
 body.gw-signal.gw-page--asset-manager .registry-nav .registry-facet-title { background: transparent !important; padding: 0 !important; min-height: 24px !important; }
-body.gw-signal.gw-page--asset-manager .registry-nav .registry-facet-title strong { font-size: 10px !important; color: var(--vault-muted) !important; letter-spacing: 0; }
-body.gw-signal.gw-page--asset-manager .registry-nav .registry-facet-basic { min-height: 28px !important; font-size: 11px; font-weight: 400; }
+body.gw-signal.gw-page--asset-manager .registry-nav .registry-facet-title strong {  color: var(--vault-muted) !important;   font-family:var(--gw-font-body) !important; font-size:var(--gw-type-body-sm) !important; line-height:var(--gw-leading-body-sm) !important; font-weight:var(--gw-weight-medium) !important; letter-spacing:0 !important;}
+body.gw-signal.gw-page--asset-manager .registry-nav .registry-facet-basic { min-height: 36px !important;    font-family:var(--gw-font-body) !important; font-size:var(--gw-type-body-md) !important; line-height:var(--gw-leading-body-md) !important; font-weight:var(--gw-weight-medium) !important; letter-spacing:0 !important;}
 body.gw-signal.gw-page--asset-manager .registry-nav .registry-facet-basic span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-body.gw-signal.gw-page--asset-manager .registry-nav .registry-facet-basic em { flex: 0 0 auto; font: 9px Consolas,monospace; }
+body.gw-signal.gw-page--asset-manager .registry-nav .registry-facet-basic em { flex: 0 0 auto; font: var(--gw-type-label-md) var(--gw-font-mono); }
 body.gw-signal.gw-page--asset-manager .registry-nav .registry-facet-basic:is(.active,:hover) { background: var(--vault-top) !important; border-color: var(--vault-edge) !important; color: var(--vault-accent) !important; }
 /* On narrow embedded pages the same live filter controls become a popover. */
 html.vault-shell-embedded body.gw-signal.gw-page--asset-manager #registryFacetPopover[popover] {
@@ -167,10 +167,10 @@ html body.gw-signal.gw-page--asset-manager .registry-stat-card {
 }
 html body.gw-signal.gw-page--asset-manager .registry-stat-card:is(.active,:hover) { border-color: var(--vault-accent) !important; }
 body.gw-signal.gw-page--asset-manager .registry-stat-copy { display: contents; }
-body.gw-signal.gw-page--asset-manager .registry-stat-card small { grid-area: 1 / 1 / 2 / 3; font-size: 10px; line-height: 14px; font-weight: 400; white-space: nowrap; }
-body.gw-signal.gw-page--asset-manager .registry-stat-card strong { grid-area: 2 / 2 / 3 / 4; font: 700 17px/25px Consolas,monospace; letter-spacing: 0; margin: 0; }
-body.gw-signal.gw-page--asset-manager .registry-stat-card.primary strong { color: var(--vault-bright) !important; font-size: 22px; }
-body.gw-signal.gw-page--asset-manager .registry-stat-card em { display: block; grid-area: 1 / 3; font: 700 9px/14px Consolas,monospace; color: var(--vault-meter) !important; white-space: nowrap; }
+body.gw-signal.gw-page--asset-manager .registry-stat-card small { grid-area: 1 / 1 / 2 / 3;    white-space: nowrap;  font-family:var(--gw-font-body); font-size:var(--gw-type-body-sm); line-height:var(--gw-leading-body-sm); font-weight:var(--gw-weight-regular); letter-spacing:0;}
+body.gw-signal.gw-page--asset-manager .registry-stat-card strong { grid-area: 2 / 2 / 3 / 4; font: 700 var(--gw-type-body-lg)/25px var(--gw-font-mono); letter-spacing: 0; margin: 0; }
+body.gw-signal.gw-page--asset-manager .registry-stat-card.primary strong { color: var(--vault-bright) !important;   font-family:var(--gw-font-body) !important; font-size:var(--gw-type-body-sm) !important; line-height:var(--gw-leading-body-sm) !important; font-weight:var(--gw-weight-medium) !important; letter-spacing:0 !important;}
+body.gw-signal.gw-page--asset-manager .registry-stat-card em { display: block; grid-area: 1 / 3; font: 700 var(--gw-type-label-md)/14px var(--gw-font-mono); color: var(--vault-meter) !important; white-space: nowrap; }
 body.gw-signal.gw-page--asset-manager .registry-stat-card.primary em { padding: 0 3px; background: color-mix(in srgb,var(--vault-accent) 12%,transparent); opacity: 1; border-radius: 3px; }
 body.gw-signal.gw-page--asset-manager .registry-stat-icon { grid-area: 2 / 1; width: 16px; height: 25px; background: transparent !important; color: var(--vault-meter) !important; }
 body.gw-signal.gw-page--asset-manager .registry-stat-icon svg { width: 15px; height: 15px; }
@@ -195,14 +195,14 @@ body.gw-signal.gw-page--asset-manager .registry-toolbar {
     border-bottom: 1px solid var(--vault-line);
 }
 body.gw-signal.gw-page--asset-manager .registry-toolbar .content-heading { display: flex; flex: 0 1 auto; flex-direction: row; align-items: center; gap: 7px; padding: 0; }
-body.gw-signal.gw-page--asset-manager .registry-toolbar .content-heading strong { font-size: 12px; white-space: nowrap; }
-body.gw-signal.gw-page--asset-manager .registry-toolbar .content-heading > span { font-size: 9px; line-height: 16px; }
-body.gw-signal.gw-page--asset-manager .registry-toolbar-controls { gap: 6px; flex: 1 1 600px; justify-content: flex-start; }
-body.gw-signal.gw-page--asset-manager .registry-toolbar .asset-search-wrap { order: -1; flex: 1 1 180px; min-width: 120px; height: 28px !important; padding: 0 8px; box-shadow: inset 0 2px 4px rgb(0 0 0 / .4); }
-body.gw-signal.gw-page--asset-manager .registry-toolbar :is(button, input, select,.registry-toolbar-select) { height: 28px !important; min-height: 28px !important; max-height: 28px !important; font-size: 10px !important; }
+body.gw-signal.gw-page--asset-manager .registry-toolbar .content-heading strong {  white-space: nowrap;  font-family:var(--gw-font-body); font-size:var(--gw-type-body-sm); line-height:var(--gw-leading-body-sm); font-weight:var(--gw-weight-medium); letter-spacing:0;}
+body.gw-signal.gw-page--asset-manager .registry-toolbar .content-heading > span {    font-family:var(--gw-font-body); font-size:var(--gw-type-body-sm); line-height:var(--gw-leading-body-sm); font-weight:var(--gw-weight-medium); letter-spacing:0;}
+body.gw-signal.gw-page--asset-manager .registry-toolbar-controls { gap: 8px; flex: 1 1 600px; justify-content: flex-start; flex-wrap: wrap; min-width: 0; }
+body.gw-signal.gw-page--asset-manager .registry-toolbar .asset-search-wrap { order: -1; flex: 1 1 180px; min-width: 120px; height: 40px !important; padding: 0 8px; box-shadow: inset 0 2px 4px rgb(0 0 0 / .4); }
+body.gw-signal.gw-page--asset-manager .registry-toolbar :is(button, input, select,.registry-toolbar-select) {      font-family:var(--gw-font-body) !important; font-size:var(--gw-type-body-md) !important; line-height:var(--gw-leading-body-md) !important; font-weight:var(--gw-weight-regular) !important; letter-spacing:0 !important; min-height:40px !important; height:auto !important; max-height:none !important;}
 body.gw-signal.gw-page--asset-manager .registry-toolbar .asset-btn { padding: 0 7px; gap: 4px; }
 body.gw-signal.gw-page--asset-manager .registry-toolbar svg { width: 13px; height: 13px; }
-body.gw-signal.gw-page--asset-manager .registry-toolbar-select > span { padding: 0 5px; font-size: 9px; }
+body.gw-signal.gw-page--asset-manager .registry-toolbar-select > span { padding: 0 5px;   font-family:var(--gw-font-body); font-size:var(--gw-type-body-md); line-height:var(--gw-leading-body-md); font-weight:var(--gw-weight-regular); letter-spacing:0; min-height:40px; height:auto; max-height:none;}
 body.gw-signal.gw-page--asset-manager .registry-toolbar-select select { min-width: 65px; padding: 0 4px; }
 body.gw-signal.gw-page--asset-manager .registry-layout-switch { padding: 0; }
 body.gw-signal.gw-page--asset-manager .registry-layout-switch button { width: 26px; }
@@ -225,17 +225,17 @@ body.gw-signal.gw-page--asset-manager .registry-simple .registry-card .asset-thu
 body.gw-signal.gw-page--asset-manager .registry-simple.registry-aspect-square .registry-card .asset-thumb :is(img, video) { object-fit: cover !important; }
 body.gw-signal.gw-page--asset-manager .registry-card .asset-card-body { display: block; padding: 5px 1px 0; }
 body.gw-signal.gw-page--asset-manager .registry-card-caption { display: flex; align-items: center; gap: 5px; min-width: 0; }
-body.gw-signal.gw-page--asset-manager .registry-card .asset-card-name { flex: 1; min-width: 0; font-size: 11px; line-height: 17px; }
+body.gw-signal.gw-page--asset-manager .registry-card .asset-card-name { flex: 1; min-width: 0;    font-family:var(--gw-font-body); font-size:var(--gw-type-body-md); line-height:var(--gw-leading-body-md); font-weight:var(--gw-weight-medium); letter-spacing:0;}
 body.gw-signal.gw-page--asset-manager .registry-simple .registry-card .asset-card-name { display: block; min-height: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
-body.gw-signal.gw-page--asset-manager .registry-card-measure { flex: 0 0 auto; color: var(--vault-muted); font: 9px/17px Consolas,monospace; }
+body.gw-signal.gw-page--asset-manager .registry-card-measure { flex: 0 0 auto; color: var(--vault-muted); font: var(--gw-type-label-md)/17px var(--gw-font-mono); }
 body.gw-signal.gw-page--asset-manager .asset-type-video .registry-card-measure { color: #22c5d5; }
 body.gw-signal.gw-page--asset-manager .registry-simple .registry-card :is(.asset-card-meta,.registry-card-source) { display: none; }
-body.gw-signal.gw-page--asset-manager .registry-card .registry-card-format { top: 11px; left: 11px; min-width: 0; height: 16px; padding: 0 3px; border: 1px solid var(--vault-edge) !important; border-radius: 3px !important; font: 9px/14px Consolas,monospace !important; letter-spacing: 0; background: var(--vault-well) !important; color: var(--vault-accent) !important; }
+body.gw-signal.gw-page--asset-manager .registry-card .registry-card-format { top: 11px; left: 11px; min-width: 0; height: 16px; padding: 0 3px; border: 1px solid var(--vault-edge) !important; border-radius: 3px !important; font: var(--gw-type-label-md)/14px var(--gw-font-mono); letter-spacing: 0; background: var(--vault-well) !important; color: var(--vault-accent) !important; }
 body.gw-signal.gw-page--asset-manager .registry-card.asset-type-video .registry-card-format { left: 21px; color: #22c5d5 !important; }
 body.gw-signal.gw-page--asset-manager .registry-card .registry-card-recycle { top: 10px; right: 10px; height: 22px; width: 22px; }
 body.gw-signal.gw-page--asset-manager .registry-card.asset-type-video .asset-thumb::before,
 body.gw-signal.gw-page--asset-manager .registry-card.asset-type-video .asset-thumb::after { width: 8px; background-color: transparent; background-image: radial-gradient(#05070a 38%,transparent 42%); background-size: 8px 8px; }
-body.gw-signal.gw-page--asset-manager .registry-vault-footer { flex: 0 0 auto; min-height: 35px; padding: 7px 12px; display: flex; justify-content: space-between; align-items: center; gap: 10px; border-top: 1px solid var(--vault-line); background: var(--vault-well); color: var(--vault-muted); font: 10px/18px Consolas,monospace; }
+body.gw-signal.gw-page--asset-manager .registry-vault-footer { flex: 0 0 auto; min-height: 35px; padding: 7px 12px; display: flex; justify-content: space-between; align-items: center; gap: 10px; border-top: 1px solid var(--vault-line); background: var(--vault-well); color: var(--vault-muted); font: var(--gw-type-label-md)/18px var(--gw-font-mono); }
 body.gw-signal.gw-page--asset-manager .registry-vault-footer strong { color: var(--vault-accent); }
 body.gw-signal.gw-page--asset-manager :is(#assetBoardTabs,.registry-content) :is(button,input,select):focus-visible { outline: 2px solid var(--vault-accent) !important; outline-offset: 2px !important; }
 @media (max-width: 1200px) {
@@ -256,7 +256,7 @@ body.gw-signal.gw-page--asset-manager :is(#assetBoardTabs,.registry-content) :is
     body.gw-signal.gw-page--asset-manager .registry-grid { grid-template-columns: repeat(2,minmax(0,1fr)); gap: 8px; }
     body.gw-signal.gw-page--asset-manager .registry-overview-stats { grid-template-columns: repeat(2,minmax(0,1fr)) !important; }
     body.gw-signal.gw-page--asset-manager .registry-content { --registry-card-size: 140px !important; }
-    body.gw-signal.gw-page--asset-manager .registry-vault-footer { flex-wrap: wrap; font-size: 9px; }
+    body.gw-signal.gw-page--asset-manager .registry-vault-footer { flex-wrap: wrap;   font-family:var(--gw-font-body); font-size:var(--gw-type-body-sm); line-height:var(--gw-leading-body-sm); font-weight:var(--gw-weight-medium); letter-spacing:0;}
 }
 
 /* Shared vault treatment for every non-registry asset route. */
@@ -273,7 +273,7 @@ body.gw-signal.gw-page--asset-manager {
     --vault-green: #26ba93;
     background-color: var(--vault-bg) !important;
     background-image: radial-gradient(circle at 50% 0%, rgba(223,195,132,.045), transparent 54%), linear-gradient(180deg,#0b0d11 0%,#060709 100%) !important;
-    font-family: "Source Han Sans CN", 'Microsoft YaHei', sans-serif;
+    font-family: var(--gw-font-body);
 }
 body.gw-signal.gw-page--asset-manager .asset-page { position: relative; isolation: isolate; }
 body.gw-signal.gw-page--asset-manager .asset-page::before {
@@ -319,14 +319,14 @@ body.gw-signal.gw-page--asset-manager #assetManagerRoot:not(.asset-manager-root-
 body.gw-signal.gw-page--asset-manager #assetManagerRoot:not(.asset-manager-root-registry) .panel-title strong,
 body.gw-signal.gw-page--asset-manager #assetManagerRoot:not(.asset-manager-root-registry) .content-heading strong {
     color: var(--vault-gold-light) !important;
-    font-family: "Source Han Sans CN", 'Microsoft YaHei', sans-serif;
-    font-size: 12px;
-    letter-spacing: .01em;
-}
+
+
+
+ font-family:var(--gw-font-body) !important; font-size:var(--gw-type-headline-sm) !important; line-height:var(--gw-leading-headline-sm) !important; font-weight:var(--gw-weight-medium) !important; letter-spacing:0 !important;}
 body.gw-signal.gw-page--asset-manager #assetManagerRoot:not(.asset-manager-root-registry) .panel-title span,
 body.gw-signal.gw-page--asset-manager #assetManagerRoot:not(.asset-manager-root-registry) .content-heading span {
     color: #8490a3 !important;
-    font: 9px/1.2 "Source Han Sans CN", Consolas, monospace;
+    font: var(--gw-type-label-md)/1.2 var(--gw-font-mono);
 }
 body.gw-signal.gw-page--asset-manager #assetManagerRoot:not(.asset-manager-root-registry) .nav-scroll,
 body.gw-signal.gw-page--asset-manager #assetManagerRoot:not(.asset-manager-root-registry) .content-scroll,
@@ -377,7 +377,7 @@ body.gw-signal.gw-page--asset-manager #assetManagerRoot:not(.asset-manager-root-
 body.gw-signal.gw-page--asset-manager #assetManagerRoot:not(.asset-manager-root-registry) .tree-row.active .tree-row-icon,
 body.gw-signal.gw-page--asset-manager #assetManagerRoot:not(.asset-manager-root-registry) .nav-row.active .nav-row-icon { color: var(--vault-gold); }
 body.gw-signal.gw-page--asset-manager #assetManagerRoot:not(.asset-manager-root-registry) .tree-row-name,
-body.gw-signal.gw-page--asset-manager #assetManagerRoot:not(.asset-manager-root-registry) .nav-row-name { font-size: 10.5px; }
+body.gw-signal.gw-page--asset-manager #assetManagerRoot:not(.asset-manager-root-registry) .nav-row-name {   font-family:var(--gw-font-body); font-size:var(--gw-type-body-md); line-height:var(--gw-leading-body-md); font-weight:var(--gw-weight-medium); letter-spacing:0;}
 body.gw-signal.gw-page--asset-manager #assetManagerRoot:not(.asset-manager-root-registry) .tree-row-count,
 body.gw-signal.gw-page--asset-manager #assetManagerRoot:not(.asset-manager-root-registry) .nav-row-count {
     height: 18px;
@@ -385,7 +385,7 @@ body.gw-signal.gw-page--asset-manager #assetManagerRoot:not(.asset-manager-root-
     border-radius: 3px;
     background: #080a0e;
     color: #718096;
-    font: 9px/18px "Source Han Sans CN", Consolas, monospace;
+    font: var(--gw-type-label-md)/18px var(--gw-font-mono);
 }
 body.gw-signal.gw-page--asset-manager #assetManagerRoot:not(.asset-manager-root-registry) .tree-row.active .tree-row-count,
 body.gw-signal.gw-page--asset-manager #assetManagerRoot:not(.asset-manager-root-registry) .nav-row.active .nav-row-count { background: rgba(223,195,132,.18); color: var(--vault-gold-light); }
@@ -397,7 +397,7 @@ body.gw-signal.gw-page--asset-manager #assetManagerRoot:not(.asset-manager-root-
 body.gw-signal.gw-page--asset-manager #assetManagerRoot:not(.asset-manager-root-registry) .registry-facet-section { border-top-color: var(--vault-line-soft); border-bottom-color: var(--vault-line-soft); }
 body.gw-signal.gw-page--asset-manager #assetManagerRoot:not(.asset-manager-root-registry) .registry-facet-title strong,
 body.gw-signal.gw-page--asset-manager #assetManagerRoot:not(.asset-manager-root-registry) .nav-group-title,
-body.gw-signal.gw-page--asset-manager #assetManagerRoot:not(.asset-manager-root-registry) .nav-section-title { color: #728096 !important; font: 9px/1.2 "Source Han Sans CN", Consolas, monospace; letter-spacing: .06em; }
+body.gw-signal.gw-page--asset-manager #assetManagerRoot:not(.asset-manager-root-registry) .nav-section-title { color: #728096 !important; font: var(--gw-type-label-md)/1.2 var(--gw-font-mono); letter-spacing: .06em; }
 body.gw-signal.gw-page--asset-manager #assetManagerRoot:not(.asset-manager-root-registry) .smart-class-group-btn,
 body.gw-signal.gw-page--asset-manager #assetManagerRoot:not(.asset-manager-root-registry) .smart-class-pill,
 body.gw-signal.gw-page--asset-manager #assetManagerRoot:not(.asset-manager-root-registry) .library-rule-row,
@@ -457,9 +457,9 @@ body.gw-signal.gw-page--asset-manager #assetManagerRoot:not(.asset-manager-root-
     background: #0b0d12;
     color: #7e8a9d;
 }
-body.gw-signal.gw-page--asset-manager #assetManagerRoot:not(.asset-manager-root-registry) .manage-group-title { color: var(--vault-gold); font: 9px/1.2 "Source Han Sans CN", Consolas, monospace; letter-spacing: .05em; }
+body.gw-signal.gw-page--asset-manager #assetManagerRoot:not(.asset-manager-root-registry) .manage-group-title { color: var(--vault-gold); font: var(--gw-type-label-md)/1.2 var(--gw-font-mono); letter-spacing: .05em; }
 body.gw-signal.gw-page--asset-manager #assetManagerRoot:not(.asset-manager-root-registry) .manage-summary,
-body.gw-signal.gw-page--asset-manager #assetManagerRoot:not(.asset-manager-root-registry) .manage-tools > span { color: #8a96a8; font-size: 9px; }
+body.gw-signal.gw-page--asset-manager #assetManagerRoot:not(.asset-manager-root-registry) .manage-tools > span { color: #8a96a8;   font-family:var(--gw-font-body); font-size:var(--gw-type-body-sm); line-height:var(--gw-leading-body-sm); font-weight:var(--gw-weight-medium); letter-spacing:0;}
 
 /* Asset cards, upload bays and type surfaces. */
 body.gw-signal.gw-page--asset-manager #assetManagerRoot:not(.asset-manager-root-registry) .asset-grid,
@@ -553,7 +553,7 @@ body.gw-signal.gw-page--asset-manager #assetManagerRoot:not(.asset-manager-root-
 body.gw-signal.gw-page--asset-manager #assetManagerRoot:not(.asset-manager-root-registry) .project-gate.approved { border-color: rgba(38,186,147,.55); }
 body.gw-signal.gw-page--asset-manager #assetManagerRoot:not(.asset-manager-root-registry) .project-gate.blocked { border-color: rgba(239,100,84,.6); }
 body.gw-signal.gw-page--asset-manager #assetManagerRoot:not(.asset-manager-root-registry) .project-entity-groups { padding: 11px; gap: 13px; }
-body.gw-signal.gw-page--asset-manager #assetManagerRoot:not(.asset-manager-root-registry) .project-entity-group > header { color: #7f8b9e; font: 9px/1.2 "Source Han Sans CN", Consolas, monospace; }
+body.gw-signal.gw-page--asset-manager #assetManagerRoot:not(.asset-manager-root-registry) .project-entity-group > header { color: #7f8b9e; font: var(--gw-type-label-md)/1.2 var(--gw-font-mono); }
 body.gw-signal.gw-page--asset-manager #assetManagerRoot:not(.asset-manager-root-registry) .project-entity-group > header strong { color: var(--vault-gold-light); }
 body.gw-signal.gw-page--asset-manager #assetManagerRoot:not(.asset-manager-root-registry) .canvas-asset-group + .canvas-asset-group { border-top-color: var(--vault-line-soft); }
 body.gw-signal.gw-page--asset-manager #assetManagerRoot:not(.asset-manager-root-registry) .canvas-asset-group-head strong { color: var(--vault-gold-light); }
@@ -572,16 +572,16 @@ body.gw-signal.gw-page--asset-manager #assetManagerRoot.asset-manager-root-page-
     background-image: repeating-linear-gradient(135deg, rgba(255,255,255,.016) 0, rgba(255,255,255,.016) 1px, transparent 1px, transparent 5px);
 }
 body.gw-signal.gw-page--asset-manager #assetManagerRoot.asset-manager-root-page-scripts .asset-workspace-panel-head { padding: 0 0 13px; border-bottom: 1px solid var(--vault-line-soft); }
-body.gw-signal.gw-page--asset-manager #assetManagerRoot.asset-manager-root-page-scripts .asset-panel-kicker { color: var(--vault-gold); font: 9px/1.3 "Source Han Sans CN", Consolas, monospace; letter-spacing: .08em; }
-body.gw-signal.gw-page--asset-manager #assetManagerRoot.asset-manager-root-page-scripts .asset-workspace-panel-head h2 { color: var(--vault-gold-light); font: 700 18px/1.15 "Source Han Sans CN", 'Microsoft YaHei', sans-serif; }
-body.gw-signal.gw-page--asset-manager #assetManagerRoot.asset-manager-root-page-scripts .asset-workspace-panel-head p { color: #7f8b9e; font-size: 10px; }
+body.gw-signal.gw-page--asset-manager #assetManagerRoot.asset-manager-root-page-scripts .asset-panel-kicker { color: var(--vault-gold); font: var(--gw-type-label-md)/1.3 var(--gw-font-mono); letter-spacing: .08em; }
+body.gw-signal.gw-page--asset-manager #assetManagerRoot.asset-manager-root-page-scripts .asset-workspace-panel-head h2 { color: var(--vault-gold-light); font: 700 var(--gw-type-body-lg)/1.15 var(--gw-font-body); }
+body.gw-signal.gw-page--asset-manager #assetManagerRoot.asset-manager-root-page-scripts .asset-workspace-panel-head p { color: #7f8b9e;   font-family:var(--gw-font-body); font-size:var(--gw-type-body-sm); line-height:var(--gw-leading-body-sm); font-weight:var(--gw-weight-medium); letter-spacing:0;}
 body.gw-signal.gw-page--asset-manager #assetManagerRoot.asset-manager-root-page-scripts .asset-primary-action { min-height: 30px; border: 1px solid var(--vault-gold); border-radius: 4px; background: linear-gradient(180deg,#f8dfb1,#c49b58); color: #171109; box-shadow: 0 4px 10px rgba(223,195,132,.2); }
 body.gw-signal.gw-page--asset-manager #assetManagerRoot.asset-manager-root-page-scripts .script-asset-grid { grid-template-columns: repeat(auto-fill,minmax(250px,1fr)); gap: 10px; padding-top: 13px; }
 body.gw-signal.gw-page--asset-manager #assetManagerRoot.asset-manager-root-page-scripts .script-asset-card { border: 1px solid var(--vault-line-soft); border-top-color: var(--vault-line-gold); border-radius: 7px; background: linear-gradient(165deg,var(--vault-card),var(--vault-card-deep)); box-shadow: inset 0 1px rgba(255,255,255,.05), 0 8px 18px rgba(0,0,0,.42); }
 body.gw-signal.gw-page--asset-manager #assetManagerRoot.asset-manager-root-page-scripts .script-asset-card:hover { border-color: var(--vault-gold); background: linear-gradient(165deg,#1a1d27,#0e1015); }
 body.gw-signal.gw-page--asset-manager #assetManagerRoot.asset-manager-root-page-scripts :is(.script-card-title,.script-assets-empty h3) { color: #e3e8f0; }
 body.gw-signal.gw-page--asset-manager #assetManagerRoot.asset-manager-root-page-scripts :is(.script-card-preview,.script-asset-meta,.script-date,.script-meta-file,.script-meta-project,.script-assets-empty p) { color: #7f8b9e; }
-body.gw-signal.gw-page--asset-manager #assetManagerRoot.asset-manager-root-page-scripts .script-format-badge { border: 1px solid var(--vault-line-gold); border-radius: 3px; background: rgba(223,195,132,.12); color: var(--vault-gold-light); font: 9px "Source Han Sans CN", Consolas, monospace; }
+body.gw-signal.gw-page--asset-manager #assetManagerRoot.asset-manager-root-page-scripts .script-format-badge { border: 1px solid var(--vault-line-gold); border-radius: 3px; background: rgba(223,195,132,.12); color: var(--vault-gold-light); font: var(--gw-type-label-md) var(--gw-font-mono); }
 body.gw-signal.gw-page--asset-manager #assetManagerRoot.asset-manager-root-page-scripts .script-asset-meta { border-top-color: var(--vault-line-soft); }
 
 /* Floating asset surfaces inherit the same hardware palette. */
@@ -849,17 +849,17 @@ body.gw-signal.gw-page--asset-manager #assetManagerRoot:not(.asset-manager-root-
     padding: 0;
     background: transparent;
 }
-body.gw-signal.gw-page--asset-manager #assetManagerRoot:not(.asset-manager-root-registry) .asset-smart-filter-scroll .registry-facet-title strong { color: #728096 !important; font-size: 9px !important; letter-spacing: .06em; }
+body.gw-signal.gw-page--asset-manager #assetManagerRoot:not(.asset-manager-root-registry) .asset-smart-filter-scroll .registry-facet-title strong { color: #728096 !important;    font-family:var(--gw-font-body) !important; font-size:var(--gw-type-body-sm) !important; line-height:var(--gw-leading-body-sm) !important; font-weight:var(--gw-weight-medium) !important; letter-spacing:0 !important;}
 body.gw-signal.gw-page--asset-manager #assetManagerRoot:not(.asset-manager-root-registry) .asset-smart-filter-scroll .registry-facet-basic {
-    min-height: 29px !important;
+    min-height: 36px !important;
     padding: 5px 8px;
     border: 1px solid transparent;
     border-radius: 4px;
     color: #a8b2c2;
     background: transparent;
-    font-size: 10.5px;
-    font-weight: 500;
-}
+
+
+ font-family:var(--gw-font-body) !important; font-size:var(--gw-type-body-sm) !important; line-height:var(--gw-leading-body-sm) !important; font-weight:var(--gw-weight-medium) !important; letter-spacing:0 !important;}
 body.gw-signal.gw-page--asset-manager #assetManagerRoot:not(.asset-manager-root-registry) .asset-smart-filter-scroll .registry-facet-basic:is(:hover,.active) {
     border-color: var(--vault-line-gold) !important;
     background: linear-gradient(180deg,rgba(223,195,132,.16),rgba(223,195,132,.045)) !important;
@@ -872,14 +872,14 @@ body.gw-signal.gw-page--asset-manager #assetManagerRoot:not(.asset-manager-root-
     border-radius: 5px;
     background: linear-gradient(135deg,rgba(34,197,213,.1),rgba(34,197,213,.025));
 }
-body.gw-signal.gw-page--asset-manager #assetManagerRoot:not(.asset-manager-root-registry) .asset-smart-filter-ai strong { color: #d7e7eb; font-size: 11px; }
-body.gw-signal.gw-page--asset-manager #assetManagerRoot:not(.asset-manager-root-registry) .asset-smart-filter-ai small { color: #7f9aa5; font-size: 9px; }
+body.gw-signal.gw-page--asset-manager #assetManagerRoot:not(.asset-manager-root-registry) .asset-smart-filter-ai strong { color: #d7e7eb;   font-family:var(--gw-font-body); font-size:var(--gw-type-body-sm); line-height:var(--gw-leading-body-sm); font-weight:var(--gw-weight-medium); letter-spacing:0;}
+body.gw-signal.gw-page--asset-manager #assetManagerRoot:not(.asset-manager-root-registry) .asset-smart-filter-ai small { color: #7f9aa5;   font-family:var(--gw-font-body); font-size:var(--gw-type-body-sm); line-height:var(--gw-leading-body-sm); font-weight:var(--gw-weight-regular); letter-spacing:0;}
 body.gw-signal.gw-page--asset-manager #assetManagerRoot:not(.asset-manager-root-registry) .asset-smart-filter-tags { display: grid; gap: 8px; }
 body.gw-signal.gw-page--asset-manager #assetManagerRoot:not(.asset-manager-root-registry) .asset-smart-filter-context .library-rule-row { min-height: 30px; }
-body.gw-signal.gw-page--asset-manager #assetManagerRoot:not(.asset-manager-root-registry) .asset-smart-filter-clear { width: 100%; min-height: 30px; height: 30px; justify-content: flex-start; padding: 0 8px; font-size: 10px; }
+body.gw-signal.gw-page--asset-manager #assetManagerRoot:not(.asset-manager-root-registry) .asset-smart-filter-clear { width: 100%; min-height: 30px; height: 30px; justify-content: flex-start; padding: 0 8px;   font-family:var(--gw-font-body); font-size:var(--gw-type-body-sm); line-height:var(--gw-leading-body-sm); font-weight:var(--gw-weight-medium); letter-spacing:0;}
 body.gw-signal.gw-page--asset-manager #assetManagerRoot:not(.asset-manager-root-registry) .asset-context-tree { margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--vault-line-soft); }
-body.gw-signal.gw-page--asset-manager #assetManagerRoot:not(.asset-manager-root-registry) .asset-context-tree > .nav-section-title { margin: 0 2px 6px; color: #728096; font: 9px/1.2 "Source Han Sans CN",Consolas,monospace; letter-spacing: .06em; }
-body.gw-signal.gw-page--asset-manager #assetManagerRoot:not(.asset-manager-root-registry) .asset-context-path { margin: -2px 2px 7px; color: #8490a3; font: 9px/1.4 "Source Han Sans CN",Consolas,monospace; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+body.gw-signal.gw-page--asset-manager #assetManagerRoot:not(.asset-manager-root-registry) .asset-context-tree > .nav-section-title { margin: 0 2px 6px; color: #728096; font: var(--gw-type-label-md)/1.2 var(--gw-font-mono); letter-spacing: .06em; }
+body.gw-signal.gw-page--asset-manager #assetManagerRoot:not(.asset-manager-root-registry) .asset-context-path { margin: -2px 2px 7px; color: #8490a3; font: var(--gw-type-label-md)/1.4 var(--gw-font-mono); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 body.gw-signal.gw-page--asset-manager #assetManagerRoot.asset-manager-root-page-scripts .script-assets-panel { background: transparent !important; border: 0 !important; }
 body.gw-signal.gw-page--asset-manager #assetManagerRoot.asset-manager-root-page-scripts .script-assets-empty { min-height: 360px; margin-top: 10px; }
 @media (max-width: 900px) {
@@ -902,3 +902,14 @@ html[data-theme="light"] body.gw-signal.gw-page--asset-manager #assetManagerRoot
 html[data-theme="light"] body.gw-signal.gw-page--asset-manager #assetManagerRoot:not(.asset-manager-root-registry) .asset-smart-filter-ai strong { color: #1d2633 !important; }
 html[data-theme="light"] body.gw-signal.gw-page--asset-manager #assetManagerRoot:not(.asset-manager-root-registry) .asset-smart-filter-ai small { color: #566477 !important; }
 html[data-theme="light"] body.gw-signal.gw-page--asset-manager #assetManagerRoot.asset-manager-root-page-scripts .script-assets-empty { background: #f4f6f8 !important; }
+
+body.gw-signal.gw-page--asset-manager :is(.registry-stat-card,.registry-range button) { line-height:var(--gw-leading-body-md); font-weight:var(--gw-weight-medium); }
+
+/* 操作角色保持14/22/500；换行由工具行承担而非缩小字体。 */
+body.gw-signal.gw-page--asset-manager .registry-toolbar .asset-btn { font-weight:var(--gw-weight-medium) !important; white-space:nowrap; flex-shrink:0; }
+body.gw-signal.gw-page--asset-manager .registry-toolbar-select select { line-height:var(--gw-leading-body-md); }
+body.gw-signal.gw-page--asset-manager #assetManagerRoot:not(.asset-manager-root-registry) .asset-smart-filter-scroll .registry-facet-basic { font-size:var(--gw-type-body-md) !important; line-height:var(--gw-leading-body-md) !important; }
+
+body.gw-signal.gw-page--asset-manager .registry-toolbar-select { height:auto; min-height:40px; align-items:center; }
+
+body.gw-signal.gw-page--asset-manager .registry-toolbar .registry-toolbar-select .asset-sort-select { line-height:var(--gw-leading-body-md) !important; }

@@ -1,6 +1,8 @@
 <!doctype html>
 <html lang="zh-CN">
 <head>
+  <link rel="stylesheet" href="/static/vendor/css/fonts.css">
+  <link rel="stylesheet" href="/static/css/base/hardware-tokens.css">
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
   <title data-i18n="governance.documentTitle">全局内容治理与回收站 · Gods' Workbench</title>
@@ -35,14 +37,14 @@
       gap: 6px;
     }
     .gov-stat-card span {
-      font-size: 13px;
+      font-size: var(--gw-type-body-md);
       color: var(--text-muted, #8b8b99);
     }
     .gov-stat-card strong {
-      font-size: 24px;
+      font-size: var(--gw-type-headline-md);
       font-weight: 600;
       color: var(--text-primary, #ffffff);
-      font-family: var(--font-mono, monospace);
+      font-family: var(--gw-font-mono);
     }
     .gov-toolbar {
       display: flex;
@@ -65,7 +67,7 @@
       border-bottom: 2px solid transparent;
       color: var(--text-muted, #8b8b99);
       padding: 8px 16px;
-      font-size: 14px;
+      font-size: var(--gw-type-body-md);
       font-weight: 500;
       cursor: pointer;
       transition: all 0.2s ease;
@@ -92,7 +94,7 @@
     }
     .gov-card-section h3 {
       margin: 0 0 12px 0;
-      font-size: 16px;
+      font-size: var(--gw-type-body-lg);
       font-weight: 600;
       display: flex;
       align-items: center;
@@ -101,7 +103,7 @@
     .gov-table {
       width: 100%;
       border-collapse: collapse;
-      font-size: 13px;
+      font-size: var(--gw-type-body-md);
       text-align: left;
     }
     .gov-table th {
@@ -127,10 +129,10 @@
       display: inline-block;
       padding: 2px 8px;
       border-radius: 4px;
-      font-size: 11px;
+      font-size: var(--gw-type-body-sm);
       font-weight: 600;
-      text-transform: uppercase;
-      font-family: var(--font-mono, monospace);
+      text-transform: none;
+      font-family: var(--gw-font-mono);
     }
     .gov-badge.asset { background: rgba(79,124,255,0.15); color: #789eff; }
     .gov-badge.project { background: rgba(52,199,89,0.15); color: #5cd87e; }
@@ -150,7 +152,7 @@
       gap: 6px;
     }
     .gov-form-item label {
-      font-size: 12px;
+      font-size: var(--gw-type-body-sm);
       font-weight: 500;
       color: var(--text-muted, #8b8b99);
     }
@@ -160,11 +162,11 @@
       border-radius: 6px;
       color: var(--text-primary, #ffffff);
       padding: 8px 12px;
-      font-size: 13px;
+      font-size: var(--gw-type-body-md);
       font-family: inherit;
     }
     .gov-form-item textarea {
-      font-family: var(--font-mono, monospace);
+      font-family: var(--gw-font-mono);
       resize: vertical;
       min-height: 80px;
     }
@@ -174,7 +176,7 @@
       border-radius: 6px;
       padding: 14px 16px;
       margin-top: 12px;
-      font-size: 13px;
+      font-size: var(--gw-type-body-md);
       color: var(--text-primary, #ffffff);
     }
     .btn.danger {
@@ -186,7 +188,7 @@
     }
   </style>
 </head>
-<body class="gw-signal gw-page--governance">
+<body class="gw-signal gw-page--governance gw-type-body-md">
   <main class="workspace-page center-page">
     <header class="topbar">
       <div class="top-actions">
@@ -352,8 +354,8 @@
     <section class="gov-panel" id="panelAudit" role="tabpanel" aria-labelledby="gov-tab-audit">
       <div class="gov-card-section">
         <h3 data-i18n="governance.auditOutboxHeading">审计 Outbox 队列状态</h3>
-        <p class="muted" style="margin-bottom:12px;font-size:13px;" data-i18n="governance.auditOutboxDescription">Outbox 机制保证业务操作与审计日志最终一致；若发生异常崩溃，可重放处理未决事务。</p>
-        <div id="auditOutboxStatusArea" style="font-size:13px;" data-i18n="governance.checkingAuditOutbox">正在检测 Outbox 状态…</div>
+        <p class="muted gw-type-body-md" style="margin-bottom:12px;" data-i18n="governance.auditOutboxDescription">Outbox 机制保证业务操作与审计日志最终一致；若发生异常崩溃，可重放处理未决事务。</p>
+        <div id="auditOutboxStatusArea" style="" data-i18n="governance.checkingAuditOutbox" class="gw-type-body-md">正在检测 Outbox 状态…</div>
       </div>
     </section>
   </main>

@@ -30,7 +30,7 @@ html.workspace-embedded body,
   --sf-cyan-hover: #fae2c8 !important;
   background-color: #090a0d !important;
   color: #eddab3 !important;
-  font-family: "Source Han Sans CN", -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif !important;
+  font-family: var(--gw-font-body) !important;
 }
 
 body {
@@ -61,11 +61,11 @@ body {
 
 .side-section-title, .side-title {
   color: #dfc384 !important;
-  font-family: "Source Han Sans CN", monospace !important;
-  font-size: 9.5px !important;
-  letter-spacing: 0.08em !important;
+
+
+
   text-transform: uppercase !important;
-}
+ font-family:var(--gw-font-body) !important; font-size:var(--gw-type-body-sm) !important; line-height:var(--gw-leading-body-sm) !important; font-weight:var(--gw-weight-medium) !important; letter-spacing:0 !important;}
 
 
 /* 隐藏所有网站 / 服务商图片 Logo 图标，改用文字展示 */
@@ -84,11 +84,11 @@ body {
 /* 纯文字徽标 / 回退文本常驻显示并以香槟金拟物排版 */
 .provider-card-banner .provider-logo-fallback {
   display: inline-block !important;
-  font-size: 11.5px !important;
-  font-weight: 700 !important;
+
+
   color: #eddab3 !important;
-  letter-spacing: 0.02em !important;
-}
+
+ font-family:var(--gw-font-body) !important; font-size:var(--gw-type-body-sm) !important; line-height:var(--gw-leading-body-sm) !important; font-weight:var(--gw-weight-medium) !important; letter-spacing:0 !important;}
 
 .provider-card-banner.active .provider-logo-fallback {
   color: #fae2c8 !important;
@@ -134,15 +134,15 @@ body {
 }
 
 .provider-protocol-pill {
-  font-size: 9px !important;
+
   padding: 1.5px 6px !important;
   border-radius: 6px !important;
   background: rgba(223, 195, 132, 0.12) !important;
   color: #dfc384 !important;
   border: 1px solid rgba(223, 195, 132, 0.25) !important;
-  font-family: "Source Han Sans CN", monospace !important;
-  letter-spacing: 0.04em !important;
-}
+
+
+ font-family:var(--gw-font-body) !important; font-size:var(--gw-type-body-sm) !important; line-height:var(--gw-leading-body-sm) !important; font-weight:var(--gw-weight-medium) !important; letter-spacing:0 !important;}
 
 .provider-card:hover, .workflow-card:hover {
   background-color: rgba(223, 195, 132, 0.08) !important;
@@ -160,10 +160,10 @@ body {
 }
 
 .provider-card .provider-name, .workflow-card .workflow-name {
-  font-size: 11.5px !important;
-  font-weight: 700 !important;
+
+
   color: #eddab3 !important;
-}
+ font-family:var(--gw-font-body) !important; font-size:var(--gw-type-body-md) !important; line-height:var(--gw-leading-body-md) !important; font-weight:var(--gw-weight-medium) !important; letter-spacing:0 !important;}
 
 .provider-card.active .provider-name, .workflow-card.active .workflow-name {
   color: #fae2c8 !important;
@@ -171,9 +171,9 @@ body {
 }
 
 .provider-card .provider-meta, .workflow-card .workflow-meta {
-  font-size: 9.5px !important;
+
   color: #717d8f !important;
-}
+ font-family:var(--gw-font-body) !important; font-size:var(--gw-type-body-sm) !important; line-height:var(--gw-leading-body-sm) !important; font-weight:var(--gw-weight-medium) !important; letter-spacing:0 !important;}
 
 .workflow-icon {
   background: #08090d !important;
@@ -216,20 +216,20 @@ body {
 
 .editor-title, .block-title, .popup-title, section h2, section h3 {
   color: #fae2c8 !important;
-  font-weight: 800 !important;
-  letter-spacing: -0.01em !important;
-  font-size: 15px !important;
-}
+
+
+
+ font-family:var(--gw-font-body) !important; font-size:var(--gw-type-headline-sm) !important; line-height:var(--gw-leading-headline-sm) !important; font-weight:var(--gw-weight-medium) !important; letter-spacing:0 !important;}
 
 .editor-sub, .block-desc, .popup-sub {
   color: #8392a5 !important;
-  font-size: 10.5px !important;
-}
+
+ font-family:var(--gw-font-body) !important; font-size:var(--gw-type-body-sm) !important; line-height:var(--gw-leading-body-sm) !important; font-weight:var(--gw-weight-regular) !important; letter-spacing:0 !important;}
 
 .label {
-  font-size: 10.5px !important;
+
   color: #94a3b8 !important;
-}
+ font-family:var(--gw-font-body) !important; font-size:var(--gw-type-body-md) !important; line-height:var(--gw-leading-body-md) !important; font-weight:var(--gw-weight-medium) !important; letter-spacing:0 !important;}
 
 
 /* 输入框与控件：深黑曜石拟物嵌槽，高度与字号等比缩减 10% */
@@ -251,17 +251,17 @@ textarea,
   border-radius: 8px !important;
   color: #eddab3 !important;
   box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.9) !important;
-  font-family: "Source Han Sans CN", monospace !important;
-  font-size: 11px !important;
-}
+
+
+ font-family:var(--gw-font-body) !important; font-size:var(--gw-type-body-md) !important; line-height:var(--gw-leading-body-md) !important; font-weight:var(--gw-weight-regular) !important; letter-spacing:0 !important; min-height:40px !important; height:auto !important; max-height:none !important;}
 
 .field-frame input,
 input[type="text"],
 input[type="password"],
 select {
-  height: 31px !important;
-  font-size: 11px !important;
-}
+
+
+ font-family:var(--gw-font-body) !important; font-size:var(--gw-type-body-md) !important; line-height:var(--gw-leading-body-md) !important; font-weight:var(--gw-weight-regular) !important; letter-spacing:0 !important; min-height:40px !important; height:auto !important; max-height:none !important;}
 
 input:focus, textarea:focus, select:focus,
 .field-frame:focus-within {
@@ -281,8 +281,8 @@ input:focus, textarea:focus, select:focus,
 input::placeholder, textarea::placeholder {
   color: #555e6d !important;
   -webkit-text-fill-color: #555e6d !important;
-  font-size: 10.5px !important;
-}
+
+ font-family:var(--gw-font-body) !important; font-size:var(--gw-type-body-md) !important; line-height:var(--gw-leading-body-md) !important; font-weight:var(--gw-weight-regular) !important; letter-spacing:0 !important; min-height:40px !important; height:auto !important; max-height:none !important;}
 
 /* =========================================================================
    统一按钮系统：高度 31px，缩小 10%，统一圆角 7px，统一字号 11px
@@ -295,8 +295,8 @@ button.save-btn,
 #saveBtn,
 .onboarding-save-btn,
 .recommend-guide-save-btn {
-  height: 31px !important;
-  min-height: 31px !important;
+
+
   padding: 0 14px !important;
   background-color: #dfc384 !important;
   background: radial-gradient(ellipse 75% 65% at 50% 50%, #ffffff 0%, #fff2dc 25%, #f5cf92 55%, #dfac64 80%, #b8823f 100%) !important;
@@ -304,8 +304,8 @@ button.save-btn,
   border-bottom-color: rgba(223, 195, 132, 0.4) !important;
   box-shadow: 0 3px 10px rgba(223, 195, 132, 0.45), 0 1.5px 3px rgba(0, 0, 0, 0.6), inset 0 1px 1px rgba(255, 255, 255, 0.95) !important;
   color: #1a1308 !important;
-  font-size: 11px !important;
-  font-weight: 800 !important;
+
+
   border-radius: 7px !important;
   cursor: pointer !important;
   transition: all 0.15s ease !important;
@@ -314,7 +314,7 @@ button.save-btn,
   justify-content: center !important;
   gap: 5px !important;
   box-sizing: border-box !important;
-}
+ font-family:var(--gw-font-body) !important; font-size:var(--gw-type-body-md) !important; line-height:var(--gw-leading-body-md) !important; font-weight:var(--gw-weight-medium) !important; letter-spacing:0 !important; min-height:36px !important; height:auto !important; max-height:none !important;}
 
 .action-btn.save-btn:hover,
 .api-page-save-btn:hover,
@@ -355,8 +355,8 @@ button.action-btn:not(.save-btn):not(.danger-btn),
 #openPickerBtn,
 #testUrlBtn,
 #probeAsyncBtn {
-  height: 31px !important;
-  min-height: 31px !important;
+
+
   padding: 0 12px !important;
   background-color: #161822 !important;
   background: linear-gradient(180deg, #1f232e 0%, #11131a 100%) !important;
@@ -364,8 +364,8 @@ button.action-btn:not(.save-btn):not(.danger-btn),
   border-radius: 7px !important;
   color: #eddab3 !important;
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.1), 0 2px 4px rgba(0, 0, 0, 0.6) !important;
-  font-size: 11px !important;
-  font-weight: 600 !important;
+
+
   transition: all 0.12s ease !important;
   display: inline-flex !important;
   align-items: center !important;
@@ -373,7 +373,7 @@ button.action-btn:not(.save-btn):not(.danger-btn),
   gap: 5px !important;
   box-sizing: border-box !important;
   cursor: pointer !important;
-}
+ font-family:var(--gw-font-body) !important; font-size:var(--gw-type-body-md) !important; line-height:var(--gw-leading-body-md) !important; font-weight:var(--gw-weight-medium) !important; letter-spacing:0 !important; min-height:36px !important; height:auto !important; max-height:none !important;}
 
 .side-add-btn:hover,
 .add-provider-btn:hover,
@@ -427,15 +427,15 @@ button.action-btn:not(.save-btn):not(.danger-btn),
 .action-btn.danger-btn,
 .key-btn.key-clear,
 .api-page-delete-btn {
-  height: 31px !important;
-  min-height: 31px !important;
+
+
   padding: 0 12px !important;
   background-color: rgba(239, 68, 68, 0.12) !important;
   background: rgba(239, 68, 68, 0.12) !important;
   border: 1px solid rgba(239, 68, 68, 0.35) !important;
   color: #fca5a5 !important;
-  font-size: 11px !important;
-  font-weight: 600 !important;
+
+
   border-radius: 7px !important;
   display: inline-flex !important;
   align-items: center !important;
@@ -443,7 +443,7 @@ button.action-btn:not(.save-btn):not(.danger-btn),
   gap: 5px !important;
   box-sizing: border-box !important;
   cursor: pointer !important;
-}
+ font-family:var(--gw-font-body) !important; font-size:var(--gw-type-body-md) !important; line-height:var(--gw-leading-body-md) !important; font-weight:var(--gw-weight-medium) !important; letter-spacing:0 !important; min-height:36px !important; height:auto !important; max-height:none !important;}
 
 .key-btn.key-clear {
   padding: 0 !important;
@@ -470,8 +470,8 @@ button.action-btn:not(.save-btn):not(.danger-btn),
 .apimart-hint,
 .volcengine-hint {
   color: #717d8f !important;
-  font-size: 10px !important;
-}
+
+ font-family:var(--gw-font-body) !important; font-size:var(--gw-type-body-sm) !important; line-height:var(--gw-leading-body-sm) !important; font-weight:var(--gw-weight-regular) !important; letter-spacing:0 !important;}
 
 .inline-code, code {
   background-color: #06080b !important;
@@ -480,9 +480,9 @@ button.action-btn:not(.save-btn):not(.danger-btn),
   color: #dfc384 !important;
   border-radius: 4px !important;
   padding: 1px 5px !important;
-  font-family: "Source Han Sans CN", monospace !important;
-  font-size: 10.5px !important;
-}
+
+
+ font-family:var(--gw-font-body) !important; font-size:var(--gw-type-body-sm) !important; line-height:var(--gw-leading-body-sm) !important; font-weight:var(--gw-weight-medium) !important; letter-spacing:0 !important;}
 
 /* 预览卡片与浮层面板 */
 #previewCard, .preview-empty {
@@ -490,8 +490,8 @@ button.action-btn:not(.save-btn):not(.danger-btn),
   border: 1px dashed rgba(223, 195, 132, 0.25) !important;
   border-radius: 10px !important;
   color: #8392a5 !important;
-  font-size: 11px !important;
-}
+
+ font-family:var(--gw-font-body) !important; font-size:var(--gw-type-body-sm) !important; line-height:var(--gw-leading-body-sm) !important; font-weight:var(--gw-weight-regular) !important; letter-spacing:0 !important;}
 
 
 .graph-svg-wrap {
@@ -517,10 +517,10 @@ button.action-btn:not(.save-btn):not(.danger-btn),
 
 .gnode .gn-title {
   fill: #eddab3 !important;
-  font-size: 10.5px !important;
+  font-size:var(--gw-type-label-md) !important;
 }
 
 .gnode .gn-sub {
   fill: #94a3b8 !important;
-  font-size: 8.5px !important;
-}
+
+ font-family:var(--gw-font-body) !important; font-size:var(--gw-type-body-sm) !important; line-height:var(--gw-leading-body-sm) !important; font-weight:var(--gw-weight-medium) !important; letter-spacing:0 !important;}

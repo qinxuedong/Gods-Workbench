@@ -1,0 +1,132 @@
+/* 黑金硬件共享变量：字体、尺寸与颜色；布局/控件由页面样式负责。 */
+:root {
+
+  /* ========================================================================= */
+  /* 字体族体系 (Font Families) - 角色分工，中文回退思源黑体 */
+  /* ========================================================================= */
+  --gw-font-display: "Source Han Sans CN", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --gw-font-body: "Source Han Sans CN", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --gw-font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Source Han Sans CN", monospace;
+
+  /* ========================================================================= */
+  /* 10 阶标准排版字阶 (Typography Scale: 48px ~ 9px) */
+  /* ========================================================================= */
+  --gw-type-display-lg: 48px;
+  --gw-type-headline-lg: 32px;
+  --gw-type-headline-md: 16px;
+  --gw-type-headline-sm: 14px;
+  --gw-type-body-lg: 16px;
+  --gw-type-body-md: 14px;
+  --gw-type-body-sm: 12px;
+  --gw-type-label-lg: 13px;
+  --gw-type-label-md: 11px;
+  --gw-type-label-sm: var(--gw-type-body-sm); /* 废弃9px，兼容映射12px */
+
+  /* ========================================================================= */
+  /* 字距微调 (Tracking Compensation: 暗底防模糊防粘连) */
+  /* ========================================================================= */
+  --gw-tracking-tight: 0;
+  --gw-tracking-headline: 0;
+  --gw-tracking-normal: 0;
+  --gw-tracking-headline-md: 0;
+  --gw-tracking-latin-label: 0.08em;
+  --gw-tracking-label-lg: 0;
+  --gw-tracking-label-md: 0;
+  --gw-tracking-label-sm: 0;
+
+  /* ========================================================================= */
+  /* 行高系统 (Line Height) */
+  /* ========================================================================= */
+  --gw-leading-display-lg: 56px;
+  --gw-leading-headline-lg: 40px;
+  --gw-leading-headline-md: 24px;
+  --gw-leading-headline-sm: 22px;
+  --gw-leading-body-lg: 24px;
+  --gw-leading-body-md: 22px;
+  --gw-leading-body-sm: 18px;
+  --gw-leading-label-lg: 18px;
+  --gw-leading-label-md: 16px;
+  --gw-leading-label-sm: 18px;
+
+  /* ========================================================================= */
+  /* 字重系统 (Font Weights) */
+  /* ========================================================================= */
+  --gw-weight-regular: 400;
+  --gw-weight-medium: 500;
+  --gw-weight-semibold: 700; /* 仅准入400/500/700，避免合成600 */
+  --gw-weight-bold: 700;
+
+  --font-display: var(--gw-font-display);
+  --font-sans: var(--gw-font-body);
+  --font-mono: var(--gw-font-mono);
+  --gw-icon-size-xs: 8px;
+  --gw-icon-size-title: 20px;
+  --gw-icon-size-section: 18px;
+  --gw-type-metric-md: 20px;
+  --gw-type-metric-sm: 18px;
+  --gw-icon-size-sm: 12px;
+  --gw-icon-size-md: 16px;
+  --gw-icon-size-lg: 24px;
+  --gw-icon-size-xl: 32px;
+
+  /* 向下平滑兼容旧变量，存量页面不受破坏 */
+  --gw-type-title: var(--gw-type-headline-md);   /* 16px */
+  --gw-type-section: var(--gw-type-headline-sm); /* 14px */
+  --gw-type-body: var(--gw-type-body-md);         /* 14px */
+  --gw-type-meta: var(--gw-type-body-sm);         /* 12px */
+  --gw-space-outer: 24px;
+  --gw-space-section: 32px;
+  --gw-row-height: 56px;
+  --gw-zebra-2: rgba(255, 255, 255, 0.02);
+
+      /* 图1 (media_1788857338517.jpg) 精确采样香槟金质感色谱 - 纯正高级香槟钛金，绝非刺眼高饱和黄色 */
+      --gold-flare: #fae2c8;
+      --gold-light: #eddab3;
+      --gold-primary: #dfc384;
+      --gold-medium: #c9ad6e;
+      --gold-bronze: #947a57;
+      --gold-shadow: #6f654c;
+      --gold-dim: rgba(223, 195, 132, 0.16);
+      --gold-glow: rgba(223, 195, 132, 0.35);
+
+      /* 深黑曜石沉稳基底 */
+      --chassis-bg: #090a0d;
+      --panel-dark: #101217;
+      --card-start: #171920;
+      --card-end: #0f1115;
+
+  --gw-text: #e5e7eb;
+  --gw-text-muted: #aeb6c3;
+  --gw-border: #343841;
+  --gw-control-bg: #0f1115;
+  --gw-success: #86efac;
+  --gw-warning: #dfc384;
+  --gw-error: #fda4af;
+}
+
+/* 共享继承基线：不使用*字号覆盖，用户字体预览与创作内容保持独立。 */
+body, body.gw-shell { font-family: var(--gw-font-body); font-size: var(--gw-type-body-md); line-height: var(--gw-leading-body-md); font-weight: var(--gw-weight-regular); letter-spacing: var(--gw-tracking-normal); }
+button, input, select, textarea { font-family: inherit; font-size: var(--gw-type-body-md); line-height: var(--gw-leading-body-md); }
+.font-sans, .font-body { font-family: var(--gw-font-body) !important; }
+.font-display { font-family: var(--gw-font-display) !important; }
+.font-mono, [data-mono="true"], code, pre, time, .font-telemetry, .gw-telemetry-value { font-family: var(--gw-font-mono) !important; font-variant-numeric: tabular-nums; }
+.gw-type-display-lg, [data-type="display-lg"] { font-size: var(--gw-type-display-lg); line-height: var(--gw-leading-display-lg); font-weight: var(--gw-weight-semibold); letter-spacing: var(--gw-tracking-tight); }
+.gw-type-headline-lg, [data-type="headline-lg"] { font-size: var(--gw-type-headline-lg); line-height: var(--gw-leading-headline-lg); font-weight: var(--gw-weight-semibold); letter-spacing: var(--gw-tracking-headline); }
+.gw-type-headline-md, [data-type="headline-md"] { font-size: var(--gw-type-headline-md); line-height: var(--gw-leading-headline-md); font-weight: var(--gw-weight-semibold); letter-spacing: var(--gw-tracking-headline-md); }
+.gw-type-headline-sm, [data-type="headline-sm"] { font-size: var(--gw-type-headline-sm); line-height: var(--gw-leading-headline-sm); font-weight: var(--gw-weight-medium); letter-spacing: var(--gw-tracking-normal); }
+.gw-type-body-lg, [data-type="body-lg"] { font-size: var(--gw-type-body-lg); line-height: var(--gw-leading-body-lg); font-weight: var(--gw-weight-regular); letter-spacing: var(--gw-tracking-normal); }
+.gw-type-body-md, [data-type="body-md"] { font-size: var(--gw-type-body-md); line-height: var(--gw-leading-body-md); font-weight: var(--gw-weight-regular); letter-spacing: var(--gw-tracking-normal); }
+.gw-type-body-sm, [data-type="body-sm"] { font-size: var(--gw-type-body-sm); line-height: var(--gw-leading-body-sm); font-weight: var(--gw-weight-regular); letter-spacing: var(--gw-tracking-normal); }
+.gw-type-label-lg, [data-type="label-lg"] { font-size: var(--gw-type-label-lg); line-height: var(--gw-leading-label-lg); font-weight: var(--gw-weight-medium); letter-spacing: var(--gw-tracking-normal); }
+.gw-type-label-md, [data-type="label-md"] { font-size: var(--gw-type-label-md); line-height: var(--gw-leading-label-md); font-weight: var(--gw-weight-medium); letter-spacing: var(--gw-tracking-normal); }
+.gw-type-label-sm, [data-type="label-sm"] { font-size: var(--gw-type-label-sm); line-height: var(--gw-leading-label-sm); font-weight: var(--gw-weight-medium); letter-spacing: var(--gw-tracking-normal); }
+[data-gw-latin-label="true"] { letter-spacing: var(--gw-tracking-latin-label); text-transform: uppercase; }
+
+/* 显式页面角色优先于旧栏目标签映射，栏目utility保持500。 */
+.gw-type-title, [data-type="title"] { font-size:var(--gw-type-title); line-height:var(--gw-leading-headline-md); font-weight:var(--gw-weight-bold); }
+.gw-type-section, [data-type="section"] { font-size:var(--gw-type-section); line-height:var(--gw-leading-headline-sm); font-weight:var(--gw-weight-medium); }
+
+/* 独立iframe也具有辅助语义；显式状态/计数字重不由辅助class抹除。 */
+small, [data-type="meta"], [data-type="caption"] { font-size:var(--gw-type-body-sm); line-height:var(--gw-leading-body-sm); font-weight:var(--gw-weight-regular); }
+.gw-type-body-sm.font-bold { font-weight:var(--gw-weight-bold); }
+.gw-type-body-sm.font-medium { font-weight:var(--gw-weight-medium); }

@@ -1388,7 +1388,7 @@ html.studio-theme-dark body .provider-switch button,
 body.studio-theme-dark .provider-switch button {
     border-radius: 999px !important;
     min-height: 30px !important;
-    font-size: 10px !important;
+    font-size:var(--gw-type-label-md) !important;
     font-weight: 600 !important;
     letter-spacing: .02em !important;
 }

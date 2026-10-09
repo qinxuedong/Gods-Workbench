@@ -1,34 +1,6 @@
 /* Gods Workbench - 曜石香槟金拟物科技设计系统 (Hardware Design System) */
 
-/* GW-TYPE-01: fixed product type ramp. Keep UI geometry predictable and readable. */
-:root {
-  --gw-type-title: 24px;
-  --gw-type-section: 18px;
-  --gw-type-body: 14px;
-  --gw-type-meta: 12px;
-  --gw-space-outer: 24px;
-  --gw-space-section: 32px;
-  --gw-row-height: 56px;
-  --gw-zebra-2: rgba(255, 255, 255, 0.02);
-}
-
-    :root {
-      /* 图1 (media_1788857338517.jpg) 精确采样香槟金质感色谱 - 纯正高级香槟钛金，绝非刺眼高饱和黄色 */
-      --gold-flare: #fae2c8;
-      --gold-light: #eddab3;
-      --gold-primary: #dfc384;
-      --gold-medium: #c9ad6e;
-      --gold-bronze: #947a57;
-      --gold-shadow: #6f654c;
-      --gold-dim: rgba(223, 195, 132, 0.16);
-      --gold-glow: rgba(223, 195, 132, 0.35);
-
-      /* 深黑曜石沉稳基底 */
-      --chassis-bg: #090a0d;
-      --panel-dark: #101217;
-      --card-start: #171920;
-      --card-end: #0f1115;
-    }
+@import url("./hardware-tokens.css");
 
     * {
       box-sizing: border-box;
@@ -46,7 +18,7 @@
       background-image:
         radial-gradient(circle at 50% 0%, rgba(223, 195, 132, 0.05) 0%, transparent 65%),
         linear-gradient(180deg, #0b0d11 0%, #07080a 100%);
-      font-family: "Source Han Sans CN", -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      font-family: var(--gw-font-body);
       color: #e5e7eb;
       overflow: hidden;
       width: 100%;
@@ -80,21 +52,13 @@
   box-sizing:border-box !important; height:32px !important; min-height:32px !important;
   padding:0 14px !important; display:inline-flex !important; align-items:center !important;
   justify-content:center !important; line-height:1 !important; white-space:nowrap !important;
-  font-size:12px !important; font-weight:500 !important; flex:0 0 auto !important;
+  font-size:var(--gw-type-body-md) !important; font-weight:500 !important; flex:0 0 auto !important;
 }
 
-/* GW-TYPE-01: normalize every Workbench text role onto the four approved sizes. */
-.gw-workbench :where(*) { font-size: var(--gw-type-body) !important; }
-.gw-workbench :where(h1, .page-title, .hero-title, [data-type="title"]) {
-  font-size: var(--gw-type-title) !important;
-}
-.gw-workbench :where(h2, h3, .section-title, .panel-title, .card-title, [data-type="section"]) {
-  font-size: var(--gw-type-section) !important;
-}
-.gw-workbench :where(small, time, code, pre, kbd, .font-mono, [data-type="meta"], [data-type="caption"]) {
-  font-size: var(--gw-type-meta) !important;
-}
-.gw-workbench :where(svg, svg *) { font-size: inherit !important; }
+/* GW-TYPE-01：默认字号继承与显式角色在hardware-tokens中，禁止星号覆盖。 */
+.gw-shell :where(h1, .page-title, .hero-title, [data-type="title"]) { font-family:var(--gw-font-display); font-size:var(--gw-type-headline-md); line-height:var(--gw-leading-headline-md); font-weight:var(--gw-weight-bold); letter-spacing:var(--gw-tracking-headline-md); }
+.gw-shell :where(small, [data-type="meta"], [data-type="caption"]) { font-size:var(--gw-type-body-sm); line-height:var(--gw-leading-body-sm); font-weight:var(--gw-weight-regular); }
+.gw-telemetry-label, .gw-telemetry-badge { font-family:var(--gw-font-mono); font-size:var(--gw-type-label-md); line-height:var(--gw-leading-label-md); font-weight:var(--gw-weight-medium); letter-spacing:0; font-variant-numeric:tabular-nums; }
 
 /* GW-GRID-01: shared outer rhythm, rows, and level-2 zebra surface. */
 .gw-workbench { padding-inline: var(--gw-space-outer) !important; }
@@ -180,7 +144,7 @@
 .gw-shell-trash { position:relative; width:36px; height:42px; display:flex; flex-direction:column; align-items:center; justify-content:center; color:#dfc384; flex:0 0 36px; }
 .gw-shell-trash .hw-mini-knob { width:30px; height:30px; }
 .gw-shell-trash .hw-mini-knob-inner { width:20px; height:20px; }
-.gw-shell-trash .gw-shell-trash-badge { position:absolute; top:0; right:-2px; min-width:13px; height:13px; padding:0 3px; border-radius:99px; background:#ef4444; color:#fff; border:1px solid #08090d; font:700 8px/11px "Source Han Sans CN",monospace; text-align:center; }
+.gw-shell-trash .gw-shell-trash-badge { position:absolute; top:0; right:-2px; min-width:20px; min-height:20px; padding:0 3px; border-radius:99px; background:#ef4444; color:#fff; border:1px solid #08090d; font:700 var(--gw-type-body-sm)/var(--gw-leading-body-sm) var(--gw-font-mono); text-align:center; }
 .gw-shell-trash:focus-visible { outline:2px solid #dfc384; outline-offset:2px; }
 .gw-shell-right { display:flex; align-items:center; gap:12px; flex:0 0 auto; height:44px; }
 .gw-shell-right .gw-shell-fader { display:flex; align-items:center; gap:8px; font:700 10px/1 "Source Han Sans CN",monospace; color:#94a3b8; }

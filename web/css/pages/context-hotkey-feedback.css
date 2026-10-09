@@ -10,7 +10,7 @@
   border: 1px solid rgba(56, 189, 248, 0.3);
   border-radius: 8px;
   color: #F8FAFC;
-  font-size: 14px;
+  font-size: var(--gw-type-body-md);
   font-weight: 500;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
   opacity: 0;

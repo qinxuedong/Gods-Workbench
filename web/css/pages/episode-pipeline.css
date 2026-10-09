@@ -44,7 +44,7 @@ html body.gw-signal.gw-page--episode-pipeline::-webkit-scrollbar-thumb:hover,
 html::-webkit-scrollbar-thumb:hover {
   background: rgba(223, 195, 132, 0.55);
 }
-body { margin: 0; background: var(--episode-bg); color: var(--episode-ink); font: 14px/1.5 "Source Han Sans CN", "Microsoft YaHei", system-ui, sans-serif; }
+body { margin: 0; background: var(--episode-bg); color: var(--episode-ink); font: var(--gw-type-body-md)/1.5 var(--gw-font-body); }
 .episode-page { min-height: 100vh; padding: var(--gw-space-section, 32px) var(--gw-space-outer, 24px) 64px; max-width: 1760px; margin: 0 auto; background: var(--episode-bg); }
 body.is-script-step .episode-header,
 body.is-assets-step .episode-header,
@@ -89,9 +89,9 @@ body.is-assets-step .episode-page textarea {
 .episode-header { position: sticky; top: 0; z-index: 20; display: flex; align-items: center; gap: 18px; margin-bottom: 18px; padding: 10px 0; background: var(--episode-bg); border-bottom: 1px solid var(--episode-line); box-shadow: 0 10px 18px -16px rgba(0, 0, 0, .85); }
 #createPanel, #episodePipeline, .episode-page .panel, .stage { scroll-margin-top: 96px; }
 .episode-brand { min-width: 0; }
-.breadcrumbs { display: flex; gap: 16px; color: var(--episode-muted); font-size: 12px; margin-bottom: 9px; }
+.breadcrumbs { display: flex; gap: 16px; color: var(--episode-muted); font-size: var(--gw-type-body-sm); margin-bottom: 9px; }
 .breadcrumbs span + span::before { content: "/"; margin-right: 16px; color: var(--episode-line); }
-.episode-header h1 { margin: 0; font: 700 28px/1.15 "Source Han Sans CN", "Microsoft YaHei", sans-serif; letter-spacing: -.025em; text-wrap: balance; }
+.episode-header h1 { margin: 0; font: 700 var(--gw-type-headline-lg)/1.15 var(--gw-font-body); letter-spacing: -.025em; text-wrap: balance; }
 .episode-header p { margin: 7px 0 0; color: var(--episode-muted); max-width: 70ch; }
 /* 顶栏单区：四步 stepbar（v3.1 项目名并入 kicker 行，顶栏右侧不再有项目元素）。
    stepbar 需以 #id 特异性覆盖 signal-flow.css 中对 .workflow-steps/.workflow-step 的
@@ -103,21 +103,21 @@ html body.gw-signal.gw-page--episode-pipeline #episodeStepNav[hidden] { display:
    border-radius 999px 使 CSS 胶囊轮廓与液态金属 SDF 端帽（半径 = 高度一半）
    几何一致，按下/悬停光效轮廓与按钮轮廓重合。 */
 html body.gw-signal.gw-page--episode-pipeline #episodeStepNav .workflow-step { min-height: 42px !important; min-width: 0 !important; padding: 4px 10px !important; display: flex !important; flex-direction: column !important; align-items: center !important; justify-content: center !important; gap: 2px !important; text-align: center !important; border-radius: 999px !important; }
-html body.gw-signal.gw-page--episode-pipeline #episodeStepNav .workflow-step strong { white-space: nowrap; font-size: 12px !important; line-height: 1.2 !important; }
-html body.gw-signal.gw-page--episode-pipeline #episodeStepNav .workflow-step small { white-space: nowrap; font-size: 10px !important; line-height: 1.2 !important; }
+html body.gw-signal.gw-page--episode-pipeline #episodeStepNav .workflow-step strong { white-space: nowrap; font-size:var(--gw-type-body-sm) !important; line-height: 1.2 !important; }
+html body.gw-signal.gw-page--episode-pipeline #episodeStepNav .workflow-step small { white-space: nowrap; font-size:var(--gw-type-label-md) !important; line-height: 1.2 !important; }
 html body.gw-signal.gw-page--episode-pipeline #episodeStepNav .workflow-step:focus-visible { outline: 2px solid var(--episode-accent); outline-offset: 2px; }
 .episode-page select, .episode-page input, .episode-page textarea { width: 100%; border: 1px solid rgba(255, 255, 255, 0.1) !important; border-radius: 6px !important; background: #08090d !important; color: var(--episode-ink) !important; padding: 9px 11px; font: inherit; box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.8) !important; }
 .episode-page textarea { resize: vertical; }
-.episode-page select { height: 38px; }
+.episode-page select { height: 40px; }
 .episode-page input::placeholder, .episode-page textarea::placeholder { color: #6b7280; }
 .episode-page input:focus-visible, .episode-page select:focus-visible, .episode-page textarea:focus-visible, .episode-page button:focus-visible { outline: 1px solid var(--episode-accent); outline-offset: 1px; border-color: var(--episode-accent) !important; }
 .panel { background: linear-gradient(180deg, #13151c 0%, #0a0b10 100%) !important; border: 1px solid rgba(223, 195, 132, 0.2) !important; border-radius: 12px !important; box-shadow: 0 8px 30px rgba(0, 0, 0, 0.8), inset 0 1px 0 rgba(255, 255, 255, 0.06) !important; }
 .pipeline-shell { padding: 24px; background: linear-gradient(180deg, #13151c 0%, #0a0b10 100%) !important; border: 1px solid rgba(223, 195, 132, 0.22) !important; border-radius: 12px !important; }
 .episode-create { margin-bottom: 20px; padding: 18px; }
 .panel-heading { display: flex; justify-content: space-between; gap: 16px; align-items: start; border-bottom: 1px solid var(--episode-line); padding-bottom: 13px; }
-.panel-heading h2 { margin: 0; font-size: 18px; }
+.panel-heading h2 { margin: 0;   font-size: var(--gw-type-headline-sm); line-height: var(--gw-leading-headline-sm); font-weight:var(--gw-weight-medium); letter-spacing: 0; text-transform: none;}
 .panel-heading p { margin: 4px 0 0; color: var(--episode-muted); }
-.icon-button { border: 0; background: transparent; color: var(--episode-muted); width: 34px; height: 34px; font-size: 22px; cursor: pointer; }
+.icon-button { border: 0; background: transparent; color: var(--episode-muted); width: 34px; height: 34px; font-size: var(--gw-icon-size-title); cursor: pointer; }
 .episode-form { padding-top: 17px; }
 .form-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(220px, .7fr); gap: 14px; }
 .form-grid label { display: grid; gap: 6px; font-weight: 700; }
@@ -126,7 +126,7 @@ html body.gw-signal.gw-page--episode-pipeline #episodeStepNav .workflow-step:foc
 .form-error { flex: 1; color: var(--episode-danger); min-height: 22px; }
 .episode-loading { min-height: 180px; display: grid; place-items: center; color: var(--episode-muted); }
 .episode-empty { padding: 54px 24px; text-align: center; }
-.episode-empty h2 { margin: 0 0 8px; font-size: 20px; }
+.episode-empty h2 { margin: 0 0 8px; font-size: var(--gw-type-headline-sm);  font-weight:var(--gw-weight-medium); line-height:var(--gw-leading-headline-sm);}
 .episode-empty p { color: var(--episode-muted); margin: 0 auto 18px; max-width: 56ch; }
 .pipeline-shell { padding: 22px; }
 .pipeline-title-row { display: flex; align-items: start; justify-content: space-between; gap: 20px; border-bottom: 1px solid var(--episode-line); padding-bottom: 18px; }
@@ -134,21 +134,21 @@ html body.gw-signal.gw-page--episode-pipeline #episodeStepNav .workflow-step:foc
 /* v3.2：卡片左上「剧集制片 / 项目名」标题行（原 kicker 字号 2 倍，标题字体栈），
    其下为待开始 chip 与整体进度；EP01-集名称为信息卡主标题。 */
 .pipeline-title-side { display: flex; flex-direction: column; gap: 10px; flex: 0 0 auto; min-width: 0; }
-.pipeline-page-title { margin: 0; font: 700 22px/1.2 "Source Han Sans CN", "Microsoft YaHei", sans-serif; letter-spacing: -.01em; overflow-wrap: anywhere; }
+.pipeline-page-title { margin: 0; font: 700 var(--gw-type-headline-md)/var(--gw-leading-headline-md) var(--gw-font-body); letter-spacing: -.01em; overflow-wrap: anywhere; }
 /* signal-flow.css 以 (0,2,2)+!important 把 .pipeline-title-row h2 压到 --sf-fs-title(15px)，
    需以 #episodePipeline 提升至 (1,2,2) 夺回字号：页标题 22px（kicker 的 2 倍），
    EP 集名标题保持视觉主标题 24px。 */
-html body.gw-signal.gw-page--episode-pipeline #episodePipeline .pipeline-page-title { font-size: 22px !important; }
-html body.gw-signal.gw-page--episode-pipeline #episodePipeline .pipeline-episode-title { font-size: 24px !important; }
+html body.gw-signal.gw-page--episode-pipeline #episodePipeline .pipeline-page-title { font-size:var(--gw-type-headline-md) !important;  font-weight:var(--gw-weight-bold); line-height:var(--gw-leading-headline-md);}
+html body.gw-signal.gw-page--episode-pipeline #episodePipeline .pipeline-episode-title { font-size:var(--gw-type-headline-md) !important;  font-weight:var(--gw-weight-bold); line-height:var(--gw-leading-headline-md);}
 /* v3.3-2：「剧集制片」前缀用现有链接蓝（与原提示词链路行同色系），项目名保持 ink 色。 */
 .pipeline-page-title .accent { color: var(--episode-blue); }
-.stage-kicker { color: var(--episode-green); font: 700 11px/1.3 "Source Han Sans CN", Consolas, monospace; letter-spacing: .08em; text-transform: uppercase; }
-.pipeline-title-row h2 { margin: 6px 0 0; font: 700 24px/1.2 "Source Han Sans CN", "Microsoft YaHei", sans-serif; text-wrap: balance; }
+.stage-kicker { color: var(--episode-green); font: 700 var(--gw-type-label-md)/1.3 var(--gw-font-mono); letter-spacing: .08em; text-transform: uppercase; }
+.pipeline-title-row h2 { margin: 6px 0 0; font: 700 var(--gw-type-headline-md)/var(--gw-leading-headline-md) var(--gw-font-body); text-wrap: balance; }
 .pipeline-title-row p { margin: 8px 0 0; color: var(--episode-muted); max-width: 80ch; overflow-wrap: anywhere; }
-.pipeline-title-row p span { color: var(--episode-blue); font-size: 12px; }
+.pipeline-title-row p span { color: var(--episode-blue); font-size: var(--gw-type-body-sm); }
 .pipeline-meta-side { display: grid; justify-items: end; gap: 7px; color: var(--episode-muted); white-space: nowrap; }
-.pipeline-meta-side select { width: 200px; height: 34px; font-size: 12px; }
-.status { display: inline-flex; align-items: center; gap: 6px; min-height: 26px; padding: 3px 9px; border: 1px solid var(--episode-line); border-radius: 999px; background: #0c0e13; color: var(--episode-muted); font-size: 12px; font-weight: 700; white-space: nowrap; }
+.pipeline-meta-side select { width: 200px; min-height:40px; height:auto;   font-size: var(--gw-type-body-md); line-height: var(--gw-leading-body-md); font-weight: var(--gw-weight-regular); letter-spacing: 0; text-transform: none; min-height:40px;}
+.status { display: inline-flex; align-items: center; gap: 6px; min-height: 26px; padding: 3px 9px; border: 1px solid var(--episode-line); border-radius: 999px; background: #0c0e13; color: var(--episode-muted); font-size: var(--gw-type-body-sm); font-weight: 700; white-space: nowrap; }
 .status i { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
 .status.succeeded { color: var(--episode-green); border-color: rgba(24,201,139,.55); background: rgba(24,201,139,.08); }
 .status.running { color: var(--episode-warning); border-color: rgba(243,180,49,.55); background: rgba(243,180,49,.08); }
@@ -158,9 +158,9 @@ html body.gw-signal.gw-page--episode-pipeline #episodePipeline .pipeline-episode
 .workflow-step { min-width: 0; min-height: var(--gw-row-height, 56px); display: grid; grid-template-columns: 32px 1fr; grid-template-rows: auto auto; column-gap: 10px; align-items: center; text-align: left; border: 1px solid var(--episode-line); border-radius: 3px; background: var(--episode-surface-3); color: var(--episode-ink); padding: 10px 12px; cursor: pointer; transition: border-color .18s ease, background .18s ease, transform .18s ease; }
 .workflow-step:hover { border-color: var(--episode-accent); transform: translateY(-1px); }
 .workflow-step.is-active { border-color: var(--episode-accent); background: #2a2118; }
-.workflow-step > span { grid-row: 1 / -1; align-self: center; color: var(--episode-accent); font: 700 16px/1 "Source Han Sans CN", Consolas, monospace; }
-.workflow-step strong { font-size: 14px; }
-.workflow-step small { color: var(--episode-muted); font-size: 11px; }
+.workflow-step > span { grid-row: 1 / -1; align-self: center; color: var(--episode-accent); font: 700 var(--gw-type-body-lg)/1 var(--gw-font-mono); }
+.workflow-step strong { font-size: var(--gw-type-body-md); }
+.workflow-step small { color: var(--episode-muted); font-size: var(--gw-type-label-md); }
 .workflow-step.succeeded small { color: var(--episode-green); }
 .workflow-step.running small { color: var(--episode-warning); }
 .pipeline-progress { height: 3px; background: var(--episode-line-soft); overflow: hidden; }
@@ -172,26 +172,26 @@ html body.gw-signal.gw-page--episode-pipeline #episodePipeline .pipeline-episode
 .stage.failed, .stage.canceled, .stage.interrupted { border-color: rgba(228,108,102,.65); }
 .stage-heading { display: flex; justify-content: space-between; gap: 16px; align-items: start; padding-bottom: 14px; border-bottom: 1px solid var(--episode-line-soft); }
 .stage-heading-tools { display: flex; align-items: end; justify-content: flex-end; gap: 10px; flex-wrap: wrap; }
-.stage-model-picker { display: grid; gap: 4px; min-width: 220px; color: var(--episode-muted); font-size: 11px; font-weight: 700; }
-.stage-model-picker select { width: 100%; min-width: 220px; height: 34px; padding: 6px 9px; font-size: 12px; }
-.stage-heading h2 { margin: 5px 0 0; font-size: 20px; }
-.stage-heading p { margin: 5px 0 0; color: var(--episode-muted); font-size: 12px; overflow-wrap: anywhere; }
+.stage-model-picker { display: grid; gap: 4px; min-width: 220px; color: var(--episode-muted); font-size: var(--gw-type-label-md); font-weight: 700; }
+.stage-model-picker select { width: 100%; min-width: 220px; min-height:40px; height:auto; padding: 6px 9px;   font-size: var(--gw-type-body-md); line-height: var(--gw-leading-body-md); font-weight: var(--gw-weight-regular); letter-spacing: 0; text-transform: none; min-height:40px;}
+.stage-heading h2 { margin: 5px 0 0; font-size: var(--gw-type-headline-sm);  font-weight:var(--gw-weight-medium); line-height:var(--gw-leading-headline-sm);}
+.stage-heading p { margin: 5px 0 0; color: var(--episode-muted); font-size: var(--gw-type-body-sm); overflow-wrap: anywhere; }
 .stage-heading .status { flex: 0 0 auto; }
 .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
 .script-grid { display: grid; grid-template-columns: minmax(0, .92fr) minmax(0, 1.08fr); gap: 16px; margin-top: 16px; }
 .editor-pane, .result-pane, .review-panel { min-width: 0; background: linear-gradient(175deg, #171920 0%, #101217 60%, #0c0d10 100%); border: 1px solid var(--episode-line); box-shadow: 0 12px 28px rgba(0,0,0,0.8), inset 0 1px 1px rgba(255,255,255,0.07); padding: 15px; border-radius: 8px; }
-.field-label, .inline-fields label, .shot-card label, .video-script-card label { color: var(--episode-muted); font-size: 12px; }
+.field-label, .inline-fields label, .shot-card label, .video-script-card label { color: var(--episode-muted);   font-size: var(--gw-type-body-md); line-height: var(--gw-leading-body-md); font-weight: var(--gw-weight-medium); letter-spacing: 0; text-transform: none;}
 .script-input-heading { display: flex; align-items: end; justify-content: space-between; gap: 12px; }
-.script-mode-picker { display: grid; gap: 5px; width: min(100%, 290px); color: var(--episode-muted); font-size: 12px; }
+.script-mode-picker { display: grid; gap: 5px; width: min(100%, 290px); color: var(--episode-muted); font-size: var(--gw-type-body-sm); }
 .script-mode-picker select { width: 100%; min-height: 36px; padding: 7px 9px; }
 .script-input { min-height: 220px; margin-top: 7px; }
 .inline-fields { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 9px; margin-top: 10px; }
 .inline-fields label { display: grid; gap: 5px; }
 .inline-fields input { height: 34px; padding: 7px 9px; }
-.helper { color: var(--episode-muted); margin: 9px 0 0; font-size: 12px; }
+.helper { color: var(--episode-muted); margin: 9px 0 0; font-size: var(--gw-type-body-sm); }
 .pane-heading { display: flex; align-items: start; justify-content: space-between; gap: 12px; margin-bottom: 9px; }
-.pane-heading h3, .pane-heading h4 { margin: 0; font-size: 15px; }
-.pane-heading span { color: var(--episode-muted); font-size: 12px; }
+.pane-heading h3, .pane-heading h4 { margin: 0;   font-size: var(--gw-type-headline-sm); line-height: var(--gw-leading-headline-sm); font-weight:var(--gw-weight-medium); letter-spacing: 0; text-transform: none;}
+.pane-heading span { color: var(--episode-muted); font-size: var(--gw-type-body-sm); }
 .result-dot, .review-agent { color: var(--episode-green) !important; }
 .result-editor { min-height: 300px; background: #171312 !important; border-color: #4d3d2f !important; }
 .result-actions, .stage-actions, .review-actions, .story-step-actions, .stage-footer { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
@@ -199,103 +199,103 @@ html body.gw-signal.gw-page--episode-pipeline #episodePipeline .pipeline-episode
 .review-empty, .step-empty, .video-script-empty { color: var(--episode-muted); border: 1px dashed var(--episode-line); padding: 18px; }
 .review-summary { display: flex; align-items: center; gap: 22px; padding: 12px; background: #171312; border: 1px solid #4d3d2f; }
 .review-summary > div { display: grid; gap: 3px; }
-.review-summary span { color: var(--episode-muted); font-size: 11px; }
-.review-summary strong { color: var(--episode-green); font: 700 25px/1 "Source Han Sans CN", sans-serif; }
-.review-summary strong small { color: var(--episode-muted); font: 400 11px/1 "Source Han Sans CN", sans-serif; }
-.review-summary time { margin-left: auto; color: var(--episode-muted); font-size: 11px; }
-.review-decision { font-size: 13px; }
+.review-summary span { color: var(--episode-muted); font-size: var(--gw-type-label-md); }
+.review-summary strong { color: var(--episode-green); font: 700 var(--gw-type-metric-md)/1 var(--gw-font-body); }
+.review-summary strong small { color: var(--episode-muted); font: 400 var(--gw-type-label-md)/1 var(--gw-font-body); }
+.review-summary time { margin-left: auto; color: var(--episode-muted); font-size: var(--gw-type-label-md); }
+.review-decision { font-size: var(--gw-type-body-sm); }
 .review-decision.pass { color: var(--episode-green); }
 .review-decision.revise { color: var(--episode-warning); }
 .review-note { color: var(--episode-ink); margin: 12px 0; }
 .review-dimensions { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
-.review-dimensions div { display: flex; justify-content: space-between; gap: 8px; padding: 9px; border: 1px solid var(--episode-line-soft); color: var(--episode-muted); font-size: 12px; }
+.review-dimensions div { display: flex; justify-content: space-between; gap: 8px; padding: 9px; border: 1px solid var(--episode-line-soft); color: var(--episode-muted); font-size: var(--gw-type-body-sm); }
 .review-dimensions strong { color: var(--episode-green); }
-.stage-loading { display: flex; align-items: center; gap: 9px; margin: 12px 0 0; padding: 9px 11px; border: 1px solid rgba(243,180,49,.48); background: rgba(243,180,49,.08); color: var(--episode-warning); font-size: 12px; }
+.stage-loading { display: flex; align-items: center; gap: 9px; margin: 12px 0 0; padding: 9px 11px; border: 1px solid rgba(243,180,49,.48); background: rgba(243,180,49,.08); color: var(--episode-warning); font-size: var(--gw-type-body-sm); }
 .loading-spinner { display: inline-block; width: 15px; height: 15px; flex: 0 0 15px; border: 2px solid rgba(243,180,49,.28); border-top-color: var(--episode-warning); border-radius: 50%; animation: episode-spin .8s linear infinite; }
 .inline-loading { display: inline-flex; align-items: center; gap: 5px; color: var(--episode-warning); white-space: nowrap; }
 .inline-loading .loading-spinner { width: 11px; height: 11px; flex-basis: 11px; border-width: 1.5px; }
 @keyframes episode-spin { to { transform: rotate(360deg); } }
 .review-result { display: grid; gap: 10px; }
-.review-result-title { color: var(--episode-text); font-size: 18px; font-weight: 800; padding: 2px 0 1px; }
+.review-result-title { color: var(--episode-text); font-size: var(--gw-type-body-lg); font-weight: 800; padding: 2px 0 1px; }
 .review-top-grid { display: grid; grid-template-columns: minmax(180px, .58fr) minmax(0, 1.42fr); gap: 10px; }
 .review-card { min-width: 0; padding: 13px; border: 1px solid var(--episode-line-soft); background: #171312; }
-.review-card-title { margin-bottom: 9px; color: var(--episode-green); font-size: 12px; font-weight: 700; }
+.review-card-title { margin-bottom: 9px; color: var(--episode-green); font-size: var(--gw-type-body-sm); font-weight: 700; }
 .review-score-card { display: grid; align-content: start; gap: 8px; }
-.review-score-card > strong { color: var(--episode-green); font: 700 34px/1 "Source Han Sans CN", sans-serif; }
-.review-score-card > strong small { color: var(--episode-muted); font: 400 12px/1 "Source Han Sans CN", sans-serif; }
+.review-score-card > strong { color: var(--episode-green); font: 700 var(--gw-type-headline-lg)/1 var(--gw-font-body); }
+.review-score-card > strong small { color: var(--episode-muted); font: 400 var(--gw-type-body-sm)/var(--gw-leading-body-sm) var(--gw-font-body); }
 .review-score-card .review-decision { width: fit-content; }
-.review-score-card time { color: var(--episode-muted); font-size: 11px; }
+.review-score-card time { color: var(--episode-muted); font-size: var(--gw-type-label-md); }
 .review-dimension-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
 .review-dimension-item { min-height: 82px; padding: 9px; border: 1px solid #4d3d2f; background: #1b1513; }
 .review-dimension-item > div { display: flex; align-items: baseline; justify-content: space-between; gap: 7px; }
-.review-dimension-item strong { color: var(--episode-ink); font-size: 12px; }
-.review-dimension-item b { color: var(--episode-green); font: 700 17px/1 "Source Han Sans CN", sans-serif; }
-.review-dimension-item p { margin: 8px 0 0; color: var(--episode-muted); font-size: 11px; line-height: 1.45; }
+.review-dimension-item strong { color: var(--episode-ink); font-size: var(--gw-type-body-sm); }
+.review-dimension-item b { color: var(--episode-green); font: 700 var(--gw-type-body-lg)/1 var(--gw-font-body); }
+.review-dimension-item p { margin: 8px 0 0; color: var(--episode-muted);    font-size: var(--gw-type-body-sm); line-height: var(--gw-leading-body-sm); font-weight: var(--gw-weight-medium); letter-spacing: 0; text-transform: none;}
 .review-summary-card p { margin: 0; color: var(--episode-ink); line-height: 1.65; }
 .review-list { display: grid; gap: 7px; margin: 0; padding-left: 19px; color: var(--episode-ink); line-height: 1.55; }
 .review-list li::marker { color: var(--episode-accent); }
 .review-priority-list li::marker { color: var(--episode-green); font-weight: 700; }
 .review-surgery-card, .review-examples-card { display: grid; gap: 9px; }
 .review-surgery-row { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; padding: 10px; border: 1px solid var(--episode-line-soft); background: #1b1513; }
-.review-surgery-row span { color: var(--episode-green); font-size: 11px; font-weight: 700; }
-.review-surgery-row p { margin: 5px 0 0; color: var(--episode-ink); font-size: 12px; line-height: 1.5; white-space: pre-wrap; }
+.review-surgery-row span { color: var(--episode-green);    font-size: var(--gw-type-body-sm); line-height: var(--gw-leading-body-sm); font-weight: var(--gw-weight-medium); letter-spacing: 0; text-transform: none;}
+.review-surgery-row p { margin: 5px 0 0; color: var(--episode-ink); font-size: var(--gw-type-body-sm); line-height: 1.5; white-space: pre-wrap; }
 .review-example-body { padding: 10px; border: 1px solid var(--episode-line-soft); background: #1b1513; }
 .review-example-body p { margin: 0 0 6px; color: var(--episode-ink); line-height: 1.55; white-space: pre-wrap; }
 .review-example-body p:last-child { margin-bottom: 0; }
-.history-strip { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 14px; color: var(--episode-muted); font-size: 12px; }
-.history-strip button { border: 1px solid var(--episode-line); border-radius: 3px; background: transparent; color: var(--episode-blue); padding: 5px 8px; cursor: pointer; font-size: 11px; }
+.history-strip { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 14px; color: var(--episode-muted); font-size: var(--gw-type-body-sm); }
+.history-strip button { border: 1px solid var(--episode-line); border-radius: 3px; background: transparent; color: var(--episode-blue); padding: 5px 8px; cursor: pointer;   font-size: var(--gw-type-body-md); line-height: var(--gw-leading-body-md); font-weight: var(--gw-weight-medium); letter-spacing: 0; text-transform: none; min-height:36px;}
 .asset-toolbar, .video-script-intro { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 15px 0; border-bottom: 1px solid var(--episode-line-soft); }
 .asset-toolbar-summary { display: grid; gap: 10px; min-width: 0; }
 .asset-toolbar-actions { display: flex; align-items: end; justify-content: flex-end; gap: 10px; flex-wrap: wrap; }
 .asset-toolbar-actions .stage-actions { margin-top: 0; }
 .asset-toolbar-actions .stage-model-picker { min-width: 250px; }
-.asset-toolbar strong, .video-script-intro strong { display: block; font-size: 15px; }
-.asset-toolbar span, .video-script-intro p { display: block; margin: 3px 0 0; color: var(--episode-muted); font-size: 12px; }
+.asset-toolbar strong, .video-script-intro strong { display: block; font-size: var(--gw-type-body-lg); }
+.asset-toolbar span, .video-script-intro p { display: block; margin: 3px 0 0; color: var(--episode-muted); font-size: var(--gw-type-body-sm); }
 .asset-group-filter { display: flex; flex-wrap: wrap; gap: 6px; }
-.asset-group-button { display: inline-flex; align-items: center; gap: 6px; min-height: 30px; padding: 0 9px; border: 1px solid var(--episode-line); border-radius: 3px; background: transparent; color: var(--episode-muted); font: 700 11px/1 "Source Han Sans CN", "Microsoft YaHei", sans-serif; cursor: pointer; }
+.asset-group-button { display: inline-flex; align-items: center; gap: 6px; min-height: 30px; padding: 0 9px; border: 1px solid var(--episode-line); border-radius: 3px; background: transparent; color: var(--episode-muted); font: 700 var(--gw-type-label-md)/1 var(--gw-font-body); cursor: pointer; }
 .asset-group-button:hover, .asset-group-button:focus-visible { border-color: var(--episode-accent); color: var(--episode-ink); }
 .asset-group-button.is-active { border-color: var(--episode-accent-strong); background: rgba(242,140,22,.14); color: var(--episode-ink); }
-.asset-group-button span { margin: 0; color: var(--episode-green); font: 700 11px/1 "Source Han Sans CN", Consolas, monospace; }
+.asset-group-button span { margin: 0; color: var(--episode-green); font: 700 var(--gw-type-label-md)/1 var(--gw-font-mono); }
 .asset-grid { display: flex; gap: 10px; overflow-x: auto; padding: 16px 2px 8px; scroll-snap-type: x proximity; scrollbar-width: thin; }
 .asset-card { position: relative; flex: 0 0 min(320px, calc((100% - 20px) / 3)); min-width: 270px; border: 1px solid var(--episode-line); background: linear-gradient(175deg, #171920 0%, #101217 60%, #0c0d10 100%); box-shadow: 0 12px 28px rgba(0,0,0,0.8), inset 0 1px 1px rgba(255,255,255,0.07); scroll-snap-align: start; }
 .asset-card:focus-visible { outline: 2px solid var(--episode-accent); outline-offset: 2px; }
 .asset-card.is-ready { border-color: rgba(24,201,139,.6); }
 .asset-preview { aspect-ratio: 16 / 9; background: #08090b; border-bottom: 1px solid var(--episode-line); display: grid; place-items: center; overflow: hidden; cursor: zoom-in; }
 .asset-preview img { width: 100%; height: 100%; object-fit: cover; display: block; }
-.asset-placeholder { display: grid; gap: 3px; place-items: center; color: var(--episode-muted); font-size: 12px; }
-.asset-placeholder-loading .inline-loading { font-size: 11px; }
+.asset-placeholder { display: grid; gap: 3px; place-items: center; color: var(--episode-muted); font-size: var(--gw-type-body-sm); }
+.asset-placeholder-loading .inline-loading { font-size: var(--gw-type-label-md); }
 .asset-placeholder-loading::before { display: none; }
-.asset-placeholder::before { content: "◫"; color: var(--episode-accent); font-size: 25px; }
-.asset-placeholder small { font-size: 10px; }
+.asset-placeholder::before { content: "◫"; color: var(--episode-accent); font-size: var(--gw-icon-size-title); }
+.asset-placeholder small { font-size: var(--gw-type-label-md); }
 .asset-card-body { padding: 11px; }
 .asset-card-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
 .asset-card-title { display: grid; gap: 4px; min-width: 0; }
 .asset-card-title strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .asset-card-meta { display: flex; align-items: center; gap: 7px; min-width: 0; }
-.asset-type { color: var(--episode-accent); font-size: 11px; }
-.asset-status-text { color: var(--episode-muted); font-size: 11px; white-space: nowrap; }
-.asset-generate-button { flex: 0 0 auto; min-height: 31px; padding: 0 9px; font-size: 11px; }
-.asset-card p { min-height: 43px; margin: 8px 0 0; color: var(--episode-muted); font-size: 12px; line-height: 1.45; overflow-wrap: anywhere; }
+.asset-type { color: var(--episode-accent); font-size: var(--gw-type-label-md); }
+.asset-status-text { color: var(--episode-muted);  white-space: nowrap;  font-size: var(--gw-type-body-sm); line-height: var(--gw-leading-body-sm); font-weight: var(--gw-weight-medium); letter-spacing: 0; text-transform: none;}
+.asset-generate-button { flex: 0 0 auto; min-height: 31px; padding: 0 9px;   font-size: var(--gw-type-body-md); line-height: var(--gw-leading-body-md); font-weight: var(--gw-weight-medium); letter-spacing: 0; text-transform: none; min-height:36px;}
+.asset-card p { min-height: 43px; margin: 8px 0 0; color: var(--episode-muted); font-size: var(--gw-type-body-sm); line-height: 1.45; overflow-wrap: anywhere; }
 .asset-card-actions { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 9px; }
-.asset-type-bottom { color: var(--episode-accent); font-size: 11px; font-weight: 700; }
-.asset-card-actions .btn { min-height: 31px; font-size: 11px; padding: 0 9px; }
+.asset-type-bottom { color: var(--episode-accent); font-size: var(--gw-type-label-md); font-weight: 700; }
+.asset-card-actions .btn { min-height: 31px;  padding: 0 9px;  font-size: var(--gw-type-body-md); line-height: var(--gw-leading-body-md); font-weight: var(--gw-weight-medium); letter-spacing: 0; text-transform: none; min-height:36px;}
 .asset-empty { padding: 34px 20px; text-align: center; border: 1px dashed var(--episode-line); }
-.asset-empty-mark { color: var(--episode-accent); font-size: 30px; }
-.asset-empty h3, .asset-empty h4 { margin: 4px 0; font-size: 16px; }
+.asset-empty-mark { color: var(--episode-accent); font-size: var(--gw-type-headline-lg); }
+.asset-empty h3, .asset-empty h4 { margin: 4px 0; font-size: var(--gw-type-body-lg); }
 .asset-empty p { color: var(--episode-muted); margin: 0 auto; max-width: 55ch; }
 .asset-filter-empty { margin-top: 16px; padding: 24px; border: 1px dashed var(--episode-line); color: var(--episode-muted); text-align: center; }
 .asset-detail-dialog, .asset-image-dialog { width: min(900px, calc(100vw - 32px)); max-width: 900px; max-height: min(820px, calc(100vh - 32px)); padding: 0; border: 1px solid var(--episode-line); border-radius: 4px; background: var(--episode-surface); color: var(--episode-ink); box-shadow: 0 8px 24px rgba(0,0,0,.32); }
 .asset-detail-dialog::backdrop, .asset-image-dialog::backdrop { background: rgba(5,9,13,.72); }
 .asset-detail-shell, .asset-image-shell { display: grid; gap: 0; min-width: 0; }
 .asset-detail-head, .asset-image-head { display: flex; align-items: start; justify-content: space-between; gap: 16px; padding: 18px 20px; border-bottom: 1px solid var(--episode-line); }
-.asset-detail-kicker { color: var(--episode-green); font: 700 11px/1.3 "Source Han Sans CN", Consolas, monospace; }
-.asset-detail-head h2 { margin: 5px 0 0; font-size: 20px; }
-.asset-detail-head p { margin: 4px 0 0; color: var(--episode-muted); font-size: 12px; }
+.asset-detail-kicker { color: var(--episode-green); font: 700 var(--gw-type-label-md)/1.3 var(--gw-font-mono); }
+.asset-detail-head h2 { margin: 5px 0 0; font-size: var(--gw-type-headline-sm);  font-weight:var(--gw-weight-medium); line-height:var(--gw-leading-headline-sm);}
+.asset-detail-head p { margin: 4px 0 0; color: var(--episode-muted); font-size: var(--gw-type-body-sm); }
 .asset-detail-body { display: grid; grid-template-columns: minmax(260px, .95fr) minmax(300px, 1.05fr); gap: 16px; padding: 18px 20px; }
 .asset-detail-media { min-height: 260px; display: grid; place-items: center; border: 1px solid var(--episode-line-soft); background: #08090b; overflow: hidden; }
 .asset-detail-media img { width: 100%; height: 100%; min-height: 260px; object-fit: contain; cursor: zoom-in; }
 .asset-detail-fields { display: grid; align-content: start; gap: 10px; }
-.asset-detail-fields label { display: grid; gap: 5px; color: var(--episode-muted); font-size: 12px; }
+.asset-detail-fields label { display: grid; gap: 5px; color: var(--episode-muted);   font-size: var(--gw-type-body-md); line-height: var(--gw-leading-body-md); font-weight: var(--gw-weight-medium); letter-spacing: 0; text-transform: none;}
 .asset-detail-fields textarea { min-height: 190px; resize: vertical; }
 .asset-detail-actions { display: flex; align-items: center; gap: 8px; padding: 14px 20px 18px; border-top: 1px solid var(--episode-line-soft); }
 .asset-detail-actions > span { flex: 1; }
@@ -303,47 +303,47 @@ html body.gw-signal.gw-page--episode-pipeline #episodePipeline .pipeline-episode
 .asset-image-shell { padding: 14px; }
 .asset-image-head { padding: 0 0 10px; border-bottom: 1px solid var(--episode-line-soft); }
 .asset-image-shell > img { display: block; width: 100%; max-height: calc(100vh - 130px); object-fit: contain; margin: 14px auto 8px; }
-.asset-image-shell > p { margin: 0; color: var(--episode-muted); font-size: 11px; text-align: center; }
+.asset-image-shell > p { margin: 0; color: var(--episode-muted); font-size: var(--gw-type-label-md); text-align: center; }
 .storyboard-steps { display: grid; grid-template-columns: minmax(220px, .8fr) minmax(0, 1.35fr) minmax(220px, .8fr); gap: 12px; margin-top: 16px; }
 .story-step { min-width: 0; border: 1px solid var(--episode-line); background: linear-gradient(175deg, #171920 0%, #101217 60%, #0c0d10 100%); box-shadow: 0 12px 28px rgba(0,0,0,0.8), inset 0 1px 1px rgba(255,255,255,0.07); padding: 13px; border-radius: 8px; }
 .story-step-outline { grid-column: 1 / -1; }
 .story-step-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-.story-step-head span { color: var(--episode-accent); font: 700 11px "Source Han Sans CN", Consolas, monospace; }
-.story-step-head b { margin-left: auto; color: var(--episode-green); font-size: 11px; }
+.story-step-head span { color: var(--episode-accent); font: 700 var(--gw-type-label-md) var(--gw-font-mono); }
+.story-step-head b { margin-left: auto; color: var(--episode-green); font-size: var(--gw-type-label-md); }
 .story-step-head b.story-step-warning { color: var(--episode-warning); }
-.story-step p { color: var(--episode-muted); font-size: 12px; margin: 9px 0; }
-.story-step textarea { min-height: 128px; font-size: 12px; }
+.story-step p { color: var(--episode-muted); font-size: var(--gw-type-body-sm); margin: 9px 0; }
+.story-step textarea { min-height: 128px;   font-size: var(--gw-type-body-md); line-height: var(--gw-leading-body-md); font-weight: var(--gw-weight-regular); letter-spacing: 0; text-transform: none; min-height:40px;}
 .outline-editor-grid { display: grid; grid-template-columns: minmax(280px, .88fr) minmax(0, 1.12fr); gap: 12px; margin-top: 13px; }
 .outline-source, .outline-structured { min-width: 0; border: 1px solid var(--episode-line-soft); background: #0a0c10; padding: 12px; border-radius: 6px; }
-.outline-pane-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; color: var(--episode-green); font-size: 13px; }
-.outline-pane-heading span { color: var(--episode-muted); font-size: 11px; }
+.outline-pane-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; color: var(--episode-green);   font-size: var(--gw-type-headline-sm); line-height: var(--gw-leading-headline-sm); font-weight:var(--gw-weight-medium); letter-spacing: 0; text-transform: none;}
+.outline-pane-heading span { color: var(--episode-muted);   font-size: var(--gw-type-body-sm); line-height: var(--gw-leading-body-sm); font-weight: var(--gw-weight-medium); letter-spacing: 0; text-transform: none;}
 .outline-source-editor { min-height: 330px; margin-top: 9px; background: #171312 !important; border-color: #4d3d2f !important; color: var(--episode-ink); line-height: 1.6; resize: vertical; }
 .outline-fields { display: grid; gap: 9px; margin-top: 9px; }
 .outline-field { min-width: 0; border: 1px solid var(--episode-line); background: #0e1015; padding: 9px; border-radius: 6px; }
 .outline-field-head { display: flex; align-items: center; justify-content: space-between; gap: 9px; }
-.outline-field-head label, .outline-field-head > span { color: var(--episode-accent); font-size: 11px; font-weight: 700; }
+.outline-field-head label, .outline-field-head > span { color: var(--episode-accent);    font-size: var(--gw-type-body-md); line-height: var(--gw-leading-body-md); font-weight: var(--gw-weight-medium); letter-spacing: 0; text-transform: none;}
 .outline-field textarea { min-height: 62px; margin-top: 7px; background: #08090b; line-height: 1.55; }
 .outline-field.is-expanded textarea { min-height: 170px; }
-.outline-expand { flex: 0 0 auto; min-height: 24px; padding: 2px 8px; border: 1px solid rgba(244,166,42,.65); border-radius: 3px; background: transparent; color: var(--episode-accent); font-size: 11px; cursor: pointer; }
+.outline-expand { flex: 0 0 auto; min-height: 24px; padding: 2px 8px; border: 1px solid rgba(244,166,42,.65); border-radius: 3px; background: transparent; color: var(--episode-accent); font-size: var(--gw-type-label-md); cursor: pointer; }
 .outline-expand:hover, .outline-expand:focus-visible { background: rgba(244,166,42,.12); }
 .outline-act-list { display: grid; gap: 7px; margin-top: 7px; }
-.outline-act-list label { display: grid; grid-template-columns: 54px minmax(0, 1fr); align-items: start; gap: 8px; color: var(--episode-muted); font-size: 11px; }
+.outline-act-list label { display: grid; grid-template-columns: 54px minmax(0, 1fr); align-items: start; gap: 8px; color: var(--episode-muted);   font-size: var(--gw-type-body-md); line-height: var(--gw-leading-body-md); font-weight: var(--gw-weight-medium); letter-spacing: 0; text-transform: none;}
 .outline-act-list textarea { margin-top: 0; min-height: 46px; }
 .shot-list { display: grid; gap: 9px; max-height: 680px; overflow: auto; padding-right: 2px; }
 .shot-card { border: 1px solid var(--episode-line-soft); background: #171312; padding: 10px; }
-.shot-head { display: flex; justify-content: space-between; gap: 8px; color: var(--episode-green); font-size: 11px; }
+.shot-head { display: flex; justify-content: space-between; gap: 8px; color: var(--episode-green); font-size: var(--gw-type-label-md); }
 .shot-head span { color: var(--episode-muted); }
 .shot-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 7px; margin-top: 8px; }
 .shot-fields label, .shot-wide { display: grid; gap: 4px; }
-.shot-card input, .shot-card textarea { padding: 6px 7px; font-size: 12px; }
+.shot-card input, .shot-card textarea { padding: 6px 7px;   font-size: var(--gw-type-body-md); line-height: var(--gw-leading-body-md); font-weight: var(--gw-weight-regular); letter-spacing: 0; text-transform: none; min-height:40px;}
 .shot-wide { margin-top: 7px; }
 .video-script-list { display: grid; gap: 12px; margin-top: 16px; }
 .video-script-card { border: 1px solid var(--episode-line); background: linear-gradient(175deg, #171920 0%, #101217 60%, #0c0d10 100%); box-shadow: 0 12px 28px rgba(0,0,0,0.8), inset 0 1px 1px rgba(255,255,255,0.07); padding: 13px; border-radius: 8px; }
 .video-script-head { display: flex; justify-content: space-between; gap: 12px; color: var(--episode-green); margin-bottom: 10px; }
-.video-script-head span { color: var(--episode-muted); font-size: 11px; }
+.video-script-head span { color: var(--episode-muted); font-size: var(--gw-type-label-md); }
 .video-script-card label { display: grid; gap: 5px; margin-top: 9px; }
-.video-script-card textarea { font-family: "Source Han Sans CN", "Microsoft YaHei", sans-serif; font-size: 12px; }
-.btn { border: 1px solid var(--episode-line); border-radius: 3px; min-height: 38px; padding: 0 14px; background: transparent; color: var(--episode-ink); font: 700 13px/1 "Source Han Sans CN", "Microsoft YaHei", sans-serif; cursor: pointer; transition: background .18s ease, border-color .18s ease, color .18s ease; }
+.video-script-card textarea { font-family: var(--gw-font-body);   font-size: var(--gw-type-body-md); line-height: var(--gw-leading-body-md); font-weight: var(--gw-weight-regular); letter-spacing: 0; text-transform: none; min-height:40px;}
+.btn { border: 1px solid var(--episode-line); border-radius: 3px; min-height: 38px; padding: 0 14px; background: transparent; color: var(--episode-ink); font: 700 var(--gw-type-body-sm)/1 var(--gw-font-body); cursor: pointer; transition: background .18s ease, border-color .18s ease, color .18s ease; }
 .btn:hover { background: var(--episode-surface-2); border-color: var(--episode-blue); }
 .btn.primary { border-color: var(--episode-accent-strong); background: var(--episode-accent-strong); color: #15110b; }
 .btn.primary:hover { background: var(--episode-accent); border-color: var(--episode-accent); }
@@ -354,7 +354,7 @@ html body.gw-signal.gw-page--episode-pipeline #episodePipeline .pipeline-episode
 .episode-toast.visible { opacity: 1; transform: translateY(0); }
 .episode-toast.error { border-color: var(--episode-danger); color: #ffd6d2; }
 @media (max-width: 1160px) { .episode-page { padding: 24px 20px 50px; } .script-grid, .storyboard-steps, .outline-editor-grid { grid-template-columns: 1fr; } .story-step { min-height: 0; } }
-@media (max-width: 760px) { .episode-page { padding: 17px 12px 40px; } .episode-header { flex-wrap: wrap; align-items: center; gap: 10px 14px; padding: 8px 0; } html body.gw-signal.gw-page--episode-pipeline #episodeStepNav.episode-stepbar { flex-basis: 100%; order: 3; margin: 2px 0 0; } .pipeline-shell { padding: 14px; } .pipeline-title-row { flex-direction: column; } .pipeline-status-side { flex-wrap: wrap; } .pipeline-meta-side { justify-items: start; width: 100%; } .pipeline-meta-side select { width: 100%; } .workflow-steps { grid-template-columns: repeat(2, minmax(0, 1fr)); } .stage { padding: 13px; } .stage-heading { flex-direction: column; } .stage-heading-tools { align-items: stretch; justify-content: stretch; width: 100%; } .stage-model-picker, .stage-model-picker select { min-width: 0; width: 100%; } .script-input-heading { align-items: stretch; flex-direction: column; } .script-mode-picker { width: 100%; } .inline-fields, .review-dimensions { grid-template-columns: 1fr; } .asset-toolbar, .video-script-intro { align-items: stretch; flex-direction: column; } .asset-toolbar-actions { align-items: stretch; flex-direction: column; width: 100%; } .asset-toolbar-actions .stage-model-picker, .asset-toolbar-actions .stage-model-picker select { min-width: 0; width: 100%; } .asset-card { flex-basis: 280px; } .asset-card p { min-height: 0; } .asset-detail-body { grid-template-columns: 1fr; } .asset-detail-media { min-height: 200px; } .asset-detail-media img { min-height: 200px; } .asset-detail-actions { flex-wrap: wrap; } .asset-detail-actions > span { display: none; } .review-summary { flex-wrap: wrap; gap: 14px; } .review-summary time { width: 100%; margin-left: 0; } .form-grid { grid-template-columns: 1fr; } .form-grid .wide { grid-column: auto; } .form-actions { flex-wrap: wrap; justify-content: stretch; } .form-actions .btn { flex: 1 1 120px; } }
+@media (max-width: 760px) { .episode-page { padding: 17px 12px 40px; } .episode-header { flex-wrap: wrap; align-items: center; gap: 10px 14px; padding: 8px 0; } html body.gw-signal.gw-page--episode-pipeline #episodeStepNav.episode-stepbar { flex-basis: 100%; order: 3; margin: 2px 0 0; } .pipeline-shell { padding: 14px; } .pipeline-title-row { flex-direction: column; } .pipeline-status-side { flex-wrap: wrap; } .pipeline-meta-side { justify-items: start; width: 100%; } .pipeline-meta-side select { width: 100%;  font-size: var(--gw-type-body-md); line-height: var(--gw-leading-body-md); font-weight: var(--gw-weight-regular); letter-spacing: 0; text-transform: none; min-height:40px;} .workflow-steps { grid-template-columns: repeat(2, minmax(0, 1fr)); } .stage { padding: 13px; } .stage-heading { flex-direction: column; } .stage-heading-tools { align-items: stretch; justify-content: stretch; width: 100%; } .stage-model-picker, .stage-model-picker select { min-width: 0; width: 100%; } .script-input-heading { align-items: stretch; flex-direction: column; } .script-mode-picker { width: 100%; } .inline-fields, .review-dimensions { grid-template-columns: 1fr; } .asset-toolbar, .video-script-intro { align-items: stretch; flex-direction: column; } .asset-toolbar-actions { align-items: stretch; flex-direction: column; width: 100%; } .asset-toolbar-actions .stage-model-picker, .asset-toolbar-actions .stage-model-picker select { min-width: 0; width: 100%; } .asset-card { flex-basis: 280px; } .asset-card p { min-height: 0; } .asset-detail-body { grid-template-columns: 1fr; } .asset-detail-media { min-height: 200px; } .asset-detail-media img { min-height: 200px; } .asset-detail-actions { flex-wrap: wrap; } .asset-detail-actions > span { display: none; } .review-summary { flex-wrap: wrap; gap: 14px; } .review-summary time { width: 100%; margin-left: 0; } .form-grid { grid-template-columns: 1fr; } .form-grid .wide { grid-column: auto; } .form-actions { flex-wrap: wrap; justify-content: stretch; } .form-actions .btn { flex: 1 1 120px; } }
 
 /* 窄屏 sticky 修复：signal-flow.css @media (max-width: 620px) 给 html/body 设 overflow-x:hidden !important，
    hidden 会使 body 成为滚动容器，后代的 position:sticky 只锚定在永不滚动的 body scrollport 上，顶栏吸顶失效。
@@ -421,7 +421,7 @@ html body.gw-signal.gw-page--episode-pipeline {
   background: #090a0d radial-gradient(circle at 50% 0%, rgba(223, 195, 132, 0.06) 0%, transparent 70%) !important;
   background-color: #090a0d !important;
   color: #eddab3 !important;
-  font-family: "Source Han Sans CN", -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif !important;
+  font-family: var(--gw-font-body) !important;
   overflow-x: clip !important;
 }
 
@@ -486,14 +486,14 @@ html body.gw-signal.gw-page--episode-pipeline :is(
   .video-script-intro strong
 ) {
   color: #f8fafc !important;
-  font-family: "Source Han Sans CN", sans-serif !important;
+  font-family: var(--gw-font-body) !important;
   font-weight: 700 !important;
   letter-spacing: -0.01em !important;
 }
 
 html body.gw-signal.gw-page--episode-pipeline :is(.stage-kicker, .asset-detail-kicker) {
   color: #dfc384 !important;
-  font-family: "Source Han Sans CN", monospace !important;
+  font-family: var(--gw-font-mono) !important;
   font-weight: 700 !important;
 }
 
@@ -512,9 +512,11 @@ html body.gw-signal.gw-page--episode-pipeline :is(
   border-radius: 6px !important;
   color: #f1f5f9 !important;
   box-shadow: inset 0 2px 6px rgba(0, 0, 0, 0.95), 0 1px 0 rgba(255, 255, 255, 0.04) !important;
-  font-family: "Source Han Sans CN", monospace !important;
-  font-size: 13px !important;
-  line-height: 1.55 !important;
+  font-family: var(--gw-font-body) !important;
+  font-size:var(--gw-type-body-md) !important;
+  font-weight:var(--gw-weight-regular);
+  min-height:40px;
+  line-height:var(--gw-leading-body-md) !important;
   transition: border-color 0.15s ease, box-shadow 0.15s ease !important;
 }
 
@@ -548,7 +550,7 @@ html body.gw-signal.gw-page--episode-pipeline :is(
   border-bottom: 1px solid rgba(223, 195, 132, 0.6) !important;
   box-shadow: 0 6px 20px 2px rgba(223, 195, 132, 0.65), 0 2px 4px rgba(0, 0, 0, 0.7), inset 0 1.5px 1.5px rgba(255, 255, 255, 0.95), inset 0 -1.5px 2px rgba(120, 80, 25, 0.4) !important;
   color: #1a1308 !important;
-  font-family: "Source Han Sans CN", sans-serif !important;
+  font-family: var(--gw-font-body) !important;
   font-weight: 800 !important;
   border-radius: 9999px !important;
   letter-spacing: 0.03em !important;
@@ -591,7 +593,7 @@ html body.gw-signal.gw-page--episode-pipeline :is(
   border: 1px solid rgba(223, 195, 132, 0.22) !important;
   border-radius: 6px !important;
   color: #eddab3 !important;
-  font-family: "Source Han Sans CN", sans-serif !important;
+  font-family: var(--gw-font-body) !important;
   font-weight: 700 !important;
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12), 0 2px 4px rgba(0, 0, 0, 0.6) !important;
   cursor: pointer !important;
@@ -644,7 +646,7 @@ html body.gw-signal.gw-page--episode-pipeline .status {
   border: 1px solid rgba(223, 195, 132, 0.2) !important;
   border-radius: 9999px !important;
   color: #94a3b8 !important;
-  font-family: "Source Han Sans CN", monospace !important;
+  font-family: var(--gw-font-mono) !important;
   box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.8) !important;
 }
 
@@ -694,7 +696,7 @@ html body.gw-signal.gw-page--episode-pipeline :is(
   .review-dimension-item b
 ) {
   color: #34d399 !important;
-  font-family: "Source Han Sans CN", monospace !important;
+  font-family: var(--gw-font-mono) !important;
   text-shadow: 0 0 10px rgba(52, 211, 153, 0.35) !important;
 }
 
@@ -728,7 +730,7 @@ html body.gw-signal.gw-page--episode-pipeline :is(
   .asset-group-button.is-active span
 ) {
   color: #dfc384 !important;
-  font-family: "Source Han Sans CN", monospace !important;
+  font-family: var(--gw-font-mono) !important;
 }
 
 html body.gw-signal.gw-page--episode-pipeline .asset-card {
@@ -753,7 +755,7 @@ html body.gw-signal.gw-page--episode-pipeline .asset-placeholder {
 html body.gw-signal.gw-page--episode-pipeline .asset-placeholder::before {
   content: "◫" !important;
   color: #dfc384 !important;
-  font-size: 26px !important;
+  font-size:var(--gw-icon-size-title) !important;
 }
 
 html body.gw-signal.gw-page--episode-pipeline :is(.asset-type, .asset-type-bottom) {
@@ -764,7 +766,7 @@ html body.gw-signal.gw-page--episode-pipeline :is(.asset-type, .asset-type-botto
 /* 6.3 【分镜脚本】分镜卡片与故事步骤 */
 html body.gw-signal.gw-page--episode-pipeline .story-step-head span {
   color: #dfc384 !important;
-  font-family: "Source Han Sans CN", monospace !important;
+  font-family: var(--gw-font-mono) !important;
   font-weight: 700 !important;
 }
 
@@ -774,14 +776,14 @@ html body.gw-signal.gw-page--episode-pipeline .story-step-head b {
 
 html body.gw-signal.gw-page--episode-pipeline .shot-head {
   color: #dfc384 !important;
-  font-family: "Source Han Sans CN", monospace !important;
+  font-family: var(--gw-font-mono) !important;
   font-weight: 700 !important;
 }
 
 /* 6.4 【视频脚本】视频脚本列表与提示词卡片 */
 html body.gw-signal.gw-page--episode-pipeline .video-script-head {
   color: #dfc384 !important;
-  font-family: "Source Han Sans CN", monospace !important;
+  font-family: var(--gw-font-mono) !important;
   font-weight: 700 !important;
 }
 
@@ -978,16 +980,16 @@ canvas.episode-liquid-canvas {
   border-radius: 6px !important;
   background: linear-gradient(180deg, #e5ca8f 0%, #bfa15d 100%) !important;
   color: #12141a !important;
-  font-family: "Source Han Sans CN", monospace !important;
-  font-size: 11px !important;
-  font-weight: 700 !important;
-  text-transform: uppercase !important;
-  letter-spacing: 0.05em !important;
+  font-family: var(--gw-font-mono) !important;
+
+
+
+
   border: 1px solid rgba(255, 255, 255, 0.3) !important;
   box-shadow: 0 4px 14px rgba(223, 195, 132, 0.3), inset 0 1px 1px rgba(255, 255, 255, 0.5) !important;
   cursor: pointer !important;
   transition: filter 0.15s ease, transform 0.1s ease !important;
-}
+ font-size: var(--gw-type-body-md) !important; line-height: var(--gw-leading-body-md) !important; font-weight: var(--gw-weight-medium) !important; letter-spacing: 0 !important; text-transform: none !important; min-height:36px;}
 
 .btn-stitch-primary:hover {
   filter: brightness(1.1) !important;
@@ -1007,14 +1009,14 @@ canvas.episode-liquid-canvas {
   border-radius: 6px !important;
   background: linear-gradient(180deg, #181b24 0%, #0d0f14 100%) !important;
   color: #eddab3 !important;
-  font-family: "Source Han Sans CN", monospace !important;
-  font-size: 11px !important;
-  letter-spacing: 0.05em !important;
+  font-family: var(--gw-font-mono) !important;
+
+
   border: 1px solid rgba(223, 195, 132, 0.2) !important;
   box-shadow: 0 4px 10px rgba(0, 0, 0, 0.6), inset 0 1px 0 rgba(255, 255, 255, 0.1) !important;
   cursor: pointer !important;
   transition: background 0.15s ease, border-color 0.15s ease, transform 0.1s ease !important;
-}
+ font-size: var(--gw-type-body-md) !important; line-height: var(--gw-leading-body-md) !important; font-weight: var(--gw-weight-medium) !important; letter-spacing: 0 !important; text-transform: none !important; min-height:36px;}
 
 .btn-stitch-secondary:hover {
   background: linear-gradient(180deg, #222633 0%, #12141b 100%) !important;
@@ -1036,15 +1038,16 @@ canvas.episode-liquid-canvas {
   border-radius: 6px !important;
   background: linear-gradient(135deg, #dfc384 0%, #f4e1b9 50%, #c9ad6e 100%) !important;
   color: #121417 !important;
-  font-family: "Source Han Sans CN", sans-serif !important;
-  font-size: 13px !important;
-  font-weight: 800 !important;
-  letter-spacing: 0.06em !important;
+  font-family: var(--gw-font-body) !important;
+
+
+
   border: 1px solid rgba(255, 255, 255, 0.4) !important;
   box-shadow: 0 6px 18px rgba(223, 195, 132, 0.35), inset 0 1px 2px rgba(255, 255, 255, 0.6) !important;
   cursor: pointer !important;
   transition: filter 0.15s ease, transform 0.1s ease !important;
-}
+ font-size: var(--gw-type-body-md) !important; line-height: var(--gw-leading-body-md) !important; font-weight: var(--gw-weight-medium) !important; letter-spacing: 0 !important; text-transform: none !important; min-height:36px;}
+.stitch-workstation-grid {
   grid-template-columns: minmax(0, 5fr) minmax(0, 7fr) !important;
   gap: 20px !important;
   align-items: stretch !important;
@@ -1173,16 +1176,16 @@ canvas.episode-liquid-canvas {
   border-radius: 6px !important;
   background: linear-gradient(180deg, #e5ca8f 0%, #bfa15d 100%) !important;
   color: #12141a !important;
-  font-family: "Source Han Sans CN", monospace !important;
-  font-size: 11px !important;
-  font-weight: 700 !important;
-  text-transform: uppercase !important;
-  letter-spacing: 0.05em !important;
+  font-family: var(--gw-font-mono) !important;
+
+
+
+
   border: 1px solid rgba(255, 255, 255, 0.3) !important;
   box-shadow: 0 4px 14px rgba(223, 195, 132, 0.3), inset 0 1px 1px rgba(255, 255, 255, 0.5) !important;
   cursor: pointer !important;
   transition: filter 0.15s ease, transform 0.1s ease !important;
-}
+ font-size: var(--gw-type-body-md) !important; line-height: var(--gw-leading-body-md) !important; font-weight: var(--gw-weight-medium) !important; letter-spacing: 0 !important; text-transform: none !important; min-height:36px;}
 
 .btn-stitch-primary:hover {
   filter: brightness(1.1) !important;
@@ -1202,14 +1205,14 @@ canvas.episode-liquid-canvas {
   border-radius: 6px !important;
   background: linear-gradient(180deg, #181b24 0%, #0d0f14 100%) !important;
   color: #eddab3 !important;
-  font-family: "Source Han Sans CN", monospace !important;
-  font-size: 11px !important;
-  letter-spacing: 0.05em !important;
+  font-family: var(--gw-font-mono) !important;
+
+
   border: 1px solid rgba(223, 195, 132, 0.2) !important;
   box-shadow: 0 4px 10px rgba(0, 0, 0, 0.6), inset 0 1px 0 rgba(255, 255, 255, 0.1) !important;
   cursor: pointer !important;
   transition: background 0.15s ease, border-color 0.15s ease, transform 0.1s ease !important;
-}
+ font-size: var(--gw-type-body-md) !important; line-height: var(--gw-leading-body-md) !important; font-weight: var(--gw-weight-medium) !important; letter-spacing: 0 !important; text-transform: none !important; min-height:36px;}
 
 .btn-stitch-secondary:hover {
   background: linear-gradient(180deg, #222633 0%, #12141b 100%) !important;
@@ -1231,15 +1234,15 @@ canvas.episode-liquid-canvas {
   border-radius: 6px !important;
   background: linear-gradient(135deg, #dfc384 0%, #f4e1b9 50%, #c9ad6e 100%) !important;
   color: #121417 !important;
-  font-family: "Source Han Sans CN", sans-serif !important;
-  font-size: 13px !important;
-  font-weight: 800 !important;
-  letter-spacing: 0.06em !important;
+  font-family: var(--gw-font-body) !important;
+
+
+
   border: 1px solid rgba(255, 255, 255, 0.4) !important;
   box-shadow: 0 6px 18px rgba(223, 195, 132, 0.35), inset 0 1px 2px rgba(255, 255, 255, 0.6) !important;
   cursor: pointer !important;
   transition: filter 0.15s ease, transform 0.1s ease !important;
-}
+ font-size: var(--gw-type-body-md) !important; line-height: var(--gw-leading-body-md) !important; font-weight: var(--gw-weight-medium) !important; letter-spacing: 0 !important; text-transform: none !important; min-height:36px;}
 
 .btn-stitch-ignite:hover {
   filter: brightness(1.12) !important;
@@ -1284,8 +1287,8 @@ canvas.episode-liquid-canvas {
   display: flex !important;
   align-items: center !important;
   gap: 8px !important;
-  font-family: "Source Han Sans CN", sans-serif !important;
-  font-size: 12px !important;
+  font-family: var(--gw-font-body) !important;
+  font-size:var(--gw-type-body-sm) !important;
   color: #9ca3af !important;
 }
 
@@ -1329,15 +1332,15 @@ canvas.episode-liquid-canvas {
   flex-direction: row !important;
   align-items: center !important;
   justify-content: space-between !important;
-  font-family: "Source Han Sans CN", monospace !important;
-  font-size: 10px !important;
+  font-family: var(--gw-font-mono) !important;
+
   color: #9ca3af !important;
-  text-transform: uppercase !important;
-  letter-spacing: 0.05em !important;
+
+
   margin-bottom: 6px !important;
   width: 100% !important;
   box-sizing: border-box !important;
-}
+ font-size: var(--gw-type-body-md) !important; line-height: var(--gw-leading-body-md) !important; font-weight: var(--gw-weight-medium) !important; letter-spacing: 0 !important; text-transform: none !important;}
 
 /* 旋钮列高精度对齐 */
 .knob-array {
@@ -1359,15 +1362,15 @@ canvas.episode-liquid-canvas {
 }
 
 .knob-label-title {
-  font-family: "Source Han Sans CN", monospace !important;
-  font-size: 11px !important;
-  font-weight: 600 !important;
+  font-family: var(--gw-font-mono) !important;
+
+
   color: #9ca3af !important;
-  text-transform: uppercase !important;
-  letter-spacing: 0.05em !important;
+
+
   white-space: nowrap !important;
-  line-height: 1 !important;
-}
+
+ font-size: var(--gw-type-body-md) !important; line-height: var(--gw-leading-body-md) !important; font-weight: var(--gw-weight-medium) !important; letter-spacing: 0 !important; text-transform: none !important;}
 
 .knob-val-badge {
   background: #101217 !important;
@@ -1384,8 +1387,8 @@ canvas.episode-liquid-canvas {
 }
 
 .knob-val-badge span {
-  font-family: "Source Han Sans CN", monospace !important;
-  font-size: 10px !important;
+  font-family: var(--gw-font-mono) !important;
+  font-size:var(--gw-type-label-md) !important;
   font-weight: 600 !important;
   color: #fcdf9d !important;
   white-space: nowrap !important;
@@ -1434,8 +1437,8 @@ canvas.episode-liquid-canvas {
   border-radius: 6px !important;
   background: #0b0c10 !important;
   border: 1px solid rgba(255, 255, 255, 0.06) !important;
-  font-family: "Source Han Sans CN", monospace !important;
-  font-size: 11px !important;
+  font-family: var(--gw-font-mono) !important;
+  font-size:var(--gw-type-label-md) !important;
   width: 100% !important;
   box-sizing: border-box !important;
 }
@@ -1457,8 +1460,8 @@ canvas.episode-liquid-canvas {
   padding-top: 12px !important;
   padding-bottom: 8px !important;
   border-top: 1px solid rgba(255, 255, 255, 0.06) !important;
-  font-family: "Source Han Sans CN", monospace !important;
-  font-size: 10px !important;
+  font-family: var(--gw-font-mono) !important;
+  font-size:var(--gw-type-label-md) !important;
   color: #6b7280 !important;
   width: 100% !important;
   box-sizing: border-box !important;
@@ -1565,16 +1568,16 @@ canvas.episode-liquid-canvas {
   border-radius: 6px !important;
   background: linear-gradient(180deg, #e5ca8f 0%, #bfa15d 100%) !important;
   color: #12141a !important;
-  font-family: "Source Han Sans CN", monospace !important;
-  font-size: 11px !important;
-  font-weight: 700 !important;
-  text-transform: uppercase !important;
-  letter-spacing: 0.05em !important;
+  font-family: var(--gw-font-mono) !important;
+
+
+
+
   border: none !important;
   box-shadow: 0 4px 12px rgba(223, 195, 132, 0.25), inset 0 1px 1px rgba(255, 255, 255, 0.4) !important;
   cursor: pointer !important;
   transition: all 0.15s ease !important;
-}
+ font-size: var(--gw-type-body-md) !important; line-height: var(--gw-leading-body-md) !important; font-weight: var(--gw-weight-medium) !important; letter-spacing: 0 !important; text-transform: none !important; min-height:36px;}
 
 .btn-stitch-primary:hover {
   filter: brightness(1.1) !important;
@@ -1590,15 +1593,15 @@ canvas.episode-liquid-canvas {
   border-radius: 6px !important;
   background: #181b24 !important;
   color: #e2e8f0 !important;
-  font-family: "Source Han Sans CN", monospace !important;
-  font-size: 11px !important;
-  text-transform: uppercase !important;
-  letter-spacing: 0.05em !important;
+  font-family: var(--gw-font-mono) !important;
+
+
+
   border: 1px solid rgba(255, 255, 255, 0.06) !important;
   box-shadow: 0 4px 10px rgba(0, 0, 0, 0.6) !important;
   cursor: pointer !important;
   transition: all 0.15s ease !important;
-}
+ font-size: var(--gw-type-body-md) !important; line-height: var(--gw-leading-body-md) !important; font-weight: var(--gw-weight-medium) !important; letter-spacing: 0 !important; text-transform: none !important; min-height:36px;}
 
 .btn-stitch-secondary:hover {
   background: #202430 !important;
@@ -1613,16 +1616,16 @@ canvas.episode-liquid-canvas {
   border-radius: 6px !important;
   background: linear-gradient(90deg, #dfc384 0%, #f4e1b9 100%) !important;
   color: #121417 !important;
-  font-family: "Source Han Sans CN", sans-serif !important;
-  font-size: 13px !important;
-  font-weight: 700 !important;
-  text-transform: uppercase !important;
-  letter-spacing: 0.08em !important;
+  font-family: var(--gw-font-body) !important;
+
+
+
+
   border: none !important;
   box-shadow: 0 6px 18px rgba(223, 195, 132, 0.35), inset 0 1px 2px rgba(255, 255, 255, 0.6) !important;
   cursor: pointer !important;
   transition: all 0.15s ease !important;
-}
+ font-size: var(--gw-type-body-md) !important; line-height: var(--gw-leading-body-md) !important; font-weight: var(--gw-weight-medium) !important; letter-spacing: 0 !important; text-transform: none !important; min-height:36px;}
 
 .btn-stitch-ignite:hover {
   filter: brightness(1.12) !important;
@@ -1805,8 +1808,8 @@ body.is-video-step {
   align-items: center;
   gap: 0.25rem;
   padding: 0.25rem 0.75rem;
-  font-family: "Source Han Sans CN", monospace;
-  font-size: 11px;
+  font-family: var(--gw-font-mono);
+  font-size: var(--gw-type-label-md);
   font-weight: 800;
   letter-spacing: 0.1em;
   border-radius: 4px;
@@ -1841,8 +1844,8 @@ body.is-video-step {
 }
 .episode-degradation[hidden]{display:none;}
 .episode-degradation span{
-  font-family:ui-monospace,SFMono-Regular,Menlo,monospace;
-  font-size:10px;
+  font-family: var(--gw-font-mono);
+  font-size: var(--gw-type-label-md);
   letter-spacing:.02em;
   color:#fcd34d;
 }
