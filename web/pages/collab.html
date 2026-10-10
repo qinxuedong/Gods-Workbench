@@ -118,12 +118,12 @@
 
       <div class="flex items-center space-x-2 shrink-0">
         <div class="flex items-center space-x-1.5 bg-[#07080b] px-3 py-1 rounded-lg border border-white/10 shadow-inner">
-          <button class="text-slate-400 hover:text-[#dfc384] p-0.5 transition"><i data-lucide="chevron-left" class="w-3.5 h-3.5"></i></button>
+          <button class="hw-btn hw-btn-icon transition"><i data-lucide="chevron-left" class="w-3.5 h-3.5"></i></button>
           <div class="flex items-center space-x-2 px-1.5">
             <span class="w-1.5 h-1.5 rounded-full bg-[#dfc384] shadow-[0_0_6px_#dfc384] animate-pulse"></span>
             <span class="gw-type-body-sm font-mono font-bold text-[#eddab3]" id="collabDeckStatus" title="真实数据源：/api/asset-auth/users|teams|operation-approvals 与 /api/observability/tasks|events">TEAM COLLABORATION &amp; AUDIT DECK · 读取中…</span>
           </div>
-          <button class="text-slate-400 hover:text-[#dfc384] p-0.5 transition"><i data-lucide="chevron-right" class="w-3.5 h-3.5"></i></button>
+          <button class="hw-btn hw-btn-icon transition"><i data-lucide="chevron-right" class="w-3.5 h-3.5"></i></button>
         </div>
       </div>
 
@@ -259,7 +259,7 @@
       </div>
 
       <div class="p-2.5 bg-[#050608] border-t border-white/5 shrink-0">
-        <button class="tactile-keycap w-full py-1.5 rounded-lg gw-type-body-md font-bold text-[#eddab3] flex items-center justify-center space-x-1" onclick="WorkbenchCollab.openTeamManagement()" title="打开团队管理">
+        <button class="hw-btn hw-btn-gold w-full flex items-center justify-center space-x-1" onclick="WorkbenchCollab.openTeamManagement()" title="打开团队管理">
           <i data-lucide="users-round" class="w-3.5 h-3.5 text-[#dfc384]"></i>
           <span>团队管理</span>
         </button>
@@ -289,7 +289,7 @@
             <span id="collabAuditScope">变更审计 · 最近 24 小时</span>
             <span class="text-slate-500" id="collabTimelineState">读取中</span>
           </div>
-          <button type="button" id="collabAuditMore" class="collab-more" hidden>加载更多审计</button>
+          <button type="button" id="collabAuditMore" class="hw-btn" hidden>加载更多审计</button>
         </div>
 
         <div class="grid grid-cols-12 gap-2 flex-1 min-h-0">
@@ -301,25 +301,25 @@
             <div class="collab-message-toolbar" role="group" aria-label="团队消息目标">
               <label for="collabTeamSelect">团队</label>
               <select id="collabTeamSelect" disabled aria-describedby="collabTeamNotice"><option value="">正在读取可见团队…</option></select>
-              <button type="button" id="collabIdentityBind" class="collab-more" hidden>启用团队协作身份</button>
-              <button type="button" id="collabTeamManage" class="collab-more">团队管理</button>
+              <button type="button" id="collabIdentityBind" class="hw-btn" hidden>启用团队协作身份</button>
+              <button type="button" id="collabTeamManage" class="hw-btn">团队管理</button>
             </div>
             <p id="collabTeamNotice" class="collab-message-notice" aria-live="polite">身份绑定只创建当前登录身份引用，不会自动加入团队。</p>
             <div id="collabReviewFeed" class="flex-1 min-h-0 overflow-y-auto py-2" aria-live="polite"><div class="collab-empty">正在读取团队消息…</div></div>
-            <button type="button" id="collabMessageHistoryMore" class="collab-more" hidden>加载更多消息</button>
+            <button type="button" id="collabMessageHistoryMore" class="hw-btn" hidden>加载更多消息</button>
             <div class="collab-message-composer" role="group" aria-label="团队消息入口">
               <label class="gw-type-body-sm text-slate-300" for="collabMessageInput">团队消息</label>
               <textarea id="collabMessageInput" rows="2" maxlength="2000" placeholder="输入团队消息" aria-describedby="collabMessageStatus"></textarea>
               <div class="collab-message-actions">
                 <p id="collabMessageStatus" role="status" aria-live="polite">正在读取团队消息权限…</p>
-                <button type="button" id="collabMessageSend" class="collab-message-send" disabled title="选择可写团队后可发送" aria-describedby="collabMessageStatus"><i data-lucide="send" class="w-3.5 h-3.5" aria-hidden="true"></i><span>发送</span></button>
+                <button type="button" id="collabMessageSend" class="hw-btn" disabled title="选择可写团队后可发送" aria-describedby="collabMessageStatus"><i data-lucide="send" class="w-3.5 h-3.5" aria-hidden="true"></i><span>发送</span></button>
               </div>
             </div>
           </section>
           <section class="champagne-card p-2.5 col-span-4 flex flex-col min-h-0">
             <div class="flex items-center justify-between pb-1.5 border-b border-white/5 shrink-0"><div class="flex items-center space-x-2"><i data-lucide="badge-check" class="w-4 h-4 text-amber-300"></i><h3 class="gw-type-body-lg font-bold text-slate-100">操作审批</h3></div><span id="collabApprovalCount" class="gw-type-body-sm font-mono text-amber-300">读取中</span></div>
             <div id="collabApprovalList" class="flex-1 min-h-0 overflow-y-auto space-y-2 py-2"><div class="gw-type-body-sm text-slate-500 p-2">正在读取审批记录…</div></div>
-            <button type="button" class="gw-type-body-md text-[#dfc384] pt-1 border-t border-white/5" onclick="WorkbenchCollab.openTeamManagement('approvals')">打开完整审批管理</button>
+            <button type="button" class="hw-btn" onclick="WorkbenchCollab.openTeamManagement('approvals')">打开完整审批管理</button>
           </section>
         </div>
       </div>
@@ -329,13 +329,13 @@
         <div class="champagne-card p-2.5 flex-[0_0_32%] flex flex-col min-h-0 justify-between">
           <div class="flex items-center justify-between pb-1.5 border-b border-white/5 shrink-0">
             <h3 class="gw-type-body-lg font-bold text-slate-100">工作台入口</h3>
-            <button type="button" id="collabRefresh" class="collab-more" title="刷新协作数据" aria-label="刷新协作数据"><i data-lucide="refresh-cw" class="w-3.5 h-3.5" aria-hidden="true"></i></button>
+            <button type="button" id="collabRefresh" class="hw-btn hw-btn-icon" title="刷新协作数据" aria-label="刷新协作数据"><i data-lucide="refresh-cw" class="w-3.5 h-3.5" aria-hidden="true"></i></button>
           </div>
 
           <div class="flex items-center justify-between py-2 gw-type-body-sm">
             <div class="flex items-center gap-1" role="tablist" aria-label="任务和日志">
-              <button type="button" class="collab-view-tab active" data-collab-view="tasks" role="tab" aria-selected="true"><i data-lucide="list-checks" class="w-3.5 h-3.5"></i><span>任务</span></button>
-              <button type="button" class="collab-view-tab" data-collab-view="logs" role="tab" aria-selected="false"><i data-lucide="scroll-text" class="w-3.5 h-3.5"></i><span>日志</span></button>
+              <button type="button" class="hw-btn hw-btn-sm active" data-collab-view="tasks" role="tab" aria-selected="true"><i data-lucide="list-checks" class="w-3.5 h-3.5"></i><span>任务</span></button>
+              <button type="button" class="hw-btn hw-btn-sm" data-collab-view="logs" role="tab" aria-selected="false"><i data-lucide="scroll-text" class="w-3.5 h-3.5"></i><span>日志</span></button>
             </div>
             <a class="gw-type-body-sm font-mono text-slate-500 hover:text-[#dfc384]" data-collab-route-link href="/static/pages/collab.html?view=tasks">查看任务面板</a>
           </div>
@@ -343,7 +343,7 @@
 
           <div class="pt-2 border-t border-white/5 shrink-0">
             <span class="gw-type-body-sm font-mono text-slate-500" id="collabTaskState">来源：统一观测任务路由</span>
-            <button type="button" id="collabTaskMore" class="collab-more" hidden>加载更多</button>
+            <button type="button" id="collabTaskMore" class="hw-btn" hidden>加载更多</button>
           </div>
         </div>
         <section class="champagne-card p-2.5 flex-1 flex flex-col min-h-0">

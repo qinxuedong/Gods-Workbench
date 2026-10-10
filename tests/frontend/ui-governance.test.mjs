@@ -72,7 +72,8 @@ test('首页总线版块化：节点枚举右侧版块，保留真实数据绑�
 test('按钮契约上提：hw-btn 族定义于设计系统，工作台页局部定义清零',()=>{
   const sys=read('web/css/base/hardware-design-system.css');
   assert.match(sys,/GW-BTN-01/);
-  assert.match(sys,/\.hw-btn \{[^}]*min-height:36px/s,'默认钮契约必须含 36px 最小高度');
+  assert.match(sys,/\.hw-btn \{[^}]*padding:6px 12px; border-radius:8px;/s,'hw-btn 基准契约：6px 12px 内边距、8px 圆角（2026-10-10 重定义，去 mono 用 sans）');
+  assert.doesNotMatch(sys.match(/\.hw-btn \{[^}]*\}/s)?.[0]||'',/min-height/,'hw-btn 基准契约不得含 min-height（已移除，高度由内边距自然决定）');
   assert.match(sys,/\.hw-btn-gold \{/);
   assert.match(sys,/\.hw-btn-danger \{/);
   assert.match(sys,/GW-BTN-02/,'分段控件契约必须登记');

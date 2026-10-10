@@ -82,33 +82,41 @@
 .launch-orb-btn > .orb-core > span { background:linear-gradient(to right, #67e8f9, #f472b6); animation:gw-orb-spin 1s linear infinite; }
 @keyframes gw-orb-spin { to { transform:rotate(360deg); } }
 
-/* GW-BTN-01: 共享按钮契约（默认 / 金色 / 危险）。原仅定义于 workflow-workbench.css，上提为全站唯一真源。 */
+/* GW-BTN-01: 全站按钮标准（用户 2026-10-10 确认）。基准 = workshop 页两按钮：
+   次按钮（刷新分集）= 纯色深底 #12151d / slate-300 字 / 8px 圆角 / 无渐变 / 无 min-height；
+   主按钮（新建分集）= 浅金横向渐变 / 深字 #0a0c10 粗体 / 金色辉光 / 8px 圆角。
+   字体继承 sans（--gw-font-body），不再用 mono。 */
 .hw-btn {
-  display:inline-flex; align-items:center; justify-content:center; gap:5px;
-  padding:4px 10px; border-radius:4px;
-  font-family:var(--gw-font-mono); font-size:var(--gw-type-body-md); line-height:var(--gw-leading-body-md);
-  font-weight:var(--gw-weight-medium); letter-spacing:0; text-transform:none; min-height:36px;
-  cursor:pointer; border:1px solid #2a2f42;
-  background:linear-gradient(180deg, #1b1f2c 0%, #11141d 100%); color:#ffffff;
-  box-shadow:inset 0 1px 0 rgba(255,255,255,0.08), 0 2px 5px rgba(0,0,0,0.6);
+  display:inline-flex; align-items:center; justify-content:center; gap:6px;
+  padding:6px 12px; border-radius:8px;
+  font-family:inherit; font-size:var(--gw-type-body-md); line-height:var(--gw-leading-body-md);
+  font-weight:var(--gw-weight-regular); letter-spacing:var(--gw-tracking-normal); text-transform:none;
+  cursor:pointer; border:1px solid rgba(255,255,255,0.1);
+  background:#12151d; color:#cbd5e1;
   transition:all 0.15s ease; white-space:nowrap;
 }
-.hw-btn:hover, .hw-btn:focus, .hw-btn.active { border-color:rgba(223,195,132,0.6); color:var(--primary, #dfc384); background:linear-gradient(180deg, #232838 0%, #151924 100%); }
-.hw-btn:active { transform:translateY(1px); color:var(--primary, #dfc384); }
+.hw-btn:hover, .hw-btn:focus, .hw-btn.active { border-color:rgba(223,195,132,0.5); color:#ffffff; background:#12151d; }
+.hw-btn:active { transform:scale(0.97); color:#ffffff; }
 .hw-btn:disabled { opacity:0.5; cursor:not-allowed; }
-.hw-btn-gold { background:linear-gradient(180deg, #282115 0%, #16120a 100%); color:#ffffff; border-color:rgba(223,195,132,0.55); font-weight:var(--gw-weight-medium); box-shadow:0 2px 6px rgba(0,0,0,0.65), inset 0 1px 0 rgba(255,255,255,0.1); }
-.hw-btn-gold:hover, .hw-btn-gold:focus, .hw-btn-gold:active { color:var(--primary, #dfc384); border-color:var(--primary, #dfc384); }
+.hw-btn-gold { border:none; background:linear-gradient(90deg, #dfc384 0%, #c29d58 100%); color:#0a0c10; font-weight:var(--gw-weight-bold); padding:6px 16px; box-shadow:0 0 12px rgba(223,195,132,0.3); }
+.hw-btn-gold:hover, .hw-btn-gold:focus { filter:brightness(1.1); color:#0a0c10; }
+.hw-btn-gold:active { transform:scale(0.95); filter:brightness(1.1); }
 .hw-btn-danger { border-color:rgba(244,63,94,0.65); color:#ffffff; background:linear-gradient(180deg, #be123c 0%, #881337 100%); }
 .hw-btn-danger:hover { border-color:#fb7185; color:#ffffff; background:linear-gradient(180deg, #e11d48 0%, #9f1239 100%); }
 
-/* GW-BTN-01a: 紧凑内边距修饰组——工作流页 18 处内联 padding 的等值提取（视觉零变化）。
-   命名 = padding 竖/横像素值；min-height:36px 底约束不变。 */
+/* GW-BTN-01a: 紧凑内边距修饰组——工作流页 18 处内联 padding 的等值提取。
+   命名 = padding 竖/横像素值；基准重定义后无 min-height、8px 圆角，紧凑变体。 */
 .hw-btn-pad-26 { padding:2px 6px; }
 .hw-btn-pad-36 { padding:3px 6px; }
 .hw-btn-pad-27 { padding:2px 7px; }
 .hw-btn-pad-37 { padding:3px 7px; }
 .hw-btn-pad-28 { padding:2px 8px; }
 .hw-btn-pad-38 { padding:3px 8px; }
+
+/* GW-BTN-01b: 紧凑选项钮（比例/分辨率档位）与纯图标钮（箭头/关闭/刷新），
+   用户 2026-10-10 确认收敛到基准。与 .hw-btn/.hw-btn-gold 组合使用，继承边框/底色/hover。 */
+.hw-btn-sm { padding:2px 8px; border-radius:6px; gap:4px; font-size:var(--gw-type-body-sm); line-height:var(--gw-leading-body-sm); }
+.hw-btn-icon { padding:4px; border-radius:6px; gap:0; }
 
 /* GW-BTN-02: 分段控件契约。页内页签/筛选（ep-pill-btn、filter-pill-btn）改分段外观，
    替代对顶栏椭圆胶囊样式（pill-capsule-*, radius 9999px）的混用；JS 状态切换类不变。 */

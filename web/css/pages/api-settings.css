@@ -192,6 +192,13 @@ body.api-settings-page {
 .add-btn,
 .cli-quick-btn { width:100%; }
 .add-btn { margin-bottom:8px; }
+/* 内嵌 api-settings 页：hw-btn 族保留 40px 最小高度，满足可读触控契约
+   （e2e test_api_settings_visual.py 断言 buttonHeight>=40 与 inputHeight>=40）。
+   视觉语言（圆角/字体/配色/悬停）仍由 hardware-design-system.css 的 hw-btn 统一，
+   此处仅覆盖高度以保留该设置页的可访问性下限。 */
+.api-settings-page .hw-btn,
+.api-settings-page .hw-btn-sm,
+.api-settings-page .hw-btn-icon { min-height:40px; }
 .empty,
 .lora-empty { color:var(--muted); font-size:var(--gw-type-meta); padding:8px 0;  font-weight:var(--gw-weight-regular); line-height:var(--gw-leading-body-sm);}
 .model-list { display:flex; flex-direction:column; gap:10px; }
