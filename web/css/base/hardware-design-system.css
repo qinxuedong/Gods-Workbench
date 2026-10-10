@@ -57,12 +57,64 @@
 .topbar-master-deck .recessed-deck-slot { min-height:44px !important; height:44px !important; }
 .topbar-master-deck #navPillsGroup { gap:8px !important; align-items:center !important; }
 .topbar-master-deck .nav-pill-btn {
-  box-sizing:border-box !important; height:34px !important; min-height:34px !important;
+  box-sizing:border-box !important; height:32px !important; min-height:32px !important;
   padding:0 14px !important; display:inline-flex !important; align-items:center !important;
   justify-content:center !important; line-height:1 !important; white-space:nowrap !important;
   font-size:var(--gw-type-body) !important; font-weight:500 !important; flex:0 0 auto !important;
   gap:6px !important;
 }
+
+/* GW-ORB-01: 彩虹微球入口唯一外观真源（用户许可的霓虹例外；同一入口同一外观，32px）。
+   顶栏 10 处与页内 3 处入口共用；tailwind 工具类编译值与本定义相同，冲突时视觉不变。 */
+.launch-orb-btn {
+  width:32px; height:32px; padding:2px; border-radius:9999px;
+  background-image:linear-gradient(to top right, #22d3ee, #d946ef, #fcd34d);
+  box-shadow:0 0 12px rgba(236,72,153,0.7), 0 0 6px rgba(34,211,238,0.9);
+  display:inline-flex; align-items:center; justify-content:center;
+  flex:0 0 auto; cursor:pointer; transition:all 0.15s ease;
+}
+.launch-orb-btn:hover { transform:scale(1.1); }
+.launch-orb-btn:active { transform:scale(0.95); }
+.launch-orb-btn:disabled { opacity:0.5; pointer-events:none; }
+.launch-orb-btn > .orb-core { width:100%; height:100%; border-radius:9999px; background:rgba(0,0,0,0.85); display:flex; align-items:center; justify-content:center; }
+.launch-orb-btn > .orb-core > span,
+.launch-orb-btn > .orb-core > i { width:12px; height:12px; border-radius:9999px; color:#dfc384; }
+.launch-orb-btn > .orb-core > span { background:linear-gradient(to right, #67e8f9, #f472b6); animation:gw-orb-spin 1s linear infinite; }
+@keyframes gw-orb-spin { to { transform:rotate(360deg); } }
+
+/* GW-BTN-01: 共享按钮契约（默认 / 金色 / 危险）。原仅定义于 workflow-workbench.css，上提为全站唯一真源。 */
+.hw-btn {
+  display:inline-flex; align-items:center; justify-content:center; gap:5px;
+  padding:4px 10px; border-radius:4px;
+  font-family:var(--gw-font-mono); font-size:var(--gw-type-body-md); line-height:var(--gw-leading-body-md);
+  font-weight:var(--gw-weight-medium); letter-spacing:0; text-transform:none; min-height:36px;
+  cursor:pointer; border:1px solid #2a2f42;
+  background:linear-gradient(180deg, #1b1f2c 0%, #11141d 100%); color:#ffffff;
+  box-shadow:inset 0 1px 0 rgba(255,255,255,0.08), 0 2px 5px rgba(0,0,0,0.6);
+  transition:all 0.15s ease; white-space:nowrap;
+}
+.hw-btn:hover, .hw-btn:focus, .hw-btn.active { border-color:rgba(223,195,132,0.6); color:var(--primary, #dfc384); background:linear-gradient(180deg, #232838 0%, #151924 100%); }
+.hw-btn:active { transform:translateY(1px); color:var(--primary, #dfc384); }
+.hw-btn:disabled { opacity:0.5; cursor:not-allowed; }
+.hw-btn-gold { background:linear-gradient(180deg, #282115 0%, #16120a 100%); color:#ffffff; border-color:rgba(223,195,132,0.55); font-weight:var(--gw-weight-medium); box-shadow:0 2px 6px rgba(0,0,0,0.65), inset 0 1px 0 rgba(255,255,255,0.1); }
+.hw-btn-gold:hover, .hw-btn-gold:focus, .hw-btn-gold:active { color:var(--primary, #dfc384); border-color:var(--primary, #dfc384); }
+.hw-btn-danger { border-color:rgba(244,63,94,0.65); color:#ffffff; background:linear-gradient(180deg, #be123c 0%, #881337 100%); }
+.hw-btn-danger:hover { border-color:#fb7185; color:#ffffff; background:linear-gradient(180deg, #e11d48 0%, #9f1239 100%); }
+
+/* GW-BTN-01a: 紧凑内边距修饰组——工作流页 18 处内联 padding 的等值提取（视觉零变化）。
+   命名 = padding 竖/横像素值；min-height:36px 底约束不变。 */
+.hw-btn-pad-26 { padding:2px 6px; }
+.hw-btn-pad-36 { padding:3px 6px; }
+.hw-btn-pad-27 { padding:2px 7px; }
+.hw-btn-pad-37 { padding:3px 7px; }
+.hw-btn-pad-28 { padding:2px 8px; }
+.hw-btn-pad-38 { padding:3px 8px; }
+
+/* GW-BTN-02: 分段控件契约。页内页签/筛选（ep-pill-btn、filter-pill-btn）改分段外观，
+   替代对顶栏椭圆胶囊样式（pill-capsule-*, radius 9999px）的混用；JS 状态切换类不变。 */
+.ep-pill-btn, .filter-pill-btn { border-radius:4px !important; min-height:32px; box-shadow:none !important; }
+.pill-capsule-inactive.ep-pill-btn, .pill-capsule-inactive.filter-pill-btn { background:#11141d; border-color:#2a2f42; }
+.pill-capsule-active.ep-pill-btn, .pill-capsule-active.filter-pill-btn { background:linear-gradient(180deg, rgba(223,195,132,0.16) 0%, rgba(223,195,132,0.06) 100%); border-color:var(--gold-primary); box-shadow:inset 0 1px 0 rgba(255,255,255,0.06) !important; }
 
 /* GW-TYPE-01：默认字号继承与显式角色在hardware-tokens中，禁止星号覆盖。 */
 .gw-shell :where(h1, .page-title, .hero-title, [data-type="title"]) { font-family:var(--gw-font-display); font-size:var(--gw-type-headline-md); line-height:var(--gw-leading-headline-md); font-weight:var(--gw-weight-bold); letter-spacing:var(--gw-tracking-headline-md); }
@@ -944,22 +996,7 @@ table tbody td {
     ::-webkit-scrollbar-thumb { background: #1e222d; border-radius: 2px; }
     ::-webkit-scrollbar-thumb:hover { background: #dfc384; }
 
-    /* 发射按钮 AI 微球动画 */
-    @keyframes orbRotate {
-      from { background: conic-gradient(from 0deg, #22d3ee, #a855f7, #f59e0b, #ec4899, #22d3ee); }
-      to   { background: conic-gradient(from 360deg, #22d3ee, #a855f7, #f59e0b, #ec4899, #22d3ee); }
-    }
-    @keyframes orbCoreFloat {
-      0%   { transform: scale(0.88) translateY(0.5px); opacity: 0.85; }
-      100% { transform: scale(1.08) translateY(-0.5px); opacity: 1; }
-    }
-    .launch-orb-btn {
-      animation: none; /* conic-gradient 不能直接动画，用 filter hue-rotate 替代 */
-      filter: hue-rotate(0deg);
-      transition: transform 0.15s ease, box-shadow 0.15s ease, filter 0.15s ease;
-    }
-    .launch-orb-btn:hover { filter: hue-rotate(30deg) brightness(1.2); }
-    .launch-orb-btn:active { transform: scale(0.92) !important; }
+    /* 发射按钮 AI 微球：旧锥面动画块已删除，统一由顶部 GW-ORB-01 真源定义（含 hover/active/内芯旋转）。 */
 
     /* ========================================================================= */
     /* MODAL & DRAWER HARDWARE DIALOGS (拟物模态窗与侧边抽屉)                     */

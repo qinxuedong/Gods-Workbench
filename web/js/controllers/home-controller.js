@@ -197,6 +197,22 @@ window.WorkbenchHome = (function () {
       }
     }
 
+    // 总线节点 01 真实项目计数（与右侧版块同一数据源，绝不伪造）
+    const busCount = document.getElementById('busProjectsCount');
+    if (busCount) {
+      if (state.projectsDegradation) {
+        busCount.textContent = '不可用';
+        busCount.className = 'gw-type-body-sm font-mono px-1 py-0.5 rounded-full bg-amber-500/15 text-amber-300 border border-amber-500/30 shrink-0';
+        busCount.setAttribute('data-gw-degradation', state.projectsDegradation.kind);
+        busCount.title = state.projectsDegradation.message;
+      } else {
+        busCount.textContent = (state.projects ? state.projects.length : 0) + ' 个';
+        busCount.className = 'gw-type-body-sm font-mono px-1 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 shrink-0';
+        busCount.removeAttribute('data-gw-degradation');
+        busCount.title = '真实数据源：GET /api/asset-registry/projects?archived=false';
+      }
+    }
+
     if (!state.projects || state.projects.length === 0) {
       // 空态必须区分：显式降级（未接入/服务不可用/请求失败）与「后端如实应答确实为空」。
       container.innerHTML = state.projectsDegradation
@@ -1548,6 +1564,7 @@ window.WorkbenchHome = (function () {
   async function syncAuraBusStatus() {
     const node = document.getElementById('auraBusStatus');
     if (!node) return;
+    let busDegradation = 'service_unavailable';
     try {
       const res = await fetch('/api/chat/config', {
         method: 'GET',
@@ -1561,20 +1578,39 @@ window.WorkbenchHome = (function () {
         node.className = 'gw-type-body-sm font-mono text-cyan-300 font-bold';
         node.removeAttribute('data-gw-degradation');
         node.title = '只读取 /api/chat/config；尚未验证上游连通性或发起计费请求';
-        return;
+        busDegradation = null;
+      } else {
+        const status = String(body && body.configuration_status || '');
+        const kind = res.ok && status === 'not_configured' ? 'not_integrated' : 'service_unavailable';
+        node.textContent = 'AURA 智能体总线 · ' + (kind === 'not_integrated' ? 'Provider 未配置' : '配置状态不可用');
+        node.className = 'gw-type-body-sm font-mono text-amber-300 font-bold';
+        node.setAttribute('data-gw-degradation', kind);
+        node.title = '只读取 /api/chat/config 的服务端配置状态（HTTP ' + res.status + '）；未触发模型生成';
+        busDegradation = kind;
       }
-      const status = String(body && body.configuration_status || '');
-      const kind = res.ok && status === 'not_configured' ? 'not_integrated' : 'service_unavailable';
-      node.textContent = 'AURA 智能体总线 · ' + (kind === 'not_integrated' ? 'Provider 未配置' : '配置状态不可用');
-      node.className = 'gw-type-body-sm font-mono text-amber-300 font-bold';
-      node.setAttribute('data-gw-degradation', kind);
-      node.title = '只读取 /api/chat/config 的服务端配置状态（HTTP ' + res.status + '）；未触发模型生成';
     } catch (_) {
       applyAuraConfiguration(null);
       node.textContent = 'AURA 智能体总线 · 配置状态不可用';
       node.className = 'gw-type-body-sm font-mono text-amber-300 font-bold';
       node.setAttribute('data-gw-degradation', 'service_unavailable');
       node.title = 'GET /api/chat/config 请求异常；未触发模型生成';
+      busDegradation = 'service_unavailable';
+    }
+
+    // 总线节点 03 镜像同一状态（与右侧版块共用 /api/chat/config 状态源）
+    // 契约兼容：只用 getElementById/innerHTML/className 级 API（phase12 vm 假 DOM 无 querySelector/hasAttribute）
+    const busNode = document.getElementById('busAuraStatus');
+    if (busNode) {
+      const label = String(node.textContent).replace('AURA 智能体总线 · ', '');
+      busNode.innerHTML = '<span>' + label + '</span><i data-lucide="external-link" class="w-2.5 h-2.5 opacity-60 group-hover:opacity-100"></i>';
+      if (window.lucide && typeof window.lucide.createIcons === 'function') window.lucide.createIcons();
+      const color = String(node.className).includes('text-cyan-300')
+        ? 'bg-cyan-500/15 text-cyan-300 border-cyan-500/30'
+        : 'bg-amber-500/15 text-amber-300 border-amber-500/30';
+      busNode.className = 'gw-type-body-sm font-mono px-1 py-0.5 rounded-full ' + color + ' shrink-0 flex items-center space-x-1';
+      if (busDegradation) busNode.setAttribute('data-gw-degradation', busDegradation);
+      else busNode.removeAttribute('data-gw-degradation');
+      busNode.title = node.title;
     }
   }
 
