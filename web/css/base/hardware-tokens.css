@@ -111,8 +111,7 @@
   --gw-surface-panel: var(--panel-dark);   /* #101217 面板 */
   --gw-surface-card: var(--card-start);    /* #171920 卡片渐变起 */
   --gw-surface-card-end: var(--card-end);  /* #0f1115 卡片渐变止 */
-  --gw-btn-radius: 4px;
-  --gw-segment-min-height: 32px;
+
 }
 
 /* 共享继承基线：不使用*字号覆盖，用户字体预览与创作内容保持独立。 */

@@ -702,9 +702,9 @@ window.WorkbenchHome = (function () {
       const btns = sizePopover.querySelectorAll('.flex button');
       btns.forEach(b => {
         if (b.innerText.trim() === lvl) {
-          b.className = 'px-1.5 py-0.5 rounded bg-[#1a1e2b] text-[#dfc384] border border-[#dfc384]/30';
+          b.className = 'hw-btn hw-btn-sm active px-1.5 py-0.5 rounded bg-[#1a1e2b] text-[#dfc384] border border-[#dfc384]/30';
         } else {
-          b.className = 'px-1.5 py-0.5 rounded bg-[#161a24] text-slate-300 hover:text-white border border-white/10';
+          b.className = 'hw-btn hw-btn-sm px-1.5 py-0.5 rounded bg-[#161a24] text-slate-300 hover:text-white border border-white/10';
         }
       });
     }

@@ -36,7 +36,7 @@
 }
 /* 排版范围声明：按钮字号契约的上提真源为 hardware-design-system.css 的 GW-BTN-01（.hw-btn / .hw-btn-gold）。
    此处仅同值重声明字号契约，供排版门禁在本页可审计；不得重定义外观（padding/背景/边框/高度/色彩）。 */
-.workflow-workbench .hw-btn { font-family:var(--gw-font-mono); font-size:var(--gw-type-body-md); line-height:var(--gw-leading-body-md); font-weight:var(--gw-weight-medium); }
+.workflow-workbench .hw-btn { font-size:var(--gw-type-body-md); line-height:var(--gw-leading-body-md); font-weight:var(--gw-weight-medium); }
 .workflow-workbench .hw-btn-gold { font-weight:var(--gw-weight-medium); }
 .workflow-workbench .left-bus-sidebar,
 .workflow-workbench .center-actuator-rack,
