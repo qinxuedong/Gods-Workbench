@@ -8,6 +8,7 @@
   <title data-i18n="governance.documentTitle">全局内容治理与回收站 · Gods' Workbench</title>
   <link rel="stylesheet" href="/static/css/base/workspace-pages.css?v=v0.0.1-alpha-2026">
   <link rel="stylesheet" href="/static/css/base/signal-flow.css?v=v0.0.1-alpha-2026&sf=20260826">
+  <link rel="stylesheet" href="/static/css/base/hardware-design-system.css?v=v0.0.1-alpha-2026">
 
   <style>
     .sr-only {
@@ -202,8 +203,8 @@
         <p data-i18n="governance.subheading">跨项目、团队与存储根的素材/项目/画布统一回收、恢复、级联防冲突与事务审计</p>
       </div>
       <div style="display:flex;gap:8px;">
-        <button class="btn" id="btnReconcileAudit" type="button" data-i18n="governance.reconcileAudit">重放挂起审计</button>
-        <button class="btn danger" id="btnPurgeExpiredCanvases" type="button" data-i18n="governance.purgeExpired">清理过期画布</button>
+        <button class="hw-btn hw-btn-sm" id="btnReconcileAudit" type="button" data-i18n="governance.reconcileAudit">重放挂起审计</button>
+        <button class="hw-btn hw-btn-sm hw-btn-danger" id="btnPurgeExpiredCanvases" type="button" data-i18n="governance.purgeExpired">清理过期画布</button>
       </div>
     </header>
 
@@ -341,8 +342,8 @@
             <textarea id="opParamsJson" data-i18n-placeholder="governance.paramsPlaceholder" placeholder='{"name": "新名称", "expected_version": 1}'></textarea>
           </div>
           <div style="display:flex;gap:8px;">
-            <button type="button" class="btn" id="btnPreviewImpact" data-i18n="governance.previewImpact">预览级联影响</button>
-            <button type="submit" class="btn primary" id="btnExecuteOp" data-i18n="governance.executeOperation">执行操作</button>
+            <button type="button" class="hw-btn" id="btnPreviewImpact" data-i18n="governance.previewImpact">预览级联影响</button>
+            <button type="submit" class="hw-btn hw-btn-gold" id="btnExecuteOp" data-i18n="governance.executeOperation">执行操作</button>
           </div>
         </form>
         <div id="opPreviewBox" class="gov-preview-box" style="display:none;"></div>
@@ -365,13 +366,13 @@
     <div class="task-detail-shell" data-floating-content>
       <header class="task-detail-head">
         <div><h2 id="govConfirmTitle" data-i18n="governance.confirmationTitle">操作确认</h2><p id="govConfirmSubtitle"></p></div>
-        <button class="btn small" type="button" id="btnGovConfirmClose" data-floating-close data-i18n="governance.closeDialog">关闭</button>
+        <button class="hw-btn hw-btn-sm" type="button" id="btnGovConfirmClose" data-floating-close data-i18n="governance.closeDialog">关闭</button>
       </header>
       <div class="task-detail-body" id="govConfirmBody"></div>
       <div class="sr-only" id="govConfirmStatus" role="status" aria-live="polite" aria-atomic="true"></div>
       <footer style="display:flex;justify-content:flex-end;gap:8px;padding:16px 20px;border-top:1px solid var(--border-subtle, rgba(255,255,255,0.08));">
-        <button class="btn" type="button" id="btnGovConfirmCancel" data-floating-close data-i18n="governance.cancelOperation">取消</button>
-        <button class="btn primary" type="button" id="btnGovConfirmOk" data-i18n="governance.confirmExecute">确认执行</button>
+        <button class="hw-btn" type="button" id="btnGovConfirmCancel" data-floating-close data-i18n="governance.cancelOperation">取消</button>
+        <button class="hw-btn hw-btn-gold" type="button" id="btnGovConfirmOk" data-i18n="governance.confirmExecute">确认执行</button>
       </footer>
     </div>
   </dialog>

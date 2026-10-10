@@ -454,7 +454,7 @@
     <!-- LEFT CONSOLE DOCK: 上下文工作流总线                                           -->
     <!-- ----------------------------------------------------------------------- -->
     <aside class="w-64 bg-[#08090d] border-r border-[#191c24] flex flex-col shrink-0 z-30 h-full min-h-0 overflow-hidden">
-      <div class="flex-1 flex flex-col min-h-0 relative" id="contextBusContainer">
+      <div class="flex-1 flex flex-col min-h-0 relative overflow-hidden" id="contextBusContainer">
         <!-- Tree Header -->
         <div class="p-2 border-b border-white/5 shrink-0">
           <div class="w-full flex items-center justify-between px-3 py-2 rounded-xl bg-[#141720] border border-[#dfc384]/35 text-[#eddab3] gw-type-body-sm font-semibold shadow-[0_0_12px_rgba(223,195,132,0.12)] relative">
@@ -470,18 +470,18 @@
         </div>
 
         <!-- Scrollable Flow Graph -->
-        <div class="flex-1 overflow-y-auto p-2 pr-2 relative space-y-4">
+        <div class="flex-1 overflow-y-auto p-2 pr-2 relative space-y-4 min-h-0">
           <!-- Continuous Bus Trunk Line -->
           <div class="absolute left-3.5 top-2 bottom-4 w-[1.5px] bg-gradient-to-b from-[#dfc384] via-[#dfc384]/40 to-transparent pointer-events-none"></div>
 
-          <!-- 1. NODE 01: 院线长片 -->
+          <!-- 1. NODE 01: 制作中工程 (film) -->
           <div class="relative pl-5">
             <div class="absolute left-[-6px] top-[17px] w-[6px] h-[1.5px] bg-[#dfc384]/60 pointer-events-none"></div>
             <div data-project-type="film" class="tree-node-card px-2.5 py-1.5 flex items-center justify-between group cursor-pointer" onclick="WorkbenchProjects.filterType('film', this)">
               <div class="card-connector-pin"></div>
               <div class="flex items-center space-x-1.5 min-w-0">
                 <span class="gw-type-body-sm font-mono text-[#dfc384] font-bold px-1 py-0.5 rounded bg-[#dfc384]/15 border border-[#dfc384]/30 shrink-0">01</span>
-                <span class="gw-type-body-md font-semibold text-slate-100 truncate">《神谕之地》院线长片</span>
+                <span class="gw-type-body-md font-semibold text-slate-100 truncate">制作中工程 (长片)</span>
               </div>
               <span class="gw-type-body-sm font-mono px-1 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 shrink-0 flex items-center space-x-0.5">
                 <span>act</span>
@@ -493,7 +493,7 @@
                 <div class="absolute -left-3 top-1/2 -translate-y-1/2 w-3 h-[1px] bg-[#dfc384]/40 pointer-events-none"></div>
                 <div class="w-full tree-node-card px-2.5 py-1.5 flex items-center justify-between gw-type-body-sm">
                   <div class="card-connector-pin"></div>
-                  <span class="text-slate-300 truncate">1.1 概念剧照调色</span>
+                  <span class="text-slate-300 truncate">1.1 概念资产调色</span>
                   <span class="gw-type-body-sm font-mono text-amber-300 shrink-0" id="projStageAssets" data-gw-degradation="not_integrated" title="真实数据源：/api/episode-pipelines 的 assets 阶段状态">读取中…</span>
                 </div>
               </div>
@@ -510,40 +510,40 @@
             </div>
           </div>
 
-          <!-- 2. NODE 02: 赛博短剧 -->
+          <!-- 2. NODE 02: 渲染中工程 (series) -->
           <div class="relative pl-5">
             <div class="absolute left-[-6px] top-[17px] w-[6px] h-[1.5px] bg-[#dfc384]/50 pointer-events-none"></div>
             <div data-project-type="series" class="tree-node-card px-2.5 py-1.5 flex items-center justify-between cursor-pointer" onclick="WorkbenchProjects.filterType('series', this)">
               <div class="card-connector-pin"></div>
               <div class="flex items-center space-x-1.5 min-w-0">
                 <span class="gw-type-body-sm font-mono text-[#eddab3] font-bold px-1 py-0.5 rounded bg-white/5 border border-white/10 shrink-0">02</span>
-                <span class="gw-type-body-md font-semibold text-slate-200 truncate">《霓虹脉冲2099》短剧</span>
+                <span class="gw-type-body-md font-semibold text-slate-200 truncate">渲染中工程 (短剧)</span>
               </div>
               <span class="gw-type-body-sm font-mono px-1 py-0.5 rounded-full bg-cyan-500/15 text-cyan-400 border border-cyan-500/30 shrink-0">run</span>
             </div>
           </div>
 
-          <!-- 3. NODE 03: 概念PV -->
+          <!-- 3. NODE 03: 待审阅工程 (other) -->
           <div class="relative pl-5">
             <div class="absolute left-[-6px] top-[17px] w-[6px] h-[1.5px] bg-amber-500/40 pointer-events-none"></div>
             <div data-project-type="other" class="tree-node-card px-2.5 py-1.5 flex items-center justify-between cursor-pointer" onclick="WorkbenchProjects.filterType('other', this)">
               <div class="card-connector-pin"></div>
               <div class="flex items-center space-x-1.5 min-w-0">
                 <span class="gw-type-body-sm font-mono text-slate-400 font-bold px-1 py-0.5 rounded bg-white/5 border border-white/10 shrink-0">03</span>
-                <span class="gw-type-body-md font-semibold text-slate-300 truncate">《深渊回响》先导概念</span>
+                <span class="gw-type-body-md font-semibold text-slate-300 truncate">待审阅工程 (实验/概念)</span>
               </div>
               <span class="gw-type-body-sm font-mono px-1 py-0.5 rounded-full bg-amber-500/15 text-amber-300 border border-amber-500/30 shrink-0">plan</span>
             </div>
           </div>
 
-          <!-- 4. NODE 04: 已归档 -->
+          <!-- 4. NODE 04: 已归档工程 (archived) -->
           <div class="relative pl-5">
             <div class="absolute left-[-6px] top-[17px] w-[6px] h-[1.5px] bg-blue-400/40 pointer-events-none"></div>
             <div data-project-scope="archived" class="tree-node-card px-2.5 py-1.5 flex items-center justify-between cursor-pointer" onclick="WorkbenchProjects.toggleArchived(this)">
               <div class="card-connector-pin"></div>
               <div class="flex items-center space-x-1.5 min-w-0">
                 <span class="gw-type-body-sm font-mono text-blue-400 font-bold px-1 py-0.5 rounded bg-blue-500/10 border border-blue-500/20 shrink-0">04</span>
-                <span class="gw-type-body-md font-semibold text-slate-400 truncate">已归档发行剧集 (8)</span>
+                <span class="gw-type-body-md font-semibold text-slate-400 truncate">已归档工程</span>
               </div>
               <span class="gw-type-body-sm font-mono px-1 py-0.5 rounded-full bg-blue-500/15 text-blue-400 border border-blue-500/30 shrink-0">arch</span>
             </div>
@@ -755,7 +755,7 @@
 
         <div class="project-date-range-field" data-project-date-range>
           <label class="block gw-type-body-sm font-mono text-slate-400 mb-1">项目排期</label>
-          <button type="button" class="tactile-keycap project-date-range-trigger" data-date-range-trigger aria-haspopup="dialog" aria-expanded="false"><i data-lucide="calendar-days" class="w-4 h-4"></i><span class="project-date-range-label" data-date-range-label>选择项目排期</span></button>
+          <button type="button" class="hw-btn project-date-range-trigger" data-date-range-trigger aria-haspopup="dialog" aria-expanded="false"><i data-lucide="calendar-days" class="w-4 h-4"></i><span class="project-date-range-label" data-date-range-label>选择项目排期</span></button>
           <input type="hidden" id="newProjectStartAt" data-date-range-start>
           <input type="hidden" id="newProjectDueAt" data-date-range-end>
           <div class="project-date-range-popover" data-date-range-popover hidden></div>
@@ -939,7 +939,7 @@
 
         <div class="project-date-range-field" data-project-date-range>
           <label class="block gw-type-body-sm font-mono text-slate-400 mb-1">项目排期</label>
-          <button type="button" class="tactile-keycap project-date-range-trigger" data-date-range-trigger aria-haspopup="dialog" aria-expanded="false"><i data-lucide="calendar-days" class="w-4 h-4"></i><span class="project-date-range-label" data-date-range-label>选择项目排期</span></button>
+          <button type="button" class="hw-btn project-date-range-trigger" data-date-range-trigger aria-haspopup="dialog" aria-expanded="false"><i data-lucide="calendar-days" class="w-4 h-4"></i><span class="project-date-range-label" data-date-range-label>选择项目排期</span></button>
           <input type="hidden" id="editProjectStartAt" data-date-range-start>
           <input type="hidden" id="editProjectDueAt" data-date-range-end>
           <div class="project-date-range-popover" data-date-range-popover hidden></div>

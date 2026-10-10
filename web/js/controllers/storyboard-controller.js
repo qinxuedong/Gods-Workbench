@@ -133,8 +133,8 @@ window.WorkbenchStoryboard = (function () {
             <button class="hover:text-white" title="下移镜头" onclick="WorkbenchStoryboard.moveShot(${idx}, 1)">&darr;</button>
           </div>
           <div class="flex items-center space-x-1.5">
-            <button class="tactile-keycap px-2 py-0.5 rounded gw-type-body-md text-slate-300 hover:text-white" onclick="WorkbenchStoryboard.regenerateShot(${idx})">重绘画面</button>
-            <a href="production.html" class="tactile-keycap px-2 py-0.5 rounded gw-type-body-sm text-[#eddab3]">进入制片</a>
+            <button class="hw-btn hw-btn-sm" onclick="WorkbenchStoryboard.regenerateShot(${idx})">重绘画面</button>
+            <a href="production.html" class="hw-btn hw-btn-sm hw-btn-gold">进入制片</a>
           </div>
         </div>
 

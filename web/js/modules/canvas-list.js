@@ -439,8 +439,8 @@ function renderProjects(){
             box.innerHTML = `
                 <div class="ws-project-confirm-title">${L('删除项目','Delete project')}「${escapeHtml(p.name)}」？${L('其画布将移回默认项目。','Canvases move back to Default.')}</div>
                 <div class="ws-project-confirm-actions">
-                    <button class="ws-confirm-btn" type="button">${L('删除','Delete')}</button>
-                    <button class="ws-cancel-btn" type="button">${L('取消','Cancel')}</button>
+                    <button class="hw-btn hw-btn-sm hw-btn-danger ws-confirm-btn" type="button">${L('删除','Delete')}</button>
+                    <button class="hw-btn hw-btn-sm ws-cancel-btn" type="button">${L('取消','Cancel')}</button>
                 </div>`;
             box.querySelector('.ws-confirm-btn').onclick = () => deleteProject(p.id);
             box.querySelector('.ws-cancel-btn').onclick = () => { pendingDeleteProjectId = null; renderProjects(); };
@@ -1064,7 +1064,7 @@ function buildCard(c, position){
         <div class="canvas-overview-card-head">
             ${canvasOverviewBadge(c, overviewType)}
             <button class="ws-card-child-btn canvas-overview-child-btn" type="button" title="${L('新建画布','New canvas')}" aria-label="${L('新建画布','New canvas')}"><i data-lucide="plus-square" class="w-3 h-3"></i></button>
-            <button class="ws-card-menu tactile-micro-btn" type="button" title="${L('更多','More')}" aria-label="${L('更多','More')}"><i data-lucide="more-horizontal" class="w-3 h-3"></i></button>
+            <button class="ws-card-menu hw-btn-icon" type="button" title="${L('更多','More')}" aria-label="${L('更多','More')}"><i data-lucide="more-horizontal" class="w-3 h-3"></i></button>
         </div>
         <div class="canvas-overview-card-copy">
             <h3 class="ws-card-title" title="${escapeAttr(canvasDisplayTitle(c))}">${escapeHtml(canvasDisplayTitle(c))}</h3>
@@ -1083,8 +1083,8 @@ function buildCard(c, position){
         <div class="ws-card-delete-confirm">
             <div class="ws-card-delete-title">${L('移入回收站？','Move to trash?')}</div>
             <div class="ws-card-delete-actions">
-                <button class="ws-card-delete-yes" type="button">${L('删除','Delete')}</button>
-                <button class="ws-card-delete-no" type="button">${L('取消','Cancel')}</button>
+                <button class="hw-btn hw-btn-sm hw-btn-danger ws-card-delete-yes" type="button">${L('删除','Delete')}</button>
+                <button class="hw-btn hw-btn-sm ws-card-delete-no" type="button">${L('取消','Cancel')}</button>
             </div>
         </div>` : `
         <div class="ws-card-top">
@@ -1102,8 +1102,8 @@ function buildCard(c, position){
         <div class="ws-card-delete-confirm">
             <div class="ws-card-delete-title">${L('移入回收站？','Move to trash?')}</div>
             <div class="ws-card-delete-actions">
-                <button class="ws-card-delete-yes" type="button">${L('删除','Delete')}</button>
-                <button class="ws-card-delete-no" type="button">${L('取消','Cancel')}</button>
+                <button class="hw-btn hw-btn-sm hw-btn-danger ws-card-delete-yes" type="button">${L('删除','Delete')}</button>
+                <button class="hw-btn hw-btn-sm ws-card-delete-no" type="button">${L('取消','Cancel')}</button>
             </div>
         </div>`;
     const menuBtn = card.querySelector('.ws-card-menu');
@@ -1297,8 +1297,8 @@ function openCreateCard(worldPt, parentCanvasId = '', trigger = document.activeE
             <span class="text-amber-300 font-bold">SMART</span>
         </div>
         <div class="ws-create-actions">
-            <button class="ws-create-confirm" type="button">${L('创建画布','Create canvas')}</button>
-            <button class="ws-create-cancel" type="button" data-floating-close>${L('取消','Cancel')}</button>
+            <button class="hw-btn hw-btn-gold ws-create-confirm" type="button">${L('创建画布','Create canvas')}</button>
+            <button class="hw-btn ws-create-cancel" type="button" data-floating-close>${L('取消','Cancel')}</button>
         </div>`;
     const backdrop = document.createElement('div');
     backdrop.className = 'ws-create-backdrop';
@@ -1944,7 +1944,7 @@ function renderArchive(){
             <div class="ws-card-top"><span class="ws-card-icon">${renderCanvasIcon(c.icon, 17)}</span><span class="ws-card-kind">${L('已归档','Archived')}</span></div>
             <div class="ws-card-title">${escapeHtml(c.title)}</div>
             <div class="ws-card-meta"><span class="ws-card-nodes">${escapeHtml(projName)}</span><span class="ws-card-meta-dot"></span><span class="ws-card-time">${formatCanvasTime(c.archived_at)}</span></div>
-            <div class="ws-card-actions"><button class="ws-trash-act restore" type="button"><i data-lucide="archive-restore" class="w-3.5 h-3.5"></i><span>${L('召回','Restore')}</span></button></div>`;
+            <div class="ws-card-actions"><button class="hw-btn hw-btn-sm ws-trash-act restore" type="button"><i data-lucide="archive-restore" class="w-3.5 h-3.5"></i><span>${L('召回','Restore')}</span></button></div>`;
         card.querySelector('.restore').onclick = () => unarchiveCanvas(c.id);
         archiveListEl.appendChild(card);
     });
@@ -2006,14 +2006,14 @@ function renderTrash(){
             <div class="ws-card-title">${escapeHtml(c.title)}</div>
             <div class="ws-card-meta"><span class="ws-card-nodes">${escapeHtml(projName)}</span><span class="ws-card-meta-dot"></span><span class="ws-card-time">${formatCanvasTime(c.deleted_at)}</span></div>
             <div class="ws-card-actions">
-                <button class="ws-trash-act restore" type="button"><i data-lucide="rotate-ccw" class="w-3.5 h-3.5"></i><span>${L('恢复','Restore')}</span></button>
-                <button class="ws-trash-act purge" type="button"><i data-lucide="trash-2" class="w-3.5 h-3.5"></i><span>${L('彻底删除','Delete')}</span></button>
+                <button class="hw-btn hw-btn-sm ws-trash-act restore" type="button"><i data-lucide="rotate-ccw" class="w-3.5 h-3.5"></i><span>${L('恢复','Restore')}</span></button>
+                <button class="hw-btn hw-btn-sm hw-btn-danger ws-trash-act purge" type="button"><i data-lucide="trash-2" class="w-3.5 h-3.5"></i><span>${L('彻底删除','Delete')}</span></button>
             </div>
             <div class="ws-trash-confirm">
                 <div class="ws-trash-confirm-title">${L('彻底删除？不可恢复','Delete permanently?')}</div>
                 <div class="ws-trash-confirm-actions">
-                    <button class="ws-trash-confirm-yes" type="button">${L('删除','Delete')}</button>
-                    <button class="ws-trash-confirm-no" type="button">${L('取消','Cancel')}</button>
+                    <button class="hw-btn hw-btn-sm hw-btn-danger ws-trash-confirm-yes" type="button">${L('删除','Delete')}</button>
+                    <button class="hw-btn hw-btn-sm ws-trash-confirm-no" type="button">${L('取消','Cancel')}</button>
                 </div>
             </div>`;
         card.querySelector('.ws-trash-act.restore').onclick = () => restoreCanvas(c.id);

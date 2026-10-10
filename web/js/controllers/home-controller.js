@@ -342,7 +342,7 @@ window.WorkbenchHome = (function () {
                 <div class="flex items-center space-x-2">
                   ${progressHtml}
                   <a href="/static/pages/workshop.html?project_id=${encodeURIComponent(p.id)}"
-                     class="tactile-keycap px-1.5 py-0.5 rounded gw-type-body-sm text-[#eddab3] hover:text-white flex items-center space-x-0.5"
+                     class="hw-btn hw-btn-sm flex items-center space-x-0.5"
                      onclick="event.stopPropagation(); localStorage.setItem('workspace_project_id', '${esc(p.id)}'); localStorage.setItem('workspace_project_name', '${esc(p.name)}');"
                      title="进入该项目的影视工坊（剧本/资产/分镜/视频）">
                     <i data-lucide="film" class="w-2.5 h-2.5 text-[#dfc384]"></i>
@@ -415,7 +415,7 @@ window.WorkbenchHome = (function () {
                 </div>
               </div>
               <a href="/static/pages/workshop.html?project_id=${encodeURIComponent(p.id)}"
-                 class="tactile-keycap px-1.5 py-0.5 rounded gw-type-body-sm text-[#eddab3] hover:text-white flex items-center space-x-0.5 cursor-pointer"
+                 class="hw-btn hw-btn-sm flex items-center space-x-0.5 cursor-pointer"
                  onclick="event.stopPropagation(); localStorage.setItem('workspace_project_id', '${esc(p.id)}'); localStorage.setItem('workspace_project_name', '${esc(p.name)}');"
                  title="进入该项目的影视工坊">
                 <i data-lucide="film" class="w-2.5 h-2.5 text-[#dfc384]"></i>
@@ -1212,7 +1212,7 @@ window.WorkbenchHome = (function () {
           </div>
           ${degradedList.length ? `<div class="pt-1 gw-type-body-sm font-mono text-slate-500" role="status" data-gw-degradation="${esc(degradedKind)}">${esc(degradedText)}</div>` : ''}
           <div class="pt-1 text-right">
-            <button class="tactile-keycap px-2 py-1 rounded gw-type-body-md text-slate-300 hover:text-white" onclick="alert('当前固件已是最新正式版本')">检查更新</button>
+            <button class="hw-btn hw-btn-sm" onclick="alert('当前固件已是最新正式版本')">检查更新</button>
           </div>
         `;
       }
@@ -1253,7 +1253,7 @@ window.WorkbenchHome = (function () {
                 </div>
               </div>
               <div class="prompt-source-actions">
-                <button type="button" class="tactile-keycap px-2 py-1 rounded gw-type-body-md text-slate-300" onclick="alert('已重新校验快照文件 SHA-256')">校验快照</button>
+                <button type="button" class="hw-btn hw-btn-sm" onclick="alert('已重新校验快照文件 SHA-256')">校验快照</button>
               </div>
             </article>
           `;
