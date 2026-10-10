@@ -9,19 +9,19 @@
   <script src="/static/vendor/js/tailwindcss-cdn.js?v=3.4.17&amp;build=d11003b2f6fb"></script>
   <script src="/static/vendor/js/lucide.js?v=1.16.0"></script>
   <link rel="stylesheet" href="/static/css/base/hardware-design-system.css">
+  <link rel="stylesheet" href="/static/css/pages/canvas-workspace.css?v=20261010-v1">
   <style>
     body.embedded > header { display: none; }
     body.embedded { padding-left: 0; padding-right: 0; }
     body.canvas-overview-mode #storyboardMain { padding: 0; gap: 0; }
-    body.canvas-overview-mode .canvas-scene-legacy { display: none !important; }
     .canvas-overview-frame { display: block; flex: 1 1 auto; width: 100%; min-height: 0; border: 0; background: #090a0d; }
-    .canvas-overview-frame[hidden], .storyboard-matrix-content[hidden] { display: none !important; }
-    .canvas-rail-group { margin: 8px; padding: 8px; border: 1px solid rgba(255,255,255,.08); border-radius: 8px; background: #0b0d12; }
-    .canvas-rail-heading { padding: 3px 7px 6px; color: #dfc384; font-family: var(--gw-font-mono); font-size: var(--gw-type-body-sm) !important; font-weight: 700; line-height: 1.2; }
-    .canvas-rail-heading.tools { margin-top: 8px; color: #dfc384; }
-    .canvas-rail-item { width: 100%; min-height: 36px; margin: 3px 0; padding: 6px 8px; display: flex; align-items: center; gap: 8px; border: 1px solid rgba(255,255,255,.1); border-radius: 8px; background: #101319; color: #f8fafc; font-family: var(--gw-font-body); font-size: var(--gw-type-body-md) !important; font-weight: var(--gw-weight-medium); line-height: var(--gw-leading-body-md); text-align: left; cursor: pointer; transition: border-color .16s ease, box-shadow .16s ease, color .16s ease, background-color .16s ease; }
+    .canvas-overview-frame[hidden], .storyboard-matrix-content[hidden], .canvas-workspace-stage[hidden], .tool-panel-container[hidden] { display: none !important; }
+    .canvas-rail-group { margin: 6px 8px; padding: 6px; border: 1px solid rgba(255,255,255,.08); border-radius: 8px; background: #0b0d12; }
+    .canvas-rail-heading { padding: 3px 7px 5px; color: #dfc384; font-family: var(--gw-font-mono); font-size: var(--gw-type-body-sm) !important; font-weight: 700; line-height: 1.2; letter-spacing: 0.5px; }
+    .canvas-rail-heading.tools { margin-top: 2px; color: #dfc384; }
+    .canvas-rail-item { width: 100%; min-height: 34px; margin: 2px 0; padding: 6px 8px; display: flex; align-items: center; gap: 8px; border: 1px solid rgba(255,255,255,.08); border-radius: 8px; background: #101319; color: #f8fafc; font-family: var(--gw-font-body); font-size: var(--gw-type-body-md) !important; font-weight: var(--gw-weight-medium); line-height: var(--gw-leading-body-md); text-align: left; cursor: pointer; transition: border-color .16s ease, box-shadow .16s ease, color .16s ease, background-color .16s ease; }
     .canvas-rail-item:hover { color: #eddab3; border-color: rgba(223,195,132,.45); background: #14171f; }
-    .canvas-rail-item.active, .canvas-rail-item.tools.active { color: #dfc384; border-color: #dfc384; background: #14171f; box-shadow: 0 0 8px rgba(223,195,132,.12), inset 0 0 0 1px rgba(223,195,132,.08); }
+    .canvas-rail-item.active { color: #dfc384; border-color: #dfc384; background: #14171f; box-shadow: 0 0 8px rgba(223,195,132,.12), inset 0 0 0 1px rgba(223,195,132,.08); }
     .canvas-rail-item:focus-visible { outline: 2px solid rgba(223,195,132,.72); outline-offset: 2px; }
     .canvas-rail-item > svg { width: 14px; height: 14px; flex: 0 0 14px; }
     #storyboardWorkspace, #storyboardMain { min-width: 0; }
@@ -231,28 +231,44 @@
   </header>
 
   <div id="storyboardWorkspace" class="flex-1 flex overflow-hidden min-h-0">
-    <!-- LEFT: 场次导航 -->
+    <!-- LEFT: 导航总线（全局画布与创作工具箱） -->
     <aside id="storyboardRail" class="w-64 bg-[#08090d] border-r border-[#191c24] flex flex-col shrink-0 z-30 h-full min-h-0">
-      <section class="canvas-rail-group" aria-label="全局画布与快捷工具">
-        <div class="canvas-rail-heading">全局画布</div>
-        <button class="canvas-rail-item active" data-canvas-rail="all" type="button" onclick="openCanvasOverview(this, 'all')"><i data-lucide="layout-grid" class="w-3.5 h-3.5"></i><span>画布首页</span></button>
-        <button class="canvas-rail-item" data-canvas-rail="classic" type="button" onclick="openCanvasOverview(this, 'classic')"><i data-lucide="square-kanban" class="w-3.5 h-3.5"></i><span>普通画布</span></button>
-        <button class="canvas-rail-item" data-canvas-rail="project" type="button" onclick="openCanvasOverview(this, 'project')"><i data-lucide="folder-kanban" class="w-3.5 h-3.5"></i><span>项目画布</span></button>
-        <button class="canvas-rail-item" data-canvas-rail="reference" type="button" onclick="openCanvasOverview(this, 'reference')"><i data-lucide="image" class="w-3.5 h-3.5"></i><span>参考画布</span></button>
-      </section>
-      <div class="p-2 border-b border-white/5 shrink-0 canvas-scene-legacy">
-        <div class="w-full flex items-center justify-between px-3 py-2 rounded-xl bg-[#141720] border border-[#dfc384]/35 text-[#eddab3] gw-type-body-sm font-semibold shadow-md">
-          <div class="flex items-center space-x-2">
-            <i data-lucide="layout-grid" class="w-4 h-4 text-[#dfc384]"></i>
-            <span>分镜故事场次</span>
+      <div class="flex-1 overflow-y-auto min-h-0" id="railScrollArea">
+        <!-- 分组一：全局画布 -->
+        <section class="canvas-rail-group" aria-label="全局画布">
+          <div class="canvas-rail-heading">全局画布</div>
+          <button class="canvas-rail-item active" data-rail-type="canvas" data-canvas-rail="all" type="button" onclick="openCanvasOverview(this, 'all')"><i data-lucide="layout-grid" class="w-3.5 h-3.5"></i><span>画布首页</span></button>
+          <button class="canvas-rail-item" data-rail-type="canvas" data-canvas-rail="classic" type="button" onclick="openCanvasOverview(this, 'classic')"><i data-lucide="sparkles" class="w-3.5 h-3.5"></i><span>智能画布</span></button>
+          <button class="canvas-rail-item" data-rail-type="canvas" data-canvas-rail="project" type="button" onclick="openCanvasOverview(this, 'project')"><i data-lucide="folder-kanban" class="w-3.5 h-3.5"></i><span>项目画布</span></button>
+          <button class="canvas-rail-item" data-rail-type="canvas" data-canvas-rail="reference" type="button" onclick="openCanvasOverview(this, 'reference')"><i data-lucide="image" class="w-3.5 h-3.5"></i><span>参考画布</span></button>
+        </section>
+
+        <!-- 分组二：创作工具箱 -->
+        <section class="canvas-rail-group" aria-label="创作工具箱">
+          <div class="canvas-rail-heading tools">创作工具</div>
+          <button class="canvas-rail-item" data-rail-type="tool" data-tool-id="storyboard" type="button" onclick="switchToolTab(this, 'storyboard')"><i data-lucide="film" class="w-3.5 h-3.5"></i><span>分镜矩阵 (4幕)</span></button>
+          <button class="canvas-rail-item" data-rail-type="tool" data-tool-id="radar" type="button" onclick="switchToolTab(this, 'radar')"><i data-lucide="compass" class="w-3.5 h-3.5"></i><span>机位雷达 (Previs)</span></button>
+          <button class="canvas-rail-item" data-rail-type="tool" data-tool-id="palette" type="button" onclick="switchToolTab(this, 'palette')"><i data-lucide="palette" class="w-3.5 h-3.5"></i><span>色彩管理</span></button>
+          <button class="canvas-rail-item" data-rail-type="tool" data-tool-id="prompts" type="button" onclick="switchToolTab(this, 'prompts')"><i data-lucide="sparkles" class="w-3.5 h-3.5"></i><span>提示词助手</span></button>
+        </section>
+
+        <!-- 分镜场次目录（仅在分镜矩阵工具激活时展示） -->
+        <div id="storyboardSceneNavContainer" class="p-2 border-t border-white/5 space-y-1.5" style="display:none;">
+          <div class="w-full flex items-center justify-between px-3 py-1.5 rounded-lg bg-[#141720] border border-[#dfc384]/35 text-[#eddab3] gw-type-body-sm font-semibold shadow-md">
+            <div class="flex items-center space-x-2">
+              <i data-lucide="list-video" class="w-3.5 h-3.5 text-[#dfc384]"></i>
+              <span>分镜场次</span>
+            </div>
+            <span class="gw-type-body-sm font-mono text-[#dfc384]">共 4 幕</span>
           </div>
-          <span class="gw-type-body-sm font-mono text-[#dfc384]">共 4 幕</span>
+          <div class="space-y-1 pt-1" id="storyboardSceneNav">
+            <!-- 场次导航条目由 JS 动态渲染 -->
+          </div>
         </div>
       </div>
-      <div class="flex-1 overflow-y-auto p-2 space-y-1.5 gw-type-body-sm canvas-scene-legacy" id="storyboardSceneNav">
-        <!-- 场次导航按钮 -->
-      </div>
-      <div class="p-2.5 bg-[#050608] border-t border-white/5 shrink-0 canvas-scene-legacy">
+
+      <!-- 底部操作栏（分镜矩阵模式下展示导出脚本） -->
+      <div class="p-2.5 bg-[#050608] border-t border-white/5 shrink-0" id="storyboardExportFooter" style="display:none;">
         <button class="tactile-keycap w-full py-1.5 rounded-lg gw-type-body-md font-bold text-[#eddab3] flex items-center justify-center space-x-1" onclick="WorkbenchStoryboard.exportPdf()">
           <i data-lucide="file-down" class="w-3.5 h-3.5 text-[#dfc384]"></i>
           <span>导出导演分镜脚本</span>
@@ -260,40 +276,95 @@
       </div>
     </aside>
 
-    <!-- MAIN WORKSPACE: 分镜卡片网格矩阵 -->
+    <!-- MAIN WORKSPACE: 多视图主工作区 -->
     <main id="storyboardMain" class="flex-1 p-2.5 min-h-0 flex flex-col space-y-2 overflow-hidden">
-      <div id="storyboardMatrixContent" class="storyboard-matrix-content flex flex-col flex-1 min-h-0 space-y-2">
-      <!-- 顶栏批量控制与网格切换 -->
-      <div class="champagne-card p-2 flex items-center justify-between shrink-0">
-        <div class="flex items-center space-x-3">
-          <div class="flex items-center space-x-2">
-            <i data-lucide="grid" class="w-4 h-4 text-[#dfc384]"></i>
-            <h2 class="gw-type-headline-md font-bold text-slate-100" id="storyboardTitle">第 03 幕 · 钛金圣殿对峙 (共 6 个分镜)</h2>
-          </div>
-          <div class="h-3.5 w-px bg-white/10"></div>
-          <span class="gw-type-body-sm font-mono text-amber-300" data-gw-degradation="not_integrated">渲染端点未接入（未纳入当前切片）</span>
-        </div>
-
-        <div class="flex items-center space-x-2 gw-type-body-sm font-mono">
-          <button class="tactile-keycap px-2.5 py-1 rounded text-slate-300 hover:text-white flex items-center space-x-1" onclick="WorkbenchStoryboard.batchGenerate()">
-            <i data-lucide="play" class="w-3 h-3 text-[#dfc384]"></i>
-            <span>批量渲染所有分镜</span>
-          </button>
-          <button class="tactile-keycap px-2.5 py-1 rounded text-[#eddab3] font-bold flex items-center space-x-1" onclick="WorkbenchStoryboard.addNewShot()">
-            <i data-lucide="plus" class="w-3 h-3 text-[#dfc384]"></i>
-            <span>追加镜头</span>
-          </button>
-        </div>
-      </div>
-
-      <!-- 分镜网格容器 -->
-      <div class="flex-1 min-h-0 overflow-y-auto pr-1">
-        <div class="grid grid-cols-3 gap-2.5" id="storyboardGrid">
-          <!-- 动态渲染 6 个分镜卡片 -->
-        </div>
-      </div>
-      </div>
+      <!-- 视图 1：画布总览 (嵌入 iframe) -->
       <iframe id="canvasOverviewFrame" class="canvas-overview-frame" title="画布总览" src="about:blank" scrolling="no" hidden></iframe>
+
+      <!-- 视图 2：画布工作台承接面 (Canvas Workspace) -->
+      <div id="canvasWorkspaceStage" class="canvas-workspace-stage flex flex-col flex-1 min-h-0 space-y-2" hidden>
+        <!-- 顶部信息栏 & 面包屑 -->
+        <div class="champagne-card p-2 flex items-center justify-between shrink-0">
+          <div class="flex items-center space-x-3">
+            <button class="tactile-keycap px-2.5 py-1 rounded text-slate-300 hover:text-white flex items-center space-x-1" onclick="exitCanvasWorkspace()" title="返回画布总览">
+              <i data-lucide="arrow-left" class="w-3.5 h-3.5 text-[#dfc384]"></i>
+              <span>返回总览</span>
+            </button>
+            <div class="h-3.5 w-px bg-white/10"></div>
+            <div class="flex items-center space-x-2">
+              <i data-lucide="layout-template" class="w-4 h-4 text-[#dfc384]"></i>
+              <h2 class="gw-type-headline-md font-bold text-slate-100" id="workspaceCanvasTitle">当前画布</h2>
+              <span class="gw-type-body-sm font-mono px-2 py-0.5 rounded bg-black/60 border border-[#dfc384]/30 text-[#eddab3]" id="workspaceCanvasIdTag">cv-xxxx</span>
+              <span class="gw-type-body-sm font-mono text-slate-400" id="workspaceCanvasVersion">v1</span>
+            </div>
+          </div>
+          <div class="flex items-center space-x-2 gw-type-body-sm font-mono">
+            <span class="text-slate-400" id="workspaceProjectBadge">项目: default</span>
+            <div class="h-3.5 w-px bg-white/10"></div>
+            <button class="tactile-keycap px-2.5 py-1 rounded text-slate-300 hover:text-white flex items-center space-x-1" id="btnExportCanvasGodmap" title="导出拓扑 JSON">
+              <i data-lucide="download" class="w-3 h-3 text-[#dfc384]"></i>
+              <span>导出 .godmap</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- 工作台拓扑舞台（Task 3 将对其渲染工作流同源节点与连线动效） -->
+        <div class="flex-1 min-h-0 relative overflow-hidden rounded-xl border border-white/10 bg-[#080a0e]" id="canvasTopologyContainer">
+          <div class="absolute inset-0 infinite-grid-bg" id="canvasTopologyStage">
+            <!-- 连线 SVG 层 -->
+            <svg class="absolute inset-0 w-full h-full pointer-events-none" id="canvasTopologyWiresSvg" style="z-index: 10;"></svg>
+            <!-- 节点容器层 -->
+            <div class="absolute inset-0" id="canvasTopologyNodesLayer" style="z-index: 20;"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 视图 3：分镜卡片网格矩阵 -->
+      <div id="storyboardMatrixContent" class="storyboard-matrix-content flex flex-col flex-1 min-h-0 space-y-2">
+        <!-- 顶栏批量控制与网格切换 -->
+        <div class="champagne-card p-2 flex items-center justify-between shrink-0">
+          <div class="flex items-center space-x-3">
+            <div class="flex items-center space-x-2">
+              <i data-lucide="film" class="w-4 h-4 text-[#dfc384]"></i>
+              <h2 class="gw-type-headline-md font-bold text-slate-100" id="storyboardTitle">第 03 幕 · 钛金圣殿对峙 (共 6 个分镜)</h2>
+            </div>
+            <div class="h-3.5 w-px bg-white/10"></div>
+            <span class="gw-type-body-sm font-mono text-amber-300" data-gw-degradation="not_integrated">渲染端点未接入（未纳入当前切片）</span>
+          </div>
+
+          <div class="flex items-center space-x-2 gw-type-body-sm font-mono">
+            <button class="tactile-keycap px-2.5 py-1 rounded text-slate-300 hover:text-white flex items-center space-x-1" onclick="WorkbenchStoryboard.batchGenerate()">
+              <i data-lucide="play" class="w-3 h-3 text-[#dfc384]"></i>
+              <span>批量渲染所有分镜</span>
+            </button>
+            <button class="tactile-keycap px-2.5 py-1 rounded text-[#eddab3] font-bold flex items-center space-x-1" onclick="WorkbenchStoryboard.addNewShot()">
+              <i data-lucide="plus" class="w-3 h-3 text-[#dfc384]"></i>
+              <span>追加镜头</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- 分镜网格容器 -->
+        <div class="flex-1 min-h-0 overflow-y-auto pr-1">
+          <div class="grid grid-cols-3 gap-2.5" id="storyboardGrid">
+            <!-- 动态渲染 6 个分镜卡片 -->
+          </div>
+        </div>
+      </div>
+
+      <!-- 视图 4：独立创作工具面板 -->
+      <div id="toolPanelContainer" class="tool-panel-container flex flex-col flex-1 min-h-0 space-y-2" hidden>
+        <div class="champagne-card p-2 flex items-center justify-between shrink-0">
+          <div class="flex items-center space-x-2">
+            <i data-lucide="wrench" class="w-4 h-4 text-[#dfc384]" id="toolPanelIcon"></i>
+            <h2 class="gw-type-headline-md font-bold text-slate-100" id="toolPanelTitle">创作工具</h2>
+          </div>
+          <span class="gw-type-body-sm font-mono text-[#dfc384]">GODS' TOOLKIT</span>
+        </div>
+        <div class="flex-1 min-h-0 rounded-xl border border-white/10 bg-[#0b0d13] p-6 flex flex-col items-center justify-center text-center space-y-4" id="toolPanelBody">
+          <!-- 动态工具内容 -->
+        </div>
+      </div>
     </main>
   </div>
 
@@ -302,12 +373,16 @@
     const storyboardParams = new URLSearchParams(window.location.search);
     const matrix = document.getElementById('storyboardMatrixContent');
     const frame = document.getElementById('canvasOverviewFrame');
+    const workspaceStage = document.getElementById('canvasWorkspaceStage');
+    const toolContainer = document.getElementById('toolPanelContainer');
+    const sceneNavContainer = document.getElementById('storyboardSceneNavContainer');
+    const exportFooter = document.getElementById('storyboardExportFooter');
     const canvasContextKeys = ['project_id', 'project', 'entity_id', 'canvas_id'];
 
     function embeddedCanvasRoute(path, extraParams = {}, includeHash = false) {
       const url = new URL(path, location.origin);
       url.searchParams.set('embedded', '1');
-      url.searchParams.set('v', 'v0.0.1-alpha-2026');
+      url.searchParams.set('v', '20261010-v2');
       canvasContextKeys.forEach(key => {
         const value = storyboardParams.get(key);
         if (value) url.searchParams.set(key, value);
@@ -317,51 +392,182 @@
       return `${url.pathname}${url.search}${url.hash}`;
     }
 
-    document.body.classList.remove('canvas-overview-mode', 'embedded');
-    document.body.removeAttribute('data-storyboard-view');
-    if (matrix) matrix.hidden = false;
-    if (frame) {
-      frame.hidden = true;
-      frame.src = 'about:blank';
+    function hideAllMainViews() {
+      if (matrix) matrix.hidden = true;
+      if (frame) frame.hidden = true;
+      if (workspaceStage) workspaceStage.hidden = true;
+      if (toolContainer) toolContainer.hidden = true;
     }
+
     window.openCanvasOverview = function openCanvasOverview(button, filter) {
-      const frame = document.getElementById('canvasOverviewFrame');
-      if (!frame) return;
-      document.querySelectorAll('[data-canvas-rail]').forEach(item => item.classList.toggle('active', item === button));
-      frame.hidden = false;
-      frame.title = '画布总览';
-      frame.src = embeddedCanvasRoute('/static/canvas-list.html', {layout: 'overview', filter}, true);
-      document.getElementById('storyboardMatrixContent').hidden = true;
+      hideAllMainViews();
+      document.body.classList.add('canvas-overview-mode');
+      if (sceneNavContainer) sceneNavContainer.style.display = 'none';
+      if (exportFooter) exportFooter.style.display = 'none';
+
+      document.querySelectorAll('#storyboardRail .canvas-rail-item').forEach(item => {
+        item.classList.toggle('active', item === button);
+      });
+
+      if (frame) {
+        frame.hidden = false;
+        frame.title = '画布总览';
+        const currentSrc = frame.getAttribute('src');
+        const targetUrl = embeddedCanvasRoute('/static/canvas-list.html', { layout: 'overview', filter }, true);
+        if (!currentSrc || currentSrc === 'about:blank') {
+          frame.src = targetUrl;
+        } else {
+          frame.contentWindow?.postMessage({ type: 'canvas-filter', filter }, location.origin);
+        }
+      }
+      document.title = '画布 · Gods\' Workbench';
     };
+
+    window.switchToolTab = function switchToolTab(button, toolId) {
+      hideAllMainViews();
+      document.body.classList.remove('canvas-overview-mode');
+
+      document.querySelectorAll('#storyboardRail .canvas-rail-item').forEach(item => {
+        item.classList.toggle('active', item === button);
+      });
+
+      if (toolId === 'storyboard') {
+        if (matrix) matrix.hidden = false;
+        if (sceneNavContainer) sceneNavContainer.style.display = 'block';
+        if (exportFooter) exportFooter.style.display = 'block';
+        document.title = '分镜画布矩阵 · Gods\' Workbench';
+      } else {
+        if (sceneNavContainer) sceneNavContainer.style.display = 'none';
+        if (exportFooter) exportFooter.style.display = 'none';
+        if (toolContainer) {
+          toolContainer.hidden = false;
+          renderToolPanelContent(toolId);
+        }
+      }
+    };
+
+    function renderToolPanelContent(toolId) {
+      const titleEl = document.getElementById('toolPanelTitle');
+      const bodyEl = document.getElementById('toolPanelBody');
+      if (!titleEl || !bodyEl) return;
+
+      if (toolId === 'radar') {
+        titleEl.textContent = '2D 顶视机位雷达 (Previs 预演)';
+        bodyEl.innerHTML = `
+          <div class="max-w-md space-y-3">
+            <div class="w-16 h-16 rounded-2xl bg-[#dfc384]/10 border border-[#dfc384]/30 flex items-center justify-center mx-auto text-[#dfc384]">
+              <i data-lucide="compass" class="w-8 h-8"></i>
+            </div>
+            <h3 class="gw-type-headline-md font-bold text-slate-100">原生 2D HTML5 Canvas 机位雷达</h3>
+            <p class="text-slate-400 gw-type-body-sm leading-relaxed">
+              支持在网格标尺舞台上拖拽摄像机视锥箭头与演员目标点，实时解算视角 FOV 与俯仰角，导出标准 CameraCtrl / Wan2.1 轨迹 JSON。
+            </p>
+            <div class="p-3 bg-[#07080b] rounded-lg border border-white/10 text-left font-mono gw-type-body-sm text-amber-300">
+              [P2 分镜增强] 遵循 3D-ASSET-PREVIS-AND-STORYBOARD-SPEC 规范构建中
+            </div>
+          </div>
+        `;
+      } else if (toolId === 'palette') {
+        titleEl.textContent = '色彩管理与调色板';
+        bodyEl.innerHTML = `
+          <div class="max-w-md space-y-3">
+            <div class="w-16 h-16 rounded-2xl bg-[#38bdf8]/10 border border-[#38bdf8]/30 flex items-center justify-center mx-auto text-[#38bdf8]">
+              <i data-lucide="palette" class="w-8 h-8"></i>
+            </div>
+            <h3 class="gw-type-headline-md font-bold text-slate-100">黑金影视色彩调色系统</h3>
+            <p class="text-slate-400 gw-type-body-sm leading-relaxed">
+              统一管理影视镜头色调预设、LUT 配置文件与调色板，确保项目全链路视觉一致性。
+            </p>
+          </div>
+        `;
+      } else if (toolId === 'prompts') {
+        titleEl.textContent = '提示词助手';
+        bodyEl.innerHTML = `
+          <div class="max-w-md space-y-3">
+            <div class="w-16 h-16 rounded-2xl bg-[#c084fc]/10 border border-[#c084fc]/30 flex items-center justify-center mx-auto text-[#c084fc]">
+              <i data-lucide="sparkles" class="w-8 h-8"></i>
+            </div>
+            <h3 class="gw-type-headline-md font-bold text-slate-100">影视镜头提示词结构化生成器</h3>
+            <p class="text-slate-400 gw-type-body-sm leading-relaxed">
+              集成景别、机位角度、灯光氛围、画风品质等影视术语标准化模板，一键赋能工作流。
+            </p>
+          </div>
+        `;
+      }
+      if (window.lucide) lucide.createIcons();
+    }
+
+    window.exitCanvasWorkspace = function exitCanvasWorkspace() {
+      const allBtn = document.querySelector('[data-canvas-rail="all"]');
+      if (allBtn) openCanvasOverview(allBtn, 'all');
+    };
+
+    // 默认路由判断
     if (storyboardParams.get('embedded') === '1') {
       document.body.classList.add('embedded');
     }
-    if (storyboardParams.get('view') === 'canvas') {
-      document.body.classList.add('canvas-overview-mode');
-      document.body.dataset.storyboardView = 'canvas';
-      document.title = '画布 · Gods\' Workbench';
-      document.getElementById('storyboardMatrixContent').hidden = true;
-      frame.hidden = false;
-      if (window.matchMedia('(max-width: 760px)').matches) {
-        requestAnimationFrame(() => document.getElementById('storyboardNavCanvas')?.scrollIntoView({block: 'nearest', inline: 'center'}));
-      }
-      if (window.__gwCanvasFilterHandler) window.removeEventListener('message', window.__gwCanvasFilterHandler);
-      window.__gwCanvasFilterHandler = event => {
-        if (event.origin && event.origin !== location.origin) return;
-        if (event.data?.type !== 'canvas-filter') return;
-        frame.contentWindow?.postMessage(event.data, location.origin);
+    const reqView = storyboardParams.get('view');
+    if (reqView === 'canvas' || !reqView) {
+      // 默认或明确为 canvas 时进入画布总览
+      const allBtn = document.querySelector('[data-canvas-rail="all"]');
+      openCanvasOverview(allBtn, 'all');
+    } else if (reqView === 'storyboard') {
+      const sbBtn = document.querySelector('[data-tool-id="storyboard"]');
+      switchToolTab(sbBtn, 'storyboard');
+    } else if (reqView === 'radar') {
+      const radarBtn = document.querySelector('[data-tool-id="radar"]');
+      switchToolTab(radarBtn, 'radar');
+    }
+
+    // 监听子 iframe 发来的消息 (如 canvas-filter、canvas-open)
+    if (window.__gwCanvasMsgHandler) window.removeEventListener('message', window.__gwCanvasMsgHandler);
+    window.__gwCanvasMsgHandler = event => {
+      if (event.origin && event.origin !== location.origin) return;
+      if (event.data?.type === 'canvas-filter') {
+        frame?.contentWindow?.postMessage(event.data, location.origin);
         document.querySelectorAll('[data-canvas-rail]').forEach(item => {
           item.classList.toggle('active', item.dataset.canvasRail === event.data.filter);
         });
-      };
-      window.addEventListener('message', window.__gwCanvasFilterHandler);
-      frame.src = embeddedCanvasRoute('/static/canvas-list.html', {layout: 'overview'}, true);
+      } else if (event.data?.type === 'canvas-open') {
+        // Task 3: 捕获打开画布事件并进入画布工作台
+        handleCanvasOpen(event.data.canvas);
+      }
+    };
+    window.addEventListener('message', window.__gwCanvasMsgHandler);
+
+    function handleCanvasOpen(canvas) {
+      if (!canvas) return;
+      hideAllMainViews();
+      document.body.classList.add('canvas-overview-mode');
+      if (sceneNavContainer) sceneNavContainer.style.display = 'none';
+      if (exportFooter) exportFooter.style.display = 'none';
+
+      document.querySelectorAll('#storyboardRail .canvas-rail-item').forEach(item => item.classList.remove('active'));
+
+      if (workspaceStage) {
+        workspaceStage.hidden = false;
+        const titleEl = document.getElementById('workspaceCanvasTitle');
+        const idTagEl = document.getElementById('workspaceCanvasIdTag');
+        const verEl = document.getElementById('workspaceCanvasVersion');
+        const projBadge = document.getElementById('workspaceProjectBadge');
+        if (titleEl) titleEl.textContent = canvas.title || '未命名画布';
+        if (idTagEl) idTagEl.textContent = canvas.id || 'cv-xxxx';
+        if (verEl) verEl.textContent = canvas.version ? `v${canvas.version}` : 'v1';
+        if (projBadge) projBadge.textContent = `项目: ${canvas.project || 'default'}`;
+
+        document.title = `${canvas.title || '画布'} · 工作台`;
+
+        // 触发工作台拓扑渲染（Task 3 将接入）
+        window.dispatchEvent(new CustomEvent('gw:render-canvas-workspace', { detail: canvas }));
+      }
     }
+    if (window.lucide) lucide.createIcons();
     })();
   </script>
   <script src="/static/js/core/degradation.js?v=v0.0.1-alpha-2026"></script>
   <script src="/static/js/core/hardware-telemetry.js?v=20261008-auth6"></script>
   <script src="/static/js/controllers/storyboard-controller.js"></script>
+  <script src="/static/js/modules/canvas-workspace.js?v=20261010-v1"></script>
 <script src="/static/js/core/workbench-shell.js?v=20261009-parse-cf7"></script>
 </body>
 </html>

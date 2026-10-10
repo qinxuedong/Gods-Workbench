@@ -465,3 +465,25 @@ html[data-canvas-list-layout="overview"].canvas-overview-compact .canvas-overvie
 }
 
 html[data-canvas-list-layout="overview"] :is(#newCanvasBtn,#emptyCreateCanvasBtn) { font-weight:var(--gw-weight-medium); }
+
+/* 全站统一按钮基准 (以 workshop 页两按钮为准) */
+html[data-canvas-list-layout="overview"] :is(.ws-create-confirm, .ws-primary-btn, #newCanvasBtn, #emptyCreateCanvasBtn) {
+    background: linear-gradient(90deg, #dfc384 0%, #c29d58 100%) !important;
+    color: #0a0c10 !important;
+    font-weight: 700 !important;
+    border-radius: 8px !important;
+    box-shadow: 0 0 12px rgba(223, 195, 132, 0.28) !important;
+    border: none !important;
+}
+
+html[data-canvas-list-layout="overview"] :is(.ws-create-cancel) {
+    background: #12151d !important;
+    color: #cbd5e1 !important;
+    border: 1px solid rgba(255, 255, 255, 0.1) !important;
+    border-radius: 8px !important;
+}
+
+html[data-canvas-list-layout="overview"] :is(.ws-icon-btn, .ws-mini-btn) {
+    border-radius: 8px !important;
+}
+

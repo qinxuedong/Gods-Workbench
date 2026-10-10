@@ -66,6 +66,11 @@
             </div>
             <div id="projectList" class="ws-project-list"></div>
             <div class="ws-side-foot">
+                <button id="trashEntry" class="ws-trash-entry ws-icon-btn bay-inset" type="button" title="回收站" aria-label="回收站" aria-controls="trashPanel" aria-expanded="false">
+                    <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
+                    <span class="ws-trash-label">回收站</span>
+                    <span id="trashBadge" class="ws-trash-badge">0</span>
+                </button>
             </div>
         </aside>
 
@@ -79,7 +84,7 @@
                     <span class="canvas-overview-toolbar-divider" aria-hidden="true"></span>
                     <div id="canvasFilterGroup" class="ws-canvas-filter-group" role="group" aria-label="画布类型筛选">
                         <button class="ws-filter-btn active" type="button" data-canvas-filter="all" aria-pressed="true"><span>全部画布</span><span class="ws-filter-count" id="filterCountAll">0</span></button>
-                        <button class="ws-filter-btn" type="button" data-canvas-filter="classic" aria-pressed="false"><span class="canvas-overview-filter-dot normal"></span><span>普通画布</span><span class="ws-filter-count" id="filterCountClassic">0</span><span class="canvas-overview-filter-detail" id="filterCountClassicDetail">（常规/智能）</span></button>
+                        <button class="ws-filter-btn" type="button" data-canvas-filter="classic" aria-pressed="false"><span class="canvas-overview-filter-dot normal"></span><span>智能画布</span><span class="ws-filter-count" id="filterCountClassic">0</span><span class="canvas-overview-filter-detail" id="filterCountClassicDetail" style="display:none"></span></button>
                         <button class="ws-filter-btn project-filter" type="button" data-canvas-filter="project" aria-pressed="false"><span class="canvas-overview-filter-dot project"></span><span>项目画布</span><span class="ws-filter-count" id="filterCountProject">0</span></button>
                         <button class="ws-filter-btn reference-filter" type="button" data-canvas-filter="reference" aria-pressed="false"><span class="canvas-overview-filter-dot reference"></span><span>参考画布</span><span class="ws-filter-count" id="filterCountReference">0</span></button>
                     </div>
@@ -124,9 +129,10 @@
             </div>
 
             <!-- Trash panel (overlay over the board area) -->
-            <div id="trashPanel" class="ws-trash-panel" hidden data-floating-surface="canvas-trash-panel" data-floating-kind="panel" data-floating-content="self" data-floating-dismiss="outside" data-floating-escape="close-only">
+            <div id="trashBackdrop" class="ws-archive-backdrop" style="display:none"></div>
+            <div id="trashPanel" class="ws-trash-panel ws-archive-dialog" role="dialog" aria-modal="true" aria-labelledby="trashPanelTitle" data-floating-surface="canvas-trash-panel" data-floating-kind="modal" data-floating-content=".ws-trash-head, .ws-trash-note, .ws-trash-list" data-floating-dismiss="outside" data-floating-escape="close-only" tabindex="-1">
                 <div class="ws-trash-head">
-                    <div class="ws-trash-head-title"><i data-lucide="trash-2" class="w-4 h-4"></i><span>回收站</span></div>
+                    <div class="ws-trash-head-title"><i data-lucide="trash-2" class="w-4 h-4"></i><span id="trashPanelTitle">回收站</span></div>
                     <button id="trashClose" class="ws-icon-btn" type="button" data-floating-close title="关闭" aria-label="关闭"><i data-lucide="x" class="w-4 h-4"></i></button>
                 </div>
                 <div class="ws-trash-note"><i data-lucide="info" class="w-3.5 h-3.5"></i><span>回收站中的画布会在 30 天后自动清理。</span></div>
@@ -150,7 +156,7 @@
                     <span class="canvas-overview-footer-separator" aria-hidden="true">|</span>
                     <span>总画布: <strong id="overviewTotalCount">0</strong> 项</span>
                     <span class="canvas-overview-footer-separator" aria-hidden="true">|</span>
-                    <span class="canvas-overview-footer-stat"><span class="canvas-overview-filter-dot normal"></span>普通: <strong id="overviewNormalCount">0</strong><small id="overviewNormalDetail">（常规/智能）</small></span>
+                    <span class="canvas-overview-footer-stat"><span class="canvas-overview-filter-dot normal"></span>智能: <strong id="overviewNormalCount">0</strong></span>
                     <span class="canvas-overview-footer-stat project"><span class="canvas-overview-filter-dot project"></span>项目: <strong id="overviewProjectCount">0</strong></span>
                     <span class="canvas-overview-footer-stat reference"><span class="canvas-overview-filter-dot reference"></span>参考: <strong id="overviewReferenceCount">0</strong></span>
                 </div>
@@ -170,8 +176,8 @@
             if (overviewTrashHost && overviewTrashEntry) overviewTrashHost.appendChild(overviewTrashEntry);
         }
     </script>
-    <script type="module" src="/static/js/modules/canvas-list/api.js?v=v0.0.1-alpha-2026&m3=f1b"></script>
+    <script type="module" src="/static/js/modules/canvas-list/api.js?v=20261010-v2"></script>
     <script src="/static/js/core/degradation.js?v=v0.0.1-alpha-2026"></script>
-    <script defer src="/static/js/modules/canvas-list.js?v=v0.0.1-alpha-2026&m3=20260916-stitch-black-gold-v3&f1b=20260821a"></script>
+    <script defer src="/static/js/modules/canvas-list.js?v=20261010-v2"></script>
 </body>
 </html>

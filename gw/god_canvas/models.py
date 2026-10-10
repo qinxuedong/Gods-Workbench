@@ -114,12 +114,26 @@ class CanvasListResponse(BaseModel):
 class CanvasCreateRequest(BaseModel):
     """创建画布请求体。"""
 
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="ignore")
 
-    project_id: str = Field(..., description="所属项目 ID")
-    title: str = Field(..., min_length=1, description="画布标题")
-    mode: CanvasMode = Field(default=CanvasMode.CLASSIC, description="画布模式")
+    project_id: str = Field(default="default", description="所属项目 ID")
+    title: str = Field(default="未命名智能画布", min_length=1, description="画布标题")
+    mode: CanvasMode = Field(default=CanvasMode.SMART, description="画布模式")
     initial_payload: Optional[Dict[str, Any]] = Field(None, description="可选初始拓扑")
+
+    @model_validator(mode="before")
+    @classmethod
+    def normalize_create_payload(cls, data: Any) -> Any:
+        if isinstance(data, dict):
+            pid = data.get("project_id") or data.get("project") or "default"
+            raw_title = str(data.get("title") or "").strip()
+            title = raw_title if raw_title else "未命名智能画布"
+            raw_mode = data.get("mode") or data.get("kind") or "smart"
+            mode = "smart" if str(raw_mode).lower() in {"smart", "classic"} else raw_mode
+            data["project_id"] = pid
+            data["title"] = title
+            data["mode"] = mode
+        return data
 
 
 class CanvasMutationResult(BaseModel):
