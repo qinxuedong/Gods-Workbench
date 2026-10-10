@@ -175,9 +175,11 @@ const boardEmptyHint = document.getElementById('boardEmptyHint');
 const projectListEl = document.getElementById('projectList');
 const trashEntryBtn = document.getElementById('trashEntry');
 const trashBadge = document.getElementById('trashBadge');
+const trashBackdrop = document.getElementById('trashBackdrop');
 const trashPanel = document.getElementById('trashPanel');
 const trashListEl = document.getElementById('trashList');
 const trashCloseBtn = document.getElementById('trashClose');
+let trashReturnFocusEl = null;
 const archiveEntryBtn = document.getElementById('archiveEntry');
 const archiveBadge = document.getElementById('archiveBadge');
 const archiveBackdrop = document.getElementById('archiveBackdrop');
@@ -754,7 +756,7 @@ function updateCanvasFilterCounts(){
     if(countClassicEl) countClassicEl.textContent = String(classicCount);
     if(countProjectEl) countProjectEl.textContent = String(projectCount);
     if(countReferenceEl) countReferenceEl.textContent = String(referenceCount);
-    if(filterCountClassicDetailEl) filterCountClassicDetailEl.textContent = `（${L('常规','Classic')} ${Math.max(0, classicCount - smartCount)} / ${L('智能','Smart')} ${smartCount}）`;
+    if(filterCountClassicDetailEl) filterCountClassicDetailEl.textContent = '';
 }
 
 function syncCanvasFilterControls(){
@@ -832,7 +834,7 @@ function updateOverviewFooter(sourceState = ''){
     if(overviewSmartCountEl) overviewSmartCountEl.textContent = String(smart.length);
     if(overviewProjectCountEl) overviewProjectCountEl.textContent = String(project.length);
     if(overviewReferenceCountEl) overviewReferenceCountEl.textContent = String(reference.length);
-    if(overviewNormalDetailEl) overviewNormalDetailEl.textContent = `（${L('常规','Classic')} ${Math.max(0, normal.length - smart.length)} / ${L('智能','Smart')} ${smart.length}）`;
+    if(overviewNormalDetailEl) overviewNormalDetailEl.textContent = '';
     if(canvasOverviewSourceEl){
         const state = sourceState || (document.documentElement.dataset.canvasListReady === 'error' ? 'error' : 'ready');
         const labels = {
@@ -920,8 +922,8 @@ function renderOverviewBoard(){
     columns.className = 'canvas-overview-columns';
     const groups = [
         {
-            id:'normal', title:L('普通画布 (Standard & Smart)', 'Standard & Smart canvases'), items:normalItems,
-            chips:[{label:L('常规', 'Classic'), count:normalItems.length - smartItems.length}, {label:`✦ ${L('智能', 'Smart')}`, count:smartItems.length, className:'smart'}]
+            id:'normal', title:L('智能画布 (Smart Canvas)', 'Smart canvases'), items:normalItems,
+            chips:[{label:`✦ ${L('智能', 'Smart')}`, count:normalItems.length, className:'smart'}]
         },
         {
             id:'project', title:L('项目画布 (Project Canvas)', 'Project Canvas'), items:projectItems,
@@ -1005,11 +1007,11 @@ function renderBoard({preserveCreateCard=false} = {}){
             if(emptyTextEl) emptyTextEl.textContent = L('暂无项目画布', 'No project canvas');
             if(emptySubEl) emptySubEl.textContent = L('当前项目暂无专属画布', 'No project canvas in current project');
         } else if(currentCanvasFilter === 'classic'){
-            if(emptyTextEl) emptyTextEl.textContent = L('暂无普通画布', 'No classic canvas');
-            if(emptySubEl) emptySubEl.textContent = L('当前项目暂无普通画布', 'No classic canvas in current project');
+            if(emptyTextEl) emptyTextEl.textContent = L('暂无智能画布', 'No smart canvas');
+            if(emptySubEl) emptySubEl.textContent = L('当前项目暂无智能画布', 'No smart canvas in current project');
         } else {
             if(emptyTextEl) emptyTextEl.textContent = L('暂无画布', 'No canvas');
-            if(emptySubEl) emptySubEl.textContent = L('为当前项目创建第一块画布', 'Create the first canvas for current project');
+            if(emptySubEl) emptySubEl.textContent = L('为当前项目创建第一块智能画布', 'Create the first smart canvas for current project');
         }
     }
     updatePasteBtn();
@@ -1036,7 +1038,7 @@ function buildCard(c, position){
     const projectScoped = isProjectCanvas(c);
     const scopeClass = projectScoped ? 'scope-project' : '';
     const tone = canvasTone(c);
-    const kindLabel = isSmart ? compactLabel('智能画布','智能','Smart') : isReference ? compactLabel('参考画布','参考','Reference') : compactLabel('普通画布','普通','Classic');
+    const kindLabel = isReference ? compactLabel('参考画布','参考','Reference') : compactLabel('智能画布','智能','Smart');
     const overviewType = canvasOverviewType(c);
     const card = document.createElement('div');
     card.className = `ws-card ${scopeClass}`
@@ -1176,7 +1178,8 @@ async function openCanvas(c){
                 id:String(canvas.id || '').trim(),
                 title:canvasDisplayTitle(canvas),
                 project:projectId,
-                kind:canvas.kind || 'classic'
+                kind:canvas.kind || 'classic',
+                version:canvas.version || 1
             }
         }, location.origin);
         // 画布内页（canvas.html / smart-canvas.html）已按用户裁决移除；
@@ -1246,7 +1249,7 @@ function openCreateCard(worldPt, parentCanvasId = '', trigger = document.activeE
     // Opening a replacement surface must not return focus to the old trigger.
     closeCreateCard({restoreFocus:false});
     closeCardMenu();
-    createKind = 'classic';
+    createKind = 'smart';
     createScope = 'project';
     createParentCanvasId = String(parentCanvasId || '').trim();
     const parentCanvas = createParentCanvasId
@@ -1255,7 +1258,7 @@ function openCreateCard(worldPt, parentCanvasId = '', trigger = document.activeE
     if(parentCanvas){
         createScope = String(parentCanvas.scope || 'standalone');
     }
-    createCardLabel = L('新建画布', 'New canvas');
+    createCardLabel = L('新建智能画布', 'New smart canvas');
     const createProjectId = parentCanvas?.project || currentProjectId || 'default';
     const createEntityId = currentEntityId;
     const inheritedEntityId = parentCanvas?.entity_id || createEntityId;
@@ -1286,9 +1289,12 @@ function openCreateCard(worldPt, parentCanvasId = '', trigger = document.activeE
             <button class="ws-create-toggle-btn" type="button" data-scope="standalone" aria-pressed="false">${L('独立画布','Standalone')}</button>
         </div>
         <label class="ws-create-field ws-create-project-field"><span>${L('所属项目','Project')}</span><select class="ws-create-project" aria-label="${L('选择所属项目','Select project')}">${projects.map(project => `<option value="${escapeAttr(project.id)}"${project.id === createProjectId ? ' selected' : ''}>${escapeHtml(project.name || project.id)}</option>`).join('')}</select></label>
-        <div class="ws-create-toggle">
-            <button class="ws-create-toggle-btn active" type="button" data-kind="classic" aria-pressed="true">${L('普通画布','Classic')}</button>
-            <button class="ws-create-toggle-btn" type="button" data-kind="smart" aria-pressed="false">${L('智能画布','Smart')}</button>
+        <div class="p-2 rounded-lg bg-[#0e1118] border border-[#dfc384]/20 text-[#eddab3] flex items-center justify-between font-mono" style="font-size:var(--gw-type-label-md);">
+            <div class="flex items-center space-x-1.5">
+                <i data-lucide="sparkles" class="w-3.5 h-3.5 text-[#dfc384]"></i>
+                <span>${L('模式：智能画布 (统一模式)','Mode: Smart Canvas')}</span>
+            </div>
+            <span class="text-amber-300 font-bold">SMART</span>
         </div>
         <div class="ws-create-actions">
             <button class="ws-create-confirm" type="button">${L('创建画布','Create canvas')}</button>
@@ -1393,8 +1399,7 @@ function openCreateCard(worldPt, parentCanvasId = '', trigger = document.activeE
     };
 }
 
-async function createCanvasOnBoard(title, kind, worldPt, projectId = currentProjectId, entityId = currentEntityId, scope = 'project', parentCanvasId = ''){
-    const isSmart = kind === 'smart';
+async function createCanvasOnBoard(title, kind = 'smart', worldPt, projectId = currentProjectId, entityId = currentEntityId, scope = 'project', parentCanvasId = ''){
     const canvasScope = String(scope || 'project').trim().toLowerCase() === 'standalone'
         ? 'standalone'
         : 'project';
@@ -1402,43 +1407,56 @@ async function createCanvasOnBoard(title, kind, worldPt, projectId = currentProj
         ? 'default'
         : String(projectId || currentProjectId || 'default');
     const canvasEntityId = canvasScope === 'standalone' ? '' : String(entityId || '');
-    // Leave an empty title empty. The service owns Shanghai-time auto naming
-    // and remains the single source of truth across browser time zones.
     const name = String(title || '').trim();
     closeCreateCard();
     try {
         const res = await canvasListApi().createCanvas({
             title: name,
-            icon: isSmart ? 'sparkles' : '🧩',
-            kind: isSmart ? 'smart' : 'classic',
-            // This flag means the creation flow owns the title, whether it is
-            // a server-generated empty-name title or an explicit user name.
-            // Legacy project-title projection stays disabled for both cases.
-            title_auto: true,
+            project_id: canvasProjectId,
             project: canvasProjectId,
+            mode: 'smart',
+            kind: 'smart',
+            icon: 'sparkles',
+            title_auto: true,
             entity_id: canvasEntityId,
             scope: canvasScope,
             parent_canvas_id: String(parentCanvasId || '').trim(),
             board_x: Math.round(worldPt.x),
             board_y: Math.round(worldPt.y)
         });
-        if(!res.ok) throw new Error('create canvas failed');
+        if(!res.ok) {
+            const err = await res.json().catch(() => ({}));
+            console.error('create canvas failed:', res.status, err);
+            throw new Error(err?.detail?.message || 'create canvas failed');
+        }
         const data = await res.json();
         const nc = data.canvas;
         if(nc){
-            if(nc.project == null) nc.project = canvasProjectId;
-            if(nc.board_x == null) nc.board_x = Math.round(worldPt.x);
-            if(nc.board_y == null) nc.board_y = Math.round(worldPt.y);
-            canvases.push(nc);
+            const newId = nc.canvas_id || nc.id;
+            const newCanvas = {
+                id: newId,
+                canvas_id: newId,
+                title: name || '未命名智能画布',
+                project: canvasProjectId,
+                project_id: canvasProjectId,
+                kind: 'smart',
+                mode: 'smart',
+                version: nc.version || 1,
+                board_x: Math.round(worldPt.x),
+                board_y: Math.round(worldPt.y),
+                created_at: Math.floor(Date.now() / 1000)
+            };
+            canvases.push(newCanvas);
             if(currentProjectId !== canvasProjectId){
                 currentProjectId = canvasProjectId;
                 rememberProjectId(currentProjectId);
                 syncCanvasListContext();
             }
-            selectedCanvasId = nc.id;
+            selectedCanvasId = newId;
             renderProjects();
             renderBoard();
             setStatus(L('创建成功','Canvas created'));
+            loadAll().catch(() => {});
         }
     } catch(e){ console.error(e); setStatus(L('创建失败','Create failed')); }
 }
@@ -1836,14 +1854,33 @@ async function refreshTrashCount(){
 }
 async function openTrashView(){
     closeArchiveView({restoreFocus:false});
+    trashReturnFocusEl = document.activeElement instanceof HTMLElement
+        && document.activeElement !== document.body
+        ? document.activeElement
+        : trashEntryBtn;
     trashEntryBtn?.classList.add('active');
+    trashEntryBtn?.setAttribute('aria-expanded', 'true');
     trashPanel?.classList.add('active');
+    if(trashBackdrop) trashBackdrop.style.display = 'block';
     closeCardMenu(); closeCreateCard();
+    const focusTarget = trashCloseBtn || trashPanel;
+    window.requestAnimationFrame?.(() => {
+        if(trashPanel?.classList.contains('active')) focusTarget?.focus({preventScroll:true});
+    });
     await loadTrash();
 }
-function closeTrashView(){
+function closeTrashView({restoreFocus = true} = {}){
+    const returnFocus = trashReturnFocusEl || trashEntryBtn;
     trashEntryBtn?.classList.remove('active');
+    trashEntryBtn?.setAttribute('aria-expanded', 'false');
     trashPanel?.classList.remove('active');
+    if(trashBackdrop) trashBackdrop.style.display = 'none';
+    trashReturnFocusEl = null;
+    if(restoreFocus && returnFocus?.isConnected && !returnFocus.hidden){
+        const restore = () => returnFocus.focus({preventScroll:true});
+        restore();
+        window.requestAnimationFrame?.(restore);
+    }
 }
 async function openArchiveView(){
     archiveReturnFocusEl = document.activeElement instanceof HTMLElement
@@ -1953,10 +1990,10 @@ function renderTrash(){
         return;
     }
     deletedCanvases.forEach(c => {
-        const isSmart = (c.kind || 'classic') === 'smart';
-        const isReference = (c.kind || 'classic') === 'reference';
-        const kindClass = isSmart ? 'smart' : isReference ? 'reference' : 'classic';
-        const kindLabel = isSmart ? L('智能','Smart') : isReference ? L('参考','Reference') : L('普通','Classic');
+        const isSmart = (c.kind || 'smart') === 'smart';
+        const isReference = (c.kind || 'smart') === 'reference';
+        const kindClass = isReference ? 'reference' : 'smart';
+        const kindLabel = isReference ? L('参考','Reference') : L('智能','Smart');
         const projName = (projects.find(p => p.id === (c.project || 'default')) || {}).name || L('默认项目','Default');
         const card = document.createElement('div');
         card.className = 'ws-trash-card';
@@ -2056,6 +2093,9 @@ canvasFilterGroupEl?.addEventListener('click', e => {
     currentCanvasFilter = filter;
     syncCanvasFilterControls();
     renderBoard();
+    if(CANVAS_LIST_OVERVIEW){
+        window.parent?.postMessage({ type: 'canvas-filter', filter }, location.origin);
+    }
 });
 
 boardRefreshBtn?.addEventListener('click', () => { void loadAll(); });
@@ -2076,6 +2116,7 @@ trashEntryBtn?.addEventListener('click', () => {
     else openTrashView();
 });
 trashCloseBtn?.addEventListener('click', closeTrashView);
+trashBackdrop?.addEventListener('click', closeTrashView);
 archiveEntryBtn?.addEventListener('click', () => {
     closeTrashView();
     if(archivePanel.classList.contains('active')) closeArchiveView();
@@ -2084,7 +2125,7 @@ archiveEntryBtn?.addEventListener('click', () => {
 archiveCloseBtn?.addEventListener('click', closeArchiveView);
 archiveBackdrop?.addEventListener('click', closeArchiveView);
 
-// close card menu and archive dialog when clicking outside
+// close card menu, archive dialog and trash dialog when clicking outside
 document.addEventListener('mousedown', e => {
     if(document.querySelector('.ws-card-pop') && !e.target.closest('.ws-card-pop') && !e.target.closest('.ws-card-menu')){
         closeCardMenu();
@@ -2097,6 +2138,11 @@ document.addEventListener('pointerdown', e => {
     if(archivePanel?.classList.contains('active')){
         if(!archivePanel.contains(e.target) && !archiveEntryBtn?.contains(e.target)){
             closeArchiveView();
+        }
+    }
+    if(trashPanel?.classList.contains('active')){
+        if(!trashPanel.contains(e.target) && !trashEntryBtn?.contains(e.target)){
+            closeTrashView();
         }
     }
 });

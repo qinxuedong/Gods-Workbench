@@ -212,6 +212,8 @@ def test_prompt_library_and_items_survive_real_process_restart_without_id_reuse(
     env = os.environ.copy()
     env["GW_DATA_DIR"] = str(data_dir)
     env["PYTHONPATH"] = str(ROOT) + os.pathsep + env.get("PYTHONPATH", "")
+    env["PYTHONUTF8"] = "1"
+    env["PYTHONIOENCODING"] = "utf-8"
 
     create_code = r"""
 import json
