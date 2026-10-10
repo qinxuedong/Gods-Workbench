@@ -111,7 +111,6 @@
   --gw-surface-panel: var(--panel-dark);   /* #101217 面板 */
   --gw-surface-card: var(--card-start);    /* #171920 卡片渐变起 */
   --gw-surface-card-end: var(--card-end);  /* #0f1115 卡片渐变止 */
-  --gw-btn-min-height: 36px;
   --gw-btn-radius: 4px;
   --gw-segment-min-height: 32px;
 }

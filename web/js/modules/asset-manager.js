@@ -705,10 +705,10 @@ function renderScriptAssetsManager(){
                 <span class="script-meta-project"><i data-lucide="folder"></i>${projectId}</span>
             </div>
             <div class="script-card-actions">
-                <button type="button" class="asset-btn primary" data-script-open="${itemId}">
+                <button type="button" class="hw-btn hw-btn-gold" data-script-open="${itemId}">
                     <i data-lucide="pencil"></i><span>继续创作</span>
                 </button>
-                <button type="button" class="asset-btn" data-script-copy="${itemId}">
+                <button type="button" class="hw-btn" data-script-copy="${itemId}">
                     <i data-lucide="copy"></i><span>复制正文</span>
                 </button>
             </div>
@@ -1043,8 +1043,8 @@ function renderAssetAiSettingsBody(){
             <details class="board-ai-rule"><summary><span>智能分类规则</span><small>展开编辑 JSON 输出规则</small></summary><textarea id="prefClassificationRule" class="asset-pref-rule-textarea" rows="5" placeholder="智能分类规则">${escapeHtml(assetAiSettingsState.rule || assetAiSettingsState.defaultRule || '')}</textarea></details>
         </div>
         <div class="storage-settings-actions inline board-ai-actions">
-            <button class="asset-btn" type="button" data-board-ai-reset ${assetAiSettingsState.loading || assetAiSettingsState.saving ? 'disabled' : ''}><i data-lucide="rotate-ccw"></i><span>恢复内置规则</span></button>
-            <button class="asset-btn primary" type="button" data-board-ai-save ${assetAiSettingsState.loading || assetAiSettingsState.saving ? 'disabled' : ''}><i data-lucide="save"></i><span>保存 AI 分类设置</span></button>
+            <button class="hw-btn" type="button" data-board-ai-reset ${assetAiSettingsState.loading || assetAiSettingsState.saving ? 'disabled' : ''}><i data-lucide="rotate-ccw"></i><span>恢复内置规则</span></button>
+            <button class="hw-btn hw-btn-gold" type="button" data-board-ai-save ${assetAiSettingsState.loading || assetAiSettingsState.saving ? 'disabled' : ''}><i data-lucide="save"></i><span>保存 AI 分类设置</span></button>
         </div>
     </section>`;
 }
@@ -1093,7 +1093,7 @@ function renderAssetDirectorySettingsBody(){
         ${renderProjectWorkspaceSettingsBody()}
         <div class="board-settings-divider" aria-hidden="true"></div>
         ${renderAssetThumbnailCacheDirectoryBody()}
-        <div class="storage-settings-actions inline"><button class="asset-btn primary" type="button" data-storage-save><i data-lucide="save"></i><span>保存目录</span></button></div>
+        <div class="storage-settings-actions inline"><button class="hw-btn hw-btn-gold" type="button" data-storage-save><i data-lucide="save"></i><span>保存目录</span></button></div>
     </section>`;
 }
 function renderAssetPreviewSettingsBody(){
@@ -1107,8 +1107,8 @@ function renderAssetPreviewSettingsBody(){
         <div class="thumbnail-cache-summary board-thumbnail-summary"><span><i data-lucide="images"></i>${selectedCount ? `已选择 ${selectedCount} 项` : `当前视图 ${ids.length} 项`}</span><small>重新生成会先直接删除旧缓存，不进入回收站。</small></div>
         ${thumbnailGeneratorState.error ? `<div class="thumbnail-cache-error board-thumbnail-error">${escapeHtml(thumbnailGeneratorState.error)}</div>` : ''}
         <div class="board-thumbnail-actions">
-            <button class="asset-btn danger" type="button" data-board-thumbnail-delete ${busy || !ids.length ? 'disabled' : ''}><i data-lucide="image-off"></i><span>${thumbnailGeneratorState.deleting ? '正在删除…' : `删除缩略图 ${ids.length}`}</span></button>
-            <button class="asset-btn primary" type="button" data-board-thumbnail-run ${busy || !ids.length ? 'disabled' : ''}><i data-lucide="${thumbnailGeneratorState.submittingBackground ? 'loader-2' : 'circle-play'}"></i><span>${thumbnailGeneratorState.submittingBackground ? '正在提交…' : `后台重新生成 ${ids.length}`}</span></button>
+            <button class="hw-btn hw-btn-danger" type="button" data-board-thumbnail-delete ${busy || !ids.length ? 'disabled' : ''}><i data-lucide="image-off"></i><span>${thumbnailGeneratorState.deleting ? '正在删除…' : `删除缩略图 ${ids.length}`}</span></button>
+            <button class="hw-btn hw-btn-gold" type="button" data-board-thumbnail-run ${busy || !ids.length ? 'disabled' : ''}><i data-lucide="${thumbnailGeneratorState.submittingBackground ? 'loader-2' : 'circle-play'}"></i><span>${thumbnailGeneratorState.submittingBackground ? '正在提交…' : `后台重新生成 ${ids.length}`}</span></button>
         </div>
     </section>`;
 }
@@ -1123,7 +1123,7 @@ function renderAssetVideoSettingsBody(){
         <label class="thumbnail-video-transcode board-thumbnail-transcode"><input id="thumbnailTranscodeVideos" type="checkbox" ${thumbnailGeneratorState.transcodeVideos ? 'checked' : ''}><span><strong>非 MP4 视频同时转码</strong><small>生成一一对应的 H.264 MP4，已有转码会直接复用。</small></span></label>
         <div class="board-settings-divider" aria-hidden="true"></div>
         ${renderAssetProxySettingsBody()}
-        <div class="board-thumbnail-actions"><button class="asset-btn danger" type="button" data-board-storyboard-delete ${busy || !ids.length ? 'disabled' : ''}><i data-lucide="grid-3x3"></i><span>${thumbnailGeneratorState.deletingStoryboards ? '正在删除…' : `删除九宫格 ${ids.length}`}</span></button></div>
+        <div class="board-thumbnail-actions"><button class="hw-btn hw-btn-danger" type="button" data-board-storyboard-delete ${busy || !ids.length ? 'disabled' : ''}><i data-lucide="grid-3x3"></i><span>${thumbnailGeneratorState.deletingStoryboards ? '正在删除…' : `删除九宫格 ${ids.length}`}</span></button></div>
     </section>`;
 }
 function renderCreateLibraryModal(){
@@ -1150,7 +1150,7 @@ function renderCreateLibraryModal(){
             <datalist id="boardKnownPaths">${localLibraries.map(lib => `<option value="${escapeAttr(lib.path || '')}">${escapeHtml(lib.name || '')}</option>`).join('')}</datalist>
             <div class="board-create-summary"><i data-lucide="filter"></i><span>${selected.id === 'other' ? '不限制资源类型，用户路径会作为独立来源显示；未绑定路径的素材库不再自动收纳全部同类素材。' : `自动归档 ${selected.kinds.map(registryKindLabel).concat(selected.extensions.map(ext => `.${ext}`)).slice(0, 8).join('、') || '其他类型'}，用户路径会作为独立来源显示；未绑定路径的素材库不再自动收纳全部同类素材。`}</span></div>
         </div>
-        <div class="board-create-actions"><button class="asset-btn" type="button" data-board-create-close>取消</button><button class="asset-btn primary" type="button" data-board-create-confirm><i data-lucide="plus"></i><span>创建资源库</span></button></div>
+        <div class="board-create-actions"><button class="hw-btn" type="button" data-board-create-close>取消</button><button class="hw-btn hw-btn-gold" type="button" data-board-create-confirm><i data-lucide="plus"></i><span>创建资源库</span></button></div>
     </div>`;
     markAssetFloatingSurface(overlay, {surface:'asset-board-create', content:'.board-create-modal', close:closeCreateLibraryModal});
     refreshIcons();
@@ -1182,7 +1182,7 @@ function renderBoardEditModal(){
             <label><span>资源库名称</span><input id="boardEditName" maxlength="32" value="${escapeAttr(boardEditState.name || board.name)}" placeholder="资源库名称"></label>
             <label><span>素材库路径</span><input id="boardEditPath" value="${escapeAttr(boardEditState.path || '')}" placeholder="D:\\Assets 或 NAS 共享目录"></label>
         </div>
-        <div class="board-create-actions"><button class="asset-btn" type="button" data-board-edit-close>取消</button><button class="asset-btn primary" type="button" data-board-edit-save ${boardEditState.saving ? 'disabled' : ''}><i data-lucide="${boardEditState.saving ? 'loader-2' : 'save'}"></i><span>${boardEditState.saving ? '正在保存…' : '保存修改'}</span></button></div>
+        <div class="board-create-actions"><button class="hw-btn" type="button" data-board-edit-close>取消</button><button class="hw-btn hw-btn-gold" type="button" data-board-edit-save ${boardEditState.saving ? 'disabled' : ''}><i data-lucide="${boardEditState.saving ? 'loader-2' : 'save'}"></i><span>${boardEditState.saving ? '正在保存…' : '保存修改'}</span></button></div>
     </div>`;
     markAssetFloatingSurface(overlay, {surface:'asset-board-edit', content:'.board-library-edit-modal', close:closeBoardEditModal});
     refreshIcons();
@@ -1344,7 +1344,7 @@ function renderBoardSourceModal(){
             <label><span>来源名称</span><input id="boardSourceName" maxlength="40" value="${escapeAttr(boardSourceState.name || editingSource?.name || '用户素材')}" placeholder="例如：NAS 品牌素材"></label>
             <label><span>素材路径</span><input id="boardSourcePath" value="${escapeAttr(boardSourceState.path || editingSource?.path || '')}" placeholder="D:\\Assets 或 NAS 共享目录"></label>
         </div></div>` : ''}
-        <div class="board-create-actions"><button class="asset-btn" type="button" ${showForm ? 'data-board-source-editor-cancel' : 'data-board-source-close'}>${showForm && board ? '取消编辑' : '关闭'}</button>${showForm ? `<button class="asset-btn primary" type="button" data-board-source-confirm><i data-lucide="${editing ? 'save' : 'folder-plus'}"></i><span>${editing ? '保存更改' : '添加来源'}</span></button>` : ''}</div>
+        <div class="board-create-actions"><button class="hw-btn" type="button" ${showForm ? 'data-board-source-editor-cancel' : 'data-board-source-close'}>${showForm && board ? '取消编辑' : '关闭'}</button>${showForm ? `<button class="hw-btn hw-btn-gold" type="button" data-board-source-confirm><i data-lucide="${editing ? 'save' : 'folder-plus'}"></i><span>${editing ? '保存更改' : '添加来源'}</span></button>` : ''}</div>
     </div>`;
     markAssetFloatingSurface(overlay, {surface:'asset-board-source', content:'.board-source-modal', close:closeBoardSourceModal});
     refreshIcons();
@@ -1605,11 +1605,11 @@ function renderProjectWorkspaceSettingsBody(){
         <div class="asset-pref-title"><i data-lucide="folder-cog"></i><span>项目工作区</span><small>只影响之后新建的项目</small></div>
         <p class="board-settings-hint">更改根目录不会迁移、删除或重命名已有项目的工作区。</p>
         <div class="storage-dir-grid">
-            <label class="storage-dir-row"><span>项目工作区根目录</span><div class="directory-input-row"><input id="storageDir_projects" value="${escapeAttr(dirs.projects || '')}" placeholder="${escapeAttr(defaultRoot)}" autocomplete="off"><button type="button" class="asset-btn directory-picker-btn" data-directory-picker="projects" title="选择目录" aria-label="选择项目工作区根目录"><i data-lucide="folder-open"></i></button></div></label>
+            <label class="storage-dir-row"><span>项目工作区根目录</span><div class="directory-input-row"><input id="storageDir_projects" value="${escapeAttr(dirs.projects || '')}" placeholder="${escapeAttr(defaultRoot)}" autocomplete="off"><button type="button" class="hw-btn hw-btn-icon directory-picker-btn" data-directory-picker="projects" title="选择目录" aria-label="选择项目工作区根目录"><i data-lucide="folder-open"></i></button></div></label>
         </div>
         <div class="storage-settings-actions inline">
-            <button class="asset-btn" type="button" data-project-directory-template-manager-open><i data-lucide="folders"></i><span>管理目录模板</span></button>
-            <button class="asset-btn primary" type="button" data-storage-save><i data-lucide="save"></i><span>保存目录</span></button>
+            <button class="hw-btn" type="button" data-project-directory-template-manager-open><i data-lucide="folders"></i><span>管理目录模板</span></button>
+            <button class="hw-btn hw-btn-gold" type="button" data-storage-save><i data-lucide="save"></i><span>保存目录</span></button>
         </div>
     </section>`;
 }
@@ -1736,7 +1736,7 @@ function renderAssetProxySettingsBody(){
             <label class="board-proxy-switch"><input id="boardProxyAutoQueue" type="checkbox" ${state.autoQueue ? 'checked' : ''} ${state.loading || state.saving ? 'disabled' : ''}><span><strong>自动入队</strong><small>关闭后仅保留策略，需从素材动作手动提交</small></span></label>
             <div class="board-proxy-profile"><span>编码配置</span><strong>H.264 / MP4</strong><small>${escapeHtml(scope)}</small></div>
         </div>
-        <div class="storage-settings-actions inline"><button class="asset-btn primary" type="button" data-board-proxy-save ${state.loading || state.saving ? 'disabled' : ''}><i data-lucide="save"></i><span>${state.saving ? '正在保存…' : '保存代理设置'}</span></button></div>
+        <div class="storage-settings-actions inline"><button class="hw-btn hw-btn-gold" type="button" data-board-proxy-save ${state.loading || state.saving ? 'disabled' : ''}><i data-lucide="save"></i><span>${state.saving ? '正在保存…' : '保存代理设置'}</span></button></div>
     </div>`;
 }
 async function saveAssetProxySettings(){
@@ -1938,8 +1938,8 @@ function openDirectoryMountConfirmDialog(key, label, folderName){
                     <span class="directory-mount-hint">支持一键粘贴或手动编辑。按回车或点击“确认并自动挂载”后自动持久化并挂载。</span>
                 </div>
                 <div class="directory-mount-actions">
-                    <button type="button" class="asset-btn directory-btn-cancel" data-directory-mount-close>取消</button>
-                    <button type="button" class="asset-btn primary directory-btn-confirm" data-directory-mount-confirm="${escapeAttr(key)}"><i data-lucide="check"></i>确认并自动挂载</button>
+                    <button type="button" class="hw-btn directory-btn-cancel" data-directory-mount-close>取消</button>
+                    <button type="button" class="hw-btn hw-btn-gold directory-btn-confirm" data-directory-mount-confirm="${escapeAttr(key)}"><i data-lucide="check"></i>确认并自动挂载</button>
                 </div>
             </div>
         </div>
@@ -2107,18 +2107,18 @@ async function loadGlobalDirectorySettings(){
 function renderGlobalDirectorySettings(){
     let host = document.getElementById('storageSettingsOverlay');
     if(!host){ host = document.createElement('main'); host.id = 'storageSettingsOverlay'; host.className = 'directory-page'; document.body.appendChild(host); }
-    const input = (key, label, value, readonly=false) => `<label class="storage-dir-row"><span>${escapeHtml(label)}</span><div class="directory-input-row"><input id="storageDir_${key}" value="${escapeAttr(value || '')}" ${readonly ? 'readonly' : ''} autocomplete="off" title="${readonly ? '' : '输入路径后按回车可自动挂载并保存'}">${readonly ? '' : `<button type="button" class="asset-btn directory-picker-btn" data-directory-picker="${escapeAttr(key)}" title="选择目录并自动挂载" aria-label="选择${escapeAttr(label)}目录"><i data-lucide="folder-open"></i></button>`}</div></label>`;
+    const input = (key, label, value, readonly=false) => `<label class="storage-dir-row"><span>${escapeHtml(label)}</span><div class="directory-input-row"><input id="storageDir_${key}" value="${escapeAttr(value || '')}" ${readonly ? 'readonly' : ''} autocomplete="off" title="${readonly ? '' : '输入路径后按回车可自动挂载并保存'}">${readonly ? '' : `<button type="button" class="hw-btn hw-btn-icon directory-picker-btn" data-directory-picker="${escapeAttr(key)}" title="选择目录并自动挂载" aria-label="选择${escapeAttr(label)}目录"><i data-lucide="folder-open"></i></button>`}</div></label>`;
     const dirs = storageSettingsState.dirs || {};
     const managed = registryStatus?.overview?.roots?.find(item => item.kind === 'managed_library');
-    host.innerHTML = `<header class="directory-page-header"><h1><i data-lucide="folder-cog"></i>目录设置</h1><button type="button" class="asset-btn" data-directory-reload title="重新读取目录设置" ${directorySettingsSaving ? 'disabled' : ''}><i data-lucide="refresh-cw"></i>重新读取</button></header>
+    host.innerHTML = `<header class="directory-page-header"><h1><i data-lucide="folder-cog"></i>目录设置</h1><button type="button" class="hw-btn" data-directory-reload title="重新读取目录设置" ${directorySettingsSaving ? 'disabled' : ''}><i data-lucide="refresh-cw"></i>重新读取</button></header>
         ${directorySettingsError ? `<div class="directory-error" role="alert">${escapeHtml(directorySettingsError)}</div>` : ''}
         ${!directorySettingsReady ? `<p class="directory-status" role="status">${directorySettingsError ? '请检查权限或连接后重新读取。' : '正在读取目录设置…'}</p>` : `<fieldset ${directorySettingsSaving ? 'disabled' : ''}>
         <section class="asset-pref-section" data-board-directories-settings><div class="asset-pref-title"><i data-lucide="folder-check"></i><span>登记目录</span></div><div class="storage-dir-grid">${input('managed_name','托管资产库',managed?.name,true)}${input('managed_path','资产库目录',managed?.path,true)}${input('local','本地素材目录',dirs.local)}</div><div class="directory-registered">${storageExtraLocalEntries().map(item=>`<div><span>${escapeHtml(item.name)}</span><code>${escapeHtml(item.path)}</code></div>`).join('')}</div></section>
         <section class="asset-pref-section"><div class="asset-pref-title"><i data-lucide="hard-drive"></i><span>上传与生成</span></div><div class="storage-dir-grid">${input('upload','上传素材',dirs.upload)}${input('generated','生成素材',dirs.generated)}</div></section>
         ${renderProjectWorkspaceSettingsBody()}
-        <section class="asset-pref-section">${renderAssetThumbnailCacheDirectoryBody()}<div class="storage-settings-actions"><button class="asset-btn" type="button" data-directory-cache-save><i data-lucide="save"></i>保存缓存目录</button></div></section>
+        <section class="asset-pref-section">${renderAssetThumbnailCacheDirectoryBody()}<div class="storage-settings-actions"><button class="hw-btn" type="button" data-directory-cache-save><i data-lucide="save"></i>保存缓存目录</button></div></section>
         <section class="asset-pref-section"><div class="asset-pref-title"><i data-lucide="trash-2"></i><span>回收站目录</span></div><div class="storage-dir-grid">${input('trash','统一回收根目录（留空跟随素材源）',dirs.trash)}</div><p class="board-settings-hint">新回收素材保存在此目录的 god-ecycler 子目录中；更改目录不会移动已有回收文件，历史记录仍可恢复。项目与画布继续使用原有逻辑回收记录。</p></section>
-        </fieldset><footer class="directory-footer"><div id="assetStatus" class="directory-status" role="status" aria-live="polite">${escapeHtml(currentStatusText)}</div><button class="asset-btn primary" type="button" data-storage-save ${directorySettingsSaving ? 'disabled' : ''}><i data-lucide="save"></i>${directorySettingsSaving ? '保存中…' : '保存目录'}</button></footer>`}`;
+        </fieldset><footer class="directory-footer"><div id="assetStatus" class="directory-status" role="status" aria-live="polite">${escapeHtml(currentStatusText)}</div><button class="hw-btn hw-btn-gold" type="button" data-storage-save ${directorySettingsSaving ? 'disabled' : ''}><i data-lucide="save"></i>${directorySettingsSaving ? '保存中…' : '保存目录'}</button></footer>`}`;
     host.querySelector('.project-workspace-settings [data-storage-save]')?.remove();
     refreshIcons();
 }
@@ -2133,7 +2133,7 @@ function renderStorageSettingsModal(){
         document.body.appendChild(overlay);
     }
     const previousFocusId = overlay.contains(document.activeElement) ? String(document.activeElement?.id || '') : '';
-    const unifiedBody = `${renderAssetBoardSettingsBody()}<div class="board-settings-divider" aria-hidden="true"></div>${renderAssetAiSettingsBody()}<div class="board-settings-divider" aria-hidden="true"></div><a class="asset-btn" href="/static/pages/index.html?view=settings&section=directories" target="_top"><i data-lucide="folder-cog"></i>目录设置<i data-lucide="arrow-up-right"></i></a><div class="board-settings-divider" aria-hidden="true"></div>${renderAssetPreviewSettingsBody()}<div class="board-settings-divider" aria-hidden="true"></div>${renderAssetVideoSettingsBody()}`;
+    const unifiedBody = `${renderAssetBoardSettingsBody()}<div class="board-settings-divider" aria-hidden="true"></div>${renderAssetAiSettingsBody()}<div class="board-settings-divider" aria-hidden="true"></div><a class="hw-btn" href="/static/pages/index.html?view=settings&section=directories" target="_top"><i data-lucide="folder-cog"></i>目录设置<i data-lucide="arrow-up-right"></i></a><div class="board-settings-divider" aria-hidden="true"></div>${renderAssetPreviewSettingsBody()}<div class="board-settings-divider" aria-hidden="true"></div>${renderAssetVideoSettingsBody()}`;
     overlay.innerHTML = `
         <div class="storage-settings-modal board-settings-modal" data-floating-content role="dialog" aria-modal="true" aria-labelledby="storageSettingsTitle" tabindex="-1">
             <div class="storage-settings-head">
@@ -2410,8 +2410,8 @@ function renderProjectDirectoryTemplateEditor(){
         </div>
         <div class="project-directory-template-editor-preview"><header><strong>目录预览</strong><span>${projectDirectoryTemplatePaths(draft.directory_tree_text.split(/\r?\n/)).length} 个有效目录</span></header>${projectDirectoryTemplateTreeMarkup(projectDirectoryTemplatePaths(draft.directory_tree_text.split(/\r?\n/)))}</div>
         ${projectDirectoryTemplateManagerState.error ? `<div class="project-directory-template-manager-error" role="alert">${escapeHtml(projectDirectoryTemplateManagerState.error)}</div>` : ''}
-        ${archiveConfirm ? `<div class="project-directory-template-archive-confirm" role="alert"><span>归档后，新项目不再可选择该模板；已有项目不会变化。</span><div><button class="asset-btn" type="button" data-project-directory-template-archive-cancel>取消</button><button class="asset-btn danger" type="button" data-project-directory-template-archive-confirm>确认归档</button></div></div>` : ''}
-        <footer><div>${isExisting ? `<button class="asset-btn" type="button" data-project-directory-template-copy="${escapeAttr(draft.id)}"><i data-lucide="copy"></i><span>复制模板</span></button>${draft.is_default || isUsed || isArchived ? '' : `<button class="asset-btn" type="button" data-project-directory-template-default="${escapeAttr(draft.id)}" ${draft.dirty || projectDirectoryTemplateManagerState.saving ? 'disabled' : ''}><i data-lucide="star"></i><span>设为默认</span></button>`}${isArchived ? '' : `<button class="asset-btn danger" type="button" data-project-directory-template-archive="${escapeAttr(draft.id)}" ${draft.dirty || projectDirectoryTemplateManagerState.saving ? 'disabled' : ''}><i data-lucide="archive"></i><span>归档</span></button>`}` : ''}</div><button class="asset-btn primary" type="button" data-project-directory-template-save ${mutationDisabled ? 'disabled' : ''}><i data-lucide="${projectDirectoryTemplateManagerState.saving ? 'loader-2' : 'save'}"></i><span>${projectDirectoryTemplateManagerState.saving ? '正在保存…' : '保存模板'}</span></button></footer>
+        ${archiveConfirm ? `<div class="project-directory-template-archive-confirm" role="alert"><span>归档后，新项目不再可选择该模板；已有项目不会变化。</span><div><button class="hw-btn" type="button" data-project-directory-template-archive-cancel>取消</button><button class="hw-btn hw-btn-danger" type="button" data-project-directory-template-archive-confirm>确认归档</button></div></div>` : ''}
+        <footer><div>${isExisting ? `<button class="hw-btn" type="button" data-project-directory-template-copy="${escapeAttr(draft.id)}"><i data-lucide="copy"></i><span>复制模板</span></button>${draft.is_default || isUsed || isArchived ? '' : `<button class="hw-btn" type="button" data-project-directory-template-default="${escapeAttr(draft.id)}" ${draft.dirty || projectDirectoryTemplateManagerState.saving ? 'disabled' : ''}><i data-lucide="star"></i><span>设为默认</span></button>`}${isArchived ? '' : `<button class="hw-btn hw-btn-danger" type="button" data-project-directory-template-archive="${escapeAttr(draft.id)}" ${draft.dirty || projectDirectoryTemplateManagerState.saving ? 'disabled' : ''}><i data-lucide="archive"></i><span>归档</span></button>`}` : ''}</div><button class="hw-btn hw-btn-gold" type="button" data-project-directory-template-save ${mutationDisabled ? 'disabled' : ''}><i data-lucide="${projectDirectoryTemplateManagerState.saving ? 'loader-2' : 'save'}"></i><span>${projectDirectoryTemplateManagerState.saving ? '正在保存…' : '保存模板'}</span></button></footer>
     </div>`;
 }
 function renderProjectDirectoryTemplateManagerSheet(){
@@ -2431,8 +2431,8 @@ function renderProjectDirectoryTemplateManagerSheet(){
     const pending = projectDirectoryTemplateManagerState.pendingAction;
     overlay.innerHTML = `<section class="project-directory-template-sheet" data-floating-content role="dialog" aria-modal="true" aria-labelledby="projectDirectoryTemplateSheetTitle">
         <header class="project-directory-template-sheet-head"><div><strong id="projectDirectoryTemplateSheetTitle">项目目录模板</strong><span>模板仅用于之后新建的项目，不展示或推断项目实际工作路径。</span></div><button type="button" data-project-directory-template-manager-close aria-label="关闭" ${projectDirectoryTemplateManagerState.saving ? 'disabled' : ''}><i data-lucide="x"></i></button></header>
-        ${pending ? `<div class="project-directory-template-discard-confirm" role="alert"><span>当前模板有未保存修改。</span><div><button class="asset-btn" type="button" data-project-directory-template-discard-cancel>继续编辑</button><button class="asset-btn danger" type="button" data-project-directory-template-discard-confirm>放弃修改</button></div></div>` : ''}
-        <div class="project-directory-template-sheet-body"><aside><div class="project-directory-template-list-head"><strong>模板库</strong><button class="asset-icon-btn" type="button" data-project-directory-template-new aria-label="新建目录模板" title="新建目录模板"><i data-lucide="plus"></i></button></div><div class="project-directory-template-list">${rows}</div></aside><main>${renderProjectDirectoryTemplateEditor()}</main></div>
+        ${pending ? `<div class="project-directory-template-discard-confirm" role="alert"><span>当前模板有未保存修改。</span><div><button class="hw-btn" type="button" data-project-directory-template-discard-cancel>继续编辑</button><button class="hw-btn hw-btn-danger" type="button" data-project-directory-template-discard-confirm>放弃修改</button></div></div>` : ''}
+        <div class="project-directory-template-sheet-body"><aside><div class="project-directory-template-list-head"><strong>模板库</strong><button class="hw-btn hw-btn-icon" type="button" data-project-directory-template-new aria-label="新建目录模板" title="新建目录模板"><i data-lucide="plus"></i></button></div><div class="project-directory-template-list">${rows}</div></aside><main>${renderProjectDirectoryTemplateEditor()}</main></div>
     </section>`;
     markAssetFloatingSurface(overlay, {surface:'asset-project-directory-template-manager', content:'.project-directory-template-sheet', close:closeProjectDirectoryTemplateManagerSheet, trigger:projectDirectoryTemplateManagerState.returnFocus, parent:'#storageSettingsOverlay'});
     refreshIcons();
@@ -2667,7 +2667,7 @@ function renderThumbnailGeneratorModal(){
             <label class="thumbnail-video-transcode"><input id="thumbnailTranscodeVideos" type="checkbox" ${thumbnailGeneratorState.transcodeVideos ? 'checked' : ''}><span><strong>非 MP4 视频同时转码</strong><small>生成 H.264 MP4 到 ${escapeHtml(thumbnailGeneratorState.cacheFolder)}，便于浏览器播放。</small></span></label>
             ${thumbnailGeneratorState.error ? `<div class="thumbnail-cache-error">${escapeHtml(thumbnailGeneratorState.error)}</div>` : ''}
         </div>
-        <div class="thumbnail-cache-actions"><button class="asset-btn" type="button" data-thumbnail-generator-close ${busy ? 'disabled' : ''}>取消</button><button class="asset-btn thumbnail-background-action" type="button" data-thumbnail-generator-background title="关闭弹窗并在后台生成" ${busy || !ids.length ? 'disabled' : ''}><i data-lucide="${thumbnailGeneratorState.submittingBackground ? 'loader-2' : 'circle-play'}"></i><span>${thumbnailGeneratorState.submittingBackground ? '正在提交…' : '后台生成'}</span></button><button class="asset-btn primary" type="button" data-thumbnail-generator-run ${busy || !ids.length ? 'disabled' : ''}><i data-lucide="${thumbnailGeneratorState.generating ? 'loader-2' : 'images'}"></i><span>${thumbnailGeneratorState.generating ? '正在生成…' : `生成缩略图 ${ids.length}`}</span></button></div>
+        <div class="thumbnail-cache-actions"><button class="hw-btn" type="button" data-thumbnail-generator-close ${busy ? 'disabled' : ''}>取消</button><button class="hw-btn thumbnail-background-action" type="button" data-thumbnail-generator-background title="关闭弹窗并在后台生成" ${busy || !ids.length ? 'disabled' : ''}><i data-lucide="${thumbnailGeneratorState.submittingBackground ? 'loader-2' : 'circle-play'}"></i><span>${thumbnailGeneratorState.submittingBackground ? '正在提交…' : '后台生成'}</span></button><button class="hw-btn hw-btn-gold" type="button" data-thumbnail-generator-run ${busy || !ids.length ? 'disabled' : ''}><i data-lucide="${thumbnailGeneratorState.generating ? 'loader-2' : 'images'}"></i><span>${thumbnailGeneratorState.generating ? '正在生成…' : `生成缩略图 ${ids.length}`}</span></button></div>
     </div>`;
     markAssetFloatingSurface(overlay, {surface:'asset-thumbnail-generator', content:'.thumbnail-generator-modal', close:closeThumbnailGenerator});
     refreshIcons();
@@ -3143,9 +3143,9 @@ function renderLocalCaptionTools(imageCount){
                 ${models.length ? models.map(m => `<option value="${escapeAttr(m)}" ${m === localCaptionModel ? 'selected' : ''}>${escapeHtml(m)}</option>`).join('') : '<option value="">暂无模型</option>'}
             </select>
             <input id="localCaptionPrompt" class="local-caption-prompt-input" type="text" value="${escapeAttr(localCaptionPrompt || '描述图片')}" placeholder="描述图片">
-            <button class="asset-btn" type="button" data-local-classify-run ${classifyDisabled ? 'disabled' : ''}><i data-lucide="${localClassifyBusy ? 'loader-2' : 'tags'}"></i><span>${localClassifyBusy ? '分类中' : '智能分类'}</span></button>
-            <button class="asset-btn primary" type="button" data-local-caption-run ${captionDisabled ? 'disabled' : ''}><i data-lucide="${localCaptionBusy ? 'loader-2' : 'wand-sparkles'}"></i><span>${localCaptionBusy ? '反推中' : '提示词反推'}</span></button>
-            <button class="asset-icon-btn" type="button" data-local-classify-toggle title="智能分类要求"><i data-lucide="${localClassifyPromptOpen ? 'chevron-up' : 'sliders-horizontal'}"></i></button>
+            <button class="hw-btn" type="button" data-local-classify-run ${classifyDisabled ? 'disabled' : ''}><i data-lucide="${localClassifyBusy ? 'loader-2' : 'tags'}"></i><span>${localClassifyBusy ? '分类中' : '智能分类'}</span></button>
+            <button class="hw-btn hw-btn-gold" type="button" data-local-caption-run ${captionDisabled ? 'disabled' : ''}><i data-lucide="${localCaptionBusy ? 'loader-2' : 'wand-sparkles'}"></i><span>${localCaptionBusy ? '反推中' : '提示词反推'}</span></button>
+            <button class="hw-btn hw-btn-icon" type="button" data-local-classify-toggle title="智能分类要求"><i data-lucide="${localClassifyPromptOpen ? 'chevron-up' : 'sliders-horizontal'}"></i></button>
             </div>
             ${localClassifyPromptOpen ? `<textarea id="localClassifyPrompt" class="local-classify-prompt-input" placeholder="默认已内置室内/室外、空间、主体、光影、模特、风格、色彩等分类。这里可以追加你的分类要求，例如：增加家装风格、镜头焦段、商业用途、人物年龄段、产品材质。">${escapeHtml(localClassifyPrompt || '')}</textarea>` : ''}
         </div>
@@ -3211,7 +3211,7 @@ function renderLocalLibraryTabs(){
                 <i data-lucide="folder"></i><span>${escapeHtml(storageCleanName(lib.name, DEFAULT_LOCAL_LIBRARY_NAME))}</span>
             </button>`).join('')}
         </div>
-        <button class="asset-icon-btn" type="button" data-local-library-rename title="修改素材库名称"><i data-lucide="pencil"></i></button>
+        <button class="hw-btn hw-btn-icon" type="button" data-local-library-rename title="修改素材库名称"><i data-lucide="pencil"></i></button>
     </div>`;
 }
 async function switchLocalLibrary(id){
@@ -4469,7 +4469,7 @@ function renderRegistryVersionStructureRemoveDialog(){
     overlay.innerHTML = `<section class="registry-structure-remove-dialog" data-registry-structure-remove-type="${escapeAttr(structure.structure_type)}" data-floating-content role="dialog" aria-modal="true" aria-labelledby="registryStructureRemoveTitle">
         <header><span><i data-lucide="${isGroup ? 'ungroup' : 'unlink'}"></i></span><div><strong id="registryStructureRemoveTitle">${title}</strong><small>${escapeHtml(current?.name || (isGroup ? '当前图片组' : '当前最终版本'))}，共 ${structure.members.length} 张图片</small></div><button type="button" data-registry-structure-remove-dialog-close aria-label="关闭" ${busy ? 'disabled' : ''}><i data-lucide="x"></i></button></header>
         <div class="registry-structure-remove-body"><p>${body}</p>${registryStructureRemoveState.error ? `<div class="registry-structure-remove-error" role="alert">${escapeHtml(registryStructureRemoveState.error)}</div>` : ''}</div>
-        <footer><button class="asset-btn" type="button" data-registry-structure-remove-dialog-close ${busy ? 'disabled' : ''}>取消</button><button class="asset-btn danger registry-structure-remove-confirm" type="button" data-registry-structure-remove-confirm ${busy ? 'disabled' : ''}><i data-lucide="${busy ? 'loader-2' : (isGroup ? 'ungroup' : 'unlink')}"></i><span>${busy ? '正在解除…' : actionLabel}</span></button></footer>
+        <footer><button class="hw-btn" type="button" data-registry-structure-remove-dialog-close ${busy ? 'disabled' : ''}>取消</button><button class="hw-btn hw-btn-danger registry-structure-remove-confirm" type="button" data-registry-structure-remove-confirm ${busy ? 'disabled' : ''}><i data-lucide="${busy ? 'loader-2' : (isGroup ? 'ungroup' : 'unlink')}"></i><span>${busy ? '正在解除…' : actionLabel}</span></button></footer>
     </section>`;
     markAssetFloatingSurface(overlay, {
         surface:'asset-registry-version-structure-remove',
@@ -5678,7 +5678,7 @@ function renderRegistryFreshNotice(){
         return;
     }
     if(!registryPendingFreshCount()){ host.remove(); return; }
-    host.innerHTML = `<button class="asset-btn" type="button" data-registry-fresh-apply><i data-lucide="refresh-cw"></i><span>${escapeHtml(registryPendingFreshNoticeText())}</span></button>`;
+    host.innerHTML = `<button class="hw-btn" type="button" data-registry-fresh-apply><i data-lucide="refresh-cw"></i><span>${escapeHtml(registryPendingFreshNoticeText())}</span></button>`;
     refreshIcons();
 }
 function registryPendingFreshNoticeText(){
@@ -6085,7 +6085,7 @@ function renderRegistryRecycleDialog(){
         <header><span><i data-lucide="trash-2"></i></span><div><strong id="registryRecycleTitle">确认删除吗？</strong><small>${escapeHtml(item.name || '未命名素材')}</small></div><button type="button" data-registry-recycle-close aria-label="关闭" ${registryRecycleState.busy ? 'disabled' : ''}><i data-lucide="x"></i></button></header>
         <div class="registry-recycle-body"><p>当前操作并非永久删除，永久删除请前往当前素材库文件夹：</p><code>${escapeHtml(registryRecyclerPath(item))}</code><div class="registry-recycle-note"><i data-lucide="info"></i><span>原文件将移动到 <b>god-ecycler</b>，缩略图等缓存会同步清理。</span></div>${registryRecycleState.error ? `<div class="registry-recycle-error">${escapeHtml(registryRecycleState.error)}</div>` : ''}</div>
         <label class="registry-recycle-skip"><input id="registryRecycleDontAsk" type="checkbox" ${registryRecycleState.dontAsk ? 'checked' : ''} ${registryRecycleState.busy ? 'disabled' : ''}><span class="registry-feature-switch ${registryRecycleState.dontAsk ? 'is-on' : ''}"><i></i></span><span><strong>不再提醒</strong><small>以后点击删除按钮将直接移入 god-ecycler</small></span></label>
-        <footer><button class="asset-btn" type="button" data-registry-recycle-close ${registryRecycleState.busy ? 'disabled' : ''}>取消</button><button class="asset-btn danger registry-recycle-confirm" type="button" data-registry-recycle-confirm ${registryRecycleState.busy ? 'disabled' : ''}><i data-lucide="${registryRecycleState.busy ? 'loader-2' : 'trash-2'}"></i><span>${registryRecycleState.busy ? '正在移动…' : '移入回收站'}</span></button></footer>
+        <footer><button class="hw-btn" type="button" data-registry-recycle-close ${registryRecycleState.busy ? 'disabled' : ''}>取消</button><button class="hw-btn hw-btn-danger registry-recycle-confirm" type="button" data-registry-recycle-confirm ${registryRecycleState.busy ? 'disabled' : ''}><i data-lucide="${registryRecycleState.busy ? 'loader-2' : 'trash-2'}"></i><span>${registryRecycleState.busy ? '正在移动…' : '移入回收站'}</span></button></footer>
     </section>`;
     markAssetFloatingSurface(overlay, {surface:'asset-registry-recycle', content:'.registry-recycle-dialog', close:closeRegistryRecycleDialog});
     refreshIcons();
@@ -6145,7 +6145,7 @@ function renderRegistryRecycleBin(){
     const body = registryRecycleBinState.loading
         ? `<div class="registry-recycle-bin-empty"><i data-lucide="loader-2"></i><strong>正在读取回收站…</strong></div>`
         : registryRecycleBinState.error
-            ? `<div class="registry-recycle-bin-empty error"><i data-lucide="circle-alert"></i><strong>${escapeHtml(registryRecycleBinState.error)}</strong><button class="asset-btn" type="button" data-registry-recycle-bin-reload>重新加载</button></div>`
+            ? `<div class="registry-recycle-bin-empty error"><i data-lucide="circle-alert"></i><strong>${escapeHtml(registryRecycleBinState.error)}</strong><button class="hw-btn" type="button" data-registry-recycle-bin-reload>重新加载</button></div>`
             : items.length
                 ? `<div class="registry-recycle-bin-list">${items.map(item => {
                     const restoring = registryRecycleBinState.restoringId === item.id;
@@ -6153,7 +6153,7 @@ function renderRegistryRecycleBin(){
                     return `<article class="registry-recycle-bin-item ${unavailable ? 'is-missing' : ''}">
                         <span class="registry-recycle-bin-kind"><i data-lucide="${item.kind === 'image' ? 'image' : item.kind === 'video' ? 'film' : item.kind === 'audio' ? 'audio-lines' : 'file'}"></i></span>
                         <div class="registry-recycle-bin-copy"><strong title="${escapeAttr(item.name || '')}">${escapeHtml(item.name || '未命名素材')}</strong><span>${escapeHtml(item.storage_root_name || '素材来源')} · ${escapeHtml(registryKindLabel(item.kind || 'document'))} · ${escapeHtml(formatFileSize(item.file_size || 0))} · ${escapeHtml(formatDate(item.deleted_at))}</span><code title="${escapeAttr(item.original_relative_path || '')}">${escapeHtml(item.original_relative_path || '')}</code>${unavailable ? '<em>回收站文件已被手动移除</em>' : ''}</div>
-                        <button class="asset-btn primary" type="button" data-registry-recycle-restore="${escapeAttr(item.id || '')}" ${restoring || unavailable ? 'disabled' : ''}><i data-lucide="${restoring ? 'loader-2' : 'rotate-ccw'}"></i><span>${restoring ? '恢复中…' : '恢复'}</span></button>
+                        <button class="hw-btn hw-btn-gold" type="button" data-registry-recycle-restore="${escapeAttr(item.id || '')}" ${restoring || unavailable ? 'disabled' : ''}><i data-lucide="${restoring ? 'loader-2' : 'rotate-ccw'}"></i><span>${restoring ? '恢复中…' : '恢复'}</span></button>
                     </article>`;
                 }).join('')}</div>`
                 : `<div class="registry-recycle-bin-empty"><i data-lucide="trash-2"></i><strong>回收站暂无素材</strong><span>从资产中心删除的本地素材会显示在这里。</span></div>`;
@@ -6162,7 +6162,7 @@ function renderRegistryRecycleBin(){
         <div class="registry-recycle-bin-notice"><i data-lucide="shield-check"></i><div><strong>这里只提供恢复，不提供清空</strong><span>永久删除原素材，请手动进入对应素材库的 <b>god-ecycler</b> 文件夹处理。</span></div></div>
         ${recyclerDirectories.length ? `<div class="registry-recycle-bin-paths"><strong>回收目录</strong>${recyclerDirectories.map(path => `<code>${escapeHtml(path)}</code>`).join('')}</div>` : ''}
         <div class="registry-recycle-bin-body">${body}</div>
-        <footer><span>共 ${items.length} 项</span><button class="asset-btn" type="button" data-registry-recycle-bin-close ${registryRecycleBinState.restoringId ? 'disabled' : ''}>关闭</button></footer>
+        <footer><span>共 ${items.length} 项</span><button class="hw-btn" type="button" data-registry-recycle-bin-close ${registryRecycleBinState.restoringId ? 'disabled' : ''}>关闭</button></footer>
     </section>`;
     markAssetFloatingSurface(overlay, {surface:'asset-registry-recycle-bin', content:'.registry-recycle-bin-modal', close:closeRegistryRecycleBin});
     refreshIcons();
@@ -6674,7 +6674,7 @@ function renderCanvasAssetsManager(){
                     <span>${canvasAssetViewSubtitle(items)}</span>
                 </div>
                 <div class="asset-tools">
-                    <button class="asset-btn" type="button" data-canvas-asset-refresh title="重新读取画布中的图片、视频、音频资源"><i data-lucide="refresh-cw"></i><span>刷新资源</span></button>
+                    <button class="hw-btn" type="button" data-canvas-asset-refresh title="重新读取画布中的图片、视频、音频资源"><i data-lucide="refresh-cw"></i><span>刷新资源</span></button>
                     <label class="asset-search-wrap"><i data-lucide="search"></i><input id="canvasAssetSearch" class="asset-search" type="search" value="${escapeAttr(canvasAssetQuery)}" placeholder="搜索画布资产"></label>
                     <select id="canvasAssetSort" class="manage-select canvas-sort-select" title="排序方法">
                         <option value="canvas_asc" ${canvasAssetSort === 'canvas_asc' ? 'selected' : ''}>画布名称</option>
@@ -6683,15 +6683,15 @@ function renderCanvasAssetsManager(){
                         <option value="name_asc" ${canvasAssetSort === 'name_asc' ? 'selected' : ''}>资产名称</option>
                         <option value="kind" ${canvasAssetSort === 'kind' ? 'selected' : ''}>类型</option>
                     </select>
-                    <button class="asset-btn ${canvasAssetManageMode ? 'primary' : ''}" type="button" data-canvas-asset-manage ${total ? '' : 'disabled'}><i data-lucide="list-checks"></i><span>${canvasAssetManageMode ? '完成管理' : '批量管理'}</span></button>
+                    <button class="${canvasAssetManageMode ? 'hw-btn hw-btn-gold' : 'hw-btn'}" type="button" data-canvas-asset-manage ${total ? '' : 'disabled'}><i data-lucide="list-checks"></i><span>${canvasAssetManageMode ? '完成管理' : '批量管理'}</span></button>
                 </div>
             </div>
             <div class="manage-tools">
                 <span>已选择 ${selectedCanvasAssetIds.size} 个画布资产，支持拖拽框选或逐个勾选。</span>
                 <div class="asset-tools">
-                    <button class="asset-btn" type="button" data-canvas-asset-select-all ${items.length ? '' : 'disabled'}><i data-lucide="check-square"></i><span>全选</span></button>
-                    <button class="asset-btn" type="button" data-canvas-asset-clear-selection ${selectedCanvasAssetIds.size ? '' : 'disabled'}><i data-lucide="square"></i><span>清空</span></button>
-                    <button class="asset-btn primary" type="button" data-canvas-asset-download-selected ${selectedCanvasAssetIds.size ? '' : 'disabled'}><i data-lucide="download"></i><span>下载所选</span></button>
+                    <button class="hw-btn" type="button" data-canvas-asset-select-all ${items.length ? '' : 'disabled'}><i data-lucide="check-square"></i><span>全选</span></button>
+                    <button class="hw-btn" type="button" data-canvas-asset-clear-selection ${selectedCanvasAssetIds.size ? '' : 'disabled'}><i data-lucide="square"></i><span>清空</span></button>
+                    <button class="hw-btn hw-btn-gold" type="button" data-canvas-asset-download-selected ${selectedCanvasAssetIds.size ? '' : 'disabled'}><i data-lucide="download"></i><span>下载所选</span></button>
                 </div>
             </div>
             <div class="content-scroll">
@@ -6768,10 +6768,10 @@ function renderCanvasAssetDetail(item){
         <div class="panel-head">
             <div class="panel-title"><strong>画布资产详情</strong><span>${escapeHtml(canvasAssetKindLabel(item))}</span></div>
             <div class="panel-actions">
-                ${canPreview ? `<button class="asset-icon-btn" type="button" data-canvas-asset-preview="${escapeAttr(item.id)}" title="${kind === 'video' ? '预览视频' : '放大预览'}"><i data-lucide="${kind === 'video' ? 'play' : 'maximize-2'}"></i></button>` : ''}
-                <button class="asset-icon-btn" type="button" data-canvas-asset-open="${escapeAttr(item.id)}" title="打开链接"><i data-lucide="external-link"></i></button>
-                <button class="asset-icon-btn" type="button" data-canvas-asset-copy="${escapeAttr(item.id)}" title="复制链接"><i data-lucide="copy"></i></button>
-                <button class="asset-btn primary" type="button" data-canvas-asset-download="${escapeAttr(item.id)}"><i data-lucide="download"></i><span>下载</span></button>
+                ${canPreview ? `<button class="hw-btn hw-btn-icon" type="button" data-canvas-asset-preview="${escapeAttr(item.id)}" title="${kind === 'video' ? '预览视频' : '放大预览'}"><i data-lucide="${kind === 'video' ? 'play' : 'maximize-2'}"></i></button>` : ''}
+                <button class="hw-btn hw-btn-icon" type="button" data-canvas-asset-open="${escapeAttr(item.id)}" title="打开链接"><i data-lucide="external-link"></i></button>
+                <button class="hw-btn hw-btn-icon" type="button" data-canvas-asset-copy="${escapeAttr(item.id)}" title="复制链接"><i data-lucide="copy"></i></button>
+                <button class="hw-btn hw-btn-gold" type="button" data-canvas-asset-download="${escapeAttr(item.id)}"><i data-lucide="download"></i><span>下载</span></button>
             </div>
         </div>
         <div class="detail-scroll">
@@ -6950,8 +6950,8 @@ function renderLocalManager(){
             <div class="panel-head">
                 <div class="panel-title"><strong>智能筛选</strong><span>点击包含，减号排除</span></div>
                 <div class="panel-actions compact-actions">
-                    <button class="asset-icon-btn" type="button" data-localup-folder-new title="新建文件夹"><i data-lucide="folder-plus"></i></button>
-                    <button class="asset-icon-btn" type="button" data-localup-folder-rename title="重命名文件夹" ${activeLocalUploadFolder ? '' : 'disabled'}><i data-lucide="pencil"></i></button>
+                    <button class="hw-btn hw-btn-icon" type="button" data-localup-folder-new title="新建文件夹"><i data-lucide="folder-plus"></i></button>
+                    <button class="hw-btn hw-btn-icon" type="button" data-localup-folder-rename title="重命名文件夹" ${activeLocalUploadFolder ? '' : 'disabled'}><i data-lucide="pencil"></i></button>
                 </div>
             </div>
             <div class="nav-scroll registry-facets asset-smart-filter-scroll">
@@ -6974,8 +6974,8 @@ function renderLocalManager(){
                 </div>
                 <div class="asset-tools">
                     <label class="asset-search-wrap"><i data-lucide="search"></i><input id="localUploadSearch" class="asset-search" type="search" value="${escapeAttr(localUploadQuery)}" placeholder="搜索本地上传"></label>
-                    <button class="asset-btn primary" type="button" data-localup-upload><i data-lucide="upload"></i><span>上传文件</span></button>
-                    <button class="asset-btn ${localUploadManageMode ? 'primary' : ''}" type="button" data-localup-manage ${total ? '' : 'disabled'}><i data-lucide="list-checks"></i><span>${localUploadManageMode ? '完成管理' : '批量管理'}</span></button>
+                    <button class="hw-btn hw-btn-gold" type="button" data-localup-upload><i data-lucide="upload"></i><span>上传文件</span></button>
+                    <button class="${localUploadManageMode ? 'hw-btn hw-btn-gold' : 'hw-btn'}" type="button" data-localup-manage ${total ? '' : 'disabled'}><i data-lucide="list-checks"></i><span>${localUploadManageMode ? '完成管理' : '批量管理'}</span></button>
                 </div>
             </div>
             <div class="manage-tools local-manage-tools">
@@ -6983,12 +6983,12 @@ function renderLocalManager(){
                     <span class="manage-group-title">管理</span>
                     <span class="manage-summary">已选 ${selectedLocalUploadIds.size} 个，其中 ${imageCount} 张图片</span>
                     <div class="asset-tools local-manage-actions">
-                        <button class="asset-btn" type="button" data-localup-select-all ${items.length ? '' : 'disabled'}><i data-lucide="check-square"></i><span>全选</span></button>
-                        <button class="asset-btn" type="button" data-localup-clear ${selectedLocalUploadIds.size ? '' : 'disabled'}><i data-lucide="square"></i><span>清空</span></button>
-                        <button class="asset-btn" type="button" data-localup-download-selected ${selectedLocalUploadIds.size ? '' : 'disabled'}><i data-lucide="download"></i><span>下载</span></button>
-                        <button class="asset-btn" type="button" data-localup-canvas-selected ${selectedLocalUploadIds.size ? '' : 'disabled'}><i data-lucide="clipboard-paste"></i><span>复制到画布</span></button>
-                        <button class="asset-btn" type="button" data-localup-cut-selected ${selectedLocalUploadIds.size ? '' : 'disabled'}><i data-lucide="scissors"></i><span>剪切/移动</span></button>
-                        <button class="asset-btn danger" type="button" data-localup-delete-selected ${selectedLocalUploadIds.size ? '' : 'disabled'}><i data-lucide="trash-2"></i><span>删除</span></button>
+                        <button class="hw-btn" type="button" data-localup-select-all ${items.length ? '' : 'disabled'}><i data-lucide="check-square"></i><span>全选</span></button>
+                        <button class="hw-btn" type="button" data-localup-clear ${selectedLocalUploadIds.size ? '' : 'disabled'}><i data-lucide="square"></i><span>清空</span></button>
+                        <button class="hw-btn" type="button" data-localup-download-selected ${selectedLocalUploadIds.size ? '' : 'disabled'}><i data-lucide="download"></i><span>下载</span></button>
+                        <button class="hw-btn" type="button" data-localup-canvas-selected ${selectedLocalUploadIds.size ? '' : 'disabled'}><i data-lucide="clipboard-paste"></i><span>复制到画布</span></button>
+                        <button class="hw-btn" type="button" data-localup-cut-selected ${selectedLocalUploadIds.size ? '' : 'disabled'}><i data-lucide="scissors"></i><span>剪切/移动</span></button>
+                        <button class="hw-btn hw-btn-danger" type="button" data-localup-delete-selected ${selectedLocalUploadIds.size ? '' : 'disabled'}><i data-lucide="trash-2"></i><span>删除</span></button>
                     </div>
                 </div>
                 <div class="manage-group manage-ai-group">
@@ -7036,11 +7036,11 @@ function renderLocalUploadDetail(item){
         <div class="panel-head">
             <div class="panel-title"><strong>素材预览</strong><span>${escapeHtml(assetKindLabel(item))}</span></div>
             <div class="panel-actions">
-                <button class="asset-icon-btn" type="button" data-localup-rename="${escapeAttr(item.id)}" title="重命名"><i data-lucide="pencil"></i></button>
-                <button class="asset-icon-btn" type="button" data-localup-download="${escapeAttr(item.id)}" title="下载"><i data-lucide="download"></i></button>
-                <button class="asset-icon-btn" type="button" data-localup-open="${escapeAttr(item.id)}" title="新窗口打开"><i data-lucide="external-link"></i></button>
-                <button class="asset-icon-btn" type="button" data-localup-copy="${escapeAttr(item.id)}" title="复制链接"><i data-lucide="link"></i></button>
-                <button class="asset-icon-btn danger" type="button" data-localup-delete-one="${escapeAttr(item.id)}" title="删除"><i data-lucide="trash-2"></i></button>
+                <button class="hw-btn hw-btn-icon" type="button" data-localup-rename="${escapeAttr(item.id)}" title="重命名"><i data-lucide="pencil"></i></button>
+                <button class="hw-btn hw-btn-icon" type="button" data-localup-download="${escapeAttr(item.id)}" title="下载"><i data-lucide="download"></i></button>
+                <button class="hw-btn hw-btn-icon" type="button" data-localup-open="${escapeAttr(item.id)}" title="新窗口打开"><i data-lucide="external-link"></i></button>
+                <button class="hw-btn hw-btn-icon" type="button" data-localup-copy="${escapeAttr(item.id)}" title="复制链接"><i data-lucide="link"></i></button>
+                <button class="hw-btn hw-btn-icon hw-btn-danger" type="button" data-localup-delete-one="${escapeAttr(item.id)}" title="删除"><i data-lucide="trash-2"></i></button>
             </div>
         </div>
         <div class="detail-scroll">
@@ -7063,9 +7063,9 @@ function renderLocalUploadDetail(item){
                         <div class="detail-caption-head">
                             <strong>反推提示词</strong>
                             <div class="detail-caption-actions">
-                                <button class="asset-btn" type="button" data-localup-caption-one="${escapeAttr(item.id)}" ${localCaptionBusy || localClassifyBusy ? 'disabled' : ''}><i data-lucide="${localCaptionBusy ? 'loader-2' : 'wand-sparkles'}"></i><span>${localCaptionBusy ? '反推中' : '反推'}</span></button>
-                                <button class="asset-btn" type="button" data-localup-caption-copy="${escapeAttr(item.id)}"><i data-lucide="copy"></i><span>复制</span></button>
-                                <button class="asset-btn primary" type="button" data-localup-caption-save="${escapeAttr(item.id)}"><i data-lucide="save"></i><span>保存</span></button>
+                                <button class="hw-btn" type="button" data-localup-caption-one="${escapeAttr(item.id)}" ${localCaptionBusy || localClassifyBusy ? 'disabled' : ''}><i data-lucide="${localCaptionBusy ? 'loader-2' : 'wand-sparkles'}"></i><span>${localCaptionBusy ? '反推中' : '反推'}</span></button>
+                                <button class="hw-btn" type="button" data-localup-caption-copy="${escapeAttr(item.id)}"><i data-lucide="copy"></i><span>复制</span></button>
+                                <button class="hw-btn hw-btn-gold" type="button" data-localup-caption-save="${escapeAttr(item.id)}"><i data-lucide="save"></i><span>保存</span></button>
                             </div>
                         </div>
                         <textarea id="localUploadCaptionEdit" class="detail-caption-textarea" placeholder="暂无反推提示词，可以批量反推后自动写入，也可以在这里手动编辑。">${escapeHtml(item.caption || '')}</textarea>
@@ -7124,8 +7124,8 @@ function renderLocalClipboardBar(){
     return `<div class="asset-clipboard-bar">
         <div class="asset-clipboard-info"><i data-lucide="clipboard"></i><span>${escapeHtml(modeLabel)}了 ${localClipboard.items.length} 个本地素材，目标：${escapeHtml(activeAssetLibrary()?.name || '图片资产')} / ${escapeHtml(target?.name || '未选择分组')}</span></div>
         <div class="asset-tools">
-            <button class="asset-btn primary" type="button" data-local-import-clipboard ${target ? '' : 'disabled'}><i data-lucide="clipboard-paste"></i><span>导入到图片资产</span></button>
-            <button class="asset-icon-btn" type="button" data-local-clear-clipboard title="清空本地剪贴板"><i data-lucide="x"></i></button>
+            <button class="hw-btn hw-btn-gold" type="button" data-local-import-clipboard ${target ? '' : 'disabled'}><i data-lucide="clipboard-paste"></i><span>导入到图片资产</span></button>
+            <button class="hw-btn hw-btn-icon" type="button" data-local-clear-clipboard title="清空本地剪贴板"><i data-lucide="x"></i></button>
         </div>
     </div>`;
 }
@@ -7135,8 +7135,8 @@ function renderLocalDetail(item){
         <div class="panel-head">
             <div class="panel-title"><strong>本地预览</strong><span>${escapeHtml(assetKindLabel(item))}</span></div>
             <div class="panel-actions">
-                <button class="asset-icon-btn" type="button" data-local-open="${escapeAttr(item.id)}" title="打开预览"><i data-lucide="external-link"></i></button>
-                <button class="asset-btn primary" type="button" data-local-import-one="${escapeAttr(item.id)}"><i data-lucide="download"></i><span>导入</span></button>
+                <button class="hw-btn hw-btn-icon" type="button" data-local-open="${escapeAttr(item.id)}" title="打开预览"><i data-lucide="external-link"></i></button>
+                <button class="hw-btn hw-btn-gold" type="button" data-local-import-one="${escapeAttr(item.id)}"><i data-lucide="download"></i><span>导入</span></button>
             </div>
         </div>
         <div class="detail-scroll">
@@ -7452,7 +7452,7 @@ function renderCustomBoardFolderCreateModal(){
             <label><span>当前父目录</span><input value="${escapeAttr(parentLabel)}" readonly></label>
         </div>
         ${error ? `<div class="thumbnail-cache-error">${escapeHtml(error)}</div>` : ''}
-        <div class="board-create-actions"><button class="asset-btn" type="button" data-board-folder-create-close ${boardFolderCreateState.saving ? 'disabled' : ''}>取消</button><button class="asset-btn primary" type="button" data-board-folder-create-confirm ${boardFolderCreateState.saving || !selectedRoot ? 'disabled' : ''}><i data-lucide="${boardFolderCreateState.saving ? 'loader-2' : 'folder-plus'}"></i><span>${boardFolderCreateState.saving ? '正在创建…' : '创建文件夹'}</span></button></div>
+        <div class="board-create-actions"><button class="hw-btn" type="button" data-board-folder-create-close ${boardFolderCreateState.saving ? 'disabled' : ''}>取消</button><button class="hw-btn hw-btn-gold" type="button" data-board-folder-create-confirm ${boardFolderCreateState.saving || !selectedRoot ? 'disabled' : ''}><i data-lucide="${boardFolderCreateState.saving ? 'loader-2' : 'folder-plus'}"></i><span>${boardFolderCreateState.saving ? '正在创建…' : '创建文件夹'}</span></button></div>
     </div>`;
     markAssetFloatingSurface(overlay, {surface:'asset-board-folder-create', content:'.board-library-edit-modal', close:closeCustomBoardFolderCreateModal});
     refreshIcons();
@@ -7643,7 +7643,7 @@ function renderAssetSmartFilterContents(contextLabel='当前看板'){
         </section>
         <div class="registry-tag-facet-grid asset-smart-filter-tags">${renderRegistryTagGroups()}</div>
         <section class="registry-facet-section asset-smart-filter-context"><div class="registry-facet-title"><strong>当前页面</strong></div><div class="library-rule-row"><i data-lucide="panel-left"></i><span>${escapeHtml(contextLabel)}</span></div></section>
-        <button type="button" class="asset-btn asset-smart-filter-clear" data-registry-clear="all"><i data-lucide="x-circle"></i><span>清空智能筛选</span></button>
+        <button type="button" class="hw-btn asset-smart-filter-clear" data-registry-clear="all"><i data-lucide="x-circle"></i><span>清空智能筛选</span></button>
     `;
 }
 function renderAssetSmartFilterPanel(contextLabel='当前看板'){
@@ -7822,8 +7822,8 @@ function renderRegistryBulkPanel(board=null){
     if(registryBulkPanel === 'canvas'){
         return `<div class="registry-bulk-panel registry-canvas-panel">
             <div class="registry-bulk-panel-title"><span><i data-lucide="layout-dashboard"></i><strong>加入画布</strong></span><button type="button" data-registry-bulk-close aria-label="关闭"><i data-lucide="x"></i></button></div>
-            <div class="registry-canvas-target-row"><label><span>已有画布</span><select id="registryCanvasTarget" ${registryCanvasLoading ? 'disabled' : ''}><option value="">${registryCanvasLoading ? '正在读取…' : '选择画布'}</option>${registryCanvasTargets.map(canvas => `<option value="${escapeAttr(canvas.id)}">${escapeHtml(canvas.title || '未命名画布')} · ${escapeHtml(canvasKindLabel(canvas.kind))}</option>`).join('')}</select></label><button class="asset-btn primary" type="button" data-registry-add-to-canvas ${registryCanvasLoading || !registryCanvasTargets.length ? 'disabled' : ''}><i data-lucide="plus"></i><span>加入已有画布</span></button></div>
-            <div class="registry-canvas-target-row"><label><span>新画布名称</span><input id="registryNewCanvasTitle" type="text" value="资产画布" maxlength="80"></label><label class="compact"><span>类型</span><select id="registryNewCanvasKind"><option value="classic">普通画布</option><option value="smart">智能画布</option><option value="reference">参考画布</option></select></label><button class="asset-btn" type="button" data-registry-create-canvas><i data-lucide="panel-top-open"></i><span>新建并加入</span></button></div>
+            <div class="registry-canvas-target-row"><label><span>已有画布</span><select id="registryCanvasTarget" ${registryCanvasLoading ? 'disabled' : ''}><option value="">${registryCanvasLoading ? '正在读取…' : '选择画布'}</option>${registryCanvasTargets.map(canvas => `<option value="${escapeAttr(canvas.id)}">${escapeHtml(canvas.title || '未命名画布')} · ${escapeHtml(canvasKindLabel(canvas.kind))}</option>`).join('')}</select></label><button class="hw-btn hw-btn-gold" type="button" data-registry-add-to-canvas ${registryCanvasLoading || !registryCanvasTargets.length ? 'disabled' : ''}><i data-lucide="plus"></i><span>加入已有画布</span></button></div>
+            <div class="registry-canvas-target-row"><label><span>新画布名称</span><input id="registryNewCanvasTitle" type="text" value="资产画布" maxlength="80"></label><label class="compact"><span>类型</span><select id="registryNewCanvasKind"><option value="classic">普通画布</option><option value="smart">智能画布</option><option value="reference">参考画布</option></select></label><button class="hw-btn" type="button" data-registry-create-canvas><i data-lucide="panel-top-open"></i><span>新建并加入</span></button></div>
         </div>`;
     }
     if(registryBulkPanel === 'tags'){
@@ -7831,7 +7831,7 @@ function renderRegistryBulkPanel(board=null){
         return `<div class="registry-bulk-panel registry-tags-panel">
             <div class="registry-bulk-panel-title"><span><i data-lucide="tags"></i><strong>添加标签</strong></span><button type="button" data-registry-bulk-close aria-label="关闭"><i data-lucide="x"></i></button></div>
             <div class="registry-tag-suggestions"><span>智能推荐</span>${tags.map(tag => `<button type="button" data-registry-tag-suggestion="${escapeAttr(tag)}">${escapeHtml(tag)}</button>`).join('')}</div>
-            <div class="registry-tag-entry"><input id="registryBulkTagInput" type="text" placeholder="输入标签，多个标签用逗号分隔" maxlength="500"><button class="asset-btn primary" type="button" data-registry-tags-save><i data-lucide="plus"></i><span>添加到 ${selected.length} 项</span></button></div>
+            <div class="registry-tag-entry"><input id="registryBulkTagInput" type="text" placeholder="输入标签，多个标签用逗号分隔" maxlength="500"><button class="hw-btn hw-btn-gold" type="button" data-registry-tags-save><i data-lucide="plus"></i><span>添加到 ${selected.length} 项</span></button></div>
         </div>`;
     }
     return '';
@@ -7893,21 +7893,21 @@ function renderRegistryToolbar(board, title, subtitle, options={}){
     const selectedGroupIds = selectedRegistryCustomGroupIds(board);
     const searchLabel = board?.name || '全部资产';
     const coverflowAvailable = registryCoverflowAssets(board).length > 0;
-    const coverflowControl = board ? `<button class="asset-btn registry-coverflow-open" type="button" data-registry-coverflow-open ${coverflowAvailable ? '' : 'disabled'} title="${coverflowAvailable ? '打开当前素材库 Coverflow' : '当前素材库没有图片或视频'}"><i data-lucide="images"></i><span>Coverflow</span></button>` : '';
+    const coverflowControl = board ? `<button class="hw-btn registry-coverflow-open" type="button" data-registry-coverflow-open ${coverflowAvailable ? '' : 'disabled'} title="${coverflowAvailable ? '打开当前素材库 Coverflow' : '当前素材库没有图片或视频'}"><i data-lucide="images"></i><span>Coverflow</span></button>` : '';
     return `<div class="content-toolbar registry-toolbar">
         <div class="content-heading"><strong>${escapeHtml(title)}</strong><span>${escapeHtml(subtitle)}</span></div>
         <div class="registry-toolbar-controls">
-            ${!board && document.documentElement.classList.contains('vault-shell-embedded') ? '<button class="asset-btn vault-filters-toggle" type="button" popovertarget="registryFacetPopover" title="智能筛选" aria-label="智能筛选"><i data-lucide="filter"></i></button>' : ''}
+            ${!board && document.documentElement.classList.contains('vault-shell-embedded') ? '<button class="hw-btn hw-btn-icon vault-filters-toggle" type="button" popovertarget="registryFacetPopover" title="智能筛选" aria-label="智能筛选"><i data-lucide="filter"></i></button>' : ''}
             <label class="asset-search-wrap"><i data-lucide="search"></i><input id="registrySearch" class="asset-search" type="search" aria-label="搜索 ${escapeAttr(searchLabel)}" value="${escapeAttr(registryQuery)}" placeholder="搜索文件名 / 标签 / ID"></label>
             <div class="registry-layout-switch" role="group" aria-label="显示方式"><button class="${registryLayout === 'grid' ? 'is-active' : ''}" type="button" data-registry-layout="grid" title="方格视图" aria-pressed="${registryLayout === 'grid'}"><i data-lucide="grid-2x2"></i></button><button class="${registryLayout === 'list' ? 'is-active' : ''}" type="button" data-registry-layout="list" title="列表视图" aria-pressed="${registryLayout === 'list'}"><i data-lucide="list"></i></button></div>
             <label class="registry-toolbar-select"><span>排序</span><select class="asset-sort-select" id="registrySort" aria-label="资产排序"><option value="newest" ${registrySort==='newest'?'selected':''}>最近新增</option><option value="oldest" ${registrySort==='oldest'?'selected':''}>最早新增</option><option value="name" ${registrySort==='name'?'selected':''}>名称</option><option value="size_desc" ${registrySort==='size_desc'?'selected':''}>大小降序</option></select></label>
             <label class="registry-toolbar-select"><span>分组</span><select class="asset-sort-select" id="registryGroupMode" aria-label="资产分组"><option value="none" ${registryGroupMode==='none'?'selected':''}>不分组</option><option value="source" ${registryGroupMode==='source'?'selected':''}>素材来源</option><option value="folder" ${registryGroupMode==='folder'?'selected':''}>文件夹</option><option value="custom" ${registryGroupMode==='custom'?'selected':''}>自定义分组</option></select></label>
             <div class="registry-segment" role="group" aria-label="缩略图比例"><button class="${registryAspect === 'square' ? 'is-active' : ''}" type="button" data-registry-aspect-toggle aria-pressed="${registryAspect === 'square'}" title="${registryAspect === 'square' ? '当前方格显示，点击恢复原始比例' : '当前原始比例，点击切换方格显示'}">方格</button></div>
-            <button class="asset-btn registry-toggle ${registrySimple ? 'is-active' : ''}" type="button" data-registry-simple-toggle aria-pressed="${registrySimple}"><i data-lucide="image"></i><span>简洁</span></button>
+            <button class="hw-btn registry-toggle ${registrySimple ? 'is-active' : ''}" type="button" data-registry-simple-toggle aria-pressed="${registrySimple}"><i data-lucide="image"></i><span>简洁</span></button>
             ${coverflowControl}
-            ${options.allowUrl ? '<button class="asset-btn" type="button" data-registry-add-url><i data-lucide="link"></i><span>添加 URL</span></button>' : ''}
-            <button class="asset-btn" type="button" data-registry-group-selected ${selectedIds.length ? '' : 'disabled'}><i data-lucide="folder-plus"></i><span>加入分组</span></button>
-            <button class="asset-btn" type="button" data-registry-group-remove ${selectedGroupIds.length ? '' : 'disabled'}><i data-lucide="folder-minus"></i><span>移出分组</span></button>
+            ${options.allowUrl ? '<button class="hw-btn" type="button" data-registry-add-url><i data-lucide="link"></i><span>添加 URL</span></button>' : ''}
+            <button class="hw-btn" type="button" data-registry-group-selected ${selectedIds.length ? '' : 'disabled'}><i data-lucide="folder-plus"></i><span>加入分组</span></button>
+            <button class="hw-btn" type="button" data-registry-group-remove ${selectedGroupIds.length ? '' : 'disabled'}><i data-lucide="folder-minus"></i><span>移出分组</span></button>
         </div>
     </div>`;
 }
@@ -7917,7 +7917,7 @@ function renderRegistryEditableTags(item={}, context='side'){
     const suggestions = registrySuggestedTags([item]).slice(0, 6);
     return `<div class="registry-detail-block registry-editable-tags"><div class="registry-detail-heading"><strong>标签</strong><button type="button" data-registry-tag-editor="${escapeAttr(item.id || '')}" title="添加标签"><i data-lucide="plus"></i></button></div>
         <div class="registry-tag-chip-list">${tags.map(tag => `<span class="registry-tag-chip"><em>${escapeHtml(tag.name || tag.tag || String(tag))}</em>${tag.id ? `<button type="button" data-registry-tag-delete="${escapeAttr(tag.id)}" data-asset-id="${escapeAttr(item.id || '')}" title="删除标签 ${escapeAttr(tag.name || '')}" aria-label="删除标签 ${escapeAttr(tag.name || '')}"><i data-lucide="x"></i></button>` : ''}</span>`).join('') || '<span class="registry-tag-empty">暂无标签</span>'}</div>
-        ${editing ? `<div class="registry-detail-tag-presets">${suggestions.map(tag => `<button type="button" data-registry-tag-preset="${escapeAttr(tag)}" data-asset-id="${escapeAttr(item.id || '')}">${escapeHtml(tag)}</button>`).join('')}</div><div class="registry-inline-tag-editor"><input id="registryTagInput-${escapeAttr(context)}" type="text" placeholder="输入标签，多个用逗号分隔" maxlength="500" data-registry-tag-input="${escapeAttr(item.id || '')}"><button class="asset-btn primary" type="button" data-registry-tag-save="${escapeAttr(item.id || '')}" data-tag-context="${escapeAttr(context)}"><i data-lucide="check"></i><span>添加</span></button><button class="asset-btn" type="button" data-registry-tag-editor=""><span>取消</span></button></div>` : ''}
+        ${editing ? `<div class="registry-detail-tag-presets">${suggestions.map(tag => `<button type="button" data-registry-tag-preset="${escapeAttr(tag)}" data-asset-id="${escapeAttr(item.id || '')}">${escapeHtml(tag)}</button>`).join('')}</div><div class="registry-inline-tag-editor"><input id="registryTagInput-${escapeAttr(context)}" type="text" placeholder="输入标签，多个用逗号分隔" maxlength="500" data-registry-tag-input="${escapeAttr(item.id || '')}"><button class="hw-btn hw-btn-gold" type="button" data-registry-tag-save="${escapeAttr(item.id || '')}" data-tag-context="${escapeAttr(context)}"><i data-lucide="check"></i><span>添加</span></button><button class="hw-btn" type="button" data-registry-tag-editor=""><span>取消</span></button></div>` : ''}
     </div>`;
 }
 function renderRegistryRelations(item={}){
@@ -8006,7 +8006,7 @@ async function openRegistryAssetInBoard(boardId,assetId){
     }));
 }
 function registryDetailPanelToggleButton(collapsed=registryDetailPanelCollapsed){
-    return `<button class="asset-icon-btn registry-detail-toggle" type="button" data-registry-detail-toggle aria-expanded="${!collapsed}" title="${collapsed ? '展开资产详情' : '折叠资产详情'}" aria-label="${collapsed ? '展开资产详情' : '折叠资产详情'}"><i data-lucide="${collapsed ? 'panel-right-open' : 'panel-right-close'}"></i></button>`;
+    return `<button class="hw-btn hw-btn-icon registry-detail-toggle" type="button" data-registry-detail-toggle aria-expanded="${!collapsed}" title="${collapsed ? '展开资产详情' : '折叠资产详情'}" aria-label="${collapsed ? '展开资产详情' : '折叠资产详情'}"><i data-lucide="${collapsed ? 'panel-right-open' : 'panel-right-close'}"></i></button>`;
 }
 function renderRegistryDetailPanel(){
     if(registryDetailPanelCollapsed){
@@ -8095,7 +8095,7 @@ function renderRegistryDetail(){
     const originalMediaUrl = mediaType === 'image' && item.id ? `/api/asset-registry/assets/${encodeURIComponent(item.id)}/media` : (item.url || '');
     const detailPreviewItem = mediaType === 'image' ? {...item,url:originalMediaUrl} : item;
     return `<div class="panel-head"><div class="panel-title"><strong>资产详情</strong><span>${escapeHtml(registryAssetTypeLabel(item))} · ${escapeHtml(item.storage_root_name || '统一资产')}</span></div>
-        <div class="panel-actions">${item.is_remote ? `<button class="asset-icon-btn" type="button" data-registry-delete-remote="${escapeAttr(item.id)}" title="删除 URL 资产"><i data-lucide="trash-2"></i></button>` : ''}${registryDetailPanelToggleButton()}</div></div>
+        <div class="panel-actions">${item.is_remote ? `<button class="hw-btn hw-btn-icon" type="button" data-registry-delete-remote="${escapeAttr(item.id)}" title="删除 URL 资产"><i data-lucide="trash-2"></i></button>` : ''}${registryDetailPanelToggleButton()}</div></div>
         <div class="registry-review-entry"><button type="button" data-review-open><i data-lucide="messages-square"></i>审阅批注</button><button type="button" data-review-share-selected><i data-lucide="share-2"></i>创建分享</button></div>
         <div class="detail-scroll">
             <div class="detail-media"><button class="detail-media-frame detail-media-zoomable" type="button" aria-label="放大预览 ${escapeAttr(item.name || 'asset')}" data-registry-preview="${escapeAttr(item.id)}">${mediaType === 'video' ? `<span class="asset-thumb detail-media-video-thumb">${assetThumb(detailPreviewItem)}</span>` : assetThumb(detailPreviewItem)}</button></div>
@@ -8126,7 +8126,7 @@ function renderRegistryManager(){
     const coverflowLabel = coverflowAvailable ? '打开当前素材库 Coverflow' : '当前素材库没有图片或视频';
     const embeddedVault = document.documentElement.classList.contains('vault-shell-embedded');
     root.innerHTML = `${renderRegistryOverview()}<aside class="asset-panel asset-nav registry-nav" ${embeddedVault ? 'id="registryFacetPopover" popover="auto" aria-label="智能筛选"' : ''}>
-        <div class="panel-head"><div class="panel-title"><strong>智能筛选</strong><span>点击包含，减号排除</span></div><button class="asset-icon-btn registry-coverflow-open" type="button" data-registry-coverflow-open ${coverflowAvailable ? '' : 'disabled'} aria-label="${coverflowLabel}" title="${coverflowLabel}"><i data-lucide="images"></i></button></div>
+        <div class="panel-head"><div class="panel-title"><strong>智能筛选</strong><span>点击包含，减号排除</span></div><button class="hw-btn hw-btn-icon registry-coverflow-open" type="button" data-registry-coverflow-open ${coverflowAvailable ? '' : 'disabled'} aria-label="${coverflowLabel}" title="${coverflowLabel}"><i data-lucide="images"></i></button></div>
         <div class="nav-scroll registry-facets">
             <section class="registry-facet-section"><div class="registry-facet-title"><strong>快捷入口</strong></div>
                 ${renderRegistryFacetRow({id:'7',name:'最近 7 天',count:''}, 'recent', String(registryRecentDays || ''))}
@@ -8216,18 +8216,18 @@ function renderProjectManager(){
     const templateTypes = project?.template?.entity_types || AssetRegistryDefaultEntityTypes;
     const selectedEntity = entities.find(item => item.id === selectedProjectEntityId) || null;
     root.innerHTML = `<aside class="asset-panel asset-nav asset-context-nav">
-        <div class="panel-head"><div class="panel-title"><strong>智能筛选</strong><span>点击包含，减号排除</span></div><div class="panel-actions"><button class="asset-icon-btn" type="button" data-project-create title="新建项目"><i data-lucide="plus"></i></button></div></div>
+        <div class="panel-head"><div class="panel-title"><strong>智能筛选</strong><span>点击包含，减号排除</span></div><div class="panel-actions"><button class="hw-btn hw-btn-icon" type="button" data-project-create title="新建项目"><i data-lucide="plus"></i></button></div></div>
         <div class="nav-scroll registry-facets asset-smart-filter-scroll">${renderAssetSmartFilterContents('项目制片')}<section class="asset-context-tree"><div class="nav-section-title">项目层级</div><div class="nav-tree">${projects.map(item => `<button class="tree-row tree-parent ${item.id===activeProjectId?'active':''}" type="button" data-project="${escapeAttr(item.id)}"><span class="tree-row-icon"><i data-lucide="clapperboard"></i></span><span class="tree-row-name">${escapeHtml(item.name)}</span><span class="tree-row-count">${Number(item.asset_count || 0)}</span></button>`).join('') || '<div class="tree-empty">新建项目后开始制片管理</div>'}</div></section></div>
     </aside>
     <section class="asset-panel asset-content project-board">
-        <div class="content-toolbar"><div class="content-heading"><strong>${escapeHtml(project?.name || '项目制片')}</strong><span>${entities.length} 个条目 · ${Number(project?.asset_count || projectBoard?.assets?.length || 0)} 个素材</span></div><div class="asset-tools"><button class="asset-btn" type="button" data-project-proxy-settings ${project?'':'disabled'}><i data-lucide="film"></i><span>代理设置</span></button><button class="asset-btn" type="button" data-project-template ${project?'':'disabled'}><i data-lucide="settings-2"></i><span>模板设置</span></button><button class="asset-btn" type="button" data-project-add-entity ${project?'':'disabled'}><i data-lucide="plus"></i><span>新增条目</span></button></div></div>
+        <div class="content-toolbar"><div class="content-heading"><strong>${escapeHtml(project?.name || '项目制片')}</strong><span>${entities.length} 个条目 · ${Number(project?.asset_count || projectBoard?.assets?.length || 0)} 个素材</span></div><div class="asset-tools"><button class="hw-btn" type="button" data-project-proxy-settings ${project?'':'disabled'}><i data-lucide="film"></i><span>代理设置</span></button><button class="hw-btn" type="button" data-project-template ${project?'':'disabled'}><i data-lucide="settings-2"></i><span>模板设置</span></button><button class="hw-btn" type="button" data-project-add-entity ${project?'':'disabled'}><i data-lucide="plus"></i><span>新增条目</span></button></div></div>
         <div class="project-gates">${gates.filter(gate => !gate.entity_id).map(gate => `<button type="button" class="project-gate ${escapeAttr(gate.status)}" data-project-gate="${escapeAttr(gate.id)}" data-status="${escapeAttr(gate.status)}"><span>${escapeHtml(gate.code)}</span><strong>${escapeHtml(gate.name)}</strong><em>${escapeHtml(projectStatusLabel(gate.status))}</em></button>`).join('')}</div>
         <div class="content-scroll"><div class="project-entity-groups">${templateTypes.map(type => {
             const list = entities.filter(item => item.entity_type === type.id);
             return `<section class="project-entity-group"><header><strong>${escapeHtml(type.name || type.id)}</strong><span>${list.length}</span></header><div>${list.map(item => `<button class="project-entity-card ${item.id===selectedProjectEntityId?'active':''}" type="button" data-project-entity="${escapeAttr(item.id)}"><span class="project-entity-code">${escapeHtml(item.code || type.name || '')}</span><strong>${escapeHtml(item.name)}</strong><em class="${escapeAttr(item.status)}">${escapeHtml(projectStatusLabel(item.status))}</em><small>${(item.assets || []).length} 个素材</small></button>`).join('') || '<div class="tree-empty">暂无条目</div>'}</div></section>`;
         }).join('')}</div></div>
     </section>
-    <aside class="asset-panel asset-detail">${selectedEntity ? `<div class="panel-head"><div class="panel-title"><strong>${escapeHtml(selectedEntity.name)}</strong><span>${escapeHtml(selectedEntity.code || selectedEntity.entity_type)}</span></div></div><div class="detail-scroll"><div class="detail-body"><div class="detail-meta-grid"><div class="detail-meta"><span>状态</span><strong>${escapeHtml(projectStatusLabel(selectedEntity.status))}</strong></div><div class="detail-meta"><span>关联素材</span><strong>${(selectedEntity.assets || []).length}</strong></div></div><div class="asset-tools project-detail-actions"><button class="asset-btn" type="button" data-project-entity-status="${escapeAttr(selectedEntity.id)}" data-status="${escapeAttr(selectedEntity.status)}"><i data-lucide="circle-dot-dashed"></i><span>推进状态</span></button><button class="asset-btn primary" type="button" data-project-link-selected ${registrySelectedIds.size?'':'disabled'}><i data-lucide="link"></i><span>关联已选统一资产（${registrySelectedIds.size}）</span></button></div><div class="project-linked-assets">${(selectedEntity.assets || []).map(item => `<div class="project-linked-card"><div class="asset-thumb">${assetThumb({...item,url:item.public_url})}</div><span>${escapeHtml(item.name)}</span></div>`).join('') || '<div class="detail-empty"><span>尚未关联素材</span></div>'}</div></div></div>` : '<div class="panel-head"><div class="panel-title"><strong>条目详情</strong><span>选择剧集、角色、镜头或任务</span></div></div><div class="detail-empty"><i data-lucide="clapperboard"></i><span>暂无条目</span></div>'}</aside>`;
+    <aside class="asset-panel asset-detail">${selectedEntity ? `<div class="panel-head"><div class="panel-title"><strong>${escapeHtml(selectedEntity.name)}</strong><span>${escapeHtml(selectedEntity.code || selectedEntity.entity_type)}</span></div></div><div class="detail-scroll"><div class="detail-body"><div class="detail-meta-grid"><div class="detail-meta"><span>状态</span><strong>${escapeHtml(projectStatusLabel(selectedEntity.status))}</strong></div><div class="detail-meta"><span>关联素材</span><strong>${(selectedEntity.assets || []).length}</strong></div></div><div class="asset-tools project-detail-actions"><button class="hw-btn" type="button" data-project-entity-status="${escapeAttr(selectedEntity.id)}" data-status="${escapeAttr(selectedEntity.status)}"><i data-lucide="circle-dot-dashed"></i><span>推进状态</span></button><button class="hw-btn hw-btn-gold" type="button" data-project-link-selected ${registrySelectedIds.size?'':'disabled'}><i data-lucide="link"></i><span>关联已选统一资产（${registrySelectedIds.size}）</span></button></div><div class="project-linked-assets">${(selectedEntity.assets || []).map(item => `<div class="project-linked-card"><div class="asset-thumb">${assetThumb({...item,url:item.public_url})}</div><span>${escapeHtml(item.name)}</span></div>`).join('') || '<div class="detail-empty"><span>尚未关联素材</span></div>'}</div></div></div>` : '<div class="panel-head"><div class="panel-title"><strong>条目详情</strong><span>选择剧集、角色、镜头或任务</span></div></div><div class="detail-empty"><i data-lucide="clapperboard"></i><span>暂无条目</span></div>'}</aside>`;
 }
 const AssetRegistryDefaultEntityTypes = [
     {id:'episode',name:'剧集'},{id:'scene',name:'场景'},{id:'shot',name:'镜头'},{id:'character',name:'角色'},{id:'task',name:'任务'}
@@ -8247,7 +8247,7 @@ function renderAssetManager(){
             <div class="panel-head">
                 <div class="panel-title"><strong>智能筛选</strong><span>点击包含，减号排除</span></div>
                 <div class="panel-actions compact-actions">
-                    ${assetTreeEdit?.placement === 'head' ? '' : '<button class="asset-icon-btn" type="button" data-asset-lib-new title="新建资产库"><i data-lucide="plus"></i></button>'}
+                    ${assetTreeEdit?.placement === 'head' ? '' : '<button class="hw-btn hw-btn-icon" type="button" data-asset-lib-new title="新建资产库"><i data-lucide="plus"></i></button>'}
                     ${renderHeadTreeInlineEdit(assetTreeEdit, 'assetTreeEditInput', 'data-asset-tree-edit-save', 'data-asset-tree-edit-cancel')}
                 </div>
             </div>
@@ -8266,7 +8266,7 @@ function renderAssetManager(){
                 </div>
                 <div class="asset-tools">
                     <label class="asset-search-wrap"><i data-lucide="search"></i><input id="assetSearch" class="asset-search" type="search" value="${escapeAttr(assetQuery)}" placeholder="搜索素材"></label>
-                    <button class="asset-btn ${assetManageMode ? 'primary' : ''}" type="button" data-asset-manage><i data-lucide="list-checks"></i><span>${assetManageMode ? '完成管理' : '批量管理'}</span></button>
+                    <button class="${assetManageMode ? 'hw-btn hw-btn-gold' : 'hw-btn'}" type="button" data-asset-manage><i data-lucide="list-checks"></i><span>${assetManageMode ? '完成管理' : '批量管理'}</span></button>
                 </div>
             </div>
             ${renderAssetClipboardBar()}
@@ -8276,18 +8276,18 @@ function renderAssetManager(){
                     <span class="manage-group-title">管理</span>
                     <span class="manage-summary">已选 ${selectedAssetIds.size} 个，其中 ${imageCount} 张图片</span>
                     <div class="asset-tools">
-                        <button class="asset-btn" type="button" data-asset-select-all ${items.length ? '' : 'disabled'}><i data-lucide="check-square"></i><span>全选</span></button>
-                        <button class="asset-btn" type="button" data-asset-clear-selection ${selectedAssetIds.size ? '' : 'disabled'}><i data-lucide="square"></i><span>清空</span></button>
-                        <button class="asset-btn" type="button" data-asset-cut-selected ${selectedAssetIds.size ? '' : 'disabled'}><i data-lucide="scissors"></i><span>剪切</span></button>
-                        <button class="asset-btn" type="button" data-asset-copy-selected ${selectedAssetIds.size ? '' : 'disabled'}><i data-lucide="copy"></i><span>复制</span></button>
-                        <button class="asset-btn" type="button" data-asset-download-selected ${selectedAssetIds.size ? '' : 'disabled'}><i data-lucide="download"></i><span>下载所选</span></button>
-                        <button class="asset-btn" type="button" data-asset-copy-to-canvas ${selectedAssetIds.size ? '' : 'disabled'}><i data-lucide="clipboard-paste"></i><span>复制到画布</span></button>
-                        <button class="asset-btn danger" type="button" data-asset-delete-selected ${selectedAssetIds.size ? '' : 'disabled'}><i data-lucide="trash-2"></i><span>删除所选</span></button>
+                        <button class="hw-btn" type="button" data-asset-select-all ${items.length ? '' : 'disabled'}><i data-lucide="check-square"></i><span>全选</span></button>
+                        <button class="hw-btn" type="button" data-asset-clear-selection ${selectedAssetIds.size ? '' : 'disabled'}><i data-lucide="square"></i><span>清空</span></button>
+                        <button class="hw-btn" type="button" data-asset-cut-selected ${selectedAssetIds.size ? '' : 'disabled'}><i data-lucide="scissors"></i><span>剪切</span></button>
+                        <button class="hw-btn" type="button" data-asset-copy-selected ${selectedAssetIds.size ? '' : 'disabled'}><i data-lucide="copy"></i><span>复制</span></button>
+                        <button class="hw-btn" type="button" data-asset-download-selected ${selectedAssetIds.size ? '' : 'disabled'}><i data-lucide="download"></i><span>下载所选</span></button>
+                        <button class="hw-btn" type="button" data-asset-copy-to-canvas ${selectedAssetIds.size ? '' : 'disabled'}><i data-lucide="clipboard-paste"></i><span>复制到画布</span></button>
+                        <button class="hw-btn hw-btn-danger" type="button" data-asset-delete-selected ${selectedAssetIds.size ? '' : 'disabled'}><i data-lucide="trash-2"></i><span>删除所选</span></button>
                     </div>
                 </div>
                 <div class="manage-group manage-ai-group">
                     <span class="manage-group-title">AI 处理</span>
-                    <button class="asset-btn" type="button" data-asset-classify-selected ${imageCount && !assetClassifyBusy ? '' : 'disabled'}><i data-lucide="${assetClassifyBusy ? 'loader-2' : 'tags'}"></i><span>${assetClassifyBusy ? '分类中' : '智能分类'}</span></button>
+                    <button class="hw-btn" type="button" data-asset-classify-selected ${imageCount && !assetClassifyBusy ? '' : 'disabled'}><i data-lucide="${assetClassifyBusy ? 'loader-2' : 'tags'}"></i><span>${assetClassifyBusy ? '分类中' : '智能分类'}</span></button>
                 </div>
             </div>
             <div class="content-scroll">
@@ -8314,7 +8314,7 @@ function renderWorkflowManager(){
             <div class="panel-head">
                 <div class="panel-title"><strong>智能筛选</strong><span>点击包含，减号排除</span></div>
                 <div class="panel-actions compact-actions">
-                    ${workflowTreeEdit?.placement === 'head' ? '' : '<button class="asset-icon-btn" type="button" data-workflow-cat-new title="新建工作流分组"><i data-lucide="folder-plus"></i></button>'}
+                    ${workflowTreeEdit?.placement === 'head' ? '' : '<button class="hw-btn hw-btn-icon" type="button" data-workflow-cat-new title="新建工作流分组"><i data-lucide="folder-plus"></i></button>'}
                     ${renderHeadTreeInlineEdit(workflowTreeEdit, 'workflowTreeEditInput', 'data-workflow-tree-edit-save', 'data-workflow-tree-edit-cancel')}
                 </div>
             </div>
@@ -8350,16 +8350,16 @@ function renderWorkflowManager(){
                 </div>
                 <div class="asset-tools">
                     <label class="asset-search-wrap"><i data-lucide="search"></i><input id="workflowSearch" class="asset-search" type="search" value="${escapeAttr(workflowQuery)}" placeholder="搜索工作流"></label>
-                    <button class="asset-btn ${workflowManageMode ? 'primary' : ''}" type="button" data-workflow-manage><i data-lucide="list-checks"></i><span>${workflowManageMode ? '完成管理' : '批量管理'}</span></button>
+                    <button class="${workflowManageMode ? 'hw-btn hw-btn-gold' : 'hw-btn'}" type="button" data-workflow-manage><i data-lucide="list-checks"></i><span>${workflowManageMode ? '完成管理' : '批量管理'}</span></button>
                 </div>
             </div>
             <div class="manage-tools">
                 <span>已选择 ${selectedWorkflowIds.size} 个工作流。</span>
                 <div class="asset-tools">
-                    <button class="asset-btn" type="button" data-workflow-select-all ${items.length ? '' : 'disabled'}><i data-lucide="check-square"></i><span>全选</span></button>
-                    <button class="asset-btn" type="button" data-workflow-clear-selection ${selectedWorkflowIds.size ? '' : 'disabled'}><i data-lucide="square"></i><span>清空</span></button>
-                    <button class="asset-btn" type="button" data-workflow-export-selected ${selectedWorkflowIds.size ? '' : 'disabled'}><i data-lucide="download"></i><span>导出所选</span></button>
-                    <button class="asset-btn danger" type="button" data-workflow-delete-selected ${selectedWorkflowIds.size ? '' : 'disabled'}><i data-lucide="trash-2"></i><span>删除所选</span></button>
+                    <button class="hw-btn" type="button" data-workflow-select-all ${items.length ? '' : 'disabled'}><i data-lucide="check-square"></i><span>全选</span></button>
+                    <button class="hw-btn" type="button" data-workflow-clear-selection ${selectedWorkflowIds.size ? '' : 'disabled'}><i data-lucide="square"></i><span>清空</span></button>
+                    <button class="hw-btn" type="button" data-workflow-export-selected ${selectedWorkflowIds.size ? '' : 'disabled'}><i data-lucide="download"></i><span>导出所选</span></button>
+                    <button class="hw-btn hw-btn-danger" type="button" data-workflow-delete-selected ${selectedWorkflowIds.size ? '' : 'disabled'}><i data-lucide="trash-2"></i><span>删除所选</span></button>
                 </div>
             </div>
             <div class="content-scroll">
@@ -8420,10 +8420,10 @@ function renderWorkflowDetail(item){
         <div class="panel-head">
             <div class="panel-title"><strong>工作流详情</strong><span>${escapeHtml(workflowKindLabel(item))}</span></div>
             <div class="panel-actions">
-                ${workflow_id ? `<a class="asset-icon-btn" href="/static/pages/workflow.html?id=${encodeURIComponent(workflow_id)}" title="编辑工作流" aria-label="编辑工作流"><i data-lucide="external-link"></i></a>` : ''}
-                <button class="asset-icon-btn" type="button" data-workflow-download="${escapeAttr(asset_id)}" title="导出工作流"><i data-lucide="download"></i></button>
-                <button class="asset-icon-btn" type="button" data-workflow-rename="${escapeAttr(asset_id)}" title="重命名"><i data-lucide="pencil"></i></button>
-                <button class="asset-icon-btn danger ${pendingDeleteAssetId === asset_id ? 'detail-confirm' : ''}" type="button" data-workflow-delete="${escapeAttr(asset_id)}" title="${pendingDeleteAssetId === asset_id ? '再次点击确认删除' : '删除'}"><i data-lucide="trash-2"></i></button>
+                ${workflow_id ? `<a class="hw-btn hw-btn-icon" href="/static/pages/workflow.html?id=${encodeURIComponent(workflow_id)}" title="编辑工作流" aria-label="编辑工作流"><i data-lucide="external-link"></i></a>` : ''}
+                <button class="hw-btn hw-btn-icon" type="button" data-workflow-download="${escapeAttr(asset_id)}" title="导出工作流"><i data-lucide="download"></i></button>
+                <button class="hw-btn hw-btn-icon" type="button" data-workflow-rename="${escapeAttr(asset_id)}" title="重命名"><i data-lucide="pencil"></i></button>
+                <button class="hw-btn hw-btn-icon hw-btn-danger ${pendingDeleteAssetId === asset_id ? 'detail-confirm' : ''}" type="button" data-workflow-delete="${escapeAttr(asset_id)}" title="${pendingDeleteAssetId === asset_id ? '再次点击确认删除' : '删除'}"><i data-lucide="trash-2"></i></button>
             </div>
         </div>
         <div class="detail-scroll">
@@ -8458,8 +8458,8 @@ function renderAssetClipboardBar(){
     return `<div class="asset-clipboard-bar">
         <div class="asset-clipboard-info"><i data-lucide="clipboard"></i><span>${escapeHtml(modeLabel)}了 ${assetClipboard.ids.length} 个素材</span></div>
         <div class="asset-tools">
-            <button class="asset-btn primary" type="button" data-asset-paste-clipboard ${sameTarget && assetClipboard.mode === 'cut' ? 'disabled' : ''}><i data-lucide="clipboard-paste"></i><span>${escapeHtml(pasteText)}</span></button>
-            <button class="asset-icon-btn" type="button" data-asset-clear-clipboard title="清空剪贴板"><i data-lucide="x"></i></button>
+            <button class="hw-btn hw-btn-gold" type="button" data-asset-paste-clipboard ${sameTarget && assetClipboard.mode === 'cut' ? 'disabled' : ''}><i data-lucide="clipboard-paste"></i><span>${escapeHtml(pasteText)}</span></button>
+            <button class="hw-btn hw-btn-icon" type="button" data-asset-clear-clipboard title="清空剪贴板"><i data-lucide="x"></i></button>
         </div>
     </div>`;
 }
@@ -8556,8 +8556,8 @@ function renderAvatarRegistrationCard(item, platform, reg, busy){
             <div class="avatar-head"><i data-lucide="badge-check"></i><span>已认证可用</span>${tag}</div>
             <div class="avatar-uri" title="只能在 ${escapeAttr(avatarPlatformLabel(platform))} 平台的视频生成中通过 @ 调用">${escapeHtml(reg.asset_uri)}</div>
             <div class="asset-tools">
-                <button class="asset-btn" type="button" data-avatar-copy="${escapeAttr(reg.asset_uri)}"><i data-lucide="copy"></i><span>复制 asset:// 地址</span></button>
-                <button class="asset-btn" type="button" data-avatar-register="${escapeAttr(item.id)}" ${provAttr} ${busy ? 'disabled' : ''}><i data-lucide="refresh-cw"></i><span>${busy ? '处理中…' : '重新注册'}</span></button>
+                <button class="hw-btn" type="button" data-avatar-copy="${escapeAttr(reg.asset_uri)}"><i data-lucide="copy"></i><span>复制 asset:// 地址</span></button>
+                <button class="hw-btn" type="button" data-avatar-register="${escapeAttr(item.id)}" ${provAttr} ${busy ? 'disabled' : ''}><i data-lucide="refresh-cw"></i><span>${busy ? '处理中…' : '重新注册'}</span></button>
             </div>
         </div>`;
     }
@@ -8566,7 +8566,7 @@ function renderAvatarRegistrationCard(item, platform, reg, busy){
             <div class="avatar-head"><i data-lucide="loader"></i><span>审核中</span>${tag}</div>
             <div class="avatar-hint">已提交到 ${escapeHtml(avatarPlatformLabel(platform))} 审核（任务 ${escapeHtml(reg.task_id || '')}），通过后会自动生成 asset:// 地址。审核通常需要几十秒到几分钟。</div>
             <div class="asset-tools">
-                <button class="asset-btn primary" type="button" data-avatar-check="${escapeAttr(item.id)}" ${provAttr} ${busy ? 'disabled' : ''}><i data-lucide="refresh-cw"></i><span>${busy ? '查询中…' : '刷新审核状态'}</span></button>
+                <button class="hw-btn hw-btn-gold" type="button" data-avatar-check="${escapeAttr(item.id)}" ${provAttr} ${busy ? 'disabled' : ''}><i data-lucide="refresh-cw"></i><span>${busy ? '查询中…' : '刷新审核状态'}</span></button>
             </div>
         </div>`;
     }
@@ -8574,7 +8574,7 @@ function renderAvatarRegistrationCard(item, platform, reg, busy){
         <div class="avatar-head"><i data-lucide="x-circle"></i><span>审核未通过</span>${tag}</div>
         <div class="avatar-hint warn">${escapeHtml(reg.detail || '审核未通过，请更换素材后重试。')}</div>
         <div class="asset-tools">
-            <button class="asset-btn" type="button" data-avatar-register="${escapeAttr(item.id)}" ${provAttr} ${busy ? 'disabled' : ''}><i data-lucide="refresh-cw"></i><span>${busy ? '处理中…' : '重新提交'}</span></button>
+            <button class="hw-btn" type="button" data-avatar-register="${escapeAttr(item.id)}" ${provAttr} ${busy ? 'disabled' : ''}><i data-lucide="refresh-cw"></i><span>${busy ? '处理中…' : '重新提交'}</span></button>
         </div>
     </div>`;
 }
@@ -8608,7 +8608,7 @@ function renderAvatarSection(item){
             ${select}
             ${noKey ? '<div class="avatar-hint warn">该平台尚未配置 API Key。</div>' : ''}
             ${alreadyRegistered ? '<div class="avatar-hint">该平台已注册，再次提交会覆盖该平台的认证。</div>' : ''}
-            <button class="asset-btn primary" type="button" data-avatar-register="${escapeAttr(item.id)}" data-avatar-prov="${escapeAttr(selected?.id || '')}" ${busy || noKey ? 'disabled' : ''}><i data-lucide="user-round-plus"></i><span>${busy ? '注册中，请稍候…' : (alreadyRegistered ? '重新注册到该平台' : '注册并等待审核')}</span></button>`;
+            <button class="hw-btn hw-btn-gold" type="button" data-avatar-register="${escapeAttr(item.id)}" data-avatar-prov="${escapeAttr(selected?.id || '')}" ${busy || noKey ? 'disabled' : ''}><i data-lucide="user-round-plus"></i><span>${busy ? '注册中，请稍候…' : (alreadyRegistered ? '重新注册到该平台' : '注册并等待审核')}</span></button>`;
     }
     return `<div class="avatar-section">
         ${cards}
@@ -8624,8 +8624,8 @@ function renderAssetDetail(item){
             <div class="panel-head">
                 <div class="panel-title"><strong>编辑素材</strong><span>当前分组内直接保存</span></div>
                 <div class="panel-actions">
-                    <button class="asset-btn primary" type="button" data-asset-edit-save="${escapeAttr(item.id)}"><i data-lucide="check"></i><span>保存</span></button>
-                    <button class="asset-icon-btn" type="button" data-asset-edit-cancel title="取消"><i data-lucide="x"></i></button>
+                    <button class="hw-btn hw-btn-gold" type="button" data-asset-edit-save="${escapeAttr(item.id)}"><i data-lucide="check"></i><span>保存</span></button>
+                    <button class="hw-btn hw-btn-icon" type="button" data-asset-edit-cancel title="取消"><i data-lucide="x"></i></button>
                 </div>
             </div>
             <div class="detail-scroll">
@@ -8645,9 +8645,9 @@ function renderAssetDetail(item){
         <div class="panel-head">
             <div class="panel-title"><strong>素材预览</strong><span>${escapeHtml(assetKindLabel(item))}</span></div>
             <div class="panel-actions">
-                <button class="asset-icon-btn" type="button" data-asset-download="${escapeAttr(item.id)}" title="下载素材"><i data-lucide="download"></i></button>
-                <button class="asset-icon-btn" type="button" data-asset-edit-start="${escapeAttr(item.id)}" title="编辑"><i data-lucide="pencil"></i></button>
-                <button class="asset-icon-btn danger ${pendingDeleteAssetId === item.id ? 'detail-confirm' : ''}" type="button" data-asset-delete="${escapeAttr(item.id)}" title="${pendingDeleteAssetId === item.id ? '再次点击确认删除' : '删除'}"><i data-lucide="trash-2"></i></button>
+                <button class="hw-btn hw-btn-icon" type="button" data-asset-download="${escapeAttr(item.id)}" title="下载素材"><i data-lucide="download"></i></button>
+                <button class="hw-btn hw-btn-icon" type="button" data-asset-edit-start="${escapeAttr(item.id)}" title="编辑"><i data-lucide="pencil"></i></button>
+                <button class="hw-btn hw-btn-icon hw-btn-danger ${pendingDeleteAssetId === item.id ? 'detail-confirm' : ''}" type="button" data-asset-delete="${escapeAttr(item.id)}" title="${pendingDeleteAssetId === item.id ? '再次点击确认删除' : '删除'}"><i data-lucide="trash-2"></i></button>
             </div>
         </div>
         <div class="detail-scroll">
@@ -8686,7 +8686,7 @@ function renderPromptManager(){
             <div class="panel-head">
                 <div class="panel-title"><strong>智能筛选</strong><span>点击包含，减号排除</span></div>
                 <div class="panel-actions compact-actions">
-                    ${promptTreeEdit?.placement === 'head' ? '' : '<button class="asset-icon-btn" type="button" data-prompt-lib-new title="新建提示词库"><i data-lucide="plus"></i></button>'}
+                    ${promptTreeEdit?.placement === 'head' ? '' : '<button class="hw-btn hw-btn-icon" type="button" data-prompt-lib-new title="新建提示词库"><i data-lucide="plus"></i></button>'}
                     ${renderHeadTreeInlineEdit(promptTreeEdit, 'promptTreeEditInput', 'data-prompt-tree-edit-save', 'data-prompt-tree-edit-cancel')}
                 </div>
             </div>
@@ -8705,16 +8705,16 @@ function renderPromptManager(){
                 </div>
                 <div class="asset-tools">
                     <label class="asset-search-wrap"><i data-lucide="search"></i><input id="promptSearch" class="asset-search" type="search" value="${escapeAttr(promptQuery)}" placeholder="搜索名称、说明或正文"></label>
-                    <button class="asset-btn primary" type="button" data-prompt-new ${readonly ? 'disabled' : ''}><i data-lucide="file-plus-2"></i><span>新增</span></button>
-                    <button class="asset-btn ${promptManageMode ? 'primary' : ''}" type="button" data-prompt-manage><i data-lucide="list-checks"></i><span>${promptManageMode ? '完成管理' : '批量管理'}</span></button>
+                    <button class="hw-btn hw-btn-gold" type="button" data-prompt-new ${readonly ? 'disabled' : ''}><i data-lucide="file-plus-2"></i><span>新增</span></button>
+                    <button class="${promptManageMode ? 'hw-btn hw-btn-gold' : 'hw-btn'}" type="button" data-prompt-manage><i data-lucide="list-checks"></i><span>${promptManageMode ? '完成管理' : '批量管理'}</span></button>
                 </div>
             </div>
             <div class="manage-tools">
                 <span>已选择 ${selectedPromptIds.size} 条提示词，支持拖拽框选或逐个勾选。</span>
                 <div class="asset-tools">
-                    <button class="asset-btn" type="button" data-prompt-select-all ${items.length && !readonly ? '' : 'disabled'}><i data-lucide="check-square"></i><span>全选</span></button>
-                    <button class="asset-btn" type="button" data-prompt-clear-selection ${selectedPromptIds.size ? '' : 'disabled'}><i data-lucide="square"></i><span>清空</span></button>
-                    <button class="asset-btn danger ${pendingBatchDelete === 'prompt' ? 'detail-confirm' : ''}" type="button" data-prompt-delete-selected ${readonly || !selectedPromptIds.size ? 'disabled' : ''}><i data-lucide="trash-2"></i><span>${pendingBatchDelete === 'prompt' ? '确认删除' : '删除所选'}</span></button>
+                    <button class="hw-btn" type="button" data-prompt-select-all ${items.length && !readonly ? '' : 'disabled'}><i data-lucide="check-square"></i><span>全选</span></button>
+                    <button class="hw-btn" type="button" data-prompt-clear-selection ${selectedPromptIds.size ? '' : 'disabled'}><i data-lucide="square"></i><span>清空</span></button>
+                    <button class="hw-btn hw-btn-danger ${pendingBatchDelete === 'prompt' ? 'detail-confirm' : ''}" type="button" data-prompt-delete-selected ${readonly || !selectedPromptIds.size ? 'disabled' : ''}><i data-lucide="trash-2"></i><span>${pendingBatchDelete === 'prompt' ? '确认删除' : '删除所选'}</span></button>
                 </div>
             </div>
             <div class="content-scroll">
@@ -8820,8 +8820,8 @@ function renderPromptDetail(item, readonly){
             <div class="panel-head">
                 <div class="panel-title"><strong>新增提示词</strong><span>保存到当前提示词库</span></div>
                 <div class="panel-actions">
-                    <button class="asset-btn primary" type="button" data-prompt-create-save><i data-lucide="check"></i><span>保存</span></button>
-                    <button class="asset-icon-btn" type="button" data-prompt-edit-cancel title="取消"><i data-lucide="x"></i></button>
+                    <button class="hw-btn hw-btn-gold" type="button" data-prompt-create-save><i data-lucide="check"></i><span>保存</span></button>
+                    <button class="hw-btn hw-btn-icon" type="button" data-prompt-edit-cancel title="取消"><i data-lucide="x"></i></button>
                 </div>
             </div>
             <div class="detail-scroll">
@@ -8840,8 +8840,8 @@ function renderPromptDetail(item, readonly){
             <div class="panel-head">
                 <div class="panel-title"><strong>编辑提示词</strong><span>在当前库内保存</span></div>
                 <div class="panel-actions">
-                    <button class="asset-btn primary" type="button" data-prompt-edit-save="${escapeAttr(item.id)}"><i data-lucide="check"></i><span>保存</span></button>
-                    <button class="asset-icon-btn" type="button" data-prompt-edit-cancel title="取消"><i data-lucide="x"></i></button>
+                    <button class="hw-btn hw-btn-gold" type="button" data-prompt-edit-save="${escapeAttr(item.id)}"><i data-lucide="check"></i><span>保存</span></button>
+                    <button class="hw-btn hw-btn-icon" type="button" data-prompt-edit-cancel title="取消"><i data-lucide="x"></i></button>
                 </div>
             </div>
             <div class="detail-scroll">
@@ -8859,8 +8859,8 @@ function renderPromptDetail(item, readonly){
         <div class="panel-head">
             <div class="panel-title"><strong>提示词预览</strong><span>${escapeHtml(promptCategoryLabel(item.category || 'custom'))}</span></div>
             <div class="panel-actions">
-                <button class="asset-icon-btn" type="button" data-prompt-edit-start="${escapeAttr(item.id)}" ${readonly ? 'disabled' : ''} title="编辑"><i data-lucide="pencil"></i></button>
-                <button class="asset-icon-btn danger ${pendingDeletePromptId === item.id ? 'detail-confirm' : ''}" type="button" data-prompt-delete="${escapeAttr(item.id)}" ${readonly ? 'disabled' : ''} title="${pendingDeletePromptId === item.id ? '再次点击确认删除' : '删除'}"><i data-lucide="trash-2"></i></button>
+                <button class="hw-btn hw-btn-icon" type="button" data-prompt-edit-start="${escapeAttr(item.id)}" ${readonly ? 'disabled' : ''} title="编辑"><i data-lucide="pencil"></i></button>
+                <button class="hw-btn hw-btn-icon hw-btn-danger ${pendingDeletePromptId === item.id ? 'detail-confirm' : ''}" type="button" data-prompt-delete="${escapeAttr(item.id)}" ${readonly ? 'disabled' : ''} title="${pendingDeletePromptId === item.id ? '再次点击确认删除' : '删除'}"><i data-lucide="trash-2"></i></button>
             </div>
         </div>
         <div class="detail-scroll">
@@ -9098,8 +9098,8 @@ function renderLocalUploadClipboardBar(){
     return `<div class="asset-clipboard-bar">
         <div class="asset-clipboard-info"><i data-lucide="clipboard"></i><span>已剪切 ${localUploadClipboard.ids.length} 个素材</span></div>
         <div class="asset-tools">
-            <button class="asset-btn primary" type="button" data-localup-paste-clipboard ${sameFolder ? 'disabled' : ''}><i data-lucide="clipboard-paste"></i><span>${sameFolder ? '切到其他文件夹后移动' : `移动到「${escapeHtml(hereLabel)}」`}</span></button>
-            <button class="asset-icon-btn" type="button" data-localup-clear-clipboard title="取消剪切"><i data-lucide="x"></i></button>
+            <button class="hw-btn hw-btn-gold" type="button" data-localup-paste-clipboard ${sameFolder ? 'disabled' : ''}><i data-lucide="clipboard-paste"></i><span>${sameFolder ? '切到其他文件夹后移动' : `移动到「${escapeHtml(hereLabel)}」`}</span></button>
+            <button class="hw-btn hw-btn-icon" type="button" data-localup-clear-clipboard title="取消剪切"><i data-lucide="x"></i></button>
         </div>
     </div>`;
 }

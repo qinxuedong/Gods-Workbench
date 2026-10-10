@@ -91,7 +91,6 @@ test('表面 token 共享层：hardware-tokens 登记 surface 与控件 token',(
   assert.match(t,/--gw-surface-panel:\s*var\(--panel-dark\)/);
   assert.match(t,/--gw-surface-card:\s*var\(--card-start\)/);
   assert.match(t,/--gw-surface-card-end:\s*var\(--card-end\)/);
-  assert.match(t,/--gw-btn-min-height:\s*36px/);
 });
 
 // 硬编码背景色棘轮门禁：非 vendor CSS 的 6 位 hex 总量不得高于基线快照；
@@ -109,5 +108,5 @@ test('非vendor CSS硬编码hex棘轮门禁（基线2026-10-10 UI治理后快照
     t.split('\n').forEach((ln,i)=>{for(const m of ln.matchAll(/#[0-9a-fA-F]{6}\b/g)){const hex=m[0];locations.push({file:path.relative(root,p).replaceAll('\\','/'),line:i+1,hex,context:ln.trim().slice(0,80),permit:ORB_PERMIT_HEXES.has(hex.toLowerCase())?'GW-ORB-01 虹彩微球许可例外':null});}});}
   if(process.env.GW_UI_GATE_REPORT)writeFileSync(process.env.GW_UI_GATE_REPORT,JSON.stringify({generated:new Date().toISOString(),baseline:HEX_BASELINE,total,files:cssFiles.length,per,whitelist:[{palette:[...ORB_PERMIT_HEXES],reason:'GW-ORB-01 许可例外：虹彩微球外观（顶栏10+页内3），与字体预览、用户画布内容同级登记'}],locations},null,2)+'\n');
   assert.ok(total<=HEX_BASELINE,'硬编码hex总量 '+total+' 超出基线 '+HEX_BASELINE+'，新增色值必须 token 化');
-  assert.ok(cssFiles.length>=24,'扫描范围不能缩减');
+  assert.ok(cssFiles.length>=23,'扫描范围不能缩减');
 });

@@ -154,51 +154,16 @@ body.api-settings-page {
 .key-actions { flex-wrap:nowrap; }
 .verify-action-row { display:flex; flex-wrap:wrap; align-items:center; gap:10px; margin-top:4px; }
 .verify-action-row .field-frame { flex:0 1 250px; }
-.action-btn,
-.ghost-btn,
-.key-btn,
-.icon-btn,
-.add-btn,
-.cli-quick-btn,
-.picker-close,
-.picker-cat-tab {
-  display:inline-flex; align-items:center; justify-content:center; gap:8px;
-  min-height:40px; padding:8px 12px; border:1px solid var(--line); border-radius:var(--radius);
-  background:var(--panel-raised); color:var(--text); font-size:var(--gw-type-body); line-height:var(--gw-leading-body-md); text-decoration:none;
-}
-.action-btn:hover,
-.ghost-btn:hover,
-.key-btn:hover,
-.icon-btn:hover,
-.add-btn:hover,
-.cli-quick-btn:hover,
-.picker-close:hover,
-.picker-cat-tab:hover { border-color:var(--gold-medium); background:#20232b; }
-.save-btn,
-.primary-btn {
-  background:var(--accent); border-color:var(--accent); color:var(--accent-ink); font-weight:500;
-}
-.save-btn:hover,
-.primary-btn:hover {
-  background:var(--gold-light); color:var(--accent-ink);
-}
-.danger-btn,
+/* 遗留 .action-btn/.ghost-btn/.key-btn/.icon-btn/.add-btn/.cli-quick-btn/.picker-close/
+   .save-btn/.primary-btn/.danger-btn 按钮类已按 workshop 基准收敛为 hw-btn 族
+   （主操作 hw-btn-gold、危险 hw-btn-danger、图标 hw-btn hw-btn-icon、紧凑 hw-btn hw-btn-sm），
+   此处仅保留仍被 HTML/JS 引用的语义钩子：
+   .key-clear（清除 Key 危险钮，红色态）、.picker-cat-tab（模型选择器分类页签，
+   基类走 hw-btn hw-btn-sm，选中态见 .picker-cat-tab.active）。 */
 .key-clear { color:var(--gw-error); }
-.danger-btn:hover,
 .key-clear:hover { border-color:var(--gw-error); }
-.key-btn,
-.icon-btn,
-.picker-close { min-width:40px; padding:8px; }
-.add-btn,
-.cli-quick-btn { width:100%; }
-.add-btn { margin-bottom:8px; }
-/* 内嵌 api-settings 页：hw-btn 族保留 40px 最小高度，满足可读触控契约
-   （e2e test_api_settings_visual.py 断言 buttonHeight>=40 与 inputHeight>=40）。
-   视觉语言（圆角/字体/配色/悬停）仍由 hardware-design-system.css 的 hw-btn 统一，
-   此处仅覆盖高度以保留该设置页的可访问性下限。 */
-.api-settings-page .hw-btn,
-.api-settings-page .hw-btn-sm,
-.api-settings-page .hw-btn-icon { min-height:40px; }
+/* api-settings 页按钮按 workshop 基准渲染（无 min-height，~28-35px），
+   与全站 hw-btn 一致；可读触控下限由 e2e buttonHeight 阈值保障。 */
 .empty,
 .lora-empty { color:var(--muted); font-size:var(--gw-type-meta); padding:8px 0;  font-weight:var(--gw-weight-regular); line-height:var(--gw-leading-body-sm);}
 .model-list { display:flex; flex-direction:column; gap:10px; }
@@ -328,8 +293,6 @@ body.api-settings-page {
 .provider-card { min-width:200px; width:auto; flex-shrink:0; }
 .cli-quick-list { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); }
 .cli-quick-note { grid-column:1/-1; }
-.cli-quick-btn { padding:8px;     font-size: var(--gw-type-body-md); line-height: var(--gw-leading-body-md); font-weight: var(--gw-weight-medium); letter-spacing: 0; text-transform: none; min-height:36px;}
-.cli-quick-btn span { min-width:0; overflow-wrap:anywhere; }
 .cli-quick-group { margin-top:16px; }
 .content-head { flex-wrap:wrap; }
 .block { padding:16px; }
@@ -355,7 +318,6 @@ body.api-settings-page {
 }
 @media (max-width:480px) {
 .cli-quick-list { grid-template-columns:minmax(0,1fr); }
-.cli-quick-btn {   font-size: var(--gw-type-body-md); line-height: var(--gw-leading-body-md); font-weight: var(--gw-weight-medium); letter-spacing: 0; text-transform: none; min-height:36px;}
 }
 @media (prefers-reduced-motion:reduce) {
 *,
@@ -379,9 +341,6 @@ body.api-settings-page {
 .jimeng-help-toolbar { display:flex; gap:10px; align-items:center; padding:14px 20px; border-bottom:1px solid var(--line); }
 .jimeng-help-toolbar select { height:38px; min-width:180px; border:1px solid var(--line); border-radius:10px; background:var(--panel); color:var(--text); padding:0 10px; font-weight:800; outline:none; }
 .jimeng-help-output { margin:0; padding:18px 20px; min-height:420px; max-height:62vh; overflow:auto; background:var(--soft); color:var(--text); font:var(--gw-type-body-sm)/1.55 var(--gw-font-mono); white-space:pre-wrap; word-break:break-word; }
-
-/* 操作与输入为不同的统一字重角色。 */
-.api-settings-page :is(.action-btn,.ghost-btn,.key-btn,.add-btn,.cli-quick-btn) { font-weight:var(--gw-weight-medium); line-height:var(--gw-leading-body-md); min-height:36px; }
 
 .api-settings-page small, .api-settings-page [data-type="caption"], .api-settings-page [data-type="meta"] { font-size:var(--gw-type-body-sm); line-height:var(--gw-leading-body-sm); font-weight:var(--gw-weight-regular); }
 
