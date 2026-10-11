@@ -34,10 +34,49 @@ def _infer_slot_type(name: str) -> str:
     return "*"
 
 
-def export_to_comfy_litegraph(document: dict[str, Any]) -> dict[str, Any]:
+def _api_widgets(node: dict[str, Any], schema: Any) -> list[Any]:
+    """API 字段只有经真实 Schema 排序后才能变成宿主的位置参数。"""
+    kind = node.get("kind") or node.get("class_type")
+    if not isinstance(schema, dict):
+        raise CleanroomException(422, "NODE_SCHEMA_REQUIRED", f"节点 {node.get('id')} ({kind}) 缺少真实参数 Schema，请连接 ComfyUI 后导出")
+    values = deepcopy(node.get("inputs") or {})
+    for widget in node.get("widgets") or []:
+        if isinstance(widget, dict) and "name" in widget:
+            values[widget["name"]] = deepcopy(widget.get("value"))
+    widgets = []
+    mapped = set()
+    missing_optional = False
+    for section in ("required", "optional"):
+        definitions = schema.get("input", {}).get(section, {})
+        order = schema.get("input_order", {}).get(section, list(definitions))
+        for field in order:
+            spec = definitions.get(field)
+            if not isinstance(spec, (list, tuple)) or not spec:
+                continue
+            options = spec[1] if len(spec) > 1 and isinstance(spec[1], dict) else {}
+            if options.get("forceInput") or not (isinstance(spec[0], list) or spec[0] in ("STRING", "INT", "FLOAT", "BOOLEAN")):
+                continue
+            mapped.add(field)
+            if field not in values:
+                if section == "required":
+                    raise CleanroomException(422, "INVALID_WORKFLOW", f"节点 {node.get('id')} 缺少参数 {field}")
+                missing_optional = True
+                continue
+            if missing_optional or isinstance(values[field], (list, tuple, dict)):
+                raise CleanroomException(422, "UNSUPPORTED_WIDGET_MAPPING", f"节点 {node.get('id')} 的参数无法无损转换，请使用原生图")
+            widgets.append(deepcopy(values[field]))
+            if options.get("control_after_generate"):
+                widgets.append("fixed")
+    if any(field not in mapped and not isinstance(value, (list, tuple)) for field, value in values.items()):
+        raise CleanroomException(422, "UNSUPPORTED_WIDGET_MAPPING", f"节点 {node.get('id')} 存在 Schema 未定义的参数")
+    return widgets
+
+
+def export_to_comfy_litegraph(document: dict[str, Any], schemas: dict | None = None) -> dict[str, Any]:
     """将工作流文档转换为合法的 ComfyUI LiteGraph JSON。"""
     if not isinstance(document, dict):
         return {}
+    schemas = schemas if schemas is not None else document.get("metadata", {}).get("node_schemas", {})
 
     # 若已经是符合 LiteGraph 标准的结构（nodes 且 node.inputs 为 list，且带有 links 数组）
     raw_nodes = document.get("nodes", [])
@@ -212,24 +251,23 @@ def export_to_comfy_litegraph(document: dict[str, Any]) -> dict[str, Any]:
         raw_widgets = node.get("widgets")
         native_inputs = (node.get('raw_payload') or {}).get('inputs')
         if not isinstance(native_inputs, list) and isinstance(node.get('inputs'), dict):
-            # API 图的编辑列表可能只包含一个改过的参数；其余输入仍必须保留。
-            values = {widget['name']: widget.get('value') for widget in (raw_widgets or [])
-                      if isinstance(widget, dict) and 'name' in widget} if isinstance(raw_widgets, list) else {}
-            for name, value in node['inputs'].items():
-                if not isinstance(value, (list, tuple)):
-                    widgets_values.append(deepcopy(values.get(name, value)))
+            if any(not isinstance(value, (list, tuple)) for value in node['inputs'].values()):
+                widgets_values = _api_widgets(node, (schemas or {}).get(class_name))
         elif isinstance(raw_widgets, list):
-            for w in raw_widgets:
-                if isinstance(w, dict) and "value" in w:
-                    widgets_values.append(w["value"])
-                elif not isinstance(w, dict):
-                    widgets_values.append(deepcopy(w))
+            for widget_value in raw_widgets:
+                if isinstance(widget_value, dict) and "value" in widget_value:
+                    widgets_values.append(widget_value["value"])
+                elif not isinstance(widget_value, dict):
+                    widgets_values.append(deepcopy(widget_value))
         elif isinstance(node.get("inputs"), dict):
             for k, v in node["inputs"].items():
                 if not (isinstance(v, (list, tuple)) and len(v) >= 2 and not isinstance(v[0], (dict, list))):
                     widgets_values.append(v)
 
-        original = node.get("raw_payload") or {}
+        original = deepcopy(node.get("raw_payload") or {})
+        # 原生节点只以 type/widgets_values 表达语义，不能夹带旧 API 分类或编辑值。
+        for internal_field in ("class_type", "kind", "widgets"):
+            original.pop(internal_field, None)
         litegraph_nodes.append({
             **deepcopy(original),
             "id": nid_num,

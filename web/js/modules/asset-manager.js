@@ -372,6 +372,7 @@ let selectedPromptId = '';
 let selectedAssetIds = new Set();
 let selectedWorkflowIds = new Set();
 const workflowDeleteVersions = new Map();
+const workflowDeleteBusy = new Set();
 let selectedPromptIds = new Set();
 let assetQuery = '';
 let workflowQuery = '';
@@ -8423,7 +8424,7 @@ function renderWorkflowDetail(item){
                 ${workflow_id ? `<a class="hw-btn hw-btn-icon" href="/static/pages/workflow.html?id=${encodeURIComponent(workflow_id)}" title="编辑工作流" aria-label="编辑工作流"><i data-lucide="external-link"></i></a>` : ''}
                 <button class="hw-btn hw-btn-icon" type="button" data-workflow-download="${escapeAttr(asset_id)}" title="导出工作流"><i data-lucide="download"></i></button>
                 <button class="hw-btn hw-btn-icon" type="button" data-workflow-rename="${escapeAttr(asset_id)}" title="重命名"><i data-lucide="pencil"></i></button>
-                <button class="hw-btn hw-btn-icon hw-btn-danger ${pendingDeleteAssetId === asset_id ? 'detail-confirm' : ''}" type="button" data-workflow-delete="${escapeAttr(asset_id)}" title="${pendingDeleteAssetId === asset_id ? '再次点击确认删除' : '删除'}"><i data-lucide="trash-2"></i></button>
+                <button class="hw-btn hw-btn-icon hw-btn-danger ${pendingDeleteAssetId === asset_id ? 'detail-confirm' : ''}" type="button" data-workflow-delete="${escapeAttr(asset_id)}" ${workflowDeleteBusy.has(asset_id) ? 'disabled aria-busy="true"' : ''} title="${pendingDeleteAssetId === asset_id ? '再次点击确认删除' : '删除'}"><i data-lucide="trash-2"></i></button>
             </div>
         </div>
         <div class="detail-scroll">
@@ -9145,23 +9146,33 @@ async function renameWorkflowItem(id){
     setStatus('已重命名工作流');
 }
 async function deleteWorkflowItem(id){
+    if(workflowDeleteBusy.has(id)) return;
     const item = findWorkflowItem(id);
     if(!item) return;
     const workflow_id = workflowSourceId(item);
     if(pendingDeleteAssetId !== id){
-        if(workflow_id){
-            const source = await apiJsonResponse(assetManagerApi.getWorkflowDocument(workflow_id));
-            workflowDeleteVersions.set(id, source.version);
-        }
-        pendingDeleteAssetId = id;
+        // 取版本期间锁定当前动作，避免快速点击重复进入首次确认。
+        workflowDeleteBusy.add(id);
         render();
-        setStatus('再次点击确认删除工作流');
+        try {
+            if(workflow_id){
+                const source = await apiJsonResponse(assetManagerApi.getWorkflowDocument(workflow_id));
+                workflowDeleteVersions.set(id, source.version);
+            }
+            pendingDeleteAssetId = id;
+            setStatus('再次点击确认删除工作流');
+        } finally {
+            workflowDeleteBusy.delete(id);
+            render();
+        }
         return;
     }
     if(workflow_id){
+        workflowDeleteBusy.add(id);
+        render();
         try {
             await apiJsonResponse(assetManagerApi.deleteWorkflowDocument(workflow_id, workflowDeleteVersions.get(id)));
-        } finally { workflowDeleteVersions.delete(id); pendingDeleteAssetId = ''; render(); }
+        } finally { workflowDeleteBusy.delete(id); workflowDeleteVersions.delete(id); pendingDeleteAssetId = ''; render(); }
         selectedWorkflowIds.delete(id); selectedWorkflowId = '';
         await loadAll(); setStatus('已删除工作流'); return;
     }

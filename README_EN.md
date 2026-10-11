@@ -130,6 +130,36 @@ python run.py
 | `--migrate` | `False` | Safely migrates legacy data roots to the production store |
 | `--reset <TARGET>` | - | Explicitly clears a target path inside the dev sandbox (`.local/runtime-dev`) |
 
+### 4. RunningHub Workflow Output Collection
+
+The RunningHub API Key in workflow settings is used for parsing, submission, and queries. Downloading cloud outputs also requires `GW_WORKFLOW_OUTPUT_HOSTS` in the **server process environment**. Set a comma-separated list of output URL hostnames you have verified and authorized:
+
+```powershell
+$env:GW_WORKFLOW_OUTPUT_HOSTS = 'output.example,cdn.example'
+```
+
+These are placeholder domains; replace them with actual output sources. This does not add any default trusted sources. Matching uses exact hostnames, without schemes, paths, or wildcards. Start the server in the same PowerShell window using the instructions above. Updating an existing server requires restarting it yourself while retaining its production or development mode and data root so existing tasks remain accessible.
+
+Downloads require an authorized HTTPS hostname on the default port or port 443. Redirects are not followed, and the connection layer checks and pins public IP addresses. Missing or unmatched configuration produces `OUTPUT_URL_NOT_ALLOWED` without downloading the file.
+
+Execution and collection are recorded separately. If remote generation succeeds but downloading or registration is incomplete, `execution_status` is `completed`, `collection_status` is `partial_failed`, and the overall task is `failed`. This means **collection is incomplete**; generation may already have occurred and been billed. After correcting configuration, use the workflow task window's collection retry action. It collects the original `job_id` and remote task ID without resubmitting generation. Registered outputs retain their stable `asset_id`, and repeated collection does not create duplicate assets.
+
+Do not include API keys or full signed/token-bearing output URLs in examples, issue reports, or logs. For troubleshooting, provide the source hostname, `job_id`, and error code.
+
+### 5. Converting ComfyUI API Graphs to Native Graphs
+
+Converting API graphs to native graphs, including workflow/asset JSON and ZIP exports and native opening, requires the actual node schemas. When the document lacks a required schema, the server reads `/object_info` from the ComfyUI address in workflow settings. For `NODE_SCHEMA_REQUIRED`, check the address, availability, and node installation. `UNSUPPORTED_WIDGET_MAPPING` means the parameters cannot be converted losslessly; retain the source file and use the corresponding native graph.
+
+Native saves retain the original project/canvas source and migrate asset bindings only when the same field and value still match. Changed values, removed nodes, changed node types, or connected inputs clear the old binding. If the mapping cannot be confirmed, saving is rejected and the original document and version remain intact.
+
+### 6. Workflow Transfer and Current Limitations
+
+Ordinary JSON and PNG/WebP with complete workflow metadata can be parsed through upload, canvas drop, or clipboard. Internal adaptation comes first; missing definitions retain the source and report the gap without guessing parameters or links. ComfyUI page conversion is a last resort and does not implicitly start the service. CF controls start/stop; Import ComfyUI opens and loads through the project-managed adapter, with success confirmed by the host receipt.
+
+RH link parsing does not require saving or running first. The platform can still return 810 when it supplies no complete graph. Automatic retrieval from signed-in RH pages and automatic RH creation/upload for local/Lib graphs without an RH identifier remain incomplete. Submissions with a real RH identifier carry the current complete execution graph; isolated tests do not establish real platform acceptance.
+
+Definite rejection persists a safe error code. Timeouts, missing remote task identifiers, and unconfirmed results remain `outcome_unknown` and must not automatically generate again. Real ComfyUI, RH, and cross-platform acceptance remain open.
+
 ---
 
 ## 💾 Data Storage Architecture

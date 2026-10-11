@@ -1,5 +1,6 @@
 """设置页目录探测和CLI能力陈述；隔离夹具，不调用供应商或本机命令。"""
 import json
+import pytest
 
 from test_api_settings_browser import settings_browser, ENTRIES
 from test_api_settings_visual import settings_frame
@@ -67,6 +68,25 @@ def test_model_picker_does_not_reuse_another_platform_catalog(monkeypatch,tmp_pa
         assert frame.locator('#openPickerBtn').is_disabled()
         assert frame.locator('#chatModelList .empty').is_visible()
         assert errors==[] and writes==[]
+
+
+@pytest.mark.parametrize('entry', ENTRIES)
+def test_async_model_picker_takes_focus_and_escape_returns_to_trigger(monkeypatch, tmp_path, entry):
+    """异步目录响应开窗后立即接管焦点；键盘关闭仍返还精确触发控件。"""
+    with settings_browser(monkeypatch, tmp_path, populated=True) as (page, base, errors, writes):
+        frame = settings_frame(page, base, entry)
+        page.route('**/api/providers/fetch-models', lambda route: route.fulfill(
+            status=200, content_type='application/json',
+            body=json.dumps({'ok': True, 'all': ['synthetic-owned-model'],
+                             'chat_models': ['synthetic-owned-model']})))
+        frame.locator('#fetchModelsBtn').click()
+        overlay = frame.locator('#modelPickerOverlay')
+        overlay.wait_for()
+        assert overlay.evaluate('el => el.contains(document.activeElement)')
+        page.keyboard.press('Escape')
+        overlay.wait_for(state='hidden')
+        frame.wait_for_function("document.activeElement === document.querySelector('#openPickerBtn')")
+        assert errors == [] and writes == []
 
 
 def test_failed_old_probe_does_not_replace_new_platform_feedback(monkeypatch,tmp_path):

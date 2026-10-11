@@ -1194,8 +1194,11 @@ function openModelPicker(){
     pickerInitialStateJson = JSON.stringify(pickerState);
     // 默认 tab 切回「全部」
     document.querySelectorAll('.picker-cat-tab').forEach(t => t.classList.toggle('active', t.dataset.cat === 'all'));
-    document.getElementById('modelPickerOverlay').style.display = 'flex';
+    const overlay = document.getElementById('modelPickerOverlay');
+    overlay.style.display = 'flex';
     renderModelPicker();
+    // 异步目录响应开窗不经过同步触发控件，立即把键盘焦点送入模态框。
+    overlay.querySelector('[data-picker-close]')?.focus({preventScroll: true});
 }
 function closeModelPicker(){
     if(JSON.stringify(pickerState) !== pickerInitialStateJson && !window.confirm('放弃尚未应用的模型选择？')) return;

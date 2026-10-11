@@ -781,8 +781,9 @@ def test_execute_rh_cloud_success_and_poll_status(client, monkeypatch):
 
     import gw.god_workflow.platforms as platforms_mod
 
-    async def _mock_create_task(workflow_id, node_info_list, api_key, domain="www.runninghub.cn"):
-        assert workflow_id == "1234567890123456789"
+    async def _mock_create_task(workflow_id, node_info_list, api_key, domain="www.runninghub.cn", *, workflow=None):
+        assert workflow_id == '1234567890123456789' and workflow
+        assert all("class_type" in node and "inputs" in node for node in workflow.values())
         return {"taskId": "rh-mock-task-888"}
 
     poll_state = {"called": 0}
@@ -842,7 +843,15 @@ def test_execute_rh_cloud_success_and_poll_status(client, monkeypatch):
     assert "asset_id" in res_body["outputs"][0]
 
 
-def test_open_in_comfy_and_bridge_poll_and_sync(client, monkeypatch):
+def test_open_in_comfy_and_bridge_poll_and_sync(client, monkeypatch, tmp_path):
+    root = tmp_path / "isolated-comfy"
+    app_file = root / "python_embeded/Lib/site-packages/comfyui_frontend_package/static/scripts/app.js"
+    app_file.parent.mkdir(parents=True)
+    app_file.write_text("isolated", encoding="utf-8")
+    monkeypatch.setenv("GW_COMFYUI_ROOT_DIR", str(root))
+    async def probe():
+        return {'online': True, 'object_info': {'KSampler': {'input': {'required': {'seed': ['INT', {}]}}}}}
+    monkeypatch.setattr('gw.god_workflow.comfy_executor.probe', probe)
     monkeypatch.setenv('GW_COMFYUI_URL', 'http://127.0.0.1:8188')
     monkeypatch.setattr("gw.god_workflow.routes._comfy_operation", lambda *a: {"highlight": True})
     created = client.post("/api/god_workflow/documents?source=canvas", json=_sample_workflow(), headers=_headers()).json()
@@ -1510,6 +1519,10 @@ def test_export_to_comfy_litegraph_structure():
 
     internal_doc = {
         "workflow_id": "test-wf-100",
+        "metadata": {"node_schemas": {
+            "CLIPLoader": {"input": {"required": {"clip_name": ["STRING", {}], "type": ["STRING", {}]}}},
+            "TextEncode": {"input": {"required": {"prompt": ["STRING", {}], "clip": ["CLIP", {}]}}},
+        }},
         "name": "测试流",
         "nodes": [
             {
@@ -1557,8 +1570,12 @@ def test_export_to_comfy_litegraph_structure():
     assert link[5] == "CLIP"
 
 
-def test_export_endpoint_returns_litegraph(client):
+def test_export_endpoint_returns_litegraph(client, monkeypatch):
     """验证 GET /api/god_workflow/export/{workflow_id}?format=litegraph 接口返回标准 LiteGraph 格式。"""
+    async def probe():
+        return {'online': True, 'object_info': {'LoadImage': {'input': {'required': {'image': ['STRING', {}]}}}}}
+    monkeypatch.setenv('GW_COMFYUI_URL', 'http://127.0.0.1:8188')
+    monkeypatch.setattr('gw.god_workflow.comfy_executor.probe', probe)
     created = client.post(
         "/api/god_workflow/documents?name=导出LiteGraph测试&source=canvas",
         json={
@@ -1639,7 +1656,7 @@ def test_rh_public_preview_is_not_a_document_or_executable(client, monkeypatch, 
     calls = []
     async def source(url, body, headers):
         calls.append(url)
-        assert url.endswith('/api/workflow/getDetail')
+        assert url.endswith(('/api/workflow/getDetail', '/api/portal/workflow/detail'))
         assert body['workflowId'] == workflow_id
         return {'code': 0, 'data': {'id': workflow_id, 'name': '公开工作流',
             'workflowContent': None, 'nodeCount': 15, 'primitiveNodes': ['LoadImage'],
@@ -1661,7 +1678,8 @@ def test_rh_public_preview_is_not_a_document_or_executable(client, monkeypatch, 
     rejected = client.post('/api/god_workflow/execute',
         json={'workflow_id': workflow_id, 'target': 'rh_cloud'}, headers=_headers())
     assert rejected.status_code == 404
-    assert calls == ['https://www.runninghub.cn/api/workflow/getDetail']
+    assert calls == ['https://www.runninghub.cn/api/workflow/getDetail',
+                     'https://www.runninghub.cn/api/portal/workflow/detail']
 
 
 def test_rh_public_preview_preserves_existing_source_document(client, monkeypatch):
@@ -1771,3 +1789,59 @@ def test_local_json_with_rh_metadata_is_not_remote_reference(client, monkeypatch
     graph={"nodes":[{"id":1,"type":"SaveImage","pos":[20,30]}],"links":[],"extra":{"source":"https://www.runninghub.cn/workflow/2104915887789797378"}}
     response=client.post("/api/god_workflow/parse-link",json={"url_or_text":json.dumps(graph)},headers=_headers())
     assert response.status_code==200
+
+
+@pytest.mark.parametrize("supplier_code", [810, "810"])
+@pytest.mark.parametrize("stale_web_token", [False, True])
+def test_rh_parse_exposes_workflow_not_ready_without_leaking_secrets(
+        client, monkeypatch, tmp_path, supplier_code, stale_web_token):
+    # 现场官方 810 不应误导为密钥错误，也不能被旧网页 token 的错误覆盖。
+    monkeypatch.delenv("GW_RUNNINGHUB_ACCESS_TOKEN", raising=False)
+    key = "synthetic-not-ready-api-key"
+    config = {"rh_api_key": key}
+    if stale_web_token:
+        config["rh_access_token"] = "synthetic-expired-web-token"
+    configured = client.post("/api/god_workflow/settings", json=config,
+                            headers={**_headers(), "X-User-Role": "admin"})
+    assert configured.status_code == 200
+    calls = []
+
+    async def source(url, payload, headers):
+        calls.append(url)
+        if url.endswith("getContent"):
+            return {"code": 401, "msg": config["rh_access_token"]}
+        if url.endswith("getJsonApiFormat"):
+            assert payload == {"apiKey": key, "workflowId": "2108837566177959938"}
+            assert headers["Authorization"] == f"Bearer {key}"
+            return {"code": supplier_code, "msg": key, "data": None}
+        assert url.endswith(("getDetail", "/detail")), "解析不得调用任务创建或生成接口"
+        return {"code": 0, "data": {"name": "只读清单", "nodeInfoList": []}}
+
+    monkeypatch.setattr(platforms, "_post_json", source)
+    response = client.post("/api/god_workflow/parse-link", headers=_headers(),
+        json={"url_or_text": "https://www.runninghub.cn/workflow/2108837566177959938"})
+    assert response.status_code == 502
+    detail = response.json()["detail"]
+    assert detail["code"] == "RH_WORKFLOW_NOT_READY"
+    assert "810" in detail["message"] and "完整工作流" in detail["message"]
+    assert "保存" not in detail["message"] and "手动运行" not in detail["message"]
+    assert key not in response.text and "synthetic-expired-web-token" not in response.text
+    assert len(calls) == (4 if stale_web_token else 3)
+    assert [p.name for p in (tmp_path / "data/workflow").glob("*/*.json")] == ["settings.json"]
+
+
+def test_rh_not_ready_can_still_use_available_original_public_graph(monkeypatch):
+    import asyncio
+    graph = {"nodes": [{"id": 1, "type": "SaveImage", "pos": [9, 8]}], "links": []}
+
+    async def source(url, *args):
+        if url.endswith("getJsonApiFormat"):
+            return {"code": 810, "msg": "WORKFLOW_NOT_SAVED_OR_NOT_RUNNING"}
+        return {"code": 0, "data": {"name": "原图", "workflowContent": graph}}
+
+    monkeypatch.setattr(platforms, "_post_json", source)
+    bundle = asyncio.run(platforms.fetch_runninghub_bundle(
+        "https://www.runninghub.cn/workflow/2108837566177959938", api_key="synthetic-only"))
+    from gw.god_workflow.routes import _document_from_bundle
+    document = _document_from_bundle(bundle).as_dict()
+    assert document["nodes"][0]["position"] == {"x": 9., "y": 8.}

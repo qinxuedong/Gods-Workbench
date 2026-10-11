@@ -54,7 +54,13 @@ class ProcessBackend:
                                    base / "venv" / "bin" / "python") if p.is_file()), None)
         if main is None or python is None:
             raise ValueError("仅支持已配置 Python 环境及 ComfyUI main.py，拒绝任意启动脚本")
-        process = subprocess.Popen([str(python), str(main), "--listen", "127.0.0.1", "--port", str(port)],
+        # 便携包使用自身隔离解释器及标准 standalone 参数，不执行安装目录中的脚本。
+        portable = python.parent.name == "python_embeded"
+        argv = [str(python)] + (["-I"] if portable else []) + [str(main)]
+        if portable:
+            argv.append("--windows-standalone-build")
+        argv.extend(["--disable-auto-launch", "--listen", "127.0.0.1", "--port", str(port)])
+        process = subprocess.Popen(argv,
                                    cwd=str(main.parent), stdin=subprocess.DEVNULL,
                                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                                    shell=False, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
@@ -131,6 +137,7 @@ class ComfyControl:
         self.owned = None
         self.child = None
         self.owner = None
+        self.owned_url = None
         self.confirmations = {}
 
     def _inspect(self, url, principal):
@@ -144,6 +151,15 @@ class ComfyControl:
         managed = identity is not None and identity == self.owned and principal == self.owner
         result = {"ok": True, "status": "online" if online else "offline", "highlight": online,
                   "managed": managed, "can_stop": identity is not None}
+        if not online and self.child is not None and self.owned_url == url:
+            exit_code = self.child.poll()
+            if exit_code is None:
+                result.update(status="starting", managed=principal == self.owner,
+                              can_stop=principal == self.owner, code="COMFY_START_PENDING",
+                              message="ComfyUI 正在启动，请等待就绪；再次点击 CF 可取消本次启动")
+            elif principal == self.owner:
+                result.update(code="COMFY_START_FAILED", exit_code=exit_code,
+                              message=f"ComfyUI 启动进程已退出（退出码 {exit_code}），请检查本地启动环境")
         if online and identity and not managed:
             now = time.monotonic()
             self.confirmations = {k: v for k, v in self.confirmations.items() if v[0] > now}
@@ -167,26 +183,30 @@ class ComfyControl:
                     return result
                 # 上次启动仍活着但未就绪，不重复产生后台进程。
                 if self.child is not None and self.child.poll() is None:
-                    return dict(result, ok=False, code="COMFY_START_PENDING")
+                    return dict(result, ok=self.owned_url == url and principal == self.owner,
+                                code="COMFY_START_PENDING")
                 self.child, self.owned = self.backend.spawn(root, local_endpoint(url))
                 self.owner = principal
+                self.owned_url = url
                 deadline = time.monotonic() + self.wait_seconds
                 while True:
                     result, identity = self._inspect(url, principal)
                     if result["highlight"] and identity == self.owned:
                         return dict(result, launched=True)
-                    if self.child.poll() is not None or time.monotonic() >= deadline:
-                        # 超时只终止刚保存的精确子进程；身份变化/权限拒绝则保留待恢复。
-                        cleaned = self.child.poll() is not None or self.backend.stop(self.owned)
-                        if cleaned:
-                            self.child = None
-                            self.owned = None
-                            self.owner = None
-                        result, _ = self._inspect(url, principal)
-                        return dict(result, ok=False, code="COMFY_START_TIMEOUT", launched=True, cleanup_confirmed=cleaned)
+                    if self.child.poll() is not None:
+                        return dict(result, ok=False, code="COMFY_START_FAILED", launched=True,
+                                    message=f"ComfyUI 启动进程已退出（退出码 {self.child.poll()}），请检查本地启动环境")
+                    if time.monotonic() >= deadline:
+                        # 请求等待结束不代表冷启动失败；保留精确子进程，后续状态探测确认就绪。
+                        return dict(result, launched=True)
                     self.sleep(0.25)
             if action != "stop":
                 return dict(result, ok=False, code="INVALID_ACTION")
+            pending_owned = (not result["highlight"] and self.child is not None
+                             and self.child.poll() is None and self.owned_url == url
+                             and principal == self.owner)
+            if pending_owned:
+                identity = self.owned
             if not identity:
                 return dict(result, ok=False, code="COMFY_PROCESS_IDENTITY_UNKNOWN")
             if identity != self.owned or principal != self.owner:
@@ -196,10 +216,12 @@ class ComfyControl:
                 if confirmation[3] != identity:
                     return dict(result, ok=False, code="COMFY_PROCESS_IDENTITY_CHANGED")
             # 监听身份再次检查，OS句柄内再重验，拒绝PID复用及确认竞态。
-            if self.backend.listener(local_endpoint(url)) != identity or not self.backend.stop(identity):
+            if ((not pending_owned and self.backend.listener(local_endpoint(url)) != identity)
+                    or not self.backend.stop(identity)):
                 return dict(result, ok=False, code="COMFY_PROCESS_IDENTITY_CHANGED")
             self.owned = None
             self.owner = None
+            self.owned_url = None
             self.child = None
             deadline = time.monotonic() + 3
             while self.probe(url) and time.monotonic() < deadline:

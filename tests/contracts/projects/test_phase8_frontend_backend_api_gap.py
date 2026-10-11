@@ -83,12 +83,15 @@ KNOWN_IMPLEMENTED = frozenset([
     '/api/god_workflow/browse_directory',
     # 2026-10-08 已批准全站 CF 真实状态与管理员受控生命周期，专项契约覆盖。
     '/api/god_workflow/comfy-control',
-    '/api/god_workflow/open-in-comfy',
+    # 2026-10-10 用户确认 CF 只启停，导入须选择工作流；前端撤除无 ID 根调用。
+    # 后端兼容路由保留，变更证据见本地 workflow-cf-import-20261010/P8-A1-BASELINE-CHANGE.md。
     '/api/god_workflow/open-in-comfy/{p}',
     '/api/god_workflow/comfy-bridge/sync-status',
     # 2026-10-09 已授权原生回存与输出回收重试，真实路由、CAS 和浏览器有专项覆盖。
     '/api/god_workflow/comfy-bridge/sync-saved',
     '/api/god_workflow/item/{p}/params',
+    # 2026-10-10 已确认内部定义适配优先；真实CAS路由和隔离浏览器专项覆盖。
+    '/api/god_workflow/item/{p}/resolve-definitions',
     '/api/god_workflow/canvas-contract/{p}',
     '/api/god_workflow/auto-layout/{p}',
     '/api/god_workflow/execute',
@@ -344,6 +347,7 @@ KNOWN_CONTRACT_WITHOUT_FRONTEND_PATH_LITERAL = frozenset([
 
 #: 后端已实现路由的归一化路径（用于断言后端集合未被意外缩小）
 KNOWN_BACKEND_PATHS = frozenset([
+    '/api/god_workflow/item/{p}/resolve-definitions',
     '/api/chat/config',
     '/api/asset-library',
     '/api/asset-library/categories',

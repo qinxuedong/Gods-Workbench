@@ -10,7 +10,7 @@
  * 3. 右侧全息画布：
  *    - 上传类节点（LoadImage / LoadVideo 等）配备『📤 上传 / 🗂️ 选择』双按钮，完成后内嵌显示图像或视频预览与详情；
  *    - 连线粗细减半（1px），选中节点后触发双向循环流光动画（从上一节点流入、从当前节点流出，取消选中后停止）；
- *    - 顶部工具栏『🖥️ 打开 ComfyUI』支持自动检测/后台静默启动本地 ComfyUI 并直接加载打开当前激活工作流；
+ *    - 顶部工具栏『导入 ComfyUI』通过 CF 已连接的本地服务加载当前激活工作流；
  *    - 全面支持本地任意格式工作流（非 API 画布 JSON、子图 Subgraphs JSON、API JSON、PNG/WebP）解析加载。
  */
 
@@ -95,6 +95,7 @@ const state = {
   comfyWindowRef: null,
   syncRevisions: {},
   comfySyncTimer: null,
+  pendingDefinitionWorkflow: null,
 };
 
 const PORT_COLORS = {
@@ -655,8 +656,10 @@ async function refreshMediaAssetsCache() {
 }
 
 async function refreshWorkflowList() {
+  const principalKey = state.authPrincipalKey;
   try {
     let res = await apiFetch("/api/god_workflow/list");
+    if (principalKey !== state.authPrincipalKey || !window.GWAuthGate?.isAuthenticated()) return;
     const items = res.items || [];
 
     if (state.currentWorkflow?.workflow_id && !items.some((w) => w.workflow_id === state.currentWorkflow.workflow_id)) {
@@ -674,6 +677,7 @@ async function refreshWorkflowList() {
       state.folders = res.folders;
     } else {
       const fRes = await apiFetch("/api/god_workflow/folders");
+      if (principalKey !== state.authPrincipalKey || !window.GWAuthGate?.isAuthenticated()) return;
       state.folders = fRes.folders || [];
     }
     for (const wf of state.workflows) {
@@ -686,9 +690,14 @@ async function refreshWorkflowList() {
 }
 
 async function selectWorkflow(workflowId) {
+  const principalKey = state.authPrincipalKey;
+  const request = state.workflowSelectionRequest = {};
+  const active = () => state.workflowSelectionRequest === request && principalKey === state.authPrincipalKey && window.GWAuthGate?.isAuthenticated();
   try {
     if (state.currentWorkflow) await flushWorkflowParams(state.currentWorkflow.workflow_id);
+    if (!active()) return;
     const wf = await apiFetch(`/api/god_workflow/item/${encodeURIComponent(workflowId)}`);
+    if (!active()) return;
     setCurrentWorkflow(normalizeMatureWorkflow(wf));
   } catch (err) {
     showToast(err.message, true);
@@ -981,7 +990,7 @@ async function fetchClipboardSnapshot() {
   } catch (_) {}
 
   const latestText = browserText || serverData?.latest?.text || "";
-  return { latestText, serverItems: serverData?.items || [] };
+  return { latestText, browserText, serverItems: serverData?.items || [] };
 }
 
 async function openClipboardModal() {
@@ -1073,22 +1082,41 @@ function showPublicWorkflowPreview(preview) {
   modal.classList.add('open');
 }
 
+async function readClipboardWorkflowImage() {
+  // 只读取图片原有的二进制元数据；图片内容不用于推测工作流。
+  try {
+    if (!navigator.clipboard?.read) return null;
+    for (const item of await navigator.clipboard.read()) {
+      const type = item.types.find(value => value === 'image/png' || value === 'image/webp');
+      if (type) return new File([await item.getType(type)], `clipboard-workflow.${type === 'image/png' ? 'png' : 'webp'}`, { type });
+    }
+  } catch (_) {}
+  return null;
+}
+
 async function handleParseLink(rawLink) {
+  const principalKey = state.authPrincipalKey;
   let text = String(rawLink ?? "").trim();
 
   if (!text) {
-    const { latestText } = await fetchClipboardSnapshot();
-    if (latestText && isLikelyRhLink(latestText)) {
-      text = latestText;
+    const { latestText, browserText } = await fetchClipboardSnapshot();
+    if (browserText && isLikelyRhLink(browserText)) {
+      text = browserText;
     } else {
+      const image = await readClipboardWorkflowImage();
+      if (image) { await handleUploadFile(image); return; }
+      if (latestText && isLikelyRhLink(latestText)) {
+        text = latestText;
+      } else {
       showToast(
-        "剪贴板最新内容未检测到有效工作流链接或 JSON，请选择最近复制的链接",
+        "剪贴板未检测到工作流链接、JSON 或带工作流的 PNG/WebP 图片",
         true,
         "📋 打开剪贴板",
         () => openClipboardModal()
       );
       await openClipboardModal();
       return;
+      }
     }
   }
 
@@ -1110,6 +1138,7 @@ async function handleParseLink(rawLink) {
         folder_id: state.activeFolderId || "parsed_default",
       }),
     });
+    if (principalKey !== state.authPrincipalKey || !window.GWAuthGate?.isAuthenticated()) return;
     if (wf.public_preview) {
       showPublicWorkflowPreview(wf.public_preview);
       return;
@@ -1119,6 +1148,7 @@ async function handleParseLink(rawLink) {
       state.activeFolderId = wf.folder_id;
     }
     await refreshWorkflowList();
+    if (principalKey !== state.authPrincipalKey || !window.GWAuthGate?.isAuthenticated()) return;
     setCurrentWorkflow(normalizeMatureWorkflow(wf));
     if (wf.split_group_count && wf.split_group_count > 1) {
       showToast(
@@ -1127,6 +1157,7 @@ async function handleParseLink(rawLink) {
     } else {
       showToast(`已成功解析工作流「${wf.name}」(${wf.nodes.length} 节点)`);
     }
+    if (wf.needs_definition_resolution) await offerDefinitionResolution(wf);
   } catch (err) {
     showToast(err.message, true, "📋 打开剪贴板", () => openClipboardModal());
   } finally {
@@ -1139,6 +1170,8 @@ async function handleParseLink(rawLink) {
 
 async function handleUploadFile(file) {
   if (!file) return;
+  const principalKey = state.authPrincipalKey;
+  // 先在工作台内部解析；只有内部适配不足时才使用宿主，不预先打开空页。
   const formData = new FormData();
   formData.append("file", file);
   formData.append("folder_id", state.activeFolderId || "parsed_default");
@@ -1149,11 +1182,13 @@ async function handleUploadFile(file) {
       method: "POST",
       body: formData,
     });
+    if (principalKey !== state.authPrincipalKey || !window.GWAuthGate?.isAuthenticated()) return;
     if (wf.folder_id) {
       state.collapsedFolders.delete(wf.folder_id);
       state.activeFolderId = wf.folder_id;
     }
     await refreshWorkflowList();
+    if (principalKey !== state.authPrincipalKey || !window.GWAuthGate?.isAuthenticated()) return;
     setCurrentWorkflow(normalizeMatureWorkflow(wf));
     if (wf.split_group_count && wf.split_group_count > 1) {
       showToast(
@@ -1162,94 +1197,151 @@ async function handleUploadFile(file) {
     } else {
       showToast(`本地工作流「${wf.name}」解析完成 (${wf.nodes.length} 节点)！`);
     }
+    if (wf.needs_definition_resolution) await offerDefinitionResolution(wf);
   } catch (err) {
     showToast(err.message, true);
   }
 }
 
+async function offerDefinitionResolution(wf) {
+      state.pendingDefinitionWorkflow = { workflow_id: wf.workflow_id, principalKey: state.authPrincipalKey,
+        window: null, reservedBlank: false };
+      showToast('原 JSON 已保留，内部适配仍缺节点定义；可启动 CF 补齐，页面解析仅作最后补救', false, '启动 CF 后继续', () => {
+        const pending = state.pendingDefinitionWorkflow;
+        if (!pending || pending.principalKey !== state.authPrincipalKey || !window.GWAuthGate?.isAuthenticated()) return;
+        if (!pending.window || pending.window.closed) {
+          pending.window = window.open('', 'RH_Auto_ComfyUI_Tab');
+          try { pending.reservedBlank = pending.window?.location.href === 'about:blank'; } catch (_) {}
+        }
+        if (window.WorkbenchComfy?.getStatus() === 'offline') window.WorkbenchComfy.start();
+        else resumeDefinitionResolution();
+      });
+      await resumeDefinitionResolution();
+}
+
+async function resumeDefinitionResolution() {
+  const pending = state.pendingDefinitionWorkflow;
+  if (!pending || pending.checking || pending.principalKey !== state.authPrincipalKey || !window.GWAuthGate?.isAuthenticated()
+      || state.currentWorkflow?.workflow_id !== pending.workflow_id) return;
+  pending.checking = true;
+  try {
+    const control = await apiFetch('/api/god_workflow/comfy-control');
+    if (state.pendingDefinitionWorkflow !== pending || pending.principalKey !== state.authPrincipalKey
+        || state.currentWorkflow?.workflow_id !== pending.workflow_id || !control.highlight) return;
+    await flushWorkflowParams(pending.workflow_id);
+    if (state.currentWorkflow?.workflow_id !== pending.workflow_id || pending.principalKey !== state.authPrincipalKey) return;
+    const internal = await apiFetch(`/api/god_workflow/item/${encodeURIComponent(pending.workflow_id)}/resolve-definitions`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ expected_version: state.currentWorkflow.revision ?? state.currentWorkflow.version }),
+    });
+    if (state.pendingDefinitionWorkflow !== pending || pending.principalKey !== state.authPrincipalKey
+        || state.currentWorkflow?.workflow_id !== pending.workflow_id) return;
+    setCurrentWorkflow(normalizeMatureWorkflow(internal.workflow), { autoFit: false });
+    // 从等待队列移除后仅尝试一次；失败由用户明确重试，不重复打开/回传。
+    state.pendingDefinitionWorkflow = null;
+    if (!internal.needs_definition_resolution) {
+      if (pending.reservedBlank) { try { pending.window?.close(); } catch (_) {} }
+      showToast('工作台已补齐真实节点定义，可继续工作');
+      return;
+    }
+    await handleOpenInComfyUi({ reservedWindow: pending.window, reservedBlank: pending.reservedBlank });
+  } catch (error) { showToast(`定义补齐等待失败：${error.message}`, true); }
+  finally { pending.checking = false; }
+}
+
 /**
- * 顶部工具栏「🖥️ 打开 ComfyUI」：
- * 1. 自动检测并后台静默启动本地 ComfyUI；
+ * 顶部工具栏「导入 ComfyUI」：
+ * 1. 连接右上角 CF 已启动并就绪的本地 ComfyUI，不隐式启停服务；
  * 2. 按固定 ID 匹配已有工作流（不产生 工作流(1)、工作流(2) 等重复副本）；
  * 3. 若已打开 ComfyUI 标签页且桥接插件在线，直接复用该标签页页内切换对应工作流，不重复打开多个浏览器标签页。
  */
-async function handleOpenInComfyUi() {
+async function handleOpenInComfyUi(options = {}) {
+  if (!window.GWAuthGate?.isAuthenticated()) { showToast('请先登录神工坊，再导入 ComfyUI', true); return; }
   const wf = state.currentWorkflow;
-  const url = wf && wf.workflow_id
-    ? `/api/god_workflow/open-in-comfy/${encodeURIComponent(wf.workflow_id)}`
-    : `/api/god_workflow/open-in-comfy`;
+  if (!wf?.workflow_id) { showToast('请先选择或解析一个工作流，再导入 ComfyUI', true); return; }
+  const btn = wfGet("btnImportComfyUi");
+  if (btn?.disabled) return;
+  const url = `/api/god_workflow/open-in-comfy/${encodeURIComponent(wf.workflow_id)}`;
 
-  const btn = wfGet("btnOpenComfyUi");
   const origHtml = btn ? btn.innerHTML : "";
   if (btn) {
     btn.disabled = true;
-    btn.innerHTML = `<span>⏳ 正在启动并打开...</span>`;
+    btn.innerHTML = `<span>正在导入...</span>`;
   }
 
-  showToast(wf ? `正在同步并匹配 ComfyUI 工作流「${wf.name}」...` : "正在连接并启动本地 ComfyUI...");
+  showToast(`正在导入 ComfyUI 工作流「${wf.name}」...`);
 
+  const principalKey = state.authPrincipalKey;
+  let win = options.reservedWindow && !options.reservedWindow.closed ? options.reservedWindow :
+    state.comfyWindowRef && !state.comfyWindowRef.closed ? state.comfyWindowRef : null;
+  let reservedBlank = Boolean(options.reservedBlank);
   try {
+    // 点击当下预留窗口，避免异步请求结束后被浏览器拦截；不清空已有宿主图。
+    if (!win) {
+      win = window.open('', "RH_Auto_ComfyUI_Tab");
+      try { reservedBlank = Boolean(win && win.location.href === 'about:blank'); } catch (_) {}
+    }
     if (wf) await flushWorkflowParams(wf.workflow_id);
+    if (state.authPrincipalKey !== principalKey || !window.GWAuthGate?.isAuthenticated() || state.currentWorkflow?.workflow_id !== wf.workflow_id) throw new Error('登录状态或选定工作流已变化，请重新导入');
     const res = await apiFetch(url, { method: "POST" });
+    if (state.authPrincipalKey !== principalKey || !window.GWAuthGate?.isAuthenticated() || state.currentWorkflow?.workflow_id !== wf.workflow_id) throw new Error('登录状态或选定工作流已变化，请重新导入');
     const bridgeUrl = new URL(res.open_url);
     const nonce = crypto.randomUUID();
     bridgeUrl.searchParams.set('gw_nonce', nonce);
     bridgeUrl.searchParams.set('gw_origin', window.location.origin);
     const openUrl = bridgeUrl.href;
-    const hasLiveTab = Boolean(state.comfyWindowRef && !state.comfyWindowRef.closed);
-
-    let win = null;
-    if (res.bridge_connected && hasLiveTab) {
-      try {
-        state.comfyWindowRef.focus();
-      } catch (_) {}
-      win = state.comfyWindowRef;
-    } else {
-      win = window.open(openUrl, "RH_Auto_ComfyUI_Tab");
-      if (win) {
-        state.comfyWindowRef = win;
-        try {
-          win.focus();
-        } catch (_) {}
-      }
-    }
+    clearTimeout(state.comfyBridgeSession?.loadTimer);
     state.comfyBridgeSession = wf ? { nonce, origin: bridgeUrl.origin, workflow_id: wf.workflow_id,
       expected_version: res.expected_version, graph: res.workflow_graph, window: win,
-      principalKey: state.authPrincipalKey, expires: Date.now() + 30 * 60 * 1000 } : null;
+      principalKey, format: res.workflow_format || 'native', resolveDefinitions: res.resolve_definitions === true,
+      expires: Date.now() + 30 * 60 * 1000 } : null;
+    const session = state.comfyBridgeSession;
+    const watchLoad = () => {
+      clearTimeout(session.loadTimer);
+      session.loadTimer = setTimeout(() => {
+        if (state.comfyBridgeSession !== session || session.connected || session.principalKey !== state.authPrincipalKey || !window.GWAuthGate?.isAuthenticated()) return;
+        showToast('未收到 ComfyUI 载入回执，请核对宿主画布、页面适配是否加载及缺失节点', true);
+      }, 30000);
+    };
+    if (win && !win.closed) {
+      state.comfyWindowRef = win;
+      // 先建立消息会话，再导航，确保扩展初始化时能收到载入指令。
+      win.location.href = openUrl;
+      reservedBlank = false;
+      watchLoad();
+      try { win.focus(); } catch (_) {}
+    } else win = null;
 
     if (wf && wf.workflow_id) {
       try {
         const refreshedWf = await apiFetch(`/api/god_workflow/item/${encodeURIComponent(wf.workflow_id)}`);
+        if (state.authPrincipalKey !== principalKey || !window.GWAuthGate?.isAuthenticated()
+            || state.comfyBridgeSession !== session || state.currentWorkflow?.workflow_id !== wf.workflow_id) return;
         setCurrentWorkflow(normalizeMatureWorkflow(refreshedWf), { autoFit: false });
       } catch (_) {}
     }
 
-    let statusPrefix = "";
-    if (res.launched) {
-      statusPrefix = "已在后台启动本地 ComfyUI，";
-    } else if (res.online) {
-      statusPrefix = "本地 ComfyUI 已在线，";
-    } else {
-      statusPrefix = "正在尝试连接本地 ComfyUI，";
-    }
+    const toastMsg = win ? `已打开 ComfyUI，正在等待工作流「${wf.name}」载入确认` : '浏览器阻止了 ComfyUI 窗口，请点击打开或允许弹窗';
 
-    const toastMsg = wf
-      ? `${statusPrefix}已发送工作流打开请求「${wf.name}」，请在 ComfyUI 确认加载`
-      : `${statusPrefix}已打开 ComfyUI 控制台`;
-
-    showToast(
+    if (!session.connected) showToast(
       toastMsg,
-      false,
+      !win,
       win ? "" : "🖥️ 点击打开 ComfyUI",
       win
         ? null
         : () => {
-            state.comfyWindowRef = window.open(openUrl, "RH_Auto_ComfyUI_Tab");
-            if (state.comfyBridgeSession?.nonce === nonce) state.comfyBridgeSession.window = state.comfyWindowRef;
+            if (state.comfyBridgeSession !== session || session.principalKey !== state.authPrincipalKey || !window.GWAuthGate?.isAuthenticated()) return;
+            session.window = window.open('', "RH_Auto_ComfyUI_Tab");
+            if (session.window) {
+              state.comfyWindowRef = session.window;
+              session.window.location.href = openUrl;
+              watchLoad();
+            }
           }
     );
   } catch (err) {
-    showToast(`打开 ComfyUI 失败：${err.message}`, true);
+    if (reservedBlank) { try { win.close(); } catch (_) {} }
+    showToast(`导入 ComfyUI 失败：${err.message}`, true);
   } finally {
     if (btn) {
       btn.disabled = false;
@@ -1263,6 +1355,7 @@ async function handleOpenInComfyUi() {
  */
 async function checkComfySavedSyncOnce() {
   if (!window.GWAuthGate?.isAuthenticated()) return;
+  await resumeDefinitionResolution();
   const selected = state.currentWorkflow;
   const hasDraft = () => {
     const entry = selected && state.parameterSaves.get(selected.workflow_id);
@@ -3264,22 +3357,33 @@ function bindEvents() {
         session.principalKey !== state.authPrincipalKey || !window.GWAuthGate?.isAuthenticated() || Date.now() > session.expires) return;
     const send = value => session.window.postMessage({ ...value, nonce: session.nonce }, session.origin);
     if (event.data.kind === 'gw-comfy-ready') {
-      send({ kind: 'gw-comfy-load', workflow_id: session.workflow_id, expected_version: session.expected_version, graph: session.graph });
+      send({ kind: 'gw-comfy-load', workflow_id: session.workflow_id, expected_version: session.expected_version,
+        graph: session.graph, format: session.format, resolve_definitions: session.resolveDefinitions });
     } else if (event.data.kind === 'gw-comfy-loaded' && event.data.workflow_id === session.workflow_id) {
+      clearTimeout(session.loadTimer);
       session.connected = true; showToast('ComfyUI 已确认加载工作流，可在宿主中回存');
     } else if (event.data.kind === 'gw-comfy-error') {
+      clearTimeout(session.loadTimer);
       showToast(event.data.message || 'ComfyUI 加载失败', true);
-    } else if (event.data.kind === 'gw-comfy-save' && event.data.workflow_id === session.workflow_id && !session.saving) {
+    } else if (['gw-comfy-save', 'gw-comfy-resolved'].includes(event.data.kind) && event.data.workflow_id === session.workflow_id && !session.saving) {
+      const automatic = event.data.kind === 'gw-comfy-resolved';
+      if (automatic && (!session.resolveDefinitions || session.resolutionHandled)) return;
+      if (automatic) session.resolutionHandled = true;
       session.saving = true;
       try {
         if (event.data.expected_version !== session.expected_version) throw new Error('宿主保存版本不一致');
+        const draft = state.parameterSaves.get(session.workflow_id);
+        if (automatic && (draft?.running || draft?.pending.size || draft?.positions.size)) throw new Error('工作台有未保存编辑，请保存后重新导入解析');
         const result = await apiFetch('/api/god_workflow/comfy-bridge/sync-saved', { method: 'POST',
           headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ workflow_id: session.workflow_id,
-            expected_version: session.expected_version, workflow: event.data.graph }) });
-        if (state.comfyBridgeSession !== session) return;
+            expected_version: session.expected_version, workflow: event.data.graph,
+            resolve_definitions: automatic || Boolean(event.data.api_prompt),
+            api_prompt: event.data.api_prompt, field_maps: event.data.field_maps, virtual_node_ids: event.data.virtual_node_ids }) });
+        if (state.comfyBridgeSession !== session || session.principalKey !== state.authPrincipalKey || !window.GWAuthGate?.isAuthenticated()) return;
         session.expected_version = result.version;
         send({ kind: 'gw-comfy-save-result', request_id: event.data.request_id, ok: true, version: result.version });
         if (state.currentWorkflow?.workflow_id === session.workflow_id) await selectWorkflow(session.workflow_id);
+        if (automatic && state.comfyBridgeSession === session && session.principalKey === state.authPrincipalKey && window.GWAuthGate?.isAuthenticated()) showToast('ComfyUI 真实解析与定义补齐已回传，可继续工作');
       } catch (error) {
         if (state.comfyBridgeSession === session) {
           send({ kind: 'gw-comfy-save-result', request_id: event.data.request_id, ok: false });
@@ -3433,8 +3537,9 @@ function bindEvents() {
     window.open(workflowExportUrl(state.currentWorkflow.workflow_id, "canvas_contract"), "_blank");
   });
 
-  // 第三行左侧新增：「🖥️ 打开 ComfyUI」按钮 & 「⚡ 获取并解析」按钮
+  // 解析与本地导入分开；CF 启停由全站顶栏负责。
   wfGet("btnParseLink").addEventListener("click", () => handleParseLink());
+  wfGet("btnImportComfyUi")?.addEventListener("click", () => handleOpenInComfyUi());
 
   // 节点媒体文件隐藏上传控件 & 素材库弹窗事件
   wfGet("nodeMediaUploadInput")?.addEventListener("change", (e) => {
@@ -3848,6 +3953,11 @@ function bindEvents() {
 }
 
 function disposeWorkbench() {
+  state.workflowSelectionRequest = null;
+  const pending = state.pendingDefinitionWorkflow;
+  if (pending?.reservedBlank) { try { pending.window?.close(); } catch (_) {} }
+  state.pendingDefinitionWorkflow = null;
+  clearTimeout(state.comfyBridgeSession?.loadTimer);
   state.comfyBridgeSession = null;
   state.authLoading = false;
   clearInterval(state.comfySyncTimer);
@@ -3877,6 +3987,15 @@ function resetWorkflowIdentity() {
     renderHeaderTelemetry({ name: '--', workflow_id: '--', nodes: [], connections: [], env_diff: {} });
   }
 }
+// 匿名态不初始化受保护目录，但按钮仍给出登录反馈；根节点更换后同样有效。
+function handleUnauthenticatedComfyImport(event) {
+  const button = event.target?.closest?.('#btnImportComfyUi');
+  if (!button || !document.getElementById('workflowWorkbench')?.contains(button) || window.GWAuthGate?.isAuthenticated()) return;
+  event.stopImmediatePropagation();
+  showToast('请先登录神工坊，再导入 ComfyUI', true);
+  window.HardwareDeck?.openAccountModal?.();
+}
+document.addEventListener('click', handleUnauthenticatedComfyImport, true);
 window.WorkbenchWorkflow = Object.freeze({ init: rebindWorkbench, rebind: rebindWorkbench, dispose: disposeWorkbench });
 window.addEventListener('gw-auth-state', event => {
   if (event.detail?.authenticated === true) {

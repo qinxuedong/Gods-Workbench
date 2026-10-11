@@ -19,7 +19,7 @@ function harness(fetchImpl) {
   };
   const context = createContext({
     window:{location:{search:''},GWAuthGate:{revision:1,isAuthenticated:()=>true},addEventListener(type,fn){handlers.set(type,fn);},removeEventListener(type){handlers.delete(type);}},
-    document:{readyState:'loading',createElement:()=>({textContent:'',innerHTML:''})},
+    document:{readyState:'loading',addEventListener(){},createElement:()=>({textContent:'',innerHTML:''})},
     localStorage:{getItem:()=>null,setItem(){}}, CSS:{escape:value=>value},
     AbortController, URLSearchParams, crypto:webcrypto, console:{warn(...args){warnings.push(args.map(String).join(' '));},log(){}},
     setTimeout:fn=>{const id=++serial;timers.set(id,fn);return id;}, clearTimeout:id=>timers.delete(id),

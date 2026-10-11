@@ -5,6 +5,8 @@ from urllib.parse import urlsplit, quote
 import io
 import json
 import zipfile
+import base64
+import pytest
 
 
 def create_workflow(page, base, image, name='workflow'):
@@ -158,7 +160,7 @@ def test_rh_api_source_keeps_original_name_in_catalog_and_assets(monkeypatch, tm
             return {'code': 0, 'data': {'prompt': json.dumps({
                 '1': {'class_type': 'LoadImage', 'inputs': {'image': 'source.png'}},
                 '2': {'class_type': 'SaveImage', 'inputs': {'images': ['1', 0], 'filename_prefix': 'source'}}})}}
-        assert url.endswith('getDetail'), url
+        assert url.endswith(('getDetail', '/api/portal/workflow/detail')), url
         assert 'Authorization' not in headers
         return {'code': 0, 'data': {'name': title, 'workflowContent': None}}
     monkeypatch.setattr(platforms, '_post_json', source)
@@ -186,7 +188,9 @@ def test_rh_api_source_keeps_original_name_in_catalog_and_assets(monkeypatch, tm
         card = page.locator('[data-workflow-card="' + asset_id + '"]')
         card.wait_for()
         assert title in card.inner_text()
-        assert len(seen) == 2 and seen[1].endswith('getDetail')
+        assert len(seen) == 3
+        assert seen[0].endswith('getDetail') and seen[1].endswith('/api/portal/workflow/detail')
+        assert seen[2].endswith('getJsonApiFormat')
         assert errors == []
 
 
@@ -277,16 +281,28 @@ def test_imported_workflow_catalog_survives_metadata_and_reload(monkeypatch, tmp
         assert errors == []
 
 
-def test_native_bridge_load_save_and_conflict_in_isolated_browser_host(monkeypatch, tmp_path):
+@pytest.mark.parametrize('two_parameters', [False, True])
+def test_native_bridge_load_save_and_conflict_in_isolated_browser_host(monkeypatch, tmp_path, two_parameters):
     """使用真实扩展和浏览器消息链；宿主 app 为隔离替身，不代表 ComfyUI 现场验收。"""
+    root = tmp_path / 'comfy-native-host'
+    app_file = root / 'python_embeded/Lib/site-packages/comfyui_frontend_package/static/scripts/app.js'
+    app_file.parent.mkdir(parents=True)
+    app_file.write_text('isolated', encoding='utf-8')
+    monkeypatch.setenv('GW_COMFYUI_ROOT_DIR', str(root))
     monkeypatch.setenv('GW_COMFYUI_URL', 'http://127.0.0.1:8199')
+    async def probe():
+        return {'online': True, 'object_info': {
+            'LoadImage': {'input': {'required': {'image': ['STRING', {}]}}},
+            'ImageAndLabel': {'input': {'required': {'image': ['STRING', {}], 'label': ['STRING', {}]}}},
+        }}
+    monkeypatch.setattr('gw.god_workflow.comfy_executor.probe', probe)
     monkeypatch.setattr('gw.god_workflow.routes._comfy_operation', lambda *args: {'highlight': True})
     script = (Path(__file__).resolve().parents[2] / 'tools/comfy_workbench_bridge/js/workbench.js').read_text(encoding='utf-8')
     with settings_browser(monkeypatch, tmp_path) as (page, base, errors, _):
         def host(route):
             path = urlsplit(route.request.url).path
             if path == '/scripts/app.js':
-                body = 'export const app = {registerExtension: e => e.setup(), loadGraphData: async g => {window.loadedGraph = structuredClone(g)}, graph: {serialize: () => structuredClone(window.loadedGraph)}};'
+                body = 'export const app = {registerExtension: e => e.setup(), loadGraphData: async g => {window.loadedGraph = structuredClone(g)}, loadApiJson: async g => {window.loadedGraph = {version:0.4,links:[],nodes:Object.entries(g).map(([id,n])=>({id:Number(id),type:n.class_type,pos:[0,0],inputs:[],outputs:[],widgets_values:n.class_type==="ImageAndLabel"?[n.inputs.image,n.inputs.label]:[n.inputs.image]}))}}, graphToPrompt: async()=>({output:Object.fromEntries(window.loadedGraph.nodes.map(n=>[String(n.id),{class_type:n.type,inputs:n.type==="ImageAndLabel"?{image:n.widgets_values[0],label:n.widgets_values[1]}:{image:n.widgets_values[0]}}]))}), graph: {serialize: () => structuredClone(window.loadedGraph)}};'
                 kind = 'application/javascript'
             elif path.endswith('/workbench.js'):
                 body, kind = script, 'application/javascript'
@@ -295,26 +311,38 @@ def test_native_bridge_load_save_and_conflict_in_isolated_browser_host(monkeypat
             route.fulfill(status=200, body=body, content_type=kind)
         page.context.route('http://127.0.0.1:8199/**', host)
         target = create_workflow(page, base, 'source.png')
+        if two_parameters:
+            response = page.context.request.post(base + '/api/god_workflow/documents', headers={'Origin': base},
+                data={'1': {'class_type': 'ImageAndLabel', 'inputs': {'label': 'keep', 'image': 'source.png'}}})
+            assert response.status == 201, response.text()
+            target = response.json()['workflow_id']
         page.goto(base + '/static/pages/workflow.html?id=' + target, wait_until='networkidle')
         page.wait_for_function('(id) => state.currentWorkflow?.workflow_id === id', arg=target)
-        page.locator('.wf-capsule[data-wf-id="' + target + '"]').click(button='right')
+        if not two_parameters:
+            page.locator('.wf-capsule[data-wf-id="' + target + '"]').click(button='right')
         with page.expect_popup() as opened:
-            page.locator('#ctxEditNativeWorkflow').click()
+            page.locator('#btnImportComfyUi' if two_parameters else '#ctxEditNativeWorkflow').click()
         native = opened.value
         native.wait_for_function('() => window.loadedGraph?.nodes?.length === 1')
+        if two_parameters:
+            assert native.evaluate('window.loadedGraph.nodes[0].widgets_values') == ['source.png', 'keep']
         page.wait_for_function('() => state.comfyBridgeSession?.connected === true')
+        page.wait_for_function('state.currentWorkflow.version === 2')
         native.evaluate('window.loadedGraph.nodes[0].widgets_values[0] = "native-edited.png"')
+        native.get_by_role('button', name='将当前工作流回存神工坊').filter(has_text='已回存').wait_for()
         native.get_by_role('button', name='将当前工作流回存神工坊').click()
-        page.wait_for_function('() => state.currentWorkflow.version === 2')
+        page.wait_for_function('() => state.currentWorkflow.version === 3')
         saved = page.context.request.get(base + '/api/god_workflow/item/' + target).json()
         assert saved['nodes'][0]['widgets'][0] == 'native-edited.png'
+        if two_parameters:
+            assert saved['nodes'][0]['widgets'][1] == 'keep'
         native.get_by_role('button', name='将当前工作流回存神工坊').filter(has_text='已回存').wait_for()
         changed = page.context.request.put(base + '/api/god_workflow/item/' + target + '/name',
-            data={'name': '并发编辑', 'expected_version': 2}, headers={'Origin': base})
+            data={'name': '并发编辑', 'expected_version': 3}, headers={'Origin': base})
         assert changed.status == 200
         native.get_by_role('button', name='将当前工作流回存神工坊').click()
         native.get_by_role('button', name='将当前工作流回存神工坊').filter(has_text='回存失败').wait_for()
-        assert page.context.request.get(base + '/api/god_workflow/item/' + target).json()['version'] == 3
+        assert page.context.request.get(base + '/api/god_workflow/item/' + target).json()['version'] == 4
         # 原页结束桥会话后，按钮超时解除；迟到的旧回执不能解锁下一次回存。
         page.evaluate('''() => {
             state.comfyBridgeSession = null; window.bridgeRequests = [];
@@ -338,6 +366,274 @@ def test_native_bridge_load_save_and_conflict_in_isolated_browser_host(monkeypat
         assert native.get_by_role('button', name='将当前工作流回存神工坊').is_disabled()
         native.clock.fast_forward(30_001)
         assert not native.get_by_role('button', name='将当前工作流回存神工坊').is_disabled()
+        assert errors == []
+
+
+def test_cf_lifecycle_and_import_button_have_separate_responsibilities(monkeypatch, tmp_path):
+    """真实Chrome点击，CF假进程隔离；不启停用户ComfyUI。"""
+    monkeypatch.setenv('GW_COMFYUI_URL', 'http://127.0.0.1:8199')
+    current = {'status': 'offline', 'highlight': False, 'managed': False, 'ok': True}
+    actions = []
+    def operate(context, action, token=None):
+        actions.append(action)
+        if action == 'start':
+            current.update(status='starting', highlight=False, managed=True, can_stop=True)
+        elif action == 'stop':
+            current.update(status='offline', highlight=False, managed=False, can_stop=False)
+        return dict(current)
+    monkeypatch.setattr('gw.god_workflow.routes._comfy_operation', operate)
+    with settings_browser(monkeypatch, tmp_path) as (page, base, errors, _):
+        paths = []
+        page.on('request', lambda request: paths.append(urlsplit(request.url).path))
+        page.goto(base + '/static/pages/workflow.html', wait_until='networkidle')
+        page.wait_for_function('() => state.authLoading === false')
+        button = page.get_by_role('button', name='导入 ComfyUI', exact=True)
+        button.click()
+        page.get_by_text('请先选择或解析一个工作流，再导入 ComfyUI', exact=True).wait_for()
+        assert not any('/open-in-comfy' in path for path in paths)
+        target = create_workflow(page, base, 'input.png')
+        page.goto(base + '/static/pages/workflow.html?id=' + target, wait_until='networkidle')
+        page.wait_for_function('(id) => state.currentWorkflow?.workflow_id === id', arg=target)
+        assert page.evaluate('document.getElementById("btnParseLink").nextElementSibling.id') == 'btnImportComfyUi'
+        button.click()
+        page.get_by_text('导入 ComfyUI 失败：ComfyUI 未在线，请先使用全站 CF 控件启动或连接服务', exact=True).wait_for()
+        assert 'start' not in actions and len(page.context.pages) == 1
+        paths.clear()
+        toggle = page.locator('[data-gw-comfy-toggle]')
+        page.wait_for_function('() => document.querySelector("[data-gw-comfy-toggle]").getAttribute("aria-busy") === "false"')
+        toggle.click()
+        page.wait_for_function('() => document.querySelector("[data-gw-comfy-toggle]").dataset.gwComfyStatus === "starting"')
+        assert toggle.get_attribute('aria-pressed') == 'false'
+        assert '取消启动' in toggle.get_attribute('title')
+        assert not any('/open-in-comfy' in path for path in paths)
+        button.click()
+        page.get_by_text('导入 ComfyUI 失败：ComfyUI 正在启动，请等待右上角 CF 确认运行后再导入', exact=True).wait_for()
+        assert actions.count('start') == 1 and len(page.context.pages) == 1
+        page.wait_for_function('() => document.querySelector("[data-gw-comfy-toggle]").getAttribute("aria-busy") === "false"')
+        toggle.click()
+        page.wait_for_function('() => document.querySelector("[data-gw-comfy-toggle]").dataset.gwComfyStatus === "offline"')
+        assert actions.count('stop') == 1
+        assert errors == []
+
+
+def test_anonymous_import_click_has_feedback_without_business_request(monkeypatch, tmp_path):
+    with settings_browser(monkeypatch, tmp_path) as (page, base, errors, _):
+        page.context.clear_cookies()
+        paths = []
+        page.on('request', lambda request: paths.append(urlsplit(request.url).path))
+        page.goto(base + '/static/pages/workflow.html', wait_until='networkidle')
+        page.get_by_role('button', name='导入 ComfyUI', exact=True).click()
+        page.get_by_text('请先登录神工坊，再导入 ComfyUI', exact=True).wait_for()
+        assert not any('/open-in-comfy' in path for path in paths)
+        assert len(page.context.pages) == 1 and errors == []
+
+
+def test_project_managed_adapter_loads_plain_native_json_and_reuses_window(monkeypatch, tmp_path):
+    """真实仓库脚本由导入路由自动提供；宿主app隔离替身，不接触用户ComfyUI。"""
+    host_root = tmp_path / 'comfy-host'
+    static = host_root / 'python_embeded/Lib/site-packages/comfyui_frontend_package/static'
+    app_file = static / 'scripts/app.js'
+    app_file.parent.mkdir(parents=True)
+    app_file.write_text('isolated-native-app', encoding='utf-8')
+    monkeypatch.setenv('GW_COMFYUI_ROOT_DIR', str(host_root))
+    monkeypatch.setenv('GW_COMFYUI_URL', 'http://127.0.0.1:8199')
+    monkeypatch.setattr('gw.god_workflow.routes._comfy_operation', lambda *args: {'highlight': True, 'status': 'online'})
+    async def probe():
+        return {'online': True, 'object_info': {'ImageAndLabel': {'input': {'required': {'image': ['STRING', {}], 'label': ['STRING', {}]}}}}}
+    monkeypatch.setattr('gw.god_workflow.comfy_executor.probe', probe)
+    graph = {'version': 0.4, 'nodes': [{'id': 1, 'type': 'ImageAndLabel', 'pos': [10, 20],
+        'widgets_values': ['direct-json.png', '保留第二参数'], 'inputs': [], 'outputs': []}], 'links': [],
+        'groups': [{'title': '保留分组'}]}
+    with settings_browser(monkeypatch, tmp_path) as (page, base, errors, _):
+        def host(route):
+            path = urlsplit(route.request.url).path
+            if path == '/scripts/app.js':
+                body = 'export const app = {registerExtension: e => e.setup(), loadGraphData: async g => {window.loadedGraph = structuredClone(g)}, graph: {serialize: () => structuredClone(window.loadedGraph)}};'
+                kind = 'application/javascript'
+            elif path == '/extensions/gods_workbench/workbench.js':
+                body = (static / 'extensions/gods_workbench/workbench.js').read_text(encoding='utf-8')
+                kind = 'application/javascript'
+            else:
+                body = '<!doctype html><script type="module" src="/extensions/gods_workbench/workbench.js"></script>'
+                kind = 'text/html'
+            route.fulfill(status=200, body=body, content_type=kind)
+        page.context.route('http://127.0.0.1:8199/**', host)
+        page.goto(base + '/static/pages/workflow.html', wait_until='networkidle')
+        native_file = tmp_path / 'ordinary-workflow.json'
+        native_file.write_text(json.dumps(graph), encoding='utf-8')
+        page.wait_for_function('window.WorkbenchComfy.getStatus() === "online"')
+        page.locator('#localFileInput').set_input_files(native_file)
+        page.wait_for_function('state.currentWorkflow?.nodes?.length === 1')
+        target = page.evaluate('state.currentWorkflow.workflow_id')
+        # 内部真实定义足够时既不打开宿主页，也不安装页面适配。
+        assert len(page.context.pages) == 1
+        assert not (static / 'extensions/gods_workbench/workbench.js').exists()
+        saved = page.context.request.get(base + '/api/god_workflow/item/' + target).json()
+        assert saved['metadata']['node_schemas']['ImageAndLabel']['input']['required']['label'] == ['STRING', {}]
+        assert saved['version'] == 1 and saved['metadata']['needs_host_resolution'] is False
+        with page.expect_popup() as opened:
+            page.get_by_role('button', name='导入 ComfyUI', exact=True).click()
+        native = opened.value
+        native.wait_for_function('window.loadedGraph?.nodes?.length === 1')
+        assert native.evaluate('window.loadedGraph.nodes[0].widgets_values') == ['direct-json.png', '保留第二参数']
+        assert native.evaluate('window.loadedGraph.groups') == graph['groups']
+        assert native.evaluate('window.loadedGraph.version') == 0.4
+        assert 'rh_workflow' not in native.url and 'gw_workflow=' + target in native.url
+        page.wait_for_function('state.comfyBridgeSession?.connected === true')
+        adapter = static / 'extensions/gods_workbench/workbench.js'
+        assert adapter.read_bytes() == (Path(__file__).resolve().parents[2] / 'tools/comfy_workbench_bridge/js/workbench.js').read_bytes()
+        before = adapter.stat().st_mtime_ns
+        with native.expect_navigation(wait_until='load'):
+            page.get_by_role('button', name='导入 ComfyUI', exact=True).click()
+        native.wait_for_function('window.loadedGraph?.nodes?.length === 1')
+        page.wait_for_function('state.comfyBridgeSession?.connected === true')
+        assert len(page.context.pages) == 2 and adapter.stat().st_mtime_ns == before
+        assert errors == []
+
+
+@pytest.mark.parametrize('entry', ['upload', 'drop', 'clipboard'])
+def test_embedded_png_workflow_uses_real_metadata_without_opening_host(monkeypatch, tmp_path, entry):
+    from PIL import Image, PngImagePlugin
+    graph = {'version': 0.4, 'nodes': [{'id': 1, 'type': 'ActualNode', 'pos': [12, 34],
+        'inputs': [], 'outputs': [], 'widgets_values': ['metadata-value', 9]}], 'links': []}
+    info = PngImagePlugin.PngInfo()
+    info.add_text('workflow', json.dumps(graph))
+    binary = io.BytesIO()
+    Image.new('RGB', (2, 2)).save(binary, format='PNG', pnginfo=info)
+    encoded = base64.b64encode(binary.getvalue()).decode('ascii')
+    monkeypatch.setenv('GW_COMFYUI_URL', 'http://127.0.0.1:8199')
+    monkeypatch.setattr('gw.god_workflow.routes._comfy_operation', lambda *args: {'highlight': True, 'status': 'online'})
+    async def probe():
+        return {'online': True, 'object_info': {'ActualNode': {'input': {'required': {'text': ['STRING', {}], 'count': ['INT', {}]}}}}}
+    monkeypatch.setattr('gw.god_workflow.comfy_executor.probe', probe)
+    with settings_browser(monkeypatch, tmp_path) as (page, base, errors, _):
+        if entry == 'clipboard':
+            # 隔离系统剪贴板，实际控制器读到含原始元数据的ClipboardItem。
+            page.add_init_script('''Object.defineProperty(navigator, 'clipboard', {value: {
+              readText: async()=>'', read: async()=>[{types:['image/png'], getType: async()=>
+              new Blob([Uint8Array.from(atob('%s'), c=>c.charCodeAt(0))], {type:'image/png'})}]
+            }});''' % encoded)
+        page.goto(base + '/static/pages/workflow.html', wait_until='networkidle')
+        if entry == 'upload':
+            image = tmp_path / 'embedded.png'
+            image.write_bytes(binary.getvalue())
+            page.locator('#localFileInput').set_input_files(image)
+        elif entry == 'drop':
+            page.evaluate('''encoded=>{const data=new DataTransfer();
+              data.items.add(new File([Uint8Array.from(atob(encoded), c=>c.charCodeAt(0))], 'embedded.png', {type:'image/png'}));
+              document.getElementById('canvasViewport').dispatchEvent(new DragEvent('drop', {bubbles:true,dataTransfer:data}));}''', encoded)
+        else:
+            history = page.context.request.get(base + '/api/god_workflow/clipboard?text=' + quote('https://www.runninghub.cn/workflow/9999999999999999999'))
+            assert history.status == 200
+            page.locator('#btnParseLink').click()
+        page.wait_for_function('state.currentWorkflow?.nodes?.length === 1')
+        current = page.evaluate('state.currentWorkflow')
+        saved = page.context.request.get(base + '/api/god_workflow/item/' + current['workflow_id']).json()
+        assert saved['nodes'][0]['widgets'] == ['metadata-value', 9]
+        assert saved['raw_payload'] == graph
+        assert saved['metadata']['needs_host_resolution'] is False
+        assert len(page.context.pages) == 1 and errors == []
+
+
+def test_native_page_resolution_is_last_resort_for_unsupported_widget_mapping(monkeypatch, tmp_path):
+    host_root = tmp_path / 'last-resort-host'
+    static = host_root / 'python_embeded/Lib/site-packages/comfyui_frontend_package/static'
+    (static / 'scripts').mkdir(parents=True)
+    (static / 'scripts/app.js').write_text('isolated', encoding='utf-8')
+    monkeypatch.setenv('GW_COMFYUI_ROOT_DIR', str(host_root))
+    monkeypatch.setenv('GW_COMFYUI_URL', 'http://127.0.0.1:8199')
+    controls = []
+    def control(context, action):
+        controls.append(action)
+        return {'status': 'online', 'highlight': True}
+    monkeypatch.setattr('gw.god_workflow.routes._comfy_operation', control)
+    async def probe():
+        return {'online': True, 'object_info': {'ActualNode': {'input': {'required': {'text': ['STRING', {}], 'count': ['INT', {}]}}}}}
+    monkeypatch.setattr('gw.god_workflow.comfy_executor.probe', probe)
+    graph = {'version': 0.4, 'nodes': [{'id': 1, 'type': 'ActualNode', 'pos': [12, 34],
+        'inputs': [], 'outputs': [], 'widgets_values': ['UI-only', 'native-text', 9]}], 'links': []}
+    with settings_browser(monkeypatch, tmp_path) as (page, base, errors, _):
+        def host(route):
+            path = urlsplit(route.request.url).path
+            if path == '/scripts/app.js':
+                body = '''export const app={registerExtension:e=>e.setup(),
+                  loadGraphData:async g=>{window.loadedGraph=structuredClone(g)},
+                  graphToPrompt:async()=>({output:{'1':{class_type:'ActualNode',inputs:{text:window.loadedGraph.nodes[0].widgets_values[1],count:window.loadedGraph.nodes[0].widgets_values[2]}}}}),
+                  graph:{serialize:()=>structuredClone(window.loadedGraph),
+                    get _nodes(){return [{id:1,widgets:[{name:'ui'},{name:'text'},{name:'count'}]}]}}};'''
+                kind = 'application/javascript'
+            elif path.endswith('/workbench.js'):
+                body = (static / 'extensions/gods_workbench/workbench.js').read_text(encoding='utf-8')
+                kind = 'application/javascript'
+            else:
+                body = '<!doctype html><script type="module" src="/extensions/gods_workbench/workbench.js"></script>'
+                kind = 'text/html'
+            route.fulfill(status=200, content_type=kind, body=body)
+        page.context.route('http://127.0.0.1:8199/**', host)
+        page.goto(base + '/static/pages/workflow.html', wait_until='networkidle')
+        native_file = tmp_path / 'custom-native.json'
+        native_file.write_text(json.dumps(graph), encoding='utf-8')
+        with page.expect_popup() as opened:
+            page.locator('#localFileInput').set_input_files(native_file)
+        opened.value.wait_for_function('window.loadedGraph?.nodes?.length === 1')
+        page.wait_for_function('state.currentWorkflow?.version === 2')
+        workflow_id = page.evaluate('state.currentWorkflow.workflow_id')
+        saved = page.context.request.get(base + '/api/god_workflow/item/' + workflow_id).json()
+        assert saved['metadata']['needs_host_resolution'] is False
+        assert saved['metadata']['resolved_api']['prompt']['1']['inputs'] == {'text': 'native-text', 'count': 9}
+        assert saved['metadata']['resolved_api']['field_maps'] == {'1': {'widget_1': 'text', 'widget_2': 'count'}}
+        assert saved['raw_payload']['nodes'][0]['widgets_values'] == graph['nodes'][0]['widgets_values']
+        assert set(controls) == {'status'} and errors == []
+
+
+@pytest.mark.parametrize('legacy_zero', [False, True])
+def test_native_format_version_can_save_then_submit_local_in_browser(monkeypatch, tmp_path, legacy_zero):
+    """原生0.4新导入与旧零版本均通过真实页面CAS保存，执行器隔离替身。"""
+    from gw.god_workflow import comfy_executor
+    submissions = []
+    async def probe():
+        return {'online': True, 'object_info': {'LoadImage': {'input': {'required': {'image': ['STRING', {}]}}}}}
+    async def submit(prompt, **kwargs):
+        submissions.append(prompt)
+        return {'prompt_id': 'isolated-native-version'}
+    async def history(*args, **kwargs):
+        return {'found': False}
+    monkeypatch.setenv('GW_COMFYUI_URL', 'http://127.0.0.1:8199')
+    monkeypatch.setattr(comfy_executor, 'probe', probe)
+    monkeypatch.setattr(comfy_executor, 'submit', submit)
+    monkeypatch.setattr(comfy_executor, 'history', history)
+    monkeypatch.setattr('gw.god_workflow.routes._comfy_operation', lambda *args: {'highlight': False})
+    graph = {'version': 0.4, 'nodes': [{'id': 1, 'type': 'LoadImage', 'pos': [10, 20],
+        'widgets_values': ['original.png'], 'inputs': [], 'outputs': []}], 'links': []}
+    with settings_browser(monkeypatch, tmp_path) as (page, base, errors, _):
+        response = page.context.request.post(base + '/api/god_workflow/parse-upload?source=canvas',
+            data=graph, headers={'Origin': base})
+        assert response.status == 200, response.text()
+        target = response.json()['workflow_id']
+        if legacy_zero:
+            import os
+            storage = Path(os.environ['GW_DATA_DIR'])
+            assert storage.is_relative_to(tmp_path)
+            files = list(storage.rglob(target + '.json'))
+            assert len(files) == 1
+            stored = json.loads(files[0].read_text(encoding='utf-8'))
+            stored['version'] = 0
+            files[0].write_text(json.dumps(stored), encoding='utf-8')
+        page.goto(base + '/static/pages/workflow.html?id=' + target, wait_until='networkidle')
+        page.wait_for_function('(id) => state.currentWorkflow?.workflow_id === id', arg=target)
+        assert page.evaluate('state.currentWorkflow.version') == 1
+        page.locator('.canvas-node[data-node-id="1"]').click()
+        page.locator('[data-widget-control="1:widget_0"]').first.fill('native-edited.png')
+        page.wait_for_function('state.currentWorkflow.version === 2')
+        page.locator('#btnTargetLocal').click()
+        page.locator('#btnExecuteWorkflow').click()
+        page.wait_for_function('state.activeTaskId !== null')
+        assert len(submissions) == 1 and submissions[0]['1']['inputs']['image'] == 'native-edited.png'
+        saved = page.context.request.get(base + '/api/god_workflow/item/' + target).json()
+        task = page.context.request.get(base + '/api/god_workflow/tasks').json()['tasks'][0]
+        assert task['workflow_version'] == saved['version']
+        assert saved['nodes'][0]['widgets'] == ['native-edited.png']
+        assert saved['raw_payload']['version'] == 0.4
         assert errors == []
 
 
@@ -441,6 +737,10 @@ def test_native_wire_centres_type_and_source_at_zoom_and_pan(monkeypatch, tmp_pa
 
 def test_asset_host_workflow_ids_native_export_cas_and_edit_jump(monkeypatch, tmp_path):
     """实际素材页点击和下载字节验证桥接入口，全部使用临时主体。"""
+    async def probe():
+        return {'online': True, 'object_info': {'LoadImage': {'input': {'required': {'image': ['STRING', {}]}}}}}
+    monkeypatch.setenv('GW_COMFYUI_URL', 'http://127.0.0.1:8199')
+    monkeypatch.setattr('gw.god_workflow.comfy_executor.probe', probe)
     with settings_browser(monkeypatch, tmp_path) as (page, base, errors, _):
         first = create_workflow(page, base, 'first.png', '中秋工作流')
         second = create_workflow(page, base, 'second.png', '中秋工作流')
