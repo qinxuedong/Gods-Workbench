@@ -129,17 +129,6 @@
       font-size: var(--gw-type-body-sm);
       font-weight: 800;
     }
-    .launch-orb-btn {
-      filter: hue-rotate(0deg);
-      transition: transform 0.15s ease, box-shadow 0.15s ease, filter 0.15s ease;
-    }
-    .launch-orb-btn:hover { filter: hue-rotate(30deg) brightness(1.2); }
-    .launch-orb-btn:active { transform: scale(0.92) !important; }
-    @keyframes orbCoreFloat {
-      0%   { transform: scale(0.88) translateY(0.5px); opacity: 0.85; }
-      100% { transform: scale(1.08) translateY(-0.5px); opacity: 1; }
-    }
-
     /* 方形大尺寸预览图 (110px*110px，支持卡片 240px 高度紧凑精致排版) */
     .proj-card-thumb {
       width: 110px;
@@ -303,12 +292,12 @@
       <!-- CENTER: 系统中央总线引擎 -->
       <div class="flex items-center space-x-2 shrink-0">
         <div class="flex items-center space-x-2 bg-[#07080b] px-3.5 py-1.5 rounded-lg border border-white/10 shadow-inner">
-          <button class="text-slate-400 hover:text-[#dfc384] p-0.5 transition"><i data-lucide="chevron-left" class="w-4 h-4"></i></button>
+          <button class="hw-btn hw-btn-icon transition"><i data-lucide="chevron-left" class="w-4 h-4"></i></button>
           <div class="flex items-center space-x-2 px-1.5">
             <span class="w-1.5 h-1.5 rounded-full bg-[#dfc384] shadow-[0_0_6px_#dfc384] animate-pulse"></span>
             <span class="gw-type-body-sm font-mono font-bold text-[#eddab3]">PROJECT ASSET MASTER DECK</span>
           </div>
-          <button class="text-slate-400 hover:text-[#dfc384] p-0.5 transition"><i data-lucide="chevron-right" class="w-4 h-4"></i></button>
+          <button class="hw-btn hw-btn-icon transition"><i data-lucide="chevron-right" class="w-4 h-4"></i></button>
         </div>
       </div>
 
@@ -464,8 +453,8 @@
     <!-- ----------------------------------------------------------------------- -->
     <!-- LEFT CONSOLE DOCK: 上下文工作流总线                                           -->
     <!-- ----------------------------------------------------------------------- -->
-    <aside class="w-64 bg-[#08090d] border-r border-[#191c24] flex flex-col shrink-0 z-30 h-full min-h-0">
-      <div class="flex-1 flex flex-col min-h-0 relative" id="contextBusContainer">
+    <aside class="w-64 bg-[#08090d] border-r border-[#191c24] flex flex-col shrink-0 z-30 h-full min-h-0 overflow-hidden">
+      <div class="flex-1 flex flex-col min-h-0 relative overflow-hidden" id="contextBusContainer">
         <!-- Tree Header -->
         <div class="p-2 border-b border-white/5 shrink-0">
           <div class="w-full flex items-center justify-between px-3 py-2 rounded-xl bg-[#141720] border border-[#dfc384]/35 text-[#eddab3] gw-type-body-sm font-semibold shadow-[0_0_12px_rgba(223,195,132,0.12)] relative">
@@ -474,25 +463,25 @@
               <i data-lucide="git-branch" class="w-4 h-4 text-[#dfc384]"></i>
               <span class="font-semibold">项目工程工作流总线</span>
             </div>
-            <button class="text-slate-400 hover:text-[#dfc384] p-1 rounded-lg hover:bg-white/5 transition" title="刷新总线" onclick="WorkbenchProjects.load()">
+            <button class="hw-btn hw-btn-icon transition" title="刷新总线" onclick="WorkbenchProjects.load()">
               <i data-lucide="refresh-cw" class="w-3 h-3"></i>
             </button>
           </div>
         </div>
 
         <!-- Scrollable Flow Graph -->
-        <div class="flex-1 overflow-y-auto p-2 pr-2 relative space-y-4">
+        <div class="flex-1 overflow-y-auto p-2 pr-2 relative space-y-4 min-h-0">
           <!-- Continuous Bus Trunk Line -->
           <div class="absolute left-3.5 top-2 bottom-4 w-[1.5px] bg-gradient-to-b from-[#dfc384] via-[#dfc384]/40 to-transparent pointer-events-none"></div>
 
-          <!-- 1. NODE 01: 院线长片 -->
+          <!-- 1. NODE 01: 制作中工程 (film) -->
           <div class="relative pl-5">
             <div class="absolute left-[-6px] top-[17px] w-[6px] h-[1.5px] bg-[#dfc384]/60 pointer-events-none"></div>
             <div data-project-type="film" class="tree-node-card px-2.5 py-1.5 flex items-center justify-between group cursor-pointer" onclick="WorkbenchProjects.filterType('film', this)">
               <div class="card-connector-pin"></div>
               <div class="flex items-center space-x-1.5 min-w-0">
                 <span class="gw-type-body-sm font-mono text-[#dfc384] font-bold px-1 py-0.5 rounded bg-[#dfc384]/15 border border-[#dfc384]/30 shrink-0">01</span>
-                <span class="gw-type-body-md font-semibold text-slate-100 truncate">《神谕之地》院线长片</span>
+                <span class="gw-type-body-md font-semibold text-slate-100 truncate">制作中工程 (长片)</span>
               </div>
               <span class="gw-type-body-sm font-mono px-1 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 shrink-0 flex items-center space-x-0.5">
                 <span>act</span>
@@ -504,7 +493,7 @@
                 <div class="absolute -left-3 top-1/2 -translate-y-1/2 w-3 h-[1px] bg-[#dfc384]/40 pointer-events-none"></div>
                 <div class="w-full tree-node-card px-2.5 py-1.5 flex items-center justify-between gw-type-body-sm">
                   <div class="card-connector-pin"></div>
-                  <span class="text-slate-300 truncate">1.1 概念剧照调色</span>
+                  <span class="text-slate-300 truncate">1.1 概念资产调色</span>
                   <span class="gw-type-body-sm font-mono text-amber-300 shrink-0" id="projStageAssets" data-gw-degradation="not_integrated" title="真实数据源：/api/episode-pipelines 的 assets 阶段状态">读取中…</span>
                 </div>
               </div>
@@ -521,40 +510,40 @@
             </div>
           </div>
 
-          <!-- 2. NODE 02: 赛博短剧 -->
+          <!-- 2. NODE 02: 渲染中工程 (series) -->
           <div class="relative pl-5">
             <div class="absolute left-[-6px] top-[17px] w-[6px] h-[1.5px] bg-[#dfc384]/50 pointer-events-none"></div>
             <div data-project-type="series" class="tree-node-card px-2.5 py-1.5 flex items-center justify-between cursor-pointer" onclick="WorkbenchProjects.filterType('series', this)">
               <div class="card-connector-pin"></div>
               <div class="flex items-center space-x-1.5 min-w-0">
                 <span class="gw-type-body-sm font-mono text-[#eddab3] font-bold px-1 py-0.5 rounded bg-white/5 border border-white/10 shrink-0">02</span>
-                <span class="gw-type-body-md font-semibold text-slate-200 truncate">《霓虹脉冲2099》短剧</span>
+                <span class="gw-type-body-md font-semibold text-slate-200 truncate">渲染中工程 (短剧)</span>
               </div>
               <span class="gw-type-body-sm font-mono px-1 py-0.5 rounded-full bg-cyan-500/15 text-cyan-400 border border-cyan-500/30 shrink-0">run</span>
             </div>
           </div>
 
-          <!-- 3. NODE 03: 概念PV -->
+          <!-- 3. NODE 03: 待审阅工程 (other) -->
           <div class="relative pl-5">
             <div class="absolute left-[-6px] top-[17px] w-[6px] h-[1.5px] bg-amber-500/40 pointer-events-none"></div>
             <div data-project-type="other" class="tree-node-card px-2.5 py-1.5 flex items-center justify-between cursor-pointer" onclick="WorkbenchProjects.filterType('other', this)">
               <div class="card-connector-pin"></div>
               <div class="flex items-center space-x-1.5 min-w-0">
                 <span class="gw-type-body-sm font-mono text-slate-400 font-bold px-1 py-0.5 rounded bg-white/5 border border-white/10 shrink-0">03</span>
-                <span class="gw-type-body-md font-semibold text-slate-300 truncate">《深渊回响》先导概念</span>
+                <span class="gw-type-body-md font-semibold text-slate-300 truncate">待审阅工程 (实验/概念)</span>
               </div>
               <span class="gw-type-body-sm font-mono px-1 py-0.5 rounded-full bg-amber-500/15 text-amber-300 border border-amber-500/30 shrink-0">plan</span>
             </div>
           </div>
 
-          <!-- 4. NODE 04: 已归档 -->
+          <!-- 4. NODE 04: 已归档工程 (archived) -->
           <div class="relative pl-5">
             <div class="absolute left-[-6px] top-[17px] w-[6px] h-[1.5px] bg-blue-400/40 pointer-events-none"></div>
             <div data-project-scope="archived" class="tree-node-card px-2.5 py-1.5 flex items-center justify-between cursor-pointer" onclick="WorkbenchProjects.toggleArchived(this)">
               <div class="card-connector-pin"></div>
               <div class="flex items-center space-x-1.5 min-w-0">
                 <span class="gw-type-body-sm font-mono text-blue-400 font-bold px-1 py-0.5 rounded bg-blue-500/10 border border-blue-500/20 shrink-0">04</span>
-                <span class="gw-type-body-md font-semibold text-slate-400 truncate">已归档发行剧集 (8)</span>
+                <span class="gw-type-body-md font-semibold text-slate-400 truncate">已归档工程</span>
               </div>
               <span class="gw-type-body-sm font-mono px-1 py-0.5 rounded-full bg-blue-500/15 text-blue-400 border border-blue-500/30 shrink-0">arch</span>
             </div>
@@ -594,7 +583,7 @@
 
           <div class="h-4 w-px bg-white/10"></div>
 
-          <button class="tactile-keycap px-3 py-1.5 rounded-xl flex items-center space-x-1.5 group cursor-pointer" title="新建项目" onclick="HardwareDeck.openModal('newProjectModal')">
+          <button class="hw-btn hw-btn-gold flex items-center space-x-1.5 group cursor-pointer" title="新建项目" onclick="HardwareDeck.openModal('newProjectModal')">
             <div class="hw-round-btn w-4 h-4"><div class="hw-round-inner w-3 h-3"><i data-lucide="plus" class="w-2.5 h-2.5 text-[#dfc384]"></i></div></div>
             <span class="gw-type-body-sm font-bold text-[#eddab3]">新建项目</span>
           </button>
@@ -682,7 +671,7 @@
                 <i data-lucide="layers" class="w-3.5 h-3.5 text-[#dfc384]"></i>
                 <h3 class="gw-type-body-lg font-semibold text-slate-100">渲染批处理流水线</h3>
               </div>
-              <button class="gw-type-body-md font-mono font-bold text-cyan-300 hover:underline cursor-pointer" id="activeTasksCountBadge" onclick="HardwareDeck.openDrawer('taskCenterDrawer')" title="真实作业队列 /api/observability/tasks">读取中…</button>
+              <button class="hw-btn cursor-pointer" id="activeTasksCountBadge" onclick="HardwareDeck.openDrawer('taskCenterDrawer')" title="真实作业队列 /api/observability/tasks">读取中…</button>
             </div>
 
             <!-- 真实作业队列容器：内容由 /api/observability/tasks 驱动，不含静态示例任务。 -->
@@ -703,20 +692,9 @@
                 <span id="projectDispatchStatus" title="真实数据源：POST /api/asset-registry/projects">待命</span>
               </div>
             </div>
-            <!-- 彩虹 AI 微球发射按钮 -->
-            <button class="launch-orb-btn shrink-0 cursor-pointer" title="一键立项点火" onclick="HardwareDeck.openModal('newProjectModal')" style="
-              width: 36px; height: 36px; border-radius: 50%;
-              background: conic-gradient(from 0deg, #22d3ee, #a855f7, #f59e0b, #ec4899, #22d3ee);
-              padding: 2.5px;
-              box-shadow: 0 0 14px rgba(236,72,153,0.65), 0 0 8px rgba(34,211,238,0.75), 0 0 24px rgba(168,85,247,0.4);
-              transition: transform 0.15s ease, box-shadow 0.15s ease;
-            ">
-              <div style="width:100%;height:100%;border-radius:50%;background:rgba(5,5,10,0.88);display:flex;align-items:center;justify-content:center;">
-                <div style="width:14px;height:14px;border-radius:50%;
-                  background: radial-gradient(circle at 35% 35%, #67e8f9, #a855f7 55%, #f59e0b);
-                  box-shadow: 0 0 6px rgba(103,232,249,0.8), 0 0 3px rgba(168,85,247,0.6);
-                  animation: orbCoreFloat 2.8s ease-in-out infinite alternate;"></div>
-              </div>
+            <!-- 彩虹 AI 微球发射按钮（GW-ORB-01 真源外观，32px 顶栏同款） -->
+            <button class="launch-orb-btn shrink-0 cursor-pointer" title="一键立项点火" onclick="HardwareDeck.openModal('newProjectModal')">
+              <div class="orb-core"><span></span></div>
             </button>
           </section>
         </div>
@@ -734,7 +712,7 @@
           <i data-lucide="folder-plus" class="w-4 h-4 text-[#dfc384]"></i>
           <h3 class="gw-type-body-lg font-bold text-slate-100">创建新影视制片工程</h3>
         </div>
-        <button class="text-slate-400 hover:text-white" onclick="HardwareDeck.closeModal('newProjectModal')">
+        <button class="hw-btn hw-btn-icon" onclick="HardwareDeck.closeModal('newProjectModal')">
           <i data-lucide="x" class="w-4 h-4"></i>
         </button>
       </div>
@@ -777,15 +755,15 @@
 
         <div class="project-date-range-field" data-project-date-range>
           <label class="block gw-type-body-sm font-mono text-slate-400 mb-1">项目排期</label>
-          <button type="button" class="tactile-keycap project-date-range-trigger" data-date-range-trigger aria-haspopup="dialog" aria-expanded="false"><i data-lucide="calendar-days" class="w-4 h-4"></i><span class="project-date-range-label" data-date-range-label>选择项目排期</span></button>
+          <button type="button" class="hw-btn project-date-range-trigger" data-date-range-trigger aria-haspopup="dialog" aria-expanded="false"><i data-lucide="calendar-days" class="w-4 h-4"></i><span class="project-date-range-label" data-date-range-label>选择项目排期</span></button>
           <input type="hidden" id="newProjectStartAt" data-date-range-start>
           <input type="hidden" id="newProjectDueAt" data-date-range-end>
           <div class="project-date-range-popover" data-date-range-popover hidden></div>
         </div>
 
         <div class="pt-2 border-t border-white/10 flex justify-end space-x-2">
-          <button type="button" class="px-3 py-1.5 rounded-lg gw-type-body-md font-mono text-slate-400 hover:text-white" onclick="HardwareDeck.closeModal('newProjectModal')">取消</button>
-          <button type="submit" class="tactile-keycap px-4 py-1.5 rounded-lg gw-type-body-md font-bold text-[#eddab3]">立即立项</button>
+          <button type="button" class="hw-btn" onclick="HardwareDeck.closeModal('newProjectModal')">取消</button>
+          <button type="submit" class="hw-btn hw-btn-gold">立即立项</button>
         </div>
       </form>
     </div>
@@ -799,7 +777,7 @@
         <i data-lucide="layers" class="w-4 h-4 text-[#dfc384]"></i>
         <h3 class="gw-type-body-lg font-bold text-slate-100">渲染队列与后台任务流水线</h3>
       </div>
-      <button class="text-slate-400 hover:text-white" onclick="HardwareDeck.closeDrawer('taskCenterDrawer')">
+      <button class="hw-btn hw-btn-icon" onclick="HardwareDeck.closeDrawer('taskCenterDrawer')">
         <i data-lucide="x" class="w-4 h-4"></i>
       </button>
     </div>
@@ -820,7 +798,7 @@
           <i data-lucide="users" class="w-4 h-4 text-[#dfc384]"></i>
           <h3 class="gw-type-body-lg font-bold text-slate-100">团队与协同席位治理</h3>
         </div>
-        <button type="button" class="hw-modal-close text-slate-400 hover:text-white" onclick="HardwareDeck.closeModal('teamModal')">
+        <button type="button" class="hw-modal-close hw-btn-icon" onclick="HardwareDeck.closeModal('teamModal')">
           <i data-lucide="x" class="w-4 h-4"></i>
         </button>
       </div>
@@ -865,7 +843,7 @@
           <i id="actionModalIcon" data-lucide="alert-triangle" class="w-4 h-4 text-[#dfc384]"></i>
           <h3 class="gw-type-body-lg font-bold text-slate-100" id="actionModalTitle">项目操作确认</h3>
         </div>
-        <button type="button" class="hw-modal-close text-slate-400 hover:text-white cursor-pointer" onclick="HardwareDeck.closeModal('projectActionModal')">
+        <button type="button" class="hw-modal-close hw-btn-icon cursor-pointer" onclick="HardwareDeck.closeModal('projectActionModal')">
           <i data-lucide="x" class="w-4 h-4"></i>
         </button>
       </div>
@@ -889,8 +867,8 @@
         </div>
 
         <div class="pt-2 border-t border-white/10 flex justify-end space-x-2">
-          <button type="button" class="px-3 py-1.5 rounded-lg gw-type-body-md font-mono text-slate-400 hover:text-white cursor-pointer" onclick="HardwareDeck.closeModal('projectActionModal')">取消</button>
-          <button type="button" id="actionModalConfirmBtn" class="tactile-keycap px-4 py-1.5 rounded-lg gw-type-body-md font-bold cursor-pointer" onclick="WorkbenchProjects.executeConfirmedAction()">确定执行</button>
+          <button type="button" class="hw-btn cursor-pointer" onclick="HardwareDeck.closeModal('projectActionModal')">取消</button>
+          <button type="button" id="actionModalConfirmBtn" class="hw-btn hw-btn-gold cursor-pointer" onclick="WorkbenchProjects.executeConfirmedAction()">确定执行</button>
         </div>
       </div>
     </div>
@@ -904,7 +882,7 @@
           <i data-lucide="edit-3" class="w-4 h-4 text-[#dfc384]"></i>
           <h3 class="gw-type-body-lg font-bold text-slate-100">编辑制片工程信息</h3>
         </div>
-        <button type="button" class="text-slate-400 hover:text-white cursor-pointer" onclick="HardwareDeck.closeModal('editProjectModal')">
+        <button type="button" class="hw-btn hw-btn-icon cursor-pointer" onclick="HardwareDeck.closeModal('editProjectModal')">
           <i data-lucide="x" class="w-4 h-4"></i>
         </button>
       </div>
@@ -961,7 +939,7 @@
 
         <div class="project-date-range-field" data-project-date-range>
           <label class="block gw-type-body-sm font-mono text-slate-400 mb-1">项目排期</label>
-          <button type="button" class="tactile-keycap project-date-range-trigger" data-date-range-trigger aria-haspopup="dialog" aria-expanded="false"><i data-lucide="calendar-days" class="w-4 h-4"></i><span class="project-date-range-label" data-date-range-label>选择项目排期</span></button>
+          <button type="button" class="hw-btn project-date-range-trigger" data-date-range-trigger aria-haspopup="dialog" aria-expanded="false"><i data-lucide="calendar-days" class="w-4 h-4"></i><span class="project-date-range-label" data-date-range-label>选择项目排期</span></button>
           <input type="hidden" id="editProjectStartAt" data-date-range-start>
           <input type="hidden" id="editProjectDueAt" data-date-range-end>
           <div class="project-date-range-popover" data-date-range-popover hidden></div>
@@ -973,8 +951,8 @@
         </div>
 
         <div class="pt-2 border-t border-white/10 flex justify-end space-x-2">
-          <button type="button" class="px-3 py-1.5 rounded-lg gw-type-body-md font-mono text-slate-400 hover:text-white cursor-pointer" onclick="HardwareDeck.closeModal('editProjectModal')">取消</button>
-          <button type="submit" class="tactile-keycap px-4 py-1.5 rounded-lg gw-type-body-md font-bold text-[#eddab3] cursor-pointer">保存修改</button>
+          <button type="button" class="hw-btn cursor-pointer" onclick="HardwareDeck.closeModal('editProjectModal')">取消</button>
+          <button type="submit" class="hw-btn hw-btn-gold cursor-pointer">保存修改</button>
         </div>
       </form>
     </div>
@@ -993,7 +971,7 @@
           <p class="gw-type-body-md font-mono text-slate-500">非物理软删除隔离停放池 · 支持随时无损安全恢复</p>
         </div>
       </div>
-      <button class="text-slate-400 hover:text-white cursor-pointer" onclick="HardwareDeck.closeDrawer('unifiedGlobalTrashDrawer')">
+      <button class="hw-btn hw-btn-icon cursor-pointer" onclick="HardwareDeck.closeDrawer('unifiedGlobalTrashDrawer')">
         <i data-lucide="x" class="w-4 h-4"></i>
       </button>
     </div>
@@ -1032,7 +1010,7 @@
         <i data-lucide="shield-check" class="w-3.5 h-3.5"></i>
         <span>所有条目均保留元数据与哈希映射，永不静默物理销毁</span>
       </div>
-      <button class="tactile-keycap px-2.5 py-1 rounded gw-type-body-md text-[#eddab3] cursor-pointer" onclick="WorkbenchProjects.refreshGlobalTrash()">
+      <button class="hw-btn hw-btn-gold cursor-pointer" onclick="WorkbenchProjects.refreshGlobalTrash()">
         刷新回收池
       </button>
     </div>

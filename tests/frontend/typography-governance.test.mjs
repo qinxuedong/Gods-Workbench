@@ -113,7 +113,7 @@ test('主标题动态与iframe入口不得回退24px',()=>{
 test('跨页操作输入及主名称不得误映辅助字号',()=>{
  const matrix={
   'canvas-list':['.ws-project-name','.ws-primary-btn','.ws-newproj-input'],
-  'asset-manager':['.asset-card-name','.asset-btn,.asset-icon-btn','.local-caption-prompt-input'],
+  'asset-manager':['.asset-card-name','.local-caption-prompt-input'],
   'workflow-workbench':['.workflow-workbench .hw-btn','.workflow-workbench .wf-tree-name','.workflow-workbench .param-label-row'],
   'directory-settings':['.directory-page .asset-btn','.directory-mount-input'],
   'episode-pipeline':['.shot-card input, .shot-card textarea']
@@ -128,6 +128,11 @@ test('跨页操作输入及主名称不得误映辅助字号',()=>{
    assert.match(declaration,/line-height:\s*var\(--gw-leading-body-md\)/,`${file} ${selector}`);
   }
  }
+  // asset-btn/asset-icon-btn 旧族已于 2026-10-10 按钮统一（TASK-20261010 风险3）退役，
+  // 收敛至 hw-btn；按钮排版不变量上移为设计系统基类契约，必须显式声明 body-md 字号与行高。
+  const hwbtn=(read('web/css/base/hardware-design-system.css').match(/\.hw-btn \{([^}]+)\}/)||[])[1]||'';
+  assert.match(hwbtn,/font-size:\s*var\(--gw-type-body-md\)/,'hw-btn 基类必须声明 body-md 字号');
+  assert.match(hwbtn,/line-height:\s*var\(--gw-leading-body-md\)/,'hw-btn 基类必须声明 body-md 行高');
 });
 
 

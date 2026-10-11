@@ -2,6 +2,7 @@
 <html lang="zh-CN">
 <head>
   <link rel="stylesheet" href="/static/css/base/hardware-tokens.css">
+  <link rel="stylesheet" href="/static/css/base/hardware-design-system.css?v=v0.0.1-alpha-2026">
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>API 设置</title>
@@ -33,13 +34,13 @@
                 <aside class="sidebar">
                     <div class="side-section-title" data-i18n="api.providersTitle">平台列表</div>
                     <div id="providerList" class="provider-list"></div>
-                    <button class="add-btn" type="button" onclick="addProvider()"><i data-lucide="plus" class="w-4 h-4"></i><span data-i18n="api.addProvider">新增平台</span></button>
+                    <button class="hw-btn w-full mb-2" type="button" onclick="addProvider()"><i data-lucide="plus" class="w-4 h-4"></i><span data-i18n="api.addProvider">新增平台</span></button>
                     <div class="cli-quick-group">
                         <div class="side-section-title" data-i18n="api.cliSettings">CLI 设置</div>
                         <div class="cli-quick-list">
-                            <button class="cli-quick-btn" type="button" onclick="addCliProvider('jimeng')"><i data-lucide="image" class="w-3.5 h-3.5"></i><span>即梦 CLI</span></button>
-                            <button class="cli-quick-btn" type="button" onclick="addCliProvider('codex')"><i data-lucide="terminal" class="w-3.5 h-3.5"></i><span>GPT CLI</span></button>
-                            <button class="cli-quick-btn" type="button" onclick="addCliProvider('gemini-cli')"><i data-lucide="sparkles" class="w-3.5 h-3.5"></i><span>Gemini / Antigravity CLI</span></button>
+                            <button class="hw-btn hw-btn-sm w-full" type="button" onclick="addCliProvider('jimeng')"><i data-lucide="image" class="w-3.5 h-3.5"></i><span>即梦 CLI</span></button>
+                            <button class="hw-btn hw-btn-sm w-full" type="button" onclick="addCliProvider('codex')"><i data-lucide="terminal" class="w-3.5 h-3.5"></i><span>GPT CLI</span></button>
+                            <button class="hw-btn hw-btn-sm w-full" type="button" onclick="addCliProvider('gemini-cli')"><i data-lucide="sparkles" class="w-3.5 h-3.5"></i><span>Gemini / Antigravity CLI</span></button>
                             <div class="cli-quick-note">需要先安装 CLI文件夹中的依赖。</div>
                         </div>
                     </div>
@@ -58,8 +59,8 @@
                             <div class="editor-sub" data-i18n="api.editorSub">配置基础信息、API Key 和可用模型</div>
                         </div>
                         <div class="content-actions">
-                            <button id="deleteBtn" class="action-btn danger-btn api-page-delete-btn" type="button" onclick="deleteProvider()"><i data-lucide="trash-2" class="w-3.5 h-3.5"></i><span data-i18n="api.delete">删除</span></button>
-                            <button class="action-btn save-btn api-page-save-btn" type="button" onclick="saveProviders()"><i data-lucide="save" class="w-3.5 h-3.5"></i><span data-i18n="api.save">保存</span></button>
+                            <button id="deleteBtn" class="hw-btn hw-btn-danger" type="button" onclick="deleteProvider()"><i data-lucide="trash-2" class="w-3.5 h-3.5"></i><span data-i18n="api.delete">删除</span></button>
+                            <button class="hw-btn hw-btn-gold api-page-save-btn" type="button" onclick="saveProviders()"><i data-lucide="save" class="w-3.5 h-3.5"></i><span data-i18n="api.save">保存</span></button>
                         </div>
                     </div>
 
@@ -100,8 +101,8 @@
                                     <div class="key-input-line">
                                         <div class="field-frame"><input id="keyInput" name="provider-api-key" type="password" autocomplete="new-password" spellcheck="false" aria-describedby="keyHint"></div>
                                         <div class="key-actions">
-                                            <button class="key-btn" type="button" onclick="saveKeyOnly()" title="保存 Key" data-i18n-title="api.saveKeyTitle"><i data-lucide="check" class="w-4 h-4"></i></button>
-                                            <button class="key-btn key-clear" type="button" onclick="clearKeyOnly()" title="清除 Key" data-i18n-title="api.clearKeyTitle"><i data-lucide="trash-2" class="w-4 h-4"></i></button>
+                                            <button class="hw-btn hw-btn-icon" type="button" onclick="saveKeyOnly()" title="保存 Key" data-i18n-title="api.saveKeyTitle"><i data-lucide="check" class="w-4 h-4"></i></button>
+                                            <button class="hw-btn hw-btn-icon key-clear" type="button" onclick="clearKeyOnly()" title="清除 Key" data-i18n-title="api.clearKeyTitle"><i data-lucide="trash-2" class="w-4 h-4"></i></button>
                                         </div>
                                     </div>
                                 </div>
@@ -130,8 +131,8 @@
                                         <div class="key-input-line">
                                             <div class="field-frame"><input id="volcSkInput" name="provider-volc-sk" type="password" autocomplete="new-password" spellcheck="false" aria-label="火山素材库 Secret Access Key" placeholder="Secret Access Key"></div>
                                             <div class="key-actions">
-                                                <button class="key-btn" type="button" onclick="saveVolcengineAssetKeys()" title="保存火山素材库 AK/SK"><i data-lucide="check" class="w-4 h-4"></i></button>
-                                                <button class="key-btn key-clear" type="button" onclick="clearVolcengineAssetKeys()" title="清除火山素材库 AK/SK"><i data-lucide="trash-2" class="w-4 h-4"></i></button>
+                                                <button class="hw-btn hw-btn-icon" type="button" onclick="saveVolcengineAssetKeys()" title="保存火山素材库 AK/SK"><i data-lucide="check" class="w-4 h-4"></i></button>
+                                                <button class="hw-btn hw-btn-icon key-clear" type="button" onclick="clearVolcengineAssetKeys()" title="清除火山素材库 AK/SK"><i data-lucide="trash-2" class="w-4 h-4"></i></button>
                                             </div>
                                         </div>
                                         <span id="volcAssetKeyHint" class="hint"></span>
@@ -172,10 +173,10 @@
                                 <p class="jimeng-credit" role="note">这是服务器本机共享账户：治理角色的登录、退出和余额查询会影响同一服务器上的其他使用者。仅支持单进程/单worker部署，不保证多worker或多实例互斥。登录只会启动一次；关闭页面仅停止本页等待，不会取消服务器进程。</p>
                                 <p id="jimengExecutionInfo" class="hint">路径、执行开关、登录观察和生成能力分别验证。</p>
                                 <div class="jimeng-actions">
-                                    <button id="jimengLoginBtn" class="action-btn primary-btn" type="button" onclick="startJimengLogin()"><i data-lucide="log-in" class="w-3.5 h-3.5"></i><span>登录</span></button>
-                                    <button id="jimengCreditBtn" class="action-btn" type="button" onclick="refreshJimengCredit()"><i data-lucide="wallet-cards" class="w-3.5 h-3.5"></i><span>查询余额</span></button>
-                                    <button id="openJimengHelpBtn" class="action-btn" type="button" onclick="openJimengHelp()" aria-controls="jimengHelpOverlay" data-floating-trigger="jimengHelpOverlay"><i data-lucide="terminal" class="w-3.5 h-3.5"></i><span>帮助</span></button>
-                                    <button id="jimengLogoutBtn" class="action-btn danger-btn" type="button" onclick="logoutJimeng()"><i data-lucide="log-out" class="w-3.5 h-3.5"></i><span>退出登录</span></button>
+                                    <button id="jimengLoginBtn" class="hw-btn hw-btn-gold" type="button" onclick="startJimengLogin()"><i data-lucide="log-in" class="w-3.5 h-3.5"></i><span>登录</span></button>
+                                    <button id="jimengCreditBtn" class="hw-btn" type="button" onclick="refreshJimengCredit()"><i data-lucide="wallet-cards" class="w-3.5 h-3.5"></i><span>查询余额</span></button>
+                                    <button id="openJimengHelpBtn" class="hw-btn" type="button" onclick="openJimengHelp()" aria-controls="jimengHelpOverlay" data-floating-trigger="jimengHelpOverlay"><i data-lucide="terminal" class="w-3.5 h-3.5"></i><span>帮助</span></button>
+                                    <button id="jimengLogoutBtn" class="hw-btn hw-btn-danger" type="button" onclick="logoutJimeng()"><i data-lucide="log-out" class="w-3.5 h-3.5"></i><span>退出登录</span></button>
                                 </div>
                                 <div id="jimengCredit" class="jimeng-credit" aria-live="polite"></div>
                                 <div id="jimengLoginBox" class="jimeng-output" role="status" aria-live="polite" hidden></div>
@@ -189,8 +190,8 @@
                                     <div id="codexCliStatus" class="jimeng-status-pill">未检测</div>
                                 </div>
                                 <div class="jimeng-actions">
-                                    <button class="action-btn primary-btn" type="button" onclick="refreshCodexStatus()"><i data-lucide="radar" class="w-3.5 h-3.5"></i><span>检测 CLI</span></button>
-                                    <button id="openCodexHelpBtn" class="action-btn" type="button" onclick="openCodexHelp()" aria-controls="codexHelpOverlay" data-floating-trigger="codexHelpOverlay"><i data-lucide="terminal" class="w-3.5 h-3.5"></i><span>帮助</span></button>
+                                    <button class="hw-btn hw-btn-gold" type="button" onclick="refreshCodexStatus()"><i data-lucide="radar" class="w-3.5 h-3.5"></i><span>检测 CLI</span></button>
+                                    <button id="openCodexHelpBtn" class="hw-btn" type="button" onclick="openCodexHelp()" aria-controls="codexHelpOverlay" data-floating-trigger="codexHelpOverlay"><i data-lucide="terminal" class="w-3.5 h-3.5"></i><span>帮助</span></button>
                                 </div>
                                 <div id="codexCliInfo" class="jimeng-credit"></div>
                             </div>
@@ -204,17 +205,17 @@
                                     <div id="geminiCliStatus" class="jimeng-status-pill">未检测</div>
                                 </div>
                                 <div class="jimeng-actions">
-                                    <button class="action-btn primary-btn" type="button" onclick="refreshGeminiCliStatus()"><i data-lucide="radar" class="w-3.5 h-3.5"></i><span>检测 CLI</span></button>
-                                    <button id="openGeminiHelpBtn" class="action-btn" type="button" onclick="openGeminiCliHelp()" aria-controls="geminiCliHelpOverlay" data-floating-trigger="geminiCliHelpOverlay"><i data-lucide="terminal" class="w-3.5 h-3.5"></i><span>帮助</span></button>
+                                    <button class="hw-btn hw-btn-gold" type="button" onclick="refreshGeminiCliStatus()"><i data-lucide="radar" class="w-3.5 h-3.5"></i><span>检测 CLI</span></button>
+                                    <button id="openGeminiHelpBtn" class="hw-btn" type="button" onclick="openGeminiCliHelp()" aria-controls="geminiCliHelpOverlay" data-floating-trigger="geminiCliHelpOverlay"><i data-lucide="terminal" class="w-3.5 h-3.5"></i><span>帮助</span></button>
                                 </div>
                                 <div id="geminiCliInfo" class="jimeng-credit"></div>
                             </div>
                             <!-- 验证操作行 -->
                             <div class="verify-action-row">
-                                <button id="testUrlBtn" class="action-btn" type="button" onclick="testConnection()">
+                                <button id="testUrlBtn" class="hw-btn" type="button" onclick="testConnection()">
                                     <i data-lucide="check-circle-2" class="w-3.5 h-3.5"></i><span data-i18n="api.testUrl">验证地址</span>
                                 </button>
-                                <button id="probeAsyncBtn" class="action-btn" type="button" onclick="probeAsync()">
+                                <button id="probeAsyncBtn" class="hw-btn" type="button" onclick="probeAsync()">
                                     <i data-lucide="radar" class="w-3.5 h-3.5"></i><span>探测目录</span>
                                 </button>
                                 <div class="field-frame protocol-selector-wrap">
@@ -254,10 +255,10 @@
                             <div class="block-desc" data-i18n="api.modelsDesc">从上游 API 自动拉取所有可用模型并按类型分类（image / chat / video）</div>
                         </div>
                         <div class="models-toolbar-actions">
-                            <button id="fetchModelsBtn" class="action-btn primary-btn" type="button" onclick="fetchModels()">
+                            <button id="fetchModelsBtn" class="hw-btn hw-btn-gold" type="button" onclick="fetchModels()">
                                 <i data-lucide="download-cloud" class="w-3.5 h-3.5"></i><span data-i18n="api.fetchModels">拉取模型</span>
                             </button>
-                            <button id="openPickerBtn" class="action-btn" type="button" onclick="openModelPicker()" aria-controls="modelPickerOverlay" data-floating-trigger="modelPickerOverlay" disabled style="opacity:.5">
+                            <button id="openPickerBtn" class="hw-btn" type="button" onclick="openModelPicker()" aria-controls="modelPickerOverlay" data-floating-trigger="modelPickerOverlay" disabled style="opacity:.5">
                                 <i data-lucide="list-checks" class="w-3.5 h-3.5"></i><span data-i18n="api.selectModels">选择模型</span>
                             </button>
                         </div>
@@ -272,7 +273,7 @@
                                         <span class="ms-line"><span data-i18n="api.msModelExample">模型名称示意：</span><span class="inline-code">Tongyi-MAI/Z-Image-Turbo</span></span>
                                     </div>
                                 </div>
-                                <button class="ghost-btn" type="button" onclick="addModel('image')"><i data-lucide="plus" class="w-3.5 h-3.5"></i><span data-i18n="api.model">模型</span></button>
+                                <button class="hw-btn" type="button" onclick="addModel('image')"><i data-lucide="plus" class="w-3.5 h-3.5"></i><span data-i18n="api.model">模型</span></button>
                             </div>
                             <div id="imageModelList" class="model-list"></div>
                         </section>
@@ -283,7 +284,7 @@
                                     <div class="block-title" data-i18n="api.chatModels">聊天模型</div>
                                     <div class="block-desc" data-i18n="api.chatHint">GPT 对话和 LLM 节点使用</div>
                                 </div>
-                                <button class="ghost-btn" type="button" onclick="addModel('chat')"><i data-lucide="plus" class="w-3.5 h-3.5"></i><span data-i18n="api.model">模型</span></button>
+                                <button class="hw-btn" type="button" onclick="addModel('chat')"><i data-lucide="plus" class="w-3.5 h-3.5"></i><span data-i18n="api.model">模型</span></button>
                         </div>
                         <div id="chatModelList" class="model-list"></div>
                     </section>
@@ -294,7 +295,7 @@
                                     <div class="block-title" data-i18n="api.videoModels">视频模型</div>
                                     <div class="block-desc" data-i18n="api.videoHint">无限画布视频生成节点使用</div>
                                 </div>
-                                <button class="ghost-btn" type="button" onclick="addModel('video')"><i data-lucide="plus" class="w-3.5 h-3.5"></i><span data-i18n="api.model">模型</span></button>
+                                <button class="hw-btn" type="button" onclick="addModel('video')"><i data-lucide="plus" class="w-3.5 h-3.5"></i><span data-i18n="api.model">模型</span></button>
                             </div>
                             <label for="videoProtocolInput" data-i18n="api.videoProtocol">视频生成接口</label>
                             <select id="videoProtocolInput" aria-label="视频执行接口">
@@ -315,7 +316,7 @@
                                         <span class="ms-line"><span data-i18n="api.msEnModels">英文模型库：</span><a href="https://www.modelscope.ai/civision/models" target="_blank">https://www.modelscope.ai/civision/models</a></span>
                                     </div>
                                 </div>
-                                <button class="ghost-btn" type="button" onclick="addMsLora()"><i data-lucide="plus" class="w-3.5 h-3.5"></i><span>LoRA</span></button>
+                                <button class="hw-btn" type="button" onclick="addMsLora()"><i data-lucide="plus" class="w-3.5 h-3.5"></i><span>LoRA</span></button>
                             </div>
                             <div id="msLoraList" class="lora-list"></div>
                         </section>
@@ -336,15 +337,15 @@
                     <div id="modelPickerOverlayTitle" class="picker-title">从上游拉取的模型清单</div>
                     <div id="pickerCount" class="picker-count">—</div>
                 </div>
-                <button class="picker-close" type="button" data-picker-close aria-label="关闭模型选择"><i data-lucide="x" class="w-4 h-4"></i></button>
+                <button class="hw-btn hw-btn-icon" type="button" data-picker-close aria-label="关闭模型选择"><i data-lucide="x" class="w-4 h-4"></i></button>
             </div>
             <div class="picker-toolbar">
                 <input id="pickerFilter" class="picker-search" type="text" aria-label="搜索模型" placeholder="按名称搜索模型…" oninput="renderModelPicker()">
                 <div class="picker-cat-tabs">
-                    <button class="picker-cat-tab active" data-cat="all" onclick="selectPickerCat('all')">全部 <span class="cat-count">0</span></button>
-                    <button class="picker-cat-tab" data-cat="image" onclick="selectPickerCat('image')">生图 <span class="cat-count">0</span></button>
-                    <button class="picker-cat-tab" data-cat="chat" onclick="selectPickerCat('chat')">LLM <span class="cat-count">0</span></button>
-                    <button class="picker-cat-tab" data-cat="video" onclick="selectPickerCat('video')">视频 <span class="cat-count">0</span></button>
+                    <button class="hw-btn hw-btn-sm picker-cat-tab active" data-cat="all" onclick="selectPickerCat('all')">全部 <span class="cat-count">0</span></button>
+                    <button class="hw-btn hw-btn-sm picker-cat-tab" data-cat="image" onclick="selectPickerCat('image')">生图 <span class="cat-count">0</span></button>
+                    <button class="hw-btn hw-btn-sm picker-cat-tab" data-cat="chat" onclick="selectPickerCat('chat')">LLM <span class="cat-count">0</span></button>
+                    <button class="hw-btn hw-btn-sm picker-cat-tab" data-cat="video" onclick="selectPickerCat('video')">视频 <span class="cat-count">0</span></button>
                 </div>
             </div>
             <div id="pickerList" class="picker-body"></div>
@@ -356,8 +357,8 @@
                 <span id="sumUnsel" style="margin-left:auto;color:var(--faint)">未选 0</span>
             </div>
             <div class="picker-foot">
-                <button class="action-btn" type="button" data-picker-close>取消</button>
-                <button class="action-btn save-btn" type="button" onclick="applyModelPicker()">应用到模型列表</button>
+                <button class="hw-btn" type="button" data-picker-close>取消</button>
+                <button class="hw-btn hw-btn-gold" type="button" onclick="applyModelPicker()">应用到模型列表</button>
             </div>
         </div>
     </div>
@@ -369,7 +370,7 @@
                     <div id="jimengHelpOverlayTitle" class="picker-title">即梦 CLI 帮助</div>
                     <div class="picker-count">查看 dreamina 官方命令帮助输出</div>
                 </div>
-                <button class="picker-close" type="button" data-picker-close aria-label="关闭即梦 CLI 帮助"><i data-lucide="x" class="w-4 h-4"></i></button>
+                <button class="hw-btn hw-btn-icon" type="button" data-picker-close aria-label="关闭即梦 CLI 帮助"><i data-lucide="x" class="w-4 h-4"></i></button>
             </div>
             <div class="jimeng-help-toolbar">
                 <select id="jimengHelpCommand">
@@ -388,7 +389,7 @@
                     <option value="list_task">list_task</option>
                     <option value="query_result">query_result</option>
                 </select>
-                <button class="action-btn primary-btn" type="button" onclick="loadJimengHelp()"><i data-lucide="refresh-cw" class="w-3.5 h-3.5"></i><span>刷新</span></button>
+                <button class="hw-btn hw-btn-gold" type="button" onclick="loadJimengHelp()"><i data-lucide="refresh-cw" class="w-3.5 h-3.5"></i><span>刷新</span></button>
             </div>
             <pre id="jimengHelpOutput" class="jimeng-help-output"></pre>
         </div>
@@ -401,7 +402,7 @@
                     <div id="codexHelpOverlayTitle" class="picker-title">OpenAI Codex CLI 帮助</div>
                     <div class="picker-count">查看 codex 官方命令帮助输出</div>
                 </div>
-                <button class="picker-close" type="button" data-picker-close aria-label="关闭 Codex CLI 帮助"><i data-lucide="x" class="w-4 h-4" aria-hidden="true"></i></button>
+                <button class="hw-btn hw-btn-icon" type="button" data-picker-close aria-label="关闭 Codex CLI 帮助"><i data-lucide="x" class="w-4 h-4" aria-hidden="true"></i></button>
             </div>
             <div class="jimeng-help-toolbar">
                 <select id="codexHelpCommand">
@@ -414,7 +415,7 @@
                     <option value="app">app</option>
                     <option value="update">update</option>
                 </select>
-                <button class="action-btn primary-btn" type="button" onclick="loadCodexHelp()"><i data-lucide="refresh-cw" class="w-3.5 h-3.5"></i><span>刷新</span></button>
+                <button class="hw-btn hw-btn-gold" type="button" onclick="loadCodexHelp()"><i data-lucide="refresh-cw" class="w-3.5 h-3.5"></i><span>刷新</span></button>
             </div>
             <pre id="codexHelpOutput" class="jimeng-help-output"></pre>
         </div>
@@ -427,7 +428,7 @@
                     <div id="geminiHelpOverlayTitle" class="picker-title">Gemini / Antigravity CLI 帮助</div>
                     <div class="picker-count">查看 gemini 官方命令帮助输出</div>
                 </div>
-                <button class="picker-close" type="button" data-picker-close aria-label="关闭 Gemini / Antigravity CLI 帮助"><i data-lucide="x" class="w-4 h-4"></i></button>
+                <button class="hw-btn hw-btn-icon" type="button" data-picker-close aria-label="关闭 Gemini / Antigravity CLI 帮助"><i data-lucide="x" class="w-4 h-4"></i></button>
             </div>
             <div class="jimeng-help-toolbar">
                 <select id="geminiCliHelpCommand">
@@ -436,7 +437,7 @@
                     <option value="mcp">mcp</option>
                     <option value="extensions">extensions</option>
                 </select>
-                <button class="action-btn primary-btn" type="button" onclick="loadGeminiCliHelp()"><i data-lucide="refresh-cw" class="w-3.5 h-3.5"></i><span>刷新</span></button>
+                <button class="hw-btn hw-btn-gold" type="button" onclick="loadGeminiCliHelp()"><i data-lucide="refresh-cw" class="w-3.5 h-3.5"></i><span>刷新</span></button>
             </div>
             <pre id="geminiCliHelpOutput" class="jimeng-help-output"></pre>
         </div>

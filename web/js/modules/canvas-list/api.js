@@ -73,7 +73,17 @@ export function createCanvasListApi(http) {
             return request(canvasUrl(id), init);
         },
         createCanvas(payload, init = {}) {
-            return request('/api/canvases', jsonInit(payload, {...init, method: 'POST'}));
+            const pid = String(payload?.project_id || payload?.project || '').trim() || 'default';
+            const rawTitle = String(payload?.title || '').trim();
+            const body = {
+                project_id: pid,
+                title: rawTitle || '未命名智能画布',
+                mode: 'smart'
+            };
+            if (payload?.initial_payload && typeof payload.initial_payload === 'object') {
+                body.initial_payload = payload.initial_payload;
+            }
+            return request('/api/canvases', jsonInit(body, {...init, method: 'POST'}));
         },
         updateCanvasMeta(id, payload, init = {}) {
             return request(`${canvasUrl(id)}/meta`, jsonInit(payload, {...init, method: 'POST'}));

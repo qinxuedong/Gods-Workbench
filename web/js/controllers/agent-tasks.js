@@ -436,7 +436,7 @@
       for (const [format, title] of formats) {
         const button = document.createElement('button');
         button.type = 'button';
-        button.className = 'tactile-keycap px-2 py-1 rounded gw-type-body-md';
+        button.className = 'hw-btn hw-btn-sm';
         button.textContent = `导出 ${title}`;
         button.addEventListener('click', () => downloadExport(review, format));
         group.appendChild(button);

@@ -1350,7 +1350,7 @@ function renderModels(kind){
                     <input aria-label="${kind === 'image' ? '生图' : kind === 'video' ? '视频' : '聊天'}模型 ID ${index + 1}" spellcheck="false" autocomplete="off" value="${escapeAttr(model)}" oninput="updateModel('${kind}', ${index}, this.value)">
                 </div>
                 ${modelProtocolSelectHtml(kind, index, model, item)}
-                <button class="icon-btn" type="button" onclick="removeModel('${kind}', ${index})" aria-label="删除模型 ${escapeAttr(model || String(index + 1))}" title="删除"><i data-lucide="trash-2" class="w-4 h-4"></i></button>
+                <button class="hw-btn hw-btn-icon" type="button" onclick="removeModel('${kind}', ${index})" aria-label="删除模型 ${escapeAttr(model || String(index + 1))}" title="删除"><i data-lucide="trash-2" class="w-4 h-4"></i></button>
             </div>
         `;
     }).join('');
@@ -1391,7 +1391,7 @@ function renderMsLoras(){
                     <span>${tr('api.loraDefaultStrength')}</span>
                     <input type="number" min="0" max="2" step="0.05" value="${strength}" oninput="updateMsLora(${index}, 'strength', this.value)">
                 </label>
-                <button class="icon-btn" type="button" onclick="removeMsLora(${index})" aria-label="删除 LoRA ${escapeAttr(lora.id || String(index + 1))}" title="${escapeAttr(tr('common.delete'))}"><i data-lucide="trash-2" class="w-4 h-4"></i></button>
+                <button class="hw-btn hw-btn-icon" type="button" onclick="removeMsLora(${index})" aria-label="删除 LoRA ${escapeAttr(lora.id || String(index + 1))}" title="${escapeAttr(tr('common.delete'))}"><i data-lucide="trash-2" class="w-4 h-4"></i></button>
             </div>
         `;
     }).join('');

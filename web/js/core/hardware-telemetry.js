@@ -1050,8 +1050,8 @@
                 <span>打开资产中心与团队分配</span>
               </a>
               <div class="flex items-center space-x-2">
-                <button type="button" class="px-3 py-1.5 rounded-lg gw-type-body-md font-mono text-slate-400 hover:text-white" onclick="HardwareDeck.closeModal('accountModal')">关闭</button>
-                <button type="button" class="px-3 py-1.5 rounded-lg bg-red-500/20 text-red-300 border border-red-500/40 gw-type-body-md font-bold hover:bg-red-500/30 transition" onclick="HardwareDeck.handleLogout()">退出登录</button>
+                <button type="button" class="hw-btn" onclick="HardwareDeck.closeModal('accountModal')">关闭</button>
+                <button type="button" class="hw-btn hw-btn-danger" onclick="HardwareDeck.handleLogout()">退出登录</button>
               </div>
             </div>
           </div>
@@ -1086,8 +1086,8 @@
             <div class="pt-2 border-t border-white/10 flex items-center justify-between">
               <span class="gw-type-body-sm font-mono text-slate-500">发起端点: POST /api/asset-auth/login</span>
               <div class="flex items-center space-x-2">
-                <button type="button" class="px-3 py-1.5 rounded-lg gw-type-body-md font-mono text-slate-400 hover:text-white" onclick="HardwareDeck.closeModal('accountModal')">取消</button>
-                <button type="button" id="hwLoginSubmitBtn" ${loginAvailable ? '' : 'disabled'} onclick="HardwareDeck.handleLoginSubmit(event)" class="tactile-keycap px-4 py-1.5 rounded-lg gw-type-body-md font-bold text-[#eddab3] ${loginAvailable ? '' : 'opacity-50 cursor-not-allowed'}">
+                <button type="button" class="hw-btn" onclick="HardwareDeck.closeModal('accountModal')">取消</button>
+                <button type="button" id="hwLoginSubmitBtn" ${loginAvailable ? '' : 'disabled'} onclick="HardwareDeck.handleLoginSubmit(event)" class="hw-btn hw-btn-gold ${loginAvailable ? '' : 'opacity-50 cursor-not-allowed'}">
                   使用外部身份提供商登录
                 </button>
               </div>
@@ -1115,7 +1115,7 @@
           <input id="localPassword" name="password" type="password" class="w-full bg-black/40 border border-white/20 rounded-lg p-2 text-slate-100" autocomplete="${setup ? 'new-password' : 'current-password'}" required minlength="8" maxlength="128" ${setup ? 'pattern="(?=.*[A-Za-z])(?=.*[0-9]).{8,128}"' : ''} placeholder="至少8位，包含字母和数字">
           ${setup ? '<label class="block gw-type-body-md text-slate-300" for="localPasswordConfirm">确认密码</label><input id="localPasswordConfirm" type="password" class="w-full bg-black/40 border border-white/20 rounded-lg p-2 text-slate-100" autocomplete="new-password" required minlength="8" maxlength="128">' : ''}
           <p id="localLoginError" role="alert" class="gw-type-body-sm text-red-300 hidden"></p>
-          <button id="localLoginSubmit" type="submit" class="tactile-keycap w-full rounded-lg p-3 font-bold text-[#eddab3]">${setup ? '创建管理员并登录' : '登录'}</button>
+          <button id="localLoginSubmit" type="submit" class="hw-btn hw-btn-gold w-full">${setup ? '创建管理员并登录' : '登录'}</button>
         </form>`;
     },
 

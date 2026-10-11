@@ -46,18 +46,23 @@ window.WorkbenchAgents = (function () {
     if (!list) return;
 
     list.innerHTML = state.agents.map(ag => `
-      <div class="tree-node-card ${ag.active ? 'active' : ''} p-2 cursor-pointer transition" role="button" tabindex="0" onclick="WorkbenchAgents.selectAgent('${ag.id}')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();WorkbenchAgents.selectAgent('${ag.id}')}" aria-label="选择 ${esc(ag.name)}">
-        <div class="flex items-center justify-between mb-1">
-          <div class="font-bold text-slate-100 gw-type-body-md truncate">${esc(ag.name)}</div>
-          ${ag.route ? `<a href="${esc(ag.route)}" class="text-slate-400 hover:text-[#dfc384] shrink-0" title="打开剧本架构师路由" aria-label="打开剧本架构师路由" onclick="event.stopPropagation()"><i data-lucide="external-link" class="w-3 h-3"></i></a>` : ''}
-          <span class="gw-type-body-sm font-mono px-1 py-0.5 rounded-full ${ag.status === 'configured' ? 'bg-cyan-500/15 text-cyan-300 border border-cyan-500/30' : 'bg-amber-500/15 text-amber-300 border border-amber-500/30'}"${ag.status !== 'configured' ? ' data-gw-degradation="' + ag.status + '"' : ''}>
-            ${ag.status === 'configured' ? 'Provider 已配置' : (ag.status === 'not_integrated' ? '未配置' : (ag.status === 'service_unavailable' ? '配置读取失败' : '配置读取中'))}
-          </span>
+      <div class="relative pl-5">
+        <div class="absolute left-[-6px] top-[17px] w-[6px] h-[1.5px] bg-[#dfc384]/60 pointer-events-none"></div>
+        <div class="tree-node-card ${ag.active ? 'active' : ''} p-2 cursor-pointer transition relative" role="button" tabindex="0" onclick="WorkbenchAgents.selectAgent('${ag.id}')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();WorkbenchAgents.selectAgent('${ag.id}')}" aria-label="选择 ${esc(ag.name)}">
+          <div class="card-connector-pin"></div>
+          <div class="flex items-center justify-between mb-1">
+            <div class="font-bold text-slate-100 gw-type-body-md truncate">${esc(ag.name)}</div>
+            ${ag.route ? `<a href="${esc(ag.route)}" class="text-slate-400 hover:text-[#dfc384] shrink-0" title="打开剧本架构师路由" aria-label="打开剧本架构师路由" onclick="event.stopPropagation()"><i data-lucide="external-link" class="w-3 h-3"></i></a>` : ''}
+            <span class="gw-type-body-sm font-mono px-1 py-0.5 rounded-full ${ag.status === 'configured' ? 'bg-cyan-500/15 text-cyan-300 border border-cyan-500/30' : 'bg-amber-500/15 text-amber-300 border border-amber-500/30'}"${ag.status !== 'configured' ? ' data-gw-degradation="' + ag.status + '"' : ''}>
+              ${ag.status === 'configured' ? 'Provider 已配置' : (ag.status === 'not_integrated' ? '未配置' : (ag.status === 'service_unavailable' ? '配置读取失败' : '配置读取中'))}
+            </span>
+          </div>
+          <div class="gw-type-body-sm text-slate-400 truncate mb-1">${esc(ag.role)}</div>
+          <div class="gw-type-body-sm font-mono text-[#dfc384] truncate">${esc(ag.model)}</div>
         </div>
-        <div class="gw-type-body-sm text-slate-400 truncate mb-1">${esc(ag.role)}</div>
-        <div class="gw-type-body-sm font-mono text-[#dfc384] truncate">${esc(ag.model)}</div>
       </div>
     `).join('');
+    if (window.lucide) window.lucide.createIcons();
   }
 
   function renderTraces() {

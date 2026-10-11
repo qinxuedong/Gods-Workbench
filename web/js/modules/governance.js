@@ -140,7 +140,7 @@
           <td>${dateTime(item.recycled_at || item.created_at)}</td>
           <td class="mono muted" style="font-size:var(--gw-type-body-sm);">${esc((item.sha256 || '').slice(0, 12))}…</td>
           <td>
-            <button class="btn small primary btn-restore-asset" data-asset-id="${esc(item.asset_id)}" data-entry-id="${esc(item.id)}" type="button">${esc(tr('governance.restore'))}</button>
+            <button class="hw-btn hw-btn-sm hw-btn-gold btn-restore-asset" data-asset-id="${esc(item.asset_id)}" data-entry-id="${esc(item.id)}" type="button">${esc(tr('governance.restore'))}</button>
           </td>
         </tr>
       `).join('');
@@ -161,7 +161,7 @@
           <td class="mono">${item.entity_count ?? '—'}</td>
           <td class="mono">${esc(trf('governance.versionValue', { version: item.version || 1 }))}</td>
           <td>
-            <button class="btn small primary btn-restore-project" data-project-id="${esc(item.id)}" data-version="${item.version || 1}" type="button">${esc(tr('governance.restoreProject'))}</button>
+            <button class="hw-btn hw-btn-sm hw-btn-gold btn-restore-project" data-project-id="${esc(item.id)}" data-version="${item.version || 1}" type="button">${esc(tr('governance.restoreProject'))}</button>
           </td>
         </tr>
       `).join('');
@@ -182,7 +182,7 @@
           <td>${dateTime(item.deleted_at)}</td>
           <td class="muted">${item.deleted_at ? dateTime(Number(item.deleted_at) + 30 * 86400000) : '—'}</td>
           <td>
-            <button class="btn small primary btn-restore-canvas" data-canvas-id="${esc(item.id)}" data-version="${Number(item.governance_version || 1)}" type="button">${esc(tr('governance.restore'))}</button>
+            <button class="hw-btn hw-btn-sm hw-btn-gold btn-restore-canvas" data-canvas-id="${esc(item.id)}" data-version="${Number(item.governance_version || 1)}" type="button">${esc(tr('governance.restore'))}</button>
           </td>
         </tr>
       `).join('');
