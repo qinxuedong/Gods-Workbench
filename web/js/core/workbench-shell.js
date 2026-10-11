@@ -100,6 +100,8 @@
   }
 
   let comfyBusy = false;
+  let comfyLastState = null;
+  let comfyLastFailure = null;
   let comfyPollTimer = null;
   function notifyComfy(message, isError) {
     if (window.showWorkbenchToast) { window.showWorkbenchToast(message, isError); return; }
@@ -113,6 +115,7 @@
   }
   function authReady() { return Boolean(window.GWAuthGate?.isAuthenticated()); }
   function renderComfyState(data) {
+    comfyLastState = data;
     const online = data.status === 'online' && data.highlight === true;
     document.querySelectorAll('[data-gw-comfy-toggle]').forEach(toggle => {
       toggle.classList.toggle('active', online);
@@ -121,7 +124,7 @@
       toggle.disabled = false;
       toggle.setAttribute('aria-busy', String(comfyBusy));
       toggle.dataset.gwComfyStatus = data.status || 'unknown';
-      toggle.title = data.status === 'unknown' ? 'CF 状态未知' : online ? 'CF 运行中，点击关闭' : 'CF 未运行，点击后台启动';
+      toggle.title = data.code === 'COMFY_START_FAILED' ? `${data.message || 'CF 启动失败'}；点击重试启动` : data.status === 'starting' ? 'CF 正在启动，点击取消启动' : data.status === 'unknown' ? 'CF 状态未知' : online ? 'CF 运行中，点击关闭' : 'CF 未运行，点击后台启动';
       if (!authReady()) toggle.title = '请先登录后读取/控制 CF，点击头像打开认证中心';
       else if (window.HardwareDeck?.authState?.principal?.role !== 'admin') toggle.title = 'CF 状态只读；启停仅限管理员';
       const label = toggle.previousElementSibling;
@@ -145,14 +148,20 @@
       return;
     }
     comfyBusy = true;
-    try { renderComfyState(await readComfyState()); }
+    try {
+      const data = await readComfyState();
+      renderComfyState(data);
+      const failure = data.code === 'COMFY_START_FAILED' ? `${data.code}:${data.exit_code}` : null;
+      if (failure && failure !== comfyLastFailure) notifyComfy(data.message || 'CF 启动进程已退出，请检查本地启动环境', true);
+      comfyLastFailure = failure;
+    }
     catch (error) {
       renderComfyState({status:'unknown', highlight:false});
       document.querySelectorAll('[data-gw-comfy-toggle]').forEach(t => { t.title = `CF 状态未知：${error.message || '读取失败'}；点击重试控制`; });
     }
     finally { comfyBusy = false; document.querySelectorAll('[data-gw-comfy-toggle]').forEach(t => { t.disabled = false; t.setAttribute('aria-busy', 'false'); }); }
   }
-  async function comfyControl(toggle) {
+  async function comfyControl(toggle, requestedAction = null) {
     if (!authReady()) {
       if (!authReady()) { notifyComfy('请先登录后控制 CF', true); window.HardwareDeck?.openAccountModal?.(); }
       return;
@@ -165,7 +174,11 @@
     try {
       // 点击前重新读服务端，不能以按钮残留样式决定启动/停止。
       const current = await readComfyState();
-      const action = current.highlight ? 'stop' : 'start';
+      const action = requestedAction === 'start'
+        ? (current.highlight || current.status === 'starting' ? null : 'start')
+        : current.highlight || current.status === 'starting' ? 'stop' : 'start';
+      if (!action) { renderComfyState(current); return; }
+      if (action === 'start') comfyLastFailure = null;
       let confirmation_token;
       if (action === 'stop' && !current.managed) {
         if (!current.can_stop || !current.confirmation_token) throw new Error('CF 进程身份未知，拒绝关闭');
@@ -177,8 +190,9 @@
       const data = await response.json().catch(() => ({}));
       if (response.status === 401) window.GWAuthGate?.invalidate(401, authRevision, '/api/god_workflow/comfy-control');
       if (data.status) renderComfyState(data);
-      if (!response.ok || !data.ok) throw new Error(data.detail?.message || data.code || 'CF 控制失败');
-      notifyComfy(action === 'stop' ? 'CF 已确认关闭' : 'CF 已确认运行', false);
+      if (data.code === 'COMFY_START_FAILED') comfyLastFailure = `${data.code}:${data.exit_code}`;
+      if (!response.ok || !data.ok) throw new Error(data.detail?.message || data.message || data.code || 'CF 控制失败');
+      notifyComfy(data.status === 'starting' ? 'CF 正在启动，就绪后开关会亮起；再次点击可取消启动' : action === 'stop' ? 'CF 已确认关闭' : 'CF 已确认运行', false);
     } catch (error) {
       notifyComfy(error.message || 'CF 控制失败', true);
     } finally {
@@ -198,6 +212,11 @@
       window.addEventListener('gw-auth-state', () => { bindComfyControl(); pollComfyState(); });
     }
   }
+  // 工作流仅在用户明确点击“启动CF后继续”时请求启动，不操作顶栏DOM或误切到停止。
+  window.WorkbenchComfy = Object.freeze({
+    getStatus: () => authReady() ? comfyLastState?.status || 'unknown' : 'unknown',
+    start: () => comfyControl(null, 'start'),
+  });
   function init() {
     seedInitialRouteScripts();
     standardRightDeck();

@@ -185,6 +185,191 @@ def test_native_export_preserves_widgets_sparse_ports_and_extensions():
     assert target["inputs"][1]["name"] == "image"
 
 
+@pytest.mark.parametrize('domain', ['www.runninghub.cn', 'runninghub.ai'])
+def test_legacy_rh_source_link_is_provenance_while_full_graph_is_submitted(client, monkeypatch, domain):
+    from gw.god_workflow import platforms, routes
+    monkeypatch.setenv('GW_RUNNINGHUB_API_KEY', 'synthetic-legacy-rh-key')
+    workflow_id = save(client, 'edited-input.png')
+    context = routes._auth(HEADERS['Authorization'], 'editor', True)
+    path = routes._path(context, workflow_id)
+    document = item(client, workflow_id)
+    remote_id = '2104915887789797378'
+    document.update(source='runninghub', source_type='rh_link',
+                    source_url=f'https://{domain}/workflow/{remote_id}', version=3)
+    document.pop('external_workflow_id', None)
+    document.pop('external_provider', None)
+    routes._atomic_write(path, document)
+    before = path.read_bytes()
+    calls = []
+
+    async def submit(identifier, values, key, **kwargs):
+        calls.append((identifier, values, key, kwargs['workflow']))
+        return {'taskId': 'synthetic-legacy-remote-task'}
+
+    monkeypatch.setattr(platforms, 'create_rh_cloud_task', submit)
+    headers = {**HEADERS, 'Idempotency-Key': 'legacy-source-replay'}
+    body = {'workflow_id': workflow_id, 'expected_version': 3, 'target': 'rh_cloud'}
+    response = client.post('/api/god_workflow/execute', headers=headers, json=body)
+    assert response.status_code == 202, response.text
+    replay = client.post('/api/god_workflow/execute', headers=headers, json=body)
+    assert replay.status_code == 202 and replay.json()['job_id'] == response.json()['job_id']
+    assert len(calls) == 1 and calls[0][0] == remote_id
+    assert calls[0][3]['1']['inputs']['image'] == 'edited-input.png'
+    assert {'nodeId': '1', 'fieldName': 'image', 'fieldValue': 'edited-input.png'} in calls[0][1]
+    assert calls[0][2] == 'synthetic-legacy-rh-key'
+    assert path.read_bytes() == before
+    assert 'synthetic-legacy-rh-key' not in response.text
+
+
+@pytest.mark.parametrize('source_type,provider,url', [
+    ('local_file', None, 'https://www.runninghub.cn/workflow/2104915887789797378'),
+    ('liblib_link', None, 'https://www.runninghub.cn/workflow/2104915887789797378'),
+    ('rh_link', 'liblib', 'https://www.runninghub.cn/workflow/2104915887789797378'),
+    ('rh_link', None, 'https://runninghub.cn.evil.test/workflow/2104915887789797378'),
+    ('rh_link', None, 'https://www.runninghub.cn@evil.test/workflow/2104915887789797378'),
+    ('rh_link', None, 'https://evil.test/?url=https://www.runninghub.cn/workflow/2104915887789797378'),
+    ('rh_link', None, 'https://www.runninghub.cn/ai-detail/2104915887789797378'),
+    ('rh_link', None, '2104915887789797378'),
+    ('rh_link', None, ''),
+])
+def test_source_provenance_never_becomes_cloud_template_or_destination(client, monkeypatch, source_type, provider, url):
+    from gw.god_workflow import platforms, routes, registry
+    monkeypatch.setenv('GW_RUNNINGHUB_API_KEY', 'synthetic-legacy-rh-key')
+    workflow_id = save(client)
+    context = routes._auth(HEADERS['Authorization'], 'editor', True)
+    document = item(client, workflow_id)
+    document.update(source_type=source_type, source_url=url, external_provider=provider)
+    document.pop('external_workflow_id', None)
+    path = routes._path(context, workflow_id)
+    routes._atomic_write(path, document)
+    before = path.read_bytes()
+
+    calls = []
+    async def submit(identifier, values, key, **kwargs):
+        calls.append((identifier, kwargs))
+        return {'taskId': 'actual-created-id'}
+    async def forbidden_fetch(*args, **kwargs):
+        pytest.fail('已存完整图运行不得抓取来源网址')
+    monkeypatch.setattr(platforms, 'create_rh_cloud_task', submit)
+    monkeypatch.setattr(platforms, 'fetch_runninghub_bundle', forbidden_fetch)
+    response = client.post('/api/god_workflow/execute', headers=HEADERS,
+                           json={'workflow_id': workflow_id, 'target': 'rh_cloud'})
+    assert response.status_code == 202 and response.json()['status'] == 'accepted'
+    assert len(calls) == 1 and calls[0][0] is None
+    assert calls[0][1]['domain'] == 'www.runninghub.cn'
+    assert calls[0][1]['workflow']['1']['class_type'] == 'LoadImage'
+    assert path.read_bytes() == before and len(registry.list_tasks(context)) == 1
+
+
+def test_legacy_rh_identity_keeps_version_and_principal_guards(client, monkeypatch):
+    from gw.god_workflow import platforms, routes
+    monkeypatch.setenv('GW_RUNNINGHUB_API_KEY', 'synthetic-legacy-rh-key')
+    workflow_id = save(client)
+    context = routes._auth(HEADERS['Authorization'], 'editor', True)
+    document = item(client, workflow_id)
+    document.update(source_type='rh_link', source_url='https://www.runninghub.cn/workflow/2104915887789797378')
+    routes._atomic_write(routes._path(context, workflow_id), document)
+
+    async def forbidden(*args, **kwargs):
+        pytest.fail('版本冲突或跨主体不能提交')
+
+    monkeypatch.setattr(platforms, 'create_rh_cloud_task', forbidden)
+    conflict = client.post('/api/god_workflow/execute', headers=HEADERS,
+        json={'workflow_id': workflow_id, 'expected_version': 0, 'target': 'rh_cloud'})
+    assert conflict.status_code == 409
+    other = client.post('/api/god_workflow/execute', headers={**HEADERS, 'Authorization': 'Bearer other-legacy-user'},
+        json={'workflow_id': workflow_id, 'expected_version': 1, 'target': 'rh_cloud'})
+    assert other.status_code == 404
+
+
+def _native_versioned_graph():
+    return {'version': 0.4, 'nodes': [
+        {'id': 1, 'type': 'LoadImage', 'pos': [10, 20], 'widgets_values': ['original.png'],
+         'inputs': [], 'outputs': []}], 'links': [], 'groups': [{'title': '保留原图'}]}
+
+
+def test_native_upload_uses_document_revision_not_comfy_format_version(client):
+    import json
+    graph = _native_versioned_graph()
+    response = client.post('/api/god_workflow/parse-upload', headers=HEADERS,
+        files={'file': ('native.json', json.dumps(graph).encode(), 'application/json')})
+    assert response.status_code == 200, response.text
+    document = response.json()
+    assert type(document['version']) is int and document['version'] == 1
+    loaded = item(client, document['workflow_id'])
+    assert loaded['revision'] == loaded['version'] == 1
+    assert loaded['metadata']['version'] == loaded['raw_payload']['version'] == 0.4
+    changed = client.put(f"/api/god_workflow/item/{document['workflow_id']}/params", headers=HEADERS,
+        json={'expected_version': 1, 'widget_updates': [
+            {'node_id': '1', 'field_name': 'widget_0', 'value': 'edited.png'}]})
+    assert changed.status_code == 200 and changed.json()['version'] == 2
+    exported = client.get(f"/api/god_workflow/export/{document['workflow_id']}?format=litegraph", headers=HEADERS)
+    assert exported.status_code == 200, exported.text
+    assert exported.json()['version'] == 0.4
+    assert exported.json()['nodes'][0]['widgets_values'] == ['edited.png']
+
+
+def test_known_legacy_native_zero_revision_recovers_read_view_and_preserves_cas(client):
+    import json
+    from gw.god_workflow import parser, routes
+    workflow_id = save(client)
+    context = routes._auth(HEADERS['Authorization'], 'editor', True)
+    path = routes._path(context, workflow_id)
+    document = parser.parse_workflow(_native_versioned_graph(), source='canvas').as_dict()
+    assert document['version'] == 0
+    document.update(workflow_id=workflow_id, source_type='local_file', asset_id=item(client, workflow_id)['asset_id'])
+    routes._atomic_write(path, document)
+    original_bytes = path.read_bytes()
+    original_native = document['raw_payload']
+    loaded = item(client, workflow_id)
+    assert loaded['revision'] == loaded['version'] == 1
+    assert loaded['raw_payload'] == original_native
+    assert path.read_bytes() == original_bytes, '读取兼容视图不改写旧文件'
+    listing = client.get('/api/god_workflow/list', headers=HEADERS).json()['items']
+    assert next(value for value in listing if value['workflow_id'] == workflow_id)['version'] == 1
+    update = {'expected_version': 1, 'widget_updates': [{'node_id': '1', 'field_name': 'widget_0', 'value': 'new.png'}]}
+    first = client.put(f'/api/god_workflow/item/{workflow_id}/params', headers=HEADERS, json=update)
+    assert first.status_code == 200 and first.json()['version'] == 2
+    stored = json.loads(path.read_text(encoding='utf-8'))
+    assert stored['version'] == 2 and stored['raw_payload'] == original_native
+    second = client.put(f'/api/god_workflow/item/{workflow_id}/params', headers=HEADERS, json=update)
+    assert second.status_code == 409 and second.json()['detail']['code'] == 'VERSION_CONFLICT'
+    assert item(client, workflow_id)['nodes'][0]['widgets'] == ['new.png']
+    assert client.get(f'/api/god_workflow/item/{workflow_id}', headers={**HEADERS, 'Authorization': 'Bearer other-native-user'}).status_code == 404
+
+
+def test_upload_existing_document_cannot_reset_revision_or_overwrite(client):
+    from gw.god_workflow import routes
+    workflow_id = save(client, 'preserved.png')
+    changed = client.put(f'/api/god_workflow/item/{workflow_id}/name', headers=HEADERS,
+        json={'name': '较新版本', 'expected_version': 1})
+    assert changed.status_code == 200
+    document = item(client, workflow_id)
+    context = routes._auth(HEADERS['Authorization'], 'editor', True)
+    path = routes._path(context, workflow_id)
+    before = path.read_bytes()
+    response = client.post('/api/god_workflow/parse-upload', headers=HEADERS, json=document)
+    assert response.status_code == 409 and response.json()['detail']['code'] == 'VERSION_CONFLICT'
+    assert path.read_bytes() == before
+    assert item(client, workflow_id)['version'] == 2
+
+
+@pytest.mark.parametrize('change', [
+    {'source_type': 'rh_link'}, {'source': 'comfyui'}, {'version': False},
+    {'version': -1}, {'raw_payload': {'version': 0.4}}, {'metadata': {'version': '0.4'}},
+])
+def test_native_legacy_revision_recovery_does_not_guess_for_other_documents(client, change):
+    from gw.god_workflow import parser, routes
+    workflow_id = save(client)
+    context = routes._auth(HEADERS['Authorization'], 'editor', True)
+    path = routes._path(context, workflow_id)
+    document = parser.parse_workflow(_native_versioned_graph(), source='canvas').as_dict()
+    document.update(workflow_id=workflow_id, source_type='local_file')
+    document.update(change)
+    routes._atomic_write(path, document)
+    assert routes._load(path)['version'] == document['version']
+
+
 def test_private_workflow_metadata_hidden_from_other_principal(client):
     workflow_id = save(client, "private-reference.png")
     asset_id = item(client, workflow_id)["asset_id"]
@@ -363,28 +548,28 @@ def test_psd_original_download_and_media_category(client):
 
 
 @pytest.mark.parametrize('remote_id', [None, '', '  ', True, {'id': '123'}, '1' * 129])
-def test_cloud_requires_remote_workflow_id_before_side_effects(client, monkeypatch, remote_id):
+def test_cloud_full_graph_does_not_use_untrusted_template_override(client, monkeypatch, remote_id):
     from gw.god_workflow import platforms
     monkeypatch.setenv('GW_RUNNINGHUB_API_KEY', 'synthetic-test-key')
     workflow_id = save(client)
     calls = []
-    async def unexpected(*args, **kwargs):
-        calls.append('unexpected')
-        raise AssertionError('标识无效时不能向供应商发请求')
-    monkeypatch.setattr(platforms, 'upload_rh_input', unexpected)
-    monkeypatch.setattr(platforms, 'create_rh_cloud_task', unexpected)
-    body = {'workflow_id': workflow_id, 'target': 'rh_cloud'}
-    if remote_id is not None:
-        body['rh_workflow_id'] = remote_id
+    async def submit(identifier, values, key, **kwargs):
+        calls.append(identifier)
+        assert identifier is None
+        assert kwargs['workflow']['1']['class_type'] == 'LoadImage'
+        return {'taskId': 'actual-full-graph-task'}
+    async def forbidden(*args, **kwargs):
+        pytest.fail('无素材绑定时不得上传素材')
+    monkeypatch.setattr(platforms, 'upload_rh_input', forbidden)
+    monkeypatch.setattr(platforms, 'create_rh_cloud_task', submit)
+    body = {'workflow_id': workflow_id, 'target': 'rh_cloud', 'rh_workflow_id': remote_id}
     response = client.post('/api/god_workflow/execute', headers=HEADERS, json=body)
-    assert response.status_code == 400, response.text
-    assert response.json()['detail']['code'] == 'INVALID_REQUEST'
-    assert calls == []
-    assert client.get('/api/god_workflow/tasks', headers=HEADERS).json()['tasks'] == []
+    assert response.status_code == 202 and response.json()['status'] == 'accepted', response.text
+    assert calls == [None]
 
 
 @pytest.mark.parametrize('provider', ['runninghub', 'liblib'])
-def test_cloud_uses_only_matching_imported_supplier_id(client, monkeypatch, provider):
+def test_cloud_uploads_full_graph_from_either_supplier_and_keeps_provenance(client, monkeypatch, provider):
     from gw.god_workflow import platforms
     monkeypatch.setenv('GW_RUNNINGHUB_API_KEY', 'synthetic-test-key')
     remote_id = '1234567890123456789'
@@ -399,18 +584,16 @@ def test_cloud_uses_only_matching_imported_supplier_id(client, monkeypatch, prov
     workflow_id = parsed.json()['workflow_id']
     assert item(client, workflow_id)['external_provider'] == provider
     calls = []
-    async def submit(workflow, *args, **kwargs):
-        calls.append(workflow)
+    async def submit(identifier, *args, **kwargs):
+        assert identifier == (remote_id if provider == 'runninghub' else None)
+        assert kwargs['workflow']['1']['inputs']['image'] == 'remote.png'
+        calls.append(identifier)
         return {'taskId': 'supplier-bound-test'}
     monkeypatch.setattr(platforms, 'create_rh_cloud_task', submit)
     response = client.post('/api/god_workflow/execute', headers=HEADERS,
                            json={'workflow_id': workflow_id, 'target': 'rh_cloud'})
-    if provider == 'runninghub':
-        assert response.status_code == 202, response.text
-        assert calls == [remote_id]
-    else:
-        assert response.status_code == 400, response.text
-        assert calls == []
+    assert response.status_code == 202, response.text
+    assert calls == [remote_id if provider == 'runninghub' else None]
 
 
 def test_cloud_upload_precedes_generate_and_saved_unpromoted_parameter_applies(client, monkeypatch):
@@ -428,8 +611,9 @@ def test_cloud_upload_precedes_generate_and_saved_unpromoted_parameter_applies(c
         assert payload == b'isolated-input-bytes' and key == 'synthetic-test-key'
         calls.append('upload')
         return 'api/engine-reference.png'
-    async def submit(workflow, values, key, **kwargs):
-        assert workflow == '1234567890123456789'
+    async def submit(identifier, values, key, **kwargs):
+        assert identifier == '1234567890123456789'
+        assert kwargs['workflow']['1']['inputs']['image'] == 'api/engine-reference.png'
         assert values == [{'nodeId': '1', 'fieldName': 'image', 'fieldValue': 'api/engine-reference.png'}]
         calls.append('generate')
         return {'taskId': 'cloud-real-id'}
@@ -491,10 +675,16 @@ def test_source_project_acl_and_version_snapshot(client, monkeypatch):
 
 
 def test_native_open_never_overwrites_user_named_files(client, monkeypatch, tmp_path):
+    async def probe():
+        return {'online': True, 'object_info': {'LoadImage': {'input': {'required': {'image': ['STRING', {}]}}}}}
+    monkeypatch.setattr('gw.god_workflow.comfy_executor.probe', probe)
     from gw.god_workflow import registry
     from gw.god_workflow.routes import _auth
     context = _auth(HEADERS['Authorization'], 'editor', True)
     root = tmp_path / 'isolated-comfy'
+    app_file = root / 'python_embeded/Lib/site-packages/comfyui_frontend_package/static/scripts/app.js'
+    app_file.parent.mkdir(parents=True)
+    app_file.write_text('isolated', encoding='utf-8')
     workflows = root / 'user/default/workflows'
     workflows.mkdir(parents=True)
     user_file = workflows / 'RH_workflow.json'
@@ -575,7 +765,10 @@ print(json.dumps({'job_id':task['job_id'], 'remote_task_id':task['remote_task_id
 
 
 def test_api_export_after_edit_keeps_untouched_parameter_values(client):
-    workflow = {'1': {'class_type': 'ExampleNode', 'inputs': {'seed': 12, 'steps': 20, 'label': 'untouched'}}}
+    from gw.god_workflow.parser import parse_workflow
+    workflow = parse_workflow({'1': {'class_type': 'ExampleNode', 'inputs': {'seed': 12, 'steps': 20, 'label': 'untouched'}}}).as_dict()
+    workflow['metadata']['node_schemas'] = {'ExampleNode': {'input': {'required': {
+        'seed': ['INT', {}], 'steps': ['INT', {}], 'label': ['STRING', {}]}}}}
     created = client.post('/api/god_workflow/documents', headers=HEADERS, json=workflow)
     workflow_id = created.json()['workflow_id']
     changed = client.put(f'/api/god_workflow/item/{workflow_id}/params', headers=HEADERS,
@@ -584,3 +777,4 @@ def test_api_export_after_edit_keeps_untouched_parameter_values(client):
     exported = client.get(f'/api/god_workflow/export/{workflow_id}?format=litegraph', headers=HEADERS)
     assert exported.status_code == 200
     assert exported.json()['nodes'][0]['widgets_values'] == [34, 20, 'untouched']
+    assert all(type(value) in (int, float) for value in exported.json()['nodes'][0]['size'])

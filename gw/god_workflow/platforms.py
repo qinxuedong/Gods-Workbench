@@ -37,6 +37,11 @@ RUNNINGHUB_DEFAULT_DOMAIN = "www.runninghub.cn"
 LIBLIB_DEFAULT_DOMAIN = "www.liblib.art"
 DEFAULT_TIMEOUT = 20.0
 MAX_FETCH_BYTES = 8 * 1024 * 1024
+# 官方明确未受理的参数/权限/资源拒绝；排队、运行中、超时与服务异常不能判失败。
+RH_CREATE_REJECTION_CODES = {
+    '301', '380', '412', '415', '416', '421', '433', '808', '809', '810', '811', '812', '901',
+    '1001', '1002', '1003', '1007', '1008', '1009', '1014', '1101', '1501', '1505',
+}
 
 _RH_URL_PATTERN = re.compile(
     r"https?://(?P<domain>(?:www\.)?runninghub\.(?:cn|ai))/"
@@ -78,7 +83,7 @@ def extract_runninghub_reference(text: str) -> dict[str, str]:
     if "runninghub." in raw.lower():
         for candidate in re.findall(r"https?://[^\s\"'<>]+", raw):
             host = (urlparse(candidate).hostname or "").lower()
-            if "runninghub.cn" in host or "runninghub.ai" in host:
+            if host in ('runninghub.cn', 'www.runninghub.cn', 'runninghub.ai', 'www.runninghub.ai'):
                 identifier = _SNOWFLAKE_PATTERN.search(urlparse(candidate).path or "")
                 if identifier:
                     domain = host if host.startswith("www.") else f"www.{host}"
@@ -256,6 +261,7 @@ async def fetch_runninghub_detail(workflow_id: str, domain: str = RUNNINGHUB_DEF
     """公开详情（无需凭证）。"""
     last_error = "未返回有效工作流数据"
     last_exception = None
+    metadata_only = None
     for endpoint in ("/api/workflow/getDetail", "/api/portal/workflow/detail"):
         url = f"https://{domain}{endpoint}"
         try:
@@ -265,10 +271,18 @@ async def fetch_runninghub_detail(workflow_id: str, domain: str = RUNNINGHUB_DEF
             last_error = exc.message
             continue
         if isinstance(body, dict) and body.get("code") == 0 and isinstance(body.get("data"), dict):
-            return body["data"]
+            from gw.god_workflow.parser import extract_source_graph
+            data = body['data']
+            if extract_source_graph(data) is not None:
+                return data
+            metadata_only = metadata_only or data
+            # 详情有效但没有图时仍查另一个已知公开源，不能提前止于节点清单。
+            continue
         # 不回显供应商原始错误文本，避免泄露令牌/请求内容。
         last_exception = None
         last_error = "公开源未返回有效工作流；请确认链接可访问，或上传原始工作流 JSON"
+    if metadata_only is not None:
+        return metadata_only
     if last_exception is not None:
         raise last_exception
     raise CleanroomException(502, "RH_DETAIL_FETCH_FAILED",
@@ -286,7 +300,7 @@ async def fetch_runninghub_canvas(workflow_id: str, access_token: str,
                                 _rh_headers(domain, access_token))
     except CleanroomException:
         raise
-    if not isinstance(body, dict) or body.get("code") != 0:
+    if not isinstance(body, dict) or str(body.get("code")) != "0":
         code = "RH_SOURCE_AUTH_FAILED" if isinstance(body, dict) and str(body.get("code")) in ("401", "403") else "RH_SOURCE_REJECTED"
         raise CleanroomException(502, code,
                                  "RunningHub 已配置的工作流源请求被拒绝；请检查凭据、源权限与链接，或上传原始工作流 JSON")
@@ -314,6 +328,10 @@ async def fetch_runninghub_api_json(workflow_id: str, api_key: str,
     except CleanroomException:
         raise
     if not isinstance(body, dict) or body.get("code") != 0:
+        if isinstance(body, dict) and str(body.get("code")) == "810":
+            # 官方 810 表示原图尚未就绪；不回显可能带凭据的供应商消息。
+            raise CleanroomException(502, "RH_WORKFLOW_NOT_READY",
+                                     "原图暂不可读取（RunningHub 810）；平台未提供完整工作流，解析不以运行作为前置。")
         code = "RH_SOURCE_AUTH_FAILED" if isinstance(body, dict) and str(body.get("code")) in ("401", "403") else "RH_SOURCE_REJECTED"
         raise CleanroomException(502, code,
                                  "RunningHub 已配置的工作流源请求被拒绝；请检查凭据、源权限与链接，或上传原始工作流 JSON")
@@ -331,32 +349,36 @@ async def fetch_runninghub_api_json(workflow_id: str, api_key: str,
 
 async def fetch_runninghub_bundle(reference: str, *, access_token: str = "",
                                   api_key: str = "") -> dict[str, Any]:
-    """按固定优先级拉取 RunningHub 工作流：完整画布 → API prompt → 公开详情。"""
+    """先读公开完整原图，再使用既有凭据查画布/API；解析绝不启动任务。"""
     info = extract_runninghub_reference(reference)
     workflow_id = info["workflow_id"]
     domain = info["domain"]
 
     source_errors = []
     canvas = api_json = None
+    detail = {}
     try:
-        canvas = await fetch_runninghub_canvas(workflow_id, access_token, domain)
+        detail = await fetch_runninghub_detail(workflow_id, domain)
+        from gw.god_workflow.parser import extract_source_graph
+        original = extract_source_graph(detail)
+        if original is not None:
+            canvas = original
+    except CleanroomException as exc:
+        source_errors.append(exc)
+    try:
+        if canvas is None:
+            canvas = await fetch_runninghub_canvas(workflow_id, access_token, domain)
     except CleanroomException as exc:
         source_errors.append(exc)
     if canvas is None:
         try:
             api_json = await fetch_runninghub_api_json(workflow_id, api_key, domain)
         except CleanroomException as exc:
-            source_errors.append(exc)
-    detail: dict[str, Any] = {}
-    try:
-        # API prompt不包含工作流标题；真实图取得后仍补取公开名称元数据。
-        detail = await fetch_runninghub_detail(workflow_id, domain)
-    except CleanroomException:
-        if canvas is None and api_json is None:
-            if source_errors:
-                raise source_errors[0] from None
-            raise
-        # 标题查询失败不能丢弃已经取得的真实图或降级为只读预览。
+            if exc.code == "RH_WORKFLOW_NOT_READY":
+                # 具体的官方原图状态优先于网页 token 的通用失败提示。
+                source_errors.insert(0, exc)
+            else:
+                source_errors.append(exc)
     if canvas is None and api_json is None:
         if source_errors:
             # 公开清单不是可用图，不得用它覆盖授权/网络真实失败。
@@ -514,20 +536,32 @@ async def upload_rh_input(payload: bytes, filename: str, content_type: str, api_
 
 
 async def create_rh_cloud_task(
-    workflow_id: str,
+    workflow_id: Optional[str],
     node_info_list: list[dict[str, Any]],
     api_key: str,
     domain: str = RUNNINGHUB_DEFAULT_DOMAIN,
+    *, workflow: Optional[dict[str, Any]] = None,
 ) -> dict[str, Any]:
     """调用 RunningHub OpenAPI 提交工作流云端运行任务。"""
     if not api_key or not api_key.strip():
         raise CleanroomException(503, "WORKFLOW_EXECUTOR_UNAVAILABLE", "运行 RunningHub 云端任务需要配置 API Key")
     clean_key = api_key.strip()
     url = f"https://{domain}/task/openapi/create"
-    payload: dict[str, Any] = {
-        "apiKey": clean_key,
-        "workflowId": str(workflow_id),
-    }
+    payload: dict[str, Any] = {"apiKey": clean_key}
+    # 官方高级接口支持完整workflow；上传与提交合为一次请求，不伪造模板ID。
+    if workflow is not None:
+        if not isinstance(workflow, dict) or not workflow or any(
+                not isinstance(node, dict) or not isinstance(node.get('class_type'), str)
+                or not isinstance(node.get('inputs'), dict) for node in workflow.values()):
+            raise CleanroomException(400, 'INVALID_WORKFLOW', '缺少完整可执行工作流')
+        payload['workflow'] = json.dumps(workflow, ensure_ascii=False)
+        # 现场301说明必填校验仍生效；已有真实RH标识仅供传输兼容，完整图仍覆盖模板。
+        if isinstance(workflow_id, str) and re.fullmatch(r'\d{10,25}', workflow_id):
+            payload['workflowId'] = workflow_id
+    elif isinstance(workflow_id, str) and workflow_id.strip():
+        payload['workflowId'] = workflow_id.strip()
+    else:
+        raise CleanroomException(400, 'INVALID_WORKFLOW', '缺少完整工作流或真实RH模板标识')
     if node_info_list:
         payload["nodeInfoList"] = [
             {
@@ -539,13 +573,21 @@ async def create_rh_cloud_task(
             if item.get("nodeId", item.get("node_id")) is not None
         ]
     body = await _post_json(url, payload, _rh_headers(domain, bearer_token=clean_key))
-    if not isinstance(body, dict) or body.get("code") != 0:
-        msg = body.get("msg") if isinstance(body, dict) else "未知错误"
-        raise CleanroomException(400, "RH_TASK_CREATE_REJECTED", f"RunningHub 拒绝创建任务：{msg}")
+    if not isinstance(body, dict) or str(body.get("code")) != "0":
+        # 明确的业务拒绝与响应格式未知分开，不能回显可能带凭据的自由文本。
+        if (isinstance(body, dict) and type(body.get('code')) in (int, str)
+                and str(body['code']) in RH_CREATE_REJECTION_CODES):
+            code = str(body['code'])
+            raise CleanroomException(400, "RH_TASK_CREATE_REJECTED", f"RunningHub 拒绝创建任务（错误码 {code}）",
+                                     extra={'provider_code': code})
+        raise CleanroomException(502, 'RH_TASK_CREATE_UNCONFIRMED', 'RunningHub 未返回可确认的任务创建结果')
     data = body.get("data")
     if isinstance(data, dict):
+        task_id = data.get('taskId') or data.get('task_id')
+        if task_id is not None and (type(task_id) not in (str, int) or not str(task_id).strip() or len(str(task_id)) > 128):
+            raise CleanroomException(502, 'RH_TASK_CREATE_UNCONFIRMED', 'RunningHub 返回无效任务标识，提交结果未确认')
         return data
-    if isinstance(data, (str, int)):
+    if type(data) in (str, int) and str(data).strip() and len(str(data)) <= 128:
         return {"taskId": str(data)}
     return {}
 
@@ -563,19 +605,17 @@ async def query_rh_task_outputs(
     payload = {"apiKey": clean_key, "taskId": str(task_id)}
     body = await _post_json(url, payload, _rh_headers(domain, bearer_token=clean_key))
     if not isinstance(body, dict):
-        return {"status": "UNKNOWN", "outputs": []}
+        raise CleanroomException(502, "RH_TASK_STATUS_UNKNOWN", "RunningHub 查询返回格式无效，请稍后续查")
     code = body.get("code")
     data = body.get("data")
     if code == 0 and isinstance(data, list):
         return {"status": "SUCCESS", "outputs": data, "raw": body}
-    if code in (804, 813) or "RUNNING" in str(body.get("msg", "")).upper() or "QUEUED" in str(body.get("msg", "")).upper():
+    if code in (804, 813) or (code == 0 and not data):
         return {"status": "RUNNING", "outputs": [], "message": body.get("msg") or "任务运行中", "raw": body}
-    return {
-        "status": "RUNNING" if code == 0 and not data else "FAILED",
-        "outputs": data if isinstance(data, list) else [],
-        "message": body.get("msg") or f"状态码: {code}",
-        "raw": body,
-    }
+    if code == 805:
+        return {"status": "FAILED", "outputs": [], "message": "RunningHub 远端任务状态异常", "raw": body}
+    # 授权、服务故障及未知码是查询失败，不是远端执行终态；不用自由文本猜状态。
+    raise CleanroomException(502, "RH_TASK_QUERY_REJECTED", "RunningHub 未确认任务结果，请核对配置后续查")
 
 
 __all__ = [

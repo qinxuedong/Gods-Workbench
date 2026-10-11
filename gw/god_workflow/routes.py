@@ -13,6 +13,7 @@ import threading
 import uuid
 import time
 import math
+from copy import deepcopy
 from pathlib import Path
 from typing import Any, Optional
 from urllib.parse import quote, urlsplit
@@ -28,6 +29,7 @@ from gw.god_workflow import comfy_executor
 from gw.god_workflow import platforms
 from gw.god_workflow import registry
 from gw.god_workflow import asset_hub_bridge
+from gw.god_workflow import browser_bridge
 from gw.god_workflow.layout import compute_layout
 from gw.god_workflow.models import WorkflowSource
 from gw.god_workflow.clients import PROVIDERS, get_provider, unavailable
@@ -35,7 +37,7 @@ from gw.god_workflow.parser import (MAX_UPLOAD_BYTES, MAX_PNG_TEXT_BYTES, Workfl
                                    parse_workflow, parse_upload, png_available,
                                    build_topology_from_public_detail, extract_source_graph)
 from gw.god_workflow.exporter import export_to_comfy_litegraph
-from gw.god_workflow.compiler import compile_prompt
+from gw.god_workflow.compiler import compile_prompt, execution_fingerprint
 
 #: 可执行真实抓取的平台适配器；其余 provider 仍走通用网关或返回不可用。
 PROVIDER_ADAPTERS = ("runninghub", "liblib")
@@ -275,7 +277,15 @@ def _load(path: Path) -> dict[str, Any]:
     if not path.is_file():
         raise CleanroomException(404, "WORKFLOW_NOT_FOUND", "工作流不存在")
     try:
-        return json.loads(path.read_text(encoding="utf-8"))
+        document = json.loads(path.read_text(encoding="utf-8"))
+        # 旧本地导入把原生格式0.4转成CAS 0；只兼容这一已确证形状，读取不落盘。
+        if (isinstance(document, dict) and type(document.get("version")) is int and document["version"] == 0
+                and document.get("source_type") == "local_file" and document.get("source") == "canvas"
+                and isinstance(document.get("metadata"), dict) and document["metadata"].get("version") == 0.4
+                and isinstance(document.get("raw_payload"), dict) and document["raw_payload"].get("version") == 0.4
+                and isinstance(document["raw_payload"].get("nodes"), list)):
+            document["version"] = 1
+        return document
     except (OSError, json.JSONDecodeError) as exc:
         raise CleanroomException(500, "WORKFLOW_STORAGE_ERROR", "工作流存储内容不可读取") from exc
 
@@ -358,7 +368,11 @@ async def _json_body(request: Request, *, allow_empty: bool = False) -> Any:
 
 def _parse_payload(request_payload: Any, source: str, name: str):
     try:
-        return parse_workflow(request_payload, source=source, name=name)
+        parsed = parse_workflow(request_payload, source=source, name=name)
+        # 用户导入的元数据不能冒充服务端验证过的宿主编译缓存。
+        if isinstance(parsed.metadata, dict):
+            parsed.metadata.pop('resolved_api', None)
+        return parsed
     except WorkflowParseError as exc:
         raise CleanroomException(400, "INVALID_WORKFLOW", str(exc)) from None
 
@@ -446,6 +460,124 @@ async def _comfy_call(context: AuthContext, method, *args, task=None, **kwargs):
         return await method(*args, **kwargs)
 
 
+async def _native_schemas(context: AuthContext, document: dict, *, for_bindings: bool = False) -> dict:
+    """只有缺少 API 图字段映射时才读取当前主体配置的真实节点 Schema。"""
+    schemas = deepcopy(document.get("metadata", {}).get("node_schemas") or {})
+    missing = {node.get("kind") or node.get("class_type") for node in document.get("nodes", [])
+               if ((not isinstance((node.get("raw_payload") or {}).get("inputs"), list)
+                    and any(not isinstance(value, (list, tuple)) for value in (node.get("inputs") or {}).values()))
+                   or (for_bindings and node.get("metadata", {}).get("input_assets") and node.get("widgets")))
+               and not isinstance(schemas.get(node.get("kind") or node.get("class_type")), dict)}
+    if missing:
+        if not _comfy_endpoint(context).configured:
+            raise CleanroomException(422, "NODE_SCHEMA_REQUIRED", "API 图转原生图需要真实节点 Schema，请先配置并连接 ComfyUI")
+        probe = await _comfy_call(context, comfy_executor.probe)
+        schemas.update(probe.get("object_info") or {})
+        if any(not isinstance(schemas.get(kind), dict) for kind in missing):
+            raise CleanroomException(422, "NODE_SCHEMA_REQUIRED", "未取得所需节点的真实 Schema，原文档及素材绑定保持不变")
+    return schemas
+
+
+def _native_definition_gaps(document: dict) -> list[str]:
+    """原生参数值可以原样读取；参数定义仅认文件已有真实 Schema 或宿主定义。"""
+    schemas = document.get('metadata', {}).get('node_schemas') or {}
+    return sorted({node.get('kind') or node.get('class_type') for node in document.get('nodes', [])
+                   if (node.get('kind') or node.get('class_type')) not in {'Note', 'MarkdownNote'}
+                   and isinstance((node.get('raw_payload') or {}).get('inputs'), list)
+                   and isinstance(node.get('widgets'), list) and node['widgets']
+                   and not isinstance(schemas.get(node.get('kind') or node.get('class_type')), dict)})
+
+
+def _definition_cache_path(context: AuthContext) -> Path:
+    endpoint = _comfy_endpoint(context).base_url
+    return _principal_root(context) / 'node-definitions' / (hashlib.sha256(endpoint.encode()).hexdigest() + '.json')
+
+
+async def _resolve_definitions_in_workbench(context: AuthContext, document: dict) -> bool:
+    """先用主体/端点隔离的已验证缓存；在线时直接查定义，不打开或启动宿主。"""
+    if not _native_definition_gaps(document):
+        try:
+            compile_prompt(document, document.get('metadata', {}).get('node_schemas'))
+            return False
+        except CleanroomException:
+            return True
+    schemas = deepcopy(document.get('metadata', {}).get('node_schemas') or {})
+    path = _definition_cache_path(context)
+    try:
+        cached = json.loads(path.read_text(encoding='utf-8')) if path.is_file() else {}
+    except (OSError, ValueError):
+        cached = {}
+    if isinstance(cached, dict) and cached.get('source') == 'comfyui_object_info' and isinstance(cached.get('schemas'), dict):
+        schemas.update({kind: deepcopy(schema) for kind, schema in cached['schemas'].items() if isinstance(schema, dict)})
+        document.setdefault('metadata', {})['schema_source'] = 'verified_cache'
+    document.setdefault('metadata', {})['node_schemas'] = schemas
+    if _native_definition_gaps(document) and _comfy_endpoint(context).configured:
+        control = _comfy_operation(context, 'status')
+        if control.get('highlight'):
+            try:
+                probe = await _comfy_call(context, comfy_executor.probe)
+            except CleanroomException:
+                return True
+            actual = probe.get('object_info') or {}
+            if probe.get('online') and isinstance(actual, dict):
+                schemas.update({kind: deepcopy(schema) for kind, schema in actual.items() if isinstance(schema, dict)})
+                document['metadata']['node_schemas'] = {kind: schemas[kind] for kind in _node_class_ids(document) if kind in schemas}
+                document['metadata']['schema_source'] = 'comfyui_object_info'
+                with _STORAGE_LOCK:
+                    _atomic_write(path, {'source': 'comfyui_object_info', 'schemas': schemas, 'observed_at': time.time()})
+    if _native_definition_gaps(document):
+        return True
+    try:
+        compile_prompt(document, schemas)
+    except CleanroomException as error:
+        return True
+    return False
+
+
+def _preserve_native_bindings(current: dict, stored: dict, schemas: dict) -> None:
+    """宿主元数据不建立素材权限；只迁移同节点、同字段且值未改变的原绑定。"""
+    original_nodes = {str(node["id"]): node for node in current.get("nodes", [])}
+    for node in stored.get("nodes", []):
+        metadata = node.setdefault("metadata", {})
+        metadata.pop("input_assets", None)
+        original = original_nodes.get(str(node["id"]))
+        if not original or original.get("kind") != node.get("kind"):
+            continue
+        bindings = original.get("metadata", {}).get("input_assets") or {}
+        if not bindings:
+            continue
+        old_maps = {}
+        new_maps = {}
+        old_prompt = compile_prompt({"nodes": [original]}, schemas, field_maps=old_maps)
+        new_prompt = compile_prompt({"nodes": [node]}, schemas, field_maps=new_maps)
+        if str(original["id"]) not in old_prompt or str(node["id"]) not in new_prompt:
+            raise CleanroomException(422, "UNSUPPORTED_WIDGET_MAPPING", "不能确认原生回存的素材字段，原文档保持不变")
+        old_inputs = old_prompt[str(original["id"])]["inputs"]
+        new_inputs = new_prompt[str(node["id"])]["inputs"]
+        connected_fields = set()
+        for link in stored.get("connections", []):
+            if str(link["target"]) != str(node["id"]):
+                continue
+            field = str(link.get("target_slot") or "0")
+            ports = (node.get("raw_payload") or {}).get("inputs")
+            if field.isdigit() and isinstance(ports, list):
+                slot = int(field)
+                if slot >= len(ports) or not ports[slot].get("name"):
+                    raise CleanroomException(422, "INVALID_WORKFLOW", "原生回存的输入槽位无效")
+                field = ports[slot]["name"]
+            connected_fields.add(field)
+        for field, asset_id in bindings.items():
+            actual_field = old_maps[str(original["id"])].get(field, field)
+            # 宿主连线优先于旧位置参数，上传旧素材不能覆盖新拓扑。
+            if actual_field in connected_fields:
+                continue
+            if actual_field not in old_inputs or actual_field not in new_inputs:
+                raise CleanroomException(422, "UNSUPPORTED_WIDGET_MAPPING", "原生图遗漏已绑定素材的参数，原文档保持不变")
+            if old_inputs[actual_field] == new_inputs[actual_field]:
+                saved_field = next((name for name, actual in new_maps[str(node["id"])].items() if actual == actual_field), actual_field)
+                metadata.setdefault("input_assets", {})[saved_field] = asset_id
+
+
 @router.post("/tasks/execute", status_code=status.HTTP_202_ACCEPTED)
 async def execute_task(request: Request, authorization: Optional[str] = Header(None), x_user_role: str = Header("editor", alias="X-User-Role"), idempotency_key: Optional[str] = Header(None, alias="Idempotency-Key")):
     """提交本地 ComfyUI 执行，返回真实 task_id。
@@ -513,15 +645,17 @@ async def execute_task(request: Request, authorization: Optional[str] = Header(N
         api_key = registry.credential_value("rh_api_key", context)
         if not api_key:
             raise unavailable("WORKFLOW_EXECUTOR_UNAVAILABLE", "RunningHub API Key is not configured")
-        # 本地文档 ID 只用于归属与账本，不能冒充供应商的工作流 ID。
-        stored_rh_id = document.get("external_workflow_id")
-        if document.get("external_provider") not in (None, "runninghub") or document.get("source_type") == "liblib_link":
-            stored_rh_id = None
-        rh_wf_id = body.get("rh_workflow_id") or stored_rh_id
-        if (isinstance(rh_wf_id, bool) or not isinstance(rh_wf_id, (str, int))
-                or not str(rh_wf_id).strip() or len(str(rh_wf_id)) > 128):
-            raise CleanroomException(400, "INVALID_REQUEST", "缺少真实 RunningHub 工作流标识")
-        rh_wf_id = str(rh_wf_id).strip()
+        # 始终直传当前完整图；已有真实RH标识兼容平台必填校验，不使用本地或Lib ID冒充。
+        stored_rh_id = document.get('external_workflow_id') if document.get('external_provider') == 'runninghub' else None
+        if (stored_rh_id is None and document.get('external_provider') is None
+                and document.get('source_type') == 'rh_link'):
+            legacy_source = re.fullmatch(r'https?://(?:www\.)?runninghub\.(?:cn|ai)/workflow/(\d{10,25})(?:[/?#].*)?',
+                                         str(document.get('source_url') or ''), re.IGNORECASE)
+            if legacy_source:
+                stored_rh_id = legacy_source.group(1)
+        candidate_rh_id = body.get('rh_workflow_id') or stored_rh_id
+        transport_workflow_id = (str(candidate_rh_id) if type(candidate_rh_id) in (str, int)
+                                 and re.fullmatch(r'\d{10,25}', str(candidate_rh_id)) else None)
         # 保存图上的全部标量参数都参与运行；提升仅决定界面展示，不决定生效范围。
         cloud_values = {(node_id, field): value for node_id, node in prompt.items()
                         for field, value in node.get("inputs", {}).items() if not isinstance(value, (dict, list))}
@@ -533,10 +667,20 @@ async def execute_task(request: Request, authorization: Optional[str] = Header(N
             if (node_id, field) not in cloud_values:
                 raise CleanroomException(400, "INVALID_REQUEST", "参数覆盖节点或字段不存在")
             cloud_values[node_id, field] = entry.get("fieldValue")
+        for (node_id, field), value in cloud_values.items():
+            prompt[node_id]['inputs'][field] = value
         node_info = [{"nodeId": node_id, "fieldName": field, "fieldValue": value}
                      for (node_id, field), value in cloud_values.items()]
     else:
         raise unavailable("WORKFLOW_EXECUTOR_UNAVAILABLE", "不支持的执行目标")
+    # 在任何素材上传前核对实际编译图，虚拟节点或未知字段不能产生外部副作用。
+    for node in (document.get("nodes", []) if workflow_id else []):
+        for field in node.get("metadata", {}).get("input_assets", {}):
+            node_id = str(node["id"])
+            actual_field = widget_fields.get(node_id, {}).get(field, field)
+            compiled_node = prompt.get(node_id)
+            if not isinstance(compiled_node, dict) or actual_field not in compiled_node.get("inputs", {}):
+                raise CleanroomException(422, "INPUT_ASSET_FIELD_UNRESOLVED", "输入素材字段无法映射到实际执行图，请补齐节点定义")
     source_context = _source_context(context, body.get("source_context", document.get("metadata", {}).get("source_context", {})))
     # 原子预留必须先于任何外部副作用；未绑定ID的账本一律未知且禁止自动重发。
     task, replay = registry.reserve_task(context, workflow_id=workflow_id, target=target,
@@ -581,22 +725,32 @@ async def execute_task(request: Request, authorization: Optional[str] = Header(N
                         if entry is None:
                             raise CleanroomException(400, "INVALID_REQUEST", "输入素材绑定的字段不存在")
                         entry["fieldValue"] = remote_name
-                task = registry.update_task(context, task["job_id"], node_info_snapshot=node_info)
+                        prompt[str(node['id'])]['inputs'][actual_field] = remote_name
+                task = registry.update_task(context, task["job_id"], node_info_snapshot=node_info, prompt_snapshot=prompt,
+                                            submission_mode='full_workflow')
                 submission_started = True
-                result = await platforms.create_rh_cloud_task(str(rh_wf_id), node_info, api_key,
-                    domain=snapshot["domain"])
+                result = await platforms.create_rh_cloud_task(transport_workflow_id, node_info, api_key,
+                    domain=snapshot["domain"], workflow=prompt)
                 remote_id = result.get("taskId") or result.get("task_id")
             if remote_id:
                 task = registry.update_task(context, task["job_id"], remote_task_id=str(remote_id),
                     prompt_id=str(remote_id), remote_id_missing=False, status="accepted",
                     execution_status="accepted", source_status="queued")
+            else:
+                task = registry.update_task(context, task['job_id'], messages=['RH_TASK_ID_MISSING' if target == 'rh_cloud' else 'COMFY_TASK_ID_MISSING'])
         except (CleanroomException, OSError) as exc:
             # 绑定写盘失败仍返回已预留公共ID，不因错误重发外部请求。
             task = registry.load_task(context, task["job_id"])
             task["messages"] = [exc.code if isinstance(exc, CleanroomException) else "TASK_LEDGER_WRITE_FAILED"]
-            if not submission_started:
+            if isinstance(exc, CleanroomException) and exc.code == 'RH_TASK_CREATE_REJECTED':
+                provider_code = exc.extra.get('provider_code')
+                if isinstance(provider_code, str) and re.fullmatch(r'-?\d{1,10}|UNKNOWN', provider_code):
+                    task['messages'].append('RunningHub 错误码: ' + provider_code)
+            if not submission_started or (isinstance(exc, CleanroomException) and exc.code == 'RH_TASK_CREATE_REJECTED'):
                 task = registry.update_task(context, task["job_id"], status="failed", execution_status="failed",
                                             remote_id_missing=False, messages=task["messages"])
+            else:
+                task = registry.update_task(context, task['job_id'], messages=task['messages'])
     return {**task, "poll_hint": f"/api/god_workflow/tasks/{task['job_id']}",
             "idempotent_replay": replay, "data_status": "ok",
             "data_gaps": ["remote_task_id_missing"] if task.get("remote_id_missing") else []}
@@ -622,8 +776,8 @@ async def task_status(task_id: str, authorization: Optional[str] = Header(None),
     if target in ("rh_cloud", "runninghub"):
         api_key = registry.credential_value("rh_api_key", context)
         if not api_key:
-            task = registry.update_task(context, task_id, status="failed", source_status="failed", execution_status="failed", messages=["RunningHub API Key is not configured"])
-            return {**task, "data_status": "ok", "data_gaps": []}
+            # 配置缺失只阻断查询，不能推断已发出的远端执行失败。
+            raise unavailable("WORKFLOW_EXECUTOR_UNAVAILABLE", "RunningHub API Key is not configured")
         domain = task.get("executor_snapshot", {}).get("domain") or os.environ.get("GW_RUNNINGHUB_DOMAIN", platforms.RUNNINGHUB_DEFAULT_DOMAIN)
         query_res = await platforms.query_rh_task_outputs(str(task.get("prompt_id") or ""), api_key, domain=domain)
         st = query_res.get("status")
@@ -631,20 +785,25 @@ async def task_status(task_id: str, authorization: Optional[str] = Header(None),
             assets = await _collect_rh_task_outputs(context, task_id, query_res.get("outputs", []))
             complete = bool(assets) and all(item.get("registered") for item in assets)
             task = registry.update_task(context, task_id, status="completed" if complete else "failed",
+                                        only_if_active=True,
                                         source_status="SUCCESS", execution_status="completed",
                                         collection_status="completed" if complete else "partial_failed", outputs=assets)
             return {**task, "data_status": "ok", "data_gaps": ([] if complete else ["output_collection_incomplete"])}
         elif st == "RUNNING":
-            task = registry.update_task(context, task_id, status="running", source_status="RUNNING", execution_status="running")
+            task = registry.update_task(context, task_id, only_if_active=True,
+                                        status="running", source_status="RUNNING", execution_status="running")
             return {**task, "progress": {"known": False, "value": None}, "data_status": "ok", "data_gaps": []}
-        else:
+        elif st == "FAILED":
             msg = query_res.get("message") or "RunningHub 任务执行失败"
-            task = registry.update_task(context, task_id, status="failed", source_status="FAILED", execution_status="failed", messages=[msg])
+            task = registry.update_task(context, task_id, only_if_active=True,
+                                        status="failed", source_status="FAILED", execution_status="failed", messages=[msg])
             return {**task, "data_status": "ok", "data_gaps": []}
+        # 未确认的回包保留任务身份及原状态，修复查询条件后可续查。
+        raise CleanroomException(502, "RH_TASK_STATUS_UNKNOWN", "RunningHub 未返回可确认的任务状态，请稍后续查")
 
     history = await _comfy_call(context, comfy_executor.history, str(task.get("prompt_id") or ""), task=task)
     if not history["found"]:
-        task = registry.update_task(context, task_id, status="running")
+        task = registry.update_task(context, task_id, only_if_active=True, status="running")
         return {**task, "progress": {"known": False, "value": None},
                 "data_status": "ok", "data_gaps": []}
 
@@ -652,6 +811,7 @@ async def task_status(task_id: str, authorization: Optional[str] = Header(None),
     assets = await _collect_task_outputs(context, task_id, summary["outputs"], task=task)
     complete = bool(assets) and all(item.get("registered") for item in assets)
     task = registry.update_task(context, task_id,
+                                only_if_active=True,
                                 status="completed" if summary["status"] == "succeeded" and complete else "failed",
                                 source_status=summary["status"],
                                 execution_status="completed" if summary["status"] == "succeeded" else "failed",
@@ -669,7 +829,7 @@ async def retry_task_collection(task_id: str, authorization: Optional[str] = Hea
         raise CleanroomException(409, "EXECUTION_NOT_COMPLETED", "执行尚未确认完成，不能回收")
     if task.get("collection_status") == "completed":
         return task
-    if task.get("target") == "rh_cloud":
+    if task.get("target") in ("rh_cloud", "runninghub"):
         api_key = registry.credential_value("rh_api_key", context)
         if not api_key:
             raise unavailable("WORKFLOW_EXECUTOR_UNAVAILABLE", "RunningHub API Key is not configured")
@@ -784,10 +944,12 @@ async def _collect_rh_task_outputs(context: AuthContext, task_id: str,
         return [{"registered": False, "code": "OUTPUT_COUNT_EXCEEDED"}]
     for item in outputs:
         if not isinstance(item, dict):
+            collected.append({"registered": False, "code": "INVALID_OUTPUT_DESCRIPTOR"})
             continue
         url = str(item.get("fileUrl") or item.get("url") or "")
         filename = str(item.get("fileName") or item.get("filename") or "")
         if not url:
+            collected.append({"registered": False, "code": "INVALID_OUTPUT_DESCRIPTOR"})
             continue
         if not filename:
             filename = url.split("?")[0].rsplit("/", 1)[-1] or f"rh_output_{len(collected)+1}.png"
@@ -1016,7 +1178,8 @@ def get_document(workflow_id: str, authorization: Optional[str] = Header(None), 
             "data_status": "ok", "data_gaps": []}
 
 
-async def _update_document(workflow_id: str, request: Request, authorization: Optional[str], x_user_role: str):
+async def _update_document(workflow_id: str, request: Request, authorization: Optional[str], x_user_role: str,
+                           *, native_sync: bool = False, schemas: Optional[dict] = None, host_prompt=None, host_fields=None):
     context = _auth(authorization, x_user_role, True)
     body = await _json_body(request)
     if not isinstance(body, dict):
@@ -1034,6 +1197,18 @@ async def _update_document(workflow_id: str, request: Request, authorization: Op
         name = body.get("name", current.get("name", "workflow"))
         document = _parse_payload(payload, body.get("source", current.get("source", "comfyui")), name)
         stored = {**current, **document.as_dict()}
+        cached_prompt = current.get('metadata', {}).get('resolved_api')
+        if isinstance(cached_prompt, dict) and cached_prompt.get('fingerprint') == execution_fingerprint(stored):
+            stored.setdefault('metadata', {})['resolved_api'] = deepcopy(cached_prompt)
+        if native_sync:
+            # 来源由服务端当前 CAS 版本保留，不能被宿主图中随带的元数据替换。
+            stored.setdefault("metadata", {})["source_context"] = deepcopy(current.get("metadata", {}).get("source_context", {}))
+            stored["metadata"]["node_schemas"] = deepcopy(schemas or {})
+            _preserve_native_bindings(current, stored, schemas or {})
+            if host_prompt is not None:
+                stored['metadata']['resolved_api'] = {'source': 'comfyui_graph_to_prompt', 'prompt': deepcopy(host_prompt),
+                    'field_maps': deepcopy(host_fields or {}), 'fingerprint': execution_fingerprint(stored)}
+                stored['metadata']['needs_host_resolution'] = False
         stored.update({"workflow_id": workflow_id, "version": current_version + 1,
                        "folder_id": body.get("folder_id", current.get("folder_id"))})
         stored["asset_id"] = asset_hub_bridge._workflow_asset_id(context, workflow_id)
@@ -1222,7 +1397,7 @@ def comfy_control_status(authorization: Optional[str] = Header(None), x_user_rol
 @router.post("/open-in-comfy")
 @router.post("/open-in-comfy/{workflow_id}")
 async def open_in_comfy(workflow_id: Optional[str] = None, authorization: Optional[str] = Header(None), x_user_role: str = Header("editor", alias="X-User-Role")):
-    """准备在本地 ComfyUI 中打开工作流；无工作流时直接拉起启动并打开 ComfyUI 根地址。"""
+    """将工作流导入已在线的本地 ComfyUI；服务启停仅由全站 CF 控件负责。"""
     context = _auth(authorization, x_user_role, True)
 
     document = None
@@ -1238,6 +1413,8 @@ async def open_in_comfy(workflow_id: Optional[str] = None, authorization: Option
     # 与顶栏共用受控生命周期；普通用户可以打开在线服务但不能隐式启动。
     control = _comfy_operation(context, "status")
     if not control.get("highlight"):
+        if control.get("status") == "starting":
+            raise unavailable('COMFY_START_PENDING', 'ComfyUI 正在启动，请等待右上角 CF 确认运行后再导入')
         raise unavailable('WORKFLOW_EXECUTOR_UNAVAILABLE', 'ComfyUI 未在线，请先使用全站 CF 控件启动或连接服务')
     online = bool(control.get("highlight"))
     launched = bool(control.get("launched"))
@@ -1247,7 +1424,24 @@ async def open_in_comfy(workflow_id: Optional[str] = None, authorization: Option
     safe_filename = ""
     saved_path_str = ""
     write_error = None
-    native_graph = export_to_comfy_litegraph(document) if document else None
+    native_graph = None
+    workflow_format = 'native'
+    if document:
+        original_nodes = (document.get('raw_payload') or {}).get('nodes')
+        if (isinstance(original_nodes, list) and all(isinstance(node, dict) and node.get('type')
+                and isinstance(node.get('inputs', []), list) for node in original_nodes)):
+            native_graph = export_to_comfy_litegraph(document)
+        else:
+            # API 图由宿主实际节点工厂恢复参数与端口；不在工作台猜位置或端口类型。
+            native_graph = _api_prompt_payload(document)
+            workflow_format = 'api'
+    # 原生 JSON 直接交给项目页面适配；服务启动、API 编译均不在导入路径中。
+    browser_adapter = None
+    if document and workflow_id:
+        if urlsplit(comfy_url).hostname not in {'127.0.0.1', 'localhost', '::1'}:
+            raise CleanroomException(422, 'COMFY_ADAPTER_LOCAL_REQUIRED', '自动页面适配仅支持本机 ComfyUI，不向远端安装目录写入')
+        with _STORAGE_LOCK:
+            browser_adapter = browser_bridge.prepare(comfy_root)
 
     if document and workflow_id:
         principal = registry.principal_digest(context.identity_domain, context.subject)
@@ -1290,7 +1484,7 @@ async def open_in_comfy(workflow_id: Optional[str] = None, authorization: Option
             "timestamp": time.time(),
         }
         base_url = comfy_url.rstrip("/")
-        open_url = f"{base_url}/?rh_workflow={quote(safe_filename)}&rh_wf_id={quote(workflow_id)}&rh_uuid={quote(comfy_uuid)}"
+        open_url = f"{base_url}/?gw_workflow={quote(workflow_id)}"
     else:
         open_url = comfy_url.rstrip("/")
 
@@ -1303,6 +1497,10 @@ async def open_in_comfy(workflow_id: Optional[str] = None, authorization: Option
         "workflow_file": safe_filename or None,
         "saved_path": saved_path_str,
         "workflow_graph": native_graph,
+        "workflow_format": workflow_format,
+        "browser_adapter": browser_adapter,
+        "resolve_definitions": (workflow_format == 'api' or bool(_native_definition_gaps(document))
+                                or bool(document.get('metadata', {}).get('needs_host_resolution'))) if document else False,
         "expected_version": document.get("version") if document else None,
         "bridge_connected": False,
         "open_url": open_url,
@@ -1326,7 +1524,7 @@ def comfy_bridge_poll(authorization: Optional[str] = Header(None), x_user_role: 
 @router.post("/comfy-bridge/sync-saved")
 async def comfy_bridge_sync_saved(request: Request, authorization: Optional[str] = Header(None), x_user_role: str = Header("editor", alias="X-User-Role")):
     """接收来自 ComfyUI 拦截保存的最新工作流回传，原子更新工作台文档。"""
-    _auth(authorization, x_user_role, True)
+    context = _auth(authorization, x_user_role, True)
     body = await _json_body(request)
     if not isinstance(body, dict):
         raise CleanroomException(400, "INVALID_REQUEST", "请求体必须是 JSON 对象")
@@ -1336,14 +1534,55 @@ async def comfy_bridge_sync_saved(request: Request, authorization: Optional[str]
         raise CleanroomException(400, "INVALID_REQUEST", "缺少 workflow_id 或 workflow 数据")
 
     current = get_document(workflow_id, authorization, x_user_role)["workflow"]
+    expected = _expected_version(body.get("expected_version"))
+    if expected != int(current.get("version", 1)):
+        raise VersionConflictException(expected, int(current.get("version", 1)))
     parsed_doc = _parse_payload(raw_workflow, "canvas", current.get("name", "workflow"))
     updated_dict = parsed_doc.as_dict()
+    schemas = current.get("metadata", {}).get("node_schemas") or {}
+    host_prompt, host_fields = None, None
+    if body.get('resolve_definitions') is True:
+        # 定义从当前主体配置的实际宿主取得，不信任浏览器随图附送的 Schema。
+        probe = await _comfy_call(context, comfy_executor.probe)
+        actual = probe.get('object_info') or {}
+        supplied_prompt = body.get('api_prompt')
+        if supplied_prompt is not None:
+            if not isinstance(supplied_prompt, dict) or not supplied_prompt:
+                raise CleanroomException(422, 'INVALID_WORKFLOW', '宿主未返回可执行图，原 JSON 已保留')
+            _parse_payload(supplied_prompt, 'comfyui', current.get('name', 'workflow'))
+        virtual_ids = body.get('virtual_node_ids') or []
+        if not isinstance(virtual_ids, list) or any(not isinstance(node_id, str) for node_id in virtual_ids):
+            raise CleanroomException(422, 'INVALID_WORKFLOW', '宿主虚拟节点标识无效')
+        required_classes = [node.get('class_type') for node in supplied_prompt.values()] if supplied_prompt else []
+        required_classes += [node.get('kind') for node in updated_dict.get('nodes', [])
+                             if str(node.get('id')) not in virtual_ids and (node.get('raw_payload') or {}).get('mode', 0) not in (2, 4)]
+        missing = [kind for kind in required_classes
+                   if kind not in {'Note', 'MarkdownNote', 'Reroute'} and not isinstance(actual.get(kind), dict)]
+        if not probe.get('online') or missing:
+            raise CleanroomException(422, 'NODE_SCHEMA_REQUIRED', 'ComfyUI 缺少该图的真实节点定义，原 JSON 已保留，请补齐缺失节点后重试')
+        schemas = {**schemas, **{kind: deepcopy(actual[kind]) for kind in _node_class_ids(updated_dict)
+                                if isinstance(actual.get(kind), dict)}}
+        if supplied_prompt:
+            host_prompt = supplied_prompt
+            host_fields = body.get('field_maps') or {}
+            if not isinstance(host_fields, dict) or any(not isinstance(fields, dict)
+                    or node_id not in host_prompt or any(not isinstance(field, str) or field not in host_prompt[node_id]['inputs']
+                    for field in fields.values()) for node_id, fields in host_fields.items()):
+                raise CleanroomException(422, 'INVALID_WORKFLOW', '宿主参数映射不匹配，原 JSON 已保留')
+    new_nodes = {str(node["id"]): node for node in updated_dict.get("nodes", [])}
+    binding_nodes = [node for node in current.get("nodes", [])
+                     if node.get("metadata", {}).get("input_assets")
+                     and str(node["id"]) in new_nodes
+                     and node.get("kind") == new_nodes[str(node["id"])].get("kind")]
+    if binding_nodes:
+        schemas = await _native_schemas(context, {**current, "nodes": binding_nodes}, for_bindings=True)
     updated_dict["workflow_id"] = workflow_id
     updated_dict["folder_id"] = current.get("folder_id")
 
     expected = body.get("expected_version")
     request._body = json.dumps({"workflow": updated_dict, "expected_version": expected, "source": current.get("source", "canvas")}).encode()
-    res = await _update_document(workflow_id, request, authorization, x_user_role)
+    res = await _update_document(workflow_id, request, authorization, x_user_role, native_sync=True, schemas=schemas,
+                                 host_prompt=host_prompt, host_fields=host_fields)
     return {"synced": True, "workflow_id": workflow_id, "version": res["version"], "data_status": "ok", "data_gaps": []}
 
 
@@ -1767,6 +2006,8 @@ async def mature_parse_link(request: Request, authorization: Optional[str] = Hea
     stored["version"] = 1
     stored["source_type"] = source_type
     stored["source_url"] = reference
+    needs_resolution = await _resolve_definitions_in_workbench(context, stored)
+    stored.setdefault('metadata', {})['needs_host_resolution'] = needs_resolution
 
     with _STORAGE_LOCK:
         path = _path(context, wf_id)
@@ -1782,7 +2023,8 @@ async def mature_parse_link(request: Request, authorization: Optional[str] = Hea
         _atomic_write(path, stored)
 
     registration = asset_hub_bridge.register_workflow_to_asset_hub(wf_id, stored.get("name", "workflow"), document=stored, context=context)
-    return {**stored, **asset_hub_bridge.registration_health(registration)}
+    return {**stored, 'needs_definition_resolution': needs_resolution,
+            **asset_hub_bridge.registration_health(registration)}
 
 
 @router.post("/parse-upload")
@@ -1794,12 +2036,47 @@ async def mature_parse_upload(request: Request, authorization: Optional[str] = H
     wf_data["workflow_id"] = wf_id
     wf_data["asset_id"] = asset_hub_bridge._workflow_asset_id(context, wf_id)
     wf_data.setdefault("folder_id", "parsed_default")
-    wf_data.setdefault("version", 1)
+    # 文档CAS从1起步；Comfy格式版本保留在metadata/raw_payload，不作为修订号。
+    wf_data["version"] = 1
     wf_data["source_type"] = "local_file"
+    wf_data.setdefault('metadata', {}).pop('resolved_api', None)
+    needs_resolution = await _resolve_definitions_in_workbench(context, wf_data)
+    wf_data.setdefault('metadata', {})['needs_host_resolution'] = needs_resolution
     with _STORAGE_LOCK:
-        _atomic_write(_path(context, wf_id), wf_data)
+        path = _path(context, wf_id)
+        if path.exists():
+            raise CleanroomException(409, "VERSION_CONFLICT", "此工作流已存在；请通过编辑接口携带原文档版本更新")
+        _atomic_write(path, wf_data)
     registration = asset_hub_bridge.register_workflow_to_asset_hub(wf_id, wf_data.get("name", "workflow"), document=wf_data, context=context)
-    return {**wf_data, **asset_hub_bridge.registration_health(registration)}
+    return {**wf_data, 'needs_definition_resolution': needs_resolution,
+            **asset_hub_bridge.registration_health(registration)}
+
+
+@router.post("/item/{workflow_id}/resolve-definitions")
+async def resolve_workflow_definitions(workflow_id: str, request: Request,
+                                       authorization: Optional[str] = Header(None), x_user_role: str = Header('editor', alias='X-User-Role')):
+    """启动后先重试内部真实定义适配；只有仍不足时才需要宿主页面。"""
+    context = _auth(authorization, x_user_role, True)
+    body = await _json_body(request)
+    expected = _expected_version(body.get('expected_version') if isinstance(body, dict) else None)
+    with _STORAGE_LOCK:
+        path = _path(context, workflow_id)
+        current = deepcopy(_load(path))
+        if current.get('version') != expected:
+            raise VersionConflictException(expected, current.get('version'))
+    updated = deepcopy(current)
+    needs_resolution = await _resolve_definitions_in_workbench(context, updated)
+    updated.setdefault('metadata', {})['needs_host_resolution'] = needs_resolution
+    with _STORAGE_LOCK:
+        latest = _load(path)
+        if latest.get('version') != expected:
+            raise VersionConflictException(expected, latest.get('version'))
+        if updated != current:
+            updated['version'] = expected + 1
+            _atomic_write(path, updated)
+    registration = asset_hub_bridge.register_workflow_to_asset_hub(workflow_id, updated.get('name', 'workflow'), document=updated, context=context)
+    return {'workflow': updated, 'needs_definition_resolution': needs_resolution,
+            **asset_hub_bridge.registration_health(registration)}
 
 
 @router.post("/execute", status_code=status.HTTP_202_ACCEPTED)
@@ -1871,7 +2148,7 @@ def mature_canvas_contract(workflow_id: str, authorization: Optional[str] = Head
 
 
 @router.get("/export/{workflow_id}")
-def mature_export(workflow_id: str, request: Request, format: str = "json",
+async def mature_export(workflow_id: str, request: Request, format: str = "json",
                   authorization: Optional[str] = Header(None), x_user_role: str = Header("editor", alias="X-User-Role")):
     """Format-branching export.
 
@@ -1884,7 +2161,8 @@ def mature_export(workflow_id: str, request: Request, format: str = "json",
     if selected == "json":
         return document
     if selected in ("litegraph", "comfyui"):
-        return export_to_comfy_litegraph(document)
+        context = _auth(authorization, x_user_role, False)
+        return export_to_comfy_litegraph(document, await _native_schemas(context, document))
     if selected == "api":
         return _api_prompt_payload(document)
     if selected == "node_info_list":

@@ -616,9 +616,12 @@ def load_task(context: Any, task_id: str) -> dict[str, Any]:
     return task
 
 
-def update_task(context: Any, task_id: str, **changes: Any) -> dict[str, Any]:
+def update_task(context: Any, task_id: str, *, only_if_active: bool = False, **changes: Any) -> dict[str, Any]:
     with _STORAGE_LOCK:
         task = load_task(context, task_id)
+        # 多入口轮询的迟到回包不能覆盖已确认终态；显式回收重试不受此条件限制。
+        if only_if_active and task.get("status") in {"completed", "failed", "cancelled", "outcome_unknown"}:
+            return task
         task.update(changes)
         task["updated_at"] = datetime.now(timezone.utc).isoformat()
         try:

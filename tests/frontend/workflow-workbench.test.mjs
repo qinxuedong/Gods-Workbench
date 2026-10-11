@@ -196,6 +196,42 @@ test('工作台不含局部CF启动入口和擅加认证横条',()=>{
   assert.doesNotMatch(html,/id="btnOpenComfyUi"/);assert.doesNotMatch(controller,/data-wf-auth-notice|wfAuthNotice/);
 });
 
+test('CF启动中只显示等待，再次点击取消且从不发送工作流', async () => {
+  const offline = {ok:true,status:'offline',highlight:false};
+  const pending = {ok:true,status:'starting',highlight:false,managed:true,can_stop:true};
+  const h = comfyHarness([offline,pending,pending]);
+  const notices=[]; h.window.showToast=message=>notices.push(message);
+  await h.comfyControl(h.toggle);
+  assert.ok(notices.some(message=>message.includes('正在启动')));
+  assert.ok(!notices.some(message=>message==='CF 已确认运行'));
+  assert.ok(!h.classes.has('active'));
+  assert.match(h.toggle.title,/取消启动/);
+});
+
+test('CF启动中点击发送停止而不是再次启动', async () => {
+  const pending = {ok:true,status:'starting',highlight:false,managed:true,can_stop:true};
+  const offline = {ok:true,status:'offline',highlight:false};
+  const h = comfyHarness([pending,offline,offline]);
+  await h.comfyControl(h.toggle);
+  const body=JSON.parse(h.requests.find(request=>request?.method==='POST').body);
+  assert.equal(body.action,'stop');
+  assert.ok(!h.classes.has('active'));
+});
+
+test('CF慢启动后退出在下一次轮询显示原因且同一失败只提示一次', async () => {
+  const pending={ok:true,status:'starting',highlight:false,managed:true};
+  const failed={ok:true,status:'offline',highlight:false,code:'COMFY_START_FAILED',exit_code:1,
+    message:'ComfyUI 启动进程已退出（退出码 1），请检查本地启动环境'};
+  const h=comfyHarness([pending,failed,failed,pending,failed]);
+  const notices=[];h.window.showToast=message=>notices.push(message);
+  await h.pollComfyState();await h.pollComfyState();await h.pollComfyState();
+  assert.deepEqual(notices,[failed.message]);
+  assert.match(h.toggle.title,/退出码 1/);
+  assert.ok(!h.classes.has('active'));
+  await h.pollComfyState();await h.pollComfyState();
+  assert.equal(notices.length,2);
+});
+
 // 解析错误路径执行真实 apiFetch/handleParseLink，不替换其错误映射。
 function parseHarness(status, data) {
   const btn={disabled:false,innerHTML:'解析'}, banner={style:{},innerHTML:'',classList:{add(){},remove(){}}};
@@ -204,7 +240,7 @@ function parseHarness(status, data) {
     wfGet:id=>id==='btnParseLink'?btn:banner, recordClipboardHistory(){},
     fetch:async(url,options)=>{requests.push({url,options});return {ok:status===200,status,json:async()=>data};},
     targetApiUrl:u=>u,showToast:m=>notices.push(m),fetchClipboardSnapshot:async()=>({latestText:''}),
-    isLikelyRhLink:()=>false,openClipboardModal:async()=>{},clearInterval(){},
+    isLikelyRhLink:()=>false,readClipboardWorkflowImage:async()=>null,openClipboardModal:async()=>{},clearInterval(){},
     refreshWorkflowList:async()=>{},setCurrentWorkflow:w=>{h.loaded=w;},normalizeMatureWorkflow:w=>w};
   runInNewContext(controller.slice(controller.indexOf('async function apiFetch('),controller.indexOf('async function initWorkbench(')),h);
   runInNewContext(controller.slice(controller.indexOf('async function handleParseLink('),controller.indexOf('async function handleUploadFile(')),h);
@@ -219,6 +255,21 @@ test('parse-link 502真实错误显示并释放按钮，不改已加载工作流
 });
 test('空剪贴板不发送parse-link，不伪造解析',async()=>{
   const h=parseHarness(502,{});await h.handleParseLink();assert.equal(h.requests.length,0);assert.match(h.notices[0],/剪贴板/);
+});
+test('剪贴板PNG原字节直接交给统一上传解析，不发送链接解析',async()=>{
+  const h=parseHarness(200,{});let uploaded;
+  // 函数闭包在VM内，设置通过同一对象引用进入其全局。
+  const image={name:'clipboard-workflow.png'};
+  const context={state:{},fetchClipboardSnapshot:async()=>({latestText:'https://www.runninghub.cn/workflow/old',browserText:''}),readClipboardWorkflowImage:async()=>image,
+    handleUploadFile:async file=>{uploaded=file;},recordClipboardHistory(){},isLikelyRhLink:()=>true,showToast(){}};
+  runInNewContext(controller.slice(controller.indexOf('async function handleParseLink('),controller.indexOf('async function handleUploadFile(')),context);
+  await context.handleParseLink();assert.equal(uploaded,image);assert.equal(h.requests.length,0);
+});
+test('剪贴板图片读取保持Blob原字节且不接受JPEG视觉推测',async()=>{
+  const context={navigator:{clipboard:{read:async()=>[{types:['image/png'],getType:async()=>new Blob(['metadata-original'])}]}},File};
+  runInNewContext(controller.slice(controller.indexOf('async function readClipboardWorkflowImage('),controller.indexOf('async function handleParseLink(')),context);
+  const image=await context.readClipboardWorkflowImage();assert.equal(image.name,'clipboard-workflow.png');assert.equal(await image.text(),'metadata-original');
+  context.navigator.clipboard.read=async()=>[{types:['image/jpeg']}];assert.equal(await context.readClipboardWorkflowImage(),null);
 });
 test('解析toast显示规则不能隐藏错误反馈',()=>{
   const rule=css.match(/\.workflow-workbench \.toast-banner\.show\s*\{([^}]+)\}/)[1];
@@ -245,3 +296,106 @@ test('关闭overlay不拦截顶栏命中，CF无pointer-events:none',()=>{
   assert.match(base,/\.hw-modal-backdrop\.open\s*\{[^}]*pointer-events:\s*auto/s);
   assert.doesNotMatch(base,/\[data-gw-comfy-toggle\]\s*\{[^}]*pointer-events:\s*none/s);
 });
+
+function importHarness({existing = false, blocked = false, fail = false, refreshDeferred = false} = {}) {
+  const events = [], notices = [], timers = [];
+  let finishRefresh;
+  const pendingRefresh = new Promise(resolve => {finishRefresh=resolve;});
+  const loaded=[];
+  const native = {closed:false, location:{href:existing?'http://127.0.0.1:8199/':'about:blank'},
+    focus(){}, close(){this.closed=true;}};
+  const btn = {disabled:false, innerHTML:'导入'};
+  const h = {URL, crypto:{randomUUID:()=> 'single-nonce'}, Date,
+    state:{currentWorkflow:{workflow_id:'real-id',name:'原生图'},authPrincipalKey:'owner',comfyWindowRef:existing?native:null},
+    window:{GWAuthGate:{isAuthenticated:()=>true},location:{origin:'http://127.0.0.1:2077'},
+      open(url){events.push(['open',url]);return blocked?null:native;}},
+    wfGet:()=>btn, showToast:(...args)=>notices.push(args),
+    flushWorkflowParams:async()=>{events.push(['flush']);if(fail) throw Error('保存失败');},
+    apiFetch:async url=>{events.push(['api',url]);if(url.includes('/item/')) return refreshDeferred?pendingRefresh:{...h.state.currentWorkflow};return {open_url:'http://127.0.0.1:8199/',expected_version:1,workflow_graph:{version:0.4}};},
+    normalizeMatureWorkflow:w=>w,setCurrentWorkflow(w){loaded.push(w);h.state.currentWorkflow=w;},
+    clearTimeout(){},setTimeout(fn){timers.push(fn);return timers.length;}};
+  runInNewContext(controller.slice(controller.indexOf('async function handleOpenInComfyUi('),controller.indexOf('async function checkComfySavedSyncOnce(')),h);
+  return {...h,events,notices,timers,native,btn,loaded,finishRefresh};
+}
+
+for (const changed of ['principal', 'selection']) {
+  test(`导入刷新期间切换${changed}不会回填旧私有图`,async()=>{
+    const h=importHarness({refreshDeferred:true});const pending=h.handleOpenInComfyUi();
+    while(!h.events.some(event=>String(event[1]).includes('/item/'))) await new Promise(resolve=>setImmediate(resolve));
+    if(changed==='principal') {h.state.authPrincipalKey='other';h.state.comfyBridgeSession=null;h.state.currentWorkflow=null;}
+    else h.state.currentWorkflow={workflow_id:'other-selected'};
+    h.finishRefresh({workflow_id:'real-id',name:'old-private'});await pending;
+    assert.equal(h.loaded.length,0);assert.equal(h.state.currentWorkflow?.workflow_id,changed==='selection'?'other-selected':undefined);
+  });
+}
+
+test('宿主异步编译期间编辑会拒绝图与执行缓存错配',async()=>{
+  const adapter=read('tools/comfy_workbench_bridge/js/workbench.js');
+  let graph={nodes:[{id:1,widgets_values:['old']}],links:[]};let finish;
+  const context={structuredClone,JSON,Object,app:{graph:{serialize:()=>structuredClone(graph),_nodes:[]},graphToPrompt:()=>new Promise(resolve=>{finish=resolve;})}};
+  runInNewContext(adapter.slice(adapter.indexOf('const parseGraph ='),adapter.indexOf('const listener =')).replace('const parseGraph =','globalThis.parseGraph ='),context);
+  const pending=context.parseGraph();graph.nodes[0].widgets_values[0]='new';
+  finish({output:{'1':{class_type:'Node',inputs:{value:'old'}}}});
+  await assert.rejects(pending,/编译期间工作流已改变/);
+});
+
+test('导入在首个异步保存前预留窗口，先会话后导航，等待真实确认',async()=>{
+  const h=importHarness();const pending=h.handleOpenInComfyUi();
+  assert.deepEqual(h.events.slice(0,2),[['open',''],['flush']]);
+  await pending;
+  assert.equal(h.state.comfyBridgeSession.window,h.native);
+  assert.match(h.native.location.href,/gw_nonce=single-nonce/);
+  assert.equal(h.state.comfyBridgeSession.connected,undefined);
+  h.timers[0]();assert.match(h.notices.at(-1)[0],/未收到.*载入回执/);
+  assert.equal(h.btn.disabled,false);
+});
+
+test('导入失败仅关闭预留空页，保留已有宿主图',async()=>{
+  const fresh=importHarness({fail:true});await fresh.handleOpenInComfyUi();assert.equal(fresh.native.closed,true);
+  const existing=importHarness({existing:true,fail:true});await existing.handleOpenInComfyUi();
+  assert.equal(existing.native.closed,false);assert.equal(existing.native.location.href,'http://127.0.0.1:8199/');
+  assert.equal(existing.events.filter(e=>e[0]==='open').length,0);
+});
+
+test('窗口拦截显示操作入口，登出后不能用旧入口导入',async()=>{
+  const h=importHarness({blocked:true});await h.handleOpenInComfyUi();
+  const toast=h.notices.at(-1);assert.match(toast[0],/浏览器阻止/);assert.equal(typeof toast[3],'function');
+  h.window.GWAuthGate.isAuthenticated=()=>false;toast[3]();
+  assert.equal(h.events.filter(e=>e[0]==='open').length,1);
+  h.timers.forEach(fn=>fn());assert.equal(h.notices.at(-1),toast);
+});
+
+test('已确认或已换主体的导入不显示迟到超时',async()=>{
+  const h=importHarness();await h.handleOpenInComfyUi();const count=h.notices.length;
+  h.state.comfyBridgeSession.connected=true;h.timers[0]();assert.equal(h.notices.length,count);
+  h.state.comfyBridgeSession.connected=false;h.state.authPrincipalKey='another';h.timers[0]();assert.equal(h.notices.length,count);
+});
+
+test('未登录导入按钮拦截反馈，认证后留给业务事件处理',()=>{
+  let stopped=0,login=0;const notices=[];const button={};
+  const h={document:{getElementById:()=>({contains:b=>b===button})},
+    window:{GWAuthGate:{isAuthenticated:()=>false},HardwareDeck:{openAccountModal:()=>login++}},
+    showToast:m=>notices.push(m)};
+  runInNewContext(controller.slice(controller.indexOf('function handleUnauthenticatedComfyImport('),controller.indexOf("document.addEventListener('click', handleUnauthenticatedComfyImport")),h);
+  const event={target:{closest:()=>button},stopImmediatePropagation:()=>stopped++};
+  h.handleUnauthenticatedComfyImport(event);assert.equal(stopped,1);assert.equal(login,1);assert.match(notices[0],/登录/);
+  h.window.GWAuthGate.isAuthenticated=()=>true;h.handleUnauthenticatedComfyImport(event);assert.equal(stopped,1);
+});
+
+for (const scenario of ['offline', 'internal-ready', 'last-resort']) {
+  test(`定义补齐 ${scenario} 只在内部仍不足时请求页面，不自动启动`,async()=>{
+    const requests=[];let opened=0,started=0,hostFallback=0;
+    const h={state:{authPrincipalKey:'principal',currentWorkflow:{workflow_id:'workflow',version:1}},
+      window:{GWAuthGate:{isAuthenticated:()=>true},open:()=>{opened++;return {};},WorkbenchComfy:{start:()=>started++}},
+      showToast(){},flushWorkflowParams:async()=>{},normalizeMatureWorkflow:w=>w,
+      setCurrentWorkflow:w=>{h.state.currentWorkflow=w;},handleOpenInComfyUi:async()=>hostFallback++,
+      apiFetch:async(url,options)=>{requests.push({url,options});return url.endsWith('comfy-control')
+        ? {highlight:scenario!=='offline'} : {workflow:{workflow_id:'workflow',version:2},needs_definition_resolution:scenario==='last-resort'};}};
+    runInNewContext(controller.slice(controller.indexOf('async function offerDefinitionResolution('),controller.indexOf('async function handleOpenInComfyUi(')),h);
+    await h.offerDefinitionResolution({workflow_id:'workflow'});
+    assert.equal(opened,0);assert.equal(started,0);assert.equal(hostFallback,scenario==='last-resort'?1:0);
+    assert.equal(requests.length,scenario==='offline'?1:2);
+    if(scenario==='offline') assert.ok(h.state.pendingDefinitionWorkflow);
+    else assert.equal(h.state.pendingDefinitionWorkflow,null);
+  });
+}

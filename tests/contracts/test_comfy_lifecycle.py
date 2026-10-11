@@ -91,13 +91,18 @@ def test_stop_revalidates_listener_race():
     assert not b.stops
 
 
-def test_start_timeout_no_duplicate_process():
+def test_slow_start_preserves_child_and_never_duplicates():
     c, b = control(wait_seconds=0)
     c.probe = lambda _: False
-    b.stop = lambda _: False
-    assert c.operate('start', URL, '/configured', 'admin')['code'] == 'COMFY_START_TIMEOUT'
+    result = c.operate('start', URL, '/configured', 'admin')
+    assert result['ok'] and result['status'] == 'starting' and not result['highlight']
     assert c.operate('start', URL, '/configured', 'admin')['code'] == 'COMFY_START_PENDING'
     assert b.launches == 1
+    assert b.stops == [] and c.child is b
+    assert c.operate('status', URL, '', 'admin')['status'] == 'starting'
+    c.probe = lambda _: b.online
+    ready = c.operate('status', URL, '', 'admin')
+    assert ready['highlight'] and ready['managed'] and ready['status'] == 'online'
 
 
 def test_start_waits_for_readiness():
@@ -183,15 +188,59 @@ def test_anonymous_denied(client):
     assert client.post('/api/god_workflow/comfy-control', json={'action': 'start'}, headers={'Origin': 'http://testserver'}).status_code == 401
 
 
-def test_timeout_cleans_exact_child_and_allows_retry():
+def test_pending_start_can_be_cancelled_by_owner_then_retried():
     c, b = control(wait_seconds=0)
     c.probe = lambda _: False
     result = c.operate('start', URL, '/configured', 'admin')
-    assert result['cleanup_confirmed']
-    assert b.stops == [IDENTITY]
-    assert c.child is None
+    assert result['status'] == 'starting' and b.stops == []
+    assert c.operate('stop', URL, '', 'admin')['ok']
+    assert b.stops == [IDENTITY] and c.child is None
+    assert c.owned_url is None
     c.operate('start', URL, '/configured', 'admin')
     assert b.launches == 2
+
+
+def test_pending_start_other_subject_or_endpoint_cannot_cancel():
+    c, b = control(wait_seconds=0)
+    c.probe = lambda _: False
+    c.operate('start', URL, '/configured', 'admin')
+    for principal, url in [('other', URL), ('admin', 'http://127.0.0.1:8199')]:
+        status = c.operate('status', url, '', principal)
+        assert not status['can_stop'] and not status['managed']
+        assert not c.operate('stop', url, '', principal)['ok']
+        assert not c.operate('start', url, '/configured', principal)['ok']
+    assert not b.stops and b.launches == 1
+
+
+def test_pending_cancel_identity_change_never_claims_stopped():
+    c, b = control(wait_seconds=0)
+    c.probe = lambda _: False
+    c.operate('start', URL, '/configured', 'admin')
+    b.stop = lambda _: False
+    result = c.operate('stop', URL, '', 'admin')
+    assert not result['ok'] and result['code'] == 'COMFY_PROCESS_IDENTITY_CHANGED'
+    assert c.child is b and c.owned == IDENTITY
+
+
+def test_start_process_exit_reports_failure_instead_of_timeout():
+    c, b = control(wait_seconds=0)
+    c.probe = lambda _: False
+    b.poll = lambda: 1
+    result = c.operate('start', URL, '/configured', 'admin')
+    assert not result['ok'] and result['code'] == 'COMFY_START_FAILED'
+    assert result['exit_code'] == 1 and not b.stops
+    assert c.operate('status', URL, '', 'admin')['code'] == 'COMFY_START_FAILED'
+
+
+def test_process_exits_after_pending_response_is_reported_by_later_status():
+    c, b = control(wait_seconds=0)
+    c.probe = lambda _: False
+    assert c.operate('start', URL, '/configured', 'admin')['status'] == 'starting'
+    b.poll = lambda: 7
+    later = c.operate('status', URL, '', 'admin')
+    assert later['status'] == 'offline' and later['code'] == 'COMFY_START_FAILED'
+    assert later['exit_code'] == 7 and '7' in later['message'] and not later['highlight']
+    assert not b.stops
 
 
 def test_different_admin_needs_confirmation_for_owned_instance():
@@ -248,6 +297,9 @@ def test_spawn_records_identity_without_shell(tmp_path, monkeypatch):
     child, identity = backend.spawn(str(tmp_path), 8188)
     assert identity == IDENTITY
     assert calls[0][1]['shell'] is False
+    assert calls[0][0][1] == '-I'
+    assert '--windows-standalone-build' in calls[0][0]
+    assert '--disable-auto-launch' in calls[0][0]
     assert calls[0][0][-4:] == ['--listen', '127.0.0.1', '--port', '8188']
 
 
