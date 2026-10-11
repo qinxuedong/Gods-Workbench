@@ -3,6 +3,7 @@
 <head>
   <link rel="stylesheet" href="/static/vendor/css/fonts.css">
   <link rel="stylesheet" href="/static/css/base/hardware-tokens.css">
+  <link rel="stylesheet" href="/static/css/base/hardware-design-system.css?v=v0.0.1-alpha-2026">
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>项目工作台</title>
@@ -79,7 +80,7 @@
             <!-- Action header: keep the controls together without an empty rule row. -->
             <div class="ws-topbar-right ws-board-actions ws-board-toolbar canvas-overview-toolbar" role="toolbar" aria-label="画布操作">
                 <div class="canvas-overview-toolbar-leading">
-                    <button id="newCanvasBtn" class="ws-primary-btn hw-create-btn" type="button"><i data-lucide="plus" class="w-4 h-4"></i><span id="newCanvasLabel">新建画布</span></button>
+                    <button id="newCanvasBtn" class="hw-btn hw-btn-gold ws-primary-btn hw-create-btn" type="button"><i data-lucide="plus" class="w-4 h-4"></i><span id="newCanvasLabel">新建画布</span></button>
                     <button id="archiveEntry" class="ws-icon-btn ws-archive-entry bay-inset" type="button" title="画布归档" aria-label="画布归档" aria-controls="archivePanel" aria-expanded="false"><i data-lucide="archive" class="w-3.5 h-3.5"></i><span class="ws-archive-label">画布归档</span><span id="archiveBadge" class="ws-trash-badge">0</span></button>
                     <span class="canvas-overview-toolbar-divider" aria-hidden="true"></span>
                     <div id="canvasFilterGroup" class="ws-canvas-filter-group" role="group" aria-label="画布类型筛选">
@@ -88,7 +89,7 @@
                         <button class="ws-filter-btn project-filter" type="button" data-canvas-filter="project" aria-pressed="false"><span class="canvas-overview-filter-dot project"></span><span>项目画布</span><span class="ws-filter-count" id="filterCountProject">0</span></button>
                         <button class="ws-filter-btn reference-filter" type="button" data-canvas-filter="reference" aria-pressed="false"><span class="canvas-overview-filter-dot reference"></span><span>参考画布</span><span class="ws-filter-count" id="filterCountReference">0</span></button>
                     </div>
-                    <button id="pasteCanvasBtn" class="ws-paste-btn" type="button" title="粘贴到此项目" style="display:none"><i data-lucide="clipboard-paste" class="w-4 h-4"></i><span>粘贴到此项目</span></button>
+                    <button id="pasteCanvasBtn" class="hw-btn hw-btn-sm ws-paste-btn" type="button" title="粘贴到此项目" style="display:none"><i data-lucide="clipboard-paste" class="w-4 h-4"></i><span>粘贴到此项目</span></button>
                 </div>
                 <div class="canvas-overview-toolbar-trailing">
                     <label class="canvas-overview-search bay-inset" for="canvasOverviewSearch">
@@ -109,7 +110,7 @@
                         <button type="button" data-canvas-overview-density="compact" title="紧凑视图" aria-label="紧凑视图" aria-pressed="false"><i data-lucide="stretch-horizontal" class="w-3.5 h-3.5"></i></button>
                     </div>
                     <div id="canvasOverviewTrashHost" class="canvas-overview-trash-host"></div>
-                    <button id="canvasOverviewRefresh" class="ws-icon-btn canvas-overview-refresh" type="button" title="刷新画布" aria-label="刷新画布"><i data-lucide="refresh-cw" class="w-4 h-4"></i></button>
+                    <button id="canvasOverviewRefresh" class="hw-btn hw-btn-icon ws-icon-btn canvas-overview-refresh" type="button" title="刷新画布" aria-label="刷新画布"><i data-lucide="refresh-cw" class="w-4 h-4"></i></button>
                     <button id="boardResetView" class="ws-icon-btn ws-legacy-board-control" type="button" title="重置视图" aria-label="重置视图" aria-hidden="true" tabindex="-1"><i data-lucide="locate-fixed" class="w-4 h-4"></i></button>
                     <button id="boardRefresh" class="ws-icon-btn ws-legacy-board-control" type="button" title="刷新" aria-label="刷新" aria-hidden="true" tabindex="-1"><i data-lucide="refresh-cw" class="w-4 h-4"></i></button>
                 </div>
@@ -123,7 +124,7 @@
                     <div class="ws-board-empty-text">暂无画布</div>
                     <div class="ws-board-empty-sub">为当前项目创建第一块画布</div>
                     <div class="ws-board-empty-actions">
-                        <button id="emptyCreateCanvasBtn" class="ws-primary-btn" type="button"><i data-lucide="plus" class="w-4 h-4"></i><span>新建画布</span></button>
+                        <button id="emptyCreateCanvasBtn" class="hw-btn hw-btn-gold ws-primary-btn" type="button"><i data-lucide="plus" class="w-4 h-4"></i><span>新建画布</span></button>
                     </div>
                 </div>
             </div>

@@ -34,6 +34,10 @@
   --font-sans: var(--gw-font-body);
   --font-mono: var(--gw-font-mono);
 }
+/* 排版范围声明：按钮字号契约的上提真源为 hardware-design-system.css 的 GW-BTN-01（.hw-btn / .hw-btn-gold）。
+   此处仅同值重声明字号契约，供排版门禁在本页可审计；不得重定义外观（padding/背景/边框/高度/色彩）。 */
+.workflow-workbench .hw-btn { font-size:var(--gw-type-body-md); line-height:var(--gw-leading-body-md); font-weight:var(--gw-weight-medium); }
+.workflow-workbench .hw-btn-gold { font-weight:var(--gw-weight-medium); }
 .workflow-workbench .left-bus-sidebar,
 .workflow-workbench .center-actuator-rack,
 .workflow-workbench .env-diff-drawer,
@@ -200,53 +204,7 @@
   color: rgba(255, 255, 255, 0.55);
 }
 
-.workflow-workbench .hw-btn{
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 5px;
-  padding: 4px 10px;
-  border-radius: 4px;
-  font-family: var(--gw-font-mono);
-
-
-  cursor: pointer;
-  border: 1px solid #2a2f42;
-  background: linear-gradient(180deg, #1b1f2c 0%, #11141d 100%);
-  color: #ffffff;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08), 0 2px 5px rgba(0, 0, 0, 0.6);
-  transition: all 0.15s ease;
-  white-space: nowrap;
-     text-transform: none; min-height:36px;font-size:var(--gw-type-body-md); line-height:var(--gw-leading-body-md); font-weight:var(--gw-weight-medium); letter-spacing:0; min-height:36px;}
-.workflow-workbench .hw-btn:hover,
-.workflow-workbench .hw-btn:focus,
-.workflow-workbench .hw-btn.active{
-  border-color: rgba(223, 195, 132, 0.6);
-  color: var(--primary);
-  background: linear-gradient(180deg, #232838 0%, #151924 100%);
-}
-.workflow-workbench .hw-btn:active{
-  transform: translateY(1px);
-  color: var(--primary);
-}
-.workflow-workbench .hw-btn:disabled{
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-.workflow-workbench .hw-btn-gold{
-  background: linear-gradient(180deg, #282115 0%, #16120a 100%);
-  color: #ffffff;
-  border-color: rgba(223, 195, 132, 0.55);
-  font-weight: var(--gw-weight-medium);
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.65), inset 0 1px 0 rgba(255, 255, 255, 0.1);
-}
-.workflow-workbench .hw-btn-gold:hover,
-.workflow-workbench .hw-btn-gold:focus,
-.workflow-workbench .hw-btn-gold:active{
-  color: var(--primary);
-  border-color: var(--primary);
-}
+/* hw-btn / hw-btn-gold / hw-btn-danger 契约已上提至 hardware-design-system.css (GW-BTN-01)。 */
 
 
 .workflow-workbench .telemetry-cluster{
@@ -1183,10 +1141,12 @@ font-size:var(--gw-type-body-md); line-height:var(--gw-leading-body-md); font-we
   width: 560px;
   max-width: 92vw;
   max-height: 85vh;
-  background: linear-gradient(180deg, #161924 0%, #0c0e15 100%);
-  border: 1px solid rgba(223, 195, 132, 0.38);
-  border-radius: 8px;
-  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.92);
+  background: linear-gradient(165deg, var(--card-start) 0%, var(--card-end) 100%);
+  border: 1px solid rgba(223, 195, 132, 0.2);
+  border-top: 1px solid rgba(223, 195, 132, 0.4);
+  border-left: 1px solid rgba(223, 195, 132, 0.28);
+  border-radius: 18px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.85), inset 0 1px 0 rgba(255, 255, 255, 0.09);
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -2267,16 +2227,7 @@ font-size:var(--gw-type-body-md); line-height:var(--gw-leading-body-md); font-we
   background: linear-gradient(180deg, #321923 0%, #1d0e15 100%);
 }
 
-.workflow-workbench .hw-btn-danger{
-  border-color: rgba(244, 63, 94, 0.65);
-  color: #ffffff;
-  background: linear-gradient(180deg, #be123c 0%, #881337 100%);
-}
-.workflow-workbench .hw-btn-danger:hover{
-  border-color: #fb7185;
-  color: #ffffff;
-  background: linear-gradient(180deg, #e11d48 0%, #9f1239 100%);
-}
+/* .hw-btn-danger 契约已上提至 hardware-design-system.css (GW-BTN-01)。 */
 
 /* 窄屏/200%保留三栏，通过可滚动工作区到达，而不是裁掉后两栏。 */
 @media (max-width: 1000px) {

@@ -207,13 +207,13 @@
         </div>
         <div class="workflow-sub-deck-actions">
           <span class="capsule-badge" id="completenessTag">FULL CANVAS JSON</span>
-          <button id="btnOpenContractModal" class="hw-btn hw-btn-gold gw-type-body-md" type="button" title="查看并复制外部画布对接契约" style="padding:3px 8px;">
+          <button id="btnOpenContractModal" class="hw-btn hw-btn-gold gw-type-body-md hw-btn-pad-38" type="button" title="查看并复制外部画布对接契约">
             <span>🔗 画布对接契约</span>
           </button>
-          <button id="btnExportApiJson" class="hw-btn gw-type-body-md" type="button" title="导出标准 ComfyUI API 格式 JSON 文件" style="padding:3px 8px;">
+          <button id="btnExportApiJson" class="hw-btn gw-type-body-md hw-btn-pad-38" type="button" title="导出标准 ComfyUI API 格式 JSON 文件">
             <span>⬇ 导出 API JSON</span>
           </button>
-          <button id="btnExportNodeList" class="hw-btn gw-type-body-md" type="button" title="导出简化 nodeInfoList 格式 JSON 文件" style="padding:3px 8px;">
+          <button id="btnExportNodeList" class="hw-btn gw-type-body-md hw-btn-pad-38" type="button" title="导出简化 nodeInfoList 格式 JSON 文件">
             <span>⬇ 导出 nodeInfoList</span>
           </button>
         </div>
@@ -239,7 +239,7 @@
               </div>
             </div>
             <div style="display:flex;align-items:center;gap:4px;">
-              <button id="btnNewFolder" class="hw-btn hw-btn-gold gw-type-body-md" style="padding:2px 6px;" type="button" title="新增自定义工作流分类文件夹">
+              <button id="btnNewFolder" class="hw-btn hw-btn-gold gw-type-body-md hw-btn-pad-26" type="button" title="新增自定义工作流分类文件夹">
                 + 新建文件夹
               </button>
               <button id="btnCollapseLeftCol" class="hw-btn col-collapse-btn" type="button" title="折叠『工作流目录』列" aria-label="折叠工作流目录">
@@ -260,8 +260,8 @@
               <option value="🧪">🧪</option>
             </select>
             <input id="inputNewFolderName" class="param-input gw-type-body-md" type="text" placeholder="输入新文件夹名称..." style="flex:1;padding:3px 6px;" />
-            <button id="btnConfirmNewFolder" class="hw-btn hw-btn-gold gw-type-body-md" type="button" style="padding:3px 7px;">确定</button>
-            <button id="btnCancelNewFolder" class="hw-btn gw-type-body-sm" type="button" style="padding:3px 6px;">✕</button>
+            <button id="btnConfirmNewFolder" class="hw-btn hw-btn-gold gw-type-body-md hw-btn-pad-37" type="button">确定</button>
+            <button id="btnCancelNewFolder" class="hw-btn gw-type-body-sm hw-btn-pad-36" type="button">✕</button>
           </div>
 
           <div class="wf-tree-list" id="workflowTreeList">
@@ -298,7 +298,7 @@
             </div>
           </div>
           <div style="display:flex;align-items:center;gap:4px;">
-            <button id="btnRandomizeSeeds" class="hw-btn gw-type-body-md" style="padding:3px 7px;" type="button" title="随机化所有采样器 Seed">
+            <button id="btnRandomizeSeeds" class="hw-btn gw-type-body-md hw-btn-pad-37" type="button" title="随机化所有采样器 Seed">
               🎲 随机种子
             </button>
             <button id="btnCollapseCenterCol" class="hw-btn col-collapse-btn" type="button" title="折叠『参数执行矩阵』列" aria-label="折叠参数执行矩阵">
@@ -358,7 +358,7 @@
               <span>🖥️ 本地 ComfyUI 运行</span>
             </button>
           </div>
-          <button id="btnExecuteWorkflow" class="molten-gold-cta" type="button">
+          <button id="btnExecuteWorkflow" class="hw-btn hw-btn-gold molten-gold-cta" type="button">
             <span>⚡ 生成 / 排队运行 (QUEUE PROMPT) →</span>
           </button>
         </div>
@@ -383,7 +383,7 @@
             </div>
           </div>
           <div style="display:flex;align-items:center;gap:4px;">
-            <button id="btnRefreshDiff" class="hw-btn gw-type-body-md" style="padding:2px 6px;" type="button" title="重新扫描对比本地 ComfyUI">
+            <button id="btnRefreshDiff" class="hw-btn gw-type-body-md hw-btn-pad-26" type="button" title="重新扫描对比本地 ComfyUI">
               🔄 对比
             </button>
             <button id="btnCloseEnvDrawer" class="hw-btn col-collapse-btn" type="button" title="折叠『本地 ComfyUI 诊断』列" aria-label="折叠本地 ComfyUI 诊断">
@@ -449,13 +449,13 @@
 
           <!-- 第三行右侧：打开 ComfyUI、获取并解析、剪贴板、本地上传、拓扑整理、任务面板 -->
           <div style="display:flex;align-items:center;gap:5px;flex-shrink:0;">
-            <button id="btnParseLink" class="hw-btn hw-btn-gold gw-type-body-md" style="padding:3px 8px;" type="button" title="点击直接读取剪贴板最新 RunningHub / Liblib 链接或工作流 JSON 文本并自动解析">
+            <button id="btnParseLink" class="hw-btn hw-btn-gold gw-type-body-md hw-btn-pad-38" type="button" title="点击直接读取剪贴板最新 RunningHub / Liblib 链接或工作流 JSON 文本并自动解析">
               <span>⚡ 获取并解析</span>
             </button>
-            <button id="btnOpenClipboardModal" class="hw-btn gw-type-body-md" style="padding:3px 7px;" type="button" title="打开剪贴板历史，选择最近复制的内容或链接">
+            <button id="btnOpenClipboardModal" class="hw-btn gw-type-body-md hw-btn-pad-37" type="button" title="打开剪贴板历史，选择最近复制的内容或链接">
               <span>📋 剪贴板</span>
             </button>
-            <label for="localFileInput" class="hw-btn gw-type-body-md" style="padding:3px 8px;" title="上传任意本地 ComfyUI 工作流文件（支持非 API 画布 .json、子图 .json、API .json 或 .png/.webp）">
+            <label for="localFileInput" class="hw-btn gw-type-body-md hw-btn-pad-38" title="上传任意本地 ComfyUI 工作流文件（支持非 API 画布 .json、子图 .json、API .json 或 .png/.webp）">
               <span>📂 本地上传</span>
             </label>
             <input id="localFileInput" type="file" accept=".json,.png,.webp" style="display:none;" />
@@ -463,10 +463,10 @@
 
             <div class="divider-v" style="height:14px;"></div>
 
-            <button id="btnAutoLayout" class="hw-btn gw-type-body-md" style="padding:2px 7px;" type="button">
+            <button id="btnAutoLayout" class="hw-btn gw-type-body-md hw-btn-pad-27" type="button">
               <span>✨ 自动整理拓扑</span>
             </button>
-            <button id="btnViewTaskDrawer" class="hw-btn gw-type-body-md" style="padding:2px 7px;" type="button">
+            <button id="btnViewTaskDrawer" class="hw-btn gw-type-body-md hw-btn-pad-27" type="button">
               <span>🖼️ 任务面板</span>
             </button>
           </div>
@@ -634,7 +634,7 @@
       <div class="modal-body">
         <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;">
           <span style="color:#ffffff;" class="gw-type-body-sm">点击下方最近复制的链接即可立即获取并解析（也支持直接按 Ctrl+V 粘贴）：</span>
-          <button id="btnRefreshClipboardList" class="hw-btn gw-type-body-md" style="padding:3px 8px;" type="button">
+          <button id="btnRefreshClipboardList" class="hw-btn gw-type-body-md hw-btn-pad-38" type="button">
             🔄 刷新读取剪贴板
           </button>
         </div>
@@ -694,7 +694,7 @@
           <span class="capsule-badge" id="assetModalTargetBadge">目标节点: --</span>
         </div>
         <div style="display:flex;align-items:center;gap:6px;">
-          <button id="btnUploadInAssetModal" class="hw-btn hw-btn-gold gw-type-body-md" style="padding:3px 8px;" type="button">
+          <button id="btnUploadInAssetModal" class="hw-btn hw-btn-gold gw-type-body-md hw-btn-pad-38" type="button">
             📤 上传新素材
           </button>
           <button id="btnCloseAssetModal" class="hw-btn" type="button">✕</button>
@@ -703,9 +703,9 @@
       <div class="modal-body" style="gap:10px;">
         <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;">
           <div style="display:flex;align-items:center;gap:6px;">
-            <button class="hw-btn asset-filter-btn active gw-type-body-md" data-filter="all" type="button" style="padding:2px 8px;">全部素材</button>
-            <button class="hw-btn asset-filter-btn gw-type-body-md" data-filter="image" type="button" style="padding:2px 8px;">🖼️ 图像</button>
-            <button class="hw-btn asset-filter-btn gw-type-body-md" data-filter="video" type="button" style="padding:2px 8px;">🎬 视频</button>
+            <button class="hw-btn asset-filter-btn active gw-type-body-md hw-btn-pad-28" data-filter="all" type="button">全部素材</button>
+            <button class="hw-btn asset-filter-btn gw-type-body-md hw-btn-pad-28" data-filter="image" type="button">🖼️ 图像</button>
+            <button class="hw-btn asset-filter-btn gw-type-body-md hw-btn-pad-28" data-filter="video" type="button">🎬 视频</button>
           </div>
           <span id="assetCountText" style="font-family: var(--gw-font-mono);color:rgba(255,255,255,0.75);" class="gw-type-body-sm">共 0 项素材</span>
         </div>

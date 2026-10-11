@@ -212,6 +212,8 @@ def test_prompt_library_and_items_survive_real_process_restart_without_id_reuse(
     env = os.environ.copy()
     env["GW_DATA_DIR"] = str(data_dir)
     env["PYTHONPATH"] = str(ROOT) + os.pathsep + env.get("PYTHONPATH", "")
+    env["PYTHONUTF8"] = "1"
+    env["PYTHONIOENCODING"] = "utf-8"
 
     create_code = r"""
 import json
@@ -225,7 +227,7 @@ item = items_repository.create_item({"library_id": library.library_id, "category
 print(json.dumps({"library_id": library.library_id, "category_id": category.category_id, "item_id": item["item_id"]}, ensure_ascii=False))
 """
     created_proc = subprocess.run([sys.executable, "-c", create_code], cwd=ROOT, env=env,
-                                  capture_output=True, text=True, timeout=15)
+                                  capture_output=True, text=True, encoding="utf-8", timeout=15)
     assert created_proc.returncode == 0, created_proc.stderr
     old = json.loads(created_proc.stdout)
     assert old["library_id"] == "plib_0001" and old["category_id"] == "pcat_0001"
@@ -243,7 +245,7 @@ new_items = items_repository.list_items(new_library.library_id)["items"]
 print(json.dumps({"libraries": [item.library_id for item in before.libraries], "new_library_id": new_library.library_id, "old_items": old_items, "new_items": new_items, "category_ids": [category.category_id for item in before.libraries for category in item.categories]}, ensure_ascii=False))
 """
     restarted_proc = subprocess.run([sys.executable, "-c", restart_code], cwd=ROOT, env=env,
-                                    capture_output=True, text=True, timeout=15)
+                                    capture_output=True, text=True, encoding="utf-8", timeout=15)
     assert restarted_proc.returncode == 0, restarted_proc.stderr
     restarted = json.loads(restarted_proc.stdout)
     assert restarted["libraries"] == [old["library_id"]]

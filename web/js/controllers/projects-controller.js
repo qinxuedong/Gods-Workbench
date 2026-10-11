@@ -532,20 +532,20 @@ window.WorkbenchProjects = (function () {
         <div class="flex items-center space-x-1">
           <!-- 生产入口组：非回收站项目可用 -->
           ${!isDeleted ? `
-            <button class="tactile-keycap px-1.5 py-0.5 rounded gw-type-body-md font-bold text-[#eddab3] flex items-center space-x-0.5 cursor-pointer hover:border-[#dfc384]/70 transition"
+            <button class="hw-btn hw-btn-sm hw-btn-gold flex items-center space-x-0.5 cursor-pointer transition"
                     onclick="event.stopPropagation(); WorkbenchProjects.openProject('${esc(p.id)}', 'workshop')"
                     title="进入影视工坊">
-              <i data-lucide="film" class="w-2.5 h-2.5 text-[#dfc384]"></i>
+              <i data-lucide="film" class="w-2.5 h-2.5"></i>
               <span>工坊</span>
             </button>
-            <button class="tactile-keycap px-1.5 py-0.5 rounded gw-type-body-md font-bold text-slate-200 hover:text-white flex items-center space-x-0.5 cursor-pointer hover:border-cyan-400/60 transition"
+            <button class="hw-btn hw-btn-sm flex items-center space-x-0.5 cursor-pointer transition"
                     onclick="event.stopPropagation(); WorkbenchProjects.openProject('${esc(p.id)}', 'production')"
                     title="进入制片监视器">
               <i data-lucide="sliders" class="w-2.5 h-2.5 text-cyan-300"></i>
               <span>监视</span>
             </button>
             <!-- 新增：编辑按钮 -->
-            <button class="tactile-keycap px-1.5 py-0.5 rounded gw-type-body-md font-bold text-amber-200/90 hover:text-[#eddab3] flex items-center space-x-0.5 cursor-pointer hover:border-[#dfc384]/80 transition"
+            <button class="hw-btn hw-btn-sm flex items-center space-x-0.5 cursor-pointer transition"
                     onclick="event.stopPropagation(); WorkbenchProjects.openEditProject('${esc(p.id)}')"
                     title="编辑项目信息与配置参数">
               <i data-lucide="edit-3" class="w-2.5 h-2.5 text-[#dfc384]"></i>
@@ -557,23 +557,23 @@ window.WorkbenchProjects = (function () {
           <!-- 生命周期治理组 -->
           ${isDeleted ? `
             <!-- 回收站恢复 -->
-            <button class="tactile-keycap px-1.5 py-0.5 rounded gw-type-body-md font-bold text-emerald-400 hover:text-emerald-300 hover:border-emerald-500/50 flex items-center space-x-0.5 cursor-pointer transition"
+            <button class="hw-btn hw-btn-sm hw-btn-gold flex items-center space-x-0.5 cursor-pointer transition"
                     onclick="event.stopPropagation(); WorkbenchProjects.confirmAction('restore', '${esc(p.id)}', '${esc(p.name)}', ${p.version || 1})"
                     title="从统一回收站安全恢复该工程">
-              <i data-lucide="rotate-ccw" class="w-2.5 h-2.5 text-emerald-400"></i>
+              <i data-lucide="rotate-ccw" class="w-2.5 h-2.5"></i>
               <span>恢复</span>
             </button>
           ` : `
             <!-- 归档 / 取消归档 -->
             ${isArchived ? `
-              <button class="tactile-keycap px-1 py-0.5 rounded gw-type-body-md text-slate-300 hover:text-[#eddab3] flex items-center space-x-0.5 cursor-pointer transition"
+              <button class="hw-btn hw-btn-sm flex items-center space-x-0.5 cursor-pointer transition"
                       onclick="event.stopPropagation(); WorkbenchProjects.confirmAction('unarchive', '${esc(p.id)}', '${esc(p.name)}', ${p.version || 1})"
                       title="取消归档">
                 <i data-lucide="archive-restore" class="w-2.5 h-2.5 text-[#dfc384]"></i>
                 <span>取消归档</span>
               </button>
             ` : `
-              <button class="tactile-keycap px-1 py-0.5 rounded gw-type-body-md text-slate-400 hover:text-[#eddab3] flex items-center space-x-0.5 cursor-pointer transition"
+              <button class="hw-btn hw-btn-sm flex items-center space-x-0.5 cursor-pointer transition"
                       onclick="event.stopPropagation(); WorkbenchProjects.confirmAction('archive', '${esc(p.id)}', '${esc(p.name)}', ${p.version || 1})"
                       title="归档项目">
                 <i data-lucide="archive" class="w-2.5 h-2.5 text-slate-400"></i>
@@ -582,10 +582,10 @@ window.WorkbenchProjects = (function () {
             `}
 
             <!-- 删除到统一回收站 -->
-            <button class="tactile-keycap px-1 py-0.5 rounded gw-type-body-md text-red-400/80 hover:text-red-300 hover:border-red-500/50 flex items-center space-x-0.5 cursor-pointer transition"
+            <button class="hw-btn hw-btn-sm hw-btn-danger flex items-center space-x-0.5 cursor-pointer transition"
                     onclick="event.stopPropagation(); WorkbenchProjects.confirmAction('trash', '${esc(p.id)}', '${esc(p.name)}', ${p.version || 1})"
                     title="删除到统一回收站（非物理直接删除）">
-              <i data-lucide="trash-2" class="w-2.5 h-2.5 text-red-400/90"></i>
+              <i data-lucide="trash-2" class="w-2.5 h-2.5"></i>
               <span>删除</span>
             </button>
           `}
@@ -688,20 +688,20 @@ window.WorkbenchProjects = (function () {
             <td class="py-2.5 text-right">
               <div class="inline-flex items-center space-x-1.5">
                 ${!isDeleted ? `
-                  <button onclick="event.stopPropagation(); WorkbenchProjects.openProject('${encodeURIComponent(p.id)}', 'workshop')" class="tactile-keycap px-2 py-0.5 rounded gw-type-body-md text-[#eddab3]" title="进入影视工坊">工坊</button>
-                  <button onclick="event.stopPropagation(); WorkbenchProjects.openProject('${encodeURIComponent(p.id)}', 'production')" class="tactile-keycap px-2 py-0.5 rounded gw-type-body-md text-cyan-300" title="进入制片监视">制片</button>
-                  <button onclick="event.stopPropagation(); WorkbenchProjects.openEditProject('${esc(p.id)}')" class="tactile-keycap px-2 py-0.5 rounded gw-type-body-md text-amber-200 hover:text-white" title="编辑工程">编辑</button>
+                  <button onclick="event.stopPropagation(); WorkbenchProjects.openProject('${encodeURIComponent(p.id)}', 'workshop')" class="hw-btn hw-btn-sm hw-btn-gold" title="进入影视工坊">工坊</button>
+                  <button onclick="event.stopPropagation(); WorkbenchProjects.openProject('${encodeURIComponent(p.id)}', 'production')" class="hw-btn hw-btn-sm" title="进入制片监视">制片</button>
+                  <button onclick="event.stopPropagation(); WorkbenchProjects.openEditProject('${esc(p.id)}')" class="hw-btn hw-btn-sm" title="编辑工程">编辑</button>
                 ` : ''}
 
                 ${isDeleted ? `
-                  <button onclick="event.stopPropagation(); WorkbenchProjects.confirmAction('restore', '${esc(p.id)}', '${esc(p.name)}', ${p.version || 1})" class="tactile-keycap px-2 py-0.5 rounded gw-type-body-md text-emerald-400" title="从回收站恢复">恢复</button>
+                  <button onclick="event.stopPropagation(); WorkbenchProjects.confirmAction('restore', '${esc(p.id)}', '${esc(p.name)}', ${p.version || 1})" class="hw-btn hw-btn-sm hw-btn-gold" title="从回收站恢复">恢复</button>
                 ` : `
                   ${isArchived ? `
-                    <button onclick="event.stopPropagation(); WorkbenchProjects.confirmAction('unarchive', '${esc(p.id)}', '${esc(p.name)}', ${p.version || 1})" class="tactile-keycap px-2 py-0.5 rounded gw-type-body-md text-amber-400" title="取消归档">恢复</button>
+                    <button onclick="event.stopPropagation(); WorkbenchProjects.confirmAction('unarchive', '${esc(p.id)}', '${esc(p.name)}', ${p.version || 1})" class="hw-btn hw-btn-sm" title="取消归档">恢复</button>
                   ` : `
-                    <button onclick="event.stopPropagation(); WorkbenchProjects.confirmAction('archive', '${esc(p.id)}', '${esc(p.name)}', ${p.version || 1})" class="tactile-keycap px-2 py-0.5 rounded gw-type-body-md text-slate-400 hover:text-[#dfc384]" title="归档项目">归档</button>
+                    <button onclick="event.stopPropagation(); WorkbenchProjects.confirmAction('archive', '${esc(p.id)}', '${esc(p.name)}', ${p.version || 1})" class="hw-btn hw-btn-sm" title="归档项目">归档</button>
                   `}
-                  <button onclick="event.stopPropagation(); WorkbenchProjects.confirmAction('trash', '${esc(p.id)}', '${esc(p.name)}', ${p.version || 1})" class="tactile-keycap px-2 py-0.5 rounded gw-type-body-md text-red-400 hover:text-red-300" title="删除到统一回收站（非物理直接删除）">删除</button>
+                  <button onclick="event.stopPropagation(); WorkbenchProjects.confirmAction('trash', '${esc(p.id)}', '${esc(p.name)}', ${p.version || 1})" class="hw-btn hw-btn-sm hw-btn-danger" title="删除到统一回收站（非物理直接删除）">删除</button>
                 `}
               </div>
             </td>
@@ -880,7 +880,7 @@ window.WorkbenchProjects = (function () {
       }
       if (safetyNotice) safetyNotice.classList.remove('hidden');
       if (confirmBtn) {
-        confirmBtn.className = 'tactile-keycap px-4 py-1.5 rounded-lg gw-type-body-sm font-bold text-red-400 border border-red-500/40 hover:border-red-400/80 cursor-pointer';
+        confirmBtn.className = 'hw-btn hw-btn-danger cursor-pointer';
         confirmBtn.textContent = '确认移入回收站';
       }
     } else if (type === 'archive') {
@@ -890,7 +890,7 @@ window.WorkbenchProjects = (function () {
       }
       if (safetyNotice) safetyNotice.classList.add('hidden');
       if (confirmBtn) {
-        confirmBtn.className = 'tactile-keycap px-4 py-1.5 rounded-lg gw-type-body-sm font-bold text-[#eddab3] border border-[#dfc384]/40 hover:border-[#dfc384] cursor-pointer';
+        confirmBtn.className = 'hw-btn hw-btn-gold cursor-pointer';
         confirmBtn.textContent = '确认归档';
       }
     } else if (type === 'unarchive') {
@@ -900,7 +900,7 @@ window.WorkbenchProjects = (function () {
       }
       if (safetyNotice) safetyNotice.classList.add('hidden');
       if (confirmBtn) {
-        confirmBtn.className = 'tactile-keycap px-4 py-1.5 rounded-lg gw-type-body-sm font-bold text-amber-300 border border-amber-400/40 hover:border-amber-300 cursor-pointer';
+        confirmBtn.className = 'hw-btn hw-btn-gold cursor-pointer';
         confirmBtn.textContent = '取消归档并激活';
       }
     } else if (type === 'restore') {
@@ -910,7 +910,7 @@ window.WorkbenchProjects = (function () {
       }
       if (safetyNotice) safetyNotice.classList.add('hidden');
       if (confirmBtn) {
-        confirmBtn.className = 'tactile-keycap px-4 py-1.5 rounded-lg gw-type-body-sm font-bold text-emerald-400 border border-emerald-500/40 hover:border-emerald-400 cursor-pointer';
+        confirmBtn.className = 'hw-btn hw-btn-gold cursor-pointer';
         confirmBtn.textContent = '确认安全恢复';
       }
     }
@@ -1449,10 +1449,10 @@ window.WorkbenchProjects = (function () {
                   <span>ID: ${esc(p.id)}</span>
                 </div>
               </div>
-              <button class="tactile-keycap px-2.5 py-1 rounded-lg gw-type-body-md font-bold text-emerald-400 hover:text-emerald-300 hover:border-emerald-500/50 flex items-center space-x-1 cursor-pointer transition shrink-0"
+              <button class="hw-btn hw-btn-sm hw-btn-gold flex items-center space-x-1 cursor-pointer transition shrink-0"
                       onclick="${restoreAction}"
                       title="一键安全恢复该工程">
-                <i data-lucide="rotate-ccw" class="w-3 h-3 text-emerald-400"></i>
+                <i data-lucide="rotate-ccw" class="w-3 h-3"></i>
                 <span>安全恢复</span>
               </button>
             </div>
@@ -1483,10 +1483,10 @@ window.WorkbenchProjects = (function () {
                 <span class="truncate max-w-[120px]">哈希: ${esc(a.hash || 'sha256:...')}</span>
               </div>
             </div>
-            <button class="tactile-keycap px-2.5 py-1 rounded-lg gw-type-body-md font-bold text-emerald-400 hover:text-emerald-300 hover:border-emerald-500/50 flex items-center space-x-1 cursor-pointer transition shrink-0"
+            <button class="hw-btn hw-btn-sm hw-btn-gold flex items-center space-x-1 cursor-pointer transition shrink-0"
                     onclick="WorkbenchProjects.restoreAssetFromTrash('${esc(a.id)}')"
                     title="恢复此素材到资产库">
-              <i data-lucide="rotate-ccw" class="w-3 h-3 text-emerald-400"></i>
+              <i data-lucide="rotate-ccw" class="w-3 h-3"></i>
               <span>恢复素材</span>
             </button>
           </div>
@@ -1515,10 +1515,10 @@ window.WorkbenchProjects = (function () {
                 <span>隔离时间: ${formatTime(c.deleted_at)}</span>
               </div>
             </div>
-            <button class="tactile-keycap px-2.5 py-1 rounded-lg gw-type-body-md font-bold text-emerald-400 hover:text-emerald-300 hover:border-emerald-500/50 flex items-center space-x-1 cursor-pointer transition shrink-0"
+            <button class="hw-btn hw-btn-sm hw-btn-gold flex items-center space-x-1 cursor-pointer transition shrink-0"
                     onclick="WorkbenchProjects.restoreCanvasFromTrash('${esc(c.id)}')"
                     title="恢复此画布到分镜画布台">
-              <i data-lucide="rotate-ccw" class="w-3 h-3 text-emerald-400"></i>
+              <i data-lucide="rotate-ccw" class="w-3 h-3"></i>
               <span>恢复画布</span>
             </button>
           </div>
