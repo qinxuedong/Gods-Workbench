@@ -286,7 +286,7 @@ def test_static_layer_has_no_legacy_integration_markers(repo_root: Path):
 # 登记只保存当前新仓的分类、准入依据和规范化哈希；不保存旧仓源码、提示词正文、
 # 凭据或完整历史授权账本。历史材料继续留在洁净源仓，不因测试需要复制进新仓。
 ADMISSION_METADATA_PATH = "tests/hygiene/fixtures/cleanroom_admission_metadata.json"
-ADMISSION_METADATA_SHA256 = "6be0e529d11b2cc5f765de60f95b84718cf3d7e8317a44cf414410f19de9caa0"
+ADMISSION_METADATA_SHA256 = "77dce984499f0267c7728e3ebe69452c095258c335c532351eed59dc9227282a"
 QUARANTINED_PROMPT_ORIGINAL_PATH = "web/system-prompts/infinite-canvas-prompt-templates.md"
 QUARANTINED_PROMPT_URL = "/static/system-prompts/infinite-canvas-prompt-templates.md"
 
@@ -436,7 +436,7 @@ def test_admission_metadata_hashes_match_current_files(repo_root: Path):
     """当前准入文件哈希必须与机器登记一致；不复用旧 Phase-2 账本。"""
     metadata = _load_admission_metadata(repo_root)
     entries = metadata.get("admitted_files", [])
-    assert len(entries) == 93, "当前准入登记数量必须与 H01 及已批准按钮规范实物集合一致"
+    assert len(entries) == 95, "当前准入登记数量必须与 H01、已批准按钮规范、全局命名规范及本地文件夹规范实物集合一致"
     for entry in entries:
         path = repo_root / entry["path"]
         assert path.is_file(), f"准入文件缺失: {entry['path']}"
@@ -509,6 +509,8 @@ def test_accepted_doc_slices_match_migration_manifest(repo_root: Path):
         "docs/design/DESIGN-SYSTEM-GUIDE.md",
         "docs/design/BUTTON-SYSTEM-SPEC.md",
         "docs/governance/PROJECT-GOVERNANCE.md",
+        "docs/governance/GLOBAL-NAMING-SPEC.md",
+        "docs/governance/LOCAL-DIRECTORY-SPEC.md",
         "docs/contracts/PROVIDER-PROTOCOL-BOUNDARIES.md",
     }
     admitted_paths = _metadata_admitted_paths(metadata)
@@ -630,7 +632,7 @@ def test_no_homoglyph_confusables(repo_root: Path):
             continue
         if any(
             part in {
-                ".git", "__pycache__", ".pytest_cache", "node_modules",
+                ".git", ".local", ".agents", "__pycache__", ".pytest_cache", "node_modules",
                 ".venv", "venv", "env", "build", "dist", ".mypy_cache", ".ruff_cache",
             }
             for part in path.parts

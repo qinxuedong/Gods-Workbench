@@ -681,3 +681,40 @@ def test_workflow_domain_carriers_do_not_declare_new_api_prefix_domains() -> Non
         assert not _router_api_prefix_domains(source), relative
         assert not _is_router_carrier_source(source), relative
         assert _route_group_key(relative) not in baseline or _route_group_key(relative) == "god_workflow", relative
+
+
+# ---------------------------------------------------------------------------
+# 2026-10-12 全局命名系统规范门禁 (GLOBAL-NAMING-SPEC.md)
+# 1. 代码库工作树全路径严格纯 ASCII、无空格
+# 2. 前端控制器统一使用 *-controller.js 命名；历史遗留例外按白名单冻结
+# ---------------------------------------------------------------------------
+_FROZEN_LEGACY_CONTROLLER_PATHS = frozenset(
+    {
+        "web/js/controllers/agent-tasks.js",
+        "web/js/controllers/settings.js",
+    }
+)
+
+
+def test_working_tree_paths_are_strictly_ascii_and_space_free() -> None:
+    """依据 GNS 规范，工作树中所有纳入版本与未忽略文件路径必须为纯 ASCII 且不含空格。"""
+    paths = _working_tree_paths()
+    non_ascii_paths = [p for p in paths if not p.isascii()]
+    assert not non_ascii_paths, f"发现非 ASCII 文件/目录路径，违反全局命名规范：{non_ascii_paths}"
+
+    space_paths = [p for p in paths if " " in p]
+    assert not space_paths, f"发现包含空格的文件/目录路径，违反全局命名规范：{space_paths}"
+
+
+def test_frontend_controller_naming_convention() -> None:
+    """前端控制器必须遵循 *-controller.js 规范；历史遗留文件逐条冻结。"""
+    controller_paths = [
+        p for p in _working_tree_paths()
+        if p.startswith("web/js/controllers/") and p.endswith(".js")
+    ]
+    violations = [
+        p for p in controller_paths
+        if not p.endswith("-controller.js") and p not in _FROZEN_LEGACY_CONTROLLER_PATHS
+    ]
+    assert not violations, f"前端控制器命名违反规范（应为 *-controller.js）：{violations}"
+

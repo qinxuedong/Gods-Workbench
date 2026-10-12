@@ -47,6 +47,18 @@
       "classification": "curated_design_system",
       "authorization_basis": "UI_buttons_user_decision_and_B0a_B1_B2_approval_2026-10-11",
       "admission": "accepted"
+    },
+    {
+      "path": "docs/governance/GLOBAL-NAMING-SPEC.md",
+      "classification": "curated_project_governance",
+      "authorization_basis": "user_global_naming_system_specification_2026-10-12",
+      "admission": "accepted"
+    },
+    {
+      "path": "docs/governance/LOCAL-DIRECTORY-SPEC.md",
+      "classification": "curated_project_governance",
+      "authorization_basis": "user_local_directory_specification_2026-10-12",
+      "admission": "accepted"
     }
   ],
   "excluded_roots": [
@@ -85,7 +97,7 @@
       "path": "docs/behavior/BEHAVIOR-SPEC-CANVAS.md",
       "classification": "frozen_behavior_contract",
       "authorization_basis": "cleanroom_frozen_input",
-      "sha256": "a905b61b8650c65d7c358d41a1c774a7574a583a02c9cb7f142f7b87867382f4",
+      "sha256": "f7c7a4f485c57b4f0dd8ee685fa2ad1b5a07d2d67506429ba5a1830e7f94dbf6",
       "admission": "accepted"
     },
     {
@@ -99,14 +111,14 @@
       "path": "docs/behavior/BEHAVIOR-SPEC-SMART-CANVAS.md",
       "classification": "frozen_behavior_contract",
       "authorization_basis": "cleanroom_frozen_input",
-      "sha256": "4fbf4c30c063049a6cf5e7ae826de1332f352ccb5506086cd4353288e77ec348",
+      "sha256": "2a4b37b838d1b9395bb7a981d427a158b810b278c3b59cba4821f6197464fef7",
       "admission": "accepted"
     },
     {
       "path": "docs/behavior/README.md",
       "classification": "frozen_behavior_contract",
       "authorization_basis": "cleanroom_frozen_input",
-      "sha256": "1384c77e3ef4ac42fe7967767acd253849522bf6a5cd90230b07bc0061c7e7fd",
+      "sha256": "52a5cb755f41778d16c71b74e382e20561df48514e0466cecb8dbe23a9e30c12",
       "admission": "accepted"
     },
     {
@@ -721,8 +733,8 @@
     {
       "path": "docs/governance/PROJECT-GOVERNANCE.md",
       "classification": "curated_project_governance",
-      "authorization_basis": "UI_buttons_user_decision_and_B0a_B1_B2_approval_2026-10-11",
-      "sha256": "05c1544ba2b8356d7f6404091bb0fb6c559df0d75ff6ffbf91fd633efb80080c",
+      "authorization_basis": "user_global_naming_system_specification_2026-10-12",
+      "sha256": "799d1e90973de84819927810404e2ff8f4cdf908ea89bb933fc5fe519d19c502",
       "admission": "accepted"
     },
     {
@@ -730,6 +742,20 @@
       "classification": "curated_design_system",
       "authorization_basis": "UI_buttons_user_decision_and_B0a_B1_B2_approval_2026-10-11",
       "sha256": "a3d9855b1725823ff1fae5c73fe124ee832d21b4fc63c0396eb6bc7a26ca6a2c",
+      "admission": "accepted"
+    },
+    {
+      "path": "docs/governance/GLOBAL-NAMING-SPEC.md",
+      "classification": "curated_project_governance",
+      "authorization_basis": "user_global_naming_system_specification_2026-10-12",
+      "sha256": "f5dce800f4f993ee4c1bce5daede74ce459e67409b85b58616c611c7feddc23c",
+      "admission": "accepted"
+    },
+    {
+      "path": "docs/governance/LOCAL-DIRECTORY-SPEC.md",
+      "classification": "curated_project_governance",
+      "authorization_basis": "user_local_directory_specification_2026-10-12",
+      "sha256": "fae7e58bd5efa3aba972144206c3e6141c5d1a656a8da16f500c87233520b38f",
       "admission": "accepted"
     }
   ]
