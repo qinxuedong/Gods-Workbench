@@ -96,6 +96,8 @@ async def _app_lifespan(app: FastAPI):
     stop_integration = None
     primary_error = None
     try:
+        from gw.god_canvas.service import default_god_canvas_service
+        default_god_canvas_service.recover_interrupted_jobs()
         if integration_enabled:
             try:
                 from gw.api.agent_integration import start_agent_integration, stop_agent_integration

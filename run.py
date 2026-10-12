@@ -338,6 +338,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     except RuntimePathError as exc:
         parser.error(str(exc))
 
+    from gw.core.storage import DataDirLockedError, acquire_data_dir_lock
+    try:
+        data_lock = acquire_data_dir_lock(paths.data_root)  # noqa: F841 进程存活期间持有
+    except DataDirLockedError as exc:
+        parser.error(str(exc))
+
     # 根路径验证和目录准备完成后才允许导入应用。
     from gw.api.app import app
 

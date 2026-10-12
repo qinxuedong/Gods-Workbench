@@ -287,3 +287,54 @@ def next_sequence(prefix: str, existing: Iterator[str]) -> str:
     return "%s%04d" % (prefix, max_seen + 1)
 
 
+
+
+class DataDirLockedError(RuntimeError):
+    """同一数据目录已被另一个神工坊进程独占。"""
+
+
+class DataDirLock:
+    """数据目录独占文件锁句柄；进程退出时由操作系统自动释放。"""
+
+    def __init__(self, path: Path, handle: Any) -> None:
+        self.path = path
+        self._handle = handle
+
+    def release(self) -> None:
+        if self._handle is None:
+            return
+        try:
+            if os.name == "nt":
+                import msvcrt
+                self._handle.seek(0)
+                msvcrt.locking(self._handle.fileno(), msvcrt.LK_UNLCK, 1)
+            else:
+                import fcntl
+                fcntl.flock(self._handle.fileno(), fcntl.LOCK_UN)
+        finally:
+            self._handle.close()
+            self._handle = None
+
+
+def acquire_data_dir_lock(root: Path) -> DataDirLock:
+    """对数据目录加跨进程独占锁；已被占用时立即失败，不等待、不共享。"""
+    root = Path(root)
+    root.mkdir(parents=True, exist_ok=True)
+    path = root / ".gw-data.lock"
+    handle = open(path, "a+", encoding="utf-8")
+    try:
+        if os.name == "nt":
+            import msvcrt
+            handle.seek(0)
+            msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
+        else:
+            import fcntl
+            fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError:
+        handle.close()
+        raise DataDirLockedError(f"数据目录已被另一个神工坊进程占用: {root}") from None
+    handle.seek(0)
+    handle.truncate()
+    handle.write(str(os.getpid()))
+    handle.flush()
+    return DataDirLock(path, handle)
