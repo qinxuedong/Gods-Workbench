@@ -65,8 +65,33 @@ from gw.canvas_closure.service import (
     default_shared_folder_service as shared_folders,
 )
 from gw.core.auth import require_authenticated, require_edit_access
+from gw.core.errors import CleanroomException
+from gw.projects_hub.service import owner_key_for_context
 
 router = APIRouter(tags=["canvas-closure"])
+
+
+def _authorize_canvas(canvas_id, context):
+    if closure._canvas_service.persistent:
+        closure._canvas_service.authorize_canvas(canvas_id, context)
+
+
+def _owned_projection(result, context):
+    """资产索引、参考与回收站共用持久画布主体过滤。"""
+    if not closure._canvas_service.persistent:
+        return result
+    visible = []
+    for entry in result.get("canvases", []):
+        try:
+            closure._canvas_service.authorize_canvas(entry["canvas_id"], context)
+            visible.append(entry)
+        except CleanroomException as exc:
+            if exc.status_code != 404:
+                raise
+    scoped = {**result, "canvases": visible}
+    if "categories" in result:
+        scoped["categories"] = [{**category, "count":sum(entry.get("kind") == category["id"] for entry in visible)} for category in result["categories"]]
+    return scoped
 
 
 # ---------------------------------------------------------------------------
@@ -85,8 +110,8 @@ def get_canvas_assets(
     x_user_role: str = Header("editor", alias="X-User-Role", description="用户角色权限"),
 ):
     """返回画布索引；素材条目需素材注册表，本阶段为空并如实标记缺口。"""
-    require_authenticated(authorization, x_user_role)
-    return closure.get_canvas_assets()
+    context = require_authenticated(authorization, x_user_role)
+    return _owned_projection(closure.get_canvas_assets(), context)
 
 
 @router.post(
@@ -120,8 +145,8 @@ def list_reference_canvases(
     x_user_role: str = Header("editor", alias="X-User-Role", description="用户角色权限"),
 ):
     """返回参考画布集合；无内容时必须为空数组，不预置演示画布。"""
-    require_authenticated(authorization, x_user_role)
-    return closure.list_reference_canvases()
+    context = require_authenticated(authorization, x_user_role)
+    return _owned_projection(closure.list_reference_canvases(), context)
 
 
 @router.post(
@@ -136,7 +161,9 @@ def save_reference_canvas(
     x_user_role: str = Header("editor", alias="X-User-Role", description="用户角色权限"),
 ):
     """保存参考画布；只登记调用方提交的内容，不编造素材元数据。"""
-    require_edit_access(authorization, x_user_role)
+    context = require_edit_access(authorization, x_user_role)
+    if payload.canvas_id:
+        _authorize_canvas(payload.canvas_id, context)
     return closure.save_reference_canvas(
         title=payload.title,
         items=payload.items,
@@ -146,6 +173,7 @@ def save_reference_canvas(
         viewport=payload.viewport,
         canvas_id=payload.canvas_id,
         expected_version=payload.expected_version,
+        owner_key=owner_key_for_context(context) if closure._canvas_service.persistent else None,
     )
 
 
@@ -249,7 +277,7 @@ def list_canvas_trash(
     x_user_role: str = Header("editor", alias="X-User-Role", description="用户角色权限"),
 ):
     """返回回收站 / 归档列表；无内容时必须是空数组，不返回演示条目。"""
-    require_authenticated(authorization, x_user_role)
+    context = require_authenticated(authorization, x_user_role)
     if view not in ("deleted", "archived"):
         from gw.core.errors import CleanroomException
 
@@ -258,7 +286,7 @@ def list_canvas_trash(
             code="INVALID_REQUEST",
             message="view 仅支持 deleted 或 archived",
         )
-    return closure.list_trash(view="deleted" if view == "deleted" else "archived")
+    return _owned_projection(closure.list_trash(view="deleted" if view == "deleted" else "archived"), context)
 
 
 @router.post(
@@ -295,7 +323,8 @@ def update_canvas_meta(
     x_user_role: str = Header("editor", alias="X-User-Role", description="用户角色权限"),
 ):
     """更新标题 / 实体绑定 / 项目归属；CAS 冲突严格 409 CANVAS_VERSION_CONFLICT。"""
-    require_edit_access(authorization, x_user_role)
+    context = require_edit_access(authorization, x_user_role)
+    _authorize_canvas(canvas_id, context)
     patch = {
         "title": payload.title,
         "entity_id": payload.entity_id,
@@ -304,6 +333,8 @@ def update_canvas_meta(
         "board_x": payload.board_x,
         "board_y": payload.board_y,
     }
+    if closure._canvas_service.persistent and patch["project_id"]:
+        closure._canvas_service.authorize_project(patch["project_id"], context)
     return {"canvas": closure.update_canvas_meta(canvas_id, patch, expected_version=payload.resolved_version())}
 
 
@@ -322,7 +353,8 @@ def touch_canvas(
     x_user_role: str = Header("editor", alias="X-User-Role", description="用户角色权限"),
 ):
     """归档 / 解归档；只翻转状态，不借 touch 绕过 CAS。"""
-    require_edit_access(authorization, x_user_role)
+    context = require_edit_access(authorization, x_user_role)
+    _authorize_canvas(canvas_id, context)
     resolved = expected_version
     if resolved is None and payload is not None:
         resolved = payload.expected_version
@@ -343,12 +375,14 @@ def touch_canvas(
 )
 def purge_canvas(
     canvas_id: str,
+    expected_version: Optional[int] = Query(None, ge=1),
     authorization: Optional[str] = Header(None),
     x_user_role: str = Header("editor", alias="X-User-Role", description="用户角色权限"),
 ):
     """仅允许彻底删除回收站中的画布；未入回收站返回 409，禁止越权直删。"""
-    require_edit_access(authorization, x_user_role)
-    return closure.purge_canvas(canvas_id)
+    context = require_edit_access(authorization, x_user_role)
+    _authorize_canvas(canvas_id, context)
+    return closure.purge_canvas(canvas_id, expected_version=expected_version)
 
 
 @router.delete(
@@ -364,5 +398,6 @@ def trash_canvas(
     x_user_role: str = Header("editor", alias="X-User-Role", description="用户角色权限"),
 ):
     """软删除：移入回收站而非物理删除，可经 /restore 恢复。"""
-    require_edit_access(authorization, x_user_role)
+    context = require_edit_access(authorization, x_user_role)
+    _authorize_canvas(canvas_id, context)
     return {"canvas": closure.move_to_trash(canvas_id, expected_version=expected_version)}

@@ -44,6 +44,13 @@ from gw.projects_hub.models import CasVersionRequest
 router = APIRouter(prefix="/api/canvases", tags=["god-canvas"])
 jobs_router = APIRouter(prefix="/api/jobs", tags=["god-canvas-jobs"])
 
+
+def _authorize_canvas(canvas_id: str, authorization: Optional[str], user_role: str = "editor") -> None:
+    """持久数据必须按当前主体过滤；显式黄金夹具保留契约测试面。"""
+    if default_god_canvas_service.persistent:
+        context = require_authenticated(authorization, user_role)
+        default_god_canvas_service.authorize_canvas(canvas_id, context)
+
 _AGENT_RUN_TO_TASK_STATUS = {
     "queued": TaskStatus.ACCEPTED.value,
     "running": TaskStatus.RUNNING.value,
@@ -101,7 +108,20 @@ def list_canvases(
     """仅返回当前项目可见的画布集合。"""
     if authorization == "invalid":
         raise UnauthorizedException()
+    context = require_authenticated(authorization) if default_god_canvas_service.persistent else None
+    if context is not None:
+        default_god_canvas_service.authorize_project(project_id, context)
     canvases = default_god_canvas_service.list_canvases(project_id=project_id)
+    if context is not None:
+        visible = []
+        for item in canvases:
+            try:
+                default_god_canvas_service.authorize_canvas(item.canvas_id, context)
+                visible.append(item)
+            except CleanroomException as exc:
+                if exc.status_code != 404:
+                    raise
+        canvases = visible
     return CanvasListResponse(canvases=canvases)
 
 
@@ -117,8 +137,9 @@ def create_canvas(
     x_user_role: str = Header("editor", alias="X-User-Role", description="用户角色权限"),
 ):
     """创建画布实体并返回稳定 canvas_id。"""
-    require_edit_access(authorization, x_user_role)
-    result = default_god_canvas_service.create_canvas(payload)
+    context = require_edit_access(authorization, x_user_role)
+    owner_key = default_god_canvas_service.authorize_project(payload.project_id, context) if default_god_canvas_service.persistent else None
+    result = default_god_canvas_service.create_canvas(payload, owner_key=owner_key)
     return CanvasMutationResponse(canvas=result)
 
 
@@ -135,6 +156,7 @@ def get_canvas_topology(
     """获取指定画布的完整拓扑结构（节点与连线）。"""
     if authorization == "invalid":
         raise UnauthorizedException()
+    _authorize_canvas(canvas_id, authorization)
     return default_god_canvas_service.get_topology(canvas_id)
 
 
@@ -152,6 +174,7 @@ def update_canvas_topology(
 ):
     """根据 expected_version 更新拓扑；版本不一致严格返回 409 CANVAS_VERSION_CONFLICT。"""
     require_edit_access(authorization, x_user_role)
+    _authorize_canvas(canvas_id, authorization, x_user_role)
     result = default_god_canvas_service.update_topology(canvas_id, payload)
     return CanvasMutationResponse(canvas=result)
 
@@ -170,6 +193,7 @@ def restore_canvas(
 ):
     """恢复画布；按章程必须携带 expected_version（CAS）。"""
     require_edit_access(authorization, x_user_role)
+    _authorize_canvas(canvas_id, authorization, x_user_role)
     result = default_god_canvas_service.restore_canvas(
         canvas_id, expected_version=payload.expected_version
     )
@@ -194,6 +218,7 @@ async def import_canvas_workflow(
     """导入工作流拓扑文件并进行严格结构校验；按章程必须携带 expected_version（CAS）。"""
     require_edit_access(authorization, x_user_role)
     body_bytes = await request.body()
+    _authorize_canvas(canvas_id, authorization, x_user_role)
     content_str = body_bytes.decode("utf-8")
     return default_god_canvas_service.import_workflow(
         canvas_id=canvas_id,
@@ -217,6 +242,7 @@ def export_canvas_workflow(
 ):
     """将画布拓扑导出为指定格式内容。"""
     require_edit_access(authorization, x_user_role)
+    _authorize_canvas(canvas_id, authorization, x_user_role)
     data_str = default_god_canvas_service.export_workflow(
         canvas_id=canvas_id,
         export_format=payload.format,

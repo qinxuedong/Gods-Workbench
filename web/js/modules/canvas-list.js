@@ -1778,13 +1778,29 @@ async function moveCanvasToProject(id, projectId){
 }
 
 /* ===== Card meta persist (POST /meta) ===== */
+function canvasExpectedVersion(canvas){
+    const version = canvas?.governance_version ?? canvas?.version;
+    if(!Number.isInteger(version) || version < 1) throw new Error('画布操作缺少当前版本，请刷新后重试');
+    return version;
+}
+
+async function canvasLifecycleConflict(response){
+    if(response.status !== 409) return false;
+    // 只刷新当前状态；不把用户旧意图自动重放到新版本。
+    await loadAll();
+    await refreshTrashCount();
+    renderTrash(); renderArchive();
+    setStatus(L('画布已被其他用户更新，请确认后重试','Canvas changed elsewhere; review before retrying'));
+    return true;
+}
+
 function canvasMetaWritePayload(canvas, patch){
+    const entityId = String(canvas?.entity_id || '').trim();
     const payload = {
-        entity_id: entityId,
+        ...(entityId ? {entity_id: entityId} : {}),
         ...patch
     };
-    const version = Number(canvas?.governance_version || 0);
-    if(Number.isInteger(version) && version > 0) payload.expected_version = version;
+    payload.expected_version = canvasExpectedVersion(canvas);
     const updatedAt = Number(canvas?.updated_at || 0);
     if(Number.isFinite(updatedAt) && updatedAt > 0) payload.base_updated_at = updatedAt;
     return payload;
@@ -1818,7 +1834,8 @@ async function deleteCanvas(id){
     const c = canvases.find(x => x.id === id);
     if(!c) return;
     try {
-        const res = await canvasListApi().deleteCanvas(id);
+        const res = await canvasListApi().deleteCanvas(id, canvasExpectedVersion(c));
+        if(await canvasLifecycleConflict(res)) return;
         if(!res.ok) throw new Error('delete failed');
         canvases = canvases.filter(x => x.id !== id);
         renderBoard();
@@ -1952,7 +1969,8 @@ function renderArchive(){
 }
 async function archiveCanvas(id){
     try {
-        const res = await canvasListApi().archiveCanvas(id);
+        const res = await canvasListApi().archiveCanvas(id, canvasExpectedVersion(canvases.find(c => c.id === id)));
+        if(await canvasLifecycleConflict(res)) return;
         if(!res.ok) throw new Error('archive failed');
         canvases = canvases.filter(c => c.id !== id);
         renderBoard(); renderProjects(); await refreshTrashCount();
@@ -1961,7 +1979,8 @@ async function archiveCanvas(id){
 }
 async function unarchiveCanvas(id){
     try {
-        const res = await canvasListApi().unarchiveCanvas(id);
+        const res = await canvasListApi().unarchiveCanvas(id, canvasExpectedVersion(archivedCanvases.find(c => (c.canvas_id || c.id) === id)));
+        if(await canvasLifecycleConflict(res)) return;
         if(!res.ok) throw new Error('unarchive failed');
         archivedCanvases = archivedCanvases.filter(c => c.id !== id);
         await loadAll();
@@ -2026,7 +2045,8 @@ function renderTrash(){
 }
 async function restoreCanvas(id){
     try {
-        const res = await canvasListApi().restoreCanvas(id);
+        const res = await canvasListApi().restoreCanvas(id, canvasExpectedVersion(deletedCanvases.find(c => (c.canvas_id || c.id) === id)));
+        if(await canvasLifecycleConflict(res)) return;
         if(!res.ok) throw new Error('restore failed');
         deletedCanvases = deletedCanvases.filter(c => c.id !== id);
         await loadAll();           // restored canvas returns to its stored project
@@ -2036,7 +2056,8 @@ async function restoreCanvas(id){
 }
 async function purgeCanvas(id){
     try {
-        const res = await canvasListApi().purgeCanvas(id);
+        const res = await canvasListApi().purgeCanvas(id, canvasExpectedVersion(deletedCanvases.find(c => (c.canvas_id || c.id) === id)));
+        if(await canvasLifecycleConflict(res)) return;
         if(!res.ok) throw new Error('purge failed');
         deletedCanvases = deletedCanvases.filter(c => c.id !== id);
         renderTrash();

@@ -74,6 +74,23 @@ def isolated_data_dir(tmp_path, monkeypatch):
     from gw.video_tasks import service as video_service_module
     monkeypatch.setattr(video_service_module, "default_projects_service", memory_projects_service)
 
+    # 生产画布使用惰性持久单例；旧 HTTP 契约显式注入每例内存黄金夹具。
+    from gw.god_canvas import service as canvas_service_module
+    from gw.api import routes_god_canvas, routes_canvas_closure, routes_observability
+    from gw.canvas_closure import service as closure_service_module
+    from gw.observability import service as observability_service_module
+    memory_canvas_service = canvas_service_module.GodCanvasService(seed_golden_fixture=True)
+    monkeypatch.setattr(canvas_service_module, "default_god_canvas_service", memory_canvas_service)
+    monkeypatch.setattr(canvas_service_module, "default_canvas_service", memory_canvas_service)
+    monkeypatch.setattr(routes_god_canvas, "default_god_canvas_service", memory_canvas_service)
+    monkeypatch.setattr(video_service_module, "default_god_canvas_service", memory_canvas_service)
+    monkeypatch.setattr(closure_service_module, "default_god_canvas_service", memory_canvas_service)
+    monkeypatch.setattr(closure_service_module.default_canvas_closure_service, "_canvas_service", memory_canvas_service)
+    monkeypatch.setattr(routes_canvas_closure.closure, "_canvas_service", memory_canvas_service)
+    monkeypatch.setattr(observability_service_module, "default_god_canvas_service", memory_canvas_service)
+    monkeypatch.setattr(observability_service_module.default_observability_service, "_canvas", memory_canvas_service)
+    monkeypatch.setattr(routes_observability.default_observability_service, "_canvas", memory_canvas_service)
+
     # 视频任务有独立持久化根目录；用例间显式换库，不能通过改写/清空生产 ACL 来消除串扰。
     from gw.video_tasks import service as video_service_module
     previous_service = video_service_module._default_service

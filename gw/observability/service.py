@@ -651,7 +651,7 @@ class ObservabilityService:
                 HealthCheck(
                     name="canvas",
                     status="ok",
-                    message_safe=f"GodCanvasService 可用，当前 {len(jobs)} 个任务（进程内内存）",
+                    message_safe=f"GodCanvasService 可用，当前 {len(jobs)} 个任务（{'单进程持久快照' if getattr(self._canvas, 'persistent', False) else '内存夹具'}）",
                 )
             )
 

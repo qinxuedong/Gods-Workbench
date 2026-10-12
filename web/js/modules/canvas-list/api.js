@@ -47,6 +47,12 @@ export function createCanvasListApi(http) {
     const request = (url, init) => transport.request(url, init);
     const projectUrl = id => `/api/asset-registry/projects/${encodeURIComponent(id)}`;
     const canvasUrl = id => `/api/canvases/${encodeURIComponent(id)}`;
+    const versionedUrl = (url, expectedVersion) => {
+        if (!Number.isInteger(expectedVersion) || expectedVersion < 1) {
+            throw new TypeError('画布操作缺少当前版本，请刷新后重试');
+        }
+        return `${url}${url.includes('?') ? '&' : '?'}expected_version=${expectedVersion}`;
+    };
 
     return {
         listProjects(init) {
@@ -88,8 +94,8 @@ export function createCanvasListApi(http) {
         updateCanvasMeta(id, payload, init = {}) {
             return request(`${canvasUrl(id)}/meta`, jsonInit(payload, {...init, method: 'POST'}));
         },
-        deleteCanvas(id, init = {}) {
-            return request(canvasUrl(id), {...init, method: 'DELETE'});
+        deleteCanvas(id, expectedVersion, init = {}) {
+            return request(versionedUrl(canvasUrl(id), expectedVersion), {...init, method: 'DELETE'});
         },
         listTrashedCanvases(init) {
             return request('/api/canvases/trash', init);
@@ -98,17 +104,18 @@ export function createCanvasListApi(http) {
             const url = '/api/canvases/trash?view=archived';
             return request(url, init);
         },
-        archiveCanvas(id, init = {}) {
-            return request(`${canvasUrl(id)}/touch?operation=archive`, {...init, method: 'POST'});
+        archiveCanvas(id, expectedVersion, init = {}) {
+            return request(versionedUrl(`${canvasUrl(id)}/touch?operation=archive`, expectedVersion), {...init, method: 'POST'});
         },
-        unarchiveCanvas(id, init = {}) {
-            return request(`${canvasUrl(id)}/touch?operation=unarchive`, {...init, method: 'POST'});
+        unarchiveCanvas(id, expectedVersion, init = {}) {
+            return request(versionedUrl(`${canvasUrl(id)}/touch?operation=unarchive`, expectedVersion), {...init, method: 'POST'});
         },
-        restoreCanvas(id, init = {}) {
-            return request(`${canvasUrl(id)}/restore`, {...init, method: 'POST'});
+        restoreCanvas(id, expectedVersion, init = {}) {
+            versionedUrl(canvasUrl(id), expectedVersion);
+            return request(`${canvasUrl(id)}/restore`, jsonInit({expected_version: expectedVersion}, {...init, method: 'POST'}));
         },
-        purgeCanvas(id, init = {}) {
-            return request(`${canvasUrl(id)}/purge`, {...init, method: 'DELETE'});
+        purgeCanvas(id, expectedVersion, init = {}) {
+            return request(versionedUrl(`${canvasUrl(id)}/purge`, expectedVersion), {...init, method: 'DELETE'});
         },
         getResource(url, init) {
             return request(url, init);

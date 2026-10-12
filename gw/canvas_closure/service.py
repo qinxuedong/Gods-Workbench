@@ -118,9 +118,9 @@ class CanvasClosureService:
         """从回收站恢复画布。"""
         return self._canvas_service.restore_from_trash(canvas_id, expected_version=expected_version)
 
-    def purge_canvas(self, canvas_id: str) -> Dict[str, Any]:
+    def purge_canvas(self, canvas_id: str, expected_version: Optional[int] = None) -> Dict[str, Any]:
         """彻底删除画布；仅允许回收站中的画布。"""
-        return self._canvas_service.purge_canvas(canvas_id)
+        return self._canvas_service.purge_canvas(canvas_id, expected_version=expected_version)
 
     def list_trash(self, view: str = "deleted") -> Dict[str, Any]:
         """回收站 / 归档列表；无内容时 ``canvases`` 必须是空数组。"""
@@ -154,6 +154,7 @@ class CanvasClosureService:
         viewport: Dict[str, Any],
         canvas_id: Optional[str] = None,
         expected_version: Optional[int] = None,
+        owner_key: Optional[str] = None,
     ) -> Dict[str, Any]:
         """保存参考画布（新建或覆盖）。
 
@@ -169,6 +170,7 @@ class CanvasClosureService:
         }
 
         if canvas_id:
+            self._canvas_service._require_version(expected_version)
             existing = self._canvas_service.get_canvas(canvas_id)
             if (self._canvas_service.ensure_lifecycle(canvas_id) or {}).get("kind") != "reference":
                 raise CleanroomException(
@@ -183,12 +185,20 @@ class CanvasClosureService:
             )
             return {"canvas": updated}
 
+        if self._canvas_service.persistent:
+            # 种类、主体和参考载荷随新画布一次提交，不残留半初始化记录。
+            created = self._canvas_service.create_canvas(
+                CanvasCreateRequest(project_id="default", title=title, sub_canvas_type="reference",
+                                    initial_payload={"references":{"reference_canvas":payload}}),
+                owner_key=owner_key, canvas_kind="reference")
+            return {"canvas":self._canvas_service.get_canvas_meta(created.canvas_id)}
+
         created = self._canvas_service.create_canvas(
             CanvasCreateRequest(
                 project_id="default",
                 title=title,
                 mode=CanvasMode.CLASSIC,
-            )
+            ), owner_key=owner_key,
         )
         new_canvas_id = created.canvas_id
         self._canvas_service.set_canvas_kind(new_canvas_id, "reference")

@@ -29,6 +29,49 @@ class CanvasMode(str, Enum):
     SMART = "smart"
 
 
+class CanvasNodeKind(str, Enum):
+    """统合画布的多模态节点词表；旧工作流自定义 kind 继续回环。"""
+
+    TEXT_PROMPT = "text_prompt"
+    TEXT_DIALOGUE = "text_dialogue"
+    TEXT_MEMO = "text_memo"
+    IMAGE_ASSET = "image_asset"
+    VIDEO_ASSET = "video_asset"
+    AUDIO_ASSET = "audio_asset"
+    WORKFLOW_TOOL = "workflow_tool"
+    SHOT_FRAME = "shot_frame"
+    SCENE_SWIMLANE = "scene_swimlane"
+
+
+class PortDataType(str, Enum):
+    """端口承载的数据类型，不表示生成引擎已经接通。"""
+
+    TEXT = "TEXT"
+    IMAGE = "IMAGE"
+    VIDEO = "VIDEO"
+    AUDIO = "AUDIO"
+    MASK = "MASK"
+    LATENT = "LATENT"
+
+
+class SubCanvasType(str, Enum):
+    """项目子画布用途。"""
+
+    STORYBOARD = "storyboard"
+    CHARACTER = "character"
+    ASSET = "asset"
+    DRAFT = "draft"
+    REFERENCE = "reference"
+
+
+class CanvasPort(BaseModel):
+    """节点端口的稳定标识与类型。"""
+
+    model_config = ConfigDict(extra="allow")
+    port_id: str = Field(..., min_length=1)
+    data_type: PortDataType
+
+
 class NodePosition(BaseModel):
     """节点在画布上的坐标位置。"""
 
@@ -51,9 +94,17 @@ class CanvasNode(BaseModel):
     model_config = ConfigDict(extra="allow")
 
     entity_id: str = Field(..., description="稳定节点标识")
-    kind: str = Field(..., description="节点类型，例如 input, output, process")
+    kind: CanvasNodeKind | str = Field(..., description="多模态类型或旧工作流自定义类型")
     position: Optional[NodePosition] = Field(None, description="节点坐标")
     refs: Optional[NodeReferences] = Field(default_factory=NodeReferences, description="节点关联引用")
+    ports: Optional[List[CanvasPort]] = None
+
+    @model_validator(mode="after")
+    def validate_ports(self):
+        identifiers = [port.port_id for port in self.ports or []]
+        if len(identifiers) != len(set(identifiers)):
+            raise ValueError("节点 port_id 必须唯一")
+        return self
 
 
 class CanvasConnection(BaseModel):
@@ -72,7 +123,9 @@ class CanvasTopology(BaseModel):
     model_config = ConfigDict(populate_by_name=True, extra="allow")
 
     canvas_id: str = Field(..., description="画布标识")
+    project_id: Optional[str] = None
     version: int = Field(1, description="CAS 版本号")
+    viewport: Optional[Dict[str, Any]] = None
     nodes: List[CanvasNode] = Field(default_factory=list, description="节点列表")
     connections: List[CanvasConnection] = Field(default_factory=list, description="连接列表")
     references: Optional[Dict[str, Any]] = Field(None, description="画布级别全局引用")
@@ -103,6 +156,8 @@ class CanvasItem(BaseModel):
     project_id: str
     version: int
     mode: CanvasMode
+    kind: Optional[str] = None
+    sub_canvas_type: Optional[SubCanvasType] = None
 
 
 class CanvasListResponse(BaseModel):
@@ -120,6 +175,7 @@ class CanvasCreateRequest(BaseModel):
     title: str = Field(default="未命名智能画布", min_length=1, description="画布标题")
     mode: CanvasMode = Field(default=CanvasMode.SMART, description="画布模式")
     initial_payload: Optional[Dict[str, Any]] = Field(None, description="可选初始拓扑")
+    sub_canvas_type: Optional[SubCanvasType] = None
 
     @model_validator(mode="before")
     @classmethod
@@ -154,7 +210,8 @@ class CanvasTopologyUpdateRequest(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    expected_version: int = Field(..., description="期望 CAS 版本")
+    expected_version: int = Field(..., ge=1, strict=True, description="期望 CAS 版本")
+    viewport: Optional[Dict[str, Any]] = None
     nodes: List[CanvasNode] = Field(default_factory=list, description="最新节点集合")
     connections: List[CanvasConnection] = Field(default_factory=list, description="最新连线集合")
     references: Optional[Dict[str, Any]] = Field(None, description="画布级别全局引用")
