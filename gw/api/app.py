@@ -95,11 +95,15 @@ async def _app_lifespan(app: FastAPI):
     integration_enabled = os.getenv("GW_DISABLE_AGENT_INTEGRATION", "").strip() != "1"
     stop_integration = None
     primary_error = None
+    owned_data_lock = None
     try:
-        from gw.core.storage import acquire_data_dir_lock, data_root
+        from gw.core.storage import acquire_data_dir_lock, data_root, is_data_dir_lock_held
         from gw.god_canvas.service import default_god_canvas_service
         # 先持有数据目录锁再做启动恢复；绕过 run.py 直接用 uvicorn 启动也受保护。
+        preheld = is_data_dir_lock_held(data_root())
         app.state.data_dir_lock = acquire_data_dir_lock(data_root())
+        # 只释放本 lifespan 自己拿到的锁；run.py 预先持有的锁由进程退出时释放。
+        owned_data_lock = None if preheld else app.state.data_dir_lock
         default_god_canvas_service.recover_interrupted_jobs()
         if integration_enabled:
             try:
@@ -128,6 +132,11 @@ async def _app_lifespan(app: FastAPI):
             shutdown_index_jobs()
         except BaseException as error:
             cleanup_errors.append(error)
+        if owned_data_lock is not None:
+            try:
+                owned_data_lock.release()
+            except BaseException as error:
+                cleanup_errors.append(error)
 
         if cleanup_errors:
             cleanup_error = (
