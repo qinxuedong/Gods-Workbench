@@ -13,6 +13,12 @@ from gw.settings.service import ProviderService
 from playwright_support import open_playwright
 
 
+def goto_ready(page, url):
+    """导航后等待页面认证闸门完成首轮同步；networkidle 早于 /api/asset-auth/status 返回。"""
+    page.goto(url, wait_until="networkidle")
+    page.wait_for_function("!window.GWAuthGate || window.GWAuthGate.loaded === true")
+
+
 @contextmanager
 def settings_browser(monkeypatch, tmp_path):
     browser_api = pytest.importorskip("playwright.sync_api")
