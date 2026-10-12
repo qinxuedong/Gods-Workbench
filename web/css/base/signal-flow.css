@@ -171,11 +171,11 @@ body.gw-signal :is(input, select, textarea)::placeholder { color: var(--sf-muted
 /* Form labels read one step below input values. */
 body.gw-signal label { font-size: var(--sf-fs-secondary); font-weight: var(--sf-fw-medium); }
 body.gw-signal :is(input, select, textarea):focus-visible {
-  outline: 2px solid var(--sf-cyan) !important;
+  outline: 2px solid var(--gw-focus-color,var(--sf-cyan)) !important;
   outline-offset: 2px;
   border-color: var(--sf-cyan) !important;
 }
-body.gw-signal :is(button, a, input, select, textarea):focus-visible { outline: 2px solid var(--sf-cyan); outline-offset: 2px; }
+body.gw-signal :is(button, a, input, select, textarea):focus-visible { outline: 2px solid var(--gw-focus-color,var(--sf-cyan)); outline-offset: 2px; }
 
 body.gw-signal :is(.workspace-page, .asset-page, .page, .chat-shell, .workspace) {
   min-width: 0;
@@ -200,7 +200,7 @@ body.gw-signal :is(.section-frame, .panel, .overview-panel, .agent-panel, .episo
 body.gw-signal :is(.section-head, .section-body, .panel-heading, .block-head, .content-head) { border-color: var(--sf-line) !important; }
 body.gw-signal :is(.section-head, .panel-heading, .block-head) { background: var(--sf-raised) !important; }
 
-body.gw-signal :is(.btn, .action-btn, .upload-btn, .add-btn, .api-link-btn, .cli-quick-btn, .ws-primary-btn, .ws-icon-btn, .ws-paste-btn, .text-button) {
+body.gw-signal :is(.btn, .action-btn, .upload-btn, .add-btn, .api-link-btn, .cli-quick-btn, .ws-primary-btn:not(:where(.hw-btn,.btn-hw-tactile,.btn-tactile-keycap,.btn-hw-round,.hw-round-btn,.btn-segmented-item,.hw-segmented-btn,.btn-rocker-paddle,.hw-rocker-btn,.btn-slide-toggle,.hw-slide-toggle,.btn-launch-orb,.launch-orb-btn,.btn-pill-active,.btn-pill-inactive,.btn-pill-disabled)), .ws-icon-btn:not(:where(.hw-btn,.btn-hw-tactile,.btn-tactile-keycap,.btn-hw-round,.hw-round-btn,.btn-segmented-item,.hw-segmented-btn,.btn-rocker-paddle,.hw-rocker-btn,.btn-slide-toggle,.hw-slide-toggle,.btn-launch-orb,.launch-orb-btn,.btn-pill-active,.btn-pill-inactive,.btn-pill-disabled)), .ws-paste-btn:not(:where(.hw-btn,.btn-hw-tactile,.btn-tactile-keycap,.btn-hw-round,.hw-round-btn,.btn-segmented-item,.hw-segmented-btn,.btn-rocker-paddle,.hw-rocker-btn,.btn-slide-toggle,.hw-slide-toggle,.btn-launch-orb,.launch-orb-btn,.btn-pill-active,.btn-pill-inactive,.btn-pill-disabled)), .text-button) {
   min-height: 36px;
   border-radius: var(--sf-radius-control) !important;
   border-color: var(--sf-line-strong) !important;
@@ -211,13 +211,13 @@ body.gw-signal :is(.btn, .action-btn, .upload-btn, .add-btn, .api-link-btn, .cli
   font-weight: var(--sf-fw-medium);
   transition: background-color .18s var(--sf-ease), border-color .18s var(--sf-ease), color .18s var(--sf-ease);
 }
-body.gw-signal :is(.btn:hover, .action-btn:hover, .upload-btn:hover, .add-btn:hover, .api-link-btn:hover, .cli-quick-btn:hover, .ws-primary-btn:hover, .ws-icon-btn:hover, .ws-paste-btn:hover, .text-button:hover) {
+body.gw-signal :is(.btn:hover, .action-btn:hover, .upload-btn:hover, .add-btn:hover, .api-link-btn:hover, .cli-quick-btn:hover, .ws-primary-btn:not(:where(.hw-btn,.btn-hw-tactile,.btn-tactile-keycap,.btn-hw-round,.hw-round-btn,.btn-segmented-item,.hw-segmented-btn,.btn-rocker-paddle,.hw-rocker-btn,.btn-slide-toggle,.hw-slide-toggle,.btn-launch-orb,.launch-orb-btn,.btn-pill-active,.btn-pill-inactive,.btn-pill-disabled)):hover, .ws-icon-btn:not(:where(.hw-btn,.btn-hw-tactile,.btn-tactile-keycap,.btn-hw-round,.hw-round-btn,.btn-segmented-item,.hw-segmented-btn,.btn-rocker-paddle,.hw-rocker-btn,.btn-slide-toggle,.hw-slide-toggle,.btn-launch-orb,.launch-orb-btn,.btn-pill-active,.btn-pill-inactive,.btn-pill-disabled)):hover, .ws-paste-btn:not(:where(.hw-btn,.btn-hw-tactile,.btn-tactile-keycap,.btn-hw-round,.hw-round-btn,.btn-segmented-item,.hw-segmented-btn,.btn-rocker-paddle,.hw-rocker-btn,.btn-slide-toggle,.hw-slide-toggle,.btn-launch-orb,.launch-orb-btn,.btn-pill-active,.btn-pill-inactive,.btn-pill-disabled)):hover, .text-button:hover) {
   border-color: var(--sf-cyan) !important;
   background: rgba(105, 214, 255, .12) !important;
   color: var(--sf-cyan) !important;
 }
-body.gw-signal :is(.btn.primary, .action-btn.save-btn, .ws-primary-btn) { border-color: var(--sf-cyan) !important; background: var(--sf-cyan) !important; color: var(--sf-on-accent) !important; font-weight: var(--sf-fw-medium); }
-body.gw-signal :is(.btn.primary:hover, .action-btn.save-btn:hover, .ws-primary-btn:hover) { background: var(--sf-cyan-hover) !important; color: var(--sf-on-accent) !important; }
+body.gw-signal :is(.btn.primary, .action-btn.save-btn, .ws-primary-btn:not(:where(.hw-btn,.btn-hw-tactile,.btn-tactile-keycap,.btn-hw-round,.hw-round-btn,.btn-segmented-item,.hw-segmented-btn,.btn-rocker-paddle,.hw-rocker-btn,.btn-slide-toggle,.hw-slide-toggle,.btn-launch-orb,.launch-orb-btn,.btn-pill-active,.btn-pill-inactive,.btn-pill-disabled))) { border-color: var(--sf-cyan) !important; background: var(--sf-cyan) !important; color: var(--sf-on-accent) !important; font-weight: var(--sf-fw-medium); }
+body.gw-signal :is(.btn.primary:hover, .action-btn.save-btn:hover, .ws-primary-btn:not(:where(.hw-btn,.btn-hw-tactile,.btn-tactile-keycap,.btn-hw-round,.hw-round-btn,.btn-segmented-item,.hw-segmented-btn,.btn-rocker-paddle,.hw-rocker-btn,.btn-slide-toggle,.hw-slide-toggle,.btn-launch-orb,.launch-orb-btn,.btn-pill-active,.btn-pill-inactive,.btn-pill-disabled)):hover) { background: var(--sf-cyan-hover) !important; color: var(--sf-on-accent) !important; }
 body.gw-signal :is(.btn.danger, .danger-btn) { border-color: rgba(255, 127, 120, .55) !important; color: var(--sf-coral) !important; background: rgba(255, 127, 120, .1) !important; }
 body.gw-signal :is(button:disabled, input:disabled, select:disabled, textarea:disabled) { cursor: not-allowed; opacity: .55; }
 
@@ -267,17 +267,17 @@ body.gw-page--project-board .project-overview-actions .project-calendar-toggle {
 /* 总览控制条：搜索/状态/类型/排序（居中展示） */
 body.gw-page--project-board .project-overview-controls { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px; }
 body.gw-page--project-board .project-overview-search { min-width: 200px; height: 32px; padding: 0 10px; border: 1px solid var(--sf-line); border-radius: var(--sf-radius-control, 6px); background: var(--sf-raised); color: var(--sf-text); font: var(--sf-fs-caption) / 1.4 var(--sf-font-sans, inherit); }
-body.gw-page--project-board .project-overview-search:focus-visible { outline: 2px solid var(--sf-cyan); outline-offset: -2px; }
+body.gw-page--project-board .project-overview-search:focus-visible { outline: 2px solid var(--gw-focus-color,var(--sf-cyan)); outline-offset: -2px; }
 body.gw-page--project-board .project-overview-filter { height: 32px; padding: 0 8px; border: 1px solid var(--sf-line); border-radius: var(--sf-radius-control, 6px); background: var(--sf-raised); color: var(--sf-text); font: var(--sf-fs-caption) / 1.4 var(--sf-font-sans, inherit); }
-body.gw-page--project-board .project-overview-filter:focus-visible { outline: 2px solid var(--sf-cyan); outline-offset: -2px; }
+body.gw-page--project-board .project-overview-filter:focus-visible { outline: 2px solid var(--gw-focus-color,var(--sf-cyan)); outline-offset: -2px; }
 body.gw-page--project-board .project-overview-zoom-hint { color: var(--sf-muted); font-size: var(--sf-fs-micro); white-space: nowrap; }
 body.gw-page--project-board .project-overview-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(calc(260px * var(--project-card-scale, 1)), 1fr)); gap: 10px; }
 body.gw-page--project-board .project-overview-card { min-width: 0; overflow: hidden; border: 1px solid var(--sf-line); border-radius: var(--sf-radius-panel); background: var(--sf-content); }
 body.gw-page--project-board .project-overview-card-open { display: grid; width: 100%; min-width: 0; padding: 0; border: 0; background: transparent; color: var(--sf-text); cursor: pointer; text-align: left; }
 body.gw-page--project-board .project-overview-card-open:hover { background: rgba(105, 214, 255, .06); }
 body.gw-page--project-board .project-overview-card-open[aria-current="true"] { background: rgba(105, 214, 255, .1); }
-body.gw-page--project-board .project-overview-card-open:focus-visible { outline: 2px solid var(--sf-cyan); outline-offset: -2px; }
-body.gw-page--project-board .project-overview:focus-visible { outline: 2px solid var(--sf-cyan); outline-offset: 3px; }
+body.gw-page--project-board .project-overview-card-open:focus-visible { outline: 2px solid var(--gw-focus-color,var(--sf-cyan)); outline-offset: -2px; }
+body.gw-page--project-board .project-overview:focus-visible { outline: 2px solid var(--gw-focus-color,var(--sf-cyan)); outline-offset: 3px; }
 body.gw-page--project-board .project-overview-card-media { position: relative; display: grid; width: 100%; aspect-ratio: 1 / 1; place-items: center; overflow: hidden; border-bottom: 1px solid var(--sf-line); background: var(--sf-raised); color: var(--sf-muted); }
 body.gw-page--project-board .project-overview-card-media img { width: 100%; height: 100%; object-fit: cover; }
 body.gw-page--project-board .project-overview-card-media.media-unavailable::after { content: attr(data-media-unavailable); color: var(--sf-coral); font-size: var(--sf-fs-caption); }
@@ -379,7 +379,7 @@ body.gw-page--gpt-chat :is(.model-picker-button:hover, .resolution-picker-button
 body.gw-page--canvas .ws-sidebar, body.gw-page--canvas .ws-main { background: var(--sf-bg) !important; color: var(--sf-text) !important; }
 body.gw-page--canvas :is(.ws-topbar, .ws-board-actions, .ws-trash-head) { background: rgba(18, 28, 38, .9) !important; border-color: var(--sf-line) !important; backdrop-filter: blur(16px); }
 body.gw-page--canvas :is(.ws-card, .ws-trash-card, .ws-card-pop, .ws-create-card, .ws-board-empty-icon) { border-color: var(--canvas-border, var(--sf-line)) !important; background: var(--canvas-surface, var(--sf-content)) !important; border-radius: var(--sf-radius-control) !important; box-shadow: none !important; }
-body.gw-page--canvas .ws-primary-btn { background: var(--sf-cyan) !important; color: var(--sf-on-accent) !important; }
+body.gw-page--canvas .ws-primary-btn:not(:where(.hw-btn,.btn-hw-tactile,.btn-tactile-keycap,.btn-hw-round,.hw-round-btn,.btn-segmented-item,.hw-segmented-btn,.btn-rocker-paddle,.hw-rocker-btn,.btn-slide-toggle,.hw-slide-toggle,.btn-launch-orb,.launch-orb-btn,.btn-pill-active,.btn-pill-inactive,.btn-pill-disabled)) { background: var(--sf-cyan) !important; color: var(--sf-on-accent) !important; }
 
 /* Asset library. Review layer geometry/z-index remains owned by asset-review.css. */
 body.gw-page--asset-manager :is(.asset-page, .asset-page-head, .asset-tabs, .asset-manager-root, .asset-board, .asset-grid, .asset-card, .asset-detail) { color: var(--sf-text) !important; border-color: var(--sf-line) !important; }
@@ -522,7 +522,7 @@ body.gw-page--asset-manager .asset-manager-root-registry > .registry-nav {
 }
 
 /* Keyboard focus stays visible on the custom control vocabulary. */
-body.gw-page--asset-manager :is(.asset-btn, .asset-icon-btn, .asset-refresh-btn, .manage-select, .smart-class-group-btn, .registry-facet-basic, .registry-facet-title button, .nav-row, .registry-layout-switch button, .registry-stat-card, .registry-filter-chips button, .registry-tag-chip button, .asset-tabs button, button[data-registry-load-more]):focus-visible { outline: 2px solid var(--sf-cyan) !important; outline-offset: 2px !important; }
+body.gw-page--asset-manager :is(.asset-btn, .asset-icon-btn, .asset-refresh-btn, .manage-select, .smart-class-group-btn, .registry-facet-basic, .registry-facet-title button, .nav-row, .registry-layout-switch button, .registry-stat-card, .registry-filter-chips button, .registry-tag-chip button, .asset-tabs button, button[data-registry-load-more]):focus-visible { outline: 2px solid var(--gw-focus-color,var(--sf-cyan)) !important; outline-offset: 2px !important; }
 /* REV leftovers: the review layer renders its token result and toast inside
    this page; their navy internals (#223047 toast, #17xx code) resolve to SF
    tokens. Semantic accent of the outer mint card stays untouched. */
@@ -674,7 +674,7 @@ body.gw-page--home .home-grid .mini-item time { color: var(--sf-muted) !importan
 body.gw-page--home .home-grid .mini-item time { font-family: var(--gw-font-mono); }
 body.gw-page--home .home-grid .mini-item .home-list-link { min-width: 0; }
 body.gw-page--home .home-grid .mini-item .home-list-link:focus-visible,
-body.gw-page--home .home-grid .home-action-item:focus-visible { outline-color: var(--sf-cyan); }
+body.gw-page--home .home-grid .home-action-item:focus-visible { outline-color: var(--gw-focus-color,var(--sf-cyan)); }
 body.gw-page--home .home-grid .mini-item:hover strong,
 body.gw-page--home .home-grid .home-action-item:hover strong { color: var(--sf-cyan); }
 
@@ -1007,7 +1007,7 @@ body.gw-page--home .home-create-menu { position: absolute; z-index: 20; top: cal
 body.gw-page--home .home-create-menu[hidden] { display: none; }
 body.gw-page--home .home-create-menu button { width: 100%; min-height: 34px; padding: 0 10px; border: 0; border-radius: var(--sf-radius-tight); background: transparent; color: var(--sf-text); text-align: left; cursor: pointer; }
 body.gw-page--home .home-create-menu button:hover { background: rgba(105, 214, 255, .12); color: var(--sf-cyan); }
-body.gw-page--home .home-create-menu button:focus-visible { background: rgba(105, 214, 255, .12); color: var(--sf-cyan); outline: 2px solid var(--sf-cyan); outline-offset: 2px; }
+body.gw-page--home .home-create-menu button:focus-visible { background: rgba(105, 214, 255, .12); color: var(--sf-cyan); outline: 2px solid var(--gw-focus-color,var(--sf-cyan)); outline-offset: 2px; }
 
 /* Project calendar: a real date surface for project start, due and entity
    completion data. The month grid stays compact so the dialog remains useful
@@ -1167,7 +1167,7 @@ body.gw-page--home .home-avatar { width: 22px; height: 22px; flex: 0 0 22px; dis
 body.gw-page--home .home-project-item time { color: var(--sf-muted); font-size: var(--gw-type-label-md); white-space: nowrap; }
 body.gw-page--home .home-more-button { width: 22px; height: 24px; padding: 0; border: 0; background: transparent; color: var(--sf-muted); cursor: pointer; font-size: var(--gw-type-body-lg); }
 body.gw-page--home .home-more-button:hover { color: var(--sf-cyan); }
-body.gw-page--home .home-more-button:focus-visible { color: var(--sf-cyan); outline: 2px solid var(--sf-cyan); outline-offset: 2px; }
+body.gw-page--home .home-more-button:focus-visible { color: var(--sf-cyan); outline: 2px solid var(--gw-focus-color,var(--sf-cyan)); outline-offset: 2px; }
 body.gw-page--home .home-more-button svg { width: 17px; height: 17px; }
 
 body.gw-page--home .home-work-list { display: grid; }
@@ -1200,7 +1200,7 @@ body.gw-page--home .home-action-link { min-width: 0; display: grid; gap: 2px; pa
 body.gw-page--home .home-action-link strong, body.gw-page--home .home-action-link small { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 body.gw-page--home .home-action-link strong { color: var(--sf-text); font-size: var(--gw-type-label-md); }
 body.gw-page--home .home-action-link small { color: var(--sf-muted); font-size: var(--gw-type-label-md); }
-body.gw-page--home .home-action-link:focus-visible { outline: 2px solid var(--sf-cyan); outline-offset: 2px; }
+body.gw-page--home .home-action-link:focus-visible { outline: 2px solid var(--gw-focus-color,var(--sf-cyan)); outline-offset: 2px; }
 body.gw-page--home .home-priority { font-size: var(--gw-type-label-md); }
 body.gw-page--home .home-priority.high { color: var(--sf-coral); background: rgba(255, 127, 120, .1); }
 body.gw-page--home .home-priority.medium { color: var(--sf-amber); background: rgba(242, 198, 109, .1); }
@@ -1226,7 +1226,7 @@ body.gw-page--home .home-presence-dot { width: 7px; height: 7px; flex: 0 0 7px; 
 body.gw-page--home .home-collab-review-list { display: grid; margin-top: 5px; }
 body.gw-page--home .home-collab-review-list button { min-width: 0; display: grid; grid-template-columns: minmax(0, 1fr) auto 10px; align-items: center; gap: 5px; min-height: 27px; padding: 3px 0; border: 0; border-top: 1px solid rgba(173, 205, 220, .1); background: transparent; color: var(--sf-text); text-align: left; cursor: pointer; }
 body.gw-page--home .home-collab-review-list button:hover { color: var(--sf-cyan); }
-body.gw-page--home .home-collab-review-list button:focus-visible { color: var(--sf-cyan); outline: 2px solid var(--sf-cyan); outline-offset: 2px; }
+body.gw-page--home .home-collab-review-list button:focus-visible { color: var(--sf-cyan); outline: 2px solid var(--gw-focus-color,var(--sf-cyan)); outline-offset: 2px; }
 body.gw-page--home .home-collab-review-list button span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--gw-type-label-md); }
 body.gw-page--home .home-collab-review-list button small { color: var(--sf-muted); white-space: nowrap; font-size: var(--gw-type-label-md); }
 body.gw-page--home .home-collab-review-list button b { color: var(--sf-muted); font-size: var(--gw-type-body-sm); font-weight: 400; }
@@ -1390,7 +1390,7 @@ body.gw-page--shell > .app-shell > .sidebar :is(.workspace-team, .workspace-sett
 }
 body.gw-page--shell > .app-shell > .sidebar .workspace-team-copy { display: none !important; }
 body.gw-page--shell > .app-shell > .sidebar :is(.workspace-user, .workspace-team, .workspace-settings, .workspace-reminder):focus-visible {
-  outline: 2px solid var(--sf-cyan) !important;
+  outline: 2px solid var(--gw-focus-color,var(--sf-cyan)) !important;
   outline-offset: 2px;
 }
 body.gw-page--shell > .app-shell > .sidebar .workspace-version {
@@ -1527,7 +1527,7 @@ body.gw-signal:not(.gw-page--home) :is(.panel, .section-frame, .block, .card, .s
   border-radius: var(--sf-radius-panel) !important;
   box-shadow: none !important;
 }
-body.gw-signal:not(.gw-page--home) :is(button, input, select, textarea) { min-height: 36px; }
+body.gw-signal:not(.gw-page--home) :is(button, input, select, textarea):not(:where(.hw-btn,.btn-hw-tactile,.btn-tactile-keycap,.btn-hw-round,.hw-round-btn,.btn-segmented-item,.hw-segmented-btn,.btn-rocker-paddle,.hw-rocker-btn,.btn-slide-toggle,.hw-slide-toggle,.btn-launch-orb,.launch-orb-btn,.btn-pill-active,.btn-pill-inactive,.btn-pill-disabled)) { min-height: 36px; }
 body.gw-signal:not(.gw-page--home) :is(input, select, textarea) {
   border-color: var(--sf-line-strong) !important;
   border-radius: var(--sf-radius-control) !important;
@@ -1536,10 +1536,10 @@ body.gw-signal:not(.gw-page--home) :is(input, select, textarea) {
 }
 body.gw-signal:not(.gw-page--home) :is(input, select, textarea)::placeholder { color: var(--sf-muted) !important; opacity: 1; }
 body.gw-signal:not(.gw-page--home) :is(button, input, select, textarea, a):focus-visible {
-  outline: 2px solid var(--sf-cyan) !important;
+  outline: 2px solid var(--gw-focus-color,var(--sf-cyan)) !important;
   outline-offset: 2px;
 }
-body.gw-signal:not(.gw-page--home) :is(.btn, .action-btn, .upload-btn, .add-btn, .api-link-btn, .ws-primary-btn, .ws-icon-btn, .ws-paste-btn, .glass-btn) {
+body.gw-signal:not(.gw-page--home) :is(.btn, .action-btn, .upload-btn, .add-btn, .api-link-btn, .ws-primary-btn:not(:where(.hw-btn,.btn-hw-tactile,.btn-tactile-keycap,.btn-hw-round,.hw-round-btn,.btn-segmented-item,.hw-segmented-btn,.btn-rocker-paddle,.hw-rocker-btn,.btn-slide-toggle,.hw-slide-toggle,.btn-launch-orb,.launch-orb-btn,.btn-pill-active,.btn-pill-inactive,.btn-pill-disabled)), .ws-icon-btn:not(:where(.hw-btn,.btn-hw-tactile,.btn-tactile-keycap,.btn-hw-round,.hw-round-btn,.btn-segmented-item,.hw-segmented-btn,.btn-rocker-paddle,.hw-rocker-btn,.btn-slide-toggle,.hw-slide-toggle,.btn-launch-orb,.launch-orb-btn,.btn-pill-active,.btn-pill-inactive,.btn-pill-disabled)), .ws-paste-btn:not(:where(.hw-btn,.btn-hw-tactile,.btn-tactile-keycap,.btn-hw-round,.hw-round-btn,.btn-segmented-item,.hw-segmented-btn,.btn-rocker-paddle,.hw-rocker-btn,.btn-slide-toggle,.hw-slide-toggle,.btn-launch-orb,.launch-orb-btn,.btn-pill-active,.btn-pill-inactive,.btn-pill-disabled)), .glass-btn) {
   border: 1px solid var(--sf-line-strong) !important;
   border-radius: var(--sf-radius-control) !important;
   background: var(--sf-surface) !important;
@@ -1547,18 +1547,18 @@ body.gw-signal:not(.gw-page--home) :is(.btn, .action-btn, .upload-btn, .add-btn,
   box-shadow: none !important;
   font-weight: var(--sf-fw-medium);
 }
-body.gw-signal:not(.gw-page--home) :is(.btn:hover, .action-btn:hover, .upload-btn:hover, .add-btn:hover, .api-link-btn:hover, .ws-primary-btn:hover, .ws-icon-btn:hover, .ws-paste-btn:hover, .glass-btn:hover) {
+body.gw-signal:not(.gw-page--home) :is(.btn:hover, .action-btn:hover, .upload-btn:hover, .add-btn:hover, .api-link-btn:hover, .ws-primary-btn:not(:where(.hw-btn,.btn-hw-tactile,.btn-tactile-keycap,.btn-hw-round,.hw-round-btn,.btn-segmented-item,.hw-segmented-btn,.btn-rocker-paddle,.hw-rocker-btn,.btn-slide-toggle,.hw-slide-toggle,.btn-launch-orb,.launch-orb-btn,.btn-pill-active,.btn-pill-inactive,.btn-pill-disabled)):hover, .ws-icon-btn:not(:where(.hw-btn,.btn-hw-tactile,.btn-tactile-keycap,.btn-hw-round,.hw-round-btn,.btn-segmented-item,.hw-segmented-btn,.btn-rocker-paddle,.hw-rocker-btn,.btn-slide-toggle,.hw-slide-toggle,.btn-launch-orb,.launch-orb-btn,.btn-pill-active,.btn-pill-inactive,.btn-pill-disabled)):hover, .ws-paste-btn:not(:where(.hw-btn,.btn-hw-tactile,.btn-tactile-keycap,.btn-hw-round,.hw-round-btn,.btn-segmented-item,.hw-segmented-btn,.btn-rocker-paddle,.hw-rocker-btn,.btn-slide-toggle,.hw-slide-toggle,.btn-launch-orb,.launch-orb-btn,.btn-pill-active,.btn-pill-inactive,.btn-pill-disabled)):hover, .glass-btn:hover) {
   border-color: var(--sf-cyan) !important;
   background: rgba(105, 214, 255, .12) !important;
   color: var(--sf-cyan) !important;
 }
-body.gw-signal:not(.gw-page--home) :is(.btn.primary, .action-btn.primary, .ws-primary-btn, .glass-btn) {
+body.gw-signal:not(.gw-page--home) :is(.btn.primary, .action-btn.primary, .ws-primary-btn:not(:where(.hw-btn,.btn-hw-tactile,.btn-tactile-keycap,.btn-hw-round,.hw-round-btn,.btn-segmented-item,.hw-segmented-btn,.btn-rocker-paddle,.hw-rocker-btn,.btn-slide-toggle,.hw-slide-toggle,.btn-launch-orb,.launch-orb-btn,.btn-pill-active,.btn-pill-inactive,.btn-pill-disabled)), .glass-btn) {
   border-color: var(--sf-cyan) !important;
   background: var(--sf-cyan) !important;
   color: #071018 !important;
   font-weight: var(--sf-fw-medium);
 }
-body.gw-signal:not(.gw-page--home) :is(.btn.primary:hover, .action-btn.primary:hover, .ws-primary-btn:hover, .glass-btn:hover) {
+body.gw-signal:not(.gw-page--home) :is(.btn.primary:hover, .action-btn.primary:hover, .ws-primary-btn:not(:where(.hw-btn,.btn-hw-tactile,.btn-tactile-keycap,.btn-hw-round,.hw-round-btn,.btn-segmented-item,.hw-segmented-btn,.btn-rocker-paddle,.hw-rocker-btn,.btn-slide-toggle,.hw-slide-toggle,.btn-launch-orb,.launch-orb-btn,.btn-pill-active,.btn-pill-inactive,.btn-pill-disabled)):hover, .glass-btn:hover) {
   background: #8be0ff !important;
   color: #071018 !important;
 }
@@ -1696,7 +1696,7 @@ body:is(.gw-page--project-board, .gw-page--task-center, .gw-page--asset-manager,
     min-height: 100vh !important;
     height: auto !important;
   }
-  body.gw-signal:is(.gw-page--project-board, .gw-page--episode-pipeline, .gw-page--zimage, .gw-page--enhance, .gw-page--klein, .gw-page--angle, .gw-page--online, .gw-page--video, .gw-page--gpt-chat, .gw-page--canvas, .gw-page--asset-manager, .gw-page--task-center, .gw-page--settings, .gw-page--api-settings) :is(button, input, select, textarea) {
+  body.gw-signal:is(.gw-page--project-board, .gw-page--episode-pipeline, .gw-page--zimage, .gw-page--enhance, .gw-page--klein, .gw-page--angle, .gw-page--online, .gw-page--video, .gw-page--gpt-chat, .gw-page--canvas, .gw-page--asset-manager, .gw-page--task-center, .gw-page--settings, .gw-page--api-settings) :is(button, input, select, textarea):not(:where(.hw-btn,.btn-hw-tactile,.btn-tactile-keycap,.btn-hw-round,.hw-round-btn,.btn-segmented-item,.hw-segmented-btn,.btn-rocker-paddle,.hw-rocker-btn,.btn-slide-toggle,.hw-slide-toggle,.btn-launch-orb,.launch-orb-btn,.btn-pill-active,.btn-pill-inactive,.btn-pill-disabled)) {
     min-height: 36px !important;
   }
 }
@@ -1735,8 +1735,8 @@ body:is(.gw-page--project-board, .gw-page--task-center, .gw-page--asset-manager,
 /* Shared component radii. Avatars, progress rings and scrollbar thumbs are
    intentionally excluded from this square control vocabulary. */
 body.gw-signal:not(.gw-page--home) :is(
-  .btn, .action-btn, .upload-btn, .add-btn, .api-link-btn, .ws-primary-btn,
-  .ws-icon-btn, .ws-paste-btn, .text-button, .icon-button, .status, .status-chip,
+  .btn, .action-btn, .upload-btn, .add-btn, .api-link-btn, .ws-primary-btn:not(:where(.hw-btn,.btn-hw-tactile,.btn-tactile-keycap,.btn-hw-round,.hw-round-btn,.btn-segmented-item,.hw-segmented-btn,.btn-rocker-paddle,.hw-rocker-btn,.btn-slide-toggle,.hw-slide-toggle,.btn-launch-orb,.launch-orb-btn,.btn-pill-active,.btn-pill-inactive,.btn-pill-disabled)),
+  .ws-icon-btn:not(:where(.hw-btn,.btn-hw-tactile,.btn-tactile-keycap,.btn-hw-round,.hw-round-btn,.btn-segmented-item,.hw-segmented-btn,.btn-rocker-paddle,.hw-rocker-btn,.btn-slide-toggle,.hw-slide-toggle,.btn-launch-orb,.launch-orb-btn,.btn-pill-active,.btn-pill-inactive,.btn-pill-disabled)), .ws-paste-btn:not(:where(.hw-btn,.btn-hw-tactile,.btn-tactile-keycap,.btn-hw-round,.hw-round-btn,.btn-segmented-item,.hw-segmented-btn,.btn-rocker-paddle,.hw-rocker-btn,.btn-slide-toggle,.hw-slide-toggle,.btn-launch-orb,.launch-orb-btn,.btn-pill-active,.btn-pill-inactive,.btn-pill-disabled)), .text-button, .icon-button, .status, .status-chip,
   .status-badge, .status-pill, .badge, .chip, .pill, .tag, .mode-badge,
   .preview-pill, .project-access, .asset-status, .run-state, .production-status,
   .home-priority, .home-project-stage, .provider-item, .task-detail-dialog,
@@ -2344,7 +2344,7 @@ body.gw-page--canvas :is(.ws-board-empty, .ws-board-empty-sub, .ws-card-time, .w
 body.gw-page--canvas .ws-board-count { background: rgba(242, 198, 109, .14) !important; color: var(--sf-amber) !important; border: 1px solid rgba(242, 198, 109, .4) !important; }
 body.gw-page--canvas .ws-board-empty-icon { background: var(--sf-content) !important; border-color: var(--sf-line) !important; color: var(--sf-cyan) !important; }
 body.gw-page--canvas :is(.ws-card, .ws-trash-card, .ws-card-pop, .ws-create-card) { background: var(--sf-content) !important; border-color: var(--sf-line) !important; }
-body.gw-page--canvas .ws-primary-btn { background: var(--sf-cyan) !important; border-color: var(--sf-cyan) !important; color: #071018 !important; }
+body.gw-page--canvas .ws-primary-btn:not(:where(.hw-btn,.btn-hw-tactile,.btn-tactile-keycap,.btn-hw-round,.hw-round-btn,.btn-segmented-item,.hw-segmented-btn,.btn-rocker-paddle,.hw-rocker-btn,.btn-slide-toggle,.hw-slide-toggle,.btn-launch-orb,.launch-orb-btn,.btn-pill-active,.btn-pill-inactive,.btn-pill-disabled)) { background: var(--sf-cyan) !important; border-color: var(--sf-cyan) !important; color: #071018 !important; }
 
 body.gw-page--smart-canvas {
   --page: var(--sf-bg) !important;
@@ -2381,13 +2381,13 @@ body.gw-page--governance {
 body.gw-page--governance :is(.workspace-page, .topbar, .center-titlebar) { background: transparent !important; color: var(--sf-text) !important; }
 body.gw-page--governance :is(.topbar, .center-titlebar) { border-color: var(--sf-line) !important; }
 body.gw-page--governance :is(.gov-stat-card, .gov-card-section, .gov-preview-box, .center-pane) { background: var(--sf-content) !important; border-color: var(--sf-line) !important; color: var(--sf-text) !important; box-shadow: none !important; }
-body.gw-page--governance :is(.gov-stat-card span, .gov-form-item label, .gov-table th, .gov-table .empty-td, .gov-tab) { color: var(--sf-muted) !important; }
+body.gw-page--governance :is(.gov-stat-card span, .gov-form-item label, .gov-table th, .gov-table .empty-td, .gov-tab:not(:where(.hw-btn,.btn-hw-tactile,.btn-tactile-keycap,.btn-hw-round,.hw-round-btn,.btn-segmented-item,.hw-segmented-btn,.btn-rocker-paddle,.hw-rocker-btn,.btn-slide-toggle,.hw-slide-toggle,.btn-launch-orb,.launch-orb-btn,.btn-pill-active,.btn-pill-inactive,.btn-pill-disabled))) { color: var(--sf-muted) !important; }
 body.gw-page--governance :is(.gov-stat-card strong, .gov-card-section h3, .gov-table td, .gov-preview-box, .center-titlebar h1) { color: var(--sf-text) !important; }
 body.gw-page--governance :is(.gov-form-item input, .gov-form-item select, .gov-form-item textarea) { background: var(--sf-raised) !important; border-color: var(--sf-line-strong) !important; color: var(--sf-text) !important; }
-body.gw-page--governance :is(.btn, .gov-tab) { border-radius: var(--sf-radius-control) !important; }
-body.gw-page--governance .btn { background: var(--sf-surface) !important; border-color: var(--sf-line-strong) !important; color: var(--sf-text) !important; }
-body.gw-page--governance .btn:hover, body.gw-page--governance .gov-tab.active { border-color: var(--sf-cyan) !important; color: var(--sf-cyan) !important; background: rgba(105, 214, 255, .12) !important; }
-body.gw-page--governance .btn.danger { background: rgba(255, 127, 120, .1) !important; border-color: rgba(255, 127, 120, .5) !important; color: var(--sf-coral) !important; }
+body.gw-page--governance :is(.btn:not(:where(.hw-btn,.btn-hw-tactile,.btn-tactile-keycap,.btn-hw-round,.hw-round-btn,.btn-segmented-item,.hw-segmented-btn,.btn-rocker-paddle,.hw-rocker-btn,.btn-slide-toggle,.hw-slide-toggle,.btn-launch-orb,.launch-orb-btn,.btn-pill-active,.btn-pill-inactive,.btn-pill-disabled)), .gov-tab:not(:where(.hw-btn,.btn-hw-tactile,.btn-tactile-keycap,.btn-hw-round,.hw-round-btn,.btn-segmented-item,.hw-segmented-btn,.btn-rocker-paddle,.hw-rocker-btn,.btn-slide-toggle,.hw-slide-toggle,.btn-launch-orb,.launch-orb-btn,.btn-pill-active,.btn-pill-inactive,.btn-pill-disabled))) { border-radius: var(--sf-radius-control) !important; }
+body.gw-page--governance .btn:not(:where(.hw-btn,.btn-hw-tactile,.btn-tactile-keycap,.btn-hw-round,.hw-round-btn,.btn-segmented-item,.hw-segmented-btn,.btn-rocker-paddle,.hw-rocker-btn,.btn-slide-toggle,.hw-slide-toggle,.btn-launch-orb,.launch-orb-btn,.btn-pill-active,.btn-pill-inactive,.btn-pill-disabled)) { background: var(--sf-surface) !important; border-color: var(--sf-line-strong) !important; color: var(--sf-text) !important; }
+body.gw-page--governance .btn:not(:where(.hw-btn,.btn-hw-tactile,.btn-tactile-keycap,.btn-hw-round,.hw-round-btn,.btn-segmented-item,.hw-segmented-btn,.btn-rocker-paddle,.hw-rocker-btn,.btn-slide-toggle,.hw-slide-toggle,.btn-launch-orb,.launch-orb-btn,.btn-pill-active,.btn-pill-inactive,.btn-pill-disabled)):hover, body.gw-page--governance .gov-tab:not(:where(.hw-btn,.btn-hw-tactile,.btn-tactile-keycap,.btn-hw-round,.hw-round-btn,.btn-segmented-item,.hw-segmented-btn,.btn-rocker-paddle,.hw-rocker-btn,.btn-slide-toggle,.hw-slide-toggle,.btn-launch-orb,.launch-orb-btn,.btn-pill-active,.btn-pill-inactive,.btn-pill-disabled)).active { border-color: var(--sf-cyan) !important; color: var(--sf-cyan) !important; background: rgba(105, 214, 255, .12) !important; }
+body.gw-page--governance .btn:not(:where(.hw-btn,.btn-hw-tactile,.btn-tactile-keycap,.btn-hw-round,.hw-round-btn,.btn-segmented-item,.hw-segmented-btn,.btn-rocker-paddle,.hw-rocker-btn,.btn-slide-toggle,.hw-slide-toggle,.btn-launch-orb,.launch-orb-btn,.btn-pill-active,.btn-pill-inactive,.btn-pill-disabled)).danger { background: rgba(255, 127, 120, .1) !important; border-color: rgba(255, 127, 120, .5) !important; color: var(--sf-coral) !important; }
 
 @media (max-width: 620px) {
   body.gw-page--home .home-page { height: auto !important; min-height: 100dvh !important; overflow: auto !important; padding: 10px 12px 14px !important; }
@@ -3350,7 +3350,7 @@ body.gw-page--canvas .ws-board-actions {
 }
 body.gw-page--canvas :is(.ws-board-name, .ws-board-empty-text) { color: var(--sf-text) !important; font-weight: var(--sf-fw-semibold) !important; }
 body.gw-page--canvas .ws-board-count { background: rgba(242, 198, 109, .14) !important; border: 1px solid rgba(242, 198, 109, .4) !important; color: var(--sf-amber) !important; border-radius: var(--sf-radius-tight) !important; }
-body.gw-page--canvas :is(.ws-icon-btn, .ws-primary-btn, .ws-paste-btn) {
+body.gw-page--canvas :is(.ws-icon-btn:not(:where(.hw-btn,.btn-hw-tactile,.btn-tactile-keycap,.btn-hw-round,.hw-round-btn,.btn-segmented-item,.hw-segmented-btn,.btn-rocker-paddle,.hw-rocker-btn,.btn-slide-toggle,.hw-slide-toggle,.btn-launch-orb,.launch-orb-btn,.btn-pill-active,.btn-pill-inactive,.btn-pill-disabled)), .ws-primary-btn:not(:where(.hw-btn,.btn-hw-tactile,.btn-tactile-keycap,.btn-hw-round,.hw-round-btn,.btn-segmented-item,.hw-segmented-btn,.btn-rocker-paddle,.hw-rocker-btn,.btn-slide-toggle,.hw-slide-toggle,.btn-launch-orb,.launch-orb-btn,.btn-pill-active,.btn-pill-inactive,.btn-pill-disabled)), .ws-paste-btn:not(:where(.hw-btn,.btn-hw-tactile,.btn-tactile-keycap,.btn-hw-round,.hw-round-btn,.btn-segmented-item,.hw-segmented-btn,.btn-rocker-paddle,.hw-rocker-btn,.btn-slide-toggle,.hw-slide-toggle,.btn-launch-orb,.launch-orb-btn,.btn-pill-active,.btn-pill-inactive,.btn-pill-disabled))) {
   min-height: 36px !important;
   height: 36px !important;
   border: 1px solid var(--sf-line-strong) !important;
@@ -3359,9 +3359,9 @@ body.gw-page--canvas :is(.ws-icon-btn, .ws-primary-btn, .ws-paste-btn) {
   color: var(--sf-text) !important;
   box-shadow: none !important;
 }
-body.gw-page--canvas :is(.ws-icon-btn, .ws-paste-btn):hover { border-color: var(--sf-cyan) !important; background: rgba(105, 214, 255, .12) !important; color: var(--sf-cyan) !important; }
-body.gw-page--canvas .ws-primary-btn { border-color: var(--sf-cyan) !important; background: var(--sf-cyan) !important; color: #071018 !important; }
-body.gw-page--canvas .ws-primary-btn:hover { background: #9be4ff !important; color: #071018 !important; }
+body.gw-page--canvas :is(.ws-icon-btn:not(:where(.hw-btn,.btn-hw-tactile,.btn-tactile-keycap,.btn-hw-round,.hw-round-btn,.btn-segmented-item,.hw-segmented-btn,.btn-rocker-paddle,.hw-rocker-btn,.btn-slide-toggle,.hw-slide-toggle,.btn-launch-orb,.launch-orb-btn,.btn-pill-active,.btn-pill-inactive,.btn-pill-disabled)), .ws-paste-btn:not(:where(.hw-btn,.btn-hw-tactile,.btn-tactile-keycap,.btn-hw-round,.hw-round-btn,.btn-segmented-item,.hw-segmented-btn,.btn-rocker-paddle,.hw-rocker-btn,.btn-slide-toggle,.hw-slide-toggle,.btn-launch-orb,.launch-orb-btn,.btn-pill-active,.btn-pill-inactive,.btn-pill-disabled))):hover { border-color: var(--sf-cyan) !important; background: rgba(105, 214, 255, .12) !important; color: var(--sf-cyan) !important; }
+body.gw-page--canvas .ws-primary-btn:not(:where(.hw-btn,.btn-hw-tactile,.btn-tactile-keycap,.btn-hw-round,.hw-round-btn,.btn-segmented-item,.hw-segmented-btn,.btn-rocker-paddle,.hw-rocker-btn,.btn-slide-toggle,.hw-slide-toggle,.btn-launch-orb,.launch-orb-btn,.btn-pill-active,.btn-pill-inactive,.btn-pill-disabled)) { border-color: var(--sf-cyan) !important; background: var(--sf-cyan) !important; color: #071018 !important; }
+body.gw-page--canvas .ws-primary-btn:not(:where(.hw-btn,.btn-hw-tactile,.btn-tactile-keycap,.btn-hw-round,.hw-round-btn,.btn-segmented-item,.hw-segmented-btn,.btn-rocker-paddle,.hw-rocker-btn,.btn-slide-toggle,.hw-slide-toggle,.btn-launch-orb,.launch-orb-btn,.btn-pill-active,.btn-pill-inactive,.btn-pill-disabled)):hover { background: #9be4ff !important; color: #071018 !important; }
 body.gw-page--canvas .ws-board {
   background-color: var(--sf-bg) !important;
   background-image: none !important;
@@ -3637,7 +3637,7 @@ body.gw-page--shell .workspace-tab.active {
   border-bottom-color: var(--sf-cyan) !important;
 }
 body.gw-page--shell :is(.workspace-tab:focus-visible, .workspace-tabs-overflow:focus-visible) {
-  outline: 2px solid var(--sf-cyan) !important;
+  outline: 2px solid var(--gw-focus-color,var(--sf-cyan)) !important;
   outline-offset: -2px !important;
 }
 
@@ -3823,7 +3823,7 @@ html:not(.studio-theme-dark):not(.theme-dark):not([data-theme="dark"]) body.gw-s
 html body.gw-signal.gw-page--episode-pipeline .episode-page :is(input, textarea)::placeholder { color: var(--sf-faint) !important; opacity: 1 !important; }
 html body.gw-signal.gw-page--episode-pipeline .episode-page :is(select, input, textarea):focus-visible {
   border-color: var(--sf-cyan) !important;
-  outline: 2px solid var(--sf-cyan) !important;
+  outline: 2px solid var(--gw-focus-color,var(--sf-cyan)) !important;
   outline-offset: 2px !important;
 }
 
@@ -3967,7 +3967,7 @@ html:has(body.gw-signal.gw-page--asset-manager) .asset-detail-viewer-head { min-
 html:has(body.gw-signal.gw-page--asset-manager) .asset-detail-breadcrumb { gap: 7px; color: var(--sf-muted) !important; font-size: var(--sf-fs-caption); font-weight: var(--sf-fw-semibold); }
 html:has(body.gw-signal.gw-page--asset-manager) .asset-detail-breadcrumb strong { color: var(--sf-text) !important; font-weight: var(--sf-fw-bold); }
 html:has(body.gw-signal.gw-page--asset-manager) .asset-detail-breadcrumb button:hover { color: var(--sf-cyan) !important; }
-html:has(body.gw-signal.gw-page--asset-manager) .asset-detail-breadcrumb button:focus-visible,html:has(body.gw-signal.gw-page--asset-manager) .asset-detail-head-actions :is(a, button):focus-visible,html:has(body.gw-signal.gw-page--asset-manager) .asset-detail-inspector-toggle:focus-visible { outline: 2px solid var(--sf-cyan) !important; outline-offset: 2px; }
+html:has(body.gw-signal.gw-page--asset-manager) .asset-detail-breadcrumb button:focus-visible,html:has(body.gw-signal.gw-page--asset-manager) .asset-detail-head-actions :is(a, button):focus-visible,html:has(body.gw-signal.gw-page--asset-manager) .asset-detail-inspector-toggle:focus-visible { outline: 2px solid var(--gw-focus-color,var(--sf-cyan)) !important; outline-offset: 2px; }
 html:has(body.gw-signal.gw-page--asset-manager) .asset-detail-head-actions { gap: 6px; }
 html:has(body.gw-signal.gw-page--asset-manager) .asset-detail-head-actions > span { min-width: 46px; color: var(--sf-muted) !important; font-family: var(--gw-font-mono); font-size: var(--sf-fs-micro); font-weight: var(--sf-fw-medium); }
 html:has(body.gw-signal.gw-page--asset-manager) .asset-detail-head-actions :is(a, button) { width: 30px; height: 30px; border-color: var(--sf-line-strong) !important; border-radius: var(--sf-radius-tight) !important; background: var(--sf-surface) !important; color: var(--sf-text) !important; }
@@ -4051,7 +4051,7 @@ html:has(body.gw-signal.gw-page--asset-manager) .asset-detail-image-versions > h
 }
 html:has(body.gw-signal.gw-page--asset-manager) .asset-detail-image-versions > header button:focus-visible {
   border-color: var(--sf-cyan) !important;
-  outline: 2px solid var(--sf-cyan) !important;
+  outline: 2px solid var(--gw-focus-color,var(--sf-cyan)) !important;
   outline-offset: 2px;
 }
 html:has(body.gw-signal.gw-page--asset-manager) .asset-detail-image-version-list {
@@ -4085,7 +4085,7 @@ html:has(body.gw-signal.gw-page--asset-manager) .asset-detail-image-version-main
   border-radius: var(--sf-radius-tight) !important;
 }
 html:has(body.gw-signal.gw-page--asset-manager) .asset-detail-image-version-main:focus-visible {
-  outline: 2px solid var(--sf-cyan) !important;
+  outline: 2px solid var(--gw-focus-color,var(--sf-cyan)) !important;
   outline-offset: -2px;
 }
 html:has(body.gw-signal.gw-page--asset-manager) .asset-detail-image-version-main > img {
@@ -4132,7 +4132,7 @@ html:has(body.gw-signal.gw-page--asset-manager) .asset-detail-image-version-list
   color: var(--sf-coral) !important;
 }
 html:has(body.gw-signal.gw-page--asset-manager) .asset-detail-image-version-list > article > div button:focus-visible {
-  outline: 2px solid var(--sf-cyan) !important;
+  outline: 2px solid var(--gw-focus-color,var(--sf-cyan)) !important;
   outline-offset: 2px;
 }
 html:has(body.gw-signal.gw-page--asset-manager) .asset-detail-image-version-list > article > div button:disabled {
@@ -4168,7 +4168,7 @@ html:has(body.gw-signal.gw-page--asset-manager) .asset-detail-image-versions.is-
   color: var(--sf-cyan) !important;
 }
 html:has(body.gw-signal.gw-page--asset-manager) .asset-detail-image-versions.is-collapsed > button:focus-visible {
-  outline: 2px solid var(--sf-cyan) !important;
+  outline: 2px solid var(--gw-focus-color,var(--sf-cyan)) !important;
   outline-offset: -2px;
 }
 html:has(body.gw-signal.gw-page--asset-manager) .asset-detail-image-versions.is-collapsed b {
@@ -4311,7 +4311,7 @@ html:has(body.gw-signal.gw-page--asset-manager) :is(
   .asset-detail-media-library-controls select:focus-visible
 ) {
   border-color: var(--sf-cyan) !important;
-  outline-color: var(--sf-cyan) !important;
+  outline-color: var(--gw-focus-color,var(--sf-cyan)) !important;
   box-shadow: none !important;
 }
 html:has(body.gw-signal.gw-page--asset-manager) :is(
@@ -4366,7 +4366,7 @@ html:has(body.gw-signal.gw-page--asset-manager) :is(
   .asset-video-storyboard-panel button:hover
 ) {
   border-color: var(--sf-cyan) !important;
-  outline-color: var(--sf-cyan) !important;
+  outline-color: var(--gw-focus-color,var(--sf-cyan)) !important;
   box-shadow: inset 0 0 0 1px var(--sf-cyan) !important;
 }
 html:has(body.gw-signal.gw-page--asset-manager) :is(
@@ -4384,7 +4384,7 @@ html:has(body.gw-signal.gw-page--asset-manager) :is(
   .asset-detail-font-library-list button:focus-visible,
   .asset-detail-font-expand:focus-visible
 ) {
-  outline-color: var(--sf-cyan) !important;
+  outline-color: var(--gw-focus-color,var(--sf-cyan)) !important;
   box-shadow: inset 0 0 0 2px var(--sf-cyan) !important;
 }
 html:has(body.gw-signal.gw-page--asset-manager) .asset-detail-media-resize-handle { background: var(--sf-cyan) !important; border-color: #fff !important; }
@@ -4599,25 +4599,25 @@ html body.gw-signal.theme-light :is(button, a, input, select, textarea):focus-vi
   border-color: var(--sf-focus) !important;
 }
 
-html body.gw-signal[data-theme="light"] :is(.btn.primary, .action-btn.primary, .action-btn.save-btn, .ws-primary-btn, .glass-btn, .send-btn, .asset-btn.primary, .review-primary, .btn-render, .btn-enhance, #genBtn, .save-btn, .recommend-guide-save-btn, .onboarding-save-btn, .primary-btn) {
+html body.gw-signal[data-theme="light"] :is(.btn.primary, .action-btn.primary, .action-btn.save-btn, .ws-primary-btn:not(:where(.hw-btn,.btn-hw-tactile,.btn-tactile-keycap,.btn-hw-round,.hw-round-btn,.btn-segmented-item,.hw-segmented-btn,.btn-rocker-paddle,.hw-rocker-btn,.btn-slide-toggle,.hw-slide-toggle,.btn-launch-orb,.launch-orb-btn,.btn-pill-active,.btn-pill-inactive,.btn-pill-disabled)), .glass-btn, .send-btn, .asset-btn.primary, .review-primary, .btn-render, .btn-enhance, #genBtn, .save-btn, .recommend-guide-save-btn, .onboarding-save-btn, .primary-btn) {
   border-color: var(--sf-primary-fill) !important;
   background: var(--sf-primary-fill) !important;
   color: var(--sf-on-accent) !important;
 }
 
-html body.gw-signal[data-theme="light"] :is(.btn.primary:hover, .action-btn.primary:hover, .action-btn.save-btn:hover, .ws-primary-btn:hover, .glass-btn:hover, .send-btn:hover, .asset-btn.primary:hover, .review-primary:hover, .btn-render:hover, .btn-enhance:hover, #genBtn:hover, .save-btn:hover, .recommend-guide-save-btn:hover, .onboarding-save-btn:hover, .primary-btn:hover) {
+html body.gw-signal[data-theme="light"] :is(.btn.primary:hover, .action-btn.primary:hover, .action-btn.save-btn:hover, .ws-primary-btn:not(:where(.hw-btn,.btn-hw-tactile,.btn-tactile-keycap,.btn-hw-round,.hw-round-btn,.btn-segmented-item,.hw-segmented-btn,.btn-rocker-paddle,.hw-rocker-btn,.btn-slide-toggle,.hw-slide-toggle,.btn-launch-orb,.launch-orb-btn,.btn-pill-active,.btn-pill-inactive,.btn-pill-disabled)):hover, .glass-btn:hover, .send-btn:hover, .asset-btn.primary:hover, .review-primary:hover, .btn-render:hover, .btn-enhance:hover, #genBtn:hover, .save-btn:hover, .recommend-guide-save-btn:hover, .onboarding-save-btn:hover, .primary-btn:hover) {
   border-color: var(--sf-primary-hover) !important;
   background: var(--sf-primary-hover) !important;
   color: var(--sf-on-accent) !important;
 }
 
-html body.gw-signal[data-theme="light"] :is(.btn, .action-btn, .upload-btn, .add-btn, .api-link-btn, .cli-quick-btn, .ws-icon-btn, .ws-paste-btn, .text-button, .asset-btn, .asset-icon-btn, .glass-btn) {
+html body.gw-signal[data-theme="light"] :is(.btn, .action-btn, .upload-btn, .add-btn, .api-link-btn, .cli-quick-btn, .ws-icon-btn:not(:where(.hw-btn,.btn-hw-tactile,.btn-tactile-keycap,.btn-hw-round,.hw-round-btn,.btn-segmented-item,.hw-segmented-btn,.btn-rocker-paddle,.hw-rocker-btn,.btn-slide-toggle,.hw-slide-toggle,.btn-launch-orb,.launch-orb-btn,.btn-pill-active,.btn-pill-inactive,.btn-pill-disabled)), .ws-paste-btn:not(:where(.hw-btn,.btn-hw-tactile,.btn-tactile-keycap,.btn-hw-round,.hw-round-btn,.btn-segmented-item,.hw-segmented-btn,.btn-rocker-paddle,.hw-rocker-btn,.btn-slide-toggle,.hw-slide-toggle,.btn-launch-orb,.launch-orb-btn,.btn-pill-active,.btn-pill-inactive,.btn-pill-disabled)), .text-button, .asset-btn, .asset-icon-btn, .glass-btn) {
   border-color: var(--sf-line-strong) !important;
   background: var(--sf-surface) !important;
   color: var(--sf-text) !important;
 }
 
-html body.gw-signal[data-theme="light"] :is(.btn:hover, .action-btn:hover, .upload-btn:hover, .add-btn:hover, .api-link-btn:hover, .cli-quick-btn:hover, .ws-icon-btn:hover, .ws-paste-btn:hover, .text-button:hover, .asset-btn:hover, .asset-icon-btn:hover, .glass-btn:hover) {
+html body.gw-signal[data-theme="light"] :is(.btn:hover, .action-btn:hover, .upload-btn:hover, .add-btn:hover, .api-link-btn:hover, .cli-quick-btn:hover, .ws-icon-btn:not(:where(.hw-btn,.btn-hw-tactile,.btn-tactile-keycap,.btn-hw-round,.hw-round-btn,.btn-segmented-item,.hw-segmented-btn,.btn-rocker-paddle,.hw-rocker-btn,.btn-slide-toggle,.hw-slide-toggle,.btn-launch-orb,.launch-orb-btn,.btn-pill-active,.btn-pill-inactive,.btn-pill-disabled)):hover, .ws-paste-btn:not(:where(.hw-btn,.btn-hw-tactile,.btn-tactile-keycap,.btn-hw-round,.hw-round-btn,.btn-segmented-item,.hw-segmented-btn,.btn-rocker-paddle,.hw-rocker-btn,.btn-slide-toggle,.hw-slide-toggle,.btn-launch-orb,.launch-orb-btn,.btn-pill-active,.btn-pill-inactive,.btn-pill-disabled)):hover, .text-button:hover, .asset-btn:hover, .asset-icon-btn:hover, .glass-btn:hover) {
   border-color: var(--sf-cyan) !important;
   background: var(--sf-cyan-soft-subtle) !important;
   color: var(--sf-cyan) !important;
@@ -5263,7 +5263,7 @@ html body.gw-signal.gw-page--task-center .asset-volume-value {
 }
 
 html body.gw-signal.gw-page--task-center :is(.longtask-trigger, .observability-tab, .asset-volume-more .btn, .observability-field input, .observability-field select, .text-button):focus-visible {
-  outline: 2px solid var(--sf-focus, var(--sf-cyan)) !important;
+  outline: 2px solid var(--sf-focus, var(--gw-focus-color,var(--sf-cyan))) !important;
   outline-offset: 2px;
 }
 
@@ -5272,7 +5272,7 @@ html body.gw-signal.gw-page--task-center #longTaskProgress .longtask-trigger:foc
 }
 
 html body.gw-signal.gw-page--task-center #longTaskProgress .longtask-trigger:focus {
-  outline: 2px solid var(--sf-focus, var(--sf-cyan)) !important;
+  outline: 2px solid var(--sf-focus, var(--gw-focus-color,var(--sf-cyan))) !important;
   outline-offset: -2px;
 }
 
@@ -5991,7 +5991,7 @@ body.gw-page--shell .workspace-context-toolbar-menu-action:focus-visible,
 body.gw-page--shell .workspace-context-tree-toggle:focus-visible,
 body.gw-page--shell .workspace-context-tree-link:focus-visible,
 body.gw-page--shell .workspace-context-tree-more:focus-visible {
-  outline: 2px solid var(--sf-focus, var(--sf-cyan));
+  outline: 2px solid var(--sf-focus, var(--gw-focus-color,var(--sf-cyan)));
   outline-offset: 2px;
 }
 body.gw-page--shell .workspace-context-toolbar-more {
@@ -6113,7 +6113,7 @@ body.gw-page--shell .workspace-context-tree-scroll {
   overscroll-behavior: contain;
   scrollbar-color: var(--sf-line-strong) transparent;
 }
-body.gw-page--shell .workspace-context-tree-scroll:focus-visible { outline: 2px solid var(--sf-focus, var(--sf-cyan)); outline-offset: -2px; }
+body.gw-page--shell .workspace-context-tree-scroll:focus-visible { outline: 2px solid var(--sf-focus, var(--gw-focus-color,var(--sf-cyan))); outline-offset: -2px; }
 body.gw-page--shell .workspace-context-tree-body { display: grid; gap: 1px; padding: 2px 0 6px; }
 body.gw-page--shell .workspace-context-tree-row {
   min-width: 0;
@@ -6250,7 +6250,7 @@ body.gw-page--shell .workspace-context-tree-control:hover { background: var(--sf
 body.gw-page--shell .workspace-context-tree-control:focus-visible,
 body.gw-page--shell .workspace-context-tree-link:focus-visible,
 body.gw-page--settings .context-preference-row input:focus-visible {
-  outline: 2px solid var(--sf-focus, var(--sf-cyan));
+  outline: 2px solid var(--sf-focus, var(--gw-focus-color,var(--sf-cyan)));
   outline-offset: -2px;
 }
 body.gw-page--shell #workspaceContextTreeCollapse[aria-expanded="false"] svg { transform: rotate(-90deg); }
@@ -6362,7 +6362,8 @@ body.gw-page--settings .context-preference-row input[type="checkbox"] { flex: 0 
   --gw-type-meta: var(--gw-type-body-sm);
 }
 /* GW-TYPE-01: keep all legacy surface text on the same approved ramp. */
-.gw-signal :where(*) { font-size: var(--gw-type-body) !important; }
+/* 正文默认继承，具体角色与共享按钮保留自己的字阶。 */
+.gw-signal { font-size:var(--gw-type-body); }
 .gw-signal :where(h1, .page-title, .hero-title, [data-type="title"]) { font-size: var(--gw-type-title) !important;  font-weight:var(--gw-weight-bold); line-height:var(--gw-leading-headline-md);}
 .gw-signal :where(h2, h3, .section-title, .panel-title, .card-title, [data-type="section"]) { font-size: var(--gw-type-section) !important;  font-weight:var(--gw-weight-medium); line-height:var(--gw-leading-headline-sm);}
 .gw-signal :where(time, code, pre, kbd, .font-mono) { font-size: var(--gw-type-meta) !important; }

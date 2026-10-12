@@ -21,6 +21,9 @@
 window.WorkbenchStoryboard = (function () {
   'use strict';
 
+  // 内置演示预览只使用内联占位，避免展示时请求外部图片。
+  const DEMO_PREVIEW = 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="640" height="360" viewBox="0 0 640 360"><rect width="640" height="360" fill="#111418"/><rect x="24" y="24" width="592" height="312" rx="12" fill="none" stroke="#534a38"/><path d="M224 220l64-72 64 48 56-64 80 88z" fill="#302c24"/><circle cx="248" cy="116" r="20" fill="#534a38"/><text x="320" y="286" text-anchor="middle" font-family="sans-serif" style="font-size:var(--gw-type-body-md,14px)" fill="#b3a68c">示例占位</text></svg>');
+
   const state = {
     shots: [
       {
@@ -30,7 +33,7 @@ window.WorkbenchStoryboard = (function () {
         shotType: '远景 · 24mm',
         dialogue: '【艾伦 独白】我们用了三百年才找到这里，而它已经在黑暗中沉睡了数个纪元。',
         duration: '4.5s',
-        img: 'https://images.unsplash.com/photo-1518709268805-4e9042af9f23?q=80&w=600&auto=format&fit=crop',
+        img: DEMO_PREVIEW,
         status: 'not_integrated'
       },
       {
@@ -40,7 +43,7 @@ window.WorkbenchStoryboard = (function () {
         shotType: '中景 · 35mm',
         dialogue: '【系统音】身份识别通过。欢迎归来，席位 #01 工程师。',
         duration: '3.2s',
-        img: 'https://images.unsplash.com/photo-1509198397868-475647b2a1e5?q=80&w=600&auto=format&fit=crop',
+        img: DEMO_PREVIEW,
         status: 'not_integrated'
       },
       {
@@ -50,7 +53,7 @@ window.WorkbenchStoryboard = (function () {
         shotType: '特写 · 85mm',
         dialogue: '【艾伦】你早就知道我会来，对吗，AURA？',
         duration: '5.0s',
-        img: 'https://images.unsplash.com/photo-1534447677768-be436bb09401?q=80&w=600&auto=format&fit=crop',
+        img: DEMO_PREVIEW,
         status: 'not_integrated'
       },
       {
@@ -60,7 +63,7 @@ window.WorkbenchStoryboard = (function () {
         shotType: '全景 · 35mm',
         dialogue: '【AURA 语音】我没有预测未来，我只是穷尽了所有因果概率的交点。',
         duration: '6.0s',
-        img: 'https://images.unsplash.com/photo-1511447333015-45b65e60f6d5?q=80&w=600&auto=format&fit=crop',
+        img: DEMO_PREVIEW,
         status: 'not_integrated'
       },
       {
@@ -70,7 +73,7 @@ window.WorkbenchStoryboard = (function () {
         shotType: '运动镜头 · 50mm',
         dialogue: '【警告音】核心显存压力告警，神经流即将反噬外部矩阵！',  // 示例台词（虚构剧情文本，非遥测读数）
         duration: '3.8s',
-        img: 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?q=80&w=600&auto=format&fit=crop',
+        img: DEMO_PREVIEW,
         status: 'not_integrated'
       },
       {
@@ -80,7 +83,7 @@ window.WorkbenchStoryboard = (function () {
         shotType: '特写 · 50mm 宽银幕',
         dialogue: '【艾伦】那么，让真正的重构法则开始运转。',
         duration: '4.0s',
-        img: 'https://images.unsplash.com/photo-1511447333015-45b65e60f6d5?q=80&w=600&auto=format&fit=crop',
+        img: DEMO_PREVIEW,
         status: 'not_integrated'
       }
     ]
@@ -91,9 +94,12 @@ window.WorkbenchStoryboard = (function () {
   function renderGrid() {
     const grid = document.getElementById('storyboardGrid');
     if (!grid) return;
+    const focused = grid.contains(document.activeElement) ? document.activeElement : null;
+    const focusedShot = focused?.closest('[data-storyboard-shot]')?.dataset.storyboardShot;
+    const focusedAction = focused?.dataset.shotAction;
 
     grid.innerHTML = state.shots.map((sh, idx) => `
-      <div class="champagne-card p-2.5 flex flex-col justify-between group transition hover:border-[#dfc384]/50">
+      <div class="champagne-card p-2.5 flex flex-col justify-between group transition hover:border-[#dfc384]/50" data-storyboard-shot="${esc(sh.id)}">
         <div>
           <!-- 头部编号与景别标签 -->
           <div class="flex items-center justify-between pb-1.5 mb-1.5 border-b border-white/5 gw-type-body-sm">
@@ -129,11 +135,11 @@ window.WorkbenchStoryboard = (function () {
         <!-- 底部快捷操作条 -->
         <div class="pt-1.5 border-t border-white/5 flex items-center justify-between gw-type-body-sm font-mono">
           <div class="flex items-center space-x-2 text-slate-400 gw-type-body-sm">
-            <button class="hover:text-white" title="上移镜头" onclick="WorkbenchStoryboard.moveShot(${idx}, -1)">&uarr;</button>
-            <button class="hover:text-white" title="下移镜头" onclick="WorkbenchStoryboard.moveShot(${idx}, 1)">&darr;</button>
+            <button type="button" class="btn-hw-round" title="上移镜头" aria-label="上移镜头" data-shot-action="up" onclick="WorkbenchStoryboard.moveShot(${idx}, -1)"><span class="btn-hw-round-inner" aria-hidden="true">&uarr;</span></button>
+            <button type="button" class="btn-hw-round" title="下移镜头" aria-label="下移镜头" data-shot-action="down" onclick="WorkbenchStoryboard.moveShot(${idx}, 1)"><span class="btn-hw-round-inner" aria-hidden="true">&darr;</span></button>
           </div>
           <div class="flex items-center space-x-1.5">
-            <button class="hw-btn hw-btn-sm" onclick="WorkbenchStoryboard.regenerateShot(${idx})">重绘画面</button>
+            <button class="hw-btn hw-btn-sm" data-shot-action="regenerate" onclick="WorkbenchStoryboard.regenerateShot(${idx})">重绘画面</button>
             <a href="production.html" class="hw-btn hw-btn-sm hw-btn-gold">进入制片</a>
           </div>
         </div>
@@ -141,6 +147,10 @@ window.WorkbenchStoryboard = (function () {
       </div>
     `).join('');
 
+    if (focusedShot && focusedAction) {
+      const card = [...grid.querySelectorAll('[data-storyboard-shot]')].find(item => item.dataset.storyboardShot === focusedShot);
+      [...(card?.querySelectorAll('[data-shot-action]') || [])].find(button => button.dataset.shotAction === focusedAction)?.focus();
+    }
     window.lucide?.createIcons();
   }
 
@@ -193,7 +203,7 @@ window.WorkbenchStoryboard = (function () {
       shotType: '特写 · 50mm',
       dialogue: '【剧本情节】补充过渡镜头与情绪留白...',
       duration: '3.0s',
-      img: 'https://images.unsplash.com/photo-1518709268805-4e9042af9f23?q=80&w=600&auto=format&fit=crop',
+      img: DEMO_PREVIEW,
       status: 'not_integrated'
     });
     renderGrid();

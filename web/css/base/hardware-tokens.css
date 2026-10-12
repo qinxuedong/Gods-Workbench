@@ -20,6 +20,14 @@
   --gw-type-body-sm: 12px;
   --gw-type-label-lg: 13px;
   --gw-type-label-md: 11px;
+  --gw-type-button-md: 12px;
+  --gw-type-button-sm: 11px;
+  --gw-type-button-xs: 9.5px;
+  --gw-danger-cap: #8c0000;
+  --gw-danger-well: #500000;
+  --gw-button-disabled-bg: #12141a;
+  --gw-button-disabled-text: #475569;
+  --gw-engraved-text: #171107;
   --gw-type-label-sm: var(--gw-type-body-sm); /* 废弃9px，兼容映射12px */
 
   /* ========================================================================= */
@@ -88,6 +96,9 @@
       --gold-shadow: #6f654c;
       --gold-dim: rgba(223, 195, 132, 0.16);
       --gold-glow: rgba(223, 195, 132, 0.35);
+      /* 键帽材质不随主题语义强调色变化。 */
+      --gw-keycap-gold: #dfc384;
+      --gw-keycap-flare: #fae2c8;
 
       /* 深黑曜石沉稳基底 */
       --chassis-bg: #090a0d;

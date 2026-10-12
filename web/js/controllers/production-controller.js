@@ -22,6 +22,9 @@
 window.WorkbenchProduction = (function () {
   'use strict';
 
+  // 内置演示预览只使用内联占位，避免展示时请求外部图片。
+  const DEMO_PREVIEW = 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="640" height="360" viewBox="0 0 640 360"><rect width="640" height="360" fill="#111418"/><rect x="24" y="24" width="592" height="312" rx="12" fill="none" stroke="#534a38"/><path d="M224 220l64-72 64 48 56-64 80 88z" fill="#302c24"/><circle cx="248" cy="116" r="20" fill="#534a38"/><text x="320" y="286" text-anchor="middle" font-family="sans-serif" style="font-size:var(--gw-type-body-md,14px)" fill="#b3a68c">示例占位</text></svg>');
+
   // 1. 内置示例目录（demoProjectCatalog）：**未接入后端**，仅用于本地演示渲染。
   //    它不是真实项目数据，不得写入任何被当作真实数据的 state 字段；
   //    无后端时由渲染层显式降级（data-gw-degradation），绝不伪装成真实数据。
@@ -48,10 +51,10 @@ window.WorkbenchProduction = (function () {
               progress: 100,
               expanded: false,
               shots: [
-                { id: 'sh-01-01', code: 'SH_01', type: '[全景]', desc: '暴雨冲刷霓虹楼顶', status: 'OK', color: 'emerald', focal: 35, img: 'https://images.unsplash.com/photo-1518709268805-4e9042af9f23?q=80&w=600&auto=format&fit=crop', prompt: 'Cinematic wide angle, cyberpunk city rooftop under torrential acid rain, dark atmosphere, volumetric amber lights.' },
-                { id: 'sh-01-02', code: 'SH_02', type: '[中景]', desc: '风衣特工立于边缘', status: 'OK', color: 'emerald', focal: 50, img: 'https://images.unsplash.com/photo-1509198397868-475647b2a1e5?q=80&w=600&auto=format&fit=crop', prompt: 'Medium shot of cyberpunk agent standing at ledge, trenchcoat fluttering in gale, anamorphic flare.' },
-                { id: 'sh-01-03', code: 'SH_03', type: '[特写]', desc: '战术目镜雨滴滑落', status: 'OK', color: 'emerald', focal: 85, img: 'https://images.unsplash.com/photo-1534447677768-be436bb09401?q=80&w=600&auto=format&fit=crop', prompt: 'Extreme close up of cybernetic eye lens, raindrops sliding across glass with HUD reflection.' },
-                { id: 'sh-01-04', code: 'SH_04', type: '[仰拍]', desc: '巡逻浮空艇掠过天际', status: 'OK', color: 'emerald', focal: 35, img: 'https://images.unsplash.com/photo-1511447333015-45b65e60f6d5?q=80&w=600&auto=format&fit=crop', prompt: 'Low angle shot, heavy police VTOL dropship passing overhead with searchlight beam cutting through fog.' }
+                { id: 'sh-01-01', code: 'SH_01', type: '[全景]', desc: '暴雨冲刷霓虹楼顶', status: 'OK', color: 'emerald', focal: 35, img: DEMO_PREVIEW, prompt: 'Cinematic wide angle, cyberpunk city rooftop under torrential acid rain, dark atmosphere, volumetric amber lights.' },
+                { id: 'sh-01-02', code: 'SH_02', type: '[中景]', desc: '风衣特工立于边缘', status: 'OK', color: 'emerald', focal: 50, img: DEMO_PREVIEW, prompt: 'Medium shot of cyberpunk agent standing at ledge, trenchcoat fluttering in gale, anamorphic flare.' },
+                { id: 'sh-01-03', code: 'SH_03', type: '[特写]', desc: '战术目镜雨滴滑落', status: 'OK', color: 'emerald', focal: 85, img: DEMO_PREVIEW, prompt: 'Extreme close up of cybernetic eye lens, raindrops sliding across glass with HUD reflection.' },
+                { id: 'sh-01-04', code: 'SH_04', type: '[仰拍]', desc: '巡逻浮空艇掠过天际', status: 'OK', color: 'emerald', focal: 35, img: DEMO_PREVIEW, prompt: 'Low angle shot, heavy police VTOL dropship passing overhead with searchlight beam cutting through fog.' }
               ]
             },
             {
@@ -66,10 +69,10 @@ window.WorkbenchProduction = (function () {
               progress: 75,
               expanded: true,
               shots: [
-                { id: 'sh-02-01', code: 'SH_01', type: '[全景]', desc: '实验室穹顶', status: 'OK', color: 'emerald', focal: 35, img: 'https://images.unsplash.com/photo-1509198397868-475647b2a1e5?q=80&w=600&auto=format&fit=crop', prompt: 'Wide shot of underground neural biotech laboratory dome, blue cryogenic pods, cables running along floor.' },
-                { id: 'sh-02-02', code: 'SH_02', type: '[特写]', desc: '神经探针接入', status: 'EDIT', color: 'champagne', focal: 50, img: 'https://images.unsplash.com/photo-1518709268805-4e9042af9f23?q=80&w=1200&auto=format&fit=crop', prompt: 'Close up, glowing neural interface probe connecting into biomechanical socket at base of skull, spark effects, amber glow.' },
-                { id: 'sh-02-03', code: 'SH_03', type: '[中景]', desc: '警报红光闪烁', status: 'SYNC', color: 'cyan', focal: 50, img: 'https://images.unsplash.com/photo-1511447333015-45b65e60f6d5?q=80&w=600&auto=format&fit=crop', prompt: 'Medium shot, warning sirens pulsing red in cleanroom, steam venting from coolant pipes.' },
-                { id: 'sh-02-04', code: 'SH_04', type: '[特写]', desc: '机械眼对焦', status: 'WAIT', color: 'slate', focal: 85, img: 'https://images.unsplash.com/photo-1534447677768-be436bb09401?q=80&w=600&auto=format&fit=crop', prompt: 'Macro lens shot, bionic aperture blades iris dilating and focusing under intense fluorescent illumination.' }
+                { id: 'sh-02-01', code: 'SH_01', type: '[全景]', desc: '实验室穹顶', status: 'OK', color: 'emerald', focal: 35, img: DEMO_PREVIEW, prompt: 'Wide shot of underground neural biotech laboratory dome, blue cryogenic pods, cables running along floor.' },
+                { id: 'sh-02-02', code: 'SH_02', type: '[特写]', desc: '神经探针接入', status: 'EDIT', color: 'champagne', focal: 50, img: DEMO_PREVIEW, prompt: 'Close up, glowing neural interface probe connecting into biomechanical socket at base of skull, spark effects, amber glow.' },
+                { id: 'sh-02-03', code: 'SH_03', type: '[中景]', desc: '警报红光闪烁', status: 'SYNC', color: 'cyan', focal: 50, img: DEMO_PREVIEW, prompt: 'Medium shot, warning sirens pulsing red in cleanroom, steam venting from coolant pipes.' },
+                { id: 'sh-02-04', code: 'SH_04', type: '[特写]', desc: '机械眼对焦', status: 'WAIT', color: 'slate', focal: 85, img: DEMO_PREVIEW, prompt: 'Macro lens shot, bionic aperture blades iris dilating and focusing under intense fluorescent illumination.' }
               ]
             },
             {
@@ -84,7 +87,7 @@ window.WorkbenchProduction = (function () {
               progress: 20,
               expanded: false,
               shots: [
-                { id: 'sh-03-01', code: 'SH_01', type: '[远景]', desc: '峡谷追逐序幕', status: 'WAIT', color: 'slate', focal: 35, img: 'https://images.unsplash.com/photo-1511447333015-45b65e60f6d5?q=80&w=600&auto=format&fit=crop', prompt: 'Extreme wide shot of canyon skiff chase across glowing electromagnetic desert.' }
+                { id: 'sh-03-01', code: 'SH_01', type: '[远景]', desc: '峡谷追逐序幕', status: 'WAIT', color: 'slate', focal: 35, img: DEMO_PREVIEW, prompt: 'Extreme wide shot of canyon skiff chase across glowing electromagnetic desert.' }
               ]
             }
           ]
@@ -116,7 +119,7 @@ window.WorkbenchProduction = (function () {
               progress: 60,
               expanded: true,
               shots: [
-                { id: 'sh-01-01', code: 'SH_01', type: '[特写]', desc: '液金灵气符文流动', status: 'EDIT', color: 'champagne', focal: 50, img: 'https://images.unsplash.com/photo-1518709268805-4e9042af9f23?q=80&w=1200&auto=format&fit=crop', prompt: 'Cyberpunk alchemy furnace ignition, liquid quantum runes pulsing over titanium cauldron, glowing amber aura.' }
+                { id: 'sh-01-01', code: 'SH_01', type: '[特写]', desc: '液金灵气符文流动', status: 'EDIT', color: 'champagne', focal: 50, img: DEMO_PREVIEW, prompt: 'Cyberpunk alchemy furnace ignition, liquid quantum runes pulsing over titanium cauldron, glowing amber aura.' }
               ]
             }
           ]
@@ -145,7 +148,7 @@ window.WorkbenchProduction = (function () {
               progress: 80,
               expanded: true,
               shots: [
-                { id: 'sh-01-01', code: 'SH_01', type: '[中景]', desc: '机械臂焊接断裂神经', status: 'OK', color: 'emerald', focal: 50, img: 'https://images.unsplash.com/photo-1518709268805-4e9042af9f23?q=80&w=1200&auto=format&fit=crop', prompt: 'Underground cybernetic clinic, robotic surgical arm welding damaged spinal neural implants, sparks.' }
+                { id: 'sh-01-01', code: 'SH_01', type: '[中景]', desc: '机械臂焊接断裂神经', status: 'OK', color: 'emerald', focal: 50, img: DEMO_PREVIEW, prompt: 'Underground cybernetic clinic, robotic surgical arm welding damaged spinal neural implants, sparks.' }
               ]
             }
           ]
@@ -164,17 +167,17 @@ window.WorkbenchProduction = (function () {
     currentShot: {
       id: 'sh-02-02',
       name: 'SC.02 · SH_02 [特写] 神经探针接入',
-      imageUrl: 'https://images.unsplash.com/photo-1518709268805-4e9042af9f23?q=80&w=1200&auto=format&fit=crop',
+      imageUrl: DEMO_PREVIEW,
       focal: 50,
       prompt: 'Close up, glowing neural interface probe connecting into biomechanical socket at base of skull, spark effects, amber glow, cinematic lighting.'
     },
     shotList: [
-      { id: 'sh-01', code: 'SH_01', type: '全景 WIDE', img: 'https://images.unsplash.com/photo-1509198397868-475647b2a1e5?q=80&w=300&auto=format&fit=crop', status: 'not_integrated' },
-      { id: 'sh-02', code: 'SH_02', type: '中景 MED', img: 'https://images.unsplash.com/photo-1511447333015-45b65e60f6d5?q=80&w=300&auto=format&fit=crop', status: 'not_integrated' },
-      { id: 'sh-03', code: 'SH_03', type: '特写 CLOSE', img: 'https://images.unsplash.com/photo-1534447677768-be436bb09401?q=80&w=300&auto=format&fit=crop', status: 'not_integrated' },
-      { id: 'sh-04', code: 'SH_04', type: '微距 MACRO', img: 'https://images.unsplash.com/photo-1518709268805-4e9042af9f23?q=80&w=300&auto=format&fit=crop', status: 'active' },
-      { id: 'sh-05', code: 'SH_05', type: '俯拍 TOP', img: 'https://images.unsplash.com/photo-1511447333015-45b65e60f6d5?q=80&w=300&auto=format&fit=crop', status: 'queued' },
-      { id: 'sh-06', code: 'SH_06', type: '过肩 OTS', img: 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?q=80&w=300&auto=format&fit=crop', status: 'not_integrated' }
+      { id: 'sh-01', code: 'SH_01', type: '全景 WIDE', img: DEMO_PREVIEW, status: 'not_integrated' },
+      { id: 'sh-02', code: 'SH_02', type: '中景 MED', img: DEMO_PREVIEW, status: 'not_integrated' },
+      { id: 'sh-03', code: 'SH_03', type: '特写 CLOSE', img: DEMO_PREVIEW, status: 'not_integrated' },
+      { id: 'sh-04', code: 'SH_04', type: '微距 MACRO', img: DEMO_PREVIEW, status: 'active' },
+      { id: 'sh-05', code: 'SH_05', type: '俯拍 TOP', img: DEMO_PREVIEW, status: 'queued' },
+      { id: 'sh-06', code: 'SH_06', type: '过肩 OTS', img: DEMO_PREVIEW, status: 'not_integrated' }
     ]
   };
 
@@ -247,11 +250,35 @@ window.WorkbenchProduction = (function () {
     switchProject(keys[nextIdx]);
   }
 
+  // 侧栏与分段选择共用当前目录状态，避免只同步外观。
+  function syncEpisodeControls() {
+    document.querySelectorAll('[data-production-episode]').forEach(button => {
+      const selected = button.dataset.productionEpisode === state.activeEpisodeId;
+      button.setAttribute('aria-pressed', String(selected));
+      if (button.classList.contains('ep-pill-btn')) {
+        button.classList.toggle('engaged', selected);
+      } else {
+        button.classList.toggle('active', selected);
+      }
+    });
+    document.querySelectorAll('[data-production-scene]').forEach(button => {
+      const scene = state.currentEpisode?.scenes?.find(item => item.id === button.dataset.productionScene);
+      const selected = scene?.id === state.activeSceneId;
+      button.classList.toggle('active', selected);
+      button.setAttribute('aria-pressed', String(selected));
+      button.setAttribute('aria-expanded', String(Boolean(scene && scene.expanded !== false)));
+    });
+  }
+
   // 3. 渲染场次镜头目录 (Scene Catalog Deck)
   function renderSceneCatalog() {
+    syncEpisodeControls();
     const listContainer = document.getElementById('sceneCatalogList');
     const tagEl = document.getElementById('catalogEpisodeTag');
     if (!listContainer || !state.currentEpisode) return;
+    const focused = listContainer.contains(document.activeElement) ? document.activeElement : null;
+    const focusShot = focused?.dataset.productionCatalogShot;
+    const focusScene = focused?.dataset.productionCatalogScene;
 
     if (tagEl) {
       const epShotCount = Number(state.currentEpisode.totalShots);
@@ -302,7 +329,7 @@ window.WorkbenchProduction = (function () {
 
               return `
                 <div class="shot-row-item group flex items-center justify-between px-2 py-1.5 rounded-lg cursor-pointer transition ${isShotActive ? 'bg-[#dfc384]/15 border border-[#dfc384]/50 shadow-[0_0_8px_rgba(223,195,132,0.15)]' : 'bg-black/40 hover:bg-white/5 border border-white/5'}"
-                     onclick="event.stopPropagation(); WorkbenchProduction.selectCatalogShot('${sc.id}', '${sh.id}')">
+                     role="button" tabindex="0" data-production-catalog-shot="${esc(sh.id)}" aria-pressed="${isShotActive}" onkeydown="if(event.target===this&&(event.key==='Enter'||event.key===' ')){event.preventDefault();event.stopPropagation();this.click()}" onclick="event.stopPropagation(); WorkbenchProduction.selectCatalogShot('${sc.id}', '${sh.id}')">
                   <div class="flex items-center space-x-2 min-w-0">
                     <span class="gw-type-body-sm font-mono font-bold ${isShotActive ? 'text-[#dfc384]' : 'text-slate-400'} shrink-0">${esc(sh.code)}</span>
                     <span class="gw-type-body-sm text-slate-300 truncate">${esc(sh.type)} ${esc(sh.desc)}</span>
@@ -319,10 +346,10 @@ window.WorkbenchProduction = (function () {
         <!-- 场次卡片: ${sc.code} -->
         <div class="champagne-card p-2.5 transition relative cursor-pointer group ${isCurrent ? 'border-[#dfc384]/55 shadow-[0_0_12px_rgba(223,195,132,0.12)]' : 'border-white/5 hover:border-white/20'}"
              onclick="WorkbenchProduction.toggleSceneCard('${sc.id}')">
-          <div class="flex items-start justify-between">
+          <div class="flex items-start justify-between" role="button" tabindex="0" data-production-catalog-scene="${esc(sc.id)}" aria-pressed="${isCurrent}" aria-expanded="${isExpanded}" onkeydown="if(event.target===this&&(event.key==='Enter'||event.key===' ')){event.preventDefault();this.click()}">
             <div class="flex items-center space-x-1.5 min-w-0">
               <span class="gw-type-body-sm font-mono font-bold px-1.5 py-0.5 rounded bg-black/60 border border-white/10 text-slate-300 shrink-0">${esc(sc.code)}</span>
-              <h4 class="gw-type-body-md font-bold text-slate-100 truncate">${esc(sc.name)}</h4>
+              <h4 class="gw-type-section text-slate-100 truncate">${esc(sc.name)}</h4>
             </div>
             <span class="gw-type-body-sm font-mono px-1.5 py-0.5 rounded shrink-0 ${statusBadgeClass}">${esc(sc.status)}</span>
           </div>
@@ -349,6 +376,10 @@ window.WorkbenchProduction = (function () {
       `;
     }).join('');
 
+    if (focusShot || focusScene) {
+      [...listContainer.querySelectorAll('[data-production-catalog-shot], [data-production-catalog-scene]')]
+        .find(button => focusShot ? button.dataset.productionCatalogShot === focusShot : button.dataset.productionCatalogScene === focusScene)?.focus();
+    }
     window.lucide?.createIcons();
   }
 
@@ -419,9 +450,11 @@ window.WorkbenchProduction = (function () {
 
     if (btn && btn.parentElement) {
       btn.parentElement.querySelectorAll('button').forEach(b => {
-        b.className = 'pill-capsule-inactive px-2.5 py-0.5 gw-type-body-sm font-mono text-slate-400 cursor-pointer ep-pill-btn';
+        b.className = 'hw-btn btn-size-sm font-mono cursor-pointer ep-pill-btn';
+        b.setAttribute('aria-pressed', 'false');
       });
-      btn.className = 'pill-capsule-active px-2.5 py-0.5 gw-type-body-sm font-mono cursor-pointer ep-pill-btn';
+      btn.className = 'hw-btn btn-size-sm engaged font-mono cursor-pointer ep-pill-btn';
+      btn.setAttribute('aria-pressed', 'true');
     }
 
     if (ep.scenes && ep.scenes.length > 0) {
@@ -437,6 +470,9 @@ window.WorkbenchProduction = (function () {
   // 7. 监视器焦距推子控制
   function setFocal(mm) {
     state.currentShot.focal = mm;
+    document.querySelectorAll('[data-production-focal]').forEach(button => {
+      button.setAttribute('aria-pressed', String(Number(button.dataset.productionFocal) === mm));
+    });
     const imgEl = document.getElementById('mainMonitorImage');
     if (imgEl) {
       imgEl.style.transform = mm === 85 ? 'scale(1.15)' : (mm === 35 ? 'scale(0.95)' : 'scale(1)');
@@ -485,7 +521,7 @@ window.WorkbenchProduction = (function () {
       progress: 0,
       expanded: true,
       shots: [
-        { id: `sh-${Date.now()}-1`, code: 'SH_01', type: '[全景]', desc: '镜头起幅建立', status: 'WAIT', color: 'slate', focal: 35, img: 'https://images.unsplash.com/photo-1518709268805-4e9042af9f23?q=80&w=600&auto=format&fit=crop', prompt: 'New cinematic establishing shot.' }
+        { id: `sh-${Date.now()}-1`, code: 'SH_01', type: '[全景]', desc: '镜头起幅建立', status: 'WAIT', color: 'slate', focal: 35, img: DEMO_PREVIEW, prompt: 'New cinematic establishing shot.' }
       ]
     };
     state.currentEpisode.scenes.push(newScene);
@@ -553,6 +589,7 @@ window.WorkbenchProduction = (function () {
     initRouting();
     renderSceneCatalog();
     renderShots();
+    setFocal(state.currentShot.focal);
     window.lucide?.createIcons();
   }
 

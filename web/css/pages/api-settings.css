@@ -27,8 +27,7 @@ body.api-settings-page {
 .api-settings-page [hidden] { display:none; }
 .api-settings-page input,
 .api-settings-page select,
-.api-settings-page textarea,
-.api-settings-page button { font:inherit; }
+.api-settings-page textarea { font:inherit; }
 .api-settings-page input:not([type="hidden"]):not([type="checkbox"]),
 .api-settings-page select,
 .api-settings-page textarea {
@@ -49,10 +48,9 @@ body.api-settings-page {
 .api-settings-page button,
 .api-settings-page a { -webkit-tap-highlight-color:transparent; }
 .api-settings-page button { cursor:pointer; }
-.api-settings-page button:disabled,
 .api-settings-page input:disabled,
 .api-settings-page select:disabled { cursor:not-allowed; color:var(--muted); background:var(--panel-raised); }
-.api-settings-page :is(button, input, select, textarea, a):focus-visible {
+.api-settings-page :is(input, select, textarea, a):focus-visible {
   outline:2px solid var(--accent); outline-offset:3px;
 }
 .api-settings-page input:focus-visible,
@@ -61,7 +59,7 @@ body.api-settings-page {
 .api-settings-page input[aria-invalid="true"] { border-color:var(--gw-error); }
 .api-settings-page a { color:var(--accent); text-decoration:underline; text-underline-offset:3px; overflow-wrap:anywhere; }
 .api-settings-page a:hover { color:var(--gold-light); }
-.api-settings-page svg { width:16px; height:16px; flex-shrink:0; }
+.provider-mark svg { width:16px; height:16px; flex-shrink:0; }
 .page { padding:16px; }
 .workspace-embedded .page { padding:0; }
 .wrap { width:100%; margin:0; }
@@ -91,11 +89,8 @@ body.api-settings-page {
 .provider-list { display:flex; flex-direction:column; gap:8px; margin-bottom:16px; }
 .provider-card {
   width:100%; min-width:0; display:flex; align-items:center; gap:10px;
-  padding:12px; text-align:left; color:var(--text); background:transparent;
-  border:1px solid var(--line); border-radius:var(--radius);
+  min-height:48px; padding:12px; justify-content:flex-start; text-align:left; white-space:normal;
 }
-.provider-card:hover { background:var(--panel-raised); }
-.provider-card.active { border-color:var(--accent); background:rgba(223,195,132,.08); }
 .provider-card.active .provider-name { color:var(--accent); }
 .provider-card.is-disabled { color:var(--muted); }
 .provider-info { min-width:0; flex:1; }
@@ -160,8 +155,7 @@ body.api-settings-page {
    此处仅保留仍被 HTML/JS 引用的语义钩子：
    .key-clear（清除 Key 危险钮，红色态）、.picker-cat-tab（模型选择器分类页签，
    基类走 hw-btn hw-btn-sm，选中态见 .picker-cat-tab.active）。 */
-.key-clear { color:var(--gw-error); }
-.key-clear:hover { border-color:var(--gw-error); }
+/* 按钮材质、禁用和焦点统一由hardware-buttons.css提供。 */
 /* api-settings 页按钮按 workshop 基准渲染（无 min-height，~28-35px），
    与全站 hw-btn 一致；可读触控下限由 e2e buttonHeight 阈值保障。 */
 .empty,
@@ -249,18 +243,20 @@ body.api-settings-page {
 
 /***** 浮窗沿用FloatingDismissal负责行为，CSS只负责结构。 *****/
 .picker-overlay { display:none; position:fixed; inset:0; align-items:center; justify-content:center; padding:20px; background:rgba(0,0,0,.72); z-index:60; }
-.picker-modal { display:flex; flex-direction:column; width:min(960px,100%); max-height:calc(100dvh - 40px); background:var(--panel); border:1px solid var(--line); border-radius:8px; box-shadow:0 8px 24px rgba(0,0,0,.3); min-width:0; }
+.picker-modal { display:flex; flex-direction:column; width:min(960px,100%); max-height:calc(100dvh - 40px); background:var(--panel); border:1px solid var(--line); border-radius:8px; box-shadow:0 8px 24px rgba(0,0,0,.3); min-width:0; overflow:auto; }
 .picker-head { display:flex; align-items:flex-start; justify-content:space-between; gap:16px; padding:20px; border-bottom:1px solid var(--line); }
 .picker-toolbar { display:flex; flex-wrap:wrap; align-items:center; gap:12px; padding:16px 20px; }
 .picker-search { flex:1 1 280px; }
-.picker-cat-tabs { display:flex; flex-wrap:wrap; gap:8px; }
-.picker-cat-tab.active { border-color:var(--accent); color:var(--accent); }
+.picker-cat-tabs { display:flex; flex-wrap:wrap; gap:4px; }
+.picker-cat-tab { min-height:26px; }
 .cat-count { color:var(--muted); font-size:var(--gw-type-body-sm); }
 .picker-summary { display:flex; flex-wrap:wrap; align-items:center; gap:8px; padding:0 20px 12px; }
 .picker-summary-title { color:var(--muted);   font-size: var(--gw-type-body-md); line-height: var(--gw-leading-body-md); font-weight: var(--gw-weight-medium); letter-spacing: 0; text-transform: none;}
-.picker-body { overflow:auto; min-height:0; padding:0 20px; }
-.picker-row { display:flex; align-items:center; gap:12px; padding:12px 0; border-bottom:1px solid var(--line); }
-.picker-checkbox { flex-shrink:0; accent-color:var(--accent); width:18px; height:18px; }
+.picker-body { flex:0 0 auto; overflow:auto; min-height:88px; max-height:50dvh; padding:0 20px; }
+.picker-row { display:flex; width:100%; align-items:center; justify-content:flex-start; gap:12px; min-height:44px; height:auto; padding:12px; text-align:left; white-space:normal; margin-bottom:6px; }
+.picker-checkbox { display:inline-flex; align-items:center; justify-content:center; flex-shrink:0; color:var(--accent); width:18px; height:18px; border:1px solid var(--line-strong); border-radius:4px; }
+.picker-checkbox svg { width:14px; height:14px; opacity:0; }
+.picker-row[aria-pressed="true"] .picker-checkbox svg { opacity:1; }
 .picker-model-label { display:flex; flex:1; align-items:center; gap:12px; min-width:0; cursor:pointer; }
 .picker-model-name,
 .picker-model-id { overflow-wrap:anywhere; }
@@ -314,10 +310,34 @@ body.api-settings-page {
 .picker-toolbar,
 .picker-foot { padding:16px; }
 .picker-body { padding:0 16px; }
-.api-settings-page button { min-height:44px; }
+/* 共享按钮族保留原始几何；平台/模型行用自身布局提供较大命中区。 */
 }
 @media (max-width:480px) {
 .cli-quick-list { grid-template-columns:minmax(0,1fr); }
+/* 真实 200% 下宿主 iframe 可能只有约120px；快捷 CLI 按钮允许文字折行，不能把页面撑出横向滚动。 */
+.api-settings-page .cli-quick-list .hw-btn { min-width:0; width:100%; height:auto; min-height:26px; padding:4px 6px; line-height:1.2; white-space:normal; }
+.api-settings-page .cli-quick-list .hw-btn span { min-width:0; overflow-wrap:anywhere; }
+}
+@media (max-width:240px) {
+/* 真实 200% 下仅约120px的内嵌视窗：缩减嵌套留白，操作文字允许折行，保留全部数据。 */
+.api-settings-page :is(.sidebar,.content,.block) { padding:6px; }
+.api-settings-page .provider-list { flex-direction:column; overflow:visible; }
+.api-settings-page .provider-card { min-width:0; width:100%; flex-shrink:1; padding:6px; }
+.api-settings-page .provider-card-sortable { grid-template-columns:14px minmax(0,1fr); gap:4px; }
+.api-settings-page .provider-card-sortable :is(.provider-info,.provider-side-meta) { grid-column:1/-1; min-width:0; }
+.api-settings-page .provider-side-meta { flex-wrap:wrap; }
+.api-settings-page .provider-banner-inner { flex-wrap:wrap; }
+.api-settings-page :is(.content-head,.content-head > div,.models-toolbar,.block-head) { min-width:0; overflow-wrap:anywhere; }
+.api-settings-page .key-input-line { flex-wrap:wrap; }
+.api-settings-page .key-input-line .field-frame { flex-basis:100%; }
+.api-settings-page :is(.sidebar,.content-actions,.verify-action-row,.models-toolbar,.jimeng-actions,.picker-foot) .hw-btn {
+  max-width:100%; min-width:0; height:auto; min-height:32px; padding:4px 6px; white-space:normal;
+}
+.api-settings-page .hw-btn span { min-width:0; overflow-wrap:anywhere; }
+.api-settings-page .picker-overlay { padding:4px; }
+.api-settings-page :is(.picker-head,.picker-toolbar,.picker-foot) { padding:6px; }
+.api-settings-page .picker-body { padding:0 6px; }
+.api-settings-page .picker-summary { padding:0 6px 6px; }
 }
 @media (prefers-reduced-motion:reduce) {
 *,
@@ -345,3 +365,17 @@ body.api-settings-page {
 .api-settings-page small, .api-settings-page [data-type="caption"], .api-settings-page [data-type="meta"] { font-size:var(--gw-type-body-sm); line-height:var(--gw-leading-body-sm); font-weight:var(--gw-weight-regular); }
 
 .api-settings-page :is(.provider-side-meta,.cli-quick-note,.provider-key-desc,.ms-hint,.editor-sub,.block-desc,.popup-sub) { font-size:var(--gw-type-body-sm); line-height:var(--gw-leading-body-sm); font-weight:var(--gw-weight-regular); }
+
+
+/* B5：弹层操作和长错误在窄屏中换行，避免固定内容挤掉关闭键。 */
+.picker-head > div { min-width: 0; overflow-wrap: anywhere; }
+.picker-foot { flex-wrap: wrap; flex-shrink: 0; }
+.picker-head, .picker-toolbar, .picker-summary { flex-shrink: 0; }
+.jimeng-help-toolbar { flex-wrap: wrap; }
+.jimeng-help-toolbar select { min-width: 0; max-width: 100%; flex: 1 1 180px; }
+.jimeng-help-output { min-height: 0; }
+@media (max-width: 760px) {
+  .provider-key-head { flex-wrap: wrap; }
+  .provider-key-title, .jimeng-cli-head { min-width: 0; overflow-wrap: anywhere; }
+  .picker-cat-tabs { max-width: 100%; }
+}

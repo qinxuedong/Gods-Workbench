@@ -1,14 +1,14 @@
 <!DOCTYPE html>
 <html lang="zh-CN" class="h-full overflow-hidden">
 <head>
-  <link rel="stylesheet" href="/static/css/base/hardware-tokens.css">
+  <link rel="stylesheet" href="/static/css/base/hardware-tokens.css?ui=20261011-final">
   <link rel="stylesheet" href="/static/vendor/css/fonts.css?v=v0.0.1-alpha-2026">
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>分镜画布矩阵 · Gods' Workbench</title>
   <script src="/static/vendor/js/tailwindcss-cdn.js?v=3.4.17&amp;build=d11003b2f6fb"></script>
   <script src="/static/vendor/js/lucide.js?v=1.16.0"></script>
-  <link rel="stylesheet" href="/static/css/base/hardware-design-system.css">
+  <link rel="stylesheet" href="/static/css/base/hardware-design-system.css?ui=20261011-final">
   <link rel="stylesheet" href="/static/css/pages/canvas-workspace.css?v=20261010-v1">
   <style>
     body.embedded > header { display: none; }
@@ -17,12 +17,10 @@
     .canvas-overview-frame { display: block; flex: 1 1 auto; width: 100%; min-height: 0; border: 0; background: #090a0d; }
     .canvas-overview-frame[hidden], .storyboard-matrix-content[hidden], .canvas-workspace-stage[hidden], .tool-panel-container[hidden] { display: none !important; }
     .canvas-rail-group { margin: 6px 8px; padding: 6px; border: 1px solid rgba(255,255,255,.08); border-radius: 8px; background: #0b0d12; }
-    .canvas-rail-heading { padding: 3px 7px 5px; color: #dfc384; font-family: var(--gw-font-mono); font-size: var(--gw-type-body-sm) !important; font-weight: 700; line-height: 1.2; letter-spacing: 0.5px; }
+    .canvas-rail-heading { padding: 3px 7px 5px; color: #dfc384; font-family: var(--gw-font-body); font-size: var(--gw-type-section); font-weight: var(--gw-weight-medium); line-height: var(--gw-leading-headline-sm); letter-spacing: 0; }
     .canvas-rail-heading.tools { margin-top: 2px; color: #dfc384; }
-    .canvas-rail-item { width: 100%; min-height: 34px; margin: 2px 0; padding: 6px 8px; display: flex; align-items: center; gap: 8px; border: 1px solid rgba(255,255,255,.08); border-radius: 8px; background: #101319; color: #f8fafc; font-family: var(--gw-font-body); font-size: var(--gw-type-body-md) !important; font-weight: var(--gw-weight-medium); line-height: var(--gw-leading-body-md); text-align: left; cursor: pointer; transition: border-color .16s ease, box-shadow .16s ease, color .16s ease, background-color .16s ease; }
-    .canvas-rail-item:hover { color: #eddab3; border-color: rgba(223,195,132,.45); background: #14171f; }
-    .canvas-rail-item.active { color: #dfc384; border-color: #dfc384; background: #14171f; box-shadow: 0 0 8px rgba(223,195,132,.12), inset 0 0 0 1px rgba(223,195,132,.08); }
-    .canvas-rail-item:focus-visible { outline: 2px solid rgba(223,195,132,.72); outline-offset: 2px; }
+    /* 轨道按钮使用常规键帽材质；拟物胶囊仅限固定顶栏导航。 */
+    .canvas-rail-item { width: 100%; margin: 2px 0; justify-content: flex-start; text-align: left; }
     .canvas-rail-item > svg { width: 14px; height: 14px; flex: 0 0 14px; }
     #storyboardWorkspace, #storyboardMain { min-width: 0; }
     @media (max-width: 760px) {
@@ -58,12 +56,41 @@
       body.canvas-overview-mode .canvas-rail-item {
         width: auto;
         min-width: 116px;
-        min-height: 44px;
         margin: 0;
         flex: 0 0 auto;
       }
       body.canvas-overview-mode #storyboardMain { overflow: hidden; }
       body.canvas-overview-mode .canvas-overview-frame { min-width: 0; }
+    }
+
+    @media (max-width: 1056px) {
+      #storyboardWorkspace { flex-direction: column; overflow-y: auto; }
+      #storyboardRail { width: 100%; height: auto; max-height: 300px; border-right: 0; border-bottom: 1px solid #191c24; }
+      #railScrollArea { max-height: 220px; overflow-y: auto; }
+      #storyboardMain { width: 100%; min-height: 600px; overflow: visible; }
+    }
+    @media (max-width: 760px) {
+      #storyboardWorkspace { overflow-y: auto; }
+      #storyboardRail { max-height: 220px; }
+      #railScrollArea { display: flex; gap: 6px; overflow-x: auto; overflow-y: hidden; padding: 4px; }
+      #railScrollArea .canvas-rail-group { display: contents; }
+      #railScrollArea .canvas-rail-heading { display: none; }
+      #railScrollArea #storyboardSceneNavContainer { flex: 0 0 260px; width: 260px; }
+      #railScrollArea .canvas-rail-item { width: auto; min-width: 122px; flex: 0 0 auto; margin: 0; }
+      #storyboardMain { min-height: 560px; padding: 8px; }
+    }
+
+    @media (max-width: 1056px) {
+      #storyboardGrid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      #storyboardMatrixContent > .champagne-card { flex-wrap: wrap; gap: 8px; }
+      #storyboardMatrixContent > .champagne-card > div:first-child { flex-wrap: wrap; gap: 8px; min-width: 0; }
+      #storyboardTitle { overflow-wrap: anywhere; }
+      #storyboardGrid [data-storyboard-shot] { min-width: 0; }
+    }
+    @media (max-width: 760px) {
+      #storyboardGrid { grid-template-columns: minmax(0, 1fr); }
+      #railScrollArea { height: auto; flex: none; align-items: flex-start; }
+      #railScrollArea #storyboardSceneNavContainer { max-height: 104px; overflow-y: auto; }
     }
   </style>
 </head>
@@ -77,10 +104,8 @@
     <div class="flex items-center justify-between relative z-30 px-1 pt-0.5">
       <div class="flex items-center space-x-2 shrink-0">
                 <!-- 智能体核心按钮 (原关机键位置) -->
-        <button class="w-8 h-8 rounded-full bg-gradient-to-tr from-cyan-400 via-fuchsia-500 to-amber-300 p-0.5 shadow-[0_0_12px_rgba(236,72,153,0.7),0_0_6px_rgba(34,211,238,0.9)] hover:scale-110 active:scale-95 transition flex items-center justify-center cursor-pointer shrink-0 launch-orb-btn" title="智能体核心总线 (Agent Core)">
-          <div class="w-full h-full rounded-full bg-black/85 flex items-center justify-center">
-            <div class="w-3 h-3 rounded-full bg-gradient-to-r from-cyan-300 to-pink-400 animate-spin"></div>
-          </div>
+        <button class="launch-orb-btn" title="智能体核心总线 (Agent Core)" aria-label="智能体核心总线">
+          <div class="orb-core"><span></span></div>
         </button>
         <div class="h-4 w-px bg-white/10"></div>
         <div class="flex items-center space-x-1.5">
@@ -112,12 +137,12 @@
 
       <div class="flex items-center space-x-2 shrink-0">
         <div class="flex items-center space-x-1.5 bg-[#07080b] px-3 py-1 rounded-lg border border-white/10 shadow-inner">
-          <button class="hw-btn hw-btn-icon transition"><i data-lucide="chevron-left" class="w-3.5 h-3.5"></i></button>
+          <button type="button" class="transition btn-hw-round" aria-label="上一项"><span class="btn-hw-round-inner"><i data-lucide="chevron-left" class="w-3.5 h-3.5" aria-hidden="true"></i></span></button>
           <div class="flex items-center space-x-2 px-1.5">
             <span class="w-1.5 h-1.5 rounded-full bg-[#dfc384] shadow-[0_0_6px_#dfc384] animate-pulse"></span>
             <span class="gw-type-body-sm font-mono font-bold text-[#eddab3]">STORYBOARD CANVAS MATRIX · 32-GRID</span>
           </div>
-          <button class="hw-btn hw-btn-icon transition"><i data-lucide="chevron-right" class="w-3.5 h-3.5"></i></button>
+          <button type="button" class="transition btn-hw-round" aria-label="下一项"><span class="btn-hw-round-inner"><i data-lucide="chevron-right" class="w-3.5 h-3.5" aria-hidden="true"></i></span></button>
         </div>
       </div>
 
@@ -138,9 +163,9 @@
         </div>
 
         <div class="flex items-center space-x-1 bg-[#090b0e] p-1 rounded-lg border border-white/5">
-          <button class="hw-round-btn w-7 h-7" title="停止"><div class="hw-round-inner w-4 h-4"><div class="w-1.5 h-1.5 bg-slate-400 rounded-sm"></div></div></button>
-          <button class="hw-round-btn active w-7 h-7" title="运行"><div class="hw-round-inner w-4 h-4"><svg class="w-2.5 h-2.5 text-[#dfc384]" fill="currentColor" viewBox="0 0 24 24"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg></div></button>
-          <button class="hw-round-btn w-7 h-7" title="下一步"><div class="hw-round-inner w-4 h-4"><i data-lucide="skip-forward" class="w-2.5 h-2.5 text-slate-400"></i></div></button>
+          <button type="button" class="hw-round-btn" title="停止" aria-label="停止"><div class="hw-round-inner"><div class="w-1.5 h-1.5 bg-slate-400 rounded-sm"></div></div></button>
+          <button type="button" class="hw-round-btn active" title="运行" aria-label="运行"><div class="hw-round-inner"><svg class="w-2.5 h-2.5 text-[#dfc384]" fill="currentColor" viewBox="0 0 24 24"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg></div></button>
+          <button type="button" class="hw-round-btn" title="下一步" aria-label="下一步"><div class="hw-round-inner"><i data-lucide="skip-forward" class="w-2.5 h-2.5 text-slate-400"></i></div></button>
         </div>
 
         <div class="h-4 w-px bg-white/10"></div>
@@ -148,7 +173,7 @@
           <span class="w-1.5 h-1.5 rounded-full bg-[#dfc384] shadow-[0_0_6px_#dfc384]"></span>
           <span id="masterDeckClock">00:00:00</span>
         </div>
-        <button type="button" id="masterDeckDate" class="shrink-0 min-w-[76px] px-2.5 py-1.5 rounded bg-[#06070a] border border-[#dfc384]/45 font-mono gw-type-body-md text-[#eddab3] font-bold shadow-inner flex items-center justify-center space-x-1.5 hover:border-[#dfc384] transition" title="打开项目排期日历" aria-label="打开项目排期日历"><i data-lucide="calendar-days" class="w-3.5 h-3.5 text-[#dfc384]" aria-hidden="true"></i><span class="text-slate-500" id="masterDeckDateMonth">---</span><span id="masterDeckDateDay">--</span></button>
+        <button type="button" id="masterDeckDate" class="hw-btn shrink-0 min-w-[76px]" title="打开项目排期日历" aria-label="打开项目排期日历"><i data-lucide="calendar-days" class="w-3.5 h-3.5 text-[#dfc384]" aria-hidden="true"></i><span class="text-slate-500" id="masterDeckDateMonth">---</span><span id="masterDeckDateDay">--</span></button>
       </div>
     </div>
 
@@ -220,8 +245,8 @@
       <div class="flex items-center space-x-3 shrink-0">
         <div class="h-3.5 w-px bg-white/10"></div>
                 <!-- 拟物头像键帽 (原智能体核心位置，替换左下角登录用户，无文字只显头像) -->
-        <div class="hw-avatar-keycap ml-1 cursor-pointer hover:scale-105 active:scale-95 transition" title="认证状态未接入：点击打开认证中心查看真实登录状态" data-gw-identity="unverified">
-          <div class="hw-avatar-keycap-inner">
+        <div class="hw-avatar-keycap ml-1 cursor-pointer transition btn-hw-round" title="认证状态未接入：点击打开认证中心查看真实登录状态" data-gw-identity="unverified" role="button" tabindex="0" aria-label="打开认证中心">
+          <div class="hw-avatar-keycap-inner btn-hw-round-inner">
             <i data-lucide="shield-check" class="w-4 h-4 text-[#eddab3]"></i>
           </div>
           <span class="hw-avatar-keycap-status"></span>
@@ -237,19 +262,19 @@
         <!-- 分组一：全局画布 -->
         <section class="canvas-rail-group" aria-label="全局画布">
           <div class="canvas-rail-heading">全局画布</div>
-          <button class="canvas-rail-item active" data-rail-type="canvas" data-canvas-rail="all" type="button" onclick="openCanvasOverview(this, 'all')"><i data-lucide="layout-grid" class="w-3.5 h-3.5"></i><span>画布首页</span></button>
-          <button class="canvas-rail-item" data-rail-type="canvas" data-canvas-rail="classic" type="button" onclick="openCanvasOverview(this, 'classic')"><i data-lucide="sparkles" class="w-3.5 h-3.5"></i><span>智能画布</span></button>
-          <button class="canvas-rail-item" data-rail-type="canvas" data-canvas-rail="project" type="button" onclick="openCanvasOverview(this, 'project')"><i data-lucide="folder-kanban" class="w-3.5 h-3.5"></i><span>项目画布</span></button>
-          <button class="canvas-rail-item" data-rail-type="canvas" data-canvas-rail="reference" type="button" onclick="openCanvasOverview(this, 'reference')"><i data-lucide="image" class="w-3.5 h-3.5"></i><span>参考画布</span></button>
+          <button class="canvas-rail-item active hw-btn engaged" data-rail-type="canvas" data-canvas-rail="all" type="button" onclick="openCanvasOverview(this, 'all')" aria-pressed="true"><i data-lucide="layout-grid" class="w-3.5 h-3.5"></i><span>画布首页</span></button>
+          <button class="canvas-rail-item hw-btn" data-rail-type="canvas" data-canvas-rail="classic" type="button" onclick="openCanvasOverview(this, 'classic')" aria-pressed="false"><i data-lucide="sparkles" class="w-3.5 h-3.5"></i><span>智能画布</span></button>
+          <button class="canvas-rail-item hw-btn" data-rail-type="canvas" data-canvas-rail="project" type="button" onclick="openCanvasOverview(this, 'project')" aria-pressed="false"><i data-lucide="folder-kanban" class="w-3.5 h-3.5"></i><span>项目画布</span></button>
+          <button class="canvas-rail-item hw-btn" data-rail-type="canvas" data-canvas-rail="reference" type="button" onclick="openCanvasOverview(this, 'reference')" aria-pressed="false"><i data-lucide="image" class="w-3.5 h-3.5"></i><span>参考画布</span></button>
         </section>
 
         <!-- 分组二：创作工具箱 -->
         <section class="canvas-rail-group" aria-label="创作工具箱">
           <div class="canvas-rail-heading tools">创作工具</div>
-          <button class="canvas-rail-item" data-rail-type="tool" data-tool-id="storyboard" type="button" onclick="switchToolTab(this, 'storyboard')"><i data-lucide="film" class="w-3.5 h-3.5"></i><span>分镜矩阵 (4幕)</span></button>
-          <button class="canvas-rail-item" data-rail-type="tool" data-tool-id="radar" type="button" onclick="switchToolTab(this, 'radar')"><i data-lucide="compass" class="w-3.5 h-3.5"></i><span>机位雷达 (Previs)</span></button>
-          <button class="canvas-rail-item" data-rail-type="tool" data-tool-id="palette" type="button" onclick="switchToolTab(this, 'palette')"><i data-lucide="palette" class="w-3.5 h-3.5"></i><span>色彩管理</span></button>
-          <button class="canvas-rail-item" data-rail-type="tool" data-tool-id="prompts" type="button" onclick="switchToolTab(this, 'prompts')"><i data-lucide="sparkles" class="w-3.5 h-3.5"></i><span>提示词助手</span></button>
+          <button class="canvas-rail-item hw-btn" data-rail-type="tool" data-tool-id="storyboard" type="button" onclick="switchToolTab(this, 'storyboard')" aria-pressed="false"><i data-lucide="film" class="w-3.5 h-3.5"></i><span>分镜矩阵 (4幕)</span></button>
+          <button class="canvas-rail-item hw-btn" data-rail-type="tool" data-tool-id="radar" type="button" onclick="switchToolTab(this, 'radar')" aria-pressed="false"><i data-lucide="compass" class="w-3.5 h-3.5"></i><span>机位雷达 (Previs)</span></button>
+          <button class="canvas-rail-item hw-btn" data-rail-type="tool" data-tool-id="palette" type="button" onclick="switchToolTab(this, 'palette')" aria-pressed="false"><i data-lucide="palette" class="w-3.5 h-3.5"></i><span>色彩管理</span></button>
+          <button class="canvas-rail-item hw-btn" data-rail-type="tool" data-tool-id="prompts" type="button" onclick="switchToolTab(this, 'prompts')" aria-pressed="false"><i data-lucide="sparkles" class="w-3.5 h-3.5"></i><span>提示词助手</span></button>
         </section>
 
         <!-- 分镜场次目录（仅在分镜矩阵工具激活时展示） -->
@@ -293,7 +318,7 @@
             <div class="h-3.5 w-px bg-white/10"></div>
             <div class="flex items-center space-x-2">
               <i data-lucide="layout-template" class="w-4 h-4 text-[#dfc384]"></i>
-              <h2 class="gw-type-headline-md font-bold text-slate-100" id="workspaceCanvasTitle">当前画布</h2>
+              <h2 class="text-slate-100 gw-type-section" id="workspaceCanvasTitle">当前画布</h2>
               <span class="gw-type-body-sm font-mono px-2 py-0.5 rounded bg-black/60 border border-[#dfc384]/30 text-[#eddab3]" id="workspaceCanvasIdTag">cv-xxxx</span>
               <span class="gw-type-body-sm font-mono text-slate-400" id="workspaceCanvasVersion">v1</span>
             </div>
@@ -326,7 +351,7 @@
           <div class="flex items-center space-x-3">
             <div class="flex items-center space-x-2">
               <i data-lucide="film" class="w-4 h-4 text-[#dfc384]"></i>
-              <h2 class="gw-type-headline-md font-bold text-slate-100" id="storyboardTitle">第 03 幕 · 钛金圣殿对峙 (共 6 个分镜)</h2>
+              <h2 class="text-slate-100 gw-type-title" id="storyboardTitle">第 03 幕 · 钛金圣殿对峙 (共 6 个分镜)</h2>
             </div>
             <div class="h-3.5 w-px bg-white/10"></div>
             <span class="gw-type-body-sm font-mono text-amber-300" data-gw-degradation="not_integrated">渲染端点未接入（未纳入当前切片）</span>
@@ -358,7 +383,7 @@
         <div class="champagne-card p-2 flex items-center justify-between shrink-0">
           <div class="flex items-center space-x-2">
             <i data-lucide="wrench" class="w-4 h-4 text-[#dfc384]" id="toolPanelIcon"></i>
-            <h2 class="gw-type-headline-md font-bold text-slate-100" id="toolPanelTitle">创作工具</h2>
+            <h2 class="text-slate-100 gw-type-section" id="toolPanelTitle">创作工具</h2>
           </div>
           <span class="gw-type-body-sm font-mono text-[#dfc384]">GODS' TOOLKIT</span>
         </div>
@@ -408,6 +433,8 @@
 
       document.querySelectorAll('#storyboardRail .canvas-rail-item').forEach(item => {
         item.classList.toggle('active', item === button);
+        item.classList.toggle('engaged', item === button);
+        item.setAttribute('aria-pressed', String(item === button));
       });
 
       if (frame) {
@@ -430,6 +457,8 @@
 
       document.querySelectorAll('#storyboardRail .canvas-rail-item').forEach(item => {
         item.classList.toggle('active', item === button);
+        item.classList.toggle('engaged', item === button);
+        item.setAttribute('aria-pressed', String(item === button));
       });
 
       if (toolId === 'storyboard') {
@@ -459,7 +488,7 @@
             <div class="w-16 h-16 rounded-2xl bg-[#dfc384]/10 border border-[#dfc384]/30 flex items-center justify-center mx-auto text-[#dfc384]">
               <i data-lucide="compass" class="w-8 h-8"></i>
             </div>
-            <h3 class="gw-type-headline-md font-bold text-slate-100">原生 2D HTML5 Canvas 机位雷达</h3>
+            <h3 class="text-slate-100 gw-type-section">原生 2D HTML5 Canvas 机位雷达</h3>
             <p class="text-slate-400 gw-type-body-sm leading-relaxed">
               支持在网格标尺舞台上拖拽摄像机视锥箭头与演员目标点，实时解算视角 FOV 与俯仰角，导出标准 CameraCtrl / Wan2.1 轨迹 JSON。
             </p>
@@ -475,7 +504,7 @@
             <div class="w-16 h-16 rounded-2xl bg-[#38bdf8]/10 border border-[#38bdf8]/30 flex items-center justify-center mx-auto text-[#38bdf8]">
               <i data-lucide="palette" class="w-8 h-8"></i>
             </div>
-            <h3 class="gw-type-headline-md font-bold text-slate-100">黑金影视色彩调色系统</h3>
+            <h3 class="text-slate-100 gw-type-section">黑金影视色彩调色系统</h3>
             <p class="text-slate-400 gw-type-body-sm leading-relaxed">
               统一管理影视镜头色调预设、LUT 配置文件与调色板，确保项目全链路视觉一致性。
             </p>
@@ -488,7 +517,7 @@
             <div class="w-16 h-16 rounded-2xl bg-[#c084fc]/10 border border-[#c084fc]/30 flex items-center justify-center mx-auto text-[#c084fc]">
               <i data-lucide="sparkles" class="w-8 h-8"></i>
             </div>
-            <h3 class="gw-type-headline-md font-bold text-slate-100">影视镜头提示词结构化生成器</h3>
+            <h3 class="text-slate-100 gw-type-section">影视镜头提示词结构化生成器</h3>
             <p class="text-slate-400 gw-type-body-sm leading-relaxed">
               集成景别、机位角度、灯光氛围、画风品质等影视术语标准化模板，一键赋能工作流。
             </p>
@@ -527,7 +556,10 @@
       if (event.data?.type === 'canvas-filter') {
         frame?.contentWindow?.postMessage(event.data, location.origin);
         document.querySelectorAll('[data-canvas-rail]').forEach(item => {
-          item.classList.toggle('active', item.dataset.canvasRail === event.data.filter);
+          const selected = item.dataset.canvasRail === event.data.filter;
+          item.classList.toggle('active', selected);
+          item.classList.toggle('engaged', selected);
+          item.setAttribute('aria-pressed', String(selected));
         });
       } else if (event.data?.type === 'canvas-open') {
         // Task 3: 捕获打开画布事件并进入画布工作台
@@ -543,7 +575,10 @@
       if (sceneNavContainer) sceneNavContainer.style.display = 'none';
       if (exportFooter) exportFooter.style.display = 'none';
 
-      document.querySelectorAll('#storyboardRail .canvas-rail-item').forEach(item => item.classList.remove('active'));
+      document.querySelectorAll('#storyboardRail .canvas-rail-item').forEach(item => {
+        item.classList.remove('active', 'engaged');
+        item.setAttribute('aria-pressed', 'false');
+      });
 
       if (workspaceStage) {
         workspaceStage.hidden = false;
@@ -566,6 +601,7 @@
     })();
   </script>
   <script src="/static/js/core/degradation.js?v=v0.0.1-alpha-2026"></script>
+  <script src="/static/js/core/floating-dismissal.js?v=v0.0.1-alpha-2026&m3=floating-dismissal"></script>
   <script src="/static/js/core/hardware-telemetry.js?v=20261008-auth6"></script>
   <script src="/static/js/controllers/storyboard-controller.js"></script>
   <script src="/static/js/modules/canvas-workspace.js?v=20261010-v1"></script>

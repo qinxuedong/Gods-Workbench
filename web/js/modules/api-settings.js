@@ -450,7 +450,7 @@ function renderProviderList(){
         const protocolLabel = String(item.protocol || 'openai').toUpperCase();
         if(item.id === 'modelscope'){
             return `
-                <button class="provider-card provider-card-banner ${active} ${stateClass}" type="button" onclick="selectProvider('${escapeHtml(item.id)}')">
+                <button class="btn-segmented-item provider-card provider-card-banner ${active} ${stateClass}" aria-pressed="${item.id === selectedId}" type="button" onclick="selectProvider('${escapeHtml(item.id)}')">
                     <span class="provider-banner-inner">
                         <span class="provider-logo-wrap">
                             <span class="provider-logo-fallback">ModelScope</span>
@@ -462,7 +462,7 @@ function renderProviderList(){
         }
         if(item.id === 'volcengine'){
             return `
-                <button class="provider-card provider-card-banner ${active} ${stateClass}" type="button" onclick="selectProvider('${escapeHtml(item.id)}')">
+                <button class="btn-segmented-item provider-card provider-card-banner ${active} ${stateClass}" aria-pressed="${item.id === selectedId}" type="button" onclick="selectProvider('${escapeHtml(item.id)}')">
                     <span class="provider-banner-inner">
                         <span class="provider-logo-wrap">
                             <span class="provider-logo-fallback">火山引擎</span>
@@ -473,7 +473,7 @@ function renderProviderList(){
             `;
         }
         return `
-            <button class="provider-card provider-card-sortable ${active} ${stateClass}" type="button" onclick="selectProvider('${escapeHtml(item.id)}')"${providerDragAttrs(item)}>
+            <button class="btn-segmented-item provider-card provider-card-sortable ${active} ${stateClass}" aria-pressed="${item.id === selectedId}" type="button" onclick="selectProvider('${escapeHtml(item.id)}')"${providerDragAttrs(item)}>
                 <span class="provider-drag-handle" aria-hidden="true"><i data-lucide="grip-vertical" class="w-3.5 h-3.5"></i></span>
                 <span class="provider-mark"><i data-lucide="${item.has_key ? 'key-round' : 'key'}" class="w-4 h-4"></i></span>
                 <span class="provider-info">
@@ -686,7 +686,7 @@ function setJimengActionBusy(busy){
     jimengActionBusy = Boolean(busy);
     ['jimengLoginBtn', 'jimengCreditBtn', 'jimengLogoutBtn'].forEach(id => {
         const button = document.getElementById(id);
-        if(button) button.disabled = jimengActionBusy;
+        if(button){ button.disabled = jimengActionBusy; button.setAttribute('aria-busy', String(jimengActionBusy)); }
     });
 }
 function clearJimengPoll({invalidate=false, clearBox=false}={}){
@@ -1062,7 +1062,10 @@ function updateProbeAvailability(){
     const supported = supportsHttpModelDiscovery(item);
     ['testUrlBtn','probeAsyncBtn','fetchModelsBtn'].forEach(id => {
         const button = document.getElementById(id);
-        if(button) button.disabled = !supported || providerProbePending || providerSavePending;
+        if(button){
+            button.disabled = !supported || providerProbePending || providerSavePending;
+            button.setAttribute('aria-busy', String(providerProbePending || providerSavePending));
+        }
     });
     const notice = document.getElementById('probeSupportNote');
     if(notice) notice.textContent = supported
@@ -1073,7 +1076,7 @@ function updateProbeAvailability(){
     const pickerButton = document.getElementById('openPickerBtn');
     if(pickerButton){
         pickerButton.disabled = !item || lastFetchedProviderId !== item.id || !lastFetchedAll.length;
-        pickerButton.style.opacity = pickerButton.disabled ? '.5' : '1';
+        pickerButton.style.removeProperty('opacity');
     }
 }
 async function performModelProbe(kind){
@@ -1115,7 +1118,7 @@ async function performModelProbe(kind){
         if(ok && kind !== 'probe-async'){
             setFetchedModelState(data);
             const openButton = document.getElementById('openPickerBtn');
-            if(openButton){ openButton.disabled = lastFetchedAll.length === 0; openButton.style.opacity = lastFetchedAll.length ? '1' : '.5'; }
+            if(openButton){ openButton.disabled = lastFetchedAll.length === 0; openButton.style.removeProperty('opacity'); }
             setStatus(`已读取 ${lastFetchedAll.length} 个模型；分类为建议，选择后保存配置，生成能力尚未验证。`, 'success');
             if(kind === 'fetch-models' && lastFetchedAll.length) openModelPicker();
         }
@@ -1193,7 +1196,7 @@ function openModelPicker(){
     });
     pickerInitialStateJson = JSON.stringify(pickerState);
     // 默认 tab 切回「全部」
-    document.querySelectorAll('.picker-cat-tab').forEach(t => t.classList.toggle('active', t.dataset.cat === 'all'));
+    selectPickerCategoryState('all');
     const overlay = document.getElementById('modelPickerOverlay');
     overlay.style.display = 'flex';
     renderModelPicker();
@@ -1236,16 +1239,16 @@ function renderModelPicker(){
         const label = modelDisplayName(id, item);
         const badge = providerModelBadge(id, label);
         return `
-            <div class="picker-row ${checked?'has-sel':''}" onclick="togglePickerRowByIndex(${index})">
-                <div class="picker-checkbox ${checked?'checked':''}">
+            <button type="button" class="btn-segmented-item picker-row ${checked?'has-sel':''}" data-picker-index="${index}" aria-pressed="${checked}" onclick="togglePickerRowByIndex(${index})">
+                <span class="picker-checkbox ${checked?'checked':''}" aria-hidden="true">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
-                </div>
-                <div class="picker-model-badge">${escapeHtml(badge)}</div>
-                <div class="picker-model-name" title="${escapeAttr(id)}">
-                    <div class="picker-model-label">${escapeHtml(label || id)}</div>
-                    ${label && label !== id ? `<div class="picker-model-id">${escapeHtml(id)}</div>` : ''}
-                </div>
-            </div>
+                </span>
+                <span class="picker-model-badge">${escapeHtml(badge)}</span>
+                <span class="picker-model-name" title="${escapeAttr(id)}">
+                    <span class="picker-model-label">${escapeHtml(label || id)}</span>
+                    ${label && label !== id ? `<span class="picker-model-id">${escapeHtml(id)}</span>` : ''}
+                </span>
+            </button>
         `;
     }).join('');
     document.getElementById('pickerList').innerHTML = html || `<div style="padding:32px;text-align:center;color:var(--faint);font-size:var(--gw-type-body-sm)">无匹配</div>`;
@@ -1267,9 +1270,18 @@ function togglePickerRowByIndex(index){
     const id = pickerVisibleIds[index];
     if(typeof id !== 'string') return;
     togglePickerRow(id);
+    document.querySelector(`[data-picker-index="${index}"]`)?.focus({preventScroll:true});
+}
+// 同一分类状态同时驱动共享分段外观和辅助技术反馈。
+function selectPickerCategoryState(category){
+    document.querySelectorAll('.picker-cat-tab').forEach(tab => {
+        const active = tab.dataset.cat === category;
+        tab.classList.toggle('active', active);
+        tab.setAttribute('aria-pressed', String(active));
+    });
 }
 function selectPickerCat(cat){
-    document.querySelectorAll('.picker-cat-tab').forEach(t => t.classList.toggle('active', t.dataset.cat === cat));
+    selectPickerCategoryState(cat);
     renderModelPicker();
 }
 function applyModelPicker(){
@@ -1350,7 +1362,7 @@ function renderModels(kind){
                     <input aria-label="${kind === 'image' ? '生图' : kind === 'video' ? '视频' : '聊天'}模型 ID ${index + 1}" spellcheck="false" autocomplete="off" value="${escapeAttr(model)}" oninput="updateModel('${kind}', ${index}, this.value)">
                 </div>
                 ${modelProtocolSelectHtml(kind, index, model, item)}
-                <button class="hw-btn hw-btn-icon" type="button" onclick="removeModel('${kind}', ${index})" aria-label="删除模型 ${escapeAttr(model || String(index + 1))}" title="删除"><i data-lucide="trash-2" class="w-4 h-4"></i></button>
+                <button class="hw-btn hw-btn-danger hw-btn-icon btn-size-sm" type="button" onclick="removeModel('${kind}', ${index})" aria-label="删除模型 ${escapeAttr(model || String(index + 1))}" title="删除"><i data-lucide="trash-2" class="w-4 h-4"></i></button>
             </div>
         `;
     }).join('');
@@ -1391,7 +1403,7 @@ function renderMsLoras(){
                     <span>${tr('api.loraDefaultStrength')}</span>
                     <input type="number" min="0" max="2" step="0.05" value="${strength}" oninput="updateMsLora(${index}, 'strength', this.value)">
                 </label>
-                <button class="hw-btn hw-btn-icon" type="button" onclick="removeMsLora(${index})" aria-label="删除 LoRA ${escapeAttr(lora.id || String(index + 1))}" title="${escapeAttr(tr('common.delete'))}"><i data-lucide="trash-2" class="w-4 h-4"></i></button>
+                <button class="hw-btn hw-btn-danger hw-btn-icon btn-size-sm" type="button" onclick="removeMsLora(${index})" aria-label="删除 LoRA ${escapeAttr(lora.id || String(index + 1))}" title="${escapeAttr(tr('common.delete'))}"><i data-lucide="trash-2" class="w-4 h-4"></i></button>
             </div>
         `;
     }).join('');
@@ -1711,6 +1723,7 @@ async function saveProviders(){
     }
     setStatus(tr('api.saving'));
     providerSavePending = true;
+    document.getElementById('settingsContent')?.setAttribute('aria-busy', 'true');
     const heldControls = Array.from(document.querySelectorAll('.layout input, .layout select, .layout button'))
         .map(control => [control, control.disabled]);
     heldControls.forEach(([control]) => { control.disabled = true; });
@@ -1775,7 +1788,9 @@ async function saveProviders(){
         return false;
     } finally {
         providerSavePending = false;
+        document.getElementById('settingsContent')?.setAttribute('aria-busy', 'false');
         heldControls.forEach(([control, disabled]) => { control.disabled = disabled; });
+        updateProbeAvailability();
     }
 }
 function escapeHtml(str){

@@ -614,7 +614,7 @@ function showAssetFailure(title,error){
     const overlay=document.createElement('div');
     overlay.className='asset-operation-error-overlay';
     overlay.dataset.assetErrorDialog='';
-    overlay.innerHTML=`<section data-floating-content role="alertdialog" aria-modal="true" aria-label="${escapeAttr(title)}"><header><i data-lucide="triangle-alert"></i><div><strong>${escapeHtml(title)}</strong><span>后台返回的失败原因与前端调用日志</span></div></header><pre>${escapeHtml(detail)}</pre><footer><button type="button" data-asset-error-close>关闭日志</button></footer></section>`;
+    overlay.innerHTML=`<section data-floating-content role="alertdialog" aria-modal="true" aria-label="${escapeAttr(title)}"><header><i data-lucide="triangle-alert"></i><div><strong>${escapeHtml(title)}</strong><span>后台返回的失败原因与前端调用日志</span></div></header><pre>${escapeHtml(detail)}</pre><footer><button class="hw-btn" type="button" data-asset-error-close>关闭日志</button></footer></section>`;
     document.body.appendChild(overlay);
     markAssetFloatingSurface(overlay, {surface:'asset-operation-error', content:'[role="alertdialog"]', close:() => overlay.remove()});
     refreshIcons();
@@ -851,12 +851,12 @@ function renderBoardNavigation(){
         const active = board.id === activeTab;
         const movable = !board.fixed && !board.sourceBoard;
         const title = board.sourceBoard ? '已登记素材库' : board.fixed ? '固定看板' : '拖动调整看板顺序';
-        return `<button class="asset-board-tab ${active ? 'active' : ''} ${board.fixed ? 'fixed' : ''} ${board.sourceBoard ? 'source-board' : ''}" type="button" role="tab" aria-selected="${active}" tabindex="${active ? '0' : '-1'}" data-tab="${escapeAttr(board.id)}" ${movable ? `draggable="true" data-board-drag="${escapeAttr(board.id)}"` : ''} title="${title}"><i data-lucide="${escapeAttr(board.icon)}"></i><span>${escapeHtml(board.name)}</span>${board.fixed ? '<i class="asset-board-lock" data-lucide="lock-keyhole"></i>' : ''}</button>`;
-    }).join('')}<button class="asset-board-add" type="button" data-board-create aria-label="新增资源库"><i data-lucide="plus"></i><span>新增资源库</span></button></div>
+        return `<button class="asset-board-tab btn-segmented-item ${active ? 'active' : ''} ${board.fixed ? 'fixed' : ''} ${board.sourceBoard ? 'source-board' : ''}" type="button" role="tab" aria-selected="${active}" tabindex="${active ? '0' : '-1'}" data-tab="${escapeAttr(board.id)}" ${movable ? `draggable="true" data-board-drag="${escapeAttr(board.id)}"` : ''} title="${title}"><i data-lucide="${escapeAttr(board.icon)}"></i><span>${escapeHtml(board.name)}</span>${board.fixed ? '<i class="asset-board-lock" data-lucide="lock-keyhole"></i>' : ''}</button>`;
+    }).join('')}<button class="hw-btn asset-board-add" type="button" data-board-create aria-label="新增资源库"><i data-lucide="plus"></i><span>新增资源库</span></button></div>
     <div class="asset-board-menu-actions">
         <div id="assetStatus" class="asset-status" role="status" aria-live="polite">${escapeHtml(currentStatusText)}</div>
-        <button type="button" data-refresh-assets><i data-lucide="refresh-cw"></i><span>刷新</span></button>
-        <button type="button" data-board-settings-open><i data-lucide="panel-top"></i><span>资产设置</span></button>
+        <button class="hw-btn" type="button" data-refresh-assets><i data-lucide="refresh-cw"></i><span>刷新</span></button>
+        <button class="hw-btn" type="button" data-board-settings-open><i data-lucide="panel-top"></i><span>资产设置</span></button>
     </div>`;
     refreshIcons();
 }
@@ -1926,7 +1926,7 @@ function openDirectoryMountConfirmDialog(key, label, folderName){
                     </strong>
                     <span class="directory-mount-subtitle">系统已响应所选目录。核对或输入本地完整物理路径，确认后将自动挂载。</span>
                 </div>
-                <button type="button" class="directory-mount-close-btn" data-directory-mount-close aria-label="关闭"><i data-lucide="x"></i></button>
+                <button type="button" class="hw-btn hw-btn-icon directory-mount-close-btn" data-directory-mount-close aria-label="关闭"><i data-lucide="x"></i></button>
             </div>
             <div class="directory-mount-body">
                 ${folderName ? `<div class="directory-mount-folder-chip">
@@ -7900,10 +7900,10 @@ function renderRegistryToolbar(board, title, subtitle, options={}){
         <div class="registry-toolbar-controls">
             ${!board && document.documentElement.classList.contains('vault-shell-embedded') ? '<button class="hw-btn hw-btn-icon vault-filters-toggle" type="button" popovertarget="registryFacetPopover" title="智能筛选" aria-label="智能筛选"><i data-lucide="filter"></i></button>' : ''}
             <label class="asset-search-wrap"><i data-lucide="search"></i><input id="registrySearch" class="asset-search" type="search" aria-label="搜索 ${escapeAttr(searchLabel)}" value="${escapeAttr(registryQuery)}" placeholder="搜索文件名 / 标签 / ID"></label>
-            <div class="registry-layout-switch" role="group" aria-label="显示方式"><button class="${registryLayout === 'grid' ? 'is-active' : ''}" type="button" data-registry-layout="grid" title="方格视图" aria-pressed="${registryLayout === 'grid'}"><i data-lucide="grid-2x2"></i></button><button class="${registryLayout === 'list' ? 'is-active' : ''}" type="button" data-registry-layout="list" title="列表视图" aria-pressed="${registryLayout === 'list'}"><i data-lucide="list"></i></button></div>
+            <div class="registry-layout-switch" role="group" aria-label="显示方式"><button class="btn-segmented-item btn-size-sm hw-btn-icon ${registryLayout === 'grid' ? 'is-active' : ''}" type="button" data-registry-layout="grid" title="方格视图" aria-label="方格视图" aria-pressed="${registryLayout === 'grid'}"><i data-lucide="grid-2x2"></i></button><button class="btn-segmented-item btn-size-sm hw-btn-icon ${registryLayout === 'list' ? 'is-active' : ''}" type="button" data-registry-layout="list" title="列表视图" aria-label="列表视图" aria-pressed="${registryLayout === 'list'}"><i data-lucide="list"></i></button></div>
             <label class="registry-toolbar-select"><span>排序</span><select class="asset-sort-select" id="registrySort" aria-label="资产排序"><option value="newest" ${registrySort==='newest'?'selected':''}>最近新增</option><option value="oldest" ${registrySort==='oldest'?'selected':''}>最早新增</option><option value="name" ${registrySort==='name'?'selected':''}>名称</option><option value="size_desc" ${registrySort==='size_desc'?'selected':''}>大小降序</option></select></label>
             <label class="registry-toolbar-select"><span>分组</span><select class="asset-sort-select" id="registryGroupMode" aria-label="资产分组"><option value="none" ${registryGroupMode==='none'?'selected':''}>不分组</option><option value="source" ${registryGroupMode==='source'?'selected':''}>素材来源</option><option value="folder" ${registryGroupMode==='folder'?'selected':''}>文件夹</option><option value="custom" ${registryGroupMode==='custom'?'selected':''}>自定义分组</option></select></label>
-            <div class="registry-segment" role="group" aria-label="缩略图比例"><button class="${registryAspect === 'square' ? 'is-active' : ''}" type="button" data-registry-aspect-toggle aria-pressed="${registryAspect === 'square'}" title="${registryAspect === 'square' ? '当前方格显示，点击恢复原始比例' : '当前原始比例，点击切换方格显示'}">方格</button></div>
+            <div class="registry-segment" role="group" aria-label="缩略图比例"><button class="btn-segmented-item btn-size-sm ${registryAspect === 'square' ? 'is-active' : ''}" type="button" data-registry-aspect-toggle aria-pressed="${registryAspect === 'square'}" title="${registryAspect === 'square' ? '当前方格显示，点击恢复原始比例' : '当前原始比例，点击切换方格显示'}">方格</button></div>
             <button class="hw-btn registry-toggle ${registrySimple ? 'is-active' : ''}" type="button" data-registry-simple-toggle aria-pressed="${registrySimple}"><i data-lucide="image"></i><span>简洁</span></button>
             ${coverflowControl}
             ${options.allowUrl ? '<button class="hw-btn" type="button" data-registry-add-url><i data-lucide="link"></i><span>添加 URL</span></button>' : ''}
@@ -8144,7 +8144,7 @@ function renderRegistryManager(){
                 ${(registryFacets.collections || []).map(item => renderRegistryFacetRow(item,'collection',registryCollectionId)).join('')}
             </section>
             <div class="registry-tag-facet-grid">${renderRegistryTagGroups()}</div>
-            <section class="registry-facet-section"><div class="registry-facet-title"><strong>筛选预设</strong><button type="button" data-registry-preset-save><i data-lucide="plus"></i></button></div>
+            <section class="registry-facet-section"><div class="registry-facet-title"><strong>筛选预设</strong><button class="hw-btn hw-btn-sm hw-btn-icon" type="button" data-registry-preset-save aria-label="保存筛选预设"><i data-lucide="plus"></i></button></div>
                 ${(registryPresets || []).map(item => `<div class="registry-preset-row"><button type="button" data-registry-preset="${escapeAttr(item.id)}"><span>${escapeHtml(item.name)}</span></button><button type="button" data-registry-preset-delete="${escapeAttr(item.id)}"><i data-lucide="x"></i></button></div>`).join('') || '<div class="tree-empty">暂无预设</div>'}
             </section>
         </div>
@@ -15531,6 +15531,35 @@ function positionDetailImageEditorInlineText(){
     input.style.color=layer.color;
     requestAnimationFrame(()=>{ input.focus(); if(state.inlineTextSelectAll){ input.select(); state.inlineTextSelectAll=false; } });
 }
+// 编辑器每次重绘时迁移按钮；保留原 data 属性、原生 disabled 和委托事件。
+function applyDetailImageEditorButtons(overlay){
+    const state=detailImageEditorState;
+    overlay.querySelectorAll('button').forEach(button=>{
+        const label=button.getAttribute('aria-label') || button.title || button.textContent.trim();
+        if(label) button.setAttribute('aria-label',label);
+        const danger=button.matches('[data-image-editor-discard],[data-image-editor-layer-delete],[data-image-editor-layer-delete-selected]');
+        const iconOnly=!button.textContent.trim();
+        button.classList.remove('primary','is-active');
+        if(iconOnly){
+            button.classList.add('hw-round-btn');
+            if(danger) button.classList.add('hw-btn-danger');
+            const inner=document.createElement('span');
+            inner.className='hw-round-inner';
+            inner.append(...button.childNodes);
+            button.appendChild(inner);
+        }else{
+            button.classList.add('hw-btn');
+            if(danger) button.classList.add('hw-btn-danger');
+            if(button.matches('[data-image-editor-close],[data-image-editor-apply-crop]')) button.classList.add('hw-btn-gold');
+        }
+        if(button.hasAttribute('data-image-editor-tool')) button.setAttribute('aria-pressed',String(state.tool===button.dataset.imageEditorTool));
+        if(button.hasAttribute('data-image-editor-layer-select')) button.setAttribute('aria-pressed',String(Boolean(state.selectedLayerIds?.has(button.dataset.imageEditorLayerSelect))));
+        if(button.hasAttribute('data-image-editor-group-select')){
+            const members=state.layers.filter(layer=>layer.groupId===button.dataset.imageEditorGroupSelect);
+            button.setAttribute('aria-pressed',String(members.length>0 && members.every(layer=>state.selectedLayerIds?.has(layer.id))));
+        }
+    });
+}
 function renderDetailImageEditor(){
     const state = detailImageEditorState;
     if(!state) return;
@@ -15571,6 +15600,7 @@ function renderDetailImageEditor(){
         </div>
         <footer><span><i data-lucide="keyboard"></i>Q 选择 · B 画笔 · E 橡皮擦 · C 裁切 · T 文字 · +/- 调整画笔/橡皮大小 · 中键拖动画布 · 滚轮缩放</span><strong>${state.saving ? '正在保存版本…' : '完成或关闭会保存新版本，原素材文件不会改变'}</strong></footer>
     </section>`;
+    applyDetailImageEditorButtons(overlay);
     markAssetFloatingSurface(overlay, {surface:'asset-image-editor', content:'.asset-image-editor-shell', close:requestCloseDetailImageEditor});
     drawDetailImageEditorCanvas();
     refreshIcons();

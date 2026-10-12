@@ -17,6 +17,9 @@
 (function () {
   'use strict';
 
+  // 内置演示预览只使用内联占位，避免展示时请求外部图片。
+  const DEMO_PREVIEW = 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="640" height="360" viewBox="0 0 640 360"><rect width="640" height="360" fill="#111418"/><rect x="24" y="24" width="592" height="312" rx="12" fill="none" stroke="#534a38"/><path d="M224 220l64-72 64 48 56-64 80 88z" fill="#302c24"/><circle cx="248" cy="116" r="20" fill="#534a38"/><text x="320" y="286" text-anchor="middle" font-family="sans-serif" style="font-size:var(--gw-type-body-md,14px)" fill="#b3a68c">示例占位</text></svg>');
+
   const {api, escapeHtml: esc, dateTime} = Workspace;
   const q = selector => document.querySelector(selector);
   const STAGES = [
@@ -56,7 +59,7 @@
   const videoContext = {scopeKey: '', projectId: '', pipelineId: '', actorId: '', canvasId: '', entityId: '', canvases: [], nodes: [], loading: '', error: '', generation: 0, controller: null};
 
   const DEFAULT_ASSETS_DEMO = [
-    { id: 'asset-01', name: '林浩', type: 'character', prompt: '根据剧本建立“林浩”的统一视觉设定，锁定面部五官与战术风衣材质，保持后续镜头连续性。', status: 'running', preview: 'https://lh3.googleusercontent.com/aida-public/AB6AXuD05s7fKU3W0sxDtoNaPSvqhxs-sAyO3oNnRtpvgYnc72ryANA_h8I0BFAzb4B34cYDLzXlYt66FDdfHfIbjvOZvxb3G5Xg2O697SzeMXPmKxeo180L6jsYObIKp9OswOqPzSxXyjPNM7AwXZB29tLWpOoxlyeUW-mskOJ98PHrp6k6-ipnyJ04gizllKggww21os_o8bVcmgRZ62uex5rZN7mG5YNp-kL7R7Zn63wP-hYGlO0Qf_2A' },
+    { id: 'asset-01', name: '林浩', type: 'character', prompt: '根据剧本建立“林浩”的统一视觉设定，锁定面部五官与战术风衣材质，保持后续镜头连续性。', status: 'running', preview: DEMO_PREVIEW },
     { id: 'asset-02', name: '陈默', type: 'character', prompt: '根据剧本建立“陈默”的反派统一视觉设定，暗银色工装与义肢接口，保持后续镜头连贯。', status: 'pending', preview: '' },
     { id: 'asset-03', name: '韩锋', type: 'character', prompt: '根据剧本建立电竞战队队长“韩锋”设定，强化坚毅神态与定制团队战服细节。', status: 'pending', preview: '' },
     { id: 'asset-04', name: '网咖训练室', type: 'scene', prompt: '根据剧本建立“网咖训练室”的统一视觉设定，霓虹暗光、机房线缆阵列与主备服务器布局。', status: 'pending', preview: '' },
@@ -139,7 +142,7 @@
   function parseVideoScripts(text, shots) { const parsed = parseJson(text); const list = Array.isArray(parsed) ? parsed : parsed?.scripts || parsed?.shots; if (Array.isArray(list)) return list.map((item, index) => ({id: String(item?.id || shots[index]?.id || `shot-${index + 1}`), shotId: String(item?.shotId || shots[index]?.id || `shot-${index + 1}`), title: String(item?.title || shots[index]?.title || `镜头 ${index + 1}`), prompt: String(item?.prompt || item?.positive || item?.content || ''), negative: String(item?.negative || item?.negative_prompt || ''), assets: String(item?.assets || '{{character:主角}}, {{scene:当前场景}}, {{prop:关键道具}}')})); return shots.map(shot => ({id: shot.id, shotId: shot.id, title: shot.title, prompt: shot.content, negative: 'deformed hands, extra fingers, inconsistent character, flickering, text, watermark', assets: '{{character:主角}}, {{scene:当前场景}}, {{prop:关键道具}}'})); }
   function statusChip(status) { return `<span class="status ${statusClass(status)}"><i aria-hidden="true"></i>${esc(statusText(status))}</span>`; }
   function stageHeading(pipeline, stage, index) { const spec = STAGES[index]; return `<div class="stage-heading"><div><div class="stage-kicker">步骤 ${String(index + 1).padStart(2, '0')} / ${esc(spec.display)}</div><h3 class="sr-only">${esc(spec.label)}</h3><h2>${esc(spec.display)}</h2><p>提示词链路：${esc(promptSource(pipeline, stage))}</p></div><div class="stage-heading-tools">${modelPicker(pipeline, stage)}${statusChip(stage.status)}</div></div>${stageLoading(pipeline, stage)}`; }
-  function stageActions(pipeline, stage, index, extra = '') { const previous = index ? stageFor(pipeline, STAGES[index - 1].key) : null; const documentReady = stage.stage === 'video' && assetDocumentReady(pipeline); const previousReady = !previous || previous.status === 'succeeded' || documentReady; const canStart = (stage.status === 'queued' || stage.status === 'succeeded' || ['failed', 'canceled', 'interrupted'].includes(stage.status)) && previousReady; const startText = index === 0 ? '开始生成剧本' : index === 1 ? '根据剧本生成资产' : index === 2 ? '生成分镜大纲' : '根据分镜生成视频脚本'; const running = ['running', 'cancel_requested', 'recovering'].includes(stage.status); const stop = stage.stage === 'assets' && running ? `<button class="btn danger" type="button" data-stage-stop="${esc(stage.stage)}" data-pipeline-id="${esc(pipeline.pipeline_id)}" data-stage-version="${esc(stage.version || '')}" ${stage.status === 'cancel_requested' ? 'disabled' : ''}>${stage.status === 'cancel_requested' ? '停止中' : '停止任务'}</button>` : ''; const retry = canStart ? `<button class="btn${stage.status === 'queued' ? ' primary' : ''}" type="button" data-stage-${stage.status === 'queued' ? 'start' : 'retry'}="${esc(stage.stage)}" data-pipeline-id="${esc(pipeline.pipeline_id)}">${esc(stage.status === 'queued' ? startText : '重新执行')}</button>` : ''; return `<div class="stage-actions">${retry}${stop}${extra}</div>`; }
+  function stageActions(pipeline, stage, index, extra = '') { const previous = index ? stageFor(pipeline, STAGES[index - 1].key) : null; const documentReady = stage.stage === 'video' && assetDocumentReady(pipeline); const previousReady = !previous || previous.status === 'succeeded' || documentReady; const canStart = (stage.status === 'queued' || stage.status === 'succeeded' || ['failed', 'canceled', 'interrupted'].includes(stage.status)) && previousReady; const startText = index === 0 ? '开始生成剧本' : index === 1 ? '根据剧本生成资产' : index === 2 ? '生成分镜大纲' : '根据分镜生成视频脚本'; const running = ['running', 'cancel_requested', 'recovering'].includes(stage.status); const stop = stage.stage === 'assets' && running ? `<button class="hw-btn hw-btn-danger" type="button" data-stage-stop="${esc(stage.stage)}" data-pipeline-id="${esc(pipeline.pipeline_id)}" data-stage-version="${esc(stage.version || '')}" ${stage.status === 'cancel_requested' ? 'disabled' : ''}>${stage.status === 'cancel_requested' ? '停止中' : '停止任务'}</button>` : ''; const retry = canStart ? `<button class="hw-btn${stage.status === 'queued' ? ' hw-btn-gold' : ''}" type="button" data-stage-${stage.status === 'queued' ? 'start' : 'retry'}="${esc(stage.stage)}" data-pipeline-id="${esc(pipeline.pipeline_id)}">${esc(stage.status === 'queued' ? startText : '重新执行')}</button>` : ''; return `<div class="stage-actions">${retry}${stop}${extra}</div>`; }
   function reviewMarkup(review, kind = 'script') {
     if (!review) return '<div class="review-empty">尚未送审，生成结果后可提交审核 agent。</div>';
     const reviseAttr = kind === 'script' ? 'data-revise-script' : 'data-revise-storyboard';
@@ -155,7 +158,7 @@
     const reviseTitle = kind === 'storyboard' ? '按审核意见重拆分' : '按意见修改';
     const statusLabel = review.status === 'passed' ? '审核通过' : '审核未通过';
     const summary = String(review.summary || review.overallVerdict || '分镜审核已返回结果');
-    return `<div class="review-result">${kind === 'storyboard' ? '<div class="review-result-title">分镜审核结果</div>' : ''}<div class="review-top-grid"><section class="review-card review-score-card"><div class="review-card-title">综合评分</div><strong>${esc(review.score)}<small>/100</small></strong><b class="review-decision ${review.status === 'passed' ? 'pass' : 'revise'}">${statusLabel}</b><time>${esc(dateTime(review.at))}</time></section><section class="review-card review-dimensions-card"><div class="review-card-title">维度评分</div><div class="review-dimension-grid">${dimensions.map(item => { const key = String(item.key || item.name || ''); return `<div class="review-dimension-item"><div><strong>${esc(dimensionLabels[key] || key)}</strong><b>${esc(item.score)}</b></div><p>${esc(item.comment || '模型已完成该维度检查。')}</p></div>`; }).join('')}</div></section></div><section class="review-card review-summary-card"><div class="review-card-title">审核状态及描述</div><p>${esc(summary)}</p></section><section class="review-card"><div class="review-card-title">主要问题</div><ul class="review-list">${problems.map(item => `<li>${esc(item)}</li>`).join('')}</ul></section><section class="review-card"><div class="review-card-title">${suggestionTitle}</div><ul class="review-list">${suggestions.map(item => `<li>${esc(item)}</li>`).join('')}</ul></section><section class="review-card"><div class="review-card-title">执行优先级</div><ol class="review-list review-priority-list">${priorities.map(item => `<li>${esc(item)}</li>`).join('')}</ol></section>${revisionPath.length ? `<section class="review-card"><div class="review-card-title">修改路径</div><ol class="review-list review-priority-list">${revisionPath.map(item => `<li>${esc(item)}</li>`).join('')}</ol></section>` : ''}${surgery.length ? `<section class="review-card review-surgery-card"><div class="review-card-title">对白手术台</div>${surgery.map(item => `<div class="review-surgery-row"><div><span>原文</span><p>${esc(item.original || '—')}</p></div><div><span>诊断</span><p>${esc(item.diagnosis || '—')}</p></div><div><span>重写</span><p>${esc(item.rewrite || '—')}</p></div></div>`).join('')}</section>` : ''}${review.rewriteExample ? `<section class="review-card review-examples-card"><div class="review-card-title">优化方向示例</div><div class="review-example-body"><p>${esc(review.rewriteExample)}</p></div></section>` : ''}<div class="review-actions"><button class="btn primary" type="button" ${reviseAttr}>${reviseTitle}</button>${kind === 'script' ? '<button class="btn" type="button" data-confirm-next>确认，进入下一步</button>' : ''}</div></div>`;
+    return `<div class="review-result">${kind === 'storyboard' ? '<div class="review-result-title">分镜审核结果</div>' : ''}<div class="review-top-grid"><section class="review-card review-score-card"><div class="review-card-title">综合评分</div><strong>${esc(review.score)}<small>/100</small></strong><b class="review-decision ${review.status === 'passed' ? 'pass' : 'revise'}">${statusLabel}</b><time>${esc(dateTime(review.at))}</time></section><section class="review-card review-dimensions-card"><div class="review-card-title">维度评分</div><div class="review-dimension-grid">${dimensions.map(item => { const key = String(item.key || item.name || ''); return `<div class="review-dimension-item"><div><strong>${esc(dimensionLabels[key] || key)}</strong><b>${esc(item.score)}</b></div><p>${esc(item.comment || '模型已完成该维度检查。')}</p></div>`; }).join('')}</div></section></div><section class="review-card review-summary-card"><div class="review-card-title">审核状态及描述</div><p>${esc(summary)}</p></section><section class="review-card"><div class="review-card-title">主要问题</div><ul class="review-list">${problems.map(item => `<li>${esc(item)}</li>`).join('')}</ul></section><section class="review-card"><div class="review-card-title">${suggestionTitle}</div><ul class="review-list">${suggestions.map(item => `<li>${esc(item)}</li>`).join('')}</ul></section><section class="review-card"><div class="review-card-title">执行优先级</div><ol class="review-list review-priority-list">${priorities.map(item => `<li>${esc(item)}</li>`).join('')}</ol></section>${revisionPath.length ? `<section class="review-card"><div class="review-card-title">修改路径</div><ol class="review-list review-priority-list">${revisionPath.map(item => `<li>${esc(item)}</li>`).join('')}</ol></section>` : ''}${surgery.length ? `<section class="review-card review-surgery-card"><div class="review-card-title">对白手术台</div>${surgery.map(item => `<div class="review-surgery-row"><div><span>原文</span><p>${esc(item.original || '—')}</p></div><div><span>诊断</span><p>${esc(item.diagnosis || '—')}</p></div><div><span>重写</span><p>${esc(item.rewrite || '—')}</p></div></div>`).join('')}</section>` : ''}${review.rewriteExample ? `<section class="review-card review-examples-card"><div class="review-card-title">优化方向示例</div><div class="review-example-body"><p>${esc(review.rewriteExample)}</p></div></section>` : ''}<div class="review-actions"><button class="hw-btn" type="button" ${reviseAttr}>${reviseTitle}</button>${kind === 'script' ? '<button class="hw-btn" type="button" data-confirm-next>确认，进入下一步</button>' : ''}</div></div>`;
   }
   function iconSvg(name, extraClass = '', size = 16) {
     const svgs = {
@@ -204,7 +207,7 @@
       chevron_left: '<polyline points="15 18 9 12 15 6" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>',
       chevron_right: '<polyline points="9 18 15 12 9 6" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>',
       history_edu: '<path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" stroke-width="1.8"/>',
-      precision_manufacturing: '<rect x="3" y="14" width="18" height="6" rx="1" stroke-width="1.8"/><path d="M6 14V8a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v6M12 6Workbench" stroke-width="1.8"/>'
+      precision_manufacturing: '<rect x="3" y="14" width="18" height="6" rx="1" stroke-width="1.8"/><path d="M6 14V8a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v6M12 6v4" stroke-width="1.8"/>'
     };
     const body = svgs[name] || '<circle cx="12" cy="12" r="9" stroke-width="2"/>';
     return `<svg class="inline-block shrink-0 ${extraClass}" width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true">${body}</svg>`;
@@ -509,7 +512,7 @@
 
           <!-- Generate and automatically save the resulting script version. -->
           <div class="flex items-center gap-3 pt-1">
-            <button class="hw-btn hw-btn-gold btn-stitch-primary flex-1 flex items-center justify-center gap-2 py-2 px-3 rounded text-[#12141a] font-mono gw-type-body-md font-boldr hover:brightness-110 shadow-[0_4px_12px_rgba(223,195,132,0.25),inset_0_1px_1px_rgba(255,255,255,0.4)] active:translate-y-px transition-all cursor-pointer" type="button" data-stage-${stage.status === 'queued' ? 'start' : 'retry'}="script" data-pipeline-id="${esc(pipeline.pipeline_id)}" ${generatingScript ? 'disabled aria-busy="true"' : ''}>
+            <button class="hw-btn hw-btn-gold flex-1 flex items-center justify-center gap-2 cursor-pointer" type="button" data-stage-${stage.status === 'queued' ? 'start' : 'retry'}="script" data-pipeline-id="${esc(pipeline.pipeline_id)}" ${generatingScript ? 'disabled aria-busy="true"' : ''}>
               ${iconSvg(hasGeneratedScript ? 'replay' : 'play_arrow', 'w-4 h-4')}
               <span>${generatingScript ? '生成中…' : hasGeneratedScript ? '重新生成' : '生成剧本'}</span>
             </button>
@@ -532,7 +535,7 @@
               <span class="font-display gw-type-body-md text-neutral-200 font-semibold">生成结果视窗 (${output ? '已回写，可继续编辑' : '完成生成后显示'})</span>
             </div>
             <div class="flex items-center gap-2.5">
-              <button type="button" class="hw-btn hw-btn-sm gw-type-body-md font-mono px-2 py-0.5 rounded text-gold-dim cursor-pointer" data-toggle-script-editor title="在富文本排版与纯文本源码编辑之间切换">
+              <button type="button" class="hw-btn hw-btn-sm cursor-pointer" data-toggle-script-editor title="在富文本排版与纯文本源码编辑之间切换">
                 ${state.scriptEditorMode === 'edit' ? '预览排版' : '编辑源码'}
               </button>
               <span class="font-mono gw-type-body-sm text-gold-dim">BUFFER ID: SCR-${esc(pipeline.pipeline_id.slice(-5).toUpperCase())}</span>
@@ -555,7 +558,7 @@
               <span class="font-mono gw-type-body-sm text-neutral-500">CHECKSUM: 0x${checksum(output || pipeline.pipeline_id)}</span>
             </div>
             <!-- Submit Audit Button -->
-            <button class="hw-btn hw-btn-gold btn-stitch-ignite flex items-center gap-2.5 px-5 py-2 rounded text-[#121417] font-display gw-type-body-md font-boldr hover:brightness-110 shadow-[0_6px_18px_rgba(223,195,132,0.35),inset_0_1px_2px_rgba(255,255,255,0.6)] active:scale-95 transition-all cursor-pointer" type="button" data-script-review>
+            <button class="hw-btn hw-btn-gold btn-size-lg flex items-center gap-2.5 cursor-pointer" type="button" data-script-review>
               ${iconSvg('cyclone', 'w-[18px] h-[18px]', 18)}
               <span>送审 (SUBMIT AUDIT)</span>
             </button>
@@ -642,7 +645,7 @@
           ${iconSvg('history', 'w-3.5 h-3.5 text-gold-dim')}
           <span class="text-gold-dim font-bold">历史版本:</span>
           <div class="flex items-center gap-1.5 flex-wrap">
-            ${data.history.filter(item => item.type === 'script-review' || item.type === 'script-generated' || item.type === 'script-revised').slice(0, 8).map(item => `<button type="button" class="px-2 py-0.5 rounded bg-[#161820] hover:bg-[#222633] text-neutral-300 border border-white/5 cursor-pointer" data-history-item="${esc(item.at)}">${esc(item.type === 'script-review' ? `审核 ${item.score}分` : item.type === 'script-revised' ? '按意见修改' : '生成版本')} · ${esc(dateTime(item.at))}</button>`).join('') || '<span class="text-neutral-600">首次生成后将保留历史版本</span>'}
+            ${data.history.filter(item => item.type === 'script-review' || item.type === 'script-generated' || item.type === 'script-revised').slice(0, 8).map(item => `<button type="button" class="hw-btn cursor-pointer" data-history-item="${esc(item.at)}">${esc(item.type === 'script-review' ? `审核 ${item.score}分` : item.type === 'script-revised' ? '按意见修改' : '生成版本')} · ${esc(dateTime(item.at))}</button>`).join('') || '<span class="text-neutral-600">首次生成后将保留历史版本</span>'}
           </div>
         </div>
         <span class="text-neutral-600 gw-type-body-sm">ROLLBACK READY</span>
@@ -672,17 +675,16 @@
     ];
     const selected = state.assetGroups[pipeline.pipeline_id] || 'all';
 
-    return `<div class="flex items-center p-1 rounded-xl bg-[#06070a] border border-[#1c1f2b] shadow-[inset_0_2px_5px_rgba(0,0,0,0.9)] gap-1 flex-wrap" role="tablist" aria-label="资产分类筛选">
+    return `<div class="btn-segmented-deck flex flex-wrap" role="tablist" aria-label="资产分类筛选">
       ${groups.map(grp => {
         const isActive = selected === grp.key;
         if (isActive) {
-          return `<button class="relative px-3.5 py-1.5 rounded-lg bg-[#181c26] text-primary font-mono gw-type-body-md font-bold shadow-[0_2px_8px_rgba(0,0,0,0.6),inset_0_1px_1px_rgba(255,255,255,0.15)] flex items-center gap-2 border border-primary/30 cursor-pointer" type="button" role="tab" aria-selected="true" data-asset-group="${esc(grp.key)}" data-pipeline-id="${esc(pipeline.pipeline_id)}">
+          return `<button class="btn-segmented-item active" type="button" role="tab" aria-selected="true" data-asset-group="${esc(grp.key)}" data-pipeline-id="${esc(pipeline.pipeline_id)}">
             <span>${esc(grp.label)}</span>
             <span class="px-1.5 py-0.5 rounded-full bg-primary text-[#1a1308] gw-type-body-md font-bold">${grp.count}</span>
-            <span class="absolute -bottom-1 left-1/2 -translate-x-1/2 w-8 h-[2px] bg-primary rounded-full blur-[1px]"></span>
           </button>`;
         } else {
-          return `<button class="px-3.5 py-1.5 rounded-lg text-[#888173] hover:text-[#d3cbbe] font-mono gw-type-body-md transition-all flex items-center gap-2 cursor-pointer hover:bg-white/5" type="button" role="tab" aria-selected="false" data-asset-group="${esc(grp.key)}" data-pipeline-id="${esc(pipeline.pipeline_id)}">
+          return `<button class="btn-segmented-item" type="button" role="tab" aria-selected="false" data-asset-group="${esc(grp.key)}" data-pipeline-id="${esc(pipeline.pipeline_id)}">
             <span>${esc(grp.label)}</span>
             <span class="px-1.5 py-0.5 rounded-full bg-[#101218] text-[#71695b] gw-type-body-sm">${grp.count}</span>
           </button>`;
@@ -758,10 +760,10 @@
       </div>`;
     }
 
-    let genBtnClass = 'bg-gradient-to-b from-[#fcdf9d] to-[#dfc384] text-[#1a1308] shadow-[0_3px_12px_rgba(223,195,132,0.35),inset_0_1px_1px_rgba(255,255,255,0.6)] hover:brightness-105';
+    let genBtnClass = 'cursor-wait';
     let genBtnInner = `${iconSvg('draw', 'w-3.5 h-3.5 shrink-0')}<span>${isReady ? '重新生成' : (asset.status === 'running' ? '生成中' : '生成资产')}</span>`;
     if (isRunning) {
-      genBtnClass = 'bg-gradient-to-b from-[#fcdf9d] to-[#dfc384] text-[#1a1308] opacity-80 cursor-wait';
+      genBtnClass = 'cursor-wait';
       genBtnInner = `${iconSvg('refresh', 'w-3.5 h-3.5 shrink-0 animate-spin')}<span>${asset.status === 'running' ? '生成中' : '生成资产'}...</span>`;
     }
 
@@ -787,10 +789,10 @@
       </div>
 
       <div class="flex items-center gap-2 pt-2 border-t border-[#191c26]">
-        <button class="asset-generate-button flex-1 py-2 rounded-lg ${genBtnClass} font-mono gw-type-body-md font-bold active:translate-y-px transition-all flex items-center justify-center gap-1.5 cursor-pointer" type="button" data-asset-generate="${assetId}" data-pipeline-id="${pipelineId}" ${isRunning ? 'disabled' : ''}>
+        <button class="hw-btn hw-btn-gold asset-generate-button flex-1 ${genBtnClass} flex items-center justify-center gap-1.5 cursor-pointer" type="button" data-asset-generate="${assetId}" data-pipeline-id="${pipelineId}" ${isRunning ? 'disabled' : ''}>
           ${genBtnInner}
         </button>
-        <button class="px-3 py-2 rounded-lg bg-[#141720] hover:bg-[#1c202d] text-[#b3aa9a] hover:text-[#f0eae1] border border-[#272d3e] shadow-[0_2px_6px_rgba(0,0,0,0.6)] active:translate-y-px transition-all font-mono gw-type-body-md font-medium cursor-pointer" type="button" data-asset-upload="${assetId}" data-pipeline-id="${pipelineId}">
+        <button class="hw-btn cursor-pointer" type="button" data-asset-upload="${assetId}" data-pipeline-id="${pipelineId}">
           上传本地
         </button>
       </div>
@@ -896,14 +898,14 @@
 
           <div class="flex items-center gap-3">
             <div class="flex items-center gap-1.5 bg-[#06070a] p-1 rounded-lg border border-[#181b24] shadow-[inset_0_2px_4px_rgba(0,0,0,0.85)]">
-              <button class="px-2 py-0.5 rounded gw-type-body-md font-mono text-[#8a8274] hover:text-[#f2ede4] hover:bg-[#141722] transition-colors flex items-center gap-1 cursor-pointer" type="button" data-goto-step="script" title="返回上一步：01 剧本生成">
+              <button class="hw-btn flex items-center gap-1 cursor-pointer" type="button" data-goto-step="script" title="返回上一步：01 剧本生成">
                 ${iconSvg('arrow_back', 'w-3 h-3')}
                 <span>01 剧本</span>
               </button>
               <span class="text-[#2e3444] gw-type-body-sm">/</span>
               <span class="px-2 py-0.5 rounded bg-[#161923] gw-type-body-sm font-mono font-bold text-primary border border-primary/25 shadow-[inset_0_1px_1px_rgba(255,255,255,0.06)]">02 资产</span>
               <span class="text-[#2e3444] gw-type-body-sm">/</span>
-              <button class="px-2 py-0.5 rounded gw-type-body-md font-mono text-[#8a8274] hover:text-[#f2ede4] hover:bg-[#141722] transition-colors flex items-center gap-1 cursor-pointer" type="button" data-goto-step="video" title="进入下一步：03 分镜脚本">
+              <button class="hw-btn flex items-center gap-1 cursor-pointer" type="button" data-goto-step="video" title="进入下一步：03 分镜脚本">
                 <span>03 分镜</span>
                 ${iconSvg('arrow_forward', 'w-3 h-3')}
               </button>
@@ -964,11 +966,11 @@
             </div>
 
             <div class="flex items-center gap-2 pt-2 sm:pt-0 shrink-0">
-              <button class="px-3 py-2 rounded-lg bg-[#141720] hover:bg-[#1a1e2a] text-[#dfc384] border border-[#2c3242] shadow-[0_3px_8px_rgba(0,0,0,0.6),inset_0_1px_1px_rgba(255,255,255,0.08)] active:translate-y-px transition-all flex items-center gap-1.5 cursor-pointer" type="button" data-assets-refresh data-pipeline-id="${esc(pipeline.pipeline_id)}" ${extracting ? 'disabled' : ''}>
+              <button class="hw-btn flex items-center gap-1.5 cursor-pointer" type="button" data-assets-refresh data-pipeline-id="${esc(pipeline.pipeline_id)}" ${extracting ? 'disabled' : ''}>
                 ${iconSvg('refresh', `w-3.5 h-3.5 ${extracting ? 'animate-spin' : ''}`)}
                 <span class="font-mono gw-type-body-md font-boldr">${extracting ? '提取中...' : '重新提取'}</span>
               </button>
-              <button class="px-4 py-2 rounded-lg bg-gradient-to-b from-[#fcdf9d] to-[#dfc384] text-[#1a1308] font-bold shadow-[0_4px_12px_rgba(223,195,132,0.35),inset_0_1px_1px_rgba(255,255,255,0.6)] active:translate-y-px transition-all flex items-center gap-1.5 hover:brightness-105 cursor-pointer" type="button" data-stage-retry="assets" data-pipeline-id="${esc(pipeline.pipeline_id)}">
+              <button class="hw-btn hw-btn-gold flex items-center gap-1.5 cursor-pointer" type="button" data-stage-retry="assets" data-pipeline-id="${esc(pipeline.pipeline_id)}">
                 ${iconSvg('bolt', 'w-4 h-4 text-current')}
                 <span class="font-mono gw-type-body-md font-boldr">重新执行</span>
               </button>
@@ -1014,7 +1016,7 @@
               <h3 class="font-display gw-type-headline-sm font-medium text-[#f2ede4]">从已确认剧本提取资产</h3>
               <p class="gw-type-body-sm text-[#9c9484] max-w-md">点击“重新提取”或“根据剧本生成资产”，由资产提取 agent 读取剧本并创建可编辑的提示词卡片。</p>
             </div>
-            <button class="px-5 py-2.5 rounded-lg bg-gradient-to-b from-[#fcdf9d] via-[#dfc384] to-[#c7a760] text-[#1a1308] font-mono gw-type-body-md font-bold shadow-[0_6px_20px_rgba(223,195,132,0.4),inset_0_1px_1px_rgba(255,255,255,0.7)] hover:brightness-105 active:translate-y-px transition-all flex items-center gap-2 cursor-pointer" type="button" data-assets-refresh data-pipeline-id="${esc(pipeline.pipeline_id)}">
+            <button class="hw-btn hw-btn-gold flex items-center gap-2 cursor-pointer" type="button" data-assets-refresh data-pipeline-id="${esc(pipeline.pipeline_id)}">
               ${iconSvg('play_arrow', 'w-4 h-4 text-current')}
               <span>根据剧本提取资产</span>
             </button>
@@ -1045,17 +1047,17 @@
             <span class="font-mono gw-type-body-sm text-[#ffb689] font-bold">58°C OPTIMAL</span>
           </div>
 
-          <button class="px-4 py-2.5 rounded-lg bg-[#141722] hover:bg-[#1c2230] border border-[#2e3447] text-[#c9cbd2] font-mono gw-type-body-md font-semibold shadow-[0_2px_8px_rgba(0,0,0,0.5)] active:translate-y-px transition-all flex items-center gap-1.5 cursor-pointer" type="button" data-goto-step="script" title="返回剧本生成">
+          <button class="hw-btn flex items-center gap-1.5 cursor-pointer" type="button" data-goto-step="script" title="返回剧本生成">
             ${iconSvg('arrow_back', 'w-3.5 h-3.5 text-[#8b909f]')}
             <span>上一步：剧本</span>
           </button>
 
-          <button class="px-5 py-2.5 rounded-lg bg-gradient-to-b from-[#fcdf9d] via-[#dfc384] to-[#c7a760] text-[#1a1308] font-mono gw-type-body-md font-bold shadow-[0_6px_20px_rgba(223,195,132,0.4),inset_0_1px_1px_rgba(255,255,255,0.7)] hover:brightness-105 active:translate-y-px active:shadow-[inset_0_2px_6px_rgba(0,0,0,0.7)] transition-all flex items-center gap-2 cursor-pointer ${pendingCount === 0 ? 'opacity-70' : ''}" type="button" data-batch-generate-assets data-pipeline-id="${esc(pipeline.pipeline_id)}">
+          <button class="hw-btn hw-btn-gold flex items-center gap-2 cursor-pointer" type="button" data-batch-generate-assets data-pipeline-id="${esc(pipeline.pipeline_id)}">
             ${iconSvg('playlist_play', 'w-4 h-4 text-current')}
             <span class="font-body">${pendingCount > 0 ? `批量生成剩余 ${pendingCount} 项资产` : '已全部生成完毕'}</span>
           </button>
 
-          <button class="px-4 py-2.5 rounded-lg bg-gradient-to-r from-[#1c2233] to-[#252c40] hover:from-[#232b40] hover:to-[#2e3752] border border-[#dfc384]/40 text-[#dfc384] font-mono gw-type-body-md font-bold shadow-[0_4px_14px_rgba(0,0,0,0.6)] active:translate-y-px transition-all flex items-center gap-1.5 cursor-pointer group" type="button" data-goto-step="video" title="确认资产并进入分镜脚本">
+          <button class="hw-btn flex items-center gap-1.5 cursor-pointer group" type="button" data-goto-step="video" title="确认资产并进入分镜脚本">
             <span>下一步：分镜</span>
             ${iconSvg('arrow_forward', 'w-3.5 h-3.5 text-primary group-hover:translate-x-0.5 transition-transform')}
           </button>
@@ -1104,7 +1106,7 @@
           <span class="font-display font-bold gw-type-body-md text-gold-light">${esc(label)}</span>
           <span class="font-mono gw-type-body-sm text-[#6d7283]">${esc(tag)}</span>
         </div>
-        <button class="flex items-center gap-1 px-2 py-0.5 bg-[#090a0e] hover:bg-[#161822] rounded border border-[#20232e] text-[#8e93a4] hover:text-gold-light font-mono gw-type-body-md transition-all cursor-pointer" type="button" data-outline-expand aria-expanded="true">
+        <button class="hw-btn flex items-center gap-1 cursor-pointer" type="button" data-outline-expand aria-expanded="true">
           <span>收起</span>
           ${iconSvg('unfold_more', 'w-3 h-3 text-gold-dim')}
         </button>
@@ -1125,7 +1127,7 @@
           <span class="font-display font-bold gw-type-body-md text-gold-light">五幕结构 (每行一条逐条展开)</span>
           <span class="font-mono gw-type-body-sm text-[#6d7283]">5-ACT DRAMATIC BEATS</span>
         </div>
-        <button class="flex items-center gap-1 px-2 py-0.5 bg-[#090a0e] hover:bg-[#161822] rounded border border-[#20232e] text-[#8e93a4] hover:text-gold-light font-mono gw-type-body-md transition-all cursor-pointer" type="button" data-outline-expand aria-expanded="true">
+        <button class="hw-btn flex items-center gap-1 cursor-pointer" type="button" data-outline-expand aria-expanded="true">
           <span>收起</span>
           ${iconSvg('unfold_more', 'w-3 h-3 text-gold-dim')}
         </button>
@@ -1202,7 +1204,7 @@
             <span class="font-mono gw-type-body-sm text-gold-dim">[CANON-TXT-01]</span>
           </div>
           <div class="flex items-center gap-2">
-            <button class="flex items-center gap-1 px-2.5 py-0.5 bg-[#11131a] hover:bg-[#1a1d28] border border-[#2b2e3c] rounded text-gold-light font-mono gw-type-body-md transition-all shadow-sm" type="button" data-goto-step="script" title="返回剧本生成修改源文本">
+            <button class="hw-btn flex items-center gap-1" type="button" data-goto-step="script" title="返回剧本生成修改源文本">
               ${iconSvg('history_edu', 'w-3 h-3 text-gold-dim')}
               <span>来源脚本</span>
             </button>
@@ -1271,11 +1273,11 @@
             <span>大纲状态：${ready ? '<b class="text-emerald-400">校验通过，可进入拆分</b>' : '<b class="text-amber-400">待校验生成</b>'}</span>
           </div>
           <div class="flex items-center gap-2">
-            <button class="px-5 py-2 rounded-lg bg-gradient-to-b from-[#fcdf9d] via-[#dfc384] to-[#b89547] text-[#120f05] font-display font-bold gw-type-body-md shadow-[0_0_18px_rgba(223,195,132,0.4),0_4px_10px_rgba(0,0,0,0.8),inset_0_1px_1px_rgba(255,255,255,0.6)] hover:brightness-110 active:scale-[0.98] transition-all flex items-center gap-1.5 cursor-pointer" type="button" data-outline-generate>
+            <button class="hw-btn hw-btn-gold flex items-center gap-1.5 cursor-pointer" type="button" data-outline-generate>
               ${iconSvg('auto_awesome', 'w-4 h-4 text-[#120f05]')}
               <span>${ready ? '重新生成大纲' : '生成结构化大纲'}</span>
             </button>
-            ${ready ? `<button class="px-4 py-2 rounded-lg bg-[#1a1e2a] hover:bg-[#23293a] border border-gold-primary/30 text-gold-light font-display font-bold gw-type-body-md transition-all flex items-center gap-1 cursor-pointer" type="button" data-storyboard-substep="2">
+            ${ready ? `<button class="hw-btn flex items-center gap-1 cursor-pointer" type="button" data-storyboard-substep="2">
               <span>前往步骤 2 拆分分镜</span>
               ${iconSvg('chevron_right', 'w-3.5 h-3.5 text-gold-primary')}
             </button>` : ''}
@@ -1307,11 +1309,11 @@
             <span class="text-[#6d7283]">预估总片长:</span>
             <span class="text-gold-light font-bold">${totalDuration} 秒</span>
           </div>
-          <button class="px-4 py-1.5 rounded-lg bg-gradient-to-b from-[#fcdf9d] via-[#dfc384] to-[#b89547] text-[#120f05] font-display font-bold gw-type-body-md shadow hover:brightness-105 active:scale-95 transition-all flex items-center gap-1.5 cursor-pointer ${ready ? '' : 'opacity-60'}" type="button" data-shots-generate ${ready ? '' : 'disabled'}>
+          <button class="hw-btn hw-btn-gold flex items-center gap-1.5 cursor-pointer" type="button" data-shots-generate ${ready ? '' : 'disabled'}>
             ${iconSvg('movie_edit', 'w-3.5 h-3.5 text-[#120f05]')}
             <span>${shots.length ? '重新拆分分镜' : '确认大纲并拆分分镜'}</span>
           </button>
-          ${shots.length ? `<button class="px-4 py-1.5 rounded-lg bg-[#1b1f2c] hover:bg-[#252b3d] border border-gold-primary/40 text-gold-light font-display font-bold gw-type-body-md transition-all flex items-center gap-1 cursor-pointer" type="button" data-storyboard-substep="3">
+          ${shots.length ? `<button class="hw-btn flex items-center gap-1 cursor-pointer" type="button" data-storyboard-substep="3">
             <span>前往步骤 3 提交审核</span>
             ${iconSvg('chevron_right', 'w-3.5 h-3.5 text-gold-primary')}
           </button>` : ''}
@@ -1327,7 +1329,7 @@
           <h4 class="font-display gw-type-body-md font-bold text-[#e1e4ed]">尚未生成分镜镜头组</h4>
           <p class="font-mono gw-type-body-sm text-[#6e7384]">请先在步骤 1 确认结构化大纲，然后点击上方“确认大纲并拆分分镜”，分镜师 Agent 将自动为您规划逐镜头参数。</p>
         </div>
-        <button class="mt-2 px-5 py-2 rounded-lg bg-gradient-to-b from-[#fcdf9d] via-[#dfc384] to-[#b89547] text-[#120f05] font-display font-bold gw-type-body-md shadow hover:brightness-105 cursor-pointer ${ready ? '' : 'opacity-60'}" type="button" data-shots-generate ${ready ? '' : 'disabled'}>
+        <button class="hw-btn hw-btn-gold mt-2 cursor-pointer" type="button" data-shots-generate ${ready ? '' : 'disabled'}>
           一键拆分具体分镜
         </button>
       </div>`}
@@ -1348,11 +1350,11 @@
           <p class="font-mono gw-type-body-sm text-[#7e8498] leading-relaxed">Gods' Workbench 严格分镜审片官将对叙事清晰度、镜头连续性、可执行性、节奏控制力、资产一致性进行 0-100 分综合打分（80 分及格），并提供逐条针对性修改意见。</p>
         </div>
         <div class="flex items-center gap-3 mt-2">
-          <button class="px-6 py-2.5 rounded-lg bg-gradient-to-b from-[#fcdf9d] via-[#dfc384] to-[#b89547] text-[#120f05] font-display font-bold gw-type-body-md shadow-[0_0_20px_rgba(223,195,132,0.4)] hover:brightness-110 active:scale-95 transition-all flex items-center gap-2 cursor-pointer ${shots.length ? '' : 'opacity-60'}" type="button" data-storyboard-review ${shots.length ? '' : 'disabled'}>
+          <button class="hw-btn hw-btn-gold flex items-center gap-2 cursor-pointer" type="button" data-storyboard-review ${shots.length ? '' : 'disabled'}>
             ${iconSvg('auto_awesome', 'w-4 h-4 text-[#120f05]')}
             <span>提交严格分镜审片官审核</span>
           </button>
-          <button class="px-4 py-2.5 rounded-lg bg-[#141722] hover:bg-[#1c2230] border border-[#2e3447] text-[#c9cbd2] font-mono gw-type-body-md font-semibold transition-all cursor-pointer" type="button" data-storyboard-substep="2">
+          <button class="hw-btn cursor-pointer" type="button" data-storyboard-substep="2">
             返回调整镜头
           </button>
         </div>
@@ -1451,21 +1453,21 @@
       <!-- 审片操作按键栏 -->
       <div class="flex flex-col sm:flex-row items-center justify-between gap-3 pt-2 border-t border-[#181a24]">
         <div class="flex items-center gap-2">
-          <button class="px-4 py-2 rounded-lg bg-[#181c28] hover:bg-[#202636] border border-[#2e3448] text-gold-light font-display gw-type-body-md font-bold transition-all flex items-center gap-1.5 cursor-pointer" type="button" data-storyboard-review>
+          <button class="hw-btn flex items-center gap-1.5 cursor-pointer" type="button" data-storyboard-review>
             ${iconSvg('refresh', 'w-3.5 h-3.5 text-gold-primary')}
             <span>重新提交审核</span>
           </button>
-          <button class="px-4 py-2 rounded-lg bg-[#141722] hover:bg-[#1c2230] border border-[#2e3447] text-[#c9cbd2] font-mono gw-type-body-md transition-all cursor-pointer" type="button" data-storyboard-substep="2">
+          <button class="hw-btn cursor-pointer" type="button" data-storyboard-substep="2">
             返回调整镜头
           </button>
         </div>
 
         <div class="flex items-center gap-3">
-          ${!isPassed ? `<button class="px-5 py-2 rounded-lg bg-gradient-to-b from-[#fcdf9d] via-[#dfc384] to-[#c7a760] text-[#1a1308] font-display gw-type-body-md font-bold shadow-[0_4px_14px_rgba(223,195,132,0.3)] hover:brightness-105 active:scale-95 transition-all flex items-center gap-1.5 cursor-pointer" type="button" data-revise-storyboard>
+          ${!isPassed ? `<button class="hw-btn hw-btn-gold flex items-center gap-1.5 cursor-pointer" type="button" data-revise-storyboard>
             ${iconSvg('auto_fix_high', 'w-4 h-4 text-current')}
             <span>按审核意见一键重拆分镜</span>
           </button>` : ''}
-          <button class="px-5 py-2 rounded-lg bg-gradient-to-b from-[#34d399] to-[#059669] text-white font-display gw-type-body-md font-bold shadow-[0_4px_14px_rgba(52,211,153,0.3)] hover:brightness-105 active:scale-95 transition-all flex items-center gap-1.5 cursor-pointer" type="button" data-complete-storyboard>
+          <button class="hw-btn flex items-center gap-1.5 cursor-pointer" type="button" data-complete-storyboard>
             <span>确认分镜，进入视频脚本</span>
             ${iconSvg('arrow_forward', 'w-4 h-4 text-white')}
           </button>
@@ -1523,12 +1525,12 @@
 
               <!-- 全局步骤快速切换胶囊 -->
               <div class="flex items-center gap-1 p-1 bg-[#090b10] border border-[#222634] rounded-lg shadow-inner">
-                <button class="px-2.5 py-1 rounded gw-type-body-md font-mono text-[#898e9e] hover:text-[#d1d5db] transition-all cursor-pointer" type="button" data-goto-step="script">01 剧本</button>
-                <button class="px-2.5 py-1 rounded gw-type-body-md font-mono text-[#898e9e] hover:text-[#d1d5db] transition-all cursor-pointer" type="button" data-goto-step="assets">02 资产</button>
-                <button class="relative px-3 py-1 rounded gw-type-body-md font-mono font-bold text-black bg-gradient-to-b from-[#fcdf9d] to-[#c9a65d] shadow-[0_0_12px_rgba(223,195,132,0.5),inset_0_1px_1px_rgba(255,255,255,0.4)] cursor-pointer" type="button" data-goto-step="video">
+                <button class="hw-btn cursor-pointer" type="button" data-goto-step="script">01 剧本</button>
+                <button class="hw-btn cursor-pointer" type="button" data-goto-step="assets">02 资产</button>
+                <button class="hw-btn hw-btn-gold relative cursor-pointer" type="button" data-goto-step="video">
                   03 分镜
                 </button>
-                <button class="px-2.5 py-1 rounded gw-type-body-md font-mono text-[#898e9e] hover:text-[#d1d5db] transition-all cursor-pointer" type="button" data-goto-step="audio_compose">04 视频</button>
+                <button class="hw-btn cursor-pointer" type="button" data-goto-step="audio_compose">04 视频</button>
               </div>
             </div>
           </div>
@@ -1536,23 +1538,23 @@
           <!-- Lower Row: Sub-rail Segmented Capsule Deck & Metric Bar -->
           <div class="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-3 pt-3">
             <!-- Step Sub-rail Capsules (可点击切换 1 / 2 / 3) -->
-            <div class="flex items-center gap-2 flex-wrap">
+            <div class="btn-segmented-deck flex items-center flex-wrap">
               <!-- Step 1 Capsule -->
-              <button class="flex items-center gap-2 px-3 py-1 rounded transition-all cursor-pointer ${subStep === 1 ? 'bg-gradient-to-r from-gold-primary/25 to-gold-primary/10 border border-gold-primary/50 text-gold-light shadow-[0_0_10px_rgba(223,195,132,0.2)]' : 'bg-[#0c0d12] hover:bg-[#141620] border border-[#1f222e] text-[#808595]'}" type="button" data-storyboard-substep="1">
+              <button class="btn-segmented-item ${subStep === 1 ? 'active' : ''}" type="button" aria-pressed="${subStep === 1}" data-storyboard-substep="1">
                 ${iconSvg('check_circle', `w-3.5 h-3.5 ${ready ? 'text-gold-primary' : 'text-[#616677]'}`)}
                 <span class="font-mono gw-type-body-md font-boldr">步骤 1 大纲规划</span>
                 ${ready ? '<span class="font-mono gw-type-body-sm bg-gold-primary text-black font-extrabold px-1.5 py-0.5 rounded">DONE</span>' : ''}
               </button>
 
               <!-- Step 2 Capsule -->
-              <button class="flex items-center gap-2 px-3 py-1 rounded transition-all cursor-pointer ${subStep === 2 ? 'bg-gradient-to-r from-gold-primary/25 to-gold-primary/10 border border-gold-primary/50 text-gold-light shadow-[0_0_10px_rgba(223,195,132,0.2)]' : 'bg-[#0c0d12] hover:bg-[#141620] border border-[#1f222e] text-[#808595]'}" type="button" data-storyboard-substep="2">
+              <button class="btn-segmented-item ${subStep === 2 ? 'active' : ''}" type="button" aria-pressed="${subStep === 2}" data-storyboard-substep="2">
                 ${iconSvg('movie_edit', 'w-3.5 h-3.5 text-current')}
                 <span class="font-mono gw-type-body-smr">步骤 2 分镜节拍拆解</span>
                 ${shots.length ? `<span class="font-mono gw-type-body-sm bg-[#1e2230] text-gold-light px-1.5 py-0.5 rounded font-bold">${shots.length} 镜</span>` : ''}
               </button>
 
               <!-- Step 3 Capsule -->
-              <button class="flex items-center gap-2 px-3 py-1 rounded transition-all cursor-pointer ${subStep === 3 ? 'bg-gradient-to-r from-gold-primary/25 to-gold-primary/10 border border-gold-primary/50 text-gold-light shadow-[0_0_10px_rgba(223,195,132,0.2)]' : 'bg-[#0c0d12] hover:bg-[#141620] border border-[#1f222e] text-[#808595]'}" type="button" data-storyboard-substep="3">
+              <button class="btn-segmented-item ${subStep === 3 ? 'active' : ''}" type="button" aria-pressed="${subStep === 3}" data-storyboard-substep="3">
                 ${iconSvg('rate_review', 'w-3.5 h-3.5 text-current')}
                 <span class="font-mono gw-type-body-smr">步骤 3 镜头机位与审片</span>
                 ${review ? `<span class="font-mono gw-type-body-sm ${review.status === 'passed' ? 'bg-emerald-500/20 text-emerald-300' : 'bg-amber-500/20 text-amber-300'} px-1.5 py-0.5 rounded font-bold">${review.score}分</span>` : ''}
@@ -1598,28 +1600,28 @@
         <!-- 动作操作区 -->
         <div class="flex items-center gap-3 w-full md:w-auto justify-end">
           <!-- 上一步：资产生成 -->
-          <button class="px-4 py-2.5 rounded-lg bg-[#141722] hover:bg-[#1c2230] border border-[#2e3447] text-[#c9cbd2] font-mono gw-type-body-md font-semibold shadow-[0_2px_8px_rgba(0,0,0,0.5)] active:translate-y-px transition-all flex items-center gap-1.5 cursor-pointer" type="button" data-goto-step="assets" title="返回资产生成">
+          <button class="hw-btn flex items-center gap-1.5 cursor-pointer" type="button" data-goto-step="assets" title="返回资产生成">
             ${iconSvg('arrow_back', 'w-3.5 h-3.5 text-[#8b909f]')}
             <span>上一步：资产生成</span>
           </button>
 
           <!-- 中间主行动键 (按当前子步骤动态展现) -->
-          ${subStep === 1 ? `<button class="px-5 py-2.5 rounded-lg bg-gradient-to-b from-[#fcdf9d] via-[#dfc384] to-[#c7a760] text-[#1a1308] font-display gw-type-body-md font-bold shadow-[0_4px_16px_rgba(223,195,132,0.4)] hover:brightness-105 active:scale-95 transition-all flex items-center gap-1.5 cursor-pointer" type="button" data-outline-generate>
+          ${subStep === 1 ? `<button class="hw-btn hw-btn-gold flex items-center gap-1.5 cursor-pointer" type="button" data-outline-generate>
             ${iconSvg('auto_awesome', 'w-4 h-4 text-[#1a1308]')}
             <span>${ready ? '更新大纲规划' : '生成大纲规划'}</span>
-          </button>` : subStep === 2 ? `<button class="px-5 py-2.5 rounded-lg bg-gradient-to-b from-[#fcdf9d] via-[#dfc384] to-[#c7a760] text-[#1a1308] font-display gw-type-body-md font-bold shadow-[0_4px_16px_rgba(223,195,132,0.4)] hover:brightness-105 active:scale-95 transition-all flex items-center gap-1.5 cursor-pointer" type="button" data-shots-generate ${ready ? '' : 'disabled'}>
+          </button>` : subStep === 2 ? `<button class="hw-btn hw-btn-gold flex items-center gap-1.5 cursor-pointer" type="button" data-shots-generate ${ready ? '' : 'disabled'}>
             ${iconSvg('movie_edit', 'w-4 h-4 text-[#1a1308]')}
             <span>${shots.length ? '重新拆分分镜' : '拆分具体分镜'}</span>
-          </button>` : review && review.status !== 'passed' ? `<button class="px-5 py-2.5 rounded-lg bg-gradient-to-b from-[#fcdf9d] via-[#dfc384] to-[#c7a760] text-[#1a1308] font-display gw-type-body-md font-bold shadow-[0_4px_16px_rgba(223,195,132,0.4)] hover:brightness-105 active:scale-95 transition-all flex items-center gap-1.5 cursor-pointer" type="button" data-revise-storyboard>
+          </button>` : review && review.status !== 'passed' ? `<button class="hw-btn hw-btn-gold flex items-center gap-1.5 cursor-pointer" type="button" data-revise-storyboard>
             ${iconSvg('auto_fix_high', 'w-4 h-4 text-[#1a1308]')}
             <span>按意见一键重拆分镜</span>
-          </button>` : `<button class="px-5 py-2.5 rounded-lg bg-gradient-to-b from-[#fcdf9d] via-[#dfc384] to-[#c7a760] text-[#1a1308] font-display gw-type-body-md font-bold shadow-[0_4px_16px_rgba(223,195,132,0.4)] hover:brightness-105 active:scale-95 transition-all flex items-center gap-1.5 cursor-pointer" type="button" data-storyboard-review ${shots.length ? '' : 'disabled'}>
+          </button>` : `<button class="hw-btn hw-btn-gold flex items-center gap-1.5 cursor-pointer" type="button" data-storyboard-review ${shots.length ? '' : 'disabled'}>
             ${iconSvg('auto_awesome', 'w-4 h-4 text-[#1a1308]')}
             <span>提交分镜审核</span>
           </button>`}
 
           <!-- 下一步：视频脚本 -->
-          <button class="px-4 py-2.5 rounded-lg bg-gradient-to-r from-[#1c2233] to-[#252c40] hover:from-[#232b40] hover:to-[#2e3752] border border-[#dfc384]/40 text-[#dfc384] font-mono gw-type-body-md font-bold shadow-[0_4px_14px_rgba(0,0,0,0.6)] active:translate-y-px transition-all flex items-center gap-1.5 cursor-pointer group" type="button" data-goto-step="audio_compose" title="前往视频脚本制作">
+          <button class="hw-btn flex items-center gap-1.5 cursor-pointer group" type="button" data-goto-step="audio_compose" title="前往视频脚本制作">
             <span>下一步：视频脚本</span>
             ${iconSvg('arrow_forward', 'w-3.5 h-3.5 text-primary group-hover:translate-x-0.5 transition-transform')}
           </button>
@@ -1774,7 +1776,7 @@
     const previousFocus = document.activeElement?.closest?.('#episodeStepNav') ? String(document.activeElement.dataset.step || '') : '';
     const stages = STAGES.map(spec => stageFor(pipeline, spec.key));
     nav.hidden = false;
-    nav.innerHTML = STAGES.map((spec, index) => `<button type="button" class="workflow-step ${state.activeStep === spec.key ? 'is-active' : ''} ${statusClass(stages[index].status)}" data-step="${esc(spec.key)}" role="tab" aria-selected="${state.activeStep === spec.key}" aria-controls="${stageSectionId(spec.key)}" tabindex="${state.activeStep === spec.key ? '0' : '-1'}"><strong>${esc(spec.display)}</strong><small>${esc(statusText(stages[index].status))}</small></button>`).join('');
+    nav.innerHTML = STAGES.map((spec, index) => `<button type="button" class="btn-segmented-item workflow-step ${state.activeStep === spec.key ? 'is-active' : ''} ${statusClass(stages[index].status)}" data-step="${esc(spec.key)}" role="tab" aria-selected="${state.activeStep === spec.key}" aria-controls="${stageSectionId(spec.key)}" tabindex="${state.activeStep === spec.key ? '0' : '-1'}"><strong>${esc(spec.display)}</strong><small>${esc(statusText(stages[index].status))}</small></button>`).join('');
     if (previousFocus) nav.querySelector(`[data-step="${CSS.escape(previousFocus)}"]`)?.focus();
     if (window.EpisodeLiquidMetal) window.EpisodeLiquidMetal.refresh();
   }
@@ -2926,8 +2928,8 @@ state.projects = (projects.projects || DEMO_PROJECTS_FALLBACK)
   window.addEventListener('focus', () => { void refreshVideoIdentity(); });
   window.addEventListener('storage', () => { void refreshVideoIdentity(); });
   function assetRecord(pipelineId, assetId) { const pipeline = pipelineFor(pipelineId); if (!pipeline) return null; const data = localData(pipeline); const item = data.assets.find(value => value.id === assetId); return item ? {pipeline, data, item} : null; }
-  function openAssetDetail(pipelineId, assetId, returnFocus = null) { const record = assetRecord(pipelineId, assetId); const dialog = q('#assetDetailDialog'); if (!record || !dialog) return; state.detailReturnFocus = returnFocus || document.activeElement; dialog.dataset.pipelineId = record.pipeline.pipeline_id; dialog.dataset.assetId = record.item.id; dialog.innerHTML = `<form method="dialog" class="asset-detail-shell" data-floating-content><div class="asset-detail-head"><div><span class="asset-detail-kicker">资产设定</span><h2>${esc(record.item.name)}</h2><p>${esc(assetTypeLabel(record.item.type))} · ${esc(record.item.status === 'ready' ? '图片已生成' : '图片待生成')}</p></div><button class="hw-btn hw-btn-icon icon-button" type="button" data-asset-detail-close aria-label="关闭资产详情" title="关闭">×</button></div><div class="asset-detail-body"><div class="asset-detail-media ${record.item.preview ? 'has-image' : ''}">${record.item.preview ? `<img data-detail-image src="${esc(record.item.preview)}" alt="${esc(record.item.name)}" title="双击查看大图">` : '<div class="asset-placeholder"><span>待生成图片</span><small>保存设定后可生成资产</small></div>'}</div><div class="asset-detail-fields"><label>资产名称<input data-asset-detail-field="name" value="${esc(record.item.name)}"></label><label>资产类型<select data-asset-detail-field="type"><option value="character"${record.item.type === 'character' ? ' selected' : ''}>角色</option><option value="scene"${record.item.type === 'scene' ? ' selected' : ''}>场景</option><option value="prop"${record.item.type === 'prop' ? ' selected' : ''}>道具</option><option value="other"${record.item.type === 'other' ? ' selected' : ''}>其他</option></select></label><label>资产设定提示词<textarea data-asset-detail-field="prompt" rows="9">${esc(record.item.prompt)}</textarea></label></div></div><div class="asset-detail-actions"><button class="hw-btn" type="button" data-asset-detail-regenerate data-pipeline-id="${esc(record.pipeline.pipeline_id)}" data-asset-id="${esc(record.item.id)}">重新生成</button><span></span><button class="hw-btn" type="button" data-asset-detail-close>取消</button><button class="hw-btn hw-btn-gold" type="button" data-asset-detail-save>保存修改</button></div></form>`; if (!dialog.open) dialog.showModal(); dialog.querySelector('[data-asset-detail-field="name"]')?.focus(); }
-  function openAssetImage(pipelineId, assetId) { const record = assetRecord(pipelineId, assetId); const dialog = q('#assetImageDialog'); if (!record || !record.item.preview || !dialog) return; dialog.innerHTML = `<div class="asset-image-shell" data-floating-content><div class="asset-image-head"><strong>${esc(record.item.name)}</strong><button class="hw-btn hw-btn-icon icon-button" type="button" data-asset-image-close aria-label="关闭图片预览" title="关闭">×</button></div><img src="${esc(record.item.preview)}" alt="${esc(record.item.name)}"><p>双击卡片可编辑设定，点击空白关闭预览</p></div>`; if (!dialog.open) dialog.showModal(); }
+  function openAssetDetail(pipelineId, assetId, returnFocus = null) { const record = assetRecord(pipelineId, assetId); const dialog = q('#assetDetailDialog'); if (!record || !dialog) return; state.detailReturnFocus = returnFocus || document.activeElement; dialog.dataset.pipelineId = record.pipeline.pipeline_id; dialog.dataset.assetId = record.item.id; dialog.innerHTML = `<form method="dialog" class="asset-detail-shell" data-floating-content><div class="asset-detail-head"><div><span class="asset-detail-kicker">资产设定</span><h2>${esc(record.item.name)}</h2><p>${esc(assetTypeLabel(record.item.type))} · ${esc(record.item.status === 'ready' ? '图片已生成' : '图片待生成')}</p></div><button class="hw-btn hw-btn-icon" type="button" data-asset-detail-close aria-label="关闭资产详情" title="关闭">×</button></div><div class="asset-detail-body"><div class="asset-detail-media ${record.item.preview ? 'has-image' : ''}">${record.item.preview ? `<img data-detail-image src="${esc(record.item.preview)}" alt="${esc(record.item.name)}" title="双击查看大图">` : '<div class="asset-placeholder"><span>待生成图片</span><small>保存设定后可生成资产</small></div>'}</div><div class="asset-detail-fields"><label>资产名称<input data-asset-detail-field="name" value="${esc(record.item.name)}"></label><label>资产类型<select data-asset-detail-field="type"><option value="character"${record.item.type === 'character' ? ' selected' : ''}>角色</option><option value="scene"${record.item.type === 'scene' ? ' selected' : ''}>场景</option><option value="prop"${record.item.type === 'prop' ? ' selected' : ''}>道具</option><option value="other"${record.item.type === 'other' ? ' selected' : ''}>其他</option></select></label><label>资产设定提示词<textarea data-asset-detail-field="prompt" rows="9">${esc(record.item.prompt)}</textarea></label></div></div><div class="asset-detail-actions"><button class="hw-btn" type="button" data-asset-detail-regenerate data-pipeline-id="${esc(record.pipeline.pipeline_id)}" data-asset-id="${esc(record.item.id)}">重新生成</button><span></span><button class="hw-btn" type="button" data-asset-detail-close>取消</button><button class="hw-btn hw-btn-gold" type="button" data-asset-detail-save>保存修改</button></div></form>`; if (!dialog.open) dialog.showModal(); dialog.querySelector('[data-asset-detail-field="name"]')?.focus(); }
+  function openAssetImage(pipelineId, assetId) { const record = assetRecord(pipelineId, assetId); const dialog = q('#assetImageDialog'); if (!record || !record.item.preview || !dialog) return; dialog.innerHTML = `<div class="asset-image-shell" data-floating-content><div class="asset-image-head"><strong>${esc(record.item.name)}</strong><button class="hw-btn hw-btn-icon" type="button" data-asset-image-close aria-label="关闭图片预览" title="关闭">×</button></div><img src="${esc(record.item.preview)}" alt="${esc(record.item.name)}"><p>双击卡片可编辑设定，点击空白关闭预览</p></div>`; if (!dialog.open) dialog.showModal(); }
   function saveAssetDetail(dialog) { const record = assetRecord(dialog.dataset.pipelineId, dialog.dataset.assetId); if (!record) throw new Error('资产卡片已不存在'); const name = String(dialog.querySelector('[data-asset-detail-field="name"]')?.value || '').trim(); const prompt = String(dialog.querySelector('[data-asset-detail-field="prompt"]')?.value || '').trim(); const type = String(dialog.querySelector('[data-asset-detail-field="type"]')?.value || 'other'); if (!name) throw new Error('资产名称不能为空'); if (!prompt) throw new Error('资产设定提示词不能为空'); record.item.name = name; record.item.prompt = prompt; record.item.type = ['character', 'scene', 'prop', 'other'].includes(type) ? type : 'other'; writeWorkspace(record.pipeline, record.data); dialog.close(); render(); toast('资产设定已保存'); }
   function closeAssetDialog(dialog) { if (dialog?.open) dialog.close(); }
   function syncStepParam(key) { const url = new URL(window.location.href); url.searchParams.set('step', key); history.replaceState(history.state, '', url); }

@@ -1,49 +1,29 @@
 /* Stitch's asset stage. The shell header and outer sidebar keep their own styles. */
 body.gw-signal.gw-page--asset-manager {
-    --vault-bg: #0a0b10;
-    --vault-deck: #090b10;
-    --vault-well: #080a0e;
-    --vault-top: #161820;
-    --vault-bottom: #0e1014;
-    --vault-text: #e2e8f0;
-    --vault-muted: #9ca9bb;
-    --vault-line: #262932;
-    --vault-accent: #dfc384;
-    --vault-bright: #fae2c8;
-    --vault-edge: rgba(223,195,132,.3);
+    --vault-bg: var(--gw-surface-bg);
+    --vault-deck: var(--gw-surface-panel);
+    --vault-well: var(--gw-control-bg);
+    --vault-top: var(--gw-surface-card);
+    --vault-bottom: var(--gw-surface-card-end);
+    --vault-text: var(--gw-text);
+    --vault-muted: var(--gw-text-muted);
+    --vault-line: var(--gw-border);
+    --vault-surface: var(--gw-surface-panel);
+    --vault-card: var(--gw-surface-card);
+    --vault-card-deep: var(--gw-surface-card-end);
+    --vault-inset: var(--gw-control-bg);
+    --vault-line-soft: var(--gw-border);
+    --vault-line-gold: var(--gold-glow);
+    --vault-gold: var(--gold-primary);
+    --vault-gold-light: var(--gold-light);
+    --vault-cyan: var(--sf-cyan);
+    --vault-green: var(--gw-success);
+    --vault-accent: var(--gold-primary);
+    --vault-bright: var(--gold-flare);
+    --vault-edge: var(--gold-glow);
 }
-html[data-theme="light"] body.gw-signal.gw-page--asset-manager {
-    --vault-bg: #f1f2f4;
-    --vault-deck: #e8eaee;
-    --vault-well: #fff;
-    --vault-top: #fff;
-    --vault-bottom: #e8eaee;
-    --vault-text: #25282e;
-    --vault-muted: #515d6f;
-    --vault-line: #c3c9d2;
-    --vault-accent: #775617;
-    --vault-bright: #634510;
-    --vault-edge: rgba(119,86,23,.4);
-}
-body.gw-signal.gw-page--asset-manager :is(#assetBoardTabs, .registry-overview-shell, .asset-content, .registry-nav) {
-    --sf-content: var(--vault-bg);
-    --sf-surface: var(--vault-well);
-    --sf-raised: var(--vault-top);
-    --sf-text: var(--vault-text);
-    --sf-muted: var(--vault-muted);
-    --sf-faint: var(--vault-muted);
-    --sf-line: var(--vault-line);
-    --sf-line-strong: var(--vault-edge);
-    --sf-cyan: var(--vault-accent);
-    --sf-focus: var(--vault-accent);
-    --sf-cyan-soft: color-mix(in srgb,var(--vault-accent) 12%,transparent);
-    --text: var(--vault-text);
-    --muted: var(--vault-muted);
-    --faint: var(--vault-muted);
-    --line: var(--vault-line);
-    color: var(--vault-text);
-    letter-spacing: 0;
-}
+
+
 body.gw-signal.gw-page--asset-manager .asset-page {
     max-width: none;
     padding: 0 !important;
@@ -64,33 +44,13 @@ body.gw-signal.gw-page--asset-manager #assetBoardTabs {
     box-shadow: none !important;
 }
 body.gw-signal.gw-page--asset-manager #assetBoardTabs .asset-board-list { gap: 3px; flex-basis: 700px; }
-body.gw-signal.gw-page--asset-manager #assetBoardTabs button {
-    
-    
-    padding: 0 7px !important;
-    gap: 5px;
-    
-    
-    border: 1px solid transparent !important;
-    border-radius: 4px !important;
-    background: transparent !important;
-    color: var(--vault-muted) !important;
-    box-shadow: none !important;
- font-family:var(--gw-font-body) !important; font-size:var(--gw-type-body-md) !important; line-height:var(--gw-leading-body-md) !important; font-weight:var(--gw-weight-medium) !important; letter-spacing:0 !important; min-height:36px !important; height:auto !important; max-height:none !important;}
-body.gw-signal.gw-page--asset-manager #assetBoardTabs svg { width: 13px; height: 13px; }
+
+body.gw-signal.gw-page--asset-manager #assetBoardTabs svg { width:14px; height:14px; }
 body.gw-signal.gw-page--asset-manager #assetBoardTabs .asset-board-lock { display: none; }
-body.gw-signal.gw-page--asset-manager #assetBoardTabs .asset-board-tab.active {
-    border-color: var(--vault-edge) !important;
-    background: var(--vault-top) !important;
-    color: var(--vault-accent) !important;
-}
+
 body.gw-signal.gw-page--asset-manager #assetBoardTabs .asset-board-add { color: var(--vault-accent) !important; }
 body.gw-signal.gw-page--asset-manager #assetBoardTabs .asset-board-menu-actions { flex-wrap: wrap; min-width: 0; max-width: 100%; gap: 6px; }
-body.gw-signal.gw-page--asset-manager #assetBoardTabs .asset-board-menu-actions button {
-    background: linear-gradient(var(--vault-top),var(--vault-bottom)) !important;
-    border-color: var(--vault-edge) !important;
-    box-shadow: inset 0 1px rgb(255 255 255 / .08) !important;
-}
+
 body.gw-signal.gw-page--asset-manager #assetStatus { min-width: 0; height: 22px; padding: 0 7px;  border-radius: 4px;  font-family:var(--gw-font-body); font-size:var(--gw-type-body-sm); line-height:var(--gw-leading-body-sm); font-weight:var(--gw-weight-medium); letter-spacing:0;}
 body.gw-signal.gw-page--asset-manager #assetManagerRoot {
     gap: 0 !important;
@@ -199,15 +159,15 @@ body.gw-signal.gw-page--asset-manager .registry-toolbar .content-heading strong 
 body.gw-signal.gw-page--asset-manager .registry-toolbar .content-heading > span {    font-family:var(--gw-font-body); font-size:var(--gw-type-body-sm); line-height:var(--gw-leading-body-sm); font-weight:var(--gw-weight-medium); letter-spacing:0;}
 body.gw-signal.gw-page--asset-manager .registry-toolbar-controls { gap: 8px; flex: 1 1 600px; justify-content: flex-start; flex-wrap: wrap; min-width: 0; }
 body.gw-signal.gw-page--asset-manager .registry-toolbar .asset-search-wrap { order: -1; flex: 1 1 180px; min-width: 120px; height: 40px !important; padding: 0 8px; box-shadow: inset 0 2px 4px rgb(0 0 0 / .4); }
-body.gw-signal.gw-page--asset-manager .registry-toolbar :is(button, input, select,.registry-toolbar-select) {      font-family:var(--gw-font-body) !important; font-size:var(--gw-type-body-md) !important; line-height:var(--gw-leading-body-md) !important; font-weight:var(--gw-weight-regular) !important; letter-spacing:0 !important; min-height:40px !important; height:auto !important; max-height:none !important;}
+body.gw-signal.gw-page--asset-manager .registry-toolbar :is(input, select,.registry-toolbar-select) {      font-family:var(--gw-font-body) !important; font-size:var(--gw-type-body-md) !important; line-height:var(--gw-leading-body-md) !important; font-weight:var(--gw-weight-regular) !important; letter-spacing:0 !important; min-height:40px !important; height:auto !important; max-height:none !important;}
 body.gw-signal.gw-page--asset-manager .registry-toolbar .asset-btn { padding: 0 7px; gap: 4px; }
 body.gw-signal.gw-page--asset-manager .registry-toolbar svg { width: 13px; height: 13px; }
 body.gw-signal.gw-page--asset-manager .registry-toolbar-select > span { padding: 0 5px;   font-family:var(--gw-font-body); font-size:var(--gw-type-body-md); line-height:var(--gw-leading-body-md); font-weight:var(--gw-weight-regular); letter-spacing:0; min-height:40px; height:auto; max-height:none;}
 body.gw-signal.gw-page--asset-manager .registry-toolbar-select select { min-width: 65px; padding: 0 4px; }
 body.gw-signal.gw-page--asset-manager .registry-layout-switch { padding: 0; }
-body.gw-signal.gw-page--asset-manager .registry-layout-switch button { width: 26px; }
-body.gw-signal.gw-page--asset-manager .registry-toolbar :is(.asset-btn,.registry-segment button) { border: 1px solid var(--vault-edge); border-radius: 4px !important; background: linear-gradient(var(--vault-top),var(--vault-bottom)) !important; box-shadow: inset 0 1px rgb(255 255 255 / .1); color: var(--vault-text) !important; }
-body.gw-signal.gw-page--asset-manager .registry-toolbar button:is(.is-active,:hover:not(:disabled)) { color: var(--vault-accent) !important; border-color: var(--vault-accent) !important; }
+
+
+
 body.gw-signal.gw-page--asset-manager .registry-content .registry-assets-scroll { padding: 12px; gap: 12px; background: var(--vault-bg); }
 body.gw-signal.gw-page--asset-manager .registry-grid { background: transparent !important; grid-template-columns: repeat(7,minmax(0,1fr)); gap: 10px; }
 body.gw-signal.gw-page--asset-manager .registry-content .registry-card {
@@ -261,18 +221,8 @@ body.gw-signal.gw-page--asset-manager :is(#assetBoardTabs,.registry-content) :is
 
 /* Shared vault treatment for every non-registry asset route. */
 body.gw-signal.gw-page--asset-manager {
-    --vault-surface: #0e1015;
-    --vault-card: #161820;
-    --vault-card-deep: #0d0f14;
-    --vault-inset: #080a0e;
-    --vault-line-soft: rgba(255,255,255,.08);
-    --vault-line-gold: rgba(223,195,132,.36);
-    --vault-gold: #dfc384;
-    --vault-gold-light: #fae2c8;
-    --vault-cyan: #22c5d5;
-    --vault-green: #26ba93;
     background-color: var(--vault-bg) !important;
-    background-image: radial-gradient(circle at 50% 0%, rgba(223,195,132,.045), transparent 54%), linear-gradient(180deg,#0b0d11 0%,#060709 100%) !important;
+    background-image: none !important;
     font-family: var(--gw-font-body);
 }
 body.gw-signal.gw-page--asset-manager .asset-page { position: relative; isolation: isolate; }
@@ -304,11 +254,11 @@ body.gw-signal.gw-page--asset-manager #assetManagerRoot:not(.asset-manager-root-
 }
 body.gw-signal.gw-page--asset-manager #assetManagerRoot:not(.asset-manager-root-registry) > .asset-nav {
     border-right: 1px solid var(--vault-line-soft) !important;
-    background: linear-gradient(180deg, #0d0f14 0%, #080a0e 100%) !important;
+    background: linear-gradient(180deg, var(--vault-surface), var(--vault-inset)) !important;
 }
 body.gw-signal.gw-page--asset-manager #assetManagerRoot:not(.asset-manager-root-registry) > .asset-detail {
     border-left: 1px solid var(--vault-line-soft) !important;
-    background: linear-gradient(180deg, #11131a 0%, #0a0c10 100%) !important;
+    background: linear-gradient(180deg, var(--vault-card), var(--vault-card-deep)) !important;
 }
 body.gw-signal.gw-page--asset-manager #assetManagerRoot:not(.asset-manager-root-registry) .panel-head {
     min-height: 48px;
@@ -561,13 +511,13 @@ body.gw-signal.gw-page--asset-manager #assetManagerRoot:not(.asset-manager-root-
 body.gw-signal.gw-page--asset-manager #assetManagerRoot:not(.asset-manager-root-registry) .canvas-asset-group-head small { border: 1px solid var(--vault-line-soft); border-radius: 3px; background: #0b0d12; color: var(--vault-gold); }
 
 /* Standalone script archive page uses the same chassis without inventing a second UI. */
-body.gw-signal.gw-page--asset-manager #assetManagerRoot.asset-manager-root-page-scripts { display: block; background: #0a0c10 !important; }
+body.gw-signal.gw-page--asset-manager #assetManagerRoot.asset-manager-root-page-scripts { display: block; background: var(--vault-inset) !important; }
 body.gw-signal.gw-page--asset-manager #assetManagerRoot.asset-manager-root-page-scripts .script-assets-panel {
     min-height: 100%;
     padding: 15px;
     border: 0;
     border-radius: 0;
-    background: #0a0c10;
+    background: var(--vault-surface);
     color: var(--vault-text);
     background-image: repeating-linear-gradient(135deg, rgba(255,255,255,.016) 0, rgba(255,255,255,.016) 1px, transparent 1px, transparent 5px);
 }
@@ -578,7 +528,7 @@ body.gw-signal.gw-page--asset-manager #assetManagerRoot.asset-manager-root-page-
 body.gw-signal.gw-page--asset-manager #assetManagerRoot.asset-manager-root-page-scripts .asset-primary-action { min-height: 30px; border: 1px solid var(--vault-gold); border-radius: 4px; background: linear-gradient(180deg,#f8dfb1,#c49b58); color: #171109; box-shadow: 0 4px 10px rgba(223,195,132,.2); }
 body.gw-signal.gw-page--asset-manager #assetManagerRoot.asset-manager-root-page-scripts .script-asset-grid { grid-template-columns: repeat(auto-fill,minmax(250px,1fr)); gap: 10px; padding-top: 13px; }
 body.gw-signal.gw-page--asset-manager #assetManagerRoot.asset-manager-root-page-scripts .script-asset-card { border: 1px solid var(--vault-line-soft); border-top-color: var(--vault-line-gold); border-radius: 7px; background: linear-gradient(165deg,var(--vault-card),var(--vault-card-deep)); box-shadow: inset 0 1px rgba(255,255,255,.05), 0 8px 18px rgba(0,0,0,.42); }
-body.gw-signal.gw-page--asset-manager #assetManagerRoot.asset-manager-root-page-scripts .script-asset-card:hover { border-color: var(--vault-gold); background: linear-gradient(165deg,#1a1d27,#0e1015); }
+body.gw-signal.gw-page--asset-manager #assetManagerRoot.asset-manager-root-page-scripts .script-asset-card:hover { border-color: var(--vault-gold); background: linear-gradient(165deg,var(--vault-card),var(--vault-card-deep)); }
 body.gw-signal.gw-page--asset-manager #assetManagerRoot.asset-manager-root-page-scripts :is(.script-card-title,.script-assets-empty h3) { color: #e3e8f0; }
 body.gw-signal.gw-page--asset-manager #assetManagerRoot.asset-manager-root-page-scripts :is(.script-card-preview,.script-asset-meta,.script-date,.script-meta-file,.script-meta-project,.script-assets-empty p) { color: #7f8b9e; }
 body.gw-signal.gw-page--asset-manager #assetManagerRoot.asset-manager-root-page-scripts .script-format-badge { border: 1px solid var(--vault-line-gold); border-radius: 3px; background: rgba(223,195,132,.12); color: var(--vault-gold-light); font: var(--gw-type-label-md) var(--gw-font-mono); }
@@ -588,16 +538,16 @@ body.gw-signal.gw-page--asset-manager #assetManagerRoot.asset-manager-root-page-
 body.gw-signal.gw-page--asset-manager :is(.storage-settings-modal,.project-directory-template-sheet,.asset-operation-error-overlay > section,.asset-lightbox-dialog,.asset-image-editor-shell) {
     border-color: var(--vault-line-gold) !important;
     border-radius: 7px !important;
-    background: linear-gradient(165deg,#161820,#0d0f14) !important;
+    background: linear-gradient(165deg,var(--vault-card),var(--vault-card-deep)) !important;
     color: var(--vault-text);
     box-shadow: 0 28px 80px rgba(0,0,0,.72), inset 0 1px rgba(255,255,255,.06);
 }
-body.gw-signal.gw-page--asset-manager :is(.storage-settings-head,.project-directory-template-sheet-head,.project-directory-template-list-head,.asset-operation-error-overlay header,.asset-operation-error-overlay footer) { border-color: var(--vault-line-soft) !important; background: rgba(10,12,16,.72); }
+body.gw-signal.gw-page--asset-manager :is(.storage-settings-head,.project-directory-template-sheet-head,.project-directory-template-list-head,.asset-operation-error-overlay header,.asset-operation-error-overlay footer) { border-color: var(--vault-line-soft) !important; background: var(--vault-surface); }
 body.gw-signal.gw-page--asset-manager :is(.storage-settings-head strong,.project-directory-template-sheet-head strong,.project-directory-template-editor-head h3) { color: var(--vault-gold-light) !important; }
 body.gw-signal.gw-page--asset-manager :is(.storage-settings-head span,.project-directory-template-sheet-head span,.project-directory-template-editor-head p) { color: #8490a3 !important; }
-body.gw-signal.gw-page--asset-manager :is(.storage-settings-modal input,.storage-settings-modal textarea,.storage-settings-modal select,.project-directory-template-sheet textarea) { border-color: var(--vault-line-soft); border-radius: 4px; background: #090b0f; color: #e2e8f0; }
+body.gw-signal.gw-page--asset-manager :is(.storage-settings-modal input,.storage-settings-modal textarea,.storage-settings-modal select,.project-directory-template-sheet textarea) { border-color: var(--vault-line-soft); border-radius: 4px; background: var(--vault-inset); color: var(--vault-text); }
 body.gw-signal.gw-page--asset-manager :is(.storage-settings-modal input,.storage-settings-modal textarea,.storage-settings-modal select,.project-directory-template-sheet textarea):focus { border-color: var(--vault-gold); outline: none; box-shadow: 0 0 0 1px rgba(223,195,132,.18); }
-body.gw-signal.gw-page--asset-manager :is(.asset-operation-error-overlay pre,.asset-image-editor-stage) { background: #080a0e !important; }
+body.gw-signal.gw-page--asset-manager :is(.asset-operation-error-overlay pre,.asset-image-editor-stage) { background: var(--vault-inset) !important; }
 
 @media (max-width: 1180px) {
     body.gw-signal.gw-page--asset-manager #assetManagerRoot:not(.asset-manager-root-registry) { grid-template-columns: 220px minmax(0,1fr) 280px; }
@@ -624,22 +574,7 @@ body.gw-signal.gw-page--asset-manager :is(.asset-operation-error-overlay pre,.as
     body.gw-signal.gw-page--asset-manager #assetManagerRoot:not(.asset-manager-root-registry) :is(.asset-card,.prompt-card,.project-entity-card,.asset-btn,.asset-icon-btn) { transition: none !important; }
 }
 
-html[data-theme="light"] body.gw-signal.gw-page--asset-manager {
-    --vault-bg: #eef0f3;
-    --vault-deck: #e1e5ea;
-    --vault-well: #f7f8fa;
-    --vault-surface: #f5f6f8;
-    --vault-card: #ffffff;
-    --vault-card-deep: #edf0f4;
-    --vault-inset: #e6e9ee;
-    --vault-text: #1d2633;
-    --vault-muted: #566477;
-    --vault-line-soft: rgba(31,41,55,.16);
-    --vault-line-gold: rgba(119,86,23,.45);
-    --vault-gold: #775617;
-    --vault-gold-light: #634510;
-    --vault-cyan: #087f8c;
-}
+
 html[data-theme="light"] body.gw-signal.gw-page--asset-manager #assetManagerRoot:not(.asset-manager-root-registry) .content-scroll { background: #eef0f3; background-image: repeating-linear-gradient(135deg, rgba(31,41,55,.025) 0, rgba(31,41,55,.025) 1px, transparent 1px, transparent 5px); }
 html[data-theme="light"] body.gw-signal.gw-page--asset-manager #assetManagerRoot:not(.asset-manager-root-registry) :is(.asset-btn,.asset-icon-btn) { background: linear-gradient(180deg,#fff,#e8ebef); color: #465366; box-shadow: inset 0 1px #fff, 0 2px 5px rgba(31,41,55,.08); }
 html[data-theme="light"] body.gw-signal.gw-page--asset-manager #assetManagerRoot:not(.asset-manager-root-registry) :is(.asset-search-wrap,.asset-search,.manage-select,.manage-select select,.canvas-sort-select) { background: #fff; color: #1d2633; box-shadow: inset 0 2px 5px rgba(31,41,55,.08); }
@@ -655,9 +590,9 @@ html[data-theme="light"] body.gw-signal.gw-page--asset-manager #assetManagerRoot
 }
 
 /* Keep the optional light theme readable while retaining the hardware palette. */
-html[data-theme="light"] body.gw-signal.gw-page--asset-manager #assetManagerRoot:not(.asset-manager-root-registry) > .asset-nav { background: linear-gradient(180deg,#f7f8fa,#e8ebef) !important; }
-html[data-theme="light"] body.gw-signal.gw-page--asset-manager #assetManagerRoot:not(.asset-manager-root-registry) > .asset-detail { background: linear-gradient(180deg,#f5f6f8,#e3e7ec) !important; }
-html[data-theme="light"] body.gw-signal.gw-page--asset-manager #assetManagerRoot:not(.asset-manager-root-registry) .content-toolbar { background: linear-gradient(180deg,#fff,#eef0f3); }
+html[data-theme="light"] body.gw-signal.gw-page--asset-manager #assetManagerRoot:not(.asset-manager-root-registry) > .asset-nav { background: linear-gradient(180deg,var(--vault-surface),var(--vault-inset)) !important; }
+html[data-theme="light"] body.gw-signal.gw-page--asset-manager #assetManagerRoot:not(.asset-manager-root-registry) > .asset-detail { background: linear-gradient(180deg,var(--vault-card),var(--vault-card-deep)) !important; }
+html[data-theme="light"] body.gw-signal.gw-page--asset-manager #assetManagerRoot:not(.asset-manager-root-registry) .content-toolbar { background: linear-gradient(180deg,var(--vault-card),var(--vault-card-deep)); }
 html[data-theme="light"] body.gw-signal.gw-page--asset-manager #assetManagerRoot:not(.asset-manager-root-registry) :is(.manage-tools,.asset-clipboard-bar) { background: #f2f4f7; color: #566477; }
 html[data-theme="light"] body.gw-signal.gw-page--asset-manager #assetManagerRoot:not(.asset-manager-root-registry) :is(.tree-row,.nav-row,.library-source-row,.local-library-tab).active { background: linear-gradient(180deg,rgba(119,86,23,.16),rgba(119,86,23,.045)) !important; }
 html[data-theme="light"] body.gw-signal.gw-page--asset-manager #assetManagerRoot:not(.asset-manager-root-registry) :is(.smart-class-group-btn,.smart-class-pill,.library-rule-row,.library-extension-list span) { background: #fff; color: #4b596d; }
@@ -665,18 +600,19 @@ html[data-theme="light"] body.gw-signal.gw-page--asset-manager #assetManagerRoot
 html[data-theme="light"] body.gw-signal.gw-page--asset-manager #assetManagerRoot:not(.asset-manager-root-registry) .prompt-card-media,
 html[data-theme="light"] body.gw-signal.gw-page--asset-manager #assetManagerRoot:not(.asset-manager-root-registry) .upload-thumb { background: #e8ebef; }
 html[data-theme="light"] body.gw-signal.gw-page--asset-manager #assetManagerRoot:not(.asset-manager-root-registry) .upload-grid-card { background: repeating-linear-gradient(135deg,rgba(119,86,23,.035) 0,rgba(119,86,23,.035) 1px,transparent 1px,transparent 5px),#f7f8fa; }
-html[data-theme="light"] body.gw-signal.gw-page--asset-manager #assetManagerRoot:not(.asset-manager-root-registry) :is(.empty-state,.detail-empty) { background: #f4f6f8; color: #566477; }
+html[data-theme="light"] body.gw-signal.gw-page--asset-manager #assetManagerRoot:not(.asset-manager-root-registry) :is(.empty-state,.detail-empty) { background: var(--vault-card); color: var(--vault-muted); }
 html[data-theme="light"] body.gw-signal.gw-page--asset-manager #assetManagerRoot:not(.asset-manager-root-registry) :is(.detail-media,.detail-caption-card,.detail-meta,.detail-url,.prompt-block,.library-board-summary,.registry-ai-overview) { background: linear-gradient(165deg,#fff,#eef0f3); }
 html[data-theme="light"] body.gw-signal.gw-page--asset-manager #assetManagerRoot:not(.asset-manager-root-registry) .detail-media-frame { background: #e6e9ee; }
 html[data-theme="light"] body.gw-signal.gw-page--asset-manager #assetManagerRoot:not(.asset-manager-root-registry) .project-gates { background: #f2f4f7; }
 html[data-theme="light"] body.gw-signal.gw-page--asset-manager #assetManagerRoot:not(.asset-manager-root-registry) .project-entity-card strong,
 html[data-theme="light"] body.gw-signal.gw-page--asset-manager #assetManagerRoot.asset-manager-root-page-scripts .script-card-title,
 html[data-theme="light"] body.gw-signal.gw-page--asset-manager #assetManagerRoot.asset-manager-root-page-scripts .script-assets-empty h3 { color: #1d2633 !important; }
-html[data-theme="light"] body.gw-signal.gw-page--asset-manager #assetManagerRoot.asset-manager-root-page-scripts .script-assets-panel { background: #eef0f3; background-image: repeating-linear-gradient(135deg,rgba(31,41,55,.025) 0,rgba(31,41,55,.025) 1px,transparent 1px,transparent 5px); }
-html[data-theme="light"] body.gw-signal.gw-page--asset-manager #assetManagerRoot.asset-manager-root-page-scripts .script-asset-card { background: linear-gradient(165deg,#fff,#eef0f3); box-shadow: inset 0 1px #fff, 0 8px 18px rgba(31,41,55,.09); }
-html[data-theme="light"] body.gw-signal.gw-page--asset-manager :is(.storage-settings-modal,.project-directory-template-sheet,.asset-operation-error-overlay > section,.asset-lightbox-dialog,.asset-image-editor-shell) { background: linear-gradient(165deg,#fff,#eef0f3) !important; color: #1d2633; }
-html[data-theme="light"] body.gw-signal.gw-page--asset-manager :is(.storage-settings-head,.project-directory-template-sheet-head,.project-directory-template-list-head,.asset-operation-error-overlay header,.asset-operation-error-overlay footer) { background: rgba(245,246,248,.9); }
-html[data-theme="light"] body.gw-signal.gw-page--asset-manager :is(.asset-operation-error-overlay pre,.asset-image-editor-stage) { background: #e6e9ee !important; }
+html[data-theme="light"] body.gw-signal.gw-page--asset-manager #assetManagerRoot.asset-manager-root-page-scripts .script-assets-panel { background: var(--vault-surface); background-image: none; }
+html[data-theme="light"] body.gw-signal.gw-page--asset-manager #assetManagerRoot.asset-manager-root-page-scripts .script-asset-card { background: linear-gradient(165deg,var(--vault-card),var(--vault-card-deep)); box-shadow: inset 0 1px #fff, 0 8px 18px rgba(31,41,55,.09); }
+html[data-theme="light"] body.gw-signal.gw-page--asset-manager :is(.storage-settings-modal,.project-directory-template-sheet,.asset-operation-error-overlay > section,.asset-lightbox-dialog,.asset-image-editor-shell) { background: linear-gradient(165deg,var(--vault-card),var(--vault-card-deep)) !important; color: var(--vault-text); }
+html[data-theme="light"] body.gw-signal.gw-page--asset-manager :is(.storage-settings-head,.project-directory-template-sheet-head,.project-directory-template-list-head,.asset-operation-error-overlay header,.asset-operation-error-overlay footer) { background: var(--vault-surface); }
+html[data-theme="light"] body.gw-signal.gw-page--asset-manager :is(.storage-settings-modal input,.storage-settings-modal textarea,.storage-settings-modal select,.project-directory-template-sheet textarea) { background: var(--vault-inset) !important; color: var(--vault-text) !important; border-color: var(--vault-line-soft) !important; }
+html[data-theme="light"] body.gw-signal.gw-page--asset-manager :is(.asset-operation-error-overlay pre,.asset-image-editor-stage) { background: var(--vault-inset) !important; color: var(--vault-text) !important; }
 
 /* Every asset board uses the same Stitch chassis. The board-specific markup and
    data actions stay intact; only the presentation of the shared work surfaces
@@ -686,22 +622,22 @@ body.gw-signal.gw-page--asset-manager #assetManagerRoot:not(.asset-manager-root-
     background-image: repeating-linear-gradient(135deg, rgba(255,255,255,.014) 0, rgba(255,255,255,.014) 1px, transparent 1px, transparent 5px) !important;
 }
 body.gw-signal.gw-page--asset-manager #assetManagerRoot:not(.asset-manager-root-registry) > .asset-panel {
-    background: linear-gradient(180deg, #11141b 0%, #0a0c10 100%) !important;
+    background: linear-gradient(180deg, var(--vault-surface), var(--vault-inset)) !important;
 }
 body.gw-signal.gw-page--asset-manager #assetManagerRoot:not(.asset-manager-root-registry) > .asset-nav {
-    background: linear-gradient(180deg, #151820 0%, #090b0f 100%) !important;
+    background: linear-gradient(180deg, var(--vault-surface), var(--vault-inset)) !important;
 }
 body.gw-signal.gw-page--asset-manager #assetManagerRoot:not(.asset-manager-root-registry) > .asset-detail {
-    background: linear-gradient(180deg, #11151c 0%, #090b0f 100%) !important;
+    background: linear-gradient(180deg, var(--vault-card), var(--vault-card-deep)) !important;
 }
 body.gw-signal.gw-page--asset-manager #assetManagerRoot:not(.asset-manager-root-registry) :is(.panel-head,.content-toolbar) {
     border-top: 1px solid rgba(223,195,132,.18) !important;
     border-bottom: 1px solid rgba(223,195,132,.22) !important;
-    background: linear-gradient(180deg, #1a1d27 0%, #0f1117 100%) !important;
+    background: linear-gradient(180deg, var(--vault-card), var(--vault-card-deep)) !important;
     box-shadow: inset 0 1px rgba(255,255,255,.07), 0 3px 12px rgba(0,0,0,.28);
 }
 body.gw-signal.gw-page--asset-manager #assetManagerRoot:not(.asset-manager-root-registry) > .asset-detail .panel-head {
-    background: linear-gradient(180deg, #171b23 0%, #0d1015 100%) !important;
+    background: linear-gradient(180deg, var(--vault-card), var(--vault-card-deep)) !important;
 }
 body.gw-signal.gw-page--asset-manager #assetManagerRoot:not(.asset-manager-root-registry) :is(.panel-title strong,.content-heading strong) {
     color: #eddab3 !important;
@@ -778,30 +714,27 @@ body.gw-signal.gw-page--asset-manager #assetManagerRoot:not(.asset-manager-root-
     color: #8490a3 !important;
 }
 body.gw-signal.gw-page--asset-manager #assetManagerRoot:not(.asset-manager-root-registry) :is(.detail-empty,.empty-state) svg { color: #dfc384 !important; }
-body.gw-signal.gw-page--asset-manager #assetManagerRoot.asset-manager-root-page-scripts .script-assets-panel {
-    background-color: #0a0c10 !important;
-    background-image: repeating-linear-gradient(135deg, rgba(255,255,255,.014) 0, rgba(255,255,255,.014) 1px, transparent 1px, transparent 5px) !important;
-}
+body.gw-signal.gw-page--asset-manager #assetManagerRoot.asset-manager-root-page-scripts .script-assets-panel { background: var(--vault-surface) !important; background-image: none !important; }
 body.gw-signal.gw-page--asset-manager #assetManagerRoot.asset-manager-root-page-scripts .script-assets-empty {
     min-height: 420px;
     margin-top: 12px;
     border: 1px dashed rgba(223,195,132,.22);
     border-radius: 6px;
-    background: rgba(8,10,14,.66);
+    background: var(--vault-card);
 }
-html[data-theme="light"] body.gw-signal.gw-page--asset-manager #assetManagerRoot:not(.asset-manager-root-registry) > .asset-panel { background: linear-gradient(180deg,#f7f8fa 0%,#e8ebef 100%) !important; }
-html[data-theme="light"] body.gw-signal.gw-page--asset-manager #assetManagerRoot:not(.asset-manager-root-registry) :is(.panel-head,.content-toolbar) { background: linear-gradient(180deg,#fff 0%,#eef0f3 100%) !important; }
-html[data-theme="light"] body.gw-signal.gw-page--asset-manager #assetManagerRoot:not(.asset-manager-root-registry) :is(.asset-card,.prompt-card,.project-entity-card,.project-gate,.workflow-card,.canvas-asset-card,.upload-grid-card) { background: linear-gradient(165deg,#fff 0%,#eef0f3 100%) !important; box-shadow: inset 0 1px #fff, 0 8px 18px rgba(31,41,55,.09) !important; }
+html[data-theme="light"] body.gw-signal.gw-page--asset-manager #assetManagerRoot:not(.asset-manager-root-registry) > .asset-panel { background: linear-gradient(180deg,var(--vault-surface),var(--vault-inset)) !important; }
+html[data-theme="light"] body.gw-signal.gw-page--asset-manager #assetManagerRoot:not(.asset-manager-root-registry) :is(.panel-head,.content-toolbar) { background: linear-gradient(180deg,var(--vault-card),var(--vault-card-deep)) !important; }
+html[data-theme="light"] body.gw-signal.gw-page--asset-manager #assetManagerRoot:not(.asset-manager-root-registry) :is(.asset-card,.prompt-card,.project-entity-card,.project-gate,.workflow-card,.canvas-asset-card,.upload-grid-card) { background: linear-gradient(165deg,var(--vault-card),var(--vault-card-deep)) !important; box-shadow: inset 0 1px #fff, 0 8px 18px rgba(31,41,55,.09) !important; }
 html[data-theme="light"] body.gw-signal.gw-page--asset-manager #assetManagerRoot:not(.asset-manager-root-registry) :is(.asset-search-wrap,.asset-search,.manage-select,.manage-select select,.canvas-sort-select) { background: #fff !important; color: #1d2633 !important; }
 html[data-theme="light"] body.gw-signal.gw-page--asset-manager .registry-stat-card { background: #fff !important; }
 
 /* These light-theme rules intentionally follow the shared dark chassis above. */
 html[data-theme="light"] body.gw-signal.gw-page--asset-manager #assetManagerRoot:not(.asset-manager-root-registry) {
-    background: #e6e9ee !important;
+    background: var(--vault-inset) !important;
     background-image: repeating-linear-gradient(135deg, rgba(31,41,55,.025) 0, rgba(31,41,55,.025) 1px, transparent 1px, transparent 5px) !important;
 }
-html[data-theme="light"] body.gw-signal.gw-page--asset-manager #assetManagerRoot:not(.asset-manager-root-registry) > .asset-nav { background: linear-gradient(180deg,#f7f8fa,#e8ebef) !important; }
-html[data-theme="light"] body.gw-signal.gw-page--asset-manager #assetManagerRoot:not(.asset-manager-root-registry) > .asset-detail { background: linear-gradient(180deg,#f5f6f8,#e3e7ec) !important; }
+html[data-theme="light"] body.gw-signal.gw-page--asset-manager #assetManagerRoot:not(.asset-manager-root-registry) > .asset-nav { background: linear-gradient(180deg,var(--vault-surface),var(--vault-inset)) !important; }
+html[data-theme="light"] body.gw-signal.gw-page--asset-manager #assetManagerRoot:not(.asset-manager-root-registry) > .asset-detail { background: linear-gradient(180deg,var(--vault-card),var(--vault-card-deep)) !important; }
 html[data-theme="light"] body.gw-signal.gw-page--asset-manager #assetManagerRoot:not(.asset-manager-root-registry) :is(.panel-title strong,.content-heading strong,.asset-card-name,.prompt-card-title strong,.project-entity-card strong,.project-entity-group > header strong,.canvas-asset-group-head strong,.script-card-title,.script-assets-empty h3) { color: #1d2633 !important; }
 html[data-theme="light"] body.gw-signal.gw-page--asset-manager #assetManagerRoot:not(.asset-manager-root-registry) :is(.panel-title span,.content-heading span,.asset-card-meta,.prompt-card-scene,.project-entity-code,.project-entity-card small,.canvas-asset-group-head span) { color: #566477 !important; }
 html[data-theme="light"] body.gw-signal.gw-page--asset-manager #assetManagerRoot:not(.asset-manager-root-registry) :is(.asset-btn,.asset-icon-btn) {
@@ -820,13 +753,13 @@ html[data-theme="light"] body.gw-signal.gw-page--asset-manager #assetManagerRoot
 html[data-theme="light"] body.gw-signal.gw-page--asset-manager #assetManagerRoot:not(.asset-manager-root-registry) :is(.tree-row,.nav-row,.library-source-row,.local-library-tab).active { color: #4c3814 !important; }
 html[data-theme="light"] body.gw-signal.gw-page--asset-manager #assetManagerRoot:not(.asset-manager-root-registry) :is(.smart-class-group-btn,.smart-class-pill,.library-rule-row,.library-extension-list span) { background: #fff !important; color: #4b596d !important; }
 html[data-theme="light"] body.gw-signal.gw-page--asset-manager #assetManagerRoot:not(.asset-manager-root-registry) :is(.asset-thumb,.prompt-card-media,.upload-thumb,.detail-media-frame) { background: #e8ebef !important; }
-html[data-theme="light"] body.gw-signal.gw-page--asset-manager #assetManagerRoot:not(.asset-manager-root-registry) :is(.detail-empty,.empty-state) { background: #f4f6f8 !important; color: #566477 !important; }
-html[data-theme="light"] body.gw-signal.gw-page--asset-manager #assetManagerRoot.asset-manager-root-page-scripts .script-assets-panel { background-color: #eef0f3 !important; background-image: repeating-linear-gradient(135deg,rgba(31,41,55,.025) 0,rgba(31,41,55,.025) 1px,transparent 1px,transparent 5px) !important; }
-html[data-theme="light"] body.gw-signal.gw-page--asset-manager #assetManagerRoot.asset-manager-root-page-scripts .script-assets-empty { background: rgba(244,246,248,.92) !important; border-color: rgba(119,86,23,.3) !important; }
+html[data-theme="light"] body.gw-signal.gw-page--asset-manager #assetManagerRoot:not(.asset-manager-root-registry) :is(.detail-empty,.empty-state) { background: var(--vault-card) !important; color: var(--vault-muted) !important; }
+html[data-theme="light"] body.gw-signal.gw-page--asset-manager #assetManagerRoot.asset-manager-root-page-scripts .script-assets-panel { background: var(--vault-surface) !important; background-image: none !important; }
+html[data-theme="light"] body.gw-signal.gw-page--asset-manager #assetManagerRoot.asset-manager-root-page-scripts .script-assets-empty { background: var(--vault-card) !important; border-color: var(--vault-line-gold) !important; }
 html[data-theme="light"] body.gw-signal.gw-page--asset-manager #assetManagerRoot.asset-manager-root-page-scripts :is(.script-card-preview,.script-asset-meta,.script-date,.script-meta-file,.script-meta-project,.script-assets-empty p) { color: #566477 !important; }
-html[data-theme="light"] body.gw-signal.gw-page--asset-manager :is(.storage-settings-head,.project-directory-template-sheet-head,.project-directory-template-list-head,.asset-operation-error-overlay header,.asset-operation-error-overlay footer) { background: rgba(245,246,248,.9) !important; }
-html[data-theme="light"] body.gw-signal.gw-page--asset-manager :is(.storage-settings-modal input,.storage-settings-modal textarea,.storage-settings-modal select,.project-directory-template-sheet textarea) { background: #fff !important; color: #1d2633 !important; border-color: rgba(31,41,55,.16) !important; }
-html[data-theme="light"] body.gw-signal.gw-page--asset-manager :is(.asset-operation-error-overlay pre,.asset-image-editor-stage) { background: #e6e9ee !important; color: #1d2633 !important; }
+html[data-theme="light"] body.gw-signal.gw-page--asset-manager :is(.storage-settings-head,.project-directory-template-sheet-head,.project-directory-template-list-head,.asset-operation-error-overlay header,.asset-operation-error-overlay footer) { background: var(--vault-surface) !important; }
+html[data-theme="light"] body.gw-signal.gw-page--asset-manager :is(.storage-settings-modal input,.storage-settings-modal textarea,.storage-settings-modal select,.project-directory-template-sheet textarea) { background: var(--vault-inset) !important; color: var(--vault-text) !important; border-color: var(--vault-line-soft) !important; }
+html[data-theme="light"] body.gw-signal.gw-page--asset-manager :is(.asset-operation-error-overlay pre,.asset-image-editor-stage) { background: var(--vault-inset) !important; color: var(--vault-text) !important; }
 
 /* The non-registry boards use the same two-stage left rail as the dashboard:
    smart filters first, then the board-specific hierarchy. */
@@ -880,7 +813,7 @@ body.gw-signal.gw-page--asset-manager #assetManagerRoot:not(.asset-manager-root-
 body.gw-signal.gw-page--asset-manager #assetManagerRoot:not(.asset-manager-root-registry) .asset-context-tree { margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--vault-line-soft); }
 body.gw-signal.gw-page--asset-manager #assetManagerRoot:not(.asset-manager-root-registry) .asset-context-tree > .nav-section-title { margin: 0 2px 6px; color: #728096; font: var(--gw-type-label-md)/1.2 var(--gw-font-mono); letter-spacing: .06em; }
 body.gw-signal.gw-page--asset-manager #assetManagerRoot:not(.asset-manager-root-registry) .asset-context-path { margin: -2px 2px 7px; color: #8490a3; font: var(--gw-type-label-md)/1.4 var(--gw-font-mono); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-body.gw-signal.gw-page--asset-manager #assetManagerRoot.asset-manager-root-page-scripts .script-assets-panel { background: transparent !important; border: 0 !important; }
+body.gw-signal.gw-page--asset-manager #assetManagerRoot.asset-manager-root-page-scripts .script-assets-panel { background: var(--vault-surface) !important; background-image: none !important; border: 0 !important; }
 body.gw-signal.gw-page--asset-manager #assetManagerRoot.asset-manager-root-page-scripts .script-assets-empty { min-height: 360px; margin-top: 10px; }
 @media (max-width: 900px) {
     body.gw-signal.gw-page--asset-manager #assetManagerRoot.asset-manager-root-page-scripts { grid-template-columns: 1fr !important; grid-template-rows: minmax(190px,auto) minmax(390px,1fr); }
@@ -901,7 +834,7 @@ html[data-theme="light"] body.gw-signal.gw-page--asset-manager #assetManagerRoot
 html[data-theme="light"] body.gw-signal.gw-page--asset-manager #assetManagerRoot:not(.asset-manager-root-registry) .asset-smart-filter-ai { border-color: rgba(8,127,140,.22); background: linear-gradient(135deg,rgba(8,127,140,.08),rgba(8,127,140,.02)); }
 html[data-theme="light"] body.gw-signal.gw-page--asset-manager #assetManagerRoot:not(.asset-manager-root-registry) .asset-smart-filter-ai strong { color: #1d2633 !important; }
 html[data-theme="light"] body.gw-signal.gw-page--asset-manager #assetManagerRoot:not(.asset-manager-root-registry) .asset-smart-filter-ai small { color: #566477 !important; }
-html[data-theme="light"] body.gw-signal.gw-page--asset-manager #assetManagerRoot.asset-manager-root-page-scripts .script-assets-empty { background: #f4f6f8 !important; }
+html[data-theme="light"] body.gw-signal.gw-page--asset-manager #assetManagerRoot.asset-manager-root-page-scripts .script-assets-empty { background: var(--vault-card) !important; }
 
 body.gw-signal.gw-page--asset-manager :is(.registry-stat-card,.registry-range button) { line-height:var(--gw-leading-body-md); font-weight:var(--gw-weight-medium); }
 

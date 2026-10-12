@@ -73,6 +73,10 @@
       const dialog = this.ensureProjectCalendarDialog();
       if (!dialog) return;
       this.projectCalendarReturnFocus = returnFocus || document.activeElement;
+      window.FloatingDismissal?.register(dialog, {
+        kind: 'native-dialog', content: '.gw-project-calendar-shell',
+        trigger: this.projectCalendarReturnFocus, close: () => this.closeProjectCalendar()
+      });
       if (!dialog.open) dialog.showModal();
       const body = dialog.querySelector('[data-project-calendar-body]');
       if (body) body.innerHTML = '<div class="gw-calendar-loading">正在读取真实项目排期…</div>';
@@ -83,9 +87,8 @@
         const projects = Array.isArray(payload) ? payload : (Array.isArray(payload?.projects) ? payload.projects : []);
         this.renderProjectCalendar(projects);
       } catch (error) {
-        if (body) body.innerHTML = `<div class="gw-calendar-empty"><strong>暂时无法读取项目排期</strong><span>真实项目接口返回异常，请稍后重试。</span><button type="button" data-project-calendar-retry>重试</button></div>`;
+        if (body) body.innerHTML = `<div class="gw-calendar-empty"><strong>暂时无法读取项目排期</strong><span>真实项目接口返回异常，请稍后重试。</span><button type="button" data-project-calendar-retry class="hw-btn">重试</button></div>`;
       }
-      window.requestAnimationFrame(() => dialog.querySelector('[data-project-calendar-close]')?.focus());
     },
 
     ensureProjectCalendarDialog: function() {
@@ -95,6 +98,7 @@
       dialog.id = 'gwProjectCalendarDialog';
       dialog.className = 'gw-project-calendar-dialog';
       dialog.setAttribute('aria-labelledby', 'gwProjectCalendarTitle');
+      dialog.setAttribute('aria-modal', 'true');
       dialog.innerHTML = `
         <div class="gw-project-calendar-shell">
           <header class="gw-project-calendar-head">
@@ -103,14 +107,13 @@
               <h2 id="gwProjectCalendarTitle">工作流计划</h2>
               <p data-project-calendar-summary>正在读取真实项目数据…</p>
             </div>
-            <button type="button" class="gw-project-calendar-close" data-project-calendar-close aria-label="关闭项目排期"><span aria-hidden="true">×</span></button>
+            <button type="button" class="btn-hw-round gw-project-calendar-close" data-project-calendar-close data-floating-close aria-label="关闭项目排期"><span class="btn-hw-round-inner" aria-hidden="true">×</span></button>
           </header>
           <div class="gw-project-calendar-body" data-project-calendar-body></div>
           <footer class="gw-project-calendar-foot"><span>点击任务条进入对应真实项目</span><span>NOW · Asia/Shanghai</span></footer>
         </div>`;
       document.body.appendChild(dialog);
       dialog.addEventListener('click', event => {
-        if (event.target === dialog) this.closeProjectCalendar();
         const close = event.target.closest?.('[data-project-calendar-close]');
         if (close) this.closeProjectCalendar();
         const retry = event.target.closest?.('[data-project-calendar-retry]');
@@ -124,12 +127,8 @@
           }
         }
       });
-      dialog.addEventListener('cancel', event => { event.preventDefault(); this.closeProjectCalendar(); });
-      dialog.addEventListener('close', () => {
-        const target = this.projectCalendarReturnFocus;
-        this.projectCalendarReturnFocus = null;
-        target?.focus?.({preventScroll: true});
-      });
+      // Escape、外部关闭与焦点返还统一由 FloatingDismissal 处理。
+      dialog.addEventListener('close', () => { this.projectCalendarReturnFocus = null; });
       return dialog;
     },
 
@@ -160,7 +159,7 @@
       if (summary) summary.textContent = `${scheduled.length} 个项目已排期 · ${unscheduled} 个项目未排期`;
       const unscheduledProjects = normalized.filter(project => !scheduled.includes(project));
       const unscheduledMarkup = unscheduledProjects.length
-        ? `<section class="gw-calendar-unscheduled"><h3>未排期项目</h3><div>${unscheduledProjects.map(project => `<button type="button" data-project-calendar-project="${esc(project.id)}"><span>${esc(project.name || project.title || '未命名项目')}</span><small>${esc(project.id || '')}</small></button>`).join('')}</div></section>`
+        ? `<section class="gw-calendar-unscheduled"><h3>未排期项目</h3><div>${unscheduledProjects.map(project => `<button type="button" data-project-calendar-project="${esc(project.id)}" class="hw-btn"><span>${esc(project.name || project.title || '未命名项目')}</span><small>${esc(project.id || '')}</small></button>`).join('')}</div></section>`
         : '';
       if (!scheduled.length) {
         body.innerHTML = `<div class="gw-calendar-empty"><strong>暂无已排期项目</strong><span>项目详情仍来自真实项目接口。</span></div>${unscheduledMarkup}`;
@@ -475,36 +474,72 @@
       this.vuState.refreshTimer = setInterval(() => { this.syncTelemetry(); }, 15000);
     },
 
+    // 硬件浮窗沿用唯一FloatingDismissal栈；程序保存成功关闭不重复询问草稿。
+    modalDrafts: new WeakMap(),
+    snapshotDraft: function(content) {
+      return JSON.stringify(Array.from(content.querySelectorAll('input:not([type="hidden"]),textarea,select,[contenteditable="true"]')).map(el => [el.id || el.name, el.type === 'checkbox' || el.type === 'radio' ? el.checked : el.isContentEditable ? el.textContent : el.value]));
+    },
+    registerHardwareSurface: function(surface, content, close) {
+      if (!surface || !content) return;
+      const heading = content.querySelector('h1,h2,h3');
+      content.setAttribute('role', 'dialog');
+      content.setAttribute('aria-modal', 'true');
+      if (heading) {
+        if (!heading.id) heading.id = surface.id + '-title';
+        content.setAttribute('aria-labelledby', heading.id);
+      } else content.setAttribute('aria-label', '工作台面板');
+      content.querySelectorAll('button[onclick*="closeModal"],button[onclick*="closeDrawer"]').forEach(button => {
+        button.setAttribute('data-floating-close', '');
+        if (!button.textContent.trim() && !button.hasAttribute('aria-label')) button.setAttribute('aria-label', '关闭');
+      });
+      this.modalDrafts.set(surface, this.snapshotDraft(content));
+      window.FloatingDismissal?.register(surface, {
+        kind: 'modal', content,
+        close,
+        beforeClose: () => this.modalDrafts.get(surface) === this.snapshotDraft(content) || window.confirm('有未保存的修改，确认放弃并关闭？'),
+      });
+    },
+
     // 3. Modal Controls
     openModal: function(modalId) {
       const el = document.getElementById(modalId);
       if (!el) return;
+      this.registerHardwareSurface(el, el.querySelector('.hw-modal-dialog'), () => this.closeModal(modalId));
+      el.setAttribute('aria-hidden', 'false');
       el.classList.add('open');
       document.body.style.overflow = 'hidden';
+      window.FloatingDismissal?.scan();
     },
 
     closeModal: function(modalId) {
       const el = document.getElementById(modalId);
       if (!el) return;
       el.classList.remove('open');
-      document.body.style.overflow = '';
+      el.setAttribute('aria-hidden', 'true');
+      if (!document.querySelector('.hw-modal-backdrop.open')) document.body.style.overflow = '';
+      window.FloatingDismissal?.scan();
     },
 
     // 4. Drawer Controls
     openDrawer: function(drawerId) {
       const el = document.getElementById(drawerId);
       if (!el) return;
-      el.classList.add('open');
       const backdrop = document.getElementById(drawerId + '-backdrop');
-      if (backdrop) backdrop.classList.add('open');
+      if (backdrop) this.registerHardwareSurface(backdrop, el, () => this.closeDrawer(drawerId));
+      el.setAttribute('aria-hidden', 'false');
+      el.classList.add('open');
+      if (backdrop) { backdrop.setAttribute('aria-hidden', 'false'); backdrop.classList.add('open'); }
+      window.FloatingDismissal?.scan();
     },
 
     closeDrawer: function(drawerId) {
       const el = document.getElementById(drawerId);
       if (!el) return;
       el.classList.remove('open');
+      el.setAttribute('aria-hidden', 'true');
       const backdrop = document.getElementById(drawerId + '-backdrop');
-      if (backdrop) backdrop.classList.remove('open');
+      if (backdrop) { backdrop.classList.remove('open'); backdrop.setAttribute('aria-hidden', 'true'); }
+      window.FloatingDismissal?.scan();
     },
 
     // 4.5 真实在线状态探针：GET /api/observability/health（Phase 12 已接入）
@@ -961,9 +996,6 @@
           </div>
         `;
         document.body.appendChild(modal);
-        modal.addEventListener('click', (e) => {
-          if (e.target === modal) HardwareDeck.closeModal('accountModal');
-        });
       }
 
       this.renderAccountModalContent();
@@ -991,18 +1023,16 @@
           <div class="flex items-center justify-between pb-2 mb-3 border-b border-white/10">
             <div class="flex items-center space-x-2">
               <i data-lucide="plug-zap" class="w-4 h-4 text-amber-300"></i>
-              <h3 class="gw-type-body-md font-bold text-slate-100">${degradedTitle}</h3>
+              <h3 class="gw-type-section font-bold text-slate-100">${degradedTitle}</h3>
             </div>
-            <button class="text-slate-400 hover:text-white" onclick="HardwareDeck.closeModal('accountModal')">
-              <i data-lucide="x" class="w-4 h-4"></i>
-            </button>
+            <button type="button" class="btn-hw-round text-slate-400 hover:text-white" onclick="HardwareDeck.closeModal('accountModal')" aria-label="关闭"><span class="btn-hw-round-inner"><i data-lucide="x" class="w-4 h-4"></i></span></button>
           </div>
           <div class="bay-inset p-3 rounded-xl border border-amber-500/30 gw-type-body-sm font-mono text-amber-200" role="status" data-hw-auth-degradation="${degradedKind}">
             <span class="block">该功能尚未接入后端（未纳入当前切片）</span>
             <span class="block mt-1 gw-type-body-sm text-slate-500">${degradedBody}</span>
           </div>
           <div class="pt-3 mt-3 border-t border-white/10 text-right">
-            <button type="button" class="px-3 py-1.5 rounded-lg gw-type-body-md font-mono text-slate-400 hover:text-white" onclick="HardwareDeck.closeModal('accountModal')">关闭</button>
+            <button type="button" class="hw-btn px-3 py-1.5 rounded-lg gw-type-body-md font-mono text-slate-400 hover:text-white" onclick="HardwareDeck.closeModal('accountModal')">关闭</button>
           </div>
         `;
         if (window.lucide) window.lucide.createIcons();
@@ -1016,11 +1046,9 @@
           <div class="flex items-center justify-between pb-2 mb-3 border-b border-white/10">
             <div class="flex items-center space-x-2">
               <i data-lucide="shield-check" class="w-4 h-4 text-[#dfc384]"></i>
-              <h3 class="gw-type-body-md font-bold text-slate-100">认证中心 · 账户管理</h3>
+              <h3 class="gw-type-section font-bold text-slate-100">认证中心 · 账户管理</h3>
             </div>
-            <button class="text-slate-400 hover:text-white" onclick="HardwareDeck.closeModal('accountModal')">
-              <i data-lucide="x" class="w-4 h-4"></i>
-            </button>
+            <button type="button" class="btn-hw-round text-slate-400 hover:text-white" onclick="HardwareDeck.closeModal('accountModal')" aria-label="关闭"><span class="btn-hw-round-inner"><i data-lucide="x" class="w-4 h-4"></i></span></button>
           </div>
 
           <div class="space-y-3 gw-type-body-sm">
@@ -1068,11 +1096,9 @@
           <div class="flex items-center justify-between pb-2 mb-3 border-b border-white/10">
             <div class="flex items-center space-x-2">
               <i data-lucide="lock" class="w-4 h-4 text-[#dfc384]"></i>
-              <h3 class="gw-type-body-md font-bold text-slate-100">曜石身份认证 · 系统登录</h3>
+              <h3 class="gw-type-section font-bold text-slate-100">曜石身份认证 · 系统登录</h3>
             </div>
-            <button class="text-slate-400 hover:text-white" onclick="HardwareDeck.closeModal('accountModal')">
-              <i data-lucide="x" class="w-4 h-4"></i>
-            </button>
+            <button type="button" class="btn-hw-round text-slate-400 hover:text-white" onclick="HardwareDeck.closeModal('accountModal')" aria-label="关闭"><span class="btn-hw-round-inner"><i data-lucide="x" class="w-4 h-4"></i></span></button>
           </div>
 
           <div class="space-y-3 gw-type-body-sm">
@@ -1104,8 +1130,8 @@
       const setup = this.authState.setup_required;
       dialog.innerHTML = `
         <div class="flex items-center justify-between pb-3 mb-3 border-b border-white/10">
-          <h3 class="gw-type-body-md font-bold text-slate-100">${setup ? '首次设置 · 创建管理员' : '本地账户登录'}</h3>
-          <button type="button" aria-label="关闭登录" class="text-slate-400" onclick="HardwareDeck.closeModal('accountModal')">关闭</button>
+          <h3 class="gw-type-section font-bold text-slate-100">${setup ? '首次设置 · 创建管理员' : '本地账户登录'}</h3>
+          <button type="button" aria-label="关闭登录" class="hw-btn text-slate-400" onclick="HardwareDeck.closeModal('accountModal')">关闭</button>
         </div>
         <p class="mb-3 gw-type-body-sm text-slate-400">${setup ? '请设置你自己的管理员账户。没有默认密码；账户保存在本机数据库，重启后仍然有效。' : '使用本机数据库中的账号密码登录，无需外部认证服务。'}</p>
         <form id="localAccountForm" class="space-y-3" onsubmit="HardwareDeck.handleLocalAccountSubmit(event)">
@@ -1133,6 +1159,7 @@
         return;
       }
       button.disabled = true;
+      button.setAttribute('aria-busy', 'true');
       try {
         const path = this.authState.setup_required ? '/api/asset-auth/local/setup' : '/api/asset-auth/local/login';
         const response = await fetch(path, {
@@ -1148,6 +1175,7 @@
         error.textContent = failure.message || '无法连接本地登录服务。';
         error.classList.remove('hidden');
         button.disabled = false;
+        button.setAttribute('aria-busy', 'false');
       }
     },
 
@@ -1168,7 +1196,7 @@
         return;
       }
       if (errEl) errEl.classList.add('hidden');
-      if (submitBtn) { submitBtn.disabled = true; submitBtn.textContent = '正在跳转到身份提供商...'; }
+      if (submitBtn) { submitBtn.disabled = true; submitBtn.setAttribute('aria-busy', 'true'); submitBtn.textContent = '正在跳转到身份提供商...'; }
 
       try {
         const res = await fetch('/api/asset-auth/login', {
@@ -1201,7 +1229,7 @@
         window.location.assign(data.authorization_url);
       } catch (err) {
         showError(err && err.message ? err.message : '发起登录失败。');
-        if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = '使用外部身份提供商登录'; }
+        if (submitBtn) { submitBtn.disabled = false; submitBtn.setAttribute('aria-busy', 'false'); submitBtn.textContent = '使用外部身份提供商登录'; }
       }
     },
 
@@ -1263,9 +1291,6 @@
           <div class="hw-modal-dialog w-[480px] p-4 text-slate-200" id="teamModalDialog"></div>
         `;
         document.body.appendChild(modal);
-        modal.addEventListener('click', (e) => {
-          if (e.target === modal) HardwareDeck.closeModal('teamModal');
-        });
       }
 
       this.renderTeamModalSkeleton();
@@ -1281,11 +1306,9 @@
         <div class="flex items-center justify-between pb-2 mb-3 border-b border-white/10">
           <div class="flex items-center space-x-2">
             <i data-lucide="users" class="w-4 h-4 text-[#dfc384]"></i>
-            <h3 class="gw-type-body-md font-bold text-slate-100">团队与协同席位治理</h3>
+            <h3 class="gw-type-section font-bold text-slate-100">团队与协同席位治理</h3>
           </div>
-          <button class="text-slate-400 hover:text-white" onclick="HardwareDeck.closeModal('teamModal')">
-            <i data-lucide="x" class="w-4 h-4"></i>
-          </button>
+          <button type="button" class="btn-hw-round text-slate-400 hover:text-white" onclick="HardwareDeck.closeModal('teamModal')" aria-label="关闭"><span class="btn-hw-round-inner"><i data-lucide="x" class="w-4 h-4"></i></span></button>
         </div>
 
         <div class="space-y-3 gw-type-body-sm">
@@ -1328,7 +1351,7 @@
 
           <div class="pt-2 border-t border-white/10 flex items-center justify-between gw-type-body-sm font-mono text-slate-500">
             <span>预期路由: /api/asset-auth/teams · /api/asset-auth/users（未接入时下方明示）</span>
-            <button type="button" class="px-3 py-1.5 rounded-lg gw-type-body-md font-mono text-slate-400 hover:text-white" onclick="HardwareDeck.closeModal('teamModal')">关闭</button>
+            <button type="button" class="hw-btn px-3 py-1.5 rounded-lg gw-type-body-md font-mono text-slate-400 hover:text-white" onclick="HardwareDeck.closeModal('teamModal')">关闭</button>
           </div>
         </div>
       `;
@@ -1457,11 +1480,9 @@
           <div class="flex items-center justify-between pb-2 mb-3 border-b border-white/10">
             <div class="flex items-center space-x-2">
               <i data-lucide="settings" class="w-4 h-4 text-[#dfc384]"></i>
-              <h3 class="gw-type-body-md font-bold text-slate-100">系统与工程参数控制中心</h3>
+              <h3 class="gw-type-section font-bold text-slate-100">系统与工程参数控制中心</h3>
             </div>
-            <button class="text-slate-400 hover:text-white" onclick="HardwareDeck.closeModal('settingsModal')">
-              <i data-lucide="x" class="w-4 h-4"></i>
-            </button>
+            <button type="button" class="btn-hw-round text-slate-400 hover:text-white" onclick="HardwareDeck.closeModal('settingsModal')" aria-label="关闭"><span class="btn-hw-round-inner"><i data-lucide="x" class="w-4 h-4"></i></span></button>
           </div>
 
           <div class="space-y-3 gw-type-body-sm">
@@ -1496,7 +1517,7 @@
 
             <div class="pt-2 border-t border-white/10 flex items-center justify-between">
               <span class="gw-type-body-sm font-mono text-slate-500">系统模式: 曜石香槟钛金拟物硬件总线 (v2.0)</span>
-              <button type="button" class="px-3 py-1.5 rounded-lg gw-type-body-md font-mono text-slate-400 hover:text-white" onclick="HardwareDeck.closeModal('settingsModal')">完成</button>
+              <button type="button" class="hw-btn px-3 py-1.5 rounded-lg gw-type-body-md font-mono text-slate-400 hover:text-white" onclick="HardwareDeck.closeModal('settingsModal')">完成</button>
             </div>
           </div>
         </div>
@@ -1521,37 +1542,7 @@
         this.syncStageProgress();
       });
 
-      // Backdrop click closes modal
-      document.querySelectorAll('.hw-modal-backdrop').forEach(bd => {
-        bd.addEventListener('click', (e) => {
-          if (e.target === bd) {
-            bd.classList.remove('open');
-            document.body.style.overflow = '';
-          }
-        });
-      });
-
-      // Backdrop click closes drawer
-      document.querySelectorAll('.hw-drawer-backdrop').forEach(bd => {
-        bd.addEventListener('click', () => {
-          bd.classList.remove('open');
-          const panel = bd.nextElementSibling;
-          if (panel && panel.classList.contains('hw-drawer-panel')) {
-            panel.classList.remove('open');
-          }
-        });
-      });
-
-      // ESC key to close active modal or drawer
-      window.addEventListener('keydown', (e) => {
-        if (e.key === 'Escape') {
-          if (document.querySelector('dialog[open]')) return;
-          document.querySelectorAll('.hw-modal-backdrop.open').forEach(m => m.classList.remove('open'));
-          document.querySelectorAll('.hw-drawer-backdrop.open').forEach(d => d.classList.remove('open'));
-          document.querySelectorAll('.hw-drawer-panel.open').forEach(p => p.classList.remove('open'));
-          document.body.style.overflow = '';
-        }
-      });
+      window.FloatingDismissal?.scan();
     }
   };
 

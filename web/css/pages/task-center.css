@@ -1,0 +1,9 @@
+/* B3：观测页只维护布局与标题，按钮材质引用共享实现。 */
+body.gw-page--task-center #observationViews { width:max-content; max-width:100%; gap:3px; }
+body.gw-page--task-center #observationViews .btn-segmented-item { height:32px; min-height:32px; }
+body.gw-page--task-center :is(h1,h2) { font-size:var(--gw-type-headline-md) !important; line-height:var(--gw-leading-headline-md) !important; font-weight:var(--gw-weight-bold) !important; letter-spacing:0; }
+body.gw-page--task-center h3 { font-size:var(--gw-type-headline-sm) !important; line-height:var(--gw-leading-headline-sm) !important; font-weight:var(--gw-weight-medium) !important; }
+.task-detail-actions, .task-inline-confirm > div { display:flex; flex-wrap:wrap; gap:8px; }
+
+body.gw-page--task-center :is(button,a,select,input,textarea):focus-visible { outline:2px solid var(--gold-primary,#dfc384); outline-offset:2px; }
+@media (max-width:720px) { body.gw-page--task-center .task-table-wrap { overflow-x:auto; } body.gw-page--task-center .view-heading, body.gw-page--task-center .panel-heading { align-items:flex-start; flex-wrap:wrap; } }

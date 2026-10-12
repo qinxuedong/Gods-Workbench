@@ -84,9 +84,9 @@
       const enabled=promptSourceIsEnabled(id);
       const sourcePath=String(source.path || '').replace(/^\/+/, '');
       return `<article class="prompt-source-row ${enabled ? '' : 'is-disabled'}">
-        <div class="prompt-source-toggle"><button type="button" class="toggle ${enabled ? 'on' : ''}" role="switch" aria-checked="${enabled}" aria-label="${enabled ? '停用来源' : '启用来源'}" data-prompt-source-toggle="${esc(id)}" title="${enabled ? '停用来源' : '启用来源'}"><i></i></button></div>
+        <div class="prompt-source-toggle"><button type="button" class="toggle hw-slide-toggle ${enabled ? 'on' : ''}" role="switch" aria-checked="${enabled}" aria-label="${enabled ? '停用来源' : '启用来源'}" data-prompt-source-toggle="${esc(id)}" title="${enabled ? '停用来源' : '启用来源'}"><span class="hw-slide-peg" aria-hidden="true"></span></button></div>
         <div class="prompt-source-main"><div class="prompt-source-title"><strong>${esc(source.name || id)}</strong><span class="prompt-source-badge">本地</span></div><a href="${esc(source.homepage || '#')}" target="_blank" rel="noopener">${esc(source.homepage || '无主页')}</a><div class="prompt-source-meta"><span>${Number(source.count || 0)} 条</span><span>${esc(source.license || '未声明许可证')}</span><span>本地正常</span><span>SHA-256 ${esc(String(source.sha256 || '').slice(0, 12))}…</span></div></div>
-        <div class="prompt-source-actions"><details><summary>查看内容</summary><div class="prompt-source-details"><span>快照文件：<code>${esc(sourcePath)}</code></span><span>快照时间：${esc(promptSourceManifest.generatedAt || '—')}</span><span>来源状态：${enabled ? '已启用' : '已停用'}</span></div></details><button type="button" class="btn" data-prompt-source-reload="${esc(id)}">重新读取本地快照</button></div>
+        <div class="prompt-source-actions"><details><summary>查看内容</summary><div class="prompt-source-details"><span>快照文件：<code>${esc(sourcePath)}</code></span><span>快照时间：${esc(promptSourceManifest.generatedAt || '—')}</span><span>来源状态：${enabled ? '已启用' : '已停用'}</span></div></details><button type="button" class="hw-btn btn-size-sm" data-prompt-source-reload="${esc(id)}">重新读取本地快照</button></div>
       </article>`;
     }).join('') || '<div class="prompt-source-loading">清单中没有可用来源。</div>';
     if(window.lucide) window.lucide.createIcons();
@@ -115,7 +115,12 @@
   function setSection(section){
     if(['appearance','system'].includes(section)) section='general';
     if(![...document.querySelectorAll('[data-panel]')].some(panel=>panel.dataset.panel===section)) section='general';
-    document.querySelectorAll('[data-section]').forEach(button=>button.classList.toggle('active',button.dataset.section===section));
+    document.querySelectorAll('[data-section]').forEach(button=>{
+      const selected=button.dataset.section===section;
+      button.classList.toggle('active',selected);
+      button.classList.toggle('engaged', selected);
+      button.setAttribute('aria-pressed',String(selected));
+    });
     document.querySelectorAll('[data-panel]').forEach(panel=>panel.classList.toggle('active',panel.dataset.panel===section));
     const params=new URLSearchParams(location.hash.slice(1));params.set('section',section);if(document.documentElement.classList.contains('workspace-embedded'))params.set('embedded','1');history.replaceState(null,'',`${location.pathname}${location.search}#${params.toString()}`);
   }
@@ -190,7 +195,7 @@
     const degraded = appResult.error || statusResult.error;
     const info = q('#systemInfo');
     if (info) info.dataset.gwDegradation = degraded ? (degraded.code === 'SERVICE_UNAVAILABLE' ? 'service_unavailable' : 'not_integrated') : 'ok';
-    q('#systemInfo').innerHTML=`<div class="summary-stat"><span>工作台版本</span><strong style="font-size:var(--gw-type-body-lg)">${esc(appLabel)}</strong></div><div class="summary-stat"><span>资产后端</span><strong style="font-size:var(--gw-type-body-lg)">${esc(backendLabel)}</strong></div><div class="summary-stat"><span>注册表状态</span><strong style="font-size:var(--gw-type-body-lg)">${esc(readyLabel)}</strong></div><button class="btn" id="checkUpdate" style="margin-top:14px">检查更新</button>`;
+    q('#systemInfo').innerHTML=`<div class="summary-stat"><span>工作台版本</span><strong style="font-size:var(--gw-type-body-lg)">${esc(appLabel)}</strong></div><div class="summary-stat"><span>资产后端</span><strong style="font-size:var(--gw-type-body-lg)">${esc(backendLabel)}</strong></div><div class="summary-stat"><span>注册表状态</span><strong style="font-size:var(--gw-type-body-lg)">${esc(readyLabel)}</strong></div><button class="hw-btn btn-size-sm" id="checkUpdate" style="margin-top:14px">检查更新</button>`;
     q('#checkUpdate')?.addEventListener('click',()=>{try{parent.checkForUpdates(true);}catch(e){}});
   });
 

@@ -440,7 +440,7 @@ window.WorkbenchProjects = (function () {
 
           <div class="min-w-0 flex-1 pr-1">
             <div class="flex items-center space-x-1 flex-wrap gap-y-0.5">
-              <h3 class="gw-type-body-md font-medium text-slate-100 group-hover:text-[#eddab3] truncate max-w-[150px]">${esc(p.name)}</h3>
+              <h3 class="gw-type-section text-slate-100 group-hover:text-[#eddab3] truncate max-w-[150px]">${esc(p.name)}</h3>
               ${statusBadgeHtml}
               <span class="gw-type-body-sm font-mono px-1 py-0.5 rounded bg-black/60 border border-white/10 text-[#fae2c8] shrink-0">ACEScg</span>
             </div>
@@ -807,6 +807,8 @@ window.WorkbenchProjects = (function () {
     const btnG = document.getElementById('viewBtnGrid');
     const btnT = document.getElementById('viewBtnTable');
 
+    if (btnG) btnG.setAttribute('aria-pressed', String(view === 'grid'));
+    if (btnT) btnT.setAttribute('aria-pressed', String(view !== 'grid'));
     if (view === 'grid') {
       if (grid) grid.classList.remove('hidden');
       if (table) table.classList.add('hidden');
@@ -825,12 +827,13 @@ window.WorkbenchProjects = (function () {
     sidebar?.querySelectorAll('.tree-node-card').forEach(card => card.classList.remove('active'));
     document.querySelectorAll('#filterCapsulesGroup .filter-pill-btn').forEach(button => {
       const selected = button.dataset.type ? button.dataset.type === state.filterType : button.dataset.scope === state.filterScope && state.filterType === 'all';
-      button.classList.toggle('pill-capsule-active', selected);
-      button.classList.toggle('pill-capsule-inactive', !selected);
+      button.classList.toggle('engaged', selected);
+      button.setAttribute('aria-pressed', String(selected));
     });
     document.querySelectorAll('aside [data-project-type], aside [data-project-scope]').forEach(card => {
       const selected = card.dataset.projectType ? card.dataset.projectType === state.filterType : card.dataset.projectScope === state.filterScope;
       card.classList.toggle('active', selected);
+      card.setAttribute('aria-pressed', String(selected));
     });
   }
 
@@ -1324,15 +1327,18 @@ window.WorkbenchProjects = (function () {
 
   function switchGlobalTrashTab(tab) {
     globalTrashState.currentTab = tab;
+    [['trashTabAll', 'all'], ['trashTabProjects', 'projects'], ['trashTabAssets', 'assets'], ['trashTabCanvases', 'canvases']].forEach(([id, value]) => {
+      document.getElementById(id)?.setAttribute('aria-pressed', String(tab === value));
+    });
     const btnAll = document.getElementById('trashTabAll');
     const btnProj = document.getElementById('trashTabProjects');
     const btnAssets = document.getElementById('trashTabAssets');
     const btnCanvas = document.getElementById('trashTabCanvases');
 
-    if (btnAll) btnAll.className = tab === 'all' ? 'pill-capsule-active px-2.5 py-0.5 cursor-pointer filter-pill-btn' : 'pill-capsule-inactive px-2.5 py-0.5 text-slate-400 cursor-pointer filter-pill-btn';
-    if (btnProj) btnProj.className = tab === 'projects' ? 'pill-capsule-active px-2.5 py-0.5 cursor-pointer filter-pill-btn' : 'pill-capsule-inactive px-2.5 py-0.5 text-slate-400 cursor-pointer filter-pill-btn';
-    if (btnAssets) btnAssets.className = tab === 'assets' ? 'pill-capsule-active px-2.5 py-0.5 cursor-pointer filter-pill-btn' : 'pill-capsule-inactive px-2.5 py-0.5 text-slate-400 cursor-pointer filter-pill-btn';
-    if (btnCanvas) btnCanvas.className = tab === 'canvases' ? 'pill-capsule-active px-2.5 py-0.5 cursor-pointer filter-pill-btn' : 'pill-capsule-inactive px-2.5 py-0.5 text-slate-400 cursor-pointer filter-pill-btn';
+    if (btnAll) btnAll.className = tab === 'all' ? 'hw-btn btn-size-sm engaged px-2.5 py-0.5 cursor-pointer filter-pill-btn' : 'hw-btn btn-size-sm px-2.5 py-0.5 text-slate-400 cursor-pointer filter-pill-btn';
+    if (btnProj) btnProj.className = tab === 'projects' ? 'hw-btn btn-size-sm engaged px-2.5 py-0.5 cursor-pointer filter-pill-btn' : 'hw-btn btn-size-sm px-2.5 py-0.5 text-slate-400 cursor-pointer filter-pill-btn';
+    if (btnAssets) btnAssets.className = tab === 'assets' ? 'hw-btn btn-size-sm engaged px-2.5 py-0.5 cursor-pointer filter-pill-btn' : 'hw-btn btn-size-sm px-2.5 py-0.5 text-slate-400 cursor-pointer filter-pill-btn';
+    if (btnCanvas) btnCanvas.className = tab === 'canvases' ? 'hw-btn btn-size-sm engaged px-2.5 py-0.5 cursor-pointer filter-pill-btn' : 'hw-btn btn-size-sm px-2.5 py-0.5 text-slate-400 cursor-pointer filter-pill-btn';
 
     renderGlobalTrash();
   }
@@ -1439,7 +1445,7 @@ window.WorkbenchProjects = (function () {
               <div class="min-w-0 flex-1 pr-3">
                 <div class="flex items-center space-x-2">
                   <span class="w-1.5 h-1.5 rounded-full bg-red-400"></span>
-                  <h4 class="gw-type-body-md font-bold text-slate-100 truncate">${esc(p.name)}</h4>
+                  <h4 class="gw-type-section text-slate-100 truncate">${esc(p.name)}</h4>
                   <span class="gw-type-body-sm font-mono px-1.5 py-0.5 rounded bg-red-500/15 text-red-400 border border-red-500/30">工程隔离</span>
                   <span class="gw-type-body-sm font-mono text-slate-400">${typeMeta.label}</span>
                 </div>
@@ -1474,7 +1480,7 @@ window.WorkbenchProjects = (function () {
             <div class="min-w-0 flex-1 pr-3">
               <div class="flex items-center space-x-2">
                 <span class="w-1.5 h-1.5 rounded-full bg-cyan-400"></span>
-                <h4 class="gw-type-body-md font-bold text-slate-100 truncate">${esc(a.name)}</h4>
+                <h4 class="gw-type-section text-slate-100 truncate">${esc(a.name)}</h4>
                 <span class="gw-type-body-sm font-mono px-1.5 py-0.5 rounded bg-cyan-500/15 text-cyan-300 border border-cyan-500/30">${esc(a.type || 'RAW')}</span>
               </div>
               <div class="gw-type-body-sm font-mono text-slate-400 mt-1 flex items-center space-x-3">
@@ -1507,7 +1513,7 @@ window.WorkbenchProjects = (function () {
             <div class="min-w-0 flex-1 pr-3">
               <div class="flex items-center space-x-2">
                 <span class="w-1.5 h-1.5 rounded-full bg-purple-400"></span>
-                <h4 class="gw-type-body-md font-bold text-slate-100 truncate">${esc(c.name)}</h4>
+                <h4 class="gw-type-section text-slate-100 truncate">${esc(c.name)}</h4>
                 <span class="gw-type-body-sm font-mono px-1.5 py-0.5 rounded bg-purple-500/15 text-purple-300 border border-purple-500/30">画布节点</span>
               </div>
               <div class="gw-type-body-sm font-mono text-slate-400 mt-1 flex items-center space-x-3">
@@ -1642,6 +1648,7 @@ window.WorkbenchProjects = (function () {
   }
 
   function init() {
+    syncFilters();
     // 不在初始化阶段读资产规模：此时卡片尚未由 render() 生成，会命中 0 个节点。
     load();
     setupKeyboardShortcuts();

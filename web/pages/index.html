@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="zh-CN" class="h-full overflow-hidden">
 <head>
-  <link rel="stylesheet" href="/static/css/base/hardware-tokens.css">
+  <link rel="stylesheet" href="/static/css/base/hardware-tokens.css?ui=20261011-final">
   <link rel="stylesheet" href="/static/vendor/css/fonts.css?v=v0.0.1-alpha-2026">
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -13,46 +13,10 @@
 
 
   <!-- Gods' Workbench 拟物科技公共硬件设计系统 -->
-  <link rel="stylesheet" href="/static/css/base/hardware-design-system.css">
+  <link rel="stylesheet" href="/static/css/base/hardware-design-system.css?ui=20261011-final">
   <link rel="stylesheet" href="/static/css/pages/project-date-range.css">
-  <link rel="stylesheet" href="/static/css/pages/directory-settings.css?v=20260917">
+  <link rel="stylesheet" href="/static/css/pages/directory-settings.css?v=20260917&ui=20261011-final">
   <style>
-    /* 拟物滑动开关适配原有 settings.js 的 .toggle.on 逻辑 */
-    .toggle {
-      width: 44px;
-      height: 22px;
-      border-radius: 9999px;
-      background: #090a0e;
-      border: 1px solid rgba(255, 255, 255, 0.12);
-      box-shadow: inset 0 2px 4px rgba(0,0,0,0.9);
-      position: relative;
-      cursor: pointer;
-      display: inline-flex;
-      align-items: center;
-      padding: 2px;
-      transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-    }
-    .toggle i {
-      display: block;
-      width: 16px;
-      height: 16px;
-      border-radius: 50%;
-      background: linear-gradient(180deg, #ffffff 0%, #cbd5e1 100%);
-      box-shadow: 0 1px 3px rgba(0,0,0,0.7);
-      transform: translateX(0);
-      transition: transform 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-    }
-    .toggle.on {
-      background: #0d1219;
-      border-color: rgba(223, 195, 132, 0.5);
-      box-shadow: inset 0 2px 4px rgba(0,0,0,0.9), 0 0 10px rgba(223, 195, 132, 0.25);
-    }
-    .toggle.on i {
-      transform: translateX(20px);
-      background: linear-gradient(180deg, #fae2c8 0%, #dfc384 50%, #947a57 100%);
-      box-shadow: 0 0 10px rgba(223, 195, 132, 0.8), 0 2px 4px rgba(0,0,0,0.8);
-    }
-
     /* 设置选项卡面板激活与隐藏控制 */
     [data-panel] {
       display: none !important;
@@ -61,13 +25,8 @@
       display: flex !important;
     }
 
-    /* 侧边分区按钮激活态 */
-    [data-section].active {
-      background: linear-gradient(180deg, #272c38 0%, #151821 100%);
-      color: #dfc384;
-      border: 1px solid rgba(223, 195, 132, 0.4);
-      box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.2), 0 0 12px rgba(223, 195, 132, 0.2);
-    }
+    /* 分区按钮仅保留布局，材质来自共享 Pill。 */
+    [data-section] { justify-content: flex-start; }
 
     /* 提示词来源行条拟物卡片 */
     .prompt-source-row {
@@ -297,60 +256,53 @@
       box-shadow: 0 0 6px #dfc384;
     }
 
-    /* 视图切换组合按键 (卡片网格 vs 列表) */
-    .view-mode-toggle-group {
-      display: inline-flex;
-      background: #050608;
-      border-radius: 6px;
-      padding: 1.5px;
-      border: 1px solid rgba(255, 255, 255, 0.08);
-      box-shadow: inset 0 1px 3px rgba(0,0,0,0.9);
+
+    /* 主区按可用宽度重排；折叠入口独立于上下文侧栏。 */
+    #homeWorkspace, #workbenchMainDashboard, #workbenchMainSettings { min-width: 0; }
+    #workbenchMainDashboard > div, #workbenchMainSettings > div { min-width: 0; }
+    #homeContextBusControls { padding: 4px 10px; flex: 0 0 auto; }
+    #homeContextBusAside.hidden { display: none; }
+    @media (max-width: 1400px) {
+      #workbenchMainDashboard { grid-template-columns: repeat(2, minmax(0, 1fr)); overflow-y: auto; align-content: start; align-items: start; grid-auto-rows: max-content; }
+      #workbenchMainDashboard > div { grid-column: auto; height: auto; overflow: visible; padding-inline: 0; }
+      #workbenchMainDashboard > div > section { flex: none; overflow: visible; }
+      #homeRecentProjects, #homeAssetOverview { min-height: 280px; }
+      #workbenchMainDashboard > div:nth-child(2) > section { min-height: 560px; }
+      #homeRenderBus { grid-column: 1 / -1 !important; display: grid; grid-auto-rows: max-content; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+      #homeRenderBus > section { min-height: 260px; margin-top: 0; }
     }
-    .view-mode-btn {
-      padding: 2.5px 6px;
-      border-radius: 4px;
-      color: #64748b;
-      cursor: pointer;
-      transition: all 0.12s ease;
-      display: flex;
-      align-items: center;
-      justify-content: center;
+    @media (max-width: 1056px) {
+      #homeWorkspace { flex-direction: column; }
+      #homeContextBusAside { width: 100%; height: auto; max-height: 340px; flex: 0 0 auto; }
+      #homeContextBusAside #contextBusContainer { flex: auto; }
+      #homeContextBusAside #contextBusContainer > div:last-child { max-height: 260px; }
+      #workbenchMainDashboard { grid-template-columns: minmax(0, 1fr); }
+      #homeRenderBus { grid-template-columns: minmax(0, 1fr); }
+      #workbenchMainSettings { flex-direction: column; overflow-y: auto; }
+      #workbenchMainSettings > aside { width: 100%; height: auto; }
+      #workbenchMainSettings .settings-index { display: flex; flex-wrap: wrap; gap: 6px; }
+      #workbenchMainSettings .settings-index button { width: auto; margin: 0; }
+      #workbenchMainSettings > div { flex: 0 0 auto; height: min(720px, 75dvh); }
     }
-    .view-mode-btn:hover {
-      color: #cbd5e1;
-    }
-    .view-mode-btn.active {
-      background: linear-gradient(180deg, #272c38 0%, #151821 100%);
-      color: #dfc384;
-      border: 1px solid rgba(223, 195, 132, 0.35);
-      box-shadow: 0 1px 3px rgba(0,0,0,0.6), 0 0 6px rgba(223,195,132,0.2);
+    @media (max-width: 600px) {
+      #workbenchMainDashboard > div > section > .flex.items-center.justify-between { flex-wrap: wrap; gap: 8px; }
+      #homeRecentProjects .proj-grid-container { grid-template-columns: minmax(0, 1fr); }
+      #workbenchMainSettings [data-panel="general"] > .grid { grid-template-columns: minmax(0, 1fr); }
+      #workbenchMainSettings .prompt-source-row { grid-template-columns: 32px minmax(0, 1fr); padding: 10px; }
+      #workbenchMainSettings .prompt-source-actions { grid-column: 2; justify-self: start; }
+      #workbenchMainSettings .prompt-source-title { flex-wrap: wrap; }
     }
 
-    /* 双向微调翘板按钮 (Stepper Rockers: [ < | > ]) 对齐原设计规范 */
-    .hw-rocker-stepper {
-      display: inline-flex;
-      border-radius: 8px;
-      background: #090a0e;
-      padding: 2px;
-      border: 1px solid rgba(255, 255, 255, 0.08);
-      box-shadow: inset 0 2px 4px rgba(0,0,0,0.9);
+
+    @media (max-width: 1056px) {
+      #workbenchMainDashboard > div { min-height: min-content; }
+      #homeAuraInputTools, #homeAuraInputToolButtons, #homeAuraQuickChips { flex-wrap: wrap; gap: 6px; }
+      #homeAuraInputToolButtons > *, #homeAuraQuickChips > * { margin-left: 0; }
+      #homeAuraInputTools > * { min-width: 0; }
+      #workbenchChatInput { min-width: 0; }
+      #workbenchChatStream { min-height: 220px; max-height: 420px; flex: auto; }
+      #homeAuraQuickChips { overflow: visible; }
     }
-    .hw-rocker-btn {
-      padding: 2.5px 7px;
-      background: linear-gradient(180deg, #20242e 0%, #13151b 100%);
-      border: 1px solid rgba(255, 255, 255, 0.09);
-      color: #94a3b8;
-      box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.15), 0 1px 3px rgba(0,0,0,0.6);
-      transition: all 0.1s ease;
-      cursor: pointer;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-    }
-    .hw-rocker-btn:first-child { border-radius: 6px 2px 2px 6px; }
-    .hw-rocker-btn:last-child { border-radius: 2px 6px 6px 2px; margin-left: 1px; }
-    .hw-rocker-btn:hover { color: #eddab3; border-color: rgba(223, 195, 132, 0.3); }
-    .hw-rocker-btn:active { transform: translateY(1px); background: #0c0e12; }
   </style>
 </head>
 <body class="gw-shell bg-[#090a0d] text-slate-200 antialiased h-screen flex flex-col justify-between select-none overflow-hidden px-5 gw-type-body-md">
@@ -371,10 +323,8 @@
       <!-- LEFT: 智能体核心 (原关机键位置) + 标志 + 状态指示 + 左侧CPU电平表 -->
       <div class="master-deck-upper-left flex items-center space-x-2.5 shrink-0">
         <!-- 智能体核心按钮 (原关机键位置) -->
-        <button class="w-8 h-8 rounded-full bg-gradient-to-tr from-cyan-400 via-fuchsia-500 to-amber-300 p-0.5 shadow-[0_0_12px_rgba(236,72,153,0.7),0_0_6px_rgba(34,211,238,0.9)] hover:scale-110 active:scale-95 transition flex items-center justify-center cursor-pointer shrink-0 launch-orb-btn" title="智能体核心总线 (Agent Core)">
-          <div class="w-full h-full rounded-full bg-black/85 flex items-center justify-center">
-            <div class="w-3 h-3 rounded-full bg-gradient-to-r from-cyan-300 to-pink-400 animate-spin"></div>
-          </div>
+        <button class="launch-orb-btn" title="智能体核心总线 (Agent Core)" aria-label="智能体核心总线">
+          <div class="orb-core"><span></span></div>
         </button>
 
         <div class="h-5 w-px bg-white/10"></div>
@@ -421,12 +371,12 @@
       <!-- CENTER: 系统中央总线引擎 -->
       <div class="flex items-center space-x-2 shrink-0">
         <div class="flex items-center space-x-2 bg-[#07080b] px-3.5 py-1.5 rounded-lg border border-white/10 shadow-inner">
-          <button class="hw-btn hw-btn-icon transition"><i data-lucide="chevron-left" class="w-4 h-4"></i></button>
+          <button type="button" class="transition btn-hw-round" aria-label="上一项"><span class="btn-hw-round-inner"><i data-lucide="chevron-left" class="w-4 h-4" aria-hidden="true"></i></span></button>
           <div class="flex items-center space-x-2 px-1.5">
             <span class="w-1.5 h-1.5 rounded-full bg-[#dfc384] shadow-[0_0_6px_#dfc384] animate-pulse"></span>
             <span class="gw-type-body-sm font-mono font-bold text-[#eddab3]" data-gw-header-prefix="AI-FLUX 引擎总线" data-gw-degradation="not_integrated">AI-FLUX 引擎总线 · 读取中…</span>
           </div>
-          <button class="hw-btn hw-btn-icon transition"><i data-lucide="chevron-right" class="w-4 h-4"></i></button>
+          <button type="button" class="transition btn-hw-round" aria-label="下一项"><span class="btn-hw-round-inner"><i data-lucide="chevron-right" class="w-4 h-4" aria-hidden="true"></i></span></button>
         </div>
       </div>
 
@@ -449,9 +399,9 @@
 
         <!-- 播控按键组 (放大1.2倍) -->
         <div class="flex items-center space-x-1.5 bg-[#090b0e] p-1 rounded-lg border border-white/5">
-          <button class="hw-round-btn w-7 h-7" title="停止"><div class="hw-round-inner w-5 h-5"><div class="w-2 h-2 bg-slate-400 rounded-sm"></div></div></button>
-          <button class="hw-round-btn active w-7 h-7" title="运行"><div class="hw-round-inner w-5 h-5"><svg class="w-3 h-3 text-[#dfc384]" fill="currentColor" viewBox="0 0 24 24"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg></div></button>
-          <button class="hw-round-btn w-7 h-7" title="下一步"><div class="hw-round-inner w-5 h-5"><i data-lucide="skip-forward" class="w-3 h-3 text-slate-400"></i></div></button>
+          <button type="button" class="hw-round-btn" title="停止" aria-label="停止"><div class="hw-round-inner"><div class="w-2 h-2 bg-slate-400 rounded-sm"></div></div></button>
+          <button type="button" class="hw-round-btn active" title="运行" aria-label="运行"><div class="hw-round-inner"><svg class="w-3 h-3 text-[#dfc384]" fill="currentColor" viewBox="0 0 24 24"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg></div></button>
+          <button type="button" class="hw-round-btn" title="下一步" aria-label="下一步"><div class="hw-round-inner"><i data-lucide="skip-forward" class="w-3 h-3 text-slate-400"></i></div></button>
         </div>
 
         <div class="h-5 w-px bg-white/10"></div>
@@ -461,7 +411,7 @@
           <span class="w-1.5 h-1.5 rounded-full bg-[#dfc384] shadow-[0_0_6px_#dfc384]"></span>
           <span id="masterDeckClock">00:00:00</span>
         </div>
-        <button type="button" id="masterDeckDate" class="shrink-0 min-w-[76px] px-2.5 py-1.5 rounded bg-[#06070a] border border-[#dfc384]/45 font-mono gw-type-body-md text-[#eddab3] font-bold shadow-inner flex items-center justify-center space-x-1.5 hover:border-[#dfc384] transition" title="打开项目排期日历" aria-label="打开项目排期日历">
+        <button type="button" id="masterDeckDate" class="hw-btn shrink-0 min-w-[76px]" title="打开项目排期日历" aria-label="打开项目排期日历">
           <i data-lucide="calendar-days" class="w-3.5 h-3.5 text-[#dfc384]" aria-hidden="true"></i>
           <span class="text-slate-500" id="masterDeckDateMonth">---</span>
           <span id="masterDeckDateDay">--</span>
@@ -553,8 +503,8 @@
         <div class="h-4 w-px bg-white/10"></div>
 
         <!-- 拟物头像键帽 (原智能体核心位置，替换左下角登录用户，无文字只显头像) -->
-        <div class="hw-avatar-keycap ml-1 cursor-pointer hover:scale-105 active:scale-95 transition" onclick="HardwareDeck.openAccountModal()" title="认证状态未接入：点击打开认证中心查看真实登录状态" data-gw-identity="unverified">
-          <div class="hw-avatar-keycap-inner">
+        <div class="hw-avatar-keycap ml-1 cursor-pointer transition btn-hw-round" onclick="HardwareDeck.openAccountModal()" title="认证状态未接入：点击打开认证中心查看真实登录状态" data-gw-identity="unverified" role="button" tabindex="0" aria-label="打开认证中心">
+          <div class="hw-avatar-keycap-inner btn-hw-round-inner">
             <i data-lucide="shield-check" class="w-4 h-4 text-[#eddab3]"></i>
           </div>
           <span class="hw-avatar-keycap-status"></span>
@@ -567,7 +517,8 @@
   <!-- ========================================================================= -->
   <!-- 2. MAIN SHELL (Sidebar + Main Workspace)                                  -->
   <!-- ========================================================================= -->
-  <div class="flex-1 flex overflow-hidden min-h-0">
+  <div id="homeContextBusControls"><button type="button" id="homeContextBusToggle" class="hw-btn" aria-controls="homeContextBusAside" aria-expanded="true">收起上下文总线</button></div>
+  <div id="homeWorkspace" class="flex-1 flex overflow-hidden min-h-0">
 
     <!-- LEFT CONSOLE DOCK: 上下文工作流总线 -->
     <aside id="homeContextBusAside" class="w-64 bg-[#08090d] border-r border-[#191c24] flex flex-col shrink-0 z-30 h-full min-h-0 overflow-hidden">
@@ -580,9 +531,7 @@
               <i data-lucide="git-branch" class="w-4 h-4 text-[#dfc384]"></i>
               <span class="font-semibold">上下文工作流总线</span>
             </div>
-            <button class="hw-btn hw-btn-icon transition" title="刷新总线" onclick="WorkbenchHome.reloadProjects()">
-              <i data-lucide="refresh-cw" class="w-3 h-3"></i>
-            </button>
+            <button type="button" class="transition btn-hw-round" title="刷新总线" onclick="WorkbenchHome.reloadProjects()" aria-label="刷新总线"><span class="btn-hw-round-inner"><i data-lucide="refresh-cw" class="w-3 h-3" aria-hidden="true"></i></span></button>
           </div>
         </div>
 
@@ -662,15 +611,15 @@
           <div class="flex items-center justify-between pb-1.5 mb-1.5 border-b border-white/5 shrink-0">
             <div class="flex items-center space-x-2">
               <i data-lucide="folder-kanban" class="w-4 h-4 text-[#dfc384]"></i>
-              <h3 class="gw-type-body-lg font-semibold text-slate-100">最近制片项目</h3>
+              <h3 class="text-slate-100 gw-type-section">最近制片项目</h3>
             </div>
             <div class="flex items-center space-x-2">
               <!-- 视图切换器: 网格卡片 (2列) vs 行条列表 -->
-              <div class="view-mode-toggle-group" id="projViewToggleGroup">
-                <button type="button" class="view-mode-btn active" id="btnViewGrid" onclick="WorkbenchHome.setViewMode('grid')" title="网格卡片 (每行2列)">
+              <div class="hw-segmented-group" id="projViewToggleGroup">
+                <button type="button" class="hw-segmented-btn active" aria-pressed="true" id="btnViewGrid" onclick="WorkbenchHome.setViewMode('grid')" title="网格卡片 (每行2列)">
                   <i data-lucide="layout-grid" class="w-3.5 h-3.5"></i>
                 </button>
-                <button type="button" class="view-mode-btn" id="btnViewList" onclick="WorkbenchHome.setViewMode('list')" title="行条列表">
+                <button type="button" class="hw-segmented-btn" aria-pressed="false" id="btnViewList" onclick="WorkbenchHome.setViewMode('list')" title="行条列表">
                   <i data-lucide="list" class="w-3.5 h-3.5"></i>
                 </button>
               </div>
@@ -696,7 +645,7 @@
           <div class="flex items-center justify-between pb-1.5 mb-1.5 border-b border-white/5 shrink-0">
             <div class="flex items-center space-x-2">
               <i data-lucide="database" class="w-4 h-4 text-purple-300"></i>
-              <h3 class="gw-type-body-lg font-semibold text-slate-100">数字资产仓储概览</h3>
+              <h3 class="text-slate-100 gw-type-section">数字资产仓储概览</h3>
             </div>
             <div class="flex items-center space-x-2">
               <span id="assetOverviewStatus" class="gw-type-body-sm font-mono text-emerald-400 flex items-center space-x-1">
@@ -774,7 +723,7 @@
           <div class="flex items-center justify-between pb-1.5 mb-1 border-b border-white/5 shrink-0">
             <a href="agents.html" class="flex items-center space-x-2 group cursor-pointer hover:opacity-90 transition" title="进入 AURA 智能体控制中枢 (agents.html)">
               <span class="w-2 h-2 rounded-full bg-emerald-400 shadow-[0_0_6px_#10b981] animate-pulse"></span>
-              <h3 class="gw-type-body-lg font-semibold text-slate-100 group-hover:text-[#eddab3] flex items-center space-x-1.5">
+              <h3 class="text-slate-100 group-hover:text-[#eddab3] flex items-center space-x-1.5 gw-type-section">
                 <span>AURA · 核心调度智能体机舱</span>
                 <i data-lucide="external-link" class="w-3 h-3 text-[#dfc384] opacity-70 group-hover:opacity-100"></i>
               </h3>
@@ -799,7 +748,7 @@
           <!-- 底部指令输入台 (绝对锁定于机舱底部) -->
           <div class="mt-2 pt-2 border-t border-white/5 shrink-0 space-y-2 relative">
             <!-- 快捷提示词芯片 -->
-            <div class="flex items-center space-x-1.5 overflow-x-auto pb-0.5 gw-type-body-sm font-mono">
+            <div id="homeAuraQuickChips" class="flex items-center space-x-1.5 overflow-x-auto pb-0.5 gw-type-body-sm font-mono">
               <button class="hw-btn hw-btn-sm transition whitespace-nowrap" onclick="WorkbenchHome.insertChip('分析当前项目的第3幕高潮分镜戏剧冲突')"># 分析高潮分镜冲突</button>
               <button class="hw-btn hw-btn-sm transition whitespace-nowrap" onclick="WorkbenchHome.insertChip('校准主角 AURA 钛金光感与面容一致性参数')"># 校准主角钛金光感</button>
               <button class="hw-btn hw-btn-sm transition whitespace-nowrap" onclick="WorkbenchHome.insertChip('列出 GPU 渲染队列等待时长与显存占用')"># 检查渲染队列状态</button>
@@ -817,14 +766,14 @@
                 <input type="text" id="workbenchChatInput" placeholder="向 AURA 下达创作意图、微调参数或批处理指令..." class="flex-1 bg-transparent border-0 gw-type-body-md font-mono text-slate-100 placeholder-slate-500 focus:ring-0 focus:outline-none px-1" autocomplete="off">
 
                 <!-- 彩虹 AI 微球发射按钮（GW-ORB-01 真源外观，32px 顶栏同款） -->
-                <button type="submit" class="launch-orb-btn shrink-0 cursor-pointer" title="点火发射指令">
+                <button type="submit" class="launch-orb-btn shrink-0 cursor-pointer" title="点火发射指令" aria-label="点火发射指令">
                   <div class="orb-core"><span></span></div>
                 </button>
               </form>
 
               <!-- 拟物化三键控制栏 (上传附件 · API设置 · 尺寸) 对齐原路由 -->
-              <div class="flex items-center justify-between pt-1 border-t border-white/5 gw-type-body-sm font-mono">
-                <div class="flex items-center space-x-1.5">
+              <div id="homeAuraInputTools" class="flex items-center justify-between pt-1 border-t border-white/5 gw-type-body-sm font-mono">
+                <div id="homeAuraInputToolButtons" class="flex items-center space-x-1.5">
                   <!-- 1. 上传附件按键 -->
                   <button type="button" class="hw-btn flex items-center space-x-1" onclick="document.getElementById('workbenchAuraAttachmentInput').click()" title="上传附件 (对齐原路由 /api/ai/upload)">
                     <i data-lucide="paperclip" class="w-3 h-3 text-[#dfc384]"></i>
@@ -867,22 +816,22 @@
                       </div>
                       <!-- 比例矩阵网格 -->
                       <div class="grid grid-cols-4 gap-1 gw-type-body-sm font-mono text-center">
-                        <button type="button" class="hw-btn hw-btn-sm active" onclick="WorkbenchHome.setAuraRatio('1:1', '1024x1024')">1:1<br><span class="gw-type-body-sm text-slate-400">正方形</span></button>
-                        <button type="button" class="hw-btn hw-btn-sm" onclick="WorkbenchHome.setAuraRatio('16:9', '1280x720')">16:9<br><span class="gw-type-body-sm text-slate-400">宽屏</span></button>
-                        <button type="button" class="hw-btn hw-btn-sm" onclick="WorkbenchHome.setAuraRatio('9:16', '720x1280')">9:16<br><span class="gw-type-body-sm text-slate-400">竖屏</span></button>
-                        <button type="button" class="hw-btn hw-btn-sm" onclick="WorkbenchHome.setAuraRatio('2:3', '720x1080')">2:3<br><span class="gw-type-body-sm text-slate-400">海报</span></button>
-                        <button type="button" class="hw-btn hw-btn-sm" onclick="WorkbenchHome.setAuraRatio('3:2', '1080x720')">3:2<br><span class="gw-type-body-sm text-slate-400">横图</span></button>
-                        <button type="button" class="hw-btn hw-btn-sm" onclick="WorkbenchHome.setAuraRatio('3:4', '1008x1344')">3:4<br><span class="gw-type-body-sm text-slate-400">小红书</span></button>
-                        <button type="button" class="hw-btn hw-btn-sm" onclick="WorkbenchHome.setAuraRatio('4:3', '1344x1008')">4:3<br><span class="gw-type-body-sm text-slate-400">传统</span></button>
-                        <button type="button" class="hw-btn hw-btn-sm" onclick="WorkbenchHome.setAuraRatio('自动', '1024x1024')">自动<br><span class="gw-type-body-sm text-cyan-400">智能</span></button>
+                        <button type="button" class="hw-btn btn-size-lg flex-col active" onclick="WorkbenchHome.setAuraRatio('1:1', '1024x1024')" aria-pressed="true">1:1<span class="gw-type-body-sm text-slate-400">正方形</span></button>
+                        <button type="button" class="hw-btn btn-size-lg flex-col" onclick="WorkbenchHome.setAuraRatio('16:9', '1280x720')" aria-pressed="false">16:9<span class="gw-type-body-sm text-slate-400">宽屏</span></button>
+                        <button type="button" class="hw-btn btn-size-lg flex-col" onclick="WorkbenchHome.setAuraRatio('9:16', '720x1280')" aria-pressed="false">9:16<span class="gw-type-body-sm text-slate-400">竖屏</span></button>
+                        <button type="button" class="hw-btn btn-size-lg flex-col" onclick="WorkbenchHome.setAuraRatio('2:3', '720x1080')" aria-pressed="false">2:3<span class="gw-type-body-sm text-slate-400">海报</span></button>
+                        <button type="button" class="hw-btn btn-size-lg flex-col" onclick="WorkbenchHome.setAuraRatio('3:2', '1080x720')" aria-pressed="false">3:2<span class="gw-type-body-sm text-slate-400">横图</span></button>
+                        <button type="button" class="hw-btn btn-size-lg flex-col" onclick="WorkbenchHome.setAuraRatio('3:4', '1008x1344')" aria-pressed="false">3:4<span class="gw-type-body-sm text-slate-400">小红书</span></button>
+                        <button type="button" class="hw-btn btn-size-lg flex-col" onclick="WorkbenchHome.setAuraRatio('4:3', '1344x1008')" aria-pressed="false">4:3<span class="gw-type-body-sm text-slate-400">传统</span></button>
+                        <button type="button" class="hw-btn btn-size-lg flex-col" onclick="WorkbenchHome.setAuraRatio('自动', '1024x1024')" aria-pressed="false">自动<span class="gw-type-body-sm text-cyan-400">智能</span></button>
                       </div>
                       <!-- 分辨率档位 -->
                       <div class="flex items-center justify-between pt-1 border-t border-white/10 gw-type-body-sm">
                         <span class="text-slate-400">分辨率档位:</span>
-                        <div class="flex items-center space-x-1">
-                          <button type="button" class="hw-btn hw-btn-sm" onclick="WorkbenchHome.setAuraResolutionLevel('1K')">1K</button>
-                          <button type="button" class="hw-btn hw-btn-sm" onclick="WorkbenchHome.setAuraResolutionLevel('2K')">2K</button>
-                          <button type="button" class="hw-btn hw-btn-sm" onclick="WorkbenchHome.setAuraResolutionLevel('4K')">4K</button>
+                        <div class="hw-segmented-group" role="group" aria-label="分辨率档位">
+                          <button type="button" class="hw-segmented-btn btn-size-sm" onclick="WorkbenchHome.setAuraResolutionLevel('1K')" aria-pressed="true">1K</button>
+                          <button type="button" class="hw-segmented-btn btn-size-sm" onclick="WorkbenchHome.setAuraResolutionLevel('2K')" aria-pressed="false">2K</button>
+                          <button type="button" class="hw-segmented-btn btn-size-sm" onclick="WorkbenchHome.setAuraResolutionLevel('4K')" aria-pressed="false">4K</button>
                         </div>
                       </div>
                     </div>
@@ -911,7 +860,7 @@
                 <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-cyan-400 opacity-75"></span>
                 <span class="relative inline-flex rounded-full h-2 w-2 bg-cyan-400 shadow-[0_0_6px_#38bdf8]"></span>
               </span>
-              <h3 class="gw-type-body-lg font-semibold text-slate-100">正在进行的任务</h3>
+              <h3 class="text-slate-100 gw-type-section">正在进行的任务</h3>
             </div>
             <div class="flex items-center space-x-1.5">
               <span class="gw-type-body-sm font-mono text-slate-400 font-bold" id="activeTasksCountBadge" title="读取真实作业队列 /api/observability/tasks">读取中…</span>
@@ -930,17 +879,17 @@
           </div>
         </section>
 
-        <!-- 3.2 第二分块：下一步行动指令 / 待办事项 (高度 1/3，复刻图1，接入当前用户待办) -->
-        <section class="champagne-card p-2.5 flex-1 flex flex-col min-h-0 justify-between overflow-hidden" id="workbenchDirectivesSection">
+        <!-- 3.2 第二分块：行动指令示例 (高度 1/3，本地演示清单；真实任务位于上方队列) -->
+        <section class="champagne-card p-2.5 flex-1 flex flex-col min-h-0 justify-between overflow-hidden" id="workbenchDirectivesSection" data-gw-example="directives">
           <div class="flex items-center justify-between pb-1.5 mb-1 border-b border-white/5 shrink-0">
             <div class="flex items-center space-x-2">
               <i data-lucide="compass" class="w-4 h-4 text-[#dfc384]"></i>
-              <h3 class="gw-type-body-lg font-semibold text-slate-100">下一步行动指令 (Directives)</h3>
+              <h3 class="text-slate-100 gw-type-section">行动指令示例 (Directives)</h3>
             </div>
-            <span class="gw-type-body-sm font-mono text-[#dfc384] font-bold" id="workbenchDirectivesCount">2 待办</span>
+            <span class="gw-type-body-sm font-mono text-[#dfc384] font-bold" id="workbenchDirectivesCount">示例载入中…</span>
           </div>
 
-          <!-- 待办事项列表项 (1:1 沉浸拟物曜石质感，带翘板键与操作胶囊) -->
+          <!-- 本地示例清单：布局和入口演示，不代表当前用户待办或真实运行任务。 -->
           <div class="space-y-1.5 flex-1 overflow-y-auto pr-0.5 min-h-0" id="workbenchDirectivesContainer">
             <!-- 待办 1: 香槟金边框卡片 -->
             <div class="p-2 rounded-xl bay-inset border-l-2 border-[#dfc384] flex items-center justify-between bg-[#0a0c10]">
@@ -951,10 +900,10 @@
               <!-- 翘板微调按键 + 处理胶囊按钮 -->
               <div class="flex items-center space-x-1.5 shrink-0">
                 <div class="hw-rocker-stepper">
-                  <button type="button" class="hw-rocker-btn" title="上一个待办" onclick="WorkbenchHome.stepDirective(-1)">
+                  <button type="button" class="hw-rocker-btn" title="上一个示例" aria-label="上一个示例" onclick="WorkbenchHome.stepDirective(-1)">
                     <i data-lucide="chevron-left" class="w-2.5 h-2.5"></i>
                   </button>
-                  <button type="button" class="hw-rocker-btn" title="下一个待办" onclick="WorkbenchHome.stepDirective(1)">
+                  <button type="button" class="hw-rocker-btn" title="下一个示例" aria-label="下一个示例" onclick="WorkbenchHome.stepDirective(1)">
                     <i data-lucide="chevron-right" class="w-2.5 h-2.5"></i>
                   </button>
                 </div>
@@ -983,7 +932,7 @@
         <!-- 3.3 第三分块：快速开始工坊 (高度缩小到 1/3，竖向 3 等分) -->
         <section class="champagne-card p-2.5 flex-1 flex flex-col justify-between min-h-0 overflow-hidden">
           <div class="flex items-center justify-between pb-1 mb-1 border-b border-white/5 shrink-0">
-            <h3 class="gw-type-body-lg font-semibold text-slate-100">快速开始工坊</h3>
+            <h3 class="text-slate-100 gw-type-section">快速开始工坊</h3>
             <span class="gw-type-body-sm font-mono text-[#dfc384]">QUICK WORKFLOW</span>
           </div>
 
@@ -1034,23 +983,23 @@
 
         <!-- 核心分区切换按键 (内部平滑切换，无外链跳转) -->
         <nav class="space-y-1 settings-index" aria-label="设置分区">
-          <button type="button" data-section="general" class="w-full flex items-center space-x-2.5 px-3 py-2 rounded-lg gw-type-body-md font-medium text-slate-300 hover:text-white transition active cursor-pointer">
+          <button type="button" data-section="general" class="w-full flex items-center space-x-2.5 transition active cursor-pointer hw-btn engaged" aria-pressed="true">
             <i data-lucide="sliders" class="w-4 h-4 text-[#dfc384]"></i>
             <span>通用与外观偏好</span>
           </button>
-          <button type="button" data-section="directories" class="w-full flex items-center space-x-2.5 px-3 py-2 rounded-lg gw-type-body-md font-medium text-slate-300 hover:text-white transition cursor-pointer">
+          <button type="button" data-section="directories" class="w-full flex items-center space-x-2.5 transition cursor-pointer hw-btn" aria-pressed="false">
             <i data-lucide="folder-cog" class="w-4 h-4 text-amber-300"></i>
             <span>目录设置</span>
           </button>
-          <button type="button" data-section="prompt-sources" class="w-full flex items-center space-x-2.5 px-3 py-2 rounded-lg gw-type-body-md font-medium text-slate-300 hover:text-white transition cursor-pointer">
+          <button type="button" data-section="prompt-sources" class="w-full flex items-center space-x-2.5 transition cursor-pointer hw-btn" aria-pressed="false">
             <i data-lucide="sparkles" class="w-4 h-4 text-cyan-400"></i>
             <span>提示词来源 (本地快照)</span>
           </button>
-          <button type="button" data-section="api-settings" class="w-full flex items-center space-x-2.5 px-3 py-2 rounded-lg gw-type-body-md font-medium text-slate-300 hover:text-white transition cursor-pointer">
+          <button type="button" data-section="api-settings" class="w-full flex items-center space-x-2.5 transition cursor-pointer hw-btn" aria-pressed="false">
             <i data-lucide="key" class="w-4 h-4 text-amber-400"></i>
             <span>API 与密钥配置</span>
           </button>
-          <button type="button" data-section="permissions" class="w-full flex items-center space-x-2.5 px-3 py-2 rounded-lg gw-type-body-md font-medium text-slate-300 hover:text-white transition cursor-pointer">
+          <button type="button" data-section="permissions" class="w-full flex items-center space-x-2.5 transition cursor-pointer hw-btn" aria-pressed="false">
             <i data-lucide="shield-check" class="w-4 h-4 text-emerald-400"></i>
             <span>席位与资产权限</span>
           </button>
@@ -1076,7 +1025,7 @@
         <section class="active h-full flex flex-col overflow-y-auto pr-1" data-panel="general">
           <div class="mb-4 flex items-center justify-between">
             <div>
-              <h2 class="gw-type-headline-sm font-medium text-slate-100 flex items-center space-x-2">
+              <h2 class="text-slate-100 flex items-center space-x-2 gw-type-title">
                 <i data-lucide="sliders" class="w-5 h-5 text-[#dfc384]"></i>
                 <span>通用工作台与工程环境设置</span>
               </h2>
@@ -1097,7 +1046,7 @@
             <div class="bay-inset p-4 rounded-xl space-y-3.5">
               <div class="flex items-center space-x-2 pb-2 border-b border-white/5">
                 <i data-lucide="power" class="w-4 h-4 text-[#dfc384]"></i>
-                <h3 class="gw-type-body-lg font-bold text-slate-200">启动与任务行为</h3>
+                <h3 class="text-slate-200 gw-type-section">启动与任务行为</h3>
               </div>
 
               <!-- 默认启动页 -->
@@ -1120,8 +1069,8 @@
                   <strong class="gw-type-body-sm text-slate-200 block">中心自动刷新</strong>
                   <p class="gw-type-body-md text-slate-400">每 5 秒同步后台任务与运行日志</p>
                 </div>
-                <button type="button" class="toggle on" data-setting="task_refresh" aria-label="中心自动刷新" aria-pressed="true">
-                  <i></i>
+                <button type="button" class="toggle hw-slide-toggle on" data-setting="task_refresh" aria-label="中心自动刷新" aria-pressed="true">
+                  <span class="hw-slide-peg" aria-hidden="true"></span>
                 </button>
               </div>
 
@@ -1131,8 +1080,8 @@
                   <strong class="gw-type-body-sm text-slate-200 block">恢复上次页面</strong>
                   <p class="gw-type-body-md text-slate-400">重新打开时自动定位到最近工作位置</p>
                 </div>
-                <button type="button" class="toggle on" data-setting="restore_page" aria-label="恢复上次页面" aria-pressed="true">
-                  <i></i>
+                <button type="button" class="toggle hw-slide-toggle on" data-setting="restore_page" aria-label="恢复上次页面" aria-pressed="true">
+                  <span class="hw-slide-peg" aria-hidden="true"></span>
                 </button>
               </div>
             </div>
@@ -1141,7 +1090,7 @@
             <div class="bay-inset p-4 rounded-xl space-y-3.5">
               <div class="flex items-center space-x-2 pb-2 border-b border-white/5">
                 <i data-lucide="palette" class="w-4 h-4 text-cyan-400"></i>
-                <h3 class="gw-type-body-lg font-bold text-slate-200">界面外观与显示偏好</h3>
+                <h3 class="text-slate-200 gw-type-section">界面外观与显示偏好</h3>
               </div>
 
               <!-- 深色模式 -->
@@ -1150,8 +1099,8 @@
                   <strong class="gw-type-body-sm text-slate-200 block">深色模式 (曜石香槟金)</strong>
                   <p class="gw-type-body-md text-slate-400">切换全局界面拟物暗黑科技主题</p>
                 </div>
-                <button type="button" class="toggle on" id="themeToggle" aria-label="深色模式" aria-pressed="true">
-                  <i></i>
+                <button type="button" class="toggle hw-slide-toggle on" id="themeToggle" aria-label="深色模式" aria-pressed="true">
+                  <span class="hw-slide-peg" aria-hidden="true"></span>
                 </button>
               </div>
 
@@ -1172,8 +1121,8 @@
                   <strong class="gw-type-body-sm text-slate-200 block">减少动态效果</strong>
                   <p class="gw-type-body-md text-slate-400">降低复杂过渡动效与高光呼吸强度</p>
                 </div>
-                <button type="button" class="toggle" data-setting="reduce_motion" aria-label="减少动态效果" aria-pressed="false">
-                  <i></i>
+                <button type="button" class="toggle hw-slide-toggle" data-setting="reduce_motion" aria-label="减少动态效果" aria-pressed="false">
+                  <span class="hw-slide-peg" aria-hidden="true"></span>
                 </button>
               </div>
             </div>
@@ -1182,7 +1131,7 @@
             <div class="bay-inset p-4 rounded-xl space-y-3.5">
               <div class="flex items-center space-x-2 pb-2 border-b border-white/5">
                 <i data-lucide="users" class="w-4 h-4 text-amber-400"></i>
-                <h3 class="gw-type-body-lg font-bold text-slate-200">团队偏好与服务端同步</h3>
+                <h3 class="text-slate-200 gw-type-section">团队偏好与服务端同步</h3>
               </div>
 
               <!-- 命名规则 -->
@@ -1220,7 +1169,7 @@
             <div class="bay-inset p-4 rounded-xl space-y-3">
               <div class="flex items-center space-x-2 pb-2 border-b border-white/5">
                 <i data-lucide="info" class="w-4 h-4 text-emerald-400"></i>
-                <h3 class="gw-type-body-lg font-bold text-slate-200">系统信息与版本状态</h3>
+                <h3 class="text-slate-200 gw-type-section">系统信息与版本状态</h3>
               </div>
               <div id="systemInfo" class="space-y-2 gw-type-body-sm font-mono text-slate-300">
                 <div class="flex items-center space-x-2 text-slate-400">
@@ -1242,7 +1191,7 @@
         <section class="h-full flex flex-col overflow-y-auto pr-1" data-panel="prompt-sources">
           <div class="flex items-center justify-between mb-4 pb-3 border-b border-white/10">
             <div>
-              <h2 class="gw-type-headline-sm font-medium text-slate-100 flex items-center space-x-2">
+              <h2 class="text-slate-100 flex items-center space-x-2 gw-type-title">
                 <i data-lucide="sparkles" class="w-5 h-5 text-cyan-400"></i>
                 <span>本地提示词来源快照管理</span>
               </h2>
@@ -1272,7 +1221,7 @@
         <section class="h-full flex flex-col overflow-hidden" data-panel="api-settings">
           <div class="flex items-center justify-between mb-2.5 pb-2.5 border-b border-white/10 shrink-0">
             <div>
-              <h2 class="gw-type-headline-sm font-medium text-slate-100 flex items-center space-x-2">
+              <h2 class="text-slate-100 flex items-center space-x-2 gw-type-title">
                 <i data-lucide="key" class="w-4 h-4 text-amber-400"></i>
                 <span>API 平台与大模型密钥配置</span>
               </h2>
@@ -1295,7 +1244,7 @@
         <section class="h-full flex flex-col overflow-hidden" data-panel="permissions">
           <div class="flex items-center justify-between mb-2.5 pb-2.5 border-b border-white/10 shrink-0">
             <div>
-              <h2 class="gw-type-headline-sm font-medium text-slate-100 flex items-center space-x-2">
+              <h2 class="text-slate-100 flex items-center space-x-2 gw-type-title">
                 <i data-lucide="users" class="w-4 h-4 text-[#dfc384]"></i>
                 <span>团队协同席位与资产权限治理</span>
               </h2>
@@ -1405,11 +1354,9 @@
       <div class="flex items-center justify-between pb-2 mb-3 border-b border-white/10">
         <div class="flex items-center space-x-2">
           <i data-lucide="settings" class="w-4 h-4 text-[#dfc384]"></i>
-          <h3 class="gw-type-body-lg font-bold text-slate-100">系统与大模型设置</h3>
+          <h3 class="text-slate-100 gw-type-title">系统与大模型设置</h3>
         </div>
-        <button class="hw-btn hw-btn-icon" onclick="HardwareDeck.closeModal('settingsModal')">
-          <i data-lucide="x" class="w-4 h-4"></i>
-        </button>
+        <button type="button" class="btn-hw-round" onclick="HardwareDeck.closeModal('settingsModal')" aria-label="关闭设置"><span class="btn-hw-round-inner"><i data-lucide="x" class="w-4 h-4" aria-hidden="true"></i></span></button>
       </div>
 
       <div class="space-y-3 gw-type-body-sm">
@@ -1457,11 +1404,9 @@
       <div class="flex items-center justify-between pb-2 mb-3 border-b border-white/10">
         <div class="flex items-center space-x-2">
           <i data-lucide="folder-plus" class="w-4 h-4 text-[#dfc384]"></i>
-          <h3 class="gw-type-body-lg font-bold text-slate-100">创建新影视制片工程</h3>
+          <h3 class="text-slate-100 gw-type-title">创建新影视制片工程</h3>
         </div>
-        <button class="hw-btn hw-btn-icon" onclick="HardwareDeck.closeModal('newProjectModal')">
-          <i data-lucide="x" class="w-4 h-4"></i>
-        </button>
+        <button type="button" class="btn-hw-round" onclick="HardwareDeck.closeModal('newProjectModal')" aria-label="关闭新建项目"><span class="btn-hw-round-inner"><i data-lucide="x" class="w-4 h-4" aria-hidden="true"></i></span></button>
       </div>
 
       <form onsubmit="WorkbenchHome.handleCreateProject(event)" class="space-y-3 gw-type-body-sm">
@@ -1516,11 +1461,9 @@
     <div class="p-3.5 border-b border-white/10 flex items-center justify-between shrink-0 bg-[#0d0f14]">
       <div class="flex items-center space-x-2">
         <i data-lucide="bell" class="w-4 h-4 text-[#dfc384]"></i>
-        <h3 class="gw-type-body-lg font-bold text-slate-100">任务中心与渲染队列</h3>
+        <h3 class="text-slate-100 gw-type-title">任务中心与渲染队列</h3>
       </div>
-      <button class="hw-btn hw-btn-icon" onclick="HardwareDeck.closeDrawer('taskCenterDrawer')">
-        <i data-lucide="x" class="w-4 h-4"></i>
-      </button>
+      <button type="button" class="btn-hw-round" onclick="HardwareDeck.closeDrawer('taskCenterDrawer')" aria-label="关闭任务中心"><span class="btn-hw-round-inner"><i data-lucide="x" class="w-4 h-4" aria-hidden="true"></i></span></button>
     </div>
 
     <div class="p-3 overflow-y-auto space-y-2 flex-1 gw-type-body-sm">
@@ -1537,11 +1480,9 @@
       <div class="flex items-center justify-between pb-2 mb-3 border-b border-white/10">
         <div class="flex items-center space-x-2">
           <i data-lucide="users" class="w-4 h-4 text-[#dfc384]"></i>
-          <h3 class="gw-type-body-lg font-bold text-slate-100">团队与协同席位治理</h3>
+          <h3 class="text-slate-100 gw-type-title">团队与协同席位治理</h3>
         </div>
-        <button type="button" class="hw-btn hw-btn-icon" onclick="HardwareDeck.closeModal('teamModal')">
-          <i data-lucide="x" class="w-4 h-4"></i>
-        </button>
+        <button type="button" class="btn-hw-round" onclick="HardwareDeck.closeModal('teamModal')" aria-label="关闭团队席位"><span class="btn-hw-round-inner"><i data-lucide="x" class="w-4 h-4" aria-hidden="true"></i></span></button>
       </div>
 
       <div class="space-y-3 gw-type-body-sm">
@@ -1596,6 +1537,7 @@
 
   <!-- Scripts -->
   <script src="/static/js/core/degradation.js?v=v0.0.1-alpha-2026"></script>
+  <script src="/static/js/core/floating-dismissal.js?v=v0.0.1-alpha-2026&m3=floating-dismissal"></script>
   <script src="/static/js/core/hardware-telemetry.js?v=20261008-auth6"></script>
 <script src="/static/js/core/task-queue.js?v=20261008-auth6"></script>
   <script src="/static/js/modules/directory-settings-nav.js?v=20260917"></script>

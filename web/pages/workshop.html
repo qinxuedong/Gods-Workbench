@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="zh-CN" class="h-full overflow-hidden">
 <head>
-  <link rel="stylesheet" href="/static/css/base/hardware-tokens.css">
+  <link rel="stylesheet" href="/static/css/base/hardware-tokens.css?ui=20261011-final">
   <link rel="stylesheet" href="/static/vendor/css/fonts.css?v=v0.0.1-alpha-2026">
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -10,8 +10,12 @@
   <script src="/static/vendor/js/tailwindcss-cdn.js?v=3.4.17&amp;build=d11003b2f6fb"></script>
   <script src="/static/vendor/js/lucide.js?v=1.16.0"></script>
   <!-- Gods' Workbench 拟物科技公共硬件设计系统 -->
-  <link rel="stylesheet" href="/static/css/base/hardware-design-system.css">
+  <link rel="stylesheet" href="/static/css/base/hardware-design-system.css?ui=20261011-final">
   <style>
+    /* 阶段按钮沿用树节点材质，原生按钮仅重置文字对齐与外观。 */
+    button[id^="stepBtn-"] { appearance:none; text-align:left; font:inherit; }
+    /* 新建分集保留视口内滚动与显式关闭。 */
+    #newEpisodeModalDialog { max-height:calc(100dvh - 32px); overflow:auto; border-radius:8px; }
     /* 拟物科技物理背灯步骤胶囊 */
     .step-badge {
       display: inline-flex;
@@ -91,6 +95,25 @@
       color: #94a3b8;
       border: 1px solid rgba(148, 163, 184, 0.25);
     }
+
+    /* 页面主区重排，正文滚动与二维工作区各自保留。 */
+    #workshopWorkspace, #workshopMain, #workshopMain > div { min-width: 0; }
+    #workshopMain :is(h2,h3,p) { overflow-wrap: anywhere; }
+    @media (max-width: 1056px) {
+      #workshopWorkspace { flex-direction: column; overflow-y: auto; }
+      #workshopWorkspace > .gw-page-side { width: 100%; height: auto; max-height: 340px; flex: 0 0 auto; }
+      #workshopWorkspace .gw-page-side #contextBusContainer { flex: auto; max-height: 285px; }
+      #workshopMain { width: 100%; height: auto; flex: 0 0 auto; overflow: visible; grid-template-columns: minmax(0, 1fr); }
+      #workshopMain > div { height: auto; grid-column: auto; overflow: visible; }
+      #workshopMain > div > .champagne-card { flex: 0 0 auto; height: auto; min-height: 280px; overflow: visible; }
+      #workshopMain > section:first-child, #workshopMain > div > .champagne-card > .flex.justify-between { flex-wrap: wrap; gap: 8px; }
+    }
+    @media (max-width: 1056px) {
+      #workshopMain { min-height: 480px; }
+      #episodesView { height: auto; padding: 16px; overflow: visible; }
+      #episodesView > .flex.justify-between { flex-wrap: wrap; gap: 10px; }
+      #pipelineIframe { height: 85dvh; min-height: 600px; }
+    }
   </style>
 </head>
 <body class="gw-shell bg-[#090a0d] text-slate-200 antialiased h-screen flex flex-col justify-between select-none overflow-hidden px-5 gw-type-body-md">
@@ -111,10 +134,8 @@
       <!-- LEFT: 电源键 + 标志 + 状态指示 + 左侧CPU电平表 -->
       <div class="flex items-center space-x-2 shrink-0">
                 <!-- 智能体核心按钮 (原关机键位置) -->
-        <button class="w-8 h-8 rounded-full bg-gradient-to-tr from-cyan-400 via-fuchsia-500 to-amber-300 p-0.5 shadow-[0_0_12px_rgba(236,72,153,0.7),0_0_6px_rgba(34,211,238,0.9)] hover:scale-110 active:scale-95 transition flex items-center justify-center cursor-pointer shrink-0 launch-orb-btn" title="智能体核心总线 (Agent Core)">
-          <div class="w-full h-full rounded-full bg-black/85 flex items-center justify-center">
-            <div class="w-3 h-3 rounded-full bg-gradient-to-r from-cyan-300 to-pink-400 animate-spin"></div>
-          </div>
+        <button class="launch-orb-btn" title="智能体核心总线 (Agent Core)" aria-label="智能体核心总线">
+          <div class="orb-core"><span></span></div>
         </button>
 
         <div class="h-4 w-px bg-white/10"></div>
@@ -154,12 +175,12 @@
       <!-- CENTER: 系统中央总线引擎与当前项目 -->
       <div class="flex items-center space-x-2 shrink-0">
         <div class="flex items-center space-x-1.5 bg-[#07080b] px-3 py-1 rounded-lg border border-white/10 shadow-inner">
-          <button class="hw-btn hw-btn-icon transition cursor-pointer" onclick="WorkbenchWorkshop.prevProject()" title="切换至上一个项目"><i data-lucide="chevron-left" class="w-3.5 h-3.5"></i></button>
+          <button type="button" class="transition cursor-pointer btn-hw-round" onclick="WorkbenchWorkshop.prevProject()" title="切换至上一个项目" aria-label="切换至上一个项目"><span class="btn-hw-round-inner"><i data-lucide="chevron-left" class="w-3.5 h-3.5" aria-hidden="true"></i></span></button>
           <div class="flex items-center space-x-2 px-1.5">
             <span class="w-1.5 h-1.5 rounded-full bg-[#dfc384] shadow-[0_0_6px_#dfc384] animate-pulse"></span>
             <span class="gw-type-body-sm font-mono font-bold text-[#eddab3]" id="workshopProjectTitle">《神谕之地》· 影视工坊流水线</span>
           </div>
-          <button class="hw-btn hw-btn-icon transition cursor-pointer" onclick="WorkbenchWorkshop.nextProject()" title="切换至下一个项目"><i data-lucide="chevron-right" class="w-3.5 h-3.5"></i></button>
+          <button type="button" class="transition cursor-pointer btn-hw-round" onclick="WorkbenchWorkshop.nextProject()" title="切换至下一个项目" aria-label="切换至下一个项目"><span class="btn-hw-round-inner"><i data-lucide="chevron-right" class="w-3.5 h-3.5" aria-hidden="true"></i></span></button>
         </div>
       </div>
 
@@ -182,9 +203,9 @@
 
         <!-- 播控按键组 -->
         <div class="flex items-center space-x-1 bg-[#090b0e] p-1 rounded-lg border border-white/5">
-          <button class="hw-round-btn w-7 h-7" title="停止"><div class="hw-round-inner w-4 h-4"><div class="w-1.5 h-1.5 bg-slate-400 rounded-sm"></div></div></button>
-          <button class="hw-round-btn active w-7 h-7" title="运行"><div class="hw-round-inner w-4 h-4"><svg class="w-2.5 h-2.5 text-[#dfc384]" fill="currentColor" viewBox="0 0 24 24"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg></div></button>
-          <button class="hw-round-btn w-7 h-7" title="下一步"><div class="hw-round-inner w-4 h-4"><i data-lucide="skip-forward" class="w-2.5 h-2.5 text-slate-400"></i></div></button>
+          <button type="button" class="hw-round-btn" title="停止" aria-label="停止"><div class="hw-round-inner"><div class="w-1.5 h-1.5 bg-slate-400 rounded-sm"></div></div></button>
+          <button type="button" class="hw-round-btn active" title="运行" aria-label="运行"><div class="hw-round-inner"><svg class="w-2.5 h-2.5 text-[#dfc384]" fill="currentColor" viewBox="0 0 24 24"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg></div></button>
+          <button type="button" class="hw-round-btn" title="下一步" aria-label="下一步"><div class="hw-round-inner"><i data-lucide="skip-forward" class="w-2.5 h-2.5 text-slate-400"></i></div></button>
         </div>
 
         <div class="h-4 w-px bg-white/10"></div>
@@ -194,7 +215,7 @@
           <span class="w-1.5 h-1.5 rounded-full bg-[#dfc384] shadow-[0_0_6px_#dfc384]"></span>
           <span id="masterDeckClock">00:00:00</span>
         </div>
-        <button type="button" id="masterDeckDate" class="shrink-0 min-w-[76px] px-2.5 py-1.5 rounded bg-[#06070a] border border-[#dfc384]/45 font-mono gw-type-body-md text-[#eddab3] font-bold shadow-inner flex items-center justify-center space-x-1.5 hover:border-[#dfc384] transition" title="打开项目排期日历" aria-label="打开项目排期日历"><i data-lucide="calendar-days" class="w-3.5 h-3.5 text-[#dfc384]" aria-hidden="true"></i><span class="text-slate-500" id="masterDeckDateMonth">---</span><span id="masterDeckDateDay">--</span></button>
+        <button type="button" id="masterDeckDate" class="hw-btn shrink-0 min-w-[76px]" title="打开项目排期日历" aria-label="打开项目排期日历"><i data-lucide="calendar-days" class="w-3.5 h-3.5 text-[#dfc384]" aria-hidden="true"></i><span class="text-slate-500" id="masterDeckDateMonth">---</span><span id="masterDeckDateDay">--</span></button>
       </div>
     </div>
 
@@ -268,8 +289,8 @@
           </div>
         </button>
         <!-- 拟物头像键帽 (原智能体核心位置，替换左下角登录用户，无文字只显头像) -->
-        <div class="hw-avatar-keycap ml-1 cursor-pointer hover:scale-105 active:scale-95 transition" title="认证状态未接入：点击打开认证中心查看真实登录状态" data-gw-identity="unverified">
-          <div class="hw-avatar-keycap-inner">
+        <div class="hw-avatar-keycap ml-1 cursor-pointer transition btn-hw-round" title="认证状态未接入：点击打开认证中心查看真实登录状态" data-gw-identity="unverified" role="button" tabindex="0" aria-label="打开认证中心">
+          <div class="hw-avatar-keycap-inner btn-hw-round-inner">
             <i data-lucide="shield-check" class="w-4 h-4 text-[#eddab3]"></i>
           </div>
           <span class="hw-avatar-keycap-status"></span>
@@ -281,11 +302,11 @@
   <!-- ========================================================================= -->
   <!-- 2. MAIN WORKSPACE WITH WORKFLOW BUS DOCK                                  -->
   <!-- ========================================================================= -->
-  <div class="flex-1 flex overflow-hidden min-h-0">
+  <div id="workshopWorkspace" class="flex-1 flex overflow-hidden min-h-0">
     <!-- ----------------------------------------------------------------------- -->
     <!-- LEFT CONSOLE DOCK: 影视工坊工作流总线 (Workshop Workflow Bus)                 -->
     <!-- ----------------------------------------------------------------------- -->
-    <aside class="w-64 bg-[#08090d] border-r border-[#191c24] flex flex-col shrink-0 z-30 h-full min-h-0 overflow-hidden">
+    <aside class="gw-page-side w-64 bg-[#08090d] border-r border-[#191c24] flex flex-col shrink-0 z-30 h-full min-h-0 overflow-hidden">
       <div class="flex-1 flex flex-col min-h-0 relative overflow-hidden" id="contextBusContainer">
         <!-- Tree Header -->
         <div class="p-2 border-b border-white/5 shrink-0">
@@ -295,9 +316,7 @@
               <i data-lucide="git-branch" class="w-4 h-4 text-[#dfc384]"></i>
               <span class="font-semibold">工坊生产工作流总线</span>
             </div>
-            <button class="hw-btn hw-btn-icon transition" title="刷新总线" onclick="WorkbenchWorkshop.refreshPipeline()">
-              <i data-lucide="refresh-cw" class="w-3 h-3"></i>
-            </button>
+            <button type="button" class="transition btn-hw-round" title="刷新总线" onclick="WorkbenchWorkshop.refreshPipeline()" aria-label="刷新总线"><span class="btn-hw-round-inner"><i data-lucide="refresh-cw" class="w-3 h-3" aria-hidden="true"></i></span></button>
           </div>
         </div>
 
@@ -309,95 +328,95 @@
           <!-- 0. 阶段 00: 项目分集 (Episodes) -->
           <div class="relative pl-5">
             <div class="absolute left-[-6px] top-[17px] w-[6px] h-[1.5px] bg-[#dfc384]/60 pointer-events-none"></div>
-            <div class="tree-node-card active px-2.5 py-1.5 flex items-center justify-between group cursor-pointer" id="stepBtn-episodes" onclick="WorkbenchWorkshop.switchStep('episodes')">
-              <div class="card-connector-pin"></div>
-              <div class="flex items-center space-x-1.5 min-w-0">
+            <button type="button" class="tree-node-card active px-2.5 py-1.5 flex items-center justify-between group cursor-pointer" id="stepBtn-episodes" onclick="WorkbenchWorkshop.switchStep('episodes')">
+              <span class="card-connector-pin"></span>
+              <span class="flex items-center space-x-1.5 min-w-0">
                 <span class="gw-type-body-sm font-mono text-[#dfc384] font-bold px-1 py-0.5 rounded bg-[#dfc384]/15 border border-[#dfc384]/30 shrink-0">EP</span>
                 <i data-lucide="film" class="w-3.5 h-3.5 text-[#dfc384] group-hover:text-[#dfc384]"></i>
                 <span class="gw-type-body-md font-semibold text-slate-100 truncate">项目分集</span>
-              </div>
+              </span>
               <span id="episodesCountBadge" class="gw-type-body-sm font-mono px-1.5 py-0.5 rounded-full bg-[#dfc384]/15 text-[#eddab3] border border-[#dfc384]/30 shrink-0">
                 0集
               </span>
-            </div>
+            </button>
           </div>
 
           <!-- 1. 阶段 01: 剧本生成 -->
           <div class="relative pl-5">
             <div class="absolute left-[-6px] top-[17px] w-[6px] h-[1.5px] bg-[#dfc384]/60 pointer-events-none"></div>
-            <div class="tree-node-card px-2.5 py-1.5 flex items-center justify-between group cursor-pointer" id="stepBtn-script" onclick="WorkbenchWorkshop.switchStep('script')">
-              <div class="card-connector-pin"></div>
-              <div class="flex items-center space-x-1.5 min-w-0">
+            <button type="button" class="tree-node-card px-2.5 py-1.5 flex items-center justify-between group cursor-pointer" id="stepBtn-script" onclick="WorkbenchWorkshop.switchStep('script')">
+              <span class="card-connector-pin"></span>
+              <span class="flex items-center space-x-1.5 min-w-0">
                 <span class="gw-type-body-sm font-mono text-[#dfc384] font-bold px-1 py-0.5 rounded bg-[#dfc384]/15 border border-[#dfc384]/30 shrink-0">01</span>
                 <i data-lucide="file-text" class="w-3.5 h-3.5 text-slate-400 group-hover:text-[#dfc384]"></i>
                 <span class="gw-type-body-md font-semibold text-slate-100 truncate">剧本生成</span>
-              </div>
+              </span>
               <span class="gw-type-body-sm font-mono px-1 py-0.5 rounded-full bg-slate-500/15 text-slate-400 border border-slate-500/30 shrink-0">
                 wait
               </span>
-            </div>
+            </button>
           </div>
 
           <!-- 2. 阶段 02: 资产生成 -->
           <div class="relative pl-5">
             <div class="absolute left-[-6px] top-[17px] w-[6px] h-[1.5px] bg-[#dfc384]/60 pointer-events-none"></div>
-            <div class="tree-node-card px-2.5 py-1.5 flex items-center justify-between group cursor-pointer" id="stepBtn-assets" onclick="WorkbenchWorkshop.switchStep('assets')">
-              <div class="card-connector-pin"></div>
-              <div class="flex items-center space-x-1.5 min-w-0">
+            <button type="button" class="tree-node-card px-2.5 py-1.5 flex items-center justify-between group cursor-pointer" id="stepBtn-assets" onclick="WorkbenchWorkshop.switchStep('assets')">
+              <span class="card-connector-pin"></span>
+              <span class="flex items-center space-x-1.5 min-w-0">
                 <span class="gw-type-body-sm font-mono text-[#dfc384] font-bold px-1 py-0.5 rounded bg-[#dfc384]/15 border border-[#dfc384]/30 shrink-0">02</span>
                 <i data-lucide="palette" class="w-3.5 h-3.5 text-slate-400 group-hover:text-[#dfc384]"></i>
                 <span class="gw-type-body-md font-semibold text-slate-100 truncate">资产生成</span>
-              </div>
+              </span>
               <span class="gw-type-body-sm font-mono px-1 py-0.5 rounded-full bg-slate-500/15 text-slate-400 border border-slate-500/30 shrink-0">
                 wait
               </span>
-            </div>
+            </button>
           </div>
 
           <!-- 3. 阶段 03: 分镜脚本 -->
           <div class="relative pl-5">
             <div class="absolute left-[-6px] top-[17px] w-[6px] h-[1.5px] bg-[#dfc384]/60 pointer-events-none"></div>
-            <div class="tree-node-card px-2.5 py-1.5 flex items-center justify-between group cursor-pointer" id="stepBtn-video" onclick="WorkbenchWorkshop.switchStep('video')">
-              <div class="card-connector-pin"></div>
-              <div class="flex items-center space-x-1.5 min-w-0">
+            <button type="button" class="tree-node-card px-2.5 py-1.5 flex items-center justify-between group cursor-pointer" id="stepBtn-video" onclick="WorkbenchWorkshop.switchStep('video')">
+              <span class="card-connector-pin"></span>
+              <span class="flex items-center space-x-1.5 min-w-0">
                 <span class="gw-type-body-sm font-mono text-[#dfc384] font-bold px-1 py-0.5 rounded bg-[#dfc384]/15 border border-[#dfc384]/30 shrink-0">03</span>
                 <i data-lucide="layout-grid" class="w-3.5 h-3.5 text-slate-400 group-hover:text-[#dfc384]"></i>
                 <span class="gw-type-body-md font-semibold text-slate-100 truncate">分镜脚本</span>
-              </div>
+              </span>
               <span class="gw-type-body-sm font-mono px-1 py-0.5 rounded-full bg-slate-500/15 text-slate-400 border border-slate-500/30 shrink-0">
                 wait
               </span>
-            </div>
+            </button>
           </div>
 
           <!-- 4. 阶段 04: 视频脚本 -->
           <div class="relative pl-5">
             <div class="absolute left-[-6px] top-[17px] w-[6px] h-[1.5px] bg-[#dfc384]/60 pointer-events-none"></div>
-            <div class="tree-node-card px-2.5 py-1.5 flex items-center justify-between group cursor-pointer" id="stepBtn-audio_compose" onclick="WorkbenchWorkshop.switchStep('audio_compose')">
-              <div class="card-connector-pin"></div>
-              <div class="flex items-center space-x-1.5 min-w-0">
+            <button type="button" class="tree-node-card px-2.5 py-1.5 flex items-center justify-between group cursor-pointer" id="stepBtn-audio_compose" onclick="WorkbenchWorkshop.switchStep('audio_compose')">
+              <span class="card-connector-pin"></span>
+              <span class="flex items-center space-x-1.5 min-w-0">
                 <span class="gw-type-body-sm font-mono text-[#dfc384] font-bold px-1 py-0.5 rounded bg-[#dfc384]/15 border border-[#dfc384]/30 shrink-0">04</span>
                 <i data-lucide="video" class="w-3.5 h-3.5 text-slate-400 group-hover:text-[#dfc384]"></i>
                 <span class="gw-type-body-md font-semibold text-slate-100 truncate">视频脚本</span>
-              </div>
+              </span>
               <span class="gw-type-body-sm font-mono px-1 py-0.5 rounded-full bg-slate-500/15 text-slate-400 border border-slate-500/30 shrink-0">
                 wait
               </span>
-            </div>
+            </button>
           </div>
 
           <!-- 独立工具入口: 分镜画布 -->
           <div class="relative pl-5">
             <div class="absolute left-[-6px] top-[17px] w-[6px] h-[1.5px] bg-[#dfc384]/60 pointer-events-none"></div>
-            <div id="stepBtn-storyboard" class="tree-node-card px-2.5 py-1.5 flex items-center justify-between group text-slate-300 hover:text-white cursor-pointer" onclick="WorkbenchWorkshop.switchStep('storyboard')" title="在右侧打开分镜画布">
-              <div class="card-connector-pin"></div>
-              <div class="flex items-center space-x-1.5 min-w-0">
+            <button type="button" id="stepBtn-storyboard" class="tree-node-card px-2.5 py-1.5 flex items-center justify-between group text-slate-300 hover:text-white cursor-pointer" onclick="WorkbenchWorkshop.switchStep('storyboard')" title="在右侧打开分镜画布">
+              <span class="card-connector-pin"></span>
+              <span class="flex items-center space-x-1.5 min-w-0">
                 <span class="gw-type-body-sm font-mono text-[#dfc384] font-bold px-1 py-0.5 rounded bg-[#dfc384]/15 border border-[#dfc384]/30 shrink-0">工具</span>
                 <i data-lucide="layout-dashboard" class="w-3.5 h-3.5 text-slate-400 group-hover:text-[#dfc384]"></i>
                 <span class="gw-type-body-md font-semibold truncate">分镜画布</span>
-              </div>
+              </span>
               <i data-lucide="arrow-up-right" class="w-3 h-3 text-slate-500 group-hover:text-[#dfc384]"></i>
-            </div>
+            </button>
           </div>
 
           <!-- 快捷跳转入口: 剧集制片监视器 -->
@@ -419,7 +438,7 @@
     <!-- ----------------------------------------------------------------------- -->
     <!-- MAIN EMBEDDED PIPELINE ENGINE & EPISODES CONTAINER                      -->
     <!-- ----------------------------------------------------------------------- -->
-    <main class="flex-1 w-full h-full min-h-0 relative overflow-hidden bg-[#090a0d] flex flex-col">
+    <main id="workshopMain" class="flex-1 w-full h-full min-h-0 relative overflow-hidden bg-[#090a0d] flex flex-col">
       <!-- 剧集卡片列表控制台 (当 step === 'episodes' 时展示) -->
       <div id="episodesView" class="w-full h-full overflow-y-auto p-6 flex flex-col space-y-6">
         <!-- 头部标题与控制条 -->
@@ -427,7 +446,7 @@
           <div>
             <div class="flex items-center space-x-2.5">
               <span class="w-2.5 h-2.5 rounded-full bg-[#dfc384] shadow-[0_0_8px_#dfc384]"></span>
-              <h1 class="gw-type-headline-md font-bold text-slate-100 font-sans" id="episodesHeaderTitle">项目分集控制台</h1>
+              <h1 class="text-slate-100 font-sans gw-type-title" id="episodesHeaderTitle">项目分集控制台</h1>
               <span id="episodesTotalCountTag" class="gw-type-body-sm font-mono px-2 py-0.5 rounded-md bg-[#dfc384]/15 text-[#eddab3] border border-[#dfc384]/30">0 个分集</span>
             </div>
             <p class="gw-type-body-md text-slate-400 mt-1">选择或创建剧集，正式进入剧本大纲、角色资产、分镜脚本与成片制作流水线</p>
@@ -437,7 +456,7 @@
               <i data-lucide="rotate-cw" class="w-3.5 h-3.5"></i>
               <span>刷新分集</span>
             </button>
-            <button type="button" onclick="WorkbenchWorkshop.openNewEpisodeModal()" class="hw-btn hw-btn-gold gw-type-body-md flex items-center space-x-1.5">
+            <button type="button" onclick="WorkbenchWorkshop.openNewEpisodeModal(this)" class="hw-btn hw-btn-gold gw-type-body-md flex items-center space-x-1.5">
               <i data-lucide="plus" class="w-4 h-4 stroke-[2.5]"></i>
               <span>新建分集</span>
             </button>
@@ -459,36 +478,34 @@
   </div>
 
   <!-- 新建分集模态框 -->
-  <div id="newEpisodeModal" class="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm hidden flex items-center justify-center p-4">
-    <div class="w-full max-w-lg rounded-2xl bg-[#0e1118] border border-[#dfc384]/40 shadow-[0_16px_40px_rgba(0,0,0,0.8)] overflow-hidden flex flex-col">
+  <div id="newEpisodeModal" class="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm hidden flex items-center justify-center p-4" data-floating-surface="workshop-new-episode" data-floating-kind="modal" data-floating-content="#newEpisodeModalDialog" data-floating-dismiss="outside" data-floating-escape="close-only">
+    <div id="newEpisodeModalDialog" class="w-full max-w-lg rounded-2xl bg-[#0e1118] border border-[#dfc384]/40 shadow-[0_16px_40px_rgba(0,0,0,0.8)] overflow-hidden flex flex-col" data-floating-content role="dialog" aria-modal="true" aria-labelledby="newEpisodeModalTitle">
       <div class="px-5 py-4 border-b border-white/10 flex items-center justify-between bg-[#141822]">
         <div class="flex items-center space-x-2">
           <i data-lucide="film" class="w-4 h-4 text-[#dfc384]"></i>
-          <h3 class="gw-type-body-lg font-bold text-slate-100">创建新分集 (New Episode)</h3>
+          <h3 id="newEpisodeModalTitle" class="text-slate-100 gw-type-title">创建新分集 (New Episode)</h3>
         </div>
-        <button type="button" onclick="WorkbenchWorkshop.closeNewEpisodeModal()" class="hw-btn hw-btn-icon transition cursor-pointer">
-          <i data-lucide="x" class="w-4 h-4"></i>
-        </button>
+        <button type="button" onclick="WorkbenchWorkshop.requestCloseNewEpisodeModal()" class="transition cursor-pointer btn-hw-round" data-floating-close aria-label="关闭"><span class="btn-hw-round-inner"><i data-lucide="x" class="w-4 h-4" aria-hidden="true"></i></span></button>
       </div>
 
       <form id="newEpisodeForm" onsubmit="WorkbenchWorkshop.handleCreateEpisode(event)" class="p-5 space-y-4">
         <div>
-          <label class="block gw-type-body-sm font-semibold text-slate-300 mb-1.5">所属项目</label>
+          <label for="newEpisodeProjectName" class="block gw-type-body-sm font-semibold text-slate-300 mb-1.5">所属项目</label>
           <input type="text" id="newEpisodeProjectName" disabled class="w-full px-3 py-2 gw-type-body-md rounded-lg bg-[#07080b] border border-white/10 text-slate-400 font-mono" value="当前项目" />
         </div>
 
         <div>
-          <label class="block gw-type-body-sm font-semibold text-slate-300 mb-1.5">分集标题 <span class="text-rose-400">*</span></label>
+          <label for="newEpisodeTitle" class="block gw-type-body-sm font-semibold text-slate-300 mb-1.5">分集标题 <span class="text-rose-400">*</span></label>
           <input type="text" id="newEpisodeTitle" required placeholder="如：第 1 集：命运启程" class="w-full px-3 py-2 gw-type-body-md rounded-lg bg-[#07080b] border border-white/15 text-slate-100 placeholder-slate-500 focus:border-[#dfc384] focus:outline-none transition" />
         </div>
 
         <div>
-          <label class="block gw-type-body-sm font-semibold text-slate-300 mb-1.5">创作种子 / 故事主旨大纲 (可选)</label>
+          <label for="newEpisodeSeed" class="block gw-type-body-sm font-semibold text-slate-300 mb-1.5">创作种子 / 故事主旨大纲 (可选)</label>
           <textarea id="newEpisodeSeed" rows="4" placeholder="简述该集的核心事件、人物冲突、戏剧转折点或基调..." class="w-full px-3 py-2 gw-type-body-md rounded-lg bg-[#07080b] border border-white/15 text-slate-100 placeholder-slate-500 focus:border-[#dfc384] focus:outline-none transition resize-none"></textarea>
         </div>
 
         <div class="pt-2 flex items-center justify-end space-x-3 border-t border-white/5">
-          <button type="button" onclick="WorkbenchWorkshop.closeNewEpisodeModal()" class="hw-btn gw-type-body-md transition cursor-pointer">
+          <button type="button" onclick="WorkbenchWorkshop.requestCloseNewEpisodeModal()" class="hw-btn gw-type-body-md transition cursor-pointer">
             取消
           </button>
           <button type="submit" id="btnSubmitEpisode" class="hw-btn hw-btn-gold gw-type-body-md transition flex items-center space-x-1.5 cursor-pointer">
@@ -505,6 +522,7 @@
       const params = new URLSearchParams(window.location.search);
       let projectId = params.get('project_id') || localStorage.getItem('workspace_project_id') || 'proj-01';
       let pipelineId = params.get('pipeline_id') || '';
+      let newEpisodeModalSnapshot = '';
       // 若没有显式指定 step，且没有 pipeline_id，默认优先展示 'episodes' 剧集管理；否则默认进入指定 step 或 script
       let currentStep = params.get('step') || (pipelineId ? 'script' : 'episodes');
       let cachedProjectName = localStorage.getItem('workspace_project_name') || '';
@@ -817,11 +835,11 @@
           // 当前项目确实没有分集：显示新建分集引导卡片
           grid.innerHTML = `
             <div class="w-full flex items-center justify-center py-16 px-4">
-              <div onclick="WorkbenchWorkshop.openNewEpisodeModal()" class="w-full max-w-lg p-10 rounded-2xl border-2 border-dashed border-[#dfc384]/35 bg-[#0e1118]/80 hover:bg-[#141822] hover:border-[#dfc384] transition-all duration-300 cursor-pointer group flex flex-col items-center text-center shadow-[0_8px_30px_rgba(0,0,0,0.6)]">
+              <div role="button" tabindex="0" onkeydown="if(event.target===this &amp;&amp; (event.key==='Enter' || event.key===' ')){event.preventDefault();WorkbenchWorkshop.openNewEpisodeModal(this)}" onclick="WorkbenchWorkshop.openNewEpisodeModal(this)" class="w-full max-w-lg p-10 rounded-2xl border-2 border-dashed border-[#dfc384]/35 bg-[#0e1118]/80 hover:bg-[#141822] hover:border-[#dfc384] transition-all duration-300 cursor-pointer group flex flex-col items-center text-center shadow-[0_8px_30px_rgba(0,0,0,0.6)]">
                 <div class="w-16 h-16 rounded-2xl bg-[#dfc384]/10 border border-[#dfc384]/30 flex items-center justify-center text-[#dfc384] mb-4 group-hover:scale-110 transition-transform">
                   <i data-lucide="clapperboard" class="w-8 h-8"></i>
                 </div>
-                <h3 class="gw-type-body-lg font-bold text-slate-100 group-hover:text-[#eddab3] mb-2">当前项目尚未创建分集</h3>
+                <h3 class="text-slate-100 group-hover:text-[#eddab3] mb-2 gw-type-section">当前项目尚未创建分集</h3>
                 <p class="gw-type-body-md text-slate-400 mb-6 leading-relaxed max-w-sm">点击此处创建第 1 集，即可正式进入剧本生成、角色资产提炼与分镜流水线</p>
                 <span class="px-5 py-2.5 rounded-lg bg-gradient-to-r from-[#dfc384] to-[#c29d58] text-[#0a0c10] gw-type-body-sm font-bold shadow-[0_0_16px_rgba(223,195,132,0.35)] group-hover:brightness-110 flex items-center space-x-2">
                   <i data-lucide="plus" class="w-4 h-4 stroke-[2.5]"></i>
@@ -857,7 +875,7 @@
                 </div>
 
                 <div>
-                  <h4 class="gw-type-body-lg font-bold text-slate-100 group-hover:text-[#eddab3] line-clamp-1 transition">${escapeHtml(epTitle)}</h4>
+                  <h4 class="text-slate-100 group-hover:text-[#eddab3] line-clamp-1 transition gw-type-section">${escapeHtml(epTitle)}</h4>
                   <p class="gw-type-body-md text-slate-400 mt-1 line-clamp-2 leading-relaxed">${escapeHtml(seedDesc)}</p>
                 </div>
 
@@ -887,7 +905,7 @@
 
         // 追加新建卡片
         html += `
-          <div onclick="WorkbenchWorkshop.openNewEpisodeModal()" class="rounded-xl border-2 border-dashed border-white/15 hover:border-[#dfc384]/70 bg-[#0c0e14]/50 hover:bg-[#12151e] p-6 flex flex-col items-center justify-center text-center transition cursor-pointer group min-h-[220px]">
+          <div role="button" tabindex="0" onkeydown="if(event.target===this &amp;&amp; (event.key==='Enter' || event.key===' ')){event.preventDefault();WorkbenchWorkshop.openNewEpisodeModal(this)}" onclick="WorkbenchWorkshop.openNewEpisodeModal(this)" class="rounded-xl border-2 border-dashed border-white/15 hover:border-[#dfc384]/70 bg-[#0c0e14]/50 hover:bg-[#12151e] p-6 flex flex-col items-center justify-center text-center transition cursor-pointer group min-h-[220px]">
             <div class="w-12 h-12 rounded-xl bg-white/5 group-hover:bg-[#dfc384]/15 border border-white/10 group-hover:border-[#dfc384]/40 flex items-center justify-center text-slate-400 group-hover:text-[#dfc384] mb-3 transition">
               <i data-lucide="plus" class="w-6 h-6 stroke-[2.5]"></i>
             </div>
@@ -906,27 +924,50 @@
         switchStep('script');
       }
 
-      function openNewEpisodeModal() {
+      function openNewEpisodeModal(trigger) {
         const current = projects.find(p => p.id === projectId) || { id: projectId, name: cachedProjectName || projectId };
         const modal = document.getElementById('newEpisodeModal');
         const projNameInput = document.getElementById('newEpisodeProjectName');
         const titleInput = document.getElementById('newEpisodeTitle');
         const seedInput = document.getElementById('newEpisodeSeed');
+        const opener = trigger instanceof HTMLElement ? trigger : document.activeElement;
 
         if (projNameInput) projNameInput.value = `${current.name} (${projectId})`;
         if (titleInput) {
           titleInput.value = `第 ${episodes.length + 1} 集`;
-          setTimeout(() => titleInput.focus(), 100);
         }
         if (seedInput) seedInput.value = '';
 
-        if (modal) modal.classList.remove('hidden');
+        if (modal) {
+          newEpisodeModalSnapshot = JSON.stringify([titleInput?.value || '', seedInput?.value || '']);
+          window.FloatingDismissal?.register(modal, {
+            kind: 'modal', content: document.getElementById('newEpisodeModalDialog'), trigger: opener,
+            close: () => closeNewEpisodeModal(true),
+            beforeClose: () => canCloseNewEpisodeModal()
+          });
+          modal.classList.remove('hidden');
+          window.FloatingDismissal?.scan();
+        }
         window.lucide?.createIcons();
       }
 
-      function closeNewEpisodeModal() {
+      function canCloseNewEpisodeModal() {
+        const draft = JSON.stringify([document.getElementById('newEpisodeTitle')?.value || '', document.getElementById('newEpisodeSeed')?.value || '']);
+        return draft === newEpisodeModalSnapshot || window.confirm('分集草稿尚未保存，确认关闭并丢弃吗？');
+      }
+
+      function requestCloseNewEpisodeModal() {
+        const modal = document.getElementById('newEpisodeModal');
+        if (window.FloatingDismissal) return window.FloatingDismissal.closeSurface(modal);
+        return closeNewEpisodeModal();
+      }
+
+      function closeNewEpisodeModal(force = false) {
+        if (!force && !canCloseNewEpisodeModal()) return false;
         const modal = document.getElementById('newEpisodeModal');
         if (modal) modal.classList.add('hidden');
+        window.FloatingDismissal?.scan();
+        return true;
       }
 
       async function handleCreateEpisode(e) {
@@ -983,13 +1024,15 @@
           }
 
           const created = await res.json();
-          closeNewEpisodeModal();
+          closeNewEpisodeModal(true);
 
           const newPipelineId = created.pipeline_id || created.id || '';
           if (newPipelineId) {
             pipelineId = newPipelineId;
             // 自动进入剧本生成流水线
             switchStep('script');
+            // 分集列表将隐藏，成功路径把键盘焦点交给当前可见阶段。
+            requestAnimationFrame(() => document.getElementById('stepBtn-script')?.focus());
           } else {
             await fetchEpisodes();
           }
@@ -1311,6 +1354,7 @@
         refreshPipeline,
         openEpisode,
         openNewEpisodeModal,
+        requestCloseNewEpisodeModal,
         closeNewEpisodeModal,
         handleCreateEpisode
       };
@@ -1320,6 +1364,7 @@
     document.addEventListener('DOMContentLoaded', WorkbenchWorkshop.init);
   </script>
 <script src="/static/js/core/degradation.js?v=v0.0.1-alpha-2026"></script>
+  <script src="/static/js/core/floating-dismissal.js?v=v0.0.1-alpha-2026&m3=floating-dismissal"></script>
 <script src="/static/js/core/hardware-telemetry.js?v=20261008-auth6"></script>
 <script src="/static/js/core/workbench-shell.js?v=20261009-parse-cf7"></script>
 </body>

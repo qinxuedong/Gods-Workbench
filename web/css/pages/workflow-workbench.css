@@ -34,10 +34,7 @@
   --font-sans: var(--gw-font-body);
   --font-mono: var(--gw-font-mono);
 }
-/* 排版范围声明：按钮字号契约的上提真源为 hardware-design-system.css 的 GW-BTN-01（.hw-btn / .hw-btn-gold）。
-   此处仅同值重声明字号契约，供排版门禁在本页可审计；不得重定义外观（padding/背景/边框/高度/色彩）。 */
-.workflow-workbench .hw-btn { font-size:var(--gw-type-body-md); line-height:var(--gw-leading-body-md); font-weight:var(--gw-weight-medium); }
-.workflow-workbench .hw-btn-gold { font-weight:var(--gw-weight-medium); }
+/* 按钮字号与材质均由hardware-buttons.css提供，页面不回写默认值，避免覆盖SM/XS变体。 */
 .workflow-workbench .left-bus-sidebar,
 .workflow-workbench .center-actuator-rack,
 .workflow-workbench .env-diff-drawer,
@@ -270,64 +267,18 @@
   min-height: 28px;
 }
 
-.workflow-workbench .wf-capsule{
-  position: relative;
-  padding: 4px 10px;
-  border-radius: 4px;
-  background: #0d0f15;
-  border: 1px solid #1c1f2b;
-  color: #ffffff;
-  font-family: var(--gw-font-mono);
 
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  cursor: pointer;
-  white-space: nowrap;
-  transition: all 0.15s;
-font-size:var(--gw-type-body-md); line-height:var(--gw-leading-body-md); font-weight:var(--gw-weight-medium); letter-spacing:0; min-height:36px;}
-.workflow-workbench .wf-capsule:hover{
-  background: #141722;
-  color: var(--primary);
-}
-.workflow-workbench .wf-capsule.active{
-  background: #161a25;
-  border-color: rgba(223, 195, 132, 0.65);
-  color: var(--primary);
-  font-weight:var(--gw-weight-medium);
-  padding-right: 22px;
-  box-shadow: 0 0 10px rgba(223, 195, 132, 0.12);
-}
+.workflow-workbench .wf-capsule { position:relative; gap:6px; flex-shrink:0; }
+
+
 .workflow-workbench .wf-capsule.active .capsule-badge{
   color: var(--primary);
 }
 
 
-.workflow-workbench .wf-capsule-close{
-  position: absolute;
-  top: 1px;
-  right: 2px;
-  width: 14px;
-  height: 14px;
-  border-radius: 3px;
-  border: 1px solid rgba(223, 195, 132, 0.35);
-  background: rgba(12, 15, 22, 0.92);
-  color: rgba(255, 255, 255, 0.85);
-  font-family: var(--gw-font-mono);
-  font-size: var(--gw-type-label-md);
-  line-height: 1;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  padding: 0;
-  transition: all 0.14s ease;
-}
-.workflow-workbench .wf-capsule-close:hover{
-  background: rgba(244, 63, 94, 0.24);
-  border-color: #f43f5e;
-  color: #f43f5e;
-}
+
+.workflow-workbench .wf-capsule-close { flex:0 0 auto; }
+
 
 .workflow-workbench .capsule-badge{
   padding: 1px 4px;
@@ -446,28 +397,10 @@ font-size:var(--gw-type-body-md); line-height:var(--gw-leading-body-md); font-we
   min-height: 0;
 }
 
-.workflow-workbench .wf-tree-item{
-  padding: 6px 8px;
-  border-radius: 4px;
-  background: #0b0d13;
-  border: 1px solid #181a24;
-  color: #ffffff;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 6px;
-  transition: all 0.15s;
-}
-.workflow-workbench .wf-tree-item:hover{
-  border-color: #2b2e3c;
-  background: #11141e;
-}
-.workflow-workbench .wf-tree-item.active{
-  background: linear-gradient(90deg, #171a24 0%, #101218 100%);
-  border-color: rgba(223, 195, 132, 0.55);
-  color: var(--primary);
-}
+
+.workflow-workbench .wf-tree-item { width:100%; min-height:32px; padding:6px 8px; justify-content:space-between; gap:6px; text-align:left; }
+
+
 
 .workflow-workbench .wf-tree-idx {
   font-family: var(--gw-font-mono);
@@ -780,64 +713,16 @@ font-size:var(--gw-type-body-md); line-height:var(--gw-leading-body-md); font-we
   flex-shrink: 0;
 }
 
-.workflow-workbench .target-switch-bar{
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 5px;
-  background: #06080b;
-  padding: 4px;
-  border-radius: 5px;
-  border: 1px solid #1a1d28;
-}
 
-.workflow-workbench .target-option-btn{
-  padding: 5px 6px;
-  border-radius: 4px;
-  border: 1px solid transparent;
-  background: transparent;
-  color: #ffffff;
-  font-family: var(--gw-font-mono);
+.workflow-workbench .target-switch-bar { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:3px; }
 
 
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 5px;
-  transition: all 0.15s;
- font-size: var(--gw-type-body-md); line-height: var(--gw-leading-body-md); font-weight: var(--gw-weight-medium); letter-spacing: 0; text-transform: none; min-height:36px;}
-.workflow-workbench .target-option-btn.active{
-  background: #161a26;
-  color: var(--primary);
-  border-color: rgba(223, 195, 132, 0.55);
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.6);
-}
-
-.workflow-workbench .molten-gold-cta{
-  width: 100%;
-  padding: 10px 14px;
-  border-radius: 6px;
-  border: 1px solid rgba(223, 195, 132, 0.6);
-  background: linear-gradient(180deg, #282115 0%, #17130b 100%);
-  color: #ffffff;
-  font-family: var(--gw-font-body);
+.workflow-workbench .target-option-btn { min-height:32px; min-width:0; white-space:normal; }
 
 
 
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.8), inset 0 1px 1px rgba(255, 255, 255, 0.12);
-  transition: all 0.15s;
-font-size:var(--gw-type-body-md); line-height:var(--gw-leading-body-md); font-weight:var(--gw-weight-medium); letter-spacing:0; min-height:36px;}
-.workflow-workbench .molten-gold-cta:hover,
-.workflow-workbench .molten-gold-cta:focus,
-.workflow-workbench .molten-gold-cta:active{
-  color: var(--primary);
-  border-color: var(--primary);
-}
+.workflow-workbench .molten-gold-cta { width:100%; }
+
 .workflow-workbench .molten-gold-cta:active{
   transform: scale(0.99);
 }
@@ -873,32 +758,11 @@ font-size:var(--gw-type-body-md); line-height:var(--gw-leading-body-md); font-we
   z-index: 30;
 }
 
-.workflow-workbench .zoom-control-group{
-  display: flex;
-  align-items: center;
-  gap: 3px;
-  background: #0f1118;
-  border: 1px solid #222534;
-  padding: 2px 5px;
-  border-radius: 4px;
-  flex-shrink: 0;
-}
-.workflow-workbench .zoom-btn{
-  width: 20px;
-  height: 20px;
-  border: none;
-  background: transparent;
-  color: #ffffff;
-  font-family: var(--gw-font-mono);
-  font-size: var(--gw-type-label-md);
-  cursor: pointer;
-  border-radius: 3px;
-}
-.workflow-workbench .zoom-btn:hover,
-.workflow-workbench .zoom-btn:active{
-  background: #1b2030;
-  color: var(--primary);
-}
+
+.workflow-workbench .zoom-control-group { display:flex; align-items:center; gap:6px; }
+
+.workflow-workbench .zoom-btn { width:32px; min-height:32px; flex:0 0 32px; }
+
 
 .workflow-workbench .wire-legend{
   display: flex;
@@ -1253,38 +1117,13 @@ font-size:var(--gw-type-body-md); line-height:var(--gw-leading-body-md); font-we
   box-sizing: border-box !important;
 }
 
+
 .workflow-workbench .hw-btn-browse,
-.workflow-workbench #settingsModal .hw-btn-browse{
-  flex: 0 0 auto !important;
-  height: 32px !important;
-  padding: 0 12px !important;
-  display: inline-flex !important;
-  align-items: center !important;
-  justify-content: center !important;
-  gap: 4px !important;
-  font-size:var(--gw-type-label-md) !important;
-  white-space: nowrap !important;
-  border: 1px solid rgba(223, 195, 132, 0.4) !important;
-  background: linear-gradient(180deg, #242938 0%, #131722 100%) !important;
-  color: #eddab3 !important;
-  cursor: pointer !important;
-  border-radius: 4px !important;
-  transition: all 0.15s ease !important;
-}
+.workflow-workbench #settingsModal .hw-btn-browse { flex:0 0 auto; white-space:nowrap; }
 
-.workflow-workbench .hw-btn-browse:hover,
-.workflow-workbench #settingsModal .hw-btn-browse:hover{
-  border-color: var(--primary) !important;
-  color: #ffffff !important;
-  background: linear-gradient(180deg, #323b52 0%, #1c2233 100%) !important;
-  box-shadow: 0 0 8px rgba(223, 195, 132, 0.25) !important;
-}
 
-.workflow-workbench .hw-btn-browse:disabled,
-.workflow-workbench #settingsModal .hw-btn-browse:disabled{
-  opacity: 0.6 !important;
-  cursor: not-allowed !important;
-}
+
+
 
 /* 凭据配置指引代码卡片 */
 .workflow-workbench .credential-guide-box,
@@ -1347,21 +1186,9 @@ font-size:var(--gw-type-body-md); line-height:var(--gw-leading-body-md); font-we
   display: flex;
 }
 
-.workflow-workbench .toast-action-btn{
-  padding: 2px 8px;
-  border-radius: 4px;
-  border: 1px solid var(--primary);
-  background: #231e13;
-  color: var(--primary);
-  font-family: var(--gw-font-mono);
 
+.workflow-workbench .toast-action-btn { flex:0 0 auto; }
 
-  cursor: pointer;
-  margin-left: 4px;
- font-size: var(--gw-type-body-md); line-height: var(--gw-leading-body-md); font-weight: var(--gw-weight-medium); letter-spacing: 0; text-transform: none; min-height:36px;}
-.workflow-workbench .toast-action-btn:hover{
-  background: #2e2718;
-}
 
 
 .workflow-workbench .clipboard-list-box{
@@ -1550,26 +1377,10 @@ font-size:var(--gw-type-body-md); line-height:var(--gw-leading-body-md); font-we
   flex-shrink: 0;
 }
 
-.workflow-workbench .folder-icon-btn{
-  padding: 1px 4px;
-  border-radius: 3px;
-  border: 1px solid transparent;
-  background: transparent;
-  color: rgba(255, 255, 255, 0.7);
-  font-size: var(--gw-type-label-md);
-  cursor: pointer;
-  line-height: 1.2;
-  transition: all 0.15s;
-}
-.workflow-workbench .folder-icon-btn:hover{
-  color: var(--primary);
-  border-color: rgba(223, 195, 132, 0.45);
-  background: #181c29;
-}
-.workflow-workbench .folder-icon-btn.danger:hover{
-  color: var(--rose);
-  border-color: rgba(244, 63, 94, 0.5);
-}
+
+.workflow-workbench .folder-icon-btn { flex:0 0 auto; }
+
+
 
 .workflow-workbench .wf-folder-children{
   display: flex;
@@ -1729,57 +1540,13 @@ font-size:var(--gw-type-body-md); line-height:var(--gw-leading-body-md); font-we
 }
 
 
-.workflow-workbench .btn-promote-param{
-  display: inline-flex;
-  flex-direction: row;
-  align-items: center;
-  justify-content: center;
-  gap: 2px;
-  min-width: 28px;
-  height: 18px;
-  padding: 1px 4px;
-  border-radius: 3px;
-  border: 1px solid #2b3248;
-  background: linear-gradient(180deg, #171b27 0%, #0f121a 100%);
-  color: #ffffff;
-  font-family: var(--gw-font-mono);
-  font-size: var(--gw-type-label-md);
-  font-weight: var(--gw-weight-medium);
-  line-height: 1;
-  cursor: pointer;
-  flex-shrink: 0;
-  align-self: flex-start;
-  margin-top: 1px;
-  transition: all 0.15s ease;
-}
-.workflow-workbench .btn-promote-param:hover{
-  border-color: var(--primary);
-  color: var(--primary);
-  background: #1d2231;
-}
 
-.workflow-workbench .btn-unpromote-icon{
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 16px;
-  height: 16px;
-  padding: 0;
-  border-radius: 3px;
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  background: rgba(15, 18, 26, 0.9);
-  color: rgba(255, 255, 255, 0.65);
-  font-family: var(--gw-font-mono);
-  font-size: var(--gw-type-label-md);
-  line-height: 1;
-  cursor: pointer;
-  transition: all 0.15s;
-}
-.workflow-workbench .btn-unpromote-icon:hover{
-  border-color: var(--rose);
-  color: var(--rose);
-  background: rgba(244, 63, 94, 0.12);
-}
+.workflow-workbench .btn-promote-param { flex-shrink:0; align-self:flex-start; margin-top:1px; }
+
+
+
+.workflow-workbench .btn-unpromote-icon { flex:0 0 auto; }
+
 
 .workflow-workbench .node-attr-main{
   flex: 1;
@@ -1859,32 +1626,13 @@ font-size:var(--gw-type-body-md); line-height:var(--gw-leading-body-md); font-we
   border-top: 1px solid #1b1f2d;
   flex-shrink: 0;
 }
-.workflow-workbench .sidebar-settings-btn{
-  width: 100%;
-  justify-content: center;
-  padding: 7px 10px;
+
+.workflow-workbench .sidebar-settings-btn { width:100%; }
 
 
-  border-color: rgba(223, 195, 132, 0.36);
-  background: linear-gradient(180deg, #181c28 0%, #0e1118 100%);
- font-size: var(--gw-type-body-md); line-height: var(--gw-leading-body-md); font-weight: var(--gw-weight-medium); letter-spacing: 0; text-transform: none; min-height:36px;}
-.workflow-workbench .sidebar-settings-btn:hover{
-  border-color: var(--primary);
-  color: var(--primary);
-}
 
 
-.workflow-workbench .hw-btn-emerald{
-  border-color: rgba(16, 185, 129, 0.52);
-  background: linear-gradient(180deg, #112822 0%, #0a1814 100%);
-  color: #ffffff;
-}
-.workflow-workbench .hw-btn-emerald:hover,
-.workflow-workbench .hw-btn-emerald:focus{
-  border-color: var(--emerald-bright);
-  color: var(--emerald-bright);
-  box-shadow: 0 0 10px rgba(16, 185, 129, 0.25);
-}
+
 
 
 .workflow-workbench .node-upload-actions{
@@ -1893,36 +1641,12 @@ font-size:var(--gw-type-body-md); line-height:var(--gw-leading-body-md); font-we
   gap: 5px;
   margin-top: 5px;
 }
+
 .workflow-workbench .node-upload-btn,
 .workflow-workbench .btn-node-upload,
-.workflow-workbench .btn-node-library{
-  padding: 4px 6px;
-  border-radius: 3px;
-  border: 1px solid #2b334a;
-  background: linear-gradient(180deg, #171c29 0%, #0e111a 100%);
-  color: #ffffff;
-  font-family: var(--gw-font-mono);
-  font-size: var(--gw-type-label-md);
-  font-weight: var(--gw-weight-medium);
-  cursor: pointer;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 4px;
-  transition: all 0.15s;
-}
-.workflow-workbench .node-upload-btn:hover,
-.workflow-workbench .btn-node-upload:hover{
-  border-color: var(--primary);
-  color: var(--primary);
-  background: #1f2435;
-}
-.workflow-workbench .node-upload-btn[data-node-select-asset]:hover,
-.workflow-workbench .btn-node-library:hover{
-  border-color: var(--emerald-bright);
-  color: var(--emerald-bright);
-  background: #122420;
-}
+.workflow-workbench .btn-node-library { min-width:0; white-space:normal; }
+
+
 
 .workflow-workbench .node-media-detail{
   margin-top: 5px;
@@ -1995,11 +1719,7 @@ font-size:var(--gw-type-body-md); line-height:var(--gw-leading-body-md); font-we
 }
 
 
-.workflow-workbench .asset-filter-btn.active{
-  border-color: var(--primary);
-  color: var(--primary);
-  background: #1d2130;
-}
+
 
 .workflow-workbench .asset-library-grid{
   display: grid;
@@ -2089,30 +1809,10 @@ font-size:var(--gw-type-body-md); line-height:var(--gw-leading-body-md); font-we
 .workflow-workbench .wf-context-menu.open{
   display: flex;
 }
-.workflow-workbench .wf-ctx-item{
-  width: 100%;
-  padding: 6px 10px;
-  border: none;
-  border-radius: 3px;
-  background: transparent;
-  color: #ffffff;
 
-  font-family: var(--gw-font-body);
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  cursor: pointer;
-  text-align: left;
-  transition: all 0.12s ease;
- font-size: var(--gw-type-body-md); line-height: var(--gw-leading-body-md); font-weight: var(--gw-weight-medium); letter-spacing: 0; text-transform: none;}
-.workflow-workbench .wf-ctx-item:hover{
-  background: rgba(223, 195, 132, 0.16);
-  color: var(--primary);
-}
-.workflow-workbench .wf-ctx-item.danger:hover{
-  background: rgba(244, 63, 94, 0.18);
-  color: #f43f5e;
-}
+.workflow-workbench .wf-ctx-item { width:100%; justify-content:flex-start; text-align:left; }
+
+
 .workflow-workbench .wf-ctx-divider{
   height: 1px;
   background: #222636;
@@ -2127,19 +1827,9 @@ font-size:var(--gw-type-body-md); line-height:var(--gw-leading-body-md); font-we
   transition: width 0.2s cubic-bezier(0.22, 1, 0.36, 1), padding 0.2s ease;
 }
 
-.workflow-workbench .col-collapse-btn{
-  padding: 2px 6px !important;
-  font-size:var(--gw-type-label-md) !important;
-  min-width: 22px;
-  height: 22px;
-  color: rgba(255, 255, 255, 0.85);
-  border-color: rgba(223, 195, 132, 0.38);
-}
-.workflow-workbench .col-collapse-btn:hover{
-  color: var(--primary);
-  border-color: var(--primary);
-  background: rgba(223, 195, 132, 0.14);
-}
+
+.workflow-workbench .col-collapse-btn { flex:0 0 auto; }
+
 
 .workflow-workbench .col-collapsed-rail{
   display: none;
@@ -2160,21 +1850,8 @@ font-size:var(--gw-type-body-md); line-height:var(--gw-leading-body-md); font-we
   border-color: var(--primary);
 }
 
-.workflow-workbench .col-rail-expand-btn{
-  width: 24px;
-  height: 24px;
-  border-radius: 4px;
-  border: 1px solid rgba(223, 195, 132, 0.45);
-  background: linear-gradient(180deg, #1d2230 0%, #11141d 100%);
-  color: #ffffff;
-  font-family: var(--gw-font-mono);
-  font-size: var(--gw-type-label-md);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  transition: all 0.15s ease;
-}
+
+.workflow-workbench .col-rail-expand-btn { flex:0 0 auto; }
 
 .workflow-workbench .col-rail-icon{
   font-size: var(--gw-type-body-sm);
@@ -2213,19 +1890,9 @@ font-size:var(--gw-type-body-md); line-height:var(--gw-leading-body-md); font-we
 }
 
 
-.workflow-workbench .hw-btn-close-all{
-  flex-shrink: 0;
-  padding: 3px 8px;
 
-  border-color: rgba(244, 63, 94, 0.42);
-  color: rgba(255, 255, 255, 0.9);
-  background: linear-gradient(180deg, #24141b 0%, #140b10 100%);
- font-size: var(--gw-type-body-md); line-height: var(--gw-leading-body-md); font-weight: var(--gw-weight-medium); letter-spacing: 0; text-transform: none; min-height:36px;}
-.workflow-workbench .hw-btn-close-all:hover{
-  border-color: #f43f5e;
-  color: #fda4af;
-  background: linear-gradient(180deg, #321923 0%, #1d0e15 100%);
-}
+.workflow-workbench .hw-btn-close-all { flex:0 0 auto; }
+
 
 /* .hw-btn-danger 契约已上提至 hardware-design-system.css (GW-BTN-01)。 */
 
@@ -2260,4 +1927,77 @@ font-size:var(--gw-type-body-md); line-height:var(--gw-leading-body-md); font-we
   color: var(--hw-accent-gold, #dfc384);
   border-left: 2px solid currentColor;
   padding-left: 12px;
+}
+
+/* B3：页面只声明布局与密度，按钮材质由共享hardware-buttons.css维护。 */
+.workflow-workbench .wf-capsule-slot { display:inline-flex; align-items:center; gap:4px; flex:0 0 auto; }
+.workflow-workbench .wf-folder-title-wrap { min-height:32px; padding:4px 6px; justify-content:flex-start; text-align:left; }
+.workflow-workbench .wf-folder-title-wrap[aria-expanded="false"] .wf-folder-arrow { transform:none; }
+.workflow-workbench .node-upload-actions { align-items:start; }
+.workflow-workbench .asset-filter-btn { min-height:32px; }
+
+
+/* B5：窄屏工作区与来源栏保持可达，避免固定三栏在1056px被外壳裁切。 */
+@media (max-width: 1200px) {
+  .workflow-workbench .workbench-main {
+    overflow-x: auto;
+    overflow-y: hidden;
+  }
+  .workflow-workbench .right-canvas-bay {
+    min-width: 420px;
+    flex: 1 0 420px;
+  }
+  .workflow-workbench .source-url-box {
+    width: auto;
+    min-width: 0;
+    max-width: 356px;
+    flex: 1 1 180px;
+  }
+  .workflow-workbench .canvas-toolbar {
+    justify-content: flex-start;
+    overflow-x: auto;
+    overflow-y: hidden;
+  }
+  .workflow-workbench .canvas-toolbar > div:first-child {
+    min-width: 0;
+    flex: 0 1 auto;
+  }
+  .workflow-workbench .canvas-toolbar > div:last-child {
+    flex: 0 0 auto;
+  }
+}
+
+/* 工具栏单独滚动，保留画布二维操作；收起轨道容纳共享Round原始32px外环。 */
+.workflow-workbench .canvas-toolbar {
+  height: auto;
+  min-height: 42px;
+  padding: 4px 8px;
+  justify-content: flex-start;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+.workflow-workbench .canvas-toolbar > div:first-child { flex: 0 0 auto; }
+.workflow-workbench .source-url-box { width: auto; min-width: 0; max-width: 356px; flex: 1 1 180px; }
+.workflow-workbench .canvas-footer-bar { height: auto; min-height: 24px; flex-wrap: wrap; gap: 4px 10px; }
+.workflow-workbench .canvas-footer-stats { min-width: 0; flex: 1 1 auto; flex-wrap: wrap; }
+.workflow-workbench :is(.modal-header, .modal-footer) { flex-shrink: 0; gap: 8px; }
+.workflow-workbench .modal-title { min-width: 0; flex-wrap: wrap; overflow-wrap: anywhere; }
+.workflow-workbench .modal-footer { flex-wrap: wrap; }
+@media (max-width: 560px) {
+  .workflow-workbench .modal-backdrop { padding: 10px; }
+  .workflow-workbench .modal-card { max-width: 100%; max-height: calc(100dvh - 20px); }
+  .workflow-workbench .modal-body { min-height: 0; padding: 12px; }
+  .workflow-workbench #settingsModal .dir-input-row { flex-wrap: wrap; }
+  .workflow-workbench .asset-library-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+/* B5：遵循系统减少动画偏好，停用工作流连线与布局状态过渡。 */
+@media (prefers-reduced-motion: reduce) {
+  .workflow-workbench *,
+  .workflow-workbench *::before,
+  .workflow-workbench *::after {
+    animation: none !important;
+    transition: none !important;
+    scroll-behavior: auto !important;
+  }
 }

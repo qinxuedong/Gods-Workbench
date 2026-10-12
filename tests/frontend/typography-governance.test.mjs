@@ -114,7 +114,7 @@ test('跨页操作输入及主名称不得误映辅助字号',()=>{
  const matrix={
   'canvas-list':['.ws-project-name','.ws-primary-btn','.ws-newproj-input'],
   'asset-manager':['.asset-card-name','.local-caption-prompt-input'],
-  'workflow-workbench':['.workflow-workbench .hw-btn','.workflow-workbench .wf-tree-name','.workflow-workbench .param-label-row'],
+  'workflow-workbench':['.workflow-workbench .wf-tree-name','.workflow-workbench .param-label-row'],
   'directory-settings':['.directory-page .asset-btn','.directory-mount-input'],
   'episode-pipeline':['.shot-card input, .shot-card textarea']
  };
@@ -124,23 +124,30 @@ test('跨页操作输入及主名称不得误映辅助字号',()=>{
    const rules=[...css.matchAll(/([^{}]+)\{([^{}]*)\}/g)].filter(m=>m[1].split('*/').at(-1).trim()===selector);
    assert.ok(rules.length,`${file} ${selector}必须有具体规则`);
    const declaration=rules.at(-1)[2];
-   assert.match(declaration,/font-size:\s*var\(--gw-type-body-md\)/,`${file} ${selector}`);
-   assert.match(declaration,/line-height:\s*var\(--gw-leading-body-md\)/,`${file} ${selector}`);
+   // 共享硬件按钮由 hardware-buttons.css 统一提供 button-md 字阶，页面类只保留布局；输入和主名称仍必须明确为 body-md。
+   if(selector === '.ws-primary-btn') {
+    assert.match(read('web/embeds/canvas-list.html'),/id="newCanvasBtn" class="[^"]*hw-btn[^"]*ws-primary-btn/, '新建画布实际使用共享硬件按钮');
+    assert.doesNotMatch(declaration,/font-size:\s*var\(--gw-type-(label|body-sm)\)/,`${file} ${selector}`);
+   } else {
+    assert.match(declaration,/font-size:\s*var\(--gw-type-body-md\)/,`${file} ${selector}`);
+    assert.match(declaration,/line-height:\s*var\(--gw-leading-body-md\)/,`${file} ${selector}`);
+   }
   }
  }
-  // asset-btn/asset-icon-btn 旧族已于 2026-10-10 按钮统一（TASK-20261010 风险3）退役，
-  // 收敛至 hw-btn；按钮排版不变量上移为设计系统基类契约，必须显式声明 body-md 字号与行高。
-  const hwbtn=(read('web/css/base/hardware-design-system.css').match(/\.hw-btn \{([^}]+)\}/)||[])[1]||'';
-  assert.match(hwbtn,/font-size:\s*var\(--gw-type-body-md\)/,'hw-btn 基类必须声明 body-md 字号');
-  assert.match(hwbtn,/line-height:\s*var\(--gw-leading-body-md\)/,'hw-btn 基类必须声明 body-md 行高');
+  // 按钮采用用户确认的新规范字阶，输入与主名称保持body-md。
+  const buttons=read('web/css/base/hardware-buttons.css');
+  assert.match(buttons,/font-size:var\(--gw-type-button-md\)/);
+  assert.match(buttons,/font-weight:var\(--gw-weight-bold\)/);
+  assert.match(buttons,/line-height:1/);
+
 });
 
 
 test('strict运行时回归：分集下拉、资产工具行wrap与普通金色操作字重',()=>{
  assert.match(read('web/css/pages/episode-pipeline.css'),/\.episode-page select \{ height: 40px;/);
  assert.match(read('web/css/pages/asset-vault.css'),/registry-toolbar-controls[^}]*flex-wrap:\s*wrap/s);
- const gold=read('web/css/pages/workflow-workbench.css').match(/\.workflow-workbench \.hw-btn-gold\s*\{([^}]+)\}/)?.[1];
- assert.match(gold,/font-weight:\s*var\(--gw-weight-medium\)/);
+ assert.doesNotMatch(read('web/css/pages/workflow-workbench.css'),/\.workflow-workbench \.hw-btn(?:-gold)?\s*\{/,'页面默认按钮声明不得压过SM/XS共享变体');
+ assert.match(read('web/css/base/hardware-buttons.css'),/font-weight:var\(--gw-weight-bold\)/);
 });
 
 test('栏目和辅助class字重与精确CSS覆盖同最新角色，状态计数保留独立字重',()=>{

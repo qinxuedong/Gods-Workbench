@@ -244,7 +244,7 @@ function showToast(message, isError = false, actionLabel = "", onAction = null) 
   if (!banner) return;
   banner.style.borderColor = isError ? "#f43f5e" : "#dfc384";
   const btnHtml = actionLabel
-    ? `<button type="button" class="toast-action-btn" id="toastActionBtn">${escapeHtml(actionLabel)}</button>`
+    ? `<button type="button" class="hw-btn btn-size-sm toast-action-btn" id="toastActionBtn">${escapeHtml(actionLabel)}</button>`
     : "";
   banner.innerHTML = `<span>${isError ? "⚠️" : "✨"}</span><span>${escapeHtml(message)}</span>${btnHtml}`;
   banner.classList.add("show");
@@ -513,14 +513,35 @@ async function apiFetch(url, options = {}) {
 
 /* ==================== 1. 初始化与工作流目录 / 剪贴板链接解析 ==================== */
 
+function moveColumnFocusOnCollapse(element, wasCollapsed, shouldCollapse, expandId, collapseId, active) {
+  if (!element || wasCollapsed === shouldCollapse) return;
+  const expandButton = wfGet(expandId);
+  const collapseButton = wfGet(collapseId);
+  if (shouldCollapse && active && element.contains(active)) {
+    expandButton?.focus?.();
+  } else if (!shouldCollapse && active === expandButton) {
+    collapseButton?.focus?.();
+  }
+}
+
 function applyColumnCollapseState() {
   const leftEl = wfGet("leftBusSidebar") || wfQuery(".left-bus-sidebar");
   const centerEl = wfGet("centerActuatorRack") || wfQuery(".center-actuator-rack");
   if (leftEl) {
-    leftEl.classList.toggle("collapsed", Boolean(state.leftColCollapsed));
+    const shouldCollapse = Boolean(state.leftColCollapsed);
+    const wasCollapsed = leftEl.classList.contains("collapsed");
+    const active = document.activeElement;
+    leftEl.classList.toggle("collapsed", shouldCollapse);
+    moveColumnFocusOnCollapse(leftEl, wasCollapsed, shouldCollapse, "btnExpandLeftCol", "btnCollapseLeftCol", active);
+    for (const id of ["btnCollapseLeftCol", "btnExpandLeftCol"]) wfGet(id)?.setAttribute?.("aria-expanded", String(!shouldCollapse));
   }
   if (centerEl) {
-    centerEl.classList.toggle("collapsed", Boolean(state.centerColCollapsed));
+    const shouldCollapse = Boolean(state.centerColCollapsed);
+    const wasCollapsed = centerEl.classList.contains("collapsed");
+    const active = document.activeElement;
+    centerEl.classList.toggle("collapsed", shouldCollapse);
+    moveColumnFocusOnCollapse(centerEl, wasCollapsed, shouldCollapse, "btnExpandCenterCol", "btnCollapseCenterCol", active);
+    for (const id of ["btnCollapseCenterCol", "btnExpandCenterCol"]) wfGet(id)?.setAttribute?.("aria-expanded", String(!shouldCollapse));
   }
 }
 
@@ -587,6 +608,7 @@ async function restoreWorkflowTask() {
       : (response.tasks || []).find(item => ["accepted", "running", "waiting_review", "paused", "outcome_unknown"].includes(item.status));
     if (!task) return;
     state.activeTaskId = task.job_id || task.task_id;
+    setWorkflowTaskTrigger("btnViewTaskDrawer");
     wfGet("taskModal")?.classList.add("open");
     startTaskPolling(state.activeTaskId, task.target);
   } catch (error) {
@@ -1043,7 +1065,7 @@ async function renderClipboardModalList() {
           </div>
           <div class="clipboard-item-text">${escapeHtml(item.text.slice(0, 280))}</div>
         </div>
-        <button type="button" class="hw-btn hw-btn-gold" style="padding:3px 9px;font-size:var(--gw-type-body-md);">
+        <button type="button" class="hw-btn hw-btn-gold btn-size-sm">
           <span>⚡ 选择并解析</span>
         </button>
       </div>
@@ -1057,7 +1079,7 @@ async function renderClipboardModalList() {
       const chosen = merged[idx];
       if (!chosen) return;
       rowEl.classList.add("active");
-      wfGet("clipboardModal")?.classList.remove("open");
+      closeWorkflowSurface("clipboardModal");
       handleParseLink(chosen.text);
     });
   });
@@ -1126,6 +1148,7 @@ async function handleParseLink(rawLink) {
   const origText = btn ? btn.innerHTML : "";
   if (btn) {
     btn.disabled = true;
+    btn.setAttribute?.("aria-busy", "true");
     btn.innerHTML = `<span>⏳ 正在解析...</span>`;
   }
 
@@ -1163,6 +1186,7 @@ async function handleParseLink(rawLink) {
   } finally {
     if (btn) {
       btn.disabled = false;
+      btn.setAttribute?.("aria-busy", "false");
       btn.innerHTML = origText;
     }
   }
@@ -1266,6 +1290,7 @@ async function handleOpenInComfyUi(options = {}) {
   const origHtml = btn ? btn.innerHTML : "";
   if (btn) {
     btn.disabled = true;
+    btn.setAttribute?.("aria-busy", "true");
     btn.innerHTML = `<span>正在导入...</span>`;
   }
 
@@ -1345,6 +1370,7 @@ async function handleOpenInComfyUi(options = {}) {
   } finally {
     if (btn) {
       btn.disabled = false;
+      btn.setAttribute?.("aria-busy", "false");
       btn.innerHTML = origHtml;
     }
   }
@@ -1538,19 +1564,22 @@ function renderWorkflowCatalog() {
         .map((item, idx) => {
           const isAct = item.workflow_id === currentId;
           const closeBtnHtml = isAct
-            ? `<span class="wf-capsule-close" data-close-wf-tab="${escapeHtml(item.workflow_id)}" title="关闭当前工作流标签">×</span>`
+            ? `<button type="button" class="hw-round-btn btn-size-sm wf-capsule-close" data-close-wf-tab="${escapeHtml(item.workflow_id)}" aria-label="关闭工作流 ${escapeHtml(item.name)}" title="关闭当前工作流标签"><span class="hw-round-inner">×</span></button>`
             : "";
           return `
+            <div class="wf-capsule-slot">
             <button
               type="button"
-              class="wf-capsule ${isAct ? "active" : ""}"
+              class="wf-capsule hw-btn btn-size-sm ${isAct ? "engaged active" : ""}"
+              aria-pressed="${isAct}"
               data-wf-id="${escapeHtml(item.workflow_id)}"
               title="${escapeHtml(item.name)}（右键可重命名或删除）"
             >
               <span class="led-dot ${item.can_run_locally ? "led-emerald" : "led-amber"}" style="width:6px;height:6px;"></span>
               <span>${String(idx + 1).padStart(2, "0")}. ${escapeHtml(item.name)}</span>
-              ${closeBtnHtml}
             </button>
+            ${closeBtnHtml}
+            </div>
           `;
         })
         .join("");
@@ -1618,24 +1647,24 @@ function renderWorkflowCatalog() {
               value="${escapeHtml(folder.name)}"
               style="padding:2px 5px;font-size:var(--gw-type-body-sm);flex:1;"
             />
-            <button type="button" class="hw-btn hw-btn-gold btn-save-rename" data-save-rename="${escapeHtml(fid)}" style="padding:1px 6px;font-size:var(--gw-type-body-md);">✓</button>
-            <button type="button" class="hw-btn btn-cancel-rename" data-cancel-rename="${escapeHtml(fid)}" style="padding:1px 5px;font-size:var(--gw-type-body-md);">✕</button>
+            <button type="button" class="hw-btn hw-btn-gold hw-btn-icon btn-size-sm btn-save-rename" aria-label="保存文件夹名称" data-save-rename="${escapeHtml(fid)}">✓</button>
+            <button type="button" class="hw-round-btn btn-size-sm btn-cancel-rename" aria-label="取消文件夹重命名" data-cancel-rename="${escapeHtml(fid)}"><span class="hw-round-inner">✕</span></button>
           </div>
         `;
       } else {
         const deleteBtnHtml = folder.is_system
           ? ""
-          : `<button type="button" class="folder-icon-btn danger" data-delete-folder="${escapeHtml(fid)}" title="删除文件夹（内部工作流将自动移回『已解析工作流』）">🗑</button>`;
+          : `<button type="button" class="hw-btn hw-btn-danger hw-btn-icon btn-size-sm folder-icon-btn danger" aria-label="删除文件夹 ${escapeHtml(folder.name)}" data-delete-folder="${escapeHtml(fid)}" title="删除文件夹（内部工作流将自动移回『已解析工作流』）">🗑</button>`;
         headerHtml = `
           <div class="wf-folder-header ${isActiveFolder ? "active-folder" : ""}" data-folder-header="${escapeHtml(fid)}">
-            <div class="wf-folder-title-wrap">
+            <button type="button" class="btn-segmented-item wf-folder-title-wrap" data-toggle-folder="${escapeHtml(fid)}" aria-expanded="${!isCollapsed}" aria-label="展开或折叠文件夹 ${escapeHtml(folder.name)}">
               <span class="wf-folder-arrow">${isCollapsed ? "▸" : "▾"}</span>
               <span style="font-size:var(--gw-icon-size-sm);">${escapeHtml(folder.icon || "📁")}</span>
               <span class="wf-folder-name" title="${escapeHtml(folder.name)}">${escapeHtml(folder.name)}</span>
-            </div>
+            </button>
             <div class="wf-folder-actions">
               <span class="capsule-badge" title="文件夹内工作流数量">${wfItems.length}</span>
-              <button type="button" class="folder-icon-btn" data-rename-folder="${escapeHtml(fid)}" title="重命名文件夹">✎</button>
+              <button type="button" class="hw-round-btn btn-size-sm folder-icon-btn" aria-label="重命名文件夹 ${escapeHtml(folder.name)}" data-rename-folder="${escapeHtml(fid)}" title="重命名文件夹"><span class="hw-round-inner">✎</span></button>
               ${deleteBtnHtml}
             </div>
           </div>
@@ -1660,14 +1689,15 @@ function renderWorkflowCatalog() {
                         value="${escapeHtml(item.name)}"
                         style="padding:2px 5px;font-size:var(--gw-type-body-sm);flex:1;min-width:0;"
                       />
-                      <button type="button" class="hw-btn hw-btn-gold" data-save-rename-wf="${escapeHtml(item.workflow_id)}" style="padding:1px 6px;font-size:var(--gw-type-body-md);">✓</button>
-                      <button type="button" class="hw-btn" data-cancel-rename-wf="${escapeHtml(item.workflow_id)}" style="padding:1px 5px;font-size:var(--gw-type-body-md);">✕</button>
+                      <button type="button" class="hw-btn hw-btn-gold hw-btn-icon btn-size-sm" aria-label="保存工作流名称" data-save-rename-wf="${escapeHtml(item.workflow_id)}">✓</button>
+                      <button type="button" class="hw-round-btn btn-size-sm" aria-label="取消工作流重命名" data-cancel-rename-wf="${escapeHtml(item.workflow_id)}"><span class="hw-round-inner">✕</span></button>
                     </div>
                   `;
                 }
                 return `
-                  <div
-                    class="wf-tree-item ${isAct ? "active" : ""}"
+                  <button type="button"
+                    class="btn-segmented-item wf-tree-item ${isAct ? "active" : ""}"
+                    aria-pressed="${isAct}"
                     data-wf-id="${escapeHtml(item.workflow_id)}"
                     draggable="true"
                     title="${escapeHtml(item.name)}（左键打开 · 右键重命名或删除 · 拖拽移动至其他文件夹）"
@@ -1679,7 +1709,7 @@ function renderWorkflowCatalog() {
                       <span class="wf-tree-name">${escapeHtml(item.name)}</span>
                     </div>
                     <span class="wf-source-badge">${escapeHtml(srcBadge)}</span>
-                  </div>
+                  </button>
                 `;
               })
               .join("");
@@ -1699,7 +1729,7 @@ function renderWorkflowCatalog() {
   treeList.querySelectorAll("[data-folder-header]").forEach((hdr) => {
     const fid = hdr.getAttribute("data-folder-header");
     hdr.addEventListener("click", (e) => {
-      if (e.target.closest("button") || e.target.closest("input")) {
+      if ((e.target.closest("button") && !e.target.closest("[data-toggle-folder]")) || e.target.closest("input")) {
         return;
       }
       state.activeFolderId = fid;
@@ -1929,7 +1959,7 @@ function buildWidgetControlHtml(attrKey, value, fieldType, minVal, maxVal, stepV
       <div class="node-upload-actions">
         <button
           type="button"
-          class="node-upload-btn"
+          class="hw-btn btn-size-sm node-upload-btn"
           data-node-upload="${escapeHtml(nid)}"
           data-node-field="${escapeHtml(fname)}"
           data-media-mode="${escapeHtml(mediaMode)}"
@@ -1937,7 +1967,7 @@ function buildWidgetControlHtml(attrKey, value, fieldType, minVal, maxVal, stepV
         >📤 上传</button>
         <button
           type="button"
-          class="node-upload-btn"
+          class="hw-btn btn-size-sm node-upload-btn"
           data-node-select-asset="${escapeHtml(nid)}"
           data-node-field="${escapeHtml(fname)}"
           data-media-mode="${escapeHtml(mediaMode)}"
@@ -2065,7 +2095,7 @@ function renderSelectedNodePanel(wf) {
         ? ""
         : `<button
             type="button"
-            class="btn-promote-param"
+            class="hw-btn btn-size-sm btn-promote-param"
             data-promote-toggle="${escapeHtml(attrKey)}"
             title="点击将该输入属性提升至下方『工作流提取列表』"
           >⬆ 提升</button>`;
@@ -2167,10 +2197,10 @@ function renderExtractedParamsList(wf) {
                 >#${escapeHtml(p.node_id)} · ${escapeHtml(p.field_name)}</span>
                 <button
                   type="button"
-                  class="btn-unpromote-icon"
+                  class="hw-round-btn btn-size-sm btn-unpromote-icon"
                   data-promote-toggle="${escapeHtml(attrKey)}"
-                  title="从工作流提取列表移除该属性"
-                >✕</button>
+                  title="从工作流提取列表移除该属性" aria-label="从工作流提取列表移除 ${escapeHtml(p.field_name)}"
+                ><span class="hw-round-inner">✕</span></button>
               </span>
             </div>
             ${controlHtml}
@@ -2586,8 +2616,10 @@ async function handleNodeMediaFileSelected(file) {
 async function openAssetLibraryModal(nodeId, fieldName, mediaMode) {
   state.pendingMediaTarget = { nodeId, fieldName, mediaMode };
   state.assetFilterType = "all";
-  wfQueryAll("#assetLibraryModal [data-asset-filter]").forEach((btn) => {
-    btn.classList.toggle("active", btn.getAttribute("data-asset-filter") === state.assetFilterType);
+  wfQueryAll("#assetLibraryModal [data-asset-filter], #assetLibraryModal [data-filter]").forEach((btn) => {
+    const active = (btn.getAttribute("data-asset-filter") || btn.getAttribute("data-filter") || "all") === state.assetFilterType;
+    btn.classList.toggle("active", active);
+    btn.setAttribute("aria-pressed", String(active));
   });
 
   const subText = wfGet("assetModalTargetHint");
@@ -2651,7 +2683,7 @@ function renderAssetLibraryGrid() {
           state.pendingMediaTarget.fieldName,
           asset
         );
-        wfGet("assetLibraryModal")?.classList.remove("open");
+        closeWorkflowSurface("assetLibraryModal");
       }
     });
   });
@@ -2730,7 +2762,7 @@ function renderNodeCanvas(wf, autoFit = true) {
             <div class="node-upload-actions">
               <button
                 type="button"
-                class="node-upload-btn"
+                class="hw-btn btn-size-sm node-upload-btn"
                 data-node-upload="${escapeHtml(node.node_id)}"
                 data-node-field="${escapeHtml(fieldName)}"
                 data-media-mode="${escapeHtml(uploadMode)}"
@@ -2738,7 +2770,7 @@ function renderNodeCanvas(wf, autoFit = true) {
               >📤 上传</button>
               <button
                 type="button"
-                class="node-upload-btn"
+                class="hw-btn btn-size-sm node-upload-btn"
                 data-node-select-asset="${escapeHtml(node.node_id)}"
                 data-node-field="${escapeHtml(fieldName)}"
                 data-media-mode="${escapeHtml(uploadMode)}"
@@ -3141,8 +3173,11 @@ async function autoLayoutCurrentNodes() {
 
 function setExecutionTarget(target) {
   state.executionTarget = target;
-  wfGet("btnTargetRH").classList.toggle("active", target === "rh_cloud");
-  wfGet("btnTargetLocal").classList.toggle("active", target === "local_comfy");
+  for (const [id, value] of [["btnTargetRH", "rh_cloud"], ["btnTargetLocal", "local_comfy"]]) {
+    const button = wfGet(id);
+    button?.classList.toggle("active", target === value);
+    button?.setAttribute?.("aria-pressed", String(target === value));
+  }
 }
 
 function executionSourceContext(wf) {
@@ -3166,8 +3201,14 @@ async function handleExecuteWorkflow() {
   }
 
   state.submitting = true;
+  const executeButton = wfGet("btnExecuteWorkflow");
+  if (executeButton) { executeButton.disabled = true; executeButton.setAttribute?.("aria-busy", "true"); }
   try { await flushWorkflowParams(wf.workflow_id); }
-  catch (err) { state.submitting = false; showToast(`请先处理保存失败：${err.message}`, true); return; }
+  catch (err) {
+    state.submitting = false;
+    if (executeButton) { executeButton.disabled = false; executeButton.setAttribute?.("aria-busy", "false"); }
+    showToast(`请先处理保存失败：${err.message}`, true); return;
+  }
   const nodeInfoList = (wf.actuator_params || []).map((p) => ({
     nodeId: String(p.node_id),
     fieldName: String(p.field_name),
@@ -3176,6 +3217,7 @@ async function handleExecuteWorkflow() {
 
   const modal = wfGet("taskModal");
   const bodyEl = wfGet("taskModalBody");
+  setWorkflowTaskTrigger("btnExecuteWorkflow");
   modal.classList.add("open");
   bodyEl.innerHTML = `
     <div class="hw-bay-row">
@@ -3210,11 +3252,16 @@ async function handleExecuteWorkflow() {
         <div style="color:var(--primary-soft);font-size:var(--gw-type-body-sm);margin-top:4px;">${escapeHtml(err.message)}</div>
       </div>
     `;
-  } finally { state.submitting = false; }
+  } finally {
+    state.submitting = false;
+    if (executeButton) { executeButton.disabled = false; executeButton.setAttribute?.("aria-busy", "false"); }
+  }
 }
 
 async function openWorkflowTasks() {
-  wfGet('taskModal')?.classList.add('open');
+  const taskModal = wfGet('taskModal');
+  if (!taskModal?.classList.contains('open')) setWorkflowTaskTrigger('btnViewTaskDrawer');
+  taskModal?.classList.add('open');
   try {
     const response = await apiFetch('/api/god_workflow/tasks');
     const tasks = response.tasks || [];
@@ -3282,72 +3329,88 @@ function setEnvDrawerOpen(isOpen) {
   const drawer = wfGet("envDiffDrawer");
   if (!drawer) return;
   const open = Boolean(isOpen);
+  const wasOpen = !drawer.classList.contains("collapsed");
+  const active = document.activeElement;
+  const openButton = wfGet("btnOpenEnvDrawer");
+  const closeButton = wfGet("btnCloseEnvDrawer");
   drawer.classList.toggle("collapsed", !open);
   drawer.classList.toggle("open", open);
+  if (wasOpen !== open && !open && active && drawer.contains(active)) openButton?.focus?.();
+  if (wasOpen !== open && open && active === openButton) closeButton?.focus?.();
+  for (const id of ["btnOpenEnvDrawer", "btnCloseEnvDrawer", "btnExpandEnvCol"]) wfGet(id)?.setAttribute?.("aria-expanded", String(open));
+}
+
+function workflowSettingsValues(modal) {
+  return JSON.stringify([...modal.querySelectorAll('input:not([readonly]), textarea, select')]
+    .map(element => [element.id, element.type === 'checkbox' ? element.checked : element.value]));
+}
+
+function closeWorkflowSurface(id) {
+  const modal = wfGet(id);
+  return Boolean(modal && window.FloatingDismissal?.closeSurface?.(modal));
+}
+
+function setWorkflowTaskTrigger(triggerId) {
+  const modal = wfGet("taskModal");
+  const trigger = triggerId ? wfGet(triggerId) : null;
+  if (modal && window.FloatingDismissal?.register) {
+    window.FloatingDismissal.register(modal, { trigger });
+  }
 }
 
 function bindWorkflowOverlays() {
-  if (typeof MutationObserver === 'undefined') return;
-  const backdrops = [...wfQueryAll('.modal-backdrop')];
-  const stack = [];
-  const entries = new Map();
-  let trigger = null;
-  const controls = (modal) => [...modal.querySelectorAll('button, input, textarea, select, a[href], [tabindex]')]
-    .filter(element => !element.disabled && element.tabIndex >= 0 && element.getClientRects().length);
-  const formValues = modal => JSON.stringify([...modal.querySelectorAll('input:not([readonly]), textarea, select')]
-    .map(element => [element.id, element.type === 'checkbox' ? element.checked : element.value]));
-  const reconcile = modal => {
-    const open = modal.classList.contains('open');
-    const previous = entries.get(modal);
-    if (open && !previous) {
-      delete modal._workflowSettingsSaved;
-      const card = modal.querySelector('.modal-card') || modal;
-      card.setAttribute('role', 'dialog'); card.setAttribute('aria-modal', 'true'); card.tabIndex = -1;
-      card.setAttribute('aria-label', modal.querySelector('.modal-title')?.textContent?.trim() || '工作流对话框');
-      entries.set(modal, { trigger: modal._workflowReturnFocus || (trigger?.isConnected ? trigger : document.activeElement), values: formValues(modal) });
-      stack.push(modal);
-      (controls(modal)[0] || card).focus();
-    } else if (!open && previous) {
-      if (modal.id === 'settingsModal' && !modal._workflowSettingsSaved && previous.values !== formValues(modal) && !window.confirm('配置尚未保存，确认关闭并保留当前草稿？')) {
-        modal.classList.add('open'); return;
-      }
-      entries.delete(modal); stack.splice(stack.indexOf(modal), 1);
-      delete modal._workflowReturnFocus;
-      delete modal._workflowSettingsSaved;
-      if (previous.trigger?.isConnected && !modal.contains(previous.trigger)) previous.trigger.focus();
-    }
-  };
-  listen(workbenchRoot, 'pointerdown', event => { trigger = event.target.closest?.('button, input, textarea, select, a[href]'); }, true);
-  listen(workbenchRoot, 'keydown', event => { if (event.key === 'Enter' || event.key === ' ') trigger = document.activeElement; }, true);
-  const observer = new MutationObserver(records => { for (const { target } of records) reconcile(target); });
-  backdrops.forEach(modal => {
-    observer.observe(modal, { attributes: true, attributeFilter: ['class'] });
-    listen(modal, 'click', event => {
-      if (event.target === modal && stack.at(-1) === modal) {
-        event.preventDefault(); event.stopImmediatePropagation(); modal.classList.remove('open'); reconcile(modal);
-      }
+  const floating = window.FloatingDismissal;
+  if (!floating) return;
+  const definitions = [
+    ['settingsModal', 'btnOpenSettings', ['btnCloseSettings', 'btnCancelSettings']],
+    ['taskModal', 'btnViewTaskDrawer', ['btnCloseTaskModal', 'btnCloseTaskFooter']],
+    ['clipboardModal', 'btnOpenClipboardModal', ['btnCloseClipboardModal', 'btnCloseClipboardFooter']],
+    ['publicWorkflowPreviewModal', 'btnParseLink', ['btnClosePublicWorkflowPreview', 'btnClosePublicWorkflowPreviewFooter']],
+    ['contractModal', 'btnOpenContractModal', ['btnCloseContractModal', 'btnCloseContractFooter']],
+    ['assetLibraryModal', null, ['btnCloseAssetModal', 'btnCloseAssetFooter']],
+    ['closeAllConfirmModal', 'btnCloseAllWorkflows', ['btnCloseConfirmAllModal', 'btnCancelCloseAll']],
+  ];
+  for (const [id, triggerId, closeIds] of definitions) {
+    const modal = wfGet(id);
+    if (!modal) continue;
+    const card = modal.querySelector('.modal-card') || modal;
+    const accessibleName = modal.querySelector('.modal-title')?.textContent?.trim() || '工作流对话框';
+    modal.setAttribute('role', 'dialog');
+    modal.setAttribute('aria-modal', 'true');
+    modal.setAttribute('aria-label', accessibleName);
+    card.tabIndex = -1;
+    card.setAttribute('aria-label', accessibleName);
+    if (triggerId) wfGet(triggerId)?.setAttribute('aria-controls', id);
+    closeIds.forEach(closeId => wfGet(closeId)?.setAttribute('data-floating-close', ''));
+    const unregister = floating.register(modal, {
+      surface: `workflow-${id}`,
+      kind: 'modal',
+      content: card,
+      trigger: triggerId ? wfGet(triggerId) : null,
+      isOpen: () => modal.classList.contains('open'),
+      beforeClose: () => id !== 'settingsModal' || modal._workflowSettingsSaved ||
+        modal._workflowSettingsValues === undefined || modal._workflowSettingsValues === workflowSettingsValues(modal) ||
+        window.confirm('配置尚未保存，确认关闭并保留当前草稿？'),
+      close: () => {
+        modal.classList.remove('open');
+        delete modal._workflowReturnFocus;
+        delete modal._workflowSettingsSaved;
+      },
     });
-    reconcile(modal);
-  });
-  lifecycleListeners.push(() => observer.disconnect());
-  listen(document, 'keydown', event => {
-    const modal = stack.at(-1);
-    if (!modal) return;
-    if (event.key === 'Escape') {
-      event.preventDefault(); event.stopImmediatePropagation(); modal.classList.remove('open'); reconcile(modal);
-    } else if (event.key === 'Tab') {
-      const elements = controls(modal);
-      const first = elements[0] || modal.querySelector('.modal-card');
-      const last = elements.at(-1) || first;
-      if (!modal.contains(document.activeElement) || (event.shiftKey && document.activeElement === first) || (!event.shiftKey && document.activeElement === last)) {
-        event.preventDefault(); (event.shiftKey ? last : first)?.focus();
-      }
-    }
-  }, true);
-  listen(document, 'focusin', event => {
-    const modal = stack.at(-1);
-    if (modal && !modal.contains(event.target)) (controls(modal)[0] || modal.querySelector('.modal-card'))?.focus();
-  });
+    lifecycleListeners.push(unregister);
+  }
+  const contextMenu = wfGet("wfContextMenu");
+  if (contextMenu) {
+    const contextMenuIsOpen = () => contextMenu.classList.contains("open");
+    const unregister = floating.register(contextMenu, {
+      surface: "workflow-context-menu",
+      kind: "popover",
+      content: "self",
+      isOpen: contextMenuIsOpen,
+      close: closeWorkflowContextMenu,
+    });
+    lifecycleListeners.push(unregister);
+  }
 }
 
 function bindEvents() {
@@ -3434,20 +3497,9 @@ function bindEvents() {
     }
     closeAllModal?.classList.add("open");
   });
-  wfGet("btnCloseConfirmAllModal")?.addEventListener("click", () => {
-    closeAllModal?.classList.remove("open");
-  });
-  wfGet("btnCancelCloseAll")?.addEventListener("click", () => {
-    closeAllModal?.classList.remove("open");
-  });
   wfGet("btnConfirmCloseAll")?.addEventListener("click", () => {
-    closeAllModal?.classList.remove("open");
+    closeWorkflowSurface("closeAllConfirmModal");
     closeAllOpenWorkflowTabs();
-  });
-  closeAllModal?.addEventListener("mousedown", (e) => {
-    if (e.target === closeAllModal) {
-      closeAllModal.classList.remove("open");
-    }
   });
 
   // 切回工作台窗口时立即检查 ComfyUI 保存更新
@@ -3478,17 +3530,6 @@ function bindEvents() {
       handleDeleteWorkflow(state.contextMenuWfId);
     }
   });
-  listen(document, "click", (e) => {
-    if (!e.target.closest("#wfContextMenu")) {
-      closeWorkflowContextMenu();
-    }
-  });
-  listen(window, "keydown", (e) => {
-    if (e.key === "Escape") {
-      closeWorkflowContextMenu();
-    }
-  });
-
   // 左侧工作流目录：新建文件夹内联栏控制
   const newFolderBar = wfGet("newFolderInlineBar");
   const inputNewFolder = wfGet("inputNewFolderName");
@@ -3521,8 +3562,6 @@ function bindEvents() {
   // 顶栏「🔗 画布对接契约」预览与导出弹窗
   const contractModal = wfGet("contractModal");
   wfGet("btnOpenContractModal")?.addEventListener("click", openContractModal);
-  wfGet("btnCloseContractModal")?.addEventListener("click", () => contractModal?.classList.remove("open"));
-  wfGet("btnCloseContractFooter")?.addEventListener("click", () => contractModal?.classList.remove("open"));
   wfGet("btnCopyContractJson")?.addEventListener("click", async () => {
     const text = wfGet("contractJsonPreview")?.textContent || "";
     try {
@@ -3549,11 +3588,6 @@ function bindEvents() {
   });
 
   const assetModal = wfGet("assetLibraryModal");
-  wfGet("btnCloseAssetModal")?.addEventListener("click", () => assetModal?.classList.remove("open"));
-  wfGet("btnCloseAssetFooter")?.addEventListener("click", () => assetModal?.classList.remove("open"));
-  assetModal?.addEventListener("mousedown", (e) => {
-    if (e.target === assetModal) assetModal.classList.remove("open");
-  });
   const onUploadInAssetModal = () => {
     const target = state.pendingMediaTarget || { nodeId: state.selectedNodeId, fieldName: "image", mediaMode: "image" };
     triggerLocalMediaUploadForNode(target.nodeId, target.fieldName, target.mediaMode);
@@ -3565,6 +3599,7 @@ function bindEvents() {
       state.assetFilterType = btn.getAttribute("data-asset-filter") || btn.getAttribute("data-filter") || "all";
       wfQueryAll("#assetLibraryModal [data-asset-filter], #assetLibraryModal [data-filter]").forEach((b) => {
         b.classList.toggle("active", b === btn);
+        b.setAttribute("aria-pressed", String(b === btn));
       });
       renderAssetLibraryGrid();
     });
@@ -3573,15 +3608,7 @@ function bindEvents() {
   // 第三行「📋 剪贴板」按钮与剪贴板选择弹窗控制
   const clipboardModal = wfGet("clipboardModal");
   wfGet("btnOpenClipboardModal")?.addEventListener("click", () => openClipboardModal());
-  wfGet("btnCloseClipboardModal")?.addEventListener("click", () => clipboardModal?.classList.remove("open"));
-  wfGet("btnCloseClipboardFooter")?.addEventListener("click", () => clipboardModal?.classList.remove("open"));
-  for (const id of ['btnClosePublicWorkflowPreview', 'btnClosePublicWorkflowPreviewFooter']) {
-    wfGet(id)?.addEventListener('click', () => wfGet('publicWorkflowPreviewModal')?.classList.remove('open'));
-  }
   wfGet("btnRefreshClipboardList")?.addEventListener("click", () => renderClipboardModalList());
-  clipboardModal?.addEventListener("mousedown", (e) => {
-    if (e.target === clipboardModal) clipboardModal.classList.remove("open");
-  });
 
   listen(window, "paste", (e) => {
     const activeTag = document.activeElement?.tagName?.toLowerCase();
@@ -3590,13 +3617,14 @@ function bindEvents() {
     if (!pasted) return;
     recordClipboardHistory(pasted);
     if (isLikelyRhLink(pasted)) {
-      clipboardModal?.classList.remove("open");
+      closeWorkflowSurface("clipboardModal");
       handleParseLink(pasted);
     } else if (clipboardModal?.classList.contains("open")) {
       renderClipboardModalList();
     }
   });
 
+  wfGet("btnUploadWorkflowFile")?.addEventListener("click", () => wfGet("localFileInput")?.click());
   wfGet("localFileInput").addEventListener("change", (e) => {
     const file = e.target.files?.[0];
     if (file) handleUploadFile(file);
@@ -3771,10 +3799,12 @@ function bindEvents() {
     } catch (err) {
       console.warn("加载设置状态失败:", err);
     }
-    settingsModal?.classList.add("open");
+    if (settingsModal) {
+      delete settingsModal._workflowSettingsSaved;
+      settingsModal._workflowSettingsValues = workflowSettingsValues(settingsModal);
+      settingsModal.classList.add("open");
+    }
   });
-  wfGet("btnCloseSettings")?.addEventListener("click", () => settingsModal?.classList.remove("open"));
-  wfGet("btnCancelSettings")?.addEventListener("click", () => settingsModal?.classList.remove("open"));
   wfGet("btnSaveSettings")?.addEventListener("click", async () => {
     const payload = {
       comfy_url: wfGet("inputComfyUrl")?.value?.trim() || "",
@@ -3798,7 +3828,7 @@ function bindEvents() {
       });
       applySavedSettings(saved);
       if (settingsModal) settingsModal._workflowSettingsSaved = true;
-      settingsModal?.classList.remove("open");
+      closeWorkflowSurface("settingsModal");
       const credentialNote = saved?.has_rh_api_key || saved?.has_rh_access_token
         ? "凭据已生效"
         : "RH 凭据未配置，可在设置中填写";
@@ -3838,6 +3868,7 @@ function bindEvents() {
       if (triggerBtn) {
         triggerBtn.innerHTML = "<span>⏳ 选择中...</span>";
         triggerBtn.disabled = true;
+        triggerBtn.setAttribute?.("aria-busy", "true");
       }
 
       // 1. 优先调用后端原生 Windows 目录选择对话框，直接获取真实的绝对路径
@@ -3922,6 +3953,7 @@ function bindEvents() {
       if (triggerBtn) {
         triggerBtn.innerHTML = originalBtnText;
         triggerBtn.disabled = false;
+        triggerBtn.setAttribute?.("aria-busy", "false");
       }
     }
   }
@@ -3941,14 +3973,13 @@ function bindEvents() {
   wfGet('btnRetryTaskCollection')?.addEventListener('click', async event => {
     if (!state.activeTaskId) return;
     event.target.disabled = true;
+    event.target.setAttribute?.("aria-busy", "true");
     try {
       const result = await apiFetch(`/api/god_workflow/tasks/${encodeURIComponent(state.activeTaskId)}/collect`, { method: 'POST' });
       startTaskPolling(state.activeTaskId, result.target);
     } catch (error) { showToast(`产物回收失败：${error.message}`, true); }
-    finally { event.target.disabled = false; }
+    finally { event.target.disabled = false; event.target.setAttribute?.("aria-busy", "false"); }
   });
-  wfGet("btnCloseTaskModal")?.addEventListener("click", () => taskModal?.classList.remove("open"));
-  wfGet("btnCloseTaskFooter")?.addEventListener("click", () => taskModal?.classList.remove("open"));
   bindWorkflowOverlays();
 }
 

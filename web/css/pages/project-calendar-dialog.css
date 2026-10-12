@@ -5,11 +5,9 @@
 #gwProjectCalendarDialog .gw-project-calendar-kicker { color:#dfc384; font: 700 var(--gw-type-label-md)/1.2 var(--gw-font-mono); letter-spacing:.14em; text-transform:uppercase; }
 #gwProjectCalendarDialog h2 { margin:7px 0 4px; color:#f8fafc; font: 700 var(--gw-type-headline-lg)/1.1 var(--gw-font-body); }
 #gwProjectCalendarDialog .gw-project-calendar-head p { margin:0; color:#94a3b8; font: 500 var(--gw-type-body-sm)/1.4 var(--gw-font-mono); }
-#gwProjectCalendarDialog .gw-project-calendar-close { width:36px; height:36px; display:grid; place-items:center; border:1px solid rgba(223,195,132,.35); border-radius:9px; background:#080a0e; color:#dfc384; cursor:pointer; font-size: var(--gw-icon-size-title); line-height:1; }
 #gwProjectCalendarDialog .gw-project-calendar-body { margin-top:18px; min-height:250px; max-height:calc(100vh - 190px); overflow:auto; }
 #gwProjectCalendarDialog .gw-calendar-loading,#gwProjectCalendarDialog .gw-calendar-empty { min-height:220px; display:grid; place-items:center; align-content:center; gap:10px; color:#94a3b8; font: 400 var(--gw-type-body-sm)/var(--gw-leading-body-sm) var(--gw-font-mono); text-align:center; }
 #gwProjectCalendarDialog .gw-calendar-empty strong { color:#eddab3; font-size: var(--gw-type-body-lg); }
-#gwProjectCalendarDialog .gw-calendar-empty button,#gwProjectCalendarDialog .gw-calendar-unscheduled button { padding:7px 13px; border:1px solid rgba(223,195,132,.45); border-radius:7px; background:#10141c; color:#eddab3; cursor:pointer; }
 #gwProjectCalendarDialog .gw-calendar-axis { display:grid; grid-template-columns:190px minmax(620px,1fr); gap:14px; align-items:end; padding:0 0 9px; color:#dfc384; font: 700 var(--gw-type-label-md)/1.2 var(--gw-font-mono); letter-spacing:.08em; }
 #gwProjectCalendarDialog .gw-calendar-axis>div { display:grid; grid-template-columns:repeat(8,1fr); color:#64748b; font-weight:500; letter-spacing:0; }
 #gwProjectCalendarDialog .gw-calendar-axis>div span { text-align:center; }
@@ -29,7 +27,7 @@
 #gwProjectCalendarDialog .gw-calendar-unscheduled { margin-top:18px; padding-top:14px; border-top:1px solid rgba(255,255,255,.10); }
 #gwProjectCalendarDialog .gw-calendar-unscheduled h3 { margin:0 0 9px; color:#dfc384; font: 700 var(--gw-type-label-md)/1.2 var(--gw-font-mono); letter-spacing:.08em; text-transform:uppercase; }
 #gwProjectCalendarDialog .gw-calendar-unscheduled>div { display:flex; flex-wrap:wrap; gap:8px; }
-#gwProjectCalendarDialog .gw-calendar-unscheduled button { min-width:220px; max-width:100%; display:flex; flex-direction:column; align-items:flex-start; gap:4px; text-align:left; }
+#gwProjectCalendarDialog .gw-calendar-unscheduled button { min-width:min(220px,100%); max-width:100%; height:var(--button-height); display:flex; flex-direction:row; align-items:flex-start; gap:4px; text-align:left; }
 #gwProjectCalendarDialog .gw-calendar-unscheduled button span { overflow:hidden; width:100%; font: 600 var(--gw-type-body-sm)/1.25 var(--gw-font-body); text-overflow:ellipsis; white-space:nowrap; }
 #gwProjectCalendarDialog .gw-calendar-unscheduled button small { color:#64748b; font: 500 var(--gw-type-label-md)/1 var(--gw-font-mono); }
 #gwProjectCalendarDialog .gw-project-calendar-foot { display:flex; justify-content:space-between; gap:14px; padding-top:15px; color:#64748b; font: 500 var(--gw-type-label-md)/1.2 var(--gw-font-mono); }

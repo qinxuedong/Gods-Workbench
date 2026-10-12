@@ -18,6 +18,7 @@
   'use strict';
 
   const instances = new WeakMap();
+  let surfaceSequence = 0;
   const pad = value => String(value).padStart(2, '0');
   const dayKey = date => `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
   const dateFromKey = key => {
@@ -49,6 +50,10 @@
   }
 
   function render(instance) {
+    const active = instance.popover.contains(document.activeElement) ? document.activeElement : null;
+    const focusSelector = active?.hasAttribute('data-date-range-prev') ? '[data-date-range-prev]'
+      : active?.hasAttribute('data-date-range-next') ? '[data-date-range-next]'
+      : active?.dataset.dateRangeDay ? `[data-date-range-day="${active.dataset.dateRangeDay}"]` : null;
     const month = instance.month;
     const first = new Date(month.getFullYear(), month.getMonth(), 1);
     const gridStart = new Date(first);
@@ -67,27 +72,28 @@
       const key = dayKey(date);
       const outside = date.getMonth() !== month.getMonth();
       const between = startKey && endKey && key > startKey && key < endKey;
-      const classes = ['project-date-range-day'];
+      const classes = ['project-date-range-day', 'btn-segmented-item'];
       if (outside) classes.push('is-other');
       if (key === todayKey) classes.push('is-today');
       if (key === startKey) classes.push('is-start');
       if (key === endKey) classes.push('is-end');
       if (between) classes.push('is-between');
-      cells.push(`<button type="button" class="${classes.join(' ')}" data-date-range-day="${key}" aria-label="${key}">${date.getDate()}</button>`);
+      cells.push(`<button type="button" class="${classes.join(' ')}" data-date-range-day="${key}" aria-label="${key}${key === startKey ? '，开始日期' : ''}${key === endKey ? '，结束日期' : ''}" aria-pressed="${Boolean(key === startKey || key === endKey || between)}"${key === todayKey ? ' aria-current="date"' : ''}>${date.getDate()}</button>`);
     }
-    instance.popover.innerHTML = `<div class="project-date-range-head"><button type="button" class="project-date-range-nav" data-date-range-prev aria-label="上个月">‹</button><strong>${monthLabel}</strong><button type="button" class="project-date-range-nav" data-date-range-next aria-label="下个月">›</button></div><div class="project-date-range-weekdays">${weekdays.map(item => `<span>${item}</span>`).join('')}</div><div class="project-date-range-days">${cells.join('')}</div><p class="project-date-range-hint">${start && !end ? '请选择第二个日期作为结束时间' : '点击第一个日期设置开始时间'}</p>`;
+    instance.popover.innerHTML = `<div class="project-date-range-head"><button type="button" class="project-date-range-nav btn-hw-round" data-date-range-prev aria-label="上个月"><span class="btn-hw-round-inner" aria-hidden="true">‹</span></button><strong>${monthLabel}</strong><button type="button" class="project-date-range-nav btn-hw-round" data-date-range-next aria-label="下个月"><span class="btn-hw-round-inner" aria-hidden="true">›</span></button></div><div class="project-date-range-weekdays">${weekdays.map(item => `<span>${item}</span>`).join('')}</div><div class="project-date-range-days btn-segmented-deck" role="group" aria-label="选择项目开始及结束日期">${cells.join('')}</div><p class="project-date-range-hint">${start && !end ? '请选择第二个日期作为结束时间' : '点击第一个日期设置开始时间'}</p>`;
+    if (focusSelector && !instance.popover.hidden) instance.popover.querySelector(focusSelector)?.focus({preventScroll: true});
   }
 
-  function close(instance) {
+  function closeState(instance) {
     instance.popover.hidden = true;
     instance.trigger.setAttribute('aria-expanded', 'false');
   }
 
+  function close(instance) {
+    if (!window.FloatingDismissal?.closeSurface(instance.popover)) closeState(instance);
+  }
+
   function open(instance) {
-    document.querySelectorAll('[data-project-date-range] .project-date-range-popover:not([hidden])').forEach(popover => {
-      const other = popover.closest('[data-project-date-range]');
-      if (other && other !== instance.root) close(instances.get(other));
-    });
     render(instance);
     instance.popover.hidden = false;
     instance.trigger.setAttribute('aria-expanded', 'true');
@@ -105,6 +111,16 @@
       const selectedStart = timestampDate(start.value);
       const instance = {root: container, trigger, label, start, end, popover, month: new Date((selectedStart || new Date()).getFullYear(), (selectedStart || new Date()).getMonth(), 1)};
       instances.set(container, instance);
+      popover.id ||= `projectDateRange-${++surfaceSequence}`;
+      popover.setAttribute('role', 'dialog');
+      popover.setAttribute('aria-label', '选择项目排期');
+      popover.tabIndex = -1;
+      trigger.setAttribute('aria-controls', popover.id);
+      window.FloatingDismissal?.register(popover, {
+        kind: 'popover', content: popover, trigger,
+        close: () => closeState(instance),
+        isOpen: () => !popover.hidden,
+      });
       sync(instance);
       trigger.addEventListener('click', () => popover.hidden ? open(instance) : close(instance));
       popover.addEventListener('click', event => {
@@ -135,18 +151,6 @@
       });
     });
   }
-
-  document.addEventListener('click', event => {
-    document.querySelectorAll('[data-project-date-range] .project-date-range-popover:not([hidden])').forEach(popover => {
-      const root = popover.closest('[data-project-date-range]');
-      const instance = instances.get(root);
-      if (instance && !root.contains(event.target)) close(instance);
-    });
-  });
-  document.addEventListener('keydown', event => {
-    if (event.key !== 'Escape') return;
-    document.querySelectorAll('[data-project-date-range] .project-date-range-popover:not([hidden])').forEach(popover => close(instances.get(popover.closest('[data-project-date-range]'))));
-  });
 
   window.GWProjectDateRange = {bind, setRange(container, startValue, endValue) {
     const instance = typeof container === 'string' ? document.querySelector(container) : container;

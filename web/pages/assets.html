@@ -1,14 +1,14 @@
 <!DOCTYPE html>
 <html lang="zh-CN" class="h-full overflow-hidden">
 <head>
-  <link rel="stylesheet" href="/static/css/base/hardware-tokens.css">
+  <link rel="stylesheet" href="/static/css/base/hardware-tokens.css?ui=20261011-final">
   <link rel="stylesheet" href="/static/vendor/css/fonts.css?v=v0.0.1-alpha-2026">
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>资产金库与素材池 · Gods' Workbench</title>
   <script src="/static/vendor/js/tailwindcss-cdn.js?v=3.4.17&amp;build=d11003b2f6fb"></script>
   <script src="/static/vendor/js/lucide.js?v=1.16.0"></script>
-  <link rel="stylesheet" href="/static/css/base/hardware-design-system.css">
+  <link rel="stylesheet" href="/static/css/base/hardware-design-system.css?ui=20261011-final">
   <style>
     #assetVaultStage { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
     #assetVaultFrame { flex: 1; width: 100%; min-height: 0; border: 0; background: #0a0b10; }
@@ -27,10 +27,8 @@
     <div class="flex items-center justify-between relative z-30 px-1 pt-0.5">
       <div class="flex items-center space-x-2 shrink-0">
                 <!-- 智能体核心按钮 (原关机键位置) -->
-        <button class="w-8 h-8 rounded-full bg-gradient-to-tr from-cyan-400 via-fuchsia-500 to-amber-300 p-0.5 shadow-[0_0_12px_rgba(236,72,153,0.7),0_0_6px_rgba(34,211,238,0.9)] hover:scale-110 active:scale-95 transition flex items-center justify-center cursor-pointer shrink-0 launch-orb-btn" title="智能体核心总线 (Agent Core)">
-          <div class="w-full h-full rounded-full bg-black/85 flex items-center justify-center">
-            <div class="w-3 h-3 rounded-full bg-gradient-to-r from-cyan-300 to-pink-400 animate-spin"></div>
-          </div>
+        <button class="launch-orb-btn" title="智能体核心总线 (Agent Core)" aria-label="智能体核心总线">
+          <div class="orb-core"><span></span></div>
         </button>
         <div class="h-4 w-px bg-white/10"></div>
         <div class="flex items-center space-x-1.5">
@@ -172,7 +170,7 @@
       <div class="flex items-center space-x-3 shrink-0">
         <div class="flex items-center space-x-1.5">
           <span class="gw-type-body-sm font-mono text-slate-400 font-bold">AUTO</span>
-          <div class="hw-slide-toggle active" onclick="this.classList.toggle('active')"><div class="hw-slide-peg"></div></div>
+          <button type="button" class="hw-slide-toggle active" aria-pressed="true" aria-label="切换自动与手动模式" onclick="this.classList.toggle('active'); this.setAttribute('aria-pressed', String(this.classList.contains('active')))"><div class="hw-slide-peg"></div></button>
           <span class="gw-type-body-sm font-mono text-[#dfc384] font-bold">MANUAL</span>
         </div>
         <div class="h-3.5 w-px bg-white/10"></div>

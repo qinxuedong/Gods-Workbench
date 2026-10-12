@@ -237,21 +237,21 @@
         layer.className = 'asset-review-layer auth-open';
         if(user){
             layer.innerHTML = '<div class="asset-review-backdrop" data-review-close></div><section class="asset-account-modal" data-floating-content>' +
-                '<header><div><strong>账号与 PC Token</strong><span>' + esc(user.username) + ' · ' + esc(user.role) + '</span></div><button data-review-close>'+icon('x')+'</button></header>' +
+                '<header><div><strong>账号与 PC Token</strong><span>' + esc(user.username) + ' · ' + esc(user.role) + '</span></div><button type="button" class="hw-btn" data-review-close aria-label="关闭账号与 Token 面板">'+icon('x')+'</button></header>' +
                 '<div class="asset-account-body"><div class="account-profile">'+icon('shield-check',24)+'<div><strong>'+esc(user.display_name)+'</strong><span>当前角色：'+esc(user.role)+'</span></div></div>' +
                 (user.local_mode ? '<p class="review-hint">当前为免登录本地模式。NAS 部署时设置 ASSET_AUTH_REQUIRED=1 后可创建用户与 PC Token。</p>' :
-                '<label>Token 名称<input id="reviewTokenName" value="PC 客户端"></label><button class="review-primary" data-review-token-create>'+icon('key-round')+'生成 Token</button><div id="reviewTokenResult"></div>') +
+                '<label>Token 名称<input id="reviewTokenName" value="PC 客户端"></label><button class="hw-btn hw-btn-gold review-primary" data-review-token-create>'+icon('key-round')+'生成 Token</button><div id="reviewTokenResult"></div>') +
                 (user.role==='admin'?'<section id="reviewAdminPanel" class="review-admin-panel"><div class="share-spinner"></div></section>':'')+
-                '</div><footer><button data-review-logout>退出登录</button><button class="review-primary" data-review-close>完成</button></footer></section>';
+                '</div><footer><button class="hw-btn" data-review-logout>退出登录</button><button class="hw-btn hw-btn-gold review-primary" data-review-close>完成</button></footer></section>';
         } else {
             // 本切片认证由**外部 IdP**（OIDC 授权码 + PKCE）承担：本页**不收集**任何用户名或口令。
             // 历史缺陷（R6-9）：旧实现渲染用户名/口令表单并 POST 给 /api/asset-auth/login，
             // 而新后端该端点不消费任何请求体，只返回 {authorization_url, state} —— 属静默坏掉。
             layer.innerHTML = '<div class="asset-review-backdrop"></div><section class="asset-account-modal" data-floating-content>' +
-                '<header><div><strong>登录资产中心</strong><span>通过外部身份提供商（OIDC 授权码 + PKCE）继续</span></div></header>' +
+                '<header><div><strong>登录资产中心</strong><span>通过外部身份提供商（OIDC 授权码 + PKCE）继续</span></div><button type="button" class="hw-btn hw-btn-icon" data-review-close aria-label="关闭登录">'+icon('x')+'</button></header>' +
                 '<form id="assetAuthForm" class="asset-account-body">' +
                 '<p class="review-hint"'+(loginAvailable?'':' data-gw-degradation="not_integrated"')+'>本页不收集用户名或密码；凭据只在 IdP 页面输入。'+(loginAvailable?'':'认证服务未接入或未配置：'+esc(state.auth?.reason || '未启用外部 IdP 校验'))+'</p>' +
-                '<button class="review-primary" type="submit" '+(loginAvailable?'':'disabled')+'>'+icon('log-in')+'使用外部身份提供商登录</button>' +
+                '<button class="hw-btn hw-btn-gold review-primary" type="submit" '+(loginAvailable?'':'disabled')+'>'+icon('log-in')+'使用外部身份提供商登录</button>' +
                 '<p class="review-auth-error" id="assetAuthError"></p></form></section>';
         }
         window.lucide?.createIcons();
@@ -271,10 +271,10 @@
         state.users=userData.users||[];state.teams=teamData.teams||[];
         const panel=q('#reviewAdminPanel');if(!panel)return;
         panel.innerHTML='<details><summary>用户与角色 <span>'+state.users.length+'</span></summary><div class="review-admin-content">'+
-            '<form id="assetUserCreateForm"><input name="username" placeholder="用户名" required><input name="display_name" placeholder="显示名称" required><input name="password" type="password" placeholder="初始密码（至少8位）" minlength="8" required><select name="role"><option value="reviewer">reviewer</option><option value="editor">editor</option><option value="admin">admin</option></select><button class="review-primary" type="submit">创建用户</button></form>'+
+            '<form id="assetUserCreateForm"><input name="username" placeholder="用户名" required><input name="display_name" placeholder="显示名称" required><input name="password" type="password" placeholder="初始密码（至少8位）" minlength="8" required><select name="role"><option value="reviewer">reviewer</option><option value="editor">editor</option><option value="admin">admin</option></select><button class="hw-btn hw-btn-gold review-primary" type="submit">创建用户</button></form>'+
             '<div class="review-admin-list">'+state.users.map(user=>'<div><span><strong>'+esc(user.display_name)+'</strong><small>'+esc(user.username)+'</small></span><em>'+esc(user.role)+'</em></div>').join('')+'</div></div></details>'+
-            '<details><summary>团队 <span>'+state.teams.length+'</span></summary><div class="review-admin-content"><form id="assetTeamCreateForm"><input name="name" placeholder="团队名称" required><button class="review-primary" type="submit">创建团队</button></form>'+
-            (state.teams.length?'<form id="assetTeamMemberForm"><select name="team_id">'+state.teams.map(team=>'<option value="'+attr(team.id)+'">'+esc(team.name)+'</option>').join('')+'</select><select name="user_id">'+state.users.map(user=>'<option value="'+attr(user.id)+'">'+esc(user.display_name)+' · '+esc(roleName(user.role))+'</option>').join('')+'</select><button type="submit">加入/更新</button></form>':'')+
+            '<details><summary>团队 <span>'+state.teams.length+'</span></summary><div class="review-admin-content"><form id="assetTeamCreateForm"><input name="name" placeholder="团队名称" required><button class="hw-btn hw-btn-gold review-primary" type="submit">创建团队</button></form>'+
+            (state.teams.length?'<form id="assetTeamMemberForm"><select name="team_id">'+state.teams.map(team=>'<option value="'+attr(team.id)+'">'+esc(team.name)+'</option>').join('')+'</select><select name="user_id">'+state.users.map(user=>'<option value="'+attr(user.id)+'">'+esc(user.display_name)+' · '+esc(roleName(user.role))+'</option>').join('')+'</select><button class="hw-btn" type="submit">加入/更新</button></form>':'')+
             '<div class="review-admin-list">'+state.teams.map(team=>'<div><span><strong>'+esc(team.name)+'</strong><small>'+(team.members||[]).map(member=>esc(member.display_name)+' · '+esc(member.role)).join('，')+'</small></span><em>'+Number(team.member_count||0)+'</em></div>').join('')+'</div></div></details>';
         qa('details',panel).forEach((detail,index)=>{ if(openDetails[index]) detail.open=true; });
     }
@@ -335,7 +335,7 @@
                 '<label><span>显示名称</span><input name="display_name" required maxlength="120" placeholder="操作记录显示名称"></label>' +
                 '<label><span>初始密码</span><input name="password" type="password" minlength="8" required placeholder="至少 8 位"></label>' +
                 '<label><span>账户权限</span><select name="role">'+roleOptions('reviewer')+'</select></label>' +
-                '<button class="review-primary" type="submit">'+icon('user-plus')+'创建账户</button>' +
+                '<button class="hw-btn hw-btn-gold review-primary" type="submit">'+icon('user-plus')+'创建账户</button>' +
             '</form>' +
             '<div class="team-user-table"><div class="team-user-table-head"><span>成员</span><span>权限</span><span>状态</span><span>重设密码</span><span>操作</span></div>' +
             (state.users.length ? state.users.map(user => {
@@ -345,8 +345,8 @@
                     '<select data-team-user-role '+(isSelf?'disabled title="不能修改当前账户权限"':'')+'>'+roleOptions(user.role)+'</select>' +
                     '<select data-team-user-status '+(isSelf?'disabled title="不能停用当前账户"':'')+'><option value="active" '+(user.status==='active'?'selected':'')+'>已启用</option><option value="disabled" '+(user.status==='disabled'?'selected':'')+'>已停用</option></select>' +
                     '<input data-team-user-password type="password" minlength="8" placeholder="留空不修改" aria-label="新密码">' +
-                    '<span class="team-user-actions"><button type="button" data-team-user-save="'+attr(user.id)+'">'+icon('save')+'保存</button>' +
-                    (isSelf ? '' : '<button class="danger" type="button" data-team-user-delete="'+attr(user.id)+'" data-user-name="'+attr(user.display_name || user.username || '')+'">'+icon('trash-2')+'删除</button>') + '</span>' +
+                    '<span class="team-user-actions"><button class="hw-btn" type="button" data-team-user-save="'+attr(user.id)+'">'+icon('save')+'保存</button>' +
+                    (isSelf ? '' : '<button class="hw-btn hw-btn-danger danger" type="button" data-team-user-delete="'+attr(user.id)+'" data-user-name="'+attr(user.display_name || user.username || '')+'">'+icon('trash-2')+'删除</button>') + '</span>' +
                 '</div>';
             }).join('') : '<div class="team-empty">暂无协作账户，可从上方创建。</div>') + '</div></section>';
     }
@@ -354,16 +354,16 @@
     function renderTeamsPanel(){
         return '<section class="team-management-panel">' +
             '<div class="team-section-head"><div><strong>团队与成员</strong><span>配置团队成员及团队内权限</span></div><em>'+state.teams.length+' 个团队</em></div>' +
-            '<form id="teamCreateForm" class="team-create-inline"><input name="name" maxlength="120" required placeholder="新团队名称"><button class="review-primary" type="submit">'+icon('plus')+'创建团队</button></form>' +
+            '<form id="teamCreateForm" class="team-create-inline"><input name="name" maxlength="120" required placeholder="新团队名称"><button class="hw-btn hw-btn-gold review-primary" type="submit">'+icon('plus')+'创建团队</button></form>' +
             '<div class="team-group-list">' + (state.teams.length ? state.teams.map(team => {
                 const members = team.members || [];
-                return '<article class="team-group"><header><div><strong>'+esc(team.name)+'</strong><span>'+members.length+' 位成员</span></div><div class="team-group-actions"><code>'+esc(team.slug || '')+'</code><button class="danger" type="button" data-team-delete="'+attr(team.id)+'" data-team-name="'+attr(team.name || '')+'">'+icon('trash-2')+'删除团队</button></div></header>' +
+                return '<article class="team-group"><header><div><strong>'+esc(team.name)+'</strong><span>'+members.length+' 位成员</span></div><div class="team-group-actions"><code>'+esc(team.slug || '')+'</code><button class="hw-btn hw-btn-danger danger" type="button" data-team-delete="'+attr(team.id)+'" data-team-name="'+attr(team.name || '')+'">'+icon('trash-2')+'删除团队</button></div></header>' +
                     '<div class="team-member-list">' + (members.length ? members.map(member =>
                         '<div class="team-member-row" data-team-member-row="'+attr(team.id)+'|'+attr(member.user_id)+'"><span><strong>'+esc(member.display_name || member.username)+'</strong><small>@'+esc(member.username || '')+'</small></span>' +
-                        '<select data-team-member-role>'+roleOptions(member.role)+'</select><button type="button" data-team-member-save="'+attr(team.id)+'|'+attr(member.user_id)+'">'+icon('save')+'保存</button>' +
-                        '<button class="danger" type="button" data-team-member-remove="'+attr(team.id)+'|'+attr(member.user_id)+'">'+icon('user-minus')+'移除</button></div>'
+                        '<select data-team-member-role>'+roleOptions(member.role)+'</select><button class="hw-btn" type="button" data-team-member-save="'+attr(team.id)+'|'+attr(member.user_id)+'">'+icon('save')+'保存</button>' +
+                        '<button class="hw-btn hw-btn-danger danger" type="button" data-team-member-remove="'+attr(team.id)+'|'+attr(member.user_id)+'">'+icon('user-minus')+'移除</button></div>'
                     ).join('') : '<div class="team-empty compact">该团队暂无成员。</div>') + '</div>' +
-                    '<form class="team-member-add" data-team-member-add="'+attr(team.id)+'"><select name="user_id" required><option value="">选择成员账户</option>'+state.users.map(user=>'<option value="'+attr(user.id)+'">'+esc(user.display_name)+' · '+esc(user.username)+' · '+esc(roleName(user.role))+'</option>').join('')+'</select><button type="submit">'+icon('user-plus')+'添加成员</button></form>' +
+                    '<form class="team-member-add" data-team-member-add="'+attr(team.id)+'"><select name="user_id" required><option value="">选择成员账户</option>'+state.users.map(user=>'<option value="'+attr(user.id)+'">'+esc(user.display_name)+' · '+esc(user.username)+' · '+esc(roleName(user.role))+'</option>').join('')+'</select><button class="hw-btn" type="submit">'+icon('user-plus')+'添加成员</button></form>' +
                 '</article>';
             }).join('') : '<div class="team-empty">暂无团队，可从上方创建。</div>') + '</div></section>';
     }
@@ -377,7 +377,7 @@
                 const canApprove = pending && approval.can_approve;
                 return '<article class="team-approval-row"><header><span class="team-approval-status '+attr(approval.status)+'">'+statusName(approval.status)+'</span><time>'+teamDate(approval.operation_created_at || approval.created_at)+'</time></header>' +
                     '<div class="team-approval-main"><strong>'+esc(approvalActionName(approval.action))+'</strong><p><b>'+esc(approval.requester_name || '未知账户')+'</b> · '+esc(roleName(approval.requester_role))+' · '+esc(detail.file_name || approval.entity_id || '')+'</p></div>' +
-                    (pending ? '<div class="team-approval-actions"><input data-team-approval-note="'+attr(approval.id)+'" maxlength="2000" placeholder="审批意见（可选）"><button type="button" data-team-approval-decision="'+attr(approval.id)+'|approved" '+(canApprove?'':'disabled')+'>'+icon('check')+'通过</button><button class="danger" type="button" data-team-approval-decision="'+attr(approval.id)+'|rejected" '+(canApprove?'':'disabled')+'>'+icon('x')+'拒绝</button></div>' : '<footer>审批人：'+esc(approval.reviewer_name || '系统')+(approval.note?' · '+esc(approval.note):'')+'</footer>') +
+                    (pending ? '<div class="team-approval-actions"><input data-team-approval-note="'+attr(approval.id)+'" maxlength="2000" placeholder="审批意见（可选）"><button class="hw-btn" type="button" data-team-approval-decision="'+attr(approval.id)+'|approved" '+(canApprove?'':'disabled')+'>'+icon('check')+'通过</button><button class="hw-btn hw-btn-danger danger" type="button" data-team-approval-decision="'+attr(approval.id)+'|rejected" '+(canApprove?'':'disabled')+'>'+icon('x')+'拒绝</button></div>' : '<footer>审批人：'+esc(approval.reviewer_name || '系统')+(approval.note?' · '+esc(approval.note):'')+'</footer>') +
                     (!pending || canApprove ? '' : '<small class="team-approval-limit">只能审批其他账户且权限低于自己的操作</small>') +
                 '</article>';
             }).join('') : '<div class="team-empty">当前筛选下没有审批记录。</div>') + '</div></section>';
@@ -392,9 +392,9 @@
             ? '<div class="team-loading"><span class="share-spinner"></span><strong>正在加载团队数据…</strong></div>'
             : state.teamTab === 'members' ? renderTeamMembersPanel() : state.teamTab === 'teams' ? renderTeamsPanel() : renderApprovalsPanel();
         layer.innerHTML = '<div class="asset-review-backdrop" data-team-close></div><section class="asset-team-modal" data-floating-content role="dialog" aria-modal="true" aria-label="团队管理">' +
-            '<header><div><strong>'+(admin?'团队管理':'操作审批')+'</strong><span>'+esc(state.auth?.principal?.display_name || '')+' · '+esc(roleName(state.auth?.principal?.role))+'</span></div><button type="button" data-team-close aria-label="关闭">'+icon('x')+'</button></header>' +
+            '<header><div><strong>'+(admin?'团队管理':'操作审批')+'</strong><span>'+esc(state.auth?.principal?.display_name || '')+' · '+esc(roleName(state.auth?.principal?.role))+'</span></div><button class="hw-btn" type="button" data-team-close aria-label="关闭">'+icon('x')+'</button></header>' +
             '<div class="asset-team-workspace"><nav aria-label="团队管理导航">'+tabs.map(([id,label,iconName])=>'<button type="button" data-team-tab="'+id+'" class="'+(state.teamTab===id?'active':'')+'">'+icon(iconName)+'<span>'+label+'</span>'+(id==='approvals'&&state.approvals.filter(item=>item.status==='pending').length?'<em>'+state.approvals.filter(item=>item.status==='pending').length+'</em>':'')+'</button>').join('')+'</nav><main>'+body+'</main></div>' +
-            '<footer><span>所有变更都会记录操作人和时间</span><button type="button" data-team-close>完成</button></footer></section>';
+            '<footer><span>所有变更都会记录操作人和时间</span><button class="hw-btn" type="button" data-team-close>完成</button></footer></section>';
         window.lucide?.createIcons();
     }
 
@@ -547,7 +547,7 @@
                 expires_days:365,
             }));
             const result = q('#reviewTokenResult');
-            if(result) result.innerHTML = '<div class="token-result"><span>仅显示一次，请立即复制</span><code>'+esc(data.secret)+'</code><button data-review-copy="'+attr(data.secret)+'">'+icon('copy')+'复制</button></div>';
+            if(result) result.innerHTML = '<div class="token-result"><span>仅显示一次，请立即复制</span><code>'+esc(data.secret)+'</code><button class="hw-btn" data-review-copy="'+attr(data.secret)+'">'+icon('copy')+'复制</button></div>';
             window.lucide?.createIcons();
         } catch(error){ toast(error.message, true); }
     }
@@ -687,7 +687,7 @@
 
     function commentMarkup(comment){
         const time = comment.timecode_ms !== null && comment.timecode_ms !== undefined
-            ? '<button data-review-seek="'+Number(comment.timecode_ms)+'">'+icon('timer')+formatTimecode(comment.timecode_ms)+'</button>' : '';
+            ? '<button class="hw-btn" data-review-seek="'+Number(comment.timecode_ms)+'">'+icon('timer')+formatTimecode(comment.timecode_ms)+'</button>' : '';
         const range = comment.in_ms !== null && comment.in_ms !== undefined
             ? '<span>'+formatTimecode(comment.in_ms)+' – '+formatTimecode(comment.out_ms)+'</span>' : '';
         const resolved = comment.status === 'resolved';
@@ -695,8 +695,8 @@
             '<header><strong>'+esc(comment.author_name || '访客')+'</strong><time>'+new Date(Number(comment.created_at || 0)).toLocaleString()+'</time></header>' +
             '<p>'+esc(comment.body || (comment.annotations?.length ? '图形批注' : '')).replace(/\n/g,'<br>')+'</p>' +
             '<footer>'+time+range+(comment.annotations?.length?'<span>'+icon('pencil-line')+comment.annotations.length+' 个标记</span>':'') +
-            (can('reviewer')?'<button data-review-resolve="'+attr(comment.id)+'" data-resolved="'+(resolved?'1':'0')+'">'+icon(resolved?'rotate-ccw':'check')+(resolved?'重新打开':'解决')+'</button>':'')+
-            '<button data-review-reply="'+attr(comment.id)+'">'+icon('reply')+'回复</button></footer></article>';
+            (can('reviewer')?'<button class="hw-btn" data-review-resolve="'+attr(comment.id)+'" data-resolved="'+(resolved?'1':'0')+'">'+icon(resolved?'rotate-ccw':'check')+(resolved?'重新打开':'解决')+'</button>':'')+
+            '<button class="hw-btn" data-review-reply="'+attr(comment.id)+'">'+icon('reply')+'回复</button></footer></article>';
     }
 
     function approvalMarkup(){
@@ -704,7 +704,7 @@
         const status = state.detail?.session?.status || 'open';
         return '<section class="review-approval"><div><strong>版本审批</strong><span class="review-status '+attr(status)+'">'+esc(status)+'</span></div>' +
             '<p>'+(latest ? esc((latest.reviewer_name || '')+'：'+(latest.note || latest.status)) : '尚无审批记录')+'</p>' +
-            (can('reviewer')?'<div><button data-review-approval="changes_requested">'+icon('message-square-warning')+'需修改</button><button data-review-approval="approved">'+icon('badge-check')+'通过</button>'+(can('editor')?'<button data-review-approval="locked">'+icon('lock-keyhole')+'锁定</button>':'')+'</div>':'')+'</section>';
+            (can('reviewer')?'<div><button class="hw-btn" data-review-approval="changes_requested">'+icon('message-square-warning')+'需修改</button><button class="hw-btn" data-review-approval="approved">'+icon('badge-check')+'通过</button>'+(can('editor')?'<button class="hw-btn" data-review-approval="locked">'+icon('lock-keyhole')+'锁定</button>':'')+'</div>':'')+'</section>';
     }
 
     function injectDeliveryAction(){
@@ -752,7 +752,7 @@
         const session = state.detail?.session;
         layer.className = 'asset-review-layer review-open';
         if(!session){
-            layer.innerHTML = '<div class="asset-review-backdrop" data-review-close></div><section class="asset-review-drawer" data-floating-content><header><strong>审阅批注</strong><button data-review-close>'+icon('x')+'</button></header><div class="review-empty">暂无审阅会话，当前账号只有查看权限。</div></section>';
+            layer.innerHTML = '<div class="asset-review-backdrop" data-review-close></div><section class="asset-review-drawer" data-floating-content><header><strong>审阅批注</strong><button type="button" class="hw-btn" data-review-close aria-label="关闭审阅面板">'+icon('x')+'</button></header><div class="review-empty">暂无审阅会话，当前账号只有查看权限。</div></section>';
             window.lucide?.createIcons();
             return;
         }
@@ -760,18 +760,18 @@
         layer.innerHTML = '<div class="asset-review-backdrop" data-review-close></div><section class="asset-review-drawer" data-floating-content>' +
             '<header class="review-drawer-head"><div><strong>'+esc(session.title)+'</strong><span>'+esc(state.asset?.name || session.asset_name || '')+'</span></div>' +
             '<div><select id="reviewSessionSelect">'+state.sessions.map(item=>'<option value="'+attr(item.id)+'" '+(item.id===session.id?'selected':'')+'>'+esc(item.title)+'</option>').join('')+'</select>' +
-            (can('editor')?'<button data-review-share>'+icon('share-2')+'分享</button>':'')+'<button data-review-close>'+icon('x')+'</button></div></header>' +
+            (can('editor')?'<button class="hw-btn" data-review-share>'+icon('share-2')+'分享</button>':'')+'<button type="button" class="hw-btn" data-review-close aria-label="关闭审阅面板">'+icon('x')+'</button></div></header>' +
             '<div class="review-workspace"><section class="review-stage-wrap"><div class="review-stage" data-review-draw-surface>' +
             mediaMarkup(state.asset || session, session) + (state.asset?.kind !== 'audio' ? annotationLayer() : '') +
             '<div class="review-watermark">INFINITE CANVAS · REVIEW</div></div>' +
             '<div class="review-drawbar"><span>批注工具</span>' +
-            ['pin','rect','ellipse','arrow','freehand'].map(mode=>'<button class="'+(state.drawMode===mode?'active':'')+'" data-review-tool="'+mode+'">'+icon({pin:'map-pin',rect:'square',ellipse:'circle',arrow:'move-up-right',freehand:'pencil'}[mode])+'</button>').join('') +
-            '<button data-review-clear-draft>'+icon('eraser')+'清除标记</button>' +
-            (['video','audio'].includes(state.asset?.kind)?'<button data-review-capture-time>'+icon('timer')+'取当前时间点</button>':'') +
+            ['pin','rect','ellipse','arrow','freehand'].map(mode=>'<button type="button" class="hw-btn '+(state.drawMode===mode?'active':'')+'" data-review-tool="'+mode+'" aria-label="'+({pin:'位置标记',rect:'矩形',ellipse:'椭圆',arrow:'箭头',freehand:'自由绘制'}[mode])+'" aria-pressed="'+(state.drawMode===mode?'true':'false')+'">'+icon({pin:'map-pin',rect:'square',ellipse:'circle',arrow:'move-up-right',freehand:'pencil'}[mode])+'</button>').join('') +
+            '<button class="hw-btn" data-review-clear-draft>'+icon('eraser')+'清除标记</button>' +
+            (['video','audio'].includes(state.asset?.kind)?'<button class="hw-btn" data-review-capture-time>'+icon('timer')+'取当前时间点</button>':'') +
             (state.timecodeMs!==null?'<em>'+formatTimecode(state.timecodeMs)+'</em>':'')+'</div></section>' +
             '<aside class="review-sidebar">'+approvalMarkup()+'<section class="review-thread"><header><strong>评论</strong><span>'+comments.length+'</span></header>' +
             '<div class="review-comments">'+(comments.map(commentMarkup).join('') || '<div class="review-empty">还没有评论</div>')+'</div>' +
-            (can('reviewer')?'<form id="reviewCommentForm"><input id="reviewReplyId" type="hidden"><div id="reviewReplyHint"></div><textarea name="body" placeholder="写下修改意见，或直接在画面上标记…"></textarea><div><label><input name="visibility" type="checkbox" value="internal"> 仅内部可见</label><button class="review-primary" type="submit">'+icon('send')+'发布评论</button></div></form>':'') +
+            (can('reviewer')?'<form id="reviewCommentForm"><input id="reviewReplyId" type="hidden"><div id="reviewReplyHint"></div><textarea name="body" placeholder="写下修改意见，或直接在画面上标记…"></textarea><div><label><input name="visibility" type="checkbox" value="internal"> 仅内部可见</label><button class="hw-btn hw-btn-gold review-primary" type="submit">'+icon('send')+'发布评论</button></div></form>':'') +
             '</section></aside></div></section>';
         window.lucide?.createIcons();
         injectDeliveryAction();
@@ -884,12 +884,12 @@
         const sessionId = activeSession && assetIds.includes(activeSession.asset_id) ? activeSession.session_id : '';
         const layer = ensureLayer();
         layer.className = 'asset-review-layer share-open';
-        layer.innerHTML = '<div class="asset-review-backdrop" data-review-close></div><section class="asset-share-modal" data-floating-content><header><div><strong>创建审阅分享</strong><span>'+assetIds.length+' 个资产</span></div><button data-review-close>'+icon('x')+'</button></header>' +
+        layer.innerHTML = '<div class="asset-review-backdrop" data-review-close></div><section class="asset-share-modal" data-floating-content><header><div><strong>创建审阅分享</strong><span>'+assetIds.length+' 个资产</span></div><button type="button" class="hw-btn" data-review-close aria-label="关闭审阅分享设置">'+icon('x')+'</button></header>' +
             '<form id="assetShareForm"><label>分享标题<input name="title" value="'+attr((state.asset?.name || '素材')+' 审阅')+'" maxlength="160"></label>' +
             '<div class="share-form-grid"><label>访问密码<input name="password" type="password" placeholder="留空则无需密码"></label><label>有效天数<input name="days" type="number" value="7" min="1" max="3650"></label>' +
             '<label>最多访问次数<input name="max_access_count" type="number" value="0" min="0"><small>0 表示不限</small></label><label>水印文字<input name="watermark_text" value="仅供审阅"></label></div>' +
             '<div class="share-permissions"><label><input name="can_comment" type="checkbox" checked> 允许评论与审批</label><label><input name="can_download" type="checkbox"> 允许下载原文件</label></div>' +
-            '<input name="asset_ids" type="hidden" value="'+attr(assetIds.join(','))+'"><input name="session_id" type="hidden" value="'+attr(sessionId)+'"><button class="review-primary" type="submit">'+icon('link')+'创建链接</button><div id="shareCreateResult"></div></form></section>';
+            '<input name="asset_ids" type="hidden" value="'+attr(assetIds.join(','))+'"><input name="session_id" type="hidden" value="'+attr(sessionId)+'"><button class="hw-btn hw-btn-gold review-primary" type="submit">'+icon('link')+'创建链接</button><div id="shareCreateResult"></div></form></section>';
         window.lucide?.createIcons();
     }
 
@@ -913,7 +913,7 @@
             if (!token) throw new Error('分享未返回一次性令牌，不能生成访问链接');
             const url = location.origin + '/share/' + encodeURIComponent(token);
             const result = q('#shareCreateResult');
-            if(result) result.innerHTML = '<div class="share-result"><span>链接已创建，密钥不会再次显示</span><code>'+esc(url)+'</code><button type="button" data-review-copy="'+attr(url)+'">'+icon('copy')+'复制链接</button></div>';
+            if(result) result.innerHTML = '<div class="share-result"><span>链接已创建，密钥不会再次显示</span><code>'+esc(url)+'</code><button class="hw-btn" type="button" data-review-copy="'+attr(url)+'">'+icon('copy')+'复制链接</button></div>';
             window.lucide?.createIcons();
         } catch(error){ toast(error.message,true); }
     }
@@ -949,7 +949,7 @@
         const copy = target.closest?.('[data-review-copy]');
         if(copy){ await navigator.clipboard.writeText(copy.dataset.reviewCopy||''); toast('已复制'); return; }
         const tool = target.closest?.('[data-review-tool]');
-        if(tool){ state.drawMode=tool.dataset.reviewTool||'pin'; qa('[data-review-tool]').forEach(node=>node.classList.toggle('active',node===tool)); return; }
+        if(tool){ state.drawMode=tool.dataset.reviewTool||'pin'; qa('[data-review-tool]').forEach(node=>{ const selected=node===tool; node.classList.toggle('active',selected); node.setAttribute('aria-pressed',String(selected)); }); return; }
         if(target.closest?.('[data-review-clear-draft]')){ state.draftAnnotation=null;refreshAnnotationSvg();return; }
         if(target.closest?.('[data-review-capture-time]')){
             const media=q('#reviewMedia');state.timecodeMs=Math.round(Number(media?.currentTime||0)*1000);renderReview();return;

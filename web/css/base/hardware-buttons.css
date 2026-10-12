@@ -1,0 +1,493 @@
+/* GW-BTN-01 / GW-BTN-02 / GW-ORB-01：共享硬件按钮材质。视觉依据见本地原稿，
+   项目尺寸映射为LG40/MD32/SM26/XS20，既有Launch Orb固定32px。 */
+
+/* 共用焦点颜色可在 forced-colors 中直接切到系统高亮色。 */
+:root { --gw-focus-color:var(--gold-primary); }
+
+/* Tactile default and legacy .hw-btn aliases. */
+:is(.hw-btn,.btn-hw-tactile,.btn-tactile-keycap) {
+  --button-height:32px;
+  --button-padding:16px;
+  --button-icon:14px;
+  box-sizing:border-box;
+  height:var(--button-height);
+  min-height:var(--button-height);
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  gap:6px;
+  padding:0 var(--button-padding);
+  border:1px solid rgb(223 195 132 / .2);
+  border-top-color:rgb(255 255 255 / .18);
+  border-radius:9px;
+  background:linear-gradient(180deg,#1e222d 0%,#11131a 100%);
+  color:#d1d5db;
+  box-shadow:inset 0 1px 0 rgb(255 255 255 / .14),0 4px 8px rgb(0 0 0 / .75),0 1px 0 rgb(0 0 0 / .9);
+  font-family:var(--gw-font-body);
+  font-size:var(--gw-type-button-md);
+  font-weight:var(--gw-weight-bold);
+  line-height:1;
+  letter-spacing:0;
+  text-transform:none;
+  white-space:nowrap;
+  cursor:pointer;
+  transition:background .12s ease,border-color .12s ease,color .12s ease,box-shadow .12s ease,transform .12s ease;
+}
+:is(.hw-btn,.btn-hw-tactile,.btn-tactile-keycap) :is(svg,[data-lucide]) {
+  width:var(--button-icon);
+  height:var(--button-icon);
+  flex:0 0 var(--button-icon);
+}
+:is(.hw-btn,.btn-hw-tactile,.btn-tactile-keycap):hover:not(:disabled):not([aria-disabled="true"]) {
+  border-color:rgb(223 195 132 / .45);
+  background:linear-gradient(180deg,#252a36 0%,#151822 100%);
+  color:#fae2c8;
+  box-shadow:inset 0 1px 0 rgb(255 255 255 / .24),0 4px 12px rgb(0 0 0 / .85),0 0 10px rgb(223 195 132 / .2);
+}
+:is(.hw-btn,.btn-hw-tactile,.btn-tactile-keycap):active:not(:disabled):not([aria-disabled="true"]) {
+  transform:translateY(1.5px);
+  background:linear-gradient(180deg,#101217 0%,#161922 100%);
+  border-color:rgb(223 195 132 / .3);
+  box-shadow:inset 0 2px 5px rgb(0 0 0 / .9),0 1px 2px rgb(0 0 0 / .5);
+}
+:is(.hw-btn,.btn-hw-tactile).engaged,
+:is(.hw-btn,.btn-hw-tactile)[aria-pressed="true"] {
+  border-color:var(--gold-primary);
+  color:var(--gold-primary);
+}
+:is(.btn-tactile-compound,.hw-btn-compound) { transition:all .15s cubic-bezier(.2,0,0,1); }
+:is(.btn-tactile-compound,.hw-btn-compound):hover:not(:disabled):not([aria-disabled="true"]) {
+  border-color:rgb(223 195 132 / .7);
+  box-shadow:inset 0 1px 0 rgb(255 255 255 / .35),0 5px 12px rgb(0 0 0 / .85);
+}
+:is(.btn-tactile-compound,.hw-btn-compound):hover:not(:disabled):not([aria-disabled="true"]) .compound-label { color:var(--gw-keycap-gold); }
+:is(.btn-tactile-compound,.hw-btn-compound):active:not(:disabled):not([aria-disabled="true"]) {
+  transform:translateY(2px) scale(.985);
+  background:linear-gradient(180deg,#0d0f14 0%,#151820 100%);
+  box-shadow:inset 0 3px 6px rgb(0 0 0 / .95);
+}
+
+/* 金色主键三态保持金属背景与深色刻字，按压只改变内凹与位移。 */
+:is(.hw-btn-gold,.primary-ignite,.btn-tactile-keycap.primary-ignite) {
+  background:linear-gradient(180deg,var(--gw-keycap-gold) 0%,#b89354 100%);
+  border:1px solid var(--gw-keycap-flare);
+  border-bottom-color:#8c6828;
+  color:var(--gw-engraved-text);
+  font-weight:var(--gw-weight-bold);
+  box-shadow:0 4px 6px rgb(0 0 0 / .75),inset 0 1px 0 rgb(255 255 255 / .9),inset 0 -2px 3px rgb(140 104 40 / .6);
+  transition:all .16s cubic-bezier(.34,1.56,.64,1);
+}
+:is(.hw-btn-gold,.primary-ignite,.btn-tactile-keycap.primary-ignite):hover:not(:disabled):not([aria-disabled="true"]) {
+  background:linear-gradient(180deg,var(--gw-keycap-gold) 0%,#b89354 100%);
+  border:1px solid var(--gw-keycap-flare);
+  border-bottom-color:#8c6828;
+  color:var(--gw-engraved-text);
+  filter:brightness(1.12);
+  transform:translateY(-2px);
+  box-shadow:0 7px 14px rgb(0 0 0 / .85),inset 0 1.5px 0 #fff,inset 0 -1px 2px rgb(140 104 40 / .5);
+}
+:is(.hw-btn-gold,.primary-ignite,.btn-tactile-keycap.primary-ignite):active:not(:disabled):not([aria-disabled="true"]) {
+  background:linear-gradient(180deg,var(--gw-keycap-gold) 0%,#b89354 100%);
+  border:1px solid var(--gw-keycap-flare);
+  border-bottom-color:#8c6828;
+  color:var(--gw-engraved-text);
+  transform:translateY(2.5px) scale(.97);
+  filter:brightness(.92);
+  box-shadow:inset 0 4px 9px rgb(0 0 0 / .92),inset 0 -1px 0 rgb(255 255 255 / .2);
+}
+
+/* 发光胶囊仅固定顶栏10个导航使用；材质规则限定顶栏，其他位置用常规按钮。 */
+.topbar-master-deck :is(.btn-pill-active,.pill-capsule-active,.btn-pill-inactive,.pill-capsule-inactive) {
+  --button-height:32px;
+  --button-padding:16px;
+  --button-icon:14px;
+  box-sizing:border-box;
+  height:var(--button-height);
+  min-height:var(--button-height);
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  gap:6px;
+  padding:0 var(--button-padding);
+  border-radius:9999px;
+  font-family:var(--gw-font-body);
+  font-size:var(--gw-type-button-md);
+  font-weight:var(--gw-weight-bold);
+  line-height:1;
+  letter-spacing:0;
+  white-space:nowrap;
+  cursor:pointer;
+  transition:all .15s cubic-bezier(.2,0,0,1);
+}
+.topbar-master-deck :is(.btn-pill-active,.pill-capsule-active) {
+  background:radial-gradient(ellipse 75% 65% at 50% 50%,#fff 0%,#fff2dc 25%,#f5cf92 55%,#dfac64 80%,#b8823f 100%);
+  border:1px solid rgb(255 255 255 / .75);
+  border-bottom-color:rgb(223 195 132 / .4);
+  color:#1a1308;
+  box-shadow:0 4px 9px .5px rgb(223 195 132 / .35),0 7px 14px 1px rgb(186 147 91 / .22),0 3px 6px rgb(0 0 0 / .55),inset 0 1.5px 1.5px rgb(255 255 255 / .95),inset 0 -1.5px 2px rgb(120 80 25 / .35);
+}
+.topbar-master-deck :is(.btn-pill-active,.pill-capsule-active):hover:not(:disabled):not([aria-disabled="true"]) {
+  filter:brightness(1.05);
+  box-shadow:0 5px 11px .5px rgb(223 195 132 / .42),0 8px 16px 1px rgb(186 147 91 / .28),0 3px 6px rgb(0 0 0 / .5),inset 0 1.5px 1.5px #fff;
+}
+.topbar-master-deck :is(.btn-pill-active,.pill-capsule-active):active:not(:disabled):not([aria-disabled="true"]) {
+  transform:translateY(1.5px);
+  box-shadow:0 2px 5px .5px rgb(223 195 132 / .25),0 2px 4px rgb(0 0 0 / .6),inset 0 1px 1px rgb(255 255 255 / .85);
+}
+.topbar-master-deck :is(.btn-pill-inactive,.pill-capsule-inactive) {
+  background:linear-gradient(180deg,#1f232d 0%,#111319 100%);
+  border:1px solid rgb(255 255 255 / .09);
+  color:#94a3b8;
+  box-shadow:inset 0 1px 0 rgb(255 255 255 / .16),0 2px 5px rgb(0 0 0 / .7);
+}
+.topbar-master-deck :is(.btn-pill-inactive,.pill-capsule-inactive):hover:not(:disabled):not([aria-disabled="true"]) {
+  background:linear-gradient(180deg,#272c38 0%,#161821 100%);
+  border-color:rgb(223 195 132 / .4);
+  color:#eddab3;
+  box-shadow:inset 0 1px 0 rgb(255 255 255 / .25),0 0 10px rgb(223 195 132 / .2);
+}
+.topbar-master-deck :is(.btn-pill-inactive,.pill-capsule-inactive):active:not(:disabled):not([aria-disabled="true"]) {
+  transform:translateY(1px);
+  background:#0e1015;
+  box-shadow:inset 0 2px 4px rgb(0 0 0 / .85);
+}
+
+/* 原稿禁用胶囊保留独立哑光材质。 */
+.topbar-master-deck .btn-pill-disabled {
+  background:#12141a;
+  border:1px solid rgb(255 255 255 / .04);
+  color:#475569;
+  cursor:not-allowed;
+  box-shadow:none;
+  opacity:.6;
+}
+
+/* Semantic danger variants keep an obsidian body and restrained carmine signal. */
+:is(.hw-btn-danger,.btn-hw-danger,.btn-abort-carmine) {
+  background:linear-gradient(180deg,#181113 0%,#0d0a0b 100%);
+  border:1px solid rgb(140 0 0 / .55);
+  color:rgb(229 163 163);
+  text-shadow:none;
+  box-shadow:inset 0 1px 0 rgb(255 255 255 / .08),0 2px 5px rgb(0 0 0 / .7);
+}
+:is(.hw-btn-danger,.btn-hw-danger,.btn-abort-carmine):hover:not(:disabled):not([aria-disabled="true"]) {
+  background:linear-gradient(180deg,#241315 0%,#150a0c 100%);
+  border-color:var(--gw-danger-cap);
+  color:#ffcccc;
+  box-shadow:inset 0 1px 0 rgb(255 255 255 / .15),0 0 10px rgb(140 0 0 / .35);
+}
+:is(.btn-override-carmine,.btn-tactile-keycap.btn-override-carmine) {
+  background:linear-gradient(180deg,#1b1113 0%,#0f0a0c 100%);
+  border:1px solid rgb(140 0 0 / .6);
+  border-top-color:rgb(255 120 120 / .25);
+  color:rgb(241 168 168);
+  box-shadow:inset 0 1px 0 rgb(255 255 255 / .08),0 4px 8px rgb(0 0 0 / .8);
+}
+:is(.btn-override-carmine,.btn-tactile-keycap.btn-override-carmine):hover:not(:disabled):not([aria-disabled="true"]) {
+  background:linear-gradient(180deg,#281417 0%,#170b0e 100%);
+  border-color:var(--gw-danger-cap);
+  border-top-color:rgb(255 140 140 / .4);
+  color:#ffcccc;
+  box-shadow:inset 0 1px 0 rgb(255 255 255 / .18),0 0 14px rgb(140 0 0 / .4);
+}
+
+/* Project sizing and compatibility aliases. */
+.btn-size-lg { --button-height:40px; --button-padding:20px; --button-icon:16px; font-size:var(--gw-type-button-md); }
+:is(.btn-size-sm,.hw-btn-sm,.hw-btn-pad-26,.hw-btn-pad-36,.hw-btn-pad-27,.hw-btn-pad-37,.hw-btn-pad-28,.hw-btn-pad-38) { --button-height:26px; --button-padding:12px; --button-icon:12px; font-size:var(--gw-type-button-sm); }
+.btn-size-xs { --button-height:20px; --button-padding:8px; --button-icon:10px; font-family:var(--gw-font-mono); font-size:var(--gw-type-button-xs); }
+.hw-btn-icon { width:var(--button-height); min-width:var(--button-height); padding:0; gap:0; }
+.topbar-master-deck .nav-pill-btn { --button-height:40px; --button-padding:20px; --button-icon:16px; }
+:is(.hw-btn,.btn-hw-tactile,.btn-tactile-keycap,.btn-pill-active,.pill-capsule-active,.btn-pill-inactive,.pill-capsule-inactive,.btn-segmented-item,.hw-segmented-btn,.btn-rocker-paddle,.hw-rocker-btn) :is(svg,[data-lucide]) { width:var(--button-icon); height:var(--button-icon); flex:0 0 var(--button-icon); }
+
+/* Segmented selector: shared recessed deck, distinct selected inlay. */
+:is(.btn-segmented-deck,.btn-segmented-group,.hw-segmented-group) {
+  display:inline-flex;
+  gap:0;
+  padding:3px;
+  border:1px solid rgb(255 255 255 / .08);
+  border-radius:8px;
+  background:#07080c;
+  box-shadow:inset 0 2px 5px rgb(0 0 0 / .95),0 1px 0 rgb(255 255 255 / .05);
+}
+:is(.btn-segmented-item,.hw-segmented-btn) {
+  --button-height:32px;
+  --button-icon:12px;
+  box-sizing:border-box;
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  gap:5px;
+  padding:4px 10px;
+  border:1px solid transparent;
+  border-radius:6px;
+  background:transparent;
+  color:#94a3b8;
+  font-family:var(--gw-font-body);
+  font-size:var(--gw-type-button-sm);
+  font-weight:var(--gw-weight-bold);
+  line-height:1;
+  cursor:pointer;
+  transition:all .12s ease;
+}
+:is(.btn-segmented-item,.hw-segmented-btn):hover:not(:disabled):not([aria-disabled="true"]) { color:#eddab3; }
+:is(.btn-segmented-item,.hw-segmented-btn):is(.active,.is-active,[aria-selected="true"],[aria-pressed="true"]) {
+  border-color:rgb(223 195 132 / .35);
+  background:linear-gradient(180deg,#272c38 0%,#151821 100%);
+  color:var(--gw-keycap-gold);
+  box-shadow:inset 0 1px 0 rgb(255 255 255 / .22),0 2px 4px rgb(0 0 0 / .7),0 0 8px rgb(223 195 132 / .25);
+}
+:is(.btn-segmented-item,.hw-segmented-btn):active:not(:disabled):not([aria-disabled="true"]) { transform:translateY(1px); }
+
+/* Stepper rocker: separate paddles inside a narrow mechanical housing. */
+:is(.btn-rocker-housing,.hw-rocker-stepper) {
+  display:inline-flex;
+  gap:0;
+  padding:2px;
+  border:1px solid rgb(255 255 255 / .08);
+  border-radius:8px;
+  background:#08090d;
+  box-shadow:inset 0 2px 5px rgb(0 0 0 / .95);
+}
+:is(.btn-rocker-paddle,.hw-rocker-btn) {
+  --button-height:32px;
+  --button-icon:12px;
+  box-sizing:border-box;
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  padding:3px 9px;
+  border:1px solid rgb(255 255 255 / .09);
+  background:linear-gradient(180deg,#20242e 0%,#13151b 100%);
+  color:#94a3b8;
+  box-shadow:inset 0 1px 0 rgb(255 255 255 / .16),0 1px 3px rgb(0 0 0 / .6);
+  cursor:pointer;
+  transition:all .1s ease;
+}
+:is(.btn-rocker-paddle,.hw-rocker-btn):first-child { border-radius:6px 2px 2px 6px; }
+:is(.btn-rocker-paddle,.hw-rocker-btn):last-child { margin-left:1px; border-radius:2px 6px 6px 2px; }
+:is(.btn-rocker-paddle,.hw-rocker-btn):hover:not(:disabled):not([aria-disabled="true"]) { border-color:rgb(223 195 132 / .35); background:linear-gradient(180deg,#272d3b 0%,#171a22 100%); color:var(--gw-keycap-flare); }
+:is(.btn-rocker-paddle,.hw-rocker-btn):active:not(:disabled):not([aria-disabled="true"]) { transform:translateY(1px); background:#0c0e12; box-shadow:inset 0 2px 4px rgb(0 0 0 / .9); }
+
+/* Slide toggle retains the original 44 x 22 recess and luminous 16px peg. */
+:is(.btn-slide-toggle,.hw-slide-toggle) {
+  width:44px;
+  height:22px;
+  flex:0 0 auto;
+  box-sizing:border-box;
+  display:inline-flex;
+  align-items:center;
+  position:relative;
+  padding:2px;
+  border:1px solid rgb(255 255 255 / .09);
+  border-radius:9999px;
+  background:#050608;
+  box-shadow:inset 0 2px 5px rgb(0 0 0 / .98),0 1px 0 rgb(255 255 255 / .05);
+  cursor:pointer;
+  transition:all .2s cubic-bezier(.4,0,.2,1);
+}
+:is(.btn-slide-peg,.hw-slide-peg) {
+  width:16px;
+  height:16px;
+  flex:0 0 16px;
+  border:1px solid rgb(255 255 255 / .7);
+  border-radius:50%;
+  background:linear-gradient(180deg,#fff 0%,#eddab3 50%,#baa27a 100%);
+  box-shadow:0 0 10px rgb(223 195 132 / .75),0 2px 4px rgb(0 0 0 / .8),inset 0 1px 0 rgb(255 255 255 / .9);
+  transform:translateX(0);
+  transition:transform .2s cubic-bezier(.34,1.25,.64,1);
+}
+:is(.btn-slide-toggle,.hw-slide-toggle):is(.active,[aria-checked="true"],[aria-pressed="true"]) { background:#090a10; border-color:rgb(223 195 132 / .4); }
+:is(.btn-slide-toggle,.hw-slide-toggle):is(.active,[aria-checked="true"],[aria-pressed="true"]) :is(.btn-slide-peg,.hw-slide-peg) { transform:translateX(22px); box-shadow:0 0 14px rgb(223 195 132 / .95),0 2px 5px rgb(0 0 0 / .9); }
+
+/* Round push key: final source override locks the outer ring; only the inset key moves. */
+:is(.btn-hw-round,.hw-round-btn) {
+  width:var(--button-height,32px);
+  height:var(--button-height,32px);
+  min-width:var(--button-height,32px);
+  padding:2.5px;
+  position:relative;
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  flex:0 0 auto;
+  border:1.5px solid rgb(223 195 132 / .22) !important;
+  border-radius:50%;
+  background:#08090d;
+  box-shadow:inset 0 2px 5px rgb(0 0 0 / .95),0 1px 0 rgb(255 255 255 / .05) !important;
+  cursor:pointer;
+  transition:none !important;
+}
+:is(.btn-hw-round,.hw-round-btn):is(:hover,:active,.active-power,.power-engaged,.active,[aria-checked="true"],[aria-pressed="true"]) { border-color:rgb(223 195 132 / .22) !important; box-shadow:inset 0 2px 5px rgb(0 0 0 / .95),0 1px 0 rgb(255 255 255 / .05) !important; }
+/* 默认内胆填满可用空间；零优先级允许调用方既有几何覆盖。 */
+:where(.btn-hw-round-inner,.hw-round-inner) { width:calc(var(--button-height,32px) - 8px); height:calc(var(--button-height,32px) - 8px); }
+:is(.btn-hw-round-inner,.hw-round-inner) {
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  border:1px solid rgb(255 255 255 / .12);
+  border-radius:50%;
+  background:linear-gradient(180deg,#20242e 0%,#111319 100%);
+  color:#94a3b8;
+  box-shadow:inset 0 1px 0 rgb(255 255 255 / .22),0 2px 5px rgb(0 0 0 / .85);
+  transition:all .12s cubic-bezier(.2,0,0,1);
+}
+:is(.btn-hw-round,.hw-round-btn):not(:is(.active-power,.power-engaged,.active,[aria-checked="true"],[aria-pressed="true"])):hover:not(:disabled):not([aria-disabled="true"]) :is(.btn-hw-round-inner,.hw-round-inner) {
+  border-color:rgb(223 195 132 / .6);
+  background:linear-gradient(180deg,#272d3a 0%,#151821 100%);
+  color:var(--gw-keycap-gold);
+  box-shadow:inset 0 1px 0 rgb(255 255 255 / .32),0 2px 5px rgb(0 0 0 / .85);
+}
+:is(.btn-hw-round,.hw-round-btn):not(:is(.active-power,.power-engaged,.active,[aria-checked="true"],[aria-pressed="true"])):active:not(:disabled):not([aria-disabled="true"]) :is(.btn-hw-round-inner,.hw-round-inner) {
+  transform:translateY(1.5px) scale(.96);
+  background:#0b0d12;
+  box-shadow:inset 0 2px 4px rgb(0 0 0 / .95);
+}
+:is(.btn-hw-round,.hw-round-btn):is(.active-power,.power-engaged,.active,[aria-checked="true"],[aria-pressed="true"]) :is(.btn-hw-round-inner,.hw-round-inner) {
+  border-color:var(--gw-keycap-flare);
+  background:linear-gradient(180deg,#fff3dc 0%,#fae2c8 30%,var(--gw-keycap-gold) 70%,#b89354 100%);
+  color:var(--gw-engraved-text);
+  box-shadow:inset 0 1.5px 1px rgb(255 255 255 / .95),inset 0 -1.5px 2px rgb(110 75 20 / .5),0 2px 4px rgb(0 0 0 / .7);
+}
+:is(.btn-hw-round,.hw-round-btn):is(.active-power,.power-engaged,.active,[aria-checked="true"],[aria-pressed="true"]):hover:not(:disabled):not([aria-disabled="true"]) :is(.btn-hw-round-inner,.hw-round-inner) { filter:brightness(1.06); }
+:is(.btn-hw-round,.hw-round-btn):is(.active-power,.power-engaged,.active,[aria-checked="true"],[aria-pressed="true"]):active:not(:disabled):not([aria-disabled="true"]) :is(.btn-hw-round-inner,.hw-round-inner) { transform:translateY(1.5px) scale(.96); filter:brightness(.95); }
+:is(.rec-node-standby,.btn-hw-round.rec-node-standby) .rec-bead {
+  border:1px solid rgb(255 100 100 / .35);
+  background:radial-gradient(circle at 35% 35%,#b32626 0%,var(--gw-danger-cap) 65%,#4a0000 100%);
+  box-shadow:0 0 4px rgb(140 0 0 / .4);
+}
+:is(.rec-node-active,.btn-hw-round.rec-node-active) .rec-bead {
+  border:1px solid #ff7373;
+  background:radial-gradient(circle at 35% 35%,#ff4d4d 0%,#b80000 55%,var(--gw-danger-cap) 100%);
+  box-shadow:0 0 8px rgb(140 0 0 / .8),inset 0 1px 1px #fff;
+}
+
+/* Prismatic launch orb: rotating color ring, dark core, pulsing chromatic dot. */
+:is(.btn-launch-orb,.launch-orb-btn) {
+  width:32px;
+  height:32px;
+  position:relative;
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  flex:0 0 32px;
+  padding:2px;
+  overflow:visible;
+  border:0;
+  border-radius:50%;
+  background:transparent;
+  box-shadow:0 0 18px rgb(223 195 132 / .45),0 0 28px rgb(201 173 110 / .25);
+  cursor:pointer;
+  transition:transform .22s cubic-bezier(.34,1.56,.64,1),box-shadow .2s ease,background .25s ease;
+}
+:is(.btn-launch-orb,.launch-orb-btn)::before {
+  content:"";
+  position:absolute;
+  inset:0;
+  z-index:0;
+  border-radius:50%;
+  background:conic-gradient(from 0deg,rgb(34 211 238),rgb(168 85 247),rgb(245 158 11),rgb(236 72 153),rgb(34 211 238));
+  animation:gw-orb-spin 3.5s linear infinite;
+}
+:is(.btn-launch-orb,.launch-orb-btn) > .orb-core {
+  width:100%;
+  height:100%;
+  position:relative;
+  z-index:1;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  border-radius:50%;
+  background:#05060a;
+}
+:is(.btn-launch-orb,.launch-orb-btn) > .orb-core > span {
+  width:10px;
+  height:10px;
+  display:block;
+  border-radius:50%;
+  background:linear-gradient(to top right,#67e8f9 0%,#e879f9 50%,#fcd34d 100%);
+  box-shadow:0 0 8px var(--gw-keycap-gold);
+  animation:gw-orb-core-pulse 2s ease-in-out infinite alternate;
+}
+:is(.btn-launch-orb,.launch-orb-btn) > .orb-core > i,
+:is(.btn-launch-orb,.launch-orb-btn) > .orb-core > svg { width:14px; height:14px; color:#fae2c8; }
+:is(.btn-launch-orb,.launch-orb-btn):hover:not(:disabled):not([aria-disabled="true"]) {
+  transform:scale(1.08);
+  box-shadow:0 0 24px rgb(223 195 132 / .7),0 0 38px rgb(201 173 110 / .4);
+}
+:is(.btn-launch-orb,.launch-orb-btn):is(:active,.is-firing):not(:disabled):not([aria-disabled="true"]) {
+  transform:scale(.88);
+  box-shadow:0 0 28px rgb(223 195 132 / .95),0 0 45px rgb(250 226 200 / .6);
+  filter:brightness(1.2);
+}
+:is(.btn-launch-orb,.launch-orb-btn):is(:active,.is-firing):not(:disabled):not([aria-disabled="true"])::before {
+  background:conic-gradient(from 0deg,#fff3dc,var(--gw-keycap-gold),#fae2c8,#b89354,#fff3dc);
+  animation:none;
+}
+:is(.btn-launch-orb,.launch-orb-btn):is(:active,.is-firing):not(:disabled):not([aria-disabled="true"]) > .orb-core > span {
+  transform:scale(.85);
+  background:radial-gradient(circle at 35% 35%,#fff 0%,#fae2c8 40%,var(--gw-keycap-gold) 100%);
+  box-shadow:0 0 14px rgb(223 195 132 / 1);
+}
+@keyframes gw-orb-spin { to { transform:rotate(360deg); } }
+@keyframes gw-orb-core-pulse { from { transform:scale(.9); opacity:.85; } to { transform:scale(1.1); opacity:1; } }
+.shockwave-ring { position:absolute; inset:-4px; border:.75px solid rgb(223 195 132 / .8); border-radius:50%; pointer-events:none; opacity:0; }
+@keyframes shockwavePulse {
+  0% { transform:scale(1); opacity:0; border-width:.75px; }
+  25% { opacity:.35; border-width:.75px; }
+  65% { opacity:.18; border-width:.75px; }
+  100% { transform:scale(1.6); opacity:0; border-width:.75px; }
+}
+.is-firing .shockwave-ring-1 { animation:shockwavePulse .75s cubic-bezier(.1,.8,.3,1) forwards; }
+.is-firing .shockwave-ring-2 { animation:shockwavePulse .75s .14s cubic-bezier(.1,.8,.3,1) forwards; }
+.is-firing .shockwave-ring-3 { animation:shockwavePulse .75s .28s cubic-bezier(.1,.8,.3,1) forwards; }
+
+:is(.btn-hw-round-inner,.hw-round-inner) :is(svg,[data-lucide]) { width:var(--button-icon,14px); height:var(--button-icon,14px); flex:0 0 var(--button-icon,14px); }
+
+/* Disabled is deliberately matte and freezes every inset/animated child. */
+:is(.hw-btn,.hw-btn-gold,.hw-btn-danger,.btn-hw-tactile,.btn-hw-danger,.btn-tactile-keycap,.primary-ignite,.btn-tactile-compound,.hw-btn-compound,.btn-pill-active,.btn-pill-inactive,.btn-pill-disabled,.pill-capsule-active,.pill-capsule-inactive,.btn-abort-carmine,.btn-override-carmine,.btn-segmented-item,.hw-segmented-btn,.btn-rocker-paddle,.hw-rocker-btn,.btn-hw-round,.hw-round-btn,.btn-slide-toggle,.hw-slide-toggle,.btn-launch-orb,.launch-orb-btn):is(:disabled,[aria-disabled="true"]) {
+  opacity:.6;
+  cursor:not-allowed;
+  transform:none !important;
+  background:var(--gw-button-disabled-bg,#12141a) !important;
+  background-image:none !important;
+  border-color:var(--gw-button-disabled-bg,#12141a) !important;
+  color:var(--gw-button-disabled-text,#475569) !important;
+  box-shadow:none !important;
+  filter:none !important;
+  text-shadow:none !important;
+  transition:none !important;
+}
+/* 真实禁用胶囊沿用原稿低透明白色细边，其余冻结规则照常生效。 */
+.topbar-master-deck .btn-pill-disabled:is(:disabled,[aria-disabled="true"]) { border-color:rgb(255 255 255 / .04) !important; }
+:is(.btn-hw-round,.hw-round-btn,.btn-slide-toggle,.hw-slide-toggle,.btn-launch-orb,.launch-orb-btn):is(:disabled,[aria-disabled="true"]) :is(.btn-hw-round-inner,.hw-round-inner,.btn-slide-peg,.hw-slide-peg,.orb-core,.orb-core > span,.orb-core > i,.orb-core > svg,.rec-bead,.shockwave-ring) {
+  background:var(--gw-button-disabled-bg,#12141a) !important;
+  background-image:none !important;
+  border-color:var(--gw-button-disabled-bg,#12141a) !important;
+  color:var(--gw-button-disabled-text,#475569) !important;
+  box-shadow:none !important;
+  filter:none !important;
+  text-shadow:none !important;
+  transform:none !important;
+  animation:none !important;
+  transition:none !important;
+}
+:is(.btn-launch-orb,.launch-orb-btn):is(:disabled,[aria-disabled="true"])::before { display:none; }
+:is(.btn-launch-orb,.launch-orb-btn):is(:disabled,[aria-disabled="true"]) .shockwave-ring { opacity:0 !important; }
+:is(button,a,input,select,textarea,[role="button"],[role="switch"],[tabindex]):focus-visible { outline:2px solid var(--gw-focus-color) !important; outline-offset:2px !important; }
+
+@media (prefers-reduced-motion: reduce) {
+  :is(.hw-btn,.hw-btn-gold,.hw-btn-danger,.btn-hw-tactile,.btn-hw-danger,.btn-tactile-keycap,.primary-ignite,.btn-tactile-compound,.hw-btn-compound,.btn-pill-active,.btn-pill-inactive,.btn-pill-disabled,.pill-capsule-active,.pill-capsule-inactive,.btn-abort-carmine,.btn-override-carmine,.btn-segmented-item,.hw-segmented-btn,.btn-rocker-paddle,.hw-rocker-btn,.btn-hw-round,.hw-round-btn,.btn-hw-round-inner,.hw-round-inner,.btn-slide-toggle,.hw-slide-toggle,.btn-slide-peg,.hw-slide-peg,.btn-launch-orb,.launch-orb-btn) { transition:none !important; }
+  :is(.btn-launch-orb,.launch-orb-btn)::before,
+  :is(.btn-launch-orb,.launch-orb-btn) > .orb-core > span,
+  .shockwave-ring { animation:none !important; }
+  :is(.hw-btn,.hw-btn-gold,.hw-btn-danger,.btn-hw-tactile,.btn-hw-danger,.btn-tactile-keycap,.primary-ignite,.btn-tactile-compound,.hw-btn-compound,.btn-pill-active,.btn-pill-inactive,.btn-pill-disabled,.pill-capsule-active,.pill-capsule-inactive,.btn-abort-carmine,.btn-override-carmine,.btn-segmented-item,.hw-segmented-btn,.btn-rocker-paddle,.hw-rocker-btn,.btn-hw-round-inner,.hw-round-inner,.btn-slide-toggle,.hw-slide-toggle,.btn-launch-orb,.launch-orb-btn):is(:hover,:active,.is-firing) { transform:none !important; }
+  :is(.btn-hw-round-inner,.hw-round-inner) { transform:none !important; }
+}
+
+
+@media (forced-colors: active) {
+  :root { --gw-focus-color:Highlight; }
+  :is(button,a,input,select,textarea,[role="button"],[role="switch"],[tabindex]):focus-visible { outline-color:Highlight !important; }
+  :is(.hw-btn,.btn-hw-round,.hw-round-btn,.btn-segmented-item,.hw-segmented-btn,.hw-slide-toggle,.btn-slide-toggle,.launch-orb-btn,.btn-launch-orb) { border-color:ButtonText !important; box-shadow:none !important; }
+  :is([aria-pressed="true"],[aria-checked="true"],[aria-selected="true"]) { outline:2px solid Highlight; outline-offset:-2px; }
+}

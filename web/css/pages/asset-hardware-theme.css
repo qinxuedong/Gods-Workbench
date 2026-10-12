@@ -1,0 +1,53 @@
+/* 资产内嵌文档唯一主题映射。旧变量仍服务布局，取值统一来自硬件token；
+   保留theme.js的明暗/缩放偏好，不再加载全局theme.css和signal-flow.css。 */
+html:has(> body.gw-page--asset-manager) {
+  color-scheme:dark;
+  --page:var(--gw-surface-bg); --bg:var(--gw-surface-bg);
+  --panel:var(--gw-surface-panel); --panel-bg:var(--gw-surface-panel); --panel-solid:var(--gw-surface-panel);
+  --card:var(--gw-surface-card); --card-solid:var(--gw-surface-card); --card-gradient:linear-gradient(165deg,var(--gw-surface-card),var(--gw-surface-card-end));
+  --soft:var(--gw-control-bg); --soft-2:var(--gw-surface-card);
+  --text:var(--gw-text); --text-main:var(--gw-text); --muted:var(--gw-text-muted); --faint:var(--gw-text-muted);
+  --line:var(--gw-border); --line-2:var(--gold-glow); --line-gold:var(--gold-glow); --line-gold-bright:var(--gold-glow);
+  --strong:var(--gold-primary); --strong-text:var(--gw-engraved-text); --danger:var(--gw-error); --ok:var(--gw-success);
+  --shadow:rgb(0 0 0 / .24); --gold-bright:var(--gold-flare);
+  --sf-bg:var(--page); --sf-sidebar:var(--panel); --sf-content:var(--panel); --sf-surface:var(--card); --sf-raised:var(--soft);
+  --sf-text:var(--text); --sf-muted:var(--muted); --sf-faint:var(--faint); --sf-line:var(--line); --sf-line-strong:var(--line-2);
+  --sf-cyan:var(--gold-primary); --sf-cyan-hover:var(--gold-flare); --sf-cyan-soft:var(--gold-dim); --sf-cyan-soft-subtle:var(--gold-dim); --sf-focus:var(--gold-primary);
+  --sf-mint:var(--gw-success); --sf-amber:var(--gw-warning); --sf-coral:var(--gw-error); --sf-on-accent:var(--gw-engraved-text);
+  --sf-radius-panel:8px; --sf-radius-control:6px; --sf-radius-tight:4px; --sf-ease:cubic-bezier(.3,0,0,1);
+  --sf-font-ui:var(--gw-font-body); --sf-font-mono:var(--gw-font-mono); --sf-fs-display:var(--gw-type-headline-md); --sf-fs-title:var(--gw-type-headline-sm); --sf-fs-heading:var(--gw-type-headline-sm); --sf-fs-body:var(--gw-type-body-md); --sf-fs-secondary:var(--gw-type-body-sm); --sf-fs-caption:var(--gw-type-body-sm); --sf-fs-micro:var(--gw-type-body-sm);
+  --sf-fw-regular:400; --sf-fw-medium:500; --sf-fw-semibold:700; --sf-fw-bold:700;
+
+}
+/* 明色偏好原已存在：全页及弹层共享同一组变量，避免只给资产网格换色。 */
+html[data-theme="light"]:has(> body.gw-page--asset-manager) {
+  color-scheme:light;
+  --gw-surface-bg:#f1f2f4; --gw-surface-panel:#e8eaee; --gw-surface-card:#ffffff; --gw-surface-card-end:#e8eaee; --gw-control-bg:#ffffff;
+  --gw-text:#25282e; --gw-text-muted:#515d6f; --gw-border:#c3c9d2;
+  --gold-primary:#775617; --gold-flare:#eddab3; --gold-light:var(--gold-primary); --gold-glow:rgb(119 86 23 / .4);
+  --gw-error:#8c0000; --gw-success:#16753e;
+  --chassis-bg:var(--gw-surface-bg); --panel-dark:var(--gw-surface-panel);
+  --card-start:var(--gw-surface-card); --card-end:var(--gw-surface-card-end);
+}
+body.gw-page--asset-manager { background:var(--page); color:var(--text); background-image:none; }
+/* 详情与编辑器保留html直属portal，避免受body手动缩放影响。 */
+html:has(> body.gw-page--asset-manager) > :is(.asset-lightbox,.asset-image-editor) {
+  font-family:var(--gw-font-body); font-size:var(--gw-type-body-md); line-height:var(--gw-leading-body-md);
+  font-weight:var(--gw-weight-regular); color:var(--text);
+}
+body.gw-page--asset-manager :is(.asset-panel,.registry-nav,.registry-content,.registry-detail-panel,.board-settings-body) { background:var(--panel); }
+body.gw-page--asset-manager :is(.board-settings-modal,.storage-settings-modal,.registry-recycle-dialog) { background:var(--card); color:var(--text); border-color:var(--line); }
+body.gw-page--asset-manager :is(input,textarea,select) { color:var(--text); background:var(--soft); border-color:var(--line); }
+body.gw-page--asset-manager :is(input,textarea,select):focus-visible { outline:2px solid var(--gold-primary); outline-offset:2px; }
+body.gw-page--asset-manager * { scrollbar-width:thin; scrollbar-color:var(--muted) transparent; }
+
+/* html 直属编辑器的输入及滚动条沿用正文主题，手动正文缩放不影响 portal。 */
+html:has(> body.gw-page--asset-manager) > .asset-image-editor :is(input,textarea,select) { color:var(--text); font-family:var(--gw-font-body); }
+html:has(> body.gw-page--asset-manager) > .asset-image-editor :is(input,textarea,select):focus-visible { outline:2px solid var(--gw-focus-color); outline-offset:2px; }
+html:has(> body.gw-page--asset-manager) > .asset-image-editor * { scrollbar-width:thin; scrollbar-color:var(--muted) transparent; }
+
+/* 详情 portal 脱离 body 后仍必须保留可见键盘焦点；覆盖详情工具栏对 input 的 outline:none。 */
+html:has(> body.gw-page--asset-manager) > .asset-lightbox :is(input,textarea,select):focus-visible {
+  outline:2px solid var(--gw-focus-color,var(--gold-primary)) !important;
+  outline-offset:2px !important;
+}

@@ -72,15 +72,12 @@ window.WorkbenchHome = (function () {
     // 同步更新切换按钮激活状态
     const btnGrid = document.getElementById('btnViewGrid');
     const btnList = document.getElementById('btnViewList');
-    if (btnGrid && btnList) {
-      if (mode === 'grid') {
-        btnGrid.classList.add('active');
-        btnList.classList.remove('active');
-      } else {
-        btnList.classList.add('active');
-        btnGrid.classList.remove('active');
-      }
-    }
+    [[btnGrid, 'grid'], [btnList, 'list']].forEach(([button, value]) => {
+      if (!button) return;
+      const selected = mode === value;
+      button.classList.toggle('active', selected);
+      button.setAttribute('aria-pressed', String(selected));
+    });
 
     renderProjectsList();
   }
@@ -681,9 +678,11 @@ window.WorkbenchHome = (function () {
     // 更新弹窗中按钮选中高亮
     const sizePopover = document.getElementById('workbenchAuraSizePopover');
     if (sizePopover) {
-      const btns = sizePopover.querySelectorAll('.grid button');
+      const btns = sizePopover.querySelectorAll('button[onclick*="setAuraRatio("]');
       btns.forEach(b => {
-        if (b.innerText.startsWith(ratio)) {
+        const selected = b.innerText.startsWith(ratio);
+        b.setAttribute('aria-pressed', String(selected));
+        if (selected) {
           b.classList.add('active', 'border-[#dfc384]', 'text-[#dfc384]');
         } else {
           b.classList.remove('active', 'border-[#dfc384]', 'text-[#dfc384]');
@@ -699,13 +698,11 @@ window.WorkbenchHome = (function () {
     auraState.resolutionLevel = lvl;
     const sizePopover = document.getElementById('workbenchAuraSizePopover');
     if (sizePopover) {
-      const btns = sizePopover.querySelectorAll('.flex button');
+      const btns = sizePopover.querySelectorAll('button[onclick*="setAuraResolutionLevel("]');
       btns.forEach(b => {
-        if (b.innerText.trim() === lvl) {
-          b.className = 'hw-btn hw-btn-sm active px-1.5 py-0.5 rounded bg-[#1a1e2b] text-[#dfc384] border border-[#dfc384]/30';
-        } else {
-          b.className = 'hw-btn hw-btn-sm px-1.5 py-0.5 rounded bg-[#161a24] text-slate-300 hover:text-white border border-white/10';
-        }
+        const selected = b.innerText.trim() === lvl;
+        b.classList.toggle('active', selected);
+        b.setAttribute('aria-pressed', String(selected));
       });
     }
   }
@@ -801,8 +798,8 @@ window.WorkbenchHome = (function () {
         <i data-lucide="file-warning" class="w-2.5 h-2.5 text-amber-300"></i>
         <span class="max-w-[100px] truncate" title="${esc(item.name)}">${esc(item.name)}</span>
         ${item.uploadState === 'not_uploaded' ? '<span class="px-1 rounded border border-amber-500/30 text-amber-300" title="未上传到服务器">未上传</span>' : ''}
-        <button type="button" class="text-slate-400 hover:text-rose-400 ml-1" onclick="WorkbenchHome.removeAuraAttachment(${idx})" title="移除此附件">
-          &times;
+        <button type="button" class="btn-hw-round ml-1" onclick="WorkbenchHome.removeAuraAttachment(${idx})" title="移除此附件" aria-label="移除附件：${esc(item.name)}">
+          <span class="btn-hw-round-inner" aria-hidden="true">&times;</span>
         </button>
       </div>
     `).join('');
@@ -978,6 +975,30 @@ window.WorkbenchHome = (function () {
 
   // 6. 主工作台视图切换 (控制台三列 vs 拟物设置工作台，实现“只切换下面页面，不是整体都变”)
   let settingsInitialized = false;
+  let contextBusCollapsed = false;
+
+  function syncContextBus() {
+    const aside = document.getElementById('homeContextBusAside');
+    const toggle = document.getElementById('homeContextBusToggle');
+    const controls = document.getElementById('homeContextBusControls');
+    const dashboard = document.getElementById('workbenchMainDashboard');
+    const inSettings = Boolean(dashboard?.classList.contains('hidden'));
+    aside?.classList.toggle('hidden', contextBusCollapsed || inSettings);
+    controls?.classList.toggle('hidden', inSettings);
+    if (toggle) {
+      toggle.setAttribute('aria-expanded', String(!contextBusCollapsed && !inSettings));
+      toggle.textContent = contextBusCollapsed ? '展开上下文总线' : '收起上下文总线';
+    }
+  }
+
+  function initContextBus() {
+    contextBusCollapsed = Number(window.innerWidth || 1920) <= 1056;
+    document.getElementById('homeContextBusToggle')?.addEventListener('click', () => {
+      contextBusCollapsed = !contextBusCollapsed;
+      syncContextBus();
+    });
+    syncContextBus();
+  }
 
   function switchView(target) {
     const dashboardView = document.getElementById('workbenchMainDashboard');
@@ -1019,7 +1040,7 @@ window.WorkbenchHome = (function () {
         settingsView.classList.remove('flex');
       }
       if (dashboardView) dashboardView.classList.remove('hidden');
-      if (contextBusAside) contextBusAside.classList.remove('hidden');
+      syncContextBus();
 
       if (pillDashboard) {
         pillDashboard.className = 'pill-capsule-active px-3.5 py-1.5 gw-type-body-md flex items-center space-x-1.5 nav-pill-btn cursor-pointer';
@@ -1037,6 +1058,7 @@ window.WorkbenchHome = (function () {
       } catch (e) {}
     }
 
+    syncContextBus();
     if (window.lucide) window.lucide.createIcons();
   }
 
@@ -1116,6 +1138,7 @@ window.WorkbenchHome = (function () {
       settingsSectionButtons.forEach(btn => {
         const active = btn === next;
         btn.classList.toggle('active', active);
+        btn.classList.toggle('engaged', active);
         btn.setAttribute('aria-pressed', String(active));
       });
       document.querySelectorAll('#workbenchMainSettings [data-panel]').forEach(p => p.classList.toggle('active', p.dataset.panel === sec));
@@ -1239,7 +1262,7 @@ window.WorkbenchHome = (function () {
           return `
             <article class="prompt-source-row">
               <div class="prompt-source-toggle">
-                <button type="button" class="toggle on" onclick="this.classList.toggle('on')"><i></i></button>
+                <button type="button" class="toggle hw-slide-toggle on" role="switch" aria-checked="true" aria-label="提示词来源：${esc(source.name || id)}" onclick="this.classList.toggle('on'); this.setAttribute('aria-checked', String(this.classList.contains('on')))"><span class="hw-slide-peg" aria-hidden="true"></span></button>
               </div>
               <div class="prompt-source-main">
                 <div class="prompt-source-title">
@@ -1436,8 +1459,9 @@ window.WorkbenchHome = (function () {
   }
 
   // =========================================================================
-  // 正在进行的任务与用户待办事项 (Directives) 驱动逻辑
+  // 行动指令本地示例 (Directives)；真实任务由 task-queue.js 独立读取
   // =========================================================================
+  // 固定示例清单，仅展示现有操作入口，不声明为当前用户待办。
   const directivesState = {
     currentIndex: 0,
     items: [
@@ -1485,7 +1509,8 @@ window.WorkbenchHome = (function () {
     const origText = btn.textContent;
     btn.disabled = true;
     btn.textContent = '备份中…';
-    btn.className = 'pill-capsule-active px-2 py-0.5 gw-type-body-sm font-mono text-cyan-200 border-cyan-400';
+    btn.className = 'hw-btn btn-size-sm';
+    btn.setAttribute('aria-busy', 'true');
 
     // 显式降级：只有后端真的接受任务才谈「已就绪」；未接入 / 失败一律如实告知。
     let resultText = '已就绪';
@@ -1508,7 +1533,8 @@ window.WorkbenchHome = (function () {
       setTimeout(() => {
         btn.disabled = false;
         btn.textContent = origText;
-        btn.className = 'pill-capsule-inactive px-2 py-0.5 gw-type-body-sm font-mono text-cyan-300 border-cyan-500/30 cursor-pointer hover:border-cyan-400 transition';
+        btn.className = 'hw-btn btn-size-sm';
+        btn.removeAttribute('aria-busy');
       }, 1500);
     }, 1200);
   }
@@ -1524,7 +1550,7 @@ window.WorkbenchHome = (function () {
       directivesState.items[(directivesState.currentIndex + 1) % directivesState.items.length]
     ].filter(Boolean);
 
-    if (badge) badge.textContent = `${directivesState.items.length} 待办`;
+    if (badge) badge.textContent = `${directivesState.items.length} 个示例`;
 
     container.innerHTML = visibleItems.map(item => `
       <div class="px-2.5 py-2 rounded-xl bay-inset border-l-2 ${item.border} flex items-center justify-between bg-[#0a0c10]">
@@ -1535,20 +1561,20 @@ window.WorkbenchHome = (function () {
         <div class="flex items-center space-x-1.5 shrink-0">
           ${item.hasStepper ? `
             <div class="hw-rocker-stepper">
-              <button type="button" class="hw-rocker-btn" title="上一个待办" onclick="WorkbenchHome.stepDirective(-1)">
+              <button type="button" class="hw-rocker-btn" title="上一个示例" aria-label="上一个示例" onclick="WorkbenchHome.stepDirective(-1)">
                 <i data-lucide="chevron-left" class="w-2.5 h-2.5"></i>
               </button>
-              <button type="button" class="hw-rocker-btn" title="下一个待办" onclick="WorkbenchHome.stepDirective(1)">
+              <button type="button" class="hw-rocker-btn" title="下一个示例" aria-label="下一个示例" onclick="WorkbenchHome.stepDirective(1)">
                 <i data-lucide="chevron-right" class="w-2.5 h-2.5"></i>
               </button>
             </div>
           ` : ''}
           ${item.isActionTrigger ? `
-            <button type="button" class="pill-capsule-inactive px-2 py-0.5 gw-type-body-md font-mono text-cyan-300 border-cyan-500/30 cursor-pointer hover:border-cyan-400 transition" onclick="WorkbenchHome.triggerIndexBackup(this)">
+            <button type="button" class="hw-btn btn-size-sm" onclick="WorkbenchHome.triggerIndexBackup(this)">
               ${item.actionText}
             </button>
           ` : `
-            <button type="button" class="pill-capsule-inactive px-2 py-0.5 gw-type-body-md font-mono text-[#eddab3] cursor-pointer hover:border-[#dfc384] transition" onclick="location.href='${item.actionHref || 'assets.html'}'">
+            <button type="button" class="hw-btn btn-size-sm" onclick="location.href='${item.actionHref || 'assets.html'}'">
               ${item.actionText}
             </button>
           `}
@@ -1615,6 +1641,7 @@ window.WorkbenchHome = (function () {
   }
 
   function init() {
+    initContextBus();
     syncAuraBusStatus();
     reloadProjects();
     reloadAssetOverview();

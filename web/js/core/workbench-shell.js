@@ -50,7 +50,7 @@
     if (old?.classList.contains('gw-shell-right')) return;
     const right = document.createElement('div');
     right.className = 'gw-shell-right';
-    right.innerHTML = '<div class="gw-shell-fader"><span>FLUX</span><div class="hw-fader-track-horizontal gw-shell-fader-track"><div class="hw-fader-glow-bar" data-gw-gpu-util-fill style="width:0%"></div><div class="hw-fader-thumb-3d" data-gw-gpu-util-thumb style="left:0%"></div></div><span class="text-amber-300" data-gw-gpu-util title="真实数据源：GET /api/observability/health 的 gpu_telemetry（读取中）">读取中…</span></div><div class="gw-shell-fader"><span>VRAM</span><div class="hw-fader-track-horizontal gw-shell-fader-track"><div class="hw-fader-glow-bar" data-gw-gpu-vram-fill style="width:0%;background:linear-gradient(90deg,#38bdf8,#2dd4bf)"></div><div class="hw-fader-thumb-3d" data-gw-gpu-vram-thumb style="left:0%"></div></div><span class="text-amber-300" data-gw-gpu-vram title="真实数据源：GET /api/observability/health 的 gpu_telemetry（读取中）">读取中…</span></div><span class="h-4 w-px bg-white/10"></span><span class="gw-type-body-md font-mono text-[#dfc384]">CF</span><button type="button" class="hw-slide-toggle" data-gw-comfy-toggle aria-pressed="false" aria-label="切换 CF 后台控制"><div class="hw-slide-peg"></div></button><span class="h-4 w-px bg-white/10"></span><a id="topbarUnifiedTrashBtn" class="gw-shell-trash" href="projects.html?openTrash=1" onclick="if(window.WorkbenchProjects?.openGlobalTrashDrawer){event.preventDefault();window.WorkbenchProjects.openGlobalTrashDrawer();}" title="统一回收站" aria-label="打开统一回收站"><span class="hw-mini-knob"><span class="hw-mini-knob-arc" style="border-top-color:#ef4444;border-right-color:#f59e0b"></span><span class="hw-mini-knob-inner"><i data-lucide="trash-2" class="w-3.5 h-3.5"></i></span></span><span id="topbarTrashBadge" class="gw-shell-trash-badge" hidden>0</span></a><div class="h-4 w-px bg-white/10"></div><div class="hw-avatar-keycap" title="认证状态未接入：点击打开认证中心查看真实登录状态" role="button" tabindex="0" aria-label="打开认证中心" data-gw-identity="unverified"><div class="hw-avatar-keycap-inner"><i data-lucide="shield-check" class="w-4 h-4 text-[#eddab3]"></i></div><span class="hw-avatar-keycap-status"></span></div>';
+    right.innerHTML = '<div class="gw-shell-fader"><span>FLUX</span><div class="hw-fader-track-horizontal gw-shell-fader-track"><div class="hw-fader-glow-bar" data-gw-gpu-util-fill style="width:0%"></div><div class="hw-fader-thumb-3d" data-gw-gpu-util-thumb style="left:0%"></div></div><span class="text-amber-300" data-gw-gpu-util title="真实数据源：GET /api/observability/health 的 gpu_telemetry（读取中）">读取中…</span></div><div class="gw-shell-fader"><span>VRAM</span><div class="hw-fader-track-horizontal gw-shell-fader-track"><div class="hw-fader-glow-bar" data-gw-gpu-vram-fill style="width:0%;background:linear-gradient(90deg,#38bdf8,#2dd4bf)"></div><div class="hw-fader-thumb-3d" data-gw-gpu-vram-thumb style="left:0%"></div></div><span class="text-amber-300" data-gw-gpu-vram title="真实数据源：GET /api/observability/health 的 gpu_telemetry（读取中）">读取中…</span></div><span class="h-4 w-px bg-white/10"></span><span class="gw-type-body-md font-mono text-[#dfc384]">CF</span><button type="button" class="hw-slide-toggle" data-gw-comfy-toggle aria-pressed="false" aria-label="切换 CF 后台控制"><div class="hw-slide-peg"></div></button><span class="h-4 w-px bg-white/10"></span><a id="topbarUnifiedTrashBtn" class="gw-shell-trash btn-hw-round" href="projects.html?openTrash=1" onclick="if(window.WorkbenchProjects?.openGlobalTrashDrawer){event.preventDefault();window.WorkbenchProjects.openGlobalTrashDrawer();}" title="统一回收站" aria-label="打开统一回收站"><span class="btn-hw-round-inner"><i data-lucide="trash-2" class="w-3.5 h-3.5"></i></span><span id="topbarTrashBadge" class="gw-shell-trash-badge" hidden>0</span></a><div class="h-4 w-px bg-white/10"></div><div class="hw-avatar-keycap btn-hw-round" title="认证状态未接入：点击打开认证中心查看真实登录状态" role="button" tabindex="0" aria-label="打开认证中心" data-gw-identity="unverified"><div class="hw-avatar-keycap-inner btn-hw-round-inner"><i data-lucide="shield-check" class="w-4 h-4 text-[#eddab3]"></i></div><span class="hw-avatar-keycap-status"></span></div>';
     old.replaceWith(right);
     // 顶栏推子是后注入的：用最近一次真实 GPU 读数立即回放，
     // 否则会一直停在「读取中」直到 15s 周期刷新（fake-degradation 空窗）。
@@ -67,11 +67,11 @@
     const right = deck.lastElementChild;
     if (!right) return;
     const button = document.createElement('a');
-    button.className = 'gw-shell-trash';
+    button.className = 'gw-shell-trash btn-hw-round';
     button.href = 'projects.html?openTrash=1';
     button.title = '统一回收站';
     button.setAttribute('aria-label', '打开统一回收站');
-    button.innerHTML = '<span class="hw-mini-knob"><span class="hw-mini-knob-arc" style="border-top-color:#ef4444;border-right-color:#f59e0b"></span><span class="hw-mini-knob-inner"><i data-lucide="trash-2" class="w-3.5 h-3.5"></i></span></span><span class="gw-shell-trash-badge" hidden>0</span>';
+    button.innerHTML = '<span class="btn-hw-round-inner"><i data-lucide="trash-2" class="w-3.5 h-3.5"></i></span><span class="gw-shell-trash-badge" hidden>0</span>';
     const divider = document.createElement('span');
     divider.className = 'h-4 w-px bg-white/10';
     right.insertBefore(divider, right.firstChild);
@@ -82,7 +82,7 @@
     const url = new URL(href, location.href);
     const activeName = url.pathname.split('/').pop() || 'index.html';
     const settingsActive = activeName === 'settings.html' || (activeName === 'index.html' && url.searchParams.get('view') === 'settings');
-    document.querySelectorAll('.nav-pill-btn').forEach(item => {
+    document.querySelectorAll('.topbar-master-deck .nav-pill-btn').forEach(item => {
       const itemHref = item.getAttribute('href') || '';
       let active = false;
       if (item.id === 'navPillSettings') active = settingsActive;

@@ -27,6 +27,8 @@
     // These definitions keep older pages working while they are migrated to the
     // explicit data-floating contract.
     const LEGACY_SURFACE_DEFINITIONS = [
+        {selector: '.hw-modal-backdrop', kind: 'modal', content: '.hw-modal-dialog'},
+        {selector: '.hw-drawer-backdrop', kind: 'modal'},
         {selector: '.picker-overlay', kind: 'modal', content: '[data-floating-content], .picker-modal'},
         {selector: '.gallery-lightbox', kind: 'modal', content: '[data-floating-content], #lightboxFrame, #lightboxCard'},
         {selector: '.output-lightbox', kind: 'modal', content: '[data-floating-content], .output-lightbox-shell, #outputPromptPanel'},
@@ -156,9 +158,10 @@
 
     function rawIsOpen(record) {
         const element = record.element;
-        if (!element?.isConnected) return false;
+        if (!element?.isConnected || element.closest('[hidden], [inert], [aria-hidden="true"]')) return false;
         if (typeof record.isOpen === 'function') return Boolean(record.isOpen(element));
         if (isNativeDialog(element)) return Boolean(element.open);
+        if (element.matches?.('.hw-modal-backdrop, .hw-drawer-backdrop')) return element.classList.contains('open');
         if (element.hidden || element.getAttribute('aria-hidden') === 'true') return false;
 
         const openClass = element.dataset.floatingOpenClass;
@@ -182,6 +185,7 @@
         } else {
             record.justOpened = false;
         }
+        if (record.wasOpen && !open) restoreFocus(record);
         record.wasOpen = open;
         return open;
     }
@@ -273,6 +277,12 @@
         }
         const openClasses = splitTokens(element.dataset.floatingOpenClass || 'open visible active');
         openClasses.forEach(token => element.classList.remove(token));
+        if (element.matches?.('.hw-drawer-backdrop')) {
+            getContentElements(record).forEach(content => {
+                content.classList.remove('open');
+                content.setAttribute('aria-hidden', 'true');
+            });
+        }
         splitTokens(element.dataset.floatingClosedClass).forEach(token => element.classList.add(token));
         if (element.dataset.floatingCloseStyle !== undefined) element.style.display = element.dataset.floatingCloseStyle;
         else if (element.dataset.floatingInitialDisplay) element.style.display = element.dataset.floatingInitialDisplay;
@@ -287,27 +297,41 @@
         // a nested action button) is only a fallback when no opener was supplied.
         const target = record.lastTrigger || triggerFor(record) || record.previousFocus || asElement(record.element.dataset.floatingTrigger);
         if (!target?.isConnected || typeof target.focus !== 'function' || target.hidden) return;
-        global.requestAnimationFrame(() => target.focus({preventScroll: true}));
+        const returnToTarget = () => {
+            const top = openRecords().find(isModalRecord);
+            if (top && !getContentElements(top).some(content => content.contains(target))) { focusSurface(top); return; }
+            if (target.isConnected && !target.hidden) target.focus({preventScroll: true});
+        };
+        // 关闭完成即返焦；仅在布局尚未释放焦点时等待下一帧补偿。
+        returnToTarget();
+        if (document.activeElement !== target) global.requestAnimationFrame(returnToTarget);
     }
 
     function closeRecord(record) {
         if (record.closing || !isOpen(record)) return false;
+        try {
+            if (typeof record.beforeClose === 'function' && record.beforeClose() === false) return false;
+        } catch (error) {
+            global.console?.warn?.('[FloatingDismissal] close guard failed', error);
+            return false;
+        }
         record.closing = true;
         const fn = resolveCloseFunction(record);
+        let result;
         try {
             if (fn) {
                 const args = record.element.dataset.floatingCloseArgs;
                 if (args) {
-                    fn(...args.split(',').map(value => {
+                    result = fn(...args.split(',').map(value => {
                         const normalized = value.trim();
                         if (normalized === 'false') return false;
                         if (normalized === 'true') return true;
                         return normalized;
                     }));
                 } else if (/^toggle/i.test(String(record.close ?? record.element.dataset.floatingClose ?? ''))) {
-                    fn(false);
+                    result = fn(false);
                 } else {
-                    fn();
+                    result = fn();
                 }
             } else {
                 const closeButton = record.element.querySelector('[data-floating-close]:not([disabled])');
@@ -315,8 +339,14 @@
                 else closeByState(record);
             }
         } catch (error) {
+            // 业务关闭失败时保留内容，不能绕过未保存保护。
             global.console?.warn?.('[FloatingDismissal] close failed', error);
-            closeByState(record);
+        }
+        if (result && typeof result.then === 'function') {
+            Promise.resolve(result).then(() => { if (!isOpen(record)) restoreFocus(record); })
+                .catch(error => global.console?.warn?.('[FloatingDismissal] async close failed', error))
+                .finally(() => { record.closing = false; });
+            return false;
         }
         record.closing = false;
         const closed = !isOpen(record);
@@ -381,6 +411,7 @@
         if (!element.dataset.floatingDismiss) element.dataset.floatingDismiss = 'outside';
         if (!element.dataset.floatingEscape) element.dataset.floatingEscape = 'close-only';
         syncOpenState(record);
+        if (record.justOpened && isModalRecord(record)) global.requestAnimationFrame(() => focusSurface(record));
         return () => registry.delete(element);
     }
 
@@ -413,11 +444,25 @@
         addMatches('[data-floating-surface]');
         LEGACY_SURFACE_DEFINITIONS.forEach(definition => addMatches(definition.selector));
 
+        // 遮罩与内容可能互为兄弟节点；内容根不能再自动登记为第二层。
+        const contentRoots = new Set();
+        registry.forEach(record => getContentElements(record).forEach(element => {
+            if (element !== record.element) contentRoots.add(element);
+        }));
+        candidates.filter(element => element.matches?.('.hw-drawer-backdrop')).forEach(element => {
+            const panel = document.getElementById(element.id.replace(/-backdrop$/, '')) || element.nextElementSibling;
+            if (panel?.matches?.('.hw-drawer-panel')) contentRoots.add(panel);
+        });
+        contentRoots.forEach(element => {
+            const record = registry.get(element);
+            if (record && !record.explicitOptions.size) registry.delete(element);
+        });
         const explicitRoots = new Set(candidates);
         try {
-            if (isElement(root) && root.matches(AUTO_DIALOG_SELECTOR) && !explicitRoots.has(root)) candidates.push(root);
+            if (isElement(root) && root.matches(AUTO_DIALOG_SELECTOR) && !explicitRoots.has(root) && !contentRoots.has(root)) candidates.push(root);
             if (root.querySelectorAll) {
                 root.querySelectorAll(AUTO_DIALOG_SELECTOR).forEach(element => {
+                    if (contentRoots.has(element)) return;
                     let parent = element.parentElement;
                     let nested = false;
                     while (parent) {
@@ -428,7 +473,7 @@
                 });
             }
         } catch (_) {}
-        return [...new Set(candidates)];
+        return [...new Set(candidates)].filter(element => !contentRoots.has(element));
     }
 
     function pruneDisconnected() {
@@ -442,9 +487,12 @@
         collectCandidates(root).forEach(element => {
             const definition = definitionFor(element) || {};
             const dataset = element.dataset;
+            const hardwareDrawer = element.matches?.('.hw-drawer-backdrop')
+                ? document.getElementById(element.id.replace(/-backdrop$/, '')) || element.nextElementSibling
+                : null;
             register(element, {
                 kind: dataset.floatingKind || definition.kind || defaultKind(element),
-                content: dataset.floatingContent || definition.content,
+                content: dataset.floatingContent || (hardwareDrawer?.matches?.('.hw-drawer-panel') ? hardwareDrawer : definition.content),
                 close: dataset.floatingClose || definition.close,
                 trigger: dataset.floatingTrigger || definition.trigger,
                 parent: dataset.floatingParent || definition.parent,
@@ -533,17 +581,28 @@
             if (root.matches?.(FOCUSABLE_SELECTOR)) elements.push(root);
             if (root.querySelectorAll) elements.push(...root.querySelectorAll(FOCUSABLE_SELECTOR));
         });
-        return elements.filter(element => !element.hidden && element.getAttribute('aria-hidden') !== 'true');
+        return [...new Set(elements)].filter(element => {
+            if (element.hidden || element.disabled || element.closest('[hidden], [inert], [aria-hidden="true"]')) return false;
+            const style = global.getComputedStyle(element);
+            return element.getClientRects().length > 0 && style.visibility !== 'hidden' && style.visibility !== 'collapse';
+        });
     }
 
     function focusSurface(record) {
         if (!record || !isOpen(record) || !isModalRecord(record)) return;
+        // 同一次打开可能经MutationObserver和点击各登记一次；不抢回已在窗内的焦点。
+        const active = document.activeElement;
+        if (getContentElements(record).some(content => content.contains(active)) && active?.getClientRects().length) return;
         const target = focusableElements(record)[0]
             || record.element.querySelector('[aria-labelledby], h1, h2, h3')
             || record.element;
         if (target && typeof target.focus === 'function') {
             if (!target.hasAttribute('tabindex') && target === record.element) target.setAttribute('tabindex', '-1');
-            global.requestAnimationFrame(() => target.focus({preventScroll: true}));
+            global.requestAnimationFrame(() => {
+            const top = openRecords().find(isModalRecord);
+            if (top && !getContentElements(top).some(content => content.contains(target))) { focusSurface(top); return; }
+            target.focus({preventScroll: true});
+        });
         }
     }
 
@@ -564,7 +623,7 @@
         }
         const current = isElement(document.activeElement) ? document.activeElement : null;
         const index = focusables.indexOf(current);
-        if (event.shiftKey && (index <= 0 || !top.element.contains(current))) {
+        if (event.shiftKey && (index <= 0 || !getContentElements(top).some(content => content.contains(current)))) {
             event.preventDefault();
             event.stopImmediatePropagation();
             focusables[focusables.length - 1].focus({preventScroll: true});
@@ -580,7 +639,14 @@
     }
 
     function handlePointerDown(event) {
-        scheduleScan();
+        scan();
+        rememberTriggers(event);
+        const top = openRecords()[0];
+        const path = pathFor(event);
+        if (top && !isInsideSurface(top, path) && !isTriggerPath(top, path) && isOutsideDismissEnabled(top)) {
+            event.preventDefault();
+            event.stopImmediatePropagation();
+        }
     }
 
     function scheduleOpenedSurfaceFocus(triggerRecords = []) {
@@ -614,28 +680,17 @@
             return;
         }
 
-        const surfaceHit = hitSurfaceForPath(open, path);
-        const contentHits = contentSurfaceHits(open, path);
-        const keep = new Set();
-        contentHits.forEach(record => recordChain(record).forEach(item => keep.add(item)));
-        triggers.forEach(record => {
-            if (isOpen(record)) recordChain(record).forEach(item => keep.add(item));
-        });
-
-        // A backdrop/root hit is outside that surface's content. Keep only its
-        // parent chain so a child menu closes without collapsing its owner.
-        if (surfaceHit && !isInsideSurface(surfaceHit, path)) {
-            recordChain(surfaceHit, false).forEach(item => keep.add(item));
+        const top = open[0];
+        const closeControl = pathElement(path, element => element.hasAttribute('data-floating-close'));
+        if (!top.closing && closeControl && (top.element.contains(closeControl) || getContentElements(top).some(content => content.contains(closeControl)))) {
+            closeRecord(top);
+            event.preventDefault();
+            event.stopImmediatePropagation();
+            return;
         }
-
-        const dismissible = open.filter(record => isOutsideDismissEnabled(record) && !keep.has(record));
-        closeOrder(dismissible).forEach(record => closeRecord(record));
-
-        // A click on another registered opener may close the old surface and
-        // continue to the opener so the new surface can open in one gesture.
-        const clickIsInsideFloatingContent = contentHits.length > 0;
-        const clickIsRegisteredTrigger = triggers.length > 0;
-        if (dismissible.length && !clickIsInsideFloatingContent && !clickIsRegisteredTrigger) {
+        // 顶层遮罩、下层内容与背景动作都只消费一次关闭，不穿透执行。
+        if (!isInsideSurface(top, path) && !isTriggerPath(top, path) && isOutsideDismissEnabled(top)) {
+            closeRecord(top);
             event.preventDefault();
             event.stopImmediatePropagation();
         }
@@ -675,7 +730,10 @@
                 change.removedNodes.forEach(node => {
                     if (!isElement(node)) return;
                     registry.forEach((record, element) => {
-                        if (element === node || node.contains(element)) registry.delete(element);
+                        if (element === node || node.contains(element)) {
+                            if (record.wasOpen) restoreFocus(record);
+                            registry.delete(element);
+                        }
                     });
                 });
                 if (change.type === 'attributes') scheduleScan();
@@ -693,6 +751,7 @@
                 'data-floating-kind',
                 'data-floating-dismiss',
                 'data-floating-escape',
+                'class', 'hidden', 'open', 'style', 'aria-hidden',
             ],
         });
     }
@@ -701,6 +760,10 @@
     document.addEventListener('click', handleClick, true);
     document.addEventListener('focusin', handleFocusIn, true);
     document.addEventListener('keydown', handleKeydown, true);
+    global.addEventListener('blur', () => {
+        openRecords().filter(record => ['popover', 'panel'].includes(String(record.kind).toLowerCase()))
+            .forEach(closeRecord);
+    });
     if (document.readyState === 'loading') {
         document.addEventListener('DOMContentLoaded', () => {
             scan();

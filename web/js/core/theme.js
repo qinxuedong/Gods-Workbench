@@ -105,7 +105,13 @@
         }
     }
 
+    // 硬件页面依靠响应式重排；auto 不缩小字体和命中区。手动缩放仍沿用用户偏好。
+    function responsiveHardwarePage(){
+        return !!document.querySelector('link[href*="hardware-design-system.css"]');
+    }
+
     function autoScale(){
+        if(responsiveHardwarePage()) return 1;
         const dpr = Math.max(1, Number(window.devicePixelRatio || 1));
         const viewportWidth = Math.max(320, Number(window.innerWidth || 0));
         const viewportHeight = Math.max(320, Number(window.innerHeight || 0));
@@ -125,6 +131,7 @@
 
     function scaleForMode(mode){
         const next = normalizeScaleMode(mode);
+        if(next === 'auto' && responsiveHardwarePage()) return 1;
         if(next === 'auto' && Number.isFinite(externalScaleValue)) return externalScaleValue;
         if(next === 'auto') return autoScale();
         return Math.max(0.58, Math.min(1.4, Number(next) / 100));
@@ -174,7 +181,7 @@
     let contentFitTimer = null;
     function scheduleContentFit(mode){
         clearTimeout(contentFitTimer);
-        if(mode !== 'auto' || scaleOptedOut() || contentFitOptedOut() || Number.isFinite(externalScaleValue)) return;
+        if(mode !== 'auto' || responsiveHardwarePage() || scaleOptedOut() || contentFitOptedOut() || Number.isFinite(externalScaleValue)) return;
         contentFitTimer = setTimeout(() => {
             const root = document.documentElement;
             if(!root.classList.contains('studio-ui-scaled')) return;

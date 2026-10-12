@@ -1,25 +1,12 @@
 .directory-settings-panel { display: flex !important; flex: 1 1 auto; width: 100%; min-width: 0; min-height: 0; height: 100%; overflow: hidden; }
 .directory-settings-frame { flex: 1 1 auto; width: 100%; height: 100%; min-width: 0; min-height: 0; border: 0; display: block; }
-html.directory-settings-page { height: 100%; background: #090a0d; }
+html.directory-settings-page { height:100%; background:var(--gw-surface-bg); }
 .directory-settings-page body {
-  --panel: #090a0d;
-  --card: #0d0f15;
-  --card-gradient: linear-gradient(165deg, #171920 0%, #0f1115 100%);
-  --soft: #0e1117;
-  --text: #e2e8f0;
-  --muted: #8892a4;
-  --faint: #64748b;
-  --line: rgba(255, 255, 255, 0.08);
-  --line-gold: rgba(223, 195, 132, 0.22);
-  --line-gold-bright: rgba(250, 226, 200, 0.42);
-  --gold-primary: #dfc384;
-  --gold-bright: #fae2c8;
-  --gold-dark: #b8823f;
-  --strong-text: #1a1308;
-  background: var(--panel);
-  color: var(--text);
-  margin: 0;
-  font-family: var(--gw-font-body);
+  --card-gradient:linear-gradient(165deg,var(--gw-surface-card),var(--gw-surface-card-end));
+  --line-gold:var(--gold-glow); --line-gold-bright:var(--gold-glow);
+  --gold-bright:var(--gold-flare);
+  background:var(--gw-surface-bg); color:var(--gw-text); margin:0;
+  font-family:var(--gw-font-body);
 }
 .directory-settings-page .asset-page { display: none !important; }
 
@@ -126,31 +113,9 @@ html.directory-settings-page { height: 100%; background: #090a0d; }
 }
 
 /* 紧凑型文件夹选择按键 */
-.directory-page .directory-picker-btn {
-  width: 32px;
-  min-width: 32px;
-  height: 32px;
-  padding: 0;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 8px;
-  border: 1px solid rgba(223, 195, 132, 0.35);
-  background: linear-gradient(180deg, #1f2430 0%, #12151d 100%);
-  color: var(--gold-primary);
-  cursor: pointer;
-  transition: all 0.15s ease;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.1), 0 2px 5px rgba(0, 0, 0, 0.5);
-}
-.directory-page .directory-picker-btn:hover {
-  background: linear-gradient(180deg, #2a3142 0%, #171b26 100%);
-  border-color: var(--gold-bright);
-  color: #fae2c8;
-  box-shadow: 0 0 10px rgba(223, 195, 132, 0.35);
-}
-.directory-page .directory-picker-btn:active {
-  transform: translateY(1px);
-}
+
+
+
 .directory-page .directory-picker-btn svg {
   width: 14px;
   height: 14px;
@@ -182,10 +147,7 @@ html.directory-settings-page { height: 100%; background: #090a0d; }
   border-color: rgba(223, 195, 132, 0.65);
   box-shadow: 0 0 8px rgba(223, 195, 132, 0.25);
 }
-.directory-page :is(button, a):focus-visible {
-  outline: 2px solid var(--gold-primary);
-  outline-offset: 2px;
-}
+
 
 /* 说明小提示 */
 .directory-page .board-settings-hint {
@@ -301,6 +263,8 @@ html.directory-settings-page { height: 100%; background: #090a0d; }
 
 .directory-page .storage-settings-actions {
   display: flex;
+  flex-wrap: wrap;
+  min-width: 0;
   justify-content: flex-end;
   gap: 8px;
   margin-top: 10px;
@@ -317,6 +281,8 @@ html.directory-settings-page { height: 100%; background: #090a0d; }
   overflow-wrap: anywhere;
 }
 .directory-page .directory-error {
+  min-width: 0;
+  overflow-wrap: anywhere;
   color: #f87171;
   padding: 8px 12px;
   font-size: var(--gw-type-label-md);
@@ -370,7 +336,7 @@ html.directory-settings-page { height: 100%; background: #090a0d; }
   max-width: 520px;
   width: 92%;
   margin: auto;
-  background: linear-gradient(170deg, #171a23 0%, #0c0e14 100%) !important;
+  background:linear-gradient(170deg,var(--gw-surface-card),var(--gw-surface-card-end));
   border: 1px solid rgba(223, 195, 132, 0.35) !important;
   border-top-color: rgba(250, 226, 200, 0.6) !important;
   border-radius: 14px !important;
@@ -410,22 +376,8 @@ html.directory-settings-page { height: 100%; background: #090a0d; }
   margin-top: 3px;
   
  font-size: var(--gw-type-body-sm); line-height: var(--gw-leading-body-sm); font-weight:var(--gw-weight-regular); letter-spacing: 0; text-transform: none;}
-.directory-mount-close-btn {
-  background: none;
-  border: none;
-  color: #8892a4;
-  cursor: pointer;
-  padding: 4px;
-  border-radius: 6px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: all 0.15s ease;
-}
-.directory-mount-close-btn:hover {
-  color: #fae2c8;
-  background: rgba(255, 255, 255, 0.08);
-}
+
+
 .directory-mount-close-btn svg {
   width: 15px;
   height: 15px;
@@ -488,6 +440,7 @@ html.directory-settings-page { height: 100%; background: #090a0d; }
 }
 .directory-mount-actions {
   display: flex;
+  flex-wrap: wrap;
   justify-content: flex-end;
   gap: 8px;
   margin-top: 4px;

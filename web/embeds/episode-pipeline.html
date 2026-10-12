@@ -79,18 +79,19 @@
       border: 1px solid rgba(255,255,255,0.05) !important;
     }
   </style>
+  <link rel="stylesheet" href="/static/css/base/hardware-buttons.css?ui=20261012-b3">
 </head>
 <body class="gw-signal gw-page--episode-pipeline gw-type-body-md">
   <a class="skip-link" href="#episodePipeline">跳至剧集制片内容</a>
   <main class="workspace-page episode-page">
     <header class="episode-header">
-      <nav id="episodeStepNav" class="episode-stepbar workflow-steps" role="tablist" aria-label="剧集四步工作流" hidden aria-hidden="true"></nav>
+      <nav id="episodeStepNav" class="episode-stepbar workflow-steps btn-segmented-deck" role="tablist" aria-label="剧集四步工作流" hidden aria-hidden="true"></nav>
     </header>
 
     <section class="episode-create panel" id="createPanel" hidden aria-labelledby="createTitle">
       <div class="panel-heading">
         <div><h2 id="createTitle">新建剧集流水线</h2><p>剧集会绑定当前项目，四个阶段共享同一组持久任务。</p></div>
-        <button class="icon-button" type="button" id="closeCreate" aria-label="关闭新建表单" title="关闭">×</button>
+        <button class="hw-btn hw-btn-icon" type="button" id="closeCreate" aria-label="关闭新建表单" title="关闭">×</button>
       </div>
       <form id="createForm" class="episode-form">
         <div class="form-grid">
@@ -98,7 +99,7 @@
           <label>剧集提示词库<select name="prompt_library_id" id="promptLibrary" required></select></label>
           <label class="wide">创作种子<textarea name="seed" maxlength="20000" rows="4" placeholder="人物、冲突、场景和情绪线索"></textarea></label>
         </div>
-        <div class="form-actions"><span class="form-error" id="createError" role="alert"></span><button class="hw-btn" type="button" id="cancelCreate">取消</button><button class="hw-btn hw-btn-gold" type="submit">创建流水线</button></div>
+        <div class="form-actions"><span class="form-error" id="createError" role="alert"></span><button class="hw-btn" type="button" id="cancelCreate">取消</button><button class="hw-btn hw-btn-gold btn-size-lg" type="submit">创建流水线</button></div>
       </form>
     </section>
 

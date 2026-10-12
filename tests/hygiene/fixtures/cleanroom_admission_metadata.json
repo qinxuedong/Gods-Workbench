@@ -1,6 +1,6 @@
 {
   "schema": "gw.cleanroom-admission/v1",
-  "as_of": "2026-10-07",
+  "as_of": "2026-10-11",
   "release_authorized": true,
   "purpose": "新仓当前准入边界、来源分类和排除项的机器可读登记；不保存旧仓正文、凭据或授权账本正文。",
   "accepted_roots": [
@@ -40,6 +40,12 @@
       "path": "docs/contracts/PROVIDER-PROTOCOL-BOUNDARIES.md",
       "classification": "curated_provider_boundary",
       "authorization_basis": "H01_user_decision_2026-09-29",
+      "admission": "accepted"
+    },
+    {
+      "path": "docs/design/BUTTON-SYSTEM-SPEC.md",
+      "classification": "curated_design_system",
+      "authorization_basis": "UI_buttons_user_decision_and_B0a_B1_B2_approval_2026-10-11",
       "admission": "accepted"
     }
   ],
@@ -323,8 +329,8 @@
     {
       "path": "docs/design/DESIGN-SYSTEM-GUIDE.md",
       "classification": "curated_design_system",
-      "authorization_basis": "H01_user_decision_2026-09-29",
-      "sha256": "d0677839175096a5b3fa3860ea855d179e093c8cf2e5b0652e7d6a3ef9ec02dd",
+      "authorization_basis": "UI_buttons_user_decision_and_B0a_B1_B2_approval_2026-10-11",
+      "sha256": "81dc556a648bc96ea5e9cfa0e442fbd139b3a738a9475755c925eed1726f40f6",
       "admission": "accepted"
     },
     {
@@ -715,8 +721,15 @@
     {
       "path": "docs/governance/PROJECT-GOVERNANCE.md",
       "classification": "curated_project_governance",
-      "authorization_basis": "H01_user_decision_2026-09-29",
-      "sha256": "2e7b8a4a317179aa6531e43103da9f5711cfc3fa4e934fc7c22fb2e1e51656e5",
+      "authorization_basis": "UI_buttons_user_decision_and_B0a_B1_B2_approval_2026-10-11",
+      "sha256": "05c1544ba2b8356d7f6404091bb0fb6c559df0d75ff6ffbf91fd633efb80080c",
+      "admission": "accepted"
+    },
+    {
+      "path": "docs/design/BUTTON-SYSTEM-SPEC.md",
+      "classification": "curated_design_system",
+      "authorization_basis": "UI_buttons_user_decision_and_B0a_B1_B2_approval_2026-10-11",
+      "sha256": "a3d9855b1725823ff1fae5c73fe124ee832d21b4fc63c0396eb6bc7a26ca6a2c",
       "admission": "accepted"
     }
   ]

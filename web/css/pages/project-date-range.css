@@ -1,20 +1,18 @@
 .project-date-range-field { position: relative; }
-.project-date-range-trigger { width: 100%; min-height: 34px; display: flex; align-items: center; gap: 8px; text-align: left; }
+.project-date-range-trigger { width: 100%; display: flex; align-items: center; gap: 8px; text-align: left; }
 .project-date-range-trigger i { color: #dfc384; flex: 0 0 auto; }
 .project-date-range-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .project-date-range-popover { position: absolute; z-index: 80; top: calc(100% + 8px); left: 0; width: min(320px, calc(100vw - 32px)); padding: 12px; border: 1px solid rgba(223,195,132,.42); border-radius: 8px; background: #11141a; box-shadow: 0 18px 48px rgba(0,0,0,.58); color: #e2e8f0; }
 .project-date-range-popover[hidden] { display: none; }
 .project-date-range-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 10px; }
 .project-date-range-head strong { color: #eddab3; font: 600 var(--gw-type-body-sm)/1.2 var(--gw-font-mono); }
-.project-date-range-nav { width: 26px; height: 26px; padding: 0; display: inline-grid; place-items: center; border: 1px solid rgba(255,255,255,.14); border-radius: 5px; background: #090b0f; color: #cbd5e1; cursor: pointer; }
-.project-date-range-nav:hover, .project-date-range-nav:focus-visible { border-color: #dfc384; color: #eddab3; outline: none; }
 .project-date-range-weekdays, .project-date-range-days { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 3px; }
 .project-date-range-weekdays { margin-bottom: 4px; color: #64748b; font: 600 var(--gw-type-label-md)/1.2 var(--gw-font-mono); text-align: center; }
-.project-date-range-day { min-height: 30px; padding: 0; border: 1px solid transparent; border-radius: 4px; background: transparent; color: #cbd5e1; cursor: pointer; font: 500 var(--gw-type-label-md)/1 var(--gw-font-mono); }
-.project-date-range-day:hover, .project-date-range-day:focus-visible { border-color: rgba(223,195,132,.7); color: #fff; outline: none; }
-.project-date-range-day.is-other { color: #475569; }
-.project-date-range-day.is-today { box-shadow: inset 0 -2px #38bdf8; }
-.project-date-range-day.is-start, .project-date-range-day.is-end { background: #1687d9; color: #fff; }
-.project-date-range-day.is-between { border-radius: 0; background: rgba(56,189,248,.22); color: #f8fafc; }
 .project-date-range-hint { margin: 10px 0 0; color: #94a3b8; font-size: var(--gw-type-label-md); line-height: 1.4; }
-@media (max-width: 560px) { .project-date-range-popover { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); width: min(320px, calc(100vw - 24px)); } }
+@media (max-width: 560px) { .project-date-range-popover { width: min(320px, 100%); } }
+
+/* 日期沿用共享Segmented，页面只保留七列布局与日期内容语义。 */
+.project-date-range-day { height: var(--button-height); min-width: 0; padding-inline: 0; }
+.project-date-range-day.is-other:not([aria-pressed="true"]) { opacity: .65; }
+.project-date-range-day.is-today { text-decoration: underline; text-underline-offset: 5px; }
+.project-date-range-popover { max-height: calc(100dvh - 24px); overflow-y: auto; }

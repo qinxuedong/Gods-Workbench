@@ -457,8 +457,8 @@ function renderProjects(){
             <span class="ws-project-name">${escapeHtml(p.name)}</span>
             <span class="ws-project-count">${count}</span>
             <span class="ws-project-actions">
-                <button class="ws-proj-act rename" type="button" title="${L('重命名','Rename')}" aria-label="${L('重命名','Rename')}"><i data-lucide="pencil" class="w-3.5 h-3.5"></i></button>
-                ${isDefault ? '' : `<button class="ws-proj-act del" type="button" title="${L('删除','Delete')}" aria-label="${L('删除','Delete')}"><i data-lucide="trash-2" class="w-3.5 h-3.5"></i></button>`}
+                <button class="ws-proj-act rename hw-btn hw-btn-sm hw-btn-icon" type="button" title="${L('重命名','Rename')}" aria-label="${L('重命名','Rename')}"><i data-lucide="pencil" class="w-3.5 h-3.5"></i></button>
+                ${isDefault ? '' : `<button class="ws-proj-act del hw-btn hw-btn-sm hw-btn-icon hw-btn-danger" type="button" title="${L('删除','Delete')}" aria-label="${L('删除','Delete')}"><i data-lucide="trash-2" class="w-3.5 h-3.5"></i></button>`}
             </span>`;
         row.onclick = e => {
             if(e.target.closest('.ws-proj-act')) return;
@@ -1063,8 +1063,8 @@ function buildCard(c, position){
     const overviewCard = CANVAS_LIST_OVERVIEW ? `
         <div class="canvas-overview-card-head">
             ${canvasOverviewBadge(c, overviewType)}
-            <button class="ws-card-child-btn canvas-overview-child-btn" type="button" title="${L('新建画布','New canvas')}" aria-label="${L('新建画布','New canvas')}"><i data-lucide="plus-square" class="w-3 h-3"></i></button>
-            <button class="ws-card-menu hw-btn-icon" type="button" title="${L('更多','More')}" aria-label="${L('更多','More')}"><i data-lucide="more-horizontal" class="w-3 h-3"></i></button>
+            <button class="hw-btn hw-btn-sm hw-btn-icon ws-card-child-btn canvas-overview-child-btn" type="button" title="${L('新建画布','New canvas')}" aria-label="${L('新建画布','New canvas')}"><i data-lucide="plus-square" class="w-3 h-3"></i></button>
+            <button class="hw-btn hw-btn-sm hw-btn-icon ws-card-menu hw-btn-icon" type="button" title="${L('更多','More')}" aria-label="${L('更多','More')}"><i data-lucide="more-horizontal" class="w-3 h-3"></i></button>
         </div>
         <div class="canvas-overview-card-copy">
             <h3 class="ws-card-title" title="${escapeAttr(canvasDisplayTitle(c))}">${escapeHtml(canvasDisplayTitle(c))}</h3>
@@ -1090,8 +1090,8 @@ function buildCard(c, position){
         <div class="ws-card-top">
             <span class="ws-card-kind ${kindClass}">${kindLabel}</span>
             ${projectScoped ? `<span class="ws-card-scope scope-project">${compactLabel('项目','项目','Project')}</span>` : ''}
-            <button class="ws-card-child-btn" type="button" title="${L('新建画布','New canvas')}" aria-label="${L('新建画布','New canvas')}"><i data-lucide="plus-square" class="w-3.5 h-3.5"></i></button>
-            <button class="ws-card-menu" type="button" title="${L('更多','More')}" aria-label="${L('更多','More')}"><i data-lucide="more-horizontal" class="w-4 h-4"></i></button>
+            <button class="hw-btn hw-btn-sm hw-btn-icon ws-card-child-btn" type="button" title="${L('新建画布','New canvas')}" aria-label="${L('新建画布','New canvas')}"><i data-lucide="plus-square" class="w-3.5 h-3.5"></i></button>
+            <button class="hw-btn hw-btn-sm hw-btn-icon ws-card-menu" type="button" title="${L('更多','More')}" aria-label="${L('更多','More')}"><i data-lucide="more-horizontal" class="w-4 h-4"></i></button>
         </div>
         ${overviewCopy}
         <div class="ws-card-meta">
@@ -1281,12 +1281,12 @@ function openCreateCard(worldPt, parentCanvasId = '', trigger = document.activeE
     el.innerHTML = `
         <div class="ws-create-head">
             <div id="ws-create-title" class="ws-create-title">${escapeHtml(createCardLabel)}</div>
-            <button class="ws-create-close" type="button" data-floating-close title="${L('关闭','Close')}" aria-label="${L('关闭','Close')}"><i data-lucide="x" class="w-4 h-4"></i></button>
+            <button class="hw-btn hw-btn-icon ws-create-close" type="button" data-floating-close title="${L('关闭','Close')}" aria-label="${L('关闭','Close')}"><i data-lucide="x" class="w-4 h-4"></i></button>
         </div>
         <label class="ws-create-field"><span>${L('画布名称','Canvas name')}</span><input class="ws-create-input" type="text" maxlength="80" placeholder="${L('可不填，自动命名','Optional, auto-generated if empty')}"></label>
         <div class="ws-create-toggle ws-create-scope-toggle">
-            <button class="ws-create-toggle-btn active" type="button" data-scope="project" aria-pressed="true">${L('项目画布','Project canvas')}</button>
-            <button class="ws-create-toggle-btn" type="button" data-scope="standalone" aria-pressed="false">${L('独立画布','Standalone')}</button>
+            <button class="btn-segmented-item ws-create-toggle-btn active" type="button" data-scope="project" aria-pressed="true">${L('项目画布','Project canvas')}</button>
+            <button class="btn-segmented-item ws-create-toggle-btn" type="button" data-scope="standalone" aria-pressed="false">${L('独立画布','Standalone')}</button>
         </div>
         <label class="ws-create-field ws-create-project-field"><span>${L('所属项目','Project')}</span><select class="ws-create-project" aria-label="${L('选择所属项目','Select project')}">${projects.map(project => `<option value="${escapeAttr(project.id)}"${project.id === createProjectId ? ' selected' : ''}>${escapeHtml(project.name || project.id)}</option>`).join('')}</select></label>
         <div class="p-2 rounded-lg bg-[#0e1118] border border-[#dfc384]/20 text-[#eddab3] flex items-center justify-between font-mono" style="font-size:var(--gw-type-label-md);">
@@ -1297,7 +1297,7 @@ function openCreateCard(worldPt, parentCanvasId = '', trigger = document.activeE
             <span class="text-amber-300 font-bold">SMART</span>
         </div>
         <div class="ws-create-actions">
-            <button class="hw-btn hw-btn-gold ws-create-confirm" type="button">${L('创建画布','Create canvas')}</button>
+            <button class="hw-btn hw-btn-gold btn-size-lg ws-create-confirm" type="button">${L('创建画布','Create canvas')}</button>
             <button class="hw-btn ws-create-cancel" type="button" data-floating-close>${L('取消','Cancel')}</button>
         </div>`;
     const backdrop = document.createElement('div');
@@ -1474,14 +1474,14 @@ function openCardMenu(canvasId, anchorBtn){
         pop.dataset.floatingTrigger = createCardTriggerId(anchorBtn);
     }
     pop.innerHTML = `
-        ${isProjectCanvas(c) ? '' : `<button class="ws-pop-item" data-act="rename"><i data-lucide="pencil" class="w-4 h-4"></i><span>${L('重命名','Rename')}</span></button>`}
-        <button class="ws-pop-item" data-act="new-child"><i data-lucide="git-branch" class="w-4 h-4"></i><span>${L('新建画布','New canvas')}</span></button>
-        <button class="ws-pop-item" data-act="export"><i data-lucide="download" class="w-4 h-4"></i><span>${L('导出画布','Export canvas')}</span></button>
-        <button class="ws-pop-item" data-act="export-assets"><i data-lucide="archive" class="w-4 h-4"></i><span>${L('导出画布 + 资源','Export with assets')}</span></button>
-        <button class="ws-pop-item" data-act="cut"><i data-lucide="scissors" class="w-4 h-4"></i><span>${L('剪切到其他项目','Cut to project')}</span></button>
+        ${isProjectCanvas(c) ? '' : `<button class="hw-btn hw-btn-sm ws-pop-item" data-act="rename"><i data-lucide="pencil" class="w-4 h-4"></i><span>${L('重命名','Rename')}</span></button>`}
+        <button class="hw-btn hw-btn-sm ws-pop-item" data-act="new-child"><i data-lucide="git-branch" class="w-4 h-4"></i><span>${L('新建画布','New canvas')}</span></button>
+        <button class="hw-btn hw-btn-sm ws-pop-item" data-act="export"><i data-lucide="download" class="w-4 h-4"></i><span>${L('导出画布','Export canvas')}</span></button>
+        <button class="hw-btn hw-btn-sm ws-pop-item" data-act="export-assets"><i data-lucide="archive" class="w-4 h-4"></i><span>${L('导出画布 + 资源','Export with assets')}</span></button>
+        <button class="hw-btn hw-btn-sm ws-pop-item" data-act="cut"><i data-lucide="scissors" class="w-4 h-4"></i><span>${L('剪切到其他项目','Cut to project')}</span></button>
         <div class="ws-pop-sep"></div>
-        <button class="ws-pop-item" data-act="archive"><i data-lucide="archive" class="w-4 h-4"></i><span>${L('归档画布','Archive canvas')}</span></button>
-        <button class="ws-pop-item danger" data-act="delete"><i data-lucide="trash-2" class="w-4 h-4"></i><span>${L('删除','Delete')}</span></button>`;
+        <button class="hw-btn hw-btn-sm ws-pop-item" data-act="archive"><i data-lucide="archive" class="w-4 h-4"></i><span>${L('归档画布','Archive canvas')}</span></button>
+        <button class="hw-btn hw-btn-sm hw-btn-danger ws-pop-item danger" data-act="delete"><i data-lucide="trash-2" class="w-4 h-4"></i><span>${L('删除','Delete')}</span></button>`;
     document.body.appendChild(pop);
     const r = anchorBtn.getBoundingClientRect();
     const w = pop.offsetWidth || 188, h = pop.offsetHeight || 120;

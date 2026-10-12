@@ -34,7 +34,7 @@ function ensureDirectorySettingsNav() {
     const panel = document.createElement('section');
     panel.dataset.panel = 'directories';
     panel.className = 'directory-settings-panel';
-    panel.innerHTML = '<iframe title="目录设置" class="directory-settings-frame" src="/static/asset-manager.html?settings=directories&embedded=1" loading="lazy"></iframe>';
+    panel.innerHTML = '<iframe title="目录设置" class="directory-settings-frame" src="/static/asset-manager.html?settings=directories&embedded=1&ui=20261011-final" loading="lazy"></iframe>';
     general.after(panel);
     if (window.lucide && typeof window.lucide.createIcons === 'function') window.lucide.createIcons();
 }
