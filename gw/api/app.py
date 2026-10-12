@@ -96,7 +96,10 @@ async def _app_lifespan(app: FastAPI):
     stop_integration = None
     primary_error = None
     try:
+        from gw.core.storage import acquire_data_dir_lock, data_root
         from gw.god_canvas.service import default_god_canvas_service
+        # 先持有数据目录锁再做启动恢复；绕过 run.py 直接用 uvicorn 启动也受保护。
+        app.state.data_dir_lock = acquire_data_dir_lock(data_root())
         default_god_canvas_service.recover_interrupted_jobs()
         if integration_enabled:
             try:

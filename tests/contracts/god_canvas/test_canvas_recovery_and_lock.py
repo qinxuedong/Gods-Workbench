@@ -75,15 +75,37 @@ def test_second_process_on_same_data_dir_is_rejected():
     assert ok.stdout.strip() == "OK", ok.stderr
 
 
-def test_lock_rejects_in_same_process_too():
+def test_same_process_reacquire_returns_held_lock():
     root = data_root()
-    root.mkdir(parents=True, exist_ok=True)
     first = acquire_data_dir_lock(root)
     try:
-        with pytest.raises(DataDirLockedError):
-            acquire_data_dir_lock(root)
+        assert acquire_data_dir_lock(root) is first
     finally:
         first.release()
+
+
+def test_interrupted_at_uses_shared_utc_format():
+    import re
+    _, running, *_ = _seed_jobs()
+    svc = GodCanvasService(seed_golden_fixture=False, persistent=True)
+    svc.recover_interrupted_jobs()
+    assert re.fullmatch(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z", svc.get_job(running).interrupted_at)
+
+
+def test_app_startup_takes_lock_before_recovery():
+    from fastapi.testclient import TestClient
+    from gw.api.app import app
+    root = data_root()
+    root.mkdir(parents=True, exist_ok=True)
+    code = "import time;from gw.core.storage import acquire_data_dir_lock,data_root;acquire_data_dir_lock(data_root());print('HELD',flush=True);time.sleep(30)"
+    holder = subprocess.Popen([sys.executable, "-c", code], cwd=REPO, env=os.environ.copy(), stdout=subprocess.PIPE, text=True)
+    try:
+        assert holder.stdout.readline().strip() == "HELD"
+        with pytest.raises(DataDirLockedError):
+            with TestClient(app):
+                pass
+    finally:
+        holder.kill(); holder.wait()
 
 
 def test_run_py_refuses_second_instance(tmp_path):

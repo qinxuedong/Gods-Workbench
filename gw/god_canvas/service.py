@@ -30,7 +30,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from gw.core.auth import AuthContext, require_edit_access
-from gw.core.storage import JsonState, data_root
+from gw.core.storage import JsonState, data_root, now_iso
 from gw.core.errors import (
     CanvasVersionConflictException,
     CleanroomException,
@@ -993,7 +993,7 @@ class GodCanvasService:
         """启动恢复：上次进程遗留的 accepted/running 任务标为中断终态，不自动重发。"""
         interrupted: List[str] = []
         with self._transaction():
-            stamp = time.strftime("%Y-%m-%dT%H:%M:%S%z")
+            stamp = now_iso()
             for job_id, job in self._jobs.items():
                 if job.state in (TaskStatus.ACCEPTED.value, TaskStatus.RUNNING.value):
                     self._jobs[job_id] = SmartCanvasTaskResponse.model_validate({

@@ -316,10 +316,21 @@ class DataDirLock:
             self._handle = None
 
 
+_HELD_DATA_LOCKS: Dict[str, DataDirLock] = {}
+
+
 def acquire_data_dir_lock(root: Path) -> DataDirLock:
-    """对数据目录加跨进程独占锁；已被占用时立即失败，不等待、不共享。"""
+    """对数据目录加跨进程独占锁；已被别的进程占用时立即失败，不等待、不共享。
+
+    同一进程重复获取（run.py 预检 + 应用 lifespan）返回已持有的句柄。
+    """
     root = Path(root)
     root.mkdir(parents=True, exist_ok=True)
+    key = str(root.resolve())
+    with _LOCK:
+        held = _HELD_DATA_LOCKS.get(key)
+        if held is not None and held._handle is not None:
+            return held
     path = root / ".gw-data.lock"
     handle = open(path, "a+", encoding="utf-8")
     try:
@@ -337,4 +348,7 @@ def acquire_data_dir_lock(root: Path) -> DataDirLock:
     handle.truncate()
     handle.write(str(os.getpid()))
     handle.flush()
-    return DataDirLock(path, handle)
+    lock = DataDirLock(path, handle)
+    with _LOCK:
+        _HELD_DATA_LOCKS[key] = lock
+    return lock
