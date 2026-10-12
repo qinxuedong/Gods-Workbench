@@ -989,6 +989,20 @@ class GodCanvasService:
         self._audit_job_access("query", 200, context)
         return result
 
+    def recover_interrupted_jobs(self) -> List[str]:
+        """启动恢复：上次进程遗留的 accepted/running 任务标为中断终态，不自动重发。"""
+        interrupted: List[str] = []
+        with self._transaction():
+            stamp = time.strftime("%Y-%m-%dT%H:%M:%S%z")
+            for job_id, job in self._jobs.items():
+                if job.state in (TaskStatus.ACCEPTED.value, TaskStatus.RUNNING.value):
+                    self._jobs[job_id] = SmartCanvasTaskResponse.model_validate({
+                        **job.model_dump(mode="json"), "state": TaskStatus.FAILED.value,
+                        "error": "CANVAS_TASK_INTERRUPTED", "poll_hint": None, "interrupted_at": stamp,
+                    })
+                    interrupted.append(job_id)
+        return interrupted
+
     def list_owned_jobs(self, context: AuthContext) -> List[SmartCanvasTaskResponse]:
         """观测列表使用与单任务相同的当前项目权限，不公开种子。"""
         with self._transaction():
