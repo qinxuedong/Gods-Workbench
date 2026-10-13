@@ -234,6 +234,8 @@ def test_workbench_shell_intercepts_static_pages_navigation_without_document_rel
                 "location.pathname.endsWith('/projects.html') && "
                 "document.querySelector('#projectsGridViewContainer')"
             )
+            # gw:route-loaded 在页面脚本按序加载完成后才派发，晚于 DOM 替换；等待事件再断言，避免竞态。
+            page.wait_for_function("window.__gw_route_events.length >= 1")
 
             assert page.evaluate("window.__gw_document_token") == original_document_token
             assert page.evaluate("window.__gw_route_events.length") == 1

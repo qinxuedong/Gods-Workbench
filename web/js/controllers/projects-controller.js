@@ -234,6 +234,7 @@ window.WorkbenchProjects = (function () {
     } catch (e) {}
 
     render();
+    window.GWProjectArtifactLinks?.load(state.activeProjectId);
   }
 
   async function fetchCounts() {
@@ -741,6 +742,7 @@ window.WorkbenchProjects = (function () {
 
     // 动态同步顶栏各导航按钮的 project_id
     updateNavPillsProject(id);
+    window.GWProjectArtifactLinks?.load(id);
   }
 
   // 同步更新顶栏胶囊导航的 project_id
