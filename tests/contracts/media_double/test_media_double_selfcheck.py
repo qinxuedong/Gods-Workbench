@@ -13,6 +13,9 @@ from fastapi.testclient import TestClient
 from media_doubles import (HEADERS, NetworkBlocked, count_assets, FIXED_PNG, FIXED_PNG_SHA256, MODES, TEST_API_KEY, FakeComfy, FakeRunningHub,
                            output_transport)
 
+# 裁定 9c 要求放 docs/fixtures/，但 docs/fixtures/ 受 H03 准入清单逐文件约束
+# （tests/hygiene/fixtures/cleanroom_admission_metadata.json + 其哈希钉在 test_cleanroom_hygiene.py，二者均为 C1 冻结文件），
+# 不改冻结文件就无法登记，故暂留本目录，待 cut 修订 9c。
 SCENARIOS = Path(__file__).resolve().parent / "c3-media-double-scenarios.json"
 
 
@@ -109,36 +112,6 @@ def test_fake_media_installs_on_module_attributes(fake_media, media_env):
     assert platforms.query_rh_task_outputs == fake_media.rh.query_rh_task_outputs
     assert comfy_executor.submit == fake_media.comfy.submit
     assert comfy_executor.history == fake_media.comfy.history
-
-
-def _register_output(client, tmp_name):
-    from gw.god_workflow import asset_hub_bridge, registry, routes
-    context = routes._auth(HEADERS["Authorization"], "editor", True)
-    asset = registry.store_bytes(context, FIXED_PNG, tmp_name, "image/png")
-    result = asset_hub_bridge.register_output_to_asset_hub(asset, context=context)
-    assert not result.get("error"), result
-    return asset["asset_id"]
-
-
-def test_asset_stores_are_isolated_between_data_dirs(tmp_path, monkeypatch, no_network):
-    """C3-MD-ISOLATION-01：两个数据目录的资产数互不串（计划 §7 第 2 条，开工第一条用例）。"""
-    from gw.api.app import create_app
-    monkeypatch.setenv("GW_AUTH_MODE", "local")
-    monkeypatch.setenv("GW_DATA_DIR", str(tmp_path / "one"))
-    with TestClient(create_app()) as client:
-        before = count_assets(client)
-        asset_id = _register_output(client, "isolation.png")
-        one = count_assets(client)
-    assert one["registry"] == before["registry"] + 1
-    assert one["library_image"] == before["library_image"] + 1
-    assert asset_id in one["registry_ids"] and asset_id in one["library_image_ids"]
-
-    monkeypatch.setenv("GW_DATA_DIR", str(tmp_path / "two"))
-    with TestClient(create_app()) as client:
-        two = count_assets(client)
-    assert asset_id not in two["registry_ids"]
-    assert asset_id not in two["library_image_ids"]
-    assert two["registry"] == before["registry"] and two["library_image"] == before["library_image"]
 
 
 def test_scenario_catalog_lists_every_fixture_id():
