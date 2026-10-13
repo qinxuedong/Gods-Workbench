@@ -236,6 +236,11 @@ test('首批复核修补覆盖顶栏微球、禁用材质、资产主题与审�
   assert.match(tokens,/--gw-button-disabled-bg:\s*#1a1d24/i);
   assert.match(tokens,/--gw-button-disabled-text:\s*#a3acb9/i);
   assert.match(tokens,/--gw-button-disabled-border:\s*#3a404c/i);
+  // 金色主按钮/红色危险按钮禁用时保留色相痕迹，文字对比度均 ≥4.5:1（金 #c9b88f on #211d15 ≈ 8.58:1；红 #d4a9a9 on #241619 ≈ 8.35:1）。
+  assert.match(tokens,/--gw-button-disabled-gold-bg:\s*#211d15/i);assert.match(tokens,/--gw-button-disabled-gold-text:\s*#c9b88f/i);
+  assert.match(tokens,/--gw-button-disabled-danger-bg:\s*#241619/i);assert.match(tokens,/--gw-button-disabled-danger-text:\s*#d4a9a9/i);
+  assert.match(buttons,/:is\(\.hw-btn-gold,\.primary-ignite\):is\(:disabled,\[aria-disabled="true"\]\) \{[^}]*--gw-button-disabled-gold-bg[^}]*--gw-button-disabled-gold-text/);
+  assert.match(buttons,/:is\(\.hw-btn-danger,\.btn-hw-danger,\.btn-abort-carmine,\.btn-override-carmine\):is\(:disabled,\[aria-disabled="true"\]\) \{[^}]*--gw-button-disabled-danger-bg[^}]*--gw-button-disabled-danger-text/);
   // C1-V3：禁用态不再整体降透明度，文字/底色对比度须 ≥4.5:1（#a3acb9 on #1a1d24 ≈ 7.36:1）。
   assert.match(buttons,/opacity:1;\s*cursor:not-allowed/);
   assert.match(buttons,/border-style:dashed !important/);
