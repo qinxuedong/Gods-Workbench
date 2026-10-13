@@ -32,6 +32,43 @@ cd <本机仓库根目录>
 - 可选：`--timeout-seconds`（默认 1800）、`--poll-interval`（默认 10）、`--domain`（默认 www.runninghub.cn）。
 - 退出码：0 = PASS，1 = FAILED，2 = BLOCKED。
 
+## 3b. Windows PowerShell 版本
+
+本机为 Windows 时，用下面的 PowerShell 命令替代第 2、3 节的 bash 命令（key 配置 + 运行验收）；第 4、5、6 节的判定标准、证据归档与预算提示不变。
+
+### 配置 key（只进本机会话环境变量，不写进任何文件）
+
+```powershell
+$env:GW_RUNNINGHUB_API_KEY = '<你的 RunningHub 付费 apiKey>'   # 只在本机 PowerShell 会话里设置
+```
+
+- key 只对当前 PowerShell 会话生效，不写进仓库文件、日志、结果 JSON 或 PR；脚本只读取环境变量，值不会被打印或落盘（同第 2 节）。
+- 验收结束后清掉会话里的 key：`Remove-Item Env:GW_RUNNINGHUB_API_KEY`。
+
+### 激活本地虚拟环境（或直接调用其 python）
+
+```powershell
+.\.venv\Scripts\Activate.ps1   # 激活本机仓库根目录下的 .venv
+```
+
+- 若不想激活（或 `Activate.ps1` 受执行策略限制），可直接调用 `.\.venv\Scripts\python.exe`，效果相同；下面的运行命令即采用此写法。
+
+### 运行验收命令
+
+```powershell
+cd <本机仓库根目录>
+.\.venv\Scripts\python.exe tools\c3_acceptance\ac8_runninghub_real.py `
+  --out .local\qa\C3-evidence\AC8\ac8-result.json `
+  --workflow-id <RunningHub 工作流数字ID> `
+  --i-accept-cost
+```
+
+- 多行时用 PowerShell 反引号 `` ` `` 续行（反引号之后必须直接换行，不能有空格）；也可写成单行：
+  `.\.venv\Scripts\python.exe tools\c3_acceptance\ac8_runninghub_real.py --out .local\qa\C3-evidence\AC8\ac8-result.json --workflow-id <数字ID> --i-accept-cost`
+- Windows 路径分隔符：证据目录写作 `.local\qa\C3-evidence\AC8\`（与第 5 节 `.local/qa/C3-evidence/AC8/` 等价）。
+- 退出码用 `$LASTEXITCODE` 查看（运行后直接输入 `$LASTEXITCODE`）：0 = PASS，1 = FAILED，2 = BLOCKED（含义同第 3 节）。
+- `--workflow-id`、`--i-accept-cost` 及可选参数（`--timeout-seconds`、`--poll-interval`、`--domain`）含义同第 3 节。
+
 ## 4. 判定 PASS 的标准
 
 1. 命令退出码 0，终端输出 `PASS: 真实任务 <job_id> 完成；统一资产 <asset_id> 已登记且可回跳。`
