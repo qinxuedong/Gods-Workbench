@@ -176,6 +176,7 @@ window.WorkbenchProjects = (function () {
 
   // 1. 加载项目数据与状态统计
   async function load() {
+    window.GWProjectArtifactLinks?.invalidate();
     try {
       let targetUrl = '/api/asset-registry/projects?archived=false';
       if (state.filterScope === 'trash') {
@@ -234,7 +235,6 @@ window.WorkbenchProjects = (function () {
     } catch (e) {}
 
     render();
-    window.GWProjectArtifactLinks?.load(state.activeProjectId);
   }
 
   async function fetchCounts() {
@@ -528,6 +528,7 @@ window.WorkbenchProjects = (function () {
           <span class="gw-type-body-sm font-mono px-1 py-0.5 rounded bg-[#0a0c10] border border-white/10 text-[#eddab3]">
             AURA
           </span>
+          <span data-gw-artifact-version-slot data-project-id="${esc(p.id)}" class="flex items-center" hidden></span>
         </div>
 
         <div class="flex items-center space-x-1">
@@ -651,6 +652,7 @@ window.WorkbenchProjects = (function () {
         }
 
         stream.innerHTML = cardsHtml;
+        window.GWProjectArtifactLinks?.hydrate(stream);
       }
     }
 
@@ -742,7 +744,6 @@ window.WorkbenchProjects = (function () {
 
     // 动态同步顶栏各导航按钮的 project_id
     updateNavPillsProject(id);
-    window.GWProjectArtifactLinks?.load(id);
   }
 
   // 同步更新顶栏胶囊导航的 project_id
