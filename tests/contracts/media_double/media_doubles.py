@@ -130,7 +130,10 @@ class FakeComfy(_Recorder):
             raise CleanroomException(502, "WORKFLOW_PROVIDER_ERROR", "ComfyUI history request failed")
         if self.count("history") == 1:
             return {"found": False, "entry": None}
-        status = {"status_str": "error", "messages": []} if self.mode == "fail_remote" else {"status_str": "success"}
+        if self.mode == "fail_remote":
+            # ComfyUI 执行出错时 history 里没有产物；带产物的 error 条目会被真实代码照常登记（见 PR-3 说明）。
+            return {"found": True, "entry": {"outputs": {}, "status": {"status_str": "error", "messages": []}}}
+        status = {"status_str": "success"}
         images = [{"filename": "out-0001.png", "subfolder": "", "type": "output"}]
         if self.mode == "partial_outputs" and self.count("history") == 2:
             images.append({"filename": "missing-0002.png", "subfolder": "", "type": "output"})
