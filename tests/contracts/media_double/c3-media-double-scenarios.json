@@ -225,7 +225,7 @@
       "fixture_id": "C3-MD-DELETE-RESTORE-04",
       "mode": "success",
       "scenario": "重复恢复 → 404/409",
-      "test": "test_c3_asset_delete_restore.py::test_restore_conflict_is_409",
+      "test": "test_c3_asset_delete_restore.py::test_restore_twice_returns_404_or_409",
       "ac": [
         "AC4"
       ],
