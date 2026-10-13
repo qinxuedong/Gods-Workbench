@@ -85,7 +85,7 @@ def test_collect_while_deleted_does_not_resurrect_or_duplicate(media_client, fak
     assert fake_media.rh.count("create_rh_cloud_task") == 1
 
 
-def test_restore_conflict_is_409(media_client, fake_media, asset_counts):
+def test_restore_twice_returns_404_or_409(media_client, fake_media, asset_counts):
     """C3-MD-DELETE-RESTORE-04：同一回收条目恢复两次 → 404 或 409，资产不重复。"""
     _, _, asset_id = _completed_output(media_client)
     entry_id = _delete(media_client, asset_id)
