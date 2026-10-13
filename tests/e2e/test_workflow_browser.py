@@ -1,5 +1,5 @@
 """工作流实际浏览器回归，账户、存储与网络均隔离。"""
-from workflow_support import settings_browser
+from workflow_support import goto_ready, settings_browser
 from pathlib import Path
 from urllib.parse import urlsplit, quote
 import io
@@ -21,7 +21,7 @@ def test_deep_link_and_continuous_parameter_save_survive_reload(monkeypatch, tmp
     with settings_browser(monkeypatch, tmp_path) as (page, base, errors, _):
         create_workflow(page, base, 'first.png')
         target = create_workflow(page, base, 'target.png')
-        page.goto(base + '/static/pages/workflow.html?id=' + target, wait_until='networkidle')
+        goto_ready(page, base + '/static/pages/workflow.html?id=' + target)
         page.wait_for_function('(id) => state.currentWorkflow?.workflow_id === id', arg=target)
         page.locator('.canvas-node[data-node-id="1"]').click()
         control = page.locator('[data-widget-control="1:image"]').first
@@ -38,7 +38,7 @@ def test_deep_link_and_continuous_parameter_save_survive_reload(monkeypatch, tmp
 def test_modal_escape_focus_loop_and_return(monkeypatch, tmp_path):
     with settings_browser(monkeypatch, tmp_path) as (page, base, errors, _):
         target = create_workflow(page, base, 'target.png')
-        page.goto(base + '/static/pages/workflow.html?id=' + target, wait_until='networkidle')
+        goto_ready(page, base + '/static/pages/workflow.html?id=' + target)
         page.wait_for_function('(id) => state.currentWorkflow?.workflow_id === id', arg=target)
         page.locator('#btnViewTaskDrawer').click()
         page.locator('#taskModal.open').wait_for()
@@ -73,7 +73,7 @@ def test_settings_save_does_not_reimport_or_overwrite_current_workflow(monkeypat
                 {'node_id': '1', 'field_name': 'image', 'value': 'user-edited.png'}]})
         assert changed.status == 200, changed.text()
         before = page.context.request.get(base + f'/api/god_workflow/item/{target}').json()
-        page.goto(base + '/static/pages/workflow.html?id=' + target, wait_until='networkidle')
+        goto_ready(page, base + '/static/pages/workflow.html?id=' + target)
         page.wait_for_function('(id) => state.currentWorkflow?.workflow_id === id', arg=target)
         page.locator('#btnOpenSettings').click()
         page.locator('#settingsModal.open').wait_for()
@@ -105,7 +105,7 @@ def test_rh_credentials_can_be_typed_saved_and_used_after_reload(monkeypatch, tm
             '1': {'class_type': 'LoadImage', 'inputs': {'image': 'source.png'}}}}
     monkeypatch.setattr(platforms, 'fetch_runninghub_bundle', source)
     with settings_browser(monkeypatch, tmp_path) as (page, base, errors, _):
-        page.goto(base + '/static/pages/workflow.html', wait_until='networkidle')
+        goto_ready(page, base + '/static/pages/workflow.html')
         page.locator('#btnOpenSettings').click()
         page.locator('#settingsModal.open').wait_for()
         key_input, token_input = page.locator('#inputRhApiKey'), page.locator('#inputRhAccessToken')
@@ -165,7 +165,7 @@ def test_rh_api_source_keeps_original_name_in_catalog_and_assets(monkeypatch, tm
         return {'code': 0, 'data': {'name': title, 'workflowContent': None}}
     monkeypatch.setattr(platforms, '_post_json', source)
     with settings_browser(monkeypatch, tmp_path) as (page, base, errors, _):
-        page.goto(base + '/static/pages/workflow.html', wait_until='networkidle')
+        goto_ready(page, base + '/static/pages/workflow.html')
         page.locator('#btnOpenSettings').click()
         page.locator('#settingsModal.open').wait_for()
         page.locator('#inputRhApiKey').fill('synthetic-name-browser-key')
@@ -183,7 +183,7 @@ def test_rh_api_source_keeps_original_name_in_catalog_and_assets(monkeypatch, tm
         page.wait_for_function('(title) => state.currentWorkflow?.name === title', arg=title)
         assert title in page.locator('#workflowTreeList').inner_text()
         page.screenshot(path=str(tmp_path / 'rh-original-name-reloaded.png'))
-        page.goto(base + '/static/embeds/asset-manager.html', wait_until='networkidle')
+        goto_ready(page, base + '/static/embeds/asset-manager.html')
         page.locator('[data-tab="workflows"]').click()
         card = page.locator('[data-workflow-card="' + asset_id + '"]')
         card.wait_for()
@@ -205,7 +205,7 @@ def test_rh_public_preview_preserves_editor_and_has_no_execution_controls(monkey
     monkeypatch.setattr(platforms, 'fetch_runninghub_bundle', source)
     with settings_browser(monkeypatch, tmp_path) as (page, base, errors, _):
         target = create_workflow(page, base, 'keep-edited.png')
-        page.goto(base + '/static/pages/workflow.html?id=' + target, wait_until='networkidle')
+        goto_ready(page, base + '/static/pages/workflow.html?id=' + target)
         page.wait_for_function('(id) => state.currentWorkflow?.workflow_id === id', arg=target)
         before = page.evaluate('JSON.stringify(state.currentWorkflow)')
         page.locator('#btnParseLink').focus()
@@ -247,7 +247,7 @@ def test_imported_workflow_catalog_survives_metadata_and_reload(monkeypatch, tmp
             'links': [[1, 1, 0, 2, 0, 'IMAGE']]}}
     monkeypatch.setattr(platforms, 'fetch_liblib_bundle', source)
     with settings_browser(monkeypatch, tmp_path) as (page, base, errors, _):
-        page.goto(base + '/static/pages/workflow.html', wait_until='networkidle')
+        goto_ready(page, base + '/static/pages/workflow.html')
         settings = page.context.request.post(base + '/api/god_workflow/settings',
             headers={'Origin': base}, data={'comfy_url': 'http://127.0.0.1:8199'})
         assert settings.status == 200
@@ -275,7 +275,7 @@ def test_imported_workflow_catalog_survives_metadata_and_reload(monkeypatch, tmp
         page.wait_for_function('(id) => state.currentWorkflow?.workflow_id === id', arg=workflow_id)
         assert page.evaluate('state.currentWorkflow.nodes[0].widgets[0].value') == 'original.png'
         assert page.context.request.get(base + '/api/god_workflow/item/' + workflow_id).json() == saved
-        page.goto(base + '/static/embeds/asset-manager.html', wait_until='networkidle')
+        goto_ready(page, base + '/static/embeds/asset-manager.html')
         page.locator('[data-tab="workflows"]').click()
         page.locator('[data-workflow-card="' + saved['asset_id'] + '"]').wait_for()
         assert errors == []
@@ -316,7 +316,7 @@ def test_native_bridge_load_save_and_conflict_in_isolated_browser_host(monkeypat
                 data={'1': {'class_type': 'ImageAndLabel', 'inputs': {'label': 'keep', 'image': 'source.png'}}})
             assert response.status == 201, response.text()
             target = response.json()['workflow_id']
-        page.goto(base + '/static/pages/workflow.html?id=' + target, wait_until='networkidle')
+        goto_ready(page, base + '/static/pages/workflow.html?id=' + target)
         page.wait_for_function('(id) => state.currentWorkflow?.workflow_id === id', arg=target)
         if not two_parameters:
             page.locator('.wf-capsule[data-wf-id="' + target + '"]').click(button='right')
@@ -385,14 +385,14 @@ def test_cf_lifecycle_and_import_button_have_separate_responsibilities(monkeypat
     with settings_browser(monkeypatch, tmp_path) as (page, base, errors, _):
         paths = []
         page.on('request', lambda request: paths.append(urlsplit(request.url).path))
-        page.goto(base + '/static/pages/workflow.html', wait_until='networkidle')
+        goto_ready(page, base + '/static/pages/workflow.html')
         page.wait_for_function('() => state.authLoading === false')
         button = page.get_by_role('button', name='导入 ComfyUI', exact=True)
         button.click()
         page.get_by_text('请先选择或解析一个工作流，再导入 ComfyUI', exact=True).wait_for()
         assert not any('/open-in-comfy' in path for path in paths)
         target = create_workflow(page, base, 'input.png')
-        page.goto(base + '/static/pages/workflow.html?id=' + target, wait_until='networkidle')
+        goto_ready(page, base + '/static/pages/workflow.html?id=' + target)
         page.wait_for_function('(id) => state.currentWorkflow?.workflow_id === id', arg=target)
         assert page.evaluate('document.getElementById("btnParseLink").nextElementSibling.id') == 'btnImportComfyUi'
         button.click()
@@ -421,7 +421,7 @@ def test_anonymous_import_click_has_feedback_without_business_request(monkeypatc
         page.context.clear_cookies()
         paths = []
         page.on('request', lambda request: paths.append(urlsplit(request.url).path))
-        page.goto(base + '/static/pages/workflow.html', wait_until='networkidle')
+        goto_ready(page, base + '/static/pages/workflow.html')
         page.get_by_role('button', name='导入 ComfyUI', exact=True).click()
         page.get_by_text('请先登录神工坊，再导入 ComfyUI', exact=True).wait_for()
         assert not any('/open-in-comfy' in path for path in paths)
@@ -458,7 +458,7 @@ def test_project_managed_adapter_loads_plain_native_json_and_reuses_window(monke
                 kind = 'text/html'
             route.fulfill(status=200, body=body, content_type=kind)
         page.context.route('http://127.0.0.1:8199/**', host)
-        page.goto(base + '/static/pages/workflow.html', wait_until='networkidle')
+        goto_ready(page, base + '/static/pages/workflow.html')
         native_file = tmp_path / 'ordinary-workflow.json'
         native_file.write_text(json.dumps(graph), encoding='utf-8')
         page.wait_for_function('window.WorkbenchComfy.getStatus() === "online"')
@@ -513,7 +513,7 @@ def test_embedded_png_workflow_uses_real_metadata_without_opening_host(monkeypat
               readText: async()=>'', read: async()=>[{types:['image/png'], getType: async()=>
               new Blob([Uint8Array.from(atob('%s'), c=>c.charCodeAt(0))], {type:'image/png'})}]
             }});''' % encoded)
-        page.goto(base + '/static/pages/workflow.html', wait_until='networkidle')
+        goto_ready(page, base + '/static/pages/workflow.html')
         if entry == 'upload':
             image = tmp_path / 'embedded.png'
             image.write_bytes(binary.getvalue())
@@ -570,7 +570,7 @@ def test_native_page_resolution_is_last_resort_for_unsupported_widget_mapping(mo
                 kind = 'text/html'
             route.fulfill(status=200, content_type=kind, body=body)
         page.context.route('http://127.0.0.1:8199/**', host)
-        page.goto(base + '/static/pages/workflow.html', wait_until='networkidle')
+        goto_ready(page, base + '/static/pages/workflow.html')
         native_file = tmp_path / 'custom-native.json'
         native_file.write_text(json.dumps(graph), encoding='utf-8')
         with page.expect_popup() as opened:
@@ -619,7 +619,7 @@ def test_native_format_version_can_save_then_submit_local_in_browser(monkeypatch
             stored = json.loads(files[0].read_text(encoding='utf-8'))
             stored['version'] = 0
             files[0].write_text(json.dumps(stored), encoding='utf-8')
-        page.goto(base + '/static/pages/workflow.html?id=' + target, wait_until='networkidle')
+        goto_ready(page, base + '/static/pages/workflow.html?id=' + target)
         page.wait_for_function('(id) => state.currentWorkflow?.workflow_id === id', arg=target)
         assert page.evaluate('state.currentWorkflow.version') == 1
         page.locator('.canvas-node[data-node-id="1"]').click()
@@ -640,7 +640,7 @@ def test_native_format_version_can_save_then_submit_local_in_browser(monkeypatch
 def test_delete_last_workflow_stays_empty_after_reload(monkeypatch, tmp_path):
     with settings_browser(monkeypatch, tmp_path) as (page, base, errors, _):
         target = create_workflow(page, base, 'delete.png')
-        page.goto(base + '/static/pages/workflow.html?id=' + target, wait_until='networkidle')
+        goto_ready(page, base + '/static/pages/workflow.html?id=' + target)
         page.wait_for_function('(id) => state.currentWorkflow?.workflow_id === id', arg=target)
         page.locator('.wf-capsule[data-wf-id="' + target + '"]').click(button='right')
         page.locator('#ctxDeleteWf').click()
@@ -656,7 +656,7 @@ def test_delete_last_workflow_stays_empty_after_reload(monkeypatch, tmp_path):
 def test_rebind_after_root_replacement_restores_real_controls(monkeypatch, tmp_path):
     with settings_browser(monkeypatch, tmp_path) as (page, base, errors, _):
         target = create_workflow(page, base, 'root.png')
-        page.goto(base + '/static/pages/workflow.html?id=' + target, wait_until='networkidle')
+        goto_ready(page, base + '/static/pages/workflow.html?id=' + target)
         page.wait_for_function('(id) => state.currentWorkflow?.workflow_id === id', arg=target)
         old_timer = page.evaluate('state.comfySyncTimer')
         page.evaluate('''() => {
@@ -688,7 +688,7 @@ def test_native_wire_centres_type_and_source_at_zoom_and_pan(monkeypatch, tmp_pa
             data=graph, headers={'Origin': base})
         assert saved.status == 201, saved.text()
         target = saved.json()['workflow_id']
-        page.goto(base + '/static/pages/workflow.html?id=' + target, wait_until='networkidle')
+        goto_ready(page, base + '/static/pages/workflow.html?id=' + target)
         page.wait_for_function('(id) => state.currentWorkflow?.workflow_id === id', arg=target)
         assert page.locator('.wf-tree-item[data-wf-id="' + target + '"] .wf-source-badge').inner_text() == 'LOCAL'
         for zoom in (1, 0.5, 1.7):
@@ -747,7 +747,7 @@ def test_asset_host_workflow_ids_native_export_cas_and_edit_jump(monkeypatch, tm
         first_doc = page.context.request.get(base + '/api/god_workflow/item/' + first).json()
         second_doc = page.context.request.get(base + '/api/god_workflow/item/' + second).json()
         first_asset, second_asset = first_doc['asset_id'], second_doc['asset_id']
-        page.goto(base + '/static/embeds/asset-manager.html', wait_until='networkidle')
+        goto_ready(page, base + '/static/embeds/asset-manager.html')
         page.locator('[data-tab="workflows"]').click()
         assert page.locator('[data-workflow-card="' + first_asset + '"]').count() == 1
         assert page.locator('[data-workflow-card="' + second_asset + '"]').count() == 1
@@ -779,6 +779,8 @@ def test_asset_host_workflow_ids_native_export_cas_and_edit_jump(monkeypatch, tm
         page.locator('[data-workflow-card="' + first_asset + '"]').filter(has_text='更名后的工作流').wait_for()
         assert page.context.request.get(base + '/api/god_workflow/item/' + first).json()['version'] == 2
         page.locator('[data-workflow-delete="' + first_asset + '"]').click()
+        # 首次点击异步读取删除基线版本；须待其进入确认态后再制造并发改名，否则基线可能已是新版本。
+        page.locator('#assetStatus').filter(has_text='再次点击确认删除').wait_for()
         concurrent = page.context.request.put(base + '/api/god_workflow/item/' + first + '/name',
             data={'name': '并发新版本', 'expected_version': 2}, headers={'Origin': base})
         assert concurrent.status == 200
@@ -822,7 +824,7 @@ def test_project_workflow_output_asset_source_roundtrip_in_browser(monkeypatch, 
             data={'name': '隔离来源项目', 'project_type': 'other'}, headers={'Origin': base})
         assert created.status == 201, created.text()
         project_id = created.json()['project']['project_id']
-        page.goto(base + '/static/pages/projects.html?project_id=' + project_id, wait_until='networkidle')
+        goto_ready(page, base + '/static/pages/projects.html?project_id=' + project_id)
         link = page.locator('a[title="工作流"]')
         page.wait_for_function('(id) => document.querySelector(\'a[title="工作流"]\').href.includes(id)', arg=project_id)
         link.click()
@@ -846,7 +848,7 @@ def test_project_workflow_output_asset_source_roundtrip_in_browser(monkeypatch, 
         current_assets = page.context.request.get(base + '/api/asset-registry/assets?project_id=' + project_id).json()['items']
         assert sum(asset['asset_id'] == asset_id for asset in current_assets) == 1
         assert len(submissions) == 1
-        page.goto(base + '/static/embeds/asset-manager.html', wait_until='networkidle')
+        goto_ready(page, base + '/static/embeds/asset-manager.html')
         page.locator('[data-registry-card="' + asset_id + '"]').dblclick()
         page.locator('[data-detail-media-library-toggle]').wait_for()
         toggle = page.locator('[data-detail-media-library-toggle][aria-expanded="false"]')
