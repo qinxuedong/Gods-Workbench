@@ -49,8 +49,9 @@ app.registerExtension({
         if (!message.graph || typeof message.workflow_id !== 'string' || !Number.isInteger(message.expected_version)) return;
         loading = true; button.disabled = true;
         try {
+          // ComfyUI 前端 1.55 的 openWorkflow 读取 filename.path，缺省文件名会抛 TypeError。
           const loaded = message.format === 'api'
-            ? await app.loadApiJson(message.graph)
+            ? await app.loadApiJson(message.graph, 'GW_' + message.workflow_id + '.json')
             : await app.loadGraphData(message.graph);
           if (loaded === false) throw new Error('宿主未载入图');
           workflowId = message.workflow_id; version = message.expected_version;

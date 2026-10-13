@@ -9,6 +9,7 @@
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 
 import pytest
@@ -304,3 +305,18 @@ def test_open_in_comfy_native_roundtrip_and_sync(media_client, no_network, comfy
     fields: dict = {}
     assert compile_prompt(saved, saved["metadata"]["node_schemas"], field_maps=fields) == LITEGRAPH_PROMPT
     assert fields == {"1": {"widget_0": "text", "widget_1": "count"}}
+
+
+def test_adapter_api_load_passes_safe_filename_derived_from_workflow_id():
+    """C3-AC9-FIX-01：API 图载入必须传文件名——ComfyUI 0.39.0（前端 1.55）的 openWorkflow
+    读取 filename.path，缺省文件名会抛 TypeError reading 'path'；文件名由 workflow_id 派生。"""
+    adapter = browser_bridge.SCRIPT.read_text(encoding='utf-8')
+    # 直接在 loadApiJson 调用点断言第二个文件名实参（GW_<workflow_id>.json）。
+    call = re.search(r"await app\.loadApiJson\([^)]*\)", adapter)
+    assert call, 'adapter 应调用 app.loadApiJson'
+    assert re.fullmatch(
+        r"await app\.loadApiJson\(message\.graph,\s*'GW_' \+ message\.workflow_id \+ '\.json'\)",
+        call.group(0)), call.group(0)
+    # 提供到宿主的页面适配即本源文件，无第二份拷贝需要同步。
+    assert browser_bridge.SCRIPT.name == 'workbench.js'
+    assert browser_bridge.EXTENSION_URL.endswith('/workbench.js')
