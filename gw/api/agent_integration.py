@@ -775,6 +775,17 @@ class AgentIntegration:
             )
         return await self.request_context(auth, {}, fingerprint, binding["project_id"], request_id, edit_required=edit_required)
 
+    def project_run_ids(self, auth: AuthContext, fingerprint: str, project_id: str) -> list[str]:
+        """只读：校验项目读权限后，返回当前主体在该项目下绑定的运行（按创建顺序）。"""
+        self._verify_auth_for_project(auth, fingerprint, project_id, edit_required=False)
+        with self.database.connect() as db:
+            rows = db.execute(
+                "SELECT run_id FROM host_agent_bindings WHERE project_id=? AND actor_id=? AND identity_domain=? "
+                "AND auth_mode=? ORDER BY rowid",
+                (project_id, auth.subject or "", auth.identity_domain or "", auth.mode),
+            ).fetchall()
+        return [str(row["run_id"]) for row in rows]
+
     async def authorize_background(self, project_id: Identifier, actor_id: Identifier, run_id: Identifier | None = None) -> bool:
         if run_id is None:
             return False
