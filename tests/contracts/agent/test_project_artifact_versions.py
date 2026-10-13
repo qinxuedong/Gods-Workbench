@@ -74,12 +74,178 @@ def test_project_artifacts_limit_and_unknown_project(host_agent: Harness):
     assert missing.status_code == 404
 
 
-def test_project_artifacts_require_live_cookie_session(host_agent: Harness):
+def _url(project_id: str, query: str = "") -> str:
+    return f"/api/agent/projects/{project_id}/artifacts{query}"
+
+
+def _fresh_client(host_agent: Harness, port: int, token: str | None = None):
+    """新建一个不继承夹具 Cookie 的客户端；token 给定时以 Cookie 会话登录。"""
+    from fastapi.testclient import TestClient
+
+    from gw.api.app import create_app
+    from gw.core.session import session_cookie_name
+
+    client = TestClient(
+        create_app(agent_integration_factory=host_agent.integration),
+        base_url="http://localhost",
+        client=("127.0.0.1", port),
+        headers={"Origin": "http://localhost"},
+    )
+    client.__enter__()  # 运行 lifespan，挂上 agent integration
+    if token is not None:
+        client.cookies.set(session_cookie_name(), token)
+    return client
+
+
+def _create_local_user(username: str, password: str, role: str = "editor") -> str:
+    from gw.core import local_accounts
+
+    salt = f"{username}-salt".encode()
+    with local_accounts.database() as db:
+        db.execute(
+            "INSERT INTO local_users(user_id,username,salt,password_hash,role) VALUES(?,?,?,?,?)",
+            (f"usr-{username}", username, salt, local_accounts.password_hash(password, salt), role),
+        )
+    _, token = local_accounts.login(username, password, f"{username}-client")
+    return token
+
+
+def _seeded_run(host_agent: Harness, project_id: str | None = None, key: str = "a") -> str:
+    overrides = {"idempotency_key": f"c3-artifact-acl-{key}", "request_id": f"c3-artifact-acl-req-{key}"}
+    if project_id is not None:
+        overrides["project_id"] = project_id
+    created = host_agent.client.post("/api/agent/runs", json=_create_payload(host_agent, **overrides))
+    assert created.status_code == 202, created.text
+    run_id = created.json()["run_id"]
+    _seed_version(host_agent.integration, run_id, key, f"项目 {key} 的剧本")
+    return run_id
+
+
+def test_project_artifacts_cookie_session_lists_own_run(host_agent: Harness):
+    """真正走 Cookie 会话（夹具客户端只带 Cookie、不带 Authorization）。"""
+    run_id = _seeded_run(host_agent)
+    response = host_agent.client.get(_url(host_agent.project_id))
+    assert response.status_code == 200, response.text
+    assert [item["run_id"] for item in response.json()["items"]] == [run_id]
+
+
+def test_project_artifacts_reject_bearer_without_cookie_session(host_agent: Harness):
+    """只有 Bearer、没有 Cookie 会话 → 拒绝（Bearer 不能代替主机 Cookie 会话）。"""
+    client = _fresh_client(host_agent, 50101)
+    try:
+        response = client.get(_url(host_agent.project_id), headers={"Authorization": "Bearer someone-else"})
+        assert response.status_code == 401, response.text
+    finally:
+        client.__exit__(None, None, None)
+
+
+def test_project_artifacts_reject_no_credentials(host_agent: Harness):
+    _seeded_run(host_agent)
+    client = _fresh_client(host_agent, 50102)
+    try:
+        response = client.get(_url(host_agent.project_id))
+        assert response.status_code == 401, response.text
+        assert "run_id" not in response.text
+    finally:
+        client.__exit__(None, None, None)
+
+
+def test_project_artifacts_reject_expired_session(host_agent: Harness):
+    import hashlib
+
+    from gw.core import local_accounts
+
+    _seeded_run(host_agent)
+    with local_accounts.database() as db:
+        db.execute("UPDATE local_sessions SET expires_at=? WHERE token_hash=?",
+                   (1.0, hashlib.sha256(host_agent.session_token.encode()).hexdigest()))
+    response = host_agent.client.get(_url(host_agent.project_id))
+    assert response.status_code == 401, response.text
+
+
+def test_project_artifacts_reject_revoked_account(host_agent: Harness):
+    """账号被移除（本地账号模型里的“撤销”：删除用户，会话级联删除）→ 拒绝。"""
+    from gw.core import local_accounts
+
+    _seeded_run(host_agent)
+    with local_accounts.database() as db:
+        db.execute("DELETE FROM local_users WHERE user_id=?", (host_agent.principal["user_id"],))
+    response = host_agent.client.get(_url(host_agent.project_id))
+    assert response.status_code in (401, 403), response.text
+    assert "run_id" not in response.text
+
+
+def test_project_artifacts_role_downgrade_to_readonly_still_reads(host_agent: Harness):
+    """角色降为 readonly 仍可读：本接口只读（edit_required=False），已知角色都有读权限；
+    本地账号库的 role 受 CHECK 约束，无法降为“无角色”，所以没有“角色撤销 → 403”的可构造用例。"""
+    from gw.core import local_accounts
+
+    run_id = _seeded_run(host_agent)
+    with local_accounts.database() as db:
+        db.execute("UPDATE local_users SET role='readonly' WHERE user_id=?", (host_agent.principal["user_id"],))
+    response = host_agent.client.get(_url(host_agent.project_id))
+    assert response.status_code == 200, response.text
+    assert [item["run_id"] for item in response.json()["items"]] == [run_id]
+
+
+def test_project_artifacts_hidden_from_another_user(host_agent: Harness):
+    from gw.projects_hub.models import ProjectCreateRequest, ProjectType
+    from gw.projects_hub.service import owner_key_for_context
+    from gw.core.auth import AuthContext
+
+    run_id = _seeded_run(host_agent)
+    token = _create_local_user("artifactoutsider", "Outsider2026")
+    outsider_auth = AuthContext(role="editor", subject="usr-artifactoutsider", mode="local_account",
+                                identity_domain="local_account")
+    own = host_agent.integration.projects.create_project(
+        ProjectCreateRequest(name="外人自己的项目", project_type=ProjectType.FILM),
+        owner_key=owner_key_for_context(outsider_auth),
+    )
+    client = _fresh_client(host_agent, 50103, token)
+    try:
+        foreign = client.get(_url(host_agent.project_id))
+        assert foreign.status_code == 404, foreign.text
+        assert run_id not in foreign.text
+        mine = client.get(_url(own.project_id))
+        assert mine.status_code == 200, mine.text
+        assert mine.json()["items"] == [] and run_id not in mine.text
+    finally:
+        client.__exit__(None, None, None)
+
+
+def test_project_artifacts_do_not_leak_across_same_users_projects(host_agent: Harness):
+    from gw.projects_hub.models import ProjectCreateRequest, ProjectType
+    from gw.projects_hub.service import owner_key_for_context
+    from gw.core.auth import AuthContext
+
+    owner_auth = AuthContext(role=host_agent.principal["role"], subject=host_agent.principal["user_id"],
+                             mode="local_account", identity_domain="local_account")
+    other = host_agent.integration.projects.create_project(
+        ProjectCreateRequest(name="同一用户的另一个项目", project_type=ProjectType.FILM),
+        owner_key=owner_key_for_context(owner_auth),
+    )
+    run_a = _seeded_run(host_agent, key="a")
+    run_b = _seeded_run(host_agent, project_id=other.project_id, key="b")
+    a = host_agent.client.get(_url(host_agent.project_id)).json()
+    b = host_agent.client.get(_url(other.project_id)).json()
+    assert {item["run_id"] for item in a["items"]} == {run_a}
+    assert {item["run_id"] for item in b["items"]} == {run_b}
+
+
+def test_project_artifacts_limit_boundaries(host_agent: Harness):
+    """limit 越界被参数校验拒绝。注意：本应用把 FastAPI 的校验错误统一映射为 400 INVALID_REQUEST
+    （不是 FastAPI 默认的 422），这里按实际契约断言。"""
     client = host_agent.client
-    client.cookies.clear()
-    response = client.get(f"/api/agent/projects/{host_agent.project_id}/artifacts",
-                          headers={"Authorization": "Bearer someone-else"})
-    assert response.status_code in (401, 403)
+    _seeded_run(host_agent)
+    for bad in ("0", "501"):
+        response = client.get(_url(host_agent.project_id, f"?limit={bad}"))
+        assert response.status_code == 400, (bad, response.text)
+        detail = response.json()["detail"]
+        assert detail["code"] == "INVALID_REQUEST"
+        assert detail["errors"][0]["loc"] == ["query", "limit"]
+    ok = client.get(_url(host_agent.project_id, "?limit=500"))
+    assert ok.status_code == 200, ok.text
+    assert ok.json()["truncated"] is False and ok.json()["total"] == 1
 
 
 def test_project_artifacts_export_uri_opens_the_exact_approved_version(host_agent: Harness):
