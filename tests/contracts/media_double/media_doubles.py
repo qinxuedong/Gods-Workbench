@@ -186,3 +186,41 @@ def count_assets(client: TestClient, headers=HEADERS) -> dict:
     return {"registry": len(items), "library_image": len(images),
             "registry_ids": sorted(item["asset_id"] for item in items),
             "library_image_ids": sorted(item["asset_id"] for item in images)}
+
+
+# ---------------------------------------------------------------------------
+# 媒体闭环共用步骤（PR-2..PR-4 复用；全部走真实路由）
+# ---------------------------------------------------------------------------
+TASKS = "/api/god_workflow/tasks"
+
+
+def upload_input_asset(client: TestClient, headers=HEADERS) -> dict:
+    response = client.post("/api/god_workflow/assets/upload",
+                           files={"file": ("local-input.png", FIXED_PNG, "image/png")}, headers=headers)
+    assert response.status_code == 201, response.text
+    return response.json()
+
+
+def save_image_workflow(client: TestClient, input_asset_id: str, headers=HEADERS) -> dict:
+    """保存一个带 metadata.input_assets 的 LoadImage → SaveImage 工作流文档（没有 RH 标识）。"""
+    document = {"nodes": [
+        {"id": "1", "kind": "LoadImage", "title": "Load", "inputs": {"image": "placeholder.png"},
+         "metadata": {"input_assets": {"image": input_asset_id}}},
+        {"id": "2", "kind": "SaveImage", "title": "Save", "inputs": {"images": ["1", 0], "filename_prefix": "c3"}},
+    ], "connections": []}
+    response = client.post("/api/god_workflow/documents?source=canvas", json=document, headers=headers)
+    assert response.status_code == 201, response.text
+    return response.json()["workflow"]
+
+
+def prepare_workflow(client: TestClient, headers=HEADERS) -> tuple[dict, dict]:
+    asset = upload_input_asset(client, headers)
+    return asset, save_image_workflow(client, asset["asset_id"], headers)
+
+
+def execute(client: TestClient, workflow: dict, target: str, key: Optional[str] = "c3-key-1",
+            headers=HEADERS, **extra: Any):
+    body = {"workflow_id": workflow["workflow_id"], "target": target,
+            "expected_version": workflow["version"], **extra}
+    request_headers = {**headers, **({"Idempotency-Key": key} if key else {})}
+    return client.post(f"{TASKS}/execute", json=body, headers=request_headers)
