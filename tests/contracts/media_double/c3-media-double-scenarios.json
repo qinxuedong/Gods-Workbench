@@ -1,0 +1,235 @@
+{
+  "cut": "CUT-20261013-C3",
+  "purpose": "C3 媒体链替身场景目录：fixture id → 场景、替身模式、对应测试与 AC。替身结果不能冒充 AC8/AC9 真实验收。",
+  "test_dir": "tests/contracts/media_double/",
+  "fixed_png_sha256": "see media_doubles.FIXED_PNG_SHA256",
+  "scenarios": [
+    {
+      "fixture_id": "C3-MD-NONET-01",
+      "mode": "n/a",
+      "scenario": "无网络守卫：替身未覆盖的真实 HTTP 直接失败",
+      "test": "test_media_double_selfcheck.py::test_no_network_guard_blocks_real_http",
+      "ac": [
+        "ALL"
+      ],
+      "pr": "PR-1"
+    },
+    {
+      "fixture_id": "C3-MD-ISOLATION-01",
+      "mode": "n/a",
+      "scenario": "两个数据目录资产数互不串",
+      "test": "test_00_isolation_selfcheck.py::test_asset_stores_are_isolated_between_data_dirs",
+      "ac": [
+        "AC3",
+        "AC4"
+      ],
+      "pr": "PR-1"
+    },
+    {
+      "fixture_id": "C3-MD-IDEM-01",
+      "mode": "success",
+      "scenario": "同 Idempotency-Key 同请求体经 /tasks/execute(rh_cloud) 两次，upload/create 各 1 次",
+      "test": "test_c3_idempotency.py::test_same_idempotency_key_rh_tasks_execute_submits_once",
+      "ac": [
+        "AC6"
+      ],
+      "pr": "PR-2"
+    },
+    {
+      "fixture_id": "C3-MD-IDEM-02",
+      "mode": "success",
+      "scenario": "同上 local_comfy，upload_input/submit 各 1 次",
+      "test": "test_c3_idempotency.py::test_same_idempotency_key_comfy_uploads_once",
+      "ac": [
+        "AC6"
+      ],
+      "pr": "PR-2"
+    },
+    {
+      "fixture_id": "C3-MD-IDEM-MISMATCH-01",
+      "mode": "success",
+      "scenario": "同 key 不同请求体 → 409 IDEMPOTENCY_CONFLICT，无副作用",
+      "test": "test_c3_idempotency.py::test_same_key_different_body_is_409_without_side_effect",
+      "ac": [
+        "AC6"
+      ],
+      "pr": "PR-2"
+    },
+    {
+      "fixture_id": "C3-MD-CAS-409-01",
+      "mode": "success",
+      "scenario": "过期 expected_version → 409，无任务账本、无提交",
+      "test": "test_c3_idempotency.py::test_stale_expected_version_is_409_before_reserve",
+      "ac": [
+        "AC6"
+      ],
+      "pr": "PR-2"
+    },
+    {
+      "fixture_id": "C3-MD-UNKNOWN-01",
+      "mode": "submit_timeout",
+      "scenario": "RH 提交超时 → outcome_unknown，轮询/collect/重放都不重提",
+      "test": "test_c3_outcome_unknown.py::test_rh_submit_timeout_is_outcome_unknown_and_never_resubmitted",
+      "ac": [
+        "AC5",
+        "AC6"
+      ],
+      "pr": "PR-2"
+    },
+    {
+      "fixture_id": "C3-MD-UNKNOWN-02",
+      "mode": "submit_timeout",
+      "scenario": "ComfyUI 提交超时 → outcome_unknown，不重提",
+      "test": "test_c3_outcome_unknown.py::test_comfy_submit_timeout_poll_and_collect_do_not_resubmit",
+      "ac": [
+        "AC5",
+        "AC6"
+      ],
+      "pr": "PR-2"
+    },
+    {
+      "fixture_id": "C3-MD-UPLOAD-FAIL-01",
+      "mode": "upload_timeout",
+      "scenario": "上传阶段超时 → failed，create 0 次",
+      "test": "test_c3_outcome_unknown.py::test_upload_timeout_before_submit_is_failed_not_unknown",
+      "ac": [
+        "AC6"
+      ],
+      "pr": "PR-2"
+    },
+    {
+      "fixture_id": "C3-MD-NOREMOTE-01",
+      "mode": "no_remote_id",
+      "scenario": "无远端 ID → outcome_unknown + remote_task_id_missing，不编造",
+      "test": "test_c3_outcome_unknown.py::test_no_remote_id_is_not_fabricated",
+      "ac": [
+        "AC5",
+        "AC6"
+      ],
+      "pr": "PR-2"
+    },
+    {
+      "fixture_id": "C3-MD-NOLEAK-01",
+      "mode": "success",
+      "scenario": "测试 key 不出现在响应与任务文件",
+      "test": "test_c3_outcome_unknown.py::test_test_key_never_leaks",
+      "ac": [
+        "AC6"
+      ],
+      "pr": "PR-2"
+    },
+    {
+      "fixture_id": "C3-MD-RH-SUCCESS-01",
+      "mode": "success",
+      "scenario": "本地图 → RH 执行 → 轮询 → collect → 统一资产 → 来源回跳",
+      "test": "test_c3_media_closed_loop.py::test_rh_closed_loop_local_image_without_rh_id",
+      "ac": [
+        "AC3"
+      ],
+      "pr": "PR-3"
+    },
+    {
+      "fixture_id": "C3-MD-COMFY-SUCCESS-01",
+      "mode": "success",
+      "scenario": "同上 local_comfy",
+      "test": "test_c3_media_closed_loop.py::test_comfy_closed_loop",
+      "ac": [
+        "AC3"
+      ],
+      "pr": "PR-3"
+    },
+    {
+      "fixture_id": "C3-MD-COLLECT-TWICE-01",
+      "mode": "success",
+      "scenario": "成功后再 collect 两次，两个存储资产数不变",
+      "test": "test_c3_media_closed_loop.py::test_collect_twice_asset_count_unchanged",
+      "ac": [
+        "AC3",
+        "AC4"
+      ],
+      "pr": "PR-3"
+    },
+    {
+      "fixture_id": "C3-MD-FAIL-01",
+      "mode": "fail_remote",
+      "scenario": "远端失败 → failed，资产数 +0",
+      "test": "test_c3_media_closed_loop.py::test_remote_failure_registers_nothing",
+      "ac": [
+        "AC3",
+        "AC10"
+      ],
+      "pr": "PR-3"
+    },
+    {
+      "fixture_id": "C3-MD-PARTIAL-01",
+      "mode": "partial_outputs",
+      "scenario": "一合法一非白名单 → partial；重试合法那份只登记 1 次",
+      "test": "test_c3_media_closed_loop.py::test_partial_outputs_retry_no_duplicates",
+      "ac": [
+        "AC3",
+        "AC4"
+      ],
+      "pr": "PR-3"
+    },
+    {
+      "fixture_id": "C3-MD-CAP-01",
+      "mode": "n/a",
+      "scenario": "未配置时 /capabilities 报 *_not_configured",
+      "test": "test_c3_media_closed_loop.py::test_capabilities_reports_not_configured_without_keys",
+      "ac": [
+        "AC10"
+      ],
+      "pr": "PR-3"
+    },
+    {
+      "fixture_id": "C3-MD-RESTART-01",
+      "mode": "success",
+      "scenario": "同进程重建 create_app() 后任务与资产关系仍在（同进程模拟重启，非跨进程）",
+      "test": "test_c3_media_closed_loop.py::test_restart_keeps_task_and_asset_relation",
+      "ac": [
+        "AC5"
+      ],
+      "pr": "PR-3"
+    },
+    {
+      "fixture_id": "C3-MD-DELETE-RESTORE-01",
+      "mode": "success",
+      "scenario": "删除 → 回收站 → 恢复，任务链接字段不变（只验 registry，方案 A）",
+      "test": "test_c3_asset_delete_restore.py::test_collected_output_delete_then_restore_keeps_task_links",
+      "ac": [
+        "AC4"
+      ],
+      "pr": "PR-4"
+    },
+    {
+      "fixture_id": "C3-MD-DELETE-RESTORE-02",
+      "mode": "success",
+      "scenario": "恢复后再 collect 不重复",
+      "test": "test_c3_asset_delete_restore.py::test_collect_after_restore_does_not_duplicate",
+      "ac": [
+        "AC4"
+      ],
+      "pr": "PR-4"
+    },
+    {
+      "fixture_id": "C3-MD-DELETE-RESTORE-03",
+      "mode": "success",
+      "scenario": "删除后再 collect 不复活、不重复",
+      "test": "test_c3_asset_delete_restore.py::test_collect_while_deleted_does_not_resurrect_or_duplicate",
+      "ac": [
+        "AC4"
+      ],
+      "pr": "PR-4"
+    },
+    {
+      "fixture_id": "C3-MD-DELETE-RESTORE-04",
+      "mode": "success",
+      "scenario": "重复恢复 → 404/409",
+      "test": "test_c3_asset_delete_restore.py::test_restore_conflict_is_409",
+      "ac": [
+        "AC4"
+      ],
+      "pr": "PR-4"
+    }
+  ]
+}
