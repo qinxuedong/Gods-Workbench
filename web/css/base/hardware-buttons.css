@@ -445,13 +445,14 @@
 
 /* Disabled is deliberately matte and freezes every inset/animated child. */
 :is(.hw-btn,.hw-btn-gold,.hw-btn-danger,.btn-hw-tactile,.btn-hw-danger,.btn-tactile-keycap,.primary-ignite,.btn-tactile-compound,.hw-btn-compound,.btn-pill-active,.btn-pill-inactive,.btn-pill-disabled,.pill-capsule-active,.pill-capsule-inactive,.btn-abort-carmine,.btn-override-carmine,.btn-segmented-item,.hw-segmented-btn,.btn-rocker-paddle,.hw-rocker-btn,.btn-hw-round,.hw-round-btn,.btn-slide-toggle,.hw-slide-toggle,.btn-launch-orb,.launch-orb-btn):is(:disabled,[aria-disabled="true"]) {
-  opacity:.6;
+  opacity:1;
   cursor:not-allowed;
   transform:none !important;
-  background:var(--gw-button-disabled-bg,#12141a) !important;
+  background:var(--gw-button-disabled-bg,#1a1d24) !important;
   background-image:none !important;
-  border-color:var(--gw-button-disabled-bg,#12141a) !important;
-  color:var(--gw-button-disabled-text,#475569) !important;
+  border-color:var(--gw-button-disabled-border,#3a404c) !important;
+  border-style:dashed !important;
+  color:var(--gw-button-disabled-text,#a3acb9) !important;
   box-shadow:none !important;
   filter:none !important;
   text-shadow:none !important;
@@ -460,10 +461,10 @@
 /* 真实禁用胶囊沿用原稿低透明白色细边，其余冻结规则照常生效。 */
 .topbar-master-deck .btn-pill-disabled:is(:disabled,[aria-disabled="true"]) { border-color:rgb(255 255 255 / .04) !important; }
 :is(.btn-hw-round,.hw-round-btn,.btn-slide-toggle,.hw-slide-toggle,.btn-launch-orb,.launch-orb-btn):is(:disabled,[aria-disabled="true"]) :is(.btn-hw-round-inner,.hw-round-inner,.btn-slide-peg,.hw-slide-peg,.orb-core,.orb-core > span,.orb-core > i,.orb-core > svg,.rec-bead,.shockwave-ring) {
-  background:var(--gw-button-disabled-bg,#12141a) !important;
+  background:var(--gw-button-disabled-bg,#1a1d24) !important;
   background-image:none !important;
-  border-color:var(--gw-button-disabled-bg,#12141a) !important;
-  color:var(--gw-button-disabled-text,#475569) !important;
+  border-color:var(--gw-button-disabled-bg,#1a1d24) !important;
+  color:var(--gw-button-disabled-text,#a3acb9) !important;
   box-shadow:none !important;
   filter:none !important;
   text-shadow:none !important;
