@@ -395,6 +395,64 @@ async def get_agent_artifacts(
     }
 
 
+@router.get("/api/agent/projects/{project_id}/artifacts", summary="按项目只读列出Agent产物精确版本")
+async def get_project_agent_artifacts(
+    project_id: str,
+    request: Request,
+    limit: int = Query(default=200, ge=1, le=500),
+    authorization: Optional[str] = Header(None),
+    x_user_role: str = Header("editor", alias="X-User-Role"),
+):
+    """项目页“查看 vNNN”入口的数据源：只读，不写任何状态，不调用模型。
+
+    只返回当前主体在该项目下的运行所产生的产物版本；每项带 run_id、精确 version_id、
+    content_hash，有审核记录时给出可直接导出该精确版本的 export_uri。
+    """
+    from urllib.parse import urlencode
+
+    integration, auth, fingerprint = await _agent_identity(request, authorization, x_user_role)
+    run_ids = integration.project_run_ids(auth, fingerprint, project_id)
+    items: list[dict[str, Any]] = []
+    for run_id in run_ids:
+        identifier = Identifier(run_id)
+        for artifact in await integration.service.artifacts.list_run_artifacts(identifier):
+            review = await integration.service.repository.latest_review_for_artifact(identifier, artifact.version_id)
+            review_id = review.review_id.root if review is not None else None
+            public = artifact.model_dump(mode="json")
+            formats: list[str] = []
+            if review is not None:
+                formats = [
+                    "exact-json" if export_format is TextExportFormat.json else export_format.value
+                    for export_format in await integration.service.export_formats_for_review(
+                        identifier, review.review_id, artifact.version_id,
+                    )
+                ]
+            items.append({
+                "run_id": run_id,
+                "artifact_id": public["artifact_id"],
+                "version_id": public["version_id"],
+                "revision": public["revision"],
+                "version_label": f"v{int(public['revision']):03d}",
+                "content_hash": public["content_hash"],
+                "lifecycle": public["lifecycle"],
+                "created_at": public["created_at"],
+                "review_id": review_id,
+                "export_formats": formats,
+                "export_uri": (f"/api/agent/runs/{run_id}/export?" + urlencode({
+                    "format": formats[0], "review_id": review_id, "artifact_version_id": public["version_id"],
+                })) if formats else None,
+            })
+    truncated = len(items) > limit
+    return {
+        "project_id": project_id,
+        "items": items[:limit],
+        "total": len(items),
+        "truncated": truncated,
+        "data_status": "partial" if truncated else "ok",
+        "data_gaps": ["artifact_list_truncated"] if truncated else [],
+    }
+
+
 @router.get("/api/agent/runs/{run_id}/export", summary="按精确审核与产物版本导出")
 async def export_agent_artifact(
     run_id: str,
