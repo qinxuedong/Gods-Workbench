@@ -319,6 +319,14 @@ class DataDirLock:
 _HELD_DATA_LOCKS: Dict[str, DataDirLock] = {}
 
 
+def is_data_dir_lock_held(root: Path) -> bool:
+    """本进程是否已持有该数据目录的锁。"""
+    key = str(Path(root).resolve())
+    with _LOCK:
+        held = _HELD_DATA_LOCKS.get(key)
+        return held is not None and held._handle is not None
+
+
 def acquire_data_dir_lock(root: Path) -> DataDirLock:
     """对数据目录加跨进程独占锁；已被别的进程占用时立即失败，不等待、不共享。
 

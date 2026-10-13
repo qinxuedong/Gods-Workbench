@@ -119,3 +119,34 @@ def test_run_py_refuses_second_instance(tmp_path):
         assert "数据目录已被另一个神工坊进程占用" in (res.stderr + res.stdout)
     finally:
         handle.release()
+
+
+def _other_process_can_lock(root):
+    code = "import sys;from pathlib import Path;from gw.core.storage import acquire_data_dir_lock;acquire_data_dir_lock(Path(sys.argv[1]));print('OK')"
+    res = subprocess.run([sys.executable, "-c", code, str(root)], cwd=REPO, env=os.environ.copy(), capture_output=True, text=True, timeout=60)
+    return res.returncode == 0 and res.stdout.strip() == "OK"
+
+
+def test_lifespan_exit_releases_data_dir_lock():
+    from fastapi.testclient import TestClient
+    from gw.api.app import app
+    root = data_root()
+    with TestClient(app):
+        assert not _other_process_can_lock(root)
+    assert _other_process_can_lock(root)
+    # 同一进程也能再次拿到新锁并正常释放。
+    acquire_data_dir_lock(root).release()
+
+
+def test_lifespan_exit_keeps_lock_owned_by_caller():
+    from fastapi.testclient import TestClient
+    from gw.api.app import app
+    root = data_root()
+    handle = acquire_data_dir_lock(root)  # 模拟 run.py 预先持锁
+    try:
+        with TestClient(app):
+            pass
+        assert not _other_process_can_lock(root)
+    finally:
+        handle.release()
+    assert _other_process_can_lock(root)
