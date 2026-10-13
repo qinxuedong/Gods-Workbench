@@ -186,6 +186,17 @@
       position: relative;
       overflow: hidden;
     }
+    /* 卡片底栏：窄卡时收起次要信息与生产入口文字，保证归档/删除完整可见 */
+    .gw-card-footer { container-type: inline-size; position: sticky; bottom: 0; z-index: 1; background: var(--gw-surface-card-end); }
+    .gw-card-footer .hw-btn { flex-shrink: 0; white-space: nowrap; }
+    @container (max-width: 560px) { .gw-card-footer [data-gw-card-footer-optional] { display: none; } }
+    @container (max-width: 480px) {
+      .gw-card-footer [data-gw-card-footer-label] { display: none; }
+      .gw-card-footer .hw-btn { --button-padding: 7px; }
+    }
+    @container (max-width: 300px) {
+      .gw-card-footer [data-gw-card-footer-owner] { display: none; }
+    }
     .project-card-item:hover {
       transform: translateY(-2px);
       box-shadow: 0 14px 34px rgba(0, 0, 0, 0.95), 0 0 20px rgba(223, 195, 132, 0.22);
@@ -1031,6 +1042,7 @@
   <script src="/static/js/core/hardware-telemetry.js?v=20261008-auth6"></script>
 <script src="/static/js/core/task-queue.js?v=20261008-auth6"></script>
   <script src="/static/js/modules/project-date-range.js"></script>
+  <script src="/static/js/modules/project-artifact-links.js"></script>
   <script src="/static/js/controllers/projects-controller.js"></script>
 <script src="/static/js/core/workbench-shell.js?v=20261009-parse-cf7"></script>
 </body>

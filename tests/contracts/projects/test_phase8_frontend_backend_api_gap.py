@@ -184,6 +184,7 @@ KNOWN_IMPLEMENTED = frozenset([
     # 2026-10-07 工作流批次对账：已存在的 Agent 任务前端控制器（agent-tasks.js）
     # 引用的三个端点由 gw/api/routes_ai.py 真实实现，补登记以避免基线漂移告警。
     '/api/agent/config',
+    '/api/agent/projects/{p}/artifacts',
     '/api/agent/runs',
     '/api/agent/runs/{p}',
     '/api/app-info',
