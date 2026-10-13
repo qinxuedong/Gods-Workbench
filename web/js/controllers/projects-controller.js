@@ -519,39 +519,37 @@ window.WorkbenchProjects = (function () {
       </div>
 
       <!-- 3. 底部：主创席位 + 操作按钮组（工坊、监视、编辑、归档、删除/恢复） -->
-      <div class="pt-0.5 border-t border-white/5 flex items-center justify-between shrink-0">
-        <div class="flex items-center space-x-1">
-          <span class="gw-type-body-sm font-mono text-slate-400 font-semibold">主创:</span>
-          <span class="gw-type-body-sm font-mono px-1 py-0.5 rounded bg-[#0a0c10] border border-white/10 text-slate-200">
-            ${esc(p.owner || 'admin')}
-          </span>
-          <span class="gw-type-body-sm font-mono px-1 py-0.5 rounded bg-[#0a0c10] border border-white/10 text-[#eddab3]">
+      <div class="pt-0.5 border-t border-white/5 gw-card-footer flex items-center justify-between gap-1 min-w-0 shrink-0">
+        <div class="flex items-center space-x-1 min-w-0 overflow-hidden">
+          <span class="gw-type-body-sm font-mono text-slate-400 font-semibold whitespace-nowrap shrink-0" data-gw-card-footer-optional>主创:</span>
+          <span class="gw-type-body-sm font-mono px-1 py-0.5 rounded bg-[#0a0c10] border border-white/10 text-slate-200 min-w-0 truncate" data-gw-card-footer-owner title="${esc(p.owner || 'admin')}">${esc(p.owner || 'admin')}</span>
+          <span class="gw-type-body-sm font-mono px-1 py-0.5 rounded bg-[#0a0c10] border border-white/10 text-[#eddab3] shrink-0" data-gw-card-footer-optional>
             AURA
           </span>
-          <span data-gw-artifact-version-slot data-project-id="${esc(p.id)}" class="flex items-center" hidden></span>
+          <span data-gw-artifact-version-slot data-project-id="${esc(p.id)}" class="flex items-center shrink-0" hidden></span>
         </div>
 
-        <div class="flex items-center space-x-1">
+        <div class="flex items-center space-x-1 shrink-0">
           <!-- 生产入口组：非回收站项目可用 -->
           ${!isDeleted ? `
             <button class="hw-btn hw-btn-sm hw-btn-gold flex items-center space-x-0.5 cursor-pointer transition"
                     onclick="event.stopPropagation(); WorkbenchProjects.openProject('${esc(p.id)}', 'workshop')"
                     title="进入影视工坊">
               <i data-lucide="film" class="w-2.5 h-2.5"></i>
-              <span>工坊</span>
+              <span data-gw-card-footer-label>工坊</span>
             </button>
             <button class="hw-btn hw-btn-sm flex items-center space-x-0.5 cursor-pointer transition"
                     onclick="event.stopPropagation(); WorkbenchProjects.openProject('${esc(p.id)}', 'production')"
                     title="进入制片监视器">
               <i data-lucide="sliders" class="w-2.5 h-2.5 text-cyan-300"></i>
-              <span>监视</span>
+              <span data-gw-card-footer-label>监视</span>
             </button>
             <!-- 新增：编辑按钮 -->
             <button class="hw-btn hw-btn-sm flex items-center space-x-0.5 cursor-pointer transition"
                     onclick="event.stopPropagation(); WorkbenchProjects.openEditProject('${esc(p.id)}')"
                     title="编辑项目信息与配置参数">
               <i data-lucide="edit-3" class="w-2.5 h-2.5 text-[#dfc384]"></i>
-              <span>编辑</span>
+              <span data-gw-card-footer-label>编辑</span>
             </button>
             <div class="h-2.5 w-px bg-white/10"></div>
           ` : ''}

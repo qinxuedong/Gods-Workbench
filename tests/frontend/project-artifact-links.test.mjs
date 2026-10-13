@@ -115,3 +115,24 @@ test('卡片主入口优先展示当前版本可导出的产物', () => {
     const groups = api.groupArtifacts([scriptV1, scriptV2, newerUnreviewed]);
     assert.equal(groups[0].artifactId, 'artifact-script');
 });
+
+test('Esc 关闭版本浮层后焦点回到「查看 vNNN」触发按钮', () => {
+    const {api, document} = load();
+    const slot = document.createElement('span');
+    api.renderSlot(slot, [scriptV1, scriptV2]);
+    const trigger = slot.children[0];
+    const focusCalls = [];
+    trigger.focus = (opts) => { focusCalls.push(opts); };
+    trigger.onclick({stopPropagation() {}});
+    assert.ok(document.getElementById('gwArtifactVersionPopover'));
+    api.handleKeydown({key: 'Enter'}, document);
+    assert.ok(document.getElementById('gwArtifactVersionPopover'), '非 Esc 键不关闭');
+    assert.equal(focusCalls.length, 0);
+    api.handleKeydown({key: 'Escape'}, document);
+    assert.equal(document.getElementById('gwArtifactVersionPopover'), null);
+    assert.equal(focusCalls.length, 1, 'Esc 关闭后返焦触发按钮');
+    assert.deepEqual({...focusCalls[0]}, {preventScroll: true});
+    trigger.onclick({stopPropagation() {}});
+    api.closePopover(document);
+    assert.equal(focusCalls.length, 1, '点外部等普通关闭不抢焦点');
+});

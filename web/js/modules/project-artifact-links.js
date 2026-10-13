@@ -99,9 +99,20 @@ window.GWProjectArtifactLinks = (function () {
     slot.hidden = false;
   }
 
-  function closePopover(doc) {
+  function closePopover(doc, options) {
     const d = doc || document;
-    d.getElementById?.(POPOVER_ID)?.remove();
+    const pop = d.getElementById?.(POPOVER_ID);
+    if (!pop) return;
+    const trigger = pop._gwTrigger;
+    pop.remove();
+    // Esc 关闭时把焦点还给「查看 vNNN」触发按钮，键盘用户不丢失位置。
+    if (options?.restoreFocus && trigger?.isConnected !== false && typeof trigger?.focus === 'function') {
+      trigger.focus({preventScroll: true});
+    }
+  }
+
+  function handleKeydown(event, doc) {
+    if (event?.key === 'Escape') closePopover(doc || document, {restoreFocus: true});
   }
 
   function buildPopover(doc, groups) {
@@ -166,8 +177,8 @@ window.GWProjectArtifactLinks = (function () {
 
   if (typeof document !== 'undefined' && document.addEventListener) {
     document.addEventListener('click', () => closePopover(document));
-    document.addEventListener('keydown', (event) => { if (event.key === 'Escape') closePopover(document); });
+    document.addEventListener('keydown', (event) => handleKeydown(event, document));
   }
 
-  return {artifactsUrl, groupArtifacts, renderSlot, buildPopover, hydrate, invalidate, closePopover};
+  return {artifactsUrl, groupArtifacts, renderSlot, buildPopover, hydrate, invalidate, closePopover, handleKeydown};
 })();
