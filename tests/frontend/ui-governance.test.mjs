@@ -124,7 +124,7 @@ test('按钮标准尺寸、危险材质、禁用与动效门禁',()=>{
   assert.match(css,/@media \(forced-colors: active\)[\s\S]*--gw-focus-color:Highlight/);
   assert.match(css,/prefers-reduced-motion: reduce/);assert.match(css,/\.orb-core > span,[\s\S]*?\.shockwave-ring \{ animation:none !important/);
   assert.match(css,/:is\(:disabled,\[aria-disabled="true"\]\)[^}]+box-shadow:none/);
-  assert.match(css,/--gw-button-disabled-bg,#12141a/);assert.match(css,/--gw-button-disabled-text,#475569/);
+  assert.match(css,/--gw-button-disabled-bg,#1a1d24/);assert.match(css,/--gw-button-disabled-text,#a3acb9/);
 });
 
 test('键帽金属色与主题强调色分离，点火键与通电内胆刻字对比度达标',()=>{
@@ -233,9 +233,17 @@ test('首批复核修补覆盖顶栏微球、禁用材质、资产主题与审�
     assert.match(orb,/class="orb-core"/,'顶栏微球必须使用共享内核：'+p);
     assert.doesNotMatch(orb,/animate-spin/,'顶栏不得保留局部动画内核：'+p);
   }
-  assert.match(tokens,/--gw-button-disabled-bg:\s*#12141a/i);
-  assert.match(tokens,/--gw-button-disabled-text:\s*#475569/i);
-  assert.match(buttons,/opacity:\.6/);
+  assert.match(tokens,/--gw-button-disabled-bg:\s*#1a1d24/i);
+  assert.match(tokens,/--gw-button-disabled-text:\s*#a3acb9/i);
+  assert.match(tokens,/--gw-button-disabled-border:\s*#3a404c/i);
+  // 金色主按钮/红色危险按钮禁用时保留色相痕迹，文字对比度均 ≥4.5:1（金 #c9b88f on #211d15 ≈ 8.58:1；红 #d4a9a9 on #241619 ≈ 8.35:1）。
+  assert.match(tokens,/--gw-button-disabled-gold-bg:\s*#211d15/i);assert.match(tokens,/--gw-button-disabled-gold-text:\s*#c9b88f/i);
+  assert.match(tokens,/--gw-button-disabled-danger-bg:\s*#241619/i);assert.match(tokens,/--gw-button-disabled-danger-text:\s*#d4a9a9/i);
+  assert.match(buttons,/:is\(\.hw-btn-gold,\.primary-ignite\):is\(:disabled,\[aria-disabled="true"\]\) \{[^}]*--gw-button-disabled-gold-bg[^}]*--gw-button-disabled-gold-text/);
+  assert.match(buttons,/:is\(\.hw-btn-danger,\.btn-hw-danger,\.btn-abort-carmine,\.btn-override-carmine\):is\(:disabled,\[aria-disabled="true"\]\) \{[^}]*--gw-button-disabled-danger-bg[^}]*--gw-button-disabled-danger-text/);
+  // C1-V3：禁用态不再整体降透明度，文字/底色对比度须 ≥4.5:1（#a3acb9 on #1a1d24 ≈ 7.36:1）。
+  assert.match(buttons,/opacity:1;\s*cursor:not-allowed/);
+  assert.match(buttons,/border-style:dashed !important/);
   assert.match(buttons,/background:var\(--gw-button-disabled-bg/);
   const disabledRule=buttons.match(/:is\(([^)]*btn-pill-disabled[^)]*)\):is\(:disabled,\[aria-disabled="true"\]\)\s*\{([^}]+)\}/);
   assert.ok(disabledRule,'所有按钮别名必须共用原生/ARIA禁用样式');
