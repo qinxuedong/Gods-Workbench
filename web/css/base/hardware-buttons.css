@@ -458,6 +458,8 @@
   text-shadow:none !important;
   transition:none !important;
 }
+:is(.hw-btn-gold,.primary-ignite):is(:disabled,[aria-disabled="true"]) { background:var(--gw-button-disabled-gold-bg,#211d15) !important; border-color:var(--gw-button-disabled-gold-border,#5a4b2c) !important; color:var(--gw-button-disabled-gold-text,#c9b88f) !important; }
+:is(.hw-btn-danger,.btn-hw-danger,.btn-abort-carmine,.btn-override-carmine):is(:disabled,[aria-disabled="true"]) { background:var(--gw-button-disabled-danger-bg,#241619) !important; border-color:var(--gw-button-disabled-danger-border,#5c3034) !important; color:var(--gw-button-disabled-danger-text,#d4a9a9) !important; }
 /* 真实禁用胶囊沿用原稿低透明白色细边，其余冻结规则照常生效。 */
 .topbar-master-deck .btn-pill-disabled:is(:disabled,[aria-disabled="true"]) { border-color:rgb(255 255 255 / .04) !important; }
 :is(.btn-hw-round,.hw-round-btn,.btn-slide-toggle,.hw-slide-toggle,.btn-launch-orb,.launch-orb-btn):is(:disabled,[aria-disabled="true"]) :is(.btn-hw-round-inner,.hw-round-inner,.btn-slide-peg,.hw-slide-peg,.orb-core,.orb-core > span,.orb-core > i,.orb-core > svg,.rec-bead,.shockwave-ring) {

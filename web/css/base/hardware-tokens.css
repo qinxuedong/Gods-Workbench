@@ -28,6 +28,12 @@
   --gw-button-disabled-bg: #1a1d24;
   --gw-button-disabled-text: #a3acb9;
   --gw-button-disabled-border: #3a404c;
+  --gw-button-disabled-gold-bg: #211d15;
+  --gw-button-disabled-gold-text: #c9b88f;
+  --gw-button-disabled-gold-border: #5a4b2c;
+  --gw-button-disabled-danger-bg: #241619;
+  --gw-button-disabled-danger-text: #d4a9a9;
+  --gw-button-disabled-danger-border: #5c3034;
   --gw-engraved-text: #171107;
   --gw-type-label-sm: var(--gw-type-body-sm); /* 废弃9px，兼容映射12px */
 
