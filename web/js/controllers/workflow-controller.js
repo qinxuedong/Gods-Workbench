@@ -673,11 +673,10 @@ async function restoreWorkflowTask() {
       // 切换到工作流界面时，只有当前工作流的任务可以自动弹出执行监控；其他工作流的任务只在各自列表显示状态。
       if (!workflowId) return;
       page = await fetchWorkflowTasksPage(workflowId);
-      task = page.tasks.find(item => ["accepted", "running", "waiting_review", "paused", "outcome_unknown"].includes(item.status));
+      // 结果未知 / 已放弃任务在切换界面时从不自动弹出，只在任务面板列表显示状态标记。
+      task = page.tasks.find(item => ["accepted", "running", "waiting_review", "paused"].includes(item.status));
     }
     if (!task) return;
-    // 结果未知且已知悉：不再自动弹出，仅留任务面板徽标；显式 job_id 链接仍按用户意图打开。
-    if (!requestedJob && task.status === "outcome_unknown" && isUnknownTaskSeen(task)) return;
     if (task.status === "outcome_unknown") markUnknownTaskSeen(task);
     state.activeTaskId = state.expandedTaskId = task.job_id || task.task_id;
     if (page) { state.workflowTasks = page.tasks; state.workflowTasksCursor = page.nextCursor; renderWorkflowTaskList(); }
@@ -3371,7 +3370,7 @@ async function handleExecuteWorkflow() {
 }
 
 // 任务面板：列出当前工作流的多条任务（新→旧）；点击某行才展开该任务的执行监控与产物。
-const WORKFLOW_TASK_STATUS_LABEL = { accepted: "已受理", running: "执行中", waiting_review: "等待审核", paused: "已暂停", completed: "已完成", failed: "失败", cancelled: "已取消", outcome_unknown: "结果未知 · 待人工核实" };
+const WORKFLOW_TASK_STATUS_LABEL = { accepted: "已受理", running: "执行中", waiting_review: "等待审核", paused: "已暂停", completed: "已完成", failed: "失败", cancelled: "已取消", outcome_unknown: "结果未知 · 待人工核实", abandoned: "已放弃" };
 function formatWorkflowTaskTime(value) {
   const date = value ? new Date(value) : null;
   if (!date || Number.isNaN(date.getTime())) return "—";
@@ -3382,7 +3381,7 @@ function workflowTaskRowsHtml(tasks, expandedId) {
   return tasks.map(task => {
     const id = workflowTaskId(task);
     const status = String(task.status || "accepted");
-    const tone = status === "completed" ? "var(--emerald-bright)" : ["failed", "cancelled", "outcome_unknown"].includes(status) ? "var(--rose)" : "var(--compute)";
+    const tone = status === "completed" ? "var(--emerald-bright)" : ["failed", "cancelled", "outcome_unknown"].includes(status) ? "var(--rose)" : status === "abandoned" ? "var(--text-muted)" : "var(--compute)";
     return `<button type="button" role="listitem" class="wf-task-row" data-task-row="${escapeHtml(id)}" data-status="${escapeHtml(status)}" aria-expanded="${id === expandedId}" title="${escapeHtml(id)}"`
       + ` style="display:flex;width:100%;align-items:center;gap:10px;padding:4px 8px;margin-bottom:4px;text-align:start;cursor:pointer;background:none;border:1px solid ${id === expandedId ? "var(--primary-soft, rgba(255,255,255,.4))" : "var(--line, rgba(255,255,255,.12))"};border-radius:4px;color:inherit;font-family:var(--gw-font-mono);font-size:var(--gw-type-body-sm);font-variant-numeric:tabular-nums;">`
       + `<span data-task-short-id>${escapeHtml(id.slice(0, 8))}</span>`
@@ -3467,8 +3466,10 @@ function startTaskPolling(taskId, target) {
   clearInterval(state.pollTimer);
   const generation = state.pollGeneration = (state.pollGeneration || 0) + 1;
   const bodyEl = wfGet("taskModalBody");
-  const terminal = new Set(["completed", "failed", "cancelled", "outcome_unknown"]);
-  const label = { accepted: "已受理", running: "执行中", waiting_review: "等待审核", paused: "已暂停", completed: "已完成", failed: "失败", cancelled: "已取消", outcome_unknown: "结果未知" };
+  const terminal = new Set(["completed", "failed", "cancelled", "outcome_unknown", "abandoned"]);
+  const label = { accepted: "已受理", running: "执行中", waiting_review: "等待审核", paused: "已暂停", completed: "已完成", failed: "失败", cancelled: "已取消", outcome_unknown: "结果未知", abandoned: "已放弃" };
+  // 唯一的自动弹出时机：本次监控中亲眼看到任务从活动状态转入结果未知，且该 job+error_code 未曾提示过。
+  let observedActive = false;
 
   let inFlight = false;
   const pollOnce = async () => {
@@ -3496,10 +3497,21 @@ function startTaskPolling(taskId, target) {
         }).join("");
         const message = statusRes.messages?.join?.("；") || (st === "outcome_unknown" ? "外部请求可能已产生副作用，请人工核实，不会自动重试。" : "");
         const unknownBadge = st === "outcome_unknown" ? `<span class="wf-task-status-badge" data-task-badge="outcome_unknown" style="display:inline-block;margin-inline-start:6px;padding:0 6px;border:1px solid var(--rose);border-radius:4px;color:var(--rose);font-size:var(--gw-type-body-sm);">结果未知 · 待人工核实</span>` : "";
-        if (st === "outcome_unknown") markUnknownTaskSeen({ ...statusRes, job_id: statusRes.job_id || statusRes.task_id || taskId });
-        bodyEl.innerHTML = `<div class="missing-item-card ${delivered ? "ready-ok" : ""}"><div style="color:${delivered ? "var(--emerald-bright)" : "var(--rose)"};font-weight:700;font-family:var(--gw-font-mono);font-variant-numeric:tabular-nums;">${escapeHtml(collectionIncomplete ? "执行已结束，输出回收未完成" : (label[st] || st))} (Job ID: ${escapeHtml(taskId)})${unknownBadge}</div><div style="font-size:var(--gw-type-body-sm);color:var(--text-muted);">${escapeHtml(message)}</div></div>${mediaHtml}`;
+        if (st === "outcome_unknown") {
+          const seenTask = { ...statusRes, job_id: statusRes.job_id || statusRes.task_id || taskId };
+          if (observedActive && !isUnknownTaskSeen(seenTask)) {
+            const modal = wfGet("taskModal");
+            if (modal && !modal.classList?.contains?.("open")) { setWorkflowTaskTrigger?.("btnViewTaskDrawer"); modal.classList?.add?.("open"); }
+          }
+          markUnknownTaskSeen(seenTask);
+        }
+        const abandonButton = st === "outcome_unknown" && statusRes.error_code === "OUTCOME_UNKNOWN_NO_REMOTE_ID"
+          ? `<div class="hw-bay-row"><button type="button" class="hw-btn" data-task-abandon="${escapeHtml(taskId)}">放弃</button><span style="font-size:var(--gw-type-body-sm);color:var(--text-muted);">没有远端任务 ID，确认未产生结果后可标记放弃（不会重新提交）。</span></div>` : "";
+        bodyEl.innerHTML = `<div class="missing-item-card ${delivered ? "ready-ok" : ""}"><div style="color:${delivered ? "var(--emerald-bright)" : "var(--rose)"};font-weight:700;font-family:var(--gw-font-mono);font-variant-numeric:tabular-nums;">${escapeHtml(collectionIncomplete ? "执行已结束，输出回收未完成" : (label[st] || st))} (Job ID: ${escapeHtml(taskId)})${unknownBadge}</div><div style="font-size:var(--gw-type-body-sm);color:var(--text-muted);">${escapeHtml(message)}</div></div>${abandonButton}${mediaHtml}`;
+        bodyEl.querySelector?.("[data-task-abandon]")?.addEventListener("click", () => abandonWorkflowTask(taskId, target));
         return;
       }
+      observedActive = true;
       bodyEl.innerHTML = `<div class="hw-bay-row"><div style="color:var(--compute);font-family:var(--gw-font-mono);font-variant-numeric:tabular-nums;font-weight:700;">${escapeHtml(label[st] || st)} (${escapeHtml(target === "rh_cloud" ? "RunningHub Cloud" : "Local ComfyUI")})...</div><div style="font-family:var(--gw-font-mono);font-variant-numeric:tabular-nums;font-size:var(--gw-type-body-sm);color:var(--text-muted);">JOB ID: ${escapeHtml(taskId)} · 状态: ${escapeHtml(st)}</div></div>`;
     } catch (err) {
       if (generation !== state.pollGeneration) return;
@@ -3511,6 +3523,35 @@ function startTaskPolling(taskId, target) {
   };
   pollOnce();
   state.pollTimer = setInterval(pollOnce, 3000);
+}
+
+// 「放弃」：仅对 OUTCOME_UNKNOWN_NO_REMOTE_ID 显示；后端只做本地标记与审计，不重发。
+const ABANDON_DEFAULT_REASON = "用户确认：结果未知且无远端任务 ID，标记放弃";
+async function abandonWorkflowTask(taskId, target) {
+  if (!taskId || state.abandoningTaskId === taskId) return;
+  if (window.confirm && !window.confirm("确认放弃该任务？只做本地标记，不会重新提交或产生费用。")) return;
+  state.abandoningTaskId = taskId;
+  try {
+    await apiFetch(`/api/god_workflow/tasks/${encodeURIComponent(taskId)}/abandon`, {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ reason: ABANDON_DEFAULT_REASON }),
+    });
+    showToast("任务已放弃");
+  } catch (error) {
+    if (error?.status === 409 && ["TASK_HAS_REMOTE_ID", "TASK_NOT_OUTCOME_UNKNOWN"].includes(error?.code)) {
+      showToast(error.code === "TASK_HAS_REMOTE_ID" ? "该任务已有远端 ID，不能放弃，已刷新状态" : "该任务已不是结果未知状态，已刷新状态", true);
+    } else {
+      showToast(`放弃失败：${error?.message || "请求失败"}`, true);
+      return;
+    }
+  } finally { state.abandoningTaskId = null; }
+  // 成功或 409 都刷新该任务与列表，显示后端的真实状态。
+  const row = (state.workflowTasks || []).find(item => (item.job_id || item.task_id) === taskId);
+  try {
+    const fresh = await apiFetch(`/api/god_workflow/tasks/${encodeURIComponent(taskId)}`);
+    if (row) Object.assign(row, { status: fresh.status, error_code: fresh.error_code });
+    if (typeof renderWorkflowTaskList === "function") renderWorkflowTaskList();
+  } catch { /* 列表刷新失败不影响详情轮询 */ }
+  startTaskPolling(taskId, target);
 }
 /* ==================== 7. 事件绑定 ==================== */
 

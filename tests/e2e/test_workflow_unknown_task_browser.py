@@ -31,7 +31,7 @@ def _shot(page, name):
         page.screenshot(path=str(Path(folder) / name))
 
 
-def test_outcome_unknown_task_pops_once_then_list_click_to_expand(monkeypatch, tmp_path):
+def test_outcome_unknown_task_never_pops_on_view_switch_and_list_click_to_expand(monkeypatch, tmp_path):
     with settings_browser(monkeypatch, tmp_path) as (page, base, errors, _):
         created = page.context.request.post(base + "/api/god_workflow/documents?name=" + quote("unknown"),
             data={"1": {"class_type": "LoadImage", "inputs": {"image": "a.png"}}}, headers={"Origin": base})
@@ -49,21 +49,13 @@ def test_outcome_unknown_task_pops_once_then_list_click_to_expand(monkeypatch, t
         page.route("**/api/god_workflow/tasks**", fulfil)
         url = base + "/static/pages/workflow.html?id=" + wid
         modal = page.locator("#taskModal")
-        goto_ready(page, url)
-        page.wait_for_function("() => document.getElementById('taskModal')?.classList.contains('open')")
-        # 首次弹出的必须是当前工作流的结果未知任务，而不是其他工作流更新的运行中任务。
-        page.locator("#taskModalBody").get_by_text("Job ID: " + UNKNOWN).wait_for()
-        assert page.evaluate("state.activeTaskId") == UNKNOWN
-        _shot(page, "1-first-visit.png")
-        page.keyboard.press("Escape")
-        page.wait_for_function("() => !document.getElementById('taskModal').classList.contains('open')")
-        for attempt in range(2):
-            # 等到恢复流程真正拿到任务列表后再断言“没有弹出”。
+        for attempt in range(3):
+            # r6：结果未知任务在切换界面时首次也不弹出；等到恢复流程真正拿到任务列表后再断言“没有弹出”。
             with page.expect_response(lambda r: urlsplit(r.url).path == "/api/god_workflow/tasks"):
                 goto_ready(page, url)
             page.wait_for_load_state("networkidle")
             _shot(page, f"2-revisit-{attempt + 1}.png")
-            assert "open" not in (modal.get_attribute("class") or ""), "已知悉的结果未知任务与其他工作流运行中任务都不应自动弹出"
+            assert "open" not in (modal.get_attribute("class") or ""), "结果未知任务与其他工作流运行中任务都不应自动弹出"
             assert page.evaluate("state.activeTaskId || null") is None
         # 打开任务面板：当前工作流的任务新→旧列出，结果未知不自动展开。
         page.wait_for_function("(id) => typeof state !== 'undefined' && state.currentWorkflow?.workflow_id === id", arg=wid)
@@ -215,4 +207,70 @@ def test_real_backend_paging_loads_all_130_tasks_without_duplicates(monkeypatch,
         assert len(loaded) == 130
         assert len(set(loaded)) == 130, "加载更多出现重复任务"
         assert loaded == expected_order
+        assert errors == []
+
+
+def _seed_task(tasks_root, workflow_id, *, status, remote_task_id=None, created_at):
+    import uuid
+    from gw.god_workflow import registry
+    job = str(uuid.uuid4())
+    registry._atomic_write(tasks_root / f"{job}.json", {"job_id": job, "task_id": job, "workflow_id": workflow_id,
+        "status": status, "remote_task_id": remote_task_id, "prompt_id": remote_task_id, "target": "rh_cloud",
+        "created_at": created_at, "updated_at": created_at, "outputs": [], "messages": [], "remote_id_missing": not remote_task_id})
+    return job
+
+
+def test_real_backend_abandon_then_reload_never_pops(monkeypatch, tmp_path):
+    """真实后端：无远端 ID 的结果未知任务可放弃，刷新后不弹出且显示「已放弃」；有远端 ID 的不显示放弃。
+    后端尚未提供放弃接口（PR #35 未合入）时跳过。"""
+    import pytest
+    with settings_browser(monkeypatch, tmp_path) as (page, base, errors, _):
+        created = page.context.request.post(base + "/api/god_workflow/documents?name=abandon",
+            data={"1": {"class_type": "LoadImage", "inputs": {"image": "a.png"}}}, headers={"Origin": base})
+        assert created.status == 201, created.text()
+        wid = created.json()["workflow_id"]
+        tasks_root = next((tmp_path / "gw-data/workflow").glob(f"*/{wid}.json")).parent / "tasks"
+        tasks_root.mkdir(parents=True, exist_ok=True)
+        no_remote = _seed_task(tasks_root, wid, status="outcome_unknown", created_at="2026-10-14T02:00:00+00:00")
+        with_remote = _seed_task(tasks_root, wid, status="outcome_unknown", remote_task_id="rh-123",
+                                 created_at="2026-10-14T01:00:00+00:00")
+        detail = page.context.request.get(base + f"/api/god_workflow/tasks/{no_remote}").json()
+        if detail.get("error_code") != "OUTCOME_UNKNOWN_NO_REMOTE_ID":
+            pytest.skip("后端尚未提供 error_code / 放弃接口（PR #35 未合入）")
+        page.on("dialog", lambda dialog: dialog.accept())
+        url = base + "/static/pages/workflow.html?id=" + wid
+        modal = page.locator("#taskModal")
+        with page.expect_response(lambda r: urlsplit(r.url).path == "/api/god_workflow/tasks"):
+            goto_ready(page, url)
+        page.wait_for_load_state("networkidle")
+        assert "open" not in (modal.get_attribute("class") or ""), "切换界面不应自动弹出结果未知任务"
+        page.wait_for_function("(id) => typeof state !== 'undefined' && state.currentWorkflow?.workflow_id === id", arg=wid)
+        with page.expect_response(lambda r: urlsplit(r.url).path == "/api/god_workflow/tasks"):
+            page.locator("#btnViewTaskDrawer").click()
+        row = page.locator(f'#workflowTaskList [data-task-row="{no_remote}"]')
+        row.wait_for()
+        assert "Job ID" not in page.locator("#taskModalBody").inner_text(), "打开面板不应自动展开结果未知详情"
+        # 有远端 ID 的结果未知任务不提供放弃。
+        page.locator(f'#workflowTaskList [data-task-row="{with_remote}"]').click()
+        page.locator("#taskModalBody").get_by_text("Job ID: " + with_remote).wait_for()
+        assert page.locator("#taskModalBody [data-task-abandon]").count() == 0
+        row.click()
+        abandon = page.locator(f'#taskModalBody [data-task-abandon="{no_remote}"]')
+        abandon.wait_for()
+        _shot(page, "11-abandon-button.png")
+        with page.expect_response(lambda r: r.url.endswith(f"/tasks/{no_remote}/abandon") and r.status == 200):
+            abandon.click()
+        page.locator("#taskModalBody").get_by_text("已放弃 (Job ID: " + no_remote).wait_for()
+        page.locator(f'#workflowTaskList [data-task-row="{no_remote}"] [data-task-badge="abandoned"]').wait_for()
+        _shot(page, "12-abandoned.png")
+        assert page.context.request.get(base + f"/api/god_workflow/tasks/{no_remote}").json()["status"] == "abandoned"
+        for _ in range(2):
+            with page.expect_response(lambda r: urlsplit(r.url).path == "/api/god_workflow/tasks"):
+                page.reload(wait_until="networkidle")
+            page.wait_for_load_state("networkidle")
+            assert "open" not in (modal.get_attribute("class") or ""), "已放弃任务刷新后不应弹出"
+        _shot(page, "13-reload-no-pop.png")
+        with page.expect_response(lambda r: urlsplit(r.url).path == "/api/god_workflow/tasks"):
+            page.locator("#btnViewTaskDrawer").click()
+        page.locator(f'#workflowTaskList [data-task-row="{no_remote}"][data-status="abandoned"]').wait_for()
         assert errors == []

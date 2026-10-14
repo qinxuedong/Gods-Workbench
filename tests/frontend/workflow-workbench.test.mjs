@@ -420,30 +420,6 @@ function restoreHarness(tasks, { search = '', storage = new Map(), workflowId = 
   runInNewContext(controller.slice(start, end), context);
   return { ...context, modal, polled, storage, urls };
 }
-test('结果未知任务首次恢复弹出一次，再次进入视图不再自动弹出', async () => {
-  const tasks = [{ job_id: 'job-u', status: 'outcome_unknown', error_code: 'RH_OUTCOME_UNKNOWN', target: 'rh_cloud' }];
-  const storage = new Map();
-  const first = restoreHarness(tasks, { storage });
-  await first.restoreWorkflowTask();
-  assert.equal(first.modal.opened, 1);
-  for (let i = 0; i < 3; i++) {
-    const again = restoreHarness(tasks, { storage });
-    await again.restoreWorkflowTask();
-    assert.equal(again.modal.opened, 0);
-    assert.deepEqual(again.polled, []);
-  }
-  assert.ok([...storage.keys()].some(k => k.includes('job-u') && k.includes('RH_OUTCOME_UNKNOWN')));
-});
-test('同一任务出现不同错误码时重新提示一次；其他任务互不影响', async () => {
-  const storage = new Map();
-  await restoreHarness([{ job_id: 'job-u', status: 'outcome_unknown', error_code: 'A' }], { storage }).restoreWorkflowTask();
-  const changed = restoreHarness([{ job_id: 'job-u', status: 'outcome_unknown', error_code: 'B' }], { storage });
-  await changed.restoreWorkflowTask();
-  assert.equal(changed.modal.opened, 1);
-  const other = restoreHarness([{ job_id: 'job-v', status: 'outcome_unknown', error_code: 'A' }], { storage });
-  await other.restoreWorkflowTask();
-  assert.equal(other.modal.opened, 1);
-});
 test('运行中任务照常恢复弹出；显式 job_id 链接即使已知悉也打开', async () => {
   const storage = new Map();
   for (let i = 0; i < 2; i++) {
@@ -457,12 +433,6 @@ test('运行中任务照常恢复弹出；显式 job_id 链接即使已知悉也
   await linked.restoreWorkflowTask();
   assert.equal(linked.modal.opened, 1);
 });
-test('localStorage 不可用时恢复不抛错', async () => {
-  const h = restoreHarness([{ job_id: 'job-u', status: 'outcome_unknown' }]);
-  h.window.localStorage = { getItem() { throw new Error('x'); }, setItem() { throw new Error('x'); } };
-  await h.restoreWorkflowTask();
-  assert.equal(h.modal.opened, 1);
-});
 test('任务面板对结果未知任务显示徽标并记为已知悉', async () => {
   const seen = [];
   const harness = pollingHarness({ status: 'outcome_unknown', outputs: [], error_code: 'E1' });
@@ -475,11 +445,6 @@ test('任务面板对结果未知任务显示徽标并记为已知悉', async ()
   assert.match(harness.body.innerHTML, /data-task-badge="outcome_unknown"/);
   assert.equal(seen[0]?.job_id, 'job-u');
   assert.equal(seen[0]?.error_code, 'E1');
-});
-test('无错误码时已知悉键退回 job_id + 状态', async () => {
-  const storage = new Map();
-  await restoreHarness([{ job_id: 'job-n', status: 'outcome_unknown' }], { storage }).restoreWorkflowTask();
-  assert.deepEqual([...storage.keys()], ['gw.workflow.unknownTaskSeen:job-n:outcome_unknown']);
 });
 function panelHarness(tasks, currentWorkflowId = 'wf-1', respond) {
   const helpersStart = controller.indexOf('function workflowTaskId(task)');
@@ -575,14 +540,14 @@ function pagedResponder(pages) {
 }
 test('后端支持分页时显示「加载更多」并按 cursor 追加，末页隐藏', async () => {
   const pages = {
-    '': { tasks: [{ job_id: 'job-3', workflow_id: 'wf-1', status: 'completed', created_at: '2026-10-14T03:00:00Z' }], next_cursor: 'c1', has_more: true },
-    c1: { tasks: [{ job_id: 'job-2', workflow_id: 'wf-1', status: 'failed', created_at: '2026-10-14T02:00:00Z' }], next_cursor: null, has_more: false },
+    '': { tasks: [{ job_id: 'job-3', workflow_id: 'wf-1', status: 'completed', created_at: '2026-10-14T03:00:00Z' }], next_cursor: 'Y3Vyc29yLTE', has_more: true },
+    'Y3Vyc29yLTE': { tasks: [{ job_id: 'job-2', workflow_id: 'wf-1', status: 'failed', created_at: '2026-10-14T02:00:00Z' }], next_cursor: null, has_more: false },
   };
   const h = panelHarness([], 'wf-1', pagedResponder(pages));
   await h.openWorkflowTasks();
   assert.match(h.list.innerHTML, /data-task-load-more/);
   await h.loadMoreWorkflowTasks();
-  assert.equal(h.urls.at(-1), '/api/god_workflow/tasks?workflow_id=wf-1&limit=20&cursor=c1');
+  assert.equal(h.urls.at(-1), '/api/god_workflow/tasks?workflow_id=wf-1&limit=20&cursor=Y3Vyc29yLTE');
   assert.deepEqual(h.rows(), ['job-3', 'job-2']);
   assert.doesNotMatch(h.list.innerHTML, /data-task-load-more/);
 });
@@ -605,7 +570,7 @@ test('加载更多遇 INVALID_CURSOR 时回到第一页重新加载', async () =
   const h = panelHarness([], 'wf-1', url => {
     calls++;
     if (url.includes('cursor=')) { const e = new Error('分页游标无效'); e.status = 400; e.code = 'INVALID_CURSOR'; throw e; }
-    return { workflow_id: 'wf-1', tasks: [{ job_id: 'job-1', workflow_id: 'wf-1', status: 'completed' }], next_cursor: '20', has_more: true, data_status: 'ok', data_gaps: [] };
+    return { workflow_id: 'wf-1', tasks: [{ job_id: 'job-1', workflow_id: 'wf-1', status: 'completed' }], next_cursor: 'b3BhcXVl', has_more: true, data_status: 'ok', data_gaps: [] };
   });
   await h.openWorkflowTasks();
   await h.loadMoreWorkflowTasks();
@@ -636,4 +601,139 @@ test('同一时间的任务按 task_id 倒序，与后端分页次序一致', as
     { job_id: 'b', task_id: 'b', workflow_id: 'wf-1', status: 'completed', created_at: t }]);
   await h.openWorkflowTasks();
   assert.deepEqual(h.rows(), ['b', 'a']);
+});
+
+// r6：切换界面 / 打开面板从不自动弹出结果未知或已放弃任务；唯一自动弹出时机是监控中活动→结果未知的实时转换。
+test('切换工作流界面时结果未知与已放弃任务从不自动弹出（首次也不弹）', async () => {
+  for (const task of [{ job_id: 'job-u', status: 'outcome_unknown', error_code: 'OUTCOME_UNKNOWN_NO_REMOTE_ID' },
+    { job_id: 'job-x', status: 'abandoned', error_code: 'TASK_ABANDONED' }]) {
+    const storage = new Map();
+    for (let i = 0; i < 2; i++) {
+      const h = restoreHarness([task], { storage });
+      await h.restoreWorkflowTask();
+      assert.equal(h.modal.opened, 0, task.status);
+      assert.deepEqual(h.polled, []);
+    }
+  }
+});
+function transitionHarness(responses, { storage = new Map(), modalOpen = false } = {}) {
+  const helpersStart = controller.indexOf('const UNKNOWN_TASK_SEEN_PREFIX');
+  const helpersEnd = controller.indexOf('function workflowTaskId(task)', helpersStart);
+  const start = controller.indexOf('function startTaskPolling(taskId, target) {');
+  const end = controller.indexOf('/* ==================== 7. 事件绑定', start);
+  let abandonClick = null;
+  const body = { innerHTML: '', querySelector: sel => sel === '[data-task-abandon]' && body.innerHTML.includes('data-task-abandon') ? { addEventListener: (_, fn) => { abandonClick = fn; } } : null };
+  const modal = { opened: 0, isOpen: modalOpen, classList: { contains: () => modal.isOpen, add() { modal.opened++; modal.isOpen = true; } } };
+  const timers = new Map();
+  const queue = [...responses];
+  const calls = [];
+  const toasts = [];
+  const localStorage = { getItem: k => storage.get(k) ?? null, setItem: (k, v) => storage.set(k, String(v)) };
+  const context = {
+    state: { pollTimer: null, workflowTasks: [] }, Set, String, Array, Object, JSON, encodeURIComponent,
+    window: { localStorage, confirm: () => true },
+    wfGet: id => id === 'taskModal' ? modal : body,
+    escapeHtml: value => String(value ?? '').replaceAll('<', '&lt;'),
+    setWorkflowTaskTrigger() {}, renderWorkflowTaskList() {}, showToast: (m, e) => toasts.push([m, Boolean(e)]),
+    apiFetch: async (url, options) => { calls.push([url, options]); const next = queue.length > 1 ? queue.shift() : queue[0]; if (next instanceof Error) throw next; return typeof next === 'function' ? next(url, options) : next; },
+    clearInterval: id => timers.delete(id), clearTimeout: id => timers.delete(id),
+    setInterval: callback => { const id = timers.size + 1; timers.set(id, callback); return id; },
+  };
+  runInNewContext(controller.slice(helpersStart, helpersEnd) + controller.slice(start, end), context);
+  const flush = () => new Promise(resolve => setImmediate(resolve));
+  const tick = async () => { for (const cb of [...timers.values()]) cb(); await flush(); };
+  return { ...context, body, modal, storage, calls, toasts, flush, tick, clickAbandon: () => abandonClick?.() };
+}
+test('监控中运行任务转入结果未知时自动弹出一次；同 job+error_code 再次转换不再弹', async () => {
+  const storage = new Map();
+  const unknown = { job_id: 'job-u', status: 'outcome_unknown', error_code: 'OUTCOME_UNKNOWN_NO_REMOTE_ID', outputs: [] };
+  const h = transitionHarness([{ status: 'running' }, unknown], { storage });
+  h.startTaskPolling('job-u', 'rh_cloud');
+  await h.flush();
+  assert.equal(h.modal.opened, 0);
+  await h.tick();
+  assert.equal(h.modal.opened, 1);
+  assert.deepEqual([...storage.keys()], ['gw.workflow.unknownTaskSeen:job-u:OUTCOME_UNKNOWN_NO_REMOTE_ID']);
+  const again = transitionHarness([{ status: 'running' }, unknown], { storage });
+  again.startTaskPolling('job-u', 'rh_cloud');
+  await again.flush(); await again.tick();
+  assert.equal(again.modal.opened, 0);
+});
+test('直接读到已是结果未知的任务（未见活动状态）不自动弹出；错误码不同算新错误', async () => {
+  const h = transitionHarness([{ job_id: 'job-u', status: 'outcome_unknown', error_code: 'OUTCOME_UNKNOWN', outputs: [] }]);
+  h.startTaskPolling('job-u', 'rh_cloud');
+  await h.flush();
+  assert.equal(h.modal.opened, 0);
+  const storage = new Map([['gw.workflow.unknownTaskSeen:job-u:OUTCOME_UNKNOWN', '1']]);
+  const changed = transitionHarness([{ status: 'running' }, { job_id: 'job-u', status: 'outcome_unknown', error_code: 'OUTCOME_UNKNOWN_NO_REMOTE_ID' }], { storage });
+  changed.startTaskPolling('job-u', 'rh_cloud');
+  await changed.flush(); await changed.tick();
+  assert.equal(changed.modal.opened, 1);
+});
+test('无错误码时已知悉键退回 job_id + 状态；localStorage 不可用不抛错', async () => {
+  const storage = new Map();
+  const h = transitionHarness([{ job_id: 'job-n', status: 'outcome_unknown' }], { storage });
+  h.startTaskPolling('job-n', 'rh_cloud');
+  await h.flush();
+  assert.deepEqual([...storage.keys()], ['gw.workflow.unknownTaskSeen:job-n:outcome_unknown']);
+  const broken = transitionHarness([{ status: 'running' }, { job_id: 'job-n', status: 'outcome_unknown' }]);
+  broken.window.localStorage = { getItem() { throw new Error('x'); }, setItem() { throw new Error('x'); } };
+  broken.startTaskPolling('job-n', 'rh_cloud');
+  await broken.flush(); await broken.tick();
+  assert.equal(broken.modal.opened, 1);
+});
+test('仅 OUTCOME_UNKNOWN_NO_REMOTE_ID 显示「放弃」；有远端 ID 的结果未知不显示', async () => {
+  const yes = transitionHarness([{ status: 'outcome_unknown', error_code: 'OUTCOME_UNKNOWN_NO_REMOTE_ID' }]);
+  yes.startTaskPolling('job-u', 'rh_cloud'); await yes.flush();
+  assert.match(yes.body.innerHTML, /data-task-abandon="job-u"[^>]*>放弃</);
+  const no = transitionHarness([{ status: 'outcome_unknown', error_code: 'OUTCOME_UNKNOWN' }]);
+  no.startTaskPolling('job-u', 'rh_cloud'); await no.flush();
+  assert.doesNotMatch(no.body.innerHTML, /data-task-abandon/);
+});
+test('点击「放弃」发送 POST /abandon {reason}，成功后显示「已放弃」', async () => {
+  const h = transitionHarness([
+    { status: 'outcome_unknown', error_code: 'OUTCOME_UNKNOWN_NO_REMOTE_ID' },
+    { status: 'abandoned', abandoned: true, error_code: 'TASK_ABANDONED' },
+    { status: 'abandoned', error_code: 'TASK_ABANDONED' },
+  ]);
+  h.startTaskPolling('job-u', 'rh_cloud'); await h.flush();
+  await h.clickAbandon(); await h.flush();
+  const [url, options] = h.calls[1];
+  assert.equal(url, '/api/god_workflow/tasks/job-u/abandon');
+  assert.equal(options.method, 'POST');
+  assert.equal(typeof JSON.parse(options.body).reason, 'string');
+  assert.ok(JSON.parse(options.body).reason.length > 0 && JSON.parse(options.body).reason.length <= 200);
+  assert.match(h.body.innerHTML, /已放弃/);
+  assert.doesNotMatch(h.body.innerHTML, /data-task-abandon/);
+});
+for (const code of ['TASK_HAS_REMOTE_ID', 'TASK_NOT_OUTCOME_UNKNOWN']) {
+  test(`放弃返回 409 ${code} 时提示并刷新该任务`, async () => {
+    const conflict = Object.assign(new Error('x'), { status: 409, code });
+    const h = transitionHarness([
+      { status: 'outcome_unknown', error_code: 'OUTCOME_UNKNOWN_NO_REMOTE_ID' }, conflict,
+      { status: 'outcome_unknown', error_code: 'OUTCOME_UNKNOWN' },
+    ]);
+    h.startTaskPolling('job-u', 'rh_cloud'); await h.flush();
+    await h.clickAbandon(); await h.flush();
+    assert.ok(h.toasts.some(([, isError]) => isError));
+    assert.ok(h.calls.slice(2).some(([url]) => url === '/api/god_workflow/tasks/job-u'));
+    assert.doesNotMatch(h.body.innerHTML, /data-task-abandon/);
+  });
+}
+test('用户取消确认时不发送放弃请求', async () => {
+  const h = transitionHarness([{ status: 'outcome_unknown', error_code: 'OUTCOME_UNKNOWN_NO_REMOTE_ID' }]);
+  h.window.confirm = () => false;
+  h.startTaskPolling('job-u', 'rh_cloud'); await h.flush();
+  await h.clickAbandon();
+  assert.equal(h.calls.length, 1);
+});
+test('next_cursor 作为不透明字符串原样回传', async () => {
+  const opaque = 'eyJjIjoiMjAyNi0xMC0xNFQwMTowMDowMCIsInQiOiJhLWItYyJ9';
+  const pages = { '': { tasks: [{ job_id: 'j1', workflow_id: 'wf-1', status: 'completed', created_at: '2026-10-14T02:00:00Z' }], next_cursor: opaque, has_more: true },
+    [opaque]: { tasks: [{ job_id: 'j2', workflow_id: 'wf-1', status: 'completed', created_at: '2026-10-14T01:00:00Z' }], next_cursor: null, has_more: false } };
+  const h = panelHarness([], 'wf-1', url => ({ workflow_id: 'wf-1', ...pages[new URL(url, 'http://x').searchParams.get('cursor') || ''] }));
+  await h.openWorkflowTasks();
+  await h.loadMoreWorkflowTasks();
+  assert.equal(new URL(h.urls.at(-1), 'http://x').searchParams.get('cursor'), opaque);
+  assert.deepEqual(h.rows(), ['j1', 'j2']);
 });
