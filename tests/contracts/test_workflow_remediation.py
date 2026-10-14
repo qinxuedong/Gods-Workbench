@@ -674,6 +674,45 @@ def test_source_project_acl_and_version_snapshot(client, monkeypatch):
     assert denied.status_code == 404
 
 
+def test_params_save_clears_dead_source_project_and_execute_acl_holds(client, monkeypatch):
+    from gw.god_workflow import comfy_executor
+    monkeypatch.setenv('GW_COMFYUI_URL', 'http://127.0.0.1:8188')
+    async def submit(*args, **kwargs):
+        return {'prompt_id': 'dead-source-test'}
+    monkeypatch.setattr(comfy_executor, 'submit', submit)
+    admin = {**HEADERS, 'X-User-Role': 'admin'}
+    project = client.post('/api/asset-registry/projects', headers=HEADERS,
+                          json={'name': 'doomed source', 'project_type': 'other'})
+    assert project.status_code == 201, project.text
+    project_id = project.json()['project']['project_id']
+    project_version = project.json()['project']['version']
+    workflow_id = save(client)
+    linked = client.put(f'/api/god_workflow/documents/{workflow_id}', headers=HEADERS,
+                        json={'expected_version': 1,
+                              'source_context': {'project_id': project_id, 'project_version': project_version}})
+    assert linked.status_code == 200, linked.text
+    assert linked.json()['workflow']['metadata']['source_context']['project_id'] == project_id
+    archived = client.request('DELETE', f'/api/asset-registry/projects/{project_id}', headers=admin,
+                              json={'expected_version': project_version})
+    assert archived.status_code == 200, archived.text
+    # 来源项目归档后参数保存不再被死链阻断，元数据里的来源被清为无来源。
+    saved = client.put(f'/api/god_workflow/item/{workflow_id}/params', headers=HEADERS,
+                       json={'expected_version': 2,
+                             'widget_updates': [{'node_id': '1', 'field_name': 'image', 'value': 'after-archive.png'}]})
+    assert saved.status_code == 200, saved.text
+    stored = item(client, workflow_id)
+    assert stored['metadata']['source_context'] == {}
+    assert stored['nodes'][0]['inputs']['image'] == 'after-archive.png'
+    # execute 的显式来源 ACL 不变：其他主体携带该 project_id 执行仍按 PROJECT_NOT_FOUND 拒绝。
+    other = {**HEADERS, 'Authorization': 'Bearer other-subject'}
+    other_workflow = client.post('/api/god_workflow/documents', headers=other,
+        json={'1': {'class_type': 'LoadImage', 'inputs': {'image': 'other.png'}}}).json()['workflow_id']
+    denied = client.post('/api/god_workflow/execute', headers=other,
+        json={'workflow_id': other_workflow, 'expected_version': 1, 'source_context': {'project_id': project_id}})
+    assert denied.status_code == 404
+    assert denied.json()['detail']['code'] == 'PROJECT_NOT_FOUND'
+
+
 def test_native_open_never_overwrites_user_named_files(client, monkeypatch, tmp_path):
     async def probe():
         return {'online': True, 'object_info': {'LoadImage': {'input': {'required': {'image': ['STRING', {}]}}}}}

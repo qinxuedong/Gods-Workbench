@@ -1321,7 +1321,15 @@ async def _update_document(workflow_id: str, request: Request, authorization: Op
         stored.update({"workflow_id": workflow_id, "version": current_version + 1,
                        "folder_id": body.get("folder_id", current.get("folder_id"))})
         stored["asset_id"] = asset_hub_bridge._workflow_asset_id(context, workflow_id)
-        stored.setdefault("metadata", {})["source_context"] = _source_context(context, body.get("source_context", stored.get("metadata", {}).get("source_context", {})))
+        try:
+            source_context = _source_context(context, body.get("source_context", stored.get("metadata", {}).get("source_context", {})))
+        except CleanroomException as exc:
+            # 来源项目在保存后被删除/归档时只清除死链，不阻断参数保存等常规写入；
+            # execute 的显式来源 ACL 不变，无法访问的项目仍按 PROJECT_NOT_FOUND 拒绝。
+            if exc.status_code != 404 or exc.code != "PROJECT_NOT_FOUND":
+                raise
+            source_context = {}
+        stored.setdefault("metadata", {})["source_context"] = source_context
         if stored["folder_id"] not in (None, "parsed_default"):
             _load_folder(context, str(stored["folder_id"]))
         _atomic_write(path, stored)

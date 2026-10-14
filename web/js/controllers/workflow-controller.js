@@ -491,6 +491,10 @@ async function apiFetch(url, options = {}) {
   const data = await resp.json().catch(() => ({}));
   if (!resp.ok) {
     const detail = data?.detail; const msg = detail?.message || detail || data?.message || `请求失败 (${resp.status})`; const error = new Error(msg); error.status = resp.status;
+    // 透传统一错误包里的 CAS 元数据，供参数保存按服务端当前版本自愈。
+    if (detail?.code) error.code = detail.code;
+    if (Number.isFinite(detail?.expected_version)) error.expected_version = detail.expected_version;
+    if (Number.isFinite(detail?.current_version)) error.current_version = detail.current_version;
     if (resp.status === 401) {
       if (window.GWAuthGate?.revision === authRevision) { clearInterval(state.comfySyncTimer); clearInterval(state.pollTimer); }
       window.GWAuthGate?.invalidate(401, authRevision, 'workflow');
@@ -2402,6 +2406,28 @@ function schedulePersistWorkflowParams(widgetUpdates, positions = []) {
   state.paramSaveTimer = entry.timer;
 }
 
+function isVersionConflictError(err) {
+  return err?.status === 409 && (err.code === "VERSION_CONFLICT" || /expected_version/.test(err.message || ""));
+}
+
+// 版本冲突后取服务端当前版本：优先用 409 错误包自带的 current_version，否则回源查询一次。
+async function fetchCurrentWorkflowVersion(workflowId, err) {
+  if (Number.isFinite(err?.current_version) && err.current_version > 0) return err.current_version;
+  try {
+    const fresh = await apiFetch(`/api/god_workflow/item/${encodeURIComponent(workflowId)}`);
+    return Number.isFinite(fresh?.version) && fresh.version > 0 ? fresh.version : null;
+  } catch { return null; }
+}
+
+function applyWorkflowVersion(workflowId, version) {
+  const entry = state.parameterSaves.get(workflowId);
+  if (entry) { entry.workflow.version = entry.workflow.revision = version; }
+  state.syncRevisions[workflowId] = version;
+  if (state.currentWorkflow?.workflow_id === workflowId) {
+    state.currentWorkflow.version = state.currentWorkflow.revision = version;
+  }
+}
+
 async function flushWorkflowParams(workflowId) {
   const entry = state.parameterSaves.get(workflowId);
   if (!entry) return;
@@ -2419,11 +2445,8 @@ async function flushWorkflowParams(workflowId) {
         body: JSON.stringify({ widget_updates: updates, positions, expected_version: entry.workflow.revision ?? entry.workflow.version }),
       });
       // 只回写版本，保留请求期间用户的新输入，不覆盖当前另一份工作流。
-      entry.workflow.version = entry.workflow.revision = saved.version;
-      state.syncRevisions[workflowId] = saved.version;
-      if (state.currentWorkflow?.workflow_id === workflowId) {
-        state.currentWorkflow.version = state.currentWorkflow.revision = saved.version;
-      }
+      applyWorkflowVersion(workflowId, saved.version);
+      entry.conflictRetry = false;
     } catch (err) {
       for (const update of updates) {
         const key = JSON.stringify([String(update.node_id), update.field_name]);
@@ -2433,7 +2456,12 @@ async function flushWorkflowParams(workflowId) {
         const key = String(position.node_id);
         if (!entry.positions.has(key)) entry.positions.set(key, position);
       }
-      throw err;
+      // CAS 版本过期：取回服务端当前版本后带原输入重试一次；再次冲突则抛给调用方，不循环。
+      if (!isVersionConflictError(err) || entry.conflictRetry) throw err;
+      const refreshed = await fetchCurrentWorkflowVersion(workflowId, err);
+      if (!refreshed) throw err;
+      applyWorkflowVersion(workflowId, refreshed);
+      entry.conflictRetry = true;
     } finally { entry.running = null; }
   })();
   await entry.running;
@@ -3184,7 +3212,8 @@ function executionSourceContext(wf) {
   const parameters = new URLSearchParams(window.location.search);
   const project_id = parameters.get('project_id');
   const canvas_id = parameters.get('canvas_id');
-  if (!project_id && !canvas_id) return wf?.metadata?.source_context || {};
+  // 执行来源只信宿主 URL；文档元数据里的旧来源已失效，不作为执行依据。
+  if (!project_id && !canvas_id) return {};
   const source = {};
   for (const field of ['project_id', 'canvas_id', 'project_version', 'canvas_version']) {
     if (parameters.has(field)) source[field] = parameters.get(field);
@@ -3231,17 +3260,31 @@ async function handleExecuteWorkflow() {
   `;
 
   try {
-    const payload = JSON.stringify({ workflow_id: wf.workflow_id, expected_version: wf.revision ?? wf.version,
-      target: state.executionTarget, node_info_list: nodeInfoList, source_context: executionSourceContext(wf) });
-    // 响应丢失后保留同一请求键；收到公共任务 ID 后下一次操作才创建新键。
-    if (state.submissionAttempt?.payload !== payload) {
-      state.submissionAttempt = { payload, key: crypto.randomUUID() };
+    const originalSource = executionSourceContext(wf);
+    const sendExecute = (source_context) => {
+      const payload = JSON.stringify({ workflow_id: wf.workflow_id, expected_version: wf.revision ?? wf.version,
+        target: state.executionTarget, node_info_list: nodeInfoList, source_context });
+      // 响应丢失后保留同一请求键；收到公共任务 ID 后下一次操作才创建新键。
+      if (state.submissionAttempt?.payload !== payload) {
+        state.submissionAttempt = { payload, key: crypto.randomUUID() };
+      }
+      return apiFetch("/api/god_workflow/execute", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Idempotency-Key": state.submissionAttempt.key },
+        body: payload,
+      });
+    };
+    let res;
+    try {
+      res = await sendExecute(originalSource);
+    } catch (err) {
+      // 来源项目在会话期间被删除或归档时，改为无项目上下文重试一次；
+      // 该 404 发生在任何任务预留之前，换新负载（即新幂等键）重试不会重复提交。
+      if (err?.status !== 404 || err?.code !== "PROJECT_NOT_FOUND") throw err;
+      if (!originalSource.project_id && !originalSource.canvas_id) throw err;
+      showToast("来源项目不可用，已改为无项目上下文重试", true);
+      res = await sendExecute({});
     }
-    const res = await apiFetch("/api/god_workflow/execute", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "Idempotency-Key": state.submissionAttempt.key },
-      body: payload,
-    });
     state.activeTaskId = res.job_id || res.task_id;
     state.submissionAttempt = null;
     startTaskPolling(state.activeTaskId, res.target);
