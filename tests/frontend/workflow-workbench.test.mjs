@@ -412,7 +412,7 @@ function restoreHarness(tasks, { search = '', storage = new Map() } = {}) {
     window: { location: { search }, localStorage },
     apiFetch: async () => ({ tasks }),
     wfGet: id => id === 'taskModal' ? modal : null,
-    setWorkflowTaskTrigger() {}, showToast() {},
+    setWorkflowTaskTrigger() {}, showToast() {}, sortWorkflowTasks: t => t, renderWorkflowTaskList() {},
     startTaskPolling: id => polled.push(id),
   };
   runInNewContext(controller.slice(start, end), context);
@@ -473,43 +473,75 @@ test('任务面板对结果未知任务显示徽标并记为已知悉', async ()
   assert.match(harness.body.innerHTML, /data-task-badge="outcome_unknown"/);
   assert.equal(seen[0]?.job_id, 'job-u');
   assert.equal(seen[0]?.error_code, 'E1');
-  assert.match(controller, /data-status="\$\{escapeHtml\(task\.status\)\}"/);
 });
 test('无错误码时已知悉键退回 job_id + 状态', async () => {
   const storage = new Map();
   await restoreHarness([{ job_id: 'job-n', status: 'outcome_unknown' }], { storage }).restoreWorkflowTask();
   assert.deepEqual([...storage.keys()], ['gw.workflow.unknownTaskSeen:job-n:outcome_unknown']);
 });
-function panelHarness(tasks) {
-  const start = controller.indexOf('function renderCollapsedUnknownTask(task) {');
+function panelHarness(tasks, currentWorkflowId = 'wf-1') {
+  const start = controller.indexOf('const WORKFLOW_TASK_STATUS_LABEL');
   const end = controller.indexOf('function startTaskPolling(taskId, target) {', start);
-  let clickHandler = null;
-  const body = { innerHTML: '', textContent: '', querySelector: sel => sel === '[data-task-expand]' && body.innerHTML.includes('data-task-expand') ? { addEventListener: (_, fn) => { clickHandler = fn; } } : null };
+  const body = { innerHTML: '', textContent: '' };
+  const list = { innerHTML: '' };
   const modal = { classList: { contains: () => false, add() {} } };
-  const selector = { innerHTML: '', value: '' };
   const polled = [];
   const context = {
-    state: { pollTimer: null }, clearInterval() {}, String,
+    state: { pollTimer: null, currentWorkflow: { workflow_id: currentWorkflowId } }, clearInterval() {}, String, Number, Date, Array,
     escapeHtml: value => String(value ?? '').replaceAll('<', '&lt;'),
     apiFetch: async () => ({ tasks }), showToast() {}, setWorkflowTaskTrigger() {},
-    wfGet: id => ({ taskModal: modal, taskModalBody: body, workflowTaskSelect: selector })[id],
+    wfGet: id => ({ taskModal: modal, taskModalBody: body, workflowTaskList: list })[id],
     startTaskPolling: (id, target) => polled.push([id, target]),
   };
   runInNewContext(controller.slice(start, end), context);
-  return { ...context, body, selector, polled, click: () => clickHandler?.() };
+  const rows = () => [...list.innerHTML.matchAll(/data-task-row="([^"]+)"/g)].map(m => m[1]);
+  return { ...context, body, list, polled, rows };
 }
-test('打开任务面板时结果未知任务不自动展开详情，只显示状态标记；点击才展开', async () => {
-  const h = panelHarness([{ job_id: 'job-u', status: 'outcome_unknown', target: 'rh_cloud' }]);
+const TASKS = [
+  { job_id: 'aaaaaaaa-old-0000', workflow_id: 'wf-1', status: 'completed', target: 'local_comfy', created_at: '2026-10-14T01:00:00+00:00' },
+  { job_id: 'bbbbbbbb-other-wf', workflow_id: 'wf-2', status: 'running', target: 'rh_cloud', created_at: '2026-10-14T03:00:00+00:00' },
+  { job_id: 'cccccccc-new-1111', workflow_id: 'wf-1', status: 'outcome_unknown', target: 'rh_cloud', created_at: '2026-10-14T02:00:00+00:00' },
+];
+test('任务面板列出当前工作流多条任务（新→旧），每行含短ID、开始时间、执行端与状态标记', async () => {
+  const h = panelHarness(TASKS);
+  await h.openWorkflowTasks();
+  assert.deepEqual(h.rows(), ['cccccccc-new-1111', 'aaaaaaaa-old-0000']);
+  assert.match(h.list.innerHTML, /data-task-short-id>cccccccc</);
+  assert.doesNotMatch(h.list.innerHTML, /data-task-short-id>cccccccc-/);
+  assert.match(h.list.innerHTML, /data-task-executor>RH</);
+  assert.match(h.list.innerHTML, /data-task-executor>ComfyUI</);
+  assert.match(h.list.innerHTML, /data-task-time[^>]*>2026-10-14 \d{2}:00:00</);
+  assert.match(h.list.innerHTML, /data-task-badge="outcome_unknown"/);
+  assert.match(h.list.innerHTML, /data-task-badge="completed"/);
+});
+test('最新任务为结果未知时打开面板不自动展开详情；点击该行才展开', async () => {
+  const h = panelHarness(TASKS);
   await h.openWorkflowTasks();
   assert.deepEqual(h.polled, []);
-  assert.match(h.body.innerHTML, /data-task-badge="outcome_unknown"/);
-  assert.match(h.body.innerHTML, /data-task-expand="job-u"/);
-  assert.match(h.selector.innerHTML, /data-status="outcome_unknown"/);
-  h.click();
-  assert.deepEqual(h.polled, [['job-u', 'rh_cloud']]);
+  assert.match(h.body.textContent, /点击/);
+  h.expandWorkflowTask('cccccccc-new-1111');
+  assert.deepEqual(h.polled, [['cccccccc-new-1111', 'rh_cloud']]);
+  assert.match(h.list.innerHTML, /data-task-row="cccccccc-new-1111"[^>]*aria-expanded="true"/);
 });
-test('打开任务面板时其他状态任务照常显示详情', async () => {
-  const h = panelHarness([{ job_id: 'job-r', status: 'running', target: 'local_comfy' }]);
+test('点击其他行展开对应任务的执行监控', async () => {
+  const h = panelHarness(TASKS);
+  await h.openWorkflowTasks();
+  h.expandWorkflowTask('aaaaaaaa-old-0000');
+  assert.deepEqual(h.polled, [['aaaaaaaa-old-0000', 'local_comfy']]);
+});
+test('最新任务为其他状态时打开面板照常展开', async () => {
+  const h = panelHarness([{ job_id: 'job-r', workflow_id: 'wf-1', status: 'running', target: 'local_comfy', created_at: '2026-10-14T05:00:00Z' }]);
   await h.openWorkflowTasks();
   assert.deepEqual(h.polled, [['job-r', 'local_comfy']]);
+});
+test('当前工作流无任务时显示空态', async () => {
+  const h = panelHarness(TASKS, 'wf-none');
+  await h.openWorkflowTasks();
+  assert.deepEqual(h.rows(), []);
+  assert.match(h.body.textContent, /暂无任务/);
+});
+test('列表点击委托到 data-task-row', () => {
+  assert.match(controller, /wfGet\('workflowTaskList'\)\?\.addEventListener\('click'[\s\S]{0,160}data-task-row[\s\S]{0,80}expandWorkflowTask/);
+  assert.match(html, /id="workflowTaskList"/);
+  assert.doesNotMatch(html, /id="workflowTaskSelect"/);
 });

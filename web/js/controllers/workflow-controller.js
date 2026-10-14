@@ -633,7 +633,9 @@ async function restoreWorkflowTask() {
     // 结果未知且已知悉：不再自动弹出，仅留任务面板徽标；显式 job_id 链接仍按用户意图打开。
     if (!requestedJob && task.status === "outcome_unknown" && isUnknownTaskSeen(task)) return;
     if (task.status === "outcome_unknown") markUnknownTaskSeen(task);
-    state.activeTaskId = task.job_id || task.task_id;
+    state.activeTaskId = state.expandedTaskId = task.job_id || task.task_id;
+    state.workflowTasks = sortWorkflowTasks(response.tasks, state.currentWorkflow?.workflow_id);
+    renderWorkflowTaskList();
     setWorkflowTaskTrigger("btnViewTaskDrawer");
     wfGet("taskModal")?.classList.add("open");
     startTaskPolling(state.activeTaskId, task.target);
@@ -3323,19 +3325,45 @@ async function handleExecuteWorkflow() {
   }
 }
 
-function renderCollapsedUnknownTask(task) {
-  clearInterval(state.pollTimer);
-  state.pollGeneration = (state.pollGeneration || 0) + 1;
-  const bodyEl = wfGet('taskModalBody');
-  if (!bodyEl) return;
-  const taskId = task.job_id || task.task_id;
-  bodyEl.innerHTML = `<button type="button" class="hw-bay-row" data-task-expand="${escapeHtml(taskId)}" aria-expanded="false" style="width:100%;text-align:start;cursor:pointer;background:none;border:1px solid var(--line, rgba(255,255,255,.12));border-radius:4px;color:inherit;">`
-    + `<span class="wf-task-status-badge" data-task-badge="outcome_unknown" style="display:inline-block;padding:0 6px;border:1px solid var(--rose);border-radius:4px;color:var(--rose);font-size:var(--gw-type-body-sm);">结果未知 · 待人工核实</span>`
-    + `<span style="font-family:var(--gw-font-mono);font-size:var(--gw-type-body-sm);color:var(--text-muted);margin-inline-start:8px;">${escapeHtml(taskId)} · 点击查看详情</span></button>`;
-  bodyEl.querySelector?.('[data-task-expand]')?.addEventListener('click', () => {
-    state.activeTaskId = taskId;
-    startTaskPolling(taskId, task.target);
-  });
+// 任务面板：列出当前工作流的多条任务（新→旧）；点击某行才展开该任务的执行监控与产物。
+const WORKFLOW_TASK_STATUS_LABEL = { accepted: "已受理", running: "执行中", waiting_review: "等待审核", paused: "已暂停", completed: "已完成", failed: "失败", cancelled: "已取消", outcome_unknown: "结果未知 · 待人工核实" };
+function workflowTaskId(task) { return String(task?.job_id || task?.task_id || ""); }
+function sortWorkflowTasks(tasks, workflowId) {
+  return (Array.isArray(tasks) ? tasks : [])
+    .filter(task => workflowTaskId(task) && (!workflowId || task.workflow_id === workflowId))
+    .slice()
+    .sort((a, b) => String(b.created_at || "").localeCompare(String(a.created_at || "")));
+}
+function formatWorkflowTaskTime(value) {
+  const date = value ? new Date(value) : null;
+  if (!date || Number.isNaN(date.getTime())) return "—";
+  const pad = number => String(number).padStart(2, "0");
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
+}
+function workflowTaskRowsHtml(tasks, expandedId) {
+  return tasks.map(task => {
+    const id = workflowTaskId(task);
+    const status = String(task.status || "accepted");
+    const tone = status === "completed" ? "var(--emerald-bright)" : ["failed", "cancelled", "outcome_unknown"].includes(status) ? "var(--rose)" : "var(--compute)";
+    return `<button type="button" role="listitem" class="wf-task-row" data-task-row="${escapeHtml(id)}" data-status="${escapeHtml(status)}" aria-expanded="${id === expandedId}" title="${escapeHtml(id)}"`
+      + ` style="display:flex;width:100%;align-items:center;gap:10px;padding:4px 8px;margin-bottom:4px;text-align:start;cursor:pointer;background:none;border:1px solid ${id === expandedId ? "var(--primary-soft, rgba(255,255,255,.4))" : "var(--line, rgba(255,255,255,.12))"};border-radius:4px;color:inherit;font-family:var(--gw-font-mono);font-size:var(--gw-type-body-sm);font-variant-numeric:tabular-nums;">`
+      + `<span data-task-short-id>${escapeHtml(id.slice(0, 8))}</span>`
+      + `<span data-task-time style="color:var(--text-muted);">${escapeHtml(formatWorkflowTaskTime(task.created_at))}</span>`
+      + `<span data-task-executor>${escapeHtml(task.target === "rh_cloud" ? "RH" : "ComfyUI")}</span>`
+      + `<span class="wf-task-status-badge" data-task-badge="${escapeHtml(status)}" style="margin-inline-start:auto;padding:0 6px;border:1px solid ${tone};border-radius:4px;color:${tone};">${escapeHtml(WORKFLOW_TASK_STATUS_LABEL[status] || status)}</span>`
+      + `</button>`;
+  }).join("");
+}
+function renderWorkflowTaskList() {
+  const list = wfGet('workflowTaskList');
+  if (list) list.innerHTML = workflowTaskRowsHtml(state.workflowTasks || [], state.expandedTaskId);
+}
+function expandWorkflowTask(taskId) {
+  const task = (state.workflowTasks || []).find(item => workflowTaskId(item) === taskId);
+  if (!task) return;
+  state.activeTaskId = state.expandedTaskId = taskId;
+  renderWorkflowTaskList();
+  startTaskPolling(taskId, task.target);
 }
 
 async function openWorkflowTasks() {
@@ -3344,17 +3372,21 @@ async function openWorkflowTasks() {
   taskModal?.classList.add('open');
   try {
     const response = await apiFetch('/api/god_workflow/tasks');
-    const tasks = response.tasks || [];
-    const selector = wfGet('workflowTaskSelect');
-    if (selector) selector.innerHTML = tasks.map(task => `<option value="${escapeHtml(task.job_id || task.task_id)}" data-target="${escapeHtml(task.target)}" data-status="${escapeHtml(task.status)}">${escapeHtml(task.status === "outcome_unknown" ? "⚠ 结果未知·待核实" : task.status)} · ${escapeHtml(task.job_id || task.task_id)}</option>`).join('');
-    const selected = tasks.find(task => (task.job_id || task.task_id) === state.activeTaskId) || tasks[0];
-    if (selected) {
-      state.activeTaskId = selected.job_id || selected.task_id;
-      if (selector) selector.value = state.activeTaskId;
-      // 结果未知任务：打开面板只显示状态标记，不自动展开错误详情；用户点击该任务才看详情。
-      if (selected.status === "outcome_unknown") renderCollapsedUnknownTask(selected);
-      else startTaskPolling(state.activeTaskId, selected.target);
-    } else wfGet('taskModalBody').textContent = '暂无任务记录';
+    // 后端列表是当前主体最近 100 条（新→旧）且无 workflow_id 过滤参数，前端按当前工作流筛选并再次排序。
+    state.workflowTasks = sortWorkflowTasks(response.tasks, state.currentWorkflow?.workflow_id);
+    const tasks = state.workflowTasks;
+    const bodyEl = wfGet('taskModalBody');
+    const selected = tasks.find(task => workflowTaskId(task) === state.activeTaskId) || tasks[0];
+    // 结果未知任务不自动展开详情，只在列表显示状态标记；用户点击该行才展开。
+    if (selected && selected.status !== "outcome_unknown") {
+      expandWorkflowTask(workflowTaskId(selected));
+      return;
+    }
+    clearInterval(state.pollTimer);
+    state.pollGeneration = (state.pollGeneration || 0) + 1;
+    state.expandedTaskId = null;
+    renderWorkflowTaskList();
+    if (bodyEl) bodyEl.textContent = tasks.length ? '点击上方任务查看执行详情与产物' : '当前工作流暂无任务记录';
   } catch (error) { showToast(`任务历史读取失败：${error.message}`, true); }
 }
 
@@ -4049,9 +4081,9 @@ function bindEvents() {
 
   const taskModal = wfGet("taskModal");
   wfGet("btnViewTaskDrawer")?.addEventListener("click", openWorkflowTasks);
-  wfGet('workflowTaskSelect')?.addEventListener('change', event => {
-    state.activeTaskId = event.target.value;
-    if (state.activeTaskId) startTaskPolling(state.activeTaskId, event.target.selectedOptions[0]?.dataset.target);
+  wfGet('workflowTaskList')?.addEventListener('click', event => {
+    const row = event.target?.closest?.('[data-task-row]');
+    if (row) expandWorkflowTask(row.dataset.taskRow);
   });
   wfGet('btnRefreshWorkflowTasks')?.addEventListener('click', openWorkflowTasks);
   wfGet('btnRetryTaskCollection')?.addEventListener('click', async event => {
@@ -4097,7 +4129,7 @@ function resetWorkflowIdentity() {
   workbenchRoot = document.getElementById?.('workflowWorkbench') || null;
   if (workbenchRoot) {
     wfQueryAll('.modal-backdrop.open').forEach(modal => modal.classList.remove('open'));
-    for (const id of ['taskModalBody', 'assetLibraryGrid', 'clipboardListContainer', 'publicWorkflowPreviewBody']) { const element = wfGet(id); if (element) element.innerHTML = ''; }
+    for (const id of ['taskModalBody', 'workflowTaskList', 'assetLibraryGrid', 'clipboardListContainer', 'publicWorkflowPreviewBody']) { const element = wfGet(id); if (element) element.innerHTML = ''; }
     clearEmptyWorkbenchView();
     renderHeaderTelemetry({ name: '--', workflow_id: '--', nodes: [], connections: [], env_diff: {} });
   }
