@@ -1,0 +1,100 @@
+{
+  "workflow_id": "legacy_rh_link_slots_2108837566177959938",
+  "version": 2,
+  "source": "comfyui",
+  "source_type": "rh_link",
+  "source_url": "https://www.runninghub.cn/workflow/2108837566177959938",
+  "external_workflow_id": "2108837566177959938",
+  "external_provider": "runninghub",
+  "name": "角色资产一致性（#22 前旧前端保存）",
+  "folder_id": null,
+  "asset_id": null,
+  "viewport": {},
+  "note": null,
+  "media": null,
+  "dependencies": null,
+  "warnings": [],
+  "nodes": [
+    {
+      "id": "9",
+      "kind": "CLIPLoader",
+      "title": "加载 CLIP",
+      "position": {"x": 80.0, "y": 120.0},
+      "inputs": {"clip_name": "asset_clip.safetensors"},
+      "outputs": {},
+      "widgets": [{"name": "clip_name", "value": "asset_clip.safetensors"}],
+      "metadata": {},
+      "asset_ids": [],
+      "raw_payload": {"class_type": "CLIPLoader", "inputs": {"clip_name": "asset_clip.safetensors"}, "_meta": {"title": "加载 CLIP"}},
+      "extensions": {}
+    },
+    {
+      "id": "10",
+      "kind": "CLIPTextEncode",
+      "title": "正向提示词",
+      "position": {"x": 320.0, "y": 60.0},
+      "inputs": {"text": "角色一致性正向提示词", "clip": ["9", 0]},
+      "outputs": {},
+      "widgets": [{"name": "text", "value": "角色一致性正向提示词"}],
+      "metadata": {},
+      "asset_ids": [],
+      "raw_payload": {"class_type": "CLIPTextEncode", "inputs": {"text": "角色一致性正向提示词", "clip": ["9", 0]}, "_meta": {"title": "正向提示词"}},
+      "extensions": {}
+    },
+    {
+      "id": "11",
+      "kind": "CLIPTextEncode",
+      "title": "负向提示词",
+      "position": {"x": 320.0, "y": 260.0},
+      "inputs": {"text": "负向提示词", "clip": ["9", 0]},
+      "outputs": {},
+      "widgets": [{"name": "text", "value": "负向提示词"}],
+      "metadata": {},
+      "asset_ids": [],
+      "raw_payload": {"class_type": "CLIPTextEncode", "inputs": {"text": "负向提示词", "clip": ["9", 0]}, "_meta": {"title": "负向提示词"}},
+      "extensions": {}
+    },
+    {
+      "id": "13",
+      "kind": "EmptyLatentImage",
+      "title": "空潜空间图像",
+      "position": {"x": 320.0, "y": 430.0},
+      "inputs": {"width": 1024, "height": 1024, "batch_size": 1},
+      "outputs": {},
+      "widgets": [{"name": "width", "value": 1024}, {"name": "height", "value": 1024}, {"name": "batch_size", "value": 1}],
+      "metadata": {},
+      "asset_ids": [],
+      "raw_payload": {"class_type": "EmptyLatentImage", "inputs": {"width": 1024, "height": 1024, "batch_size": 1}, "_meta": {"title": "空潜空间图像"}},
+      "extensions": {}
+    },
+    {
+      "id": "12",
+      "kind": "KSampler",
+      "title": "K 采样器",
+      "position": {"x": 640.0, "y": 180.0},
+      "inputs": {"seed": 7, "steps": 20, "cfg": 6.5, "model": ["9", 0], "positive": ["10", 0], "negative": ["11", 0], "latent_image": ["13", 0]},
+      "outputs": {},
+      "widgets": [{"name": "seed", "value": 7}, {"name": "steps", "value": 20}, {"name": "cfg", "value": 6.5}],
+      "metadata": {},
+      "asset_ids": [],
+      "raw_payload": {"class_type": "KSampler", "inputs": {"seed": 7, "steps": 20, "cfg": 6.5, "model": ["9", 0], "positive": ["10", 0], "negative": ["11", 0], "latent_image": ["13", 0]}, "_meta": {"title": "K 采样器"}},
+      "extensions": {}
+    }
+  ],
+  "connections": [
+    {"id": "l1", "source": "9", "target": "10", "source_slot": "0", "target_slot": "0"},
+    {"id": "l2", "source": "9", "target": "11", "source_slot": "0", "target_slot": "0"},
+    {"id": "l3", "source": "9", "target": "12", "source_slot": "0", "target_slot": "0"},
+    {"id": "l4", "source": "10", "target": "12", "source_slot": "0", "target_slot": "0"},
+    {"id": "l5", "source": "11", "target": "12", "source_slot": "0", "target_slot": "0"},
+    {"id": "l6", "source": "13", "target": "12", "source_slot": "0", "target_slot": "0"}
+  ],
+  "raw_payload": {
+    "9": {"class_type": "CLIPLoader", "inputs": {"clip_name": "asset_clip.safetensors"}, "_meta": {"title": "加载 CLIP"}},
+    "10": {"class_type": "CLIPTextEncode", "inputs": {"text": "角色一致性正向提示词", "clip": ["9", 0]}, "_meta": {"title": "正向提示词"}},
+    "11": {"class_type": "CLIPTextEncode", "inputs": {"text": "负向提示词", "clip": ["9", 0]}, "_meta": {"title": "负向提示词"}},
+    "13": {"class_type": "EmptyLatentImage", "inputs": {"width": 1024, "height": 1024, "batch_size": 1}, "_meta": {"title": "空潜空间图像"}},
+    "12": {"class_type": "KSampler", "inputs": {"seed": 7, "steps": 20, "cfg": 6.5, "model": ["9", 0], "positive": ["10", 0], "negative": ["11", 0], "latent_image": ["13", 0]}, "_meta": {"title": "K 采样器"}}
+  },
+  "metadata": {"needs_host_resolution": false, "source_context": {}}
+}
