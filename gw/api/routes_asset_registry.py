@@ -1176,17 +1176,24 @@ async def move_unassigned_asset_to_project(
     authorization: Optional[str] = Header(None),
     x_user_role: str = Header("editor", alias="X-User-Role"),
 ):
-    """只有资产所有者且对目标项目有写权限才能移动；CAS 过期 409；已归属资产 409 拒绝。
+    """只有资产所有者且对目标项目有写权限才能移动；按资产 CAS，冲突 409；已归属资产 409 拒绝。
 
+    CAS 基准是资产自身版本（收件箱每项的 asset_version），而非库级 revision：
+    请求体必须提供正整数 expected_asset_version；仅当其缺省时兼容旧字段
+    expected_version（同为资产级版本语义），两者同传以 expected_asset_version 为准。
     无主资产仅本地实例管理员可移动：非管理员与不存在同形 404；管理员移动时在
     同一次 CAS 写入内回填 metadata.workflow_owner，冲突 409 即不回填。
     """
     context = _edit_auth(authorization, x_user_role)
     body = await _json_body(request)
     project_id = str(body.get("project_id") or "").strip()
-    expected_version = body.get("expected_version")
+    expected_version = body.get("expected_asset_version")
+    if expected_version is None:
+        # 旧字段兼容：仅当新字段缺省时按同一资产级语义读取 expected_version。
+        expected_version = body.get("expected_version")
     if not project_id or type(expected_version) is not int or expected_version < 1:
-        raise CleanroomException(400, "INVALID_REQUEST", "必须提供 project_id 与正整数 expected_version")
+        raise CleanroomException(400, "INVALID_REQUEST",
+                                 "必须提供 project_id 与正整数 expected_asset_version")
     # 目标项目写权限：项目owner或治理角色；项目不存在/无权同形 404，归档或回收站 403 只读。
     default_projects_service.require_project_write_access(
         project_id, owner_key=owner_key_for_context(context), role=context.role)
