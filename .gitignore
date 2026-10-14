@@ -36,5 +36,6 @@ _hg_check.py
 # 本地 AI Agent 专属技能（仅留本地，永远不提交远端）
 .agents/
 
-
-
+# 谷歌备份
+.tmp.drivedownload
+.tmp.driveupload
