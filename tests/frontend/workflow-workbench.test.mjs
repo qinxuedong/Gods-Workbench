@@ -475,3 +475,41 @@ test('任务面板对结果未知任务显示徽标并记为已知悉', async ()
   assert.equal(seen[0]?.error_code, 'E1');
   assert.match(controller, /data-status="\$\{escapeHtml\(task\.status\)\}"/);
 });
+test('无错误码时已知悉键退回 job_id + 状态', async () => {
+  const storage = new Map();
+  await restoreHarness([{ job_id: 'job-n', status: 'outcome_unknown' }], { storage }).restoreWorkflowTask();
+  assert.deepEqual([...storage.keys()], ['gw.workflow.unknownTaskSeen:job-n:outcome_unknown']);
+});
+function panelHarness(tasks) {
+  const start = controller.indexOf('function renderCollapsedUnknownTask(task) {');
+  const end = controller.indexOf('function startTaskPolling(taskId, target) {', start);
+  let clickHandler = null;
+  const body = { innerHTML: '', textContent: '', querySelector: sel => sel === '[data-task-expand]' && body.innerHTML.includes('data-task-expand') ? { addEventListener: (_, fn) => { clickHandler = fn; } } : null };
+  const modal = { classList: { contains: () => false, add() {} } };
+  const selector = { innerHTML: '', value: '' };
+  const polled = [];
+  const context = {
+    state: { pollTimer: null }, clearInterval() {}, String,
+    escapeHtml: value => String(value ?? '').replaceAll('<', '&lt;'),
+    apiFetch: async () => ({ tasks }), showToast() {}, setWorkflowTaskTrigger() {},
+    wfGet: id => ({ taskModal: modal, taskModalBody: body, workflowTaskSelect: selector })[id],
+    startTaskPolling: (id, target) => polled.push([id, target]),
+  };
+  runInNewContext(controller.slice(start, end), context);
+  return { ...context, body, selector, polled, click: () => clickHandler?.() };
+}
+test('打开任务面板时结果未知任务不自动展开详情，只显示状态标记；点击才展开', async () => {
+  const h = panelHarness([{ job_id: 'job-u', status: 'outcome_unknown', target: 'rh_cloud' }]);
+  await h.openWorkflowTasks();
+  assert.deepEqual(h.polled, []);
+  assert.match(h.body.innerHTML, /data-task-badge="outcome_unknown"/);
+  assert.match(h.body.innerHTML, /data-task-expand="job-u"/);
+  assert.match(h.selector.innerHTML, /data-status="outcome_unknown"/);
+  h.click();
+  assert.deepEqual(h.polled, [['job-u', 'rh_cloud']]);
+});
+test('打开任务面板时其他状态任务照常显示详情', async () => {
+  const h = panelHarness([{ job_id: 'job-r', status: 'running', target: 'local_comfy' }]);
+  await h.openWorkflowTasks();
+  assert.deepEqual(h.polled, [['job-r', 'local_comfy']]);
+});

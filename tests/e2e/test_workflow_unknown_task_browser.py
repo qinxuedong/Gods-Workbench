@@ -39,9 +39,17 @@ def test_outcome_unknown_task_pops_once_then_badge_only(monkeypatch, tmp_path):
             page.wait_for_load_state("networkidle")
             _shot(page, f"2-revisit-{attempt + 1}.png")
             assert "open" not in (modal.get_attribute("class") or ""), "已知悉的结果未知任务不应再次自动弹出"
-        page.locator("#btnViewTaskDrawer").click()
-        badge = page.locator('#taskModalBody [data-task-badge="outcome_unknown"]')
-        badge.wait_for()
-        _shot(page, "3-task-panel-badge.png")
+        # 打开任务面板：只显示状态标记，不自动展开错误详情。
+        with page.expect_response(lambda r: urlsplit(r.url).path == "/api/god_workflow/tasks"):
+            page.locator("#btnViewTaskDrawer").click()
+        expand = page.locator('#taskModalBody [data-task-expand="job-unknown-1"]')
+        expand.wait_for()
+        assert page.locator('#taskModalBody [data-task-badge="outcome_unknown"]').count() == 1
+        assert "Job ID" not in page.locator("#taskModalBody").inner_text(), "打开面板不应自动展开错误详情"
         assert page.locator('#workflowTaskSelect option[data-status="outcome_unknown"]').count() == 1
+        _shot(page, "3-task-panel-collapsed.png")
+        # 用户点击该任务才展开详情。
+        expand.click()
+        page.locator("#taskModalBody").get_by_text("Job ID: job-unknown-1").wait_for()
+        _shot(page, "4-click-to-expand.png")
         assert errors == []

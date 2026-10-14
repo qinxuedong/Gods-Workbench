@@ -607,8 +607,8 @@ async function initWorkbench() {
 const UNKNOWN_TASK_SEEN_PREFIX = "gw.workflow.unknownTaskSeen:";
 function unknownTaskSeenKey(task) {
   const id = task?.job_id || task?.task_id || "";
-  // 只用稳定错误码作签名，不用可变的提示文本，避免列表与详情响应字段不同导致重复弹出。
-  const signature = task?.error_code || task?.code || "outcome_unknown";
+  // 签名 = job_id + 稳定错误码；后端未给错误码时退回 job_id + 状态。不用可变的提示文本。
+  const signature = task?.error_code || task?.code || task?.status || "outcome_unknown";
   return id ? `${UNKNOWN_TASK_SEEN_PREFIX}${id}:${signature}` : "";
 }
 function isUnknownTaskSeen(task) {
@@ -3323,6 +3323,21 @@ async function handleExecuteWorkflow() {
   }
 }
 
+function renderCollapsedUnknownTask(task) {
+  clearInterval(state.pollTimer);
+  state.pollGeneration = (state.pollGeneration || 0) + 1;
+  const bodyEl = wfGet('taskModalBody');
+  if (!bodyEl) return;
+  const taskId = task.job_id || task.task_id;
+  bodyEl.innerHTML = `<button type="button" class="hw-bay-row" data-task-expand="${escapeHtml(taskId)}" aria-expanded="false" style="width:100%;text-align:start;cursor:pointer;background:none;border:1px solid var(--line, rgba(255,255,255,.12));border-radius:4px;color:inherit;">`
+    + `<span class="wf-task-status-badge" data-task-badge="outcome_unknown" style="display:inline-block;padding:0 6px;border:1px solid var(--rose);border-radius:4px;color:var(--rose);font-size:var(--gw-type-body-sm);">结果未知 · 待人工核实</span>`
+    + `<span style="font-family:var(--gw-font-mono);font-size:var(--gw-type-body-sm);color:var(--text-muted);margin-inline-start:8px;">${escapeHtml(taskId)} · 点击查看详情</span></button>`;
+  bodyEl.querySelector?.('[data-task-expand]')?.addEventListener('click', () => {
+    state.activeTaskId = taskId;
+    startTaskPolling(taskId, task.target);
+  });
+}
+
 async function openWorkflowTasks() {
   const taskModal = wfGet('taskModal');
   if (!taskModal?.classList.contains('open')) setWorkflowTaskTrigger('btnViewTaskDrawer');
@@ -3336,7 +3351,9 @@ async function openWorkflowTasks() {
     if (selected) {
       state.activeTaskId = selected.job_id || selected.task_id;
       if (selector) selector.value = state.activeTaskId;
-      startTaskPolling(state.activeTaskId, selected.target);
+      // 结果未知任务：打开面板只显示状态标记，不自动展开错误详情；用户点击该任务才看详情。
+      if (selected.status === "outcome_unknown") renderCollapsedUnknownTask(selected);
+      else startTaskPolling(state.activeTaskId, selected.target);
     } else wfGet('taskModalBody').textContent = '暂无任务记录';
   } catch (error) { showToast(`任务历史读取失败：${error.message}`, true); }
 }
