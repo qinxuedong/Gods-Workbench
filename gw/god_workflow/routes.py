@@ -23,6 +23,7 @@ import httpx
 from fastapi import APIRouter, Header, Request, status
 from fastapi.responses import FileResponse
 
+from gw.core import audit
 from gw.core.auth import AuthContext, require_authenticated, require_edit_access
 from gw.core.errors import CleanroomException, VersionConflictException
 from gw.core.runtime_paths import RuntimePathError, resolve_runtime_paths
@@ -798,7 +799,7 @@ async def task_status(task_id: str, authorization: Optional[str] = Header(None),
     """轮询真实任务状态；终态结果同步登记为素材。"""
     context = _auth(authorization, x_user_role, False)
     task = registry.load_task(context, task_id)
-    if task.get("status") in {"completed", "failed", "cancelled", "outcome_unknown"}:
+    if task.get("status") in {"completed", "failed", "cancelled", "outcome_unknown", "abandoned"}:
         return {**task, "data_status": "ok", "data_gaps": []}
     if task.get("remote_id_missing"):
         return {**task, "data_status": "ok", "data_gaps": ["remote_task_id_missing"]}
@@ -888,12 +889,39 @@ async def retry_task_collection(task_id: str, authorization: Optional[str] = Hea
         collection_status="completed" if complete else "partial_failed", outputs=outputs, messages=messages)
 
 
+@router.post("/tasks/{task_id}/abandon")
+async def abandon_task(task_id: str, request: Request, authorization: Optional[str] = Header(None), x_user_role: str = Header("editor", alias="X-User-Role")):
+    """把结果未知且无远端 ID 的任务标记为放弃；本地标记，绝不重发或新建远端任务。"""
+    context = _auth(authorization, x_user_role, True)
+    body = await _json_body(request, allow_empty=True)
+    if not isinstance(body, dict):
+        raise CleanroomException(400, "INVALID_REQUEST", "请求体必须是 JSON 对象")
+    reason = body.get("reason", "")
+    if not isinstance(reason, str):
+        raise CleanroomException(400, "INVALID_REQUEST", "reason 必须为字符串")
+    reason = reason[:200]
+    try:
+        task, changed = registry.abandon_task(context, task_id, reason=reason)
+    except CleanroomException as exc:
+        if exc.status_code == 409:
+            audit.record_management_event(audit.EVENT_WORKFLOW_TASK_ABANDONED, outcome=audit.OUTCOME_REJECTED,
+                                          reason=exc.code, subject=context.subject, role=context.role,
+                                          resource_id=task_id)
+        raise
+    if changed:
+        audit.record_management_event(audit.EVENT_WORKFLOW_TASK_ABANDONED, outcome=audit.OUTCOME_SUCCEEDED,
+                                      reason=reason or "outcome_unknown_no_remote_id",
+                                      subject=context.subject, role=context.role, resource_id=task_id)
+    return {**task, "abandoned": True, "already_abandoned": not changed, "resubmitted": False,
+            "data_status": "ok", "data_gaps": []}
+
+
 @router.post("/tasks/{task_id}/cancel")
 async def task_cancel(task_id: str, authorization: Optional[str] = Header(None), x_user_role: str = Header("editor", alias="X-User-Role")):
     """本地标记取消并尽力中断远端；不谎称远端已取消。"""
     context = _auth(authorization, x_user_role, True)
     task = registry.load_task(context, task_id)
-    if task.get("status") in {"completed", "failed", "cancelled"} | comfy_executor.TERMINAL_STATES:
+    if task.get("status") in {"completed", "failed", "cancelled", "abandoned"} | comfy_executor.TERMINAL_STATES:
         raise CleanroomException(409, "JOB_ALREADY_TERMINAL", "任务已处于终态")
     target = str(task.get("target") or "local_comfy")
     if target in ("rh_cloud", "runninghub"):
