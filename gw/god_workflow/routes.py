@@ -823,15 +823,26 @@ async def task_status(task_id: str, authorization: Optional[str] = Header(None),
                 "data_status": "ok", "data_gaps": []}
 
     summary = comfy_executor.summarize(history["entry"])
+    summary_messages = summary["messages"] if isinstance(summary.get("messages"), list) else []
+    if summary["status"] != "succeeded":
+        # 远端执行失败：history 里残留的输出/错误条目不是产物，一律不下载、不登记。
+        task = registry.update_task(context, task_id,
+                                    only_if_active=True,
+                                    status="failed",
+                                    source_status=summary["status"],
+                                    execution_status="failed",
+                                    outputs=[],
+                                    messages=["COMFY_REMOTE_EXECUTION_FAILED",
+                                              *_execution_error_lines(summary_messages)])
+        return {**task, "data_status": "ok", "data_gaps": []}
     assets = await _collect_task_outputs(context, task_id, summary["outputs"], task=task)
     complete = bool(assets) and all(item.get("registered") for item in assets)
-    summary_messages = summary["messages"] if isinstance(summary.get("messages"), list) else []
     messages = list(summary_messages) if complete else [*summary_messages, *_collection_messages(assets)]
     task = registry.update_task(context, task_id,
                                 only_if_active=True,
                                 status="completed" if summary["status"] == "succeeded" and complete else "failed",
                                 source_status=summary["status"],
-                                execution_status="completed" if summary["status"] == "succeeded" else "failed",
+                                execution_status="completed",
                                 collection_status="completed" if complete else "partial_failed",
                                 outputs=assets, messages=messages)
     return {**task, "data_status": "ok", "data_gaps": []}
@@ -930,6 +941,27 @@ def _collection_messages(outputs: list[dict[str, Any]]) -> list[str]:
         if len(messages) >= 10:
             break
     return messages
+
+
+def _execution_error_lines(summary_messages: list[Any]) -> list[str]:
+    """从 ComfyUI status.messages 摘出 execution_error 摘要行：白名单字段、限长、去重。"""
+    lines: list[str] = []
+    for message in summary_messages:
+        if not (isinstance(message, (list, tuple)) and len(message) == 2
+                and message[0] == "execution_error" and isinstance(message[1], dict)):
+            continue
+        data = message[1]
+        parts = ["execution_error"]
+        for key in ("node_type", "node_id", "exception_type", "exception_message"):
+            value = data.get(key)
+            if isinstance(value, str) and value.strip():
+                parts.append(f"{key}={' '.join(value.split())[:200]}")
+        line = " ".join(parts)
+        if line != "execution_error" and line not in lines:
+            lines.append(line)
+        if len(lines) >= 10:
+            break
+    return lines
 
 
 async def _collect_task_outputs(context: AuthContext, task_id: str,
