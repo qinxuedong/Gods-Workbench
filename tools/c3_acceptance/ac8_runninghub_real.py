@@ -49,8 +49,8 @@ def _ok(status: int, allowed: tuple[int, ...]) -> bool:
     return status in allowed
 
 
-def _failure_code(response) -> str | None:
-    """从错误响应取出 detail.code；非 JSON、detail 为字符串或缺少 code 时返回 None，不抛异常。"""
+def _failure_detail(response) -> dict | None:
+    """从错误响应取出 detail 字典；非 JSON、detail 非 dict 时返回 None，不抛异常。"""
     if not getattr(response, "text", ""):
         return None
     try:
@@ -60,13 +60,35 @@ def _failure_code(response) -> str | None:
     if not isinstance(body, dict):
         return None
     detail = body.get("detail")
-    if not isinstance(detail, dict):
-        return None
-    code = detail.get("code")
+    return detail if isinstance(detail, dict) else None
+
+
+def _failure_code(response) -> str | None:
+    """从错误响应取出 detail.code；非 JSON、detail 为字符串或缺少 code 时返回 None，不抛异常。"""
+    detail = _failure_detail(response)
+    code = detail.get("code") if detail else None
     return code if isinstance(code, str) else None
 
 
+def _record_step_failure(step: dict, response) -> None:
+    """失败响应记录错误码与供应商数字码；供应商消息文本绝不回显，非 JSON 响应也不崩溃。
+
+    RunningHub 拒绝/鉴权失败时额外在终端打印上游错误码，便于所有者直接定位。
+    """
+    step["code"] = _failure_code(response)
+    provider_code = (_failure_detail(response) or {}).get("provider_code")
+    if provider_code:
+        step["provider_code"] = provider_code
+    if step["code"] in ("RH_SOURCE_REJECTED", "RH_SOURCE_AUTH_FAILED"):
+        label = "鉴权失败/用户不存在" if step["code"] == "RH_SOURCE_AUTH_FAILED" else "拒绝"
+        print(f"FAILED: RunningHub {label}（{step['code']}，上游错误码 {provider_code or '未知'}）")
+
+
 def main() -> int:
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if reconfigure:
+            reconfigure(encoding="utf-8", errors="replace")
     parser = argparse.ArgumentParser(description="C3-AC8 真实 RunningHub 验收（仅限所有者本机自愿运行）")
     parser.add_argument("--out", required=True, help="结果 JSON 输出路径")
     parser.add_argument("--workflow-id", default=None, help="RunningHub 工作流数字 ID（10-25 位）")
@@ -127,7 +149,7 @@ def main() -> int:
             step = {"step": "import_workflow", "http_status": imported.status_code}
             result["steps"].append(step)
             if not _ok(imported.status_code, (200, 201)):
-                step["code"] = _failure_code(imported)
+                _record_step_failure(step, imported)
                 result["result"] = "FAILED"
                 result["reason"] = "import_rejected"
                 return finish(1)
@@ -143,7 +165,7 @@ def main() -> int:
             step = {"step": "execute_task", "http_status": started.status_code}
             result["steps"].append(step)
             if not _ok(started.status_code, (200, 201, 202)):
-                step["code"] = _failure_code(started)
+                _record_step_failure(step, started)
                 result["result"] = "FAILED"
                 result["reason"] = "execute_rejected"
                 return finish(1)
@@ -190,7 +212,7 @@ def main() -> int:
             step = {"step": "collect_repeat", "http_status": collected.status_code}
             result["steps"].append(step)
             if not _ok(collected.status_code, (200,)):
-                step["code"] = _failure_code(collected)
+                _record_step_failure(step, collected)
                 result["result"] = "FAILED"
                 result["reason"] = "collect_rejected"
                 return finish(1)
