@@ -69,6 +69,23 @@ cd <本机仓库根目录>
 - 退出码用 `$LASTEXITCODE` 查看（运行后直接输入 `$LASTEXITCODE`）：0 = PASS，1 = FAILED，2 = BLOCKED（含义同第 3 节）。
 - `--workflow-id`、`--i-accept-cost` 及可选参数（`--timeout-seconds`、`--poll-interval`、`--domain`）含义同第 3 节。
 
+### 只重试回收（不再次提交、不再次计费）
+
+远端已经成功、本地回收失败（`collection_status` 为 `partial_failed`，任务消息里常见 `OUTPUT_HOSTS_NOT_CONFIGURED`）时，不要重跑第 3 节命令。用结果 JSON 里的 `job_id` 和 `data_dir` 只回收：
+
+```powershell
+.\.venv\Scripts\python.exe tools\c3_acceptance\ac8_runninghub_real.py `
+  --out .local\qa\C3-evidence\AC8\ac8-recollect.json `
+  --recollect-job-id <结果 JSON 里的 job_id> `
+  --data-dir $env:TEMP\gw-ac8-v7d4lpti
+```
+
+- 仍须先设置 `GW_RUNNINGHUB_API_KEY`（同上面的配置 key）。不需要 `--i-accept-cost`，也不需要 `--workflow-id`。
+- 脚本只请求 `GET /tasks/{job}` 和 `POST /tasks/{job}/collect`，不会 parse-link，也不会再次 `/tasks/execute`。
+- `--data-dir` 是上一次 AC8 运行创建的 `%TEMP%\gw-ac8-<随机后缀>` 目录（上例 `gw-ac8-v7d4lpti` 只展示格式；以结果 JSON 里的 `data_dir` 完整路径为准），即内含 `data`、`auth`、`video` 的那个 gw-ac8 临时目录根，不是仓库目录。
+- 服务进程没有默认产物主机。脚本仅在 `GW_WORKFLOW_OUTPUT_HOSTS` 未设置时，把它设为 `rh-images-tos.xiaoyaoyou.com,rh-images.xiaoyaoyou.com`（真实 RunningHub 产物通常落在 `rh-images-tos.xiaoyaoyou.com`；`rh-images.xiaoyaoyou.com` 是 RunningHub 文档给出的主机；英文逗号分隔、逗号后无需空格）。已设置则保持原值。需要别的主机时加 `--output-hosts host-a,host-b`。
+- 结果 JSON 的 `mode` 为 `recollect`。退出码同样是 0 = PASS，1 = FAILED，2 = BLOCKED。
+
 ## 4. 判定 PASS 的标准
 
 1. 命令退出码 0，终端输出 `PASS: 真实任务 <job_id> 完成；统一资产 <asset_id> 已登记且可回跳。`

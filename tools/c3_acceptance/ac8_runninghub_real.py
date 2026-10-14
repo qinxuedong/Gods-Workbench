@@ -17,6 +17,17 @@ GW_VIDEO_DATA_DIR，不触碰本机既有数据），全部通过应用公开 AP
    metadata.workflow_id 指向导入的工作流，资产内容可读回。
 
 结果 JSON 写入 --out；key 的值绝不打印、绝不写入结果文件。PASS 退出码 0，FAILED 1，BLOCKED 2。
+
+产物下载主机：服务进程不设默认信任来源。本脚本在未设置 GW_WORKFLOW_OUTPUT_HOSTS 时，
+默认把它设为 rh-images-tos.xiaoyaoyou.com,rh-images.xiaoyaoyou.com（真实 RunningHub 产物
+通常落在 tos 主机；rh-images.xiaoyaoyou.com 是 RunningHub 文档给出的主机）；已设置则保持原值。
+可用 --output-hosts 显式覆盖（逗号分隔主机名，不含协议和路径，逗号后无需空格）。
+
+只重试回收、不再次提交：同时给出 --recollect-job-id 与 --data-dir（上次运行的
+gw-ac8 临时目录根，内含 data/、auth/、video/）。此模式仍要求 key 环境变量，
+不要求 --i-accept-cost，也不要求 --workflow-id；只调用 GET /tasks/{job} 与
+POST /tasks/{job}/collect，然后按任务记录里的 workflow_id 做资产核验。
+结果 JSON 的 mode 为 recollect。
 """
 from __future__ import annotations
 
@@ -37,6 +48,8 @@ if str(REPO_ROOT) not in sys.path:
 WORKFLOW_ROOT = "/api/god_workflow"
 KEY_ENV = "GW_RUNNINGHUB_API_KEY"
 KEY_NOTE = KEY_ENV + "（值不记录在结果里）"
+OUTPUT_HOSTS_ENV = "GW_WORKFLOW_OUTPUT_HOSTS"
+DEFAULT_OUTPUT_HOSTS = "rh-images-tos.xiaoyaoyou.com,rh-images.xiaoyaoyou.com"
 
 
 def _headers() -> dict[str, str]:
@@ -84,6 +97,90 @@ def _record_step_failure(step: dict, response) -> None:
         print(f"FAILED: RunningHub {label}（{step['code']}，上游错误码 {provider_code or '未知'}）")
 
 
+def _apply_output_hosts(explicit: str | None) -> None:
+    """显式 --output-hosts 覆盖；否则仅在环境变量为空时写入默认产物主机（真实 tos 主机 + 文档主机）。"""
+    if explicit is not None:
+        os.environ[OUTPUT_HOSTS_ENV] = explicit
+        return
+    if not str(os.environ.get(OUTPUT_HOSTS_ENV, "")).strip():
+        os.environ[OUTPUT_HOSTS_ENV] = DEFAULT_OUTPUT_HOSTS
+
+
+def _arm_runtime(root: Path) -> None:
+    """把验收数据根指到 root 下的 data/auth/video，不碰本机既有数据。"""
+    os.environ["GW_RUNTIME_MODE"] = "test"
+    os.environ["GW_AUTH_MODE"] = "local"
+    os.environ["GW_DATA_DIR"] = str(root / "data")
+    os.environ["GW_LOCAL_AUTH_DB"] = str(root / "auth" / "auth.sqlite3")
+    os.environ["GW_VIDEO_DATA_DIR"] = str(root / "video")
+    os.environ["GW_DISABLE_AGENT_INTEGRATION"] = "1"
+
+
+def _verify_asset(client, result: dict, job_id: str, workflow_id, outputs: list) -> str | None:
+    """核验统一资产可回跳。成功返回 None，失败返回 reason。"""
+    asset_ids = [item.get("asset_id") for item in outputs if isinstance(item, dict) and item.get("asset_id")]
+    if not asset_ids or not all(isinstance(item, dict) and item.get("registered") for item in outputs):
+        return "outputs_not_registered"
+    asset_id = asset_ids[0]
+    result["asset_id"] = asset_id
+    registry = client.get(f"/api/asset-registry/assets/{asset_id}", headers=_headers())
+    step = {"step": "verify_asset", "http_status": registry.status_code}
+    result["steps"].append(step)
+    if not _ok(registry.status_code, (200,)):
+        return "asset_not_in_registry"
+    asset = registry.json().get("asset") or {}
+    metadata = asset.get("metadata") or {}
+    verify = {"task_id_matches": asset.get("task_id") == job_id,
+              "workflow_id_matches": metadata.get("workflow_id") == workflow_id,
+              "workflow_version": metadata.get("workflow_version")}
+    content = client.get(f"{WORKFLOW_ROOT}/assets/{asset_id}/content", headers=_headers())
+    verify["content_http_status"] = content.status_code
+    step.update(verify)
+    result["asset_verification"] = verify
+    if not (verify["task_id_matches"] and verify["workflow_id_matches"] and _ok(content.status_code, (200,))):
+        return "asset_traceability_mismatch"
+    return None
+
+
+def _recollect(client, result: dict, finish, job_id: str) -> int:
+    """读取已有任务并只调用 collect；不解析链接、不提交新任务。"""
+    poll = client.get(f"{WORKFLOW_ROOT}/tasks/{job_id}", headers=_headers())
+    step = {"step": "read_task", "http_status": poll.status_code}
+    result["steps"].append(step)
+    if not _ok(poll.status_code, (200,)):
+        result["result"] = "FAILED"
+        result["reason"] = f"poll_http_{poll.status_code}"
+        return finish(1)
+    task = poll.json()
+    result["workflow_id"] = task.get("workflow_id")
+    collected = client.post(f"{WORKFLOW_ROOT}/tasks/{job_id}/collect", headers=_headers())
+    step = {"step": "collect", "http_status": collected.status_code}
+    result["steps"].append(step)
+    if not _ok(collected.status_code, (200,)):
+        _record_step_failure(step, collected)
+        result["result"] = "FAILED"
+        result["reason"] = "collect_rejected"
+        return finish(1)
+    collected_body = collected.json()
+    if collected_body.get("status") != "completed" or collected_body.get("collection_status") != "completed":
+        result["result"] = "FAILED"
+        result["reason"] = "task_not_completed"
+        result["last_status"] = collected_body.get("status")
+        result["last_collection_status"] = collected_body.get("collection_status")
+        result["messages"] = collected_body.get("messages")
+        return finish(1)
+    workflow_id = collected_body.get("workflow_id") or task.get("workflow_id")
+    result["workflow_id"] = workflow_id
+    reason = _verify_asset(client, result, job_id, workflow_id, collected_body.get("outputs") or [])
+    if reason:
+        result["result"] = "FAILED"
+        result["reason"] = reason
+        return finish(1)
+    result["result"] = "PASS"
+    print(f"PASS: 重新回收任务 {job_id} 完成；统一资产 {result['asset_id']} 已登记且可回跳。")
+    return finish(0)
+
+
 def main() -> int:
     for stream in (sys.stdout, sys.stderr):
         reconfigure = getattr(stream, "reconfigure", None)
@@ -98,9 +195,17 @@ def main() -> int:
                         help="RunningHub 域名；默认读 GW_RUNNINGHUB_DOMAIN，再退回平台默认 www.runninghub.cn")
     parser.add_argument("--timeout-seconds", type=int, default=1800, help="轮询总超时（默认 1800 秒）")
     parser.add_argument("--poll-interval", type=int, default=10, help="轮询间隔秒数（默认 10 秒）")
+    parser.add_argument("--output-hosts", default=None,
+                        help="覆盖 GW_WORKFLOW_OUTPUT_HOSTS（逗号分隔主机名）；省略时仅在该变量为空才默认 "
+                             "rh-images-tos.xiaoyaoyou.com,rh-images.xiaoyaoyou.com")
+    parser.add_argument("--recollect-job-id", default=None,
+                        help="只重试回收该 job_id，不再次 parse-link 或提交任务")
+    parser.add_argument("--data-dir", default=None,
+                        help="已有 gw-ac8 临时目录根（含 data、auth、video）；与 --recollect-job-id 成对使用")
     args = parser.parse_args()
 
-    result: dict = {"acceptance": "C3-AC8", "mode": "real", "steps": [], "result": "BLOCKED"}
+    recollect = bool(args.recollect_job_id or args.data_dir)
+    result: dict = {"acceptance": "C3-AC8", "mode": "recollect" if recollect else "real", "steps": [], "result": "BLOCKED"}
 
     def finish(code: int) -> int:
         result["finished_at"] = time.strftime("%Y-%m-%dT%H:%M:%S%z")
@@ -116,24 +221,35 @@ def main() -> int:
         print(f"BLOCKED: 需要先在本机设置环境变量 {KEY_ENV}（只设置到环境，不要写进任何文件）。")
         return finish(2)
     result["key_source"] = KEY_NOTE
-    if not args.i_accept_cost:
-        result["reason"] = "cost_not_accepted"
-        print("BLOCKED: 真实任务会产生 RunningHub 计费；确认预算后请加 --i-accept-cost 重新运行。")
-        return finish(2)
-    if not args.workflow_id or not re.fullmatch(r"\d{10,25}", str(args.workflow_id).strip()):
-        result["reason"] = "workflow_id_required"
-        print("BLOCKED: 需要 --workflow-id（RunningHub 工作流数字 ID，10-25 位）。")
-        return finish(2)
-    rh_workflow_id = str(args.workflow_id).strip()
-    result["rh_workflow_id"] = rh_workflow_id
+    if recollect:
+        if not args.recollect_job_id or not str(args.recollect_job_id).strip() or not args.data_dir:
+            result["reason"] = "recollect_args_required"
+            print("BLOCKED: 只回收模式需要同时提供 --recollect-job-id 与 --data-dir（已有 gw-ac8 临时目录根）。")
+            return finish(2)
+        data_root = Path(args.data_dir)
+        if not data_root.is_dir():
+            result["reason"] = "data_dir_missing"
+            print("BLOCKED: --data-dir 不是已有目录；请使用上次验收的 gw-ac8 临时目录根。")
+            return finish(2)
+        job_id = str(args.recollect_job_id).strip()
+        result["job_id"] = job_id
+        result["data_dir"] = str(data_root)
+    else:
+        if not args.i_accept_cost:
+            result["reason"] = "cost_not_accepted"
+            print("BLOCKED: 真实任务会产生 RunningHub 计费；确认预算后请加 --i-accept-cost 重新运行。")
+            return finish(2)
+        if not args.workflow_id or not re.fullmatch(r"\d{10,25}", str(args.workflow_id).strip()):
+            result["reason"] = "workflow_id_required"
+            print("BLOCKED: 需要 --workflow-id（RunningHub 工作流数字 ID，10-25 位）。")
+            return finish(2)
+        rh_workflow_id = str(args.workflow_id).strip()
+        result["rh_workflow_id"] = rh_workflow_id
+        data_root = Path(tempfile.mkdtemp(prefix="gw-ac8-"))
+        result["data_dir"] = str(data_root)
 
-    tmp = Path(tempfile.mkdtemp(prefix="gw-ac8-"))
-    os.environ["GW_RUNTIME_MODE"] = "test"
-    os.environ["GW_AUTH_MODE"] = "local"
-    os.environ["GW_DATA_DIR"] = str(tmp / "data")
-    os.environ["GW_LOCAL_AUTH_DB"] = str(tmp / "auth" / "auth.sqlite3")
-    os.environ["GW_VIDEO_DATA_DIR"] = str(tmp / "video")
-    os.environ["GW_DISABLE_AGENT_INTEGRATION"] = "1"
+    _apply_output_hosts(args.output_hosts)
+    _arm_runtime(data_root)
     domain = (args.domain or os.environ.get("GW_RUNNINGHUB_DOMAIN") or "www.runninghub.cn").strip().strip("/")
 
     from fastapi.testclient import TestClient
@@ -142,6 +258,8 @@ def main() -> int:
 
     try:
         with TestClient(create_app()) as client:
+            if recollect:
+                return _recollect(client, result, finish, job_id)
             # 1. 导入真实 RunningHub 工作流（真实协议取回；导入失败即如实 FAILED）。
             imported = client.post(f"{WORKFLOW_ROOT}/parse-link", headers=_headers(),
                                    json={"url_or_text": f"https://{domain}/workflow/{rh_workflow_id}",
@@ -204,6 +322,8 @@ def main() -> int:
                 result["last_status"] = task.get("status")
                 result["last_collection_status"] = task.get("collection_status")
                 result["messages"] = task.get("messages")
+                if task.get("collection_status") == "partial_failed":
+                    print("FAILED: 回收未完成。请用结果 JSON 里的 job_id 与 data_dir 运行 --recollect-job-id，不会再次提交。")
                 return finish(1)
 
             # 4. collect：完成任务后重复回收必须幂等（返回同一 outputs，不重复登记）。
@@ -225,36 +345,14 @@ def main() -> int:
                 return finish(1)
 
             # 5. 统一资产核验：outputs 含 asset_id，注册表可回跳（task_id=job_id、metadata.workflow_id）。
-            asset_ids = [item.get("asset_id") for item in outputs if item.get("asset_id")]
-            if not asset_ids or not all(item.get("registered") for item in outputs):
+            reason = _verify_asset(client, result, job_id, workflow_id, outputs)
+            if reason:
                 result["result"] = "FAILED"
-                result["reason"] = "outputs_not_registered"
-                return finish(1)
-            asset_id = asset_ids[0]
-            result["asset_id"] = asset_id
-            registry = client.get(f"/api/asset-registry/assets/{asset_id}", headers=_headers())
-            step = {"step": "verify_asset", "http_status": registry.status_code}
-            result["steps"].append(step)
-            if not _ok(registry.status_code, (200,)):
-                result["result"] = "FAILED"
-                result["reason"] = "asset_not_in_registry"
-                return finish(1)
-            asset = registry.json().get("asset") or {}
-            metadata = asset.get("metadata") or {}
-            verify = {"task_id_matches": asset.get("task_id") == job_id,
-                      "workflow_id_matches": metadata.get("workflow_id") == workflow_id,
-                      "workflow_version": metadata.get("workflow_version")}
-            content = client.get(f"{WORKFLOW_ROOT}/assets/{asset_id}/content", headers=_headers())
-            verify["content_http_status"] = content.status_code
-            step.update(verify)
-            result["asset_verification"] = verify
-            if not (verify["task_id_matches"] and verify["workflow_id_matches"] and _ok(content.status_code, (200,))):
-                result["result"] = "FAILED"
-                result["reason"] = "asset_traceability_mismatch"
+                result["reason"] = reason
                 return finish(1)
 
             result["result"] = "PASS"
-            print(f"PASS: 真实任务 {job_id} 完成；统一资产 {asset_id} 已登记且可回跳。")
+            print(f"PASS: 真实任务 {job_id} 完成；统一资产 {result['asset_id']} 已登记且可回跳。")
             return finish(0)
     except Exception as error:  # 任何未预期异常都如实记为 FAILED，不吞错、不打印环境变量。
         result["result"] = "FAILED"

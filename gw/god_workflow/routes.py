@@ -801,7 +801,8 @@ async def task_status(task_id: str, authorization: Optional[str] = Header(None),
             task = registry.update_task(context, task_id, status="completed" if complete else "failed",
                                         only_if_active=True,
                                         source_status="SUCCESS", execution_status="completed",
-                                        collection_status="completed" if complete else "partial_failed", outputs=assets)
+                                        collection_status="completed" if complete else "partial_failed", outputs=assets,
+                                        messages=[] if complete else _collection_messages(assets))
             return {**task, "data_status": "ok", "data_gaps": ([] if complete else ["output_collection_incomplete"])}
         elif st == "RUNNING":
             task = registry.update_task(context, task_id, only_if_active=True,
@@ -824,13 +825,15 @@ async def task_status(task_id: str, authorization: Optional[str] = Header(None),
     summary = comfy_executor.summarize(history["entry"])
     assets = await _collect_task_outputs(context, task_id, summary["outputs"], task=task)
     complete = bool(assets) and all(item.get("registered") for item in assets)
+    summary_messages = summary["messages"] if isinstance(summary.get("messages"), list) else []
+    messages = list(summary_messages) if complete else [*summary_messages, *_collection_messages(assets)]
     task = registry.update_task(context, task_id,
                                 only_if_active=True,
                                 status="completed" if summary["status"] == "succeeded" and complete else "failed",
                                 source_status=summary["status"],
                                 execution_status="completed" if summary["status"] == "succeeded" else "failed",
                                 collection_status="completed" if complete else "partial_failed",
-                                outputs=assets, messages=summary["messages"])
+                                outputs=assets, messages=messages)
     return {**task, "data_status": "ok", "data_gaps": []}
 
 
@@ -858,8 +861,14 @@ async def retry_task_collection(task_id: str, authorization: Optional[str] = Hea
             raise CleanroomException(409, "OUTPUTS_NOT_AVAILABLE", "远端结果尚不可回收")
         outputs = await _collect_task_outputs(context, task_id, comfy_executor.summarize(history["entry"])["outputs"], task=task)
     complete = bool(outputs) and all(item.get("registered") for item in outputs)
+    if task.get("target") in ("rh_cloud", "runninghub"):
+        messages = [] if complete else _collection_messages(outputs)
+    else:
+        existing = task.get("messages") if isinstance(task.get("messages"), list) else []
+        kept = [item for item in existing if not _is_collection_line(item)]
+        messages = kept if complete else [*kept, *_collection_messages(outputs)]
     return registry.update_task(context, task_id, status="completed" if complete else "failed",
-        collection_status="completed" if complete else "partial_failed", outputs=outputs)
+        collection_status="completed" if complete else "partial_failed", outputs=outputs, messages=messages)
 
 
 @router.post("/tasks/{task_id}/cancel")
@@ -881,6 +890,46 @@ async def task_cancel(task_id: str, authorization: Optional[str] = Header(None),
             "remote_may_continue_or_bill": True, "data_status": "ok",
             "data_gaps": ["task_scoped_cancel_unsupported"]}
 
+
+
+_COLLECTION_LINE = re.compile(
+    r"^(?:OUTPUT_COLLECTION_INCOMPLETE: \d+/\d+ registered|OUTPUT_LIST_EMPTY|[A-Z][A-Z0-9_]*(?: (?:host|file)=\S+)?)$"
+)
+
+
+def _is_collection_line(message: object) -> bool:
+    """回收诊断行，用于完成后清掉过期提示、失败重试时去重。"""
+    return isinstance(message, str) and bool(_COLLECTION_LINE.fullmatch(message))
+
+
+def _collection_messages(outputs: list[dict[str, Any]]) -> list[str]:
+    """回收未完成时的任务消息。只带错误码和主机名或文件名，不带查询串或完整 URL。"""
+    items = outputs if isinstance(outputs, list) else []
+    registered = sum(1 for item in items if isinstance(item, dict) and item.get("registered"))
+    messages = [f"OUTPUT_COLLECTION_INCOMPLETE: {registered}/{len(items)} registered"]
+    if not items:
+        messages.append("OUTPUT_LIST_EMPTY")
+        return messages
+    seen: set[str] = set()
+    for item in items:
+        if not isinstance(item, dict) or item.get("registered"):
+            continue
+        code = str(item.get("code") or "OUTPUT_COLLECTION_FAILED")
+        host = item.get("host")
+        filename = item.get("filename")
+        if isinstance(host, str) and host and "?" not in host and "/" not in host:
+            line = f"{code} host={host}"
+        elif isinstance(filename, str) and filename and "?" not in filename:
+            line = f"{code} file={filename}"
+        else:
+            line = code
+        if line in seen:
+            continue
+        seen.add(line)
+        messages.append(line)
+        if len(messages) >= 10:
+            break
+    return messages
 
 
 async def _collect_task_outputs(context: AuthContext, task_id: str,
@@ -967,11 +1016,15 @@ async def _collect_rh_task_outputs(context: AuthContext, task_id: str,
             continue
         if not filename:
             filename = url.split("?")[0].rsplit("/", 1)[-1] or f"rh_output_{len(collected)+1}.png"
+        parts = None
         try:
             parts = urlsplit(url)
             allowed_hosts = {host.strip().lower() for host in os.getenv("GW_WORKFLOW_OUTPUT_HOSTS", "").split(",") if host.strip()}
-            if (parts.scheme != "https" or parts.hostname not in allowed_hosts or parts.username or parts.password
-                    or parts.port not in (None, 443) or parts.fragment):
+            # 服务器不设默认信任主机；未配置与已配置但不匹配分开，便于按环境变量排查。
+            if not allowed_hosts or (parts.scheme != "https" or parts.hostname not in allowed_hosts or parts.username
+                                      or parts.password or parts.port not in (None, 443) or parts.fragment):
+                if not allowed_hosts:
+                    raise CleanroomException(400, "OUTPUT_HOSTS_NOT_CONFIGURED", "未配置产物主机白名单")
                 raise CleanroomException(400, "OUTPUT_URL_NOT_ALLOWED", "输出来源未获准")
             async with httpx.AsyncClient(timeout=30.0, follow_redirects=False, trust_env=False, transport=_output_transport()) as client:
                 async with client.stream("GET", url) as resp:
@@ -985,7 +1038,11 @@ async def _collect_rh_task_outputs(context: AuthContext, task_id: str,
                     content = bytes(content_buffer)
                     media_type = resp.headers.get("content-type") or "application/octet-stream"
         except CleanroomException as exc:
-            collected.append({"filename": filename, "registered": False, "code": exc.code})
+            failed = {"filename": filename, "registered": False, "code": exc.code}
+            hostname = parts.hostname if parts is not None else None
+            if exc.code in {"OUTPUT_URL_NOT_ALLOWED", "OUTPUT_HOSTS_NOT_CONFIGURED"} and isinstance(hostname, str) and hostname:
+                failed["host"] = hostname
+            collected.append(failed)
             continue
         except Exception:
             collected.append({"filename": filename, "registered": False, "code": "DOWNLOAD_ERROR"})

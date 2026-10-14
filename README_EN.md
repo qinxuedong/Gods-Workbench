@@ -132,15 +132,15 @@ python run.py
 
 ### 4. RunningHub Workflow Output Collection
 
-The RunningHub API Key in workflow settings is used for parsing, submission, and queries. Downloading cloud outputs also requires `GW_WORKFLOW_OUTPUT_HOSTS` in the **server process environment**. Set a comma-separated list of output URL hostnames you have verified and authorized:
+The RunningHub API Key in workflow settings is used for parsing, submission, and queries. Downloading cloud outputs also requires `GW_WORKFLOW_OUTPUT_HOSTS` in the **server process environment**. Set a comma-separated list of output URL hostnames you have verified and authorized (no spaces needed after commas):
 
 ```powershell
-$env:GW_WORKFLOW_OUTPUT_HOSTS = 'output.example,cdn.example'
+$env:GW_WORKFLOW_OUTPUT_HOSTS = 'rh-images-tos.xiaoyaoyou.com,rh-images.xiaoyaoyou.com'
 ```
 
-These are placeholder domains; replace them with actual output sources. This does not add any default trusted sources. Matching uses exact hostnames, without schemes, paths, or wildcards. Start the server in the same PowerShell window using the instructions above. Updating an existing server requires restarting it yourself while retaining its production or development mode and data root so existing tasks remain accessible.
+The example above is the usual RunningHub output host pair: real RunningHub outputs are typically served from `rh-images-tos.xiaoyaoyou.com`, while `rh-images.xiaoyaoyou.com` is the output host named in RunningHub docs; list both together as needed. Matching uses exact hostnames, without schemes, paths, or wildcards. Start the server in the same PowerShell window using the instructions above. Updating an existing server requires restarting it yourself while retaining its production or development mode and data root so existing tasks remain accessible.
 
-Downloads require an authorized HTTPS hostname on the default port or port 443. Redirects are not followed, and the connection layer checks and pins public IP addresses. Missing or unmatched configuration produces `OUTPUT_URL_NOT_ALLOWED` without downloading the file.
+Downloads require an authorized HTTPS hostname on the default port or port 443. Redirects are not followed, and the connection layer checks and pins public IP addresses. An empty `GW_WORKFLOW_OUTPUT_HOSTS` produces `OUTPUT_HOSTS_NOT_CONFIGURED`; a configured list that does not include the output host produces `OUTPUT_URL_NOT_ALLOWED`. Neither case downloads the file. The server process has no default trusted output host.
 
 Execution and collection are recorded separately. If remote generation succeeds but downloading or registration is incomplete, `execution_status` is `completed`, `collection_status` is `partial_failed`, and the overall task is `failed`. This means **collection is incomplete**; generation may already have occurred and been billed. After correcting configuration, use the workflow task window's collection retry action. It collects the original `job_id` and remote task ID without resubmitting generation. Registered outputs retain their stable `asset_id`, and repeated collection does not create duplicate assets.
 
