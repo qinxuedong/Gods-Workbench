@@ -32,12 +32,12 @@ const MOVE = '/api/assets/a1/move-to-project';
 const asset = (id, meta = {}) => ({asset_id: id, name: id, metadata: meta});
 const inbox = (revision, assets) => ({assets, items: assets, total: assets.length, revision});
 
-test('C4-AC5b 来源未知标记只给无工作流/任务/地址来源的资产', () => {
+test('C4-AC5b 来源未知只取后端 source_unknown，不按字段缺失推断', () => {
   const {inbox: box} = harness([]);
-  assert.equal(box.sourceUnknown(asset('x', {workflow_owner: 'o'})), true);
-  assert.equal(box.sourceUnknown(asset('x', {workflow_id: 'w'})), false);
-  assert.equal(box.sourceUnknown({...asset('x'), task_id: 't'}), false);
-  assert.equal(box.sourceUnknown({...asset('x'), url: '/static/pages/workflow.html?id=w'}), false);
+  assert.equal(box.sourceUnknown({...asset('x'), source_unknown: true, origin_label: '来源未知'}), true);
+  // 字段全缺但后端说 false：不标记（旧推断会误标）。
+  assert.equal(box.sourceUnknown({...asset('x'), source_unknown: false, origin_label: null}), false);
+  assert.equal(box.sourceUnknown(asset('x')), false);
 });
 
 test('C4-AC5b 移入项目使用收件箱 revision 作为 expected_version', async () => {

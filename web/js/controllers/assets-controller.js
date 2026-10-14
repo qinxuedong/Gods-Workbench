@@ -16,6 +16,7 @@
 
 /**
  * C4-AC5b「未归属」收件箱：GET /api/assets/unassigned 只返回当前账户自己的无项目资产；
+ * 无主资产只出现在管理员收件箱，后端标 source_unknown/origin_label。
  * 「移入项目」POST /api/assets/{asset_id}/move-to-project {project_id, expected_version}。
  * expected_version 是收件箱响应里的注册表 revision（不是单个资产 version）。
  * 409 VERSION_CONFLICT：重新读取收件箱拿最新 revision，资产仍未归属则自动重试一次；
@@ -40,11 +41,8 @@ window.GWUnassignedInbox = (() => {
     return data;
   }
 
-  /** 来源未知：既无工作流/任务来源，也无可回溯地址。 */
-  function sourceUnknown(asset) {
-    const meta = asset?.metadata && typeof asset.metadata === 'object' ? asset.metadata : {};
-    return !(meta.workflow_id || meta.task_id || meta.job_id || asset?.task_id || asset?.url || asset?.source_type || meta.source_type);
-  }
+  /** 来源未知只信后端 source_unknown（无主资产，仅管理员收件箱可见），前端不做推断。 */
+  function sourceUnknown(asset) { return asset?.source_unknown === true; }
 
   async function load() {
     const data = await request(`${INBOX}?limit=500`);
@@ -94,7 +92,8 @@ window.GWUnassignedInbox = (() => {
     list.innerHTML = snapshot.assets.length ? snapshot.assets.map(asset => `
       <li class="flex items-center gap-2 py-1.5 border-b border-white/5" data-asset-id="${escapeText(asset.asset_id)}">
         <span class="flex-1 truncate" title="${escapeText(asset.asset_id)}">${escapeText(asset.name || asset.asset_id)}</span>
-        ${sourceUnknown(asset) ? '<span class="text-amber-300 gw-type-body-sm" data-source-unknown="true" title="没有可回溯的工作流或任务来源">来源未知</span>' : ''}
+        ${sourceUnknown(asset) ? `<span class="text-amber-300 gw-type-body-sm" data-source-unknown="true" title="无可证明归属的资产，仅管理员可见">${escapeText(asset.origin_label || '来源未知')}</span>`
+          : (asset.origin_label ? `<span class="text-slate-400 gw-type-body-sm" data-origin-label>${escapeText(asset.origin_label)}</span>` : '')}
         <select data-move-project style="background:#141720;color:#eddab3;border:1px solid rgba(223,195,132,.35);border-radius:6px;padding:2px 6px;" aria-label="目标项目" ${projects.length ? '' : 'disabled'}>${options || '<option value="">暂无可写项目</option>'}</select>
         <button type="button" class="hw-btn btn-size-sm" data-move-asset ${projects.length ? '' : 'disabled'}>移入项目</button>
       </li>`).join('') : '<li class="py-3 text-slate-400">没有未归属资产</li>';
