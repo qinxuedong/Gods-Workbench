@@ -45,7 +45,7 @@ def _install_download(monkeypatch, *, allow: bool, host: str = HOST) -> None:
         assert request.url.host == host
         return httpx.Response(200, content=FIXED_PNG, headers={"content-type": "image/png"})
 
-    monkeypatch.setattr(routes, "_output_transport", lambda: httpx.MockTransport(handler))
+    monkeypatch.setattr(routes, "_output_transport", lambda allowed_hosts=None: httpx.MockTransport(handler))
 
 
 def _terminal(media_client, fake_rh, monkeypatch, *, allow_download: bool,

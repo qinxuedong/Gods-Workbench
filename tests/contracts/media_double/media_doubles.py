@@ -161,8 +161,11 @@ class FakeComfy(_Recorder):
             monkeypatch.setattr(comfy_executor, name, getattr(self, name))
 
 
-def output_transport() -> httpx.MockTransport:
-    """只对获准主机返回固定 PNG；其它主机一律报错。"""
+def output_transport(allowed_hosts: frozenset[str] | None = None) -> httpx.MockTransport:
+    """只对获准主机返回固定 PNG；其它主机一律报错。
+
+    形参与真实 routes._output_transport(allowed_hosts) 对齐；替身忽略白名单。
+    """
 
     def handler(request: httpx.Request) -> httpx.Response:
         if request.url.host != APPROVED_HOST:

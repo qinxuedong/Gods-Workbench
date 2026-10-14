@@ -194,7 +194,7 @@ def test_mixed_cloud_outputs_keep_partial_failure_and_retry_without_duplicates(c
     async def forbidden(*args, **kwargs):
         raise AssertionError("回收重试不能重新生成")
 
-    monkeypatch.setattr(routes, "_output_transport", lambda: httpx.MockTransport(download))
+    monkeypatch.setattr(routes, "_output_transport", lambda allowed_hosts=None: httpx.MockTransport(download))
     monkeypatch.setattr(platforms, "query_rh_task_outputs", query)
     monkeypatch.setattr(platforms, "create_rh_cloud_task", forbidden)
     url = "/api/god_workflow/tasks/" + task["job_id"]
