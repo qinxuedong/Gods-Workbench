@@ -341,6 +341,69 @@ def list_assets(limit: int, offset: int, query: Optional[str], kind: Optional[st
             "data_status": DATA_STATUS_OK, "data_gaps": []}
 
 
+def _record_owner(record: Dict[str, Any]) -> Optional[str]:
+    """读取资产可证明的归属键；只有工作流桥接写入的 workflow_owner 算归属。"""
+    metadata = record.get("metadata")
+    owner = metadata.get("workflow_owner") if isinstance(metadata, dict) else None
+    return str(owner) if owner else None
+
+
+def asset_is_unassigned(record: Dict[str, Any]) -> bool:
+    """未归属 = 没有 project_id 投影，也没有任何 project_ids 关联。"""
+    if record.get("project_id"):
+        return False
+    project_ids = record.get("project_ids")
+    return not (isinstance(project_ids, list) and project_ids)
+
+
+def list_unassigned_assets(owner_key: str, limit: int = 100, offset: int = 0) -> Dict[str, Any]:
+    """未归属收件箱：只返回可证明属于该主体、且未归属任何项目的资产。
+
+    无 workflow_owner 的登记资产没有可证明归属，不属于任何人的收件箱；
+    本接口只读取，绝不自动归属或猜测项目。
+    """
+    raw = state().read()
+    from gw.core.asset_visibility import asset_visible
+    items = [dict(a) for a in raw["assets"].values()
+             if asset_visible(a) and _record_owner(a) == owner_key and asset_is_unassigned(a)]
+    items.sort(key=lambda a: a["asset_id"])
+    total = len(items)
+    page = items[offset:offset + limit]
+    return {"assets": page, "items": page, "total": total, "total_known": True,
+            "limit": limit, "offset": offset, "has_more": offset + len(page) < total,
+            "revision": raw["revision"], "data_status": DATA_STATUS_OK, "data_gaps": []}
+
+
+def move_asset_to_project(asset_id: str, project_id: str, expected_version: int,
+                          owner_key: str) -> Dict[str, Any]:
+    """未归属资产移入项目：只有资产所有者可执行；已归属资产拒绝改归属；CAS 保护。"""
+    if type(expected_version) is not int or expected_version < 1:
+        raise CleanroomException(400, "INVALID_REQUEST", "必须提供正整数expected_version")
+    clean_project = str(project_id or "").strip()
+    if not clean_project:
+        raise CleanroomException(400, "INVALID_REQUEST", "缺少 project_id")
+
+    def mutate(raw: Dict[str, Any]) -> Any:
+        item = _require(raw, asset_id)
+        if _record_owner(item) != owner_key:
+            raise CleanroomException(404, "ASSET_NOT_FOUND", "素材 %s 不存在" % asset_id)
+        if not asset_is_unassigned(item):
+            raise CleanroomException(409, "ASSET_ALREADY_ASSIGNED",
+                                     "素材已归属项目，未归属收件箱接口不能更改归属")
+        _cas(raw, expected_version)
+        item["project_id"] = clean_project
+        item.setdefault("project_ids", [])
+        if clean_project not in item["project_ids"]:
+            item["project_ids"].append(clean_project)
+        item["version"] = int(item.get("version", 1)) + 1
+        item["updated_at"] = storage.now_iso()
+        revision = _bump(raw)
+        return {"asset": dict(item), "asset_id": asset_id, "project_id": clean_project,
+                "moved": True, "revision": revision,
+                "data_status": DATA_STATUS_OK, "data_gaps": []}
+    return state().mutate(mutate)
+
+
 def facets() -> Dict[str, Any]:
     raw = state().read()
     from gw.core.asset_visibility import asset_visible

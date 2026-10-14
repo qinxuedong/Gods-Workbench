@@ -42,7 +42,7 @@ from gw.core.auth import require_authenticated, require_edit_access, require_gov
 from gw.core.errors import CleanroomException
 from gw.projects_hub.service import default_projects_service, owner_key_for_context
 
-from gw.core.asset_visibility import asset_request_scope
+from gw.core.asset_visibility import asset_owner_key, asset_request_scope
 
 router = APIRouter(prefix="/api/asset-registry", tags=["asset-registry"], dependencies=[Depends(asset_request_scope)])
 
@@ -1141,4 +1141,51 @@ def operate_workspace_job(
     return index_jobs.service().operate(job_id, action, _payload(payload), actor)
 
 
-__all__ = ["router"]
+# ---------------------------------------------------------------------------
+# C4-AC5 未归属收件箱
+# ---------------------------------------------------------------------------
+
+
+unassigned_router = APIRouter(prefix="/api/assets", tags=["asset-registry"],
+                              dependencies=[Depends(asset_request_scope)])
+
+
+@unassigned_router.get("/unassigned", summary="未归属收件箱", status_code=status.HTTP_200_OK)
+def list_unassigned_inbox(
+    limit: int = Query(100, ge=1, le=500),
+    offset: int = Query(0, ge=0),
+    authorization: Optional[str] = Header(None),
+    x_user_role: str = Header("editor", alias="X-User-Role"),
+):
+    """只返回当前认证账户自己拥有、且没有 project_id 的资产；匿名一律 401。
+
+    无 workflow_owner 的登记资产没有可证明归属，不属于任何人的收件箱；
+    本接口只读取，绝不自动归属或猜测项目。
+    """
+    context = _read_auth(authorization, x_user_role)
+    return repo.list_unassigned_assets(asset_owner_key(context), limit, offset)
+
+
+@unassigned_router.post("/{asset_id}/move-to-project", summary="未归属资产移入项目",
+                        status_code=status.HTTP_200_OK)
+async def move_unassigned_asset_to_project(
+    asset_id: str,
+    request: Request,
+    authorization: Optional[str] = Header(None),
+    x_user_role: str = Header("editor", alias="X-User-Role"),
+):
+    """只有资产所有者且对目标项目有写权限才能移动；CAS 过期 409；已归属资产 409 拒绝。"""
+    context = _edit_auth(authorization, x_user_role)
+    body = await _json_body(request)
+    project_id = str(body.get("project_id") or "").strip()
+    expected_version = body.get("expected_version")
+    if not project_id or type(expected_version) is not int or expected_version < 1:
+        raise CleanroomException(400, "INVALID_REQUEST", "必须提供 project_id 与正整数 expected_version")
+    # 目标项目写权限：项目owner或治理角色；项目不存在/无权同形 404，归档或回收站 403 只读。
+    default_projects_service.require_project_write_access(
+        project_id, owner_key=owner_key_for_context(context), role=context.role)
+    return repo.move_asset_to_project(asset_id, project_id, expected_version,
+                                      asset_owner_key(context))
+
+
+__all__ = ["router", "unassigned_router"]

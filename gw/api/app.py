@@ -40,6 +40,7 @@ from gw.api.routes_observability import router as observability_router
 from gw.api.routes_projects import legacy_router as projects_compat_router
 from gw.api.routes_projects import router as projects_router
 from gw.api.routes_asset_registry import router as asset_registry_router
+from gw.api.routes_asset_registry import unassigned_router as asset_unassigned_router
 from gw.video_tasks.routes import router as video_tasks_router
 from gw.api.routes_prompt_library import router as prompt_library_router
 from gw.api.routes_settings import router as settings_router
@@ -360,6 +361,7 @@ def create_app(*, agent_integration_factory=None) -> FastAPI:
     app.include_router(prompt_library_b8_router)
     app.include_router(public_b9_router)
     app.include_router(asset_registry_router)
+    app.include_router(asset_unassigned_router)
     app.include_router(jobs_router)
     app.include_router(observability_router)
     app.include_router(prompt_library_router)

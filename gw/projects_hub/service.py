@@ -436,6 +436,20 @@ class ProjectsService:
                 raise CleanroomException(404, "PROJECT_NOT_FOUND", "项目不存在")
             return ProjectItem.model_validate(raw)
 
+    def require_project_write_access(self, project_id: str, *, owner_key: Optional[str], role: str) -> ProjectItem:
+        """校验主体对目标项目的写权限：项目owner或治理角色，且项目必须处于活跃状态。
+
+        项目不存在或主体无写权限时与未知项目同形 404，不泄露项目存在性。
+        """
+        with self._operation() as (_, state, __):
+            raw = state["projects"].get(project_id)
+            if raw is None or not self._validate_owner_access(state, project_id, owner_key, role):
+                raise CleanroomException(404, "PROJECT_NOT_FOUND", "项目不存在")
+            item = ProjectItem.model_validate(raw)
+            if item.archived_at is not None or item.deleted_at is not None:
+                raise CleanroomException(403, "PROJECT_READ_ONLY", "归档或回收站项目为只读状态")
+            return item
+
     def _get_source_owner_key(self, project_id: str) -> str:
         """在项目域锁及完整真源校验内读取内部owner键，不序列化到普通API响应。"""
         with self._operation() as (_, state, __):
