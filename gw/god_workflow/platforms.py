@@ -236,6 +236,21 @@ def _json_field(value: Any) -> Optional[dict[str, Any]]:
     return None
 
 
+_RH_PROVIDER_CODE_PATTERN = re.compile(r"-?\d{1,10}")
+
+
+def _rh_source_rejection(upstream_code: Any) -> CleanroomException:
+    """把上游业务码映射为 502；只回显数字码本身，绝不回显供应商消息文本。"""
+    code_text = str(upstream_code)
+    code = "RH_SOURCE_AUTH_FAILED" if code_text in ("301", "401", "403") else "RH_SOURCE_REJECTED"
+    numeric = _RH_PROVIDER_CODE_PATTERN.fullmatch(code_text)
+    suffix = f"（RunningHub 错误码 {code_text}）" if numeric else ""
+    message = f"RunningHub 已配置的工作流源请求被拒绝{suffix}；请检查凭据、源权限与链接，或上传原始工作流 JSON"
+    return CleanroomException(502, code, message,
+                              extra={"provider_code": code_text} if numeric else None,
+                              expose_extra_fields={"provider_code"} if numeric else None)
+
+
 # ---------------------------------------------------------------------------
 # RunningHub
 # ---------------------------------------------------------------------------
@@ -301,9 +316,7 @@ async def fetch_runninghub_canvas(workflow_id: str, access_token: str,
     except CleanroomException:
         raise
     if not isinstance(body, dict) or str(body.get("code")) != "0":
-        code = "RH_SOURCE_AUTH_FAILED" if isinstance(body, dict) and str(body.get("code")) in ("401", "403") else "RH_SOURCE_REJECTED"
-        raise CleanroomException(502, code,
-                                 "RunningHub 已配置的工作流源请求被拒绝；请检查凭据、源权限与链接，或上传原始工作流 JSON")
+        raise _rh_source_rejection(body.get("code") if isinstance(body, dict) else None)
     data = body.get("data")
     if not isinstance(data, dict):
         return None
@@ -327,14 +340,12 @@ async def fetch_runninghub_api_json(workflow_id: str, api_key: str,
                                 _rh_headers(domain, key))
     except CleanroomException:
         raise
-    if not isinstance(body, dict) or body.get("code") != 0:
+    if not isinstance(body, dict) or str(body.get("code")) != "0":
         if isinstance(body, dict) and str(body.get("code")) == "810":
             # 官方 810 表示原图尚未就绪；不回显可能带凭据的供应商消息。
             raise CleanroomException(502, "RH_WORKFLOW_NOT_READY",
                                      "原图暂不可读取（RunningHub 810）；平台未提供完整工作流，解析不以运行作为前置。")
-        code = "RH_SOURCE_AUTH_FAILED" if isinstance(body, dict) and str(body.get("code")) in ("401", "403") else "RH_SOURCE_REJECTED"
-        raise CleanroomException(502, code,
-                                 "RunningHub 已配置的工作流源请求被拒绝；请检查凭据、源权限与链接，或上传原始工作流 JSON")
+        raise _rh_source_rejection(body.get("code") if isinstance(body, dict) else None)
     data = body.get("data")
     if isinstance(data, dict):
         prompt = _json_field(data.get("prompt"))
@@ -529,7 +540,7 @@ async def upload_rh_input(payload: bytes, filename: str, content_type: str, api_
         raise CleanroomException(504, "RH_INPUT_UPLOAD_TIMEOUT", "RunningHub 输入上传超时") from None
     except (httpx.HTTPError, ValueError):
         raise CleanroomException(502, "RH_INPUT_UPLOAD_FAILED", "RunningHub 输入上传失败") from None
-    name = body.get("data", {}).get("fileName") if isinstance(body, dict) and body.get("code") == 0 and isinstance(body.get("data"), dict) else None
+    name = body.get("data", {}).get("fileName") if isinstance(body, dict) and str(body.get("code")) == "0" and isinstance(body.get("data"), dict) else None
     if not isinstance(name, str) or not name or len(name) > 4096 or any(character in name for character in '\r\n'):
         raise CleanroomException(502, "RH_INPUT_UPLOAD_REJECTED", "RunningHub 未返回有效输入文件名")
     return name
@@ -606,13 +617,13 @@ async def query_rh_task_outputs(
     body = await _post_json(url, payload, _rh_headers(domain, bearer_token=clean_key))
     if not isinstance(body, dict):
         raise CleanroomException(502, "RH_TASK_STATUS_UNKNOWN", "RunningHub 查询返回格式无效，请稍后续查")
-    code = body.get("code")
+    code_text = str(body.get("code"))
     data = body.get("data")
-    if code == 0 and isinstance(data, list):
+    if code_text == "0" and isinstance(data, list):
         return {"status": "SUCCESS", "outputs": data, "raw": body}
-    if code in (804, 813) or (code == 0 and not data):
+    if code_text in ("804", "813") or (code_text == "0" and not data):
         return {"status": "RUNNING", "outputs": [], "message": body.get("msg") or "任务运行中", "raw": body}
-    if code == 805:
+    if code_text == "805":
         return {"status": "FAILED", "outputs": [], "message": "RunningHub 远端任务状态异常", "raw": body}
     # 授权、服务故障及未知码是查询失败，不是远端执行终态；不用自由文本猜状态。
     raise CleanroomException(502, "RH_TASK_QUERY_REJECTED", "RunningHub 未确认任务结果，请核对配置后续查")

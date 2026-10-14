@@ -44,7 +44,23 @@ def _headers() -> dict[str, str]:
             "Origin": "http://testserver", "Content-Type": "application/json"}
 
 
+def _record_step_failure(step: dict, response) -> None:
+    """失败响应只记录错误码与供应商数字码；供应商消息文本绝不回显。"""
+    detail = (response.json().get("detail") or {}) if response.text else {}
+    step["code"] = detail.get("code")
+    provider_code = detail.get("provider_code")
+    if provider_code:
+        step["provider_code"] = provider_code
+    if step["code"] in ("RH_SOURCE_REJECTED", "RH_SOURCE_AUTH_FAILED"):
+        label = "鉴权失败/用户不存在" if step["code"] == "RH_SOURCE_AUTH_FAILED" else "拒绝"
+        print(f"FAILED: RunningHub {label}（{step['code']}，上游错误码 {provider_code or '未知'}）")
+
+
 def main() -> int:
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if reconfigure:
+            reconfigure(encoding="utf-8", errors="replace")
     parser = argparse.ArgumentParser(description="C3-AC8 真实 RunningHub 验收（仅限所有者本机自愿运行）")
     parser.add_argument("--out", required=True, help="结果 JSON 输出路径")
     parser.add_argument("--workflow-id", default=None, help="RunningHub 工作流数字 ID（10-25 位）")
@@ -105,7 +121,7 @@ def main() -> int:
             step = {"step": "import_workflow", "http_status": imported.status_code}
             result["steps"].append(step)
             if imported.status_code != 201:
-                step["code"] = (imported.json().get("detail") or {}).get("code") if imported.text else None
+                _record_step_failure(step, imported)
                 result["result"] = "FAILED"
                 result["reason"] = "import_rejected"
                 return finish(1)
@@ -121,7 +137,7 @@ def main() -> int:
             step = {"step": "execute_task", "http_status": started.status_code}
             result["steps"].append(step)
             if started.status_code != 202:
-                step["code"] = (started.json().get("detail") or {}).get("code") if started.text else None
+                _record_step_failure(step, started)
                 result["result"] = "FAILED"
                 result["reason"] = "execute_rejected"
                 return finish(1)
@@ -165,7 +181,7 @@ def main() -> int:
             step = {"step": "collect_repeat", "http_status": collected.status_code}
             result["steps"].append(step)
             if collected.status_code != 200:
-                step["code"] = (collected.json().get("detail") or {}).get("code") if collected.text else None
+                _record_step_failure(step, collected)
                 result["result"] = "FAILED"
                 result["reason"] = "collect_rejected"
                 return finish(1)

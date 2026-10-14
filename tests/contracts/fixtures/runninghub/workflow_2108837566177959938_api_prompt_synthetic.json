@@ -1,0 +1,206 @@
+{
+  "13": {
+    "class_type": "ResolutionSelector",
+    "inputs": {
+      "aspect_ratio": "9:16 (Portrait)",
+      "megapixels": 2,
+      "multiple": 32
+    },
+    "_meta": {
+      "title": "ResolutionSelector"
+    }
+  },
+  "470": {
+    "class_type": "LoadImage",
+    "inputs": {
+      "image": "example.png"
+    },
+    "_meta": {
+      "title": "LoadImage"
+    }
+  },
+  "477": {
+    "class_type": "CLIPLoader",
+    "inputs": {
+      "clip_name": "qwen3vl_8b_bf16.safetensors",
+      "type": "qwen_image",
+      "device": "default"
+    },
+    "_meta": {
+      "title": "CLIPLoader"
+    }
+  },
+  "478": {
+    "class_type": "UNETLoader",
+    "inputs": {
+      "unet_name": "qwen_image_2.1_bf16.safetensors",
+      "weight_dtype": "default"
+    },
+    "_meta": {
+      "title": "UNETLoader"
+    }
+  },
+  "476": {
+    "class_type": "VAELoader",
+    "inputs": {
+      "vae_name": "qwen_image_vae.safetensors"
+    },
+    "_meta": {
+      "title": "VAELoader"
+    }
+  },
+  "483": {
+    "class_type": "QwenImage21Cache",
+    "inputs": {
+      "dtype": "default",
+      "model": [
+        "478",
+        0
+      ],
+      "device": "auto"
+    },
+    "_meta": {
+      "title": "QwenImage21Cache"
+    }
+  },
+  "479": {
+    "class_type": "EmptyLatentImage",
+    "inputs": {
+      "batch_size": 1,
+      "width": [
+        "13",
+        0
+      ],
+      "height": [
+        "13",
+        1
+      ]
+    },
+    "_meta": {
+      "title": "EmptyLatentImage"
+    }
+  },
+  "484": {
+    "class_type": "TextEncodeQwenImage21",
+    "inputs": {
+      "negative_prompt": "",
+      "vae": [
+        "476",
+        0
+      ],
+      "prompt": [
+        "485",
+        0
+      ],
+      "resolution": 1024,
+      "clip": [
+        "477",
+        0
+      ],
+      "images.image_1": [
+        "470",
+        0
+      ]
+    },
+    "_meta": {
+      "title": "TextEncodeQwenImage21"
+    }
+  },
+  "485": {
+    "class_type": "PrimitiveStringMultiline",
+    "inputs": {
+      "value": "4-panel character sheet"
+    },
+    "_meta": {
+      "title": "PrimitiveStringMultiline"
+    }
+  },
+  "486": {
+    "class_type": "PrimitiveBoolean",
+    "inputs": {
+      "value": true
+    },
+    "_meta": {
+      "title": "PrimitiveBoolean"
+    }
+  },
+  "482": {
+    "class_type": "ComfySwitchNode",
+    "inputs": {
+      "on_false": [
+        "479",
+        0
+      ],
+      "on_true": [
+        "484",
+        2
+      ],
+      "switch": [
+        "486",
+        0
+      ]
+    },
+    "_meta": {
+      "title": "ComfySwitchNode"
+    }
+  },
+  "3": {
+    "class_type": "KSampler",
+    "inputs": {
+      "scheduler": "simple",
+      "negative": [
+        "484",
+        1
+      ],
+      "denoise": 1,
+      "latent_image": [
+        "482",
+        0
+      ],
+      "seed": 505160,
+      "cfg": 4,
+      "sampler_name": "euler",
+      "model": [
+        "483",
+        0
+      ],
+      "positive": [
+        "484",
+        0
+      ],
+      "steps": 20
+    },
+    "_meta": {
+      "title": "KSampler"
+    }
+  },
+  "8": {
+    "class_type": "VAEDecode",
+    "inputs": {
+      "samples": [
+        "3",
+        0
+      ],
+      "vae": [
+        "476",
+        0
+      ]
+    },
+    "_meta": {
+      "title": "VAEDecode"
+    }
+  },
+  "9": {
+    "class_type": "SaveImage",
+    "inputs": {
+      "images": [
+        "8",
+        0
+      ],
+      "filename_prefix": "ComfyUI"
+    },
+    "_meta": {
+      "title": "SaveImage"
+    }
+  }
+}

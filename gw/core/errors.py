@@ -34,6 +34,7 @@ class ErrorDetail(BaseModel):
     data_status: Optional[str] = Field(None, description="数据可用性状态")
     returncode: Optional[int] = Field(None, description="已退出CLI的真实退出码")
     result_unknown: Optional[bool] = Field(None, description="外部操作结果尚未确认，禁止自动重试")
+    provider_code: Optional[str] = Field(None, description="外部供应商的数字错误码（不含其消息文本）")
 
 
 class ErrorEnvelope(BaseModel):

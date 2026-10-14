@@ -317,8 +317,8 @@ function normalizeMatureWorkflow(raw) {
   const normalizedLinks = rawLinks.map((link, i) => {
     const fromNode = String(link.from_node ?? link.source ?? "");
     const toNode = String(link.to_node ?? link.target ?? "");
-    const rawFromSlot = link.from_slot ?? link.source_slot ?? 0;
-    const rawToSlot = link.to_slot ?? link.target_slot ?? 0;
+    const rawFromSlot = link.source_slot ?? link.from_slot ?? 0;
+    const rawToSlot = link.target_slot ?? link.to_slot ?? 0;
     const parsedFrom = typeof rawFromSlot === "number" ? rawFromSlot : parseInt(rawFromSlot, 10);
     const parsedTo = typeof rawToSlot === "number" ? rawToSlot : parseInt(rawToSlot, 10);
     return {

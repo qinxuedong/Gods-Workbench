@@ -1,0 +1,91 @@
+{
+  "code": 0,
+  "msg": "success",
+  "errorMessages": null,
+  "data": {
+    "id": "2108837566177959938",
+    "name": "角色资产4格详图制作【Qwen-Image2.1】",
+    "desc": null,
+    "systemWorkflow": false,
+    "publishTime": "2026-10-14T08:26:22.000+00:00",
+    "timestamp": "1791966382000",
+    "md5": null,
+    "imageSize": null,
+    "preview": null,
+    "owner": {
+      "id": "1913146898503327745",
+      "avatar": "https://rh-images.xiaoyaoyou.com/default_head_icon.png",
+      "name": "user_tsls7035"
+    },
+    "workflowContent": null,
+    "nodeCount": 21,
+    "statisticsInfo": {
+      "likeCount": "0",
+      "downloadCount": "0",
+      "useCount": "0",
+      "pv": "0",
+      "collectCount": "0"
+    },
+    "labels": null,
+    "tags": [],
+    "covers": [],
+    "chineseCovers": [],
+    "englishCovers": [],
+    "primitiveNodes": [
+      "CLIPLoader",
+      "EmptyLatentImage",
+      "KSampler",
+      "LoadImage",
+      "PreviewImage",
+      "SaveImage",
+      "UNETLoader",
+      "VAEDecode",
+      "VAELoader"
+    ],
+    "customNodes": [
+      "ComfySwitchNode",
+      "Fast Groups Bypasser (rgthree)",
+      "Image Comparer (rgthree)",
+      "ImageScaleToTotalPixels",
+      "PrimitiveBoolean",
+      "PrimitiveStringMultiline",
+      "QwenImage21Cache",
+      "ResolutionSelector",
+      "SeedVR2LoadDiTModel",
+      "SeedVR2LoadVAEModel",
+      "SeedVR2VideoUpscaler",
+      "TextEncodeQwenImage21"
+    ],
+    "usedModels": [
+      "476_qwen_image_2.1_int8_convrot.safetensors",
+      "478_qwen_image_2.1_vae_bf16.safetensors",
+      "ema_vae_fp16.safetensors",
+      "https://huggingface.co/Comfy-Org/Qwen-Image-2.1/resolve/main/diffusion_models/qwen_image_2.1_int8_convrot.safetensors",
+      "https://huggingface.co/Comfy-Org/Qwen-Image-2.1/resolve/main/text_encoders/qwen3vl_8b_bf16.safetensors",
+      "https://huggingface.co/Comfy-Org/Qwen-Image-2.1/resolve/main/vae/qwen_image_2.1_vae_bf16.safetensors",
+      "qwen3vl_8b_bf16.safetensors",
+      "qwen_image_2.1_bf16.safetensors",
+      "qwen_image_2.1_int8_convrot.safetensors",
+      "qwen_image_2.1_vae_bf16.safetensors"
+    ],
+    "liked": false,
+    "likeCount": "0",
+    "collect": false,
+    "collectCount": "0",
+    "webappId": null,
+    "status": -1,
+    "workflowState": 0,
+    "webappState": null,
+    "publishAccess": {
+      "accessType": 0,
+      "publishScope": 0,
+      "encrypted": false,
+      "granted": true,
+      "needPassword": false,
+      "owner": false,
+      "visibleUsers": []
+    },
+    "canModifyPublishType": true,
+    "canModifyPublishScope": true
+  }
+}
