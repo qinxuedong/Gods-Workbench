@@ -37,7 +37,11 @@ def test_open_in_comfy_unconfigured_shows_notice_and_jumps_to_settings(monkeypat
         _shot(page, 'ac14-not-configured-toast')
         page.get_by_role('button', name='前往设置', exact=True).click()
         page.wait_for_function('() => document.getElementById("settingsModal").classList.contains("open")')
-        assert page.locator('#inputComfyUrl').is_visible()
+        url_input = page.locator('#inputComfyUrl')
+        assert url_input.is_visible()
+        # 未配置：输入框为空，只有 placeholder 提示，不预填默认地址。
+        assert url_input.input_value() == ''
+        assert '8188' in (url_input.get_attribute('placeholder') or '')
         _shot(page, 'ac14-settings-opened')
         # 未配置时不得打开新标签页（预留空白窗口已关闭），也不得探测默认 127.0.0.1:8188。
         assert len(page.context.pages) == 1
@@ -57,3 +61,23 @@ def test_open_in_comfy_unreachable_shows_cannot_connect(monkeypatch, tmp_path):
         assert responses == [503]
         _shot(page, 'ac14-unreachable-toast')
         assert len(page.context.pages) == 1 and errors == []
+
+
+def test_saving_empty_comfy_url_does_not_store_default(monkeypatch, tmp_path):
+    for name in ('GW_COMFYUI_URL', 'GW_COMFYUI_ROOT_DIR'):
+        monkeypatch.delenv(name, raising=False)
+    with settings_browser(monkeypatch, tmp_path) as (page, base, errors, _):
+        posts = []
+        page.on('request', lambda r: posts.append(r.post_data_json) if r.method == 'POST' and r.url.endswith('/api/god_workflow/settings') else None)
+        _open_workflow(page, base)
+        page.locator('#btnOpenSettings').click()
+        page.wait_for_function('() => document.getElementById("settingsModal").classList.contains("open")')
+        assert page.locator('#inputComfyUrl').input_value() == ''
+        page.locator('#btnSaveSettings').click()
+        page.wait_for_function('() => !document.getElementById("settingsModal").classList.contains("open")')
+        assert posts and posts[-1]['comfy_url'] == ''
+        saved = page.context.request.get(base + '/api/god_workflow/settings').json()
+        assert not saved.get('comfy_url')
+        opened = page.context.request.post(base + '/api/god_workflow/open-in-comfy', headers={'Origin': base})
+        assert opened.status == 409 and opened.json()['detail']['code'] == 'COMFY_HOST_NOT_CONFIGURED'
+        assert errors == []

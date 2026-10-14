@@ -651,7 +651,8 @@ async function loadSettingsState() {
     const s = await apiFetch("/api/god_workflow/settings");
     const comfyUrlInput = wfGet("inputComfyUrl");
     if (comfyUrlInput) {
-      comfyUrlInput.value = (s.comfy_url || s.comfy_url_active || "").trim() || "http://127.0.0.1:8188";
+      // C4-AC14：未配置时保持为空，只用 placeholder 提示，不预填默认地址。
+      comfyUrlInput.value = (s.comfy_url || s.comfy_url_active || "").trim();
     }
     const rootInput = wfGet("inputComfyRootDir");
     if (rootInput) rootInput.value = s.comfy_root_dir || "";

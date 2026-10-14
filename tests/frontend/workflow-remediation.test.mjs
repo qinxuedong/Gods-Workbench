@@ -196,3 +196,12 @@ test('C4-AC14 503 连不上与其他错误文案区分', async()=>{
   assert.equal(h.run('reportComfyHostError(Object.assign(new Error("ComfyUI 正在启动"),{status:503,code:"COMFY_START_PENDING"}))'),'other');
   assert.equal(toasts[1][0],'导入 ComfyUI 失败：ComfyUI 正在启动');
 });
+test('C4-AC14 未配置时设置弹窗地址为空，不预填 127.0.0.1:8188', async()=>{
+  const h=harness(async()=>response({comfy_url:'',comfy_root_dir:'',local_models_dir:''}));
+  const input=h.element('#inputComfyUrl');input.value='stale';
+  await h.run('loadSettingsState()');
+  assert.equal(input.value,'');
+  const html=readFileSync(new URL('../../web/pages/workflow.html', import.meta.url),'utf8');
+  const tag=html.match(/<input id="inputComfyUrl"[^>]*>/)[0];
+  assert.match(tag,/value=""/);assert.match(tag,/placeholder="[^"]*8188/);
+});
