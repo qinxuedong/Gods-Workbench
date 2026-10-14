@@ -18,8 +18,13 @@
 
 统计当前数据目录（GW_DATA_DIR）资产注册表内没有 project_id 的资产数量与
 ID 清单，输出 JSON 到 stdout。只读：仅调用 ``repository.state().read()``，
-绝不 mutate、不修复、不猜测归属；归属修复只能由所有者通过
-POST /api/assets/{asset_id}/move-to-project 显式完成。
+绝不 mutate、不修复、不猜测归属。
+
+归属口径：无 workflow_owner 的无主资产只进入本地实例管理员（role == 'admin'）
+的未归属收件箱，展示为 source_unknown=true / origin_label='来源未知'；非 admin
+账户不可见也不能移动（404）。归属修复只能显式完成：有主资产由所有者、无主资产
+由管理员通过 POST /api/assets/{asset_id}/move-to-project 执行，管理员的移动会在
+同一次 CAS 写入内把 metadata.workflow_owner 回填为自己的归属键。
 
 用法：
     /workspace/.gw-venv/bin/python tools/c4_acceptance/unassigned_inbox_inventory.py

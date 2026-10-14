@@ -5,6 +5,11 @@
 匿名 401；其他账户看不到别人的资产也不能移动别人的资产；移动成功后
 资产带 project_id 并从收件箱消失；CAS 过期 409；已归属资产拒绝再移动；
 注册/列表绝不自动归属；只读盘点工具不改数据。
+
+无主资产（metadata.workflow_owner 缺失）口径：只进入本地实例管理员
+（role == 'admin'）的收件箱并标记 source_unknown=true / origin_label='来源未知'；
+非 admin 账户（含 editor/governor）列表不可见、移动与不存在同形 404；
+管理员移动无主资产时在同一次 CAS 写入内回填 workflow_owner，CAS 409 不回填。
 """
 
 from __future__ import annotations
@@ -26,6 +31,8 @@ INVENTORY_SCRIPT = REPO_ROOT / "tools" / "c4_acceptance" / "unassigned_inbox_inv
 OWNER_A = {"Authorization": "Bearer c4-owner-a", "X-User-Role": "editor"}
 OWNER_B = {"Authorization": "Bearer c4-owner-b", "X-User-Role": "editor"}
 GOVERNOR_A = {"Authorization": "Bearer c4-owner-a", "X-User-Role": "governor"}
+GOVERNOR_B = {"Authorization": "Bearer c4-owner-b", "X-User-Role": "governor"}
+ADMIN = {"Authorization": "Bearer c4-admin", "X-User-Role": "admin"}
 READONLY_A = {"Authorization": "Bearer c4-owner-a", "X-User-Role": "readonly"}
 
 INBOX = "/api/assets/unassigned"
@@ -51,6 +58,14 @@ def _register_asset(token: str, asset_id: str, name: str, *, project_id: str | N
     }
     asset_repo.register_asset_record(asset_id, name, "image", metadata=metadata)
     return asset_id
+
+
+def _import_ownerless(client, name: str = "无主导入.png") -> str:
+    """按真实导入路径构造无 workflow_owner 的无主资产。"""
+    imported = client.post("/api/asset-registry/assets/import", headers=OWNER_A,
+                           json={"items": [{"name": name, "kind": "image"}]})
+    assert imported.status_code == 200, imported.text
+    return imported.json()["asset_ids"][0]
 
 
 def _create_project(client, name: str = "C4 收件项目", headers=None) -> str:
@@ -110,14 +125,133 @@ def test_inbox_lists_only_own_unassigned_assets(client):
     assert [a["asset_id"] for a in other.json()["assets"]] == ["ast-c4-b1"]
 
 
-def test_inbox_hides_ownerless_imported_assets(client):
-    """无 workflow_owner 的导入资产没有可证明归属，不属于任何人的收件箱。"""
-    imported = client.post("/api/asset-registry/assets/import", headers=OWNER_A,
-                           json={"items": [{"name": "手工导入.png", "kind": "image"}]})
-    assert imported.status_code == 200
-    imported_id = imported.json()["asset_ids"][0]
+def test_inbox_hides_ownerless_imported_assets_from_non_admin(client):
+    """无 workflow_owner 的导入资产对非 admin 账户完全不可见。"""
+    _import_ownerless(client, "手工导入.png")
     assert _inbox(client).json()["assets"] == []
     assert _inbox(client, headers=OWNER_B).json()["assets"] == []
+
+
+# ---------------------------------------------------------------------------
+# 无主资产：只进管理员收件箱，标记来源未知；非 admin 不可见不可移动
+# ---------------------------------------------------------------------------
+
+
+def test_non_admin_roles_never_see_or_move_ownerless_assets(client):
+    """editor 与 governor 都看不到无主资产，移动与不存在同形 404。"""
+    ownerless_id = _import_ownerless(client, "来源未知.png")
+    _register_asset("c4-owner-b", "ast-c4-own-b", "自己产出.png")
+    editor_project = _create_project(client, "B的项目", headers=OWNER_B)
+    governor_project = _create_project(client, "治理项目", headers=GOVERNOR_B)
+
+    # 列表只含自己的有主资产，绝不含无主资产。
+    for headers in (OWNER_A, OWNER_B, GOVERNOR_A, GOVERNOR_B):
+        assets = _inbox(client, headers=headers).json()["assets"]
+        assert all(a["asset_id"] != ownerless_id for a in assets), headers
+
+    # 即使对目标项目有写权限，非 admin 移动无主资产也一律 404 ASSET_NOT_FOUND。
+    for headers, project_id in ((OWNER_B, editor_project), (GOVERNOR_B, governor_project)):
+        stolen = client.post(MOVE.format(asset_id=ownerless_id), headers=headers,
+                             json={"project_id": project_id, "expected_version": 1})
+        assert stolen.status_code == 404, stolen.text
+        assert _detail(stolen)["code"] == "ASSET_NOT_FOUND"
+
+    # 拒绝即无副作用：无主资产仍未归属、仍未回填 owner。
+    record = client.get(f"/api/asset-registry/assets/{ownerless_id}", headers=ADMIN).json()["asset"]
+    assert not record.get("project_id") and not record.get("project_ids")
+    assert not record.get("metadata", {}).get("workflow_owner")
+
+
+def test_admin_inbox_lists_ownerless_assets_as_source_unknown(client):
+    """admin 收件箱包含自己的有主资产与无主资产；字段按归属区分。"""
+    ownerless_id = _import_ownerless(client, "来源未知.png")
+    owned_id = _register_asset("c4-admin", "ast-c4-adm1", "管理员产物.png")
+
+    body = _inbox(client, headers=ADMIN).json()
+    by_id = {a["asset_id"]: a for a in body["assets"]}
+    assert set(by_id) == {ownerless_id, owned_id}
+
+    unknown = by_id[ownerless_id]
+    assert unknown["source_unknown"] is True
+    assert unknown["origin_label"] == "来源未知"
+
+    owned = by_id[owned_id]
+    assert owned["source_unknown"] is False
+    assert owned["origin_label"] is None
+
+
+def test_admin_moves_ownerless_asset_backfills_owner_atomically(client):
+    """admin 移动无主资产：同一次 CAS 写入回填 workflow_owner，收件箱消失。"""
+    ownerless_id = _import_ownerless(client, "待认领.png")
+    project_id = _create_project(client, "管理员收编项目", headers=ADMIN)
+    revision = _inbox(client, headers=ADMIN).json()["revision"]
+
+    moved = client.post(MOVE.format(asset_id=ownerless_id), headers=ADMIN,
+                        json={"project_id": project_id, "expected_version": revision})
+    assert moved.status_code == 200, moved.text
+    body = moved.json()
+    assert body["moved"] is True and body["project_id"] == project_id
+    assert body["asset"]["metadata"]["workflow_owner"] == _owner_key("c4-admin")
+    assert body["asset"]["source_unknown"] is False
+    assert body["asset"]["origin_label"] is None
+
+    # 持久化回读：归属键被回填为管理员，项目投影就位，收件箱不再出现。
+    readback = client.get(f"/api/asset-registry/assets/{ownerless_id}", headers=ADMIN)
+    assert readback.status_code == 200, readback.text
+    record = readback.json()["asset"]
+    assert record["metadata"]["workflow_owner"] == _owner_key("c4-admin")
+    assert record["project_id"] == project_id
+    assert project_id in record["project_ids"]
+    assert all(a["asset_id"] != ownerless_id for a in _inbox(client, headers=ADMIN).json()["assets"])
+
+
+def test_admin_moves_ownerless_asset_with_none_metadata(client):
+    """metadata 为 None 的旧数据形态无主资产：admin 移动同样成功并回填 owner。"""
+    from gw.asset_registry import repository as asset_repo
+
+    ownerless_id = _import_ownerless(client, "空metadata.png")
+
+    def force_none_metadata(raw: dict) -> None:
+        raw["assets"][ownerless_id]["metadata"] = None
+
+    asset_repo.state().mutate(force_none_metadata)
+    assert _inbox(client, headers=ADMIN).json()["assets"][0]["asset_id"] == ownerless_id
+
+    project_id = _create_project(client, "收编None元数据项目", headers=ADMIN)
+    revision = _inbox(client, headers=ADMIN).json()["revision"]
+
+    moved = client.post(MOVE.format(asset_id=ownerless_id), headers=ADMIN,
+                        json={"project_id": project_id, "expected_version": revision})
+    assert moved.status_code == 200, moved.text
+    body = moved.json()
+    assert body["moved"] is True and body["project_id"] == project_id
+    assert body["asset"]["metadata"] == {"workflow_owner": _owner_key("c4-admin")}
+    assert body["asset"]["source_unknown"] is False
+
+    readback = client.get(f"/api/asset-registry/assets/{ownerless_id}", headers=ADMIN).json()["asset"]
+    assert readback["metadata"] == {"workflow_owner": _owner_key("c4-admin")}
+    assert readback["project_id"] == project_id
+    assert all(a["asset_id"] != ownerless_id for a in _inbox(client, headers=ADMIN).json()["assets"])
+
+
+def test_admin_move_cas_conflict_does_not_backfill_owner(client):
+    """CAS 过期 409 时整笔不落盘：不回填 workflow_owner，也不写项目归属。"""
+    ownerless_id = _import_ownerless(client, "并发认领.png")
+    project_id = _create_project(client, "并发项目", headers=ADMIN)
+    revision = _inbox(client, headers=ADMIN).json()["revision"]
+
+    conflict = client.post(MOVE.format(asset_id=ownerless_id), headers=ADMIN,
+                           json={"project_id": project_id, "expected_version": revision + 99})
+    assert conflict.status_code == 409, conflict.text
+    assert _detail(conflict)["code"] == "VERSION_CONFLICT"
+
+    record = client.get(f"/api/asset-registry/assets/{ownerless_id}", headers=ADMIN).json()["asset"]
+    assert not record.get("metadata", {}).get("workflow_owner")
+    assert not record.get("project_id") and not record.get("project_ids")
+
+    inbox = _inbox(client, headers=ADMIN).json()["assets"]
+    assert [a["asset_id"] for a in inbox] == [ownerless_id]
+    assert inbox[0]["source_unknown"] is True
 
 
 def test_new_unassigned_assets_appear_naturally(client):
