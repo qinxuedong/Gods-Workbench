@@ -17,9 +17,9 @@
 /**
  * C4-AC5b「未归属」收件箱：GET /api/assets/unassigned 只返回当前账户自己的无项目资产；
  * 无主资产只出现在管理员收件箱，后端标 source_unknown/origin_label。
- * 「移入项目」POST /api/assets/{asset_id}/move-to-project {project_id, expected_version}。
- * expected_version 是收件箱响应里的注册表 revision（不是单个资产 version）。
- * 409 VERSION_CONFLICT：重新读取收件箱拿最新 revision，资产仍未归属则自动重试一次；
+ * 「移入项目」POST /api/assets/{asset_id}/move-to-project {project_id, expected_asset_version}。
+ * expected_asset_version 取该条目的 asset_version（资产自身版本 CAS，其他资产变动不再冲突）。
+ * 409 VERSION_CONFLICT（detail.asset_id）：重新读取该条目最新 asset_version，仍未归属则自动重试一次；
  * 409 ASSET_ALREADY_ASSIGNED：刷新列表并提示。匿名/无权（401/403）不显示入口。
  */
 window.GWUnassignedInbox = (() => {
@@ -143,12 +143,13 @@ window.GWUnassignedInbox = (() => {
     if (busy) return 'busy';
     if (!projectId) { notify('请先选择目标项目', true); return 'no_project'; }
     busy = true;
-    const post = revision => request(`/api/assets/${encodeURIComponent(assetId)}/move-to-project`, {
+    const versionOf = () => snapshot.assets.find(a => a.asset_id === assetId)?.asset_version;
+    const post = assetVersion => request(`/api/assets/${encodeURIComponent(assetId)}/move-to-project`, {
       method: 'POST', headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({project_id: projectId, expected_version: revision})});
+      body: JSON.stringify({project_id: projectId, expected_asset_version: assetVersion})});
     try {
       try {
-        await post(snapshot.revision);
+        await post(versionOf());
       } catch (error) {
         if (error.status !== 409) throw error;
         await load();
@@ -157,9 +158,9 @@ window.GWUnassignedInbox = (() => {
           notify('该资产已被归属到项目，列表已刷新', true);
           return 'already_assigned';
         }
-        try { await post(snapshot.revision); }
+        try { await post(versionOf()); }
         catch (retryError) {
-          if (retryError.status === 409) { await load().catch(() => {}); render(); notify('移入失败：资产库正在被其他操作修改，请稍后重试', true); return 'conflict'; }
+          if (retryError.status === 409) { await load().catch(() => {}); render(); notify('移入失败：该资产刚被其他操作修改，请稍后重试', true); return 'conflict'; }
           throw retryError;
         }
       }

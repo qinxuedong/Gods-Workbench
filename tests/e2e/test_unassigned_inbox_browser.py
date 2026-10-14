@@ -67,19 +67,68 @@ def test_unassigned_inbox_lists_marks_and_moves(monkeypatch, tmp_path):
         assert errors == []
 
 
-def test_move_conflict_refreshes_and_retries_once(monkeypatch, tmp_path):
+def _capture_moves(page):
+    calls = []
+    page.on('response', lambda r: calls.append((r.request.post_data_json, r.status)) if r.url.endswith('/move-to-project') else None)
+    return calls
+
+
+def test_unrelated_new_asset_no_longer_conflicts(monkeypatch, tmp_path):
+    """按资产 CAS：打开收件箱后其他资产登记推高库 revision，本资产移动不再 409。"""
     with settings_browser(monkeypatch, tmp_path) as (page, base, errors, _):
         project_id = _seed(page, base)
         _open_inbox(page, base)
-        stale = page.evaluate('GWUnassignedInbox.snapshot.revision')
-        _create_workflow(page, base, 'bump-revision')  # 另一处登记资产，注册表 revision 前进
-        posts = []
-        page.on('request', lambda r: posts.append(r.post_data_json) if r.url.endswith('/move-to-project') else None)
+        stale_revision = page.evaluate('GWUnassignedInbox.snapshot.revision')
+        asset_version = page.evaluate('GWUnassignedInbox.snapshot.assets.find(a => a.asset_id === "ast-c4-unknown-src").asset_version')
+        _create_workflow(page, base, 'bump-revision')  # 无关资产登记，库级 revision 前进
+        assert page.context.request.get(base + '/api/assets/unassigned').json()['revision'] > stale_revision
+        calls = _capture_moves(page)
         row = page.locator('[data-asset-id="ast-c4-unknown-src"]')
         row.locator('[data-move-project]').select_option(project_id)
         row.get_by_role('button', name='移入项目', exact=True).click()
         page.locator('#unassignedInboxStatus', has_text='已移入项目').wait_for()
-        assert len(posts) == 2 and posts[0]['expected_version'] == stale and posts[1]['expected_version'] > stale
+        assert calls == [({'project_id': project_id, 'expected_asset_version': asset_version}, 200)]
+        assert errors == []
+
+
+def test_per_asset_conflict_refreshes_item_and_retries_once(monkeypatch, tmp_path):
+    """真实资产级冲突：打开收件箱后该资产本身被改（version+1）→409（带 asset_id）→刷新→按新版本重试成功。"""
+    with settings_browser(monkeypatch, tmp_path) as (page, base, errors, _):
+        project_id = _seed(page, base)
+        _open_inbox(page, base)
+        stale = page.evaluate('GWUnassignedInbox.snapshot.assets.find(a => a.asset_id === "ast-c4-unknown-src").asset_version')
+        asset_repo.update_asset('ast-c4-unknown-src', {'name': '来源不明-已改名.png'})
+        conflicts = []
+        page.on('response', lambda r: conflicts.append(r.json()['detail']) if r.url.endswith('/move-to-project') and r.status == 409 else None)
+        calls = _capture_moves(page)
+        row = page.locator('[data-asset-id="ast-c4-unknown-src"]')
+        row.locator('[data-move-project]').select_option(project_id)
+        row.get_by_role('button', name='移入项目', exact=True).click()
+        page.locator('#unassignedInboxStatus', has_text='已移入项目').wait_for()
+        assert [c[1] for c in calls] == [409, 200]
+        assert [c[0]['expected_asset_version'] for c in calls] == [stale, stale + 1]
+        assert conflicts[0]['code'] == 'VERSION_CONFLICT' and conflicts[0]['asset_id'] == 'ast-c4-unknown-src'
+        record = page.context.request.get(base + '/api/asset-registry/assets/ast-c4-unknown-src').json()['asset']
+        assert record['project_id'] == project_id
+        assert errors == []
+
+
+def test_per_asset_conflict_twice_tells_user(monkeypatch, tmp_path):
+    with settings_browser(monkeypatch, tmp_path) as (page, base, errors, _):
+        project_id = _seed(page, base)
+        _open_inbox(page, base)
+        # 每次移动请求到达前都先改动该资产，制造连续两次真实资产级冲突。
+        def bump(route):
+            asset_repo.update_asset('ast-c4-unknown-src', {'name': 'bumped.png'})
+            route.continue_()
+        page.route('**/move-to-project', bump)
+        calls = _capture_moves(page)
+        row = page.locator('[data-asset-id="ast-c4-unknown-src"]')
+        row.locator('[data-move-project]').select_option(project_id)
+        row.get_by_role('button', name='移入项目', exact=True).click()
+        page.locator('#unassignedInboxStatus', has_text='移入失败：该资产刚被其他操作修改，请稍后重试').wait_for()
+        assert [c[1] for c in calls] == [409, 409]
+        _shot(page, 'ac5b-conflict-twice')
         assert errors == []
 
 
