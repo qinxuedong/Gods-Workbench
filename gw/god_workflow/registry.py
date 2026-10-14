@@ -604,6 +604,20 @@ def list_tasks(context: Any) -> list[dict[str, Any]]:
         return sorted(tasks, key=lambda task: task.get("created_at", ""), reverse=True)[:100]
 
 
+def list_tasks_page(context: Any, *, workflow_id: Optional[str] = None,
+                    limit: int = 20, offset: int = 0) -> tuple[list[dict[str, Any]], Optional[int]]:
+    """分页读取任务账本；先按 workflow_id 过滤再切片，不受百条截断限制。"""
+    with _STORAGE_LOCK:
+        tasks = [load_task(context, path.stem) for path in _tasks_root(context).glob("*.json")]
+        if workflow_id is not None:
+            tasks = [task for task in tasks if task.get("workflow_id") == workflow_id]
+        # task_id 作次序决胜键，保证同秒任务的分页顺序稳定。
+        tasks.sort(key=lambda task: (task.get("created_at", ""), str(task.get("task_id", ""))), reverse=True)
+        page = tasks[offset:offset + limit]
+        next_offset = offset + limit if offset + limit < len(tasks) else None
+        return page, next_offset
+
+
 def load_task(context: Any, task_id: str) -> dict[str, Any]:
     path = _task_path(context, task_id)
     task = _read_json(path, None)

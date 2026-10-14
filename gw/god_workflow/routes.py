@@ -771,9 +771,26 @@ async def execute_task(request: Request, authorization: Optional[str] = Header(N
 
 
 @router.get("/tasks")
-def list_workflow_tasks(authorization: Optional[str] = Header(None), x_user_role: str = Header("editor", alias="X-User-Role")):
+def list_workflow_tasks(authorization: Optional[str] = Header(None), x_user_role: str = Header("editor", alias="X-User-Role"),
+                        workflow_id: Optional[str] = None, limit: Optional[str] = None, cursor: Optional[str] = None):
     context = _auth(authorization, x_user_role, False)
-    return {"tasks": registry.list_tasks(context), "data_status": "ok", "data_gaps": []}
+    if workflow_id is None and limit is None and cursor is None:
+        return {"tasks": registry.list_tasks(context), "data_status": "ok", "data_gaps": []}
+    page_limit = 20
+    if limit is not None:
+        # 只接受 ASCII 十进制数字，杜绝 "+5"/"1e2"/全角数字被静默解释。
+        if not re.fullmatch(r"[0-9]+", limit) or int(limit) < 1:
+            raise CleanroomException(400, "INVALID_LIMIT", "limit 必须为正整数")
+        page_limit = min(int(limit), 100)
+    offset = 0
+    if cursor is not None:
+        if not re.fullmatch(r"[0-9]+", cursor):
+            raise CleanroomException(400, "INVALID_CURSOR", "分页游标无效")
+        offset = int(cursor)
+    page, next_offset = registry.list_tasks_page(context, workflow_id=workflow_id, limit=page_limit, offset=offset)
+    return {"tasks": page, "workflow_id": workflow_id,
+            "next_cursor": str(next_offset) if next_offset is not None else None,
+            "has_more": next_offset is not None, "data_status": "ok", "data_gaps": []}
 
 
 @router.get("/tasks/{task_id}")
