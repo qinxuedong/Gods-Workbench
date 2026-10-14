@@ -14,6 +14,172 @@
  * limitations under the License.
  */
 
+/**
+ * C4-AC5b「未归属」收件箱：GET /api/assets/unassigned 只返回当前账户自己的无项目资产；
+ * 「移入项目」POST /api/assets/{asset_id}/move-to-project {project_id, expected_version}。
+ * expected_version 是收件箱响应里的注册表 revision（不是单个资产 version）。
+ * 409 VERSION_CONFLICT：重新读取收件箱拿最新 revision，资产仍未归属则自动重试一次；
+ * 409 ASSET_ALREADY_ASSIGNED：刷新列表并提示。匿名/无权（401/403）不显示入口。
+ */
+window.GWUnassignedInbox = (() => {
+  'use strict';
+  const INBOX = '/api/assets/unassigned';
+  let snapshot = {assets: [], revision: null, total: 0};
+  let projects = [];
+  let busy = false;
+
+  async function request(url, options = {}) {
+    const res = await fetch(url, {credentials: 'same-origin', ...options});
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      const detail = data?.detail || {};
+      const error = new Error(detail.message || `请求失败 (${res.status})`);
+      error.status = res.status; error.code = detail.code;
+      throw error;
+    }
+    return data;
+  }
+
+  /** 来源未知：既无工作流/任务来源，也无可回溯地址。 */
+  function sourceUnknown(asset) {
+    const meta = asset?.metadata && typeof asset.metadata === 'object' ? asset.metadata : {};
+    return !(meta.workflow_id || meta.task_id || meta.job_id || asset?.task_id || asset?.url || asset?.source_type || meta.source_type);
+  }
+
+  async function load() {
+    const data = await request(`${INBOX}?limit=500`);
+    snapshot = {assets: Array.isArray(data.assets) ? data.assets : (data.items || []), revision: data.revision, total: Number(data.total) || 0};
+    return snapshot;
+  }
+
+  async function loadProjects() {
+    const data = await request('/api/asset-registry/projects?archived=false');
+    projects = (data.projects || []).filter(p => p && p.project_id && !p.archived_at && !p.deleted_at);
+    return projects;
+  }
+
+  function entry() { return document.getElementById('btnUnassignedInbox'); }
+
+  async function refreshEntry() {
+    const button = entry();
+    if (!button) return 'missing';
+    try {
+      await load();
+      button.style.display = '';
+      const count = button.querySelector('[data-unassigned-count]');
+      if (count) count.textContent = String(snapshot.total);
+      return 'shown';
+    } catch (error) {
+      // 匿名或无权：入口不显示（只对所有者显示）；其他错误同样隐藏，不打扰。
+      button.style.display = 'none';
+      return error.status === 401 || error.status === 403 ? 'hidden' : 'error';
+    }
+  }
+
+  function notify(message, isError = false) {
+    const status = document.getElementById('unassignedInboxStatus');
+    if (status) { status.textContent = message; status.dataset.error = isError ? 'true' : 'false'; }
+    if (typeof window.showWorkbenchToast === 'function') window.showWorkbenchToast(message, isError, '', null, 5000);
+  }
+
+  function escapeText(value) {
+    return String(value ?? '').replace(/[&<>"']/g, ch => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[ch]));
+  }
+
+  function render() {
+    const dialog = document.getElementById('unassignedInboxDialog');
+    const list = dialog?.querySelector('[data-unassigned-list]');
+    if (!list) return;
+    const options = projects.map(p => `<option value="${escapeText(p.project_id)}">${escapeText(p.name || p.project_id)}</option>`).join('');
+    list.innerHTML = snapshot.assets.length ? snapshot.assets.map(asset => `
+      <li class="flex items-center gap-2 py-1.5 border-b border-white/5" data-asset-id="${escapeText(asset.asset_id)}">
+        <span class="flex-1 truncate" title="${escapeText(asset.asset_id)}">${escapeText(asset.name || asset.asset_id)}</span>
+        ${sourceUnknown(asset) ? '<span class="text-amber-300 gw-type-body-sm" data-source-unknown="true" title="没有可回溯的工作流或任务来源">来源未知</span>' : ''}
+        <select data-move-project style="background:#141720;color:#eddab3;border:1px solid rgba(223,195,132,.35);border-radius:6px;padding:2px 6px;" aria-label="目标项目" ${projects.length ? '' : 'disabled'}>${options || '<option value="">暂无可写项目</option>'}</select>
+        <button type="button" class="hw-btn btn-size-sm" data-move-asset ${projects.length ? '' : 'disabled'}>移入项目</button>
+      </li>`).join('') : '<li class="py-3 text-slate-400">没有未归属资产</li>';
+    list.querySelectorAll('[data-move-asset]').forEach(button => button.addEventListener('click', () => {
+      const row = button.closest('[data-asset-id]');
+      moveToProject(row.dataset.assetId, row.querySelector('[data-move-project]')?.value);
+    }));
+    const count = entry()?.querySelector('[data-unassigned-count]');
+    if (count) count.textContent = String(snapshot.total);
+  }
+
+  function ensureDialog() {
+    let dialog = document.getElementById('unassignedInboxDialog');
+    if (dialog) return dialog;
+    dialog = document.createElement('div');
+    dialog.id = 'unassignedInboxDialog';
+    dialog.setAttribute('role', 'dialog');
+    dialog.setAttribute('aria-label', '未归属资产');
+    dialog.style.cssText = 'position:fixed;inset:0;z-index:80;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.6);';
+    dialog.innerHTML = `<div class="bg-[#0b0d12] border border-[#dfc384]/35 rounded-xl p-4 text-[#eddab3] gw-type-body-sm" style="width:min(640px,92vw);max-height:80vh;overflow:auto;">
+      <div class="flex items-center justify-between mb-2"><strong>未归属资产</strong>
+        <button type="button" class="hw-btn btn-size-sm" data-close-inbox>关闭</button></div>
+      <p class="text-slate-400 mb-2">这些资产尚未归属任何项目；系统不会自动归属，请手动选择项目移入。</p>
+      <p id="unassignedInboxStatus" role="status" aria-live="polite" class="mb-1"></p>
+      <ul data-unassigned-list></ul></div>`;
+    dialog.querySelector('[data-close-inbox]').addEventListener('click', close);
+    dialog.addEventListener('click', event => { if (event.target === dialog) close(); });
+    document.body.appendChild(dialog);
+    return dialog;
+  }
+
+  async function open() {
+    ensureDialog();
+    try {
+      await Promise.all([load(), loadProjects()]);
+      render();
+      return 'open';
+    } catch (error) {
+      notify(`无法读取未归属资产：${error.message}`, true);
+      return 'error';
+    }
+  }
+
+  function close() { document.getElementById('unassignedInboxDialog')?.remove(); }
+
+  async function moveToProject(assetId, projectId) {
+    if (busy) return 'busy';
+    if (!projectId) { notify('请先选择目标项目', true); return 'no_project'; }
+    busy = true;
+    const post = revision => request(`/api/assets/${encodeURIComponent(assetId)}/move-to-project`, {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({project_id: projectId, expected_version: revision})});
+    try {
+      try {
+        await post(snapshot.revision);
+      } catch (error) {
+        if (error.status !== 409) throw error;
+        await load();
+        render();
+        if (error.code === 'ASSET_ALREADY_ASSIGNED' || !snapshot.assets.some(a => a.asset_id === assetId)) {
+          notify('该资产已被归属到项目，列表已刷新', true);
+          return 'already_assigned';
+        }
+        try { await post(snapshot.revision); }
+        catch (retryError) {
+          if (retryError.status === 409) { await load().catch(() => {}); render(); notify('移入失败：资产库正在被其他操作修改，请稍后重试', true); return 'conflict'; }
+          throw retryError;
+        }
+      }
+      await load();
+      render();
+      const project = projects.find(p => p.project_id === projectId);
+      notify(`已移入项目「${project?.name || projectId}」`);
+      return 'moved';
+    } catch (error) {
+      notify(`移入项目失败：${error.message}`, true);
+      return 'error';
+    } finally {
+      busy = false;
+    }
+  }
+
+  return {open, close, refreshEntry, moveToProject, sourceUnknown, load, get snapshot() { return snapshot; }};
+})();
+
 /** The Workbench shell delegates all asset operations to the canonical asset manager. */
 window.WorkbenchAssets = (() => {
   'use strict';
@@ -196,6 +362,7 @@ window.WorkbenchAssets = (() => {
   }
 
   function rebind() {
+    window.GWUnassignedInbox?.refreshEntry();
     if (!bindElements()) return;
     categorySnapshot = '';
     mirrorFrameDegradation();
