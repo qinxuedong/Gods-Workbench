@@ -151,3 +151,68 @@ def test_other_workflow_running_task_never_pops_and_paged_load_more(monkeypatch,
         assert page.locator('#workflowTaskList [data-task-row="dddddddd-running-other"]').count() == 0
         _shot(page, "8-load-more-after.png")
         assert errors == []
+
+
+def test_real_backend_paging_loads_all_130_tasks_without_duplicates(monkeypatch, tmp_path):
+    """真实后端联调：当前工作流 130 条 + 其他工作流 5 条（含运行中），「加载更多」逐页取全且无重复。
+    后端尚未提供分页（无 next_cursor）时跳过；后端分页由 PR #35 提供。"""
+    import uuid
+    from datetime import datetime, timedelta, timezone
+    import pytest
+    from gw.god_workflow import registry
+    with settings_browser(monkeypatch, tmp_path) as (page, base, errors, _):
+        ids = []
+        for name in ("current", "other"):
+            created = page.context.request.post(base + "/api/god_workflow/documents?name=" + name,
+                data={"1": {"class_type": "LoadImage", "inputs": {"image": "a.png"}}}, headers={"Origin": base})
+            assert created.status == 201, created.text()
+            ids.append(created.json()["workflow_id"])
+        current, other = ids
+        # 同一主体的任务账本与文档同根；直接写入确定性夹具，不触发任何外部提交。
+        tasks_root = next((tmp_path / "gw-data/workflow").glob(f"*/{current}.json")).parent / "tasks"
+        tasks_root.mkdir(parents=True, exist_ok=True)
+        base_time = datetime(2026, 10, 1, tzinfo=timezone.utc)
+        expected = []
+        for i in range(130):
+            job = str(uuid.uuid4())
+            # 每 10 条共用一个时间戳，验证同秒任务分页次序稳定、无重复无遗漏。
+            stamp = (base_time + timedelta(seconds=i // 10)).isoformat()
+            registry._atomic_write(tasks_root / f"{job}.json", {"job_id": job, "task_id": job, "workflow_id": current,
+                "status": "completed", "target": "local_comfy" if i % 2 else "rh_cloud", "created_at": stamp,
+                "updated_at": stamp, "outputs": [], "messages": []})
+            expected.append((stamp, job))
+        for i in range(5):
+            job = str(uuid.uuid4())
+            registry._atomic_write(tasks_root / f"{job}.json", {"job_id": job, "task_id": job, "workflow_id": other,
+                "status": "running" if i == 0 else "completed", "target": "rh_cloud",
+                "created_at": (base_time + timedelta(days=1, seconds=i)).isoformat(), "outputs": [], "messages": []})
+        probe = page.context.request.get(base + f"/api/god_workflow/tasks?workflow_id={current}&limit=1")
+        if probe.status != 200 or "next_cursor" not in probe.json():
+            pytest.skip("后端尚未提供任务分页（PR #35 未合入）")
+        expected_order = [job for _, job in sorted(expected, reverse=True)]
+        with page.expect_response(lambda r: urlsplit(r.url).path == "/api/god_workflow/tasks"):
+            goto_ready(page, base + "/static/pages/workflow.html?id=" + current)
+        page.wait_for_load_state("networkidle")
+        assert "open" not in (page.locator("#taskModal").get_attribute("class") or ""), "其他工作流运行中任务不应弹出"
+        page.wait_for_function("(id) => typeof state !== 'undefined' && state.currentWorkflow?.workflow_id === id", arg=current)
+        with page.expect_response(lambda r: urlsplit(r.url).path == "/api/god_workflow/tasks"):
+            page.locator("#btnViewTaskDrawer").click()
+        rows = page.locator("#workflowTaskList [data-task-row]")
+        rows.first.wait_for()
+        assert rows.count() == 20
+        _shot(page, "9-real-backend-page1.png")
+        more = page.locator("#workflowTaskList [data-task-load-more]")
+        clicks = 0
+        while more.count():
+            before = rows.count()
+            with page.expect_response(lambda r: "cursor=" in r.url and r.status == 200):
+                more.click()
+            page.wait_for_function("(n) => document.querySelectorAll('#workflowTaskList [data-task-row]').length > n", arg=before)
+            clicks += 1
+        loaded = rows.evaluate_all("els => els.map(e => e.dataset.taskRow)")
+        _shot(page, "10-real-backend-all-130.png")
+        assert clicks == 6
+        assert len(loaded) == 130
+        assert len(set(loaded)) == 130, "加载更多出现重复任务"
+        assert loaded == expected_order
+        assert errors == []

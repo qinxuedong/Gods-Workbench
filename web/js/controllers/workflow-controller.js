@@ -627,25 +627,36 @@ function sortWorkflowTasks(tasks, workflowId) {
   return (Array.isArray(tasks) ? tasks : [])
     .filter(task => workflowTaskId(task) && (!workflowId || task.workflow_id === workflowId))
     .slice()
-    .sort((a, b) => String(b.created_at || "").localeCompare(String(a.created_at || "")));
+    // 与后端分页次序一致：created_at 倒序，同时间按 task_id 倒序决胜。
+    .sort((a, b) => String(b.created_at || "").localeCompare(String(a.created_at || ""))
+      || String(b.task_id || b.job_id || "").localeCompare(String(a.task_id || a.job_id || "")));
 }
 
-// 任务列表分页契约（待后端实现，前端按字段存在性探测，不靠猜测）：
-//   GET /api/god_workflow/tasks?workflow_id=<id>&limit=<n>[&cursor=<next_cursor>]
-//   → { tasks: [...新→旧], workflow_id: "<id>", next_cursor: "<opaque>"|null, has_more: bool }
-// 响应回显 workflow_id === 请求值 才视为服务端已过滤；含 next_cursor 键才视为支持分页。
-// 旧后端忽略这些参数并返回最近 100 条，此时退回前端按 workflow_id 过滤、不显示「加载更多」。
+// 任务列表分页契约（对齐后端 PR #35）：
+//   GET /api/god_workflow/tasks?workflow_id=<id>&limit=<n 默认20 上限100>[&cursor=<next_cursor 原样回传>]
+//   → { tasks:[新→旧], workflow_id, next_cursor:string|null, has_more:bool, data_status, data_gaps }
+//   400 INVALID_LIMIT / INVALID_CURSOR；不带参数时为旧格式（最近 100 条、无 workflow_id 回显）。
+// 探测：回显 workflow_id === 请求值才视为服务端已过滤；含 next_cursor 键才视为支持分页；否则退回前端过滤。
 const WORKFLOW_TASK_PAGE_SIZE = 20;
 async function fetchWorkflowTasksPage(workflowId, cursor) {
   const params = new URLSearchParams();
   if (workflowId) { params.set("workflow_id", workflowId); params.set("limit", String(WORKFLOW_TASK_PAGE_SIZE)); }
   if (cursor) params.set("cursor", cursor);
   const query = params.toString();
-  const response = await apiFetch("/api/god_workflow/tasks" + (query ? "?" + query : ""));
+  let response;
+  try {
+    response = await apiFetch("/api/god_workflow/tasks" + (query ? "?" + query : ""));
+  } catch (error) {
+    // limit 被拒时退回旧格式并前端过滤；游标失效交由调用方回到第一页。
+    if (error?.status === 400 && error?.code === "INVALID_LIMIT" && !cursor) response = await apiFetch("/api/god_workflow/tasks");
+    else throw error;
+  }
   const serverFiltered = Boolean(workflowId) && response?.workflow_id === workflowId;
   const paged = serverFiltered && Object.prototype.hasOwnProperty.call(response, "next_cursor");
   const nextCursor = paged && response.has_more !== false && typeof response.next_cursor === "string" && response.next_cursor ? response.next_cursor : null;
-  return { tasks: sortWorkflowTasks(response?.tasks, workflowId), nextCursor, serverFiltered, paged, raw: response };
+  const dataStatus = typeof response?.data_status === "string" ? response.data_status : "ok";
+  const dataGaps = Array.isArray(response?.data_gaps) ? response.data_gaps.map(String) : [];
+  return { tasks: sortWorkflowTasks(response?.tasks, workflowId), nextCursor, serverFiltered, paged, dataStatus, dataGaps };
 }
 
 async function restoreWorkflowTask() {
@@ -3386,7 +3397,14 @@ function renderWorkflowTaskList() {
   if (!list) return;
   const more = state.workflowTasksCursor
     ? `<button type="button" class="hw-btn" data-task-load-more style="width:100%;margin-top:4px;">加载更多</button>` : "";
-  list.innerHTML = workflowTaskRowsHtml(state.workflowTasks || [], state.expandedTaskId) + more;
+  const notice = state.workflowTasksNotice
+    ? `<div data-task-list-notice role="status" style="color:var(--amber, #f0b429);font-size:var(--gw-type-body-sm);margin-bottom:4px;">${escapeHtml(state.workflowTasksNotice)}</div>` : "";
+  list.innerHTML = notice + workflowTaskRowsHtml(state.workflowTasks || [], state.expandedTaskId) + more;
+}
+// 后端当前恒为 data_status "ok"、data_gaps []；若将来返回降级状态，在列表顶部如实提示，不隐藏已取得的任务。
+function workflowTasksNotice(page) {
+  if (!page || (page.dataStatus === "ok" && !page.dataGaps.length)) return "";
+  return `任务列表数据不完整（${page.dataStatus}${page.dataGaps.length ? "：" + page.dataGaps.join("、") : ""}）`;
 }
 async function loadMoreWorkflowTasks() {
   const cursor = state.workflowTasksCursor;
@@ -3397,8 +3415,19 @@ async function loadMoreWorkflowTasks() {
     const known = new Set((state.workflowTasks || []).map(workflowTaskId));
     state.workflowTasks = sortWorkflowTasks([...(state.workflowTasks || []), ...page.tasks.filter(task => !known.has(workflowTaskId(task)))], state.currentWorkflow?.workflow_id || null);
     state.workflowTasksCursor = page.nextCursor;
+    state.workflowTasksNotice = workflowTasksNotice(page);
     renderWorkflowTaskList();
-  } catch (error) { showToast(`加载更多任务失败：${error.message}`, true); }
+  } catch (error) {
+    if (error?.status === 400 && error?.code === "INVALID_CURSOR") {
+      // 游标失效：回到第一页重新加载，不拼接可能错位的结果。
+      showToast("任务列表已变化，已从第一页重新加载", true);
+      state.workflowTasksCursor = null;
+      state.workflowTasksLoading = false;
+      await openWorkflowTasks();
+      return;
+    }
+    showToast(`加载更多任务失败：${error.message}`, true);
+  }
   finally { state.workflowTasksLoading = false; }
 }
 function expandWorkflowTask(taskId) {
@@ -3417,6 +3446,7 @@ async function openWorkflowTasks() {
     const page = await fetchWorkflowTasksPage(state.currentWorkflow?.workflow_id || null);
     state.workflowTasks = page.tasks;
     state.workflowTasksCursor = page.nextCursor;
+    state.workflowTasksNotice = workflowTasksNotice(page);
     const tasks = state.workflowTasks;
     const bodyEl = wfGet('taskModalBody');
     const selected = tasks.find(task => workflowTaskId(task) === state.activeTaskId) || tasks[0];

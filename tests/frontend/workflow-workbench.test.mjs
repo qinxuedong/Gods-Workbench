@@ -600,3 +600,40 @@ test('服务端已过滤但无 next_cursor 键时不显示「加载更多」', a
   assert.deepEqual(h.rows(), ['job-a']);
   assert.doesNotMatch(h.list.innerHTML, /data-task-load-more/);
 });
+test('加载更多遇 INVALID_CURSOR 时回到第一页重新加载', async () => {
+  let calls = 0;
+  const h = panelHarness([], 'wf-1', url => {
+    calls++;
+    if (url.includes('cursor=')) { const e = new Error('分页游标无效'); e.status = 400; e.code = 'INVALID_CURSOR'; throw e; }
+    return { workflow_id: 'wf-1', tasks: [{ job_id: 'job-1', workflow_id: 'wf-1', status: 'completed' }], next_cursor: '20', has_more: true, data_status: 'ok', data_gaps: [] };
+  });
+  await h.openWorkflowTasks();
+  await h.loadMoreWorkflowTasks();
+  assert.equal(calls, 3);
+  assert.equal(h.urls.at(-1), '/api/god_workflow/tasks?workflow_id=wf-1&limit=20');
+  assert.deepEqual(h.rows(), ['job-1']);
+});
+test('INVALID_LIMIT 时退回旧格式并前端过滤', async () => {
+  const h = panelHarness([], 'wf-1', url => {
+    if (url.includes('limit=')) { const e = new Error('x'); e.status = 400; e.code = 'INVALID_LIMIT'; throw e; }
+    return { tasks: [{ job_id: 'job-a', workflow_id: 'wf-1', status: 'completed' }, { job_id: 'job-b', workflow_id: 'wf-2', status: 'completed' }] };
+  });
+  await h.openWorkflowTasks();
+  assert.equal(h.urls.at(-1), '/api/god_workflow/tasks');
+  assert.deepEqual(h.rows(), ['job-a']);
+});
+test('data_status 降级或 data_gaps 非空时列表顶部如实提示；ok 时不提示', async () => {
+  const degraded = panelHarness([], 'wf-1', () => ({ workflow_id: 'wf-1', tasks: [], next_cursor: null, has_more: false, data_status: 'partial', data_gaps: ['ledger_unreadable'] }));
+  await degraded.openWorkflowTasks();
+  assert.match(degraded.list.innerHTML, /data-task-list-notice[\s\S]*partial[\s\S]*ledger_unreadable/);
+  const ok = panelHarness([], 'wf-1', () => ({ workflow_id: 'wf-1', tasks: [], next_cursor: null, has_more: false, data_status: 'ok', data_gaps: [] }));
+  await ok.openWorkflowTasks();
+  assert.doesNotMatch(ok.list.innerHTML, /data-task-list-notice/);
+});
+test('同一时间的任务按 task_id 倒序，与后端分页次序一致', async () => {
+  const t = '2026-10-14T01:00:00Z';
+  const h = panelHarness([{ job_id: 'a', task_id: 'a', workflow_id: 'wf-1', status: 'completed', created_at: t },
+    { job_id: 'b', task_id: 'b', workflow_id: 'wf-1', status: 'completed', created_at: t }]);
+  await h.openWorkflowTasks();
+  assert.deepEqual(h.rows(), ['b', 'a']);
+});
