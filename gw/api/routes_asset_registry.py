@@ -1157,13 +1157,15 @@ def list_unassigned_inbox(
     authorization: Optional[str] = Header(None),
     x_user_role: str = Header("editor", alias="X-User-Role"),
 ):
-    """只返回当前认证账户自己拥有、且没有 project_id 的资产；匿名一律 401。
+    """返回当前认证账户自己拥有、且没有 project_id 的资产；匿名一律 401。
 
-    无 workflow_owner 的登记资产没有可证明归属，不属于任何人的收件箱；
+    无 workflow_owner 的资产只进入本地实例管理员（role == 'admin'）的收件箱，
+    标记 source_unknown=true / origin_label='来源未知'；有主资产
+    source_unknown=false / origin_label=null，且只在所有者收件箱出现。
     本接口只读取，绝不自动归属或猜测项目。
     """
     context = _read_auth(authorization, x_user_role)
-    return repo.list_unassigned_assets(asset_owner_key(context), limit, offset)
+    return repo.list_unassigned_assets(asset_owner_key(context), limit, offset, role=context.role)
 
 
 @unassigned_router.post("/{asset_id}/move-to-project", summary="未归属资产移入项目",
@@ -1174,7 +1176,11 @@ async def move_unassigned_asset_to_project(
     authorization: Optional[str] = Header(None),
     x_user_role: str = Header("editor", alias="X-User-Role"),
 ):
-    """只有资产所有者且对目标项目有写权限才能移动；CAS 过期 409；已归属资产 409 拒绝。"""
+    """只有资产所有者且对目标项目有写权限才能移动；CAS 过期 409；已归属资产 409 拒绝。
+
+    无主资产仅本地实例管理员可移动：非管理员与不存在同形 404；管理员移动时在
+    同一次 CAS 写入内回填 metadata.workflow_owner，冲突 409 即不回填。
+    """
     context = _edit_auth(authorization, x_user_role)
     body = await _json_body(request)
     project_id = str(body.get("project_id") or "").strip()
@@ -1185,7 +1191,7 @@ async def move_unassigned_asset_to_project(
     default_projects_service.require_project_write_access(
         project_id, owner_key=owner_key_for_context(context), role=context.role)
     return repo.move_asset_to_project(asset_id, project_id, expected_version,
-                                      asset_owner_key(context))
+                                      asset_owner_key(context), role=context.role)
 
 
 __all__ = ["router", "unassigned_router"]
