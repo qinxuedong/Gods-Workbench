@@ -59,7 +59,7 @@ function pollingHarness(response, { deferred = false } = {}) {
   const pending = new Promise(resolve => { resolveResponse = resolve; });
   const context = {
     state, Set, String, Array, encodeURIComponent,
-    wfGet: () => body,
+    wfGet: () => body, markUnknownTaskSeen: () => {},
     escapeHtml: value => String(value ?? '').replaceAll('<', '&lt;'),
     apiFetch: async () => { requests++; return deferred ? pending : response; },
     clearInterval: id => timers.delete(id), clearTimeout: id => timers.delete(id),
@@ -399,3 +399,79 @@ for (const scenario of ['offline', 'internal-ready', 'last-resort']) {
     else assert.equal(h.state.pendingDefinitionWorkflow,null);
   });
 }
+
+// C4-AC15：结果未知任务同一错误最多自动弹出一次，之后只显示徽标。
+function restoreHarness(tasks, { search = '', storage = new Map() } = {}) {
+  const start = controller.indexOf('const UNKNOWN_TASK_SEEN_PREFIX');
+  const end = controller.indexOf('function applySavedSettings', start);
+  const modal = { opened: 0, classList: { add() { modal.opened++; } } };
+  const polled = [];
+  const localStorage = { getItem: k => storage.get(k) ?? null, setItem: (k, v) => storage.set(k, String(v)) };
+  const context = {
+    state: {}, Array, URLSearchParams,
+    window: { location: { search }, localStorage },
+    apiFetch: async () => ({ tasks }),
+    wfGet: id => id === 'taskModal' ? modal : null,
+    setWorkflowTaskTrigger() {}, showToast() {},
+    startTaskPolling: id => polled.push(id),
+  };
+  runInNewContext(controller.slice(start, end), context);
+  return { ...context, modal, polled, storage };
+}
+test('结果未知任务首次恢复弹出一次，再次进入视图不再自动弹出', async () => {
+  const tasks = [{ job_id: 'job-u', status: 'outcome_unknown', error_code: 'RH_OUTCOME_UNKNOWN', target: 'rh_cloud' }];
+  const storage = new Map();
+  const first = restoreHarness(tasks, { storage });
+  await first.restoreWorkflowTask();
+  assert.equal(first.modal.opened, 1);
+  for (let i = 0; i < 3; i++) {
+    const again = restoreHarness(tasks, { storage });
+    await again.restoreWorkflowTask();
+    assert.equal(again.modal.opened, 0);
+    assert.deepEqual(again.polled, []);
+  }
+  assert.ok([...storage.keys()].some(k => k.includes('job-u') && k.includes('RH_OUTCOME_UNKNOWN')));
+});
+test('同一任务出现不同错误码时重新提示一次；其他任务互不影响', async () => {
+  const storage = new Map();
+  await restoreHarness([{ job_id: 'job-u', status: 'outcome_unknown', error_code: 'A' }], { storage }).restoreWorkflowTask();
+  const changed = restoreHarness([{ job_id: 'job-u', status: 'outcome_unknown', error_code: 'B' }], { storage });
+  await changed.restoreWorkflowTask();
+  assert.equal(changed.modal.opened, 1);
+  const other = restoreHarness([{ job_id: 'job-v', status: 'outcome_unknown', error_code: 'A' }], { storage });
+  await other.restoreWorkflowTask();
+  assert.equal(other.modal.opened, 1);
+});
+test('运行中任务照常恢复弹出；显式 job_id 链接即使已知悉也打开', async () => {
+  const storage = new Map();
+  for (let i = 0; i < 2; i++) {
+    const running = restoreHarness([{ job_id: 'job-r', status: 'running' }], { storage });
+    await running.restoreWorkflowTask();
+    assert.equal(running.modal.opened, 1);
+  }
+  const tasks = [{ job_id: 'job-u', status: 'outcome_unknown' }];
+  await restoreHarness(tasks, { storage }).restoreWorkflowTask();
+  const linked = restoreHarness(tasks, { storage, search: '?job_id=job-u' });
+  await linked.restoreWorkflowTask();
+  assert.equal(linked.modal.opened, 1);
+});
+test('localStorage 不可用时恢复不抛错', async () => {
+  const h = restoreHarness([{ job_id: 'job-u', status: 'outcome_unknown' }]);
+  h.window.localStorage = { getItem() { throw new Error('x'); }, setItem() { throw new Error('x'); } };
+  await h.restoreWorkflowTask();
+  assert.equal(h.modal.opened, 1);
+});
+test('任务面板对结果未知任务显示徽标并记为已知悉', async () => {
+  const seen = [];
+  const harness = pollingHarness({ status: 'outcome_unknown', outputs: [], error_code: 'E1' });
+  harness.markUnknownTaskSeen = task => seen.push(task);
+  const start = controller.indexOf('function startTaskPolling(taskId, target) {');
+  const end = controller.indexOf('/* ==================== 7. 事件绑定', start);
+  runInNewContext(controller.slice(start, end), harness);
+  harness.startTaskPolling('job-u', 'rh_cloud');
+  await harness.flush();
+  assert.match(harness.body.innerHTML, /data-task-badge="outcome_unknown"/);
+  assert.equal(seen[0]?.job_id, 'job-u');
+  assert.equal(seen[0]?.error_code, 'E1');
+  assert.match(controller, /data-status="\$\{escapeHtml\(task\.status\)\}"/);
+});

@@ -603,6 +603,25 @@ async function initWorkbench() {
   } finally { if (initializingLifecycle === lifecycleAbortController) state.authLoading = false; }
 }
 
+// 结果未知任务：同一任务的同一错误最多自动弹出一次，已知悉后只在任务面板显示状态徽标。
+const UNKNOWN_TASK_SEEN_PREFIX = "gw.workflow.unknownTaskSeen:";
+function unknownTaskSeenKey(task) {
+  const id = task?.job_id || task?.task_id || "";
+  // 只用稳定错误码作签名，不用可变的提示文本，避免列表与详情响应字段不同导致重复弹出。
+  const signature = task?.error_code || task?.code || "outcome_unknown";
+  return id ? `${UNKNOWN_TASK_SEEN_PREFIX}${id}:${signature}` : "";
+}
+function isUnknownTaskSeen(task) {
+  const key = unknownTaskSeenKey(task);
+  if (!key) return false;
+  try { return window.localStorage?.getItem(key) === "1"; } catch { return false; }
+}
+function markUnknownTaskSeen(task) {
+  const key = unknownTaskSeenKey(task);
+  if (!key) return;
+  try { window.localStorage?.setItem(key, "1"); } catch { /* 存储不可用时仅本次会话不再弹出 */ }
+}
+
 async function restoreWorkflowTask() {
   try {
     const response = await apiFetch("/api/god_workflow/tasks");
@@ -611,6 +630,9 @@ async function restoreWorkflowTask() {
       ? (response.tasks || []).find(item => (item.job_id || item.task_id) === requestedJob)
       : (response.tasks || []).find(item => ["accepted", "running", "waiting_review", "paused", "outcome_unknown"].includes(item.status));
     if (!task) return;
+    // 结果未知且已知悉：不再自动弹出，仅留任务面板徽标；显式 job_id 链接仍按用户意图打开。
+    if (!requestedJob && task.status === "outcome_unknown" && isUnknownTaskSeen(task)) return;
+    if (task.status === "outcome_unknown") markUnknownTaskSeen(task);
     state.activeTaskId = task.job_id || task.task_id;
     setWorkflowTaskTrigger("btnViewTaskDrawer");
     wfGet("taskModal")?.classList.add("open");
@@ -3309,7 +3331,7 @@ async function openWorkflowTasks() {
     const response = await apiFetch('/api/god_workflow/tasks');
     const tasks = response.tasks || [];
     const selector = wfGet('workflowTaskSelect');
-    if (selector) selector.innerHTML = tasks.map(task => `<option value="${escapeHtml(task.job_id || task.task_id)}" data-target="${escapeHtml(task.target)}">${escapeHtml(task.status)} · ${escapeHtml(task.job_id || task.task_id)}</option>`).join('');
+    if (selector) selector.innerHTML = tasks.map(task => `<option value="${escapeHtml(task.job_id || task.task_id)}" data-target="${escapeHtml(task.target)}" data-status="${escapeHtml(task.status)}">${escapeHtml(task.status === "outcome_unknown" ? "⚠ 结果未知·待核实" : task.status)} · ${escapeHtml(task.job_id || task.task_id)}</option>`).join('');
     const selected = tasks.find(task => (task.job_id || task.task_id) === state.activeTaskId) || tasks[0];
     if (selected) {
       state.activeTaskId = selected.job_id || selected.task_id;
@@ -3351,7 +3373,9 @@ function startTaskPolling(taskId, target) {
           return `<div class="hw-bay-row" style="align-items:center;">${preview}<a class="mini-link-btn" href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer">打开受控输出</a></div>`;
         }).join("");
         const message = statusRes.messages?.join?.("；") || (st === "outcome_unknown" ? "外部请求可能已产生副作用，请人工核实，不会自动重试。" : "");
-        bodyEl.innerHTML = `<div class="missing-item-card ${delivered ? "ready-ok" : ""}"><div style="color:${delivered ? "var(--emerald-bright)" : "var(--rose)"};font-weight:700;font-family:var(--gw-font-mono);font-variant-numeric:tabular-nums;">${escapeHtml(collectionIncomplete ? "执行已结束，输出回收未完成" : (label[st] || st))} (Job ID: ${escapeHtml(taskId)})</div><div style="font-size:var(--gw-type-body-sm);color:var(--text-muted);">${escapeHtml(message)}</div></div>${mediaHtml}`;
+        const unknownBadge = st === "outcome_unknown" ? `<span class="wf-task-status-badge" data-task-badge="outcome_unknown" style="display:inline-block;margin-inline-start:6px;padding:0 6px;border:1px solid var(--rose);border-radius:4px;color:var(--rose);font-size:var(--gw-type-body-sm);">结果未知 · 待人工核实</span>` : "";
+        if (st === "outcome_unknown") markUnknownTaskSeen({ ...statusRes, job_id: statusRes.job_id || statusRes.task_id || taskId });
+        bodyEl.innerHTML = `<div class="missing-item-card ${delivered ? "ready-ok" : ""}"><div style="color:${delivered ? "var(--emerald-bright)" : "var(--rose)"};font-weight:700;font-family:var(--gw-font-mono);font-variant-numeric:tabular-nums;">${escapeHtml(collectionIncomplete ? "执行已结束，输出回收未完成" : (label[st] || st))} (Job ID: ${escapeHtml(taskId)})${unknownBadge}</div><div style="font-size:var(--gw-type-body-sm);color:var(--text-muted);">${escapeHtml(message)}</div></div>${mediaHtml}`;
         return;
       }
       bodyEl.innerHTML = `<div class="hw-bay-row"><div style="color:var(--compute);font-family:var(--gw-font-mono);font-variant-numeric:tabular-nums;font-weight:700;">${escapeHtml(label[st] || st)} (${escapeHtml(target === "rh_cloud" ? "RunningHub Cloud" : "Local ComfyUI")})...</div><div style="font-family:var(--gw-font-mono);font-variant-numeric:tabular-nums;font-size:var(--gw-type-body-sm);color:var(--text-muted);">JOB ID: ${escapeHtml(taskId)} · 状态: ${escapeHtml(st)}</div></div>`;
