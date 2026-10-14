@@ -10,6 +10,10 @@
 （role == 'admin'）的收件箱并标记 source_unknown=true / origin_label='来源未知'；
 非 admin 账户（含 editor/governor）列表不可见、移动与不存在同形 404；
 管理员移动无主资产时在同一次 CAS 写入内回填 workflow_owner，CAS 409 不回填。
+
+移动接口 CAS 按资产自身版本：收件箱每项带 asset_version（资产 version 计数），
+请求体传 expected_asset_version（缺省时兼容旧字段 expected_version，同义）；
+其他资产变动推高库 revision 不影响本资产移动，资产自身变动则 409 VERSION_CONFLICT。
 """
 
 from __future__ import annotations
@@ -77,6 +81,12 @@ def _create_project(client, name: str = "C4 收件项目", headers=None) -> str:
 
 def _inbox(client, headers=OWNER_A):
     return client.get(INBOX, headers=headers)
+
+
+def _inbox_asset_version(client, asset_id: str, headers=OWNER_A) -> int:
+    """读取收件箱中某资产的 asset_version（移动接口按资产 CAS 的比对基准）。"""
+    items = _inbox(client, headers=headers).json()["assets"]
+    return next(a["asset_version"] for a in items if a["asset_id"] == asset_id)
 
 
 def _detail(response) -> dict:
@@ -184,10 +194,10 @@ def test_admin_moves_ownerless_asset_backfills_owner_atomically(client):
     """admin 移动无主资产：同一次 CAS 写入回填 workflow_owner，收件箱消失。"""
     ownerless_id = _import_ownerless(client, "待认领.png")
     project_id = _create_project(client, "管理员收编项目", headers=ADMIN)
-    revision = _inbox(client, headers=ADMIN).json()["revision"]
+    asset_version = _inbox_asset_version(client, ownerless_id, headers=ADMIN)
 
     moved = client.post(MOVE.format(asset_id=ownerless_id), headers=ADMIN,
-                        json={"project_id": project_id, "expected_version": revision})
+                        json={"project_id": project_id, "expected_asset_version": asset_version})
     assert moved.status_code == 200, moved.text
     body = moved.json()
     assert body["moved"] is True and body["project_id"] == project_id
@@ -218,10 +228,10 @@ def test_admin_moves_ownerless_asset_with_none_metadata(client):
     assert _inbox(client, headers=ADMIN).json()["assets"][0]["asset_id"] == ownerless_id
 
     project_id = _create_project(client, "收编None元数据项目", headers=ADMIN)
-    revision = _inbox(client, headers=ADMIN).json()["revision"]
+    asset_version = _inbox_asset_version(client, ownerless_id, headers=ADMIN)
 
     moved = client.post(MOVE.format(asset_id=ownerless_id), headers=ADMIN,
-                        json={"project_id": project_id, "expected_version": revision})
+                        json={"project_id": project_id, "expected_asset_version": asset_version})
     assert moved.status_code == 200, moved.text
     body = moved.json()
     assert body["moved"] is True and body["project_id"] == project_id
@@ -238,10 +248,10 @@ def test_admin_move_cas_conflict_does_not_backfill_owner(client):
     """CAS 过期 409 时整笔不落盘：不回填 workflow_owner，也不写项目归属。"""
     ownerless_id = _import_ownerless(client, "并发认领.png")
     project_id = _create_project(client, "并发项目", headers=ADMIN)
-    revision = _inbox(client, headers=ADMIN).json()["revision"]
+    asset_version = _inbox_asset_version(client, ownerless_id, headers=ADMIN)
 
     conflict = client.post(MOVE.format(asset_id=ownerless_id), headers=ADMIN,
-                           json={"project_id": project_id, "expected_version": revision + 99})
+                           json={"project_id": project_id, "expected_asset_version": asset_version + 99})
     assert conflict.status_code == 409, conflict.text
     assert _detail(conflict)["code"] == "VERSION_CONFLICT"
 
@@ -269,15 +279,17 @@ def test_new_unassigned_assets_appear_naturally(client):
 def test_move_to_project_success_and_readback(client):
     asset_id = _register_asset("c4-owner-a", "ast-c4-m1", "待归位.png")
     project_id = _create_project(client)
+    asset_version = _inbox_asset_version(client, asset_id)
     revision = _inbox(client).json()["revision"]
 
     moved = client.post(MOVE.format(asset_id=asset_id), headers=OWNER_A,
-                        json={"project_id": project_id, "expected_version": revision})
+                        json={"project_id": project_id, "expected_asset_version": asset_version})
     assert moved.status_code == 200, moved.text
     body = moved.json()
     assert body["moved"] is True and body["project_id"] == project_id
     assert body["asset"]["project_id"] == project_id
-    assert body["revision"] > revision
+    assert body["asset"]["asset_version"] == asset_version + 1
+    assert body["revision"] > asset_version
 
     remaining = _inbox(client).json()
     assert remaining["total"] == 0
@@ -293,22 +305,91 @@ def test_move_to_project_success_and_readback(client):
 def test_move_cas_stale_version_conflicts(client):
     asset_id = _register_asset("c4-owner-a", "ast-c4-c1", "并发改动.png")
     project_id = _create_project(client)
-    revision = _inbox(client).json()["revision"]
+    asset_version = _inbox_asset_version(client, asset_id)
 
     conflict = client.post(MOVE.format(asset_id=asset_id), headers=OWNER_A,
-                           json={"project_id": project_id, "expected_version": revision + 99})
+                           json={"project_id": project_id, "expected_asset_version": asset_version + 99})
     assert conflict.status_code == 409, conflict.text
     detail = _detail(conflict)
     assert detail["code"] == "VERSION_CONFLICT"
-    assert detail["current_version"] == revision
+    assert detail["current_version"] == asset_version
 
     assert [a["asset_id"] for a in _inbox(client).json()["assets"]] == [asset_id]
 
 
+def test_move_per_asset_cas_ignores_other_assets_changes(client):
+    """按资产 CAS：其他资产变动推高库 revision，不影响本资产按 asset_version 移动成功。"""
+    asset_a = _register_asset("c4-owner-a", "ast-c4-cas-a", "资产A.png")
+    _register_asset("c4-owner-a", "ast-c4-cas-b", "资产B.png")
+    project_id = _create_project(client)
+    asset_version = _inbox_asset_version(client, asset_a)
+    revision = _inbox(client).json()["revision"]
+
+    # 只改资产 B（走真实更新接口）：库 revision 变化，资产 A 的 version 不变。
+    updated = client.patch("/api/asset-registry/assets/ast-c4-cas-b", headers=OWNER_A,
+                           json={"name": "资产B改名.png"})
+    assert updated.status_code == 200, updated.text
+    assert _inbox(client).json()["revision"] > revision
+    assert _inbox_asset_version(client, asset_a) == asset_version
+
+    moved = client.post(MOVE.format(asset_id=asset_a), headers=OWNER_A,
+                        json={"project_id": project_id, "expected_asset_version": asset_version})
+    assert moved.status_code == 200, moved.text
+    assert moved.json()["moved"] is True and moved.json()["project_id"] == project_id
+
+
+def test_move_cas_conflict_when_asset_changed_no_owner_backfill(client):
+    """资产自身被改动后按旧 asset_version 移动：409 VERSION_CONFLICT，无回填也无归属。"""
+    from gw.asset_registry import repository as asset_repo
+
+    ownerless_id = _import_ownerless(client, "资产自身变更.png")
+    project_id = _create_project(client, "冲突认领项目", headers=ADMIN)
+    asset_version = _inbox_asset_version(client, ownerless_id, headers=ADMIN)
+
+    # 只改资产 A 自身：item version 自增，按旧 asset_version 移动必须冲突。
+    asset_repo.update_asset(ownerless_id, {"name": "无主资产被改.png"})
+    conflict = client.post(MOVE.format(asset_id=ownerless_id), headers=ADMIN,
+                           json={"project_id": project_id, "expected_asset_version": asset_version})
+    assert conflict.status_code == 409, conflict.text
+    detail = _detail(conflict)
+    assert detail["code"] == "VERSION_CONFLICT"
+    assert detail["asset_id"] == ownerless_id
+    assert detail["current_version"] == asset_version + 1
+
+    # 整笔不落盘：不回填 workflow_owner，也不写项目归属，资产仍在收件箱。
+    record = client.get(f"/api/asset-registry/assets/{ownerless_id}", headers=ADMIN).json()["asset"]
+    assert not record.get("metadata", {}).get("workflow_owner")
+    assert not record.get("project_id") and not record.get("project_ids")
+    assert [a["asset_id"] for a in _inbox(client, headers=ADMIN).json()["assets"]] == [ownerless_id]
+
+
+def test_move_legacy_expected_version_still_works_per_asset(client):
+    """旧字段 expected_version 兼容：新字段缺省时按同一资产级版本语义生效。"""
+    asset_id = _register_asset("c4-owner-a", "ast-c4-legacy", "旧字段.png")
+    project_id = _create_project(client)
+    asset_version = _inbox_asset_version(client, asset_id)
+
+    # 旧字段的过期值同样触发资产级 409。
+    stale = client.post(MOVE.format(asset_id=asset_id), headers=OWNER_A,
+                        json={"project_id": project_id, "expected_version": asset_version + 5})
+    assert stale.status_code == 409, stale.text
+    assert _detail(stale)["code"] == "VERSION_CONFLICT"
+
+    # 新旧字段同传以 expected_asset_version 为准：旧字段给过期值也成功。
+    moved = client.post(MOVE.format(asset_id=asset_id), headers=OWNER_A,
+                        json={"project_id": project_id, "expected_asset_version": asset_version,
+                              "expected_version": asset_version + 5})
+    assert moved.status_code == 200, moved.text
+    assert moved.json()["moved"] is True and moved.json()["project_id"] == project_id
+
+
 @pytest.mark.parametrize("payload", [
     {"expected_version": 1},
+    {"expected_asset_version": 1},
     {"project_id": "prj-0002", "expected_version": 0},
     {"project_id": "prj-0002", "expected_version": "x"},
+    {"project_id": "prj-0002", "expected_asset_version": 0},
+    {"project_id": "prj-0002", "expected_asset_version": "x"},
     {"project_id": "", "expected_version": 1},
 ])
 def test_move_validates_required_body(client, payload):
@@ -383,9 +464,9 @@ def test_governance_role_can_move_own_asset_into_any_active_project(client):
     """治理角色对任意活跃项目有写权限；资产仍必须是自己所有。"""
     asset_id = _register_asset("c4-owner-a", "ast-c4-g1", "治理移动.png")
     foreign_project = _create_project(client)
-    revision = _inbox(client).json()["revision"]
+    asset_version = _inbox_asset_version(client, asset_id)
     moved = client.post(MOVE.format(asset_id=asset_id), headers=GOVERNOR_A,
-                        json={"project_id": foreign_project, "expected_version": revision})
+                        json={"project_id": foreign_project, "expected_asset_version": asset_version})
     assert moved.status_code == 200, moved.text
     assert moved.json()["asset"]["project_id"] == foreign_project
     assert _inbox(client).json()["total"] == 0

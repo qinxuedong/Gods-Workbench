@@ -367,10 +367,15 @@ SOURCE_UNKNOWN_LABEL = "来源未知"
 
 
 def _annotate_inbox_asset(item: Dict[str, Any]) -> Dict[str, Any]:
-    """收件箱视图字段：无主资产标记来源未知，有主资产显式为否。"""
+    """收件箱视图字段：无主资产标记来源未知，有主资产显式为否。
+
+    asset_version 复用资产自身的 version 计数（保留原 version 字段），
+    是移动接口 expected_asset_version 的比对基准。
+    """
     unknown = _record_owner(item) is None
     item["source_unknown"] = unknown
     item["origin_label"] = SOURCE_UNKNOWN_LABEL if unknown else None
+    item["asset_version"] = int(item.get("version", 1))
     return item
 
 
@@ -381,6 +386,8 @@ def list_unassigned_assets(owner_key: str, limit: int = 100, offset: int = 0, *,
     无 workflow_owner 的登记资产只进入本地实例管理员（role == 'admin'）的收件箱，
     标记 source_unknown=true / origin_label='来源未知'；其他账户永远看不到无主资产。
     有主资产只在所有者自己的收件箱出现（source_unknown=false / origin_label=null）。
+    每项附带 asset_version（资产自身 version，移动接口 expected_asset_version 的比对基准）；
+    顶层 revision 仍为注册表库级版本。
     本接口只读取，绝不自动归属或猜测项目。
     """
     admin_inbox = role == "admin"
@@ -400,14 +407,17 @@ def list_unassigned_assets(owner_key: str, limit: int = 100, offset: int = 0, *,
             "revision": raw["revision"], "data_status": DATA_STATUS_OK, "data_gaps": []}
 
 
-def move_asset_to_project(asset_id: str, project_id: str, expected_version: int,
+def move_asset_to_project(asset_id: str, project_id: str, expected_asset_version: int,
                           owner_key: str, *, role: str = "") -> Dict[str, Any]:
     """未归属资产移入项目：资产所有者可执行；无主资产仅本地实例管理员（role == 'admin'）
-    可执行，且在同一次 CAS 写入内把 metadata.workflow_owner 回填为管理员归属键，
-    CAS 过期 409 即整笔不落盘、不回填；已归属资产拒绝改归属；非管理员对无主资产
-    与不存在同形 404。"""
-    if type(expected_version) is not int or expected_version < 1:
-        raise CleanroomException(400, "INVALID_REQUEST", "必须提供正整数expected_version")
+    可执行，且在同一次 CAS 写入内把 metadata.workflow_owner 回填为管理员归属键。
+    CAS 按资产自身版本（item 的 version，即收件箱 asset_version）比对，而非库级 revision：
+    其他资产变动推高库 revision 不影响本资产的移动；比对先于任何变更，
+    冲突 409 即整笔不落盘、不回填；成功后资产 version 与库 revision 各自 +1；
+    已归属资产拒绝改归属；非管理员对无主资产与不存在同形 404。
+    """
+    if type(expected_asset_version) is not int or expected_asset_version < 1:
+        raise CleanroomException(400, "INVALID_REQUEST", "必须提供正整数expected_asset_version")
     clean_project = str(project_id or "").strip()
     if not clean_project:
         raise CleanroomException(400, "INVALID_REQUEST", "缺少 project_id")
@@ -421,7 +431,15 @@ def move_asset_to_project(asset_id: str, project_id: str, expected_version: int,
         if not asset_is_unassigned(item):
             raise CleanroomException(409, "ASSET_ALREADY_ASSIGNED",
                                      "素材已归属项目，未归属收件箱接口不能更改归属")
-        _cas(raw, expected_version)
+        # 按资产 CAS：先于任何变更比对，owner 回填与项目归属才能在同一版本快照内原子生效。
+        current_asset_version = int(item.get("version", 1))
+        if current_asset_version != expected_asset_version:
+            raise CleanroomException(
+                409, "VERSION_CONFLICT", "资产版本冲突，请重新读取后重试",
+                extra={"expected_version": expected_asset_version,
+                       "current_version": current_asset_version, "asset_id": asset_id},
+                expose_extra_fields={"expected_version", "current_version", "asset_id"},
+            )
         if owner is None:
             # 无主资产：回填与项目归属在同一次 CAS 写入内原子生效。
             # metadata 可能缺失、为 None 或非 dict（旧数据形态），先归一成 dict 再回填。
