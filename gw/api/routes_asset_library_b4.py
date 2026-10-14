@@ -86,6 +86,28 @@ def _ids(payload: Dict[str, Any], key: str = "asset_ids") -> List[str]:
     return [str(item) for item in value] if isinstance(value, list) else []
 
 
+def _registry_linked_item(snapshot: Optional[Dict[str, Any]]) -> bool:
+    """同进同出（C4-AC6）：桥接登记条目 = 带 workflow_owner 且注册表存在同名可见资产。
+
+    注册表是资产存在性的唯一真源（见 gw.asset_registry.repository.delete_asset docstring）；
+    本判断放在 API 层，避免 asset_library 与 asset_registry 两个领域包互相静态依赖。
+    """
+    if not (isinstance(snapshot, dict) and snapshot.get("workflow_owner")):
+        return False
+    from gw.asset_registry import repository as asset_repo
+    from gw.core.asset_visibility import asset_visible
+    record = asset_repo.state().read().get("assets", {}).get(str(snapshot.get("asset_id") or ""))
+    return record is not None and asset_visible(record)
+
+
+def _delete_item_via_registry(asset_id: str, context=None) -> Dict[str, Any]:
+    """把桥接条目的删除统一交给注册表：素材库条目随注册表删除移入回收站并可恢复。"""
+    from gw.asset_registry import repository as asset_repo
+    result = asset_repo.delete_asset(str(asset_id), None, context)
+    return {"asset_id": str(asset_id), "deleted": True,
+            "deleted_via": "asset_registry", "recycle_entry_id": result["recycle_entry_id"]}
+
+
 # ---------------------------------------------------------------------------
 # 分类提示词与后台任务
 # ---------------------------------------------------------------------------
@@ -334,9 +356,25 @@ async def delete_asset_library_items(
     authorization: Optional[str] = Header(None),
     x_user_role: str = Header("editor", alias="X-User-Role"),
 ):
-    """批量删除素材条目。"""
-    _write(authorization, x_user_role)
-    return library_service.delete_items(_ids(await _body(request)))
+    """批量删除素材条目；桥接登记条目改走注册表删除（同进同出，可恢复）。"""
+    context = _write(authorization, x_user_role)
+    linked, plain = [], []
+    for asset_id in _ids(await _body(request)):
+        snapshot = library_service.find_item_snapshot(str(asset_id))
+        if _registry_linked_item(snapshot):
+            linked.append(str(asset_id))
+        else:
+            plain.append(asset_id)
+    deleted: List[str] = []
+    for asset_id in linked:
+        try:
+            _delete_item_via_registry(asset_id, context)
+        except CleanroomException:
+            continue
+        deleted.append(asset_id)
+    if plain:
+        deleted.extend(library_service.delete_items(plain)["deleted"])
+    return {"deleted": deleted, "count": len(deleted)}
 
 
 @router.post("/api/asset-library/items/move", status_code=status.HTTP_200_OK)
@@ -370,9 +408,14 @@ def delete_asset_library_item(
     authorization: Optional[str] = Header(None),
     x_user_role: str = Header("editor", alias="X-User-Role"),
 ):
-    """删除单个素材条目。"""
-    _write(authorization, x_user_role)
-    return library_service.delete_item(item_id, _optional_int(request, "expected_version"))
+    """删除单个素材条目；桥接登记条目改走注册表删除（同进同出，可恢复）。"""
+    context = _write(authorization, x_user_role)
+    expected_version = _optional_int(request, "expected_version")
+    snapshot = library_service.find_item_snapshot(item_id)
+    if _registry_linked_item(snapshot):
+        library_service.ensure_item_version(item_id, expected_version)
+        return _delete_item_via_registry(item_id, context)
+    return library_service.delete_item(item_id, expected_version)
 
 
 @router.post("/api/asset-library/items/{item_id}/avatar-status", status_code=status.HTTP_200_OK)
