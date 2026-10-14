@@ -1478,6 +1478,10 @@ def workflow_clipboard(request: Request, authorization: Optional[str] = Header(N
     return body
 
 
+#: ComfyUI 地址配置入口的真实前端路径：workflow 页「RunningHub 凭证与本地
+#: ComfyUI 环境设置」弹窗（web/pages/workflow.html 的 inputComfyUrl）。
+COMFY_SETTINGS_PATH = "/static/pages/workflow.html"
+
 _PENDING_COMFY_COMMAND: dict[str, dict[str, Any]] = {}
 def _require_comfy_admin(context):
     if context.role != "admin":
@@ -1487,9 +1491,14 @@ def _require_comfy_admin(context):
 def _comfy_operation(context, action, token=None):
     from .comfy_control import service
     settings = registry.read_settings(context)
-    url = str(settings.get("comfy_url") or os.getenv("GW_COMFYUI_URL") or "http://127.0.0.1:8188").strip()
+    url = str(settings.get("comfy_url") or os.getenv("GW_COMFYUI_URL") or "").strip()
     root = str(settings.get("comfy_root_dir") or os.getenv("GW_COMFYUI_ROOT_DIR") or "")
     principal = registry.principal_digest(context.identity_domain, context.subject)
+    if not url:
+        # 未配置地址时如实报告，不猜测本地默认端口，也不发起任何探测。
+        return {"ok": False, "status": "unconfigured", "highlight": False,
+                "managed": False, "can_stop": False, "code": "COMFY_HOST_NOT_CONFIGURED",
+                "message": "本地 ComfyUI 服务地址未配置", "settings_path": COMFY_SETTINGS_PATH}
     return service.operate(action, url, root, principal, token)
 
 
@@ -1524,7 +1533,9 @@ async def open_in_comfy(workflow_id: Optional[str] = None, authorization: Option
     settings = registry.read_settings(context)
     comfy_url = _comfy_endpoint(context).base_url
     if not comfy_url:
-        raise unavailable('WORKFLOW_EXECUTOR_UNAVAILABLE', '请先配置 ComfyUI 地址')
+        # 未配置不是服务不可用（503），而是需要操作者先补配置的前置条件（409）。
+        raise CleanroomException(409, 'COMFY_HOST_NOT_CONFIGURED', '请先在设置中配置本地 ComfyUI 服务地址',
+                                 {'settings_path': COMFY_SETTINGS_PATH}, {'settings_path'})
     comfy_root = settings.get("comfy_root_dir") or os.environ.get("GW_COMFYUI_ROOT_DIR") or ""
 
     # 与顶栏共用受控生命周期；普通用户可以打开在线服务但不能隐式启动。
@@ -1532,7 +1543,7 @@ async def open_in_comfy(workflow_id: Optional[str] = None, authorization: Option
     if not control.get("highlight"):
         if control.get("status") == "starting":
             raise unavailable('COMFY_START_PENDING', 'ComfyUI 正在启动，请等待右上角 CF 确认运行后再导入')
-        raise unavailable('WORKFLOW_EXECUTOR_UNAVAILABLE', 'ComfyUI 未在线，请先使用全站 CF 控件启动或连接服务')
+        raise unavailable('COMFY_HOST_UNREACHABLE', 'ComfyUI 未在线，请先使用全站 CF 控件启动或连接服务')
     online = bool(control.get("highlight"))
     launched = bool(control.get("launched"))
     effective_root = comfy_root
@@ -2341,7 +2352,8 @@ async def mature_auto_layout(workflow_id: str, request: Request,
 def capabilities(authorization: Optional[str] = Header(None), x_user_role: str = Header("editor", alias="X-User-Role")):
     context = _auth(authorization, x_user_role, False)
     providers = {provider: ("configured" if get_provider(provider).configured else "unavailable") for provider in PROVIDERS}
-    executors = {"local_comfy": "configured" if _comfy_endpoint(context).base_url else "unavailable",
+    comfy_configured = bool(_comfy_endpoint(context).base_url)
+    executors = {"local_comfy": "configured" if comfy_configured else "unavailable",
                  "rh_cloud": "configured" if registry.credential_value('rh_api_key', context) else "unavailable"}
     gaps = ['native_host_acceptance_pending', 'supplier_acceptance_pending']
     gaps += [name + '_not_configured' for name, value in executors.items() if value == 'unavailable']
@@ -2349,6 +2361,8 @@ def capabilities(authorization: Optional[str] = Header(None), x_user_role: str =
         gaps.append('image_metadata_parser_unavailable')
     return {"providers": providers,
             "executors": executors,
+            # 只如实报告配置状态；此处不做阻塞网络探测，在线与否由 /comfy-control 查询。
+            "comfy_host": "configured" if comfy_configured else "not_configured",
             "implemented": ["parse", "upload-json", "upload-png-text", "upload-webp-exif", "provider-fetch-gateway", "task-contract", "canvas-contract", "canvas-export", "runtime-isolated-storage", "workflow execution and polling", "input-upload", "asset-registration-recovery", "psd-original-download"],
             "partial": ["provider-fetch-gateway", "native-comfy-bridge", "native-schema-conversion"],
             "todo": ["native ComfyUI host acceptance", "real supplier acceptance", "canvas binary export"],

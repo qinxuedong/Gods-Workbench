@@ -155,6 +155,8 @@ def client(tmp_path, monkeypatch):
     monkeypatch.setenv('GW_LOCAL_AUTH_DB', str(tmp_path / 'auth.sqlite3'))
     monkeypatch.setenv('GW_VIDEO_DATA_DIR', str(tmp_path / 'video'))
     monkeypatch.setenv('GW_AUTH_MODE', 'local')
+    # 地址必须显式配置；未配置时路由返回 unconfigured，不再回退默认端口。
+    monkeypatch.setenv('GW_COMFYUI_URL', URL)
     c, _ = control()
     monkeypatch.setattr('gw.god_workflow.comfy_control.service', c)
     from gw.api.app import create_app
