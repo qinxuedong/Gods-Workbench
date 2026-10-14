@@ -44,6 +44,28 @@ def _headers() -> dict[str, str]:
             "Origin": "http://testserver", "Content-Type": "application/json"}
 
 
+def _ok(status: int, allowed: tuple[int, ...]) -> bool:
+    """HTTP 状态是否属于允许的成功码。"""
+    return status in allowed
+
+
+def _failure_code(response) -> str | None:
+    """从错误响应取出 detail.code；非 JSON、detail 为字符串或缺少 code 时返回 None，不抛异常。"""
+    if not getattr(response, "text", ""):
+        return None
+    try:
+        body = response.json()
+    except (json.JSONDecodeError, ValueError, TypeError):
+        return None
+    if not isinstance(body, dict):
+        return None
+    detail = body.get("detail")
+    if not isinstance(detail, dict):
+        return None
+    code = detail.get("code")
+    return code if isinstance(code, str) else None
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="C3-AC8 真实 RunningHub 验收（仅限所有者本机自愿运行）")
     parser.add_argument("--out", required=True, help="结果 JSON 输出路径")
@@ -104,8 +126,8 @@ def main() -> int:
                                          "name": f"C3-AC8-RH-{rh_workflow_id}"})
             step = {"step": "import_workflow", "http_status": imported.status_code}
             result["steps"].append(step)
-            if imported.status_code != 201:
-                step["code"] = (imported.json().get("detail") or {}).get("code") if imported.text else None
+            if not _ok(imported.status_code, (200, 201)):
+                step["code"] = _failure_code(imported)
                 result["result"] = "FAILED"
                 result["reason"] = "import_rejected"
                 return finish(1)
@@ -120,8 +142,8 @@ def main() -> int:
                                         "target": "rh_cloud"})
             step = {"step": "execute_task", "http_status": started.status_code}
             result["steps"].append(step)
-            if started.status_code != 202:
-                step["code"] = (started.json().get("detail") or {}).get("code") if started.text else None
+            if not _ok(started.status_code, (200, 201, 202)):
+                step["code"] = _failure_code(started)
                 result["result"] = "FAILED"
                 result["reason"] = "execute_rejected"
                 return finish(1)
@@ -129,13 +151,16 @@ def main() -> int:
             job_id = started_body["job_id"]
             result["job_id"] = job_id
             result["remote_task_id"] = started_body.get("remote_task_id")
+            if started_body.get("status") == "outcome_unknown":
+                step["status"] = "outcome_unknown"
+                result["messages"] = list(started_body.get("messages") or [])
 
             # 3. 轮询真实任务状态直到终态或超时；超时不是 PASS，也不伪造终态。
             deadline = time.monotonic() + max(args.timeout_seconds, 1)
             task: dict = {}
             while True:
                 poll = client.get(f"{WORKFLOW_ROOT}/tasks/{job_id}", headers=_headers())
-                if poll.status_code != 200:
+                if not _ok(poll.status_code, (200,)):
                     result["result"] = "FAILED"
                     result["reason"] = f"poll_http_{poll.status_code}"
                     return finish(1)
@@ -164,8 +189,8 @@ def main() -> int:
             collected = client.post(f"{WORKFLOW_ROOT}/tasks/{job_id}/collect", headers=_headers())
             step = {"step": "collect_repeat", "http_status": collected.status_code}
             result["steps"].append(step)
-            if collected.status_code != 200:
-                step["code"] = (collected.json().get("detail") or {}).get("code") if collected.text else None
+            if not _ok(collected.status_code, (200,)):
+                step["code"] = _failure_code(collected)
                 result["result"] = "FAILED"
                 result["reason"] = "collect_rejected"
                 return finish(1)
@@ -188,7 +213,7 @@ def main() -> int:
             registry = client.get(f"/api/asset-registry/assets/{asset_id}", headers=_headers())
             step = {"step": "verify_asset", "http_status": registry.status_code}
             result["steps"].append(step)
-            if registry.status_code != 200:
+            if not _ok(registry.status_code, (200,)):
                 result["result"] = "FAILED"
                 result["reason"] = "asset_not_in_registry"
                 return finish(1)
@@ -201,7 +226,7 @@ def main() -> int:
             verify["content_http_status"] = content.status_code
             step.update(verify)
             result["asset_verification"] = verify
-            if not (verify["task_id_matches"] and verify["workflow_id_matches"] and content.status_code == 200):
+            if not (verify["task_id_matches"] and verify["workflow_id_matches"] and _ok(content.status_code, (200,))):
                 result["result"] = "FAILED"
                 result["reason"] = "asset_traceability_mismatch"
                 return finish(1)

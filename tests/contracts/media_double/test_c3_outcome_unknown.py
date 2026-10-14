@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import pytest
 
+from gw.god_workflow import platforms
 from media_doubles import HEADERS, TASKS, TEST_API_KEY, execute, prepare_workflow
 
 
@@ -81,6 +82,52 @@ def test_no_remote_id_is_not_fabricated(media_client, fake_media):
     assert polled.json()["remote_task_id"] is None
     assert fake_media.rh.count("create_rh_cloud_task") == 1
     assert fake_media.rh.count("query_rh_task_outputs") == 0
+
+
+@pytest.mark.parametrize("exc_type", [UnicodeEncodeError, TypeError])
+def test_rh_submit_internal_error_is_outcome_unknown_and_not_resent(media_client, fake_media, monkeypatch, exc_type):
+    """C3-MD-UNKNOWN-03：提交已开始后的意外异常返回 202，保持 outcome_unknown，轮询不再提交。"""
+    calls = {"create": 0}
+
+    async def create_rh_cloud_task(*args, **kwargs):
+        calls["create"] += 1
+        if exc_type is UnicodeEncodeError:
+            raise UnicodeEncodeError("ascii", "x", 0, 1, "ordinal not in range(128)")
+        raise TypeError("not serializable")
+
+    monkeypatch.setattr(platforms, "create_rh_cloud_task", create_rh_cloud_task)
+    _, workflow = prepare_workflow(media_client)
+    first = execute(media_client, workflow, "rh_cloud", key="internal-" + exc_type.__name__)
+    assert first.status_code == 202, first.text
+    task = first.json()
+    assert task["status"] == "outcome_unknown"
+    assert "RH_SUBMIT_INTERNAL_ERROR" in task["messages"]
+    assert "exception: " + exc_type.__name__ in task["messages"]
+    assert TEST_API_KEY not in first.text
+    polled = media_client.get(f"{TASKS}/{task['job_id']}", headers=HEADERS)
+    assert polled.status_code == 200 and polled.json()["status"] == "outcome_unknown"
+    assert calls["create"] == 1
+    assert fake_media.rh.count("query_rh_task_outputs") == 0
+    assert fake_media.rh.count("create_rh_cloud_task") == 0
+
+
+def test_unexpected_error_before_rh_submit_is_failed(media_client, fake_media, monkeypatch):
+    """C3-MD-UNKNOWN-04：提交开始前的意外异常记为 failed，不再向远端创建任务。"""
+    async def upload_rh_input(*args, **kwargs):
+        raise TypeError("upload broke")
+
+    monkeypatch.setattr(platforms, "upload_rh_input", upload_rh_input)
+    _, workflow = prepare_workflow(media_client)
+    first = execute(media_client, workflow, "rh_cloud", key="pre-submit-type")
+    assert first.status_code == 202, first.text
+    task = first.json()
+    assert task["status"] == "failed"
+    assert task["remote_id_missing"] is False
+    assert "remote_task_id_missing" not in task["data_gaps"]
+    assert "RH_SUBMIT_INTERNAL_ERROR" in task["messages"]
+    assert "exception: TypeError" in task["messages"]
+    assert fake_media.rh.count("create_rh_cloud_task") == 0
+    assert fake_media.rh.count("upload_rh_input") == 0
 
 
 @pytest.mark.parametrize("fake_rh", ["success", "submit_timeout", "no_remote_id"], indirect=True)
