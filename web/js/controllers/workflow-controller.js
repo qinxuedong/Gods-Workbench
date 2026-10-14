@@ -622,20 +622,54 @@ function markUnknownTaskSeen(task) {
   try { window.localStorage?.setItem(key, "1"); } catch { /* 存储不可用时仅本次会话不再弹出 */ }
 }
 
+function workflowTaskId(task) { return String(task?.job_id || task?.task_id || ""); }
+function sortWorkflowTasks(tasks, workflowId) {
+  return (Array.isArray(tasks) ? tasks : [])
+    .filter(task => workflowTaskId(task) && (!workflowId || task.workflow_id === workflowId))
+    .slice()
+    .sort((a, b) => String(b.created_at || "").localeCompare(String(a.created_at || "")));
+}
+
+// 任务列表分页契约（待后端实现，前端按字段存在性探测，不靠猜测）：
+//   GET /api/god_workflow/tasks?workflow_id=<id>&limit=<n>[&cursor=<next_cursor>]
+//   → { tasks: [...新→旧], workflow_id: "<id>", next_cursor: "<opaque>"|null, has_more: bool }
+// 响应回显 workflow_id === 请求值 才视为服务端已过滤；含 next_cursor 键才视为支持分页。
+// 旧后端忽略这些参数并返回最近 100 条，此时退回前端按 workflow_id 过滤、不显示「加载更多」。
+const WORKFLOW_TASK_PAGE_SIZE = 20;
+async function fetchWorkflowTasksPage(workflowId, cursor) {
+  const params = new URLSearchParams();
+  if (workflowId) { params.set("workflow_id", workflowId); params.set("limit", String(WORKFLOW_TASK_PAGE_SIZE)); }
+  if (cursor) params.set("cursor", cursor);
+  const query = params.toString();
+  const response = await apiFetch("/api/god_workflow/tasks" + (query ? "?" + query : ""));
+  const serverFiltered = Boolean(workflowId) && response?.workflow_id === workflowId;
+  const paged = serverFiltered && Object.prototype.hasOwnProperty.call(response, "next_cursor");
+  const nextCursor = paged && response.has_more !== false && typeof response.next_cursor === "string" && response.next_cursor ? response.next_cursor : null;
+  return { tasks: sortWorkflowTasks(response?.tasks, workflowId), nextCursor, serverFiltered, paged, raw: response };
+}
+
 async function restoreWorkflowTask() {
   try {
-    const response = await apiFetch("/api/god_workflow/tasks");
     const requestedJob = new URLSearchParams(window.location.search).get('job_id');
-    const task = requestedJob
-      ? (response.tasks || []).find(item => (item.job_id || item.task_id) === requestedJob)
-      : (response.tasks || []).find(item => ["accepted", "running", "waiting_review", "paused", "outcome_unknown"].includes(item.status));
+    const workflowId = state.currentWorkflow?.workflow_id || null;
+    let task = null;
+    let page = null;
+    if (requestedJob) {
+      // 显式 job_id 链接按用户意图打开，不受当前工作流限制。
+      const response = await apiFetch("/api/god_workflow/tasks");
+      task = (response.tasks || []).find(item => (item.job_id || item.task_id) === requestedJob);
+    } else {
+      // 切换到工作流界面时，只有当前工作流的任务可以自动弹出执行监控；其他工作流的任务只在各自列表显示状态。
+      if (!workflowId) return;
+      page = await fetchWorkflowTasksPage(workflowId);
+      task = page.tasks.find(item => ["accepted", "running", "waiting_review", "paused", "outcome_unknown"].includes(item.status));
+    }
     if (!task) return;
     // 结果未知且已知悉：不再自动弹出，仅留任务面板徽标；显式 job_id 链接仍按用户意图打开。
     if (!requestedJob && task.status === "outcome_unknown" && isUnknownTaskSeen(task)) return;
     if (task.status === "outcome_unknown") markUnknownTaskSeen(task);
     state.activeTaskId = state.expandedTaskId = task.job_id || task.task_id;
-    state.workflowTasks = sortWorkflowTasks(response.tasks, state.currentWorkflow?.workflow_id);
-    renderWorkflowTaskList();
+    if (page) { state.workflowTasks = page.tasks; state.workflowTasksCursor = page.nextCursor; renderWorkflowTaskList(); }
     setWorkflowTaskTrigger("btnViewTaskDrawer");
     wfGet("taskModal")?.classList.add("open");
     startTaskPolling(state.activeTaskId, task.target);
@@ -3327,13 +3361,6 @@ async function handleExecuteWorkflow() {
 
 // 任务面板：列出当前工作流的多条任务（新→旧）；点击某行才展开该任务的执行监控与产物。
 const WORKFLOW_TASK_STATUS_LABEL = { accepted: "已受理", running: "执行中", waiting_review: "等待审核", paused: "已暂停", completed: "已完成", failed: "失败", cancelled: "已取消", outcome_unknown: "结果未知 · 待人工核实" };
-function workflowTaskId(task) { return String(task?.job_id || task?.task_id || ""); }
-function sortWorkflowTasks(tasks, workflowId) {
-  return (Array.isArray(tasks) ? tasks : [])
-    .filter(task => workflowTaskId(task) && (!workflowId || task.workflow_id === workflowId))
-    .slice()
-    .sort((a, b) => String(b.created_at || "").localeCompare(String(a.created_at || "")));
-}
 function formatWorkflowTaskTime(value) {
   const date = value ? new Date(value) : null;
   if (!date || Number.isNaN(date.getTime())) return "—";
@@ -3356,7 +3383,23 @@ function workflowTaskRowsHtml(tasks, expandedId) {
 }
 function renderWorkflowTaskList() {
   const list = wfGet('workflowTaskList');
-  if (list) list.innerHTML = workflowTaskRowsHtml(state.workflowTasks || [], state.expandedTaskId);
+  if (!list) return;
+  const more = state.workflowTasksCursor
+    ? `<button type="button" class="hw-btn" data-task-load-more style="width:100%;margin-top:4px;">加载更多</button>` : "";
+  list.innerHTML = workflowTaskRowsHtml(state.workflowTasks || [], state.expandedTaskId) + more;
+}
+async function loadMoreWorkflowTasks() {
+  const cursor = state.workflowTasksCursor;
+  if (!cursor || state.workflowTasksLoading) return;
+  state.workflowTasksLoading = true;
+  try {
+    const page = await fetchWorkflowTasksPage(state.currentWorkflow?.workflow_id || null, cursor);
+    const known = new Set((state.workflowTasks || []).map(workflowTaskId));
+    state.workflowTasks = sortWorkflowTasks([...(state.workflowTasks || []), ...page.tasks.filter(task => !known.has(workflowTaskId(task)))], state.currentWorkflow?.workflow_id || null);
+    state.workflowTasksCursor = page.nextCursor;
+    renderWorkflowTaskList();
+  } catch (error) { showToast(`加载更多任务失败：${error.message}`, true); }
+  finally { state.workflowTasksLoading = false; }
 }
 function expandWorkflowTask(taskId) {
   const task = (state.workflowTasks || []).find(item => workflowTaskId(item) === taskId);
@@ -3371,9 +3414,9 @@ async function openWorkflowTasks() {
   if (!taskModal?.classList.contains('open')) setWorkflowTaskTrigger('btnViewTaskDrawer');
   taskModal?.classList.add('open');
   try {
-    const response = await apiFetch('/api/god_workflow/tasks');
-    // 后端列表是当前主体最近 100 条（新→旧）且无 workflow_id 过滤参数，前端按当前工作流筛选并再次排序。
-    state.workflowTasks = sortWorkflowTasks(response.tasks, state.currentWorkflow?.workflow_id);
+    const page = await fetchWorkflowTasksPage(state.currentWorkflow?.workflow_id || null);
+    state.workflowTasks = page.tasks;
+    state.workflowTasksCursor = page.nextCursor;
     const tasks = state.workflowTasks;
     const bodyEl = wfGet('taskModalBody');
     const selected = tasks.find(task => workflowTaskId(task) === state.activeTaskId) || tasks[0];
@@ -4082,6 +4125,7 @@ function bindEvents() {
   const taskModal = wfGet("taskModal");
   wfGet("btnViewTaskDrawer")?.addEventListener("click", openWorkflowTasks);
   wfGet('workflowTaskList')?.addEventListener('click', event => {
+    if (event.target?.closest?.('[data-task-load-more]')) { loadMoreWorkflowTasks(); return; }
     const row = event.target?.closest?.('[data-task-row]');
     if (row) expandWorkflowTask(row.dataset.taskRow);
   });

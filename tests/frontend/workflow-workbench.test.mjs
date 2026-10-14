@@ -401,22 +401,24 @@ for (const scenario of ['offline', 'internal-ready', 'last-resort']) {
 }
 
 // C4-AC15：结果未知任务同一错误最多自动弹出一次，之后只显示徽标。
-function restoreHarness(tasks, { search = '', storage = new Map() } = {}) {
+function restoreHarness(tasks, { search = '', storage = new Map(), workflowId = 'wf-1', respond } = {}) {
   const start = controller.indexOf('const UNKNOWN_TASK_SEEN_PREFIX');
   const end = controller.indexOf('function applySavedSettings', start);
   const modal = { opened: 0, classList: { add() { modal.opened++; } } };
   const polled = [];
+  const urls = [];
   const localStorage = { getItem: k => storage.get(k) ?? null, setItem: (k, v) => storage.set(k, String(v)) };
+  const rows = tasks.map(task => ({ workflow_id: 'wf-1', ...task }));
   const context = {
-    state: {}, Array, URLSearchParams,
+    state: { currentWorkflow: workflowId ? { workflow_id: workflowId } : null }, Array, URLSearchParams, Object, Boolean, String, Set,
     window: { location: { search }, localStorage },
-    apiFetch: async () => ({ tasks }),
+    apiFetch: async url => { urls.push(url); return respond ? respond(url, rows) : { tasks: rows }; },
     wfGet: id => id === 'taskModal' ? modal : null,
-    setWorkflowTaskTrigger() {}, showToast() {}, sortWorkflowTasks: t => t, renderWorkflowTaskList() {},
+    setWorkflowTaskTrigger() {}, showToast() {}, renderWorkflowTaskList() {},
     startTaskPolling: id => polled.push(id),
   };
   runInNewContext(controller.slice(start, end), context);
-  return { ...context, modal, polled, storage };
+  return { ...context, modal, polled, storage, urls };
 }
 test('结果未知任务首次恢复弹出一次，再次进入视图不再自动弹出', async () => {
   const tasks = [{ job_id: 'job-u', status: 'outcome_unknown', error_code: 'RH_OUTCOME_UNKNOWN', target: 'rh_cloud' }];
@@ -479,23 +481,26 @@ test('无错误码时已知悉键退回 job_id + 状态', async () => {
   await restoreHarness([{ job_id: 'job-n', status: 'outcome_unknown' }], { storage }).restoreWorkflowTask();
   assert.deepEqual([...storage.keys()], ['gw.workflow.unknownTaskSeen:job-n:outcome_unknown']);
 });
-function panelHarness(tasks, currentWorkflowId = 'wf-1') {
+function panelHarness(tasks, currentWorkflowId = 'wf-1', respond) {
+  const helpersStart = controller.indexOf('function workflowTaskId(task)');
+  const helpersEnd = controller.indexOf('async function restoreWorkflowTask()', helpersStart);
   const start = controller.indexOf('const WORKFLOW_TASK_STATUS_LABEL');
   const end = controller.indexOf('function startTaskPolling(taskId, target) {', start);
   const body = { innerHTML: '', textContent: '' };
   const list = { innerHTML: '' };
   const modal = { classList: { contains: () => false, add() {} } };
   const polled = [];
+  const urls = [];
   const context = {
-    state: { pollTimer: null, currentWorkflow: { workflow_id: currentWorkflowId } }, clearInterval() {}, String, Number, Date, Array,
+    state: { pollTimer: null, currentWorkflow: { workflow_id: currentWorkflowId } }, clearInterval() {}, String, Number, Date, Array, URLSearchParams, Object, Boolean, Set,
     escapeHtml: value => String(value ?? '').replaceAll('<', '&lt;'),
-    apiFetch: async () => ({ tasks }), showToast() {}, setWorkflowTaskTrigger() {},
+    apiFetch: async url => { urls.push(url); return respond ? respond(url, tasks) : { tasks }; }, showToast() {}, setWorkflowTaskTrigger() {},
     wfGet: id => ({ taskModal: modal, taskModalBody: body, workflowTaskList: list })[id],
     startTaskPolling: (id, target) => polled.push([id, target]),
   };
-  runInNewContext(controller.slice(start, end), context);
+  runInNewContext(controller.slice(helpersStart, helpersEnd) + controller.slice(start, end), context);
   const rows = () => [...list.innerHTML.matchAll(/data-task-row="([^"]+)"/g)].map(m => m[1]);
-  return { ...context, body, list, polled, rows };
+  return { ...context, body, list, polled, rows, urls };
 }
 const TASKS = [
   { job_id: 'aaaaaaaa-old-0000', workflow_id: 'wf-1', status: 'completed', target: 'local_comfy', created_at: '2026-10-14T01:00:00+00:00' },
@@ -544,4 +549,54 @@ test('列表点击委托到 data-task-row', () => {
   assert.match(controller, /wfGet\('workflowTaskList'\)\?\.addEventListener\('click'[\s\S]{0,160}data-task-row[\s\S]{0,80}expandWorkflowTask/);
   assert.match(html, /id="workflowTaskList"/);
   assert.doesNotMatch(html, /id="workflowTaskSelect"/);
+});
+
+test('切换工作流界面时其他工作流的运行中任务不自动弹出', async () => {
+  const h = restoreHarness([{ job_id: 'job-other', workflow_id: 'wf-2', status: 'running' }]);
+  await h.restoreWorkflowTask();
+  assert.equal(h.modal.opened, 0);
+  assert.deepEqual(h.polled, []);
+  const none = restoreHarness([{ job_id: 'job-r', status: 'running' }], { workflowId: null });
+  await none.restoreWorkflowTask();
+  assert.equal(none.modal.opened, 0);
+});
+test('恢复与面板请求携带 workflow_id 与 limit', async () => {
+  const h = restoreHarness([{ job_id: 'job-r', status: 'running' }]);
+  await h.restoreWorkflowTask();
+  assert.equal(h.urls[0], '/api/god_workflow/tasks?workflow_id=wf-1&limit=20');
+  assert.equal(h.modal.opened, 1);
+});
+// 新后端：回显 workflow_id 且含 next_cursor 时使用服务端结果与游标。
+function pagedResponder(pages) {
+  return url => {
+    const cursor = new URL(url, 'http://x').searchParams.get('cursor') || '';
+    return { workflow_id: 'wf-1', ...pages[cursor] };
+  };
+}
+test('后端支持分页时显示「加载更多」并按 cursor 追加，末页隐藏', async () => {
+  const pages = {
+    '': { tasks: [{ job_id: 'job-3', workflow_id: 'wf-1', status: 'completed', created_at: '2026-10-14T03:00:00Z' }], next_cursor: 'c1', has_more: true },
+    c1: { tasks: [{ job_id: 'job-2', workflow_id: 'wf-1', status: 'failed', created_at: '2026-10-14T02:00:00Z' }], next_cursor: null, has_more: false },
+  };
+  const h = panelHarness([], 'wf-1', pagedResponder(pages));
+  await h.openWorkflowTasks();
+  assert.match(h.list.innerHTML, /data-task-load-more/);
+  await h.loadMoreWorkflowTasks();
+  assert.equal(h.urls.at(-1), '/api/god_workflow/tasks?workflow_id=wf-1&limit=20&cursor=c1');
+  assert.deepEqual(h.rows(), ['job-3', 'job-2']);
+  assert.doesNotMatch(h.list.innerHTML, /data-task-load-more/);
+});
+test('后端未回显 workflow_id 时退回前端过滤且不显示「加载更多」', async () => {
+  const h = panelHarness([], 'wf-1', () => ({ tasks: [
+    { job_id: 'job-a', workflow_id: 'wf-1', status: 'completed', created_at: '2026-10-14T01:00:00Z' },
+    { job_id: 'job-b', workflow_id: 'wf-2', status: 'completed', created_at: '2026-10-14T02:00:00Z' }], next_cursor: 'ignored' }));
+  await h.openWorkflowTasks();
+  assert.deepEqual(h.rows(), ['job-a']);
+  assert.doesNotMatch(h.list.innerHTML, /data-task-load-more/);
+});
+test('服务端已过滤但无 next_cursor 键时不显示「加载更多」', async () => {
+  const h = panelHarness([], 'wf-1', () => ({ workflow_id: 'wf-1', tasks: [{ job_id: 'job-a', workflow_id: 'wf-1', status: 'completed' }] }));
+  await h.openWorkflowTasks();
+  assert.deepEqual(h.rows(), ['job-a']);
+  assert.doesNotMatch(h.list.innerHTML, /data-task-load-more/);
 });
