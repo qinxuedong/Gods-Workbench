@@ -6,6 +6,7 @@ import ipaddress
 import socket
 import hashlib
 import json
+import logging
 import os
 import re
 import tempfile
@@ -38,6 +39,8 @@ from gw.god_workflow.parser import (MAX_UPLOAD_BYTES, MAX_PNG_TEXT_BYTES, Workfl
                                    build_topology_from_public_detail, extract_source_graph)
 from gw.god_workflow.exporter import export_to_comfy_litegraph
 from gw.god_workflow.compiler import compile_prompt, execution_fingerprint
+
+logger = logging.getLogger(__name__)
 
 #: 可执行真实抓取的平台适配器；其余 provider 仍走通用网关或返回不可用。
 PROVIDER_ADAPTERS = ("runninghub", "liblib")
@@ -751,6 +754,17 @@ async def execute_task(request: Request, authorization: Optional[str] = Header(N
                                             remote_id_missing=False, messages=task["messages"])
             else:
                 task = registry.update_task(context, task['job_id'], messages=task['messages'])
+        except Exception as exc:
+            # 提交阶段的意外异常不能升级为 HTTP 500；只记录异常类型，绝不记录密钥或异常正文。
+            logger.warning("工作流提交内部错误 target=%s exception=%s", target, type(exc).__name__)
+            task = registry.load_task(context, task["job_id"])
+            diagnostic = "RH_SUBMIT_INTERNAL_ERROR" if target == "rh_cloud" else "COMFY_SUBMIT_INTERNAL_ERROR"
+            task["messages"] = [diagnostic, "exception: " + type(exc).__name__]
+            if not submission_started:
+                task = registry.update_task(context, task["job_id"], status="failed", execution_status="failed",
+                                            remote_id_missing=False, messages=task["messages"])
+            else:
+                task = registry.update_task(context, task["job_id"], messages=task["messages"])
     return {**task, "poll_hint": f"/api/god_workflow/tasks/{task['job_id']}",
             "idempotent_replay": replay, "data_status": "ok",
             "data_gaps": ["remote_task_id_missing"] if task.get("remote_id_missing") else []}
