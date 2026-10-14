@@ -968,10 +968,40 @@ async def _collect_task_outputs(context: AuthContext, task_id: str,
     return collected
 
 
+#: Clash fake-ip 保留网段（RFC 2544 基准测试）：非全局地址，仅白名单产物主机可借道。
+_FAKE_IP_NETWORK = ipaddress.ip_network("198.18.0.0/15")
+
+
+def _output_address_allowed(host: str, address: str, allowed_hosts: frozenset[str]) -> bool:
+    """纯判定：单个解析地址是否可用于产物下载连接，不发起任何网络请求。
+
+    全局公网地址直接放行；Clash fake-ip（198.18.0.0/15）不是全局地址，
+    仅当主机在产物白名单内时放行；IPv4-mapped IPv6（::ffff:a.b.c.d）先还原为
+    IPv4 再判定；6to4/NAT64 等其它内嵌形式不还原，非全局一律拒绝。
+    回环/私网/链路本地/多播/保留/未指定地址及 IPv6 等价形式永不放行。
+    """
+    try:
+        parsed = ipaddress.ip_address(address)
+    except ValueError:
+        return False
+    if isinstance(parsed, ipaddress.IPv6Address) and parsed.ipv4_mapped is not None:
+        parsed = parsed.ipv4_mapped
+    # 多播（224.0.0.0/4、ff00::/8）在 Python 里 is_global 可为 True，必须先显式拒绝。
+    if parsed.is_multicast:
+        return False
+    if parsed.is_global:
+        return True
+    if isinstance(parsed, ipaddress.IPv4Address) and parsed in _FAKE_IP_NETWORK:
+        return host.lower().rstrip(".") in allowed_hosts
+    # 其余非全局地址（回环/私网/链路本地/保留/未指定等）一律拒绝。
+    return False
+
+
 class _PublicOutputBackend:
     """在连接层解析并钉住所获准公网IP，TLS仍使用原始主机名，阻止DNS重绑定。"""
-    def __init__(self, backend):
+    def __init__(self, backend, allowed_hosts: frozenset[str]):
         self.backend = backend
+        self.allowed_hosts = allowed_hosts
 
     async def connect_tcp(self, host, port, timeout=None, local_address=None, socket_options=None):
         if isinstance(host, bytes):
@@ -979,7 +1009,10 @@ class _PublicOutputBackend:
         infos = await asyncio.wait_for(asyncio.get_running_loop().getaddrinfo(
             host, port, type=socket.SOCK_STREAM), timeout=timeout or 30)
         addresses = [info[4][0] for info in infos]
-        if not addresses or any(not ipaddress.ip_address(address).is_global for address in addresses):
+        # 全部解析结果都必须获准（防部分记录污染），然后只解析一次并钉住首个获准
+        # 地址连接；httpcore 仍按请求 origin 保留 Host 头与 TLS SNI/证书校验的原始主机名。
+        if not addresses or any(not _output_address_allowed(host, address, self.allowed_hosts)
+                                for address in addresses):
             raise CleanroomException(400, "OUTPUT_ADDRESS_NOT_ALLOWED", "输出地址不是获准公网地址")
         return await self.backend.connect_tcp(host=addresses[0], port=port, timeout=timeout,
             local_address=local_address, socket_options=socket_options)
@@ -991,11 +1024,12 @@ class _PublicOutputBackend:
         await self.backend.sleep(seconds)
 
 
-def _output_transport():
+def _output_transport(allowed_hosts: frozenset[str]):
     import httpcore
     from httpcore._backends.auto import AutoBackend
     transport = httpx.AsyncHTTPTransport(retries=0, trust_env=False)
-    transport._pool = httpcore.AsyncConnectionPool(network_backend=_PublicOutputBackend(AutoBackend()))
+    transport._pool = httpcore.AsyncConnectionPool(
+        network_backend=_PublicOutputBackend(AutoBackend(), allowed_hosts))
     return transport
 
 
@@ -1019,14 +1053,18 @@ async def _collect_rh_task_outputs(context: AuthContext, task_id: str,
         parts = None
         try:
             parts = urlsplit(url)
-            allowed_hosts = {host.strip().lower() for host in os.getenv("GW_WORKFLOW_OUTPUT_HOSTS", "").split(",") if host.strip()}
+            # 同一份白名单同时用于 URL 校验与连接层地址判定（fake-ip 借道只认它）。
+            allowed_hosts = frozenset(host.strip().lower() for host in os.getenv("GW_WORKFLOW_OUTPUT_HOSTS", "").split(",") if host.strip())
             # 服务器不设默认信任主机；未配置与已配置但不匹配分开，便于按环境变量排查。
             if not allowed_hosts or (parts.scheme != "https" or parts.hostname not in allowed_hosts or parts.username
                                       or parts.password or parts.port not in (None, 443) or parts.fragment):
                 if not allowed_hosts:
                     raise CleanroomException(400, "OUTPUT_HOSTS_NOT_CONFIGURED", "未配置产物主机白名单")
                 raise CleanroomException(400, "OUTPUT_URL_NOT_ALLOWED", "输出来源未获准")
-            async with httpx.AsyncClient(timeout=30.0, follow_redirects=False, trust_env=False, transport=_output_transport()) as client:
+            # follow_redirects=False 且下方仅接受 200：不跟随重定向，
+            # 防止获准主机借 30x 把下载引向未获准地址。
+            async with httpx.AsyncClient(timeout=30.0, follow_redirects=False, trust_env=False,
+                                          transport=_output_transport(allowed_hosts)) as client:
                 async with client.stream("GET", url) as resp:
                     if resp.status_code != 200:
                         raise CleanroomException(502, "DOWNLOAD_FAILED", "输出下载失败或发生重定向")

@@ -141,6 +141,8 @@ $env:GW_WORKFLOW_OUTPUT_HOSTS = 'rh-images-tos.xiaoyaoyou.com,rh-images.xiaoyaoy
 
 下载仅接受获准主机的 HTTPS 默认端口或 443 端口，不跟随重定向；连接层还会核验并绑定公网地址。未配置 `GW_WORKFLOW_OUTPUT_HOSTS` 时产物返回 `OUTPUT_HOSTS_NOT_CONFIGURED`；已配置但主机不匹配时返回 `OUTPUT_URL_NOT_ALLOWED`。两种情况都不会下载文件。服务进程不设默认信任主机。
 
+使用 Clash fake-ip 等透明代理时，获准主机可能解析到 `198.18.0.0/15` 假地址：白名单内的主机借道该网段会被放行并钉住验证过的地址完成连接，TLS 证书校验与 Host 头仍使用白名单中的原始主机名。回环、私网、链路本地（含 `169.254.169.254` 元数据地址）、多播及保留地址在白名单内外都一律拒绝。
+
 执行与回收分别记账：远端生成成功，但下载或入库未完成时，`execution_status` 为 `completed`，`collection_status` 为 `partial_failed`，整体任务为 `failed`。这表示**回收未完成**，不表示生成没有发生或没有收费。修正配置后，在工作流任务窗点击“重试产物回收”；服务使用原 `job_id` 和远端任务 ID 回收结果，不再次提交生成。已登记产物保留稳定 `asset_id`，重复回收不会重复入库。
 
 不要将 API Key、带签名/令牌的完整产物 URL 写入示例、问题报告或日志；排查时提供来源主机名、`job_id` 与错误码即可。

@@ -1136,7 +1136,7 @@ def test_r0_output_dns_private_addresses_are_rejected(client, monkeypatch, addre
     async def run():
         monkeypatch.setattr(asyncio.get_running_loop(), 'getaddrinfo', resolve)
         with pytest.raises(CleanroomException) as error:
-            await _PublicOutputBackend(Backend()).connect_tcp('approved.example', 443)
+            await _PublicOutputBackend(Backend(), frozenset()).connect_tcp('approved.example', 443)
         assert error.value.code == 'OUTPUT_ADDRESS_NOT_ALLOWED'
     asyncio.run(run())
     assert not calls
@@ -1153,7 +1153,7 @@ def test_r0_output_dns_connects_to_validated_ip_not_second_resolution(client, mo
         return [(socket.AF_INET, socket.SOCK_STREAM, 6, '', ('8.8.8.8', 443))]
     async def run():
         monkeypatch.setattr(asyncio.get_running_loop(), 'getaddrinfo', resolve)
-        await _PublicOutputBackend(Backend()).connect_tcp('approved.example', 443)
+        await _PublicOutputBackend(Backend(), frozenset()).connect_tcp('approved.example', 443)
     asyncio.run(run())
     assert calls[0]['host'] == '8.8.8.8'
 
@@ -1387,7 +1387,7 @@ def test_r0_output_dns_mixed_or_empty_answers_fail_closed(client, monkeypatch, a
     async def run():
         monkeypatch.setattr(asyncio.get_running_loop(), 'getaddrinfo', resolve)
         with pytest.raises(CleanroomException) as error:
-            await _PublicOutputBackend(Backend()).connect_tcp('approved.example', 443)
+            await _PublicOutputBackend(Backend(), frozenset()).connect_tcp('approved.example', 443)
         assert error.value.code == 'OUTPUT_ADDRESS_NOT_ALLOWED'
     asyncio.run(run())
 
@@ -1453,7 +1453,7 @@ def test_r0_cloud_output_limits_and_redirects(client, monkeypatch, case, expecte
             return httpx.Response(200, stream=Chunks(), headers={'content-type': 'image/png'})
         return httpx.Response(200, content=b'unknown', headers={'content-type': 'application/octet-stream'})
     monkeypatch.setenv('GW_WORKFLOW_OUTPUT_HOSTS', 'approved.example')
-    monkeypatch.setattr(routes, '_output_transport', lambda: httpx.MockTransport(handle))
+    monkeypatch.setattr(routes, '_output_transport', lambda allowed_hosts=None: httpx.MockTransport(handle))
     monkeypatch.setattr(registry, 'MAX_ASSET_BYTES', 3 if case == 'overflow' else 32 * 1024 * 1024)
     outputs = [{'fileUrl': 'https://' + ('unapproved.example' if case == 'unapproved' else 'approved.example') + '/out.' + ('bin' if case == 'unknown' else 'png')}]
     if case == 'count': outputs *= 33
