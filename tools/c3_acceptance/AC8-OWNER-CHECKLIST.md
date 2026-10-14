@@ -77,13 +77,13 @@ cd <本机仓库根目录>
 .\.venv\Scripts\python.exe tools\c3_acceptance\ac8_runninghub_real.py `
   --out .local\qa\C3-evidence\AC8\ac8-recollect.json `
   --recollect-job-id <结果 JSON 里的 job_id> `
-  --data-dir <结果 JSON 里的 data_dir>
+  --data-dir $env:TEMP\gw-ac8-v7d4lpti
 ```
 
 - 仍须先设置 `GW_RUNNINGHUB_API_KEY`（同上面的配置 key）。不需要 `--i-accept-cost`，也不需要 `--workflow-id`。
 - 脚本只请求 `GET /tasks/{job}` 和 `POST /tasks/{job}/collect`，不会 parse-link，也不会再次 `/tasks/execute`。
-- `--data-dir` 是上次运行留下的 `gw-ac8` 临时目录根（下面有 `data`、`auth`、`video`），不是仓库目录。
-- 服务进程没有默认产物主机。脚本仅在 `GW_WORKFLOW_OUTPUT_HOSTS` 未设置时，把它设为 `rh-images.xiaoyaoyou.com`。已设置则保持原值。需要别的主机时加 `--output-hosts host-a,host-b`。
+- `--data-dir` 是上一次 AC8 运行创建的 `%TEMP%\gw-ac8-<随机后缀>` 目录（上例 `gw-ac8-v7d4lpti` 只展示格式；以结果 JSON 里的 `data_dir` 完整路径为准），即内含 `data`、`auth`、`video` 的那个 gw-ac8 临时目录根，不是仓库目录。
+- 服务进程没有默认产物主机。脚本仅在 `GW_WORKFLOW_OUTPUT_HOSTS` 未设置时，把它设为 `rh-images-tos.xiaoyaoyou.com,rh-images.xiaoyaoyou.com`（真实 RunningHub 产物通常落在 `rh-images-tos.xiaoyaoyou.com`；`rh-images.xiaoyaoyou.com` 是 RunningHub 文档给出的主机；英文逗号分隔、逗号后无需空格）。已设置则保持原值。需要别的主机时加 `--output-hosts host-a,host-b`。
 - 结果 JSON 的 `mode` 为 `recollect`。退出码同样是 0 = PASS，1 = FAILED，2 = BLOCKED。
 
 ## 4. 判定 PASS 的标准

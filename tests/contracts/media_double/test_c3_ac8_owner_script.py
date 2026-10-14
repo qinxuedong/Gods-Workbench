@@ -337,7 +337,7 @@ def test_recollect_mode_does_not_submit_or_require_cost(monkeypatch, tmp_path, n
     assert not any("parse-link" in url or url.endswith("/tasks/execute") for url in urls)
     assert urls[0].endswith("/tasks/job-ac8-recollect")
     assert urls[1].endswith("/tasks/job-ac8-recollect/collect")
-    assert client.output_hosts == "rh-images.xiaoyaoyou.com"
+    assert client.output_hosts == "rh-images-tos.xiaoyaoyou.com,rh-images.xiaoyaoyou.com"
     assert no_network == []
 
 

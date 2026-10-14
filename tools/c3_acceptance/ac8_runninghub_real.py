@@ -19,8 +19,9 @@ GW_VIDEO_DATA_DIR，不触碰本机既有数据），全部通过应用公开 AP
 结果 JSON 写入 --out；key 的值绝不打印、绝不写入结果文件。PASS 退出码 0，FAILED 1，BLOCKED 2。
 
 产物下载主机：服务进程不设默认信任来源。本脚本在未设置 GW_WORKFLOW_OUTPUT_HOSTS 时，
-默认把它设为 rh-images.xiaoyaoyou.com（RunningHub 官方产物主机）；已设置则保持原值。
-可用 --output-hosts 显式覆盖（逗号分隔主机名，不含协议和路径）。
+默认把它设为 rh-images-tos.xiaoyaoyou.com,rh-images.xiaoyaoyou.com（真实 RunningHub 产物
+通常落在 tos 主机；rh-images.xiaoyaoyou.com 是 RunningHub 文档给出的主机）；已设置则保持原值。
+可用 --output-hosts 显式覆盖（逗号分隔主机名，不含协议和路径，逗号后无需空格）。
 
 只重试回收、不再次提交：同时给出 --recollect-job-id 与 --data-dir（上次运行的
 gw-ac8 临时目录根，内含 data/、auth/、video/）。此模式仍要求 key 环境变量，
@@ -48,7 +49,7 @@ WORKFLOW_ROOT = "/api/god_workflow"
 KEY_ENV = "GW_RUNNINGHUB_API_KEY"
 KEY_NOTE = KEY_ENV + "（值不记录在结果里）"
 OUTPUT_HOSTS_ENV = "GW_WORKFLOW_OUTPUT_HOSTS"
-DEFAULT_OUTPUT_HOST = "rh-images.xiaoyaoyou.com"
+DEFAULT_OUTPUT_HOSTS = "rh-images-tos.xiaoyaoyou.com,rh-images.xiaoyaoyou.com"
 
 
 def _headers() -> dict[str, str]:
@@ -97,12 +98,12 @@ def _record_step_failure(step: dict, response) -> None:
 
 
 def _apply_output_hosts(explicit: str | None) -> None:
-    """显式 --output-hosts 覆盖；否则仅在环境变量为空时写入官方产物主机。"""
+    """显式 --output-hosts 覆盖；否则仅在环境变量为空时写入默认产物主机（真实 tos 主机 + 文档主机）。"""
     if explicit is not None:
         os.environ[OUTPUT_HOSTS_ENV] = explicit
         return
     if not str(os.environ.get(OUTPUT_HOSTS_ENV, "")).strip():
-        os.environ[OUTPUT_HOSTS_ENV] = DEFAULT_OUTPUT_HOST
+        os.environ[OUTPUT_HOSTS_ENV] = DEFAULT_OUTPUT_HOSTS
 
 
 def _arm_runtime(root: Path) -> None:
@@ -195,7 +196,8 @@ def main() -> int:
     parser.add_argument("--timeout-seconds", type=int, default=1800, help="轮询总超时（默认 1800 秒）")
     parser.add_argument("--poll-interval", type=int, default=10, help="轮询间隔秒数（默认 10 秒）")
     parser.add_argument("--output-hosts", default=None,
-                        help="覆盖 GW_WORKFLOW_OUTPUT_HOSTS（逗号分隔主机名）；省略时仅在该变量为空才默认 rh-images.xiaoyaoyou.com")
+                        help="覆盖 GW_WORKFLOW_OUTPUT_HOSTS（逗号分隔主机名）；省略时仅在该变量为空才默认 "
+                             "rh-images-tos.xiaoyaoyou.com,rh-images.xiaoyaoyou.com")
     parser.add_argument("--recollect-job-id", default=None,
                         help="只重试回收该 job_id，不再次 parse-link 或提交任务")
     parser.add_argument("--data-dir", default=None,

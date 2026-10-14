@@ -131,13 +131,13 @@ python run.py
 
 ### 4. RunningHub 工作流产物回收配置
 
-工作流设置中的 RunningHub API Key 用于解析、提交与查询。云端产物下载还需要在**启动服务的进程环境**中设置 `GW_WORKFLOW_OUTPUT_HOSTS`，填写你已核实并授权的产物 URL 主机名，用英文逗号分隔：
+工作流设置中的 RunningHub API Key 用于解析、提交与查询。云端产物下载还需要在**启动服务的进程环境**中设置 `GW_WORKFLOW_OUTPUT_HOSTS`，填写你已核实并授权的产物 URL 主机名，多个主机用英文逗号分隔（逗号后无需空格）：
 
 ```powershell
-$env:GW_WORKFLOW_OUTPUT_HOSTS = 'output.example,cdn.example'
+$env:GW_WORKFLOW_OUTPUT_HOSTS = 'rh-images-tos.xiaoyaoyou.com,rh-images.xiaoyaoyou.com'
 ```
 
-上例是占位域名，请替换成实际产物来源；它不会添加默认信任来源。配置按精确主机名匹配，不填写协议、路径或通配符。在同一 PowerShell 窗口按上文方式启动服务；调整已运行服务的配置需要由你重启该服务，保持原生产或开发模式及数据根，以继续查询原任务。
+上例是 RunningHub 产物主机的常见组合：真实 RunningHub 产物通常落在 `rh-images-tos.xiaoyaoyou.com`，`rh-images.xiaoyaoyou.com` 是 RunningHub 文档给出的主机，两者可按需同时列入。配置按精确主机名匹配，不填写协议、路径或通配符。在同一 PowerShell 窗口按上文方式启动服务；调整已运行服务的配置需要由你重启该服务，保持原生产或开发模式及数据根，以继续查询原任务。
 
 下载仅接受获准主机的 HTTPS 默认端口或 443 端口，不跟随重定向；连接层还会核验并绑定公网地址。未配置 `GW_WORKFLOW_OUTPUT_HOSTS` 时产物返回 `OUTPUT_HOSTS_NOT_CONFIGURED`；已配置但主机不匹配时返回 `OUTPUT_URL_NOT_ALLOWED`。两种情况都不会下载文件。服务进程不设默认信任主机。
 
