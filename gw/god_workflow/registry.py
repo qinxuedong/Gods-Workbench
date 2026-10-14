@@ -605,17 +605,24 @@ def list_tasks(context: Any) -> list[dict[str, Any]]:
 
 
 def list_tasks_page(context: Any, *, workflow_id: Optional[str] = None,
-                    limit: int = 20, offset: int = 0) -> tuple[list[dict[str, Any]], Optional[int]]:
-    """分页读取任务账本；先按 workflow_id 过滤再切片，不受百条截断限制。"""
+                    limit: int = 20,
+                    after: Optional[tuple[str, str]] = None) -> tuple[list[dict[str, Any]], Optional[tuple[str, str]]]:
+    """按 (created_at, task_id) 键集分页读取任务账本；先按 workflow_id 过滤再切片，不受百条截断限制。"""
     with _STORAGE_LOCK:
         tasks = [load_task(context, path.stem) for path in _tasks_root(context).glob("*.json")]
         if workflow_id is not None:
             tasks = [task for task in tasks if task.get("workflow_id") == workflow_id]
-        # task_id 作次序决胜键，保证同秒任务的分页顺序稳定。
-        tasks.sort(key=lambda task: (task.get("created_at", ""), str(task.get("task_id", ""))), reverse=True)
-        page = tasks[offset:offset + limit]
-        next_offset = offset + limit if offset + limit < len(tasks) else None
-        return page, next_offset
+
+        def sort_key(task: dict[str, Any]) -> tuple[str, str]:
+            return (str(task.get("created_at", "")), str(task.get("task_id", "")))
+
+        # 键集分页：两页之间任务增删不会造成重复或遗漏既有任务。
+        tasks.sort(key=sort_key, reverse=True)
+        if after is not None:
+            tasks = [task for task in tasks if sort_key(task) < after]
+        page = tasks[:limit]
+        next_after = sort_key(page[-1]) if page and len(tasks) > limit else None
+        return page, next_after
 
 
 def load_task(context: Any, task_id: str) -> dict[str, Any]:

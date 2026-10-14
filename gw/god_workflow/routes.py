@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 import ipaddress
 import socket
 import hashlib
@@ -771,6 +772,26 @@ async def execute_task(request: Request, authorization: Optional[str] = Header(N
             "data_gaps": ["remote_task_id_missing"] if task.get("remote_id_missing") else []}
 
 
+def _encode_task_cursor(created_at: str, task_id: str) -> str:
+    """游标不透明：base64url（无填充）的紧凑 JSON {"c": created_at, "t": task_id}。"""
+    payload = json.dumps({"c": created_at, "t": task_id}, separators=(",", ":"))
+    return base64.urlsafe_b64encode(payload.encode("utf-8")).decode("ascii").rstrip("=")
+
+
+def _decode_task_cursor(cursor: str) -> tuple[str, str]:
+    if not cursor or len(cursor) > 512:
+        raise CleanroomException(400, "INVALID_CURSOR", "分页游标无效")
+    try:
+        padded = cursor.translate(str.maketrans("-_", "+/"))
+        padded += "=" * (-len(padded) % 4)
+        obj = json.loads(base64.b64decode(padded, validate=True).decode("utf-8"))
+    except ValueError:  # binascii.Error / UnicodeDecodeError / JSONDecodeError 均是 ValueError
+        raise CleanroomException(400, "INVALID_CURSOR", "分页游标无效") from None
+    if not isinstance(obj, dict) or not isinstance(obj.get("c"), str) or not isinstance(obj.get("t"), str):
+        raise CleanroomException(400, "INVALID_CURSOR", "分页游标无效")
+    return obj["c"], obj["t"]
+
+
 @router.get("/tasks")
 def list_workflow_tasks(authorization: Optional[str] = Header(None), x_user_role: str = Header("editor", alias="X-User-Role"),
                         workflow_id: Optional[str] = None, limit: Optional[str] = None, cursor: Optional[str] = None):
@@ -783,15 +804,13 @@ def list_workflow_tasks(authorization: Optional[str] = Header(None), x_user_role
         if not re.fullmatch(r"[0-9]+", limit) or int(limit) < 1:
             raise CleanroomException(400, "INVALID_LIMIT", "limit 必须为正整数")
         page_limit = min(int(limit), 100)
-    offset = 0
+    after = None
     if cursor is not None:
-        if not re.fullmatch(r"[0-9]+", cursor):
-            raise CleanroomException(400, "INVALID_CURSOR", "分页游标无效")
-        offset = int(cursor)
-    page, next_offset = registry.list_tasks_page(context, workflow_id=workflow_id, limit=page_limit, offset=offset)
+        after = _decode_task_cursor(cursor)
+    page, next_after = registry.list_tasks_page(context, workflow_id=workflow_id, limit=page_limit, after=after)
     return {"tasks": page, "workflow_id": workflow_id,
-            "next_cursor": str(next_offset) if next_offset is not None else None,
-            "has_more": next_offset is not None, "data_status": "ok", "data_gaps": []}
+            "next_cursor": _encode_task_cursor(*next_after) if next_after is not None else None,
+            "has_more": next_after is not None, "data_status": "ok", "data_gaps": []}
 
 
 @router.get("/tasks/{task_id}")
