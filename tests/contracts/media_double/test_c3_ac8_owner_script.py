@@ -163,7 +163,7 @@ def test_owner_script_reconfigures_stdout_stderr_to_utf8(monkeypatch, tmp_path, 
 
 _WORKFLOW_ID = "1234567890"
 _ENV_KEYS = ("GW_RUNTIME_MODE", "GW_AUTH_MODE", "GW_DATA_DIR", "GW_LOCAL_AUTH_DB",
-             "GW_VIDEO_DATA_DIR", "GW_DISABLE_AGENT_INTEGRATION")
+             "GW_VIDEO_DATA_DIR", "GW_DISABLE_AGENT_INTEGRATION", "GW_WORKFLOW_OUTPUT_HOSTS")
 
 
 class _FakeResponse:
@@ -208,14 +208,17 @@ def _install_doubles(monkeypatch, client):
     monkeypatch.setattr("fastapi.testclient.TestClient", lambda app: _ClientContext(client))
 
 
-def _run_past_gates(monkeypatch, tmp_path, client, *argv):
-    """越过三道门槛后用替身客户端跑脚本，并还原脚本写入的环境变量。"""
+def _run_past_gates(monkeypatch, tmp_path, client, *argv, leading=None):
+    """越过门槛后用替身客户端跑脚本，并还原脚本写入的环境变量。
+
+    leading 默认是真实任务的 --i-accept-cost 与 --workflow-id；只回收模式传入自己的参数。
+    """
     module = _load_script()
     out = tmp_path / "ac8-result.json"
+    prefix = ["--i-accept-cost", "--workflow-id", _WORKFLOW_ID] if leading is None else list(leading)
     monkeypatch.delenv("GW_RUNNINGHUB_API_KEY", raising=False)
     monkeypatch.setenv("GW_RUNNINGHUB_API_KEY", TEST_API_KEY)
-    monkeypatch.setattr(sys, "argv", ["ac8_runninghub_real.py", "--out", str(out),
-                                      "--i-accept-cost", "--workflow-id", _WORKFLOW_ID, *argv])
+    monkeypatch.setattr(sys, "argv", ["ac8_runninghub_real.py", "--out", str(out), *prefix, *argv])
     _install_doubles(monkeypatch, client)
     saved = {key: os.environ.get(key) for key in _ENV_KEYS}
     try:
@@ -284,4 +287,76 @@ def test_execute_outcome_unknown_records_messages(monkeypatch, tmp_path, no_netw
     assert body["messages"] == messages
     assert body["steps"][1]["http_status"] == status_code
     assert body["steps"][1]["status"] == "outcome_unknown"
+    assert no_network == []
+
+
+class _RecollectClient(_FakeClient):
+    """记录第一次读取任务时的产物主机环境变量。"""
+
+    def __init__(self, responses):
+        super().__init__(responses)
+        self.output_hosts = None
+
+    def get(self, url, headers=None):
+        if self.output_hosts is None:
+            self.output_hosts = os.environ.get("GW_WORKFLOW_OUTPUT_HOSTS")
+        return super().get(url, headers)
+
+
+def _recollect_responses(job_id="job-ac8-recollect"):
+    task = {"job_id": job_id, "status": "failed", "execution_status": "completed",
+            "collection_status": "partial_failed", "workflow_id": "wf-from-task",
+            "messages": ["OUTPUT_HOSTS_NOT_CONFIGURED host=rh-images.xiaoyaoyou.com"], "outputs": []}
+    collected = {"job_id": job_id, "status": "completed", "collection_status": "completed",
+                 "workflow_id": "wf-from-task", "messages": [],
+                 "outputs": [{"asset_id": "asset-recollect", "registered": True}]}
+    asset = {"asset": {"task_id": job_id, "metadata": {"workflow_id": "wf-from-task", "workflow_version": 2}}}
+    return [
+        _FakeResponse(200, task),
+        _FakeResponse(200, collected),
+        _FakeResponse(200, asset),
+        _FakeResponse(200, {"ok": True}),
+    ]
+
+
+def test_recollect_mode_does_not_submit_or_require_cost(monkeypatch, tmp_path, no_network):
+    """C3-AC8-OWNER-RECOLLECT-01：只回收不调用 parse-link/execute，也不要求 --i-accept-cost。"""
+    monkeypatch.delenv("GW_WORKFLOW_OUTPUT_HOSTS", raising=False)
+    data_dir = tmp_path / "gw-ac8-existing"
+    data_dir.mkdir()
+    client = _RecollectClient(_recollect_responses())
+    code, body = _run_past_gates(
+        monkeypatch, tmp_path, client,
+        leading=["--recollect-job-id", "job-ac8-recollect", "--data-dir", str(data_dir)])
+    assert code == 0
+    assert body["mode"] == "recollect"
+    assert body["result"] == "PASS"
+    assert body["workflow_id"] == "wf-from-task"
+    assert body["asset_verification"]["workflow_id_matches"] is True
+    urls = [url for _method, url in client.calls]
+    assert not any("parse-link" in url or url.endswith("/tasks/execute") for url in urls)
+    assert urls[0].endswith("/tasks/job-ac8-recollect")
+    assert urls[1].endswith("/tasks/job-ac8-recollect/collect")
+    assert client.output_hosts == "rh-images.xiaoyaoyou.com"
+    assert no_network == []
+
+
+def test_recollect_keeps_existing_output_hosts_unless_overridden(monkeypatch, tmp_path, no_network):
+    """已设置的 GW_WORKFLOW_OUTPUT_HOSTS 保持不变；--output-hosts 才覆盖。"""
+    monkeypatch.setenv("GW_WORKFLOW_OUTPUT_HOSTS", "already.example")
+    data_dir = tmp_path / "gw-ac8-existing"
+    data_dir.mkdir()
+    kept = _RecollectClient(_recollect_responses())
+    code, _body = _run_past_gates(
+        monkeypatch, tmp_path, kept,
+        leading=["--recollect-job-id", "job-ac8-recollect", "--data-dir", str(data_dir)])
+    assert code == 0
+    assert kept.output_hosts == "already.example"
+    overridden = _RecollectClient(_recollect_responses())
+    code, body = _run_past_gates(
+        monkeypatch, tmp_path, overridden,
+        leading=["--recollect-job-id", "job-ac8-recollect", "--data-dir", str(data_dir),
+                 "--output-hosts", "cdn.example"])
+    assert code == 0 and body["mode"] == "recollect"
+    assert overridden.output_hosts == "cdn.example"
     assert no_network == []

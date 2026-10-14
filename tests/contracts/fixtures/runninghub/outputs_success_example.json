@@ -1,0 +1,12 @@
+{
+  "code": 0,
+  "msg": "success",
+  "data": [
+    {
+      "fileUrl": "https://rh-images.xiaoyaoyou.com/output/example.png?expires=1",
+      "fileType": "png",
+      "nodeId": "9",
+      "consumeCoins": "1"
+    }
+  ]
+}
