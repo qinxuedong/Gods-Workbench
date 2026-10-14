@@ -166,3 +166,36 @@ test('文档版本刷新不伪称原生宿主保存，来源徽标按真实类�
     assert.equal(h.run(`getSourceBadgeText(${JSON.stringify(source)})`),badge);
   }
 });
+
+// C4-AC3：旧工作流一键重新解析（409 刷新重试一次 / 422 来源不可用）。
+const legacy=(v,needs=true)=>({...workflow('L'),version:v,revision:v,needs_reparse:needs,reparse_reason:needs?'LEGACY_RH_LINK_SLOTS':null});
+function reparseHarness(plan){
+  const h=harness(async(url,options)=>{const step=plan.shift();assert.ok(step,`意外请求 ${url}`);assert.equal(url,step.url);
+    if(step.expected!==undefined)assert.equal(JSON.parse(options.body).expected_version,step.expected);
+    return response(step.data,step.status||200);});
+  h.toasts=[];h.context.window.showWorkbenchToast=(...args)=>h.toasts.push(args);
+  h.state.currentWorkflow=legacy(1);return h;
+}
+const RP='/api/god_workflow/workflows/L/reparse', IT='/api/god_workflow/item/L';
+test('C4-AC3 重新解析携带 expected_version 并刷新为新版本', async()=>{
+  const h=reparseHarness([{url:RP,expected:1,data:{version:2,reparse_performed:true,needs_reparse:false}},{url:IT,data:legacy(2,false)}]);
+  assert.equal(await h.run('reparseCurrentWorkflow()'),'ok');
+  assert.equal(h.state.currentWorkflow.revision,2);assert.equal(h.state.currentWorkflow.needs_reparse,false);
+  assert.equal(h.toasts.at(-1)[0],'重新解析完成，已生成新版本 v002');
+});
+test('C4-AC3 409 先刷新再按最新版本重试一次', async()=>{
+  const conflict={detail:{code:'VERSION_CONFLICT',message:'版本冲突',expected_version:1,current_version:3}};
+  const h=reparseHarness([{url:RP,expected:1,status:409,data:conflict},{url:IT,data:legacy(3)},{url:RP,expected:3,data:{version:4,reparse_performed:true}},{url:IT,data:legacy(4,false)}]);
+  assert.equal(await h.run('reparseCurrentWorkflow()'),'ok');assert.equal(h.state.currentWorkflow.revision,4);
+});
+test('C4-AC3 重试仍 409 只重试一次并告知用户', async()=>{
+  const conflict={detail:{code:'VERSION_CONFLICT',message:'版本冲突'}};
+  const h=reparseHarness([{url:RP,expected:1,status:409,data:conflict},{url:IT,data:legacy(3)},{url:RP,expected:3,status:409,data:conflict}]);
+  assert.equal(await h.run('reparseCurrentWorkflow()'),'conflict');assert.equal(h.requests.length,3);
+  assert.match(h.toasts.at(-1)[0],/^重新解析失败：工作流正在被其他操作修改/);assert.equal(h.toasts.at(-1)[1],true);
+});
+test('C4-AC3 422 显示来源不可用且不再请求', async()=>{
+  const h=reparseHarness([{url:RP,expected:1,status:422,data:{detail:{code:'REPARSE_SOURCE_UNAVAILABLE',message:'x'}}}]);
+  assert.equal(await h.run('reparseCurrentWorkflow()'),'source_unavailable');assert.equal(h.requests.length,1);
+  assert.match(h.toasts.at(-1)[0],/^来源不可用/);assert.equal(h.state.currentWorkflow.revision,1);
+});
