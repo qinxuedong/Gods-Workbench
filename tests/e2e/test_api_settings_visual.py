@@ -9,8 +9,15 @@ from test_api_settings_browser import ENTRIES, settings_browser
 
 
 def settings_frame(page, base, entry):
-    page.goto(base + entry, wait_until="networkidle")
-    frame = page.frame(url=re.compile(r"/static/api-settings.html")) or page.main_frame
+    page.goto(base + entry, wait_until="load")
+    if "/pages/settings.html" in page.url or page.query_selector("#iframeApiSettings"):
+        iframe_element = page.wait_for_selector("#iframeApiSettings")
+        frame = iframe_element.content_frame()
+        if frame is None:
+            frame = page.frame(url=re.compile(r"/static/api-settings.html"))
+        assert frame is not None, "未找到设置页 iframe"
+    else:
+        frame = page.main_frame
     frame.locator("#providerList .provider-card").first.wait_for()
     frame.evaluate("() => document.fonts.ready")
     return frame
