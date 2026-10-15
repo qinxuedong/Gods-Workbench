@@ -131,7 +131,8 @@ class FakeComfy(_Recorder):
         if self.count("history") == 1:
             return {"found": False, "entry": None}
         if self.mode == "fail_remote":
-            # ComfyUI 执行出错时 history 里没有产物；带产物的 error 条目会被真实代码照常登记（见 PR-3 说明）。
+            # ComfyUI 执行出错时替身返回 outputs 为空的 error 条目；带残留输出的
+            # 失败 history 由 C4-AC9 在 fixtures/comfyui/ 用 HTTP 层替身覆盖真实代码。
             return {"found": True, "entry": {"outputs": {}, "status": {"status_str": "error", "messages": []}}}
         status = {"status_str": "success"}
         images = [{"filename": "out-0001.png", "subfolder": "", "type": "output"}]
