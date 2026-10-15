@@ -10,7 +10,7 @@ from test_api_settings_browser import ENTRIES, settings_browser
 
 def settings_frame(page, base, entry):
     page.goto(base + entry, wait_until="load")
-    if "/pages/settings.html" in entry:
+    if "/pages/settings.html" in page.url or page.query_selector("#iframeApiSettings"):
         iframe_element = page.wait_for_selector("#iframeApiSettings")
         frame = iframe_element.content_frame()
         if frame is None:
