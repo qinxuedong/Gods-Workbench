@@ -17,7 +17,7 @@ import math
 from copy import deepcopy
 from pathlib import Path
 from typing import Any, Optional
-from urllib.parse import quote, urlsplit
+from urllib.parse import quote, urljoin, urlsplit
 
 import httpx
 from fastapi import APIRouter, Header, Request, status
@@ -796,7 +796,7 @@ async def task_status(task_id: str, authorization: Optional[str] = Header(None),
         query_res = await platforms.query_rh_task_outputs(str(task.get("prompt_id") or ""), api_key, domain=domain)
         st = query_res.get("status")
         if st == "SUCCESS":
-            assets = await _collect_rh_task_outputs(context, task_id, query_res.get("outputs", []))
+            assets = await _collect_rh_task_outputs(context, task_id, query_res.get("outputs", []), platform=target)
             complete = bool(assets) and all(item.get("registered") for item in assets)
             task = registry.update_task(context, task_id, status="completed" if complete else "failed",
                                         only_if_active=True,
@@ -854,7 +854,8 @@ async def retry_task_collection(task_id: str, authorization: Optional[str] = Hea
             domain=task.get("executor_snapshot", {}).get("domain") or os.environ.get("GW_RUNNINGHUB_DOMAIN", platforms.RUNNINGHUB_DEFAULT_DOMAIN))
         if result.get("status") != "SUCCESS":
             raise CleanroomException(409, "OUTPUTS_NOT_AVAILABLE", "远端结果尚不可回收")
-        outputs = await _collect_rh_task_outputs(context, task_id, result.get("outputs", []))
+        outputs = await _collect_rh_task_outputs(context, task_id, result.get("outputs", []),
+                                                 platform=str(task.get("target") or "rh_cloud"))
     else:
         history = await _comfy_call(context, comfy_executor.history, task["remote_task_id"], task=task)
         if not history["found"]:
@@ -997,48 +998,108 @@ def _output_address_allowed(host: str, address: str, allowed_hosts: frozenset[st
     return False
 
 
-class _PublicOutputBackend:
-    """在连接层解析并钉住所获准公网IP，TLS仍使用原始主机名，阻止DNS重绑定。"""
-    def __init__(self, backend, allowed_hosts: frozenset[str]):
-        self.backend = backend
-        self.allowed_hosts = allowed_hosts
+#: RunningHub 官方产物主机默认白名单：仅当 GW_WORKFLOW_OUTPUT_HOSTS 未配置（或空白）时
+#: 生效；一旦显式配置该环境变量，即完全替换默认值，不追加。
+RH_DEFAULT_OUTPUT_HOSTS = frozenset({"rh-images-tos.xiaoyaoyou.com", "rh-images.xiaoyaoyou.com"})
 
-    async def connect_tcp(self, host, port, timeout=None, local_address=None, socket_options=None):
-        if isinstance(host, bytes):
-            host = host.decode("ascii")
-        infos = await asyncio.wait_for(asyncio.get_running_loop().getaddrinfo(
-            host, port, type=socket.SOCK_STREAM), timeout=timeout or 30)
-        addresses = [info[4][0] for info in infos]
-        # 全部解析结果都必须获准（防部分记录污染），然后只解析一次并钉住首个获准
-        # 地址连接；httpcore 仍按请求 origin 保留 Host 头与 TLS SNI/证书校验的原始主机名。
-        if not addresses or any(not _output_address_allowed(host, address, self.allowed_hosts)
-                                for address in addresses):
-            raise CleanroomException(400, "OUTPUT_ADDRESS_NOT_ALLOWED", "输出地址不是获准公网地址")
-        return await self.backend.connect_tcp(host=addresses[0], port=port, timeout=timeout,
-            local_address=local_address, socket_options=socket_options)
+#: 产物下载手动跟随的重定向步数上限（1 次初始请求 + 3 次 30x）。
+_OUTPUT_MAX_REDIRECTS = 3
 
-    async def connect_unix_socket(self, *args, **kwargs):
-        raise CleanroomException(400, "OUTPUT_ADDRESS_NOT_ALLOWED", "输出不支持本地套接字")
-
-    async def sleep(self, seconds):
-        await self.backend.sleep(seconds)
+#: 重定向上需要重新校验并重新钉定的跳转状态码。
+_OUTPUT_REDIRECT_CODES = frozenset({301, 302, 303, 307, 308})
 
 
-def _output_transport(allowed_hosts: frozenset[str]):
-    import httpcore
-    from httpcore._backends.auto import AutoBackend
-    transport = httpx.AsyncHTTPTransport(retries=0, trust_env=False)
-    transport._pool = httpcore.AsyncConnectionPool(
-        network_backend=_PublicOutputBackend(AutoBackend(), allowed_hosts))
-    return transport
+def _output_allowed_hosts(platform: str) -> frozenset[str]:
+    """按平台解析产物主机白名单：环境变量显式配置时完全覆盖，否则仅 RunningHub 有内置默认。"""
+    configured = frozenset(host.strip().lower() for host in os.getenv("GW_WORKFLOW_OUTPUT_HOSTS", "").split(",") if host.strip())
+    if configured:
+        return configured
+    if platform in ("runninghub", "rh_cloud"):
+        return RH_DEFAULT_OUTPUT_HOSTS
+    return frozenset()
+
+
+async def _getaddrinfo(host: str, port: int) -> list[tuple]:
+    """产物下载专用 DNS 解析入口；独立模块级函数便于测试按跳替换与计数。"""
+    return await asyncio.get_running_loop().getaddrinfo(host, port, type=socket.SOCK_STREAM)
+
+
+async def _resolve_pinned(host: str, port: int, allowed_hosts: frozenset[str]) -> str:
+    """解析一次、全部结果校验、钉住首个获准地址，阻止 DNS 重绑定与部分记录污染。"""
+    infos = await _getaddrinfo(host, port)
+    addresses = [info[4][0] for info in infos]
+    if not addresses or any(not _output_address_allowed(host, address, allowed_hosts) for address in addresses):
+        raise CleanroomException(400, "OUTPUT_ADDRESS_NOT_ALLOWED", "输出地址不是获准公网地址")
+    return addresses[0]
+
+
+def _output_transport(allowed_hosts: frozenset[str] | None = None, verify: bool = True) -> httpx.AsyncHTTPTransport:
+    """产物下载传输层：默认开启证书校验，不读取代理环境。
+
+    连接目标 IP 由 _resolve_pinned 在发请求前钉定并写入 URL，本函数不再改写连接层；
+    allowed_hosts 参数仅为兼容测试替身签名而保留。
+    """
+    return httpx.AsyncHTTPTransport(retries=0, trust_env=False, verify=verify)
+
+
+def _output_url_allowed(parts, allowed_hosts: frozenset[str]) -> bool:
+    """URL 层校验：仅接受获准主机的 HTTPS 默认端口或 443，禁止 userinfo 与 fragment。"""
+    return (parts.scheme == "https" and parts.hostname in allowed_hosts and not parts.username
+            and not parts.password and parts.port in (None, 443) and not parts.fragment)
+
+
+def _pinned_target(url: str, pinned_ip: str) -> str:
+    """把已获准 URL 重写为指向钉住地址的请求 URL（IPv6 加方括号），路径与查询串原样保留。"""
+    parts = urlsplit(url)
+    host = f"[{pinned_ip}]" if ":" in pinned_ip else pinned_ip
+    return f"https://{host}{parts.path or '/'}" + (f"?{parts.query}" if parts.query else "")
+
+
+async def _download_pinned_output(url: str, allowed_hosts: frozenset[str]) -> tuple[bytes, str]:
+    """逐跳校验、解析并钉住地址后下载，手动跟随至多 3 次 30x 重定向。
+
+    每一跳都重新执行完整 URL 校验并重新解析钉定，杜绝获准主机借 30x 引流到未获准
+    地址；TLS SNI 与证书校验始终使用原始主机名（请求扩展 sni_hostname + Host 头），
+    证书校验保持默认开启。
+    """
+    current = url
+    async with httpx.AsyncClient(timeout=30.0, follow_redirects=False, trust_env=False,
+                                  transport=_output_transport(allowed_hosts)) as client:
+        for hop in range(_OUTPUT_MAX_REDIRECTS + 1):
+            parts = urlsplit(current)
+            if not _output_url_allowed(parts, allowed_hosts):
+                raise CleanroomException(400, "OUTPUT_URL_NOT_ALLOWED", "输出来源未获准")
+            hostname = parts.hostname or ""
+            pinned_ip = await _resolve_pinned(hostname, parts.port or 443, allowed_hosts)
+            async with client.stream("GET", _pinned_target(current, pinned_ip),
+                                      headers={"Host": hostname},
+                                      extensions={"sni_hostname": hostname}) as resp:
+                if resp.status_code in _OUTPUT_REDIRECT_CODES:
+                    location = resp.headers.get("location")
+                    if hop >= _OUTPUT_MAX_REDIRECTS or not location:
+                        raise CleanroomException(502, "DOWNLOAD_FAILED", "输出下载失败或发生重定向")
+                    current = urljoin(current, location)
+                    continue
+                if resp.status_code != 200:
+                    raise CleanroomException(502, "DOWNLOAD_FAILED", "输出下载失败或发生重定向")
+                content_buffer = bytearray()
+                async for chunk in resp.aiter_bytes():
+                    content_buffer.extend(chunk)
+                    if len(content_buffer) > registry.MAX_ASSET_BYTES:
+                        raise CleanroomException(502, "OUTPUT_TOO_LARGE", "输出超过大小限制")
+                return bytes(content_buffer), resp.headers.get("content-type") or "application/octet-stream"
+    raise CleanroomException(502, "DOWNLOAD_FAILED", "输出下载失败或发生重定向")
 
 
 async def _collect_rh_task_outputs(context: AuthContext, task_id: str,
-                                   outputs: list[dict[str, Any]]) -> list[dict[str, Any]]:
+                                   outputs: list[dict[str, Any]], *,
+                                   platform: str = "rh_cloud") -> list[dict[str, Any]]:
     """把 RunningHub 云端输出文件下载落到运行时数据根并登记为素材。"""
     collected: list[dict[str, Any]] = []
     if len(outputs) > 32:
         return [{"registered": False, "code": "OUTPUT_COUNT_EXCEEDED"}]
+    # 同一份白名单同时用于 URL 校验与解析钉定（fake-ip 借道只认它）。
+    allowed_hosts = _output_allowed_hosts(platform)
     for item in outputs:
         if not isinstance(item, dict):
             collected.append({"registered": False, "code": "INVALID_OUTPUT_DESCRIPTOR"})
@@ -1052,29 +1113,12 @@ async def _collect_rh_task_outputs(context: AuthContext, task_id: str,
             filename = url.split("?")[0].rsplit("/", 1)[-1] or f"rh_output_{len(collected)+1}.png"
         parts = None
         try:
+            if not allowed_hosts:
+                raise CleanroomException(400, "OUTPUT_HOSTS_NOT_CONFIGURED", "未配置产物主机白名单")
             parts = urlsplit(url)
-            # 同一份白名单同时用于 URL 校验与连接层地址判定（fake-ip 借道只认它）。
-            allowed_hosts = frozenset(host.strip().lower() for host in os.getenv("GW_WORKFLOW_OUTPUT_HOSTS", "").split(",") if host.strip())
-            # 服务器不设默认信任主机；未配置与已配置但不匹配分开，便于按环境变量排查。
-            if not allowed_hosts or (parts.scheme != "https" or parts.hostname not in allowed_hosts or parts.username
-                                      or parts.password or parts.port not in (None, 443) or parts.fragment):
-                if not allowed_hosts:
-                    raise CleanroomException(400, "OUTPUT_HOSTS_NOT_CONFIGURED", "未配置产物主机白名单")
+            if not _output_url_allowed(parts, allowed_hosts):
                 raise CleanroomException(400, "OUTPUT_URL_NOT_ALLOWED", "输出来源未获准")
-            # follow_redirects=False 且下方仅接受 200：不跟随重定向，
-            # 防止获准主机借 30x 把下载引向未获准地址。
-            async with httpx.AsyncClient(timeout=30.0, follow_redirects=False, trust_env=False,
-                                          transport=_output_transport(allowed_hosts)) as client:
-                async with client.stream("GET", url) as resp:
-                    if resp.status_code != 200:
-                        raise CleanroomException(502, "DOWNLOAD_FAILED", "输出下载失败或发生重定向")
-                    content_buffer = bytearray()
-                    async for chunk in resp.aiter_bytes():
-                        content_buffer.extend(chunk)
-                        if len(content_buffer) > registry.MAX_ASSET_BYTES:
-                            raise CleanroomException(502, "OUTPUT_TOO_LARGE", "输出超过大小限制")
-                    content = bytes(content_buffer)
-                    media_type = resp.headers.get("content-type") or "application/octet-stream"
+            content, media_type = await _download_pinned_output(url, allowed_hosts)
         except CleanroomException as exc:
             failed = {"filename": filename, "registered": False, "code": exc.code}
             hostname = parts.hostname if parts is not None else None

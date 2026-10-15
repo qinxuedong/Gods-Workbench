@@ -8,7 +8,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from media_doubles import (APPROVED_HOST, TEST_API_KEY, FakeComfy, FakeRunningHub, NetworkBlocked,
-                           count_assets, install_output_transport)
+                           count_assets, install_fake_resolver, install_output_transport)
 
 @pytest.fixture
 def no_network(monkeypatch):
@@ -64,6 +64,7 @@ def media_env(tmp_path, monkeypatch):
     monkeypatch.setenv("GW_WORKFLOW_OUTPUT_HOSTS", APPROVED_HOST)
     monkeypatch.setenv("GW_RUNNINGHUB_API_KEY", TEST_API_KEY)
     install_output_transport(monkeypatch)
+    install_fake_resolver(monkeypatch)
     return data
 
 
