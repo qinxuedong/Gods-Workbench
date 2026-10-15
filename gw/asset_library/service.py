@@ -159,6 +159,16 @@ class AssetLibraryService:
         raise CleanroomException(404, "CATEGORY_NOT_FOUND", "分类 %s 不存在" % category_id)
 
     @staticmethod
+    def _locate(raw: Dict[str, Any], asset_id: str) -> Tuple[Optional[Dict[str, Any]], Optional[Dict[str, Any]], Optional[Dict[str, Any]]]:
+        """跨全部库/分类按 asset_id 定位条目；找不到返回 (None, None, None)，不抛异常。"""
+        for library in raw.get("libraries", {}).values():
+            for category in library.get("categories", []):
+                for item in category.get("items", []):
+                    if item.get("asset_id") == asset_id:
+                        return library, category, item
+        return None, None, None
+
+    @staticmethod
     def _asset(raw: Dict[str, Any], asset_id: str) -> Tuple[Dict[str, Any], Dict[str, Any], Dict[str, Any]]:
         for library in raw.get("libraries", {}).values():
             for category in library.get("categories", []):
@@ -369,6 +379,11 @@ class AssetLibraryService:
         return AssetItem.model_validate(self._mutate(mutator))
 
     def delete_item(self, asset_id: str, expected_version: Optional[int] = None) -> Dict[str, Any]:
+        """删除单个素材条目（普通条目原语义）。
+
+        同进同出（C4-AC6）：工作流桥接登记条目的删除由 API 层改道注册表删除
+        （见 routes_asset_library_b4），本方法只负责非桥接条目。
+        """
         def mutator(raw: Dict[str, Any]) -> Any:
             library, category, _ = self._asset(raw, asset_id)
             self._check_version(expected_version, library["version"])
@@ -380,6 +395,11 @@ class AssetLibraryService:
         return self._mutate(mutator)
 
     def delete_items(self, asset_ids: List[str]) -> Dict[str, Any]:
+        """批量删除素材条目（普通条目原语义：缺失即静默跳过）。
+
+        同进同出（C4-AC6）：工作流桥接登记条目的删除由 API 层改道注册表删除
+        （见 routes_asset_library_b4），本方法只负责非桥接条目。
+        """
         def mutator(raw: Dict[str, Any]) -> Any:
             removed = []
             for asset_id in asset_ids:
@@ -394,6 +414,74 @@ class AssetLibraryService:
             if removed:
                 self._touch(raw)
             return {"deleted": removed, "count": len(removed)}
+        return self._mutate(mutator)
+
+    def find_item_snapshot(self, asset_id: str) -> Optional[Dict[str, Any]]:
+        """只读回传 asset_id 对应条目的完整快照；不存在或对当前主体不可见时返回 None。"""
+        from gw.core.asset_visibility import asset_visible
+        with self._lock:
+            _, _, item = self._locate(self._read_raw(), str(asset_id))
+            if item is None or not asset_visible(item):
+                return None
+            return copy.deepcopy(item)
+
+    def ensure_item_version(self, asset_id: str, expected_version: Optional[int]) -> None:
+        """只读校验条目所在素材库的 CAS 版本；条目不存在时静默跳过（由删除路径报 404）。"""
+        if expected_version is None:
+            return
+        with self._lock:
+            library, _, _ = self._locate(self._read_raw(), str(asset_id))
+        if library is not None:
+            self._check_version(expected_version, library["version"])
+
+    def remove_item_snapshot(self, asset_id: str) -> Optional[Dict[str, Any]]:
+        """原子移除并返回 asset_id 对应条目的完整快照（同进同出暂存用）。
+
+        不存在或对当前主体不可见时返回 None（幂等，不抛异常）；
+        移除会按惯例递增分类/库/目录版本。
+        """
+        from gw.core.asset_visibility import asset_visible
+
+        def mutator(raw: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+            library, category, item = self._locate(raw, str(asset_id))
+            if item is None or not asset_visible(item):
+                return None
+            category["items"] = [i for i in category["items"] if i["asset_id"] != str(asset_id)]
+            category["version"] += 1
+            library["version"] += 1
+            self._touch(raw)
+            return copy.deepcopy(item)
+        return self._mutate(mutator)
+
+    def insert_item_snapshot(self, snapshot: Dict[str, Any]) -> bool:
+        """原样插回条目快照（同 id/同库/同分类/同字段），返回是否真的插入。
+
+        同 asset_id 条目已存在时幂等跳过；原库或原分类已被删除时不复活条目
+        （资产存在性以注册表为唯一真源，见 registry.repository.delete_asset docstring）。
+        """
+        if not isinstance(snapshot, dict) or not snapshot.get("asset_id"):
+            return False
+
+        def mutator(raw: Dict[str, Any]) -> bool:
+            asset_id = str(snapshot["asset_id"])
+            _, _, existing = self._locate(raw, asset_id)
+            if existing is not None:
+                return False
+            library = raw.get("libraries", {}).get(str(snapshot.get("library_id") or ""))
+            if library is None:
+                return False
+            target = None
+            for candidate in library.get("categories", []):
+                if candidate.get("category_id") == snapshot.get("category_id"):
+                    target = candidate
+                    break
+            if target is None:
+                return False
+            target.setdefault("items", []).append(copy.deepcopy(snapshot))
+            target["version"] += 1
+            library["version"] += 1
+            self._touch(raw)
+            return True
         return self._mutate(mutator)
 
     def move_items(self, asset_ids: List[str], category_id: str) -> Dict[str, Any]:

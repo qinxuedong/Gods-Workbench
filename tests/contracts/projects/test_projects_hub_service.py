@@ -117,7 +117,10 @@ def test_api_static_and_projects_integration(client: TestClient):
     assert "影视工坊" in resp_workshop.text
 
     # 真实项目列表 API 接口打通
-    resp_api = client.get("/api/asset-registry/projects")
+    # C4-AC7（秦先生裁定 2026-10-15）：项目列表必须登录，匿名 401。
+    assert client.get("/api/asset-registry/projects").status_code == 401
+    resp_api = client.get("/api/asset-registry/projects",
+                          headers={"Authorization": "Bearer local-dev-token", "X-User-Role": "admin"})
     assert resp_api.status_code == 200
     data = resp_api.json()
     assert "projects" in data

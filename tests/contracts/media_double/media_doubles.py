@@ -131,7 +131,8 @@ class FakeComfy(_Recorder):
         if self.count("history") == 1:
             return {"found": False, "entry": None}
         if self.mode == "fail_remote":
-            # ComfyUI 执行出错时 history 里没有产物；带产物的 error 条目会被真实代码照常登记（见 PR-3 说明）。
+            # ComfyUI 执行出错时替身返回 outputs 为空的 error 条目；带残留输出的
+            # 失败 history 由 C4-AC9 在 fixtures/comfyui/ 用 HTTP 层替身覆盖真实代码。
             return {"found": True, "entry": {"outputs": {}, "status": {"status_str": "error", "messages": []}}}
         status = {"status_str": "success"}
         images = [{"filename": "out-0001.png", "subfolder": "", "type": "output"}]
@@ -161,15 +162,16 @@ class FakeComfy(_Recorder):
             monkeypatch.setattr(comfy_executor, name, getattr(self, name))
 
 
-def output_transport(allowed_hosts: frozenset[str] | None = None) -> httpx.MockTransport:
-    """只对获准主机返回固定 PNG；其它主机一律报错。
+def output_transport(allowed_hosts: frozenset[str] | None = None, verify: bool = True) -> httpx.MockTransport:
+    """只对获准主机名的下载请求返回固定 PNG；其它主机名一律报错。
 
-    形参与真实 routes._output_transport(allowed_hosts) 对齐；替身忽略白名单。
+    形参与真实 routes._output_transport(allowed_hosts, verify) 对齐；替身忽略白名单。
+    下载请求按新契约指向钉住后的 IP 字面量，原主机名保留在 Host 头，因此按 Host 头判定。
     """
 
     def handler(request: httpx.Request) -> httpx.Response:
-        if request.url.host != APPROVED_HOST:
-            raise httpx.ConnectError(f"fake transport refuses host {request.url.host}")
+        if request.headers.get("host") != APPROVED_HOST:
+            raise httpx.ConnectError(f"fake transport refuses host {request.headers.get('host')}")
         return httpx.Response(200, content=FIXED_PNG, headers={"content-type": "image/png"})
 
     return httpx.MockTransport(handler)
@@ -177,6 +179,21 @@ def output_transport(allowed_hosts: frozenset[str] | None = None) -> httpx.MockT
 
 def install_output_transport(monkeypatch) -> None:
     monkeypatch.setattr(routes, "_output_transport", output_transport)
+
+
+def install_fake_resolver(monkeypatch, address: str = "198.18.0.7") -> None:
+    """替身 DNS：任何主机名都解析到 fake-ip 网段地址；是否放行由真实地址判定决定。"""
+    import ipaddress
+    import socket
+
+    family = socket.AF_INET6 if ipaddress.ip_address(address).version == 6 else socket.AF_INET
+    sockaddr = (address, 0, 0, 0) if family == socket.AF_INET6 else (address, 0)
+
+    async def fake_getaddrinfo(host: str, port: int) -> list[tuple]:
+        info = (family, socket.SOCK_STREAM, 6, "", (sockaddr[0], port) + sockaddr[2:])
+        return [info]
+
+    monkeypatch.setattr(routes, "_getaddrinfo", fake_getaddrinfo)
 
 
 def count_assets(client: TestClient, headers=HEADERS) -> dict:

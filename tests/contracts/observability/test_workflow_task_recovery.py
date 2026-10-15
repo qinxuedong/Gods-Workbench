@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import io
+import socket
 
 import httpx
 import pytest
@@ -35,7 +36,7 @@ def successful_collection(monkeypatch):
         calls.append((remote_task_id, api_key))
         return {"status": "SUCCESS", "outputs": [{"fileName": "result.png"}]}
 
-    async def collect(context, task_id, outputs):
+    async def collect(context, task_id, outputs, **kwargs):
         return [{"asset_id": "stable-output", "registered": True}]
 
     async def forbidden(*args, **kwargs):
@@ -184,7 +185,7 @@ def test_mixed_cloud_outputs_keep_partial_failure_and_retry_without_duplicates(c
     valid = {"fileUrl": "https://approved.example/result.png", "fileName": "result.png"}
 
     def download(request):
-        assert request.url.host == "approved.example"
+        assert request.headers.get("host") == "approved.example"
         return httpx.Response(200, content=content, headers={"content-type": "image/png"})
 
     async def query(*args, **kwargs):
@@ -194,7 +195,11 @@ def test_mixed_cloud_outputs_keep_partial_failure_and_retry_without_duplicates(c
     async def forbidden(*args, **kwargs):
         raise AssertionError("回收重试不能重新生成")
 
-    monkeypatch.setattr(routes, "_output_transport", lambda allowed_hosts=None: httpx.MockTransport(download))
+    async def fake_resolve(host, port):
+        return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("198.18.0.7", port))]
+
+    monkeypatch.setattr(routes, "_getaddrinfo", fake_resolve)
+    monkeypatch.setattr(routes, "_output_transport", lambda allowed_hosts=None, verify=True: httpx.MockTransport(download))
     monkeypatch.setattr(platforms, "query_rh_task_outputs", query)
     monkeypatch.setattr(platforms, "create_rh_cloud_task", forbidden)
     url = "/api/god_workflow/tasks/" + task["job_id"]
