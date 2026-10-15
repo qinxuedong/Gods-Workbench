@@ -53,6 +53,7 @@ EVENT_MEMBER_UPDATED = "auth.member.updated"
 EVENT_MEMBER_DELETED = "auth.member.deleted"
 EVENT_APPROVAL_UPDATED = "auth.approval.updated"
 EVENT_TOKEN_CREATED = "auth.token.created"
+EVENT_WORKFLOW_TASK_ABANDONED = "workflow.task.abandoned"
 
 AUTH_EVENT_NAMES = frozenset(
     {
@@ -79,6 +80,7 @@ MANAGEMENT_EVENT_NAMES = frozenset(
         EVENT_MEMBER_DELETED,
         EVENT_APPROVAL_UPDATED,
         EVENT_TOKEN_CREATED,
+        EVENT_WORKFLOW_TASK_ABANDONED,
     }
 )
 ALL_EVENT_NAMES = AUTH_EVENT_NAMES | MANAGEMENT_EVENT_NAMES
