@@ -204,6 +204,9 @@ def _seed_offline_job(role: str) -> str | None:
     return job_id
 
 
+WRITER_ROLES = frozenset({"owner", "admin", "governor"})
+
+
 def seed(
     client, state: str, action: str | None = None, role: str | None = None
 ) -> dict[str, object]:
@@ -268,6 +271,20 @@ def seed(
         target_bundle = _seed_bundle(client, "owner", target_id, "ASSET_ACTIVE_A")
     if needs_cross_bundle:
         cross_bundle = _seed_bundle(client, "cross_project_editor", cross_id, "ASSET_ACTIVE_B")
+    if (
+        action == "workflow_task"
+        and role in WRITER_ROLES
+        and role != "owner"
+        and state != "unknown"
+    ):
+        # Workflows are stored per subject directory, so a writer can only
+        # execute a workflow it owns.  Seed one for the writer and bind it to
+        # the target project via the public source_context PUT.
+        workflow_id, workflow_version = _create_workflow(
+            client, role, target_id, target_bundle["canvas_id"], f"WF_{role}"
+        )
+        target_bundle["workflow_id"] = workflow_id
+        target_bundle["workflow_version"] = workflow_version
     if needs_cross_bundle and state == "active_legacy_open":
         legacy_bundle = _seed_bundle(client, "owner", legacy_id, "ASSET_LEGACY_A")
 

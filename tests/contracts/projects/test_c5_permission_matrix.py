@@ -105,12 +105,12 @@ KNOWN_GAPS: dict[str, str] = {
     'test_cell_asset_restore_move__revoked_editor__archived': 'C5-T3: expected 404, observed HTTP 403',
     'test_cell_asset_restore_move__revoked_editor__deleted': 'C5-T3: expected 404, observed HTTP 403',
     'test_cell_asset_restore_move__revoked_editor__unknown': 'C5-T3: expected 404, observed HTTP 403',
-    'test_cell_asset_task__admin__archived': 'C5-T3/T5: observed 503 executor-unavailable before project gate (gate must run first)',
-    'test_cell_asset_task__admin__deleted': 'C5-T3/T5: observed 503 executor-unavailable before project gate (gate must run first)',
-    'test_cell_asset_task__governor__archived': 'C5-T3/T5: observed 503 executor-unavailable before project gate (gate must run first)',
-    'test_cell_asset_task__governor__deleted': 'C5-T3/T5: observed 503 executor-unavailable before project gate (gate must run first)',
-    'test_cell_asset_task__owner__archived': 'C5-T3/T5: observed 503 executor-unavailable before project gate (gate must run first)',
-    'test_cell_asset_task__owner__deleted': 'C5-T3/T5: observed 503 executor-unavailable before project gate (gate must run first)',
+    'test_cell_asset_task__admin__archived': 'C5-T3/T5: expected 403, observed HTTP 200 (job action accepted on archived/deleted project; gate must run first)',
+    'test_cell_asset_task__admin__deleted': 'C5-T3/T5: expected 403, observed HTTP 200 (job action accepted on archived/deleted project; gate must run first)',
+    'test_cell_asset_task__governor__archived': 'C5-T3/T5: expected 403, observed HTTP 200 (job action accepted on archived/deleted project; gate must run first)',
+    'test_cell_asset_task__governor__deleted': 'C5-T3/T5: expected 403, observed HTTP 200 (job action accepted on archived/deleted project; gate must run first)',
+    'test_cell_asset_task__owner__archived': 'C5-T3/T5: expected 403, observed HTTP 200 (job action accepted on archived/deleted project; gate must run first)',
+    'test_cell_asset_task__owner__deleted': 'C5-T3/T5: expected 403, observed HTTP 200 (job action accepted on archived/deleted project; gate must run first)',
     'test_cell_asset_task__readonly_grantee__active': 'C5-T3: expected 404, observed HTTP 403',
     'test_cell_asset_task__readonly_grantee__active_legacy_open': 'C5-T3: expected 404, observed HTTP 403',
     'test_cell_asset_task__readonly_grantee__archived': 'C5-T3: expected 404, observed HTTP 403',
@@ -243,12 +243,12 @@ KNOWN_GAPS: dict[str, str] = {
     'test_cell_canvas_read__revoked_editor__active_legacy_open': 'C5-T4: expected 404, observed HTTP 200',
     'test_cell_canvas_read__revoked_editor__archived': 'C5-T4: expected 404, observed HTTP 200',
     'test_cell_canvas_read__revoked_editor__deleted': 'C5-T4: expected 404, observed HTTP 200',
-    'test_cell_canvas_task__admin__active': 'C5-T4: expected allow, observed HTTP 400',
-    'test_cell_canvas_task__admin__active_legacy_open': 'C5-T4: expected allow, observed HTTP 400',
+    'test_cell_canvas_task__admin__active': 'C5-T4: expected allow, observed HTTP 404 PROJECT_NOT_FOUND',
+    'test_cell_canvas_task__admin__active_legacy_open': 'C5-T4: expected allow, observed HTTP 404 PROJECT_NOT_FOUND',
     'test_cell_canvas_task__admin__archived': 'C5-T4: expected 403 PROJECT_READ_ONLY, observed HTTP 404',
     'test_cell_canvas_task__admin__deleted': 'C5-T4: expected 403 PROJECT_READ_ONLY, observed HTTP 404',
-    'test_cell_canvas_task__governor__active': 'C5-T4: expected allow, observed HTTP 400',
-    'test_cell_canvas_task__governor__active_legacy_open': 'C5-T4: expected allow, observed HTTP 400',
+    'test_cell_canvas_task__governor__active': 'C5-T4: expected allow, observed HTTP 404 PROJECT_NOT_FOUND',
+    'test_cell_canvas_task__governor__active_legacy_open': 'C5-T4: expected allow, observed HTTP 404 PROJECT_NOT_FOUND',
     'test_cell_canvas_task__governor__archived': 'C5-T4: expected 403 PROJECT_READ_ONLY, observed HTTP 404',
     'test_cell_canvas_task__governor__deleted': 'C5-T4: expected 403 PROJECT_READ_ONLY, observed HTTP 404',
     'test_cell_canvas_task__owner__archived': 'C5-T4: expected 403 PROJECT_READ_ONLY, observed HTTP 404',
@@ -405,6 +405,12 @@ KNOWN_GAPS: dict[str, str] = {
     'test_cell_workflow_task__governor__deleted': 'C5-T3/T5: observed 503 executor-unavailable before project gate (gate must run first)',
     'test_cell_workflow_task__owner__archived': 'C5-T3/T5: observed 503 executor-unavailable before project gate (gate must run first)',
     'test_cell_workflow_task__owner__deleted': 'C5-T3/T5: observed 503 executor-unavailable before project gate (gate must run first)',
+    'test_cell_workflow_task__owner__active': 'C5-T5: expected allow (2xx), observed HTTP 503 WORKFLOW_EXECUTOR_UNAVAILABLE (seeded project-bound workflow; no executor offline)',
+    'test_cell_workflow_task__owner__active_legacy_open': 'C5-T5: expected allow (2xx), observed HTTP 503 WORKFLOW_EXECUTOR_UNAVAILABLE (seeded project-bound workflow; no executor offline)',
+    'test_cell_workflow_task__admin__active': 'C5-T5: expected allow (2xx), observed HTTP 503 WORKFLOW_EXECUTOR_UNAVAILABLE (seeded project-bound workflow; no executor offline)',
+    'test_cell_workflow_task__admin__active_legacy_open': 'C5-T5: expected allow (2xx), observed HTTP 503 WORKFLOW_EXECUTOR_UNAVAILABLE (seeded project-bound workflow; no executor offline)',
+    'test_cell_workflow_task__governor__active': 'C5-T5: expected allow (2xx), observed HTTP 503 WORKFLOW_EXECUTOR_UNAVAILABLE (seeded project-bound workflow; no executor offline)',
+    'test_cell_workflow_task__governor__active_legacy_open': 'C5-T5: expected allow (2xx), observed HTTP 503 WORKFLOW_EXECUTOR_UNAVAILABLE (seeded project-bound workflow; no executor offline)',
     'test_cell_workflow_task__readonly_grantee__active': 'C5-T5: expected 404, observed HTTP 403',
     'test_cell_workflow_task__readonly_grantee__active_legacy_open': 'C5-T5: expected 404, observed HTTP 403',
     'test_cell_workflow_task__readonly_grantee__archived': 'C5-T5: expected 404, observed HTTP 403',
@@ -455,6 +461,8 @@ OFFLINE_LIMITED = {
     "canvas_task": "smart canvas runtime is not configured in the offline harness",
     "workflow_task": "ComfyUI executor is not configured in the offline harness",
 }
+
+ALLOW_SUCCESS_CODES = frozenset({200, 201, 202, 204})
 
 # The matrix includes an unfiltered canvas list spec, but that route requires
 # project_id and therefore has no endpoint contract to exercise.
@@ -561,8 +569,11 @@ def _request(client, action: str, role: str, ids: dict[str, object]):
         body = {}
     elif action == "workflow_task":
         if role in {"owner", "admin", "governor"} and ids.get("state") != "unknown":
+            # Writers execute the seeded workflow bound (source_context) to
+            # the cell's project, so the project context is exercised.
             body = {
-                "prompt": {"1": {"class_type": "LoadImage", "inputs": {}}},
+                "workflow_id": ids["workflow_id"],
+                "expected_version": ids.get("workflow_version", 2),
                 "target": "local_comfy",
             }
         else:
@@ -662,7 +673,7 @@ def _make_cell(name: str, action: str, role: str, state: str, expected: str):
     if action in NA_ENDPOINTS:
         marks.append(
             pytest.mark.skip(
-                reason="N/A: GET /api/canvases requires project_id; no unfiltered canvas list endpoint (report to QA)"
+                reason="Permanently N/A (PM decision): GET /api/canvases requires project_id; there is no unfiltered canvas list endpoint"
             )
         )
 
@@ -691,8 +702,10 @@ def _make_cell(name: str, action: str, role: str, state: str, expected: str):
         elif expected == "allow_filtered":
             _assert_filtered(response, role, state, ids)
         elif expected == "allow":
-            if action in OFFLINE_LIMITED:
-                assert response.status_code not in (401, 403, 404), response.text
+            if action.startswith(("asset_", "canvas_", "workflow_")):
+                # Explicit success only: 422/4xx and 5xx (incl. executor
+                # unavailable 503) are not an "allow".
+                assert response.status_code in ALLOW_SUCCESS_CODES, response.text
             else:
                 assert response.status_code < 400, response.text
         else:
