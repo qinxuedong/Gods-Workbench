@@ -21,7 +21,7 @@ function harness(fetchImpl) {
     window:{location:{search:''},GWAuthGate:{revision:1,isAuthenticated:()=>true},addEventListener(type,fn){handlers.set(type,fn);},removeEventListener(type){handlers.delete(type);}},
     document:{readyState:'loading',addEventListener(){},createElement:()=>({textContent:'',innerHTML:''})},
     localStorage:{getItem:()=>null,setItem(){}}, CSS:{escape:value=>value},
-    AbortController, URLSearchParams, crypto:webcrypto, console:{warn(...args){warnings.push(args.map(String).join(' '));},log(){}},
+    AbortController, URL, URLSearchParams, crypto:webcrypto, console:{warn(...args){warnings.push(args.map(String).join(' '));},log(){}},
     setTimeout:fn=>{const id=++serial;timers.set(id,fn);return id;}, clearTimeout:id=>timers.delete(id),
     setInterval:fn=>{const id=++serial;timers.set(id,fn);return id;}, clearInterval:id=>timers.delete(id),
     fetch:async(url, options={})=>{requests.push({url,...options});return fetchImpl(url,options,requests.length);}
@@ -111,21 +111,37 @@ test('参数保存版本冲突后按服务端当前版本自动重试一次且�
   assert.equal(h.state.currentWorkflow.version,6);
   assert.equal(h.state.syncRevisions.A,6);
 });
-test('执行遇来源项目失效时换无项目上下文重试一次',async()=>{
-  let calls=0;
-  const h=harness(async()=>{
-    calls+=1;
-    if(calls===1)return response({detail:{code:'PROJECT_NOT_FOUND',message:'项目不存在'}},404);
-    return response({job_id:'retry-job',target:'local_comfy'});
-  });
+test('执行遇来源项目失效时只提交一次并在面板显示失败',async()=>{
+  const h=harness(async()=>response({detail:{code:'PROJECT_NOT_FOUND',message:'项目不存在'}},404));
   h.state.currentWorkflow=workflow('A');
   h.context.window.location.search='?project_id=gone';
   h.run('startTaskPolling=()=>{};');await h.run('handleExecuteWorkflow()');
-  assert.equal(h.requests.length,2);
+  assert.equal(h.requests.length,1);
   assert.deepEqual(JSON.parse(h.requests[0].body).source_context,{project_id:'gone'});
-  assert.deepEqual(JSON.parse(h.requests[1].body).source_context,{});
-  assert.notEqual(h.requests[0].headers['Idempotency-Key'],h.requests[1].headers['Idempotency-Key']);
-  assert.equal(h.state.activeTaskId,'retry-job');
+  assert.ok(h.requests[0].headers['Idempotency-Key']);
+  assert.match(h.element('#taskModalBody').innerHTML,/任务提交失败/);
+  assert.match(h.element('#taskModalBody').innerHTML,/项目不存在/);
+  assert.equal(h.state.submitting,false);
+  assert.equal(h.state.activeTaskId,null);
+});
+test('连续版本冲突抛出后清除重试标记，后续保存仍能自动重试',async()=>{
+  let calls=0;
+  const h=harness(async(url,options)=>{
+    calls+=1;
+    if(calls<4)return response({detail:{code:'VERSION_CONFLICT',message:'expected_version 与当前版本不一致',current_version:100+calls}},409);
+    return response({...workflow('A'),version:200});
+  });
+  h.state.currentWorkflow=workflow('A');
+  h.run('schedulePersistWorkflowParams([{node_id:"1",field_name:"image",value:"first"}]);');
+  await assert.rejects(h.run('flushWorkflowParams("A")'),/expected_version/);
+  assert.equal(calls,2);
+  h.run('schedulePersistWorkflowParams([{node_id:"1",field_name:"image",value:"second"}]);');
+  await h.run('flushWorkflowParams("A")');
+  assert.equal(calls,4);
+  assert.equal(JSON.parse(h.requests[3].body).expected_version,103);
+  assert.deepEqual(JSON.parse(h.requests[3].body).widget_updates.map(x=>x.value),['second']);
+  assert.equal(h.state.currentWorkflow.version,200);
+  assert.equal(h.state.syncRevisions.A,200);
 });
 test('旧任务迟到终态不停止新任务轮询',async()=>{
   let resolveA,resolveB;const a=new Promise(r=>resolveA=r),b=new Promise(r=>resolveB=r);
@@ -236,8 +252,10 @@ test('点击升级按钮后发出的请求 body 为 {"adapter_upgrade":true}',as
   upgradeCallback=h.context.toasts[0];
   assert.ok(upgradeCallback,'应有升级回调');
   await upgradeCallback();await flush();
-  assert.equal(calls,2);
-  const req=h.requests[1];
+  // 升级成功后会继续完成导入（如回读 /item），只核对升级重发的那一次 open-in-comfy。
+  const opens=h.requests.filter(r=>r.url.includes('/open-in-comfy/'));
+  assert.equal(opens.length,2);
+  const req=opens[1];
   assert.equal(req.headers['Content-Type'],'application/json');
   assert.deepEqual(JSON.parse(req.body),{adapter_upgrade:true});
 });
@@ -256,4 +274,43 @@ test('升级重试本身再次 409 COMFY_ADAPTER_CONFLICT 不给升级按钮',as
   const conflict=toasts.find(t=>t.msg.includes('legacy-9b0ff8a'));
   assert.ok(conflict,'应有冲突提示');
   assert.equal(conflict.actionLabel,undefined,'升级重试失败不应再给升级按钮');
+});
+
+// C4-AC14：open-in-comfy 地址错误分流（未配置跳设置 / 连不上）。
+test('C4-AC14 409 未配置保留 settings_path 并提示前往设置', async()=>{
+  const h=harness(async()=>response({detail:{code:'COMFY_HOST_NOT_CONFIGURED',message:'请先在设置中配置本地 ComfyUI 服务地址',settings_path:'/static/pages/workflow.html'}},409));
+  const err=await h.run('apiFetch("/api/god_workflow/open-in-comfy/A",{method:"POST"}).catch(e=>e)');
+  assert.equal(err.status,409);assert.equal(err.code,'COMFY_HOST_NOT_CONFIGURED');assert.equal(err.settings_path,'/static/pages/workflow.html');
+  const toasts=[];h.context.window.showWorkbenchToast=(...args)=>toasts.push(args);
+  h.context.__err=err;
+  assert.equal(h.run('reportComfyHostError(__err)'),'not_configured');
+  assert.match(toasts[0][0],/^未配置 ComfyUI 地址/);assert.equal(toasts[0][1],true);assert.equal(toasts[0][2],'前往设置');
+  // 设置页即当前页：点击「前往设置」打开本页设置弹窗而非导航。
+  let clicked=0;h.element('#btnOpenSettings').click=()=>{clicked++;};
+  h.context.window.location={pathname:'/static/pages/workflow.html',href:'http://x/static/pages/workflow.html?id=A',search:''};
+  toasts[0][3]();assert.equal(clicked,1);assert.equal(h.context.window.location.href,'http://x/static/pages/workflow.html?id=A');
+});
+test('C4-AC14 settings_path 指向其他页时站内导航，拒绝外部地址', async()=>{
+  const h=harness(async()=>response({detail:{code:'COMFY_HOST_NOT_CONFIGURED',message:'m',settings_path:'//evil.example/x'}},409));
+  const err=await h.run('apiFetch("/api/god_workflow/open-in-comfy/A",{method:"POST"}).catch(e=>e)');
+  assert.equal(err.settings_path,undefined);
+  h.context.window.location={pathname:'/static/pages/index.html',href:'http://x/static/pages/index.html',search:''};
+  assert.equal(h.run('openComfyHostSettings("/static/pages/settings.html")'),'navigate');
+  assert.equal(h.context.window.location.href,'/static/pages/settings.html');
+});
+test('C4-AC14 503 连不上与其他错误文案区分', async()=>{
+  const h=harness(async()=>response({}));const toasts=[];h.context.window.showWorkbenchToast=(...args)=>toasts.push(args);
+  assert.equal(h.run('reportComfyHostError(Object.assign(new Error("ComfyUI 未在线"),{status:503,code:"COMFY_HOST_UNREACHABLE"}))'),'unreachable');
+  assert.equal(toasts[0][0],'连不上 ComfyUI：ComfyUI 未在线');
+  assert.equal(h.run('reportComfyHostError(Object.assign(new Error("ComfyUI 正在启动"),{status:503,code:"COMFY_START_PENDING"}))'),'other');
+  assert.equal(toasts[1][0],'导入 ComfyUI 失败：ComfyUI 正在启动');
+});
+test('C4-AC14 未配置时设置弹窗地址为空，不预填 127.0.0.1:8188', async()=>{
+  const h=harness(async()=>response({comfy_url:'',comfy_root_dir:'',local_models_dir:''}));
+  const input=h.element('#inputComfyUrl');input.value='stale';
+  await h.run('loadSettingsState()');
+  assert.equal(input.value,'');
+  const html=readFileSync(new URL('../../web/pages/workflow.html', import.meta.url),'utf8');
+  const tag=html.match(/<input id="inputComfyUrl"[^>]*>/)[0];
+  assert.match(tag,/value=""/);assert.match(tag,/placeholder="[^"]*8188/);
 });

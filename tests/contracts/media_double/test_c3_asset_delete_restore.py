@@ -1,7 +1,9 @@
-"""C3 删除 / 恢复（AC4，方案 A：只验资产注册表，不改生产代码）。
+"""C3 删除 / 恢复（AC4 + C4-AC6 同进同出）。
 
-已知且不在 C3 范围：产物同时登记在资产注册表和资产库，但注册表删除 / 恢复不会同步资产库那份
-（08:37 修订：另开 issue 跟踪）。本文件如实断言资产库那份在删除期间保持不变。
+产物同时登记在资产注册表和资产库（同一 asset_id）。C4-AC6 裁定：注册表是存在性
+唯一真源，注册表删除/恢复时素材库条目必须同进同出——删除把素材库条目一并移除并
+暂存进回收站条目 payload["library_item"]，恢复时原样放回；素材库侧删除桥接条目
+（带 workflow_owner 且注册表有同名资产）改走注册表删除，保证可恢复、不两处分叉。
 """
 from __future__ import annotations
 
@@ -34,6 +36,18 @@ def _restore(client, entry_id):
     return client.post(f"{REGISTRY}/recycle-bin/{entry_id}/restore", headers=GOVERNOR)
 
 
+def _library_item(client, asset_id):
+    """从素材库 API 读回 asset_id 对应条目；不存在返回 None。"""
+    response = client.get("/api/asset-library", headers=HEADERS)
+    assert response.status_code == 200, response.text
+    for library in response.json()["library"]["libraries"]:
+        for category in library["categories"]:
+            for item in category["items"]:
+                if item["asset_id"] == asset_id:
+                    return item
+    return None
+
+
 def test_collected_output_delete_then_restore_keeps_task_links(media_client, fake_media, asset_counts):
     """C3-MD-DELETE-RESTORE-01"""
     workflow, started, asset_id = _completed_output(media_client)
@@ -45,8 +59,9 @@ def test_collected_output_delete_then_restore_keeps_task_links(media_client, fak
     assert asset_id not in deleted["registry_ids"]
     assert entry_id in _recycle_ids(media_client)
     assert media_client.get(f"{REGISTRY}/assets/{asset_id}", headers=HEADERS).status_code == 404
-    # 方案 A 已知不一致：资产库那份不跟着删。
-    assert deleted["library_image"] == settled["library_image"]
+    # C4-AC6 同进同出：注册表删除时素材库同 asset_id 条目一并移除。
+    assert deleted["library_image"] == settled["library_image"] - 1
+    assert asset_id not in deleted["library_image_ids"]
     restored = _restore(media_client, entry_id)
     assert restored.status_code == 200, restored.text
     assert asset_counts() == settled
@@ -105,3 +120,73 @@ def test_restore_requires_governance_role(media_client, fake_media):
     denied = media_client.post(f"{REGISTRY}/recycle-bin/{entry_id}/restore", headers=HEADERS)
     assert denied.status_code in (401, 403), denied.text
     assert entry_id in _recycle_ids(media_client)
+
+
+def test_restore_reinserts_library_item_intact(media_client, fake_media, asset_counts):
+    """C4-AC6-RESTORE-01：恢复后素材库条目与删除前逐字段一致（同 id/同库/同分类/同字段）。"""
+    _, _, asset_id = _completed_output(media_client)
+    before = _library_item(media_client, asset_id)
+    assert before is not None
+    assert _restore(media_client, _delete(media_client, asset_id)).status_code == 200
+    after = _library_item(media_client, asset_id)
+    assert after == before
+    for field in ("asset_id", "library_id", "category_id", "name", "url", "created_at"):
+        assert after[field] == before[field], field
+
+
+def test_library_delete_goes_through_registry(media_client, fake_media, asset_counts):
+    """C4-AC6-LIB-DELETE-01：素材库侧删除桥接条目改走注册表删除（同进同出、可恢复）。"""
+    _, _, asset_id = _completed_output(media_client)
+    settled = asset_counts()
+
+    # 批量端点：删除后两份存储同时 -1，注册表出现可恢复回收条目。
+    batch = media_client.post("/api/asset-library/items/delete", headers=HEADERS,
+                              json={"asset_ids": [asset_id]})
+    assert batch.status_code == 200, batch.text
+    assert batch.json()["deleted"] == [asset_id]
+    deleted = asset_counts()
+    assert deleted["registry"] == settled["registry"] - 1
+    assert deleted["library_image"] == settled["library_image"] - 1
+    assert asset_id not in deleted["registry_ids"]
+    assert asset_id not in deleted["library_image_ids"]
+    entry_id = _recycle_ids(media_client)[-1]
+    assert _restore(media_client, entry_id).status_code == 200
+    assert asset_counts() == settled
+
+    # 单条端点：同样经注册表删除并留下回收条目。
+    single = media_client.delete(f"/api/asset-library/items/{asset_id}", headers=HEADERS)
+    assert single.status_code == 200, single.text
+    assert single.json()["deleted"] is True
+    assert asset_counts()["registry"] == settled["registry"] - 1
+    assert asset_counts()["library_image"] == settled["library_image"] - 1
+    entry_id = _recycle_ids(media_client)[-1]
+    assert _restore(media_client, entry_id).status_code == 200
+    assert asset_counts() == settled
+
+
+def test_restore_twice_does_not_duplicate_library_items(media_client, fake_media, asset_counts):
+    """C4-AC6-RESTORE-02：同一回收条目恢复两次不重复素材库条目；第二次恢复 404/409。"""
+    _, _, asset_id = _completed_output(media_client)
+    settled = asset_counts()
+    entry_id = _delete(media_client, asset_id)
+    assert _restore(media_client, entry_id).status_code == 200
+    second = _restore(media_client, entry_id)
+    assert second.status_code in (404, 409), second.text
+    counts = asset_counts()
+    assert counts == settled
+    assert counts["library_image_ids"].count(asset_id) == 1
+    assert counts["registry_ids"].count(asset_id) == 1
+
+
+def test_failed_registry_delete_rolls_back_library_item(media_client, fake_media, asset_counts):
+    """C4-AC6-ROLLBACK-01：注册表删除失败（CAS 冲突）时素材库条目原样回插，两处计数不变。"""
+    import pytest
+    from gw.asset_registry import repository as repo
+    from gw.core.errors import CleanroomException
+    _, _, asset_id = _completed_output(media_client)
+    settled = asset_counts()
+    before = _library_item(media_client, asset_id)
+    with pytest.raises(CleanroomException):
+        repo.delete_asset(asset_id, 10**9, None)
+    assert asset_counts() == settled
+    assert _library_item(media_client, asset_id) == before

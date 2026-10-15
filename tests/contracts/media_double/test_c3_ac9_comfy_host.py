@@ -128,14 +128,14 @@ def test_open_in_comfy_writes_host_file_installs_adapter_and_queues_load(media_c
 
 
 def test_open_in_comfy_offline_host_fails_closed_without_writing(media_client, no_network, comfy_host, monkeypatch):
-    """C3-AC9-OPEN-02：宿主未在线 → 503，不写宿主目录、不排队指令。"""
+    """C3-AC9-OPEN-02：宿主未在线（已配置但连不上）→ 503 COMFY_HOST_UNREACHABLE，不写宿主目录、不排队指令。"""
     from gw.god_workflow import routes
     monkeypatch.setattr(routes, "_comfy_operation",
                         lambda *a, **k: {"ok": True, "status": "offline", "highlight": False})
     workflow = save_document(media_client)
     opened = media_client.post(f"{WF}/open-in-comfy/{workflow['workflow_id']}", headers=HEADERS)
     assert opened.status_code == 503, opened.text
-    assert opened.json()["detail"]["code"] == "WORKFLOW_EXECUTOR_UNAVAILABLE"
+    assert opened.json()["detail"]["code"] == "COMFY_HOST_UNREACHABLE"
     assert list(comfy_host.rglob("GW_*.json")) == []
     assert media_client.get(f"{WF}/comfy-bridge/poll", headers=HEADERS).json() == {"command": "idle"}
 

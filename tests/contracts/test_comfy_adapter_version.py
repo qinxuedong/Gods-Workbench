@@ -122,7 +122,7 @@ def test_legacy_adapter_conflict_then_atomic_upgrade(tmp_path, monkeypatch):
     assert error.extra['installed_version'] == 'legacy-9b0ff8a'
     assert error.extra['required_version'] == str(browser_bridge.ADAPTER_VERSION) == '2'
     assert error.extra['upgradable'] is True
-    assert 'adapter_upgrade' in error.extra['fix_hint']
+    assert error.extra['fix_hint'] == '已安装的 ComfyUI 页面适配是旧版本，点「升级适配」即可更新'
     assert target.read_bytes() == legacy
 
     upgraded = browser_bridge.prepare(str(tmp_path), upgrade=True)
@@ -146,7 +146,7 @@ def test_unknown_file_is_never_upgraded(tmp_path):
         assert error.status_code == 409 and error.code == 'COMFY_ADAPTER_CONFLICT'
         assert error.extra['installed_version'] == 'unknown'
         assert error.extra['upgradable'] is False
-        assert 'extensions/gods_workbench/workbench.js' in error.extra['fix_hint']
+        assert error.extra['fix_hint'] == 'ComfyUI 里有一个不是神工坊安装的同名文件，为了安全不会覆盖，请手动移走后重试'
     assert target.read_text(encoding='utf-8') == 'user-custom bridge'
 
 
@@ -195,7 +195,7 @@ def test_open_in_comfy_conflict_detail_then_query_flag_upgrade(monkeypatch, tmp_
         assert detail['installed_version'] == 'legacy-1c915d7'
         assert detail['required_version'] == '2'
         assert detail['upgradable'] is True
-        assert 'adapter_upgrade' in detail['fix_hint']
+        assert detail['fix_hint'] == '已安装的 ComfyUI 页面适配是旧版本，点「升级适配」即可更新'
         assert target.read_bytes() == legacy
 
         upgraded = client.post(f'{WF}/open-in-comfy/{workflow_id}?adapter_upgrade=true', headers=HEADERS)
@@ -229,3 +229,16 @@ def test_open_in_comfy_upgrade_flag_accepts_json_true_only(monkeypatch, tmp_path
         assert upgraded.status_code == 200, upgraded.text
         assert upgraded.json()['browser_adapter']['upgraded'] is True
         assert target.read_bytes() == browser_bridge.SCRIPT.read_bytes()
+
+
+FORBIDDEN_HINT_TERMS = ('adapter_upgrade', 'upgrade=', '=true', 'true', 'open-in-comfy', '/api',
+                        'extensions/', 'workbench.js', 'installed_version', 'required_version',
+                        'upgradable', 'COMFY_', 'legacy-')
+
+
+@pytest.mark.parametrize('upgradable', [True, False])
+def test_fix_hints_contain_no_param_or_endpoint_names(upgradable):
+    hint = browser_bridge._conflict('legacy-9b0ff8a' if upgradable else 'unknown', upgradable).extra['fix_hint']
+    for term in FORBIDDEN_HINT_TERMS:
+        assert term.lower() not in hint.lower(), (term, hint)
+    assert '_' not in hint and '=' not in hint and '/' not in hint

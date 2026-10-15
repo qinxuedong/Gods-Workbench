@@ -19,7 +19,7 @@
     "message": "页面适配文件已有不同内容，已保留原文件，请核对后更新",
     "installed_version": "legacy-9b0ff8a",
     "required_version": "2",
-    "fix_hint": "检测到旧版神工坊页面适配（legacy-9b0ff8a），可自动升级：重新打开 ComfyUI 时携带 adapter_upgrade=true，升级完成后请刷新 ComfyUI 页面加载新脚本",
+    "fix_hint": "已安装的 ComfyUI 页面适配是旧版本，点「升级适配」即可更新",
     "upgradable": true
   }
 }
@@ -29,7 +29,9 @@
 - `installed_version`：宿主上已安装文件的版本标识。带版本标记时为标记数字字符串（如 `"2"`、`"3"`）；无标记但内容命中既往官方发布指纹时为 `legacy-<短提交号>`；其余为 `"unknown"`。
 - `required_version`：本次要安装的适配版本，字符串形式（当前 `"2"`）。
 - `upgradable`：仅当已安装文件确认为神工坊官方旧版（legacy 指纹，或标记版本低于所需版本）时为 `true`。
-- `fix_hint`：面向用户的中文修复建议，前端可直接展示。
+- `fix_hint`：面向用户的中文修复建议，前端可直接展示；不得包含参数名、接口路径或文件路径等开发术语。
+  - 可升级：`已安装的 ComfyUI 页面适配是旧版本，点「升级适配」即可更新`
+  - 未知/冲突文件：`ComfyUI 里有一个不是神工坊安装的同名文件，为了安全不会覆盖，请手动移走后重试`
 
 前端处理原则：
 - `upgradable=true`：提示用户可一键升级，携带 `adapter_upgrade=true` 重试同一请求。

@@ -99,6 +99,8 @@ KNOWN_IMPLEMENTED = frozenset([
     '/api/god_workflow/tasks',
     '/api/god_workflow/tasks/{p}',
     '/api/god_workflow/tasks/{p}/collect',
+    # 2026-10-15 C4-AC15：结果未知且无远端 ID 的任务本地标记放弃（PR #35 后端）。
+    '/api/god_workflow/tasks/{p}/abandon',
     '/api/god_workflow/export/{p}',
     '/api/god_workflow/compare-local/{p}',
     '/api/god_workflow/folders',

@@ -532,7 +532,7 @@
           <label for="inputComfyUrl">
             <span>本地 ComfyUI 服务地址 (Local ComfyUI HTTP URL)</span>
           </label>
-          <input id="inputComfyUrl" class="param-input" type="text" placeholder="http://127.0.0.1:8188" value="http://127.0.0.1:8188" />
+          <input id="inputComfyUrl" class="param-input" type="text" placeholder="例如 http://127.0.0.1:8188（未填写则视为未配置）" value="" />
           <div class="field-hint">用于自动调用 /object_info 对比本地已安装节点、模型清单，以及直接提交本地生图任务。</div>
         </div>
 
@@ -605,13 +605,15 @@
         </div>
         <button id="btnCloseTaskModal" class="hw-round-btn" type="button" aria-label="关闭工作流任务"><span class="hw-round-inner">✕</span></button>
       </div>
-      <div class="modal-body" id="taskModalBody">
-        <div style="color:#ffffff;font-family: var(--gw-font-mono);" class="gw-type-body-sm">
-          当前暂无正在运行的任务。点击左下角「生成 / 排队运行」即可提交至 RunningHub 云端或本地 ComfyUI。
+      <div class="modal-body">
+        <div id="workflowTaskList" role="list" aria-label="当前工作流任务（新→旧）"></div>
+        <div id="taskModalBody">
+          <div style="color:#ffffff;font-family: var(--gw-font-mono);" class="gw-type-body-sm">
+            当前暂无正在运行的任务。点击左下角「生成 / 排队运行」即可提交至 RunningHub 云端或本地 ComfyUI。
+          </div>
         </div>
       </div>
       <div class="modal-footer">
-        <select id="workflowTaskSelect" class="param-select" aria-label="历史任务"></select>
         <button id="btnRefreshWorkflowTasks" class="hw-btn" type="button">刷新任务</button>
         <button id="btnRetryTaskCollection" class="hw-btn" type="button" hidden>重试产物回收</button>
         <button id="btnCloseTaskFooter" class="hw-btn" type="button">关闭窗口</button>

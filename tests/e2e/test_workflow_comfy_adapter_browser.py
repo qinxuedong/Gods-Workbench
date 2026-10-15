@@ -93,7 +93,7 @@ def test_legacy_adapter_conflict_then_upgrade_and_refresh_hint(monkeypatch, tmp_
             timeout=10000
         )
         toast_text = page.locator('#toastBanner').inner_text()
-        assert '检测到旧版神工坊页面适配（legacy-9b0ff8a）' in toast_text, toast_text
+        assert '已安装的 ComfyUI 页面适配是旧版本，点「升级适配」即可更新' in toast_text, toast_text
         assert '（已安装版本：legacy-9b0ff8a，需要版本：2）' in toast_text, toast_text
         upgrade_btn = page.locator('#toastActionBtn')
         assert upgrade_btn.inner_text() == '升级适配'
@@ -141,6 +141,7 @@ def test_unknown_adapter_no_upgrade_button_and_file_unchanged(monkeypatch, tmp_p
 
         page.locator('#btnImportComfyUi').click()
         page.locator('#toastBanner', has_text='（已安装版本：unknown，需要版本：2）').wait_for()
+        assert 'ComfyUI 里有一个不是神工坊安装的同名文件，为了安全不会覆盖，请手动移走后重试' in page.locator('#toastBanner').inner_text()
         toast_text = page.locator('#toastBanner').inner_text()
         assert '导入 ComfyUI 失败' not in toast_text, toast_text
 
