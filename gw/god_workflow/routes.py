@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 import ipaddress
 import shutil
 import socket
@@ -25,6 +26,7 @@ import httpx
 from fastapi import APIRouter, Header, Request, status
 from fastapi.responses import FileResponse
 
+from gw.core import audit
 from gw.core.auth import AuthContext, require_authenticated, require_edit_access
 from gw.core.errors import CleanroomException, VersionConflictException
 from gw.core.runtime_paths import RuntimePathError, resolve_runtime_paths
@@ -783,10 +785,45 @@ async def execute_task(request: Request, authorization: Optional[str] = Header(N
             "data_gaps": ["remote_task_id_missing"] if task.get("remote_id_missing") else []}
 
 
+def _encode_task_cursor(created_at: str, task_id: str) -> str:
+    """游标不透明：base64url（无填充）的紧凑 JSON {"c": created_at, "t": task_id}。"""
+    payload = json.dumps({"c": created_at, "t": task_id}, separators=(",", ":"))
+    return base64.urlsafe_b64encode(payload.encode("utf-8")).decode("ascii").rstrip("=")
+
+
+def _decode_task_cursor(cursor: str) -> tuple[str, str]:
+    if not cursor or len(cursor) > 512:
+        raise CleanroomException(400, "INVALID_CURSOR", "分页游标无效")
+    try:
+        padded = cursor.translate(str.maketrans("-_", "+/"))
+        padded += "=" * (-len(padded) % 4)
+        obj = json.loads(base64.b64decode(padded, validate=True).decode("utf-8"))
+    except ValueError:  # binascii.Error / UnicodeDecodeError / JSONDecodeError 均是 ValueError
+        raise CleanroomException(400, "INVALID_CURSOR", "分页游标无效") from None
+    if not isinstance(obj, dict) or not isinstance(obj.get("c"), str) or not isinstance(obj.get("t"), str):
+        raise CleanroomException(400, "INVALID_CURSOR", "分页游标无效")
+    return obj["c"], obj["t"]
+
+
 @router.get("/tasks")
-def list_workflow_tasks(authorization: Optional[str] = Header(None), x_user_role: str = Header("editor", alias="X-User-Role")):
+def list_workflow_tasks(authorization: Optional[str] = Header(None), x_user_role: str = Header("editor", alias="X-User-Role"),
+                        workflow_id: Optional[str] = None, limit: Optional[str] = None, cursor: Optional[str] = None):
     context = _auth(authorization, x_user_role, False)
-    return {"tasks": registry.list_tasks(context), "data_status": "ok", "data_gaps": []}
+    if workflow_id is None and limit is None and cursor is None:
+        return {"tasks": registry.list_tasks(context), "data_status": "ok", "data_gaps": []}
+    page_limit = 20
+    if limit is not None:
+        # 只接受 ASCII 十进制数字，杜绝 "+5"/"1e2"/全角数字被静默解释。
+        if not re.fullmatch(r"[0-9]+", limit) or int(limit) < 1:
+            raise CleanroomException(400, "INVALID_LIMIT", "limit 必须为正整数")
+        page_limit = min(int(limit), 100)
+    after = None
+    if cursor is not None:
+        after = _decode_task_cursor(cursor)
+    page, next_after = registry.list_tasks_page(context, workflow_id=workflow_id, limit=page_limit, after=after)
+    return {"tasks": page, "workflow_id": workflow_id,
+            "next_cursor": _encode_task_cursor(*next_after) if next_after is not None else None,
+            "has_more": next_after is not None, "data_status": "ok", "data_gaps": []}
 
 
 @router.get("/tasks/{task_id}")
@@ -794,7 +831,7 @@ async def task_status(task_id: str, authorization: Optional[str] = Header(None),
     """轮询真实任务状态；终态结果同步登记为素材。"""
     context = _auth(authorization, x_user_role, False)
     task = registry.load_task(context, task_id)
-    if task.get("status") in {"completed", "failed", "cancelled", "outcome_unknown"}:
+    if task.get("status") in {"completed", "failed", "cancelled", "outcome_unknown", "abandoned"}:
         return {**task, "data_status": "ok", "data_gaps": []}
     if task.get("remote_id_missing"):
         return {**task, "data_status": "ok", "data_gaps": ["remote_task_id_missing"]}
@@ -896,12 +933,39 @@ async def retry_task_collection(task_id: str, authorization: Optional[str] = Hea
         collection_status="completed" if complete else "partial_failed", outputs=outputs, messages=messages)
 
 
+@router.post("/tasks/{task_id}/abandon")
+async def abandon_task(task_id: str, request: Request, authorization: Optional[str] = Header(None), x_user_role: str = Header("editor", alias="X-User-Role")):
+    """把结果未知且无远端 ID 的任务标记为放弃；本地标记，绝不重发或新建远端任务。"""
+    context = _auth(authorization, x_user_role, True)
+    body = await _json_body(request, allow_empty=True)
+    if not isinstance(body, dict):
+        raise CleanroomException(400, "INVALID_REQUEST", "请求体必须是 JSON 对象")
+    reason = body.get("reason", "")
+    if not isinstance(reason, str):
+        raise CleanroomException(400, "INVALID_REQUEST", "reason 必须为字符串")
+    reason = reason[:200]
+    try:
+        task, changed = registry.abandon_task(context, task_id, reason=reason)
+    except CleanroomException as exc:
+        if exc.status_code == 409:
+            audit.record_management_event(audit.EVENT_WORKFLOW_TASK_ABANDONED, outcome=audit.OUTCOME_REJECTED,
+                                          reason=exc.code, subject=context.subject, role=context.role,
+                                          resource_id=task_id)
+        raise
+    if changed:
+        audit.record_management_event(audit.EVENT_WORKFLOW_TASK_ABANDONED, outcome=audit.OUTCOME_SUCCEEDED,
+                                      reason=reason or "outcome_unknown_no_remote_id",
+                                      subject=context.subject, role=context.role, resource_id=task_id)
+    return {**task, "abandoned": True, "already_abandoned": not changed, "resubmitted": False,
+            "data_status": "ok", "data_gaps": []}
+
+
 @router.post("/tasks/{task_id}/cancel")
 async def task_cancel(task_id: str, authorization: Optional[str] = Header(None), x_user_role: str = Header("editor", alias="X-User-Role")):
     """本地标记取消并尽力中断远端；不谎称远端已取消。"""
     context = _auth(authorization, x_user_role, True)
     task = registry.load_task(context, task_id)
-    if task.get("status") in {"completed", "failed", "cancelled"} | comfy_executor.TERMINAL_STATES:
+    if task.get("status") in {"completed", "failed", "cancelled", "abandoned"} | comfy_executor.TERMINAL_STATES:
         raise CleanroomException(409, "JOB_ALREADY_TERMINAL", "任务已处于终态")
     target = str(task.get("target") or "local_comfy")
     if target in ("rh_cloud", "runninghub"):

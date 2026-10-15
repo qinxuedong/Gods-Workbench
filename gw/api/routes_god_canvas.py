@@ -333,7 +333,7 @@ async def get_smart_job_status(
         auth = require_authenticated(authorization, x_user_role)
         task = registry.load_task(auth, job_id)
         return {**task, "state": task["status"], "source_domain": "workflow",
-                "poll_hint": None if task["status"] in {"completed", "failed", "cancelled", "outcome_unknown"} else f"/api/god_workflow/tasks/{job_id}"}
+                "poll_hint": None if task["status"] in {"completed", "failed", "cancelled", "outcome_unknown", "abandoned"} else f"/api/god_workflow/tasks/{job_id}"}
     try:
         auth = require_authenticated(authorization, x_user_role)
     except CleanroomException as exc:

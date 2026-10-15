@@ -605,15 +605,83 @@ async function initWorkbench() {
   } finally { if (initializingLifecycle === lifecycleAbortController) state.authLoading = false; }
 }
 
+// 结果未知任务：同一任务的同一错误最多自动弹出一次，已知悉后只在任务面板显示状态徽标。
+const UNKNOWN_TASK_SEEN_PREFIX = "gw.workflow.unknownTaskSeen:";
+function unknownTaskSeenKey(task) {
+  const id = task?.job_id || task?.task_id || "";
+  // 签名 = job_id + 稳定错误码；后端未给错误码时退回 job_id + 状态。不用可变的提示文本。
+  const signature = task?.error_code || task?.code || task?.status || "outcome_unknown";
+  return id ? `${UNKNOWN_TASK_SEEN_PREFIX}${id}:${signature}` : "";
+}
+function isUnknownTaskSeen(task) {
+  const key = unknownTaskSeenKey(task);
+  if (!key) return false;
+  try { return window.localStorage?.getItem(key) === "1"; } catch { return false; }
+}
+function markUnknownTaskSeen(task) {
+  const key = unknownTaskSeenKey(task);
+  if (!key) return;
+  try { window.localStorage?.setItem(key, "1"); } catch { /* 存储不可用时仅本次会话不再弹出 */ }
+}
+
+function workflowTaskId(task) { return String(task?.job_id || task?.task_id || ""); }
+function sortWorkflowTasks(tasks, workflowId) {
+  return (Array.isArray(tasks) ? tasks : [])
+    .filter(task => workflowTaskId(task) && (!workflowId || task.workflow_id === workflowId))
+    .slice()
+    // 与后端分页次序一致：created_at 倒序，同时间按 task_id 倒序决胜。
+    .sort((a, b) => String(b.created_at || "").localeCompare(String(a.created_at || ""))
+      || String(b.task_id || b.job_id || "").localeCompare(String(a.task_id || a.job_id || "")));
+}
+
+// 任务列表分页契约（对齐后端 PR #35）：
+//   GET /api/god_workflow/tasks?workflow_id=<id>&limit=<n 默认20 上限100>[&cursor=<next_cursor 原样回传>]
+//   → { tasks:[新→旧], workflow_id, next_cursor:string|null, has_more:bool, data_status, data_gaps }
+//   400 INVALID_LIMIT / INVALID_CURSOR；不带参数时为旧格式（最近 100 条、无 workflow_id 回显）。
+// 探测：回显 workflow_id === 请求值才视为服务端已过滤；含 next_cursor 键才视为支持分页；否则退回前端过滤。
+const WORKFLOW_TASK_PAGE_SIZE = 20;
+async function fetchWorkflowTasksPage(workflowId, cursor) {
+  const params = new URLSearchParams();
+  if (workflowId) { params.set("workflow_id", workflowId); params.set("limit", String(WORKFLOW_TASK_PAGE_SIZE)); }
+  if (cursor) params.set("cursor", cursor);
+  const query = params.toString();
+  let response;
+  try {
+    response = await apiFetch("/api/god_workflow/tasks" + (query ? "?" + query : ""));
+  } catch (error) {
+    // limit 被拒时退回旧格式并前端过滤；游标失效交由调用方回到第一页。
+    if (error?.status === 400 && error?.code === "INVALID_LIMIT" && !cursor) response = await apiFetch("/api/god_workflow/tasks");
+    else throw error;
+  }
+  const serverFiltered = Boolean(workflowId) && response?.workflow_id === workflowId;
+  const paged = serverFiltered && Object.prototype.hasOwnProperty.call(response, "next_cursor");
+  const nextCursor = paged && response.has_more !== false && typeof response.next_cursor === "string" && response.next_cursor ? response.next_cursor : null;
+  const dataStatus = typeof response?.data_status === "string" ? response.data_status : "ok";
+  const dataGaps = Array.isArray(response?.data_gaps) ? response.data_gaps.map(String) : [];
+  return { tasks: sortWorkflowTasks(response?.tasks, workflowId), nextCursor, serverFiltered, paged, dataStatus, dataGaps };
+}
+
 async function restoreWorkflowTask() {
   try {
-    const response = await apiFetch("/api/god_workflow/tasks");
     const requestedJob = new URLSearchParams(window.location.search).get('job_id');
-    const task = requestedJob
-      ? (response.tasks || []).find(item => (item.job_id || item.task_id) === requestedJob)
-      : (response.tasks || []).find(item => ["accepted", "running", "waiting_review", "paused", "outcome_unknown"].includes(item.status));
+    const workflowId = state.currentWorkflow?.workflow_id || null;
+    let task = null;
+    let page = null;
+    if (requestedJob) {
+      // 显式 job_id 链接按用户意图打开，不受当前工作流限制。
+      const response = await apiFetch("/api/god_workflow/tasks");
+      task = (response.tasks || []).find(item => (item.job_id || item.task_id) === requestedJob);
+    } else {
+      // 切换到工作流界面时，只有当前工作流的任务可以自动弹出执行监控；其他工作流的任务只在各自列表显示状态。
+      if (!workflowId) return;
+      page = await fetchWorkflowTasksPage(workflowId);
+      // 结果未知 / 已放弃任务在切换界面时从不自动弹出，只在任务面板列表显示状态标记。
+      task = page.tasks.find(item => ["accepted", "running", "waiting_review", "paused"].includes(item.status));
+    }
     if (!task) return;
-    state.activeTaskId = task.job_id || task.task_id;
+    if (task.status === "outcome_unknown") markUnknownTaskSeen(task);
+    state.activeTaskId = state.expandedTaskId = task.job_id || task.task_id;
+    if (page) { state.workflowTasks = page.tasks; state.workflowTasksCursor = page.nextCursor; renderWorkflowTaskList(); }
     setWorkflowTaskTrigger("btnViewTaskDrawer");
     wfGet("taskModal")?.classList.add("open");
     startTaskPolling(state.activeTaskId, task.target);
@@ -3398,21 +3466,96 @@ async function handleExecuteWorkflow() {
   }
 }
 
+// 任务面板：列出当前工作流的多条任务（新→旧）；点击某行才展开该任务的执行监控与产物。
+const WORKFLOW_TASK_STATUS_LABEL = { accepted: "已受理", running: "执行中", waiting_review: "等待审核", paused: "已暂停", completed: "已完成", failed: "失败", cancelled: "已取消", outcome_unknown: "结果未知 · 待人工核实", abandoned: "已放弃" };
+function formatWorkflowTaskTime(value) {
+  const date = value ? new Date(value) : null;
+  if (!date || Number.isNaN(date.getTime())) return "—";
+  const pad = number => String(number).padStart(2, "0");
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
+}
+function workflowTaskRowsHtml(tasks, expandedId) {
+  return tasks.map(task => {
+    const id = workflowTaskId(task);
+    const status = String(task.status || "accepted");
+    const tone = status === "completed" ? "var(--emerald-bright)" : ["failed", "cancelled", "outcome_unknown"].includes(status) ? "var(--rose)" : status === "abandoned" ? "var(--text-muted)" : "var(--compute)";
+    return `<button type="button" role="listitem" class="wf-task-row" data-task-row="${escapeHtml(id)}" data-status="${escapeHtml(status)}" aria-expanded="${id === expandedId}" title="${escapeHtml(id)}"`
+      + ` style="display:flex;width:100%;align-items:center;gap:10px;padding:4px 8px;margin-bottom:4px;text-align:start;cursor:pointer;background:none;border:1px solid ${id === expandedId ? "var(--primary-soft, rgba(255,255,255,.4))" : "var(--line, rgba(255,255,255,.12))"};border-radius:4px;color:inherit;font-family:var(--gw-font-mono);font-size:var(--gw-type-body-sm);font-variant-numeric:tabular-nums;">`
+      + `<span data-task-short-id>${escapeHtml(id.slice(0, 8))}</span>`
+      + `<span data-task-time style="color:var(--text-muted);">${escapeHtml(formatWorkflowTaskTime(task.created_at))}</span>`
+      + `<span data-task-executor>${escapeHtml(task.target === "rh_cloud" ? "RH" : "ComfyUI")}</span>`
+      + `<span class="wf-task-status-badge" data-task-badge="${escapeHtml(status)}" style="margin-inline-start:auto;padding:0 6px;border:1px solid ${tone};border-radius:4px;color:${tone};">${escapeHtml(WORKFLOW_TASK_STATUS_LABEL[status] || status)}</span>`
+      + `</button>`;
+  }).join("");
+}
+function renderWorkflowTaskList() {
+  const list = wfGet('workflowTaskList');
+  if (!list) return;
+  const more = state.workflowTasksCursor
+    ? `<button type="button" class="hw-btn" data-task-load-more style="width:100%;margin-top:4px;">加载更多</button>` : "";
+  const notice = state.workflowTasksNotice
+    ? `<div data-task-list-notice role="status" style="color:var(--amber, #f0b429);font-size:var(--gw-type-body-sm);margin-bottom:4px;">${escapeHtml(state.workflowTasksNotice)}</div>` : "";
+  list.innerHTML = notice + workflowTaskRowsHtml(state.workflowTasks || [], state.expandedTaskId) + more;
+}
+// 后端当前恒为 data_status "ok"、data_gaps []；若将来返回降级状态，在列表顶部如实提示，不隐藏已取得的任务。
+function workflowTasksNotice(page) {
+  if (!page || (page.dataStatus === "ok" && !page.dataGaps.length)) return "";
+  return `任务列表数据不完整（${page.dataStatus}${page.dataGaps.length ? "：" + page.dataGaps.join("、") : ""}）`;
+}
+async function loadMoreWorkflowTasks() {
+  const cursor = state.workflowTasksCursor;
+  if (!cursor || state.workflowTasksLoading) return;
+  state.workflowTasksLoading = true;
+  try {
+    const page = await fetchWorkflowTasksPage(state.currentWorkflow?.workflow_id || null, cursor);
+    const known = new Set((state.workflowTasks || []).map(workflowTaskId));
+    state.workflowTasks = sortWorkflowTasks([...(state.workflowTasks || []), ...page.tasks.filter(task => !known.has(workflowTaskId(task)))], state.currentWorkflow?.workflow_id || null);
+    state.workflowTasksCursor = page.nextCursor;
+    state.workflowTasksNotice = workflowTasksNotice(page);
+    renderWorkflowTaskList();
+  } catch (error) {
+    if (error?.status === 400 && error?.code === "INVALID_CURSOR") {
+      // 游标失效：回到第一页重新加载，不拼接可能错位的结果。
+      showToast("任务列表已变化，已从第一页重新加载", true);
+      state.workflowTasksCursor = null;
+      state.workflowTasksLoading = false;
+      await openWorkflowTasks();
+      return;
+    }
+    showToast(`加载更多任务失败：${error.message}`, true);
+  }
+  finally { state.workflowTasksLoading = false; }
+}
+function expandWorkflowTask(taskId) {
+  const task = (state.workflowTasks || []).find(item => workflowTaskId(item) === taskId);
+  if (!task) return;
+  state.activeTaskId = state.expandedTaskId = taskId;
+  renderWorkflowTaskList();
+  startTaskPolling(taskId, task.target);
+}
+
 async function openWorkflowTasks() {
   const taskModal = wfGet('taskModal');
   if (!taskModal?.classList.contains('open')) setWorkflowTaskTrigger('btnViewTaskDrawer');
   taskModal?.classList.add('open');
   try {
-    const response = await apiFetch('/api/god_workflow/tasks');
-    const tasks = response.tasks || [];
-    const selector = wfGet('workflowTaskSelect');
-    if (selector) selector.innerHTML = tasks.map(task => `<option value="${escapeHtml(task.job_id || task.task_id)}" data-target="${escapeHtml(task.target)}">${escapeHtml(task.status)} · ${escapeHtml(task.job_id || task.task_id)}</option>`).join('');
-    const selected = tasks.find(task => (task.job_id || task.task_id) === state.activeTaskId) || tasks[0];
-    if (selected) {
-      state.activeTaskId = selected.job_id || selected.task_id;
-      if (selector) selector.value = state.activeTaskId;
-      startTaskPolling(state.activeTaskId, selected.target);
-    } else wfGet('taskModalBody').textContent = '暂无任务记录';
+    const page = await fetchWorkflowTasksPage(state.currentWorkflow?.workflow_id || null);
+    state.workflowTasks = page.tasks;
+    state.workflowTasksCursor = page.nextCursor;
+    state.workflowTasksNotice = workflowTasksNotice(page);
+    const tasks = state.workflowTasks;
+    const bodyEl = wfGet('taskModalBody');
+    const selected = tasks.find(task => workflowTaskId(task) === state.activeTaskId) || tasks[0];
+    // 结果未知任务不自动展开详情，只在列表显示状态标记；用户点击该行才展开。
+    if (selected && selected.status !== "outcome_unknown") {
+      expandWorkflowTask(workflowTaskId(selected));
+      return;
+    }
+    clearInterval(state.pollTimer);
+    state.pollGeneration = (state.pollGeneration || 0) + 1;
+    state.expandedTaskId = null;
+    renderWorkflowTaskList();
+    if (bodyEl) bodyEl.textContent = tasks.length ? '点击上方任务查看执行详情与产物' : '当前工作流暂无任务记录';
   } catch (error) { showToast(`任务历史读取失败：${error.message}`, true); }
 }
 
@@ -3420,8 +3563,10 @@ function startTaskPolling(taskId, target) {
   clearInterval(state.pollTimer);
   const generation = state.pollGeneration = (state.pollGeneration || 0) + 1;
   const bodyEl = wfGet("taskModalBody");
-  const terminal = new Set(["completed", "failed", "cancelled", "outcome_unknown"]);
-  const label = { accepted: "已受理", running: "执行中", waiting_review: "等待审核", paused: "已暂停", completed: "已完成", failed: "失败", cancelled: "已取消", outcome_unknown: "结果未知" };
+  const terminal = new Set(["completed", "failed", "cancelled", "outcome_unknown", "abandoned"]);
+  const label = { accepted: "已受理", running: "执行中", waiting_review: "等待审核", paused: "已暂停", completed: "已完成", failed: "失败", cancelled: "已取消", outcome_unknown: "结果未知", abandoned: "已放弃" };
+  // 唯一的自动弹出时机：本次监控中亲眼看到任务从活动状态转入结果未知，且该 job+error_code 未曾提示过。
+  let observedActive = false;
 
   let inFlight = false;
   const pollOnce = async () => {
@@ -3448,9 +3593,22 @@ function startTaskPolling(taskId, target) {
           return `<div class="hw-bay-row" style="align-items:center;">${preview}<a class="mini-link-btn" href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer">打开受控输出</a></div>`;
         }).join("");
         const message = statusRes.messages?.join?.("；") || (st === "outcome_unknown" ? "外部请求可能已产生副作用，请人工核实，不会自动重试。" : "");
-        bodyEl.innerHTML = `<div class="missing-item-card ${delivered ? "ready-ok" : ""}"><div style="color:${delivered ? "var(--emerald-bright)" : "var(--rose)"};font-weight:700;font-family:var(--gw-font-mono);font-variant-numeric:tabular-nums;">${escapeHtml(collectionIncomplete ? "执行已结束，输出回收未完成" : (label[st] || st))} (Job ID: ${escapeHtml(taskId)})</div><div style="font-size:var(--gw-type-body-sm);color:var(--text-muted);">${escapeHtml(message)}</div></div>${mediaHtml}`;
+        const unknownBadge = st === "outcome_unknown" ? `<span class="wf-task-status-badge" data-task-badge="outcome_unknown" style="display:inline-block;margin-inline-start:6px;padding:0 6px;border:1px solid var(--rose);border-radius:4px;color:var(--rose);font-size:var(--gw-type-body-sm);">结果未知 · 待人工核实</span>` : "";
+        if (st === "outcome_unknown") {
+          const seenTask = { ...statusRes, job_id: statusRes.job_id || statusRes.task_id || taskId };
+          if (observedActive && !isUnknownTaskSeen(seenTask)) {
+            const modal = wfGet("taskModal");
+            if (modal && !modal.classList?.contains?.("open")) { setWorkflowTaskTrigger?.("btnViewTaskDrawer"); modal.classList?.add?.("open"); }
+          }
+          markUnknownTaskSeen(seenTask);
+        }
+        const abandonButton = st === "outcome_unknown" && statusRes.error_code === "OUTCOME_UNKNOWN_NO_REMOTE_ID"
+          ? `<div class="hw-bay-row"><button type="button" class="hw-btn" data-task-abandon="${escapeHtml(taskId)}">放弃</button><span style="font-size:var(--gw-type-body-sm);color:var(--text-muted);">没有远端任务 ID，确认未产生结果后可标记放弃（不会重新提交）。</span></div>` : "";
+        bodyEl.innerHTML = `<div class="missing-item-card ${delivered ? "ready-ok" : ""}"><div style="color:${delivered ? "var(--emerald-bright)" : "var(--rose)"};font-weight:700;font-family:var(--gw-font-mono);font-variant-numeric:tabular-nums;">${escapeHtml(collectionIncomplete ? "执行已结束，输出回收未完成" : (label[st] || st))} (Job ID: ${escapeHtml(taskId)})${unknownBadge}</div><div style="font-size:var(--gw-type-body-sm);color:var(--text-muted);">${escapeHtml(message)}</div></div>${abandonButton}${mediaHtml}`;
+        bodyEl.querySelector?.("[data-task-abandon]")?.addEventListener("click", () => abandonWorkflowTask(taskId, target));
         return;
       }
+      observedActive = true;
       bodyEl.innerHTML = `<div class="hw-bay-row"><div style="color:var(--compute);font-family:var(--gw-font-mono);font-variant-numeric:tabular-nums;font-weight:700;">${escapeHtml(label[st] || st)} (${escapeHtml(target === "rh_cloud" ? "RunningHub Cloud" : "Local ComfyUI")})...</div><div style="font-family:var(--gw-font-mono);font-variant-numeric:tabular-nums;font-size:var(--gw-type-body-sm);color:var(--text-muted);">JOB ID: ${escapeHtml(taskId)} · 状态: ${escapeHtml(st)}</div></div>`;
     } catch (err) {
       if (generation !== state.pollGeneration) return;
@@ -3462,6 +3620,35 @@ function startTaskPolling(taskId, target) {
   };
   pollOnce();
   state.pollTimer = setInterval(pollOnce, 3000);
+}
+
+// 「放弃」：仅对 OUTCOME_UNKNOWN_NO_REMOTE_ID 显示；后端只做本地标记与审计，不重发。
+const ABANDON_DEFAULT_REASON = "用户确认：结果未知且无远端任务 ID，标记放弃";
+async function abandonWorkflowTask(taskId, target) {
+  if (!taskId || state.abandoningTaskId === taskId) return;
+  if (window.confirm && !window.confirm("确认放弃该任务？只做本地标记，不会重新提交或产生费用。")) return;
+  state.abandoningTaskId = taskId;
+  try {
+    await apiFetch(`/api/god_workflow/tasks/${encodeURIComponent(taskId)}/abandon`, {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ reason: ABANDON_DEFAULT_REASON }),
+    });
+    showToast("任务已放弃");
+  } catch (error) {
+    if (error?.status === 409 && ["TASK_HAS_REMOTE_ID", "TASK_NOT_OUTCOME_UNKNOWN"].includes(error?.code)) {
+      showToast(error.code === "TASK_HAS_REMOTE_ID" ? "该任务已有远端 ID，不能放弃，已刷新状态" : "该任务已不是结果未知状态，已刷新状态", true);
+    } else {
+      showToast(`放弃失败：${error?.message || "请求失败"}`, true);
+      return;
+    }
+  } finally { state.abandoningTaskId = null; }
+  // 成功或 409 都刷新该任务与列表，显示后端的真实状态。
+  const row = (state.workflowTasks || []).find(item => (item.job_id || item.task_id) === taskId);
+  try {
+    const fresh = await apiFetch(`/api/god_workflow/tasks/${encodeURIComponent(taskId)}`);
+    if (row) Object.assign(row, { status: fresh.status, error_code: fresh.error_code });
+    if (typeof renderWorkflowTaskList === "function") renderWorkflowTaskList();
+  } catch { /* 列表刷新失败不影响详情轮询 */ }
+  startTaskPolling(taskId, target);
 }
 /* ==================== 7. 事件绑定 ==================== */
 
@@ -4105,9 +4292,10 @@ function bindEvents() {
 
   const taskModal = wfGet("taskModal");
   wfGet("btnViewTaskDrawer")?.addEventListener("click", openWorkflowTasks);
-  wfGet('workflowTaskSelect')?.addEventListener('change', event => {
-    state.activeTaskId = event.target.value;
-    if (state.activeTaskId) startTaskPolling(state.activeTaskId, event.target.selectedOptions[0]?.dataset.target);
+  wfGet('workflowTaskList')?.addEventListener('click', event => {
+    if (event.target?.closest?.('[data-task-load-more]')) { loadMoreWorkflowTasks(); return; }
+    const row = event.target?.closest?.('[data-task-row]');
+    if (row) expandWorkflowTask(row.dataset.taskRow);
   });
   wfGet('btnRefreshWorkflowTasks')?.addEventListener('click', openWorkflowTasks);
   wfGet('btnRetryTaskCollection')?.addEventListener('click', async event => {
@@ -4153,7 +4341,7 @@ function resetWorkflowIdentity() {
   workbenchRoot = document.getElementById?.('workflowWorkbench') || null;
   if (workbenchRoot) {
     wfQueryAll('.modal-backdrop.open').forEach(modal => modal.classList.remove('open'));
-    for (const id of ['taskModalBody', 'assetLibraryGrid', 'clipboardListContainer', 'publicWorkflowPreviewBody']) { const element = wfGet(id); if (element) element.innerHTML = ''; }
+    for (const id of ['taskModalBody', 'workflowTaskList', 'assetLibraryGrid', 'clipboardListContainer', 'publicWorkflowPreviewBody']) { const element = wfGet(id); if (element) element.innerHTML = ''; }
     clearEmptyWorkbenchView();
     renderHeaderTelemetry({ name: '--', workflow_id: '--', nodes: [], connections: [], env_diff: {} });
   }

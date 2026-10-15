@@ -604,6 +604,27 @@ def list_tasks(context: Any) -> list[dict[str, Any]]:
         return sorted(tasks, key=lambda task: task.get("created_at", ""), reverse=True)[:100]
 
 
+def list_tasks_page(context: Any, *, workflow_id: Optional[str] = None,
+                    limit: int = 20,
+                    after: Optional[tuple[str, str]] = None) -> tuple[list[dict[str, Any]], Optional[tuple[str, str]]]:
+    """按 (created_at, task_id) 键集分页读取任务账本；先按 workflow_id 过滤再切片，不受百条截断限制。"""
+    with _STORAGE_LOCK:
+        tasks = [load_task(context, path.stem) for path in _tasks_root(context).glob("*.json")]
+        if workflow_id is not None:
+            tasks = [task for task in tasks if task.get("workflow_id") == workflow_id]
+
+        def sort_key(task: dict[str, Any]) -> tuple[str, str]:
+            return (str(task.get("created_at", "")), str(task.get("task_id", "")))
+
+        # 键集分页：两页之间任务增删不会造成重复或遗漏既有任务。
+        tasks.sort(key=sort_key, reverse=True)
+        if after is not None:
+            tasks = [task for task in tasks if sort_key(task) < after]
+        page = tasks[:limit]
+        next_after = sort_key(page[-1]) if page and len(tasks) > limit else None
+        return page, next_after
+
+
 def load_task(context: Any, task_id: str) -> dict[str, Any]:
     path = _task_path(context, task_id)
     task = _read_json(path, None)
@@ -613,14 +634,48 @@ def load_task(context: Any, task_id: str) -> dict[str, Any]:
     task.setdefault("remote_task_id", task.get("prompt_id"))
     task.setdefault("source_status", task.get("status"))
     task["status"] = {"queued": "accepted", "succeeded": "completed", "canceled": "cancelled", "interrupted": "cancelled"}.get(task.get("status"), task.get("status"))
+    # error_code 是派生字段：按归一化后的当前状态重算，不信任落盘旧值。
+    if task["status"] == "outcome_unknown":
+        task["error_code"] = "OUTCOME_UNKNOWN_NO_REMOTE_ID" if not task.get("remote_task_id") else "OUTCOME_UNKNOWN"
+    elif task["status"] == "abandoned":
+        task["error_code"] = "TASK_ABANDONED"
+    else:
+        task["error_code"] = None
     return task
+
+
+def abandon_task(context: Any, task_id: str, *, reason: str = "") -> tuple[dict[str, Any], bool]:
+    """把结果未知且无远端 ID 的任务标记为放弃；绝不触发任何远端提交或重发。"""
+    with _STORAGE_LOCK:
+        task = load_task(context, task_id)
+        if task.get("status") == "abandoned":
+            return task, False
+        if task.get("remote_task_id"):
+            raise CleanroomException(409, "TASK_HAS_REMOTE_ID", "任务已有远端 ID，不能标记放弃，请查询或回收")
+        if task.get("status") != "outcome_unknown":
+            raise CleanroomException(409, "TASK_NOT_OUTCOME_UNKNOWN", "只有结果未知且无远端 ID 的任务可以标记放弃")
+        now = datetime.now(timezone.utc).isoformat()
+        task.update({
+            "status": "abandoned",
+            "execution_status": "abandoned",
+            "abandoned_at": now,
+            "abandon_reason": str(reason or "")[:200],
+            "previous_status": "outcome_unknown",
+            "error_code": "TASK_ABANDONED",
+            "updated_at": now,
+        })
+        try:
+            _atomic_write(_task_path(context, task_id), task)
+        except OSError:
+            raise CleanroomException(503, "TASK_LEDGER_WRITE_FAILED", "任务账本写入失败，请查询恢复") from None
+    return task, True
 
 
 def update_task(context: Any, task_id: str, *, only_if_active: bool = False, **changes: Any) -> dict[str, Any]:
     with _STORAGE_LOCK:
         task = load_task(context, task_id)
         # 多入口轮询的迟到回包不能覆盖已确认终态；显式回收重试不受此条件限制。
-        if only_if_active and task.get("status") in {"completed", "failed", "cancelled", "outcome_unknown"}:
+        if only_if_active and task.get("status") in {"completed", "failed", "cancelled", "outcome_unknown", "abandoned"}:
             return task
         task.update(changes)
         task["updated_at"] = datetime.now(timezone.utc).isoformat()
@@ -635,6 +690,7 @@ __all__ = [
     "ASSET_CHUNK_BYTES",
     "CLIPBOARD_TEXT_LIMIT",
     "MAX_ASSET_BYTES",
+    "abandon_task",
     "classify_media_type",
     "create_task",
     "find_idempotent_task",
