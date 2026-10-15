@@ -183,6 +183,99 @@ test('文档版本刷新不伪称原生宿主保存，来源徽标按真实类�
   }
 });
 
+test('apiFetch 挂载 detail 到 error.detail',async()=>{
+  const h=harness(async()=>response({detail:{code:'TEST_ERROR',message:'测试',extra_field:'值'}},400));
+  try{await h.run('apiFetch("/test")');assert.fail('应抛出错误');}catch(err){
+    assert.equal(err.code,'TEST_ERROR');assert.equal(err.detail.extra_field,'值');
+  }
+});
+
+test('409 COMFY_ADAPTER_CONFLICT upgradable=true 时 toast 含 fix_hint、版本和升级按钮',async()=>{
+  const h=harness(async()=>response({detail:{code:'COMFY_ADAPTER_CONFLICT',message:'页面适配文件已有不同内容',
+    installed_version:'legacy-9b0ff8a',required_version:'2',
+    fix_hint:'检测到旧版神工坊页面适配（legacy-9b0ff8a），可自动升级',upgradable:true}},409));
+  h.state.currentWorkflow=workflow('A');h.state.authPrincipalKey='key';
+  h.context.window.location.origin='http://testserver';
+  h.context.window.open=()=>({closed:false,location:{href:'about:blank'}});
+  h.run('flushWorkflowParams=async()=>{};');
+  const toasts=[];
+  h.context.toasts=toasts;
+  h.run('showToast=(msg,isError,actionLabel,onAction)=>{toasts.push({msg,isError,actionLabel,onAction});};');
+  await h.run('handleOpenInComfyUi()');
+  // 第一个 toast 是"正在导入..."，第二个是冲突提示
+  const conflict=toasts.find(t=>t.msg.includes('legacy-9b0ff8a'));
+  assert.ok(conflict,'应有冲突提示');
+  assert.match(conflict.msg,/检测到旧版神工坊页面适配/);
+  assert.match(conflict.msg,/legacy-9b0ff8a/);
+  assert.match(conflict.msg,/需要版本：2/);
+  assert.equal(conflict.actionLabel,'升级适配');
+  assert.equal(typeof conflict.onAction,'function');
+});
+
+test('409 COMFY_ADAPTER_CONFLICT upgradable=false 时无升级按钮',async()=>{
+  const h=harness(async()=>response({detail:{code:'COMFY_ADAPTER_CONFLICT',message:'页面适配文件已有不同内容',
+    installed_version:'unknown',required_version:'2',
+    fix_hint:'不是神工坊发布的适配脚本',upgradable:false}},409));
+  h.state.currentWorkflow=workflow('A');h.state.authPrincipalKey='key';
+  h.context.window.location.origin='http://testserver';
+  h.context.window.open=()=>({closed:false,location:{href:'about:blank'}});
+  h.run('flushWorkflowParams=async()=>{};');
+  const toasts=[];
+  h.context.toasts=toasts;
+  h.run('showToast=(msg,isError,actionLabel)=>{toasts.push({msg,isError,actionLabel});};');
+  await h.run('handleOpenInComfyUi()');
+  const conflict=toasts.find(t=>t.msg.includes('unknown'));
+  assert.ok(conflict,'应有冲突提示');
+  assert.match(conflict.msg,/不是神工坊发布的适配脚本/);
+  assert.match(conflict.msg,/已安装版本：unknown/);
+  assert.equal(conflict.actionLabel,undefined,'不应有升级按钮');
+});
+
+test('点击升级按钮后发出的请求 body 为 {"adapter_upgrade":true}',async()=>{
+  let calls=0;
+  const h=harness(async(url,options)=>{
+    calls+=1;
+    if(calls===1)return response({detail:{code:'COMFY_ADAPTER_CONFLICT',installed_version:'legacy-9b0ff8a',
+      required_version:'2',fix_hint:'可自动升级',upgradable:true}},409);
+    return response({open_url:'http://127.0.0.1:8188',browser_adapter:{mode:'managed',adapter_version:2,upgraded:true},
+      expected_version:1,workflow_graph:{},workflow_format:'native'});
+  });
+  h.state.currentWorkflow=workflow('A');h.state.authPrincipalKey='key';
+  h.context.window.location.origin='http://testserver';
+  h.context.window.open=()=>({closed:false,location:{href:'about:blank'}});
+  h.run('flushWorkflowParams=async()=>{};');
+  let upgradeCallback=null;
+  h.context.toasts=[];
+  h.run('showToast=(msg,isError,actionLabel,onAction)=>{if(actionLabel==="升级适配")toasts.push(onAction);};');
+  await h.run('handleOpenInComfyUi()');
+  assert.equal(calls,1);assert.equal(h.requests[0].body,undefined,"首次导入不带升级开关");
+  upgradeCallback=h.context.toasts[0];
+  assert.ok(upgradeCallback,'应有升级回调');
+  await upgradeCallback();await flush();
+  // 升级成功后会继续完成导入（如回读 /item），只核对升级重发的那一次 open-in-comfy。
+  const opens=h.requests.filter(r=>r.url.includes('/open-in-comfy/'));
+  assert.equal(opens.length,2);
+  const req=opens[1];
+  assert.equal(req.headers['Content-Type'],'application/json');
+  assert.deepEqual(JSON.parse(req.body),{adapter_upgrade:true});
+});
+
+test('升级重试本身再次 409 COMFY_ADAPTER_CONFLICT 不给升级按钮',async()=>{
+  const h=harness(async()=>response({detail:{code:'COMFY_ADAPTER_CONFLICT',installed_version:'legacy-9b0ff8a',
+    required_version:'2',fix_hint:'可自动升级',upgradable:true}},409));
+  h.state.currentWorkflow=workflow('A');h.state.authPrincipalKey='key';
+  h.context.window.location.origin='http://testserver';
+  h.context.window.open=()=>({closed:false,location:{href:'about:blank'}});
+  h.run('flushWorkflowParams=async()=>{};');
+  const toasts=[];
+  h.context.toasts=toasts;
+  h.run('showToast=(msg,isError,actionLabel)=>{toasts.push({msg,isError,actionLabel});};');
+  await h.run('handleOpenInComfyUi({adapterUpgrade:true})');
+  const conflict=toasts.find(t=>t.msg.includes('legacy-9b0ff8a'));
+  assert.ok(conflict,'应有冲突提示');
+  assert.equal(conflict.actionLabel,undefined,'升级重试失败不应再给升级按钮');
+});
+
 // C4-AC3：旧工作流一键重新解析（409 刷新重试一次 / 422 来源不可用）。
 const legacy=(v,needs=true)=>({...workflow('L'),version:v,revision:v,needs_reparse:needs,reparse_reason:needs?'LEGACY_RH_LINK_SLOTS':null});
 function reparseHarness(plan){
