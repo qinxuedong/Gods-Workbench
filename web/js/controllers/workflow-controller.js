@@ -493,6 +493,8 @@ async function apiFetch(url, options = {}) {
     const detail = data?.detail; const msg = detail?.message || detail || data?.message || `请求失败 (${resp.status})`; const error = new Error(msg); error.status = resp.status;
     // 透传统一错误包里的 CAS 元数据，供参数保存按服务端当前版本自愈。
     if (detail?.code) error.code = detail.code;
+    // C4-AC14：保留统一错误包的跳转元数据（如 settings_path），只接受站内相对路径。
+    if (typeof detail?.settings_path === 'string' && detail.settings_path.startsWith('/') && !detail.settings_path.startsWith('//')) error.settings_path = detail.settings_path;
     if (Number.isFinite(detail?.expected_version)) error.expected_version = detail.expected_version;
     if (Number.isFinite(detail?.current_version)) error.current_version = detail.current_version;
     if (resp.status === 401) {
@@ -649,7 +651,8 @@ async function loadSettingsState() {
     const s = await apiFetch("/api/god_workflow/settings");
     const comfyUrlInput = wfGet("inputComfyUrl");
     if (comfyUrlInput) {
-      comfyUrlInput.value = (s.comfy_url || s.comfy_url_active || "").trim() || "http://127.0.0.1:8188";
+      // C4-AC14：未配置时保持为空，只用 placeholder 提示，不预填默认地址。
+      comfyUrlInput.value = (s.comfy_url || s.comfy_url_active || "").trim();
     }
     const rootInput = wfGet("inputComfyRootDir");
     if (rootInput) rootInput.value = s.comfy_root_dir || "";
@@ -1370,7 +1373,7 @@ async function handleOpenInComfyUi(options = {}) {
     );
   } catch (err) {
     if (reservedBlank) { try { win.close(); } catch (_) {} }
-    showToast(`导入 ComfyUI 失败：${err.message}`, true);
+    reportComfyHostError(err);
   } finally {
     if (btn) {
       btn.disabled = false;
@@ -1378,6 +1381,36 @@ async function handleOpenInComfyUi(options = {}) {
       btn.innerHTML = origHtml;
     }
   }
+}
+
+/**
+ * C4-AC14：open-in-comfy 的地址错误分流。
+ * - 409 COMFY_HOST_NOT_CONFIGURED：提示「未配置」，按服务端 settings_path 跳到设置；
+ *   settings_path 就是当前页时直接打开本页设置弹窗，否则站内导航过去。
+ * - 503 COMFY_HOST_UNREACHABLE：提示「连不上」，引导用 CF 控件启动或检查地址。
+ * 其余错误保持原有「导入 ComfyUI 失败」文案。
+ */
+function reportComfyHostError(err) {
+  if (err?.status === 409 && err.code === 'COMFY_HOST_NOT_CONFIGURED') {
+    showToast('未配置 ComfyUI 地址：请先在设置中填写本地 ComfyUI 服务地址', true, '前往设置', () => openComfyHostSettings(err.settings_path));
+    return 'not_configured';
+  }
+  if (err?.status === 503 && err.code === 'COMFY_HOST_UNREACHABLE') {
+    showToast(`连不上 ComfyUI：${err.message || '已配置地址无法连接'}`, true);
+    return 'unreachable';
+  }
+  showToast(`导入 ComfyUI 失败：${err?.message}`, true);
+  return 'other';
+}
+
+function openComfyHostSettings(settingsPath) {
+  const target = settingsPath || '/static/pages/workflow.html';
+  let samePage = false;
+  try { samePage = new URL(target, window.location.href).pathname === window.location.pathname; } catch (_) {}
+  const opener = wfGet('btnOpenSettings');
+  if (samePage && opener) { opener.click(); return 'modal'; }
+  window.location.href = target;
+  return 'navigate';
 }
 
 /**

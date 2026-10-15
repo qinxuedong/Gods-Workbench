@@ -21,7 +21,7 @@ function harness(fetchImpl) {
     window:{location:{search:''},GWAuthGate:{revision:1,isAuthenticated:()=>true},addEventListener(type,fn){handlers.set(type,fn);},removeEventListener(type){handlers.delete(type);}},
     document:{readyState:'loading',addEventListener(){},createElement:()=>({textContent:'',innerHTML:''})},
     localStorage:{getItem:()=>null,setItem(){}}, CSS:{escape:value=>value},
-    AbortController, URLSearchParams, crypto:webcrypto, console:{warn(...args){warnings.push(args.map(String).join(' '));},log(){}},
+    AbortController, URL, URLSearchParams, crypto:webcrypto, console:{warn(...args){warnings.push(args.map(String).join(' '));},log(){}},
     setTimeout:fn=>{const id=++serial;timers.set(id,fn);return id;}, clearTimeout:id=>timers.delete(id),
     setInterval:fn=>{const id=++serial;timers.set(id,fn);return id;}, clearInterval:id=>timers.delete(id),
     fetch:async(url, options={})=>{requests.push({url,...options});return fetchImpl(url,options,requests.length);}
@@ -181,4 +181,43 @@ test('文档版本刷新不伪称原生宿主保存，来源徽标按真实类�
   for (const [source,badge] of [['canvas','LOCAL'],['comfyui','LOCAL'],['runninghub','RH'],['liblib','LIB'],['unknown','--']]) {
     assert.equal(h.run(`getSourceBadgeText(${JSON.stringify(source)})`),badge);
   }
+});
+
+// C4-AC14：open-in-comfy 地址错误分流（未配置跳设置 / 连不上）。
+test('C4-AC14 409 未配置保留 settings_path 并提示前往设置', async()=>{
+  const h=harness(async()=>response({detail:{code:'COMFY_HOST_NOT_CONFIGURED',message:'请先在设置中配置本地 ComfyUI 服务地址',settings_path:'/static/pages/workflow.html'}},409));
+  const err=await h.run('apiFetch("/api/god_workflow/open-in-comfy/A",{method:"POST"}).catch(e=>e)');
+  assert.equal(err.status,409);assert.equal(err.code,'COMFY_HOST_NOT_CONFIGURED');assert.equal(err.settings_path,'/static/pages/workflow.html');
+  const toasts=[];h.context.window.showWorkbenchToast=(...args)=>toasts.push(args);
+  h.context.__err=err;
+  assert.equal(h.run('reportComfyHostError(__err)'),'not_configured');
+  assert.match(toasts[0][0],/^未配置 ComfyUI 地址/);assert.equal(toasts[0][1],true);assert.equal(toasts[0][2],'前往设置');
+  // 设置页即当前页：点击「前往设置」打开本页设置弹窗而非导航。
+  let clicked=0;h.element('#btnOpenSettings').click=()=>{clicked++;};
+  h.context.window.location={pathname:'/static/pages/workflow.html',href:'http://x/static/pages/workflow.html?id=A',search:''};
+  toasts[0][3]();assert.equal(clicked,1);assert.equal(h.context.window.location.href,'http://x/static/pages/workflow.html?id=A');
+});
+test('C4-AC14 settings_path 指向其他页时站内导航，拒绝外部地址', async()=>{
+  const h=harness(async()=>response({detail:{code:'COMFY_HOST_NOT_CONFIGURED',message:'m',settings_path:'//evil.example/x'}},409));
+  const err=await h.run('apiFetch("/api/god_workflow/open-in-comfy/A",{method:"POST"}).catch(e=>e)');
+  assert.equal(err.settings_path,undefined);
+  h.context.window.location={pathname:'/static/pages/index.html',href:'http://x/static/pages/index.html',search:''};
+  assert.equal(h.run('openComfyHostSettings("/static/pages/settings.html")'),'navigate');
+  assert.equal(h.context.window.location.href,'/static/pages/settings.html');
+});
+test('C4-AC14 503 连不上与其他错误文案区分', async()=>{
+  const h=harness(async()=>response({}));const toasts=[];h.context.window.showWorkbenchToast=(...args)=>toasts.push(args);
+  assert.equal(h.run('reportComfyHostError(Object.assign(new Error("ComfyUI 未在线"),{status:503,code:"COMFY_HOST_UNREACHABLE"}))'),'unreachable');
+  assert.equal(toasts[0][0],'连不上 ComfyUI：ComfyUI 未在线');
+  assert.equal(h.run('reportComfyHostError(Object.assign(new Error("ComfyUI 正在启动"),{status:503,code:"COMFY_START_PENDING"}))'),'other');
+  assert.equal(toasts[1][0],'导入 ComfyUI 失败：ComfyUI 正在启动');
+});
+test('C4-AC14 未配置时设置弹窗地址为空，不预填 127.0.0.1:8188', async()=>{
+  const h=harness(async()=>response({comfy_url:'',comfy_root_dir:'',local_models_dir:''}));
+  const input=h.element('#inputComfyUrl');input.value='stale';
+  await h.run('loadSettingsState()');
+  assert.equal(input.value,'');
+  const html=readFileSync(new URL('../../web/pages/workflow.html', import.meta.url),'utf8');
+  const tag=html.match(/<input id="inputComfyUrl"[^>]*>/)[0];
+  assert.match(tag,/value=""/);assert.match(tag,/placeholder="[^"]*8188/);
 });
