@@ -105,10 +105,17 @@ def _cas(raw: Dict[str, Any], expected: Optional[int]) -> None:
         )
 
 
-def _require(raw: Dict[str, Any], asset_id: str) -> Dict[str, Any]:
+def _visible(record: Dict[str, Any]) -> bool:
+    """asset_visible 的旧数据容错：metadata 为 None 或非 dict 时按空 metadata 判定。"""
     from gw.core.asset_visibility import asset_visible
+    if not isinstance(record.get("metadata"), dict):
+        record = {**record, "metadata": {}}
+    return asset_visible(record)
+
+
+def _require(raw: Dict[str, Any], asset_id: str) -> Dict[str, Any]:
     item = raw["assets"].get(asset_id)
-    if item is None or not asset_visible(item):
+    if item is None or not _visible(item):
         raise CleanroomException(404, "ASSET_NOT_FOUND", "素材 %s 不存在" % asset_id)
     return item
 
@@ -391,6 +398,122 @@ def list_assets(limit: int, offset: int, query: Optional[str], kind: Optional[st
             "limit": limit, "offset": offset, "has_more": has_more, "next_offset": next_offset,
             "next_cursor": next_cursor, "revision": raw["revision"],
             "data_status": DATA_STATUS_OK, "data_gaps": []}
+
+
+def _record_owner(record: Dict[str, Any]) -> Optional[str]:
+    """读取资产可证明的归属键；只有工作流桥接写入的 workflow_owner 算归属。
+
+    与 gw/core/asset_visibility.py 同口径：先取顶层 workflow_owner，缺失时再取
+    metadata.workflow_owner；metadata 非字典（含 None）时忽略，不视为有主。
+    """
+    metadata = record.get("metadata")
+    owner = record.get("workflow_owner") or (metadata.get("workflow_owner") if isinstance(metadata, dict) else None)
+    return str(owner) if owner else None
+
+
+def asset_is_unassigned(record: Dict[str, Any]) -> bool:
+    """未归属 = 没有 project_id 投影，也没有任何 project_ids 关联。"""
+    if record.get("project_id"):
+        return False
+    project_ids = record.get("project_ids")
+    return not (isinstance(project_ids, list) and project_ids)
+
+
+SOURCE_UNKNOWN_LABEL = "来源未知"
+
+
+def _annotate_inbox_asset(item: Dict[str, Any]) -> Dict[str, Any]:
+    """收件箱视图字段：无主资产标记来源未知，有主资产显式为否。
+
+    asset_version 复用资产自身的 version 计数（保留原 version 字段），
+    是移动接口 expected_asset_version 的比对基准。
+    """
+    unknown = _record_owner(item) is None
+    item["source_unknown"] = unknown
+    item["origin_label"] = SOURCE_UNKNOWN_LABEL if unknown else None
+    item["asset_version"] = int(item.get("version", 1))
+    return item
+
+
+def list_unassigned_assets(owner_key: str, limit: int = 100, offset: int = 0, *,
+                           role: str = "") -> Dict[str, Any]:
+    """未归属收件箱：返回可证明属于该主体、且未归属任何项目的资产。
+
+    无 workflow_owner 的登记资产只进入本地实例管理员（role == 'admin'）的收件箱，
+    标记 source_unknown=true / origin_label='来源未知'；其他账户永远看不到无主资产。
+    有主资产只在所有者自己的收件箱出现（source_unknown=false / origin_label=null）。
+    每项附带 asset_version（资产自身 version，移动接口 expected_asset_version 的比对基准）；
+    顶层 revision 仍为注册表库级版本。
+    本接口只读取，绝不自动归属或猜测项目。
+    """
+    admin_inbox = role == "admin"
+    raw = state().read()
+
+    def inbox_member(record: Dict[str, Any]) -> bool:
+        owner = _record_owner(record)
+        return owner == owner_key if owner is not None else admin_inbox
+
+    items = [_annotate_inbox_asset(dict(a)) for a in raw["assets"].values()
+             if _visible(a) and asset_is_unassigned(a) and inbox_member(a)]
+    items.sort(key=lambda a: a["asset_id"])
+    total = len(items)
+    page = items[offset:offset + limit]
+    return {"assets": page, "items": page, "total": total, "total_known": True,
+            "limit": limit, "offset": offset, "has_more": offset + len(page) < total,
+            "revision": raw["revision"], "data_status": DATA_STATUS_OK, "data_gaps": []}
+
+
+def move_asset_to_project(asset_id: str, project_id: str, expected_asset_version: int,
+                          owner_key: str, *, role: str = "") -> Dict[str, Any]:
+    """未归属资产移入项目：资产所有者可执行；无主资产仅本地实例管理员（role == 'admin'）
+    可执行，且在同一次 CAS 写入内把 metadata.workflow_owner 回填为管理员归属键。
+    CAS 按资产自身版本（item 的 version，即收件箱 asset_version）比对，而非库级 revision：
+    其他资产变动推高库 revision 不影响本资产的移动；比对先于任何变更，
+    冲突 409 即整笔不落盘、不回填；成功后资产 version 与库 revision 各自 +1；
+    已归属资产拒绝改归属；非管理员对无主资产与不存在同形 404。
+    """
+    if type(expected_asset_version) is not int or expected_asset_version < 1:
+        raise CleanroomException(400, "INVALID_REQUEST", "必须提供正整数expected_asset_version")
+    clean_project = str(project_id or "").strip()
+    if not clean_project:
+        raise CleanroomException(400, "INVALID_REQUEST", "缺少 project_id")
+    admin_may_claim = role == "admin"
+
+    def mutate(raw: Dict[str, Any]) -> Any:
+        item = _require(raw, asset_id)
+        owner = _record_owner(item)
+        if owner != owner_key and not (owner is None and admin_may_claim):
+            raise CleanroomException(404, "ASSET_NOT_FOUND", "素材 %s 不存在" % asset_id)
+        if not asset_is_unassigned(item):
+            raise CleanroomException(409, "ASSET_ALREADY_ASSIGNED",
+                                     "素材已归属项目，未归属收件箱接口不能更改归属")
+        # 按资产 CAS：先于任何变更比对，owner 回填与项目归属才能在同一版本快照内原子生效。
+        current_asset_version = int(item.get("version", 1))
+        if current_asset_version != expected_asset_version:
+            raise CleanroomException(
+                409, "VERSION_CONFLICT", "资产版本冲突，请重新读取后重试",
+                extra={"expected_version": expected_asset_version,
+                       "current_version": current_asset_version, "asset_id": asset_id},
+                expose_extra_fields={"expected_version", "current_version", "asset_id"},
+            )
+        if owner is None:
+            # 无主资产：回填与项目归属在同一次 CAS 写入内原子生效。
+            # metadata 可能缺失、为 None 或非 dict（旧数据形态），先归一成 dict 再回填。
+            if not isinstance(item.get("metadata"), dict):
+                item["metadata"] = {}
+            item["metadata"]["workflow_owner"] = owner_key
+        item["project_id"] = clean_project
+        item.setdefault("project_ids", [])
+        if clean_project not in item["project_ids"]:
+            item["project_ids"].append(clean_project)
+        item["version"] = int(item.get("version", 1)) + 1
+        item["updated_at"] = storage.now_iso()
+        revision = _bump(raw)
+        return {"asset": _annotate_inbox_asset(dict(item)), "asset_id": asset_id,
+                "project_id": clean_project,
+                "moved": True, "revision": revision,
+                "data_status": DATA_STATUS_OK, "data_gaps": []}
+    return state().mutate(mutate)
 
 
 def facets() -> Dict[str, Any]:

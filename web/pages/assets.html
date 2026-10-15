@@ -202,7 +202,11 @@
         <!-- 动态生成 -->
       </div>
 
-      <div class="p-2.5 bg-[#050608] border-t border-white/5 shrink-0">
+      <div class="p-2.5 bg-[#050608] border-t border-white/5 shrink-0 space-y-1.5">
+        <button type="button" id="btnUnassignedInbox" class="hw-btn w-full flex items-center justify-center space-x-1" style="display:none" onclick="GWUnassignedInbox.open()" title="尚未归属任何项目的资产（仅本人可见）">
+          <i data-lucide="inbox" class="w-3.5 h-3.5 text-[#dfc384]"></i>
+          <span>未归属</span><span class="font-mono text-[#dfc384]" data-unassigned-count></span>
+        </button>
         <button class="hw-btn hw-btn-gold w-full flex items-center justify-center space-x-1" onclick="WorkbenchAssets.uploadAsset()">
           <i data-lucide="cloud-upload" class="w-3.5 h-3.5 text-[#dfc384]"></i>
           <span>导入外部资产文件</span>

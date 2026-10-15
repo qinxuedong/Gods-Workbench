@@ -105,6 +105,9 @@ KNOWN_IMPLEMENTED = frozenset([
     '/api/god_workflow/compare-local/{p}',
     '/api/god_workflow/folders',
     '/api/god_workflow/folders/{p}',
+    # 2026-10-15 C4-AC5b：未归属收件箱与移到项目（后端 IN-5）。
+    '/api/assets/unassigned',
+    '/api/assets/{p}/move-to-project',
     '/api/asset-library',
     '/api/asset-library/categories',
     '/api/asset-library/libraries',
