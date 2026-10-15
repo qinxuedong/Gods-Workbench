@@ -396,7 +396,7 @@ def test_cf_lifecycle_and_import_button_have_separate_responsibilities(monkeypat
         page.wait_for_function('(id) => state.currentWorkflow?.workflow_id === id', arg=target)
         assert page.evaluate('document.getElementById("btnParseLink").nextElementSibling.id') == 'btnImportComfyUi'
         button.click()
-        page.get_by_text('导入 ComfyUI 失败：ComfyUI 未在线，请先使用全站 CF 控件启动或连接服务', exact=True).wait_for()
+        page.get_by_text('连不上 ComfyUI：ComfyUI 未在线，请先使用全站 CF 控件启动或连接服务', exact=True).wait_for()
         assert 'start' not in actions and len(page.context.pages) == 1
         paths.clear()
         toggle = page.locator('[data-gw-comfy-toggle]')

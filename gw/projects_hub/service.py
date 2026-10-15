@@ -47,6 +47,11 @@ _GATE_CODE_CHARS = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
 _GATE_STATES = frozenset({"pending", "approved", "changes_requested"})
 _GOVERNANCE_ROLES = frozenset({"admin", "governor"})
 _GATE_WRITER_ROLES = _GOVERNANCE_ROLES | frozenset({"editor"})
+_READ_ACCESS_MODES = frozenset({"legacy_open", "explicit"})
+_READ_AUDIT_EVENTS = frozenset({"project.read_granted", "project.read_revoked", "project.read_mode_explicit"})
+_READ_AUDIT_CAP = 1000
+_READ_KEY_PREFIX = re.compile(r"^[0-9a-f]{12}$")
+_READ_KEY_PREFIX_LEN = 12
 
 _PROJECT_LOCKS_GUARD = threading.Lock()
 _PROJECT_LOCKS: Dict[str, threading.RLock] = {}
@@ -63,6 +68,15 @@ def owner_key_for_context(context: Any) -> str:
     subject = str(getattr(context, "subject", "") or "").strip()
     if not domain or not subject:
         raise CleanroomException(403, "FORBIDDEN", "当前认证身份不具备稳定项目主体")
+    return hashlib.sha256((domain + "\0" + subject).encode("utf-8")).hexdigest()
+
+
+def owner_key_for_identity(identity_domain: Optional[str], subject: Optional[str]) -> str:
+    """按 (身份域, 主体) 计算 owner_key；与 owner_key_for_context 同一口径。"""
+    domain = str(identity_domain or "").strip()
+    subject = str(subject or "").strip()
+    if not domain or not subject:
+        raise CleanroomException(400, "INVALID_REQUEST", "身份域与主体不能为空")
     return hashlib.sha256((domain + "\0" + subject).encode("utf-8")).hexdigest()
 
 
@@ -225,6 +239,45 @@ def _validate_projects_state(value: Dict[str, Any], reservations: Dict[str, Any]
         ):
             raise _state_error("PROJECT_STATE_CORRUPT", "创建幂等记录结构不合法")
 
+    # C4-AC7/AC8：读授权与审计为可选顶层键；缺省按 legacy_open 处理，出现时必须结构完整。
+    read_access = value.get("read_access")
+    if read_access is not None:
+        if not isinstance(read_access, dict):
+            raise _state_error("PROJECT_STATE_CORRUPT", "项目读授权记录结构不合法")
+        for project_id, record in read_access.items():
+            if not isinstance(project_id, str) or project_id not in projects:
+                raise _state_error("PROJECT_STATE_CORRUPT", "项目读授权记录关联未知项目")
+            if not isinstance(record, dict) or record.get("mode") not in _READ_ACCESS_MODES:
+                raise _state_error("PROJECT_STATE_CORRUPT", "项目读授权模式不合法")
+            if type(record.get("version")) is not int or record["version"] < 1:
+                raise _state_error("PROJECT_STATE_CORRUPT", "项目读授权版本不合法")
+            for field in ("grants", "revoked"):
+                keys = record.get(field)
+                if not isinstance(keys, list) or any(
+                    not isinstance(key, str) or not _OWNER_KEY_PATTERN.fullmatch(key) for key in keys
+                ):
+                    raise _state_error("PROJECT_STATE_CORRUPT", "项目读授权键结构不合法")
+
+    read_audit = value.get("read_audit")
+    if read_audit is not None:
+        if not isinstance(read_audit, list) or len(read_audit) > _READ_AUDIT_CAP:
+            raise _state_error("PROJECT_STATE_CORRUPT", "项目读授权审计集合不合法")
+        for entry in read_audit:
+            if not isinstance(entry, dict) or set(entry) != {"event", "project_id", "actor", "target", "at"}:
+                raise _state_error("PROJECT_STATE_CORRUPT", "项目读授权审计条目结构不合法")
+            if (
+                entry["event"] not in _READ_AUDIT_EVENTS
+                or entry["project_id"] not in projects
+                or not isinstance(entry["at"], str)
+                or not isinstance(entry["actor"], str)
+                or not _READ_KEY_PREFIX.fullmatch(entry["actor"])
+                or not (
+                    entry["target"] is None
+                    or (isinstance(entry["target"], str) and _READ_KEY_PREFIX.fullmatch(entry["target"]))
+                )
+            ):
+                raise _state_error("PROJECT_STATE_CORRUPT", "项目读授权审计条目字段不合法")
+
 
 class ProjectsService:
     """项目服务；测试可显式使用内存模式，生产实例默认读取单一持久快照。"""
@@ -236,6 +289,8 @@ class ProjectsService:
         self._owners: Dict[str, str] = {}
         self._gates: Dict[str, Dict[str, Any]] = {}
         self._idempotency: Dict[str, Dict[str, Any]] = {}
+        self._read_access: Dict[str, Dict[str, Any]] = {}
+        self._read_audit: List[Dict[str, Any]] = []
         self._seq = 1 if seed_golden_fixture else 0
         self._gate_seq = 0
 
@@ -277,6 +332,8 @@ class ProjectsService:
             "owners": copy.deepcopy(self._owners),
             "gates": copy.deepcopy(self._gates),
             "idempotency": copy.deepcopy(self._idempotency),
+            "read_access": copy.deepcopy(self._read_access),
+            "read_audit": copy.deepcopy(self._read_audit),
         }
 
     def _load_persistent_state(self, root: Path) -> tuple[Dict[str, Any], Dict[str, Any]]:
@@ -335,6 +392,8 @@ class ProjectsService:
         self._owners = copy.deepcopy(state["owners"])
         self._gates = copy.deepcopy(state["gates"])
         self._idempotency = copy.deepcopy(state["idempotency"])
+        self._read_access = copy.deepcopy(state.get("read_access") or {})
+        self._read_audit = copy.deepcopy(state.get("read_audit") or [])
 
     def _persist_reservations(self, root: Path, reservations: Dict[str, Any]) -> None:
         _atomic_write(root / _RESERVATIONS_FILE, reservations)
@@ -399,8 +458,11 @@ class ProjectsService:
         self,
         archived: Optional[bool] = False,
         deleted: Optional[bool] = None,
+        *,
+        viewer_owner_key: Optional[str] = None,
+        viewer_role: str = "",
     ) -> List[ProjectItem]:
-        """根据归档与回收站过滤条件返回项目列表。"""
+        """根据归档与回收站过滤条件返回项目列表；提供查看者身份时过滤其不可读项目。"""
         with self._operation() as (_, state, __):
             results = []
             for raw in state["projects"].values():
@@ -417,6 +479,10 @@ class ProjectsService:
                         continue
                     if archived is False and is_archived:
                         continue
+                if (viewer_owner_key is not None or viewer_role) and not self._read_decision(
+                    state, item.project_id, viewer_owner_key, viewer_role
+                ):
+                    continue
                 results.append(item)
             return sorted(results, key=lambda item: item.project_id, reverse=True)
 
@@ -435,6 +501,202 @@ class ProjectsService:
             if raw is None or state["owners"].get(project_id) != owner_key:
                 raise CleanroomException(404, "PROJECT_NOT_FOUND", "项目不存在")
             return ProjectItem.model_validate(raw)
+
+    # ---------------------------------------------------------------------------
+    # C4-AC7/AC8 显式读授权（owner 决定模型）
+    # ---------------------------------------------------------------------------
+
+    @staticmethod
+    def _read_decision(
+        state: Dict[str, Any],
+        project_id: str,
+        owner_key: Optional[str],
+        role: str,
+    ) -> bool:
+        """读权限判定：全局治理角色与项目owner恒可读；legacy_open 除显式撤销外开放；
+        explicit 模式仅授权名单可读。"""
+        if str(role or "").lower() in _GOVERNANCE_ROLES:
+            return True
+        if owner_key and state["owners"].get(project_id) == owner_key:
+            return True
+        record = (state.get("read_access") or {}).get(project_id)
+        if record is None or record.get("mode") == "legacy_open":
+            revoked = (record or {}).get("revoked") or []
+            return not (owner_key and owner_key in revoked)
+        return bool(owner_key) and owner_key in ((record or {}).get("grants") or [])
+
+    @staticmethod
+    def _grants_view(project_id: str, record: Dict[str, Any]) -> Dict[str, Any]:
+        """对外视图：owner_key 只暴露 12 位前缀，绝不回显完整键或明文主体。"""
+        return {
+            "project_id": project_id,
+            "mode": record["mode"],
+            "grants": [key[:_READ_KEY_PREFIX_LEN] for key in record.get("grants") or []],
+            "revoked": [key[:_READ_KEY_PREFIX_LEN] for key in record.get("revoked") or []],
+            "version": int(record.get("version") or 1),
+        }
+
+    def _effective_read_record(self, state: Dict[str, Any], project_id: str) -> Dict[str, Any]:
+        record = (state.get("read_access") or {}).get(project_id)
+        if record is None:
+            return {"mode": "legacy_open", "grants": [], "revoked": [], "version": 1}
+        return record
+
+    @staticmethod
+    def _append_read_audit(
+        state: Dict[str, Any],
+        event: str,
+        project_id: str,
+        actor_owner_key: str,
+        target_owner_key: Optional[str],
+    ) -> None:
+        """审计只落 owner_key 12 位前缀；超出容量丢弃最旧条目。"""
+        entries = state.setdefault("read_audit", [])
+        entries.append(
+            {
+                "event": event,
+                "project_id": project_id,
+                "actor": actor_owner_key[:_READ_KEY_PREFIX_LEN],
+                "target": (target_owner_key[:_READ_KEY_PREFIX_LEN] if target_owner_key else None),
+                "at": _now_iso(),
+            }
+        )
+        if len(entries) > _READ_AUDIT_CAP:
+            del entries[: len(entries) - _READ_AUDIT_CAP]
+
+    @classmethod
+    def _require_read_grant_manager(
+        cls,
+        state: Dict[str, Any],
+        project_id: str,
+        owner_key: Optional[str],
+        role: str,
+    ) -> None:
+        """只有项目owner与全局 admin 可管理读授权；非owner治理角色同样 403。"""
+        if str(role or "").lower() == "admin":
+            return
+        if owner_key and state["owners"].get(project_id) == owner_key:
+            return
+        raise CleanroomException(403, "FORBIDDEN", "仅项目owner或管理员可管理项目读授权")
+
+    def get_readable_project(self, project_id: str, context: Any) -> ProjectItem:
+        """按读授权语义读取项目：未知项目 404，存在但不可读 403 PROJECT_READ_FORBIDDEN。"""
+        with self._operation() as (_, state, __):
+            raw = state["projects"].get(project_id)
+            if raw is None:
+                raise CleanroomException(404, "PROJECT_NOT_FOUND", f"项目 {project_id} 不存在")
+            owner_key = None
+            role = str(getattr(context, "role", "") or "")
+            if context is not None:
+                try:
+                    owner_key = owner_key_for_context(context)
+                except CleanroomException:
+                    owner_key = None
+            if not self._read_decision(state, project_id, owner_key, role):
+                raise CleanroomException(403, "PROJECT_READ_FORBIDDEN", "无当前项目读权限")
+            return ProjectItem.model_validate(raw)
+
+    def can_read_project(self, project_id: str, *, owner_key: Optional[str], role: str) -> bool:
+        """判断给定主体是否可读项目；未知项目一律 False。"""
+        with self._operation() as (_, state, __):
+            if project_id not in state["projects"]:
+                return False
+            return self._read_decision(state, project_id, owner_key, role)
+
+    def list_read_grants(
+        self,
+        project_id: str,
+        *,
+        owner_key: Optional[str],
+        role: str,
+    ) -> Dict[str, Any]:
+        """owner/admin 读取项目读授权视图（脱敏键前缀）。"""
+        with self._operation() as (_, state, __):
+            if project_id not in state["projects"]:
+                raise CleanroomException(404, "PROJECT_NOT_FOUND", "项目不存在")
+            self._require_read_grant_manager(state, project_id, owner_key, role)
+            return self._grants_view(project_id, self._effective_read_record(state, project_id))
+
+    def _change_read_access(
+        self,
+        project_id: str,
+        *,
+        actor_owner_key: Optional[str],
+        actor_role: str,
+        change: Callable[[Dict[str, Any], str], Optional[tuple]],
+    ) -> Dict[str, Any]:
+        """在项目域锁内校验管理者身份并应用读授权变更；无实际变化时不写盘、不改版本。"""
+        if not actor_owner_key:
+            raise CleanroomException(403, "FORBIDDEN", "当前认证身份不具备稳定项目主体")
+        with self._operation() as (root, state, __):
+            if project_id not in state["projects"]:
+                raise CleanroomException(404, "PROJECT_NOT_FOUND", "项目不存在")
+            self._require_read_grant_manager(state, project_id, actor_owner_key, actor_role)
+            record = copy.deepcopy(self._effective_read_record(state, project_id))
+            event = change(record, state["owners"][project_id])
+            if event is None:
+                return self._grants_view(project_id, record)
+            applied_event, target_key = event
+            record["version"] = int(record.get("version") or 0) + 1
+            next_state = copy.deepcopy(state)
+            next_state.setdefault("read_access", {})[project_id] = record
+            self._append_read_audit(next_state, applied_event, project_id, actor_owner_key, target_key)
+            next_state["revision"] = int(next_state.get("revision") or 1) + 1
+            self._commit_state(root, next_state)
+            return self._grants_view(project_id, record)
+
+    @staticmethod
+    def _require_target(target_owner_key: Any) -> None:
+        if not isinstance(target_owner_key, str) or not _OWNER_KEY_PATTERN.fullmatch(target_owner_key):
+            raise CleanroomException(400, "INVALID_REQUEST", "目标主体身份不合法")
+
+    def grant_read(self, project_id: str, target_owner_key: str, *,
+                   actor_owner_key: Optional[str], actor_role: str) -> Dict[str, Any]:
+        """把目标主体加入授权名单，并从撤销名单移除；owner 不可被授权。幂等。"""
+        self._require_target(target_owner_key)
+
+        def change(record: Dict[str, Any], owner: str) -> Optional[tuple]:
+            if target_owner_key == owner:
+                raise CleanroomException(400, "INVALID_REQUEST", "项目owner恒可读，不能授权或撤销")
+            if target_owner_key in record["grants"] and target_owner_key not in record["revoked"]:
+                return None
+            if target_owner_key not in record["grants"]:
+                record["grants"].append(target_owner_key)
+            record["revoked"] = [k for k in record["revoked"] if k != target_owner_key]
+            return ("project.read_granted", target_owner_key)
+
+        return self._change_read_access(project_id, actor_owner_key=actor_owner_key,
+                                        actor_role=actor_role, change=change)
+
+    def revoke_read(self, project_id: str, target_owner_key: str, *,
+                    actor_owner_key: Optional[str], actor_role: str) -> Dict[str, Any]:
+        """把目标主体移出授权名单并加入撤销名单；幂等；owner 不可被撤销。"""
+        self._require_target(target_owner_key)
+
+        def change(record: Dict[str, Any], owner: str) -> Optional[tuple]:
+            if target_owner_key == owner:
+                raise CleanroomException(400, "INVALID_REQUEST", "项目owner恒可读，不能授权或撤销")
+            if target_owner_key in record["revoked"] and target_owner_key not in record["grants"]:
+                return None
+            record["grants"] = [k for k in record["grants"] if k != target_owner_key]
+            if target_owner_key not in record["revoked"]:
+                record["revoked"].append(target_owner_key)
+            return ("project.read_revoked", target_owner_key)
+
+        return self._change_read_access(project_id, actor_owner_key=actor_owner_key,
+                                        actor_role=actor_role, change=change)
+
+    def set_read_mode_explicit(self, project_id: str, *, actor_owner_key: Optional[str],
+                               actor_role: str) -> Dict[str, Any]:
+        """把项目切到 explicit 模式（单向，不可切回）；已处于 explicit 时幂等。"""
+        def change(record: Dict[str, Any], owner: str) -> Optional[tuple]:
+            if record["mode"] == "explicit":
+                return None
+            record["mode"] = "explicit"
+            return ("project.read_mode_explicit", None)
+
+        return self._change_read_access(project_id, actor_owner_key=actor_owner_key,
+                                        actor_role=actor_role, change=change)
 
     def _get_source_owner_key(self, project_id: str) -> str:
         """在项目域锁及完整真源校验内读取内部owner键，不序列化到普通API响应。"""
@@ -513,6 +775,15 @@ class ProjectsService:
             next_state = copy.deepcopy(state)
             next_state["projects"][project_id] = item.model_dump(mode="json")
             next_state["owners"][project_id] = effective_owner
+            # C4-AC7/AC8：本变更之后创建的项目一律 explicit 模式，授权名单为空。
+            next_state.setdefault("read_access", {})[project_id] = {
+                "mode": "explicit",
+                "grants": [],
+                "revoked": [],
+                "version": 1,
+            }
+            # C4-AC7：新建项目一律 explicit 读授权（仅 owner + admin/governor + 授权名单）。
+            next_state.setdefault("read_access", {})[project_id] = {"mode": "explicit", "grants": [], "revoked": [], "version": 1}
             for gate_id, gate_input in zip(gate_ids, gates):
                 next_state["gates"][gate_id] = {
                     "gate_id": gate_id,

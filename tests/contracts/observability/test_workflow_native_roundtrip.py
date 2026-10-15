@@ -114,8 +114,10 @@ def test_native_sync_keeps_source_and_uploads_bound_bytes(client, monkeypatch):
 
     for name, method in (("upload_input", upload), ("submit", submit), ("history", history), ("fetch_output", fetch_output)):
         monkeypatch.setattr(comfy_executor, name, method)
+    # 执行来源只认请求显式携带的上下文；项目归属随请求传入，与宿主 URL 行为一致。
     response = client.post("/api/god_workflow/execute", headers={**HEADERS, "Idempotency-Key": "native-once"},
-                           json={"workflow_id": workflow_id, "expected_version": 3})
+                           json={"workflow_id": workflow_id, "expected_version": 3,
+                                 "source_context": {"project_id": project_id}})
     assert response.status_code == 202, response.text
     assert response.json()["project_id"] == project_id and calls == ["upload", "submit"]
     status = client.get("/api/god_workflow/tasks/" + response.json()["job_id"], headers=HEADERS)

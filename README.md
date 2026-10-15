@@ -139,9 +139,9 @@ $env:GW_WORKFLOW_OUTPUT_HOSTS = 'rh-images-tos.xiaoyaoyou.com,rh-images.xiaoyaoy
 
 上例是 RunningHub 产物主机的常见组合：真实 RunningHub 产物通常落在 `rh-images-tos.xiaoyaoyou.com`，`rh-images.xiaoyaoyou.com` 是 RunningHub 文档给出的主机，两者可按需同时列入。配置按精确主机名匹配，不填写协议、路径或通配符。在同一 PowerShell 窗口按上文方式启动服务；调整已运行服务的配置需要由你重启该服务，保持原生产或开发模式及数据根，以继续查询原任务。
 
-下载仅接受获准主机的 HTTPS 默认端口或 443 端口，不跟随重定向；连接层还会核验并绑定公网地址。未配置 `GW_WORKFLOW_OUTPUT_HOSTS` 时产物返回 `OUTPUT_HOSTS_NOT_CONFIGURED`；已配置但主机不匹配时返回 `OUTPUT_URL_NOT_ALLOWED`。两种情况都不会下载文件。服务进程不设默认信任主机。
+未配置 `GW_WORKFLOW_OUTPUT_HOSTS` 时，RunningHub 任务自动使用两个内置默认产物主机 `rh-images-tos.xiaoyaoyou.com` 与 `rh-images.xiaoyaoyou.com`；一旦设置该变量（哪怕只写一个主机）即完全替换默认值。下载仅接受获准主机的 HTTPS 默认端口或 443 端口，并手动跟随至多 3 次重定向，每一跳都重新校验 URL、重新解析并钉住获准地址；TLS SNI 与证书校验始终使用原主机名，证书校验保持开启。非 RunningHub 平台在未配置该变量时产物返回 `OUTPUT_HOSTS_NOT_CONFIGURED`；主机不匹配时返回 `OUTPUT_URL_NOT_ALLOWED`。两种情况都不会下载文件。
 
-使用 Clash fake-ip 等透明代理时，获准主机可能解析到 `198.18.0.0/15` 假地址：白名单内的主机借道该网段会被放行并钉住验证过的地址完成连接，TLS 证书校验与 Host 头仍使用白名单中的原始主机名。回环、私网、链路本地（含 `169.254.169.254` 元数据地址）、多播及保留地址在白名单内外都一律拒绝。
+使用 Clash fake-ip 等透明代理时，获准主机可能解析到 `198.18.0.0/15` 假地址：白名单内的主机借道该网段会被放行——这一例外等同信任本机代理对获准主机的解析——每跳只解析一次、全部结果核验后钉住首个获准地址完成连接，TLS 证书校验与 Host 头仍使用白名单中的原始主机名。回环、私网、链路本地（含 `169.254.169.254` 元数据地址）、多播及保留地址在白名单内外都一律拒绝。
 
 执行与回收分别记账：远端生成成功，但下载或入库未完成时，`execution_status` 为 `completed`，`collection_status` 为 `partial_failed`，整体任务为 `failed`。这表示**回收未完成**，不表示生成没有发生或没有收费。修正配置后，在工作流任务窗点击“重试产物回收”；服务使用原 `job_id` 和远端任务 ID 回收结果，不再次提交生成。已登记产物保留稳定 `asset_id`，重复回收不会重复入库。
 

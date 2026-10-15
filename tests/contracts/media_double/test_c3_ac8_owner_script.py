@@ -337,7 +337,8 @@ def test_recollect_mode_does_not_submit_or_require_cost(monkeypatch, tmp_path, n
     assert not any("parse-link" in url or url.endswith("/tasks/execute") for url in urls)
     assert urls[0].endswith("/tasks/job-ac8-recollect")
     assert urls[1].endswith("/tasks/job-ac8-recollect/collect")
-    assert client.output_hosts == "rh-images-tos.xiaoyaoyou.com,rh-images.xiaoyaoyou.com"
+    # 脚本不再注入默认产物主机；单一事实来源在服务端（未设置时服务端用 RH 内置默认）。
+    assert client.output_hosts is None
     assert no_network == []
 
 
