@@ -19,7 +19,7 @@ from copy import deepcopy
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Optional
-from urllib.parse import quote, urlsplit
+from urllib.parse import quote, urljoin, urlsplit
 
 import httpx
 from fastapi import APIRouter, Header, Request, status
@@ -39,7 +39,8 @@ from gw.god_workflow.models import WorkflowSource
 from gw.god_workflow.clients import PROVIDERS, get_provider, unavailable
 from gw.god_workflow.parser import (MAX_UPLOAD_BYTES, MAX_PNG_TEXT_BYTES, WorkflowParseError,
                                    parse_workflow, parse_upload, png_available,
-                                   build_topology_from_public_detail, extract_source_graph)
+                                   build_topology_from_public_detail, extract_source_graph,
+                                   _api_link)
 from gw.god_workflow.exporter import export_to_comfy_litegraph
 from gw.god_workflow.compiler import compile_prompt, execution_fingerprint
 
@@ -695,7 +696,8 @@ async def execute_task(request: Request, authorization: Optional[str] = Header(N
             compiled_node = prompt.get(node_id)
             if not isinstance(compiled_node, dict) or actual_field not in compiled_node.get("inputs", {}):
                 raise CleanroomException(422, "INPUT_ASSET_FIELD_UNRESOLVED", "输入素材字段无法映射到实际执行图，请补齐节点定义")
-    source_context = _source_context(context, body.get("source_context", document.get("metadata", {}).get("source_context", {})))
+    # 执行来源只认请求显式携带的来源上下文；文档元数据里的旧来源不作为执行依据。
+    source_context = _source_context(context, body.get("source_context") or {})
     # 原子预留必须先于任何外部副作用；未绑定ID的账本一律未知且禁止自动重发。
     task, replay = registry.reserve_task(context, workflow_id=workflow_id, target=target,
                                          node_count=len(prompt), idempotency_key=idempotency_key,
@@ -807,7 +809,7 @@ async def task_status(task_id: str, authorization: Optional[str] = Header(None),
         query_res = await platforms.query_rh_task_outputs(str(task.get("prompt_id") or ""), api_key, domain=domain)
         st = query_res.get("status")
         if st == "SUCCESS":
-            assets = await _collect_rh_task_outputs(context, task_id, query_res.get("outputs", []))
+            assets = await _collect_rh_task_outputs(context, task_id, query_res.get("outputs", []), platform=target)
             complete = bool(assets) and all(item.get("registered") for item in assets)
             task = registry.update_task(context, task_id, status="completed" if complete else "failed",
                                         only_if_active=True,
@@ -834,15 +836,26 @@ async def task_status(task_id: str, authorization: Optional[str] = Header(None),
                 "data_status": "ok", "data_gaps": []}
 
     summary = comfy_executor.summarize(history["entry"])
+    summary_messages = summary["messages"] if isinstance(summary.get("messages"), list) else []
+    if summary["status"] != "succeeded":
+        # 远端执行失败：history 里残留的输出/错误条目不是产物，一律不下载、不登记。
+        task = registry.update_task(context, task_id,
+                                    only_if_active=True,
+                                    status="failed",
+                                    source_status=summary["status"],
+                                    execution_status="failed",
+                                    outputs=[],
+                                    messages=["COMFY_REMOTE_EXECUTION_FAILED",
+                                              *_execution_error_lines(summary_messages)])
+        return {**task, "data_status": "ok", "data_gaps": []}
     assets = await _collect_task_outputs(context, task_id, summary["outputs"], task=task)
     complete = bool(assets) and all(item.get("registered") for item in assets)
-    summary_messages = summary["messages"] if isinstance(summary.get("messages"), list) else []
     messages = list(summary_messages) if complete else [*summary_messages, *_collection_messages(assets)]
     task = registry.update_task(context, task_id,
                                 only_if_active=True,
                                 status="completed" if summary["status"] == "succeeded" and complete else "failed",
                                 source_status=summary["status"],
-                                execution_status="completed" if summary["status"] == "succeeded" else "failed",
+                                execution_status="completed",
                                 collection_status="completed" if complete else "partial_failed",
                                 outputs=assets, messages=messages)
     return {**task, "data_status": "ok", "data_gaps": []}
@@ -865,7 +878,8 @@ async def retry_task_collection(task_id: str, authorization: Optional[str] = Hea
             domain=task.get("executor_snapshot", {}).get("domain") or os.environ.get("GW_RUNNINGHUB_DOMAIN", platforms.RUNNINGHUB_DEFAULT_DOMAIN))
         if result.get("status") != "SUCCESS":
             raise CleanroomException(409, "OUTPUTS_NOT_AVAILABLE", "远端结果尚不可回收")
-        outputs = await _collect_rh_task_outputs(context, task_id, result.get("outputs", []))
+        outputs = await _collect_rh_task_outputs(context, task_id, result.get("outputs", []),
+                                                 platform=str(task.get("target") or "rh_cloud"))
     else:
         history = await _comfy_call(context, comfy_executor.history, task["remote_task_id"], task=task)
         if not history["found"]:
@@ -943,6 +957,27 @@ def _collection_messages(outputs: list[dict[str, Any]]) -> list[str]:
     return messages
 
 
+def _execution_error_lines(summary_messages: list[Any]) -> list[str]:
+    """从 ComfyUI status.messages 摘出 execution_error 摘要行：白名单字段、限长、去重。"""
+    lines: list[str] = []
+    for message in summary_messages:
+        if not (isinstance(message, (list, tuple)) and len(message) == 2
+                and message[0] == "execution_error" and isinstance(message[1], dict)):
+            continue
+        data = message[1]
+        parts = ["execution_error"]
+        for key in ("node_type", "node_id", "exception_type", "exception_message"):
+            value = data.get(key)
+            if isinstance(value, str) and value.strip():
+                parts.append(f"{key}={' '.join(value.split())[:200]}")
+        line = " ".join(parts)
+        if line != "execution_error" and line not in lines:
+            lines.append(line)
+        if len(lines) >= 10:
+            break
+    return lines
+
+
 async def _collect_task_outputs(context: AuthContext, task_id: str,
                                 outputs: list[dict[str, Any]], *, task=None) -> list[dict[str, Any]]:
     """把 ComfyUI 输出文件落到运行时数据根并登记为素材。
@@ -1008,48 +1043,108 @@ def _output_address_allowed(host: str, address: str, allowed_hosts: frozenset[st
     return False
 
 
-class _PublicOutputBackend:
-    """在连接层解析并钉住所获准公网IP，TLS仍使用原始主机名，阻止DNS重绑定。"""
-    def __init__(self, backend, allowed_hosts: frozenset[str]):
-        self.backend = backend
-        self.allowed_hosts = allowed_hosts
+#: RunningHub 官方产物主机默认白名单：仅当 GW_WORKFLOW_OUTPUT_HOSTS 未配置（或空白）时
+#: 生效；一旦显式配置该环境变量，即完全替换默认值，不追加。
+RH_DEFAULT_OUTPUT_HOSTS = frozenset({"rh-images-tos.xiaoyaoyou.com", "rh-images.xiaoyaoyou.com"})
 
-    async def connect_tcp(self, host, port, timeout=None, local_address=None, socket_options=None):
-        if isinstance(host, bytes):
-            host = host.decode("ascii")
-        infos = await asyncio.wait_for(asyncio.get_running_loop().getaddrinfo(
-            host, port, type=socket.SOCK_STREAM), timeout=timeout or 30)
-        addresses = [info[4][0] for info in infos]
-        # 全部解析结果都必须获准（防部分记录污染），然后只解析一次并钉住首个获准
-        # 地址连接；httpcore 仍按请求 origin 保留 Host 头与 TLS SNI/证书校验的原始主机名。
-        if not addresses or any(not _output_address_allowed(host, address, self.allowed_hosts)
-                                for address in addresses):
-            raise CleanroomException(400, "OUTPUT_ADDRESS_NOT_ALLOWED", "输出地址不是获准公网地址")
-        return await self.backend.connect_tcp(host=addresses[0], port=port, timeout=timeout,
-            local_address=local_address, socket_options=socket_options)
+#: 产物下载手动跟随的重定向步数上限（1 次初始请求 + 3 次 30x）。
+_OUTPUT_MAX_REDIRECTS = 3
 
-    async def connect_unix_socket(self, *args, **kwargs):
-        raise CleanroomException(400, "OUTPUT_ADDRESS_NOT_ALLOWED", "输出不支持本地套接字")
-
-    async def sleep(self, seconds):
-        await self.backend.sleep(seconds)
+#: 重定向上需要重新校验并重新钉定的跳转状态码。
+_OUTPUT_REDIRECT_CODES = frozenset({301, 302, 303, 307, 308})
 
 
-def _output_transport(allowed_hosts: frozenset[str]):
-    import httpcore
-    from httpcore._backends.auto import AutoBackend
-    transport = httpx.AsyncHTTPTransport(retries=0, trust_env=False)
-    transport._pool = httpcore.AsyncConnectionPool(
-        network_backend=_PublicOutputBackend(AutoBackend(), allowed_hosts))
-    return transport
+def _output_allowed_hosts(platform: str) -> frozenset[str]:
+    """按平台解析产物主机白名单：环境变量显式配置时完全覆盖，否则仅 RunningHub 有内置默认。"""
+    configured = frozenset(host.strip().lower() for host in os.getenv("GW_WORKFLOW_OUTPUT_HOSTS", "").split(",") if host.strip())
+    if configured:
+        return configured
+    if platform in ("runninghub", "rh_cloud"):
+        return RH_DEFAULT_OUTPUT_HOSTS
+    return frozenset()
+
+
+async def _getaddrinfo(host: str, port: int) -> list[tuple]:
+    """产物下载专用 DNS 解析入口；独立模块级函数便于测试按跳替换与计数。"""
+    return await asyncio.get_running_loop().getaddrinfo(host, port, type=socket.SOCK_STREAM)
+
+
+async def _resolve_pinned(host: str, port: int, allowed_hosts: frozenset[str]) -> str:
+    """解析一次、全部结果校验、钉住首个获准地址，阻止 DNS 重绑定与部分记录污染。"""
+    infos = await _getaddrinfo(host, port)
+    addresses = [info[4][0] for info in infos]
+    if not addresses or any(not _output_address_allowed(host, address, allowed_hosts) for address in addresses):
+        raise CleanroomException(400, "OUTPUT_ADDRESS_NOT_ALLOWED", "输出地址不是获准公网地址")
+    return addresses[0]
+
+
+def _output_transport(allowed_hosts: frozenset[str] | None = None, verify: bool = True) -> httpx.AsyncHTTPTransport:
+    """产物下载传输层：默认开启证书校验，不读取代理环境。
+
+    连接目标 IP 由 _resolve_pinned 在发请求前钉定并写入 URL，本函数不再改写连接层；
+    allowed_hosts 参数仅为兼容测试替身签名而保留。
+    """
+    return httpx.AsyncHTTPTransport(retries=0, trust_env=False, verify=verify)
+
+
+def _output_url_allowed(parts, allowed_hosts: frozenset[str]) -> bool:
+    """URL 层校验：仅接受获准主机的 HTTPS 默认端口或 443，禁止 userinfo 与 fragment。"""
+    return (parts.scheme == "https" and parts.hostname in allowed_hosts and not parts.username
+            and not parts.password and parts.port in (None, 443) and not parts.fragment)
+
+
+def _pinned_target(url: str, pinned_ip: str) -> str:
+    """把已获准 URL 重写为指向钉住地址的请求 URL（IPv6 加方括号），路径与查询串原样保留。"""
+    parts = urlsplit(url)
+    host = f"[{pinned_ip}]" if ":" in pinned_ip else pinned_ip
+    return f"https://{host}{parts.path or '/'}" + (f"?{parts.query}" if parts.query else "")
+
+
+async def _download_pinned_output(url: str, allowed_hosts: frozenset[str]) -> tuple[bytes, str]:
+    """逐跳校验、解析并钉住地址后下载，手动跟随至多 3 次 30x 重定向。
+
+    每一跳都重新执行完整 URL 校验并重新解析钉定，杜绝获准主机借 30x 引流到未获准
+    地址；TLS SNI 与证书校验始终使用原始主机名（请求扩展 sni_hostname + Host 头），
+    证书校验保持默认开启。
+    """
+    current = url
+    async with httpx.AsyncClient(timeout=30.0, follow_redirects=False, trust_env=False,
+                                  transport=_output_transport(allowed_hosts)) as client:
+        for hop in range(_OUTPUT_MAX_REDIRECTS + 1):
+            parts = urlsplit(current)
+            if not _output_url_allowed(parts, allowed_hosts):
+                raise CleanroomException(400, "OUTPUT_URL_NOT_ALLOWED", "输出来源未获准")
+            hostname = parts.hostname or ""
+            pinned_ip = await _resolve_pinned(hostname, parts.port or 443, allowed_hosts)
+            async with client.stream("GET", _pinned_target(current, pinned_ip),
+                                      headers={"Host": hostname},
+                                      extensions={"sni_hostname": hostname}) as resp:
+                if resp.status_code in _OUTPUT_REDIRECT_CODES:
+                    location = resp.headers.get("location")
+                    if hop >= _OUTPUT_MAX_REDIRECTS or not location:
+                        raise CleanroomException(502, "DOWNLOAD_FAILED", "输出下载失败或发生重定向")
+                    current = urljoin(current, location)
+                    continue
+                if resp.status_code != 200:
+                    raise CleanroomException(502, "DOWNLOAD_FAILED", "输出下载失败或发生重定向")
+                content_buffer = bytearray()
+                async for chunk in resp.aiter_bytes():
+                    content_buffer.extend(chunk)
+                    if len(content_buffer) > registry.MAX_ASSET_BYTES:
+                        raise CleanroomException(502, "OUTPUT_TOO_LARGE", "输出超过大小限制")
+                return bytes(content_buffer), resp.headers.get("content-type") or "application/octet-stream"
+    raise CleanroomException(502, "DOWNLOAD_FAILED", "输出下载失败或发生重定向")
 
 
 async def _collect_rh_task_outputs(context: AuthContext, task_id: str,
-                                   outputs: list[dict[str, Any]]) -> list[dict[str, Any]]:
+                                   outputs: list[dict[str, Any]], *,
+                                   platform: str = "rh_cloud") -> list[dict[str, Any]]:
     """把 RunningHub 云端输出文件下载落到运行时数据根并登记为素材。"""
     collected: list[dict[str, Any]] = []
     if len(outputs) > 32:
         return [{"registered": False, "code": "OUTPUT_COUNT_EXCEEDED"}]
+    # 同一份白名单同时用于 URL 校验与解析钉定（fake-ip 借道只认它）。
+    allowed_hosts = _output_allowed_hosts(platform)
     for item in outputs:
         if not isinstance(item, dict):
             collected.append({"registered": False, "code": "INVALID_OUTPUT_DESCRIPTOR"})
@@ -1063,29 +1158,12 @@ async def _collect_rh_task_outputs(context: AuthContext, task_id: str,
             filename = url.split("?")[0].rsplit("/", 1)[-1] or f"rh_output_{len(collected)+1}.png"
         parts = None
         try:
+            if not allowed_hosts:
+                raise CleanroomException(400, "OUTPUT_HOSTS_NOT_CONFIGURED", "未配置产物主机白名单")
             parts = urlsplit(url)
-            # 同一份白名单同时用于 URL 校验与连接层地址判定（fake-ip 借道只认它）。
-            allowed_hosts = frozenset(host.strip().lower() for host in os.getenv("GW_WORKFLOW_OUTPUT_HOSTS", "").split(",") if host.strip())
-            # 服务器不设默认信任主机；未配置与已配置但不匹配分开，便于按环境变量排查。
-            if not allowed_hosts or (parts.scheme != "https" or parts.hostname not in allowed_hosts or parts.username
-                                      or parts.password or parts.port not in (None, 443) or parts.fragment):
-                if not allowed_hosts:
-                    raise CleanroomException(400, "OUTPUT_HOSTS_NOT_CONFIGURED", "未配置产物主机白名单")
+            if not _output_url_allowed(parts, allowed_hosts):
                 raise CleanroomException(400, "OUTPUT_URL_NOT_ALLOWED", "输出来源未获准")
-            # follow_redirects=False 且下方仅接受 200：不跟随重定向，
-            # 防止获准主机借 30x 把下载引向未获准地址。
-            async with httpx.AsyncClient(timeout=30.0, follow_redirects=False, trust_env=False,
-                                          transport=_output_transport(allowed_hosts)) as client:
-                async with client.stream("GET", url) as resp:
-                    if resp.status_code != 200:
-                        raise CleanroomException(502, "DOWNLOAD_FAILED", "输出下载失败或发生重定向")
-                    content_buffer = bytearray()
-                    async for chunk in resp.aiter_bytes():
-                        content_buffer.extend(chunk)
-                        if len(content_buffer) > registry.MAX_ASSET_BYTES:
-                            raise CleanroomException(502, "OUTPUT_TOO_LARGE", "输出超过大小限制")
-                    content = bytes(content_buffer)
-                    media_type = resp.headers.get("content-type") or "application/octet-stream"
+            content, media_type = await _download_pinned_output(url, allowed_hosts)
         except CleanroomException as exc:
             failed = {"filename": filename, "registered": False, "code": exc.code}
             hostname = parts.hostname if parts is not None else None
@@ -1333,14 +1411,22 @@ async def _update_document(workflow_id: str, request: Request, authorization: Op
         stored.update({"workflow_id": workflow_id, "version": current_version + 1,
                        "folder_id": body.get("folder_id", current.get("folder_id"))})
         stored["asset_id"] = asset_hub_bridge._workflow_asset_id(context, workflow_id)
+        explicit_source = "source_context" in body
+        raw_source = body.get("source_context") if explicit_source else stored.get("metadata", {}).get("source_context", {})
         try:
-            source_context = _source_context(context, body.get("source_context", stored.get("metadata", {}).get("source_context", {})))
+            source_context = _source_context(context, raw_source)
         except CleanroomException as exc:
-            # 来源项目在保存后被删除/归档时只清除死链，不阻断参数保存等常规写入；
-            # execute 的显式来源 ACL 不变，无法访问的项目仍按 PROJECT_NOT_FOUND 拒绝。
-            if exc.status_code != 404 or exc.code != "PROJECT_NOT_FOUND":
+            # 显式来源无法访问仍按原错误拒绝；继承自文档元数据的旧来源只是陈旧数据，
+            # 死链只做自愈清理不阻断参数保存等常规写入；execute 的显式来源 ACL 不变。
+            if explicit_source or exc.status_code != 404 or exc.code not in ("PROJECT_NOT_FOUND", "CANVAS_NOT_FOUND"):
                 raise
-            source_context = {}
+            if exc.code == "CANVAS_NOT_FOUND":
+                try:  # 画布已失效但项目仍可访问时保留项目级来源
+                    source_context = _source_context(context, {"project_id": raw_source["project_id"]})
+                except CleanroomException:
+                    source_context = {}
+            else:
+                source_context = {}
         stored.setdefault("metadata", {})["source_context"] = source_context
         if stored["folder_id"] not in (None, "parsed_default"):
             _load_folder(context, str(stored["folder_id"]))
@@ -1379,8 +1465,8 @@ async def delete_document(workflow_id: str, request: Request, authorization: Opt
         removed = asset_hub_bridge.remove_workflow_from_asset_hub(context, workflow_id)
         if removed.get("error"):
             raise CleanroomException(503, removed["error"], "资产投影清理未完成，文档保留，可重试删除")
-        shutil.rmtree(_workflow_versions_root(context, workflow_id), ignore_errors=True)
         path.unlink()
+        shutil.rmtree(_workflow_versions_root(context, workflow_id), ignore_errors=True)
     return {"workflow_id": workflow_id, "deleted": True, "data_status": "ok", "data_gaps": []}
 
 
@@ -1411,6 +1497,85 @@ def _workflow_versions_root(context: AuthContext, workflow_id: str) -> Path:
     return _principal_root(context) / "workflow_versions" / _path(context, workflow_id).stem
 
 
+def _merge_user_node_data(nodes: Any, previous_nodes: Any) -> None:
+    """把旧文档的用户态数据按 (id, kind) 合并回重解析出的新节点。
+
+    重解析只修复结构（命名槽位连线、输入集合、控件结构保持新结果权威），
+    用户在旧文档上的编辑原样回填：画布位置、标量输入值、控件 value/promoted，
+    以及 input_assets / widget_promotions 元数据。
+    """
+    if not isinstance(nodes, list) or not isinstance(previous_nodes, list):
+        return
+    previous: dict[tuple[str, str], dict[str, Any]] = {}
+    for old in previous_nodes:
+        if isinstance(old, dict):
+            previous.setdefault((str(old.get("id")), str(old.get("kind"))), old)
+    for node in nodes:
+        if not isinstance(node, dict):
+            continue
+        old = previous.get((str(node.get("id")), str(node.get("kind"))))
+        if old is None:
+            continue
+        old_position = old.get("position")
+        if isinstance(old_position, dict):
+            node["position"] = deepcopy(old_position)
+        new_inputs, old_inputs = node.get("inputs"), old.get("inputs")
+        if isinstance(new_inputs, dict) and isinstance(old_inputs, dict):
+            for name, value in old_inputs.items():
+                # 连线引用与解析结果覆盖不了的新输入名都保持新结构，只回填标量。
+                if _api_link(value) is not None or name not in new_inputs:
+                    continue
+                if _api_link(new_inputs[name]) is None:
+                    new_inputs[name] = deepcopy(value)
+        old_widgets = old.get("widgets")
+        if isinstance(old_widgets, list):
+            if not isinstance(node.get("widgets"), list):
+                node["widgets"] = deepcopy(old_widgets)
+            else:
+                named = {widget.get("name"): widget for widget in old_widgets
+                         if isinstance(widget, dict) and isinstance(widget.get("name"), str)}
+                for widget in node["widgets"]:
+                    old_widget = named.get(widget.get("name")) if isinstance(widget, dict) else None
+                    if old_widget is None:
+                        continue
+                    if "value" in old_widget:
+                        widget["value"] = deepcopy(old_widget["value"])
+                    if "promoted" in old_widget:
+                        widget["promoted"] = bool(old_widget["promoted"])
+        old_metadata = old.get("metadata")
+        if isinstance(old_metadata, dict):
+            new_metadata = node.get("metadata")
+            if not isinstance(new_metadata, dict):
+                new_metadata = {}
+                node["metadata"] = new_metadata
+            for key in ("input_assets", "widget_promotions"):
+                if key in old_metadata:
+                    new_metadata[key] = deepcopy(old_metadata[key])
+
+
+def _positions_all_at_origin(nodes: Any) -> bool:
+    """所有节点都缺位置或停在 (0,0) 时需要整体重排。"""
+    if not isinstance(nodes, list) or not nodes:
+        return False
+    for node in nodes:
+        position = node.get("position") if isinstance(node, dict) else None
+        if isinstance(position, dict) and (position.get("x") or position.get("y")):
+            return False
+    return True
+
+
+def _assign_layout_positions(nodes: list[Any], connections: Any) -> None:
+    """按分层布局落位，沿用文档其余位置的 {x, y} 字典格式。"""
+    coordinates = compute_layout(nodes, connections if isinstance(connections, list) else [])
+    for node in nodes:
+        coord = coordinates.get(str(node.get("id")))
+        if coord is None:
+            continue
+        position = dict(node["position"]) if isinstance(node.get("position"), dict) else {}
+        position["x"], position["y"] = coord[0], coord[1]
+        node["position"] = position
+
+
 @router.post("/workflows/{workflow_id}/reparse", status_code=status.HTTP_200_OK)
 @router.post("/documents/{workflow_id}/reparse", status_code=status.HTTP_200_OK)
 async def reparse_document(workflow_id: str, request: Request, authorization: Optional[str] = Header(None), x_user_role: str = Header("editor", alias="X-User-Role")):
@@ -1434,7 +1599,8 @@ async def reparse_document(workflow_id: str, request: Request, authorization: Op
         if not needs:
             return {"workflow_id": workflow_id, "version": current_version, "workflow": current,
                     "document": _summary(current, workflow_id)["document"],
-                    "reparse_performed": False, **_reparse_flags(current),
+                    "reparse_performed": False, "actuator_params": _promoted_params(current),
+                    **_reparse_flags(current),
                     "data_status": "ok", "data_gaps": []}
         graph = extract_source_graph(current.get("raw_payload"))
         if graph is None:
@@ -1451,6 +1617,11 @@ async def reparse_document(workflow_id: str, request: Request, authorization: Op
         # 过期的宿主编译缓存指纹不再成立，必须丢弃。
         stored["metadata"] = {**(current.get("metadata") or {}), **(parsed_dict.get("metadata") or {})}
         stored["metadata"].pop("resolved_api", None)
+        # 重解析只修复结构，用户在旧文档上的编辑（位置、标量参数、控件、资产/提升）
+        # 按 (id, kind) 合并回来；整体没有有效位置时再按拓扑布局落位。
+        _merge_user_node_data(stored.get("nodes"), current.get("nodes"))
+        if _positions_all_at_origin(stored.get("nodes")):
+            _assign_layout_positions(stored["nodes"], stored.get("connections"))
         stored.update({"workflow_id": workflow_id, "version": current_version + 1,
                        "asset_id": asset_hub_bridge._workflow_asset_id(context, workflow_id)})
         _atomic_write(_workflow_versions_root(context, workflow_id) / f"{current_version}.json", deepcopy(current))
@@ -1458,6 +1629,7 @@ async def reparse_document(workflow_id: str, request: Request, authorization: Op
     registration = asset_hub_bridge.register_workflow_to_asset_hub(workflow_id, stored.get("name", "workflow"), document=stored, context=context)
     return {"workflow_id": workflow_id, "version": stored["version"], "workflow": stored,
             "document": _summary(stored, workflow_id)["document"], "reparse_performed": True,
+            "actuator_params": _promoted_params(stored),
             **_reparse_flags(stored), **asset_hub_bridge.registration_health(registration)}
 
 
@@ -1465,8 +1637,12 @@ async def reparse_document(workflow_id: str, request: Request, authorization: Op
 def list_workflow_versions(workflow_id: str, authorization: Optional[str] = Header(None), x_user_role: str = Header("editor", alias="X-User-Role")):
     """列出经 reparse 保留的历史版本（新版本在前）。"""
     context = _auth(authorization, x_user_role, False)
+    versions_root = _workflow_versions_root(context, workflow_id)
+    # 与 _load 的缺失文档语义一致：主文档与历史目录都不存在就是未找到，而非空列表。
+    if not _path(context, workflow_id).is_file() and not any(versions_root.glob("*.json")):
+        raise CleanroomException(404, "WORKFLOW_NOT_FOUND", "工作流不存在")
     versions = []
-    for path in _workflow_versions_root(context, workflow_id).glob("*.json"):
+    for path in versions_root.glob("*.json"):
         if path.stem.isascii() and path.stem.isdecimal():
             archived_at = datetime.fromtimestamp(path.stat().st_mtime, timezone.utc).isoformat()
             versions.append({"version": int(path.stem), "archived_at": archived_at})
@@ -1572,6 +1748,10 @@ def workflow_clipboard(request: Request, authorization: Optional[str] = Header(N
     return body
 
 
+#: ComfyUI 地址配置入口的真实前端路径：workflow 页「RunningHub 凭证与本地
+#: ComfyUI 环境设置」弹窗（web/pages/workflow.html 的 inputComfyUrl）。
+COMFY_SETTINGS_PATH = "/static/pages/workflow.html"
+
 _PENDING_COMFY_COMMAND: dict[str, dict[str, Any]] = {}
 def _require_comfy_admin(context):
     if context.role != "admin":
@@ -1581,9 +1761,14 @@ def _require_comfy_admin(context):
 def _comfy_operation(context, action, token=None):
     from .comfy_control import service
     settings = registry.read_settings(context)
-    url = str(settings.get("comfy_url") or os.getenv("GW_COMFYUI_URL") or "http://127.0.0.1:8188").strip()
+    url = str(settings.get("comfy_url") or os.getenv("GW_COMFYUI_URL") or "").strip()
     root = str(settings.get("comfy_root_dir") or os.getenv("GW_COMFYUI_ROOT_DIR") or "")
     principal = registry.principal_digest(context.identity_domain, context.subject)
+    if not url:
+        # 未配置地址时如实报告，不猜测本地默认端口，也不发起任何探测。
+        return {"ok": False, "status": "unconfigured", "highlight": False,
+                "managed": False, "can_stop": False, "code": "COMFY_HOST_NOT_CONFIGURED",
+                "message": "本地 ComfyUI 服务地址未配置", "settings_path": COMFY_SETTINGS_PATH}
     return service.operate(action, url, root, principal, token)
 
 
@@ -1618,7 +1803,9 @@ async def open_in_comfy(workflow_id: Optional[str] = None, authorization: Option
     settings = registry.read_settings(context)
     comfy_url = _comfy_endpoint(context).base_url
     if not comfy_url:
-        raise unavailable('WORKFLOW_EXECUTOR_UNAVAILABLE', '请先配置 ComfyUI 地址')
+        # 未配置不是服务不可用（503），而是需要操作者先补配置的前置条件（409）。
+        raise CleanroomException(409, 'COMFY_HOST_NOT_CONFIGURED', '请先在设置中配置本地 ComfyUI 服务地址',
+                                 {'settings_path': COMFY_SETTINGS_PATH}, {'settings_path'})
     comfy_root = settings.get("comfy_root_dir") or os.environ.get("GW_COMFYUI_ROOT_DIR") or ""
 
     # 与顶栏共用受控生命周期；普通用户可以打开在线服务但不能隐式启动。
@@ -1626,7 +1813,7 @@ async def open_in_comfy(workflow_id: Optional[str] = None, authorization: Option
     if not control.get("highlight"):
         if control.get("status") == "starting":
             raise unavailable('COMFY_START_PENDING', 'ComfyUI 正在启动，请等待右上角 CF 确认运行后再导入')
-        raise unavailable('WORKFLOW_EXECUTOR_UNAVAILABLE', 'ComfyUI 未在线，请先使用全站 CF 控件启动或连接服务')
+        raise unavailable('COMFY_HOST_UNREACHABLE', 'ComfyUI 未在线，请先使用全站 CF 控件启动或连接服务')
     online = bool(control.get("highlight"))
     launched = bool(control.get("launched"))
     effective_root = comfy_root
@@ -2435,7 +2622,8 @@ async def mature_auto_layout(workflow_id: str, request: Request,
 def capabilities(authorization: Optional[str] = Header(None), x_user_role: str = Header("editor", alias="X-User-Role")):
     context = _auth(authorization, x_user_role, False)
     providers = {provider: ("configured" if get_provider(provider).configured else "unavailable") for provider in PROVIDERS}
-    executors = {"local_comfy": "configured" if _comfy_endpoint(context).base_url else "unavailable",
+    comfy_configured = bool(_comfy_endpoint(context).base_url)
+    executors = {"local_comfy": "configured" if comfy_configured else "unavailable",
                  "rh_cloud": "configured" if registry.credential_value('rh_api_key', context) else "unavailable"}
     gaps = ['native_host_acceptance_pending', 'supplier_acceptance_pending']
     gaps += [name + '_not_configured' for name, value in executors.items() if value == 'unavailable']
@@ -2443,6 +2631,8 @@ def capabilities(authorization: Optional[str] = Header(None), x_user_role: str =
         gaps.append('image_metadata_parser_unavailable')
     return {"providers": providers,
             "executors": executors,
+            # 只如实报告配置状态；此处不做阻塞网络探测，在线与否由 /comfy-control 查询。
+            "comfy_host": "configured" if comfy_configured else "not_configured",
             "implemented": ["parse", "upload-json", "upload-png-text", "upload-webp-exif", "provider-fetch-gateway", "task-contract", "canvas-contract", "canvas-export", "runtime-isolated-storage", "workflow execution and polling", "input-upload", "asset-registration-recovery", "psd-original-download", "legacy-rh-link-slot-reparse"],
             "partial": ["provider-fetch-gateway", "native-comfy-bridge", "native-schema-conversion"],
             "todo": ["native ComfyUI host acceptance", "real supplier acceptance", "canvas binary export"],

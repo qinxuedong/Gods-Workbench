@@ -83,7 +83,7 @@ cd <本机仓库根目录>
 - 仍须先设置 `GW_RUNNINGHUB_API_KEY`（同上面的配置 key）。不需要 `--i-accept-cost`，也不需要 `--workflow-id`。
 - 脚本只请求 `GET /tasks/{job}` 和 `POST /tasks/{job}/collect`，不会 parse-link，也不会再次 `/tasks/execute`。
 - `--data-dir` 是上一次 AC8 运行创建的 `%TEMP%\gw-ac8-<随机后缀>` 目录（上例 `gw-ac8-v7d4lpti` 只展示格式；以结果 JSON 里的 `data_dir` 完整路径为准），即内含 `data`、`auth`、`video` 的那个 gw-ac8 临时目录根，不是仓库目录。
-- 服务进程没有默认产物主机。脚本仅在 `GW_WORKFLOW_OUTPUT_HOSTS` 未设置时，把它设为 `rh-images-tos.xiaoyaoyou.com,rh-images.xiaoyaoyou.com`（真实 RunningHub 产物通常落在 `rh-images-tos.xiaoyaoyou.com`；`rh-images.xiaoyaoyou.com` 是 RunningHub 文档给出的主机；英文逗号分隔、逗号后无需空格）。已设置则保持原值。需要别的主机时加 `--output-hosts host-a,host-b`。
+- 产物主机单一事实来源在服务端：`GW_WORKFLOW_OUTPUT_HOSTS` 未设置时，服务端对 RunningHub 任务自动使用两个内置默认产物主机 `rh-images-tos.xiaoyaoyou.com` 与 `rh-images.xiaoyaoyou.com`；一旦设置该环境变量即完全替换默认值。需要别的主机时，给脚本加 `--output-hosts host-a,host-b`（英文逗号分隔、逗号后无需空格）显式覆盖。
 - 结果 JSON 的 `mode` 为 `recollect`。退出码同样是 0 = PASS，1 = FAILED，2 = BLOCKED。
 
 ## 4. 判定 PASS 的标准

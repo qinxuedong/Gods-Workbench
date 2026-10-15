@@ -4,13 +4,15 @@
 把 RH link（source_type == "rh_link"）导入的 API 格式工作流里本应为输入参数名的
 连线槽位压成数字 0，而 raw_payload（原始来源快照）仍保留正确命名槽位。
 
-本文件固定四件事：
+本文件固定五件事：
 1. 纯函数判定（legacy_reparse_state）：只对可核验的 rh_link 过期数据判真，
    非 rh_link、无原始来源、槽位正确或用户合法改线的工作流一律不误判；
 2. GET 单个工作流与列表只透出 needs_reparse/reparse_reason 标记，绝不改写存储；
 3. POST reparse 用服务端解析逻辑从 raw_payload 离线重解析，写入新版本（+1），
    原版本作为历史版本可读回；expected_version 过期 409；无法解析时明确报错不改数据；
-4. 全部断言基于持久化后回读（fixture 见 fixtures/runninghub/workflow_legacy_*.json）。
+4. 重解析只修复结构：用户在旧文档上的编辑（位置、标量参数、控件 value/promoted、
+   input_assets/widget_promotions 元数据）按 (id, kind) 合并回新版本并透出 actuator_params；
+5. 全部断言基于持久化后回读（fixture 见 fixtures/runninghub/workflow_legacy_*.json）。
 """
 from __future__ import annotations
 
@@ -26,6 +28,7 @@ from gw.core.errors import CleanroomException
 from gw.god_workflow import routes
 from gw.god_workflow.legacy_reparse import (REPARSE_REASON_LEGACY_RH_LINK_SLOTS,
                                             legacy_reparse_state)
+from gw.god_workflow.layout import compute_layout
 from gw.god_workflow.parser import parse_workflow
 
 
@@ -246,6 +249,84 @@ def test_reparse_writes_new_version_and_keeps_original_readable(client, legacy_d
     assert zero.status_code == 400 and zero.json()["detail"]["code"] == "INVALID_VERSION"
 
 
+def _edited_user_data_document(legacy_document: dict) -> dict:
+    """旧保存形态叠加用户编辑：位置、控件值/提升、标量输入、资产与提升元数据。"""
+    document = deepcopy(legacy_document)
+    for node in document["nodes"]:
+        node["position"] = {"x": node["position"]["x"] + 100.0, "y": node["position"]["y"] + 50.0}
+    sampler = next(node for node in document["nodes"] if node["id"] == "12")
+    sampler["widgets"][0]["value"] = 424242
+    sampler["widgets"][0]["promoted"] = True
+    sampler["inputs"]["seed"] = 424242
+    sampler["metadata"]["input_assets"] = ["asset-checkpoint-1"]
+    latent = next(node for node in document["nodes"] if node["id"] == "13")
+    latent["metadata"]["widget_promotions"] = {"widget_0": True}
+    return document
+
+
+def test_reparse_preserves_user_edits_positions_promotions_and_assets(client, legacy_document):
+    """重解析恢复命名槽位的同时，用户编辑过的数据必须原样合并回新版本。"""
+    document = _edited_user_data_document(legacy_document)
+    expected_positions = {node["id"]: node["position"] for node in document["nodes"]}
+    _seed(document)
+    response = client.post(f"/api/god_workflow/workflows/{FIXTURE_ID}/reparse",
+                           headers=HEADERS, json={"expected_version": 2})
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["reparse_performed"] is True and body["version"] == 3
+    # actuator_params 与其他端点一致地出现在重解析响应里，且包含提升后的控件编辑值。
+    actuator = {(item["node_id"], item["field_name"]): item for item in body["actuator_params"]}
+    assert actuator["12", "seed"]["field_value"] == 424242
+
+    read_back = client.get(f"/api/god_workflow/documents/{FIXTURE_ID}", headers=HEADERS)
+    assert read_back.status_code == 200, read_back.text
+    read_body = read_back.json()
+    assert read_body["needs_reparse"] is False
+    stored = read_body["workflow"]
+    assert _saved_slots(stored) == EXPECTED_NAMED_SLOTS
+    assert read_body["workflow"]["actuator_params"] == body["actuator_params"]
+
+    by_id = {node["id"]: node for node in stored["nodes"]}
+    for node in stored["nodes"]:
+        assert node["position"] == expected_positions[node["id"]]
+    sampler = by_id["12"]
+    assert sampler["widgets"][0] == {"name": "seed", "value": 424242, "promoted": True}
+    assert sampler["inputs"]["seed"] == 424242
+    # 连线结构保持新解析结果：命名槽位连线不因旧文档的压平引用回退。
+    assert sampler["inputs"]["positive"] == ["10", 0]
+    assert sampler["metadata"]["input_assets"] == ["asset-checkpoint-1"]
+    assert by_id["13"]["metadata"]["widget_promotions"] == {"widget_0": True}
+
+    context = routes._auth(HEADERS["Authorization"], "editor", True)
+    persisted = json.loads(routes._path(context, FIXTURE_ID).read_text(encoding="utf-8"))
+    assert persisted["version"] == 3
+    assert {node["id"]: node["position"] for node in persisted["nodes"]} == expected_positions
+
+
+def test_reparse_computes_layout_when_all_positions_are_origin(client, legacy_document):
+    """整体没有任何有效位置（全 (0,0)）时，重解析后按拓扑布局落位。"""
+    document = _edited_user_data_document(legacy_document)
+    for node in document["nodes"]:
+        node["position"] = {"x": 0.0, "y": 0.0}
+    _seed(document)
+    response = client.post(f"/api/god_workflow/workflows/{FIXTURE_ID}/reparse",
+                           headers=HEADERS, json={"expected_version": 2})
+    assert response.status_code == 200, response.text
+    stored = client.get(f"/api/god_workflow/documents/{FIXTURE_ID}", headers=HEADERS).json()["workflow"]
+    expected = compute_layout(stored["nodes"], stored["connections"])
+    assert expected
+    for node in stored["nodes"]:
+        coord = expected[str(node["id"])]
+        assert node["position"] == {"x": coord[0], "y": coord[1]}
+
+
+def test_list_versions_of_missing_workflow_returns_404(client):
+    response = client.get("/api/god_workflow/workflows/does-not-exist/versions", headers=HEADERS)
+    assert response.status_code == 404, response.text
+    assert response.json()["detail"]["code"] == "WORKFLOW_NOT_FOUND"
+    assert response.json()["detail"]["message"] == "工作流不存在"
+
+
 def test_reparse_is_idempotent_after_success_and_stale_versions_rejected(client, legacy_document):
     _seed(legacy_document)
     first = client.post(f"/api/god_workflow/workflows/{FIXTURE_ID}/reparse",
@@ -283,9 +364,10 @@ def test_reparse_and_history_are_principal_scoped(client, legacy_document):
     _seed(legacy_document)
     other_item = client.get(f"/api/god_workflow/item/{FIXTURE_ID}", headers=OTHER_HEADERS)
     assert other_item.status_code == 404
+    # 其他主体既没有主文档也没有历史目录：按缺失工作流返回 404，而非空列表。
     other_versions = client.get(f"/api/god_workflow/workflows/{FIXTURE_ID}/versions", headers=OTHER_HEADERS)
-    assert other_versions.status_code == 200
-    assert other_versions.json()["versions"] == []
+    assert other_versions.status_code == 404
+    assert other_versions.json()["detail"]["code"] == "WORKFLOW_NOT_FOUND"
     other_reparse = client.post(f"/api/god_workflow/workflows/{FIXTURE_ID}/reparse",
                                 headers=OTHER_HEADERS, json={"expected_version": 2})
     assert other_reparse.status_code == 404
@@ -299,5 +381,7 @@ def test_delete_document_cleans_up_version_history(client, legacy_document):
     deleted = client.request("DELETE", f"/api/god_workflow/documents/{FIXTURE_ID}",
                              headers=HEADERS, json={"expected_version": 3})
     assert deleted.status_code == 200, deleted.text
-    assert client.get(f"/api/god_workflow/workflows/{FIXTURE_ID}/versions", headers=HEADERS).json()["versions"] == []
+    versions_after = client.get(f"/api/god_workflow/workflows/{FIXTURE_ID}/versions", headers=HEADERS)
+    assert versions_after.status_code == 404
+    assert versions_after.json()["detail"]["code"] == "WORKFLOW_NOT_FOUND"
     assert client.get(f"/api/god_workflow/workflows/{FIXTURE_ID}/versions/2", headers=HEADERS).status_code == 404

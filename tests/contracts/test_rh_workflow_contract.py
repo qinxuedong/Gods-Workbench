@@ -1127,35 +1127,30 @@ def test_r0_collection_retry_does_not_regenerate(client, monkeypatch):
 def test_r0_output_dns_private_addresses_are_rejected(client, monkeypatch, address):
     import asyncio
     import socket
-    from gw.god_workflow.routes import _PublicOutputBackend
+    from gw.god_workflow import routes
     calls = []
-    class Backend:
-        async def connect_tcp(self, **kwargs): calls.append(kwargs)
-    async def resolve(*args, **kwargs):
-        return [(socket.AF_INET6 if ':' in address else socket.AF_INET, socket.SOCK_STREAM, 6, '', (address, 443))]
-    async def run():
-        monkeypatch.setattr(asyncio.get_running_loop(), 'getaddrinfo', resolve)
-        with pytest.raises(CleanroomException) as error:
-            await _PublicOutputBackend(Backend(), frozenset()).connect_tcp('approved.example', 443)
-        assert error.value.code == 'OUTPUT_ADDRESS_NOT_ALLOWED'
-    asyncio.run(run())
-    assert not calls
+    async def resolve(host, port):
+        calls.append((host, port))
+        return [(socket.AF_INET6 if ':' in address else socket.AF_INET, socket.SOCK_STREAM, 6, '', (address, port))]
+    monkeypatch.setattr(routes, '_getaddrinfo', resolve)
+    with pytest.raises(CleanroomException) as error:
+        asyncio.run(routes._resolve_pinned('approved.example', 443, frozenset()))
+    assert error.value.code == 'OUTPUT_ADDRESS_NOT_ALLOWED'
+    assert calls == [('approved.example', 443)]
 
 
-def test_r0_output_dns_connects_to_validated_ip_not_second_resolution(client, monkeypatch):
+def test_r0_output_dns_pins_validated_ip_with_single_resolution(client, monkeypatch):
     import asyncio
     import socket
-    from gw.god_workflow.routes import _PublicOutputBackend
+    from gw.god_workflow import routes
     calls = []
-    class Backend:
-        async def connect_tcp(self, **kwargs): calls.append(kwargs); return object()
-    async def resolve(*args, **kwargs):
-        return [(socket.AF_INET, socket.SOCK_STREAM, 6, '', ('8.8.8.8', 443))]
-    async def run():
-        monkeypatch.setattr(asyncio.get_running_loop(), 'getaddrinfo', resolve)
-        await _PublicOutputBackend(Backend(), frozenset()).connect_tcp('approved.example', 443)
-    asyncio.run(run())
-    assert calls[0]['host'] == '8.8.8.8'
+    async def resolve(host, port):
+        calls.append((host, port))
+        return [(socket.AF_INET, socket.SOCK_STREAM, 6, '', ('8.8.8.8', port))]
+    monkeypatch.setattr(routes, '_getaddrinfo', resolve)
+    pinned = asyncio.run(routes._resolve_pinned('approved.example', 443, frozenset()))
+    assert pinned == '8.8.8.8'
+    assert calls == [('approved.example', 443)]
 
 
 def test_param_promotion_and_actuator_params_roundtrip(client):
@@ -1379,66 +1374,19 @@ def test_r0_store_bytes_enforces_size_limit(client, monkeypatch):
 def test_r0_output_dns_mixed_or_empty_answers_fail_closed(client, monkeypatch, addresses):
     import asyncio
     import socket
-    from gw.god_workflow.routes import _PublicOutputBackend
-    class Backend:
-        async def connect_tcp(self, **kwargs): pytest.fail('不得连接混合或空DNS结果')
-    async def resolve(*args, **kwargs):
-        return [(socket.AF_INET6 if ':' in address else socket.AF_INET, socket.SOCK_STREAM, 6, '', (address, 443)) for address in addresses]
-    async def run():
-        monkeypatch.setattr(asyncio.get_running_loop(), 'getaddrinfo', resolve)
-        with pytest.raises(CleanroomException) as error:
-            await _PublicOutputBackend(Backend(), frozenset()).connect_tcp('approved.example', 443)
-        assert error.value.code == 'OUTPUT_ADDRESS_NOT_ALLOWED'
-    asyncio.run(run())
-
-
-@pytest.mark.parametrize('tls_failure', [False, True])
-def test_r0_pinned_transport_preserves_tls_hostname_and_validation(client, monkeypatch, tls_failure):
-    import asyncio
-    import socket
-    import ssl
-    import httpcore._backends.auto
     from gw.god_workflow import routes
-    calls = []
-    payload = _tiny_png()
-    class Stream:
-        async def start_tls(self, ssl_context, server_hostname=None, timeout=None):
-            assert ssl_context.verify_mode == ssl.CERT_REQUIRED
-            assert ssl_context.check_hostname is True
-            assert server_hostname == 'approved.example'
-            calls.append(('tls', server_hostname))
-            if tls_failure:
-                raise ssl.SSLCertVerificationError('不可信证书')
-            return self
-        async def write(self, buffer, timeout=None): calls.append(('write', buffer))
-        async def read(self, max_bytes, timeout=None):
-            return b'HTTP/1.1 200 OK\r\nContent-Type: image/png\r\nContent-Length: ' + str(len(payload)).encode() + b'\r\nConnection: close\r\n\r\n' + payload
-        async def aclose(self): pass
-        def get_extra_info(self, info): return None
-    class Backend:
-        async def connect_tcp(self, host, port, **kwargs):
-            assert host == '8.8.8.8'
-            calls.append(('connect', host))
-            return Stream()
-    async def resolve(*args, **kwargs):
-        return [(socket.AF_INET, socket.SOCK_STREAM, 6, '', ('8.8.8.8', 443))]
-    monkeypatch.setattr(httpcore._backends.auto, 'AutoBackend', Backend)
-    monkeypatch.setenv('GW_WORKFLOW_OUTPUT_HOSTS', 'approved.example')
-    async def run():
-        monkeypatch.setattr(asyncio.get_running_loop(), 'getaddrinfo', resolve)
-        return await routes._collect_rh_task_outputs(routes._auth(_headers()['Authorization'], 'editor', True), 'tls-task', [{'fileUrl': 'https://approved.example/out.png'}])
-    result = asyncio.run(run())
-    assert ('connect', '8.8.8.8') in calls
-    assert ('tls', 'approved.example') in calls
-    assert result[0]['registered'] is not tls_failure
-    if tls_failure:
-        assert result[0]['code'] == 'DOWNLOAD_ERROR'
-        assert not any(kind == 'write' for kind, _ in calls)
+    async def resolve(host, port):
+        return [(socket.AF_INET6 if ':' in address else socket.AF_INET, socket.SOCK_STREAM, 6, '', (address, port)) for address in addresses]
+    monkeypatch.setattr(routes, '_getaddrinfo', resolve)
+    with pytest.raises(CleanroomException) as error:
+        asyncio.run(routes._resolve_pinned('approved.example', 443, frozenset()))
+    assert error.value.code == 'OUTPUT_ADDRESS_NOT_ALLOWED'
 
 
-@pytest.mark.parametrize('case,expected', [('redirect', 'DOWNLOAD_FAILED'), ('overflow', 'OUTPUT_TOO_LARGE'), ('count', 'OUTPUT_COUNT_EXCEEDED'), ('unapproved', 'OUTPUT_URL_NOT_ALLOWED'), ('unknown', 'OUTPUT_REGISTRATION_FAILED')])
+@pytest.mark.parametrize('case,expected', [('redirect', 'OUTPUT_URL_NOT_ALLOWED'), ('overflow', 'OUTPUT_TOO_LARGE'), ('count', 'OUTPUT_COUNT_EXCEEDED'), ('unapproved', 'OUTPUT_URL_NOT_ALLOWED'), ('unknown', 'OUTPUT_REGISTRATION_FAILED')])
 def test_r0_cloud_output_limits_and_redirects(client, monkeypatch, case, expected):
     import asyncio
+    import socket
     from gw.god_workflow import routes, registry
     requests = []
     class Chunks(httpx.AsyncByteStream):
@@ -1448,12 +1396,15 @@ def test_r0_cloud_output_limits_and_redirects(client, monkeypatch, case, expecte
     def handle(request):
         requests.append(request)
         if case == 'redirect':
-            return httpx.Response(302, headers={'location': 'https://approved.example/other.png'})
+            return httpx.Response(302, headers={'location': 'https://unapproved.example/other.png'})
         if case == 'overflow':
             return httpx.Response(200, stream=Chunks(), headers={'content-type': 'image/png'})
         return httpx.Response(200, content=b'unknown', headers={'content-type': 'application/octet-stream'})
     monkeypatch.setenv('GW_WORKFLOW_OUTPUT_HOSTS', 'approved.example')
-    monkeypatch.setattr(routes, '_output_transport', lambda allowed_hosts=None: httpx.MockTransport(handle))
+    async def resolve(host, port):
+        return [(socket.AF_INET, socket.SOCK_STREAM, 6, '', ('198.18.0.7', port))]
+    monkeypatch.setattr(routes, '_getaddrinfo', resolve)
+    monkeypatch.setattr(routes, '_output_transport', lambda allowed_hosts=None, verify=True: httpx.MockTransport(handle))
     monkeypatch.setattr(registry, 'MAX_ASSET_BYTES', 3 if case == 'overflow' else 32 * 1024 * 1024)
     outputs = [{'fileUrl': 'https://' + ('unapproved.example' if case == 'unapproved' else 'approved.example') + '/out.' + ('bin' if case == 'unknown' else 'png')}]
     if case == 'count': outputs *= 33
@@ -1461,6 +1412,33 @@ def test_r0_cloud_output_limits_and_redirects(client, monkeypatch, case, expecte
     assert result[0]['registered'] is False
     assert result[0]['code'] == expected
     assert len(requests) == (0 if case in {'count', 'unapproved'} else 1)
+
+
+def test_r0_cloud_redirect_to_allowed_host_is_followed_and_repinned(client, monkeypatch):
+    """重定向到另一获准主机：第二跳重新解析钉定后完成下载。"""
+    import asyncio
+    import socket
+    from gw.god_workflow import routes, registry
+    requests = []
+    def handle(request):
+        requests.append(request)
+        if len(requests) == 1:
+            return httpx.Response(302, headers={'location': 'https://approved.example/other.png'})
+        return httpx.Response(200, content=_tiny_png(), headers={'content-type': 'image/png'})
+    monkeypatch.setenv('GW_WORKFLOW_OUTPUT_HOSTS', 'approved.example')
+    resolutions = []
+    async def resolve(host, port):
+        resolutions.append((host, port))
+        return [(socket.AF_INET, socket.SOCK_STREAM, 6, '', ('198.18.0.7', port))]
+    monkeypatch.setattr(routes, '_getaddrinfo', resolve)
+    monkeypatch.setattr(routes, '_output_transport', lambda allowed_hosts=None, verify=True: httpx.MockTransport(handle))
+    result = asyncio.run(routes._collect_rh_task_outputs(routes._auth(_headers()['Authorization'], 'editor', True), 'redirect-task',
+        [{'fileUrl': 'https://approved.example/out.png', 'fileName': 'out.png'}]))
+    assert result[0]['registered'] is True, result
+    assert len(requests) == 2
+    assert [request.url.host for request in requests] == ['198.18.0.7', '198.18.0.7']
+    assert [request.headers['host'] for request in requests] == ['approved.example', 'approved.example']
+    assert resolutions == [('approved.example', 443)] * 2
 
 
 def test_r0_local_output_count_limit_prevents_download(client, monkeypatch):

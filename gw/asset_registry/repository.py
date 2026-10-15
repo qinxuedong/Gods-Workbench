@@ -193,40 +193,92 @@ def archive_assets(asset_ids: List[str], expected_version: Optional[int]) -> Dic
 
 
 def delete_asset(asset_id: str, expected_version: Optional[int], context=None) -> Dict[str, Any]:
-    """删除资产：移入回收站并保留可恢复副本。"""
-    def mutate(raw: Dict[str, Any]) -> Any:
-        item = _require(raw, asset_id)
-        _cas(raw, expected_version)
-        del raw["assets"][asset_id]
-        entry_id = _seq(raw, "rcy_", raw["recycle_bin"].keys())
-        raw["recycle_bin"][entry_id] = {"entry_id": entry_id, "kind": "asset", "asset_id": asset_id,
-                                        "payload": dict(item), "deleted_at": storage.now_iso()}
-        event_id = audit_sink.append_event(raw, "asset.deleted", asset_id, context)
-        revision = _bump(raw)
-        return {"event_id": event_id, "asset_id": asset_id, "deleted": True, "recycle_entry_id": entry_id,
-                "recycled": {"entry_id": entry_id, "asset_id": asset_id, "removed_previews": 0},
-                "revision": revision, "data_status": DATA_STATUS_OK}
-    return state().mutate(mutate)
+    """删除资产：移入回收站并保留可恢复副本。
+
+    同进同出裁定（C4-AC6 / issue #12）：资产注册表是资产存在性的唯一真源。工作流产物与
+    工作流文档经 asset_hub_bridge 以同一 asset_id 同时登记在本注册表和素材库
+    （AssetLibraryService），两份记录必须随删除/恢复同进同出：
+
+    - 删除时把同 asset_id 的素材库条目一并移除，完整记录暂存进回收站条目
+      payload["library_item"]；素材库没有同名条目时不做任何素材库改动。
+    - 原子顺序：先移除素材库条目，素材库更新失败则整个删除失败（注册表未动）；
+      素材库成功后注册表写入失败则回滚素材库移除，不留半程状态。
+    - 恢复见 restore_from_recycle：暂存条目原样放回（同 id/同库/同分类/同字段，幂等）。
+    """
+    from gw.asset_library.service import default_asset_library_service
+    snapshot = state().read()
+    _require(snapshot, asset_id)
+    _cas(snapshot, expected_version)
+    library_item = default_asset_library_service.remove_item_snapshot(asset_id)
+    try:
+        def mutate(raw: Dict[str, Any]) -> Any:
+            item = _require(raw, asset_id)
+            _cas(raw, expected_version)
+            del raw["assets"][asset_id]
+            payload = dict(item)
+            if library_item is not None:
+                payload["library_item"] = library_item
+            entry_id = _seq(raw, "rcy_", raw["recycle_bin"].keys())
+            raw["recycle_bin"][entry_id] = {"entry_id": entry_id, "kind": "asset", "asset_id": asset_id,
+                                            "payload": payload, "deleted_at": storage.now_iso()}
+            event_id = audit_sink.append_event(raw, "asset.deleted", asset_id, context)
+            revision = _bump(raw)
+            return {"event_id": event_id, "asset_id": asset_id, "deleted": True, "recycle_entry_id": entry_id,
+                    "recycled": {"entry_id": entry_id, "asset_id": asset_id, "removed_previews": 0},
+                    "revision": revision, "data_status": DATA_STATUS_OK}
+        return state().mutate(mutate)
+    except Exception:
+        if library_item is not None:
+            default_asset_library_service.insert_item_snapshot(library_item)
+        raise
 
 
 def restore_from_recycle(entry_id: str, context=None) -> Dict[str, Any]:
-    def mutate(raw: Dict[str, Any]) -> Any:
-        entry = raw["recycle_bin"].get(entry_id)
-        if entry is None:
+    """从回收站恢复条目（同进同出：见 delete_asset docstring 的裁定）。
+
+    回收站条目 payload["library_item"] 暂存过素材库条目时，恢复会把该条目原样放回
+    素材库（同 id/同库/同分类/同字段；同 asset_id 已存在则幂等跳过），并从恢复的
+    注册表记录中剥掉暂存键。原子顺序与删除对称：先回插素材库（失败即整体失败，
+    注册表未动）；注册表恢复失败（404/409）则回滚刚插入的素材库条目。
+    """
+    from gw.asset_library.service import default_asset_library_service
+    peek = state().read()
+    existing = peek["recycle_bin"].get(entry_id)
+    if existing is None:
+        raise CleanroomException(404, "RECYCLE_ENTRY_NOT_FOUND", "回收站条目不存在")
+    stashed = dict(existing.get("payload") or {}).get("library_item")
+    inserted = False
+    if existing["kind"] == "asset" and stashed is not None:
+        from gw.core.asset_visibility import asset_visible
+        if not asset_visible(existing.get("payload", {})):
             raise CleanroomException(404, "RECYCLE_ENTRY_NOT_FOUND", "回收站条目不存在")
-        if entry["kind"] == "asset":
-            from gw.core.asset_visibility import asset_visible
-            if not asset_visible(entry.get('payload', {})):
-                raise CleanroomException(404, 'RECYCLE_ENTRY_NOT_FOUND', '回收站条目不存在')
-            if entry["asset_id"] in raw["assets"]:
-                raise CleanroomException(409, "ASSET_RESTORE_CONFLICT", "恢复目标资产已经存在")
-            raw["assets"][entry["asset_id"]] = entry["payload"]
-            audit_sink.append_event(raw, "asset.recycle_restored", entry["asset_id"], context)
-        del raw["recycle_bin"][entry_id]
-        revision = _bump(raw)
-        return {"entry_id": entry_id, "restored": True, "kind": entry["kind"],
-                "revision": revision, "data_status": DATA_STATUS_OK}
-    return state().mutate(mutate)
+        if existing["asset_id"] in peek["assets"]:
+            raise CleanroomException(409, "ASSET_RESTORE_CONFLICT", "恢复目标资产已经存在")
+        inserted = default_asset_library_service.insert_item_snapshot(stashed)
+    try:
+        def mutate(raw: Dict[str, Any]) -> Any:
+            entry = raw["recycle_bin"].get(entry_id)
+            if entry is None:
+                raise CleanroomException(404, "RECYCLE_ENTRY_NOT_FOUND", "回收站条目不存在")
+            if entry["kind"] == "asset":
+                from gw.core.asset_visibility import asset_visible
+                if not asset_visible(entry.get('payload', {})):
+                    raise CleanroomException(404, 'RECYCLE_ENTRY_NOT_FOUND', '回收站条目不存在')
+                if entry["asset_id"] in raw["assets"]:
+                    raise CleanroomException(409, "ASSET_RESTORE_CONFLICT", "恢复目标资产已经存在")
+                payload = dict(entry["payload"])
+                payload.pop("library_item", None)
+                raw["assets"][entry["asset_id"]] = payload
+                audit_sink.append_event(raw, "asset.recycle_restored", entry["asset_id"], context)
+            del raw["recycle_bin"][entry_id]
+            revision = _bump(raw)
+            return {"entry_id": entry_id, "restored": True, "kind": entry["kind"],
+                    "revision": revision, "data_status": DATA_STATUS_OK}
+        return state().mutate(mutate)
+    except Exception:
+        if inserted and isinstance(stashed, dict):
+            default_asset_library_service.remove_item_snapshot(str(stashed.get("asset_id") or ""))
+        raise
 
 
 def restore_asset(asset_id: str, context=None) -> Dict[str, Any]:
