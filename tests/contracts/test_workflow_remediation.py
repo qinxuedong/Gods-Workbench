@@ -713,6 +713,82 @@ def test_params_save_clears_dead_source_project_and_execute_acl_holds(client, mo
     assert denied.json()['detail']['code'] == 'PROJECT_NOT_FOUND'
 
 
+def test_explicit_dead_source_context_rejects_save_without_version_bump(client):
+    """保存请求显式携带无法访问的来源时按 PROJECT_NOT_FOUND 拒绝，文档原样保留。"""
+    workflow_id = save(client)
+    before = item(client, workflow_id)
+    response = client.put(f'/api/god_workflow/item/{workflow_id}', headers=HEADERS,
+                          json={'expected_version': 1,
+                                'source_context': {'project_id': 'no-such-project'}})
+    assert response.status_code == 404, response.text
+    assert response.json()['detail']['code'] == 'PROJECT_NOT_FOUND'
+    assert item(client, workflow_id) == before
+
+
+def test_params_save_heals_dead_canvas_and_keeps_live_project(client):
+    """继承来源里的画布失效而项目仍可访问时，只丢弃画布部分并保留项目级来源。"""
+    project = client.post('/api/asset-registry/projects', headers=HEADERS,
+                          json={'name': 'canvas source', 'project_type': 'other'})
+    assert project.status_code == 201, project.text
+    project_id = project.json()['project']['project_id']
+    created = client.post('/api/canvases', headers=HEADERS,
+                          json={'project_id': project_id, 'title': '来源画布'})
+    assert created.status_code == 201, created.text
+    canvas_id = created.json()['canvas']['canvas_id']
+    workflow_id = save(client)
+    linked = client.put(f'/api/god_workflow/documents/{workflow_id}', headers=HEADERS,
+                        json={'expected_version': 1,
+                              'source_context': {'project_id': project_id, 'canvas_id': canvas_id}})
+    assert linked.status_code == 200, linked.text
+    assert linked.json()['workflow']['metadata']['source_context']['canvas_id'] == canvas_id
+    assert client.delete(f'/api/canvases/{canvas_id}', headers=HEADERS,
+                         params={'expected_version': 1}).status_code == 200
+    assert client.delete(f'/api/canvases/{canvas_id}/purge', headers=HEADERS,
+                         params={'expected_version': 2}).status_code == 200
+    saved = client.put(f'/api/god_workflow/item/{workflow_id}/params', headers=HEADERS,
+                       json={'expected_version': 2,
+                             'widget_updates': [{'node_id': '1', 'field_name': 'image', 'value': 'after-canvas-gone.png'}]})
+    assert saved.status_code == 200, saved.text
+    stored = item(client, workflow_id)
+    assert stored['metadata']['source_context'] == {'project_id': project_id, 'project_version': 1}
+    assert stored['nodes'][0]['inputs']['image'] == 'after-canvas-gone.png'
+
+
+def test_execute_uses_only_explicit_source_context_and_keeps_acl(client, monkeypatch):
+    from gw.god_workflow import comfy_executor
+    monkeypatch.setenv('GW_COMFYUI_URL', 'http://127.0.0.1:8188')
+    async def submit(*args, **kwargs):
+        return {'prompt_id': 'stored-source-ignored'}
+    monkeypatch.setattr(comfy_executor, 'submit', submit)
+    admin = {**HEADERS, 'X-User-Role': 'admin'}
+    project = client.post('/api/asset-registry/projects', headers=HEADERS,
+                          json={'name': 'stale execute source', 'project_type': 'other'})
+    assert project.status_code == 201, project.text
+    project_id = project.json()['project']['project_id']
+    project_version = project.json()['project']['version']
+    workflow_id = save(client)
+    linked = client.put(f'/api/god_workflow/documents/{workflow_id}', headers=HEADERS,
+                        json={'expected_version': 1,
+                              'source_context': {'project_id': project_id, 'project_version': project_version}})
+    assert linked.status_code == 200, linked.text
+    archived = client.request('DELETE', f'/api/asset-registry/projects/{project_id}', headers=admin,
+                              json={'expected_version': project_version})
+    assert archived.status_code == 200, archived.text
+    # 执行不带 source_context 时不再回退到文档元数据里的失效来源：202 且任务无 project_id。
+    response = client.post('/api/god_workflow/execute', headers={**HEADERS, 'Idempotency-Key': 'stored-source-one'},
+                           json={'workflow_id': workflow_id, 'expected_version': 2})
+    assert response.status_code == 202, response.text
+    assert 'project_id' not in response.json()
+    # 显式来源 ACL 不变：已删除项目与不存在的项目都按 PROJECT_NOT_FOUND 拒绝。
+    denied = client.post('/api/god_workflow/execute', headers=HEADERS,
+                         json={'workflow_id': workflow_id, 'source_context': {'project_id': project_id}})
+    assert denied.status_code == 404
+    assert denied.json()['detail']['code'] == 'PROJECT_NOT_FOUND'
+    absent = client.post('/api/god_workflow/execute', headers=HEADERS,
+                         json={'workflow_id': workflow_id, 'source_context': {'project_id': 'no-such-project'}})
+    assert absent.status_code == 404
+
+
 def test_native_open_never_overwrites_user_named_files(client, monkeypatch, tmp_path):
     async def probe():
         return {'online': True, 'object_info': {'LoadImage': {'input': {'required': {'image': ['STRING', {}]}}}}}

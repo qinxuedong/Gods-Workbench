@@ -1,0 +1,24 @@
+{
+  "fixture_id": "C4-AC9-FAIL-REMOTE-01",
+  "cut": "CUT-20261014-C4",
+  "purpose": "ComfyUI 远端执行失败的 GET /history/{prompt_id} 响应样例：status_str=error 且 messages 带 execution_error，outputs 仍残留已完成节点的输出条目。真实代码必须把该条目整体判为失败：不下载、不把其中任何条目登记为产物资产。样例为手工构造的合成数据，不含真实密钥、真实地址或真实文件。",
+  "endpoint": "GET /history/{prompt_id}",
+  "prompt_id": "c4ac9-fail-prompt-0001",
+  "history": {
+    "c4ac9-fail-prompt-0001": {
+      "prompt": [3, "c4ac9-fail-prompt-0001", {}, {"client_id": "c4ac9-test"}, []],
+      "outputs": {
+        "9": {"images": [{"filename": "ComfyUI_00001_.png", "subfolder": "", "type": "output"}]},
+        "12": {"gifs": [{"filename": "AnimateDiff_00001.gif", "subfolder": "", "type": "output"}]}
+      },
+      "status": {
+        "status_str": "error",
+        "completed": false,
+        "messages": [
+          ["execution_error", {"node_id": "12", "node_type": "VHS_VideoCombine", "exception_type": "RuntimeError", "exception_message": "ffmpeg exited with code 1"}],
+          ["execution_interrupted", {"node_id": "12"}]
+        ]
+      }
+    }
+  }
+}

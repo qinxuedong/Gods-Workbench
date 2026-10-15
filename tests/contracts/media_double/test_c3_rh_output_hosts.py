@@ -18,7 +18,7 @@ QUERY = "expires=1"
 # 真实 RunningHub 产物主机：真实回包的 fileUrl 落在 tos 主机，而非文档主机。
 REAL_HOST = "rh-images-tos.xiaoyaoyou.com"
 REAL_FIXTURE = Path(__file__).resolve().parents[1] / "fixtures" / "runninghub" / "outputs_success_real_host.json"
-# 与 tools/c3_acceptance/ac8_runninghub_real.py 未设置环境变量时的默认值保持一致。
+# 与服务端 RunningHub 内置默认产物主机（routes.RH_DEFAULT_OUTPUT_HOSTS）保持一致。
 AC8_DEFAULT_HOSTS = f"{REAL_HOST},{HOST}"
 
 
@@ -42,10 +42,10 @@ def _install_query(monkeypatch, fake_rh, body: dict) -> None:
 def _install_download(monkeypatch, *, allow: bool, host: str = HOST) -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         assert allow, "拒绝的产物 URL 不得发起下载"
-        assert request.url.host == host
+        assert request.headers.get("host") == host
         return httpx.Response(200, content=FIXED_PNG, headers={"content-type": "image/png"})
 
-    monkeypatch.setattr(routes, "_output_transport", lambda allowed_hosts=None: httpx.MockTransport(handler))
+    monkeypatch.setattr(routes, "_output_transport", lambda allowed_hosts=None, verify=True: httpx.MockTransport(handler))
 
 
 def _terminal(media_client, fake_rh, monkeypatch, *, allow_download: bool,
@@ -69,20 +69,40 @@ def _messages_hide_url(task: dict, host: str = HOST) -> None:
     assert f"https://{host}" not in dumped
 
 
-def test_unset_output_hosts_reports_not_configured(media_client, fake_rh, no_network, monkeypatch):
-    """未设置 GW_WORKFLOW_OUTPUT_HOSTS 时给出可操作的主机诊断，且不下载。"""
+def test_empty_output_hosts_falls_back_to_rh_defaults(media_client, fake_rh, no_network, monkeypatch):
+    """未设置 GW_WORKFLOW_OUTPUT_HOSTS 时，RunningHub 使用内置默认两主机，文档主机产物可登记。"""
     monkeypatch.delenv("GW_WORKFLOW_OUTPUT_HOSTS", raising=False)
-    started, task = _terminal(media_client, fake_rh, monkeypatch, allow_download=False)
+    started, task = _terminal(media_client, fake_rh, monkeypatch, allow_download=True)
+    assert task["status"] == "completed"
+    assert task["collection_status"] == "completed"
+    assert task["messages"] == []
+    assert task["outputs"][0]["registered"] is True
+    assert task["outputs"][0].get("asset_id")
+    assert no_network == []
+
+
+def test_empty_output_hosts_default_includes_real_tos_host(media_client, fake_rh, no_network, monkeypatch):
+    """未设置环境变量时，内置默认同时覆盖真实 tos 主机，真实形态产物可直接登记。"""
+    monkeypatch.delenv("GW_WORKFLOW_OUTPUT_HOSTS", raising=False)
+    _started, task = _terminal(media_client, fake_rh, monkeypatch, allow_download=True,
+                               path=REAL_FIXTURE, host=REAL_HOST)
+    assert task["status"] == "completed"
+    assert task["collection_status"] == "completed"
+    assert task["messages"] == []
+    assert task["outputs"][0]["registered"] is True
+    assert no_network == []
+
+
+def test_explicit_hosts_replace_defaults_entirely(media_client, fake_rh, no_network, monkeypatch):
+    """显式配置 x.example 时默认两主机完全不生效，tos 主机被拒并写明主机。"""
+    monkeypatch.setenv("GW_WORKFLOW_OUTPUT_HOSTS", "x.example")
+    _started, task = _terminal(media_client, fake_rh, monkeypatch, allow_download=False,
+                               path=REAL_FIXTURE, host=REAL_HOST)
     assert task["status"] == "failed"
-    assert task["execution_status"] == "completed"
     assert task["collection_status"] == "partial_failed"
-    assert task["outputs"][0]["code"] == "OUTPUT_HOSTS_NOT_CONFIGURED"
-    assert task["outputs"][0]["host"] == HOST
-    assert "fileUrl" not in task["outputs"][0]
-    assert f"OUTPUT_HOSTS_NOT_CONFIGURED host={HOST}" in task["messages"]
-    assert any(line.startswith("OUTPUT_COLLECTION_INCOMPLETE:") for line in task["messages"])
-    _messages_hide_url(task)
-    assert started["job_id"]
+    assert f"OUTPUT_URL_NOT_ALLOWED host={REAL_HOST}" in task["messages"]
+    assert task["outputs"][0]["host"] == REAL_HOST
+    _messages_hide_url(task, host=REAL_HOST)
     assert no_network == []
 
 
@@ -142,7 +162,7 @@ def test_real_host_output_rejected_with_only_docs_host(media_client, fake_rh, no
 
 def test_recollect_after_host_config_does_not_resubmit(media_client, fake_rh, no_network, monkeypatch):
     """任务已是 failed/completed/partial_failed 时，POST /collect 只回收，不再次建任务。"""
-    monkeypatch.delenv("GW_WORKFLOW_OUTPUT_HOSTS", raising=False)
+    monkeypatch.setenv("GW_WORKFLOW_OUTPUT_HOSTS", "approved.example")
     started, task = _terminal(media_client, fake_rh, monkeypatch, allow_download=False)
     assert task["status"] == "failed"
     assert task["execution_status"] == "completed"

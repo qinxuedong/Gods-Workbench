@@ -32,6 +32,7 @@ class ErrorDetail(BaseModel):
     canvas_id: Optional[str] = Field(None, description="冲突的画布标识")
     endpoint: Optional[str] = Field(None, description="产生错误的接口路径")
     unavailable: Optional[bool] = Field(None, description="能力当前不可用或未准入")
+    settings_path: Optional[str] = Field(None, description="需要操作者补充配置的前端设置页路径")
     data_status: Optional[str] = Field(None, description="数据可用性状态")
     returncode: Optional[int] = Field(None, description="已退出CLI的真实退出码")
     result_unknown: Optional[bool] = Field(None, description="外部操作结果尚未确认，禁止自动重试")

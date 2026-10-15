@@ -20,7 +20,7 @@ def test_canvas_meta_lifecycle_restart_and_conflict_in_browser(monkeypatch,tmp_p
         assert created.status==201,created.text()
         cid=created.json()['canvas']['canvas_id']
         page.goto(base+'/static/embeds/canvas-list.html?project_id='+pid,wait_until='networkidle')
-        page.wait_for_function('(id)=>canvases.some(c=>c.id===id)',arg=cid)
+        page.wait_for_function('(id)=>typeof canvases!=="undefined"&&canvases.some(c=>c.id===id)',arg=cid)
         console_errors=[]
         page.on('console',lambda message:console_errors.append(message.text) if message.type=='error' else None)
         assert page.evaluate('(id)=>canvasMetaWritePayload(canvases.find(c=>c.id===id),{}).expected_version',cid)==1
@@ -29,7 +29,7 @@ def test_canvas_meta_lifecycle_restart_and_conflict_in_browser(monkeypatch,tmp_p
         assert saved is not None,console_errors
         assert request.get(base+'/api/canvases/'+cid).json()['version']==2
         page.evaluate('(id)=>archiveCanvas(id)',cid)
-        page.wait_for_function('(id)=>archivedCanvases.some(c=>(c.canvas_id||c.id)===id)',arg=cid)
+        page.wait_for_function('(id)=>typeof archivedCanvases!=="undefined"&&archivedCanvases.some(c=>(c.canvas_id||c.id)===id)',arg=cid)
         assert request.get(base+'/api/canvases/'+cid).json()['version']==3
         page.evaluate('(id)=>unarchiveCanvas(id)',cid)
         assert request.get(base+'/api/canvases/'+cid).json()['version']==4
@@ -38,7 +38,7 @@ def test_canvas_meta_lifecycle_restart_and_conflict_in_browser(monkeypatch,tmp_p
         monkeypatch.setattr(routes_god_canvas,"default_god_canvas_service",restarted)
         monkeypatch.setattr(routes_canvas_closure,"closure",CanvasClosureService(canvas_service=restarted))
         page.reload(wait_until='networkidle')
-        page.wait_for_function('(id)=>canvases.some(c=>c.id===id&&c.version===4)',arg=cid)
+        page.wait_for_function('(id)=>typeof canvases!=="undefined"&&canvases.some(c=>c.id===id&&c.version===4)',arg=cid)
         # 另一个写入者先推进版本；旧页面动作收到409，只刷新，不能自动重试。
         changed=request.post(base+f'/api/canvases/{cid}/meta',data={"title":"并发更新","expected_version":4},headers=headers)
         assert changed.status==200,changed.text()
@@ -50,12 +50,12 @@ def test_canvas_meta_lifecycle_restart_and_conflict_in_browser(monkeypatch,tmp_p
         assert request.get(base+f'/api/canvases/{cid}').json()['version']==5
         assert not restarted.ensure_lifecycle(cid)['archived_at']
         page.evaluate('(id)=>deleteCanvas(id)',cid)
-        page.wait_for_function('(id)=>deletedCanvases.some(c=>(c.canvas_id||c.id)===id)',arg=cid)
+        page.wait_for_function('(id)=>typeof deletedCanvases!=="undefined"&&deletedCanvases.some(c=>(c.canvas_id||c.id)===id)',arg=cid)
         assert request.get(base+f'/api/canvases/{cid}').json()['version']==6
         page.evaluate('(id)=>restoreCanvas(id)',cid)
         assert request.get(base+f'/api/canvases/{cid}').json()['version']==7
         page.evaluate('(id)=>deleteCanvas(id)',cid)
-        page.wait_for_function('(id)=>deletedCanvases.some(c=>(c.canvas_id||c.id)===id)',arg=cid)
+        page.wait_for_function('(id)=>typeof deletedCanvases!=="undefined"&&deletedCanvases.some(c=>(c.canvas_id||c.id)===id)',arg=cid)
         page.evaluate('(id)=>purgeCanvas(id)',cid)
         assert request.get(base+f'/api/canvases/{cid}').status==404
         assert errors==[]
