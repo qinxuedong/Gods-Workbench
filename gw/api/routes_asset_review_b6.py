@@ -169,6 +169,6 @@ async def create_share(
     x_user_role: str = Header("editor", alias="X-User-Role"),
 ):
     """创建本地分享令牌；明文仅返回一次，服务端只保存 SHA-256 哈希。"""
-    _write(authorization, x_user_role)
+    context = _write(authorization, x_user_role)
     payload = await _json(request)
-    return repo.create_share(payload)
+    return repo.create_share(payload, context=context)

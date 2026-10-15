@@ -522,7 +522,7 @@ def _session_for_share(raw: Dict[str, Any], session_id: Optional[str], asset_ids
     return session
 
 
-def create_share(payload: Dict[str, Any]) -> Dict[str, Any]:
+def create_share(payload: Dict[str, Any], context: Any = None) -> Dict[str, Any]:
     if not isinstance(payload, dict):
         raise CleanroomException(400, "INVALID_REQUEST", "请求体必须是对象")
     asset_ids = payload.get("asset_ids") or []
@@ -557,6 +557,16 @@ def create_share(payload: Dict[str, Any]) -> Dict[str, Any]:
     if session_id == "":
         session_id = None
 
+    creator_key = None
+    creator_governance = False
+    if context is not None:
+        from gw.projects_hub.service import owner_key_for_context
+        try:
+            creator_key = owner_key_for_context(context)
+        except CleanroomException:
+            creator_key = None
+        creator_governance = str(getattr(context, "role", "") or "").lower() in {"admin", "governor"}
+
     def mutate(raw: Dict[str, Any]) -> Dict[str, Any]:
         _session_for_share(raw, session_id, normalized_ids)
         share_id = _seq(raw, "shr-", "shares")
@@ -576,6 +586,9 @@ def create_share(payload: Dict[str, Any]) -> Dict[str, Any]:
             "password_hash": (_hash_token(raw_password) if raw_password else None),
             "created_at": storage.now_iso(),
         }
+        if creator_key:
+            record["created_by"] = creator_key
+            record["created_by_governance"] = creator_governance
         raw.setdefault("shares", {})[share_id] = record
         _bump(raw)
         view = _share_view(record)
@@ -586,11 +599,44 @@ def create_share(payload: Dict[str, Any]) -> Dict[str, Any]:
     return {"share": share, "token": share["token"]}
 
 
+def _creator_still_reads(record: Dict[str, Any]) -> bool:
+    """C4-AC8：分享创建者对素材所属任一项目失去读权限时，分享立即失效。
+
+    实时判定（每次解析令牌时计算），撤销即刻生效；只影响该创建者本人创建的分享。
+    无 created_by 的历史分享不参与判定（迁移默认，已在 PR 中标注）。
+    """
+    creator = record.get("created_by")
+    if not creator:
+        return True
+    from gw.asset_registry import repository as asset_repo
+    from gw.projects_hub.service import default_projects_service
+    role = "admin" if record.get("created_by_governance") else ""
+    project_ids = []
+    for asset_id in record.get("asset_ids") or []:
+        try:
+            asset = asset_repo.get_asset(str(asset_id))
+        except CleanroomException:
+            continue
+        for pid in [asset.get("project_id")] + list(asset.get("project_ids") or []):
+            if isinstance(pid, str) and pid and pid not in project_ids:
+                project_ids.append(pid)
+    for pid in project_ids:
+        try:
+            default_projects_service.get_project(pid)
+        except CleanroomException:
+            continue  # 未知项目不构成读授权约束
+        if not default_projects_service.can_read_project(pid, owner_key=creator, role=role):
+            return False
+    return True
+
+
 def _find_share(raw: Dict[str, Any], token: str) -> Dict[str, Any]:
     token = _validated_token(token)
     target = _hash_token(token)
     for record in (raw.get("shares") or {}).values():
         if secrets.compare_digest(str(record.get("token_hash") or ""), target):
+            if not _creator_still_reads(record):
+                break
             return record
     raise CleanroomException(404, "SHARE_NOT_FOUND", "分享不存在或已失效")
 
