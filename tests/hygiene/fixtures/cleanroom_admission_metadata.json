@@ -122,6 +122,13 @@
       "admission": "accepted"
     },
     {
+      "path": "docs/contracts/COMFY-ADAPTER-CONFLICT.md",
+      "classification": "frozen_interface_contract",
+      "authorization_basis": "owner_approval_C4_AC13_2026-10-15",
+      "sha256": "44613373267165ce045073e79b52b5f6759ca6f20a34b1609f2a37b49f6c839b",
+      "admission": "accepted"
+    },
+    {
       "path": "docs/contracts/ASSET-LIBRARY-B4-INTERFACE-CATALOG.yaml",
       "classification": "frozen_interface_contract",
       "authorization_basis": "cleanroom_frozen_input",
