@@ -495,6 +495,8 @@ async function apiFetch(url, options = {}) {
     if (detail?.code) error.code = detail.code;
     if (Number.isFinite(detail?.expected_version)) error.expected_version = detail.expected_version;
     if (Number.isFinite(detail?.current_version)) error.current_version = detail.current_version;
+    // 挂载 detail 对象（当 detail 为对象时），供 409 COMFY_ADAPTER_CONFLICT 等错误使用
+    if (detail && typeof detail === 'object') error.detail = detail;
     if (resp.status === 401) {
       if (window.GWAuthGate?.revision === authRevision) { clearInterval(state.comfySyncTimer); clearInterval(state.pollTimer); }
       window.GWAuthGate?.invalidate(401, authRevision, 'workflow');
@@ -1278,6 +1280,27 @@ async function resumeDefinitionResolution() {
 }
 
 /**
+ * 上报 ComfyUI 页面适配冲突，引导用户升级或手动解决。
+ * @param {Error} err - 包含 detail 的 409 错误
+ * @param {Function|null} retry - 升级重试回调（upgradable 时使用），传 null 强制不给升级按钮
+ * @returns {string} 'upgradable' 或 'manual'
+ */
+function reportComfyAdapterConflict(err, retry) {
+  const detail = err.detail || {};
+  const installed = detail.installed_version || 'unknown';
+  const required = detail.required_version || '?';
+  const hint = detail.fix_hint || err.message;
+  const message = `${hint}（已安装版本：${installed}，需要版本：${required}）`;
+
+  if (detail.upgradable === true && retry !== null) {
+    showToast(message, true, '升级适配', retry);
+    return 'upgradable';
+  }
+  showToast(message, true);
+  return 'manual';
+}
+
+/**
  * 顶部工具栏「导入 ComfyUI」：
  * 1. 连接右上角 CF 已启动并就绪的本地 ComfyUI，不隐式启停服务；
  * 2. 按固定 ID 匹配已有工作流（不产生 工作流(1)、工作流(2) 等重复副本）；
@@ -1312,7 +1335,14 @@ async function handleOpenInComfyUi(options = {}) {
     }
     if (wf) await flushWorkflowParams(wf.workflow_id);
     if (state.authPrincipalKey !== principalKey || !window.GWAuthGate?.isAuthenticated() || state.currentWorkflow?.workflow_id !== wf.workflow_id) throw new Error('登录状态或选定工作流已变化，请重新导入');
-    const res = await apiFetch(url, { method: "POST" });
+
+    // 构建请求选项：options.adapterUpgrade 为 true 时携带 JSON body {"adapter_upgrade": true}
+    const requestOptions = { method: "POST" };
+    if (options.adapterUpgrade === true) {
+      requestOptions.headers = { 'Content-Type': 'application/json' };
+      requestOptions.body = JSON.stringify({ adapter_upgrade: true });
+    }
+    const res = await apiFetch(url, requestOptions);
     if (state.authPrincipalKey !== principalKey || !window.GWAuthGate?.isAuthenticated() || state.currentWorkflow?.workflow_id !== wf.workflow_id) throw new Error('登录状态或选定工作流已变化，请重新导入');
     const bridgeUrl = new URL(res.open_url);
     const nonce = crypto.randomUUID();
@@ -1350,7 +1380,10 @@ async function handleOpenInComfyUi(options = {}) {
       } catch (_) {}
     }
 
-    const toastMsg = win ? `已打开 ComfyUI，正在等待工作流「${wf.name}」载入确认` : '浏览器阻止了 ComfyUI 窗口，请点击打开或允许弹窗';
+    // 升级了页面适配脚本：并入同一条提示（单条 toast 会被后续提示覆盖），提醒刷新 ComfyUI 页面。
+    const upgradeNote = res.browser_adapter?.upgraded === true
+      ? `页面适配已升级到 v${res.browser_adapter.adapter_version}，请刷新 ComfyUI 页面以加载新脚本；` : '';
+    const toastMsg = upgradeNote + (win ? `已打开 ComfyUI，正在等待工作流「${wf.name}」载入确认` : '浏览器阻止了 ComfyUI 窗口，请点击打开或允许弹窗');
 
     if (!session.connected) showToast(
       toastMsg,
@@ -1370,7 +1403,17 @@ async function handleOpenInComfyUi(options = {}) {
     );
   } catch (err) {
     if (reservedBlank) { try { win.close(); } catch (_) {} }
-    showToast(`导入 ComfyUI 失败：${err.message}`, true);
+    // 409 COMFY_ADAPTER_CONFLICT 特殊处理：若 upgradable=true 提供升级按钮；本身已是升级重试则强制按 manual 展示
+    if (err.status === 409 && err.code === 'COMFY_ADAPTER_CONFLICT') {
+      if (options.adapterUpgrade === true) {
+        // 升级重试本身若再次 409 COMFY_ADAPTER_CONFLICT，不给升级按钮（避免循环）
+        reportComfyAdapterConflict(err, null);
+      } else {
+        reportComfyAdapterConflict(err, () => handleOpenInComfyUi({ adapterUpgrade: true }));
+      }
+    } else {
+      showToast(`导入 ComfyUI 失败：${err.message}`, true);
+    }
   } finally {
     if (btn) {
       btn.disabled = false;
