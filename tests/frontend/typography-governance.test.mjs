@@ -100,9 +100,8 @@ test('严格中文标题tracking0，不能沿用负字距',()=>{
 test('主标题动态与iframe入口不得回退24px',()=>{
  const sources=[
   ...files.filter(p=>/\.(css|html|js)$/.test(p)),
-  path.join(root,'.agents/skills/gods-workbench/references/design.md'),
-  path.join(root,'.local/docs/notes/TYPOGRAPHY-SYSTEM-SPEC.md'),
-  path.join(root,'.local/docs/user_doc/USER-STORIES.md')
+  path.join(root,'docs/design/DESIGN-SYSTEM-GUIDE.md'),
+  path.join(root,'docs/design/BUTTON-SYSTEM-SPEC.md')
  ];
  for(const p of sources){
   const text=readFileSync(p,'utf8');
