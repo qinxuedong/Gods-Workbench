@@ -5,6 +5,7 @@ from gw.projects_hub import service as projects
 from gw.projects_hub.models import ProjectCreateRequest
 from gw.god_canvas.service import GodCanvasService
 from gw.api import routes_god_canvas
+from gw.api import routes_projects
 
 @pytest.fixture(autouse=True)
 def owned_canvas_project(isolated_data_dir, monkeypatch):
@@ -13,4 +14,5 @@ def owned_canvas_project(isolated_data_dir, monkeypatch):
     project = source.create_project(ProjectCreateRequest(name="画布契约真实归属项目", project_type="other"), owner_key=projects.owner_key_for_context(context))
     assert project.project_id == "prj-0001"
     monkeypatch.setattr(projects, "default_projects_service", source)
+    monkeypatch.setattr(routes_projects, "default_projects_service", source)
     monkeypatch.setattr(routes_god_canvas, "default_god_canvas_service", GodCanvasService(seed_golden_fixture=True))

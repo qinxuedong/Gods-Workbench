@@ -303,8 +303,8 @@ def test_video_route_has_standard_auth_and_context_checks(api_client: TestClient
     assert created.status_code == 201, created.text
     body["production_context"]["project_id"] = created.json()["project"]["project_id"]
     denied = api_client.post("/api/video-tasks", json=body, headers={**EDITOR, "Idempotency-Key": "unowned"})
-    assert denied.status_code == 403, denied.text
-    assert denied.json()["detail"]["code"] == "PROJECT_ACCESS_DENIED"
+    assert denied.status_code == 404, denied.text
+    assert denied.json()["detail"]["code"] == "VIDEO_PROJECT_NOT_FOUND"
 
 
 # ---------------------------------------------------------------------------
