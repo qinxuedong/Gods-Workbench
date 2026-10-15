@@ -1856,9 +1856,16 @@ def comfy_control_status(authorization: Optional[str] = Header(None), x_user_rol
 
 @router.post("/open-in-comfy")
 @router.post("/open-in-comfy/{workflow_id}")
-async def open_in_comfy(workflow_id: Optional[str] = None, authorization: Optional[str] = Header(None), x_user_role: str = Header("editor", alias="X-User-Role")):
+async def open_in_comfy(request: Request, workflow_id: Optional[str] = None, authorization: Optional[str] = Header(None), x_user_role: str = Header("editor", alias="X-User-Role")):
     """将工作流导入已在线的本地 ComfyUI；服务启停仅由全站 CF 控件负责。"""
     context = _auth(authorization, x_user_role, True)
+    # 旧版页面适配的升级开关只认显式 true；查询串或 JSON 体均可携带，其余一律视为不升级。
+    try:
+        body = await _json_body(request, allow_empty=True)
+    except CleanroomException:
+        body = None
+    adapter_upgrade = (isinstance(body, dict) and body.get("adapter_upgrade") is True) \
+        or request.query_params.get("adapter_upgrade", "").lower() == "true"
 
     document = None
     if workflow_id:
@@ -1903,7 +1910,7 @@ async def open_in_comfy(workflow_id: Optional[str] = None, authorization: Option
         if urlsplit(comfy_url).hostname not in {'127.0.0.1', 'localhost', '::1'}:
             raise CleanroomException(422, 'COMFY_ADAPTER_LOCAL_REQUIRED', '自动页面适配仅支持本机 ComfyUI，不向远端安装目录写入')
         with _STORAGE_LOCK:
-            browser_adapter = browser_bridge.prepare(comfy_root)
+            browser_adapter = browser_bridge.prepare(comfy_root, upgrade=adapter_upgrade)
 
     if document and workflow_id:
         principal = registry.principal_digest(context.identity_domain, context.subject)

@@ -1,3 +1,4 @@
+// gods-workbench-adapter-version: 2
 import { app } from '../../scripts/app.js';
 
 // 仅与显式打开本窗口的神工坊页通信，不接收凭据或任意远端指令。

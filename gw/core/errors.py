@@ -37,6 +37,10 @@ class ErrorDetail(BaseModel):
     returncode: Optional[int] = Field(None, description="已退出CLI的真实退出码")
     result_unknown: Optional[bool] = Field(None, description="外部操作结果尚未确认，禁止自动重试")
     provider_code: Optional[str] = Field(None, description="外部供应商的数字错误码（不含其消息文本）")
+    installed_version: Optional[str] = Field(None, description="宿主上已安装页面适配的版本标识")
+    required_version: Optional[str] = Field(None, description="当前需要的页面适配版本")
+    fix_hint: Optional[str] = Field(None, description="面向用户的可执行修复建议")
+    upgradable: Optional[bool] = Field(None, description="已安装文件是否为可自动升级的官方旧版适配")
 
 
 class ErrorEnvelope(BaseModel):

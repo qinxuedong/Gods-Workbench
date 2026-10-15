@@ -104,7 +104,8 @@ def test_open_in_comfy_writes_host_file_installs_adapter_and_queues_load(media_c
     assert body["workflow_format"] == "api"
     assert body["workflow_graph"] == API_PROMPT
     assert body["resolve_definitions"] is True
-    assert body["browser_adapter"] == {"mode": "managed", "extension_url": EXTENSION_URL}
+    assert body["browser_adapter"] == {"mode": "managed", "extension_url": EXTENSION_URL,
+                                       "adapter_version": browser_bridge.ADAPTER_VERSION, "upgraded": False}
     assert body["workflow_file"] and body["saved_path"]
     # 1. 工作流文件已写入宿主工作流目录，内容即自动载入用的 API 图。
     on_disk = json.loads(host_file_bytes(comfy_host, body["saved_path"]))

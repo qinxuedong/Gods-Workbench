@@ -116,7 +116,8 @@ def test_adapter_is_automatic_idempotent_and_does_not_change_host_core(tmp_path)
     before = (static / 'scripts/app.js').read_bytes()
     first = browser_bridge.prepare(str(tmp_path))
     target = static / 'extensions/gods_workbench/workbench.js'
-    assert first == {'mode': 'managed', 'extension_url': browser_bridge.EXTENSION_URL}
+    assert first == {'mode': 'managed', 'extension_url': browser_bridge.EXTENSION_URL,
+                     'adapter_version': browser_bridge.ADAPTER_VERSION, 'upgraded': False}
     assert target.read_bytes() == browser_bridge.SCRIPT.read_bytes()
     stamp = target.stat().st_mtime_ns
     assert browser_bridge.prepare(str(tmp_path)) == first
