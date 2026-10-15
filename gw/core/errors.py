@@ -28,6 +28,7 @@ class ErrorDetail(BaseModel):
     message: str = Field(..., description="错误可读提示")
     expected_version: Optional[int] = Field(None, description="期望的 CAS 版本")
     current_version: Optional[int] = Field(None, description="当前实际的 CAS 版本")
+    asset_id: Optional[str] = Field(None, description="冲突的资产标识")
     canvas_id: Optional[str] = Field(None, description="冲突的画布标识")
     endpoint: Optional[str] = Field(None, description="产生错误的接口路径")
     unavailable: Optional[bool] = Field(None, description="能力当前不可用或未准入")
