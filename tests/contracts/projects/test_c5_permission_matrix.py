@@ -399,18 +399,16 @@ KNOWN_GAPS: dict[str, str] = {
     'test_cell_workflow_read__readonly_grantee__archived': 'C5-T5: expected allow, observed HTTP 404',
     'test_cell_workflow_read__readonly_grantee__deleted': 'C5-T5: expected allow, observed HTTP 404',
     'test_cell_workflow_read__readonly_no_grant__active_legacy_open': 'C5-T5: expected allow, observed HTTP 404',
-    'test_cell_workflow_task__admin__archived': 'C5-T3/T5: observed 503 executor-unavailable before project gate (gate must run first)',
-    'test_cell_workflow_task__admin__deleted': 'C5-T3/T5: observed 503 executor-unavailable before project gate (gate must run first)',
-    'test_cell_workflow_task__governor__archived': 'C5-T3/T5: observed 503 executor-unavailable before project gate (gate must run first)',
-    'test_cell_workflow_task__governor__deleted': 'C5-T3/T5: observed 503 executor-unavailable before project gate (gate must run first)',
-    'test_cell_workflow_task__owner__archived': 'C5-T3/T5: observed 503 executor-unavailable before project gate (gate must run first)',
-    'test_cell_workflow_task__owner__deleted': 'C5-T3/T5: observed 503 executor-unavailable before project gate (gate must run first)',
-    'test_cell_workflow_task__owner__active': 'C5-T5: expected allow (2xx), observed HTTP 503 WORKFLOW_EXECUTOR_UNAVAILABLE (seeded project-bound workflow; no executor offline)',
-    'test_cell_workflow_task__owner__active_legacy_open': 'C5-T5: expected allow (2xx), observed HTTP 503 WORKFLOW_EXECUTOR_UNAVAILABLE (seeded project-bound workflow; no executor offline)',
-    'test_cell_workflow_task__admin__active': 'C5-T5: expected allow (2xx), observed HTTP 503 WORKFLOW_EXECUTOR_UNAVAILABLE (seeded project-bound workflow; no executor offline)',
-    'test_cell_workflow_task__admin__active_legacy_open': 'C5-T5: expected allow (2xx), observed HTTP 503 WORKFLOW_EXECUTOR_UNAVAILABLE (seeded project-bound workflow; no executor offline)',
-    'test_cell_workflow_task__governor__active': 'C5-T5: expected allow (2xx), observed HTTP 503 WORKFLOW_EXECUTOR_UNAVAILABLE (seeded project-bound workflow; no executor offline)',
-    'test_cell_workflow_task__governor__active_legacy_open': 'C5-T5: expected allow (2xx), observed HTTP 503 WORKFLOW_EXECUTOR_UNAVAILABLE (seeded project-bound workflow; no executor offline)',
+    'test_cell_workflow_task__admin__archived': "C5-T5: expected 403 PROJECT_READ_ONLY, observed HTTP 404 PROJECT_NOT_FOUND ('项目不存在': source_context gate is owner-only for non-owner writers)",
+    'test_cell_workflow_task__admin__deleted': "C5-T5: expected 403 PROJECT_READ_ONLY, observed HTTP 404 PROJECT_NOT_FOUND ('项目不存在': source_context gate is owner-only for non-owner writers)",
+    'test_cell_workflow_task__governor__archived': "C5-T5: expected 403 PROJECT_READ_ONLY, observed HTTP 404 PROJECT_NOT_FOUND ('项目不存在': source_context gate is owner-only for non-owner writers)",
+    'test_cell_workflow_task__governor__deleted': "C5-T5: expected 403 PROJECT_READ_ONLY, observed HTTP 404 PROJECT_NOT_FOUND ('项目不存在': source_context gate is owner-only for non-owner writers)",
+    'test_cell_workflow_task__owner__archived': "C5-T5: expected 403 PROJECT_READ_ONLY, observed HTTP 404 PROJECT_NOT_FOUND ('来源项目不可访问': execute source_context gate hides archived/deleted project instead of read-only)",
+    'test_cell_workflow_task__owner__deleted': "C5-T5: expected 403 PROJECT_READ_ONLY, observed HTTP 404 PROJECT_NOT_FOUND ('来源项目不可访问': execute source_context gate hides archived/deleted project instead of read-only)",
+    'test_cell_workflow_task__admin__active': "C5-T5: expected allow (2xx), observed HTTP 404 PROJECT_NOT_FOUND ('项目不存在': execute/bind source_context uses owner-only get_owned_project; non-owner writer cannot run workflow in project context)",
+    'test_cell_workflow_task__admin__active_legacy_open': "C5-T5: expected allow (2xx), observed HTTP 404 PROJECT_NOT_FOUND ('项目不存在': execute/bind source_context uses owner-only get_owned_project; non-owner writer cannot run workflow in project context)",
+    'test_cell_workflow_task__governor__active': "C5-T5: expected allow (2xx), observed HTTP 404 PROJECT_NOT_FOUND ('项目不存在': execute/bind source_context uses owner-only get_owned_project; non-owner writer cannot run workflow in project context)",
+    'test_cell_workflow_task__governor__active_legacy_open': "C5-T5: expected allow (2xx), observed HTTP 404 PROJECT_NOT_FOUND ('项目不存在': execute/bind source_context uses owner-only get_owned_project; non-owner writer cannot run workflow in project context)",
     'test_cell_workflow_task__readonly_grantee__active': 'C5-T5: expected 404, observed HTTP 403',
     'test_cell_workflow_task__readonly_grantee__active_legacy_open': 'C5-T5: expected 404, observed HTTP 403',
     'test_cell_workflow_task__readonly_grantee__archived': 'C5-T5: expected 404, observed HTTP 403',
@@ -575,6 +573,7 @@ def _request(client, action: str, role: str, ids: dict[str, object]):
                 "workflow_id": ids["workflow_id"],
                 "expected_version": ids.get("workflow_version", 2),
                 "target": "local_comfy",
+                "source_context": {"project_id": ids["project_id"], "canvas_id": ids["canvas_id"]},
             }
         else:
             body = {"workflow_id": ids.get("workflow_id") or "WORKFLOW_UNKNOWN"}
@@ -668,7 +667,7 @@ def _make_cell(name: str, action: str, role: str, state: str, expected: str):
     """Create one named test function from a generated matrix cell."""
 
     marks = []
-    if name in KNOWN_GAPS:
+    if name in KNOWN_GAPS and action != "workflow_task":
         marks.append(pytest.mark.xfail(strict=True, reason=KNOWN_GAPS[name]))
     if action in NA_ENDPOINTS:
         marks.append(
@@ -677,46 +676,53 @@ def _make_cell(name: str, action: str, role: str, state: str, expected: str):
             )
         )
 
-    def test_cell(client):
+    def test_cell(client, monkeypatch):
         """Exercise one C5 permission matrix cell."""
 
+        if action == "workflow_task":
+            from tests.contracts.media_double.media_doubles import FakeComfy
+            FakeComfy().install(monkeypatch)
+            monkeypatch.setenv("GW_COMFYUI_URL", "http://comfy.test")
         ids = seed(client, state, action=action, role=role)
-        before = _readback(client, action, ids) if expected.startswith(("404", "403")) else None
-        response = _request(client, action, role, ids)
+        try:
+            before = _readback(client, action, ids) if expected.startswith(("404", "403")) else None
+            response = _request(client, action, role, ids)
 
-        if expected == "401":
-            assert response.status_code == 401, response.text
-        elif expected == "404":
-            assert response.status_code == 404, response.text
-            _assert_error_envelope(response)
-            if action in {"asset_project_list", "canvas_list"} and state != "unknown":
-                unknown_ids = dict(ids)
-                unknown_ids["project_id"] = ids["unknown_project_id"]
-                unknown_response = _request(client, action, role, unknown_ids)
-                assert unknown_response.status_code == 404, unknown_response.text
-                assert unknown_response.json() == response.json()
-        elif expected == "403 PROJECT_READ_ONLY":
-            assert response.status_code == 403, response.text
-            _assert_error_envelope(response)
-            assert _error_code(response) == "PROJECT_READ_ONLY"
-        elif expected == "allow_filtered":
-            _assert_filtered(response, role, state, ids)
-        elif expected == "allow":
-            if action.startswith(("asset_", "canvas_", "workflow_")):
-                # Explicit success only: 422/4xx and 5xx (incl. executor
-                # unavailable 503) are not an "allow".
+            if expected == "401":
+                assert response.status_code == 401, response.text
+            elif expected == "404":
+                assert response.status_code == 404, response.text
+                _assert_error_envelope(response)
+                if action in {"asset_project_list", "canvas_list"} and state != "unknown":
+                    unknown_ids = dict(ids)
+                    unknown_ids["project_id"] = ids["unknown_project_id"]
+                    unknown_response = _request(client, action, role, unknown_ids)
+                    assert unknown_response.status_code == 404, unknown_response.text
+                    assert unknown_response.json() == response.json()
+            elif expected == "403 PROJECT_READ_ONLY":
+                assert response.status_code == 403, response.text
+                _assert_error_envelope(response)
+                assert _error_code(response) == "PROJECT_READ_ONLY"
+            elif expected == "allow_filtered":
+                _assert_filtered(response, role, state, ids)
+            elif expected == "allow":
+                # Explicit 2xx success only: 1xx/3xx, 422/4xx and 5xx are
+                # never an "allow".
                 assert response.status_code in ALLOW_SUCCESS_CODES, response.text
             else:
-                assert response.status_code < 400, response.text
-        else:
-            raise AssertionError(f"unknown expected value: {expected}")
+                raise AssertionError(f"unknown expected value: {expected}")
 
-        if before is not None and before.status_code == 200:
-            after = _readback(client, action, ids)
-            if after is not None:
-                assert after.status_code == 200, after.text
-                assert after.json() == before.json()
-
+            if before is not None and before.status_code == 200:
+                after = _readback(client, action, ids)
+                if after is not None:
+                    assert after.status_code == 200, after.text
+                    assert after.json() == before.json()
+        except AssertionError:
+            if action == "workflow_task" and name in KNOWN_GAPS:
+                pytest.xfail(reason=KNOWN_GAPS[name])
+            raise
+        if action == "workflow_task" and name in KNOWN_GAPS:
+            pytest.fail("[XPASS(strict)] " + KNOWN_GAPS[name])
     test_cell.__name__ = name
     test_cell.__qualname__ = name
     for mark in marks:

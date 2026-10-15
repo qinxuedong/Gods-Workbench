@@ -120,7 +120,7 @@ def _create_canvas(client, role: str, project_id: str, title: str) -> str:
 
 
 def _create_workflow(
-    client, role: str, project_id: str, canvas_id: str, name: str
+    client, role: str, project_id: str, canvas_id: str, name: str, *, bind: bool = True
 ) -> tuple[str, int]:
     response = client.post(
         f"/api/god_workflow/documents?name={name}",
@@ -129,6 +129,8 @@ def _create_workflow(
     )
     _assert_status(response, 201)
     workflow_id = response.json()["workflow_id"]
+    if not bind:
+        return workflow_id, 1
     response = client.put(
         f"/api/god_workflow/documents/{workflow_id}",
         headers=headers(role),
@@ -281,7 +283,8 @@ def seed(
         # execute a workflow it owns.  Seed one for the writer and bind it to
         # the target project via the public source_context PUT.
         workflow_id, workflow_version = _create_workflow(
-            client, role, target_id, target_bundle["canvas_id"], f"WF_{role}"
+            client, role, target_id, target_bundle["canvas_id"], f"WF_{role}",
+            bind=role == "owner",
         )
         target_bundle["workflow_id"] = workflow_id
         target_bundle["workflow_version"] = workflow_version
