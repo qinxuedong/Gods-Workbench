@@ -59,7 +59,7 @@ function pollingHarness(response, { deferred = false } = {}) {
   const pending = new Promise(resolve => { resolveResponse = resolve; });
   const context = {
     state, Set, String, Array, encodeURIComponent,
-    wfGet: () => body,
+    wfGet: () => body, markUnknownTaskSeen: () => {},
     escapeHtml: value => String(value ?? '').replaceAll('<', '&lt;'),
     apiFetch: async () => { requests++; return deferred ? pending : response; },
     clearInterval: id => timers.delete(id), clearTimeout: id => timers.delete(id),
@@ -399,3 +399,341 @@ for (const scenario of ['offline', 'internal-ready', 'last-resort']) {
     else assert.equal(h.state.pendingDefinitionWorkflow,null);
   });
 }
+
+// C4-AC15：结果未知任务同一错误最多自动弹出一次，之后只显示徽标。
+function restoreHarness(tasks, { search = '', storage = new Map(), workflowId = 'wf-1', respond } = {}) {
+  const start = controller.indexOf('const UNKNOWN_TASK_SEEN_PREFIX');
+  const end = controller.indexOf('function applySavedSettings', start);
+  const modal = { opened: 0, classList: { add() { modal.opened++; } } };
+  const polled = [];
+  const urls = [];
+  const localStorage = { getItem: k => storage.get(k) ?? null, setItem: (k, v) => storage.set(k, String(v)) };
+  const rows = tasks.map(task => ({ workflow_id: 'wf-1', ...task }));
+  const context = {
+    state: { currentWorkflow: workflowId ? { workflow_id: workflowId } : null }, Array, URLSearchParams, Object, Boolean, String, Set,
+    window: { location: { search }, localStorage },
+    apiFetch: async url => { urls.push(url); return respond ? respond(url, rows) : { tasks: rows }; },
+    wfGet: id => id === 'taskModal' ? modal : null,
+    setWorkflowTaskTrigger() {}, showToast() {}, renderWorkflowTaskList() {},
+    startTaskPolling: id => polled.push(id),
+  };
+  runInNewContext(controller.slice(start, end), context);
+  return { ...context, modal, polled, storage, urls };
+}
+test('运行中任务照常恢复弹出；显式 job_id 链接即使已知悉也打开', async () => {
+  const storage = new Map();
+  for (let i = 0; i < 2; i++) {
+    const running = restoreHarness([{ job_id: 'job-r', status: 'running' }], { storage });
+    await running.restoreWorkflowTask();
+    assert.equal(running.modal.opened, 1);
+  }
+  const tasks = [{ job_id: 'job-u', status: 'outcome_unknown' }];
+  await restoreHarness(tasks, { storage }).restoreWorkflowTask();
+  const linked = restoreHarness(tasks, { storage, search: '?job_id=job-u' });
+  await linked.restoreWorkflowTask();
+  assert.equal(linked.modal.opened, 1);
+});
+test('任务面板对结果未知任务显示徽标并记为已知悉', async () => {
+  const seen = [];
+  const harness = pollingHarness({ status: 'outcome_unknown', outputs: [], error_code: 'E1' });
+  harness.markUnknownTaskSeen = task => seen.push(task);
+  const start = controller.indexOf('function startTaskPolling(taskId, target) {');
+  const end = controller.indexOf('/* ==================== 7. 事件绑定', start);
+  runInNewContext(controller.slice(start, end), harness);
+  harness.startTaskPolling('job-u', 'rh_cloud');
+  await harness.flush();
+  assert.match(harness.body.innerHTML, /data-task-badge="outcome_unknown"/);
+  assert.equal(seen[0]?.job_id, 'job-u');
+  assert.equal(seen[0]?.error_code, 'E1');
+});
+function panelHarness(tasks, currentWorkflowId = 'wf-1', respond) {
+  const helpersStart = controller.indexOf('function workflowTaskId(task)');
+  const helpersEnd = controller.indexOf('async function restoreWorkflowTask()', helpersStart);
+  const start = controller.indexOf('const WORKFLOW_TASK_STATUS_LABEL');
+  const end = controller.indexOf('function startTaskPolling(taskId, target) {', start);
+  const body = { innerHTML: '', textContent: '' };
+  const list = { innerHTML: '' };
+  const modal = { classList: { contains: () => false, add() {} } };
+  const polled = [];
+  const urls = [];
+  const context = {
+    state: { pollTimer: null, currentWorkflow: { workflow_id: currentWorkflowId } }, clearInterval() {}, String, Number, Date, Array, URLSearchParams, Object, Boolean, Set,
+    escapeHtml: value => String(value ?? '').replaceAll('<', '&lt;'),
+    apiFetch: async url => { urls.push(url); return respond ? respond(url, tasks) : { tasks }; }, showToast() {}, setWorkflowTaskTrigger() {},
+    wfGet: id => ({ taskModal: modal, taskModalBody: body, workflowTaskList: list })[id],
+    startTaskPolling: (id, target) => polled.push([id, target]),
+  };
+  runInNewContext(controller.slice(helpersStart, helpersEnd) + controller.slice(start, end), context);
+  const rows = () => [...list.innerHTML.matchAll(/data-task-row="([^"]+)"/g)].map(m => m[1]);
+  return { ...context, body, list, polled, rows, urls };
+}
+const TASKS = [
+  { job_id: 'aaaaaaaa-old-0000', workflow_id: 'wf-1', status: 'completed', target: 'local_comfy', created_at: '2026-10-14T01:00:00+00:00' },
+  { job_id: 'bbbbbbbb-other-wf', workflow_id: 'wf-2', status: 'running', target: 'rh_cloud', created_at: '2026-10-14T03:00:00+00:00' },
+  { job_id: 'cccccccc-new-1111', workflow_id: 'wf-1', status: 'outcome_unknown', target: 'rh_cloud', created_at: '2026-10-14T02:00:00+00:00' },
+];
+test('任务面板列出当前工作流多条任务（新→旧），每行含短ID、开始时间、执行端与状态标记', async () => {
+  const h = panelHarness(TASKS);
+  await h.openWorkflowTasks();
+  assert.deepEqual(h.rows(), ['cccccccc-new-1111', 'aaaaaaaa-old-0000']);
+  assert.match(h.list.innerHTML, /data-task-short-id>cccccccc</);
+  assert.doesNotMatch(h.list.innerHTML, /data-task-short-id>cccccccc-/);
+  assert.match(h.list.innerHTML, /data-task-executor>RH</);
+  assert.match(h.list.innerHTML, /data-task-executor>ComfyUI</);
+  assert.match(h.list.innerHTML, /data-task-time[^>]*>2026-10-14 \d{2}:00:00</);
+  assert.match(h.list.innerHTML, /data-task-badge="outcome_unknown"/);
+  assert.match(h.list.innerHTML, /data-task-badge="completed"/);
+});
+test('最新任务为结果未知时打开面板不自动展开详情；点击该行才展开', async () => {
+  const h = panelHarness(TASKS);
+  await h.openWorkflowTasks();
+  assert.deepEqual(h.polled, []);
+  assert.match(h.body.textContent, /点击/);
+  h.expandWorkflowTask('cccccccc-new-1111');
+  assert.deepEqual(h.polled, [['cccccccc-new-1111', 'rh_cloud']]);
+  assert.match(h.list.innerHTML, /data-task-row="cccccccc-new-1111"[^>]*aria-expanded="true"/);
+});
+test('点击其他行展开对应任务的执行监控', async () => {
+  const h = panelHarness(TASKS);
+  await h.openWorkflowTasks();
+  h.expandWorkflowTask('aaaaaaaa-old-0000');
+  assert.deepEqual(h.polled, [['aaaaaaaa-old-0000', 'local_comfy']]);
+});
+test('最新任务为其他状态时打开面板照常展开', async () => {
+  const h = panelHarness([{ job_id: 'job-r', workflow_id: 'wf-1', status: 'running', target: 'local_comfy', created_at: '2026-10-14T05:00:00Z' }]);
+  await h.openWorkflowTasks();
+  assert.deepEqual(h.polled, [['job-r', 'local_comfy']]);
+});
+test('当前工作流无任务时显示空态', async () => {
+  const h = panelHarness(TASKS, 'wf-none');
+  await h.openWorkflowTasks();
+  assert.deepEqual(h.rows(), []);
+  assert.match(h.body.textContent, /暂无任务/);
+});
+test('列表点击委托到 data-task-row', () => {
+  assert.match(controller, /wfGet\('workflowTaskList'\)\?\.addEventListener\('click'[\s\S]{0,160}data-task-row[\s\S]{0,80}expandWorkflowTask/);
+  assert.match(html, /id="workflowTaskList"/);
+  assert.doesNotMatch(html, /id="workflowTaskSelect"/);
+});
+
+test('切换工作流界面时其他工作流的运行中任务不自动弹出', async () => {
+  const h = restoreHarness([{ job_id: 'job-other', workflow_id: 'wf-2', status: 'running' }]);
+  await h.restoreWorkflowTask();
+  assert.equal(h.modal.opened, 0);
+  assert.deepEqual(h.polled, []);
+  const none = restoreHarness([{ job_id: 'job-r', status: 'running' }], { workflowId: null });
+  await none.restoreWorkflowTask();
+  assert.equal(none.modal.opened, 0);
+});
+test('恢复与面板请求携带 workflow_id 与 limit', async () => {
+  const h = restoreHarness([{ job_id: 'job-r', status: 'running' }]);
+  await h.restoreWorkflowTask();
+  assert.equal(h.urls[0], '/api/god_workflow/tasks?workflow_id=wf-1&limit=20');
+  assert.equal(h.modal.opened, 1);
+});
+// 新后端：回显 workflow_id 且含 next_cursor 时使用服务端结果与游标。
+function pagedResponder(pages) {
+  return url => {
+    const cursor = new URL(url, 'http://x').searchParams.get('cursor') || '';
+    return { workflow_id: 'wf-1', ...pages[cursor] };
+  };
+}
+test('后端支持分页时显示「加载更多」并按 cursor 追加，末页隐藏', async () => {
+  const pages = {
+    '': { tasks: [{ job_id: 'job-3', workflow_id: 'wf-1', status: 'completed', created_at: '2026-10-14T03:00:00Z' }], next_cursor: 'Y3Vyc29yLTE', has_more: true },
+    'Y3Vyc29yLTE': { tasks: [{ job_id: 'job-2', workflow_id: 'wf-1', status: 'failed', created_at: '2026-10-14T02:00:00Z' }], next_cursor: null, has_more: false },
+  };
+  const h = panelHarness([], 'wf-1', pagedResponder(pages));
+  await h.openWorkflowTasks();
+  assert.match(h.list.innerHTML, /data-task-load-more/);
+  await h.loadMoreWorkflowTasks();
+  assert.equal(h.urls.at(-1), '/api/god_workflow/tasks?workflow_id=wf-1&limit=20&cursor=Y3Vyc29yLTE');
+  assert.deepEqual(h.rows(), ['job-3', 'job-2']);
+  assert.doesNotMatch(h.list.innerHTML, /data-task-load-more/);
+});
+test('后端未回显 workflow_id 时退回前端过滤且不显示「加载更多」', async () => {
+  const h = panelHarness([], 'wf-1', () => ({ tasks: [
+    { job_id: 'job-a', workflow_id: 'wf-1', status: 'completed', created_at: '2026-10-14T01:00:00Z' },
+    { job_id: 'job-b', workflow_id: 'wf-2', status: 'completed', created_at: '2026-10-14T02:00:00Z' }], next_cursor: 'ignored' }));
+  await h.openWorkflowTasks();
+  assert.deepEqual(h.rows(), ['job-a']);
+  assert.doesNotMatch(h.list.innerHTML, /data-task-load-more/);
+});
+test('服务端已过滤但无 next_cursor 键时不显示「加载更多」', async () => {
+  const h = panelHarness([], 'wf-1', () => ({ workflow_id: 'wf-1', tasks: [{ job_id: 'job-a', workflow_id: 'wf-1', status: 'completed' }] }));
+  await h.openWorkflowTasks();
+  assert.deepEqual(h.rows(), ['job-a']);
+  assert.doesNotMatch(h.list.innerHTML, /data-task-load-more/);
+});
+test('加载更多遇 INVALID_CURSOR 时回到第一页重新加载', async () => {
+  let calls = 0;
+  const h = panelHarness([], 'wf-1', url => {
+    calls++;
+    if (url.includes('cursor=')) { const e = new Error('分页游标无效'); e.status = 400; e.code = 'INVALID_CURSOR'; throw e; }
+    return { workflow_id: 'wf-1', tasks: [{ job_id: 'job-1', workflow_id: 'wf-1', status: 'completed' }], next_cursor: 'b3BhcXVl', has_more: true, data_status: 'ok', data_gaps: [] };
+  });
+  await h.openWorkflowTasks();
+  await h.loadMoreWorkflowTasks();
+  assert.equal(calls, 3);
+  assert.equal(h.urls.at(-1), '/api/god_workflow/tasks?workflow_id=wf-1&limit=20');
+  assert.deepEqual(h.rows(), ['job-1']);
+});
+test('INVALID_LIMIT 时退回旧格式并前端过滤', async () => {
+  const h = panelHarness([], 'wf-1', url => {
+    if (url.includes('limit=')) { const e = new Error('x'); e.status = 400; e.code = 'INVALID_LIMIT'; throw e; }
+    return { tasks: [{ job_id: 'job-a', workflow_id: 'wf-1', status: 'completed' }, { job_id: 'job-b', workflow_id: 'wf-2', status: 'completed' }] };
+  });
+  await h.openWorkflowTasks();
+  assert.equal(h.urls.at(-1), '/api/god_workflow/tasks');
+  assert.deepEqual(h.rows(), ['job-a']);
+});
+test('data_status 降级或 data_gaps 非空时列表顶部如实提示；ok 时不提示', async () => {
+  const degraded = panelHarness([], 'wf-1', () => ({ workflow_id: 'wf-1', tasks: [], next_cursor: null, has_more: false, data_status: 'partial', data_gaps: ['ledger_unreadable'] }));
+  await degraded.openWorkflowTasks();
+  assert.match(degraded.list.innerHTML, /data-task-list-notice[\s\S]*partial[\s\S]*ledger_unreadable/);
+  const ok = panelHarness([], 'wf-1', () => ({ workflow_id: 'wf-1', tasks: [], next_cursor: null, has_more: false, data_status: 'ok', data_gaps: [] }));
+  await ok.openWorkflowTasks();
+  assert.doesNotMatch(ok.list.innerHTML, /data-task-list-notice/);
+});
+test('同一时间的任务按 task_id 倒序，与后端分页次序一致', async () => {
+  const t = '2026-10-14T01:00:00Z';
+  const h = panelHarness([{ job_id: 'a', task_id: 'a', workflow_id: 'wf-1', status: 'completed', created_at: t },
+    { job_id: 'b', task_id: 'b', workflow_id: 'wf-1', status: 'completed', created_at: t }]);
+  await h.openWorkflowTasks();
+  assert.deepEqual(h.rows(), ['b', 'a']);
+});
+
+// r6：切换界面 / 打开面板从不自动弹出结果未知或已放弃任务；唯一自动弹出时机是监控中活动→结果未知的实时转换。
+test('切换工作流界面时结果未知与已放弃任务从不自动弹出（首次也不弹）', async () => {
+  for (const task of [{ job_id: 'job-u', status: 'outcome_unknown', error_code: 'OUTCOME_UNKNOWN_NO_REMOTE_ID' },
+    { job_id: 'job-x', status: 'abandoned', error_code: 'TASK_ABANDONED' }]) {
+    const storage = new Map();
+    for (let i = 0; i < 2; i++) {
+      const h = restoreHarness([task], { storage });
+      await h.restoreWorkflowTask();
+      assert.equal(h.modal.opened, 0, task.status);
+      assert.deepEqual(h.polled, []);
+    }
+  }
+});
+function transitionHarness(responses, { storage = new Map(), modalOpen = false } = {}) {
+  const helpersStart = controller.indexOf('const UNKNOWN_TASK_SEEN_PREFIX');
+  const helpersEnd = controller.indexOf('function workflowTaskId(task)', helpersStart);
+  const start = controller.indexOf('function startTaskPolling(taskId, target) {');
+  const end = controller.indexOf('/* ==================== 7. 事件绑定', start);
+  let abandonClick = null;
+  const body = { innerHTML: '', querySelector: sel => sel === '[data-task-abandon]' && body.innerHTML.includes('data-task-abandon') ? { addEventListener: (_, fn) => { abandonClick = fn; } } : null };
+  const modal = { opened: 0, isOpen: modalOpen, classList: { contains: () => modal.isOpen, add() { modal.opened++; modal.isOpen = true; } } };
+  const timers = new Map();
+  const queue = [...responses];
+  const calls = [];
+  const toasts = [];
+  const localStorage = { getItem: k => storage.get(k) ?? null, setItem: (k, v) => storage.set(k, String(v)) };
+  const context = {
+    state: { pollTimer: null, workflowTasks: [] }, Set, String, Array, Object, JSON, encodeURIComponent,
+    window: { localStorage, confirm: () => true },
+    wfGet: id => id === 'taskModal' ? modal : body,
+    escapeHtml: value => String(value ?? '').replaceAll('<', '&lt;'),
+    setWorkflowTaskTrigger() {}, renderWorkflowTaskList() {}, showToast: (m, e) => toasts.push([m, Boolean(e)]),
+    apiFetch: async (url, options) => { calls.push([url, options]); const next = queue.length > 1 ? queue.shift() : queue[0]; if (next instanceof Error) throw next; return typeof next === 'function' ? next(url, options) : next; },
+    clearInterval: id => timers.delete(id), clearTimeout: id => timers.delete(id),
+    setInterval: callback => { const id = timers.size + 1; timers.set(id, callback); return id; },
+  };
+  runInNewContext(controller.slice(helpersStart, helpersEnd) + controller.slice(start, end), context);
+  const flush = () => new Promise(resolve => setImmediate(resolve));
+  const tick = async () => { for (const cb of [...timers.values()]) cb(); await flush(); };
+  return { ...context, body, modal, storage, calls, toasts, flush, tick, clickAbandon: () => abandonClick?.() };
+}
+test('监控中运行任务转入结果未知时自动弹出一次；同 job+error_code 再次转换不再弹', async () => {
+  const storage = new Map();
+  const unknown = { job_id: 'job-u', status: 'outcome_unknown', error_code: 'OUTCOME_UNKNOWN_NO_REMOTE_ID', outputs: [] };
+  const h = transitionHarness([{ status: 'running' }, unknown], { storage });
+  h.startTaskPolling('job-u', 'rh_cloud');
+  await h.flush();
+  assert.equal(h.modal.opened, 0);
+  await h.tick();
+  assert.equal(h.modal.opened, 1);
+  assert.deepEqual([...storage.keys()], ['gw.workflow.unknownTaskSeen:job-u:OUTCOME_UNKNOWN_NO_REMOTE_ID']);
+  const again = transitionHarness([{ status: 'running' }, unknown], { storage });
+  again.startTaskPolling('job-u', 'rh_cloud');
+  await again.flush(); await again.tick();
+  assert.equal(again.modal.opened, 0);
+});
+test('直接读到已是结果未知的任务（未见活动状态）不自动弹出；错误码不同算新错误', async () => {
+  const h = transitionHarness([{ job_id: 'job-u', status: 'outcome_unknown', error_code: 'OUTCOME_UNKNOWN', outputs: [] }]);
+  h.startTaskPolling('job-u', 'rh_cloud');
+  await h.flush();
+  assert.equal(h.modal.opened, 0);
+  const storage = new Map([['gw.workflow.unknownTaskSeen:job-u:OUTCOME_UNKNOWN', '1']]);
+  const changed = transitionHarness([{ status: 'running' }, { job_id: 'job-u', status: 'outcome_unknown', error_code: 'OUTCOME_UNKNOWN_NO_REMOTE_ID' }], { storage });
+  changed.startTaskPolling('job-u', 'rh_cloud');
+  await changed.flush(); await changed.tick();
+  assert.equal(changed.modal.opened, 1);
+});
+test('无错误码时已知悉键退回 job_id + 状态；localStorage 不可用不抛错', async () => {
+  const storage = new Map();
+  const h = transitionHarness([{ job_id: 'job-n', status: 'outcome_unknown' }], { storage });
+  h.startTaskPolling('job-n', 'rh_cloud');
+  await h.flush();
+  assert.deepEqual([...storage.keys()], ['gw.workflow.unknownTaskSeen:job-n:outcome_unknown']);
+  const broken = transitionHarness([{ status: 'running' }, { job_id: 'job-n', status: 'outcome_unknown' }]);
+  broken.window.localStorage = { getItem() { throw new Error('x'); }, setItem() { throw new Error('x'); } };
+  broken.startTaskPolling('job-n', 'rh_cloud');
+  await broken.flush(); await broken.tick();
+  assert.equal(broken.modal.opened, 1);
+});
+test('仅 OUTCOME_UNKNOWN_NO_REMOTE_ID 显示「放弃」；有远端 ID 的结果未知不显示', async () => {
+  const yes = transitionHarness([{ status: 'outcome_unknown', error_code: 'OUTCOME_UNKNOWN_NO_REMOTE_ID' }]);
+  yes.startTaskPolling('job-u', 'rh_cloud'); await yes.flush();
+  assert.match(yes.body.innerHTML, /data-task-abandon="job-u"[^>]*>放弃</);
+  const no = transitionHarness([{ status: 'outcome_unknown', error_code: 'OUTCOME_UNKNOWN' }]);
+  no.startTaskPolling('job-u', 'rh_cloud'); await no.flush();
+  assert.doesNotMatch(no.body.innerHTML, /data-task-abandon/);
+});
+test('点击「放弃」发送 POST /abandon {reason}，成功后显示「已放弃」', async () => {
+  const h = transitionHarness([
+    { status: 'outcome_unknown', error_code: 'OUTCOME_UNKNOWN_NO_REMOTE_ID' },
+    { status: 'abandoned', abandoned: true, error_code: 'TASK_ABANDONED' },
+    { status: 'abandoned', error_code: 'TASK_ABANDONED' },
+  ]);
+  h.startTaskPolling('job-u', 'rh_cloud'); await h.flush();
+  await h.clickAbandon(); await h.flush();
+  const [url, options] = h.calls[1];
+  assert.equal(url, '/api/god_workflow/tasks/job-u/abandon');
+  assert.equal(options.method, 'POST');
+  assert.equal(typeof JSON.parse(options.body).reason, 'string');
+  assert.ok(JSON.parse(options.body).reason.length > 0 && JSON.parse(options.body).reason.length <= 200);
+  assert.match(h.body.innerHTML, /已放弃/);
+  assert.doesNotMatch(h.body.innerHTML, /data-task-abandon/);
+});
+for (const code of ['TASK_HAS_REMOTE_ID', 'TASK_NOT_OUTCOME_UNKNOWN']) {
+  test(`放弃返回 409 ${code} 时提示并刷新该任务`, async () => {
+    const conflict = Object.assign(new Error('x'), { status: 409, code });
+    const h = transitionHarness([
+      { status: 'outcome_unknown', error_code: 'OUTCOME_UNKNOWN_NO_REMOTE_ID' }, conflict,
+      { status: 'outcome_unknown', error_code: 'OUTCOME_UNKNOWN' },
+    ]);
+    h.startTaskPolling('job-u', 'rh_cloud'); await h.flush();
+    await h.clickAbandon(); await h.flush();
+    assert.ok(h.toasts.some(([, isError]) => isError));
+    assert.ok(h.calls.slice(2).some(([url]) => url === '/api/god_workflow/tasks/job-u'));
+    assert.doesNotMatch(h.body.innerHTML, /data-task-abandon/);
+  });
+}
+test('用户取消确认时不发送放弃请求', async () => {
+  const h = transitionHarness([{ status: 'outcome_unknown', error_code: 'OUTCOME_UNKNOWN_NO_REMOTE_ID' }]);
+  h.window.confirm = () => false;
+  h.startTaskPolling('job-u', 'rh_cloud'); await h.flush();
+  await h.clickAbandon();
+  assert.equal(h.calls.length, 1);
+});
+test('next_cursor 作为不透明字符串原样回传', async () => {
+  const opaque = 'eyJjIjoiMjAyNi0xMC0xNFQwMTowMDowMCIsInQiOiJhLWItYyJ9';
+  const pages = { '': { tasks: [{ job_id: 'j1', workflow_id: 'wf-1', status: 'completed', created_at: '2026-10-14T02:00:00Z' }], next_cursor: opaque, has_more: true },
+    [opaque]: { tasks: [{ job_id: 'j2', workflow_id: 'wf-1', status: 'completed', created_at: '2026-10-14T01:00:00Z' }], next_cursor: null, has_more: false } };
+  const h = panelHarness([], 'wf-1', url => ({ workflow_id: 'wf-1', ...pages[new URL(url, 'http://x').searchParams.get('cursor') || ''] }));
+  await h.openWorkflowTasks();
+  await h.loadMoreWorkflowTasks();
+  assert.equal(new URL(h.urls.at(-1), 'http://x').searchParams.get('cursor'), opaque);
+  assert.deepEqual(h.rows(), ['j1', 'j2']);
+});
