@@ -286,7 +286,7 @@ def test_static_layer_has_no_legacy_integration_markers(repo_root: Path):
 # 登记只保存当前新仓的分类、准入依据和规范化哈希；不保存旧仓源码、提示词正文、
 # 凭据或完整历史授权账本。历史材料继续留在洁净源仓，不因测试需要复制进新仓。
 ADMISSION_METADATA_PATH = "tests/hygiene/fixtures/cleanroom_admission_metadata.json"
-ADMISSION_METADATA_SHA256 = "7e147f48e87a439d99415a00a995407447e5539162abde93133801dfe8e59b0d"
+ADMISSION_METADATA_SHA256 = "ee9bf1bf672c7b4905bbc9df4b9a64e56d31e18ffe560bf031e66635c5edf8ef"
 QUARANTINED_PROMPT_ORIGINAL_PATH = "web/system-prompts/infinite-canvas-prompt-templates.md"
 QUARANTINED_PROMPT_URL = "/static/system-prompts/infinite-canvas-prompt-templates.md"
 

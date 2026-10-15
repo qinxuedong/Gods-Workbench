@@ -57,11 +57,9 @@ def _classify(content: bytes) -> Tuple[str, bool]:
 
 def _conflict(installed_version: str, upgradable: bool) -> CleanroomException:
     if upgradable:
-        hint = (f'检测到旧版神工坊页面适配（{installed_version}），可自动升级：'
-                f'重新打开 ComfyUI 时携带 adapter_upgrade=true，升级完成后请刷新 ComfyUI 页面加载新脚本')
+        hint = '已安装的 ComfyUI 页面适配是旧版本，点「升级适配」即可更新'
     else:
-        hint = (f'{TARGET_RELPATH} 不是神工坊发布的适配脚本，为保护本地修改不会自动覆盖；'
-                '请先备份并手动移除该文件（或恢复为官方适配脚本）后重试')
+        hint = 'ComfyUI 里有一个不是神工坊安装的同名文件，为了安全不会覆盖，请手动移走后重试'
     return CleanroomException(
         409, 'COMFY_ADAPTER_CONFLICT', '页面适配文件已有不同内容，已保留原文件，请核对后更新',
         extra={
