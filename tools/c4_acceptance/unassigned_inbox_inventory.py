@@ -59,7 +59,7 @@ def inventory_unassigned_assets() -> Dict[str, Any]:
         key=lambda record: str(record.get("asset_id") or ""),
     )
     unassigned_ids = [str(record.get("asset_id") or "") for record in unassigned]
-    with_owner = sum(1 for record in unassigned if record.get("metadata", {}).get("workflow_owner"))
+    with_owner = sum(1 for record in unassigned if repo._record_owner(record) is not None)
     return {
         "tool": "unassigned-inbox-inventory",
         "read_only": True,

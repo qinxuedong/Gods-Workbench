@@ -349,9 +349,13 @@ def list_assets(limit: int, offset: int, query: Optional[str], kind: Optional[st
 
 
 def _record_owner(record: Dict[str, Any]) -> Optional[str]:
-    """读取资产可证明的归属键；只有工作流桥接写入的 workflow_owner 算归属。"""
+    """读取资产可证明的归属键；只有工作流桥接写入的 workflow_owner 算归属。
+
+    与 gw/core/asset_visibility.py 同口径：先取顶层 workflow_owner，缺失时再取
+    metadata.workflow_owner；metadata 非字典（含 None）时忽略，不视为有主。
+    """
     metadata = record.get("metadata")
-    owner = metadata.get("workflow_owner") if isinstance(metadata, dict) else None
+    owner = record.get("workflow_owner") or (metadata.get("workflow_owner") if isinstance(metadata, dict) else None)
     return str(owner) if owner else None
 
 

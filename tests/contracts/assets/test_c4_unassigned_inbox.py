@@ -244,6 +244,47 @@ def test_admin_moves_ownerless_asset_with_none_metadata(client):
     assert all(a["asset_id"] != ownerless_id for a in _inbox(client, headers=ADMIN).json()["assets"])
 
 
+def test_top_level_workflow_owner_asset_is_owned(client):
+    """只有顶层 workflow_owner（metadata 无归属键）的旧数据形态按有主口径处理。"""
+    from gw.asset_registry import repository as asset_repo
+
+    asset_id = _register_asset("c4-owner-a", "ast-c4-top1", "顶层归属.png")
+    owner_key = _owner_key("c4-owner-a")
+
+    def hoist_owner_to_top_level(raw: dict) -> None:
+        raw["assets"][asset_id]["workflow_owner"] = \
+            raw["assets"][asset_id]["metadata"].pop("workflow_owner")
+
+    asset_repo.state().mutate(hoist_owner_to_top_level)
+
+    record = asset_repo.state().read()["assets"][asset_id]
+    assert asset_repo._record_owner(record) == owner_key
+
+    # 所有者收件箱可见且不标来源未知；admin 收件箱不把它当无主资产。
+    mine = _inbox(client).json()["assets"]
+    assert [a["asset_id"] for a in mine] == [asset_id]
+    assert mine[0]["source_unknown"] is False
+    assert mine[0]["origin_label"] is None
+    assert _inbox(client, headers=ADMIN).json()["assets"] == []
+
+    # 盘点按有主计数。
+    module = _load_inventory_module()
+    inventory = module.inventory_unassigned_assets()
+    assert inventory["unassigned_asset_ids"] == [asset_id]
+    assert inventory["unassigned_with_owner_count"] == 1
+    assert inventory["unassigned_ownerless_count"] == 0
+
+    # 所有者可移动到自己的项目。
+    project_id = _create_project(client, "顶层归属项目")
+    asset_version = _inbox_asset_version(client, asset_id)
+    moved = _move(client, asset_id, OWNER_A,
+                  {"project_id": project_id, "expected_asset_version": asset_version})
+    assert moved.status_code == 200, moved.text
+    assert moved.json()["moved"] is True and moved.json()["project_id"] == project_id
+    assert moved.json()["asset"]["source_unknown"] is False
+    assert _inbox(client).json()["total"] == 0
+
+
 def test_admin_move_cas_conflict_does_not_backfill_owner(client):
     """CAS 过期 409 时整笔不落盘：不回填 workflow_owner，也不写项目归属。"""
     ownerless_id = _import_ownerless(client, "并发认领.png")
@@ -544,6 +585,27 @@ def test_inventory_counts_unassigned_assets_and_is_read_only(client):
     assert result["unassigned_with_owner_count"] == 2
     assert result["unassigned_ownerless_count"] == 1
     assert result["revision"] == before["revision"]
+
+
+def test_inventory_tolerates_none_or_missing_metadata(client):
+    """metadata=None 或整条缺失的旧数据无主资产：盘点不报错且按无主计数。"""
+    from gw.asset_registry import repository as asset_repo
+
+    none_meta_id = _import_ownerless(client, "元数据为None.png")
+    no_meta_id = _import_ownerless(client, "元数据缺失.png")
+
+    def corrupt_metadata(raw: dict) -> None:
+        raw["assets"][none_meta_id]["metadata"] = None
+        raw["assets"][no_meta_id].pop("metadata", None)
+
+    asset_repo.state().mutate(corrupt_metadata)
+
+    module = _load_inventory_module()
+    result = module.inventory_unassigned_assets()
+    assert result["unassigned_count"] == 2
+    assert result["unassigned_asset_ids"] == sorted([none_meta_id, no_meta_id])
+    assert result["unassigned_with_owner_count"] == 0
+    assert result["unassigned_ownerless_count"] == 2
 
 
 def test_inventory_main_outputs_json(client):
