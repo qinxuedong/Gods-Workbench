@@ -43,18 +43,27 @@ def test_write_routes_require_session_and_role(client: TestClient):
     )
     assert archive_without_session.status_code == 401
 
-    archive_without_governance = client.request(
+    archive_as_owner = client.request(
         "DELETE",
         f"/api/asset-registry/projects/{project_id}",
         json={"expected_version": version},
         headers=EDITOR,
     )
-    assert archive_without_governance.status_code == 403
+    assert archive_as_owner.status_code == 200
+
+    governance_project = client.post(
+        "/api/asset-registry/projects",
+        json=payload,
+        headers=EDITOR,
+    )
+    assert governance_project.status_code == 201
+    governance_project_id = governance_project.json()["project"]["project_id"]
+    governance_version = governance_project.json()["project"]["version"]
 
     archived = client.request(
         "DELETE",
-        f"/api/asset-registry/projects/{project_id}",
-        json={"expected_version": version},
+        f"/api/asset-registry/projects/{governance_project_id}",
+        json={"expected_version": governance_version},
         headers=GOVERNOR,
     )
     assert archived.status_code == 200

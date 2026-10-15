@@ -92,7 +92,12 @@ def update_project(
     x_user_role: str = Header("editor", alias="X-User-Role", description="用户角色权限"),
 ):
     """更新项目元信息，要求 expected_version 匹配。"""
-    require_edit_access(authorization, x_user_role)
+    context = require_authenticated(authorization, x_user_role)
+    default_projects_service.require_project_write_access(
+        project_id,
+        owner_key=owner_key_for_context(context),
+        role=context.role,
+    )
     result = default_projects_service.update_project(project_id, payload)
     return ProjectMutationResponse(project=result)
 
@@ -110,7 +115,12 @@ def archive_project(
     x_user_role: str = Header("editor", alias="X-User-Role", description="用户角色权限"),
 ):
     """将项目移入只读归档状态。"""
-    require_governance_access(authorization, x_user_role)
+    context = require_authenticated(authorization, x_user_role)
+    default_projects_service.require_project_write_access(
+        project_id,
+        owner_key=owner_key_for_context(context),
+        role=context.role,
+    )
     result = default_projects_service.archive_project(project_id, payload.expected_version)
     return ProjectMutationResponse(project=result)
 
