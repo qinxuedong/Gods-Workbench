@@ -1627,6 +1627,77 @@ function setCurrentWorkflow(wf, options = {}) {
   renderActuatorRack(wf);
   const autoFit = options.autoFit !== undefined ? Boolean(options.autoFit) : true;
   renderNodeCanvas(wf, autoFit);
+  renderReparseNotice(wf);
+}
+
+/**
+ * C4-AC3：旧工作流（后端判定 needs_reparse，如 LEGACY_RH_LINK_SLOTS）显示提示与一键「重新解析」。
+ * 只读后端标记，不在前端自行推断；提示条动态插入画布视口上方，不改冻结页面结构。
+ */
+function renderReparseNotice(wf) {
+  const viewport = wfGet('canvasViewport');
+  let notice = wfGet('workflowReparseNotice');
+  if (!wf?.needs_reparse) { notice?.remove?.(); return; }
+  if (!notice && viewport?.parentNode && typeof document.createElement === 'function') {
+    notice = document.createElement('div');
+    notice.id = 'workflowReparseNotice';
+    notice.className = 'workflow-reparse-notice gw-type-body-sm';
+    notice.setAttribute?.('role', 'status');
+    notice.style.cssText = 'display:flex;align-items:center;gap:10px;padding:6px 12px;border:1px solid #dfc384;border-radius:6px;margin:6px 0;';
+    viewport.parentNode.insertBefore(notice, viewport);
+  }
+  if (!notice) return;
+  notice.innerHTML = `<span>⚠️ 该工作流由旧版本保存，连线槽位可能不正确，建议重新解析（原版本会保留）。</span>`
+    + `<button type="button" class="hw-btn btn-size-sm" id="btnWorkflowReparse">重新解析</button>`;
+  wfGet('btnWorkflowReparse')?.addEventListener?.('click', () => reparseCurrentWorkflow());
+}
+
+/**
+ * 调用 POST /workflows/{id}/reparse（携带 expected_version）。
+ * 409 版本冲突：刷新工作流取最新版本后自动重试一次；再冲突则提示用户。
+ * 422 REPARSE_SOURCE_UNAVAILABLE：提示「来源不可用」，数据未修改。
+ */
+async function reparseCurrentWorkflow() {
+  const wf = state.currentWorkflow;
+  if (!wf?.workflow_id || state.reparseRunning) return 'skipped';
+  const id = wf.workflow_id;
+  const btn = wfGet('btnWorkflowReparse');
+  state.reparseRunning = true;
+  if (btn) btn.disabled = true;
+  const refresh = async () => {
+    const fresh = normalizeMatureWorkflow(await apiFetch(`${WORKFLOW_API}/item/${encodeURIComponent(id)}`));
+    if (state.currentWorkflow?.workflow_id === id) setCurrentWorkflow(fresh, { autoFit: false });
+    return fresh;
+  };
+  const post = (version) => apiFetch(`${WORKFLOW_API}/workflows/${encodeURIComponent(id)}/reparse`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ expected_version: version }) });
+  const versionOf = (value) => Number(value?.revision ?? value?.version ?? 1);
+  try {
+    let result;
+    try {
+      result = await post(versionOf(wf));
+    } catch (error) {
+      if (error.status !== 409) throw error;
+      const fresh = await refresh();
+      if (!fresh?.needs_reparse) { showToast('工作流已被更新，无需重新解析'); return 'refreshed'; }
+      try { result = await post(versionOf(fresh)); }
+      catch (retryError) {
+        if (retryError.status === 409) { showToast('重新解析失败：工作流正在被其他操作修改，请稍后再试', true); return 'conflict'; }
+        throw retryError;
+      }
+    }
+    await refresh();
+    showToast(result?.reparse_performed === false ? '工作流已是最新解析结果' : `重新解析完成，已生成新版本 v${String(result?.version ?? '').padStart(3, '0')}`);
+    return 'ok';
+  } catch (error) {
+    if (error.status === 422) { showToast('来源不可用：保存的原始来源无法重新解析，工作流未做任何修改', true); return 'source_unavailable'; }
+    showToast(`重新解析失败：${error.message}`, true);
+    return 'error';
+  } finally {
+    state.reparseRunning = false;
+    const current = wfGet('btnWorkflowReparse');
+    if (current) current.disabled = false;
+  }
 }
 
 function renderHeaderTelemetry(wf) {
