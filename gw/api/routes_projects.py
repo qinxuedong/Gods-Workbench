@@ -21,7 +21,6 @@ from typing import Optional
 from fastapi import APIRouter, Body, Header, Query, status
 
 from gw.core.auth import require_authenticated, require_edit_access, require_governance_access
-from gw.core.errors import UnauthorizedException
 from gw.projects_hub.models import (
     CasVersionRequest,
     ProjectCreateRequest,
@@ -48,15 +47,11 @@ def list_projects(
     authorization: Optional[str] = Header(None),
     x_user_role: str = Header("editor", alias="X-User-Role"),
 ):
-    """根据查询条件返回项目集合；已认证调用方只看到自己可读的项目（C4-AC7）。"""
-    if authorization == "invalid":
-        raise UnauthorizedException()
-    viewer = _optional_viewer(authorization, x_user_role)
-    if viewer is None:
-        projects = default_projects_service.list_projects(archived=archived, deleted=deleted)
-    else:
-        projects = default_projects_service.list_projects(
-            archived=archived, deleted=deleted, viewer_owner_key=viewer[0], viewer_role=viewer[1])
+    """根据查询条件返回项目集合；必须登录，只返回调用方可读的项目（C4-AC7）。"""
+    # C4-AC7（秦先生裁定 2026-10-15）：必须登录，匿名 401；已认证按读授权过滤。
+    owner_key, role = _viewer(require_authenticated(authorization, x_user_role))
+    projects = default_projects_service.list_projects(
+        archived=archived, deleted=deleted, viewer_owner_key=owner_key, viewer_role=role)
     return ProjectListResponse(projects=projects)
 
 
@@ -228,13 +223,6 @@ def _viewer(context):
     except CleanroomException:
         owner_key = None
     return owner_key, str(getattr(context, "role", "") or "")
-
-
-def _optional_viewer(authorization, x_user_role):
-    """历史上该列表不要求认证；保持匿名行为不变（标注为开放问题），已认证时按读授权过滤。"""
-    if not authorization:
-        return None
-    return _viewer(require_authenticated(authorization, x_user_role))
 
 
 def _target_key(context, payload) -> str:

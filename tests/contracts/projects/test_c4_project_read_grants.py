@@ -352,3 +352,19 @@ def test_read_grants_view_roundtrip_after_grant(client: TestClient):
         ("local_dev\0" + local_subject(OTHER_TOKEN)).encode("utf-8")
     ).hexdigest()[:12]
     assert view["grants"] == [expected_prefix]
+
+
+def test_asset_registry_project_list_requires_login(client: TestClient):
+    """秦先生裁定：GET /api/asset-registry/projects 匿名 401；登录后按读授权过滤。"""
+    project_id = _create_project(client, "C4 列表登录")
+    for url in ("/api/asset-registry/projects", "/api/asset-registry/projects?archived=false"):
+        anon = client.get(url)
+        assert anon.status_code == 401, anon.text
+        assert "projects" not in anon.json()
+    owner_list = client.get("/api/asset-registry/projects?archived=false", headers=OWNER)
+    assert owner_list.status_code == 200
+    assert project_id in _ids(owner_list.json())
+    other_list = client.get("/api/asset-registry/projects?archived=false", headers=OTHER)
+    assert other_list.status_code == 200
+    assert project_id not in _ids(other_list.json())
+    assert project_id in _ids(client.get("/api/asset-registry/projects", headers=ADMIN).json())
