@@ -8,7 +8,9 @@ boundary without contacting a real filesystem provider.
 
 from __future__ import annotations
 
+import base64
 import hashlib
+import os
 
 from gw.core.auth import require_authenticated
 
@@ -60,13 +62,32 @@ def _create_project(client, role: str, name: str) -> str:
 def _create_asset(client, role: str, project_id: str, name: str) -> tuple[str, int]:
     """Import a tiny real file so media-read cells have usable content."""
 
+    # Multipart uploads are stored below the isolated data root.  The media
+    # route resolves display_path through GW_ALLOWED_ROOTS, so admit only this
+    # per-test root and point the imported record at the uploaded PNG.
+    png = base64.b64decode(
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGNgYGD4DwAB"
+        "BAEAwS2OUAAAAABJRU5ErkJggg=="
+    )
     response = client.post(
         "/api/asset-registry/assets/import",
         headers=headers(role),
-        files={"file": (name, b"C5 fixture\n", "text/plain")},
+        files={"file": ("c5-fixture.png", png, "image/png")},
     )
     _assert_status(response, 200)
     asset_id = response.json()["asset_ids"][0]
+    from gw.asset_registry import repository as asset_repository
+    from gw.core import storage
+
+    os.environ["GW_ALLOWED_ROOTS"] = str(storage.data_root())
+    stored_name = response.json()["asset"].get("stored_name")
+    assert stored_name
+
+    def expose_uploaded_media(raw):
+        raw["assets"][asset_id]["display_path"] = f"registry_uploads/{stored_name}"
+        return raw
+
+    asset_repository.state().mutate(expose_uploaded_media)
     response = client.post(
         f"/api/asset-registry/projects/{project_id}/assets",
         headers=headers(role),
@@ -76,8 +97,6 @@ def _create_asset(client, role: str, project_id: str, name: str) -> tuple[str, i
     # The asset mutation CAS is the registry-wide revision.  Read the same
     # repository snapshot the route uses after the link operation; the list
     # response can be served from its compatibility projection.
-    from gw.asset_registry import repository as asset_repository
-
     revision = int(asset_repository.state().read().get("revision", 1))
     return asset_id, revision
 
@@ -152,6 +171,10 @@ def _seed_offline_job(role: str) -> str | None:
     actor = index_jobs._actor(context)
     owner = index_jobs._owner(actor)
     job_id = "c5-offline-" + hashlib.sha256(role.encode()).hexdigest()[:12]
+    aliases = index_jobs._roots()[1]
+    fingerprint = index_jobs._digest(
+        {key: str(value) for key, value in sorted(aliases.items())}
+    )
     record = {
         "job_id": job_id,
         "job_type": "asset.index.sync",
@@ -168,7 +191,7 @@ def _seed_offline_job(role: str) -> str | None:
         "error_code": None,
         "_actor": actor,
         "_owner": owner,
-        "_fingerprint": "c5-offline",
+        "_fingerprint": fingerprint,
         "_request": {"kind": "sync", "roots": [], "max_files": 1, "hash_files": False},
         "_request_digest": "c5-offline",
     }
@@ -303,7 +326,7 @@ def seed(
         "canvas_version": 1,
         "job_id": (
             _seed_offline_job(role or "")
-            if state != "unknown"
+            if action == "asset_task" and state != "unknown"
             else "C5-OFFLINE-JOB"
         ),
     }
