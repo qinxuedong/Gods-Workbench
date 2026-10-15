@@ -4,6 +4,7 @@ from __future__ import annotations
 import asyncio
 import base64
 import ipaddress
+import shutil
 import socket
 import hashlib
 import json
@@ -16,6 +17,7 @@ import uuid
 import time
 import math
 from copy import deepcopy
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Optional
 from urllib.parse import quote, urljoin, urlsplit
@@ -33,12 +35,14 @@ from gw.god_workflow import platforms
 from gw.god_workflow import registry
 from gw.god_workflow import asset_hub_bridge
 from gw.god_workflow import browser_bridge
+from gw.god_workflow.legacy_reparse import legacy_reparse_state
 from gw.god_workflow.layout import compute_layout
 from gw.god_workflow.models import WorkflowSource
 from gw.god_workflow.clients import PROVIDERS, get_provider, unavailable
 from gw.god_workflow.parser import (MAX_UPLOAD_BYTES, MAX_PNG_TEXT_BYTES, WorkflowParseError,
                                    parse_workflow, parse_upload, png_available,
-                                   build_topology_from_public_detail, extract_source_graph)
+                                   build_topology_from_public_detail, extract_source_graph,
+                                   _api_link)
 from gw.god_workflow.exporter import export_to_comfy_litegraph
 from gw.god_workflow.compiler import compile_prompt, execution_fingerprint
 
@@ -308,6 +312,12 @@ def _stored_document_items(context: AuthContext):
             yield path, document
 
 
+def _reparse_flags(document: dict[str, Any]) -> dict[str, Any]:
+    """读取时动态判定过期标记；只随响应透出，绝不写回存储。"""
+    needs, reason = legacy_reparse_state(document)
+    return {"needs_reparse": needs, "reparse_reason": reason}
+
+
 def _summary(document: dict[str, Any], workflow_id: str) -> dict[str, Any]:
     st = document.get("source_type") or document.get("source")
     return {"workflow_id": workflow_id, "name": document.get("name", "workflow"),
@@ -316,11 +326,13 @@ def _summary(document: dict[str, Any], workflow_id: str) -> dict[str, Any]:
             "node_count": len(document.get("nodes", [])),
             "connection_count": len(document.get("connections", [])),
             "can_run_locally": bool(document.get("env_diff", {}).get("can_run_locally", False)),
+            **_reparse_flags(document),
             "document": {"workflow_id": workflow_id, "name": document.get("name", "workflow"),
                          "source": document.get("source"), "source_type": st, "source_url": document.get("source_url"),
                          "folder_id": document.get("folder_id") or "parsed_default", "version": document.get("version", 1),
                          "node_count": len(document.get("nodes", [])),
-                         "connection_count": len(document.get("connections", []))}}
+                         "connection_count": len(document.get("connections", [])),
+                         **_reparse_flags(document)}}
 
 
 
@@ -1425,6 +1437,7 @@ def get_document(workflow_id: str, authorization: Optional[str] = Header(None), 
     wf_data = dict(item)
     wf_data["actuator_params"] = _promoted_params(wf_data)
     return {"workflow_id": workflow_id, "workflow": wf_data, "document": _summary(item, workflow_id)["document"],
+            **_reparse_flags(item),
             "data_status": "ok", "data_gaps": []}
 
 
@@ -1517,6 +1530,7 @@ async def delete_document(workflow_id: str, request: Request, authorization: Opt
         if removed.get("error"):
             raise CleanroomException(503, removed["error"], "资产投影清理未完成，文档保留，可重试删除")
         path.unlink()
+        shutil.rmtree(_workflow_versions_root(context, workflow_id), ignore_errors=True)
     return {"workflow_id": workflow_id, "deleted": True, "data_status": "ok", "data_gaps": []}
 
 
@@ -1540,6 +1554,177 @@ async def rename_document(workflow_id: str, request: Request, authorization: Opt
     registration = asset_hub_bridge.register_workflow_to_asset_hub(workflow_id, current["name"], document=current, context=context)
     return {"workflow_id": workflow_id, "version": current["version"], "workflow": current,
             "document": _summary(current, workflow_id)["document"], **asset_hub_bridge.registration_health(registration)}
+
+
+def _workflow_versions_root(context: AuthContext, workflow_id: str) -> Path:
+    """历史版本目录：与文档同主体隔离；子目录不参与文档枚举（仅遍历顶层 *.json）。"""
+    return _principal_root(context) / "workflow_versions" / _path(context, workflow_id).stem
+
+
+def _merge_user_node_data(nodes: Any, previous_nodes: Any) -> None:
+    """把旧文档的用户态数据按 (id, kind) 合并回重解析出的新节点。
+
+    重解析只修复结构（命名槽位连线、输入集合、控件结构保持新结果权威），
+    用户在旧文档上的编辑原样回填：画布位置、标量输入值、控件 value/promoted，
+    以及 input_assets / widget_promotions 元数据。
+    """
+    if not isinstance(nodes, list) or not isinstance(previous_nodes, list):
+        return
+    previous: dict[tuple[str, str], dict[str, Any]] = {}
+    for old in previous_nodes:
+        if isinstance(old, dict):
+            previous.setdefault((str(old.get("id")), str(old.get("kind"))), old)
+    for node in nodes:
+        if not isinstance(node, dict):
+            continue
+        old = previous.get((str(node.get("id")), str(node.get("kind"))))
+        if old is None:
+            continue
+        old_position = old.get("position")
+        if isinstance(old_position, dict):
+            node["position"] = deepcopy(old_position)
+        new_inputs, old_inputs = node.get("inputs"), old.get("inputs")
+        if isinstance(new_inputs, dict) and isinstance(old_inputs, dict):
+            for name, value in old_inputs.items():
+                # 连线引用与解析结果覆盖不了的新输入名都保持新结构，只回填标量。
+                if _api_link(value) is not None or name not in new_inputs:
+                    continue
+                if _api_link(new_inputs[name]) is None:
+                    new_inputs[name] = deepcopy(value)
+        old_widgets = old.get("widgets")
+        if isinstance(old_widgets, list):
+            if not isinstance(node.get("widgets"), list):
+                node["widgets"] = deepcopy(old_widgets)
+            else:
+                named = {widget.get("name"): widget for widget in old_widgets
+                         if isinstance(widget, dict) and isinstance(widget.get("name"), str)}
+                for widget in node["widgets"]:
+                    old_widget = named.get(widget.get("name")) if isinstance(widget, dict) else None
+                    if old_widget is None:
+                        continue
+                    if "value" in old_widget:
+                        widget["value"] = deepcopy(old_widget["value"])
+                    if "promoted" in old_widget:
+                        widget["promoted"] = bool(old_widget["promoted"])
+        old_metadata = old.get("metadata")
+        if isinstance(old_metadata, dict):
+            new_metadata = node.get("metadata")
+            if not isinstance(new_metadata, dict):
+                new_metadata = {}
+                node["metadata"] = new_metadata
+            for key in ("input_assets", "widget_promotions"):
+                if key in old_metadata:
+                    new_metadata[key] = deepcopy(old_metadata[key])
+
+
+def _positions_all_at_origin(nodes: Any) -> bool:
+    """所有节点都缺位置或停在 (0,0) 时需要整体重排。"""
+    if not isinstance(nodes, list) or not nodes:
+        return False
+    for node in nodes:
+        position = node.get("position") if isinstance(node, dict) else None
+        if isinstance(position, dict) and (position.get("x") or position.get("y")):
+            return False
+    return True
+
+
+def _assign_layout_positions(nodes: list[Any], connections: Any) -> None:
+    """按分层布局落位，沿用文档其余位置的 {x, y} 字典格式。"""
+    coordinates = compute_layout(nodes, connections if isinstance(connections, list) else [])
+    for node in nodes:
+        coord = coordinates.get(str(node.get("id")))
+        if coord is None:
+            continue
+        position = dict(node["position"]) if isinstance(node.get("position"), dict) else {}
+        position["x"], position["y"] = coord[0], coord[1]
+        node["position"] = position
+
+
+@router.post("/workflows/{workflow_id}/reparse", status_code=status.HTTP_200_OK)
+@router.post("/documents/{workflow_id}/reparse", status_code=status.HTTP_200_OK)
+async def reparse_document(workflow_id: str, request: Request, authorization: Optional[str] = Header(None), x_user_role: str = Header("editor", alias="X-User-Role")):
+    """从已保存的原始来源（raw_payload）离线重解析并写入新版本。
+
+    只读本地已保存数据，绝不访问网络；``expected_version`` 过期返回 409，
+    无法重新解析时返回明确错误码且不修改任何数据。原版本先落入历史目录
+    再写新版本，因此中断后原数据仍完整可读回。
+    """
+    context = _auth(authorization, x_user_role, True)
+    body = await _json_body(request, allow_empty=True)
+    body = body if isinstance(body, dict) else {}
+    expected = _expected_version(body.get("expected_version", request.query_params.get("expected_version")))
+    with _STORAGE_LOCK:
+        path = _path(context, workflow_id)
+        current = _load(path)
+        current_version = int(current.get("version", 1))
+        if expected != current_version:
+            raise VersionConflictException(expected, current_version)
+        needs, _reason = legacy_reparse_state(current)
+        if not needs:
+            return {"workflow_id": workflow_id, "version": current_version, "workflow": current,
+                    "document": _summary(current, workflow_id)["document"],
+                    "reparse_performed": False, "actuator_params": _promoted_params(current),
+                    **_reparse_flags(current),
+                    "data_status": "ok", "data_gaps": []}
+        graph = extract_source_graph(current.get("raw_payload"))
+        if graph is None:
+            raise CleanroomException(422, "REPARSE_SOURCE_UNAVAILABLE",
+                                     "保存的原始来源缺少可重新解析的源图，未做任何修改") from None
+        try:
+            parsed = _parse_payload(deepcopy(graph), current.get("source") or "comfyui", current.get("name") or "workflow")
+        except CleanroomException as exc:
+            raise CleanroomException(422, "REPARSE_SOURCE_UNAVAILABLE",
+                                     f"原始来源无法重新解析（{exc.code}），未做任何修改") from None
+        parsed_dict = parsed.as_dict()
+        stored = {**current, **parsed_dict}
+        # 解析结果覆盖不了的既有元数据（来源上下文、宿主 Schema 等）原样保留；
+        # 过期的宿主编译缓存指纹不再成立，必须丢弃。
+        stored["metadata"] = {**(current.get("metadata") or {}), **(parsed_dict.get("metadata") or {})}
+        stored["metadata"].pop("resolved_api", None)
+        # 重解析只修复结构，用户在旧文档上的编辑（位置、标量参数、控件、资产/提升）
+        # 按 (id, kind) 合并回来；整体没有有效位置时再按拓扑布局落位。
+        _merge_user_node_data(stored.get("nodes"), current.get("nodes"))
+        if _positions_all_at_origin(stored.get("nodes")):
+            _assign_layout_positions(stored["nodes"], stored.get("connections"))
+        stored.update({"workflow_id": workflow_id, "version": current_version + 1,
+                       "asset_id": asset_hub_bridge._workflow_asset_id(context, workflow_id)})
+        _atomic_write(_workflow_versions_root(context, workflow_id) / f"{current_version}.json", deepcopy(current))
+        _atomic_write(path, stored)
+    registration = asset_hub_bridge.register_workflow_to_asset_hub(workflow_id, stored.get("name", "workflow"), document=stored, context=context)
+    return {"workflow_id": workflow_id, "version": stored["version"], "workflow": stored,
+            "document": _summary(stored, workflow_id)["document"], "reparse_performed": True,
+            "actuator_params": _promoted_params(stored),
+            **_reparse_flags(stored), **asset_hub_bridge.registration_health(registration)}
+
+
+@router.get("/workflows/{workflow_id}/versions")
+def list_workflow_versions(workflow_id: str, authorization: Optional[str] = Header(None), x_user_role: str = Header("editor", alias="X-User-Role")):
+    """列出经 reparse 保留的历史版本（新版本在前）。"""
+    context = _auth(authorization, x_user_role, False)
+    versions_root = _workflow_versions_root(context, workflow_id)
+    # 与 _load 的缺失文档语义一致：主文档与历史目录都不存在就是未找到，而非空列表。
+    if not _path(context, workflow_id).is_file() and not any(versions_root.glob("*.json")):
+        raise CleanroomException(404, "WORKFLOW_NOT_FOUND", "工作流不存在")
+    versions = []
+    for path in versions_root.glob("*.json"):
+        if path.stem.isascii() and path.stem.isdecimal():
+            archived_at = datetime.fromtimestamp(path.stat().st_mtime, timezone.utc).isoformat()
+            versions.append({"version": int(path.stem), "archived_at": archived_at})
+    versions.sort(key=lambda item: item["version"], reverse=True)
+    return {"workflow_id": workflow_id, "versions": versions, "data_status": "ok", "data_gaps": []}
+
+
+@router.get("/workflows/{workflow_id}/versions/{version}")
+def get_workflow_version(workflow_id: str, version: str, authorization: Optional[str] = Header(None), x_user_role: str = Header("editor", alias="X-User-Role")):
+    """读回指定历史版本的完整原文档。"""
+    context = _auth(authorization, x_user_role, False)
+    parsed_version = _expected_version(version)
+    path = _workflow_versions_root(context, workflow_id) / f"{parsed_version}.json"
+    if not path.is_file():
+        raise CleanroomException(404, "WORKFLOW_VERSION_NOT_FOUND", "该历史版本不存在") from None
+    document = _load(path)
+    return {"workflow_id": workflow_id, "version": parsed_version, "workflow": document,
+            **_reparse_flags(document), "data_status": "ok", "data_gaps": []}
 
 
 @router.get("/diagnostics")
@@ -2108,7 +2293,7 @@ def mature_item(workflow_id: str, authorization: Optional[str] = Header(None), x
     document = get_document(workflow_id, authorization, x_user_role)["workflow"]
     # ``revision`` mirrors the document ``version`` so callers can drive CAS
     # updates without a second round-trip.
-    return {**document, "revision": int(document.get("version", 1))}
+    return {**document, "revision": int(document.get("version", 1)), **_reparse_flags(document)}
 
 
 @router.put("/item/{workflow_id}/name")
@@ -2512,7 +2697,7 @@ def capabilities(authorization: Optional[str] = Header(None), x_user_role: str =
             "executors": executors,
             # 只如实报告配置状态；此处不做阻塞网络探测，在线与否由 /comfy-control 查询。
             "comfy_host": "configured" if comfy_configured else "not_configured",
-            "implemented": ["parse", "upload-json", "upload-png-text", "upload-webp-exif", "provider-fetch-gateway", "task-contract", "canvas-contract", "canvas-export", "runtime-isolated-storage", "workflow execution and polling", "input-upload", "asset-registration-recovery", "psd-original-download"],
+            "implemented": ["parse", "upload-json", "upload-png-text", "upload-webp-exif", "provider-fetch-gateway", "task-contract", "canvas-contract", "canvas-export", "runtime-isolated-storage", "workflow execution and polling", "input-upload", "asset-registration-recovery", "psd-original-download", "legacy-rh-link-slot-reparse"],
             "partial": ["provider-fetch-gateway", "native-comfy-bridge", "native-schema-conversion"],
             "todo": ["native ComfyUI host acceptance", "real supplier acceptance", "canvas binary export"],
             "data_status": "partial", "data_gaps": gaps}
