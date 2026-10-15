@@ -684,7 +684,8 @@ async def execute_task(request: Request, authorization: Optional[str] = Header(N
             compiled_node = prompt.get(node_id)
             if not isinstance(compiled_node, dict) or actual_field not in compiled_node.get("inputs", {}):
                 raise CleanroomException(422, "INPUT_ASSET_FIELD_UNRESOLVED", "输入素材字段无法映射到实际执行图，请补齐节点定义")
-    source_context = _source_context(context, body.get("source_context", document.get("metadata", {}).get("source_context", {})))
+    # 执行来源只认请求显式携带的来源上下文；文档元数据里的旧来源不作为执行依据。
+    source_context = _source_context(context, body.get("source_context") or {})
     # 原子预留必须先于任何外部副作用；未绑定ID的账本一律未知且禁止自动重发。
     task, replay = registry.reserve_task(context, workflow_id=workflow_id, target=target,
                                          node_count=len(prompt), idempotency_key=idempotency_key,
@@ -1397,14 +1398,22 @@ async def _update_document(workflow_id: str, request: Request, authorization: Op
         stored.update({"workflow_id": workflow_id, "version": current_version + 1,
                        "folder_id": body.get("folder_id", current.get("folder_id"))})
         stored["asset_id"] = asset_hub_bridge._workflow_asset_id(context, workflow_id)
+        explicit_source = "source_context" in body
+        raw_source = body.get("source_context") if explicit_source else stored.get("metadata", {}).get("source_context", {})
         try:
-            source_context = _source_context(context, body.get("source_context", stored.get("metadata", {}).get("source_context", {})))
+            source_context = _source_context(context, raw_source)
         except CleanroomException as exc:
-            # 来源项目在保存后被删除/归档时只清除死链，不阻断参数保存等常规写入；
-            # execute 的显式来源 ACL 不变，无法访问的项目仍按 PROJECT_NOT_FOUND 拒绝。
-            if exc.status_code != 404 or exc.code != "PROJECT_NOT_FOUND":
+            # 显式来源无法访问仍按原错误拒绝；继承自文档元数据的旧来源只是陈旧数据，
+            # 死链只做自愈清理不阻断参数保存等常规写入；execute 的显式来源 ACL 不变。
+            if explicit_source or exc.status_code != 404 or exc.code not in ("PROJECT_NOT_FOUND", "CANVAS_NOT_FOUND"):
                 raise
-            source_context = {}
+            if exc.code == "CANVAS_NOT_FOUND":
+                try:  # 画布已失效但项目仍可访问时保留项目级来源
+                    source_context = _source_context(context, {"project_id": raw_source["project_id"]})
+                except CleanroomException:
+                    source_context = {}
+            else:
+                source_context = {}
         stored.setdefault("metadata", {})["source_context"] = source_context
         if stored["folder_id"] not in (None, "parsed_default"):
             _load_folder(context, str(stored["folder_id"]))

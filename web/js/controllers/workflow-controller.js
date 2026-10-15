@@ -2457,9 +2457,16 @@ async function flushWorkflowParams(workflowId) {
         if (!entry.positions.has(key)) entry.positions.set(key, position);
       }
       // CAS 版本过期：取回服务端当前版本后带原输入重试一次；再次冲突则抛给调用方，不循环。
-      if (!isVersionConflictError(err) || entry.conflictRetry) throw err;
+      // 抛出前清掉重试标记，之后的新一轮保存仍能再自愈一次。
+      if (!isVersionConflictError(err) || entry.conflictRetry) {
+        entry.conflictRetry = false;
+        throw err;
+      }
       const refreshed = await fetchCurrentWorkflowVersion(workflowId, err);
-      if (!refreshed) throw err;
+      if (!refreshed) {
+        entry.conflictRetry = false;
+        throw err;
+      }
       applyWorkflowVersion(workflowId, refreshed);
       entry.conflictRetry = true;
     } finally { entry.running = null; }
@@ -3260,31 +3267,17 @@ async function handleExecuteWorkflow() {
   `;
 
   try {
-    const originalSource = executionSourceContext(wf);
-    const sendExecute = (source_context) => {
-      const payload = JSON.stringify({ workflow_id: wf.workflow_id, expected_version: wf.revision ?? wf.version,
-        target: state.executionTarget, node_info_list: nodeInfoList, source_context });
-      // 响应丢失后保留同一请求键；收到公共任务 ID 后下一次操作才创建新键。
-      if (state.submissionAttempt?.payload !== payload) {
-        state.submissionAttempt = { payload, key: crypto.randomUUID() };
-      }
-      return apiFetch("/api/god_workflow/execute", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "Idempotency-Key": state.submissionAttempt.key },
-        body: payload,
-      });
-    };
-    let res;
-    try {
-      res = await sendExecute(originalSource);
-    } catch (err) {
-      // 来源项目在会话期间被删除或归档时，改为无项目上下文重试一次；
-      // 该 404 发生在任何任务预留之前，换新负载（即新幂等键）重试不会重复提交。
-      if (err?.status !== 404 || err?.code !== "PROJECT_NOT_FOUND") throw err;
-      if (!originalSource.project_id && !originalSource.canvas_id) throw err;
-      showToast("来源项目不可用，已改为无项目上下文重试", true);
-      res = await sendExecute({});
+    const payload = JSON.stringify({ workflow_id: wf.workflow_id, expected_version: wf.revision ?? wf.version,
+      target: state.executionTarget, node_info_list: nodeInfoList, source_context: executionSourceContext(wf) });
+    // 响应丢失后保留同一请求键；收到公共任务 ID 后下一次操作才创建新键。
+    if (state.submissionAttempt?.payload !== payload) {
+      state.submissionAttempt = { payload, key: crypto.randomUUID() };
     }
+    const res = await apiFetch("/api/god_workflow/execute", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "Idempotency-Key": state.submissionAttempt.key },
+      body: payload,
+    });
     state.activeTaskId = res.job_id || res.task_id;
     state.submissionAttempt = null;
     startTaskPolling(state.activeTaskId, res.target);

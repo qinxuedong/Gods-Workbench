@@ -111,21 +111,37 @@ test('参数保存版本冲突后按服务端当前版本自动重试一次且�
   assert.equal(h.state.currentWorkflow.version,6);
   assert.equal(h.state.syncRevisions.A,6);
 });
-test('执行遇来源项目失效时换无项目上下文重试一次',async()=>{
-  let calls=0;
-  const h=harness(async()=>{
-    calls+=1;
-    if(calls===1)return response({detail:{code:'PROJECT_NOT_FOUND',message:'项目不存在'}},404);
-    return response({job_id:'retry-job',target:'local_comfy'});
-  });
+test('执行遇来源项目失效时只提交一次并在面板显示失败',async()=>{
+  const h=harness(async()=>response({detail:{code:'PROJECT_NOT_FOUND',message:'项目不存在'}},404));
   h.state.currentWorkflow=workflow('A');
   h.context.window.location.search='?project_id=gone';
   h.run('startTaskPolling=()=>{};');await h.run('handleExecuteWorkflow()');
-  assert.equal(h.requests.length,2);
+  assert.equal(h.requests.length,1);
   assert.deepEqual(JSON.parse(h.requests[0].body).source_context,{project_id:'gone'});
-  assert.deepEqual(JSON.parse(h.requests[1].body).source_context,{});
-  assert.notEqual(h.requests[0].headers['Idempotency-Key'],h.requests[1].headers['Idempotency-Key']);
-  assert.equal(h.state.activeTaskId,'retry-job');
+  assert.ok(h.requests[0].headers['Idempotency-Key']);
+  assert.match(h.element('#taskModalBody').innerHTML,/任务提交失败/);
+  assert.match(h.element('#taskModalBody').innerHTML,/项目不存在/);
+  assert.equal(h.state.submitting,false);
+  assert.equal(h.state.activeTaskId,null);
+});
+test('连续版本冲突抛出后清除重试标记，后续保存仍能自动重试',async()=>{
+  let calls=0;
+  const h=harness(async(url,options)=>{
+    calls+=1;
+    if(calls<4)return response({detail:{code:'VERSION_CONFLICT',message:'expected_version 与当前版本不一致',current_version:100+calls}},409);
+    return response({...workflow('A'),version:200});
+  });
+  h.state.currentWorkflow=workflow('A');
+  h.run('schedulePersistWorkflowParams([{node_id:"1",field_name:"image",value:"first"}]);');
+  await assert.rejects(h.run('flushWorkflowParams("A")'),/expected_version/);
+  assert.equal(calls,2);
+  h.run('schedulePersistWorkflowParams([{node_id:"1",field_name:"image",value:"second"}]);');
+  await h.run('flushWorkflowParams("A")');
+  assert.equal(calls,4);
+  assert.equal(JSON.parse(h.requests[3].body).expected_version,103);
+  assert.deepEqual(JSON.parse(h.requests[3].body).widget_updates.map(x=>x.value),['second']);
+  assert.equal(h.state.currentWorkflow.version,200);
+  assert.equal(h.state.syncRevisions.A,200);
 });
 test('旧任务迟到终态不停止新任务轮询',async()=>{
   let resolveA,resolveB;const a=new Promise(r=>resolveA=r),b=new Promise(r=>resolveB=r);
