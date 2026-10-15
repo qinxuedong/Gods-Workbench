@@ -39,7 +39,8 @@ from gw.god_workflow.models import WorkflowSource
 from gw.god_workflow.clients import PROVIDERS, get_provider, unavailable
 from gw.god_workflow.parser import (MAX_UPLOAD_BYTES, MAX_PNG_TEXT_BYTES, WorkflowParseError,
                                    parse_workflow, parse_upload, png_available,
-                                   build_topology_from_public_detail, extract_source_graph)
+                                   build_topology_from_public_detail, extract_source_graph,
+                                   _api_link)
 from gw.god_workflow.exporter import export_to_comfy_litegraph
 from gw.god_workflow.compiler import compile_prompt, execution_fingerprint
 
@@ -1379,8 +1380,8 @@ async def delete_document(workflow_id: str, request: Request, authorization: Opt
         removed = asset_hub_bridge.remove_workflow_from_asset_hub(context, workflow_id)
         if removed.get("error"):
             raise CleanroomException(503, removed["error"], "资产投影清理未完成，文档保留，可重试删除")
-        shutil.rmtree(_workflow_versions_root(context, workflow_id), ignore_errors=True)
         path.unlink()
+        shutil.rmtree(_workflow_versions_root(context, workflow_id), ignore_errors=True)
     return {"workflow_id": workflow_id, "deleted": True, "data_status": "ok", "data_gaps": []}
 
 
@@ -1411,6 +1412,85 @@ def _workflow_versions_root(context: AuthContext, workflow_id: str) -> Path:
     return _principal_root(context) / "workflow_versions" / _path(context, workflow_id).stem
 
 
+def _merge_user_node_data(nodes: Any, previous_nodes: Any) -> None:
+    """把旧文档的用户态数据按 (id, kind) 合并回重解析出的新节点。
+
+    重解析只修复结构（命名槽位连线、输入集合、控件结构保持新结果权威），
+    用户在旧文档上的编辑原样回填：画布位置、标量输入值、控件 value/promoted，
+    以及 input_assets / widget_promotions 元数据。
+    """
+    if not isinstance(nodes, list) or not isinstance(previous_nodes, list):
+        return
+    previous: dict[tuple[str, str], dict[str, Any]] = {}
+    for old in previous_nodes:
+        if isinstance(old, dict):
+            previous.setdefault((str(old.get("id")), str(old.get("kind"))), old)
+    for node in nodes:
+        if not isinstance(node, dict):
+            continue
+        old = previous.get((str(node.get("id")), str(node.get("kind"))))
+        if old is None:
+            continue
+        old_position = old.get("position")
+        if isinstance(old_position, dict):
+            node["position"] = deepcopy(old_position)
+        new_inputs, old_inputs = node.get("inputs"), old.get("inputs")
+        if isinstance(new_inputs, dict) and isinstance(old_inputs, dict):
+            for name, value in old_inputs.items():
+                # 连线引用与解析结果覆盖不了的新输入名都保持新结构，只回填标量。
+                if _api_link(value) is not None or name not in new_inputs:
+                    continue
+                if _api_link(new_inputs[name]) is None:
+                    new_inputs[name] = deepcopy(value)
+        old_widgets = old.get("widgets")
+        if isinstance(old_widgets, list):
+            if not isinstance(node.get("widgets"), list):
+                node["widgets"] = deepcopy(old_widgets)
+            else:
+                named = {widget.get("name"): widget for widget in old_widgets
+                         if isinstance(widget, dict) and isinstance(widget.get("name"), str)}
+                for widget in node["widgets"]:
+                    old_widget = named.get(widget.get("name")) if isinstance(widget, dict) else None
+                    if old_widget is None:
+                        continue
+                    if "value" in old_widget:
+                        widget["value"] = deepcopy(old_widget["value"])
+                    if "promoted" in old_widget:
+                        widget["promoted"] = bool(old_widget["promoted"])
+        old_metadata = old.get("metadata")
+        if isinstance(old_metadata, dict):
+            new_metadata = node.get("metadata")
+            if not isinstance(new_metadata, dict):
+                new_metadata = {}
+                node["metadata"] = new_metadata
+            for key in ("input_assets", "widget_promotions"):
+                if key in old_metadata:
+                    new_metadata[key] = deepcopy(old_metadata[key])
+
+
+def _positions_all_at_origin(nodes: Any) -> bool:
+    """所有节点都缺位置或停在 (0,0) 时需要整体重排。"""
+    if not isinstance(nodes, list) or not nodes:
+        return False
+    for node in nodes:
+        position = node.get("position") if isinstance(node, dict) else None
+        if isinstance(position, dict) and (position.get("x") or position.get("y")):
+            return False
+    return True
+
+
+def _assign_layout_positions(nodes: list[Any], connections: Any) -> None:
+    """按分层布局落位，沿用文档其余位置的 {x, y} 字典格式。"""
+    coordinates = compute_layout(nodes, connections if isinstance(connections, list) else [])
+    for node in nodes:
+        coord = coordinates.get(str(node.get("id")))
+        if coord is None:
+            continue
+        position = dict(node["position"]) if isinstance(node.get("position"), dict) else {}
+        position["x"], position["y"] = coord[0], coord[1]
+        node["position"] = position
+
+
 @router.post("/workflows/{workflow_id}/reparse", status_code=status.HTTP_200_OK)
 @router.post("/documents/{workflow_id}/reparse", status_code=status.HTTP_200_OK)
 async def reparse_document(workflow_id: str, request: Request, authorization: Optional[str] = Header(None), x_user_role: str = Header("editor", alias="X-User-Role")):
@@ -1434,7 +1514,8 @@ async def reparse_document(workflow_id: str, request: Request, authorization: Op
         if not needs:
             return {"workflow_id": workflow_id, "version": current_version, "workflow": current,
                     "document": _summary(current, workflow_id)["document"],
-                    "reparse_performed": False, **_reparse_flags(current),
+                    "reparse_performed": False, "actuator_params": _promoted_params(current),
+                    **_reparse_flags(current),
                     "data_status": "ok", "data_gaps": []}
         graph = extract_source_graph(current.get("raw_payload"))
         if graph is None:
@@ -1451,6 +1532,11 @@ async def reparse_document(workflow_id: str, request: Request, authorization: Op
         # 过期的宿主编译缓存指纹不再成立，必须丢弃。
         stored["metadata"] = {**(current.get("metadata") or {}), **(parsed_dict.get("metadata") or {})}
         stored["metadata"].pop("resolved_api", None)
+        # 重解析只修复结构，用户在旧文档上的编辑（位置、标量参数、控件、资产/提升）
+        # 按 (id, kind) 合并回来；整体没有有效位置时再按拓扑布局落位。
+        _merge_user_node_data(stored.get("nodes"), current.get("nodes"))
+        if _positions_all_at_origin(stored.get("nodes")):
+            _assign_layout_positions(stored["nodes"], stored.get("connections"))
         stored.update({"workflow_id": workflow_id, "version": current_version + 1,
                        "asset_id": asset_hub_bridge._workflow_asset_id(context, workflow_id)})
         _atomic_write(_workflow_versions_root(context, workflow_id) / f"{current_version}.json", deepcopy(current))
@@ -1458,6 +1544,7 @@ async def reparse_document(workflow_id: str, request: Request, authorization: Op
     registration = asset_hub_bridge.register_workflow_to_asset_hub(workflow_id, stored.get("name", "workflow"), document=stored, context=context)
     return {"workflow_id": workflow_id, "version": stored["version"], "workflow": stored,
             "document": _summary(stored, workflow_id)["document"], "reparse_performed": True,
+            "actuator_params": _promoted_params(stored),
             **_reparse_flags(stored), **asset_hub_bridge.registration_health(registration)}
 
 
@@ -1465,8 +1552,12 @@ async def reparse_document(workflow_id: str, request: Request, authorization: Op
 def list_workflow_versions(workflow_id: str, authorization: Optional[str] = Header(None), x_user_role: str = Header("editor", alias="X-User-Role")):
     """列出经 reparse 保留的历史版本（新版本在前）。"""
     context = _auth(authorization, x_user_role, False)
+    versions_root = _workflow_versions_root(context, workflow_id)
+    # 与 _load 的缺失文档语义一致：主文档与历史目录都不存在就是未找到，而非空列表。
+    if not _path(context, workflow_id).is_file() and not any(versions_root.glob("*.json")):
+        raise CleanroomException(404, "WORKFLOW_NOT_FOUND", "工作流不存在")
     versions = []
-    for path in _workflow_versions_root(context, workflow_id).glob("*.json"):
+    for path in versions_root.glob("*.json"):
         if path.stem.isascii() and path.stem.isdecimal():
             archived_at = datetime.fromtimestamp(path.stat().st_mtime, timezone.utc).isoformat()
             versions.append({"version": int(path.stem), "archived_at": archived_at})
