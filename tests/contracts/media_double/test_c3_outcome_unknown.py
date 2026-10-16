@@ -4,7 +4,7 @@ from __future__ import annotations
 import pytest
 
 from gw.god_workflow import platforms
-from media_doubles import HEADERS, TASKS, TEST_API_KEY, execute, prepare_workflow
+from media_doubles import HEADERS, TASKS, TEST_API_KEY, execute, iter_persisted_files, prepare_workflow
 
 
 def _follow_up(client, job_id, workflow, target, key):
@@ -139,7 +139,7 @@ def test_test_key_never_leaks(media_client, fake_media, media_env):
     listed = media_client.get(TASKS, headers=HEADERS)
     for response in (first, polled, listed):
         assert TEST_API_KEY not in response.text
-    files = [path for path in media_env.rglob("*") if path.is_file()]
+    files = iter_persisted_files(media_env)
     assert any("tasks" in path.parts for path in files)
     for path in files:
         assert TEST_API_KEY.encode() not in path.read_bytes(), path

@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import base64
 import hashlib
+from pathlib import Path
 from typing import Any, Optional
 
 from fastapi.testclient import TestClient
@@ -209,6 +210,18 @@ def count_assets(client: TestClient, headers=HEADERS) -> dict:
     return {"registry": len(items), "library_image": len(images),
             "registry_ids": sorted(item["asset_id"] for item in items),
             "library_image_ids": sorted(item["asset_id"] for item in images)}
+
+
+def iter_persisted_files(root: Path) -> list[Path]:
+    """返回可读的业务持久化文件，排除运行中的数据目录锁文件。
+
+    Windows 会拒绝另一个句柄持有独占锁时的读取；``.gw-data.lock`` 只记录
+    进程占用状态，不属于任务持久化内容，因此不能纳入密钥扫描。
+    """
+    return sorted(
+        (path for path in root.rglob("*") if path.is_file() and path.name != ".gw-data.lock"),
+        key=lambda path: path.as_posix(),
+    )
 
 
 # ---------------------------------------------------------------------------
