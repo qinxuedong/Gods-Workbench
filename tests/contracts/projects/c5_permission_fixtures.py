@@ -249,6 +249,19 @@ def seed(
         json={"subject": subject("revoked_editor")},
     )
     _assert_status(response, 200)
+    # 新建项目默认是 explicit；这里还原一条旧版 legacy_open 记录，
+    # 只保留 revoked_editor 的显式撤销，供 C5-T5 兼容矩阵覆盖。
+    from gw.projects_hub import service as projects_service
+
+    revoked_context = require_authenticated(
+        f"Bearer {USERS['revoked_editor'][0]}", USERS['revoked_editor'][1]
+    )
+    projects_service.default_projects_service._read_access[legacy_id] = {
+        "mode": "legacy_open",
+        "grants": [],
+        "revoked": [projects_service.owner_key_for_context(revoked_context)],
+        "version": 1,
+    }
 
     target_id = {
         "active": active_id,

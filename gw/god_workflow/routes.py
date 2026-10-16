@@ -27,7 +27,7 @@ from fastapi import APIRouter, Header, Request, status
 from fastapi.responses import FileResponse
 
 from gw.core import audit
-from gw.core.auth import AuthContext, require_authenticated, require_edit_access
+from gw.core.auth import EDIT_ROLES, AuthContext, require_authenticated, require_edit_access
 from gw.core.errors import CleanroomException, VersionConflictException
 from gw.core.runtime_paths import RuntimePathError, resolve_runtime_paths
 from gw.god_workflow import comfy_executor
@@ -200,6 +200,14 @@ def _auth(authorization: Optional[str], role: str, write: bool) -> AuthContext:
     return require_edit_access(authorization, role) if write else require_authenticated(authorization, role)
 
 
+def _workflow_write_auth(authorization: Optional[str], role: str) -> AuthContext:
+    """认证工作流写入，并把只读项目资源按隐藏资源处理。"""
+    context = require_authenticated(authorization, role)
+    if context.role not in EDIT_ROLES:
+        raise CleanroomException(404, "WORKFLOW_NOT_FOUND", "工作流不存在")
+    return context
+
+
 def _principal_root(context: AuthContext) -> Path:
     root = _workflow_root() / registry.principal_digest(context.identity_domain, context.subject)
     root.mkdir(parents=True, exist_ok=True)
@@ -207,6 +215,11 @@ def _principal_root(context: AuthContext) -> Path:
 
 
 def _path(context: AuthContext, workflow_id: str) -> Path:
+    return _principal_root(context) / _workflow_filename(workflow_id)
+
+
+def _workflow_filename(workflow_id: str) -> str:
+    """生成规范存储文件名，不创建主体目录。"""
     try:
         parsed = uuid.UUID(workflow_id)
         filename = f"{parsed}.json"
@@ -215,7 +228,7 @@ def _path(context: AuthContext, workflow_id: str) -> Path:
         if not cleaned or cleaned.casefold() in _PRIVATE_METADATA_NAMES:
             raise CleanroomException(404, "WORKFLOW_NOT_FOUND", "工作流不存在") from None
         filename = f"{cleaned}.json"
-    return _principal_root(context) / filename
+    return filename
 
 
 def _folder_root(context: AuthContext) -> Path:
@@ -299,17 +312,134 @@ def _load(path: Path) -> dict[str, Any]:
         raise CleanroomException(500, "WORKFLOW_STORAGE_ERROR", "工作流存储内容不可读取") from exc
 
 
-def _stored_document_items(context: AuthContext):
-    """工作流与私有清单共目录，列表和目录操作仅遍历真实文档。"""
-    for path in sorted(_principal_root(context).glob("*.json")):
-        if path.stem.casefold() in _PRIVATE_METADATA_NAMES:
+def _workflow_project_id(document: dict[str, Any]) -> Optional[str]:
+    if not isinstance(document, dict):
+        return None
+    metadata = document.get("metadata")
+    source_context = metadata.get("source_context") if isinstance(metadata, dict) else None
+    project_id = source_context.get("project_id") if isinstance(source_context, dict) else None
+    return project_id if isinstance(project_id, str) and project_id else None
+
+
+def _workflow_not_found() -> CleanroomException:
+    return CleanroomException(404, "WORKFLOW_NOT_FOUND", "工作流不存在")
+
+
+def _authorize_workflow_document(context: AuthContext, path: Path, document: dict[str, Any], *, write: bool) -> None:
+    """定位工作流后应用项目权限。
+
+    无项目上下文的旧文档仍只对所属主体可见；绑定项目后统一遵守项目读写策略。
+    """
+    project_id = _workflow_project_id(document)
+    own_root = registry.principal_digest(context.identity_domain, context.subject)
+    if write and context.role not in EDIT_ROLES:
+        raise _workflow_not_found()
+    if project_id is None:
+        if path.parent.name != own_root:
+            raise _workflow_not_found()
+        return
+
+    from gw.projects_hub import service as projects
+
+    if write:
+        projects.require_project_write_context(project_id, context)
+        return
+    try:
+        projects.default_projects_service.get_readable_project(project_id, context)
+    except CleanroomException as exc:
+        # Resource visibility is fail-closed: an inaccessible project-bound
+        # workflow must not reveal whether the workflow or project exists.
+        if exc.status_code in (403, 404):
+            raise _workflow_not_found() from None
+        raise
+
+
+def _resolve_workflow(context: AuthContext, workflow_id: str, *, write: bool) -> tuple[Path, dict[str, Any]]:
+    """在所属主体目录或可读项目目录中解析工作流。"""
+    filename = _workflow_filename(workflow_id)
+    own_root = _principal_root(context)
+    candidates = [own_root / filename]
+    workflow_root = _workflow_root()
+    if workflow_root.is_dir():
+        for principal_root in sorted(workflow_root.iterdir(), key=lambda item: item.name):
+            if not principal_root.is_dir() or principal_root == own_root:
+                continue
+            candidate = principal_root / filename
+            if candidate.is_file():
+                candidates.append(candidate)
+
+    for path in candidates:
+        if not path.is_file():
             continue
         try:
             document = _load(path)
-        except CleanroomException:
+            _authorize_workflow_document(context, path, document, write=write)
+        except CleanroomException as exc:
+            if exc.status_code == 403 and write and exc.code == "PROJECT_READ_ONLY":
+                raise
+            if exc.status_code in (403, 404) and exc.code in {
+                "WORKFLOW_NOT_FOUND", "PROJECT_NOT_FOUND", "PROJECT_READ_FORBIDDEN"
+            }:
+                continue
+            raise
+        return path, document
+    raise _workflow_not_found()
+
+
+def _authorize_workflow_bridge(context: AuthContext) -> None:
+    """要求至少存在一个当前主体可写的项目绑定工作流。"""
+    workflow_root = _workflow_root()
+    if not workflow_root.is_dir():
+        raise _workflow_not_found()
+    for principal_root in sorted(workflow_root.iterdir(), key=lambda item: item.name):
+        if not principal_root.is_dir():
             continue
-        if isinstance(document, dict) and isinstance(document.get("nodes"), list):
-            yield path, document
+        for path in sorted(principal_root.glob("*.json")):
+            if path.stem.casefold() in _PRIVATE_METADATA_NAMES:
+                continue
+            try:
+                document = _load(path)
+            except CleanroomException:
+                continue
+            if _workflow_project_id(document) is None:
+                continue
+            try:
+                _authorize_workflow_document(context, path, document, write=True)
+            except CleanroomException as exc:
+                if exc.status_code == 403 and exc.code == "PROJECT_READ_ONLY":
+                    raise
+                if exc.status_code in (403, 404):
+                    continue
+                raise
+            return
+    # 旧版无项目上下文的文档只允许当前主体通过待处理回执重试桥接；
+    # 没有回执时仍按项目资源隐藏规则返回 404。
+    pending_root = _principal_root(context) / "asset-hub-pending"
+    if any(pending_root.glob("*.json")):
+        return
+    raise _workflow_not_found()
+
+
+def _stored_document_items(context: AuthContext):
+    """遍历当前主体及其可读项目中的真实工作流文档。"""
+    workflow_root = _workflow_root()
+    if not workflow_root.is_dir():
+        return
+    for principal_root in sorted(workflow_root.iterdir(), key=lambda item: item.name):
+        if not principal_root.is_dir():
+            continue
+        for path in sorted(principal_root.glob("*.json")):
+            if path.stem.casefold() in _PRIVATE_METADATA_NAMES:
+                continue
+            try:
+                document = _load(path)
+                _authorize_workflow_document(context, path, document, write=False)
+            except CleanroomException as exc:
+                if exc.status_code in (403, 404):
+                    continue
+                raise
+            if isinstance(document, dict) and isinstance(document.get("nodes"), list):
+                yield path, document
 
 
 def _reparse_flags(document: dict[str, Any]) -> dict[str, Any]:
@@ -354,9 +484,14 @@ def _source_context(context, value):
     if not isinstance(project_id, str) or not project_id:
         raise CleanroomException(400, "INVALID_REQUEST", "画布来源必须同时指定 project_id")
     from gw.projects_hub import service as projects
-    project = projects.default_projects_service.get_owned_project(project_id, projects.owner_key_for_context(context))
-    if project.archived_at or project.deleted_at:
-        raise CleanroomException(404, "PROJECT_NOT_FOUND", "来源项目不可访问")
+    try:
+        project = projects.require_project_write_context(project_id, context)
+    except CleanroomException as exc:
+        # 旧客户端只携带 project_id 时没有可执行画布上下文，保留其
+        # 历史死链 404 语义；完整项目+画布来源仍返回只读门禁 403。
+        if exc.status_code == 403 and canvas_id is None:
+            raise CleanroomException(404, "PROJECT_NOT_FOUND", "来源项目不可访问") from None
+        raise
     if value.get("project_version") is not None and _expected_version(value["project_version"]) != project.version:
         raise VersionConflictException(value["project_version"], project.version)
     result = {"project_id": project_id, "project_version": project.version}
@@ -602,7 +737,7 @@ async def execute_task(request: Request, authorization: Optional[str] = Header(N
     只走 ComfyUI 官方 ``POST /prompt``；未配置 ``GW_COMFYUI_URL`` 时返回标准
     503，不下发任何请求，也不伪造 task_id。
     """
-    context = _auth(authorization, x_user_role, True)
+    context = _workflow_write_auth(authorization, x_user_role)
     body = await _json_body(request, allow_empty=True)
     if not isinstance(body, dict):
         raise CleanroomException(400, "INVALID_REQUEST", "请求体必须是 JSON 对象")
@@ -618,7 +753,22 @@ async def execute_task(request: Request, authorization: Optional[str] = Header(N
     if workflow_id is not None and (not isinstance(workflow_id, str) or not workflow_id):
         raise CleanroomException(400, "INVALID_REQUEST", "workflow_id 必须为非空字符串")
     if isinstance(workflow_id, str) and workflow_id:
-        document = get_document(workflow_id, authorization, x_user_role)["workflow"]
+        if "source_context" in body:
+            # 完整项目+画布来源是写入项目上下文的动作，严格执行写门禁。
+            # 仅 project_id 的旧调用先读回文档，再由来源校验保留死链 404。
+            source_value = body.get("source_context")
+            strict_source = isinstance(source_value, dict) and "canvas_id" in source_value
+            _workflow_path, document = _resolve_workflow(context, workflow_id, write=strict_source)
+        else:
+            # 兼容旧客户端：未携带来源时不把文档元数据当执行来源，
+            # 但项目绑定文档仍必须由项目owner本人执行，避免读授权越权运行。
+            _workflow_path, document = _resolve_workflow(context, workflow_id, write=False)
+            project_id = _workflow_project_id(document)
+            if project_id is not None:
+                from gw.projects_hub import service as projects
+                projects.default_projects_service.get_owned_project(
+                    project_id, projects.owner_key_for_context(context)
+                )
         if "expected_version" in body and body["expected_version"] != document["version"]:
             raise VersionConflictException(body["expected_version"], document["version"])
         schemas = document.get("metadata", {}).get("node_schemas")
@@ -805,6 +955,24 @@ def _decode_task_cursor(cursor: str) -> tuple[str, str]:
     return obj["c"], obj["t"]
 
 
+def _authorize_task_scope(context: AuthContext, task: dict[str, Any], *, write: bool) -> None:
+    """对任务读写操作应用任务中保存的项目上下文。"""
+    source_context = task.get("source_context")
+    project_id = source_context.get("project_id") if isinstance(source_context, dict) else None
+    if not isinstance(project_id, str) or not project_id:
+        return
+    from gw.projects_hub import service as projects
+    if write:
+        projects.require_project_write_context(project_id, context)
+        return
+    try:
+        projects.default_projects_service.get_readable_project(project_id, context)
+    except CleanroomException as exc:
+        if exc.status_code in (403, 404):
+            raise CleanroomException(404, "TASK_NOT_FOUND", "任务不存在") from None
+        raise
+
+
 @router.get("/tasks")
 def list_workflow_tasks(authorization: Optional[str] = Header(None), x_user_role: str = Header("editor", alias="X-User-Role"),
                         workflow_id: Optional[str] = None, limit: Optional[str] = None, cursor: Optional[str] = None):
@@ -831,6 +999,7 @@ async def task_status(task_id: str, authorization: Optional[str] = Header(None),
     """轮询真实任务状态；终态结果同步登记为素材。"""
     context = _auth(authorization, x_user_role, False)
     task = registry.load_task(context, task_id)
+    _authorize_task_scope(context, task, write=False)
     if task.get("status") in {"completed", "failed", "cancelled", "outcome_unknown", "abandoned"}:
         return {**task, "data_status": "ok", "data_gaps": []}
     if task.get("remote_id_missing"):
@@ -903,6 +1072,7 @@ async def retry_task_collection(task_id: str, authorization: Optional[str] = Hea
     """只重试回收已完成的远端结果，绝不再次提交生成。"""
     context = _auth(authorization, x_user_role, True)
     task = registry.load_task(context, task_id)
+    _authorize_task_scope(context, task, write=True)
     if task.get("execution_status") != "completed":
         raise CleanroomException(409, "EXECUTION_NOT_COMPLETED", "执行尚未确认完成，不能回收")
     if task.get("collection_status") == "completed":
@@ -940,6 +1110,8 @@ async def abandon_task(task_id: str, request: Request, authorization: Optional[s
     body = await _json_body(request, allow_empty=True)
     if not isinstance(body, dict):
         raise CleanroomException(400, "INVALID_REQUEST", "请求体必须是 JSON 对象")
+    task = registry.load_task(context, task_id)
+    _authorize_task_scope(context, task, write=True)
     reason = body.get("reason", "")
     if not isinstance(reason, str):
         raise CleanroomException(400, "INVALID_REQUEST", "reason 必须为字符串")
@@ -965,6 +1137,7 @@ async def task_cancel(task_id: str, authorization: Optional[str] = Header(None),
     """本地标记取消并尽力中断远端；不谎称远端已取消。"""
     context = _auth(authorization, x_user_role, True)
     task = registry.load_task(context, task_id)
+    _authorize_task_scope(context, task, write=True)
     if task.get("status") in {"completed", "failed", "cancelled", "abandoned"} | comfy_executor.TERMINAL_STATES:
         raise CleanroomException(409, "JOB_ALREADY_TERMINAL", "任务已处于终态")
     target = str(task.get("target") or "local_comfy")
@@ -1433,7 +1606,7 @@ def list_documents(authorization: Optional[str] = Header(None), x_user_role: str
 def get_document(workflow_id: str, authorization: Optional[str] = Header(None), x_user_role: str = Header("editor", alias="X-User-Role")):
     context = _auth(authorization, x_user_role, False)
     with _STORAGE_LOCK:
-        item = _load(_path(context, workflow_id))
+        _path_for_read, item = _resolve_workflow(context, workflow_id, write=False)
     wf_data = dict(item)
     wf_data["actuator_params"] = _promoted_params(wf_data)
     return {"workflow_id": workflow_id, "workflow": wf_data, "document": _summary(item, workflow_id)["document"],
@@ -1442,13 +1615,22 @@ def get_document(workflow_id: str, authorization: Optional[str] = Header(None), 
 
 
 async def _update_document(workflow_id: str, request: Request, authorization: Optional[str], x_user_role: str,
-                           *, native_sync: bool = False, schemas: Optional[dict] = None, host_prompt=None, host_fields=None):
-    context = _auth(authorization, x_user_role, True)
+                           *, native_sync: bool = False, schemas: Optional[dict] = None, host_prompt=None,
+                           host_fields=None, allow_stale_source_repair: bool = False):
+    context = _workflow_write_auth(authorization, x_user_role)
     body = await _json_body(request)
     if not isinstance(body, dict):
         raise CleanroomException(400, "INVALID_REQUEST", "请求体必须是 JSON 对象")
+    # 权限门禁必须先于 expected_version，避免隐藏资源泄露版本信息。
+    readonly_source_repair = False
+    try:
+        path, _ = _resolve_workflow(context, workflow_id, write=True)
+    except CleanroomException as exc:
+        if not (allow_stale_source_repair and exc.status_code == 403 and exc.code == "PROJECT_READ_ONLY"):
+            raise
+        path, _ = _resolve_workflow(context, workflow_id, write=False)
+        readonly_source_repair = True
     with _STORAGE_LOCK:
-        path = _path(context, workflow_id)
         current = _load(path)
         expected = body.pop("expected_version", request.query_params.get("expected_version"))
         expected = _expected_version(expected)
@@ -1474,11 +1656,11 @@ async def _update_document(workflow_id: str, request: Request, authorization: Op
                 stored['metadata']['needs_host_resolution'] = False
         stored.update({"workflow_id": workflow_id, "version": current_version + 1,
                        "folder_id": body.get("folder_id", current.get("folder_id"))})
-        stored["asset_id"] = asset_hub_bridge._workflow_asset_id(context, workflow_id)
+        stored["asset_id"] = current.get("asset_id") or asset_hub_bridge._workflow_asset_id(context, workflow_id)
         explicit_source = "source_context" in body
         raw_source = body.get("source_context") if explicit_source else stored.get("metadata", {}).get("source_context", {})
         try:
-            source_context = _source_context(context, raw_source)
+            source_context = {} if readonly_source_repair and not explicit_source else _source_context(context, raw_source)
         except CleanroomException as exc:
             # 显式来源无法访问仍按原错误拒绝；继承自文档元数据的旧来源只是陈旧数据，
             # 死链只做自愈清理不阻断参数保存等常规写入；execute 的显式来源 ACL 不变。
@@ -1514,12 +1696,12 @@ async def patch_document(workflow_id: str, request: Request, authorization: Opti
 @router.delete("/documents/{workflow_id}")
 @router.delete("/item/{workflow_id}")
 async def delete_document(workflow_id: str, request: Request, authorization: Optional[str] = Header(None), x_user_role: str = Header("editor", alias="X-User-Role")):
-    context = _auth(authorization, x_user_role, True)
+    context = _workflow_write_auth(authorization, x_user_role)
     body = await _json_body(request)
     if not isinstance(body, dict):
         raise CleanroomException(400, "INVALID_REQUEST", "请求体必须是 JSON 对象")
+    path, _ = _resolve_workflow(context, workflow_id, write=True)
     with _STORAGE_LOCK:
-        path = _path(context, workflow_id)
         current = _load(path)
         expected = body.get("expected_version", request.query_params.get("expected_version"))
         expected = _expected_version(expected)
@@ -1530,18 +1712,18 @@ async def delete_document(workflow_id: str, request: Request, authorization: Opt
         if removed.get("error"):
             raise CleanroomException(503, removed["error"], "资产投影清理未完成，文档保留，可重试删除")
         path.unlink()
-        shutil.rmtree(_workflow_versions_root(context, workflow_id), ignore_errors=True)
+        shutil.rmtree(_workflow_versions_root(context, workflow_id, document_path=path), ignore_errors=True)
     return {"workflow_id": workflow_id, "deleted": True, "data_status": "ok", "data_gaps": []}
 
 
 @router.post("/documents/{workflow_id}/rename")
 async def rename_document(workflow_id: str, request: Request, authorization: Optional[str] = Header(None), x_user_role: str = Header("editor", alias="X-User-Role")):
-    context = _auth(authorization, x_user_role, True)
+    context = _workflow_write_auth(authorization, x_user_role)
     body = await _json_body(request)
     if not isinstance(body, dict):
         raise CleanroomException(400, "INVALID_REQUEST", "请求体必须是 JSON 对象")
+    path, _ = _resolve_workflow(context, workflow_id, write=True)
     with _STORAGE_LOCK:
-        path = _path(context, workflow_id)
         current = _load(path)
         expected = body.get("expected_version", request.query_params.get("expected_version"))
         expected = _expected_version(expected)
@@ -1556,9 +1738,10 @@ async def rename_document(workflow_id: str, request: Request, authorization: Opt
             "document": _summary(current, workflow_id)["document"], **asset_hub_bridge.registration_health(registration)}
 
 
-def _workflow_versions_root(context: AuthContext, workflow_id: str) -> Path:
+def _workflow_versions_root(context: AuthContext, workflow_id: str, *, document_path: Optional[Path] = None) -> Path:
     """历史版本目录：与文档同主体隔离；子目录不参与文档枚举（仅遍历顶层 *.json）。"""
-    return _principal_root(context) / "workflow_versions" / _path(context, workflow_id).stem
+    base = document_path.parent if document_path is not None else _principal_root(context)
+    return base / "workflow_versions" / _workflow_filename(workflow_id).removesuffix(".json")
 
 
 def _merge_user_node_data(nodes: Any, previous_nodes: Any) -> None:
@@ -1649,12 +1832,12 @@ async def reparse_document(workflow_id: str, request: Request, authorization: Op
     无法重新解析时返回明确错误码且不修改任何数据。原版本先落入历史目录
     再写新版本，因此中断后原数据仍完整可读回。
     """
-    context = _auth(authorization, x_user_role, True)
+    context = _workflow_write_auth(authorization, x_user_role)
     body = await _json_body(request, allow_empty=True)
     body = body if isinstance(body, dict) else {}
     expected = _expected_version(body.get("expected_version", request.query_params.get("expected_version")))
+    path, _ = _resolve_workflow(context, workflow_id, write=True)
     with _STORAGE_LOCK:
-        path = _path(context, workflow_id)
         current = _load(path)
         current_version = int(current.get("version", 1))
         if expected != current_version:
@@ -1687,8 +1870,8 @@ async def reparse_document(workflow_id: str, request: Request, authorization: Op
         if _positions_all_at_origin(stored.get("nodes")):
             _assign_layout_positions(stored["nodes"], stored.get("connections"))
         stored.update({"workflow_id": workflow_id, "version": current_version + 1,
-                       "asset_id": asset_hub_bridge._workflow_asset_id(context, workflow_id)})
-        _atomic_write(_workflow_versions_root(context, workflow_id) / f"{current_version}.json", deepcopy(current))
+                       "asset_id": current.get("asset_id") or asset_hub_bridge._workflow_asset_id(context, workflow_id)})
+        _atomic_write(_workflow_versions_root(context, workflow_id, document_path=path) / f"{current_version}.json", deepcopy(current))
         _atomic_write(path, stored)
     registration = asset_hub_bridge.register_workflow_to_asset_hub(workflow_id, stored.get("name", "workflow"), document=stored, context=context)
     return {"workflow_id": workflow_id, "version": stored["version"], "workflow": stored,
@@ -1701,9 +1884,10 @@ async def reparse_document(workflow_id: str, request: Request, authorization: Op
 def list_workflow_versions(workflow_id: str, authorization: Optional[str] = Header(None), x_user_role: str = Header("editor", alias="X-User-Role")):
     """列出经 reparse 保留的历史版本（新版本在前）。"""
     context = _auth(authorization, x_user_role, False)
-    versions_root = _workflow_versions_root(context, workflow_id)
+    document_path, _ = _resolve_workflow(context, workflow_id, write=False)
+    versions_root = _workflow_versions_root(context, workflow_id, document_path=document_path)
     # 与 _load 的缺失文档语义一致：主文档与历史目录都不存在就是未找到，而非空列表。
-    if not _path(context, workflow_id).is_file() and not any(versions_root.glob("*.json")):
+    if not document_path.is_file() and not any(versions_root.glob("*.json")):
         raise CleanroomException(404, "WORKFLOW_NOT_FOUND", "工作流不存在")
     versions = []
     for path in versions_root.glob("*.json"):
@@ -1719,7 +1903,8 @@ def get_workflow_version(workflow_id: str, version: str, authorization: Optional
     """读回指定历史版本的完整原文档。"""
     context = _auth(authorization, x_user_role, False)
     parsed_version = _expected_version(version)
-    path = _workflow_versions_root(context, workflow_id) / f"{parsed_version}.json"
+    document_path, _ = _resolve_workflow(context, workflow_id, write=False)
+    path = _workflow_versions_root(context, workflow_id, document_path=document_path) / f"{parsed_version}.json"
     if not path.is_file():
         raise CleanroomException(404, "WORKFLOW_VERSION_NOT_FOUND", "该历史版本不存在") from None
     document = _load(path)
@@ -1740,7 +1925,8 @@ def diagnostics(authorization: Optional[str] = Header(None), x_user_role: str = 
 
 @router.post("/asset-hub/reconcile")
 def reconcile_asset_hub(authorization: Optional[str] = Header(None), x_user_role: str = Header("editor", alias="X-User-Role")):
-    context = _auth(authorization, x_user_role, True)
+    context = _workflow_write_auth(authorization, x_user_role)
+    _authorize_workflow_bridge(context)
     return asset_hub_bridge.reconcile_pending(context)
 
 
@@ -1869,7 +2055,7 @@ async def open_in_comfy(request: Request, workflow_id: Optional[str] = None, aut
 
     document = None
     if workflow_id:
-        document = get_document(workflow_id, authorization, x_user_role)["workflow"]
+        _workflow_path, document = _resolve_workflow(context, workflow_id, write=True)
 
     settings = registry.read_settings(context)
     comfy_url = _comfy_endpoint(context).base_url
@@ -2002,7 +2188,7 @@ async def comfy_bridge_sync_saved(request: Request, authorization: Optional[str]
     if not isinstance(workflow_id, str) or not isinstance(raw_workflow, dict):
         raise CleanroomException(400, "INVALID_REQUEST", "缺少 workflow_id 或 workflow 数据")
 
-    current = get_document(workflow_id, authorization, x_user_role)["workflow"]
+    _workflow_path, current = _resolve_workflow(context, workflow_id, write=True)
     expected = _expected_version(body.get("expected_version"))
     if expected != int(current.get("version", 1)):
         raise VersionConflictException(expected, int(current.get("version", 1)))
@@ -2407,7 +2593,10 @@ async def mature_params(workflow_id: str, request: Request, authorization: Optio
             raise CleanroomException(400, "INVALID_REQUEST", "节点或位置无效")
         node["position"] = {**node.get("position", {}), "x": update["x"], "y": update["y"]}
     request._body = json.dumps({"workflow": current, "expected_version": body.get("expected_version"), "source": current.get("source", "canvas")}).encode()
-    res = await _update_document(workflow_id, request, authorization, x_user_role)
+    res = await _update_document(
+        workflow_id, request, authorization, x_user_role,
+        allow_stale_source_repair=True,
+    )
     wf_data = dict(res["workflow"])
     wf_data["actuator_params"] = _promoted_params(wf_data)
     return wf_data
@@ -2528,8 +2717,8 @@ async def resolve_workflow_definitions(workflow_id: str, request: Request,
     context = _auth(authorization, x_user_role, True)
     body = await _json_body(request)
     expected = _expected_version(body.get('expected_version') if isinstance(body, dict) else None)
+    path, _ = _resolve_workflow(context, workflow_id, write=True)
     with _STORAGE_LOCK:
-        path = _path(context, workflow_id)
         current = deepcopy(_load(path))
         if current.get('version') != expected:
             raise VersionConflictException(expected, current.get('version'))
@@ -2654,8 +2843,8 @@ async def mature_auto_layout(workflow_id: str, request: Request,
     context = _auth(authorization, x_user_role, True)
     body = await _json_body(request, allow_empty=True)
     expected = body.get("expected_version", request.query_params.get("expected_version")) if isinstance(body, dict) else None
+    path, _ = _resolve_workflow(context, workflow_id, write=True)
     with _STORAGE_LOCK:
-        path = _path(context, workflow_id)
         current = _load(path)
         current_version = int(current.get("version", 1))
         expected = _expected_version(expected)
@@ -2682,7 +2871,7 @@ async def mature_auto_layout(workflow_id: str, request: Request,
             position["y"] = coordinates[1]
             node["position"] = position
         current["version"] = current_version + 1
-        current["asset_id"] = asset_hub_bridge._workflow_asset_id(context, workflow_id)
+        current["asset_id"] = current.get("asset_id") or asset_hub_bridge._workflow_asset_id(context, workflow_id)
         _atomic_write(path, current)
     registration = asset_hub_bridge.register_workflow_to_asset_hub(workflow_id, current.get("name"), document=current, context=context)
     return {"workflow_id": workflow_id, "version": current["version"], "workflow": current,
