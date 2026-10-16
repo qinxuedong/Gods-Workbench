@@ -83,33 +83,47 @@ def _make_legacy(project_id: str) -> None:
         service._commit_state(root, state)
 
 
+def _revision() -> int:
+    service = routes_projects.default_projects_service
+    with service._operation() as (_, state, __):
+        return int(state.get("revision") or 1)
+
+
 def test_revoked_reader_patch_is_hidden_and_does_not_mutate(client: TestClient):
     project_id = _create_project(client)
     _grant(client, project_id, OTHER_TOKEN)
     _revoke(client, project_id, OTHER_TOKEN)
+
+    rev_before = _revision()
+    audit_len_before = len(_audit())
 
     denied = _patch(client, project_id, OTHER, "不应写入")
 
     assert denied.status_code == 404, denied.text
     assert denied.json()["detail"]["code"] == "PROJECT_NOT_FOUND"
     assert _project(client, project_id)["name"] == "C4-L3 项目"
-    entry = _audit()[-1]
-    assert entry["event"] == "project.write_denied"
-    assert entry["actor"] == _owner_key(OTHER_TOKEN)[:12]
-    assert OTHER_TOKEN not in str(entry)
-    assert _subject(OTHER_TOKEN) not in str(entry)
+    # QIN-165 / C6-AC7: 写拒绝不复制或持久化 state，无副作用
+    assert _revision() == rev_before
+    assert len(_audit()) == audit_len_before
+    assert "project.write_denied" not in [e["event"] for e in _audit()]
 
 
 def test_reader_without_write_access_is_hidden(client: TestClient):
     project_id = _create_project(client)
     _grant(client, project_id, OTHER_TOKEN)
 
+    rev_before = _revision()
+    audit_len_before = len(_audit())
+
     denied = _patch(client, project_id, OTHER, "读者不应写入")
 
     assert denied.status_code == 404, denied.text
     assert denied.json()["detail"]["code"] == "PROJECT_NOT_FOUND"
     assert _project(client, project_id)["name"] == "C4-L3 项目"
-    assert _audit()[-1]["event"] == "project.write_denied"
+    # QIN-165 / C6-AC7: 写拒绝不复制或持久化 state，无副作用
+    assert _revision() == rev_before
+    assert len(_audit()) == audit_len_before
+    assert "project.write_denied" not in [e["event"] for e in _audit()]
 
 
 def test_owner_and_admin_can_patch_project(client: TestClient):

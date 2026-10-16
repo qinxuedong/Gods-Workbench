@@ -52,7 +52,6 @@ _READ_AUDIT_EVENTS = frozenset({
     "project.read_granted",
     "project.read_revoked",
     "project.read_mode_explicit",
-    "project.write_denied",
 })
 _READ_AUDIT_CAP = 1000
 _READ_KEY_PREFIX = re.compile(r"^[0-9a-f]{12}$")
@@ -508,20 +507,17 @@ class ProjectsService:
             return ProjectItem.model_validate(raw)
 
     def require_project_write_access(self, project_id: str, *, owner_key: Optional[str], role: str) -> ProjectItem:
-        """校验项目写权限；非项目写者统一隐藏项目存在性。"""
-        with self._operation() as (root, state, __):
+        """校验项目写权限；非项目写者统一隐藏项目存在性。写拒绝路径无副作用且不复制或持久化 state。"""
+        with self._operation() as (_, state, __):
             raw = state["projects"].get(project_id)
             if raw is None:
                 raise CleanroomException(404, "PROJECT_NOT_FOUND", "项目不存在")
             item = ProjectItem.model_validate(raw)
             if not self._read_decision(state, project_id, owner_key, role):
-                self._record_write_denial(root, state, project_id, owner_key)
                 raise CleanroomException(404, "PROJECT_NOT_FOUND", "项目不存在")
             if not self._validate_owner_access(state, project_id, owner_key, role):
-                self._record_write_denial(root, state, project_id, owner_key)
                 raise CleanroomException(404, "PROJECT_NOT_FOUND", "项目不存在")
             if item.archived_at is not None or item.deleted_at is not None:
-                self._record_write_denial(root, state, project_id, owner_key)
                 raise CleanroomException(403, "PROJECT_READ_ONLY", "归档或回收站项目为只读状态")
             return item
 
@@ -532,21 +528,6 @@ class ProjectsService:
             if gate is None:
                 raise CleanroomException(404, "PROJECT_GATE_NOT_FOUND", "项目门不存在")
             return str(gate["project_id"])
-
-    def _record_write_denial(
-        self,
-        root: Optional[Path],
-        state: Dict[str, Any],
-        project_id: str,
-        actor_owner_key: Optional[str],
-    ) -> None:
-        """记录项目写入拒绝，审计主体仅保留 12 位前缀。"""
-        if not actor_owner_key:
-            return
-        next_state = copy.deepcopy(state)
-        self._append_read_audit(next_state, "project.write_denied", project_id, actor_owner_key, None)
-        next_state["revision"] = int(next_state.get("revision") or 1) + 1
-        self._commit_state(root, next_state)
 
     # ---------------------------------------------------------------------------
     # C4-AC7/AC8 显式读授权（owner 决定模型）
