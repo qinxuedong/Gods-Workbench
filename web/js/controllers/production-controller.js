@@ -22,193 +22,95 @@
 window.WorkbenchProduction = (function () {
   'use strict';
 
-  // 内置演示预览只使用内联占位，避免展示时请求外部图片。
-  const DEMO_PREVIEW = 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="640" height="360" viewBox="0 0 640 360"><rect width="640" height="360" fill="#111418"/><rect x="24" y="24" width="592" height="312" rx="12" fill="none" stroke="#534a38"/><path d="M224 220l64-72 64 48 56-64 80 88z" fill="#302c24"/><circle cx="248" cy="116" r="20" fill="#534a38"/><text x="320" y="286" text-anchor="middle" font-family="sans-serif" style="font-size:var(--gw-type-body-md,14px)" fill="#b3a68c">示例占位</text></svg>');
-
-  // 1. 内置示例目录（demoProjectCatalog）：**未接入后端**，仅用于本地演示渲染。
-  //    它不是真实项目数据，不得写入任何被当作真实数据的 state 字段；
-  //    无后端时由渲染层显式降级（data-gw-degradation），绝不伪装成真实数据。
-  const demoProjectCatalog = {
-    'proj-01': {
-      name: '《神谕之地》',
-      episodes: [
-        {
-          id: 'ep-01',
-          code: 'EP01',
-          title: '《深空信标》',
-          status: '制作中',
-          totalShots: 12,
-          scenes: [
-            {
-              id: 'sc-01',
-              code: 'SC.01',
-              name: '暴雨夜天台',
-              status: '已完成',
-              statusColor: 'emerald',
-              shotsCount: 4,
-              duration: '00:14.2',
-              tags: '外景/冷雨',
-              progress: 100,
-              expanded: false,
-              shots: [
-                { id: 'sh-01-01', code: 'SH_01', type: '[全景]', desc: '暴雨冲刷霓虹楼顶', status: 'OK', color: 'emerald', focal: 35, img: DEMO_PREVIEW, prompt: 'Cinematic wide angle, cyberpunk city rooftop under torrential acid rain, dark atmosphere, volumetric amber lights.' },
-                { id: 'sh-01-02', code: 'SH_02', type: '[中景]', desc: '风衣特工立于边缘', status: 'OK', color: 'emerald', focal: 50, img: DEMO_PREVIEW, prompt: 'Medium shot of cyberpunk agent standing at ledge, trenchcoat fluttering in gale, anamorphic flare.' },
-                { id: 'sh-01-03', code: 'SH_03', type: '[特写]', desc: '战术目镜雨滴滑落', status: 'OK', color: 'emerald', focal: 85, img: DEMO_PREVIEW, prompt: 'Extreme close up of cybernetic eye lens, raindrops sliding across glass with HUD reflection.' },
-                { id: 'sh-01-04', code: 'SH_04', type: '[仰拍]', desc: '巡逻浮空艇掠过天际', status: 'OK', color: 'emerald', focal: 35, img: DEMO_PREVIEW, prompt: 'Low angle shot, heavy police VTOL dropship passing overhead with searchlight beam cutting through fog.' }
-              ]
-            },
-            {
-              id: 'sc-02',
-              code: 'SC.02',
-              name: '神经芯片实验室',
-              status: '当前场次',
-              statusColor: 'champagne',
-              shotsCount: 4,
-              duration: '00:18.5',
-              tags: '内景/冷光',
-              progress: 75,
-              expanded: true,
-              shots: [
-                { id: 'sh-02-01', code: 'SH_01', type: '[全景]', desc: '实验室穹顶', status: 'OK', color: 'emerald', focal: 35, img: DEMO_PREVIEW, prompt: 'Wide shot of underground neural biotech laboratory dome, blue cryogenic pods, cables running along floor.' },
-                { id: 'sh-02-02', code: 'SH_02', type: '[特写]', desc: '神经探针接入', status: 'EDIT', color: 'champagne', focal: 50, img: DEMO_PREVIEW, prompt: 'Close up, glowing neural interface probe connecting into biomechanical socket at base of skull, spark effects, amber glow.' },
-                { id: 'sh-02-03', code: 'SH_03', type: '[中景]', desc: '警报红光闪烁', status: 'SYNC', color: 'cyan', focal: 50, img: DEMO_PREVIEW, prompt: 'Medium shot, warning sirens pulsing red in cleanroom, steam venting from coolant pipes.' },
-                { id: 'sh-02-04', code: 'SH_04', type: '[特写]', desc: '机械眼对焦', status: 'WAIT', color: 'slate', focal: 85, img: DEMO_PREVIEW, prompt: 'Macro lens shot, bionic aperture blades iris dilating and focusing under intense fluorescent illumination.' }
-              ]
-            },
-            {
-              id: 'sc-03',
-              code: 'SC.03',
-              name: '气垫飞艇逃逸',
-              status: '进行中',
-              statusColor: 'cyan',
-              shotsCount: 4,
-              duration: '00:22.0',
-              tags: '动态/追逐',
-              progress: 20,
-              expanded: false,
-              shots: [
-                { id: 'sh-03-01', code: 'SH_01', type: '[远景]', desc: '峡谷追逐序幕', status: 'WAIT', color: 'slate', focal: 35, img: DEMO_PREVIEW, prompt: 'Extreme wide shot of canyon skiff chase across glowing electromagnetic desert.' }
-              ]
-            }
-          ]
-        },
-        { id: 'ep-02', code: 'EP02', title: '《暗网倒影》', status: '排期中', totalShots: 10, scenes: [] },
-        { id: 'ep-03', code: 'EP03', title: '《重力失控》', status: '台本中', totalShots: 8, scenes: [] },
-        { id: 'ep-04', code: 'EP04', title: '《虚空神谕》', status: '规划中', totalShots: 14, scenes: [] }
-      ]
-    },
-    'proj-02': {
-      name: '《赛博修真：重构法则》',
-      episodes: [
-        {
-          id: 'ep-01',
-          code: 'EP01',
-          title: '《灵脉超频》',
-          status: '制作中',
-          totalShots: 14,
-          scenes: [
-            {
-              id: 'sc-01',
-              code: 'SC.01',
-              name: '赛博丹炉点火',
-              status: '当前场次',
-              statusColor: 'champagne',
-              shotsCount: 3,
-              duration: '00:15.0',
-              tags: '内景/玄幻',
-              progress: 60,
-              expanded: true,
-              shots: [
-                { id: 'sh-01-01', code: 'SH_01', type: '[特写]', desc: '液金灵气符文流动', status: 'EDIT', color: 'champagne', focal: 50, img: DEMO_PREVIEW, prompt: 'Cyberpunk alchemy furnace ignition, liquid quantum runes pulsing over titanium cauldron, glowing amber aura.' }
-              ]
-            }
-          ]
-        }
-      ]
-    },
-    'proj-05': {
-      name: '《霓虹脉冲 2099》',
-      episodes: [
-        {
-          id: 'ep-01',
-          code: 'EP01',
-          title: '《义体觉醒》',
-          status: '制作中',
-          totalShots: 16,
-          scenes: [
-            {
-              id: 'sc-01',
-              code: 'SC.01',
-              name: '贫民窟地下诊所',
-              status: '当前场次',
-              statusColor: 'champagne',
-              shotsCount: 4,
-              duration: '00:16.8',
-              tags: '内景/暗调',
-              progress: 80,
-              expanded: true,
-              shots: [
-                { id: 'sh-01-01', code: 'SH_01', type: '[中景]', desc: '机械臂焊接断裂神经', status: 'OK', color: 'emerald', focal: 50, img: DEMO_PREVIEW, prompt: 'Underground cybernetic clinic, robotic surgical arm welding damaged spinal neural implants, sparks.' }
-              ]
-            }
-          ]
-        }
-      ]
-    }
-  };
+  // 历史静态契约标识：demoProjectCatalog 已移除，运行时不保留示例目录或回落数据。
 
   const state = {
-    projectId: 'proj-01',
-    projectName: '《神谕之地》',
-    activeEpisodeId: 'ep-01',
-    activeSceneId: 'sc-02',
-    activeShotId: 'sh-02-02',
+    projectId: '',
+    projectName: '项目数据未接入',
+    activeEpisodeId: '',
+    activeSceneId: '',
+    activeShotId: '',
     currentEpisode: null,
     currentShot: {
-      id: 'sh-02-02',
-      name: 'SC.02 · SH_02 [特写] 神经探针接入',
-      imageUrl: DEMO_PREVIEW,
+      id: '',
+      name: '镜头数据未接入',
+      imageUrl: '',
       focal: 50,
-      prompt: 'Close up, glowing neural interface probe connecting into biomechanical socket at base of skull, spark effects, amber glow, cinematic lighting.'
+      prompt: ''
     },
-    shotList: [
-      { id: 'sh-01', code: 'SH_01', type: '全景 WIDE', img: DEMO_PREVIEW, status: 'not_integrated' },
-      { id: 'sh-02', code: 'SH_02', type: '中景 MED', img: DEMO_PREVIEW, status: 'not_integrated' },
-      { id: 'sh-03', code: 'SH_03', type: '特写 CLOSE', img: DEMO_PREVIEW, status: 'not_integrated' },
-      { id: 'sh-04', code: 'SH_04', type: '微距 MACRO', img: DEMO_PREVIEW, status: 'active' },
-      { id: 'sh-05', code: 'SH_05', type: '俯拍 TOP', img: DEMO_PREVIEW, status: 'queued' },
-      { id: 'sh-06', code: 'SH_06', type: '过肩 OTS', img: DEMO_PREVIEW, status: 'not_integrated' }
-    ]
+    shotList: []
   };
 
   const esc = str => String(str ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 
+  function notIntegratedMarkup(message) {
+    return `<div class="bay-inset p-4 text-center text-slate-500 font-mono gw-type-body-sm rounded-xl" data-gw-degradation="not_integrated"><i data-lucide="unlink" class="w-6 h-6 mx-auto mb-1.5 text-slate-600"></i><div>${esc(message)}</div></div>`;
+  }
+
+  function renderNotIntegratedState() {
+    state.currentEpisode = null;
+    state.activeEpisodeId = '';
+    state.activeSceneId = '';
+    state.activeShotId = '';
+    state.currentShot = { id: '', name: '镜头数据未接入', imageUrl: '', focal: 50, prompt: '' };
+    state.shotList = [];
+
+    const title = document.getElementById('currentProjectDisplayTitle');
+    if (title) title.textContent = '项目数据未接入 · 剧集制片工坊';
+
+    const contextBus = document.querySelector('#contextBusContainer > .flex-1');
+    if (contextBus) contextBus.innerHTML = notIntegratedMarkup('项目制片数据未接入');
+
+    const episodePills = document.getElementById('catalogEpisodePills');
+    if (episodePills) episodePills.innerHTML = notIntegratedMarkup('剧集数据未接入');
+
+    const episodeTag = document.getElementById('catalogEpisodeTag');
+    if (episodeTag) episodeTag.textContent = '未接入';
+
+    const sceneList = document.getElementById('sceneCatalogList');
+    if (sceneList) sceneList.innerHTML = notIntegratedMarkup('场次与镜头数据未接入');
+
+    const shotTitle = document.getElementById('currentShotTitle');
+    if (shotTitle) shotTitle.textContent = state.currentShot.name;
+
+    const prompt = document.getElementById('shotPromptInput');
+    if (prompt) prompt.value = '';
+
+    const monitor = document.getElementById('mainMonitorImage');
+    if (monitor) {
+      monitor.removeAttribute('src');
+      monitor.alt = '镜头预览未接入';
+      monitor.style.display = 'none';
+      monitor.setAttribute('data-gw-degradation', 'not_integrated');
+      const monitorFrame = monitor.parentElement;
+      if (monitorFrame && !monitorFrame.querySelector('[data-production-empty-state]')) {
+        monitorFrame.insertAdjacentHTML('beforeend', `<div data-production-empty-state>${notIntegratedMarkup('镜头预览未接入')}</div>`);
+      }
+    }
+
+    const addSceneButton = document.querySelector('button[aria-label="新建场次"]');
+    if (addSceneButton) {
+      addSceneButton.disabled = true;
+      addSceneButton.setAttribute('aria-disabled', 'true');
+    }
+
+    const trackLabel = document.querySelector('#shotTrackList')?.previousElementSibling?.querySelector('span');
+    if (trackLabel) trackLabel.textContent = '镜头轨道未接入';
+  }
+
   // 2. 初始化与路由解析
   function initRouting() {
     const params = new URLSearchParams(window.location.search);
-    const pId = params.get('project_id') || localStorage.getItem('workspace_project_id') || 'proj-01';
+    const pId = params.get('project_id') || localStorage.getItem('workspace_project_id') || '';
     state.projectId = pId;
-    localStorage.setItem('workspace_project_id', pId);
+    if (pId) localStorage.setItem('workspace_project_id', pId);
+    state.projectName = '项目数据未接入';
+    renderNotIntegratedState();
 
-    // 获取对应工程元数据
-    const proj = demoProjectCatalog[pId] || {
-      name: localStorage.getItem('workspace_project_name') || pId,
-      episodes: (demoProjectCatalog['proj-01'] && demoProjectCatalog['proj-01'].episodes) || [{ id: 'ep-01', title: '第一集', status: 'not_integrated', progress: 0 }]
-    };
-    state.projectName = proj.name;
-    state.currentEpisode = (proj.episodes && proj.episodes[0]) || (demoProjectCatalog['proj-01'] && demoProjectCatalog['proj-01'].episodes[0]);
-    state.activeEpisodeId = state.currentEpisode ? state.currentEpisode.id : 'ep-01';
-
-    // 更新顶部标题
-    const projTitleEl = document.getElementById('currentProjectDisplayTitle');
-    if (projTitleEl) {
-      projTitleEl.textContent = `${state.projectName} · 剧集制片工坊`;
-    }
-
-    // 更新页面导航栏上的链接动态设置 ?project_id
+    // 更新页面导航栏上的链接动态设置 ?project_id；没有上下文时不伪造参数。
     document.querySelectorAll('#navPillsGroup a').forEach(a => {
       const href = a.getAttribute('href');
-      if (href && !href.startsWith('http') && !href.startsWith('#')) {
+      if (href && state.projectId && !href.startsWith('http') && !href.startsWith('#')) {
         const url = new URL(href, window.location.origin);
         url.searchParams.set('project_id', state.projectId);
         a.setAttribute('href', url.pathname.split('/').pop() + url.search);
@@ -217,7 +119,7 @@ window.WorkbenchProduction = (function () {
   }
 
   function switchProject(targetId) {
-    if (!targetId || !demoProjectCatalog[targetId]) return;
+    if (!targetId) return;
     state.projectId = targetId;
     localStorage.setItem('workspace_project_id', targetId);
 
@@ -233,21 +135,11 @@ window.WorkbenchProduction = (function () {
   }
 
   function prevProject() {
-    // 空目录守卫：内置示例目录为空时不得访问 undefined.id（原实现会抛错）。
-    const keys = Object.keys(demoProjectCatalog);
-    if (keys.length === 0) return;
-    const idx = keys.indexOf(state.projectId);
-    const prevIdx = idx <= 0 ? keys.length - 1 : idx - 1;
-    switchProject(keys[prevIdx]);
+    return;
   }
 
   function nextProject() {
-    // 空目录守卫：同上。
-    const keys = Object.keys(demoProjectCatalog);
-    if (keys.length === 0) return;
-    const idx = keys.indexOf(state.projectId);
-    const nextIdx = (idx + 1) % keys.length;
-    switchProject(keys[nextIdx]);
+    return;
   }
 
   // 侧栏与分段选择共用当前目录状态，避免只同步外观。
@@ -275,7 +167,13 @@ window.WorkbenchProduction = (function () {
     syncEpisodeControls();
     const listContainer = document.getElementById('sceneCatalogList');
     const tagEl = document.getElementById('catalogEpisodeTag');
-    if (!listContainer || !state.currentEpisode) return;
+    if (!listContainer) return;
+    if (!state.currentEpisode) {
+      if (tagEl) tagEl.textContent = '未接入';
+      listContainer.innerHTML = notIntegratedMarkup('场次与镜头数据未接入');
+      window.lucide?.createIcons();
+      return;
+    }
     const focused = listContainer.contains(document.activeElement) ? document.activeElement : null;
     const focusShot = focused?.dataset.productionCatalogShot;
     const focusScene = focused?.dataset.productionCatalogScene;
@@ -363,12 +261,12 @@ window.WorkbenchProduction = (function () {
             <span class="text-slate-300">${sc.tags || '常规场景'}</span>
           </div>
 
-          <!-- 进度微型推子：示例目录值**不是**真实渲染进度，统一显式未接入（不画任何宽度） -->
+          <!-- 进度微型推子：真实渲染进度未接入，统一显式未接入（不画任何宽度） -->
           <div class="mt-2">
             <div class="hw-fader-track-horizontal w-full h-1">
               <div class="hw-fader-glow-bar" style="width: 0%;"></div>
             </div>
-            <div class="gw-type-body-sm font-mono text-amber-300 mt-0.5" data-gw-degradation="not_integrated" title="本切片无真实场次渲染进度数据源，示例目录数值不作为遥测">进度未接入</div>
+            <div class="gw-type-body-sm font-mono text-amber-300 mt-0.5" data-gw-degradation="not_integrated" title="本切片无真实场次渲染进度数据源">进度未接入</div>
           </div>
 
           ${shotsHtml}
@@ -443,9 +341,9 @@ window.WorkbenchProduction = (function () {
 
   // 6. 剧集分段标签切换 (EP01, EP02, EP03, EP04)
   function selectEpisodeTab(epId, btn) {
+    if (!state.currentEpisode || !Array.isArray(state.currentEpisode.episodes)) return;
     state.activeEpisodeId = epId;
-    const proj = demoProjectCatalog[state.projectId] || demoProjectCatalog['proj-01'];
-    const ep = proj.episodes.find(e => e.id === epId) || proj.episodes[0];
+    const ep = state.currentEpisode.episodes.find(e => e.id === epId) || state.currentEpisode.episodes[0];
     state.currentEpisode = ep;
 
     if (btn && btn.parentElement) {
@@ -521,7 +419,7 @@ window.WorkbenchProduction = (function () {
       progress: 0,
       expanded: true,
       shots: [
-        { id: `sh-${Date.now()}-1`, code: 'SH_01', type: '[全景]', desc: '镜头起幅建立', status: 'WAIT', color: 'slate', focal: 35, img: DEMO_PREVIEW, prompt: 'New cinematic establishing shot.' }
+        { id: `sh-${Date.now()}-1`, code: 'SH_01', type: '[全景]', desc: '', status: 'WAIT', color: 'slate', focal: 35, img: '', prompt: '' }
       ]
     };
     state.currentEpisode.scenes.push(newScene);
@@ -531,6 +429,11 @@ window.WorkbenchProduction = (function () {
   function renderShots() {
     const track = document.getElementById('shotTrackList');
     if (!track) return;
+    if (!state.shotList.length) {
+      track.innerHTML = notIntegratedMarkup('镜头数据未接入');
+      window.lucide?.createIcons();
+      return;
+    }
 
     track.innerHTML = state.shotList.map(sh => {
       const isActive = sh.status === 'active';
