@@ -1230,12 +1230,14 @@ async function handleParseLink(rawLink) {
   }
 
   try {
+    const sourceContext = executionSourceContext();
     const wf = await apiFetch("/api/god_workflow/parse-link", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         url_or_text: text,
         folder_id: state.activeFolderId || "parsed_default",
+        source_context: sourceContext,
       }),
     });
     if (principalKey !== state.authPrincipalKey || !window.GWAuthGate?.isAuthenticated()) return;
@@ -1278,6 +1280,8 @@ async function handleUploadFile(file) {
   formData.append("folder_id", state.activeFolderId || "parsed_default");
 
   try {
+    const sourceContext = executionSourceContext();
+    formData.append("source_context", JSON.stringify(sourceContext));
     showToast(`正在解析本地文件 ${file.name}...`);
     const wf = await apiFetch("/api/god_workflow/parse-upload", {
       method: "POST",
@@ -3431,10 +3435,17 @@ function setExecutionTarget(target) {
   }
 }
 
-function executionSourceContext(wf) {
+function requireProjectContext(wf) {
   const parameters = new URLSearchParams(window.location.search);
-  const project_id = parameters.get('project_id');
-  const canvas_id = parameters.get('canvas_id');
+  const project_id = String(parameters.get('project_id') || '').trim();
+  const canvas_id = String(parameters.get('canvas_id') || '').trim();
+  if (canvas_id && !project_id) {
+    const error = new Error('工作流来源缺少项目上下文');
+    error.status = 400;
+    error.code = 'PROJECT_CONTEXT_REQUIRED';
+    error.detail = {code: error.code, message: error.message};
+    throw error;
+  }
   // 执行来源只信宿主 URL；文档元数据里的旧来源已失效，不作为执行依据。
   if (!project_id && !canvas_id) return {};
   const source = {};
@@ -3442,6 +3453,18 @@ function executionSourceContext(wf) {
     if (parameters.has(field)) source[field] = parameters.get(field);
   }
   return source;
+}
+
+function executionSourceContext(wf) {
+  return requireProjectContext(wf);
+}
+
+function workflowErrorNotice(error, title = '请求失败') {
+  const kind = window.GWDegradation?.statusKind?.(error?.status, error?.detail) || 'error';
+  const message = error?.message || '操作失败';
+  const notice = window.GWDegradation?.noticeHtml?.(kind, message)
+    || `<div role="status" data-gw-degradation="${kind}">${escapeHtml(message)}</div>`;
+  return `<div class="missing-item-card"><div style="color:var(--rose);font-weight:700;font-family:var(--gw-font-mono);font-variant-numeric:tabular-nums;" data-gw-degradation="${kind}">❌ ${escapeHtml(title)}</div><div style="color:var(--primary-soft);font-size:var(--gw-type-body-sm);margin-top:4px;">${escapeHtml(message)}</div>${notice}</div>`;
 }
 
 async function handleExecuteWorkflow() {
@@ -3498,12 +3521,7 @@ async function handleExecuteWorkflow() {
     state.submissionAttempt = null;
     startTaskPolling(state.activeTaskId, res.target);
   } catch (err) {
-    bodyEl.innerHTML = `
-      <div class="missing-item-card">
-        <div style="color:var(--rose);font-weight:700;font-family:var(--gw-font-mono);font-variant-numeric:tabular-nums;">❌ 任务提交失败</div>
-        <div style="color:var(--primary-soft);font-size:var(--gw-type-body-sm);margin-top:4px;">${escapeHtml(err.message)}</div>
-      </div>
-    `;
+    bodyEl.innerHTML = workflowErrorNotice(err, '任务提交失败');
   } finally {
     state.submitting = false;
     if (executeButton) { executeButton.disabled = false; executeButton.setAttribute?.("aria-busy", "false"); }

@@ -79,7 +79,14 @@ export function createCanvasListApi(http) {
             return request(canvasUrl(id), init);
         },
         createCanvas(payload, init = {}) {
-            const pid = String(payload?.project_id || payload?.project || '').trim() || 'default';
+            const pid = String(payload?.project_id || payload?.project || '').trim();
+            if(!pid){
+                return Promise.resolve({
+                    ok: false,
+                    status: 400,
+                    json: async () => ({detail:{code:'PROJECT_CONTEXT_REQUIRED', message:'创建画布需要项目上下文'}}),
+                });
+            }
             const rawTitle = String(payload?.title || '').trim();
             const body = {
                 project_id: pid,

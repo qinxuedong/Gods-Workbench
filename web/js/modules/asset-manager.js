@@ -348,7 +348,14 @@ let registryMasonryScheduleRevision = 0;
 let thumbnailGeneratorState = {open:false, loading:false, generating:false, deleting:false, deletingStoryboards:false, submittingBackground:false, backgroundTaskId:'', mode:'source', directory:'', cacheFolder:'god-cache', transcodeVideos:true, error:''};
 let thumbnailCacheVersion = 0; // 【修复问题1】仅作为无 asset_id 的旧版 URL 的会话级版本，任务完成不再全局变化
 let projects = [];
-let activeProjectId = '';
+function requestedRegistryProjectId(){
+    try {
+        return String(new URLSearchParams(window.location.search).get('project_id') || '').trim();
+    } catch(e){ return ''; }
+}
+const initialRegistryProjectId = requestedRegistryProjectId();
+let activeProjectId = initialRegistryProjectId;
+const explicitRegistryProjectContext = Boolean(initialRegistryProjectId);
 let projectBoard = null;
 let selectedProjectEntityId = '';
 let assetLibrary = {libraries:[], categories:[]};
@@ -564,7 +571,8 @@ function setStatus(text='准备就绪'){
         // 显式降级标记（用户 2026-09-21 裁决第 3 项）：未接入 / 暂不可用必须可被核验，
         // 不得静默。父页 /static/pages/assets.html 会读取该标记并同步展示。
         const kind = /未纳入当前切片/.test(currentStatusText) ? 'not_integrated'
-            : (/暂时不可用/.test(currentStatusText) ? 'service_unavailable' : '');
+            : (/暂时不可用/.test(currentStatusText) ? 'service_unavailable'
+                : (/项目不存在|无权访问|权限不足|只读/.test(currentStatusText) ? 'forbidden' : ''));
         if(kind) el.setAttribute('data-gw-degradation', kind);
         else el.removeAttribute('data-gw-degradation');
     }
@@ -4921,6 +4929,7 @@ function applyRegistryFilterDefinition(definition={}){
 }
 function registryQueryString({offset=0, limit=REGISTRY_PAGE_SIZE, cursor=''}={}){
     const params = new URLSearchParams({limit:String(limit), offset:String(Math.max(0, Number(offset) || 0)), sort:registrySort || 'newest', view:'card'});
+    if(activeProjectId) params.set('project_id', activeProjectId);
     if(cursor) params.set('cursor', cursor);
     if(registryQuery.trim()) params.set('search', registryQuery.trim());
     if(registryKind) params.set('kind', registryKind);
@@ -5314,6 +5323,13 @@ async function loadRegistryBootstrap(requestId=beginRegistryBootstrapRequest()){
         // 否则 activeProjectId 为 undefined、项目看板不加载、项目按钮 data-project 为空。
         projects = (Array.isArray(projectData.projects) ? projectData.projects : [])
             .map(item => ({...item, id:item.id || item.project_id}));
+        if(explicitRegistryProjectContext && !projects.some(item => item.id === activeProjectId)){
+            const error = new Error('项目不存在或无权访问');
+            error.status = 404;
+            error.code = 'PROJECT_NOT_FOUND';
+            error.detail = {code:error.code, message:error.message};
+            throw error;
+        }
         if(!activeProjectId && projects.length) activeProjectId = projects[0].id;
         if(activeProjectId) await loadProjectBoard(activeProjectId, false);
         if(requestId !== registryRequestSeq) return false;
