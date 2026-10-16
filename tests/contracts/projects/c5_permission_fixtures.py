@@ -160,7 +160,7 @@ def _seed_bundle(client, role: str, project_id: str, prefix: str) -> dict[str, o
     }
 
 
-def _seed_offline_job(role: str) -> str | None:
+def _seed_offline_job(role: str, project_id: str | None = None) -> str | None:
     """Install a local queued job that reaches the provider-free 503 boundary."""
 
     if role not in {"owner", "admin", "governor"}:
@@ -191,6 +191,7 @@ def _seed_offline_job(role: str) -> str | None:
         "error_count": 0,
         "result": None,
         "error_code": None,
+        "project_id": project_id,
         "_actor": actor,
         "_owner": owner,
         "_fingerprint": fingerprint,
@@ -243,6 +244,11 @@ def seed(
     _assert_status(response, 200)
 
     legacy_id = _create_project(client, "owner", "P_LEGACY_A")
+    from gw.projects_hub import service as projects_service_module
+    with projects_service_module.default_projects_service._operation() as (root, p_state, _):
+        if legacy_id in p_state.get("read_access", {}):
+            p_state["read_access"][legacy_id]["mode"] = "legacy_open"
+            projects_service_module.default_projects_service._commit_state(root, p_state)
     response = client.post(
         f"/api/asset-registry/projects/{legacy_id}/read-grants/revoke",
         headers=headers("owner"),
@@ -345,7 +351,7 @@ def seed(
         "state": state,
         "canvas_version": 1,
         "job_id": (
-            _seed_offline_job(role or "")
+            _seed_offline_job(role or "", target_id)
             if action == "asset_task" and state != "unknown"
             else "C5-OFFLINE-JOB"
         ),
