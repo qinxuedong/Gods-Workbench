@@ -395,6 +395,12 @@ KNOWN_GAPS: dict[str, str] = {
     'test_cell_asset_read_media__readonly_no_grant__deleted': 'C5-T3: expected 404, observed HTTP 200',
 }
 
+# C5-T5 work closes the previously recorded workflow ACL gaps in this matrix.
+KNOWN_GAPS = {
+    name: reason for name, reason in KNOWN_GAPS.items()
+    if not name.startswith("test_cell_workflow_")
+}
+
 # These operations are meaningful offline only up to their provider/runtime
 # boundary.  A 503 is a valid result; authentication and resource hiding are
 # still asserted strictly before that boundary.
