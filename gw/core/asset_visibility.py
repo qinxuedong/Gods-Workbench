@@ -26,22 +26,21 @@ def asset_visible(record: dict) -> bool:
         project_ids.append(record["project_id"])
     if project_ids:
         context = current_auth_context.get()
-        if context is None:
-            return False
-        from gw.projects_hub import service as projects_service_module
-        owner_key = None
-        role = str(getattr(context, "role", "") or "")
-        try:
-            owner_key = projects_service_module.owner_key_for_context(context)
-        except Exception:
+        if context is not None:
+            from gw.projects_hub import service as projects_service_module
             owner_key = None
-        can_read = False
-        for pid in project_ids:
-            if projects_service_module.default_projects_service.can_read_project(pid, owner_key=owner_key, role=role):
-                can_read = True
-                break
-        if not can_read:
-            return False
+            role = str(getattr(context, "role", "") or "")
+            try:
+                owner_key = projects_service_module.owner_key_for_context(context)
+            except Exception:
+                owner_key = None
+            can_read = False
+            for pid in project_ids:
+                if projects_service_module.default_projects_service.can_read_project(pid, owner_key=owner_key, role=role):
+                    can_read = True
+                    break
+            if not can_read:
+                return False
     # 旧桥接没有可核实的归属，禁止作为公共资源继续暴露。
     url = str(record.get("url") or "")
     return not ("/api/god_workflow/assets/" in url or "/pages/workflow.html?id=" in url)

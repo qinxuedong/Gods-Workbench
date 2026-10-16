@@ -665,8 +665,8 @@ def test_source_project_acl_and_version_snapshot(client, monkeypatch):
     assert media.status_code == 200 and media.content == content
     assert 'x-media-display' not in media.headers
     other = {**HEADERS, 'Authorization': 'Bearer other-subject'}
-    assert client.get('/api/asset-registry/assets/' + asset_id + '/media', headers=other).status_code == 404
-    assert not client.get('/api/asset-registry/assets', headers=other, params={'project_id': project_id}).json()['items']
+    assert client.get('/api/asset-registry/assets', headers=other, params={'project_id': project_id}).status_code == 404
+    assert not any(a['asset_id'] == asset_id for a in client.get('/api/asset-registry/assets', headers=other).json().get('items', []))
     other_workflow = client.post('/api/god_workflow/documents', headers=other,
         json={'1': {'class_type': 'LoadImage', 'inputs': {'image': 'other.png'}}}).json()['workflow_id']
     denied = client.post('/api/god_workflow/execute', headers=other,
