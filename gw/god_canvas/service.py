@@ -29,11 +29,12 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from gw.core.auth import AuthContext, require_edit_access
+from gw.core.auth import AuthContext, require_authenticated
 from gw.core.storage import JsonState, data_root, now_iso
 from gw.core.errors import (
     CanvasVersionConflictException,
     CleanroomException,
+    ForbiddenException,
 )
 from gw.god_canvas.godmap import export_to_godmap, parse_godmap_content
 from gw.god_canvas.models import (
@@ -268,6 +269,88 @@ class GodCanvasService:
                 owner = self.authorize_project(item.project_id, context)
                 if (item.project_id == "default" and self._canvas_owners.get(canvas_id) != owner_key_for_context(context)) or (self._canvas_owners.get(canvas_id) not in (None, owner)):
                     raise CleanroomException(404, "CANVAS_NOT_FOUND", "画布不存在或不可访问")
+            return copy.deepcopy(item)
+
+    @staticmethod
+    def _project_read_allowed(project_id: str, context: AuthContext) -> bool:
+        """项目读可见性统一交由项目真源判定；未知或不可读项目一律视为不可见。"""
+        from gw.projects_hub import service as projects
+        owner_key = None
+        try:
+            owner_key = projects.owner_key_for_context(context)
+        except CleanroomException:
+            owner_key = None
+        return projects.default_projects_service.can_read_project(
+            project_id,
+            owner_key=owner_key,
+            role=str(getattr(context, "role", "") or ""),
+        )
+
+    def _reference_canvas_owner_guard(self, canvas_id: str, context: AuthContext) -> None:
+        """无归属画布（project_id=default）只按登记主体隔离，不借用项目权限。"""
+        from gw.projects_hub.service import owner_key_for_context
+        try:
+            owner_key = owner_key_for_context(context)
+        except CleanroomException:
+            raise CleanroomException(404, "CANVAS_NOT_FOUND", "画布不存在或不可访问")
+        if self._canvas_owners.get(canvas_id) not in (None, owner_key):
+            raise CleanroomException(404, "CANVAS_NOT_FOUND", "画布不存在或不可访问")
+
+    def authorize_canvas_read(self, canvas_id: str, context: AuthContext) -> CanvasItem:
+        """读门禁：项目绑定画布按项目读权限判定，不可读一律隐藏为 404 CANVAS_NOT_FOUND。"""
+        with self._transaction():
+            item = self._canvases.get(canvas_id)
+            if item is None:
+                raise CleanroomException(404, "CANVAS_NOT_FOUND", "画布不存在或不可访问")
+            if item.project_id == "default":
+                self._reference_canvas_owner_guard(canvas_id, context)
+            else:
+                if context.mode == "local_account":
+                    owner = self.authorize_project(item.project_id, context)
+                    if self._canvas_owners.get(canvas_id) not in (None, owner):
+                        raise CleanroomException(404, "CANVAS_NOT_FOUND", "画布不存在或不可访问")
+                if not self._project_read_allowed(item.project_id, context):
+                    raise CleanroomException(404, "CANVAS_NOT_FOUND", "画布不存在或不可访问")
+            return copy.deepcopy(item)
+
+    def authorize_canvas_write(self, canvas_id: str, context: AuthContext) -> CanvasItem:
+        """写门禁：仅项目写者放行；无权写者 404 隐藏，只读项目 403 PROJECT_READ_ONLY。"""
+        from gw.core.auth import EDIT_ROLES
+        from gw.projects_hub.service import require_project_write_context, owner_key_for_context
+        with self._transaction():
+            item = self._canvases.get(canvas_id)
+            if item is None:
+                raise CleanroomException(404, "CANVAS_NOT_FOUND", "画布不存在或不可访问")
+            if item.project_id == "default":
+                self._reference_canvas_owner_guard(canvas_id, context)
+                if context.role not in EDIT_ROLES:
+                    raise ForbiddenException(message="无当前资源写权限，已降级为只读")
+                return copy.deepcopy(item)
+
+            if context.role not in EDIT_ROLES:
+                from gw.projects_hub import service as projects
+                owner_key = None
+                try:
+                    owner_key = owner_key_for_context(context)
+                except CleanroomException:
+                    owner_key = None
+                with projects.default_projects_service._operation() as (_, state, __):
+                    is_owner = bool(owner_key and state.get("owners", {}).get(item.project_id) == owner_key)
+                if is_owner:
+                    raise ForbiddenException(message="无当前资源写权限，已降级为只读")
+                raise CleanroomException(404, "CANVAS_NOT_FOUND", "画布不存在或不可访问")
+
+            if context.mode == "local_account":
+                owner = self._check_project_access(item.project_id, context)
+                if self._canvas_owners.get(canvas_id) not in (None, owner):
+                    raise CleanroomException(404, "CANVAS_NOT_FOUND", "画布不存在或不可访问")
+
+            try:
+                require_project_write_context(item.project_id, context)
+            except CleanroomException as exc:
+                if exc.status_code == 404:
+                    raise CleanroomException(404, "CANVAS_NOT_FOUND", "画布不存在或不可访问") from None
+                raise
             return copy.deepcopy(item)
 
     def _require_version(self, expected_version: Optional[int]) -> None:
@@ -895,9 +978,15 @@ class GodCanvasService:
         """发起智能画布任务，返回 202 Accepted 及稳定 job_id。"""
         # 服务层也保留写权限边界，避免绕过 HTTP 路由直接提交任务。
         try:
-            context = require_edit_access(authorization, user_role)
+            context = require_authenticated(authorization, user_role)
         except CleanroomException as exc:
             self._audit_job_access("submit", exc.status_code)
+            raise
+
+        try:
+            self.authorize_canvas_write(canvas_id, context)
+        except CleanroomException as exc:
+            self._audit_job_access("submit", exc.status_code, context)
             raise
 
         self._require_version(payload.expected_version)
@@ -907,13 +996,8 @@ class GodCanvasService:
             if not item or not top:
                 raise CleanroomException(status_code=404, code="CANVAS_NOT_FOUND", message=f"画布 {canvas_id} 不存在")
 
-            try:
-                owner_key = self.authorize_project(item.project_id, context) if self.persistent else self._check_project_access(item.project_id, context)
-                if self.persistent and item.project_id == "default" and self._canvas_owners.get(canvas_id) != owner_key:
-                    raise CleanroomException(404, "CANVAS_NOT_FOUND", "画布不存在或不可访问")
-            except CleanroomException as exc:
-                self._audit_job_access("submit", exc.status_code, context)
-                raise
+            from gw.projects_hub.service import owner_key_for_context
+            owner_key = owner_key_for_context(context)
 
             # CAS 校验
             if payload.expected_version is not None and top.version != payload.expected_version:

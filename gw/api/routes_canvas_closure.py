@@ -71,19 +71,22 @@ from gw.projects_hub.service import owner_key_for_context
 router = APIRouter(tags=["canvas-closure"])
 
 
-def _authorize_canvas(canvas_id, context):
-    if closure._canvas_service.persistent:
-        closure._canvas_service.authorize_canvas(canvas_id, context)
+def _canvas_write_context(canvas_id, context):
+    """认证后执行项目写门禁；非项目写者 404，只读项目 403 PROJECT_READ_ONLY。"""
+    closure._canvas_service.authorize_canvas_write(canvas_id, context)
+
+
+def _canvas_read_context(canvas_id, context):
+    """读门禁：项目不可读的画布统一隐藏为 404 CANVAS_NOT_FOUND。"""
+    closure._canvas_service.authorize_canvas_read(canvas_id, context)
 
 
 def _owned_projection(result, context):
-    """资产索引、参考与回收站共用持久画布主体过滤。"""
-    if not closure._canvas_service.persistent:
-        return result
+    """资产索引、参考与回收站共用项目读可见性过滤。"""
     visible = []
     for entry in result.get("canvases", []):
         try:
-            closure._canvas_service.authorize_canvas(entry["canvas_id"], context)
+            closure._canvas_service.authorize_canvas_read(entry["canvas_id"], context)
             visible.append(entry)
         except CleanroomException as exc:
             if exc.status_code != 404:
@@ -163,7 +166,7 @@ def save_reference_canvas(
     """保存参考画布；只登记调用方提交的内容，不编造素材元数据。"""
     context = require_edit_access(authorization, x_user_role)
     if payload.canvas_id:
-        _authorize_canvas(payload.canvas_id, context)
+        _canvas_write_context(payload.canvas_id, context)
     return closure.save_reference_canvas(
         title=payload.title,
         items=payload.items,
@@ -322,9 +325,9 @@ def update_canvas_meta(
     authorization: Optional[str] = Header(None),
     x_user_role: str = Header("editor", alias="X-User-Role", description="用户角色权限"),
 ):
-    """更新标题 / 实体绑定 / 项目归属；CAS 冲突严格 409 CANVAS_VERSION_CONFLICT。"""
-    context = require_edit_access(authorization, x_user_role)
-    _authorize_canvas(canvas_id, context)
+    """更新标题 / 实体绑定 / 项目归属；权限与项目状态先于 CAS，冲突严格 409。"""
+    context = require_authenticated(authorization, x_user_role)
+    _canvas_write_context(canvas_id, context)
     patch = {
         "title": payload.title,
         "entity_id": payload.entity_id,
@@ -333,8 +336,10 @@ def update_canvas_meta(
         "board_x": payload.board_x,
         "board_y": payload.board_y,
     }
-    if closure._canvas_service.persistent and patch["project_id"]:
-        closure._canvas_service.authorize_project(patch["project_id"], context)
+    if patch["project_id"] and patch["project_id"] != "default":
+        from gw.projects_hub.service import require_project_write_context
+
+        require_project_write_context(patch["project_id"], context)
     return {"canvas": closure.update_canvas_meta(canvas_id, patch, expected_version=payload.resolved_version())}
 
 
@@ -352,9 +357,9 @@ def touch_canvas(
     authorization: Optional[str] = Header(None),
     x_user_role: str = Header("editor", alias="X-User-Role", description="用户角色权限"),
 ):
-    """归档 / 解归档；只翻转状态，不借 touch 绕过 CAS。"""
-    context = require_edit_access(authorization, x_user_role)
-    _authorize_canvas(canvas_id, context)
+    """归档 / 解归档；只翻转状态，不借 touch 绕过项目写门禁与 CAS。"""
+    context = require_authenticated(authorization, x_user_role)
+    _canvas_write_context(canvas_id, context)
     resolved = expected_version
     if resolved is None and payload is not None:
         resolved = payload.expected_version
@@ -380,8 +385,8 @@ def purge_canvas(
     x_user_role: str = Header("editor", alias="X-User-Role", description="用户角色权限"),
 ):
     """仅允许彻底删除回收站中的画布；未入回收站返回 409，禁止越权直删。"""
-    context = require_edit_access(authorization, x_user_role)
-    _authorize_canvas(canvas_id, context)
+    context = require_authenticated(authorization, x_user_role)
+    _canvas_write_context(canvas_id, context)
     return closure.purge_canvas(canvas_id, expected_version=expected_version)
 
 
@@ -398,6 +403,6 @@ def trash_canvas(
     x_user_role: str = Header("editor", alias="X-User-Role", description="用户角色权限"),
 ):
     """软删除：移入回收站而非物理删除，可经 /restore 恢复。"""
-    context = require_edit_access(authorization, x_user_role)
-    _authorize_canvas(canvas_id, context)
+    context = require_authenticated(authorization, x_user_role)
+    _canvas_write_context(canvas_id, context)
     return {"canvas": closure.move_to_trash(canvas_id, expected_version=expected_version)}
