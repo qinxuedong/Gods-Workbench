@@ -56,9 +56,9 @@ const initialCanvasContext = requestedCanvasContext();
 
 function rememberedProjectId(){
     try {
-        return initialCanvasContext.projectId || localStorage.getItem(CANVAS_LIST_PROJECT_KEY) || 'default';
+        return initialCanvasContext.projectId || localStorage.getItem(CANVAS_LIST_PROJECT_KEY) || '';
     } catch(e){
-        return 'default';
+        return initialCanvasContext.projectId || '';
     }
 }
 
@@ -298,6 +298,36 @@ function setStatus(text){
     statusTimer = setTimeout(() => statusEl.classList.remove('show'), 2200);
 }
 
+function canvasResponseError(response, data, fallback){
+    const detail = data?.detail;
+    const message = detail?.message || (typeof detail === 'string' ? detail : fallback);
+    const error = new Error(message || `请求失败 (HTTP ${response?.status || 0})`);
+    error.status = Number(response?.status || 0);
+    error.code = detail?.code || data?.code || '';
+    error.detail = detail;
+    error.kind = window.GWDegradation?.statusKind?.(error.status, detail) || 'error';
+    return error;
+}
+
+async function readCanvasResponse(response, fallback){
+    const data = await response.json().catch(() => ({}));
+    if(!response.ok) throw canvasResponseError(response, data, fallback);
+    return data;
+}
+
+function renderCanvasLoadError(error){
+    const kind = error?.kind || window.GWDegradation?.statusKind?.(error?.status, error?.detail) || 'error';
+    const message = canvasListDegradationLabel(error, error?.message || L('画布加载失败','Canvas load failed'));
+    if(boardWorld){
+        const notice = window.GWDegradation?.noticeHtml?.(kind, message)
+            || `<div role="status" data-gw-degradation="${escapeAttr(kind)}">${escapeHtml(message)}</div>`;
+        boardWorld.innerHTML = notice;
+    }
+    boardEmptyHint?.classList.add('hidden');
+    setStatus(message);
+    refreshIcons();
+}
+
 /* ===== Card scale & viewport math ===== */
 function canvasViewportIsCompact(){
     try {
@@ -363,7 +393,7 @@ function onBoardWheel(e){
 }
 
 /* ===== Data loading ===== */
-function currentProject(){ return projects.find(p => p.id === currentProjectId) || projects[0] || null; }
+function currentProject(){ return projects.find(p => p.id === currentProjectId) || null; }
 function canvasesInProject(pid){ return canvases.filter(c => (c.project || 'default') === pid); }
 function canvasGridColumns(){
     const width = board?.clientWidth || window.innerWidth || 1200;
@@ -381,26 +411,41 @@ async function loadAll(){
         // 因此项目列表必须先行读取；此前两个请求并发发出，画布请求恒定缺参 400。
         const pRes = await canvasListApi().listProjects();
         if(requestSequence !== canvasListLoadSequence) return false;
-        const pData = pRes.ok ? await pRes.json() : { projects: [] };
+        const pData = await readCanvasResponse(pRes, L('项目列表加载失败','Project list failed'));
         if(requestSequence !== canvasListLoadSequence) return false;
         projects = (pData.projects || []).map(normalizeProject).sort((a, b) => projectSortOrder(a) - projectSortOrder(b));
-        if(!projects.length) projects = [{ id: 'default', name: L('默认项目','Default'), order: 0, canvas_count: 0 }];
-        // pick active project (prefer current or remembered)
-        const targetPid = currentProjectId || rememberedProjectId();
-        if(projects.find(p => p.id === targetPid)){
-            currentProjectId = targetPid;
-        } else {
-            const def = projects.find(p => p.id === 'default') || projects.slice().sort((a, b) => (a.order || 0) - (b.order || 0))[0];
-            currentProjectId = def ? def.id : (projects[0]?.id || 'default');
-            currentEntityId = '';
+        // Explicit URL context is authoritative.  A missing or inaccessible
+        // project must remain visible as an error instead of silently opening
+        // another project.
+        const explicitProjectId = String(initialCanvasContext.projectId || '').trim();
+        const targetPid = explicitProjectId || currentProjectId || rememberedProjectId();
+        if(explicitProjectId && !projects.some(p => p.id === explicitProjectId)){
+            const error = new Error(L('项目不存在或无权访问','Project not found or inaccessible'));
+            error.status = 404;
+            error.code = 'PROJECT_NOT_FOUND';
+            error.detail = {code:error.code, message:error.message};
+            error.kind = window.GWDegradation?.statusKind?.(error.status, error.detail) || 'error';
+            throw error;
         }
+        if(targetPid && projects.some(p => p.id === targetPid)) currentProjectId = targetPid;
+        else currentProjectId = projects[0]?.id || '';
+        if(!currentProjectId) currentEntityId = '';
         rememberProjectId(currentProjectId);
+        if(!currentProjectId){
+            canvases = [];
+            syncCanvasListContext();
+            renderProjects();
+            renderBoard();
+            refreshTrashCount();
+            document.documentElement.dataset.canvasListReady = 'ready';
+            updateOverviewFooter('ready');
+            return true;
+        }
         const cRes = await canvasListApi().listCanvases(currentProjectId);
         if(requestSequence !== canvasListLoadSequence) return false;
-        const cData = cRes.ok ? await cRes.json() : { canvases: [] };
+        const cData = await readCanvasResponse(cRes, L('画布列表加载失败','Canvas list failed'));
         if(requestSequence !== canvasListLoadSequence) return false;
         canvases = (cData.canvases || []).map(normalizeCanvas);
-        const loaded = pRes.ok && cRes.ok;
         syncCanvasListContext();
         renderProjects();
         renderBoard({
@@ -409,13 +454,15 @@ async function loadAll(){
             )
         });
         refreshTrashCount();
-        document.documentElement.dataset.canvasListReady = loaded ? 'ready' : 'error';
-        updateOverviewFooter(loaded ? 'ready' : 'error');
-        return loaded;
+        document.documentElement.dataset.canvasListReady = 'ready';
+        updateOverviewFooter('ready');
+        return true;
     } catch(e){
         if(requestSequence !== canvasListLoadSequence) return false;
         console.error(e);
-        setStatus(canvasListDegradationLabel(e, L('加载失败','Load failed')));
+        projects = [];
+        canvases = [];
+        renderCanvasLoadError(e);
         document.documentElement.dataset.canvasListReady = 'error';
         updateOverviewFooter('error');
         return false;

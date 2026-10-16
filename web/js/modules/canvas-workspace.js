@@ -90,82 +90,70 @@
 
     async loadAndRenderCanvas(canvasId, meta = {}) {
       this.currentCanvasId = canvasId;
-      this.currentCanvasMeta = meta;
+      const parameters = new URLSearchParams(window.location.search);
+      const projectId = String(
+        meta?.project_id || meta?.project || parameters.get('project_id') || parameters.get('project') || ''
+      ).trim();
+      this.currentCanvasMeta = {...meta, ...(projectId ? {project_id: projectId, project: projectId} : {})};
       this.selectedNodeId = null;
 
       try {
-        // 请求后端获取真实拓扑数据
-        const res = await fetch(`/api/canvases/${encodeURIComponent(canvasId)}`);
-        if (res.ok) {
-          const data = await res.json();
-          this.nodes = Array.isArray(data.nodes) ? data.nodes : [];
-          this.connections = Array.isArray(data.connections) ? data.connections : [];
-          this.currentCanvasMeta.version = data.version || meta.version || 1;
-        } else {
-          // 若为新画布或离线降级
-          this.nodes = [];
-          this.connections = [];
+        if (!projectId) {
+          const error = new Error('读取画布需要项目上下文');
+          error.status = 400;
+          error.code = 'PROJECT_CONTEXT_REQUIRED';
+          error.detail = {code: error.code, message: error.message};
+          error.kind = global.GWDegradation?.statusKind?.(error.status, error.detail) || 'error';
+          throw error;
         }
+        // 请求后端获取真实拓扑数据；project_id 是显式上下文，禁止跨项目猜测。
+        const endpoint = new URL(`/api/canvases/${encodeURIComponent(canvasId)}`, window.location.origin);
+        endpoint.searchParams.set('project_id', projectId);
+        const res = await fetch(endpoint.toString(), {credentials: 'same-origin'});
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          const detail = data?.detail;
+          const error = new Error(detail?.message || (typeof detail === 'string' ? detail : `读取画布失败 (HTTP ${res.status})`));
+          error.status = res.status;
+          error.code = detail?.code || data?.code || '';
+          error.detail = detail;
+          error.kind = global.GWDegradation?.statusKind?.(error.status, detail) || 'error';
+          throw error;
+        }
+        const responseProjectId = String(data.project_id || data.project || '').trim();
+        if (responseProjectId && responseProjectId !== projectId) {
+          const error = new Error('画布项目上下文不一致');
+          error.status = 409;
+          error.code = 'PROJECT_CONTEXT_MISMATCH';
+          error.detail = {code: error.code, message: error.message};
+          error.kind = global.GWDegradation?.statusKind?.(error.status, error.detail) || 'error';
+          throw error;
+        }
+        this.nodes = Array.isArray(data.nodes) ? data.nodes : [];
+        this.connections = Array.isArray(data.connections) ? data.connections : [];
+        this.currentCanvasMeta.version = data.version || meta.version || 1;
+        this.render();
+        return;
       } catch (err) {
         console.warn('获取画布拓扑降级:', err);
         this.nodes = [];
         this.connections = [];
+        this.renderError(err);
+        return;
       }
+    }
 
-      // 如果节点为空，提供演示种子节点以供编辑
-      if (this.nodes.length === 0) {
-        this.nodes = [
-          {
-            entity_id: 'nd-001',
-            kind: 'prompt_node',
-            title: '提示词编码器 (CLIP)',
-            position: { x: 80, y: 100 },
-            in_ports: [{ name: 'text', data_type: 'CLIP' }],
-            out_ports: [{ name: 'conditioning', data_type: 'CONDITIONING' }]
-          },
-          {
-            entity_id: 'nd-002',
-            kind: 'sampler_node',
-            title: 'K-采样器 (Sampler)',
-            position: { x: 380, y: 120 },
-            in_ports: [
-              { name: 'model', data_type: 'MODEL' },
-              { name: 'positive', data_type: 'CONDITIONING' },
-              { name: 'latent', data_type: 'LATENT' }
-            ],
-            out_ports: [{ name: 'latent_out', data_type: 'LATENT' }]
-          },
-          {
-            entity_id: 'nd-003',
-            kind: 'vae_node',
-            title: 'VAE 解码输出',
-            position: { x: 680, y: 150 },
-            in_ports: [
-              { name: 'samples', data_type: 'LATENT' },
-              { name: 'vae', data_type: 'VAE' }
-            ],
-            out_ports: [{ name: 'image', data_type: 'IMAGE' }]
-          }
-        ];
-        this.connections = [
-          {
-            from_node: 'nd-001',
-            from_port: 0,
-            to_node: 'nd-002',
-            to_port: 1,
-            data_type: 'CONDITIONING'
-          },
-          {
-            from_node: 'nd-002',
-            from_port: 0,
-            to_node: 'nd-003',
-            to_port: 0,
-            data_type: 'LATENT'
-          }
-        ];
-      }
-
-      this.render();
+    renderError(error) {
+      if (!this.nodesLayerEl || !this.wiresSvgEl) return;
+      this.wiresSvgEl.innerHTML = '';
+      const GWDegradation = global.GWDegradation || {};
+      const kind = error?.kind || GWDegradation.statusKind?.(error?.status, error?.detail) || 'error';
+      const message = error?.message || '画布拓扑加载失败';
+      const notice = typeof GWDegradation.noticeHtml === 'function'
+        ? GWDegradation.noticeHtml(kind, message)
+        : `<div role="status" data-gw-degradation="${kind}">${GWDegradation.escapeHtml?.(message) || message}</div>`;
+      this.nodesLayerEl.innerHTML = notice;
+      if (global.lucide) global.lucide.createIcons();
     }
 
     render() {
