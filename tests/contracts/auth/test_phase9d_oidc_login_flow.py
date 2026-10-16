@@ -367,10 +367,10 @@ def test_callback_happy_path_establishes_session_and_role_from_idp(clean_env, lo
         assert created.status_code == 201, created.text
         project_id = created.json()["project"]["project_id"]
 
-        # 治理操作需要 governor：会话角色为 editor，必须 403（未被请求头提权）。
+        # 回收站入口仍是治理操作：会话角色为 editor，必须 403（未被请求头提权）。
         archived = api.request(
-            "DELETE",
-            f"/api/asset-registry/projects/{project_id}",
+            "POST",
+            f"/api/asset-registry/projects/{project_id}/trash",
             json={"expected_version": created.json()["project"]["version"]},
             headers={"X-User-Role": "governor", "Origin": "http://testserver"},
         )
