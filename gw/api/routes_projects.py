@@ -73,7 +73,7 @@ def create_project(
 ):
     """创建新项目。"""
     context = require_edit_access(authorization, x_user_role)
-    # ACL 绑定只接收服务端认证主体；service先持久预留不可复用ID，再原子发布项目真源。
+    # 认证主体由服务端上下文解析为 owner_key；项目 owner 注册在项目快照提交前完成。
     from gw.video_tasks.service import get_video_service
     video_service = get_video_service()
     result = default_projects_service.create_project(

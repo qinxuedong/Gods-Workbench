@@ -774,7 +774,7 @@ class ProjectsService:
         owner_key: Optional[str] = None,
         before_publish: Optional[Callable[[str], None]] = None,
     ) -> ProjectMutationResult:
-        """先持久预留不可复用ID，再执行ACL绑定，最后原子发布项目、owner、门与幂等快照。"""
+        """预留不可复用项目 ID，执行发布前回调，再原子提交项目、owner、读授权、门与幂等快照。"""
         gates = self._clean_gate_inputs(payload)
         effective_owner = owner_key
         if self._persistent:
