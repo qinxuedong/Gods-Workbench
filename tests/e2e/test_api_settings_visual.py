@@ -197,7 +197,11 @@ def test_autofilled_values_require_explicit_review_before_save(monkeypatch, tmp_
         assert errors == [] and writes == ["PUT"]
 
 
-@pytest.mark.parametrize("selector", ['a[href$="projects.html"]', 'button[data-section="general"]'])
+@pytest.mark.parametrize(
+    "selector",
+    ['a[href$="projects.html"]', 'button[data-section="general"]'],
+    ids=["projects", "general"],
+)
 def test_parent_navigation_cancellation_keeps_draft(selector, monkeypatch, tmp_path):
     with settings_browser(monkeypatch, tmp_path, populated=True) as (page, base, errors, writes):
         frame = settings_frame(page, base, ENTRIES[1])
