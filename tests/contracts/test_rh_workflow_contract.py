@@ -813,6 +813,15 @@ def test_execute_rh_cloud_success_and_poll_status(client, monkeypatch):
 
     # mock 下载：仅合成获准主机，不访问网络。
     monkeypatch.setenv("GW_WORKFLOW_OUTPUT_HOSTS", "mock.runninghub")
+    # 不做真实 DNS：CI 上 mock.runninghub 为 NXDOMAIN，本地仅因 fake-ip 恰好可解析。
+    import socket
+    from gw.god_workflow import routes as workflow_routes
+
+    async def _mock_getaddrinfo(host, port):
+        assert host == "mock.runninghub"
+        return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("93.184.216.34", port))]
+
+    monkeypatch.setattr(workflow_routes, "_getaddrinfo", _mock_getaddrinfo)
     class _MockHttpxResponse:
         status_code = 200
         content = _tiny_png()
