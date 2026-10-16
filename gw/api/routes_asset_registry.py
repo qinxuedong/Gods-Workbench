@@ -214,7 +214,19 @@ def list_registry_assets(
     authorization: Optional[str] = Header(None),
     x_user_role: str = Header("editor", alias="X-User-Role"),
 ):
-    _read_auth(authorization, x_user_role)
+    context = _read_auth(authorization, x_user_role)
+    if project_id:
+        if "?" in project_id:
+            project_id = project_id.split("?")[0]
+        owner_key = None
+        role = str(getattr(context, "role", "") or "")
+        try:
+            owner_key = owner_key_for_context(context)
+        except CleanroomException:
+            owner_key = None
+        from gw.projects_hub import service as projects_service_module
+        if not projects_service_module.default_projects_service.can_read_project(project_id, owner_key=owner_key, role=role):
+            raise CleanroomException(404, "PROJECT_NOT_FOUND", "项目不存在")
     return repo.list_assets(limit, offset, query or search, kind, archived, cursor=cursor, sort=sort,
                             view=view, category=category, tag=tag, project_id=project_id,
                             include_tags=include_tags, exclude_tags=exclude_tags, root_id=root_id,
@@ -430,6 +442,16 @@ def get_workspace_job(
     x_user_role: str = Header("editor", alias="X-User-Role"),
 ):
     actor = _read_auth(authorization, x_user_role)
+    job = index_jobs.service().store.read()["jobs"].get(job_id)
+    if job and job.get("project_id"):
+        owner_key = None
+        role = str(getattr(actor, "role", "") or "")
+        try:
+            owner_key = owner_key_for_context(actor)
+        except CleanroomException:
+            owner_key = None
+        if not default_projects_service.can_read_project(job["project_id"], owner_key=owner_key, role=role):
+            raise CleanroomException(404, "WORKSPACE_JOB_NOT_FOUND", "工作区任务不存在")
     return index_jobs.service().detail(job_id, actor)
 
 # ---------------------------------------------------------------------------
@@ -604,7 +626,20 @@ def update_registry_asset(
     authorization: Optional[str] = Header(None),
     x_user_role: str = Header("editor", alias="X-User-Role"),
 ):
-    _edit_auth(authorization, x_user_role)
+    context = _read_auth(authorization, x_user_role)
+    raw_asset = repo.get_asset(asset_id)
+    if str(getattr(context, "role", "") or "").lower() not in {"editor", "admin", "governor"}:
+        raise CleanroomException(404, "ASSET_NOT_FOUND", f"素材 {asset_id} 不存在")
+    project_ids = list(raw_asset.get("project_ids") or [])
+    if raw_asset.get("project_id") and raw_asset["project_id"] not in project_ids:
+        project_ids.append(raw_asset["project_id"])
+    for pid in project_ids:
+        try:
+            require_project_write_context(pid, context)
+        except CleanroomException as exc:
+            if exc.status_code == 404:
+                raise CleanroomException(404, "ASSET_NOT_FOUND", f"素材 {asset_id} 不存在")
+            raise
     return repo.update_asset(asset_id, _payload(payload))
 
 
@@ -614,7 +649,20 @@ def delete_registry_asset(
     authorization: Optional[str] = Header(None),
     x_user_role: str = Header("editor", alias="X-User-Role"),
 ):
-    context = _edit_auth(authorization, x_user_role)
+    context = _read_auth(authorization, x_user_role)
+    raw_asset = repo.get_asset(asset_id)
+    if str(getattr(context, "role", "") or "").lower() not in {"editor", "admin", "governor"}:
+        raise CleanroomException(404, "ASSET_NOT_FOUND", f"素材 {asset_id} 不存在")
+    project_ids = list(raw_asset.get("project_ids") or [])
+    if raw_asset.get("project_id") and raw_asset["project_id"] not in project_ids:
+        project_ids.append(raw_asset["project_id"])
+    for pid in project_ids:
+        try:
+            require_project_write_context(pid, context)
+        except CleanroomException as exc:
+            if exc.status_code == 404:
+                raise CleanroomException(404, "ASSET_NOT_FOUND", f"素材 {asset_id} 不存在")
+            raise
     return repo.delete_asset(asset_id, None, context)
 
 
@@ -1145,7 +1193,16 @@ def operate_workspace_job(
     authorization: Optional[str] = Header(None),
     x_user_role: str = Header("editor", alias="X-User-Role"),
 ):
-    actor = _edit_auth(authorization, x_user_role)
+    if action not in index_jobs.ACTIONS:
+        raise CleanroomException(400, "INVALID_ACTION", "不支持的任务操作")
+    actor = _read_auth(authorization, x_user_role)
+    job = index_jobs.service().store.read()["jobs"].get(job_id)
+    if not job:
+        raise CleanroomException(404, "WORKSPACE_JOB_NOT_FOUND", "工作区任务不存在")
+    if job.get("project_id"):
+        require_project_write_context(job["project_id"], actor)
+    else:
+        _edit_auth(authorization, x_user_role)
     return index_jobs.service().operate(job_id, action, _payload(payload), actor)
 
 
