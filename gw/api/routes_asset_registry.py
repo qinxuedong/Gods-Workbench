@@ -40,7 +40,11 @@ from gw.asset_registry.service import (
 )
 from gw.core.auth import require_authenticated, require_edit_access, require_governance_access
 from gw.core.errors import CleanroomException
-from gw.projects_hub.service import default_projects_service, owner_key_for_context
+from gw.projects_hub.service import (
+    default_projects_service,
+    owner_key_for_context,
+    require_project_write_context,
+)
 
 from gw.core.asset_visibility import asset_owner_key, asset_request_scope
 
@@ -976,7 +980,8 @@ def create_project_entity(
     authorization: Optional[str] = Header(None),
     x_user_role: str = Header("editor", alias="X-User-Role"),
 ):
-    _edit_auth(authorization, x_user_role)
+    context = _read_auth(authorization, x_user_role)
+    require_project_write_context(project_id, context)
     body = _payload(payload)
     result = repo.create_project_entity(project_id, str(body.get("name") or ""),
                                         str(body.get("entity_type") or "generic"), body)
@@ -1005,7 +1010,8 @@ def link_project_assets(
     authorization: Optional[str] = Header(None),
     x_user_role: str = Header("editor", alias="X-User-Role"),
 ):
-    _edit_auth(authorization, x_user_role)
+    context = _read_auth(authorization, x_user_role)
+    require_project_write_context(project_id, context)
     body = _payload(payload)
     asset_ids = _ids(body) or ([str(body["asset_id"])] if body.get("asset_id") else [])
     if not asset_ids:
@@ -1055,6 +1061,8 @@ def update_project_gate(
 ):
     """owner或治理角色按门自身版本执行状态迁移；项目生命周期屏障在域锁内校验。"""
     context = _read_auth(authorization, x_user_role)
+    project_id = default_projects_service.project_id_for_gate(gate_id)
+    require_project_write_context(project_id, context)
     body = _payload(payload)
     if body.get("status") is not None and body.get("state") is None:
         body["state"] = body["status"]

@@ -13,3 +13,10 @@
 # limitations under the License.
 
 """项目中心领域模块。"""
+
+
+def require_project_write_context(project_id, context):
+    """延迟导入项目写门禁，避免领域包初始化时形成循环导入。"""
+    from gw.projects_hub.service import require_project_write_context as _require
+
+    return _require(project_id, context)

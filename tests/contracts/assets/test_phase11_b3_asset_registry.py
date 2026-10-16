@@ -214,18 +214,22 @@ def test_a2_folders_presets_and_directory_templates(client):
 
 def test_a2_project_entities_gates_and_linking(client, assets):
     first = assets[0]
-    entity = client.post("/api/asset-registry/projects/prj_0001/entities", headers=AUTH,
+    project = client.post("/api/asset-registry/projects", headers=AUTH,
+                          json={"name": "实体关联项目", "project_type": "film"})
+    assert project.status_code == 201, project.text
+    project_id = project.json()["project"]["project_id"]
+    entity = client.post(f"/api/asset-registry/projects/{project_id}/entities", headers=AUTH,
                          json={"name": "主角", "entity_type": "character"})
     assert entity.status_code == 200
     assert entity.json()["entity"]["id"] == "ent_0001"
     assert client.patch("/api/asset-registry/project-entities/ent_0001", headers=AUTH,
                         json={"status": "approved"}).status_code == 200
 
-    linked = client.post("/api/asset-registry/projects/prj_0001/assets", headers=AUTH,
+    linked = client.post(f"/api/asset-registry/projects/{project_id}/assets", headers=AUTH,
                          json={"asset_ids": [first]})
     assert linked.status_code == 200 and linked.json()["linked"] == 1
     assert linked.json()["assets"][0]["asset_id"] == first
-    missing = client.post("/api/asset-registry/projects/prj_0001/assets", headers=AUTH,
+    missing = client.post(f"/api/asset-registry/projects/{project_id}/assets", headers=AUTH,
                           json={"asset_ids": ["ast_9999"]})
     assert missing.status_code == 404
     assert missing.json()["detail"]["code"] == "ASSET_NOT_FOUND"

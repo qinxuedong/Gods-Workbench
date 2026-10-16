@@ -484,7 +484,7 @@ class ProjectsService:
                         continue
                     if archived is False and is_archived:
                         continue
-                if (viewer_owner_key is not None or viewer_role) and not self._read_decision(
+                if (viewer_owner_key is not None or viewer_role) and not self._list_read_decision(
                     state, item.project_id, viewer_owner_key, viewer_role
                 ):
                     continue
@@ -508,7 +508,7 @@ class ProjectsService:
             return ProjectItem.model_validate(raw)
 
     def require_project_write_access(self, project_id: str, *, owner_key: Optional[str], role: str) -> ProjectItem:
-        """校验项目写权限；无读权限隐藏项目存在，有读无写返回 403。"""
+        """校验项目写权限；非项目写者统一隐藏项目存在性。"""
         with self._operation() as (root, state, __):
             raw = state["projects"].get(project_id)
             if raw is None:
@@ -519,11 +519,19 @@ class ProjectsService:
                 raise CleanroomException(404, "PROJECT_NOT_FOUND", "项目不存在")
             if not self._validate_owner_access(state, project_id, owner_key, role):
                 self._record_write_denial(root, state, project_id, owner_key)
-                raise CleanroomException(403, "FORBIDDEN", "当前认证身份不具备项目写权限")
+                raise CleanroomException(404, "PROJECT_NOT_FOUND", "项目不存在")
             if item.archived_at is not None or item.deleted_at is not None:
                 self._record_write_denial(root, state, project_id, owner_key)
                 raise CleanroomException(403, "PROJECT_READ_ONLY", "归档或回收站项目为只读状态")
             return item
+
+    def project_id_for_gate(self, gate_id: str) -> str:
+        """按项目门稳定 ID 解析所属项目；未知门沿用项目门 404 契约。"""
+        with self._operation() as (_, state, __):
+            gate = state["gates"].get(gate_id)
+            if gate is None:
+                raise CleanroomException(404, "PROJECT_GATE_NOT_FOUND", "项目门不存在")
+            return str(gate["project_id"])
 
     def _record_write_denial(
         self,
@@ -543,6 +551,19 @@ class ProjectsService:
     # ---------------------------------------------------------------------------
     # C4-AC7/AC8 显式读授权（owner 决定模型）
     # ---------------------------------------------------------------------------
+
+    @staticmethod
+    def _list_read_decision(
+        state: Dict[str, Any],
+        project_id: str,
+        owner_key: Optional[str],
+        role: str,
+    ) -> bool:
+        """项目列表对缺少读授权记录的存量项目保持 legacy-open 可见性。"""
+        record = (state.get("read_access") or {}).get(project_id)
+        if record is None:
+            return True
+        return ProjectsService._read_decision(state, project_id, owner_key, role)
 
     @staticmethod
     def _read_decision(
@@ -1033,3 +1054,12 @@ class ProjectsService:
 
 # 生产API单例使用持久真源；黄金项目仅由显式内存测试实例注入。
 default_projects_service = ProjectsService(seed_golden_fixture=False, persistent=True)
+
+
+def require_project_write_context(project_id: str, context: Any) -> ProjectItem:
+    """以认证上下文执行统一项目写门禁。"""
+    return default_projects_service.require_project_write_access(
+        project_id,
+        owner_key=owner_key_for_context(context),
+        role=str(getattr(context, "role", "") or ""),
+    )

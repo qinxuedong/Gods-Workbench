@@ -100,14 +100,14 @@ def test_revoked_reader_patch_is_hidden_and_does_not_mutate(client: TestClient):
     assert _subject(OTHER_TOKEN) not in str(entry)
 
 
-def test_reader_without_write_access_gets_forbidden(client: TestClient):
+def test_reader_without_write_access_is_hidden(client: TestClient):
     project_id = _create_project(client)
     _grant(client, project_id, OTHER_TOKEN)
 
     denied = _patch(client, project_id, OTHER, "读者不应写入")
 
-    assert denied.status_code == 403, denied.text
-    assert denied.json()["detail"]["code"] == "FORBIDDEN"
+    assert denied.status_code == 404, denied.text
+    assert denied.json()["detail"]["code"] == "PROJECT_NOT_FOUND"
     assert _project(client, project_id)["name"] == "C4-L3 项目"
     assert _audit()[-1]["event"] == "project.write_denied"
 
@@ -142,6 +142,6 @@ def test_legacy_open_project_remains_readable_but_write_still_requires_owner_or_
     denied = _patch(client, project_id, OTHER, "legacy 不应写入")
 
     assert readable.status_code == 200, readable.text
-    assert denied.status_code == 403, denied.text
-    assert denied.json()["detail"]["code"] == "FORBIDDEN"
+    assert denied.status_code == 404, denied.text
+    assert denied.json()["detail"]["code"] == "PROJECT_NOT_FOUND"
     assert _project(client, project_id)["name"] == "C4-L3 项目"

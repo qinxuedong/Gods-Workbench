@@ -29,7 +29,12 @@ from gw.projects_hub.models import (
     ProjectMutationResponse,
     ProjectUpdateRequest,
 )
-from gw.projects_hub.service import default_projects_service, owner_key_for_context, owner_key_for_identity
+from gw.projects_hub.service import (
+    default_projects_service,
+    owner_key_for_context,
+    owner_key_for_identity,
+    require_project_write_context,
+)
 from gw.core.errors import CleanroomException
 
 router = APIRouter(prefix="/api/asset-registry", tags=["projects-hub"])
@@ -93,11 +98,7 @@ def update_project(
 ):
     """更新项目元信息，要求 expected_version 匹配。"""
     context = require_authenticated(authorization, x_user_role)
-    default_projects_service.require_project_write_access(
-        project_id,
-        owner_key=owner_key_for_context(context),
-        role=context.role,
-    )
+    require_project_write_context(project_id, context)
     result = default_projects_service.update_project(project_id, payload)
     return ProjectMutationResponse(project=result)
 
@@ -116,11 +117,7 @@ def archive_project(
 ):
     """将项目移入只读归档状态。"""
     context = require_authenticated(authorization, x_user_role)
-    default_projects_service.require_project_write_access(
-        project_id,
-        owner_key=owner_key_for_context(context),
-        role=context.role,
-    )
+    require_project_write_context(project_id, context)
     result = default_projects_service.archive_project(project_id, payload.expected_version)
     return ProjectMutationResponse(project=result)
 
