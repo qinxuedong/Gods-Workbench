@@ -21,79 +21,43 @@
 window.WorkbenchStoryboard = (function () {
   'use strict';
 
-  // 内置演示预览只使用内联占位，避免展示时请求外部图片。
-  const DEMO_PREVIEW = 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="640" height="360" viewBox="0 0 640 360"><rect width="640" height="360" fill="#111418"/><rect x="24" y="24" width="592" height="312" rx="12" fill="none" stroke="#534a38"/><path d="M224 220l64-72 64 48 56-64 80 88z" fill="#302c24"/><circle cx="248" cy="116" r="20" fill="#534a38"/><text x="320" y="286" text-anchor="middle" font-family="sans-serif" style="font-size:var(--gw-type-body-md,14px)" fill="#b3a68c">示例占位</text></svg>');
+  // 历史静态契约标识：内置演示预览与示例分镜已移除，运行时不保留示例分镜或回落数据。
 
   const state = {
-    shots: [
-      {
-        id: 'sb-01',
-        code: 'SC03_SH01',
-        title: '宏观俯瞰 · 钛金母体神殿外景',
-        shotType: '远景 · 24mm',
-        dialogue: '【艾伦 独白】我们用了三百年才找到这里，而它已经在黑暗中沉睡了数个纪元。',
-        duration: '4.5s',
-        img: DEMO_PREVIEW,
-        status: 'not_integrated'
-      },
-      {
-        id: 'sb-02',
-        code: 'SC03_SH02',
-        title: '推进中景 · 艾伦穿过离子光幕门禁',
-        shotType: '中景 · 35mm',
-        dialogue: '【系统音】身份识别通过。欢迎归来，席位 #01 工程师。',
-        duration: '3.2s',
-        img: DEMO_PREVIEW,
-        status: 'not_integrated'
-      },
-      {
-        id: 'sb-03',
-        code: 'SC03_SH03',
-        title: '微距特写 · 艾伦凝视中枢核心瞳孔倒影',
-        shotType: '特写 · 85mm',
-        dialogue: '【艾伦】你早就知道我会来，对吗，AURA？',
-        duration: '5.0s',
-        img: DEMO_PREVIEW,
-        status: 'not_integrated'
-      },
-      {
-        id: 'sb-04',
-        code: 'SC03_SH04',
-        title: '对峙全景 · 巨大环状加速器在头顶运转',
-        shotType: '全景 · 35mm',
-        dialogue: '【AURA 语音】我没有预测未来，我只是穷尽了所有因果概率的交点。',
-        duration: '6.0s',
-        img: DEMO_PREVIEW,
-        status: 'not_integrated'
-      },
-      {
-        id: 'sb-05',
-        code: 'SC03_SH05',
-        title: '动态摇镜 · 环形管道超载冷光脉冲',
-        shotType: '运动镜头 · 50mm',
-        dialogue: '【警告音】核心显存压力告警，神经流即将反噬外部矩阵！',  // 示例台词（虚构剧情文本，非遥测读数）
-        duration: '3.8s',
-        img: DEMO_PREVIEW,
-        status: 'not_integrated'
-      },
-      {
-        id: 'sb-06',
-        code: 'SC03_SH06',
-        title: '高潮静止 · 艾伦将控制插头接入主接口',
-        shotType: '特写 · 50mm 宽银幕',
-        dialogue: '【艾伦】那么，让真正的重构法则开始运转。',
-        duration: '4.0s',
-        img: DEMO_PREVIEW,
-        status: 'not_integrated'
-      }
-    ]
+    projectId: '',
+    scenes: [],
+    shots: []
   };
 
   const esc = str => String(str ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 
+  function notIntegratedMarkup(message) {
+    return `<div class="col-span-full bay-inset p-8 text-center text-slate-500 font-mono gw-type-body-sm rounded-xl" data-gw-degradation="not_integrated"><i data-lucide="unlink" class="w-6 h-6 mx-auto mb-1.5 text-slate-600"></i><div>${esc(message)}</div></div>`;
+  }
+
+  function renderNotIntegratedState() {
+    state.shots = [];
+    state.scenes = [];
+    renderNav();
+    renderGrid();
+  }
+
   function renderGrid() {
     const grid = document.getElementById('storyboardGrid');
     if (!grid) return;
+    const titleEl = document.getElementById('storyboardTitle');
+
+    if (!state.shots || state.shots.length === 0) {
+      if (titleEl) titleEl.textContent = '分镜数据未接入 (共 0 个分镜)';
+      grid.innerHTML = notIntegratedMarkup('分镜数据未接入');
+      window.lucide?.createIcons();
+      return;
+    }
+
+    if (titleEl) {
+      titleEl.textContent = `当前分镜场次 (共 ${state.shots.length} 个分镜)`;
+    }
+
     const focused = grid.contains(document.activeElement) ? document.activeElement : null;
     const focusedShot = focused?.closest('[data-storyboard-shot]')?.dataset.storyboardShot;
     const focusedAction = focused?.dataset.shotAction;
@@ -105,30 +69,30 @@ window.WorkbenchStoryboard = (function () {
           <div class="flex items-center justify-between pb-1.5 mb-1.5 border-b border-white/5 gw-type-body-sm">
             <div class="flex items-center space-x-1.5">
               <span class="gw-type-body-sm font-mono px-1.5 py-0.5 rounded bg-black/60 border border-[#dfc384]/30 text-[#eddab3] font-bold">
-                #${idx + 1} · ${sh.code}
+                #${idx + 1} · ${esc(sh.code || '')}
               </span>
-              <span class="gw-type-body-sm font-mono text-cyan-300">${sh.shotType}</span>
+              <span class="gw-type-body-sm font-mono text-cyan-300">${esc(sh.shotType || '')}</span>
             </div>
             <div class="flex items-center space-x-1.5 gw-type-body-sm font-mono">
-              <span class="text-slate-400">${sh.duration}</span>
+              <span class="text-slate-400">${esc(sh.duration || '')}</span>
               <span class="${sh.status === 'generating' ? 'text-amber-300 animate-pulse' : (sh.status === 'not_integrated' ? 'text-slate-400' : 'text-emerald-400')}"${sh.status === 'not_integrated' ? ' data-gw-degradation="not_integrated"' : ''}>
-                ${sh.status === 'generating' ? '渲染中' : '未接入（无渲染端点）'}
+                ${sh.status === 'generating' ? '渲染中' : (sh.status === 'not_integrated' ? '未接入（无渲染端点）' : esc(sh.status || '已就绪'))}
               </span>
             </div>
           </div>
 
           <!-- 分镜构图画面 (16:9 画幅) -->
           <div class="aspect-video w-full rounded-lg overflow-hidden bg-black relative border border-white/10 mb-2">
-            <img src="${sh.img}" class="w-full h-full object-cover group-hover:scale-105 transition duration-300" alt="${esc(sh.title)}">
+            <img src="${esc(sh.img || '')}" class="w-full h-full object-cover group-hover:scale-105 transition duration-300" alt="${esc(sh.title || '')}">
             <div class="absolute top-1 right-1 px-1.5 py-0.5 rounded bg-black/70 gw-type-body-sm font-mono text-[#eddab3]">
               2.39:1
             </div>
           </div>
 
           <!-- 台词对白与叙事意图 -->
-          <div class="gw-type-body-md font-bold text-slate-100 mb-1 truncate">${esc(sh.title)}</div>
+          <div class="gw-type-body-md font-bold text-slate-100 mb-1 truncate">${esc(sh.title || '')}</div>
           <div class="gw-type-body-sm text-slate-300 bg-black/40 p-1.5 rounded-lg border border-white/5 leading-relaxed font-body mb-2">
-            ${esc(sh.dialogue)}
+            ${esc(sh.dialogue || '')}
           </div>
         </div>
 
@@ -157,19 +121,23 @@ window.WorkbenchStoryboard = (function () {
   function renderNav() {
     const nav = document.getElementById('storyboardSceneNav');
     if (!nav) return;
-    const scenes = [
-      { id: '1', title: '第 01 幕 · 序幕起航', shots: 4, active: false },
-      { id: '2', title: '第 02 幕 · 钛金废墟', shots: 6, active: false },
-      { id: '3', title: '第 03 幕 · 钛金圣殿对峙', shots: 6, active: true },
-      { id: '4', title: '第 04 幕 · 黎明信标', shots: 3, active: false }
-    ];
+    const navCount = document.querySelector('#storyboardSceneNavContainer .font-mono.text-\\[\\#dfc384\\]');
 
-    nav.innerHTML = scenes.map(s => `
+    if (!state.scenes || state.scenes.length === 0) {
+      nav.innerHTML = `<div class="bay-inset p-3 text-center text-slate-500 font-mono gw-type-body-sm rounded-lg" data-gw-degradation="not_integrated"><i data-lucide="unlink" class="w-4 h-4 mx-auto mb-1 text-slate-600"></i><div>场次数据未接入</div></div>`;
+      if (navCount) navCount.textContent = '未接入';
+      window.lucide?.createIcons();
+      return;
+    }
+
+    if (navCount) navCount.textContent = `共 ${state.scenes.length} 幕`;
+    nav.innerHTML = state.scenes.map(s => `
       <button type="button" class="tree-node-card w-full text-left px-2.5 py-2 ${s.active ? 'active' : ''} flex items-center justify-between">
-        <span>${s.title}</span>
-        <span class="gw-type-body-sm font-mono px-1 rounded bg-black/60 text-[#dfc384]">${s.shots}镜</span>
+        <span>${esc(s.title || '')}</span>
+        <span class="gw-type-body-sm font-mono px-1 rounded bg-black/60 text-[#dfc384]">${Number(s.shots || 0)}镜</span>
       </button>
     `).join('');
+    window.lucide?.createIcons();
   }
 
   function moveShot(idx, dir) {
@@ -183,27 +151,32 @@ window.WorkbenchStoryboard = (function () {
 
   // 显式降级：本仓当前切片无分镜渲染端点，禁止用 setTimeout 假装生成完成。
   function regenerateShot(idx) {
+    if (!state.shots[idx]) return;
     state.shots[idx].status = 'not_integrated';
     renderGrid();
     alert('分镜渲染端点尚未接入（未纳入当前切片），不会伪造生成结果。');
   }
 
   function batchGenerate() {
-    state.shots.forEach(s => s.status = 'not_integrated');
+    state.shots.forEach(s => { s.status = 'not_integrated'; });
     renderGrid();
     alert('批量渲染端点尚未接入（未纳入当前切片），不会伪造生成结果。');
   }
 
   function addNewShot() {
+    if (!state.shots || state.shots.length === 0) {
+      alert('分镜数据尚未接入（未纳入当前切片），无法追加镜头。');
+      return;
+    }
     const n = state.shots.length + 1;
     state.shots.push({
-      id: 'sb-0' + n,
-      code: `SC03_SH0${n}`,
-      title: `新追加分镜镜头 #${n}`,
+      id: `sb-${Date.now()}`,
+      code: `SC_SH${n < 10 ? '0' + n : n}`,
+      title: `追加镜头 #${n}`,
       shotType: '特写 · 50mm',
-      dialogue: '【剧本情节】补充过渡镜头与情绪留白...',
+      dialogue: '补充过渡情节...',
       duration: '3.0s',
-      img: DEMO_PREVIEW,
+      img: '',
       status: 'not_integrated'
     });
     renderGrid();
@@ -213,9 +186,24 @@ window.WorkbenchStoryboard = (function () {
     alert('分镜 PDF 导出端点尚未接入（未纳入当前切片），未生成任何文件。');
   }
 
-  function init() {
+  function setShots(shots) {
+    state.shots = Array.isArray(shots) ? [...shots] : [];
+    renderGrid();
+  }
+
+  function setScenes(scenes) {
+    state.scenes = Array.isArray(scenes) ? [...scenes] : [];
     renderNav();
-    if (new URLSearchParams(window.location.search).get('view') !== 'canvas') renderGrid();
+  }
+
+  function init() {
+    const params = new URLSearchParams(window.location.search);
+    const pId = params.get('project_id') || localStorage.getItem('workspace_project_id') || '';
+    state.projectId = pId;
+    if (params.get('view') !== 'canvas') {
+      renderNav();
+      renderGrid();
+    }
   }
 
   if (document.readyState === 'loading') {
@@ -230,6 +218,10 @@ window.WorkbenchStoryboard = (function () {
     batchGenerate,
     addNewShot,
     exportPdf,
+    setShots,
+    setScenes,
+    getState: () => ({ ...state }),
+    renderNotIntegratedState,
     rebind: init
   };
 })();
