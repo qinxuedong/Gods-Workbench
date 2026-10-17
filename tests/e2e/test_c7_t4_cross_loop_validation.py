@@ -63,7 +63,7 @@ def _child_env(*, evidence: Path, text: bool) -> dict[str, str]:
 
 def _run_child(node: str, *, env: Mapping[str, str]) -> str:
     completed = subprocess.run(
-        [sys.executable, "-m", "pytest", node, "-q"],
+        [sys.executable, "-m", "pytest", node, "-q", "-rs"],
         cwd=REPO_ROOT,
         env=dict(env),
         capture_output=True,
