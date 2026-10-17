@@ -93,6 +93,42 @@ def _wait_server(server: uvicorn.Server, thread: threading.Thread) -> None:
     assert server.started, "隔离 FastAPI 服务未启动"
 
 
+def _launch_browser(chromium: Any, browser_error: type[BaseException]):
+    """优先使用系统 Chrome，CI 没有时回退到 Playwright 自带 Chromium。"""
+
+    try:
+        return chromium.launch(channel="chrome", headless=True)
+    except browser_error as chrome_error:
+        try:
+            return chromium.launch(headless=True)
+        except browser_error as bundled_error:
+            raise RuntimeError(
+                "系统 Chrome 与 Playwright Chromium 均不可用；"
+                f"Chrome={type(chrome_error).__name__}: {chrome_error}; "
+                f"Chromium={type(bundled_error).__name__}: {bundled_error}"
+            ) from bundled_error
+
+
+def test_c7_p3_browser_launcher_falls_back_to_playwright_chromium():
+    """系统 Chrome 不存在时，必须使用 Playwright 自带 Chromium。"""
+
+    class BrowserLaunchError(Exception):
+        pass
+
+    bundled_browser = object()
+    calls: list[dict[str, Any]] = []
+
+    class ChromiumStub:
+        def launch(self, **options):
+            calls.append(options)
+            if options.get("channel") == "chrome":
+                raise BrowserLaunchError("system Chrome missing")
+            return bundled_browser
+
+    assert _launch_browser(ChromiumStub(), BrowserLaunchError) is bundled_browser
+    assert calls == [{"channel": "chrome", "headless": True}, {"headless": True}]
+
+
 def _seed_export_records_in_worker(helper, integration, run_id: str, stages: list[dict[str, str]]):
     """Playwright 同步 API 持有事件循环时，把异步夹具放到独立线程执行。"""
 
@@ -196,9 +232,9 @@ def test_c7_p3_text_loop_real_browser_readback_and_export(monkeypatch, tmp_path)
         _wait_server(server, thread)
         with open_playwright(browser_api) as pw:
             try:
-                browser = pw.chromium.launch(channel="chrome", headless=True)
-            except browser_api.Error as exc:
-                pytest.skip(f"Chrome 不可用，浏览器证据未取得：{type(exc).__name__}: {exc}")
+                browser = _launch_browser(pw.chromium, browser_api.Error)
+            except RuntimeError as exc:
+                pytest.skip(f"Chrome 与 Playwright Chromium 均不可用，浏览器证据未取得：{exc}")
             try:
                 context = browser.new_context(viewport={"width": 1440, "height": 1100})
                 context.route(
