@@ -581,6 +581,7 @@ async function initWorkbench() {
   if (!window.GWAuthGate?.isAuthenticated()) return;
 
   if (!workbenchRoot) { disposeWorkbench(); return; }
+  renderProjectContextBadge();
   if (state.authLoading) return;
   if (!lifecycleAbortController) {
     lifecycleAbortController = new AbortController();
@@ -702,6 +703,7 @@ async function restoreWorkflowTask() {
     }
     setWorkflowTaskTrigger("btnViewTaskDrawer");
     wfGet("taskModal")?.classList.add("open");
+    if (typeof renderProjectContextBadge === "function") renderProjectContextBadge();
     startTaskPolling(state.activeTaskId, task.target);
   } catch (error) {
     showToast("任务恢复查询失败，请重新打开任务面板", true);
@@ -1784,8 +1786,14 @@ function renderHeaderTelemetry(wf) {
 function renderProjectContextBadge() {
   const search = (typeof window !== 'undefined' && window.location?.search) || (typeof location !== 'undefined' && location?.search) || '';
   const params = typeof URLSearchParams !== 'undefined' ? new URLSearchParams(search) : { get: () => null, has: () => false };
-  const projectId = String(params.get('project_id') || '').trim();
-  const canvasId = String(params.get('canvas_id') || '').trim();
+  let projectId = String(params.get('project_id') || '').trim();
+  let canvasId = String(params.get('canvas_id') || '').trim();
+  if (!projectId && state.activeTaskId) {
+    const task = state.workflowTasks?.find(t => (t.job_id || t.task_id) === state.activeTaskId);
+    const sc = task?.source_context || task?.metadata?.source_context;
+    if (sc?.project_id) projectId = String(sc.project_id).trim();
+    if (sc?.canvas_id) canvasId = String(sc.canvas_id).trim();
+  }
   let badge = wfGet('workflowProjectContextBadge');
   if (!projectId && !canvasId) {
     if (badge) badge.remove?.();
@@ -4498,6 +4506,7 @@ window.WorkbenchWorkflow = Object.freeze({
   restoreWorkflowTask,
   renderProjectContextBadge,
 });
+window.addEventListener('gw-auth-state', (event) => {
   if (event.detail?.authenticated === true) {
     const principal = event.detail.principal || {};
     const key = JSON.stringify([principal.identity_domain || event.detail.auth_mode, principal.subject || principal.user_id || principal.username]);

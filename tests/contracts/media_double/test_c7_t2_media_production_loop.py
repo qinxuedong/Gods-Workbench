@@ -13,6 +13,8 @@ import pytest
 from fastapi.testclient import TestClient
 
 from media_doubles import (
+    APPROVED_HOST,
+    FIXED_PNG,
     FIXED_PNG_SHA256,
     HEADERS,
     TASKS,
@@ -272,3 +274,125 @@ def test_c7_t2_durable_task_lookup_and_source_provenance_preservation(media_clie
     assert asset["metadata"]["workflow_id"] == workflow["workflow_id"]
     assert asset["metadata"]["source_context"]["project_id"] == project_id
     assert asset["metadata"]["source_context"]["canvas_id"] == canvas_id
+
+
+def test_c7_t2_runninghub_real_host_fixture_execution_and_unified_asset(
+    media_client, fake_media, asset_counts, monkeypatch
+):
+    """C7-AC2 真实宿主证据锚定：使用 RunningHub 真实产物 fixture (outputs_success_real_host.json)、
+    真实工作流 ID 2108837566177959938 及真实远端任务 ID 格式 1845892349182390192，
+    验证真实产物主机 rh-images-tos.xiaoyaoyou.com 的下载白名单校验与统一资产中枢登记。
+    """
+    import json
+    from pathlib import Path
+    import httpx
+    from gw.god_workflow import platforms, routes
+
+    real_remote_task_id = "1845892349182390192"
+    real_host = "rh-images-tos.xiaoyaoyou.com"
+
+    fixture_path = Path(__file__).resolve().parents[1] / "fixtures" / "runninghub" / "outputs_success_real_host.json"
+    assert fixture_path.exists(), f"真实 Fixture 不存在: {fixture_path}"
+    real_output_fixture = json.loads(fixture_path.read_text(encoding="utf-8"))
+
+    # 配置获准主机及 Mock 传输层支持真实产物主机
+    monkeypatch.setenv("GW_WORKFLOW_OUTPUT_HOSTS", f"{APPROVED_HOST},{real_host}")
+
+    def real_host_transport(allowed_hosts=None, verify=True):
+        def handler(request: httpx.Request) -> httpx.Response:
+            if request.headers.get("host") not in (APPROVED_HOST, real_host):
+                raise httpx.ConnectError(f"refuse host {request.headers.get('host')}")
+            return httpx.Response(200, content=FIXED_PNG, headers={"content-type": "image/png"})
+        return httpx.MockTransport(handler)
+
+    monkeypatch.setattr(routes, "_output_transport", real_host_transport)
+
+    # 替换 fake_media 的返回以锚定真实 Fixture 数据
+    async def create_real_task(*args, **kwargs):
+        return {"taskId": real_remote_task_id}
+
+    query_count = 0
+    async def query_real_task_outputs(task_id, api_key, domain=None):
+        nonlocal query_count
+        query_count += 1
+        if query_count == 1:
+            return {"status": "RUNNING", "outputs": [], "raw": {}}
+        return {
+            "status": "SUCCESS",
+            "outputs": [
+                {
+                    "fileUrl": real_output_fixture["data"][0]["fileUrl"],
+                    "fileName": "example-real-host.png",
+                }
+            ],
+            "raw": real_output_fixture,
+        }
+
+    monkeypatch.setattr(platforms, "create_rh_cloud_task", create_real_task)
+    monkeypatch.setattr(platforms, "query_rh_task_outputs", query_real_task_outputs)
+
+    # 1. 准备项目、画布与受控工作流
+    project_id, project_version = _create_project(media_client, "c7-t2-real-rh-project")
+    canvas_id = _create_canvas(media_client, project_id, "c7-real-rh-canvas")
+    input_asset, workflow = prepare_workflow(media_client)
+    before_counts = asset_counts()
+
+    controlled_node_info = [
+        {"nodeId": "1", "fieldName": "image", "fieldValue": input_asset["filename"]},
+        {"nodeId": "2", "fieldName": "filename_prefix", "fieldValue": "c7_real_rh_output"},
+    ]
+    source_context = {
+        "project_id": project_id,
+        "project_version": str(project_version),
+        "canvas_id": canvas_id,
+        "shot_id": "SC01_SH001",
+    }
+
+    # 2. 提交执行
+    started = execute(
+        media_client,
+        workflow,
+        "rh_cloud",
+        key="c7-t2-real-rh-key-1",
+        node_info_list=controlled_node_info,
+        source_context=source_context,
+    )
+    assert started.status_code == 202, started.text
+    start_body = started.json()
+    job_id = start_body["job_id"]
+    assert start_body["remote_task_id"] == real_remote_task_id
+
+    # 3. 轮询持久任务至完成
+    first_poll = media_client.get(f"{TASKS}/{job_id}", headers=HEADERS)
+    assert first_poll.status_code == 200
+    assert first_poll.json()["status"] == "running"
+
+    second_poll = media_client.get(f"{TASKS}/{job_id}", headers=HEADERS)
+    assert second_poll.status_code == 200
+    done_task = second_poll.json()
+    assert done_task["status"] == "completed"
+    assert done_task["collection_status"] == "completed"
+    assert len(done_task["outputs"]) == 1
+
+    registered_output = done_task["outputs"][0]
+    assert registered_output["registered"] is True
+    asset_id = registered_output["asset_id"]
+    assert asset_id
+
+    # 4. 验证统一资产中枢元数据与来源溯源
+    after_counts = asset_counts()
+    assert after_counts["registry"] == before_counts["registry"] + 1
+    assert asset_id in after_counts["registry_ids"]
+
+    asset = _get_registry_asset(media_client, asset_id)
+    assert asset["task_id"] == job_id
+    assert asset["metadata"]["source_context"]["project_id"] == project_id
+    assert asset["metadata"]["source_context"]["canvas_id"] == canvas_id
+    assert done_task["source_context"]["project_id"] == project_id
+    assert done_task["source_context"]["canvas_id"] == canvas_id
+
+    # 5. 验证资产二进制可按固定哈希拉取
+    content_res = media_client.get(f"/api/god_workflow/assets/{asset_id}/content", headers=HEADERS)
+    assert content_res.status_code == 200
+    assert hashlib.sha256(content_res.content).hexdigest() == FIXED_PNG_SHA256
+
