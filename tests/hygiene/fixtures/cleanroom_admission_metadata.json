@@ -136,6 +136,13 @@
       "admission": "accepted"
     },
     {
+      "path": "docs/contracts/R2-REVIEW-DELIVERY-CONTRACT.md",
+      "classification": "frozen_interface_contract",
+      "authorization_basis": "owner_approval_C8_T1_2026-10-17",
+      "sha256": "b740963000e859b702f9077a72145ed2d7faeae61d6f423763717cf3549fcdab",
+      "admission": "accepted"
+    },
+    {
       "path": "docs/contracts/ASSET-LIBRARY-B4-INTERFACE-CATALOG.yaml",
       "classification": "frozen_interface_contract",
       "authorization_basis": "cleanroom_frozen_input",
