@@ -33,15 +33,16 @@ import hashlib
 import secrets
 import time
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Mapping, Optional
 
 from gw.core import storage
 from gw.core.errors import CleanroomException, VersionConflictException
+from gw.asset_review import service as review_service
 
 NS = "asset_review"
 DATA_STATUS_OK = "ok"
 
-SESSION_STATES = ("open", "delivered", "approved", "rejected")
+SESSION_STATES = ("open", "delivered", "approved", "rejected", "superseded")
 APPROVAL_STATES = ("approved", "changes_requested", "locked")
 COMMENT_STATES = ("open", "resolved")
 
@@ -99,11 +100,105 @@ def _require(bucket: str, key: str, code: str, label: str) -> Dict[str, Any]:
     return item
 
 
+def _is_c8(item: Mapping[str, Any] | None) -> bool:
+    return review_service.is_version_bound_payload(item)
+
+
+def _session_revision(item: Mapping[str, Any]) -> int:
+    """对象级 CAS 版本；旧 B6 记录没有 revision 时回退到 version。"""
+    return int(item.get("revision") or item.get("expected_version") or item.get("version") or 1)
+
+
+def _cas_session(session: Mapping[str, Any], expected: Any, label: str = "审阅会话") -> None:
+    if expected is None:
+        return
+    try:
+        expected_int = int(expected)
+    except (TypeError, ValueError):
+        raise CleanroomException(400, "INVALID_REQUEST", "expected_version 必须是整数") from None
+    current = _session_revision(session)
+    if expected_int != current:
+        raise VersionConflictException(
+            expected_version=expected_int,
+            current_version=current,
+            message="%s版本冲突，请重新读取后重试" % label,
+        )
+
+
+def _require_expected_for_c8(session: Mapping[str, Any], payload: Mapping[str, Any]) -> None:
+    if _is_c8(session) and payload.get("expected_version") is None:
+        raise CleanroomException(400, "INVALID_REQUEST", "C8 写操作必须携带 expected_version")
+
+
+def _assert_exact_binding(session: Mapping[str, Any], payload: Mapping[str, Any], *, require: bool = True) -> None:
+    """校验写入仍指向审阅会话创建时的精确资产版本。"""
+    if not _is_c8(session):
+        return
+    if require and not review_service.is_version_bound_payload(payload):
+        raise CleanroomException(400, "INVALID_REQUEST", "C8 写操作必须携带完整版本绑定")
+    binding = dict(payload)
+    binding.setdefault("asset_id", session.get("asset_id"))
+    version_id, version = review_service.validate_version_binding(binding)
+    if (
+        str(payload.get("asset_id") or session.get("asset_id")) != str(session.get("asset_id"))
+        or version_id != session.get("version_id")
+        or version != int(session.get("asset_version") or session.get("version") or 0)
+    ):
+        raise VersionConflictException(
+            expected_version=int(payload.get("expected_version") or _session_revision(session)),
+            current_version=_session_revision(session),
+            message="审阅写入的 asset_id/version_id/version 已过期，请重新读取当前版本",
+        )
+
+
+def _context_fields(item: Mapping[str, Any]) -> Dict[str, Any]:
+    """复制 C8 关联快照，防止交付记录依赖当前会话指针。"""
+    fields = {
+        key: item.get(key)
+        for key in review_service.C8_VERSION_FIELDS
+        if item.get(key) is not None
+    }
+    if isinstance(item.get("source"), Mapping):
+        fields["source"] = dict(item["source"])
+    fields["review_id"] = item.get("review_id") or item.get("session_id")
+    fields["session_id"] = item.get("session_id")
+    return fields
+
+
+def _advance_session(session: Dict[str, Any], *, c8: bool) -> int:
+    if c8:
+        next_revision = _session_revision(session) + 1
+        session["revision"] = next_revision
+        return next_revision
+    session["version"] = int(session.get("version") or 1) + 1
+    return int(session["version"])
+
+
+def _approval_view(item: Mapping[str, Any]) -> Dict[str, Any]:
+    view = dict(item)
+    view.setdefault("decision_id", view.get("approval_id"))
+    view.setdefault("decision", view.get("status"))
+    view.setdefault("review_id", view.get("session_id"))
+    if "review_status" not in view:
+        view["review_status"] = "approved" if view.get("status") == "approved" else view.get("status")
+    view.setdefault("next_action", review_service.next_action_for_decision(str(view.get("decision") or "")))
+    return view
+
+
+def _delivery_view(item: Mapping[str, Any]) -> Dict[str, Any]:
+    view = dict(item)
+    view.setdefault("review_id", view.get("session_id"))
+    view.setdefault("delivery_status", "delivered")
+    view.setdefault("updated_at", view.get("created_at"))
+    return view
+
+
 def _session_view(item: Dict[str, Any]) -> Dict[str, Any]:
     """对前端暴露的会话视图；字段名与 static/js/asset-review.js 对齐。"""
-    return {
+    view = {
         "id": item["session_id"],
         "session_id": item["session_id"],
+        "review_id": item.get("review_id") or item["session_id"],
         "asset_id": item.get("asset_id") or "",
         "title": item.get("title") or "",
         "visibility": item.get("visibility") or "shared",
@@ -111,19 +206,38 @@ def _session_view(item: Dict[str, Any]) -> Dict[str, Any]:
         "delivery_eligible": bool(item.get("delivery_eligible")),
         "status": item.get("status"),
         "version": item.get("version"),
+        "version_id": item.get("version_id"),
+        "asset_version": item.get("asset_version"),
+        "review_status": item.get("review_status") or (
+            "pending_review" if item.get("status") in ("open", "delivered") else item.get("status")
+        ),
+        "next_action": item.get("next_action") or review_service.next_action_for_decision(
+            str(item.get("review_status") or "")
+        ),
+        "expected_version": _session_revision(item),
+        "revision": _session_revision(item),
         "created_at": item.get("created_at"),
         "updated_at": item.get("updated_at"),
     }
+    for key in review_service.C8_VERSION_FIELDS:
+        if key in item and key not in view:
+            view[key] = item.get(key)
+    if isinstance(item.get("source"), Mapping):
+        view["source"] = dict(item["source"])
+    return view
 
 
 def _comment_view(item: Dict[str, Any]) -> Dict[str, Any]:
     # created_at 使用数字 epoch：前端执行 new Date(Number(created_at))。
-    return {
+    view = {
         "id": item["comment_id"],
         "comment_id": item["comment_id"],
         "session_id": item["session_id"],
+        "review_id": item.get("review_id") or item.get("session_id"),
         "author_name": item.get("author_name") or "匿名",
+        "reviewer_id": item.get("reviewer_id"),
         "created_at": item.get("created_at_epoch"),
+        "occurred_at": item.get("occurred_at") or item.get("created_at"),
         "body": item.get("body") or "",
         "status": item.get("status") or "open",
         "resolved": (item.get("status") == "resolved"),
@@ -135,6 +249,21 @@ def _comment_view(item: Dict[str, Any]) -> Dict[str, Any]:
         "annotations": item.get("annotations") or [],
         "version": item.get("version"),
     }
+    for key in (
+        "project_id",
+        "entity_id",
+        "episode_id",
+        "scene_id",
+        "shot_id",
+        "canvas_id",
+        "job_id",
+        "asset_id",
+        "version_id",
+        "expected_version",
+    ):
+        if key in item:
+            view[key] = item.get(key)
+    return view
 
 
 def _share_view(item: Dict[str, Any], include_token: bool = False) -> Dict[str, Any]:
@@ -156,11 +285,23 @@ def _share_view(item: Dict[str, Any], include_token: bool = False) -> Dict[str, 
     return view
 
 
-def list_sessions(asset_id: Optional[str] = None) -> Dict[str, Any]:
+def list_sessions(
+    asset_id: Optional[str] = None,
+    *,
+    project_id: Optional[str] = None,
+    shot_id: Optional[str] = None,
+    version_id: Optional[str] = None,
+) -> Dict[str, Any]:
     raw = state().read()
     items = [dict(v) for v in (raw.get("sessions") or {}).values()]
     if asset_id:
         items = [item for item in items if item.get("asset_id") == asset_id]
+    if project_id:
+        items = [item for item in items if item.get("project_id") == project_id]
+    if shot_id:
+        items = [item for item in items if item.get("shot_id") == shot_id]
+    if version_id:
+        items = [item for item in items if item.get("version_id") == version_id]
     items.sort(key=lambda item: item["session_id"])
     return {
         "sessions": [_session_view(item) for item in items],
@@ -173,6 +314,13 @@ def list_sessions(asset_id: Optional[str] = None) -> Dict[str, Any]:
 def create_session(payload: Dict[str, Any], expected_version: Optional[int]) -> Dict[str, Any]:
     if not isinstance(payload, dict):
         raise CleanroomException(400, "INVALID_REQUEST", "请求体必须是对象")
+    c8 = review_service.is_version_bound_payload(payload)
+    if c8:
+        if expected_version is None:
+            raise CleanroomException(400, "INVALID_REQUEST", "C8 创建审阅必须携带 expected_version")
+        version_id, asset_version = review_service.validate_version_binding(payload, require_source=True)
+    else:
+        version_id, asset_version = None, None
 
     def mutate(raw: Dict[str, Any]) -> Dict[str, Any]:
         _cas(raw, expected_version, "审查会话集合")
@@ -184,16 +332,50 @@ def create_session(payload: Dict[str, Any], expected_version: Optional[int]) -> 
         media_url = payload.get("version_media_url")
         record = {
             "session_id": session_id,
+            "review_id": session_id,
             "asset_id": asset_id,
             "title": str(payload.get("title") or "").strip(),
             "visibility": str(payload.get("visibility") or "shared"),
             "version_media_url": str(media_url) if media_url else None,
             "delivery_eligible": bool(payload.get("delivery_eligible", True)),
             "status": "open",
-            "version": 1,
+            "review_status": "pending_review" if c8 else "open",
+            "next_action": "review" if c8 else None,
+            "version": asset_version if c8 else 1,
+            "asset_version": asset_version,
+            "version_id": version_id,
+            "revision": 1 if c8 else None,
             "created_at": now,
             "updated_at": now,
         }
+        if c8:
+            for key in review_service.C8_VERSION_FIELDS:
+                if key in payload and payload.get(key) is not None:
+                    record[key] = dict(payload[key]) if key == "source" else payload[key]
+            # 新版本出现时，旧批准与交付只能作为历史读取，不能继续作为当前交付依据。
+            for old_session in (raw.get("sessions") or {}).values():
+                if (
+                    old_session.get("asset_id") != asset_id
+                    or not old_session.get("version_id")
+                    or old_session.get("version_id") == version_id
+                ):
+                    continue
+                old_session["review_status"] = "superseded"
+                old_session["next_action"] = "review_new_version"
+                if old_session.get("status") in ("open", "delivered", "approved", "rejected"):
+                    old_session["status"] = "superseded"
+                for approval in (raw.get("approvals") or {}).values():
+                    if approval.get("session_id") == old_session.get("session_id"):
+                        if approval.get("decision") == "approved" or approval.get("status") == "approved":
+                            approval["review_status"] = "approval_invalidated"
+                            approval["status"] = "approval_invalidated"
+                            approval["next_action"] = "review_new_version"
+                            approval["invalidated_at"] = now
+                for delivery in (raw.get("deliveries") or {}).values():
+                    if delivery.get("session_id") == old_session.get("session_id"):
+                        delivery["delivery_status"] = "superseded"
+                        delivery["status"] = "superseded"
+                        delivery["updated_at"] = now
         raw["sessions"][session_id] = record
         _bump(raw)
         return _session_view(record)
@@ -211,12 +393,24 @@ def get_session(session_id: str) -> Dict[str, Any]:
     approvals.sort(key=lambda item: item["approval_id"])
     deliveries = [dict(v) for v in (raw.get("deliveries") or {}).values() if v.get("session_id") == session_id]
     deliveries.sort(key=lambda item: item["delivery_id"])
+    session_view = _session_view(session)
+    delivery_views = [_delivery_view(item) for item in deliveries]
     return {
-        "session": _session_view(session),
+        "session": session_view,
         "comments": [_comment_view(item) for item in comments],
-        "approvals": [dict(item) for item in approvals],
-        "delivery": (dict(deliveries[-1]) if deliveries else None),
-        "asset": None,
+        "approvals": [_approval_view(item) for item in approvals],
+        "delivery": (delivery_views[-1] if delivery_views else None),
+        "deliveries": delivery_views,
+        "delivery_records": delivery_views,
+        "asset": (
+            {
+                "asset_id": session.get("asset_id"),
+                "version_id": session.get("version_id"),
+                "version": session.get("asset_version") or session.get("version"),
+            }
+            if session.get("asset_id")
+            else None
+        ),
         "revision": raw["revision"],
         "data_status": DATA_STATUS_OK,
         "data_gaps": [],
@@ -242,13 +436,21 @@ def create_comment(session_id: str, payload: Dict[str, Any]) -> Dict[str, Any]:
         raise CleanroomException(400, "INVALID_REQUEST", "评论内容不能为空")
 
     def mutate(raw: Dict[str, Any]) -> Dict[str, Any]:
-        if session_id not in raw["sessions"]:
+        session = raw["sessions"].get(session_id)
+        if session is None:
             raise CleanroomException(404, "SESSION_NOT_FOUND", "审查会话不存在")
+        c8 = _is_c8(session)
+        _require_expected_for_c8(session, payload)
+        _cas_session(session, payload.get("expected_version"))
+        _assert_exact_binding(session, payload)
         comment_id = _seq(raw, "rc-", "comments")
+        now = storage.now_iso()
         record = {
             "comment_id": comment_id,
             "session_id": session_id,
+            "review_id": session_id,
             "author_name": str(payload.get("author_name") or "匿名"),
+            "reviewer_id": str(payload.get("reviewer_id") or payload.get("author_name") or "").strip() or None,
             "body": body,
             "status": "open",
             "parent_id": payload.get("parent_id"),
@@ -257,14 +459,17 @@ def create_comment(session_id: str, payload: Dict[str, Any]) -> Dict[str, Any]:
             "in_ms": payload.get("in_ms"),
             "out_ms": payload.get("out_ms"),
             "annotations": list(payload.get("annotations") or []),
-            "created_at": storage.now_iso(),
+            "created_at": now,
             "created_at_epoch": _now_epoch(),
-            "version": 1,
+            "occurred_at": now,
+            "version": session.get("asset_version") if c8 else 1,
         }
+        if c8:
+            record.update(_context_fields(session))
         raw["comments"][comment_id] = record
-        session = raw["sessions"][session_id]
-        session["updated_at"] = storage.now_iso()
-        session["version"] = int(session.get("version") or 1) + 1
+        session["updated_at"] = now
+        new_revision = _advance_session(session, c8=c8)
+        record["expected_version"] = new_revision
         _bump(raw)
         return _comment_view(record)
 
@@ -280,6 +485,12 @@ def update_comment(comment_id: str, payload: Dict[str, Any]) -> Dict[str, Any]:
         record = raw["comments"].get(comment_id)
         if record is None:
             raise CleanroomException(404, "COMMENT_NOT_FOUND", "评论不存在")
+        session = raw["sessions"].get(record.get("session_id"))
+        c8 = _is_c8(session)
+        if session is not None:
+            _require_expected_for_c8(session, payload)
+            _cas_session(session, payload.get("expected_version"))
+            _assert_exact_binding(session, payload)
         if "resolved" in payload and payload.get("resolved") is not None:
             record["status"] = "resolved" if bool(payload.get("resolved")) else "open"
         if "status" in payload and payload.get("status") in COMMENT_STATES:
@@ -289,7 +500,11 @@ def update_comment(comment_id: str, payload: Dict[str, Any]) -> Dict[str, Any]:
             if not text:
                 raise CleanroomException(400, "INVALID_REQUEST", "评论内容不能为空")
             record["body"] = text
-        record["version"] = int(record.get("version") or 1) + 1
+        if session is not None:
+            session["updated_at"] = storage.now_iso()
+            record["expected_version"] = _advance_session(session, c8=c8)
+        else:
+            record["version"] = int(record.get("version") or 1) + 1
         _bump(raw)
         return _comment_view(record)
 
@@ -304,8 +519,9 @@ def update_comment(comment_id: str, payload: Dict[str, Any]) -> Dict[str, Any]:
 def put_approval(session_id: str, payload: Dict[str, Any]) -> Dict[str, Any]:
     if not isinstance(payload, dict):
         raise CleanroomException(400, "INVALID_REQUEST", "请求体必须是对象")
-    status = str(payload.get("status") or "").strip()
-    if status not in APPROVAL_STATES:
+    decision = review_service.decision_from_payload(payload)
+    legacy_status = str(payload.get("status") or "").strip()
+    if decision not in {"approved", "changes_requested"} and legacy_status not in APPROVAL_STATES:
         raise CleanroomException(
             400, "INVALID_REQUEST",
             "approval.status 只接受 %s" % "/".join(APPROVAL_STATES),
@@ -315,31 +531,57 @@ def put_approval(session_id: str, payload: Dict[str, Any]) -> Dict[str, Any]:
         session = raw["sessions"].get(session_id)
         if session is None:
             raise CleanroomException(404, "SESSION_NOT_FOUND", "审查会话不存在")
+        c8 = _is_c8(session)
+        _require_expected_for_c8(session, payload)
+        _cas_session(session, payload.get("expected_version"))
+        _assert_exact_binding(session, payload)
+        if c8 and decision not in {"approved", "changes_requested"}:
+            raise CleanroomException(400, "INVALID_REQUEST", "decision 只接受 approved/changes_requested")
+        next_action = str(payload.get("next_action") or "").strip()
+        if c8 and decision == "changes_requested" and not next_action:
+            # 契约要求退回必须能告诉用户下一步；默认动作是可执行的重新生成。
+            next_action = "regenerate_version"
         current = session.get("status")
-        # 状态机：open -> delivered -> approved/rejected，非法流转 409。
-        if current == "open":
+        # 旧 B6 客户端仍遵循 open -> delivered -> approved/rejected；
+        # C8 的 pending_review 可以直接登记精确版本决定。
+        if current == "open" and not c8:
             raise CleanroomException(409, "INVALID_STATE_TRANSITION", "会话尚未交付，不能审批")
-        if current in ("approved", "rejected") and current != _status_for(status):
+        if c8 and current in ("approved", "rejected", "superseded"):
+            raise CleanroomException(409, "INVALID_STATE_TRANSITION", "当前版本已完成决定，必须创建新版本后重新审阅")
+        if current in ("approved", "rejected", "superseded") and not c8 and current != _status_for(legacy_status):
             raise CleanroomException(409, "INVALID_STATE_TRANSITION", "会话已终态，不能再变更审批结论")
-        approval_id = "apr-%s-%04d" % (
-            session_id,
-            len([v for v in raw["approvals"].values() if v.get("session_id") == session_id]) + 1,
-        )
+        approval_id = (
+            "rd-%s-%04d" if c8 else "apr-%s-%04d"
+        ) % (session_id, len([v for v in raw["approvals"].values() if v.get("session_id") == session_id]) + 1)
+        now = storage.now_iso()
+        status_value = decision if c8 else legacy_status
         record = {
             "approval_id": approval_id,
+            "decision_id": approval_id,
             "session_id": session_id,
-            "status": status,
+            "review_id": session_id,
+            "status": status_value,
+            "decision": decision if c8 else legacy_status,
+            "review_status": decision if c8 else _status_for(legacy_status),
+            "next_action": next_action or review_service.next_action_for_decision(decision),
             "note": str(payload.get("note") or ""),
             "author_name": str(payload.get("author_name") or "匿名"),
-            "created_at": storage.now_iso(),
+            "reviewer_id": str(payload.get("reviewer_id") or payload.get("author_name") or "").strip() or None,
+            "created_at": now,
             "created_at_epoch": _now_epoch(),
+            "occurred_at": now,
         }
+        if c8:
+            record.update(_context_fields(session))
         raw["approvals"][approval_id] = record
-        session["status"] = _status_for(status)
-        session["updated_at"] = storage.now_iso()
-        session["version"] = int(session.get("version") or 1) + 1
+        session["status"] = "approved" if decision == "approved" else "rejected"
+        session["review_status"] = decision if c8 else session.get("review_status")
+        session["next_action"] = record["next_action"]
+        session["updated_at"] = now
+        new_revision = _advance_session(session, c8=c8)
+        record["expected_version"] = new_revision
         _bump(raw)
-        return dict(record)
+        return _approval_view(record)
 
     approval = state().mutate(mutate)
     return {"approval": approval, "session": get_session(session_id)["session"]}
@@ -362,23 +604,84 @@ def create_delivery(session_id: str, payload: Dict[str, Any]) -> Dict[str, Any]:
         session = raw["sessions"].get(session_id)
         if session is None:
             raise CleanroomException(404, "SESSION_NOT_FOUND", "审查会话不存在")
-        if session.get("status") == "open":
+        c8 = _is_c8(session)
+        requested_id = str(payload.get("delivery_id") or payload.get("id") or "").strip()
+        existing = (raw.get("deliveries") or {}).get(requested_id) if requested_id else None
+        if existing is not None:
+            _require_expected_for_c8(session, payload)
+            _assert_exact_binding(session, payload)
+            if c8:
+                expected_snapshot = _context_fields(session)
+                for key in ("version_id", "asset_id", "version"):
+                    if existing.get(key) != expected_snapshot.get(key):
+                        raise VersionConflictException(
+                            expected_version=int(payload.get("expected_version") or _session_revision(session)),
+                            current_version=_session_revision(session),
+                            message="delivery_id 已绑定其他版本，不能改绑",
+                        )
+                requested_decision = str(payload.get("decision_id") or "").strip()
+                if requested_decision and existing.get("decision_id") != requested_decision:
+                    raise VersionConflictException(
+                        expected_version=int(payload.get("expected_version") or _session_revision(session)),
+                        current_version=_session_revision(session),
+                        message="delivery_id 已绑定其他批准决定，不能改绑",
+                    )
+            return _delivery_view(existing)
+        _require_expected_for_c8(session, payload)
+        _cas_session(session, payload.get("expected_version"))
+        _assert_exact_binding(session, payload)
+
+        if c8:
+            if session.get("status") != "approved" or session.get("review_status") != "approved":
+                raise CleanroomException(409, "INVALID_STATE_TRANSITION", "只有明确批准的当前版本才能交付")
+            decision_id = str(payload.get("decision_id") or "").strip()
+            approvals = [
+                item for item in (raw.get("approvals") or {}).values()
+                if item.get("session_id") == session_id
+                and item.get("decision_id") == decision_id
+                and item.get("decision") == "approved"
+                and item.get("review_status") == "approved"
+            ]
+            if not decision_id or not approvals:
+                raise CleanroomException(409, "INVALID_STATE_TRANSITION", "交付必须引用当前版本的 approved decision_id")
+            for field in review_service.C8_ARTIFACT_FIELDS:
+                if not str(payload.get(field) or "").strip():
+                    raise CleanroomException(400, "INVALID_REQUEST", "交付必须携带 %s" % field)
+        elif session.get("status") == "open":
+            # 旧 B6 客户端保留 open -> delivered 的兼容状态机。
             session["status"] = "delivered"
-        delivery_id = _seq(raw, "dlv-", "deliveries")
+        delivery_id = requested_id or _seq(raw, "dlv-", "deliveries")
+        if requested_id and (not requested_id.isascii() or any(ch.isspace() for ch in requested_id)):
+            raise CleanroomException(400, "INVALID_REQUEST", "delivery_id 必须是无空格 ASCII 标识")
+        now = storage.now_iso()
         record = {
             "delivery_id": delivery_id,
             "id": delivery_id,
             "session_id": session_id,
+            "review_id": session_id,
             "title": str(payload.get("title") or session.get("title") or "delivery"),
             "asset_id": session.get("asset_id"),
-            "created_at": storage.now_iso(),
-            "version": 1,
+            "created_at": now,
+            "updated_at": now,
+            "delivery_status": "delivered",
+            "version": session.get("asset_version") if c8 else 1,
         }
+        if c8:
+            record.update(_context_fields(session))
+            record.update({field: str(payload[field]).strip() for field in review_service.C8_ARTIFACT_FIELDS})
+            record["decision_id"] = str(payload.get("decision_id")).strip()
+            record["approval_id"] = record["decision_id"]
+            record["decision"] = "approved"
+            record["expected_version"] = _session_revision(session) + 1
         raw["deliveries"][delivery_id] = record
-        session["updated_at"] = storage.now_iso()
-        session["version"] = int(session.get("version") or 1) + 1
+        session["updated_at"] = now
+        if c8:
+            _advance_session(session, c8=True)
+            record["expected_version"] = _session_revision(session)
+        else:
+            _advance_session(session, c8=False)
         _bump(raw)
-        return dict(record)
+        return _delivery_view(record)
 
     delivery = state().mutate(mutate)
     return {"delivery": delivery}
@@ -390,17 +693,22 @@ def export_delivery(delivery_id: str) -> Dict[str, Any]:
     delivery = (raw.get("deliveries") or {}).get(delivery_id)
     if delivery is None:
         raise CleanroomException(404, "DELIVERY_NOT_FOUND", "交付记录不存在")
+    if delivery.get("delivery_status") == "superseded":
+        raise CleanroomException(409, "VERSION_CONFLICT", "交付记录绑定的批准版本已失效，请重新审阅当前版本")
     session = (raw.get("sessions") or {}).get(delivery.get("session_id")) or {}
+    view = _delivery_view(delivery)
     lines = [
         "Gods-Workbench 交付清单",
         "交付编号: %s" % delivery_id,
         "审查会话: %s" % delivery.get("session_id"),
         "素材编号: %s" % (session.get("asset_id") or "-"),
         "标题: %s" % (delivery.get("title") or "-"),
+        "版本编号: %s" % (view.get("version_id") or "-"),
+        "批准决定: %s" % (view.get("decision_id") or "-"),
         "生成时间: %s" % storage.now_iso(),
     ]
     return {
-        "delivery": dict(delivery),
+        "delivery": view,
         "filename": "%s.pdf" % delivery_id,
         "pdf": _build_pdf(lines),
         "data_status": DATA_STATUS_OK,
