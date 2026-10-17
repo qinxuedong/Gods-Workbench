@@ -665,14 +665,23 @@ async function fetchWorkflowTasksPage(workflowId, cursor) {
 
 async function restoreWorkflowTask() {
   try {
-    const requestedJob = new URLSearchParams(window.location.search).get('job_id');
+    const search = (typeof window !== 'undefined' && window.location?.search) || (typeof location !== 'undefined' && location?.search) || '';
+    const searchParams = typeof URLSearchParams !== 'undefined' ? new URLSearchParams(search) : { get: () => null, has: () => false };
+    const requestedJob = searchParams.get('job_id');
     const workflowId = state.currentWorkflow?.workflow_id || null;
     let task = null;
     let page = null;
     if (requestedJob) {
       // 显式 job_id 链接按用户意图打开，不受当前工作流限制。
-      const response = await apiFetch("/api/god_workflow/tasks");
-      task = (response.tasks || []).find(item => (item.job_id || item.task_id) === requestedJob);
+      try {
+        const response = await apiFetch("/api/god_workflow/tasks");
+        task = (response?.tasks || []).find(item => (item.job_id || item.task_id) === requestedJob);
+      } catch (_) {}
+      if (!task) {
+        try {
+          task = await apiFetch(`/api/god_workflow/tasks/${encodeURIComponent(requestedJob)}`);
+        } catch (_) {}
+      }
     } else {
       // 切换到工作流界面时，只有当前工作流的任务可以自动弹出执行监控；其他工作流的任务只在各自列表显示状态。
       if (!workflowId) return;
@@ -683,7 +692,14 @@ async function restoreWorkflowTask() {
     if (!task) return;
     if (task.status === "outcome_unknown") markUnknownTaskSeen(task);
     state.activeTaskId = state.expandedTaskId = task.job_id || task.task_id;
-    if (page) { state.workflowTasks = page.tasks; state.workflowTasksCursor = page.nextCursor; renderWorkflowTaskList(); }
+    if (page) {
+      state.workflowTasks = page.tasks;
+      state.workflowTasksCursor = page.nextCursor;
+      renderWorkflowTaskList();
+    } else if (!state.workflowTasks || !state.workflowTasks.some(item => (item.job_id || item.task_id) === state.activeTaskId)) {
+      state.workflowTasks = [task, ...(state.workflowTasks || [])];
+      renderWorkflowTaskList();
+    }
     setWorkflowTaskTrigger("btnViewTaskDrawer");
     wfGet("taskModal")?.classList.add("open");
     startTaskPolling(state.activeTaskId, task.target);
@@ -1230,15 +1246,18 @@ async function handleParseLink(rawLink) {
   }
 
   try {
-    const sourceContext = executionSourceContext();
+    const sourceContext = typeof executionSourceContext === 'function' ? executionSourceContext() : {};
+    const parsePayload = {
+      url_or_text: text,
+      folder_id: state.activeFolderId || "parsed_default",
+    };
+    if (sourceContext && Object.keys(sourceContext).length) {
+      parsePayload.source_context = sourceContext;
+    }
     const wf = await apiFetch("/api/god_workflow/parse-link", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        url_or_text: text,
-        folder_id: state.activeFolderId || "parsed_default",
-        source_context: sourceContext,
-      }),
+      body: JSON.stringify(parsePayload),
     });
     if (principalKey !== state.authPrincipalKey || !window.GWAuthGate?.isAuthenticated()) return;
     if (wf.public_preview) {
@@ -1280,8 +1299,10 @@ async function handleUploadFile(file) {
   formData.append("folder_id", state.activeFolderId || "parsed_default");
 
   try {
-    const sourceContext = executionSourceContext();
-    formData.append("source_context", JSON.stringify(sourceContext));
+    const sourceContext = typeof executionSourceContext === 'function' ? executionSourceContext() : {};
+    if (sourceContext && Object.keys(sourceContext).length) {
+      formData.append("source_context", JSON.stringify(sourceContext));
+    }
     showToast(`正在解析本地文件 ${file.name}...`);
     const wf = await apiFetch("/api/god_workflow/parse-upload", {
       method: "POST",
@@ -1757,6 +1778,37 @@ function renderHeaderTelemetry(wf) {
       )}">${escapeHtml(fallbackText)}</span>`;
     }
   }
+  renderProjectContextBadge();
+}
+
+function renderProjectContextBadge() {
+  const search = (typeof window !== 'undefined' && window.location?.search) || (typeof location !== 'undefined' && location?.search) || '';
+  const params = typeof URLSearchParams !== 'undefined' ? new URLSearchParams(search) : { get: () => null, has: () => false };
+  const projectId = String(params.get('project_id') || '').trim();
+  const canvasId = String(params.get('canvas_id') || '').trim();
+  let badge = wfGet('workflowProjectContextBadge');
+  if (!projectId && !canvasId) {
+    if (badge) badge.remove?.();
+    return;
+  }
+  if (!badge && typeof document !== 'undefined') {
+    badge = document.createElement('div');
+    badge.id = 'workflowProjectContextBadge';
+    badge.className = 'capsule-badge';
+    badge.style.cssText = 'background:rgba(223,195,132,0.15);border:1px solid var(--gold);color:var(--gold);display:inline-flex;align-items:center;gap:6px;';
+    const runway = wfGet('capsuleRunway');
+    if (runway) {
+      runway.appendChild(badge);
+    } else {
+      const actions = wfQuery('.workflow-sub-deck-actions');
+      if (actions) actions.prepend(badge);
+    }
+  }
+  if (!badge) return;
+  const projectLabel = projectId ? `项目: ${escapeHtml(projectId)}` : '';
+  const backProject = projectId ? `<a id="workflowBackToProjectLink" class="mini-link-btn" href="/static/pages/projects.html?project_id=${encodeURIComponent(projectId)}" style="margin-left:4px;">回到项目</a>` : '';
+  const backCanvas = canvasId ? `<a id="workflowBackToCanvasLink" class="mini-link-btn" href="/static/pages/canvas.html?canvas_id=${encodeURIComponent(canvasId)}&project_id=${encodeURIComponent(projectId)}" style="margin-left:4px;">回到画布</a>` : '';
+  badge.innerHTML = `<span>${projectLabel}</span>${backProject}${backCanvas}`;
 }
 
 function getSourceBadgeText(sourceType) {
@@ -3436,7 +3488,8 @@ function setExecutionTarget(target) {
 }
 
 function requireProjectContext(wf) {
-  const parameters = new URLSearchParams(window.location.search);
+  const search = (typeof window !== 'undefined' && window.location?.search) || (typeof location !== 'undefined' && location?.search) || '';
+  const parameters = typeof URLSearchParams !== 'undefined' ? new URLSearchParams(search) : { get: () => null, has: () => false };
   const project_id = String(parameters.get('project_id') || '').trim();
   const canvas_id = String(parameters.get('canvas_id') || '').trim();
   if (canvas_id && !project_id) {
@@ -3646,13 +3699,25 @@ function startTaskPolling(taskId, target) {
       const outputs = Array.isArray(statusRes.outputs) ? statusRes.outputs : [];
       if (terminal.has(st)) {
         clearInterval(state.pollTimer);
+        const sourceContext = statusRes.source_context || statusRes.metadata?.source_context || {};
+        const search = (typeof window !== 'undefined' && window.location?.search) || (typeof location !== 'undefined' && location?.search) || '';
+        const searchParams = typeof URLSearchParams !== 'undefined' ? new URLSearchParams(search) : { get: () => null, has: () => false };
+        const projectId = String(sourceContext.project_id || searchParams.get('project_id') || '').trim();
+        const canvasId = String(sourceContext.canvas_id || searchParams.get('canvas_id') || '').trim();
         const mediaHtml = outputs.filter((item) => item.registered && item.url).map((item) => {
           const url = item.url;
+          const assetId = item.asset_id || '';
           const preview = item.media_type === 'video'
             ? `<video src="${escapeHtml(url)}" controls preload="metadata" style="max-width:100%;max-height:320px;"></video>`
             : item.media_type === 'document' ? `<span>${escapeHtml(item.filename || '产物文件')} · 下载原件</span>`
             : `<img src="${escapeHtml(url)}" alt="生成产物" style="max-width:100%;max-height:320px;" />`;
-          return `<div class="hw-bay-row" style="align-items:center;">${preview}<a class="mini-link-btn" href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer">打开受控输出</a></div>`;
+          const assetBadge = assetId
+            ? `<span class="wf-task-asset-badge" data-asset-id="${escapeHtml(assetId)}" style="color:var(--gold);font-family:var(--gw-font-mono);font-size:var(--gw-type-body-sm);padding:2px 6px;border:1px solid rgba(223,195,132,0.4);border-radius:3px;">统一资产: ${escapeHtml(assetId)}</span>`
+            : '';
+          const assetLink = assetId
+            ? `<a class="mini-link-btn" data-action="view-asset" href="/static/pages/assets.html?asset_id=${encodeURIComponent(assetId)}" target="_blank" rel="noopener noreferrer">查看资产详情</a>`
+            : '';
+          return `<div class="hw-bay-row" style="align-items:center;gap:8px;">${preview}${assetBadge}<a class="mini-link-btn" href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer">打开受控输出</a>${assetLink}</div>`;
         }).join("");
         const message = statusRes.messages?.join?.("；") || (st === "outcome_unknown" ? "外部请求可能已产生副作用，请人工核实，不会自动重试。" : "");
         const unknownBadge = st === "outcome_unknown" ? `<span class="wf-task-status-badge" data-task-badge="outcome_unknown" style="display:inline-block;margin-inline-start:6px;padding:0 6px;border:1px solid var(--rose);border-radius:4px;color:var(--rose);font-size:var(--gw-type-body-sm);">结果未知 · 待人工核实</span>` : "";
@@ -3666,7 +3731,14 @@ function startTaskPolling(taskId, target) {
         }
         const abandonButton = st === "outcome_unknown" && statusRes.error_code === "OUTCOME_UNKNOWN_NO_REMOTE_ID"
           ? `<div class="hw-bay-row"><button type="button" class="hw-btn" data-task-abandon="${escapeHtml(taskId)}">放弃</button><span style="font-size:var(--gw-type-body-sm);color:var(--text-muted);">没有远端任务 ID，确认未产生结果后可标记放弃（不会重新提交）。</span></div>` : "";
-        bodyEl.innerHTML = `<div class="missing-item-card ${delivered ? "ready-ok" : ""}"><div style="color:${delivered ? "var(--emerald-bright)" : "var(--rose)"};font-weight:700;font-family:var(--gw-font-mono);font-variant-numeric:tabular-nums;">${escapeHtml(collectionIncomplete ? "执行已结束，输出回收未完成" : (label[st] || st))} (Job ID: ${escapeHtml(taskId)})${unknownBadge}</div><div style="font-size:var(--gw-type-body-sm);color:var(--text-muted);">${escapeHtml(message)}</div></div>${abandonButton}${mediaHtml}`;
+        const sourceProvenanceHtml = (delivered && (projectId || canvasId))
+          ? `<div class="hw-bay-row wf-source-provenance" data-source-provenance style="align-items:center;gap:8px;margin-top:6px;padding:6px 10px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.08);border-radius:4px;">
+              <span style="color:var(--text-muted);font-size:var(--gw-type-body-sm);font-weight:600;">来源回跳:</span>
+              ${projectId ? `<a class="mini-link-btn" data-action="return-to-source-project" href="/static/pages/projects.html?project_id=${encodeURIComponent(projectId)}" target="_blank" rel="noopener noreferrer">返回来源项目</a>` : ''}
+              ${canvasId ? `<a class="mini-link-btn" data-action="return-to-source-canvas" href="/static/pages/canvas.html?canvas_id=${encodeURIComponent(canvasId)}&project_id=${encodeURIComponent(projectId)}" target="_blank" rel="noopener noreferrer">返回来源画布</a>` : ''}
+            </div>`
+          : '';
+        bodyEl.innerHTML = `<div class="missing-item-card ${delivered ? "ready-ok" : ""}"><div style="color:${delivered ? "var(--emerald-bright)" : "var(--rose)"};font-weight:700;font-family:var(--gw-font-mono);font-variant-numeric:tabular-nums;">${escapeHtml(collectionIncomplete ? "执行已结束，输出回收未完成" : (label[st] || st))} (Job ID: ${escapeHtml(taskId)})${unknownBadge}</div><div style="font-size:var(--gw-type-body-sm);color:var(--text-muted);">${escapeHtml(message)}</div></div>${abandonButton}${mediaHtml}${sourceProvenanceHtml}`;
         bodyEl.querySelector?.("[data-task-abandon]")?.addEventListener("click", () => abandonWorkflowTask(taskId, target));
         return;
       }
@@ -4417,8 +4489,15 @@ function handleUnauthenticatedComfyImport(event) {
   window.HardwareDeck?.openAccountModal?.();
 }
 document.addEventListener('click', handleUnauthenticatedComfyImport, true);
-window.WorkbenchWorkflow = Object.freeze({ init: rebindWorkbench, rebind: rebindWorkbench, dispose: disposeWorkbench });
-window.addEventListener('gw-auth-state', event => {
+window.WorkbenchWorkflow = Object.freeze({
+  init: rebindWorkbench,
+  rebind: rebindWorkbench,
+  dispose: disposeWorkbench,
+  getProjectContext: () => requireProjectContext(state.currentWorkflow),
+  getActiveTaskId: () => state.activeTaskId,
+  restoreWorkflowTask,
+  renderProjectContextBadge,
+});
   if (event.detail?.authenticated === true) {
     const principal = event.detail.principal || {};
     const key = JSON.stringify([principal.identity_domain || event.detail.auth_mode, principal.subject || principal.user_id || principal.username]);
