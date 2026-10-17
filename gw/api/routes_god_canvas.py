@@ -100,14 +100,14 @@ def _project_write_owner_key(project_id: str, context) -> Optional[str]:
                 raise ForbiddenException(message="无当前资源写权限，已降级为只读")
         raise CleanroomException(404, "PROJECT_NOT_FOUND", "项目不存在")
 
+    if project_id == "default":
+        return owner_key_for_context(context)
+
     if not default_god_canvas_service.persistent:
         return default_god_canvas_service._check_project_access(project_id, context)
 
     if context.mode == "local_account":
         default_god_canvas_service._check_project_access(project_id, context)
-
-    if project_id == "default":
-        return owner_key_for_context(context)
     require_project_write_context(project_id, context)
     return owner_key_for_context(context)
 

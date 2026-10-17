@@ -22,6 +22,12 @@
     'agents.html': 'agents.html', 'assets.html': 'assets.html', 'collab.html': 'collab.html',
     'workflow-workbench.html': 'workflow-workbench.html', 'settings.html': 'settings.html'
   };
+  const STARTUP_PAGE_ROUTES = Object.freeze({
+    index: 'index.html',
+    projects: 'projects.html',
+    storyboard: 'storyboard.html?view=canvas'
+  });
+  const WORKBENCH_PREFERENCES_KEY = 'workbench_preferences';
   // 部分路由会移除旧的 script 节点，但不会撤销浏览器已经建立的全局绑定。
   // 以稳定指纹去重，避免外部脚本重复副作用和内联 const 重复声明。
   const executedRouteScriptKeys = new Set();
@@ -43,15 +49,69 @@
     const pageName = location.pathname.split('/').pop() || 'index.html';
     workshopRouteBootstrapped = pageName === 'workshop.html';
   }
+  function readWorkbenchPreferences() {
+    try {
+      const parsed = JSON.parse(localStorage.getItem(WORKBENCH_PREFERENCES_KEY) || '{}');
+      return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
+    } catch (_) {
+      return {};
+    }
+  }
+  function startupHref(value) {
+    const raw = String(value || '').trim();
+    if (!raw) return '';
+    const mapped = STARTUP_PAGE_ROUTES[raw] || raw;
+    try {
+      const url = new URL(mapped, location.href);
+      if (url.origin !== location.origin) return '';
+      const pageName = url.pathname.split('/').pop() || 'index.html';
+      if (!ROUTES[pageName]) return '';
+      return `${url.pathname}${url.search}${url.hash}`;
+    } catch (_) {
+      return '';
+    }
+  }
+  function rememberLastVisitedPage(href = location.href) {
+    const target = startupHref(href);
+    if (!target) return;
+    try {
+      const preferences = readWorkbenchPreferences();
+      preferences.last_visited_page = target;
+      localStorage.setItem(WORKBENCH_PREFERENCES_KEY, JSON.stringify(preferences));
+    } catch (_) {}
+  }
+  function applyStartupPreference() {
+    const current = new URL(location.href);
+    const currentPage = current.pathname.split('/').pop() || 'index.html';
+    // Direct page links remain authoritative. Startup preferences only apply
+    // when the configured entry point has loaded the plain home route.
+    if (currentPage !== 'index.html' || current.search) return false;
+    const preferences = readWorkbenchPreferences();
+    const restore = preferences.restore_page !== false;
+    const target = startupHref(restore ? preferences.last_visited_page : preferences.default_page || 'index');
+    if (!target || target === `${current.pathname}${current.search}${current.hash}`) return false;
+    void navigate(target, false);
+    return true;
+  }
   function standardRightDeck() {
     const deck = document.querySelector('.topbar-master-deck .recessed-deck-slot');
     if (!deck || deck.children.length < 2) return;
-    const old = deck.lastElementChild;
-    if (old?.classList.contains('gw-shell-right')) return;
-    const right = document.createElement('div');
+    const nav = deck.querySelector(':scope > .deck-nav-cluster') || deck.firstElementChild;
+    if (!nav) return;
+    const right = deck.querySelector(':scope > .gw-shell-right') || document.createElement('div');
+    const needsMarkup = !right.classList.contains('gw-shell-right');
     right.className = 'gw-shell-right';
     right.innerHTML = '<div class="gw-shell-fader"><span>FLUX</span><div class="hw-fader-track-horizontal gw-shell-fader-track"><div class="hw-fader-glow-bar" data-gw-gpu-util-fill style="width:0%"></div><div class="hw-fader-thumb-3d" data-gw-gpu-util-thumb style="left:0%"></div></div><span class="text-amber-300" data-gw-gpu-util title="真实数据源：GET /api/observability/health 的 gpu_telemetry（读取中）">读取中…</span></div><div class="gw-shell-fader"><span>VRAM</span><div class="hw-fader-track-horizontal gw-shell-fader-track"><div class="hw-fader-glow-bar" data-gw-gpu-vram-fill style="width:0%;background:linear-gradient(90deg,#38bdf8,#2dd4bf)"></div><div class="hw-fader-thumb-3d" data-gw-gpu-vram-thumb style="left:0%"></div></div><span class="text-amber-300" data-gw-gpu-vram title="真实数据源：GET /api/observability/health 的 gpu_telemetry（读取中）">读取中…</span></div><span class="h-4 w-px bg-white/10"></span><span class="gw-type-body-md font-mono text-[#dfc384]">CF</span><button type="button" class="hw-slide-toggle" data-gw-comfy-toggle aria-pressed="false" aria-label="切换 CF 后台控制"><div class="hw-slide-peg"></div></button><span class="h-4 w-px bg-white/10"></span><a id="topbarUnifiedTrashBtn" class="gw-shell-trash btn-hw-round" href="projects.html?openTrash=1" onclick="if(window.WorkbenchProjects?.openGlobalTrashDrawer){event.preventDefault();window.WorkbenchProjects.openGlobalTrashDrawer();}" title="统一回收站" aria-label="打开统一回收站"><span class="btn-hw-round-inner"><i data-lucide="trash-2" class="w-3.5 h-3.5"></i></span><span id="topbarTrashBadge" class="gw-shell-trash-badge" hidden>0</span></a><div class="h-4 w-px bg-white/10"></div><div class="hw-avatar-keycap btn-hw-round" title="认证状态未接入：点击打开认证中心查看真实登录状态" role="button" tabindex="0" aria-label="打开认证中心" data-gw-identity="unverified"><div class="hw-avatar-keycap-inner btn-hw-round-inner"><i data-lucide="shield-check" class="w-4 h-4 text-[#eddab3]"></i></div><span class="hw-avatar-keycap-status"></span></div>';
-    old.replaceWith(right);
+    if (needsMarkup) {
+      [...deck.children].forEach(child => {
+        if (child !== nav && child !== right) child.remove();
+      });
+      deck.appendChild(right);
+    } else {
+      [...deck.children].forEach(child => {
+        if (child !== nav && child !== right) child.remove();
+      });
+    }
     // 顶栏推子是后注入的：用最近一次真实 GPU 读数立即回放，
     // 否则会一直停在「读取中」直到 15s 周期刷新（fake-degradation 空窗）。
     try {
@@ -224,8 +284,12 @@
     injectTrash();
     syncNavPills(location.href);
   }
-  function shellWorkspace() { return document.querySelector('.topbar-master-deck')?.nextElementSibling || null; }
-  function targetWorkspace(doc) { return doc.querySelector('.topbar-master-deck')?.nextElementSibling || doc.body; }
+  function shellWorkspace() { return targetWorkspace(document); }
+  function targetWorkspace(doc) {
+    return doc.querySelector('#homeWorkspace, #workspace, #agentsWorkspace, main, .app-shell-workspace')
+      || doc.querySelector('.topbar-master-deck')?.nextElementSibling
+      || doc.body;
+  }
   function firstSidebar(workspace) { return workspace?.querySelector(':scope > aside') || null; }
   function workspaceNodes(workspace, aside) { return [...(workspace?.children || [])].filter(node => node !== aside); }
   function syncRouteDeck(doc) {
@@ -378,6 +442,7 @@
         syncNavPills(url.href);
         window.dispatchEvent(new CustomEvent('gw:route-loaded', { detail: { href: url.href } }));
         if (window.lucide?.createIcons) window.lucide.createIcons();
+        rememberLastVisitedPage(url.href);
         return;
       }
       const nextSidebar = firstSidebar(nextWorkspace);
@@ -405,6 +470,7 @@
        refreshRouteController(url.href);
       window.dispatchEvent(new CustomEvent('gw:route-loaded', { detail: { href: url.href } }));
       if (window.lucide?.createIcons) window.lucide.createIcons();
+      rememberLastVisitedPage(url.href);
     } catch (error) {
       console.warn('[GW shell] partial route failed, falling back to full navigation', error);
       location.href = url.href;
@@ -468,6 +534,12 @@
     observeSidebar();
   }
   const oldInit = init;
-  init = function () { oldInit(); bindNavigation(); bindSelection(); };
+  init = function () {
+    oldInit();
+    const redirected = applyStartupPreference();
+    if (!redirected) rememberLastVisitedPage();
+    bindNavigation();
+    bindSelection();
+  };
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init); else init();
 })();

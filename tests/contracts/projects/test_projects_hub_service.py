@@ -103,7 +103,7 @@ def test_api_static_and_projects_integration(client: TestClient):
     # 根路径重定向
     resp_root = client.get("/", follow_redirects=False)
     assert resp_root.status_code == 307
-    assert resp_root.headers["location"] == "/static/pages/projects.html"
+    assert resp_root.headers["location"] == "/static/pages/index.html"
 
     # 项目中心 HTML 可读取
     resp_page = client.get("/static/pages/projects.html")

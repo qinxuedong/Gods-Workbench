@@ -1488,6 +1488,7 @@ async function createCanvasOnBoard(title, kind = 'smart', worldPt, projectId = c
                 project_id: canvasProjectId,
                 kind: 'smart',
                 mode: 'smart',
+                scope: canvasScope,
                 version: nc.version || 1,
                 board_x: Math.round(worldPt.x),
                 board_y: Math.round(worldPt.y),
@@ -1499,13 +1500,27 @@ async function createCanvasOnBoard(title, kind = 'smart', worldPt, projectId = c
                 rememberProjectId(currentProjectId);
                 syncCanvasListContext();
             }
+            // 创建结果必须落在当前可见分类中，否则成功响应会被筛选器隐藏。
+            if (canvasScope === 'project' && !['all', 'project'].includes(currentCanvasFilter)) {
+                currentCanvasFilter = 'project';
+            } else if (canvasScope === 'standalone' && !['all', 'classic'].includes(currentCanvasFilter)) {
+                currentCanvasFilter = 'all';
+            }
+            syncCanvasFilterControls();
             selectedCanvasId = newId;
             renderProjects();
             renderBoard();
             setStatus(L('创建成功','Canvas created'));
             loadAll().catch(() => {});
         }
-    } catch(e){ console.error(e); setStatus(L('创建失败','Create failed')); }
+    } catch(e){
+        console.error(e);
+        const message = String(e?.message || L('未知错误', 'Unknown error')).trim();
+        const notice = L(`创建失败：${message}`, `Create failed: ${message}`);
+        setStatus(notice);
+        if (typeof window.showWorkbenchToast === 'function') window.showWorkbenchToast(notice, true);
+        else if (typeof window.alert === 'function') window.alert(notice);
+    }
 }
 
 /* ===== Card context menu (rename / delete / move) ===== */
