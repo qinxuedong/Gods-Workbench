@@ -129,6 +129,13 @@
       "admission": "accepted"
     },
     {
+      "path": "docs/contracts/R1-TEXT-MEDIA-LOOP-CONTRACT.md",
+      "classification": "frozen_interface_contract",
+      "authorization_basis": "owner_approval_C7_P5_2026-10-17",
+      "sha256": "97ee98fd981e922ccecc9eb62acbc506866982ee74cff32b700ef5a1d78aae48",
+      "admission": "accepted"
+    },
+    {
       "path": "docs/contracts/ASSET-LIBRARY-B4-INTERFACE-CATALOG.yaml",
       "classification": "frozen_interface_contract",
       "authorization_basis": "cleanroom_frozen_input",

@@ -286,7 +286,7 @@ def test_static_layer_has_no_legacy_integration_markers(repo_root: Path):
 # 登记只保存当前新仓的分类、准入依据和规范化哈希；不保存旧仓源码、提示词正文、
 # 凭据或完整历史授权账本。历史材料继续留在洁净源仓，不因测试需要复制进新仓。
 ADMISSION_METADATA_PATH = "tests/hygiene/fixtures/cleanroom_admission_metadata.json"
-ADMISSION_METADATA_SHA256 = "ee9bf1bf672c7b4905bbc9df4b9a64e56d31e18ffe560bf031e66635c5edf8ef"
+ADMISSION_METADATA_SHA256 = "ebd31e031f6c8fca2eec63a164e0f5a6b9984e9d0f7f938639e0efd938e61ded"
 QUARANTINED_PROMPT_ORIGINAL_PATH = "web/system-prompts/infinite-canvas-prompt-templates.md"
 QUARANTINED_PROMPT_URL = "/static/system-prompts/infinite-canvas-prompt-templates.md"
 
@@ -436,7 +436,7 @@ def test_admission_metadata_hashes_match_current_files(repo_root: Path):
     """当前准入文件哈希必须与机器登记一致；不复用旧 Phase-2 账本。"""
     metadata = _load_admission_metadata(repo_root)
     entries = metadata.get("admitted_files", [])
-    assert len(entries) == 96, "当前准入登记数量必须与 H01、已批准按钮规范、全局命名规范及本地文件夹规范实物集合一致"
+    assert len(entries) == 97, "当前准入登记数量必须与 H01、已批准按钮规范、全局命名规范及本地文件夹规范实物集合一致"
     for entry in entries:
         path = repo_root / entry["path"]
         assert path.is_file(), f"准入文件缺失: {entry['path']}"
