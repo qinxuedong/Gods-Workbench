@@ -12,6 +12,7 @@ import test from 'node:test';
 import { createContext, runInContext } from 'node:vm';
 
 const source = readFileSync(new URL('../../web/js/controllers/projects-controller.js', import.meta.url), 'utf8');
+const projectsPage = readFileSync(new URL('../../web/pages/projects.html', import.meta.url), 'utf8');
 
 function createHarness(projects = []) {
   const elements = {};
@@ -101,6 +102,19 @@ test('源码规则核查：handleUpdateProject 提交时 scene/shot 缺失/空�
     source,
     /shots:\s*Number\.isFinite\(parseInt\(shotsInput\?\.value,\s*10\)\)\s*\?\s*parseInt\(shotsInput\?\.value,\s*10\)\s*:\s*0/,
     'handleUpdateProject 应在 shots 为空时默认提交 0'
+  );
+});
+
+test('HTML 合同：编辑对话框 scene/shot 输入允许数值 0', () => {
+  assert.match(
+    projectsPage,
+    /<input[^>]*id="editProjectScenesInput"[^>]*min="0"[^>]*>/,
+    'scene 输入的 min 必须为 0'
+  );
+  assert.match(
+    projectsPage,
+    /<input[^>]*id="editProjectShotsInput"[^>]*min="0"[^>]*>/,
+    'shot 输入的 min 必须为 0'
   );
 });
 
