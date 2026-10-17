@@ -28,8 +28,8 @@
 #   * colorama 仅 Windows 安装；Linux 不装，pip 不会因缺少 colorama 哈希而失败
 #     （其 py2.py3-none-any 哈希两平台相同，已合并保留）。
 #   * 历史 33 包基线曾在独立干净 venv 实测 `--require-hashes` 安装通过。
-#   * 当前 62 pin 在宿主 Windows venv 按精确锁安装并通过 `pip check`；新增 Linux wheel
-#     SHA-256 已按下载的 manylinux x86_64 wheel 计算核验，但当前未执行 Linux 干净环境安装。
+#   * 当前 65 pin 在宿主 Windows venv 按精确锁安装并通过 `pip check`；新增 Linux wheel
+#     SHA-256 已按下载的 python:3.11-slim 兼容 manylinux x86_64 wheel 计算核验。
 # ---------------------------------------------------------------------------
 annotated-doc==0.0.5 --hash=sha256:117bac03a25ede5df5440e855b32d556049ca169ead221505badf432fed4b101
 annotated-types==0.8.0 --hash=sha256:f072f4d804ea359e4eaf198b1af7a8b0943881a87f31bb764f8bf219bb9419e0
@@ -96,3 +96,7 @@ urllib3==2.8.0 --hash=sha256:0cf3cae568d36aa9576b28dfb35f11328f1cb974ca7647d9475
 uuid-utils==0.17.1 --hash=sha256:297c6be22e0dd0f7d372845b171ffee5657581759982413c0a5b01b900c5f592 --hash=sha256:3404d50a60ec74642fd590b9d639d98770022f4b1ff8a4055b3c70742c85f096
 xxhash==4.0.1 --hash=sha256:ac0f291ab6485bd71f33941f9b92771318332a05d505460b41e893a549caadc0 --hash=sha256:101aa300de6ceef3d9c77569706330d8921fc45dd82bceed2084f1e9f2557a24
 zstandard==0.25.0 --hash=sha256:daab68faadb847063d0c56f361a289c4f268706b598afbf9ad113cbe5c38b6b2 --hash=sha256:9300d02ea7c6506f00e627e287e0492a5eb0371ec1670ae852fefffa6164b072
+# ---- CI 浏览器测试依赖（2026-10-17；Playwright 1.63.0）----
+greenlet==3.3.2 --hash=sha256:1e692b2dae4cc7077cbb11b47d258533b48c8fde69a33d0d8a82e2fe8d8531d5 --hash=sha256:8e2cd90d413acbf5e77ae41e5d3c9b3ac1d011a756d7284d7f3f2b806bbd6358
+playwright==1.63.0 --hash=sha256:2f9a707a6c6c91157ed77bff2b8caeb04b3c8d46e70d585fc134298cbe4b5cc6 --hash=sha256:ad21bc07516b187965a7521c5cf0df0bd657b17482eaad74335272d35a2b07de
+pyee==13.0.1 --hash=sha256:af2f8fede4171ef667dfded53f96e2ed0d6e6bd7ee3bb46437f77e3b57689228

@@ -35,9 +35,10 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           python -m pip install --require-hashes -r requirements.lock.hashes
+          python -m playwright install --with-deps chromium
 
       - name: 验证关键依赖可导入
-        run: python -c "import fastapi, httpx, pydantic, pytest, uvicorn, psutil, multipart, PIL; print('依赖导入通过:', fastapi.__version__, pydantic.__version__, uvicorn.__version__, psutil.__version__, PIL.__version__)"
+        run: python -c "import fastapi, httpx, pydantic, pytest, uvicorn, psutil, multipart, PIL, playwright, playwright.sync_api; print('依赖导入通过:', fastapi.__version__, pydantic.__version__, uvicorn.__version__, psutil.__version__, PIL.__version__, playwright.__file__)"
 
       - name: 校验哈希锁与版本锁一致
         # 防止两把锁漂移：哈希锁的 (name, version) 集合必须等于版本锁主表。
