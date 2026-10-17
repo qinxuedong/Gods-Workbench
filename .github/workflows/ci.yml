@@ -89,7 +89,11 @@ jobs:
           PY
 
       - name: 运行全量测试
-        run: python -m pytest -v --no-header -p no:cacheprovider
+        # C7 媒体浏览器夹具会在测试内替换 RunningHub 调用与输出传输；
+        # 仅为通过配置闸门注入本次提交 SHA，不代表真实供应商验收或凭据。
+        run: |
+          export GW_RUNNINGHUB_API_KEY="${GITHUB_SHA}"
+          python -m pytest -v --no-header -p no:cacheprovider
 
       - name: 运行 Agent Tasks 前端回归测试
         run: node --test tests/frontend/agent-tasks.test.mjs
