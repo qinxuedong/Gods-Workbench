@@ -57,12 +57,15 @@ async def _json(request: Request) -> Dict[str, Any]:
 @router.get("/api/asset-reviews/sessions", status_code=status.HTTP_200_OK)
 def list_sessions(
     asset_id: Optional[str] = None,
+    project_id: Optional[str] = None,
+    shot_id: Optional[str] = None,
+    version_id: Optional[str] = None,
     authorization: Optional[str] = Header(None),
     x_user_role: str = Header("editor", alias="X-User-Role"),
 ):
-    """读取审查会话集合；空集合返回 sessions: [] 且 data_gaps 为空。"""
+    """读取审查会话集合；C8 可按项目、镜头和精确版本过滤。"""
     _read(authorization, x_user_role)
-    return repo.list_sessions(asset_id)
+    return repo.list_sessions(asset_id, project_id=project_id, shot_id=shot_id, version_id=version_id)
 
 
 @router.post("/api/asset-reviews/sessions", status_code=status.HTTP_201_CREATED)
@@ -75,7 +78,12 @@ async def create_session(
     _write(authorization, x_user_role)
     payload = await _json(request)
     expected = payload.get("expected_version")
-    return repo.create_session(payload, int(expected) if expected is not None else None)
+    if expected is not None:
+        try:
+            expected = int(expected)
+        except (TypeError, ValueError):
+            raise CleanroomException(400, "INVALID_REQUEST", "expected_version 必须是整数") from None
+    return repo.create_session(payload, expected)
 
 
 @router.get("/api/asset-reviews/sessions/{session_id}", status_code=status.HTTP_200_OK)
