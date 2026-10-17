@@ -25,11 +25,93 @@ window.WorkbenchStoryboard = (function () {
 
   const state = {
     projectId: '',
+    projectName: '项目数据未接入',
     scenes: [],
     shots: []
   };
 
   const esc = str => String(str ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+  async function requestJson(url) {
+    const response = await fetch(url, {credentials: 'same-origin'});
+    if (!response || !response.ok) {
+      const error = new Error(`storyboard request failed: ${response?.status || 'network'}`);
+      error.status = response?.status || 0;
+      throw error;
+    }
+    return response.json();
+  }
+
+  function resolveProjectId() {
+    const params = new URLSearchParams(window.location.search);
+    const fromUrl = String(params.get('project_id') || '').trim();
+    const fromStorage = String(window.localStorage?.getItem('workspace_project_id') || '').trim();
+    const projectId = fromUrl || fromStorage;
+    if (projectId && fromUrl) window.localStorage?.setItem('workspace_project_id', projectId);
+    return projectId;
+  }
+
+  function normalizeShot(asset) {
+    if (!asset || typeof asset !== 'object') return null;
+    const assetId = String(asset.asset_id || asset.id || '').trim();
+    if (!assetId) return null;
+    const metadata = asset.metadata && typeof asset.metadata === 'object' ? asset.metadata : {};
+    const source = metadata.source_context && typeof metadata.source_context === 'object'
+      ? metadata.source_context : {};
+    const sceneId = String(asset.scene_id || source.scene_id || metadata.scene_id || '').trim();
+    const name = String(asset.name || asset.display_name || asset.title || assetId).trim();
+    const kind = String(asset.kind || asset.asset_type || metadata.media_type || '媒体资产').trim();
+    const mediaType = String(asset.media_type || metadata.media_type || kind).trim().toLowerCase();
+    const isImage = mediaType === 'image' || mediaType.startsWith('image/');
+    const isVideo = mediaType === 'video' || mediaType.startsWith('video/');
+    const directMediaUrl = String(asset.url || asset.media_url || '').trim();
+    const imageUrl = (isImage || isVideo)
+      ? (directMediaUrl || `/api/asset-registry/assets/${encodeURIComponent(assetId)}/media`)
+      : '';
+    const prompt = String(asset.prompt || metadata.prompt || '').trim();
+    const status = String(asset.status || metadata.status || '已登记').trim();
+    return {
+      id: assetId,
+      asset_id: assetId,
+      scene_id: sceneId,
+      name,
+      title: name,
+      imageUrl,
+      img: imageUrl,
+      previewType: isVideo ? 'video' : (isImage ? 'image' : ''),
+      prompt,
+      dialogue: prompt,
+      shotType: kind,
+      duration: asset.duration ?? metadata.duration ?? '',
+      status
+    };
+  }
+
+  function scenesFromShots(shots) {
+    const grouped = new Map();
+    shots.forEach(shot => {
+      if (!shot.scene_id) return;
+      const scene = grouped.get(shot.scene_id) || {
+        id: shot.scene_id,
+        title: shot.scene_id,
+        shots: 0,
+        active: grouped.size === 0
+      };
+      scene.shots += 1;
+      grouped.set(shot.scene_id, scene);
+    });
+    return [...grouped.values()];
+  }
+
+  function updateProjectLinks() {
+    document.querySelectorAll?.('a[href]').forEach(link => {
+      const href = link.getAttribute('href');
+      if (!href || !state.projectId || href.startsWith('http') || href.startsWith('#')) return;
+      const url = new URL(href, window.location.origin);
+      url.searchParams.set('project_id', state.projectId);
+      link.setAttribute('href', `${url.pathname.split('/').pop()}${url.search}`);
+    });
+  }
 
   function notIntegratedMarkup(message) {
     return `<div class="col-span-full bay-inset p-8 text-center text-slate-500 font-mono gw-type-body-sm rounded-xl" data-gw-degradation="not_integrated"><i data-lucide="unlink" class="w-6 h-6 mx-auto mb-1.5 text-slate-600"></i><div>${esc(message)}</div></div>`;
@@ -55,15 +137,26 @@ window.WorkbenchStoryboard = (function () {
     }
 
     if (titleEl) {
-      titleEl.textContent = `当前分镜场次 (共 ${state.shots.length} 个分镜)`;
+      const projectLabel = state.projectName && state.projectName !== '项目数据未接入'
+        ? `${state.projectName} · ` : '';
+      titleEl.textContent = `${projectLabel}当前分镜场次 (共 ${state.shots.length} 个分镜)`;
     }
 
     const focused = grid.contains(document.activeElement) ? document.activeElement : null;
     const focusedShot = focused?.closest('[data-storyboard-shot]')?.dataset.storyboardShot;
     const focusedAction = focused?.dataset.shotAction;
 
-    grid.innerHTML = state.shots.map((sh, idx) => `
-      <div class="champagne-card p-2.5 flex flex-col justify-between group transition hover:border-[#dfc384]/50" data-storyboard-shot="${esc(sh.id)}">
+    grid.innerHTML = state.shots.map((sh, idx) => {
+      const imageUrl = String(sh.imageUrl || sh.img || '').trim();
+      const title = sh.name || sh.title || sh.id;
+      const description = sh.prompt || sh.dialogue || '文本提示未接入';
+      const preview = imageUrl && sh.previewType === 'video'
+        ? `<video src="${esc(imageUrl)}" class="w-full h-full object-cover" controls preload="metadata" aria-label="${esc(title)}"></video>`
+        : imageUrl
+          ? `<img src="${esc(imageUrl)}" class="w-full h-full object-cover group-hover:scale-105 transition duration-300" alt="${esc(title)}" loading="lazy">`
+        : `<div class="w-full h-full flex items-center justify-center text-slate-500 font-mono gw-type-body-sm" data-gw-degradation="not_integrated">媒体预览未接入</div>`;
+      return `
+      <div class="champagne-card p-2.5 flex flex-col justify-between group transition hover:border-[#dfc384]/50" data-storyboard-shot="${esc(sh.id)}" data-asset-id="${esc(sh.asset_id || '')}">
         <div>
           <!-- 头部编号与景别标签 -->
           <div class="flex items-center justify-between pb-1.5 mb-1.5 border-b border-white/5 gw-type-body-sm">
@@ -83,16 +176,16 @@ window.WorkbenchStoryboard = (function () {
 
           <!-- 分镜构图画面 (16:9 画幅) -->
           <div class="aspect-video w-full rounded-lg overflow-hidden bg-black relative border border-white/10 mb-2">
-            <img src="${esc(sh.img || '')}" class="w-full h-full object-cover group-hover:scale-105 transition duration-300" alt="${esc(sh.title || '')}">
+            ${preview}
             <div class="absolute top-1 right-1 px-1.5 py-0.5 rounded bg-black/70 gw-type-body-sm font-mono text-[#eddab3]">
               2.39:1
             </div>
           </div>
 
           <!-- 台词对白与叙事意图 -->
-          <div class="gw-type-body-md font-bold text-slate-100 mb-1 truncate">${esc(sh.title || '')}</div>
+          <div class="gw-type-body-md font-bold text-slate-100 mb-1 truncate">${esc(title)}</div>
           <div class="gw-type-body-sm text-slate-300 bg-black/40 p-1.5 rounded-lg border border-white/5 leading-relaxed font-body mb-2">
-            ${esc(sh.dialogue || '')}
+            ${esc(description)}
           </div>
         </div>
 
@@ -109,7 +202,8 @@ window.WorkbenchStoryboard = (function () {
         </div>
 
       </div>
-    `).join('');
+    `;
+    }).join('');
 
     if (focusedShot && focusedAction) {
       const card = [...grid.querySelectorAll('[data-storyboard-shot]')].find(item => item.dataset.storyboardShot === focusedShot);
@@ -133,7 +227,7 @@ window.WorkbenchStoryboard = (function () {
     if (navCount) navCount.textContent = `共 ${state.scenes.length} 幕`;
     nav.innerHTML = state.scenes.map(s => `
       <button type="button" class="tree-node-card w-full text-left px-2.5 py-2 ${s.active ? 'active' : ''} flex items-center justify-between">
-        <span>${esc(s.title || '')}</span>
+        <span>${esc(s.title || s.id || '')}</span>
         <span class="gw-type-body-sm font-mono px-1 rounded bg-black/60 text-[#dfc384]">${Number(s.shots || 0)}镜</span>
       </button>
     `).join('');
@@ -164,22 +258,9 @@ window.WorkbenchStoryboard = (function () {
   }
 
   function addNewShot() {
-    if (!state.shots || state.shots.length === 0) {
-      alert('分镜数据尚未接入（未纳入当前切片），无法追加镜头。');
-      return;
-    }
-    const n = state.shots.length + 1;
-    state.shots.push({
-      id: `sb-${Date.now()}`,
-      code: `SC_SH${n < 10 ? '0' + n : n}`,
-      title: `追加镜头 #${n}`,
-      shotType: '特写 · 50mm',
-      dialogue: '补充过渡情节...',
-      duration: '3.0s',
-      img: '',
-      status: 'not_integrated'
-    });
-    renderGrid();
+    alert(state.shots.length === 0
+      ? '分镜数据尚未接入（未纳入当前切片），无法追加镜头。'
+      : '新增镜头端点尚未接入（未纳入当前切片），不会创建未持久化镜头。');
   }
 
   function exportPdf() {
@@ -196,20 +277,58 @@ window.WorkbenchStoryboard = (function () {
     renderNav();
   }
 
-  function init() {
-    const params = new URLSearchParams(window.location.search);
-    const pId = params.get('project_id') || localStorage.getItem('workspace_project_id') || '';
-    state.projectId = pId;
-    if (params.get('view') !== 'canvas') {
+  async function loadProjectContext(projectId = state.projectId) {
+    if (!projectId) {
+      renderNotIntegratedState();
+      return null;
+    }
+    try {
+      const projectPayload = await requestJson(`/api/projects/${encodeURIComponent(projectId)}`);
+      const project = projectPayload?.project || projectPayload;
+      if (!project || typeof project !== 'object') throw new Error('project unavailable');
+      const assetsPayload = await requestJson(`/api/asset-registry/assets?project_id=${encodeURIComponent(projectId)}&limit=500`);
+      const rawAssets = Array.isArray(assetsPayload?.assets) ? assetsPayload.assets
+        : (Array.isArray(assetsPayload?.items) ? assetsPayload.items : []);
+      const shots = rawAssets.map(normalizeShot).filter(Boolean);
+      if (state.projectId !== projectId) return null;
+      state.projectName = String(project.name || project.title || projectId);
+      state.shots = shots;
+      state.scenes = scenesFromShots(shots);
       renderNav();
       renderGrid();
+      return {project, shots};
+    } catch (_) {
+      if (state.projectId === projectId) renderNotIntegratedState();
+      return null;
     }
   }
 
+  function init() {
+    state.projectId = resolveProjectId();
+    state.projectName = '项目数据未接入';
+    renderNotIntegratedState();
+    updateProjectLinks();
+    if (new URLSearchParams(window.location.search).get('view') === 'canvas') return Promise.resolve(null);
+    return loadProjectContext(state.projectId);
+  }
+
+  let ready;
   if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', init);
+    let resolveReady;
+    let rejectReady;
+    ready = new Promise((resolve, reject) => {
+      resolveReady = resolve;
+      rejectReady = reject;
+    });
+    document.addEventListener('DOMContentLoaded', () => {
+      try {
+        Promise.resolve(init()).then(resolveReady, rejectReady);
+      } catch (error) {
+        rejectReady(error);
+      }
+    });
   } else {
-    init();
+    ready = init();
   }
 
   return {
@@ -220,8 +339,10 @@ window.WorkbenchStoryboard = (function () {
     exportPdf,
     setShots,
     setScenes,
+    loadProjectContext,
     getState: () => ({ ...state }),
     renderNotIntegratedState,
-    rebind: init
+    get ready() { return ready; },
+    rebind: () => { ready = init(); return ready; }
   };
 })();
