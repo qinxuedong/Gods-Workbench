@@ -1258,8 +1258,8 @@ window.WorkbenchProjects = (function () {
     if (nameInput) nameInput.value = p.name || '';
     if (typeSelect) typeSelect.value = p.project_type || 'film';
     if (stageSelect) stageSelect.value = getProjectStage(p);
-    if (scenesInput) scenesInput.value = rawNumber(p.scenes) === null ? '' : rawNumber(p.scenes);
-    if (shotsInput) shotsInput.value = rawNumber(p.shots) === null ? '' : rawNumber(p.shots);
+    if (scenesInput) scenesInput.value = rawNumber(p.scenes) === null ? 0 : rawNumber(p.scenes);
+    if (shotsInput) shotsInput.value = rawNumber(p.shots) === null ? 0 : rawNumber(p.shots);
     if (progressInput) progressInput.value = rawNumber(p.progress) === null ? '' : rawNumber(p.progress);
     if (descInput) descInput.value = p.description || '';
     const dateRange = document.querySelector('#editProjectModal [data-project-date-range]');
@@ -1289,8 +1289,8 @@ window.WorkbenchProjects = (function () {
     const payload = {
       name: nameInput?.value?.trim() || '未命名工程',
       stage: stageSelect?.value || 'planning',
-      scenes: Number.isFinite(parseInt(scenesInput?.value, 10)) ? parseInt(scenesInput?.value, 10) : null,
-      shots: Number.isFinite(parseInt(shotsInput?.value, 10)) ? parseInt(shotsInput?.value, 10) : null,
+      scenes: Number.isFinite(parseInt(scenesInput?.value, 10)) ? parseInt(scenesInput?.value, 10) : 0,
+      shots: Number.isFinite(parseInt(shotsInput?.value, 10)) ? parseInt(shotsInput?.value, 10) : 0,
       progress: parseInt(progressInput?.value, 10) || 0,
       description: descInput?.value?.trim() || '',
       start_at: dateInputTimestamp(startAtInput?.value),
