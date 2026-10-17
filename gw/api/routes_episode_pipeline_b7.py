@@ -13,23 +13,27 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Phase 12 A3 剧集流水线 API（真实落盘，不触发真实渲染）。
+"""Phase 12 A3 剧集流水线 API（真实落盘）。
 
 数据来源：``gw.episode_pipeline.repository``
 （core.storage.JsonState 命名空间 ``episode_pipeline``），重启可恢复。
 
-证据边界：阶段 start/complete/cancel **只推进状态机**，本阶段不触发任何真实渲染、
-不调用外部模型、不生成媒体产物；单实例一致性，多 worker 并发写属部署方职责。
+阶段 start/complete/cancel 仍只推进状态机；C8-T2 的单镜头入口复用既有
+ComfyUI/RunningHub 工作流执行器，并把真实任务和资产回写到流水线快照。
+单实例一致性，多 worker 并发写属部署方职责。
 """
 
 from __future__ import annotations
 
+import json
 from typing import Any, Dict, Optional
 
 from fastapi import APIRouter, Header, Request, status
 
 from gw.core.auth import require_authenticated, require_edit_access
+from gw.core.errors import CleanroomException
 from gw.episode_pipeline import repository as repo
+from gw.god_workflow import routes as workflow_routes
 
 router = APIRouter(tags=["episode-pipeline-b7"])
 
@@ -48,6 +52,33 @@ async def _json(request: Request) -> Dict[str, Any]:
     except Exception:
         return {}
     return payload if isinstance(payload, dict) else {}
+
+
+def _internal_workflow_request(payload: Dict[str, Any]) -> Request:
+    """把已认证的单镜头请求交给现有工作流 handler，不复制执行逻辑。"""
+    raw = json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+    sent = False
+
+    async def receive():
+        nonlocal sent
+        if sent:
+            return {"type": "http.request", "body": b"", "more_body": False}
+        sent = True
+        return {"type": "http.request", "body": raw, "more_body": False}
+
+    scope = {
+        "type": "http",
+        "method": "POST",
+        "path": "/api/god_workflow/tasks/execute",
+        "raw_path": b"/api/god_workflow/tasks/execute",
+        "root_path": "",
+        "scheme": "http",
+        "query_string": b"",
+        "headers": [],
+        "client": ("episode-pipeline", 0),
+        "server": ("episode-pipeline", 80),
+    }
+    return Request(scope, receive)
 
 
 @router.get("/api/episode-pipelines", status_code=status.HTTP_200_OK)
@@ -120,3 +151,83 @@ async def cancel_stage(
     """取消阶段；已终态 409。"""
     _write(authorization, x_user_role)
     return repo.cancel_stage(pipeline_id, stage_id, await _json(request))
+
+
+@router.post(
+    "/api/episode-pipelines/{pipeline_id}/shots/{shot_id}/generate",
+    status_code=status.HTTP_202_ACCEPTED,
+)
+async def generate_single_shot(
+    pipeline_id: str,
+    shot_id: str,
+    request: Request,
+    idempotency_key: Optional[str] = Header(None, alias="Idempotency-Key"),
+    authorization: Optional[str] = Header(None),
+    x_user_role: str = Header("editor", alias="X-User-Role"),
+):
+    """提交一个镜头到真实工作流执行器，并持久化来源绑定。"""
+    context = _write(authorization, x_user_role)
+    payload = await _json(request)
+    pipeline = repo.get_pipeline(pipeline_id)["pipeline"]
+    source = payload.get("source_context")
+    if source is None:
+        source = {}
+    if isinstance(source, dict):
+        source = dict(source)
+        source.setdefault("project_id", pipeline.get("project_id") or "")
+        source.setdefault("shot_id", shot_id)
+        payload["source_context"] = source
+    reserved = repo.reserve_single_shot(
+        pipeline_id,
+        shot_id,
+        payload,
+        idempotency_key,
+        actor_key=f"{getattr(context, 'identity_domain', '')}:{getattr(context, 'subject', '')}",
+    )
+    if not reserved["needs_submit"]:
+        return {"shot": reserved["shot"], "data_status": "ok", "data_gaps": reserved["shot"].get("data_gaps", [])}
+
+    try:
+        execution = await workflow_routes.execute_task(
+            _internal_workflow_request(payload),
+            authorization=authorization,
+            x_user_role=x_user_role,
+            idempotency_key=idempotency_key,
+        )
+        if not isinstance(execution, dict):
+            raise CleanroomException(502, "WORKFLOW_PROVIDER_INVALID_RESPONSE", "执行器未返回任务对象")
+    except CleanroomException as exc:
+        repo.mark_single_shot_failure(pipeline_id, shot_id, exc.code, exc.message)
+        raise
+    except Exception as exc:
+        repo.mark_single_shot_failure(pipeline_id, shot_id, "WORKFLOW_SUBMIT_FAILED", type(exc).__name__)
+        raise CleanroomException(503, "WORKFLOW_SUBMIT_FAILED", "工作流执行器提交失败，请读取镜头状态") from None
+
+    return repo.bind_single_shot(pipeline_id, shot_id, execution)
+
+
+@router.get(
+    "/api/episode-pipelines/{pipeline_id}/shots/{shot_id}",
+    status_code=status.HTTP_200_OK,
+)
+async def get_single_shot(
+    pipeline_id: str,
+    shot_id: str,
+    authorization: Optional[str] = Header(None),
+    x_user_role: str = Header("editor", alias="X-User-Role"),
+):
+    """读取镜头生成快照；有真实 job_id 时只查询既有任务，不重新提交。"""
+    _read(authorization, x_user_role)
+    current = repo.get_single_shot(pipeline_id, shot_id)
+    shot = current["shot"]
+    if not shot.get("job_id") or shot.get("status") in {"completed", "failed", "unknown"}:
+        return current
+    try:
+        execution = await workflow_routes.task_status(
+            shot["job_id"], authorization=authorization, x_user_role=x_user_role
+        )
+    except CleanroomException as exc:
+        if exc.status_code >= 500:
+            return repo.mark_single_shot_failure(pipeline_id, shot_id, exc.code, exc.message)
+        raise
+    return repo.bind_single_shot(pipeline_id, shot_id, execution)
