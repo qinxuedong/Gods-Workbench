@@ -35,6 +35,10 @@ DATA_STATUS_NOT_INTEGRATED = "not_integrated"
 ASSET_REGISTRY_NOT_INTEGRATED = "ASSET_REGISTRY_NOT_INTEGRATED"
 ASSET_NOT_FOUND = "ASSET_NOT_FOUND"
 JOB_NOT_FOUND = "WORKSPACE_JOB_NOT_FOUND"
+ASSET_ALREADY_EXISTS = "ASSET_ALREADY_EXISTS"
+RECYCLE_ENTRY_NOT_FOUND = "RECYCLE_ENTRY_NOT_FOUND"
+ASSET_RESTORE_CONFLICT = "ASSET_RESTORE_CONFLICT"
+ASSET_RESTORE_PARTIAL_FAILURE = "ASSET_RESTORE_PARTIAL_FAILURE"
 
 _GAP_REGISTRY_SOURCE = "asset_registry_source_not_connected"
 _GAP_MEDIA_SOURCE = "media_storage_not_connected"
@@ -81,6 +85,10 @@ class AssetRegistryService:
     def __init__(self) -> None:
         self._lock = threading.RLock()
         self._revision = 1
+        # 仅保存调用方明确登记的内存快照；不扫描文件系统，也不把空态伪装成真实来源。
+        self._assets: Dict[str, Dict[str, Any]] = {}
+        self._recycle_entries: Dict[str, Dict[str, Any]] = {}
+        self._recycle_sequence = 0
         self._team_preferences: Dict[str, Any] = {
             "team_id": None,
             "default_library_id": None,
@@ -98,7 +106,7 @@ class AssetRegistryService:
             return {
                 "registry": "asset-registry",
                 "revision": self._revision,
-                "assets": [],
+                "assets": [copy.deepcopy(item) for item in self._assets.values()],
                 "features": self._features(),
                 "backend": "cleanroom-memory",
                 **_truthful_meta(),
@@ -110,9 +118,9 @@ class AssetRegistryService:
                 "ready": True,
                 "backend": "cleanroom-memory",
                 "revision": self._revision,
-                "assets_count": 0,
+                "assets_count": len(self._assets),
                 "jobs": [],
-                "overview": {"assets": 0, "projects": 0, "canvases": 0},
+                "overview": {"assets": len(self._assets), "projects": 0, "canvases": 0},
                 "features": self._features(),
                 **_truthful_meta(),
             }
@@ -127,25 +135,169 @@ class AssetRegistryService:
         ]
 
     def list_assets(self, *, limit: int = 100, offset: int = 0, cursor: Optional[str] = None, **_: Any) -> Dict[str, Any]:
-        # 当前真实集合为空；返回稳定的分页外壳，不生成演示数据。
+        # 集合只包含调用方显式登记的内存快照，不生成演示数据。
         if limit < 1 or limit > 500:
             raise CleanroomException(status_code=400, code="INVALID_LIMIT", message="limit 必须在 1 到 500 之间")
         if offset < 0:
             raise CleanroomException(status_code=400, code="INVALID_OFFSET", message="offset 不能为负数")
         with self._lock:
+            values = [copy.deepcopy(item) for item in self._assets.values()]
+            page = values[offset : offset + limit]
             return {
-                "assets": [],
-                "total": 0,
+                "assets": page,
+                "total": len(values),
                 "limit": limit,
                 "offset": offset,
-                "next_cursor": None,
+                "next_cursor": str(offset + limit) if offset + limit < len(values) else None,
                 "revision": self._revision,
                 **_truthful_meta(),
             }
 
     def get_asset(self, asset_id: str) -> Dict[str, Any]:
-        # 初始集合没有任何 asset_id；不伪造一个空 asset 详情。
-        _not_found(ASSET_NOT_FOUND, f"素材 {asset_id} 不存在")
+        # 没有登记的 asset_id 必须明确 404，不伪造一个空详情。
+        with self._lock:
+            item = self._assets.get(asset_id)
+            if item is None:
+                _not_found(ASSET_NOT_FOUND, f"素材 {asset_id} 不存在")
+            return copy.deepcopy(item)
+
+    def register_asset(
+        self,
+        asset_id: str,
+        *,
+        source_ref: Optional[Dict[str, Any]] = None,
+        references: Optional[Dict[str, Any]] = None,
+        metadata: Optional[Dict[str, Any]] = None,
+        payload: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        """登记一个由真实上游提交的稳定资产快照。
+
+        该入口只接收调用方已确认的 ID 与来源，不读取本机文件或远程服务；它为
+        C8 的统一回收契约提供可回放的最小资产真源。
+        """
+        asset_id = str(asset_id or "").strip()
+        if not asset_id:
+            raise CleanroomException(400, "INVALID_REQUEST", "asset_id 不能为空")
+        with self._lock:
+            if asset_id in self._assets:
+                raise CleanroomException(409, ASSET_ALREADY_EXISTS, f"素材 {asset_id} 已登记")
+            item: Dict[str, Any] = {
+                "id": asset_id,
+                "asset_id": asset_id,
+                "version": 1,
+                "source_ref": copy.deepcopy(source_ref) if isinstance(source_ref, dict) else {},
+                "references": copy.deepcopy(references) if isinstance(references, dict) else {},
+                "metadata": copy.deepcopy(metadata) if isinstance(metadata, dict) else {},
+            }
+            if isinstance(payload, dict):
+                item.update(copy.deepcopy(payload))
+            # 资产 ID 是唯一真源，调用方 payload 不能覆盖它。
+            item["id"] = asset_id
+            item["asset_id"] = asset_id
+            item["version"] = int(item.get("version") or 1)
+            self._assets[asset_id] = item
+            self._revision += 1
+            return {"asset": copy.deepcopy(item), "revision": self._revision, **_truthful_meta()}
+
+    # 便于上层按领域语言调用；两者共享同一实现，不生成第二套状态。
+    register = register_asset
+    upsert_asset = register_asset
+
+    def _assert_expected_version(self, expected_version: Optional[int]) -> None:
+        if expected_version is None:
+            return
+        if type(expected_version) is not int or expected_version < 1:
+            raise CleanroomException(400, "EXPECTED_VERSION_REQUIRED", "资产回收操作必须携带正整数 expected_version")
+        if expected_version != self._revision:
+            raise CleanroomException(
+                409,
+                "VERSION_CONFLICT",
+                "注册表版本冲突，请重新读取后重试",
+                extra={"expected_version": expected_version, "current_version": self._revision},
+                expose_extra_fields={"expected_version", "current_version"},
+            )
+
+    def _next_recycle_id(self) -> str:
+        self._recycle_sequence += 1
+        return f"rcy_{self._recycle_sequence:04d}"
+
+    def recycle_entry(self, entry_id: str) -> Dict[str, Any]:
+        """读取单个回收条目；未知状态明确 404，不返回空成功。"""
+        with self._lock:
+            entry = self._recycle_entries.get(entry_id)
+            if entry is None:
+                raise CleanroomException(404, RECYCLE_ENTRY_NOT_FOUND, "回收站条目不存在")
+            return copy.deepcopy(entry)
+
+    def assert_recycle_entry_restorable(self, entry_id: str) -> Dict[str, Any]:
+        """恢复前置检查，保证跨服务恢复失败时不先改动另一侧。"""
+        with self._lock:
+            entry = self._recycle_entries.get(entry_id)
+            if entry is None:
+                raise CleanroomException(404, RECYCLE_ENTRY_NOT_FOUND, "回收站条目不存在")
+            asset_id = str(entry.get("asset_id") or "")
+            if not asset_id or not isinstance(entry.get("payload"), dict):
+                raise CleanroomException(
+                    409,
+                    ASSET_RESTORE_PARTIAL_FAILURE,
+                    "回收条目快照不完整，无法安全恢复",
+                    extra={"partial_failures": [{"entry_id": entry_id, "code": ASSET_RESTORE_PARTIAL_FAILURE}]},
+                )
+            if asset_id in self._assets:
+                raise CleanroomException(409, ASSET_RESTORE_CONFLICT, f"恢复目标资产 {asset_id} 已存在")
+            return copy.deepcopy(entry)
+
+    def delete_asset(self, asset_id: str, expected_version: Optional[int] = None) -> Dict[str, Any]:
+        """删除登记快照并进入可恢复回收站，保留来源与引用。"""
+        with self._lock:
+            self._assert_expected_version(expected_version)
+            if asset_id not in self._assets:
+                _not_found(ASSET_NOT_FOUND, f"素材 {asset_id} 不存在")
+            item = copy.deepcopy(self._assets[asset_id])
+            entry_id = self._next_recycle_id()
+            entry = {
+                "entry_id": entry_id,
+                "kind": "asset",
+                "asset_id": asset_id,
+                "payload": item,
+                "source_ref": copy.deepcopy(item.get("source_ref") or {}),
+                "references": copy.deepcopy(item.get("references") or {}),
+            }
+            del self._assets[asset_id]
+            self._recycle_entries[entry_id] = entry
+            self._revision += 1
+            return {
+                "entry_id": entry_id,
+                "asset_id": asset_id,
+                "deleted": True,
+                "recycle_entry_id": entry_id,
+                "references": copy.deepcopy(entry["references"]),
+                "source_ref": copy.deepcopy(entry["source_ref"]),
+                "revision": self._revision,
+                **_truthful_meta(),
+            }
+
+    def restore_from_recycle(self, entry_id: str, expected_version: Optional[int] = None) -> Dict[str, Any]:
+        """恢复资产快照；同一条目重复恢复不重复登记。"""
+        with self._lock:
+            self._assert_expected_version(expected_version)
+            entry = self.assert_recycle_entry_restorable(entry_id)
+            asset_id = str(entry["asset_id"])
+            self._assets[asset_id] = copy.deepcopy(entry["payload"])
+            del self._recycle_entries[entry_id]
+            self._revision += 1
+            return {
+                "entry_id": entry_id,
+                "asset_id": asset_id,
+                "restored": True,
+                "asset": copy.deepcopy(self._assets[asset_id]),
+                "references": copy.deepcopy(self._assets[asset_id].get("references") or {}),
+                "source_ref": copy.deepcopy(self._assets[asset_id].get("source_ref") or {}),
+                "revision": self._revision,
+                **_truthful_meta(),
+            }
+
+    restore_recycle_entry = restore_from_recycle
 
     def image_versions(self, asset_id: str, *, limit: int = 500) -> Dict[str, Any]:
         if limit < 1 or limit > 500:
@@ -164,7 +316,16 @@ class AssetRegistryService:
             return {"preferences": copy.deepcopy(self._team_preferences), **self._meta()}
 
     def recycle_bin(self) -> Dict[str, Any]:
-        return {"items": [], "assets": [], "projects": [], "canvases": [], "revision": self._revision, **_truthful_meta()}
+        with self._lock:
+            items = [copy.deepcopy(item) for item in self._recycle_entries.values()]
+            return {
+                "items": items,
+                "assets": [item for item in items if item.get("kind") == "asset"],
+                "projects": [],
+                "canvases": [],
+                "revision": self._revision,
+                **_truthful_meta(),
+            }
 
     def governance_overview(self) -> Dict[str, Any]:
         return {
@@ -193,11 +354,15 @@ default_asset_registry_service = AssetRegistryService()
 
 
 __all__ = [
+    "ASSET_ALREADY_EXISTS",
     "ASSET_REGISTRY_NOT_INTEGRATED",
     "ASSET_NOT_FOUND",
+    "ASSET_RESTORE_CONFLICT",
+    "ASSET_RESTORE_PARTIAL_FAILURE",
     "DATA_STATUS_NOT_INTEGRATED",
     "DATA_STATUS_OK",
     "JOB_NOT_FOUND",
+    "RECYCLE_ENTRY_NOT_FOUND",
     "AssetRegistryService",
     "default_asset_registry_service",
     "_not_integrated",

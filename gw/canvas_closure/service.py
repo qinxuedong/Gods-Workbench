@@ -47,7 +47,11 @@ from gw.canvas_closure.models import (
     VIDEO_RENDERER_NOT_INTEGRATED,
     VIDEO_TASK_NOT_FOUND,
 )
-from gw.core.errors import CleanroomException
+from gw.asset_registry.service import (
+    AssetRegistryService,
+    default_asset_registry_service,
+)
+from gw.core.errors import CanvasVersionConflictException, CleanroomException
 from gw.god_canvas.models import CanvasCreateRequest, CanvasMode
 from gw.god_canvas.service import (
     GodCanvasService,
@@ -73,6 +77,7 @@ class CanvasClosureService:
         self,
         canvas_service: Optional[GodCanvasService] = None,
         shared_folder_service: Optional["SharedFolderService"] = None,
+        asset_registry_service: Optional[AssetRegistryService] = None,
     ):
         #: 视频任务本阶段无渲染后端，恒为空；保留显式空集合以免被误填演示数据。
         self._video_tasks: Dict[str, Dict[str, Any]] = {}
@@ -83,6 +88,10 @@ class CanvasClosureService:
             if shared_folder_service is not None
             else default_shared_folder_service
         )
+        # 统一回收只编排已登记的稳定资产快照；不接管素材文件或外部服务。
+        self._asset_registry_service = asset_registry_service or default_asset_registry_service
+        self._unified_recycle: Dict[str, Dict[str, Any]] = {}
+        self._unified_recycle_sequence = 0
 
     # ------------------------------------------------------------------
     # 画布元信息 / 生命周期
@@ -110,12 +119,32 @@ class CanvasClosureService:
             canvas_id, operation, expected_version=expected_version
         )
 
-    def move_to_trash(self, canvas_id: str, expected_version: Optional[int] = None) -> Dict[str, Any]:
+    def move_to_trash(
+        self,
+        canvas_id: str,
+        expected_version: Optional[int] = None,
+        *,
+        asset_ids: Optional[List[str]] = None,
+    ) -> Dict[str, Any]:
         """把画布移入回收站（软删除，可恢复）。"""
+        if asset_ids is not None:
+            return self.recycle_with_references(
+                canvas_id,
+                asset_ids=asset_ids,
+                expected_version=expected_version,
+            )
         return self._canvas_service.move_to_trash(canvas_id, expected_version=expected_version)
 
-    def restore_from_trash(self, canvas_id: str, expected_version: Optional[int] = None) -> Dict[str, Any]:
+    def restore_from_trash(
+        self,
+        canvas_id: str,
+        expected_version: Optional[int] = None,
+        *,
+        recycle_entry_id: Optional[str] = None,
+    ) -> Dict[str, Any]:
         """从回收站恢复画布。"""
+        if recycle_entry_id is not None:
+            return self.restore_recycled(recycle_entry_id, expected_version=expected_version)
         return self._canvas_service.restore_from_trash(canvas_id, expected_version=expected_version)
 
     def purge_canvas(self, canvas_id: str, expected_version: Optional[int] = None) -> Dict[str, Any]:
@@ -130,6 +159,194 @@ class CanvasClosureService:
             "data_status": DATA_STATUS_OK,
             "data_gaps": [],
         }
+
+    # ------------------------------------------------------------------
+    # C8 统一回收 / 恢复
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _partial_failure(asset_id: str, code: str) -> Dict[str, str]:
+        return {
+            "asset_id": asset_id,
+            "code": code,
+            "next_step": "刷新资产来源后重试",
+        }
+
+    def _next_unified_recycle_id(self) -> str:
+        self._unified_recycle_sequence += 1
+        return f"u_rcy_{self._unified_recycle_sequence:04d}"
+
+    def recycle_with_references(
+        self,
+        canvas_id: str,
+        asset_ids: Optional[List[str]] = None,
+        expected_version: Optional[int] = None,
+    ) -> Dict[str, Any]:
+        """原子编排画布与统一资产回收，保留精确来源和引用快照。
+
+        资产缺失时在画布变更前明确返回部分失败；任一已完成资产删除后画布 CAS
+        失败，会尽力按原回收条目恢复资产，避免留下半程成功。
+        """
+        ids = list(dict.fromkeys(str(asset_id) for asset_id in (asset_ids or [])))
+        canvas = self._canvas_service.get_canvas_meta(canvas_id)
+        # 先做现有画布 CAS 入参和版本校验，避免资产已回收后才发现画布冲突。
+        self._canvas_service._require_version(expected_version)
+        if expected_version is not None and canvas["version"] != expected_version:
+            raise CanvasVersionConflictException(expected_version, canvas["version"], canvas_id)
+        snapshots: Dict[str, Dict[str, Any]] = {}
+        failures: List[Dict[str, str]] = []
+        for asset_id in ids:
+            try:
+                snapshots[asset_id] = self._asset_registry_service.get_asset(asset_id)
+            except CleanroomException as exc:
+                failures.append(self._partial_failure(asset_id, exc.code))
+        if failures:
+            raise CleanroomException(
+                409,
+                "UNIFIED_RECYCLE_PARTIAL_FAILURE",
+                "统一回收未执行：部分资产来源不可用",
+                extra={"partial_failures": failures},
+            )
+
+        reference_payload = self._canvas_service.get_reference_payload(canvas_id) or {}
+        references: Dict[str, Any] = {
+            "canvas_id": canvas_id,
+            "canvas_version": canvas["version"],
+        }
+        if len(ids) == 1:
+            references["source_ref"] = copy.deepcopy(snapshots[ids[0]].get("source_ref") or {})
+        elif ids:
+            references["source_refs"] = {
+                asset_id: copy.deepcopy(snapshots[asset_id].get("source_ref") or {})
+                for asset_id in ids
+            }
+        deleted_assets: List[Dict[str, str]] = []
+        try:
+            for asset_id in ids:
+                deleted = self._asset_registry_service.delete_asset(asset_id)
+                deleted_assets.append({"asset_id": asset_id, "entry_id": deleted["entry_id"]})
+            trashed = self._canvas_service.move_to_trash(canvas_id, expected_version=expected_version)
+        except Exception as exc:
+            rollback_failures: List[Dict[str, str]] = []
+            for deleted in reversed(deleted_assets):
+                try:
+                    self._asset_registry_service.restore_from_recycle(deleted["entry_id"])
+                except CleanroomException as rollback_error:
+                    rollback_failures.append(
+                        self._partial_failure(deleted["asset_id"], rollback_error.code)
+                    )
+            if rollback_failures:
+                raise CleanroomException(
+                    500,
+                    "UNIFIED_RECYCLE_PARTIAL_FAILURE",
+                    "统一回收失败且资产补偿未完成",
+                    extra={"partial_failures": rollback_failures},
+                ) from exc
+            raise
+
+        entry_id = self._next_unified_recycle_id()
+        entry = {
+            "entry_id": entry_id,
+            "kind": "unified",
+            "canvas_id": canvas_id,
+            "canvas_snapshot": copy.deepcopy(trashed),
+            "reference_payload": copy.deepcopy(reference_payload),
+            "references": copy.deepcopy(references),
+            "assets": copy.deepcopy(deleted_assets),
+        }
+        self._unified_recycle[entry_id] = entry
+        return {
+            "status": "completed",
+            "recycle_entry_id": entry_id,
+            "canvas": copy.deepcopy(trashed),
+            "assets": copy.deepcopy(deleted_assets),
+            "references": copy.deepcopy(references),
+            "reference_payload": copy.deepcopy(reference_payload),
+            "data_status": DATA_STATUS_OK,
+            "data_gaps": [],
+        }
+
+    # 任务书使用“统一回收”语义；保留清晰别名，避免新建第二套状态机。
+    delete_and_recycle = recycle_with_references
+    recycle_canvas_with_assets = recycle_with_references
+
+    def restore_recycled(
+        self,
+        entry_id: str,
+        expected_version: Optional[int] = None,
+    ) -> Dict[str, Any]:
+        """恢复统一回收条目，保持画布、资产 ID、来源和引用快照不变。"""
+        entry = self._unified_recycle.get(entry_id)
+        if entry is None:
+            raise CleanroomException(404, "UNIFIED_RECYCLE_ENTRY_NOT_FOUND", "统一回收条目不存在")
+
+        current = self._canvas_service.get_canvas_meta(entry["canvas_id"])
+        self._canvas_service._require_version(expected_version)
+        if current.get("deleted_at") is None:
+            raise CleanroomException(409, "UNIFIED_RECYCLE_CONFLICT", "画布不在回收站中")
+        if expected_version is not None and current["version"] != expected_version:
+            raise CanvasVersionConflictException(expected_version, current["version"], entry["canvas_id"])
+
+        # 先做所有资产恢复预检，冲突时画布保持在回收站中。
+        for asset in entry["assets"]:
+            try:
+                self._asset_registry_service.assert_recycle_entry_restorable(asset["entry_id"])
+            except CleanroomException as exc:
+                raise CleanroomException(
+                    409 if exc.status_code == 409 else exc.status_code,
+                    "UNIFIED_RECYCLE_PARTIAL_FAILURE",
+                    "统一恢复未执行：部分资产无法恢复",
+                    extra={
+                        "partial_failures": [
+                            self._partial_failure(asset["asset_id"], exc.code)
+                        ]
+                    },
+                ) from exc
+
+        restored_canvas = self._canvas_service.restore_from_trash(
+            entry["canvas_id"], expected_version=expected_version
+        )
+        restored_assets: List[str] = []
+        try:
+            for asset in entry["assets"]:
+                self._asset_registry_service.restore_from_recycle(asset["entry_id"])
+                restored_assets.append(asset["asset_id"])
+        except Exception as exc:
+            # 发生意外部分失败时把画布退回回收站，并保留统一条目供人工处理。
+            try:
+                self._canvas_service.move_to_trash(
+                    entry["canvas_id"], expected_version=restored_canvas["version"]
+                )
+            except Exception:
+                pass
+            raise CleanroomException(
+                500,
+                "UNIFIED_RECYCLE_PARTIAL_FAILURE",
+                "统一恢复失败，已暴露部分结果",
+                extra={
+                    "partial_failures": [
+                        {
+                            "asset_id": asset["asset_id"],
+                            "code": getattr(exc, "code", "RESTORE_FAILED"),
+                            "next_step": "保留回收条目并人工核对后重试",
+                        }
+                    ]
+                },
+            ) from exc
+
+        del self._unified_recycle[entry_id]
+        return {
+            "status": "completed",
+            "recycle_entry_id": entry_id,
+            "canvas": copy.deepcopy(restored_canvas),
+            "asset_ids": restored_assets,
+            "references": copy.deepcopy(entry["references"]),
+            "reference_payload": copy.deepcopy(entry["reference_payload"]),
+            "data_status": DATA_STATUS_OK,
+            "data_gaps": [],
+        }
+
+    restore_from_unified_recycle = restore_recycled
 
     # ------------------------------------------------------------------
     # 参考画布
