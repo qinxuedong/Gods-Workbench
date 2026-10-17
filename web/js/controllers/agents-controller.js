@@ -36,10 +36,85 @@ window.WorkbenchAgents = (function () {
     chatProviders: [],
     selectedProviderId: '',
     configurationStatus: 'unknown',
-    requestInFlight: false
+    requestInFlight: false,
+    projectId: null,
+    projectName: null,
+    agentConfigReady: false,
+    agentConfigProfiles: []
   };
 
   const esc = str => String(str ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+  function resolveProjectId() {
+    try {
+      const urlId = new URLSearchParams(window.location?.search || '').get('project_id');
+      if (urlId && urlId.trim()) return urlId.trim();
+    } catch (_) {}
+    try {
+      const localId = window.localStorage?.getItem('workspace_project_id');
+      if (localId && localId.trim()) return localId.trim();
+    } catch (_) {}
+    return null;
+  }
+
+  function renderProjectContext() {
+    let bar = document.getElementById('agentProjectContextBar');
+    if (!state.projectId) {
+      if (bar) bar.remove();
+      return;
+    }
+    const container = document.getElementById('agentsWorkspace') || document.body;
+    if (!bar) {
+      bar = document.createElement('div');
+      bar.id = 'agentProjectContextBar';
+      bar.className = 'w-full px-3 py-1.5 bg-[#12151c] border-b border-[#dfc384]/20 flex items-center justify-between text-xs font-mono shrink-0';
+      const main = document.getElementById('agentsMain');
+      if (main && main.parentNode && typeof main.parentNode.insertBefore === 'function') {
+        main.parentNode.insertBefore(bar, main);
+      } else if (typeof container.prepend === 'function') {
+        container.prepend(bar);
+      } else if (typeof container.appendChild === 'function') {
+        container.appendChild(bar);
+      }
+    }
+    const safeId = esc(state.projectId);
+    const safeName = esc(state.projectName || state.projectId);
+    bar.innerHTML = `
+      <div class="flex items-center space-x-2">
+        <span class="w-1.5 h-1.5 rounded-full bg-[#dfc384] animate-pulse"></span>
+        <span class="text-slate-400">当前项目上下文:</span>
+        <span class="text-[#eddab3] font-bold">${safeName}</span>
+        <span class="text-slate-500 font-mono text-[11px]">${safeId}</span>
+      </div>
+      <div class="flex items-center space-x-2">
+        <a href="/static/pages/projects.html?project_id=${encodeURIComponent(state.projectId)}" id="agentBackToProjectLink" class="hw-btn hw-btn-sm text-amber-300 hover:text-amber-200 flex items-center space-x-1" title="返回项目中心">
+          <span>回到项目</span>
+        </a>
+      </div>
+    `;
+    const projectSelect = document.getElementById('agentTaskProject');
+    if (projectSelect && state.projectId) {
+      projectSelect.value = state.projectId;
+    }
+    if (window.lucide) window.lucide.createIcons();
+  }
+
+  function setProjectId(id, name) {
+    state.projectId = id ? String(id).trim() : null;
+    state.projectName = name ? String(name).trim() : null;
+    try {
+      if (state.projectId) window.localStorage?.setItem('workspace_project_id', state.projectId);
+    } catch (_) {}
+    renderProjectContext();
+  }
+
+  function getProjectId() {
+    return state.projectId;
+  }
+
+  function getAgent(id) {
+    return state.agents.find(a => a.id === id) || null;
+  }
 
   function renderAgents() {
     const list = document.getElementById('agentList');
@@ -123,7 +198,13 @@ window.WorkbenchAgents = (function () {
     const found = state.agents.find(a => a.id === id);
     const titleEl = document.getElementById('currentAgentTitle');
     if (titleEl && found) {
-      titleEl.textContent = `${found.name} (思维链路实时透视)`;
+      titleEl.textContent = found.id === 'script-03'
+        ? `${found.name} (六阶段文学创作与版本产物)`
+        : `${found.name} (思维链路实时透视)`;
+    }
+    if (id === 'script-03') {
+      const goalArea = document.getElementById('agentTaskGoal');
+      if (goalArea && typeof goalArea.focus === 'function') goalArea.focus();
     }
     if (found?.route) {
       try { localStorage.setItem('gwb_agent_route', found.route); } catch (_) {}
@@ -222,10 +303,48 @@ window.WorkbenchAgents = (function () {
 
   function applyAgentProviderStatus() {
     state.agents.forEach(agent => {
-      // Chat 配置只代表 AURA 对话链可配置，不代表示例目录中的其它工具/模型已接入。
-      agent.status = agent.id === 'aura-01' ? agentProviderStatus : 'not_integrated';
+      if (agent.id === 'aura-01') {
+        agent.status = agentProviderStatus;
+      } else if (agent.id === 'script-03') {
+        agent.status = state.agentConfigReady ? 'configured' : 'not_integrated';
+      } else {
+        agent.status = 'not_integrated';
+      }
     });
     renderAgents();
+  }
+
+  async function loadAgentTextConfiguration() {
+    try {
+      const response = await fetch('/api/agent/config', {
+        method: 'GET',
+        credentials: 'same-origin',
+        headers: {'Accept': 'application/json'},
+        signal: AbortSignal.timeout(10000)
+      });
+      const body = await response.json().catch(() => null);
+      if (response.ok && body && body.ready === true && Array.isArray(body.profiles) && body.profiles.length > 0) {
+        state.agentConfigReady = true;
+        state.agentConfigProfiles = body.profiles;
+        const scriptAgent = state.agents.find(a => a.id === 'script-03');
+        if (scriptAgent) {
+          scriptAgent.status = 'configured';
+          const first = body.profiles[0];
+          scriptAgent.model = `${first.provider_id || ''} · ${first.model || ''}`;
+        }
+      } else {
+        state.agentConfigReady = false;
+        state.agentConfigProfiles = [];
+        const scriptAgent = state.agents.find(a => a.id === 'script-03');
+        if (scriptAgent) scriptAgent.status = 'not_integrated';
+      }
+    } catch (_) {
+      state.agentConfigReady = false;
+      state.agentConfigProfiles = [];
+      const scriptAgent = state.agents.find(a => a.id === 'script-03');
+      if (scriptAgent) scriptAgent.status = 'not_integrated';
+    }
+    applyAgentProviderStatus();
   }
 
   async function loadChatConfiguration() {
@@ -383,11 +502,19 @@ window.WorkbenchAgents = (function () {
     state.traceUnsubscribe?.();
     if (state.auraScopeHandler) window.removeEventListener('gw-aura-scope', state.auraScopeHandler);
     state.traces = window.AuraTraceBus?.history?.() || [];
+    setProjectId(resolveProjectId());
     applyAgentProviderStatus();
     renderAgents();
     bindChatSelection();
     loadChatConfiguration();
+    loadAgentTextConfiguration();
     renderTraces();
+    const projectSelect = document.getElementById('agentTaskProject');
+    projectSelect?.addEventListener('change', () => {
+      if (projectSelect.value) {
+        setProjectId(projectSelect.value, projectSelect.options?.[projectSelect.selectedIndex]?.text);
+      }
+    });
     state.traceUnsubscribe = window.AuraTraceBus?.subscribe?.(appendTrace) || null;
     state.auraScopeHandler = () => {
       state.traces = window.AuraTraceBus?.history?.() || [];
@@ -407,6 +534,10 @@ window.WorkbenchAgents = (function () {
     selectAgent,
     sendTestPrompt,
     createAgent,
+    getProjectId,
+    setProjectId,
+    getAgent,
+    refreshAgentConfig: loadAgentTextConfiguration,
     rebind: init
   };
 })();
