@@ -52,6 +52,37 @@ window.WorkbenchProjects = (function () {
     return { kind: kind, status: res.status, message: degradationMessage(kind, res.status), detail: data };
   }
 
+  // 提取服务端响应或异常中的中文可理解错误文本，支持标准错误包、字符串与状态码语义
+  function extractErrorMessage(error, res) {
+    if (error) {
+      if (typeof error.detail === 'string' && error.detail.trim()) {
+        return error.detail.trim();
+      }
+      if (error.detail && typeof error.detail === 'object') {
+        if (Array.isArray(error.detail)) {
+          const msgs = error.detail.map(item => item.msg || item.type).filter(Boolean);
+          if (msgs.length) return msgs.join('；');
+        } else if (typeof error.detail.message === 'string' && error.detail.message.trim()) {
+          return error.detail.message.trim();
+        }
+      }
+      if (typeof error.message === 'string' && error.message.trim()) {
+        return error.message.trim();
+      }
+    }
+    const api = degradationApi();
+    if (res) {
+      if (res.status === 403) {
+        return (api?.FORBIDDEN_MESSAGE || '权限不足，已切换为只读模式') + '（HTTP 403）';
+      }
+      if (res.status === 409) {
+        return (api?.CONFLICT_MESSAGE || '版本冲突，请刷新并解决并发差异后重试') + '（HTTP 409）';
+      }
+      return `项目排期保存失败（HTTP ${res.status}）`;
+    }
+    return '项目排期保存失败';
+  }
+
   function degradationNoticeHtml(degradation, extraHint) {
     const api = degradationApi();
     const hint = extraHint ? `<div class="mt-1 gw-type-body-sm text-slate-500">${escHtml(extraHint)}</div>` : '';
@@ -150,12 +181,16 @@ window.WorkbenchProjects = (function () {
     const iconName = isSuccess ? 'check-circle' : (isWarning ? 'alert-circle' : (isDanger ? 'alert-triangle' : 'info'));
     const textColor = isSuccess ? 'text-emerald-400' : (isWarning ? 'text-amber-400' : (isDanger ? 'text-red-400' : 'text-[#eddab3]'));
 
+    const text = (typeof message === 'object' && message !== null)
+      ? (message.message || message.detail || JSON.stringify(message))
+      : String(message ?? '');
+
     toast.className = `bay-inset p-2.5 px-3.5 rounded-xl border ${borderColor} gw-type-body-sm font-mono flex items-center space-x-2.5 shadow-2xl transition-all duration-300 pointer-events-auto opacity-0 translate-y-2`;
     toast.style.boxShadow = `0 8px 24px rgba(0,0,0,0.9), 0 0 12px ${glowColor}`;
     toast.style.background = 'linear-gradient(135deg, #181b24 0%, #0c0d12 100%)';
     toast.innerHTML = `
       <i data-lucide="${iconName}" class="w-4 h-4 ${textColor} shrink-0"></i>
-      <span class="text-slate-200">${esc(message)}</span>
+      <span class="text-slate-200">${esc(text)}</span>
     `;
     container.appendChild(toast);
     window.lucide?.createIcons();
@@ -1224,7 +1259,8 @@ window.WorkbenchProjects = (function () {
         const errJson = await res.json().catch(() => ({}));
         if (res.status === 503) setDispatchStatus('service_unavailable', 'HTTP ' + res.status);
         else if (res.status === 404 || res.status === 501) setDispatchStatus('not_integrated', 'HTTP ' + res.status);
-        showToast(errJson.detail || '新建项目失败', 'error');
+        const errMsg = extractErrorMessage(errJson, res) || '新建项目失败';
+        showToast(errMsg, 'error');
       }
     } catch (e) {
       console.error('新建项目请求失败:', e);
@@ -1307,8 +1343,8 @@ window.WorkbenchProjects = (function () {
       });
       if (!res.ok) {
         const error = await res.json().catch(() => ({}));
-        const detail = Array.isArray(error.detail) ? error.detail.map(item => item.msg || item.type).filter(Boolean).join('；') : error.detail;
-        showToast(detail || `项目排期保存失败（HTTP ${res.status}）`, 'error');
+        const message = extractErrorMessage(error, res);
+        showToast(message, 'error');
         return;
       }
       showToast('项目工程配置已成功更新并持久化', 'success');
