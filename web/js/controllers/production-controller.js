@@ -98,37 +98,131 @@ window.WorkbenchProduction = (function () {
     if (trackLabel) trackLabel.textContent = '镜头轨道未接入';
   }
 
-  // 2. 初始化与路由解析
-  function initRouting() {
-    const params = new URLSearchParams(window.location.search);
-    const pId = params.get('project_id') || localStorage.getItem('workspace_project_id') || '';
-    state.projectId = pId;
-    if (pId) localStorage.setItem('workspace_project_id', pId);
-    state.projectName = '项目数据未接入';
-    renderNotIntegratedState();
-
-    // 更新页面导航栏上的链接动态设置 ?project_id；没有上下文时不伪造参数。
+  // 更新页面导航栏上的链接动态设置 ?project_id；没有上下文时不伪造参数。
+  function updateNavLinks(projectId) {
+    const origin = (typeof window !== 'undefined' && window.location && window.location.origin && window.location.origin !== 'null')
+      ? window.location.origin
+      : 'http://localhost';
     document.querySelectorAll('#navPillsGroup a').forEach(a => {
       const href = a.getAttribute('href');
-      if (href && state.projectId && !href.startsWith('http') && !href.startsWith('#')) {
-        const url = new URL(href, window.location.origin);
-        url.searchParams.set('project_id', state.projectId);
+      if (href && !href.startsWith('http') && !href.startsWith('#')) {
+        const url = new URL(href, origin);
+        if (projectId) {
+          url.searchParams.set('project_id', projectId);
+        } else {
+          url.searchParams.delete('project_id');
+        }
         a.setAttribute('href', url.pathname.split('/').pop() + url.search);
       }
     });
   }
 
-  function switchProject(targetId) {
+  // 2. 初始化与路由解析
+  async function initRouting() {
+    const params = new URLSearchParams(window.location.search);
+    const pId = params.get('project_id') || localStorage.getItem('workspace_project_id') || '';
+    state.projectId = pId;
+
+    if (!pId) {
+      state.projectName = '项目数据未接入';
+      renderNotIntegratedState();
+      updateNavLinks('');
+      return;
+    }
+
+    try {
+      const fetchImpl = (typeof window !== 'undefined' && window.fetch) ? window.fetch.bind(window) : (typeof fetch !== 'undefined' ? fetch : null);
+      if (!fetchImpl) {
+        state.projectName = '项目数据未接入';
+        renderNotIntegratedState();
+        updateNavLinks('');
+        return;
+      }
+
+      const res = await fetchImpl(`/api/projects/${encodeURIComponent(pId)}`, {
+        headers: { 'Accept': 'application/json' }
+      });
+
+      if (!res.ok) {
+        // 403 权限不足、404 未找到等一律触发未接入降级，fail closed
+        state.projectName = '项目数据未接入';
+        renderNotIntegratedState();
+        updateNavLinks('');
+        return;
+      }
+
+      const body = await res.json();
+      const proj = body?.project || body;
+      if (!proj || !proj.project_id) {
+        state.projectName = '项目数据未接入';
+        renderNotIntegratedState();
+        updateNavLinks('');
+        return;
+      }
+
+      state.projectId = proj.project_id;
+      state.projectName = proj.name || '未命名项目';
+      localStorage.setItem('workspace_project_id', proj.project_id);
+
+      const title = document.getElementById('currentProjectDisplayTitle');
+      if (title) {
+        const cleanName = state.projectName.replace(/^《|》$/g, '');
+        title.textContent = `《${cleanName}》· 剧集制片工坊`;
+      }
+
+      updateNavLinks(state.projectId);
+
+      // 真实项目存在但尚无镜头或剧集配置时，保持清晰空态降级，不捏造镜头
+      if (!state.currentEpisode || !state.currentEpisode.scenes || state.currentEpisode.scenes.length === 0) {
+        const sceneList = document.getElementById('sceneCatalogList');
+        if (sceneList) sceneList.innerHTML = notIntegratedMarkup('场次与镜头数据未接入');
+        const episodePills = document.getElementById('catalogEpisodePills');
+        if (episodePills) episodePills.innerHTML = notIntegratedMarkup('剧集数据未接入');
+        const episodeTag = document.getElementById('catalogEpisodeTag');
+        if (episodeTag) episodeTag.textContent = '未接入';
+        const contextBus = document.querySelector('#contextBusContainer > .flex-1');
+        if (contextBus) contextBus.innerHTML = notIntegratedMarkup('项目制片数据未接入');
+      }
+      if (!state.shotList || state.shotList.length === 0) {
+        const track = document.getElementById('shotTrackList');
+        if (track) track.innerHTML = notIntegratedMarkup('镜头数据未接入');
+      }
+      if (!state.currentShot || !state.currentShot.imageUrl) {
+        const shotTitle = document.getElementById('currentShotTitle');
+        if (shotTitle) shotTitle.textContent = state.currentShot?.name || '镜头数据未接入';
+        const prompt = document.getElementById('shotPromptInput');
+        if (prompt) prompt.value = '';
+        const monitor = document.getElementById('mainMonitorImage');
+        if (monitor) {
+          monitor.removeAttribute('src');
+          monitor.style.display = 'none';
+          monitor.setAttribute('data-gw-degradation', 'not_integrated');
+          const monitorFrame = monitor.parentElement;
+          if (monitorFrame && !monitorFrame.querySelector('[data-production-empty-state]')) {
+            monitorFrame.insertAdjacentHTML('beforeend', `<div data-production-empty-state>${notIntegratedMarkup('镜头预览未接入')}</div>`);
+          }
+        }
+      }
+    } catch (_) {
+      state.projectName = '项目数据未接入';
+      renderNotIntegratedState();
+      updateNavLinks('');
+    }
+  }
+
+  async function switchProject(targetId) {
     if (!targetId) return;
     state.projectId = targetId;
     localStorage.setItem('workspace_project_id', targetId);
 
     // 更新 URL
-    const url = new URL(window.location.href);
-    url.searchParams.set('project_id', targetId);
-    window.history.pushState({}, '', url.toString());
+    if (typeof window !== 'undefined' && window.location) {
+      const url = new URL(window.location.href);
+      url.searchParams.set('project_id', targetId);
+      window.history?.pushState?.({}, '', url.toString());
+    }
 
-    initRouting();
+    await initRouting();
     renderSceneCatalog();
     renderShots();
     window.lucide?.createIcons();
@@ -369,7 +463,8 @@ window.WorkbenchProduction = (function () {
   function setFocal(mm) {
     state.currentShot.focal = mm;
     document.querySelectorAll('[data-production-focal]').forEach(button => {
-      button.setAttribute('aria-pressed', String(Number(button.dataset.productionFocal) === mm));
+      const focalVal = Number(button.dataset.productionFocal ?? button.getAttribute('data-production-focal'));
+      button.setAttribute('aria-pressed', String(focalVal === mm));
     });
     const imgEl = document.getElementById('mainMonitorImage');
     if (imgEl) {
@@ -481,15 +576,100 @@ window.WorkbenchProduction = (function () {
     selectEpisodeTab(epId);
   }
 
-  function reloadBus() {
-    initRouting();
+  function bindCurrentShot(shot) {
+    if (!shot) return;
+    state.currentShot = {
+      id: shot.id || '',
+      name: shot.name || '未命名镜头',
+      imageUrl: shot.imageUrl || shot.img || '',
+      focal: Number(shot.focal) || 50,
+      prompt: shot.prompt || '',
+      asset_id: shot.asset_id || ''
+    };
+
+    const titleEl = document.getElementById('currentShotTitle');
+    if (titleEl) titleEl.textContent = state.currentShot.name;
+
+    const imgEl = document.getElementById('mainMonitorImage');
+    if (imgEl) {
+      if (state.currentShot.imageUrl) {
+        imgEl.src = state.currentShot.imageUrl;
+        imgEl.alt = state.currentShot.name;
+        imgEl.style.display = 'block';
+        imgEl.removeAttribute('data-gw-degradation');
+        if (state.currentShot.asset_id) {
+          imgEl.setAttribute('data-asset-id', state.currentShot.asset_id);
+        } else {
+          imgEl.removeAttribute('data-asset-id');
+        }
+        const monitorFrame = imgEl.parentElement;
+        const emptyPlaceholder = monitorFrame?.querySelector?.('[data-production-empty-state]');
+        if (emptyPlaceholder) {
+          if (typeof emptyPlaceholder.remove === 'function') {
+            emptyPlaceholder.remove();
+          } else if (emptyPlaceholder.parentElement) {
+            emptyPlaceholder.parentElement.removeChild(emptyPlaceholder);
+          }
+        }
+      } else {
+        imgEl.removeAttribute('src');
+        imgEl.style.display = 'none';
+        imgEl.setAttribute('data-gw-degradation', 'not_integrated');
+        imgEl.alt = '镜头预览未接入';
+        const monitorFrame = imgEl.parentElement;
+        if (monitorFrame && !monitorFrame.querySelector('[data-production-empty-state]')) {
+          monitorFrame.insertAdjacentHTML('beforeend', `<div data-production-empty-state>${notIntegratedMarkup('镜头预览未接入')}</div>`);
+        }
+      }
+    }
+
+    const promptInput = document.getElementById('shotPromptInput');
+    if (promptInput) {
+      promptInput.value = state.currentShot.prompt;
+    }
+
+    setFocal(state.currentShot.focal);
+  }
+
+  function bindProductionContext(data) {
+    if (!data) return;
+    if (data.project) {
+      const proj = data.project;
+      state.projectId = proj.project_id || proj.id || state.projectId;
+      state.projectName = proj.name || state.projectName;
+      if (state.projectId) localStorage.setItem('workspace_project_id', state.projectId);
+      const title = document.getElementById('currentProjectDisplayTitle');
+      if (title) {
+        const cleanName = state.projectName.replace(/^《|》$/g, '');
+        title.textContent = `《${cleanName}》· 剧集制片工坊`;
+      }
+      updateNavLinks(state.projectId);
+    }
+    if (Array.isArray(data.episodes)) {
+      state.episodes = data.episodes;
+      state.currentEpisode = data.episodes[0] || null;
+      state.activeEpisodeId = state.currentEpisode?.id || '';
+      renderSceneCatalog();
+    }
+    if (Array.isArray(data.shots)) {
+      state.shotList = data.shots;
+      renderShots();
+    }
+    if (data.currentShot) {
+      bindCurrentShot(data.currentShot);
+    }
+    window.lucide?.createIcons();
+  }
+
+  async function reloadBus() {
+    await initRouting();
     renderSceneCatalog();
     renderShots();
     window.lucide?.createIcons();
   }
 
-  function init() {
-    initRouting();
+  async function init() {
+    await initRouting();
     renderSceneCatalog();
     renderShots();
     setFocal(state.currentShot.focal);
@@ -505,6 +685,7 @@ window.WorkbenchProduction = (function () {
   return {
     initRouting,
     renderSceneCatalog,
+    renderShots,
     selectEpisodeTab,
     toggleSceneCard,
     selectCatalogShot,
@@ -519,6 +700,10 @@ window.WorkbenchProduction = (function () {
     switchProject,
     prevProject,
     nextProject,
+    bindCurrentShot,
+    bindProductionContext,
+    renderNotIntegratedState,
+    getState: () => ({ ...state }),
     rebind: reloadBus
   };
 })();
