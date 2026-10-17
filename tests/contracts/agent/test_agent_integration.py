@@ -619,6 +619,23 @@ def _episode_text_content(stage: str) -> str:
     import json
 
     payloads = {
+        "brief": {
+            "creative_goal": "A concise synthetic brief.",
+            "format_description": "Short film script.",
+            "acceptance_criteria": ["Synthetic brief acceptance criteria."],
+            "duration_request": None,
+        },
+        "outline_characters": {
+            "source_brief_version_id": "brief-source-v1",
+            "logline": "Synthetic outline logline.",
+            "sections": [{
+                "section_id": "section-1",
+                "title": "Act I",
+                "summary": "Initial introduction.",
+            }],
+            "characters": [],
+            "relationships": [],
+        },
         "full_script": {
             "source_brief_version_id": "brief-source-v1",
             "source_outline_version_id": "outline-source-v1",
@@ -629,6 +646,16 @@ def _episode_text_content(stage: str) -> str:
                 "time": "Day",
                 "location": "Studio",
                 "content": "A concise synthetic scene.",
+            }],
+        },
+        "scene_script": {
+            "source_full_script_version_id": "script-source-v1",
+            "scenes": [{
+                "scene_id": "scene-1",
+                "title": "Opening Scene Breakdown",
+                "time": "Day",
+                "location": "Studio",
+                "content": "A detailed synthetic scene breakdown.",
             }],
         },
         "storyboard_text": {
@@ -1768,4 +1795,131 @@ def test_agent_legacy_host_schema_migration_serializes_concurrent_initialization
     assert "run_id" in budget_columns
     assert create_key["job_id"].startswith("job_agent_")
     assert ledger["run_id"] == "legacy-run"
+
+
+def test_c7_t1_text_production_loop_full_six_stage_lifecycle_and_project_export(host_agent: Harness):
+    """C7-T1 (QIN-167 / C7-AC1): 验证一个项目的六阶段文本 Agent 完整闭环。
+    
+    涵盖：
+    1. 初始项目无文本产物；
+    2. 绑定项目创建六阶段文本 Agent 运行；
+    3. 完整推进六个阶段（brief, outline_characters, full_script, scene_script, storyboard_text, delivery_check）；
+    4. 各阶段经过审核批准（approve），产生具有确定版本 ID 的精确版本文本产物；
+    5. 回到项目：通过 GET /api/agent/projects/{project_id}/artifacts 成功检索该项目关联的全部精确版本产物及 export_uri；
+    6. 导出产物：通过 GET /api/agent/runs/{run_id}/export 成功导出 markdown, csv, exact-json；
+    7. 校验权限隔离与只读安全性。
+    """
+    import asyncio
+    from gw.core.auth import AuthContext
+    from gw.agent_runtime.models import StageId
+
+    project_id = host_agent.project_id
+
+    # 1. 验证初始状态：该项目产物列表为空
+    initial_artifacts = host_agent.client.get(f"/api/agent/projects/{project_id}/artifacts")
+    assert initial_artifacts.status_code == 200, initial_artifacts.text
+    assert initial_artifacts.json()["items"] == []
+
+    # 2. 验证配置就绪
+    config_res = host_agent.client.get("/api/agent/config")
+    assert config_res.status_code == 200
+    assert config_res.json()["ready"] is True
+
+    # 3. 创建六阶段文本 Agent 运行并绑定项目
+    run_id = _create_export_test_run(host_agent, "approval")
+    assert run_id
+
+    # 校验 AgentIntegration 领域方法 list_project_runs
+    import hashlib
+    auth = AuthContext(
+        role=host_agent.principal["role"],
+        subject=host_agent.principal["user_id"],
+        mode="local_account",
+        identity_domain="local_account",
+    )
+    fingerprint = hashlib.sha256(host_agent.session_token.encode("utf-8")).hexdigest()
+    runs = asyncio.run(host_agent.integration.list_project_runs(auth, fingerprint, project_id))
+    assert any(r.run_id.root == run_id for r in runs)
+
+    # 4. 塞入并经历全部六阶段：brief, outline_characters, full_script, scene_script, storyboard_text, delivery_check
+    six_stages = [
+        {"label": "stage1-brief", "stage": StageId.brief.value, "approval": "approve"},
+        {"label": "stage2-outline", "stage": StageId.outline_characters.value, "approval": "approve"},
+        {"label": "stage3-script", "stage": StageId.full_script.value, "approval": "approve"},
+        {"label": "stage4-scene", "stage": StageId.scene_script.value, "approval": "approve"},
+        {"label": "stage5-storyboard", "stage": StageId.storyboard_text.value, "approval": "approve"},
+        {"label": "stage6-delivery", "stage": StageId.delivery_check.value, "approval": "approve"},
+    ]
+    current_labels = [s["label"] for s in six_stages]
+    review_ids = _seed_export_test_records(
+        host_agent.integration,
+        run_id,
+        mode="approval",
+        records=six_stages,
+        current_labels=current_labels,
+        released_labels=current_labels,
+    )
+
+    # 5. 回到项目并查询文本产物精确版本（C7-AC1）
+    project_artifacts_res = host_agent.client.get(f"/api/agent/projects/{project_id}/artifacts")
+    assert project_artifacts_res.status_code == 200, project_artifacts_res.text
+    artifacts = project_artifacts_res.json()["items"]
+    assert len(artifacts) == 6
+
+    # 校验每个产物均包含 run_id、version_id、revision、content_hash 和 review_id
+    for item in artifacts:
+        assert item["run_id"] == run_id
+        assert item["version_id"]
+        assert item["revision"] >= 1
+        assert len(item["content_hash"]) == 64
+        assert item["review_id"] in review_ids.values()
+
+    # 6. 验证可导出文本产物（Markdown, CSV, exact-JSON）
+    script_artifact = next(item for item in artifacts if item["review_id"] == review_ids["stage3-script"])
+    assert "markdown" in script_artifact["export_formats"]
+    assert script_artifact["export_uri"] is not None
+
+    exported_md = host_agent.client.get(
+        f"/api/agent/runs/{run_id}/export",
+        params={
+            "format": "markdown",
+            "review_id": script_artifact["review_id"],
+            "artifact_version_id": script_artifact["version_id"],
+        },
+    )
+    assert exported_md.status_code == 200
+    assert exported_md.headers["content-type"].startswith("text/markdown")
+    assert b"Contract Test Episode" in exported_md.content
+
+    storyboard_artifact = next(item for item in artifacts if item["review_id"] == review_ids["stage5-storyboard"])
+    assert "csv" in storyboard_artifact["export_formats"]
+    exported_csv = host_agent.client.get(
+        f"/api/agent/runs/{run_id}/export",
+        params={
+            "format": "csv",
+            "review_id": storyboard_artifact["review_id"],
+            "artifact_version_id": storyboard_artifact["version_id"],
+        },
+    )
+    assert exported_csv.status_code == 200
+    assert exported_csv.headers["content-type"].startswith("text/csv")
+
+    delivery_artifact = next(item for item in artifacts if item["review_id"] == review_ids["stage6-delivery"])
+    assert "exact-json" in delivery_artifact["export_formats"]
+    exported_json = host_agent.client.get(
+        f"/api/agent/runs/{run_id}/export",
+        params={
+            "format": "exact-json",
+            "review_id": delivery_artifact["review_id"],
+            "artifact_version_id": delivery_artifact["version_id"],
+        },
+    )
+    assert exported_json.status_code == 200
+    assert exported_json.headers["content-type"].startswith("application/json")
+    assert b"Synthetic delivery check." in exported_json.content
+
+    # 7. 跨项目隔离验证：查询未授权或不存在项目
+    not_found = host_agent.client.get("/api/agent/projects/non-existent-project-00000000/artifacts")
+    assert not_found.status_code == 404
+
 

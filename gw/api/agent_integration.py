@@ -786,6 +786,16 @@ class AgentIntegration:
             ).fetchall()
         return [str(row["run_id"]) for row in rows]
 
+    async def list_project_runs(self, auth: AuthContext, fingerprint: str, project_id: str) -> list[Any]:
+        """只读：校验项目读权限后，返回当前主体在该项目下的所有运行实例（按创建顺序）。"""
+        run_ids = self.project_run_ids(auth, fingerprint, project_id)
+        runs: list[Any] = []
+        for rid in run_ids:
+            run = await self.repository.read_run_by_id(Identifier(rid))
+            if run is not None:
+                runs.append(run)
+        return runs
+
     async def authorize_background(self, project_id: Identifier, actor_id: Identifier, run_id: Identifier | None = None) -> bool:
         if run_id is None:
             return False
