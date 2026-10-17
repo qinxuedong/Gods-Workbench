@@ -2,7 +2,7 @@
 
 由【运维交付与生产基线工程师】负责构建与维护：
 1. 验证 FastAPI 应用实例、路由挂载与交互式文档可用性
-2. 验证前端静态页面入口（307 重定向至 /static/pages/projects.html、HTML/CSS 静态可达）
+2. 验证前端静态页面入口（307 重定向至 /static/pages/index.html、HTML/CSS 静态可达）
 3. 验证端到端业务主链路健康可用（/healthz、项目中心、god-canvas 拓扑与智能任务）
 4. 验证生产启动脚本 run.py 严格绑定默认 2077 端口
 """
@@ -39,10 +39,10 @@ def test_production_smoke_app_and_docs_available():
 
 def test_production_smoke_frontend_static_routing():
     """验证前端静态文件挂载与页面路由健康性。"""
-    # 1. 首页 307 重定向到 /static/pages/projects.html
+    # 1. 首页 307 重定向到 /static/pages/index.html
     resp_root = client.get("/", follow_redirects=False)
     assert resp_root.status_code == 307
-    assert resp_root.headers.get("location") == "/static/pages/projects.html"
+    assert resp_root.headers.get("location") == "/static/pages/index.html"
 
     # 2. 项目中心 HTML
     resp_projects = client.get("/static/pages/projects.html")

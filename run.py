@@ -60,7 +60,7 @@ def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="启动 Gods-Workbench 单进程服务")
     parser.add_argument("--prod", action="store_true", help="使用 LOCALAPPDATA/GodsWorkbench 生产数据根")
     parser.add_argument("--test", action="store_true", help="使用显式 GW_DATA_DIR/GW_LOCAL_AUTH_DB/GW_VIDEO_DATA_DIR 测试路径")
-    parser.add_argument("--open-browser", action="store_true", help="健康检查就绪后打开项目中心")
+    parser.add_argument("--open-browser", action="store_true", help="健康检查就绪后打开首页")
     parser.add_argument("--port", type=int, help="监听端口；默认 2077，可用于同时运行第二个实例")
     parser.add_argument("--reset", metavar="TARGET", nargs="?", help="显式清理开发沙盒内的目标路径")
     parser.add_argument("--migrate", action="store_true", help="一次性迁移旧 GodsWorkbenchClear 数据到生产数据根")
@@ -354,7 +354,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         parser.error("GW_PORT 必须是整数")
     if not 1 <= port <= 65535:
         parser.error("端口必须在 1 到 65535 之间")
-    browser_url = f"http://{host}:{port}/static/pages/projects.html"
+    browser_url = f"http://{host}:{port}/static/pages/index.html"
     print("=" * 60)
     print("  Gods' Workbench Cleanroom")
     print(f"  运行态: {mode}")

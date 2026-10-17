@@ -1045,6 +1045,8 @@ class GodCanvasService:
     def _check_project_access(project_id: str, context: AuthContext) -> str:
         from gw.projects_hub import service as projects
         owner_key = projects.owner_key_for_context(context)
+        if project_id == "default":
+            return owner_key
         project = projects.default_projects_service.get_owned_project(project_id, owner_key)
         if project.deleted_at or project.archived_at:
             raise CleanroomException(404, "JOB_NOT_FOUND", "任务不存在或不可访问")

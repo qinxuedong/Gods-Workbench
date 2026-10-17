@@ -69,8 +69,8 @@ window.WorkbenchAgents = (function () {
       bar.id = 'agentProjectContextBar';
       bar.className = 'w-full px-3 py-1.5 bg-[#12151c] border-b border-[#dfc384]/20 flex items-center justify-between text-xs font-mono shrink-0';
       const main = document.getElementById('agentsMain');
-      if (main && main.parentNode && typeof main.parentNode.insertBefore === 'function') {
-        main.parentNode.insertBefore(bar, main);
+      if (main && typeof main.insertBefore === 'function') {
+        main.insertBefore(bar, main.firstChild);
       } else if (typeof container.prepend === 'function') {
         container.prepend(bar);
       } else if (typeof container.appendChild === 'function') {

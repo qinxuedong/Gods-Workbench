@@ -210,8 +210,8 @@ def create_app(*, agent_integration_factory=None) -> FastAPI:
 
     @app.get("/", include_in_schema=False)
     def index_redirect():
-        """根路径重定向至 Workbench 项目中心。"""
-        return RedirectResponse(url="/static/pages/projects.html", status_code=status.HTTP_307_TEMPORARY_REDIRECT)
+        """根路径重定向至 Workbench 首页。"""
+        return RedirectResponse(url="/static/pages/index.html", status_code=status.HTTP_307_TEMPORARY_REDIRECT)
 
     @app.middleware("http")
     async def quarantined_static_guard(request: Request, call_next):
