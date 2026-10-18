@@ -358,6 +358,12 @@
           </div>
 
           <div class="flex items-center space-x-2 gw-type-body-sm font-mono">
+            <button type="button" class="hw-btn hw-btn-sm flex items-center space-x-1" id="btnSyncAgentStoryboard" onclick="WorkbenchStoryboard.syncLatestAgentStoryboard()" title="读取当前项目最新已审核文字分镜产物并生成占位卡片">
+              <i data-lucide="bot" class="w-3 h-3 text-cyan-300"></i>
+              <span>从智能体同步文字分镜</span>
+            </button>
+            <span id="agentStoryboardSyncStatus" class="gw-type-body-sm font-mono text-slate-400" role="status" aria-live="polite" data-gw-degradation="not_integrated">未同步</span>
+            <div class="h-3.5 w-px bg-white/10"></div>
             <button class="hw-btn flex items-center space-x-1" onclick="WorkbenchStoryboard.batchGenerate()">
               <i data-lucide="play" class="w-3 h-3 text-[#dfc384]"></i>
               <span>批量渲染所有分镜</span>
@@ -614,6 +620,7 @@
   <script src="/static/js/core/degradation.js?v=v0.0.1-alpha-2026"></script>
   <script src="/static/js/core/floating-dismissal.js?v=v0.0.1-alpha-2026&m3=floating-dismissal"></script>
   <script src="/static/js/core/hardware-telemetry.js?v=20261008-auth6"></script>
+  <script src="/static/js/modules/project-artifact-links.js"></script>
   <script src="/static/js/controllers/storyboard-controller.js"></script>
   <script src="/static/js/modules/canvas-workspace.js?v=20261010-v1"></script>
 <script src="/static/js/core/workbench-shell.js?v=20261009-parse-cf7"></script>

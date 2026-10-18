@@ -20,6 +20,62 @@ window.GWProjectArtifactLinks = (function () {
     return typeof uri === 'string' && uri.startsWith('/api/agent/runs/') ? uri : null;
   }
 
+  // 文字分镜导出只允许使用后端给出的精确 Agent 导出地址。
+  function latestApprovedStoryboard(items) {
+    return (Array.isArray(items) ? items : [])
+      .filter(item => Array.isArray(item?.export_formats)
+        && item.export_formats.includes('csv')
+        && item.review_id
+        && safeUri(item.export_uri))
+      .sort((a, b) => String(b.created_at || '').localeCompare(String(a.created_at || ''))
+        || revisionOf(b) - revisionOf(a))[0] || null;
+  }
+
+  // 仅支持 RFC 4180 兼容的逗号分隔文本；不把任意响应内容当作分镜。
+  function parseStoryboardCsv(text) {
+    const input = String(text ?? '').replace(/^\uFEFF/, '');
+    const records = [];
+    let row = [];
+    let cell = '';
+    let quoted = false;
+    for (let index = 0; index < input.length; index += 1) {
+      const char = input[index];
+      if (quoted) {
+        if (char === '"' && input[index + 1] === '"') {
+          cell += '"';
+          index += 1;
+        } else if (char === '"') {
+          quoted = false;
+        } else {
+          cell += char;
+        }
+      } else if (char === '"' && cell === '') {
+        quoted = true;
+      } else if (char === ',') {
+        row.push(cell);
+        cell = '';
+      } else if (char === '\n' || char === '\r') {
+        if (char === '\r' && input[index + 1] === '\n') index += 1;
+        row.push(cell);
+        if (row.some(value => String(value).trim())) records.push(row);
+        row = [];
+        cell = '';
+      } else {
+        cell += char;
+      }
+    }
+    if (cell !== '' || row.length) {
+      row.push(cell);
+      if (row.some(value => String(value).trim())) records.push(row);
+    }
+    if (records.length < 2) return [];
+    const headers = records.shift().map(value => String(value).trim());
+    return records.map(values => headers.reduce((result, header, index) => {
+      if (header) result[header] = String(values[index] ?? '').trim();
+      return result;
+    }, {}));
+  }
+
   function revisionOf(item) {
     const n = Number(item?.revision);
     if (Number.isFinite(n)) return n;
@@ -61,6 +117,64 @@ window.GWProjectArtifactLinks = (function () {
 
   function invalidate() { cache.clear(); }
 
+  function agentStatus(items) {
+    if (!Array.isArray(items) || !items.length) return {label: '未接入', kind: 'not_integrated'};
+    const latest = items.slice().sort((a, b) => String(b.created_at || '').localeCompare(String(a.created_at || '')))[0];
+    if (latest?.review_id && safeUri(latest.export_uri)) return {label: '已审核', kind: 'approved'};
+    if (latest?.lifecycle === 'trashed') return {label: '已回收', kind: 'trashed'};
+    return {label: '待审核', kind: 'pending'};
+  }
+
+  // 项目卡片 footer 由 projects-controller 动态生成；在已有版本槽位旁挂载真实 AI 编剧入口。
+  function renderAgentProjectEntry(slot, items) {
+    const projectId = String(slot?.dataset?.projectId || '').trim();
+    const parent = slot?.parentElement;
+    if (!projectId || !parent || typeof parent.appendChild !== 'function') return null;
+    const doc = slot.ownerDocument || document;
+    let link = parent.querySelector?.('[data-gw-agent-project-link]');
+    if (!link) {
+      link = doc.createElement('a');
+      link.setAttribute('data-gw-agent-project-link', projectId);
+      link.className = 'gw-type-body-sm font-mono text-cyan-300 underline whitespace-nowrap cursor-pointer shrink-0';
+      link.textContent = 'AI 编剧';
+      link.title = '打开当前项目的 AI 编剧工作台';
+      link.addEventListener?.('click', event => event.stopPropagation());
+      if (typeof parent.insertBefore === 'function') parent.insertBefore(link, slot);
+      else parent.appendChild(link);
+    }
+    link.href = `/static/pages/agents.html?project_id=${encodeURIComponent(projectId)}`;
+    let badge = parent.querySelector?.('[data-gw-agent-status]');
+    if (!badge) {
+      badge = doc.createElement('span');
+      badge.setAttribute('data-gw-agent-status', projectId);
+      badge.className = 'gw-type-body-sm font-mono px-1 py-0.5 rounded bg-black/50 border border-white/10 whitespace-nowrap shrink-0';
+      if (typeof parent.insertBefore === 'function') parent.insertBefore(badge, slot);
+      else parent.appendChild(badge);
+    }
+    const status = agentStatus(items);
+    badge.textContent = status.label;
+    badge.dataset.gwDegradation = status.kind === 'not_integrated' ? 'not_integrated' : '';
+    badge.title = `AI 编剧状态：${status.label}`;
+    return {link, badge, status};
+  }
+
+  async function loadLatestApprovedStoryboard(projectId, fetchImpl) {
+    const id = String(projectId || '').trim();
+    if (!id) return null;
+    const items = await fetchProject(id, fetchImpl);
+    const artifact = latestApprovedStoryboard(items);
+    if (!artifact) return null;
+    const uri = safeUri(artifact.export_uri);
+    const response = await (fetchImpl || fetch)(uri, {credentials: 'same-origin', headers: {Accept: 'text/csv'}});
+    if (!response.ok) {
+      const error = new Error(`文字分镜导出读取失败（HTTP ${response.status}）`);
+      error.status = response.status;
+      throw error;
+    }
+    const csv = await response.text();
+    return {artifact, rows: parseStoryboardCsv(csv)};
+  }
+
   function versionNode(doc, item, isCurrent) {
     const uri = safeUri(item.export_uri);
     const label = String(item.version_label || '');
@@ -81,6 +195,7 @@ window.GWProjectArtifactLinks = (function () {
     const doc = slot.ownerDocument || document;
     const groups = groupArtifacts(items);
     slot._gwArtifactGroups = groups;
+    renderAgentProjectEntry(slot, items);
     if (!groups.length) { slot.replaceChildren(); slot.hidden = true; return; }
     const current = groups[0].current;
     const trigger = doc.createElement('button');
@@ -180,5 +295,9 @@ window.GWProjectArtifactLinks = (function () {
     document.addEventListener('keydown', (event) => handleKeydown(event, document));
   }
 
-  return {artifactsUrl, groupArtifacts, renderSlot, buildPopover, hydrate, invalidate, closePopover, handleKeydown};
+  return {
+    artifactsUrl, groupArtifacts, latestApprovedStoryboard, parseStoryboardCsv,
+    renderAgentProjectEntry, loadLatestApprovedStoryboard, renderSlot, buildPopover,
+    hydrate, invalidate, closePopover, handleKeydown,
+  };
 })();
