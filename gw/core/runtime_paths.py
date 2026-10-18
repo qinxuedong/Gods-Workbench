@@ -76,6 +76,11 @@ class RuntimePaths:
     def video_data_root(self) -> Path:
         return self.video_root
 
+    @property
+    def backup_root(self) -> Path:
+        """测试态备份的默认根目录；不会在解析阶段创建目录。"""
+        return self.runtime_root / "backups"
+
 
 # ---------------------------------------------------------------------------
 # 纯路径判定
