@@ -441,7 +441,13 @@ async function loadAll(){
             updateOverviewFooter('ready');
             return true;
         }
-        const cRes = await canvasListApi().listCanvases(currentProjectId);
+        const cRes = CANVAS_LIST_OVERVIEW
+            ? await canvasListApi().listCanvasesForOverview([
+                currentProjectId,
+                'default',
+                ...projects.map(project => project.id),
+            ])
+            : await canvasListApi().listCanvases(currentProjectId);
         if(requestSequence !== canvasListLoadSequence) return false;
         const cData = await readCanvasResponse(cRes, L('画布列表加载失败','Canvas list failed'));
         if(requestSequence !== canvasListLoadSequence) return false;
@@ -756,12 +762,10 @@ function isClassicCanvas(c){
 }
 
 function getCandidateCanvases(){
-    // The top-level canvas catalog is a workspace view.  It only narrows to a
-    // project when the route explicitly carries a project context (for
-    // example, an embedded project-board view).
-    if(CANVAS_LIST_OVERVIEW && !initialCanvasContext.projectId){
-        return canvases;
-    }
+    // The top-level canvas catalog is a workspace view.  Even when the
+    // storyboard host carries a project context, the overview must retain the
+    // standalone bucket and every accessible project after a create/refresh.
+    if(CANVAS_LIST_OVERVIEW) return canvases;
     if(!currentProjectId || currentProjectId === 'default'){
         return canvases;
     }
@@ -1317,7 +1321,6 @@ function openCreateCard(worldPt, parentCanvasId = '', trigger = document.activeE
     el.setAttribute('aria-modal', 'true');
     el.setAttribute('aria-labelledby', 'ws-create-title');
     el.setAttribute('tabindex', '-1');
-    el.dataset.floatingClose = 'closeCreateCard';
     el.dataset.floatingContent = 'self';
     el.dataset.floatingKind = 'modal';
     el.dataset.floatingDismiss = 'outside';
@@ -1495,7 +1498,8 @@ async function createCanvasOnBoard(title, kind = 'smart', worldPt, projectId = c
                 created_at: Math.floor(Date.now() / 1000)
             };
             canvases.push(newCanvas);
-            if(currentProjectId !== canvasProjectId){
+            const shouldSelectCreatedProject = canvasScope === 'project' || !CANVAS_LIST_OVERVIEW;
+            if(shouldSelectCreatedProject && currentProjectId !== canvasProjectId){
                 currentProjectId = canvasProjectId;
                 rememberProjectId(currentProjectId);
                 syncCanvasListContext();
@@ -1511,6 +1515,18 @@ async function createCanvasOnBoard(title, kind = 'smart', worldPt, projectId = c
             renderProjects();
             renderBoard();
             setStatus(L('创建成功','Canvas created'));
+            const createdFilter = canvasScope === 'project' ? 'project' : 'all';
+            window.parent?.postMessage({
+                type:'canvas-created',
+                canvas:{
+                    id:String(newId),
+                    title:newCanvas.title,
+                    project:canvasProjectId,
+                    scope:canvasScope,
+                    kind:'smart',
+                },
+                filter:createdFilter,
+            }, location.origin);
             loadAll().catch(() => {});
         }
     } catch(e){

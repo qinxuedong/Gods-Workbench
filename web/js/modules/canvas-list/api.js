@@ -66,6 +66,33 @@ export function createCanvasListApi(http) {
             if(!pid) return Promise.resolve({ok: false, status: 400, json: async () => ({canvases: []})});
             return request(`/api/canvases?project_id=${encodeURIComponent(pid)}`, init);
         },
+        listCanvasesForOverview(projectIds, init) {
+            const ids = [...new Set(
+                (Array.isArray(projectIds) ? projectIds : [projectIds])
+                    .map(value => String(value == null ? '' : value).trim())
+                    .filter(Boolean)
+            )];
+            if(!ids.length){
+                return Promise.resolve({ok: true, status: 200, json: async () => ({canvases: []})});
+            }
+            return Promise.all(ids.map(id => request(`/api/canvases?project_id=${encodeURIComponent(id)}`, init)))
+                .then(async responses => {
+                    const failed = responses.find(response => !response?.ok);
+                    if(failed) return failed;
+                    const payloads = await Promise.all(responses.map(response => response.json()));
+                    const canvases = [];
+                    const seen = new Set();
+                    payloads.forEach(payload => {
+                        (payload?.canvases || []).forEach(canvas => {
+                            const id = String(canvas?.canvas_id || canvas?.id || '').trim();
+                            if(!id || seen.has(id)) return;
+                            seen.add(id);
+                            canvases.push(canvas);
+                        });
+                    });
+                    return {ok: true, status: 200, json: async () => ({canvases})};
+                });
+        },
         createProject(payload, init = {}) {
             return request('/api/asset-registry/projects', jsonInit(payload, {...init, method: 'POST'}));
         },
