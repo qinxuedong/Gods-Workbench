@@ -22,6 +22,47 @@
  * 409 VERSION_CONFLICT（detail.asset_id）：重新读取该条目最新 asset_version，仍未归属则自动重试一次；
  * 409 ASSET_ALREADY_ASSIGNED：刷新列表并提示。匿名/无权（401/403）不显示入口。
  */
+window.GWAssetJobStatus = (() => {
+  'use strict';
+  const NEXT_ACTION_LABEL = Object.freeze({
+    poll_job: '等待任务状态更新',
+    resume_index: '恢复索引任务',
+    review_result: '查看索引结果',
+    retry_index: '修复来源后重试索引',
+    reconcile_index_job: '人工核对索引任务',
+  });
+
+  function escapeText(value) {
+    return String(value ?? '').replace(/[&<>"']/g, ch => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[ch]));
+  }
+
+  function view(job = {}) {
+    const status = String(job.status || 'unknown').trim().toLowerCase();
+    const errorCode = String(job.error_code || '').trim();
+    if (status === 'succeeded') return {status, kind: '', dataStatus: 'ok', label: '索引已完成', nextAction: 'review_result', resultUnknown: false, errorCode, message: '索引已完成'};
+    if (status === 'queued' || status === 'running') return {status, kind: 'pending', dataStatus: 'degraded', label: status === 'queued' ? '索引排队中' : '索引执行中', nextAction: 'poll_job', resultUnknown: false, errorCode, message: status === 'queued' ? '索引排队中' : '索引执行中'};
+    if (status === 'paused') return {status, kind: 'blocked', dataStatus: 'degraded', label: '索引已暂停', nextAction: 'resume_index', resultUnknown: false, errorCode, message: '索引已暂停'};
+    if (status === 'failed') {
+      const message = errorCode ? `索引失败：${errorCode}` : '索引失败';
+      return {status, kind: 'degraded', dataStatus: 'degraded', label: '索引失败', nextAction: 'retry_index', resultUnknown: false, errorCode, message};
+    }
+    if (status === 'cancelled') return {status, kind: 'degraded', dataStatus: 'degraded', label: '索引已取消', nextAction: 'retry_index', resultUnknown: false, errorCode, message: '索引已取消'};
+    if (status === 'interrupted') {
+      const message = errorCode ? `索引中断，结果未知：${errorCode}` : '索引中断，结果未知';
+      return {status, kind: 'unknown', dataStatus: 'degraded', label: '索引中断，结果未知', nextAction: 'reconcile_index_job', resultUnknown: true, errorCode, message};
+    }
+    return {status: 'unknown', kind: 'unknown', dataStatus: 'degraded', label: '索引状态未知', nextAction: 'reconcile_index_job', resultUnknown: true, errorCode, message: '索引状态未知'};
+  }
+
+  function render(job) {
+    const result = view(job);
+    const degradation = result.kind ? ` data-gw-degradation="${result.kind}"` : '';
+    return `<div role="status" data-asset-job-status="${escapeText(result.status)}"${degradation}><strong>${escapeText(result.message)}</strong><span>下一步：${escapeText(NEXT_ACTION_LABEL[result.nextAction] || result.nextAction)}</span></div>`;
+  }
+
+  return Object.freeze({view, render});
+})();
+
 window.GWUnassignedInbox = (() => {
   'use strict';
   const INBOX = '/api/assets/unassigned';
@@ -198,13 +239,18 @@ window.WorkbenchAssets = (() => {
 
   // 父页状态条必须明说「未接入」并带结构化标记（用户 2026-09-21 裁决第 3 项）。
   function setVaultStatus(text) {
-    const value = text || '';
-    const kind = /未纳入当前切片/.test(value) ? 'not_integrated'
-      : (/暂时不可用/.test(value) ? 'service_unavailable' : '');
+    const projected = text && typeof text === 'object' ? text : null;
+    const value = projected?.message || text || '';
+    const kind = projected?.kind || (/未纳入当前切片/.test(value) ? 'not_integrated'
+      : (/暂时不可用/.test(value) ? 'service_unavailable' : ''));
     if (!status) return;
     status.textContent = value;
     if (kind) status.setAttribute('data-gw-degradation', kind);
     else status.removeAttribute('data-gw-degradation');
+    if (status.dataset) {
+      if (projected?.nextAction) status.dataset.nextAction = projected.nextAction;
+      else delete status.dataset.nextAction;
+    }
   }
 
   // 把 iframe 内的显式降级同步到父页状态条，避免父页看起来「一切正常」。
@@ -370,8 +416,14 @@ window.WorkbenchAssets = (() => {
     if (frame.contentDocument?.readyState === 'complete') initFrame();
   }
 
+  function showIndexJobStatus(job) {
+    const view = window.GWAssetJobStatus.view(job);
+    setVaultStatus(view);
+    return view;
+  }
+
   // 首屏与壳层部分路由返回时都走同一个幂等绑定入口；不重复执行顶层脚本。
   rebind();
   window.addEventListener('pagehide', () => observer?.disconnect());
-  return {uploadAsset, rebind};
+  return {uploadAsset, rebind, showIndexJobStatus, indexJobStatusView: window.GWAssetJobStatus.view};
 })();
