@@ -149,6 +149,21 @@ window.WorkbenchProduction = (function () {
     }[status] || 'review_context';
   }
 
+  function blockProductionAction(code, message, nextAction = 'review_context') {
+    const shot = state.currentShot || {};
+    state.currentShot = {
+      ...shot,
+      project_id: shot.project_id || state.projectId || '',
+      status: 'waiting',
+      next_action: nextAction,
+      data_gaps: [code]
+    };
+    resetReviewState('waiting', nextAction, [code]);
+    renderReviewPanel();
+    window.alert(`制片动作已阻塞：${code}。${message}`);
+    return null;
+  }
+
   function renderNotIntegratedState() {
     state.pipelineId = '';
     state.pipelineVersion = 0;
@@ -650,16 +665,16 @@ window.WorkbenchProduction = (function () {
   }
 
   // 2. 初始化与路由解析
-  async function initRouting() {
+  async function initRouting(projectIdOverride = '') {
     const params = new URLSearchParams(window.location.search);
-    const pId = params.get('project_id') || localStorage.getItem('workspace_project_id') || '';
+    const pId = String(projectIdOverride || params.get('project_id') || localStorage.getItem('workspace_project_id') || '').trim();
     state.projectId = pId;
 
     if (!pId) {
       state.projectName = '项目数据未接入';
       renderNotIntegratedState();
       updateNavLinks('');
-      return;
+      return false;
     }
 
     try {
@@ -671,7 +686,7 @@ window.WorkbenchProduction = (function () {
         state.projectName = '项目数据未接入';
         renderNotIntegratedState();
         updateNavLinks('');
-        return;
+        return false;
       }
 
       state.projectId = proj.project_id;
@@ -694,25 +709,27 @@ window.WorkbenchProduction = (function () {
         try { await requestJson(`/api/projects/${encodeURIComponent(state.projectId)}`); } catch (_) { /* 已在下方呈现降级 */ }
         resetReviewState('not_integrated', 'review_context', ['EPISODE_PIPELINE_NOT_FOUND']);
         renderReviewPanel();
-        return;
+        return true;
       }
       const context = bindPipelineContext(pipeline);
       if (!context?.shots?.length || !state.activeShotId) {
         resetReviewState('not_integrated', 'review_context', ['SHOT_CONTEXT_NOT_FOUND']);
         renderReviewPanel();
-        return;
+        return true;
       }
       await loadShotDetail(state.activeShotId);
       await loadReviewForCurrentShot();
+      return true;
     } catch (error) {
       state.projectName = '项目数据未接入';
       renderNotIntegratedState();
       updateNavLinks('');
+      return false;
     }
   }
 
   async function switchProject(targetId) {
-    if (!targetId) return;
+    if (!targetId) return null;
     state.projectId = targetId;
     localStorage.setItem('workspace_project_id', targetId);
 
@@ -723,18 +740,44 @@ window.WorkbenchProduction = (function () {
       window.history?.pushState?.({}, '', url.toString());
     }
 
-    await initRouting();
+    const loaded = await initRouting(targetId);
+    if (!loaded) {
+      return blockProductionAction('PROJECT_NAVIGATION_UNAVAILABLE', '目标项目上下文读取失败，请刷新后重试。');
+    }
     renderSceneCatalog();
     renderShots();
     window.lucide?.createIcons();
+    return state.projectId;
+  }
+
+  async function switchAdjacentProject(direction) {
+    if (!state.projectId) {
+      return blockProductionAction('PROJECT_CONTEXT_REQUIRED', '缺少 project_id，未切换项目。');
+    }
+    try {
+      const payload = await requestJson('/api/asset-registry/projects?archived=false');
+      const projects = Array.isArray(payload?.projects) ? payload.projects : [];
+      const projectIds = projects
+        .map(project => String(project?.project_id || '').trim())
+        .filter(Boolean);
+      const currentIndex = projectIds.indexOf(String(state.projectId));
+      const targetIndex = currentIndex + direction;
+      const targetId = currentIndex >= 0 ? projectIds[targetIndex] : '';
+      if (!targetId || targetId === state.projectId) {
+        return blockProductionAction('PROJECT_NAVIGATION_NOT_AVAILABLE', '没有可切换的真实项目。');
+      }
+      return await switchProject(targetId);
+    } catch (_) {
+      return blockProductionAction('PROJECT_NAVIGATION_UNAVAILABLE', '真实项目列表读取失败，请刷新后重试。');
+    }
   }
 
   function prevProject() {
-    return;
+    return switchAdjacentProject(-1);
   }
 
   function nextProject() {
-    return;
+    return switchAdjacentProject(1);
   }
 
   // 侧栏与分段选择共用当前目录状态，避免只同步外观。
@@ -998,29 +1041,16 @@ window.WorkbenchProduction = (function () {
     return Promise.resolve(null);
   }
 
-  // 9. 添加新场次
+  // 9. 添加新场次：后端真实创建契约尚未接入，必须显式阻塞且保持本地状态不变。
   function addScene() {
-    if (!state.currentEpisode) return;
-    if (!state.currentEpisode.scenes) state.currentEpisode.scenes = [];
-    const idx = state.currentEpisode.scenes.length + 1;
-    const code = `SC.${idx < 10 ? '0' + idx : idx}`;
-    const newScene = {
-      id: `sc-${Date.now()}`,
-      code: code,
-      name: `${code} 新分镜场次`,
-      status: '待编排',
-      statusColor: 'slate',
-      shotsCount: 1,
-      duration: '00:10.0',
-      tags: '新分镜',
-      progress: 0,
-      expanded: true,
-      shots: [
-        { id: `sh-${Date.now()}-1`, code: 'SH_01', type: '[全景]', desc: '', status: 'WAIT', color: 'slate', focal: 35, img: '', prompt: '' }
-      ]
-    };
-    state.currentEpisode.scenes.push(newScene);
-    renderSceneCatalog();
+    if (!state.currentEpisode) return blockProductionAction(
+      'SCENE_CREATE_NOT_INTEGRATED',
+      '场次创建尚未接入真实接口，未写入本地场次或镜头。'
+    );
+    return blockProductionAction(
+      'SCENE_CREATE_NOT_INTEGRATED',
+      '场次创建尚未接入真实接口，未写入本地场次或镜头。'
+    );
   }
 
   function renderShots() {
