@@ -143,6 +143,13 @@
       "admission": "accepted"
     },
     {
+      "path": "docs/contracts/R2-CLOSURE-CONTRACT.md",
+      "classification": "frozen_interface_contract",
+      "authorization_basis": "owner_approval_C9_T1_cleanroom_2026-10-18",
+      "sha256": "6ef5b87605924a021b001f8a25aa322542c7fbc0438af4bab4cbda1d5eb599f0",
+      "admission": "accepted"
+    },
+    {
       "path": "docs/contracts/ASSET-LIBRARY-B4-INTERFACE-CATALOG.yaml",
       "classification": "frozen_interface_contract",
       "authorization_basis": "cleanroom_frozen_input",
