@@ -601,5 +601,3 @@ def test_c9_real_single_shot_review_delivery_browser(monkeypatch, tmp_path):
         if browser is not None:
             browser.close()
         server.stop()
-
-\n
