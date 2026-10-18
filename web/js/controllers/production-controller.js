@@ -674,7 +674,7 @@ window.WorkbenchProduction = (function () {
       state.projectName = '项目数据未接入';
       renderNotIntegratedState();
       updateNavLinks('');
-      return;
+      return false;
     }
 
     try {
@@ -686,7 +686,7 @@ window.WorkbenchProduction = (function () {
         state.projectName = '项目数据未接入';
         renderNotIntegratedState();
         updateNavLinks('');
-        return;
+        return false;
       }
 
       state.projectId = proj.project_id;
@@ -709,20 +709,22 @@ window.WorkbenchProduction = (function () {
         try { await requestJson(`/api/projects/${encodeURIComponent(state.projectId)}`); } catch (_) { /* 已在下方呈现降级 */ }
         resetReviewState('not_integrated', 'review_context', ['EPISODE_PIPELINE_NOT_FOUND']);
         renderReviewPanel();
-        return;
+        return true;
       }
       const context = bindPipelineContext(pipeline);
       if (!context?.shots?.length || !state.activeShotId) {
         resetReviewState('not_integrated', 'review_context', ['SHOT_CONTEXT_NOT_FOUND']);
         renderReviewPanel();
-        return;
+        return true;
       }
       await loadShotDetail(state.activeShotId);
       await loadReviewForCurrentShot();
+      return true;
     } catch (error) {
       state.projectName = '项目数据未接入';
       renderNotIntegratedState();
       updateNavLinks('');
+      return false;
     }
   }
 
@@ -738,7 +740,10 @@ window.WorkbenchProduction = (function () {
       window.history?.pushState?.({}, '', url.toString());
     }
 
-    await initRouting(targetId);
+    const loaded = await initRouting(targetId);
+    if (!loaded) {
+      return blockProductionAction('PROJECT_NAVIGATION_UNAVAILABLE', '目标项目上下文读取失败，请刷新后重试。');
+    }
     renderSceneCatalog();
     renderShots();
     window.lucide?.createIcons();
