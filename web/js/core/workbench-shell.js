@@ -277,8 +277,23 @@
     getStatus: () => authReady() ? comfyLastState?.status || 'unknown' : 'unknown',
     start: () => comfyControl(null, 'start'),
   });
+  function loadWorkbenchShortcuts() {
+    if (window.WorkbenchShortcuts?.bind) {
+      window.WorkbenchShortcuts.bind();
+      return;
+    }
+    if (document.querySelector('script[data-gw-shortcuts]')) return;
+    const host = document.head || document.body;
+    if (!host || !document.createElement) return;
+    const script = document.createElement('script');
+    script.src = '/static/js/modules/shortcuts.js';
+    script.dataset.gwShortcuts = '1';
+    script.onload = () => window.WorkbenchShortcuts?.bind?.();
+    host.appendChild(script);
+  }
   function init() {
     seedInitialRouteScripts();
+    loadWorkbenchShortcuts();
     standardRightDeck();
     bindComfyControl();
     injectTrash();
