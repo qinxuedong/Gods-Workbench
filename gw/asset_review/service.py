@@ -21,6 +21,7 @@
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from typing import Any, Mapping
 
 from gw.core.errors import CleanroomException
@@ -99,6 +100,200 @@ def next_action_for_decision(decision: str) -> str:
     if decision == "changes_requested":
         return "regenerate_version"
     return "review"
+
+
+# C9-T5 将 Provider/审阅状态映射到同一份可回读的收口投影。
+C9_CLOSURE_STATUSES = frozenset(
+    {"open", "blocked", "recovery_required", "partially_recovered", "closed", "unknown"}
+)
+C9_NEXT_ACTIONS = frozenset(
+    {
+        "review",
+        "regenerate_version",
+        "restore_reference",
+        "retry_recovery",
+        "wait_for_provider",
+        "reconcile_unknown_job",
+        "reread_current_version",
+        "resolve_permission",
+        "inspect_persisted_state",
+        "deliver",
+    }
+)
+
+_PROVIDER_STATE_MAP = {
+    "pending": ("blocked", "PROVIDER_PENDING", "wait_for_provider"),
+    "waiting": ("blocked", "PROVIDER_PENDING", "wait_for_provider"),
+    "queued": ("blocked", "PROVIDER_PENDING", "wait_for_provider"),
+    "accepted": ("blocked", "PROVIDER_PENDING", "wait_for_provider"),
+    "running": ("blocked", "PROVIDER_PENDING", "wait_for_provider"),
+    "failed": ("blocked", "PROVIDER_FAILED", "regenerate_version"),
+    "error": ("blocked", "PROVIDER_FAILED", "regenerate_version"),
+    "unknown": ("unknown", "PROVIDER_UNKNOWN", "reconcile_unknown_job"),
+    "outcome_unknown": ("unknown", "PROVIDER_UNKNOWN", "reconcile_unknown_job"),
+}
+_PROVIDER_STATE_KEYS = (
+    "provider_status",
+    "provider_state",
+    "execution_status",
+    "generation_status",
+    "task_status",
+)
+
+
+def now_iso() -> str:
+    """返回稳定的 UTC ISO 时间，写入 blocker 快照。"""
+    return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+
+
+def provider_state(value: Mapping[str, Any] | None) -> str | None:
+    """从请求或持久对象识别 Provider 等待、失败和未知状态。"""
+    if not isinstance(value, Mapping):
+        return None
+    if value.get("result_unknown") is True:
+        return "unknown"
+    candidates = [value.get(key) for key in _PROVIDER_STATE_KEYS]
+    # 兼容只传 status 的 Provider/任务响应，但不把审阅 approved 等状态误判为 Provider 状态。
+    candidates.append(value.get("status"))
+    for raw in candidates:
+        normalized = str(raw or "").strip().lower().replace("-", "_").replace(" ", "_")
+        if normalized in _PROVIDER_STATE_MAP:
+            return normalized
+    return None
+
+
+def blocker(
+    item: Mapping[str, Any],
+    *,
+    code: str,
+    scope: str,
+    message: str,
+    retryable: bool,
+    observed_at: str | None = None,
+) -> dict[str, Any]:
+    """构造 C9 固定形状 blocker，只复制已有稳定 ID。"""
+    subject: dict[str, Any] = {}
+    for key in (
+        "review_id",
+        "delivery_id",
+        "project_id",
+        "shot_id",
+        "job_id",
+        "asset_id",
+        "version_id",
+        "version",
+    ):
+        if item.get(key) is not None:
+            subject[key] = item[key]
+    return {
+        "code": code,
+        "scope": scope,
+        "subject": subject,
+        "message": message,
+        "retryable": bool(retryable),
+        "observed_at": observed_at or now_iso(),
+    }
+
+
+def closure_projection(
+    item: Mapping[str, Any],
+    *,
+    kind: str = "review",
+    observed_at: str | None = None,
+) -> dict[str, Any]:
+    """根据当前事实生成 C9 ``closure_status/blocker/next_action`` 投影。"""
+    existing_blocker = item.get("blocker")
+    existing_status = item.get("closure_status")
+    if existing_blocker is not None or existing_status in C9_CLOSURE_STATUSES:
+        action = item.get("next_action")
+        if existing_status == "closed" and existing_blocker is None:
+            action = None
+        return {
+            "closure_status": existing_status or "blocked",
+            "blocker": dict(existing_blocker) if isinstance(existing_blocker, Mapping) else None,
+            "recovery": dict(item["recovery"]) if isinstance(item.get("recovery"), Mapping) else item.get("recovery"),
+            "next_action": (
+                None
+                if action is None and existing_status == "closed"
+                else action if action in C9_NEXT_ACTIONS else (action or "inspect_persisted_state")
+            ),
+        }
+
+    provider = provider_state(item)
+    if provider:
+        status, code, action = _PROVIDER_STATE_MAP[provider]
+        return {
+            "closure_status": status,
+            "blocker": blocker(
+                item,
+                code=code,
+                scope="job" if item.get("job_id") else kind,
+                message={
+                    "PROVIDER_PENDING": "Provider 仍在等待，尚未形成可审阅结果。",
+                    "PROVIDER_FAILED": "Provider 执行失败，尚未形成可交付结果。",
+                    "PROVIDER_UNKNOWN": "Provider 结果未知，禁止盲目重试副作用。",
+                }[code],
+                retryable=code == "PROVIDER_PENDING",
+                observed_at=observed_at,
+            ),
+            "recovery": None,
+            "next_action": action,
+        }
+
+    review_status = str(item.get("review_status") or "").strip().lower()
+    status = str(item.get("status") or item.get("delivery_status") or "").strip().lower()
+    if review_status in {"approval_invalidated", "superseded"} or status in {
+        "approval_invalidated",
+        "superseded",
+    }:
+        return {
+            "closure_status": "blocked",
+            "blocker": blocker(
+                item,
+                code="APPROVAL_INVALIDATED",
+                scope="delivery" if kind == "delivery" else "review",
+                message="当前资产已有新版本，原批准不能用于审阅或交付。",
+                retryable=False,
+                observed_at=observed_at,
+            ),
+            "recovery": None,
+            "next_action": "review",
+        }
+    if review_status == "changes_requested" or status == "rejected":
+        return {
+            "closure_status": "blocked",
+            "blocker": blocker(
+                item,
+                code="INVALID_STATE_TRANSITION",
+                scope=kind,
+                message="审阅要求修改，必须先生成并审阅新版本。",
+                retryable=False,
+                observed_at=observed_at,
+            ),
+            "recovery": None,
+            "next_action": "regenerate_version",
+        }
+    if item.get("delivery_status") == "delivered" or status == "delivered":
+        return {"closure_status": "closed", "blocker": None, "recovery": None, "next_action": None}
+    if status == "approved" or review_status == "approved":
+        return {"closure_status": "open", "blocker": None, "recovery": None, "next_action": "deliver"}
+    return {"closure_status": "open", "blocker": None, "recovery": None, "next_action": "review"}
+
+
+def apply_closure_projection(
+    item: dict[str, Any],
+    *,
+    kind: str = "review",
+    observed_at: str | None = None,
+) -> dict[str, Any]:
+    """将当前事实投影落回记录，保证刷新/重启返回同一 blocker 快照。"""
+    # 普通状态推进需要重新推导，不能被上一轮的 ``blocker`` 粘住；版本失效会显式写入 blocker 后再回读。
+    source = dict(item)
+    source.pop("closure_status", None)
+    source.pop("blocker", None)
+    source.pop("recovery", None)
+    item.update(closure_projection(source, kind=kind, observed_at=observed_at))
+    return item
 
 
 def unavailable(
