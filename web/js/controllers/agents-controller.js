@@ -67,7 +67,7 @@ window.WorkbenchAgents = (function () {
     if (!bar) {
       bar = document.createElement('div');
       bar.id = 'agentProjectContextBar';
-      bar.className = 'w-full px-3 py-1.5 bg-[#12151c] border-b border-[#dfc384]/20 flex items-center justify-between text-xs font-mono shrink-0';
+      bar.className = 'col-span-12 w-full px-3 py-1.5 bg-[#12151c] border-b border-[#dfc384]/20 flex items-center justify-between text-xs font-mono shrink-0';
       const main = document.getElementById('agentsMain');
       if (main && typeof main.insertBefore === 'function') {
         main.insertBefore(bar, main.firstChild);
