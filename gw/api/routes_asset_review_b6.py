@@ -20,7 +20,8 @@
 
 安全口径：
 - 读端点需认证；写端点需 ``require_edit_access``（只读角色 403）；
-- 状态机 ``open → delivered → approved/rejected``，非法流转 409；
+- 状态机 ``open → delivered → approved/rejected``，非法流转 409；C9 额外返回
+  ``closure_status``、``blocker``、``next_action``，失败/等待/未知不返回成功形态；
 - 导出 PDF 由纯标准库生成真实字节（``%PDF-`` 开头、``%%EOF`` 结尾），不伪造；
 - 分享为**本地**令牌：服务端只存哈希，明文仅返回一次，查不到 404 ``SHARE_NOT_FOUND``。
 """
@@ -63,7 +64,7 @@ def list_sessions(
     authorization: Optional[str] = Header(None),
     x_user_role: str = Header("editor", alias="X-User-Role"),
 ):
-    """读取审查会话集合；C8 可按项目、镜头和精确版本过滤。"""
+    """读取审查会话集合；C8 精确版本与 C9 收口投影一并回读。"""
     _read(authorization, x_user_role)
     return repo.list_sessions(asset_id, project_id=project_id, shot_id=shot_id, version_id=version_id)
 
@@ -92,7 +93,7 @@ def get_session(
     authorization: Optional[str] = Header(None),
     x_user_role: str = Header("editor", alias="X-User-Role"),
 ):
-    """读取单个审查会话详情；不存在 404。"""
+    """读取单个审查会话详情；包含批准失效、阻塞和下一步；不存在 404。"""
     _read(authorization, x_user_role)
     return repo.get_session(session_id)
 
@@ -104,7 +105,7 @@ async def create_delivery(
     authorization: Optional[str] = Header(None),
     x_user_role: str = Header("editor", alias="X-User-Role"),
 ):
-    """创建交付记录并把会话推进到 ``delivered``；稳定 ``dlv-NNNN``。"""
+    """创建交付记录并把当前版本收口为 ``closed``；稳定 ``dlv-NNNN``。"""
     _write(authorization, x_user_role)
     payload = await _json(request)
     return repo.create_delivery(session_id, payload)
@@ -164,7 +165,7 @@ async def put_approval(
     authorization: Optional[str] = Header(None),
     x_user_role: str = Header("editor", alias="X-User-Role"),
 ):
-    """登记审批结论；未交付即审批返回 409，终态不可再翻转。"""
+    """登记审批结论；Provider 未完成或终态不可再翻转时返回可定位 409。"""
     _write(authorization, x_user_role)
     payload = await _json(request)
     return repo.put_approval(session_id, payload)

@@ -182,6 +182,7 @@ def _approval_view(item: Mapping[str, Any]) -> Dict[str, Any]:
     if "review_status" not in view:
         view["review_status"] = "approved" if view.get("status") == "approved" else view.get("status")
     view.setdefault("next_action", review_service.next_action_for_decision(str(view.get("decision") or "")))
+    view.update(review_service.closure_projection(view, kind="review"))
     return view
 
 
@@ -190,6 +191,7 @@ def _delivery_view(item: Mapping[str, Any]) -> Dict[str, Any]:
     view.setdefault("review_id", view.get("session_id"))
     view.setdefault("delivery_status", "delivered")
     view.setdefault("updated_at", view.get("created_at"))
+    view.update(review_service.closure_projection(view, kind="delivery"))
     return view
 
 
@@ -218,12 +220,19 @@ def _session_view(item: Dict[str, Any]) -> Dict[str, Any]:
         "revision": _session_revision(item),
         "created_at": item.get("created_at"),
         "updated_at": item.get("updated_at"),
+        "delivery_status": item.get("delivery_status"),
+        "provider_status": item.get("provider_status"),
+        "provider_message": item.get("provider_message"),
     }
     for key in review_service.C8_VERSION_FIELDS:
         if key in item and key not in view:
             view[key] = item.get(key)
     if isinstance(item.get("source"), Mapping):
         view["source"] = dict(item["source"])
+    for key in ("closure_status", "blocker", "recovery"):
+        if key in item:
+            view[key] = item.get(key)
+    view.update(review_service.closure_projection(view, kind="review"))
     return view
 
 
@@ -349,9 +358,15 @@ def create_session(payload: Dict[str, Any], expected_version: Optional[int]) -> 
             "updated_at": now,
         }
         if c8:
+            provider_status = review_service.provider_state(payload)
+            if provider_status:
+                record["provider_status"] = provider_status
+                if payload.get("provider_message") is not None:
+                    record["provider_message"] = str(payload.get("provider_message")).strip()
             for key in review_service.C8_VERSION_FIELDS:
                 if key in payload and payload.get(key) is not None:
                     record[key] = dict(payload[key]) if key == "source" else payload[key]
+            review_service.apply_closure_projection(record, kind="review", observed_at=now)
             # 新版本出现时，旧批准与交付只能作为历史读取，不能继续作为当前交付依据。
             for old_session in (raw.get("sessions") or {}).values():
                 if (
@@ -361,21 +376,52 @@ def create_session(payload: Dict[str, Any], expected_version: Optional[int]) -> 
                 ):
                     continue
                 old_session["review_status"] = "superseded"
-                old_session["next_action"] = "review_new_version"
+                old_session["next_action"] = "review"
                 if old_session.get("status") in ("open", "delivered", "approved", "rejected"):
                     old_session["status"] = "superseded"
+                old_session["closure_status"] = "blocked"
+                old_session["blocker"] = review_service.blocker(
+                    old_session,
+                    code="APPROVAL_INVALIDATED",
+                    scope="review",
+                    message="当前资产已有新版本，原批准不能用于审阅或交付。",
+                    retryable=False,
+                    observed_at=now,
+                )
+                old_session["recovery"] = None
                 for approval in (raw.get("approvals") or {}).values():
                     if approval.get("session_id") == old_session.get("session_id"):
                         if approval.get("decision") == "approved" or approval.get("status") == "approved":
                             approval["review_status"] = "approval_invalidated"
                             approval["status"] = "approval_invalidated"
-                            approval["next_action"] = "review_new_version"
+                            approval["next_action"] = "review"
                             approval["invalidated_at"] = now
+                            approval["closure_status"] = "blocked"
+                            approval["blocker"] = review_service.blocker(
+                                approval,
+                                code="APPROVAL_INVALIDATED",
+                                scope="review",
+                                message="当前资产已有新版本，原批准不能用于审阅或交付。",
+                                retryable=False,
+                                observed_at=now,
+                            )
+                            approval["recovery"] = None
                 for delivery in (raw.get("deliveries") or {}).values():
                     if delivery.get("session_id") == old_session.get("session_id"):
                         delivery["delivery_status"] = "superseded"
                         delivery["status"] = "superseded"
                         delivery["updated_at"] = now
+                        delivery["next_action"] = "review"
+                        delivery["closure_status"] = "blocked"
+                        delivery["blocker"] = review_service.blocker(
+                            delivery,
+                            code="APPROVAL_INVALIDATED",
+                            scope="delivery",
+                            message="当前资产已有新版本，原批准不能用于审阅或交付。",
+                            retryable=False,
+                            observed_at=now,
+                        )
+                        delivery["recovery"] = None
         raw["sessions"][session_id] = record
         _bump(raw)
         return _session_view(record)
@@ -535,6 +581,19 @@ def put_approval(session_id: str, payload: Dict[str, Any]) -> Dict[str, Any]:
         _require_expected_for_c8(session, payload)
         _cas_session(session, payload.get("expected_version"))
         _assert_exact_binding(session, payload)
+        if c8 and review_service.provider_state(session):
+            projection = review_service.closure_projection(session, kind="review")
+            raise CleanroomException(
+                409,
+                "INVALID_STATE_TRANSITION",
+                "当前 Provider 状态尚未形成可审阅结果，请按 next_action 继续",
+                extra={
+                    "closure_status": projection["closure_status"],
+                    "blocker": projection["blocker"],
+                    "next_action": projection["next_action"],
+                },
+                expose_extra_fields={"closure_status", "blocker", "next_action"},
+            )
         if c8 and decision not in {"approved", "changes_requested"}:
             raise CleanroomException(400, "INVALID_REQUEST", "decision 只接受 approved/changes_requested")
         next_action = str(payload.get("next_action") or "").strip()
@@ -580,6 +639,8 @@ def put_approval(session_id: str, payload: Dict[str, Any]) -> Dict[str, Any]:
         session["updated_at"] = now
         new_revision = _advance_session(session, c8=c8)
         record["expected_version"] = new_revision
+        review_service.apply_closure_projection(record, kind="review", observed_at=now)
+        review_service.apply_closure_projection(session, kind="review", observed_at=now)
         _bump(raw)
         return _approval_view(record)
 
@@ -632,6 +693,19 @@ def create_delivery(session_id: str, payload: Dict[str, Any]) -> Dict[str, Any]:
         _assert_exact_binding(session, payload)
 
         if c8:
+            if review_service.provider_state(session):
+                projection = review_service.closure_projection(session, kind="review")
+                raise CleanroomException(
+                    409,
+                    "INVALID_STATE_TRANSITION",
+                    "当前 Provider 状态尚未形成可交付结果，请按 next_action 继续",
+                    extra={
+                        "closure_status": projection["closure_status"],
+                        "blocker": projection["blocker"],
+                        "next_action": projection["next_action"],
+                    },
+                    expose_extra_fields={"closure_status", "blocker", "next_action"},
+                )
             if session.get("status") != "approved" or session.get("review_status") != "approved":
                 raise CleanroomException(409, "INVALID_STATE_TRANSITION", "只有明确批准的当前版本才能交付")
             decision_id = str(payload.get("decision_id") or "").strip()
@@ -676,8 +750,11 @@ def create_delivery(session_id: str, payload: Dict[str, Any]) -> Dict[str, Any]:
         raw["deliveries"][delivery_id] = record
         session["updated_at"] = now
         if c8:
+            session["delivery_status"] = "delivered"
             _advance_session(session, c8=True)
             record["expected_version"] = _session_revision(session)
+            review_service.apply_closure_projection(session, kind="review", observed_at=now)
+            review_service.apply_closure_projection(record, kind="delivery", observed_at=now)
         else:
             _advance_session(session, c8=False)
         _bump(raw)
