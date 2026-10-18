@@ -286,12 +286,13 @@
   }
   function shellWorkspace() { return targetWorkspace(document); }
   function targetWorkspace(doc) {
-    return doc.querySelector('#homeWorkspace, #workspace, #agentsWorkspace, main, .app-shell-workspace')
+    return doc.querySelector('.app-shell-workspace')
+      || doc.querySelector('#homeWorkspace, #workspace, #agentsWorkspace')
       || doc.querySelector('.topbar-master-deck')?.nextElementSibling
+      || doc.querySelector('#homeWorkspace, #workspace, #agentsWorkspace, main, .app-shell-workspace')
       || doc.body;
   }
   function firstSidebar(workspace) { return workspace?.querySelector(':scope > aside') || null; }
-  function workspaceNodes(workspace, aside) { return [...(workspace?.children || [])].filter(node => node !== aside); }
   function syncRouteDeck(doc) {
     const currentHeader = document.querySelector('.topbar-master-deck');
     const nextHeader = doc.querySelector('.topbar-master-deck');
@@ -330,21 +331,26 @@
     });
     for (const source of scripts) {
       const key = routeScriptKey(source, doc.baseURI || location.href);
-      if (executedRouteScriptKeys.has(key)) continue;
+      const src = source.getAttribute('src') || '';
+      // 外部控制器/页面模块在工作区被替换后必须重新执行；否则返回旧页面时
+      // 只有新 DOM，没有旧控制器的事件与状态绑定。内联脚本仍按指纹去重，
+      // 避免重复声明 const/let 造成语法错误。
+      const rebindOnRoute = Boolean(src) && (src.includes('/controllers/') || src.includes('/modules/'));
+      if (!rebindOnRoute && executedRouteScriptKeys.has(key)) continue;
       const script = document.createElement('script');
       [...source.attributes].forEach(attribute => {
         if (attribute.name !== 'src') script.setAttribute(attribute.name, attribute.value);
       });
       script.dataset.gwRouteScript = '1';
-      if (source.getAttribute('src')) {
-        script.src = new URL(source.getAttribute('src'), doc.baseURI || location.href).href;
+      if (src) {
+        script.src = new URL(src, doc.baseURI || location.href).href;
         script.async = false;
         const loaded = await new Promise(resolve => {
           script.onload = () => resolve(true);
           script.onerror = () => resolve(false);
           document.body.appendChild(script);
         });
-        if (loaded) executedRouteScriptKeys.add(key);
+        if (loaded && !rebindOnRoute) executedRouteScriptKeys.add(key);
       } else {
         script.textContent = source.textContent;
         document.body.appendChild(script);
@@ -401,7 +407,6 @@
     const url = new URL(href, location.href);
     if (url.origin !== location.origin) return;
     const currentWorkspace = shellWorkspace();
-    const currentSidebar = firstSidebar(currentWorkspace);
     if (!currentWorkspace) { location.href = url.href; return; }
     try {
       const response = await fetch(url.href, { credentials: 'same-origin', headers: { 'X-GW-Partial': '1' } });
@@ -425,49 +430,19 @@
         copy.dataset.gwTailwindRoute = '1';
         document.head.appendChild(copy);
       }
-      // Settings uses a direct <main> root while work pages use a workspace
-      // wrapper. Preserve the shared header, but swap the complete content
-      // root at this boundary so the target layout classes remain intact.
-      if (currentWorkspace.matches('main') !== nextWorkspace.matches('main')) {
-        disposeRouteController(mountedRouteHref, url.href);
-        mountedRouteHref = url.href;
-        currentWorkspace.replaceWith(document.importNode(nextWorkspace, true));
-        syncRouteDeck(doc);
-        if (push) history.pushState({}, '', url.href);
-        if (doc.title) document.title = doc.title;
-        standardRightDeck();
-        bindComfyControl();
-        await runRouteScripts(doc);
-       refreshRouteController(url.href);
-        syncNavPills(url.href);
-        window.dispatchEvent(new CustomEvent('gw:route-loaded', { detail: { href: url.href } }));
-        if (window.lucide?.createIcons) window.lucide.createIcons();
-        rememberLastVisitedPage(url.href);
-        return;
-      }
-      const nextSidebar = firstSidebar(nextWorkspace);
-      const nextNodes = workspaceNodes(nextWorkspace, nextSidebar);
-      if (!nextNodes.length) throw new Error('target workspace missing');
+      // 无论目标是 div 工作区还是直接 main，始终替换完整根节点。
+      // 这样侧边栏、页面专属根 ID 与首页控制条都不会跨页残留。
       syncRouteDeck(doc);
       disposeRouteController(mountedRouteHref, url.href);
       mountedRouteHref = url.href;
-      if (currentSidebar && nextSidebar) {
-        currentSidebar.innerHTML = nextSidebar.innerHTML;
-        currentSidebar.id = nextSidebar.id;
-        currentSidebar.className = nextSidebar.className;
-      } else if (currentSidebar && !nextSidebar) {
-        currentSidebar.remove();
-      }
-      workspaceNodes(currentWorkspace, currentSidebar).forEach(node => node.remove());
-      if (!currentSidebar && nextSidebar) currentWorkspace.appendChild(document.importNode(nextSidebar, true));
-      nextNodes.forEach(node => currentWorkspace.appendChild(document.importNode(node, true)));
+      currentWorkspace.replaceWith(document.importNode(nextWorkspace, true));
       if (push) history.pushState({}, '', url.href);
       if (doc.title) document.title = doc.title;
-      syncNavPills(url.href);
       standardRightDeck();
       bindComfyControl();
       await runRouteScripts(doc);
-       refreshRouteController(url.href);
+      refreshRouteController(url.href);
+      syncNavPills(url.href);
       window.dispatchEvent(new CustomEvent('gw:route-loaded', { detail: { href: url.href } }));
       if (window.lucide?.createIcons) window.lucide.createIcons();
       rememberLastVisitedPage(url.href);
