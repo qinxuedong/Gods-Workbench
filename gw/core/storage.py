@@ -27,21 +27,36 @@
 from __future__ import annotations
 
 import json
+import hashlib
 import os
+import shutil
+import stat
+import tempfile
 import threading
 import time
 from pathlib import Path
+from collections.abc import Mapping, Sequence
 from typing import Any, Callable, Dict, Iterator, List, Optional
 
 from gw.core.errors import CleanroomException
-from gw.core.runtime_paths import RuntimePathError, resolve_runtime_paths
+from gw.core.runtime_paths import MODE_TEST, RuntimePathError, RuntimePaths, resolve_runtime_paths
 
 DATA_DIR_ENV = "GW_DATA_DIR"
 ALLOWED_ROOTS_ENV = "GW_ALLOWED_ROOTS"
 DEFAULT_FOLDER = "GodsWorkbench"
+BACKUP_FORMAT = "gods-workbench-runtime-backup-v1"
+_BACKUP_ROOTS = frozenset({"data", "auth", "video"})
 
 _LOCK = threading.RLock()
 _NAMESPACE_LOCKS: Dict[str, threading.RLock] = {}
+
+
+class RuntimeBackupError(RuntimeError):
+    """运行时备份、恢复或回滚失败；错误不携带原始路径。"""
+
+    def __init__(self, code: str, message: str) -> None:
+        self.code = code
+        super().__init__(message)
 
 
 def data_root() -> Path:
@@ -273,6 +288,446 @@ class JsonState:
 def now_iso() -> str:
     """统一 ISO 8601 UTC 时间戳（秒精度），供审计与排序使用。"""
     return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+
+
+def _backup_fail(code: str, message: str) -> None:
+    raise RuntimeBackupError(code, message)
+
+
+def _lexists(path: Path) -> bool:
+    try:
+        path.lstat()
+    except FileNotFoundError:
+        return False
+    except (OSError, RuntimeError):
+        _backup_fail("BACKUP_PATH_UNSAFE", "运行时备份路径无法安全核验")
+    return True
+
+
+def _reject_links(path: Path) -> None:
+    """拒绝备份边界上的符号链接和 Windows 重解析点。"""
+    current = Path(path.anchor) if path.anchor else Path()
+    parts = path.parts[1:] if path.anchor else path.parts
+    for part in parts:
+        if not part:
+            continue
+        current = current / part
+        try:
+            info = current.lstat()
+        except FileNotFoundError:
+            continue
+        except (OSError, RuntimeError):
+            _backup_fail("BACKUP_PATH_UNSAFE", "运行时备份路径无法安全核验")
+        if stat.S_ISLNK(info.st_mode) or getattr(info, "st_file_attributes", 0) & 0x0400:
+            _backup_fail("BACKUP_PATH_LINK", "运行时备份不允许符号链接或重解析点")
+
+
+def _canonical_backup_path(raw: object) -> Path:
+    if not isinstance(raw, (str, os.PathLike)):
+        _backup_fail("BACKUP_PATH_INVALID", "运行时备份路径必须是绝对路径")
+    candidate = Path(os.fspath(raw))
+    if not candidate.is_absolute():
+        _backup_fail("BACKUP_PATH_INVALID", "运行时备份路径必须是绝对路径")
+    _reject_links(candidate)
+    try:
+        resolved = candidate.resolve(strict=False)
+    except (OSError, RuntimeError, ValueError):
+        _backup_fail("BACKUP_PATH_INVALID", "运行时备份路径无法安全解析")
+    _reject_links(resolved)
+    return resolved
+
+
+def _is_inside(path: Path, parent: Path) -> bool:
+    try:
+        path.relative_to(parent)
+        return True
+    except ValueError:
+        return False
+
+
+def _ensure_test_runtime(paths: RuntimePaths) -> None:
+    if not isinstance(paths, RuntimePaths) or paths.mode != MODE_TEST:
+        _backup_fail("BACKUP_TEST_ONLY", "备份与回滚只允许在隔离测试态执行")
+
+
+def _runtime_sources(paths: RuntimePaths) -> tuple[tuple[str, Path, bool], ...]:
+    sources = (
+        ("data", _canonical_backup_path(paths.data_root), True),
+        ("auth", _canonical_backup_path(paths.auth_db), False),
+        ("video", _canonical_backup_path(paths.video_root), True),
+    )
+    for index, (_left_name, left, _left_directory) in enumerate(sources):
+        for _right_name, right, _right_directory in sources[index + 1:]:
+            if _is_inside(left, right) or _is_inside(right, left):
+                _backup_fail("BACKUP_PATH_OVERLAP", "运行时来源目录不得相互重叠")
+    return sources
+
+
+def _ensure_source_shape(name: str, source: Path, directory: bool) -> None:
+    if not _lexists(source):
+        return
+    info = source.lstat()
+    if stat.S_ISLNK(info.st_mode) or getattr(info, "st_file_attributes", 0) & 0x0400:
+        _backup_fail("BACKUP_SOURCE_LINK", "运行时来源不允许符号链接或重解析点")
+    if directory and not stat.S_ISDIR(info.st_mode):
+        _backup_fail("BACKUP_SOURCE_SHAPE", "运行时目录来源类型不正确")
+    if not directory and not stat.S_ISREG(info.st_mode):
+        _backup_fail("BACKUP_SOURCE_SHAPE", "运行时账户库来源类型不正确")
+
+
+def _source_files(name: str, source: Path, directory: bool) -> list[tuple[str, Path]]:
+    """返回来源文件和备份内相对路径，并在遍历时拒绝链接。"""
+    _ensure_source_shape(name, source, directory)
+    if not _lexists(source):
+        return []
+    if not directory:
+        return [(f"{name}/{source.name}", source)]
+    files: list[tuple[str, Path]] = []
+    pending = [source]
+    while pending:
+        current = pending.pop()
+        try:
+            children = sorted(current.iterdir(), key=lambda item: item.name)
+        except (OSError, RuntimeError):
+            _backup_fail("BACKUP_SOURCE_UNREADABLE", "运行时来源无法读取")
+        for child in children:
+            try:
+                info = child.lstat()
+            except (OSError, RuntimeError):
+                _backup_fail("BACKUP_SOURCE_UNREADABLE", "运行时来源无法读取")
+            if stat.S_ISLNK(info.st_mode) or getattr(info, "st_file_attributes", 0) & 0x0400:
+                _backup_fail("BACKUP_SOURCE_LINK", "运行时来源不允许符号链接或重解析点")
+            if stat.S_ISDIR(info.st_mode):
+                pending.append(child)
+            elif stat.S_ISREG(info.st_mode):
+                try:
+                    relative = child.relative_to(source).as_posix()
+                except ValueError:
+                    _backup_fail("BACKUP_SOURCE_SHAPE", "运行时来源路径不在准入根内")
+                files.append((f"{name}/{relative}", child))
+            else:
+                _backup_fail("BACKUP_SOURCE_SHAPE", "运行时来源包含不支持的文件类型")
+    return sorted(files)
+
+
+def _sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    try:
+        with path.open("rb") as handle:
+            for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+                digest.update(chunk)
+    except (OSError, RuntimeError):
+        _backup_fail("BACKUP_SOURCE_UNREADABLE", "运行时来源无法读取")
+    return digest.hexdigest()
+
+
+def _backup_destination(paths: RuntimePaths, destination: object | None) -> Path:
+    target = _canonical_backup_path(destination if destination is not None else paths.backup_root)
+    for _name, source, _directory in _runtime_sources(paths):
+        if _is_inside(target, source) or _is_inside(source, target):
+            _backup_fail("BACKUP_PATH_OVERLAP", "备份目录不得与运行时来源重叠")
+    try:
+        target.mkdir(parents=True, exist_ok=True)
+    except OSError:
+        _backup_fail("BACKUP_PATH_UNAVAILABLE", "备份目录不可用")
+    if not target.is_dir():
+        _backup_fail("BACKUP_PATH_SHAPE", "备份目录必须是目录")
+    return target
+
+
+def _remove_path(path: Path) -> None:
+    if not _lexists(path):
+        return
+    info = path.lstat()
+    if stat.S_ISLNK(info.st_mode) or getattr(info, "st_file_attributes", 0) & 0x0400:
+        _backup_fail("BACKUP_PATH_LINK", "运行时备份不允许符号链接或重解析点")
+    try:
+        if stat.S_ISDIR(info.st_mode):
+            shutil.rmtree(path)
+        else:
+            path.unlink()
+    except OSError:
+        _backup_fail("BACKUP_PATH_UNAVAILABLE", "运行时备份路径无法清理")
+
+
+def _atomic_json(path: Path, payload: Mapping[str, Any]) -> None:
+    temporary = path.with_name(path.name + ".tmp")
+    try:
+        with temporary.open("w", encoding="utf-8", newline="\n") as handle:
+            json.dump(dict(payload), handle, ensure_ascii=False, indent=2, sort_keys=True)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temporary, path)
+    except OSError:
+        _remove_path(temporary)
+        _backup_fail("BACKUP_WRITE_FAILED", "运行时备份清单写入失败")
+
+
+def create_runtime_backup(
+    paths: RuntimePaths,
+    destination: object | None = None,
+    *,
+    source_state_version: int | str | None = None,
+    target_state_version: int | str | None = None,
+    metadata: Mapping[str, Any] | None = None,
+) -> Dict[str, Any]:
+    """在隔离测试态复制 data/auth/video 并生成带哈希清单的备份。"""
+    _ensure_test_runtime(paths)
+    target = _backup_destination(paths, destination)
+    started = time.perf_counter()
+    created_at = now_iso()
+    seed = f"{created_at}:{time.time_ns()}:{paths.data_root}:{paths.auth_db}:{paths.video_root}".encode("utf-8")
+    backup_id = "backup_" + hashlib.sha256(seed).hexdigest()[:20]
+    final = target / backup_id
+    staging = target / f".{backup_id}.staging"
+    if _lexists(final) or _lexists(staging):
+        _backup_fail("BACKUP_ALREADY_EXISTS", "运行时备份编号已存在")
+    files: list[dict[str, Any]] = []
+    try:
+        staging.mkdir(parents=True)
+        for root_name, source, is_directory in _runtime_sources(paths):
+            for relative, original in _source_files(root_name, source, is_directory):
+                target_file = staging / relative
+                target_file.parent.mkdir(parents=True, exist_ok=True)
+                try:
+                    shutil.copy2(original, target_file)
+                except OSError:
+                    _backup_fail("BACKUP_COPY_FAILED", "运行时来源复制失败")
+                files.append({
+                    "path": relative,
+                    "size": target_file.stat().st_size,
+                    "sha256": _sha256(target_file),
+                })
+        manifest: Dict[str, Any] = {
+            "format": BACKUP_FORMAT,
+            "schema_version": 1,
+            "backup_id": backup_id,
+            "created_at": created_at,
+            "runtime_mode": paths.mode,
+            "source_state_version": source_state_version,
+            "target_state_version": target_state_version,
+            "roots": {"data": "data", "auth": "auth", "video": "video"},
+            "files": sorted(files, key=lambda item: item["path"]),
+            "metadata": dict(metadata or {}),
+        }
+        _atomic_json(staging / "manifest.json", manifest)
+        os.replace(staging, final)
+    except RuntimeBackupError:
+        _remove_path(staging)
+        raise
+    except OSError:
+        _remove_path(staging)
+        _backup_fail("BACKUP_WRITE_FAILED", "运行时备份写入失败")
+    elapsed = round((time.perf_counter() - started) * 1000, 4)
+    return {
+        "status": "created",
+        "backup_id": backup_id,
+        "path": str(final),
+        "manifest": manifest,
+        "source_state_version": source_state_version,
+        "target_state_version": target_state_version,
+        "files": len(files),
+        "backup_duration_ms": elapsed,
+        "rpo_ms": 0.0,
+    }
+
+
+def _backup_path(backup: object) -> Path:
+    if isinstance(backup, Mapping):
+        backup = backup.get("path")
+    return _canonical_backup_path(backup)
+
+
+def _load_backup_manifest(backup: object) -> tuple[Path, Dict[str, Any]]:
+    directory = _backup_path(backup)
+    manifest_path = directory / "manifest.json"
+    _reject_links(manifest_path)
+    try:
+        payload = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError):
+        _backup_fail("BACKUP_MANIFEST_INVALID", "运行时备份清单无效")
+    if (not isinstance(payload, dict) or payload.get("format") != BACKUP_FORMAT
+            or payload.get("schema_version") != 1):
+        _backup_fail("BACKUP_MANIFEST_INVALID", "运行时备份清单版本不受支持")
+    backup_id = str(payload.get("backup_id") or "")
+    if not backup_id.startswith("backup_") or directory.name != backup_id:
+        _backup_fail("BACKUP_MANIFEST_INVALID", "运行时备份编号无效")
+    if payload.get("runtime_mode") != MODE_TEST:
+        _backup_fail("BACKUP_TEST_ONLY", "备份清单不是隔离测试态产物")
+    entries = payload.get("files")
+    if not isinstance(entries, list):
+        _backup_fail("BACKUP_MANIFEST_INVALID", "运行时备份文件清单无效")
+    seen: set[str] = set()
+    expected: set[str] = set()
+    for entry in entries:
+        if not isinstance(entry, dict):
+            _backup_fail("BACKUP_MANIFEST_INVALID", "运行时备份文件清单无效")
+        relative = str(entry.get("path") or "")
+        pieces = relative.replace("\\", "/").split("/")
+        if len(pieces) < 2 or pieces[0] not in _BACKUP_ROOTS or any(part in {"", ".", ".."} for part in pieces):
+            _backup_fail("BACKUP_MANIFEST_INVALID", "运行时备份文件路径无效")
+        if relative in seen or not isinstance(entry.get("size"), int) or not isinstance(entry.get("sha256"), str):
+            _backup_fail("BACKUP_MANIFEST_INVALID", "运行时备份文件清单无效")
+        seen.add(relative)
+        expected.add(relative)
+        source = directory / Path(*pieces)
+        _reject_links(source)
+        try:
+            info = source.stat()
+        except (OSError, RuntimeError):
+            _backup_fail("BACKUP_INTEGRITY_FAILED", "运行时备份文件缺失")
+        if not stat.S_ISREG(info.st_mode) or info.st_size != entry["size"] or _sha256(source) != entry["sha256"]:
+            _backup_fail("BACKUP_INTEGRITY_FAILED", "运行时备份文件校验失败")
+    for root_name in _BACKUP_ROOTS:
+        root = directory / root_name
+        if not _lexists(root):
+            continue
+        _reject_links(root)
+        for candidate in root.rglob("*"):
+            if candidate.is_file():
+                relative = candidate.relative_to(directory).as_posix()
+                if relative not in expected:
+                    _backup_fail("BACKUP_INTEGRITY_FAILED", "运行时备份包含未登记文件")
+    return directory, payload
+
+
+def _copy_manifest_to_stage(directory: Path, manifest: Mapping[str, Any], stage: Path) -> int:
+    count = 0
+    for entry in manifest["files"]:
+        pieces = str(entry["path"]).split("/")
+        source = directory.joinpath(*pieces)
+        target = stage.joinpath(*pieces)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            shutil.copy2(source, target)
+        except OSError:
+            _backup_fail("BACKUP_COPY_FAILED", "运行时备份恢复暂存失败")
+        if target.stat().st_size != entry["size"] or _sha256(target) != entry["sha256"]:
+            _backup_fail("BACKUP_INTEGRITY_FAILED", "运行时备份恢复暂存校验失败")
+        count += 1
+    return count
+
+
+def _restore_commit(paths: RuntimePaths, stage: Path, backup_id: str) -> None:
+    targets = (
+        (paths.data_root, stage / "data", True),
+        (paths.auth_db, stage / "auth" / paths.auth_db.name, False),
+        (paths.video_root, stage / "video", True),
+    )
+    old_paths: list[tuple[Path, Path]] = []
+    new_paths: list[Path] = []
+    try:
+        for target, staged, is_directory in targets:
+            target = _canonical_backup_path(target)
+            staged = _canonical_backup_path(staged)
+            _ensure_source_shape("target", target, is_directory)
+            target.parent.mkdir(parents=True, exist_ok=True)
+            old = target.with_name(f".{target.name}.gw-old-{backup_id}")
+            if _lexists(old):
+                _remove_path(old)
+            if _lexists(target):
+                os.replace(target, old)
+                old_paths.append((target, old))
+            if _lexists(staged):
+                os.replace(staged, target)
+                new_paths.append(target)
+            elif is_directory:
+                target.mkdir(parents=True, exist_ok=True)
+                new_paths.append(target)
+        for _target, old in old_paths:
+            _remove_path(old)
+    except Exception:
+        for target in reversed(new_paths):
+            try:
+                _remove_path(target)
+            except RuntimeBackupError:
+                pass
+        for target, old in reversed(old_paths):
+            if _lexists(old) and not _lexists(target):
+                os.replace(old, target)
+        raise
+
+
+def restore_runtime_backup(paths: RuntimePaths, backup: object) -> Dict[str, Any]:
+    """校验并恢复隔离测试态备份，恢复前后不触碰开发或生产根。"""
+    _ensure_test_runtime(paths)
+    directory, manifest = _load_backup_manifest(backup)
+    started = time.perf_counter()
+    stage = Path(tempfile.mkdtemp(prefix=".gw-restore-"))
+    try:
+        for root_name in _BACKUP_ROOTS:
+            (stage / root_name).mkdir(parents=True, exist_ok=True)
+        files_restored = _copy_manifest_to_stage(directory, manifest, stage)
+        _restore_commit(paths, stage, str(manifest["backup_id"]))
+    except RuntimeBackupError:
+        raise
+    except (OSError, RuntimeError):
+        _backup_fail("BACKUP_RESTORE_FAILED", "运行时备份恢复失败")
+    finally:
+        _remove_path(stage)
+    elapsed = round((time.perf_counter() - started) * 1000, 4)
+    return {
+        "status": "restored",
+        "backup_id": manifest["backup_id"],
+        "path": str(directory),
+        "source_state_version": manifest.get("source_state_version"),
+        "target_state_version": manifest.get("target_state_version"),
+        "files_restored": files_restored,
+        "restore_duration_ms": elapsed,
+        "rpo_ms": 0.0,
+        "rto_ms": elapsed,
+    }
+
+
+def upgrade_runtime(
+    paths: RuntimePaths,
+    upgrader: Callable[[RuntimePaths], Any],
+    *,
+    destination: object | None = None,
+    source_state_version: int | str | None = None,
+    target_state_version: int | str | None = None,
+    metadata: Mapping[str, Any] | None = None,
+) -> Dict[str, Any]:
+    """先备份再执行隔离升级；升级异常时自动恢复同一备份。"""
+    if not callable(upgrader):
+        _backup_fail("UPGRADE_CALLBACK_INVALID", "升级操作必须是可调用对象")
+    backup = create_runtime_backup(
+        paths,
+        destination,
+        source_state_version=source_state_version,
+        target_state_version=target_state_version,
+        metadata=metadata,
+    )
+    started = time.perf_counter()
+    try:
+        result = upgrader(paths)
+    except Exception:
+        try:
+            restore_runtime_backup(paths, backup)
+        except Exception as rollback_error:
+            raise RuntimeBackupError("UPGRADE_ROLLBACK_FAILED", "升级失败且自动回滚未完成") from rollback_error
+        raise
+    elapsed = round((time.perf_counter() - started) * 1000, 4)
+    return {
+        "status": "upgraded",
+        "backup": backup,
+        "upgrade_result": result,
+        "backup_duration_ms": backup["backup_duration_ms"],
+        "upgrade_duration_ms": elapsed,
+        "rpo_ms": 0.0,
+    }
+
+
+def rollback_runtime(paths: RuntimePaths, backup: object) -> Dict[str, Any]:
+    """把隔离测试态恢复到指定备份，并保留可审计的回滚耗时。"""
+    result = restore_runtime_backup(paths, backup)
+    result["status"] = "rolled_back"
+    return result
+
+
+# 兼容任务描述中的简短动作名；实现仍集中在带 runtime 前缀的函数。
+backup_runtime = create_runtime_backup
+restore_runtime = restore_runtime_backup
 
 
 def next_sequence(prefix: str, existing: Iterator[str]) -> str:
