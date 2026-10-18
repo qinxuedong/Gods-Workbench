@@ -40,6 +40,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from gw.core import storage
 from gw.asset_registry import audit_sink
+from gw.asset_registry.service import normalize_asset_query, parse_utc_datetime
 from gw.core.errors import CleanroomException
 
 NS_REGISTRY = "asset_registry"
@@ -317,7 +318,25 @@ def list_assets(limit: int, offset: int, query: Optional[str], kind: Optional[st
                 view: Optional[str] = None, category: Optional[str] = None, tag: Optional[str] = None,
                 project_id: Optional[str] = None, include_tags: Optional[str] = None,
                 exclude_tags: Optional[str] = None, root_id: Optional[str] = None,
-                collection_id: Optional[str] = None, recent_days: Optional[int] = None) -> Dict[str, Any]:
+                collection_id: Optional[str] = None, recent_days: Optional[int] = None,
+                structured: bool = False, scope: Any = None, text: Optional[str] = None,
+                filters: Any = None, include: Any = None) -> Dict[str, Any]:
+    if structured:
+        if root_id or collection_id or any(value is not None for value in (kind, archived, category, tag,
+                                                                            project_id, include_tags,
+                                                                            exclude_tags, recent_days)):
+            raise CleanroomException(400, "UNSUPPORTED_FILTER_VALUE",
+                                     "结构化查询不能混用旧版过滤参数")
+        return _list_structured_assets(
+            limit=limit,
+            offset=offset,
+            cursor=cursor,
+            scope=scope,
+            text=text,
+            filters=filters,
+            sort=sort,
+            include=include,
+        )
     if root_id or collection_id:
         raise CleanroomException(400, "UNSUPPORTED_OPTION", "注册表尚无存储根或集合关联，不能应用该过滤")
     cutoff = None
@@ -398,6 +417,224 @@ def list_assets(limit: int, offset: int, query: Optional[str], kind: Optional[st
             "limit": limit, "offset": offset, "has_more": has_more, "next_offset": next_offset,
             "next_cursor": next_cursor, "revision": raw["revision"],
             "data_status": DATA_STATUS_OK, "data_gaps": []}
+
+
+def _structured_cursor_fingerprint(normalized: Dict[str, Any]) -> str:
+    """游标只绑定规范化查询和当前认证主体的不可逆归属键。"""
+    from gw.core.asset_visibility import asset_owner_key, current_auth_context
+
+    context = current_auth_context.get()
+    principal = asset_owner_key(context) if context is not None else "anonymous"
+    payload = {"query": normalized, "principal": principal}
+    return hashlib.sha256(
+        json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    ).hexdigest()
+
+
+def _structured_asset_facets(items: List[Dict[str, Any]], raw: Dict[str, Any]) -> Dict[str, Any]:
+    kinds = Counter(str(asset.get("kind") or "unknown") for asset in items)
+    categories = Counter(_asset_category(asset) for asset in items)
+    tag_counts = Counter(tag for asset in items for tag in set(asset.get("tags", [])))
+    tags = [
+        {**value, "count": tag_counts.get(value["tag_id"], 0)}
+        for value in sorted(raw["tags"].values(), key=lambda item: item["tag_id"])
+        if tag_counts.get(value["tag_id"], 0)
+    ]
+    return {
+        "kinds": [{"name": name, "count": count} for name, count in sorted(kinds.items())],
+        "categories": [{"name": name, "count": count} for name, count in sorted(categories.items())],
+        "tags": tags,
+        "collections": [],
+        "roots": [],
+        "revision": raw["revision"],
+    }
+
+
+def _structured_asset_projection(asset: Dict[str, Any], *, include_preview: bool) -> Dict[str, Any]:
+    """把旧资产记录投影为 C11 稳定实体字段，不改变落盘记录。"""
+    item = dict(asset)
+    item.pop("id", None)
+    item["entity_type"] = "asset"
+    item["tag_id"] = list(asset.get("tags") or [])
+    if not item.get("project_id") and asset.get("project_ids"):
+        item["project_id"] = asset["project_ids"][0]
+    item["status"] = "archived" if bool(asset.get("archived")) else "active"
+    if include_preview:
+        item["preview"] = {
+            "availability": "not_integrated",
+            "reason_code": "MEDIA_PROXY_NOT_INTEGRATED",
+            "next_action": "use_asset_media_endpoint",
+        }
+    return item
+
+
+def _list_structured_assets(
+    *,
+    limit: int,
+    offset: int,
+    cursor: Optional[str],
+    scope: Any,
+    text: Any,
+    filters: Any,
+    sort: Optional[str],
+    include: Any,
+) -> Dict[str, Any]:
+    normalized = normalize_asset_query(
+        scope=scope,
+        text=text,
+        filters=filters,
+        sort=sort,
+        limit=limit,
+        include=include,
+    )
+    raw = state().read()
+    fingerprint = _structured_cursor_fingerprint(normalized)
+    cursor_last_id: Optional[str] = None
+    if cursor:
+        try:
+            if len(cursor) > 2048:
+                raise ValueError()
+            decoded = json.loads(
+                base64.b64decode(cursor + "=" * (-len(cursor) % 4), altchars=b"-_", validate=True)
+            )
+            if (
+                not isinstance(decoded, dict)
+                or set(decoded) != {"offset", "revision", "query", "last_id"}
+                or type(decoded["offset"]) is not int
+                or decoded["offset"] < 0
+                or type(decoded["revision"]) is not int
+                or decoded["query"] != fingerprint
+                or (offset and offset != decoded["offset"])
+                or not isinstance(decoded["last_id"], str)
+            ):
+                raise ValueError()
+        except (ValueError, TypeError, KeyError, UnicodeError):
+            raise CleanroomException(400, "INVALID_CURSOR", "分页游标无效或不属于当前查询") from None
+        if decoded["revision"] != raw["revision"]:
+            raise CleanroomException(
+                409,
+                "VERSION_CONFLICT",
+                "资产列表已变化，请从第一页重新读取",
+                extra={"expected_version": decoded["revision"], "current_version": raw["revision"]},
+                expose_extra_fields={"expected_version", "current_version"},
+            )
+        offset = decoded["offset"]
+        cursor_last_id = decoded["last_id"]
+
+    from gw.core.asset_visibility import asset_visible
+
+    filter_values = normalized["filters"]
+    items = [dict(asset) for asset in raw["assets"].values() if asset_visible(asset)]
+    needle = normalized["text"].casefold()
+    if needle:
+        items = [
+            asset
+            for asset in items
+            if needle in str(asset.get("name") or "").casefold()
+            or needle in str(asset.get("asset_id") or "").casefold()
+        ]
+    if filter_values.get("kind"):
+        kinds = set(filter_values["kind"])
+        items = [asset for asset in items if _asset_category(asset) in kinds]
+    if filter_values.get("project_id"):
+        projects = set(filter_values["project_id"])
+        items = [
+            asset
+            for asset in items
+            if projects.intersection(set(asset.get("project_ids") or [])
+                                     | ({asset["project_id"]} if asset.get("project_id") else set()))
+        ]
+    if filter_values.get("tag_id"):
+        tags = set(filter_values["tag_id"])
+        items = [asset for asset in items if tags.intersection(set(asset.get("tags") or []))]
+    if filter_values.get("status", {}).get("asset"):
+        statuses = set(filter_values["status"]["asset"])
+        items = [
+            asset
+            for asset in items
+            if ("archived" if bool(asset.get("archived")) else "active") in statuses
+        ]
+    if "created_at" in filter_values:
+        window = filter_values["created_at"]
+        start = parse_utc_datetime(window["from"]) if window.get("from") else None
+        end = parse_utc_datetime(window["to"]) if window.get("to") else None
+        filtered: List[Dict[str, Any]] = []
+        for asset in items:
+            try:
+                created = parse_utc_datetime(asset.get("created_at"))
+            except CleanroomException:
+                continue
+            if start is not None and created < start:
+                continue
+            if end is not None and created >= end:
+                continue
+            filtered.append(asset)
+        items = filtered
+
+    # 先按稳定 ID，再按主排序键，保证同值时 ID 升序且跨页不重不漏。
+    items.sort(key=lambda asset: str(asset.get("asset_id") or ""))
+    if normalized["sort"] in {"newest", "oldest"}:
+        items.sort(
+            key=lambda asset: str(asset.get("created_at") or ""),
+            reverse=normalized["sort"] == "newest",
+        )
+    elif normalized["sort"] == "name":
+        items.sort(key=lambda asset: str(asset.get("name") or "").casefold())
+
+    if cursor is not None and (offset == 0 or offset > len(items)
+                               or items[offset - 1].get("asset_id") != cursor_last_id):
+        raise CleanroomException(400, "INVALID_CURSOR", "分页游标无效或不属于当前查询")
+
+    total = len(items)
+    page = items[offset:offset + limit]
+    has_more = offset + len(page) < total
+    next_offset = offset + len(page) if has_more else None
+    next_cursor = None
+    if has_more:
+        next_cursor = base64.urlsafe_b64encode(
+            json.dumps(
+                {
+                    "offset": next_offset,
+                    "revision": raw["revision"],
+                    "query": fingerprint,
+                    "last_id": page[-1]["asset_id"],
+                },
+                separators=(",", ":"),
+            ).encode("utf-8")
+        ).decode("ascii").rstrip("=")
+
+    include_values = set(normalized["include"])
+    projected = [
+        _structured_asset_projection(asset, include_preview="preview" in include_values)
+        for asset in page
+    ]
+    applied_filters: Dict[str, Any] = {"scope": normalized["scope"], "sort": normalized["sort"]}
+    if normalized["text"]:
+        applied_filters["text"] = normalized["text"]
+    applied_filters.update(filter_values)
+    gaps = ["media_proxy_not_integrated"] if "preview" in include_values else []
+    return {
+        "assets": projected,
+        "items": projected,
+        "total": total,
+        "total_known": True,
+        "limit": limit,
+        "offset": offset,
+        "has_more": has_more,
+        "next_offset": next_offset,
+        "next_cursor": next_cursor,
+        "revision": raw["revision"],
+        "page": {
+            "limit": limit,
+            "has_more": has_more,
+            "next_cursor": next_cursor,
+            "collection_revision": raw["revision"],
+        },
+        "applied_filters": applied_filters,
+        "facets": _structured_asset_facets(items, raw) if "facets" in include_values else None,
+        "data_status": "degraded" if gaps else "complete",
+        "data_gaps": gaps,
+    }
 
 
 def _record_owner(record: Dict[str, Any]) -> Optional[str]:

@@ -258,7 +258,7 @@ FEATURE_NAMES = {
 
 @router.get("/assets", summary="分页读取素材登记", status_code=status.HTTP_200_OK)
 def list_registry_assets(
-    limit: int = Query(100, ge=1, le=500),
+    limit: Optional[str] = Query(None),
     offset: int = Query(0, ge=0),
     cursor: Optional[str] = Query(None),
     sort: Optional[str] = Query(None),
@@ -275,10 +275,30 @@ def list_registry_assets(
     collection_id: Optional[str] = Query(None),
     recent_days: Optional[int] = Query(None),
     archived: Optional[bool] = Query(None),
+    scope: Optional[str] = Query(None),
+    text: Optional[str] = Query(None),
+    filters: Optional[str] = Query(None),
+    include: Optional[str] = Query(None),
     authorization: Optional[str] = Header(None),
     x_user_role: str = Header("editor", alias="X-User-Role"),
 ):
     context = _read_auth(authorization, x_user_role)
+    structured = any(value is not None for value in (scope, text, filters, include))
+    if limit is None:
+        effective_limit = 50 if structured else 100
+    else:
+        try:
+            effective_limit = int(limit)
+        except (TypeError, ValueError):
+            raise CleanroomException(400, "INVALID_LIMIT", "limit 必须是整数") from None
+    if type(effective_limit) is not int or effective_limit < 1 or effective_limit > (200 if structured else 500):
+        raise CleanroomException(400, "INVALID_LIMIT", "limit 超出当前查询允许范围")
+    structured_text = text
+    legacy_text = query or search
+    if structured and legacy_text:
+        if structured_text and structured_text != legacy_text:
+            raise CleanroomException(400, "UNSUPPORTED_FILTER_VALUE", "结构化查询不能混用 query/search")
+        structured_text = legacy_text
     if project_id:
         if "?" in project_id:
             project_id = project_id.split("?")[0]
@@ -291,10 +311,12 @@ def list_registry_assets(
         from gw.projects_hub import service as projects_service_module
         if not projects_service_module.default_projects_service.can_read_project(project_id, owner_key=owner_key, role=role):
             raise CleanroomException(404, "PROJECT_NOT_FOUND", "项目不存在")
-    return repo.list_assets(limit, offset, query or search, kind, archived, cursor=cursor, sort=sort,
+    return repo.list_assets(effective_limit, offset, query or search, kind, archived, cursor=cursor, sort=sort,
                             view=view, category=category, tag=tag, project_id=project_id,
                             include_tags=include_tags, exclude_tags=exclude_tags, root_id=root_id,
-                            collection_id=collection_id, recent_days=recent_days)
+                            collection_id=collection_id, recent_days=recent_days,
+                            structured=structured, scope=scope, text=structured_text,
+                            filters=filters, include=include)
 
 
 @router.get("/assets/{asset_id}", summary="读取素材登记详情", status_code=status.HTTP_200_OK)

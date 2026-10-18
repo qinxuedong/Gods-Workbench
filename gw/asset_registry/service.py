@@ -25,6 +25,7 @@
 from __future__ import annotations
 
 import copy
+import json
 import threading
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
@@ -45,6 +46,142 @@ _GAP_REGISTRY_SOURCE = "asset_registry_source_not_connected"
 _GAP_MEDIA_SOURCE = "media_storage_not_connected"
 _GAP_REMOTE_SOURCE = "remote_asset_source_not_connected"
 _GAP_INDEX_SOURCE = "asset_index_not_connected"
+
+_STRUCTURED_KINDS = {"image", "video", "audio", "document", "model", "font", "other"}
+_STRUCTURED_FILTER_FIELDS = {"kind", "project_id", "tag_id", "created_at", "status"}
+_STRUCTURED_SORTS = {"newest", "oldest", "name", "asset_id"}
+_STRUCTURED_INCLUDES = {"facets", "preview"}
+
+
+def _structured_error(code: str, message: str) -> None:
+    raise CleanroomException(400, code, message)
+
+
+def _json_or_csv(value: Any, *, field: str) -> Any:
+    """读取 GET 参数里的 JSON 数组/对象，同时兼容简短逗号分隔写法。"""
+    if not isinstance(value, str):
+        return value
+    raw = value.strip()
+    if not raw:
+        return []
+    if raw[0] in "[{":
+        try:
+            return json.loads(raw)
+        except (TypeError, ValueError):
+            _structured_error("UNSUPPORTED_FILTER_VALUE", f"{field} 不是有效 JSON")
+    return [part.strip() for part in raw.split(",") if part.strip()]
+
+
+def _string_list(value: Any, *, field: str, allowed: Optional[set[str]] = None) -> List[str]:
+    values = _json_or_csv(value, field=field)
+    if values is None:
+        return []
+    if not isinstance(values, list):
+        _structured_error("UNSUPPORTED_FILTER_VALUE", f"{field} 必须是字符串数组")
+    result: List[str] = []
+    for item in values:
+        if not isinstance(item, str) or not item.strip():
+            _structured_error("UNSUPPORTED_FILTER_VALUE", f"{field} 包含无效值")
+        clean = item.strip()
+        if allowed is not None and clean not in allowed:
+            _structured_error("UNSUPPORTED_FILTER_VALUE", f"{field} 不支持值 {clean}")
+        if clean not in result:
+            result.append(clean)
+    return sorted(result)
+
+
+def parse_utc_datetime(value: Any, *, field: str = "created_at") -> datetime:
+    """解析带时区的 UTC RFC3339 时间；拒绝本地时间和无效时间。"""
+    if not isinstance(value, str) or not value.strip():
+        _structured_error("INVALID_TIME_RANGE", f"{field} 必须是带时区的 RFC3339 时间")
+    try:
+        parsed = datetime.fromisoformat(value.strip().replace("Z", "+00:00"))
+    except (TypeError, ValueError):
+        _structured_error("INVALID_TIME_RANGE", f"{field} 不是有效的 RFC3339 时间")
+    if parsed.tzinfo is None:
+        _structured_error("INVALID_TIME_RANGE", f"{field} 必须包含时区")
+    return parsed.astimezone(timezone.utc)
+
+
+def _canonical_datetime(value: Any, *, field: str) -> str:
+    return parse_utc_datetime(value, field=field).isoformat().replace("+00:00", "Z")
+
+
+def normalize_asset_query(
+    *,
+    scope: Any = None,
+    text: Any = None,
+    filters: Any = None,
+    sort: Optional[str] = None,
+    limit: Any = 50,
+    include: Any = None,
+) -> Dict[str, Any]:
+    """规范化 C11 资产查询，未知字段和值一律显式失败。"""
+    scopes = _string_list(scope or ["asset"], field="scope")
+    if not scopes:
+        _structured_error("UNSUPPORTED_FILTER_VALUE", "scope 不能为空")
+    if any(value != "asset" for value in scopes):
+        _structured_error("UNSUPPORTED_FILTER_VALUE", "当前资产入口只支持 asset scope")
+
+    if text is None:
+        clean_text = ""
+    elif isinstance(text, str):
+        clean_text = text.strip()
+    else:
+        _structured_error("UNSUPPORTED_FILTER_VALUE", "text 必须是字符串")
+
+    raw_filters = _json_or_csv(filters or {}, field="filters")
+    if raw_filters is None:
+        raw_filters = {}
+    if not isinstance(raw_filters, dict):
+        _structured_error("UNSUPPORTED_FILTER_VALUE", "filters 必须是对象")
+    unknown = set(raw_filters) - _STRUCTURED_FILTER_FIELDS
+    if unknown:
+        _structured_error("UNSUPPORTED_FILTER_VALUE", f"不支持过滤字段: {sorted(unknown)[0]}")
+
+    normalized: Dict[str, Any] = {}
+    if "kind" in raw_filters:
+        normalized["kind"] = _string_list(raw_filters.get("kind"), field="kind", allowed=_STRUCTURED_KINDS)
+    if "project_id" in raw_filters:
+        normalized["project_id"] = _string_list(raw_filters.get("project_id"), field="project_id")
+    if "tag_id" in raw_filters:
+        normalized["tag_id"] = _string_list(raw_filters.get("tag_id"), field="tag_id")
+    if "created_at" in raw_filters:
+        created = raw_filters.get("created_at")
+        if not isinstance(created, dict) or set(created) - {"from", "to"}:
+            _structured_error("INVALID_TIME_RANGE", "created_at 只接受 from/to")
+        if not created.get("from") and not created.get("to"):
+            _structured_error("INVALID_TIME_RANGE", "created_at 至少需要 from 或 to")
+        window: Dict[str, str] = {}
+        if created.get("from") is not None:
+            window["from"] = _canonical_datetime(created["from"], field="created_at.from")
+        if created.get("to") is not None:
+            window["to"] = _canonical_datetime(created["to"], field="created_at.to")
+        if "from" in window and "to" in window and window["from"] >= window["to"]:
+            _structured_error("INVALID_TIME_RANGE", "created_at.from 必须早于 created_at.to")
+        normalized["created_at"] = window
+    if "status" in raw_filters:
+        status = raw_filters.get("status")
+        if not isinstance(status, dict) or set(status) - {"asset"}:
+            _structured_error("UNSUPPORTED_FILTER_VALUE", "status 必须明确指定 asset 域")
+        normalized["status"] = {
+            "asset": _string_list(status.get("asset"), field="status.asset", allowed={"active", "archived"})
+        }
+
+    clean_sort = str(sort or "newest").strip()
+    if clean_sort not in _STRUCTURED_SORTS:
+        _structured_error("UNSUPPORTED_SORT", f"不支持的资产排序 {clean_sort}")
+    if type(limit) is not int or not 1 <= limit <= 200:
+        _structured_error("INVALID_LIMIT", "结构化查询 limit 必须在 1 到 200 之间")
+    includes = _string_list(include or [], field="include", allowed=_STRUCTURED_INCLUDES)
+    return {
+        "scope": scopes,
+        "text": clean_text,
+        "filters": normalized,
+        "sort": clean_sort,
+        "limit": limit,
+        "include": includes,
+    }
 
 
 def _not_integrated(endpoint: str, *, code: str = ASSET_REGISTRY_NOT_INTEGRATED, gap: str = _GAP_REGISTRY_SOURCE) -> None:
@@ -142,8 +279,125 @@ class AssetRegistryService:
             {"id": "index_automation", "name": "索引自动化", "enabled": False, "data_status": DATA_STATUS_NOT_INTEGRATED},
         ]
 
-    def list_assets(self, *, limit: int = 100, offset: int = 0, cursor: Optional[str] = None, **_: Any) -> Dict[str, Any]:
+    def list_assets(
+        self,
+        *,
+        limit: int = 100,
+        offset: int = 0,
+        cursor: Optional[str] = None,
+        structured: bool = False,
+        scope: Any = None,
+        text: Any = None,
+        filters: Any = None,
+        sort: Optional[str] = None,
+        include: Any = None,
+        **_: Any,
+    ) -> Dict[str, Any]:
         # 集合只包含调用方显式登记的内存快照，不生成演示数据。
+        if structured:
+            normalized = normalize_asset_query(
+                scope=scope,
+                text=text,
+                filters=filters,
+                sort=sort,
+                limit=limit,
+                include=include,
+            )
+            if offset < 0:
+                raise CleanroomException(status_code=400, code="INVALID_OFFSET", message="offset 不能为负数")
+            if cursor is not None:
+                try:
+                    cursor_offset = int(cursor)
+                except (TypeError, ValueError):
+                    raise CleanroomException(400, "INVALID_CURSOR", "分页游标无效或不属于当前查询") from None
+                if cursor_offset < 0 or (offset and offset != cursor_offset):
+                    raise CleanroomException(400, "INVALID_CURSOR", "分页游标无效或不属于当前查询")
+                offset = cursor_offset
+            with self._lock:
+                values = [copy.deepcopy(item) for item in self._assets.values()]
+                needle = normalized["text"].casefold()
+                if needle:
+                    values = [
+                        item for item in values
+                        if needle in str(item.get("name") or "").casefold()
+                        or needle in str(item.get("asset_id") or "").casefold()
+                    ]
+                filters_map = normalized["filters"]
+                if filters_map.get("kind"):
+                    values = [item for item in values if str(item.get("kind") or "other") in filters_map["kind"]]
+                if filters_map.get("project_id"):
+                    projects = set(filters_map["project_id"])
+                    values = [item for item in values if projects.intersection(
+                        set(item.get("project_ids") or [])
+                        | ({item["project_id"]} if item.get("project_id") else set())
+                    )]
+                if filters_map.get("tag_id"):
+                    tags = set(filters_map["tag_id"])
+                    values = [item for item in values if tags.intersection(set(item.get("tags") or []))]
+                if filters_map.get("status", {}).get("asset"):
+                    allowed_status = set(filters_map["status"]["asset"])
+                    values = [item for item in values if
+                              ("archived" if item.get("archived") else "active") in allowed_status]
+                if "created_at" in filters_map:
+                    window = filters_map["created_at"]
+                    start = parse_utc_datetime(window["from"]) if window.get("from") else None
+                    end = parse_utc_datetime(window["to"]) if window.get("to") else None
+                    selected = []
+                    for item in values:
+                        try:
+                            created = parse_utc_datetime(item.get("created_at"))
+                        except CleanroomException:
+                            continue
+                        if start is not None and created < start:
+                            continue
+                        if end is not None and created >= end:
+                            continue
+                        selected.append(item)
+                    values = selected
+                values.sort(key=lambda item: str(item.get("asset_id") or ""))
+                if normalized["sort"] in {"newest", "oldest"}:
+                    values.sort(key=lambda item: str(item.get("created_at") or ""),
+                                reverse=normalized["sort"] == "newest")
+                elif normalized["sort"] == "name":
+                    values.sort(key=lambda item: str(item.get("name") or "").casefold())
+                total = len(values)
+                page = values[offset:offset + limit]
+                has_more = offset + len(page) < total
+                next_cursor = str(offset + len(page)) if has_more else None
+                projected = []
+                for item in page:
+                    projected_item = copy.deepcopy(item)
+                    projected_item.pop("id", None)
+                    projected_item["entity_type"] = "asset"
+                    projected_item["tag_id"] = list(item.get("tags") or [])
+                    projected_item["status"] = "archived" if item.get("archived") else "active"
+                    projected.append(projected_item)
+                return {
+                    "assets": projected,
+                    "items": projected,
+                    "total": total,
+                    "total_known": True,
+                    "limit": limit,
+                    "offset": offset,
+                    "has_more": has_more,
+                    "next_cursor": next_cursor,
+                    "revision": self._revision,
+                    "page": {
+                        "limit": limit,
+                        "has_more": has_more,
+                        "next_cursor": next_cursor,
+                        "collection_revision": self._revision,
+                    },
+                    "applied_filters": {
+                        "scope": normalized["scope"],
+                        "sort": normalized["sort"],
+                        **({"text": normalized["text"]} if normalized["text"] else {}),
+                        **filters_map,
+                    },
+                    "facets": None,
+                    "data_status": "complete",
+                    "data_gaps": [],
+                }
         if limit < 1 or limit > 500:
             raise CleanroomException(status_code=400, code="INVALID_LIMIT", message="limit 必须在 1 到 500 之间")
         if offset < 0:
@@ -444,6 +698,8 @@ __all__ = [
     "DATA_STATUS_NOT_INTEGRATED",
     "DATA_STATUS_OK",
     "JOB_NOT_FOUND",
+    "normalize_asset_query",
+    "parse_utc_datetime",
     "RECYCLE_ENTRY_NOT_FOUND",
     "AssetRegistryService",
     "default_asset_registry_service",
