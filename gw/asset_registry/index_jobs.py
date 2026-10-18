@@ -39,8 +39,18 @@ ACTIONS = {"pause": {"queued", "running"}, "resume": {"paused"},
            "retry": {"failed", "cancelled", "interrupted"}}
 
 
-def _error(status, code, message):
-    raise CleanroomException(status, code, message)
+def _error(status, code, message, *, data_status=None, unavailable=False):
+    """抛出受控错误；来源不可用时同时返回明确的降级标记。"""
+    extra = {}
+    exposed = set()
+    if data_status is not None:
+        extra["data_status"] = data_status
+        exposed.add("data_status")
+    if unavailable:
+        extra["unavailable"] = True
+        exposed.add("unavailable")
+    raise CleanroomException(status, code, message, extra=extra,
+                             expose_extra_fields=exposed or None)
 
 
 def _digest(value):
@@ -60,7 +70,8 @@ def _roots():
     from gw.settings.service import default_storage_settings_service
     roots = storage.allowed_roots()
     if not roots:
-        _error(503, "INDEX_SOURCE_NOT_AVAILABLE", "未配置允许根目录")
+        _error(503, "INDEX_SOURCE_NOT_AVAILABLE", "未配置允许根目录",
+               data_status="not_integrated", unavailable=True)
     canonical = {"root_" + hashlib.sha256(os.path.normcase(str(p)).encode()).hexdigest()[:24]: p for p in roots}
     aliases = dict(canonical)
     for item in default_storage_settings_service.get_snapshot().local_libraries:
@@ -180,6 +191,32 @@ class IndexJobs:
     @staticmethod
     def public(job):
         public = {k: v for k, v in job.items() if not k.startswith("_")}
+        status = str(job.get("status") or "unknown")
+        error_code = str(job.get("error_code") or "")
+        if status == "succeeded":
+            projection = {"data_status": "ok", "data_gaps": [],
+                          "next_action": "review_result", "result_unknown": False}
+        elif status in {"queued", "running"}:
+            projection = {"data_status": "degraded", "data_gaps": ["INDEX_PENDING"],
+                          "next_action": "poll_job", "result_unknown": False}
+        elif status == "paused":
+            projection = {"data_status": "degraded", "data_gaps": ["INDEX_PAUSED"],
+                          "next_action": "resume_index", "result_unknown": False}
+        elif status == "failed":
+            projection = {"data_status": "degraded",
+                          "data_gaps": [error_code or "INDEX_EXECUTION_FAILED"],
+                          "next_action": "retry_index", "result_unknown": False}
+        elif status == "cancelled":
+            projection = {"data_status": "degraded", "data_gaps": [error_code or "INDEX_CANCELLED"],
+                          "next_action": "retry_index", "result_unknown": False}
+        elif status == "interrupted":
+            projection = {"data_status": "degraded",
+                          "data_gaps": [error_code or "INDEX_PROCESS_INTERRUPTED"],
+                          "next_action": "reconcile_index_job", "result_unknown": True}
+        else:
+            projection = {"data_status": "degraded", "data_gaps": ["INDEX_STATUS_UNKNOWN"],
+                          "next_action": "reconcile_index_job", "result_unknown": True}
+        public.update(projection)
         public["has_error"] = bool(job.get("error_code"))
         public["progress"] = {"scanned": job["scanned"], "error_count": job["error_count"]}
         return public
@@ -189,9 +226,11 @@ class IndexJobs:
             job = self._job(job_id, auth)
             writable = auth.role in EDIT_ROLES
             actions = {a: writable and job["status"] in states and (a != "retry" or job["attempt"] < 5) for a, states in ACTIONS.items()}
-            return {"job": self.public(job), "actions": actions,
+            view = self.public(job)
+            return {"job": view, "actions": actions,
                     "action_reasons": {a: "当前状态或权限不允许此操作" for a, ok in actions.items() if not ok},
-                    "data_status": "ok"}
+                    "data_status": view["data_status"], "data_gaps": view["data_gaps"],
+                    "next_action": view["next_action"], "result_unknown": view["result_unknown"]}
 
     def listing(self, auth):
         with self.lock:
@@ -253,9 +292,11 @@ class IndexJobs:
             self._save(job)
 
     def _accepted(self, job):
-        return {"job_id": job["job_id"], "job": self.public(job),
+        view = self.public(job)
+        return {"job_id": job["job_id"], "job": view,
                 "poll_hint": {"url": "/api/asset-registry/workspace-jobs/" + job["job_id"], "interval_ms": 500},
-                "data_status": "ok"}
+                "data_status": view["data_status"], "data_gaps": view["data_gaps"],
+                "next_action": view["next_action"], "result_unknown": view["result_unknown"]}
 
     def operate(self, job_id, action, payload, auth):
         if action not in ACTIONS:
@@ -392,7 +433,8 @@ class IndexJobs:
             with self.condition:
                 self._checkpoint(job_id, attempt)
                 if not root.is_dir():
-                    _error(503, "INDEX_ROOT_UNAVAILABLE", "索引来源目录不可用")
+                    _error(503, "INDEX_ROOT_UNAVAILABLE", "索引来源目录不可用",
+                           data_status="not_integrated", unavailable=True)
             pending = [root]
             while pending:
                 folder = pending.pop()
