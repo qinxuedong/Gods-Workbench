@@ -33,7 +33,8 @@ window.WorkbenchStoryboard = (function () {
     shots: [],
     reviews: {},
     reviewRevision: 1,
-    reviewError: ''
+    reviewError: '',
+    actionBlocker: null
   };
 
   const esc = str => String(str ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -66,28 +67,33 @@ window.WorkbenchStoryboard = (function () {
     return projectId;
   }
 
-  function normalizeShot(asset) {
+  function normalizeShot(asset, { allowMissingAsset = false } = {}) {
     if (!asset || typeof asset !== 'object') return null;
     const metadata = asset.metadata && typeof asset.metadata === 'object' ? asset.metadata : {};
     const metadataSource = metadata.source_context && typeof metadata.source_context === 'object'
       ? metadata.source_context : {};
     const source = asset.source && typeof asset.source === 'object' ? { ...asset.source } : metadataSource;
-    const assetId = String(asset.asset_id || asset.id || '').trim();
+    const assetId = String(asset.asset_id || (!allowMissingAsset ? asset.id : '') || '').trim();
     const shotId = String(asset.shot_id || source.shot_id || asset.id || asset.asset_id || '').trim();
-    if (!assetId || !shotId) return null;
+    if ((!allowMissingAsset && !assetId) || !shotId) return null;
     const sceneId = String(asset.scene_id || source.scene_id || metadata.scene_id || '').trim();
     const episodeId = String(asset.episode_id || source.episode_id || metadata.episode_id || '').trim();
     const name = String(asset.name || asset.display_name || asset.title || asset.code || shotId).trim();
-    const kind = String(asset.kind || asset.asset_type || asset.shot_type || metadata.media_type || '媒体资产').trim();
-    const mediaType = String(asset.media_type || metadata.media_type || kind).trim().toLowerCase();
+    const directMediaUrl = String(asset.url || asset.media_url || asset.imageUrl || asset.img || source.source_url || '').trim();
+    const declaredMediaType = String(asset.media_type || asset.previewType || metadata.media_type || '').trim();
+    const kind = String(asset.kind || asset.asset_type || asset.shot_type || asset.shotType || metadata.media_type || '媒体资产').trim();
+    const mediaType = String(declaredMediaType || (directMediaUrl ? 'image' : kind)).trim().toLowerCase();
     const isImage = mediaType === 'image' || mediaType.startsWith('image/');
     const isVideo = mediaType === 'video' || mediaType.startsWith('video/');
-    const directMediaUrl = String(asset.url || asset.media_url || source.source_url || '').trim();
     const imageUrl = (isImage || isVideo)
-      ? (directMediaUrl || `/api/asset-registry/assets/${encodeURIComponent(assetId)}/media`)
+      ? (directMediaUrl || (assetId ? `/api/asset-registry/assets/${encodeURIComponent(assetId)}/media` : ''))
       : '';
-    const prompt = String(asset.prompt || metadata.prompt || '').trim();
+    const prompt = String(asset.prompt || asset.dialogue || metadata.prompt || '').trim();
     const status = String(asset.status || metadata.status || 'unknown').trim().toLowerCase();
+    const blocker = asset.blocker && typeof asset.blocker === 'object'
+      ? { ...asset.blocker } : (metadata.blocker && typeof metadata.blocker === 'object' ? { ...metadata.blocker } : null);
+    const recovery = asset.recovery && typeof asset.recovery === 'object'
+      ? { ...asset.recovery } : (metadata.recovery && typeof metadata.recovery === 'object' ? { ...metadata.recovery } : null);
     return {
       ...asset,
       id: shotId,
@@ -111,7 +117,12 @@ window.WorkbenchStoryboard = (function () {
       job_id: String(asset.job_id || asset.task_id || metadata.job_id || '').trim(),
       version_id: String(asset.version_id || metadata.version_id || '').trim(),
       version: asset.version ?? asset.asset_version ?? metadata.version ?? null,
-      media_type: String(asset.media_type || metadata.media_type || '').trim(),
+      media_type: String(asset.media_type || asset.previewType || metadata.media_type || (isImage ? 'image' : (isVideo ? 'video' : ''))).trim(),
+      data_status: String(asset.data_status || metadata.data_status || '').trim(),
+      closure_status: String(asset.closure_status || metadata.closure_status || '').trim(),
+      blocker,
+      recovery,
+      expected_version: asset.expected_version ?? metadata.expected_version ?? null,
       source,
       data_gaps: Array.isArray(asset.data_gaps) ? asset.data_gaps.map(item => String(item)) : []
     };
@@ -128,7 +139,7 @@ window.WorkbenchStoryboard = (function () {
       media_url: raw.media_url || raw.image_url || raw.source?.source_url || '',
       media_type: raw.media_type || raw.type || '',
       source: raw.source || {}
-    });
+    }, { allowMissingAsset: true });
   }
 
   function scenesFromShots(shots) {
@@ -147,6 +158,49 @@ window.WorkbenchStoryboard = (function () {
     return [...grouped.values()];
   }
 
+  function scenesFromPipeline(pipeline, shots) {
+    const grouped = new Map();
+    const episodes = Array.isArray(pipeline?.production_context?.episodes)
+      ? pipeline.production_context.episodes : [];
+    episodes.forEach(episode => {
+      const scenes = Array.isArray(episode?.scenes) ? episode.scenes : [];
+      scenes.forEach(raw => {
+        const id = String(raw?.scene_id || raw?.id || '').trim();
+        if (!id) return;
+        const contextShots = Array.isArray(raw.shots) ? raw.shots : [];
+        grouped.set(id, {
+          id,
+          episode_id: String(raw.episode_id || episode.id || '').trim(),
+          title: String(raw.title || raw.name || raw.code || id).trim(),
+          code: String(raw.code || id).trim(),
+          shots: contextShots.length,
+          shotIds: new Set(contextShots.map(item => String(item?.shot_id || item?.id || '').trim()).filter(Boolean)),
+          active: grouped.size === 0
+        });
+      });
+    });
+    shots.forEach(shot => {
+      const id = String(shot.scene_id || '').trim();
+      if (!id) return;
+      const scene = grouped.get(id) || {
+        id,
+        episode_id: String(shot.episode_id || '').trim(),
+        title: id,
+        code: id,
+        shots: 0,
+        shotIds: new Set(),
+        active: grouped.size === 0
+      };
+      const shotId = String(shot.shot_id || shot.id || '').trim();
+      if (!scene.shotIds.has(shotId)) {
+        scene.shots += 1;
+        if (shotId) scene.shotIds.add(shotId);
+      }
+      grouped.set(id, scene);
+    });
+    return [...grouped.values()].map(({ shotIds, ...scene }) => scene);
+  }
+
   function updateProjectLinks() {
     document.querySelectorAll?.('a[href]').forEach(link => {
       const href = link.getAttribute('href');
@@ -159,6 +213,55 @@ window.WorkbenchStoryboard = (function () {
 
   function notIntegratedMarkup(message) {
     return `<div class="col-span-full bay-inset p-8 text-center text-slate-500 font-mono gw-type-body-sm rounded-xl" data-gw-degradation="not_integrated"><i data-lucide="unlink" class="w-6 h-6 mx-auto mb-1.5 text-slate-600"></i><div>${esc(message)}</div></div>`;
+  }
+
+  function actionBlockerMarkup() {
+    const blocker = state.actionBlocker;
+    if (!blocker) return '';
+    return `<div class="col-span-full bay-inset p-3 mb-2 rounded-xl border border-amber-300/30 text-amber-200 font-mono gw-type-body-sm" data-gw-degradation="blocked" data-storyboard-blocker="${esc(blocker.code)}"><strong>动作已阻塞：${esc(blocker.code)}</strong><div class="mt-1">${esc(blocker.message)}</div><div class="mt-1 text-slate-400">下一步：${esc(blocker.next_action)}</div></div>`;
+  }
+
+  function blockStoryboardAction(code, message, nextAction = 'review_context', shot = null) {
+    const subject = {};
+    const current = shot || state.shots[0] || {};
+    if (state.projectId) subject.project_id = state.projectId;
+    if (current.entity_id) subject.entity_id = current.entity_id;
+    if (current.scene_id) subject.scene_id = current.scene_id;
+    if (current.shot_id || current.id) subject.shot_id = current.shot_id || current.id;
+    if (current.asset_id) subject.asset_id = current.asset_id;
+    if (current.version_id) subject.version_id = current.version_id;
+    state.actionBlocker = {
+      closure_status: 'blocked',
+      blocker: {
+        code,
+        scope: current.asset_id ? 'asset' : 'shot',
+        subject,
+        message,
+        retryable: false,
+        observed_at: new Date().toISOString()
+      },
+      code,
+      message,
+      next_action: nextAction
+    };
+    renderGrid();
+    window.alert?.(`分镜动作已阻塞：${code}。${message} 下一步：${nextAction}。`);
+    return null;
+  }
+
+  function shotStatusPresentation(shot) {
+    const status = String(shot?.status || '').trim().toLowerCase();
+    const labels = {
+      submitting: '提交中', queued: '排队中', running: '生成中', generating: '渲染中', ready: '已读取',
+      completed: '已完成', succeeded: '已完成', success: '已完成', failed: '生成失败',
+      waiting: '等待处理', unknown: '结果未知', cancelled: '已取消', canceled: '已取消',
+      not_integrated: '未接入'
+    };
+    if (shot?.data_status === 'not_integrated' || status === 'not_integrated') {
+      return { label: '未接入', degraded: true };
+    }
+    if (labels[status]) return { label: labels[status], degraded: false };
+    return { label: '状态未接入', degraded: true };
   }
 
   function reviewStatusForSession(session = {}) {
@@ -428,6 +531,7 @@ window.WorkbenchStoryboard = (function () {
     state.scenes = [];
     state.reviews = {};
     state.reviewError = '';
+    state.actionBlocker = null;
     renderNav();
     renderGrid();
   }
@@ -439,7 +543,7 @@ window.WorkbenchStoryboard = (function () {
 
     if (!state.shots || state.shots.length === 0) {
       if (titleEl) titleEl.textContent = '分镜数据未接入 (共 0 个分镜)';
-      grid.innerHTML = notIntegratedMarkup('分镜数据未接入');
+      grid.innerHTML = `${actionBlockerMarkup()}${notIntegratedMarkup('分镜数据未接入')}`;
       window.lucide?.createIcons();
       return;
     }
@@ -454,7 +558,7 @@ window.WorkbenchStoryboard = (function () {
     const focusedShot = focused?.closest('[data-storyboard-shot]')?.dataset.storyboardShot;
     const focusedAction = focused?.dataset.shotAction;
 
-    grid.innerHTML = state.shots.map((sh, idx) => {
+    grid.innerHTML = `${actionBlockerMarkup()}${state.shots.map((sh, idx) => {
       const imageUrl = String(sh.imageUrl || sh.img || '').trim();
       const title = sh.name || sh.title || sh.id;
       const description = sh.prompt || sh.dialogue || '文本提示未接入';
@@ -462,6 +566,10 @@ window.WorkbenchStoryboard = (function () {
       const hasVersion = Boolean(sh.asset_id && sh.version_id && sh.version);
       const terminal = ['approved', 'changes_requested', 'superseded'].includes(review.status);
       const blocked = !hasVersion || ['waiting', 'unknown', 'failed', 'not_integrated', 'queued', 'running'].includes(review.status);
+      const statusView = shotStatusPresentation(sh);
+      const nextActionKey = (!hasVersion || review.status === 'not_integrated')
+        ? (String(sh.next_action || '').trim() || review.nextAction)
+        : review.nextAction;
       const reviewLabel = {
         pending_review: '待审阅', approved: '已通过', changes_requested: '已退回修改', superseded: '旧版本已失效',
         waiting: '等待处理', unknown: '结果未知', failed: '生成失败', queued: '排队中', running: '生成中',
@@ -470,15 +578,20 @@ window.WorkbenchStoryboard = (function () {
       const nextLabel = {
         review: '检查当前版本', create_review: '首次操作时建立审阅', deliver: '可进入交付记录',
         regenerate_version: '请重新生成新版本', review_new_version: '请审阅新版本', configure_review: '检查审阅服务',
-        reconcile_provider: '人工核对任务', review_source: '进入审阅'
-      }[review.nextAction] || review.nextAction || '刷新读取';
+        reconcile_provider: '人工核对任务', review_source: '进入审阅', poll_job: '读取任务状态',
+        collect_asset: '等待资产登记', configure_executor: '配置真实执行器', review_context: '检查真实上下文',
+        inspect_persisted_state: '核对持久化状态', wait_for_provider: '等待 Provider',
+        reconcile_unknown_job: '人工核对未知任务', resolve_permission: '修复权限后重试'
+      }[nextActionKey] || nextActionKey || '刷新读取';
       const preview = imageUrl && sh.previewType === 'video'
         ? `<video src="${esc(imageUrl)}" class="w-full h-full object-cover" controls preload="metadata" aria-label="${esc(title)}"></video>`
         : imageUrl
           ? `<img src="${esc(imageUrl)}" class="w-full h-full object-cover group-hover:scale-105 transition duration-300" alt="${esc(title)}" loading="lazy">`
         : `<div class="w-full h-full flex items-center justify-center text-slate-500 font-mono gw-type-body-sm" data-gw-degradation="not_integrated">媒体预览未接入</div>`;
+      const blockerMarkup = sh.blocker && typeof sh.blocker === 'object'
+        ? `<div class="text-amber-300 mt-1" data-gw-degradation="blocked">阻塞：${esc(sh.blocker.code || 'UNKNOWN_BLOCKER')} · ${esc(sh.blocker.message || '请核对当前事实')}<br>下一步：${esc(sh.next_action || 'review_context')}</div>` : '';
       return `
-      <div class="champagne-card p-2.5 flex flex-col justify-between group transition hover:border-[#dfc384]/50" data-storyboard-shot="${esc(sh.id)}" data-asset-id="${esc(sh.asset_id || '')}" data-shot-version-id="${esc(sh.version_id || '')}" data-review-status="${esc(review.status || 'not_integrated')}">
+      <div class="champagne-card p-2.5 flex flex-col justify-between group transition hover:border-[#dfc384]/50" data-storyboard-shot="${esc(sh.id)}" data-asset-id="${esc(sh.asset_id || '')}" data-shot-version-id="${esc(sh.version_id || '')}" data-closure-status="${esc(sh.closure_status || '')}" data-review-status="${esc(review.status || 'not_integrated')}">
         <div>
           <!-- 头部编号与景别标签 -->
           <div class="flex items-center justify-between pb-1.5 mb-1.5 border-b border-white/5 gw-type-body-sm">
@@ -490,8 +603,8 @@ window.WorkbenchStoryboard = (function () {
             </div>
             <div class="flex items-center space-x-1.5 gw-type-body-sm font-mono">
               <span class="text-slate-400">${esc(sh.duration || '')}</span>
-              <span class="${sh.status === 'generating' ? 'text-amber-300 animate-pulse' : (sh.status === 'not_integrated' ? 'text-slate-400' : 'text-emerald-400')}"${sh.status === 'not_integrated' ? ' data-gw-degradation="not_integrated"' : ''}>
-                ${sh.status === 'generating' ? '渲染中' : (sh.status === 'not_integrated' ? '未接入（无渲染端点）' : esc(sh.status || '已就绪'))}
+              <span class="${['generating', 'running'].includes(String(sh.status || '').toLowerCase()) ? 'text-amber-300 animate-pulse' : (statusView.degraded ? 'text-slate-400' : 'text-emerald-400')}"${statusView.degraded ? ' data-gw-degradation="not_integrated"' : ''}>
+                ${esc(statusView.label)}
               </span>
             </div>
           </div>
@@ -519,6 +632,7 @@ window.WorkbenchStoryboard = (function () {
               <strong class="text-cyan-300" data-storyboard-review-status>${esc(reviewLabel)}</strong>
             </div>
             <div class="text-slate-500 mt-1">下一步：${esc(nextLabel)}</div>
+            ${blockerMarkup}
             ${review.supersededVersionId ? `<div class="text-amber-300 mt-1" data-gw-degradation="blocked">旧版本 ${esc(review.supersededVersionId)} 已失效</div>` : ''}
             ${state.reviewError ? `<div class="text-amber-300 mt-1" data-gw-degradation="blocked">${esc(state.reviewError)}</div>` : ''}
             ${hasVersion && !blocked && !terminal ? `
@@ -545,7 +659,7 @@ window.WorkbenchStoryboard = (function () {
 
       </div>
     `;
-    }).join('');
+    }).join('')}`;
 
     if (focusedShot && focusedAction) {
       const card = [...grid.querySelectorAll('[data-storyboard-shot]')].find(item => item.dataset.storyboardShot === focusedShot);
@@ -585,36 +699,54 @@ window.WorkbenchStoryboard = (function () {
     renderGrid();
   }
 
-  // 显式降级：本仓当前切片无分镜渲染端点，禁止用 setTimeout 假装生成完成。
+  // 显式降级：本仓当前切片无分镜渲染端点，禁止用本地状态假装生成完成。
   function regenerateShot(idx) {
-    if (!state.shots[idx]) return;
-    state.shots[idx].status = 'not_integrated';
-    renderGrid();
-    alert('分镜渲染端点尚未接入（未纳入当前切片），不会伪造生成结果。');
+    const shot = state.shots[idx];
+    if (!shot) return blockStoryboardAction('SHOT_CONTEXT_NOT_FOUND', '缺少真实镜头上下文，未提交重绘任务。');
+    return blockStoryboardAction(
+      'RENDER_NOT_INTEGRATED',
+      '分镜重绘端点尚未接入，未提交任务，也未修改当前镜头状态。',
+      'configure_executor',
+      shot
+    );
   }
 
   function batchGenerate() {
-    state.shots.forEach(s => { s.status = 'not_integrated'; });
-    renderGrid();
-    alert('批量渲染端点尚未接入（未纳入当前切片），不会伪造生成结果。');
+    return blockStoryboardAction(
+      'BATCH_RENDER_OUT_OF_SCOPE',
+      '批量渲染不在本期/未接入（属于批量制作）；未提交任何任务。',
+      'review_context'
+    );
   }
 
   function addNewShot() {
-    alert(state.shots.length === 0
-      ? '分镜数据尚未接入（未纳入当前切片），无法追加镜头。'
-      : '新增镜头端点尚未接入（未纳入当前切片），不会创建未持久化镜头。');
+    return blockStoryboardAction(
+      'SHOT_APPEND_NOT_INTEGRATED',
+      state.shots.length === 0
+        ? '分镜数据尚未接入，无法追加镜头。'
+        : '新增镜头端点尚未接入，未创建未持久化镜头。',
+      'review_context'
+    );
   }
 
   function exportPdf() {
-    alert('分镜 PDF 导出端点尚未接入（未纳入当前切片），未生成任何文件。');
+    return blockStoryboardAction(
+      'PDF_EXPORT_NOT_INTEGRATED',
+      '分镜 PDF 导出本期明确阻塞，未生成任何文件。',
+      'review_context'
+    );
   }
 
   function setShots(shots) {
-    state.shots = Array.isArray(shots) ? [...shots] : [];
+    state.actionBlocker = null;
+    state.shots = Array.isArray(shots)
+      ? shots.map(item => normalizeShot(item, { allowMissingAsset: true })).filter(Boolean)
+      : [];
     renderGrid();
   }
 
   function setScenes(scenes) {
+    state.actionBlocker = null;
     state.scenes = Array.isArray(scenes) ? [...scenes] : [];
     renderNav();
   }
@@ -632,7 +764,8 @@ window.WorkbenchStoryboard = (function () {
     state.pipelineId = String(pipeline.pipeline_id || pipeline.id || '').trim();
     state.pipelineVersion = Number(pipeline.version) || 1;
     state.shots = shots;
-    state.scenes = scenesFromShots(shots);
+    state.actionBlocker = null;
+    state.scenes = scenesFromPipeline(pipeline, shots);
     renderNav();
     renderGrid();
     await loadReviewSessions(projectId);
@@ -644,6 +777,7 @@ window.WorkbenchStoryboard = (function () {
       renderNotIntegratedState();
       return null;
     }
+    state.actionBlocker = null;
     try {
       const projectPayload = await requestJson(`/api/projects/${encodeURIComponent(projectId)}`);
       const project = projectPayload?.project || projectPayload;
