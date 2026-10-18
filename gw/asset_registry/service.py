@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import copy
 import threading
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 from gw.core.errors import CleanroomException
@@ -75,6 +76,11 @@ def _truthful_meta(*, gaps: Optional[List[str]] = None) -> Dict[str, Any]:
     }
 
 
+def _now_iso() -> str:
+    """返回可回读的 UTC 事实时间，不依赖外部时钟服务。"""
+    return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+
+
 class AssetRegistryService:
     """素材注册表的最小进程内真值。
 
@@ -89,6 +95,8 @@ class AssetRegistryService:
         self._assets: Dict[str, Dict[str, Any]] = {}
         self._recycle_entries: Dict[str, Dict[str, Any]] = {}
         self._recycle_sequence = 0
+        # 只缓存显式幂等键对应的本地事实；不以键推断或重放外部副作用。
+        self._idempotent_results: Dict[str, Dict[str, Any]] = {}
         self._team_preferences: Dict[str, Any] = {
             "team_id": None,
             "default_library_id": None,
@@ -221,6 +229,35 @@ class AssetRegistryService:
         self._recycle_sequence += 1
         return f"rcy_{self._recycle_sequence:04d}"
 
+    @staticmethod
+    def _preserved_subjects(asset: Dict[str, Any]) -> List[Dict[str, str]]:
+        """从资产快照提取已存在的稳定引用，不按数组位置生成 ID。"""
+        subject: Dict[str, str] = {"asset_id": str(asset.get("asset_id") or asset.get("id") or "")}
+        version_id = asset.get("version_id")
+        if version_id:
+            subject["version_id"] = str(version_id)
+        return [subject] if subject["asset_id"] else []
+
+    @staticmethod
+    def _recovery_projection(
+        *,
+        operation: str,
+        entry_id: str,
+        state: str,
+        preserved_subjects: List[Dict[str, str]],
+        failed_scopes: Optional[List[str]] = None,
+        idempotency_key: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        return {
+            "operation": operation,
+            "recycle_entry_id": entry_id,
+            "state": state,
+            "preserved_subjects": copy.deepcopy(preserved_subjects),
+            "failed_scopes": list(failed_scopes or []),
+            "idempotency_key": idempotency_key or f"{operation}:{entry_id}",
+            "occurred_at": _now_iso(),
+        }
+
     def recycle_entry(self, entry_id: str) -> Dict[str, Any]:
         """读取单个回收条目；未知状态明确 404，不返回空成功。"""
         with self._lock:
@@ -247,9 +284,17 @@ class AssetRegistryService:
                 raise CleanroomException(409, ASSET_RESTORE_CONFLICT, f"恢复目标资产 {asset_id} 已存在")
             return copy.deepcopy(entry)
 
-    def delete_asset(self, asset_id: str, expected_version: Optional[int] = None) -> Dict[str, Any]:
+    def delete_asset(
+        self,
+        asset_id: str,
+        expected_version: Optional[int] = None,
+        *,
+        idempotency_key: Optional[str] = None,
+    ) -> Dict[str, Any]:
         """删除登记快照并进入可恢复回收站，保留来源与引用。"""
         with self._lock:
+            if idempotency_key and idempotency_key in self._idempotent_results:
+                return copy.deepcopy(self._idempotent_results[idempotency_key])
             self._assert_expected_version(expected_version)
             if asset_id not in self._assets:
                 _not_found(ASSET_NOT_FOUND, f"素材 {asset_id} 不存在")
@@ -262,11 +307,14 @@ class AssetRegistryService:
                 "payload": item,
                 "source_ref": copy.deepcopy(item.get("source_ref") or {}),
                 "references": copy.deepcopy(item.get("references") or {}),
+                "version_id": item.get("version_id"),
+                "idempotency_key": idempotency_key or f"recycle:{entry_id}",
+                "occurred_at": _now_iso(),
             }
             del self._assets[asset_id]
             self._recycle_entries[entry_id] = entry
             self._revision += 1
-            return {
+            result = {
                 "entry_id": entry_id,
                 "asset_id": asset_id,
                 "deleted": True,
@@ -274,19 +322,40 @@ class AssetRegistryService:
                 "references": copy.deepcopy(entry["references"]),
                 "source_ref": copy.deepcopy(entry["source_ref"]),
                 "revision": self._revision,
+                "closure_status": "recovery_required",
+                "blocker": None,
+                "recovery": self._recovery_projection(
+                    operation="recycle",
+                    entry_id=entry_id,
+                    state="recovery_required",
+                    preserved_subjects=self._preserved_subjects(item),
+                    idempotency_key=idempotency_key or f"recycle:{entry_id}",
+                ),
+                "next_action": "restore_reference",
                 **_truthful_meta(),
             }
+            if idempotency_key:
+                self._idempotent_results[idempotency_key] = copy.deepcopy(result)
+            return result
 
-    def restore_from_recycle(self, entry_id: str, expected_version: Optional[int] = None) -> Dict[str, Any]:
+    def restore_from_recycle(
+        self,
+        entry_id: str,
+        expected_version: Optional[int] = None,
+        *,
+        idempotency_key: Optional[str] = None,
+    ) -> Dict[str, Any]:
         """恢复资产快照；同一条目重复恢复不重复登记。"""
         with self._lock:
+            if idempotency_key and idempotency_key in self._idempotent_results:
+                return copy.deepcopy(self._idempotent_results[idempotency_key])
             self._assert_expected_version(expected_version)
             entry = self.assert_recycle_entry_restorable(entry_id)
             asset_id = str(entry["asset_id"])
             self._assets[asset_id] = copy.deepcopy(entry["payload"])
             del self._recycle_entries[entry_id]
             self._revision += 1
-            return {
+            result = {
                 "entry_id": entry_id,
                 "asset_id": asset_id,
                 "restored": True,
@@ -294,8 +363,21 @@ class AssetRegistryService:
                 "references": copy.deepcopy(self._assets[asset_id].get("references") or {}),
                 "source_ref": copy.deepcopy(self._assets[asset_id].get("source_ref") or {}),
                 "revision": self._revision,
+                "closure_status": "closed",
+                "blocker": None,
+                "recovery": self._recovery_projection(
+                    operation="restore",
+                    entry_id=entry_id,
+                    state="completed",
+                    preserved_subjects=self._preserved_subjects(self._assets[asset_id]),
+                    idempotency_key=idempotency_key or f"restore:{entry_id}",
+                ),
+                "next_action": None,
                 **_truthful_meta(),
             }
+            if idempotency_key:
+                self._idempotent_results[idempotency_key] = copy.deepcopy(result)
+            return result
 
     restore_recycle_entry = restore_from_recycle
 

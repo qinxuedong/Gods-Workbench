@@ -92,6 +92,8 @@ class CanvasClosureService:
         self._asset_registry_service = asset_registry_service or default_asset_registry_service
         self._unified_recycle: Dict[str, Dict[str, Any]] = {}
         self._unified_recycle_sequence = 0
+        # 只保存显式幂等键对应的本地恢复事实，重放不再触发第二次副作用。
+        self._unified_idempotent_results: Dict[str, Dict[str, Any]] = {}
 
     # ------------------------------------------------------------------
     # 画布元信息 / 生命周期
@@ -165,28 +167,98 @@ class CanvasClosureService:
     # ------------------------------------------------------------------
 
     @staticmethod
-    def _partial_failure(asset_id: str, code: str) -> Dict[str, str]:
-        return {
+    def _partial_failure(asset_id: str, code: str, *, c9: bool = False) -> Dict[str, str]:
+        failure = {
             "asset_id": asset_id,
             "code": code,
             "next_step": "刷新资产来源后重试",
         }
+        if c9:
+            failure["next_action"] = "restore_reference"
+        return failure
 
     def _next_unified_recycle_id(self) -> str:
         self._unified_recycle_sequence += 1
         return f"u_rcy_{self._unified_recycle_sequence:04d}"
+
+    @staticmethod
+    def _now_iso() -> str:
+        return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+
+    @staticmethod
+    def _preserved_subjects(
+        references: Dict[str, Any],
+        *,
+        canvas_id: str,
+        assets: Optional[List[Dict[str, Any]]] = None,
+    ) -> List[Dict[str, str]]:
+        """只投影调用方已提供或快照中已存在的稳定 ID。"""
+        allowed = (
+            "project_id", "entity_id", "episode_id", "scene_id", "shot_id", "canvas_id",
+            "job_id", "asset_id", "version_id", "review_id", "decision_id", "delivery_id",
+        )
+        subjects: List[Dict[str, str]] = []
+
+        def add(key: str, value: Any) -> None:
+            if value is None or isinstance(value, (dict, list, tuple, set)):
+                return
+            item = {key: str(value)}
+            if item not in subjects:
+                subjects.append(item)
+
+        add("canvas_id", canvas_id)
+        for key in allowed:
+            add(key, references.get(key))
+        for asset in assets or []:
+            add("asset_id", asset.get("asset_id"))
+            add("version_id", asset.get("version_id"))
+        return subjects
+
+    @classmethod
+    def _recovery_projection(
+        cls,
+        *,
+        operation: str,
+        entry_id: str,
+        state: str,
+        preserved_subjects: List[Dict[str, str]],
+        failed_scopes: Optional[List[str]] = None,
+        idempotency_key: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        return {
+            "operation": operation,
+            "recycle_entry_id": entry_id,
+            "state": state,
+            "preserved_subjects": copy.deepcopy(preserved_subjects),
+            "failed_scopes": list(failed_scopes or []),
+            "idempotency_key": idempotency_key or f"{operation}:{entry_id}",
+            "occurred_at": cls._now_iso(),
+        }
+
+    def recycle_entry(self, entry_id: str) -> Dict[str, Any]:
+        """读取统一回收条目，供部分失败后的安全重试与证据回读。"""
+        entry = self._unified_recycle.get(entry_id)
+        if entry is None:
+            raise CleanroomException(404, "UNIFIED_RECYCLE_ENTRY_NOT_FOUND", "统一回收条目不存在")
+        return copy.deepcopy(entry)
 
     def recycle_with_references(
         self,
         canvas_id: str,
         asset_ids: Optional[List[str]] = None,
         expected_version: Optional[int] = None,
+        *,
+        references: Optional[Dict[str, Any]] = None,
+        idempotency_key: Optional[str] = None,
+        asset_expected_version: Optional[int] = None,
     ) -> Dict[str, Any]:
         """原子编排画布与统一资产回收，保留精确来源和引用快照。
 
         资产缺失时在画布变更前明确返回部分失败；任一已完成资产删除后画布 CAS
         失败，会尽力按原回收条目恢复资产，避免留下半程成功。
         """
+        if idempotency_key and f"recycle:{idempotency_key}" in self._unified_idempotent_results:
+            return copy.deepcopy(self._unified_idempotent_results[f"recycle:{idempotency_key}"])
         ids = list(dict.fromkeys(str(asset_id) for asset_id in (asset_ids or [])))
         canvas = self._canvas_service.get_canvas_meta(canvas_id)
         # 先做现有画布 CAS 入参和版本校验，避免资产已回收后才发现画布冲突。
@@ -199,8 +271,34 @@ class CanvasClosureService:
             try:
                 snapshots[asset_id] = self._asset_registry_service.get_asset(asset_id)
             except CleanroomException as exc:
-                failures.append(self._partial_failure(asset_id, exc.code))
+                failures.append(
+                    self._partial_failure(
+                        asset_id,
+                        exc.code,
+                        c9=bool(references or idempotency_key),
+                    )
+                )
         if failures:
+            if references or idempotency_key:
+                recovery = self._recovery_projection(
+                    operation="recycle",
+                    entry_id="",
+                    state="partially_recovered",
+                    preserved_subjects=[{"canvas_id": canvas_id}],
+                    failed_scopes=["asset"],
+                    idempotency_key=idempotency_key or f"recycle:{canvas_id}",
+                )
+                raise CleanroomException(
+                    409,
+                    "UNIFIED_RECYCLE_PARTIAL_FAILURE",
+                    "统一回收未执行：部分资产来源不可用",
+                    extra={
+                        "partial_failures": failures,
+                        "closure_status": "blocked",
+                        "recovery": recovery,
+                        "next_action": "restore_reference",
+                    },
+                )
             raise CleanroomException(
                 409,
                 "UNIFIED_RECYCLE_PARTIAL_FAILURE",
@@ -209,22 +307,28 @@ class CanvasClosureService:
             )
 
         reference_payload = self._canvas_service.get_reference_payload(canvas_id) or {}
-        references: Dict[str, Any] = {
-            "canvas_id": canvas_id,
-            "canvas_version": canvas["version"],
-        }
+        reference_snapshot: Dict[str, Any] = copy.deepcopy(references) if isinstance(references, dict) else {}
+        reference_snapshot["canvas_id"] = canvas_id
+        reference_snapshot["canvas_version"] = canvas["version"]
         if len(ids) == 1:
-            references["source_ref"] = copy.deepcopy(snapshots[ids[0]].get("source_ref") or {})
+            reference_snapshot["source_ref"] = copy.deepcopy(snapshots[ids[0]].get("source_ref") or {})
         elif ids:
-            references["source_refs"] = {
+            reference_snapshot["source_refs"] = {
                 asset_id: copy.deepcopy(snapshots[asset_id].get("source_ref") or {})
                 for asset_id in ids
             }
         deleted_assets: List[Dict[str, str]] = []
+        asset_expected = asset_expected_version
         try:
             for asset_id in ids:
-                deleted = self._asset_registry_service.delete_asset(asset_id)
+                deleted = self._asset_registry_service.delete_asset(
+                    asset_id,
+                    expected_version=asset_expected,
+                    idempotency_key=(f"{idempotency_key}:asset:{asset_id}" if idempotency_key else None),
+                )
                 deleted_assets.append({"asset_id": asset_id, "entry_id": deleted["entry_id"]})
+                if asset_expected is not None:
+                    asset_expected = deleted.get("revision")
             trashed = self._canvas_service.move_to_trash(canvas_id, expected_version=expected_version)
         except Exception as exc:
             rollback_failures: List[Dict[str, str]] = []
@@ -245,26 +349,51 @@ class CanvasClosureService:
             raise
 
         entry_id = self._next_unified_recycle_id()
+        recovery_key = idempotency_key or f"recycle:{entry_id}"
+        preserved_subjects = self._preserved_subjects(
+            reference_snapshot,
+            canvas_id=canvas_id,
+            assets=[snapshots[asset_id] for asset_id in ids],
+        )
+        recovery = self._recovery_projection(
+            operation="recycle",
+            entry_id=entry_id,
+            state="recovery_required",
+            preserved_subjects=preserved_subjects,
+            idempotency_key=recovery_key,
+        )
         entry = {
             "entry_id": entry_id,
             "kind": "unified",
             "canvas_id": canvas_id,
             "canvas_snapshot": copy.deepcopy(trashed),
             "reference_payload": copy.deepcopy(reference_payload),
-            "references": copy.deepcopy(references),
+            "references": copy.deepcopy(reference_snapshot),
             "assets": copy.deepcopy(deleted_assets),
+            "preserved_subjects": copy.deepcopy(preserved_subjects),
+            "idempotency_key": recovery_key,
+            "closure_status": "recovery_required",
+            "recovery": copy.deepcopy(recovery),
+            "next_action": "restore_reference",
         }
         self._unified_recycle[entry_id] = entry
-        return {
+        result = {
             "status": "completed",
             "recycle_entry_id": entry_id,
             "canvas": copy.deepcopy(trashed),
             "assets": copy.deepcopy(deleted_assets),
-            "references": copy.deepcopy(references),
+            "references": copy.deepcopy(reference_snapshot),
             "reference_payload": copy.deepcopy(reference_payload),
+            "closure_status": "recovery_required",
+            "blocker": None,
+            "recovery": copy.deepcopy(recovery),
+            "next_action": "restore_reference",
             "data_status": DATA_STATUS_OK,
             "data_gaps": [],
         }
+        if idempotency_key:
+            self._unified_idempotent_results[f"recycle:{idempotency_key}"] = copy.deepcopy(result)
+        return result
 
     # 任务书使用“统一回收”语义；保留清晰别名，避免新建第二套状态机。
     delete_and_recycle = recycle_with_references
@@ -274,8 +403,12 @@ class CanvasClosureService:
         self,
         entry_id: str,
         expected_version: Optional[int] = None,
+        *,
+        idempotency_key: Optional[str] = None,
     ) -> Dict[str, Any]:
         """恢复统一回收条目，保持画布、资产 ID、来源和引用快照不变。"""
+        if idempotency_key and f"restore:{idempotency_key}" in self._unified_idempotent_results:
+            return copy.deepcopy(self._unified_idempotent_results[f"restore:{idempotency_key}"])
         entry = self._unified_recycle.get(entry_id)
         if entry is None:
             raise CleanroomException(404, "UNIFIED_RECYCLE_ENTRY_NOT_FOUND", "统一回收条目不存在")
@@ -292,14 +425,31 @@ class CanvasClosureService:
             try:
                 self._asset_registry_service.assert_recycle_entry_restorable(asset["entry_id"])
             except CleanroomException as exc:
+                recovery_key = idempotency_key or f"restore:{entry_id}"
+                preserved_subjects = copy.deepcopy(entry.get("preserved_subjects") or [])
+                recovery = self._recovery_projection(
+                    operation="restore",
+                    entry_id=entry_id,
+                    state="partially_recovered",
+                    preserved_subjects=preserved_subjects,
+                    failed_scopes=["asset"],
+                    idempotency_key=recovery_key,
+                )
                 raise CleanroomException(
                     409 if exc.status_code == 409 else exc.status_code,
                     "UNIFIED_RECYCLE_PARTIAL_FAILURE",
                     "统一恢复未执行：部分资产无法恢复",
                     extra={
                         "partial_failures": [
-                            self._partial_failure(asset["asset_id"], exc.code)
-                        ]
+                            self._partial_failure(
+                                asset["asset_id"],
+                                exc.code,
+                                c9=bool(idempotency_key),
+                            )
+                        ],
+                        "closure_status": "partially_recovered",
+                        "recovery": recovery,
+                        "next_action": "retry_recovery",
                     },
                 ) from exc
 
@@ -309,7 +459,13 @@ class CanvasClosureService:
         restored_assets: List[str] = []
         try:
             for asset in entry["assets"]:
-                self._asset_registry_service.restore_from_recycle(asset["entry_id"])
+                self._asset_registry_service.restore_from_recycle(
+                    asset["entry_id"],
+                    idempotency_key=(
+                        f"{idempotency_key}:asset:{asset['asset_id']}"
+                        if idempotency_key else None
+                    ),
+                )
                 restored_assets.append(asset["asset_id"])
         except Exception as exc:
             # 发生意外部分失败时把画布退回回收站，并保留统一条目供人工处理。
@@ -330,21 +486,46 @@ class CanvasClosureService:
                             "code": getattr(exc, "code", "RESTORE_FAILED"),
                             "next_step": "保留回收条目并人工核对后重试",
                         }
-                    ]
+                    ],
+                    "closure_status": "partially_recovered",
+                    "recovery": self._recovery_projection(
+                        operation="restore",
+                        entry_id=entry_id,
+                        state="partially_recovered",
+                        preserved_subjects=copy.deepcopy(entry.get("preserved_subjects") or []),
+                        failed_scopes=["asset"],
+                        idempotency_key=idempotency_key or f"restore:{entry_id}",
+                    ),
+                    "next_action": "retry_recovery",
                 },
             ) from exc
 
         del self._unified_recycle[entry_id]
-        return {
+        recovery_key = idempotency_key or f"restore:{entry_id}"
+        recovery = self._recovery_projection(
+            operation="restore",
+            entry_id=entry_id,
+            state="completed",
+            preserved_subjects=copy.deepcopy(entry.get("preserved_subjects") or []),
+            idempotency_key=recovery_key,
+        )
+        result = {
             "status": "completed",
             "recycle_entry_id": entry_id,
             "canvas": copy.deepcopy(restored_canvas),
             "asset_ids": restored_assets,
             "references": copy.deepcopy(entry["references"]),
             "reference_payload": copy.deepcopy(entry["reference_payload"]),
+            "closure_status": "closed",
+            "blocker": None,
+            "recovery": recovery,
+            "next_action": None,
             "data_status": DATA_STATUS_OK,
             "data_gaps": [],
         }
+        if idempotency_key:
+            self._unified_idempotent_results[f"restore:{idempotency_key}"] = copy.deepcopy(result)
+        return result
 
     restore_from_unified_recycle = restore_recycled
 

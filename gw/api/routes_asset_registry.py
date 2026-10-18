@@ -26,6 +26,7 @@
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Body, Depends, File, Form, Header, Query, Request, Response, status, UploadFile
@@ -80,6 +81,69 @@ def _ids(payload: Dict[str, Any], key: str = "asset_ids") -> List[str]:
 def _version(payload: Dict[str, Any]) -> Optional[int]:
     raw = payload.get("expected_version")
     return int(raw) if raw is not None else None
+
+
+def _closure_now() -> str:
+    return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+
+
+def _asset_closure_projection(
+    result: Dict[str, Any],
+    *,
+    asset_id: Optional[str] = None,
+    operation: str,
+    next_action: Optional[str] = None,
+    closure_status: str,
+    version_id: Optional[str] = None,
+    failed_scopes: Optional[List[str]] = None,
+) -> Dict[str, Any]:
+    """把既有注册表结果补成 C9 收口投影，不改变原有字段。"""
+    entry_id = str(result.get("recycle_entry_id") or result.get("entry_id") or "")
+    subject: Dict[str, str] = {}
+    if asset_id:
+        subject["asset_id"] = str(asset_id)
+    if version_id:
+        subject["version_id"] = str(version_id)
+    recovery = {
+        "operation": operation,
+        "recycle_entry_id": entry_id,
+        "state": "completed" if closure_status == "closed" else closure_status,
+        "preserved_subjects": [subject] if subject else [],
+        "failed_scopes": list(failed_scopes or []),
+        "idempotency_key": f"{operation}:{entry_id}" if entry_id else None,
+        "occurred_at": _closure_now(),
+    }
+    return {
+        **result,
+        "closure_status": closure_status,
+        "blocker": None,
+        "recovery": recovery,
+        "next_action": next_action,
+    }
+
+
+def _recycle_entry_projection(entry: Dict[str, Any]) -> Dict[str, Any]:
+    """为回收站读模型补充稳定资产引用和恢复动作。"""
+    if entry.get("closure_status") or entry.get("kind") != "asset":
+        return entry
+    payload = entry.get("payload") if isinstance(entry.get("payload"), dict) else {}
+    asset_id = entry.get("asset_id") or payload.get("asset_id")
+    return _asset_closure_projection(
+        entry,
+        asset_id=str(asset_id) if asset_id else None,
+        version_id=payload.get("version_id"),
+        operation="recycle",
+        closure_status="recovery_required",
+        next_action="restore_reference",
+    )
+
+
+def _recycle_asset_subject(entry_id: str) -> tuple[Optional[str], Optional[str]]:
+    """在删除回收条目真正消费前读取其中的稳定资产/版本引用。"""
+    entry = repo.state().read().get("recycle_bin", {}).get(entry_id) or {}
+    payload = entry.get("payload") if isinstance(entry.get("payload"), dict) else {}
+    asset_id = entry.get("asset_id") or payload.get("asset_id")
+    return (str(asset_id) if asset_id else None, payload.get("version_id"))
 
 
 async def _json_body(request: Request) -> Dict[str, Any]:
@@ -419,7 +483,11 @@ def get_recycle_bin(
     _read_auth(authorization, x_user_role)
     raw = repo.state().read()
     from gw.core.asset_visibility import asset_visible
-    visible = [dict(value) for value in raw['recycle_bin'].values() if value.get('kind') != 'asset' or asset_visible(value.get('payload', {}))]
+    visible = [
+        _recycle_entry_projection(dict(value))
+        for value in raw['recycle_bin'].values()
+        if value.get('kind') != 'asset' or asset_visible(value.get('payload', {}))
+    ]
     return {"items": visible,
             "assets": [value for value in visible if value.get("kind") == "asset"],
             "projects": [], "canvases": [],
@@ -646,6 +714,7 @@ def update_registry_asset(
 @router.delete("/assets/{asset_id}", summary="删除素材（移入回收站）", status_code=status.HTTP_200_OK)
 def delete_registry_asset(
     asset_id: str,
+    payload: Optional[Dict[str, Any]] = Body(None),
     authorization: Optional[str] = Header(None),
     x_user_role: str = Header("editor", alias="X-User-Role"),
 ):
@@ -663,7 +732,15 @@ def delete_registry_asset(
             if exc.status_code == 404:
                 raise CleanroomException(404, "ASSET_NOT_FOUND", f"素材 {asset_id} 不存在")
             raise
-    return repo.delete_asset(asset_id, None, context)
+    result = repo.delete_asset(asset_id, _version(_payload(payload)), context)
+    return _asset_closure_projection(
+        result,
+        asset_id=asset_id,
+        version_id=raw_asset.get("version_id"),
+        operation="recycle",
+        closure_status="recovery_required",
+        next_action="restore_reference",
+    )
 
 
 @router.post("/assets/{asset_id}/image-versions", summary="创建图片版本", status_code=status.HTTP_200_OK)
@@ -783,7 +860,16 @@ def restore_asset_trash(
     x_user_role: str = Header("editor", alias="X-User-Role"),
 ):
     context = _governance_auth(authorization, x_user_role)
-    return repo.restore_asset_trash(entry_id, context)
+    asset_id, version_id = _recycle_asset_subject(entry_id)
+    result = repo.restore_asset_trash(entry_id, context)
+    return _asset_closure_projection(
+        result,
+        asset_id=asset_id or result.get("asset_id"),
+        version_id=version_id,
+        operation="restore",
+        closure_status="closed",
+        next_action=None,
+    )
 
 
 @router.post("/governance/assets/{asset_id}/restore", summary="恢复已归档素材", status_code=status.HTTP_200_OK)
@@ -794,7 +880,14 @@ def restore_asset(
     x_user_role: str = Header("editor", alias="X-User-Role"),
 ):
     context = _governance_auth(authorization, x_user_role)
-    return repo.restore_asset(asset_id, context)
+    result = repo.restore_asset(asset_id, context)
+    return _asset_closure_projection(
+        result,
+        asset_id=asset_id,
+        operation="restore",
+        closure_status="closed",
+        next_action=None,
+    )
 
 
 @router.post("/governance/audit-outbox/reconcile", summary="重放审计 outbox", status_code=status.HTTP_200_OK)
@@ -830,7 +923,29 @@ def restore_canvas(
     """画布域不在本块范围：只记录真实操作条目，不伪造画布状态。"""
     _governance_auth(authorization, x_user_role)
     result = repo.restore_canvas(canvas_id)
-    return {**result, "data_gaps": ["canvas_store_not_connected"]}
+    return {
+        **result,
+        "closure_status": "blocked",
+        "blocker": {
+            "code": "PERSISTENCE_FAILED",
+            "scope": "canvas",
+            "subject": {"canvas_id": canvas_id},
+            "message": "当前路由只记录恢复操作，画布真源未接入，无法确认恢复事实。",
+            "retryable": False,
+            "observed_at": _closure_now(),
+        },
+        "recovery": {
+            "operation": "restore",
+            "recycle_entry_id": None,
+            "state": "recovery_required",
+            "preserved_subjects": [{"canvas_id": canvas_id}],
+            "failed_scopes": ["canvas"],
+            "idempotency_key": f"restore:canvas:{canvas_id}",
+            "occurred_at": _closure_now(),
+        },
+        "next_action": "inspect_persisted_state",
+        "data_gaps": ["canvas_store_not_connected"],
+    }
 
 
 @router.post("/governance/operations", summary="登记治理操作", status_code=status.HTTP_200_OK)
@@ -1131,17 +1246,42 @@ def restore_project_recycle(
 ):
     """治理权限下接入项目中心恢复状态机，未知项目404、过期版本409。"""
     _governance_auth(authorization, x_user_role)
-    return repo.restore_project_recycle(project_id, _payload(payload).get("expected_version"))
+    result = repo.restore_project_recycle(project_id, _payload(payload).get("expected_version"))
+    return {
+        **result,
+        "closure_status": "closed",
+        "blocker": None,
+        "recovery": {
+            "operation": "restore",
+            "recycle_entry_id": None,
+            "state": "completed",
+            "preserved_subjects": [{"project_id": project_id}],
+            "failed_scopes": [],
+            "idempotency_key": f"restore:project:{project_id}",
+            "occurred_at": _closure_now(),
+        },
+        "next_action": None,
+    }
 
 
 @router.post("/recycle-bin/{entry_id}/restore", summary="恢复回收站条目", status_code=status.HTTP_200_OK)
 def restore_recycle_entry(
     entry_id: str,
+    payload: Optional[Dict[str, Any]] = Body(None),
     authorization: Optional[str] = Header(None),
     x_user_role: str = Header("editor", alias="X-User-Role"),
 ):
     context = _governance_auth(authorization, x_user_role)
-    return repo.restore_from_recycle(entry_id, context)
+    asset_id, version_id = _recycle_asset_subject(entry_id)
+    result = repo.restore_from_recycle(entry_id, context)
+    return _asset_closure_projection(
+        result,
+        asset_id=asset_id or result.get("asset_id"),
+        version_id=version_id,
+        operation="restore",
+        closure_status="closed",
+        next_action=None,
+    )
 
 
 def _entity_view(record: Dict[str, Any]) -> Dict[str, Any]:
