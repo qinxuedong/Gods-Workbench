@@ -561,6 +561,17 @@
           item.classList.toggle('engaged', selected);
           item.setAttribute('aria-pressed', String(selected));
         });
+      } else if (event.data?.type === 'canvas-created') {
+        const filter = ['all', 'classic', 'project', 'reference'].includes(event.data.filter)
+          ? event.data.filter
+          : 'all';
+        frame?.contentWindow?.postMessage({ type: 'canvas-filter', filter }, location.origin);
+        document.querySelectorAll('[data-canvas-rail]').forEach(item => {
+          const selected = item.dataset.canvasRail === filter;
+          item.classList.toggle('active', selected);
+          item.classList.toggle('engaged', selected);
+          item.setAttribute('aria-pressed', String(selected));
+        });
       } else if (event.data?.type === 'canvas-open') {
         // Task 3: 捕获打开画布事件并进入画布工作台
         handleCanvasOpen(event.data.canvas);
