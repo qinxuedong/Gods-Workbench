@@ -153,6 +153,83 @@ async def cancel_stage(
     return repo.cancel_stage(pipeline_id, stage_id, await _json(request))
 
 
+@router.get(
+    "/api/episode-pipelines/{pipeline_id}/timeline-manifest",
+    status_code=status.HTTP_200_OK,
+    operation_id="get_timeline_manifest_hyphen",
+)
+@router.get(
+    "/api/episode-pipelines/{pipeline_id}/timeline_manifest",
+    status_code=status.HTTP_200_OK,
+    operation_id="get_timeline_manifest_snake",
+)
+@router.get(
+    "/api/episode-pipelines/{pipeline_id}/timeline",
+    status_code=status.HTTP_200_OK,
+    operation_id="get_timeline_manifest_legacy",
+)
+def get_timeline_manifest(
+    pipeline_id: str,
+    authorization: Optional[str] = Header(None),
+    x_user_role: str = Header("editor", alias="X-User-Role"),
+):
+    """读取 OpenFilm timeline_manifest；数据来自 episode_pipeline 落盘命名空间。"""
+    _read(authorization, x_user_role)
+    return repo.get_timeline_manifest(pipeline_id)
+
+
+@router.post(
+    "/api/episode-pipelines/{pipeline_id}/timeline-manifest",
+    status_code=status.HTTP_201_CREATED,
+    operation_id="create_timeline_manifest_hyphen",
+)
+@router.post(
+    "/api/episode-pipelines/{pipeline_id}/timeline_manifest",
+    status_code=status.HTTP_201_CREATED,
+    operation_id="create_timeline_manifest_snake",
+)
+@router.post(
+    "/api/episode-pipelines/{pipeline_id}/timeline",
+    status_code=status.HTTP_201_CREATED,
+    operation_id="create_timeline_manifest_legacy",
+)
+async def create_timeline_manifest(
+    pipeline_id: str,
+    request: Request,
+    authorization: Optional[str] = Header(None),
+    x_user_role: str = Header("editor", alias="X-User-Role"),
+):
+    """初始化轻量时间线清单；片段可携带 <img> 的 src 与 #t 覆盖属性。"""
+    _write(authorization, x_user_role)
+    return repo.create_timeline_manifest(pipeline_id, await _json(request))
+
+
+@router.put(
+    "/api/episode-pipelines/{pipeline_id}/timeline-manifest",
+    status_code=status.HTTP_200_OK,
+    operation_id="update_timeline_manifest_hyphen",
+)
+@router.put(
+    "/api/episode-pipelines/{pipeline_id}/timeline_manifest",
+    status_code=status.HTTP_200_OK,
+    operation_id="update_timeline_manifest_snake",
+)
+@router.put(
+    "/api/episode-pipelines/{pipeline_id}/timeline",
+    status_code=status.HTTP_200_OK,
+    operation_id="update_timeline_manifest_legacy",
+)
+async def update_timeline_manifest(
+    pipeline_id: str,
+    request: Request,
+    authorization: Optional[str] = Header(None),
+    x_user_role: str = Header("editor", alias="X-User-Role"),
+):
+    """更新时间线清单；必须携带 expected_version 执行 CAS。"""
+    _write(authorization, x_user_role)
+    return repo.update_timeline_manifest(pipeline_id, await _json(request))
+
+
 @router.post(
     "/api/episode-pipelines/{pipeline_id}/shots/{shot_id}/generate",
     status_code=status.HTTP_202_ACCEPTED,
