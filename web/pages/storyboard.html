@@ -363,6 +363,11 @@
               <span>从智能体同步文字分镜</span>
             </button>
             <span id="agentStoryboardSyncStatus" class="gw-type-body-sm font-mono text-slate-400" role="status" aria-live="polite" data-gw-degradation="not_integrated">未同步</span>
+            <button type="button" class="hw-btn hw-btn-sm hw-btn-gold flex items-center space-x-1" id="btnSyncTimeline" onclick="WorkbenchStoryboard.syncTimeline()" title="按分镜顺序写入当前剧集的 OpenFilm timeline_manifest">
+              <i data-lucide="list-video" class="w-3 h-3 text-[#0a0c10]"></i>
+              <span>同步至时间线</span>
+            </button>
+            <span id="timelineSyncStatus" class="gw-type-body-sm font-mono text-slate-400" role="status" aria-live="polite" data-gw-degradation="not_integrated">未同步</span>
             <div class="h-3.5 w-px bg-white/10"></div>
             <button class="hw-btn flex items-center space-x-1" onclick="WorkbenchStoryboard.batchGenerate()">
               <i data-lucide="play" class="w-3 h-3 text-[#dfc384]"></i>

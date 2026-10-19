@@ -34,6 +34,11 @@ window.WorkbenchProduction = (function () {
     activeEpisodeId: '',
     activeSceneId: '',
     activeShotId: '',
+    timelineManifest: null,
+    timelineClips: [],
+    activeTimelineIndex: -1,
+    timelinePlaying: false,
+    timelineTimer: null,
     currentEpisode: null,
     currentShot: {
       id: '',
@@ -173,6 +178,10 @@ window.WorkbenchProduction = (function () {
     state.activeEpisodeId = '';
     state.activeSceneId = '';
     state.activeShotId = '';
+    stopTimeline();
+    state.timelineManifest = null;
+    state.timelineClips = [];
+    state.activeTimelineIndex = -1;
     state.currentShot = {
       id: '', name: '镜头数据未接入', imageUrl: '', focal: 50, prompt: '',
       project_id: state.projectId || '', status: 'not_integrated', next_action: 'review_context', data_gaps: []
@@ -221,6 +230,7 @@ window.WorkbenchProduction = (function () {
 
     const trackLabel = document.querySelector('#shotTrackList')?.previousElementSibling?.querySelector('span');
     if (trackLabel) trackLabel.textContent = '镜头轨道未接入';
+    setTimelinePlaybackStatus('时间线未接入', 'not_integrated');
 
     const reviewPanel = document.getElementById('productionReviewPanel');
     if (reviewPanel) {
@@ -356,6 +366,173 @@ window.WorkbenchProduction = (function () {
     const episodes = [...episodeMap.values()];
     const shots = episodes.flatMap(episode => episode.scenes.flatMap(scene => scene.shots));
     return { episodes, shots };
+  }
+
+  function setTimelinePlaybackStatus(text, kind = '') {
+    const status = document.getElementById('timelinePlaybackStatus');
+    if (!status) return;
+    status.textContent = String(text || '');
+    if (kind) status.setAttribute('data-gw-degradation', kind);
+    else status.removeAttribute('data-gw-degradation');
+  }
+
+  function timelineClipSource(clip) {
+    const overrides = clip?.overrides && typeof clip.overrides === 'object' ? clip.overrides : {};
+    const raw = String(overrides.src || clip?.src || '').trim();
+    return raw;
+  }
+
+  function normalizeTimelineClip(raw, trackIndex = 0, clipIndex = 0) {
+    if (!raw || typeof raw !== 'object') return null;
+    const shotId = String(raw.shot_id || raw.id || '').trim();
+    const assetId = String(raw.asset_id || '').trim();
+    if (!shotId || !assetId) return null;
+    const sourceShot = state.shotList.find(item => item.id === shotId || item.shot_id === shotId) || {};
+    const overrides = raw.overrides && typeof raw.overrides === 'object' ? { ...raw.overrides } : {};
+    const durationValue = Number(raw.duration);
+    const duration = Number.isFinite(durationValue) && durationValue > 0 ? durationValue : 1;
+    const atValue = Number(raw.at);
+    const at = Number.isFinite(atValue) && atValue >= 0 ? atValue : 0;
+    const imageUrl = timelineClipSource(raw) || sourceShot.imageUrl || sourceShot.img || '';
+    const camera = String(overrides.camera || raw.camera || sourceShot.camera || sourceShot.shotType || sourceShot.type || '').trim();
+    const movement = String(overrides.movement || raw.movement || sourceShot.movement || '').trim();
+    return {
+      ...sourceShot,
+      ...raw,
+      id: shotId,
+      shot_id: shotId,
+      asset_id: assetId,
+      imageUrl,
+      img: imageUrl,
+      code: String(sourceShot.code || raw.code || shotId).trim(),
+      name: String(sourceShot.name || raw.name || shotId).trim(),
+      type: String(sourceShot.type || raw.type || camera || '镜头').trim(),
+      shotType: camera,
+      camera,
+      movement,
+      duration,
+      at,
+      overrides,
+      timeline_track_index: trackIndex,
+      timeline_clip_index: clipIndex,
+      status: 'timeline'
+    };
+  }
+
+  function flattenTimelineManifest(manifest) {
+    const tracks = Array.isArray(manifest?.tracks) ? manifest.tracks : [];
+    return tracks.flatMap((track, trackIndex) => {
+      const clips = Array.isArray(track?.clips) ? track.clips : [];
+      return clips.map((clip, clipIndex) => normalizeTimelineClip(clip, trackIndex, clipIndex)).filter(Boolean);
+    }).sort((left, right) => left.at - right.at || left.timeline_track_index - right.timeline_track_index || left.timeline_clip_index - right.timeline_clip_index);
+  }
+
+  function applyTimelineClip(index, { render = true } = {}) {
+    const clip = state.timelineClips[index];
+    if (!clip) return null;
+    state.activeTimelineIndex = index;
+    state.activeShotId = clip.shot_id;
+    state.activeSceneId = clip.scene_id || state.activeSceneId;
+    bindCurrentShot({
+      ...clip,
+      id: clip.shot_id,
+      shot_id: clip.shot_id,
+      name: clip.name || clip.shot_id,
+      imageUrl: clip.imageUrl || timelineClipSource(clip),
+      img: clip.imageUrl || timelineClipSource(clip),
+      focal: clip.focal || 50,
+      prompt: clip.prompt || '',
+      camera: clip.camera,
+      movement: clip.movement,
+      duration: clip.duration,
+      overrides: clip.overrides
+    });
+    if (render) renderShots();
+    return state.currentShot;
+  }
+
+  async function loadTimelineManifest(pipelineId = state.pipelineId) {
+    stopTimeline();
+    state.timelineManifest = null;
+    state.timelineClips = [];
+    state.activeTimelineIndex = -1;
+    setTimelinePlaybackStatus('读取时间线…');
+    if (!pipelineId) {
+      setTimelinePlaybackStatus('时间线未接入', 'not_integrated');
+      renderShots();
+      return null;
+    }
+    try {
+      const payload = await requestJson(`/api/episode-pipelines/${encodeURIComponent(pipelineId)}/timeline-manifest`);
+      const manifest = payload?.timeline_manifest || payload?.manifest || payload;
+      const clips = flattenTimelineManifest(manifest);
+      if (!manifest || !clips.length) {
+        setTimelinePlaybackStatus('时间线暂无镜头', 'not_integrated');
+        renderShots();
+        return null;
+      }
+      state.timelineManifest = manifest;
+      state.timelineClips = clips;
+      state.activeTimelineIndex = 0;
+      applyTimelineClip(0, { render: false });
+      setTimelinePlaybackStatus(`已载入 ${clips.length} 镜`);
+      renderShots();
+      return manifest;
+    } catch (error) {
+      state.timelineManifest = null;
+      state.timelineClips = [];
+      state.activeTimelineIndex = -1;
+      setTimelinePlaybackStatus('时间线未接入', 'not_integrated');
+      renderShots();
+      return null;
+    }
+  }
+
+  function scheduleTimelineAdvance() {
+    if (!state.timelinePlaying || !state.timelineClips.length) return;
+    if (state.timelineTimer) window.clearTimeout?.(state.timelineTimer);
+    const current = state.timelineClips[state.activeTimelineIndex] || state.timelineClips[0];
+    const delay = Math.max(1, Number(current?.duration || 1)) * 1000;
+    state.timelineTimer = window.setTimeout(function timelineAdvance() {
+      state.timelineTimer = null;
+      if (!state.timelinePlaying) return;
+      if (state.activeTimelineIndex >= state.timelineClips.length - 1) {
+        state.timelinePlaying = false;
+        setTimelinePlaybackStatus(`播放完成 · ${state.timelineClips.length} 镜`);
+        return;
+      }
+      applyTimelineClip(state.activeTimelineIndex + 1);
+      setTimelinePlaybackStatus(`连播中 · ${state.activeTimelineIndex + 1}/${state.timelineClips.length}`);
+      scheduleTimelineAdvance();
+    }, delay);
+  }
+
+  function playTimeline() {
+    if (!state.timelineClips.length) {
+      setTimelinePlaybackStatus('时间线未接入', 'not_integrated');
+      return null;
+    }
+    if (state.activeTimelineIndex < 0 || state.activeTimelineIndex >= state.timelineClips.length) {
+      applyTimelineClip(0);
+    }
+    state.timelinePlaying = true;
+    setTimelinePlaybackStatus(`连播中 · ${state.activeTimelineIndex + 1}/${state.timelineClips.length}`);
+    scheduleTimelineAdvance();
+    return state.timelineClips[state.activeTimelineIndex];
+  }
+
+  function stopTimeline() {
+    if (state.timelineTimer) window.clearTimeout?.(state.timelineTimer);
+    state.timelineTimer = null;
+    state.timelinePlaying = false;
+    if (state.timelineClips.length && state.activeTimelineIndex >= 0) {
+      setTimelinePlaybackStatus(`已载入 ${state.timelineClips.length} 镜`);
+    }
+    return null;
+  }
+
+  function selectTimelineClip(index) {
+    return Promise.resolve(applyTimelineClip(Number(index)));
   }
 
   function bindPipelineContext(pipeline) {
@@ -712,7 +889,9 @@ window.WorkbenchProduction = (function () {
         return true;
       }
       const context = bindPipelineContext(pipeline);
-      if (!context?.shots?.length || !state.activeShotId) {
+      await loadTimelineManifest(state.pipelineId);
+      if (state.timelineClips.length) applyTimelineClip(0, { render: false });
+      if ((!context?.shots?.length && !state.timelineClips.length) || !state.activeShotId) {
         resetReviewState('not_integrated', 'review_context', ['SHOT_CONTEXT_NOT_FOUND']);
         renderReviewPanel();
         return true;
@@ -1056,24 +1235,29 @@ window.WorkbenchProduction = (function () {
   function renderShots() {
     const track = document.getElementById('shotTrackList');
     if (!track) return;
-    if (!state.shotList.length) {
+    const displayShots = state.timelineClips.length ? state.timelineClips : state.shotList;
+    if (!displayShots.length) {
       track.innerHTML = notIntegratedMarkup('镜头数据未接入');
       window.lucide?.createIcons();
       return;
     }
 
-    track.innerHTML = state.shotList.map(sh => {
-      const isActive = sh.status === 'active';
+    track.innerHTML = displayShots.map((sh, index) => {
+      const isTimeline = state.timelineClips.length > 0;
+      const isActive = isTimeline ? index === state.activeTimelineIndex : sh.status === 'active';
+      const camera = String(sh.camera || sh.shotType || sh.type || '').trim();
+      const movement = String(sh.movement || '').trim();
+      const label = [camera, movement].filter(Boolean).join(' · ');
       return `
         <div class="bay-inset p-1 rounded-lg cursor-pointer transition ${isActive ? 'border-2 border-[#dfc384]' : 'border border-white/5 hover:border-white/20'}"
-             onclick="WorkbenchProduction.selectShot('${sh.id}')">
+             data-timeline-index="${isTimeline ? index : ''}" data-timeline-active="${isActive}" onclick="${isTimeline ? `WorkbenchProduction.selectTimelineClip(${index})` : `WorkbenchProduction.selectShot('${esc(sh.id)}')`}">
           <div class="h-12 w-full rounded overflow-hidden mb-1 relative bg-black">
-            <img src="${sh.img}" class="w-full h-full object-cover">
-            <span class="absolute bottom-0.5 right-0.5 gw-type-body-sm font-mono px-1 rounded bg-black/80 text-[#eddab3]">${sh.type}</span>
+            ${sh.img ? `<img src="${esc(sh.img)}" class="w-full h-full object-cover" alt="${esc(sh.name || sh.id)}">` : '<div class="w-full h-full flex items-center justify-center text-slate-500">未接入</div>'}
+            <span class="absolute bottom-0.5 right-0.5 gw-type-body-sm font-mono px-1 rounded bg-black/80 text-[#eddab3]">${esc(label || sh.type || '镜头')}</span>
           </div>
           <div class="flex items-center justify-between gw-type-body-sm font-mono">
-            <span class="${isActive ? 'text-[#dfc384] font-bold' : 'text-slate-400'}">${sh.code}</span>
-            <span class="${sh.status === 'queued' ? 'text-amber-300' : 'text-slate-400'}"${sh.status === 'not_integrated' ? ' data-gw-degradation="not_integrated"' : ''}>${sh.status === 'queued' ? '排队' : (sh.status === 'not_integrated' ? '未接入' : sh.status)}</span>
+            <span class="${isActive ? 'text-[#dfc384] font-bold' : 'text-slate-400'}">${esc(sh.code || sh.id)}</span>
+            <span class="${sh.status === 'queued' ? 'text-amber-300' : 'text-slate-400'}"${sh.status === 'not_integrated' ? ' data-gw-degradation="not_integrated"' : ''}>${isTimeline ? `${Number(sh.duration || 0)}s` : (sh.status === 'queued' ? '排队' : (sh.status === 'not_integrated' ? '未接入' : esc(sh.status)))}</span>
           </div>
         </div>
       `;
@@ -1081,6 +1265,10 @@ window.WorkbenchProduction = (function () {
   }
 
   function selectShot(shId) {
+    if (state.timelineClips.length) {
+      const index = state.timelineClips.findIndex(item => item.id === shId || item.shot_id === shId);
+      if (index >= 0) return selectTimelineClip(index);
+    }
     const target = state.shotList.find(item => item.id === shId);
     if (!target) return Promise.resolve(null);
     const sceneId = target.scene_id || state.activeSceneId;
@@ -1119,6 +1307,11 @@ window.WorkbenchProduction = (function () {
       version_id: shot.version_id || '',
       version: shot.version ?? null,
       media_type: shot.media_type || shot.previewType || '',
+      camera: shot.camera || shot.shotType || shot.type || '',
+      movement: shot.movement || shot.camera_movement || '',
+      duration: shot.duration ?? null,
+      at: shot.at ?? null,
+      overrides: shot.overrides && typeof shot.overrides === 'object' ? { ...shot.overrides } : {},
       status: String(shot.status || 'unknown').toLowerCase(),
       next_action: shot.next_action || nextActionForReview(String(shot.status || '').toLowerCase()),
       source: shot.source && typeof shot.source === 'object' ? { ...shot.source } : null,
@@ -1246,12 +1439,16 @@ window.WorkbenchProduction = (function () {
     nextProject,
     bindCurrentShot,
     bindProductionContext,
+    loadTimelineManifest,
+    playTimeline,
+    stopTimeline,
+    selectTimelineClip,
     loadReviewForCurrentShot,
     addReviewComment,
     submitReviewDecision,
     renderReviewPanel,
     renderNotIntegratedState,
-    getState: () => ({ ...state }),
+    getState: () => ({ ...state, timelineClips: [...state.timelineClips] }),
     rebind: reloadBus
   };
 })();
