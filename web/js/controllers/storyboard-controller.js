@@ -34,7 +34,8 @@ window.WorkbenchStoryboard = (function () {
     reviews: {},
     reviewRevision: 1,
     reviewError: '',
-    actionBlocker: null
+    actionBlocker: null,
+    timelineManifest: null
   };
 
   const esc = str => String(str ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -532,6 +533,8 @@ window.WorkbenchStoryboard = (function () {
     state.reviews = {};
     state.reviewError = '';
     state.actionBlocker = null;
+    state.timelineManifest = null;
+    setTimelineSyncStatus('时间线未接入', 'not_integrated');
     renderNav();
     renderGrid();
   }
@@ -753,6 +756,92 @@ window.WorkbenchStoryboard = (function () {
     else status.removeAttribute('data-gw-degradation');
   }
 
+  function setTimelineSyncStatus(text, kind = '') {
+    const status = document.getElementById('timelineSyncStatus');
+    if (!status) return;
+    status.textContent = String(text || '');
+    if (kind) status.setAttribute('data-gw-degradation', kind);
+    else status.removeAttribute('data-gw-degradation');
+  }
+
+  function timelineShotOrder(shot, index) {
+    const shotId = String(shot?.shot_id || shot?.id || '').trim();
+    const match = /^SC(\d+)_SH(\d+)$/.exec(shotId);
+    if (match) return [0, Number(match[1]), Number(match[2]), index];
+    return [1, shotId, index];
+  }
+
+  function timelineDuration(shot) {
+    const raw = shot?.duration ?? shot?.duration_seconds ?? shot?.metadata?.duration;
+    const value = typeof raw === 'number' ? raw : Number.parseFloat(String(raw ?? ''));
+    return Number.isFinite(value) && value > 0 ? value : 1;
+  }
+
+  function timelineSource(shot, duration) {
+    const source = String(shot?.imageUrl || shot?.img || shot?.source?.source_url || '').trim();
+    if (!source) return '';
+    return source.includes('#t=') ? source : `${source}#t=0,${duration}`;
+  }
+
+  async function syncTimeline() {
+    const projectId = String(state.projectId || resolveProjectId() || '').trim();
+    const pipelineId = String(state.pipelineId || '').trim();
+    const button = document.getElementById('btnSyncTimeline');
+    if (!projectId || !pipelineId) {
+      setTimelineSyncStatus('缺少流水线上下文', 'not_integrated');
+      return null;
+    }
+    const ordered = (Array.isArray(state.shots) ? state.shots : [])
+      .map((shot, index) => ({ shot, index }))
+      .sort((a, b) => {
+        const left = timelineShotOrder(a.shot, a.index);
+        const right = timelineShotOrder(b.shot, b.index);
+        for (let i = 0; i < Math.max(left.length, right.length); i += 1) {
+          if (left[i] === right[i]) continue;
+          return left[i] < right[i] ? -1 : 1;
+        }
+        return 0;
+      })
+      .map(item => item.shot);
+    if (!ordered.length || ordered.some(shot => !String(shot?.shot_id || shot?.id || '').trim() || !String(shot?.asset_id || '').trim())) {
+      setTimelineSyncStatus('缺少镜头资产上下文', 'not_integrated');
+      return null;
+    }
+
+    const clips = [];
+    let at = 0;
+    ordered.forEach(shot => {
+      const shotId = String(shot.shot_id || shot.id).trim();
+      const duration = timelineDuration(shot);
+      const overrides = { ...(shot.overrides && typeof shot.overrides === 'object' ? shot.overrides : {}) };
+      const src = timelineSource(shot, duration);
+      if (src) overrides.src = src;
+      const camera = String(shot.camera || shot.shotType || shot.shot_type || shot.type || '').trim();
+      const movement = String(shot.movement || shot.camera_movement || '').trim();
+      if (camera) overrides.camera = camera;
+      if (movement) overrides.movement = movement;
+      clips.push({ shot_id: shotId, asset_id: String(shot.asset_id).trim(), at, duration, overrides });
+      at += duration;
+    });
+
+    if (button) button.disabled = true;
+    setTimelineSyncStatus('正在写入时间线…');
+    try {
+      const result = await requestJson(`/api/episode-pipelines/${encodeURIComponent(pipelineId)}/timeline-manifest`, {
+        method: 'POST',
+        body: JSON.stringify({ tracks: [{ track_id: 'video-01', kind: 'video', clips }] })
+      });
+      state.timelineManifest = result?.timeline_manifest || result?.manifest || result;
+      setTimelineSyncStatus(`已同步 ${clips.length} 镜至时间线`);
+      return result;
+    } catch (error) {
+      setTimelineSyncStatus(error?.message || '时间线同步失败', 'service_unavailable');
+      return null;
+    } finally {
+      if (button) button.disabled = false;
+    }
+  }
+
   function shotsFromAgentStoryboard(rows, artifact, projectId = state.projectId) {
     const versionId = String(artifact?.version_id || '').trim();
     const revision = Number(artifact?.revision);
@@ -821,6 +910,8 @@ window.WorkbenchStoryboard = (function () {
       state.pipelineId = '';
       state.pipelineVersion = 0;
       state.pipeline = null;
+      state.timelineManifest = null;
+      setTimelineSyncStatus('时间线未接入', 'not_integrated');
       state.actionBlocker = null;
       state.reviewError = '';
       state.shots = shots;
@@ -862,6 +953,8 @@ window.WorkbenchStoryboard = (function () {
     state.pipeline = pipeline;
     state.pipelineId = String(pipeline.pipeline_id || pipeline.id || '').trim();
     state.pipelineVersion = Number(pipeline.version) || 1;
+    state.timelineManifest = null;
+    setTimelineSyncStatus('未同步', 'not_integrated');
     state.shots = shots;
     state.actionBlocker = null;
     state.scenes = scenesFromPipeline(pipeline, shots);
@@ -898,6 +991,8 @@ window.WorkbenchStoryboard = (function () {
       state.pipelineId = '';
       state.pipelineVersion = 0;
       state.pipeline = null;
+    state.timelineManifest = null;
+    setTimelineSyncStatus('时间线未接入', 'not_integrated');
       state.shots = shots;
       state.scenes = scenesFromShots(shots);
       renderNav();
@@ -952,6 +1047,7 @@ window.WorkbenchStoryboard = (function () {
     addReviewComment,
     submitReviewDecision,
     syncLatestAgentStoryboard,
+    syncTimeline,
     shotsFromAgentStoryboard,
     getState: () => ({ ...state, shots: [...state.shots], scenes: [...state.scenes], reviews: { ...state.reviews } }),
     renderNotIntegratedState,

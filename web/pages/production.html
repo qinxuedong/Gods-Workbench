@@ -383,8 +383,14 @@
           <!-- 底部多机位/分镜轨道 -->
           <div class="shrink-0 pt-1 border-t border-white/5">
             <div class="flex items-center justify-between gw-type-body-sm font-mono text-slate-400 mb-1.5">
-              <span>当前场次镜头轨道 (SHOT TRACK · 6 SHOTS)</span>
-              <span class="text-[#dfc384]">点击切换主监视镜头</span>
+              <div class="flex items-center space-x-2 min-w-0">
+                <span>时间线镜头轨道 (TIMELINE TRACK)</span>
+                <span id="timelinePlaybackStatus" class="text-amber-300" role="status" aria-live="polite" data-gw-degradation="not_integrated">时间线未接入</span>
+              </div>
+              <div class="flex items-center space-x-1.5 shrink-0">
+                <button type="button" class="hw-btn btn-size-sm" id="timelinePlayToggle" onclick="WorkbenchProduction.playTimeline()">连续播放</button>
+                <button type="button" class="hw-btn btn-size-sm" id="timelineStopToggle" onclick="WorkbenchProduction.stopTimeline()">停止</button>
+              </div>
             </div>
             <div class="grid grid-cols-6 gap-2" id="shotTrackList">
               <!-- 动态镜头缩略轨 -->
