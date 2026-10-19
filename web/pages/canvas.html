@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="zh-CN" class="h-full">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>机位雷达画布 · Gods' Workbench</title>
+  <link rel="stylesheet" href="/static/vendor/css/fonts.css">
+  <link rel="stylesheet" href="/static/css/base/hardware-tokens.css">
+  <link rel="stylesheet" href="/static/css/base/hardware-design-system.css">
+  <style>
+    :root { color-scheme: dark; }
+    body { margin: 0; min-height: 100vh; background: #090a0d; color: #e2e8f0; font-family: var(--gw-font-body, sans-serif); }
+    .canvas-radar-page { min-height: 100vh; display: flex; flex-direction: column; }
+    .canvas-radar-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 18px; border-bottom: 1px solid rgba(255,255,255,.1); background: #0b0d13; }
+    .canvas-radar-title { display: flex; align-items: center; gap: 10px; min-width: 0; }
+    .canvas-radar-title h1 { margin: 0; color: #eddab3; font: 700 var(--gw-type-section, 16px)/1.2 var(--gw-font-body, sans-serif); }
+    .canvas-radar-title small { color: #64748b; font: 500 var(--gw-type-label-md, 11px)/1.2 var(--gw-font-mono, monospace); }
+    .canvas-radar-main { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 12px; padding: 18px; }
+    .canvas-radar-context { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+    .canvas-radar-context strong { color: #f1f5f9; }
+    .canvas-radar-status { color: #94a3b8; font: 500 var(--gw-type-body-sm, 12px)/1.4 var(--gw-font-mono, monospace); }
+    .canvas-radar-status[data-state="error"] { color: #fca5a5; }
+    .canvas-radar-status[data-state="ready"] { color: #86efac; }
+    #canvasRadarWorkspace { display: grid; grid-template-columns: repeat(auto-fit, minmax(360px, 1fr)); gap: 12px; align-items: start; }
+    .canvas-radar-node { min-width: 0; overflow: hidden; border: 1px solid rgba(223,195,132,.28); border-radius: 12px; background: #0b0d13; box-shadow: inset 0 1px 0 rgba(255,255,255,.04), 0 12px 28px rgba(0,0,0,.35); }
+    .canvas-radar-node.camera-radar-focused { border-color: #dfc384; box-shadow: 0 0 0 2px rgba(223,195,132,.3), 0 12px 28px rgba(0,0,0,.45); }
+    .canvas-radar-node-header { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 10px 12px; border-bottom: 1px solid rgba(255,255,255,.08); }
+    .canvas-radar-node-header strong { overflow: hidden; color: #f1f5f9; text-overflow: ellipsis; white-space: nowrap; }
+    .canvas-radar-node-type { color: #dfc384; font: var(--gw-weight-bold) var(--gw-type-label-md)/var(--gw-leading-body-sm) var(--gw-font-mono, monospace); }
+    .canvas-radar-node-radar { padding: 8px; }
+    .canvas-radar-node-radar svg { display: block; width: 100%; height: auto; border-radius: 8px; }
+    .canvas-radar-node-actions { display: flex; gap: 8px; flex-wrap: wrap; padding: 8px 12px 12px; }
+    .canvas-radar-empty { padding: 28px; border: 1px dashed rgba(223,195,132,.22); border-radius: 12px; color: #94a3b8; text-align: center; }
+    @media (max-width: 640px) { .canvas-radar-main { padding: 10px; } #canvasRadarWorkspace { grid-template-columns: minmax(0, 1fr); } }
+  </style>
+  <script src="/static/js/modules/topdown-radar.js?v=20261019-c13-t3"></script>
+  <script src="/static/js/nodes/canvas-radar-node.js?v=20261019-c13-t3"></script>
+</head>
+<body>
+  <div class="canvas-radar-page">
+    <header class="canvas-radar-head">
+      <div class="canvas-radar-title">
+        <a id="canvasRadarBack" class="hw-btn hw-btn-sm" href="storyboard.html?view=radar" aria-label="返回分镜台">返回分镜台</a>
+        <div><h1>机位雷达 · camera_radar</h1><small id="canvasRadarFocusLabel">等待画布上下文</small></div>
+      </div>
+      <span class="canvas-radar-status" id="canvasRadarStatus" role="status" aria-live="polite" data-state="loading">正在读取画布拓扑…</span>
+    </header>
+    <main class="canvas-radar-main">
+      <div class="canvas-radar-context"><span>项目：<strong id="canvasRadarProject">未接入</strong></span><span>聚焦节点：<strong id="canvasRadarNode">未指定</strong></span></div>
+      <section id="canvasRadarWorkspace" aria-label="机位雷达节点"></section>
+    </main>
+  </div>
+  <script>
+    (function initCameraRadarCanvas() {
+      'use strict';
+      const params = new URLSearchParams(window.location.search);
+      const projectId = String(params.get('project_id') || params.get('project') || '').trim();
+      const canvasId = String(params.get('canvas_id') || params.get('id') || '').trim();
+      const focusNode = String(params.get('focus_node') || '').trim();
+      const statusEl = document.getElementById('canvasRadarStatus');
+      const workspace = document.getElementById('canvasRadarWorkspace');
+      const projectEl = document.getElementById('canvasRadarProject');
+      const nodeEl = document.getElementById('canvasRadarNode');
+      const focusLabel = document.getElementById('canvasRadarFocusLabel');
+      const back = document.getElementById('canvasRadarBack');
+      const state = { projectId, canvasId, focusNode, nodes: [], error: '' };
+
+      projectEl.textContent = projectId || '未接入';
+      nodeEl.textContent = focusNode || '未指定';
+      focusLabel.textContent = focusNode ? `聚焦 ${focusNode}` : '未指定聚焦节点';
+      const returnTo = String(params.get('return_to') || '').trim();
+      if (returnTo) back.href = returnTo;
+      else if (projectId) back.href = `storyboard.html?project_id=${encodeURIComponent(projectId)}&view=radar${focusNode ? `&shot_id=${encodeURIComponent(params.get('shot_id') || '')}` : ''}`;
+
+      function setStatus(message, stateName = 'loading') {
+        statusEl.textContent = message;
+        statusEl.dataset.state = stateName;
+      }
+
+      function showEmpty(message) {
+        workspace.innerHTML = `<div class="canvas-radar-empty" data-gw-degradation="not_integrated">${message}</div>`;
+      }
+
+      async function load() {
+        if (!projectId || !canvasId) {
+          state.error = 'PROJECT_AND_CANVAS_CONTEXT_REQUIRED';
+          setStatus('缺少项目或画布上下文', 'error');
+          showEmpty('需要 project_id 与 canvas_id 才能读取真实画布拓扑。');
+          return state;
+        }
+        try {
+          const endpoint = new URL(`/api/canvases/${encodeURIComponent(canvasId)}`, window.location.origin);
+          endpoint.searchParams.set('project_id', projectId);
+          const response = await fetch(endpoint.toString(), {credentials: 'same-origin', headers: {Accept: 'application/json'}});
+          const payload = await response.json().catch(() => ({}));
+          if (!response.ok) throw new Error(payload?.detail?.message || `读取画布失败（HTTP ${response.status}）`);
+          const rawNodes = Array.isArray(payload.nodes) ? payload.nodes : [];
+          state.nodes = rawNodes.filter(node => String(node?.node_type || node?.type || '').trim() === 'camera_radar');
+          workspace.innerHTML = '';
+          if (!state.nodes.length) {
+            setStatus('未找到机位雷达节点', 'error');
+            showEmpty('当前画布没有 camera_radar 节点，返回分镜台补充真实机位元数据。');
+            return state;
+          }
+          state.nodes.forEach(rawNode => {
+            const node = window.CameraRadarNode.createCameraRadarNode({...rawNode, project_id: projectId, canvas_id: canvasId});
+            const host = document.createElement('div');
+            host.dataset.nodeId = node.entity_id;
+            workspace.appendChild(host);
+            window.CameraRadarNode.renderCameraRadarNode(node, host, {origin: window.location.origin});
+          });
+          setStatus(`已读取 ${state.nodes.length} 个机位雷达节点`, 'ready');
+          if (focusNode) window.CameraRadarNode.focusCanvasNode(focusNode, {container: workspace});
+          return state;
+        } catch (error) {
+          state.error = error?.message || 'CANVAS_RADAR_LOAD_FAILED';
+          setStatus('画布拓扑读取失败', 'error');
+          showEmpty(state.error);
+          return state;
+        }
+      }
+
+      window.__gwCanvasRadar = {state, load};
+      load();
+    })();
+  </script>
+</body>
+</html>
