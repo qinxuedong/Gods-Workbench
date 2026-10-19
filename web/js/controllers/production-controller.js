@@ -36,6 +36,8 @@ window.WorkbenchProduction = (function () {
     activeShotId: '',
     timelineManifest: null,
     timelineClips: [],
+    timelineAudioClips: [],
+    timelineAudioSource: '',
     activeTimelineIndex: -1,
     timelinePlaying: false,
     timelineTimer: null,
@@ -181,7 +183,16 @@ window.WorkbenchProduction = (function () {
     stopTimeline();
     state.timelineManifest = null;
     state.timelineClips = [];
+    state.timelineAudioClips = [];
+    state.timelineAudioSource = '';
     state.activeTimelineIndex = -1;
+    const audio = timelineAudioElement();
+    if (audio) {
+      audio.pause?.();
+      audio.removeAttribute?.('src');
+      audio.src = '';
+      try { audio.currentTime = 0; } catch (_) { /* 浏览器尚未加载媒体时忽略复位 */ }
+    }
     state.currentShot = {
       id: '', name: '镜头数据未接入', imageUrl: '', focal: 50, prompt: '',
       project_id: state.projectId || '', status: 'not_integrated', next_action: 'review_context', data_gaps: []
@@ -374,12 +385,90 @@ window.WorkbenchProduction = (function () {
     status.textContent = String(text || '');
     if (kind) status.setAttribute('data-gw-degradation', kind);
     else status.removeAttribute('data-gw-degradation');
+    status.setAttribute('data-animatic-state', state.timelinePlaying ? 'playing' : (kind || 'ready'));
+    const playButton = document.getElementById('timelinePlayToggle');
+    if (playButton) {
+      playButton.setAttribute('aria-pressed', String(Boolean(state.timelinePlaying)));
+      playButton.setAttribute('data-animatic-state', state.timelinePlaying ? 'playing' : 'ready');
+    }
+    updateAnimaticFader();
+  }
+
+  function updateAnimaticFader() {
+    const fader = document.getElementById('animaticStageFader');
+    if (!fader) return;
+    const total = state.timelineClips.length;
+    const index = state.activeTimelineIndex < 0 ? 0 : state.activeTimelineIndex;
+    const percent = total > 1 ? Math.min(100, Math.max(0, (index / (total - 1)) * 100)) : 0;
+    const glow = fader.querySelector?.('.hw-fader-glow-bar');
+    const thumb = fader.querySelector?.('.hw-fader-thumb-3d');
+    if (glow) glow.style.width = `${percent}%`;
+    if (thumb) thumb.style.left = `${percent}%`;
+    fader.setAttribute('data-animatic-progress', String(percent));
+    if (state.currentShot?.shot_id) fader.setAttribute('data-animatic-active-shot', state.currentShot.shot_id);
+  }
+
+  function timelineSeconds(value, fallback = 1) {
+    if (typeof value === 'string') {
+      const match = value.trim().match(/^([0-9]+(?:\.[0-9]+)?)(ms|s|sec|secs|seconds)?$/i);
+      if (match) value = match[2]?.toLowerCase() === 'ms' ? Number(match[1]) / 1000 : match[1];
+    }
+    const number = Number(value);
+    return Number.isFinite(number) && number > 0 ? number : fallback;
+  }
+
+  function timelineOffsetSeconds(value) {
+    if (typeof value === 'string') {
+      const match = value.trim().match(/^([0-9]+(?:\.[0-9]+)?)(ms|s|sec|secs|seconds)?$/i);
+      if (match) value = match[2]?.toLowerCase() === 'ms' ? Number(match[1]) / 1000 : match[1];
+    }
+    const number = Number(value);
+    return Number.isFinite(number) && number >= 0 ? number : 0;
   }
 
   function timelineClipSource(clip) {
     const overrides = clip?.overrides && typeof clip.overrides === 'object' ? clip.overrides : {};
-    const raw = String(overrides.src || clip?.src || '').trim();
+    const raw = String(overrides.src || clip?.src || clip?.image_url || clip?.imageUrl || '').trim();
     return raw;
+  }
+
+  function timelineExplicitAudioSource(clip) {
+    const overrides = clip?.overrides && typeof clip.overrides === 'object' ? clip.overrides : {};
+    const audio = clip?.audio && typeof clip.audio === 'object' ? clip.audio : {};
+    const raw = clip?.audio_url || clip?.audioUrl || clip?.dialogue_audio_url || clip?.dialogueAudioUrl
+      || audio.url || audio.src || (typeof clip?.audio === 'string' ? clip.audio : '')
+      || overrides.audio_url || overrides.audioUrl || overrides.audio_src
+      || clip?.source?.audio_url || clip?.source?.audioUrl
+      || (typeof clip?.source === 'string' ? clip.source : '') || '';
+    return String(raw || '').trim();
+  }
+
+  function timelineAudioSource(clip) {
+    const overrides = clip?.overrides && typeof clip.overrides === 'object' ? clip.overrides : {};
+    return timelineExplicitAudioSource(clip)
+      || String(overrides.src || clip?.src || clip?.source?.source_url || '').trim();
+  }
+
+  function timelineTrackKind(track) {
+    return String(track?.kind || track?.type || track?.track_type || '').trim().toLowerCase();
+  }
+
+  function isAudioTimelineTrack(track) {
+    return ['audio', 'dialogue', 'voice', 'sound', 'sfx'].includes(timelineTrackKind(track));
+  }
+
+  function timelineTrackSource(track) {
+    const audio = track?.audio && typeof track.audio === 'object' ? track.audio : {};
+    return String(track?.audio_url || track?.audioUrl || track?.dialogue_audio_url || track?.dialogueAudioUrl
+      || audio.url || audio.src || track?.src || track?.url || '').trim();
+  }
+
+  function timelineManifestTracks(manifest) {
+    const tracks = Array.isArray(manifest?.tracks) ? manifest.tracks : [];
+    const audioTracks = Array.isArray(manifest?.audio_tracks)
+      ? manifest.audio_tracks
+      : (Array.isArray(manifest?.audioTracks) ? manifest.audioTracks : []);
+    return [...tracks, ...audioTracks];
   }
 
   function normalizeTimelineClip(raw, trackIndex = 0, clipIndex = 0) {
@@ -389,10 +478,10 @@ window.WorkbenchProduction = (function () {
     if (!shotId || !assetId) return null;
     const sourceShot = state.shotList.find(item => item.id === shotId || item.shot_id === shotId) || {};
     const overrides = raw.overrides && typeof raw.overrides === 'object' ? { ...raw.overrides } : {};
-    const durationValue = Number(raw.duration);
-    const duration = Number.isFinite(durationValue) && durationValue > 0 ? durationValue : 1;
-    const atValue = Number(raw.at);
-    const at = Number.isFinite(atValue) && atValue >= 0 ? atValue : 0;
+    const duration = timelineSeconds(raw.duration ?? raw.target_duration
+      ?? (raw.duration_ms == null ? undefined : Number(raw.duration_ms) / 1000));
+    const at = timelineOffsetSeconds(raw.at ?? raw.start ?? raw.start_time
+      ?? (raw.at_ms == null ? undefined : Number(raw.at_ms) / 1000));
     const imageUrl = timelineClipSource(raw) || sourceShot.imageUrl || sourceShot.img || '';
     const camera = String(overrides.camera || raw.camera || sourceShot.camera || sourceShot.shotType || sourceShot.type || '').trim();
     const movement = String(overrides.movement || raw.movement || sourceShot.movement || '').trim();
@@ -412,6 +501,7 @@ window.WorkbenchProduction = (function () {
       movement,
       duration,
       at,
+      audio_url: timelineExplicitAudioSource(raw),
       overrides,
       timeline_track_index: trackIndex,
       timeline_clip_index: clipIndex,
@@ -419,12 +509,123 @@ window.WorkbenchProduction = (function () {
     };
   }
 
+  function normalizeTimelineAudioClip(raw, trackIndex = 0, clipIndex = 0) {
+    if (!raw || typeof raw !== 'object') return null;
+    const shotId = String(raw.shot_id || raw.id || '').trim();
+    const source = timelineAudioSource(raw);
+    if (!source) return null;
+    return {
+      ...raw,
+      id: shotId,
+      shot_id: shotId,
+      asset_id: String(raw.asset_id || raw.audio_asset_id || '').trim(),
+      audio_url: source,
+      at: timelineOffsetSeconds(raw.at ?? raw.start ?? raw.start_time
+        ?? (raw.at_ms == null ? undefined : Number(raw.at_ms) / 1000)),
+      duration: timelineSeconds(raw.duration ?? raw.target_duration
+        ?? (raw.duration_ms == null ? undefined : Number(raw.duration_ms) / 1000)),
+      timeline_track_index: trackIndex,
+      timeline_clip_index: clipIndex,
+      status: 'timeline_audio'
+    };
+  }
+
   function flattenTimelineManifest(manifest) {
-    const tracks = Array.isArray(manifest?.tracks) ? manifest.tracks : [];
+    const tracks = timelineManifestTracks(manifest);
     return tracks.flatMap((track, trackIndex) => {
+      if (isAudioTimelineTrack(track)) return [];
       const clips = Array.isArray(track?.clips) ? track.clips : [];
       return clips.map((clip, clipIndex) => normalizeTimelineClip(clip, trackIndex, clipIndex)).filter(Boolean);
     }).sort((left, right) => left.at - right.at || left.timeline_track_index - right.timeline_track_index || left.timeline_clip_index - right.timeline_clip_index);
+  }
+
+  function flattenTimelineAudio(manifest) {
+    const tracks = timelineManifestTracks(manifest);
+    const clips = tracks.flatMap((track, trackIndex) => {
+      const rawClips = Array.isArray(track?.clips) ? track.clips : [];
+      const trackSource = timelineTrackSource(track);
+      return rawClips
+        .filter(clip => isAudioTimelineTrack(track)
+          || Boolean(timelineExplicitAudioSource(clip)))
+        .map((clip, clipIndex) => normalizeTimelineAudioClip(
+          trackSource && !timelineExplicitAudioSource(clip) ? { ...clip, audio_url: trackSource } : clip,
+          trackIndex,
+          clipIndex
+        ))
+        .filter(Boolean);
+    });
+    return clips.sort((left, right) => left.at - right.at || left.timeline_track_index - right.timeline_track_index || left.timeline_clip_index - right.timeline_clip_index);
+  }
+
+  function manifestAudioSource(manifest) {
+    const audio = manifest?.audio && typeof manifest.audio === 'object' ? manifest.audio : {};
+    const declared = String(manifest?.audio_url || manifest?.audioUrl || manifest?.dialogue_audio_url || manifest?.dialogueAudioUrl
+      || audio.url || audio.src || '').trim();
+    if (declared) return declared;
+    const tracks = timelineManifestTracks(manifest);
+    const audioTrack = tracks.find(isAudioTimelineTrack);
+    return timelineTrackSource(audioTrack);
+  }
+
+  function timelineAudioElement() {
+    return document.getElementById('animaticAudioTrack');
+  }
+
+  function setTimelineAudioSource(source, currentTime = 0) {
+    const audio = timelineAudioElement();
+    if (!audio) return null;
+    const normalized = String(source || '').trim();
+    if (!normalized) {
+      audio.pause?.();
+      audio.removeAttribute?.('src');
+      audio.src = '';
+      audio.currentTime = 0;
+      return audio;
+    }
+    if (audio.src !== normalized && audio.getAttribute?.('src') !== normalized) {
+      audio.src = normalized;
+      audio.setAttribute?.('src', normalized);
+      audio.load?.();
+    }
+    try { audio.currentTime = Math.max(0, Number(currentTime) || 0); } catch (_) { /* 浏览器尚未加载媒体时忽略定位 */ }
+    audio.setAttribute?.('data-animatic-source', normalized);
+    return audio;
+  }
+
+  function timelineAudioForClip(clip) {
+    if (!clip) return null;
+    return state.timelineAudioClips.find(item => item.shot_id && item.shot_id === clip.shot_id)
+      || state.timelineAudioClips.find(item => item.at <= clip.at && item.at + item.duration > clip.at)
+      || null;
+  }
+
+  function syncTimelineAudio(index, { autoplay = false } = {}) {
+    const audio = timelineAudioElement();
+    if (!audio) return null;
+    const clip = state.timelineClips[index];
+    if (!clip) {
+      audio.pause?.();
+      return null;
+    }
+    const audioClip = timelineAudioForClip(clip);
+    const source = state.timelineAudioSource || audioClip?.audio_url || clip.audio_url || '';
+    if (!source) {
+      audio.pause?.();
+      audio.removeAttribute?.('data-animatic-source');
+      audio.setAttribute?.('data-gw-degradation', 'not_integrated');
+      return null;
+    }
+    const offset = state.timelineAudioSource ? clip.at : Math.max(0, Number(clip.at) - Number(audioClip?.at || 0));
+    setTimelineAudioSource(source, offset);
+    audio.removeAttribute?.('data-gw-degradation');
+    audio.setAttribute?.('data-animatic-shot', clip.shot_id);
+    if (autoplay && typeof audio.play === 'function') {
+      const playResult = audio.play();
+      if (playResult && typeof playResult.catch === 'function') {
+        playResult.catch(() => setTimelinePlaybackStatus('点击“连续播放”启用对白音频', 'blocked'));
+      }
+    }
+    return audioClip || { audio_url: source, at: offset };
   }
 
   function applyTimelineClip(index, { render = true } = {}) {
@@ -447,6 +648,8 @@ window.WorkbenchProduction = (function () {
       duration: clip.duration,
       overrides: clip.overrides
     });
+    syncTimelineAudio(index, { autoplay: state.timelinePlaying });
+    updateAnimaticFader();
     if (render) renderShots();
     return state.currentShot;
   }
@@ -455,6 +658,8 @@ window.WorkbenchProduction = (function () {
     stopTimeline();
     state.timelineManifest = null;
     state.timelineClips = [];
+    state.timelineAudioClips = [];
+    state.timelineAudioSource = '';
     state.activeTimelineIndex = -1;
     setTimelinePlaybackStatus('读取时间线…');
     if (!pipelineId) {
@@ -473,6 +678,11 @@ window.WorkbenchProduction = (function () {
       }
       state.timelineManifest = manifest;
       state.timelineClips = clips;
+      state.timelineAudioClips = flattenTimelineAudio(manifest);
+      state.timelineAudioSource = manifestAudioSource(manifest);
+      if (!state.timelineAudioSource && state.timelineAudioClips.length === 1 && !state.timelineAudioClips[0].shot_id) {
+        state.timelineAudioSource = state.timelineAudioClips[0].audio_url;
+      }
       state.activeTimelineIndex = 0;
       applyTimelineClip(0, { render: false });
       setTimelinePlaybackStatus(`已载入 ${clips.length} 镜`);
@@ -481,6 +691,8 @@ window.WorkbenchProduction = (function () {
     } catch (error) {
       state.timelineManifest = null;
       state.timelineClips = [];
+      state.timelineAudioClips = [];
+      state.timelineAudioSource = '';
       state.activeTimelineIndex = -1;
       setTimelinePlaybackStatus('时间线未接入', 'not_integrated');
       renderShots();
@@ -492,12 +704,14 @@ window.WorkbenchProduction = (function () {
     if (!state.timelinePlaying || !state.timelineClips.length) return;
     if (state.timelineTimer) window.clearTimeout?.(state.timelineTimer);
     const current = state.timelineClips[state.activeTimelineIndex] || state.timelineClips[0];
-    const delay = Math.max(1, Number(current?.duration || 1)) * 1000;
+    const delay = timelineSeconds(current?.duration) * 1000;
     state.timelineTimer = window.setTimeout(function timelineAdvance() {
       state.timelineTimer = null;
       if (!state.timelinePlaying) return;
       if (state.activeTimelineIndex >= state.timelineClips.length - 1) {
         state.timelinePlaying = false;
+        syncTimelineAudio(state.activeTimelineIndex, { autoplay: false });
+        timelineAudioElement()?.pause?.();
         setTimelinePlaybackStatus(`播放完成 · ${state.timelineClips.length} 镜`);
         return;
       }
@@ -516,6 +730,7 @@ window.WorkbenchProduction = (function () {
       applyTimelineClip(0);
     }
     state.timelinePlaying = true;
+    syncTimelineAudio(state.activeTimelineIndex, { autoplay: true });
     setTimelinePlaybackStatus(`连播中 · ${state.activeTimelineIndex + 1}/${state.timelineClips.length}`);
     scheduleTimelineAdvance();
     return state.timelineClips[state.activeTimelineIndex];
@@ -525,6 +740,11 @@ window.WorkbenchProduction = (function () {
     if (state.timelineTimer) window.clearTimeout?.(state.timelineTimer);
     state.timelineTimer = null;
     state.timelinePlaying = false;
+    const audio = timelineAudioElement();
+    if (audio) {
+      audio.pause?.();
+      try { audio.currentTime = 0; } catch (_) { /* 浏览器尚未加载媒体时忽略复位 */ }
+    }
     if (state.timelineClips.length && state.activeTimelineIndex >= 0) {
       setTimelinePlaybackStatus(`已载入 ${state.timelineClips.length} 镜`);
     }
@@ -1250,14 +1470,14 @@ window.WorkbenchProduction = (function () {
       const label = [camera, movement].filter(Boolean).join(' · ');
       return `
         <div class="bay-inset p-1 rounded-lg cursor-pointer transition ${isActive ? 'border-2 border-[#dfc384]' : 'border border-white/5 hover:border-white/20'}"
-             data-timeline-index="${isTimeline ? index : ''}" data-timeline-active="${isActive}" onclick="${isTimeline ? `WorkbenchProduction.selectTimelineClip(${index})` : `WorkbenchProduction.selectShot('${esc(sh.id)}')`}">
+             data-animatic-track="picture" data-timeline-index="${isTimeline ? index : ''}" data-timeline-active="${isActive}" aria-current="${isActive ? 'true' : 'false'}" onclick="${isTimeline ? `WorkbenchProduction.selectTimelineClip(${index})` : `WorkbenchProduction.selectShot('${esc(sh.id)}')`}">
           <div class="h-12 w-full rounded overflow-hidden mb-1 relative bg-black">
             ${sh.img ? `<img src="${esc(sh.img)}" class="w-full h-full object-cover" alt="${esc(sh.name || sh.id)}">` : '<div class="w-full h-full flex items-center justify-center text-slate-500">未接入</div>'}
             <span class="absolute bottom-0.5 right-0.5 gw-type-body-sm font-mono px-1 rounded bg-black/80 text-[#eddab3]">${esc(label || sh.type || '镜头')}</span>
           </div>
           <div class="flex items-center justify-between gw-type-body-sm font-mono">
             <span class="${isActive ? 'text-[#dfc384] font-bold' : 'text-slate-400'}">${esc(sh.code || sh.id)}</span>
-            <span class="${sh.status === 'queued' ? 'text-amber-300' : 'text-slate-400'}"${sh.status === 'not_integrated' ? ' data-gw-degradation="not_integrated"' : ''}>${isTimeline ? `${Number(sh.duration || 0)}s` : (sh.status === 'queued' ? '排队' : (sh.status === 'not_integrated' ? '未接入' : esc(sh.status)))}</span>
+            <span class="${sh.status === 'queued' ? 'text-amber-300' : 'text-slate-400'}"${sh.status === 'not_integrated' ? ' data-gw-degradation="not_integrated"' : ''}>${isTimeline ? `${timelineSeconds(sh.duration)}s` : (sh.status === 'queued' ? '排队' : (sh.status === 'not_integrated' ? '未接入' : esc(sh.status)))}</span>
           </div>
         </div>
       `;
@@ -1311,6 +1531,7 @@ window.WorkbenchProduction = (function () {
       movement: shot.movement || shot.camera_movement || '',
       duration: shot.duration ?? null,
       at: shot.at ?? null,
+      audio_url: timelineExplicitAudioSource(shot),
       overrides: shot.overrides && typeof shot.overrides === 'object' ? { ...shot.overrides } : {},
       status: String(shot.status || 'unknown').toLowerCase(),
       next_action: shot.next_action || nextActionForReview(String(shot.status || '').toLowerCase()),

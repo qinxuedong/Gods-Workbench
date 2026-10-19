@@ -163,7 +163,7 @@
       <div class="flex items-center space-x-4 shrink-0">
         <div class="flex items-center space-x-2">
           <span class="gw-type-body-sm font-mono text-slate-400 font-bold">STAGE</span>
-          <div class="hw-fader-track-horizontal w-28">
+          <div class="hw-fader-track-horizontal w-28" id="animaticStageFader" data-animatic-fader="stage" aria-label="样片播放进度">
             <div class="hw-fader-glow-bar" style="width: 0%;"></div>
             <div class="hw-fader-thumb-3d" style="left: 0%;"></div>
           </div>
@@ -351,8 +351,9 @@
           </div>
 
           <!-- 4K 电影画幅主视窗 -->
-          <div class="flex-1 min-h-0 my-2 rounded-xl bg-black border border-white/10 relative overflow-hidden flex items-center justify-center group shadow-inner">
+          <div class="flex-1 min-h-0 my-2 rounded-xl bg-black border border-white/10 relative overflow-hidden flex items-center justify-center group shadow-inner" data-animatic-player="wide-screen" data-animatic-track="picture">
             <img id="mainMonitorImage" src="data:image/svg+xml;charset=UTF-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22640%22%20height%3D%22360%22%20viewBox%3D%220%200%20640%20360%22%3E%3Crect%20width%3D%22640%22%20height%3D%22360%22%20fill%3D%22%23111418%22%2F%3E%3Crect%20x%3D%2224%22%20y%3D%2224%22%20width%3D%22592%22%20height%3D%22312%22%20rx%3D%2212%22%20fill%3D%22none%22%20stroke%3D%22%23534a38%22%2F%3E%3Cpath%20d%3D%22M224%20220l64-72%2064%2048%2056-64%2080%2088z%22%20fill%3D%22%23302c24%22%2F%3E%3Ccircle%20cx%3D%22248%22%20cy%3D%22116%22%20r%3D%2220%22%20fill%3D%22%23534a38%22%2F%3E%3Ctext%20x%3D%22320%22%20y%3D%22286%22%20text-anchor%3D%22middle%22%20font-family%3D%22sans-serif%22%20style%3D%22font-size%3Avar(--gw-type-body-md%2C14px)%22%20fill%3D%22%23b3a68c%22%3E%E7%A4%BA%E4%BE%8B%E5%8D%A0%E4%BD%8D%3C%2Ftext%3E%3C%2Fsvg%3E" class="w-full h-full object-cover" alt="示例占位：镜头预览">
+            <audio id="animaticAudioTrack" class="sr-only" preload="auto" data-animatic-track="dialogue" aria-label="对白音频轨道"></audio>
 
             <!-- 电影辅助线刻度 -->
             <div class="absolute inset-0 pointer-events-none border border-white/10 flex items-center justify-center">
@@ -381,10 +382,10 @@
           </div>
 
           <!-- 底部多机位/分镜轨道 -->
-          <div class="shrink-0 pt-1 border-t border-white/5">
+          <div class="shrink-0 pt-1 border-t border-white/5" data-animatic-player="timeline">
             <div class="flex items-center justify-between gw-type-body-sm font-mono text-slate-400 mb-1.5">
               <div class="flex items-center space-x-2 min-w-0">
-                <span>时间线镜头轨道 (TIMELINE TRACK)</span>
+                <span data-animatic-track="picture">多轨样片画面轨道 (PICTURE TRACK)</span>
                 <span id="timelinePlaybackStatus" class="text-amber-300" role="status" aria-live="polite" data-gw-degradation="not_integrated">时间线未接入</span>
               </div>
               <div class="flex items-center space-x-1.5 shrink-0">
@@ -392,7 +393,7 @@
                 <button type="button" class="hw-btn btn-size-sm" id="timelineStopToggle" onclick="WorkbenchProduction.stopTimeline()">停止</button>
               </div>
             </div>
-            <div class="grid grid-cols-6 gap-2" id="shotTrackList">
+            <div class="grid grid-cols-6 gap-2" id="shotTrackList" data-animatic-track="picture">
               <!-- 动态镜头缩略轨 -->
             </div>
           </div>
