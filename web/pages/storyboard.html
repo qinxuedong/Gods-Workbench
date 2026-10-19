@@ -8,6 +8,8 @@
   <title>分镜画布矩阵 · Gods' Workbench</title>
   <script src="/static/vendor/js/tailwindcss-cdn.js?v=3.4.17&amp;build=d11003b2f6fb"></script>
   <script src="/static/vendor/js/lucide.js?v=1.16.0"></script>
+  <script src="/static/js/modules/topdown-radar.js?v=20261019-c13-t3"></script>
+  <script src="/static/js/nodes/canvas-radar-node.js?v=20261019-c13-t3"></script>
   <link rel="stylesheet" href="/static/css/base/hardware-design-system.css?ui=20261011-final">
   <link rel="stylesheet" href="/static/css/pages/canvas-workspace.css?v=20261010-v1">
   <style>
@@ -23,6 +25,16 @@
     .canvas-rail-item { width: 100%; margin: 2px 0; justify-content: flex-start; text-align: left; }
     .canvas-rail-item > svg { width: 14px; height: 14px; flex: 0 0 14px; }
     #storyboardWorkspace, #storyboardMain { min-width: 0; }
+    .radar-panel-shell { width: 100%; max-width: 980px; min-height: 0; text-align: left; }
+    .radar-panel-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+    .radar-panel-meta { display: flex; gap: 8px; flex-wrap: wrap; color: #94a3b8; font: 500 var(--gw-type-label-md)/1.2 var(--gw-font-mono); }
+    .radar-panel-meta strong { color: #eddab3; }
+    [data-radar-panel] [data-radar-host] { min-height: 280px; overflow: hidden; border: 1px solid rgba(223,195,132,.2); border-radius: 12px; background: #080a0e; }
+    [data-radar-panel] [data-radar-host] svg { display: block; width: 100%; height: auto; min-height: 280px; }
+    .radar-shot-list { display: flex; gap: 6px; flex-wrap: wrap; }
+    .radar-shot-link { display: inline-flex; align-items: center; gap: 5px; color: #7dd3fc; font: 600 var(--gw-type-label-md)/1.2 var(--gw-font-mono); }
+    .radar-shot-link[data-radar-alert="axis-crossing"] { color: #fca5a5; }
+    .radar-node-inline-link { margin-left: 6px; }
     @media (max-width: 760px) {
       body.canvas-overview-mode { padding-inline: 0 !important; }
       body.canvas-overview-mode .topbar-master-deck { padding-inline: 4px !important; }
@@ -494,20 +506,10 @@
 
       if (toolId === 'radar') {
         titleEl.textContent = '2D 顶视机位雷达 (Previs 预演)';
-        bodyEl.innerHTML = `
-          <div class="max-w-md space-y-3">
-            <div class="w-16 h-16 rounded-2xl bg-[#dfc384]/10 border border-[#dfc384]/30 flex items-center justify-center mx-auto text-[#dfc384]">
-              <i data-lucide="compass" class="w-8 h-8"></i>
-            </div>
-            <h3 class="text-slate-100 gw-type-section">原生 2D HTML5 Canvas 机位雷达</h3>
-            <p class="text-slate-400 gw-type-body-sm leading-relaxed">
-              支持在网格标尺舞台上拖拽摄像机视锥箭头与演员目标点，实时解算视角 FOV 与俯仰角，导出标准 CameraCtrl / Wan2.1 轨迹 JSON。
-            </p>
-            <div class="p-3 bg-[#07080b] rounded-lg border border-white/10 text-left font-mono gw-type-body-sm text-amber-300">
-              [P2 分镜增强] 遵循 3D-ASSET-PREVIS-AND-STORYBOARD-SPEC 规范构建中
-            </div>
-          </div>
-        `;
+        renderRadarPanel(bodyEl);
+        window.setTimeout(() => {
+          if (!toolContainer?.hidden) renderRadarPanel(bodyEl);
+        }, 0);
       } else if (toolId === 'palette') {
         titleEl.textContent = '色彩管理与调色板';
         bodyEl.innerHTML = `
@@ -536,6 +538,144 @@
         `;
       }
       if (window.lucide) lucide.createIcons();
+    }
+
+    function radarCameraForShot(shot) {
+      if (!shot || typeof shot !== 'object') return null;
+      const metadata = shot.metadata && typeof shot.metadata === 'object' ? shot.metadata : {};
+      const camera = shot.camera_radar || shot.camera_position || metadata.camera || metadata.camera_position;
+      return camera && typeof camera === 'object' ? camera : null;
+    }
+
+    function radarSubjectForShot(shot) {
+      if (!shot || typeof shot !== 'object') return null;
+      const metadata = shot.metadata && typeof shot.metadata === 'object' ? shot.metadata : {};
+      const subject = shot.subject_position || shot.subject || metadata.subject || metadata.subject_position;
+      return subject && typeof subject === 'object' ? subject : null;
+    }
+
+    function renderRadarPanel(bodyEl) {
+      if (!bodyEl) return;
+      const storyboardState = window.WorkbenchStoryboard?.getState?.() || {shots: []};
+      const shots = Array.isArray(storyboardState.shots) ? storyboardState.shots : [];
+      const requestedShotId = String(storyboardParams.get('shot_id') || '').trim();
+      const shotIndex = Math.max(0, shots.findIndex(shot => String(shot?.id || shot?.shot_id || '') === requestedShotId));
+      const shot = shots[shotIndex] || shots[0] || null;
+      const camera = radarCameraForShot(shot);
+      const subject = radarSubjectForShot(shot);
+      const previousShot = shotIndex > 0 ? shots[shotIndex - 1] : null;
+      const previousCamera = radarCameraForShot(previousShot);
+      const projectId = String(storyboardState.projectId || storyboardParams.get('project_id') || '').trim();
+      const shotId = String(shot?.id || shot?.shot_id || '').trim();
+
+      if (!shot || !camera || !subject || !window.TopDownRadar || !window.CameraRadarNode) {
+        bodyEl.innerHTML = `
+          <div class="radar-panel-shell space-y-3" data-radar-panel>
+            <div class="flex items-center gap-3">
+              <div class="w-12 h-12 rounded-2xl bg-[#dfc384]/10 border border-[#dfc384]/30 flex items-center justify-center text-[#dfc384]"><i data-lucide="compass" class="w-6 h-6"></i></div>
+              <div><h3 class="text-slate-100 gw-type-section">原生 SVG 2D 顶视机位雷达</h3><p class="text-slate-400 gw-type-body-sm">读取分镜的 ASC 机位坐标、主体锚点与动作轴。</p></div>
+            </div>
+            <div class="p-4 rounded-xl border border-amber-300/20 bg-[#07080b] text-amber-200 gw-type-body-sm" data-gw-degradation="not_integrated">${shot ? '当前分镜缺少可用机位或主体坐标，雷达保持未接入。' : '分镜数据未接入，雷达等待真实机位元数据。'}</div>
+          </div>`;
+        window.lucide?.createIcons();
+        return null;
+      }
+
+      const node = window.CameraRadarNode.createCameraRadarNode({
+        entity_id: shot.entity_id || `camera-radar-${shotId}`,
+        project_id: projectId,
+        canvas_id: shot.canvas_id || storyboardParams.get('canvas_id') || '',
+        shot_id: shotId,
+        camera,
+        subject,
+        previousCamera,
+        axisAngle: shot.action_axis ?? shot.axis_angle ?? shot.metadata?.axis_angle ?? 0
+      });
+      const focusUrl = window.CameraRadarNode.buildCanvasFocusUrl(node, {origin: location.origin});
+      // Deep-Link 形态：canvas.html?project_id=...&focus_node=...，保持项目上下文。
+      const model = window.TopDownRadar.createRadarModel(camera, {
+        subject,
+        previousCamera,
+        axisAngle: node.metadata.axis_angle
+      });
+      bodyEl.innerHTML = `
+        <div class="radar-panel-shell space-y-3" data-radar-panel data-radar-alert="${model.crossesAxis ? 'axis-crossing' : 'safe'}">
+          <div class="radar-panel-toolbar">
+            <div><h3 class="text-slate-100 gw-type-section">原生 SVG 2D 顶视机位雷达</h3><p class="text-slate-400 gw-type-body-sm">视锥 FOV、主体朝向与相邻镜头动作轴实时核验。</p></div>
+            <a class="hw-btn hw-btn-sm hw-btn-gold" data-radar-canvas-link href="${focusUrl}">在画布中调走位</a>
+          </div>
+          <div class="radar-panel-meta"><span>镜头 <strong>${shotId}</strong></span><span>heading <strong>${model.camera.heading}°</strong></span><span>FOV <strong>${model.camera.fov}°</strong></span><span data-radar-status class="${model.crossesAxis ? 'text-red-300' : 'text-emerald-300'}">${model.crossesAxis ? '180° 越轴警示' : '动作轴安全'}</span></div>
+          <div data-radar-host aria-label="${model.crossesAxis ? '180 度动作轴越轴警示' : '2D 顶视机位雷达'}"></div>
+          <div class="radar-shot-list" data-radar-shot-links aria-label="相邻镜头雷达入口"></div>
+        </div>`;
+      window.TopDownRadar.renderRadar(bodyEl.querySelector('[data-radar-host]'), camera, {
+        subject,
+        previousCamera,
+        axisAngle: node.metadata.axis_angle
+      });
+      const links = bodyEl.querySelector('[data-radar-shot-links]');
+      shots.forEach((candidate, index) => {
+        const candidateCamera = radarCameraForShot(candidate);
+        const candidateSubject = radarSubjectForShot(candidate);
+        if (!candidateCamera || !candidateSubject) return;
+        const candidateId = String(candidate.id || candidate.shot_id || '').trim();
+        const candidateNode = window.CameraRadarNode.createCameraRadarNode({
+          entity_id: candidate.entity_id || `camera-radar-${candidateId}`,
+          project_id: projectId,
+          canvas_id: candidate.canvas_id || node.canvas_id,
+          shot_id: candidateId,
+          camera: candidateCamera,
+          subject: candidateSubject,
+          previousCamera: index > 0 ? radarCameraForShot(shots[index - 1]) : null,
+          axisAngle: candidate.action_axis ?? candidate.axis_angle ?? candidate.metadata?.axis_angle ?? 0
+        });
+        const link = document.createElement('a');
+        link.className = 'hw-btn hw-btn-sm radar-shot-link';
+        link.href = window.CameraRadarNode.buildCanvasFocusUrl(candidateNode, {origin: location.origin});
+        link.dataset.radarAlert = candidateNode.metadata.crosses_axis ? 'axis-crossing' : 'safe';
+        link.textContent = candidateId;
+        links?.appendChild(link);
+      });
+      window.lucide?.createIcons();
+      return node;
+    }
+
+    window.__gwRenderRadarPanel = renderRadarPanel;
+
+    function enhanceStoryboardRadarLinks() {
+      const storyboardState = window.WorkbenchStoryboard?.getState?.();
+      const grid = document.getElementById('storyboardGrid');
+      if (!storyboardState || !grid || !window.CameraRadarNode) return;
+      (storyboardState.shots || []).forEach(shot => {
+        const shotId = String(shot?.id || shot?.shot_id || '').trim();
+        const camera = radarCameraForShot(shot);
+        const subject = radarSubjectForShot(shot);
+        if (!shotId || !camera || !subject) return;
+        const card = [...grid.querySelectorAll('[data-storyboard-shot]')].find(item => item.dataset.storyboardShot === shotId);
+        if (!card || card.querySelector('[data-shot-radar-link]')) return;
+        const node = window.CameraRadarNode.createCameraRadarNode({
+          entity_id: shot.entity_id || `camera-radar-${shotId}`,
+          project_id: storyboardState.projectId || storyboardParams.get('project_id') || '',
+          canvas_id: shot.canvas_id || storyboardParams.get('canvas_id') || '',
+          shot_id: shotId,
+          camera,
+          subject
+        });
+        const target = card.querySelector('.pt-1\.5.border-t') || card.lastElementChild;
+        if (!target) return;
+        const link = document.createElement('a');
+        link.className = 'hw-btn hw-btn-sm radar-node-inline-link';
+        link.dataset.shotRadarLink = shotId;
+        link.href = window.CameraRadarNode.buildCanvasFocusUrl(node, {origin: location.origin});
+        link.textContent = '调机位';
+        target.querySelector?.('.flex.items-center.space-x-1\.5')?.appendChild(link);
+      });
+    }
+
+    window.setTimeout(enhanceStoryboardRadarLinks, 0);
+    const radarGrid = document.getElementById('storyboardGrid');
+    if (radarGrid && window.MutationObserver) {
+      new MutationObserver(enhanceStoryboardRadarLinks).observe(radarGrid, {childList: true, subtree: true});
     }
 
     window.exitCanvasWorkspace = function exitCanvasWorkspace() {
