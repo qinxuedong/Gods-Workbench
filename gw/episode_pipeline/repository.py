@@ -29,10 +29,12 @@ from __future__ import annotations
 
 import hashlib
 import json
-from typing import Any, Dict, List, Optional
+import math
+from typing import Any, Dict, List, Mapping, Optional
 
 from gw.core import storage
 from gw.core.errors import CleanroomException, VersionConflictException
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 
 NS = "episode_pipeline"
 DATA_STATUS_OK = "ok"
@@ -64,7 +66,16 @@ def state() -> storage.JsonState:
 
 
 def _blank() -> Dict[str, Any]:
-    return {"revision": 1, "pipelines": {}, "stages": {}, "shots": {}, "seq": 0, "shot_seq": 0}
+    return {
+        "revision": 1,
+        "pipelines": {},
+        "stages": {},
+        "shots": {},
+        "timeline_manifests": {},
+        "seq": 0,
+        "shot_seq": 0,
+        "timeline_seq": 0,
+    }
 
 
 def _bump(raw: Dict[str, Any]) -> int:
@@ -245,6 +256,272 @@ def get_pipeline(pipeline_id: str) -> Dict[str, Any]:
         raise CleanroomException(404, "PIPELINE_NOT_FOUND", "剧集流水线不存在")
     pipeline = _pipeline_view(raw, item)
     return {"pipeline": pipeline, "revision": raw["revision"]}
+
+
+# ---------------------------------------------------------------------------
+# C12-T3 OpenFilm timeline_manifest
+# ---------------------------------------------------------------------------
+
+
+def _timeline_identifier(value: str, field_name: str) -> str:
+    """校验时间线清单中的稳定 ASCII 长标识。"""
+    if not isinstance(value, str):
+        raise ValueError(f"{field_name} 必须是字符串")
+    value = value.strip()
+    if not value or len(value) > 128 or not value.isascii() or any(ch.isspace() for ch in value):
+        raise ValueError(f"{field_name} 必须是非空 ASCII 标识")
+    return value
+
+
+class TimelineClip(BaseModel):
+    """OpenFilm 轻量时间线中的单镜头片段。"""
+
+    model_config = ConfigDict(extra="allow")
+
+    shot_id: str = Field(..., min_length=1, max_length=128)
+    asset_id: str = Field(..., min_length=1, max_length=128)
+    at: float = Field(..., ge=0)
+    duration: float = Field(..., gt=0)
+    overrides: Dict[str, Any] = Field(default_factory=dict)
+
+    @field_validator("shot_id", "asset_id")
+    @classmethod
+    def validate_identifier(cls, value: str, info):
+        return _timeline_identifier(value, info.field_name)
+
+    @field_validator("at", "duration")
+    @classmethod
+    def validate_finite_time(cls, value: float, info):
+        if not math.isfinite(value):
+            raise ValueError(f"{info.field_name} 必须是有限数字")
+        return value
+
+    @field_validator("overrides")
+    @classmethod
+    def validate_overrides(cls, value: Dict[str, Any]):
+        if not isinstance(value, dict):
+            raise ValueError("overrides 必须是对象")
+        return value
+
+
+class TimelineTrack(BaseModel):
+    """OpenFilm 时间线轨道；当前首片以静态图 video 轨为主。"""
+
+    model_config = ConfigDict(extra="allow")
+
+    track_id: str = Field(..., min_length=1, max_length=128)
+    kind: str = Field(default="video", min_length=1, max_length=32)
+    clips: List[TimelineClip] = Field(default_factory=list)
+
+    @field_validator("track_id")
+    @classmethod
+    def validate_track_identifier(cls, value: str):
+        return _timeline_identifier(value, "track_id")
+
+    @field_validator("kind")
+    @classmethod
+    def validate_kind(cls, value: str):
+        value = value.strip().lower()
+        if not value or not value.isascii() or any(ch.isspace() for ch in value):
+            raise ValueError("kind 必须是非空 ASCII 标识")
+        return value
+
+
+class TimelineManifest(BaseModel):
+    """可持久化的 OpenFilm timeline_manifest 数据模型。"""
+
+    model_config = ConfigDict(extra="allow")
+
+    manifest_id: str = Field(..., min_length=1, max_length=128)
+    pipeline_id: str = Field(..., min_length=1, max_length=128)
+    project_id: str = Field(..., min_length=1, max_length=128)
+    schema_version: str = Field(default="openfilm.timeline_manifest.v1", min_length=1, max_length=64)
+    version: int = Field(default=1, ge=1)
+    tracks: List[TimelineTrack] = Field(..., min_length=1)
+    metadata: Dict[str, Any] = Field(default_factory=dict)
+    created_at: Optional[str] = None
+    updated_at: Optional[str] = None
+
+    @field_validator("manifest_id", "pipeline_id", "project_id")
+    @classmethod
+    def validate_manifest_identifier(cls, value: str, info):
+        return _timeline_identifier(value, info.field_name)
+
+    @field_validator("schema_version")
+    @classmethod
+    def validate_schema_version(cls, value: str):
+        if not value.isascii() or any(ch.isspace() for ch in value):
+            raise ValueError("schema_version 必须是 ASCII 标识")
+        return value
+
+
+def _ensure_timeline_state(raw: Dict[str, Any]) -> None:
+    """兼容 C12-T3 之前已落盘的 episode_pipeline 快照。"""
+    if not isinstance(raw.get("timeline_manifests"), dict):
+        raw["timeline_manifests"] = {}
+    if not isinstance(raw.get("timeline_seq"), int):
+        raw["timeline_seq"] = 0
+
+
+def _timeline_response(raw: Dict[str, Any], manifest: Dict[str, Any]) -> Dict[str, Any]:
+    """统一时间线响应，同时保留顶层字段方便现有前端逐步接入。"""
+    clean = dict(manifest)
+    response = {
+        "timeline_manifest": clean,
+        "manifest": clean,
+        "revision": int(raw.get("revision") or 1),
+        "data_status": DATA_STATUS_OK,
+        "data_gaps": [],
+    }
+    response.update(clean)
+    return response
+
+
+def _timeline_payload(payload: Mapping[str, Any]) -> tuple[Dict[str, Any], Any]:
+    """兼容直接 body 与 {timeline_manifest, expected_version} 两种输入。"""
+    if not isinstance(payload, Mapping):
+        raise CleanroomException(400, "INVALID_TIMELINE_MANIFEST", "timeline_manifest 请求体必须是对象")
+    outer = dict(payload)
+    nested = outer.get("timeline_manifest")
+    if not isinstance(nested, Mapping):
+        nested = outer.get("manifest")
+    data = dict(nested) if isinstance(nested, Mapping) else dict(outer)
+    expected = outer.get("expected_version", data.pop("expected_version", None))
+    tracks = data.get("tracks")
+    if tracks is None:
+        clips = data.get("clips")
+        if clips is None:
+            clips = data.get("shots")
+        if clips is not None:
+            tracks = [{"track_id": "video-01", "kind": "video", "clips": clips}]
+            data["tracks"] = tracks
+    if not isinstance(data.get("tracks"), list) or not data["tracks"]:
+        raise CleanroomException(400, "INVALID_TIMELINE_MANIFEST", "timeline_manifest 至少需要一个轨道")
+    normalized_tracks = []
+    for index, track in enumerate(data["tracks"], start=1):
+        if not isinstance(track, Mapping):
+            raise CleanroomException(400, "INVALID_TIMELINE_MANIFEST", "轨道必须是对象")
+        item = dict(track)
+        item.setdefault("track_id", f"track-{index:02d}")
+        if "clips" not in item and "segments" in item:
+            item["clips"] = item.pop("segments")
+        normalized_tracks.append(item)
+    data["tracks"] = normalized_tracks
+    return data, expected
+
+
+def _validated_timeline(
+    raw: Dict[str, Any], pipeline_id: str, payload: Mapping[str, Any], *, version: int, manifest_id: str,
+    now: str,
+) -> Dict[str, Any]:
+    pipeline = raw.get("pipelines", {}).get(pipeline_id)
+    if pipeline is None:
+        raise CleanroomException(404, "PIPELINE_NOT_FOUND", "剧集流水线不存在")
+    data, _ = _timeline_payload(payload)
+    supplied_pipeline = data.get("pipeline_id")
+    if supplied_pipeline not in (None, "", pipeline_id):
+        raise CleanroomException(400, "INVALID_TIMELINE_MANIFEST", "pipeline_id 与路径不一致")
+    supplied_project = data.get("project_id")
+    project_id = str(pipeline.get("project_id") or "")
+    if supplied_project not in (None, "", project_id):
+        raise CleanroomException(403, "PROJECT_CONTEXT_MISMATCH", "时间线项目与流水线项目不一致")
+    data["manifest_id"] = str(data.get("manifest_id") or manifest_id)
+    data["pipeline_id"] = pipeline_id
+    data["project_id"] = project_id
+    data["version"] = version
+    data["created_at"] = data.get("created_at") or now
+    data["updated_at"] = now
+    try:
+        model = TimelineManifest.model_validate(data)
+    except ValidationError:
+        raise CleanroomException(400, "INVALID_TIMELINE_MANIFEST", "timeline_manifest 结构不合法") from None
+    tracks = model.tracks
+    track_ids = [track.track_id for track in tracks]
+    shot_ids = [clip.shot_id for track in tracks for clip in track.clips]
+    if len(track_ids) != len(set(track_ids)) or len(shot_ids) != len(set(shot_ids)):
+        raise CleanroomException(400, "INVALID_TIMELINE_MANIFEST", "轨道与 shot_id 必须唯一")
+    return model.model_dump(mode="json", exclude_none=True)
+
+
+def _required_timeline_version(value: Any) -> int:
+    if isinstance(value, bool) or not isinstance(value, int) or value < 1:
+        raise CleanroomException(400, "INVALID_VERSION", "expected_version 必须为正整数")
+    return value
+
+
+def create_timeline_manifest(pipeline_id: str, payload: Mapping[str, Any]) -> Dict[str, Any]:
+    """创建并持久化一个 OpenFilm timeline_manifest。"""
+    def mutate(raw: Dict[str, Any]) -> Dict[str, Any]:
+        _ensure_timeline_state(raw)
+        if pipeline_id not in raw.get("pipelines", {}):
+            raise CleanroomException(404, "PIPELINE_NOT_FOUND", "剧集流水线不存在")
+        existing_id = next(
+            (key for key, value in raw["timeline_manifests"].items() if value.get("pipeline_id") == pipeline_id),
+            None,
+        )
+        if existing_id is not None:
+            raise CleanroomException(409, "TIMELINE_MANIFEST_EXISTS", "该流水线已有 timeline_manifest")
+        raw["timeline_seq"] = int(raw.get("timeline_seq") or 0) + 1
+        manifest_id = "timeline-%04d" % raw["timeline_seq"]
+        now = storage.now_iso()
+        manifest = _validated_timeline(raw, pipeline_id, payload, version=1, manifest_id=manifest_id, now=now)
+        raw["timeline_manifests"][manifest_id] = manifest
+        _bump(raw)
+        return _timeline_response(raw, manifest)
+
+    return state().mutate(mutate)
+
+
+def get_timeline_manifest(pipeline_id: str) -> Dict[str, Any]:
+    """读取流水线的 timeline_manifest；不存在时明确 404。"""
+    raw = state().read()
+    _ensure_timeline_state(raw)
+    if pipeline_id not in raw.get("pipelines", {}):
+        raise CleanroomException(404, "PIPELINE_NOT_FOUND", "剧集流水线不存在")
+    manifest = next(
+        (value for value in raw["timeline_manifests"].values() if value.get("pipeline_id") == pipeline_id),
+        None,
+    )
+    if manifest is None:
+        raise CleanroomException(404, "TIMELINE_MANIFEST_NOT_FOUND", "timeline_manifest 不存在")
+    return _timeline_response(raw, manifest)
+
+
+def update_timeline_manifest(pipeline_id: str, payload: Mapping[str, Any]) -> Dict[str, Any]:
+    """以 expected_version CAS 更新现有 timeline_manifest。"""
+    data, expected = _timeline_payload(payload)
+    if expected is None:
+        raise CleanroomException(400, "EXPECTED_VERSION_REQUIRED", "更新 timeline_manifest 必须携带 expected_version")
+    expected_int = _required_timeline_version(expected)
+
+    def mutate(raw: Dict[str, Any]) -> Dict[str, Any]:
+        _ensure_timeline_state(raw)
+        if pipeline_id not in raw.get("pipelines", {}):
+            raise CleanroomException(404, "PIPELINE_NOT_FOUND", "剧集流水线不存在")
+        manifest = next(
+            (value for value in raw["timeline_manifests"].values() if value.get("pipeline_id") == pipeline_id),
+            None,
+        )
+        if manifest is None:
+            raise CleanroomException(404, "TIMELINE_MANIFEST_NOT_FOUND", "timeline_manifest 不存在")
+        current = int(manifest.get("version") or 1)
+        if expected_int != current:
+            raise VersionConflictException(expected_int, current, "timeline_manifest 版本冲突，请重新读取后重试")
+        now = storage.now_iso()
+        updated = _validated_timeline(
+            raw, pipeline_id, data, version=current + 1,
+            manifest_id=str(manifest.get("manifest_id") or ""), now=now,
+        )
+        raw["timeline_manifests"][updated["manifest_id"]] = updated
+        _bump(raw)
+        return _timeline_response(raw, updated)
+
+    return state().mutate(mutate)
+
+
+# 便于仓储调用方使用更语义化的名称；仍共享同一 JSON 命名空间与 CAS 实现。
+initialize_timeline_manifest = create_timeline_manifest
+list_timeline_manifest = get_timeline_manifest
 
 
 def _find_stage(raw: Dict[str, Any], pipeline_id: str, stage_id: str) -> Dict[str, Any]:

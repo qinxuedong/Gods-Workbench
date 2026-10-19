@@ -1,0 +1,15 @@
+"""Agent 结构化输出模板集合。"""
+
+from .agent_breakdown import (
+    BREAKDOWN_PROMPT,
+    BREAKDOWN_TEMPLATE,
+    BREAKDOWN_TEMPLATE_ID,
+    BREAKDOWN_TEMPLATE_VERSION,
+)
+
+__all__ = [
+    "BREAKDOWN_PROMPT",
+    "BREAKDOWN_TEMPLATE",
+    "BREAKDOWN_TEMPLATE_ID",
+    "BREAKDOWN_TEMPLATE_VERSION",
+]
