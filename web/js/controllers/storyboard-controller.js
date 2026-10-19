@@ -745,6 +745,105 @@ window.WorkbenchStoryboard = (function () {
     renderGrid();
   }
 
+  function setAgentSyncStatus(text, kind = '') {
+    const status = document.getElementById('agentStoryboardSyncStatus');
+    if (!status) return;
+    status.textContent = String(text || '');
+    if (kind) status.setAttribute('data-gw-degradation', kind);
+    else status.removeAttribute('data-gw-degradation');
+  }
+
+  function shotsFromAgentStoryboard(rows, artifact, projectId = state.projectId) {
+    const versionId = String(artifact?.version_id || '').trim();
+    const revision = Number(artifact?.revision);
+    return (Array.isArray(rows) ? rows : []).map((row, index) => {
+      const shotId = String(row?.shot_id || '').trim();
+      if (!shotId) return null;
+      const camera = String(row?.camera || '').trim();
+      const movement = String(row?.movement || '').trim();
+      const shotType = [camera, movement].filter(Boolean).join(' · ') || '文字分镜';
+      const duration = String(row?.duration_seconds || '').trim();
+      return normalizeShot({
+        id: shotId,
+        shot_id: shotId,
+        code: shotId,
+        scene_id: String(row?.scene_id || '').trim(),
+        project_id: projectId,
+        name: shotId,
+        title: shotId,
+        prompt: String(row?.description || '').trim(),
+        dialogue: String(row?.description || '').trim(),
+        shot_type: shotType,
+        duration: duration ? `${duration}s` : '',
+        status: 'completed',
+        data_status: 'ok',
+        closure_status: 'approved_text',
+        source_kind: 'agent_storyboard',
+        source: {
+          project_id: projectId,
+          artifact_id: String(artifact?.artifact_id || '').trim(),
+          artifact_version_id: versionId,
+          source: 'approved_storyboard_text',
+          row_index: index,
+        },
+        version_id: versionId,
+        version: Number.isFinite(revision) ? revision : null,
+        media_type: 'text',
+      }, { allowMissingAsset: true });
+    }).filter(Boolean);
+  }
+
+  async function syncLatestAgentStoryboard() {
+    const projectId = String(state.projectId || resolveProjectId() || '').trim();
+    const button = document.getElementById('btnSyncAgentStoryboard');
+    if (!projectId) {
+      setAgentSyncStatus('缺少项目上下文', 'not_integrated');
+      return null;
+    }
+    if (button) button.disabled = true;
+    setAgentSyncStatus('读取最新已审核产物…');
+    try {
+      const loader = window.GWProjectArtifactLinks?.loadLatestApprovedStoryboard;
+      if (typeof loader !== 'function') {
+        throw Object.assign(new Error('智能体产物读取模块未接入'), { code: 'AGENT_ARTIFACTS_NOT_INTEGRATED' });
+      }
+      const result = await loader(projectId);
+      if (!result?.artifact) {
+        setAgentSyncStatus('暂无已审核文字分镜', 'not_integrated');
+        return null;
+      }
+      const shots = shotsFromAgentStoryboard(result.rows, result.artifact, projectId);
+      if (!shots.length) {
+        setAgentSyncStatus('已审核产物没有有效镜头', 'not_integrated');
+        return null;
+      }
+      if (state.projectId !== projectId) return null;
+      state.pipelineId = '';
+      state.pipelineVersion = 0;
+      state.pipeline = null;
+      state.actionBlocker = null;
+      state.reviewError = '';
+      state.shots = shots;
+      state.scenes = scenesFromShots(shots);
+      // 文字分镜已由 Agent 审核；它们是占位卡片，不创建伪造的媒体审阅会话。
+      state.reviews = Object.fromEntries(shots.map(shot => [shot.id, {
+        sessionId: '', reviewId: String(result.artifact.review_id || ''), assetId: '', shotId: shot.id,
+        versionId: shot.version_id, version: shot.version, expectedVersion: shot.version || 1,
+        status: 'approved', nextAction: 'review_source', comments: [], approvals: [], delivery: null,
+        dataStatus: 'ok', dataGaps: [], supersededVersionId: ''
+      }]));
+      renderNav();
+      renderGrid();
+      setAgentSyncStatus(`已同步 ${shots.length} 镜 · ${result.artifact.version_label || result.artifact.version_id}`, '');
+      return {artifact: result.artifact, shots};
+    } catch (error) {
+      setAgentSyncStatus(error?.message || '智能体产物读取失败', 'service_unavailable');
+      return null;
+    } finally {
+      if (button) button.disabled = false;
+    }
+  }
+
   function setScenes(scenes) {
     state.actionBlocker = null;
     state.scenes = Array.isArray(scenes) ? [...scenes] : [];
@@ -852,6 +951,8 @@ window.WorkbenchStoryboard = (function () {
     loadReviewSessions,
     addReviewComment,
     submitReviewDecision,
+    syncLatestAgentStoryboard,
+    shotsFromAgentStoryboard,
     getState: () => ({ ...state, shots: [...state.shots], scenes: [...state.scenes], reviews: { ...state.reviews } }),
     renderNotIntegratedState,
     get ready() { return ready; },
