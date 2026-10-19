@@ -34,6 +34,7 @@ from fastapi.responses import JSONResponse
 
 from gw.core.auth import require_authenticated, require_edit_access
 from gw.core.errors import CleanroomException
+from gw.media import proxy as media_proxy
 from gw.media import repository as repo
 
 router = APIRouter(tags=["media-b5"])
@@ -179,8 +180,60 @@ def media_preview(
 ):
     """对允许根目录内的真实文件返回真实缩略字节；越界 403，依赖缺失 503。"""
     _read(authorization, x_user_role)
-    result = repo.preview_bytes(_query_dict(request))
+    payload = _query_dict(request)
+    if str(payload.get("metadata") or "").lower() in {"1", "true", "yes"}:
+        return media_proxy.descriptor(payload)
+    result = repo.preview_bytes(payload)
     return Response(content=result["bytes"], media_type=result["media_type"])
+
+
+# ---------------------------------------------------------------------------
+# C11-T4 轻量代理：结构化状态与受控派生内容
+# ---------------------------------------------------------------------------
+
+@router.get("/api/media-proxy", status_code=status.HTTP_200_OK)
+def media_proxy_descriptor(
+    request: Request,
+    authorization: Optional[str] = Header(None),
+    x_user_role: str = Header("editor", alias="X-User-Role"),
+):
+    """返回真实代理的 ready 状态，或不伪造媒体的规范降级状态。"""
+    _read(authorization, x_user_role)
+    return media_proxy.descriptor(_query_dict(request))
+
+
+@router.post("/api/media-proxy", status_code=status.HTTP_200_OK)
+async def media_proxy_descriptor_post(
+    request: Request,
+    authorization: Optional[str] = Header(None),
+    x_user_role: str = Header("editor", alias="X-User-Role"),
+):
+    """POST 形态供检索结果直接提交结构化代理请求。"""
+    _read(authorization, x_user_role)
+    return media_proxy.descriptor(await _json(request))
+
+
+@router.get("/api/media-proxy/content", status_code=status.HTTP_200_OK)
+def media_proxy_content(
+    request: Request,
+    authorization: Optional[str] = Header(None),
+    x_user_role: str = Header("editor", alias="X-User-Role"),
+):
+    """读取代理派生文件；源离线或依赖缺失时返回带动作的 503 错误包。"""
+    _read(authorization, x_user_role)
+    try:
+        path, metadata = media_proxy.artifact_path(_query_dict(request))
+        content = path.read_bytes()
+    except CleanroomException as exc:
+        return JSONResponse(status_code=exc.status_code, content=media_proxy.error_payload(exc))
+    except OSError:
+        error = CleanroomException(503, "MEDIA_PROCESS_FAILED", "代理产物暂时不可读")
+        return JSONResponse(status_code=503, content=media_proxy.error_payload(error))
+    return Response(
+        content=content,
+        media_type=metadata.get("media_type") or repo._mime(path),
+        headers={"X-Proxy-Artifact": path.name},
+    )
 
 
 @router.get("/api/media-transcode", status_code=status.HTTP_200_OK)
