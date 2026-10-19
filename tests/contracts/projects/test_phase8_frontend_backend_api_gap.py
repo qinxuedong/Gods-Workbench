@@ -308,6 +308,8 @@ KNOWN_IMPLEMENTED = frozenset([
     # 2026-09-25 Phase 11 B7：剧集流水线路径统一失败关闭。
     '/api/episode-pipelines',
     '/api/episode-pipelines/{p}',
+    # 2026-10-19 C12-T3/T4：时间线清单由后端持久化并由分镜页同步消费。
+    '/api/episode-pipelines/{p}/timeline-manifest',
     '/api/episode-pipelines/{p}/stages/{p}/cancel',
     '/api/episode-pipelines/{p}/stages/{p}/complete',
     '/api/episode-pipelines/{p}/stages/{p}/start',
