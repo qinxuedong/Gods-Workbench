@@ -7,8 +7,11 @@ import json
 import re
 from decimal import Decimal, InvalidOperation
 from collections.abc import Mapping
+from enum import StrEnum
 from hashlib import sha256
-from typing import Any
+from typing import Any, Literal
+
+from pydantic import Field, model_validator
 
 from gw.agent_runtime.models import (
     ApprovalRecord,
@@ -25,10 +28,202 @@ from .models import (
     EpisodeModel,
     EpisodeScoreResult,
     FullScriptContent,
+    OpaqueId,
+    OpaqueText,
     STAGE_CONTENT_MODELS,
     StoryboardTextContent,
 )
 from .scoring import SCORING_RULE_VERSION, approval_matches_current_review
+from gw.agent_runtime.templates import (
+    BREAKDOWN_TEMPLATE,
+    BREAKDOWN_TEMPLATE_ID,
+    BREAKDOWN_TEMPLATE_VERSION,
+)
+
+
+class BreakdownCategory(StrEnum):
+    """好莱坞八大制片拆解分类代码。"""
+
+    CAST = "01_CAST"
+    EXTRAS = "02_EXTRAS"
+    PROPS = "03_PROPS"
+    WARDROBE = "04_WARDROBE"
+    VFX = "05_VFX"
+    SFX = "06_SFX"
+    LOCATION = "07_LOCATION"
+    VEHICLES = "08_VEHICLES"
+
+
+class ShotSize(StrEnum):
+    """ASC 六级标准景别。"""
+
+    EWS = "EWS"
+    WS = "WS"
+    MS = "MS"
+    MCU = "MCU"
+    CU = "CU"
+    ECU = "ECU"
+
+
+class CameraAngle(StrEnum):
+    """ASC 摄影机视角与高度。"""
+
+    EYE_LEVEL = "EYE_LEVEL"
+    LOW_ANGLE = "LOW_ANGLE"
+    HIGH_ANGLE = "HIGH_ANGLE"
+    GODS_EYE = "GODS_EYE"
+    DUTCH_ANGLE = "DUTCH_ANGLE"
+    GROUND_LEVEL = "GROUND_LEVEL"
+
+
+class CameraMovement(StrEnum):
+    """ASC 十一种受控运镜代码。"""
+
+    STATIC = "STATIC"
+    PAN = "PAN"
+    TILT = "TILT"
+    DOLLY_IN = "DOLLY_IN"
+    DOLLY_OUT = "DOLLY_OUT"
+    TRUCK_LEFT = "TRUCK_LEFT"
+    TRUCK_RIGHT = "TRUCK_RIGHT"
+    PEDESTAL_UP = "PEDESTAL_UP"
+    PEDESTAL_DOWN = "PEDESTAL_DOWN"
+    ARC = "ARC"
+    WHIP_PAN = "WHIP_PAN"
+
+
+class FocalLengthTier(StrEnum):
+    """ASC 五档焦段类别。"""
+
+    ULTRA_WIDE = "ULTRA_WIDE"
+    WIDE = "WIDE"
+    STANDARD = "STANDARD"
+    PORTRAIT = "PORTRAIT"
+    TELEPHOTO = "TELEPHOTO"
+
+
+class CompositionRule(StrEnum):
+    """受控构图代码，避免把构图要求写成不可执行的形容词。"""
+
+    RULE_OF_THIRDS = "RULE_OF_THIRDS"
+    CENTER_SYMMETRY = "CENTER_SYMMETRY"
+    GOLDEN_RATIO = "GOLDEN_RATIO"
+    LEADING_LINES = "LEADING_LINES"
+    FRAME_IN_FRAME = "FRAME_IN_FRAME"
+    LOOK_ROOM = "LOOK_ROOM"
+
+
+class SceneSettingType(StrEnum):
+    INT = "INT"
+    EXT = "EXT"
+    INT_EXT = "INT/EXT"
+
+
+class LightingPhase(StrEnum):
+    DAY = "DAY"
+    NIGHT = "NIGHT"
+    GOLDEN_HOUR = "GOLDEN_HOUR"
+    MAGIC_HOUR = "MAGIC_HOUR"
+    DAWN = "DAWN"
+    DUSK = "DUSK"
+    CONTINUOUS = "CONTINUOUS"
+    MOMENTS_LATER = "MOMENTS_LATER"
+
+
+class WeatherAtmosphere(StrEnum):
+    CLEAR = "CLEAR"
+    OVERCAST = "OVERCAST"
+    HEAVY_RAIN = "HEAVY_RAIN"
+    BLIZZARD = "BLIZZARD"
+    DENSE_FOG = "DENSE_FOG"
+    SMOKE_HAZE = "SMOKE_HAZE"
+
+
+class CinematographyMetadata(EpisodeModel):
+    """镜头必须携带的 ASC 结构化机位元数据。"""
+
+    shot_size: ShotSize
+    camera_angle: CameraAngle
+    camera_movement: CameraMovement
+    focal_length: FocalLengthTier
+    composition: CompositionRule = CompositionRule.RULE_OF_THIRDS
+
+
+class BreakdownElement(EpisodeModel):
+    """一个可追踪的制片拆解元素。"""
+
+    element_id: OpaqueId
+    name: OpaqueText
+    description: OpaqueText | None = None
+    quantity: int = Field(default=1, ge=1)
+
+
+class StructuredShot(EpisodeModel):
+    """分镜镜头及其可执行元数据。"""
+
+    shot_id: OpaqueId
+    scene_id: OpaqueId
+    description: OpaqueText
+    metadata: CinematographyMetadata
+    element_ids: list[OpaqueId] = Field(default_factory=list)
+    character_ids: list[OpaqueId] = Field(default_factory=list)
+    duration_seconds: float | None = Field(default=None, gt=0)
+
+
+class SceneBreakdown(EpisodeModel):
+    """分场拆解，八类元素始终以固定代码集合出现。"""
+
+    scene_id: OpaqueId
+    title: OpaqueText
+    slugline: OpaqueText
+    setting_type: SceneSettingType
+    lighting_phase: LightingPhase
+    weather: WeatherAtmosphere | None = None
+    location: OpaqueText
+    elements: dict[BreakdownCategory, list[BreakdownElement]]
+    shots: list[StructuredShot] = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def validate_scene_contract(self) -> "SceneBreakdown":
+        expected = set(BreakdownCategory)
+        if set(self.elements) != expected:
+            raise ValueError("elements must contain all eight breakdown categories exactly")
+        known_element_ids = {
+            item.element_id
+            for items in self.elements.values()
+            for item in items
+        }
+        if len(known_element_ids) != sum(len(items) for items in self.elements.values()):
+            raise ValueError("element_id values must be unique within a scene")
+        for shot in self.shots:
+            if shot.scene_id != self.scene_id:
+                raise ValueError("shot scene_id must match its containing scene_id")
+            unknown_ids = set(shot.element_ids) - known_element_ids
+            if unknown_ids:
+                raise ValueError("shot element_ids must reference scene breakdown elements")
+        return self
+
+
+class AgentBreakdownOutput(EpisodeModel):
+    """文学/导演 Agent 的机器可读分场分镜拆解结果。"""
+
+    schema_version: Literal[1] = 1
+    template_id: str = BREAKDOWN_TEMPLATE_ID
+    template_version: str = BREAKDOWN_TEMPLATE_VERSION
+    source_full_script_version_id: OpaqueId
+    source_scene_script_version_id: OpaqueId
+    scenes: list[SceneBreakdown] = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def validate_document_contract(self) -> "AgentBreakdownOutput":
+        if self.template_id != BREAKDOWN_TEMPLATE_ID:
+            raise ValueError("unsupported breakdown template_id")
+        if self.template_version != BREAKDOWN_TEMPLATE_VERSION:
+            raise ValueError("unsupported breakdown template_version")
+        scene_ids = [scene.scene_id for scene in self.scenes]
+        if len(scene_ids) != len(set(scene_ids)):
+            raise ValueError("scene_id values must be unique")
+        return self
 
 
 class ExportRejected(ValueError):
@@ -37,6 +232,65 @@ class ExportRejected(ValueError):
 
 class ExportFormatMismatch(ExportRejected):
     """A supported business format was requested for the wrong episode stage."""
+
+
+def structured_breakdown_schema() -> dict[str, Any]:
+    """返回 Agent 拆解输出的 Pydantic JSON Schema。"""
+
+    return AgentBreakdownOutput.model_json_schema()
+
+
+def parse_agent_breakdown(
+    payload: AgentBreakdownOutput | Mapping[str, Any] | str | bytes,
+) -> AgentBreakdownOutput:
+    """校验 Agent 拆解 JSON 或映射并返回不可变语义模型。
+
+    只接受 ``agent.breakdown`` 当前版本和八类完整元素集合；自然语言镜头
+    描述无法绕过枚举字段校验。
+    """
+
+    if isinstance(payload, (str, bytes)):
+        try:
+            payload = json.loads(payload)
+        except (TypeError, json.JSONDecodeError) as exc:
+            raise ExportRejected("agent breakdown payload is not valid JSON") from exc
+    try:
+        return AgentBreakdownOutput.model_validate(payload)
+    except (TypeError, ValueError) as exc:
+        raise ExportRejected("agent breakdown payload does not match its structured contract") from exc
+
+
+def validate_agent_breakdown(
+    payload: AgentBreakdownOutput | Mapping[str, Any] | str | bytes,
+) -> AgentBreakdownOutput:
+    """兼容调用方的语义别名，执行与 ``parse_agent_breakdown`` 相同的校验。"""
+
+    return parse_agent_breakdown(payload)
+
+
+def build_agent_breakdown(
+    payload: AgentBreakdownOutput | Mapping[str, Any],
+) -> AgentBreakdownOutput:
+    """将 Agent 结构化输出归一化为可导出的契约模型。"""
+
+    return parse_agent_breakdown(payload)
+
+
+def export_agent_breakdown(
+    payload: AgentBreakdownOutput | Mapping[str, Any],
+) -> bytes:
+    """导出稳定排序、UTF-8 的机器可读分场分镜 JSON。"""
+
+    document = parse_agent_breakdown(payload)
+    return (json.dumps(document.model_dump(mode="json"), ensure_ascii=False, sort_keys=True, indent=2) + "\n").encode("utf-8")
+
+
+def export_structured_breakdown(
+    payload: AgentBreakdownOutput | Mapping[str, Any],
+) -> bytes:
+    """结构化拆解导出的兼容别名。"""
+
+    return export_agent_breakdown(payload)
 
 
 _STAGE_EXPORT_FORMATS: dict[StageId, tuple[TextExportFormat, ...]] = {
@@ -377,4 +631,33 @@ def export_json(
     return (json.dumps(document, ensure_ascii=False, sort_keys=True, indent=2) + "\n").encode("utf-8")
 
 
-__all__ = ["ExportFormatMismatch", "ExportRejected", "export_csv", "export_json", "export_markdown"]
+__all__ = [
+    "AgentBreakdownOutput",
+    "BreakdownCategory",
+    "BreakdownElement",
+    "CameraAngle",
+    "CameraMovement",
+    "CinematographyMetadata",
+    "CompositionRule",
+    "ExportFormatMismatch",
+    "ExportRejected",
+    "FocalLengthTier",
+    "LightingPhase",
+    "SceneBreakdown",
+    "SceneSettingType",
+    "ShotSize",
+    "StructuredShot",
+    "WeatherAtmosphere",
+    "BREAKDOWN_TEMPLATE",
+    "BREAKDOWN_TEMPLATE_ID",
+    "BREAKDOWN_TEMPLATE_VERSION",
+    "build_agent_breakdown",
+    "export_agent_breakdown",
+    "export_csv",
+    "export_json",
+    "export_markdown",
+    "export_structured_breakdown",
+    "parse_agent_breakdown",
+    "structured_breakdown_schema",
+    "validate_agent_breakdown",
+]
