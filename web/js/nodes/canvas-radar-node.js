@@ -65,24 +65,24 @@
   }
 
   function buildStoryboardReturnUrl(node, options = {}) {
-    return withQuery('storyboard.html', {
+    return withQuery('/static/pages/storyboard.html', {
       project_id: nodeProjectId(node, options),
       view: 'radar',
       shot_id: nodeShotId(node, options),
       canvas_id: nodeCanvasId(node, options),
       focus_node: nodeEntityId(node, options)
-    }, { ...options, basePath: options.storyboardPath || 'storyboard.html' });
+    }, { ...options, basePath: options.storyboardPath || '/static/pages/storyboard.html' });
   }
 
   function buildCanvasFocusUrl(node, options = {}) {
     const returnUrl = options.returnUrl || buildStoryboardReturnUrl(node, options);
-    return withQuery('canvas.html', {
+    return withQuery('/static/pages/canvas.html', {
       project_id: nodeProjectId(node, options),
       canvas_id: nodeCanvasId(node, options),
       focus_node: nodeEntityId(node, options),
       shot_id: nodeShotId(node, options),
       return_to: returnUrl
-    }, { ...options, basePath: options.canvasPath || 'canvas.html' });
+    }, { ...options, basePath: options.canvasPath || '/static/pages/canvas.html' });
   }
 
   function createCameraRadarNode(input = {}) {
