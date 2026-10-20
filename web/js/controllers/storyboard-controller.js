@@ -143,6 +143,74 @@ window.WorkbenchStoryboard = (function () {
     }, { allowMissingAsset: true });
   }
 
+  function contactSheetApi() {
+    return window.WorkbenchContactSheet && typeof window.WorkbenchContactSheet === 'object'
+      ? window.WorkbenchContactSheet : {};
+  }
+
+  function takesForShot(shot) {
+    const collect = contactSheetApi().collectTakes;
+    if (typeof collect === 'function') return collect(shot);
+    if (!shot || typeof shot !== 'object' || (!shot.asset_id && !shot.version_id)) return [];
+    return [{
+      ...shot,
+      asset_id: String(shot.asset_id || '').trim(),
+      version_id: String(shot.version_id || '').trim(),
+      version: Number(shot.version) || 1,
+      take_id: String(shot.take_id || shot.version_id || shot.asset_id || shot.id || '').trim(),
+      versionLabel: `v${String(Number(shot.version) || 1).padStart(3, '0')}`,
+      source: String(shot.imageUrl || shot.img || shot.source?.source_url || '').trim(),
+      media_url: String(shot.imageUrl || shot.img || shot.source?.source_url || '').trim(),
+      primary: true
+    }];
+  }
+
+  function primaryTakeForShot(shot) {
+    const takes = takesForShot(shot);
+    return takes.find(take => take.primary) || takes[0] || null;
+  }
+
+  function takeSource(take, duration) {
+    const source = String(take?.source || take?.media_url || take?.url || '').trim();
+    if (!source) return '';
+    return source.includes('#t=') ? source : `${source}#t=0,${duration}`;
+  }
+
+  function applyPrimaryTake(shot, take) {
+    if (!shot || !take) return shot;
+    const takeId = String(take.take_id || '').trim();
+    const normalizedTakes = takesForShot(shot).map(item => ({
+      ...item,
+      primary: String(item.take_id || '') === takeId
+    }));
+    shot.takes = normalizedTakes;
+    shot.primary_take_id = takeId;
+    shot.asset_id = String(take.asset_id || '').trim();
+    shot.version_id = String(take.version_id || '').trim();
+    shot.version = take.version ?? shot.version;
+    shot.imageUrl = String(take.source || take.media_url || '').trim();
+    shot.img = shot.imageUrl;
+    shot.media_url = shot.imageUrl;
+    shot.media_type = String(take.media_type || shot.media_type || 'video').trim();
+    shot.previewType = shot.media_type.startsWith('video') ? 'video' : shot.previewType;
+    const review = state.reviews[shot.id];
+    if (review) {
+      review.assetId = shot.asset_id;
+      review.versionId = shot.version_id;
+      review.version = shot.version;
+      review.status = 'approved';
+      review.nextAction = 'deliver';
+    }
+    return shot;
+  }
+
+  function takeById(shot, takeId) {
+    const requested = String(takeId || '').trim();
+    if (!requested) return null;
+    return takesForShot(shot).find(take => take.take_id === requested
+      || take.asset_id === requested || take.version_id === requested) || null;
+  }
+
   function scenesFromShots(shots) {
     const grouped = new Map();
     shots.forEach(shot => {
@@ -563,6 +631,7 @@ window.WorkbenchStoryboard = (function () {
 
     grid.innerHTML = `${actionBlockerMarkup()}${state.shots.map((sh, idx) => {
       const imageUrl = String(sh.imageUrl || sh.img || '').trim();
+      const takes = takesForShot(sh);
       const title = sh.name || sh.title || sh.id;
       const description = sh.prompt || sh.dialogue || '文本提示未接入';
       const review = state.reviews[sh.id] || defaultReviewForShot(sh);
@@ -591,7 +660,9 @@ window.WorkbenchStoryboard = (function () {
         : imageUrl
           ? `<img src="${esc(imageUrl)}" class="w-full h-full object-cover group-hover:scale-105 transition duration-300" alt="${esc(title)}" loading="lazy">`
         : `<div class="w-full h-full flex items-center justify-center text-slate-500 font-mono gw-type-body-sm" data-gw-degradation="not_integrated">媒体预览未接入</div>`;
-      const blockerMarkup = sh.blocker && typeof sh.blocker === 'object'
+      const contactSheetMarkup = takes.length > 1 && typeof contactSheetApi().render === 'function'
+         ? contactSheetApi().render(takes, sh.id) : '';
+       const blockerMarkup = sh.blocker && typeof sh.blocker === 'object'
         ? `<div class="text-amber-300 mt-1" data-gw-degradation="blocked">阻塞：${esc(sh.blocker.code || 'UNKNOWN_BLOCKER')} · ${esc(sh.blocker.message || '请核对当前事实')}<br>下一步：${esc(sh.next_action || 'review_context')}</div>` : '';
       return `
       <div class="champagne-card p-2.5 flex flex-col justify-between group transition hover:border-[#dfc384]/50" data-storyboard-shot="${esc(sh.id)}" data-asset-id="${esc(sh.asset_id || '')}" data-shot-version-id="${esc(sh.version_id || '')}" data-closure-status="${esc(sh.closure_status || '')}" data-review-status="${esc(review.status || 'not_integrated')}">
@@ -620,7 +691,9 @@ window.WorkbenchStoryboard = (function () {
             </div>
           </div>
 
-          <!-- 台词对白与叙事意图 -->
+          ${contactSheetMarkup}
+
+           <!-- 台词对白与叙事意图 -->
           <div class="gw-type-body-md font-bold text-slate-100 mb-1 truncate">${esc(title)}</div>
           <div class="gw-type-body-sm text-slate-300 bg-black/40 p-1.5 rounded-lg border border-white/5 leading-relaxed font-body mb-2">
             ${esc(description)}
@@ -663,6 +736,11 @@ window.WorkbenchStoryboard = (function () {
       </div>
     `;
     }).join('')}`;
+
+    const bindContactSheet = contactSheetApi().bind;
+    if (typeof bindContactSheet === 'function') {
+      bindContactSheet(grid, { onPromote: (shotId, takeId) => { void promoteTake(shotId, takeId); } });
+    }
 
     if (focusedShot && focusedAction) {
       const card = [...grid.querySelectorAll('[data-storyboard-shot]')].find(item => item.dataset.storyboardShot === focusedShot);
@@ -813,14 +891,25 @@ window.WorkbenchStoryboard = (function () {
     ordered.forEach(shot => {
       const shotId = String(shot.shot_id || shot.id).trim();
       const duration = timelineDuration(shot);
+      const primaryTake = primaryTakeForShot(shot);
+      const assetId = String(primaryTake?.asset_id || shot.asset_id || '').trim();
       const overrides = { ...(shot.overrides && typeof shot.overrides === 'object' ? shot.overrides : {}) };
-      const src = timelineSource(shot, duration);
+      const src = takeSource(primaryTake, duration) || timelineSource(shot, duration);
       if (src) overrides.src = src;
       const camera = String(shot.camera || shot.shotType || shot.shot_type || shot.type || '').trim();
       const movement = String(shot.movement || shot.camera_movement || '').trim();
       if (camera) overrides.camera = camera;
       if (movement) overrides.movement = movement;
-      clips.push({ shot_id: shotId, asset_id: String(shot.asset_id).trim(), at, duration, overrides });
+      clips.push({
+        shot_id: shotId,
+        asset_id: assetId,
+        version_id: String(primaryTake?.version_id || shot.version_id || '').trim(),
+        take_id: String(primaryTake?.take_id || shot.primary_take_id || '').trim(),
+        version: primaryTake?.version ?? shot.version ?? null,
+        at,
+        duration,
+        overrides
+      });
       at += duration;
     });
 
@@ -839,6 +928,89 @@ window.WorkbenchStoryboard = (function () {
       return null;
     } finally {
       if (button) button.disabled = false;
+    }
+  }
+
+  async function readTimelineManifest(pipelineId) {
+    if (state.timelineManifest && Array.isArray(state.timelineManifest.tracks)) return state.timelineManifest;
+    const result = await requestJson(`/api/episode-pipelines/${encodeURIComponent(pipelineId)}/timeline-manifest`);
+    const manifest = result?.timeline_manifest || result?.manifest || result;
+    if (!manifest || !Array.isArray(manifest.tracks)) {
+      throw Object.assign(new Error('时间线清单结构未接入'), { code: 'TIMELINE_MANIFEST_INVALID' });
+    }
+    state.timelineManifest = manifest;
+    return manifest;
+  }
+
+  function cloneTimeline(value) {
+    return JSON.parse(JSON.stringify(value));
+  }
+
+  async function promoteTake(shotId, takeId) {
+    const shot = shotForId(shotId);
+    const pipelineId = String(state.pipelineId || '').trim();
+    if (!shot) {
+      setTimelineSyncStatus('缺少真实镜头上下文，未回选 Take。', 'not_integrated');
+      return null;
+    }
+    const take = takeById(shot, takeId);
+    if (!take || !take.asset_id || !take.version_id) {
+      setTimelineSyncStatus('缺少 Take 的资产或版本绑定，未回选。', 'not_integrated');
+      return null;
+    }
+    if (!pipelineId) {
+      setTimelineSyncStatus('缺少流水线上下文，未回选 Take。', 'not_integrated');
+      return null;
+    }
+
+    setTimelineSyncStatus(`正在回选主力 Take ${take.versionLabel || ''}…`);
+    try {
+      const manifest = await readTimelineManifest(pipelineId);
+      const tracks = cloneTimeline(manifest.tracks);
+      const clip = tracks.flatMap(track => Array.isArray(track.clips) ? track.clips : [])
+        .find(item => String(item?.shot_id || '') === String(shot.id || shot.shot_id || shotId));
+      if (!clip) {
+        throw Object.assign(new Error('时间线中未找到对应镜头片段'), { code: 'TIMELINE_CLIP_NOT_FOUND' });
+      }
+      const duration = Number(clip.duration) > 0 ? Number(clip.duration) : timelineDuration(shot);
+      const overrides = { ...(clip.overrides && typeof clip.overrides === 'object' ? clip.overrides : {}) };
+      const source = takeSource(take, duration);
+      if (source) overrides.src = source;
+      clip.asset_id = String(take.asset_id).trim();
+      clip.version_id = String(take.version_id).trim();
+      clip.take_id = String(take.take_id || '').trim();
+      clip.version = take.version ?? null;
+      clip.overrides = overrides;
+
+      const metadata = manifest.metadata && typeof manifest.metadata === 'object' ? cloneTimeline(manifest.metadata) : {};
+      const bindings = metadata.primary_take_by_shot && typeof metadata.primary_take_by_shot === 'object'
+        ? { ...metadata.primary_take_by_shot } : {};
+      bindings[String(shot.id || shot.shot_id || shotId)] = {
+        take_id: String(take.take_id || '').trim(),
+        asset_id: String(take.asset_id).trim(),
+        version_id: String(take.version_id).trim(),
+        version: take.version ?? null
+      };
+      metadata.primary_take_by_shot = bindings;
+      const expectedVersion = Number(manifest.version || 1);
+      const result = await requestJson(`/api/episode-pipelines/${encodeURIComponent(pipelineId)}/timeline-manifest`, {
+        method: 'PUT',
+        body: JSON.stringify({
+          expected_version: expectedVersion,
+          manifest_id: manifest.manifest_id,
+          project_id: manifest.project_id || state.projectId,
+          tracks,
+          metadata
+        })
+      });
+      state.timelineManifest = result?.timeline_manifest || result?.manifest || result;
+      applyPrimaryTake(shot, take);
+      renderGrid();
+      setTimelineSyncStatus(`已回选主力 Take ${take.versionLabel || ''}，时间线已更新`);
+      return result;
+    } catch (error) {
+      setTimelineSyncStatus(error?.message || '主力 Take 回选失败', error?.code === 'TIMELINE_CLIP_NOT_FOUND' ? 'not_integrated' : 'service_unavailable');
+      return null;
     }
   }
 
@@ -1048,6 +1220,7 @@ window.WorkbenchStoryboard = (function () {
     submitReviewDecision,
     syncLatestAgentStoryboard,
     syncTimeline,
+    promoteTake,
     shotsFromAgentStoryboard,
     getState: () => ({ ...state, shots: [...state.shots], scenes: [...state.scenes], reviews: { ...state.reviews } }),
     renderNotIntegratedState,
