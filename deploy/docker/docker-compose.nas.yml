@@ -1,0 +1,39 @@
+services:
+  gods-workbench:
+    build:
+      context: ../..
+      dockerfile: deploy/docker/Dockerfile
+    command: ["python", "run.py", "--prod"]
+    init: true
+    restart: unless-stopped
+    ports:
+      - "${GW_PORT:-2077}:2077"
+    environment:
+      GW_RUNTIME_MODE: prod
+      GW_HOST: 0.0.0.0
+      GW_PORT: "2077"
+      LOCALAPPDATA: /var/lib/gods-workbench
+    volumes:
+      - "${GW_DATA_DIR:-./data}:/var/lib/gods-workbench/GodsWorkbench/data"
+      - "${GW_AUTH_DIR:-./auth}:/var/lib/gods-workbench/GodsWorkbench/auth"
+      - "${GW_VIDEO_DIR:-./video}:/var/lib/gods-workbench/GodsWorkbench/video"
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - >-
+          from urllib.request import urlopen;
+          response = urlopen('http://127.0.0.1:2077/healthz', timeout=2);
+          raise SystemExit(0 if response.status == 200 else 1)
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 10s
