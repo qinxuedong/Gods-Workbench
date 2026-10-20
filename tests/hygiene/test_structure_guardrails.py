@@ -24,6 +24,7 @@ _ROOT_ALLOWLIST = frozenset(
         "scripts",
         "tests",
         "tools",
+        "deploy",
         ".gitattributes",
         ".gitignore",
         "AGENTS.md",
