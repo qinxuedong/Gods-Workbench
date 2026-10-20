@@ -661,14 +661,14 @@
           camera,
           subject
         });
-        const target = card.querySelector('.pt-1\.5.border-t') || card.lastElementChild;
+        const target = card.querySelector('.border-t') || card.lastElementChild;
         if (!target) return;
         const link = document.createElement('a');
         link.className = 'hw-btn hw-btn-sm radar-node-inline-link';
         link.dataset.shotRadarLink = shotId;
         link.href = window.CameraRadarNode.buildCanvasFocusUrl(node, {origin: location.origin});
         link.textContent = '调机位';
-        target.querySelector?.('.flex.items-center.space-x-1\.5')?.appendChild(link);
+        (target.querySelector?.('.flex.items-center') || target).appendChild(link);
       });
     }
 
