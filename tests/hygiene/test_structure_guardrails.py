@@ -20,6 +20,7 @@ _ROOT_ALLOWLIST = frozenset(
         ".local",
         "gw",
         "web",
+        "clients",
         "docs",
         "scripts",
         "tests",
