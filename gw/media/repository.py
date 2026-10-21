@@ -33,6 +33,8 @@ from __future__ import annotations
 import ipaddress
 import shutil
 import socket
+import hashlib
+import os
 import subprocess
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
@@ -266,12 +268,19 @@ def generate_thumbnail(payload: dict[str, Any]) -> dict[str, Any]:
     width = max(64, min(2048, width))
     data = _thumbnail_bytes(path, width)
     out_dir = _output_dir("thumbnails")
-    key = str((payload or {}).get("asset_id") or _stem(path))
-    target = out_dir / _thumbnail_filename(key)
+    key = str((payload or {}).get("asset_id") or "").strip()
+    if not key:
+        # 无 asset_id 时退化为源文件身份摘要，避免多根同名 stem 互相覆盖。
+        stat = path.stat()
+        identity = "|".join(
+            (storage.relative_display(path), str(stat.st_size), str(stat.st_mtime_ns))
+        )
+        key = "media-" + hashlib.sha256(identity.encode("utf-8")).hexdigest()[:16]
+    target = out_dir / _thumbnail_filename(key, width=width if key.startswith("media-") else None)
     target = storage.resolve_output_path(
         target.relative_to(storage.data_root().resolve()).as_posix(), must_exist=False
     )
-    target.write_bytes(data)
+    _atomic_write_bytes(target, data)
     return {
         "asset_id": str((payload or {}).get("asset_id") or ""),
         "source": storage.relative_display(path),
@@ -284,10 +293,6 @@ def generate_thumbnail(payload: dict[str, Any]) -> dict[str, Any]:
         "data_gaps": [],
     }
 
-
-def _stem(path: Path) -> str:
-    safe = "".join(ch for ch in path.stem if ch.isalnum() or ch in "-_") or "media"
-    return safe[:80]
 
 
 def preview_bytes(payload: dict[str, Any]) -> dict[str, Any]:
@@ -414,7 +419,12 @@ def transcode(payload: dict[str, Any]) -> dict[str, Any]:
     path = _resolve_input(payload)
     ffmpeg = _tool("ffmpeg")
     out_dir = _output_dir("transcode")
-    target = out_dir / ("%s.mp4" % _stem(path))
+    stat = path.stat()
+    identity = "|".join(
+        (storage.relative_display(path), str(stat.st_size), str(stat.st_mtime_ns))
+    )
+    target = out_dir / ("%s.mp4" % hashlib.sha256(identity.encode("utf-8")).hexdigest()[:32])
+    partial = target.parent / (target.stem + ".part" + target.suffix)
     completed = _run(
         [
             ffmpeg,
@@ -431,11 +441,12 @@ def transcode(payload: dict[str, Any]) -> dict[str, Any]:
             "aac",
             "-movflags",
             "+faststart",
-            str(target),
+            str(partial),
         ]
     )
-    if completed.returncode != 0 or not target.is_file():
+    if completed.returncode != 0 or not partial.is_file():
         _unavailable("/api/media", "MEDIA_PROCESS_FAILED", "媒体转码失败")
+    partial.replace(target)
     return {
         "source": storage.relative_display(path),
         "output": target.resolve()
@@ -460,7 +471,12 @@ def download_path(payload: dict[str, Any]) -> dict[str, Any]:
         if not asset_id:
             raise CleanroomException(400, "INVALID_REQUEST", "缺少 path 或 asset_id")
         for relative, candidate in storage.iter_output_paths("media_output"):
-            if candidate.stem == asset_id or candidate.stem.startswith(asset_id + "_"):
+            if (
+                candidate.name.startswith(asset_id + ".")
+                or candidate.name.startswith(asset_id + "-")
+                or candidate.stem == asset_id
+                or candidate.stem.startswith(asset_id + "_")
+            ):
                 return {
                     "path": candidate,
                     "relative_path": relative,
@@ -657,14 +673,29 @@ def _asset_ids(payload: dict[str, Any]) -> list[str]:
     return [str(item).strip() for item in raw if str(item).strip()]
 
 
-def _thumbnail_filename(asset_id: str) -> str:
+def _thumbnail_filename(asset_id: str, *, width: int | None = None) -> str:
     if (
         not asset_id
         or len(asset_id) > 128
         or not all(ch.isalnum() or ch in "_-" for ch in asset_id)
     ):
         raise CleanroomException(400, "INVALID_ASSET_ID", "素材标识不是安全单段")
-    return asset_id + ".jpg.png"
+    suffix = "-w%04d" % width if width else ""
+    return "%s%s.jpg.png" % (asset_id, suffix)
+
+
+def _atomic_write_bytes(target: Path, data: bytes) -> None:
+    """派生物统一原子写：先写同目录 .part 并 fsync，再替换最终文件。"""
+    partial = target.parent / (target.stem + ".part" + target.suffix)
+    try:
+        partial.parent.mkdir(parents=True, exist_ok=True)
+        with partial.open("wb") as output:
+            output.write(data)
+            output.flush()
+            os.fsync(output.fileno())
+        partial.replace(target)
+    finally:
+        partial.unlink(missing_ok=True)
 
 
 def delete_outputs(kind: str, payload: dict[str, Any]) -> dict[str, Any]:
@@ -685,14 +716,22 @@ def delete_outputs(kind: str, payload: dict[str, Any]) -> dict[str, Any]:
             candidate = storage.resolve_output_path(relative, must_exist=False)
             if candidate.exists():
                 candidates.append(relative)
+            else:
+                # 历史回退 key（源 stem）；产物目录内精确同名匹配。
+                for entry in storage.iter_output_paths("media_output/thumbnails"):
+                    if entry[1].name == asset_id + ".jpg.png":
+                        candidates.append(entry[0])
+                        break
         else:
             directory = media_probe.storyboard_directory(asset_id)
             if directory.exists():
-                for child in sorted(directory.iterdir()):
+                # 版本桶与默认桶一并清理；逐文件准入校验，不跟随链接。
+                for child in sorted(directory.rglob("*")):
+                    if not child.is_file():
+                        continue
                     relative = child.relative_to(
                         storage.data_root().resolve()
                     ).as_posix()
-                    # 非生成文件也校验链接，避免忽略目录中指向其他资产的别名。
                     storage.resolve_output_path(relative)
                     if media_probe.is_storyboard_cache_name(child.name):
                         candidates.append(relative)

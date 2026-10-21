@@ -394,13 +394,27 @@ def reveal_file(raw_path: str) -> dict[str, Any]:
 
 
 def save_upload(raw_path: str, content_b64: str) -> dict[str, Any]:
-    """把 base64 内容真实写入允许根目录内的目标路径。"""
+    """把 base64 内容原子写入允许根目录；已存在路径要求显式覆盖。"""
     path = storage.resolve_within_roots(raw_path)
     if path.exists() and path.is_dir():
         raise CleanroomException(400, "INVALID_PATH", "目标路径是目录")
     payload = _decode_upload_payload(content_b64)
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_bytes(payload)
+    if path.exists():
+        raise CleanroomException(
+            409, "PATH_CONFLICT", "目标文件已存在；显式覆盖必须走版本化更新接口"
+        )
+    partial = path.parent / (path.stem + ".part" + path.suffix)
+    try:
+        with partial.open("wb") as output:
+            output.write(payload)
+            output.flush()
+            os.fsync(output.fileno())
+        os.replace(partial, path)
+    except OSError:
+        raise CleanroomException(503, "FILE_WRITE_FAILED", "目标文件写入失败") from None
+    finally:
+        partial.unlink(missing_ok=True)
     return {
         "display_path": storage.relative_display(path),
         "size_bytes": len(payload),
