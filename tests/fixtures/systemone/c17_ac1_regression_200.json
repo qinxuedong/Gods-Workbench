@@ -1,0 +1,3408 @@
+{
+  "fixture_id": "c17-ac1-systemone-v1-200",
+  "description": "Deterministic local regression data; each scenario rotates a synthetic first-position bias across four options. No provider calls are made.",
+  "item_count": 200,
+  "expected_choice_id": "option-a",
+  "items": [
+    {
+      "item_id": "scenario-001-position-1",
+      "scenario_id": "scenario-001",
+      "prompt": "Select the most suitable next action for a writer. Case 001.",
+      "option_order": [
+        "option-a",
+        "option-b",
+        "option-c",
+        "option-d"
+      ],
+      "position_scores": [
+        0.91,
+        0.03,
+        0.03,
+        0.03
+      ]
+    },
+    {
+      "item_id": "scenario-001-position-2",
+      "scenario_id": "scenario-001",
+      "prompt": "Select the most suitable next action for a writer. Case 001.",
+      "option_order": [
+        "option-b",
+        "option-c",
+        "option-d",
+        "option-a"
+      ],
+      "position_scores": [
+        0.91,
+        0.03,
+        0.03,
+        0.03
+      ]
+    },
+    {
+      "item_id": "scenario-001-position-3",
+      "scenario_id": "scenario-001",
+      "prompt": "Select the most suitable next action for a writer. Case 001.",
+      "option_order": [
+        "option-c",
+        "option-d",
+        "option-a",
+        "option-b"
+      ],
+      "position_scores": [
+        0.91,
+        0.03,
+        0.03,
+        0.03
+      ]
+    },
+    {
+      "item_id": "scenario-001-position-4",
+      "scenario_id": "scenario-001",
+      "prompt": "Select the most suitable next action for a writer. Case 001.",
+      "option_order": [
+        "option-d",
+        "option-a",
+        "option-b",
+        "option-c"
+      ],
+      "position_scores": [
+        0.91,
+        0.03,
+        0.03,
+        0.03
+      ]
+    },
+    {
+      "item_id": "scenario-002-position-1",
+      "scenario_id": "scenario-002",
+      "prompt": "Choose the safest recovery step after a timeout. Case 002.",
+      "option_order": [
+        "option-a",
+        "option-b",
+        "option-c",
+        "option-d"
+      ],
+      "position_scores": [
+        0.91,
+        0.03,
+        0.03,
+        0.03
+      ]
+    },
+    {
+      "item_id": "scenario-002-position-2",
+      "scenario_id": "scenario-002",
+      "prompt": "Choose the safest recovery step after a timeout. Case 002.",
+      "option_order": [
+        "option-b",
+        "option-c",
+        "option-d",
+        "option-a"
+      ],
+      "position_scores": [
+        0.91,
+        0.03,
+        0.03,
+        0.03
+      ]
+    },
+    {
+      "item_id": "scenario-002-position-3",
+      "scenario_id": "scenario-002",
+      "prompt": "Choose the safest recovery step after a timeout. Case 002.",
+      "option_order": [
+        "option-c",
+        "option-d",
+        "option-a",
+        "option-b"
+      ],
+      "position_scores": [
+        0.91,
+        0.03,
+        0.03,
+        0.03
+      ]
+    },
+    {
+      "item_id": "scenario-002-position-4",
+      "scenario_id": "scenario-002",
+      "prompt": "Choose the safest recovery step after a timeout. Case 002.",
+      "option_order": [
+        "option-d",
+        "option-a",
+        "option-b",
+        "option-c"
+      ],
+      "position_scores": [
+        0.91,
+        0.03,
+        0.03,
+        0.03
+      ]
+    },
+    {
+      "item_id": "scenario-003-position-1",
+      "scenario_id": "scenario-003",
+      "prompt": "Select the clearest storyboard transition. Case 003.",
+      "option_order": [
+        "option-a",
+        "option-b",
+        "option-c",
+        "option-d"
+      ],
+      "position_scores": [
+        0.91,
+        0.03,
+        0.03,
+        0.03
+      ]
+    },
+    {
+      "item_id": "scenario-003-position-2",
+      "scenario_id": "scenario-003",
+      "prompt": "Select the clearest storyboard transition. Case 003.",
+      "option_order": [
+        "option-b",
+        "option-c",
+        "option-d",
+        "option-a"
+      ],
+      "position_scores": [
+        0.91,
+        0.03,
+        0.03,
+        0.03
+      ]
+    },
+    {
+      "item_id": "scenario-003-position-3",
+      "scenario_id": "scenario-003",
+      "prompt": "Select the clearest storyboard transition. Case 003.",
+      "option_order": [
+        "option-c",
+        "option-d",
+        "option-a",
+        "option-b"
+      ],
+      "position_scores": [
+        0.91,
+        0.03,
+        0.03,
+        0.03
+      ]
+    },
+    {
+      "item_id": "scenario-003-position-4",
+      "scenario_id": "scenario-003",
+      "prompt": "Select the clearest storyboard transition. Case 003.",
+      "option_order": [
+        "option-d",
+        "option-a",
+        "option-b",
+        "option-c"
+      ],
+      "position_scores": [
+        0.91,
+        0.03,
+        0.03,
+        0.03
+      ]
+    },
+    {
+      "item_id": "scenario-004-position-1",
+      "scenario_id": "scenario-004",
+      "prompt": "Choose the best asset review priority. Case 004.",
+      "option_order": [
+        "option-a",
+        "option-b",
+        "option-c",
+        "option-d"
+      ],
+      "position_scores": [
+        0.91,
+        0.03,
+        0.03,
+        0.03
+      ]
+    },
+    {
+      "item_id": "scenario-004-position-2",
+      "scenario_id": "scenario-004",
+      "prompt": "Choose the best asset review priority. Case 004.",
+      "option_order": [
+        "option-b",
+        "option-c",
+        "option-d",
+        "option-a"
+      ],
+      "position_scores": [
+        0.91,
+        0.03,
+        0.03,
+        0.03
+      ]
+    },
+    {
+      "item_id": "scenario-004-position-3",
+      "scenario_id": "scenario-004",
+      "prompt": "Choose the best asset review priority. Case 004.",
+      "option_order": [
+        "option-c",
+        "option-d",
+        "option-a",
+        "option-b"
+      ],
+      "position_scores": [
+        0.91,
+        0.03,
+        0.03,
+        0.03
+      ]
+    },
+    {
+      "item_id": "scenario-004-position-4",
+      "scenario_id": "scenario-004",
+      "prompt": "Choose the best asset review priority. Case 004.",
+      "option_order": [
+        "option-d",
+        "option-a",
+        "option-b",
+        "option-c"
+      ],
+      "position_scores": [
+        0.91,
+        0.03,
+        0.03,
+        0.03
+      ]
+    },
+    {
+      "item_id": "scenario-005-position-1",
+      "scenario_id": "scenario-005",
+      "prompt": "Select the most relevant project follow-up. Case 005.",
+      "option_order": [
+        "option-a",
+        "option-b",
+        "option-c",
+        "option-d"
+      ],
+      "position_scores": [
+        0.91,
+        0.03,
+        0.03,
+        0.03
+      ]
+    },
+    {
+      "item_id": "scenario-005-position-2",
+      "scenario_id": "scenario-005",
+      "prompt": "Select the most relevant project follow-up. Case 005.",
+      "option_order": [
+        "option-b",
+        "option-c",
+        "option-d",
+        "option-a"
+      ],
+      "position_scores": [
+        0.91,
+        0.03,
+        0.03,
+        0.03
+      ]
+    },
+    {
+      "item_id": "scenario-005-position-3",
+      "scenario_id": "scenario-005",
+      "prompt": "Select the most relevant project follow-up. Case 005.",
+      "option_order": [
+        "option-c",
+        "option-d",
+        "option-a",
+        "option-b"
+      ],
+      "position_scores": [
+        0.91,
+        0.03,
+        0.03,
+        0.03
+      ]
+    },
+    {
+      "item_id": "scenario-005-position-4",
+      "scenario_id": "scenario-005",
+      "prompt": "Select the most relevant project follow-up. Case 005.",
+      "option_order": [
+        "option-d",
+        "option-a",
+        "option-b",
+        "option-c"
+      ],
+      "position_scores": [
+        0.91,
+        0.03,
+        0.03,
+        0.03
+      ]
+    },
+    {
+      "item_id": "scenario-006-position-1",
+      "scenario_id": "scenario-006",
+      "prompt": "Choose a balanced response to an ambiguous request. Case 006.",
+      "option_order": [
+        "option-a",
+        "option-b",
+        "option-c",
+        "option-d"
+      ],
+      "position_scores": [
+        0.91,
+        0.03,
+        0.03,
+        0.03
+      ]
+    },
+    {
+      "item_id": "scenario-006-position-2",
+      "scenario_id": "scenario-006",
+      "prompt": "Choose a balanced response to an ambiguous request. Case 006.",
+      "option_order": [
+        "option-b",
+        "option-c",
+        "option-d",
+        "option-a"
+      ],
+      "position_scores": [
+        0.91,
+        0.03,
+        0.03,
+        0.03
+      ]
+    },
+    {
+      "item_id": "scenario-006-position-3",
+      "scenario_id": "scenario-006",
+      "prompt": "Choose a balanced response to an ambiguous request. Case 006.",
+      "option_order": [
+        "option-c",
+        "option-d",
+        "option-a",
+        "option-b"
+      ],
+      "position_scores": [
+        0.91,
+        0.03,
+        0.03,
+        0.03
+      ]
+    },
+    {
+      "item_id": "scenario-006-position-4",
+      "scenario_id": "scenario-006",
+      "prompt": "Choose a balanced response to an ambiguous request. Case 006.",
+      "option_order": [
+        "option-d",
+        "option-a",
+        "option-b",
+        "option-c"
+      ],
+      "position_scores": [
+        0.91,
+        0.03,
+        0.03,
+        0.03
+      ]
+    },
+    {
+      "item_id": "scenario-007-position-1",
+      "scenario_id": "scenario-007",
+      "prompt": "Select the most useful next canvas operation. Case 007.",
+      "option_order": [
+        "option-a",
+        "option-b",
+        "option-c",
+        "option-d"
+      ],
+      "position_scores": [
+        0.91,
+        0.03,
+        0.03,
+        0.03
+      ]
+    },
+    {
+      "item_id": "scenario-007-position-2",
+      "scenario_id": "scenario-007",
+      "prompt": "Select the most useful next canvas operation. Case 007.",
+      "option_order": [
+        "option-b",
+        "option-c",
+        "option-d",
+        "option-a"
+      ],
+      "position_scores": [
+        0.91,
+        0.03,
+        0.03,
+        0.03
+      ]
+    },
+    {
+      "item_id": "scenario-007-position-3",
+      "scenario_id": "scenario-007",
+      "prompt": "Select the most useful next canvas operation. Case 007.",
+      "option_order": [
+        "option-c",
+        "option-d",
+        "option-a",
+        "option-b"
+      ],
+      "position_scores": [
+        0.91,
+        0.03,
+        0.03,
+        0.03
+      ]
+    },
+    {
+      "item_id": "scenario-007-position-4",
+      "scenario_id": "scenario-007",
+      "prompt": "Select the most useful next canvas operation. Case 007.",
+      "option_order": [
+        "option-d",
+        "option-a",
+        "option-b",
+        "option-c"
+      ],
+      "position_scores": [
+        0.91,
+        0.03,
+        0.03,
+        0.03
+      ]
+    },
+    {
+      "item_id": "scenario-008-position-1",
+      "scenario_id": "scenario-008",
+      "prompt": "Choose the strongest candidate for a concise summary. Case 008.",
+      "option_order": [
+        "option-a",
+        "option-b",
+        "option-c",
+        "option-d"
+      ],
+      "position_scores": [
+        0.91,
+        0.03,
+        0.03,
+        0.03
+      ]
+    },
+    {
+      "item_id": "scenario-008-position-2",
+      "scenario_id": "scenario-008",
+      "prompt": "Choose the strongest candidate for a concise summary. Case 008.",
+      "option_order": [
+        "option-b",
+        "option-c",
+        "option-d",
+        "option-a"
+      ],
+      "position_scores": [
+        0.91,
+        0.03,
+        0.03,
+        0.03
+      ]
+    },
+    {
+      "item_id": "scenario-008-position-3",
+      "scenario_id": "scenario-008",
+      "prompt": "Choose the strongest candidate for a concise summary. Case 008.",
+      "option_order": [
+        "option-c",
+        "option-d",
+        "option-a",
+        "option-b"
+      ],
+      "position_scores": [
+        0.91,
+        0.03,
+        0.03,
+        0.03
+      ]
+    },
+    {
+      "item_id": "scenario-008-position-4",
+      "scenario_id": "scenario-008",
+      "prompt": "Choose the strongest candidate for a concise summary. Case 008.",
+      "option_order": [
+        "option-d",
+        "option-a",
+        "option-b",
+        "option-c"
+      ],
+      "position_scores": [
+        0.91,
+        0.03,
+        0.03,
+        0.03
+      ]
+    },
+    {
+      "item_id": "scenario-009-position-1",
+      "scenario_id": "scenario-009",
+      "prompt": "Select the lowest-risk workflow branch. Case 009.",
+      "option_order": [
+        "option-a",
+        "option-b",
+        "option-c",
+        "option-d"
+      ],
+      "position_scores": [
+        0.91,
+        0.03,
+        0.03,
+        0.03
+      ]
+    },
+    {
+      "item_id": "scenario-009-position-2",
+      "scenario_id": "scenario-009",
+      "prompt": "Select the lowest-risk workflow branch. Case 009.",
+      "option_order": [
+        "option-b",
+        "option-c",
+        "option-d",
+        "option-a"
+      ],
+      "position_scores": [
+        0.91,
+        0.03,
+        0.03,
+        0.03
+      ]
+    },
+    {
+      "item_id": "scenario-009-position-3",
+      "scenario_id": "scenario-009",
+      "prompt": "Select the lowest-risk workflow branch. Case 009.",
+      "option_order": [
+        "option-c",
+        "option-d",
+        "option-a",
+        "option-b"
+      ],
+      "position_scores": [
+        0.91,
+        0.03,
+        0.03,
+        0.03
+      ]
+    },
+    {
+      "item_id": "scenario-009-position-4",
+      "scenario_id": "scenario-009",
+      "prompt": "Select the lowest-risk workflow branch. Case 009.",
+      "option_order": [
+        "option-d",
+        "option-a",
+        "option-b",
+        "option-c"
+      ],
+      "position_scores": [
+        0.91,
+        0.03,
+        0.03,
+        0.03
+      ]
+    },
+    {
+      "item_id": "scenario-010-position-1",
+      "scenario_id": "scenario-010",
+      "prompt": "Choose the most actionable quality improvement. Case 010.",
+      "option_order": [
+        "option-a",
+        "option-b",
+        "option-c",
+        "option-d"
+      ],
+      "position_scores": [
+        0.91,
+        0.03,
+        0.03,
+        0.03
+      ]
+    },
+    {
+      "item_id": "scenario-010-position-2",
+      "scenario_id": "scenario-010",
+      "prompt": "Choose the most actionable quality improvement. Case 010.",
+      "option_order": [
+        "option-b",
+        "option-c",
+        "option-d",
+        "option-a"
+      ],
+      "position_scores": [
+        0.91,
+        0.03,
+        0.03,
+        0.03
+      ]
+    },
+    {
+      "item_id": "scenario-010-position-3",
+      "scenario_id": "scenario-010",
+      "prompt": "Choose the most actionable quality improvement. Case 010.",
+      "option_order": [
+        "option-c",
+        "option-d",
+        "option-a",
+        "option-b"
+      ],
+      "position_scores": [
+        0.91,
+        0.03,
+        0.03,
+        0.03
+      ]
+    },
+    {
+      "item_id": "scenario-010-position-4",
+      "scenario_id": "scenario-010",
+      "prompt": "Choose the most actionable quality improvement. Case 010.",
+      "option_order": [
+        "option-d",
+        "option-a",
+        "option-b",
+        "option-c"
+      ],
+      "position_scores": [
+        0.91,
+        0.03,
+        0.03,
+        0.03
+      ]
+    },
+    {
+      "item_id": "scenario-011-position-1",
+      "scenario_id": "scenario-011",
+      "prompt": "Select the most suitable next action for a writer. Case 011.",
+      "option_order": [
+        "option-a",
+        "option-b",
+        "option-c",
+        "option-d"
+      ],
+      "position_scores": [
+        0.91,
+        0.03,
+        0.03,
+        0.03
+      ]
+    },
+    {
+      "item_id": "scenario-011-position-2",
+      "scenario_id": "scenario-011",
+      "prompt": "Select the most suitable next action for a writer. Case 011.",
+      "option_order": [
+        "option-b",
+        "option-c",
+        "option-d",
+        "option-a"
+      ],
+      "position_scores": [
+        0.91,
+        0.03,
+        0.03,
+        0.03
+      ]
+    },
+    {
+      "item_id": "scenario-011-position-3",
+      "scenario_id": "scenario-011",
+      "prompt": "Select the most suitable next action for a writer. Case 011.",
+      "option_order": [
+        "option-c",
+        "option-d",
+        "option-a",
+        "option-b"
+      ],
+      "position_scores": [
+        0.91,
+        0.03,
+        0.03,
+        0.03
+      ]
+    },
+    {
+      "item_id": "scenario-011-position-4",
+      "scenario_id": "scenario-011",
+      "prompt": "Select the most suitable next action for a writer. Case 011.",
+      "option_order": [
+        "option-d",
+        "option-a",
+        "option-b",
+        "option-c"
+      ],
+      "position_scores": [
+        0.91,
+        0.03,
+        0.03,
+        0.03
+      ]
+    },
+    {
+      "item_id": "scenario-012-position-1",
+      "scenario_id": "scenario-012",
+      "prompt": "Choose the safest recovery step after a timeout. Case 012.",
+      "option_order": [
+        "option-a",
+        "option-b",
+        "option-c",
+        "option-d"
+      ],
+      "position_scores": [
+        0.91,
+        0.03,
+        0.03,
+        0.03
+      ]
+    },
+    {
+      "item_id": "scenario-012-position-2",
+      "scenario_id": "scenario-012",
+      "prompt": "Choose the safest recovery step after a timeout. Case 012.",
+      "option_order": [
+        "option-b",
+        "option-c",
+        "option-d",
+        "option-a"
+      ],
+      "position_scores": [
+        0.91,
+        0.03,
+        0.03,
+        0.03
+      ]
+    },
+    {
+      "item_id": "scenario-012-position-3",
+      "scenario_id": "scenario-012",
+      "prompt": "Choose the safest recovery step after a timeout. Case 012.",
+      "option_order": [
+        "option-c",
+        "option-d",
+        "option-a",
+        "option-b"
+      ],
+      "position_scores": [
+        0.91,
+        0.03,
+        0.03,
+        0.03
+      ]
+    },
+    {
+      "item_id": "scenario-012-position-4",
+      "scenario_id": "scenario-012",
+      "prompt": "Choose the safest recovery step after a timeout. Case 012.",
+      "option_order": [
+        "option-d",
+        "option-a",
+        "option-b",
+        "option-c"
+      ],
+      "position_scores": [
+        0.91,
+        0.03,
+        0.03,
+        0.03
+      ]
+    },
+    {
+      "item_id": "scenario-013-position-1",
+      "scenario_id": "scenario-013",
+      "prompt": "Select the clearest storyboard transition. Case 013.",
+      "option_order": [
+        "option-a",
+        "option-b",
+        "option-c",
+        "option-d"
+      ],
+      "position_scores": [
+        0.91,
+        0.03,
+        0.03,
+        0.03
+      ]
+    },
+    {
+      "item_id": "scenario-013-position-2",
+      "scenario_id": "scenario-013",
+      "prompt": "Select the clearest storyboard transition. Case 013.",
+      "option_order": [
+        "option-b",
+        "option-c",
+        "option-d",
+        "option-a"
+      ],
+      "position_scores": [
+        0.91,
+        0.03,
+        0.03,
+        0.03
+      ]
+    },
+    {
+      "item_id": "scenario-013-position-3",
+      "scenario_id": "scenario-013",
+      "prompt": "Select the clearest storyboard transition. Case 013.",
+      "option_order": [
+        "option-c",
+        "option-d",
+        "option-a",
+        "option-b"
+      ],
+      "position_scores": [
+        0.91,
+        0.03,
+        0.03,
+        0.03
+      ]
+    },
+    {
+      "item_id": "scenario-013-position-4",
+      "scenario_id": "scenario-013",
+      "prompt": "Select the clearest storyboard transition. Case 013.",
+      "option_order": [
+        "option-d",
+        "option-a",
+        "option-b",
+        "option-c"
+      ],
+      "position_scores": [
+        0.91,
+        0.03,
+        0.03,
+        0.03
+      ]
+    },
+    {
+      "item_id": "scenario-014-position-1",
+      "scenario_id": "scenario-014",
+      "prompt": "Choose the best asset review priority. Case 014.",
+      "option_order": [
+        "option-a",
+        "option-b",
+        "option-c",
+        "option-d"
+      ],
+      "position_scores": [
+        0.91,
+        0.03,
+        0.03,
+        0.03
+      ]
+    },
+    {
+      "item_id": "scenario-014-position-2",
+      "scenario_id": "scenario-014",
+      "prompt": "Choose the best asset review priority. Case 014.",
+      "option_order": [
+        "option-b",
+        "option-c",
+        "option-d",
+        "option-a"
+      ],
+      "position_scores": [
+        0.91,
+        0.03,
+        0.03,
+        0.03
+      ]
+    },
+    {
+      "item_id": "scenario-014-position-3",
+      "scenario_id": "scenario-014",
+      "prompt": "Choose the best asset review priority. Case 014.",
+      "option_order": [
+        "option-c",
+        "option-d",
+        "option-a",
+        "option-b"
+      ],
+      "position_scores": [
+        0.91,
+        0.03,
+        0.03,
+        0.03
+      ]
+    },
+    {
+      "item_id": "scenario-014-position-4",
+      "scenario_id": "scenario-014",
+      "prompt": "Choose the best asset review priority. Case 014.",
+      "option_order": [
+        "option-d",
+        "option-a",
+        "option-b",
+        "option-c"
+      ],
+      "position_scores": [
+        0.91,
+        0.03,
+        0.03,
+        0.03
+      ]
+    },
+    {
+      "item_id": "scenario-015-position-1",
+      "scenario_id": "scenario-015",
+      "prompt": "Select the most relevant project follow-up. Case 015.",
+      "option_order": [
+        "option-a",
+        "option-b",
+        "option-c",
+        "option-d"
+      ],
+      "position_scores": [
+        0.91,
+        0.03,
+        0.03,
+        0.03
+      ]
+    },
+    {
+      "item_id": "scenario-015-position-2",
+      "scenario_id": "scenario-015",
+      "prompt": "Select the most relevant project follow-up. Case 015.",
+      "option_order": [
+        "option-b",
+        "option-c",
+        "option-d",
+        "option-a"
+      ],
+      "position_scores": [
+        0.91,
+        0.03,
+        0.03,
+        0.03
+      ]
+    },
+    {
+      "item_id": "scenario-015-position-3",
+      "scenario_id": "scenario-015",
+      "prompt": "Select the most relevant project follow-up. Case 015.",
+      "option_order": [
+        "option-c",
+        "option-d",
+        "option-a",
+        "option-b"
+      ],
+      "position_scores": [
+        0.91,
+        0.03,
+        0.03,
+        0.03
+      ]
+    },
+    {
+      "item_id": "scenario-015-position-4",
+      "scenario_id": "scenario-015",
+      "prompt": "Select the most relevant project follow-up. Case 015.",
+      "option_order": [
+        "option-d",
+        "option-a",
+        "option-b",
+        "option-c"
+      ],
+      "position_scores": [
+        0.91,
+        0.03,
+        0.03,
+        0.03
+      ]
+    },
+    {
+      "item_id": "scenario-016-position-1",
+      "scenario_id": "scenario-016",
+      "prompt": "Choose a balanced response to an ambiguous request. Case 016.",
+      "option_order": [
+        "option-a",
+        "option-b",
+        "option-c",
+        "option-d"
+      ],
+      "position_scores": [
+        0.91,
+        0.03,
+        0.03,
+        0.03
+      ]
+    },
+    {
+      "item_id": "scenario-016-position-2",
+      "scenario_id": "scenario-016",
+      "prompt": "Choose a balanced response to an ambiguous request. Case 016.",
+      "option_order": [
+        "option-b",
+        "option-c",
+        "option-d",
+        "option-a"
+      ],
+      "position_scores": [
+        0.91,
+        0.03,
+        0.03,
+        0.03
+      ]
+    },
+    {
+      "item_id": "scenario-016-position-3",
+      "scenario_id": "scenario-016",
+      "prompt": "Choose a balanced response to an ambiguous request. Case 016.",
+      "option_order": [
+        "option-c",
+        "option-d",
+        "option-a",
+        "option-b"
+      ],
+      "position_scores": [
+        0.91,
+        0.03,
+        0.03,
+        0.03
+      ]
+    },
+    {
+      "item_id": "scenario-016-position-4",
+      "scenario_id": "scenario-016",
+      "prompt": "Choose a balanced response to an ambiguous request. Case 016.",
+      "option_order": [
+        "option-d",
+        "option-a",
+        "option-b",
+        "option-c"
+      ],
+      "position_scores": [
+        0.91,
+        0.03,
+        0.03,
+        0.03
+      ]
+    },
+    {
+      "item_id": "scenario-017-position-1",
+      "scenario_id": "scenario-017",
+      "prompt": "Select the most useful next canvas operation. Case 017.",
+      "option_order": [
+        "option-a",
+        "option-b",
+        "option-c",
+        "option-d"
+      ],
+      "position_scores": [
+        0.91,
+        0.03,
+        0.03,
+        0.03
+      ]
+    },
+    {
+      "item_id": "scenario-017-position-2",
+      "scenario_id": "scenario-017",
+      "prompt": "Select the most useful next canvas operation. Case 017.",
+      "option_order": [
+        "option-b",
+        "option-c",
+        "option-d",
+        "option-a"
+      ],
+      "position_scores": [
+        0.91,
+        0.03,
+        0.03,
+        0.03
+      ]
+    },
+    {
+      "item_id": "scenario-017-position-3",
+      "scenario_id": "scenario-017",
+      "prompt": "Select the most useful next canvas operation. Case 017.",
+      "option_order": [
+        "option-c",
+        "option-d",
+        "option-a",
+        "option-b"
+      ],
+      "position_scores": [
+        0.91,
+        0.03,
+        0.03,
+        0.03
+      ]
+    },
+    {
+      "item_id": "scenario-017-position-4",
+      "scenario_id": "scenario-017",
+      "prompt": "Select the most useful next canvas operation. Case 017.",
+      "option_order": [
+        "option-d",
+        "option-a",
+        "option-b",
+        "option-c"
+      ],
+      "position_scores": [
+        0.91,
+        0.03,
+        0.03,
+        0.03
+      ]
+    },
+    {
+      "item_id": "scenario-018-position-1",
+      "scenario_id": "scenario-018",
+      "prompt": "Choose the strongest candidate for a concise summary. Case 018.",
+      "option_order": [
+        "option-a",
+        "option-b",
+        "option-c",
+        "option-d"
+      ],
+      "position_scores": [
+        0.91,
+        0.03,
+        0.03,
+        0.03
+      ]
+    },
+    {
+      "item_id": "scenario-018-position-2",
+      "scenario_id": "scenario-018",
+      "prompt": "Choose the strongest candidate for a concise summary. Case 018.",
+      "option_order": [
+        "option-b",
+        "option-c",
+        "option-d",
+        "option-a"
+      ],
+      "position_scores": [
+        0.91,
+        0.03,
+        0.03,
+        0.03
+      ]
+    },
+    {
+      "item_id": "scenario-018-position-3",
+      "scenario_id": "scenario-018",
+      "prompt": "Choose the strongest candidate for a concise summary. Case 018.",
+      "option_order": [
+        "option-c",
+        "option-d",
+        "option-a",
+        "option-b"
+      ],
+      "position_scores": [
+        0.91,
+        0.03,
+        0.03,
+        0.03
+      ]
+    },
+    {
+      "item_id": "scenario-018-position-4",
+      "scenario_id": "scenario-018",
+      "prompt": "Choose the strongest candidate for a concise summary. Case 018.",
+      "option_order": [
+        "option-d",
+        "option-a",
+        "option-b",
+        "option-c"
+      ],
+      "position_scores": [
+        0.91,
+        0.03,
+        0.03,
+        0.03
+      ]
+    },
+    {
+      "item_id": "scenario-019-position-1",
+      "scenario_id": "scenario-019",
+      "prompt": "Select the lowest-risk workflow branch. Case 019.",
+      "option_order": [
+        "option-a",
+        "option-b",
+        "option-c",
+        "option-d"
+      ],
+      "position_scores": [
+        0.91,
+        0.03,
+        0.03,
+        0.03
+      ]
+    },
+    {
+      "item_id": "scenario-019-position-2",
+      "scenario_id": "scenario-019",
+      "prompt": "Select the lowest-risk workflow branch. Case 019.",
+      "option_order": [
+        "option-b",
+        "option-c",
+        "option-d",
+        "option-a"
+      ],
+      "position_scores": [
+        0.91,
+        0.03,
+        0.03,
+        0.03
+      ]
+    },
+    {
+      "item_id": "scenario-019-position-3",
+      "scenario_id": "scenario-019",
+      "prompt": "Select the lowest-risk workflow branch. Case 019.",
+      "option_order": [
+        "option-c",
+        "option-d",
+        "option-a",
+        "option-b"
+      ],
+      "position_scores": [
+        0.91,
+        0.03,
+        0.03,
+        0.03
+      ]
+    },
+    {
+      "item_id": "scenario-019-position-4",
+      "scenario_id": "scenario-019",
+      "prompt": "Select the lowest-risk workflow branch. Case 019.",
+      "option_order": [
+        "option-d",
+        "option-a",
+        "option-b",
+        "option-c"
+      ],
+      "position_scores": [
+        0.91,
+        0.03,
+        0.03,
+        0.03
+      ]
+    },
+    {
+      "item_id": "scenario-020-position-1",
+      "scenario_id": "scenario-020",
+      "prompt": "Choose the most actionable quality improvement. Case 020.",
+      "option_order": [
+        "option-a",
+        "option-b",
+        "option-c",
+        "option-d"
+      ],
+      "position_scores": [
+        0.91,
+        0.03,
+        0.03,
+        0.03
+      ]
+    },
+    {
+      "item_id": "scenario-020-position-2",
+      "scenario_id": "scenario-020",
+      "prompt": "Choose the most actionable quality improvement. Case 020.",
+      "option_order": [
+        "option-b",
+        "option-c",
+        "option-d",
+        "option-a"
+      ],
+      "position_scores": [
+        0.91,
+        0.03,
+        0.03,
+        0.03
+      ]
+    },
+    {
+      "item_id": "scenario-020-position-3",
+      "scenario_id": "scenario-020",
+      "prompt": "Choose the most actionable quality improvement. Case 020.",
+      "option_order": [
+        "option-c",
+        "option-d",
+        "option-a",
+        "option-b"
+      ],
+      "position_scores": [
+        0.91,
+        0.03,
+        0.03,
+        0.03
+      ]
+    },
+    {
+      "item_id": "scenario-020-position-4",
+      "scenario_id": "scenario-020",
+      "prompt": "Choose the most actionable quality improvement. Case 020.",
+      "option_order": [
+        "option-d",
+        "option-a",
+        "option-b",
+        "option-c"
+      ],
+      "position_scores": [
+        0.91,
+        0.03,
+        0.03,
+        0.03
+      ]
+    },
+    {
+      "item_id": "scenario-021-position-1",
+      "scenario_id": "scenario-021",
+      "prompt": "Select the most suitable next action for a writer. Case 021.",
+      "option_order": [
+        "option-a",
+        "option-b",
+        "option-c",
+        "option-d"
+      ],
+      "position_scores": [
+        0.91,
+        0.03,
+        0.03,
+        0.03
+      ]
+    },
+    {
+      "item_id": "scenario-021-position-2",
+      "scenario_id": "scenario-021",
+      "prompt": "Select the most suitable next action for a writer. Case 021.",
+      "option_order": [
+        "option-b",
+        "option-c",
+        "option-d",
+        "option-a"
+      ],
+      "position_scores": [
+        0.91,
+        0.03,
+        0.03,
+        0.03
+      ]
+    },
+    {
+      "item_id": "scenario-021-position-3",
+      "scenario_id": "scenario-021",
+      "prompt": "Select the most suitable next action for a writer. Case 021.",
+      "option_order": [
+        "option-c",
+        "option-d",
+        "option-a",
+        "option-b"
+      ],
+      "position_scores": [
+        0.91,
+        0.03,
+        0.03,
+        0.03
+      ]
+    },
+    {
+      "item_id": "scenario-021-position-4",
+      "scenario_id": "scenario-021",
+      "prompt": "Select the most suitable next action for a writer. Case 021.",
+      "option_order": [
+        "option-d",
+        "option-a",
+        "option-b",
+        "option-c"
+      ],
+      "position_scores": [
+        0.91,
+        0.03,
+        0.03,
+        0.03
+      ]
+    },
+    {
+      "item_id": "scenario-022-position-1",
+      "scenario_id": "scenario-022",
+      "prompt": "Choose the safest recovery step after a timeout. Case 022.",
+      "option_order": [
+        "option-a",
+        "option-b",
+        "option-c",
+        "option-d"
+      ],
+      "position_scores": [
+        0.91,
+        0.03,
+        0.03,
+        0.03
+      ]
+    },
+    {
+      "item_id": "scenario-022-position-2",
+      "scenario_id": "scenario-022",
+      "prompt": "Choose the safest recovery step after a timeout. Case 022.",
+      "option_order": [
+        "option-b",
+        "option-c",
+        "option-d",
+        "option-a"
+      ],
+      "position_scores": [
+        0.91,
+        0.03,
+        0.03,
+        0.03
+      ]
+    },
+    {
+      "item_id": "scenario-022-position-3",
+      "scenario_id": "scenario-022",
+      "prompt": "Choose the safest recovery step after a timeout. Case 022.",
+      "option_order": [
+        "option-c",
+        "option-d",
+        "option-a",
+        "option-b"
+      ],
+      "position_scores": [
+        0.91,
+        0.03,
+        0.03,
+        0.03
+      ]
+    },
+    {
+      "item_id": "scenario-022-position-4",
+      "scenario_id": "scenario-022",
+      "prompt": "Choose the safest recovery step after a timeout. Case 022.",
+      "option_order": [
+        "option-d",
+        "option-a",
+        "option-b",
+        "option-c"
+      ],
+      "position_scores": [
+        0.91,
+        0.03,
+        0.03,
+        0.03
+      ]
+    },
+    {
+      "item_id": "scenario-023-position-1",
+      "scenario_id": "scenario-023",
+      "prompt": "Select the clearest storyboard transition. Case 023.",
+      "option_order": [
+        "option-a",
+        "option-b",
+        "option-c",
+        "option-d"
+      ],
+      "position_scores": [
+        0.91,
+        0.03,
+        0.03,
+        0.03
+      ]
+    },
+    {
+      "item_id": "scenario-023-position-2",
+      "scenario_id": "scenario-023",
+      "prompt": "Select the clearest storyboard transition. Case 023.",
+      "option_order": [
+        "option-b",
+        "option-c",
+        "option-d",
+        "option-a"
+      ],
+      "position_scores": [
+        0.91,
+        0.03,
+        0.03,
+        0.03
+      ]
+    },
+    {
+      "item_id": "scenario-023-position-3",
+      "scenario_id": "scenario-023",
+      "prompt": "Select the clearest storyboard transition. Case 023.",
+      "option_order": [
+        "option-c",
+        "option-d",
+        "option-a",
+        "option-b"
+      ],
+      "position_scores": [
+        0.91,
+        0.03,
+        0.03,
+        0.03
+      ]
+    },
+    {
+      "item_id": "scenario-023-position-4",
+      "scenario_id": "scenario-023",
+      "prompt": "Select the clearest storyboard transition. Case 023.",
+      "option_order": [
+        "option-d",
+        "option-a",
+        "option-b",
+        "option-c"
+      ],
+      "position_scores": [
+        0.91,
+        0.03,
+        0.03,
+        0.03
+      ]
+    },
+    {
+      "item_id": "scenario-024-position-1",
+      "scenario_id": "scenario-024",
+      "prompt": "Choose the best asset review priority. Case 024.",
+      "option_order": [
+        "option-a",
+        "option-b",
+        "option-c",
+        "option-d"
+      ],
+      "position_scores": [
+        0.91,
+        0.03,
+        0.03,
+        0.03
+      ]
+    },
+    {
+      "item_id": "scenario-024-position-2",
+      "scenario_id": "scenario-024",
+      "prompt": "Choose the best asset review priority. Case 024.",
+      "option_order": [
+        "option-b",
+        "option-c",
+        "option-d",
+        "option-a"
+      ],
+      "position_scores": [
+        0.91,
+        0.03,
+        0.03,
+        0.03
+      ]
+    },
+    {
+      "item_id": "scenario-024-position-3",
+      "scenario_id": "scenario-024",
+      "prompt": "Choose the best asset review priority. Case 024.",
+      "option_order": [
+        "option-c",
+        "option-d",
+        "option-a",
+        "option-b"
+      ],
+      "position_scores": [
+        0.91,
+        0.03,
+        0.03,
+        0.03
+      ]
+    },
+    {
+      "item_id": "scenario-024-position-4",
+      "scenario_id": "scenario-024",
+      "prompt": "Choose the best asset review priority. Case 024.",
+      "option_order": [
+        "option-d",
+        "option-a",
+        "option-b",
+        "option-c"
+      ],
+      "position_scores": [
+        0.91,
+        0.03,
+        0.03,
+        0.03
+      ]
+    },
+    {
+      "item_id": "scenario-025-position-1",
+      "scenario_id": "scenario-025",
+      "prompt": "Select the most relevant project follow-up. Case 025.",
+      "option_order": [
+        "option-a",
+        "option-b",
+        "option-c",
+        "option-d"
+      ],
+      "position_scores": [
+        0.91,
+        0.03,
+        0.03,
+        0.03
+      ]
+    },
+    {
+      "item_id": "scenario-025-position-2",
+      "scenario_id": "scenario-025",
+      "prompt": "Select the most relevant project follow-up. Case 025.",
+      "option_order": [
+        "option-b",
+        "option-c",
+        "option-d",
+        "option-a"
+      ],
+      "position_scores": [
+        0.91,
+        0.03,
+        0.03,
+        0.03
+      ]
+    },
+    {
+      "item_id": "scenario-025-position-3",
+      "scenario_id": "scenario-025",
+      "prompt": "Select the most relevant project follow-up. Case 025.",
+      "option_order": [
+        "option-c",
+        "option-d",
+        "option-a",
+        "option-b"
+      ],
+      "position_scores": [
+        0.91,
+        0.03,
+        0.03,
+        0.03
+      ]
+    },
+    {
+      "item_id": "scenario-025-position-4",
+      "scenario_id": "scenario-025",
+      "prompt": "Select the most relevant project follow-up. Case 025.",
+      "option_order": [
+        "option-d",
+        "option-a",
+        "option-b",
+        "option-c"
+      ],
+      "position_scores": [
+        0.91,
+        0.03,
+        0.03,
+        0.03
+      ]
+    },
+    {
+      "item_id": "scenario-026-position-1",
+      "scenario_id": "scenario-026",
+      "prompt": "Choose a balanced response to an ambiguous request. Case 026.",
+      "option_order": [
+        "option-a",
+        "option-b",
+        "option-c",
+        "option-d"
+      ],
+      "position_scores": [
+        0.91,
+        0.03,
+        0.03,
+        0.03
+      ]
+    },
+    {
+      "item_id": "scenario-026-position-2",
+      "scenario_id": "scenario-026",
+      "prompt": "Choose a balanced response to an ambiguous request. Case 026.",
+      "option_order": [
+        "option-b",
+        "option-c",
+        "option-d",
+        "option-a"
+      ],
+      "position_scores": [
+        0.91,
+        0.03,
+        0.03,
+        0.03
+      ]
+    },
+    {
+      "item_id": "scenario-026-position-3",
+      "scenario_id": "scenario-026",
+      "prompt": "Choose a balanced response to an ambiguous request. Case 026.",
+      "option_order": [
+        "option-c",
+        "option-d",
+        "option-a",
+        "option-b"
+      ],
+      "position_scores": [
+        0.91,
+        0.03,
+        0.03,
+        0.03
+      ]
+    },
+    {
+      "item_id": "scenario-026-position-4",
+      "scenario_id": "scenario-026",
+      "prompt": "Choose a balanced response to an ambiguous request. Case 026.",
+      "option_order": [
+        "option-d",
+        "option-a",
+        "option-b",
+        "option-c"
+      ],
+      "position_scores": [
+        0.91,
+        0.03,
+        0.03,
+        0.03
+      ]
+    },
+    {
+      "item_id": "scenario-027-position-1",
+      "scenario_id": "scenario-027",
+      "prompt": "Select the most useful next canvas operation. Case 027.",
+      "option_order": [
+        "option-a",
+        "option-b",
+        "option-c",
+        "option-d"
+      ],
+      "position_scores": [
+        0.91,
+        0.03,
+        0.03,
+        0.03
+      ]
+    },
+    {
+      "item_id": "scenario-027-position-2",
+      "scenario_id": "scenario-027",
+      "prompt": "Select the most useful next canvas operation. Case 027.",
+      "option_order": [
+        "option-b",
+        "option-c",
+        "option-d",
+        "option-a"
+      ],
+      "position_scores": [
+        0.91,
+        0.03,
+        0.03,
+        0.03
+      ]
+    },
+    {
+      "item_id": "scenario-027-position-3",
+      "scenario_id": "scenario-027",
+      "prompt": "Select the most useful next canvas operation. Case 027.",
+      "option_order": [
+        "option-c",
+        "option-d",
+        "option-a",
+        "option-b"
+      ],
+      "position_scores": [
+        0.91,
+        0.03,
+        0.03,
+        0.03
+      ]
+    },
+    {
+      "item_id": "scenario-027-position-4",
+      "scenario_id": "scenario-027",
+      "prompt": "Select the most useful next canvas operation. Case 027.",
+      "option_order": [
+        "option-d",
+        "option-a",
+        "option-b",
+        "option-c"
+      ],
+      "position_scores": [
+        0.91,
+        0.03,
+        0.03,
+        0.03
+      ]
+    },
+    {
+      "item_id": "scenario-028-position-1",
+      "scenario_id": "scenario-028",
+      "prompt": "Choose the strongest candidate for a concise summary. Case 028.",
+      "option_order": [
+        "option-a",
+        "option-b",
+        "option-c",
+        "option-d"
+      ],
+      "position_scores": [
+        0.91,
+        0.03,
+        0.03,
+        0.03
+      ]
+    },
+    {
+      "item_id": "scenario-028-position-2",
+      "scenario_id": "scenario-028",
+      "prompt": "Choose the strongest candidate for a concise summary. Case 028.",
+      "option_order": [
+        "option-b",
+        "option-c",
+        "option-d",
+        "option-a"
+      ],
+      "position_scores": [
+        0.91,
+        0.03,
+        0.03,
+        0.03
+      ]
+    },
+    {
+      "item_id": "scenario-028-position-3",
+      "scenario_id": "scenario-028",
+      "prompt": "Choose the strongest candidate for a concise summary. Case 028.",
+      "option_order": [
+        "option-c",
+        "option-d",
+        "option-a",
+        "option-b"
+      ],
+      "position_scores": [
+        0.91,
+        0.03,
+        0.03,
+        0.03
+      ]
+    },
+    {
+      "item_id": "scenario-028-position-4",
+      "scenario_id": "scenario-028",
+      "prompt": "Choose the strongest candidate for a concise summary. Case 028.",
+      "option_order": [
+        "option-d",
+        "option-a",
+        "option-b",
+        "option-c"
+      ],
+      "position_scores": [
+        0.91,
+        0.03,
+        0.03,
+        0.03
+      ]
+    },
+    {
+      "item_id": "scenario-029-position-1",
+      "scenario_id": "scenario-029",
+      "prompt": "Select the lowest-risk workflow branch. Case 029.",
+      "option_order": [
+        "option-a",
+        "option-b",
+        "option-c",
+        "option-d"
+      ],
+      "position_scores": [
+        0.91,
+        0.03,
+        0.03,
+        0.03
+      ]
+    },
+    {
+      "item_id": "scenario-029-position-2",
+      "scenario_id": "scenario-029",
+      "prompt": "Select the lowest-risk workflow branch. Case 029.",
+      "option_order": [
+        "option-b",
+        "option-c",
+        "option-d",
+        "option-a"
+      ],
+      "position_scores": [
+        0.91,
+        0.03,
+        0.03,
+        0.03
+      ]
+    },
+    {
+      "item_id": "scenario-029-position-3",
+      "scenario_id": "scenario-029",
+      "prompt": "Select the lowest-risk workflow branch. Case 029.",
+      "option_order": [
+        "option-c",
+        "option-d",
+        "option-a",
+        "option-b"
+      ],
+      "position_scores": [
+        0.91,
+        0.03,
+        0.03,
+        0.03
+      ]
+    },
+    {
+      "item_id": "scenario-029-position-4",
+      "scenario_id": "scenario-029",
+      "prompt": "Select the lowest-risk workflow branch. Case 029.",
+      "option_order": [
+        "option-d",
+        "option-a",
+        "option-b",
+        "option-c"
+      ],
+      "position_scores": [
+        0.91,
+        0.03,
+        0.03,
+        0.03
+      ]
+    },
+    {
+      "item_id": "scenario-030-position-1",
+      "scenario_id": "scenario-030",
+      "prompt": "Choose the most actionable quality improvement. Case 030.",
+      "option_order": [
+        "option-a",
+        "option-b",
+        "option-c",
+        "option-d"
+      ],
+      "position_scores": [
+        0.91,
+        0.03,
+        0.03,
+        0.03
+      ]
+    },
+    {
+      "item_id": "scenario-030-position-2",
+      "scenario_id": "scenario-030",
+      "prompt": "Choose the most actionable quality improvement. Case 030.",
+      "option_order": [
+        "option-b",
+        "option-c",
+        "option-d",
+        "option-a"
+      ],
+      "position_scores": [
+        0.91,
+        0.03,
+        0.03,
+        0.03
+      ]
+    },
+    {
+      "item_id": "scenario-030-position-3",
+      "scenario_id": "scenario-030",
+      "prompt": "Choose the most actionable quality improvement. Case 030.",
+      "option_order": [
+        "option-c",
+        "option-d",
+        "option-a",
+        "option-b"
+      ],
+      "position_scores": [
+        0.91,
+        0.03,
+        0.03,
+        0.03
+      ]
+    },
+    {
+      "item_id": "scenario-030-position-4",
+      "scenario_id": "scenario-030",
+      "prompt": "Choose the most actionable quality improvement. Case 030.",
+      "option_order": [
+        "option-d",
+        "option-a",
+        "option-b",
+        "option-c"
+      ],
+      "position_scores": [
+        0.91,
+        0.03,
+        0.03,
+        0.03
+      ]
+    },
+    {
+      "item_id": "scenario-031-position-1",
+      "scenario_id": "scenario-031",
+      "prompt": "Select the most suitable next action for a writer. Case 031.",
+      "option_order": [
+        "option-a",
+        "option-b",
+        "option-c",
+        "option-d"
+      ],
+      "position_scores": [
+        0.91,
+        0.03,
+        0.03,
+        0.03
+      ]
+    },
+    {
+      "item_id": "scenario-031-position-2",
+      "scenario_id": "scenario-031",
+      "prompt": "Select the most suitable next action for a writer. Case 031.",
+      "option_order": [
+        "option-b",
+        "option-c",
+        "option-d",
+        "option-a"
+      ],
+      "position_scores": [
+        0.91,
+        0.03,
+        0.03,
+        0.03
+      ]
+    },
+    {
+      "item_id": "scenario-031-position-3",
+      "scenario_id": "scenario-031",
+      "prompt": "Select the most suitable next action for a writer. Case 031.",
+      "option_order": [
+        "option-c",
+        "option-d",
+        "option-a",
+        "option-b"
+      ],
+      "position_scores": [
+        0.91,
+        0.03,
+        0.03,
+        0.03
+      ]
+    },
+    {
+      "item_id": "scenario-031-position-4",
+      "scenario_id": "scenario-031",
+      "prompt": "Select the most suitable next action for a writer. Case 031.",
+      "option_order": [
+        "option-d",
+        "option-a",
+        "option-b",
+        "option-c"
+      ],
+      "position_scores": [
+        0.91,
+        0.03,
+        0.03,
+        0.03
+      ]
+    },
+    {
+      "item_id": "scenario-032-position-1",
+      "scenario_id": "scenario-032",
+      "prompt": "Choose the safest recovery step after a timeout. Case 032.",
+      "option_order": [
+        "option-a",
+        "option-b",
+        "option-c",
+        "option-d"
+      ],
+      "position_scores": [
+        0.91,
+        0.03,
+        0.03,
+        0.03
+      ]
+    },
+    {
+      "item_id": "scenario-032-position-2",
+      "scenario_id": "scenario-032",
+      "prompt": "Choose the safest recovery step after a timeout. Case 032.",
+      "option_order": [
+        "option-b",
+        "option-c",
+        "option-d",
+        "option-a"
+      ],
+      "position_scores": [
+        0.91,
+        0.03,
+        0.03,
+        0.03
+      ]
+    },
+    {
+      "item_id": "scenario-032-position-3",
+      "scenario_id": "scenario-032",
+      "prompt": "Choose the safest recovery step after a timeout. Case 032.",
+      "option_order": [
+        "option-c",
+        "option-d",
+        "option-a",
+        "option-b"
+      ],
+      "position_scores": [
+        0.91,
+        0.03,
+        0.03,
+        0.03
+      ]
+    },
+    {
+      "item_id": "scenario-032-position-4",
+      "scenario_id": "scenario-032",
+      "prompt": "Choose the safest recovery step after a timeout. Case 032.",
+      "option_order": [
+        "option-d",
+        "option-a",
+        "option-b",
+        "option-c"
+      ],
+      "position_scores": [
+        0.91,
+        0.03,
+        0.03,
+        0.03
+      ]
+    },
+    {
+      "item_id": "scenario-033-position-1",
+      "scenario_id": "scenario-033",
+      "prompt": "Select the clearest storyboard transition. Case 033.",
+      "option_order": [
+        "option-a",
+        "option-b",
+        "option-c",
+        "option-d"
+      ],
+      "position_scores": [
+        0.91,
+        0.03,
+        0.03,
+        0.03
+      ]
+    },
+    {
+      "item_id": "scenario-033-position-2",
+      "scenario_id": "scenario-033",
+      "prompt": "Select the clearest storyboard transition. Case 033.",
+      "option_order": [
+        "option-b",
+        "option-c",
+        "option-d",
+        "option-a"
+      ],
+      "position_scores": [
+        0.91,
+        0.03,
+        0.03,
+        0.03
+      ]
+    },
+    {
+      "item_id": "scenario-033-position-3",
+      "scenario_id": "scenario-033",
+      "prompt": "Select the clearest storyboard transition. Case 033.",
+      "option_order": [
+        "option-c",
+        "option-d",
+        "option-a",
+        "option-b"
+      ],
+      "position_scores": [
+        0.91,
+        0.03,
+        0.03,
+        0.03
+      ]
+    },
+    {
+      "item_id": "scenario-033-position-4",
+      "scenario_id": "scenario-033",
+      "prompt": "Select the clearest storyboard transition. Case 033.",
+      "option_order": [
+        "option-d",
+        "option-a",
+        "option-b",
+        "option-c"
+      ],
+      "position_scores": [
+        0.91,
+        0.03,
+        0.03,
+        0.03
+      ]
+    },
+    {
+      "item_id": "scenario-034-position-1",
+      "scenario_id": "scenario-034",
+      "prompt": "Choose the best asset review priority. Case 034.",
+      "option_order": [
+        "option-a",
+        "option-b",
+        "option-c",
+        "option-d"
+      ],
+      "position_scores": [
+        0.91,
+        0.03,
+        0.03,
+        0.03
+      ]
+    },
+    {
+      "item_id": "scenario-034-position-2",
+      "scenario_id": "scenario-034",
+      "prompt": "Choose the best asset review priority. Case 034.",
+      "option_order": [
+        "option-b",
+        "option-c",
+        "option-d",
+        "option-a"
+      ],
+      "position_scores": [
+        0.91,
+        0.03,
+        0.03,
+        0.03
+      ]
+    },
+    {
+      "item_id": "scenario-034-position-3",
+      "scenario_id": "scenario-034",
+      "prompt": "Choose the best asset review priority. Case 034.",
+      "option_order": [
+        "option-c",
+        "option-d",
+        "option-a",
+        "option-b"
+      ],
+      "position_scores": [
+        0.91,
+        0.03,
+        0.03,
+        0.03
+      ]
+    },
+    {
+      "item_id": "scenario-034-position-4",
+      "scenario_id": "scenario-034",
+      "prompt": "Choose the best asset review priority. Case 034.",
+      "option_order": [
+        "option-d",
+        "option-a",
+        "option-b",
+        "option-c"
+      ],
+      "position_scores": [
+        0.91,
+        0.03,
+        0.03,
+        0.03
+      ]
+    },
+    {
+      "item_id": "scenario-035-position-1",
+      "scenario_id": "scenario-035",
+      "prompt": "Select the most relevant project follow-up. Case 035.",
+      "option_order": [
+        "option-a",
+        "option-b",
+        "option-c",
+        "option-d"
+      ],
+      "position_scores": [
+        0.91,
+        0.03,
+        0.03,
+        0.03
+      ]
+    },
+    {
+      "item_id": "scenario-035-position-2",
+      "scenario_id": "scenario-035",
+      "prompt": "Select the most relevant project follow-up. Case 035.",
+      "option_order": [
+        "option-b",
+        "option-c",
+        "option-d",
+        "option-a"
+      ],
+      "position_scores": [
+        0.91,
+        0.03,
+        0.03,
+        0.03
+      ]
+    },
+    {
+      "item_id": "scenario-035-position-3",
+      "scenario_id": "scenario-035",
+      "prompt": "Select the most relevant project follow-up. Case 035.",
+      "option_order": [
+        "option-c",
+        "option-d",
+        "option-a",
+        "option-b"
+      ],
+      "position_scores": [
+        0.91,
+        0.03,
+        0.03,
+        0.03
+      ]
+    },
+    {
+      "item_id": "scenario-035-position-4",
+      "scenario_id": "scenario-035",
+      "prompt": "Select the most relevant project follow-up. Case 035.",
+      "option_order": [
+        "option-d",
+        "option-a",
+        "option-b",
+        "option-c"
+      ],
+      "position_scores": [
+        0.91,
+        0.03,
+        0.03,
+        0.03
+      ]
+    },
+    {
+      "item_id": "scenario-036-position-1",
+      "scenario_id": "scenario-036",
+      "prompt": "Choose a balanced response to an ambiguous request. Case 036.",
+      "option_order": [
+        "option-a",
+        "option-b",
+        "option-c",
+        "option-d"
+      ],
+      "position_scores": [
+        0.91,
+        0.03,
+        0.03,
+        0.03
+      ]
+    },
+    {
+      "item_id": "scenario-036-position-2",
+      "scenario_id": "scenario-036",
+      "prompt": "Choose a balanced response to an ambiguous request. Case 036.",
+      "option_order": [
+        "option-b",
+        "option-c",
+        "option-d",
+        "option-a"
+      ],
+      "position_scores": [
+        0.91,
+        0.03,
+        0.03,
+        0.03
+      ]
+    },
+    {
+      "item_id": "scenario-036-position-3",
+      "scenario_id": "scenario-036",
+      "prompt": "Choose a balanced response to an ambiguous request. Case 036.",
+      "option_order": [
+        "option-c",
+        "option-d",
+        "option-a",
+        "option-b"
+      ],
+      "position_scores": [
+        0.91,
+        0.03,
+        0.03,
+        0.03
+      ]
+    },
+    {
+      "item_id": "scenario-036-position-4",
+      "scenario_id": "scenario-036",
+      "prompt": "Choose a balanced response to an ambiguous request. Case 036.",
+      "option_order": [
+        "option-d",
+        "option-a",
+        "option-b",
+        "option-c"
+      ],
+      "position_scores": [
+        0.91,
+        0.03,
+        0.03,
+        0.03
+      ]
+    },
+    {
+      "item_id": "scenario-037-position-1",
+      "scenario_id": "scenario-037",
+      "prompt": "Select the most useful next canvas operation. Case 037.",
+      "option_order": [
+        "option-a",
+        "option-b",
+        "option-c",
+        "option-d"
+      ],
+      "position_scores": [
+        0.91,
+        0.03,
+        0.03,
+        0.03
+      ]
+    },
+    {
+      "item_id": "scenario-037-position-2",
+      "scenario_id": "scenario-037",
+      "prompt": "Select the most useful next canvas operation. Case 037.",
+      "option_order": [
+        "option-b",
+        "option-c",
+        "option-d",
+        "option-a"
+      ],
+      "position_scores": [
+        0.91,
+        0.03,
+        0.03,
+        0.03
+      ]
+    },
+    {
+      "item_id": "scenario-037-position-3",
+      "scenario_id": "scenario-037",
+      "prompt": "Select the most useful next canvas operation. Case 037.",
+      "option_order": [
+        "option-c",
+        "option-d",
+        "option-a",
+        "option-b"
+      ],
+      "position_scores": [
+        0.91,
+        0.03,
+        0.03,
+        0.03
+      ]
+    },
+    {
+      "item_id": "scenario-037-position-4",
+      "scenario_id": "scenario-037",
+      "prompt": "Select the most useful next canvas operation. Case 037.",
+      "option_order": [
+        "option-d",
+        "option-a",
+        "option-b",
+        "option-c"
+      ],
+      "position_scores": [
+        0.91,
+        0.03,
+        0.03,
+        0.03
+      ]
+    },
+    {
+      "item_id": "scenario-038-position-1",
+      "scenario_id": "scenario-038",
+      "prompt": "Choose the strongest candidate for a concise summary. Case 038.",
+      "option_order": [
+        "option-a",
+        "option-b",
+        "option-c",
+        "option-d"
+      ],
+      "position_scores": [
+        0.91,
+        0.03,
+        0.03,
+        0.03
+      ]
+    },
+    {
+      "item_id": "scenario-038-position-2",
+      "scenario_id": "scenario-038",
+      "prompt": "Choose the strongest candidate for a concise summary. Case 038.",
+      "option_order": [
+        "option-b",
+        "option-c",
+        "option-d",
+        "option-a"
+      ],
+      "position_scores": [
+        0.91,
+        0.03,
+        0.03,
+        0.03
+      ]
+    },
+    {
+      "item_id": "scenario-038-position-3",
+      "scenario_id": "scenario-038",
+      "prompt": "Choose the strongest candidate for a concise summary. Case 038.",
+      "option_order": [
+        "option-c",
+        "option-d",
+        "option-a",
+        "option-b"
+      ],
+      "position_scores": [
+        0.91,
+        0.03,
+        0.03,
+        0.03
+      ]
+    },
+    {
+      "item_id": "scenario-038-position-4",
+      "scenario_id": "scenario-038",
+      "prompt": "Choose the strongest candidate for a concise summary. Case 038.",
+      "option_order": [
+        "option-d",
+        "option-a",
+        "option-b",
+        "option-c"
+      ],
+      "position_scores": [
+        0.91,
+        0.03,
+        0.03,
+        0.03
+      ]
+    },
+    {
+      "item_id": "scenario-039-position-1",
+      "scenario_id": "scenario-039",
+      "prompt": "Select the lowest-risk workflow branch. Case 039.",
+      "option_order": [
+        "option-a",
+        "option-b",
+        "option-c",
+        "option-d"
+      ],
+      "position_scores": [
+        0.91,
+        0.03,
+        0.03,
+        0.03
+      ]
+    },
+    {
+      "item_id": "scenario-039-position-2",
+      "scenario_id": "scenario-039",
+      "prompt": "Select the lowest-risk workflow branch. Case 039.",
+      "option_order": [
+        "option-b",
+        "option-c",
+        "option-d",
+        "option-a"
+      ],
+      "position_scores": [
+        0.91,
+        0.03,
+        0.03,
+        0.03
+      ]
+    },
+    {
+      "item_id": "scenario-039-position-3",
+      "scenario_id": "scenario-039",
+      "prompt": "Select the lowest-risk workflow branch. Case 039.",
+      "option_order": [
+        "option-c",
+        "option-d",
+        "option-a",
+        "option-b"
+      ],
+      "position_scores": [
+        0.91,
+        0.03,
+        0.03,
+        0.03
+      ]
+    },
+    {
+      "item_id": "scenario-039-position-4",
+      "scenario_id": "scenario-039",
+      "prompt": "Select the lowest-risk workflow branch. Case 039.",
+      "option_order": [
+        "option-d",
+        "option-a",
+        "option-b",
+        "option-c"
+      ],
+      "position_scores": [
+        0.91,
+        0.03,
+        0.03,
+        0.03
+      ]
+    },
+    {
+      "item_id": "scenario-040-position-1",
+      "scenario_id": "scenario-040",
+      "prompt": "Choose the most actionable quality improvement. Case 040.",
+      "option_order": [
+        "option-a",
+        "option-b",
+        "option-c",
+        "option-d"
+      ],
+      "position_scores": [
+        0.91,
+        0.03,
+        0.03,
+        0.03
+      ]
+    },
+    {
+      "item_id": "scenario-040-position-2",
+      "scenario_id": "scenario-040",
+      "prompt": "Choose the most actionable quality improvement. Case 040.",
+      "option_order": [
+        "option-b",
+        "option-c",
+        "option-d",
+        "option-a"
+      ],
+      "position_scores": [
+        0.91,
+        0.03,
+        0.03,
+        0.03
+      ]
+    },
+    {
+      "item_id": "scenario-040-position-3",
+      "scenario_id": "scenario-040",
+      "prompt": "Choose the most actionable quality improvement. Case 040.",
+      "option_order": [
+        "option-c",
+        "option-d",
+        "option-a",
+        "option-b"
+      ],
+      "position_scores": [
+        0.91,
+        0.03,
+        0.03,
+        0.03
+      ]
+    },
+    {
+      "item_id": "scenario-040-position-4",
+      "scenario_id": "scenario-040",
+      "prompt": "Choose the most actionable quality improvement. Case 040.",
+      "option_order": [
+        "option-d",
+        "option-a",
+        "option-b",
+        "option-c"
+      ],
+      "position_scores": [
+        0.91,
+        0.03,
+        0.03,
+        0.03
+      ]
+    },
+    {
+      "item_id": "scenario-041-position-1",
+      "scenario_id": "scenario-041",
+      "prompt": "Select the most suitable next action for a writer. Case 041.",
+      "option_order": [
+        "option-a",
+        "option-b",
+        "option-c",
+        "option-d"
+      ],
+      "position_scores": [
+        0.91,
+        0.03,
+        0.03,
+        0.03
+      ]
+    },
+    {
+      "item_id": "scenario-041-position-2",
+      "scenario_id": "scenario-041",
+      "prompt": "Select the most suitable next action for a writer. Case 041.",
+      "option_order": [
+        "option-b",
+        "option-c",
+        "option-d",
+        "option-a"
+      ],
+      "position_scores": [
+        0.91,
+        0.03,
+        0.03,
+        0.03
+      ]
+    },
+    {
+      "item_id": "scenario-041-position-3",
+      "scenario_id": "scenario-041",
+      "prompt": "Select the most suitable next action for a writer. Case 041.",
+      "option_order": [
+        "option-c",
+        "option-d",
+        "option-a",
+        "option-b"
+      ],
+      "position_scores": [
+        0.91,
+        0.03,
+        0.03,
+        0.03
+      ]
+    },
+    {
+      "item_id": "scenario-041-position-4",
+      "scenario_id": "scenario-041",
+      "prompt": "Select the most suitable next action for a writer. Case 041.",
+      "option_order": [
+        "option-d",
+        "option-a",
+        "option-b",
+        "option-c"
+      ],
+      "position_scores": [
+        0.91,
+        0.03,
+        0.03,
+        0.03
+      ]
+    },
+    {
+      "item_id": "scenario-042-position-1",
+      "scenario_id": "scenario-042",
+      "prompt": "Choose the safest recovery step after a timeout. Case 042.",
+      "option_order": [
+        "option-a",
+        "option-b",
+        "option-c",
+        "option-d"
+      ],
+      "position_scores": [
+        0.91,
+        0.03,
+        0.03,
+        0.03
+      ]
+    },
+    {
+      "item_id": "scenario-042-position-2",
+      "scenario_id": "scenario-042",
+      "prompt": "Choose the safest recovery step after a timeout. Case 042.",
+      "option_order": [
+        "option-b",
+        "option-c",
+        "option-d",
+        "option-a"
+      ],
+      "position_scores": [
+        0.91,
+        0.03,
+        0.03,
+        0.03
+      ]
+    },
+    {
+      "item_id": "scenario-042-position-3",
+      "scenario_id": "scenario-042",
+      "prompt": "Choose the safest recovery step after a timeout. Case 042.",
+      "option_order": [
+        "option-c",
+        "option-d",
+        "option-a",
+        "option-b"
+      ],
+      "position_scores": [
+        0.91,
+        0.03,
+        0.03,
+        0.03
+      ]
+    },
+    {
+      "item_id": "scenario-042-position-4",
+      "scenario_id": "scenario-042",
+      "prompt": "Choose the safest recovery step after a timeout. Case 042.",
+      "option_order": [
+        "option-d",
+        "option-a",
+        "option-b",
+        "option-c"
+      ],
+      "position_scores": [
+        0.91,
+        0.03,
+        0.03,
+        0.03
+      ]
+    },
+    {
+      "item_id": "scenario-043-position-1",
+      "scenario_id": "scenario-043",
+      "prompt": "Select the clearest storyboard transition. Case 043.",
+      "option_order": [
+        "option-a",
+        "option-b",
+        "option-c",
+        "option-d"
+      ],
+      "position_scores": [
+        0.91,
+        0.03,
+        0.03,
+        0.03
+      ]
+    },
+    {
+      "item_id": "scenario-043-position-2",
+      "scenario_id": "scenario-043",
+      "prompt": "Select the clearest storyboard transition. Case 043.",
+      "option_order": [
+        "option-b",
+        "option-c",
+        "option-d",
+        "option-a"
+      ],
+      "position_scores": [
+        0.91,
+        0.03,
+        0.03,
+        0.03
+      ]
+    },
+    {
+      "item_id": "scenario-043-position-3",
+      "scenario_id": "scenario-043",
+      "prompt": "Select the clearest storyboard transition. Case 043.",
+      "option_order": [
+        "option-c",
+        "option-d",
+        "option-a",
+        "option-b"
+      ],
+      "position_scores": [
+        0.91,
+        0.03,
+        0.03,
+        0.03
+      ]
+    },
+    {
+      "item_id": "scenario-043-position-4",
+      "scenario_id": "scenario-043",
+      "prompt": "Select the clearest storyboard transition. Case 043.",
+      "option_order": [
+        "option-d",
+        "option-a",
+        "option-b",
+        "option-c"
+      ],
+      "position_scores": [
+        0.91,
+        0.03,
+        0.03,
+        0.03
+      ]
+    },
+    {
+      "item_id": "scenario-044-position-1",
+      "scenario_id": "scenario-044",
+      "prompt": "Choose the best asset review priority. Case 044.",
+      "option_order": [
+        "option-a",
+        "option-b",
+        "option-c",
+        "option-d"
+      ],
+      "position_scores": [
+        0.91,
+        0.03,
+        0.03,
+        0.03
+      ]
+    },
+    {
+      "item_id": "scenario-044-position-2",
+      "scenario_id": "scenario-044",
+      "prompt": "Choose the best asset review priority. Case 044.",
+      "option_order": [
+        "option-b",
+        "option-c",
+        "option-d",
+        "option-a"
+      ],
+      "position_scores": [
+        0.91,
+        0.03,
+        0.03,
+        0.03
+      ]
+    },
+    {
+      "item_id": "scenario-044-position-3",
+      "scenario_id": "scenario-044",
+      "prompt": "Choose the best asset review priority. Case 044.",
+      "option_order": [
+        "option-c",
+        "option-d",
+        "option-a",
+        "option-b"
+      ],
+      "position_scores": [
+        0.91,
+        0.03,
+        0.03,
+        0.03
+      ]
+    },
+    {
+      "item_id": "scenario-044-position-4",
+      "scenario_id": "scenario-044",
+      "prompt": "Choose the best asset review priority. Case 044.",
+      "option_order": [
+        "option-d",
+        "option-a",
+        "option-b",
+        "option-c"
+      ],
+      "position_scores": [
+        0.91,
+        0.03,
+        0.03,
+        0.03
+      ]
+    },
+    {
+      "item_id": "scenario-045-position-1",
+      "scenario_id": "scenario-045",
+      "prompt": "Select the most relevant project follow-up. Case 045.",
+      "option_order": [
+        "option-a",
+        "option-b",
+        "option-c",
+        "option-d"
+      ],
+      "position_scores": [
+        0.91,
+        0.03,
+        0.03,
+        0.03
+      ]
+    },
+    {
+      "item_id": "scenario-045-position-2",
+      "scenario_id": "scenario-045",
+      "prompt": "Select the most relevant project follow-up. Case 045.",
+      "option_order": [
+        "option-b",
+        "option-c",
+        "option-d",
+        "option-a"
+      ],
+      "position_scores": [
+        0.91,
+        0.03,
+        0.03,
+        0.03
+      ]
+    },
+    {
+      "item_id": "scenario-045-position-3",
+      "scenario_id": "scenario-045",
+      "prompt": "Select the most relevant project follow-up. Case 045.",
+      "option_order": [
+        "option-c",
+        "option-d",
+        "option-a",
+        "option-b"
+      ],
+      "position_scores": [
+        0.91,
+        0.03,
+        0.03,
+        0.03
+      ]
+    },
+    {
+      "item_id": "scenario-045-position-4",
+      "scenario_id": "scenario-045",
+      "prompt": "Select the most relevant project follow-up. Case 045.",
+      "option_order": [
+        "option-d",
+        "option-a",
+        "option-b",
+        "option-c"
+      ],
+      "position_scores": [
+        0.91,
+        0.03,
+        0.03,
+        0.03
+      ]
+    },
+    {
+      "item_id": "scenario-046-position-1",
+      "scenario_id": "scenario-046",
+      "prompt": "Choose a balanced response to an ambiguous request. Case 046.",
+      "option_order": [
+        "option-a",
+        "option-b",
+        "option-c",
+        "option-d"
+      ],
+      "position_scores": [
+        0.91,
+        0.03,
+        0.03,
+        0.03
+      ]
+    },
+    {
+      "item_id": "scenario-046-position-2",
+      "scenario_id": "scenario-046",
+      "prompt": "Choose a balanced response to an ambiguous request. Case 046.",
+      "option_order": [
+        "option-b",
+        "option-c",
+        "option-d",
+        "option-a"
+      ],
+      "position_scores": [
+        0.91,
+        0.03,
+        0.03,
+        0.03
+      ]
+    },
+    {
+      "item_id": "scenario-046-position-3",
+      "scenario_id": "scenario-046",
+      "prompt": "Choose a balanced response to an ambiguous request. Case 046.",
+      "option_order": [
+        "option-c",
+        "option-d",
+        "option-a",
+        "option-b"
+      ],
+      "position_scores": [
+        0.91,
+        0.03,
+        0.03,
+        0.03
+      ]
+    },
+    {
+      "item_id": "scenario-046-position-4",
+      "scenario_id": "scenario-046",
+      "prompt": "Choose a balanced response to an ambiguous request. Case 046.",
+      "option_order": [
+        "option-d",
+        "option-a",
+        "option-b",
+        "option-c"
+      ],
+      "position_scores": [
+        0.91,
+        0.03,
+        0.03,
+        0.03
+      ]
+    },
+    {
+      "item_id": "scenario-047-position-1",
+      "scenario_id": "scenario-047",
+      "prompt": "Select the most useful next canvas operation. Case 047.",
+      "option_order": [
+        "option-a",
+        "option-b",
+        "option-c",
+        "option-d"
+      ],
+      "position_scores": [
+        0.91,
+        0.03,
+        0.03,
+        0.03
+      ]
+    },
+    {
+      "item_id": "scenario-047-position-2",
+      "scenario_id": "scenario-047",
+      "prompt": "Select the most useful next canvas operation. Case 047.",
+      "option_order": [
+        "option-b",
+        "option-c",
+        "option-d",
+        "option-a"
+      ],
+      "position_scores": [
+        0.91,
+        0.03,
+        0.03,
+        0.03
+      ]
+    },
+    {
+      "item_id": "scenario-047-position-3",
+      "scenario_id": "scenario-047",
+      "prompt": "Select the most useful next canvas operation. Case 047.",
+      "option_order": [
+        "option-c",
+        "option-d",
+        "option-a",
+        "option-b"
+      ],
+      "position_scores": [
+        0.91,
+        0.03,
+        0.03,
+        0.03
+      ]
+    },
+    {
+      "item_id": "scenario-047-position-4",
+      "scenario_id": "scenario-047",
+      "prompt": "Select the most useful next canvas operation. Case 047.",
+      "option_order": [
+        "option-d",
+        "option-a",
+        "option-b",
+        "option-c"
+      ],
+      "position_scores": [
+        0.91,
+        0.03,
+        0.03,
+        0.03
+      ]
+    },
+    {
+      "item_id": "scenario-048-position-1",
+      "scenario_id": "scenario-048",
+      "prompt": "Choose the strongest candidate for a concise summary. Case 048.",
+      "option_order": [
+        "option-a",
+        "option-b",
+        "option-c",
+        "option-d"
+      ],
+      "position_scores": [
+        0.91,
+        0.03,
+        0.03,
+        0.03
+      ]
+    },
+    {
+      "item_id": "scenario-048-position-2",
+      "scenario_id": "scenario-048",
+      "prompt": "Choose the strongest candidate for a concise summary. Case 048.",
+      "option_order": [
+        "option-b",
+        "option-c",
+        "option-d",
+        "option-a"
+      ],
+      "position_scores": [
+        0.91,
+        0.03,
+        0.03,
+        0.03
+      ]
+    },
+    {
+      "item_id": "scenario-048-position-3",
+      "scenario_id": "scenario-048",
+      "prompt": "Choose the strongest candidate for a concise summary. Case 048.",
+      "option_order": [
+        "option-c",
+        "option-d",
+        "option-a",
+        "option-b"
+      ],
+      "position_scores": [
+        0.91,
+        0.03,
+        0.03,
+        0.03
+      ]
+    },
+    {
+      "item_id": "scenario-048-position-4",
+      "scenario_id": "scenario-048",
+      "prompt": "Choose the strongest candidate for a concise summary. Case 048.",
+      "option_order": [
+        "option-d",
+        "option-a",
+        "option-b",
+        "option-c"
+      ],
+      "position_scores": [
+        0.91,
+        0.03,
+        0.03,
+        0.03
+      ]
+    },
+    {
+      "item_id": "scenario-049-position-1",
+      "scenario_id": "scenario-049",
+      "prompt": "Select the lowest-risk workflow branch. Case 049.",
+      "option_order": [
+        "option-a",
+        "option-b",
+        "option-c",
+        "option-d"
+      ],
+      "position_scores": [
+        0.91,
+        0.03,
+        0.03,
+        0.03
+      ]
+    },
+    {
+      "item_id": "scenario-049-position-2",
+      "scenario_id": "scenario-049",
+      "prompt": "Select the lowest-risk workflow branch. Case 049.",
+      "option_order": [
+        "option-b",
+        "option-c",
+        "option-d",
+        "option-a"
+      ],
+      "position_scores": [
+        0.91,
+        0.03,
+        0.03,
+        0.03
+      ]
+    },
+    {
+      "item_id": "scenario-049-position-3",
+      "scenario_id": "scenario-049",
+      "prompt": "Select the lowest-risk workflow branch. Case 049.",
+      "option_order": [
+        "option-c",
+        "option-d",
+        "option-a",
+        "option-b"
+      ],
+      "position_scores": [
+        0.91,
+        0.03,
+        0.03,
+        0.03
+      ]
+    },
+    {
+      "item_id": "scenario-049-position-4",
+      "scenario_id": "scenario-049",
+      "prompt": "Select the lowest-risk workflow branch. Case 049.",
+      "option_order": [
+        "option-d",
+        "option-a",
+        "option-b",
+        "option-c"
+      ],
+      "position_scores": [
+        0.91,
+        0.03,
+        0.03,
+        0.03
+      ]
+    },
+    {
+      "item_id": "scenario-050-position-1",
+      "scenario_id": "scenario-050",
+      "prompt": "Choose the most actionable quality improvement. Case 050.",
+      "option_order": [
+        "option-a",
+        "option-b",
+        "option-c",
+        "option-d"
+      ],
+      "position_scores": [
+        0.91,
+        0.03,
+        0.03,
+        0.03
+      ]
+    },
+    {
+      "item_id": "scenario-050-position-2",
+      "scenario_id": "scenario-050",
+      "prompt": "Choose the most actionable quality improvement. Case 050.",
+      "option_order": [
+        "option-b",
+        "option-c",
+        "option-d",
+        "option-a"
+      ],
+      "position_scores": [
+        0.91,
+        0.03,
+        0.03,
+        0.03
+      ]
+    },
+    {
+      "item_id": "scenario-050-position-3",
+      "scenario_id": "scenario-050",
+      "prompt": "Choose the most actionable quality improvement. Case 050.",
+      "option_order": [
+        "option-c",
+        "option-d",
+        "option-a",
+        "option-b"
+      ],
+      "position_scores": [
+        0.91,
+        0.03,
+        0.03,
+        0.03
+      ]
+    },
+    {
+      "item_id": "scenario-050-position-4",
+      "scenario_id": "scenario-050",
+      "prompt": "Choose the most actionable quality improvement. Case 050.",
+      "option_order": [
+        "option-d",
+        "option-a",
+        "option-b",
+        "option-c"
+      ],
+      "position_scores": [
+        0.91,
+        0.03,
+        0.03,
+        0.03
+      ]
+    }
+  ]
+}
