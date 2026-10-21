@@ -3,6 +3,7 @@
 Concrete host, model, storage, and vector-store adapters are deliberately owned by
 separate implementation tasks and must not be imported from this module.
 """
+
 from __future__ import annotations
 
 from collections.abc import Awaitable, Callable, Mapping, Sequence
@@ -13,13 +14,13 @@ from .models import (
     AgentRun,
     ApprovalRecord,
     ArtifactRef,
-    BudgetReservationRequest,
-    BudgetSettlement,
     ArtifactVersionInput,
     BudgetDecision,
-    ConfigSnapshot,
-    ClarificationRead,
+    BudgetReservationRequest,
+    BudgetSettlement,
     ClarificationAnswerRequest,
+    ClarificationRead,
+    ConfigSnapshot,
     ConfigurationValidation,
     CreateRunRequest,
     EventPage,
@@ -29,18 +30,18 @@ from .models import (
     Identifier,
     InvocationRecord,
     KnowledgeSearchRequest,
+    KnowledgeSearchResult,
     KnowledgeSource,
     LeaseGrant,
-    KnowledgeSearchResult,
     ModelCapabilities,
     ModelInvocationRequest,
     ModelInvocationResult,
     PromptTemplate,
     PromptTemplateRef,
     RequestContext,
+    ReviewCandidateRead,
     ReviewDecisionRequest,
     ReviewRecord,
-    ReviewCandidateRead,
     RunEvent,
     StageId,
     TextExportFormat,
@@ -63,8 +64,14 @@ class ArtifactExportPort(Protocol):
     """Injected domain serializer after the runtime verifies exact release evidence."""
 
     async def export(
-        self, artifact: ArtifactRef, content: str, review: ReviewRecord, *,
-        is_current: bool, release: bool, approval: ApprovalRecord | None,
+        self,
+        artifact: ArtifactRef,
+        content: str,
+        review: ReviewRecord,
+        *,
+        is_current: bool,
+        release: bool,
+        approval: ApprovalRecord | None,
         format: TextExportFormat,
     ) -> ExportPayload: ...
 
@@ -87,15 +94,21 @@ class IdentityProjectPort(Protocol):
 class ModelGateway(Protocol):
     """Capability discovery and one invocation; no provider is implied."""
 
-    async def describe_capabilities(self, model_ref: Identifier) -> ModelCapabilities: ...
+    async def describe_capabilities(
+        self, model_ref: Identifier
+    ) -> ModelCapabilities: ...
 
-    async def invoke(self, request: ModelInvocationRequest) -> ModelInvocationResult: ...
+    async def invoke(
+        self, request: ModelInvocationRequest
+    ) -> ModelInvocationResult: ...
 
 
 class ModelInvocationLookupPort(Protocol):
     """Optional capability, implemented only when the provider supports it."""
 
-    async def lookup(self, invocation_id: Identifier) -> ModelInvocationResult | None: ...
+    async def lookup(
+        self, invocation_id: Identifier
+    ) -> ModelInvocationResult | None: ...
 
     async def cancel(self, invocation_id: Identifier) -> bool: ...
 
@@ -104,15 +117,23 @@ class InvocationDispatcherPort(Protocol):
     """Durable model boundary; known results replay and unknown sends never resend."""
 
     async def invoke(
-        self, run_id: Identifier, request: ModelInvocationRequest, *,
+        self,
+        run_id: Identifier,
+        request: ModelInvocationRequest,
+        *,
         reservation: BudgetReservationRequest | None = None,
-        lease: LeaseGrant, max_retries: int = 2,
+        lease: LeaseGrant,
+        max_retries: int = 2,
         before_send: Callable[[], Awaitable[LeaseGrant]] | None = None,
     ) -> ModelInvocationResult: ...
 
     async def reserve_format_repair(
-        self, run_id: Identifier, operation_id: Identifier, repair_id: Identifier,
-        *, lease: LeaseGrant,
+        self,
+        run_id: Identifier,
+        operation_id: Identifier,
+        repair_id: Identifier,
+        *,
+        lease: LeaseGrant,
     ) -> None: ...
 
 
@@ -137,13 +158,17 @@ class ArtifactRepository(Protocol):
         self, artifact_id: Identifier, version_id: Identifier
     ) -> ArtifactRef | None: ...
 
-    async def read_content(self, artifact_id: Identifier, version_id: Identifier) -> str | None: ...
+    async def read_content(
+        self, artifact_id: Identifier, version_id: Identifier
+    ) -> str | None: ...
 
     async def list_versions(
         self, artifact_id: Identifier, cursor: Identifier | None, limit: int
     ) -> tuple[Sequence[ArtifactRef], Identifier | None]: ...
 
-    async def move_to_trash(self, artifact_id: Identifier, expected_revision: int) -> int: ...
+    async def move_to_trash(
+        self, artifact_id: Identifier, expected_revision: int
+    ) -> int: ...
 
     async def restore(self, artifact_id: Identifier, expected_revision: int) -> int: ...
 
@@ -153,7 +178,9 @@ class RunRepository(Protocol):
 
     async def create_run(self, request: CreateRunRequest) -> AgentRun: ...
 
-    async def read_run(self, project_id: Identifier, run_id: Identifier) -> AgentRun | None: ...
+    async def read_run(
+        self, project_id: Identifier, run_id: Identifier
+    ) -> AgentRun | None: ...
 
     async def record_invocation(self, record: InvocationRecord) -> InvocationRecord: ...
 
@@ -221,7 +248,9 @@ class KnowledgeRetriever(Protocol):
 class HostTaskGateway(Protocol):
     """External task mapping; never substitute run IDs for actual host task IDs."""
 
-    async def describe_tool(self, tool_id: Identifier) -> HostToolCapabilities | None: ...
+    async def describe_tool(
+        self, tool_id: Identifier
+    ) -> HostToolCapabilities | None: ...
 
     async def submit(self, request: HostTaskRequest) -> HostJob: ...
 
@@ -233,9 +262,13 @@ class HostTaskGateway(Protocol):
 class ConfigurationPort(Protocol):
     """Versioned profiles; applying one is an explicit paused-run CAS."""
 
-    async def get_profile(self, profile_version: Identifier) -> ConfigSnapshot | None: ...
+    async def get_profile(
+        self, profile_version: Identifier
+    ) -> ConfigSnapshot | None: ...
 
-    async def validate_profile(self, profile: ConfigSnapshot) -> ConfigurationValidation: ...
+    async def validate_profile(
+        self, profile: ConfigSnapshot
+    ) -> ConfigurationValidation: ...
 
     async def apply_to_paused_run(
         self, run_id: Identifier, expected_revision: int, profile_version: Identifier
@@ -255,12 +288,20 @@ class BudgetPort(Protocol):
 class AgentUseCasePort(Protocol):
     """Framework-neutral AgentRunAPI facade; no HTTP framework or app assembly."""
 
-    async def create_run(self, context: RequestContext, request: CreateRunRequest) -> AgentRun: ...
+    async def create_run(
+        self, context: RequestContext, request: CreateRunRequest
+    ) -> AgentRun: ...
 
-    async def get_run(self, context: RequestContext, run_id: Identifier) -> AgentRun | None: ...
+    async def get_run(
+        self, context: RequestContext, run_id: Identifier
+    ) -> AgentRun | None: ...
 
     async def list_events(
-        self, context: RequestContext, run_id: Identifier, cursor: Identifier | None, limit: int
+        self,
+        context: RequestContext,
+        run_id: Identifier,
+        cursor: Identifier | None,
+        limit: int,
     ) -> EventPage: ...
 
     async def pause_run(
@@ -288,30 +329,48 @@ class AgentUseCasePort(Protocol):
     ) -> AgentRun: ...
 
     async def list_artifacts(
-        self, context: RequestContext, run_id: Identifier, cursor: Identifier | None, limit: int
+        self,
+        context: RequestContext,
+        run_id: Identifier,
+        cursor: Identifier | None,
+        limit: int,
     ) -> tuple[Sequence[ArtifactRef], Identifier | None]: ...
 
     async def export_approved_artifact(
-        self, context: RequestContext, run_id: Identifier, artifact_version_id: Identifier
+        self,
+        context: RequestContext,
+        run_id: Identifier,
+        artifact_version_id: Identifier,
     ) -> bytes: ...
 
     async def read_review_candidate(
-        self, context: RequestContext, run_id: Identifier, review_id: Identifier,
+        self,
+        context: RequestContext,
+        run_id: Identifier,
+        review_id: Identifier,
         artifact_version_id: Identifier,
     ) -> ReviewCandidateRead: ...
 
     async def read_clarifications(
-        self, context: RequestContext, run_id: Identifier,
+        self,
+        context: RequestContext,
+        run_id: Identifier,
     ) -> ClarificationRead: ...
 
     async def submit_clarification(
-        self, context: RequestContext, run_id: Identifier,
+        self,
+        context: RequestContext,
+        run_id: Identifier,
         request: ClarificationAnswerRequest,
     ) -> AgentRun: ...
 
     async def export_episode(
-        self, context: RequestContext, run_id: Identifier, review_id: Identifier,
-        artifact_version_id: Identifier, format: TextExportFormat,
+        self,
+        context: RequestContext,
+        run_id: Identifier,
+        review_id: Identifier,
+        artifact_version_id: Identifier,
+        format: TextExportFormat,
     ) -> ExportPayload: ...
 
 

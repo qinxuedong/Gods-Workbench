@@ -4,6 +4,7 @@ Every creator and reviewer prompt is authored here for this isolated module.
 Nothing is imported from a host prompt library; adapters must pin the returned
 ID/version/hash through the shared PromptRepository before invoking a model.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -15,17 +16,16 @@ from pydantic import Field, create_model
 from gw.agent_runtime.models import PromptTemplate, PromptTemplateRef, StageId
 
 from .models import (
+    STAGE_CONTENT_MODELS,
     EpisodeModel,
     IndependentReviewOutput,
     OpaqueText,
     ReviewDimension,
     ReviewFinding,
     RevisionResponse,
-    STAGE_CONTENT_MODELS,
 )
 from .revisions import RollbackProposal
 from .scoring import DIMENSION_DESCRIPTIONS, SCORING_RULE_VERSION
-
 
 PROMPT_PACK_VERSION = "1.2.0"
 PROMPT_PACK_ID = "gw.episode.text.v1"
@@ -135,7 +135,13 @@ def _template(stage: StageId, role: Role) -> PromptTemplate:
         purpose=f"{stage.value}.{role}",
         parameter_schema={
             "type": "object",
-            "required": ["stage", "inputs", "input_refs", "revision_feedback", "human_revision_feedback"],
+            "required": [
+                "stage",
+                "inputs",
+                "input_refs",
+                "revision_feedback",
+                "human_revision_feedback",
+            ],
             "properties": {
                 "stage": {"type": "string"},
                 "user_goal": {"type": ["string", "null"]},
@@ -148,7 +154,13 @@ def _template(stage: StageId, role: Role) -> PromptTemplate:
                     "anyOf": [
                         {
                             "type": "object",
-                            "required": ["approval_id", "review_id", "artifact_version_id", "actor_id", "reason"],
+                            "required": [
+                                "approval_id",
+                                "review_id",
+                                "artifact_version_id",
+                                "actor_id",
+                                "reason",
+                            ],
                             "properties": {
                                 "approval_id": {"type": "string"},
                                 "review_id": {"type": "string"},

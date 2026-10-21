@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 # Copyright 2026 Gods-Workbench Authors
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -144,12 +143,20 @@ class CinematographyMetadata(_ContractModel):
     """镜头光学与美学元数据强类型对象。"""
 
     shot_size: ShotSize = Field(default=ShotSize.MS, description="标准解剖景别")
-    camera_angle: CameraAngle = Field(default=CameraAngle.EYE_LEVEL, description="机位视角与高度")
-    camera_movement: CameraMovement = Field(default=CameraMovement.STATIC, description="机动运镜形式")
-    focal_length: FocalLengthTier = Field(default=FocalLengthTier.STANDARD, description="焦段分级")
-    composition: CompositionRule = Field(default=CompositionRule.RULE_OF_THIRDS, description="构图法则")
-    lighting_phase: Optional[LightingPhase] = Field(default=None, description="光照时段")
-    weather: Optional[WeatherAtmosphere] = Field(default=None, description="天气大气介质")
+    camera_angle: CameraAngle = Field(
+        default=CameraAngle.EYE_LEVEL, description="机位视角与高度"
+    )
+    camera_movement: CameraMovement = Field(
+        default=CameraMovement.STATIC, description="机动运镜形式"
+    )
+    focal_length: FocalLengthTier = Field(
+        default=FocalLengthTier.STANDARD, description="焦段分级"
+    )
+    composition: CompositionRule = Field(
+        default=CompositionRule.RULE_OF_THIRDS, description="构图法则"
+    )
+    lighting_phase: LightingPhase | None = Field(default=None, description="光照时段")
+    weather: WeatherAtmosphere | None = Field(default=None, description="天气大气介质")
 
 
 def _clean_text(value: Any) -> str:
@@ -174,20 +181,22 @@ class EntityCreatePayload(_ContractModel):
     project_id: str
     entity_type: MasterEntityType
     name: str
-    description: Optional[str] = None
-    feature_base_prompt: Optional[str] = Field(
+    description: str | None = None
+    feature_base_prompt: str | None = Field(
         default=None,
         validation_alias=AliasChoices("feature_base_prompt", "base_prompt"),
     )
-    lora_trigger_words: List[str] = Field(
+    lora_trigger_words: list[str] = Field(
         default_factory=list,
         validation_alias=AliasChoices("lora_trigger_words", "lora_triggers"),
     )
-    lora_id: Optional[str] = None
-    lora_strength: Optional[float] = Field(default=None, ge=0.0, le=2.0)
-    cinematography: CinematographyMetadata = Field(default_factory=CinematographyMetadata)
-    metadata: Dict[str, Any] = Field(default_factory=dict)
-    expected_version: Optional[int] = Field(default=None, ge=1)
+    lora_id: str | None = None
+    lora_strength: float | None = Field(default=None, ge=0.0, le=2.0)
+    cinematography: CinematographyMetadata = Field(
+        default_factory=CinematographyMetadata
+    )
+    metadata: dict[str, Any] = Field(default_factory=dict)
+    expected_version: int | None = Field(default=None, ge=1)
 
     @field_validator("project_id")
     @classmethod
@@ -201,15 +210,15 @@ class EntityCreatePayload(_ContractModel):
 
     @field_validator("description", "feature_base_prompt", "lora_id")
     @classmethod
-    def normalize_optional_text(cls, value: Optional[str]) -> Optional[str]:
+    def normalize_optional_text(cls, value: str | None) -> str | None:
         if value is None:
             return None
         return value.strip() or None
 
     @field_validator("lora_trigger_words")
     @classmethod
-    def normalize_lora_trigger_words(cls, values: List[str]) -> List[str]:
-        normalized: List[str] = []
+    def normalize_lora_trigger_words(cls, values: list[str]) -> list[str]:
+        normalized: list[str] = []
         for value in values:
             value = _clean_text(value)
             if value not in normalized:
@@ -221,39 +230,39 @@ class EntityPatchPayload(_ContractModel):
     """实体母库更新请求；所有写入必须带顶层 expected_version。"""
 
     expected_version: int = Field(..., ge=1)
-    name: Optional[str] = None
-    description: Optional[str] = None
-    feature_base_prompt: Optional[str] = Field(
+    name: str | None = None
+    description: str | None = None
+    feature_base_prompt: str | None = Field(
         default=None,
         validation_alias=AliasChoices("feature_base_prompt", "base_prompt"),
     )
-    lora_trigger_words: Optional[List[str]] = Field(
+    lora_trigger_words: list[str] | None = Field(
         default=None,
         validation_alias=AliasChoices("lora_trigger_words", "lora_triggers"),
     )
-    lora_id: Optional[str] = None
-    lora_strength: Optional[float] = Field(default=None, ge=0.0, le=2.0)
-    cinematography: Optional[CinematographyMetadata] = None
-    metadata: Optional[Dict[str, Any]] = None
+    lora_id: str | None = None
+    lora_strength: float | None = Field(default=None, ge=0.0, le=2.0)
+    cinematography: CinematographyMetadata | None = None
+    metadata: dict[str, Any] | None = None
 
     @field_validator("name")
     @classmethod
-    def validate_optional_name(cls, value: Optional[str]) -> Optional[str]:
+    def validate_optional_name(cls, value: str | None) -> str | None:
         return None if value is None else _clean_text(value)
 
     @field_validator("description", "feature_base_prompt", "lora_id")
     @classmethod
-    def normalize_patch_text(cls, value: Optional[str]) -> Optional[str]:
+    def normalize_patch_text(cls, value: str | None) -> str | None:
         if value is None:
             return None
         return value.strip() or None
 
     @field_validator("lora_trigger_words")
     @classmethod
-    def normalize_patch_lora_words(cls, values: Optional[List[str]]) -> Optional[List[str]]:
+    def normalize_patch_lora_words(cls, values: list[str] | None) -> list[str] | None:
         if values is None:
             return None
-        normalized: List[str] = []
+        normalized: list[str] = []
         for value in values:
             value = _clean_text(value)
             if value not in normalized:
@@ -268,13 +277,15 @@ class MasterCatalogEntity(_ContractModel):
     project_id: str
     entity_type: MasterEntityType
     name: str
-    description: Optional[str] = None
-    feature_base_prompt: Optional[str] = None
-    lora_trigger_words: List[str] = Field(default_factory=list)
-    lora_id: Optional[str] = None
-    lora_strength: Optional[float] = Field(default=None, ge=0.0, le=2.0)
-    cinematography: CinematographyMetadata = Field(default_factory=CinematographyMetadata)
-    metadata: Dict[str, Any] = Field(default_factory=dict)
+    description: str | None = None
+    feature_base_prompt: str | None = None
+    lora_trigger_words: list[str] = Field(default_factory=list)
+    lora_id: str | None = None
+    lora_strength: float | None = Field(default=None, ge=0.0, le=2.0)
+    cinematography: CinematographyMetadata = Field(
+        default_factory=CinematographyMetadata
+    )
+    metadata: dict[str, Any] = Field(default_factory=dict)
     version: int = Field(default=1, ge=1)
     archived: bool = False
     created_at: str

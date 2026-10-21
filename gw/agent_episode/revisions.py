@@ -1,4 +1,5 @@
 """Content-revision response checks and evidence-only rollback proposals."""
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -7,7 +8,7 @@ from pydantic import Field
 
 from gw.agent_runtime.models import ArtifactSourceRef, StageId
 
-from .models import EpisodeModel, ReviewFinding, RevisionResponse, STAGE_ORDER
+from .models import STAGE_ORDER, EpisodeModel, ReviewFinding, RevisionResponse
 
 
 @dataclass(frozen=True, slots=True)
@@ -25,7 +26,9 @@ def validate_revision_responses(
     expected = {finding.finding_id for finding in findings}
     response_ids = [response.finding_id for response in responses]
     actual = set(response_ids)
-    duplicates = tuple(sorted(value for value in actual if response_ids.count(value) > 1))
+    duplicates = tuple(
+        sorted(value for value in actual if response_ids.count(value) > 1)
+    )
     missing = tuple(sorted(expected - actual))
     unexpected = tuple(sorted(actual - expected))
     return RevisionResponseCheck(
@@ -68,7 +71,9 @@ def propose_rollback(
     if STAGE_ORDER.index(to_stage) >= STAGE_ORDER.index(from_stage):
         raise ValueError("rollback target must be a strictly earlier episode stage")
     if not reason.strip() or not findings or not source_refs:
-        raise ValueError("rollback proposals require a reason, at least one finding, and source version refs")
+        raise ValueError(
+            "rollback proposals require a reason, at least one finding, and source version refs"
+        )
     evidence = [
         RollbackEvidence(
             finding_id=finding.finding_id,

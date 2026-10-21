@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 # Copyright 2026 Gods-Workbench Authors
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -61,7 +60,7 @@ _NVIDIA_QUERY = "index,name,memory.total,memory.used,utilization.gpu"
 _NVIDIA_TIMEOUT_SECONDS = 5.0
 
 
-def gpu_telemetry() -> Optional[Dict[str, Any]]:
+def gpu_telemetry() -> dict[str, Any] | None:
     """通过 nvidia-smi 读取真实 GPU 读数；命令缺失/失败返回 None。
 
     设计：仅采集 nvidia-smi 自身报告的真实数值；不做任何推算或插值。
@@ -84,7 +83,7 @@ def gpu_telemetry() -> Optional[Dict[str, Any]]:
         return None
     if proc.returncode != 0:
         return None
-    devices: List[Dict[str, Any]] = []
+    devices: list[dict[str, Any]] = []
     total_util_sum = 0.0
     for line in (proc.stdout or "").splitlines():
         parts = [cell.strip() for cell in line.split(",")]
@@ -101,28 +100,35 @@ def gpu_telemetry() -> Optional[Dict[str, Any]]:
         # 分母为 0 属驱动异常读数，跳过而不猜测。
         util_percent = util
         mem_percent = (used_mib / total_mib * 100.0) if total_mib > 0 else None
-        devices.append({
-            "index": index,
-            "name": name,
-            "memory_total_mib": total_mib,
-            "memory_used_mib": used_mib,
-            "utilization_percent": util_percent,
-            "memory_utilization_percent": mem_percent,
-        })
+        devices.append(
+            {
+                "index": index,
+                "name": name,
+                "memory_total_mib": total_mib,
+                "memory_used_mib": used_mib,
+                "utilization_percent": util_percent,
+                "memory_utilization_percent": mem_percent,
+            }
+        )
         total_util_sum += util_percent
     if not devices:
         return None
-    mem_percents = [d["memory_utilization_percent"] for d in devices
-                    if d["memory_utilization_percent"] is not None]
+    mem_percents = [
+        d["memory_utilization_percent"]
+        for d in devices
+        if d["memory_utilization_percent"] is not None
+    ]
     return {
         "gpu_count": len(devices),
         "gpu_utilization_percent": round(total_util_sum / len(devices), 2),
-        "gpu_memory_percent": round(sum(mem_percents) / len(mem_percents), 2) if mem_percents else None,
+        "gpu_memory_percent": round(sum(mem_percents) / len(mem_percents), 2)
+        if mem_percents
+        else None,
         "devices": devices,
     }
 
 
-def hardware_telemetry() -> Optional[Dict[str, Any]]:
+def hardware_telemetry() -> dict[str, Any] | None:
     """读取真实 CPU/内存/磁盘读数；psutil 不可用返回 None。"""
     psutil = _psutil()
     if psutil is None:
@@ -150,13 +156,15 @@ def _samples_state() -> storage.JsonState:
 
 #: HTTP 观测缓冲：把真实请求的字节数与耗时按指标累计，达到节流间隔后落盘。
 _HTTP_LOCK = threading.Lock()
-_HTTP_PENDING: Dict[str, float] = {}
+_HTTP_PENDING: dict[str, float] = {}
 _HTTP_LAST_FLUSH = 0.0
 #: 落盘节流间隔（秒）；缓冲内的真实读数在下次读取前强制刷盘。
 HTTP_FLUSH_INTERVAL_SECONDS = 1.0
 
 
-def record_http_observation(path: str, *, response_bytes: int, duration_ms: float) -> None:
+def record_http_observation(
+    path: str, *, response_bytes: int, duration_ms: float
+) -> None:
     """记录一次真实 HTTP 请求的响应字节数与耗时（仅 /api/ 请求）。
 
     只累计调用方提供的真实测量值；不编造、不插值。写入按固定间隔节流，
@@ -200,7 +208,7 @@ def flush_http_samples() -> None:
         _persist_http_payload(payload)
 
 
-def _persist_http_payload(payload: Dict[str, float]) -> None:
+def _persist_http_payload(payload: dict[str, float]) -> None:
     """把一批真实 HTTP 读数写入采样存储（一次请求对应一个真实采样点）。"""
     count = float(payload.get("_count") or 0.0)
     if count <= 0:
@@ -233,14 +241,14 @@ def _persist_http_payload(payload: Dict[str, float]) -> None:
         return
 
 
-def record_sample() -> Dict[str, Any]:
+def record_sample() -> dict[str, Any]:
     """采集一次真实硬件读数并落盘；返回写入的采样点（或空 dict）。"""
     reading = hardware_telemetry()
     if reading is None:
         return {}
     ts_ms = int(time.time() * 1000)
 
-    def mutate(raw: Dict[str, Any]) -> Dict[str, Any]:
+    def mutate(raw: dict[str, Any]) -> dict[str, Any]:
         bucket = raw.setdefault("samples", {})
         values = {
             "cpu_percent": reading["cpu_percent"],
@@ -272,7 +280,9 @@ def record_sample() -> Dict[str, Any]:
     return _samples_state().mutate(mutate)
 
 
-def load_series(metric: str, start_ms: Optional[int], end_ms: Optional[int]) -> List[Dict[str, Any]]:
+def load_series(
+    metric: str, start_ms: int | None, end_ms: int | None
+) -> list[dict[str, Any]]:
     """读取真实采样点；只返回白名单指标且落在窗口内的点。"""
     if metric not in KNOWN_METRICS:
         return []
@@ -280,7 +290,7 @@ def load_series(metric: str, start_ms: Optional[int], end_ms: Optional[int]) -> 
         # 先把缓冲中的真实 HTTP 读数落盘，避免「刚产生的真实请求读不到」。
         flush_http_samples()
     raw = _samples_state().read()
-    points: List[Dict[str, Any]] = []
+    points: list[dict[str, Any]] = []
     for key, item in sorted((raw.get("samples") or {}).items()):
         try:
             ts_ms = int(item.get("ts_ms"))
@@ -298,7 +308,7 @@ def load_series(metric: str, start_ms: Optional[int], end_ms: Optional[int]) -> 
     return points
 
 
-def source_registry() -> List[Dict[str, Any]]:
+def source_registry() -> list[dict[str, Any]]:
     """返回本进程真实接入的数据源清单（与实现路径一一对应）。"""
     return [
         {
@@ -346,13 +356,17 @@ def source_registry() -> List[Dict[str, Any]]:
     ]
 
 
-def scan_asset_volumes(limit: int = 200) -> Dict[str, Any]:
+def scan_asset_volumes(limit: int = 200) -> dict[str, Any]:
     """真实遍历允许根目录统计素材体积；未配置根目录返回 not_integrated。"""
     roots = storage.allowed_roots()
     if not roots:
-        return {"items": [], "data_status": "not_integrated", "data_gaps": ["未配置 GW_ALLOWED_ROOTS，无法遍历素材体积"]}
-    items: List[Dict[str, Any]] = []
-    gaps: List[str] = []
+        return {
+            "items": [],
+            "data_status": "not_integrated",
+            "data_gaps": ["未配置 GW_ALLOWED_ROOTS，无法遍历素材体积"],
+        }
+    items: list[dict[str, Any]] = []
+    gaps: list[str] = []
     for root in roots:
         if not root.exists():
             gaps.append("允许根目录不存在或不可访问")
@@ -368,11 +382,13 @@ def scan_asset_volumes(limit: int = 200) -> Dict[str, Any]:
                 except OSError:
                     gaps.append("存在无法读取的素材文件，体积已跳过")
                     continue
-                items.append({
-                    "path": storage.relative_display(path),
-                    "size_bytes": int(size),
-                    "root": storage.relative_display(root),
-                })
+                items.append(
+                    {
+                        "path": storage.relative_display(path),
+                        "size_bytes": int(size),
+                        "root": storage.relative_display(root),
+                    }
+                )
         except OSError:
             gaps.append("允许根目录遍历失败，结果可能不完整")
     items.sort(key=lambda item: item["path"])

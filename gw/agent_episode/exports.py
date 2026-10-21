@@ -1,12 +1,13 @@
 """Approved-version text exports: Markdown script, CSV storyboard, JSON manifest."""
+
 from __future__ import annotations
 
 import csv
 import io
 import json
 import re
-from decimal import Decimal, InvalidOperation
 from collections.abc import Mapping
+from decimal import Decimal, InvalidOperation
 from enum import StrEnum
 from hashlib import sha256
 from typing import Any, Literal
@@ -22,23 +23,23 @@ from gw.agent_runtime.models import (
     TextExportFormat,
 )
 from gw.agent_runtime.ports import ExportPayload
+from gw.agent_runtime.templates import (
+    BREAKDOWN_TEMPLATE,
+    BREAKDOWN_TEMPLATE_ID,
+    BREAKDOWN_TEMPLATE_VERSION,
+)
 
 from .models import (
+    STAGE_CONTENT_MODELS,
     DeliveryCheckContent,
     EpisodeModel,
     EpisodeScoreResult,
     FullScriptContent,
     OpaqueId,
     OpaqueText,
-    STAGE_CONTENT_MODELS,
     StoryboardTextContent,
 )
 from .scoring import SCORING_RULE_VERSION, approval_matches_current_review
-from gw.agent_runtime.templates import (
-    BREAKDOWN_TEMPLATE,
-    BREAKDOWN_TEMPLATE_ID,
-    BREAKDOWN_TEMPLATE_VERSION,
-)
 
 
 class BreakdownCategory(StrEnum):
@@ -184,23 +185,27 @@ class SceneBreakdown(EpisodeModel):
     shots: list[StructuredShot] = Field(min_length=1)
 
     @model_validator(mode="after")
-    def validate_scene_contract(self) -> "SceneBreakdown":
+    def validate_scene_contract(self) -> SceneBreakdown:
         expected = set(BreakdownCategory)
         if set(self.elements) != expected:
-            raise ValueError("elements must contain all eight breakdown categories exactly")
+            raise ValueError(
+                "elements must contain all eight breakdown categories exactly"
+            )
         known_element_ids = {
-            item.element_id
-            for items in self.elements.values()
-            for item in items
+            item.element_id for items in self.elements.values() for item in items
         }
-        if len(known_element_ids) != sum(len(items) for items in self.elements.values()):
+        if len(known_element_ids) != sum(
+            len(items) for items in self.elements.values()
+        ):
             raise ValueError("element_id values must be unique within a scene")
         for shot in self.shots:
             if shot.scene_id != self.scene_id:
                 raise ValueError("shot scene_id must match its containing scene_id")
             unknown_ids = set(shot.element_ids) - known_element_ids
             if unknown_ids:
-                raise ValueError("shot element_ids must reference scene breakdown elements")
+                raise ValueError(
+                    "shot element_ids must reference scene breakdown elements"
+                )
         return self
 
 
@@ -215,7 +220,7 @@ class AgentBreakdownOutput(EpisodeModel):
     scenes: list[SceneBreakdown] = Field(min_length=1)
 
     @model_validator(mode="after")
-    def validate_document_contract(self) -> "AgentBreakdownOutput":
+    def validate_document_contract(self) -> AgentBreakdownOutput:
         if self.template_id != BREAKDOWN_TEMPLATE_ID:
             raise ValueError("unsupported breakdown template_id")
         if self.template_version != BREAKDOWN_TEMPLATE_VERSION:
@@ -257,7 +262,9 @@ def parse_agent_breakdown(
     try:
         return AgentBreakdownOutput.model_validate(payload)
     except (TypeError, ValueError) as exc:
-        raise ExportRejected("agent breakdown payload does not match its structured contract") from exc
+        raise ExportRejected(
+            "agent breakdown payload does not match its structured contract"
+        ) from exc
 
 
 def validate_agent_breakdown(
@@ -282,7 +289,15 @@ def export_agent_breakdown(
     """导出稳定排序、UTF-8 的机器可读分场分镜 JSON。"""
 
     document = parse_agent_breakdown(payload)
-    return (json.dumps(document.model_dump(mode="json"), ensure_ascii=False, sort_keys=True, indent=2) + "\n").encode("utf-8")
+    return (
+        json.dumps(
+            document.model_dump(mode="json"),
+            ensure_ascii=False,
+            sort_keys=True,
+            indent=2,
+        )
+        + "\n"
+    ).encode("utf-8")
 
 
 def export_structured_breakdown(
@@ -316,7 +331,9 @@ def parse_episode_text_artifact(
         stage = StageId(envelope["stage"])
         raw_payload = envelope["content"]
     except (ValueError, TypeError, KeyError, json.JSONDecodeError) as exc:
-        raise ExportRejected("content is not a supported episode text artifact") from exc
+        raise ExportRejected(
+            "content is not a supported episode text artifact"
+        ) from exc
     if expected_stage is not None and stage is not expected_stage:
         raise ExportRejected("artifact stage does not match its durable stage attempt")
     if envelope.get("schema_version") != 1 or not isinstance(raw_payload, dict):
@@ -324,7 +341,9 @@ def parse_episode_text_artifact(
     try:
         payload = STAGE_CONTENT_MODELS[stage].model_validate(raw_payload)
     except (KeyError, ValueError, TypeError) as exc:
-        raise ExportRejected("content does not match its frozen episode stage schema") from exc
+        raise ExportRejected(
+            "content does not match its frozen episode stage schema"
+        ) from exc
     return stage, payload
 
 
@@ -346,67 +365,131 @@ class EpisodeArtifactExporter:
         approval: ApprovalRecord | None,
         format: TextExportFormat,
     ) -> ExportPayload:
-        if artifact.lifecycle is not ArtifactLifecycle.valid or not is_current or not release:
-            raise ExportRejected("stale, non-current, or unreleased artifacts cannot be exported")
-        if review.artifact.artifact_id.root != artifact.artifact_id.root or review.artifact.version_id.root != artifact.version_id.root:
+        if (
+            artifact.lifecycle is not ArtifactLifecycle.valid
+            or not is_current
+            or not release
+        ):
+            raise ExportRejected(
+                "stale, non-current, or unreleased artifacts cannot be exported"
+            )
+        if (
+            review.artifact.artifact_id.root != artifact.artifact_id.root
+            or review.artifact.version_id.root != artifact.version_id.root
+        ):
             raise ExportRejected("review is not bound to the exact artifact version")
         if not review.program_validation_passed:
             raise ExportRejected("program-invalid artifacts cannot be exported")
         if sha256(content.encode("utf-8")).hexdigest() != artifact.content_hash.root:
-            raise ExportRejected("artifact content does not match its immutable content hash")
+            raise ExportRejected(
+                "artifact content does not match its immutable content hash"
+            )
         if approval is not None and (
             approval.run_id.root != review.run_id.root
             or approval.review_id.root != review.review_id.root
             or approval.artifact_version_id.root != artifact.version_id.root
             or approval.decision.value not in {"approve", "override"}
         ):
-            raise ExportRejected("approval does not match the exact released artifact and review")
+            raise ExportRejected(
+                "approval does not match the exact released artifact and review"
+            )
         if review.overall_score_decimal is None:
             raise ExportRejected("the exact persisted review score is unavailable")
         try:
             score = Decimal(review.overall_score_decimal)
         except (InvalidOperation, ValueError, TypeError) as exc:
-            raise ExportRejected("content or its exact review score is invalid") from exc
+            raise ExportRejected(
+                "content or its exact review score is invalid"
+            ) from exc
         if not score.is_finite() or score < 0 or score > 10:
-            raise ExportRejected("the persisted review score is outside the supported range")
+            raise ExportRejected(
+                "the persisted review score is outside the supported range"
+            )
         stage, payload = parse_episode_text_artifact(content)
         if format not in supported_export_formats(stage):
-            raise ExportFormatMismatch("The requested export format is not supported for this episode stage")
+            raise ExportFormatMismatch(
+                "The requested export format is not supported for this episode stage"
+            )
 
-        version = re.sub(r"[^A-Za-z0-9._-]", "-", artifact.version_id.root)[:64] or "version"
+        version = (
+            re.sub(r"[^A-Za-z0-9._-]", "-", artifact.version_id.root)[:64] or "version"
+        )
         score_text = str(score)
         if format is TextExportFormat.markdown:
             script = FullScriptContent.model_validate(payload.model_dump(mode="json"))
-            release_meta = f"approval_id={approval.approval_id.root}" if approval else "release=automatic"
+            release_meta = (
+                f"approval_id={approval.approval_id.root}"
+                if approval
+                else "release=automatic"
+            )
             metadata = (
                 f"<!-- artifact_id={artifact.artifact_id.root}; artifact_version_id={artifact.version_id.root}; "
                 f"{release_meta}; score={score_text}; rule={review.rule_version.root} -->"
             )
             lines = [f"# {script.title}", "", metadata, ""]
             for scene in script.scenes:
-                lines.extend([
-                    f"## {scene.title}", "", f"**场景ID：** `{scene.scene_id}`  ",
-                    f"**时间：** {scene.time}  ", f"**地点：** {scene.location}", "",
-                    scene.content, "",
-                ])
+                lines.extend(
+                    [
+                        f"## {scene.title}",
+                        "",
+                        f"**场景ID：** `{scene.scene_id}`  ",
+                        f"**时间：** {scene.time}  ",
+                        f"**地点：** {scene.location}",
+                        "",
+                        scene.content,
+                        "",
+                    ]
+                )
             body = ("\n".join(lines).rstrip() + "\n").encode("utf-8")
-            media_type, extension, stem = "text/markdown; charset=utf-8", "md", "full-script"
+            media_type, extension, stem = (
+                "text/markdown; charset=utf-8",
+                "md",
+                "full-script",
+            )
         elif format is TextExportFormat.csv:
-            storyboard = StoryboardTextContent.model_validate(payload.model_dump(mode="json"))
+            storyboard = StoryboardTextContent.model_validate(
+                payload.model_dump(mode="json")
+            )
             stream = io.StringIO(newline="")
-            writer = csv.writer(stream, lineterminator="\r\n", quoting=csv.QUOTE_MINIMAL)
-            writer.writerow([
-                "artifact_id", "artifact_version_id", "score_rule_version", "weighted_score",
-                "shot_id", "scene_id", "description", "camera", "movement", "duration_seconds", "character_ids",
-            ])
+            writer = csv.writer(
+                stream, lineterminator="\r\n", quoting=csv.QUOTE_MINIMAL
+            )
+            writer.writerow(
+                [
+                    "artifact_id",
+                    "artifact_version_id",
+                    "score_rule_version",
+                    "weighted_score",
+                    "shot_id",
+                    "scene_id",
+                    "description",
+                    "camera",
+                    "movement",
+                    "duration_seconds",
+                    "character_ids",
+                ]
+            )
             for shot in storyboard.shots:
-                writer.writerow([
-                    _csv_safe(artifact.artifact_id.root), _csv_safe(artifact.version_id.root),
-                    _csv_safe(review.rule_version.root), _csv_safe(score_text), _csv_safe(shot.shot_id),
-                    _csv_safe(shot.scene_id), _csv_safe(shot.description),
-                    _csv_safe(shot.camera or ""), _csv_safe(shot.movement or ""),
-                    _csv_safe(shot.duration_seconds), _csv_safe(", ".join(story_character_id for story_character_id in shot.character_ids)),
-                ])
+                writer.writerow(
+                    [
+                        _csv_safe(artifact.artifact_id.root),
+                        _csv_safe(artifact.version_id.root),
+                        _csv_safe(review.rule_version.root),
+                        _csv_safe(score_text),
+                        _csv_safe(shot.shot_id),
+                        _csv_safe(shot.scene_id),
+                        _csv_safe(shot.description),
+                        _csv_safe(shot.camera or ""),
+                        _csv_safe(shot.movement or ""),
+                        _csv_safe(shot.duration_seconds),
+                        _csv_safe(
+                            ", ".join(
+                                story_character_id
+                                for story_character_id in shot.character_ids
+                            )
+                        ),
+                    ]
+                )
             body = ("\ufeff" + stream.getvalue()).encode("utf-8")
             media_type, extension, stem = "text/csv; charset=utf-8", "csv", "storyboard"
         elif format is TextExportFormat.json:
@@ -416,10 +499,16 @@ class EpisodeArtifactExporter:
                 "artifact": artifact.model_dump(mode="json"),
                 "approval": approval.model_dump(mode="json") if approval else None,
                 "review": review.model_dump(mode="json"),
-                "score": {"weighted_score": score_text, "rule_version": review.rule_version.root},
+                "score": {
+                    "weighted_score": score_text,
+                    "rule_version": review.rule_version.root,
+                },
                 "content": payload.model_dump(mode="json"),
             }
-            body = (json.dumps(document, ensure_ascii=False, sort_keys=True, indent=2) + "\n").encode("utf-8")
+            body = (
+                json.dumps(document, ensure_ascii=False, sort_keys=True, indent=2)
+                + "\n"
+            ).encode("utf-8")
             media_type, extension, stem = "application/json", "json", "delivery-check"
         else:
             raise ExportRejected("unsupported episode export format")
@@ -442,9 +531,13 @@ def _decode_artifact(
     artifact_current: bool,
 ) -> tuple[StageId, Mapping[str, Any]]:
     if artifact.lifecycle is not ArtifactLifecycle.valid or not artifact_current:
-        raise ExportRejected("stale or non-current artifact versions cannot be exported")
+        raise ExportRejected(
+            "stale or non-current artifact versions cannot be exported"
+        )
     if sha256(content.encode("utf-8")).hexdigest() != artifact.content_hash.root:
-        raise ExportRejected("artifact content does not match its immutable content hash")
+        raise ExportRejected(
+            "artifact content does not match its immutable content hash"
+        )
     if approval.run_id.root != review.run_id.root:
         raise ExportRejected("approval and review belong to different runs")
     if approval.artifact_version_id.root != artifact.version_id.root:
@@ -454,7 +547,9 @@ def _decode_artifact(
     if review.artifact.version_id.root != artifact.version_id.root:
         raise ExportRejected("review is not bound to the exact artifact version")
     if review.rule_version.root != SCORING_RULE_VERSION:
-        raise ExportRejected("review rule version is not the accepted episode scoring contract")
+        raise ExportRejected(
+            "review rule version is not the accepted episode scoring contract"
+        )
     if not review.program_validation_passed:
         raise ExportRejected("program-invalid artifacts cannot be approved or exported")
     try:
@@ -462,7 +557,9 @@ def _decode_artifact(
         stage = StageId(document["stage"])
         payload = document["content"]
     except (ValueError, KeyError, TypeError, json.JSONDecodeError) as exc:
-        raise ExportRejected("content is not a supported episode text artifact") from exc
+        raise ExportRejected(
+            "content is not a supported episode text artifact"
+        ) from exc
     if document.get("schema_version") != 1 or not isinstance(payload, dict):
         raise ExportRejected("content is not a supported episode text artifact")
     if not approval_matches_current_review(
@@ -473,7 +570,9 @@ def _decode_artifact(
         score_result,
         artifact_current=artifact_current,
     ):
-        raise ExportRejected("approval does not match a current, program-valid exact-score review")
+        raise ExportRejected(
+            "approval does not match a current, program-valid exact-score review"
+        )
     return stage, payload
 
 
@@ -507,9 +606,16 @@ def export_markdown(
         artifact_current=artifact_current,
     )
     if stage is not StageId.full_script:
-        raise ExportRejected("Markdown script export requires an approved full_script artifact")
+        raise ExportRejected(
+            "Markdown script export requires an approved full_script artifact"
+        )
     script = FullScriptContent.model_validate(payload)
-    lines = [f"# {script.title}", "", _metadata_comment(artifact, approval, score_result), ""]
+    lines = [
+        f"# {script.title}",
+        "",
+        _metadata_comment(artifact, approval, score_result),
+        "",
+    ]
     for scene in script.scenes:
         lines.extend(
             [
@@ -617,7 +723,9 @@ def export_json(
         artifact_current=artifact_current,
     )
     if stage is not StageId.delivery_check:
-        raise ExportRejected("JSON delivery export requires an approved delivery_check artifact")
+        raise ExportRejected(
+            "JSON delivery export requires an approved delivery_check artifact"
+        )
     delivery = DeliveryCheckContent.model_validate(payload)
     document = {
         "schema_version": 1,
@@ -628,7 +736,9 @@ def export_json(
         "score": score_result.model_dump(mode="json"),
         "content": delivery.model_dump(mode="json"),
     }
-    return (json.dumps(document, ensure_ascii=False, sort_keys=True, indent=2) + "\n").encode("utf-8")
+    return (
+        json.dumps(document, ensure_ascii=False, sort_keys=True, indent=2) + "\n"
+    ).encode("utf-8")
 
 
 __all__ = [

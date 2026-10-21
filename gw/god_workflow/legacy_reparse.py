@@ -10,10 +10,12 @@ PR #22 之前，旧前端 normalizeMatureWorkflow 在保存时优先取数字 to
 2. 依据文档已保存的 raw_payload（原始来源快照）离线重新推导正确命名槽位，
    绝不访问网络。
 """
+
 from __future__ import annotations
 
 from collections import Counter
-from typing import Any, Mapping, Optional
+from collections.abc import Mapping
+from typing import Any, Optional
 
 from .parser import WorkflowParseError, extract_source_graph, parse_workflow
 
@@ -40,12 +42,15 @@ def _saved_slots(document: Mapping[str, Any]) -> dict[tuple[str, str], Counter]:
         target_slot = link.get("target_slot")
         pair = (str(link.get("source")), str(link.get("target")))
         by_pair.setdefault(pair, Counter())[
-            (None if source_slot is None else str(source_slot),
-             None if target_slot is None else str(target_slot))] += 1
+            (
+                None if source_slot is None else str(source_slot),
+                None if target_slot is None else str(target_slot),
+            )
+        ] += 1
     return by_pair
 
 
-def legacy_reparse_state(document: Mapping[str, Any]) -> tuple[bool, Optional[str]]:
+def legacy_reparse_state(document: Mapping[str, Any]) -> tuple[bool, str | None]:
     """判定已保存文档是否需要 LEGACY_RH_LINK_SLOTS 重新解析。
 
     返回 ``(needs_reparse, reparse_reason)``。只有当 raw_payload 能重新解析出
@@ -64,7 +69,8 @@ def legacy_reparse_state(document: Mapping[str, Any]) -> tuple[bool, Optional[st
     reference: dict[tuple[str, str], Counter] = {}
     for link in reparsed.connections:
         reference.setdefault((link.source, link.target), Counter())[
-            (link.source_slot, link.target_slot)] += 1
+            (link.source_slot, link.target_slot)
+        ] += 1
     for pair, saved_counter in _saved_slots(document).items():
         ref_counter = reference.get(pair)
         if not ref_counter:
@@ -74,8 +80,12 @@ def legacy_reparse_state(document: Mapping[str, Any]) -> tuple[bool, Optional[st
         remaining_ref = ref_counter - matched
         remaining_saved = saved_counter - matched
         for position in (0, 1):
-            ref_named = any(_is_named_slot(slots[position]) for slots in remaining_ref.elements())
-            saved_index = any(_is_index_slot(slots[position]) for slots in remaining_saved.elements())
+            ref_named = any(
+                _is_named_slot(slots[position]) for slots in remaining_ref.elements()
+            )
+            saved_index = any(
+                _is_index_slot(slots[position]) for slots in remaining_saved.elements()
+            )
             if ref_named and saved_index:
                 return (True, REPARSE_REASON_LEGACY_RH_LINK_SLOTS)
     return (False, None)

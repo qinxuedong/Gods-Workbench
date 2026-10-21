@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 # Copyright 2026 Gods-Workbench Authors
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -17,8 +16,9 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterable, Mapping
 from html import escape
-from typing import Any, Iterable, Mapping
+from typing import Any
 
 from gw.core.errors import CleanroomException
 from gw.media.audio_timing import normalize_word_timestamps
@@ -52,7 +52,11 @@ def generate_webvtt(
     C13 的递增、非重叠及有限值校验。WebVTT 精度为毫秒，无法表示的时间轴会
     失败关闭，避免不同词的时间戳量化成同一时刻。
     """
-    if not isinstance(word_separator, str) or "\n" in word_separator or "\r" in word_separator:
+    if (
+        not isinstance(word_separator, str)
+        or "\n" in word_separator
+        or "\r" in word_separator
+    ):
         _fail("INVALID_SUBTITLE_SEPARATOR", "word_separator 必须是单行文本")
     words = normalize_word_timestamps(word_timestamps)
     if any("\n" in item["word"] or "\r" in item["word"] for item in words):

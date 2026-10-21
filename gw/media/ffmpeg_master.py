@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 # Copyright 2026 Gods-Workbench Authors
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -23,11 +22,11 @@ import math
 import os
 import shutil
 import subprocess
+from collections.abc import Mapping, Sequence
 from pathlib import Path
-from typing import Any, Mapping, Sequence
+from typing import Any
 
 from gw.core.errors import CleanroomException
-
 
 WIDTH = 1920
 HEIGHT = 1080
@@ -61,7 +60,9 @@ def _time(frames: int) -> str:
     return f"{frames / FRAME_RATE:.8f}".rstrip("0").rstrip(".")
 
 
-def _tracks(manifest: Mapping[str, Any]) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+def _tracks(
+    manifest: Mapping[str, Any],
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     if not isinstance(manifest, Mapping):
         _fail(400, "INVALID_TIMELINE_MANIFEST", "timeline_manifest 必须是对象")
     tracks = manifest.get("tracks")
@@ -89,13 +90,17 @@ def _tracks(manifest: Mapping[str, Any]) -> tuple[list[dict[str, Any]], list[dic
                 audio.append(clip)
             elif kind in {"subtitle", "subtitles", "caption"}:
                 if clips:
-                    _fail(400, "UNSUPPORTED_SUBTITLE_TRACK", "母带导出暂不支持独立字幕轨")
+                    _fail(
+                        400, "UNSUPPORTED_SUBTITLE_TRACK", "母带导出暂不支持独立字幕轨"
+                    )
     if not video:
         _fail(400, "EMPTY_VIDEO_TIMELINE", "时间线没有可导出的视频片段")
     return video, audio
 
 
-def _clip(clip: Mapping[str, Any], asset_paths: Mapping[str, Path], *, track: str) -> dict[str, Any]:
+def _clip(
+    clip: Mapping[str, Any], asset_paths: Mapping[str, Path], *, track: str
+) -> dict[str, Any]:
     asset_id = str(clip.get("asset_id") or "").strip()
     path = asset_paths.get(asset_id)
     if not asset_id or path is None:
@@ -103,7 +108,9 @@ def _clip(clip: Mapping[str, Any], asset_paths: Mapping[str, Path], *, track: st
     at = _number(clip.get("at"), field="clip.at", default=0.0)
     duration = _number(clip.get("duration"), field="clip.duration")
     if at < 0 or duration <= 0:
-        _fail(400, "INVALID_TIMELINE_MANIFEST", "片段 at 必须非负且 duration 必须大于零")
+        _fail(
+            400, "INVALID_TIMELINE_MANIFEST", "片段 at 必须非负且 duration 必须大于零"
+        )
     overrides = clip.get("overrides") or {}
     if not isinstance(overrides, Mapping):
         _fail(400, "INVALID_TIMELINE_MANIFEST", "片段 overrides 必须是对象")
@@ -153,7 +160,11 @@ def _validate_video_order(clips: Sequence[dict[str, Any]]) -> None:
     end = 0
     for item in ordered:
         if item["at_frames"] < end:
-            _fail(400, "UNSUPPORTED_TIMELINE_OVERLAP", "视频片段存在重叠，无法按单轨顺序压制")
+            _fail(
+                400,
+                "UNSUPPORTED_TIMELINE_OVERLAP",
+                "视频片段存在重叠，无法按单轨顺序压制",
+            )
         end = item["at_frames"] + item["duration_frames"]
 
 
@@ -201,13 +212,15 @@ def build_ffmpeg_command(
         chain = [trim]
         if crop_filter:
             chain.append(crop_filter)
-        chain.extend([
-            f"fps={FRAME_RATE}",
-            f"scale={WIDTH}:{HEIGHT}:force_original_aspect_ratio=decrease",
-            f"pad={WIDTH}:{HEIGHT}:(ow-iw)/2:(oh-ih)/2:color=black",
-            "setsar=1",
-            "format=yuv420p",
-        ])
+        chain.extend(
+            [
+                f"fps={FRAME_RATE}",
+                f"scale={WIDTH}:{HEIGHT}:force_original_aspect_ratio=decrease",
+                f"pad={WIDTH}:{HEIGHT}:(ow-iw)/2:(oh-ih)/2:color=black",
+                "setsar=1",
+                "format=yuv420p",
+            ]
+        )
         label = f"v{segment_index}"
         filters.append(f"[{input_index}:v]{','.join(chain)}[{label}]")
         video_labels.append(f"[{label}]")
@@ -247,8 +260,18 @@ def build_ffmpeg_command(
                 f"dropout_transition=0,apad,atrim=duration={_time(video_duration)}[aout]"
             )
 
-    command = [ffmpeg_path, "-hide_banner", "-loglevel", "error", "-y", *inputs,
-               "-filter_complex", ";".join(filters), "-map", "[vout]"]
+    command = [
+        ffmpeg_path,
+        "-hide_banner",
+        "-loglevel",
+        "error",
+        "-y",
+        *inputs,
+        "-filter_complex",
+        ";".join(filters),
+        "-map",
+        "[vout]",
+    ]
     if audio_labels:
         command.extend(["-map", "[aout]", "-c:a", "aac", "-b:a", "192k"])
     command.extend(["-c:v", encoder])
@@ -262,7 +285,9 @@ def build_ffmpeg_command(
             command.extend(["-preset", "medium"])
         elif encoder == "h264_amf":
             command.extend(["-quality", "quality"])
-    command.extend(["-pix_fmt", "yuv420p", "-movflags", "+faststart", os.fspath(output_path)])
+    command.extend(
+        ["-pix_fmt", "yuv420p", "-movflags", "+faststart", os.fspath(output_path)]
+    )
     return command
 
 
@@ -287,9 +312,17 @@ def _hardware_encoder(ffmpeg_path: str) -> str | None:
 def _probe_output(path: Path, ffprobe_path: str) -> dict[str, Any]:
     try:
         result = _run(
-            [ffprobe_path, "-v", "error", "-count_frames", "-show_entries",
-             "format=duration:stream=codec_type,codec_name,width,height,duration,nb_read_frames",
-             "-of", "json", os.fspath(path)],
+            [
+                ffprobe_path,
+                "-v",
+                "error",
+                "-count_frames",
+                "-show_entries",
+                "format=duration:stream=codec_type,codec_name,width,height,duration,nb_read_frames",
+                "-of",
+                "json",
+                os.fspath(path),
+            ],
             timeout=30,
         )
     except (OSError, subprocess.TimeoutExpired):
@@ -300,8 +333,12 @@ def _probe_output(path: Path, ffprobe_path: str) -> dict[str, Any]:
         metadata = json.loads(result.stdout.decode("utf-8"))
         streams = metadata.get("streams", [])
         video = next(item for item in streams if item.get("codec_type") == "video")
-        audio = next((item for item in streams if item.get("codec_type") == "audio"), None)
-        duration = float(video.get("duration") or metadata.get("format", {}).get("duration"))
+        audio = next(
+            (item for item in streams if item.get("codec_type") == "audio"), None
+        )
+        duration = float(
+            video.get("duration") or metadata.get("format", {}).get("duration")
+        )
         width = int(video["width"])
         height = int(video["height"])
         video_codec = str(video["codec_name"])
@@ -309,15 +346,24 @@ def _probe_output(path: Path, ffprobe_path: str) -> dict[str, Any]:
         audio_codec = str(audio["codec_name"]) if audio else None
     except (ValueError, TypeError, KeyError, StopIteration, AttributeError):
         _fail(500, "MASTER_EXPORT_INVALID", "导出文件缺少有效的媒体流元数据")
-    if duration <= 0 or frame_count < 1 or (width, height) != (WIDTH, HEIGHT) or video_codec != "h264":
+    if (
+        duration <= 0
+        or frame_count < 1
+        or (width, height) != (WIDTH, HEIGHT)
+        or video_codec != "h264"
+    ):
         _fail(500, "MASTER_EXPORT_INVALID", "导出文件未达到 1080p H.264 母带基线")
     if audio:
         try:
-            audio_duration = float(audio.get("duration") or metadata.get("format", {}).get("duration"))
+            audio_duration = float(
+                audio.get("duration") or metadata.get("format", {}).get("duration")
+            )
         except (ValueError, TypeError):
             _fail(500, "MASTER_EXPORT_INVALID", "导出音轨缺少有效时长")
         if abs(duration - audio_duration) > 0.1:
-            _fail(500, "MASTER_EXPORT_AV_SYNC_FAILED", "导出视频与音轨时长差超过 100 毫秒")
+            _fail(
+                500, "MASTER_EXPORT_AV_SYNC_FAILED", "导出视频与音轨时长差超过 100 毫秒"
+            )
     return {
         "duration_seconds": duration,
         "width": width,
@@ -347,7 +393,9 @@ def render_master_mp4(
     expected_clips = [_clip(item, asset_paths, track="视频") for item in raw_video]
     expected_clips.sort(key=lambda item: (item["at_frames"], item["asset_id"]))
     _validate_video_order(expected_clips)
-    expected_frame_count = expected_clips[-1]["at_frames"] + expected_clips[-1]["duration_frames"]
+    expected_frame_count = (
+        expected_clips[-1]["at_frames"] + expected_clips[-1]["duration_frames"]
+    )
 
     target = Path(output_path)
     partial = target.with_name(f"{target.stem}.part{target.suffix}")
@@ -362,8 +410,11 @@ def render_master_mp4(
     for encoder in encoders:
         try:
             command = build_ffmpeg_command(
-                manifest, asset_paths, partial,
-                ffmpeg_path=ffmpeg, encoder=encoder,
+                manifest,
+                asset_paths,
+                partial,
+                ffmpeg_path=ffmpeg,
+                encoder=encoder,
             )
             try:
                 result = _run(command, timeout=timeout)
@@ -371,7 +422,11 @@ def render_master_mp4(
                 _fail(504, "MASTER_EXPORT_TIMEOUT", "FFmpeg 母带压制超时")
             except OSError:
                 _fail(503, "FFMPEG_UNAVAILABLE", "无法启动本机 FFmpeg")
-            if result.returncode != 0 or not partial.is_file() or partial.stat().st_size == 0:
+            if (
+                result.returncode != 0
+                or not partial.is_file()
+                or partial.stat().st_size == 0
+            ):
                 _fail(500, "MASTER_EXPORT_FAILED", "FFmpeg 未能生成有效母带")
             metadata = _probe_output(partial, ffprobe)
             if metadata["frame_count"] != expected_frame_count:

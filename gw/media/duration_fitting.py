@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 # Copyright 2026 Gods-Workbench Authors
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -22,10 +21,11 @@ C14-T4 再用真实媒体探测结果调用 ``validate_duration_match``。
 
 from __future__ import annotations
 
+from collections.abc import Mapping, Sequence
 from copy import deepcopy
 from math import isfinite
 from numbers import Real
-from typing import Any, Mapping, Sequence
+from typing import Any
 from urllib.parse import urlsplit, urlunsplit
 
 from gw.core.errors import CleanroomException
@@ -105,9 +105,13 @@ def _normalize_camera_ctrl(value: Any) -> dict[str, Any] | None:
         item = deepcopy(dict(point))
         if "at" not in item:
             _fail("INVALID_CAMERA_CTRL", f"trajectory 第 {index + 1} 项缺少 at")
-        at = _finite_number(item["at"], field="camera_ctrl.trajectory.at", code="INVALID_CAMERA_CTRL")
+        at = _finite_number(
+            item["at"], field="camera_ctrl.trajectory.at", code="INVALID_CAMERA_CTRL"
+        )
         if at < 0 or at + _EPSILON < previous_at:
-            _fail("INVALID_CAMERA_CTRL", "camera_ctrl.trajectory.at 必须从 0 开始单调递增")
+            _fail(
+                "INVALID_CAMERA_CTRL", "camera_ctrl.trajectory.at 必须从 0 开始单调递增"
+            )
         for axis in ("x", "y", "z", "yaw", "pitch", "roll"):
             if axis in item:
                 item[axis] = _finite_number(
@@ -143,7 +147,9 @@ def _normalize_lora(value: Any) -> list[dict[str, Any]] | None:
         result["name"] = name.strip()
         if "weight" not in result:
             result["weight"] = 1.0
-        result["weight"] = _finite_number(result["weight"], field="lora.weight", code="INVALID_LORA")
+        result["weight"] = _finite_number(
+            result["weight"], field="lora.weight", code="INVALID_LORA"
+        )
         normalized.append(result)
     return normalized
 
@@ -231,7 +237,9 @@ def validate_duration_match(
     """校验真实媒体时长是否在对白锁定目标的误差范围内。"""
     actual = validate_source_duration(actual_duration)
     target = validate_target_duration(target_duration)
-    tolerance_seconds = _finite_number(tolerance, field="tolerance", code="INVALID_DURATION_TOLERANCE")
+    tolerance_seconds = _finite_number(
+        tolerance, field="tolerance", code="INVALID_DURATION_TOLERANCE"
+    )
     if tolerance_seconds < 0:
         _fail("INVALID_DURATION_TOLERANCE", "tolerance 不能为负数")
     error = round(abs(actual - target), _ROUND_DIGITS)
@@ -285,7 +293,9 @@ def build_i2v_request(
     if normalized_lora is not None:
         result["lora"] = normalized_lora
     if fixture_id is not None:
-        result["fixture_id"] = _required_text(fixture_id, field="fixture_id", code="INVALID_FIXTURE_ID")
+        result["fixture_id"] = _required_text(
+            fixture_id, field="fixture_id", code="INVALID_FIXTURE_ID"
+        )
     return result
 
 

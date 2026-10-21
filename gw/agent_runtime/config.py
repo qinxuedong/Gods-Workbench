@@ -1,4 +1,5 @@
 """Workspace-confined runtime path configuration with no import-time I/O."""
+
 from __future__ import annotations
 
 import os
@@ -26,7 +27,9 @@ def workspace_root() -> Path:
     """Return the package's independent checkout root, not a user data directory."""
     root = Path(__file__).absolute().parents[2]
     if _is_reparse_point(root):
-        raise PathIsolationError("The workspace root must not be a symlink or junction.")
+        raise PathIsolationError(
+            "The workspace root must not be a symlink or junction."
+        )
     return root.resolve(strict=True)
 
 
@@ -34,7 +37,9 @@ def _relative_to(path: Path, root: Path) -> Path:
     try:
         return path.relative_to(root)
     except ValueError as exc:
-        raise PathIsolationError(f"Path is outside the isolated workspace: {path}") from exc
+        raise PathIsolationError(
+            f"Path is outside the isolated workspace: {path}"
+        ) from exc
 
 
 def _check_existing_components(path: Path, root: Path) -> None:
@@ -81,17 +86,27 @@ def resolve_trusted_path(
     root = root_lexical.resolve(strict=False)
 
     raw_candidate = Path(candidate)
-    lexical = Path(os.path.abspath(raw_candidate if raw_candidate.is_absolute() else root_lexical / raw_candidate))
+    lexical = Path(
+        os.path.abspath(
+            raw_candidate
+            if raw_candidate.is_absolute()
+            else root_lexical / raw_candidate
+        )
+    )
     try:
         lexical.relative_to(root_lexical)
     except ValueError as exc:
-        raise PathIsolationError("An injected runtime database path must remain below its trusted data root.") from exc
+        raise PathIsolationError(
+            "An injected runtime database path must remain below its trusted data root."
+        ) from exc
     _check_path_components(lexical)
     resolved = lexical.resolve(strict=False)
     try:
         resolved.relative_to(root)
     except ValueError as exc:
-        raise PathIsolationError("An injected runtime database path must remain below its trusted data root.") from exc
+        raise PathIsolationError(
+            "An injected runtime database path must remain below its trusted data root."
+        ) from exc
     return resolved
 
 
@@ -104,7 +119,9 @@ def _check_path_components(path: Path) -> None:
             continue
         current = current / component
         if _is_reparse_point(current):
-            raise PathIsolationError("A trusted runtime path cannot contain symlinks or Junctions.")
+            raise PathIsolationError(
+                "A trusted runtime path cannot contain symlinks or Junctions."
+            )
 
 
 def validate_pythonpath(value: str | None = None) -> None:

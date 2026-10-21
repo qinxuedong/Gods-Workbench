@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 # Copyright 2026 Gods-Workbench Authors
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -26,8 +25,9 @@ from typing import Any
 
 from gw.core.errors import CleanroomException
 
-
-_VIDEO_SUFFIXES = frozenset({".mp4", ".mov", ".mkv", ".avi", ".webm", ".m4v", ".flv", ".wmv"})
+_VIDEO_SUFFIXES = frozenset(
+    {".mp4", ".mov", ".mkv", ".avi", ".webm", ".m4v", ".flv", ".wmv"}
+)
 _SCENE_TIME = re.compile(r"\bpts_time:([-+]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?)")
 _PROCESS_TIMEOUT_SECONDS = 120
 
@@ -97,13 +97,19 @@ def detect_scenes(
     毫秒。``tags`` 保持空列表，不根据像素内容伪造语义标签，缩略图由提取器补齐。
     """
     if isinstance(threshold, bool):
-        _fail(400, "INVALID_SCENE_THRESHOLD", "scene threshold 必须是 [0, 1) 内的有限数值")
+        _fail(
+            400, "INVALID_SCENE_THRESHOLD", "scene threshold 必须是 [0, 1) 内的有限数值"
+        )
     try:
         score = float(threshold)
     except (TypeError, ValueError, OverflowError):
-        _fail(400, "INVALID_SCENE_THRESHOLD", "scene threshold 必须是 [0, 1) 内的有限数值")
+        _fail(
+            400, "INVALID_SCENE_THRESHOLD", "scene threshold 必须是 [0, 1) 内的有限数值"
+        )
     if not math.isfinite(score) or not 0 <= score < 1:
-        _fail(400, "INVALID_SCENE_THRESHOLD", "scene threshold 必须是 [0, 1) 内的有限数值")
+        _fail(
+            400, "INVALID_SCENE_THRESHOLD", "scene threshold 必须是 [0, 1) 内的有限数值"
+        )
 
     path = _video_path(video_path)
     duration = _duration_seconds(path)

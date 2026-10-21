@@ -3,14 +3,19 @@
 This is deliberately not a production database selection. Each operation opens an
 independent connection so separate processes exercise the same durable file.
 """
+
 from __future__ import annotations
 
 import sqlite3
+from collections.abc import Iterator
 from pathlib import Path
-from typing import Iterator
 
-from gw.agent_runtime.config import PathIsolationError, resolve_trusted_path, resolve_workspace_path, workspace_root
-
+from gw.agent_runtime.config import (
+    PathIsolationError,
+    resolve_trusted_path,
+    resolve_workspace_path,
+    workspace_root,
+)
 
 _DEFAULT_RELATIVE = Path(".local/runtime-dev/data/runtime.sqlite3")
 
@@ -28,7 +33,9 @@ class _ClosingConnection(sqlite3.Connection):
 class SQLiteDatabase:
     """SQLite file constrained to a non-symlink path beneath this checkout's .local."""
 
-    def __init__(self, path: str | Path | None = None, *, trusted_root: str | Path | None = None) -> None:
+    def __init__(
+        self, path: str | Path | None = None, *, trusted_root: str | Path | None = None
+    ) -> None:
         if trusted_root is None:
             root = workspace_root()
             candidate = Path(path) if path is not None else root / _DEFAULT_RELATIVE
@@ -37,9 +44,13 @@ class SQLiteDatabase:
             try:
                 safe.relative_to(local_root)
             except ValueError as exc:
-                raise PathIsolationError("Runtime SQLite data must remain below workspace .local.") from exc
+                raise PathIsolationError(
+                    "Runtime SQLite data must remain below workspace .local."
+                ) from exc
         else:
-            candidate = Path(path) if path is not None else Path("agent/runtime.sqlite3")
+            candidate = (
+                Path(path) if path is not None else Path("agent/runtime.sqlite3")
+            )
             safe = resolve_trusted_path(candidate, trusted_root=trusted_root)
         if safe.suffix not in {".sqlite3", ".sqlite", ".db"}:
             raise ValueError("SQLite database path must use .sqlite3, .sqlite, or .db.")
@@ -50,7 +61,9 @@ class SQLiteDatabase:
         self._initialize()
 
     def connect(self) -> sqlite3.Connection:
-        connection = sqlite3.connect(self.path, timeout=30, isolation_level=None, factory=_ClosingConnection)
+        connection = sqlite3.connect(
+            self.path, timeout=30, isolation_level=None, factory=_ClosingConnection
+        )
         connection.row_factory = sqlite3.Row
         connection.execute("PRAGMA foreign_keys = ON")
         connection.execute("PRAGMA busy_timeout = 30000")
