@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Phase 10B 观测契约测试。
 
 覆盖 docs/contracts/OBSERVABILITY-INTERFACE-CATALOG.yaml（p12-a4-1）的 8 个 GET 端点：
@@ -90,7 +89,9 @@ SENSITIVE_FIELDS = (
 )
 
 
-def _make_service(*, seed_projects: bool = False, seed_canvas: bool = False) -> ObservabilityService:
+def _make_service(
+    *, seed_projects: bool = False, seed_canvas: bool = False
+) -> ObservabilityService:
     """构造注入式观测服务；默认全部为空内存状态。"""
     return ObservabilityService(
         projects_service=ProjectsService(seed_golden_fixture=seed_projects),
@@ -114,14 +115,23 @@ def seeded_client(monkeypatch) -> TestClient:
     """注入黄金夹具种子：1 个项目、1 个 accepted 任务。"""
     audit_log.reset_audit_log()
     from gw.core.auth import require_authenticated
+    from gw.god_canvas.tasks import SmartCanvasTaskRequest
     from gw.projects_hub import service as projects
     from gw.projects_hub.models import ProjectCreateRequest
-    from gw.god_canvas.tasks import SmartCanvasTaskRequest
+
     service = _make_service(seed_projects=False, seed_canvas=True)
-    owner = projects.owner_key_for_context(require_authenticated("Bearer cleanroom-test", "editor"))
-    service._projects.create_project(ProjectCreateRequest(name="观测归属项目", project_type="other"), owner_key=owner)
+    owner = projects.owner_key_for_context(
+        require_authenticated("Bearer cleanroom-test", "editor")
+    )
+    service._projects.create_project(
+        ProjectCreateRequest(name="观测归属项目", project_type="other"), owner_key=owner
+    )
     monkeypatch.setattr(projects, "default_projects_service", service._projects)
-    service._canvas.submit_smart_task("cv-0001", SmartCanvasTaskRequest(entry_nodes=["nd-0001"]), authorization="Bearer cleanroom-test")
+    service._canvas.submit_smart_task(
+        "cv-0001",
+        SmartCanvasTaskRequest(entry_nodes=["nd-0001"]),
+        authorization="Bearer cleanroom-test",
+    )
     monkeypatch.setattr(obs_routes, "default_observability_service", service)
     with TestClient(create_app()) as client:
         yield client
@@ -156,13 +166,16 @@ def _assert_no_fabrication(payload) -> None:
 # 契约文件本身
 # ---------------------------------------------------------------------------
 
+
 def test_catalog_declares_eight_get_endpoints_and_zero_fabrication_rule():
     """契约必须声明 8 个 GET 端点，并显式写入「空 + not_integrated，禁止伪造」。"""
     text = CATALOG.read_text(encoding="utf-8")
     pairs = re.findall(r"method:\s*(\w+)\s*\n\s*path:\s*(\S+)", text)
     assert len(pairs) == 8, f"契约端点数量应为 8，实际 {len(pairs)}"
     assert {method for method, _ in pairs} == {"GET"}, "观测契约不得声明非 GET 方法"
-    assert {route for _, route in pairs} == set(ENDPOINTS), "契约端点集合与实现范围不一致"
+    assert {route for _, route in pairs} == set(ENDPOINTS), (
+        "契约端点集合与实现范围不一致"
+    )
     assert "not_integrated" in text
     assert "禁止伪造" in text, "契约必须显式写明禁止伪造"
 
@@ -170,7 +183,9 @@ def test_catalog_declares_eight_get_endpoints_and_zero_fabrication_rule():
 def test_catalog_declares_no_unauthorized_endpoints():
     """契约不得授权观测阶段之外的端点（含 asset-library 明细）。"""
     text = CATALOG.read_text(encoding="utf-8")
-    routes = {route for _, route in re.findall(r"method:\s*(\w+)\s*\n\s*path:\s*(\S+)", text)}
+    routes = {
+        route for _, route in re.findall(r"method:\s*(\w+)\s*\n\s*path:\s*(\S+)", text)
+    }
     for route in routes:
         assert route.startswith("/api/observability"), f"越权声明端点: {route}"
 
@@ -179,23 +194,64 @@ def test_catalog_declares_no_unauthorized_endpoints():
 # 200 形状 + 401
 # ---------------------------------------------------------------------------
 
+
 def test_all_eight_endpoints_return_200_with_expected_shape(seeded_client: TestClient):
     """8 个端点均须 200，且返回契约要求的关键字段。"""
     expected_keys = {
-        "/api/observability": {"service", "contract_version", "generated_at", "data_status", "resources"},
-        "/api/observability/overview": {"summary", "projects", "jobs", "data_status", "data_gaps"},
+        "/api/observability": {
+            "service",
+            "contract_version",
+            "generated_at",
+            "data_status",
+            "resources",
+        },
+        "/api/observability/overview": {
+            "summary",
+            "projects",
+            "jobs",
+            "data_status",
+            "data_gaps",
+        },
         "/api/observability/series": {"series", "metrics", "data_status", "data_gap"},
-        "/api/observability/events": {"items", "total", "limit", "has_more", "data_status"},
-        "/api/observability/tasks": {"items", "total", "limit", "has_more", "data_status"},
+        "/api/observability/events": {
+            "items",
+            "total",
+            "limit",
+            "has_more",
+            "data_status",
+        },
+        "/api/observability/tasks": {
+            "items",
+            "total",
+            "limit",
+            "has_more",
+            "data_status",
+        },
         "/api/observability/health": {"status", "checks", "data_status", "checked_at"},
-        "/api/observability/sources": {"items", "total", "limit", "has_more", "data_status"},
-        "/api/observability/asset-volumes": {"items", "total", "limit", "has_more", "data_status"},
+        "/api/observability/sources": {
+            "items",
+            "total",
+            "limit",
+            "has_more",
+            "data_status",
+        },
+        "/api/observability/asset-volumes": {
+            "items",
+            "total",
+            "limit",
+            "has_more",
+            "data_status",
+        },
     }
     for path in ENDPOINTS:
         res = seeded_client.get(path, headers=AUTH)
-        assert res.status_code == 200, f"{path} 期望 200，实际 {res.status_code}: {res.text}"
+        assert res.status_code == 200, (
+            f"{path} 期望 200，实际 {res.status_code}: {res.text}"
+        )
         body = res.json()
-        assert expected_keys[path] <= set(body), f"{path} 缺少字段: {expected_keys[path] - set(body)}"
+        assert expected_keys[path] <= set(body), (
+            f"{path} 缺少字段: {expected_keys[path] - set(body)}"
+        )
         assert body["data_status"] in {"ok", "degraded", "not_integrated"}
         _assert_no_fabrication(body)
 
@@ -231,9 +287,12 @@ def test_unknown_role_is_rejected(empty_client: TestClient):
 # 诚实空语义 / not_integrated
 # ---------------------------------------------------------------------------
 
+
 def test_series_reads_real_samples_or_degrades(empty_client: TestClient):
     """Phase 12 A4：series 读取真实采样；不足 2 点必须 degraded 且不插值。"""
-    body = empty_client.get("/api/observability/series?metrics=cpu_percent", headers=AUTH).json()
+    body = empty_client.get(
+        "/api/observability/series?metrics=cpu_percent", headers=AUTH
+    ).json()
     assert body["data_status"] in {"ok", "degraded"}
     assert isinstance(body["metrics"], list) and body["metrics"]
     metric = body["metrics"][0]
@@ -243,7 +302,9 @@ def test_series_reads_real_samples_or_degrades(empty_client: TestClient):
         assert body["data_gaps"]
     else:
         assert len(metric["points"]) >= 2
-    unknown = empty_client.get("/api/observability/series?metrics=not_a_metric", headers=AUTH).json()
+    unknown = empty_client.get(
+        "/api/observability/series?metrics=not_a_metric", headers=AUTH
+    ).json()
     assert unknown["metrics"][0]["data_status"] == "not_integrated"
     assert unknown["metrics"][0]["points"] == []
 
@@ -251,9 +312,12 @@ def test_series_reads_real_samples_or_degrades(empty_client: TestClient):
 def test_series_returns_two_points_after_real_sampling(empty_client: TestClient):
     """真实采样两次后可返回 >= 2 个真实点（验证采样落盘真实生效）。"""
     from gw.observability import telemetry
+
     telemetry.record_sample()
     telemetry.record_sample()
-    body = empty_client.get("/api/observability/series?metrics=cpu_percent", headers=AUTH).json()
+    body = empty_client.get(
+        "/api/observability/series?metrics=cpu_percent", headers=AUTH
+    ).json()
     metric = [m for m in body["metrics"] if m["metric"] == "cpu_percent"][0]
     assert len(metric["points"]) >= 2
     assert all("ts_ms" in p and "value" in p for p in metric["points"])
@@ -264,10 +328,14 @@ def test_sources_now_returns_real_registry(empty_client: TestClient):
     body = empty_client.get("/api/observability/sources", headers=AUTH).json()
     assert body["data_status"] == "ok"
     assert body["total"] >= 1
-    assert body["items"] and all("source_id" in item and "path" in item for item in body["items"])
+    assert body["items"] and all(
+        "source_id" in item and "path" in item for item in body["items"]
+    )
 
 
-def test_asset_volumes_without_allowed_roots_is_not_integrated(empty_client: TestClient, monkeypatch):
+def test_asset_volumes_without_allowed_roots_is_not_integrated(
+    empty_client: TestClient, monkeypatch
+):
     """未配置 GW_ALLOWED_ROOTS 时 asset-volumes 必须空 + not_integrated（不伪造条目）。"""
     monkeypatch.delenv("GW_ALLOWED_ROOTS", raising=False)
     body = empty_client.get("/api/observability/asset-volumes", headers=AUTH).json()
@@ -283,7 +351,10 @@ def test_asset_volumes_scans_real_root(empty_client: TestClient, monkeypatch, tm
     monkeypatch.setenv("GW_ALLOWED_ROOTS", str(tmp_path))
     body = empty_client.get("/api/observability/asset-volumes", headers=AUTH).json()
     assert body["data_status"] == "ok"
-    assert any(item["path"] == "shot.png" and item["size_bytes"] == 80 for item in body["items"])
+    assert any(
+        item["path"] == "shot.png" and item["size_bytes"] == 80
+        for item in body["items"]
+    )
     assert str(tmp_path) not in json.dumps(body)
 
 
@@ -339,7 +410,9 @@ def test_health_reports_real_hardware_telemetry(empty_client: TestClient):
     assert statuses["projects"] == "ok"
     assert statuses["canvas"] == "ok"
     assert statuses["asset_library"] == "ok"
-    telemetry_check = [c for c in body["checks"] if c["name"] == "hardware_telemetry"][0]
+    telemetry_check = [c for c in body["checks"] if c["name"] == "hardware_telemetry"][
+        0
+    ]
     assert telemetry_check["status"] == "ok"
     metrics = telemetry_check["metrics"]
     for key in ("cpu_percent", "memory_percent", "disk_percent", "cpu_count"):
@@ -352,6 +425,7 @@ def test_health_reports_real_hardware_telemetry(empty_client: TestClient):
 def test_health_degrades_without_psutil(empty_client: TestClient, monkeypatch):
     """psutil 不可用时 hardware_telemetry 必须 not_integrated，不得编造读数。"""
     from gw.observability import telemetry as telemetry_mod
+
     monkeypatch.setattr(telemetry_mod, "_psutil", lambda: None)
     body = empty_client.get("/api/observability/health", headers=AUTH).json()
     check = [c for c in body["checks"] if c["name"] == "hardware_telemetry"][0]
@@ -387,6 +461,7 @@ def test_health_never_claims_ok_when_component_fails(monkeypatch):
 # ---------------------------------------------------------------------------
 # 真实审计事件
 # ---------------------------------------------------------------------------
+
 
 def _record_denied_events(count: int) -> None:
     """写入真实审计记录（走 core.audit 白名单 API，不经任何伪造路径）。"""
@@ -433,12 +508,18 @@ def test_events_free_text_never_leaks_credentials(empty_client: TestClient):
         assert marker not in res.text, f"事件响应不得包含 {marker}"
 
 
-def test_events_filter_by_source_and_filter_out_unknown_source(empty_client: TestClient):
+def test_events_filter_by_source_and_filter_out_unknown_source(
+    empty_client: TestClient,
+):
     """source 过滤必须真实生效：未命中的来源返回空，而不是忽略过滤条件。"""
     _record_denied_events(1)
-    hit = empty_client.get("/api/observability/events?source=core.audit", headers=AUTH).json()
+    hit = empty_client.get(
+        "/api/observability/events?source=core.audit", headers=AUTH
+    ).json()
     assert hit["total"] == 1
-    miss = empty_client.get("/api/observability/events?source=other_source", headers=AUTH).json()
+    miss = empty_client.get(
+        "/api/observability/events?source=other_source", headers=AUTH
+    ).json()
     assert miss["total"] == 0
     assert miss["items"] == []
 
@@ -446,13 +527,17 @@ def test_events_filter_by_source_and_filter_out_unknown_source(empty_client: Tes
 def test_events_scoped_filter_returns_empty_and_degraded(empty_client: TestClient):
     """审计事件无 project_id 关联：按 project_id 过滤必须返回空 + degraded（不静默忽略）。"""
     _record_denied_events(3)
-    body = empty_client.get("/api/observability/events?project_id=prj-0001", headers=AUTH).json()
+    body = empty_client.get(
+        "/api/observability/events?project_id=prj-0001", headers=AUTH
+    ).json()
     assert body["data_status"] == "degraded"
     assert body["items"] == []
     assert any("project_id" in gap for gap in body["data_gaps"])
 
 
-def test_tasks_time_window_filter_discloses_snapshot_semantics(seeded_client: TestClient):
+def test_tasks_time_window_filter_discloses_snapshot_semantics(
+    seeded_client: TestClient,
+):
     """任务无时间戳：时间窗无法求值，必须返回真实快照 + degraded 并显式披露（不得静默忽略）。
 
     取舍说明：任务中心默认携带 range；若返回空会把真实任务误报成「窗口内无任务」，
@@ -463,13 +548,17 @@ def test_tasks_time_window_filter_discloses_snapshot_semantics(seeded_client: Te
     assert body["data_gaps"], "未生效的时间条件必须显式披露"
     assert len(body["items"]) == 1, "应返回真实任务快照，而不是误导性的空结果"
     assert body["items"][0]["job_id"] == "job-0002"
-    body2 = seeded_client.get("/api/observability/tasks?start_ms=1&end_ms=2", headers=AUTH).json()
+    body2 = seeded_client.get(
+        "/api/observability/tasks?start_ms=1&end_ms=2", headers=AUTH
+    ).json()
     assert body2["data_status"] == "degraded"
     assert body2["data_gaps"]
     assert len(body2["items"]) == 1
 
 
-def test_tasks_scope_and_unsupported_dimension_filters_fail_closed(seeded_client: TestClient):
+def test_tasks_scope_and_unsupported_dimension_filters_fail_closed(
+    seeded_client: TestClient,
+):
     """无法求值且会误导命中的过滤条件（作用域 ID / source / level）必须返回空 + degraded。"""
     for query in (
         "project_id=prj-0001",
@@ -478,7 +567,9 @@ def test_tasks_scope_and_unsupported_dimension_filters_fail_closed(seeded_client
         "source=core.audit",
         "level=warn",
     ):
-        body = seeded_client.get(f"/api/observability/tasks?{query}", headers=AUTH).json()
+        body = seeded_client.get(
+            f"/api/observability/tasks?{query}", headers=AUTH
+        ).json()
         assert body["data_status"] == "degraded", query
         assert body["items"] == [], query
         assert body["data_gaps"], query
@@ -486,15 +577,20 @@ def test_tasks_scope_and_unsupported_dimension_filters_fail_closed(seeded_client
 
 def test_tasks_status_filter_is_applied(seeded_client: TestClient):
     """status 过滤必须真实生效。"""
-    hit = seeded_client.get("/api/observability/tasks?status=accepted", headers=AUTH).json()
+    hit = seeded_client.get(
+        "/api/observability/tasks?status=accepted", headers=AUTH
+    ).json()
     assert hit["total"] == 1
-    miss = seeded_client.get("/api/observability/tasks?status=running", headers=AUTH).json()
+    miss = seeded_client.get(
+        "/api/observability/tasks?status=running", headers=AUTH
+    ).json()
     assert miss["total"] == 0
 
 
 # ---------------------------------------------------------------------------
 # 全端点查询参数矩阵（真实解析，不得 500）
 # ---------------------------------------------------------------------------
+
 
 def test_every_endpoint_accepts_full_recognized_query_set(empty_client: TestClient):
     """8 个端点都必须解析完整参数集并 200，未识别参数不得 500。"""
@@ -506,7 +602,9 @@ def test_every_endpoint_accepts_full_recognized_query_set(empty_client: TestClie
     )
     for path in ENDPOINTS:
         res = empty_client.get(f"{path}?{query}", headers=AUTH)
-        assert res.status_code == 200, f"{path} 未识别/边缘参数不得导致 {res.status_code}: {res.text}"
+        assert res.status_code == 200, (
+            f"{path} 未识别/边缘参数不得导致 {res.status_code}: {res.text}"
+        )
         body = res.json()
         filters = body["applied_filters"]
         assert filters["limit"] == 5, path
@@ -525,7 +623,9 @@ def test_every_endpoint_accepts_full_recognized_query_set(empty_client: TestClie
             ("start_ms", 1000),
             ("end_ms", 2000),
         ):
-            assert filters[field] == expected, f"{path} 未如实解析 {field}: {filters[field]!r}"
+            assert filters[field] == expected, (
+                f"{path} 未如实解析 {field}: {filters[field]!r}"
+            )
         _assert_no_fabrication(body)
 
 
@@ -553,6 +653,7 @@ def test_limit_is_honored_on_events(empty_client: TestClient):
 # ---------------------------------------------------------------------------
 # 分页与参数健壮性
 # ---------------------------------------------------------------------------
+
 
 def test_events_pagination_uses_next_cursor_and_has_more(empty_client: TestClient):
     """分页必须返回 next_cursor + has_more，且游标可真实翻页。"""
@@ -607,10 +708,13 @@ def test_window_filters_time_range(empty_client: TestClient):
     _record_denied_events(1)
     now_ms = int(__import__("time").time() * 1000)
     inside = empty_client.get(
-        f"/api/observability/events?start_ms={now_ms - 60_000}&end_ms={now_ms + 60_000}", headers=AUTH
+        f"/api/observability/events?start_ms={now_ms - 60_000}&end_ms={now_ms + 60_000}",
+        headers=AUTH,
     ).json()
     assert inside["total"] == 1
-    outside = empty_client.get("/api/observability/events?start_ms=1&end_ms=2", headers=AUTH).json()
+    outside = empty_client.get(
+        "/api/observability/events?start_ms=1&end_ms=2", headers=AUTH
+    ).json()
     assert outside["total"] == 0
 
 
@@ -626,7 +730,9 @@ def test_invalid_parameters_fail_closed_with_400(empty_client: TestClient):
         "start_ms=abc",
     ):
         res = empty_client.get(f"/api/observability/events?{query}", headers=AUTH)
-        assert res.status_code == 400, f"{query} 应失败关闭为 400，实际 {res.status_code}"
+        assert res.status_code == 400, (
+            f"{query} 应失败关闭为 400，实际 {res.status_code}"
+        )
         assert res.json()["detail"]["code"] == "INVALID_REQUEST"
 
 
@@ -642,7 +748,9 @@ def test_unrecognized_parameters_never_cause_500(empty_client: TestClient):
         res = empty_client.get(f"/api/observability/events?{query}", headers=AUTH)
         assert res.status_code == 200, f"{query} 不应 500，实际 {res.status_code}"
         res_tasks = empty_client.get(f"/api/observability/tasks?{query}", headers=AUTH)
-        assert res_tasks.status_code == 200, f"tasks?{query} 不应 500，实际 {res_tasks.status_code}"
+        assert res_tasks.status_code == 200, (
+            f"tasks?{query} 不应 500，实际 {res_tasks.status_code}"
+        )
 
 
 def test_configurable_fields_match_contract(empty_client: TestClient):
@@ -654,8 +762,20 @@ def test_configurable_fields_match_contract(empty_client: TestClient):
     res = empty_client.get(f"/api/observability/events?{query}", headers=AUTH)
     assert res.status_code == 200
     filters = res.json()["applied_filters"]
-    for field in ("range", "limit", "status", "source", "project_id", "job_id",
-                  "entity_id", "asset_id", "canvas_id", "stable_id", "start_ms", "end_ms"):
+    for field in (
+        "range",
+        "limit",
+        "status",
+        "source",
+        "project_id",
+        "job_id",
+        "entity_id",
+        "asset_id",
+        "canvas_id",
+        "stable_id",
+        "start_ms",
+        "end_ms",
+    ):
         assert field in filters, f"applied_filters 缺少 {field}"
 
 
@@ -676,6 +796,7 @@ def test_observability_index_lists_only_implemented_endpoints(empty_client: Test
 # 范围守卫
 # ---------------------------------------------------------------------------
 
+
 def test_other_api_endpoints_remain_unimplemented(empty_client: TestClient):
     """未获授权的端点必须仍不可用，观测阶段不得顺带实现其它端点。"""
     for method, path in (
@@ -691,7 +812,9 @@ def test_other_api_endpoints_remain_unimplemented(empty_client: TestClient):
         # 故从观察阶段的「不可用」探针中移除，改由 test_phase11_b8_prompt_items.py 接管。
     ):
         res = getattr(empty_client, method)(path, headers=AUTH)
-        assert res.status_code in {404, 405}, f"{method.upper()} {path} 不应可用，实际 {res.status_code}"
+        assert res.status_code in {404, 405}, (
+            f"{method.upper()} {path} 不应可用，实际 {res.status_code}"
+        )
 
 
 def test_no_randomness_or_fake_telemetry_in_service_source():
@@ -704,8 +827,15 @@ def test_no_randomness_or_fake_telemetry_in_service_source():
         text = (REPO_ROOT / relative).read_text(encoding="utf-8")
         # 只否定「真的引入随机数」，文档中说明「禁止随机数」的措辞不算违规。
         for marker in ("import random", "random.", "Math.random", "uuid4"):
-            assert marker not in text, f"{relative} 不得引入随机数（伪造数据风险）: {marker}"
-        for marker in ("random.uniform", "random.randint", "fake_telemetry", "demo_series"):
+            assert marker not in text, (
+                f"{relative} 不得引入随机数（伪造数据风险）: {marker}"
+            )
+        for marker in (
+            "random.uniform",
+            "random.randint",
+            "fake_telemetry",
+            "demo_series",
+        ):
             assert marker not in text, f"{relative} 不得包含伪造遥测标记 {marker}"
 
 
@@ -722,6 +852,7 @@ def test_repository_has_no_observability_fake_telemetry_payloads():
 # ---------------------------------------------------------------------------
 # R3 独立复核发现的「静默失败」诚实性缺口（Phase 10B 修复回归）
 # ---------------------------------------------------------------------------
+
 
 def _broken_audit_service(monkeypatch):
     """构造审计源不可读的观测服务（其余依赖为真实空服务）。"""
@@ -821,6 +952,7 @@ def test_gpu_telemetry_never_fabricates_when_command_fails(monkeypatch):
     """nvidia-smi 返回非零码时必须返回 None（fail-closed）。"""
     import shutil
     import subprocess
+
     from gw.observability import telemetry as telemetry_mod
 
     class _Proc:

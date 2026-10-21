@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 import os
-from pathlib import Path
 import stat
+from pathlib import Path
 
 import pytest
 
@@ -20,7 +20,10 @@ def _make_writable(root: Path) -> None:
 
 def test_cookie_names_isolate_dev_and_prod(monkeypatch):
     assert session.runtime_cookie_names("dev") == ("gw_session_dev", "gw_oidc_flow_dev")
-    assert session.runtime_cookie_names("prod") == ("gw_session_prod", "gw_oidc_flow_prod")
+    assert session.runtime_cookie_names("prod") == (
+        "gw_session_prod",
+        "gw_oidc_flow_prod",
+    )
     assert session.runtime_cookie_names("dev") != session.runtime_cookie_names("prod")
     assert session.runtime_cookie_names("test") == ("gw_session", "gw_oidc_flow")
 
@@ -31,7 +34,9 @@ def test_migration_copies_only_data_and_auth_and_writes_receipt(tmp_path: Path):
     source = tmp_path / "GodsWorkbenchClear"
     destination = tmp_path / "GodsWorkbench"
     (source / "data" / "nested").mkdir(parents=True)
-    (source / "data" / "nested" / "state.json").write_text("{\"ok\":true}", encoding="utf-8")
+    (source / "data" / "nested" / "state.json").write_text(
+        '{"ok":true}', encoding="utf-8"
+    )
     (source / "auth.sqlite3").write_bytes(b"auth-db")
     (source / "video").mkdir()
     (source / "video" / "should-not-move.mp4").write_bytes(b"video")
@@ -39,17 +44,23 @@ def test_migration_copies_only_data_and_auth_and_writes_receipt(tmp_path: Path):
     receipt = run.migrate_legacy_data(source, destination, repo_root=repo)
 
     assert receipt["status"] == "success"
-    assert (destination / "data" / "nested" / "state.json").read_text(encoding="utf-8") == "{\"ok\":true}"
+    assert (destination / "data" / "nested" / "state.json").read_text(
+        encoding="utf-8"
+    ) == '{"ok":true}'
     assert (destination / "auth" / "auth.sqlite3").read_bytes() == b"auth-db"
     assert not (destination / "video").exists()
     assert (destination / run.MIGRATION_RECEIPT_NAME).is_file()
-    assert (source / "data" / "nested" / "state.json").read_text(encoding="utf-8") == "{\"ok\":true}"
+    assert (source / "data" / "nested" / "state.json").read_text(
+        encoding="utf-8"
+    ) == '{"ok":true}'
     assert (source / "auth.sqlite3").read_bytes() == b"auth-db"
     assert all((p.stat().st_mode & stat.S_IWUSR) == 0 for p in source.rglob("*"))
     _make_writable(source)
 
 
-def test_migration_failure_leaves_no_success_receipt_or_destination(tmp_path: Path, monkeypatch):
+def test_migration_failure_leaves_no_success_receipt_or_destination(
+    tmp_path: Path, monkeypatch
+):
     repo = tmp_path / "repo"
     repo.mkdir()
     source = tmp_path / "GodsWorkbenchClear"

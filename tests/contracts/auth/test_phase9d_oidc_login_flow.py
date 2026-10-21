@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Phase 9D：真实外部 IdP（OIDC 授权码 + PKCE）登录链路契约测试。
 
 覆盖用户 2026-09-21 裁决「真实外部 IdP 接线」的**端到端真实 HTTP 链路**：
@@ -67,8 +66,12 @@ def jwks(rsa_keypair) -> dict:
                 "use": "sig",
                 "alg": "RS256",
                 "kid": KID,
-                "n": _b64url(numbers.n.to_bytes((numbers.n.bit_length() + 7) // 8, "big")),
-                "e": _b64url(numbers.e.to_bytes((numbers.e.bit_length() + 7) // 8, "big")),
+                "n": _b64url(
+                    numbers.n.to_bytes((numbers.n.bit_length() + 7) // 8, "big")
+                ),
+                "e": _b64url(
+                    numbers.e.to_bytes((numbers.e.bit_length() + 7) // 8, "big")
+                ),
             }
         ]
     }
@@ -223,6 +226,7 @@ def _app():
 # 状态：绝不伪造已登录
 # ---------------------------------------------------------------------------
 
+
 def test_status_local_account_mode_reports_no_principal(clean_env):
     """默认 local_account 模式：未认证时 principal 必须为 null，且不得伪造管理员。"""
     with TestClient(_app()) as api:
@@ -251,6 +255,7 @@ def test_status_oidc_without_client_config_is_not_login_ready(clean_env, local_i
 # 发起登录
 # ---------------------------------------------------------------------------
 
+
 def test_login_fails_closed_when_oidc_not_configured(clean_env):
     """显式启用 OIDC 但未配置 IdP 时必须 503，不得伪造登录成功。"""
     clean_env.setenv(gw_config.AUTH_MODE_ENV, gw_config.AUTH_MODE_OIDC)
@@ -260,7 +265,9 @@ def test_login_fails_closed_when_oidc_not_configured(clean_env):
     assert response.json()["detail"]["code"] == "OIDC_NOT_CONFIGURED"
 
 
-def test_login_returns_authorization_url_with_pkce_and_sets_flow_cookie(clean_env, local_idp):
+def test_login_returns_authorization_url_with_pkce_and_sets_flow_cookie(
+    clean_env, local_idp
+):
     """登录入口返回带 PKCE 的授权地址，并下发一次性流程 Cookie。"""
     _configure_oidc(clean_env, local_idp["issuer"])
     with TestClient(_app()) as api:
@@ -312,6 +319,7 @@ def test_login_twice_while_authenticated_is_conflict(clean_env, local_idp):
 # 回调：state 校验、换码、id_token 校验、会话建立
 # ---------------------------------------------------------------------------
 
+
 def test_callback_rejects_state_mismatch(clean_env, local_idp):
     """回调 state 与流程 Cookie 不一致时必须失败关闭，且不下发会话 Cookie。"""
     _configure_oidc(clean_env, local_idp["issuer"])
@@ -328,7 +336,9 @@ def test_callback_rejects_state_mismatch(clean_env, local_idp):
     assert local_idp["holder"]["token_calls"] == 0, "state 失配时不得发起令牌交换"
 
 
-def test_callback_happy_path_establishes_session_and_role_from_idp(clean_env, local_idp, isolated_projects_service):
+def test_callback_happy_path_establishes_session_and_role_from_idp(
+    clean_env, local_idp, isolated_projects_service
+):
     """完整链路：换码 → 校验 id_token → 会话 Cookie → 角色来自 IdP 组声明。"""
     _configure_oidc(clean_env, local_idp["issuer"])
     local_idp["holder"]["groups"] = ["gw-editor"]
@@ -441,7 +451,10 @@ def test_callback_rejects_unmapped_group(clean_env, local_idp):
 # 登出
 # ---------------------------------------------------------------------------
 
-def test_logout_clears_session_and_revokes_write_access(clean_env, local_idp, isolated_projects_service):
+
+def test_logout_clears_session_and_revokes_write_access(
+    clean_env, local_idp, isolated_projects_service
+):
     """登出后会话失效：状态回到未认证，写操作 401。"""
     _configure_oidc(clean_env, local_idp["issuer"])
     with TestClient(_app()) as api:
@@ -469,7 +482,9 @@ def test_logout_clears_session_and_revokes_write_access(clean_env, local_idp, is
         assert after.status_code == 401, after.text
 
 
-def test_oidc_mode_without_session_rejects_write(clean_env, local_idp, isolated_projects_service):
+def test_oidc_mode_without_session_rejects_write(
+    clean_env, local_idp, isolated_projects_service
+):
     """OIDC 模式下无会话的写操作必须 401（不得因 X-User-Role 而放行）。"""
     _configure_oidc(clean_env, local_idp["issuer"])
     with TestClient(_app()) as api:

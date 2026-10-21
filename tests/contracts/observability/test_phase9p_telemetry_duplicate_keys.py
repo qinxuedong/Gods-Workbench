@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Phase 9P：静态 JS「同名方法键重复定义」守卫。
 
 背景（真实缺陷，2026-09-22 已字节级核实）：
@@ -70,7 +69,8 @@ def test_telemetry_handle_logout_is_defined_once():
     """``handleLogout`` 必须只定义一次，且保留语义完整的实现。"""
     source = TELEMETRY_JS.read_text(encoding="utf-8")
     duplicates = [
-        (key, lines) for key, lines in _scan_duplicate_method_keys(source)
+        (key, lines)
+        for key, lines in _scan_duplicate_method_keys(source)
         if key[1] == "handleLogout"
     ]
     assert not duplicates, (
@@ -78,8 +78,12 @@ def test_telemetry_handle_logout_is_defined_once():
         + repr(duplicates)
     )
     # 保留的实现必须重置登出状态并回读服务端真实状态（残缺版缺这两点）。
-    assert "this.authState.logout_available = false" in source, "登出必须重置 logout_available"
-    assert "this.authState.authenticated = false" in source, "登出必须重置 authenticated"
+    assert "this.authState.logout_available = false" in source, (
+        "登出必须重置 logout_available"
+    )
+    assert "this.authState.authenticated = false" in source, (
+        "登出必须重置 authenticated"
+    )
     assert "await this.syncAuth()" in source, "登出后必须回读服务端真实认证状态"
 
 
@@ -89,7 +93,9 @@ def test_no_duplicate_method_keys_in_static_js():
     for path, relative in _iter_static_js():
         source = path.read_text(encoding="utf-8")
         for (indent, name), lines in _scan_duplicate_method_keys(source):
-            violations.append(f"{relative}: 方法 {name!r}（缩进 {indent}）定义于行 {lines}")
+            violations.append(
+                f"{relative}: 方法 {name!r}（缩进 {indent}）定义于行 {lines}"
+            )
     assert not violations, (
         "发现同名同缩进的重复方法键（后键会静默覆盖前键）:\n" + "\n".join(violations)
     )
@@ -117,6 +123,7 @@ def test_duplicate_method_key_guard_is_not_tautological():
 
     # 单定义样本不得报（避免守卫恒真）。
     single = duplicated.replace(
-        "    handleLogout: async function() {\n      this.updateAuthDOM();\n    },\n", ""
+        "    handleLogout: async function() {\n      this.updateAuthDOM();\n    },\n",
+        "",
     )
     assert not _scan_duplicate_method_keys(single), "守卫对单定义样本误报"

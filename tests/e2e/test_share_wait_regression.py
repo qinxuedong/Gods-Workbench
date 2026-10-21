@@ -1,10 +1,10 @@
 """用本地 HTTP 验证 Playwright 条件等待会继续派发 route 回调。"""
+
+import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-import threading
 
 import pytest
-
 from playwright_support import open_playwright
 
 
@@ -89,7 +89,9 @@ def test_wait_for_function_pumps_local_http_route(tmp_path):
                 context = browser.new_context()
                 context.route("**/*", route_local)
                 page = context.new_page()
-                context.expose_function("shareGateStarted", lambda: server.started.is_set())
+                context.expose_function(
+                    "shareGateStarted", lambda: server.started.is_set()
+                )
                 page.goto(base + "/", wait_until="load")
                 page.evaluate("""() => {
                     window.__shareGateStarted = false;
@@ -102,11 +104,17 @@ def test_wait_for_function_pumps_local_http_route(tmp_path):
                 assert page.evaluate("() => window.scheduleProbe()") == "scheduled"
 
                 # 同步谓词等待暴露绑定回写的状态，并持续驱动 Playwright 事件派发。
-                page.wait_for_function("() => window.__shareGateStarted === true", timeout=5_000)
-                with page.expect_response(lambda response: response.url == base + "/hold") as held_response:
+                page.wait_for_function(
+                    "() => window.__shareGateStarted === true", timeout=5_000
+                )
+                with page.expect_response(
+                    lambda response: response.url == base + "/hold"
+                ) as held_response:
                     server.release.set()
                 assert held_response.value.status == 200
-                page.wait_for_function("() => window.probeText === 'released'", timeout=5_000)
+                page.wait_for_function(
+                    "() => window.probeText === 'released'", timeout=5_000
+                )
                 assert server.finished.is_set()
                 assert server.requests == ["/hold"]
                 with route_lock:

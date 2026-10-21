@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Phase 10D 设置页契约测试。
 
 覆盖 docs/contracts/SETTINGS-INTERFACE-CATALOG.yaml（p10d-frozen-1）的 13 个方法：
@@ -52,9 +51,13 @@ UNAUTHORIZED_NEIGHBORS = (
 @pytest.fixture()
 def api_client(monkeypatch) -> TestClient:
     """每个用例注入全新的内存服务，避免进程内单例串扰。"""
-    monkeypatch.setattr(routes, "default_storage_settings_service", StorageSettingsService())
+    monkeypatch.setattr(
+        routes, "default_storage_settings_service", StorageSettingsService()
+    )
     monkeypatch.setattr(routes, "default_provider_service", ProviderService())
-    monkeypatch.setattr(routes, "default_asset_structure_service", AssetStructureService())
+    monkeypatch.setattr(
+        routes, "default_asset_structure_service", AssetStructureService()
+    )
     with TestClient(create_app()) as client:
         yield client
 
@@ -68,7 +71,9 @@ def _create_structure(client: TestClient, expected_version: int | None = 1) -> d
     }
     if expected_version is not None:
         payload["expected_version"] = expected_version
-    res = client.post("/api/asset-registry/asset-structures", json=payload, headers=EDITOR)
+    res = client.post(
+        "/api/asset-registry/asset-structures", json=payload, headers=EDITOR
+    )
     assert res.status_code == 201, res.text
     return res.json()
 
@@ -80,15 +85,24 @@ def _create_structure(client: TestClient, expected_version: int | None = 1) -> d
 
 def test_catalog_declares_exactly_fourteen_methods():
     """契约必须恰好声明本阶段授权的 14 个方法。"""
-    pairs = re.findall(r"method:\s*(\w+)\s*\n\s*path:\s*(\S+)", CATALOG.read_text(encoding="utf-8"))
+    pairs = re.findall(
+        r"method:\s*(\w+)\s*\n\s*path:\s*(\S+)", CATALOG.read_text(encoding="utf-8")
+    )
     assert len(pairs) == 14, f"契约方法数应为 13，实际 {len(pairs)}: {pairs}"
 
 
 def test_catalog_forbids_unauthorized_neighbors():
     """契约不得授权相邻未实现端点。"""
-    routes_set = {path for _, path in re.findall(r"method:\s*(\w+)\s*\n\s*path:\s*(\S+)", CATALOG.read_text(encoding="utf-8"))}
+    routes_set = {
+        path
+        for _, path in re.findall(
+            r"method:\s*(\w+)\s*\n\s*path:\s*(\S+)", CATALOG.read_text(encoding="utf-8")
+        )
+    }
     for forbidden in ("/api/local-assets", "/api/storage-files"):
-        assert all(forbidden not in path for path in routes_set), f"设置契约不得授权 {forbidden}"
+        assert all(forbidden not in path for path in routes_set), (
+            f"设置契约不得授权 {forbidden}"
+        )
 
 
 def test_service_sources_have_no_fabrication_generators():
@@ -114,7 +128,11 @@ def test_get_storage_settings_unconfigured(api_client: TestClient):
     assert body["dirs"] == {}
     assert body["local_libraries"] == []
     assert body["data_gaps"]
-    fixture = json.loads((REPO_ROOT / "docs" / "fixtures" / "settings-storage-unconfigured.json").read_text(encoding="utf-8"))
+    fixture = json.loads(
+        (
+            REPO_ROOT / "docs" / "fixtures" / "settings-storage-unconfigured.json"
+        ).read_text(encoding="utf-8")
+    )
     assert body == fixture
 
 
@@ -158,7 +176,9 @@ def test_patch_storage_settings_success_and_cas_conflict(api_client: TestClient)
 
 def test_patch_storage_settings_readonly_forbidden(api_client: TestClient):
     """只读角色保存存储设置必须 403。"""
-    res = api_client.patch("/api/storage-settings", json={"dirs": {"local": "x"}}, headers=READONLY)
+    res = api_client.patch(
+        "/api/storage-settings", json={"dirs": {"local": "x"}}, headers=READONLY
+    )
     assert res.status_code == 403
     assert res.json()["detail"]["code"] == "FORBIDDEN"
 
@@ -175,15 +195,28 @@ def test_get_providers_empty_by_default(api_client: TestClient):
     body = res.json()
     assert body["providers"] == []
     assert body["configured"] is False
-    fixture = json.loads((REPO_ROOT / "docs" / "fixtures" / "settings-providers-empty.json").read_text(encoding="utf-8"))
+    fixture = json.loads(
+        (REPO_ROOT / "docs" / "fixtures" / "settings-providers-empty.json").read_text(
+            encoding="utf-8"
+        )
+    )
     assert body == fixture
 
 
-def test_put_providers_protects_credentials_and_accepts_frontend_id(api_client: TestClient):
+def test_put_providers_protects_credentials_and_accepts_frontend_id(
+    api_client: TestClient,
+):
     """凭据加密保存但不回显，并接受前端既有id。"""
     res = api_client.put(
         "/api/providers?expected_version=1",
-        json=[{"id": "openai", "name": "OpenAI", "api_key": "sk-secret", "base_url": "https://api.example"}],
+        json=[
+            {
+                "id": "openai",
+                "name": "OpenAI",
+                "api_key": "sk-secret",
+                "base_url": "https://api.example",
+            }
+        ],
         headers=EDITOR,
     )
     assert res.status_code == 200, res.text
@@ -200,7 +233,11 @@ def test_put_providers_protects_credentials_and_accepts_frontend_id(api_client: 
 
 def test_put_providers_cas_conflict(api_client: TestClient):
     """PUT providers 错误 expected_version 必须 409。"""
-    first = api_client.put("/api/providers?expected_version=1", json=[{"id": "a", "name": "A"}], headers=EDITOR)
+    first = api_client.put(
+        "/api/providers?expected_version=1",
+        json=[{"id": "a", "name": "A"}],
+        headers=EDITOR,
+    )
     assert first.status_code == 200
     conflict = api_client.put(
         "/api/providers?expected_version=1",
@@ -248,13 +285,22 @@ def test_get_providers_requires_authentication(api_client: TestClient):
         "/api/providers/test-connection",
     ],
 )
-def test_provider_probe_endpoints_fail_closed_without_upstream(api_client: TestClient, path: str):
+def test_provider_probe_endpoints_fail_closed_without_upstream(
+    api_client: TestClient, path: str
+):
     """上游不可达时必须 503，且不得回显凭据或伪造模型/延迟。"""
-    res = api_client.post(path, json={"base_url": "https://127.0.0.1:1", "api_keys": "sk-x"}, headers=EDITOR)
+    res = api_client.post(
+        path,
+        json={"base_url": "https://127.0.0.1:1", "api_keys": "sk-x"},
+        headers=EDITOR,
+    )
     assert res.status_code in (403, 503), res.text
     detail = res.json()["detail"]
     assert detail["code"] in (
-        PROVIDER_PROBE_NOT_INTEGRATED, "PROVIDER_PROBE_FAILED", "SSRF_BLOCKED", "URL_NOT_ALLOWED",
+        PROVIDER_PROBE_NOT_INTEGRATED,
+        "PROVIDER_PROBE_FAILED",
+        "SSRF_BLOCKED",
+        "URL_NOT_ALLOWED",
     )
     assert "sk-x" not in res.text
 
@@ -262,8 +308,11 @@ def test_provider_probe_endpoints_fail_closed_without_upstream(api_client: TestC
 def test_provider_probe_ssrf_blocked():
     """内网/保留网段必须 403 SSRF_BLOCKED。"""
     with TestClient(create_app()) as client:
-        res = client.post("/api/providers/test-connection",
-                          json={"base_url": "http://169.254.169.254/"}, headers=EDITOR)
+        res = client.post(
+            "/api/providers/test-connection",
+            json={"base_url": "http://169.254.169.254/"},
+            headers=EDITOR,
+        )
         assert res.status_code == 403
         assert res.json()["detail"]["code"] == "SSRF_BLOCKED"
 
@@ -305,7 +354,11 @@ def test_create_structure_collection_cas_conflict(api_client: TestClient):
     _create_structure(api_client, expected_version=1)
     res = api_client.post(
         "/api/asset-registry/asset-structures",
-        json={"kind": "group", "asset_ids": ["asset_c", "asset_d"], "expected_version": 1},
+        json={
+            "kind": "group",
+            "asset_ids": ["asset_c", "asset_d"],
+            "expected_version": 1,
+        },
         headers=EDITOR,
     )
     assert res.status_code == 409
@@ -314,7 +367,9 @@ def test_create_structure_collection_cas_conflict(api_client: TestClient):
 
 def test_get_structure_not_found(api_client: TestClient):
     """不存在的结构必须 404 STRUCTURE_NOT_FOUND。"""
-    res = api_client.get("/api/asset-registry/asset-structures/strc_9999", headers=EDITOR)
+    res = api_client.get(
+        "/api/asset-registry/asset-structures/strc_9999", headers=EDITOR
+    )
     assert res.status_code == 404
     assert res.json()["detail"]["code"] == "STRUCTURE_NOT_FOUND"
 
@@ -361,7 +416,9 @@ def test_delete_structure_success_and_cas_conflict(api_client: TestClient):
     )
     assert ok.status_code == 200, ok.text
     assert ok.json()["deleted_structure_id"] == structure_id
-    missing = api_client.get(f"/api/asset-registry/asset-structures/{structure_id}", headers=EDITOR)
+    missing = api_client.get(
+        f"/api/asset-registry/asset-structures/{structure_id}", headers=EDITOR
+    )
     assert missing.status_code == 404
 
 
@@ -408,4 +465,6 @@ def test_unauthorized_neighbor_endpoints_still_unavailable(api_client: TestClien
     """未获契约授权的相邻端点必须仍然 404/405。"""
     for method, path in UNAUTHORIZED_NEIGHBORS:
         res = getattr(api_client, method)(path, headers=EDITOR)
-        assert res.status_code in {404, 405}, f"{method.upper()} {path} 不应可用，实际 {res.status_code}"
+        assert res.status_code in {404, 405}, (
+            f"{method.upper()} {path} 不应可用，实际 {res.status_code}"
+        )

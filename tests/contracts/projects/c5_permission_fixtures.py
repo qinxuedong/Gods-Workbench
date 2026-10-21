@@ -14,7 +14,6 @@ import os
 
 from gw.core.auth import require_authenticated
 
-
 USERS = {
     "owner": ("c5-owner-a", "editor"),
     "cross_project_editor": ("c5-owner-b", "editor"),
@@ -245,10 +244,17 @@ def seed(
 
     legacy_id = _create_project(client, "owner", "P_LEGACY_A")
     from gw.projects_hub import service as projects_service_module
-    with projects_service_module.default_projects_service._operation() as (root, p_state, _):
+
+    with projects_service_module.default_projects_service._operation() as (
+        root,
+        p_state,
+        _,
+    ):
         if legacy_id in p_state.get("read_access", {}):
             p_state["read_access"][legacy_id]["mode"] = "legacy_open"
-            projects_service_module.default_projects_service._commit_state(root, p_state)
+            projects_service_module.default_projects_service._commit_state(
+                root, p_state
+            )
     response = client.post(
         f"/api/asset-registry/projects/{legacy_id}/read-grants/revoke",
         headers=headers("owner"),
@@ -260,7 +266,7 @@ def seed(
     from gw.projects_hub import service as projects_service
 
     revoked_context = require_authenticated(
-        f"Bearer {USERS['revoked_editor'][0]}", USERS['revoked_editor'][1]
+        f"Bearer {USERS['revoked_editor'][0]}", USERS["revoked_editor"][1]
     )
     projects_service.default_projects_service._read_access[legacy_id] = {
         "mode": "legacy_open",
@@ -277,7 +283,9 @@ def seed(
         "unknown": "P_UNKNOWN",
     }[state]
 
-    needs_bundle = action is None or action.startswith(("asset_", "canvas_", "workflow_"))
+    needs_bundle = action is None or action.startswith(
+        ("asset_", "canvas_", "workflow_")
+    )
     needs_cross_bundle = action in {"asset_list_all", "canvas_list_all"}
     empty_bundle = {
         "asset_id": None,
@@ -291,7 +299,9 @@ def seed(
     if needs_bundle and state != "unknown":
         target_bundle = _seed_bundle(client, "owner", target_id, "ASSET_ACTIVE_A")
     if needs_cross_bundle:
-        cross_bundle = _seed_bundle(client, "cross_project_editor", cross_id, "ASSET_ACTIVE_B")
+        cross_bundle = _seed_bundle(
+            client, "cross_project_editor", cross_id, "ASSET_ACTIVE_B"
+        )
     if (
         action == "workflow_task"
         and role in WRITER_ROLES
@@ -302,7 +312,11 @@ def seed(
         # execute a workflow it owns.  Seed one for the writer and bind it to
         # the target project via the public source_context PUT.
         workflow_id, workflow_version = _create_workflow(
-            client, role, target_id, target_bundle["canvas_id"], f"WF_{role}",
+            client,
+            role,
+            target_id,
+            target_bundle["canvas_id"],
+            f"WF_{role}",
             bind=role == "owner",
         )
         target_bundle["workflow_id"] = workflow_id
@@ -324,7 +338,9 @@ def seed(
         _assert_status(response, 200)
         project_version = int(response.json()["project"]["version"])
         if state == "deleted":
-            response = client.get(f"/api/projects/{active_id}", headers=headers("owner"))
+            response = client.get(
+                f"/api/projects/{active_id}", headers=headers("owner")
+            )
             _assert_status(response, 200)
             version = response.json()["project"]["version"]
             response = client.post(

@@ -11,6 +11,7 @@
 from __future__ import annotations
 
 import pytest
+
 from tests.contracts.projects.c5_permission_fixtures import headers, seed
 
 
@@ -150,16 +151,66 @@ def test_canvas_lifecycle_and_closure_endpoints(client):
     canvas_id = ids["canvas_id"]
 
     # 1. 匿名用户一律 401
-    assert client.post(f"/api/canvases/{canvas_id}/touch?operation=archive&expected_version=1", headers=headers("anonymous")).status_code == 401
-    assert client.delete(f"/api/canvases/{canvas_id}?expected_version=1", headers=headers("anonymous")).status_code == 401
-    assert client.post(f"/api/canvases/{canvas_id}/purge?expected_version=1", headers=headers("anonymous")).status_code == 401
-    assert client.post(f"/api/canvases/{canvas_id}/meta", headers=headers("anonymous"), json={"title": "new", "expected_version": 1}).status_code == 401
+    assert (
+        client.post(
+            f"/api/canvases/{canvas_id}/touch?operation=archive&expected_version=1",
+            headers=headers("anonymous"),
+        ).status_code
+        == 401
+    )
+    assert (
+        client.delete(
+            f"/api/canvases/{canvas_id}?expected_version=1",
+            headers=headers("anonymous"),
+        ).status_code
+        == 401
+    )
+    assert (
+        client.post(
+            f"/api/canvases/{canvas_id}/purge?expected_version=1",
+            headers=headers("anonymous"),
+        ).status_code
+        == 401
+    )
+    assert (
+        client.post(
+            f"/api/canvases/{canvas_id}/meta",
+            headers=headers("anonymous"),
+            json={"title": "new", "expected_version": 1},
+        ).status_code
+        == 401
+    )
 
     # 2. 只读用户一律 404
-    assert client.post(f"/api/canvases/{canvas_id}/touch?operation=archive&expected_version=1", headers=headers("read_grantee_editor")).status_code == 404
-    assert client.delete(f"/api/canvases/{canvas_id}?expected_version=1", headers=headers("read_grantee_editor")).status_code == 404
-    assert client.post(f"/api/canvases/{canvas_id}/purge?expected_version=1", headers=headers("read_grantee_editor")).status_code == 404
-    assert client.post(f"/api/canvases/{canvas_id}/meta", headers=headers("read_grantee_editor"), json={"title": "new", "expected_version": 1}).status_code == 404
+    assert (
+        client.post(
+            f"/api/canvases/{canvas_id}/touch?operation=archive&expected_version=1",
+            headers=headers("read_grantee_editor"),
+        ).status_code
+        == 404
+    )
+    assert (
+        client.delete(
+            f"/api/canvases/{canvas_id}?expected_version=1",
+            headers=headers("read_grantee_editor"),
+        ).status_code
+        == 404
+    )
+    assert (
+        client.post(
+            f"/api/canvases/{canvas_id}/purge?expected_version=1",
+            headers=headers("read_grantee_editor"),
+        ).status_code
+        == 404
+    )
+    assert (
+        client.post(
+            f"/api/canvases/{canvas_id}/meta",
+            headers=headers("read_grantee_editor"),
+            json={"title": "new", "expected_version": 1},
+        ).status_code
+        == 404
+    )
 
 
 def test_smart_canvas_task_submission_project_gate(client):
@@ -168,18 +219,24 @@ def test_smart_canvas_task_submission_project_gate(client):
     archived_ids = seed(client, "archived", action="canvas_task", role="owner")
 
     # 匿名 401
-    assert client.post(
-        f"/api/canvases/{active_ids['canvas_id']}/tasks",
-        headers=headers("anonymous"),
-        json={"expected_version": 1, "entry_nodes": ["c5-entry"]},
-    ).status_code == 401
+    assert (
+        client.post(
+            f"/api/canvases/{active_ids['canvas_id']}/tasks",
+            headers=headers("anonymous"),
+            json={"expected_version": 1, "entry_nodes": ["c5-entry"]},
+        ).status_code
+        == 401
+    )
 
     # 只读用户 404
-    assert client.post(
-        f"/api/canvases/{active_ids['canvas_id']}/tasks",
-        headers=headers("read_grantee_editor"),
-        json={"expected_version": 1, "entry_nodes": ["c5-entry"]},
-    ).status_code == 404
+    assert (
+        client.post(
+            f"/api/canvases/{active_ids['canvas_id']}/tasks",
+            headers=headers("read_grantee_editor"),
+            json={"expected_version": 1, "entry_nodes": ["c5-entry"]},
+        ).status_code
+        == 404
+    )
 
     # 归档项目 403 PROJECT_READ_ONLY (即使 expected_version 错误)
     ro_resp = client.post(

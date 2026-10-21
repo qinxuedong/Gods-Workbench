@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Phase 12 Workbench 控制器「真实接入」运行时守卫（Node 真实执行 JS，非字符串存在性检查）。
 
 背景（第二轮独立审核 Required）：
@@ -219,17 +218,38 @@ def _chat_body(code: str) -> dict:
 # 1. 首页 AURA 总线：GET 配置摘要驱动（不触发模型生成）
 # ---------------------------------------------------------------------------
 
+
 def test_home_aura_bus_reads_chat_configuration_without_generation(tmp_path):
     """页面加载只读配置：即使 Provider 已配置也不得自动发起计费 POST。"""
     result = _run(
         CONTROLLERS_DIR / "home-controller.js",
-        {"responses": [{"url": "/api/chat/config", "match": "exact", "status": 200,
-                        "body": {"configured": True, "configuration_status": "configured", "providers": []}}],
-         "snapshotIds": ["auraBusStatus"]},
+        {
+            "responses": [
+                {
+                    "url": "/api/chat/config",
+                    "match": "exact",
+                    "status": 200,
+                    "body": {
+                        "configured": True,
+                        "configuration_status": "configured",
+                        "providers": [],
+                    },
+                }
+            ],
+            "snapshotIds": ["auraBusStatus"],
+        },
         tmp_path,
     )
-    reads = [c for c in result["calls"] if c["method"] == "GET" and c["url"] == "/api/chat/config"]
-    posts = [c for c in result["calls"] if c["method"] == "POST" and c["url"].startswith("/api/chat")]
+    reads = [
+        c
+        for c in result["calls"]
+        if c["method"] == "GET" and c["url"] == "/api/chat/config"
+    ]
+    posts = [
+        c
+        for c in result["calls"]
+        if c["method"] == "POST" and c["url"].startswith("/api/chat")
+    ]
     assert reads, f"页面加载必须读取本地配置摘要：{result['calls']}"
     assert not posts, f"页面加载不得触发任何可能计费的对话请求：{result['calls']}"
     snap = result["snapshot"]["auraBusStatus"]
@@ -240,9 +260,21 @@ def test_home_aura_bus_reads_chat_configuration_without_generation(tmp_path):
 def test_home_aura_bus_marks_missing_provider_configuration(tmp_path):
     result = _run(
         CONTROLLERS_DIR / "home-controller.js",
-        {"responses": [{"url": "/api/chat/config", "match": "exact", "status": 200,
-                        "body": {"configured": False, "configuration_status": "not_configured", "providers": []}}],
-         "snapshotIds": ["auraBusStatus"]},
+        {
+            "responses": [
+                {
+                    "url": "/api/chat/config",
+                    "match": "exact",
+                    "status": 200,
+                    "body": {
+                        "configured": False,
+                        "configuration_status": "not_configured",
+                        "providers": [],
+                    },
+                }
+            ],
+            "snapshotIds": ["auraBusStatus"],
+        },
         tmp_path,
     )
     snap = result["snapshot"]["auraBusStatus"]
@@ -254,9 +286,17 @@ def test_home_aura_bus_marks_missing_provider_configuration(tmp_path):
 def test_home_aura_bus_marks_generic_503_as_service_unavailable(tmp_path):
     result = _run(
         CONTROLLERS_DIR / "home-controller.js",
-        {"responses": [{"url": "/api/chat/config", "match": "exact", "status": 503,
-                        "body": _chat_body("UPSTREAM_BUSY")}],
-         "snapshotIds": ["auraBusStatus"]},
+        {
+            "responses": [
+                {
+                    "url": "/api/chat/config",
+                    "match": "exact",
+                    "status": 503,
+                    "body": _chat_body("UPSTREAM_BUSY"),
+                }
+            ],
+            "snapshotIds": ["auraBusStatus"],
+        },
         tmp_path,
     )
     snap = result["snapshot"]["auraBusStatus"]
@@ -269,9 +309,17 @@ def test_home_aura_bus_marks_generic_503_as_service_unavailable(tmp_path):
 def test_home_aura_bus_config_failure_never_claims_connection(tmp_path, status):
     result = _run(
         CONTROLLERS_DIR / "home-controller.js",
-        {"responses": [{"url": "/api/chat/config", "match": "exact", "status": status,
-                        "body": _chat_body("SOME_CODE")}],
-         "snapshotIds": ["auraBusStatus"]},
+        {
+            "responses": [
+                {
+                    "url": "/api/chat/config",
+                    "match": "exact",
+                    "status": status,
+                    "body": _chat_body("SOME_CODE"),
+                }
+            ],
+            "snapshotIds": ["auraBusStatus"],
+        },
         tmp_path,
     )
     snap = result["snapshot"]["auraBusStatus"]
@@ -283,8 +331,12 @@ def test_home_aura_bus_config_failure_never_claims_connection(tmp_path, status):
 def test_home_aura_bus_configuration_network_error_is_service_unavailable(tmp_path):
     result = _run(
         CONTROLLERS_DIR / "home-controller.js",
-        {"responses": [{"url": "/api/chat/config", "match": "exact", "networkError": True}],
-         "snapshotIds": ["auraBusStatus"]},
+        {
+            "responses": [
+                {"url": "/api/chat/config", "match": "exact", "networkError": True}
+            ],
+            "snapshotIds": ["auraBusStatus"],
+        },
         tmp_path,
     )
     snap = result["snapshot"]["auraBusStatus"]
@@ -297,26 +349,54 @@ def test_home_aura_bus_configuration_network_error_is_service_unavailable(tmp_pa
 # 2. 智能体页：配置仅读；吞吐仅由用户明确提交后的真 usage 驱动
 # ---------------------------------------------------------------------------
 
+
 def _configured_chat_body():
     return {
         "configured": True,
         "configuration_status": "configured",
         "default_provider_id": "provider-a",
-        "providers": [{"provider_id": "provider-a", "models": ["model-a"],
-                       "default_model": "model-a", "configured": True, "source": "runtime_mapping"}],
+        "providers": [
+            {
+                "provider_id": "provider-a",
+                "models": ["model-a"],
+                "default_model": "model-a",
+                "configured": True,
+                "source": "runtime_mapping",
+            }
+        ],
     }
 
 
 def test_agents_page_load_reads_configuration_but_never_posts_chat(tmp_path):
     result = _run(
         CONTROLLERS_DIR / "agents-controller.js",
-        {"responses": [{"url": "/api/chat/config", "match": "exact", "status": 200,
-                        "body": _configured_chat_body()}],
-         "snapshotIds": ["agentBusStatus", "agentLatencyReadout", "agentThroughputReadout"]},
+        {
+            "responses": [
+                {
+                    "url": "/api/chat/config",
+                    "match": "exact",
+                    "status": 200,
+                    "body": _configured_chat_body(),
+                }
+            ],
+            "snapshotIds": [
+                "agentBusStatus",
+                "agentLatencyReadout",
+                "agentThroughputReadout",
+            ],
+        },
         tmp_path,
     )
-    reads = [c for c in result["calls"] if c["method"] == "GET" and c["url"] == "/api/chat/config"]
-    posts = [c for c in result["calls"] if c["method"] == "POST" and c["url"].startswith("/api/chat")]
+    reads = [
+        c
+        for c in result["calls"]
+        if c["method"] == "GET" and c["url"] == "/api/chat/config"
+    ]
+    posts = [
+        c
+        for c in result["calls"]
+        if c["method"] == "POST" and c["url"].startswith("/api/chat")
+    ]
     assert reads, result["calls"]
     assert not posts, f"Agents 页面装载不得发送ping/生成：{result['calls']}"
     bus = result["snapshot"]["agentBusStatus"]
@@ -328,9 +408,25 @@ def test_agents_page_load_reads_configuration_but_never_posts_chat(tmp_path):
 def test_agents_configuration_unavailable_does_not_fake_metrics(tmp_path):
     result = _run(
         CONTROLLERS_DIR / "agents-controller.js",
-        {"responses": [{"url": "/api/chat/config", "match": "exact", "status": 200,
-                        "body": {"configured": False, "configuration_status": "not_configured", "providers": []}}],
-         "snapshotIds": ["agentBusStatus", "agentLatencyReadout", "agentThroughputReadout"]},
+        {
+            "responses": [
+                {
+                    "url": "/api/chat/config",
+                    "match": "exact",
+                    "status": 200,
+                    "body": {
+                        "configured": False,
+                        "configuration_status": "not_configured",
+                        "providers": [],
+                    },
+                }
+            ],
+            "snapshotIds": [
+                "agentBusStatus",
+                "agentLatencyReadout",
+                "agentThroughputReadout",
+            ],
+        },
         tmp_path,
     )
     bus = result["snapshot"]["agentBusStatus"]
@@ -345,40 +441,80 @@ def test_agents_configuration_unavailable_does_not_fake_metrics(tmp_path):
 def test_agents_user_click_posts_once_and_renders_provider_usage_metrics(tmp_path):
     result = _run(
         CONTROLLERS_DIR / "agents-controller.js",
-        {"responses": [
-            {"url": "/api/chat/config", "match": "exact", "status": 200, "body": _configured_chat_body()},
-            {"url": "/api/chat/agent", "match": "exact", "status": 200, "body": {
-                "reply": "真实回复", "provider_id": "provider-a", "model": "model-a",
-                "metrics": {"kind": "end_to_end_output_tokens_per_second", "provider_id": "provider-a",
-                            "model": "model-a", "output_tokens": 24, "elapsed_seconds": 2.0,
+        {
+            "responses": [
+                {
+                    "url": "/api/chat/config",
+                    "match": "exact",
+                    "status": 200,
+                    "body": _configured_chat_body(),
+                },
+                {
+                    "url": "/api/chat/agent",
+                    "match": "exact",
+                    "status": 200,
+                    "body": {
+                        "reply": "真实回复",
+                        "provider_id": "provider-a",
+                        "model": "model-a",
+                        "metrics": {
+                            "kind": "end_to_end_output_tokens_per_second",
+                            "provider_id": "provider-a",
+                            "model": "model-a",
+                            "output_tokens": 24,
+                            "elapsed_seconds": 2.0,
                             "tokens_per_second": 12.0,
-                            "usage_source": "chat_completions.usage.completion_tokens", "unavailable_reason": None}}},
-        ], "driver": "document.getElementById('agentPromptInput').value='请测试'; await window.WorkbenchAgents.sendTestPrompt({preventDefault(){}});",
-        "snapshotIds": ["agentThroughputReadout", "agentLatencyReadout"]},
+                            "usage_source": "chat_completions.usage.completion_tokens",
+                            "unavailable_reason": None,
+                        },
+                    },
+                },
+            ],
+            "driver": "document.getElementById('agentPromptInput').value='请测试'; await window.WorkbenchAgents.sendTestPrompt({preventDefault(){}});",
+            "snapshotIds": ["agentThroughputReadout", "agentLatencyReadout"],
+        },
         tmp_path,
     )
-    posts = [c for c in result["calls"] if c["method"] == "POST" and c["url"] == "/api/chat/agent"]
+    posts = [
+        c
+        for c in result["calls"]
+        if c["method"] == "POST" and c["url"] == "/api/chat/agent"
+    ]
     assert len(posts) == 1, f"一次人工提交最多发送一次付费请求：{result['calls']}"
     throughput = result["snapshot"]["agentThroughputReadout"]
     assert "12.00 tokens/s" in throughput["text"], throughput
-    assert throughput["deg"] is None and "不是解码速度" in throughput["title"], throughput
+    assert throughput["deg"] is None and "不是解码速度" in throughput["title"], (
+        throughput
+    )
     latency = result["snapshot"]["agentLatencyReadout"]
     assert "2000 ms" in latency["text"] and latency["deg"] is None, latency
+
 
 # ---------------------------------------------------------------------------
 # 3. 项目卡「资产规模」：真实 GET 必须在 render() 之后写入
 # ---------------------------------------------------------------------------
 
+
 def test_projects_asset_scale_writes_real_total_after_render(tmp_path):
     """200 + total：卡片重建后必须写真实数字，不得停留静态初值「未接入」。"""
     result = _run(
         CONTROLLERS_DIR / "projects-controller.js",
-        {"selectorMap": {"[data-gw-asset-scale]": ["assetScaleCell"]},
-         "responses": [{"url": "/api/asset-registry/assets", "status": 200, "body": {"total": 42}}],
-         "snapshotIds": ["assetScaleCell"]},
+        {
+            "selectorMap": {"[data-gw-asset-scale]": ["assetScaleCell"]},
+            "responses": [
+                {
+                    "url": "/api/asset-registry/assets",
+                    "status": 200,
+                    "body": {"total": 42},
+                }
+            ],
+            "snapshotIds": ["assetScaleCell"],
+        },
         tmp_path,
     )
-    fetched = [c for c in result["calls"] if c["url"].startswith("/api/asset-registry/assets")]
+    fetched = [
+        c for c in result["calls"] if c["url"].startswith("/api/asset-registry/assets")
+    ]
     assert fetched, f"必须真实请求素材登记端点，实际调用：{result['calls']}"
     snap = result["snapshot"]["assetScaleCell"]
     assert snap["text"] == "42 项", f"必须写入后端真实 total：{snap}"
@@ -389,10 +525,17 @@ def test_projects_asset_scale_degrades_honestly_on_failure(tmp_path):
     """503：如实回退「未接入」，不得伪造数字。"""
     result = _run(
         CONTROLLERS_DIR / "projects-controller.js",
-        {"selectorMap": {"[data-gw-asset-scale]": ["assetScaleCell"]},
-         "responses": [{"url": "/api/asset-registry/assets", "status": 503,
-                        "body": _chat_body("SERVICE_UNAVAILABLE")}],
-         "snapshotIds": ["assetScaleCell"]},
+        {
+            "selectorMap": {"[data-gw-asset-scale]": ["assetScaleCell"]},
+            "responses": [
+                {
+                    "url": "/api/asset-registry/assets",
+                    "status": 503,
+                    "body": _chat_body("SERVICE_UNAVAILABLE"),
+                }
+            ],
+            "snapshotIds": ["assetScaleCell"],
+        },
         tmp_path,
     )
     snap = result["snapshot"]["assetScaleCell"]
@@ -404,15 +547,18 @@ def test_projects_asset_scale_degrades_honestly_on_failure(tmp_path):
 # 4. GPU 遥测：真实 health 应答驱动，缺项必须降级
 # ---------------------------------------------------------------------------
 
+
 def test_hardware_deck_gpu_cluster_uses_real_devices(tmp_path):
     """gpu_telemetry.status=ok + devices：写设备台数，不得写死型号。"""
     result = _run(
         STATIC_JS / "core" / "hardware-telemetry.js",
-        {"selectorMap": {"[data-gw-gpu-cluster]": ["gpuClusterCell"]},
-         "snapshotIds": ["gpuClusterCell"],
-         "driver": "window.HardwareDeck.applyGpuTelemetry({status:'ok',metrics:{"
-                   "gpu_utilization_percent:42,gpu_memory_percent:61,"
-                   "devices:[{index:0,name:'NVIDIA GeForce RTX 5090'},{index:1,name:'NVIDIA GeForce RTX 5090'}]}});"},
+        {
+            "selectorMap": {"[data-gw-gpu-cluster]": ["gpuClusterCell"]},
+            "snapshotIds": ["gpuClusterCell"],
+            "driver": "window.HardwareDeck.applyGpuTelemetry({status:'ok',metrics:{"
+            "gpu_utilization_percent:42,gpu_memory_percent:61,"
+            "devices:[{index:0,name:'NVIDIA GeForce RTX 5090'},{index:1,name:'NVIDIA GeForce RTX 5090'}]}});",
+        },
         tmp_path,
     )
     snap = result["snapshot"]["gpuClusterCell"]
@@ -424,9 +570,11 @@ def test_hardware_deck_gpu_cluster_degrades_when_check_missing(tmp_path):
     """gpu_telemetry 缺失：必须显式降级「未接入」，不得伪造读数。"""
     result = _run(
         STATIC_JS / "core" / "hardware-telemetry.js",
-        {"selectorMap": {"[data-gw-gpu-cluster]": ["gpuClusterCell"]},
-         "snapshotIds": ["gpuClusterCell"],
-         "driver": "window.HardwareDeck.applyGpuTelemetry(null);"},
+        {
+            "selectorMap": {"[data-gw-gpu-cluster]": ["gpuClusterCell"]},
+            "snapshotIds": ["gpuClusterCell"],
+            "driver": "window.HardwareDeck.applyGpuTelemetry(null);",
+        },
         tmp_path,
     )
     snap = result["snapshot"]["gpuClusterCell"]
@@ -437,6 +585,7 @@ def test_hardware_deck_gpu_cluster_degrades_when_check_missing(tmp_path):
 # ---------------------------------------------------------------------------
 # 5. 反向变异：守卫必须拦住「空实现 / 仅注释」——这正是上一轮的 Required
 # ---------------------------------------------------------------------------
+
 
 def test_guard_rejects_comment_only_aura_implementation(tmp_path):
     """变异验证：把 syncAuraBusStatus 换成仅含关键字的注释后，运行时守卫必须失败。
@@ -452,20 +601,40 @@ def test_guard_rejects_comment_only_aura_implementation(tmp_path):
         + "async function syncAuraBusStatus() {\n"
         + "  // id=auraBusStatus 读取中… syncAuraBusStatus '/api/chat/config' auraBusStatus data-gw-degradation\n"
         + "}\n"
-        + source[source.find("function init()", anchor):]
+        + source[source.find("function init()", anchor) :]
     )
     mutant = tmp_path / "home-controller.mutant.js"
     mutant.write_text(mutated, encoding="utf-8")
 
     result = _run(
         mutant,
-        {"responses": [{"url": "/api/chat/config", "match": "exact", "status": 200,
-                        "body": {"configured": True, "configuration_status": "configured", "providers": []}}],
-         "snapshotIds": ["auraBusStatus"]},
+        {
+            "responses": [
+                {
+                    "url": "/api/chat/config",
+                    "match": "exact",
+                    "status": 200,
+                    "body": {
+                        "configured": True,
+                        "configuration_status": "configured",
+                        "providers": [],
+                    },
+                }
+            ],
+            "snapshotIds": ["auraBusStatus"],
+        },
         tmp_path,
     )
-    posted = [c for c in result["calls"] if c["method"] == "POST" and c["url"].startswith("/api/chat")]
-    reads = [c for c in result["calls"] if c["method"] == "GET" and c["url"] == "/api/chat/config"]
+    posted = [
+        c
+        for c in result["calls"]
+        if c["method"] == "POST" and c["url"].startswith("/api/chat")
+    ]
+    reads = [
+        c
+        for c in result["calls"]
+        if c["method"] == "GET" and c["url"] == "/api/chat/config"
+    ]
     assert not posted, "空实现不得发出任何模型POST"
     assert not reads, "变异后的空实现应被上方正式功能用例识别为缺少配置GET"
     snap = result["snapshot"]["auraBusStatus"]
@@ -490,12 +659,22 @@ def test_guard_rejects_comment_only_asset_scale_implementation(tmp_path):
 
     result = _run(
         mutant,
-        {"selectorMap": {"[data-gw-asset-scale]": ["assetScaleCell"]},
-         "responses": [{"url": "/api/asset-registry/assets", "status": 200, "body": {"total": 42}}],
-         "snapshotIds": ["assetScaleCell"]},
+        {
+            "selectorMap": {"[data-gw-asset-scale]": ["assetScaleCell"]},
+            "responses": [
+                {
+                    "url": "/api/asset-registry/assets",
+                    "status": 200,
+                    "body": {"total": 42},
+                }
+            ],
+            "snapshotIds": ["assetScaleCell"],
+        },
         tmp_path,
     )
-    fetched = [c for c in result["calls"] if c["url"].startswith("/api/asset-registry/assets")]
+    fetched = [
+        c for c in result["calls"] if c["url"].startswith("/api/asset-registry/assets")
+    ]
     assert not fetched, "空实现不应请求素材端点"
     snap = result["snapshot"]["assetScaleCell"]
     assert snap["text"] != "42 项", "空实现不得写出真实 total"
@@ -507,15 +686,21 @@ def test_guard_rejects_comment_only_asset_scale_implementation(tmp_path):
 #     算力/GPU 遥测数据源」的假降级块，自相矛盾。）
 # ---------------------------------------------------------------------------
 
+
 def test_shell_fader_hooks_render_real_gpu_percentages(tmp_path):
     """真实 gpu_telemetry：注入推子钩子必须写出真实百分比并清除降级标记。"""
     result = _run(
         STATIC_JS / "core" / "hardware-telemetry.js",
-        {"selectorMap": {"[data-gw-gpu-util]": ["shellFlux"], "[data-gw-gpu-vram]": ["shellVram"]},
-         "snapshotIds": ["shellFlux", "shellVram"],
-         "driver": "window.HardwareDeck.applyGpuTelemetry({status:'ok',metrics:{"
-                   "gpu_utilization_percent:42,gpu_memory_percent:61,"
-                   "devices:[{index:0,name:'NVIDIA GeForce RTX 5090'}]}});"},
+        {
+            "selectorMap": {
+                "[data-gw-gpu-util]": ["shellFlux"],
+                "[data-gw-gpu-vram]": ["shellVram"],
+            },
+            "snapshotIds": ["shellFlux", "shellVram"],
+            "driver": "window.HardwareDeck.applyGpuTelemetry({status:'ok',metrics:{"
+            "gpu_utilization_percent:42,gpu_memory_percent:61,"
+            "devices:[{index:0,name:'NVIDIA GeForce RTX 5090'}]}});",
+        },
         tmp_path,
     )
     flux = result["snapshot"]["shellFlux"]
@@ -529,9 +714,14 @@ def test_shell_fader_hooks_degrade_when_gpu_missing(tmp_path):
     """gpu_telemetry 缺失：注入推子必须显式降级「未接入」，不得伪造数字。"""
     result = _run(
         STATIC_JS / "core" / "hardware-telemetry.js",
-        {"selectorMap": {"[data-gw-gpu-util]": ["shellFlux"], "[data-gw-gpu-vram]": ["shellVram"]},
-         "snapshotIds": ["shellFlux", "shellVram"],
-         "driver": "window.HardwareDeck.applyGpuTelemetry(null);"},
+        {
+            "selectorMap": {
+                "[data-gw-gpu-util]": ["shellFlux"],
+                "[data-gw-gpu-vram]": ["shellVram"],
+            },
+            "snapshotIds": ["shellFlux", "shellVram"],
+            "driver": "window.HardwareDeck.applyGpuTelemetry(null);",
+        },
         tmp_path,
     )
     for key in ("shellFlux", "shellVram"):

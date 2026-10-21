@@ -2,6 +2,7 @@
 
 夹具只服务本目录，复用已审查的媒体双替身；不引入运行时依赖。
 """
+
 from __future__ import annotations
 
 import sys
@@ -40,7 +41,10 @@ def no_network(monkeypatch):
         raise NetworkBlocked(f"测试替身禁止真实网络: {request.url.host}")
 
     def refuse_sync(self, request, *args, **kwargs):
-        if isinstance(getattr(self, "_transport", None), httpx.MockTransport) or request.url.host == "testserver":
+        if (
+            isinstance(getattr(self, "_transport", None), httpx.MockTransport)
+            or request.url.host == "testserver"
+        ):
             return original_sync(self, request, *args, **kwargs)
         attempts.append(str(request.url))
         raise NetworkBlocked(f"测试替身禁止真实网络: {request.url.host}")

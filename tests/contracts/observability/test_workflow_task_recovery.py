@@ -1,4 +1,5 @@
 """工作流查询故障不能伪造执行终态，修复配置后续查同一个远端任务。"""
+
 from __future__ import annotations
 
 import asyncio
@@ -13,7 +14,6 @@ from gw.api.app import create_app
 from gw.core.errors import CleanroomException
 from gw.god_workflow import platforms, registry, routes
 
-
 HEADERS = {"Authorization": "Bearer workflow-recovery", "Origin": "http://testserver"}
 
 
@@ -25,7 +25,9 @@ def client():
 
 def cloud_task(target="rh_cloud"):
     context = routes._auth(HEADERS["Authorization"], "editor", True)
-    task = registry.create_task(context, workflow_id="saved-workflow", prompt_id="remote-one", target=target)
+    task = registry.create_task(
+        context, workflow_id="saved-workflow", prompt_id="remote-one", target=target
+    )
     return context, task
 
 
@@ -49,7 +51,9 @@ def successful_collection(monkeypatch):
     return calls
 
 
-def test_missing_cloud_key_preserves_task_and_recovers_same_remote_id(client, monkeypatch):
+def test_missing_cloud_key_preserves_task_and_recovers_same_remote_id(
+    client, monkeypatch
+):
     context, task = cloud_task()
     before = registry.load_task(context, task["job_id"])
     calls = successful_collection(monkeypatch)
@@ -70,7 +74,9 @@ def test_missing_cloud_key_preserves_task_and_recovers_same_remote_id(client, mo
 
 
 @pytest.mark.parametrize("upstream_status", ["UNKNOWN", "unexpected", None])
-def test_unknown_cloud_status_preserves_ledger_for_later_query(client, monkeypatch, upstream_status):
+def test_unknown_cloud_status_preserves_ledger_for_later_query(
+    client, monkeypatch, upstream_status
+):
     context, task = cloud_task()
     before = registry.load_task(context, task["job_id"])
     monkeypatch.setattr(registry, "credential_value", lambda *args: "test-only-key")
@@ -90,14 +96,23 @@ def test_unknown_cloud_status_preserves_ledger_for_later_query(client, monkeypat
 
 
 @pytest.mark.parametrize("target", ["rh_cloud", "runninghub"])
-def test_collection_retry_routes_cloud_alias_and_is_idempotent(client, monkeypatch, target):
+def test_collection_retry_routes_cloud_alias_and_is_idempotent(
+    client, monkeypatch, target
+):
     context, task = cloud_task(target)
-    registry.update_task(context, task["job_id"], status="failed", execution_status="completed",
-                         collection_status="partial_failed")
+    registry.update_task(
+        context,
+        task["job_id"],
+        status="failed",
+        execution_status="completed",
+        collection_status="partial_failed",
+    )
     monkeypatch.setattr(registry, "credential_value", lambda *args: "test-only-key")
     calls = successful_collection(monkeypatch)
     url = "/api/god_workflow/tasks/" + task["job_id"] + "/collect"
-    foreign = client.post(url, headers={**HEADERS, "Authorization": "Bearer other-user"})
+    foreign = client.post(
+        url, headers={**HEADERS, "Authorization": "Bearer other-user"}
+    )
     assert foreign.status_code == 404
     first = client.post(url, headers=HEADERS)
     assert first.status_code == 200, first.text
@@ -107,14 +122,17 @@ def test_collection_retry_routes_cloud_alias_and_is_idempotent(client, monkeypat
     assert calls == [("remote-one", "test-only-key")]
 
 
-@pytest.mark.parametrize("body", [
-    {"code": 802, "msg": "APIKEY_UNAUTHORIZED"},
-    {"code": 500, "msg": "UNKNOWN_ERROR"},
-    {"code": 987, "msg": "unexpected response"},
-    {"code": 802, "msg": "RUNNING query was rejected"},
-    {"code": 0, "data": {"unexpected": "shape"}},
-    [],
-])
+@pytest.mark.parametrize(
+    "body",
+    [
+        {"code": 802, "msg": "APIKEY_UNAUTHORIZED"},
+        {"code": 500, "msg": "UNKNOWN_ERROR"},
+        {"code": 987, "msg": "unexpected response"},
+        {"code": 802, "msg": "RUNNING query was rejected"},
+        {"code": 0, "data": {"unexpected": "shape"}},
+        [],
+    ],
+)
 def test_cloud_query_error_is_not_execution_failure(monkeypatch, body):
     async def reply(*args, **kwargs):
         return body
@@ -125,7 +143,9 @@ def test_cloud_query_error_is_not_execution_failure(monkeypatch, body):
     assert error.value.status_code == 502
 
 
-@pytest.mark.parametrize("code,status", [(804, "RUNNING"), (813, "RUNNING"), (805, "FAILED")])
+@pytest.mark.parametrize(
+    "code,status", [(804, "RUNNING"), (813, "RUNNING"), (805, "FAILED")]
+)
 def test_cloud_confirmed_statuses_remain_supported(monkeypatch, code, status):
     async def reply(*args, **kwargs):
         return {"code": code, "msg": "provider state"}
@@ -156,10 +176,14 @@ def test_late_poll_cannot_overwrite_completed_task(monkeypatch, late_status):
             return {"status": "SUCCESS", "outputs": [{"fileName": "result.png"}]}
 
         monkeypatch.setattr(platforms, "query_rh_task_outputs", query)
-        old_poll = asyncio.create_task(routes.task_status(task["job_id"], HEADERS["Authorization"], "editor"))
+        old_poll = asyncio.create_task(
+            routes.task_status(task["job_id"], HEADERS["Authorization"], "editor")
+        )
         await entered.wait()
         try:
-            done = await routes.task_status(task["job_id"], HEADERS["Authorization"], "editor")
+            done = await routes.task_status(
+                task["job_id"], HEADERS["Authorization"], "editor"
+            )
             assert done["status"] == "completed"
             before = registry.load_task(context, task["job_id"])
         finally:
@@ -172,7 +196,9 @@ def test_late_poll_cannot_overwrite_completed_task(monkeypatch, late_status):
 
 
 @pytest.mark.parametrize("invalid_output", [None, {}, {"fileName": "missing.png"}])
-def test_mixed_cloud_outputs_keep_partial_failure_and_retry_without_duplicates(client, monkeypatch, invalid_output):
+def test_mixed_cloud_outputs_keep_partial_failure_and_retry_without_duplicates(
+    client, monkeypatch, invalid_output
+):
     """有效产物持久化，无效条目仍计为失败；回收重试保留同一素材ID。"""
     image = pytest.importorskip("PIL.Image")
     buffer = io.BytesIO()
@@ -186,11 +212,16 @@ def test_mixed_cloud_outputs_keep_partial_failure_and_retry_without_duplicates(c
 
     def download(request):
         assert request.headers.get("host") == "approved.example"
-        return httpx.Response(200, content=content, headers={"content-type": "image/png"})
+        return httpx.Response(
+            200, content=content, headers={"content-type": "image/png"}
+        )
 
     async def query(*args, **kwargs):
         queries.append(args[0])
-        return {"status": "SUCCESS", "outputs": [valid, invalid_output] if len(queries) == 1 else [valid]}
+        return {
+            "status": "SUCCESS",
+            "outputs": [valid, invalid_output] if len(queries) == 1 else [valid],
+        }
 
     async def forbidden(*args, **kwargs):
         raise AssertionError("回收重试不能重新生成")
@@ -199,7 +230,11 @@ def test_mixed_cloud_outputs_keep_partial_failure_and_retry_without_duplicates(c
         return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("198.18.0.7", port))]
 
     monkeypatch.setattr(routes, "_getaddrinfo", fake_resolve)
-    monkeypatch.setattr(routes, "_output_transport", lambda allowed_hosts=None, verify=True: httpx.MockTransport(download))
+    monkeypatch.setattr(
+        routes,
+        "_output_transport",
+        lambda allowed_hosts=None, verify=True: httpx.MockTransport(download),
+    )
     monkeypatch.setattr(platforms, "query_rh_task_outputs", query)
     monkeypatch.setattr(platforms, "create_rh_cloud_task", forbidden)
     url = "/api/god_workflow/tasks/" + task["job_id"]
@@ -219,5 +254,8 @@ def test_mixed_cloud_outputs_keep_partial_failure_and_retry_without_duplicates(c
     assert recovered.json()["status"] == "completed"
     assert recovered.json()["outputs"][0]["asset_id"] == asset_id
     assert len(registry.list_assets(context)) == 1
-    assert client.post(url + "/collect", headers=HEADERS).json()["outputs"] == recovered.json()["outputs"]
+    assert (
+        client.post(url + "/collect", headers=HEADERS).json()["outputs"]
+        == recovered.json()["outputs"]
+    )
     assert queries == ["remote-one", "remote-one"]

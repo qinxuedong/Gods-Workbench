@@ -3,15 +3,17 @@
 import pytest
 from fastapi.testclient import TestClient
 
-from gw.api.app import create_app
 from gw.api import routes_asset_registry, routes_projects
+from gw.api.app import create_app
 from gw.core.local_accounts import database
 from gw.projects_hub import service as projects_service_module
 from gw.projects_hub.service import ProjectsService
 
 
 @pytest.mark.parametrize("demoted_role", ["readonly", "reviewer"])
-def test_local_account_owner_role_downgrade_blocks_gate_write_before_cas(tmp_path, monkeypatch, demoted_role):
+def test_local_account_owner_role_downgrade_blocks_gate_write_before_cas(
+    tmp_path, monkeypatch, demoted_role
+):
     """owner降为只读或reviewer后仍可读，但所有写入都先返回403。"""
     data_root = tmp_path / "data"
     monkeypatch.setenv("GW_DATA_DIR", str(data_root))

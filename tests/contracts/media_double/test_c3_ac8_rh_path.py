@@ -7,14 +7,25 @@ query_rh_task_outputs）；GW_RUNNINGHUB_API_KEY 由 conftest media_env setenv �
 （task_id + metadata.workflow_id）→ GET 任务 outputs 含 asset_id → 重复 collect 不重复登记，全程零真实网络。
 不重复 test_c3_media_closed_loop.py 的失败 / 部分回收 / 重启 / capabilities 矩阵。
 """
+
 from __future__ import annotations
 
+from media_doubles import (
+    FIXED_PNG_SHA256,
+    HEADERS,
+    TASKS,
+    TEST_API_KEY,
+    count_assets,
+    execute,
+    prepare_workflow,
+)
+
 from gw.god_workflow import platforms
-from media_doubles import (FIXED_PNG_SHA256, HEADERS, TASKS, TEST_API_KEY,
-                           count_assets, execute, prepare_workflow)
 
 
-def test_ac8_rh_path_upload_create_poll_collect_registers_unified_asset(media_client, fake_rh, no_network, asset_counts, monkeypatch):
+def test_ac8_rh_path_upload_create_poll_collect_registers_unified_asset(
+    media_client, fake_rh, no_network, asset_counts, monkeypatch
+):
     """C3-AC8-RH-PATH-01：调用顺序、key 来源、轮询状态机与统一资产登记（裁定 9a）。"""
     # 三个平台函数确实是替身在模块属性上的 monkeypatch，路由层走真实代码。
     assert platforms.upload_rh_input.__self__ is fake_rh
@@ -22,19 +33,37 @@ def test_ac8_rh_path_upload_create_poll_collect_registers_unified_asset(media_cl
     assert platforms.query_rh_task_outputs.__self__ is fake_rh
     # 替身记录不落 key；用包装捕获实参，证明 key 从 GW_RUNNINGHUB_API_KEY 经真实读取逻辑传入。
     captured: dict[str, str] = {}
-    original_upload, original_create, original_query = (fake_rh.upload_rh_input,
-                                                        fake_rh.create_rh_cloud_task,
-                                                        fake_rh.query_rh_task_outputs)
+    original_upload, original_create, original_query = (
+        fake_rh.upload_rh_input,
+        fake_rh.create_rh_cloud_task,
+        fake_rh.query_rh_task_outputs,
+    )
 
-    async def capture_upload(payload, filename, content_type, api_key, domain=platforms.RUNNINGHUB_DEFAULT_DOMAIN):
+    async def capture_upload(
+        payload,
+        filename,
+        content_type,
+        api_key,
+        domain=platforms.RUNNINGHUB_DEFAULT_DOMAIN,
+    ):
         captured["upload"] = api_key
         return await original_upload(payload, filename, content_type, api_key, domain)
 
-    async def capture_create(workflow_id, node_info_list, api_key, domain=platforms.RUNNINGHUB_DEFAULT_DOMAIN, **kwargs):
+    async def capture_create(
+        workflow_id,
+        node_info_list,
+        api_key,
+        domain=platforms.RUNNINGHUB_DEFAULT_DOMAIN,
+        **kwargs,
+    ):
         captured["create"] = api_key
-        return await original_create(workflow_id, node_info_list, api_key, domain, **kwargs)
+        return await original_create(
+            workflow_id, node_info_list, api_key, domain, **kwargs
+        )
 
-    async def capture_query(task_id, api_key, domain=platforms.RUNNINGHUB_DEFAULT_DOMAIN):
+    async def capture_query(
+        task_id, api_key, domain=platforms.RUNNINGHUB_DEFAULT_DOMAIN
+    ):
         captured.setdefault("query", api_key)
         return await original_query(task_id, api_key, domain)
 
@@ -56,9 +85,13 @@ def test_ac8_rh_path_upload_create_poll_collect_registers_unified_asset(media_cl
     assert upload[1]["filename"].startswith(input_asset["asset_id"])
     assert upload[1]["domain"] == platforms.RUNNINGHUB_DEFAULT_DOMAIN
     assert create[1]["workflow_id"] is None  # 本地图没有 RH 标识就不编造 workflowId
-    uploaded_fields = {(entry["nodeId"], entry["fieldName"]): entry["fieldValue"]
-                       for entry in create[1]["node_info_list"]}
-    assert "fake-rh/input-0001.png" in uploaded_fields.values()  # 上传得到的远端名回填进建任务参数
+    uploaded_fields = {
+        (entry["nodeId"], entry["fieldName"]): entry["fieldValue"]
+        for entry in create[1]["node_info_list"]
+    }
+    assert (
+        "fake-rh/input-0001.png" in uploaded_fields.values()
+    )  # 上传得到的远端名回填进建任务参数
     assert started["remote_task_id"] == "fake-rh-task-0001"
 
     # 2. GET 轮询：第一查 RUNNING（不登记资产），第二查 SUCCESS 并当场回收登记。
@@ -68,14 +101,22 @@ def test_ac8_rh_path_upload_create_poll_collect_registers_unified_asset(media_cl
     assert captured.get("query") == TEST_API_KEY  # 轮询查询同样用环境变量里的测试 key
     assert asset_counts() == before  # RUNNING 轮询不产生资产
     second = media_client.get(f"{TASKS}/{started['job_id']}", headers=HEADERS).json()
-    assert second["status"] == "completed" and second["collection_status"] == "completed"
+    assert (
+        second["status"] == "completed" and second["collection_status"] == "completed"
+    )
     assert [item["registered"] for item in second["outputs"]] == [True]
-    assert fake_rh.names() == ["upload_rh_input", "create_rh_cloud_task",
-                               "query_rh_task_outputs", "query_rh_task_outputs"]
+    assert fake_rh.names() == [
+        "upload_rh_input",
+        "create_rh_cloud_task",
+        "query_rh_task_outputs",
+        "query_rh_task_outputs",
+    ]
 
     # 3. 统一资产：task_id = job_id、metadata.workflow_id 可回跳；任务 outputs 含 asset_id。
     asset_id = second["outputs"][0]["asset_id"]
-    asset = media_client.get(f"/api/asset-registry/assets/{asset_id}", headers=HEADERS).json()["asset"]
+    asset = media_client.get(
+        f"/api/asset-registry/assets/{asset_id}", headers=HEADERS
+    ).json()["asset"]
     assert asset["task_id"] == started["job_id"]
     assert asset["metadata"]["workflow_id"] == workflow["workflow_id"]
     assert asset["metadata"]["workflow_version"] == workflow["version"]
@@ -87,7 +128,9 @@ def test_ac8_rh_path_upload_create_poll_collect_registers_unified_asset(media_cl
     assert no_network == []  # 全程没有替身之外的真实网络
 
 
-def test_ac8_rh_collect_guard_and_repeat_never_duplicates(media_client, fake_rh, no_network, asset_counts):
+def test_ac8_rh_collect_guard_and_repeat_never_duplicates(
+    media_client, fake_rh, no_network, asset_counts
+):
     """C3-AC8-RH-COLLECT-01：collect 门禁（409 且零远端查询）+ 重复回收零查询、零重复资产。"""
     _, workflow = prepare_workflow(media_client)
     started = execute(media_client, workflow, "rh_cloud", key="ac8-rh-collect-1")
@@ -112,6 +155,9 @@ def test_ac8_rh_collect_guard_and_repeat_never_duplicates(media_client, fake_rh,
         assert again.status_code == 200, again.text
         assert again.json()["outputs"] == outputs
     assert fake_rh.count("query_rh_task_outputs") == 2
-    assert fake_rh.count("upload_rh_input") == 1 and fake_rh.count("create_rh_cloud_task") == 1
+    assert (
+        fake_rh.count("upload_rh_input") == 1
+        and fake_rh.count("create_rh_cloud_task") == 1
+    )
     assert asset_counts() == settled
     assert no_network == []

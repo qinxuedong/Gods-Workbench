@@ -7,8 +7,10 @@ from fastapi.testclient import TestClient
 
 from gw.api.app import create_app
 from gw.core.errors import VersionConflictException
-from gw.episode_pipeline.service import relink_timeline_video, replace_timeline_clip_with_video
-
+from gw.episode_pipeline.service import (
+    relink_timeline_video,
+    replace_timeline_clip_with_video,
+)
 
 A = {"Authorization": "Bearer cleanroom-test", "X-User-Role": "editor"}
 
@@ -111,4 +113,6 @@ def test_c15_ac1_video_relink_preserves_overrides_and_persists_with_cas():
         assert api_json["timeline_manifest"] == persisted["timeline_manifest"]
 
         with pytest.raises(VersionConflictException):
-            relink_timeline_video(pipeline_id, **relink, expected_version=original["version"])
+            relink_timeline_video(
+                pipeline_id, **relink, expected_version=original["version"]
+            )

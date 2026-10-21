@@ -1,4 +1,5 @@
 """首页真实服务商选择与显式计费动作的可执行前端回归。"""
+
 import json
 import shutil
 import subprocess
@@ -8,8 +9,8 @@ ROOT = Path(__file__).resolve().parents[3]
 
 
 def test_home_uses_configured_provider_and_prevents_duplicate_paid_requests(tmp_path):
-    node = shutil.which('node')
-    assert node, '首页运行时回归需要 Node.js'
+    node = shutil.which("node")
+    assert node, "首页运行时回归需要 Node.js"
     script = r"""
 const fs = require('node:fs'), vm = require('node:vm'), assert = require('node:assert/strict');
 const elements = new Map();
@@ -60,7 +61,12 @@ vm.createContext(sandbox); vm.runInContext(source,sandbox);
   console.log(JSON.stringify({ok:true}));
 })().catch(e=>{console.error(e);process.exitCode=1;});
 """
-    result = subprocess.run([node, '-e', script, str(ROOT / 'web/js/controllers/home-controller.js')],
-                            capture_output=True, text=True, encoding='utf-8', timeout=60)
+    result = subprocess.run(
+        [node, "-e", script, str(ROOT / "web/js/controllers/home-controller.js")],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        timeout=60,
+    )
     assert result.returncode == 0, result.stderr
-    assert json.loads(result.stdout)['ok']
+    assert json.loads(result.stdout)["ok"]

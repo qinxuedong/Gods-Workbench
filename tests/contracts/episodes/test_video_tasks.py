@@ -17,13 +17,21 @@ from gw.core.errors import CleanroomException
 from gw.video_tasks.service import VideoTaskService, download_provider_artifact
 from gw.video_tasks.store import VideoTaskStore
 
-
 PROJECT_ID = "prj-video-test"
-CONTEXT = {"project_id": PROJECT_ID, "canvas_id": "cv-video-test", "entity_id": "ent-video-test"}
+CONTEXT = {
+    "project_id": PROJECT_ID,
+    "canvas_id": "cv-video-test",
+    "entity_id": "ent-video-test",
+}
 
 
 def _auth(name="alice"):
-    return AuthContext(role="editor", subject=f"local:{name}", mode="local", identity_domain="local_dev")
+    return AuthContext(
+        role="editor",
+        subject=f"local:{name}",
+        mode="local",
+        identity_domain="local_dev",
+    )
 
 
 def _payload(prompt="单镜测试"):
@@ -42,34 +50,60 @@ def _service(tmp_path, context=None, *, allow_private=False, monkeypatch):
     store = VideoTaskStore(tmp_path / "video")
     # 这些单元用例使用合成项目ID；持久项目真源由专项集成回归覆盖。
     from gw.video_tasks import service as video_service_module
+
     service = VideoTaskService(store, allow_private_artifacts_for_test=allow_private)
     service._validate_context = lambda *_args: None
     owner = service.actor(context)
-    monkeypatch.setattr(video_service_module.default_projects_service, "_get_source_owner_key", lambda *_args: owner)
+    monkeypatch.setattr(
+        video_service_module.default_projects_service,
+        "_get_source_owner_key",
+        lambda *_args: owner,
+    )
     store.register_project_owner(PROJECT_ID, owner, owner)
     return service, context
 
 
 def _runtime(monkeypatch, base_url):
     monkeypatch.setenv("GW_VIDEO_TEST_KEY", "test-secret-do-not-log")
-    monkeypatch.setenv("GW_PROVIDER_RUNTIME_JSON", json.dumps({
-        "video-test": {
-            "base_url": base_url,
-            "api_key_env": "GW_VIDEO_TEST_KEY",
-            "models": ["video-test-model"],
-            "default_model": "video-test-model",
-            "video_protocol": "newapi_video",
-        }
-    }))
+    monkeypatch.setenv(
+        "GW_PROVIDER_RUNTIME_JSON",
+        json.dumps(
+            {
+                "video-test": {
+                    "base_url": base_url,
+                    "api_key_env": "GW_VIDEO_TEST_KEY",
+                    "models": ["video-test-model"],
+                    "default_model": "video-test-model",
+                    "video_protocol": "newapi_video",
+                }
+            }
+        ),
+    )
 
 
 def _make_clip(path, *, size="64x64", rate=10, duration="0.5"):
     ffmpeg = shutil.which("ffmpeg")
     if not ffmpeg:
         pytest.skip("本机未安装 ffmpeg，无法验证真实本地媒体导出")
-    command = [ffmpeg, "-nostdin", "-hide_banner", "-loglevel", "error", "-f", "lavfi",
-               "-i", f"color=c=blue:s={size}:r={rate}:d={duration}", "-an", "-c:v", "libx264",
-               "-pix_fmt", "yuv420p", "-movflags", "+faststart", str(path)]
+    command = [
+        ffmpeg,
+        "-nostdin",
+        "-hide_banner",
+        "-loglevel",
+        "error",
+        "-f",
+        "lavfi",
+        "-i",
+        f"color=c=blue:s={size}:r={rate}:d={duration}",
+        "-an",
+        "-c:v",
+        "libx264",
+        "-pix_fmt",
+        "yuv420p",
+        "-movflags",
+        "+faststart",
+        str(path),
+    ]
     result = subprocess.run(command, capture_output=True, timeout=45, check=False)
     assert result.returncode == 0, result.stderr.decode("utf-8", errors="replace")
     assert path.is_file() and path.stat().st_size > 0
@@ -77,9 +111,18 @@ def _make_clip(path, *, size="64x64", rate=10, duration="0.5"):
 
 
 def _provider_server(video_path, mode="success"):
-    state = {"mode": mode, "posts": 0, "polls": 0, "authorization": None, "body": None,
-             "artifact_downloads": 0, "post_received": threading.Event(), "release_post": threading.Event(),
-             "poll_received": threading.Event(), "release_poll": threading.Event()}
+    state = {
+        "mode": mode,
+        "posts": 0,
+        "polls": 0,
+        "authorization": None,
+        "body": None,
+        "artifact_downloads": 0,
+        "post_received": threading.Event(),
+        "release_post": threading.Event(),
+        "poll_received": threading.Event(),
+        "release_poll": threading.Event(),
+    }
     video_bytes = video_path.read_bytes()
 
     class Handler(BaseHTTPRequestHandler):
@@ -165,6 +208,7 @@ def _wait_terminal(service, context, job_id, timeout=12):
 def test_video_routes_are_mounted_once_and_have_frozen_paths():
     """应用只注册一次视频端点，嵌套 closure 路由不产生重复 operation。"""
     app = create_app()
+
     def flattened(routes):
         for route in routes:
             yield route
@@ -172,23 +216,38 @@ def test_video_routes_are_mounted_once_and_have_frozen_paths():
             if nested is not None:
                 yield from flattened(nested.routes)
 
-    routes = [route for route in flattened(app.routes) if getattr(route, "path", "") in {
-        "/api/video-tasks", "/api/video-tasks/{job_id}", "/api/video-tasks/{job_id}/cancel",
-        "/api/video-tasks/{job_id}/content", "/api/video-exports",
-    }]
+    routes = [
+        route
+        for route in flattened(app.routes)
+        if getattr(route, "path", "")
+        in {
+            "/api/video-tasks",
+            "/api/video-tasks/{job_id}",
+            "/api/video-tasks/{job_id}/cancel",
+            "/api/video-tasks/{job_id}/content",
+            "/api/video-exports",
+        }
+    ]
     seen = set()
     for route in routes:
         for method in getattr(route, "methods", set()) or set():
             key = (method, route.path)
             assert key not in seen, f"视频路由重复注册：{key}"
             seen.add(key)
-    assert {("POST", "/api/video-tasks"), ("GET", "/api/video-tasks"),
-            ("GET", "/api/video-tasks/{job_id}"), ("POST", "/api/video-tasks/{job_id}/cancel"),
-            ("GET", "/api/video-tasks/{job_id}/content"), ("POST", "/api/video-exports")} <= seen
+    assert {
+        ("POST", "/api/video-tasks"),
+        ("GET", "/api/video-tasks"),
+        ("GET", "/api/video-tasks/{job_id}"),
+        ("POST", "/api/video-tasks/{job_id}/cancel"),
+        ("GET", "/api/video-tasks/{job_id}/content"),
+        ("POST", "/api/video-exports"),
+    } <= seen
     assert "/api/video-tasks" in app.openapi()["paths"]
 
 
-def test_video_content_is_inline_for_preview_and_attachment_for_download(monkeypatch, tmp_path):
+def test_video_content_is_inline_for_preview_and_attachment_for_download(
+    monkeypatch, tmp_path
+):
     """受保护媒体端点默认允许 video 播放器预览，下载参数才请求附件响应。"""
     from gw.video_tasks import routes as video_routes
 
@@ -210,11 +269,16 @@ def test_video_content_is_inline_for_preview_and_attachment_for_download(monkeyp
 
     assert preview.status_code == 200
     assert preview.headers["content-type"] == "video/mp4"
-    assert preview.headers["content-disposition"] == 'inline; filename="ast-video-123.mp4"'
+    assert (
+        preview.headers["content-disposition"] == 'inline; filename="ast-video-123.mp4"'
+    )
     assert preview.headers["cache-control"] == "private, no-store"
     assert preview.content == b"verified-test-content"
     assert download.status_code == 200
-    assert download.headers["content-disposition"] == 'attachment; filename="ast-video-123.mp4"'
+    assert (
+        download.headers["content-disposition"]
+        == 'attachment; filename="ast-video-123.mp4"'
+    )
     assert download.content == b"verified-test-content"
 
 
@@ -241,7 +305,9 @@ def test_create_generation_idempotency_and_conflict(monkeypatch, tmp_path):
 
 def test_newapi_create_poll_download_and_protected_artifact(tmp_path, monkeypatch):
     """loopback New API 模拟真实创建、轮询、下载与 ffprobe 校验，不调用商业 Provider。"""
-    artifact = _make_clip(tmp_path / "source.mp4", size="96x64", rate=12, duration="0.7")
+    artifact = _make_clip(
+        tmp_path / "source.mp4", size="96x64", rate=12, duration="0.7"
+    )
     server, thread, base_url, state = _provider_server(artifact)
     _runtime(monkeypatch, base_url)
     service, context = _service(tmp_path, allow_private=True, monkeypatch=monkeypatch)
@@ -257,7 +323,9 @@ def test_newapi_create_poll_download_and_protected_artifact(tmp_path, monkeypatc
         assert path.parent == service.store.artifact_root
         assert path.is_file() and path.stat().st_size == artifact.stat().st_size
         assert registered["asset_id"].startswith("ast-video-")
-        assert finished["content_url"] == f"/api/video-tasks/{accepted['job_id']}/content"
+        assert (
+            finished["content_url"] == f"/api/video-tasks/{accepted['job_id']}/content"
+        )
         assert finished["media"]["width"] == 96
         assert finished["media"]["height"] == 64
         assert finished["media"]["video_codec"] == "h264"
@@ -271,7 +339,9 @@ def test_newapi_create_poll_download_and_protected_artifact(tmp_path, monkeypatc
         thread.join(timeout=3)
 
 
-def test_unknown_provider_create_is_interrupted_and_never_reposted(tmp_path, monkeypatch):
+def test_unknown_provider_create_is_interrupted_and_never_reposted(
+    tmp_path, monkeypatch
+):
     """Provider 收到 POST 后断开连接时保留结果未知，重启恢复不得再次创建。"""
     artifact = _make_clip(tmp_path / "source.mp4")
     server, thread, base_url, state = _provider_server(artifact, mode="unknown")
@@ -307,43 +377,89 @@ def test_recovery_resumes_only_known_safe_work(tmp_path):
     store = VideoTaskStore(tmp_path / "video")
     actor = VideoTaskService.actor(_auth())
     store.register_project_owner(PROJECT_ID, actor, actor)
-    queued, _ = store.create_job(actor=actor, operation="video-generation", key="q", request=_payload(),
-                                  project_id=PROJECT_ID, canvas_id=CONTEXT["canvas_id"], entity_id=CONTEXT["entity_id"],
-                                  provider_id="video-test", model="video-test-model")
-    known, _ = store.create_job(actor=actor, operation="video-generation", key="known", request=_payload(),
-                                 project_id=PROJECT_ID, canvas_id=CONTEXT["canvas_id"], entity_id=CONTEXT["entity_id"],
-                                 provider_id="video-test", model="video-test-model")
-    unknown, _ = store.create_job(actor=actor, operation="video-generation", key="unknown", request=_payload(),
-                                  project_id=PROJECT_ID, canvas_id=CONTEXT["canvas_id"], entity_id=CONTEXT["entity_id"],
-                                  provider_id="video-test", model="video-test-model")
-    local, _ = store.create_job(actor=actor, operation="video-export", key="local", request={"asset_ids": ["ast-1"]},
-                                project_id=PROJECT_ID, canvas_id=CONTEXT["canvas_id"], entity_id=CONTEXT["entity_id"])
+    queued, _ = store.create_job(
+        actor=actor,
+        operation="video-generation",
+        key="q",
+        request=_payload(),
+        project_id=PROJECT_ID,
+        canvas_id=CONTEXT["canvas_id"],
+        entity_id=CONTEXT["entity_id"],
+        provider_id="video-test",
+        model="video-test-model",
+    )
+    known, _ = store.create_job(
+        actor=actor,
+        operation="video-generation",
+        key="known",
+        request=_payload(),
+        project_id=PROJECT_ID,
+        canvas_id=CONTEXT["canvas_id"],
+        entity_id=CONTEXT["entity_id"],
+        provider_id="video-test",
+        model="video-test-model",
+    )
+    unknown, _ = store.create_job(
+        actor=actor,
+        operation="video-generation",
+        key="unknown",
+        request=_payload(),
+        project_id=PROJECT_ID,
+        canvas_id=CONTEXT["canvas_id"],
+        entity_id=CONTEXT["entity_id"],
+        provider_id="video-test",
+        model="video-test-model",
+    )
+    local, _ = store.create_job(
+        actor=actor,
+        operation="video-export",
+        key="local",
+        request={"asset_ids": ["ast-1"]},
+        project_id=PROJECT_ID,
+        canvas_id=CONTEXT["canvas_id"],
+        entity_id=CONTEXT["entity_id"],
+    )
     store.mark_running(known["job_id"])
     assert store.begin_remote_create(known["job_id"])
     assert store.set_upstream_task(known["job_id"], "upstream-known")
     store.mark_running(unknown["job_id"])
     assert store.begin_remote_create(unknown["job_id"])
-    never_dispatched, _ = store.create_job(actor=actor, operation="video-generation", key="never-dispatched", request=_payload(),
-        project_id=PROJECT_ID, canvas_id=CONTEXT["canvas_id"], entity_id=CONTEXT["entity_id"],
-        provider_id="video-test", model="video-test-model")
+    never_dispatched, _ = store.create_job(
+        actor=actor,
+        operation="video-generation",
+        key="never-dispatched",
+        request=_payload(),
+        project_id=PROJECT_ID,
+        canvas_id=CONTEXT["canvas_id"],
+        entity_id=CONTEXT["entity_id"],
+        provider_id="video-test",
+        model="video-test-model",
+    )
     store.mark_running(never_dispatched["job_id"])
     store.mark_running(local["job_id"])
     restarted = VideoTaskStore(store.root)
     recoverable = restarted.recoverable()
-    assert {item["job_id"] for item in recoverable} == {queued["job_id"], known["job_id"], never_dispatched["job_id"]}
+    assert {item["job_id"] for item in recoverable} == {
+        queued["job_id"],
+        known["job_id"],
+        never_dispatched["job_id"],
+    }
     assert restarted.get_by_id(unknown["job_id"])["status"] == "interrupted"
     assert restarted.get_by_id(unknown["job_id"])["result_unknown"] == 1
     assert restarted.get_by_id(unknown["job_id"])["remote_may_continue"] == 1
     assert restarted.get_by_id(unknown["job_id"])["upstream_create_dispatched"] == 1
     assert restarted.get_by_id(never_dispatched["job_id"])["status"] == "queued"
-    assert restarted.get_by_id(never_dispatched["job_id"])["upstream_create_dispatched"] == 0
+    assert (
+        restarted.get_by_id(never_dispatched["job_id"])["upstream_create_dispatched"]
+        == 0
+    )
     assert restarted.get_by_id(local["job_id"])["status"] == "interrupted"
     assert restarted.get_by_id(local["job_id"])["result_unknown"] == 0
 
 
-
-
-def test_cancel_during_remote_create_keeps_risk_and_persists_late_task_id(tmp_path, monkeypatch):
+def test_cancel_during_remote_create_keeps_risk_and_persists_late_task_id(
+    tmp_path, monkeypatch
+):
     """POST 已到回环 Provider 后取消必须报计费风险；迟到引用跨重启保留且不再轮询。"""
     artifact = _make_clip(tmp_path / "source.mp4")
     server, thread, base_url, state = _provider_server(artifact, mode="delayed")
@@ -374,7 +490,9 @@ def test_cancel_during_remote_create_keeps_risk_and_persists_late_task_id(tmp_pa
         assert restarted["upstream_task_id"] == "upstream-delayed-1"
         assert restarted["upstream_create_dispatched"] == 1
         assert restarted["remote_may_continue"] == 1
-        recovered_service = VideoTaskService(restarted_store, allow_private_artifacts_for_test=True)
+        recovered_service = VideoTaskService(
+            restarted_store, allow_private_artifacts_for_test=True
+        )
         try:
             time.sleep(0.1)
             assert state["posts"] == 1
@@ -420,9 +538,15 @@ def test_complete_success_preserves_preexisting_target_bytes(tmp_path):
     store = VideoTaskStore(tmp_path / "video")
     actor = VideoTaskService.actor(_auth())
     store.register_project_owner(PROJECT_ID, actor, actor)
-    row, _ = store.create_job(actor=actor, operation="video-export", key="collision",
-        request={"asset_ids": ["ast-1"]}, project_id=PROJECT_ID,
-        canvas_id=CONTEXT["canvas_id"], entity_id=CONTEXT["entity_id"])
+    row, _ = store.create_job(
+        actor=actor,
+        operation="video-export",
+        key="collision",
+        request={"asset_ids": ["ast-1"]},
+        project_id=PROJECT_ID,
+        canvas_id=CONTEXT["canvas_id"],
+        entity_id=CONTEXT["entity_id"],
+    )
     store.mark_running(row["job_id"])
     final_path = store.artifact_root / f"{row['job_id']}.mp4"
     existing_bytes = b"pre-existing-mp4-evidence-do-not-delete"
@@ -440,11 +564,17 @@ def test_complete_success_preserves_preexisting_target_bytes(tmp_path):
     assert final_path.read_bytes() == existing_bytes
     assert temporary.read_bytes() == b"new-export-not-published"
     assert store.get_by_id(row["job_id"])["status"] == "running"
-    evidence = {"job_id": row["job_id"], "existing_sha256_before": before,
-        "existing_sha256_after": after, "existing_bytes_preserved": True,
-        "new_temp_preserved": temporary.is_file(), "target": str(final_path)}
+    evidence = {
+        "job_id": row["job_id"],
+        "existing_sha256_before": before,
+        "existing_sha256_after": after,
+        "existing_bytes_preserved": True,
+        "new_temp_preserved": temporary.is_file(),
+        "target": str(final_path),
+    }
     (tmp_path / "publish-retention-evidence.json").write_text(
-        json.dumps(evidence, ensure_ascii=False, indent=2), encoding="utf-8")
+        json.dumps(evidence, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
 
 
 def test_complete_success_removes_only_this_call_file_after_database_failure(tmp_path):
@@ -452,9 +582,15 @@ def test_complete_success_removes_only_this_call_file_after_database_failure(tmp
     store = VideoTaskStore(tmp_path / "video")
     actor = VideoTaskService.actor(_auth())
     store.register_project_owner(PROJECT_ID, actor, actor)
-    row, _ = store.create_job(actor=actor, operation="video-export", key="db-failure",
-        request={"asset_ids": ["ast-1"]}, project_id=PROJECT_ID,
-        canvas_id=CONTEXT["canvas_id"], entity_id=CONTEXT["entity_id"])
+    row, _ = store.create_job(
+        actor=actor,
+        operation="video-export",
+        key="db-failure",
+        request={"asset_ids": ["ast-1"]},
+        project_id=PROJECT_ID,
+        canvas_id=CONTEXT["canvas_id"],
+        entity_id=CONTEXT["entity_id"],
+    )
     store.mark_running(row["job_id"])
     temporary = store.work_root / "database-failure.part.mp4"
     temporary.write_bytes(b"newly-published-mp4")
@@ -477,17 +613,32 @@ def test_cancel_wins_race_with_artifact_publication(tmp_path, monkeypatch):
     service, context = _service(tmp_path, monkeypatch=monkeypatch)
     actor = service.actor(context)
     try:
-        row, _ = service.store.create_job(actor=actor, operation="video-export", key="cancel-race",
-            request={"asset_ids": ["ast-1"]}, project_id=PROJECT_ID,
-            canvas_id=CONTEXT["canvas_id"], entity_id=CONTEXT["entity_id"])
+        row, _ = service.store.create_job(
+            actor=actor,
+            operation="video-export",
+            key="cancel-race",
+            request={"asset_ids": ["ast-1"]},
+            project_id=PROJECT_ID,
+            canvas_id=CONTEXT["canvas_id"],
+            entity_id=CONTEXT["entity_id"],
+        )
         running = service.store.mark_running(row["job_id"])
         temporary = service.store.work_root / "late-result.mp4"
         temporary.write_bytes(b"not-published")
         canceled = service.cancel(row["job_id"], context)
         assert canceled["status"] == "canceled"
-        assert service.store.complete_success(running["job_id"], temporary, {"width": 1}) is None
+        assert (
+            service.store.complete_success(running["job_id"], temporary, {"width": 1})
+            is None
+        )
         with service.store.reader() as db:
-            assert db.execute("SELECT COUNT(*) FROM video_artifacts WHERE job_id=?", (row["job_id"],)).fetchone()[0] == 0
+            assert (
+                db.execute(
+                    "SELECT COUNT(*) FROM video_artifacts WHERE job_id=?",
+                    (row["job_id"],),
+                ).fetchone()[0]
+                == 0
+            )
         with pytest.raises(CleanroomException) as excinfo:
             service.open_artifact(row["job_id"], context)
         assert excinfo.value.status_code == 409
@@ -505,7 +656,9 @@ def test_provider_artifact_download_blocks_loopback_ssrf(tmp_path):
     assert not destination.exists()
 
 
-def test_local_ffmpeg_export_normalizes_mixed_inputs_and_registers_verified_output(tmp_path, monkeypatch):
+def test_local_ffmpeg_export_normalizes_mixed_inputs_and_registers_verified_output(
+    tmp_path, monkeypatch
+):
     """本机 FFmpeg 真实合并不同尺寸帧率输入，并由 ffprobe 验证受保护产物。"""
     if not shutil.which("ffmpeg") or not shutil.which("ffprobe"):
         pytest.skip("本机未安装 ffmpeg/ffprobe，无法验证真实导出")
@@ -514,10 +667,16 @@ def test_local_ffmpeg_export_normalizes_mixed_inputs_and_registers_verified_outp
     service, context = _service(tmp_path, monkeypatch=monkeypatch)
     actor = service.actor(context)
     asset_paths = {"asset-1": first, "asset-2": second}
-    service._authorized_asset_path = lambda asset_id, _project_id, _actor: asset_paths[asset_id]
-    request = {"asset_ids": ["asset-1", "asset-2"], "project_id": PROJECT_ID,
-               "canvas_id": CONTEXT["canvas_id"], "entity_id": CONTEXT["entity_id"],
-               "preset": "h264_720p_30fps"}
+    service._authorized_asset_path = lambda asset_id, _project_id, _actor: asset_paths[
+        asset_id
+    ]
+    request = {
+        "asset_ids": ["asset-1", "asset-2"],
+        "project_id": PROJECT_ID,
+        "canvas_id": CONTEXT["canvas_id"],
+        "entity_id": CONTEXT["entity_id"],
+        "preset": "h264_720p_30fps",
+    }
     service.schedule = lambda _job_id: None
     try:
         accepted = service.create_export(request, "real-ffmpeg-export", context)
@@ -533,27 +692,37 @@ def test_local_ffmpeg_export_normalizes_mixed_inputs_and_registers_verified_outp
         service.executor.shutdown(wait=True, cancel_futures=True)
 
 
-def test_cancel_after_task_id_stops_late_completed_poll_and_download(tmp_path, monkeypatch):
+def test_cancel_after_task_id_stops_late_completed_poll_and_download(
+    tmp_path, monkeypatch
+):
     """上游已返回ID且轮询在途时取消；迟到完成响应不得触发下载或发布。"""
     artifact = _make_clip(tmp_path / "source.mp4")
     server, thread, base_url, state = _provider_server(artifact, mode="hold_poll")
     _runtime(monkeypatch, base_url)
     service, context = _service(tmp_path, allow_private=True, monkeypatch=monkeypatch)
     try:
-        accepted = service.create_generation(_payload(), "cancel-known-upstream", context)
+        accepted = service.create_generation(
+            _payload(), "cancel-known-upstream", context
+        )
         assert state["poll_received"].wait(5)
         before = service.store.get_by_id(accepted["job_id"])
         assert before["upstream_task_id"] == "upstream-test-1"
         canceled = service.cancel(accepted["job_id"], context)
-        assert canceled["status"] == "canceled" and canceled["remote_may_continue_or_bill"] is True
+        assert (
+            canceled["status"] == "canceled"
+            and canceled["remote_may_continue_or_bill"] is True
+        )
         state["release_poll"].set()
         deadline = time.monotonic() + 5
         while accepted["job_id"] in service._scheduled and time.monotonic() < deadline:
-            time.sleep(.02)
+            time.sleep(0.02)
         assert state["posts"] == 1 and state["polls"] == 1
         assert state["artifact_downloads"] == 0
         final = service.store.get_by_id(accepted["job_id"])
-        assert final["status"] == "canceled" and final["upstream_task_id"] == "upstream-test-1"
+        assert (
+            final["status"] == "canceled"
+            and final["upstream_task_id"] == "upstream-test-1"
+        )
     finally:
         state["release_poll"].set()
         service.executor.shutdown(wait=True, cancel_futures=True)

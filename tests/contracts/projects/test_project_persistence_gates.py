@@ -5,18 +5,18 @@ from __future__ import annotations
 import hashlib
 import json
 import os
-from pathlib import Path
 import shutil
 import subprocess
 import sys
-from concurrent.futures import ThreadPoolExecutor
 import threading
+from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
 
+from gw.api import routes_asset_registry, routes_projects
 from gw.api.app import app
-from gw.api import routes_projects, routes_asset_registry
 from gw.core.auth import require_authenticated
 from gw.core.errors import CleanroomException
 from gw.projects_hub import service as projects_service_module
@@ -46,17 +46,25 @@ def _persistent_routes(monkeypatch) -> ProjectsService:
     monkeypatch.setattr(routes_projects, "default_projects_service", service)
     monkeypatch.setattr(routes_asset_registry, "default_projects_service", service)
     from gw.video_tasks import service as video_service_module
+
     monkeypatch.setattr(video_service_module, "default_projects_service", service)
     return service
 
 
-def test_production_project_service_is_persistent_and_does_not_seed_golden(tmp_path, monkeypatch):
+def test_production_project_service_is_persistent_and_does_not_seed_golden(
+    tmp_path, monkeypatch
+):
     """生产模式读空库时为空，不把显式内存夹具混入运行期。"""
     monkeypatch.setenv("GW_DATA_DIR", str(tmp_path / "production-empty"))
     service = ProjectsService(seed_golden_fixture=False, persistent=True)
     assert service.list_projects() == []
     assert service.list_projects() == []
-    assert not (tmp_path / "production-empty" / "projects.json").read_bytes().find(b"prj-0001") >= 0
+    assert (
+        not (tmp_path / "production-empty" / "projects.json")
+        .read_bytes()
+        .find(b"prj-0001")
+        >= 0
+    )
 
 
 def test_http_project_and_gates_are_authorized_idempotent_and_recover_in_new_process(
@@ -68,11 +76,15 @@ def test_http_project_and_gates_are_authorized_idempotent_and_recover_in_new_pro
     monkeypatch.setenv("GW_VIDEO_DATA_DIR", str(tmp_path / "http-video-state"))
     service = _persistent_routes(monkeypatch)
 
-    created = client.post("/api/asset-registry/projects", headers=AUTH_OWNER, json=CREATE_PAYLOAD)
+    created = client.post(
+        "/api/asset-registry/projects", headers=AUTH_OWNER, json=CREATE_PAYLOAD
+    )
     assert created.status_code == 201, created.text
     project_id = created.json()["project"]["project_id"]
     assert project_id.startswith("prj-p-")
-    first_gates = client.get(f"/api/asset-registry/projects/{project_id}/gates", headers=AUTH_OWNER)
+    first_gates = client.get(
+        f"/api/asset-registry/projects/{project_id}/gates", headers=AUTH_OWNER
+    )
     assert first_gates.status_code == 200
     gates = first_gates.json()["gates"]
     assert [gate["code"] for gate in gates] == ["script", "layout-01"]
@@ -80,21 +92,34 @@ def test_http_project_and_gates_are_authorized_idempotent_and_recover_in_new_pro
     assert len({gate["gate_id"] for gate in gates}) == 2
 
     # 同请求不重复分配项目/门ID；同键异参在副作用前拒绝。
-    replay = client.post("/api/asset-registry/projects", headers=AUTH_OWNER, json=CREATE_PAYLOAD)
+    replay = client.post(
+        "/api/asset-registry/projects", headers=AUTH_OWNER, json=CREATE_PAYLOAD
+    )
     assert replay.status_code == 201
     assert replay.json()["project"]["project_id"] == project_id
     conflict_payload = {**CREATE_PAYLOAD, "name": "另一个请求内容"}
-    conflict = client.post("/api/asset-registry/projects", headers=AUTH_OWNER, json=conflict_payload)
+    conflict = client.post(
+        "/api/asset-registry/projects", headers=AUTH_OWNER, json=conflict_payload
+    )
     assert conflict.status_code == 409
     assert conflict.json()["detail"]["code"] == "IDEMPOTENCY_CONFLICT"
 
     # 未授权集合过滤，详情与写入统一隐藏为404。
-    hidden_collection = client.get(f"/api/asset-registry/projects/{project_id}/gates", headers=AUTH_OTHER)
-    assert hidden_collection.status_code == 200 and hidden_collection.json()["gates"] == []
-    hidden_detail = client.get(f"/api/asset-registry/project-gates/{gates[0]['gate_id']}", headers=AUTH_OTHER)
+    hidden_collection = client.get(
+        f"/api/asset-registry/projects/{project_id}/gates", headers=AUTH_OTHER
+    )
+    assert (
+        hidden_collection.status_code == 200 and hidden_collection.json()["gates"] == []
+    )
+    hidden_detail = client.get(
+        f"/api/asset-registry/project-gates/{gates[0]['gate_id']}", headers=AUTH_OTHER
+    )
     assert hidden_detail.status_code == 404
     assert hidden_detail.json()["detail"]["code"] == "PROJECT_GATE_NOT_FOUND"
-    assert client.get(f"/api/asset-registry/projects/{project_id}/gates").status_code == 401
+    assert (
+        client.get(f"/api/asset-registry/projects/{project_id}/gates").status_code
+        == 401
+    )
 
     gate_id = gates[0]["gate_id"]
     approved = client.patch(
@@ -121,7 +146,11 @@ def test_http_project_and_gates_are_authorized_idempotent_and_recover_in_new_pro
     retract = client.patch(
         f"/api/asset-registry/project-gates/{gate_id}",
         headers=AUTH_ADMIN,
-        json={"state": "changes_requested", "note": "治理复核要求补证", "expected_version": 2},
+        json={
+            "state": "changes_requested",
+            "note": "治理复核要求补证",
+            "expected_version": 2,
+        },
     )
     assert retract.status_code == 200
     assert retract.json()["gate"]["version"] == 3
@@ -143,14 +172,22 @@ def test_http_project_and_gates_are_authorized_idempotent_and_recover_in_new_pro
     # 门CAS不触碰项目版本；归档与回收只读，恢复不重置门状态/版本。
     detail = client.get(f"/api/projects/{project_id}", headers=AUTH_OWNER)
     assert detail.status_code == 200 and detail.json()["project"]["version"] == 1
-    archived = client.request("DELETE", f"/api/asset-registry/projects/{project_id}", headers=AUTH_ADMIN, json={"expected_version": 1})
+    archived = client.request(
+        "DELETE",
+        f"/api/asset-registry/projects/{project_id}",
+        headers=AUTH_ADMIN,
+        json={"expected_version": 1},
+    )
     assert archived.status_code == 200 and archived.json()["project"]["version"] == 2
     readonly = client.patch(
         f"/api/asset-registry/project-gates/{gate_id}",
         headers=AUTH_OWNER,
         json={"state": "pending", "expected_version": 3},
     )
-    assert readonly.status_code == 403 and readonly.json()["detail"]["code"] == "PROJECT_READ_ONLY"
+    assert (
+        readonly.status_code == 403
+        and readonly.json()["detail"]["code"] == "PROJECT_READ_ONLY"
+    )
     trashed = client.post(
         f"/api/asset-registry/projects/{project_id}/trash",
         headers=AUTH_ADMIN,
@@ -163,14 +200,18 @@ def test_http_project_and_gates_are_authorized_idempotent_and_recover_in_new_pro
         json={"expected_version": 3},
     )
     assert restored.status_code == 200 and restored.json()["project"]["version"] == 4
-    preserved = client.get(f"/api/asset-registry/project-gates/{gate_id}", headers=AUTH_ADMIN)
+    preserved = client.get(
+        f"/api/asset-registry/project-gates/{gate_id}", headers=AUTH_ADMIN
+    )
     assert preserved.status_code == 200
     assert preserved.json()["gate"]["state"] == "changes_requested"
     assert preserved.json()["gate"]["version"] == 3
 
     # 另起python解释器读取同一根目录，证明不是同一进程缓存/测试夹具回显。
     root_path = str(Path(__file__).resolve().parents[3])
-    owner_key = owner_key_for_context(require_authenticated(AUTH_OWNER["Authorization"], "editor"))
+    owner_key = owner_key_for_context(
+        require_authenticated(AUTH_OWNER["Authorization"], "editor")
+    )
     child_env = os.environ.copy()
     child_env["GW_DATA_DIR"] = str(root)
     child_env["GW_TEST_PROJECT_ID"] = project_id
@@ -219,7 +260,9 @@ def test_persistent_project_snapshot_fails_closed_on_corruption(tmp_path, monkey
     assert excinfo.value.code == "PROJECT_STATE_CORRUPT"
 
 
-def test_failed_acl_and_snapshot_publication_burn_reserved_project_ids(tmp_path, monkeypatch):
+def test_failed_acl_and_snapshot_publication_burn_reserved_project_ids(
+    tmp_path, monkeypatch
+):
     """ACL绑定或项目快照发布失败均保留已经持久预留的序号。"""
     root = tmp_path / "failed-publication-state"
     monkeypatch.setenv("GW_DATA_DIR", str(root))
@@ -237,13 +280,18 @@ def test_failed_acl_and_snapshot_publication_burn_reserved_project_ids(tmp_path,
         service.create_project(payload, owner_key=owner_key, before_publish=reject_acl)
 
     original_write = projects_service_module._atomic_write
+
     def reject_project_snapshot(path: Path, value):
         if path.name == "projects.json":
             orphan_ids.append(value["projects"].copy().popitem()[0])
-            raise CleanroomException(503, "PROJECT_STATE_WRITE_FAILED", "模拟源快照发布失败")
+            raise CleanroomException(
+                503, "PROJECT_STATE_WRITE_FAILED", "模拟源快照发布失败"
+            )
         return original_write(path, value)
 
-    monkeypatch.setattr(projects_service_module, "_atomic_write", reject_project_snapshot)
+    monkeypatch.setattr(
+        projects_service_module, "_atomic_write", reject_project_snapshot
+    )
     with pytest.raises(CleanroomException) as excinfo:
         service.create_project(payload, owner_key=owner_key)
     assert excinfo.value.code == "PROJECT_STATE_WRITE_FAILED"
@@ -257,7 +305,9 @@ def test_failed_acl_and_snapshot_publication_burn_reserved_project_ids(tmp_path,
     assert len(restarted.list_projects()) == 1
 
 
-def test_project_and_gate_ids_survive_data_root_move_and_concurrent_reservations(tmp_path, monkeypatch):
+def test_project_and_gate_ids_survive_data_root_move_and_concurrent_reservations(
+    tmp_path, monkeypatch
+):
     """拷贝完整状态后namespace保持不变，多个服务实例的序号由公共域锁单调分配。"""
     first_root = tmp_path / "source-root"
     moved_root = tmp_path / "moved-root"
@@ -277,13 +327,24 @@ def test_project_and_gate_ids_survive_data_root_move_and_concurrent_reservations
     assert moved.get_project(first.project_id).project_id == first.project_id
 
     monkeypatch.setenv("GW_DATA_DIR", str(tmp_path / "concurrent-root"))
-    services = [ProjectsService(seed_golden_fixture=False, persistent=True) for _ in range(3)]
+    services = [
+        ProjectsService(seed_golden_fixture=False, persistent=True) for _ in range(3)
+    ]
     request = ProjectCreateRequest(name="并发项目", project_type=ProjectType.OTHER)
     with ThreadPoolExecutor(max_workers=6) as pool:
-        results = list(pool.map(lambda index: services[index % len(services)].create_project(request, owner_key=owner_key), range(6)))
+        results = list(
+            pool.map(
+                lambda index: services[index % len(services)].create_project(
+                    request, owner_key=owner_key
+                ),
+                range(6),
+            )
+        )
     project_ids = [result.project_id for result in results]
     assert len(set(project_ids)) == 6
-    assert sorted(int(project_id.rsplit("-", 1)[1]) for project_id in project_ids) == list(range(1, 7))
+    assert sorted(
+        int(project_id.rsplit("-", 1)[1]) for project_id in project_ids
+    ) == list(range(1, 7))
 
 
 def test_gate_write_and_project_archive_share_one_domain_lock(tmp_path, monkeypatch):
@@ -300,7 +361,9 @@ def test_gate_write_and_project_archive_share_one_domain_lock(tmp_path, monkeypa
         ),
         owner_key=owner_key,
     )
-    gate = service.list_project_gates(created.project_id, owner_key=owner_key, role="editor")[0]
+    gate = service.list_project_gates(
+        created.project_id, owner_key=owner_key, role="editor"
+    )[0]
     barrier = threading.Barrier(2)
 
     def update_gate():
@@ -330,7 +393,9 @@ def test_gate_write_and_project_archive_share_one_domain_lock(tmp_path, monkeypa
 
     assert not isinstance(archive_result, str)
     assert service.get_project(created.project_id).archived_at is not None
-    final_gate = service.get_project_gate(gate["gate_id"], owner_key=owner_key, role="editor")
+    final_gate = service.get_project_gate(
+        gate["gate_id"], owner_key=owner_key, role="editor"
+    )
     if isinstance(gate_result, str):
         assert gate_result == "PROJECT_READ_ONLY"
         assert final_gate["state"] == "pending"
@@ -340,7 +405,9 @@ def test_gate_write_and_project_archive_share_one_domain_lock(tmp_path, monkeypa
         assert final_gate["version"] == 2
 
 
-def test_persistent_project_creation_does_not_reuse_gate_id_after_source_failure(tmp_path, monkeypatch):
+def test_persistent_project_creation_does_not_reuse_gate_id_after_source_failure(
+    tmp_path, monkeypatch
+):
     """初始阶段门ID与项目快照同进退，但快照失败后其预留序号也不回收。"""
     root = tmp_path / "gate-failed-source"
     monkeypatch.setenv("GW_DATA_DIR", str(root))
@@ -359,17 +426,21 @@ def test_persistent_project_creation_does_not_reuse_gate_id_after_source_failure
     def fail_project_file(path: Path, value):
         if path.name == "projects.json":
             orphaned.extend(value["gates"].keys())
-            raise CleanroomException(503, "PROJECT_STATE_WRITE_FAILED", "模拟门源快照发布失败")
+            raise CleanroomException(
+                503, "PROJECT_STATE_WRITE_FAILED", "模拟门源快照发布失败"
+            )
         return original_write(path, value)
 
     monkeypatch.setattr(projects_service_module, "_atomic_write", fail_project_file)
     with pytest.raises(CleanroomException):
         service.create_project(payload, owner_key=owner_key)
     monkeypatch.setattr(projects_service_module, "_atomic_write", original_write)
-    created = ProjectsService(seed_golden_fixture=False, persistent=True).create_project(payload, owner_key=owner_key)
-    gate = ProjectsService(seed_golden_fixture=False, persistent=True).list_project_gates(
-        created.project_id, owner_key=owner_key, role="editor"
-    )[0]
+    created = ProjectsService(
+        seed_golden_fixture=False, persistent=True
+    ).create_project(payload, owner_key=owner_key)
+    gate = ProjectsService(
+        seed_golden_fixture=False, persistent=True
+    ).list_project_gates(created.project_id, owner_key=owner_key, role="editor")[0]
     assert len(orphaned) == 1
     assert gate["gate_id"] != orphaned[0]
     assert gate["gate_id"].endswith("-2")

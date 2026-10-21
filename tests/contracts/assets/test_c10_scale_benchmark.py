@@ -14,10 +14,10 @@ import shutil
 import subprocess
 import sys
 import time
-from datetime import datetime, timezone
+from collections.abc import Callable
+from datetime import UTC, datetime, timezone
 from pathlib import Path
-from typing import Any, Callable
-
+from typing import Any
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 EVIDENCE_ROOT = REPO_ROOT / ".local" / "qa" / "C10-evidence"
@@ -27,9 +27,9 @@ PAGE_SIZE = 64
 
 
 def _canonical_json(value: Any) -> bytes:
-    return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode(
-        "utf-8"
-    )
+    return json.dumps(
+        value, ensure_ascii=False, sort_keys=True, separators=(",", ":")
+    ).encode("utf-8")
 
 
 def _records(count: int) -> list[dict[str, Any]]:
@@ -83,7 +83,11 @@ def _command_version(command: str) -> dict[str, Any]:
             check=False,
         )
     except (OSError, subprocess.SubprocessError) as exc:
-        return {"available": True, "executable": executable, "error": type(exc).__name__}
+        return {
+            "available": True,
+            "executable": executable,
+            "error": type(exc).__name__,
+        }
     output = (result.stdout or result.stderr).strip().splitlines()
     return {
         "available": True,
@@ -110,7 +114,7 @@ def _git_sha() -> str:
 
 def _hardware_profile() -> dict[str, Any]:
     return {
-        "captured_at_utc": datetime.now(timezone.utc).isoformat(),
+        "captured_at_utc": datetime.now(UTC).isoformat(),
         "os": {
             "system": platform.system(),
             "release": platform.release(),
@@ -166,7 +170,14 @@ def test_c10_scale_ladder_manifest_is_reproducible(tmp_path: Path) -> None:
         "fixture_seed": FIXTURE_SEED,
         "generator": {
             "record_order": "asset_id ascending",
-            "schema": ["asset_id", "kind", "name", "size_bytes", "tags", "thumbnail_key"],
+            "schema": [
+                "asset_id",
+                "kind",
+                "name",
+                "size_bytes",
+                "tags",
+                "thumbnail_key",
+            ],
             "page_size": PAGE_SIZE,
         },
         "scale_levels": levels,
@@ -187,8 +198,12 @@ def test_c10_benchmark_records_observations_without_thresholds(tmp_path: Path) -
         fixture_root = tmp_path / f"scale_{count:06d}"
         manifest_path, thumbnail_root = _write_fixture(fixture_root, records)
 
-        cold_raw, cold_ms = _timed(lambda: json.loads(manifest_path.read_text(encoding="utf-8")))
-        hot_raw, hot_ms = _timed(lambda: json.loads(manifest_path.read_text(encoding="utf-8")))
+        cold_raw, cold_ms = _timed(
+            lambda: json.loads(manifest_path.read_text(encoding="utf-8"))
+        )
+        hot_raw, hot_ms = _timed(
+            lambda: json.loads(manifest_path.read_text(encoding="utf-8"))
+        )
         assert cold_raw == hot_raw
         loaded = cold_raw["assets"]
         inventory_count, inventory_ms = _timed(lambda: len(loaded))
@@ -199,7 +214,9 @@ def test_c10_benchmark_records_observations_without_thresholds(tmp_path: Path) -
         thumb_path = thumbnail_root / f"{loaded[-1]['thumbnail_key']}.bin"
         thumb_bytes, thumbnail_ms = _timed(lambda: thumb_path.read_bytes())
         derived, derived_ms = _timed(
-            lambda: [hashlib.sha256(_canonical_json(record)).hexdigest() for record in loaded]
+            lambda: [
+                hashlib.sha256(_canonical_json(record)).hexdigest() for record in loaded
+            ]
         )
 
         assert inventory_count == count

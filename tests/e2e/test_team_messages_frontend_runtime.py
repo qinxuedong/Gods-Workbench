@@ -1,5 +1,5 @@
-# -*- coding: utf-8 -*-
 """协作页团队消息运行时回归：在 Node 沙箱中真实执行控制器 JavaScript。"""
+
 from __future__ import annotations
 
 import json
@@ -315,12 +315,17 @@ def _run_scenario(scenario: str, tmp_path: Path) -> dict:
     return json.loads(result.stdout.strip().splitlines()[-1])
 
 
-def test_team_history_cursor_survives_incremental_poll_and_deduplicates_overlap(tmp_path):
+def test_team_history_cursor_survives_incremental_poll_and_deduplicates_overlap(
+    tmp_path,
+):
     """超过50条历史消息轮询后仍可继续翻页；重叠序号只在列表保留一份。"""
     result = _run_scenario("history", tmp_path)
     assert result["buttonVisibleAfterPoll"] is True, result
     assert "after_sequence=50" in result["pollUrl"]
-    assert "cursor=" in result["historyUrl"] and "after_sequence=" not in result["historyUrl"]
+    assert (
+        "cursor=" in result["historyUrl"]
+        and "after_sequence=" not in result["historyUrl"]
+    )
     assert result["messageCount"] == 75, result
     assert result["uniqueMessageCount"] == 75, result
     assert result["firstMessage"] == "历史消息-1"
@@ -336,13 +341,18 @@ def test_team_read_in_flight_is_released_and_reloaded_after_bfcache_restore(tmp_
 
 
 @pytest.mark.parametrize("scenario", ["resume-send", "switch-send"])
-def test_team_send_in_flight_can_retry_same_idempotency_key_after_bfcache_restore(tmp_path, scenario):
+def test_team_send_in_flight_can_retry_same_idempotency_key_after_bfcache_restore(
+    tmp_path, scenario
+):
     """离页发送不确定时恢复发送能力，并复用已提交请求的幂等键。"""
     result = _run_scenario(scenario, tmp_path)
     assert result["sendEnabledAfterRestore"] is True, result
     assert result["abortedPosts"] == 1, result
     assert len(result["posts"]) == 2, result
-    assert result["posts"][0]["client_request_id"] == result["posts"][1]["client_request_id"], result
+    assert (
+        result["posts"][0]["client_request_id"]
+        == result["posts"][1]["client_request_id"]
+    ), result
     assert result["posts"][0]["text"] == result["posts"][1]["text"] == "离页后安全重试"
     assert result["messageCount"] == 1, result
     assert "幂等重放" in result["status"], result

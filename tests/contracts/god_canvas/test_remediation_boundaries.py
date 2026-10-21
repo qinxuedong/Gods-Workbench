@@ -12,7 +12,6 @@ from gw.god_canvas.tasks import SmartCanvasTaskRequest
 from gw.projects_hub.models import ProjectCreateRequest, ProjectType
 from gw.projects_hub.service import ProjectsService
 
-
 AUTH = {"Authorization": "Bearer cleanroom-test"}
 EDITOR = {**AUTH, "X-User-Role": "editor"}
 GOVERNOR = {**AUTH, "X-User-Role": "governor"}
@@ -27,7 +26,9 @@ def test_write_routes_require_session_and_role(client: TestClient):
     assert missing.status_code == 401
     assert missing.json()["detail"]["code"] == "UNAUTHORIZED"
 
-    readonly = client.post("/api/asset-registry/projects", json=payload, headers=READONLY)
+    readonly = client.post(
+        "/api/asset-registry/projects", json=payload, headers=READONLY
+    )
     assert readonly.status_code == 403
     assert readonly.json()["detail"]["code"] == "FORBIDDEN"
 
@@ -69,10 +70,16 @@ def test_write_routes_require_session_and_role(client: TestClient):
     assert archived.status_code == 200
     assert archived.json()["project"]["archived_at"]
 
-    canvas_payload = {"project_id": "prj-0001", "title": "认证边界测试画布", "mode": "classic"}
+    canvas_payload = {
+        "project_id": "prj-0001",
+        "title": "认证边界测试画布",
+        "mode": "classic",
+    }
     canvas_missing = client.post("/api/canvases", json=canvas_payload)
     assert canvas_missing.status_code == 401
-    canvas_readonly = client.post("/api/canvases", json=canvas_payload, headers=READONLY)
+    canvas_readonly = client.post(
+        "/api/canvases", json=canvas_payload, headers=READONLY
+    )
     assert canvas_readonly.status_code == 403
 
 
@@ -101,13 +108,25 @@ def test_insert_import_rekeys_colliding_stable_ids():
             "canvas_id": "cv-0001",
             "version": 1,
             "nodes": [
-                {"entity_id": "nd-0001", "kind": "input", "position": {"x": 10, "y": 10}},
-                {"entity_id": "nd-0002", "kind": "output", "position": {"x": 200, "y": 10}},
+                {
+                    "entity_id": "nd-0001",
+                    "kind": "input",
+                    "position": {"x": 10, "y": 10},
+                },
+                {
+                    "entity_id": "nd-0002",
+                    "kind": "output",
+                    "position": {"x": 200, "y": 10},
+                },
             ],
-            "connections": [{"connection_id": "ln-0001", "from": "nd-0001", "to": "nd-0002"}],
+            "connections": [
+                {"connection_id": "ln-0001", "from": "nd-0001", "to": "nd-0002"}
+            ],
         }
     )
-    result = service.import_workflow("cv-0001", content, merge_mode="insert", expected_version=1)
+    result = service.import_workflow(
+        "cv-0001", content, merge_mode="insert", expected_version=1
+    )
     assert result.canvas.version == 2
     topology = service.get_topology("cv-0001")
     entity_ids = [node.entity_id for node in topology.nodes]
@@ -128,7 +147,9 @@ def test_smart_task_requires_existing_entry_and_legal_transition():
             authorization="Bearer cleanroom-test",
         )
     assert missing.value.code == "TASK_PRECONDITION_FAILED"
-    task = service.submit_smart_task("cv-0001", request, authorization="Bearer cleanroom-test")
+    task = service.submit_smart_task(
+        "cv-0001", request, authorization="Bearer cleanroom-test"
+    )
     with pytest.raises(CleanroomException) as illegal:
         service.update_job_state(task.job_id, "completed")
     assert illegal.value.code == "ILLEGAL_STATE_TRANSITION"
@@ -137,9 +158,13 @@ def test_smart_task_requires_existing_entry_and_legal_transition():
 def test_empty_services_allocate_first_stable_ids_from_one():
     """验证没有黄金夹具种子时，稳定 ID 仍从 0001 开始。"""
     projects = ProjectsService(seed_golden_fixture=False)
-    project = projects.create_project(ProjectCreateRequest(name="空服务项目", project_type=ProjectType.OTHER))
+    project = projects.create_project(
+        ProjectCreateRequest(name="空服务项目", project_type=ProjectType.OTHER)
+    )
     assert project.project_id == "prj-0001"
 
     canvases = GodCanvasService(seed_golden_fixture=False)
-    canvas = canvases.create_canvas(CanvasCreateRequest(project_id="prj-0001", title="空服务画布"))
+    canvas = canvases.create_canvas(
+        CanvasCreateRequest(project_id="prj-0001", title="空服务画布")
+    )
     assert canvas.canvas_id == "cv-0001"
