@@ -4,6 +4,7 @@
 报告只保存方法、模板路径和状态码；不保存请求体、响应体、凭据或 Cookie。
 业务通过永远需要断言和独立复核，脚本不会自动接受任何业务结果。
 """
+
 from __future__ import annotations
 
 import argparse
@@ -38,11 +39,18 @@ def _operations(app: Any) -> list[tuple[str, str]]:
 
 
 def _digest(value: Any) -> str:
-    encoded = json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    encoded = json.dumps(
+        value, ensure_ascii=False, sort_keys=True, separators=(",", ":")
+    ).encode("utf-8")
     return hashlib.sha256(encoded).hexdigest()
 
 
-def _record(rows: dict[tuple[str, str], dict[str, Any]], method: str, path: str, status: int | None) -> None:
+def _record(
+    rows: dict[tuple[str, str], dict[str, Any]],
+    method: str,
+    path: str,
+    status: int | None,
+) -> None:
     if not isinstance(status, int):
         return
     template = path
@@ -75,6 +83,7 @@ def _temporary_environment(values: dict[str, str]):
 def _observe_local_routes(rows: dict[tuple[str, str], dict[str, Any]]) -> int:
     """在临时数据根中观测认证、健康和索引任务读取路由。"""
     from fastapi.testclient import TestClient
+
     from gw.api.app import create_app
     from gw.asset_registry import index_jobs as jobs
 
@@ -108,23 +117,41 @@ def _observe_local_routes(rows: dict[tuple[str, str], dict[str, Any]]) -> int:
                         json={"background": True, "hash_files": True},
                     )
                     request_count += 1
-                    _record(rows, "POST", "/api/asset-registry/reindex", created.status_code)
+                    _record(
+                        rows, "POST", "/api/asset-registry/reindex", created.status_code
+                    )
                     if created.status_code == 202:
                         job_id = created.json().get("job_id")
                         deadline = time.monotonic() + 8
                         while isinstance(job_id, str) and time.monotonic() < deadline:
-                            current = client.get(f"/api/asset-registry/workspace-jobs/{job_id}", headers=_AUTH)
+                            current = client.get(
+                                f"/api/asset-registry/workspace-jobs/{job_id}",
+                                headers=_AUTH,
+                            )
                             request_count += 1
-                            _record(rows, "GET", f"/api/asset-registry/workspace-jobs/{job_id}", current.status_code)
+                            _record(
+                                rows,
+                                "GET",
+                                f"/api/asset-registry/workspace-jobs/{job_id}",
+                                current.status_code,
+                            )
                             if current.status_code != 200:
                                 break
                             status = current.json().get("job", {}).get("status")
                             if status in jobs.TERMINAL:
                                 break
                             time.sleep(0.02)
-                        missing = client.get("/api/asset-registry/workspace-jobs/coverage-missing", headers=_AUTH)
+                        missing = client.get(
+                            "/api/asset-registry/workspace-jobs/coverage-missing",
+                            headers=_AUTH,
+                        )
                         request_count += 1
-                        _record(rows, "GET", "/api/asset-registry/workspace-jobs/coverage-missing", missing.status_code)
+                        _record(
+                            rows,
+                            "GET",
+                            "/api/asset-registry/workspace-jobs/coverage-missing",
+                            missing.status_code,
+                        )
         finally:
             if jobs._default:
                 jobs._default.shutdown()
@@ -138,13 +165,25 @@ def _run_target(targets: list[str]) -> tuple[int, str, str]:
     env = dict(os.environ)
     env.pop("GW_COVERAGE_OUTPUT", None)
     current_pythonpath = env.get("PYTHONPATH", "")
-    env["PYTHONPATH"] = str(ROOT) + (os.pathsep + current_pythonpath if current_pythonpath else "")
+    env["PYTHONPATH"] = str(ROOT) + (
+        os.pathsep + current_pythonpath if current_pythonpath else ""
+    )
     command = [sys.executable, "-m", "pytest", "-q", *targets]
-    result = subprocess.run(command, cwd=ROOT, env=env, capture_output=True, text=True, encoding="utf-8", timeout=25)
+    result = subprocess.run(
+        command,
+        cwd=ROOT,
+        env=env,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        timeout=25,
+    )
     return result.returncode, result.stdout, result.stderr
 
 
-def build_report(output_dir: Path, targets: list[str]) -> tuple[dict[str, Any], int, str, str]:
+def build_report(
+    output_dir: Path, targets: list[str]
+) -> tuple[dict[str, Any], int, str, str]:
     from gw.api.app import create_app
 
     app = create_app()
@@ -165,7 +204,9 @@ def build_report(output_dir: Path, targets: list[str]) -> tuple[dict[str, Any], 
         if any(200 <= int(status) < 300 for status in row["status_counts"]):
             row["business_acceptance"] = "requires_assertion_and_independent_review"
     operation_rows = list(rows.values())
-    end_material = [(row["method"], row["path"], row["status_counts"]) for row in operation_rows]
+    end_material = [
+        (row["method"], row["path"], row["status_counts"]) for row in operation_rows
+    ]
     end = {"operations": end_material, "digest": _digest(end_material)}
     report = {
         "schema_version": 1,
@@ -174,8 +215,14 @@ def build_report(output_dir: Path, targets: list[str]) -> tuple[dict[str, Any], 
         "target_exit_code": target_code,
         "request_count": request_count,
         "openapi_operation_count": len(operation_rows),
-        "operation_count_with_2xx": sum(1 for row in operation_rows if any(200 <= int(status) < 300 for status in row["status_counts"])),
-        "operation_count_with_attempts": sum(1 for row in operation_rows if row["status_counts"]),
+        "operation_count_with_2xx": sum(
+            1
+            for row in operation_rows
+            if any(200 <= int(status) < 300 for status in row["status_counts"])
+        ),
+        "operation_count_with_attempts": sum(
+            1 for row in operation_rows if row["status_counts"]
+        ),
         "start_snapshot": start,
         "end_snapshot": end,
         "operations": operation_rows,
@@ -206,8 +253,15 @@ def main(argv: list[str] | None = None) -> int:
         (output / "pytest.stderr.txt").write_text(target_stderr, encoding="utf-8")
         return target_code
     report_path = output / "phase12-coverage-matrix.json"
-    report_path.write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-    print(json.dumps({"report_path": str(report_path), "request_count": report["request_count"]}, ensure_ascii=False))
+    report_path.write_text(
+        json.dumps(report, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+    )
+    print(
+        json.dumps(
+            {"report_path": str(report_path), "request_count": report["request_count"]},
+            ensure_ascii=False,
+        )
+    )
     return 0
 
 
