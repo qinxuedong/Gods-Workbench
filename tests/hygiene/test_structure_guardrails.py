@@ -127,6 +127,7 @@ _BATCH_SUFFIX = re.compile(r"_b[0-9]+$", re.IGNORECASE)
 _FROZEN_ROUTE_PATHS = frozenset(
     {
         "gw/api/routes_ai.py",
+        "gw/api/routes_export.py",
         "gw/api/routes_asset_library.py",
         "gw/api/routes_asset_library_b4.py",
         "gw/api/routes_asset_registry.py",
