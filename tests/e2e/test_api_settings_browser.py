@@ -11,7 +11,7 @@ import uvicorn
 
 from gw.api import routes_settings
 from gw.api.app import create_app
-from gw.settings.service import ProviderService
+from gw.settings.service import ProviderService, StorageSettingsService
 from playwright_support import open_playwright
 
 
@@ -24,6 +24,7 @@ def settings_browser(monkeypatch, tmp_path, *, populated=False):
     monkeypatch.delenv("GW_CHAT_BASE_URL", raising=False)
     monkeypatch.delenv("GW_CLI_EXECUTION", raising=False)
     monkeypatch.setattr(routes_settings, "default_provider_service", ProviderService())
+    monkeypatch.setattr(routes_settings, "default_storage_settings_service", StorageSettingsService())
     listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     listener.bind(("127.0.0.1", 0))
     base = f"http://127.0.0.1:{listener.getsockname()[1]}"
@@ -219,3 +220,38 @@ def test_browser_conflict_preserves_name_and_unsaved_secret(monkeypatch, tmp_pat
         assert ProviderService().get_snapshot().providers[0]["name"] == "另一窗口的编辑"
         assert ProviderService().credential("browser-fixture") == ""
         assert writes == ["PUT"] and errors == []
+
+
+def test_directory_settings_saves_full_path_and_restores_after_reload(monkeypatch, tmp_path):
+    directories = {}
+    for key in ("local", "upload", "generated", "projects"):
+        directory = tmp_path / f"目录-{key}"
+        directory.mkdir()
+        directories[key] = str(directory)
+    target = tmp_path / "完整物理路径素材库"
+    target.mkdir()
+
+    with settings_browser(monkeypatch, tmp_path) as (page, base, errors, writes):
+        seeded = page.context.request.patch(
+            base + "/api/storage-settings",
+            data=json.dumps({"dirs": directories, "expected_version": 1}),
+            headers={"Origin": base, "Content-Type": "application/json"},
+        )
+        assert seeded.status == 200, seeded.text()
+
+        page.goto(base + "/static/asset-manager.html?settings=directories&embedded=1", wait_until="networkidle")
+        local_path = page.locator("#storageDir_local")
+        local_path.wait_for()
+        local_path.fill(str(target))
+        with page.expect_response(lambda response: response.request.method == "PATCH"
+                                  and "/api/storage-settings" in response.url) as saved:
+            page.locator("[data-storage-save]").click()
+        assert saved.value.status == 200, saved.value.text()
+        assert saved.value.json()["dirs"]["local"] == str(target)
+
+        page.reload(wait_until="networkidle")
+        local_path = page.locator("#storageDir_local")
+        local_path.wait_for()
+        assert local_path.input_value() == str(target)
+        assert local_path.get_attribute("title") == str(target)
+        assert errors == [] and writes == []

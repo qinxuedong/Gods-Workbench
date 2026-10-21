@@ -28,8 +28,8 @@
 - **fail-closed**：探测由probes模块执行；缺失依赖或上游失败如实返回503，
   不伪造模型列表、连通性成功或延迟数字。
 
-证据边界：ProviderService使用三態隔离的原子JSON与受保护密文，支持重启恢复，
-仅保证单进程一致性。存储设置与素材结构服务仍为内存实现。
+证据边界：ProviderService与StorageSettingsService使用三態隔离的原子JSON，
+配置支持重启恢复并仅保证单进程一致性；素材结构服务仍为内存实现。
 """
 
 from __future__ import annotations
@@ -124,8 +124,14 @@ def strip_credential_fields(value: Any) -> Any:
 
 
 def _require_positive_version(expected_version: Optional[int], label: str) -> None:
-    """expected_version 若提供必须为正整数；否则 400。"""
-    if expected_version is not None and (not isinstance(expected_version, int) or isinstance(expected_version, bool) or expected_version < 1):
+    """写请求必须提供正整数 expected_version；缺失与非法值分别返回 400。"""
+    if expected_version is None:
+        raise CleanroomException(
+            status_code=400,
+            code="EXPECTED_VERSION_REQUIRED",
+            message=f"{label}写入必须携带 expected_version",
+        )
+    if not isinstance(expected_version, int) or isinstance(expected_version, bool) or expected_version < 1:
         raise CleanroomException(
             status_code=400,
             code="INVALID_REQUEST",
@@ -134,11 +140,8 @@ def _require_positive_version(expected_version: Optional[int], label: str) -> No
 
 
 def _resolve_expected_version(payload: Any) -> Optional[int]:
-    """解析 CAS 期望版本；``expected_revision`` 是前端既有别名。"""
-    expected = getattr(payload, "expected_version", None)
-    if expected is None:
-        expected = getattr(payload, "expected_revision", None)
-    return expected
+    """读取写请求的 CAS 期望版本。"""
+    return getattr(payload, "expected_version", None)
 
 
 def _conflict(
@@ -187,63 +190,77 @@ def _normalize_asset_ids(raw: Any, label: str) -> List[str]:
 
 
 class StorageSettingsService:
-    """存储/目录设置的内存快照与 CAS 版本服务。"""
+    """存储/目录设置的原子JSON快照与 CAS 版本服务。"""
 
     def __init__(self) -> None:
-        self._lock = threading.Lock()
-        self._revision = 1
-        self._configured = False
-        self._dirs: Dict[str, Any] = {}
-        self._defaults: Dict[str, Any] = {}
-        self._extra_local_entries: List[Dict[str, Any]] = []
-        self._local_library_names: Dict[str, str] = {}
-        self._local_library_order: List[str] = []
+        self._state = storage.JsonState("storage_settings", self._empty_state)
+
+    @staticmethod
+    def _empty_state() -> Dict[str, Any]:
+        return {
+            "revision": 1,
+            "configured": False,
+            "dirs": {},
+            "defaults": {},
+            "extra_local_entries": [],
+            "local_library_names": {},
+            "local_library_order": [],
+        }
 
     # ------------------------------------------------------------------
     # 查询
     # ------------------------------------------------------------------
     def get_snapshot(self) -> StorageSettingsSnapshot:
         """返回存储设置真值快照；无真实来源时如实标记未配置。"""
-        with self._lock:
-            return self._build_snapshot_locked()
+        return self._build_snapshot(self._state.read())
 
-    def _build_snapshot_locked(self) -> StorageSettingsSnapshot:
-        extra_dirs = [entry.get("path", "") for entry in self._extra_local_entries]
-        gaps = [] if self._configured else [GAP_STORAGE_SETTINGS_SOURCE]
+    @staticmethod
+    def _build_snapshot(state: Dict[str, Any]) -> StorageSettingsSnapshot:
+        dirs = copy.deepcopy(state.get("dirs") or {})
+        entries = copy.deepcopy(state.get("extra_local_entries") or [])
+        configured = bool(state.get("configured", False))
+        revision = int(state.get("revision", 1))
+        names = dict(state.get("local_library_names") or {})
+        order = list(state.get("local_library_order") or [])
+        extra_dirs = [entry.get("path", "") for entry in entries]
+        gaps = [] if configured else [GAP_STORAGE_SETTINGS_SOURCE]
         return StorageSettingsSnapshot(
-            configured=self._configured,
-            revision=self._revision,
-            dirs=copy.deepcopy(self._dirs),
-            defaults=copy.deepcopy(self._defaults),
+            configured=configured,
+            revision=revision,
+            dirs=dirs,
+            defaults=copy.deepcopy(state.get("defaults") or {}),
             extra_local_dirs=extra_dirs,
-            extra_local_entries=copy.deepcopy(self._extra_local_entries),
-            local_library_names=dict(self._local_library_names),
-            local_library_order=list(self._local_library_order),
-            local_libraries=self._build_local_libraries_locked(),
-            data_status=DATA_STATUS_OK if self._configured else DATA_STATUS_NOT_CONFIGURED,
+            extra_local_entries=entries,
+            local_library_names=names,
+            local_library_order=order,
+            local_libraries=StorageSettingsService._build_local_libraries(dirs, entries, names, configured),
+            data_status=DATA_STATUS_OK if configured else DATA_STATUS_NOT_CONFIGURED,
             data_gaps=gaps,
         )
 
-    def _build_local_libraries_locked(self) -> List[Dict[str, Any]]:
+    @staticmethod
+    def _build_local_libraries(
+        dirs: Dict[str, Any], entries: List[Dict[str, Any]], names: Dict[str, str], configured: bool
+    ) -> List[Dict[str, Any]]:
         """把本地目录与附加来源投影为前端直接可用的本地素材库列表。"""
         libraries: List[Dict[str, Any]] = []
-        local_path = str(self._dirs.get("local") or "").strip()
-        if local_path or self._configured:
+        local_path = str(dirs.get("local") or "").strip()
+        if local_path or configured:
             libraries.append(
                 {
                     "id": "local",
                     "kind": "local",
-                    "name": self._local_library_names.get("local") or "本地上传",
+                    "name": names.get("local") or "本地上传",
                     "path": local_path,
                 }
             )
-        for index, entry in enumerate(self._extra_local_entries):
+        for index, entry in enumerate(entries):
             entry_id = str(entry.get("id") or entry.get("kind") or f"local_extra_{index}")
             libraries.append(
                 {
                     "id": entry_id,
                     "kind": str(entry.get("kind") or entry_id),
-                    "name": self._local_library_names.get(entry_id) or entry.get("name") or f"素材来源 {index + 1}",
+                    "name": names.get(entry_id) or entry.get("name") or f"素材来源 {index + 1}",
                     "path": str(entry.get("path") or ""),
                 }
             )
@@ -256,29 +273,68 @@ class StorageSettingsService:
         """更新存储设置；CAS 冲突失败关闭，成功则 revision 递增。"""
         expected = _resolve_expected_version(payload)
         _require_positive_version(expected, "存储设置")
-        with self._lock:
-            if expected is not None and expected != self._revision:
+
+        def update(state: Dict[str, Any]) -> StorageSettingsSnapshot:
+            revision = int(state.get("revision", 1))
+            if expected != revision:
                 raise _conflict(
                     "VERSION_CONFLICT",
                     expected,
-                    self._revision,
-                    f"存储设置版本冲突（期望 {expected}，当前 {self._revision}），请重新读取后重试",
+                    revision,
+                    f"存储设置版本冲突（期望 {expected}，当前 {revision}），请重新读取后重试",
                 )
+            dirs = copy.deepcopy(state.get("dirs") or {})
+            entries = copy.deepcopy(state.get("extra_local_entries") or [])
+            names = dict(state.get("local_library_names") or {})
+            order = list(state.get("local_library_order") or [])
             if payload.dirs is not None:
-                self._dirs = copy.deepcopy(payload.dirs)
+                dirs = self._normalize_directory_mapping(payload.dirs)
             if payload.extra_local_entries is not None:
-                self._extra_local_entries = copy.deepcopy(payload.extra_local_entries)
-                self._dirs = dict(self._dirs)
-                self._dirs["extra_local_dirs"] = [
-                    str(entry.get("path") or "") for entry in self._extra_local_entries
-                ]
+                entries = self._normalize_extra_local_entries(payload.extra_local_entries)
+                dirs["extra_local_dirs"] = [entry["path"] for entry in entries]
             if payload.local_library_names is not None:
-                self._local_library_names = {str(k): str(v) for k, v in payload.local_library_names.items()}
+                names = {str(k): str(v) for k, v in payload.local_library_names.items()}
             if payload.local_library_order is not None:
-                self._local_library_order = [str(item) for item in payload.local_library_order]
-            self._configured = True
-            self._revision += 1
-            return self._build_snapshot_locked()
+                order = [str(item) for item in payload.local_library_order]
+            state.update({
+                "dirs": dirs,
+                "extra_local_entries": entries,
+                "local_library_names": names,
+                "local_library_order": order,
+                "configured": True,
+                "revision": revision + 1,
+            })
+            return self._build_snapshot(state)
+
+        return self._state.mutate(update)
+
+    @staticmethod
+    def _normalize_directory_mapping(dirs: Dict[str, Any]) -> Dict[str, Any]:
+        def normalize(value: Any) -> Any:
+            if isinstance(value, str):
+                if not value.strip():
+                    return ""
+                normalized = storage.normalize_directory_path(value)
+                return storage.validate_directory_path(normalized)
+            if isinstance(value, list):
+                return [normalize(item) for item in value]
+            if value is None:
+                return None
+            raise CleanroomException(400, "INVALID_PATH", "目录必须是绝对路径")
+
+        return {str(key): normalize(value) for key, value in dirs.items()}
+
+    @staticmethod
+    def _normalize_extra_local_entries(entries: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        normalized: List[Dict[str, Any]] = []
+        for entry in entries:
+            if not isinstance(entry, dict) or not isinstance(entry.get("path"), str):
+                raise CleanroomException(400, "INVALID_PATH", "素材目录必须是绝对路径")
+            path = storage.normalize_directory_path(entry["path"])
+            normalized_entry = copy.deepcopy(entry)
+            normalized_entry["path"] = storage.validate_directory_path(path)
+            normalized.append(normalized_entry)
+        return normalized
 
 
 class ProviderService:
@@ -656,7 +712,7 @@ def raise_probe_not_integrated(endpoint: str) -> None:
     )
 
 
-#: 进程内单例（与既有各阶段同口径：重启即丢失、多 worker 不共享）。
+#: 进程内服务单例；设置 JSON 可重启恢复，结构服务仅进程内有效，不支持多 worker 共享。
 default_storage_settings_service = StorageSettingsService()
 default_provider_service = ProviderService()
 default_asset_structure_service = AssetStructureService()

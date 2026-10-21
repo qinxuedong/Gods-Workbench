@@ -114,7 +114,7 @@ def patch_storage_settings(
     authorization: Optional[str] = Header(None),
     x_user_role: str = Header("editor", alias="X-User-Role", description="用户角色权限"),
 ):
-    """保存存储设置；要求写权限，revision 不一致返回 409 VERSION_CONFLICT。"""
+    """保存存储设置；要求 expected_version，版本不一致返回 409 VERSION_CONFLICT。"""
     require_edit_access(authorization, x_user_role)
     return default_storage_settings_service.patch(payload)
 
@@ -361,7 +361,7 @@ def set_asset_structure_current(
 )
 def delete_asset_structure(
     structure_id: str,
-    expected_version: Optional[int] = Query(None, ge=1, description="目标结构 CAS 期望版本；缺省表示不校验"),
+    expected_version: Optional[int] = Query(None, ge=1, description="删除结构必须携带的 CAS 期望版本"),
     authorization: Optional[str] = Header(None),
     x_user_role: str = Header("editor", alias="X-User-Role", description="用户角色权限"),
 ):

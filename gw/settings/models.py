@@ -73,8 +73,7 @@ class StorageSettingsPatchRequest(BaseModel):
     extra_local_entries: Optional[List[Dict[str, Any]]] = None
     local_library_names: Optional[Dict[str, str]] = None
     local_library_order: Optional[List[str]] = None
-    expected_version: Optional[int] = Field(None, ge=1, description="CAS 期望版本；缺省表示不校验")
-    expected_revision: Optional[int] = Field(None, ge=1, description="前端既有别名，等价 expected_version")
+    expected_version: Optional[int] = Field(None, ge=1, description="保存目录设置必须携带的 CAS 期望版本")
 
 
 class ProviderSnapshot(BaseModel):
@@ -241,7 +240,7 @@ class AssetStructureCreateRequest(BaseModel):
     kind: str = Field(..., min_length=1, description="version 或 group")
     asset_ids: List[str] = Field(..., description="成员素材标识；至少 2 个且不重复")
     current_asset_id: Optional[str] = Field(None, description="当前代表素材；必须是成员之一")
-    expected_version: Optional[int] = Field(None, ge=1, description="集合 CAS 期望版本；缺省表示不校验")
+    expected_version: Optional[int] = Field(None, ge=1, description="创建结构必须携带的集合 CAS 期望版本")
 
 
 class AssetStructureUpdateRequest(BaseModel):
@@ -251,7 +250,7 @@ class AssetStructureUpdateRequest(BaseModel):
 
     asset_ids: Optional[List[str]] = None
     current_asset_id: Optional[str] = None
-    expected_version: Optional[int] = Field(None, ge=1, description="目标结构 CAS 期望版本；缺省表示不校验")
+    expected_version: Optional[int] = Field(None, ge=1, description="更新结构必须携带的结构 CAS 期望版本")
 
 
 class AssetStructureCurrentRequest(BaseModel):
@@ -260,7 +259,7 @@ class AssetStructureCurrentRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     current_asset_id: str = Field(..., min_length=1, description="新的当前代表素材；必须是成员之一")
-    expected_version: Optional[int] = Field(None, ge=1, description="目标结构 CAS 期望版本；缺省表示不校验")
+    expected_version: Optional[int] = Field(None, ge=1, description="切换当前素材必须携带的结构 CAS 期望版本")
 
 
 class AssetStructureResponse(BaseModel):
