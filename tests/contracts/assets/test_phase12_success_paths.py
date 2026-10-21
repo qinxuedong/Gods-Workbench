@@ -18,6 +18,12 @@ AUTH = {"Authorization": "Bearer cleanroom-test", "X-User-Role": "editor"}
 GOV = {**AUTH, "X-User-Role": "governor"}
 
 
+def _registry_revision(client, headers=AUTH):
+    response = client.get("/api/asset-registry/status", headers=headers)
+    assert response.status_code == 200, response.text
+    return response.json()["revision"]
+
+
 @contextmanager
 def local_upstream():
     hits = []
@@ -111,11 +117,13 @@ def test_registered_media_download_zip_hash_and_recycle_readback(tmp_path, monke
             assert set(package.namelist()) == set(payloads)
             for name, data in payloads.items():
                 assert hashlib.sha256(package.read(name)).digest() == hashlib.sha256(data).digest()
-        deleted = client.delete(path + "/" + ids[0], headers=AUTH)
+        deleted = client.request("DELETE", path + "/" + ids[0], headers=AUTH,
+                                 json={"expected_version": _registry_revision(client)})
         assert deleted.status_code == 200, deleted.text
         assert client.get(path + "/" + ids[0], headers=AUTH).status_code == 404
         entry = deleted.json()["recycle_entry_id"]
-        restored = client.post("/api/asset-registry/recycle-bin/" + entry + "/restore", headers=GOV)
+        restored = client.post("/api/asset-registry/recycle-bin/" + entry + "/restore", headers=GOV,
+                               json={"expected_version": _registry_revision(client, GOV)})
         assert restored.status_code == 200, restored.text
         assert client.get(path + "/" + ids[0] + "/media", headers=AUTH).content == payloads["甲.txt"]
 
@@ -290,8 +298,13 @@ def test_image_version_bytes_archive_alias_and_governance_restore(tmp_path, monk
         restored = client.post(base + "/governance/assets/" + asset_id + "/restore", headers=GOV)
         assert restored.status_code == 200
         assert client.get(resource, headers=AUTH).json()["asset"]["archived"] is False
-        entry = client.delete(resource, headers=AUTH).json()["recycle_entry_id"]
-        assert client.post(base + "/governance/asset-trash/" + entry + "/restore", headers=GOV).status_code == 200
+        deleted = client.request("DELETE", resource, headers=AUTH,
+                                 json={"expected_version": _registry_revision(client)})
+        assert deleted.status_code == 200, deleted.text
+        entry = deleted.json()["recycle_entry_id"]
+        restored_trash = client.post(base + "/governance/asset-trash/" + entry + "/restore", headers=GOV,
+                                     json={"expected_version": _registry_revision(client, GOV)})
+        assert restored_trash.status_code == 200, restored_trash.text
         assert client.get(resource + "/media", headers=AUTH).content == payload
 
 

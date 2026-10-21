@@ -7,6 +7,8 @@
 
 import json
 import re
+import threading
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from fastapi.testclient import TestClient
@@ -91,24 +93,30 @@ def test_stage_state_machine_and_cas():
 
         # 未启动直接完成 -> 409
         assert c.post("/api/episode-pipelines/%s/stages/script/complete" % pid,
-                      headers=A, json={}).status_code == 409
+                      headers=A, json={"expected_version": 1}).status_code == 409
 
-        started = c.post("/api/episode-pipelines/%s/stages/script/start" % pid, headers=A, json={})
+        missing_start = c.post("/api/episode-pipelines/%s/stages/script/start" % pid, headers=A, json={})
+        assert missing_start.status_code == 400
+        started = c.post("/api/episode-pipelines/%s/stages/script/start" % pid, headers=A,
+                         json={"expected_version": 1})
         assert started.status_code == 200 and started.json()["stage"]["status"] == "running"
         version = started.json()["stage"]["version"]
 
         # 重复启动 -> 409
         assert c.post("/api/episode-pipelines/%s/stages/script/start" % pid,
-                      headers=A, json={}).status_code == 409
+                      headers=A, json={"expected_version": version}).status_code == 409
 
         # CAS 冲突 -> 409
         conflict = c.post("/api/episode-pipelines/%s/stages/script/cancel" % pid, headers=A,
                           json={"expected_version": version + 5})
         assert conflict.status_code == 409 and conflict.json()["detail"]["code"] == "VERSION_CONFLICT"
 
+        missing_complete = c.post("/api/episode-pipelines/%s/stages/script/complete" % pid, headers=A, json={})
+        assert missing_complete.status_code == 400
+
         done = c.post("/api/episode-pipelines/%s/stages/script/complete" % pid, headers=A, json={
             "status": "completed", "output_text": "剧本文本", "output_asset_ids": ["ast_0001"],
-            "message": "完成",
+            "message": "完成", "expected_version": version,
         })
         assert done.status_code == 200
         stage = done.json()["stage"]
@@ -118,7 +126,7 @@ def test_stage_state_machine_and_cas():
 
         # 终态再操作 -> 409
         assert c.post("/api/episode-pipelines/%s/stages/script/start" % pid,
-                      headers=A, json={}).status_code == 409
+                      headers=A, json={"expected_version": stage["version"]}).status_code == 409
         # 写后读回
         after = c.get("/api/episode-pipelines/%s" % pid, headers=A).json()["pipeline"]
         assert after["stages"][0]["status"] == "completed"
@@ -129,12 +137,35 @@ def test_cancel_stage_is_terminal_and_visible():
     with TestClient(create_app()) as c:
         pid = _create(c)["pipeline_id"]
         cancelled = c.post("/api/episode-pipelines/%s/stages/assets/cancel" % pid, headers=A,
-                           json={"message": "用户取消"})
+                           json={"message": "用户取消", "expected_version": 1})
         assert cancelled.status_code == 200 and cancelled.json()["stage"]["status"] == "cancelled"
         after = c.get("/api/episode-pipelines/%s" % pid, headers=A).json()["pipeline"]
         assert [s for s in after["stages"] if s["stage"] == "assets"][0]["status"] == "cancelled"
         assert c.post("/api/episode-pipelines/%s/stages/assets/start" % pid,
-                      headers=A, json={}).status_code == 409
+                      headers=A, json={"expected_version": 2}).status_code == 409
+
+
+def test_concurrent_stage_complete_uses_atomic_cas():
+    """两个相同阶段版本的并发 complete 只有一个成功，另一个 CAS 冲突。"""
+    with TestClient(create_app()) as c:
+        pid = _create(c)["pipeline_id"]
+        started = c.post(f"/api/episode-pipelines/{pid}/stages/script/start", headers=A,
+                         json={"expected_version": 1})
+        assert started.status_code == 200
+        expected = started.json()["stage"]["version"]
+        barrier = threading.Barrier(2)
+
+        def complete(text):
+            barrier.wait(timeout=5)
+            return c.post(f"/api/episode-pipelines/{pid}/stages/script/complete", headers=A, json={
+                "expected_version": expected, "status": "completed", "output_text": text,
+            })
+
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            responses = list(pool.map(complete, ("first", "second")))
+        assert sorted(response.status_code for response in responses) == [200, 409]
+        conflict = next(response for response in responses if response.status_code == 409)
+        assert conflict.json()["detail"]["code"] == "VERSION_CONFLICT"
 
 
 def test_not_found_semantics():
