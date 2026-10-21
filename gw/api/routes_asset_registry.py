@@ -78,9 +78,13 @@ def _ids(payload: Dict[str, Any], key: str = "asset_ids") -> List[str]:
     return [str(item) for item in value] if isinstance(value, list) else []
 
 
-def _version(payload: Dict[str, Any]) -> Optional[int]:
+def _version(payload: Dict[str, Any], *, required: bool = False) -> Optional[int]:
     raw = payload.get("expected_version")
-    return int(raw) if raw is not None else None
+    if raw is None and not required:
+        return None
+    if type(raw) is not int or raw < 1:
+        raise CleanroomException(400, "INVALID_REQUEST", "expected_version 必须为正整数")
+    return raw
 
 
 def _closure_now() -> str:
@@ -754,7 +758,7 @@ def delete_registry_asset(
             if exc.status_code == 404:
                 raise CleanroomException(404, "ASSET_NOT_FOUND", f"素材 {asset_id} 不存在")
             raise
-    result = repo.delete_asset(asset_id, _version(_payload(payload)), context)
+    result = repo.delete_asset(asset_id, _version(_payload(payload), required=True), context)
     return _asset_closure_projection(
         result,
         asset_id=asset_id,
@@ -883,7 +887,7 @@ def restore_asset_trash(
 ):
     context = _governance_auth(authorization, x_user_role)
     asset_id, version_id = _recycle_asset_subject(entry_id)
-    result = repo.restore_asset_trash(entry_id, context)
+    result = repo.restore_asset_trash(entry_id, context, _version(_payload(payload), required=True))
     return _asset_closure_projection(
         result,
         asset_id=asset_id or result.get("asset_id"),
@@ -1295,7 +1299,7 @@ def restore_recycle_entry(
 ):
     context = _governance_auth(authorization, x_user_role)
     asset_id, version_id = _recycle_asset_subject(entry_id)
-    result = repo.restore_from_recycle(entry_id, context)
+    result = repo.restore_from_recycle(entry_id, context, _version(_payload(payload), required=True))
     return _asset_closure_projection(
         result,
         asset_id=asset_id or result.get("asset_id"),

@@ -34,44 +34,6 @@ ACTION_SPECS = {
 
 
 KNOWN_GAPS: dict[str, str] = {
-    'test_cell_asset_restore_move__admin__active': 'C5-T3: expected allow, observed HTTP 409',
-    'test_cell_asset_restore_move__admin__active_legacy_open': 'C5-T3: expected allow, observed HTTP 409',
-    'test_cell_asset_restore_move__admin__archived': 'C5-T3: expected 403 PROJECT_READ_ONLY, observed HTTP 409',
-    'test_cell_asset_restore_move__admin__deleted': 'C5-T3: expected 403 PROJECT_READ_ONLY, observed HTTP 200',
-    'test_cell_asset_restore_move__cross_project_editor__active': 'C5-T3: expected 404, observed HTTP 403',
-    'test_cell_asset_restore_move__cross_project_editor__active_legacy_open': 'C5-T3: expected 404, observed HTTP 403',
-    'test_cell_asset_restore_move__cross_project_editor__archived': 'C5-T3: expected 404, observed HTTP 403',
-    'test_cell_asset_restore_move__cross_project_editor__deleted': 'C5-T3: expected 404, observed HTTP 403',
-    'test_cell_asset_restore_move__cross_project_editor__unknown': 'C5-T3: expected 404, observed HTTP 403',
-    'test_cell_asset_restore_move__governor__active': 'C5-T3: expected allow, observed HTTP 409',
-    'test_cell_asset_restore_move__governor__active_legacy_open': 'C5-T3: expected allow, observed HTTP 409',
-    'test_cell_asset_restore_move__governor__archived': 'C5-T3: expected 403 PROJECT_READ_ONLY, observed HTTP 409',
-    'test_cell_asset_restore_move__governor__deleted': 'C5-T3: expected 403 PROJECT_READ_ONLY, observed HTTP 200',
-    'test_cell_asset_restore_move__owner__active': 'C5-T3: expected allow, observed HTTP 403',
-    'test_cell_asset_restore_move__owner__active_legacy_open': 'C5-T3: expected allow, observed HTTP 403',
-    'test_cell_asset_restore_move__owner__archived': 'C5-T3: observed 403 with error code FORBIDDEN',
-    'test_cell_asset_restore_move__owner__deleted': 'C5-T3: observed 403 with error code FORBIDDEN',
-    'test_cell_asset_restore_move__owner__unknown': 'C5-T3: expected 404, observed HTTP 403',
-    'test_cell_asset_restore_move__read_grantee_editor__active': 'C5-T3: expected 404, observed HTTP 403',
-    'test_cell_asset_restore_move__read_grantee_editor__active_legacy_open': 'C5-T3: expected 404, observed HTTP 403',
-    'test_cell_asset_restore_move__read_grantee_editor__archived': 'C5-T3: expected 404, observed HTTP 403',
-    'test_cell_asset_restore_move__read_grantee_editor__deleted': 'C5-T3: expected 404, observed HTTP 403',
-    'test_cell_asset_restore_move__read_grantee_editor__unknown': 'C5-T3: expected 404, observed HTTP 403',
-    'test_cell_asset_restore_move__readonly_grantee__active': 'C5-T3: expected 404, observed HTTP 403',
-    'test_cell_asset_restore_move__readonly_grantee__active_legacy_open': 'C5-T3: expected 404, observed HTTP 403',
-    'test_cell_asset_restore_move__readonly_grantee__archived': 'C5-T3: expected 404, observed HTTP 403',
-    'test_cell_asset_restore_move__readonly_grantee__deleted': 'C5-T3: expected 404, observed HTTP 403',
-    'test_cell_asset_restore_move__readonly_grantee__unknown': 'C5-T3: expected 404, observed HTTP 403',
-    'test_cell_asset_restore_move__readonly_no_grant__active': 'C5-T3: expected 404, observed HTTP 403',
-    'test_cell_asset_restore_move__readonly_no_grant__active_legacy_open': 'C5-T3: expected 404, observed HTTP 403',
-    'test_cell_asset_restore_move__readonly_no_grant__archived': 'C5-T3: expected 404, observed HTTP 403',
-    'test_cell_asset_restore_move__readonly_no_grant__deleted': 'C5-T3: expected 404, observed HTTP 403',
-    'test_cell_asset_restore_move__readonly_no_grant__unknown': 'C5-T3: expected 404, observed HTTP 403',
-    'test_cell_asset_restore_move__revoked_editor__active': 'C5-T3: expected 404, observed HTTP 403',
-    'test_cell_asset_restore_move__revoked_editor__active_legacy_open': 'C5-T3: expected 404, observed HTTP 403',
-    'test_cell_asset_restore_move__revoked_editor__archived': 'C5-T3: expected 404, observed HTTP 403',
-    'test_cell_asset_restore_move__revoked_editor__deleted': 'C5-T3: expected 404, observed HTTP 403',
-    'test_cell_asset_restore_move__revoked_editor__unknown': 'C5-T3: expected 404, observed HTTP 403',
     'test_cell_workflow_bridge__admin__archived': 'C5-T5: expected 403 PROJECT_READ_ONLY, observed HTTP 200',
     'test_cell_workflow_bridge__admin__deleted': 'C5-T5: expected 403 PROJECT_READ_ONLY, observed HTTP 200',
     'test_cell_workflow_bridge__admin__unknown': 'C5-T5: expected 404, observed HTTP 200',
@@ -182,6 +144,20 @@ OFFLINE_LIMITED = {
 }
 
 ALLOW_SUCCESS_CODES = frozenset({200, 201, 202, 204})
+
+
+def _project_restore_expected(role: str, state: str) -> str:
+    """按项目恢复现有的治理权限、回收站状态与 CAS 契约断言结果。"""
+    if role == "anonymous":
+        return "401"
+    if role in {"admin", "governor"}:
+        if state == "unknown":
+            return "404"
+        if state == "deleted":
+            return "allow"
+        return "409 LIFECYCLE_CONFLICT"
+    return "403 FORBIDDEN"
+
 
 # The matrix includes an unfiltered canvas list spec, but that route requires
 # project_id and therefore has no endpoint contract to exercise.
@@ -384,6 +360,11 @@ def _assert_filtered(response, role: str, state: str, ids: dict[str, object]) ->
 def _make_cell(name: str, action: str, role: str, state: str, expected: str):
     """Create one named test function from a generated matrix cell."""
 
+    if action == "asset_restore_move":
+        # Restore is governance-only, and succeeds only for a trashed project;
+        # active/archived states correctly reject the lifecycle transition.
+        expected = _project_restore_expected(role, state)
+
     marks = []
     if name in KNOWN_GAPS and action != "workflow_task":
         marks.append(pytest.mark.xfail(strict=True, reason=KNOWN_GAPS[name]))
@@ -421,6 +402,14 @@ def _make_cell(name: str, action: str, role: str, state: str, expected: str):
                 assert response.status_code == 403, response.text
                 _assert_error_envelope(response)
                 assert _error_code(response) == "PROJECT_READ_ONLY"
+            elif expected == "403 FORBIDDEN":
+                assert response.status_code == 403, response.text
+                _assert_error_envelope(response)
+                assert _error_code(response) == "FORBIDDEN"
+            elif expected == "409 LIFECYCLE_CONFLICT":
+                assert response.status_code == 409, response.text
+                _assert_error_envelope(response)
+                assert _error_code(response) == "LIFECYCLE_CONFLICT"
             elif expected == "allow_filtered":
                 _assert_filtered(response, role, state, ids)
             elif expected == "allow":

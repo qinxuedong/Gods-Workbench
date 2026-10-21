@@ -14,6 +14,7 @@ LOCAL-ASSET-INTERFACE-CATALOG.yaml 声明的 40 个操作：
 from __future__ import annotations
 
 import base64
+from concurrent.futures import ThreadPoolExecutor
 import hashlib
 import json
 import os
@@ -375,8 +376,9 @@ def test_b4_library_item_lifecycle_and_cas():
         assert classified.status_code == 200
         assert classified.json()["results"][0]["classification"] == "image"
 
+        library_version = client.get("/api/asset-library", headers=EDITOR).json()["library"]["libraries"][0]["version"]
         renamed = client.patch("/api/asset-library/items/asset_0001", headers=EDITOR,
-                               json={"name": "hero-final.png"})
+                               json={"name": "hero-final.png", "expected_version": library_version})
         assert renamed.status_code == 200 and renamed.json()["name"] == "hero-final.png"
 
         snapshot = client.get("/api/asset-library", headers=EDITOR).json()["library"]
@@ -389,12 +391,119 @@ def test_b4_library_item_lifecycle_and_cas():
         assert conflict.status_code == 409
         assert conflict.json()["detail"]["code"] == "VERSION_CONFLICT"
 
-        removed = client.delete("/api/asset-library/items/asset_0002", headers=EDITOR)
+        library_version = client.get("/api/asset-library", headers=EDITOR).json()["library"]["libraries"][0]["version"]
+        removed = client.delete(f"/api/asset-library/items/asset_0002?expected_version={library_version}", headers=EDITOR)
         assert removed.status_code == 200
         snapshot_after = client.get("/api/asset-library", headers=EDITOR).json()["library"]
         remaining = [item["asset_id"] for lib in snapshot_after["libraries"]
                      for cat in lib["categories"] for item in cat["items"]]
         assert "asset_0002" not in remaining
+
+
+def test_b4_library_writes_require_parent_versions_and_batch_ids_are_explicit():
+    """库/分类/条目写操作强制 CAS；批量删移拒绝缺版本和无声漏删。"""
+    with _client() as client:
+        missing_library = client.post("/api/asset-library/libraries", headers=EDITOR, json={"name": "缺版本"})
+        assert missing_library.status_code == 400
+        created = client.post("/api/asset-library/libraries", headers=EDITOR,
+                              json={"name": "CAS库", "expected_version": 1})
+        assert created.status_code == 201, created.text
+        library_id = created.json()["library"]["library_id"]
+
+        assert client.patch(f"/api/asset-library/libraries/{library_id}", headers=EDITOR,
+                            json={"name": "缺版本改名"}).status_code == 400
+        renamed = client.patch(f"/api/asset-library/libraries/{library_id}", headers=EDITOR,
+                               json={"name": "CAS库改名", "expected_version": 1})
+        assert renamed.status_code == 200
+
+        snapshot = client.get("/api/asset-library", headers=EDITOR).json()["library"]
+        library = next(item for item in snapshot["libraries"] if item["library_id"] == library_id)
+        assert client.post("/api/asset-library/categories", headers=EDITOR, json={
+            "library_id": library_id, "name": "缺版本分类", "type": "image",
+        }).status_code == 400
+        source = client.post("/api/asset-library/categories", headers=EDITOR, json={
+            "library_id": library_id, "name": "源", "type": "image", "expected_version": library["version"],
+        })
+        assert source.status_code == 201, source.text
+        source_id = source.json()["category"]["category_id"]
+        snapshot = client.get("/api/asset-library", headers=EDITOR).json()["library"]
+        library = next(item for item in snapshot["libraries"] if item["library_id"] == library_id)
+        target = client.post("/api/asset-library/categories", headers=EDITOR, json={
+            "library_id": library_id, "name": "目标", "type": "image", "expected_version": library["version"],
+        })
+        assert target.status_code == 201, target.text
+        target_id = target.json()["category"]["category_id"]
+
+        assert client.patch(f"/api/asset-library/categories/{source_id}", headers=EDITOR,
+                            json={"name": "缺版本改名"}).status_code == 400
+        assert client.delete(f"/api/asset-library/categories/{source_id}", headers=EDITOR).status_code == 400
+
+        snapshot = client.get("/api/asset-library", headers=EDITOR).json()["library"]
+        library = next(item for item in snapshot["libraries"] if item["library_id"] == library_id)
+        batch = client.post("/api/asset-library/items/batch", headers=EDITOR, json={
+            "library_id": library_id, "category_id": source_id, "names": ["one.png", "two.png"],
+            "expected_version": library["version"],
+        })
+        assert batch.status_code == 201, batch.text
+        first, second = batch.json()["asset_ids"]
+        snapshot = client.get("/api/asset-library", headers=EDITOR).json()["library"]
+        library = next(item for item in snapshot["libraries"] if item["library_id"] == library_id)
+
+        assert client.patch(f"/api/asset-library/items/{first}", headers=EDITOR,
+                            json={"name": "缺版本改名"}).status_code == 400
+        assert client.patch(f"/api/asset-library/items/{first}", headers=EDITOR,
+                            json={"name": "旧版本改名", "expected_version": library["version"] - 1}).status_code == 409
+        assert client.patch(f"/api/asset-library/items/{first}", headers=EDITOR,
+                            json={"name": "one-renamed.png", "expected_version": library["version"]}).status_code == 200
+
+        snapshot = client.get("/api/asset-library", headers=EDITOR).json()["library"]
+        library = next(item for item in snapshot["libraries"] if item["library_id"] == library_id)
+        assert client.delete(f"/api/asset-library/items/{first}", headers=EDITOR).status_code == 400
+        assert client.delete(f"/api/asset-library/items/{first}?expected_version={library['version'] - 1}",
+                             headers=EDITOR).status_code == 409
+        assert client.delete(f"/api/asset-library/items/{first}?expected_version={library['version']}",
+                             headers=EDITOR).status_code == 200
+
+        snapshot = client.get("/api/asset-library", headers=EDITOR).json()["library"]
+        library = next(item for item in snapshot["libraries"] if item["library_id"] == library_id)
+        assert client.post("/api/asset-library/items/move", headers=EDITOR, json={
+            "asset_ids": [second], "category_id": target_id,
+        }).status_code == 400
+        assert client.post("/api/asset-library/items/move", headers=EDITOR, json={
+            "asset_ids": [second], "category_id": target_id, "expected_version": library["version"] - 1,
+        }).status_code == 409
+        malformed_versions = client.post("/api/asset-library/items/move", headers=EDITOR, json={
+            "asset_ids": [second], "category_id": target_id, "expected_version": library["version"],
+            "expected_versions": [],
+        })
+        assert malformed_versions.status_code == 400
+        moved = client.post("/api/asset-library/items/move", headers=EDITOR, json={
+            "asset_ids": [second], "category_id": target_id, "expected_version": library["version"],
+        })
+        assert moved.status_code == 200, moved.text
+        assert moved.json()["moved"] == [second]
+        assert moved.json()["results"] == [{"asset_id": second, "moved": True, "category_id": target_id}]
+
+        snapshot = client.get("/api/asset-library", headers=EDITOR).json()["library"]
+        library = next(item for item in snapshot["libraries"] if item["library_id"] == library_id)
+        missing_id = client.post("/api/asset-library/items/delete", headers=EDITOR, json={
+            "asset_ids": [second, "asset_missing"], "expected_version": library["version"],
+        })
+        assert missing_id.status_code == 404
+        assert second in {item["asset_id"] for lib in client.get("/api/asset-library", headers=EDITOR).json()["library"]["libraries"]
+                          for category in lib["categories"] for item in category["items"]}
+        deleted = client.post("/api/asset-library/items/delete", headers=EDITOR, json={
+            "asset_ids": [second], "expected_version": library["version"],
+        })
+        assert deleted.status_code == 200 and deleted.json()["deleted"] == [second]
+        assert deleted.json()["results"] == [{"asset_id": second, "deleted": True}]
+
+        snapshot = client.get("/api/asset-library", headers=EDITOR).json()["library"]
+        library = next(item for item in snapshot["libraries"] if item["library_id"] == library_id)
+        assert client.delete(f"/api/asset-library/libraries/{library_id}", headers=EDITOR).status_code == 400
+        assert client.delete(f"/api/asset-library/categories/{source_id}?expected_version=99",
+                             headers=EDITOR).status_code == 409
+        assert library["version"] > 1
 
 
 def test_b4_content_versions_and_real_pdf():
@@ -427,6 +536,47 @@ def test_b4_content_versions_and_real_pdf():
         assert pdf.status_code == 200
         assert pdf.content.startswith(b"%PDF-")
         assert pdf.content.rstrip().endswith(b"%%EOF")
+
+
+def test_b4_concurrent_batch_moves_allow_only_one_current_version():
+    """两个并发移动使用同一素材库版本时，只有一个操作可提交。"""
+    with _client() as client:
+        library = client.post("/api/asset-library/libraries", headers=EDITOR,
+                              json={"name": "并发库", "expected_version": 1}).json()["library"]
+        library_id = library["library_id"]
+        source = client.post("/api/asset-library/categories", headers=EDITOR, json={
+            "library_id": library_id, "name": "源", "type": "image", "expected_version": library["version"],
+        }).json()["category"]["category_id"]
+        snapshot = client.get("/api/asset-library", headers=EDITOR).json()["library"]
+        library = snapshot["libraries"][0]
+        targets = []
+        for name in ("目标一", "目标二"):
+            category = client.post("/api/asset-library/categories", headers=EDITOR, json={
+                "library_id": library_id, "name": name, "type": "image", "expected_version": library["version"],
+            })
+            assert category.status_code == 201, category.text
+            targets.append(category.json()["category"]["category_id"])
+            snapshot = client.get("/api/asset-library", headers=EDITOR).json()["library"]
+            library = snapshot["libraries"][0]
+        item = client.post("/api/asset-library/items/batch", headers=EDITOR, json={
+            "library_id": library_id, "category_id": source, "names": ["move.png"],
+            "expected_version": library["version"],
+        }).json()["asset_ids"][0]
+        library = client.get("/api/asset-library", headers=EDITOR).json()["library"]["libraries"][0]
+        expected = library["version"]
+        barrier = threading.Barrier(2)
+
+        def move(category_id):
+            barrier.wait(timeout=5)
+            return client.post("/api/asset-library/items/move", headers=EDITOR, json={
+                "asset_ids": [item], "category_id": category_id, "expected_version": expected,
+            })
+
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            responses = list(pool.map(move, targets))
+        assert sorted(response.status_code for response in responses) == [200, 409]
+        conflict = next(response for response in responses if response.status_code == 409)
+        assert conflict.json()["detail"]["code"] == "VERSION_CONFLICT"
 
 
 def test_b4_classification_job_is_real_and_queryable():

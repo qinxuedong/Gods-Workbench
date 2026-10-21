@@ -34,6 +34,10 @@ function jsonInit(payload, init = {}) {
     return {...init, headers, body: JSON.stringify(payload)};
 }
 
+function versionQuery(expectedVersion) {
+    return new URLSearchParams({expected_version: String(expectedVersion)}).toString();
+}
+
 function resolveHttp(http) {
     const candidate = http || assetManagerHttp;
     if (!candidate || typeof candidate.request !== 'function') {
@@ -297,10 +301,9 @@ export function createAssetManagerApi(http) {
                 credentials: 'same-origin',
             });
         },
-        deleteRegistryAsset(assetId, init = {}) {
+        deleteRegistryAsset(assetId, expectedVersion, init = {}) {
             return transport.request(`/api/asset-registry/assets/${encodeURIComponent(assetId)}`, {
-                ...init,
-                method: 'DELETE',
+                ...jsonInit({expected_version: expectedVersion}, {...init, method: 'DELETE'}),
                 credentials: 'same-origin',
             });
         },
@@ -392,8 +395,9 @@ export function createAssetManagerApi(http) {
                 credentials: 'same-origin',
             });
         },
-        deleteAssetLibrary(libraryId, init = {}) {
-            return transport.request(`/api/asset-library/libraries/${encodeURIComponent(libraryId)}`, {
+        deleteAssetLibrary(libraryId, expectedVersion, init = {}) {
+            const query = versionQuery(expectedVersion);
+            return transport.request(`/api/asset-library/libraries/${encodeURIComponent(libraryId)}?${query}`, {
                 ...init,
                 method: 'DELETE',
                 credentials: 'same-origin',
@@ -411,8 +415,10 @@ export function createAssetManagerApi(http) {
                 credentials: 'same-origin',
             });
         },
-        deleteAssetLibraryCategory(categoryId, {libraryId = '', ...init} = {}) {
-            const suffix = libraryId ? `?library_id=${encodeURIComponent(libraryId)}` : '';
+        deleteAssetLibraryCategory(categoryId, {libraryId = '', expectedVersion, ...init} = {}) {
+            const query = new URLSearchParams({expected_version: String(expectedVersion)});
+            if (libraryId) query.set('library_id', libraryId);
+            const suffix = `?${query.toString()}`;
             return transport.request(`/api/asset-library/categories/${encodeURIComponent(categoryId)}${suffix}`, {
                 ...init,
                 method: 'DELETE',
@@ -439,8 +445,9 @@ export function createAssetManagerApi(http) {
                 credentials: 'same-origin',
             });
         },
-        deleteAssetLibraryItem(itemId, init = {}) {
-            return transport.request(`/api/asset-library/items/${encodeURIComponent(itemId)}`, {
+        deleteAssetLibraryItem(itemId, expectedVersion, init = {}) {
+            const query = versionQuery(expectedVersion);
+            return transport.request(`/api/asset-library/items/${encodeURIComponent(itemId)}?${query}`, {
                 ...init,
                 method: 'DELETE',
                 credentials: 'same-origin',
@@ -470,6 +477,15 @@ export function createAssetManagerApi(http) {
                 credentials: 'same-origin',
             });
         },
+        getPromptLibraryItems(libraryId = '', init = {}) {
+            const query = new URLSearchParams();
+            if (libraryId) query.set('library_id', libraryId);
+            const suffix = query.toString() ? `?${query.toString()}` : '';
+            return transport.request(`/api/prompt-libraries/items${suffix}`, {
+                ...init,
+                credentials: 'same-origin',
+            });
+        },
         createPromptLibrary(payload, init = {}) {
             return transport.request('/api/prompt-libraries', {
                 ...jsonInit(payload, {...init, method: 'POST'}),
@@ -482,8 +498,9 @@ export function createAssetManagerApi(http) {
                 credentials: 'same-origin',
             });
         },
-        deletePromptLibrary(libraryId, init = {}) {
-            return transport.request(`/api/prompt-libraries/${encodeURIComponent(libraryId)}`, {
+        deletePromptLibrary(libraryId, expectedVersion, init = {}) {
+            const query = versionQuery(expectedVersion);
+            return transport.request(`/api/prompt-libraries/${encodeURIComponent(libraryId)}?${query}`, {
                 ...init,
                 method: 'DELETE',
                 credentials: 'same-origin',
@@ -501,8 +518,9 @@ export function createAssetManagerApi(http) {
                 credentials: 'same-origin',
             });
         },
-        deletePromptLibraryCategory(categoryId, init = {}) {
-            return transport.request(`/api/prompt-libraries/categories/${encodeURIComponent(categoryId)}`, {
+        deletePromptLibraryCategory(categoryId, expectedVersion, init = {}) {
+            const query = versionQuery(expectedVersion);
+            return transport.request(`/api/prompt-libraries/categories/${encodeURIComponent(categoryId)}?${query}`, {
                 ...init,
                 method: 'DELETE',
                 credentials: 'same-origin',
@@ -520,8 +538,9 @@ export function createAssetManagerApi(http) {
                 credentials: 'same-origin',
             });
         },
-        deletePromptLibraryItem(itemId, init = {}) {
-            return transport.request(`/api/prompt-libraries/items/${encodeURIComponent(itemId)}`, {
+        deletePromptLibraryItem(itemId, expectedVersion, init = {}) {
+            const query = versionQuery(expectedVersion);
+            return transport.request(`/api/prompt-libraries/items/${encodeURIComponent(itemId)}?${query}`, {
                 ...init,
                 method: 'DELETE',
                 credentials: 'same-origin',
@@ -669,10 +688,9 @@ export function createAssetManagerApi(http) {
                 credentials: 'same-origin',
             });
         },
-        restoreRegistryRecycleEntry(entryId, init = {}) {
+        restoreRegistryRecycleEntry(entryId, expectedVersion, init = {}) {
             return transport.request(`/api/asset-registry/recycle-bin/${encodeURIComponent(entryId)}/restore`, {
-                ...init,
-                method: 'POST',
+                ...jsonInit({expected_version: expectedVersion}, {...init, method: 'POST'}),
                 credentials: 'same-origin',
             });
         },

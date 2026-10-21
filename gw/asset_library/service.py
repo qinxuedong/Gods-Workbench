@@ -182,9 +182,11 @@ class AssetLibraryService:
 
     @staticmethod
     def _check_version(expected: Optional[int], current: int) -> None:
-        if expected is not None and int(expected) != int(current):
+        if type(expected) is not int or expected < 1:
+            raise CleanroomException(400, "INVALID_REQUEST", "expected_version 必须为正整数")
+        if expected != int(current):
             raise VersionConflictException(
-                expected_version=int(expected), current_version=int(current),
+                expected_version=expected, current_version=int(current),
                 message="版本冲突，请重新读取后重试",
             )
 
@@ -394,26 +396,49 @@ class AssetLibraryService:
             return {"asset_id": asset_id, "deleted": True}
         return self._mutate(mutator)
 
-    def delete_items(self, asset_ids: List[str]) -> Dict[str, Any]:
-        """批量删除素材条目（普通条目原语义：缺失即静默跳过）。
+    def delete_items(
+        self,
+        asset_ids: List[str],
+        expected_version: Optional[int],
+        expected_versions: Optional[Dict[str, int]] = None,
+    ) -> Dict[str, Any]:
+        """批量删除普通素材条目；所有 ID 与父库版本先在同一 mutate 内核验。
 
         同进同出（C4-AC6）：工作流桥接登记条目的删除由 API 层改道注册表删除
         （见 routes_asset_library_b4），本方法只负责非桥接条目。
         """
+        if expected_versions is not None and not isinstance(expected_versions, dict):
+            raise CleanroomException(400, "INVALID_REQUEST", "expected_versions 必须是素材库版本映射")
+
         def mutator(raw: Dict[str, Any]) -> Any:
-            removed = []
+            locations = []
+            missing = []
             for asset_id in asset_ids:
                 try:
-                    library, category, _ = self._asset(raw, asset_id)
-                except CleanroomException:
-                    continue
+                    locations.append((str(asset_id), *self._asset(raw, str(asset_id))))
+                except CleanroomException as exc:
+                    if exc.status_code == 404:
+                        missing.append(str(asset_id))
+                    else:
+                        raise
+            if missing:
+                raise CleanroomException(404, "ASSET_NOT_FOUND", "素材不存在",
+                                         extra={"missing_asset_ids": missing},
+                                         expose_extra_fields={"missing_asset_ids"})
+            for asset_id, library, _, _ in locations:
+                version = (expected_versions or {}).get(str(library["library_id"]), expected_version)
+                self._check_version(version, library["version"])
+            removed = []
+            results = []
+            for asset_id, library, category, _ in locations:
                 category["items"] = [i for i in category["items"] if i["asset_id"] != asset_id]
                 category["version"] += 1
                 library["version"] += 1
                 removed.append(asset_id)
+                results.append({"asset_id": asset_id, "deleted": True})
             if removed:
                 self._touch(raw)
-            return {"deleted": removed, "count": len(removed)}
+            return {"deleted": removed, "results": results, "count": len(removed)}
         return self._mutate(mutator)
 
     def find_item_snapshot(self, asset_id: str) -> Optional[Dict[str, Any]]:
@@ -484,14 +509,35 @@ class AssetLibraryService:
             return True
         return self._mutate(mutator)
 
-    def move_items(self, asset_ids: List[str], category_id: str) -> Dict[str, Any]:
+    def move_items(
+        self,
+        asset_ids: List[str],
+        category_id: str,
+        expected_version: Optional[int],
+        expected_versions: Optional[Dict[str, int]] = None,
+    ) -> Dict[str, Any]:
+        if expected_versions is not None and not isinstance(expected_versions, dict):
+            raise CleanroomException(400, "INVALID_REQUEST", "expected_versions 必须是素材库版本映射")
+
         def mutator(raw: Dict[str, Any]) -> Any:
-            moved = []
+            locations = []
+            missing = []
             for asset_id in asset_ids:
                 try:
-                    library, category, item = self._asset(raw, asset_id)
-                except CleanroomException:
-                    continue
+                    locations.append((str(asset_id), *self._asset(raw, str(asset_id))))
+                except CleanroomException as exc:
+                    if exc.status_code == 404:
+                        missing.append(str(asset_id))
+                    else:
+                        raise
+            if missing:
+                raise CleanroomException(404, "ASSET_NOT_FOUND", "素材不存在",
+                                         extra={"missing_asset_ids": missing},
+                                         expose_extra_fields={"missing_asset_ids"})
+            destinations = []
+            for asset_id, library, category, item in locations:
+                version = (expected_versions or {}).get(str(library["library_id"]), expected_version)
+                self._check_version(version, library["version"])
                 target = None
                 for candidate in library["categories"]:
                     if candidate["category_id"] == category_id:
@@ -499,15 +545,20 @@ class AssetLibraryService:
                         break
                 if target is None:
                     raise CleanroomException(404, "CATEGORY_NOT_FOUND", "目标分类不存在")
+                destinations.append((asset_id, library, category, item, target))
+            moved = []
+            results = []
+            for asset_id, library, category, item, target in destinations:
                 category["items"] = [i for i in category["items"] if i["asset_id"] != asset_id]
                 target.setdefault("items", []).append(item)
                 item["category_id"] = category_id
                 target["version"] += 1
                 library["version"] += 1
                 moved.append(asset_id)
+                results.append({"asset_id": asset_id, "moved": True, "category_id": category_id})
             if moved:
                 self._touch(raw)
-            return {"moved": moved, "count": len(moved)}
+            return {"moved": moved, "results": results, "count": len(moved)}
         return self._mutate(mutator)
 
     def classify_items(self, asset_ids: List[str]) -> Dict[str, Any]:

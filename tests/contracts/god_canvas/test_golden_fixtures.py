@@ -357,9 +357,10 @@ def test_fixture_prompt_library_create_request(fixtures_dir: Path):
     payload = json.loads(
         (fixtures_dir / "prompt-library-create-request.json").read_text(encoding="utf-8")
     )
+    payload["expected_version"] = 1
     req = PromptLibraryCreateRequest.model_validate(payload)
     assert req.name == "角色提示词库"
-    assert req.expected_version is None
+    assert req.expected_version == 1
 
 
 def test_fixture_prompt_library_conflict_409(fixtures_dir: Path):

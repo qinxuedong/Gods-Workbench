@@ -61,7 +61,9 @@ def test_c6_ac2_delete_recycle_restore_keeps_counts_and_asset_id(
     assert before["registry_ids"].count(asset_id) == 1
     assert before["library_image_ids"].count(asset_id) == 1
 
-    deleted = media_client.delete(f"{REGISTRY}/assets/{asset_id}", headers=HEADERS)
+    revision = media_client.get(f"{REGISTRY}/status", headers=HEADERS).json()["revision"]
+    deleted = media_client.request("DELETE", f"{REGISTRY}/assets/{asset_id}", headers=HEADERS,
+                                   json={"expected_version": revision})
     assert deleted.status_code == 200, deleted.text
     entry_id = deleted.json()["recycle_entry_id"]
     after_delete = count_assets(media_client)
@@ -73,6 +75,7 @@ def test_c6_ac2_delete_recycle_restore_keeps_counts_and_asset_id(
     restored = media_client.post(
         f"{REGISTRY}/recycle-bin/{entry_id}/restore",
         headers=GOVERNOR,
+        json={"expected_version": media_client.get(f"{REGISTRY}/status", headers=GOVERNOR).json()["revision"]},
     )
     assert restored.status_code == 200, restored.text
     after_restore = count_assets(media_client)

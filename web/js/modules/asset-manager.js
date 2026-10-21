@@ -191,6 +191,9 @@ let registryCoverflowCurrentAssetId = '';
 let registryCoverflowBoardId = '';
 let registryFacets = {kinds:[], categories:[], tags:[], collections:[], roots:[]};
 let registryStatus = {ready:false, backend:'', jobs:[], overview:{}};
+let promptItemSnapshot = {revision:0, items:[]};
+let casRefreshInFlight = false;
+const VERSION_CONFLICT_MESSAGE = '内容已变化，请刷新';
 let registryAutoPollTimer = 0;
 let registryAutoPollBusy = false;
 let registryObservedJobKey = '';
@@ -1534,9 +1537,40 @@ async function apiJsonResponse(response){
         const error = new Error((typeof detail === 'object' ? detail?.message : detail) || data.message || '操作失败');
         error.status = res.status;
         error.code = typeof detail === 'object' ? detail?.code : null;
+        if(error.status === 409 && error.code === 'VERSION_CONFLICT'){
+            error.message = VERSION_CONFLICT_MESSAGE;
+            setStatus(`${VERSION_CONFLICT_MESSAGE}（版本冲突）`);
+            void refreshCASReadState();
+        }
         throw error;
     }
     return data;
+}
+async function refreshCASReadState(){
+    if(casRefreshInFlight) return;
+    casRefreshInFlight = true;
+    try {
+        const results = await Promise.allSettled([
+            apiJsonResponse(assetManagerApi.getAssetLibrary()),
+            apiJsonResponse(assetManagerApi.getPromptLibraries()),
+            apiJsonResponse(assetManagerApi.getPromptLibraryItems()),
+            apiJsonResponse(assetManagerApi.getRegistryStatus()),
+        ]);
+        if(results[0].status === 'fulfilled') assetLibrary = results[0].value.library || assetLibrary;
+        if(results[1].status === 'fulfilled') promptLibrary = results[1].value.library || promptLibrary;
+        if(results[2].status === 'fulfilled') promptItemSnapshot = results[2].value;
+        if(results[3].status === 'fulfilled') registryStatus = results[3].value;
+        await Promise.allSettled([refreshRegistryAssets(false), refreshRegistryFacetData()]);
+        normalizeAssetState();
+        render();
+    } finally {
+        casRefreshInFlight = false;
+    }
+}
+function requireExpectedVersion(value, label){
+    const version = Number(value);
+    if(!Number.isSafeInteger(version) || version < 1) throw new Error(`${label}版本缺失，请刷新`);
+    return version;
 }
 const STORAGE_KIND_LABELS = {upload:'\u4e0a\u4f20\u7d20\u6750', generated:'\u751f\u6210\u7d20\u6750', local:'\u672c\u5730\u7d20\u6750'};
 const DEFAULT_LOCAL_LIBRARY_NAME = '\u672c\u5730\u7d20\u6750';
@@ -2821,6 +2855,26 @@ function activeAssetLibrary(){
     const libs = assetLibraries();
     return libs.find(lib => lib.id === activeAssetLibraryId) || libs[0] || null;
 }
+function assetLibraryForItemId(assetId){
+    const id = String(assetId || '');
+    for(const lib of assetLibraries()) for(const cat of lib.categories || []) for(const item of cat.items || []){
+        if(String(item.id || item.asset_id || '') === id || workflowAssetId(item) === id) return lib;
+    }
+    return null;
+}
+function assetLibraryVersionForItem(assetId){
+    const library = assetLibraryForItemId(assetId);
+    return requireExpectedVersion(library?.version, '素材库');
+}
+function expectedAssetLibraryVersions(assetIds){
+    const versions = {};
+    for(const assetId of new Set((assetIds || []).map(value => String(value || '')).filter(Boolean))){
+        const library = assetLibraryForItemId(assetId);
+        if(!library) throw new Error('素材已变化，请刷新');
+        versions[library.id] = requireExpectedVersion(library.version, '素材库');
+    }
+    return versions;
+}
 function activeWorkflowLibrary(){
     const libs = assetLibraries();
     return libs.find(lib => workflowLibraryId(lib) === activeWorkflowLibraryId) || libs[0] || null;
@@ -2882,6 +2936,28 @@ function isSystemPromptLibrary(lib){
 function activePromptLibrary(){
     const libs = promptLibraries();
     return libs.find(lib => lib.id === activePromptLibraryId) || libs[0] || null;
+}
+function promptCategoryVersion(categoryId){
+    for(const lib of promptLibraries()) for(const category of lib.categories || []){
+        if(String(category.id || category.category_id || '') === String(categoryId || '')){
+            return requireExpectedVersion(category.version, '提示词分类');
+        }
+    }
+    throw new Error('提示词分类已变化，请刷新');
+}
+async function currentPromptItemSnapshot(){
+    promptItemSnapshot = await apiJsonResponse(assetManagerApi.getPromptLibraryItems());
+    return promptItemSnapshot;
+}
+async function currentPromptItemsRevision(){
+    const snapshot = await currentPromptItemSnapshot();
+    return requireExpectedVersion(snapshot.revision, '提示词条目集合');
+}
+async function promptItemVersion(itemId){
+    const snapshot = await currentPromptItemSnapshot();
+    const item = (snapshot.items || []).find(value => String(value.item_id || value.id || '') === String(itemId || ''));
+    if(!item) throw new Error('提示词条目已变化，请刷新');
+    return requireExpectedVersion(item.version, '提示词条目');
 }
 // 按“某个库自身”解析分类：库有自己的分类就用它；只有系统库在完全为空时才补默认内置分类。
 // 新建的普通库分类为空 → 返回 []，不能借用当前激活库/系统库的分类（否则树里会错显系统分类）。
@@ -6135,7 +6211,7 @@ async function recycleRegistryAsset(assetId, silent=false){
     registryRecycleState = {...registryRecycleState, open:!silent, assetId, busy:true, error:''};
     if(!silent) renderRegistryRecycleDialog();
     try {
-        const data = await apiJsonResponse(assetManagerApi.deleteRegistryAsset(assetId));
+        const data = await apiJsonResponse(assetManagerApi.deleteRegistryAsset(assetId, requireExpectedVersion(registryStatus.revision, '资产注册表')));
         if(detailViewerState.open && detailViewerState.source === 'registry' && detailViewerState.id === assetId) closeDetailPreview(true);
         registrySelectedIds.delete(assetId);
         if(selectedRegistryAssetId === assetId){ selectedRegistryAssetId=''; registryDetail=null; }
@@ -6217,7 +6293,7 @@ async function restoreRegistryRecycleEntry(entryId){
     registryRecycleBinState = {...registryRecycleBinState, restoringId:entryId, error:''};
     renderRegistryRecycleBin();
     try {
-        const data = await apiJsonResponse(assetManagerApi.restoreRegistryRecycleEntry(entryId));
+        const data = await apiJsonResponse(assetManagerApi.restoreRegistryRecycleEntry(entryId, requireExpectedVersion(registryStatus.revision, '资产注册表')));
         registryRecycleBinState = {...registryRecycleBinState, restoringId:'', items:registryRecycleBinState.items.filter(item => item.id !== entryId)};
         await Promise.all([refreshRegistryAssets(false), refreshRegistryFacetData()]);
         // 【修复问题1】回收站恢复属于用户显式失效，保留会话级 bump（仅影响旧版 url 参数 URL）
@@ -8923,7 +8999,7 @@ async function uploadFiles(files){
         name:file.name || 'asset'
     }));
     if(!items.length) throw new Error('没有可保存的素材');
-    const data = await apiJsonResponse(assetManagerApi.createAssetLibraryItemsBatch({library_id:activeAssetLibraryId, category_id:activeAssetCategoryId, items}));
+    const data = await apiJsonResponse(assetManagerApi.createAssetLibraryItemsBatch({library_id:activeAssetLibraryId, category_id:activeAssetCategoryId, items, expected_version:requireExpectedVersion(activeAssetLibrary()?.version, '素材库')}));
     assetLibrary = data.library || assetLibrary;
     selectedAssetIds.clear();
     selectedAssetId = data.items?.[0]?.id || selectedAssetId;
@@ -9169,7 +9245,7 @@ async function renameWorkflowItem(id){
         await apiJsonResponse(assetManagerApi.renameWorkflowDocument(workflow_id, {name:String(name).trim(), expected_version:source.version}));
         await loadAll(); setStatus('已重命名工作流'); return;
     }
-    const data = await apiJsonResponse(assetManagerApi.updateAssetLibraryItem(id, {name}));
+    const data = await apiJsonResponse(assetManagerApi.updateAssetLibraryItem(id, {name, expected_version:assetLibraryVersionForItem(id)}));
     assetLibrary = data.library || assetLibrary;
     render();
     setStatus('已重命名工作流');
@@ -9199,13 +9275,23 @@ async function deleteWorkflowItem(id){
     if(workflow_id){
         workflowDeleteBusy.add(id);
         render();
+        let deleteError = null;
         try {
             await apiJsonResponse(assetManagerApi.deleteWorkflowDocument(workflow_id, workflowDeleteVersions.get(id)));
+        } catch(error) {
+            deleteError = error;
         } finally { workflowDeleteBusy.delete(id); workflowDeleteVersions.delete(id); pendingDeleteAssetId = ''; render(); }
+        if(deleteError){
+            if(deleteError.status === 409 && deleteError.code === 'VERSION_CONFLICT'){
+                setStatus(`${VERSION_CONFLICT_MESSAGE}（版本冲突）`);
+                return;
+            }
+            throw deleteError;
+        }
         selectedWorkflowIds.delete(id); selectedWorkflowId = '';
         await loadAll(); setStatus('已删除工作流'); return;
     }
-    const data = await apiJsonResponse(assetManagerApi.deleteAssetLibraryItem(id));
+    const data = await apiJsonResponse(assetManagerApi.deleteAssetLibraryItem(id, assetLibraryVersionForItem(id)));
     assetLibrary = data.library || assetLibrary;
     selectedWorkflowIds.delete(id);
     selectedWorkflowId = '';
@@ -9235,7 +9321,7 @@ async function deleteSelectedWorkflows(){
         setStatus(failure ? `已删除${removed}个，其余未删除：${failure.message}` : `已删除${removed}个工作流`);
         return;
     }
-    const data = await apiJsonResponse(assetManagerApi.deleteAssetLibraryItems({library_id:activeWorkflowLibraryId, ids}));
+    const data = await apiJsonResponse(assetManagerApi.deleteAssetLibraryItems({library_id:activeWorkflowLibraryId, asset_ids:ids, expected_version:requireExpectedVersion(activeWorkflowLibrary()?.version, '素材库'), expected_versions:expectedAssetLibraryVersions(ids)}));
     assetLibrary = data.library || assetLibrary;
     selectedWorkflowIds.clear();
     selectedWorkflowId = '';
@@ -13030,7 +13116,7 @@ async function saveDetailViewerName(){
         registryAssets = registryAssets.map(value => value.id === item.id ? {...value,...updated} : value);
         registryDetail = updated;
     } else if(source === 'asset' || source === 'workflow'){
-        const data = await apiJsonResponse(assetManagerApi.updateAssetLibraryItem(item.id, {name}));
+        const data = await apiJsonResponse(assetManagerApi.updateAssetLibraryItem(item.id, {name, expected_version:assetLibraryVersionForItem(item.id)}));
         assetLibrary = data.library || assetLibrary;
         updated = source === 'asset' ? findAssetItem(item.id) : findWorkflowItem(item.id);
     } else if(source === 'localup'){
@@ -16362,7 +16448,7 @@ function endMarqueeSelection(){
 async function createAssetLibrary(){
     const name = window.prompt('资产库名称', '新资产库');
     if(!String(name || '').trim()) return;
-    const data = await apiJsonResponse(assetManagerApi.createAssetLibrary({name}));
+    const data = await apiJsonResponse(assetManagerApi.createAssetLibrary({name, expected_version:requireExpectedVersion(assetLibrary.version, '素材库目录')}));
     assetLibrary = data.library || assetLibrary;
     activeAssetLibraryId = data.asset_library?.id || activeAssetLibraryId;
     activeAssetCategoryId = '';
@@ -16378,7 +16464,7 @@ async function saveAssetTreeEdit(){
     }
     let data = null;
     if(assetTreeEdit.kind === 'library-new'){
-        data = await apiJsonResponse(assetManagerApi.createAssetLibrary({name}));
+        data = await apiJsonResponse(assetManagerApi.createAssetLibrary({name, expected_version:requireExpectedVersion(assetLibrary.version, '素材库目录')}));
         assetLibrary = data.library || assetLibrary;
         activeAssetLibraryId = data.asset_library?.id || activeAssetLibraryId;
         activeAssetClassFilter = '';
@@ -16386,11 +16472,11 @@ async function saveAssetTreeEdit(){
     } else if(assetTreeEdit.kind === 'library-rename'){
         const lib = activeAssetLibrary();
         if(!lib) return;
-        data = await apiJsonResponse(assetManagerApi.renameAssetLibrary(lib.id, {name}));
+        data = await apiJsonResponse(assetManagerApi.renameAssetLibrary(lib.id, {name, expected_version:requireExpectedVersion(lib.version, '素材库')}));
         assetLibrary = data.library || assetLibrary;
         assetTreeFocus = 'library';
     } else if(assetTreeEdit.kind === 'category-new'){
-        data = await apiJsonResponse(assetManagerApi.createAssetLibraryCategory({library_id:activeAssetLibraryId, name, type:'image'}));
+        data = await apiJsonResponse(assetManagerApi.createAssetLibraryCategory({library_id:activeAssetLibraryId, name, type:'image', expected_version:requireExpectedVersion(activeAssetLibrary()?.version, '素材库')}));
         assetLibrary = data.library || assetLibrary;
         activeAssetCategoryId = data.category?.id || activeAssetCategoryId;
         activeAssetClassFilter = '';
@@ -16398,7 +16484,7 @@ async function saveAssetTreeEdit(){
     } else if(assetTreeEdit.kind === 'category-rename'){
         const cat = activeAssetCategory();
         if(!cat) return;
-        data = await apiJsonResponse(assetManagerApi.renameAssetLibraryCategory(cat.id, {name, library_id:activeAssetLibraryId}));
+        data = await apiJsonResponse(assetManagerApi.renameAssetLibraryCategory(cat.id, {name, library_id:activeAssetLibraryId, expected_version:requireExpectedVersion(cat.version, '素材分类')}));
         assetLibrary = data.library || assetLibrary;
         assetTreeFocus = 'category';
     }
@@ -16428,7 +16514,7 @@ async function saveWorkflowTreeEdit(){
         const cat = activeWorkflowCategory();
         const categoryId = workflowTreeEdit.categoryId || cat?.id || activeWorkflowCategoryId;
         if(!categoryId) return;
-        const data = await apiJsonResponse(assetManagerApi.renameAssetLibraryCategory(categoryId, {name, library_id:activeWorkflowLibraryId}));
+        const data = await apiJsonResponse(assetManagerApi.renameAssetLibraryCategory(categoryId, {name, library_id:activeWorkflowLibraryId, expected_version:requireExpectedVersion(cat?.version, '素材分类')}));
         assetLibrary = data.library || assetLibrary;
         activeWorkflowCategoryId = categoryId;
     }
@@ -16449,7 +16535,7 @@ async function deleteWorkflowCategory(){
         setStatus('再次点击确认删除工作流分组');
         return;
     }
-    const data = await apiJsonResponse(assetManagerApi.deleteAssetLibraryCategory(cat.id, {libraryId}));
+    const data = await apiJsonResponse(assetManagerApi.deleteAssetLibraryCategory(cat.id, {libraryId, expectedVersion:requireExpectedVersion(cat.version, '素材分类')}));
     assetLibrary = data.library || assetLibrary;
     activeWorkflowCategoryId = '';
     selectedWorkflowId = '';
@@ -16462,7 +16548,7 @@ async function renameAssetLibrary(){
     const lib = activeAssetLibrary();
     const name = window.prompt('资产库名称', lib?.name || '');
     if(!lib || !String(name || '').trim()) return;
-    const data = await apiJsonResponse(assetManagerApi.renameAssetLibrary(lib.id, {name}));
+    const data = await apiJsonResponse(assetManagerApi.renameAssetLibrary(lib.id, {name, expected_version:requireExpectedVersion(lib.version, '素材库')}));
     assetLibrary = data.library || assetLibrary;
     render();
 }
@@ -16477,7 +16563,7 @@ async function deleteAssetLibrary(){
         setStatus('再次点击确认删除资产库');
         return;
     }
-    const data = await apiJsonResponse(assetManagerApi.deleteAssetLibrary(lib.id));
+    const data = await apiJsonResponse(assetManagerApi.deleteAssetLibrary(lib.id, requireExpectedVersion(lib.version, '素材库')));
     assetLibrary = data.library || assetLibrary;
     activeAssetLibraryId = assetLibrary.active_library_id || assetLibraries()[0]?.id || '';
     activeAssetCategoryId = '';
@@ -16490,7 +16576,7 @@ async function deleteAssetLibrary(){
 async function createAssetCategory(){
     const name = window.prompt('分组名称', '新分组');
     if(!String(name || '').trim()) return;
-    const data = await apiJsonResponse(assetManagerApi.createAssetLibraryCategory({library_id:activeAssetLibraryId, name, type:'image'}));
+    const data = await apiJsonResponse(assetManagerApi.createAssetLibraryCategory({library_id:activeAssetLibraryId, name, type:'image', expected_version:requireExpectedVersion(activeAssetLibrary()?.version, '素材库')}));
     assetLibrary = data.library || assetLibrary;
     activeAssetCategoryId = data.category?.id || activeAssetCategoryId;
     activeAssetClassFilter = '';
@@ -16501,7 +16587,7 @@ async function renameAssetCategory(){
     const cat = activeAssetCategory();
     const name = window.prompt('分组名称', cat?.name || '');
     if(!cat || !String(name || '').trim()) return;
-    const data = await apiJsonResponse(assetManagerApi.renameAssetLibraryCategory(cat.id, {name, library_id:activeAssetLibraryId}));
+    const data = await apiJsonResponse(assetManagerApi.renameAssetLibraryCategory(cat.id, {name, library_id:activeAssetLibraryId, expected_version:requireExpectedVersion(cat.version, '素材分类')}));
     assetLibrary = data.library || assetLibrary;
     render();
 }
@@ -16516,7 +16602,7 @@ async function deleteAssetCategory(){
         setStatus('再次点击确认删除分组');
         return;
     }
-    const data = await apiJsonResponse(assetManagerApi.deleteAssetLibraryCategory(cat.id, {libraryId:activeAssetLibraryId}));
+    const data = await apiJsonResponse(assetManagerApi.deleteAssetLibraryCategory(cat.id, {libraryId:activeAssetLibraryId, expectedVersion:requireExpectedVersion(cat.version, '素材分类')}));
     assetLibrary = data.library || assetLibrary;
     activeAssetCategoryId = '';
     activeAssetClassFilter = '';
@@ -16543,7 +16629,7 @@ async function saveAssetEdit(id){
         setStatus('素材名称不能为空');
         return;
     }
-    const data = await apiJsonResponse(assetManagerApi.updateAssetLibraryItem(id, {name}));
+    const data = await apiJsonResponse(assetManagerApi.updateAssetLibraryItem(id, {name, expected_version:assetLibraryVersionForItem(id)}));
     assetLibrary = data.library || assetLibrary;
     selectedAssetId = id;
     assetEditMode = false;
@@ -16554,7 +16640,7 @@ async function saveAssetInlineName(id, name){
     const item = findAssetItem(id);
     if(!item || !String(name || '').trim()) return;
     if(String(item.name || '') === String(name || '')) return;
-    const data = await apiJsonResponse(assetManagerApi.updateAssetLibraryItem(id, {name}));
+    const data = await apiJsonResponse(assetManagerApi.updateAssetLibraryItem(id, {name, expected_version:assetLibraryVersionForItem(id)}));
     assetLibrary = data.library || assetLibrary;
     selectedAssetId = id;
     render();
@@ -16631,7 +16717,7 @@ function scheduleAvatarPoll(id, providerId){
 async function deleteAssetItem(id){
     const item = findAssetItem(id);
     if(!item) return;
-    const data = await apiJsonResponse(assetManagerApi.deleteAssetLibraryItem(id));
+    const data = await apiJsonResponse(assetManagerApi.deleteAssetLibraryItem(id, assetLibraryVersionForItem(id)));
     assetLibrary = data.library || assetLibrary;
     selectedAssetIds.delete(id);
     if(selectedAssetId === id) selectedAssetId = '';
@@ -16642,7 +16728,7 @@ async function deleteAssetItem(id){
 async function deleteSelectedAssets(){
     if(!selectedAssetIds.size) return;
     const ids = [...selectedAssetIds];
-    const data = await apiJsonResponse(assetManagerApi.deleteAssetLibraryItems({library_id:activeAssetLibraryId, ids}));
+    const data = await apiJsonResponse(assetManagerApi.deleteAssetLibraryItems({library_id:activeAssetLibraryId, asset_ids:ids, expected_version:requireExpectedVersion(activeAssetLibrary()?.version, '素材库'), expected_versions:expectedAssetLibraryVersions(ids)}));
     assetLibrary = data.library || assetLibrary;
     if(ids.includes(selectedAssetId)) selectedAssetId = '';
     selectedAssetIds.clear();
@@ -16669,7 +16755,8 @@ async function pasteAssetClipboard(){
     if(!assetClipboard?.ids?.length) return;
     if(assetClipboard.mode === 'cut'){
         if(assetClipboard.sourceLibraryId === activeAssetLibraryId && assetClipboard.sourceCategoryId === activeAssetCategoryId) return;
-        const data = await apiJsonResponse(assetManagerApi.moveAssetLibraryItems({library_id:assetClipboard.sourceLibraryId, target_library_id:activeAssetLibraryId, target_category_id:activeAssetCategoryId, ids:assetClipboard.ids}));
+        const sourceVersion = requireExpectedVersion(assetLibraries().find(lib => lib.id === assetClipboard.sourceLibraryId)?.version, '素材库');
+        const data = await apiJsonResponse(assetManagerApi.moveAssetLibraryItems({library_id:assetClipboard.sourceLibraryId, target_library_id:activeAssetLibraryId, category_id:activeAssetCategoryId, asset_ids:assetClipboard.ids, expected_version:sourceVersion, expected_versions:expectedAssetLibraryVersions(assetClipboard.ids)}));
         assetLibrary = data.library || assetLibrary;
         setStatus(`已移动 ${data.moved || 0} 个素材`);
     } else {
@@ -16677,6 +16764,7 @@ async function pasteAssetClipboard(){
         const data = await apiJsonResponse(assetManagerApi.createAssetLibraryItemsBatch({
             library_id:activeAssetLibraryId,
             category_id:activeAssetCategoryId,
+            expected_version:requireExpectedVersion(activeAssetLibrary()?.version, '素材库'),
             items,
         }));
         assetLibrary = data.library || assetLibrary;
@@ -16742,7 +16830,7 @@ async function moveSelectedAssets(){
     const [targetLibraryId, targetCategoryId] = assetMoveTarget.split('::');
     if(!targetLibraryId || !targetCategoryId) return;
     const ids = [...selectedAssetIds];
-    const data = await apiJsonResponse(assetManagerApi.moveAssetLibraryItems({library_id:activeAssetLibraryId, target_library_id:targetLibraryId, target_category_id:targetCategoryId, ids}));
+    const data = await apiJsonResponse(assetManagerApi.moveAssetLibraryItems({library_id:activeAssetLibraryId, target_library_id:targetLibraryId, category_id:targetCategoryId, asset_ids:ids, expected_version:requireExpectedVersion(activeAssetLibrary()?.version, '素材库'), expected_versions:expectedAssetLibraryVersions(ids)}));
     assetLibrary = data.library || assetLibrary;
     selectedAssetIds.clear();
     if(ids.includes(selectedAssetId)) selectedAssetId = '';
@@ -16758,7 +16846,7 @@ function openLocalItem(id){
 async function createPromptLibrary(){
     const name = window.prompt('提示词库名称', '新提示词库');
     if(!String(name || '').trim()) return;
-    const data = await apiJsonResponse(assetManagerApi.createPromptLibrary({name}));
+    const data = await apiJsonResponse(assetManagerApi.createPromptLibrary({name, expected_version:requireExpectedVersion(promptLibrary.version, '提示词库目录')}));
     promptLibrary = data.library || promptLibrary;
     activePromptLibraryId = data.prompt_library?.id || activePromptLibraryId;
     activePromptCategory = 'all';
@@ -16774,7 +16862,7 @@ async function savePromptTreeEdit(){
     }
     let data = null;
     if(promptTreeEdit.kind === 'library-new'){
-        data = await apiJsonResponse(assetManagerApi.createPromptLibrary({name}));
+        data = await apiJsonResponse(assetManagerApi.createPromptLibrary({name, expected_version:requireExpectedVersion(promptLibrary.version, '提示词库目录')}));
         promptLibrary = data.library || promptLibrary;
         activePromptLibraryId = data.prompt_library?.id || activePromptLibraryId;
         activePromptCategory = 'all';
@@ -16782,17 +16870,17 @@ async function savePromptTreeEdit(){
     } else if(promptTreeEdit.kind === 'library-rename'){
         const lib = activePromptLibrary();
         if(!lib) return;
-        data = await apiJsonResponse(assetManagerApi.renamePromptLibrary(lib.id, {name}));
+        data = await apiJsonResponse(assetManagerApi.renamePromptLibrary(lib.id, {name, expected_version:requireExpectedVersion(lib.version, '提示词库')}));
         promptLibrary = data.library || promptLibrary;
         promptTreeFocus = 'library';
     } else if(promptTreeEdit.kind === 'category-new'){
         const lib = activePromptLibrary();
-        data = await apiJsonResponse(assetManagerApi.createPromptLibraryCategory({library_id:lib?.id || 'system', name}));
+        data = await apiJsonResponse(assetManagerApi.createPromptLibraryCategory({library_id:lib?.id || 'system', name, expected_version:requireExpectedVersion(lib?.version, '提示词库')}));
         promptLibrary = data.library || promptLibrary;
         activePromptCategory = data.category?.id || activePromptCategory;
         promptTreeFocus = 'category';
     } else if(promptTreeEdit.kind === 'category-rename'){
-        data = await apiJsonResponse(assetManagerApi.renamePromptLibraryCategory(activePromptCategory, {name}));
+        data = await apiJsonResponse(assetManagerApi.renamePromptLibraryCategory(activePromptCategory, {name, expected_version:promptCategoryVersion(activePromptCategory)}));
         promptLibrary = data.library || promptLibrary;
         promptTreeFocus = 'category';
     }
@@ -16814,7 +16902,7 @@ async function deletePromptCategory(){
         setStatus('再次点击确认删除分组');
         return;
     }
-    const data = await apiJsonResponse(assetManagerApi.deletePromptLibraryCategory(activePromptCategory));
+    const data = await apiJsonResponse(assetManagerApi.deletePromptLibraryCategory(activePromptCategory, promptCategoryVersion(activePromptCategory)));
     promptLibrary = data.library || promptLibrary;
     activePromptCategory = 'all';
     pendingTreeDelete = '';
@@ -16825,7 +16913,7 @@ async function renamePromptLibrary(){
     const lib = activePromptLibrary();
     const name = window.prompt('提示词库名称', lib?.name || '');
     if(!lib || !String(name || '').trim()) return;
-    const data = await apiJsonResponse(assetManagerApi.renamePromptLibrary(lib.id, {name}));
+    const data = await apiJsonResponse(assetManagerApi.renamePromptLibrary(lib.id, {name, expected_version:requireExpectedVersion(lib.version, '提示词库')}));
     promptLibrary = data.library || promptLibrary;
     render();
 }
@@ -16841,7 +16929,7 @@ async function deletePromptLibrary(){
         setStatus('再次点击确认删除提示词库');
         return;
     }
-    const data = await apiJsonResponse(assetManagerApi.deletePromptLibrary(lib.id));
+    const data = await apiJsonResponse(assetManagerApi.deletePromptLibrary(lib.id, requireExpectedVersion(lib.version, '提示词库')));
     promptLibrary = data.library || promptLibrary;
     activePromptLibraryId = promptLibrary.active_library_id || promptLibraries()[0]?.id || 'system';
     activePromptCategory = 'all';
@@ -16861,7 +16949,7 @@ async function createPromptItem(){
     if(!String(positive || '').trim()) return;
     const negative = window.prompt('负向提示词内容', '') || '';
     const category = activePromptCategory === 'all' ? 'custom' : activePromptCategory;
-    const data = await apiJsonResponse(assetManagerApi.createPromptLibraryItem({library_id:lib.id, name, positive, negative, category, scene}));
+    const data = await apiJsonResponse(assetManagerApi.createPromptLibraryItem({library_id:lib.id, name, positive, negative, category, scene, expected_version:await currentPromptItemsRevision()}));
     promptLibrary = data.library || promptLibrary;
     selectedPromptId = data.item?.id || selectedPromptId;
     render();
@@ -16878,7 +16966,7 @@ async function savePromptCreate(){
         return;
     }
     const category = activePromptCategory === 'all' ? 'custom' : activePromptCategory;
-    const data = await apiJsonResponse(assetManagerApi.createPromptLibraryItem({library_id:lib.id, name, positive, negative, category, scene}));
+    const data = await apiJsonResponse(assetManagerApi.createPromptLibraryItem({library_id:lib.id, name, positive, negative, category, scene, expected_version:await currentPromptItemsRevision()}));
     promptLibrary = data.library || promptLibrary;
     selectedPromptId = data.item?.id || selectedPromptId;
     promptCreateMode = false;
@@ -16895,7 +16983,7 @@ async function editPromptItem(id){
     const positive = window.prompt('正向提示词内容', item.positive || '');
     if(!String(positive || '').trim()) return;
     const negative = window.prompt('负向提示词内容', item.negative || '') || '';
-    const data = await apiJsonResponse(assetManagerApi.updatePromptLibraryItem(id, {library_id:lib.id, name, positive, negative, category:item.category || 'custom', scene}));
+    const data = await apiJsonResponse(assetManagerApi.updatePromptLibraryItem(id, {library_id:lib.id, name, positive, negative, category:item.category || 'custom', scene, expected_version:await promptItemVersion(id)}));
     promptLibrary = data.library || promptLibrary;
     selectedPromptId = id;
     render();
@@ -16912,7 +17000,7 @@ async function savePromptEdit(id){
         setStatus('名称和正向提示词不能为空');
         return;
     }
-    const data = await apiJsonResponse(assetManagerApi.updatePromptLibraryItem(id, {library_id:lib.id, name, positive, negative, category:item.category || 'custom', scene}));
+    const data = await apiJsonResponse(assetManagerApi.updatePromptLibraryItem(id, {library_id:lib.id, name, positive, negative, category:item.category || 'custom', scene, expected_version:await promptItemVersion(id)}));
     promptLibrary = data.library || promptLibrary;
     selectedPromptId = id;
     promptEditMode = false;
@@ -16922,7 +17010,7 @@ async function savePromptEdit(id){
 async function deletePromptItem(id){
     const item = findPromptItem(id);
     if(!item) return;
-    const data = await apiJsonResponse(assetManagerApi.deletePromptLibraryItem(id));
+    const data = await apiJsonResponse(assetManagerApi.deletePromptLibraryItem(id, await currentPromptItemsRevision()));
     promptLibrary = data.library || promptLibrary;
     selectedPromptIds.delete(id);
     if(selectedPromptId === id) selectedPromptId = '';
@@ -16939,7 +17027,7 @@ async function deleteSelectedPrompts(){
         return;
     }
     const ids = [...selectedPromptIds];
-    const data = await apiJsonResponse(assetManagerApi.deletePromptLibraryItems({ids}));
+    const data = await apiJsonResponse(assetManagerApi.deletePromptLibraryItems({ids, expected_version:await currentPromptItemsRevision()}));
     promptLibrary = data.library || promptLibrary;
     if(ids.includes(selectedPromptId)) selectedPromptId = '';
     selectedPromptIds.clear();
@@ -17821,7 +17909,8 @@ root.addEventListener('change', event => {
     }
     const inlineWorkflowName = event.target.closest?.('[data-workflow-inline-name]');
     if(inlineWorkflowName){
-        apiJsonResponse(assetManagerApi.updateAssetLibraryItem(inlineWorkflowName.dataset.workflowInlineName || '', {name:inlineWorkflowName.value || ''})).then(data => {
+        const itemId = inlineWorkflowName.dataset.workflowInlineName || '';
+        apiJsonResponse(assetManagerApi.updateAssetLibraryItem(itemId, {name:inlineWorkflowName.value || '', expected_version:assetLibraryVersionForItem(itemId)})).then(data => {
             assetLibrary = data.library || assetLibrary;
             render();
             setStatus('已保存工作流名称');
