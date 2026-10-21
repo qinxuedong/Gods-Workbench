@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 # Copyright 2026 Gods-Workbench Authors
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -36,8 +35,9 @@ import hmac
 import os
 import secrets
 import time
+from collections.abc import Mapping
 from dataclasses import dataclass, field
-from typing import Any, Dict, Mapping, Optional
+from typing import Any, Dict, Optional
 
 # 会话有效期与流程状态有效期（秒）。流程状态刻意更短：只在用户往返 IdP 期间有效。
 SESSION_TTL_SECONDS = 8 * 60 * 60
@@ -61,7 +61,7 @@ _RUNTIME_COOKIE_NAMES = {
 }
 
 
-def runtime_cookie_names(mode: Optional[str] = None) -> tuple[str, str]:
+def runtime_cookie_names(mode: str | None = None) -> tuple[str, str]:
     """返回当前运行态的会话 Cookie 名和 OIDC 流程 Cookie 名。
 
     测试态继续使用冻结的 ``gw_session`` / ``gw_oidc_flow``，以避免改变既有
@@ -72,17 +72,19 @@ def runtime_cookie_names(mode: Optional[str] = None) -> tuple[str, str]:
     return _RUNTIME_COOKIE_NAMES.get(selected, _RUNTIME_COOKIE_NAMES["test"])
 
 
-def session_cookie_name(mode: Optional[str] = None) -> str:
+def session_cookie_name(mode: str | None = None) -> str:
     """返回当前运行态的会话 Cookie 名。"""
     return runtime_cookie_names(mode)[0]
 
 
-def flow_cookie_name(mode: Optional[str] = None) -> str:
+def flow_cookie_name(mode: str | None = None) -> str:
     """返回当前运行态的一次性 OIDC 流程 Cookie 名。"""
     return runtime_cookie_names(mode)[1]
 
 
-def cookie_value(cookies: Mapping[str, str], kind: str, mode: Optional[str] = None) -> Optional[str]:
+def cookie_value(
+    cookies: Mapping[str, str], kind: str, mode: str | None = None
+) -> str | None:
     """只读取当前运行态 Cookie，不接受其它运行态的同名会话。"""
     if kind == "session":
         name = session_cookie_name(mode)
@@ -98,7 +100,7 @@ def cookie_value(cookies: Mapping[str, str], kind: str, mode: Optional[str] = No
 class _Session:
     """一条服务端会话记录；``principal`` 为经过校验的最小身份上下文。"""
 
-    principal: Dict[str, Any]
+    principal: dict[str, Any]
     created_at: float
     expires_at: float
     # 绝对过期时间：登录成功时刻 + SESSION_ABSOLUTE_MAX_SECONDS，任何续期都不得越过。
@@ -113,11 +115,11 @@ class _FlowState:
     code_verifier: str
     redirect_uri: str
     created_at: float
-    metadata: Dict[str, Any] = field(default_factory=dict)
+    metadata: dict[str, Any] = field(default_factory=dict)
 
 
-_SESSIONS: Dict[str, _Session] = {}
-_FLOW_STATES: Dict[str, _FlowState] = {}
+_SESSIONS: dict[str, _Session] = {}
+_FLOW_STATES: dict[str, _FlowState] = {}
 
 
 def _prune(now: float) -> None:
@@ -137,15 +139,21 @@ def _prune(now: float) -> None:
     for key in expired_sessions:
         _SESSIONS.pop(key, None)
     flow_deadline = now - FLOW_STATE_TTL_SECONDS
-    expired_flows = [key for key, value in _FLOW_STATES.items() if value.created_at <= flow_deadline]
+    expired_flows = [
+        key for key, value in _FLOW_STATES.items() if value.created_at <= flow_deadline
+    ]
     for key in expired_flows:
         _FLOW_STATES.pop(key, None)
 
     if len(_SESSIONS) > _MAX_SESSIONS:
-        for key in sorted(_SESSIONS, key=lambda k: _SESSIONS[k].created_at)[: len(_SESSIONS) // 2]:
+        for key in sorted(_SESSIONS, key=lambda k: _SESSIONS[k].created_at)[
+            : len(_SESSIONS) // 2
+        ]:
             _SESSIONS.pop(key, None)
     if len(_FLOW_STATES) > _MAX_FLOW_STATES:
-        for key in sorted(_FLOW_STATES, key=lambda k: _FLOW_STATES[k].created_at)[: len(_FLOW_STATES) // 2]:
+        for key in sorted(_FLOW_STATES, key=lambda k: _FLOW_STATES[k].created_at)[
+            : len(_FLOW_STATES) // 2
+        ]:
             _FLOW_STATES.pop(key, None)
 
 
@@ -158,6 +166,7 @@ def reset_stores() -> None:
 # ---------------------------------------------------------------------------
 # 服务端会话
 # ---------------------------------------------------------------------------
+
 
 def create_session(principal: Mapping[str, Any]) -> str:
     """创建服务端会话并返回不透明会话标识。
@@ -178,7 +187,7 @@ def create_session(principal: Mapping[str, Any]) -> str:
     return session_id
 
 
-def get_session(session_id: Optional[str]) -> Optional[Dict[str, Any]]:
+def get_session(session_id: str | None) -> dict[str, Any] | None:
     """按会话标识取回身份；缺失、过期或未知一律返回 None（失败关闭）。"""
     if not session_id or not isinstance(session_id, str):
         return None
@@ -198,7 +207,9 @@ def get_session(session_id: Optional[str]) -> Optional[Dict[str, Any]]:
     return dict(session.principal)
 
 
-def get_session_by_fingerprint(fingerprint: str, expected_subject: str) -> Optional[Dict[str, Any]]:
+def get_session_by_fingerprint(
+    fingerprint: str, expected_subject: str
+) -> dict[str, Any] | None:
     """Resolve a live in-memory session from its SHA-256 fingerprint only.
 
     Runtime records may retain the fingerprint for reauthorization, but never the
@@ -217,12 +228,14 @@ def get_session_by_fingerprint(fingerprint: str, expected_subject: str) -> Optio
         if not hmac.compare_digest(candidate, value):
             continue
         principal = get_session(session_id)
-        if principal and hmac.compare_digest(str(principal.get("username") or ""), subject):
+        if principal and hmac.compare_digest(
+            str(principal.get("username") or ""), subject
+        ):
             return principal
     return None
 
 
-def delete_session(session_id: Optional[str]) -> bool:
+def delete_session(session_id: str | None) -> bool:
     """删除会话（登出）；返回是否确实删除了一条记录。"""
     if not session_id:
         return False
@@ -233,7 +246,10 @@ def delete_session(session_id: Optional[str]) -> bool:
 # 授权码 + PKCE 流程状态
 # ---------------------------------------------------------------------------
 
-def create_flow_state(*, state: str, nonce: str, code_verifier: str, redirect_uri: str) -> None:
+
+def create_flow_state(
+    *, state: str, nonce: str, code_verifier: str, redirect_uri: str
+) -> None:
     """登记一条一次性流程状态；``state`` 由调用方生成（需为高熵随机值）。
 
     若同一 state 已存在则覆盖写入（调用方每次登录都应生成新的 state）。
@@ -250,7 +266,7 @@ def create_flow_state(*, state: str, nonce: str, code_verifier: str, redirect_ur
     )
 
 
-def pop_flow_state(state: Optional[str]) -> Optional[_FlowState]:
+def pop_flow_state(state: str | None) -> _FlowState | None:
     """取出并**立即删除**流程状态（防重放）；未知或过期返回 None。"""
     if not state or not isinstance(state, str):
         return None
@@ -266,18 +282,18 @@ def pop_flow_state(state: Optional[str]) -> Optional[_FlowState]:
 # 当前请求身份（由中间件写入，供 core.auth 在 oidc 模式下读取）
 # ---------------------------------------------------------------------------
 
-_CURRENT_PRINCIPAL: contextvars.ContextVar[Optional[Dict[str, Any]]] = contextvars.ContextVar(
-    "gw_current_principal", default=None
+_CURRENT_PRINCIPAL: contextvars.ContextVar[dict[str, Any] | None] = (
+    contextvars.ContextVar("gw_current_principal", default=None)
 )
 
 
-def set_current_principal(principal: Optional[Mapping[str, Any]]):
+def set_current_principal(principal: Mapping[str, Any] | None):
     """写入当前请求的会话身份，返回可用于重置的 token。"""
     value = dict(principal) if principal else None
     return _CURRENT_PRINCIPAL.set(value)
 
 
-def get_current_principal() -> Optional[Dict[str, Any]]:
+def get_current_principal() -> dict[str, Any] | None:
     """读取当前请求的会话身份；未设置返回 None。"""
     value = _CURRENT_PRINCIPAL.get()
     return dict(value) if value else None

@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 # Copyright 2026 Gods-Workbench Authors
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -18,6 +17,7 @@
 本模块仅提供进程内、有界、脱敏的审计缓冲；生产持久化与多实例一致性仍由部署方负责。
 令牌原文、授权码、Cookie、code_verifier 等凭据永不进入事件记录。
 """
+
 from __future__ import annotations
 
 import json
@@ -89,24 +89,28 @@ OUTCOME_STARTED = "started"
 OUTCOME_SUCCEEDED = "succeeded"
 OUTCOME_DENIED = "denied"
 OUTCOME_REJECTED = "rejected"
-AUTH_OUTCOMES = frozenset({OUTCOME_STARTED, OUTCOME_SUCCEEDED, OUTCOME_DENIED, OUTCOME_REJECTED})
+AUTH_OUTCOMES = frozenset(
+    {OUTCOME_STARTED, OUTCOME_SUCCEEDED, OUTCOME_DENIED, OUTCOME_REJECTED}
+)
 
-_EVENTS: Deque[Dict[str, Any]] = deque(maxlen=AUDIT_MAX_EVENTS)
+_EVENTS: deque[dict[str, Any]] = deque(maxlen=AUDIT_MAX_EVENTS)
 _LOCK = threading.Lock()
 
 
-def _clip(value: Optional[str]) -> str:
+def _clip(value: str | None) -> str:
     """把可选字符串裁剪为定长安全值；非字符串一律降级为空串。"""
     if not isinstance(value, str):
         return ""
     return value if len(value) <= _MAX_FIELD_CHARS else value[:_MAX_FIELD_CHARS]
 
 
-def _append(record: Dict[str, Any]) -> Dict[str, Any]:
+def _append(record: dict[str, Any]) -> dict[str, Any]:
     with _LOCK:
         _EVENTS.append(record)
     if logger.isEnabledFor(logging.INFO):
-        logger.info("auth_audit %s", json.dumps(record, ensure_ascii=False, sort_keys=True))
+        logger.info(
+            "auth_audit %s", json.dumps(record, ensure_ascii=False, sort_keys=True)
+        )
     return dict(record)
 
 
@@ -115,17 +119,17 @@ def _record(
     *,
     outcome: str,
     reason: str = "",
-    subject: Optional[str] = None,
-    role: Optional[str] = None,
-    auth_mode: Optional[str] = None,
-    resource_id: Optional[str] = None,
-) -> Dict[str, Any]:
+    subject: str | None = None,
+    role: str | None = None,
+    auth_mode: str | None = None,
+    resource_id: str | None = None,
+) -> dict[str, Any]:
     if event not in ALL_EVENT_NAMES:
         raise ValueError("未知的认证事件名，已拒绝记录")
     if outcome not in AUTH_OUTCOMES:
         raise ValueError("未知的认证事件结果，已拒绝记录")
     # 严格字段白名单，不把调用方的任意对象（尤其是 token）写入日志。
-    record: Dict[str, Any] = {
+    record: dict[str, Any] = {
         "event": event,
         "outcome": outcome,
         "reason": _clip(reason),
@@ -144,14 +148,21 @@ def record_auth_event(
     *,
     outcome: str,
     reason: str = "",
-    subject: Optional[str] = None,
-    role: Optional[str] = None,
-    auth_mode: Optional[str] = None,
-) -> Dict[str, Any]:
+    subject: str | None = None,
+    role: str | None = None,
+    auth_mode: str | None = None,
+) -> dict[str, Any]:
     """记录认证事件；管理事件必须使用 ``record_management_event``。"""
     if event not in AUTH_EVENT_NAMES:
         raise ValueError("未知的认证事件名，已拒绝记录")
-    return _record(event, outcome=outcome, reason=reason, subject=subject, role=role, auth_mode=auth_mode)
+    return _record(
+        event,
+        outcome=outcome,
+        reason=reason,
+        subject=subject,
+        role=role,
+        auth_mode=auth_mode,
+    )
 
 
 def record_management_event(
@@ -159,11 +170,11 @@ def record_management_event(
     *,
     outcome: str,
     reason: str = "",
-    subject: Optional[str] = None,
-    role: Optional[str] = None,
-    auth_mode: Optional[str] = None,
-    resource_id: Optional[str] = None,
-) -> Dict[str, Any]:
+    subject: str | None = None,
+    role: str | None = None,
+    auth_mode: str | None = None,
+    resource_id: str | None = None,
+) -> dict[str, Any]:
     """记录 B1 管理写事件；参数中没有 token 原文入口。"""
     if event not in MANAGEMENT_EVENT_NAMES:
         raise ValueError("未知的认证管理事件名，已拒绝记录")
@@ -178,7 +189,7 @@ def record_management_event(
     )
 
 
-def list_auth_events() -> List[Dict[str, Any]]:
+def list_auth_events() -> list[dict[str, Any]]:
     """按发生顺序返回当前进程内的脱敏事件快照。"""
     with _LOCK:
         return [dict(item) for item in _EVENTS]

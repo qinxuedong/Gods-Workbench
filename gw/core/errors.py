@@ -18,6 +18,7 @@
 """
 
 from typing import Any, Dict, Optional
+
 from pydantic import BaseModel, Field
 
 
@@ -26,21 +27,31 @@ class ErrorDetail(BaseModel):
 
     code: str = Field(..., description="错误标识码")
     message: str = Field(..., description="错误可读提示")
-    expected_version: Optional[int] = Field(None, description="期望的 CAS 版本")
-    current_version: Optional[int] = Field(None, description="当前实际的 CAS 版本")
-    asset_id: Optional[str] = Field(None, description="冲突的资产标识")
-    canvas_id: Optional[str] = Field(None, description="冲突的画布标识")
-    endpoint: Optional[str] = Field(None, description="产生错误的接口路径")
-    unavailable: Optional[bool] = Field(None, description="能力当前不可用或未准入")
-    settings_path: Optional[str] = Field(None, description="需要操作者补充配置的前端设置页路径")
-    data_status: Optional[str] = Field(None, description="数据可用性状态")
-    returncode: Optional[int] = Field(None, description="已退出CLI的真实退出码")
-    result_unknown: Optional[bool] = Field(None, description="外部操作结果尚未确认，禁止自动重试")
-    provider_code: Optional[str] = Field(None, description="外部供应商的数字错误码（不含其消息文本）")
-    installed_version: Optional[str] = Field(None, description="宿主上已安装页面适配的版本标识")
-    required_version: Optional[str] = Field(None, description="当前需要的页面适配版本")
-    fix_hint: Optional[str] = Field(None, description="面向用户的可执行修复建议")
-    upgradable: Optional[bool] = Field(None, description="已安装文件是否为可自动升级的官方旧版适配")
+    expected_version: int | None = Field(None, description="期望的 CAS 版本")
+    current_version: int | None = Field(None, description="当前实际的 CAS 版本")
+    asset_id: str | None = Field(None, description="冲突的资产标识")
+    canvas_id: str | None = Field(None, description="冲突的画布标识")
+    endpoint: str | None = Field(None, description="产生错误的接口路径")
+    unavailable: bool | None = Field(None, description="能力当前不可用或未准入")
+    settings_path: str | None = Field(
+        None, description="需要操作者补充配置的前端设置页路径"
+    )
+    data_status: str | None = Field(None, description="数据可用性状态")
+    returncode: int | None = Field(None, description="已退出CLI的真实退出码")
+    result_unknown: bool | None = Field(
+        None, description="外部操作结果尚未确认，禁止自动重试"
+    )
+    provider_code: str | None = Field(
+        None, description="外部供应商的数字错误码（不含其消息文本）"
+    )
+    installed_version: str | None = Field(
+        None, description="宿主上已安装页面适配的版本标识"
+    )
+    required_version: str | None = Field(None, description="当前需要的页面适配版本")
+    fix_hint: str | None = Field(None, description="面向用户的可执行修复建议")
+    upgradable: bool | None = Field(
+        None, description="已安装文件是否为可自动升级的官方旧版适配"
+    )
 
 
 class ErrorEnvelope(BaseModel):
@@ -57,8 +68,8 @@ class CleanroomException(Exception):
         status_code: int,
         code: str,
         message: str,
-        extra: Optional[Dict[str, Any]] = None,
-        expose_extra_fields: Optional[set[str]] = None,
+        extra: dict[str, Any] | None = None,
+        expose_extra_fields: set[str] | None = None,
     ):
         super().__init__(message)
         self.status_code = status_code
@@ -100,12 +111,20 @@ class ForbiddenException(CleanroomException):
 class VersionConflictException(CleanroomException):
     """409 项目版本冲突异常。"""
 
-    def __init__(self, expected_version: int, current_version: int, message: str = "expected_version 与当前版本不一致"):
+    def __init__(
+        self,
+        expected_version: int,
+        current_version: int,
+        message: str = "expected_version 与当前版本不一致",
+    ):
         super().__init__(
             status_code=409,
             code="VERSION_CONFLICT",
             message=message,
-            extra={"expected_version": expected_version, "current_version": current_version},
+            extra={
+                "expected_version": expected_version,
+                "current_version": current_version,
+            },
         )
 
 
