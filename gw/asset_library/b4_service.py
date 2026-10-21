@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 # Copyright 2026 Gods-Workbench Authors
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -29,7 +28,9 @@ DATA_STATUS_EMPTY = "empty"
 DATA_STATUS_NOT_INTEGRATED = "not_integrated"
 
 
-def unavailable(endpoint: str, capability: str, code: str = "ASSET_LIBRARY_NOT_INTEGRATED") -> None:
+def unavailable(
+    endpoint: str, capability: str, code: str = "ASSET_LIBRARY_NOT_INTEGRATED"
+) -> None:
     """抛出包含受控能力边界的 503 错误。"""
     raise CleanroomException(
         status_code=503,
