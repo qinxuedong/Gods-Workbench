@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 # Copyright 2026 Gods-Workbench Authors
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -41,19 +40,21 @@ from urllib.parse import urlencode, urlparse
 from fastapi import APIRouter, Query, Request, Response, status
 from fastapi.responses import JSONResponse, RedirectResponse
 
-from gw.core import session as session_store
+from gw.core import audit as audit_log
 from gw.core import local_accounts
+from gw.core import session as session_store
 from gw.core.config import (
-    AUTH_MODE_OIDC,
     AUTH_MODE_LOCAL_ACCOUNT,
+    AUTH_MODE_OIDC,
     exchange_authorization_code,
     load_runtime_auth_config,
     resolve_endpoint,
 )
-from gw.core import audit as audit_log
 from gw.core.errors import CleanroomException
 from gw.core.oidc import (
     UnauthorizedException as _OidcUnauthorized,
+)
+from gw.core.oidc import (
     build_authorization_url,
     generate_nonce,
     generate_pkce_pair,
@@ -109,7 +110,9 @@ class OidcAlreadyAuthenticatedException(CleanroomException):
     """409：当前会话已认证，无需重复发起登录。"""
 
     def __init__(self, message: str = "当前会话已登录，无需重复发起授权"):
-        super().__init__(status_code=409, code="OIDC_ALREADY_AUTHENTICATED", message=message)
+        super().__init__(
+            status_code=409, code="OIDC_ALREADY_AUTHENTICATED", message=message
+        )
 
 
 class OidcFlowFailedException(CleanroomException):
@@ -119,7 +122,7 @@ class OidcFlowFailedException(CleanroomException):
         super().__init__(status_code=400, code="OIDC_FLOW_INVALID", message=message)
 
 
-def _oidc_session_still_bound(principal: Dict[str, Any], runtime) -> bool:
+def _oidc_session_still_bound(principal: dict[str, Any], runtime) -> bool:
     """会话是否仍绑定当前发行者、受众与配置代际。
 
     判定口径统一收口在 ``core.auth.oidc_session_trust_failure_reason``：
@@ -134,7 +137,7 @@ def _oidc_session_still_bound(principal: Dict[str, Any], runtime) -> bool:
     return oidc_session_trust_failure_reason(dict(principal), runtime) is None
 
 
-def _principal_from_identity(identity, runtime) -> Dict[str, Any]:
+def _principal_from_identity(identity, runtime) -> dict[str, Any]:
     """把校验通过的身份压成最小会话主体（不保留令牌原文与完整 claims）。
 
     会话绑定当时的发行者与配置代际。信任根变更后，旧会话不得继续使用。
@@ -188,6 +191,7 @@ def _clear_cookie(response: Response, name: str) -> None:
 # 状态查询
 # ---------------------------------------------------------------------------
 
+
 @router.get("/status", summary="认证与会话状态", status_code=status.HTTP_200_OK)
 def auth_status(request: Request):
     """如实返回当前认证状态；未认证时 ``principal`` 必须为 null。"""
@@ -195,16 +199,27 @@ def auth_status(request: Request):
     runtime = load_runtime_auth_config()
     if runtime.mode == AUTH_MODE_LOCAL_ACCOUNT:
         principal = local_accounts.get_session(gw_session)
-        return JSONResponse({
-            "auth_mode": runtime.mode, "oidc_ready": False,
-            "authenticated": principal is not None, "principal": principal,
-            "setup_required": local_accounts.setup_required(),
-            "login_available": True, "logout_available": principal is not None,
-            "reason": "", "release_authorized": False,
-        }, headers={"Cache-Control": "no-store"})
+        return JSONResponse(
+            {
+                "auth_mode": runtime.mode,
+                "oidc_ready": False,
+                "authenticated": principal is not None,
+                "principal": principal,
+                "setup_required": local_accounts.setup_required(),
+                "login_available": True,
+                "logout_available": principal is not None,
+                "reason": "",
+                "release_authorized": False,
+            },
+            headers={"Cache-Control": "no-store"},
+        )
     principal = session_store.get_session(gw_session)
     is_oidc = runtime.mode == AUTH_MODE_OIDC
-    if is_oidc and principal is not None and not _oidc_session_still_bound(principal, runtime):
+    if (
+        is_oidc
+        and principal is not None
+        and not _oidc_session_still_bound(principal, runtime)
+    ):
         # 配置失效或信任根已变：撤销旧会话，状态如实显示未认证。
         session_store.delete_session(gw_session)
         principal = None
@@ -231,6 +246,7 @@ def auth_status(request: Request):
 # 发起登录（授权码 + PKCE）
 # ---------------------------------------------------------------------------
 
+
 @router.post("/login", summary="发起授权码 + PKCE 登录", status_code=status.HTTP_200_OK)
 def auth_login(request: Request):
     """构造 IdP 授权地址并登记一次性流程状态。
@@ -246,7 +262,9 @@ def auth_login(request: Request):
             reason="oidc_not_ready",
             auth_mode=runtime.mode,
         )
-        raise OidcNotConfiguredException(runtime.reason or "外部 IdP 未配置，已拒绝登录")
+        raise OidcNotConfiguredException(
+            runtime.reason or "外部 IdP 未配置，已拒绝登录"
+        )
     if not runtime.login_ready:
         audit_log.record_auth_event(
             audit_log.EVENT_LOGIN_DENIED,
@@ -254,7 +272,9 @@ def auth_login(request: Request):
             reason="client_config_missing",
             auth_mode=runtime.mode,
         )
-        raise OidcNotConfiguredException("授权码流程配置缺失（client_id / redirect_uri）")
+        raise OidcNotConfiguredException(
+            "授权码流程配置缺失（client_id / redirect_uri）"
+        )
     existing = session_store.get_session(gw_session)
     if existing is not None and not _oidc_session_still_bound(existing, runtime):
         session_store.delete_session(gw_session)
@@ -269,7 +289,9 @@ def auth_login(request: Request):
         raise OidcAlreadyAuthenticatedException()
 
     try:
-        authorization_endpoint = resolve_endpoint(runtime.oidc.issuer, "authorization_endpoint")
+        authorization_endpoint = resolve_endpoint(
+            runtime.oidc.issuer, "authorization_endpoint"
+        )
     except Exception:
         audit_log.record_auth_event(
             audit_log.EVENT_LOGIN_DENIED,
@@ -277,7 +299,9 @@ def auth_login(request: Request):
             reason="authorization_endpoint_unavailable",
             auth_mode=runtime.mode,
         )
-        raise OidcNotConfiguredException("IdP authorization_endpoint 不可用，已拒绝登录")
+        raise OidcNotConfiguredException(
+            "IdP authorization_endpoint 不可用，已拒绝登录"
+        )
 
     state = generate_state()
     nonce = generate_nonce()
@@ -323,12 +347,13 @@ def auth_login(request: Request):
 # 回调
 # ---------------------------------------------------------------------------
 
+
 @router.get("/callback", summary="IdP 授权回调")
 def auth_callback(
     request: Request,
-    code: Optional[str] = Query(None),
-    state: Optional[str] = Query(None),
-    error: Optional[str] = Query(None),
+    code: str | None = Query(None),
+    state: str | None = Query(None),
+    error: str | None = Query(None),
 ):
     """校验 state → 换取代币 → 校验 id_token → 建立会话并重定向回应用页。
 
@@ -343,7 +368,9 @@ def auth_callback(
         # 审计只记「失败类别」，绝不记录授权码、state、nonce 或令牌原文。
         # 且类别必须先收敛到封闭集合：``?error=`` 由请求方控制，原样入账会污染审计记录。
         audit_reason = (
-            reason_code if reason_code in _CALLBACK_FAILURE_REASONS else _CALLBACK_FAILURE_FALLBACK
+            reason_code
+            if reason_code in _CALLBACK_FAILURE_REASONS
+            else _CALLBACK_FAILURE_FALLBACK
         )
         audit_log.record_auth_event(
             audit_log.EVENT_CALLBACK_REJECTED,
@@ -389,7 +416,9 @@ def auth_callback(
     except _OidcUnauthorized:
         return fail("id_token_rejected")
 
-    session_id = session_store.create_session(_principal_from_identity(identity, runtime))
+    session_id = session_store.create_session(
+        _principal_from_identity(identity, runtime)
+    )
     audit_log.record_auth_event(
         audit_log.EVENT_SESSION_ESTABLISHED,
         outcome=audit_log.OUTCOME_SUCCEEDED,
@@ -399,7 +428,12 @@ def auth_callback(
         auth_mode=runtime.mode,
     )
     response = RedirectResponse(url=app_target, status_code=status.HTTP_302_FOUND)
-    _set_cookie(response, session_store.session_cookie_name(), session_id, _SESSION_COOKIE_MAX_AGE)
+    _set_cookie(
+        response,
+        session_store.session_cookie_name(),
+        session_id,
+        _SESSION_COOKIE_MAX_AGE,
+    )
     _clear_cookie(response, session_store.flow_cookie_name())
     return response
 
@@ -408,13 +442,18 @@ def auth_callback(
 # 登出
 # ---------------------------------------------------------------------------
 
-@router.post("/logout", summary="登出并清除会话", status_code=status.HTTP_204_NO_CONTENT)
+
+@router.post(
+    "/logout", summary="登出并清除会话", status_code=status.HTTP_204_NO_CONTENT
+)
 def auth_logout(request: Request):
     """删除服务端会话并清除 Cookie；未登录时同样幂等返回 204。"""
     gw_session = session_store.cookie_value(request.cookies, "session")
-    deleted = (local_accounts.delete_session(gw_session)
-               if load_runtime_auth_config().mode == AUTH_MODE_LOCAL_ACCOUNT
-               else session_store.delete_session(gw_session))
+    deleted = (
+        local_accounts.delete_session(gw_session)
+        if load_runtime_auth_config().mode == AUTH_MODE_LOCAL_ACCOUNT
+        else session_store.delete_session(gw_session)
+    )
     audit_log.record_auth_event(
         audit_log.EVENT_LOGOUT,
         outcome=audit_log.OUTCOME_SUCCEEDED,
@@ -425,5 +464,3 @@ def auth_logout(request: Request):
     _clear_cookie(response, session_store.session_cookie_name())
     _clear_cookie(response, session_store.flow_cookie_name())
     return response
-
-

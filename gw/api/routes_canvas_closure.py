@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 # Copyright 2026 Gods-Workbench Authors
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -62,6 +61,8 @@ from gw.canvas_closure.models import (
 )
 from gw.canvas_closure.service import (
     default_canvas_closure_service as closure,
+)
+from gw.canvas_closure.service import (
     default_shared_folder_service as shared_folders,
 )
 from gw.core.auth import require_authenticated, require_edit_access
@@ -93,7 +94,13 @@ def _owned_projection(result, context):
                 raise
     scoped = {**result, "canvases": visible}
     if "categories" in result:
-        scoped["categories"] = [{**category, "count":sum(entry.get("kind") == category["id"] for entry in visible)} for category in result["categories"]]
+        scoped["categories"] = [
+            {
+                **category,
+                "count": sum(entry.get("kind") == category["id"] for entry in visible),
+            }
+            for category in result["categories"]
+        ]
     return scoped
 
 
@@ -109,8 +116,10 @@ def _owned_projection(result, context):
     status_code=status.HTTP_200_OK,
 )
 def get_canvas_assets(
-    authorization: Optional[str] = Header(None),
-    x_user_role: str = Header("editor", alias="X-User-Role", description="用户角色权限"),
+    authorization: str | None = Header(None),
+    x_user_role: str = Header(
+        "editor", alias="X-User-Role", description="用户角色权限"
+    ),
 ):
     """返回画布索引；素材条目需素材注册表，本阶段为空并如实标记缺口。"""
     context = require_authenticated(authorization, x_user_role)
@@ -124,8 +133,10 @@ def get_canvas_assets(
 )
 def download_canvas_assets(
     payload: CanvasAssetDownloadRequest = Body(default=CanvasAssetDownloadRequest()),
-    authorization: Optional[str] = Header(None),
-    x_user_role: str = Header("editor", alias="X-User-Role", description="用户角色权限"),
+    authorization: str | None = Header(None),
+    x_user_role: str = Header(
+        "editor", alias="X-User-Role", description="用户角色权限"
+    ),
 ):
     """无真实文件后端：如实 503 fail-closed，绝不返回伪造压缩包。"""
     require_edit_access(authorization, x_user_role)
@@ -144,8 +155,10 @@ def download_canvas_assets(
     status_code=status.HTTP_200_OK,
 )
 def list_reference_canvases(
-    authorization: Optional[str] = Header(None),
-    x_user_role: str = Header("editor", alias="X-User-Role", description="用户角色权限"),
+    authorization: str | None = Header(None),
+    x_user_role: str = Header(
+        "editor", alias="X-User-Role", description="用户角色权限"
+    ),
 ):
     """返回参考画布集合；无内容时必须为空数组，不预置演示画布。"""
     context = require_authenticated(authorization, x_user_role)
@@ -160,8 +173,10 @@ def list_reference_canvases(
 )
 def save_reference_canvas(
     payload: ReferenceCanvasCreateRequest,
-    authorization: Optional[str] = Header(None),
-    x_user_role: str = Header("editor", alias="X-User-Role", description="用户角色权限"),
+    authorization: str | None = Header(None),
+    x_user_role: str = Header(
+        "editor", alias="X-User-Role", description="用户角色权限"
+    ),
 ):
     """保存参考画布；只登记调用方提交的内容，不编造素材元数据。"""
     context = require_edit_access(authorization, x_user_role)
@@ -176,7 +191,9 @@ def save_reference_canvas(
         viewport=payload.viewport,
         canvas_id=payload.canvas_id,
         expected_version=payload.expected_version,
-        owner_key=owner_key_for_context(context) if closure._canvas_service.persistent else None,
+        owner_key=owner_key_for_context(context)
+        if closure._canvas_service.persistent
+        else None,
     )
 
 
@@ -192,8 +209,10 @@ def save_reference_canvas(
     status_code=status.HTTP_200_OK,
 )
 def list_shared_folders(
-    authorization: Optional[str] = Header(None),
-    x_user_role: str = Header("editor", alias="X-User-Role", description="用户角色权限"),
+    authorization: str | None = Header(None),
+    x_user_role: str = Header(
+        "editor", alias="X-User-Role", description="用户角色权限"
+    ),
 ):
     """返回已登记共享文件夹；无内容时必须为空数组。"""
     require_authenticated(authorization, x_user_role)
@@ -208,8 +227,10 @@ def list_shared_folders(
 )
 def create_shared_folder(
     payload: SharedFolderCreateRequest,
-    authorization: Optional[str] = Header(None),
-    x_user_role: str = Header("editor", alias="X-User-Role", description="用户角色权限"),
+    authorization: str | None = Header(None),
+    x_user_role: str = Header(
+        "editor", alias="X-User-Role", description="用户角色权限"
+    ),
 ):
     """登记项目目录内的相对路径；只登记不扫描、不复制文件。"""
     require_edit_access(authorization, x_user_role)
@@ -223,8 +244,10 @@ def create_shared_folder(
 )
 def import_shared_folder_items(
     payload: dict = Body(default_factory=dict),
-    authorization: Optional[str] = Header(None),
-    x_user_role: str = Header("editor", alias="X-User-Role", description="用户角色权限"),
+    authorization: str | None = Header(None),
+    x_user_role: str = Header(
+        "editor", alias="X-User-Role", description="用户角色权限"
+    ),
 ):
     """无真实文件复制与素材库写入能力：如实 503 fail-closed。"""
     require_edit_access(authorization, x_user_role)
@@ -238,8 +261,10 @@ def import_shared_folder_items(
 )
 def get_shared_folder_tree(
     folder_id: str,
-    authorization: Optional[str] = Header(None),
-    x_user_role: str = Header("editor", alias="X-User-Role", description="用户角色权限"),
+    authorization: str | None = Header(None),
+    x_user_role: str = Header(
+        "editor", alias="X-User-Role", description="用户角色权限"
+    ),
 ):
     """真实目录扫描未接入：目标不存在 404，存在则如实 503，绝不返回假目录树。"""
     require_authenticated(authorization, x_user_role)
@@ -254,13 +279,14 @@ def get_shared_folder_tree(
 )
 def delete_shared_folder(
     folder_id: str,
-    authorization: Optional[str] = Header(None),
-    x_user_role: str = Header("editor", alias="X-User-Role", description="用户角色权限"),
+    authorization: str | None = Header(None),
+    x_user_role: str = Header(
+        "editor", alias="X-User-Role", description="用户角色权限"
+    ),
 ):
     """移除登记；不存在必须 404 SHARED_FOLDER_NOT_FOUND。"""
     require_edit_access(authorization, x_user_role)
     return shared_folders.delete_folder(folder_id)
-
 
 
 # ---------------------------------------------------------------------------
@@ -276,8 +302,10 @@ def delete_shared_folder(
 )
 def list_canvas_trash(
     view: str = Query("deleted", description="deleted（回收站）或 archived（归档）"),
-    authorization: Optional[str] = Header(None),
-    x_user_role: str = Header("editor", alias="X-User-Role", description="用户角色权限"),
+    authorization: str | None = Header(None),
+    x_user_role: str = Header(
+        "editor", alias="X-User-Role", description="用户角色权限"
+    ),
 ):
     """返回回收站 / 归档列表；无内容时必须是空数组，不返回演示条目。"""
     context = require_authenticated(authorization, x_user_role)
@@ -289,7 +317,9 @@ def list_canvas_trash(
             code="INVALID_REQUEST",
             message="view 仅支持 deleted 或 archived",
         )
-    return _owned_projection(closure.list_trash(view="deleted" if view == "deleted" else "archived"), context)
+    return _owned_projection(
+        closure.list_trash(view="deleted" if view == "deleted" else "archived"), context
+    )
 
 
 @router.post(
@@ -299,8 +329,10 @@ def list_canvas_trash(
 )
 def attach_registry_assets_to_canvas(
     payload: CanvasAssetAttachRequest,
-    authorization: Optional[str] = Header(None),
-    x_user_role: str = Header("editor", alias="X-User-Role", description="用户角色权限"),
+    authorization: str | None = Header(None),
+    x_user_role: str = Header(
+        "editor", alias="X-User-Role", description="用户角色权限"
+    ),
 ):
     """素材注册表未接入：如实 503 fail-closed，绝不伪造已挂接素材。"""
     require_edit_access(authorization, x_user_role)
@@ -322,8 +354,10 @@ def attach_registry_assets_to_canvas(
 def update_canvas_meta(
     canvas_id: str,
     payload: CanvasMetaRequest,
-    authorization: Optional[str] = Header(None),
-    x_user_role: str = Header("editor", alias="X-User-Role", description="用户角色权限"),
+    authorization: str | None = Header(None),
+    x_user_role: str = Header(
+        "editor", alias="X-User-Role", description="用户角色权限"
+    ),
 ):
     """更新标题 / 实体绑定 / 项目归属；权限与项目状态先于 CAS，冲突严格 409。"""
     context = require_authenticated(authorization, x_user_role)
@@ -340,7 +374,11 @@ def update_canvas_meta(
         from gw.projects_hub.service import require_project_write_context
 
         require_project_write_context(patch["project_id"], context)
-    return {"canvas": closure.update_canvas_meta(canvas_id, patch, expected_version=payload.resolved_version())}
+    return {
+        "canvas": closure.update_canvas_meta(
+            canvas_id, patch, expected_version=payload.resolved_version()
+        )
+    }
 
 
 @router.post(
@@ -352,10 +390,12 @@ def update_canvas_meta(
 def touch_canvas(
     canvas_id: str,
     operation: str = Query(..., description="archive 或 unarchive"),
-    payload: Optional[CanvasTouchRequest] = Body(default=None),
-    expected_version: Optional[int] = Query(None, ge=1, description="画布 CAS 期望版本"),
-    authorization: Optional[str] = Header(None),
-    x_user_role: str = Header("editor", alias="X-User-Role", description="用户角色权限"),
+    payload: CanvasTouchRequest | None = Body(default=None),
+    expected_version: int | None = Query(None, ge=1, description="画布 CAS 期望版本"),
+    authorization: str | None = Header(None),
+    x_user_role: str = Header(
+        "editor", alias="X-User-Role", description="用户角色权限"
+    ),
 ):
     """归档 / 解归档；只翻转状态，不借 touch 绕过项目写门禁与 CAS。"""
     context = require_authenticated(authorization, x_user_role)
@@ -363,7 +403,9 @@ def touch_canvas(
     resolved = expected_version
     if resolved is None and payload is not None:
         resolved = payload.expected_version
-    return {"canvas": closure.touch_canvas(canvas_id, operation, expected_version=resolved)}
+    return {
+        "canvas": closure.touch_canvas(canvas_id, operation, expected_version=resolved)
+    }
 
 
 @router.post(
@@ -380,9 +422,11 @@ def touch_canvas(
 )
 def purge_canvas(
     canvas_id: str,
-    expected_version: Optional[int] = Query(None, ge=1),
-    authorization: Optional[str] = Header(None),
-    x_user_role: str = Header("editor", alias="X-User-Role", description="用户角色权限"),
+    expected_version: int | None = Query(None, ge=1),
+    authorization: str | None = Header(None),
+    x_user_role: str = Header(
+        "editor", alias="X-User-Role", description="用户角色权限"
+    ),
 ):
     """仅允许彻底删除回收站中的画布；未入回收站返回 409，禁止越权直删。"""
     context = require_authenticated(authorization, x_user_role)
@@ -398,11 +442,15 @@ def purge_canvas(
 )
 def trash_canvas(
     canvas_id: str,
-    expected_version: Optional[int] = Query(None, ge=1, description="画布 CAS 期望版本"),
-    authorization: Optional[str] = Header(None),
-    x_user_role: str = Header("editor", alias="X-User-Role", description="用户角色权限"),
+    expected_version: int | None = Query(None, ge=1, description="画布 CAS 期望版本"),
+    authorization: str | None = Header(None),
+    x_user_role: str = Header(
+        "editor", alias="X-User-Role", description="用户角色权限"
+    ),
 ):
     """软删除：移入回收站而非物理删除，可经 /restore 恢复。"""
     context = require_authenticated(authorization, x_user_role)
     _canvas_write_context(canvas_id, context)
-    return {"canvas": closure.move_to_trash(canvas_id, expected_version=expected_version)}
+    return {
+        "canvas": closure.move_to_trash(canvas_id, expected_version=expected_version)
+    }

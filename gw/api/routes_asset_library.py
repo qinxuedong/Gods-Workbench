@@ -36,11 +36,14 @@ from gw.asset_library.models import (
     LibraryCreateResponse,
 )
 from gw.asset_library.service import default_asset_library_service
+from gw.core.asset_visibility import asset_request_scope
 from gw.core.auth import require_authenticated, require_edit_access
 
-from gw.core.asset_visibility import asset_request_scope
-
-router = APIRouter(prefix="/api/asset-library", tags=["asset-library"], dependencies=[Depends(asset_request_scope)])
+router = APIRouter(
+    prefix="/api/asset-library",
+    tags=["asset-library"],
+    dependencies=[Depends(asset_request_scope)],
+)
 
 
 @router.get(
@@ -50,8 +53,10 @@ router = APIRouter(prefix="/api/asset-library", tags=["asset-library"], dependen
     status_code=status.HTTP_200_OK,
 )
 def get_asset_library(
-    authorization: Optional[str] = Header(None),
-    x_user_role: str = Header("editor", alias="X-User-Role", description="用户角色权限"),
+    authorization: str | None = Header(None),
+    x_user_role: str = Header(
+        "editor", alias="X-User-Role", description="用户角色权限"
+    ),
 ):
     """返回当前身份可见的素材库树；空库返回空数组，不伪造素材。"""
     require_authenticated(authorization, x_user_role)
@@ -66,8 +71,10 @@ def get_asset_library(
 )
 def create_asset_library(
     payload: AssetLibraryCreateRequest,
-    authorization: Optional[str] = Header(None),
-    x_user_role: str = Header("editor", alias="X-User-Role", description="用户角色权限"),
+    authorization: str | None = Header(None),
+    x_user_role: str = Header(
+        "editor", alias="X-User-Role", description="用户角色权限"
+    ),
 ):
     """创建素材库；要求写权限，重名或目录版本冲突失败关闭。"""
     require_edit_access(authorization, x_user_role)
@@ -83,8 +90,10 @@ def create_asset_library(
 )
 def create_asset_library_category(
     payload: CategoryCreateRequest,
-    authorization: Optional[str] = Header(None),
-    x_user_role: str = Header("editor", alias="X-User-Role", description="用户角色权限"),
+    authorization: str | None = Header(None),
+    x_user_role: str = Header(
+        "editor", alias="X-User-Role", description="用户角色权限"
+    ),
 ):
     """在指定素材库下创建分类；要求写权限，父库不存在或版本冲突失败关闭。"""
     require_edit_access(authorization, x_user_role)

@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 # Copyright 2026 Gods-Workbench Authors
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -35,15 +34,15 @@ from gw.prompt_library import items_repository as repo
 router = APIRouter(prefix="/api/prompt-libraries", tags=["prompt-library-items-b8"])
 
 
-def _read(authorization: Optional[str], role: str):
+def _read(authorization: str | None, role: str):
     return require_authenticated(authorization, role)
 
 
-def _write(authorization: Optional[str], role: str):
+def _write(authorization: str | None, role: str):
     return require_edit_access(authorization, role)
 
 
-async def _json(request: Request) -> Dict[str, Any]:
+async def _json(request: Request) -> dict[str, Any]:
     try:
         payload = await request.json()
     except Exception:
@@ -53,8 +52,8 @@ async def _json(request: Request) -> Dict[str, Any]:
 
 @router.get("/items", status_code=status.HTTP_200_OK)
 def list_items(
-    library_id: Optional[str] = None,
-    authorization: Optional[str] = Header(None),
+    library_id: str | None = None,
+    authorization: str | None = Header(None),
     x_user_role: str = Header("editor", alias="X-User-Role"),
 ):
     """读取提示词条目集合；空集合返回 items: []，不伪造任何文本。"""
@@ -65,7 +64,7 @@ def list_items(
 @router.post("/items", status_code=status.HTTP_201_CREATED)
 async def create_item(
     request: Request,
-    authorization: Optional[str] = Header(None),
+    authorization: str | None = Header(None),
     x_user_role: str = Header("editor", alias="X-User-Role"),
 ):
     """创建条目；稳定 ID ``pitem_NNNN``（复用既有前缀），写后可 GET 读回。"""
@@ -77,7 +76,7 @@ async def create_item(
 async def update_item(
     item_id: str,
     request: Request,
-    authorization: Optional[str] = Header(None),
+    authorization: str | None = Header(None),
     x_user_role: str = Header("editor", alias="X-User-Role"),
 ):
     """更新条目；不存在 404，条目级 CAS 冲突 409。"""
@@ -88,8 +87,8 @@ async def update_item(
 @router.delete("/items/{item_id}", status_code=status.HTTP_200_OK)
 def delete_item(
     item_id: str,
-    expected_version: Optional[int] = Query(None, ge=1),
-    authorization: Optional[str] = Header(None),
+    expected_version: int | None = Query(None, ge=1),
+    authorization: str | None = Header(None),
     x_user_role: str = Header("editor", alias="X-User-Role"),
 ):
     """删除条目；删除后 GET 不再返回该条目。"""
@@ -100,13 +99,13 @@ def delete_item(
 @router.post("/items/delete", status_code=status.HTTP_200_OK)
 async def bulk_delete_items(
     request: Request,
-    authorization: Optional[str] = Header(None),
+    authorization: str | None = Header(None),
     x_user_role: str = Header("editor", alias="X-User-Role"),
 ):
     """批量删除条目；只删除真实存在的 ID，禁止静默伪造成删除成功。"""
     _write(authorization, x_user_role)
     payload = await _json(request)
-    ids: List[str] = payload.get("ids") or []
+    ids: list[str] = payload.get("ids") or []
     if not isinstance(ids, list):
         ids = []
     return repo.bulk_delete(ids, payload.get("expected_version"))
