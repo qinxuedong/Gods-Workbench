@@ -46,6 +46,8 @@
     const qa = (selector, root=document) => [...root.querySelectorAll(selector)];
     const esc = value => String(value ?? '').replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
     const attr = esc;
+    // 既有评论颜色可能来自外部访客；渲染前同样执行白名单并回退默认色。
+    const safeAnnotationColor = (value, fallback) => {const color = String(value || '').trim().toLowerCase();return /^(?:#(?:[0-9a-f]{3}|[0-9a-f]{6})|rgba?\([^()'"<>;&\\]{1,80}\)|hsla?\([^()'"<>;&\\]{1,80}\)|transparent|currentcolor|[a-z]{3,32})$/.test(color) ? color : fallback;};
     const REVIEW_CONTEXT_KEYS = ['asset_id','asset_version_id','project_id','team_id','canvas_id'];
     const REVIEW_REQUIRED_KEYS = ['asset_id','asset_version_id','project_id','team_id'];
     let reviewReady = false;
@@ -651,7 +653,7 @@
     function annotationSvg(annotation, draft=false){
         const geometry = annotation?.geometry || {};
         const style = annotation?.style || {};
-        const stroke = style.color || (draft ? '#ffb020' : '#ff4d67');
+        const stroke = safeAnnotationColor(style.color, draft ? '#ffb020' : '#ff4d67');
         const width = Number(style.width || 4);
         const x = Number(geometry.x || 0) * 1000;
         const y = Number(geometry.y || 0) * 1000;

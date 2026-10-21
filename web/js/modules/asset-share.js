@@ -48,6 +48,8 @@ import assetShareApi, {createAssetShareMediaSession} from './asset-share/api.js'
     }
     const esc=value=>String(value??'').replace(/[&<>"']/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
     const attr=esc;
+    // 访客颜色是外部输入；白名单外的形状一律回退，避免进入 SVG 字符串属性边界。
+    const safeAnnotationColor=(value,fallback)=>{const color=String(value||'').trim().toLowerCase();return /^(?:#(?:[0-9a-f]{3}|[0-9a-f]{6})|rgba?\([^()'"<>;&\\]{1,80}\)|hsla?\([^()'"<>;&\\]{1,80}\)|transparent|currentcolor|[a-z]{3,32})$/.test(color)?color:fallback;};
     const icon=(name)=>'<i data-lucide="'+name+'"></i>';
     const current=()=>state.data?.assets?.[state.index]||null;
     // 统一从后端标准错误包 {"detail":{"code":...,"message":...}} 提取可读信息。
@@ -195,7 +197,7 @@ import assetShareApi, {createAssetShareMediaSession} from './asset-share/api.js'
         }
     }
     function annotationSvg(annotation,draft=false){
-        const g=annotation?.geometry||{};const color=annotation?.style?.color||(draft?'#ffb020':'#ff4d67');const width=Number(annotation?.style?.width||4);
+        const g=annotation?.geometry||{};const color=safeAnnotationColor(annotation?.style?.color,draft?'#ffb020':'#ff4d67');const width=Number(annotation?.style?.width||4);
         const x=Number(g.x||0)*1000,y=Number(g.y||0)*1000,x2=Number(g.x2??g.x??0)*1000,y2=Number(g.y2??g.y??0)*1000,w=Number(g.width||0)*1000,h=Number(g.height||0)*1000;
         if(annotation.kind==='pin')return '<g><circle cx="'+x+'" cy="'+y+'" r="18" fill="'+color+'"/><circle cx="'+x+'" cy="'+y+'" r="7" fill="white"/></g>';
         if(annotation.kind==='rect')return '<rect x="'+x+'" y="'+y+'" width="'+w+'" height="'+h+'" fill="none" stroke="'+color+'" stroke-width="'+width+'" vector-effect="non-scaling-stroke"/>';
