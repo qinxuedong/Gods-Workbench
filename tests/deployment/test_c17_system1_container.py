@@ -22,6 +22,7 @@ def test_system1_dockerfile_is_pinned_cpu_only_and_non_root():
     assert "FROM python:3.11-slim-bookworm" in text
     assert "PIP_NO_CACHE_DIR=1" in text
     assert "GW_CPU_ONLY=1" in text
+    assert "KEV_MODEL_REVISION=9a45d25e" in text
     assert "CUDA_VISIBLE_DEVICES=\"\"" in text
     assert "NVIDIA_VISIBLE_DEVICES=void" in text
     assert "HF_HUB_OFFLINE=1" in text
@@ -42,7 +43,9 @@ def test_system1_compose_declares_one_cpu_service_and_pinned_build():
     assert service["image"] == "gods-workbench-system1:local"
     assert service["user"] == "10001:10001"
     assert service["environment"]["GW_CPU_ONLY"] == "1"
-    assert service["environment"]["KEV_DEVICE"] == "cpu"
+    assert str(service["environment"]["KEV_ENDPOINT"]).startswith("${KEV_ENDPOINT:?")
+    assert service["environment"]["KEV_MODEL_FAMILY"] == "kev-0.8b"
+    assert service["environment"]["KEV_MODEL_REVISION"] == "9a45d25e"
     assert service["environment"]["CUDA_VISIBLE_DEVICES"] == ""
     assert service["environment"]["NVIDIA_VISIBLE_DEVICES"] == "void"
     assert service["environment"]["HF_HUB_OFFLINE"] == "1"
@@ -91,4 +94,3 @@ def test_system1_healthcheck_is_local_and_does_not_require_credentials():
     text = DOCKERFILE.read_text(encoding="utf-8") + COMPOSE_FILE.read_text(encoding="utf-8")
     forbidden = ("OPENAI_API_KEY", "ANTHROPIC_API_KEY", "GEMINI_API_KEY", "Authorization:")
     assert not any(marker in text for marker in forbidden)
-

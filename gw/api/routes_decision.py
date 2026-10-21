@@ -2,15 +2,25 @@
 
 from __future__ import annotations
 
+import os
 from typing import Any, Literal
 
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field
 
-from gw.decision.router import DecisionInputError, DecisionRouter, build_decision_api_router
+from gw.decision.router import (
+    DecisionInputError,
+    DecisionRouter,
+    KevDecisionBackend,
+    build_decision_api_router,
+)
 
 
-default_decision_router = DecisionRouter()
+default_decision_router = DecisionRouter(
+    kev_backend=KevDecisionBackend(os.getenv("KEV_ENDPOINT"))
+    if os.getenv("KEV_ENDPOINT")
+    else None
+)
 
 
 class ChoiceOption(BaseModel):
