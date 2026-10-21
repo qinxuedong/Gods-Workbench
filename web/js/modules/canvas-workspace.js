@@ -24,6 +24,7 @@
     LATENT: "#c084fc",
     VAE: "#f43f5e",
     ANY: "#dfc384",
+    CONDITION: "#a5f3fc",
     DEFAULT: "#94a3b8"
   };
 
@@ -132,7 +133,12 @@
         this.nodes = Array.isArray(data.nodes) ? data.nodes : [];
         this.connections = Array.isArray(data.connections) ? data.connections : [];
         this.currentCanvasMeta.version = data.version || meta.version || 1;
+        (this.nodes || []).forEach((node) => {
+          if (!global.GodCanvasGateNode?.isGate?.(node)) return;
+          Object.assign(node, global.GodCanvasGateNode.gateMetadata(node));
+        });
         this.render();
+        global.GodCanvasGateNode?.decorateStage?.(this.stageEl, this.nodes);
         return;
       } catch (err) {
         console.warn('获取画布拓扑降级:', err);
@@ -169,6 +175,13 @@
         const nodeEl = document.createElement('div');
         nodeEl.className = `canvas-workspace-node ${this.selectedNodeId === node.entity_id ? 'selected' : ''}`;
         nodeEl.dataset.nodeId = node.entity_id;
+        if (global.GodCanvasGateNode?.isGate?.(node)) {
+          nodeEl.classList.add('gate-node');
+          nodeEl.style.borderColor = '#a5f3fc';
+          nodeEl.style.boxShadow = '0 0 14px rgba(165, 243, 252, 0.18), 0 10px 28px rgba(0, 0, 0, 0.88)';
+          nodeEl.dataset.gateCondition = global.GodCanvasGateNode
+            .normalizeCondition(node.condition).decision_type;
+        }
         nodeEl.style.left = `${node.position?.x || 50}px`;
         nodeEl.style.top = `${node.position?.y || 50}px`;
 
@@ -205,6 +218,12 @@
             <div class="ports-col ports-col-out">${outPortsHtml}</div>
           </div>
         `;
+        if (global.GodCanvasGateNode?.isGate?.(node)) {
+          nodeEl.insertAdjacentHTML(
+            'afterbegin',
+            `<div class="gate-node-badge" style="display:flex;align-items:center;gap:5px;padding:2px 6px;margin-bottom:5px;border:1px solid rgba(165,243,252,.38);border-radius:999px;background:rgba(165,243,252,.08);color:#a5f3fc;font:700 10px/1 var(--gw-font-mono, monospace);letter-spacing:.08em;">SYSTEM 1</div>`
+          );
+        }
 
         // 鼠标按下开始拖拽与选中
         nodeEl.addEventListener('mousedown', (e) => {
@@ -223,18 +242,53 @@
       const selId = this.selectedNodeId;
 
       this.connections.forEach((conn) => {
-        const fromNode = this.nodes.find(n => n.entity_id === conn.from_node);
-        const toNode = this.nodes.find(n => n.entity_id === conn.to_node);
+        const fromNodeId = conn.from_node || conn.from;
+        const toNodeId = conn.to_node || conn.to;
+        const fromNode = this.nodes.find(n => n.entity_id === fromNodeId);
+        const toNode = this.nodes.find(n => n.entity_id === toNodeId);
         if (!fromNode || !toNode) return;
 
         // 计算端口圆心坐标
-        const fromNodeEl = this.nodesLayerEl.querySelector(`[data-node-id="${CSS.escape(conn.from_node)}"]`);
-        const toNodeEl = this.nodesLayerEl.querySelector(`[data-node-id="${CSS.escape(conn.to_node)}"]`);
+        const fromNodeEl = this.nodesLayerEl.querySelector(`[data-node-id="${CSS.escape(fromNodeId)}"]`);
+        const toNodeEl = this.nodesLayerEl.querySelector(`[data-node-id="${CSS.escape(toNodeId)}"]`);
 
-        let x1 = (fromNode.position?.x || 50) + (fromNodeEl?.offsetWidth || 195);
-        let y1 = (fromNode.position?.y || 50) + 38 + (Number(conn.from_port) || 0) * 22;
-        let x2 = (toNode.position?.x || 50);
-        let y2 = (toNode.position?.y || 50) + 38 + (Number(conn.to_port) || 0) * 22;
+        const fromPorts = Array.isArray(fromNode.out_ports)
+          ? fromNode.out_ports
+          : Array.isArray(fromNode.ports)
+            ? fromNode.ports
+            : [];
+        const toPorts = Array.isArray(toNode.in_ports)
+          ? toNode.in_ports
+          : Array.isArray(toNode.ports)
+            ? toNode.ports
+            : [];
+        const outSlot = fromPorts.findIndex(p => p.port_id === conn.from_port) + 1
+          || (Number(conn.from_port) || 0) + 1;
+        const inSlot = toPorts.findIndex(p => p.port_id === conn.to_port) + 1
+          || (Number(conn.to_port) || 0) + 1;
+        const outDot = this.nodesLayerEl.querySelector(
+          `[data-node-id="${CSS.escape(fromNodeId)}"] .ports-col-out .port-item:nth-child(${outSlot}) .port-dot`
+        );
+        const inDot = this.nodesLayerEl.querySelector(
+          `[data-node-id="${CSS.escape(toNodeId)}"] .ports-col-in .port-item:nth-child(${inSlot}) .port-dot`
+        );
+        const stageRect = this.stageEl?.getBoundingClientRect?.();
+        const portCenter = (dot, fallbackX, fallbackY) => {
+          if (!stageRect?.width && !stageRect?.height) return [fallbackX, fallbackY];
+          if (!dot?.getBoundingClientRect) return [fallbackX, fallbackY];
+          const rect = dot.getBoundingClientRect();
+          return [rect.left + rect.width / 2 - stageRect.left, rect.top + rect.height / 2 - stageRect.top];
+        };
+        const [x1, y1] = portCenter(
+          outDot,
+          (fromNode.position?.x || 50) + (fromNodeEl?.offsetWidth || 195),
+          (fromNode.position?.y || 50) + 38 + (outSlot - 1) * 22
+        );
+        const [x2, y2] = portCenter(
+          inDot,
+          toNode.position?.x || 50,
+          (toNode.position?.y || 50) + 38 + (inSlot - 1) * 22
+        );
 
         const dx = Math.max(55, Math.abs(x2 - x1) * 0.45);
         const d = `M ${x1} ${y1} C ${x1 + dx} ${y1}, ${x2 - dx} ${y2}, ${x2} ${y2}`;
@@ -242,7 +296,7 @@
         const dType = conn.data_type || "DEFAULT";
         const dotColor = PORT_COLORS[dType] || PORT_COLORS.DEFAULT;
 
-        const isConnectedToSelected = selId !== null && (conn.from_node === selId || conn.to_node === selId);
+        const isConnectedToSelected = selId !== null && (fromNodeId === selId || toNodeId === selId);
         const baseOpacity = selId ? (isConnectedToSelected ? "0.95" : "0.22") : "0.75";
         const strokeWidth = isConnectedToSelected ? 2.2 : 1.5;
 
@@ -266,7 +320,7 @@
         }
 
         pathsHtml.push(`
-          <g class="wire-group" data-wire-from="${conn.from_node}" data-wire-to="${conn.to_node}">
+          <g class="wire-group" data-wire-from="${fromNodeId}" data-wire-to="${toNodeId}">
             <path class="canvas-topology-wire-base" d="${d}" stroke="${dotColor}" stroke-width="${strokeWidth}" stroke-opacity="${baseOpacity}" />
             ${flowSpindleHtml}
             <circle cx="${x1}" cy="${y1}" r="2.5" fill="${dotColor}" opacity="${baseOpacity}" />

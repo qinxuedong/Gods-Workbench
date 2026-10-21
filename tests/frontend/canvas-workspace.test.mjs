@@ -96,3 +96,35 @@ test('canvas-list 浮窗严格符合 GW-UI-FW-01 与模态规范', () => {
   assert.ok(canvasListJs.includes('archiveBackdrop'), 'canvas-list.js 必须监听 archiveBackdrop 关闭');
 });
 
+test('C17 Gate 节点模块注册黑金门控契约并完成分支求值', () => {
+  const gateJs = fs.readFileSync(path.resolve('web/js/modules/canvas-gate-node.js'), 'utf-8');
+  const wsJs = fs.readFileSync(WORKSPACE_JS_PATH, 'utf-8');
+  const gateModule = {};
+
+  new Function('window', gateJs)(gateModule);
+  assert.equal(gateModule.GodCanvasGateNode.GATE_NODE_KIND, 'gate');
+  assert.deepEqual(
+    gateModule.GodCanvasGateNode.gatePorts({decision_type: 'boolean'}).map(item => item.port_id),
+    ['in', 'true', 'false']
+  );
+  assert.deepEqual(
+    gateModule.GodCanvasGateNode.gatePorts({
+      decision_type: 'choice',
+      options: ['cinematic', 'memo']
+    }).map(item => item.port_id),
+    ['in', 'cinematic', 'memo']
+  );
+  const evaluation = gateModule.GodCanvasGateNode.evaluate(
+    {entity_id: 'gate', kind: 'gate', condition: {decision_type: 'boolean'}},
+    {decision_type: 'boolean', result: {value: true}},
+    [
+      {connection_id: 'wire-true', from: 'gate', to: 'cinematic', from_port: 'true'},
+      {connection_id: 'wire-false', from: 'gate', to: 'memo', from_port: 'false'}
+    ],
+    [{entity_id: 'cinematic'}, {entity_id: 'memo'}]
+  );
+  assert.deepEqual(evaluation.triggered_node_ids, ['cinematic']);
+  assert.match(wsJs, /GodCanvasGateNode/);
+  assert.match(wsJs, /CONDITION:\s*"#a5f3fc"/);
+});
+
