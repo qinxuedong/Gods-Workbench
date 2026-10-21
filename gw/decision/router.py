@@ -78,6 +78,70 @@ class RemoteDecisionBackend:
         return result
 
 
+class KevDecisionBackend:
+    """调用显式配置的 Kev System One 服务；未配置时保持失败关闭。"""
+
+    name = "kev-cpu"
+
+    def __init__(self, endpoint: str | None, *, transport: Callable[..., Any] | None = None) -> None:
+        if not endpoint:
+            raise ValueError("必须通过 KEV_ENDPOINT 显式配置 Kev 推理端点")
+        if not isinstance(endpoint, str) or not endpoint.startswith(("http://", "https://")):
+            raise ValueError("KEV_ENDPOINT 必须使用 http:// 或 https://")
+        self.endpoint = endpoint
+        self._transport = transport
+
+    async def decide(self, payload: Mapping[str, Any]) -> Mapping[str, Any]:
+        decision_type = payload.get("decision_type")
+        request: dict[str, Any] = {"state": str(payload.get("prompt") or "")}
+        if decision_type == "choice":
+            request["questions"] = {
+                "decision": {
+                    "type": "choice",
+                    "criteria": {item["id"]: None for item in payload.get("options", ())},
+                }
+            }
+        elif decision_type == "boolean":
+            request["questions"] = {"decision": {"type": "noul"}}
+        elif decision_type == "scoring":
+            request["questions"] = {"decision": {"type": "score"}}
+        else:
+            raise DecisionInputError("Kev 后端只支持 choice、scoring 或 boolean")
+
+        if self._transport is not None:
+            result = self._transport(self.endpoint, request)
+            if inspect.isawaitable(result):
+                result = await result
+        else:
+            import httpx
+
+            try:
+                async with httpx.AsyncClient(timeout=10) as client:
+                    response = await client.post(self.endpoint, json=request)
+                    response.raise_for_status()
+                    result = response.json()
+            except httpx.HTTPError as exc:
+                raise RuntimeError("Kev 推理服务请求失败") from exc
+
+        if not isinstance(result, Mapping):
+            raise RuntimeError("Kev 推理服务返回了非对象结果")
+        if decision_type == "choice":
+            probabilities = result.get("answers", {}).get("decision", {}).get("probabilities")
+            if not isinstance(probabilities, Mapping):
+                raise RuntimeError("Kev 推理服务未返回 choice probabilities")
+            return {"probabilities": dict(probabilities)}
+        if decision_type == "boolean":
+            value = result.get("answers", {}).get("decision", {}).get("noul")
+            if not isinstance(value, bool):
+                raise RuntimeError("Kev 推理服务未返回 boolean noul")
+            return {"value": value}
+        score = result.get("answers", {}).get("decision", {}).get("score")
+        if not isinstance(score, (int, float)) or isinstance(score, bool):
+            raise RuntimeError("Kev 推理服务未返回 score")
+        option_count = max(1, len(payload.get("options", ())))
+        return {"scores": {"decision": float(score) * 100.0 / float(max(option_count - 1, 1))}}
+
+
 class DecisionRouter:
     """把统一请求交给本地或已配置的远程后端，并校验稳定响应。"""
 
@@ -88,9 +152,11 @@ class DecisionRouter:
         backend: DecisionBackend | None = None,
         *,
         remote_backend: DecisionBackend | None = None,
+        kev_backend: DecisionBackend | None = None,
     ) -> None:
         self.backend = backend or LocalDecisionBackend()
         self.remote_backend = remote_backend
+        self.kev_backend = kev_backend
 
     async def decide(self, request: Mapping[str, Any]) -> dict[str, Any]:
         payload = dict(request)
@@ -115,6 +181,10 @@ class DecisionRouter:
 
     def _backend_for(self, payload: Mapping[str, Any]) -> DecisionBackend:
         provider = payload.get("provider", "local")
+        if provider == "kev-cpu":
+            if self.kev_backend is None:
+                raise RuntimeError("Kev 决策后端尚未配置")
+            return self.kev_backend
         if provider == "local":
             return self.backend
         if provider == "remote":
@@ -273,6 +343,7 @@ __all__ = [
     "DecisionBackend",
     "DecisionInputError",
     "DecisionRouter",
+    "KevDecisionBackend",
     "LocalDecisionBackend",
     "RemoteDecisionBackend",
     "build_decision_api_router",

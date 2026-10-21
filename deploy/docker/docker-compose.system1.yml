@@ -1,0 +1,61 @@
+# C17-T2：Kev-0.8B 纯 CPU 服务配置。
+# 模型卷必须由部署者预置；本文件不下载模型、不接收凭据，也不执行生产部署。
+
+services:
+  system1:
+    build:
+      context: ../..
+      dockerfile: deploy/docker/Dockerfile.system1
+    image: gods-workbench-system1:local
+    user: "10001:10001"
+    environment:
+      GW_RUNTIME_MODE: prod
+      LOCALAPPDATA: /var/lib
+      GW_DISABLE_AGENT_INTEGRATION: "1"
+      GW_CPU_ONLY: "1"
+      KEV_ENDPOINT: ${KEV_ENDPOINT:?set the Kev inference endpoint}
+      KEV_MODEL_FAMILY: kev-0.8b
+      KEV_MODEL_REVISION: 9a45d25e
+      GW_MODEL_OFFLINE: "1"
+      HF_HUB_OFFLINE: "1"
+      TRANSFORMERS_OFFLINE: "1"
+      CUDA_VISIBLE_DEVICES: ""
+      NVIDIA_VISIBLE_DEVICES: "void"
+      OMP_NUM_THREADS: "2"
+      MKL_NUM_THREADS: "2"
+      SYSTEM1_MAX_P95_MS: "50"
+    ports:
+      - "${SYSTEM1_PORT:-2077}:2077"
+    volumes:
+      - system1-models:/models/kev:ro
+      - system1-data:/var/lib/GodsWorkbench
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=64m
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    deploy:
+      resources:
+        limits:
+          cpus: "2.0"
+          memory: 500M
+    mem_limit: 500m
+    restart: unless-stopped
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:2077/healthz', timeout=2)"
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 20s
+
+volumes:
+  system1-models:
+    name: gods-workbench-system1-models
+  system1-data:
+    name: gods-workbench-system1-data
