@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 # Copyright 2026 Gods-Workbench Authors
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -23,6 +22,7 @@
 
 from enum import Enum
 from typing import List, Optional
+
 from pydantic import BaseModel, ConfigDict, Field
 
 
@@ -44,7 +44,9 @@ class AssetItem(BaseModel):
     library_id: str = Field(..., description="所属素材库标识")
     category_id: str = Field(..., description="所属分类标识")
     name: str = Field(..., description="素材名称")
-    url: Optional[str] = Field(None, description="素材访问地址；无法确定时为 null，绝不伪造")
+    url: str | None = Field(
+        None, description="素材访问地址；无法确定时为 null，绝不伪造"
+    )
     created_at: str = Field(..., description="创建时间（ISO 8601 UTC）")
 
 
@@ -60,7 +62,7 @@ class CategoryItem(BaseModel):
     version: int = Field(..., ge=1, description="并发控制版本号（CAS）")
     created_at: str = Field(..., description="创建时间（ISO 8601 UTC）")
     updated_at: str = Field(..., description="最近更新时间（ISO 8601 UTC）")
-    items: List[AssetItem] = Field(default_factory=list, description="分类内素材条目")
+    items: list[AssetItem] = Field(default_factory=list, description="分类内素材条目")
 
 
 class LibraryItem(BaseModel):
@@ -73,7 +75,7 @@ class LibraryItem(BaseModel):
     version: int = Field(..., ge=1, description="素材库 CAS 版本号")
     created_at: str = Field(..., description="创建时间（ISO 8601 UTC）")
     updated_at: str = Field(..., description="最近更新时间（ISO 8601 UTC）")
-    categories: List[CategoryItem] = Field(default_factory=list, description="分类集合")
+    categories: list[CategoryItem] = Field(default_factory=list, description="分类集合")
 
 
 class AssetLibrarySnapshot(BaseModel):
@@ -82,8 +84,10 @@ class AssetLibrarySnapshot(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
     version: int = Field(..., ge=1, description="顶层目录 CAS 版本号")
-    active_library_id: Optional[str] = Field(None, description="当前激活素材库标识；空库为 null")
-    libraries: List[LibraryItem] = Field(default_factory=list, description="素材库集合")
+    active_library_id: str | None = Field(
+        None, description="当前激活素材库标识；空库为 null"
+    )
+    libraries: list[LibraryItem] = Field(default_factory=list, description="素材库集合")
 
 
 class AssetLibraryResponse(BaseModel):
@@ -98,7 +102,9 @@ class AssetLibraryCreateRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     name: str = Field(..., min_length=1, max_length=128, description="素材库名称")
-    expected_version: Optional[int] = Field(None, ge=1, description="顶层目录 CAS 期望版本；缺省表示不校验")
+    expected_version: int | None = Field(
+        None, ge=1, description="顶层目录 CAS 期望版本；缺省表示不校验"
+    )
 
 
 class CategoryCreateRequest(BaseModel):
@@ -106,10 +112,14 @@ class CategoryCreateRequest(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    library_id: str = Field(..., min_length=1, max_length=128, description="父素材库标识")
+    library_id: str = Field(
+        ..., min_length=1, max_length=128, description="父素材库标识"
+    )
     name: str = Field(..., min_length=1, max_length=128, description="分类名称")
     type: CategoryType = Field(..., description="分类类型")
-    expected_version: Optional[int] = Field(None, ge=1, description="父库 CAS 期望版本；缺省表示不校验")
+    expected_version: int | None = Field(
+        None, ge=1, description="父库 CAS 期望版本；缺省表示不校验"
+    )
 
 
 class LibraryCreateResponse(BaseModel):
