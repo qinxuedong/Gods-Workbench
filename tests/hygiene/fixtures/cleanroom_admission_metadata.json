@@ -799,6 +799,13 @@
       "authorization_basis": "owner_approval_C14_T1_QIN-216_2026-10-20",
       "sha256": "49aa4528b1798d0a573cc48a457223b4343368b1030e2c8c38a4719ce929ba9a",
       "admission": "accepted"
+    },
+    {
+      "path": "docs/contracts/R4-MASTER-EXPORT-CONTRACT.md",
+      "classification": "frozen_interface_contract",
+      "authorization_basis": "owner_approval_C15_T1_QIN-220_2026-10-21",
+      "sha256": "87a7b487f1283b01285d8d8940c817a0da407e70122e405609d12f929c589d84",
+      "admission": "accepted"
     }
   ]
 }
