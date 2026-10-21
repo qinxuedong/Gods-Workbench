@@ -40,6 +40,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from gw.core import storage
 from gw.asset_registry import audit_sink
+from gw.asset_registry import media_probe
 from gw.asset_registry.service import normalize_asset_query, parse_utc_datetime
 from gw.core.errors import CleanroomException
 
@@ -176,6 +177,33 @@ def update_asset(asset_id: str, payload: Dict[str, Any]) -> Dict[str, Any]:
         for key in ("kind", "display_path", "archived"):
             if key in payload and payload[key] is not None:
                 item[key] = payload[key]
+        item["version"] = int(item.get("version", 1)) + 1
+        item["updated_at"] = storage.now_iso()
+        revision = _bump(raw)
+        return {"asset": dict(item), "revision": revision, "data_status": DATA_STATUS_OK}
+    return state().mutate(mutate)
+
+
+def rename_asset_file(
+    asset_id: str, expected_version: int, new_name: str, display_path: str
+) -> Dict[str, Any]:
+    """物理重命名已在事务内完成；本函数在同一注册表事务内记账并做 CAS。"""
+    def mutate(raw: Dict[str, Any]) -> Any:
+        item = _require(raw, asset_id)
+        current = int(item.get("version", 1))
+        if expected_version != current:
+            raise CleanroomException(
+                409,
+                "VERSION_CONFLICT",
+                "素材版本冲突，请重新读取后重试",
+                extra={
+                    "expected_version": expected_version,
+                    "current_version": current,
+                },
+                expose_extra_fields={"expected_version", "current_version"},
+            )
+        item["name"] = new_name
+        item["display_path"] = display_path
         item["version"] = int(item.get("version", 1)) + 1
         item["updated_at"] = storage.now_iso()
         revision = _bump(raw)
@@ -976,6 +1004,50 @@ def get_asset_media(asset_id: str) -> Dict[str, Any]:
         _unavailable("/api/asset-registry/assets/{asset_id}/media",
                      "MEDIA_NOT_AVAILABLE", "该素材没有可读取的媒体文件")
     return {"asset_id": asset_id, "versions": readable, "data_status": DATA_STATUS_OK}
+
+
+def derived_files(asset_id: str) -> Dict[str, Path]:
+    """返回已登记派生物的稳定名称到产物路径映射。"""
+    result: Dict[str, Path] = {}
+    raw = state().read()
+    item = raw["assets"].get(asset_id)
+    metadata = item.get("metadata") if item else None
+    if isinstance(metadata, dict):
+        for name, record in metadata.get("derived_assets", {}).items():
+            try:
+                path = storage.resolve_within_roots(str(record.get("path") or ""))
+            except CleanroomException:
+                continue
+            if path.is_file():
+                result[str(name)] = path
+    try:
+        storyboard_dir = media_probe.storyboard_directory(asset_id)
+        if storyboard_dir.exists():
+            for path in sorted(storyboard_dir.iterdir()):
+                if path.is_file() and media_probe.is_storyboard_cache_name(path.name):
+                    result[path.name] = path
+    except (CleanroomException, OSError):
+        pass
+    return result
+
+
+def register_derived_asset(asset_id: str, name: str, raw_path: str) -> Dict[str, Any]:
+    """登记已存在的产物文件；文件必须在允许根内且真实存在。"""
+    clean_name = "".join(ch for ch in (name or "") if ch.isalnum() or ch in "-_. ").strip()
+    if not clean_name or not raw_path:
+        raise CleanroomException(400, "INVALID_REQUEST", "缺少派生物名称或路径")
+    path = storage.resolve_within_roots(raw_path)
+    if not path.is_file():
+        raise CleanroomException(404, "FILE_NOT_FOUND", "派生物文件不存在")
+
+    def mutate(raw: Dict[str, Any]) -> Any:
+        item = _require(raw, asset_id)
+        records = item.setdefault("metadata", {}).setdefault("derived_assets", {})
+        records[clean_name] = {"path": storage.relative_display(path), "registered_at": storage.now_iso()}
+        revision = _bump(raw)
+        return {"asset_id": asset_id, "name": clean_name, "registered": True,
+                "revision": revision, "data_status": DATA_STATUS_OK}
+    return state().mutate(mutate)
 
 
 def open_local(asset_id: str) -> Dict[str, Any]:
