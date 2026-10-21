@@ -157,6 +157,8 @@ def test_master_export_falls_back_to_cpu_after_hardware_encoder_failure(
         ]}]},
         {"video-001": source},
         tmp_path / "master.mp4",
+        ffmpeg_path="fake-ffmpeg",
+        ffprobe_path="fake-ffprobe",
         prefer_hardware=True,
     )
 
