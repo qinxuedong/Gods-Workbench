@@ -3,6 +3,7 @@
 本模块只处理统一任务契约、GNS-2026 命名和供应商适配边界。供应商对象由调用方注入，
 因此不会读取凭据、猜测服务地址或把 fixture 当作真实执行结果。
 """
+
 from __future__ import annotations
 
 import inspect
@@ -61,18 +62,32 @@ def build_video_filename(
 
 def build_storage_path(job_id: str, *, root: str = "artifacts") -> str:
     """返回 ASCII 物理存储路径；语义名称仍保存在资产登记中。"""
-    if not isinstance(job_id, str) or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_-]{0,127}", job_id):
+    if not isinstance(job_id, str) or not re.fullmatch(
+        r"[A-Za-z0-9][A-Za-z0-9_-]{0,127}", job_id
+    ):
         raise ValueError("job_id must be a filesystem-safe ASCII identifier")
-    if not isinstance(root, str) or not root or any(part in {"", ".", ".."} for part in PurePosixPath(root).parts):
+    if (
+        not isinstance(root, str)
+        or not root
+        or any(part in {"", ".", ".."} for part in PurePosixPath(root).parts)
+    ):
         raise ValueError("root must be a safe relative path")
     return f"{PurePosixPath(root) / (job_id + '.mp4')}"
 
 
 def _state(value: Any) -> str:
     value = str(value or "running").lower()
-    return {"queued": "accepted", "running": "running", "succeeded": "completed", "completed": "completed",
-            "failed": "failed", "error": "failed", "canceled": "cancelled", "cancelled": "cancelled",
-            "interrupted": "cancelled"}.get(value, "running")
+    return {
+        "queued": "accepted",
+        "running": "running",
+        "succeeded": "completed",
+        "completed": "completed",
+        "failed": "failed",
+        "error": "failed",
+        "canceled": "cancelled",
+        "cancelled": "cancelled",
+        "interrupted": "cancelled",
+    }.get(value, "running")
 
 
 async def _call(method: Any, *args: Any) -> Any:
@@ -102,20 +117,38 @@ class VideoJobExecutor:
         variant: str = "raw",
     ) -> dict[str, Any]:
         payload = build_i2v_payload(
-            shot_id=shot_id, image_asset_id=image_asset_id, target_duration=target_duration,
-            prompt=prompt, camera_ctrl=camera_ctrl, lora=lora, fixture_id=fixture_id,
+            shot_id=shot_id,
+            image_asset_id=image_asset_id,
+            target_duration=target_duration,
+            prompt=prompt,
+            camera_ctrl=camera_ctrl,
+            lora=lora,
+            fixture_id=fixture_id,
         )
-        filename = build_video_filename(episode, scene, shot_id, version, variant=variant)
+        filename = build_video_filename(
+            episode, scene, shot_id, version, variant=variant
+        )
         job_id = str(uuid.uuid4())
         remote = await _call(self.provider.submit, payload)
-        remote_id = remote.get("prompt_id") or remote.get("job_id") if isinstance(remote, dict) else None
+        remote_id = (
+            remote.get("prompt_id") or remote.get("job_id")
+            if isinstance(remote, dict)
+            else None
+        )
         if not isinstance(remote_id, str) or not remote_id.strip():
-            raise CleanroomException(502, "WORKFLOW_PROVIDER_INVALID_RESPONSE", "视频服务未返回任务 ID")
+            raise CleanroomException(
+                502, "WORKFLOW_PROVIDER_INVALID_RESPONSE", "视频服务未返回任务 ID"
+            )
         job = {
-            "job_id": job_id, "remote_task_id": remote_id.strip(), "status": "accepted",
-            "shot_id": shot_id, "episode": episode, "scene": scene,
+            "job_id": job_id,
+            "remote_task_id": remote_id.strip(),
+            "status": "accepted",
+            "shot_id": shot_id,
+            "episode": episode,
+            "scene": scene,
             "version": f"v{int(version):03d}" if isinstance(version, int) else version,
-            "filename": filename, "path": build_storage_path(job_id, root=self.storage_root),
+            "filename": filename,
+            "path": build_storage_path(job_id, root=self.storage_root),
             "payload": payload,
         }
         self._jobs[job_id] = job
@@ -131,11 +164,20 @@ class VideoJobExecutor:
         job["status"] = status
         if status == "completed":
             asset_id = str(uuid.uuid4())
-            job["outputs"] = response.get("outputs") if isinstance(response.get("outputs"), list) else []
+            job["outputs"] = (
+                response.get("outputs")
+                if isinstance(response.get("outputs"), list)
+                else []
+            )
             job["asset"] = {
-                "asset_id": asset_id, "job_id": job["job_id"], "filename": job["filename"],
-                "path": job["path"], "content_type": "video/mp4", "source_shot_id": job["shot_id"],
-                "source_version": job["version"], "origin": "video_model_executor",
+                "asset_id": asset_id,
+                "job_id": job["job_id"],
+                "filename": job["filename"],
+                "path": job["path"],
+                "content_type": "video/mp4",
+                "source_shot_id": job["shot_id"],
+                "source_version": job["version"],
+                "origin": "video_model_executor",
             }
         elif status == "failed":
             job["error"] = response.get("error") or "video provider failed"
@@ -160,4 +202,9 @@ class VideoJobExecutor:
         return job
 
 
-__all__ = ["VideoJobExecutor", "VideoProvider", "build_storage_path", "build_video_filename"]
+__all__ = [
+    "VideoJobExecutor",
+    "VideoProvider",
+    "build_storage_path",
+    "build_video_filename",
+]

@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 # Copyright 2026 Gods-Workbench Authors
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -23,7 +22,6 @@ from itertools import islice
 from numbers import Integral
 
 from gw.core.errors import CleanroomException
-
 
 _FRAME_SECONDS = 0.01
 _DIALOGUE_THRESHOLD = 0.01  # -40 dBFS，输入样本为 [-1, 1] 浮点 PCM。

@@ -1,4 +1,5 @@
 """Host-boundary recovery, authorization-race, and tracing regressions for AgentRuns."""
+
 from __future__ import annotations
 
 import asyncio
@@ -34,7 +35,6 @@ from gw.agent_runtime.models import (
 from gw.agent_runtime.policy import CapabilityRegistry, RuntimePolicy
 from gw.agent_runtime.service import AgentRuntimeService
 
-
 PASSWORD = "Test2026"
 ORIGIN_HEADERS = {"Origin": "http://localhost"}
 
@@ -43,7 +43,10 @@ class FakeGateway:
     """Typed model seam that returns deterministic text and never calls a provider."""
 
     def __init__(
-        self, *, unknown_first: bool = False, block_first: bool = False,
+        self,
+        *,
+        unknown_first: bool = False,
+        block_first: bool = False,
         block_third: bool = False,
     ) -> None:
         self.unknown_first = unknown_first
@@ -115,7 +118,10 @@ class FakeGateway:
         elif "dimension_scores" in properties:
             payload = {
                 "dimension_scores": {
-                    dimension: {"score": 10, "evidence": [f"Synthetic evidence for {dimension}."]}
+                    dimension: {
+                        "score": 10,
+                        "evidence": [f"Synthetic evidence for {dimension}."],
+                    }
                     for dimension in STAGE_WEIGHTS[StageId.brief]
                 },
                 "findings": [],
@@ -123,7 +129,9 @@ class FakeGateway:
                 "rollback_proposal": None,
             }
         else:
-            raise AssertionError("FakeGateway received an unrecognized structured output schema")
+            raise AssertionError(
+                "FakeGateway received an unrecognized structured output schema"
+            )
 
         return ModelInvocationResult(
             content=json.dumps(payload, ensure_ascii=False),
@@ -162,16 +170,20 @@ def _new_app(tmp_path, monkeypatch, gateway: FakeGateway):
     def configuration_provider() -> dict[str, Any]:
         return {
             "default_provider_id": "fake",
-            "providers": [{"provider_id": "fake", "configured": True, "models": ["fake-model"]}],
+            "providers": [
+                {"provider_id": "fake", "configured": True, "models": ["fake-model"]}
+            ],
         }
 
-    return create_app(agent_integration_factory=lambda: build_agent_integration(
-        gateway=gateway,
-        runtime_paths=paths,
-        model_resolver=model_resolver,
-        configuration_provider=configuration_provider,
-        start_worker=False,
-    ))
+    return create_app(
+        agent_integration_factory=lambda: build_agent_integration(
+            gateway=gateway,
+            runtime_paths=paths,
+            model_resolver=model_resolver,
+            configuration_provider=configuration_provider,
+            start_worker=False,
+        )
+    )
 
 
 def _open_client(app) -> TestClient:
@@ -201,25 +213,35 @@ def _setup_owner_and_project(client: TestClient) -> tuple[str, str]:
 
 
 def _create_run(
-    client: TestClient, project_id: str, *, key: str = "agent-recovery-create-1",
+    client: TestClient,
+    project_id: str,
+    *,
+    key: str = "agent-recovery-create-1",
     mode: str = "approval",
 ) -> str:
     profiles = client.get("/api/agent/config").json()["profiles"]
-    profile_id = next(item["config_snapshot_id"] for item in profiles if item["mode"] == mode)
-    response = client.post("/api/agent/runs", json={
-        "project_id": project_id,
-        "user_goal": "Complete a synthetic recovery test brief.",
-        "provider_id": "fake",
-        "model": "fake-model",
-        "mode": mode,
-        "config_snapshot_id": profile_id,
-        "input_artifact_refs": [],
-        "idempotency_key": key,
-        "request_id": f"request:{key}",
-    })
+    profile_id = next(
+        item["config_snapshot_id"] for item in profiles if item["mode"] == mode
+    )
+    response = client.post(
+        "/api/agent/runs",
+        json={
+            "project_id": project_id,
+            "user_goal": "Complete a synthetic recovery test brief.",
+            "provider_id": "fake",
+            "model": "fake-model",
+            "mode": mode,
+            "config_snapshot_id": profile_id,
+            "input_artifact_refs": [],
+            "idempotency_key": key,
+            "request_id": f"request:{key}",
+        },
+    )
     assert response.status_code == 202, response.text
     payload = response.json()
-    assert isinstance(payload.get("job_id"), str) and payload["job_id"].startswith("job_agent_")
+    assert isinstance(payload.get("job_id"), str) and payload["job_id"].startswith(
+        "job_agent_"
+    )
     assert payload["job_id"] != payload["run_id"]
     assert payload["poll_hint"] == f"/api/jobs/{payload['job_id']}"
     assert payload["status"] == "queued"
@@ -246,22 +268,34 @@ def test_execution_authorizer_accepts_run_bound_and_legacy_callbacks() -> None:
             return True
 
         legacy_service = AgentRuntimeService(
-            object(), object(), registry, execution_authorizer=legacy_authorizer,
+            object(),
+            object(),
+            registry,
+            execution_authorizer=legacy_authorizer,
         )
-        assert await legacy_service._execution_is_authorized(project_id, actor_id, run_id)
+        assert await legacy_service._execution_is_authorized(
+            project_id, actor_id, run_id
+        )
         assert legacy_calls == [(project_id.root, actor_id.root)]
 
         bound_calls: list[tuple[str, str, str | None]] = []
 
-        async def bound_authorizer(project: Identifier, actor: Identifier, run: Identifier | None = None) -> bool:
+        async def bound_authorizer(
+            project: Identifier, actor: Identifier, run: Identifier | None = None
+        ) -> bool:
             await asyncio.sleep(0)
             bound_calls.append((project.root, actor.root, run.root if run else None))
             return True
 
         bound_service = AgentRuntimeService(
-            object(), object(), registry, execution_authorizer=bound_authorizer,
+            object(),
+            object(),
+            registry,
+            execution_authorizer=bound_authorizer,
         )
-        assert await bound_service._execution_is_authorized(project_id, actor_id, run_id)
+        assert await bound_service._execution_is_authorized(
+            project_id, actor_id, run_id
+        )
         assert bound_calls == [(project_id.root, actor_id.root, run_id.root)]
 
     anyio.run(verify)
@@ -277,7 +311,9 @@ def test_each_langgraph_invoke_disables_ambient_langsmith_tracing(monkeypatch) -
         def __init__(self) -> None:
             self.observations: list[tuple[dict[str, Any], dict[str, Any]]] = []
 
-        async def ainvoke(self, state: dict[str, Any], *, config: dict[str, Any]) -> dict[str, Any]:
+        async def ainvoke(
+            self, state: dict[str, Any], *, config: dict[str, Any]
+        ) -> dict[str, Any]:
             self.observations.append((dict(get_tracing_context()), dict(config)))
             return state
 
@@ -291,7 +327,9 @@ def test_each_langgraph_invoke_disables_ambient_langsmith_tracing(monkeypatch) -
         async def unused_artifact_factory(_value):
             raise AssertionError("the fake graph must not invoke capabilities")
 
-        with tracing_context(enabled=True, project_name="synthetic-ambient", tags=["synthetic"]):
+        with tracing_context(
+            enabled=True, project_name="synthetic-ambient", tags=["synthetic"]
+        ):
             await executor.execute_stage_once(
                 stage=StageId.brief.value,
                 actor_id=Identifier("actor:synthetic"),
@@ -318,7 +356,9 @@ def test_each_langgraph_invoke_disables_ambient_langsmith_tracing(monkeypatch) -
     anyio.run(verify)
 
 
-def test_review_cas_race_and_approval_survive_app_recreation(tmp_path, monkeypatch) -> None:
+def test_review_cas_race_and_approval_survive_app_recreation(
+    tmp_path, monkeypatch
+) -> None:
     gateway = FakeGateway()
     app = _new_app(tmp_path, monkeypatch, gateway)
     with _open_client(app) as client:
@@ -356,11 +396,14 @@ def test_review_cas_race_and_approval_survive_app_recreation(tmp_path, monkeypat
         assert sorted(response.status_code for response in responses) == [200, 409], [
             (response.status_code, response.text) for response in responses
         ]
-        success_payload = next(response.json() for response in responses if response.status_code == 200)
+        success_payload = next(
+            response.json() for response in responses if response.status_code == 200
+        )
         assert success_payload["run"]["run_id"] == run_id
         with sqlite3.connect(tmp_path / "data" / "agent" / "runtime.sqlite3") as db:
             rows = db.execute(
-                "SELECT approval_json FROM approvals WHERE run_id=?", (run_id,),
+                "SELECT approval_json FROM approvals WHERE run_id=?",
+                (run_id,),
             ).fetchall()
         decisions = [ApprovalRecord.model_validate_json(row[0]) for row in rows]
         assert len(decisions) == 1
@@ -373,7 +416,9 @@ def test_review_cas_race_and_approval_survive_app_recreation(tmp_path, monkeypat
         # Human rejection is separately queryable through its durable run event;
         # the current `approval` projection intentionally returns null for reject.
         if accepted.decision.value == "approve":
-            assert success_payload["approval"]["approval_id"] == accepted.approval_id.root
+            assert (
+                success_payload["approval"]["approval_id"] == accepted.approval_id.root
+            )
         else:
             assert success_payload["approval"] is None
 
@@ -392,7 +437,8 @@ def test_review_cas_race_and_approval_survive_app_recreation(tmp_path, monkeypat
             )
             assert event_response.status_code == 200, event_response.text
             rejection_events = [
-                event for event in event_response.json()["events"]
+                event
+                for event in event_response.json()["events"]
                 if event["event_type"] == "approval.rejected.revision_queued"
             ]
             assert any(
@@ -401,7 +447,8 @@ def test_review_cas_race_and_approval_survive_app_recreation(tmp_path, monkeypat
             )
         with sqlite3.connect(tmp_path / "data" / "agent" / "runtime.sqlite3") as db:
             rows = db.execute(
-                "SELECT approval_json FROM approvals WHERE run_id=?", (run_id,),
+                "SELECT approval_json FROM approvals WHERE run_id=?",
+                (run_id,),
             ).fetchall()
         recovered = [ApprovalRecord.model_validate_json(row[0]) for row in rows]
         assert len(recovered) == 1
@@ -410,7 +457,9 @@ def test_review_cas_race_and_approval_survive_app_recreation(tmp_path, monkeypat
         assert recovered[0].reason.root == "synthetic concurrent reviewer decision"
 
 
-def test_read_only_get_does_not_rebind_revoked_session_after_relogin(tmp_path, monkeypatch) -> None:
+def test_read_only_get_does_not_rebind_revoked_session_after_relogin(
+    tmp_path, monkeypatch
+) -> None:
     gateway = FakeGateway()
     app = _new_app(tmp_path, monkeypatch, gateway)
     with _open_client(app) as client:
@@ -447,7 +496,9 @@ def test_read_only_get_does_not_rebind_revoked_session_after_relogin(tmp_path, m
         assert gateway.calls == []
 
 
-def test_unknown_model_send_is_not_replayed_after_app_recreation(tmp_path, monkeypatch) -> None:
+def test_unknown_model_send_is_not_replayed_after_app_recreation(
+    tmp_path, monkeypatch
+) -> None:
     gateway = FakeGateway(unknown_first=True)
     app = _new_app(tmp_path, monkeypatch, gateway)
     with _open_client(app) as client:
@@ -456,7 +507,8 @@ def test_unknown_model_send_is_not_replayed_after_app_recreation(tmp_path, monke
         _run_worker_once(client)
         integration = client.app.state.agent_integration
         run = client.portal.call(
-            integration.repository.read_run_by_id, Identifier(run_id),
+            integration.repository.read_run_by_id,
+            Identifier(run_id),
         )
         assert run.status is RunStatus.paused
         assert len(gateway.calls) == 1
@@ -465,7 +517,10 @@ def test_unknown_model_send_is_not_replayed_after_app_recreation(tmp_path, monke
         raw_db = database_path.read_bytes()
         assert session_cookie.encode("utf-8") not in raw_db
         binding = integration.get_binding(run_id)
-        assert binding["session_fingerprint"] == hashlib.sha256(session_cookie.encode("utf-8")).hexdigest()
+        assert (
+            binding["session_fingerprint"]
+            == hashlib.sha256(session_cookie.encode("utf-8")).hexdigest()
+        )
 
     reopened_app = _new_app(tmp_path, monkeypatch, gateway)
     with _open_client(reopened_app) as reopened:
@@ -473,29 +528,39 @@ def test_unknown_model_send_is_not_replayed_after_app_recreation(tmp_path, monke
         integration = reopened.app.state.agent_integration
         reopened.portal.call(integration.worker.run_once)
         run = reopened.portal.call(
-            integration.repository.read_run_by_id, Identifier(run_id),
+            integration.repository.read_run_by_id,
+            Identifier(run_id),
         )
         assert run.status is RunStatus.paused
         assert len(gateway.calls) == 1
 
         pending = reopened.portal.call(
-            integration.repository.incomplete_invocations, Identifier(run_id),
+            integration.repository.incomplete_invocations,
+            Identifier(run_id),
         )
         assert len(pending) == 1
         assert pending[0].dispatch_state is DispatchState.unknown
 
 
-@pytest.mark.parametrize("authority_change", ["logout", "role_downgrade", "project_archive"])
-def test_authority_revocation_during_planner_blocks_next_dispatch(tmp_path, monkeypatch, authority_change) -> None:
+@pytest.mark.parametrize(
+    "authority_change", ["logout", "role_downgrade", "project_archive"]
+)
+def test_authority_revocation_during_planner_blocks_next_dispatch(
+    tmp_path, monkeypatch, authority_change
+) -> None:
     gateway = FakeGateway(block_first=True)
     app = _new_app(tmp_path, monkeypatch, gateway)
     with _open_client(app) as client:
         _, project_id = _setup_owner_and_project(client)
-        run_id = _create_run(client, project_id, key=f"agent-revoke-{authority_change}-1")
+        run_id = _create_run(
+            client, project_id, key=f"agent-revoke-{authority_change}-1"
+        )
         integration = client.app.state.agent_integration
 
         worker_future = client.portal.start_task_soon(integration.worker.run_once)
-        assert gateway.first_started.wait(timeout=10), "planner dispatch did not reach the fake gateway"
+        assert gateway.first_started.wait(timeout=10), (
+            "planner dispatch did not reach the fake gateway"
+        )
         assert len(gateway.calls) == 1
 
         try:
@@ -504,7 +569,9 @@ def test_authority_revocation_during_planner_blocks_next_dispatch(tmp_path, monk
                 assert revoked.status_code == 204, revoked.text
             elif authority_change == "role_downgrade":
                 with sqlite3.connect(os.environ["GW_LOCAL_AUTH_DB"]) as db:
-                    db.execute("UPDATE local_users SET role='readonly' WHERE username='agent-owner'")
+                    db.execute(
+                        "UPDATE local_users SET role='readonly' WHERE username='agent-owner'"
+                    )
             else:
                 archived = client.request(
                     "DELETE",
@@ -517,28 +584,40 @@ def test_authority_revocation_during_planner_blocks_next_dispatch(tmp_path, monk
 
         worker_future.result(timeout=10)
         run = client.portal.call(
-            integration.repository.read_run_by_id, Identifier(run_id),
+            integration.repository.read_run_by_id,
+            Identifier(run_id),
         )
         assert run.status is RunStatus.paused
         assert len(gateway.calls) == 1
 
 
-@pytest.mark.parametrize("authority_change", ["logout", "role_downgrade", "project_archive"])
+@pytest.mark.parametrize(
+    "authority_change", ["logout", "role_downgrade", "project_archive"]
+)
 def test_authority_revocation_while_reviewer_waits_blocks_automatic_release(
-    tmp_path, monkeypatch, authority_change,
+    tmp_path,
+    monkeypatch,
+    authority_change,
 ) -> None:
     gateway = FakeGateway(block_third=True)
     app = _new_app(tmp_path, monkeypatch, gateway)
     with _open_client(app) as client:
         _, project_id = _setup_owner_and_project(client)
         run_id = _create_run(
-            client, project_id, key=f"agent-review-revoke-{authority_change}-1", mode="automatic",
+            client,
+            project_id,
+            key=f"agent-review-revoke-{authority_change}-1",
+            mode="automatic",
         )
         integration = client.app.state.agent_integration
         worker_future = client.portal.start_task_soon(integration.worker.run_once)
-        assert gateway.third_started.wait(timeout=10), "reviewer dispatch did not reach the fake gateway"
+        assert gateway.third_started.wait(timeout=10), (
+            "reviewer dispatch did not reach the fake gateway"
+        )
         assert len(gateway.calls) == 3
-        assert "dimension_scores" in (gateway.calls[2].output_schema or {}).get("properties", {})
+        assert "dimension_scores" in (gateway.calls[2].output_schema or {}).get(
+            "properties", {}
+        )
 
         try:
             if authority_change == "logout":
@@ -546,7 +625,9 @@ def test_authority_revocation_while_reviewer_waits_blocks_automatic_release(
                 assert revoked.status_code == 204, revoked.text
             elif authority_change == "role_downgrade":
                 with sqlite3.connect(os.environ["GW_LOCAL_AUTH_DB"]) as db:
-                    db.execute("UPDATE local_users SET role='readonly' WHERE username='agent-owner'")
+                    db.execute(
+                        "UPDATE local_users SET role='readonly' WHERE username='agent-owner'"
+                    )
             else:
                 archived = client.request(
                     "DELETE",
@@ -558,24 +639,40 @@ def test_authority_revocation_while_reviewer_waits_blocks_automatic_release(
             gateway.release_third.set()
 
         worker_future.result(timeout=10)
-        run = client.portal.call(integration.repository.read_run_by_id, Identifier(run_id))
-        state = client.portal.call(integration.repository.read_runtime_state, Identifier(run_id)) or {}
+        run = client.portal.call(
+            integration.repository.read_run_by_id, Identifier(run_id)
+        )
+        state = (
+            client.portal.call(
+                integration.repository.read_runtime_state, Identifier(run_id)
+            )
+            or {}
+        )
         assert run.status is RunStatus.paused
         assert len(gateway.calls) == 3
         assert state.get("mode") == "automatic"
         assert state.get("released_versions", []) == []
-        assert client.portal.call(integration.repository.get_reviews, Identifier(run_id)) == []
+        assert (
+            client.portal.call(integration.repository.get_reviews, Identifier(run_id))
+            == []
+        )
         with sqlite3.connect(tmp_path / "data" / "agent" / "runtime.sqlite3") as db:
-            approvals = db.execute("SELECT approval_json FROM approvals WHERE run_id=?", (run_id,)).fetchall()
+            approvals = db.execute(
+                "SELECT approval_json FROM approvals WHERE run_id=?", (run_id,)
+            ).fetchall()
         assert approvals == []
 
 
-def test_stale_source_while_reviewer_waits_blocks_automatic_release(tmp_path, monkeypatch) -> None:
+def test_stale_source_while_reviewer_waits_blocks_automatic_release(
+    tmp_path, monkeypatch
+) -> None:
     gateway = FakeGateway(block_third=True)
     app = _new_app(tmp_path, monkeypatch, gateway)
     with _open_client(app) as client:
         _, project_id = _setup_owner_and_project(client)
-        run_id = _create_run(client, project_id, key="agent-review-source-stale-1", mode="automatic")
+        run_id = _create_run(
+            client, project_id, key="agent-review-source-stale-1", mode="automatic"
+        )
         integration = client.app.state.agent_integration
         source = client.portal.call(
             integration.service.artifacts.create_version,
@@ -588,10 +685,18 @@ def test_stale_source_while_reviewer_waits_blocks_automatic_release(tmp_path, mo
                 idempotency_key=Identifier(f"source-fixture:{run_id}"),
             ),
         )
-        state = client.portal.call(integration.repository.read_runtime_state, Identifier(run_id)) or {}
-        state["initial_artifact_refs"] = [ArtifactSourceRef(
-            artifact_id=source.artifact_id, version_id=source.version_id,
-        ).model_dump(mode="json")]
+        state = (
+            client.portal.call(
+                integration.repository.read_runtime_state, Identifier(run_id)
+            )
+            or {}
+        )
+        state["initial_artifact_refs"] = [
+            ArtifactSourceRef(
+                artifact_id=source.artifact_id,
+                version_id=source.version_id,
+            ).model_dump(mode="json")
+        ]
         with sqlite3.connect(tmp_path / "data" / "agent" / "runtime.sqlite3") as db:
             db.execute(
                 "UPDATE runs SET state_json=? WHERE run_id=?",
@@ -599,11 +704,17 @@ def test_stale_source_while_reviewer_waits_blocks_automatic_release(tmp_path, mo
             )
 
         worker_future = client.portal.start_task_soon(integration.worker.run_once)
-        assert gateway.third_started.wait(timeout=10), "reviewer dispatch did not reach the fake gateway"
+        assert gateway.third_started.wait(timeout=10), (
+            "reviewer dispatch did not reach the fake gateway"
+        )
         assert len(gateway.calls) == 3
-        attempts = client.portal.call(integration.repository.get_attempts, Identifier(run_id))
+        attempts = client.portal.call(
+            integration.repository.get_attempts, Identifier(run_id)
+        )
         assert len(attempts) == 1
-        assert [item.root for item in attempts[0].input_artifact_version_ids] == [source.version_id.root]
+        assert [item.root for item in attempts[0].input_artifact_version_ids] == [
+            source.version_id.root
+        ]
 
         try:
             client.portal.call(
@@ -615,27 +726,44 @@ def test_stale_source_while_reviewer_waits_blocks_automatic_release(tmp_path, mo
             gateway.release_third.set()
 
         worker_future.result(timeout=10)
-        run = client.portal.call(integration.repository.read_run_by_id, Identifier(run_id))
-        current_state = client.portal.call(integration.repository.read_runtime_state, Identifier(run_id)) or {}
+        run = client.portal.call(
+            integration.repository.read_run_by_id, Identifier(run_id)
+        )
+        current_state = (
+            client.portal.call(
+                integration.repository.read_runtime_state, Identifier(run_id)
+            )
+            or {}
+        )
         assert run.status is not RunStatus.succeeded
         assert current_state.get("released_versions", []) == []
-        assert client.portal.call(integration.repository.get_reviews, Identifier(run_id)) == []
+        assert (
+            client.portal.call(integration.repository.get_reviews, Identifier(run_id))
+            == []
+        )
 
 
-def test_fenced_lease_while_reviewer_waits_blocks_automatic_release(tmp_path, monkeypatch) -> None:
+def test_fenced_lease_while_reviewer_waits_blocks_automatic_release(
+    tmp_path, monkeypatch
+) -> None:
     gateway = FakeGateway(block_third=True)
     app = _new_app(tmp_path, monkeypatch, gateway)
     with _open_client(app) as client:
         _, project_id = _setup_owner_and_project(client)
-        run_id = _create_run(client, project_id, key="agent-review-fenced-lease-1", mode="automatic")
+        run_id = _create_run(
+            client, project_id, key="agent-review-fenced-lease-1", mode="automatic"
+        )
         integration = client.app.state.agent_integration
         worker_future = client.portal.start_task_soon(integration.worker.run_once)
-        assert gateway.third_started.wait(timeout=10), "reviewer dispatch did not reach the fake gateway"
+        assert gateway.third_started.wait(timeout=10), (
+            "reviewer dispatch did not reach the fake gateway"
+        )
         assert len(gateway.calls) == 3
 
         with sqlite3.connect(tmp_path / "data" / "agent" / "runtime.sqlite3") as db:
             row = db.execute(
-                "SELECT owner_id,generation FROM leases WHERE run_id=?", (run_id,),
+                "SELECT owner_id,generation FROM leases WHERE run_id=?",
+                (run_id,),
             ).fetchone()
             assert row is not None
             db.execute(
@@ -645,9 +773,18 @@ def test_fenced_lease_while_reviewer_waits_blocks_automatic_release(tmp_path, mo
 
         gateway.release_third.set()
         worker_future.result(timeout=10)
-        run = client.portal.call(integration.repository.read_run_by_id, Identifier(run_id))
-        state = client.portal.call(integration.repository.read_runtime_state, Identifier(run_id)) or {}
+        run = client.portal.call(
+            integration.repository.read_run_by_id, Identifier(run_id)
+        )
+        state = (
+            client.portal.call(
+                integration.repository.read_runtime_state, Identifier(run_id)
+            )
+            or {}
+        )
         assert run.status is not RunStatus.succeeded
         assert state.get("released_versions", []) == []
-        assert client.portal.call(integration.repository.get_reviews, Identifier(run_id)) == []
-
+        assert (
+            client.portal.call(integration.repository.get_reviews, Identifier(run_id))
+            == []
+        )

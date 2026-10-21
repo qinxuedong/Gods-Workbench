@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Phase 9G：真实第三方 OP（panva/oidc-provider）互操作契约测试。
 
 与 ``test_phase9d_oidc_login_flow.py`` 的区别在于 **对端不是自研测试桩**：
@@ -156,6 +155,7 @@ def _provider_version(package_json: Path) -> str:
         )
     return actual
 
+
 _NODE_SYSTEM_ENV_ALLOWLIST = ("PATH", "SYSTEMROOT", "WINDIR", "TEMP", "TMP", "TMPDIR")
 _NODE_READY_TIMEOUT_SECONDS = 15
 _NODE_STDOUT_MAX_BYTES = 64 * 1024
@@ -205,7 +205,9 @@ def _capture_node_stream(stream, spool_path: Path, capture_state: dict) -> None:
                 with capture_state["lock"]:
                     if capture_state["ready_seen"]:
                         continue
-                    remaining = capture_state["max_bytes"] - capture_state["bytes_written"]
+                    remaining = (
+                        capture_state["max_bytes"] - capture_state["bytes_written"]
+                    )
                     if remaining > 0:
                         kept = chunk[:remaining]
                         spool.write(kept)
@@ -219,7 +221,9 @@ def _capture_node_stream(stream, spool_path: Path, capture_state: dict) -> None:
         capture_state["finished"].set()
 
 
-def _start_node_capture(stream, spool_path: Path, capture_state: dict, thread_name: str) -> None:
+def _start_node_capture(
+    stream, spool_path: Path, capture_state: dict, thread_name: str
+) -> None:
     thread = threading.Thread(
         target=_capture_node_stream,
         args=(stream, spool_path, capture_state),
@@ -231,7 +235,9 @@ def _start_node_capture(stream, spool_path: Path, capture_state: dict, thread_na
     thread.start()
 
 
-def _read_node_startup_line(process, stdout_path: Path, capture_state: dict, timeout_seconds: float) -> str:
+def _read_node_startup_line(
+    process, stdout_path: Path, capture_state: dict, timeout_seconds: float
+) -> str:
     """有限轮询有界 stdout spool；ready 行不能由不受限 readline 阻塞。"""
     deadline = time.monotonic() + timeout_seconds
     while True:
@@ -239,16 +245,22 @@ def _read_node_startup_line(process, stdout_path: Path, capture_state: dict, tim
             overflow = capture_state["overflow"]
             capture_error = capture_state["error"]
         if overflow:
-            raise RuntimeError(f"第三方 OP stdout 超过 {capture_state['max_bytes']} 字节上限")
+            raise RuntimeError(
+                f"第三方 OP stdout 超过 {capture_state['max_bytes']} 字节上限"
+            )
         if capture_error is not None:
-            raise RuntimeError(f"读取第三方 OP stdout 失败：{capture_error!r}") from capture_error
+            raise RuntimeError(
+                f"读取第三方 OP stdout 失败：{capture_error!r}"
+            ) from capture_error
 
         try:
             data = stdout_path.read_bytes()
         except FileNotFoundError:
             data = b""
         if len(data) > capture_state["max_bytes"]:
-            raise RuntimeError(f"第三方 OP stdout 超过 {capture_state['max_bytes']} 字节上限")
+            raise RuntimeError(
+                f"第三方 OP stdout 超过 {capture_state['max_bytes']} 字节上限"
+            )
         line_end = data.find(b"\n")
         if line_end >= 0:
             if line_end > _NODE_READY_MAX_LINE_BYTES:
@@ -261,10 +273,14 @@ def _read_node_startup_line(process, stdout_path: Path, capture_state: dict, tim
                 overflow = capture_state["overflow"]
                 capture_state["ready_seen"] = True
             if overflow:
-                raise RuntimeError(f"第三方 OP stdout 超过 {capture_state['max_bytes']} 字节上限")
+                raise RuntimeError(
+                    f"第三方 OP stdout 超过 {capture_state['max_bytes']} 字节上限"
+                )
             returncode = process.poll()
             if returncode is not None:
-                raise RuntimeError(f"第三方 OP 在 ready 行后提前退出（退出码 {returncode}）")
+                raise RuntimeError(
+                    f"第三方 OP 在 ready 行后提前退出（退出码 {returncode}）"
+                )
             return line
         if len(data) > _NODE_READY_MAX_LINE_BYTES:
             raise RuntimeError("第三方 OP ready 行超过长度上限")
@@ -286,10 +302,14 @@ def _read_node_startup_line(process, stdout_path: Path, capture_state: dict, tim
                     overflow = capture_state["overflow"]
                     capture_state["ready_seen"] = True
                 if overflow:
-                    raise RuntimeError(f"第三方 OP stdout 超过 {capture_state['max_bytes']} 字节上限")
+                    raise RuntimeError(
+                        f"第三方 OP stdout 超过 {capture_state['max_bytes']} 字节上限"
+                    )
                 returncode = process.poll()
                 if returncode is not None:
-                    raise RuntimeError(f"第三方 OP 在 ready 行后提前退出（退出码 {returncode}）")
+                    raise RuntimeError(
+                        f"第三方 OP 在 ready 行后提前退出（退出码 {returncode}）"
+                    )
                 return line
             returncode = process.poll()
             if returncode is not None:
@@ -325,7 +345,9 @@ def _stop_owned_process(
             try:
                 process.wait(timeout=kill_timeout_seconds)
             except subprocess.TimeoutExpired as exc:
-                raise RuntimeError(f"{process_name} 在 terminate/kill 后仍未退出") from exc
+                raise RuntimeError(
+                    f"{process_name} 在 terminate/kill 后仍未退出"
+                ) from exc
     else:
         process.wait(timeout=terminate_timeout_seconds)
     if process.poll() is None:
@@ -358,7 +380,9 @@ def _stop_node_resources_or_record(
                 stream = capture_state.get("stream")
                 if stream is not None:
                     live_streams.add(id(stream))
-                unsafe.append(f"OP 输出 reader {thread.name} 在有限 join 后仍存活；保留其管道避免跨线程 close")
+                unsafe.append(
+                    f"OP 输出 reader {thread.name} 在有限 join 后仍存活；保留其管道避免跨线程 close"
+                )
         with capture_state["lock"]:
             capture_error = capture_state["error"]
         if capture_error is not None:
@@ -366,7 +390,11 @@ def _stop_node_resources_or_record(
 
     streams = (getattr(process, "stdout", None), getattr(process, "stderr", None))
     for stream in streams:
-        if stream is None or id(stream) in live_streams or getattr(stream, "closed", False):
+        if (
+            stream is None
+            or id(stream) in live_streams
+            or getattr(stream, "closed", False)
+        ):
             continue
         try:
             stream.close()
@@ -380,7 +408,9 @@ def _stop_node_resources_or_record(
         raise RuntimeError(f"第三方 OP 资源清理未完整确认：{details}")
 
 
-def _test_runtime_environment(tmp_path: Path, issuer: str, redirect_uri: str) -> dict[str, str]:
+def _test_runtime_environment(
+    tmp_path: Path, issuer: str, redirect_uri: str
+) -> dict[str, str]:
     """为单个用例创建仓外、相互独立的测试数据根。"""
     runtime_root = (Path(tmp_path) / "gw-runtime").resolve()
     repo_root = REPO_ROOT.resolve()
@@ -488,7 +518,9 @@ def _wait_for_app_health(
             raise RuntimeError("被测应用线程在健康检查前退出")
         try:
             request_timeout = min(0.5, max(0.001, deadline - time.monotonic()))
-            response = requests_session.get(app_base + "/healthz", timeout=request_timeout)
+            response = requests_session.get(
+                app_base + "/healthz", timeout=request_timeout
+            )
             if response.status_code == 200:
                 return
             last_error = f"/healthz 返回 HTTP {response.status_code}"
@@ -538,7 +570,9 @@ def real_op(tmp_path):
         pytest.skip("未找到 oidc-provider 包（可设置 GW_OIDC_PROVIDER_MODULE_DIR）")
 
     # 必须在创建 OP 子进程之前校验固定版本。
-    provider_version = _provider_version(base / "node_modules" / "oidc-provider" / "package.json")
+    provider_version = _provider_version(
+        base / "node_modules" / "oidc-provider" / "package.json"
+    )
     import requests  # 延迟导入：缺依赖时按 skip 处理
     import uvicorn
 
@@ -553,30 +587,50 @@ def real_op(tmp_path):
     op_port = _free_port()
     stdout_path = workdir / "node.stdout.spool"
     stderr_path = workdir / "node.stderr.spool"
-    cleanup_state = {"unsafe_cleanup": [], "original_environment": None, "gw_config": None}
+    cleanup_state = {
+        "unsafe_cleanup": [],
+        "original_environment": None,
+        "gw_config": None,
+    }
 
     with ExitStack() as cleanup:
         # 最后执行：只有应用线程、OP 进程和 reader 线程都确认回收后才恢复 GW_*。
         cleanup.callback(_finish_application_environment, cleanup_state)
         node_states = []
         process = subprocess.Popen(
-            [node_executable, str(script), str(op_port), redirect_uri, CLIENT_ID, ACCOUNT_ID, GROUPS],
+            [
+                node_executable,
+                str(script),
+                str(op_port),
+                redirect_uri,
+                CLIENT_ID,
+                ACCOUNT_ID,
+                GROUPS,
+            ],
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             cwd=str(workdir),
             env=_node_environment(base / "node_modules"),
         )
         # 进程一旦创建就立即登记所有权清理，之后任何启动错误都会先杀进程、再 join reader。
-        cleanup.callback(_stop_node_resources_or_record, process, node_states, cleanup_state)
+        cleanup.callback(
+            _stop_node_resources_or_record, process, node_states, cleanup_state
+        )
         stdout_capture = _new_node_capture_state(_NODE_STDOUT_MAX_BYTES)
         stderr_capture = _new_node_capture_state(_NODE_STDERR_MAX_BYTES)
         node_states.extend((stdout_capture, stderr_capture))
-        _start_node_capture(process.stdout, stdout_path, stdout_capture, "gw-oidc-node-stdout")
-        _start_node_capture(process.stderr, stderr_path, stderr_capture, "gw-oidc-node-stderr")
+        _start_node_capture(
+            process.stdout, stdout_path, stdout_capture, "gw-oidc-node-stdout"
+        )
+        _start_node_capture(
+            process.stderr, stderr_path, stderr_capture, "gw-oidc-node-stderr"
+        )
         node_stderr = stderr_path
 
         try:
-            line = _read_node_startup_line(process, stdout_path, stdout_capture, _NODE_READY_TIMEOUT_SECONDS)
+            line = _read_node_startup_line(
+                process, stdout_path, stdout_capture, _NODE_READY_TIMEOUT_SECONDS
+            )
         except (RuntimeError, TimeoutError) as exc:
             detail = _stderr_excerpt(node_stderr)
             detail_suffix = f"：{detail}" if detail else ""
@@ -587,7 +641,9 @@ def real_op(tmp_path):
             raise RuntimeError("第三方 OP ready 响应缺少 ready=true 或 issuer")
         issuer = str(info["issuer"])
 
-        create_app = _configure_application_environment(tmp_path, issuer, redirect_uri, cleanup_state)
+        create_app = _configure_application_environment(
+            tmp_path, issuer, redirect_uri, cleanup_state
+        )
         app = create_app()
         server = uvicorn.Server(
             uvicorn.Config(
@@ -598,7 +654,9 @@ def real_op(tmp_path):
                 timeout_graceful_shutdown=1,
             )
         )
-        app_thread = threading.Thread(target=server.run, name="gw-oidc-test-app", daemon=False)
+        app_thread = threading.Thread(
+            target=server.run, name="gw-oidc-test-app", daemon=False
+        )
         cleanup.callback(_stop_app_thread, server, app_thread, cleanup_state)
         app_thread.start()
         requests_session = requests.Session()
@@ -640,7 +698,9 @@ def test_real_third_party_op_end_to_end_login(real_op):
     requests = real_op["requests"]
     session = requests.Session()
 
-    status_before = session.get(real_op["app_base"] + "/api/asset-auth/status", timeout=5).json()
+    status_before = session.get(
+        real_op["app_base"] + "/api/asset-auth/status", timeout=5
+    ).json()
     assert status_before["authenticated"] is False
 
     login = session.post(real_op["app_base"] + "/api/asset-auth/login", timeout=10)
@@ -651,7 +711,9 @@ def test_real_third_party_op_end_to_end_login(real_op):
     assert params["code_challenge_method"] == ["S256"]
     assert params["client_id"] == [CLIENT_ID]
 
-    callback = _drive_authorization(session, real_op["issuer"], authorization_url, real_op["redirect_uri"])
+    callback = _drive_authorization(
+        session, real_op["issuer"], authorization_url, real_op["redirect_uri"]
+    )
     callback_query = parse_qs(urlparse(callback).query)
     assert callback_query.get("code"), callback
     assert callback_query.get("state"), callback
@@ -661,7 +723,9 @@ def test_real_third_party_op_end_to_end_login(real_op):
     assert "auth_error" not in (finished.headers.get("location") or "")
     assert "gw_session" in session.cookies
 
-    status_after = session.get(real_op["app_base"] + "/api/asset-auth/status", timeout=5).json()
+    status_after = session.get(
+        real_op["app_base"] + "/api/asset-auth/status", timeout=5
+    ).json()
     assert status_after["authenticated"] is True, status_after
     # 角色只能来自 IdP 的 groups 声明，不得来自任何请求头。
     assert status_after["principal"]["role"] == "editor", status_after
@@ -673,8 +737,12 @@ def test_real_third_party_op_rejects_tampered_pkce(real_op):
 
     requests = real_op["requests"]
     session = requests.Session()
-    login = session.post(real_op["app_base"] + "/api/asset-auth/login", timeout=10).json()
-    callback = _drive_authorization(session, real_op["issuer"], login["authorization_url"], real_op["redirect_uri"])
+    login = session.post(
+        real_op["app_base"] + "/api/asset-auth/login", timeout=10
+    ).json()
+    callback = _drive_authorization(
+        session, real_op["issuer"], login["authorization_url"], real_op["redirect_uri"]
+    )
     state = parse_qs(urlparse(callback).query)["state"][0]
     flow = session_store.pop_flow_state(state)
     assert flow is not None
@@ -687,7 +755,9 @@ def test_real_third_party_op_rejects_tampered_pkce(real_op):
 
     response = session.get(callback, timeout=15, allow_redirects=False)
     assert response.status_code == 302
-    auth_error = parse_qs(urlparse(response.headers.get("location") or "").query).get("auth_error")
+    auth_error = parse_qs(urlparse(response.headers.get("location") or "").query).get(
+        "auth_error"
+    )
     assert auth_error == ["token_exchange_failed"], auth_error
     assert "gw_session" not in session.cookies
 
@@ -698,8 +768,12 @@ def test_real_third_party_op_rejects_wrong_nonce(real_op):
 
     requests = real_op["requests"]
     session = requests.Session()
-    login = session.post(real_op["app_base"] + "/api/asset-auth/login", timeout=10).json()
-    callback = _drive_authorization(session, real_op["issuer"], login["authorization_url"], real_op["redirect_uri"])
+    login = session.post(
+        real_op["app_base"] + "/api/asset-auth/login", timeout=10
+    ).json()
+    callback = _drive_authorization(
+        session, real_op["issuer"], login["authorization_url"], real_op["redirect_uri"]
+    )
     state = parse_qs(urlparse(callback).query)["state"][0]
     flow = session_store.pop_flow_state(state)
     assert flow is not None
@@ -712,6 +786,8 @@ def test_real_third_party_op_rejects_wrong_nonce(real_op):
 
     response = session.get(callback, timeout=15, allow_redirects=False)
     assert response.status_code == 302
-    auth_error = parse_qs(urlparse(response.headers.get("location") or "").query).get("auth_error")
+    auth_error = parse_qs(urlparse(response.headers.get("location") or "").query).get(
+        "auth_error"
+    )
     assert auth_error == ["id_token_rejected"], auth_error
     assert "gw_session" not in session.cookies

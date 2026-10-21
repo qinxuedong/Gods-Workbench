@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """C12-T1 ASC 元数据契约与实体母库 API 测试。"""
 
 from __future__ import annotations
@@ -19,7 +18,6 @@ from gw.cinematography.schema import (
     ShotSize,
 )
 from gw.core.errors import CleanroomException
-
 
 AUTH = {"Authorization": "Bearer c12-t1-test", "X-User-Role": "editor"}
 READONLY = {"Authorization": "Bearer c12-t1-test", "X-User-Role": "readonly"}
@@ -109,7 +107,10 @@ def test_entity_catalog_rest_crud_persists_and_enforces_cas(monkeypatch, tmp_pat
         updated = client.patch(
             "/api/entities/ent_0001",
             headers=AUTH,
-            json={"expected_version": body["revision"], "description": "lead character"},
+            json={
+                "expected_version": body["revision"],
+                "description": "lead character",
+            },
         )
         assert updated.status_code == 200, updated.text
         assert updated.json()["entity"]["description"] == "lead character"

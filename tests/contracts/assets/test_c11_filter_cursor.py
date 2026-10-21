@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """C11-T2 结构化多维过滤与稳定游标契约。"""
 
 from __future__ import annotations
@@ -7,7 +6,6 @@ import json
 
 import pytest
 from fastapi.testclient import TestClient
-
 
 AUTH = {"Authorization": "Bearer cleanroom-test", "X-User-Role": "editor"}
 PATH = "/api/asset-registry/assets"
@@ -19,7 +17,9 @@ def _import(client: TestClient, items: list[dict[str, object]]) -> list[str]:
     return response.json()["asset_ids"]
 
 
-def _structured_params(filters: dict[str, object] | None = None, **extra: object) -> dict[str, object]:
+def _structured_params(
+    filters: dict[str, object] | None = None, **extra: object
+) -> dict[str, object]:
     params: dict[str, object] = {
         "scope": json.dumps(["asset"], separators=(",", ":")),
         "filters": json.dumps(filters or {}, separators=(",", ":")),
@@ -40,18 +40,27 @@ def test_c11_structured_filters_and_facets_are_composed(client: TestClient) -> N
             {"name": "hero.mp4", "kind": "video"},
         ],
     )
-    tagged = client.post(PATH + "/tags", headers=AUTH,
-                         json={"asset_ids": created[:2], "names": ["hero"]})
+    tagged = client.post(
+        PATH + "/tags", headers=AUTH, json={"asset_ids": created[:2], "names": ["hero"]}
+    )
     assert tagged.status_code == 200, tagged.text
     tag_id = tagged.json()["tags"][0]["tag_id"]
-    project = client.post("/api/asset-registry/projects", headers=AUTH,
-                          json={"name": "C11 filter fixture", "project_type": "film"})
+    project = client.post(
+        "/api/asset-registry/projects",
+        headers=AUTH,
+        json={"name": "C11 filter fixture", "project_type": "film"},
+    )
     assert project.status_code == 201, project.text
     project_id = project.json()["project"]["project_id"]
-    bound = client.post(f"/api/asset-registry/projects/{project_id}/assets", headers=AUTH,
-                        json={"asset_ids": created[:2]})
+    bound = client.post(
+        f"/api/asset-registry/projects/{project_id}/assets",
+        headers=AUTH,
+        json={"asset_ids": created[:2]},
+    )
     assert bound.status_code == 200, bound.text
-    archived = client.patch(f"{PATH}/{created[0]}", headers=AUTH, json={"archived": True})
+    archived = client.patch(
+        f"{PATH}/{created[0]}", headers=AUTH, json={"archived": True}
+    )
     assert archived.status_code == 200, archived.text
 
     filters = {
@@ -61,8 +70,9 @@ def test_c11_structured_filters_and_facets_are_composed(client: TestClient) -> N
         "created_at": {"from": "2000-01-01T00:00:00Z", "to": "2100-01-01T00:00:00Z"},
         "status": {"asset": ["active"]},
     }
-    response = client.get(PATH, headers=AUTH,
-                           params=_structured_params(filters, limit=1))
+    response = client.get(
+        PATH, headers=AUTH, params=_structured_params(filters, limit=1)
+    )
     assert response.status_code == 200, response.text
     body = response.json()
     assert [item["asset_id"] for item in body["items"]] == [created[1]]
@@ -83,7 +93,9 @@ def test_c11_structured_filters_and_facets_are_composed(client: TestClient) -> N
     assert body["data_gaps"] == []
 
 
-def test_c11_cursor_is_query_and_revision_bound_without_duplicates(client: TestClient) -> None:
+def test_c11_cursor_is_query_and_revision_bound_without_duplicates(
+    client: TestClient,
+) -> None:
     created = _import(
         client,
         [
@@ -101,8 +113,11 @@ def test_c11_cursor_is_query_and_revision_bound_without_duplicates(client: TestC
     seen = [item["asset_id"] for item in first_body["items"]]
 
     while cursor:
-        page = client.get(PATH, headers=AUTH,
-                          params=_structured_params(filters, limit=1, cursor=cursor))
+        page = client.get(
+            PATH,
+            headers=AUTH,
+            params=_structured_params(filters, limit=1, cursor=cursor),
+        )
         assert page.status_code == 200, page.text
         body = page.json()
         seen.extend(item["asset_id"] for item in body["items"])
@@ -111,17 +126,26 @@ def test_c11_cursor_is_query_and_revision_bound_without_duplicates(client: TestC
     assert seen == [created[1], created[2], created[0]]
     assert len(seen) == len(set(seen)) == 3
 
-    mismatch = client.get(PATH, headers=AUTH,
-                          params=_structured_params({"kind": ["video"]}, cursor=first_body["page"]["next_cursor"]))
+    mismatch = client.get(
+        PATH,
+        headers=AUTH,
+        params=_structured_params(
+            {"kind": ["video"]}, cursor=first_body["page"]["next_cursor"]
+        ),
+    )
     assert mismatch.status_code == 400, mismatch.text
     assert mismatch.json()["detail"]["code"] == "INVALID_CURSOR"
 
     stale_cursor = first_body["page"]["next_cursor"]
-    changed = client.patch(f"{PATH}/{created[0]}", headers=AUTH,
-                           json={"name": "zeta-renamed.png"})
+    changed = client.patch(
+        f"{PATH}/{created[0]}", headers=AUTH, json={"name": "zeta-renamed.png"}
+    )
     assert changed.status_code == 200, changed.text
-    stale = client.get(PATH, headers=AUTH,
-                        params=_structured_params(filters, limit=1, cursor=stale_cursor))
+    stale = client.get(
+        PATH,
+        headers=AUTH,
+        params=_structured_params(filters, limit=1, cursor=stale_cursor),
+    )
     assert stale.status_code == 409, stale.text
     assert stale.json()["detail"]["code"] == "VERSION_CONFLICT"
 
@@ -131,8 +155,19 @@ def test_c11_cursor_is_query_and_revision_bound_without_duplicates(client: TestC
     [
         ({"filters": json.dumps({"unknown": ["value"]})}, "UNSUPPORTED_FILTER_VALUE"),
         ({"scope": json.dumps(["project"])}, "UNSUPPORTED_FILTER_VALUE"),
-        ({"filters": json.dumps({"created_at": {"from": "2026-10-19T00:00:00Z", "to": "2026-10-18T00:00:00Z"}})},
-         "INVALID_TIME_RANGE"),
+        (
+            {
+                "filters": json.dumps(
+                    {
+                        "created_at": {
+                            "from": "2026-10-19T00:00:00Z",
+                            "to": "2026-10-18T00:00:00Z",
+                        }
+                    }
+                )
+            },
+            "INVALID_TIME_RANGE",
+        ),
         ({"limit": 201}, "INVALID_LIMIT"),
     ],
 )

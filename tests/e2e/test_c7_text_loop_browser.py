@@ -1,4 +1,5 @@
 """C7-P3：通过真实浏览器回读文本链六阶段产物与精确导出版本。"""
+
 from __future__ import annotations
 
 import importlib.util
@@ -14,6 +15,7 @@ from typing import Any
 
 import pytest
 import uvicorn
+from playwright_support import open_playwright
 
 from gw.api.agent_integration import build_agent_integration
 from gw.api.app import create_app
@@ -22,8 +24,6 @@ from gw.core.auth import AuthContext
 from gw.core.runtime_paths import resolve_runtime_paths
 from gw.projects_hub.models import ProjectCreateRequest, ProjectType
 from gw.projects_hub.service import ProjectsService, owner_key_for_context
-from playwright_support import open_playwright
-
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -129,7 +129,9 @@ def test_c7_p3_browser_launcher_falls_back_to_playwright_chromium():
     assert calls == [{"channel": "chrome", "headless": True}, {"headless": True}]
 
 
-def _seed_export_records_in_worker(helper, integration, run_id: str, stages: list[dict[str, str]]):
+def _seed_export_records_in_worker(
+    helper, integration, run_id: str, stages: list[dict[str, str]]
+):
     """Playwright 同步 API 持有事件循环时，把异步夹具放到独立线程执行。"""
 
     result: dict[str, Any] = {}
@@ -175,7 +177,9 @@ def test_c7_p3_text_loop_real_browser_readback_and_export(monkeypatch, tmp_path)
     monkeypatch.setenv("GW_ALLOWED_ROOTS", "")
 
     session.reset_stores()
-    principal, _session_token = local_accounts.create_first_admin("c7browserowner", "C7Browser2026")
+    principal, _session_token = local_accounts.create_first_admin(
+        "c7browserowner", "C7Browser2026"
+    )
     auth = AuthContext(
         role=principal["role"],
         subject=principal["user_id"],
@@ -200,11 +204,20 @@ def test_c7_p3_text_loop_real_browser_readback_and_export(monkeypatch, tmp_path)
     config = {
         "configured": True,
         "default_provider_id": "fake-provider",
-        "providers": [{"provider_id": "fake-provider", "configured": True, "models": ["fake-model"]}],
+        "providers": [
+            {
+                "provider_id": "fake-provider",
+                "configured": True,
+                "models": ["fake-model"],
+            }
+        ],
     }
 
     def model_resolver(provider_id: str | None, model: str | None):
-        if (provider_id or "fake-provider", model or "fake-model") != ("fake-provider", "fake-model"):
+        if (provider_id or "fake-provider", model or "fake-model") != (
+            "fake-provider",
+            "fake-model",
+        ):
             raise ValueError("not in browser fixture allowlist")
         return {"provider_id": "fake-provider", "model": "fake-model"}
 
@@ -224,7 +237,9 @@ def test_c7_p3_text_loop_real_browser_readback_and_export(monkeypatch, tmp_path)
     listener.bind(("127.0.0.1", 0))
     base = f"http://127.0.0.1:{listener.getsockname()[1]}"
     server = uvicorn.Server(uvicorn.Config(app, log_level="error", lifespan="off"))
-    thread = threading.Thread(target=server.run, kwargs={"sockets": [listener]}, daemon=True)
+    thread = threading.Thread(
+        target=server.run, kwargs={"sockets": [listener]}, daemon=True
+    )
     thread.start()
     evidence = _evidence_dir(tmp_path)
 
@@ -234,12 +249,18 @@ def test_c7_p3_text_loop_real_browser_readback_and_export(monkeypatch, tmp_path)
             try:
                 browser = _launch_browser(pw.chromium, browser_api.Error)
             except RuntimeError as exc:
-                pytest.skip(f"Chrome 与 Playwright Chromium 均不可用，浏览器证据未取得：{exc}")
+                pytest.skip(
+                    f"Chrome 与 Playwright Chromium 均不可用，浏览器证据未取得：{exc}"
+                )
             try:
                 context = browser.new_context(viewport={"width": 1440, "height": 1100})
                 context.route(
                     "**/*",
-                    lambda route: route.continue_() if route.request.url.startswith(base + "/") else route.abort(),
+                    lambda route: (
+                        route.continue_()
+                        if route.request.url.startswith(base + "/")
+                        else route.abort()
+                    ),
                 )
                 page = context.new_page()
                 page_errors: list[str] = []
@@ -247,17 +268,31 @@ def test_c7_p3_text_loop_real_browser_readback_and_export(monkeypatch, tmp_path)
 
                 # 将真实本地账户会话注入浏览器 Cookie；后续页面/API 均由浏览器真实认证链路处理。
                 context.add_cookies(
-                    [{"name": "gw_session", "value": _session_token, "url": base, "httpOnly": True, "sameSite": "Lax"}]
+                    [
+                        {
+                            "name": "gw_session",
+                            "value": _session_token,
+                            "url": base,
+                            "httpOnly": True,
+                            "sameSite": "Lax",
+                        }
+                    ]
                 )
-                page.goto(base + "/static/pages/agents.html", wait_until="domcontentloaded")
-                page.wait_for_function("window.HardwareDeck?.authState?.authenticated === true")
+                page.goto(
+                    base + "/static/pages/agents.html", wait_until="domcontentloaded"
+                )
+                page.wait_for_function(
+                    "window.HardwareDeck?.authState?.authenticated === true"
+                )
 
                 # 真实页面创建带项目归属的持久任务。
                 page.wait_for_function(
                     "(expected) => document.querySelector('#agentTaskProject')?.value === expected",
                     arg=project.project_id,
                 )
-                page.fill("#agentTaskGoal", "完成一个可审核、可导出的六阶段文本链浏览器证据")
+                page.fill(
+                    "#agentTaskGoal", "完成一个可审核、可导出的六阶段文本链浏览器证据"
+                )
                 page.click("#agentTaskCreate")
                 page.wait_for_function(
                     "document.querySelector('#agentTaskStatus')?.textContent.includes('任务已接受')",
@@ -273,13 +308,35 @@ def test_c7_p3_text_loop_real_browser_readback_and_export(monkeypatch, tmp_path)
                 helper = _contract_seed_helper()
                 stages = [
                     {"label": "stage1-brief", "stage": "brief", "approval": "approve"},
-                    {"label": "stage2-outline", "stage": "outline_characters", "approval": "approve"},
-                    {"label": "stage3-script", "stage": "full_script", "approval": "approve"},
-                    {"label": "stage4-scene", "stage": "scene_script", "approval": "approve"},
-                    {"label": "stage5-storyboard", "stage": "storyboard_text", "approval": "approve"},
-                    {"label": "stage6-delivery", "stage": "delivery_check", "approval": "approve"},
+                    {
+                        "label": "stage2-outline",
+                        "stage": "outline_characters",
+                        "approval": "approve",
+                    },
+                    {
+                        "label": "stage3-script",
+                        "stage": "full_script",
+                        "approval": "approve",
+                    },
+                    {
+                        "label": "stage4-scene",
+                        "stage": "scene_script",
+                        "approval": "approve",
+                    },
+                    {
+                        "label": "stage5-storyboard",
+                        "stage": "storyboard_text",
+                        "approval": "approve",
+                    },
+                    {
+                        "label": "stage6-delivery",
+                        "stage": "delivery_check",
+                        "approval": "approve",
+                    },
                 ]
-                review_ids = _seed_export_records_in_worker(helper, integration, run_id, stages)
+                review_ids = _seed_export_records_in_worker(
+                    helper, integration, run_id, stages
+                )
                 assert set(review_ids) == {item["label"] for item in stages}
 
                 page.wait_for_function(
@@ -290,7 +347,10 @@ def test_c7_p3_text_loop_real_browser_readback_and_export(monkeypatch, tmp_path)
                     "document.querySelector('#agentTraceStream [data-event-id]') !== null",
                     timeout=30000,
                 )
-                assert page.locator("#agentTraceStream").locator("[data-event-id]").count() >= 1
+                assert (
+                    page.locator("#agentTraceStream").locator("[data-event-id]").count()
+                    >= 1
+                )
                 exports = page.locator("#agentTaskExports button")
                 page.wait_for_function(
                     "document.querySelector('#agentTaskExports button') !== null",
@@ -298,7 +358,9 @@ def test_c7_p3_text_loop_real_browser_readback_and_export(monkeypatch, tmp_path)
                 )
                 assert exports.count() >= 1
                 assert page.locator("#agentTaskExports").inner_text().strip()
-                page.screenshot(path=str(evidence / "c7-p3-agents-text-loop.png"), full_page=True)
+                page.screenshot(
+                    path=str(evidence / "c7-p3-agents-text-loop.png"), full_page=True
+                )
 
                 # 刷新后由 localStorage 的 job_id 恢复同一个持久任务与导出目录。
                 page.reload(wait_until="domcontentloaded")
@@ -314,24 +376,45 @@ def test_c7_p3_text_loop_real_browser_readback_and_export(monkeypatch, tmp_path)
                 assert page.locator("#agentTaskExports button").count() >= 1
 
                 # 项目页从真实项目接口读取六个精确版本，并显示可导出的当前版本入口。
-                artifacts_response = context.request.get(base + f"/api/agent/projects/{project.project_id}/artifacts")
+                artifacts_response = context.request.get(
+                    base + f"/api/agent/projects/{project.project_id}/artifacts"
+                )
                 assert artifacts_response.status == 200, artifacts_response.text()
                 artifacts = artifacts_response.json()["items"]
                 assert len(artifacts) == 6
-                assert {item["review_id"] for item in artifacts} == set(review_ids.values())
-                assert all(item["run_id"] == run_id and item["version_id"] for item in artifacts)
+                assert {item["review_id"] for item in artifacts} == set(
+                    review_ids.values()
+                )
+                assert all(
+                    item["run_id"] == run_id and item["version_id"]
+                    for item in artifacts
+                )
 
-                page.goto(base + f"/static/pages/projects.html?project_id={project.project_id}", wait_until="domcontentloaded")
-                page.wait_for_selector('[data-gw-artifact-version-slot] button[data-version-id]', timeout=30000)
-                trigger = page.locator('[data-gw-artifact-version-slot] button[data-version-id]').first
+                page.goto(
+                    base
+                    + f"/static/pages/projects.html?project_id={project.project_id}",
+                    wait_until="domcontentloaded",
+                )
+                page.wait_for_selector(
+                    "[data-gw-artifact-version-slot] button[data-version-id]",
+                    timeout=30000,
+                )
+                trigger = page.locator(
+                    "[data-gw-artifact-version-slot] button[data-version-id]"
+                ).first
                 trigger.click()
                 popover = page.locator("#gwArtifactVersionPopover")
                 assert popover.is_visible()
                 assert popover.locator("a[href^='/api/agent/runs/']").count() >= 1
-                page.screenshot(path=str(evidence / "c7-p3-project-artifact-versions.png"), full_page=True)
+                page.screenshot(
+                    path=str(evidence / "c7-p3-project-artifact-versions.png"),
+                    full_page=True,
+                )
 
-                    # 点击 Markdown 导出，并由同一浏览器会话读取精确版本响应内容。
-                page.goto(base + "/static/pages/agents.html", wait_until="domcontentloaded")
+                # 点击 Markdown 导出，并由同一浏览器会话读取精确版本响应内容。
+                page.goto(
+                    base + "/static/pages/agents.html", wait_until="domcontentloaded"
+                )
                 page.wait_for_function(
                     "document.querySelector('#agentTaskStatus')?.textContent.includes('succeeded')",
                     timeout=30000,
@@ -342,7 +425,11 @@ def test_c7_p3_text_loop_real_browser_readback_and_export(monkeypatch, tmp_path)
                 )
                 markdown_button = page.get_by_role("button", name="导出 Markdown").first
                 markdown_button.click(force=True)
-                stage3_artifact = next(item for item in artifacts if item["review_id"] == review_ids["stage3-script"])
+                stage3_artifact = next(
+                    item
+                    for item in artifacts
+                    if item["review_id"] == review_ids["stage3-script"]
+                )
                 export_result = page.evaluate(
                     """async ({runId, reviewId, versionId}) => {
                         const query = new URLSearchParams({
@@ -367,7 +454,9 @@ def test_c7_p3_text_loop_real_browser_readback_and_export(monkeypatch, tmp_path)
                 # 未认证浏览器只能得到 401，不能读取项目文本产物。
                 guest = browser.new_context(viewport={"width": 1000, "height": 800})
                 try:
-                    guest_response = guest.request.get(base + f"/api/agent/projects/{project.project_id}/artifacts")
+                    guest_response = guest.request.get(
+                        base + f"/api/agent/projects/{project.project_id}/artifacts"
+                    )
                     assert guest_response.status == 401
                 finally:
                     guest.close()
@@ -379,7 +468,9 @@ def test_c7_p3_text_loop_real_browser_readback_and_export(monkeypatch, tmp_path)
                             "job_id": job_id,
                             "run_id": run_id,
                             "review_ids": review_ids,
-                            "artifact_versions": [item["version_id"] for item in artifacts],
+                            "artifact_versions": [
+                                item["version_id"] for item in artifacts
+                            ],
                             "export_format": "markdown",
                             "export_status": export_result["status"],
                             "guest_artifacts_status": guest_response.status,

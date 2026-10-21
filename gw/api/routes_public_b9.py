@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 # Copyright 2026 Gods-Workbench Authors
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -26,12 +25,11 @@ from typing import Any, Dict, Optional
 
 from fastapi import APIRouter, Header, Query, Request, status
 from fastapi.exceptions import RequestValidationError
-from fastapi.routing import APIRoute
 from fastapi.responses import FileResponse, JSONResponse, Response
+from fastapi.routing import APIRoute
 
 from gw.asset_review import repository as repo
 from gw.core.errors import CleanroomException
-
 
 _MAX_PUBLIC_BODY_BYTES = 16 * 1024
 _NO_STORE_HEADERS = {
@@ -68,7 +66,9 @@ class _NoStorePublicShareRoute(APIRoute):
                 response = _error_response(400, "INVALID_REQUEST", "请求参数不合法")
             except Exception:
                 # 公共访问失败必须闭合且不缓存；不把异常文本或令牌写入响应。
-                response = _error_response(500, "PUBLIC_SHARE_UNAVAILABLE", "分享服务暂时不可用")
+                response = _error_response(
+                    500, "PUBLIC_SHARE_UNAVAILABLE", "分享服务暂时不可用"
+                )
             for name, value in _NO_STORE_HEADERS.items():
                 response.headers[name] = value
             return response
@@ -83,13 +83,15 @@ router = APIRouter(
 )
 
 
-async def _json(request: Request) -> Dict[str, Any]:
+async def _json(request: Request) -> dict[str, Any]:
     """以流式长度计数解析公开请求体，避免无 Content-Length 的大请求占用内存。"""
     declared = request.headers.get("content-length")
     if declared:
         try:
             if int(declared) > _MAX_PUBLIC_BODY_BYTES:
-                raise CleanroomException(413, "PAYLOAD_TOO_LARGE", "公开分享请求体超过 16 KiB 上限")
+                raise CleanroomException(
+                    413, "PAYLOAD_TOO_LARGE", "公开分享请求体超过 16 KiB 上限"
+                )
         except ValueError:
             raise CleanroomException(400, "INVALID_REQUEST", "Content-Length 不合法")
     chunks = []
@@ -97,7 +99,9 @@ async def _json(request: Request) -> Dict[str, Any]:
     async for chunk in request.stream():
         size += len(chunk)
         if size > _MAX_PUBLIC_BODY_BYTES:
-            raise CleanroomException(413, "PAYLOAD_TOO_LARGE", "公开分享请求体超过 16 KiB 上限")
+            raise CleanroomException(
+                413, "PAYLOAD_TOO_LARGE", "公开分享请求体超过 16 KiB 上限"
+            )
         chunks.append(chunk)
     if not size:
         return {}
@@ -141,8 +145,8 @@ async def comment_public_share(share_token: str, request: Request):
 def get_public_share_media(
     share_token: str,
     asset_id: str,
-    x_share_ticket: Optional[str] = Header(None, alias="X-Share-Ticket"),
-    download: Optional[str] = Query(None),
+    x_share_ticket: str | None = Header(None, alias="X-Share-Ticket"),
+    download: str | None = Query(None),
 ):
     """读取分享媒体；票据只从请求头读取，PDF/文本等只允许附件方式下载。"""
     repo.enforce_public_rate(share_token, "media")
@@ -150,7 +154,11 @@ def get_public_share_media(
         raise CleanroomException(400, "INVALID_REQUEST", "download 只接受 true/false")
     download_requested = download in ("true", "1")
     path, media_type, filename, disposition = repo.public_media(
-        share_token, asset_id, x_share_ticket, download=download_requested, rate_checked=True
+        share_token,
+        asset_id,
+        x_share_ticket,
+        download=download_requested,
+        rate_checked=True,
     )
     return FileResponse(
         path,

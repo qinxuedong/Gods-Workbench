@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 # Copyright 2026 Gods-Workbench Authors
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -45,8 +44,9 @@ import binascii
 import hashlib
 import json
 import time
-from datetime import datetime, timezone
-from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
+from collections.abc import Mapping, Sequence
+from datetime import UTC, datetime, timezone
+from typing import Any, Dict, List, Optional, Tuple
 
 from gw.asset_library.service import default_asset_library_service
 from gw.core import audit as audit_log
@@ -119,20 +119,22 @@ def _now_ms() -> int:
 
 def _now_iso() -> str:
     """当前时间（ISO 8601 UTC）。"""
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()
 
 
 def _iso_from_epoch(seconds: float) -> str:
     """把审计记录的 epoch 秒转成 ISO 8601 UTC 字符串。"""
-    return datetime.fromtimestamp(float(seconds), tz=timezone.utc).isoformat()
+    return datetime.fromtimestamp(float(seconds), tz=UTC).isoformat()
 
 
-def _coerce_int(value: Optional[Any], field: str) -> Optional[int]:
+def _coerce_int(value: Any | None, field: str) -> int | None:
     """把查询串里的整数值解析为 int；非法取值失败关闭（400），不静默忽略。"""
     if value is None or value == "":
         return None
     if isinstance(value, bool):
-        raise CleanroomException(status_code=400, code="INVALID_REQUEST", message=f"{field} 取值非法")
+        raise CleanroomException(
+            status_code=400, code="INVALID_REQUEST", message=f"{field} 取值非法"
+        )
     if isinstance(value, int):
         return value
     text = str(value).strip()
@@ -148,11 +150,11 @@ def _coerce_int(value: Optional[Any], field: str) -> Optional[int]:
         )
 
 
-def _split_csv(value: Optional[str]) -> List[str]:
+def _split_csv(value: str | None) -> list[str]:
     """把逗号分隔的指标名解析为去重列表。"""
     if not value:
         return []
-    seen: List[str] = []
+    seen: list[str] = []
     for item in str(value).split(","):
         token = item.strip()
         if token and token not in seen:
@@ -166,26 +168,32 @@ def encode_cursor(offset: int) -> str:
     return CURSOR_PREFIX + base64.urlsafe_b64encode(raw).decode("ascii").rstrip("=")
 
 
-def decode_cursor(cursor: Optional[str]) -> int:
+def decode_cursor(cursor: str | None) -> int:
     """还原游标偏移；非法游标失败关闭（400），不静默从头分页。"""
     if not cursor:
         return 0
     text = str(cursor).strip()
     if not text.startswith(CURSOR_PREFIX):
-        raise CleanroomException(status_code=400, code="INVALID_REQUEST", message="cursor 非法或已失效")
-    payload = text[len(CURSOR_PREFIX):]
+        raise CleanroomException(
+            status_code=400, code="INVALID_REQUEST", message="cursor 非法或已失效"
+        )
+    payload = text[len(CURSOR_PREFIX) :]
     padding = "=" * (-len(payload) % 4)
     try:
         decoded = base64.urlsafe_b64decode(payload + padding).decode("utf-8")
         offset = int(json.loads(decoded)["offset"])
     except (binascii.Error, ValueError, KeyError, TypeError, UnicodeDecodeError):
-        raise CleanroomException(status_code=400, code="INVALID_REQUEST", message="cursor 非法或已失效")
+        raise CleanroomException(
+            status_code=400, code="INVALID_REQUEST", message="cursor 非法或已失效"
+        )
     if offset < 0:
-        raise CleanroomException(status_code=400, code="INVALID_REQUEST", message="cursor 非法或已失效")
+        raise CleanroomException(
+            status_code=400, code="INVALID_REQUEST", message="cursor 非法或已失效"
+        )
     return offset
 
 
-def _validate_limit(limit: Optional[Any]) -> int:
+def _validate_limit(limit: Any | None) -> int:
     """校验分页条数；超出允许区间一律 400。"""
     if limit is None or limit == "":
         return DEFAULT_LIMIT
@@ -202,7 +210,8 @@ def _validate_limit(limit: Optional[Any]) -> int:
 
 def parse_filters(params: Mapping[str, Any]) -> AppliedFilters:
     """把查询映射解析为强类型过滤条件；未识别参数被忽略但仍如实回显已知项。"""
-    def pick(*names: str) -> Optional[str]:
+
+    def pick(*names: str) -> str | None:
         for name in names:
             value = params.get(name)
             if value is None:
@@ -242,10 +251,18 @@ class ObservabilityService:
         asset_library_service: Any = None,
     ) -> None:
         # 允许注入以便测试隔离；默认指向与路由一致的全局单例。
-        self._projects = projects_service if projects_service is not None else default_projects_service
-        self._canvas = canvas_service if canvas_service is not None else default_god_canvas_service
+        self._projects = (
+            projects_service
+            if projects_service is not None
+            else default_projects_service
+        )
+        self._canvas = (
+            canvas_service if canvas_service is not None else default_god_canvas_service
+        )
         self._asset_library = (
-            asset_library_service if asset_library_service is not None else default_asset_library_service
+            asset_library_service
+            if asset_library_service is not None
+            else default_asset_library_service
         )
 
     # ------------------------------------------------------------------
@@ -255,32 +272,46 @@ class ObservabilityService:
         """返回本阶段已实现的观测资源索引（不含任何未实现端点声明）。"""
         resources = [
             ResourceDescriptor(
-                name="overview", path="/api/observability/overview",
-                data_status=DataStatus.OK, description="进程内项目与任务计数总览（未接入指标为 null）",
+                name="overview",
+                path="/api/observability/overview",
+                data_status=DataStatus.OK,
+                description="进程内项目与任务计数总览（未接入指标为 null）",
             ),
             ResourceDescriptor(
-                name="series", path="/api/observability/series",
-                data_status=DataStatus.DEGRADED, description="指标采样序列（observability_samples，按真实采样求值）",
+                name="series",
+                path="/api/observability/series",
+                data_status=DataStatus.DEGRADED,
+                description="指标采样序列（observability_samples，按真实采样求值）",
             ),
             ResourceDescriptor(
-                name="events", path="/api/observability/events",
-                data_status=DataStatus.OK, description="已脱敏认证审计事件（core.audit 环形缓冲）",
+                name="events",
+                path="/api/observability/events",
+                data_status=DataStatus.OK,
+                description="已脱敏认证审计事件（core.audit 环形缓冲）",
             ),
             ResourceDescriptor(
-                name="tasks", path="/api/observability/tasks",
-                data_status=DataStatus.OK, description="god-canvas 进程内任务清单",
+                name="tasks",
+                path="/api/observability/tasks",
+                data_status=DataStatus.OK,
+                description="god-canvas 进程内任务清单",
             ),
             ResourceDescriptor(
-                name="health", path="/api/observability/health",
-                data_status=DataStatus.DEGRADED, description="本进程组件可用性（含 psutil 硬件读数与采样存储）",
+                name="health",
+                path="/api/observability/health",
+                data_status=DataStatus.DEGRADED,
+                description="本进程组件可用性（含 psutil 硬件读数与采样存储）",
             ),
             ResourceDescriptor(
-                name="sources", path="/api/observability/sources",
-                data_status=DataStatus.OK, description="数据源注册表（真实登记本进程来源路径）",
+                name="sources",
+                path="/api/observability/sources",
+                data_status=DataStatus.OK,
+                description="数据源注册表（真实登记本进程来源路径）",
             ),
             ResourceDescriptor(
-                name="asset-volumes", path="/api/observability/asset-volumes",
-                data_status=DataStatus.DEGRADED, description="素材体积索引（真实遍历 GW_ALLOWED_ROOTS；未配置为空 + not_integrated）",
+                name="asset-volumes",
+                path="/api/observability/asset-volumes",
+                data_status=DataStatus.DEGRADED,
+                description="素材体积索引（真实遍历 GW_ALLOWED_ROOTS；未配置为空 + not_integrated）",
             ),
         ]
         return ObservabilityIndex(
@@ -296,18 +327,22 @@ class ObservabilityService:
     # ------------------------------------------------------------------
     # 总览
     # ------------------------------------------------------------------
-    def overview(self, filters: AppliedFilters, auth_context=None) -> ObservabilityOverview:
+    def overview(
+        self, filters: AppliedFilters, auth_context=None
+    ) -> ObservabilityOverview:
         """总览计数严格来自真实服务实例当前内存状态。"""
         project_counts, project_gap = self._project_counts()
         job_counts, job_gap = self._job_counts(auth_context)
 
-        gaps: List[str] = [GAP_LATENCY]
+        gaps: list[str] = [GAP_LATENCY]
         if project_gap:
             gaps.append(project_gap)
         if job_gap:
             gaps.append(job_gap)
 
-        failed = job_counts.by_status.get("failed", 0) + job_counts.by_status.get("interrupted", 0)
+        failed = job_counts.by_status.get("failed", 0) + job_counts.by_status.get(
+            "interrupted", 0
+        )
         summary = OverviewSummary(
             total=job_counts.total,
             failed=failed,
@@ -327,7 +362,7 @@ class ObservabilityService:
             applied_filters=filters,
         )
 
-    def _project_counts(self) -> Tuple[ProjectCounts, Optional[str]]:
+    def _project_counts(self) -> tuple[ProjectCounts, str | None]:
         """按公开读取接口统计项目；服务不可用时返回零计数 + 说明。"""
         try:
             active = self._projects.list_projects(archived=False, deleted=False)
@@ -348,22 +383,28 @@ class ObservabilityService:
             None,
         )
 
-    def _job_snapshot(self, auth_context=None) -> Tuple[List[Any], Optional[str]]:
+    def _job_snapshot(self, auth_context=None) -> tuple[list[Any], str | None]:
         """读取 god-canvas 内存任务快照；不可用时返回空清单 + 说明。"""
         reader = getattr(self._canvas, "list_jobs", None)
         if reader is None:
-            return [], "GodCanvasService 未提供只读任务快照能力，任务计数降级为 0（不代表真实为 0）"
+            return (
+                [],
+                "GodCanvasService 未提供只读任务快照能力，任务计数降级为 0（不代表真实为 0）",
+            )
         try:
             if auth_context is not None:
                 return list(self._canvas.list_owned_jobs(auth_context)), None
             return list(reader()), None
         except Exception:
-            return [], "GodCanvasService 任务快照读取失败，任务计数降级为 0（不代表真实为 0）"
+            return (
+                [],
+                "GodCanvasService 任务快照读取失败，任务计数降级为 0（不代表真实为 0）",
+            )
 
-    def _job_counts(self, auth_context=None) -> Tuple[JobCounts, Optional[str]]:
+    def _job_counts(self, auth_context=None) -> tuple[JobCounts, str | None]:
         """按状态统计真实内存任务。"""
         jobs, gap = self._job_snapshot(auth_context)
-        by_status: Dict[str, int] = {}
+        by_status: dict[str, int] = {}
         for job in jobs:
             state = str(getattr(job, "state", "") or "unknown")
             by_status[state] = by_status.get(state, 0) + 1
@@ -390,24 +431,38 @@ class ObservabilityService:
             except Exception:
                 pass
         start_ms, end_ms = filters.resolve_window(_now_ms())
-        metrics: List[SeriesMetric] = []
-        series: Dict[str, List[Any]] = {}
-        gaps: List[str] = []
+        metrics: list[SeriesMetric] = []
+        series: dict[str, list[Any]] = {}
+        gaps: list[str] = []
         unknown = [name for name in requested if name not in telemetry.KNOWN_METRICS]
         for name in unknown:
             gaps.append("指标 %s 不在真实采样白名单内，未返回任何点" % name)
         for name in requested:
             if name not in telemetry.KNOWN_METRICS:
-                metrics.append(SeriesMetric(metric=name, data_status=DataStatus.NOT_INTEGRATED, points=[]))
+                metrics.append(
+                    SeriesMetric(
+                        metric=name, data_status=DataStatus.NOT_INTEGRATED, points=[]
+                    )
+                )
                 continue
             points = telemetry.load_series(name, start_ms, end_ms)
             if len(points) < 2:
-                metrics.append(SeriesMetric(metric=name, data_status=DataStatus.DEGRADED, points=points))
+                metrics.append(
+                    SeriesMetric(
+                        metric=name, data_status=DataStatus.DEGRADED, points=points
+                    )
+                )
                 gaps.append("指标 %s 真实采样不足 2 点，未渲染曲线（禁止插值）" % name)
             else:
-                metrics.append(SeriesMetric(metric=name, data_status=DataStatus.OK, points=points))
+                metrics.append(
+                    SeriesMetric(metric=name, data_status=DataStatus.OK, points=points)
+                )
                 series[name] = points
-        if not gaps and metrics and all(item.data_status == DataStatus.OK for item in metrics):
+        if (
+            not gaps
+            and metrics
+            and all(item.data_status == DataStatus.OK for item in metrics)
+        ):
             overall = DataStatus.OK
         elif any(item.data_status == DataStatus.OK for item in metrics) or metrics:
             overall = DataStatus.DEGRADED
@@ -433,7 +488,7 @@ class ObservabilityService:
     def events(self, filters: AppliedFilters) -> ObservabilityListResponse:
         """只投影真实审计记录；无法求值的过滤条件返回空 + degraded，不静默忽略。"""
         start_ms, end_ms = filters.resolve_window(_now_ms())
-        gaps: List[str] = []
+        gaps: list[str] = []
         blocked = self._id_scope_gaps(filters, subject="认证审计事件")
         if blocked:
             return ObservabilityListResponse(
@@ -463,9 +518,11 @@ class ObservabilityService:
                 data_gaps=[GAP_AUDIT_UNAVAILABLE],
                 applied_filters=filters,
             )
-        projected = [self._project_event(index, record) for index, record in enumerate(records)]
+        projected = [
+            self._project_event(index, record) for index, record in enumerate(records)
+        ]
 
-        selected: List[ObservabilityEvent] = []
+        selected: list[ObservabilityEvent] = []
         for event, record in zip(projected, records):
             if filters.event_id and event.event_id != filters.event_id:
                 continue
@@ -495,7 +552,7 @@ class ObservabilityService:
             applied_filters=filters,
         )
 
-    def _read_audit_records(self) -> Optional[List[Dict[str, Any]]]:
+    def _read_audit_records(self) -> list[dict[str, Any]] | None:
         """读取审计缓冲。
 
         返回 ``None`` 表示**读取失败**，与「读取成功但确实为空」严格区分：
@@ -507,7 +564,9 @@ class ObservabilityService:
         except Exception:
             return None
 
-    def _project_event(self, index: int, record: Mapping[str, Any]) -> ObservabilityEvent:
+    def _project_event(
+        self, index: int, record: Mapping[str, Any]
+    ) -> ObservabilityEvent:
         """把白名单审计记录投影为对外事件；事件标识为内容派生的稳定哈希。"""
         outcome = str(record.get("outcome") or "")
         status = _OUTCOME_STATUS.get(outcome, "unknown")
@@ -541,7 +600,9 @@ class ObservabilityService:
     # ------------------------------------------------------------------
     # 任务（真实内存任务表）
     # ------------------------------------------------------------------
-    def tasks(self, filters: AppliedFilters, auth_context=None) -> ObservabilityListResponse:
+    def tasks(
+        self, filters: AppliedFilters, auth_context=None
+    ) -> ObservabilityListResponse:
         """返回真实内存任务投影（当前状态快照，非历史查询）。
 
         过滤口径（**分档处理，绝不静默忽略**）：
@@ -556,7 +617,9 @@ class ObservabilityService:
 
         证据边界：本端点不为任务补造时间戳，也不从画布反推 project_id 等关联。
         """
-        scope_gaps = self._id_scope_gaps(filters, subject="god-canvas 任务", allow_job_id=True)
+        scope_gaps = self._id_scope_gaps(
+            filters, subject="god-canvas 任务", allow_job_id=True
+        )
         for attribute, label in (("source", "source"), ("level", "level")):
             if getattr(filters, attribute):
                 scope_gaps.append(
@@ -589,7 +652,7 @@ class ObservabilityService:
             if (not filters.status or task.status == filters.status.strip().lower())
             and (not filters.job_id or task.job_id == filters.job_id)
         ]
-        gaps: List[str] = []
+        gaps: list[str] = []
         if reader_gap:
             gaps.append(reader_gap)
         if window_requested:
@@ -626,12 +689,14 @@ class ObservabilityService:
     # ------------------------------------------------------------------
     def health(self, filters: AppliedFilters, auth_context=None) -> ObservabilityHealth:
         """如实反映组件可用性；未接入组件必须是 not_integrated，绝不无条件返回 ok。"""
-        checks: List[HealthCheck] = []
-        gaps: List[str] = []
+        checks: list[HealthCheck] = []
+        gaps: list[str] = []
 
         project_counts, project_gap = self._project_counts()
         if project_gap:
-            checks.append(HealthCheck(name="projects", status="failed", message_safe=project_gap))
+            checks.append(
+                HealthCheck(name="projects", status="failed", message_safe=project_gap)
+            )
             gaps.append(project_gap)
         else:
             checks.append(
@@ -644,7 +709,9 @@ class ObservabilityService:
 
         jobs, job_gap = self._job_snapshot(auth_context)
         if job_gap:
-            checks.append(HealthCheck(name="canvas", status="failed", message_safe=job_gap))
+            checks.append(
+                HealthCheck(name="canvas", status="failed", message_safe=job_gap)
+            )
             gaps.append(job_gap)
         else:
             checks.append(
@@ -667,7 +734,9 @@ class ObservabilityService:
             )
         except Exception:
             message = "AssetLibraryService 不可用，素材库能力降级"
-            checks.append(HealthCheck(name="asset_library", status="failed", message_safe=message))
+            checks.append(
+                HealthCheck(name="asset_library", status="failed", message_safe=message)
+            )
             gaps.append(message)
 
         records = self._read_audit_records()
@@ -691,35 +760,51 @@ class ObservabilityService:
 
         if getattr(self._canvas, "_jobs", None) is None:
             checks.append(
-                HealthCheck(name="job_store", status="unknown", message_safe="未发现可读的任务存储引用")
+                HealthCheck(
+                    name="job_store",
+                    status="unknown",
+                    message_safe="未发现可读的任务存储引用",
+                )
             )
 
         reading = telemetry.hardware_telemetry()
         if reading is None:
-            checks.append(HealthCheck(name="hardware_telemetry", status="not_integrated",
-                                      message_safe=GAP_HARDWARE))
+            checks.append(
+                HealthCheck(
+                    name="hardware_telemetry",
+                    status="not_integrated",
+                    message_safe=GAP_HARDWARE,
+                )
+            )
             gaps.append(GAP_HARDWARE)
         else:
-            checks.append(HealthCheck(
-                name="hardware_telemetry",
-                status="ok",
-                message_safe="psutil 真实读数（CPU/内存/磁盘）",
-                metrics=dict(reading),
-            ))
+            checks.append(
+                HealthCheck(
+                    name="hardware_telemetry",
+                    status="ok",
+                    message_safe="psutil 真实读数（CPU/内存/磁盘）",
+                    metrics=dict(reading),
+                )
+            )
 
         # GPU 遥测为可选真实来源：nvidia-smi 可用即接入，不可用才如实标未接入。
         gpu = telemetry.gpu_telemetry()
         if gpu is None:
-            checks.append(HealthCheck(name="gpu_telemetry", status="not_integrated",
-                                      message_safe=GAP_GPU))
+            checks.append(
+                HealthCheck(
+                    name="gpu_telemetry", status="not_integrated", message_safe=GAP_GPU
+                )
+            )
             gaps.append(GAP_GPU)
         else:
-            checks.append(HealthCheck(
-                name="gpu_telemetry",
-                status="ok",
-                message_safe="nvidia-smi 真实读数（设备清单/利用率/显存）",
-                metrics=dict(gpu),
-            ))
+            checks.append(
+                HealthCheck(
+                    name="gpu_telemetry",
+                    status="ok",
+                    message_safe="nvidia-smi 真实读数（设备清单/利用率/显存）",
+                    metrics=dict(gpu),
+                )
+            )
 
         # metrics_series：先落盘一次真实采样（观测系统自身即采样源），再读存储；
         # 无点=degraded（真实为空），存储不可读=not_integrated。
@@ -729,22 +814,36 @@ class ObservabilityService:
             pass
         try:
             metric_names = list(telemetry.KNOWN_METRICS)
-            sample_total = sum(len(telemetry.load_series(name, None, None)) for name in metric_names)
+            sample_total = sum(
+                len(telemetry.load_series(name, None, None)) for name in metric_names
+            )
         except Exception:
-            checks.append(HealthCheck(name="metrics_series", status="not_integrated",
-                                      message_safe=_GAP_METRICS_UNAVAILABLE))
+            checks.append(
+                HealthCheck(
+                    name="metrics_series",
+                    status="not_integrated",
+                    message_safe=_GAP_METRICS_UNAVAILABLE,
+                )
+            )
             gaps.append(_GAP_METRICS_UNAVAILABLE)
         else:
             if sample_total > 0:
-                checks.append(HealthCheck(
-                    name="metrics_series", status="ok",
-                    message_safe="指标采样存储可读，当前共 %d 个真实采样点" % sample_total,
-                ))
+                checks.append(
+                    HealthCheck(
+                        name="metrics_series",
+                        status="ok",
+                        message_safe="指标采样存储可读，当前共 %d 个真实采样点"
+                        % sample_total,
+                    )
+                )
             else:
-                checks.append(HealthCheck(
-                    name="metrics_series", status="degraded",
-                    message_safe=_GAP_METRICS_EMPTY,
-                ))
+                checks.append(
+                    HealthCheck(
+                        name="metrics_series",
+                        status="degraded",
+                        message_safe=_GAP_METRICS_EMPTY,
+                    )
+                )
                 gaps.append(_GAP_METRICS_EMPTY)
 
         # source_registry：真实登记本进程数据源。
@@ -753,36 +852,65 @@ class ObservabilityService:
         except Exception:
             registered = []
         if registered:
-            checks.append(HealthCheck(
-                name="source_registry", status="ok",
-                message_safe="已真实登记 %d 个数据源" % len(registered),
-            ))
+            checks.append(
+                HealthCheck(
+                    name="source_registry",
+                    status="ok",
+                    message_safe="已真实登记 %d 个数据源" % len(registered),
+                )
+            )
         else:
-            checks.append(HealthCheck(name="source_registry", status="not_integrated",
-                                      message_safe="数据源注册表为空"))
+            checks.append(
+                HealthCheck(
+                    name="source_registry",
+                    status="not_integrated",
+                    message_safe="数据源注册表为空",
+                )
+            )
             gaps.append("数据源注册表为空")
 
         # asset_volume_index：遍历真实允许根目录；未配置=not_integrated（fail-closed）。
         try:
             volume = telemetry.scan_asset_volumes(limit=1)
         except Exception:
-            volume = {"data_status": "not_integrated", "data_gaps": [_GAP_VOLUMES_UNCONFIGURED]}
+            volume = {
+                "data_status": "not_integrated",
+                "data_gaps": [_GAP_VOLUMES_UNCONFIGURED],
+            }
         if volume.get("data_status") == "ok":
-            checks.append(HealthCheck(name="asset_volume_index", status="ok",
-                                      message_safe="素材体积索引可读（GW_ALLOWED_ROOTS）"))
+            checks.append(
+                HealthCheck(
+                    name="asset_volume_index",
+                    status="ok",
+                    message_safe="素材体积索引可读（GW_ALLOWED_ROOTS）",
+                )
+            )
         elif volume.get("data_status") == "degraded":
-            checks.append(HealthCheck(name="asset_volume_index", status="degraded",
-                                      message_safe="素材体积扫描部分失败，结果可能不完整"))
+            checks.append(
+                HealthCheck(
+                    name="asset_volume_index",
+                    status="degraded",
+                    message_safe="素材体积扫描部分失败，结果可能不完整",
+                )
+            )
             gaps.extend(volume.get("data_gaps") or [])
         else:
-            checks.append(HealthCheck(name="asset_volume_index", status="not_integrated",
-                                      message_safe=_GAP_VOLUMES_UNCONFIGURED))
+            checks.append(
+                HealthCheck(
+                    name="asset_volume_index",
+                    status="not_integrated",
+                    message_safe=_GAP_VOLUMES_UNCONFIGURED,
+                )
+            )
             gaps.append(_GAP_VOLUMES_UNCONFIGURED)
 
         if any(check.status == "failed" for check in checks):
             overall = "degraded"
             data_status = DataStatus.DEGRADED
-        elif any(check.status in {"degraded", "not_integrated", "unknown"} for check in checks):
+        elif any(
+            check.status in {"degraded", "not_integrated", "unknown"}
+            for check in checks
+        ):
             overall = "partial"
             data_status = DataStatus.DEGRADED
         else:
@@ -824,8 +952,14 @@ class ObservabilityService:
         start_ms, end_ms = filters.resolve_window(_now_ms())
         scan = telemetry.scan_asset_volumes(limit=filters.limit)
         items = scan["items"]
-        status = DataStatus.OK if scan["data_status"] == "ok" else (
-            DataStatus.NOT_INTEGRATED if scan["data_status"] == "not_integrated" else DataStatus.DEGRADED
+        status = (
+            DataStatus.OK
+            if scan["data_status"] == "ok"
+            else (
+                DataStatus.NOT_INTEGRATED
+                if scan["data_status"] == "not_integrated"
+                else DataStatus.DEGRADED
+            )
         )
         return ObservabilityListResponse(
             data_status=status,
@@ -840,7 +974,9 @@ class ObservabilityService:
             applied_filters=filters,
         )
 
-    def _empty_response(self, filters: AppliedFilters, gap: str) -> ObservabilityListResponse:
+    def _empty_response(
+        self, filters: AppliedFilters, gap: str
+    ) -> ObservabilityListResponse:
         start_ms, end_ms = filters.resolve_window(_now_ms())
         return ObservabilityListResponse(
             data_status=DataStatus.NOT_INTEGRATED,
@@ -864,21 +1000,25 @@ class ObservabilityService:
         *,
         subject: str,
         allow_job_id: bool = False,
-    ) -> List[str]:
+    ) -> list[str]:
         """返回无法求值的稳定 ID 过滤条件说明；命中即应返回空集合。"""
-        gaps: List[str] = []
+        gaps: list[str] = []
         for attribute, label in _ID_SCOPE_LABELS:
             if getattr(filters, attribute):
-                gaps.append(f"{subject}不携带 {label} 关联，按 {label} 过滤无法求值；返回空结果而非全部")
+                gaps.append(
+                    f"{subject}不携带 {label} 关联，按 {label} 过滤无法求值；返回空结果而非全部"
+                )
         if not allow_job_id and filters.job_id:
-            gaps.append(f"{subject}不携带 job_id 关联，按 job_id 过滤无法求值；返回空结果而非全部")
+            gaps.append(
+                f"{subject}不携带 job_id 关联，按 job_id 过滤无法求值；返回空结果而非全部"
+            )
         return gaps
 
     @staticmethod
     def _paginate(
         items: Sequence[Any],
         filters: AppliedFilters,
-    ) -> Tuple[List[Any], bool, Optional[str]]:
+    ) -> tuple[list[Any], bool, str | None]:
         """基于不透明游标做真实分页，返回 (当前页, 是否还有更多, 下一页游标)。"""
         offset = decode_cursor(filters.cursor)
         page = list(items[offset : offset + filters.limit])

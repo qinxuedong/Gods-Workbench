@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 # Copyright 2026 Gods-Workbench Authors
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -21,10 +20,10 @@
 
 from __future__ import annotations
 
-import logging
-import uuid
 import hashlib
 import json
+import logging
+import uuid
 from functools import wraps
 from typing import Any, Dict, Optional
 
@@ -41,6 +40,7 @@ def _serialized(function):
     def operation(*args, **kwargs):
         with registry._STORAGE_LOCK:
             return function(*args, **kwargs)
+
     return operation
 
 
@@ -54,13 +54,19 @@ def _receipt(context, key, payload):
 
 def registration_health(result):
     pending = bool(result.get("error"))
-    return {"data_status": "partial" if pending else "ok",
-            "data_gaps": ["asset_hub_registration_pending"] if pending else []}
+    return {
+        "data_status": "partial" if pending else "ok",
+        "data_gaps": ["asset_hub_registration_pending"] if pending else [],
+    }
 
 
 def _workflow_asset_id(context, workflow_id):
     # 外部来源也可能使用 UUID；所有文档资产都必须进入主体命名空间。
-    return str(uuid.uuid5(uuid.NAMESPACE_URL, f"gw:workflow:{asset_owner_key(context)}:{workflow_id}"))
+    return str(
+        uuid.uuid5(
+            uuid.NAMESPACE_URL, f"gw:workflow:{asset_owner_key(context)}:{workflow_id}"
+        )
+    )
 
 
 @_serialized
@@ -68,7 +74,9 @@ def remove_workflow_from_asset_hub(context, workflow_id):
     asset_id = _workflow_asset_id(context, workflow_id)
     owner = asset_owner_key(context)
     try:
-        receipt = _receipt(context, asset_id, {"kind": "workflow_delete", "workflow_id": workflow_id})
+        receipt = _receipt(
+            context, asset_id, {"kind": "workflow_delete", "workflow_id": workflow_id}
+        )
         default_asset_library_service.remove_bridge_item(asset_id, owner)
         asset_repo.remove_bridge_asset(asset_id, owner)
         receipt.unlink(missing_ok=True)
@@ -83,21 +91,26 @@ def register_workflow_to_asset_hub(
     workflow_id: str,
     name: str,
     *,
-    document: Optional[Dict[str, Any]] = None,
+    document: dict[str, Any] | None = None,
     context=None,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """把工作流文档登记至统一资产中枢，存入资产库工作流分类，保证全局稳定 ID 绑定。"""
     if not workflow_id or context is None:
         return {}
     # 慢请求不能在新版本或删除后把旧投影写回；以主体文档为唯一真源。
-    source = registry._principal_root(context) / (str(workflow_id) + '.json')
+    source = registry._principal_root(context) / (str(workflow_id) + ".json")
     try:
-        if not source.resolve().is_relative_to(registry._principal_root(context).resolve()):
-            raise OSError('来源路径越界')
-        document = json.loads(source.read_text(encoding='utf-8'))
-        name = document.get('name', name)
+        if not source.resolve().is_relative_to(
+            registry._principal_root(context).resolve()
+        ):
+            raise OSError("来源路径越界")
+        document = json.loads(source.read_text(encoding="utf-8"))
+        name = document.get("name", name)
     except (OSError, ValueError, AttributeError):
-        return {"asset_id": _workflow_asset_id(context, workflow_id), "error": "ASSET_HUB_SOURCE_UNAVAILABLE"}
+        return {
+            "asset_id": _workflow_asset_id(context, workflow_id),
+            "error": "ASSET_HUB_SOURCE_UNAVAILABLE",
+        }
 
     wf_name = (name or "").strip() or "工作流"
     asset_id = _workflow_asset_id(context, workflow_id)
@@ -105,7 +118,9 @@ def register_workflow_to_asset_hub(
     url = f"/static/pages/workflow.html?id={workflow_id}"
 
     try:
-        receipt = _receipt(context, asset_id, {"kind": "workflow", "workflow_id": workflow_id})
+        receipt = _receipt(
+            context, asset_id, {"kind": "workflow", "workflow_id": workflow_id}
+        )
         # 1. 登记至素材库服务 (AssetLibraryService)，归入 workflow 分类
         lib_item = default_asset_library_service.register_item(
             asset_id=asset_id,
@@ -127,9 +142,15 @@ def register_workflow_to_asset_hub(
                 "workflow_id": workflow_id,
                 "workflow_owner": owner,
                 "node_count": node_count,
-                "source_type": document.get("source_type") if isinstance(document, dict) else None,
-                "workflow_version": document.get("version") if isinstance(document, dict) else None,
-                "source_context": document.get("metadata", {}).get("source_context", {}) if isinstance(document, dict) else {},
+                "source_type": document.get("source_type")
+                if isinstance(document, dict)
+                else None,
+                "workflow_version": document.get("version")
+                if isinstance(document, dict)
+                else None,
+                "source_context": document.get("metadata", {}).get("source_context", {})
+                if isinstance(document, dict)
+                else {},
             },
         )
 
@@ -142,9 +163,10 @@ def register_workflow_to_asset_hub(
 
 @_serialized
 def register_output_to_asset_hub(
-    asset_dict: Dict[str, Any],
-    *, context=None,
-) -> Dict[str, Any]:
+    asset_dict: dict[str, Any],
+    *,
+    context=None,
+) -> dict[str, Any]:
     """把工作流执行产物登记至统一资产中枢，存入资产库图片/输出分类，保证全局稳定 ID 绑定。"""
     asset_id = str(asset_dict.get("asset_id") or "")
     if not asset_id or context is None:
@@ -162,7 +184,11 @@ def register_output_to_asset_hub(
             asset_id=asset_id,
             name=filename,
             category_type=media_type,
-            category_name={"image": "图片", "video": "视频", "document": "产物原件"}.get(media_type, "产物原件"),
+            category_name={
+                "image": "图片",
+                "video": "视频",
+                "document": "产物原件",
+            }.get(media_type, "产物原件"),
             url=url,
             workflow_owner=asset_owner_key(context),
         )
@@ -205,13 +231,27 @@ def reconcile_pending(context):
             if receipt["kind"] == "workflow_delete":
                 result = remove_workflow_from_asset_hub(context, receipt["workflow_id"])
             elif receipt["kind"] == "workflow":
-                document_path = registry._principal_root(context) / (str(receipt["workflow_id"]) + ".json")
+                document_path = registry._principal_root(context) / (
+                    str(receipt["workflow_id"]) + ".json"
+                )
                 document = json.loads(document_path.read_text(encoding="utf-8"))
-                result = register_workflow_to_asset_hub(receipt["workflow_id"], document.get("name"), document=document, context=context)
+                result = register_workflow_to_asset_hub(
+                    receipt["workflow_id"],
+                    document.get("name"),
+                    document=document,
+                    context=context,
+                )
             else:
-                asset = next(value for value in registry.load_assets(context) if value["asset_id"] == receipt["asset_id"])
+                asset = next(
+                    value
+                    for value in registry.load_assets(context)
+                    if value["asset_id"] == receipt["asset_id"]
+                )
                 result = register_output_to_asset_hub(asset, context=context)
             results.append(result)
         except (OSError, ValueError, KeyError, StopIteration):
             results.append({"error": "ASSET_HUB_SOURCE_UNAVAILABLE"})
-    return {"results": results, "pending": sum(bool(value.get("error")) for value in results)}
+    return {
+        "results": results,
+        "pending": sum(bool(value.get("error")) for value in results),
+    }

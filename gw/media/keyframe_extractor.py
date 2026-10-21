@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 # Copyright 2026 Gods-Workbench Authors
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -29,7 +28,6 @@ from typing import Any
 from PIL import Image
 
 from gw.core.errors import CleanroomException
-
 
 _PROCESS_TIMEOUT_SECONDS = 120
 _THUMBNAIL_WIDTH = 320
@@ -111,7 +109,9 @@ def _save_sprite(thumbnails: list[Path], target: Path, columns: int) -> None:
         for index, path in enumerate(thumbnails):
             with Image.open(path) as source:
                 tile = source.convert("RGB")
-            tile.thumbnail((_THUMBNAIL_WIDTH, _THUMBNAIL_HEIGHT), Image.Resampling.LANCZOS)
+            tile.thumbnail(
+                (_THUMBNAIL_WIDTH, _THUMBNAIL_HEIGHT), Image.Resampling.LANCZOS
+            )
             x = (index % columns) * _THUMBNAIL_WIDTH
             y = (index // columns) * _THUMBNAIL_HEIGHT
             sprite.paste(tile, (x, y))
@@ -142,7 +142,12 @@ def extract_keyframes(
         _fail(400, "INVALID_OUTPUT_PATH", "视频或输出目录路径无效")
     if not path.is_file():
         _fail(400, "VIDEO_NOT_AVAILABLE", "视频文件不存在")
-    if isinstance(columns, bool) or not isinstance(columns, int) or columns < 1 or columns > 12:
+    if (
+        isinstance(columns, bool)
+        or not isinstance(columns, int)
+        or columns < 1
+        or columns > 12
+    ):
         _fail(400, "INVALID_SPRITE_COLUMNS", "雪碧图列数必须在 1 到 12 之间")
 
     metadata = _validate_scenes(scenes)
@@ -152,11 +157,17 @@ def extract_keyframes(
     except OSError:
         _fail(503, "OUTPUT_DIRECTORY_UNAVAILABLE", "无法创建媒体输出目录")
 
-    thumbnail_paths = [destination / f"scene_{index:03d}.webp" for index in range(1, len(metadata) + 1)]
+    thumbnail_paths = [
+        destination / f"scene_{index:03d}.webp" for index in range(1, len(metadata) + 1)
+    ]
     sprite_name = "scene_sprite.webp"
     sprite_path = destination / sprite_name
     metadata_path = destination / "metadata.json"
-    if metadata_path.exists() or sprite_path.exists() or any(item.exists() for item in thumbnail_paths):
+    if (
+        metadata_path.exists()
+        or sprite_path.exists()
+        or any(item.exists() for item in thumbnail_paths)
+    ):
         _fail(409, "MEDIA_OUTPUT_EXISTS", "媒体输出文件已存在，拒绝覆盖")
 
     created: list[Path] = []
@@ -188,7 +199,11 @@ def extract_keyframes(
                     str(target),
                 ]
             )
-            if result.returncode != 0 or not target.is_file() or target.stat().st_size <= 0:
+            if (
+                result.returncode != 0
+                or not target.is_file()
+                or target.stat().st_size <= 0
+            ):
                 _fail(503, "KEYFRAME_EXTRACTION_FAILED", "FFmpeg 无法抽取场景关键帧")
             created.append(target)
 

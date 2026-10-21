@@ -28,7 +28,10 @@ class Provider:
 
 
 def test_gns_video_name_and_storage_path():
-    assert build_video_filename("EP01", "SC01", "SH001", 1) == "EP01_SC01_SH001_v001_raw.mp4"
+    assert (
+        build_video_filename("EP01", "SC01", "SH001", 1)
+        == "EP01_SC01_SH001_v001_raw.mp4"
+    )
     assert build_storage_path("job-1") == "artifacts/job-1.mp4"
 
 
@@ -44,8 +47,13 @@ async def test_async_submit_poll_and_asset_source_provenance():
     provider = Provider()
     executor = VideoJobExecutor(provider)
     job = await executor.submit(
-        shot_id="SH001", episode="EP01", scene="SC01", version=1,
-        image_asset_id="asset-image", target_duration=4, prompt="camera move",
+        shot_id="SH001",
+        episode="EP01",
+        scene="SC01",
+        version=1,
+        image_asset_id="asset-image",
+        target_duration=4,
+        prompt="camera move",
     )
     assert job["status"] == "accepted"
     assert job["job_id"]
@@ -62,8 +70,13 @@ async def test_cancel_reports_remote_result():
     provider = Provider()
     executor = VideoJobExecutor(provider)
     job = await executor.submit(
-        shot_id="SH001", episode="EP01", scene="SC01", version=1,
-        image_asset_id="asset-image", target_duration=4, prompt="camera move",
+        shot_id="SH001",
+        episode="EP01",
+        scene="SC01",
+        version=1,
+        image_asset_id="asset-image",
+        target_duration=4,
+        prompt="camera move",
     )
     result = await executor.cancel(job["job_id"])
     assert result["status"] == "cancelled"

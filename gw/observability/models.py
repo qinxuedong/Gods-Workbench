@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 # Copyright 2026 Gods-Workbench Authors
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -60,24 +59,24 @@ class AppliedFilters(BaseModel):
 
     model_config = ConfigDict(extra="ignore")
 
-    range: Optional[str] = Field(None, description="时间范围，如 15m/1h/24h/7d/all")
+    range: str | None = Field(None, description="时间范围，如 15m/1h/24h/7d/all")
     limit: int = Field(DEFAULT_LIMIT, description="分页条数上限")
-    status: Optional[str] = None
-    source: Optional[str] = None
-    level: Optional[str] = None
-    project_id: Optional[str] = None
-    job_id: Optional[str] = None
-    entity_id: Optional[str] = None
-    asset_id: Optional[str] = None
-    canvas_id: Optional[str] = None
-    stable_id: Optional[str] = None
-    cursor: Optional[str] = None
-    start_ms: Optional[int] = None
-    end_ms: Optional[int] = None
-    metrics: List[str] = Field(default_factory=list)
-    event_id: Optional[str] = None
+    status: str | None = None
+    source: str | None = None
+    level: str | None = None
+    project_id: str | None = None
+    job_id: str | None = None
+    entity_id: str | None = None
+    asset_id: str | None = None
+    canvas_id: str | None = None
+    stable_id: str | None = None
+    cursor: str | None = None
+    start_ms: int | None = None
+    end_ms: int | None = None
+    metrics: list[str] = Field(default_factory=list)
+    event_id: str | None = None
 
-    def resolve_window(self, now_ms: int) -> Tuple[Optional[int], Optional[int]]:
+    def resolve_window(self, now_ms: int) -> tuple[int | None, int | None]:
         """把 range / start_ms / end_ms 解析为真实毫秒时间窗。
 
         非法取值失败关闭（400 INVALID_REQUEST），绝不静默忽略用户显式给定的时间条件。
@@ -134,8 +133,8 @@ class ObservabilityIndex(BaseModel):
     contract_version: str = "p12-a4-1"
     generated_at: str
     data_status: DataStatus
-    data_gaps: List[str] = Field(default_factory=list)
-    resources: List[ResourceDescriptor] = Field(default_factory=list)
+    data_gaps: list[str] = Field(default_factory=list)
+    resources: list[ResourceDescriptor] = Field(default_factory=list)
     applied_filters: AppliedFilters
 
 
@@ -156,8 +155,10 @@ class JobCounts(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
     total: int = Field(..., ge=0)
-    by_status: Dict[str, int] = Field(default_factory=dict)
-    queue_depth: int = Field(..., ge=0, description="等待执行（state=accepted）的真实任务数")
+    by_status: dict[str, int] = Field(default_factory=dict)
+    queue_depth: int = Field(
+        ..., ge=0, description="等待执行（state=accepted）的真实任务数"
+    )
 
 
 class OverviewSummary(BaseModel):
@@ -168,7 +169,9 @@ class OverviewSummary(BaseModel):
     total: int = Field(..., ge=0)
     failed: int = Field(..., ge=0)
     queue_depth: int = Field(..., ge=0)
-    p95_latency_ms: Optional[float] = Field(None, description="未接入延迟直方图数据源时为 null")
+    p95_latency_ms: float | None = Field(
+        None, description="未接入延迟直方图数据源时为 null"
+    )
 
 
 class ObservabilityOverview(BaseModel):
@@ -181,7 +184,7 @@ class ObservabilityOverview(BaseModel):
     summary: OverviewSummary
     projects: ProjectCounts
     jobs: JobCounts
-    data_gaps: List[str] = Field(default_factory=list)
+    data_gaps: list[str] = Field(default_factory=list)
     applied_filters: AppliedFilters
 
 
@@ -192,7 +195,7 @@ class SeriesMetric(BaseModel):
 
     metric: str
     data_status: DataStatus
-    points: List[Any] = Field(default_factory=list)
+    points: list[Any] = Field(default_factory=list)
 
 
 class ObservabilitySeries(BaseModel):
@@ -201,13 +204,13 @@ class ObservabilitySeries(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
     data_status: DataStatus
-    series: Dict[str, List[Any]] = Field(default_factory=dict)
-    metrics: List[SeriesMetric] = Field(default_factory=list)
-    requested_metrics: List[str] = Field(default_factory=list)
+    series: dict[str, list[Any]] = Field(default_factory=dict)
+    metrics: list[SeriesMetric] = Field(default_factory=list)
+    requested_metrics: list[str] = Field(default_factory=list)
     data_gap: str
-    start_ms: Optional[int] = None
-    end_ms: Optional[int] = None
-    data_gaps: List[str] = Field(default_factory=list)
+    start_ms: int | None = None
+    end_ms: int | None = None
+    data_gaps: list[str] = Field(default_factory=list)
     applied_filters: AppliedFilters
 
 
@@ -223,9 +226,9 @@ class ObservabilityEvent(BaseModel):
     source: str
     message_safe: str
     timestamp: str
-    subject: Optional[str] = None
-    role: Optional[str] = None
-    auth_mode: Optional[str] = None
+    subject: str | None = None
+    role: str | None = None
+    auth_mode: str | None = None
 
 
 class ObservabilityTask(BaseModel):
@@ -235,9 +238,9 @@ class ObservabilityTask(BaseModel):
 
     job_id: str
     status: str
-    poll_hint: Optional[str] = None
+    poll_hint: str | None = None
     has_result: bool = False
-    error_safe: Optional[str] = None
+    error_safe: str | None = None
 
 
 class ObservabilityListResponse(BaseModel):
@@ -246,14 +249,14 @@ class ObservabilityListResponse(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
     data_status: DataStatus
-    items: List[Any] = Field(default_factory=list)
+    items: list[Any] = Field(default_factory=list)
     total: int = Field(0, ge=0)
     limit: int = Field(DEFAULT_LIMIT, ge=1)
     has_more: bool = False
-    next_cursor: Optional[str] = None
-    start_ms: Optional[int] = None
-    end_ms: Optional[int] = None
-    data_gaps: List[str] = Field(default_factory=list)
+    next_cursor: str | None = None
+    start_ms: int | None = None
+    end_ms: int | None = None
+    data_gaps: list[str] = Field(default_factory=list)
     applied_filters: AppliedFilters
 
 
@@ -269,7 +272,7 @@ class HealthCheck(BaseModel):
     name: str
     status: str
     message_safe: str
-    metrics: Optional[Dict[str, Any]] = None
+    metrics: dict[str, Any] | None = None
 
 
 class ObservabilityHealth(BaseModel):
@@ -279,8 +282,8 @@ class ObservabilityHealth(BaseModel):
 
     status: str
     data_status: DataStatus
-    checks: List[HealthCheck] = Field(default_factory=list)
+    checks: list[HealthCheck] = Field(default_factory=list)
     buffered_audit_events: int = Field(0, ge=0)
     checked_at: str
-    data_gaps: List[str] = Field(default_factory=list)
+    data_gaps: list[str] = Field(default_factory=list)
     applied_filters: AppliedFilters

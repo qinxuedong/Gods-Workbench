@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 # Copyright 2026 Gods-Workbench Authors
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -18,23 +17,24 @@
 团队身份引用、团队/成员/bootstrap 状态与消息幂等记录由同一个 SQLite 文件承载；审批与临时令牌仍是本进程状态。部署边界为单实例、单应用进程。
 所有身份匹配必须是受信身份域与 subject 的精确匹配，不使用创建者字段冒认成员。
 """
+
 from __future__ import annotations
 
 import base64
 import hashlib
 import os
 import secrets
+from collections.abc import Iterable
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timezone
 from pathlib import Path
 from threading import RLock
-from typing import Any, Iterable, Optional
+from typing import Any, Optional
 
 from gw.core import audit as audit_log
 from gw.core.auth import GOVERNANCE_ROLES, KNOWN_ROLES
 from gw.core.errors import CleanroomException
 from gw.core.team_messages import TeamMessageRepository, TeamMessageStorageUnavailable
-
 
 BOOTSTRAP_ENABLED_ENV = "GW_AUTH_BOOTSTRAP_ENABLED"
 BOOTSTRAP_WINDOW_ENV = "GW_AUTH_BOOTSTRAP_WINDOW"
@@ -48,8 +48,18 @@ class AuthManagementNotFound(CleanroomException):
 
 
 class AuthManagementConflict(CleanroomException):
-    def __init__(self, expected: int, current: int, message: str = "认证资源版本冲突，请刷新后重试"):
-        super().__init__(409, "AUTH_VERSION_CONFLICT", message, {"expected_version": expected, "current_version": current})
+    def __init__(
+        self,
+        expected: int,
+        current: int,
+        message: str = "认证资源版本冲突，请刷新后重试",
+    ):
+        super().__init__(
+            409,
+            "AUTH_VERSION_CONFLICT",
+            message,
+            {"expected_version": expected, "current_version": current},
+        )
 
 
 class AuthManagementStateConflict(CleanroomException):
@@ -67,7 +77,7 @@ class AuthBootstrapUnavailable(CleanroomException):
         super().__init__(403, "AUTH_BOOTSTRAP_DISABLED", "认证初始化窗口未显式开启")
 
 
-def _parse_window_deadline(raw: str) -> Optional[float]:
+def _parse_window_deadline(raw: str) -> float | None:
     """解析初始化窗口截止时间；格式错误按失败关闭处理。"""
     value = raw.strip()
     if not value:
@@ -79,13 +89,13 @@ def _parse_window_deadline(raw: str) -> Optional[float]:
     try:
         parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
         if parsed.tzinfo is None:
-            parsed = parsed.replace(tzinfo=timezone.utc)
+            parsed = parsed.replace(tzinfo=UTC)
         return parsed.timestamp()
     except ValueError:
         return 0.0
 
 
-def bootstrap_window_open(now: Optional[float] = None) -> bool:
+def bootstrap_window_open(now: float | None = None) -> bool:
     """判断是否处于显式初始化窗口。
 
     默认关闭；只有 ``GW_AUTH_BOOTSTRAP_ENABLED`` 或兼容的
@@ -101,7 +111,9 @@ def bootstrap_window_open(now: Optional[float] = None) -> bool:
     deadline_raw = os.getenv(BOOTSTRAP_UNTIL_ENV)
     if deadline_raw:
         deadline = _parse_window_deadline(deadline_raw)
-        if deadline is None or deadline <= (now if now is not None else __import__("time").time()):
+        if deadline is None or deadline <= (
+            now if now is not None else __import__("time").time()
+        ):
             return False
     return True
 
@@ -318,11 +330,17 @@ class AuthManagementStore:
             raise AuthManagementConflict(expected, current)
 
     @staticmethod
-    def _subject_user(users: Iterable[_User], subject: str | None, identity_domain: str | None = None) -> Optional[_User]:
+    def _subject_user(
+        users: Iterable[_User], subject: str | None, identity_domain: str | None = None
+    ) -> _User | None:
         """只按受信身份域和 subject 的唯一绑定查找，不使用 owner_subject 回退。"""
         if not subject or not identity_domain:
             return None
-        matches = [u for u in users if u.identity_domain == identity_domain and u.external_subject == subject]
+        matches = [
+            u
+            for u in users
+            if u.identity_domain == identity_domain and u.external_subject == subject
+        ]
         return matches[0] if len(matches) == 1 else None
 
     @staticmethod
@@ -349,7 +367,13 @@ class AuthManagementStore:
             reason=reason,
         )
 
-    def _visible_team(self, team: _Team, actor_subject: str | None, actor_role: str | None, identity_domain: str | None = None) -> bool:
+    def _visible_team(
+        self,
+        team: _Team,
+        actor_subject: str | None,
+        actor_role: str | None,
+        identity_domain: str | None = None,
+    ) -> bool:
         actor = self._subject_user(self.users.values(), actor_subject, identity_domain)
         if self._is_governor(actor_role):
             return True
@@ -357,15 +381,30 @@ class AuthManagementStore:
             return True
         return bool(actor and actor.user_id in team.members)
 
-    def _visible_user(self, user: _User, actor_subject: str | None, actor_role: str | None, identity_domain: str | None = None) -> bool:
+    def _visible_user(
+        self,
+        user: _User,
+        actor_subject: str | None,
+        actor_role: str | None,
+        identity_domain: str | None = None,
+    ) -> bool:
         if self._is_governor(actor_role):
             return True
         actor = self._subject_user(self.users.values(), actor_subject, identity_domain)
-        if actor and (user.user_id == actor.user_id or (user.owner_domain == identity_domain and user.owner_subject == actor_subject)):
+        if actor and (
+            user.user_id == actor.user_id
+            or (
+                user.owner_domain == identity_domain
+                and user.owner_subject == actor_subject
+            )
+        ):
             return True
         if not actor:
             return False
-        return any(actor.user_id in team.members and user.user_id in team.members for team in self.teams.values())
+        return any(
+            actor.user_id in team.members and user.user_id in team.members
+            for team in self.teams.values()
+        )
 
     def bootstrap(
         self,
@@ -404,10 +443,19 @@ class AuthManagementStore:
             )
             return user.public()
 
-    def list_users(self, actor_subject: str | None = None, actor_role: str | None = None, identity_domain: str | None = None) -> list[dict[str, Any]]:
+    def list_users(
+        self,
+        actor_subject: str | None = None,
+        actor_role: str | None = None,
+        identity_domain: str | None = None,
+    ) -> list[dict[str, Any]]:
         with self._lock:
             self._ensure_loaded()
-            return [u.public() for u in self.users.values() if self._visible_user(u, actor_subject, actor_role, identity_domain)]
+            return [
+                u.public()
+                for u in self.users.values()
+                if self._visible_user(u, actor_subject, actor_role, identity_domain)
+            ]
 
     def create_user(
         self,
@@ -430,10 +478,17 @@ class AuthManagementStore:
                 role = self._check_role(trusted_role or "readonly")
                 external_subject = trusted_external_subject
             else:
-                role = self._check_role(trusted_role if trusted_role is not None else role)
-                external_subject = trusted_external_subject if trusted_external_subject is not None else external_subject
+                role = self._check_role(
+                    trusted_role if trusted_role is not None else role
+                )
+                external_subject = (
+                    trusted_external_subject
+                    if trusted_external_subject is not None
+                    else external_subject
+                )
             if trusted_external_subject and any(
-                u.external_subject == trusted_external_subject and u.identity_domain == trusted_identity_domain
+                u.external_subject == trusted_external_subject
+                and u.identity_domain == trusted_identity_domain
                 for u in self.users.values()
             ):
                 raise AuthManagementStateConflict("外部身份已绑定其他用户")
@@ -443,7 +498,9 @@ class AuthManagementStore:
                 role,
                 external_subject=external_subject,
                 owner_subject=actor_subject,
-                identity_domain=trusted_identity_domain if trusted_external_subject else None,
+                identity_domain=trusted_identity_domain
+                if trusted_external_subject
+                else None,
                 owner_domain=actor_domain,
             )
             self.users[user.user_id] = user
@@ -456,7 +513,6 @@ class AuthManagementStore:
                 auth_mode=auth_mode,
             )
             return user.public()
-
 
     def update_user(
         self,
@@ -491,7 +547,6 @@ class AuthManagementStore:
             )
             return user.public()
 
-
     def delete_user(
         self,
         user_id: str,
@@ -507,7 +562,11 @@ class AuthManagementStore:
             if not user:
                 raise AuthManagementNotFound("用户不存在")
             self._cas(expected, user.version)
-            if user.role in {"admin", "governor"} and sum(u.role in {"admin", "governor"} for u in self.users.values()) <= 1:
+            if (
+                user.role in {"admin", "governor"}
+                and sum(u.role in {"admin", "governor"} for u in self.users.values())
+                <= 1
+            ):
                 raise AuthManagementStateConflict("不得删除最后一个治理用户")
             self.users.pop(user_id)
             for team in self.teams.values():
@@ -525,12 +584,19 @@ class AuthManagementStore:
                 auth_mode=auth_mode,
             )
 
-
-    def list_teams(self, actor_subject: str | None = None, actor_role: str | None = None, identity_domain: str | None = None) -> list[dict[str, Any]]:
+    def list_teams(
+        self,
+        actor_subject: str | None = None,
+        actor_role: str | None = None,
+        identity_domain: str | None = None,
+    ) -> list[dict[str, Any]]:
         with self._lock:
             self._ensure_loaded()
-            return [t.public() for t in self.teams.values() if self._visible_team(t, actor_subject, actor_role, identity_domain)]
-
+            return [
+                t.public()
+                for t in self.teams.values()
+                if self._visible_team(t, actor_subject, actor_role, identity_domain)
+            ]
 
     def create_team(
         self,
@@ -548,7 +614,9 @@ class AuthManagementStore:
                 raise AuthManagementStateConflict("团队名称已存在")
             owner = self._subject_user(self.users.values(), actor_subject, actor_domain)
             team = _Team(
-                self._new_id("team"), name.strip(), description,
+                self._new_id("team"),
+                name.strip(),
+                description,
                 owner_subject=actor_subject,
                 owner_user_id=owner.user_id if owner else None,
                 owner_domain=actor_domain if owner else None,
@@ -565,7 +633,6 @@ class AuthManagementStore:
                 auth_mode=auth_mode,
             )
             return team.public()
-
 
     def delete_team(
         self,
@@ -616,7 +683,12 @@ class AuthManagementStore:
             current_role = team.members.get(user_id)
             # 相同角色的重复请求不增加版本，允许使用首次请求的旧版本重放。
             if current_role == role and expected in {team.version, team.version - 1}:
-                return {"team_id": team_id, "user_id": user_id, "role": role, "version": team.version}
+                return {
+                    "team_id": team_id,
+                    "user_id": user_id,
+                    "role": role,
+                    "version": team.version,
+                }
             self._cas(expected, team.version)
             team.members[user_id] = role
             team.version += 1
@@ -628,7 +700,12 @@ class AuthManagementStore:
                 resource_id=f"{team_id}:{user_id}",
                 auth_mode=auth_mode,
             )
-            return {"team_id": team_id, "user_id": user_id, "role": role, "version": team.version}
+            return {
+                "team_id": team_id,
+                "user_id": user_id,
+                "role": role,
+                "version": team.version,
+            }
 
     def delete_member(
         self,
@@ -663,33 +740,48 @@ class AuthManagementStore:
                 auth_mode=auth_mode,
             )
 
-    def get_identity_binding(self, identity_domain: str | None, identity_subject: str | None) -> dict[str, Any]:
+    def get_identity_binding(
+        self, identity_domain: str | None, identity_subject: str | None
+    ) -> dict[str, Any]:
         """仅查询当前认证主体自己的治理身份绑定状态。"""
         with self._lock:
             self._ensure_loaded()
-            user = self._subject_user(self.users.values(), identity_subject, identity_domain)
-            return {"bound": user is not None, "user_id": user.user_id if user else None}
+            user = self._subject_user(
+                self.users.values(), identity_subject, identity_domain
+            )
+            return {
+                "bound": user is not None,
+                "user_id": user.user_id if user else None,
+            }
 
     def bind_authenticated_identity(self, context: Any) -> tuple[dict[str, Any], bool]:
         """由可信认证上下文显式绑定身份；请求体不能选择身份或角色。"""
         identity_domain = getattr(context, "identity_domain", None)
         identity_subject = getattr(context, "subject", None)
         if not identity_domain or not identity_subject:
-            raise CleanroomException(403, "TEAM_IDENTITY_UNAVAILABLE", "当前认证上下文没有可绑定的唯一身份")
+            raise CleanroomException(
+                403, "TEAM_IDENTITY_UNAVAILABLE", "当前认证上下文没有可绑定的唯一身份"
+            )
         with self._lock:
             self._ensure_loaded()
-            existing = self._subject_user(self.users.values(), identity_subject, identity_domain)
+            existing = self._subject_user(
+                self.users.values(), identity_subject, identity_domain
+            )
             if existing:
                 return existing.public(), False
             if identity_domain == "local_account":
                 user_id = identity_subject
                 prior = self.users.get(user_id)
                 if prior:
-                    raise AuthManagementStateConflict("本地账户 user_id 已绑定到不同治理身份")
+                    raise AuthManagementStateConflict(
+                        "本地账户 user_id 已绑定到不同治理身份"
+                    )
             else:
                 user_id = self._new_id("usr")
             role = self._check_role(getattr(context, "role", ""))
-            display_name = str(getattr(context, "display_name", None) or identity_subject).strip()[:120]
+            display_name = str(
+                getattr(context, "display_name", None) or identity_subject
+            ).strip()[:120]
             user = _User(
                 user_id=user_id,
                 display_name=display_name or user_id,
@@ -725,8 +817,13 @@ class AuthManagementStore:
         with self._lock:
             self._ensure_loaded()
             return self.repository.list_messages(
-                team_id, identity_domain=identity_domain, identity_subject=identity_subject,
-                global_role=global_role, limit=limit, after_sequence=after_sequence, cursor=cursor,
+                team_id,
+                identity_domain=identity_domain,
+                identity_subject=identity_subject,
+                global_role=global_role,
+                limit=limit,
+                after_sequence=after_sequence,
+                cursor=cursor,
             )
 
     def create_message(
@@ -742,9 +839,14 @@ class AuthManagementStore:
         with self._lock:
             self._ensure_loaded()
             return self.repository.create_message(
-                team_id, identity_domain=identity_domain, identity_subject=identity_subject,
-                global_role=global_role, text=text, client_request_id=client_request_id,
+                team_id,
+                identity_domain=identity_domain,
+                identity_subject=identity_subject,
+                global_role=global_role,
+                text=text,
+                client_request_id=client_request_id,
             )
+
     def list_approvals(
         self,
         status_filter: str | None,
@@ -754,27 +856,43 @@ class AuthManagementStore:
     ) -> list[dict[str, Any]]:
         with self._lock:
             self._ensure_loaded()
-            values = [a for a in self.approvals.values() if not status_filter or a.status == status_filter]
+            values = [
+                a
+                for a in self.approvals.values()
+                if not status_filter or a.status == status_filter
+            ]
             visible: list[_Approval] = []
-            actor = self._subject_user(self.users.values(), actor_subject, identity_domain)
+            actor = self._subject_user(
+                self.users.values(), actor_subject, identity_domain
+            )
             for approval in values:
                 owns_approval = bool(
-                    actor_subject and identity_domain
+                    actor_subject
+                    and identity_domain
                     and approval.owner_subject == actor_subject
                     and approval.owner_domain == identity_domain
                 )
                 if self._is_governor(actor_role) or owns_approval:
                     visible.append(approval)
-                elif actor and approval.team_id and approval.team_id in self.teams and actor.user_id in self.teams[approval.team_id].members:
+                elif (
+                    actor
+                    and approval.team_id
+                    and approval.team_id in self.teams
+                    and actor.user_id in self.teams[approval.team_id].members
+                ):
                     visible.append(approval)
-            return [a.public() for a in sorted(visible, key=lambda item: item.approval_id)]
+            return [
+                a.public() for a in sorted(visible, key=lambda item: item.approval_id)
+            ]
 
     @staticmethod
     def _decode_cursor(cursor: str | None) -> int:
         if not cursor:
             return 0
         try:
-            raw = base64.urlsafe_b64decode(cursor.encode("ascii") + b"=" * (-len(cursor) % 4)).decode("ascii")
+            raw = base64.urlsafe_b64decode(
+                cursor.encode("ascii") + b"=" * (-len(cursor) % 4)
+            ).decode("ascii")
             offset = int(raw)
         except (ValueError, UnicodeError, TypeError, base64.binascii.Error):
             raise AuthManagementInvalidCursor()
@@ -784,7 +902,11 @@ class AuthManagementStore:
 
     @staticmethod
     def _encode_cursor(offset: int) -> str:
-        return base64.urlsafe_b64encode(str(offset).encode("ascii")).decode("ascii").rstrip("=")
+        return (
+            base64.urlsafe_b64encode(str(offset).encode("ascii"))
+            .decode("ascii")
+            .rstrip("=")
+        )
 
     def list_approvals_page(
         self,
@@ -796,12 +918,16 @@ class AuthManagementStore:
         actor_role: str | None = None,
         identity_domain: str | None = None,
     ) -> tuple[list[dict[str, Any]], str | None]:
-        values = self.list_approvals(status_filter, actor_subject, actor_role, identity_domain)
+        values = self.list_approvals(
+            status_filter, actor_subject, actor_role, identity_domain
+        )
         start = self._decode_cursor(cursor)
         if start > len(values):
             raise AuthManagementInvalidCursor()
         page = values[start : start + limit]
-        next_cursor = self._encode_cursor(start + limit) if start + limit < len(values) else None
+        next_cursor = (
+            self._encode_cursor(start + limit) if start + limit < len(values) else None
+        )
         return page, next_cursor
 
     def update_approval(

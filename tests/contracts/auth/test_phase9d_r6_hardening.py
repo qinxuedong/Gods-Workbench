@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """R6 缺陷回归守卫：流程状态误清、issuer 同源白名单、状态契约、登录语义、Cookie Secure。
 
 每一条对应 R6 独立复核发现的真实缺陷，用**行为级**断言（非静态字符串）固定修复结果。
@@ -46,10 +45,15 @@ def clean_env(monkeypatch, tmp_path):
 # R6-1：流程状态不得被新登录误清
 # ---------------------------------------------------------------------------
 
+
 def test_flow_state_survives_concurrent_login(clean_env):
     """登记流程 A 后再登记流程 B，A 必须仍然可见（不得被 _prune 误判过期）。"""
-    session_store.create_flow_state(state="state-A", nonce="n", code_verifier="v", redirect_uri="/cb")
-    session_store.create_flow_state(state="state-B", nonce="n", code_verifier="v", redirect_uri="/cb")
+    session_store.create_flow_state(
+        state="state-A", nonce="n", code_verifier="v", redirect_uri="/cb"
+    )
+    session_store.create_flow_state(
+        state="state-B", nonce="n", code_verifier="v", redirect_uri="/cb"
+    )
     flow_a = session_store.pop_flow_state("state-A")
     assert flow_a is not None, "并发登录场景下流程 A 被误清（登录会随机失败）"
     assert flow_a.code_verifier == "v"
@@ -58,15 +62,21 @@ def test_flow_state_survives_concurrent_login(clean_env):
 
 def test_session_survives_flow_state_registration(clean_env):
     """创建会话后登记流程状态，不得把有效会话一并清掉。"""
-    session_id = session_store.create_session({"username": "u", "role": "editor", "groups": ["gw-editor"]})
-    session_store.create_flow_state(state="state-X", nonce="n", code_verifier="v", redirect_uri="/cb")
+    session_id = session_store.create_session(
+        {"username": "u", "role": "editor", "groups": ["gw-editor"]}
+    )
+    session_store.create_flow_state(
+        state="state-X", nonce="n", code_verifier="v", redirect_uri="/cb"
+    )
     assert session_store.get_session(session_id) is not None, "有效会话被误清"
 
 
 def test_expired_flow_state_is_still_rejected(clean_env, monkeypatch):
     """过期流程状态仍必须被拒绝（修复不能把过期检查一并去掉）。"""
     monkeypatch.setattr(session_store, "FLOW_STATE_TTL_SECONDS", -1)
-    session_store.create_flow_state(state="state-old", nonce="n", code_verifier="v", redirect_uri="/cb")
+    session_store.create_flow_state(
+        state="state-old", nonce="n", code_verifier="v", redirect_uri="/cb"
+    )
     assert session_store.pop_flow_state("state-old") is None
 
 
@@ -74,16 +84,20 @@ def test_expired_flow_state_is_still_rejected(clean_env, monkeypatch):
 # R6-2：issuer 同源校验不得被字符串前缀绕过
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.parametrize(
     "endpoint,expected",
     [
         ("https://idp.example.com/token", True),
         ("https://idp.example.com:8443/token", False),  # 端口不同不是同源
-        ("http://idp.example.com/token", False),        # scheme 不同
+        ("http://idp.example.com/token", False),  # scheme 不同
         ("https://evil.example.com/token", False),
         ("https://idp.example.com.evil.com/token", False),  # 前缀陷阱
-        ("https://idp.example.com@evil.com/token", False),  # userinfo 陷阱（真实 host 是 evil.com）
-        ("https://idp.example.com/token/../evil", True),    # 同源路径，仍属该主机
+        (
+            "https://idp.example.com@evil.com/token",
+            False,
+        ),  # userinfo 陷阱（真实 host 是 evil.com）
+        ("https://idp.example.com/token/../evil", True),  # 同源路径，仍属该主机
     ],
 )
 def test_is_same_origin_as(endpoint, expected):
@@ -100,12 +114,17 @@ def test_resolve_endpoint_rejects_issuer_prefix_spoof(clean_env, monkeypatch):
         monkeypatch.setattr(
             gw_config,
             "load_discovery_document",
-            lambda issuer, _evil=evil, **kw: {"token_endpoint": _evil, "authorization_endpoint": _evil},
+            lambda issuer, _evil=evil, **kw: {
+                "token_endpoint": _evil,
+                "authorization_endpoint": _evil,
+            },
         )
         with pytest.raises(ValueError):
             gw_config.resolve_endpoint("https://idp.example.com", "token_endpoint")
         with pytest.raises(ValueError):
-            gw_config.resolve_endpoint("https://idp.example.com", "authorization_endpoint")
+            gw_config.resolve_endpoint(
+                "https://idp.example.com", "authorization_endpoint"
+            )
 
 
 def test_discovery_issuer_mismatch_is_rejected(clean_env, monkeypatch):
@@ -114,7 +133,10 @@ def test_discovery_issuer_mismatch_is_rejected(clean_env, monkeypatch):
     monkeypatch.setattr(
         gw_config,
         "fetch_discovery_document",
-        lambda issuer: {"issuer": "https://other-tenant.example.com", "jwks_uri": issuer + "/jwks"},
+        lambda issuer: {
+            "issuer": "https://other-tenant.example.com",
+            "jwks_uri": issuer + "/jwks",
+        },
     )
     with pytest.raises(ValueError):
         gw_config.load_discovery_document("https://idp.example.com", cache_seconds=0)
@@ -138,7 +160,9 @@ def test_discovery_issuer_trailing_slash_is_accepted(clean_env, monkeypatch):
         "fetch_discovery_document",
         lambda issuer: {"issuer": issuer + "/", "jwks_uri": issuer + "/jwks"},
     )
-    document = gw_config.load_discovery_document("https://idp.example.com", cache_seconds=0)
+    document = gw_config.load_discovery_document(
+        "https://idp.example.com", cache_seconds=0
+    )
     assert document["jwks_uri"] == "https://idp.example.com/jwks"
 
 
@@ -151,7 +175,9 @@ def test_cached_discovery_document_is_revalidated(clean_env, monkeypatch):
     )
     gw_config.reset_discovery_cache()
     gw_config.load_discovery_document("https://idp.example.com")
-    gw_config._DISCOVERY_CACHE["document"] = {"jwks_uri": "https://idp.example.com/jwks"}
+    gw_config._DISCOVERY_CACHE["document"] = {
+        "jwks_uri": "https://idp.example.com/jwks"
+    }
     with pytest.raises(ValueError):
         gw_config.load_discovery_document("https://idp.example.com")
 
@@ -171,14 +197,23 @@ def test_resolve_jwks_url_rejects_foreign_host(clean_env, monkeypatch):
 # R6-3：/status 字段必须与前端读取一致
 # ---------------------------------------------------------------------------
 
+
 def test_status_field_names_match_frontend_contract(clean_env):
     """前端读取的字段名必须真实存在于 /status 响应中（不得是死字段）。"""
     from gw.api.app import create_app
 
     with TestClient(create_app()) as api:
         body = api.get("/api/asset-auth/status").json()
-    for field in ("auth_mode", "oidc_ready", "authenticated", "principal",
-                  "login_available", "logout_available", "reason", "release_authorized"):
+    for field in (
+        "auth_mode",
+        "oidc_ready",
+        "authenticated",
+        "principal",
+        "login_available",
+        "logout_available",
+        "reason",
+        "release_authorized",
+    ):
         assert field in body, f"/status 缺少前端依赖字段 {field}"
     # 旧契约字段不得再出现（避免前后端各自读一套）。
     for legacy in ("auth_required", "configured", "needs_setup"):
@@ -191,9 +226,18 @@ def test_frontend_reads_only_contract_fields():
         encoding="utf-8"
     )
     # 忽略注释行后检查：实现中出现旧字段即为契约漂移。
-    code_lines = [line for line in source.splitlines() if not line.strip().startswith(("//", "*", "/*"))]
+    code_lines = [
+        line
+        for line in source.splitlines()
+        if not line.strip().startswith(("//", "*", "/*"))
+    ]
     code = "\n".join(code_lines)
-    for legacy in ("data.auth_required", "data.configured", "data.needs_setup", "this.authState.needs_setup"):
+    for legacy in (
+        "data.auth_required",
+        "data.configured",
+        "data.needs_setup",
+        "this.authState.needs_setup",
+    ):
         assert legacy not in code, f"前端仍在读取已废弃字段 {legacy}"
 
 
@@ -201,7 +245,10 @@ def test_frontend_reads_only_contract_fields():
 # R6-4：登录端点语义（无 body，返回授权地址）
 # ---------------------------------------------------------------------------
 
-def test_login_endpoint_takes_no_body_and_returns_authorization_url(clean_env, monkeypatch):
+
+def test_login_endpoint_takes_no_body_and_returns_authorization_url(
+    clean_env, monkeypatch
+):
     """前端必须能拿到 authorization_url；登录端点不接受用户名/密码。"""
     # routes_auth.py 采用 `from ... import resolve_endpoint` 模块级绑定，
     # 必须打到绑定处，否则打桩无效（否则会真的走 discovery 并返回 503）。
@@ -210,9 +257,17 @@ def test_login_endpoint_takes_no_body_and_returns_authorization_url(clean_env, m
     monkeypatch.setattr(
         gw_routes_auth,
         "resolve_endpoint",
-        lambda issuer, name: "https://idp.example.com/authorize" if name == "authorization_endpoint" else "https://idp.example.com/token",
+        lambda issuer, name: (
+            "https://idp.example.com/authorize"
+            if name == "authorization_endpoint"
+            else "https://idp.example.com/token"
+        ),
     )
-    monkeypatch.setattr(gw_config, "fetch_discovery_document", lambda issuer: {"jwks_uri": "https://idp.example.com/jwks"})
+    monkeypatch.setattr(
+        gw_config,
+        "fetch_discovery_document",
+        lambda issuer: {"jwks_uri": "https://idp.example.com/jwks"},
+    )
     monkeypatch.setattr(gw_config, "fetch_jwks", lambda cfg: {"keys": []})
     clean_env.setenv(gw_config.AUTH_MODE_ENV, gw_config.AUTH_MODE_OIDC)
     clean_env.setenv(gw_config.ISSUER_ENV, "https://idp.example.com")
@@ -229,12 +284,15 @@ def test_login_endpoint_takes_no_body_and_returns_authorization_url(clean_env, m
     body = response.json()
     assert set(body) == {"authorization_url", "state"}
     assert "code_challenge=" in body["authorization_url"]
-    assert session_store.SESSION_COOKIE_NAME not in response.cookies, "登录发起不得直接建立会话"
+    assert session_store.SESSION_COOKIE_NAME not in response.cookies, (
+        "登录发起不得直接建立会话"
+    )
 
 
 # ---------------------------------------------------------------------------
 # R6-5 / R6-6：base64 严格性与 Cookie Secure
 # ---------------------------------------------------------------------------
+
 
 def test_base64url_decoder_is_strict():
     """非法 Base64URL 字符必须抛错，不得静默返回空字节串。"""
@@ -250,8 +308,14 @@ def test_session_cookie_has_secure_flag_when_issuer_is_https(clean_env, monkeypa
     # 同上：resolve_endpoint 在 routes_auth 中为模块级绑定，必须打绑定处。
     from gw.api import routes_auth as gw_routes_auth
 
-    monkeypatch.setattr(gw_routes_auth, "resolve_endpoint", lambda issuer, name: f"{issuer}/{name}")
-    monkeypatch.setattr(gw_config, "fetch_discovery_document", lambda issuer: {"jwks_uri": f"{issuer}/jwks"})
+    monkeypatch.setattr(
+        gw_routes_auth, "resolve_endpoint", lambda issuer, name: f"{issuer}/{name}"
+    )
+    monkeypatch.setattr(
+        gw_config,
+        "fetch_discovery_document",
+        lambda issuer: {"jwks_uri": f"{issuer}/jwks"},
+    )
     monkeypatch.setattr(gw_config, "fetch_jwks", lambda cfg: {"keys": []})
     clean_env.setenv(gw_config.AUTH_MODE_ENV, gw_config.AUTH_MODE_OIDC)
     clean_env.setenv(gw_config.ISSUER_ENV, "https://idp.example.com")
@@ -265,7 +329,11 @@ def test_session_cookie_has_secure_flag_when_issuer_is_https(clean_env, monkeypa
     with TestClient(create_app()) as api:
         response = api.post("/api/asset-auth/login")
     cookie_header = response.headers.get("set-cookie", "")
-    assert "Secure" in cookie_header, f"HTTPS issuer 下 Cookie 缺少 Secure 属性: {cookie_header}"
+    assert "Secure" in cookie_header, (
+        f"HTTPS issuer 下 Cookie 缺少 Secure 属性: {cookie_header}"
+    )
+
+
 import json
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -275,10 +343,10 @@ import pytest
 from gw.core import config as gw_config
 from gw.core import session as session_store
 
-
 # ---------------------------------------------------------------------------
 # R6-8：重定向逐跳重校验必须同时锁「允许范围 + 起始 origin」
 # ---------------------------------------------------------------------------
+
 
 def test_redirect_guard_requires_same_origin_with_start(clean_env):
     """异源 302 不得被跟随：两个本地回环 URL 都「在允许范围内」，只有同源锁能拦住。"""
@@ -301,7 +369,13 @@ def test_redirect_to_foreign_origin_never_hits_attacker(clean_env):
 
         def do_GET(self):  # noqa: N802
             state["attacker_hits"] += 1
-            body = json.dumps({"keys": [{"kty": "RSA", "kid": "ATTACKER-KEY", "n": "AA", "e": "AQAB"}]}).encode()
+            body = json.dumps(
+                {
+                    "keys": [
+                        {"kty": "RSA", "kid": "ATTACKER-KEY", "n": "AA", "e": "AQAB"}
+                    ]
+                }
+            ).encode()
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
             self.send_header("Content-Length", str(len(body)))
@@ -328,7 +402,9 @@ def test_redirect_to_foreign_origin_never_hits_attacker(clean_env):
     try:
         start_url = f"http://127.0.0.1:{redirector.server_address[1]}/jwks.json"
         with pytest.raises(Exception):
-            gw_config.fetch_jwks(gw_config.JwksEndpointConfig(url=start_url, timeout_seconds=5))
+            gw_config.fetch_jwks(
+                gw_config.JwksEndpointConfig(url=start_url, timeout_seconds=5)
+            )
         assert state["attacker_hits"] == 0, "异源 302 目标不得被访问"
     finally:
         for server in (attacker, redirector):
@@ -360,6 +436,7 @@ def test_redirect_guard_binding_is_per_thread(clean_env):
 # 匹配为幼稚的精确字符串相等，无 PSL、无 eTLD+1 推导。
 # ---------------------------------------------------------------------------
 
+
 def test_default_allowlist_is_empty_and_strict(clean_env):
     """默认不得预置任何第三方主机：DEFAULT_ENDPOINT_HOSTS 必须为空集。"""
     assert gw_config.DEFAULT_ENDPOINT_HOSTS == frozenset()
@@ -387,49 +464,105 @@ def test_default_allowlist_is_empty_and_strict(clean_env):
     ]
     for issuer in issuers:
         for endpoint in endpoints:
-            assert gw_config.is_trusted_endpoint(endpoint, issuer) is gw_config.is_same_origin_as(
+            assert gw_config.is_trusted_endpoint(
                 endpoint, issuer
-            ), f"默认口径与同源判据分歧: {endpoint!r} vs {issuer!r}"
+            ) is gw_config.is_same_origin_as(endpoint, issuer), (
+                f"默认口径与同源判据分歧: {endpoint!r} vs {issuer!r}"
+            )
 
 
 @pytest.mark.parametrize(
     "endpoint,issuer,hosts,expected",
     [
         # 正向：Google 三主机显式 opt-in 后，三个真实端点全部可信。
-        ("https://www.googleapis.com/oauth2/v3/certs", "https://accounts.google.com",
-         frozenset({"accounts.google.com", "www.googleapis.com", "oauth2.googleapis.com"}), True),
-        ("https://oauth2.googleapis.com/token", "https://accounts.google.com",
-         frozenset({"accounts.google.com", "www.googleapis.com", "oauth2.googleapis.com"}), True),
+        (
+            "https://www.googleapis.com/oauth2/v3/certs",
+            "https://accounts.google.com",
+            frozenset(
+                {"accounts.google.com", "www.googleapis.com", "oauth2.googleapis.com"}
+            ),
+            True,
+        ),
+        (
+            "https://oauth2.googleapis.com/token",
+            "https://accounts.google.com",
+            frozenset(
+                {"accounts.google.com", "www.googleapis.com", "oauth2.googleapis.com"}
+            ),
+            True,
+        ),
         # 后缀把戏：就算白名单里有 idp.example.com，也不得命中 .evil.com。
-        ("https://idp.example.com.evil.com/keys", "https://idp.example.com",
-         frozenset({"idp.example.com"}), False),
+        (
+            "https://idp.example.com.evil.com/keys",
+            "https://idp.example.com",
+            frozenset({"idp.example.com"}),
+            False,
+        ),
         # userinfo 把戏：真实 host 是 evil.com。
-        ("https://idp.example.com@evil.com/keys", "https://idp.example.com",
-         frozenset({"idp.example.com"}), False),
+        (
+            "https://idp.example.com@evil.com/keys",
+            "https://idp.example.com",
+            frozenset({"idp.example.com"}),
+            False,
+        ),
         # 只命中一侧（端点主机在清单、issuer 主机不在）：必须拒绝。
-        ("https://idp.example.com/keys", "https://issuer.example.com",
-         frozenset({"idp.example.com"}), False),
+        (
+            "https://idp.example.com/keys",
+            "https://issuer.example.com",
+            frozenset({"idp.example.com"}),
+            False,
+        ),
         # 只命中一侧（issuer 主机在清单、端点主机不在）：必须拒绝。
-        ("https://other.example.com/keys", "https://idp.example.com",
-         frozenset({"idp.example.com"}), False),
+        (
+            "https://other.example.com/keys",
+            "https://idp.example.com",
+            frozenset({"idp.example.com"}),
+            False,
+        ),
         # 路径里塞 issuer 名不改变真实 host。
-        ("https://evil.com/idp.example.com/keys", "https://idp.example.com",
-         frozenset({"idp.example.com"}), False),
+        (
+            "https://evil.com/idp.example.com/keys",
+            "https://idp.example.com",
+            frozenset({"idp.example.com"}),
+            False,
+        ),
         # 异 scheme（http 明文）即使主机命中也不得放行。
-        ("http://idp.example.com/keys", "https://idp.example.com",
-         frozenset({"idp.example.com"}), False),
+        (
+            "http://idp.example.com/keys",
+            "https://idp.example.com",
+            frozenset({"idp.example.com"}),
+            False,
+        ),
         # 异端口不得放行。
-        ("https://idp.example.com:8443/keys", "https://idp.example.com",
-         frozenset({"idp.example.com"}), False),
+        (
+            "https://idp.example.com:8443/keys",
+            "https://idp.example.com",
+            frozenset({"idp.example.com"}),
+            False,
+        ),
         # 大小写：主机比较大小写不敏感（URL 语义），命中。
-        ("https://IDP.example.com/keys", "https://idp.example.com",
-         frozenset({"idp.example.com"}), True),
+        (
+            "https://IDP.example.com/keys",
+            "https://idp.example.com",
+            frozenset({"idp.example.com"}),
+            True,
+        ),
         # FQDN 尾随点：与白名单条目不逐字相等，必须拒绝（放宽分支口径比严格分支更严）。
-        ("https://idp.example.com./keys", "https://idp.example.com",
-         frozenset({"idp.example.com"}), False),
+        (
+            "https://idp.example.com./keys",
+            "https://idp.example.com",
+            frozenset({"idp.example.com"}),
+            False,
+        ),
         # 同族但未列出的主机（无 eTLD+1 推导，不得被当同族放行）。
-        ("https://storage.googleapis.com/keys", "https://accounts.google.com",
-         frozenset({"accounts.google.com", "www.googleapis.com", "oauth2.googleapis.com"}), False),
+        (
+            "https://storage.googleapis.com/keys",
+            "https://accounts.google.com",
+            frozenset(
+                {"accounts.google.com", "www.googleapis.com", "oauth2.googleapis.com"}
+            ),
+            False,
+        ),
     ],
 )
 def test_is_trusted_endpoint_optin_matrix(endpoint, issuer, hosts, expected):
@@ -440,9 +573,12 @@ def test_endpoint_hosts_env_empty_string_means_strict(clean_env):
     """显式设空串必须等价于未配置（严格同源），不得被读成"放开一切"。"""
     clean_env.setenv(gw_config.ENDPOINT_HOSTS_ENV, "")
     assert gw_config.resolve_endpoint_hosts() == frozenset()
-    assert gw_config.is_trusted_endpoint(
-        "https://www.googleapis.com/oauth2/v3/certs", "https://accounts.google.com"
-    ) is False
+    assert (
+        gw_config.is_trusted_endpoint(
+            "https://www.googleapis.com/oauth2/v3/certs", "https://accounts.google.com"
+        )
+        is False
+    )
     # 空白/逗号噪声同样只解析出空集。
     clean_env.setenv(gw_config.ENDPOINT_HOSTS_ENV, "  ,  , ")
     assert gw_config.resolve_endpoint_hosts() == frozenset()
@@ -457,7 +593,9 @@ def test_endpoint_hosts_env_is_full_replacement(clean_env):
     assert all(host.strip() for host in hosts)
 
 
-def test_authorization_endpoint_stays_same_origin_but_token_may_use_allowlist(clean_env, monkeypatch):
+def test_authorization_endpoint_stays_same_origin_but_token_may_use_allowlist(
+    clean_env, monkeypatch
+):
     """授权端点不得因白名单放宽；令牌端点允许 opt-in（否则 Google 无法接线）。"""
     hosts = frozenset({"accounts.google.com", "oauth2.googleapis.com"})
     clean_env.setenv(gw_config.ENDPOINT_HOSTS_ENV, ",".join(sorted(hosts)))
@@ -470,22 +608,26 @@ def test_authorization_endpoint_stays_same_origin_but_token_may_use_allowlist(cl
         },
     )
     # 授权端点：与 issuer 同源，通过。
-    assert gw_config.resolve_endpoint("https://accounts.google.com", "authorization_endpoint") == (
-        "https://accounts.google.com/o/oauth2/v2/auth"
-    )
+    assert gw_config.resolve_endpoint(
+        "https://accounts.google.com", "authorization_endpoint"
+    ) == ("https://accounts.google.com/o/oauth2/v2/auth")
     # 令牌端点：异主机但显式 opt-in，通过。
-    assert gw_config.resolve_endpoint("https://accounts.google.com", "token_endpoint") == (
-        "https://oauth2.googleapis.com/token"
-    )
+    assert gw_config.resolve_endpoint(
+        "https://accounts.google.com", "token_endpoint"
+    ) == ("https://oauth2.googleapis.com/token")
 
     # 授权端点若被篡改到白名单内的**另一**主机，仍必须拒绝（授权端点不放宽）。
     monkeypatch.setattr(
         gw_config,
         "load_discovery_document",
-        lambda issuer, **kw: {"authorization_endpoint": "https://oauth2.googleapis.com/o/oauth2/v2/auth"},
+        lambda issuer, **kw: {
+            "authorization_endpoint": "https://oauth2.googleapis.com/o/oauth2/v2/auth"
+        },
     )
     with pytest.raises(ValueError):
-        gw_config.resolve_endpoint("https://accounts.google.com", "authorization_endpoint")
+        gw_config.resolve_endpoint(
+            "https://accounts.google.com", "authorization_endpoint"
+        )
 
 
 def test_redirect_guard_is_not_relaxed_by_allowlist(clean_env):
@@ -515,27 +657,50 @@ def test_allowlist_has_no_psl_or_etld_heuristic(clean_env):
     """
     hosts = frozenset({"a.example.co.uk"})
     # 兄弟主机未列出 -> 拒绝（证明无 eTLD+1 / PSL 推导）。
-    assert gw_config.is_trusted_endpoint(
-        "https://b.example.co.uk/keys", "https://a.example.co.uk", hosts
-    ) is False
+    assert (
+        gw_config.is_trusted_endpoint(
+            "https://b.example.co.uk/keys", "https://a.example.co.uk", hosts
+        )
+        is False
+    )
     # 若部署方两个主机都填，则两端都可信（白名单就是信任根）。
     both = frozenset({"a.example.co.uk", "b.example.co.uk"})
-    assert gw_config.is_trusted_endpoint(
-        "https://b.example.co.uk/keys", "https://a.example.co.uk", both
-    ) is True
+    assert (
+        gw_config.is_trusted_endpoint(
+            "https://b.example.co.uk/keys", "https://a.example.co.uk", both
+        )
+        is True
+    )
     # 用 registered_domain 之类的后缀近似把 evil.com 纳入即自毁信任根：本实现不提供该能力，
     # 因为匹配只做逐字相等，evil.com 必须被显式写成白名单条目才可能命中。
-    assert gw_config.is_trusted_endpoint(
-        "https://idp.example.com.evil.com/keys", "https://idp.example.com", frozenset({"idp.example.com"})
-    ) is False
+    assert (
+        gw_config.is_trusted_endpoint(
+            "https://idp.example.com.evil.com/keys",
+            "https://idp.example.com",
+            frozenset({"idp.example.com"}),
+        )
+        is False
+    )
 
 
-def test_allowlist_requires_both_sides_listed_even_when_attacker_domain_listed(clean_env):
+def test_allowlist_requires_both_sides_listed_even_when_attacker_domain_listed(
+    clean_env,
+):
     """即使白名单里写了攻击者域，只要 issuer 主机未同时命中就必须拒绝。"""
-    assert gw_config.is_trusted_endpoint(
-        "https://idp.example.com@evil.com/keys", "https://idp.example.com", frozenset({"evil.com"})
-    ) is False
+    assert (
+        gw_config.is_trusted_endpoint(
+            "https://idp.example.com@evil.com/keys",
+            "https://idp.example.com",
+            frozenset({"evil.com"}),
+        )
+        is False
+    )
     # 反向：issuer 主机在白名单，但端点真实 host 是 evil.com（不在清单）-> 拒绝。
-    assert gw_config.is_trusted_endpoint(
-        "https://idp.example.com@evil.com/keys", "https://idp.example.com", frozenset({"idp.example.com"})
-    ) is False
+    assert (
+        gw_config.is_trusted_endpoint(
+            "https://idp.example.com@evil.com/keys",
+            "https://idp.example.com",
+            frozenset({"idp.example.com"}),
+        )
+        is False
+    )

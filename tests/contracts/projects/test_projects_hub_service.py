@@ -3,9 +3,13 @@
 import pytest
 from fastapi.testclient import TestClient
 
-from gw.projects_hub.service import ProjectsService
-from gw.projects_hub.models import ProjectCreateRequest, ProjectType, ProjectUpdateRequest
 from gw.core.errors import CleanroomException, VersionConflictException
+from gw.projects_hub.models import (
+    ProjectCreateRequest,
+    ProjectType,
+    ProjectUpdateRequest,
+)
+from gw.projects_hub.service import ProjectsService
 
 
 def test_projects_service_crud_and_cas():
@@ -119,8 +123,10 @@ def test_api_static_and_projects_integration(client: TestClient):
     # 真实项目列表 API 接口打通
     # C4-AC7（秦先生裁定 2026-10-15）：项目列表必须登录，匿名 401。
     assert client.get("/api/asset-registry/projects").status_code == 401
-    resp_api = client.get("/api/asset-registry/projects",
-                          headers={"Authorization": "Bearer local-dev-token", "X-User-Role": "admin"})
+    resp_api = client.get(
+        "/api/asset-registry/projects",
+        headers={"Authorization": "Bearer local-dev-token", "X-User-Role": "admin"},
+    )
     assert resp_api.status_code == 200
     data = resp_api.json()
     assert "projects" in data
@@ -135,7 +141,9 @@ def test_project_ids_do_not_repeat_when_api_service_restarts():
     first_service = ProjectsService(seed_golden_fixture=False, persistent=True)
     first = first_service.create_project(payload, owner_key=owner_key).project_id
     restarted_service = ProjectsService(seed_golden_fixture=False, persistent=True)
-    restarted = restarted_service.create_project(payload, owner_key=owner_key).project_id
+    restarted = restarted_service.create_project(
+        payload, owner_key=owner_key
+    ).project_id
 
     assert first.startswith("prj-p-")
     assert restarted.startswith("prj-p-")

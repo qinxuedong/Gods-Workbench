@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 # Copyright 2026 Gods-Workbench Authors
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -31,7 +30,7 @@ from gw.core.auth import require_authenticated, require_edit_access
 router = APIRouter(tags=["local-assets-b4"])
 
 
-async def _body(request: Request) -> Dict[str, Any]:
+async def _body(request: Request) -> dict[str, Any]:
     try:
         payload = await request.json()
     except Exception:
@@ -39,23 +38,23 @@ async def _body(request: Request) -> Dict[str, Any]:
     return payload if isinstance(payload, dict) else {}
 
 
-def _read(authorization: Optional[str], x_user_role: str):
+def _read(authorization: str | None, x_user_role: str):
     return require_authenticated(authorization, x_user_role)
 
 
-def _write(authorization: Optional[str], x_user_role: str):
+def _write(authorization: str | None, x_user_role: str):
     return require_edit_access(authorization, x_user_role)
 
 
-def _ids(payload: Dict[str, Any], key: str = "paths") -> List[str]:
+def _ids(payload: dict[str, Any], key: str = "paths") -> list[str]:
     value = payload.get(key) or []
     return [str(item) for item in value] if isinstance(value, list) else []
 
 
 @router.get("/api/local-assets", status_code=status.HTTP_200_OK)
 def list_local_assets(
-    kind: Optional[str] = Query(None),
-    authorization: Optional[str] = Header(None),
+    kind: str | None = Query(None),
+    authorization: str | None = Header(None),
     x_user_role: str = Header("editor", alias="X-User-Role"),
 ):
     """列出真实本地素材索引；无条目返回空集合。"""
@@ -66,7 +65,7 @@ def list_local_assets(
 @router.post("/api/local-assets/upload", status_code=status.HTTP_201_CREATED)
 async def upload_local_assets(
     request: Request,
-    authorization: Optional[str] = Header(None),
+    authorization: str | None = Header(None),
     x_user_role: str = Header("editor", alias="X-User-Role"),
 ):
     """真实写入允许根目录内的目标文件并登记索引。"""
@@ -83,7 +82,7 @@ async def upload_local_assets(
 @router.post("/api/local-assets/delete", status_code=status.HTTP_200_OK)
 async def delete_local_assets(
     request: Request,
-    authorization: Optional[str] = Header(None),
+    authorization: str | None = Header(None),
     x_user_role: str = Header("editor", alias="X-User-Role"),
 ):
     """真实删除允许根目录内的文件。"""
@@ -95,19 +94,21 @@ async def delete_local_assets(
 @router.post("/api/local-assets/move", status_code=status.HTTP_200_OK)
 async def move_local_assets(
     request: Request,
-    authorization: Optional[str] = Header(None),
+    authorization: str | None = Header(None),
     x_user_role: str = Header("editor", alias="X-User-Role"),
 ):
     """在允许根目录内真实移动文件。"""
     _write(authorization, x_user_role)
     payload = await _body(request)
-    return repo.move_local_file(str(payload.get("source") or ""), str(payload.get("target") or ""))
+    return repo.move_local_file(
+        str(payload.get("source") or ""), str(payload.get("target") or "")
+    )
 
 
 @router.patch("/api/local-assets/items", status_code=status.HTTP_200_OK)
 async def update_local_asset(
     request: Request,
-    authorization: Optional[str] = Header(None),
+    authorization: str | None = Header(None),
     x_user_role: str = Header("editor", alias="X-User-Role"),
 ):
     """更新本地素材索引条目（重命名/改分类）。"""
@@ -119,7 +120,7 @@ async def update_local_asset(
 @router.post("/api/local-assets/folders", status_code=status.HTTP_201_CREATED)
 async def create_local_asset_folder(
     request: Request,
-    authorization: Optional[str] = Header(None),
+    authorization: str | None = Header(None),
     x_user_role: str = Header("editor", alias="X-User-Role"),
 ):
     """在数据目录内创建真实文件夹。"""
@@ -131,56 +132,64 @@ async def create_local_asset_folder(
 @router.patch("/api/local-assets/folders", status_code=status.HTTP_200_OK)
 async def update_local_asset_folder(
     request: Request,
-    authorization: Optional[str] = Header(None),
+    authorization: str | None = Header(None),
     x_user_role: str = Header("editor", alias="X-User-Role"),
 ):
     """重命名数据目录内的真实文件夹。"""
     _write(authorization, x_user_role)
     payload = await _body(request)
-    return repo.rename_local_folder(str(payload.get("name") or ""), str(payload.get("new_name") or ""))
+    return repo.rename_local_folder(
+        str(payload.get("name") or ""), str(payload.get("new_name") or "")
+    )
 
 
 @router.post("/api/local-assets/classify", status_code=status.HTTP_200_OK)
 async def classify_local_assets(
     request: Request,
-    authorization: Optional[str] = Header(None),
+    authorization: str | None = Header(None),
     x_user_role: str = Header("editor", alias="X-User-Role"),
 ):
     """对真实登记条目做确定性分类。"""
     _write(authorization, x_user_role)
     payload = await _body(request)
     ids = payload.get("asset_ids") or []
-    return repo.classify_local_entries([str(x) for x in ids] if isinstance(ids, list) else [])
+    return repo.classify_local_entries(
+        [str(x) for x in ids] if isinstance(ids, list) else []
+    )
 
 
 @router.post("/api/local-assets/caption", status_code=status.HTTP_200_OK)
 async def caption_local_assets(
     request: Request,
-    authorization: Optional[str] = Header(None),
+    authorization: str | None = Header(None),
     x_user_role: str = Header("editor", alias="X-User-Role"),
 ):
     """为真实素材生成确定性说明（基于文件名与元数据，不做语义猜测）。"""
     _write(authorization, x_user_role)
     payload = await _body(request)
     ids = payload.get("asset_ids") or []
-    return repo.caption_local_entries([str(x) for x in ids] if isinstance(ids, list) else [])
+    return repo.caption_local_entries(
+        [str(x) for x in ids] if isinstance(ids, list) else []
+    )
 
 
 @router.patch("/api/local-assets/caption", status_code=status.HTTP_200_OK)
 async def save_local_asset_caption(
     request: Request,
-    authorization: Optional[str] = Header(None),
+    authorization: str | None = Header(None),
     x_user_role: str = Header("editor", alias="X-User-Role"),
 ):
     """保存人工说明文本到真实索引。"""
     _write(authorization, x_user_role)
     payload = await _body(request)
-    return repo.save_local_caption(str(payload.get("asset_id") or ""), str(payload.get("caption") or ""))
+    return repo.save_local_caption(
+        str(payload.get("asset_id") or ""), str(payload.get("caption") or "")
+    )
 
 
 @router.get("/api/storage-files", status_code=status.HTTP_200_OK)
 def list_storage_files(
-    authorization: Optional[str] = Header(None),
+    authorization: str | None = Header(None),
     x_user_role: str = Header("editor", alias="X-User-Role"),
 ):
     """列出数据目录内的真实存储文件与允许根目录配置状态。"""
@@ -191,7 +200,7 @@ def list_storage_files(
 @router.post("/api/storage-files/delete", status_code=status.HTTP_200_OK)
 async def delete_storage_files(
     request: Request,
-    authorization: Optional[str] = Header(None),
+    authorization: str | None = Header(None),
     x_user_role: str = Header("editor", alias="X-User-Role"),
 ):
     """删除数据目录内的真实存储产物。"""

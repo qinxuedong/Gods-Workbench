@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Phase 9Q：认证路径审计落点（D12 修复）契约测试。
 
 背景：独立复核发现 ``core/session.py`` / ``api/routes_auth.py`` / ``core/oidc.py`` /
@@ -53,7 +52,15 @@ CLIENT_ID = "gods-workbench-audit-web"
 KID = "audit-key-1"
 
 # 审计记录允许出现的**全部**字段（白名单）。多一个字段即视为泄漏风险。
-ALLOWED_RECORD_KEYS = {"event", "outcome", "reason", "subject", "role", "auth_mode", "at"}
+ALLOWED_RECORD_KEYS = {
+    "event",
+    "outcome",
+    "reason",
+    "subject",
+    "role",
+    "auth_mode",
+    "at",
+}
 
 
 def _b64url(raw: bytes) -> str:
@@ -77,8 +84,12 @@ def jwks(rsa_keypair) -> dict:
                 "use": "sig",
                 "alg": "RS256",
                 "kid": KID,
-                "n": _b64url(numbers.n.to_bytes((numbers.n.bit_length() + 7) // 8, "big")),
-                "e": _b64url(numbers.e.to_bytes((numbers.e.bit_length() + 7) // 8, "big")),
+                "n": _b64url(
+                    numbers.n.to_bytes((numbers.n.bit_length() + 7) // 8, "big")
+                ),
+                "e": _b64url(
+                    numbers.e.to_bytes((numbers.e.bit_length() + 7) // 8, "big")
+                ),
             }
         ]
     }
@@ -224,6 +235,7 @@ def _events(name=None):
 # 1. 模块自身的白名单与封闭集合
 # ---------------------------------------------------------------------------
 
+
 def test_audit_records_only_whitelisted_fields(clean_env):
     """记录字段必须严格等于白名单；调用方无法夹带任意对象。"""
     record = audit_log.record_auth_event(
@@ -241,7 +253,9 @@ def test_audit_records_only_whitelisted_fields(clean_env):
 def test_audit_rejects_unknown_event_and_outcome(clean_env):
     """事件名 / 结果拼写漂移必须在写入前失败，而不是静默记脏账。"""
     with pytest.raises(ValueError):
-        audit_log.record_auth_event("auth.not.a.real.event", outcome=audit_log.OUTCOME_SUCCEEDED)
+        audit_log.record_auth_event(
+            "auth.not.a.real.event", outcome=audit_log.OUTCOME_SUCCEEDED
+        )
     with pytest.raises(ValueError):
         audit_log.record_auth_event(audit_log.EVENT_LOGOUT, outcome="maybe")
     assert audit_log.auth_event_count() == 0
@@ -261,13 +275,16 @@ def test_audit_clips_oversized_fields(clean_env):
 def test_audit_buffer_is_bounded(clean_env):
     """环形缓冲必须有界：写入超过容量后只保留最近 N 条。"""
     for _ in range(audit_log.AUDIT_MAX_EVENTS + 50):
-        audit_log.record_auth_event(audit_log.EVENT_LOGOUT, outcome=audit_log.OUTCOME_SUCCEEDED)
+        audit_log.record_auth_event(
+            audit_log.EVENT_LOGOUT, outcome=audit_log.OUTCOME_SUCCEEDED
+        )
     assert audit_log.auth_event_count() == audit_log.AUDIT_MAX_EVENTS
 
 
 # ---------------------------------------------------------------------------
 # 2. 登录发起路径的审计
 # ---------------------------------------------------------------------------
+
 
 def test_login_not_configured_records_denied(clean_env):
     """显式启用 OIDC 但未配置时登录 503，且必须留下 denied 审计。"""
@@ -315,6 +332,7 @@ def test_login_while_authenticated_records_already_authenticated(clean_env, loca
 # 3. 回调路径的审计
 # ---------------------------------------------------------------------------
 
+
 def test_callback_state_mismatch_records_rejected(clean_env, local_idp):
     """state 失配必须留痕，且 reason 为 state_mismatch。"""
     _configure_oidc(clean_env, local_idp["issuer"])
@@ -347,7 +365,9 @@ def test_callback_id_token_rejected_is_audited(clean_env, local_idp):
     assert rejected[-1]["reason"] == "id_token_rejected"
 
 
-def test_session_established_records_subject_and_role_without_credentials(clean_env, local_idp):
+def test_session_established_records_subject_and_role_without_credentials(
+    clean_env, local_idp
+):
     """登录成功必须留痕（含 sub 与角色），且**不得**记录任何凭据。"""
     _configure_oidc(clean_env, local_idp["issuer"])
     local_idp["holder"]["groups"] = ["gw-editor"]
@@ -372,13 +392,19 @@ def test_session_established_records_subject_and_role_without_credentials(clean_
 
     # 反向断言：任何记录都不得出现授权码 / state / nonce / 会话 Cookie 值。
     blob = json.dumps(audit_log.list_auth_events(), ensure_ascii=False)
-    for forbidden in ("audit-code-3", state, nonce, session_cookie or "gw_session-absent"):
+    for forbidden in (
+        "audit-code-3",
+        state,
+        nonce,
+        session_cookie or "gw_session-absent",
+    ):
         assert forbidden not in blob, "审计记录中出现凭据类取值: " + forbidden
 
 
 # ---------------------------------------------------------------------------
 # 4. 登出与令牌 / 角色路径
 # ---------------------------------------------------------------------------
+
 
 def test_logout_is_audited(clean_env, local_idp):
     """登出必须留痕，并区分「确实删除了会话」与「幂等空登出」。"""
@@ -409,8 +435,8 @@ def test_forged_token_is_audited_and_rejected(clean_env):
     clean_env.setenv(gw_config.JWKS_URL_ENV, "https://idp.example.com/jwks")
     gw_config.reset_runtime_auth_config_cache()
 
-    from gw.core.errors import UnauthorizedException
     from gw.core.auth import require_authenticated
+    from gw.core.errors import UnauthorizedException
 
     forged = "not-a-real-token"
     with pytest.raises(UnauthorizedException):
@@ -418,7 +444,10 @@ def test_forged_token_is_audited_and_rejected(clean_env):
 
     rejected = _events(audit_log.EVENT_TOKEN_REJECTED)
     assert rejected, "令牌被拒必须留痕"
-    assert rejected[-1]["outcome"] in {audit_log.OUTCOME_REJECTED, audit_log.OUTCOME_DENIED}
+    assert rejected[-1]["outcome"] in {
+        audit_log.OUTCOME_REJECTED,
+        audit_log.OUTCOME_DENIED,
+    }
     assert forged not in json.dumps(audit_log.list_auth_events(), ensure_ascii=False)
 
 
@@ -436,8 +465,8 @@ def test_unknown_session_role_is_audited(clean_env):
     clean_env.setenv(gw_config.JWKS_URL_ENV, "https://idp.example.test/jwks.json")
     gw_config.reset_runtime_auth_config_cache()
 
-    from gw.core.errors import ForbiddenException
     from gw.core.auth import require_authenticated
+    from gw.core.errors import ForbiddenException
 
     token = session_store.set_current_principal(
         {
@@ -470,8 +499,8 @@ def test_unbound_session_is_rejected_before_role_check(clean_env):
     clean_env.setenv(gw_config.JWKS_URL_ENV, "https://idp.example.test/jwks.json")
     gw_config.reset_runtime_auth_config_cache()
 
-    from gw.core.errors import UnauthorizedException
     from gw.core.auth import require_authenticated
+    from gw.core.errors import UnauthorizedException
 
     # 缺 issuer / config_generation：即使配置就绪也必须拒绝。
     token = session_store.set_current_principal({"username": "user-y", "role": "admin"})
@@ -483,12 +512,17 @@ def test_unbound_session_is_rejected_before_role_check(clean_env):
 
     revoked = _events(audit_log.EVENT_SESSION_REVOKED)
     assert revoked, "未绑定信任根的会话必须留下撤销审计"
-    assert revoked[-1]["reason"] in {"issuer_mismatch", "trust_root_changed", "oidc_not_ready"}
+    assert revoked[-1]["reason"] in {
+        "issuer_mismatch",
+        "trust_root_changed",
+        "oidc_not_ready",
+    }
 
 
 # ---------------------------------------------------------------------------
 # Phase 9R 独立复核发现（2026-09-22 追加）
 # ---------------------------------------------------------------------------
+
 
 def test_callback_error_query_is_confined_to_closed_vocabulary(clean_env):
     """回调 ``?error=`` 由请求方控制，不得把任意文本写进审计 ``reason``。
@@ -510,7 +544,9 @@ def test_callback_error_query_is_confined_to_closed_vocabulary(clean_env):
     audit_log.reset_audit_log()
 
     client = TestClient(create_app())
-    response = client.get("/api/asset-auth/callback?error=password_reset_completed_by_admin")
+    response = client.get(
+        "/api/asset-auth/callback?error=password_reset_completed_by_admin"
+    )
     assert response.status_code in (200, 302)
 
     injected = "password_reset_completed_by_admin"
@@ -519,9 +555,9 @@ def test_callback_error_query_is_confined_to_closed_vocabulary(clean_env):
     assert events[-1]["reason"] == "unrecognized_failure", (
         "请求方控制的文本不得原样入账，实际: " + repr(events[-1]["reason"])
     )
-    assert injected not in json.dumps(audit_log.list_auth_events(), ensure_ascii=False), (
-        "审计不得保留请求方注入的任意文本"
-    )
+    assert injected not in json.dumps(
+        audit_log.list_auth_events(), ensure_ascii=False
+    ), "审计不得保留请求方注入的任意文本"
 
 
 def test_callback_standard_error_code_is_preserved(clean_env):

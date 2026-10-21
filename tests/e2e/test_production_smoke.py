@@ -7,8 +7,8 @@
 4. 验证生产启动脚本 run.py 严格绑定默认 2077 端口
 """
 
-from fastapi.testclient import TestClient
 import pytest
+from fastapi.testclient import TestClient
 
 from gw.api.app import app
 
@@ -63,18 +63,34 @@ def test_production_smoke_end_to_end_business_chain(monkeypatch):
     """隔离冒烟：真实归属项目 -> 画布拓扑 -> 原型任务受理与认证回读。"""
     from gw.api import routes_god_canvas
     from gw.core.auth import require_authenticated
+    from gw.god_canvas.models import (
+        CanvasCreateRequest,
+        CanvasNode,
+        CanvasTopologyUpdateRequest,
+    )
     from gw.god_canvas.service import GodCanvasService
-    from gw.god_canvas.models import CanvasCreateRequest, CanvasTopologyUpdateRequest, CanvasNode
     from gw.projects_hub import service as projects
     from gw.projects_hub.models import ProjectCreateRequest
 
     headers = {"Authorization": "Bearer cleanroom-test", "X-User-Role": "editor"}
     context = require_authenticated(headers["Authorization"], "editor")
     source = projects.ProjectsService(seed_golden_fixture=False)
-    project = source.create_project(ProjectCreateRequest(name="隔离烟测项目", project_type="other"), owner_key=projects.owner_key_for_context(context))
+    project = source.create_project(
+        ProjectCreateRequest(name="隔离烟测项目", project_type="other"),
+        owner_key=projects.owner_key_for_context(context),
+    )
     canvas = GodCanvasService(seed_golden_fixture=False)
-    item = canvas.create_canvas(CanvasCreateRequest(project_id=project.project_id, title="烟测画布"))
-    canvas.update_topology(item.canvas_id, CanvasTopologyUpdateRequest(expected_version=1, nodes=[CanvasNode(entity_id="smoke-node", kind="input")], connections=[]))
+    item = canvas.create_canvas(
+        CanvasCreateRequest(project_id=project.project_id, title="烟测画布")
+    )
+    canvas.update_topology(
+        item.canvas_id,
+        CanvasTopologyUpdateRequest(
+            expected_version=1,
+            nodes=[CanvasNode(entity_id="smoke-node", kind="input")],
+            connections=[],
+        ),
+    )
     monkeypatch.setattr(projects, "default_projects_service", source)
     monkeypatch.setattr(routes_god_canvas, "default_god_canvas_service", canvas)
     cid = item.canvas_id

@@ -15,6 +15,7 @@
 """视频任务模型定义。"""
 
 from typing import Literal
+
 from pydantic import BaseModel, ConfigDict, Field
 
 

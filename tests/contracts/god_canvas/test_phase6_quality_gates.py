@@ -8,6 +8,7 @@
 """
 
 from concurrent.futures import ThreadPoolExecutor, as_completed
+
 import pytest
 
 from gw.core.errors import (
@@ -28,7 +29,7 @@ from gw.god_canvas.models import (
     NodeReferences,
 )
 from gw.god_canvas.service import GodCanvasService
-from gw.god_canvas.tasks import SmartCanvasTaskRequest, SmartCanvasRunMode
+from gw.god_canvas.tasks import SmartCanvasRunMode, SmartCanvasTaskRequest
 from gw.projects_hub.models import ProjectCreateRequest, ProjectUpdateRequest
 from gw.projects_hub.service import ProjectsService
 
@@ -63,7 +64,9 @@ def test_concurrent_cas_contention_projects():
                 conflict_results.append(exc)
 
     # 核心断言：在 10 个持有旧版本 3 的并发更新中，恰好只有 1 个成功自增到 4
-    assert len(success_results) == 1, f"预期仅 1 个更新成功，实际成功数量: {len(success_results)}"
+    assert len(success_results) == 1, (
+        f"预期仅 1 个更新成功，实际成功数量: {len(success_results)}"
+    )
     assert success_results[0].version == 4
     # 其余 9 个线程必须全部被 CAS 乐观锁拦截
     assert len(conflict_results) == worker_count - 1
@@ -74,7 +77,9 @@ def test_concurrent_cas_contention_projects():
         assert conflict.extra["current_version"] == 4
 
     # 最终状态版本严格为 4，且项目数据一致
-    updated_project = [p for p in service.list_projects() if p.project_id == "prj-0001"][0]
+    updated_project = [
+        p for p in service.list_projects() if p.project_id == "prj-0001"
+    ][0]
     assert updated_project.version == 4
 
 
@@ -109,7 +114,9 @@ def test_concurrent_cas_contention_canvas():
         )
 
     with ThreadPoolExecutor(max_workers=worker_count) as executor:
-        futures = [executor.submit(attempt_canvas_update, i) for i in range(worker_count)]
+        futures = [
+            executor.submit(attempt_canvas_update, i) for i in range(worker_count)
+        ]
         for fut in as_completed(futures):
             try:
                 res = fut.result()
@@ -149,7 +156,9 @@ def test_topology_edge_cases_and_large_scale():
     # 1. 边界情况：空节点与空连线合法保存
     res = service.update_topology(
         cid,
-        payload=CanvasTopologyUpdateRequest(expected_version=1, nodes=[], connections=[]),
+        payload=CanvasTopologyUpdateRequest(
+            expected_version=1, nodes=[], connections=[]
+        ),
     )
     assert res.version == 2
     top = service.get_topology(cid)
@@ -171,7 +180,7 @@ def test_topology_edge_cases_and_large_scale():
         CanvasConnection(
             connection_id=f"ln-{i:04d}",
             from_node=f"nd-{i:04d}",
-            to_node=f"nd-{i+1:04d}",
+            to_node=f"nd-{i + 1:04d}",
         )
         for i in range(node_count - 1)
     ]
@@ -206,7 +215,9 @@ def test_topology_edge_cases_and_large_scale():
     # 5. 损坏的 godmap 格式导入时防御拦截
     corrupted_godmap = "INVALID_MAGIC_HEADER\nversion=invalid"
     with pytest.raises(CleanroomException) as exc_info:
-        service.import_workflow(cid, corrupted_godmap, file_format="godmap", expected_version=3)
+        service.import_workflow(
+            cid, corrupted_godmap, file_format="godmap", expected_version=3
+        )
     assert exc_info.value.status_code == 400
 
 
@@ -220,7 +231,9 @@ def test_smart_task_state_machine_full_lifecycle():
         entry_nodes=["nd-0001"],
         run_mode=SmartCanvasRunMode.SINGLE,
     )
-    resp = service.submit_smart_task("cv-0001", task_req, authorization="Bearer cleanroom-test", user_role="editor")
+    resp = service.submit_smart_task(
+        "cv-0001", task_req, authorization="Bearer cleanroom-test", user_role="editor"
+    )
     assert resp.state == "accepted"
     job_id = resp.job_id
     assert resp.poll_hint == f"/api/jobs/{job_id}"
@@ -250,7 +263,12 @@ def test_smart_task_state_machine_full_lifecycle():
         entry_nodes=["nd-0001"],
         run_mode=SmartCanvasRunMode.SINGLE,
     )
-    cancel_resp = service.submit_smart_task("cv-0001", task_cancel_req, authorization="Bearer cleanroom-test", user_role="editor")
+    cancel_resp = service.submit_smart_task(
+        "cv-0001",
+        task_cancel_req,
+        authorization="Bearer cleanroom-test",
+        user_role="editor",
+    )
     cancelled_job = service.cancel_job(cancel_resp.job_id)
     assert cancelled_job.state == "cancelled"
     assert cancelled_job.poll_hint is None
@@ -273,14 +291,23 @@ def test_security_auth_and_role_downgrade_matrix():
     # 2. 403 权限降级拦截（只读、访客角色）
     for banned_role in ("readonly", "reviewer", "guest", "forbidden"):
         with pytest.raises(ForbiddenException) as exc_403:
-            service.submit_smart_task("cv-0001", req, authorization="Bearer cleanroom-test", user_role=banned_role)
+            service.submit_smart_task(
+                "cv-0001",
+                req,
+                authorization="Bearer cleanroom-test",
+                user_role=banned_role,
+            )
         assert exc_403.value.status_code == 403
         assert exc_403.value.code == "FORBIDDEN"
 
     # 3. 合法角色（editor, admin）正常放行并生成稳定 job_id
-    res_editor = service.submit_smart_task("cv-0001", req, authorization="Bearer cleanroom-test", user_role="editor")
+    res_editor = service.submit_smart_task(
+        "cv-0001", req, authorization="Bearer cleanroom-test", user_role="editor"
+    )
     assert res_editor.state == "accepted"
-    res_admin = service.submit_smart_task("cv-0001", req, authorization="Bearer cleanroom-test", user_role="admin")
+    res_admin = service.submit_smart_task(
+        "cv-0001", req, authorization="Bearer cleanroom-test", user_role="admin"
+    )
     assert res_admin.state == "accepted"
 
 
@@ -288,7 +315,9 @@ def test_extended_task_status_transitions():
     """验证 7 态模型扩展状态：waiting_review 与 paused 的流转、非终端保留 poll_hint 及终态阻断。"""
     service = GodCanvasService(seed_golden_fixture=True)
     req = SmartCanvasTaskRequest(entry_nodes=["nd-0001"])
-    task = service.submit_smart_task("cv-0001", req, authorization="Bearer cleanroom-test", user_role="editor")
+    task = service.submit_smart_task(
+        "cv-0001", req, authorization="Bearer cleanroom-test", user_role="editor"
+    )
     job_id = task.job_id
 
     # accepted -> running

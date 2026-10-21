@@ -20,12 +20,13 @@
 
 from typing import Optional
 from uuid import uuid4
+
 from fastapi import APIRouter, Header, Query, Request, Response, status
 
-from gw.core.auth import EDIT_ROLES, require_authenticated, require_edit_access
-from gw.core.errors import CleanroomException, ForbiddenException, UnauthorizedException
 from gw.agent_runtime.errors import DomainError
 from gw.agent_runtime.models import ErrorCode, Identifier
+from gw.core.auth import EDIT_ROLES, require_authenticated, require_edit_access
+from gw.core.errors import CleanroomException, ForbiddenException, UnauthorizedException
 from gw.god_canvas.models import (
     CanvasCreateRequest,
     CanvasExportRequest,
@@ -38,23 +39,35 @@ from gw.god_canvas.models import (
     CanvasTopologyUpdateRequest,
 )
 from gw.god_canvas.service import default_god_canvas_service
-from gw.god_canvas.tasks import SmartCanvasTaskRequest, SmartCanvasTaskResponse, TaskStatus
+from gw.god_canvas.tasks import (
+    SmartCanvasTaskRequest,
+    SmartCanvasTaskResponse,
+    TaskStatus,
+)
 from gw.projects_hub.models import CasVersionRequest
 
 router = APIRouter(prefix="/api/canvases", tags=["god-canvas"])
 jobs_router = APIRouter(prefix="/api/jobs", tags=["god-canvas-jobs"])
 
 
-def _canvas_read_context(canvas_id: str, authorization: Optional[str], user_role: str = "editor"):
+def _canvas_read_context(
+    canvas_id: str, authorization: str | None, user_role: str = "editor"
+):
     """认证并执行画布读门禁；不可读统一隐藏为 404 CANVAS_NOT_FOUND。"""
-    if authorization is None and not default_god_canvas_service.persistent and canvas_id == "cv-0001":
+    if (
+        authorization is None
+        and not default_god_canvas_service.persistent
+        and canvas_id == "cv-0001"
+    ):
         return None
     context = require_authenticated(authorization, user_role)
     default_god_canvas_service.authorize_canvas_read(canvas_id, context)
     return context
 
 
-def _canvas_write_context(canvas_id: str, authorization: Optional[str], user_role: str = "editor"):
+def _canvas_write_context(
+    canvas_id: str, authorization: str | None, user_role: str = "editor"
+):
     """认证并执行项目写门禁；非项目写者 404，只读项目 403 PROJECT_READ_ONLY。"""
     context = require_authenticated(authorization, user_role)
     default_god_canvas_service.authorize_canvas_write(canvas_id, context)
@@ -80,22 +93,31 @@ def _require_readable_project(project_id: str, context) -> None:
         raise CleanroomException(404, "PROJECT_NOT_FOUND", "项目不存在")
 
 
-def _project_write_owner_key(project_id: str, context) -> Optional[str]:
+def _project_write_owner_key(project_id: str, context) -> str | None:
     """项目绑定画布写入前执行统一项目写门禁，并返回登记主体键。"""
-    from gw.projects_hub.service import owner_key_for_context, require_project_write_context
+    from gw.projects_hub.service import (
+        owner_key_for_context,
+        require_project_write_context,
+    )
 
     if context.role not in EDIT_ROLES:
         from gw.projects_hub import service as projects
+
         owner_key = None
         try:
             owner_key = owner_key_for_context(context)
         except CleanroomException:
             owner_key = None
-        if project_id != "default" and projects.default_projects_service.can_read_project(
-            project_id, owner_key=owner_key, role=context.role
+        if (
+            project_id != "default"
+            and projects.default_projects_service.can_read_project(
+                project_id, owner_key=owner_key, role=context.role
+            )
         ):
             with projects.default_projects_service._operation() as (_, state, __):
-                is_owner = bool(owner_key and state.get("owners", {}).get(project_id) == owner_key)
+                is_owner = bool(
+                    owner_key and state.get("owners", {}).get(project_id) == owner_key
+                )
             if is_owner:
                 raise ForbiddenException(message="无当前资源写权限，已降级为只读")
         raise CleanroomException(404, "PROJECT_NOT_FOUND", "项目不存在")
@@ -110,6 +132,7 @@ def _project_write_owner_key(project_id: str, context) -> Optional[str]:
         default_god_canvas_service._check_project_access(project_id, context)
     require_project_write_context(project_id, context)
     return owner_key_for_context(context)
+
 
 _AGENT_RUN_TO_TASK_STATUS = {
     "queued": TaskStatus.ACCEPTED.value,
@@ -126,9 +149,15 @@ _TERMINAL_AGENT_RUN_STATUSES = frozenset({"succeeded", "failed", "cancelled"})
 def agent_run_job_payload(job_id: str, run, *, accepted_response: bool = False) -> dict:
     """Project Agent's seven internal states onto the seven Workbench job states."""
     agent_status = getattr(run.status, "value", str(run.status))
-    state = TaskStatus.ACCEPTED.value if accepted_response else _AGENT_RUN_TO_TASK_STATUS.get(agent_status)
+    state = (
+        TaskStatus.ACCEPTED.value
+        if accepted_response
+        else _AGENT_RUN_TO_TASK_STATUS.get(agent_status)
+    )
     if state is None:
-        raise CleanroomException(503, "AGENT_JOB_STATUS_UNSUPPORTED", "任务状态暂不可用")
+        raise CleanroomException(
+            503, "AGENT_JOB_STATUS_UNSUPPORTED", "任务状态暂不可用"
+        )
     poll_hint = f"/api/jobs/{job_id}"
     if not accepted_response and agent_status in _TERMINAL_AGENT_RUN_STATUSES:
         poll_hint = None
@@ -137,23 +166,26 @@ def agent_run_job_payload(job_id: str, run, *, accepted_response: bool = False) 
         state=state,
         poll_hint=poll_hint,
     ).model_dump(mode="json")
-    task.update({
-        "agent_status": agent_status,
-        "run_id": run.run_id.root,
-        "version": run.version.root,
-        "stage": run.current_stage.value if run.current_stage is not None else None,
-        "agent_poll_hint": {
-            "status_uri": f"/api/agent/runs/{run.run_id.root}",
-            "events_uri": f"/api/agent/runs/{run.run_id.root}/events",
-            "suggested_interval_ms": 2000,
-        },
-    })
+    task.update(
+        {
+            "agent_status": agent_status,
+            "run_id": run.run_id.root,
+            "version": run.version.root,
+            "stage": run.current_stage.value if run.current_stage is not None else None,
+            "agent_poll_hint": {
+                "status_uri": f"/api/agent/runs/{run.run_id.root}",
+                "events_uri": f"/api/agent/runs/{run.run_id.root}/events",
+                "suggested_interval_ms": 2000,
+            },
+        }
+    )
     return task
 
 
 # ----------------------------------------------------------------------
 # 普通画布拓扑端点
 # ----------------------------------------------------------------------
+
 
 @router.get(
     "",
@@ -163,19 +195,29 @@ def agent_run_job_payload(job_id: str, run, *, accepted_response: bool = False) 
 )
 def list_canvases(
     project_id: str = Query(..., description="所属项目 ID"),
-    authorization: Optional[str] = Header(None),
-    x_user_role: str = Header("editor", alias="X-User-Role", description="用户角色权限"),
+    authorization: str | None = Header(None),
+    x_user_role: str = Header(
+        "editor", alias="X-User-Role", description="用户角色权限"
+    ),
 ):
     """仅返回当前项目可见的画布集合；显式 project_id 先过项目读可见性。"""
     if authorization == "invalid":
         raise UnauthorizedException()
     if "?" in project_id:
         project_id = project_id.split("?")[0]
-    if authorization is None and not default_god_canvas_service.persistent and project_id == "prj-0001":
-        return CanvasListResponse(canvases=default_god_canvas_service.list_canvases(project_id=project_id))
+    if (
+        authorization is None
+        and not default_god_canvas_service.persistent
+        and project_id == "prj-0001"
+    ):
+        return CanvasListResponse(
+            canvases=default_god_canvas_service.list_canvases(project_id=project_id)
+        )
     context = require_authenticated(authorization, x_user_role)
     _require_readable_project(project_id, context)
-    return CanvasListResponse(canvases=default_god_canvas_service.list_canvases(project_id=project_id))
+    return CanvasListResponse(
+        canvases=default_god_canvas_service.list_canvases(project_id=project_id)
+    )
 
 
 @router.post(
@@ -186,8 +228,10 @@ def list_canvases(
 )
 def create_canvas(
     payload: CanvasCreateRequest,
-    authorization: Optional[str] = Header(None),
-    x_user_role: str = Header("editor", alias="X-User-Role", description="用户角色权限"),
+    authorization: str | None = Header(None),
+    x_user_role: str = Header(
+        "editor", alias="X-User-Role", description="用户角色权限"
+    ),
 ):
     """创建画布实体并返回稳定 canvas_id；仅项目写者可创建。"""
     context = require_authenticated(authorization, x_user_role)
@@ -204,8 +248,10 @@ def create_canvas(
 )
 def get_canvas_topology(
     canvas_id: str,
-    authorization: Optional[str] = Header(None),
-    x_user_role: str = Header("editor", alias="X-User-Role", description="用户角色权限"),
+    authorization: str | None = Header(None),
+    x_user_role: str = Header(
+        "editor", alias="X-User-Role", description="用户角色权限"
+    ),
 ):
     """获取指定画布的完整拓扑结构（节点与连线）；不可读项目一律 404。"""
     if authorization == "invalid":
@@ -223,8 +269,10 @@ def get_canvas_topology(
 def update_canvas_topology(
     canvas_id: str,
     payload: CanvasTopologyUpdateRequest,
-    authorization: Optional[str] = Header(None),
-    x_user_role: str = Header("editor", alias="X-User-Role", description="用户角色权限"),
+    authorization: str | None = Header(None),
+    x_user_role: str = Header(
+        "editor", alias="X-User-Role", description="用户角色权限"
+    ),
 ):
     """根据 expected_version 更新拓扑；权限与项目状态先于版本校验，版本不一致严格返回 409。"""
     _canvas_write_context(canvas_id, authorization, x_user_role)
@@ -241,8 +289,10 @@ def update_canvas_topology(
 def restore_canvas(
     canvas_id: str,
     payload: CasVersionRequest,
-    authorization: Optional[str] = Header(None),
-    x_user_role: str = Header("editor", alias="X-User-Role", description="用户角色权限"),
+    authorization: str | None = Header(None),
+    x_user_role: str = Header(
+        "editor", alias="X-User-Role", description="用户角色权限"
+    ),
 ):
     """恢复画布；按章程必须携带 expected_version（CAS），权限与项目状态先于版本校验。"""
     _canvas_write_context(canvas_id, authorization, x_user_role)
@@ -264,8 +314,10 @@ async def import_canvas_workflow(
     format: str = Query("json", description="文件格式: json | godmap"),
     merge_mode: str = Query("replace", description="合并模式: replace | insert"),
     expected_version: int = Query(..., description="期望 CAS 版本（必填）"),
-    authorization: Optional[str] = Header(None),
-    x_user_role: str = Header("editor", alias="X-User-Role", description="用户角色权限"),
+    authorization: str | None = Header(None),
+    x_user_role: str = Header(
+        "editor", alias="X-User-Role", description="用户角色权限"
+    ),
 ):
     """导入工作流拓扑文件并进行严格结构校验；权限与项目状态先于 CAS 校验。"""
     _canvas_write_context(canvas_id, authorization, x_user_role)
@@ -289,8 +341,10 @@ async def import_canvas_workflow(
 def export_canvas_workflow(
     canvas_id: str,
     payload: CanvasExportRequest,
-    authorization: Optional[str] = Header(None),
-    x_user_role: str = Header("editor", alias="X-User-Role", description="用户角色权限"),
+    authorization: str | None = Header(None),
+    x_user_role: str = Header(
+        "editor", alias="X-User-Role", description="用户角色权限"
+    ),
 ):
     """将画布拓扑导出为指定格式内容；导出属读操作，按项目读可见性收敛。"""
     _canvas_read_context(canvas_id, authorization, x_user_role)
@@ -306,6 +360,7 @@ def export_canvas_workflow(
 # 智能画布异步任务端点
 # ----------------------------------------------------------------------
 
+
 @router.post(
     "/{canvas_id}/tasks",
     response_model=SmartCanvasTaskResponse,
@@ -315,8 +370,10 @@ def export_canvas_workflow(
 def run_smart_canvas_task(
     canvas_id: str,
     payload: SmartCanvasTaskRequest,
-    authorization: Optional[str] = Header(None),
-    x_user_role: str = Header("editor", alias="X-User-Role", description="用户角色权限"),
+    authorization: str | None = Header(None),
+    x_user_role: str = Header(
+        "editor", alias="X-User-Role", description="用户角色权限"
+    ),
 ):
     """发起异步执行任务并返回 202 Accepted 及稳定 job_id。"""
     return default_god_canvas_service.submit_smart_task(
@@ -336,7 +393,7 @@ def run_smart_canvas_task(
 async def get_smart_job_status(
     job_id: str,
     request: Request,
-    authorization: Optional[str] = Header(None),
+    authorization: str | None = Header(None),
     x_user_role: str = Header("editor", alias="X-User-Role"),
 ):
     """查询 Workbench job；Agent job 先复核当前Cookie主体和项目权限。"""
@@ -361,7 +418,11 @@ async def get_smart_job_status(
             )
         try:
             context = await integration.context_for_run(
-                auth, fingerprint, run_id, unavailable_request_id, edit_required=False,
+                auth,
+                fingerprint,
+                run_id,
+                unavailable_request_id,
+                edit_required=False,
             )
             run = await integration.use_case.get_run(context, Identifier(run_id))
         except CleanroomException as exc:
@@ -381,14 +442,28 @@ async def get_smart_job_status(
         return agent_run_job_payload(job_id, run)
     if not job_id.startswith("job-"):
         from gw.god_workflow import registry
+
         auth = require_authenticated(authorization, x_user_role)
         task = registry.load_task(auth, job_id)
-        return {**task, "state": task["status"], "source_domain": "workflow",
-                "poll_hint": None if task["status"] in {"completed", "failed", "cancelled", "outcome_unknown", "abandoned"} else f"/api/god_workflow/tasks/{job_id}"}
+        return {
+            **task,
+            "state": task["status"],
+            "source_domain": "workflow",
+            "poll_hint": None
+            if task["status"]
+            in {"completed", "failed", "cancelled", "outcome_unknown", "abandoned"}
+            else f"/api/god_workflow/tasks/{job_id}",
+        }
     try:
         auth = require_authenticated(authorization, x_user_role)
     except CleanroomException as exc:
         default_god_canvas_service._audit_job_access("query", exc.status_code)
         raise
     result = default_god_canvas_service.get_owned_job(job_id, auth)
-    return result.model_copy(update={"prototype": True, "durability": "process_memory", "execution_enabled": False})
+    return result.model_copy(
+        update={
+            "prototype": True,
+            "durability": "process_memory",
+            "execution_enabled": False,
+        }
+    )

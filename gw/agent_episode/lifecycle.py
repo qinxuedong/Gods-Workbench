@@ -1,10 +1,12 @@
 """Immutable artifact-history helpers for derived episode text versions."""
+
 from __future__ import annotations
 
 from collections.abc import Iterable, Sequence
 
-from gw.agent_runtime.models import ArtifactLifecycle, ArtifactRef, ArtifactSourceRef
 from pydantic import BaseModel, ConfigDict
+
+from gw.agent_runtime.models import ArtifactLifecycle, ArtifactRef, ArtifactSourceRef
 
 from .models import STAGE_ORDER, StageId
 
@@ -70,7 +72,9 @@ def downstream_stages(stage: StageId) -> tuple[StageId, ...]:
 
 
 def artifact_source_refs(artifact: ArtifactRef) -> tuple[tuple[str, str], ...]:
-    return tuple((ref.artifact_id.root, ref.version_id.root) for ref in artifact.source_refs)
+    return tuple(
+        (ref.artifact_id.root, ref.version_id.root) for ref in artifact.source_refs
+    )
 
 
 __all__ = [

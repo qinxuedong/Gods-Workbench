@@ -1,7 +1,9 @@
 """执行真实前端函数，验证上下文迟到响应、身份隔离和未知提交不可改绑。"""
+
 import shutil
 import subprocess
 from pathlib import Path
+
 import pytest
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -12,9 +14,18 @@ def test_video_context_identity_late_response_and_original_submission(tmp_path):
     if not node:
         pytest.skip("Node不可用，无法执行前端函数")
     text = (ROOT / "web/js/modules/episode-pipeline.js").read_text(encoding="utf-8")
-    context_functions = text[text.index("  function videoRequestKey("):text.index("  function videoContextMarkup(")]
-    generation = text[text.index("  function makeVideoIdempotencyKey("):text.index("  async function cancelVideoExport(")]
-    script = r'''
+    context_functions = text[
+        text.index("  function videoRequestKey(") : text.index(
+            "  function videoContextMarkup("
+        )
+    ]
+    generation = text[
+        text.index("  function makeVideoIdempotencyKey(") : text.index(
+            "  async function cancelVideoExport("
+        )
+    ]
+    script = (
+        r"""
 const assert = require('node:assert/strict');
 const state = {projectId:'p1',videoActorId:'actorA',videoIdentityReadGeneration:0};
 const VIDEO_CONTEXT_STORAGE_PREFIX='test-video-context';
@@ -33,7 +44,10 @@ let data={videoScripts:[]};
 const updateInputData=()=>data; const localData=()=>data; const writeWorkspace=()=>{};
 const selectedVideoModel=()=>({provider_id:'provider',model:'model'});
 const tick=()=>new Promise(resolve=>setImmediate(resolve));
-''' + context_functions + generation + r'''
+"""
+        + context_functions
+        + generation
+        + r"""
 (async()=>{
   activateVideoContext(pipeline); await tick();
   assert.equal(videoContext.canvasId,'');
@@ -123,9 +137,16 @@ const tick=()=>new Promise(resolve=>setImmediate(resolve));
   assert.deepEqual(data.videoExportSubmission,exportOriginal);
   console.log('PASS: identity + stale response + immutable submission + concurrent identity + rejection recovery');
 })().catch(e=>{console.error(e);process.exitCode=1});
-'''
+"""
+    )
     runner = tmp_path / "video-context.cjs"
     runner.write_text(script, encoding="utf-8")
-    result = subprocess.run([node, str(runner)], capture_output=True, text=True, encoding="utf-8", timeout=15)
+    result = subprocess.run(
+        [node, str(runner)],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        timeout=15,
+    )
     assert result.returncode == 0, result.stderr
     assert "PASS:" in result.stdout

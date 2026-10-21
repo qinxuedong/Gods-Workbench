@@ -1,4 +1,5 @@
 """立项阶段门前端回读、失败重试与幂等键清理运行时契约。"""
+
 import shutil
 import subprocess
 from pathlib import Path
@@ -8,7 +9,9 @@ import pytest
 ROOT = Path(__file__).resolve().parents[3]
 
 
-def test_project_creation_reads_back_real_gates_and_keeps_retry_key_until_verified(tmp_path):
+def test_project_creation_reads_back_real_gates_and_keeps_retry_key_until_verified(
+    tmp_path,
+):
     node = shutil.which("node")
     if not node:
         pytest.skip("Node unavailable for frontend runtime contract")
@@ -105,8 +108,12 @@ vm.runInContext(source.slice(start, end), context);
     runner = tmp_path / "project-persistence-ui.cjs"
     runner.write_text(script, encoding="utf-8")
     result = subprocess.run(
-        [node, str(runner), str(source_path)], capture_output=True, text=True,
-        encoding="utf-8", timeout=15, check=False,
+        [node, str(runner), str(source_path)],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        timeout=15,
+        check=False,
     )
     assert result.returncode == 0, result.stderr or result.stdout
     assert "PASS:" in result.stdout

@@ -1,9 +1,11 @@
 """Single-process durable AgentRun worker with run-bound authorization."""
+
 from __future__ import annotations
 
 import asyncio
 import contextlib
-from typing import Any, Callable
+from collections.abc import Callable
+from typing import Any
 
 from gw.agent_runtime.errors import DomainError
 from gw.agent_runtime.models import AgentRun, ErrorCode, Identifier, RunStatus
@@ -21,7 +23,9 @@ class RuntimeBackgroundWorker:
     async def start(self) -> None:
         if self._task is None or self._task.done():
             self._stopping.clear()
-            self._task = asyncio.create_task(self._run(), name="gw-agent-runtime-worker")
+            self._task = asyncio.create_task(
+                self._run(), name="gw-agent-runtime-worker"
+            )
 
     async def stop(self) -> None:
         self._stopping.set()
@@ -38,7 +42,9 @@ class RuntimeBackgroundWorker:
             # trusted host binding. Creation holds this same lock until binding
             # and idempotency linkage are committed.
             async with self.integration.run_lock:
-                runs, cursor = await self.integration.repository.scan_recoverable(cursor, 100)
+                runs, cursor = await self.integration.repository.scan_recoverable(
+                    cursor, 100
+                )
             for run in runs:
                 if run.status not in {RunStatus.queued, RunStatus.running}:
                     continue
@@ -55,12 +61,19 @@ class RuntimeBackgroundWorker:
         async with self.integration.run_lock:
             binding = self.integration.get_binding(run.run_id.root)
             if binding is None:
-                await self._pause_for_authorization(run, "Run identity binding is unavailable.")
+                await self._pause_for_authorization(
+                    run, "Run identity binding is unavailable."
+                )
                 return
             if not await self.integration.authorize_background(
-                run.project_id, Identifier(binding["actor_id"]), run.run_id,
+                run.project_id,
+                Identifier(binding["actor_id"]),
+                run.run_id,
             ):
-                await self._pause_for_authorization(run, "The authenticated session or project permission is no longer valid.")
+                await self._pause_for_authorization(
+                    run,
+                    "The authenticated session or project permission is no longer valid.",
+                )
                 return
 
             current = run
@@ -80,16 +93,23 @@ class RuntimeBackgroundWorker:
                 current.project_id,
                 current.run_id,
                 expected_version=current.version.root,
-                idempotency_key=Identifier(f"host-execute:{current.run_id.root}:{current.version.root}"),
+                idempotency_key=Identifier(
+                    f"host-execute:{current.run_id.root}:{current.version.root}"
+                ),
                 actor_id=Identifier(binding["actor_id"]),
                 writer_role="writer",
                 reviewer_role="reviewer",
             )
         except DomainError as exc:
             if exc.code is ErrorCode.NOT_AUTHORIZED:
-                latest = await self.integration.repository.read_run_by_id(current.run_id)
+                latest = await self.integration.repository.read_run_by_id(
+                    current.run_id
+                )
                 if latest is not None:
-                    await self._pause_for_authorization(latest, "The authenticated session or project permission was revoked during execution.")
+                    await self._pause_for_authorization(
+                        latest,
+                        "The authenticated session or project permission was revoked during execution.",
+                    )
                 return
             raise
 
@@ -99,7 +119,9 @@ class RuntimeBackgroundWorker:
                 run.project_id,
                 run.run_id,
                 expected_version=run.version.root,
-                idempotency_key=Identifier(f"host-auth-pause:{run.run_id.root}:{run.version.root}"),
+                idempotency_key=Identifier(
+                    f"host-auth-pause:{run.run_id.root}:{run.version.root}"
+                ),
                 reason=reason,
             )
         except (DomainError, TypeError):
@@ -110,7 +132,7 @@ class RuntimeBackgroundWorker:
             await self.run_once()
             try:
                 await asyncio.wait_for(self._stopping.wait(), timeout=self.poll_seconds)
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 pass
 
 

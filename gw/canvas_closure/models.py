@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 # Copyright 2026 Gods-Workbench Authors
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -72,26 +71,34 @@ class CanvasMetaRequest(BaseModel):
 
     model_config = ConfigDict(extra="ignore")
 
-    title: Optional[str] = Field(None, min_length=1, description="画布标题")
-    entity_id: Optional[str] = Field(None, min_length=1, description="绑定的实体 ID")
-    project_id: Optional[str] = Field(None, min_length=1, description="所属项目 ID")
-    project: Optional[str] = Field(None, min_length=1, description="前端既有别名，等价 project_id")
-    icon: Optional[str] = None
-    board_x: Optional[float] = None
-    board_y: Optional[float] = None
-    expected_version: Optional[int] = Field(None, ge=1, description="画布 CAS 期望版本")
-    expected_revision: Optional[int] = Field(None, ge=1, description="前端既有别名，等价 expected_version")
-    base_updated_at: Optional[float] = None
+    title: str | None = Field(None, min_length=1, description="画布标题")
+    entity_id: str | None = Field(None, min_length=1, description="绑定的实体 ID")
+    project_id: str | None = Field(None, min_length=1, description="所属项目 ID")
+    project: str | None = Field(
+        None, min_length=1, description="前端既有别名，等价 project_id"
+    )
+    icon: str | None = None
+    board_x: float | None = None
+    board_y: float | None = None
+    expected_version: int | None = Field(None, ge=1, description="画布 CAS 期望版本")
+    expected_revision: int | None = Field(
+        None, ge=1, description="前端既有别名，等价 expected_version"
+    )
+    base_updated_at: float | None = None
 
-    def resolved_version(self) -> Optional[int]:
+    def resolved_version(self) -> int | None:
         """返回调用方给出的 CAS 期望版本（两个别名取其一）。"""
-        return self.expected_version if self.expected_version is not None else self.expected_revision
+        return (
+            self.expected_version
+            if self.expected_version is not None
+            else self.expected_revision
+        )
 
 
 class CanvasMetaResponse(BaseModel):
     """画布元信息更新后的返回包装。"""
 
-    canvas: Dict[str, Any]
+    canvas: dict[str, Any]
 
 
 class CanvasTouchRequest(BaseModel):
@@ -99,13 +106,13 @@ class CanvasTouchRequest(BaseModel):
 
     model_config = ConfigDict(extra="ignore")
 
-    expected_version: Optional[int] = Field(None, ge=1)
+    expected_version: int | None = Field(None, ge=1)
 
 
 class CanvasTouchResponse(BaseModel):
     """画布归档 / 解归档后的返回包装。"""
 
-    canvas: Dict[str, Any]
+    canvas: dict[str, Any]
 
 
 class CanvasPurgeResponse(BaseModel):
@@ -119,9 +126,9 @@ class CanvasPurgeResponse(BaseModel):
 class CanvasTrashResponse(BaseModel):
     """回收站 / 归档列表响应；无内容时必须是空数组。"""
 
-    canvases: List[Dict[str, Any]] = Field(default_factory=list)
+    canvases: list[dict[str, Any]] = Field(default_factory=list)
     data_status: str = DATA_STATUS_OK
-    data_gaps: List[str] = Field(default_factory=list)
+    data_gaps: list[str] = Field(default_factory=list)
 
 
 class CanvasAssetIndexResponse(BaseModel):
@@ -130,11 +137,11 @@ class CanvasAssetIndexResponse(BaseModel):
     素材条目需要素材注册表（本阶段未接入），因此 ``items`` 必须为空并如实标记缺口。
     """
 
-    categories: List[Dict[str, Any]] = Field(default_factory=list)
-    canvases: List[Dict[str, Any]] = Field(default_factory=list)
-    items: List[Dict[str, Any]] = Field(default_factory=list)
+    categories: list[dict[str, Any]] = Field(default_factory=list)
+    canvases: list[dict[str, Any]] = Field(default_factory=list)
+    items: list[dict[str, Any]] = Field(default_factory=list)
     data_status: str = DATA_STATUS_NOT_INTEGRATED
-    data_gaps: List[str] = Field(default_factory=list)
+    data_gaps: list[str] = Field(default_factory=list)
 
 
 class CanvasAssetDownloadRequest(BaseModel):
@@ -142,8 +149,8 @@ class CanvasAssetDownloadRequest(BaseModel):
 
     model_config = ConfigDict(extra="ignore")
 
-    asset_ids: List[str] = Field(default_factory=list)
-    filename: Optional[str] = None
+    asset_ids: list[str] = Field(default_factory=list)
+    filename: str | None = None
 
 
 class CanvasAssetAttachRequest(BaseModel):
@@ -151,11 +158,11 @@ class CanvasAssetAttachRequest(BaseModel):
 
     model_config = ConfigDict(extra="ignore")
 
-    asset_ids: List[str] = Field(default_factory=list)
-    canvas_id: Optional[str] = None
-    new_title: Optional[str] = None
-    new_kind: Optional[str] = None
-    expected_version: Optional[int] = Field(None, ge=1)
+    asset_ids: list[str] = Field(default_factory=list)
+    canvas_id: str | None = None
+    new_title: str | None = None
+    new_kind: str | None = None
+    expected_version: int | None = Field(None, ge=1)
 
 
 class ReferenceCanvasCreateRequest(BaseModel):
@@ -163,28 +170,28 @@ class ReferenceCanvasCreateRequest(BaseModel):
 
     model_config = ConfigDict(extra="ignore")
 
-    canvas_id: Optional[str] = None
+    canvas_id: str | None = None
     title: str = Field(..., min_length=1, description="参考画布标题")
-    items: List[Dict[str, Any]] = Field(default_factory=list)
-    annotations: List[Dict[str, Any]] = Field(default_factory=list)
-    drawings: List[Dict[str, Any]] = Field(default_factory=list)
-    groups: List[Dict[str, Any]] = Field(default_factory=list)
-    viewport: Dict[str, Any] = Field(default_factory=dict)
-    expected_version: Optional[int] = Field(None, ge=1)
+    items: list[dict[str, Any]] = Field(default_factory=list)
+    annotations: list[dict[str, Any]] = Field(default_factory=list)
+    drawings: list[dict[str, Any]] = Field(default_factory=list)
+    groups: list[dict[str, Any]] = Field(default_factory=list)
+    viewport: dict[str, Any] = Field(default_factory=dict)
+    expected_version: int | None = Field(None, ge=1)
 
 
 class ReferenceCanvasResponse(BaseModel):
     """参考画布保存结果包装。"""
 
-    canvas: Dict[str, Any]
+    canvas: dict[str, Any]
 
 
 class ReferenceCanvasListResponse(BaseModel):
     """参考画布列表响应；无内容时必须是空数组。"""
 
-    canvases: List[Dict[str, Any]] = Field(default_factory=list)
+    canvases: list[dict[str, Any]] = Field(default_factory=list)
     data_status: str = DATA_STATUS_OK
-    data_gaps: List[str] = Field(default_factory=list)
+    data_gaps: list[str] = Field(default_factory=list)
 
 
 class SharedFolderCreateRequest(BaseModel):
@@ -193,7 +200,7 @@ class SharedFolderCreateRequest(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
     path: str = Field(..., min_length=1, description="项目目录内的相对路径")
-    name: Optional[str] = None
+    name: str | None = None
 
     @field_validator("path")
     @classmethod
@@ -208,7 +215,9 @@ class SharedFolderCreateRequest(BaseModel):
             raise ValueError("共享文件夹路径不得包含盘符")
         if normalized.startswith("~"):
             raise ValueError("共享文件夹路径不得使用用户主目录简写")
-        segments = [segment for segment in normalized.split("/") if segment not in ("", ".")]
+        segments = [
+            segment for segment in normalized.split("/") if segment not in ("", ".")
+        ]
         if any(segment == ".." for segment in segments):
             raise ValueError("共享文件夹路径不得包含上跳片段")
         return "/".join(segments)
@@ -217,16 +226,16 @@ class SharedFolderCreateRequest(BaseModel):
 class SharedFolderResponse(BaseModel):
     """单个共享文件夹返回包装。"""
 
-    folder: Dict[str, Any]
+    folder: dict[str, Any]
 
 
 class SharedFolderListResponse(BaseModel):
     """共享文件夹列表响应；无内容时必须是空数组。"""
 
-    folders: List[Dict[str, Any]] = Field(default_factory=list)
+    folders: list[dict[str, Any]] = Field(default_factory=list)
     revision: int = Field(..., ge=1)
     data_status: str = DATA_STATUS_OK
-    data_gaps: List[str] = Field(default_factory=list)
+    data_gaps: list[str] = Field(default_factory=list)
 
 
 class SharedFolderTreeResponse(BaseModel):
@@ -236,10 +245,10 @@ class SharedFolderTreeResponse(BaseModel):
     绝不编造文件 / 子目录条目。
     """
 
-    folder: Dict[str, Any]
-    tree: Dict[str, Any]
+    folder: dict[str, Any]
+    tree: dict[str, Any]
     data_status: str = DATA_STATUS_NOT_INTEGRATED
-    data_gaps: List[str] = Field(default_factory=list)
+    data_gaps: list[str] = Field(default_factory=list)
 
 
 class SharedFolderDeleteResponse(BaseModel):
@@ -252,6 +261,6 @@ class SharedFolderDeleteResponse(BaseModel):
 class VideoTaskListResponse(BaseModel):
     """视频任务列表响应；无真实渲染后端时必须是空数组。"""
 
-    video_tasks: List[Dict[str, Any]] = Field(default_factory=list)
+    video_tasks: list[dict[str, Any]] = Field(default_factory=list)
     data_status: str = DATA_STATUS_NOT_INTEGRATED
-    data_gaps: List[str] = Field(default_factory=list)
+    data_gaps: list[str] = Field(default_factory=list)

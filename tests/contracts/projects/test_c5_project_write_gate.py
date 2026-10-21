@@ -6,7 +6,6 @@ import hashlib
 
 from fastapi.testclient import TestClient
 
-
 OWNER_TOKEN = "c5-t2-owner-token"
 ADMIN_TOKEN = "c5-t2-admin-token"
 GOVERNOR_TOKEN = "c5-t2-governor-token"
@@ -25,7 +24,12 @@ def _subject(token: str) -> str:
 def _create_project(client: TestClient, *, gates: bool = False) -> str:
     body = {"name": "C5-T2 项目", "project_type": "film"}
     if gates:
-        body.update({"client_request_id": "c5-t2-gate-001", "gates": [{"code": "P1", "name": "首审"}]})
+        body.update(
+            {
+                "client_request_id": "c5-t2-gate-001",
+                "gates": [{"code": "P1", "name": "首审"}],
+            }
+        )
     response = client.post("/api/asset-registry/projects", headers=OWNER, json=body)
     assert response.status_code == 201, response.text
     return response.json()["project"]["project_id"]
@@ -135,7 +139,9 @@ def test_project_bound_entity_asset_and_gate_writes_share_gate(client: TestClien
     )
     assert owner_linked.status_code == 200, owner_linked.text
 
-    gates = client.get(f"/api/asset-registry/projects/{project_id}/gates", headers=OWNER)
+    gates = client.get(
+        f"/api/asset-registry/projects/{project_id}/gates", headers=OWNER
+    )
     assert gates.status_code == 200, gates.text
     gate_id = gates.json()["gates"][0]["gate_id"]
     gate = client.patch(
@@ -153,7 +159,9 @@ def test_project_bound_entity_asset_and_gate_writes_share_gate(client: TestClien
     assert owner_gate.status_code == 200, owner_gate.text
 
 
-def test_archived_project_hides_nonwriter_and_is_readonly_for_writer(client: TestClient):
+def test_archived_project_hides_nonwriter_and_is_readonly_for_writer(
+    client: TestClient,
+):
     project_id = _create_project(client)
     archived = client.request(
         "DELETE",
@@ -179,7 +187,9 @@ def test_project_write_gate_authenticates_before_project_lookup(client: TestClie
     assert response.status_code == 401
 
 
-def test_legacy_open_project_list_is_visible_until_subject_is_revoked(client: TestClient):
+def test_legacy_open_project_list_is_visible_until_subject_is_revoked(
+    client: TestClient,
+):
     """O2 列表回归：legacy-open 对普通主体可见，撤销只隐藏该主体。"""
     from gw.api import routes_projects
 
@@ -197,4 +207,3 @@ def test_legacy_open_project_list_is_visible_until_subject_is_revoked(client: Te
     hidden = client.get("/api/asset-registry/projects", headers=READER)
     assert hidden.status_code == 200
     assert all(item["project_id"] != project_id for item in hidden.json()["projects"])
-

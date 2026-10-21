@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Phase 8 P8-A1 前后端接口缺口基线与契约一致性守卫（纯 Python）。
 
 背景
@@ -67,429 +66,435 @@ CONTRACTS = [
 # `/api/asset-auth/logout`、`/api/asset-auth/callback` 已由
 # `gw/api/routes_auth.py` 真实实现（OIDC 授权码 + PKCE + 服务端会话），
 # 故由 KNOWN_UNIMPLEMENTED 迁入本基线。
-KNOWN_IMPLEMENTED = frozenset([
-    # 统一路由以领域包承载，前端基线扫描只识别到前缀根路径。
-    '/api/god_workflow',
-    '/api/god_workflow/settings',
-    '/api/god_workflow/assets/list',
-    '/api/god_workflow/assets/upload',
-    '/api/god_workflow/list',
-    '/api/god_workflow/item/{p}',
-    '/api/god_workflow/item/{p}/name',
-    '/api/god_workflow/item/{p}/folder',
-    '/api/god_workflow/clipboard',
-    '/api/god_workflow/parse-link',
-    '/api/god_workflow/parse-upload',
-    '/api/god_workflow/browse_directory',
-    # 2026-10-08 已批准全站 CF 真实状态与管理员受控生命周期，专项契约覆盖。
-    '/api/god_workflow/comfy-control',
-    # 2026-10-10 用户确认 CF 只启停，导入须选择工作流；前端撤除无 ID 根调用。
-    # 后端兼容路由保留，变更证据见本地 workflow-cf-import-20261010/P8-A1-BASELINE-CHANGE.md。
-    '/api/god_workflow/open-in-comfy/{p}',
-    '/api/god_workflow/comfy-bridge/sync-status',
-    # 2026-10-09 已授权原生回存与输出回收重试，真实路由、CAS 和浏览器有专项覆盖。
-    '/api/god_workflow/comfy-bridge/sync-saved',
-    '/api/god_workflow/item/{p}/params',
-    # 2026-10-10 已确认内部定义适配优先；真实CAS路由和隔离浏览器专项覆盖。
-    '/api/god_workflow/item/{p}/resolve-definitions',
-    '/api/god_workflow/canvas-contract/{p}',
-    '/api/god_workflow/auto-layout/{p}',
-    '/api/god_workflow/execute',
-    # 2026-10-08 R0批准刷新续查：服务端按认证主体列举持久任务，非新增队列。
-    '/api/god_workflow/tasks',
-    '/api/god_workflow/tasks/{p}',
-    '/api/god_workflow/tasks/{p}/collect',
-    # 2026-10-15 C4-AC15：结果未知且无远端 ID 的任务本地标记放弃（PR #35 后端）。
-    '/api/god_workflow/tasks/{p}/abandon',
-    '/api/god_workflow/export/{p}',
-    '/api/god_workflow/compare-local/{p}',
-    '/api/god_workflow/folders',
-    '/api/god_workflow/folders/{p}',
-    # 2026-10-15 C4-AC5b：未归属收件箱与移到项目（后端 IN-5）。
-    '/api/assets/unassigned',
-    '/api/assets/{p}/move-to-project',
-    '/api/asset-library',
-    '/api/asset-library/categories',
-    '/api/asset-library/libraries',
-    '/api/asset-auth/callback',
-    '/api/asset-auth/login',
-    # 2026-09-26 用户确认增补本地数据库账户登录，不替代 OIDC 路径。
-    '/api/asset-auth/local/login',
-    '/api/asset-auth/local/setup',
-    '/api/asset-auth/logout',
-    '/api/asset-auth/status',
-    '/api/asset-registry/governance/projects/{p}/restore',
-    '/api/asset-registry/projects',
-    '/api/asset-registry/projects/{p}',
-    # 2026-09-27 项目持久化阶段门已接入受权集合GET与创建后回读。
-    '/api/asset-registry/projects/{p}/gates',
-    '/api/asset-registry/projects/{p}/trash',
-    '/api/asset-registry/projects/{p}/trash/restore',
-    '/api/canvases',
-    '/api/canvases/{p}',
-    '/api/canvases/{p}/restore',
-    # 2026-10-08：Agent task recovery uses the authorized Workbench job lookup.
-    '/api/jobs/{p}',
-    '/api/observability',
-    '/api/observability/overview',
-    '/api/observability/series',
-    '/api/observability/events',
-    '/api/observability/tasks',
-    '/api/observability/health',
-    '/api/observability/sources',
-    '/api/observability/asset-volumes',
-    # 2026-09-22 Phase 10C：提示词库阶段新增 4 条路由（集合 GET/POST 与单对象 PATCH/DELETE）。
-    '/api/prompt-libraries',
-    '/api/prompt-libraries/categories',
-    '/api/prompt-libraries/categories/{p}',
-    '/api/prompt-libraries/{p}',
-    # 2026-09-22 Phase 10D：设置页阶段 8 条归一化路径。
-    '/api/storage-settings',
-    '/api/providers',
-    '/api/providers/fetch-models',
-    '/api/providers/probe-async',
-    '/api/providers/test-connection',
-    '/api/asset-registry/asset-structures',
-    '/api/asset-registry/asset-structures/{p}',
-    '/api/asset-registry/asset-structures/{p}/current',
-    # 2026-09-22 Phase 10E：画布闭环阶段新增 14 条归一化路径（3 个方法别名合并后）。
-    '/api/canvas-assets',
-    '/api/canvas-assets/download',
-    '/api/reference-canvases',
-    '/api/shared-folders',
-    '/api/shared-folders/import',
-    '/api/shared-folders/{p}',
-    '/api/shared-folders/{p}/tree',
-    '/api/video-tasks',
-    '/api/video-tasks/{p}',
-    # 2026-09-27 Phase 12：逐镜生成、任务取消与本地合并导出接入。
-    '/api/video-tasks/{p}/cancel',
-    '/api/video-exports',
-    '/api/canvases/trash',
-    '/api/canvases/assets',
-    '/api/canvases/{p}/meta',
-    '/api/canvases/{p}/touch',
-    '/api/canvases/{p}/purge',
-
-    '/api/asset-auth/bootstrap',
-    '/api/asset-auth/operation-approvals',
-    '/api/asset-auth/operation-approvals/{p}',
-    '/api/asset-auth/teams',
-    '/api/asset-auth/teams/{p}',
-    # 2026-09-27 Phase 12：团队消息身份绑定、历史读取与发送已从真实前端调用。
-    '/api/asset-auth/identity-binding',
-    '/api/asset-auth/teams/{p}/messages',
-    '/api/asset-auth/teams/{p}/members',
-    '/api/asset-auth/teams/{p}/members/{p}',
-    '/api/asset-auth/tokens',
-    '/api/asset-auth/users',
-    '/api/asset-auth/users/{p}',
-    # 2026-09-25 Phase 11 B2：平台、项目兼容路径与 AI/CLI 接口。
-    '/api/ai/upload',
-    # 2026-10-07 工作流批次对账：已存在的 Agent 任务前端控制器（agent-tasks.js）
-    # 引用的三个端点由 gw/api/routes_ai.py 真实实现，补登记以避免基线漂移告警。
-    '/api/agent/config',
-    '/api/agent/projects/{p}/artifacts',
-    '/api/agent/runs',
-    '/api/agent/runs/{p}',
-    '/api/app-info',
-    '/api/chat',
-    # 2026-09-27：页面仅读取真实服务端配置，不在加载时发起计费生成。
-    '/api/chat/config',
-    '/api/chat/agent',
-    '/api/codex/help',
-    '/api/codex/status',
-    '/api/gemini-cli/help',
-    '/api/gemini-cli/status',
-    '/api/jimeng/credit',
-    '/api/jimeng/help',
-    '/api/jimeng/login/start',
-    '/api/jimeng/login/status',
-    '/api/jimeng/logout',
-    '/api/jimeng/status',
-    '/api/projects',
-    '/api/projects/{p}',
-    # 2026-09-25 Phase 11 B3：素材注册表 52 条路径；未准入副作用保持显式 503。
-    '/api/asset-registry',
-    '/api/asset-registry/assets',
-    '/api/asset-registry/assets/archive',
-    '/api/asset-registry/assets/export-pdf',
-    '/api/asset-registry/assets/import',
-    '/api/asset-registry/assets/relations',
-    '/api/asset-registry/assets/resolve-reference',
-    '/api/asset-registry/assets/tags',
-    '/api/asset-registry/assets/{p}',
-    '/api/asset-registry/assets/{p}/image-versions',
-    '/api/asset-registry/assets/{p}/image-versions/{p}',
-    '/api/asset-registry/assets/{p}/image-versions/{p}/media',
-    '/api/asset-registry/assets/{p}/media',
-    '/api/asset-registry/assets/{p}/open-local',
-    '/api/asset-registry/assets/{p}/relations/{p}',
-    '/api/asset-registry/assets/{p}/tags/{p}',
-    '/api/asset-registry/assets/{p}/video/clip',
-    '/api/asset-registry/assets/{p}/video/frame',
-    '/api/asset-registry/assets/{p}/video/storyboard',
-    '/api/asset-registry/facets',
-    '/api/asset-registry/folders',
-    '/api/asset-registry/governance/asset-trash/{p}/restore',
-    '/api/asset-registry/governance/assets/{p}/restore',
-    '/api/asset-registry/governance/audit-outbox/reconcile',
-    '/api/asset-registry/governance/canvases/purge-expired',
-    '/api/asset-registry/governance/canvases/{p}/restore',
-    '/api/asset-registry/governance/cascade-preview',
-    '/api/asset-registry/governance/operations',
-    '/api/asset-registry/governance/overview',
-    '/api/asset-registry/index/sync',
-    '/api/asset-registry/preferences/team',
-    '/api/asset-registry/presets',
-    '/api/asset-registry/presets/{p}',
-    '/api/asset-registry/project-directory-templates',
-    '/api/asset-registry/project-directory-templates/{p}',
-    '/api/asset-registry/project-directory-templates/{p}/archive',
-    '/api/asset-registry/project-directory-templates/{p}/default',
-    '/api/asset-registry/project-entities/{p}',
-    '/api/asset-registry/project-gates/{p}',
-    '/api/asset-registry/project-recycle/{p}/restore',
-    '/api/asset-registry/projects/{p}/assets',
-    '/api/asset-registry/projects/{p}/entities',
-    '/api/asset-registry/recycle-bin',
-    '/api/asset-registry/recycle-bin/{p}/restore',
-    '/api/asset-registry/reindex',
-    '/api/asset-registry/remote-assets',
-    '/api/asset-registry/remote-assets/{p}',
-    '/api/asset-registry/settings/features/{p}',
-    '/api/asset-registry/settings/index-automation',
-    '/api/asset-registry/status',
-    '/api/asset-registry/workspace-jobs/{p}',
-    '/api/asset-registry/workspace-jobs/{p}/{p}',
-    '/api/asset-classification-prompt',
-    '/api/asset-classification/background',
-    '/api/asset-classification/jobs/{p}',
-    '/api/asset-content',
-    '/api/asset-content/pdf',
-    '/api/asset-content/versions',
-    '/api/asset-content/versions/{p}',
-    '/api/asset-content/versions/{p}/restore',
-    '/api/asset-file-info',
-    '/api/asset-file-reveal',
-    '/api/asset-library/categories/{p}',
-    '/api/asset-library/items/batch',
-    '/api/asset-library/items/classify',
-    '/api/asset-library/items/delete',
-    '/api/asset-library/items/move',
-    '/api/asset-library/items/{p}',
-    '/api/asset-library/items/{p}/avatar-status',
-    '/api/asset-library/items/{p}/register-avatar',
-    '/api/asset-library/libraries/{p}',
-    '/api/asset-library/workflows/upload',
-    '/api/local-assets',
-    '/api/local-assets/caption',
-    '/api/local-assets/classify',
-    '/api/local-assets/delete',
-    '/api/local-assets/folders',
-    '/api/local-assets/items',
-    '/api/local-assets/move',
-    '/api/local-assets/upload',
-    '/api/storage-files',
-    '/api/storage-files/delete',
-    # 2026-09-25 Phase 11 B5：媒体与缩略图路径统一注册为失败关闭。
-    '/api/asset-proxy/settings',
-    '/api/asset-thumbnails/delete',
-    '/api/asset-thumbnails/delete-storyboards',
-    '/api/asset-thumbnails/generate',
-    '/api/asset-thumbnails/generate-background',
-    '/api/asset-thumbnails/jobs/{p}',
-    '/api/asset-thumbnails/settings',
-    '/api/audio-waveform-data',
-    '/api/download-output',
-    '/api/media-preview',
-    '/api/media-transcode',
-    '/api/online-image',
-    # 2026-09-25 Phase 11 B7：剧集流水线路径统一失败关闭。
-    '/api/episode-pipelines',
-    '/api/episode-pipelines/{p}',
-    # 2026-10-19 C12-T3/T4：时间线清单由后端持久化并由分镜页同步消费。
-    '/api/episode-pipelines/{p}/timeline-manifest',
-    '/api/episode-pipelines/{p}/stages/{p}/cancel',
-    '/api/episode-pipelines/{p}/stages/{p}/complete',
-    '/api/episode-pipelines/{p}/stages/{p}/start',
-    # 2026-09-25 Phase 11 B8：提示词条目能力统一失败关闭。
-    '/api/prompt-libraries/items',
-    '/api/prompt-libraries/items/delete',
-    '/api/prompt-libraries/items/{p}',
-    # 2026-09-25 Phase 11 B9：公开分享路径统一失败关闭。
-    '/api/public/shares/{p}',
-    '/api/public/shares/{p}/access',
-    '/api/public/shares/{p}/approvals',
-    '/api/public/shares/{p}/comments',
-    # 分享票据鉴权媒体已真实接线；仅追加精确路径，不放宽差集断言。
-    '/api/public/shares/{p}/assets/{p}/media',
-    # 2026-09-25 Phase 11 B6：资产审查与交付路径统一失败关闭。
-    '/api/asset-reviews/comments/{p}',
-    '/api/asset-reviews/deliveries/{p}/export',
-    '/api/asset-reviews/sessions',
-    '/api/asset-reviews/sessions/{p}',
-    '/api/asset-reviews/sessions/{p}/approval',
-    '/api/asset-reviews/sessions/{p}/comments',
-    '/api/asset-reviews/sessions/{p}/delivery',
-    '/api/asset-reviews/shares',
-])
+KNOWN_IMPLEMENTED = frozenset(
+    [
+        # 统一路由以领域包承载，前端基线扫描只识别到前缀根路径。
+        "/api/god_workflow",
+        "/api/god_workflow/settings",
+        "/api/god_workflow/assets/list",
+        "/api/god_workflow/assets/upload",
+        "/api/god_workflow/list",
+        "/api/god_workflow/item/{p}",
+        "/api/god_workflow/item/{p}/name",
+        "/api/god_workflow/item/{p}/folder",
+        "/api/god_workflow/clipboard",
+        "/api/god_workflow/parse-link",
+        "/api/god_workflow/parse-upload",
+        "/api/god_workflow/browse_directory",
+        # 2026-10-08 已批准全站 CF 真实状态与管理员受控生命周期，专项契约覆盖。
+        "/api/god_workflow/comfy-control",
+        # 2026-10-10 用户确认 CF 只启停，导入须选择工作流；前端撤除无 ID 根调用。
+        # 后端兼容路由保留，变更证据见本地 workflow-cf-import-20261010/P8-A1-BASELINE-CHANGE.md。
+        "/api/god_workflow/open-in-comfy/{p}",
+        "/api/god_workflow/comfy-bridge/sync-status",
+        # 2026-10-09 已授权原生回存与输出回收重试，真实路由、CAS 和浏览器有专项覆盖。
+        "/api/god_workflow/comfy-bridge/sync-saved",
+        "/api/god_workflow/item/{p}/params",
+        # 2026-10-10 已确认内部定义适配优先；真实CAS路由和隔离浏览器专项覆盖。
+        "/api/god_workflow/item/{p}/resolve-definitions",
+        "/api/god_workflow/canvas-contract/{p}",
+        "/api/god_workflow/auto-layout/{p}",
+        "/api/god_workflow/execute",
+        # 2026-10-08 R0批准刷新续查：服务端按认证主体列举持久任务，非新增队列。
+        "/api/god_workflow/tasks",
+        "/api/god_workflow/tasks/{p}",
+        "/api/god_workflow/tasks/{p}/collect",
+        # 2026-10-15 C4-AC15：结果未知且无远端 ID 的任务本地标记放弃（PR #35 后端）。
+        "/api/god_workflow/tasks/{p}/abandon",
+        "/api/god_workflow/export/{p}",
+        "/api/god_workflow/compare-local/{p}",
+        "/api/god_workflow/folders",
+        "/api/god_workflow/folders/{p}",
+        # 2026-10-15 C4-AC5b：未归属收件箱与移到项目（后端 IN-5）。
+        "/api/assets/unassigned",
+        "/api/assets/{p}/move-to-project",
+        "/api/asset-library",
+        "/api/asset-library/categories",
+        "/api/asset-library/libraries",
+        "/api/asset-auth/callback",
+        "/api/asset-auth/login",
+        # 2026-09-26 用户确认增补本地数据库账户登录，不替代 OIDC 路径。
+        "/api/asset-auth/local/login",
+        "/api/asset-auth/local/setup",
+        "/api/asset-auth/logout",
+        "/api/asset-auth/status",
+        "/api/asset-registry/governance/projects/{p}/restore",
+        "/api/asset-registry/projects",
+        "/api/asset-registry/projects/{p}",
+        # 2026-09-27 项目持久化阶段门已接入受权集合GET与创建后回读。
+        "/api/asset-registry/projects/{p}/gates",
+        "/api/asset-registry/projects/{p}/trash",
+        "/api/asset-registry/projects/{p}/trash/restore",
+        "/api/canvases",
+        "/api/canvases/{p}",
+        "/api/canvases/{p}/restore",
+        # 2026-10-08：Agent task recovery uses the authorized Workbench job lookup.
+        "/api/jobs/{p}",
+        "/api/observability",
+        "/api/observability/overview",
+        "/api/observability/series",
+        "/api/observability/events",
+        "/api/observability/tasks",
+        "/api/observability/health",
+        "/api/observability/sources",
+        "/api/observability/asset-volumes",
+        # 2026-09-22 Phase 10C：提示词库阶段新增 4 条路由（集合 GET/POST 与单对象 PATCH/DELETE）。
+        "/api/prompt-libraries",
+        "/api/prompt-libraries/categories",
+        "/api/prompt-libraries/categories/{p}",
+        "/api/prompt-libraries/{p}",
+        # 2026-09-22 Phase 10D：设置页阶段 8 条归一化路径。
+        "/api/storage-settings",
+        "/api/providers",
+        "/api/providers/fetch-models",
+        "/api/providers/probe-async",
+        "/api/providers/test-connection",
+        "/api/asset-registry/asset-structures",
+        "/api/asset-registry/asset-structures/{p}",
+        "/api/asset-registry/asset-structures/{p}/current",
+        # 2026-09-22 Phase 10E：画布闭环阶段新增 14 条归一化路径（3 个方法别名合并后）。
+        "/api/canvas-assets",
+        "/api/canvas-assets/download",
+        "/api/reference-canvases",
+        "/api/shared-folders",
+        "/api/shared-folders/import",
+        "/api/shared-folders/{p}",
+        "/api/shared-folders/{p}/tree",
+        "/api/video-tasks",
+        "/api/video-tasks/{p}",
+        # 2026-09-27 Phase 12：逐镜生成、任务取消与本地合并导出接入。
+        "/api/video-tasks/{p}/cancel",
+        "/api/video-exports",
+        "/api/canvases/trash",
+        "/api/canvases/assets",
+        "/api/canvases/{p}/meta",
+        "/api/canvases/{p}/touch",
+        "/api/canvases/{p}/purge",
+        "/api/asset-auth/bootstrap",
+        "/api/asset-auth/operation-approvals",
+        "/api/asset-auth/operation-approvals/{p}",
+        "/api/asset-auth/teams",
+        "/api/asset-auth/teams/{p}",
+        # 2026-09-27 Phase 12：团队消息身份绑定、历史读取与发送已从真实前端调用。
+        "/api/asset-auth/identity-binding",
+        "/api/asset-auth/teams/{p}/messages",
+        "/api/asset-auth/teams/{p}/members",
+        "/api/asset-auth/teams/{p}/members/{p}",
+        "/api/asset-auth/tokens",
+        "/api/asset-auth/users",
+        "/api/asset-auth/users/{p}",
+        # 2026-09-25 Phase 11 B2：平台、项目兼容路径与 AI/CLI 接口。
+        "/api/ai/upload",
+        # 2026-10-07 工作流批次对账：已存在的 Agent 任务前端控制器（agent-tasks.js）
+        # 引用的三个端点由 gw/api/routes_ai.py 真实实现，补登记以避免基线漂移告警。
+        "/api/agent/config",
+        "/api/agent/projects/{p}/artifacts",
+        "/api/agent/runs",
+        "/api/agent/runs/{p}",
+        "/api/app-info",
+        "/api/chat",
+        # 2026-09-27：页面仅读取真实服务端配置，不在加载时发起计费生成。
+        "/api/chat/config",
+        "/api/chat/agent",
+        "/api/codex/help",
+        "/api/codex/status",
+        "/api/gemini-cli/help",
+        "/api/gemini-cli/status",
+        "/api/jimeng/credit",
+        "/api/jimeng/help",
+        "/api/jimeng/login/start",
+        "/api/jimeng/login/status",
+        "/api/jimeng/logout",
+        "/api/jimeng/status",
+        "/api/projects",
+        "/api/projects/{p}",
+        # 2026-09-25 Phase 11 B3：素材注册表 52 条路径；未准入副作用保持显式 503。
+        "/api/asset-registry",
+        "/api/asset-registry/assets",
+        "/api/asset-registry/assets/archive",
+        "/api/asset-registry/assets/export-pdf",
+        "/api/asset-registry/assets/import",
+        "/api/asset-registry/assets/relations",
+        "/api/asset-registry/assets/resolve-reference",
+        "/api/asset-registry/assets/tags",
+        "/api/asset-registry/assets/{p}",
+        "/api/asset-registry/assets/{p}/image-versions",
+        "/api/asset-registry/assets/{p}/image-versions/{p}",
+        "/api/asset-registry/assets/{p}/image-versions/{p}/media",
+        "/api/asset-registry/assets/{p}/media",
+        "/api/asset-registry/assets/{p}/open-local",
+        "/api/asset-registry/assets/{p}/relations/{p}",
+        "/api/asset-registry/assets/{p}/tags/{p}",
+        "/api/asset-registry/assets/{p}/video/clip",
+        "/api/asset-registry/assets/{p}/video/frame",
+        "/api/asset-registry/assets/{p}/video/storyboard",
+        "/api/asset-registry/facets",
+        "/api/asset-registry/folders",
+        "/api/asset-registry/governance/asset-trash/{p}/restore",
+        "/api/asset-registry/governance/assets/{p}/restore",
+        "/api/asset-registry/governance/audit-outbox/reconcile",
+        "/api/asset-registry/governance/canvases/purge-expired",
+        "/api/asset-registry/governance/canvases/{p}/restore",
+        "/api/asset-registry/governance/cascade-preview",
+        "/api/asset-registry/governance/operations",
+        "/api/asset-registry/governance/overview",
+        "/api/asset-registry/index/sync",
+        "/api/asset-registry/preferences/team",
+        "/api/asset-registry/presets",
+        "/api/asset-registry/presets/{p}",
+        "/api/asset-registry/project-directory-templates",
+        "/api/asset-registry/project-directory-templates/{p}",
+        "/api/asset-registry/project-directory-templates/{p}/archive",
+        "/api/asset-registry/project-directory-templates/{p}/default",
+        "/api/asset-registry/project-entities/{p}",
+        "/api/asset-registry/project-gates/{p}",
+        "/api/asset-registry/project-recycle/{p}/restore",
+        "/api/asset-registry/projects/{p}/assets",
+        "/api/asset-registry/projects/{p}/entities",
+        "/api/asset-registry/recycle-bin",
+        "/api/asset-registry/recycle-bin/{p}/restore",
+        "/api/asset-registry/reindex",
+        "/api/asset-registry/remote-assets",
+        "/api/asset-registry/remote-assets/{p}",
+        "/api/asset-registry/settings/features/{p}",
+        "/api/asset-registry/settings/index-automation",
+        "/api/asset-registry/status",
+        "/api/asset-registry/workspace-jobs/{p}",
+        "/api/asset-registry/workspace-jobs/{p}/{p}",
+        "/api/asset-classification-prompt",
+        "/api/asset-classification/background",
+        "/api/asset-classification/jobs/{p}",
+        "/api/asset-content",
+        "/api/asset-content/pdf",
+        "/api/asset-content/versions",
+        "/api/asset-content/versions/{p}",
+        "/api/asset-content/versions/{p}/restore",
+        "/api/asset-file-info",
+        "/api/asset-file-reveal",
+        "/api/asset-library/categories/{p}",
+        "/api/asset-library/items/batch",
+        "/api/asset-library/items/classify",
+        "/api/asset-library/items/delete",
+        "/api/asset-library/items/move",
+        "/api/asset-library/items/{p}",
+        "/api/asset-library/items/{p}/avatar-status",
+        "/api/asset-library/items/{p}/register-avatar",
+        "/api/asset-library/libraries/{p}",
+        "/api/asset-library/workflows/upload",
+        "/api/local-assets",
+        "/api/local-assets/caption",
+        "/api/local-assets/classify",
+        "/api/local-assets/delete",
+        "/api/local-assets/folders",
+        "/api/local-assets/items",
+        "/api/local-assets/move",
+        "/api/local-assets/upload",
+        "/api/storage-files",
+        "/api/storage-files/delete",
+        # 2026-09-25 Phase 11 B5：媒体与缩略图路径统一注册为失败关闭。
+        "/api/asset-proxy/settings",
+        "/api/asset-thumbnails/delete",
+        "/api/asset-thumbnails/delete-storyboards",
+        "/api/asset-thumbnails/generate",
+        "/api/asset-thumbnails/generate-background",
+        "/api/asset-thumbnails/jobs/{p}",
+        "/api/asset-thumbnails/settings",
+        "/api/audio-waveform-data",
+        "/api/download-output",
+        "/api/media-preview",
+        "/api/media-transcode",
+        "/api/online-image",
+        # 2026-09-25 Phase 11 B7：剧集流水线路径统一失败关闭。
+        "/api/episode-pipelines",
+        "/api/episode-pipelines/{p}",
+        # 2026-10-19 C12-T3/T4：时间线清单由后端持久化并由分镜页同步消费。
+        "/api/episode-pipelines/{p}/timeline-manifest",
+        "/api/episode-pipelines/{p}/stages/{p}/cancel",
+        "/api/episode-pipelines/{p}/stages/{p}/complete",
+        "/api/episode-pipelines/{p}/stages/{p}/start",
+        # 2026-09-25 Phase 11 B8：提示词条目能力统一失败关闭。
+        "/api/prompt-libraries/items",
+        "/api/prompt-libraries/items/delete",
+        "/api/prompt-libraries/items/{p}",
+        # 2026-09-25 Phase 11 B9：公开分享路径统一失败关闭。
+        "/api/public/shares/{p}",
+        "/api/public/shares/{p}/access",
+        "/api/public/shares/{p}/approvals",
+        "/api/public/shares/{p}/comments",
+        # 分享票据鉴权媒体已真实接线；仅追加精确路径，不放宽差集断言。
+        "/api/public/shares/{p}/assets/{p}/media",
+        # 2026-09-25 Phase 11 B6：资产审查与交付路径统一失败关闭。
+        "/api/asset-reviews/comments/{p}",
+        "/api/asset-reviews/deliveries/{p}/export",
+        "/api/asset-reviews/sessions",
+        "/api/asset-reviews/sessions/{p}",
+        "/api/asset-reviews/sessions/{p}/approval",
+        "/api/asset-reviews/sessions/{p}/comments",
+        "/api/asset-reviews/sessions/{p}/delivery",
+        "/api/asset-reviews/shares",
+    ]
+)
 
 #: 前端引用但后端**未实现**的端点（归一化路径）—— 本守卫的核心防漂移清单
-KNOWN_UNIMPLEMENTED = frozenset([
-    # 2026-09-21 第二轮更正：helper 拼接类调用（如 `${canvasUrl(id)}/meta`）入集。
-    # 旧扫描器只认以 /api 起头的字面量，这 8 条真实可达路径被结构性漏扫。
-])
+KNOWN_UNIMPLEMENTED = frozenset(
+    [
+        # 2026-09-21 第二轮更正：helper 拼接类调用（如 `${canvasUrl(id)}/meta`）入集。
+        # 旧扫描器只认以 /api 起头的字面量，这 8 条真实可达路径被结构性漏扫。
+    ]
+)
 
 #: 契约声明但**前端无调用方**的端点（仅后端能力，前端尚未接入；见 P8-A1 报告 §2.2 说明）
-KNOWN_CONTRACT_WITHOUT_FRONTEND_PATH_LITERAL = frozenset([
-    # 视频产物经 content_url 动态返回；静态路径扫描看不到完整字面量，但页面确有播放器/下载调用。
-    "GET /api/video-tasks/{p}/content",
-    "POST /api/canvases/{p}/workflow/import",
-    "POST /api/canvases/{p}/workflow/export",
-    "POST /api/canvases/{p}/tasks",
-    # 2026-09-26 Phase 12 A4：probe-async 返回 poll_hint，但前端当前只读一次性响应，
-    # 尚未轮询该任务端点；后端能力已实现，前端侧端到端覆盖待补。
-    "GET /api/providers/probe-async/jobs/{p}",
-])
+KNOWN_CONTRACT_WITHOUT_FRONTEND_PATH_LITERAL = frozenset(
+    [
+        # 视频产物经 content_url 动态返回；静态路径扫描看不到完整字面量，但页面确有播放器/下载调用。
+        "GET /api/video-tasks/{p}/content",
+        "POST /api/canvases/{p}/workflow/import",
+        "POST /api/canvases/{p}/workflow/export",
+        "POST /api/canvases/{p}/tasks",
+        # 2026-09-26 Phase 12 A4：probe-async 返回 poll_hint，但前端当前只读一次性响应，
+        # 尚未轮询该任务端点；后端能力已实现，前端侧端到端覆盖待补。
+        "GET /api/providers/probe-async/jobs/{p}",
+    ]
+)
 
 #: 后端已实现路由的归一化路径（用于断言后端集合未被意外缩小）
-KNOWN_BACKEND_PATHS = frozenset([
-    '/api/god_workflow/item/{p}/resolve-definitions',
-    '/api/chat/config',
-    '/api/asset-library',
-    '/api/asset-library/categories',
-    '/api/asset-library/libraries',
-    '/',
-    '/api/asset-auth/callback',
-    '/api/asset-auth/login',
-    '/api/asset-auth/logout',
-    '/api/asset-auth/status',
-    '/api/asset-registry/governance/projects/{p}/restore',
-    '/api/asset-registry/projects',
-    '/api/asset-registry/projects/{p}',
-    '/api/asset-registry/projects/{p}/trash',
-    '/api/asset-registry/projects/{p}/trash/restore',
-    '/api/canvases',
-    '/api/canvases/{p}',
-    '/api/canvases/{p}/restore',
-    '/api/canvases/{p}/tasks',
-    '/api/canvases/{p}/workflow/export',
-    '/api/canvases/{p}/workflow/import',
-    '/api/jobs/{p}',
-    # 2026-09-22 Phase 10B：观测阶段新增 8 个 GET 路由。
-    '/api/observability',
-    '/api/observability/overview',
-    '/api/observability/series',
-    '/api/observability/events',
-    '/api/observability/tasks',
-    '/api/observability/health',
-    '/api/observability/sources',
-    '/api/observability/asset-volumes',
-    # 2026-09-22 Phase 10C：提示词库阶段新增 4 条路由（集合 GET/POST 与单对象 PATCH/DELETE）。
-    '/api/prompt-libraries',
-    '/api/prompt-libraries/categories',
-    '/api/prompt-libraries/categories/{p}',
-    '/api/prompt-libraries/{p}',
-    # 2026-09-22 Phase 10D：设置页阶段 8 条归一化路径。
-    '/api/storage-settings',
-    '/api/providers',
-    '/api/providers/fetch-models',
-    '/api/providers/probe-async',
-    '/api/providers/test-connection',
-    '/api/asset-registry/asset-structures',
-    '/api/asset-registry/asset-structures/{p}',
-    '/api/asset-registry/asset-structures/{p}/current',
-    # 2026-09-22 Phase 10E：画布闭环阶段新增后端路由（归一化后；/api/canvases/{p} 已存在）。
-    '/api/canvas-assets',
-    '/api/canvas-assets/download',
-    '/api/reference-canvases',
-    '/api/shared-folders',
-    '/api/shared-folders/import',
-    '/api/shared-folders/{p}',
-    '/api/shared-folders/{p}/tree',
-    '/api/video-tasks',
-    '/api/video-tasks/{p}',
-    '/api/video-tasks/{p}/cancel',
-    '/api/video-tasks/{p}/content',
-    '/api/video-exports',
-    '/api/video-project-access/{p}/claim',
-    '/api/video-projects/{p}/assets/authorize',
-    '/api/asset-registry/projects/{p}/gates',
-    '/api/canvases/trash',
-    '/api/canvases/assets',
-    '/api/canvases/{p}/meta',
-    '/api/canvases/{p}/touch',
-    '/api/canvases/{p}/purge',
-    '/healthz',
-    # 2026-09-25 Phase 11 B5：媒体与缩略图路径已注册，当前统一失败关闭。
-    '/api/asset-proxy/settings',
-    '/api/asset-thumbnails/delete',
-    '/api/asset-thumbnails/delete-storyboards',
-    '/api/asset-thumbnails/generate',
-    '/api/asset-thumbnails/generate-background',
-    '/api/asset-thumbnails/jobs/{p}',
-    '/api/asset-thumbnails/settings',
-    '/api/audio-waveform-data',
-    '/api/download-output',
-    '/api/media-preview',
-    '/api/media-transcode',
-    '/api/online-image',
-    # 2026-09-25 Phase 11 B3：后端已注册全部素材注册表归一化路径。
-    '/api/asset-registry',
-    '/api/asset-registry/assets',
-    '/api/asset-registry/assets/archive',
-    '/api/asset-registry/assets/export-pdf',
-    '/api/asset-registry/assets/import',
-    '/api/asset-registry/assets/relations',
-    '/api/asset-registry/assets/resolve-reference',
-    '/api/asset-registry/assets/tags',
-    '/api/asset-registry/assets/{p}',
-    '/api/asset-registry/assets/{p}/image-versions',
-    '/api/asset-registry/assets/{p}/image-versions/{p}',
-    '/api/asset-registry/assets/{p}/image-versions/{p}/media',
-    '/api/asset-registry/assets/{p}/media',
-    '/api/asset-registry/assets/{p}/open-local',
-    '/api/asset-registry/assets/{p}/relations/{p}',
-    '/api/asset-registry/assets/{p}/tags/{p}',
-    '/api/asset-registry/assets/{p}/video/clip',
-    '/api/asset-registry/assets/{p}/video/frame',
-    '/api/asset-registry/assets/{p}/video/storyboard',
-    '/api/asset-registry/facets',
-    '/api/asset-registry/folders',
-    '/api/asset-registry/governance/asset-trash/{p}/restore',
-    '/api/asset-registry/governance/assets/{p}/restore',
-    '/api/asset-registry/governance/audit-outbox/reconcile',
-    '/api/asset-registry/governance/canvases/purge-expired',
-    '/api/asset-registry/governance/canvases/{p}/restore',
-    '/api/asset-registry/governance/cascade-preview',
-    '/api/asset-registry/governance/operations',
-    '/api/asset-registry/governance/overview',
-    '/api/asset-registry/index/sync',
-    '/api/asset-registry/preferences/team',
-    '/api/asset-registry/presets',
-    '/api/asset-registry/presets/{p}',
-    '/api/asset-registry/project-directory-templates',
-    '/api/asset-registry/project-directory-templates/{p}',
-    '/api/asset-registry/project-directory-templates/{p}/archive',
-    '/api/asset-registry/project-directory-templates/{p}/default',
-    '/api/asset-registry/project-entities/{p}',
-    '/api/asset-registry/project-gates/{p}',
-    '/api/asset-registry/project-recycle/{p}/restore',
-    '/api/asset-registry/projects/{p}/assets',
-    '/api/asset-registry/projects/{p}/entities',
-    '/api/asset-registry/recycle-bin',
-    '/api/asset-registry/recycle-bin/{p}/restore',
-    '/api/asset-registry/reindex',
-    '/api/asset-registry/remote-assets',
-    '/api/asset-registry/remote-assets/{p}',
-    '/api/asset-registry/settings/features/{p}',
-    '/api/asset-registry/settings/index-automation',
-    '/api/asset-registry/status',
-    '/api/asset-registry/workspace-jobs/{p}',
-    '/api/asset-registry/workspace-jobs/{p}/{p}',
-
-])
+KNOWN_BACKEND_PATHS = frozenset(
+    [
+        "/api/god_workflow/item/{p}/resolve-definitions",
+        "/api/chat/config",
+        "/api/asset-library",
+        "/api/asset-library/categories",
+        "/api/asset-library/libraries",
+        "/",
+        "/api/asset-auth/callback",
+        "/api/asset-auth/login",
+        "/api/asset-auth/logout",
+        "/api/asset-auth/status",
+        "/api/asset-registry/governance/projects/{p}/restore",
+        "/api/asset-registry/projects",
+        "/api/asset-registry/projects/{p}",
+        "/api/asset-registry/projects/{p}/trash",
+        "/api/asset-registry/projects/{p}/trash/restore",
+        "/api/canvases",
+        "/api/canvases/{p}",
+        "/api/canvases/{p}/restore",
+        "/api/canvases/{p}/tasks",
+        "/api/canvases/{p}/workflow/export",
+        "/api/canvases/{p}/workflow/import",
+        "/api/jobs/{p}",
+        # 2026-09-22 Phase 10B：观测阶段新增 8 个 GET 路由。
+        "/api/observability",
+        "/api/observability/overview",
+        "/api/observability/series",
+        "/api/observability/events",
+        "/api/observability/tasks",
+        "/api/observability/health",
+        "/api/observability/sources",
+        "/api/observability/asset-volumes",
+        # 2026-09-22 Phase 10C：提示词库阶段新增 4 条路由（集合 GET/POST 与单对象 PATCH/DELETE）。
+        "/api/prompt-libraries",
+        "/api/prompt-libraries/categories",
+        "/api/prompt-libraries/categories/{p}",
+        "/api/prompt-libraries/{p}",
+        # 2026-09-22 Phase 10D：设置页阶段 8 条归一化路径。
+        "/api/storage-settings",
+        "/api/providers",
+        "/api/providers/fetch-models",
+        "/api/providers/probe-async",
+        "/api/providers/test-connection",
+        "/api/asset-registry/asset-structures",
+        "/api/asset-registry/asset-structures/{p}",
+        "/api/asset-registry/asset-structures/{p}/current",
+        # 2026-09-22 Phase 10E：画布闭环阶段新增后端路由（归一化后；/api/canvases/{p} 已存在）。
+        "/api/canvas-assets",
+        "/api/canvas-assets/download",
+        "/api/reference-canvases",
+        "/api/shared-folders",
+        "/api/shared-folders/import",
+        "/api/shared-folders/{p}",
+        "/api/shared-folders/{p}/tree",
+        "/api/video-tasks",
+        "/api/video-tasks/{p}",
+        "/api/video-tasks/{p}/cancel",
+        "/api/video-tasks/{p}/content",
+        "/api/video-exports",
+        "/api/video-project-access/{p}/claim",
+        "/api/video-projects/{p}/assets/authorize",
+        "/api/asset-registry/projects/{p}/gates",
+        "/api/canvases/trash",
+        "/api/canvases/assets",
+        "/api/canvases/{p}/meta",
+        "/api/canvases/{p}/touch",
+        "/api/canvases/{p}/purge",
+        "/healthz",
+        # 2026-09-25 Phase 11 B5：媒体与缩略图路径已注册，当前统一失败关闭。
+        "/api/asset-proxy/settings",
+        "/api/asset-thumbnails/delete",
+        "/api/asset-thumbnails/delete-storyboards",
+        "/api/asset-thumbnails/generate",
+        "/api/asset-thumbnails/generate-background",
+        "/api/asset-thumbnails/jobs/{p}",
+        "/api/asset-thumbnails/settings",
+        "/api/audio-waveform-data",
+        "/api/download-output",
+        "/api/media-preview",
+        "/api/media-transcode",
+        "/api/online-image",
+        # 2026-09-25 Phase 11 B3：后端已注册全部素材注册表归一化路径。
+        "/api/asset-registry",
+        "/api/asset-registry/assets",
+        "/api/asset-registry/assets/archive",
+        "/api/asset-registry/assets/export-pdf",
+        "/api/asset-registry/assets/import",
+        "/api/asset-registry/assets/relations",
+        "/api/asset-registry/assets/resolve-reference",
+        "/api/asset-registry/assets/tags",
+        "/api/asset-registry/assets/{p}",
+        "/api/asset-registry/assets/{p}/image-versions",
+        "/api/asset-registry/assets/{p}/image-versions/{p}",
+        "/api/asset-registry/assets/{p}/image-versions/{p}/media",
+        "/api/asset-registry/assets/{p}/media",
+        "/api/asset-registry/assets/{p}/open-local",
+        "/api/asset-registry/assets/{p}/relations/{p}",
+        "/api/asset-registry/assets/{p}/tags/{p}",
+        "/api/asset-registry/assets/{p}/video/clip",
+        "/api/asset-registry/assets/{p}/video/frame",
+        "/api/asset-registry/assets/{p}/video/storyboard",
+        "/api/asset-registry/facets",
+        "/api/asset-registry/folders",
+        "/api/asset-registry/governance/asset-trash/{p}/restore",
+        "/api/asset-registry/governance/assets/{p}/restore",
+        "/api/asset-registry/governance/audit-outbox/reconcile",
+        "/api/asset-registry/governance/canvases/purge-expired",
+        "/api/asset-registry/governance/canvases/{p}/restore",
+        "/api/asset-registry/governance/cascade-preview",
+        "/api/asset-registry/governance/operations",
+        "/api/asset-registry/governance/overview",
+        "/api/asset-registry/index/sync",
+        "/api/asset-registry/preferences/team",
+        "/api/asset-registry/presets",
+        "/api/asset-registry/presets/{p}",
+        "/api/asset-registry/project-directory-templates",
+        "/api/asset-registry/project-directory-templates/{p}",
+        "/api/asset-registry/project-directory-templates/{p}/archive",
+        "/api/asset-registry/project-directory-templates/{p}/default",
+        "/api/asset-registry/project-entities/{p}",
+        "/api/asset-registry/project-gates/{p}",
+        "/api/asset-registry/project-recycle/{p}/restore",
+        "/api/asset-registry/projects/{p}/assets",
+        "/api/asset-registry/projects/{p}/entities",
+        "/api/asset-registry/recycle-bin",
+        "/api/asset-registry/recycle-bin/{p}/restore",
+        "/api/asset-registry/reindex",
+        "/api/asset-registry/remote-assets",
+        "/api/asset-registry/remote-assets/{p}",
+        "/api/asset-registry/settings/features/{p}",
+        "/api/asset-registry/settings/index-automation",
+        "/api/asset-registry/status",
+        "/api/asset-registry/workspace-jobs/{p}",
+        "/api/asset-registry/workspace-jobs/{p}/{p}",
+    ]
+)
 
 
 # ---------------------------------------------------------------------------
@@ -497,8 +502,19 @@ KNOWN_BACKEND_PATHS = frozenset([
 # ---------------------------------------------------------------------------
 
 _REGEX_PRECEDING_KEYWORDS = (
-    "return", "typeof", "instanceof", "in", "of", "new", "delete", "void",
-    "case", "do", "else", "yield", "await",
+    "return",
+    "typeof",
+    "instanceof",
+    "in",
+    "of",
+    "new",
+    "delete",
+    "void",
+    "case",
+    "do",
+    "else",
+    "yield",
+    "await",
 )
 
 
@@ -826,7 +842,7 @@ def _frontend_api_paths() -> set:
             base = helpers.get(m.group(1))
             if not base:
                 continue
-            normalized = _normalize(base + literal[m.end():])
+            normalized = _normalize(base + literal[m.end() :])
             if re.search(r"[`'\"\\]", normalized):
                 continue
             found.add(normalized)
@@ -838,7 +854,9 @@ def _backend_routes() -> dict:
     assert all(path.is_dir() for path in API_DIRS), f"缺少后端 API 目录: {API_DIRS}"
     assert VIDEO_TASKS_DIR.is_dir(), f"缺少视频任务路由目录: {VIDEO_TASKS_DIR}"
     routes = {}
-    route_files = [path for api_dir in API_DIRS for path in sorted(api_dir.glob("*.py"))]
+    route_files = [
+        path for api_dir in API_DIRS for path in sorted(api_dir.glob("*.py"))
+    ]
     route_files += sorted(VIDEO_TASKS_DIR.glob("*.py"))
     for path in route_files:
         text = path.read_text(encoding="utf-8")
@@ -851,13 +869,17 @@ def _backend_routes() -> dict:
             # to this static guard without duplicating handler declarations.
             prefixes["router"] = "/api/god_workflow"
             prefixes["router_legacy"] = "/api/god_workflow"
-        for m in re.finditer(r'@(\w+)\.(get|post|patch|put|delete)\(\s*\n?\s*"([^"]*)"', text):
+        for m in re.finditer(
+            r'@(\w+)\.(get|post|patch|put|delete)\(\s*\n?\s*"([^"]*)"', text
+        ):
             var, method, sub = m.group(1), m.group(2).upper(), m.group(3)
             full = (prefixes.get(var, "") + sub) or "/"
             routes.setdefault(_normalize(full), []).append(
                 (method, path.name, text[: m.start()].count("\n") + 1)
             )
-        for m in re.finditer(r'@app\.(get|post|patch|put|delete)\(\s*\n?\s*"([^"]*)"', text):
+        for m in re.finditer(
+            r'@app\.(get|post|patch|put|delete)\(\s*\n?\s*"([^"]*)"', text
+        ):
             routes.setdefault(_normalize(m.group(2)), []).append(
                 (m.group(1).upper(), path.name, text[: m.start()].count("\n") + 1)
             )
@@ -870,7 +892,7 @@ def _contract_pairs():
     for path in CONTRACTS:
         assert path.is_file(), f"缺少契约文件: {path}"
         text = path.read_text(encoding="utf-8")
-        for method, route in re.findall(r'method:\s*(\w+)\s*\n\s*path:\s*(\S+)', text):
+        for method, route in re.findall(r"method:\s*(\w+)\s*\n\s*path:\s*(\S+)", text):
             pairs.append((method.upper(), _normalize(route), path.name))
     return pairs
 
@@ -878,6 +900,7 @@ def _contract_pairs():
 # ---------------------------------------------------------------------------
 # 用例
 # ---------------------------------------------------------------------------
+
 
 def test_frontend_referenced_api_paths_match_frozen_baseline():
     """防漂移：前端引用的 /api 路径全集必须与冻结基线一致。
@@ -889,12 +912,14 @@ def test_frontend_referenced_api_paths_match_frozen_baseline():
     missing = sorted(expected - actual)
     added = sorted(actual - expected)
     assert not missing, (
-        "前端 /api 引用**减少**了以下路径（基线中登记但当前扫描不到）：\n  " + "\n  ".join(missing) +
-        "\n若确属删除/重命名，请同步更新本守卫与 P8-A1 报告。"
+        "前端 /api 引用**减少**了以下路径（基线中登记但当前扫描不到）：\n  "
+        + "\n  ".join(missing)
+        + "\n若确属删除/重命名，请同步更新本守卫与 P8-A1 报告。"
     )
     assert not added, (
-        "前端**新增**了以下 /api 引用（未登记在基线中）：\n  " + "\n  ".join(added) +
-        "\n请确认是否为笔误或新功能，并同步更新本守卫与 P8-A1 报告。"
+        "前端**新增**了以下 /api 引用（未登记在基线中）：\n  "
+        + "\n  ".join(added)
+        + "\n请确认是否为笔误或新功能，并同步更新本守卫与 P8-A1 报告。"
     )
 
 
@@ -912,12 +937,14 @@ def test_unimplemented_api_paths_match_frozen_baseline():
     new_gaps = sorted(actual_unimplemented - expected)
     resolved = sorted(expected - actual_unimplemented)
     assert not new_gaps, (
-        "发现**新增**的「前端调用但后端未实现」端点：\n  " + "\n  ".join(new_gaps) +
-        "\n按洁净室口径，未在冻结契约内的端点不得直接实现；请先补契约或显式登记。"
+        "发现**新增**的「前端调用但后端未实现」端点：\n  "
+        + "\n  ".join(new_gaps)
+        + "\n按洁净室口径，未在冻结契约内的端点不得直接实现；请先补契约或显式登记。"
     )
     assert not resolved, (
-        "以下端点**已不再是缺口**（可能已被实现或前端引用已移除）：\n  " + "\n  ".join(resolved) +
-        "\n这是期望的改进，请更新 KNOWN_UNIMPLEMENTED / KNOWN_IMPLEMENTED 基线并补契约。"
+        "以下端点**已不再是缺口**（可能已被实现或前端引用已移除）：\n  "
+        + "\n  ".join(resolved)
+        + "\n这是期望的改进，请更新 KNOWN_UNIMPLEMENTED / KNOWN_IMPLEMENTED 基线并补契约。"
     )
 
 
@@ -941,8 +968,9 @@ def test_backend_route_set_not_narrowed():
     expected = set(KNOWN_BACKEND_PATHS)
     removed = sorted(expected - actual)
     assert not removed, (
-        "后端路由被移除或重命名：\n  " + "\n  ".join(removed) +
-        "\n如属有意变更，请同步更新契约与本守卫基线。"
+        "后端路由被移除或重命名：\n  "
+        + "\n  ".join(removed)
+        + "\n如属有意变更，请同步更新契约与本守卫基线。"
     )
 
 
@@ -976,10 +1004,12 @@ def test_contract_endpoints_without_frontend_path_literal_match_baseline():
     new_dead = sorted(set(actual) - expected)
     resolved = sorted(expected - set(actual))
     assert not new_dead, (
-        "以下契约端点**新出现**「无完整前端路径字面量」状态：\n  " + "\n  ".join(new_dead) +
-        "\n请确认是前端接入被移除，还是契约新增了未被前端使用的端点。"
+        "以下契约端点**新出现**「无完整前端路径字面量」状态：\n  "
+        + "\n  ".join(new_dead)
+        + "\n请确认是前端接入被移除，还是契约新增了未被前端使用的端点。"
     )
     assert not resolved, (
-        "以下契约端点**新增了完整前端路径字面量**：\n  " + "\n  ".join(resolved) +
-        "\n这是期望的改进，请更新 KNOWN_CONTRACT_WITHOUT_FRONTEND_CALLER 基线。"
+        "以下契约端点**新增了完整前端路径字面量**：\n  "
+        + "\n  ".join(resolved)
+        + "\n这是期望的改进，请更新 KNOWN_CONTRACT_WITHOUT_FRONTEND_CALLER 基线。"
     )

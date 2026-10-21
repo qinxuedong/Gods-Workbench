@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """C8-T5：画布与统一资产的回收、恢复和引用保留契约。"""
 
 from __future__ import annotations
@@ -82,7 +81,9 @@ def test_c8_t5_recycle_restore_keeps_ids_sources_and_references():
 
 def test_c8_t5_repeated_restore_is_explicit_and_does_not_duplicate():
     closure, registry, canvas_id, asset_id = _fixture_services()
-    recycled = closure.recycle_with_references(canvas_id, [asset_id], expected_version=2)
+    recycled = closure.recycle_with_references(
+        canvas_id, [asset_id], expected_version=2
+    )
     closure.restore_recycled(recycled["recycle_entry_id"], expected_version=3)
 
     with pytest.raises(CleanroomException) as failure:
@@ -137,7 +138,9 @@ def test_c8_t5_asset_recycle_uses_cas_and_unknown_entry_is_not_success():
 
 def test_c8_t5_restore_conflict_keeps_canvas_in_trash():
     closure, registry, canvas_id, asset_id = _fixture_services()
-    recycled = closure.recycle_with_references(canvas_id, [asset_id], expected_version=2)
+    recycled = closure.recycle_with_references(
+        canvas_id, [asset_id], expected_version=2
+    )
     registry.register_asset(asset_id, source_ref={"job_id": "conflicting-source"})
 
     with pytest.raises(CleanroomException) as failure:
@@ -146,4 +149,6 @@ def test_c8_t5_restore_conflict_keeps_canvas_in_trash():
     assert failure.value.status_code == 409
     assert failure.value.code == "UNIFIED_RECYCLE_PARTIAL_FAILURE"
     assert closure._canvas_service.get_canvas_meta(canvas_id)["deleted_at"] is not None
-    assert registry.get_asset(asset_id)["source_ref"] == {"job_id": "conflicting-source"}
+    assert registry.get_asset(asset_id)["source_ref"] == {
+        "job_id": "conflicting-source"
+    }

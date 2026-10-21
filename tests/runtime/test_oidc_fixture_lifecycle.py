@@ -15,8 +15,15 @@ from types import SimpleNamespace
 
 import pytest
 
-FIXTURE_PATH = Path(__file__).resolve().parents[1] / "contracts" / "auth" / "test_phase9g_real_op_interop.py"
-_SPEC = importlib.util.spec_from_file_location("phase9g_real_op_fixture_under_test", FIXTURE_PATH)
+FIXTURE_PATH = (
+    Path(__file__).resolve().parents[1]
+    / "contracts"
+    / "auth"
+    / "test_phase9g_real_op_interop.py"
+)
+_SPEC = importlib.util.spec_from_file_location(
+    "phase9g_real_op_fixture_under_test", FIXTURE_PATH
+)
 assert _SPEC is not None and _SPEC.loader is not None
 _fixture = importlib.util.module_from_spec(_SPEC)
 _SPEC.loader.exec_module(_fixture)
@@ -116,7 +123,9 @@ def _capture_state(max_bytes=None):
 
 
 def _gw_environment():
-    return {key: value for key, value in os.environ.items() if key.upper().startswith("GW_")}
+    return {
+        key: value for key, value in os.environ.items() if key.upper().startswith("GW_")
+    }
 
 
 def _restore_gw_environment(snapshot):
@@ -130,10 +139,14 @@ def test_node_without_ready_times_out_and_its_pipe_reader_is_joined(tmp_path):
     process = _FakeProcess(stdout=_BlockingStdout())
     stdout_path = tmp_path / "stdout.spool"
     capture = _capture_state()
-    _fixture._start_node_capture(process.stdout, stdout_path, capture, "test-node-stdout")
+    _fixture._start_node_capture(
+        process.stdout, stdout_path, capture, "test-node-stdout"
+    )
 
     with pytest.raises(TimeoutError, match="未输出 ready"):
-        _fixture._read_node_startup_line(process, stdout_path, capture, timeout_seconds=0.02)
+        _fixture._read_node_startup_line(
+            process, stdout_path, capture, timeout_seconds=0.02
+        )
 
     cleanup_state = {"unsafe_cleanup": []}
     _fixture._stop_node_resources_or_record(process, [capture], cleanup_state)
@@ -150,7 +163,9 @@ def test_live_reader_pipe_is_not_closed_from_another_thread(tmp_path):
     process = _FakeProcess(stdout=stream)
     stdout_path = tmp_path / "stdout.spool"
     capture = _capture_state()
-    _fixture._start_node_capture(stream, stdout_path, capture, "test-sticky-node-stdout")
+    _fixture._start_node_capture(
+        stream, stdout_path, capture, "test-sticky-node-stdout"
+    )
     assert stream.entered.wait(timeout=1)
     cleanup_state = {"unsafe_cleanup": []}
 
@@ -177,11 +192,15 @@ def test_node_early_exit_is_reported_and_reaped(tmp_path):
     process = _FakeProcess(stdout=io.BytesIO(), returncode=17)
     stdout_path = tmp_path / "stdout.spool"
     capture = _capture_state()
-    _fixture._start_node_capture(process.stdout, stdout_path, capture, "test-node-stdout")
+    _fixture._start_node_capture(
+        process.stdout, stdout_path, capture, "test-node-stdout"
+    )
     assert capture["finished"].wait(timeout=1)
 
     with pytest.raises(RuntimeError, match="退出码 17"):
-        _fixture._read_node_startup_line(process, stdout_path, capture, timeout_seconds=0.2)
+        _fixture._read_node_startup_line(
+            process, stdout_path, capture, timeout_seconds=0.2
+        )
 
     _fixture._stop_node_resources_or_record(process, [capture], {"unsafe_cleanup": []})
     assert process.waited is True
@@ -192,11 +211,15 @@ def test_node_stdout_spool_is_byte_bounded(tmp_path):
     process = _FakeProcess(stdout=io.BytesIO(b"ready-too-large"))
     stdout_path = tmp_path / "stdout.spool"
     capture = _capture_state(max_bytes=4)
-    _fixture._start_node_capture(process.stdout, stdout_path, capture, "test-node-stdout")
+    _fixture._start_node_capture(
+        process.stdout, stdout_path, capture, "test-node-stdout"
+    )
     assert capture["finished"].wait(timeout=1)
 
     with pytest.raises(RuntimeError, match="超过 4 字节上限"):
-        _fixture._read_node_startup_line(process, stdout_path, capture, timeout_seconds=0.2)
+        _fixture._read_node_startup_line(
+            process, stdout_path, capture, timeout_seconds=0.2
+        )
 
     assert stdout_path.stat().st_size <= 4
     _fixture._stop_node_resources_or_record(process, [capture], {"unsafe_cleanup": []})
@@ -210,7 +233,11 @@ def test_wrong_oidc_provider_version_is_rejected_before_popen(monkeypatch, tmp_p
     monkeypatch.setattr(_fixture.shutil, "which", lambda _name: sys.executable)
     monkeypatch.setattr(_fixture, "_provider_dir", lambda: provider_root)
     popen_calls = []
-    monkeypatch.setattr(_fixture.subprocess, "Popen", lambda *args, **kwargs: popen_calls.append((args, kwargs)))
+    monkeypatch.setattr(
+        _fixture.subprocess,
+        "Popen",
+        lambda *args, **kwargs: popen_calls.append((args, kwargs)),
+    )
 
     with pytest.raises(RuntimeError, match="期望 9.12.2，实际 9.12.1"):
         next(_fixture.real_op.__wrapped__(tmp_path))
@@ -296,7 +323,9 @@ def test_node_environment_is_an_explicit_minimum_allowlist(tmp_path):
         "OIDC_ISSUER": "https://real-idp.invalid",
     }
 
-    child_environment = _fixture._node_environment(tmp_path / "node_modules", source_environment)
+    child_environment = _fixture._node_environment(
+        tmp_path / "node_modules", source_environment
+    )
 
     assert child_environment == {
         "PATH": source_environment["PATH"],
@@ -306,7 +335,9 @@ def test_node_environment_is_an_explicit_minimum_allowlist(tmp_path):
     }
 
 
-def test_runtime_data_is_isolated_before_application_import_and_restored(monkeypatch, tmp_path):
+def test_runtime_data_is_isolated_before_application_import_and_restored(
+    monkeypatch, tmp_path
+):
     monkeypatch.delenv("GW_RUNTIME_MODE", raising=False)
     issuer = "http://127.0.0.1:43121"
     redirect_uri = "http://127.0.0.1:43122/api/asset-auth/callback"
@@ -338,7 +369,11 @@ def test_runtime_data_is_isolated_before_application_import_and_restored(monkeyp
 
     monkeypatch.setattr(_fixture, "_load_config_module", load_config)
     monkeypatch.setattr(_fixture, "_load_create_app", load_app)
-    cleanup_state = {"unsafe_cleanup": [], "original_environment": None, "gw_config": None}
+    cleanup_state = {
+        "unsafe_cleanup": [],
+        "original_environment": None,
+        "gw_config": None,
+    }
     try:
         create_app = _fixture._configure_application_environment(
             tmp_path, issuer, redirect_uri, cleanup_state
@@ -369,11 +404,18 @@ def test_application_import_failure_restores_environment(monkeypatch, tmp_path):
         raise ImportError("synthetic app import failure")
 
     monkeypatch.setattr(_fixture, "_load_create_app", fail_app_import)
-    cleanup_state = {"unsafe_cleanup": [], "original_environment": None, "gw_config": None}
+    cleanup_state = {
+        "unsafe_cleanup": [],
+        "original_environment": None,
+        "gw_config": None,
+    }
     try:
         with pytest.raises(ImportError, match="synthetic app import failure"):
             _fixture._configure_application_environment(
-                tmp_path, "http://127.0.0.1:43001", "http://127.0.0.1:43002/callback", cleanup_state
+                tmp_path,
+                "http://127.0.0.1:43001",
+                "http://127.0.0.1:43002/callback",
+                cleanup_state,
             )
     finally:
         _fixture._finish_application_environment(cleanup_state)
@@ -398,10 +440,17 @@ def test_app_factory_failure_still_restores_environment(monkeypatch, tmp_path):
 
     monkeypatch.setattr(_fixture, "_load_config_module", lambda: config)
     monkeypatch.setattr(_fixture, "_load_create_app", lambda: failing_create_app)
-    cleanup_state = {"unsafe_cleanup": [], "original_environment": None, "gw_config": None}
+    cleanup_state = {
+        "unsafe_cleanup": [],
+        "original_environment": None,
+        "gw_config": None,
+    }
     try:
         create_app = _fixture._configure_application_environment(
-            tmp_path, "http://127.0.0.1:43003", "http://127.0.0.1:43004/callback", cleanup_state
+            tmp_path,
+            "http://127.0.0.1:43003",
+            "http://127.0.0.1:43004/callback",
+            cleanup_state,
         )
         with pytest.raises(RuntimeError, match="synthetic app startup failure"):
             create_app()
@@ -458,7 +507,9 @@ def test_app_thread_refusing_exit_fail_stops_before_environment_restore(monkeypa
         raise _HardStop(code)
 
     try:
-        _fixture._stop_app_thread(server, app_thread, cleanup_state, timeout_seconds=0.01)
+        _fixture._stop_app_thread(
+            server, app_thread, cleanup_state, timeout_seconds=0.01
+        )
         assert "应用线程在有限 join 后仍存活" in cleanup_state["unsafe_cleanup"]
         monkeypatch.setattr(_fixture.os, "_exit", hard_stop)
         with pytest.raises(_HardStop) as exc_info:
@@ -493,7 +544,9 @@ def test_normal_app_cleanup_sets_exit_and_joins_thread():
     server = FakeServer()
     app_thread = threading.Thread(target=stopped.wait, daemon=False)
     app_thread.start()
-    _fixture._stop_app_thread(server, app_thread, {"unsafe_cleanup": []}, timeout_seconds=0.2)
+    _fixture._stop_app_thread(
+        server, app_thread, {"unsafe_cleanup": []}, timeout_seconds=0.2
+    )
 
     assert server.should_exit is True
     assert not app_thread.is_alive()
@@ -605,7 +658,9 @@ def _prepare_fixture(monkeypatch, tmp_path, health_ok=True, app_failure=None):
     )
 
 
-def test_fixture_health_failure_cleans_node_and_app_and_restores_environment(monkeypatch, tmp_path):
+def test_fixture_health_failure_cleans_node_and_app_and_restores_environment(
+    monkeypatch, tmp_path
+):
     state = _prepare_fixture(monkeypatch, tmp_path, health_ok=False)
     monkeypatch.setenv("GW_SENTINEL_PROVIDER_SECRET", "restore-after-health-failure")
     monkeypatch.delenv("GW_RUNTIME_MODE", raising=False)

@@ -1,4 +1,5 @@
 """C10-T3 后台派生、索引失败与离线依赖降级契约。"""
+
 import time
 
 import pytest
@@ -51,7 +52,9 @@ def wait(client, job_id):
     pytest.fail("后台索引未在期限内终结")
 
 
-def test_index_job_status_has_truthful_next_action_for_pending_success_and_failure(index_runtime):
+def test_index_job_status_has_truthful_next_action_for_pending_success_and_failure(
+    index_runtime,
+):
     with TestClient(create_app()) as client:
         accepted = submit(client)
         assert accepted.status_code == 202, accepted.text
@@ -69,7 +72,9 @@ def test_index_job_status_has_truthful_next_action_for_pending_success_and_failu
         assert succeeded["result_unknown"] is False
 
         (index_runtime / "second.txt").write_text("第二个来源", encoding="utf-8")
-        failed_id = submit(client, {"max_files": 1}, key="c10-t3-failure").json()["job_id"]
+        failed_id = submit(client, {"max_files": 1}, key="c10-t3-failure").json()[
+            "job_id"
+        ]
         failed = wait(client, failed_id)
         assert failed["status"] == "failed"
         assert failed["error_code"] == "INDEX_SCAN_LIMIT"
@@ -119,10 +124,14 @@ def test_missing_media_dependency_is_fail_closed(index_runtime, monkeypatch):
         assert accepted.status_code == 202, accepted.text
         assert wait(client, accepted.json()["job_id"])["status"] == "succeeded"
         assets = client.get(f"{BASE}/assets", headers=AUTH).json()["assets"]
-        asset_id = next(item["asset_id"] for item in assets if item["name"] == video.name)
+        asset_id = next(
+            item["asset_id"] for item in assets if item["name"] == video.name
+        )
 
         monkeypatch.setattr(media_probe.shutil, "which", lambda name: None)
-        response = client.get(f"{BASE}/assets/{asset_id}/video/frame?at=0", headers=AUTH)
+        response = client.get(
+            f"{BASE}/assets/{asset_id}/video/frame?at=0", headers=AUTH
+        )
 
     assert response.status_code == 503
     detail = response.json()["detail"]

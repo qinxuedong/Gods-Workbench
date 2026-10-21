@@ -25,9 +25,8 @@ SRC_PATH = REPO_ROOT
 if str(SRC_PATH) not in sys.path:
     sys.path.insert(0, str(SRC_PATH))
 
-from gw.core.errors import UnauthorizedException  # noqa: E402
 from gw.core import oidc  # noqa: E402
-
+from gw.core.errors import UnauthorizedException  # noqa: E402
 
 # ---------------------------------------------------------------------------
 # 测试内运行时生成密钥与令牌工厂（不落盘）
@@ -118,7 +117,9 @@ def make_token(private_key, claims: dict, *, alg: str = "RS256", kid: str = KID)
 
 def make_unsigned_token(claims: dict) -> str:
     """构造 alg=none 的无签名令牌（用于算法混淆负向用例）。"""
-    header_segment = _b64url(json.dumps({"alg": "none", "typ": "JWT", "kid": KID}).encode("utf-8"))
+    header_segment = _b64url(
+        json.dumps({"alg": "none", "typ": "JWT", "kid": KID}).encode("utf-8")
+    )
     payload_segment = _b64url(json.dumps(claims, separators=(",", ":")).encode("utf-8"))
     return f"{header_segment}.{payload_segment}."
 
@@ -126,6 +127,7 @@ def make_unsigned_token(claims: dict) -> str:
 # ---------------------------------------------------------------------------
 # 正向用例
 # ---------------------------------------------------------------------------
+
 
 def test_valid_token_returns_identity(rsa_keypair, jwks):
     """正向：合法 RS256 令牌通过校验并返回身份。"""
@@ -141,14 +143,18 @@ def test_valid_token_with_expected_nonce(rsa_keypair, jwks):
     """正向：期望 nonce 与令牌声明一致时通过。"""
     private_key, _ = rsa_keypair
     token = make_token(private_key, default_claims())
-    identity = oidc.verify_jwt(token, make_config(jwks), now=NOW, expected_nonce="nonce-abc")
+    identity = oidc.verify_jwt(
+        token, make_config(jwks), now=NOW, expected_nonce="nonce-abc"
+    )
     assert identity.role == "editor"
 
 
 def test_group_mapping_takes_highest_authorized_role(rsa_keypair, jwks):
     """正向：多组命中时取最高已授权等级，不做隐式升级。"""
     private_key, _ = rsa_keypair
-    token = make_token(private_key, default_claims(groups=["gw-readonly", "gw-admin", "gw-editor"]))
+    token = make_token(
+        private_key, default_claims(groups=["gw-readonly", "gw-admin", "gw-editor"])
+    )
     identity = oidc.verify_jwt(token, make_config(jwks), now=NOW)
     assert identity.role == "admin"
 
@@ -167,8 +173,14 @@ def test_jwks_refresh_on_unknown_kid(rsa_keypair, jwks):
     token = make_token(private_key, default_claims(), kid="rotated-key")
     rotated = {
         "keys": [
-            {"kty": "RSA", "use": "sig", "alg": "RS256", "kid": "rotated-key",
-             "n": jwks["keys"][0]["n"], "e": jwks["keys"][0]["e"]}
+            {
+                "kty": "RSA",
+                "use": "sig",
+                "alg": "RS256",
+                "kid": "rotated-key",
+                "n": jwks["keys"][0]["n"],
+                "e": jwks["keys"][0]["e"],
+            }
         ]
     }
     calls = {"count": 0}
@@ -195,6 +207,7 @@ def test_time_claims_within_leeway_pass(rsa_keypair, jwks):
 # ---------------------------------------------------------------------------
 # 负向用例（> 6 条）
 # ---------------------------------------------------------------------------
+
 
 def test_expired_token_rejected(rsa_keypair, jwks):
     """负向：过期令牌必须拒绝。"""
@@ -270,9 +283,13 @@ def test_tampered_signature_rejected(rsa_keypair, jwks):
     # 不能把末尾两字符替换成固定字面量：Base64URL 末位存在同值别名
     # （例如 "xw" 与 "xx" 仅差填充位、解码后字节完全相同），
     # 那种写法约 1/256 概率篡改失效，会让本用例变成伪失败。
-    tampered_raw = bytearray(base64.urlsafe_b64decode(signature + "=" * (-len(signature) % 4)))
+    tampered_raw = bytearray(
+        base64.urlsafe_b64decode(signature + "=" * (-len(signature) % 4))
+    )
     tampered_raw[0] ^= 0x01
-    tampered_signature = base64.urlsafe_b64encode(bytes(tampered_raw)).rstrip(b"=").decode("ascii")
+    tampered_signature = (
+        base64.urlsafe_b64encode(bytes(tampered_raw)).rstrip(b"=").decode("ascii")
+    )
     assert tampered_signature != signature, "篡改失败：签名字节未发生变化"
     tampered = f"{header}.{payload}.{tampered_signature}"
     with pytest.raises(UnauthorizedException):
@@ -335,7 +352,11 @@ def test_pkce_pair_uses_s256():
     verifier, challenge = oidc.generate_pkce_pair()
     import hashlib
 
-    expected = base64.urlsafe_b64encode(hashlib.sha256(verifier.encode()).digest()).rstrip(b"=").decode()
+    expected = (
+        base64.urlsafe_b64encode(hashlib.sha256(verifier.encode()).digest())
+        .rstrip(b"=")
+        .decode()
+    )
     assert challenge == expected
 
 

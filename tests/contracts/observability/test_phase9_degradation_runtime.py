@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Phase 9 前端显式降级的**运行时行为**守卫（Node 真实执行 JS，非静态字符串断言）。
 
 背景：独立审核（`P9-B-INDEPENDENT-REVIEW.md`）指出 D2/D3——
@@ -120,7 +119,9 @@ def probe_results() -> dict:
             encoding="utf-8",
             timeout=120,
         )
-        assert completed.returncode == 0, f"Node 探针执行失败：{completed.stderr[:2000]}"
+        assert completed.returncode == 0, (
+            f"Node 探针执行失败：{completed.stderr[:2000]}"
+        )
         return json.loads(completed.stdout.strip().splitlines()[-1])
 
 
@@ -146,7 +147,9 @@ def test_501_is_not_integrated(probe_results):
 
 def test_503_is_service_unavailable_not_not_integrated(probe_results):
     """503 必须是可恢复的 SERVICE_UNAVAILABLE，不得报成「未纳入当前切片」。"""
-    assert probe_results["503_generic"] is False, "503 不应被 isNotIntegratedResponse 判定为未接入"
+    assert probe_results["503_generic"] is False, (
+        "503 不应被 isNotIntegratedResponse 判定为未接入"
+    )
     assert probe_results["t503_code"] == "SERVICE_UNAVAILABLE"
     assert probe_results["t503_isServiceUnavailable"] is True
     assert probe_results["t503_isNotIntegrated"] is False

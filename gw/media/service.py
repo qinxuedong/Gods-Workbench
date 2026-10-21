@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 # Copyright 2026 Gods-Workbench Authors
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -29,7 +28,9 @@ from gw.core.errors import CleanroomException
 DATA_STATUS_NOT_INTEGRATED = "not_integrated"
 
 
-def unavailable(endpoint: str, capability: str, code: str = "MEDIA_NOT_INTEGRATED") -> None:
+def unavailable(
+    endpoint: str, capability: str, code: str = "MEDIA_NOT_INTEGRATED"
+) -> None:
     """抛出带有受控边界元数据的媒体能力未接入错误。"""
     raise CleanroomException(
         status_code=503,
@@ -44,7 +45,9 @@ def unavailable(endpoint: str, capability: str, code: str = "MEDIA_NOT_INTEGRATE
     )
 
 
-def unavailable_detail(endpoint: str, capability: str, code: str = "MEDIA_NOT_INTEGRATED") -> dict[str, Any]:
+def unavailable_detail(
+    endpoint: str, capability: str, code: str = "MEDIA_NOT_INTEGRATED"
+) -> dict[str, Any]:
     """返回结构化说明，供非 HTTP 调用方记录边界；不生成媒体或任务数据。"""
     return {
         "endpoint": endpoint,

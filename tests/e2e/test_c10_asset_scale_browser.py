@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """C10-T5：资产体验的真实浏览器收口与阈值冻结提案。
 
 该文件只新增浏览器验收，不修改生产实现。真实浏览器用例必须显式设置
@@ -12,14 +11,12 @@ import base64
 import hashlib
 import json
 import os
-from pathlib import Path
 import subprocess
+from pathlib import Path
 from typing import Any
 
 import pytest
-
 from workflow_support import goto_ready, settings_browser
-
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 EVIDENCE_ROOT = REPO_ROOT / ".local" / "qa" / "C10-evidence"
@@ -61,7 +58,9 @@ def _git_sha() -> str:
     return result.stdout.strip() if result.returncode == 0 else "unknown"
 
 
-def _api_json(request: Any, base: str, method: str, path: str, payload: object | None = None):
+def _api_json(
+    request: Any, base: str, method: str, path: str, payload: object | None = None
+):
     headers = {"Origin": base}
     kwargs: dict[str, object] = {"headers": headers}
     if payload is not None:
@@ -79,7 +78,9 @@ def _response_summary(response: Any, body: object) -> dict[str, object]:
     return {"status": response.status, "body": body}
 
 
-def test_c10_real_browser_gate_requires_explicit_opt_in(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_c10_real_browser_gate_requires_explicit_opt_in(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     monkeypatch.delenv("GW_C10_REAL_E2E", raising=False)
     assert _real_run_enabled() is False
 
@@ -117,8 +118,12 @@ def test_c10_real_asset_browser_measurement(
     responses: list[dict[str, object]] = []
     screenshots: list[str] = []
     with settings_browser(monkeypatch, tmp_path) as (page, base, errors, _):
+
         def capture(response: Any) -> None:
-            if "/api/asset-registry/assets" not in response.url or response.request.method != "GET":
+            if (
+                "/api/asset-registry/assets" not in response.url
+                or response.request.method != "GET"
+            ):
                 return
             try:
                 body = response.json()
@@ -134,7 +139,9 @@ def test_c10_real_asset_browser_measurement(
                         "total": body.get("total"),
                         "has_more": body.get("has_more"),
                         "next_cursor_present": bool(body.get("next_cursor")),
-                        "item_count": len(body.get("items", [])) if isinstance(body.get("items"), list) else None,
+                        "item_count": len(body.get("items", []))
+                        if isinstance(body.get("items"), list)
+                        else None,
                     }
                 )
 
@@ -177,12 +184,16 @@ def test_c10_real_asset_browser_measurement(
         screenshots.append(initial_shot.name)
 
         scroll = frame.locator(".registry-assets-scroll")
-        scroll.evaluate("(node) => { node.scrollTop = node.scrollHeight; node.dispatchEvent(new Event('scroll', {bubbles: true})); }")
+        scroll.evaluate(
+            "(node) => { node.scrollTop = node.scrollHeight; node.dispatchEvent(new Event('scroll', {bubbles: true})); }"
+        )
         page.wait_for_timeout(1200)
         assert any(
             entry["status"] == 200 and entry["has_more"] is True for entry in responses
         ), responses
-        paged = next((entry for entry in reversed(responses) if entry["offset"] == 100), None)
+        paged = next(
+            (entry for entry in reversed(responses) if entry["offset"] == 100), None
+        )
         if paged is None:
             # The browser may prefetch with a cursor instead of exposing offset 100.
             assert any(entry["next_cursor_present"] for entry in responses), responses
@@ -192,7 +203,9 @@ def test_c10_real_asset_browser_measurement(
 
         search.fill("c10t5-asset-100")
         page.wait_for_timeout(500)
-        result_card = frame.locator('[data-registry-card]').filter(has_text="c10t5-asset-100")
+        result_card = frame.locator("[data-registry-card]").filter(
+            has_text="c10t5-asset-100"
+        )
         result_card.first.wait_for(state="visible", timeout=15000)
         assert result_card.count() >= 1
         search_shot = _evidence_dir() / "c10-t5-assets-search.png"
@@ -201,7 +214,9 @@ def test_c10_real_asset_browser_measurement(
 
         search.fill(preview_source.name)
         page.wait_for_timeout(500)
-        preview_card = frame.locator('[data-registry-card]').filter(has_text=preview_source.name)
+        preview_card = frame.locator("[data-registry-card]").filter(
+            has_text=preview_source.name
+        )
         preview_card.first.wait_for(state="visible", timeout=15000)
         preview_card.first.click()
         frame.locator(".registry-detail-panel").wait_for(state="visible", timeout=10000)
@@ -233,7 +248,9 @@ def test_c10_real_asset_browser_measurement(
             "seed": "c10-t5-browser-v001",
             "asset_count": len(items),
             "asset_ids_sha256": hashlib.sha256(
-                json.dumps(asset_ids, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+                json.dumps(asset_ids, ensure_ascii=False, separators=(",", ":")).encode(
+                    "utf-8"
+                )
             ).hexdigest(),
         },
         "observations": {

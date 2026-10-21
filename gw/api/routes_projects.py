@@ -18,9 +18,15 @@
 """
 
 from typing import Optional
+
 from fastapi import APIRouter, Body, Header, Query, status
 
-from gw.core.auth import require_authenticated, require_edit_access, require_governance_access
+from gw.core.auth import (
+    require_authenticated,
+    require_edit_access,
+    require_governance_access,
+)
+from gw.core.errors import CleanroomException
 from gw.projects_hub.models import (
     CasVersionRequest,
     ProjectCreateRequest,
@@ -35,7 +41,6 @@ from gw.projects_hub.service import (
     owner_key_for_identity,
     require_project_write_context,
 )
-from gw.core.errors import CleanroomException
 
 router = APIRouter(prefix="/api/asset-registry", tags=["projects-hub"])
 
@@ -47,16 +52,17 @@ router = APIRouter(prefix="/api/asset-registry", tags=["projects-hub"])
     status_code=status.HTTP_200_OK,
 )
 def list_projects(
-    archived: Optional[bool] = Query(False, description="是否包含归档项目"),
-    deleted: Optional[bool] = Query(None, description="是否包含回收站项目"),
-    authorization: Optional[str] = Header(None),
+    archived: bool | None = Query(False, description="是否包含归档项目"),
+    deleted: bool | None = Query(None, description="是否包含回收站项目"),
+    authorization: str | None = Header(None),
     x_user_role: str = Header("editor", alias="X-User-Role"),
 ):
     """根据查询条件返回项目集合；必须登录，只返回调用方可读的项目（C4-AC7）。"""
     # C4-AC7（秦先生裁定 2026-10-15）：必须登录，匿名 401；已认证按读授权过滤。
     owner_key, role = _viewer(require_authenticated(authorization, x_user_role))
     projects = default_projects_service.list_projects(
-        archived=archived, deleted=deleted, viewer_owner_key=owner_key, viewer_role=role)
+        archived=archived, deleted=deleted, viewer_owner_key=owner_key, viewer_role=role
+    )
     return ProjectListResponse(projects=projects)
 
 
@@ -68,18 +74,23 @@ def list_projects(
 )
 def create_project(
     payload: ProjectCreateRequest,
-    authorization: Optional[str] = Header(None),
-    x_user_role: str = Header("editor", alias="X-User-Role", description="用户角色权限"),
+    authorization: str | None = Header(None),
+    x_user_role: str = Header(
+        "editor", alias="X-User-Role", description="用户角色权限"
+    ),
 ):
     """创建新项目。"""
     context = require_edit_access(authorization, x_user_role)
     # 认证主体由服务端上下文解析为 owner_key；项目 owner 注册在项目快照提交前完成。
     from gw.video_tasks.service import get_video_service
+
     video_service = get_video_service()
     result = default_projects_service.create_project(
         payload,
         owner_key=owner_key_for_context(context),
-        before_publish=lambda project_id: video_service.register_project_owner(project_id, context),
+        before_publish=lambda project_id: video_service.register_project_owner(
+            project_id, context
+        ),
     )
     return ProjectMutationResponse(project=result)
 
@@ -93,8 +104,10 @@ def create_project(
 def update_project(
     project_id: str,
     payload: ProjectUpdateRequest,
-    authorization: Optional[str] = Header(None),
-    x_user_role: str = Header("editor", alias="X-User-Role", description="用户角色权限"),
+    authorization: str | None = Header(None),
+    x_user_role: str = Header(
+        "editor", alias="X-User-Role", description="用户角色权限"
+    ),
 ):
     """更新项目元信息，要求 expected_version 匹配。"""
     context = require_authenticated(authorization, x_user_role)
@@ -112,13 +125,17 @@ def update_project(
 def archive_project(
     project_id: str,
     payload: CasVersionRequest,
-    authorization: Optional[str] = Header(None),
-    x_user_role: str = Header("editor", alias="X-User-Role", description="用户角色权限"),
+    authorization: str | None = Header(None),
+    x_user_role: str = Header(
+        "editor", alias="X-User-Role", description="用户角色权限"
+    ),
 ):
     """将项目移入只读归档状态。"""
     context = require_authenticated(authorization, x_user_role)
     require_project_write_context(project_id, context)
-    result = default_projects_service.archive_project(project_id, payload.expected_version)
+    result = default_projects_service.archive_project(
+        project_id, payload.expected_version
+    )
     return ProjectMutationResponse(project=result)
 
 
@@ -131,12 +148,16 @@ def archive_project(
 def unarchive_project(
     project_id: str,
     payload: CasVersionRequest,
-    authorization: Optional[str] = Header(None),
-    x_user_role: str = Header("editor", alias="X-User-Role", description="用户角色权限"),
+    authorization: str | None = Header(None),
+    x_user_role: str = Header(
+        "editor", alias="X-User-Role", description="用户角色权限"
+    ),
 ):
     """将已归档项目恢复为活跃状态。"""
     require_governance_access(authorization, x_user_role)
-    result = default_projects_service.unarchive_project(project_id, payload.expected_version)
+    result = default_projects_service.unarchive_project(
+        project_id, payload.expected_version
+    )
     return ProjectMutationResponse(project=result)
 
 
@@ -149,12 +170,16 @@ def unarchive_project(
 def move_project_to_trash(
     project_id: str,
     payload: CasVersionRequest,
-    authorization: Optional[str] = Header(None),
-    x_user_role: str = Header("editor", alias="X-User-Role", description="用户角色权限"),
+    authorization: str | None = Header(None),
+    x_user_role: str = Header(
+        "editor", alias="X-User-Role", description="用户角色权限"
+    ),
 ):
     """仅允许已归档项目移入回收站。"""
     require_governance_access(authorization, x_user_role)
-    result = default_projects_service.move_to_trash(project_id, payload.expected_version)
+    result = default_projects_service.move_to_trash(
+        project_id, payload.expected_version
+    )
     return ProjectMutationResponse(project=result)
 
 
@@ -167,12 +192,16 @@ def move_project_to_trash(
 def restore_project_from_trash(
     project_id: str,
     payload: CasVersionRequest,
-    authorization: Optional[str] = Header(None),
-    x_user_role: str = Header("editor", alias="X-User-Role", description="用户角色权限"),
+    authorization: str | None = Header(None),
+    x_user_role: str = Header(
+        "editor", alias="X-User-Role", description="用户角色权限"
+    ),
 ):
     """从回收站恢复项目至可用集合。"""
     require_governance_access(authorization, x_user_role)
-    result = default_projects_service.restore_from_trash(project_id, payload.expected_version)
+    result = default_projects_service.restore_from_trash(
+        project_id, payload.expected_version
+    )
     return ProjectMutationResponse(project=result)
 
 
@@ -190,9 +219,9 @@ legacy_router = APIRouter(tags=["projects-compat"])
     status_code=status.HTTP_200_OK,
 )
 def list_projects_compat(
-    archived: Optional[bool] = Query(False, description="是否包含归档项目"),
-    deleted: Optional[bool] = Query(None, description="是否包含回收站项目"),
-    authorization: Optional[str] = Header(None),
+    archived: bool | None = Query(False, description="是否包含归档项目"),
+    deleted: bool | None = Query(None, description="是否包含回收站项目"),
+    authorization: str | None = Header(None),
     x_user_role: str = Header("editor", alias="X-User-Role"),
 ):
     """兼容旧工作台路径，复用项目中心同一内存真值。"""
@@ -200,7 +229,11 @@ def list_projects_compat(
     owner_key, role = _viewer(context)
     return ProjectListResponse(
         projects=default_projects_service.list_projects(
-            archived=archived, deleted=deleted, viewer_owner_key=owner_key, viewer_role=role)
+            archived=archived,
+            deleted=deleted,
+            viewer_owner_key=owner_key,
+            viewer_role=role,
+        )
     )
 
 
@@ -212,17 +245,20 @@ def list_projects_compat(
 )
 def get_project_compat(
     project_id: str,
-    authorization: Optional[str] = Header(None),
+    authorization: str | None = Header(None),
     x_user_role: str = Header("editor", alias="X-User-Role"),
 ):
     """读取项目详情；不存在返回标准 PROJECT_NOT_FOUND。"""
     context = require_authenticated(authorization, x_user_role)
-    return ProjectDetailResponse(project=default_projects_service.get_readable_project(project_id, context))
+    return ProjectDetailResponse(
+        project=default_projects_service.get_readable_project(project_id, context)
+    )
 
 
 # ---------------------------------------------------------------------------
 # C4-AC7/AC8 项目显式读授权
 # ---------------------------------------------------------------------------
+
 
 def _viewer(context):
     try:
@@ -233,7 +269,11 @@ def _viewer(context):
 
 
 def _target_key(context, payload) -> str:
-    if not isinstance(payload, dict) or not isinstance(payload.get("subject"), str) or not payload["subject"].strip():
+    if (
+        not isinstance(payload, dict)
+        or not isinstance(payload.get("subject"), str)
+        or not payload["subject"].strip()
+    ):
         raise CleanroomException(400, "INVALID_REQUEST", "subject 必须为非空字符串")
     domain = payload.get("identity_domain") or getattr(context, "identity_domain", None)
     if not isinstance(domain, str):
@@ -241,33 +281,75 @@ def _target_key(context, payload) -> str:
     return owner_key_for_identity(domain, payload["subject"])
 
 
-@router.get("/projects/{project_id}/read-grants", summary="项目读授权视图", status_code=status.HTTP_200_OK)
-def get_read_grants(project_id: str, authorization: Optional[str] = Header(None),
-                    x_user_role: str = Header("editor", alias="X-User-Role")):
+@router.get(
+    "/projects/{project_id}/read-grants",
+    summary="项目读授权视图",
+    status_code=status.HTTP_200_OK,
+)
+def get_read_grants(
+    project_id: str,
+    authorization: str | None = Header(None),
+    x_user_role: str = Header("editor", alias="X-User-Role"),
+):
     owner_key, role = _viewer(require_authenticated(authorization, x_user_role))
-    return default_projects_service.list_read_grants(project_id, owner_key=owner_key, role=role)
+    return default_projects_service.list_read_grants(
+        project_id, owner_key=owner_key, role=role
+    )
 
 
-@router.post("/projects/{project_id}/read-grants", summary="授予项目读权限", status_code=status.HTTP_200_OK)
-def grant_read(project_id: str, payload: dict = Body(default=None), authorization: Optional[str] = Header(None),
-               x_user_role: str = Header("editor", alias="X-User-Role")):
+@router.post(
+    "/projects/{project_id}/read-grants",
+    summary="授予项目读权限",
+    status_code=status.HTTP_200_OK,
+)
+def grant_read(
+    project_id: str,
+    payload: dict = Body(default=None),
+    authorization: str | None = Header(None),
+    x_user_role: str = Header("editor", alias="X-User-Role"),
+):
     context = require_authenticated(authorization, x_user_role)
     owner_key, role = _viewer(context)
-    return default_projects_service.grant_read(project_id, _target_key(context, payload),
-                                               actor_owner_key=owner_key, actor_role=role)
+    return default_projects_service.grant_read(
+        project_id,
+        _target_key(context, payload),
+        actor_owner_key=owner_key,
+        actor_role=role,
+    )
 
 
-@router.post("/projects/{project_id}/read-grants/revoke", summary="撤销项目读权限", status_code=status.HTTP_200_OK)
-def revoke_read(project_id: str, payload: dict = Body(default=None), authorization: Optional[str] = Header(None),
-                x_user_role: str = Header("editor", alias="X-User-Role")):
+@router.post(
+    "/projects/{project_id}/read-grants/revoke",
+    summary="撤销项目读权限",
+    status_code=status.HTTP_200_OK,
+)
+def revoke_read(
+    project_id: str,
+    payload: dict = Body(default=None),
+    authorization: str | None = Header(None),
+    x_user_role: str = Header("editor", alias="X-User-Role"),
+):
     context = require_authenticated(authorization, x_user_role)
     owner_key, role = _viewer(context)
-    return default_projects_service.revoke_read(project_id, _target_key(context, payload),
-                                                actor_owner_key=owner_key, actor_role=role)
+    return default_projects_service.revoke_read(
+        project_id,
+        _target_key(context, payload),
+        actor_owner_key=owner_key,
+        actor_role=role,
+    )
 
 
-@router.post("/projects/{project_id}/read-grants/explicit", summary="切换为显式读授权", status_code=status.HTTP_200_OK)
-def set_read_explicit(project_id: str, authorization: Optional[str] = Header(None),
-                      x_user_role: str = Header("editor", alias="X-User-Role")):
+@router.post(
+    "/projects/{project_id}/read-grants/explicit",
+    summary="切换为显式读授权",
+    status_code=status.HTTP_200_OK,
+)
+def set_read_explicit(
+    project_id: str,
+    authorization: str | None = Header(None),
+    x_user_role: str = Header("editor", alias="X-User-Role"),
+):
     owner_key, role = _viewer(require_authenticated(authorization, x_user_role))
-    return default_projects_service.set_read_mode_explicit(project_id, actor_owner_key=owner_key, actor_role=role)
+    return default_projects_service.set_read_mode_explicit(
+        project_id, actor_owner_key=owner_key, actor_role=role
+    )

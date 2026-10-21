@@ -8,7 +8,6 @@ from fastapi.testclient import TestClient
 
 from gw.api import routes_projects
 
-
 OWNER_TOKEN = "c4-l3-owner-token"
 OTHER_TOKEN = "c4-l3-other-token"
 GOV_TOKEN = "c4-l3-governor-token"
@@ -56,7 +55,9 @@ def _revoke(client: TestClient, project_id: str, token: str) -> None:
     assert response.status_code == 200, response.text
 
 
-def _patch(client: TestClient, project_id: str, headers: dict, name: str, version: int = 1):
+def _patch(
+    client: TestClient, project_id: str, headers: dict, name: str, version: int = 1
+):
     return client.patch(
         f"/api/asset-registry/projects/{project_id}",
         headers=headers,
@@ -148,7 +149,9 @@ def test_governor_can_patch_after_its_read_grant_is_revoked(client: TestClient):
     assert _project(client, project_id)["name"] == "governor 修改"
 
 
-def test_legacy_open_project_remains_readable_but_write_still_requires_owner_or_governance(client: TestClient):
+def test_legacy_open_project_remains_readable_but_write_still_requires_owner_or_governance(
+    client: TestClient,
+):
     project_id = _create_project(client)
     _make_legacy(project_id)
 

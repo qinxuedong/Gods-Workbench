@@ -25,14 +25,14 @@ from __future__ import annotations
 import platform as platform_module
 import shutil
 import sys
+from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Optional, Sequence
+from typing import Optional
 
 from gw import __version__
+from gw.core.cli_runtime import CLI_CANDIDATES, cli_execution_enabled
 from gw.core.config import load_runtime_auth_config
 from gw.core.errors import CleanroomException
-from gw.core.cli_runtime import CLI_CANDIDATES, cli_execution_enabled
-
 
 AI_UPLOAD_NOT_INTEGRATED = "AI_UPLOAD_NOT_INTEGRATED"
 CHAT_NOT_INTEGRATED = "CHAT_NOT_INTEGRATED"
@@ -52,12 +52,14 @@ class CliDescriptor:
 
 CLI_DESCRIPTORS = {
     "codex": CliDescriptor("codex", "GPT CLI", CLI_CANDIDATES["codex"]),
-    "gemini-cli": CliDescriptor("gemini-cli", "Gemini / Antigravity CLI", CLI_CANDIDATES["gemini-cli"]),
+    "gemini-cli": CliDescriptor(
+        "gemini-cli", "Gemini / Antigravity CLI", CLI_CANDIDATES["gemini-cli"]
+    ),
     "jimeng": CliDescriptor("jimeng", "即梦 CLI", CLI_CANDIDATES["jimeng"]),
 }
 
 
-def _find_cli_path(candidates: Sequence[str]) -> Optional[str]:
+def _find_cli_path(candidates: Sequence[str]) -> str | None:
     """只查询 PATH，不启动命令，避免隐藏外部副作用。"""
     for name in candidates:
         resolved = shutil.which(name)
@@ -85,7 +87,8 @@ def cli_status(protocol: str) -> dict:
         "generation_ready": False,
         "generation_status": "not_integrated",
         "data_status": "observed" if installed else "not_integrated",
-        "data_gaps": ["cli_generation_not_integrated", "cli_login_unobserved"] + ([] if execution_enabled else ["cli_execution_disabled"]),
+        "data_gaps": ["cli_generation_not_integrated", "cli_login_unobserved"]
+        + ([] if execution_enabled else ["cli_execution_disabled"]),
         "message": (
             "仅观察到本机命令路径；未执行 CLI，不能据此确认版本、登录或服务可用性。"
             if installed
@@ -116,7 +119,11 @@ def _not_integrated(code: str, endpoint: str, message: str) -> None:
         status_code=503,
         code=code,
         message=message,
-        extra={"endpoint": endpoint, "unavailable": True, "data_status": "not_integrated"},
+        extra={
+            "endpoint": endpoint,
+            "unavailable": True,
+            "data_status": "not_integrated",
+        },
         expose_extra_fields={"endpoint", "unavailable", "data_status"},
     )
 

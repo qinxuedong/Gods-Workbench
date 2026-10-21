@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 # Copyright 2026 Gods-Workbench Authors
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -31,10 +30,10 @@
 from __future__ import annotations
 
 import re
-from typing import Any, Mapping, Optional
+from collections.abc import Mapping
+from typing import Any, Optional
 
 from gw.core.errors import CleanroomException
-
 
 _PROVIDER_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
 
@@ -80,7 +79,9 @@ class CredentialVault:
     @staticmethod
     def _validate_provider_id(provider_id: str) -> str:
         if not isinstance(provider_id, str) or not _PROVIDER_ID.fullmatch(provider_id):
-            raise CleanroomException(400, "INVALID_REQUEST", "provider_id 不符合服务端凭据索引格式")
+            raise CleanroomException(
+                400, "INVALID_REQUEST", "provider_id 不符合服务端凭据索引格式"
+            )
         return provider_id
 
     @staticmethod
@@ -98,7 +99,7 @@ class CredentialVault:
             "服务端凭据不可用，未向外部发送请求",
         )
 
-    def replace(self, raw_providers: Any, expected_version: Optional[int]):
+    def replace(self, raw_providers: Any, expected_version: int | None):
         """通过保管库边界提交 Provider 集合，沿用 ProviderService 原子 CAS。"""
         return self._provider_service.replace(raw_providers, expected_version)
 
@@ -135,7 +136,7 @@ class CredentialVault:
         provider_id: str,
         field: str = "api_key",
         *,
-        expected_revision: Optional[int] = None,
+        expected_revision: int | None = None,
     ) -> str:
         """仅供服务端 transport 读取密钥原文；缺失或损坏时失败关闭。"""
         provider_id = self._validate_provider_id(provider_id)
@@ -158,7 +159,9 @@ class CredentialVault:
     secret = resolve
     resolve_secret = resolve
 
-    def require(self, provider_id: str, *, expected_revision: Optional[int] = None) -> None:
+    def require(
+        self, provider_id: str, *, expected_revision: int | None = None
+    ) -> None:
         """确认默认 API Key 可用，不把密钥交给调用方。"""
         self.resolve(provider_id, expected_revision=expected_revision)
 
@@ -166,8 +169,8 @@ class CredentialVault:
         self,
         provider_id: str,
         *,
-        expected_revision: Optional[int] = None,
-        extra_headers: Optional[Mapping[str, str]] = None,
+        expected_revision: int | None = None,
+        extra_headers: Mapping[str, str] | None = None,
     ) -> dict[str, str]:
         """构造一次性上游鉴权头；调用方不得把结果写入 HTTP 响应或日志。"""
         if extra_headers is not None:
@@ -182,11 +185,16 @@ class CredentialVault:
     @staticmethod
     def reject_client_credentials(payload: Any) -> None:
         """拒绝客户端把凭据混入网关请求；错误不含输入值。"""
+
         def walk(value: Any) -> bool:
             if isinstance(value, Mapping):
                 for key, nested in value.items():
-                    normalized = str(key).strip().casefold().replace("-", "_").replace(" ", "_")
-                    if normalized in {"key", "keys"} or any(marker in normalized for marker in _CREDENTIAL_MARKERS):
+                    normalized = (
+                        str(key).strip().casefold().replace("-", "_").replace(" ", "_")
+                    )
+                    if normalized in {"key", "keys"} or any(
+                        marker in normalized for marker in _CREDENTIAL_MARKERS
+                    ):
                         return True
                     if walk(nested):
                         return True

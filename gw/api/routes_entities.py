@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 # Copyright 2026 Gods-Workbench Authors
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -21,11 +20,21 @@
 
 from gw.entities.repository import (
     ArchivePayload,
-    archive_entity_endpoint as archive_entity,
-    create_entity_endpoint as create_entity,
-    get_entity_endpoint as get_entity,
-    list_entities_endpoint as list_entities,
     router,
+)
+from gw.entities.repository import (
+    archive_entity_endpoint as archive_entity,
+)
+from gw.entities.repository import (
+    create_entity_endpoint as create_entity,
+)
+from gw.entities.repository import (
+    get_entity_endpoint as get_entity,
+)
+from gw.entities.repository import (
+    list_entities_endpoint as list_entities,
+)
+from gw.entities.repository import (
     update_entity_endpoint as update_entity,
 )
 

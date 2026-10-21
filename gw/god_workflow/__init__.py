@@ -4,7 +4,7 @@
 外部服务调用不在此处伪造；未配置或未准入能力会明确返回不可用状态。
 """
 
-from .models import WorkflowDocument, WorkflowNode, WorkflowConnection, WorkflowSource
+from .models import WorkflowConnection, WorkflowDocument, WorkflowNode, WorkflowSource
 from .parser import WorkflowParseError, parse_workflow
 
 __all__ = [

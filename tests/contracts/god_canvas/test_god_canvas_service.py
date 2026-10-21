@@ -1,6 +1,7 @@
 """god-canvas 统一服务层（切片 B+C：普通画布 + 智能画布）契约测试。"""
 
 import json
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -55,7 +56,11 @@ def test_god_canvas_classic_crud_and_cas():
         CanvasTopologyUpdateRequest(
             expected_version=1,
             nodes=[
-                CanvasNode(entity_id="node-x", kind="process", position=NodePosition(x=10, y=20)),
+                CanvasNode(
+                    entity_id="node-x",
+                    kind="process",
+                    position=NodePosition(x=10, y=20),
+                ),
             ],
             connections=[],
         ),
@@ -108,7 +113,9 @@ def test_god_canvas_godmap_and_json_import_export():
             references={"asset_id": "asset-0001"},
         ),
     )
-    referenced_godmap = parse_godmap_content(service.export_workflow("cv-0001", export_format="godmap"))
+    referenced_godmap = parse_godmap_content(
+        service.export_workflow("cv-0001", export_format="godmap")
+    )
     assert referenced_godmap.payload.references == {"asset_id": "asset-0001"}
     with pytest.raises(CleanroomException) as resource_error:
         service.export_workflow("cv-0001", export_format="json", include_resources=True)
@@ -116,7 +123,9 @@ def test_god_canvas_godmap_and_json_import_export():
 
     # 导入非法数据测试
     with pytest.raises(CleanroomException) as excinfo:
-        service.import_workflow("cv-0001", content="not valid json", expected_version=2, file_format="json")
+        service.import_workflow(
+            "cv-0001", content="not valid json", expected_version=2, file_format="json"
+        )
     assert excinfo.value.status_code == 400
 
     bad_godmap = json.dumps(
@@ -126,12 +135,16 @@ def test_god_canvas_godmap_and_json_import_export():
             "payload": {
                 "canvas_id": "cv-0001",
                 "nodes": [{"entity_id": "nd-only", "kind": "input"}],
-                "connections": [{"connection_id": "ln-bad", "from": "nd-only", "to": "nd-missing"}],
+                "connections": [
+                    {"connection_id": "ln-bad", "from": "nd-only", "to": "nd-missing"}
+                ],
             },
         }
     )
     with pytest.raises(CleanroomException) as godmap_error:
-        service.import_workflow("cv-0001", content=bad_godmap, expected_version=2, file_format="godmap")
+        service.import_workflow(
+            "cv-0001", content=bad_godmap, expected_version=2, file_format="godmap"
+        )
     assert godmap_error.value.code == "INVALID_TOPOLOGY"
 
 
@@ -146,7 +159,9 @@ def test_god_canvas_smart_tasks_and_security_boundaries():
         run_mode=SmartCanvasRunMode.SINGLE,
         inputs={"prompt": "生成镜头 A"},
     )
-    task_resp = service.submit_smart_task("cv-0001", task_req, authorization="Bearer cleanroom-test", user_role="editor")
+    task_resp = service.submit_smart_task(
+        "cv-0001", task_req, authorization="Bearer cleanroom-test", user_role="editor"
+    )
     assert task_resp.state == "accepted"
     assert task_resp.job_id.startswith("job-")
     assert task_resp.job_id != "job-0001"
@@ -160,13 +175,20 @@ def test_god_canvas_smart_tasks_and_security_boundaries():
 
     # 3. 鉴权失效 401 拦截
     with pytest.raises(UnauthorizedException) as exc_401:
-        service.submit_smart_task("cv-0001", task_req, authorization="Bearer invalid", user_role="editor")
+        service.submit_smart_task(
+            "cv-0001", task_req, authorization="Bearer invalid", user_role="editor"
+        )
     assert exc_401.value.status_code == 401
     assert exc_401.value.code == "UNAUTHORIZED"
 
     # 4. 权限不足 403 拦截（只读降级）
     with pytest.raises(ForbiddenException) as exc_403:
-        service.submit_smart_task("cv-0001", task_req, authorization="Bearer cleanroom-test", user_role="readonly")
+        service.submit_smart_task(
+            "cv-0001",
+            task_req,
+            authorization="Bearer cleanroom-test",
+            user_role="readonly",
+        )
     assert exc_403.value.status_code == 403
     assert exc_403.value.code == "FORBIDDEN"
 
@@ -176,7 +198,12 @@ def test_god_canvas_smart_tasks_and_security_boundaries():
         entry_nodes=["nd-0001"],
     )
     with pytest.raises(CanvasVersionConflictException) as exc_409:
-        service.submit_smart_task("cv-0001", conflict_req, authorization="Bearer cleanroom-test", user_role="editor")
+        service.submit_smart_task(
+            "cv-0001",
+            conflict_req,
+            authorization="Bearer cleanroom-test",
+            user_role="editor",
+        )
     assert exc_409.value.status_code == 409
     assert exc_409.value.code == "CANVAS_VERSION_CONFLICT"
 
@@ -217,7 +244,9 @@ def test_api_god_canvas_routes_integration(client: TestClient):
     job_id = task_data["job_id"]
 
     # 5. 查询任务状态
-    resp_job = client.get(f"/api/jobs/{job_id}", headers={"Authorization": "Bearer cleanroom-test"})
+    resp_job = client.get(
+        f"/api/jobs/{job_id}", headers={"Authorization": "Bearer cleanroom-test"}
+    )
     assert resp_job.status_code == 200
     assert resp_job.json()["job_id"] == job_id
     assert resp_job.json()["state"] == "accepted"

@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 # Copyright 2026 Gods-Workbench Authors
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -53,7 +52,9 @@ def test_asset_project_list_hidden_for_unauthorized(client):
         headers=headers("owner"),
     )
     assert resp_owner.status_code == 200
-    assert any(a["asset_id"] == ids["asset_id"] for a in resp_owner.json().get("assets", []))
+    assert any(
+        a["asset_id"] == ids["asset_id"] for a in resp_owner.json().get("assets", [])
+    )
 
     # 被撤销读权限主体访问 -> 404 PROJECT_NOT_FOUND
     resp_revoked = client.get(
@@ -79,7 +80,9 @@ def test_asset_list_all_filters_unreadable_project_assets(client):
     active_asset_id = ids["asset_id"]
 
     # cross_project_editor 对 active_project_id 无读权限，但对 cross_project_id 有读权限
-    resp = client.get("/api/asset-registry/assets", headers=headers("cross_project_editor"))
+    resp = client.get(
+        "/api/asset-registry/assets", headers=headers("cross_project_editor")
+    )
     assert resp.status_code == 200
     returned_ids = {a["asset_id"] for a in resp.json().get("assets", [])}
     assert cross_asset_id in returned_ids
@@ -147,7 +150,9 @@ def test_asset_write_mutate_permissions_and_read_only(client):
 
 def test_asset_write_cas_preceded_by_auth(client):
     """AC8: 无写权限主体尝试更新资产时，即使传入错误 expected_version 依然返回 404，绝不泄露 409。"""
-    ids = seed(client, "active", action="asset_write_mutate", role="cross_project_editor")
+    ids = seed(
+        client, "active", action="asset_write_mutate", role="cross_project_editor"
+    )
     asset_id = ids["asset_id"]
 
     resp = client.patch(
@@ -157,4 +162,3 @@ def test_asset_write_cas_preceded_by_auth(client):
     )
     assert resp.status_code == 404
     assert resp.json()["detail"]["code"] == "ASSET_NOT_FOUND"
-

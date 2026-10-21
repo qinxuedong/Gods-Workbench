@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Phase 8 P8-A2 画布列表摄取契约守卫（纯 Python，不启动浏览器）。
 
 背景（真实浏览器 + 真实 HTTP 实测，2026-09-21）
@@ -36,7 +35,9 @@ def _read(path: Path) -> str:
 def assert_list_canvases_sends_project_id(source: str) -> None:
     """`listCanvases` 必须把契约必填的 `project_id` 附到查询串上。"""
     anchor = source.find("listCanvases(")
-    assert anchor != -1, "未在 canvas-list/api.js 中找到 listCanvases()；若被重构请同步本守卫。"
+    assert anchor != -1, (
+        "未在 canvas-list/api.js 中找到 listCanvases()；若被重构请同步本守卫。"
+    )
     region = source[anchor : anchor + 900]
     assert re.search(r"listCanvases\s*\(\s*projectId", region), (
         "listCanvases() 未接收 projectId 形参：契约 list_canvases 的 request_query.project_id 为必填，"
@@ -58,14 +59,18 @@ def assert_load_all_is_sequential_with_project_id(source: str) -> None:
     end = source.find("\nfunction ", anchor + 1)
     region = source[anchor : end if end != -1 else anchor + 4000]
 
-    assert not re.search(r"Promise\.all\(\s*\[[^\]]*listCanvases", region, flags=re.S), (
+    assert not re.search(
+        r"Promise\.all\(\s*\[[^\]]*listCanvases", region, flags=re.S
+    ), (
         "loadAll() 仍把 listProjects() 与 listCanvases() 并发发出：project_id 只有在项目列表返回后"
         "才能确定，并发时画布请求必然缺参 400（Phase 8 实测缺陷）。"
     )
     assert re.search(r"await\s+canvasListApi\(\)\.listProjects\(\)", region), (
         "loadAll() 未先行 await listProjects()：必须先确定 project_id 才能请求画布列表。"
     )
-    assert re.search(r"await\s+canvasListApi\(\)\.listCanvases\(\s*currentProjectId\s*\)", region), (
+    assert re.search(
+        r"await\s+canvasListApi\(\)\.listCanvases\(\s*currentProjectId\s*\)", region
+    ), (
         "loadAll() 未以已确定的 currentProjectId 调用 listCanvases(...)：契约要求携带 project_id。"
     )
     # 顺序：listProjects 必须在 listCanvases 之前

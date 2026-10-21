@@ -13,8 +13,8 @@ import argparse
 import json
 import os
 import sys
-import urllib.request
 import urllib.error
+import urllib.request
 
 LINEAR_GRAPHQL_URL = "https://api.linear.app/graphql"
 
@@ -65,7 +65,10 @@ CANONICAL_BLOCKING_RELATIONS = [
 def execute_graphql(query: str, variables: dict | None = None) -> dict:
     api_key = os.getenv("LINEAR_API_KEY")
     if not api_key:
-        print("[ERROR] 环境变量 LINEAR_API_KEY 未设置！无法执行 Linear 接口调用。", file=sys.stderr)
+        print(
+            "[ERROR] 环境变量 LINEAR_API_KEY 未设置！无法执行 Linear 接口调用。",
+            file=sys.stderr,
+        )
         sys.exit(2)
 
     payload = {"query": query}
@@ -84,11 +87,17 @@ def execute_graphql(query: str, variables: dict | None = None) -> dict:
         with urllib.request.urlopen(req) as resp:
             data = json.loads(resp.read().decode("utf-8"))
             if "errors" in data and data["errors"]:
-                print(f"[ERROR] GraphQL 错误: {json.dumps(data['errors'], indent=2, ensure_ascii=False)}", file=sys.stderr)
+                print(
+                    f"[ERROR] GraphQL 错误: {json.dumps(data['errors'], indent=2, ensure_ascii=False)}",
+                    file=sys.stderr,
+                )
                 sys.exit(1)
             return data.get("data", {})
     except urllib.error.HTTPError as e:
-        print(f"[ERROR] HTTP 请求失败 ({e.code}): {e.read().decode('utf-8')}", file=sys.stderr)
+        print(
+            f"[ERROR] HTTP 请求失败 ({e.code}): {e.read().decode('utf-8')}",
+            file=sys.stderr,
+        )
         sys.exit(1)
 
 
@@ -181,7 +190,9 @@ def sync_relations() -> bool:
         blocker = issues.get(blocker_ident)
         blocked = issues.get(blocked_ident)
         if not blocker or not blocked:
-            print(f"[WARN] 工单缺失，跳过: {blocker_ident} -> {blocked_ident} (blocker={bool(blocker)}, blocked={bool(blocked)})")
+            print(
+                f"[WARN] 工单缺失，跳过: {blocker_ident} -> {blocked_ident} (blocker={bool(blocker)}, blocked={bool(blocked)})"
+            )
             continue
 
         # 检查是否已存在 blocks 关系
@@ -189,12 +200,18 @@ def sync_relations() -> bool:
         # 或 blocked.inverseRelations 中有 type == 'blocks' 且 issue == blocker
         exists = False
         for rel in blocker.get("relations", {}).get("nodes", []):
-            if rel["type"] == "blocks" and rel["relatedIssue"]["identifier"] == blocked_ident:
+            if (
+                rel["type"] == "blocks"
+                and rel["relatedIssue"]["identifier"] == blocked_ident
+            ):
                 exists = True
                 break
         if not exists:
             for rel in blocked.get("inverseRelations", {}).get("nodes", []):
-                if rel["type"] == "blocks" and rel["issue"]["identifier"] == blocker_ident:
+                if (
+                    rel["type"] == "blocks"
+                    and rel["issue"]["identifier"] == blocker_ident
+                ):
                     exists = True
                     break
 
@@ -202,18 +219,23 @@ def sync_relations() -> bool:
             already_count += 1
             continue
 
-        print(f"[SYNC] 正在建立物理阻断: {blocker_ident} -> blocks -> {blocked_ident} ...")
+        print(
+            f"[SYNC] 正在建立物理阻断: {blocker_ident} -> blocks -> {blocked_ident} ..."
+        )
         # IssueRelationCreateInput:
         # issueId: 源工单 (blocker)
         # relatedIssueId: 目标工单 (blocked)
         # type: "blocks" 表示 issueId blocks relatedIssueId
-        res = execute_graphql(mutation, {
-            "input": {
-                "issueId": blocker["id"],
-                "relatedIssueId": blocked["id"],
-                "type": "blocks",
-            }
-        })
+        res = execute_graphql(
+            mutation,
+            {
+                "input": {
+                    "issueId": blocker["id"],
+                    "relatedIssueId": blocked["id"],
+                    "type": "blocks",
+                }
+            },
+        )
         if res.get("issueRelationCreate", {}).get("success"):
             print(f"  [OK] 成功建立: {blocker_ident} blocks {blocked_ident}")
             created_count += 1
@@ -239,24 +261,34 @@ def verify_relations() -> bool:
         blocker = issues.get(blocker_ident)
         blocked = issues.get(blocked_ident)
         if not blocker or not blocked:
-            missing.append(f"{blocker_ident} -> {blocked_ident} (工单未找到: blocker={bool(blocker)}, blocked={bool(blocked)})")
+            missing.append(
+                f"{blocker_ident} -> {blocked_ident} (工单未找到: blocker={bool(blocker)}, blocked={bool(blocked)})"
+            )
             continue
 
         exists = False
         for rel in blocker.get("relations", {}).get("nodes", []):
-            if rel["type"] == "blocks" and rel["relatedIssue"]["identifier"] == blocked_ident:
+            if (
+                rel["type"] == "blocks"
+                and rel["relatedIssue"]["identifier"] == blocked_ident
+            ):
                 exists = True
                 break
         if not exists:
             for rel in blocked.get("inverseRelations", {}).get("nodes", []):
-                if rel["type"] == "blocks" and rel["issue"]["identifier"] == blocker_ident:
+                if (
+                    rel["type"] == "blocks"
+                    and rel["issue"]["identifier"] == blocker_ident
+                ):
                     exists = True
                     break
 
         if exists:
             verified.append(f"{blocker_ident} -> blocks -> {blocked_ident}")
         else:
-            missing.append(f"{blocker_ident} -> blocks -> {blocked_ident} [底层物理关联缺失!]")
+            missing.append(
+                f"{blocker_ident} -> blocks -> {blocked_ident} [底层物理关联缺失!]"
+            )
 
     print(f"核验结果统计: 已验证通过 {len(verified)} 条，缺失 {len(missing)} 条")
     if missing:
@@ -284,7 +316,9 @@ def check_merge(target_ident: str) -> bool:
         if rel["type"] == "blocks":
             blockers.append(rel["issue"])
 
-    print(f"工单 {target_ident} ({target['state']['name']}) 的前置阻断工单列表 ({len(blockers)} 项):")
+    print(
+        f"工单 {target_ident} ({target['state']['name']}) 的前置阻断工单列表 ({len(blockers)} 项):"
+    )
     if not blockers:
         print("  - [无前置阻断] 具备合入资格！")
         return True
@@ -293,25 +327,47 @@ def check_merge(target_ident: str) -> bool:
     for b in blockers:
         state_type = b.get("state", {}).get("type")
         state_name = b.get("state", {}).get("name")
-        is_done = state_type in ("completed", "canceled") or state_name in ("Done", "Canceled", "Merged")
+        is_done = state_type in ("completed", "canceled") or state_name in (
+            "Done",
+            "Canceled",
+            "Merged",
+        )
         status_flag = "[OK - 已完成]" if is_done else "[BLOCKING - 未完成!]"
         print(f"  {status_flag} {b['identifier']}: {b['title']} (状态: {state_name})")
         if not is_done:
             unresolved.append(b)
 
     if unresolved:
-        print(f"\n[REJECT] 前置阻断拦截！工单 {target_ident} 仍有 {len(unresolved)} 项前置工单未完成，绝对禁止合入 master！", file=sys.stderr)
+        print(
+            f"\n[REJECT] 前置阻断拦截！工单 {target_ident} 仍有 {len(unresolved)} 项前置工单未完成，绝对禁止合入 master！",
+            file=sys.stderr,
+        )
         return False
     else:
-        print(f"\n[PERMIT] 验证通过！工单 {target_ident} 的所有前置阻断工单均已达成 Done，准予合入 master！")
+        print(
+            f"\n[PERMIT] 验证通过！工单 {target_ident} 的所有前置阻断工单均已达成 Done，准予合入 master！"
+        )
         return True
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Linear 物理阻断关系同步与门禁核验工具")
-    parser.add_argument("--sync", action="store_true", help="同步并建立缺失的底层物理阻断关系")
-    parser.add_argument("--verify", action="store_true", help="核验全量物理阻断关系是否存在，不符时退出码为 1")
-    parser.add_argument("--check-merge", type=str, metavar="IDENTIFIER", help="核验指定工单是否满足合入 master 资格（所有前置 blocker 必须为 Done）")
+    parser = argparse.ArgumentParser(
+        description="Linear 物理阻断关系同步与门禁核验工具"
+    )
+    parser.add_argument(
+        "--sync", action="store_true", help="同步并建立缺失的底层物理阻断关系"
+    )
+    parser.add_argument(
+        "--verify",
+        action="store_true",
+        help="核验全量物理阻断关系是否存在，不符时退出码为 1",
+    )
+    parser.add_argument(
+        "--check-merge",
+        type=str,
+        metavar="IDENTIFIER",
+        help="核验指定工单是否满足合入 master 资格（所有前置 blocker 必须为 Done）",
+    )
 
     args = parser.parse_args()
     if not (args.sync or args.verify or args.check_merge):

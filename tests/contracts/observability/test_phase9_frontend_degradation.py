@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Phase 9 前端显式降级与分享页缺参提示守卫（纯 Python，不依赖浏览器）。
 
 覆盖用户 2026-09-21 裁决：
@@ -47,7 +46,9 @@ def test_asset_share_direct_open_shows_missing_token_hint():
     token_guard = region.find("if(!token)")
     request_call = region.find("getPublicShare(token")
     assert token_guard != -1, "load() 应保留缺少 token 的拦截"
-    assert request_call != -1 and token_guard < request_call, "无 token 分支必须先于元信息请求，不得发起公开分享请求"
+    assert request_call != -1 and token_guard < request_call, (
+        "无 token 分支必须先于元信息请求，不得发起公开分享请求"
+    )
     assert "缺少分享令牌" in region, "无 token 分支必须显示中文缺参提示"
 
 
@@ -85,7 +86,9 @@ def test_shared_transport_defines_not_integrated_semantics():
     assert "typeof detail === 'object'" in js, "必须按对象 detail 判定路由存在"
     assert "not found" in js, "必须识别 FastAPI 默认 404 文案"
     # 503 属可恢复的服务不可用，必须与「未纳入当前切片」分离
-    assert "NOT_INTEGRATED_STATUSES = new Set([404, 501])" in js, "503 不得列入未接入集合"
+    assert "NOT_INTEGRATED_STATUSES = new Set([404, 501])" in js, (
+        "503 不得列入未接入集合"
+    )
     assert "SERVICE_UNAVAILABLE" in js, "必须单独定义服务暂时不可用语义"
 
 
@@ -104,7 +107,9 @@ def test_workspace_common_exposes_not_integrated():
     assert "NOT_INTEGRATED_MESSAGE" in js
     assert "reason" not in js or "getPublicShare" not in js
     workspace_export = js[js.find("window.Workspace = {") :]
-    assert "NOT_INTEGRATED_MESSAGE" in workspace_export, "window.Workspace 应暴露未接入文案"
+    assert "NOT_INTEGRATED_MESSAGE" in workspace_export, (
+        "window.Workspace 应暴露未接入文案"
+    )
 
 
 def test_no_silent_degradation_without_marker():
@@ -127,6 +132,7 @@ def test_workspace_common_renders_object_detail_readably():
     """对象型 detail 不得渲染成 [object Object]。"""
     js = _read(WORKSPACE_JS)
     assert "detailValue" in js and "detailValue.message" in js
+
 
 CONTROLLERS_DIR = REPO_ROOT / "web" / "js" / "controllers"
 PRODUCTION_JS = CONTROLLERS_DIR / "production-controller.js"
@@ -157,7 +163,9 @@ def test_production_controller_demo_catalog_is_labeled():
     """内置示例目录必须显式标注为未接入后端，且不得残留旧名。"""
     js = _read(PRODUCTION_JS)
     assert "demoProjectCatalog" in js, "内置示例目录必须改名以提示非真实数据"
-    assert "projectCatalog" not in js.replace("demoProjectCatalog", ""), "不得残留内部名 projectCatalog"
+    assert "projectCatalog" not in js.replace("demoProjectCatalog", ""), (
+        "不得残留内部名 projectCatalog"
+    )
 
 
 def test_storyboard_controller_has_no_fake_done_status():
@@ -172,6 +180,7 @@ def test_workshop_demo_catalog_not_merged_into_projects():
     html = _read(WORKSHOP_HTML)
     assert "demoProjectCatalog" in html
     assert "projectsDegradation" in html and "episodesDegradation" in html
+
 
 # ---------------------------------------------------------------------------
 # Phase 9E：静态页残留「不可验证运行态断言」清零守卫（2026-09-21 追加）
@@ -189,10 +198,18 @@ def _is_comment_line(line: str) -> bool:
 
 def _is_identifier_only_random(line: str) -> bool:
     """判断该行的 Math.random 是否只用于生成标识符 / nonce（非遥测读数）。"""
-    if not re.search(r"(id|key|nonce|uuid|token|client_id|group|note|library|layer|aura)\s*[:=]", line, re.I):
+    if not re.search(
+        r"(id|key|nonce|uuid|token|client_id|group|note|library|layer|aura)\s*[:=]",
+        line,
+        re.I,
+    ):
         return False
     # 若同一行还写了百分比/负载字段，则不能按标识符豁免。
-    return not re.search(r"(cpu|ram|gpu|vram|load|usage|temperat|percent|jitter)\s*[:=]", line, re.I)
+    return not re.search(
+        r"(cpu|ram|gpu|vram|load|usage|temperat|percent|jitter)\s*[:=]", line, re.I
+    )
+
+
 CONTROLLERS_DIR = STATIC_JS / "controllers"
 INDEX_HTML = PAGES_DIR / "index.html"
 PROJECTS_HTML = PAGES_DIR / "projects.html"
@@ -228,7 +245,9 @@ FAKE_RUNTIME_CLAIMS = [
 def test_workbench_static_pages_have_no_fake_runtime_claims():
     """全 Workbench 静态页不得残留伪造运行态断言（含任务中心/GPU/智能体/分镜）。"""
     offenders = {}
-    for path in sorted(list(PAGES_DIR.glob("*.html")) + list(CONTROLLERS_DIR.glob("*.js"))):
+    for path in sorted(
+        list(PAGES_DIR.glob("*.html")) + list(CONTROLLERS_DIR.glob("*.js"))
+    ):
         text = path.read_text(encoding="utf-8")
         hits = [c for c in FAKE_RUNTIME_CLAIMS if c in text]
         if hits:
@@ -271,8 +290,12 @@ def test_workbench_task_center_is_driven_by_real_endpoint():
     """
     for path in (INDEX_HTML, PROJECTS_HTML, PRODUCTION_HTML):
         html = _read(path)
-        assert "/static/js/core/task-queue.js" in html, f"{path.name} 必须引入任务队列共享模块"
-        assert "workbenchTaskCenterDrawerList" in html, f"{path.name} 必须有真实队列容器"
+        assert "/static/js/core/task-queue.js" in html, (
+            f"{path.name} 必须引入任务队列共享模块"
+        )
+        assert "workbenchTaskCenterDrawerList" in html, (
+            f"{path.name} 必须有真实队列容器"
+        )
     index = _read(INDEX_HTML)
     assert 'id="activeTasksCountBadge"' in index, "首页必须有活跃任务计数位"
     assert "暂无真实任务" not in index, "首页不得残留静态示例任务卡片"
@@ -299,7 +322,9 @@ def test_workbench_gpu_telemetry_not_faked():
     assert "IDLE</span>" not in html, "不得伪造 GPU 空闲/占用状态"
     assert 'id="gpuDeviceGrid"' in html, "GPU 设备卡必须由真实 devices 渲染"
     assert "4090 #1" not in html and "A100 #1" not in html, "不得静态写死伪造型号"
-    assert 'id="gpuClusterStatus"' in html, "必须有可被真实 gpu_telemetry 驱动的集群状态位"
+    assert 'id="gpuClusterStatus"' in html, (
+        "必须有可被真实 gpu_telemetry 驱动的集群状态位"
+    )
     js = _read(TELEMETRY_JS)
     assert "gpu_telemetry" in js, "必须消费真实 GPU 检查项"
     assert "applyGpuTelemetry" in js, "必须存在真实 GPU 写入方法"
@@ -321,8 +346,15 @@ TELEMETRY_JS = STATIC_JS / "core" / "hardware-telemetry.js"
 EPISODE_JS = STATIC_JS / "modules/episode-pipeline.js"
 EPISODE_HTML = REPO_ROOT / "web" / "embeds" / "episode-pipeline.html"
 WORKBENCH_PAGES = [
-    "index.html", "projects.html", "workshop.html", "production.html",
-    "storyboard.html", "agents.html", "assets.html", "collab.html", "settings.html",
+    "index.html",
+    "projects.html",
+    "workshop.html",
+    "production.html",
+    "storyboard.html",
+    "agents.html",
+    "assets.html",
+    "collab.html",
+    "settings.html",
 ]
 
 
@@ -340,7 +372,7 @@ def test_workbench_pages_have_no_static_online_green_led():
     for name in WORKBENCH_PAGES:
         text = (PAGES_DIR / name).read_text(encoding="utf-8")
         assert ">Online<" not in text, f"{name} 不得保留静态 Online 文案"
-        assert 'bg-emerald-400 shadow-[0_0_6px_#34d399]' not in text, (
+        assert "bg-emerald-400 shadow-[0_0_6px_#34d399]" not in text, (
             f"{name} 不得保留静态绿色就绪灯"
         )
         assert "uv-hub-percent" in text
@@ -409,12 +441,27 @@ def test_episode_pipeline_has_no_fake_hardware_or_model_claims():
 # ---------------------------------------------------------------------------
 
 TOP_BAR_FADER_FILES = [
-    "index.html", "projects.html", "production.html", "storyboard.html",
-    "agents.html", "assets.html", "collab.html",
+    "index.html",
+    "projects.html",
+    "production.html",
+    "storyboard.html",
+    "agents.html",
+    "assets.html",
+    "collab.html",
 ]
 
 #: 修复前的具体读数；这些字符串不得再出现在顶栏推子文件里。
-STALE_FADER_READOUTS = ["78%", "82%", "75%", "92%", "68%", "88%", "14.8G", "18.4G", "12.2G"]
+STALE_FADER_READOUTS = [
+    "78%",
+    "82%",
+    "75%",
+    "92%",
+    "68%",
+    "88%",
+    "14.8G",
+    "18.4G",
+    "12.2G",
+]
 
 
 def _topbar_fader_blocks(text: str):
@@ -455,22 +502,29 @@ def test_workbench_shell_injected_faders_have_no_stale_readouts():
     for token in STALE_FADER_READOUTS:
         assert token not in js, f"workbench-shell.js 不得残留具体读数 {token}"
     assert "width:78%" not in js.replace(" ", ""), "注入推子宽度必须为 0%"
-    assert "data-gw-gpu-util" in js, "注入的 FLUX 推子必须提供可被真实 GPU 读数驱动的钩子"
-    assert "data-gw-gpu-vram" in js, "注入的 VRAM 推子必须提供可被真实 GPU 读数驱动的钩子"
+    assert "data-gw-gpu-util" in js, (
+        "注入的 FLUX 推子必须提供可被真实 GPU 读数驱动的钩子"
+    )
+    assert "data-gw-gpu-vram" in js, (
+        "注入的 VRAM 推子必须提供可被真实 GPU 读数驱动的钩子"
+    )
     assert "读取中" in js, "注入推子初值应为读取中"
     # 只有推子读数位不得写死未接入；头像「认证状态未接入」等其它语义不在此范围。
     for hook in ("data-gw-gpu-util", "data-gw-gpu-vram"):
         begin = js.find(hook)
         assert begin != -1, hook
         region = js[begin : begin + 400]
-        assert "未接入" not in region, f"{hook} 推子不得永久写死未接入（真实 GPU 遥测已可驱动）"
+        assert "未接入" not in region, (
+            f"{hook} 推子不得永久写死未接入（真实 GPU 遥测已可驱动）"
+        )
 
 
 def test_workbench_shell_injected_faders_are_driven_by_real_gpu_telemetry():
     """注入推子的钩子必须真的被 applyGpuTelemetry 消费，且写入真实百分比。"""
     telemetry = _read(STATIC_JS / "core" / "hardware-telemetry.js")
-    assert "data-gw-' + key + '" in telemetry or "data-gw-gpu-util" in telemetry, \
+    assert "data-gw-' + key + '" in telemetry or "data-gw-gpu-util" in telemetry, (
         "必须按钩子选择器写入真实读数"
+    )
     assert "data-gw-gpu-util" in telemetry, "FLUX 推子钩子必须被真实遥测消费"
     assert "data-gw-gpu-vram" in telemetry, "VRAM 推子钩子必须被真实遥测消费"
     assert "lastGpuCheck" in telemetry, "必须缓存最近一次真实读数供后注入推子回放"
@@ -483,7 +537,9 @@ def test_workbench_topbar_fader_readouts_are_marked_not_integrated():
     for name in TOP_BAR_FADER_FILES:
         text = _read(PAGES_DIR / name)
         assert "未接入" in text, f"{name} 推子读数必须明说未接入"
-        assert 'data-gw-degradation="not_integrated"' in text, f"{name} 推子必须带降级标记"
+        assert 'data-gw-degradation="not_integrated"' in text, (
+            f"{name} 推子必须带降级标记"
+        )
         for block in _topbar_fader_blocks(text):
             for match in re.finditer(r"(?:width|left)\s*:\s*(\d+)%", block):
                 assert match.group(1) == "0", (
@@ -507,9 +563,13 @@ def test_asset_review_can_is_fail_closed():
     """can() 必须先要求已认证且有 principal，再比较角色等级。"""
     js = _read(ASSET_REVIEW_JS)
     code = "\n".join(
-        line for line in js.splitlines() if not line.strip().startswith(("//", "*", "/*"))
+        line
+        for line in js.splitlines()
+        if not line.strip().startswith(("//", "*", "/*"))
     )
-    assert "state.auth?.auth_required" not in code, "can() 不得再依赖后端不存在的 auth_required"
+    assert "state.auth?.auth_required" not in code, (
+        "can() 不得再依赖后端不存在的 auth_required"
+    )
     anchor = code.find("const can =")
     assert anchor != -1, "未找到 can()"
     region = code[anchor : anchor + 320]
@@ -524,11 +584,15 @@ def test_asset_review_login_failure_is_explicitly_degraded():
     assert "degraded:true" in js.replace(" ", ""), "必须写入 degraded 标记"
     assert "认证服务未接入或不可达" in js, "必须给出中文原因文案"
     code = "\n".join(
-        line for line in js.splitlines() if not line.strip().startswith(("//", "*", "/*"))
+        line
+        for line in js.splitlines()
+        if not line.strip().startswith(("//", "*", "/*"))
     )
     assert "needs_setup" not in code, "不得残留后端不存在的 needs_setup 字段"
     assert "bootstrap(" not in code, "不得残留旧 bootstrap 登录分支"
     assert "needsLogin" in code, "must expose needsLogin()"
+
+
 # ---------------------------------------------------------------------------
 # Phase 9F-2：侧栏「项目树进度」等同类假运行态读数清零（2026-09-21 追加）
 #
@@ -556,7 +620,13 @@ def test_workbench_side_tree_has_no_fake_progress_readouts():
 def test_workbench_pages_have_no_fake_online_badge_or_node_count():
     """不得残留 `online` 状态胶囊 / `4节点` / `VRAM CAP NN%` 这类不可验证断言。"""
     offenders = {}
-    for name in ("index.html", "projects.html", "production.html", "storyboard.html", "agents.html"):
+    for name in (
+        "index.html",
+        "projects.html",
+        "production.html",
+        "storyboard.html",
+        "agents.html",
+    ):
         text = _read(PAGES_DIR / name)
         hits = []
         if "<span>online</span>" in text:
@@ -602,7 +672,11 @@ FALSY_FALLBACK_RE3 = re.compile(
     r"p\.progress\s*\|\|\s*(?:\([^)]*\)\s*:\s*)?(?<!0)\d{2}"
 )
 
-CONTROLLERS = ["home-controller.js", "projects-controller.js", "production-controller.js"]
+CONTROLLERS = [
+    "home-controller.js",
+    "projects-controller.js",
+    "production-controller.js",
+]
 
 
 def test_controllers_have_no_falsy_numeric_fallback():
@@ -615,7 +689,9 @@ def test_controllers_have_no_falsy_numeric_fallback():
             hits += [m.group(0) for m in regex.finditer(text)]
         # 去掉纯注释行（本轮修复说明中会引用旧写法）
         code = "\n".join(
-            ln for ln in text.splitlines() if not ln.strip().startswith(("//", "*", "/*"))
+            ln
+            for ln in text.splitlines()
+            if not ln.strip().startswith(("//", "*", "/*"))
         )
         real = []
         for hit in hits:
@@ -744,6 +820,7 @@ def test_progress_zero_is_preserved_at_runtime(tmp_path):
     assert data["entityOnly"]["home"]["value"] == 75
     assert data["entityOnly"]["home"]["degraded"] is False
 
+
 # ---------------------------------------------------------------------------
 # Phase 9F-3：伪硬件读数 / 随机遥测 / 在线徽标清零守卫（独立复核方第 2/3 次提醒的残留项）
 # ---------------------------------------------------------------------------
@@ -797,7 +874,10 @@ def test_frontend_has_no_fake_hardware_readouts():
 #: 判定「随机数是否被当成遥测读数」的特征：赋值给百分比/指针/负载字段。
 _RANDOM_TELEMETRY_PATTERNS = (
     re.compile(r"Math\.random\(\)[^;]*\*\s*\d+"),
-    re.compile(r"(cpu|ram|gpu|vram|load|usage|temperat|percent|jitter|vibration)[A-Za-z_]*\s*=\s*[^;]*Math\.random\(\)", re.I),
+    re.compile(
+        r"(cpu|ram|gpu|vram|load|usage|temperat|percent|jitter|vibration)[A-Za-z_]*\s*=\s*[^;]*Math\.random\(\)",
+        re.I,
+    ),
     re.compile(r"Math\.random\(\)[^;]*setAttribute\('transform'"),
 )
 
@@ -869,6 +949,7 @@ def test_telemetry_online_badges_require_real_status_fields():
     assert ">ONLINE</span>" not in js, "不得无条件渲染 ONLINE"
     assert ">ACTIVE</span>" not in js, "不得无条件渲染 ACTIVE"
 
+
 # ---------------------------------------------------------------------------
 # legacy_page_degradation_guards: 5 个 legacy/v2 页面统一显式降级（2026-09-22 追加）
 # ---------------------------------------------------------------------------
@@ -893,7 +974,12 @@ def test_degradation_module_is_a_shared_single_source():
     """显式降级语义必须由单一共享模块导出。"""
     js = _read(DEGRADATION_JS)
     assert "window.GWDegradation" in js, "degradation.js 应导出 window.GWDegradation"
-    for symbol in ("statusKind", "isNotIntegrated", "isServiceUnavailable", "NOT_INTEGRATED_MESSAGE"):
+    for symbol in (
+        "statusKind",
+        "isNotIntegrated",
+        "isServiceUnavailable",
+        "NOT_INTEGRATED_MESSAGE",
+    ):
         assert symbol in js, "degradation.js 缺少 " + symbol
     assert "404" in js and "501" in js and "503" in js, "必须区分 404/501 与 503"
 
@@ -950,7 +1036,9 @@ def test_legacy_pages_load_degradation_before_page_scripts():
         deco = html.find("/static/js/core/degradation.js")
         page = html.find(page_script)
         if deco == -1 or page == -1 or deco > page:
-            missing.append(html_path.name + " (deco=" + str(deco) + ", page=" + str(page) + ")")
+            missing.append(
+                html_path.name + " (deco=" + str(deco) + ", page=" + str(page) + ")"
+            )
     assert not missing, "degradation.js 接线順序不正确: " + str(missing)
 
 
@@ -1005,6 +1093,7 @@ def test_task_center_service_unavailable_label_is_translated():
     js = _read(TASK_CENTER_JS)
     i18n = _read(TASK_CENTER_I18N)
     import re
+
     keys = sorted(set(re.findall(r"tr\('([^']+)'\)", js)))
     missing = [key for key in keys if ('"' + key + '"') not in i18n]
     assert not missing, "task-center.js 使用的 i18n 键缺失: " + str(missing)
@@ -1013,7 +1102,9 @@ def test_task_center_service_unavailable_label_is_translated():
 def test_episode_pipeline_has_no_silent_catch_fallback():
     """episode-pipeline 不得用 `.catch(() => fallback)` 静默吞掉未接入错误。"""
     js = _read(EPISODE_JS)
-    assert ".catch(() => ({ projects: DEMO_PROJECTS_FALLBACK }))" not in js, "项目回落不得静默"
+    assert ".catch(() => ({ projects: DEMO_PROJECTS_FALLBACK }))" not in js, (
+        "项目回落不得静默"
+    )
     assert ".catch(() => ({ providers: [] }))" not in js, "providers 回落不得静默"
     assert "loadWithExplicitFallback" in js, "必须经由显式降级包装器回落"
     assert "recordDegradation" in js
@@ -1056,12 +1147,14 @@ def test_episode_pipeline_degradation_state_is_reset_on_reload():
     js = _read(EPISODE_JS)
     assert "function resetDegradations()" in js, "必须提供降级状态重置函数"
     reset_start = js.find("function resetDegradations()")
-    reset_body = js[reset_start: js.find("async function loadWithExplicitFallback", reset_start)]
+    reset_body = js[
+        reset_start : js.find("async function loadWithExplicitFallback", reset_start)
+    ]
     assert "episodeDegradations.length = 0" in reset_body, "必须清空降级清单"
     assert "host.hidden = true" in reset_body, "必须隐藏降级横幅"
     load_start = js.find("async function load() {")
     assert load_start != -1, "未找到 load()"
-    load_head = js[load_start: js.find("try {", load_start)]
+    load_head = js[load_start : js.find("try {", load_start)]
     assert "resetDegradations()" in load_head, "load() 开始时必须重置降级状态"
 
 
@@ -1091,7 +1184,9 @@ def test_episode_pipeline_degradation_host_is_outside_render_container():
     assert 'id="episodeDegradation"' not in inside, (
         "降级容器不得位于 #episodePipeline 内部（render() 会整体重写该容器）"
     )
-    assert html.find('id="episodeDegradation"') > end, "降级容器应作为稳定兄弟节点位于其后"
+    assert html.find('id="episodeDegradation"') > end, (
+        "降级容器应作为稳定兄弟节点位于其后"
+    )
 
 
 def test_episode_pipeline_degradation_banner_has_style():
@@ -1110,7 +1205,9 @@ def test_episode_pipeline_degradation_banner_has_style():
 
 LOCAL_TAILWIND_SCRIPT = STATIC_DIR / "vendor" / "js" / "tailwindcss-cdn.js"
 TAILWIND_MANIFEST = STATIC_DIR / "vendor" / "MANIFEST.md"
-LOCAL_TAILWIND_SHA256 = "D11003B2F6FBE0CA79340ECD3349DFFE61E11A3FEB224B3FDFA3D24900F70E83"
+LOCAL_TAILWIND_SHA256 = (
+    "D11003B2F6FBE0CA79340ECD3349DFFE61E11A3FEB224B3FDFA3D24900F70E83"
+)
 
 
 def test_tailwind_is_self_hosted():
@@ -1161,7 +1258,9 @@ def test_workbench_pages_all_load_hardware_telemetry_module():
     """9 个 Workbench 页都必须引入共享遥测模块，否则 CPU/RAM/在线/阶段位无法真实接线。"""
     for name in WORKBENCH_PAGES:
         text = (PAGES_DIR / name).read_text(encoding="utf-8")
-        assert "/static/js/core/hardware-telemetry.js" in text, f"{name} 必须引入共享遥测模块"
+        assert "/static/js/core/hardware-telemetry.js" in text, (
+            f"{name} 必须引入共享遥测模块"
+        )
     js = _read(TELEMETRY_JS)
     assert "applyHeaderTelemetryLabels" in js, "遥测模块必须实现顶栏状态位同步方法"
     assert "data-gw-header-prefix" in js, "顶栏状态位必须按前缀真实改写"
@@ -1175,7 +1274,9 @@ def test_workbench_header_prefixes_are_not_static_not_integrated():
         for match in re.finditer(r'data-gw-header-prefix="[^"]*"[^>]*>([^<]*)<', text):
             prefixed.append(name)
             body = match.group(1)
-            assert "未接入" not in body, f"{name} 顶栏状态位不得静态写死未接入：{body!r}"
+            assert "未接入" not in body, (
+                f"{name} 顶栏状态位不得静态写死未接入：{body!r}"
+            )
             assert "读取中" in body, f"{name} 顶栏状态位初值应为读取中：{body!r}"
     assert prefixed, "至少应有页面提供可被真实驱动的顶栏状态位"
 
@@ -1188,26 +1289,36 @@ def test_workbench_production_stage_readout_is_driven_by_real_endpoint():
         "阶段汇总位不得静态写死未接入"
     )
     js = _read(TELEMETRY_JS)
-    assert "syncStageProgress" in js and "/api/episode-pipelines" in js, "必须消费真实阶段端点"
+    assert "syncStageProgress" in js and "/api/episode-pipelines" in js, (
+        "必须消费真实阶段端点"
+    )
     assert "['prodStageReadout', '*']" in js, "汇总位必须注册到真实阶段探针"
-    assert "__summary" in js and "已完成" in js, "汇总位必须由后端阶段状态聚合，不得伪造百分比"
+    assert "__summary" in js and "已完成" in js, (
+        "汇总位必须由后端阶段状态聚合，不得伪造百分比"
+    )
 
 
 def test_workbench_render_bus_status_is_driven_by_real_queue():
     """首页渲染总线状态位必须由真实任务队列驱动，不得静态写死未接入。"""
     html = _read(INDEX_HTML)
-    assert 'id="renderBusStatus"' in html and 'id="renderBusLed"' in html, "首页必须有渲染总线状态位与灯"
+    assert 'id="renderBusStatus"' in html and 'id="renderBusLed"' in html, (
+        "首页必须有渲染总线状态位与灯"
+    )
     assert "渲染总线 · 未接入" not in html, "渲染总线不得静态写死未接入"
     js = _read(STATIC_JS / "core/task-queue.js")
     assert "renderBusStatus" in js, "共享任务队列必须改写渲染总线状态位"
-    assert "state.loaded" in js and "进行中" in js, "总线必须按真实队列结果写入进行中/总数"
+    assert "state.loaded" in js and "进行中" in js, (
+        "总线必须按真实队列结果写入进行中/总数"
+    )
     assert "data-gw-degradation" in js, "队列失败路径必须带结构化降级标记"
 
 
 def test_workbench_project_dispatch_status_is_driven_by_real_create():
     """立项状态位不得静态谎称已接入；只能按真实创建结果写入。"""
     html = _read(PROJECTS_HTML)
-    assert 'id="projectDispatchStatus"' in html and 'id="projectDispatchLed"' in html, "立项页必须有调度状态位"
+    assert 'id="projectDispatchStatus"' in html and 'id="projectDispatchLed"' in html, (
+        "立项页必须有调度状态位"
+    )
     segment = html.split('id="projectDispatchStatus"')[1][:200]
     assert "已接入" not in segment, "状态位初始不得断言已接入"
     assert "待命" in segment or "读取中" in segment, "状态位初值应为待命/读取中"
@@ -1226,8 +1337,10 @@ def test_workbench_project_counts_do_not_swallow_missing_backend():
     js = _read(CONTROLLERS_DIR / "projects-controller.js")
     start = js.find("async function fetchCounts()")
     assert start != -1, "未找到 fetchCounts()"
-    body = js[start: js.find("function updateCountBadges", start)]
-    assert ".catch(() => null)" not in body, "计数请求失败必须进入显式降级，不得静默变成 null"
+    body = js[start : js.find("function updateCountBadges", start)]
+    assert ".catch(() => null)" not in body, (
+        "计数请求失败必须进入显式降级，不得静默变成 null"
+    )
     assert "classifyFetchFailure" in body, "非 2xx 必须按共享口径分类"
     assert "countsDegradation" in body, "失败必须留下结构化降级状态"
 
@@ -1251,9 +1364,17 @@ def test_workbench_agents_metrics_are_driven_by_real_chat_usage_and_config_only_
     assert "applyAgentMetrics" in js and "tokens_per_second" in js
     assert "usage_source" in js and "unavailable_reason" in js
     assert "performance.now()" not in js, "吞吐/服务端耗时必须来自同一次后端请求metrics"
-    assert "probeAgentProvider" not in js and "body: JSON.stringify({message: 'ping'" not in js
-    assert "window.confirm(" in js and "requestInFlight" in js, "计费提示与重复提交保护必须真实实现"
-    assert "configuration_changed" in js and "clearAgentMetrics" in js, "切换Provider/模型必须清除陈旧读数"
+    assert (
+        "probeAgentProvider" not in js
+        and "body: JSON.stringify({message: 'ping'" not in js
+    )
+    assert "window.confirm(" in js and "requestInFlight" in js, (
+        "计费提示与重复提交保护必须真实实现"
+    )
+    assert "configuration_changed" in js and "clearAgentMetrics" in js, (
+        "切换Provider/模型必须清除陈旧读数"
+    )
+
 
 def test_workbench_pages_have_no_static_connected_assertion():
     """Workbench 静态页的 HTML 文本节点不得写死「已接入」断言（必须由真实接口结果驱动）。
@@ -1273,7 +1394,9 @@ def test_workbench_pages_have_no_static_connected_assertion():
         hits = [h.strip() for h in hits if h.strip()]
         if hits:
             offenders[path.name] = hits
-    assert not offenders, f"Workbench 静态 HTML 文本节点仍存在写死「已接入」断言: {offenders}"
+    assert not offenders, (
+        f"Workbench 静态 HTML 文本节点仍存在写死「已接入」断言: {offenders}"
+    )
 
 
 def test_workbench_aura_bus_status_is_driven_by_read_only_chat_configuration():
@@ -1287,10 +1410,13 @@ def test_workbench_aura_bus_status_is_driven_by_read_only_chat_configuration():
     anchor = js.find("async function syncAuraBusStatus()")
     end = js.find("function init()", anchor)
     probe = js[anchor:end]
-    assert "'/api/chat/config'" in probe and "method: 'GET'" in probe, "初始化只读Provider配置摘要"
+    assert "'/api/chat/config'" in probe and "method: 'GET'" in probe, (
+        "初始化只读Provider配置摘要"
+    )
     assert "method: 'POST'" not in probe, "首页加载不得发送可能计费的模型请求"
     assert "auraBusStatus" in js, "必须写入 AURA 状态位"
     assert "data-gw-degradation" in probe, "不可用路径必须带结构化降级标记"
+
 
 def test_workbench_project_card_compute_and_asset_cells_are_real():
     """项目卡「算力集群 / 资产规模」必须由真实端点驱动，不得静态写死未接入。"""
@@ -1311,9 +1437,13 @@ def test_workbench_project_card_readouts_run_after_render():
     js = _read(CONTROLLERS_DIR / "projects-controller.js")
     render_anchor = js.find("function render()")
     assert render_anchor != -1, "必须存在 render()"
-    render_body = js[render_anchor:js.find("function selectProject", render_anchor)]
-    assert "syncAssetScale()" in render_body, "render() 重建卡片后必须重跑资产规模真实读数"
+    render_body = js[render_anchor : js.find("function selectProject", render_anchor)]
+    assert "syncAssetScale()" in render_body, (
+        "render() 重建卡片后必须重跑资产规模真实读数"
+    )
     # 且不得把调用点只留在 init()：init() 早于 render()，会命中 0 个节点。
     init_anchor = js.find("function init()")
-    init_body = js[init_anchor:js.find("if (document.readyState", init_anchor)]
-    assert "syncAssetScale()" not in init_body, "初始化阶段读取会命中 0 个节点，必须在 render() 之后"
+    init_body = js[init_anchor : js.find("if (document.readyState", init_anchor)]
+    assert "syncAssetScale()" not in init_body, (
+        "初始化阶段读取会命中 0 个节点，必须在 render() 之后"
+    )

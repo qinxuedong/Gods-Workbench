@@ -29,15 +29,24 @@ def client(tmp_path, monkeypatch):
         yield value
 
 
-def _configure(monkeypatch, *, provider_id="provider-a", base_url="http://127.0.0.1:8123/v1",
-              model="server-model", models=None, secret=SECRET):
+def _configure(
+    monkeypatch,
+    *,
+    provider_id="provider-a",
+    base_url="http://127.0.0.1:8123/v1",
+    model="server-model",
+    models=None,
+    secret=SECRET,
+):
     definition = {"base_url": base_url, "api_key_env": "GW_TEST_CHAT_SECRET"}
     if models is None:
         definition["model"] = model
     else:
         definition["models"] = models
         definition["default_model"] = model
-    monkeypatch.setenv("GW_PROVIDER_RUNTIME_JSON", json.dumps({provider_id: definition}))
+    monkeypatch.setenv(
+        "GW_PROVIDER_RUNTIME_JSON", json.dumps({provider_id: definition})
+    )
     monkeypatch.setenv("GW_TEST_CHAT_SECRET", secret)
     monkeypatch.delenv("GW_CHAT_BASE_URL", raising=False)
     monkeypatch.delenv("GW_CHAT_API_KEY", raising=False)
@@ -46,11 +55,15 @@ def _configure(monkeypatch, *, provider_id="provider-a", base_url="http://127.0.
 
 def _install_http(monkeypatch, *, payload=None, status=200, error=None):
     calls = []
-    response_payload = payload if payload is not None else {
-        "choices": [{"message": {"content": "受控真实响应"}}],
-        "usage": {"completion_tokens": 12},
-        "model": "upstream-echo-is-not-authority",
-    }
+    response_payload = (
+        payload
+        if payload is not None
+        else {
+            "choices": [{"message": {"content": "受控真实响应"}}],
+            "usage": {"completion_tokens": 12},
+            "model": "upstream-echo-is-not-authority",
+        }
+    )
 
     class Response:
         status_code = status
@@ -76,7 +89,9 @@ def _install_http(monkeypatch, *, payload=None, status=200, error=None):
                 raise TimeoutError("secret must not escape")
             return Response()
 
-    monkeypatch.setattr(chat, "_httpx", lambda _endpoint, _config: SimpleNamespace(Client=Client))
+    monkeypatch.setattr(
+        chat, "_httpx", lambda _endpoint, _config: SimpleNamespace(Client=Client)
+    )
     return calls
 
 
@@ -90,29 +105,45 @@ def test_runtime_config_exposes_only_provider_and_model_allowlist(monkeypatch):
     public = execution_config.public_configuration()
     assert public["configured"] is True
     assert public["default_provider_id"] == "provider-a"
-    assert public["providers"] == [{
-        "provider_id": "provider-a",
-        "models": ["model-a", "model-b"],
-        "default_model": "model-b",
-        "configured": True,
-        "source": "runtime_mapping",
-        "video_protocol": None,
-    }]
+    assert public["providers"] == [
+        {
+            "provider_id": "provider-a",
+            "models": ["model-a", "model-b"],
+            "default_model": "model-b",
+            "configured": True,
+            "source": "runtime_mapping",
+            "video_protocol": None,
+        }
+    ]
     serialized = json.dumps(public)
     assert SECRET not in serialized
     assert "base_url" not in serialized and "api_key_env" not in serialized
 
 
 def test_api_endpoint_url_does_not_duplicate_v1():
-    assert execution_config.api_endpoint_url("https://example.invalid", "/v1/chat/completions") == \
-        "https://example.invalid/v1/chat/completions"
-    assert execution_config.api_endpoint_url("https://example.invalid/v1", "/v1/chat/completions") == \
-        "https://example.invalid/v1/chat/completions"
-    assert execution_config.api_endpoint_url("https://example.invalid/prefix/v1/", "/v1/video/generations") == \
-        "https://example.invalid/prefix/v1/video/generations"
+    assert (
+        execution_config.api_endpoint_url(
+            "https://example.invalid", "/v1/chat/completions"
+        )
+        == "https://example.invalid/v1/chat/completions"
+    )
+    assert (
+        execution_config.api_endpoint_url(
+            "https://example.invalid/v1", "/v1/chat/completions"
+        )
+        == "https://example.invalid/v1/chat/completions"
+    )
+    assert (
+        execution_config.api_endpoint_url(
+            "https://example.invalid/prefix/v1/", "/v1/video/generations"
+        )
+        == "https://example.invalid/prefix/v1/video/generations"
+    )
 
 
-def test_chat_success_uses_verified_provider_usage_and_never_returns_raw(monkeypatch, client):
+def test_chat_success_uses_verified_provider_usage_and_never_returns_raw(
+    monkeypatch, client
+):
     _configure(monkeypatch, base_url="http://127.0.0.1:8123/v1")
     _clock(monkeypatch, 100.0, 102.5)
     payload = {
@@ -124,13 +155,17 @@ def test_chat_success_uses_verified_provider_usage_and_never_returns_raw(monkeyp
     }
     calls = _install_http(monkeypatch, payload=payload)
 
-    response = client.post("/api/chat", headers=AUTH, json={
-        "message": "测试提示",
-        "provider_id": "provider-a",
-        "provider": "caller-forged-label",
-        "model": "caller-forged-model",
-        "max_completion_tokens": 999_999,
-    })
+    response = client.post(
+        "/api/chat",
+        headers=AUTH,
+        json={
+            "message": "测试提示",
+            "provider_id": "provider-a",
+            "provider": "caller-forged-label",
+            "model": "caller-forged-model",
+            "max_completion_tokens": 999_999,
+        },
+    )
 
     assert response.status_code == 200, response.text
     data = response.json()
@@ -172,7 +207,9 @@ def test_chat_success_uses_verified_provider_usage_and_never_returns_raw(monkeyp
         ({"completion_tokens": float("inf")}, "usage_invalid"),
     ],
 )
-def test_invalid_or_missing_completion_usage_is_unavailable(monkeypatch, client, usage, expected_reason):
+def test_invalid_or_missing_completion_usage_is_unavailable(
+    monkeypatch, client, usage, expected_reason
+):
     _configure(monkeypatch)
     _clock(monkeypatch, 4.0, 6.0)
     body = {"choices": [{"message": {"content": "ok"}}]}
@@ -180,7 +217,9 @@ def test_invalid_or_missing_completion_usage_is_unavailable(monkeypatch, client,
         body["usage"] = usage
     _install_http(monkeypatch, payload=body)
 
-    response = client.post("/api/chat", headers=AUTH, json={"message": "x", "provider_id": "provider-a"})
+    response = client.post(
+        "/api/chat", headers=AUTH, json={"message": "x", "provider_id": "provider-a"}
+    )
 
     assert response.status_code == 200, response.text
     metrics = response.json()["metrics"]
@@ -193,9 +232,16 @@ def test_invalid_or_missing_completion_usage_is_unavailable(monkeypatch, client,
 def test_zero_output_tokens_yield_valid_zero_rate(monkeypatch, client):
     _configure(monkeypatch)
     _clock(monkeypatch, 7.0, 9.0)
-    _install_http(monkeypatch, payload={"choices": [{"message": {"content": ""}}],
-                                        "usage": {"completion_tokens": 0}})
-    response = client.post("/api/chat", headers=AUTH, json={"message": "x", "provider_id": "provider-a"})
+    _install_http(
+        monkeypatch,
+        payload={
+            "choices": [{"message": {"content": ""}}],
+            "usage": {"completion_tokens": 0},
+        },
+    )
+    response = client.post(
+        "/api/chat", headers=AUTH, json={"message": "x", "provider_id": "provider-a"}
+    )
     assert response.status_code == 200
     metrics = response.json()["metrics"]
     assert metrics["output_tokens"] == 0
@@ -203,12 +249,17 @@ def test_zero_output_tokens_yield_valid_zero_rate(monkeypatch, client):
     assert metrics["unavailable_reason"] is None
 
 
-@pytest.mark.parametrize(("start", "end"), [(10.0, 10.0), (10.0, 9.0), (10.0, float("inf")), (10.0, float("nan"))])
+@pytest.mark.parametrize(
+    ("start", "end"),
+    [(10.0, 10.0), (10.0, 9.0), (10.0, float("inf")), (10.0, float("nan"))],
+)
 def test_invalid_elapsed_never_yields_rate(monkeypatch, client, start, end):
     _configure(monkeypatch)
     _clock(monkeypatch, start, end)
     _install_http(monkeypatch)
-    response = client.post("/api/chat", headers=AUTH, json={"message": "x", "provider_id": "provider-a"})
+    response = client.post(
+        "/api/chat", headers=AUTH, json={"message": "x", "provider_id": "provider-a"}
+    )
     assert response.status_code == 200
     metrics = response.json()["metrics"]
     assert metrics["output_tokens"] == 12
@@ -224,19 +275,30 @@ def test_unknown_client_provider_never_relabels_legacy_environment(monkeypatch, 
     monkeypatch.setenv("GW_CHAT_MODEL", "legacy-model")
     calls = _install_http(monkeypatch)
 
-    response = client.post("/api/chat", headers=AUTH, json={
-        "message": "x", "provider_id": "forged-provider", "provider": "forged-provider",
-    })
+    response = client.post(
+        "/api/chat",
+        headers=AUTH,
+        json={
+            "message": "x",
+            "provider_id": "forged-provider",
+            "provider": "forged-provider",
+        },
+    )
 
     assert response.status_code == 400
     assert response.json()["detail"]["code"] == "CHAT_PROVIDER_NOT_CONFIGURED"
     assert response.json()["detail"]["metrics"]["provider_id"] is None
-    assert response.json()["detail"]["metrics"]["unavailable_reason"] == "provider_not_configured"
+    assert (
+        response.json()["detail"]["metrics"]["unavailable_reason"]
+        == "provider_not_configured"
+    )
     assert not [call for call in calls if "url" in call]
     assert SECRET not in response.text
 
 
-def test_legacy_environment_is_server_attributed_not_client_labeled(monkeypatch, client):
+def test_legacy_environment_is_server_attributed_not_client_labeled(
+    monkeypatch, client
+):
     monkeypatch.delenv("GW_PROVIDER_RUNTIME_JSON", raising=False)
     monkeypatch.setenv("GW_CHAT_BASE_URL", "http://127.0.0.1:8123/v1")
     monkeypatch.setenv("GW_CHAT_API_KEY", SECRET)
@@ -244,9 +306,15 @@ def test_legacy_environment_is_server_attributed_not_client_labeled(monkeypatch,
     _clock(monkeypatch)
     calls = _install_http(monkeypatch)
 
-    response = client.post("/api/chat", headers=AUTH, json={
-        "message": "x", "provider": "caller-pretends-vendor", "model": "caller-model",
-    })
+    response = client.post(
+        "/api/chat",
+        headers=AUTH,
+        json={
+            "message": "x",
+            "provider": "caller-pretends-vendor",
+            "model": "caller-model",
+        },
+    )
 
     assert response.status_code == 200, response.text
     data = response.json()
@@ -261,24 +329,48 @@ def test_legacy_environment_is_server_attributed_not_client_labeled(monkeypatch,
 def test_unlisted_model_is_rejected_for_multi_model_provider(monkeypatch, client):
     _configure(monkeypatch, models=["model-a", "model-b"], model="model-a")
     calls = _install_http(monkeypatch)
-    response = client.post("/api/chat/agent", headers=AUTH, json={
-        "message": "x", "provider_id": "provider-a", "model": "model-c",
-    })
+    response = client.post(
+        "/api/chat/agent",
+        headers=AUTH,
+        json={
+            "message": "x",
+            "provider_id": "provider-a",
+            "model": "model-c",
+        },
+    )
     assert response.status_code == 400
     assert response.json()["detail"]["code"] == "CHAT_MODEL_NOT_CONFIGURED"
-    assert response.json()["detail"]["metrics"]["unavailable_reason"] == "model_not_configured"
+    assert (
+        response.json()["detail"]["metrics"]["unavailable_reason"]
+        == "model_not_configured"
+    )
     assert not [call for call in calls if "url" in call]
 
 
 def test_multiple_providers_require_explicit_selection(monkeypatch, client):
-    monkeypatch.setenv("GW_PROVIDER_RUNTIME_JSON", json.dumps({
-        "provider-a": {"base_url": "http://127.0.0.1:8123", "api_key_env": "GW_KEY_A", "model": "a"},
-        "provider-b": {"base_url": "http://127.0.0.1:8124", "api_key_env": "GW_KEY_B", "model": "b"},
-    }))
+    monkeypatch.setenv(
+        "GW_PROVIDER_RUNTIME_JSON",
+        json.dumps(
+            {
+                "provider-a": {
+                    "base_url": "http://127.0.0.1:8123",
+                    "api_key_env": "GW_KEY_A",
+                    "model": "a",
+                },
+                "provider-b": {
+                    "base_url": "http://127.0.0.1:8124",
+                    "api_key_env": "GW_KEY_B",
+                    "model": "b",
+                },
+            }
+        ),
+    )
     monkeypatch.setenv("GW_KEY_A", SECRET)
     monkeypatch.setenv("GW_KEY_B", "other-test-secret")
     calls = _install_http(monkeypatch)
-    response = client.post("/api/chat", headers=AUTH, json={"message": "x", "provider": "provider-a"})
+    response = client.post(
+        "/api/chat", headers=AUTH, json={"message": "x", "provider": "provider-a"}
+    )
     assert response.status_code == 400
     assert response.json()["detail"]["code"] == "CHAT_PROVIDER_SELECTION_REQUIRED"
     assert not [call for call in calls if "url" in call]
@@ -287,20 +379,33 @@ def test_multiple_providers_require_explicit_selection(monkeypatch, client):
 def test_client_base_url_or_credential_is_rejected_without_network(monkeypatch, client):
     _configure(monkeypatch)
     calls = _install_http(monkeypatch)
-    response = client.post("/api/chat", headers=AUTH, json={
-        "message": "x", "base_url": "http://127.0.0.1:8123", "api_key": SECRET,
-    })
+    response = client.post(
+        "/api/chat",
+        headers=AUTH,
+        json={
+            "message": "x",
+            "base_url": "http://127.0.0.1:8123",
+            "api_key": SECRET,
+        },
+    )
     assert response.status_code == 400
     assert response.json()["detail"]["code"] == "INVALID_REQUEST"
-    assert response.json()["detail"]["metrics"]["unavailable_reason"] == "client_provider_configuration_rejected"
+    assert (
+        response.json()["detail"]["metrics"]["unavailable_reason"]
+        == "client_provider_configuration_rejected"
+    )
     assert SECRET not in response.text
     assert not [call for call in calls if "url" in call]
 
 
-def test_upstream_failure_returns_explicit_null_metrics_and_does_not_retry(monkeypatch, client):
+def test_upstream_failure_returns_explicit_null_metrics_and_does_not_retry(
+    monkeypatch, client
+):
     _configure(monkeypatch)
     calls = _install_http(monkeypatch, error="raise")
-    response = client.post("/api/chat", headers=AUTH, json={"message": "x", "provider_id": "provider-a"})
+    response = client.post(
+        "/api/chat", headers=AUTH, json={"message": "x", "provider_id": "provider-a"}
+    )
     assert response.status_code == 503
     detail = response.json()["detail"]
     assert detail["code"] == "CHAT_PROVIDER_FAILED"
@@ -316,19 +421,32 @@ def test_upstream_failure_returns_explicit_null_metrics_and_does_not_retry(monke
 def test_capacity_limit_fails_without_second_provider_call(monkeypatch, client):
     _configure(monkeypatch)
     calls = _install_http(monkeypatch)
-    acquired = [_ for _ in range(chat.MAX_CONCURRENT_REQUESTS) if chat._CHAT_SLOTS.acquire(blocking=False)]
+    acquired = [
+        _
+        for _ in range(chat.MAX_CONCURRENT_REQUESTS)
+        if chat._CHAT_SLOTS.acquire(blocking=False)
+    ]
     try:
-        response = client.post("/api/chat", headers=AUTH, json={"message": "x", "provider_id": "provider-a"})
+        response = client.post(
+            "/api/chat",
+            headers=AUTH,
+            json={"message": "x", "provider_id": "provider-a"},
+        )
     finally:
         for _ in acquired:
             chat._CHAT_SLOTS.release()
     assert response.status_code == 503
     assert response.json()["detail"]["code"] == "CHAT_CAPACITY_EXCEEDED"
-    assert response.json()["detail"]["metrics"]["unavailable_reason"] == "concurrency_limit"
+    assert (
+        response.json()["detail"]["metrics"]["unavailable_reason"]
+        == "concurrency_limit"
+    )
     assert not [call for call in calls if "url" in call]
 
 
-def test_configuration_get_has_no_provider_side_effect_and_no_secret_fields(monkeypatch, client):
+def test_configuration_get_has_no_provider_side_effect_and_no_secret_fields(
+    monkeypatch, client
+):
     _configure(monkeypatch)
     calls = _install_http(monkeypatch)
     response = client.get("/api/chat/config", headers=READONLY)
@@ -343,13 +461,26 @@ def test_configuration_get_has_no_provider_side_effect_and_no_secret_fields(monk
 def test_unauthenticated_and_readonly_chat_writes_are_denied(monkeypatch, client):
     _configure(monkeypatch)
     calls = _install_http(monkeypatch)
-    assert client.post("/api/chat", json={"message": "x", "provider_id": "provider-a"}).status_code == 401
-    assert client.post("/api/chat", headers=READONLY,
-                       json={"message": "x", "provider_id": "provider-a"}).status_code == 403
+    assert (
+        client.post(
+            "/api/chat", json={"message": "x", "provider_id": "provider-a"}
+        ).status_code
+        == 401
+    )
+    assert (
+        client.post(
+            "/api/chat",
+            headers=READONLY,
+            json={"message": "x", "provider_id": "provider-a"},
+        ).status_code
+        == 403
+    )
     assert not [call for call in calls if "url" in call]
 
 
 def test_extreme_integer_usage_overflow_is_unavailable_not_server_error():
-    result = chat._build_metrics({"usage": {"completion_tokens": 10 ** 400}}, 1.0, 2.0, "provider-a", "model-a")
+    result = chat._build_metrics(
+        {"usage": {"completion_tokens": 10**400}}, 1.0, 2.0, "provider-a", "model-a"
+    )
     assert result["tokens_per_second"] is None
     assert result["unavailable_reason"] == "rate_invalid"

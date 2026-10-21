@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """C8-T6：审阅版本绑定与交付记录回读契约。"""
 
 from __future__ import annotations
@@ -120,7 +119,11 @@ def test_c8_t6_approval_and_delivery_bind_exact_version_and_all_relations():
         newer_response = client.post(
             "/api/asset-reviews/sessions",
             headers=AUTH,
-            json={**newer, "title": "C8 单镜头 v002", "expected_version": current_revision},
+            json={
+                **newer,
+                "title": "C8 单镜头 v002",
+                "expected_version": current_revision,
+            },
         )
         assert newer_response.status_code == 201, newer_response.text
 

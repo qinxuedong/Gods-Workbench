@@ -1,11 +1,10 @@
-# -*- coding: utf-8 -*-
 """C16-AC2 零凭据客户端与服务端出口网关契约。"""
 
 from __future__ import annotations
 
 import json
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import threading
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import pytest
 from fastapi.testclient import TestClient
@@ -69,9 +68,7 @@ def test_vault_status_marks_provider_without_key_as_not_configured():
 
     assert public["configured"] is False
     assert public["data_status"] == "not_configured"
-    assert public["providers"] == [
-        {"provider_id": "gateway-provider", "fields": {}}
-    ]
+    assert public["providers"] == [{"provider_id": "gateway-provider", "fields": {}}]
 
 
 def test_vault_rejects_unsupported_or_missing_credentials_without_secret_echo():
@@ -103,7 +100,6 @@ def test_provider_settings_route_exposes_vault_status_without_secret(monkeypatch
         assert "route-secret-value" not in status.text
 
 
-
 def test_gateway_injects_server_credential_and_rejects_client_credential(monkeypatch):
     received = []
 
@@ -114,15 +110,19 @@ def test_gateway_injects_server_credential_and_rejects_client_credential(monkeyp
         def do_POST(self):
             length = int(self.headers.get("Content-Length", "0"))
             body = json.loads(self.rfile.read(length))
-            received.append({
-                "authorization": self.headers.get("Authorization"),
-                "body": body,
-            })
-            response = json.dumps({
-                "choices": [{"message": {"content": "网关响应"}}],
-                "model": "gateway-chat",
-                "usage": {"completion_tokens": 2},
-            }).encode()
+            received.append(
+                {
+                    "authorization": self.headers.get("Authorization"),
+                    "body": body,
+                }
+            )
+            response = json.dumps(
+                {
+                    "choices": [{"message": {"content": "网关响应"}}],
+                    "model": "gateway-chat",
+                    "usage": {"completion_tokens": 2},
+                }
+            ).encode()
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
             self.send_header("Content-Length", str(len(response)))
@@ -139,10 +139,12 @@ def test_gateway_injects_server_credential_and_rejects_client_credential(monkeyp
             saved = client.put(
                 "/api/providers?expected_version=1",
                 headers=AUTH,
-                json=[provider(
-                    base_url=f"http://127.0.0.1:{upstream.server_port}/v1",
-                    api_key="gateway-server-secret",
-                )],
+                json=[
+                    provider(
+                        base_url=f"http://127.0.0.1:{upstream.server_port}/v1",
+                        api_key="gateway-server-secret",
+                    )
+                ],
             )
             assert saved.status_code == 200, saved.text
 
@@ -178,7 +180,10 @@ def test_gateway_requires_authentication_and_write_role(monkeypatch):
         assert no_auth.status_code == 401
         readonly = client.post(
             "/api/providers/gateway-provider/gateway/chat",
-            headers={"Authorization": "Bearer cleanroom-test", "X-User-Role": "readonly"},
+            headers={
+                "Authorization": "Bearer cleanroom-test",
+                "X-User-Role": "readonly",
+            },
             json={"message": "hello"},
         )
         assert readonly.status_code == 403

@@ -4,6 +4,7 @@
 C7-AC2：一个受控工作流参数在 ComfyUI 或 RunningHub 产生持久任务结果，统一登记资产并可回跳来源。
 Proof：API JSON、fixture id、test log。
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -11,7 +12,6 @@ from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
-
 from media_doubles import (
     APPROVED_HOST,
     FIXED_PNG,
@@ -24,7 +24,9 @@ from media_doubles import (
 )
 
 
-def _create_project(client: TestClient, name: str = "c7-media-project") -> tuple[str, int]:
+def _create_project(
+    client: TestClient, name: str = "c7-media-project"
+) -> tuple[str, int]:
     res = client.post(
         "/api/asset-registry/projects",
         headers=HEADERS,
@@ -35,7 +37,9 @@ def _create_project(client: TestClient, name: str = "c7-media-project") -> tuple
     return project["project_id"], project["version"]
 
 
-def _create_canvas(client: TestClient, project_id: str, title: str = "c7-canvas") -> str:
+def _create_canvas(
+    client: TestClient, project_id: str, title: str = "c7-canvas"
+) -> str:
     res = client.post(
         "/api/canvases",
         headers=HEADERS,
@@ -62,7 +66,11 @@ def test_c7_t2_comfyui_controlled_params_durable_task_and_unified_asset_loop(
     before_counts = asset_counts()
 
     controlled_node_info = [
-        {"nodeId": "2", "fieldName": "filename_prefix", "fieldValue": "c7_comfy_output"},
+        {
+            "nodeId": "2",
+            "fieldName": "filename_prefix",
+            "fieldValue": "c7_comfy_output",
+        },
     ]
     source_context = {
         "project_id": project_id,
@@ -123,7 +131,9 @@ def test_c7_t2_comfyui_controlled_params_durable_task_and_unified_asset_loop(
     assert metadata["source_context"]["canvas_id"] == canvas_id
 
     # 验证资产内容可正常按固定哈希取回
-    content_res = media_client.get(f"/api/god_workflow/assets/{asset_id}/content", headers=HEADERS)
+    content_res = media_client.get(
+        f"/api/god_workflow/assets/{asset_id}/content", headers=HEADERS
+    )
     assert content_res.status_code == 200
     assert hashlib.sha256(content_res.content).hexdigest() == FIXED_PNG_SHA256
 
@@ -171,7 +181,9 @@ def test_c7_t2_runninghub_controlled_params_durable_task_and_unified_asset_loop(
     assert start_body["remote_task_id"] == "fake-rh-task-0001"
 
     # 验证受控参数已透传给平台调度器
-    create_calls = [args for name, args in fake_media.rh.calls if name == "create_rh_cloud_task"]
+    create_calls = [
+        args for name, args in fake_media.rh.calls if name == "create_rh_cloud_task"
+    ]
     assert len(create_calls) == 1
     assert create_calls[0]["node_info_list"][1] == controlled_node_info[1]
     assert create_calls[0]["node_info_list"][0]["nodeId"] == "1"
@@ -210,7 +222,9 @@ def test_c7_t2_runninghub_controlled_params_durable_task_and_unified_asset_loop(
     assert metadata["source_context"]["canvas_id"] == canvas_id
 
 
-def test_c7_t2_cross_tenant_isolation_and_project_context_guard(media_client, fake_media):
+def test_c7_t2_cross_tenant_isolation_and_project_context_guard(
+    media_client, fake_media
+):
     """跨主体租户隔离与未授权项目上下文拦截。"""
     project_id, _ = _create_project(media_client, "c7-t2-isolated-project")
     _, workflow = prepare_workflow(media_client)
@@ -232,7 +246,9 @@ def test_c7_t2_cross_tenant_isolation_and_project_context_guard(media_client, fa
     assert denied.status_code in {403, 404}
 
 
-def test_c7_t2_durable_task_lookup_and_source_provenance_preservation(media_client, fake_media):
+def test_c7_t2_durable_task_lookup_and_source_provenance_preservation(
+    media_client, fake_media
+):
     """任务与资产双向可查，刷新/通过稳定 ID 回跳无需文件名猜测。"""
     project_id, project_version = _create_project(media_client, "c7-t2-lookup-proj")
     canvas_id = _create_canvas(media_client, project_id, "c7-lookup-canvas")
@@ -257,7 +273,9 @@ def test_c7_t2_durable_task_lookup_and_source_provenance_preservation(media_clie
     # 1. 列表查询包含该任务
     list_res = media_client.get(TASKS, headers=HEADERS)
     assert list_res.status_code == 200
-    task_ids = [t.get("job_id") or t.get("task_id") for t in list_res.json().get("tasks", [])]
+    task_ids = [
+        t.get("job_id") or t.get("task_id") for t in list_res.json().get("tasks", [])
+    ]
     assert job_id in task_ids
 
     # 2. 单任务查询准确
@@ -285,13 +303,20 @@ def test_c7_t2_runninghub_real_host_fixture_execution_and_unified_asset(
     """
     import json
     from pathlib import Path
+
     import httpx
+
     from gw.god_workflow import platforms, routes
 
     real_remote_task_id = "1845892349182390192"
     real_host = "rh-images-tos.xiaoyaoyou.com"
 
-    fixture_path = Path(__file__).resolve().parents[1] / "fixtures" / "runninghub" / "outputs_success_real_host.json"
+    fixture_path = (
+        Path(__file__).resolve().parents[1]
+        / "fixtures"
+        / "runninghub"
+        / "outputs_success_real_host.json"
+    )
     assert fixture_path.exists(), f"真实 Fixture 不存在: {fixture_path}"
     real_output_fixture = json.loads(fixture_path.read_text(encoding="utf-8"))
 
@@ -302,7 +327,10 @@ def test_c7_t2_runninghub_real_host_fixture_execution_and_unified_asset(
         def handler(request: httpx.Request) -> httpx.Response:
             if request.headers.get("host") not in (APPROVED_HOST, real_host):
                 raise httpx.ConnectError(f"refuse host {request.headers.get('host')}")
-            return httpx.Response(200, content=FIXED_PNG, headers={"content-type": "image/png"})
+            return httpx.Response(
+                200, content=FIXED_PNG, headers={"content-type": "image/png"}
+            )
+
         return httpx.MockTransport(handler)
 
     monkeypatch.setattr(routes, "_output_transport", real_host_transport)
@@ -312,6 +340,7 @@ def test_c7_t2_runninghub_real_host_fixture_execution_and_unified_asset(
         return {"taskId": real_remote_task_id}
 
     query_count = 0
+
     async def query_real_task_outputs(task_id, api_key, domain=None):
         nonlocal query_count
         query_count += 1
@@ -339,7 +368,11 @@ def test_c7_t2_runninghub_real_host_fixture_execution_and_unified_asset(
 
     controlled_node_info = [
         {"nodeId": "1", "fieldName": "image", "fieldValue": input_asset["filename"]},
-        {"nodeId": "2", "fieldName": "filename_prefix", "fieldValue": "c7_real_rh_output"},
+        {
+            "nodeId": "2",
+            "fieldName": "filename_prefix",
+            "fieldValue": "c7_real_rh_output",
+        },
     ]
     source_context = {
         "project_id": project_id,
@@ -392,7 +425,8 @@ def test_c7_t2_runninghub_real_host_fixture_execution_and_unified_asset(
     assert done_task["source_context"]["canvas_id"] == canvas_id
 
     # 5. 验证资产二进制可按固定哈希拉取
-    content_res = media_client.get(f"/api/god_workflow/assets/{asset_id}/content", headers=HEADERS)
+    content_res = media_client.get(
+        f"/api/god_workflow/assets/{asset_id}/content", headers=HEADERS
+    )
     assert content_res.status_code == 200
     assert hashlib.sha256(content_res.content).hexdigest() == FIXED_PNG_SHA256
-

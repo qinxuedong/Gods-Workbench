@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 # Copyright 2026 Gods-Workbench Authors
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -14,19 +13,21 @@
 # limitations under the License.
 
 """团队治理状态与纯文本消息的 SQLite 持久化边界。"""
+
 from __future__ import annotations
 
-from contextlib import contextmanager
-from datetime import datetime, timezone
 import base64
 import hashlib
 import os
-from pathlib import Path
 import re
 import secrets
 import sqlite3
 import threading
-from typing import Any, Iterable, Iterator, Mapping
+from collections.abc import Iterable, Iterator, Mapping
+from contextlib import contextmanager
+from datetime import UTC, datetime, timezone
+from pathlib import Path
+from typing import Any
 
 from gw.core.errors import CleanroomException
 from gw.core.storage import data_root
@@ -47,7 +48,9 @@ class TeamMessageStorageUnavailable(CleanroomException):
     """团队库不可读、损坏、版本不兼容或写事务失败。"""
 
     def __init__(self) -> None:
-        super().__init__(503, "TEAM_MESSAGE_STORE_UNAVAILABLE", "团队消息存储暂不可用，已拒绝读写")
+        super().__init__(
+            503, "TEAM_MESSAGE_STORE_UNAVAILABLE", "团队消息存储暂不可用，已拒绝读写"
+        )
 
 
 class TeamMessageNotFound(CleanroomException):
@@ -68,7 +71,9 @@ class TeamMessageIdempotencyConflict(CleanroomException):
     """相同幂等键被用于不同消息文本。"""
 
     def __init__(self) -> None:
-        super().__init__(409, "MESSAGE_IDEMPOTENCY_CONFLICT", "幂等键已用于不同消息文本")
+        super().__init__(
+            409, "MESSAGE_IDEMPOTENCY_CONFLICT", "幂等键已用于不同消息文本"
+        )
 
 
 class TeamMessageInvalidCursor(CleanroomException):
@@ -82,7 +87,9 @@ class TeamMessageCursorOutOfRange(CleanroomException):
     """游标指向尚未分配的消息序号。"""
 
     def __init__(self) -> None:
-        super().__init__(422, "MESSAGE_CURSOR_OUT_OF_RANGE", "消息游标超过当前团队已分配序号")
+        super().__init__(
+            422, "MESSAGE_CURSOR_OUT_OF_RANGE", "消息游标超过当前团队已分配序号"
+        )
 
 
 def team_message_database_path() -> Path:
@@ -145,11 +152,33 @@ def _schema_statements() -> tuple[str, ...]:
 
 _EXPECTED_COLUMNS = {
     "metadata": {"key", "value"},
-    "governance_users": {"user_id", "display_name", "role", "version", "external_subject", "identity_domain", "owner_subject", "owner_domain"},
+    "governance_users": {
+        "user_id",
+        "display_name",
+        "role",
+        "version",
+        "external_subject",
+        "identity_domain",
+        "owner_subject",
+        "owner_domain",
+    },
     "teams": {"team_id", "name", "description", "version", "owner_user_id"},
     "team_members": {"team_id", "user_id", "role"},
-    "messages": {"message_id", "team_id", "author_user_id", "text", "created_at", "sequence"},
-    "idempotency_records": {"team_id", "author_user_id", "client_request_id", "request_hash", "message_id"},
+    "messages": {
+        "message_id",
+        "team_id",
+        "author_user_id",
+        "text",
+        "created_at",
+        "sequence",
+    },
+    "idempotency_records": {
+        "team_id",
+        "author_user_id",
+        "client_request_id",
+        "request_hash",
+        "message_id",
+    },
 }
 
 
@@ -183,7 +212,9 @@ class TeamMessageRepository:
                         check = connection.execute("PRAGMA quick_check").fetchone()
                         if not check or check[0] != "ok":
                             raise self._unavailable()
-                        version = connection.execute("PRAGMA user_version").fetchone()[0]
+                        version = connection.execute("PRAGMA user_version").fetchone()[
+                            0
+                        ]
                         if version != SCHEMA_VERSION:
                             raise self._unavailable()
                         meta_exists = connection.execute(
@@ -198,10 +229,19 @@ class TeamMessageRepository:
                             "SELECT name FROM sqlite_master WHERE type='table'"
                         ).fetchall()
                         table_names = {row[0] for row in required}
-                        if not stored_version or stored_version[0] != str(SCHEMA_VERSION) or not set(_EXPECTED_COLUMNS) <= table_names:
+                        if (
+                            not stored_version
+                            or stored_version[0] != str(SCHEMA_VERSION)
+                            or not set(_EXPECTED_COLUMNS) <= table_names
+                        ):
                             raise self._unavailable()
                         for table, expected_columns in _EXPECTED_COLUMNS.items():
-                            columns = {row[1] for row in connection.execute(f"PRAGMA table_info({table})")}
+                            columns = {
+                                row[1]
+                                for row in connection.execute(
+                                    f"PRAGMA table_info({table})"
+                                )
+                            }
                             if not expected_columns <= columns:
                                 raise self._unavailable()
                         bootstrap = connection.execute(
@@ -209,7 +249,9 @@ class TeamMessageRepository:
                         ).fetchone()
                         if not bootstrap or bootstrap[0] not in {"0", "1"}:
                             raise self._unavailable()
-                        users = connection.execute("SELECT 1 FROM governance_users LIMIT 1").fetchone()
+                        users = connection.execute(
+                            "SELECT 1 FROM governance_users LIMIT 1"
+                        ).fetchone()
                         if users and bootstrap[0] != "1":
                             # 有治理身份即视为初始化已经完成，缺失标记不能重开 bootstrap。
                             connection.execute("BEGIN IMMEDIATE")
@@ -221,8 +263,13 @@ class TeamMessageRepository:
                         connection.execute("BEGIN IMMEDIATE")
                         for statement in _schema_statements():
                             connection.execute(statement)
-                        connection.execute("INSERT INTO metadata(key, value) VALUES('schema_version', ?)", (str(SCHEMA_VERSION),))
-                        connection.execute("INSERT INTO metadata(key, value) VALUES('bootstrap_complete', '0')")
+                        connection.execute(
+                            "INSERT INTO metadata(key, value) VALUES('schema_version', ?)",
+                            (str(SCHEMA_VERSION),),
+                        )
+                        connection.execute(
+                            "INSERT INTO metadata(key, value) VALUES('bootstrap_complete', '0')"
+                        )
                         connection.execute(f"PRAGMA user_version={SCHEMA_VERSION}")
                         connection.commit()
                 finally:
@@ -260,17 +307,34 @@ class TeamMessageRepository:
 
     @staticmethod
     def _read_state(connection: sqlite3.Connection) -> dict[str, Any]:
-        users = [dict(row) for row in connection.execute("SELECT * FROM governance_users ORDER BY user_id")]
-        teams = [dict(row) for row in connection.execute("SELECT * FROM teams ORDER BY team_id")]
+        users = [
+            dict(row)
+            for row in connection.execute(
+                "SELECT * FROM governance_users ORDER BY user_id"
+            )
+        ]
+        teams = [
+            dict(row)
+            for row in connection.execute("SELECT * FROM teams ORDER BY team_id")
+        ]
         members: dict[str, dict[str, str]] = {}
-        for row in connection.execute("SELECT team_id, user_id, role FROM team_members ORDER BY team_id, user_id"):
+        for row in connection.execute(
+            "SELECT team_id, user_id, role FROM team_members ORDER BY team_id, user_id"
+        ):
             members.setdefault(row["team_id"], {})[row["user_id"]] = row["role"]
-        marker = connection.execute("SELECT value FROM metadata WHERE key='bootstrap_complete'").fetchone()
+        marker = connection.execute(
+            "SELECT value FROM metadata WHERE key='bootstrap_complete'"
+        ).fetchone()
         if not marker or marker[0] not in {"0", "1"}:
             raise TeamMessageStorageUnavailable()
         if users and marker[0] != "1":
             raise TeamMessageStorageUnavailable()
-        return {"users": users, "teams": teams, "members": members, "bootstrapped": marker[0] == "1"}
+        return {
+            "users": users,
+            "teams": teams,
+            "members": members,
+            "bootstrapped": marker[0] == "1",
+        }
 
     def load_governance_state(self) -> dict[str, Any]:
         with self._connection() as connection:
@@ -282,7 +346,12 @@ class TeamMessageRepository:
                 raise self._unavailable()
             return state
 
-    def save_governance_state(self, users: Iterable[Mapping[str, Any]], teams: Iterable[Mapping[str, Any]], bootstrapped: bool) -> None:
+    def save_governance_state(
+        self,
+        users: Iterable[Mapping[str, Any]],
+        teams: Iterable[Mapping[str, Any]],
+        bootstrapped: bool,
+    ) -> None:
         """在单个 SQLite 事务中替换治理身份、团队和成员快照。"""
         user_rows = list(users)
         team_rows = list(teams)
@@ -290,7 +359,9 @@ class TeamMessageRepository:
         with self._connection() as connection:
             try:
                 connection.execute("BEGIN IMMEDIATE")
-                old_marker = connection.execute("SELECT value FROM metadata WHERE key='bootstrap_complete'").fetchone()
+                old_marker = connection.execute(
+                    "SELECT value FROM metadata WHERE key='bootstrap_complete'"
+                ).fetchone()
                 if not old_marker or old_marker[0] not in {"0", "1"}:
                     raise self._unavailable()
                 connection.execute("DELETE FROM team_members")
@@ -309,10 +380,16 @@ class TeamMessageRepository:
                 )
                 connection.executemany(
                     "INSERT INTO team_members(team_id, user_id, role) VALUES (?, ?, ?)",
-                    [(team["team_id"], user_id, role) for team in team_rows for user_id, role in team["members"].items()],
+                    [
+                        (team["team_id"], user_id, role)
+                        for team in team_rows
+                        for user_id, role in team["members"].items()
+                    ],
                 )
                 if marker:
-                    connection.execute("UPDATE metadata SET value='1' WHERE key='bootstrap_complete'")
+                    connection.execute(
+                        "UPDATE metadata SET value='1' WHERE key='bootstrap_complete'"
+                    )
                 connection.commit()
             except CleanroomException:
                 if connection.in_transaction:
@@ -332,7 +409,11 @@ class TeamMessageRepository:
         data_override = os.environ.get("GW_DATA_DIR", "").strip()
         if not data_override or not Path(data_override).expanduser().is_absolute():
             raise RuntimeError("测试重置必须显式使用隔离的 GW_DATA_DIR")
-        for candidate in (resolved, Path(str(resolved) + "-wal"), Path(str(resolved) + "-shm")):
+        for candidate in (
+            resolved,
+            Path(str(resolved) + "-wal"),
+            Path(str(resolved) + "-shm"),
+        ):
             try:
                 candidate.unlink(missing_ok=True)
             except OSError as exc:
@@ -340,7 +421,11 @@ class TeamMessageRepository:
         _INITIALIZED_PATHS.discard(str(resolved))
 
     @staticmethod
-    def _resolve_actor(connection: sqlite3.Connection, identity_domain: str | None, identity_subject: str | None) -> sqlite3.Row:
+    def _resolve_actor(
+        connection: sqlite3.Connection,
+        identity_domain: str | None,
+        identity_subject: str | None,
+    ) -> sqlite3.Row:
         if not identity_domain or not identity_subject:
             raise TeamMessageForbidden()
         rows = connection.execute(
@@ -375,7 +460,11 @@ class TeamMessageRepository:
         member_role = member["role"] if member else None
         global_role = str(global_role or "").strip().lower()
         governance_override = global_role in GOVERNANCE_ROLES
-        readable = governance_override or team["owner_user_id"] == actor["user_id"] or member_role in READ_TEAM_ROLES
+        readable = (
+            governance_override
+            or team["owner_user_id"] == actor["user_id"]
+            or member_role in READ_TEAM_ROLES
+        )
         if not readable:
             raise TeamMessageNotFound()
         if write:
@@ -387,13 +476,15 @@ class TeamMessageRepository:
 
     @staticmethod
     def encode_cursor(team_id: str, sequence: int) -> str:
-        raw = f"{team_id}:{sequence}".encode("utf-8")
+        raw = f"{team_id}:{sequence}".encode()
         return base64.urlsafe_b64encode(raw).decode("ascii").rstrip("=")
 
     @staticmethod
     def decode_cursor(cursor: str, team_id: str) -> int:
         try:
-            raw = base64.urlsafe_b64decode(cursor.encode("ascii") + b"=" * (-len(cursor) % 4)).decode("utf-8")
+            raw = base64.urlsafe_b64decode(
+                cursor.encode("ascii") + b"=" * (-len(cursor) % 4)
+            ).decode("utf-8")
             scoped_team, raw_sequence = raw.rsplit(":", 1)
             sequence = int(raw_sequence)
         except (ValueError, UnicodeError, TypeError, base64.binascii.Error):
@@ -415,19 +506,31 @@ class TeamMessageRepository:
     ) -> dict[str, Any]:
         if cursor is not None and after_sequence is not None:
             raise TeamMessageInvalidCursor("cursor 与 after_sequence 不得同时提供")
-        offset = self.decode_cursor(cursor, team_id) if cursor is not None else int(after_sequence or 0)
+        offset = (
+            self.decode_cursor(cursor, team_id)
+            if cursor is not None
+            else int(after_sequence or 0)
+        )
         if offset < 0:
             raise TeamMessageInvalidCursor()
         with self._connection() as connection:
             try:
                 connection.execute("BEGIN")
                 _, member_role = self._authorize_team(
-                    connection, team_id, identity_domain, identity_subject, global_role, write=False
+                    connection,
+                    team_id,
+                    identity_domain,
+                    identity_subject,
+                    global_role,
+                    write=False,
                 )
                 role = str(global_role or "").strip().lower()
-                can_send = role in WRITE_GLOBAL_ROLES and (role in GOVERNANCE_ROLES or member_role in WRITE_TEAM_ROLES)
+                can_send = role in WRITE_GLOBAL_ROLES and (
+                    role in GOVERNANCE_ROLES or member_role in WRITE_TEAM_ROLES
+                )
                 maximum = connection.execute(
-                    "SELECT COALESCE(MAX(sequence), 0) FROM messages WHERE team_id=?", (team_id,)
+                    "SELECT COALESCE(MAX(sequence), 0) FROM messages WHERE team_id=?",
+                    (team_id,),
                 ).fetchone()[0]
                 if offset > maximum:
                     raise TeamMessageCursorOutOfRange()
@@ -438,7 +541,11 @@ class TeamMessageRepository:
                 ).fetchall()
                 messages = [dict(row) for row in rows]
                 last_sequence = messages[-1]["sequence"] if messages else offset
-                next_cursor = self.encode_cursor(team_id, last_sequence) if len(messages) == limit and messages else None
+                next_cursor = (
+                    self.encode_cursor(team_id, last_sequence)
+                    if len(messages) == limit and messages
+                    else None
+                )
                 connection.commit()
                 return {
                     "team_id": team_id,
@@ -466,17 +573,32 @@ class TeamMessageRepository:
         text: str,
         client_request_id: str,
     ) -> tuple[dict[str, Any], bool]:
-        if not isinstance(text, str) or not (1 <= len(text) <= 2000) or not text.strip():
-            raise CleanroomException(422, "INVALID_MESSAGE_TEXT", "消息必须为1至2000个字符的非空白纯文本")
-        if not isinstance(client_request_id, str) or not CLIENT_REQUEST_ID.fullmatch(client_request_id):
-            raise CleanroomException(422, "INVALID_CLIENT_REQUEST_ID", "client_request_id 格式不合法")
+        if (
+            not isinstance(text, str)
+            or not (1 <= len(text) <= 2000)
+            or not text.strip()
+        ):
+            raise CleanroomException(
+                422, "INVALID_MESSAGE_TEXT", "消息必须为1至2000个字符的非空白纯文本"
+            )
+        if not isinstance(client_request_id, str) or not CLIENT_REQUEST_ID.fullmatch(
+            client_request_id
+        ):
+            raise CleanroomException(
+                422, "INVALID_CLIENT_REQUEST_ID", "client_request_id 格式不合法"
+            )
         request_hash = hashlib.sha256(text.encode("utf-8")).hexdigest()
         with self._connection() as connection:
             try:
                 connection.execute("BEGIN IMMEDIATE")
                 # 权限校验必须先于幂等记录查找，撤权后不得靠旧键重放读取消息。
                 author_user_id, _ = self._authorize_team(
-                    connection, team_id, identity_domain, identity_subject, global_role, write=True
+                    connection,
+                    team_id,
+                    identity_domain,
+                    identity_subject,
+                    global_role,
+                    write=True,
                 )
                 prior = connection.execute(
                     """SELECT request_hash, message_id FROM idempotency_records
@@ -496,10 +618,15 @@ class TeamMessageRepository:
                     connection.commit()
                     return {**dict(message), "replayed": True}, True
                 sequence = connection.execute(
-                    "SELECT COALESCE(MAX(sequence), 0) + 1 FROM messages WHERE team_id=?", (team_id,)
+                    "SELECT COALESCE(MAX(sequence), 0) + 1 FROM messages WHERE team_id=?",
+                    (team_id,),
                 ).fetchone()[0]
                 message_id = f"msg-{team_id}-{sequence}"
-                created_at = datetime.now(timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z")
+                created_at = (
+                    datetime.now(UTC)
+                    .isoformat(timespec="milliseconds")
+                    .replace("+00:00", "Z")
+                )
                 connection.execute(
                     """INSERT INTO messages(message_id, team_id, author_user_id, text, created_at, sequence)
                        VALUES (?, ?, ?, ?, ?, ?)""",
@@ -508,7 +635,13 @@ class TeamMessageRepository:
                 connection.execute(
                     """INSERT INTO idempotency_records(team_id, author_user_id, client_request_id, request_hash, message_id)
                        VALUES (?, ?, ?, ?, ?)""",
-                    (team_id, author_user_id, client_request_id, request_hash, message_id),
+                    (
+                        team_id,
+                        author_user_id,
+                        client_request_id,
+                        request_hash,
+                        message_id,
+                    ),
                 )
                 connection.commit()
                 return {

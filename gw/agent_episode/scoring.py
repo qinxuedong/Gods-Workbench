@@ -1,8 +1,9 @@
 """Deterministic, decimal-based six-stage episode scoring and approval gates."""
+
 from __future__ import annotations
 
+from collections.abc import Mapping
 from decimal import Decimal, InvalidOperation, localcontext
-from typing import Mapping
 
 from gw.agent_runtime.models import (
     ApprovalDecision,
@@ -15,7 +16,6 @@ from gw.agent_runtime.models import (
 )
 
 from .models import EpisodeScoreResult
-
 
 SCORING_RULE_VERSION = "episode-text-scoring-v1.0.0"
 PASS_THRESHOLD = Decimal("9")
@@ -131,18 +131,26 @@ def calculate_weighted_score(
         missing = sorted(set(active_weights) - set(dimension_scores))
         extra = sorted(set(dimension_scores) - set(active_weights))
         raise ValueError(f"dimension set mismatch; missing={missing}, extra={extra}")
-    exact_weights = {name: Decimal(str(weight)) for name, weight in active_weights.items()}
+    exact_weights = {
+        name: Decimal(str(weight)) for name, weight in active_weights.items()
+    }
     if any(not value.is_finite() or value <= 0 for value in exact_weights.values()):
         raise ValueError("score weights must be finite positive decimals")
     if sum(exact_weights.values(), Decimal("0")) != Decimal("1"):
         raise ValueError("score weights must sum to exactly one")
-    exact_scores = {name: decimal_score(dimension_scores[name]) for name in exact_weights}
+    exact_scores = {
+        name: decimal_score(dimension_scores[name]) for name in exact_weights
+    }
     products = [(exact_scores[name], weight) for name, weight in exact_weights.items()]
-    max_adjusted = max(
-        (score.adjusted() + weight.adjusted() + 1)
-        for score, weight in products
-        if score != 0
-    ) if any(score != 0 for score, _ in products) else 0
+    max_adjusted = (
+        max(
+            (score.adjusted() + weight.adjusted() + 1)
+            for score, weight in products
+            if score != 0
+        )
+        if any(score != 0 for score, _ in products)
+        else 0
+    )
     min_exponent = min(
         score.as_tuple().exponent + weight.as_tuple().exponent
         for score, weight in products
@@ -169,19 +177,25 @@ def evaluate_score_gate(
     """Compute the automatic gate; model-supplied overall/pass fields are ignored."""
     if not threshold.is_finite() or threshold < 0 or threshold > 10:
         raise ValueError("threshold must be in the inclusive range 0..10")
-    exact_scores, weighted = calculate_weighted_score(stage, dimension_scores, weights=weights)
+    exact_scores, weighted = calculate_weighted_score(
+        stage, dimension_scores, weights=weights
+    )
     score_passed = weighted >= threshold
     automatic_pass = score_passed and program_passed and artifact_current
     return EpisodeScoreResult(
         stage=stage,
-        dimension_scores={key: _decimal_text(value) for key, value in exact_scores.items()},
+        dimension_scores={
+            key: _decimal_text(value) for key, value in exact_scores.items()
+        },
         weighted_score=_decimal_text(weighted),
         threshold=_decimal_text(threshold),
         score_passed=score_passed,
         program_passed=program_passed,
         artifact_current=artifact_current,
         automatic_pass=automatic_pass,
-        low_score_override_eligible=(not score_passed and program_passed and artifact_current),
+        low_score_override_eligible=(
+            not score_passed and program_passed and artifact_current
+        ),
     )
 
 
@@ -221,20 +235,35 @@ def approval_matches_current_review(
     ):
         return False
     try:
-        exact_scores, weighted = calculate_weighted_score(stage, score_result.dimension_scores)
+        exact_scores, weighted = calculate_weighted_score(
+            stage, score_result.dimension_scores
+        )
         recorded_weight = decimal_score(score_result.weighted_score)
         recomputed_pass = weighted >= PASS_THRESHOLD
-        dimensions_match = set(review.dimension_scores) == set(exact_scores) == set(score_result.dimension_scores)
-        numeric_record_matches = dimensions_match and all(
-            float(exact_scores[key]) == review.dimension_scores[key].score
-            for key in exact_scores
-        ) and float(weighted) == review.overall_score
+        dimensions_match = (
+            set(review.dimension_scores)
+            == set(exact_scores)
+            == set(score_result.dimension_scores)
+        )
+        numeric_record_matches = (
+            dimensions_match
+            and all(
+                float(exact_scores[key]) == review.dimension_scores[key].score
+                for key in exact_scores
+            )
+            and float(weighted) == review.overall_score
+        )
     except (KeyError, ValueError, InvalidOperation):
         return False
     if (
         weighted != recorded_weight
         or recomputed_pass != score_result.score_passed
-        or score_result.automatic_pass != (recomputed_pass and score_result.program_passed and score_result.artifact_current)
+        or score_result.automatic_pass
+        != (
+            recomputed_pass
+            and score_result.program_passed
+            and score_result.artifact_current
+        )
         or not numeric_record_matches
     ):
         return False

@@ -41,8 +41,9 @@ import hmac
 import json
 import secrets
 import time
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
-from typing import Any, Callable, Mapping, Optional, Tuple
+from typing import Any, Optional, Tuple
 from urllib.parse import urlencode
 
 from gw.core.errors import UnauthorizedException
@@ -70,7 +71,7 @@ GROUP_ROLE_MAPPING = {
 }
 
 # 角色权限从低到高；多组命中时取最高已授权等级。
-ROLE_PRIORITY: Tuple[str, ...] = ("readonly", "reviewer", "editor", "governor", "admin")
+ROLE_PRIORITY: tuple[str, ...] = ("readonly", "reviewer", "editor", "governor", "admin")
 
 DEFAULT_GROUPS_CLAIM = "groups"
 
@@ -94,7 +95,7 @@ class OidcConfig:
     leeway_seconds: int = 60
     groups_claim: str = DEFAULT_GROUPS_CLAIM
     jwks: Mapping[str, Any] = field(default_factory=dict)
-    jwks_fetcher: Optional[JwksFetcher] = None
+    jwks_fetcher: JwksFetcher | None = None
 
 
 @dataclass(frozen=True)
@@ -103,13 +104,14 @@ class OidcIdentity:
 
     subject: str
     role: str
-    groups: Tuple[str, ...]
+    groups: tuple[str, ...]
     claims: Mapping[str, Any]
 
 
 # ---------------------------------------------------------------------------
 # Base64URL / JSON 解析
 # ---------------------------------------------------------------------------
+
 
 def _b64url_decode(segment: str) -> bytes:
     """严格解码 Base64URL 片段，非法输入直接拒绝。"""
@@ -135,7 +137,7 @@ def _decode_json_segment(segment: str, description: str) -> Mapping[str, Any]:
     return value
 
 
-def split_token(token: str) -> Tuple[str, str, str]:
+def split_token(token: str) -> tuple[str, str, str]:
     """把 JWT 拆分为 header.payload.signature 三段，段数异常即拒绝。"""
     if not isinstance(token, str):
         raise UnauthorizedException(message="令牌类型无效，已拒绝")
@@ -164,6 +166,7 @@ def decode_claims(token: str) -> Mapping[str, Any]:
 # nonce / state / PKCE 流程辅助
 # ---------------------------------------------------------------------------
 
+
 def generate_state() -> str:
     """生成一次性 state 随机值。"""
     return secrets.token_urlsafe(32)
@@ -183,18 +186,26 @@ def constant_time_equals(left: Any, right: Any) -> bool:
 
 def verify_state(expected_state: str, received_state: str) -> None:
     """校验回调 state；缺失或不匹配一律拒绝。"""
-    if not expected_state or not received_state or not constant_time_equals(expected_state, received_state):
+    if (
+        not expected_state
+        or not received_state
+        or not constant_time_equals(expected_state, received_state)
+    ):
         raise UnauthorizedException(message="state 校验失败，已拒绝回调")
 
 
 def verify_nonce(expected_nonce: str, claims: Mapping[str, Any]) -> None:
     """校验令牌 nonce 声明；缺失或不匹配一律拒绝。"""
     actual = claims.get("nonce") if isinstance(claims, Mapping) else None
-    if not expected_nonce or not isinstance(actual, str) or not constant_time_equals(expected_nonce, actual):
+    if (
+        not expected_nonce
+        or not isinstance(actual, str)
+        or not constant_time_equals(expected_nonce, actual)
+    ):
         raise UnauthorizedException(message="nonce 校验失败，已拒绝会话")
 
 
-def generate_pkce_pair() -> Tuple[str, str]:
+def generate_pkce_pair() -> tuple[str, str]:
     """生成 PKCE 的 (code_verifier, code_challenge)，挑战使用 S256。"""
     verifier = secrets.token_urlsafe(64)
     digest = hashlib.sha256(verifier.encode("ascii")).digest()
@@ -216,7 +227,9 @@ def build_authorization_url(
     if not authorization_endpoint or not client_id or not redirect_uri:
         raise UnauthorizedException(message="OIDC 授权配置缺失，已拒绝构造跳转")
     if not state or not nonce or not code_challenge:
-        raise UnauthorizedException(message="state / nonce / PKCE 参数缺失，已拒绝构造跳转")
+        raise UnauthorizedException(
+            message="state / nonce / PKCE 参数缺失，已拒绝构造跳转"
+        )
     params = {
         "response_type": "code",
         "client_id": client_id,
@@ -234,6 +247,7 @@ def build_authorization_url(
 # 组到本地角色映射
 # ---------------------------------------------------------------------------
 
+
 def normalize_group_name(group: Any) -> str:
     """规范化组名：去首尾空白并转小写（完整匹配，不做前缀匹配）。"""
     if not isinstance(group, str):
@@ -241,7 +255,7 @@ def normalize_group_name(group: Any) -> str:
     return group.strip().lower()
 
 
-def normalize_groups(value: Any) -> Tuple[str, ...]:
+def normalize_groups(value: Any) -> tuple[str, ...]:
     """把 claim 中的组集合规范化为去空白的字符串元组。"""
     if isinstance(value, str):
         value = [value]
@@ -254,7 +268,7 @@ def normalize_groups(value: Any) -> Tuple[str, ...]:
     return tuple(result)
 
 
-def resolve_role(groups: Any) -> Optional[str]:
+def resolve_role(groups: Any) -> str | None:
     """返回最高已授权本地角色；未知组被忽略，无命中时返回 ``None``（不升级）。"""
     normalized = normalize_groups(groups)
     matched = []
@@ -270,6 +284,7 @@ def resolve_role(groups: Any) -> Optional[str]:
 # ---------------------------------------------------------------------------
 # JWKS 解析与受控刷新
 # ---------------------------------------------------------------------------
+
 
 def _jwk_base64url_to_int(value: Any) -> int:
     """把 JWK 的 Base64URL 大整数还原为 int。"""
@@ -300,7 +315,11 @@ def _jwk_to_public_key(jwk: Mapping[str, Any]) -> Any:
     if isinstance(key_use, str) and key_use.strip() and key_use.strip() != "sig":
         raise UnauthorizedException(message="JWKS 密钥用途不是签名，已拒绝")
     key_alg = jwk.get("alg")
-    if isinstance(key_alg, str) and key_alg.strip() and key_alg.strip() not in ALLOWED_ALGORITHMS:
+    if (
+        isinstance(key_alg, str)
+        and key_alg.strip()
+        and key_alg.strip() not in ALLOWED_ALGORITHMS
+    ):
         raise UnauthorizedException(message="JWKS 密钥算法不在允许列表，已拒绝")
     modulus = _jwk_base64url_to_int(jwk.get("n"))
     exponent = _jwk_base64url_to_int(jwk.get("e"))
@@ -310,7 +329,7 @@ def _jwk_to_public_key(jwk: Mapping[str, Any]) -> Any:
         raise UnauthorizedException(message="JWKS 公钥参数无效，已拒绝")
 
 
-def _find_jwk(jwks: Any, kid: str) -> Optional[Mapping[str, Any]]:
+def _find_jwk(jwks: Any, kid: str) -> Mapping[str, Any] | None:
     """在 JWKS 中按 kid 精确查找密钥。"""
     if not isinstance(jwks, Mapping):
         return None
@@ -357,7 +376,10 @@ def _resolve_public_key(kid: str, config: OidcConfig) -> Any:
 # 声明校验
 # ---------------------------------------------------------------------------
 
-def _numeric_date(claims: Mapping[str, Any], name: str, *, required: bool) -> Optional[float]:
+
+def _numeric_date(
+    claims: Mapping[str, Any], name: str, *, required: bool
+) -> float | None:
     """读取 NumericDate 声明并校验类型。"""
     # 判定「键存在性」而非「取值是否为 None」：
     # `nbf: null` 之类「键存在但值非法」的形态必须落到类型检查分支显式拒绝，
@@ -372,7 +394,9 @@ def _numeric_date(claims: Mapping[str, Any], name: str, *, required: bool) -> Op
     return float(value)
 
 
-def verify_time_claims(claims: Mapping[str, Any], *, now: float, leeway_seconds: int) -> None:
+def verify_time_claims(
+    claims: Mapping[str, Any], *, now: float, leeway_seconds: int
+) -> None:
     """校验 exp / nbf / iat，允许显式时钟容差。"""
     leeway = max(0, int(leeway_seconds))
     expires_at = _numeric_date(claims, "exp", required=True)
@@ -400,7 +424,9 @@ def verify_audience(claims: Mapping[str, Any], config: OidcConfig) -> None:
     if isinstance(audience, str):
         matched = audience == config.audience
     elif isinstance(audience, (list, tuple)):
-        matched = config.audience in [item for item in audience if isinstance(item, str)]
+        matched = config.audience in [
+            item for item in audience if isinstance(item, str)
+        ]
     else:
         matched = False
     if not matched:
@@ -449,12 +475,13 @@ def _verify_signature(signing_input: bytes, signature: bytes, public_key: Any) -
 # 主校验入口
 # ---------------------------------------------------------------------------
 
+
 def verify_jwt(
     token: str,
     config: OidcConfig,
     *,
-    now: Optional[float] = None,
-    expected_nonce: Optional[str] = None,
+    now: float | None = None,
+    expected_nonce: str | None = None,
 ) -> OidcIdentity:
     """OIDC 校验入口：任何配置缺失、算法异常或声明不合法一律拒绝。
 
@@ -475,10 +502,16 @@ def verify_jwt(
     if not isinstance(algorithm, str) or not algorithm.strip():
         raise UnauthorizedException(message="令牌缺少 alg，已拒绝")
     normalized_algorithm = algorithm.strip()
-    if normalized_algorithm.lower() == "none" or normalized_algorithm.upper().startswith("HS"):
+    if (
+        normalized_algorithm.lower() == "none"
+        or normalized_algorithm.upper().startswith("HS")
+    ):
         raise UnauthorizedException(message="检测到算法混淆，已拒绝令牌")
     allowed = frozenset(config.allowed_algorithms or ())
-    if normalized_algorithm not in allowed or normalized_algorithm not in ALLOWED_ALGORITHMS:
+    if (
+        normalized_algorithm not in allowed
+        or normalized_algorithm not in ALLOWED_ALGORITHMS
+    ):
         raise UnauthorizedException(message="令牌算法不在允许列表，已拒绝")
 
     kid = header.get("kid")
@@ -493,7 +526,11 @@ def verify_jwt(
     verify_issuer(claims, config)
     verify_audience(claims, config)
     verify_authorized_party(claims, config)
-    verify_time_claims(claims, now=now if now is not None else time.time(), leeway_seconds=config.leeway_seconds)
+    verify_time_claims(
+        claims,
+        now=now if now is not None else time.time(),
+        leeway_seconds=config.leeway_seconds,
+    )
     if expected_nonce is not None:
         verify_nonce(expected_nonce, claims)
 
@@ -506,4 +543,6 @@ def verify_jwt(
     role = resolve_role(groups)
     if role is None:
         raise UnauthorizedException(message="令牌组无已授权映射，已拒绝")
-    return OidcIdentity(subject=str(subject), role=role, groups=groups, claims=dict(claims))
+    return OidcIdentity(
+        subject=str(subject), role=role, groups=groups, claims=dict(claims)
+    )

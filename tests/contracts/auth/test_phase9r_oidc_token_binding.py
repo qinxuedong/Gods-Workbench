@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Phase 9R：OIDC 令牌绑定加固（azp / JWK use·alg）契约测试。
 
 真实外部 IdP 接线（用户裁决第 6 项）在 §9I 只读实测中暴露两条**规范级**缺口：
@@ -31,8 +30,8 @@ SRC_PATH = REPO_ROOT
 if str(SRC_PATH) not in sys.path:
     sys.path.insert(0, str(SRC_PATH))
 
-from gw.core.errors import UnauthorizedException  # noqa: E402
 from gw.core import oidc  # noqa: E402
+from gw.core.errors import UnauthorizedException  # noqa: E402
 
 ISSUER = "https://idp.example.test"
 AUDIENCE = "gw-client-a"
@@ -110,6 +109,7 @@ def make_token(private_key, claim_set: dict) -> str:
 # azp（OIDC Core 1.0 §3.1.3.7）
 # ---------------------------------------------------------------------------
 
+
 def test_single_audience_without_azp_is_accepted(rsa_keypair):
     """单 audience 且无 azp 属正常形态，必须通过。"""
     private_key, public_key = rsa_keypair
@@ -174,7 +174,9 @@ def test_multi_audience_with_matching_azp_is_accepted(rsa_keypair):
 def test_multi_audience_with_mismatched_azp_is_rejected(rsa_keypair):
     """多 audience 且 azp 指向别的客户端必须拒绝。"""
     private_key, public_key = rsa_keypair
-    token = make_token(private_key, claims(aud=[AUDIENCE, OTHER_CLIENT], azp=OTHER_CLIENT))
+    token = make_token(
+        private_key, claims(aud=[AUDIENCE, OTHER_CLIENT], azp=OTHER_CLIENT)
+    )
     with pytest.raises(UnauthorizedException):
         oidc.verify_jwt(token, make_config(_jwk(public_key)), now=NOW)
 
@@ -214,6 +216,7 @@ def test_multi_audience_with_null_azp_is_rejected(rsa_keypair):
 # JWK use / alg（RFC 7517 §4.2 / §4.3）
 # ---------------------------------------------------------------------------
 
+
 def test_encryption_key_is_rejected(rsa_keypair):
     """use=enc 的密钥不得参与签名验签。"""
     private_key, public_key = rsa_keypair
@@ -239,9 +242,12 @@ def test_key_without_use_or_alg_still_works(rsa_keypair):
     token = make_token(private_key, claims())
     identity = oidc.verify_jwt(token, make_config(jwk), now=NOW)
     assert identity.subject == "user-001"
+
+
 # ---------------------------------------------------------------------------
 # NumericDate 可选声明（nbf）：键存在性 vs 取值 None
 # ---------------------------------------------------------------------------
+
 
 def test_null_nbf_is_rejected(rsa_keypair):
     """nbf 键存在但值为 null 属非法形态，必须显式拒绝。

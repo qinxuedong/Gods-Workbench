@@ -31,7 +31,11 @@ from gw.core.runtime_paths import resolve_runtime_paths
 
 
 def _unavailable():
-    return CleanroomException(503, "PROVIDER_CREDENTIAL_UNAVAILABLE", "本地凭据无法安全保存或读取，请重新配置密钥")
+    return CleanroomException(
+        503,
+        "PROVIDER_CREDENTIAL_UNAVAILABLE",
+        "本地凭据无法安全保存或读取，请重新配置密钥",
+    )
 
 
 def _dpapi(value: bytes, decrypt: bool) -> bytes:
@@ -39,19 +43,31 @@ def _dpapi(value: bytes, decrypt: bool) -> bytes:
     from ctypes import wintypes
 
     class Blob(ctypes.Structure):
-        _fields_ = [("length", wintypes.DWORD), ("data", ctypes.POINTER(ctypes.c_ubyte))]
+        _fields_ = [
+            ("length", wintypes.DWORD),
+            ("data", ctypes.POINTER(ctypes.c_ubyte)),
+        ]
 
     buffer = (ctypes.c_ubyte * len(value)).from_buffer_copy(value)
     incoming, outgoing = Blob(len(value), buffer), Blob()
     library = ctypes.WinDLL("crypt32", use_last_error=True)
     function = library.CryptUnprotectData if decrypt else library.CryptProtectData
-    function.argtypes = [ctypes.POINTER(Blob), ctypes.c_void_p, ctypes.POINTER(Blob),
-                         ctypes.c_void_p, ctypes.c_void_p, wintypes.DWORD, ctypes.POINTER(Blob)]
+    function.argtypes = [
+        ctypes.POINTER(Blob),
+        ctypes.c_void_p,
+        ctypes.POINTER(Blob),
+        ctypes.c_void_p,
+        ctypes.c_void_p,
+        wintypes.DWORD,
+        ctypes.POINTER(Blob),
+    ]
     function.restype = wintypes.BOOL
     free = ctypes.WinDLL("kernel32", use_last_error=True).LocalFree
     free.argtypes = [ctypes.c_void_p]
     free.restype = ctypes.c_void_p
-    if not function(ctypes.byref(incoming), None, None, None, None, 1, ctypes.byref(outgoing)):
+    if not function(
+        ctypes.byref(incoming), None, None, None, None, 1, ctypes.byref(outgoing)
+    ):
         raise _unavailable()
     try:
         return ctypes.string_at(outgoing.data, outgoing.length)
@@ -65,7 +81,9 @@ def _fernet(*, create: bool) -> Fernet:
     if create:
         path.parent.mkdir(parents=True, exist_ok=True)
         try:
-            fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+            fd = os.open(
+                path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600
+            )
         except FileExistsError:
             pass
         else:
@@ -76,7 +94,11 @@ def _fernet(*, create: bool) -> Fernet:
     fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
     with os.fdopen(fd, "rb") as handle:
         info = os.fstat(handle.fileno())
-        if not stat.S_ISREG(info.st_mode) or info.st_uid != os.getuid() or info.st_mode & 0o077:
+        if (
+            not stat.S_ISREG(info.st_mode)
+            or info.st_uid != os.getuid()
+            or info.st_mode & 0o077
+        ):
             raise _unavailable()
         key = handle.read(45)
     return Fernet(key)
@@ -85,7 +107,9 @@ def _fernet(*, create: bool) -> Fernet:
 def protect(provider_id: str, field: str, secret: str) -> str:
     """密文中的身份绑定可阻止平台之间调换密文。"""
     try:
-        payload = json.dumps([provider_id, field, secret], ensure_ascii=False).encode("utf-8")
+        payload = json.dumps([provider_id, field, secret], ensure_ascii=False).encode(
+            "utf-8"
+        )
         if os.name == "nt":
             return "dpapi:" + base64.b64encode(_dpapi(payload, False)).decode("ascii")
         return "fernet:" + _fernet(create=True).encrypt(payload).decode("ascii")
@@ -102,7 +126,11 @@ def reveal(provider_id: str, field: str, encrypted: str) -> str:
         else:
             raise _unavailable()
         saved_id, saved_field, secret = json.loads(payload.decode("utf-8"))
-        if saved_id != provider_id or saved_field != field or not isinstance(secret, str):
+        if (
+            saved_id != provider_id
+            or saved_field != field
+            or not isinstance(secret, str)
+        ):
             raise _unavailable()
         return secret
     except Exception:

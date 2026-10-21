@@ -19,6 +19,7 @@
 
 from enum import Enum
 from typing import Any, Dict, List, Optional
+
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
@@ -42,13 +43,13 @@ class ProjectItem(BaseModel):
     progress: float = Field(..., ge=0, le=100, description="生产进度 (0-100)")
     scenes: int = Field(0, ge=0, description="场次数")
     shots: int = Field(0, ge=0, description="镜头数")
-    description: Optional[str] = Field(None, description="项目摘要")
-    start_at: Optional[int] = Field(None, description="排期开始时间戳（毫秒）")
-    due_at: Optional[int] = Field(None, description="排期截止时间戳（毫秒）")
+    description: str | None = Field(None, description="项目摘要")
+    start_at: int | None = Field(None, description="排期开始时间戳（毫秒）")
+    due_at: int | None = Field(None, description="排期截止时间戳（毫秒）")
     version: int = Field(..., description="并发控制版本号（CAS）")
-    archived_at: Optional[str] = Field(None, description="归档时间戳或ISO字符串")
-    deleted_at: Optional[str] = Field(None, description="逻辑删除/回收站时间戳或ISO字符串")
-    updated_at: Optional[str] = Field(None, description="最近更新时间")
+    archived_at: str | None = Field(None, description="归档时间戳或ISO字符串")
+    deleted_at: str | None = Field(None, description="逻辑删除/回收站时间戳或ISO字符串")
+    updated_at: str | None = Field(None, description="最近更新时间")
 
 
 class ProjectDetailResponse(BaseModel):
@@ -60,7 +61,7 @@ class ProjectDetailResponse(BaseModel):
 class ProjectListResponse(BaseModel):
     """项目列表返回结构。"""
 
-    projects: List[ProjectItem] = Field(default_factory=list, description="项目列表")
+    projects: list[ProjectItem] = Field(default_factory=list, description="项目列表")
 
 
 class ProjectCreateRequest(BaseModel):
@@ -70,16 +71,22 @@ class ProjectCreateRequest(BaseModel):
 
     name: str = Field(..., min_length=1, description="项目名称（必填）")
     project_type: ProjectType = Field(..., description="项目类型")
-    description: Optional[str] = Field(None, description="项目描述")
-    start_at: Optional[int] = Field(None, description="排期开始时间戳（毫秒）")
-    due_at: Optional[int] = Field(None, description="排期截止时间戳（毫秒）")
-    client_request_id: Optional[str] = Field(None, description="创建幂等请求键")
-    gates: Optional[List[Dict[str, Any]]] = Field(None, description="明确提交的初始阶段门；省略为空")
+    description: str | None = Field(None, description="项目描述")
+    start_at: int | None = Field(None, description="排期开始时间戳（毫秒）")
+    due_at: int | None = Field(None, description="排期截止时间戳（毫秒）")
+    client_request_id: str | None = Field(None, description="创建幂等请求键")
+    gates: list[dict[str, Any]] | None = Field(
+        None, description="明确提交的初始阶段门；省略为空"
+    )
 
     @model_validator(mode="after")
     def validate_schedule(self):
         """阻止结束时间早于开始时间。"""
-        if self.start_at is not None and self.due_at is not None and self.due_at < self.start_at:
+        if (
+            self.start_at is not None
+            and self.due_at is not None
+            and self.due_at < self.start_at
+        ):
             raise ValueError("due_at 不能早于 start_at")
         return self
 
@@ -89,8 +96,8 @@ class ProjectMutationResult(BaseModel):
 
     project_id: str
     version: int
-    archived_at: Optional[str] = None
-    deleted_at: Optional[str] = None
+    archived_at: str | None = None
+    deleted_at: str | None = None
 
 
 class ProjectMutationResponse(BaseModel):
@@ -104,22 +111,28 @@ class ProjectUpdateRequest(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    name: Optional[str] = Field(None, min_length=1, description="项目名称")
-    stage: Optional[str] = Field(None, description="生产阶段")
-    scenes: Optional[int] = Field(None, ge=0, description="场次数")
-    shots: Optional[int] = Field(None, ge=0, description="镜头数")
-    progress: Optional[float] = Field(None, ge=0, le=100, description="生产进度百分比")
-    description: Optional[str] = Field(None, description="项目描述")
-    start_at: Optional[int] = Field(None, description="排期开始时间戳（毫秒）")
-    due_at: Optional[int] = Field(None, description="排期截止时间戳（毫秒）")
-    client_request_id: Optional[str] = Field(None, description="创建幂等请求键")
-    gates: Optional[List[Dict[str, Any]]] = Field(None, description="明确提交的初始阶段门；省略为空")
+    name: str | None = Field(None, min_length=1, description="项目名称")
+    stage: str | None = Field(None, description="生产阶段")
+    scenes: int | None = Field(None, ge=0, description="场次数")
+    shots: int | None = Field(None, ge=0, description="镜头数")
+    progress: float | None = Field(None, ge=0, le=100, description="生产进度百分比")
+    description: str | None = Field(None, description="项目描述")
+    start_at: int | None = Field(None, description="排期开始时间戳（毫秒）")
+    due_at: int | None = Field(None, description="排期截止时间戳（毫秒）")
+    client_request_id: str | None = Field(None, description="创建幂等请求键")
+    gates: list[dict[str, Any]] | None = Field(
+        None, description="明确提交的初始阶段门；省略为空"
+    )
     expected_version: int = Field(..., description="CAS 期望版本号")
 
     @model_validator(mode="after")
     def validate_schedule(self):
         """校验请求中同时出现的排期字段。"""
-        if self.start_at is not None and self.due_at is not None and self.due_at < self.start_at:
+        if (
+            self.start_at is not None
+            and self.due_at is not None
+            and self.due_at < self.start_at
+        ):
             raise ValueError("due_at 不能早于 start_at")
         return self
 

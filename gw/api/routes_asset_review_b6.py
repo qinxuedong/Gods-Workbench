@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 # Copyright 2026 Gods-Workbench Authors
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -39,15 +38,15 @@ from gw.core.errors import CleanroomException
 router = APIRouter(tags=["asset-review-b6"])
 
 
-def _read(authorization: Optional[str], role: str):
+def _read(authorization: str | None, role: str):
     return require_authenticated(authorization, role)
 
 
-def _write(authorization: Optional[str], role: str):
+def _write(authorization: str | None, role: str):
     return require_edit_access(authorization, role)
 
 
-async def _json(request: Request) -> Dict[str, Any]:
+async def _json(request: Request) -> dict[str, Any]:
     try:
         payload = await request.json()
     except Exception:
@@ -57,22 +56,24 @@ async def _json(request: Request) -> Dict[str, Any]:
 
 @router.get("/api/asset-reviews/sessions", status_code=status.HTTP_200_OK)
 def list_sessions(
-    asset_id: Optional[str] = None,
-    project_id: Optional[str] = None,
-    shot_id: Optional[str] = None,
-    version_id: Optional[str] = None,
-    authorization: Optional[str] = Header(None),
+    asset_id: str | None = None,
+    project_id: str | None = None,
+    shot_id: str | None = None,
+    version_id: str | None = None,
+    authorization: str | None = Header(None),
     x_user_role: str = Header("editor", alias="X-User-Role"),
 ):
     """读取审查会话集合；C8 精确版本与 C9 收口投影一并回读。"""
     _read(authorization, x_user_role)
-    return repo.list_sessions(asset_id, project_id=project_id, shot_id=shot_id, version_id=version_id)
+    return repo.list_sessions(
+        asset_id, project_id=project_id, shot_id=shot_id, version_id=version_id
+    )
 
 
 @router.post("/api/asset-reviews/sessions", status_code=status.HTTP_201_CREATED)
 async def create_session(
     request: Request,
-    authorization: Optional[str] = Header(None),
+    authorization: str | None = Header(None),
     x_user_role: str = Header("editor", alias="X-User-Role"),
 ):
     """创建审查会话，返回稳定 ``rs-NNNN``；写后可被 GET 读回。"""
@@ -83,14 +84,16 @@ async def create_session(
         try:
             expected = int(expected)
         except (TypeError, ValueError):
-            raise CleanroomException(400, "INVALID_REQUEST", "expected_version 必须是整数") from None
+            raise CleanroomException(
+                400, "INVALID_REQUEST", "expected_version 必须是整数"
+            ) from None
     return repo.create_session(payload, expected)
 
 
 @router.get("/api/asset-reviews/sessions/{session_id}", status_code=status.HTTP_200_OK)
 def get_session(
     session_id: str,
-    authorization: Optional[str] = Header(None),
+    authorization: str | None = Header(None),
     x_user_role: str = Header("editor", alias="X-User-Role"),
 ):
     """读取单个审查会话详情；包含批准失效、阻塞和下一步；不存在 404。"""
@@ -98,11 +101,14 @@ def get_session(
     return repo.get_session(session_id)
 
 
-@router.post("/api/asset-reviews/sessions/{session_id}/delivery", status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/api/asset-reviews/sessions/{session_id}/delivery",
+    status_code=status.HTTP_201_CREATED,
+)
 async def create_delivery(
     session_id: str,
     request: Request,
-    authorization: Optional[str] = Header(None),
+    authorization: str | None = Header(None),
     x_user_role: str = Header("editor", alias="X-User-Role"),
 ):
     """创建交付记录并把当前版本收口为 ``closed``；稳定 ``dlv-NNNN``。"""
@@ -111,17 +117,22 @@ async def create_delivery(
     return repo.create_delivery(session_id, payload)
 
 
-@router.post("/api/asset-reviews/deliveries/{delivery_id}/export", status_code=status.HTTP_200_OK)
+@router.post(
+    "/api/asset-reviews/deliveries/{delivery_id}/export", status_code=status.HTTP_200_OK
+)
 def export_delivery(
     delivery_id: str,
-    authorization: Optional[str] = Header(None),
+    authorization: str | None = Header(None),
     x_user_role: str = Header("editor", alias="X-User-Role"),
 ):
     """导出交付清单 PDF；交付不存在 404，PDF 字节真实可校验。"""
     _write(authorization, x_user_role)
     result = repo.export_delivery(delivery_id)
     filename = result["filename"]
-    ascii_name = "".join(ch for ch in filename if ch.isascii() and ch not in '\\/:*?"<>|\r\n') or "delivery.pdf"
+    ascii_name = (
+        "".join(ch for ch in filename if ch.isascii() and ch not in '\\/:*?"<>|\r\n')
+        or "delivery.pdf"
+    )
     return Response(
         content=result["pdf"],
         media_type="application/pdf",
@@ -132,11 +143,14 @@ def export_delivery(
     )
 
 
-@router.post("/api/asset-reviews/sessions/{session_id}/comments", status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/api/asset-reviews/sessions/{session_id}/comments",
+    status_code=status.HTTP_201_CREATED,
+)
 async def create_comment(
     session_id: str,
     request: Request,
-    authorization: Optional[str] = Header(None),
+    authorization: str | None = Header(None),
     x_user_role: str = Header("editor", alias="X-User-Role"),
 ):
     """新增审查评论；稳定 ``rc-NNNN``，created_at 为数字 epoch（前端依赖）。"""
@@ -145,11 +159,13 @@ async def create_comment(
     return repo.create_comment(session_id, payload)
 
 
-@router.patch("/api/asset-reviews/comments/{comment_id}", status_code=status.HTTP_200_OK)
+@router.patch(
+    "/api/asset-reviews/comments/{comment_id}", status_code=status.HTTP_200_OK
+)
 async def update_comment(
     comment_id: str,
     request: Request,
-    authorization: Optional[str] = Header(None),
+    authorization: str | None = Header(None),
     x_user_role: str = Header("editor", alias="X-User-Role"),
 ):
     """更新评论（解决/重开/改文本）；不存在 404。"""
@@ -158,11 +174,13 @@ async def update_comment(
     return repo.update_comment(comment_id, payload)
 
 
-@router.put("/api/asset-reviews/sessions/{session_id}/approval", status_code=status.HTTP_200_OK)
+@router.put(
+    "/api/asset-reviews/sessions/{session_id}/approval", status_code=status.HTTP_200_OK
+)
 async def put_approval(
     session_id: str,
     request: Request,
-    authorization: Optional[str] = Header(None),
+    authorization: str | None = Header(None),
     x_user_role: str = Header("editor", alias="X-User-Role"),
 ):
     """登记审批结论；Provider 未完成或终态不可再翻转时返回可定位 409。"""
@@ -174,7 +192,7 @@ async def put_approval(
 @router.post("/api/asset-reviews/shares", status_code=status.HTTP_201_CREATED)
 async def create_share(
     request: Request,
-    authorization: Optional[str] = Header(None),
+    authorization: str | None = Header(None),
     x_user_role: str = Header("editor", alias="X-User-Role"),
 ):
     """创建本地分享令牌；明文仅返回一次，服务端只保存 SHA-256 哈希。"""
