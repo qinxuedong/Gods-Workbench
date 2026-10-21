@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 # Copyright 2026 Gods-Workbench Authors
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -23,11 +22,12 @@ Auto-Timing 记录，再以 ``expected_version`` CAS 生成新的 ``timeline_man
 
 from __future__ import annotations
 
+from collections.abc import Iterable, Mapping, MutableMapping, Sequence
 from copy import deepcopy
 from dataclasses import dataclass
 from math import isfinite
 from numbers import Real
-from typing import Any, Iterable, Mapping, MutableMapping, Sequence
+from typing import Any
 
 from gw.core.errors import CleanroomException, VersionConflictException
 
@@ -36,7 +36,13 @@ _ROUND_DIGITS = 6
 _EPSILON = 1e-6
 
 
-def _fail(code: str, message: str, *, status_code: int = 400, extra: Mapping[str, Any] | None = None) -> None:
+def _fail(
+    code: str,
+    message: str,
+    *,
+    status_code: int = 400,
+    extra: Mapping[str, Any] | None = None,
+) -> None:
     """以项目统一错误包失败关闭。"""
     raise CleanroomException(status_code, code, message, extra=dict(extra or {}))
 
@@ -88,7 +94,9 @@ def extract_audio_duration(source: Any) -> float:
     if isinstance(source, Mapping):
         for key in ("duration", "duration_seconds", "audio_duration", "duration_s"):
             if key in source:
-                return _positive_duration(source[key], code="INVALID_AUDIO_DURATION", field=key)
+                return _positive_duration(
+                    source[key], code="INVALID_AUDIO_DURATION", field=key
+                )
         for key in ("duration_ms", "durationMs", "audio_duration_ms"):
             if key in source:
                 return _positive_duration(
@@ -100,7 +108,9 @@ def extract_audio_duration(source: Any) -> float:
         if isinstance(format_data, Mapping):
             return extract_audio_duration(format_data)
         _fail("INVALID_AUDIO_DURATION", "TTS 结果缺少音频时长")
-    return _positive_duration(source, code="INVALID_AUDIO_DURATION", field="audio_duration")
+    return _positive_duration(
+        source, code="INVALID_AUDIO_DURATION", field="audio_duration"
+    )
 
 
 def normalize_word_timestamps(
@@ -130,14 +140,30 @@ def normalize_word_timestamps(
         word = item.get("word", item.get("text", item.get("token")))
         if not isinstance(word, str) or not word.strip():
             _fail("INVALID_AUDIO_TIMESTAMPS", f"第 {index + 1} 个词缺少文本")
-        start_key = "start_ms" if "start_ms" in item else "startMs" if "startMs" in item else "start"
-        end_key = "end_ms" if "end_ms" in item else "endMs" if "endMs" in item else "end"
+        start_key = (
+            "start_ms"
+            if "start_ms" in item
+            else "startMs"
+            if "startMs" in item
+            else "start"
+        )
+        end_key = (
+            "end_ms" if "end_ms" in item else "endMs" if "endMs" in item else "end"
+        )
         if start_key not in item or end_key not in item:
             _fail("INVALID_AUDIO_TIMESTAMPS", f"第 {index + 1} 个词缺少 start/end")
-        start = _seconds(item[start_key], field=start_key, milliseconds=start_key.lower().endswith("ms"))
-        end = _seconds(item[end_key], field=end_key, milliseconds=end_key.lower().endswith("ms"))
+        start = _seconds(
+            item[start_key],
+            field=start_key,
+            milliseconds=start_key.lower().endswith("ms"),
+        )
+        end = _seconds(
+            item[end_key], field=end_key, milliseconds=end_key.lower().endswith("ms")
+        )
         if end <= start or start + _EPSILON < previous_end:
-            _fail("INVALID_AUDIO_TIMESTAMPS", "词级时间戳必须按时间递增且 end 大于 start")
+            _fail(
+                "INVALID_AUDIO_TIMESTAMPS", "词级时间戳必须按时间递增且 end 大于 start"
+            )
         if limit is not None and end > limit + _EPSILON:
             _fail("INVALID_AUDIO_TIMESTAMPS", "词级时间戳不能超出音频时长")
         normalized.append({"word": word.strip(), "start": start, "end": end})
@@ -145,7 +171,9 @@ def normalize_word_timestamps(
     return normalized
 
 
-def calculate_shot_duration(audio_duration: Any, pad: Any = DEFAULT_PAD_SECONDS) -> float:
+def calculate_shot_duration(
+    audio_duration: Any, pad: Any = DEFAULT_PAD_SECONDS
+) -> float:
     """按 ``T_shot = T_audio + pad`` 计算镜头物理时长。"""
     duration = extract_audio_duration(audio_duration)
     return _stable(duration + _pad(pad))
@@ -213,9 +241,13 @@ def calculate_timing(
     duration = extract_audio_duration(audio_duration)
     words = normalize_word_timestamps(word_timestamps or [], audio_duration=duration)
     pad_value = _pad(pad)
-    if audio_asset_id is not None and (not isinstance(audio_asset_id, str) or not audio_asset_id.strip()):
+    if audio_asset_id is not None and (
+        not isinstance(audio_asset_id, str) or not audio_asset_id.strip()
+    ):
         _fail("INVALID_AUDIO_ASSET_ID", "audio_asset_id 必须是非空字符串")
-    if fixture_id is not None and (not isinstance(fixture_id, str) or not fixture_id.strip()):
+    if fixture_id is not None and (
+        not isinstance(fixture_id, str) or not fixture_id.strip()
+    ):
         _fail("INVALID_FIXTURE_ID", "fixture_id 必须是非空字符串")
     return ShotTiming(
         shot_id=shot_id.strip(),
@@ -234,8 +266,17 @@ def _timing_records(timings: Any) -> list[dict[str, Any]]:
         if "shot_id" in timings:
             items: list[Any] = [timings]
         else:
-            items = [{"shot_id": key, **(dict(value) if isinstance(value, Mapping) else {"duration": value})}
-                     for key, value in timings.items()]
+            items = [
+                {
+                    "shot_id": key,
+                    **(
+                        dict(value)
+                        if isinstance(value, Mapping)
+                        else {"duration": value}
+                    ),
+                }
+                for key, value in timings.items()
+            ]
     elif isinstance(timings, Sequence) and not isinstance(timings, (str, bytes)):
         items = list(timings)
     else:
@@ -263,9 +304,13 @@ def _timing_records(timings: Any) -> list[dict[str, Any]]:
 
         raw_duration = item.get("target_duration", item.get("duration"))
         if raw_duration is None and audio_duration is not None:
-            duration = calculate_shot_duration(audio_duration, item.get("pad", DEFAULT_PAD_SECONDS))
+            duration = calculate_shot_duration(
+                audio_duration, item.get("pad", DEFAULT_PAD_SECONDS)
+            )
         else:
-            duration = _positive_duration(raw_duration, code="INVALID_TARGET_DURATION", field="target_duration")
+            duration = _positive_duration(
+                raw_duration, code="INVALID_TARGET_DURATION", field="target_duration"
+            )
             if audio_duration is not None:
                 expected_duration = calculate_shot_duration(
                     audio_duration,
@@ -312,7 +357,12 @@ def _reflow_video_tracks(
             _fail("INVALID_TIMELINE_MANIFEST", "轨道 clips 必须是数组")
         timed_track = _track_kind(track) in {"video", "image", "picture"}
         first_at = 0.0
-        if timed_track and clips and isinstance(clips[0], Mapping) and clips[0].get("at") is not None:
+        if (
+            timed_track
+            and clips
+            and isinstance(clips[0], Mapping)
+            and clips[0].get("at") is not None
+        ):
             first_at = _seconds(clips[0]["at"], field="at")
         cursor = first_at
         for clip in clips:
@@ -353,13 +403,22 @@ def apply_auto_timing_to_manifest(
     """
     if not isinstance(manifest, Mapping):
         _fail("INVALID_TIMELINE_MANIFEST", "timeline_manifest 必须是对象")
-    if isinstance(expected_version, bool) or not isinstance(expected_version, int) or expected_version < 1:
-        _fail("EXPECTED_VERSION_REQUIRED", "更新 timeline_manifest 必须携带正整数 expected_version")
+    if (
+        isinstance(expected_version, bool)
+        or not isinstance(expected_version, int)
+        or expected_version < 1
+    ):
+        _fail(
+            "EXPECTED_VERSION_REQUIRED",
+            "更新 timeline_manifest 必须携带正整数 expected_version",
+        )
     current = manifest.get("version")
     if isinstance(current, bool) or not isinstance(current, int) or current < 1:
         _fail("INVALID_VERSION", "timeline_manifest.version 必须是正整数")
     if expected_version != current:
-        raise VersionConflictException(expected_version, current, "timeline_manifest 版本冲突，请重新读取后重试")
+        raise VersionConflictException(
+            expected_version, current, "timeline_manifest 版本冲突，请重新读取后重试"
+        )
     if not isinstance(manifest.get("tracks"), list) or not manifest["tracks"]:
         _fail("INVALID_TIMELINE_MANIFEST", "timeline_manifest 至少需要一个轨道")
 

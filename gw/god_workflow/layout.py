@@ -5,11 +5,12 @@ returns ``{node_id: (x, y)}``.  No I/O, no mutation of the caller's structures a
 no randomness, so the same graph always yields the same coordinates regardless of
 dict ordering.  Nothing here fabricates workflow semantics; it only moves nodes.
 """
+
 from __future__ import annotations
 
+import math
 from collections.abc import Mapping, Sequence
 from typing import Any
-import math
 
 # Geometry constants (canvas units).  Kept module-level so callers can document
 # the produced spacing without re-deriving it.
@@ -34,7 +35,9 @@ def _node_ids(nodes: Sequence[Mapping[str, Any]]) -> list[str]:
     return ordered
 
 
-def _edges(nodes: Sequence[Mapping[str, Any]], connections: Sequence[Mapping[str, Any]]) -> list[tuple[str, str]]:
+def _edges(
+    nodes: Sequence[Mapping[str, Any]], connections: Sequence[Mapping[str, Any]]
+) -> list[tuple[str, str]]:
     known = set(_node_ids(nodes))
     pairs: list[tuple[str, str]] = []
     seen: set[tuple[str, str]] = set()
@@ -52,7 +55,9 @@ def _edges(nodes: Sequence[Mapping[str, Any]], connections: Sequence[Mapping[str
     return pairs
 
 
-def _longest_path_layers(order: list[str], edges: list[tuple[str, str]]) -> dict[str, int]:
+def _longest_path_layers(
+    order: list[str], edges: list[tuple[str, str]]
+) -> dict[str, int]:
     """Forward longest-path layering; cycles fall back to discovery order."""
     outgoing: dict[str, list[str]] = {node: [] for node in order}
     indegree: dict[str, int] = {node: 0 for node in order}
@@ -76,12 +81,16 @@ def _longest_path_layers(order: list[str], edges: list[tuple[str, str]]) -> dict
         # the layer implied by their longest incoming edge from the acyclic part.
         for node in order:
             if indegree[node] > 0:
-                incoming = [layer[source] + 1 for source, target in edges if target == node]
+                incoming = [
+                    layer[source] + 1 for source, target in edges if target == node
+                ]
                 layer[node] = max(incoming) if incoming else 0
     return layer
 
 
-def _pull_back_sinks(layer: dict[str, int], order: list[str], edges: list[tuple[str, str]]) -> dict[str, int]:
+def _pull_back_sinks(
+    layer: dict[str, int], order: list[str], edges: list[tuple[str, str]]
+) -> dict[str, int]:
     """Pull terminal nodes back toward their inputs so chains do not leave gaps."""
     incoming: dict[str, list[str]] = {node: [] for node in order}
     outgoing_count: dict[str, int] = {node: 0 for node in order}
@@ -98,7 +107,9 @@ def _pull_back_sinks(layer: dict[str, int], order: list[str], edges: list[tuple[
     return result
 
 
-def _barycenter_sweep(layers: dict[int, list[str]], edges: list[tuple[str, str]], sweeps: int = 4) -> dict[int, list[str]]:
+def _barycenter_sweep(
+    layers: dict[int, list[str]], edges: list[tuple[str, str]], sweeps: int = 4
+) -> dict[int, list[str]]:
     """Bidirectional barycenter ordering to reduce edge crossings."""
     incoming: dict[str, list[str]] = {}
     outgoing: dict[str, list[str]] = {}
@@ -122,7 +133,11 @@ def _barycenter_sweep(layers: dict[int, list[str]], edges: list[tuple[str, str]]
             neighbours = incoming if downward else outgoing
 
             def key(node: str) -> tuple[float, int]:
-                anchors = [reference_positions[parent] for parent in neighbours.get(node, []) if parent in reference_positions]
+                anchors = [
+                    reference_positions[parent]
+                    for parent in neighbours.get(node, [])
+                    if parent in reference_positions
+                ]
                 if anchors:
                     return (sum(anchors) / len(anchors), positions[node])
                 return (float(positions[node]), positions[node])
@@ -149,7 +164,9 @@ def compute_layout(
     sizes = {}
     for index, node in enumerate(nodes):
         node_id = str(node.get("id", node.get("node_id", index)))
-        geometry = node.get("position") if isinstance(node.get("position"), Mapping) else {}
+        geometry = (
+            node.get("position") if isinstance(node.get("position"), Mapping) else {}
+        )
         raw_size = (node.get("raw_payload") or {}).get("size", [200, 180])
         if not isinstance(raw_size, (list, tuple)) or len(raw_size) < 2:
             raw_size = [200, 180]
@@ -158,11 +175,24 @@ def compute_layout(
         for widget in widgets if isinstance(widgets, list) else []:
             value = widget.get("value") if isinstance(widget, Mapping) else widget
             if isinstance(value, str) and node.get("kind") in {"Note", "MarkdownNote"}:
-                estimated_height = max(estimated_height, 100 + sum(max(1, math.ceil(len(line) / 20)) for line in value.splitlines()) * 22)
+                estimated_height = max(
+                    estimated_height,
+                    100
+                    + sum(
+                        max(1, math.ceil(len(line) / 20)) for line in value.splitlines()
+                    )
+                    * 22,
+                )
+
         def dimension(value, fallback):
-            if type(value) not in (int, float) or not math.isfinite(value) or not 0 < value <= 100000:
+            if (
+                type(value) not in (int, float)
+                or not math.isfinite(value)
+                or not 0 < value <= 100000
+            ):
                 return fallback
             return float(value)
+
         width = dimension(geometry.get("width", raw_size[0]), 200)
         height = dimension(geometry.get("height", raw_size[1]), estimated_height)
         if "height" not in geometry:
@@ -180,7 +210,11 @@ def compute_layout(
 
     layers: dict[int, list[str]] = {}
     if layered_nodes:
-        edges_subset = [(source, target) for source, target in edges if source in connected and target in connected]
+        edges_subset = [
+            (source, target)
+            for source, target in edges
+            if source in connected and target in connected
+        ]
         layer_of = _longest_path_layers(layered_nodes, edges_subset)
         layer_of = _pull_back_sinks(layer_of, layered_nodes, edges_subset)
         for node in layered_nodes:
@@ -198,13 +232,24 @@ def compute_layout(
     if isolated:
         base_x = ORIGIN_X
         if layered_nodes:
-            base_x = max(position[node][0] + sizes[node][0] + 80 for node in layered_nodes)
-        widths = [max([sizes[node][0] for index, node in enumerate(isolated) if index % NOTE_COLUMNS == column] or [200])
-                  for column in range(NOTE_COLUMNS)]
+            base_x = max(
+                position[node][0] + sizes[node][0] + 80 for node in layered_nodes
+            )
+        widths = [
+            max(
+                [
+                    sizes[node][0]
+                    for index, node in enumerate(isolated)
+                    if index % NOTE_COLUMNS == column
+                ]
+                or [200]
+            )
+            for column in range(NOTE_COLUMNS)
+        ]
         y = ORIGIN_Y
         for start in range(0, len(isolated), NOTE_COLUMNS):
             x = base_x
-            row = isolated[start:start + NOTE_COLUMNS]
+            row = isolated[start : start + NOTE_COLUMNS]
             for column, node in enumerate(row):
                 position[node] = (x, y)
                 x += max(LAYER_GAP_X, widths[column] + 80)

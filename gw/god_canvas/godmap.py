@@ -19,6 +19,7 @@
 
 import json
 from typing import Any, Dict, List, Optional
+
 from pydantic import BaseModel, ConfigDict, Field
 
 from gw.god_canvas.models import CanvasConnection, CanvasNode, CanvasTopology
@@ -30,9 +31,9 @@ class GodmapPayload(BaseModel):
     model_config = ConfigDict(populate_by_name=True, extra="allow")
 
     canvas_id: str
-    nodes: List[CanvasNode] = Field(default_factory=list)
-    connections: List[CanvasConnection] = Field(default_factory=list)
-    references: Optional[Dict[str, Any]] = None
+    nodes: list[CanvasNode] = Field(default_factory=list)
+    connections: list[CanvasConnection] = Field(default_factory=list)
+    references: dict[str, Any] | None = None
 
 
 class GodmapDocument(BaseModel):

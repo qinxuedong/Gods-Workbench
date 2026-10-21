@@ -1,4 +1,5 @@
 """SQLite implementation of the LangGraph checkpoint seam, separate from run truth."""
+
 from __future__ import annotations
 
 import json
@@ -16,12 +17,20 @@ class SQLiteCheckpointBackend(CheckpointBackend):
     """Persist graph resumptions locally; never treats checkpoint data as business approval."""
 
     def __init__(self, database: SQLiteDatabase | str | None = None) -> None:
-        self.database = database if isinstance(database, SQLiteDatabase) else SQLiteDatabase(database)
+        self.database = (
+            database
+            if isinstance(database, SQLiteDatabase)
+            else SQLiteDatabase(database)
+        )
 
-    async def save(self, run_id: Identifier, checkpoint: Mapping[str, Any], *, lease: LeaseGrant) -> Identifier:
+    async def save(
+        self, run_id: Identifier, checkpoint: Mapping[str, Any], *, lease: LeaseGrant
+    ) -> Identifier:
         if lease.run_id.root != run_id.root:
             raise ValueError("Checkpoint lease must be for the checkpoint run.")
-        encoded = json.dumps(dict(checkpoint), sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+        encoded = json.dumps(
+            dict(checkpoint), sort_keys=True, separators=(",", ":"), ensure_ascii=False
+        )
         checkpoint_ref = Identifier(uuid.uuid4().hex)
         connection = self.database.transaction()
         try:
@@ -39,12 +48,20 @@ class SQLiteCheckpointBackend(CheckpointBackend):
 
     async def load(self, checkpoint_ref: Identifier) -> Mapping[str, Any] | None:
         with self.database.connect() as connection:
-            row = connection.execute("SELECT checkpoint_json FROM checkpoints WHERE checkpoint_ref=?", (checkpoint_ref.root,)).fetchone()
+            row = connection.execute(
+                "SELECT checkpoint_json FROM checkpoints WHERE checkpoint_ref=?",
+                (checkpoint_ref.root,),
+            ).fetchone()
         return json.loads(row["checkpoint_json"]) if row else None
 
-    async def latest_for_run(self, run_id: Identifier) -> tuple[Identifier, Mapping[str, Any]] | None:
+    async def latest_for_run(
+        self, run_id: Identifier
+    ) -> tuple[Identifier, Mapping[str, Any]] | None:
         with self.database.connect() as connection:
-            row = connection.execute("SELECT checkpoint_ref,checkpoint_json FROM checkpoints WHERE run_id=? ORDER BY rowid DESC LIMIT 1", (run_id.root,)).fetchone()
+            row = connection.execute(
+                "SELECT checkpoint_ref,checkpoint_json FROM checkpoints WHERE run_id=? ORDER BY rowid DESC LIMIT 1",
+                (run_id.root,),
+            ).fetchone()
         if row is None:
             return None
         return Identifier(row["checkpoint_ref"]), json.loads(row["checkpoint_json"])

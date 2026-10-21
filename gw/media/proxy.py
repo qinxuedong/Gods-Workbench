@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 # Copyright 2026 Gods-Workbench Authors
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -25,7 +24,7 @@ import hashlib
 import re
 import shutil
 import subprocess
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
 from urllib.parse import urlencode
@@ -35,7 +34,9 @@ from gw.core import storage
 from gw.core.errors import CleanroomException
 from gw.media import repository as media_repo
 
-VIDEO_SUFFIXES = frozenset({".mp4", ".mov", ".mkv", ".avi", ".webm", ".m4v", ".flv", ".wmv"})
+VIDEO_SUFFIXES = frozenset(
+    {".mp4", ".mov", ".mkv", ".avi", ".webm", ".m4v", ".flv", ".wmv"}
+)
 PROFILE_LIMITS = {"thumbnail": 512, "small": 640, "preview": 1280}
 PROFILE_ALIASES = {"low": "small", "proxy": "preview"}
 ARTIFACT_RE = re.compile(r"^proxy-[A-Za-z0-9_-]{16,64}\.(?:png|jpg|mp4)$")
@@ -52,14 +53,16 @@ def _pil():
 
 
 def _now() -> str:
-    return datetime.now(timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z")
+    return datetime.now(UTC).isoformat(timespec="milliseconds").replace("+00:00", "Z")
 
 
-def _profile(payload: Dict[str, Any]) -> Tuple[str, int]:
+def _profile(payload: dict[str, Any]) -> tuple[str, int]:
     raw = str((payload or {}).get("profile") or "preview").strip().lower()
     profile = PROFILE_ALIASES.get(raw, raw)
     if profile not in PROFILE_LIMITS:
-        raise CleanroomException(400, "UNSUPPORTED_PROFILE", "代理 profile 只接受 thumbnail/small/preview")
+        raise CleanroomException(
+            400, "UNSUPPORTED_PROFILE", "代理 profile 只接受 thumbnail/small/preview"
+        )
     raw_width = (payload or {}).get("width", (payload or {}).get("w"))
     if raw_width in (None, ""):
         width = PROFILE_LIMITS[profile]
@@ -67,13 +70,15 @@ def _profile(payload: Dict[str, Any]) -> Tuple[str, int]:
         try:
             width = int(raw_width)
         except (TypeError, ValueError):
-            raise CleanroomException(400, "INVALID_WIDTH", "代理 width 必须是整数") from None
+            raise CleanroomException(
+                400, "INVALID_WIDTH", "代理 width 必须是整数"
+            ) from None
         if width < 64:
             raise CleanroomException(400, "INVALID_WIDTH", "代理 width 不能小于 64")
     return profile, min(width, PROFILE_LIMITS[profile])
 
 
-def _source(payload: Dict[str, Any]) -> Tuple[Path, Optional[str], Optional[str]]:
+def _source(payload: dict[str, Any]) -> tuple[Path, str | None, str | None]:
     payload = payload or {}
     asset_id = str(payload.get("asset_id") or "").strip() or None
     version_id = str(payload.get("version_id") or "").strip() or None
@@ -83,7 +88,9 @@ def _source(payload: Dict[str, Any]) -> Tuple[Path, Optional[str], Optional[str]
     if asset_id:
         path = asset_registry_repo.media_file(asset_id, version_id)
         if path is None:
-            raise CleanroomException(503, "MEDIA_NOT_AVAILABLE", "该资产版本没有可读取的媒体文件")
+            raise CleanroomException(
+                503, "MEDIA_NOT_AVAILABLE", "该资产版本没有可读取的媒体文件"
+            )
         return path, asset_id, version_id
     if not raw_path:
         raise CleanroomException(400, "INVALID_REQUEST", "缺少 asset_id 或 path")
@@ -99,25 +106,44 @@ def _output_dir() -> Path:
     return storage.resolve_output_directory("media_output/proxy")
 
 
-def _identity(path: Path, asset_id: Optional[str], version_id: Optional[str], profile: str, width: int) -> str:
+def _identity(
+    path: Path, asset_id: str | None, version_id: str | None, profile: str, width: int
+) -> str:
     stat = path.stat()
-    logical = "|".join((asset_id or storage.relative_display(path), version_id or "", profile, str(width), str(stat.st_size), str(stat.st_mtime_ns)))
+    logical = "|".join(
+        (
+            asset_id or storage.relative_display(path),
+            version_id or "",
+            profile,
+            str(width),
+            str(stat.st_size),
+            str(stat.st_mtime_ns),
+        )
+    )
     return hashlib.sha256(logical.encode("utf-8")).hexdigest()[:32]
 
 
-def _image_proxy(path: Path, width: int, target_base: Path) -> Dict[str, Any]:
+def _image_proxy(path: Path, width: int, target_base: Path) -> dict[str, Any]:
     Image = _pil()
     if Image is None:
-        raise CleanroomException(503, "PIL_NOT_AVAILABLE", "未安装 PIL，图片代理能力未接入",
-                                 extra={"data_status": "not_integrated"},
-                                 expose_extra_fields={"data_status"})
+        raise CleanroomException(
+            503,
+            "PIL_NOT_AVAILABLE",
+            "未安装 PIL，图片代理能力未接入",
+            extra={"data_status": "not_integrated"},
+            expose_extra_fields={"data_status"},
+        )
     try:
         with Image.open(path) as opened:
             source_width, source_height = opened.size
             target_width = min(max(1, int(width)), max(1, int(source_width)))
-            target_height = max(1, int(round(source_height * target_width / float(source_width or 1))))
+            target_height = max(
+                1, int(round(source_height * target_width / float(source_width or 1)))
+            )
             converted = opened.convert("RGBA")
-            resized = converted.resize((target_width, target_height), Image.Resampling.LANCZOS)
+            resized = converted.resize(
+                (target_width, target_height), Image.Resampling.LANCZOS
+            )
             alpha = resized.getchannel("A")
             has_alpha = alpha.getextrema()[0] < 255
             suffix = ".png" if has_alpha else ".jpg"
@@ -127,46 +153,85 @@ def _image_proxy(path: Path, width: int, target_base: Path) -> Dict[str, Any]:
                 partial = target.with_suffix(target.suffix + ".part")
                 try:
                     if image_format == "jpeg":
-                        resized.convert("RGB").save(partial, format="JPEG", quality=82, optimize=True)
+                        resized.convert("RGB").save(
+                            partial, format="JPEG", quality=82, optimize=True
+                        )
                     else:
                         resized.save(partial, format="PNG", optimize=True)
                     partial.replace(target)
                 finally:
                     partial.unlink(missing_ok=True)
-            return {"path": target, "media_type": media_type, "width": target_width, "height": target_height}
+            return {
+                "path": target,
+                "media_type": media_type,
+                "width": target_width,
+                "height": target_height,
+            }
     except CleanroomException:
         raise
     except Exception:
-        raise CleanroomException(503, "THUMBNAIL_FAILED", "无法把该文件解码为图片") from None
+        raise CleanroomException(
+            503, "THUMBNAIL_FAILED", "无法把该文件解码为图片"
+        ) from None
 
 
-def _ffmpeg_proxy(path: Path, width: int, target: Path) -> Dict[str, Any]:
+def _ffmpeg_proxy(path: Path, width: int, target: Path) -> dict[str, Any]:
     ffmpeg = shutil.which("ffmpeg")
     if not ffmpeg:
-        raise CleanroomException(503, "FFMPEG_NOT_AVAILABLE", "未找到 ffmpeg，视频代理能力未接入",
-                                 extra={"data_status": "not_integrated"},
-                                 expose_extra_fields={"data_status"})
+        raise CleanroomException(
+            503,
+            "FFMPEG_NOT_AVAILABLE",
+            "未找到 ffmpeg，视频代理能力未接入",
+            extra={"data_status": "not_integrated"},
+            expose_extra_fields={"data_status"},
+        )
     partial = target.with_suffix(target.suffix + ".part")
     args = [
-        ffmpeg, "-y", "-i", str(path),
-        "-vf", "scale=%d:-2" % width,
-        "-c:v", "libx264", "-preset", "veryfast", "-b:v", "1200k",
-        "-maxrate", "1400k", "-bufsize", "2400k", "-c:a", "aac", "-b:a", "96k",
-        "-movflags", "+faststart", "-f", "mp4", str(partial),
+        ffmpeg,
+        "-y",
+        "-i",
+        str(path),
+        "-vf",
+        "scale=%d:-2" % width,
+        "-c:v",
+        "libx264",
+        "-preset",
+        "veryfast",
+        "-b:v",
+        "1200k",
+        "-maxrate",
+        "1400k",
+        "-bufsize",
+        "2400k",
+        "-c:a",
+        "aac",
+        "-b:a",
+        "96k",
+        "-movflags",
+        "+faststart",
+        "-f",
+        "mp4",
+        str(partial),
     ]
     try:
         completed = subprocess.run(args, capture_output=True, timeout=120, check=False)
     except (OSError, subprocess.TimeoutExpired):
         partial.unlink(missing_ok=True)
-        raise CleanroomException(503, "MEDIA_PROCESS_FAILED", "视频代理处理失败") from None
-    if completed.returncode != 0 or not partial.is_file() or partial.stat().st_size <= 0:
+        raise CleanroomException(
+            503, "MEDIA_PROCESS_FAILED", "视频代理处理失败"
+        ) from None
+    if (
+        completed.returncode != 0
+        or not partial.is_file()
+        or partial.stat().st_size <= 0
+    ):
         partial.unlink(missing_ok=True)
         raise CleanroomException(503, "MEDIA_PROCESS_FAILED", "视频代理处理失败")
     partial.replace(target)
     return {"path": target, "media_type": "video/mp4", "width": width, "height": None}
 
 
-def build_proxy(payload: Dict[str, Any]) -> Dict[str, Any]:
+def build_proxy(payload: dict[str, Any]) -> dict[str, Any]:
     """生成或读取确定性的真实代理，并返回不含绝对路径的元数据。"""
     path, asset_id, version_id = _source(payload)
     profile, width = _profile(payload)
@@ -191,7 +256,9 @@ def build_proxy(payload: Dict[str, Any]) -> Dict[str, Any]:
         "duration_ms": None,
         "profile": profile,
         "source": "proxy",
-        "generated_at": datetime.fromtimestamp(target.stat().st_mtime, timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z"),
+        "generated_at": datetime.fromtimestamp(target.stat().st_mtime, UTC)
+        .isoformat(timespec="milliseconds")
+        .replace("+00:00", "Z"),
         "bytes": target.stat().st_size,
         "output": "media_output/proxy/" + artifact_id,
         "_request_width": width,
@@ -206,7 +273,9 @@ def _next_action(code: str) -> str:
     return "retry_proxy_generation"
 
 
-def _degraded_payload(payload: Dict[str, Any], exc: CleanroomException) -> Dict[str, Any]:
+def _degraded_payload(
+    payload: dict[str, Any], exc: CleanroomException
+) -> dict[str, Any]:
     code = exc.code
     availability = "not_integrated" if code in DEPENDENCY_CODES else "unavailable"
     return {
@@ -222,12 +291,14 @@ def _degraded_payload(payload: Dict[str, Any], exc: CleanroomException) -> Dict[
         "profile": str((payload or {}).get("profile") or "preview"),
         "reason_code": code,
         "next_action": _next_action(code),
-        "data_status": "not_integrated" if availability == "not_integrated" else "degraded",
+        "data_status": "not_integrated"
+        if availability == "not_integrated"
+        else "degraded",
         "data_gaps": [code],
     }
 
 
-def descriptor(payload: Dict[str, Any]) -> Dict[str, Any]:
+def descriptor(payload: dict[str, Any]) -> dict[str, Any]:
     """返回可供检索结果消费的 ready 或规范降级状态。"""
     try:
         result = build_proxy(payload)
@@ -235,7 +306,7 @@ def descriptor(payload: Dict[str, Any]) -> Dict[str, Any]:
         if exc.status_code != 503:
             raise
         return _degraded_payload(payload, exc)
-    query: Dict[str, str] = {"artifact_id": result["artifact_id"]}
+    query: dict[str, str] = {"artifact_id": result["artifact_id"]}
     query["profile"] = result["profile"]
     query["width"] = str(result.get("_request_width") or result["width"] or "")
     if result.get("asset_id"):
@@ -255,25 +326,32 @@ def descriptor(payload: Dict[str, Any]) -> Dict[str, Any]:
     return result
 
 
-def artifact_path(payload: Dict[str, Any]) -> Tuple[Path, Dict[str, Any]]:
+def artifact_path(payload: dict[str, Any]) -> tuple[Path, dict[str, Any]]:
     """解析代理内容；有源标识时重新验证绑定关系。"""
     artifact_id = str((payload or {}).get("artifact_id") or "").strip()
     if artifact_id and not ARTIFACT_RE.fullmatch(artifact_id):
         raise CleanroomException(400, "INVALID_ARTIFACT_ID", "代理产物标识不合法")
-    has_source = bool(str((payload or {}).get("asset_id") or "").strip() or str((payload or {}).get("path") or "").strip())
+    has_source = bool(
+        str((payload or {}).get("asset_id") or "").strip()
+        or str((payload or {}).get("path") or "").strip()
+    )
     if has_source:
         result = build_proxy(payload)
         if artifact_id and artifact_id != result["artifact_id"]:
-            raise CleanroomException(404, "PROXY_NOT_FOUND", "代理产物与当前媒体版本不匹配")
+            raise CleanroomException(
+                404, "PROXY_NOT_FOUND", "代理产物与当前媒体版本不匹配"
+            )
         relative = "media_output/proxy/" + result["artifact_id"]
         return storage.resolve_output_path(relative), result
     if not artifact_id:
-        raise CleanroomException(400, "INVALID_REQUEST", "缺少 artifact_id 或媒体源标识")
+        raise CleanroomException(
+            400, "INVALID_REQUEST", "缺少 artifact_id 或媒体源标识"
+        )
     path = storage.resolve_output_path("media_output/proxy/" + artifact_id)
     return path, {"artifact_id": artifact_id, "media_type": media_repo._mime(path)}
 
 
-def error_payload(exc: CleanroomException) -> Dict[str, Any]:
+def error_payload(exc: CleanroomException) -> dict[str, Any]:
     """构造媒体代理专用错误包，保留统一 detail 外层并补齐降级动作。"""
     return {
         "detail": {
@@ -281,6 +359,8 @@ def error_payload(exc: CleanroomException) -> Dict[str, Any]:
             "message": exc.message,
             "reason_code": exc.code,
             "next_action": _next_action(exc.code),
-            "data_status": "not_integrated" if exc.code in DEPENDENCY_CODES else "degraded",
+            "data_status": "not_integrated"
+            if exc.code in DEPENDENCY_CODES
+            else "degraded",
         }
     }

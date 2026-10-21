@@ -1,9 +1,11 @@
 """Workflow value objects shared by parser, storage and API."""
+
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Mapping
+from typing import Any
 
 
 class WorkflowSource(str, Enum):
@@ -35,11 +37,19 @@ class WorkflowNode:
             position["width"] = self.width
         if self.height is not None:
             position["height"] = self.height
-        return {"id": self.id, "kind": self.kind, "title": self.title,
-                "position": position, "inputs": dict(self.inputs),
-                "outputs": dict(self.outputs), "widgets": self.widgets,
-                "metadata": dict(self.metadata), "asset_ids": list(self.asset_ids),
-                "raw_payload": self.raw_payload, "extensions": dict(self.extensions)}
+        return {
+            "id": self.id,
+            "kind": self.kind,
+            "title": self.title,
+            "position": position,
+            "inputs": dict(self.inputs),
+            "outputs": dict(self.outputs),
+            "widgets": self.widgets,
+            "metadata": dict(self.metadata),
+            "asset_ids": list(self.asset_ids),
+            "raw_payload": self.raw_payload,
+            "extensions": dict(self.extensions),
+        }
 
 
 @dataclass(frozen=True)
@@ -51,8 +61,13 @@ class WorkflowConnection:
     target_slot: str | None = None
 
     def as_dict(self) -> dict[str, Any]:
-        return {"id": self.id, "source": self.source, "target": self.target,
-                "source_slot": self.source_slot, "target_slot": self.target_slot}
+        return {
+            "id": self.id,
+            "source": self.source,
+            "target": self.target,
+            "source_slot": self.source_slot,
+            "target_slot": self.target_slot,
+        }
 
 
 @dataclass(frozen=True)
@@ -74,11 +89,20 @@ class WorkflowDocument:
     extensions: Mapping[str, Any] = field(default_factory=dict)
 
     def as_dict(self) -> dict[str, Any]:
-        return {"workflow_id": self.workflow_id, "version": self.version,
-                "source": self.source.value, "name": self.name, "folder_id": self.folder_id,
-                "nodes": [node.as_dict() for node in self.nodes],
-                "connections": [link.as_dict() for link in self.connections],
-                "viewport": dict(self.viewport), "note": self.note, "media": self.media,
-                "dependencies": self.dependencies, "metadata": dict(self.metadata),
-                "warnings": list(self.warnings), "raw_payload": self.raw_payload,
-                "extensions": dict(self.extensions)}
+        return {
+            "workflow_id": self.workflow_id,
+            "version": self.version,
+            "source": self.source.value,
+            "name": self.name,
+            "folder_id": self.folder_id,
+            "nodes": [node.as_dict() for node in self.nodes],
+            "connections": [link.as_dict() for link in self.connections],
+            "viewport": dict(self.viewport),
+            "note": self.note,
+            "media": self.media,
+            "dependencies": self.dependencies,
+            "metadata": dict(self.metadata),
+            "warnings": list(self.warnings),
+            "raw_payload": self.raw_payload,
+            "extensions": dict(self.extensions),
+        }

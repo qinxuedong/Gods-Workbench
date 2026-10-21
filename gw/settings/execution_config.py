@@ -36,7 +36,14 @@ _SUPPORTED_VIDEO_PROTOCOLS = {"newapi_video"}
 _PROVIDER_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
 _ENV_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]{0,127}$")
 _MODEL_ID = re.compile(r"^[^\s\x00-\x1f]{1,256}$")
-_ALLOWED_FIELDS = {"base_url", "api_key_env", "model", "models", "default_model", "video_protocol"}
+_ALLOWED_FIELDS = {
+    "base_url",
+    "api_key_env",
+    "model",
+    "models",
+    "default_model",
+    "video_protocol",
+}
 
 
 def normalize_provider_base_url(base_url: str, protocol: str = "openai") -> str:
@@ -71,13 +78,13 @@ class RuntimeProvider:
     provider_id: str
     base_url: str
     api_key_env: str
-    models: Tuple[str, ...]
+    models: tuple[str, ...]
     default_model: str
-    video_protocol: Optional[str] = None
+    video_protocol: str | None = None
     source: str = "runtime_mapping"
-    chat_models: Optional[Tuple[str, ...]] = None
-    video_models: Optional[Tuple[str, ...]] = None
-    credential_revision: Optional[int] = None
+    chat_models: tuple[str, ...] | None = None
+    video_models: tuple[str, ...] | None = None
+    credential_revision: int | None = None
 
 
 def _unique_object(pairs):
@@ -107,7 +114,7 @@ def _valid_url_shape(value: object) -> bool:
         return False
 
 
-def _read_models(spec: dict) -> Tuple[Tuple[str, ...], str]:
+def _read_models(spec: dict) -> tuple[tuple[str, ...], str]:
     has_model = "model" in spec
     has_models = "models" in spec
     if has_model and has_models:
@@ -121,7 +128,9 @@ def _read_models(spec: dict) -> Tuple[Tuple[str, ...], str]:
         value = spec.get("models")
         if not isinstance(value, list) or not value or len(value) > 64:
             raise RuntimeConfigError("Provider models 必须是 1 至 64 项列表")
-        if any(not isinstance(item, str) or not _MODEL_ID.fullmatch(item) for item in value):
+        if any(
+            not isinstance(item, str) or not _MODEL_ID.fullmatch(item) for item in value
+        ):
             raise RuntimeConfigError("Provider models 配置无效")
         if len(set(value)) != len(value):
             raise RuntimeConfigError("Provider models 不得重复")
@@ -135,7 +144,7 @@ def _read_models(spec: dict) -> Tuple[Tuple[str, ...], str]:
     return models, default_model
 
 
-def _environment_runtime() -> Dict[str, RuntimeProvider]:
+def _environment_runtime() -> dict[str, RuntimeProvider]:
     """读取并严格解析 GW_PROVIDER_RUNTIME_JSON；不回显或持久化密钥。"""
     raw = os.environ.get(PROVIDER_RUNTIME_ENV, "")
     if not raw.strip():
@@ -151,7 +160,7 @@ def _environment_runtime() -> Dict[str, RuntimeProvider]:
     if not isinstance(parsed, dict) or len(parsed) > 128:
         raise RuntimeConfigError("Provider 运行配置必须是有限 Provider 映射")
 
-    providers: Dict[str, RuntimeProvider] = {}
+    providers: dict[str, RuntimeProvider] = {}
     for provider_id, spec in parsed.items():
         if (
             not isinstance(provider_id, str)
@@ -169,7 +178,10 @@ def _environment_runtime() -> Dict[str, RuntimeProvider]:
             raise RuntimeConfigError("Provider api_key_env 必须是环境变量名称")
         models, default_model = _read_models(spec)
         video_protocol = spec.get("video_protocol")
-        if video_protocol is not None and video_protocol not in _SUPPORTED_VIDEO_PROTOCOLS:
+        if (
+            video_protocol is not None
+            and video_protocol not in _SUPPORTED_VIDEO_PROTOCOLS
+        ):
             raise RuntimeConfigError("Provider video_protocol 不受支持")
         providers[provider_id] = RuntimeProvider(
             provider_id=provider_id,
@@ -182,7 +194,7 @@ def _environment_runtime() -> Dict[str, RuntimeProvider]:
     return providers
 
 
-def load_provider_runtime() -> Dict[str, RuntimeProvider]:
+def load_provider_runtime() -> dict[str, RuntimeProvider]:
     """页面保存为当前真源；同ID覆盖环境映射，未登记的环境项继续兼容。"""
     from gw.settings.service import ProviderService
 
@@ -196,22 +208,43 @@ def load_provider_runtime() -> Dict[str, RuntimeProvider]:
         provider_id = item["provider_id"]
         # 页面显式禁用或尚未配置的同ID项也遮蔽旧环境，不能静默调用旧账户。
         providers.pop(provider_id, None)
-        if not item["enabled"] or not item["base_url"] or item["protocol"] not in {"openai", "apimart", "grok"}:
+        if (
+            not item["enabled"]
+            or not item["base_url"]
+            or item["protocol"] not in {"openai", "apimart", "grok"}
+        ):
             continue
-        chat_models = tuple(model for model in item["chat_models"]
-                            if item["model_protocols"].get(model, "openai") == "openai")
-        video_models = tuple(item["video_models"]) if item.get("video_protocol") == "newapi_video" else ()
+        chat_models = tuple(
+            model
+            for model in item["chat_models"]
+            if item["model_protocols"].get(model, "openai") == "openai"
+        )
+        video_models = (
+            tuple(item["video_models"])
+            if item.get("video_protocol") == "newapi_video"
+            else ()
+        )
         models = tuple(dict.fromkeys((*chat_models, *video_models)))
         if not models:
             continue
-        providers[provider_id] = RuntimeProvider(provider_id=provider_id, base_url=normalize_provider_base_url(item["base_url"], item["protocol"]),
-            api_key_env="", models=models, default_model=models[0], video_protocol=item.get("video_protocol"),
-            source="settings", chat_models=chat_models, video_models=video_models,
-            credential_revision=snapshot.revision)
+        providers[provider_id] = RuntimeProvider(
+            provider_id=provider_id,
+            base_url=normalize_provider_base_url(item["base_url"], item["protocol"]),
+            api_key_env="",
+            models=models,
+            default_model=models[0],
+            video_protocol=item.get("video_protocol"),
+            source="settings",
+            chat_models=chat_models,
+            video_models=video_models,
+            credential_revision=snapshot.revision,
+        )
     return providers
 
 
-def _for_capability(provider: RuntimeProvider, capability: str) -> Optional[RuntimeProvider]:
+def _for_capability(
+    provider: RuntimeProvider, capability: str
+) -> RuntimeProvider | None:
     if capability == "video" and provider.video_protocol != "newapi_video":
         return None
     models = provider.chat_models if capability == "chat" else provider.video_models
@@ -222,7 +255,7 @@ def _for_capability(provider: RuntimeProvider, capability: str) -> Optional[Runt
     return replace(provider, models=models, default_model=models[0])
 
 
-def legacy_provider() -> Optional[RuntimeProvider]:
+def legacy_provider() -> RuntimeProvider | None:
     """读取既有 GW_CHAT_* 环境配置；客户端字段永远不能覆盖它。"""
     base_url = os.environ.get(LEGACY_BASE_URL_ENV, "").strip()
     api_key = os.environ.get(LEGACY_API_KEY_ENV, "").strip()
@@ -230,7 +263,10 @@ def legacy_provider() -> Optional[RuntimeProvider]:
         return None
     if not _valid_url_shape(base_url):
         raise RuntimeConfigError("旧版 Chat base_url 配置无效")
-    model = os.environ.get(LEGACY_MODEL_ENV, DEFAULT_LEGACY_MODEL).strip() or DEFAULT_LEGACY_MODEL
+    model = (
+        os.environ.get(LEGACY_MODEL_ENV, DEFAULT_LEGACY_MODEL).strip()
+        or DEFAULT_LEGACY_MODEL
+    )
     if not _MODEL_ID.fullmatch(model):
         raise RuntimeConfigError("旧版 Chat model 配置无效")
     return RuntimeProvider(
@@ -256,7 +292,9 @@ def api_endpoint_url(base_url: str, endpoint_path: str) -> str:
     return base + endpoint
 
 
-def resolve_provider(provider_id: Optional[str], *, capability: str = "chat") -> Optional[RuntimeProvider]:
+def resolve_provider(
+    provider_id: str | None, *, capability: str = "chat"
+) -> RuntimeProvider | None:
     """按服务端映射解析 Provider；缺省仅在唯一配置或旧环境兼容时选取。"""
     if capability not in {"chat", "video"}:
         raise RuntimeConfigError("Provider capability 不受支持")
@@ -275,7 +313,8 @@ def resolve_provider(provider_id: Optional[str], *, capability: str = "chat") ->
     if capability == "chat" and legacy is not None:
         return legacy
     candidates = [
-        candidate for item in providers.values()
+        candidate
+        for item in providers.values()
         if (candidate := _for_capability(item, capability)) is not None
     ]
     if len(candidates) == 1:
@@ -289,10 +328,13 @@ def provider_api_key(provider: RuntimeProvider) -> str:
     """只在请求执行时按引用读取秘密值；调用方不得记录或返回。"""
     if provider.source == "settings":
         from gw.settings.service import ProviderService
+
         if provider.credential_revision is None:
             return ""
         try:
-            return ProviderService().credential(provider.provider_id, expected_version=provider.credential_revision)
+            return ProviderService().credential(
+                provider.provider_id, expected_version=provider.credential_revision
+            )
         except CleanroomException:
             # 状态与执行按凭据不可用失败关闭；不输出加密异常或秘密值。
             return ""

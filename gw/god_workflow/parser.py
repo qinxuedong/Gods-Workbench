@@ -1,16 +1,16 @@
 """Strict, source-neutral workflow payload parser."""
+
 from __future__ import annotations
 
-from collections.abc import Mapping
-from copy import deepcopy
 import html
 import math
 import os
 import re
+from collections.abc import Mapping
+from copy import deepcopy
 from typing import Any
 
 from .models import WorkflowConnection, WorkflowDocument, WorkflowNode, WorkflowSource
-
 
 MAX_UPLOAD_BYTES = 4 * 1024 * 1024
 MAX_PNG_TEXT_BYTES = 1024 * 1024
@@ -19,19 +19,26 @@ MAX_PNG_TEXT_BYTES = 1024 * 1024
 def png_available() -> bool:
     try:
         import PIL.Image  # noqa: F401
+
         return True
     except ImportError:
         return False
 
 
-def parse_upload(content: bytes, media_type: str, *, source: str = "comfyui", name: str = "workflow") -> WorkflowDocument:
+def parse_upload(
+    content: bytes, media_type: str, *, source: str = "comfyui", name: str = "workflow"
+) -> WorkflowDocument:
     """Parse raw JSON/PNG bytes; never persist uploads or open caller-supplied paths."""
     import io
     import json
 
     if len(content) > MAX_UPLOAD_BYTES:
         raise WorkflowParseError("upload exceeds the size limit")
-    if media_type == "application/octet-stream" and content.startswith(b"RIFF") and content[8:12] == b"WEBP":
+    if (
+        media_type == "application/octet-stream"
+        and content.startswith(b"RIFF")
+        and content[8:12] == b"WEBP"
+    ):
         media_type = "image/webp"
     elif media_type == "application/octet-stream" and content.startswith(b"\x89PNG"):
         media_type = "image/png"
@@ -52,7 +59,9 @@ def parse_upload(content: bytes, media_type: str, *, source: str = "comfyui", na
             if image.format not in {"PNG", "WEBP"}:
                 raise WorkflowParseError("upload is not a PNG/WebP image")
             text = getattr(image, "text", None) or {
-                key: value for key, value in image.info.items() if isinstance(value, str)
+                key: value
+                for key, value in image.info.items()
+                if isinstance(value, str)
             }
             if image.format == "WEBP":
                 for value in image.getexif().values():
@@ -62,13 +71,20 @@ def parse_upload(content: bytes, media_type: str, *, source: str = "comfyui", na
                         key, encoded = value.split(":", 1)
                         if key in {"workflow", "prompt"}:
                             text[key] = encoded
-            if sum(len(str(value).encode("utf-8")) for value in text.values()) > MAX_PNG_TEXT_BYTES:
+            if (
+                sum(len(str(value).encode("utf-8")) for value in text.values())
+                > MAX_PNG_TEXT_BYTES
+            ):
                 raise WorkflowParseError("PNG text exceeds the size limit")
             key = "workflow" if "workflow" in text else "prompt"
             if key not in text:
-                raise WorkflowParseError("PNG contains no workflow or prompt text block")
+                raise WorkflowParseError(
+                    "PNG contains no workflow or prompt text block"
+                )
             payload = json.loads(text[key])
-        return parse_workflow(payload, source="canvas" if key == "workflow" else "comfyui", name=name)
+        return parse_workflow(
+            payload, source="canvas" if key == "workflow" else "comfyui", name=name
+        )
     except WorkflowParseError:
         raise
     except Exception:
@@ -113,14 +129,23 @@ def _link_tuple(raw: Any) -> tuple[Any, Any, Any, Any, Any] | None:
     if isinstance(raw, (list, tuple)):
         if len(raw) < 4:
             return None
-        return (raw[0] if len(raw) > 0 else None, raw[1], raw[2] if len(raw) > 2 else None,
-                raw[3], raw[4] if len(raw) > 4 else None)
+        return (
+            raw[0] if len(raw) > 0 else None,
+            raw[1],
+            raw[2] if len(raw) > 2 else None,
+            raw[3],
+            raw[4] if len(raw) > 4 else None,
+        )
     return None
 
 
 def _api_link(value: Any) -> tuple[str, str] | None:
     """Extract a Comfy-style [node id, output slot] input reference."""
-    if isinstance(value, (list, tuple)) and len(value) >= 2 and not isinstance(value[0], (dict, list, tuple)):
+    if (
+        isinstance(value, (list, tuple))
+        and len(value) >= 2
+        and not isinstance(value[0], (dict, list, tuple))
+    ):
         return str(value[0]), str(value[1])
     if isinstance(value, Mapping):
         node = value.get("node_id", value.get("node", value.get("id")))
@@ -130,20 +155,37 @@ def _api_link(value: Any) -> tuple[str, str] | None:
     return None
 
 
-def parse_workflow(payload: Any, *, source: WorkflowSource | str = WorkflowSource.COMFYUI,
-                   name: str = "workflow") -> WorkflowDocument:
+def parse_workflow(
+    payload: Any,
+    *,
+    source: WorkflowSource | str = WorkflowSource.COMFYUI,
+    name: str = "workflow",
+) -> WorkflowDocument:
     """Parse ComfyUI API, canvas JSON, and their public interchange variants."""
     root = _mapping(extract_source_graph(payload) or payload, "workflow")
     try:
-        selected = source if isinstance(source, WorkflowSource) else WorkflowSource(str(source).lower())
+        selected = (
+            source
+            if isinstance(source, WorkflowSource)
+            else WorkflowSource(str(source).lower())
+        )
     except ValueError as exc:
         raise WorkflowParseError("unsupported workflow source") from exc
 
-    if isinstance(root.get("nodes"), list) and any("type" in n and "class_type" not in n for n in root["nodes"] if isinstance(n, dict)):
+    if isinstance(root.get("nodes"), list) and any(
+        "type" in n and "class_type" not in n
+        for n in root["nodes"]
+        if isinstance(n, dict)
+    ):
         selected = WorkflowSource.CANVAS
 
     # Error envelopes are never valid workflow graphs, even when they contain arbitrary metadata.
-    if "error" in root and "nodes" not in root and "links" not in root and "connections" not in root:
+    if (
+        "error" in root
+        and "nodes" not in root
+        and "links" not in root
+        and "connections" not in root
+    ):
         raise WorkflowParseError("workflow error payload is not a graph")
 
     raw_nodes = root.get("nodes")
@@ -152,7 +194,11 @@ def parse_workflow(payload: Any, *, source: WorkflowSource | str = WorkflowSourc
         and all(isinstance(key, str) for key in root)
         and any(
             isinstance(value, Mapping)
-            and ("class_type" in value or "inputs" in value or selected == WorkflowSource.COMFYUI)
+            and (
+                "class_type" in value
+                or "inputs" in value
+                or selected == WorkflowSource.COMFYUI
+            )
             for value in root.values()
         )
     )
@@ -161,11 +207,17 @@ def parse_workflow(payload: Any, *, source: WorkflowSource | str = WorkflowSourc
             {"id": key, **dict(_mapping(value, "node"))}
             for key, value in root.items()
             if isinstance(value, Mapping)
-            and ("class_type" in value or "inputs" in value or selected == WorkflowSource.COMFYUI)
+            and (
+                "class_type" in value
+                or "inputs" in value
+                or selected == WorkflowSource.COMFYUI
+            )
         ]
     if raw_nodes is None:
         raw_nodes = [] if not root else None
-    if not isinstance(raw_nodes, list) or (selected == WorkflowSource.CANVAS and raw_nodes is None):
+    if not isinstance(raw_nodes, list) or (
+        selected == WorkflowSource.CANVAS and raw_nodes is None
+    ):
         raise WorkflowParseError("workflow nodes must be an array or ComfyUI node map")
 
     nodes: list[WorkflowNode] = []
@@ -178,35 +230,90 @@ def parse_workflow(payload: Any, *, source: WorkflowSource | str = WorkflowSourc
             raise WorkflowParseError(f"duplicate node id: {node_id}")
         node_ids.add(node_id)
         kind_value = item.get("kind") or item.get("class_type") or item.get("type")
-        if selected == WorkflowSource.COMFYUI and not (item.get("class_type") or item.get("kind")):
+        if selected == WorkflowSource.COMFYUI and not (
+            item.get("class_type") or item.get("kind")
+        ):
             raise WorkflowParseError(f"nodes[{index}] must contain class_type")
         kind = str(kind_value or "node")
-        if selected == WorkflowSource.COMFYUI and not isinstance(item.get("inputs"), Mapping):
+        if selected == WorkflowSource.COMFYUI and not isinstance(
+            item.get("inputs"), Mapping
+        ):
             raise WorkflowParseError(f"nodes[{index}] must contain inputs object")
         inputs = item.get("inputs") if isinstance(item.get("inputs"), Mapping) else {}
         position = _position(item.get("position", item.get("pos")))
-        known = {"id", "entity_id", "kind", "class_type", "type", "title", "name", "position", "pos",
-                 "inputs", "outputs", "widgets", "widgets_values", "metadata", "flags", "refs", "asset_ids"}
+        known = {
+            "id",
+            "entity_id",
+            "kind",
+            "class_type",
+            "type",
+            "title",
+            "name",
+            "position",
+            "pos",
+            "inputs",
+            "outputs",
+            "widgets",
+            "widgets_values",
+            "metadata",
+            "flags",
+            "refs",
+            "asset_ids",
+        }
         known.update({"raw_payload", "extensions"})
-        extensions = {**deepcopy(item.get("extensions") or {}),
-                      **{key: deepcopy(value) for key, value in item.items() if key not in known}}
+        extensions = {
+            **deepcopy(item.get("extensions") or {}),
+            **{key: deepcopy(value) for key, value in item.items() if key not in known},
+        }
         raw_node = deepcopy(item.get("raw_payload") or dict(item))
         assets = item.get("asset_ids", ())
         if not isinstance(assets, (list, tuple)):
             raise WorkflowParseError(f"nodes[{index}].asset_ids must be an array")
-        nodes.append(WorkflowNode(
-            id=node_id, kind=kind, title=str(item.get("title") or item.get("name") or (item.get("_meta") or {}).get("title") or kind),
-            position=position[:2], width=position[2], height=position[3],
-            inputs=deepcopy(inputs), outputs=deepcopy(item.get("outputs")) if isinstance(item.get("outputs"), Mapping) else {},
-            widgets=deepcopy(item.get("widgets", item.get("widgets_values"))),
-            metadata=deepcopy(item.get("metadata", {key: item[key] for key in ("type", "widgets_values", "flags", "refs") if key in item})),
-            asset_ids=tuple(str(asset) for asset in assets), raw_payload=raw_node, extensions=extensions))
+        nodes.append(
+            WorkflowNode(
+                id=node_id,
+                kind=kind,
+                title=str(
+                    item.get("title")
+                    or item.get("name")
+                    or (item.get("_meta") or {}).get("title")
+                    or kind
+                ),
+                position=position[:2],
+                width=position[2],
+                height=position[3],
+                inputs=deepcopy(inputs),
+                outputs=deepcopy(item.get("outputs"))
+                if isinstance(item.get("outputs"), Mapping)
+                else {},
+                widgets=deepcopy(item.get("widgets", item.get("widgets_values"))),
+                metadata=deepcopy(
+                    item.get(
+                        "metadata",
+                        {
+                            key: item[key]
+                            for key in ("type", "widgets_values", "flags", "refs")
+                            if key in item
+                        },
+                    )
+                ),
+                asset_ids=tuple(str(asset) for asset in assets),
+                raw_payload=raw_node,
+                extensions=extensions,
+            )
+        )
         for input_name, value in inputs.items():
             ref = _api_link(value)
             if ref:
-                generated_links.append(WorkflowConnection(
-                    id=f"{ref[0]}->{node_id}:{input_name}", source=ref[0], target=node_id,
-                    source_slot=ref[1], target_slot=str(input_name)))
+                generated_links.append(
+                    WorkflowConnection(
+                        id=f"{ref[0]}->{node_id}:{input_name}",
+                        source=ref[0],
+                        target=node_id,
+                        source_slot=ref[1],
+                        target_slot=str(input_name),
+                    )
+                )
 
     links = root.get("connections", root.get("links", []))
     if not isinstance(links, list):
@@ -221,40 +328,92 @@ def parse_workflow(payload: Any, *, source: WorkflowSource | str = WorkflowSourc
         else:
             item = _mapping(raw, f"connections[{index}]")
             link_id = item.get("id") or item.get("connection_id") or index
-            source = item.get("source", item.get("from_node", item.get("from", item.get("origin_id", ""))))
-            target = item.get("target", item.get("to_node", item.get("to", item.get("target_id", ""))))
-            source_slot = item.get("source_slot", item.get("from_slot", item.get("origin_slot")))
+            source = item.get(
+                "source",
+                item.get("from_node", item.get("from", item.get("origin_id", ""))),
+            )
+            target = item.get(
+                "target", item.get("to_node", item.get("to", item.get("target_id", "")))
+            )
+            source_slot = item.get(
+                "source_slot", item.get("from_slot", item.get("origin_slot"))
+            )
             target_slot = item.get("target_slot", item.get("to_slot"))
         connection_id = str(link_id)
         if not str(source).strip() or not str(target).strip():
-            raise WorkflowParseError(f"connections[{index}] must contain source and target")
+            raise WorkflowParseError(
+                f"connections[{index}] must contain source and target"
+            )
         if str(source) not in node_ids or str(target) not in node_ids:
-            raise WorkflowParseError(f"connection references unknown node: {source}->{target}")
+            raise WorkflowParseError(
+                f"connection references unknown node: {source}->{target}"
+            )
         if connection_id in seen_link_ids:
             raise WorkflowParseError(f"duplicate connection id: {connection_id}")
         seen_link_ids.add(connection_id)
-        connections.append(WorkflowConnection(id=connection_id, source=str(source), target=str(target),
-                                              source_slot=None if source_slot is None else str(source_slot),
-                                              target_slot=None if target_slot is None else str(target_slot)))
+        connections.append(
+            WorkflowConnection(
+                id=connection_id,
+                source=str(source),
+                target=str(target),
+                source_slot=None if source_slot is None else str(source_slot),
+                target_slot=None if target_slot is None else str(target_slot),
+            )
+        )
     # API formats expose links inside node inputs rather than root.links.
     for link in generated_links:
         if link.source not in node_ids or link.target not in node_ids:
-            raise WorkflowParseError(f"connection references unknown node: {link.source}->{link.target}")
+            raise WorkflowParseError(
+                f"connection references unknown node: {link.source}->{link.target}"
+            )
         if link.id not in seen_link_ids:
             connections.append(link)
             seen_link_ids.add(link.id)
-    metadata = {key: deepcopy(root[key]) for key in ("version", "canvas_id") if key in root}
-    known_root = {"nodes", "links", "connections", "version", "canvas_id", "viewport", "note", "media", "dependencies", "metadata", "warnings", "workflow_id", "folder_id", "name", "source", "extensions", "raw_payload", "asset_id"}
-    extensions = {key: deepcopy(value) for key, value in root.items() if key not in known_root}
-    return WorkflowDocument(workflow_id=str(root["workflow_id"]) if root.get("workflow_id") is not None else None,
-                             version=int(root.get("version", 1)), source=selected, name=name,
-                             folder_id=str(root["folder_id"]) if root.get("folder_id") is not None else None,
-                             nodes=tuple(nodes), connections=tuple(connections),
-                             viewport=deepcopy(root.get("viewport") or {}), note=deepcopy(root.get("note")),
-                             media=deepcopy(root.get("media")), dependencies=deepcopy(root.get("dependencies")),
-                             metadata=deepcopy(root.get("metadata") or metadata),
-                             warnings=tuple(str(item) for item in (root.get("warnings") or ())),
-                             raw_payload=deepcopy(root.get("raw_payload") or payload), extensions={**extensions, **deepcopy(root.get("extensions") or {})})
+    metadata = {
+        key: deepcopy(root[key]) for key in ("version", "canvas_id") if key in root
+    }
+    known_root = {
+        "nodes",
+        "links",
+        "connections",
+        "version",
+        "canvas_id",
+        "viewport",
+        "note",
+        "media",
+        "dependencies",
+        "metadata",
+        "warnings",
+        "workflow_id",
+        "folder_id",
+        "name",
+        "source",
+        "extensions",
+        "raw_payload",
+        "asset_id",
+    }
+    extensions = {
+        key: deepcopy(value) for key, value in root.items() if key not in known_root
+    }
+    return WorkflowDocument(
+        workflow_id=str(root["workflow_id"])
+        if root.get("workflow_id") is not None
+        else None,
+        version=int(root.get("version", 1)),
+        source=selected,
+        name=name,
+        folder_id=str(root["folder_id"]) if root.get("folder_id") is not None else None,
+        nodes=tuple(nodes),
+        connections=tuple(connections),
+        viewport=deepcopy(root.get("viewport") or {}),
+        note=deepcopy(root.get("note")),
+        media=deepcopy(root.get("media")),
+        dependencies=deepcopy(root.get("dependencies")),
+        metadata=deepcopy(root.get("metadata") or metadata),
+        warnings=tuple(str(item) for item in (root.get("warnings") or ())),
+        raw_payload=deepcopy(root.get("raw_payload") or payload),
+        extensions={**extensions, **deepcopy(root.get("extensions") or {})},
+    )
 
 
 NODE_CN_TITLES: dict[str, str] = {
@@ -334,6 +493,7 @@ def _clean_html_to_note_text(raw_html: Any, detail: dict[str, Any]) -> str:
 def extract_source_graph(payload: Any) -> dict[str, Any] | None:
     """只解包已知 RH 源字段，不从节点类型清单猜测连线或参数。"""
     import json
+
     candidates = [payload]
     for _ in range(8):
         next_candidates = []
@@ -365,5 +525,7 @@ def build_topology_from_public_detail(detail: dict[str, Any]) -> dict[str, Any]:
     """公开详情不是源图：缺少真实源时明确失败，禁止生成虚构拓扑。"""
     graph = extract_source_graph(detail)
     if graph is None:
-        raise WorkflowParseError("公开详情只有节点类型/模型清单，缺少原始拓扑；请配置 RH 登录 Token/API Key 或上传原始工作流 JSON")
+        raise WorkflowParseError(
+            "公开详情只有节点类型/模型清单，缺少原始拓扑；请配置 RH 登录 Token/API Key 或上传原始工作流 JSON"
+        )
     return graph

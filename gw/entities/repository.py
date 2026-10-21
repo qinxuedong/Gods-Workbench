@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 # Copyright 2026 Gods-Workbench Authors
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -22,15 +21,12 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from copy import deepcopy
-from typing import Any, Dict, List, Mapping, Optional
+from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Body, Header, Query, status
 from pydantic import BaseModel, ConfigDict, Field
-
-from gw.core import storage
-from gw.core.auth import require_authenticated, require_edit_access
-from gw.core.errors import CleanroomException, VersionConflictException
 
 from gw.cinematography.schema import (
     EntityCreatePayload,
@@ -38,14 +34,16 @@ from gw.cinematography.schema import (
     EntityType,
     MasterCatalogEntity,
 )
-
+from gw.core import storage
+from gw.core.auth import require_authenticated, require_edit_access
+from gw.core.errors import CleanroomException, VersionConflictException
 
 NS_ENTITIES = "cinematography_entities"
 DATA_STATUS_OK = "ok"
 FIXTURE_ID = "c12-t1-master-catalog-001"
 
 
-def _blank() -> Dict[str, Any]:
+def _blank() -> dict[str, Any]:
     return {"revision": 1, "entities": {}, "sequences": {}}
 
 
@@ -55,22 +53,30 @@ def state() -> storage.JsonState:
     return storage.JsonState(NS_ENTITIES, _blank)
 
 
-def _bump(raw: Dict[str, Any]) -> int:
+def _bump(raw: dict[str, Any]) -> int:
     raw["revision"] = int(raw.get("revision", 1)) + 1
     return raw["revision"]
 
 
-def _cas(raw: Mapping[str, Any], expected_version: Optional[int], *, required: bool) -> None:
+def _cas(
+    raw: Mapping[str, Any], expected_version: int | None, *, required: bool
+) -> None:
     current = int(raw.get("revision", 1))
     if expected_version is None:
         if required:
-            raise CleanroomException(400, "EXPECTED_VERSION_REQUIRED", "写入实体母库必须携带 expected_version")
+            raise CleanroomException(
+                400,
+                "EXPECTED_VERSION_REQUIRED",
+                "写入实体母库必须携带 expected_version",
+            )
         return
     if int(expected_version) != current:
-        raise VersionConflictException(int(expected_version), current, "实体母库版本冲突，请重新读取后重试")
+        raise VersionConflictException(
+            int(expected_version), current, "实体母库版本冲突，请重新读取后重试"
+        )
 
 
-def _next_entity_id(raw: Dict[str, Any]) -> str:
+def _next_entity_id(raw: dict[str, Any]) -> str:
     taken = list(raw.setdefault("entities", {}).keys())
     sequences = raw.setdefault("sequences", {})
     entity_id = storage.next_sequence("ent_", list(sequences.keys()) + taken)
@@ -81,17 +87,19 @@ def _next_entity_id(raw: Dict[str, Any]) -> str:
 def _validate_project_id(project_id: str) -> str:
     value = str(project_id or "").strip()
     if not value or not value.isascii() or any(char.isspace() for char in value):
-        raise CleanroomException(400, "INVALID_PROJECT_ID", "project_id 必须是非空 ASCII 标识")
+        raise CleanroomException(
+            400, "INVALID_PROJECT_ID", "project_id 必须是非空 ASCII 标识"
+        )
     return value
 
 
-def _record_view(record: Mapping[str, Any]) -> Dict[str, Any]:
+def _record_view(record: Mapping[str, Any]) -> dict[str, Any]:
     """将 JSON 记录通过响应模型重新校验后输出，避免脏数据越过 API。"""
 
     return MasterCatalogEntity.model_validate(record).model_dump(mode="json")
 
 
-def _entity_or_404(raw: Mapping[str, Any], entity_id: str) -> Dict[str, Any]:
+def _entity_or_404(raw: Mapping[str, Any], entity_id: str) -> dict[str, Any]:
     record = raw.get("entities", {}).get(entity_id)
     if not isinstance(record, dict) or bool(record.get("archived")):
         raise CleanroomException(404, "ENTITY_NOT_FOUND", "实体不存在")
@@ -110,12 +118,12 @@ def _patch(value: EntityPatchPayload | Mapping[str, Any]) -> EntityPatchPayload:
     return EntityPatchPayload.model_validate(dict(value))
 
 
-def create_entity(payload: EntityCreatePayload | Mapping[str, Any]) -> Dict[str, Any]:
+def create_entity(payload: EntityCreatePayload | Mapping[str, Any]) -> dict[str, Any]:
     """登记角色、道具或场景，并返回新的母库 revision。"""
 
     request = _payload(payload)
 
-    def mutate(raw: Dict[str, Any]) -> Dict[str, Any]:
+    def mutate(raw: dict[str, Any]) -> dict[str, Any]:
         _cas(raw, request.expected_version, required=False)
         entity_id = _next_entity_id(raw)
         now = storage.now_iso()
@@ -150,17 +158,17 @@ def create_entity(payload: EntityCreatePayload | Mapping[str, Any]) -> Dict[str,
 
 
 def list_entities(
-    project_id: Optional[str] = None,
-    entity_type: Optional[EntityType | str] = None,
+    project_id: str | None = None,
+    entity_type: EntityType | str | None = None,
     *,
     include_archived: bool = False,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """按项目读取母库实体；默认只返回未归档记录。"""
 
     project = _validate_project_id(project_id) if project_id is not None else None
     kind = EntityType(entity_type) if entity_type is not None else None
     raw = state().read()
-    records: List[Dict[str, Any]] = []
+    records: list[dict[str, Any]] = []
     for value in raw.get("entities", {}).values():
         if not isinstance(value, dict):
             continue
@@ -181,12 +189,14 @@ def list_entities(
     }
 
 
-def get_entity(entity_id: str, *, project_id: Optional[str] = None) -> Dict[str, Any]:
+def get_entity(entity_id: str, *, project_id: str | None = None) -> dict[str, Any]:
     """读取一个未归档实体，并在提供项目时执行主体范围校验。"""
 
     raw = state().read()
     record = _entity_or_404(raw, str(entity_id))
-    if project_id is not None and record.get("project_id") != _validate_project_id(project_id):
+    if project_id is not None and record.get("project_id") != _validate_project_id(
+        project_id
+    ):
         raise CleanroomException(404, "ENTITY_NOT_FOUND", "实体不存在")
     return {
         "entity": _record_view(record),
@@ -197,12 +207,14 @@ def get_entity(entity_id: str, *, project_id: Optional[str] = None) -> Dict[str,
     }
 
 
-def update_entity(entity_id: str, payload: EntityPatchPayload | Mapping[str, Any]) -> Dict[str, Any]:
+def update_entity(
+    entity_id: str, payload: EntityPatchPayload | Mapping[str, Any]
+) -> dict[str, Any]:
     """更新实体；所有写入使用母库顶层 revision 做 CAS。"""
 
     request = _patch(payload)
 
-    def mutate(raw: Dict[str, Any]) -> Dict[str, Any]:
+    def mutate(raw: dict[str, Any]) -> dict[str, Any]:
         _cas(raw, request.expected_version, required=True)
         record = _entity_or_404(raw, str(entity_id))
         changes = request.model_dump(exclude_unset=True, mode="json")
@@ -223,10 +235,10 @@ def update_entity(entity_id: str, payload: EntityPatchPayload | Mapping[str, Any
     return state().mutate(mutate)
 
 
-def archive_entity(entity_id: str, expected_version: int) -> Dict[str, Any]:
+def archive_entity(entity_id: str, expected_version: int) -> dict[str, Any]:
     """归档实体，保留母库记录并要求 CAS。"""
 
-    def mutate(raw: Dict[str, Any]) -> Dict[str, Any]:
+    def mutate(raw: dict[str, Any]) -> dict[str, Any]:
         _cas(raw, expected_version, required=True)
         record = _entity_or_404(raw, str(entity_id))
         record["archived"] = True
@@ -260,19 +272,19 @@ class ArchivePayload(BaseModel):
     expected_version: int = Field(..., ge=1)
 
 
-def _read_route(authorization: Optional[str], role: str):
+def _read_route(authorization: str | None, role: str):
     return require_authenticated(authorization, role)
 
 
-def _write_route(authorization: Optional[str], role: str):
+def _write_route(authorization: str | None, role: str):
     return require_edit_access(authorization, role)
 
 
 def list_entities_endpoint(
-    project_id: Optional[str] = Query(None),
-    entity_type: Optional[EntityType] = Query(None),
+    project_id: str | None = Query(None),
+    entity_type: EntityType | None = Query(None),
     include_archived: bool = Query(False),
-    authorization: Optional[str] = Header(None),
+    authorization: str | None = Header(None),
     x_user_role: str = Header("editor", alias="X-User-Role"),
 ):
     _read_route(authorization, x_user_role)
@@ -281,7 +293,7 @@ def list_entities_endpoint(
 
 def create_entity_endpoint(
     payload: EntityCreatePayload,
-    authorization: Optional[str] = Header(None),
+    authorization: str | None = Header(None),
     x_user_role: str = Header("editor", alias="X-User-Role"),
 ):
     _write_route(authorization, x_user_role)
@@ -290,8 +302,8 @@ def create_entity_endpoint(
 
 def get_entity_endpoint(
     entity_id: str,
-    project_id: Optional[str] = Query(None),
-    authorization: Optional[str] = Header(None),
+    project_id: str | None = Query(None),
+    authorization: str | None = Header(None),
     x_user_role: str = Header("editor", alias="X-User-Role"),
 ):
     _read_route(authorization, x_user_role)
@@ -301,7 +313,7 @@ def get_entity_endpoint(
 def update_entity_endpoint(
     entity_id: str,
     payload: EntityPatchPayload,
-    authorization: Optional[str] = Header(None),
+    authorization: str | None = Header(None),
     x_user_role: str = Header("editor", alias="X-User-Role"),
 ):
     _write_route(authorization, x_user_role)
@@ -311,7 +323,7 @@ def update_entity_endpoint(
 def archive_entity_endpoint(
     entity_id: str,
     payload: ArchivePayload = Body(...),
-    authorization: Optional[str] = Header(None),
+    authorization: str | None = Header(None),
     x_user_role: str = Header("editor", alias="X-User-Role"),
 ):
     _write_route(authorization, x_user_role)
@@ -319,7 +331,11 @@ def archive_entity_endpoint(
 
 
 router = APIRouter(tags=["entities-c12"])
-for _path in ("/api/entities", "/api/master-catalog/entities", "/api/cinematography/entities"):
+for _path in (
+    "/api/entities",
+    "/api/master-catalog/entities",
+    "/api/cinematography/entities",
+):
     router.add_api_route(
         _path,
         list_entities_endpoint,
@@ -336,7 +352,11 @@ for _path in ("/api/entities", "/api/master-catalog/entities", "/api/cinematogra
         include_in_schema=_path == "/api/entities",
         summary="登记实体母库记录" if _path == "/api/entities" else None,
     )
-for _path in ("/api/entities/{entity_id}", "/api/master-catalog/entities/{entity_id}", "/api/cinematography/entities/{entity_id}"):
+for _path in (
+    "/api/entities/{entity_id}",
+    "/api/master-catalog/entities/{entity_id}",
+    "/api/cinematography/entities/{entity_id}",
+):
     router.add_api_route(
         _path,
         get_entity_endpoint,
@@ -364,7 +384,9 @@ for _path in (
         methods=["POST"],
         status_code=status.HTTP_200_OK,
         include_in_schema=_path == "/api/entities/{entity_id}/archive",
-        summary="归档实体母库记录" if _path == "/api/entities/{entity_id}/archive" else None,
+        summary="归档实体母库记录"
+        if _path == "/api/entities/{entity_id}/archive"
+        else None,
     )
 
 

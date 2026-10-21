@@ -24,10 +24,10 @@ class Identifier(RootModel[StrictStr]):
     root: Annotated[
         StrictStr,
         Field(
-            description='Opaque stable identifier; never a credential or a filesystem path.',
+            description="Opaque stable identifier; never a credential or a filesystem path.",
             max_length=256,
             min_length=1,
-            pattern='^\\S(?:.*\\S)?$',
+            pattern="^\\S(?:.*\\S)?$",
         ),
     ]
 
@@ -37,11 +37,11 @@ class NonEmptyText(RootModel[StrictStr]):
 
 
 class Sha256Hex(RootModel[StrictStr]):
-    root: Annotated[StrictStr, Field(pattern='^[0-9a-f]{64}$')]
+    root: Annotated[StrictStr, Field(pattern="^[0-9a-f]{64}$")]
 
 
 class UtcDateTime(RootModel[AwareDatetime]):
-    root: Annotated[AwareDatetime, Field(description='UTC RFC 3339 timestamp.')]
+    root: Annotated[AwareDatetime, Field(description="UTC RFC 3339 timestamp.")]
 
 
 class Version(RootModel[StrictInt]):
@@ -49,154 +49,154 @@ class Version(RootModel[StrictInt]):
 
 
 class StageId(StrEnum):
-    brief = 'brief'
-    outline_characters = 'outline_characters'
-    full_script = 'full_script'
-    scene_script = 'scene_script'
-    storyboard_text = 'storyboard_text'
-    delivery_check = 'delivery_check'
+    brief = "brief"
+    outline_characters = "outline_characters"
+    full_script = "full_script"
+    scene_script = "scene_script"
+    storyboard_text = "storyboard_text"
+    delivery_check = "delivery_check"
 
 
 class RunStatus(StrEnum):
-    queued = 'queued'
-    running = 'running'
-    waiting_review = 'waiting_review'
-    paused = 'paused'
-    succeeded = 'succeeded'
-    failed = 'failed'
-    cancelled = 'cancelled'
+    queued = "queued"
+    running = "running"
+    waiting_review = "waiting_review"
+    paused = "paused"
+    succeeded = "succeeded"
+    failed = "failed"
+    cancelled = "cancelled"
 
 
 class AttemptKind(StrEnum):
-    initial = 'initial'
-    revision = 'revision'
-    rollback = 'rollback'
+    initial = "initial"
+    revision = "revision"
+    rollback = "rollback"
 
 
 class AttemptStatus(StrEnum):
-    queued = 'queued'
-    running = 'running'
-    waiting_review = 'waiting_review'
-    paused = 'paused'
-    succeeded = 'succeeded'
-    failed = 'failed'
-    cancelled = 'cancelled'
+    queued = "queued"
+    running = "running"
+    waiting_review = "waiting_review"
+    paused = "paused"
+    succeeded = "succeeded"
+    failed = "failed"
+    cancelled = "cancelled"
 
 
 class ArtifactLifecycle(StrEnum):
-    valid = 'valid'
-    stale = 'stale'
-    trashed = 'trashed'
+    valid = "valid"
+    stale = "stale"
+    trashed = "trashed"
 
 
 class ReviewConclusion(StrEnum):
-    pass_ = 'pass'
-    revise = 'revise'
-    block = 'block'
+    pass_ = "pass"
+    revise = "revise"
+    block = "block"
 
 
 class TextExportFormat(StrEnum):
-    markdown = 'markdown'
-    csv = 'csv'
-    json = 'json'
+    markdown = "markdown"
+    csv = "csv"
+    json = "json"
 
 
 class ApprovalDecision(StrEnum):
-    approve = 'approve'
-    reject = 'reject'
-    override = 'override'
+    approve = "approve"
+    reject = "reject"
+    override = "override"
 
 
 class DispatchState(StrEnum):
-    not_sent = 'not_sent'
-    sent = 'sent'
-    unknown = 'unknown'
+    not_sent = "not_sent"
+    sent = "sent"
+    unknown = "unknown"
 
 
 class ErrorCode(StrEnum):
-    CONTRACT_VERSION_UNSUPPORTED = 'CONTRACT_VERSION_UNSUPPORTED'
-    CAPABILITY_UNSUPPORTED = 'CAPABILITY_UNSUPPORTED'
-    NOT_AUTHORIZED = 'NOT_AUTHORIZED'
-    PROJECT_UNAVAILABLE = 'PROJECT_UNAVAILABLE'
-    REVISION_CONFLICT = 'REVISION_CONFLICT'
-    IDEMPOTENCY_CONFLICT = 'IDEMPOTENCY_CONFLICT'
-    VALIDATION_FAILED = 'VALIDATION_FAILED'
-    QUOTA_EXCEEDED = 'QUOTA_EXCEEDED'
-    UPSTREAM_UNAVAILABLE = 'UPSTREAM_UNAVAILABLE'
-    OUTCOME_UNKNOWN = 'OUTCOME_UNKNOWN'
-    ARTIFACT_STALE = 'ARTIFACT_STALE'
-    MANUAL_REVIEW_REQUIRED = 'MANUAL_REVIEW_REQUIRED'
+    CONTRACT_VERSION_UNSUPPORTED = "CONTRACT_VERSION_UNSUPPORTED"
+    CAPABILITY_UNSUPPORTED = "CAPABILITY_UNSUPPORTED"
+    NOT_AUTHORIZED = "NOT_AUTHORIZED"
+    PROJECT_UNAVAILABLE = "PROJECT_UNAVAILABLE"
+    REVISION_CONFLICT = "REVISION_CONFLICT"
+    IDEMPOTENCY_CONFLICT = "IDEMPOTENCY_CONFLICT"
+    VALIDATION_FAILED = "VALIDATION_FAILED"
+    QUOTA_EXCEEDED = "QUOTA_EXCEEDED"
+    UPSTREAM_UNAVAILABLE = "UPSTREAM_UNAVAILABLE"
+    OUTCOME_UNKNOWN = "OUTCOME_UNKNOWN"
+    ARTIFACT_STALE = "ARTIFACT_STALE"
+    MANUAL_REVIEW_REQUIRED = "MANUAL_REVIEW_REQUIRED"
 
 
 class MessageRole(StrEnum):
-    system = 'system'
-    developer = 'developer'
-    user = 'user'
-    assistant = 'assistant'
-    tool = 'tool'
+    system = "system"
+    developer = "developer"
+    user = "user"
+    assistant = "assistant"
+    tool = "tool"
 
 
 class FinishReason(StrEnum):
-    stop = 'stop'
-    length = 'length'
-    tool_calls = 'tool_calls'
-    content_filter = 'content_filter'
-    unknown = 'unknown'
+    stop = "stop"
+    length = "length"
+    tool_calls = "tool_calls"
+    content_filter = "content_filter"
+    unknown = "unknown"
 
 
 class RetrievalState(StrEnum):
-    ready = 'ready'
-    no_results = 'no_results'
-    disabled = 'disabled'
-    indexing = 'indexing'
-    unavailable = 'unavailable'
+    ready = "ready"
+    no_results = "no_results"
+    disabled = "disabled"
+    indexing = "indexing"
+    unavailable = "unavailable"
 
 
 class HostJobStatus(StrEnum):
-    accepted = 'accepted'
-    queued = 'queued'
-    running = 'running'
-    succeeded = 'succeeded'
-    failed = 'failed'
-    cancelled = 'cancelled'
-    unknown = 'unknown'
+    accepted = "accepted"
+    queued = "queued"
+    running = "running"
+    succeeded = "succeeded"
+    failed = "failed"
+    cancelled = "cancelled"
+    unknown = "unknown"
 
 
 class CancellationOutcome(StrEnum):
-    cancelled = 'cancelled'
-    requested = 'requested'
-    unsupported = 'unsupported'
-    may_continue = 'may_continue'
-    unknown = 'unknown'
+    cancelled = "cancelled"
+    requested = "requested"
+    unsupported = "unsupported"
+    may_continue = "may_continue"
+    unknown = "unknown"
 
 
 class ToolRiskLevel(StrEnum):
-    low = 'low'
-    medium = 'medium'
-    high = 'high'
-    critical = 'critical'
+    low = "low"
+    medium = "medium"
+    high = "high"
+    critical = "critical"
 
 
 class ToolCostState(StrEnum):
-    free = 'free'
-    metered = 'metered'
-    unknown = 'unknown'
+    free = "free"
+    metered = "metered"
+    unknown = "unknown"
 
 
 class BudgetState(StrEnum):
-    allowed = 'allowed'
-    denied = 'denied'
-    unknown = 'unknown'
+    allowed = "allowed"
+    denied = "denied"
+    unknown = "unknown"
 
 
 class BudgetOutcomeState(StrEnum):
-    known = 'known'
-    unknown = 'unknown'
+    known = "known"
+    unknown = "unknown"
 
 
 class PromptTemplateRef(BaseModel):
     model_config = ConfigDict(
-        extra='forbid',
+        extra="forbid",
     )
     template_id: Identifier
     version: Identifier
@@ -205,7 +205,7 @@ class PromptTemplateRef(BaseModel):
 
 class ArtifactSourceRef(BaseModel):
     model_config = ConfigDict(
-        extra='forbid',
+        extra="forbid",
     )
     artifact_id: Identifier
     version_id: Identifier
@@ -213,7 +213,7 @@ class ArtifactSourceRef(BaseModel):
 
 class Usage(BaseModel):
     model_config = ConfigDict(
-        extra='forbid',
+        extra="forbid",
     )
     input_tokens: Annotated[StrictInt, Field(ge=0)]
     output_tokens: Annotated[StrictInt, Field(ge=0)]
@@ -226,7 +226,7 @@ class PausedReason(RootModel[StrictStr]):
 
 class AgentRun(BaseModel):
     model_config = ConfigDict(
-        extra='forbid',
+        extra="forbid",
     )
     schema_version: Literal[1]
     run_id: Identifier
@@ -242,7 +242,7 @@ class AgentRun(BaseModel):
 
 class StageAttempt(BaseModel):
     model_config = ConfigDict(
-        extra='forbid',
+        extra="forbid",
     )
     schema_version: Literal[1]
     stage_attempt_id: Identifier
@@ -260,7 +260,7 @@ class StageAttempt(BaseModel):
 
 class ArtifactRef(BaseModel):
     model_config = ConfigDict(
-        extra='forbid',
+        extra="forbid",
     )
     schema_version: Annotated[StrictInt, Field(ge=1)]
     artifact_id: Identifier
@@ -270,7 +270,7 @@ class ArtifactRef(BaseModel):
     content_ref: Annotated[
         Identifier,
         Field(
-            description='Opaque module-owned content reference, not a host path or URL.'
+            description="Opaque module-owned content reference, not a host path or URL."
         ),
     ]
     parent_version_ids: list[Identifier]
@@ -285,7 +285,7 @@ class EvidenceItem(RootModel[StrictStr]):
 
 class DimensionScore(BaseModel):
     model_config = ConfigDict(
-        extra='forbid',
+        extra="forbid",
     )
     score: Annotated[StrictFloat, Field(ge=0.0, le=10.0)]
     evidence: list[EvidenceItem]
@@ -293,7 +293,7 @@ class DimensionScore(BaseModel):
 
 class ProgramCheck(BaseModel):
     model_config = ConfigDict(
-        extra='forbid',
+        extra="forbid",
     )
     check_id: Identifier
     passed: StrictBool
@@ -302,13 +302,13 @@ class ProgramCheck(BaseModel):
 
 DimensionScoreDecimalsAdditionalProperty = TypeAliasType(
     "DimensionScoreDecimalsAdditionalProperty",
-    Annotated[StrictStr, Field(pattern='^(?:10(?:\\.0+)?|[0-9](?:\\.[0-9]+)?)$')],
+    Annotated[StrictStr, Field(pattern="^(?:10(?:\\.0+)?|[0-9](?:\\.[0-9]+)?)$")],
 )
 
 
 class ReviewRecord(BaseModel):
     model_config = ConfigDict(
-        extra='forbid',
+        extra="forbid",
     )
     schema_version: Literal[1]
     review_id: Identifier
@@ -321,7 +321,7 @@ class ReviewRecord(BaseModel):
     program_checks: list[ProgramCheck]
     overall_score: Annotated[StrictFloat, Field(ge=0.0, le=10.0)]
     overall_score_decimal: Annotated[
-        StrictStr | None, Field(pattern='^(?:10(?:\\.0+)?|[0-9](?:\\.[0-9]+)?)$')
+        StrictStr | None, Field(pattern="^(?:10(?:\\.0+)?|[0-9](?:\\.[0-9]+)?)$")
     ] = None
     findings: list[dict[str, Any]] = []
     revision_responses: list[dict[str, Any]] = []
@@ -332,7 +332,7 @@ class ReviewRecord(BaseModel):
 
 class ReviewCandidateRead(BaseModel):
     model_config = ConfigDict(
-        extra='forbid',
+        extra="forbid",
     )
     review: ReviewRecord
     artifact: ArtifactRef
@@ -344,7 +344,7 @@ class ReviewCandidateRead(BaseModel):
 
 class ClarificationQuestion(BaseModel):
     model_config = ConfigDict(
-        extra='forbid',
+        extra="forbid",
     )
     question_id: Annotated[StrictStr, Field(max_length=256, min_length=1)]
     text: Annotated[StrictStr, Field(min_length=1)]
@@ -357,7 +357,7 @@ AnswersAdditionalProperty = TypeAliasType(
 
 class ClarificationRead(BaseModel):
     model_config = ConfigDict(
-        extra='forbid',
+        extra="forbid",
     )
     questions: list[ClarificationQuestion]
     answers: dict[str, AnswersAdditionalProperty]
@@ -366,7 +366,7 @@ class ClarificationRead(BaseModel):
 
 class ClarificationAnswerRequest(BaseModel):
     model_config = ConfigDict(
-        extra='forbid',
+        extra="forbid",
     )
     expected_version: Version
     idempotency_key: Identifier
@@ -376,7 +376,7 @@ class ClarificationAnswerRequest(BaseModel):
 
 class ApprovalRecord(BaseModel):
     model_config = ConfigDict(
-        extra='forbid',
+        extra="forbid",
     )
     schema_version: Literal[1]
     approval_id: Identifier
@@ -392,7 +392,7 @@ class ApprovalRecord(BaseModel):
 
 class ReviewDecisionRequest(BaseModel):
     model_config = ConfigDict(
-        extra='forbid',
+        extra="forbid",
     )
     request_id: Identifier
     idempotency_key: Identifier
@@ -410,7 +410,7 @@ class UsageUnavailableReason(RootModel[StrictStr]):
 
 class InvocationRecord(BaseModel):
     model_config = ConfigDict(
-        extra='forbid',
+        extra="forbid",
     )
     schema_version: Literal[1]
     invocation_id: Identifier
@@ -429,7 +429,7 @@ class InvocationRecord(BaseModel):
 
 class CallLimits(BaseModel):
     model_config = ConfigDict(
-        extra='forbid',
+        extra="forbid",
     )
     max_model_retries: Annotated[StrictInt, Field(ge=0, le=2)] = 2
     max_format_repairs: Annotated[StrictInt, Field(ge=0, le=1)] = 1
@@ -438,8 +438,8 @@ class CallLimits(BaseModel):
 
 
 class Mode(StrEnum):
-    automatic = 'automatic'
-    approval = 'approval'
+    automatic = "automatic"
+    approval = "approval"
 
 
 StageScoreWeightsAdditionalPropertyAdditionalProperty = TypeAliasType(
@@ -459,7 +459,7 @@ StageScoreWeightsAdditionalProperty = TypeAliasType(
 
 class ConfigSnapshot(BaseModel):
     model_config = ConfigDict(
-        extra='forbid',
+        extra="forbid",
     )
     schema_version: Literal[1]
     config_snapshot_id: Identifier
@@ -478,14 +478,14 @@ class ConfigSnapshot(BaseModel):
 
 class RunEvent(BaseModel):
     model_config = ConfigDict(
-        extra='forbid',
+        extra="forbid",
     )
     schema_version: Literal[1]
     event_id: Identifier
     run_id: Identifier
     event_seq: Annotated[StrictInt, Field(ge=1)]
     version: Version
-    event_type: Annotated[StrictStr, Field(pattern='^[a-z][a-z0-9_.-]{0,63}$')]
+    event_type: Annotated[StrictStr, Field(pattern="^[a-z][a-z0-9_.-]{0,63}$")]
     stage: StageId | None
     stage_attempt_id: Identifier | None
     artifact_version_ids: list[Identifier]
@@ -495,7 +495,7 @@ class RunEvent(BaseModel):
     summary: Annotated[
         StrictStr,
         Field(
-            description='Redacted audit summary; never hidden reasoning or credentials.',
+            description="Redacted audit summary; never hidden reasoning or credentials.",
             max_length=512,
         ),
     ]
@@ -503,7 +503,7 @@ class RunEvent(BaseModel):
 
 class LeaseGrant(BaseModel):
     model_config = ConfigDict(
-        extra='forbid',
+        extra="forbid",
     )
     run_id: Identifier
     owner_id: Identifier
@@ -513,7 +513,7 @@ class LeaseGrant(BaseModel):
 
 class ActorContext(BaseModel):
     model_config = ConfigDict(
-        extra='forbid',
+        extra="forbid",
     )
     actor_id: Identifier
     authorization_version: Identifier
@@ -521,9 +521,9 @@ class ActorContext(BaseModel):
 
 class RequestContext(BaseModel):
     model_config = ConfigDict(
-        extra='forbid',
+        extra="forbid",
     )
-    contract_version: Literal['1']
+    contract_version: Literal["1"]
     request_id: Identifier
     trace_id: Identifier
     project_id: Identifier
@@ -536,7 +536,7 @@ class RetryAfter(RootModel[StrictFloat]):
 
 class ErrorDetail(BaseModel):
     model_config = ConfigDict(
-        extra='forbid',
+        extra="forbid",
     )
     code: ErrorCode
     message: Annotated[StrictStr, Field(max_length=512, min_length=1)]
@@ -548,14 +548,14 @@ class ErrorDetail(BaseModel):
 
 class ErrorEnvelope(BaseModel):
     model_config = ConfigDict(
-        extra='forbid',
+        extra="forbid",
     )
     detail: ErrorDetail
 
 
 class VersionedMutation(BaseModel):
     model_config = ConfigDict(
-        extra='forbid',
+        extra="forbid",
     )
     expected_version: Version
     idempotency_key: Identifier
@@ -564,7 +564,7 @@ class VersionedMutation(BaseModel):
 
 class ApplyConfigRequest(BaseModel):
     model_config = ConfigDict(
-        extra='forbid',
+        extra="forbid",
     )
     expected_version: Version
     idempotency_key: Identifier
@@ -574,7 +574,7 @@ class ApplyConfigRequest(BaseModel):
 
 class RollbackRequest(BaseModel):
     model_config = ConfigDict(
-        extra='forbid',
+        extra="forbid",
     )
     expected_version: Version
     idempotency_key: Identifier
@@ -584,9 +584,9 @@ class RollbackRequest(BaseModel):
 
 class CreateRunRequest(BaseModel):
     model_config = ConfigDict(
-        extra='forbid',
+        extra="forbid",
     )
-    contract_version: Literal['1']
+    contract_version: Literal["1"]
     request_id: Identifier
     project_id: Identifier
     user_goal: NonEmptyText
@@ -598,7 +598,7 @@ class CreateRunRequest(BaseModel):
 
 class ModelMessage(BaseModel):
     model_config = ConfigDict(
-        extra='forbid',
+        extra="forbid",
     )
     role: MessageRole
     content: StrictStr
@@ -607,7 +607,7 @@ class ModelMessage(BaseModel):
 
 class ToolDefinition(BaseModel):
     model_config = ConfigDict(
-        extra='forbid',
+        extra="forbid",
     )
     name: Identifier
     description: Annotated[StrictStr, Field(max_length=512)]
@@ -616,7 +616,7 @@ class ToolDefinition(BaseModel):
 
 class HostToolCapabilities(BaseModel):
     model_config = ConfigDict(
-        extra='forbid',
+        extra="forbid",
     )
     tool_id: Identifier
     name: Identifier
@@ -636,7 +636,7 @@ class MaxContextTokens(RootModel[StrictInt]):
 
 class ModelCapabilities(BaseModel):
     model_config = ConfigDict(
-        extra='forbid',
+        extra="forbid",
     )
     model_ref: Identifier
     supported_roles: list[MessageRole]
@@ -652,7 +652,7 @@ class ModelCapabilities(BaseModel):
 
 class InvocationLimits(BaseModel):
     model_config = ConfigDict(
-        extra='forbid',
+        extra="forbid",
     )
     max_output_tokens: Annotated[StrictInt, Field(ge=1)]
     timeout_seconds: Annotated[StrictInt, Field(ge=1, le=3600)]
@@ -660,7 +660,7 @@ class InvocationLimits(BaseModel):
 
 class ModelInvocationRequest(BaseModel):
     model_config = ConfigDict(
-        extra='forbid',
+        extra="forbid",
     )
     invocation_id: Identifier
     idempotency_key: Identifier
@@ -673,7 +673,7 @@ class ModelInvocationRequest(BaseModel):
 
 class ToolCall(BaseModel):
     model_config = ConfigDict(
-        extra='forbid',
+        extra="forbid",
     )
     call_id: Identifier
     name: Identifier
@@ -682,7 +682,7 @@ class ToolCall(BaseModel):
 
 class ModelInvocationResult(BaseModel):
     model_config = ConfigDict(
-        extra='forbid',
+        extra="forbid",
     )
     content: StrictStr | None
     tool_calls: list[ToolCall]
@@ -694,7 +694,7 @@ class ModelInvocationResult(BaseModel):
 
 class PromptTemplate(BaseModel):
     model_config = ConfigDict(
-        extra='forbid',
+        extra="forbid",
     )
     ref: PromptTemplateRef
     purpose: Identifier
@@ -704,7 +704,7 @@ class PromptTemplate(BaseModel):
 
 class ArtifactVersionInput(BaseModel):
     model_config = ConfigDict(
-        extra='forbid',
+        extra="forbid",
     )
     artifact_id: Identifier | None
     parent_version_id: Identifier | None
@@ -716,7 +716,7 @@ class ArtifactVersionInput(BaseModel):
 
 class KnowledgeSearchRequest(BaseModel):
     model_config = ConfigDict(
-        extra='forbid',
+        extra="forbid",
     )
     project_id: Identifier
     query: NonEmptyText
@@ -726,7 +726,7 @@ class KnowledgeSearchRequest(BaseModel):
 
 class KnowledgeHit(BaseModel):
     model_config = ConfigDict(
-        extra='forbid',
+        extra="forbid",
     )
     document_id: Identifier
     document_version: Identifier
@@ -738,7 +738,7 @@ class KnowledgeHit(BaseModel):
 
 class KnowledgeSearchResult(BaseModel):
     model_config = ConfigDict(
-        extra='forbid',
+        extra="forbid",
     )
     state: RetrievalState
     hits: list[KnowledgeHit]
@@ -747,7 +747,7 @@ class KnowledgeSearchResult(BaseModel):
 
 class KnowledgeSource(BaseModel):
     model_config = ConfigDict(
-        extra='forbid',
+        extra="forbid",
     )
     document_id: Identifier
     document_version: Identifier
@@ -759,7 +759,7 @@ class KnowledgeSource(BaseModel):
 
 class HostTaskRequest(BaseModel):
     model_config = ConfigDict(
-        extra='forbid',
+        extra="forbid",
     )
     tool_id: Identifier
     arguments: dict[str, Any]
@@ -768,7 +768,7 @@ class HostTaskRequest(BaseModel):
 
 class HostJob(BaseModel):
     model_config = ConfigDict(
-        extra='forbid',
+        extra="forbid",
     )
     host_job_id: Identifier
     raw_host_status: NonEmptyText
@@ -781,7 +781,7 @@ class HostJob(BaseModel):
 
 class ConfigurationValidation(BaseModel):
     model_config = ConfigDict(
-        extra='forbid',
+        extra="forbid",
     )
     valid: StrictBool
     errors: list[NonEmptyText]
@@ -792,12 +792,12 @@ class UpperBoundAmount(RootModel[StrictFloat]):
 
 
 class Currency(RootModel[StrictStr]):
-    root: Annotated[StrictStr, Field(pattern='^[A-Z]{3}$')]
+    root: Annotated[StrictStr, Field(pattern="^[A-Z]{3}$")]
 
 
 class BudgetReservationRequest(BaseModel):
     model_config = ConfigDict(
-        extra='forbid',
+        extra="forbid",
     )
     operation_id: Identifier
     upper_bound_amount: UpperBoundAmount | None
@@ -811,7 +811,7 @@ class ActualAmount(RootModel[StrictFloat]):
 
 class BudgetSettlement(BaseModel):
     model_config = ConfigDict(
-        extra='forbid',
+        extra="forbid",
     )
     operation_id: Identifier
     outcome_state: BudgetOutcomeState
@@ -830,7 +830,7 @@ class Reason(RootModel[StrictStr]):
 
 class BudgetDecision(BaseModel):
     model_config = ConfigDict(
-        extra='forbid',
+        extra="forbid",
     )
     state: BudgetState
     amount: Amount | None
@@ -840,7 +840,7 @@ class BudgetDecision(BaseModel):
 
 class EventPage(BaseModel):
     model_config = ConfigDict(
-        extra='forbid',
+        extra="forbid",
     )
     events: list[RunEvent]
     next_cursor: Identifier | None
@@ -923,7 +923,7 @@ class AgentContractPayload(
         | BudgetDecision
         | EventPage,
         Field(
-            description='Canonical, versioned DTO and port-message schemas for the isolated GW Agent. Python models are generated from this document.',
-            title='AgentContractPayload',
+            description="Canonical, versioned DTO and port-message schemas for the isolated GW Agent. Python models are generated from this document.",
+            title="AgentContractPayload",
         ),
     ]

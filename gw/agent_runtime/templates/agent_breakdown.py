@@ -9,7 +9,6 @@ from __future__ import annotations
 from types import MappingProxyType
 from typing import Any
 
-
 BREAKDOWN_TEMPLATE_ID = "agent.breakdown"
 BREAKDOWN_TEMPLATE_VERSION = "1.0.0"
 

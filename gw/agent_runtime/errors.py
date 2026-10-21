@@ -1,10 +1,10 @@
 """Stable framework-neutral domain errors and the single HTTP detail envelope."""
+
 from __future__ import annotations
 
 from typing import Any
 
 from .models import DispatchState, ErrorCode, ErrorDetail, ErrorEnvelope
-
 
 _HTTP_STATUS: dict[ErrorCode, int] = {
     ErrorCode.CONTRACT_VERSION_UNSUPPORTED: 422,

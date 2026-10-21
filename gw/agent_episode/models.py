@@ -3,6 +3,7 @@
 This package deliberately models text artifacts only. Execution state, storage,
 leases, CAS transitions, and HTTP records remain owned by ``agent_runtime``.
 """
+
 from __future__ import annotations
 
 from decimal import Decimal
@@ -20,7 +21,6 @@ from gw.agent_runtime.models import (
     StageId,
 )
 
-
 OpaqueText = Annotated[str, Field(min_length=1, max_length=20_000)]
 OpaqueId = Annotated[str, Field(min_length=1, max_length=256, pattern=r"^\S(?:.*\S)?$")]
 
@@ -32,7 +32,9 @@ class EpisodeModel(BaseModel):
 class DurationRequest(EpisodeModel):
     target_minutes: float | None = Field(ge=0.1)
     tolerance_minutes: float | None = Field(ge=0)
-    estimation_method: Literal["dialogue_estimate", "word_count_estimate", "user_defined"] | None
+    estimation_method: (
+        Literal["dialogue_estimate", "word_count_estimate", "user_defined"] | None
+    )
 
 
 class BriefContent(EpisodeModel):
