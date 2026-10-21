@@ -55,21 +55,29 @@ def test_runtime_paths_expose_isolated_backup_root(tmp_path: Path) -> None:
     assert paths.mode == MODE_TEST
 
 
-def test_backup_restore_preserves_ids_references_and_task_relation(tmp_path: Path) -> None:
+def test_backup_restore_preserves_ids_references_and_task_relation(
+    tmp_path: Path,
+) -> None:
     paths = _paths(tmp_path)
     expected = _seed(paths)
-    backup = storage.create_runtime_backup(paths, destination=tmp_path / "backups", source_state_version=7)
+    backup = storage.create_runtime_backup(
+        paths, destination=tmp_path / "backups", source_state_version=7
+    )
 
     assert backup["status"] == "created"
     assert backup["backup_id"].startswith("backup_")
     assert backup["source_state_version"] == 7
-    manifest = json.loads((Path(backup["path"]) / "manifest.json").read_text(encoding="utf-8"))
+    manifest = json.loads(
+        (Path(backup["path"]) / "manifest.json").read_text(encoding="utf-8")
+    )
     assert manifest["format"] == storage.BACKUP_FORMAT
     assert manifest["runtime_mode"] == MODE_TEST
     assert {item["path"] for item in manifest["files"]} == set(expected)
     assert all(item["sha256"] for item in manifest["files"])
 
-    (paths.data_root / "state.json").write_text('{"schema_version": 99, "project_id": "mutated"}', encoding="utf-8")
+    (paths.data_root / "state.json").write_text(
+        '{"schema_version": 99, "project_id": "mutated"}', encoding="utf-8"
+    )
     paths.auth_db.write_bytes(b"mutated-auth")
     (paths.video_root / "asset_c10t4_001.mp4").unlink()
     restored = storage.restore_runtime_backup(paths, backup)
@@ -80,19 +88,27 @@ def test_backup_restore_preserves_ids_references_and_task_relation(tmp_path: Pat
     assert restored["restore_duration_ms"] >= 0
     assert (paths.data_root / "state.json").read_bytes() == expected["data/state.json"]
     assert paths.auth_db.read_bytes() == expected["auth/auth.sqlite3"]
-    assert (paths.video_root / "asset_c10t4_001.mp4").read_bytes() == expected["video/asset_c10t4_001.mp4"]
+    assert (paths.video_root / "asset_c10t4_001.mp4").read_bytes() == expected[
+        "video/asset_c10t4_001.mp4"
+    ]
 
 
-def test_upgrade_success_then_explicit_rollback_reports_measured_rpo_rto(tmp_path: Path) -> None:
+def test_upgrade_success_then_explicit_rollback_reports_measured_rpo_rto(
+    tmp_path: Path,
+) -> None:
     paths = _paths(tmp_path)
     _seed(paths)
     destination = tmp_path / "backups"
 
     def upgrade(current):
-        payload = json.loads((current.data_root / "state.json").read_text(encoding="utf-8"))
+        payload = json.loads(
+            (current.data_root / "state.json").read_text(encoding="utf-8")
+        )
         payload["schema_version"] = 8
         payload["task"]["status"] = "upgraded"
-        (current.data_root / "state.json").write_text(json.dumps(payload), encoding="utf-8")
+        (current.data_root / "state.json").write_text(
+            json.dumps(payload), encoding="utf-8"
+        )
         return {"schema_version": 8}
 
     result = storage.upgrade_runtime(
@@ -106,7 +122,12 @@ def test_upgrade_success_then_explicit_rollback_reports_measured_rpo_rto(tmp_pat
     assert result["backup"]["source_state_version"] == 7
     assert result["backup_duration_ms"] >= 0
     assert result["upgrade_duration_ms"] >= 0
-    assert json.loads((paths.data_root / "state.json").read_text(encoding="utf-8"))["schema_version"] == 8
+    assert (
+        json.loads((paths.data_root / "state.json").read_text(encoding="utf-8"))[
+            "schema_version"
+        ]
+        == 8
+    )
 
     rolled_back = storage.rollback_runtime(paths, result["backup"])
     restored = json.loads((paths.data_root / "state.json").read_text(encoding="utf-8"))
@@ -117,13 +138,17 @@ def test_upgrade_success_then_explicit_rollback_reports_measured_rpo_rto(tmp_pat
     assert restored["task"]["job_id"] == "job_c10t4_001"
 
 
-def test_failed_upgrade_restores_previous_state_and_tamper_is_rejected(tmp_path: Path) -> None:
+def test_failed_upgrade_restores_previous_state_and_tamper_is_rejected(
+    tmp_path: Path,
+) -> None:
     paths = _paths(tmp_path)
     _seed(paths)
     destination = tmp_path / "backups"
 
     def broken_upgrade(current):
-        (current.data_root / "state.json").write_text('{"schema_version": 999}', encoding="utf-8")
+        (current.data_root / "state.json").write_text(
+            '{"schema_version": 999}', encoding="utf-8"
+        )
         raise RuntimeError("upgrade fixture failure")
 
     with pytest.raises(RuntimeError, match="upgrade fixture failure"):
@@ -134,15 +159,27 @@ def test_failed_upgrade_restores_previous_state_and_tamper_is_rejected(tmp_path:
             source_state_version=7,
             target_state_version=999,
         )
-    assert json.loads((paths.data_root / "state.json").read_text(encoding="utf-8"))["schema_version"] == 7
+    assert (
+        json.loads((paths.data_root / "state.json").read_text(encoding="utf-8"))[
+            "schema_version"
+        ]
+        == 7
+    )
 
-    good = storage.create_runtime_backup(paths, destination=destination, source_state_version=7)
+    good = storage.create_runtime_backup(
+        paths, destination=destination, source_state_version=7
+    )
     tampered = Path(good["path"]) / "data" / "state.json"
     tampered.write_text('{"schema_version": 1000}', encoding="utf-8")
     with pytest.raises(storage.RuntimeBackupError) as error:
         storage.restore_runtime_backup(paths, good)
     assert error.value.code == "BACKUP_INTEGRITY_FAILED"
-    assert json.loads((paths.data_root / "state.json").read_text(encoding="utf-8"))["schema_version"] == 7
+    assert (
+        json.loads((paths.data_root / "state.json").read_text(encoding="utf-8"))[
+            "schema_version"
+        ]
+        == 7
+    )
 
 
 def test_backup_operations_fail_closed_outside_test_runtime(tmp_path: Path) -> None:

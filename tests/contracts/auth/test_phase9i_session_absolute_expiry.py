@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """R6-7 回归守卫：服务端会话必须有**绝对**过期上限，滑动续期不得无限延长会话。
 
 缺陷背景（独立复核 R6-7）：``core/session.py`` 原先只有滑动过期，
@@ -60,7 +59,9 @@ def test_absolute_cap_terminates_actively_renewed_session(clock):
         clock.advance(step)
         elapsed += step
 
-    assert session_store.get_session(session_id) is None, "活跃会话越过绝对上限后仍可用（R6-7 未修复）"
+    assert session_store.get_session(session_id) is None, (
+        "活跃会话越过绝对上限后仍可用（R6-7 未修复）"
+    )
 
 
 def test_sliding_renewal_never_exceeds_absolute_cap(clock):
@@ -68,7 +69,9 @@ def test_sliding_renewal_never_exceeds_absolute_cap(clock):
     session_id = session_store.create_session({"username": "u", "role": "editor"})
     record = session_store._SESSIONS[session_id]
     cap = record.absolute_expires_at
-    assert cap == pytest.approx(record.created_at + session_store.SESSION_ABSOLUTE_MAX_SECONDS)
+    assert cap == pytest.approx(
+        record.created_at + session_store.SESSION_ABSOLUTE_MAX_SECONDS
+    )
 
     # 持续活跃直至逼近绝对上限：若续期不做封顶，expires_at 会被推到 cap 之后。
     step = session_store.SESSION_TTL_SECONDS // 2
@@ -99,7 +102,9 @@ def test_prune_removes_sessions_past_absolute_cap(clock):
     clock.advance(session_store.SESSION_ABSOLUTE_MAX_SECONDS + 1)
     # 触发 _prune 的写入路径。
     session_store.create_session({"username": "other", "role": "editor"})
-    assert session_id not in session_store._SESSIONS, "越过绝对上限的会话未被 _prune 清理"
+    assert session_id not in session_store._SESSIONS, (
+        "越过绝对上限的会话未被 _prune 清理"
+    )
 
 
 def test_session_record_requires_absolute_expiry_field(clock):
@@ -113,4 +118,6 @@ def test_session_record_requires_absolute_expiry_field(clock):
 def test_absolute_cap_is_finite_and_sane(clock):
     """绝对上限必须是有限正数，且不短于单次滑动窗口（否则登录即失效）。"""
     assert session_store.SESSION_ABSOLUTE_MAX_SECONDS > 0
-    assert session_store.SESSION_ABSOLUTE_MAX_SECONDS >= session_store.SESSION_TTL_SECONDS
+    assert (
+        session_store.SESSION_ABSOLUTE_MAX_SECONDS >= session_store.SESSION_TTL_SECONDS
+    )

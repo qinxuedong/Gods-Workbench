@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """外部 IdP（OIDC）运行期接线契约测试。
 
 覆盖点：
@@ -66,8 +65,12 @@ def jwks(rsa_keypair) -> dict:
                 "use": "sig",
                 "alg": "RS256",
                 "kid": KID,
-                "n": _b64url(numbers.n.to_bytes((numbers.n.bit_length() + 7) // 8, "big")),
-                "e": _b64url(numbers.e.to_bytes((numbers.e.bit_length() + 7) // 8, "big")),
+                "n": _b64url(
+                    numbers.n.to_bytes((numbers.n.bit_length() + 7) // 8, "big")
+                ),
+                "e": _b64url(
+                    numbers.e.to_bytes((numbers.e.bit_length() + 7) // 8, "big")
+                ),
             }
         ]
     }
@@ -114,6 +117,7 @@ def clean_env(monkeypatch, tmp_path):
 # ---------------------------------------------------------------------------
 # 基础语义
 # ---------------------------------------------------------------------------
+
 
 def test_default_mode_is_local_account(clean_env):
     """未设置 GW_AUTH_MODE 时使用本地账户模式。"""
@@ -225,7 +229,9 @@ def test_jwks_fetcher_cache_is_reused_within_ttl(clean_env, jwks, monkeypatch):
         return jwks
 
     monkeypatch.setattr(gw_config, "fetch_jwks", counting_fetch)
-    fetcher = gw_config.build_jwks_fetcher(gw_config.JwksEndpointConfig(url="https://idp.example.test/jwks.json"))
+    fetcher = gw_config.build_jwks_fetcher(
+        gw_config.JwksEndpointConfig(url="https://idp.example.test/jwks.json")
+    )
     for _ in range(4):
         fetcher()
     assert calls["n"] == 1
@@ -268,6 +274,7 @@ def test_runtime_config_cache_invalidated_by_env_change(clean_env, jwks, monkeyp
 # ---------------------------------------------------------------------------
 # 真实 HTTP E2E：本地 OIDC IdP（discovery + JWKS）+ FastAPI 全链路
 # ---------------------------------------------------------------------------
+
 
 @pytest.fixture()
 def isolated_projects_service():
@@ -339,7 +346,9 @@ def local_idp(rsa_keypair, jwks):
         thread.join(timeout=5)
 
 
-def test_real_http_idp_end_to_end(clean_env, local_idp, rsa_keypair, isolated_projects_service):
+def test_real_http_idp_end_to_end(
+    clean_env, local_idp, rsa_keypair, isolated_projects_service
+):
     """真实 HTTP：discovery 自动解析 jwks_uri -> JWKS -> FastAPI 写端点鉴权。
 
     断言：
@@ -367,26 +376,43 @@ def test_real_http_idp_end_to_end(clean_env, local_idp, rsa_keypair, isolated_pr
         assert health["oidc_ready"] is True
         assert health["release_authorized"] is False
 
-        editor_token = _make_token(private_key, _claims(issuer=issuer, groups=["gw-editor"]))
+        editor_token = _make_token(
+            private_key, _claims(issuer=issuer, groups=["gw-editor"])
+        )
         created = api.post(
             "/api/asset-registry/projects",
-            json={"name": "真实 IdP E2E 项目", "project_type": "film", "description": "由本地 OIDC IdP 令牌创建"},
-            headers={"Authorization": f"Bearer {editor_token}", "X-User-Role": "governor"},
+            json={
+                "name": "真实 IdP E2E 项目",
+                "project_type": "film",
+                "description": "由本地 OIDC IdP 令牌创建",
+            },
+            headers={
+                "Authorization": f"Bearer {editor_token}",
+                "X-User-Role": "governor",
+            },
         )
         assert created.status_code == 201, created.text
 
-        readonly_token = _make_token(private_key, _claims(issuer=issuer, groups=["gw-readonly"]))
+        readonly_token = _make_token(
+            private_key, _claims(issuer=issuer, groups=["gw-readonly"])
+        )
         forbidden = api.post(
             "/api/asset-registry/projects",
             json={"name": "只读令牌不应写入", "project_type": "film"},
-            headers={"Authorization": f"Bearer {readonly_token}", "X-User-Role": "governor"},
+            headers={
+                "Authorization": f"Bearer {readonly_token}",
+                "X-User-Role": "governor",
+            },
         )
         assert forbidden.status_code == 403, forbidden.text
 
         unauthorized = api.post(
             "/api/asset-registry/projects",
             json={"name": "无效令牌不应写入", "project_type": "film"},
-            headers={"Authorization": "Bearer not-a-real-token", "X-User-Role": "governor"},
+            headers={
+                "Authorization": "Bearer not-a-real-token",
+                "X-User-Role": "governor",
+            },
         )
         assert unauthorized.status_code == 401, unauthorized.text
 
@@ -394,7 +420,9 @@ def test_real_http_idp_end_to_end(clean_env, local_idp, rsa_keypair, isolated_pr
     assert local_idp["counters"]["jwks"] == 1, local_idp["counters"]
 
 
-def test_real_http_idp_role_mapping_rejects_unknown_group(clean_env, local_idp, rsa_keypair, isolated_projects_service):
+def test_real_http_idp_role_mapping_rejects_unknown_group(
+    clean_env, local_idp, rsa_keypair, isolated_projects_service
+):
     """真实 HTTP：IdP 未映射组必须 401（无组不授权，不得静默降级）。"""
     from gw.api.app import create_app
 
@@ -465,7 +493,9 @@ def test_redirect_to_non_whitelisted_host_is_rejected(clean_env):
         assert gw_config.is_allowed_jwks_url(start_url) is True
         assert gw_config.is_allowed_jwks_url(state["target"]) is False
         with pytest.raises(Exception):
-            gw_config.fetch_jwks(gw_config.JwksEndpointConfig(url=start_url, timeout_seconds=5))
+            gw_config.fetch_jwks(
+                gw_config.JwksEndpointConfig(url=start_url, timeout_seconds=5)
+            )
         assert state["inner_hits"] == 0, "白名单外目标不得被访问（禁止自动跟随重定向）"
     finally:
         for server in (inner, outer):
@@ -483,7 +513,8 @@ def test_discovery_failure_recovers_without_process_restart(clean_env, monkeypat
     assert first.ready is False
 
     monkeypatch.setattr(
-        gw_config, "resolve_jwks_url",
+        gw_config,
+        "resolve_jwks_url",
         lambda issuer, explicit="": "https://idp.example.test/jwks.json",
     )
     second = gw_config.load_runtime_auth_config()
@@ -500,7 +531,9 @@ def test_unknown_kid_forces_refresh_bypassing_ttl(clean_env, monkeypatch, jwks):
 
     monkeypatch.setattr(gw_config, "fetch_jwks", counting_fetch)
     fetcher = gw_config.build_jwks_fetcher(
-        gw_config.JwksEndpointConfig(url="https://idp.example.test/jwks.json", cache_seconds=300)
+        gw_config.JwksEndpointConfig(
+            url="https://idp.example.test/jwks.json", cache_seconds=300
+        )
     )
     first = fetcher()
     assert calls["n"] == 1
@@ -514,14 +547,27 @@ def test_unknown_kid_forces_refresh_bypassing_ttl(clean_env, monkeypatch, jwks):
     assert calls["n"] == 2
 
 
-def test_verify_jwt_accepts_rotated_kid_within_ttl_window(clean_env, monkeypatch, rsa_keypair):
+def test_verify_jwt_accepts_rotated_kid_within_ttl_window(
+    clean_env, monkeypatch, rsa_keypair
+):
     """D7（端到端）：未知 kid 的令牌应触发受控刷新并被接受，而非被 TTL 缓存误拒。"""
     from gw.core import oidc as gw_oidc
 
     private_key, public_key = rsa_keypair
     numbers = public_key.public_numbers()
     rotated_kid = "rotated-key-2"
-    old_doc = {"keys": [{"kty": "RSA", "use": "sig", "alg": "RS256", "kid": "old-key", "n": "AA", "e": "AQAB"}]}
+    old_doc = {
+        "keys": [
+            {
+                "kty": "RSA",
+                "use": "sig",
+                "alg": "RS256",
+                "kid": "old-key",
+                "n": "AA",
+                "e": "AQAB",
+            }
+        ]
+    }
     rotated_doc = {
         "keys": [
             {
@@ -529,8 +575,12 @@ def test_verify_jwt_accepts_rotated_kid_within_ttl_window(clean_env, monkeypatch
                 "use": "sig",
                 "alg": "RS256",
                 "kid": rotated_kid,
-                "n": _b64url(numbers.n.to_bytes((numbers.n.bit_length() + 7) // 8, "big")),
-                "e": _b64url(numbers.e.to_bytes((numbers.e.bit_length() + 7) // 8, "big")),
+                "n": _b64url(
+                    numbers.n.to_bytes((numbers.n.bit_length() + 7) // 8, "big")
+                ),
+                "e": _b64url(
+                    numbers.e.to_bytes((numbers.e.bit_length() + 7) // 8, "big")
+                ),
             }
         ]
     }
@@ -556,7 +606,9 @@ def test_verify_jwt_accepts_rotated_kid_within_ttl_window(clean_env, monkeypatch
     state["phase"] = "rotated"
     header = {"alg": "RS256", "typ": "JWT", "kid": rotated_kid}
     header_segment = _b64url(json.dumps(header, separators=(",", ":")).encode("utf-8"))
-    payload_segment = _b64url(json.dumps(_claims(), separators=(",", ":")).encode("utf-8"))
+    payload_segment = _b64url(
+        json.dumps(_claims(), separators=(",", ":")).encode("utf-8")
+    )
     signing_input = f"{header_segment}.{payload_segment}".encode("ascii")
     signature = private_key.sign(signing_input, padding.PKCS1v15(), hashes.SHA256())
     rotated_token = f"{header_segment}.{payload_segment}.{_b64url(signature)}"
@@ -574,7 +626,9 @@ def test_negative_cache_default_is_bounded(clean_env):
         f"负缓存出厂值应为一个短且有界的秒数，实际为 {gw_config.NEGATIVE_CACHE_SECONDS}"
     )
     assert isinstance(gw_config.FORCE_REFRESH_MIN_SECONDS, int)
-    assert gw_config.FORCE_REFRESH_MIN_SECONDS > 0, "强刷限流窗口必须为正，避免被随机 kid 触发自 DoS"
+    assert gw_config.FORCE_REFRESH_MIN_SECONDS > 0, (
+        "强刷限流窗口必须为正，避免被随机 kid 触发自 DoS"
+    )
 
 
 def test_redirect_within_whitelist_is_followed(clean_env):
@@ -613,7 +667,9 @@ def test_redirect_within_whitelist_is_followed(clean_env):
     threading.Thread(target=server.serve_forever, daemon=True).start()
     try:
         base = f"http://127.0.0.1:{server.server_address[1]}"
-        doc = gw_config.fetch_jwks(gw_config.JwksEndpointConfig(url=f"{base}/jwks", timeout_seconds=5))
+        doc = gw_config.fetch_jwks(
+            gw_config.JwksEndpointConfig(url=f"{base}/jwks", timeout_seconds=5)
+        )
         assert [k.get("kid") for k in doc["keys"]] == ["ok"]
         assert state["jwks_hits"] == 1
         assert state["keys_hits"] == 1, "同源换路径的重定向应被跟随"
@@ -666,8 +722,12 @@ def test_redirect_to_foreign_origin_is_blocked(clean_env):
         assert gw_config.is_allowed_jwks_url(state["target"]) is True
         assert gw_config.is_same_origin_as(state["target"], start_url) is False
         with pytest.raises(Exception):
-            gw_config.fetch_jwks(gw_config.JwksEndpointConfig(url=start_url, timeout_seconds=5))
-        assert state["attacker_hits"] == 0, "异源 302 目标不得被访问（否则可用攻击者公钥验签）"
+            gw_config.fetch_jwks(
+                gw_config.JwksEndpointConfig(url=start_url, timeout_seconds=5)
+            )
+        assert state["attacker_hits"] == 0, (
+            "异源 302 目标不得被访问（否则可用攻击者公钥验签）"
+        )
     finally:
         for server in (attacker, redirector):
             server.shutdown()

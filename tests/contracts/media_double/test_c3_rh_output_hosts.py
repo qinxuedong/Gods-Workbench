@@ -2,22 +2,33 @@
 
 夹具是文档形态的成功回包，下载与 query_rh_task_outputs 都用替身，不访问网络。
 """
+
 from __future__ import annotations
 
 import json
 from pathlib import Path
 
 import httpx
-
-from gw.god_workflow import platforms, routes
 from media_doubles import FIXED_PNG, HEADERS, TASKS, execute, prepare_workflow
 
-FIXTURE = Path(__file__).resolve().parents[1] / "fixtures" / "runninghub" / "outputs_success_example.json"
+from gw.god_workflow import platforms, routes
+
+FIXTURE = (
+    Path(__file__).resolve().parents[1]
+    / "fixtures"
+    / "runninghub"
+    / "outputs_success_example.json"
+)
 HOST = "rh-images.xiaoyaoyou.com"
 QUERY = "expires=1"
 # 真实 RunningHub 产物主机：真实回包的 fileUrl 落在 tos 主机，而非文档主机。
 REAL_HOST = "rh-images-tos.xiaoyaoyou.com"
-REAL_FIXTURE = Path(__file__).resolve().parents[1] / "fixtures" / "runninghub" / "outputs_success_real_host.json"
+REAL_FIXTURE = (
+    Path(__file__).resolve().parents[1]
+    / "fixtures"
+    / "runninghub"
+    / "outputs_success_real_host.json"
+)
 # 与服务端 RunningHub 内置默认产物主机（routes.RH_DEFAULT_OUTPUT_HOSTS）保持一致。
 AC8_DEFAULT_HOSTS = f"{REAL_HOST},{HOST}"
 
@@ -26,7 +37,11 @@ def _fixture(path: Path = FIXTURE, host: str = HOST) -> dict:
     body = json.loads(path.read_text(encoding="utf-8"))
     assert body["code"] == 0
     item = body["data"][0]
-    assert item["fileType"] == "png" and item["nodeId"] == "9" and item["consumeCoins"] == "1"
+    assert (
+        item["fileType"] == "png"
+        and item["nodeId"] == "9"
+        and item["consumeCoins"] == "1"
+    )
     assert item["fileUrl"].startswith(f"https://{host}/") and QUERY in item["fileUrl"]
     return body
 
@@ -43,13 +58,26 @@ def _install_download(monkeypatch, *, allow: bool, host: str = HOST) -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         assert allow, "拒绝的产物 URL 不得发起下载"
         assert request.headers.get("host") == host
-        return httpx.Response(200, content=FIXED_PNG, headers={"content-type": "image/png"})
+        return httpx.Response(
+            200, content=FIXED_PNG, headers={"content-type": "image/png"}
+        )
 
-    monkeypatch.setattr(routes, "_output_transport", lambda allowed_hosts=None, verify=True: httpx.MockTransport(handler))
+    monkeypatch.setattr(
+        routes,
+        "_output_transport",
+        lambda allowed_hosts=None, verify=True: httpx.MockTransport(handler),
+    )
 
 
-def _terminal(media_client, fake_rh, monkeypatch, *, allow_download: bool,
-              path: Path = FIXTURE, host: str = HOST) -> tuple[dict, dict]:
+def _terminal(
+    media_client,
+    fake_rh,
+    monkeypatch,
+    *,
+    allow_download: bool,
+    path: Path = FIXTURE,
+    host: str = HOST,
+) -> tuple[dict, dict]:
     body = _fixture(path, host)
     _install_query(monkeypatch, fake_rh, body)
     _install_download(monkeypatch, allow=allow_download, host=host)
@@ -69,7 +97,9 @@ def _messages_hide_url(task: dict, host: str = HOST) -> None:
     assert f"https://{host}" not in dumped
 
 
-def test_empty_output_hosts_falls_back_to_rh_defaults(media_client, fake_rh, no_network, monkeypatch):
+def test_empty_output_hosts_falls_back_to_rh_defaults(
+    media_client, fake_rh, no_network, monkeypatch
+):
     """未设置 GW_WORKFLOW_OUTPUT_HOSTS 时，RunningHub 使用内置默认两主机，文档主机产物可登记。"""
     monkeypatch.delenv("GW_WORKFLOW_OUTPUT_HOSTS", raising=False)
     started, task = _terminal(media_client, fake_rh, monkeypatch, allow_download=True)
@@ -81,11 +111,19 @@ def test_empty_output_hosts_falls_back_to_rh_defaults(media_client, fake_rh, no_
     assert no_network == []
 
 
-def test_empty_output_hosts_default_includes_real_tos_host(media_client, fake_rh, no_network, monkeypatch):
+def test_empty_output_hosts_default_includes_real_tos_host(
+    media_client, fake_rh, no_network, monkeypatch
+):
     """未设置环境变量时，内置默认同时覆盖真实 tos 主机，真实形态产物可直接登记。"""
     monkeypatch.delenv("GW_WORKFLOW_OUTPUT_HOSTS", raising=False)
-    _started, task = _terminal(media_client, fake_rh, monkeypatch, allow_download=True,
-                               path=REAL_FIXTURE, host=REAL_HOST)
+    _started, task = _terminal(
+        media_client,
+        fake_rh,
+        monkeypatch,
+        allow_download=True,
+        path=REAL_FIXTURE,
+        host=REAL_HOST,
+    )
     assert task["status"] == "completed"
     assert task["collection_status"] == "completed"
     assert task["messages"] == []
@@ -93,11 +131,19 @@ def test_empty_output_hosts_default_includes_real_tos_host(media_client, fake_rh
     assert no_network == []
 
 
-def test_explicit_hosts_replace_defaults_entirely(media_client, fake_rh, no_network, monkeypatch):
+def test_explicit_hosts_replace_defaults_entirely(
+    media_client, fake_rh, no_network, monkeypatch
+):
     """显式配置 x.example 时默认两主机完全不生效，tos 主机被拒并写明主机。"""
     monkeypatch.setenv("GW_WORKFLOW_OUTPUT_HOSTS", "x.example")
-    _started, task = _terminal(media_client, fake_rh, monkeypatch, allow_download=False,
-                               path=REAL_FIXTURE, host=REAL_HOST)
+    _started, task = _terminal(
+        media_client,
+        fake_rh,
+        monkeypatch,
+        allow_download=False,
+        path=REAL_FIXTURE,
+        host=REAL_HOST,
+    )
     assert task["status"] == "failed"
     assert task["collection_status"] == "partial_failed"
     assert f"OUTPUT_URL_NOT_ALLOWED host={REAL_HOST}" in task["messages"]
@@ -106,7 +152,9 @@ def test_explicit_hosts_replace_defaults_entirely(media_client, fake_rh, no_netw
     assert no_network == []
 
 
-def test_official_output_host_collects_when_allowlisted(media_client, fake_rh, no_network, monkeypatch):
+def test_official_output_host_collects_when_allowlisted(
+    media_client, fake_rh, no_network, monkeypatch
+):
     """白名单包含官方产物主机时，文档形态的 fileUrl 可以登记。"""
     monkeypatch.setenv("GW_WORKFLOW_OUTPUT_HOSTS", HOST)
     _started, task = _terminal(media_client, fake_rh, monkeypatch, allow_download=True)
@@ -118,25 +166,37 @@ def test_official_output_host_collects_when_allowlisted(media_client, fake_rh, n
     assert no_network == []
 
 
-def test_non_allowed_host_keeps_partial_failure_message(media_client, fake_rh, no_network, monkeypatch):
+def test_non_allowed_host_keeps_partial_failure_message(
+    media_client, fake_rh, no_network, monkeypatch
+):
     """已配置白名单但不含该主机时，保持 partial_failed，并写明未授权主机。"""
     monkeypatch.setenv("GW_WORKFLOW_OUTPUT_HOSTS", "approved.example")
     _started, task = _terminal(media_client, fake_rh, monkeypatch, allow_download=False)
     assert task["status"] == "failed"
     assert task["collection_status"] == "partial_failed"
     assert task["messages"]
-    assert any(line.startswith("OUTPUT_COLLECTION_INCOMPLETE:") for line in task["messages"])
+    assert any(
+        line.startswith("OUTPUT_COLLECTION_INCOMPLETE:") for line in task["messages"]
+    )
     assert f"OUTPUT_URL_NOT_ALLOWED host={HOST}" in task["messages"]
     assert task["outputs"][0]["host"] == HOST
     _messages_hide_url(task)
     assert no_network == []
 
 
-def test_ac8_default_hosts_collect_real_host_output(media_client, fake_rh, no_network, monkeypatch):
+def test_ac8_default_hosts_collect_real_host_output(
+    media_client, fake_rh, no_network, monkeypatch
+):
     """GW_WORKFLOW_OUTPUT_HOSTS 为 AC8 默认两主机时，真实 tos 主机产物可登记并完成。"""
     monkeypatch.setenv("GW_WORKFLOW_OUTPUT_HOSTS", AC8_DEFAULT_HOSTS)
-    _started, task = _terminal(media_client, fake_rh, monkeypatch, allow_download=True,
-                               path=REAL_FIXTURE, host=REAL_HOST)
+    _started, task = _terminal(
+        media_client,
+        fake_rh,
+        monkeypatch,
+        allow_download=True,
+        path=REAL_FIXTURE,
+        host=REAL_HOST,
+    )
     assert task["status"] == "completed"
     assert task["collection_status"] == "completed"
     assert task["messages"] == []
@@ -145,22 +205,34 @@ def test_ac8_default_hosts_collect_real_host_output(media_client, fake_rh, no_ne
     assert no_network == []
 
 
-def test_real_host_output_rejected_with_only_docs_host(media_client, fake_rh, no_network, monkeypatch):
+def test_real_host_output_rejected_with_only_docs_host(
+    media_client, fake_rh, no_network, monkeypatch
+):
     """白名单只有文档主机（rh-images.xiaoyaoyou.com）时，真实 tos 主机产物被拒并写明主机。"""
     monkeypatch.setenv("GW_WORKFLOW_OUTPUT_HOSTS", HOST)
-    _started, task = _terminal(media_client, fake_rh, monkeypatch, allow_download=False,
-                               path=REAL_FIXTURE, host=REAL_HOST)
+    _started, task = _terminal(
+        media_client,
+        fake_rh,
+        monkeypatch,
+        allow_download=False,
+        path=REAL_FIXTURE,
+        host=REAL_HOST,
+    )
     assert task["status"] == "failed"
     assert task["collection_status"] == "partial_failed"
     assert task["messages"]
-    assert any(line.startswith("OUTPUT_COLLECTION_INCOMPLETE:") for line in task["messages"])
+    assert any(
+        line.startswith("OUTPUT_COLLECTION_INCOMPLETE:") for line in task["messages"]
+    )
     assert f"OUTPUT_URL_NOT_ALLOWED host={REAL_HOST}" in task["messages"]
     assert task["outputs"][0]["host"] == REAL_HOST
     _messages_hide_url(task, host=REAL_HOST)
     assert no_network == []
 
 
-def test_recollect_after_host_config_does_not_resubmit(media_client, fake_rh, no_network, monkeypatch):
+def test_recollect_after_host_config_does_not_resubmit(
+    media_client, fake_rh, no_network, monkeypatch
+):
     """任务已是 failed/completed/partial_failed 时，POST /collect 只回收，不再次建任务。"""
     monkeypatch.setenv("GW_WORKFLOW_OUTPUT_HOSTS", "approved.example")
     started, task = _terminal(media_client, fake_rh, monkeypatch, allow_download=False)
@@ -171,7 +243,9 @@ def test_recollect_after_host_config_does_not_resubmit(media_client, fake_rh, no
     assert submits == 1
     monkeypatch.setenv("GW_WORKFLOW_OUTPUT_HOSTS", HOST)
     _install_download(monkeypatch, allow=True)
-    collected = media_client.post(f"{TASKS}/{started['job_id']}/collect", headers=HEADERS)
+    collected = media_client.post(
+        f"{TASKS}/{started['job_id']}/collect", headers=HEADERS
+    )
     assert collected.status_code == 200, collected.text
     body = collected.json()
     assert body["status"] == "completed"

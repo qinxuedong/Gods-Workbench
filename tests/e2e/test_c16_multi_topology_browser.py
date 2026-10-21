@@ -8,17 +8,16 @@ from __future__ import annotations
 
 import json
 import os
-from pathlib import Path
 import socket
 import subprocess
 import sys
 import time
+from pathlib import Path
 from typing import Any
 from urllib.error import URLError
 from urllib.request import urlopen
 
 import pytest
-
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 EVIDENCE_ROOT = REPO_ROOT / ".local" / "qa" / "C16-evidence"
@@ -100,7 +99,9 @@ class _OwnedLocalServer:
             deadline = time.monotonic() + 20
             while time.monotonic() < deadline:
                 if self.process.poll() is not None:
-                    raise AssertionError(f"隔离本机服务提前退出，日志见 {self.log_path}")
+                    raise AssertionError(
+                        f"隔离本机服务提前退出，日志见 {self.log_path}"
+                    )
                 if _health_ready(self.base):
                     return
                 time.sleep(0.1)
@@ -124,7 +125,9 @@ class _OwnedLocalServer:
             process.wait(timeout=5)
 
 
-def test_c16_real_nas_run_requires_explicit_opt_in(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_c16_real_nas_run_requires_explicit_opt_in(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     monkeypatch.delenv("GW_C16_REAL_E2E", raising=False)
     assert _real_run_enabled() is False
     monkeypatch.setenv("GW_C16_REAL_E2E", "1")
@@ -173,7 +176,11 @@ def test_c16_windows_single_machine_topology_uses_isolated_local_service(
                 "auth": str(tmp_path / "auth" / "auth.sqlite3"),
                 "video": str(tmp_path / "video"),
             },
-            "checks": ["GET /healthz", "GET /static/manifest.json", "GET /static/sw.js"],
+            "checks": [
+                "GET /healthz",
+                "GET /static/manifest.json",
+                "GET /static/sw.js",
+            ],
             "nas_contacted": False,
             "production_data_touched": False,
         }
@@ -184,17 +191,19 @@ def test_c16_windows_single_machine_topology_uses_isolated_local_service(
 
 def test_c16_lan_discovery_contract_is_bounded_and_credential_free() -> None:
     """检查桌面端局域网探测只扫描受限私网并只发健康 GET。"""
-    source = (REPO_ROOT / "clients" / "desktop" / "src" / "main.rs").read_text(encoding="utf-8")
+    source = (REPO_ROOT / "clients" / "desktop" / "src" / "main.rs").read_text(
+        encoding="utf-8"
+    )
     assert "fn bounded_subnet_hosts" in source
     assert "let scan_prefix = prefix.max(24);" in source
     assert "fn probe_ip" in source
-    assert 'client.get(health_url).send().await.ok()?' in source
+    assert "client.get(health_url).send().await.ok()?" in source
     assert 'health_url.set_path("/healthz");' in source
-    assert 'fn new_http_client()' in source
+    assert "fn new_http_client()" in source
     assert ".no_proxy()" in source
-    assert 'url.username().is_empty()' in source
-    assert 'url.query().is_some()' in source
-    assert 'url.fragment().is_some()' in source
+    assert "url.username().is_empty()" in source
+    assert "url.query().is_some()" in source
+    assert "url.fragment().is_some()" in source
     assert 'normalized.ends_with(".local")' in source
 
 
@@ -242,7 +251,9 @@ def test_c16_local_task_survives_client_disconnect_and_app_recomposition(
             raise AssertionError("本地恢复 fixture 不应调用模型网关")
 
     session.reset_stores()
-    principal, session_token = local_accounts.create_first_admin("c16_local_owner", "LocalTest2026")
+    principal, session_token = local_accounts.create_first_admin(
+        "c16_local_owner", "LocalTest2026"
+    )
     auth = AuthContext(
         role=principal["role"],
         subject=principal["user_id"],
@@ -251,7 +262,9 @@ def test_c16_local_task_survives_client_disconnect_and_app_recomposition(
     )
     projects = ProjectsService(seed_golden_fixture=False, persistent=True)
     project = projects.create_project(
-        ProjectCreateRequest(name="C16 本机断线恢复 fixture", project_type=ProjectType.FILM),
+        ProjectCreateRequest(
+            name="C16 本机断线恢复 fixture", project_type=ProjectType.FILM
+        ),
         owner_key=owner_key_for_context(auth),
     )
     gateway = LocalGatewayFixture()
@@ -259,12 +272,19 @@ def test_c16_local_task_survives_client_disconnect_and_app_recomposition(
         "configured": True,
         "default_provider_id": "local-fixture-provider",
         "providers": [
-            {"provider_id": "local-fixture-provider", "configured": True, "models": ["local-fixture-model"]}
+            {
+                "provider_id": "local-fixture-provider",
+                "configured": True,
+                "models": ["local-fixture-model"],
+            }
         ],
     }
 
     def model_resolver(provider_id: str | None, model: str | None) -> dict[str, str]:
-        if provider_id not in (None, "local-fixture-provider") or model not in (None, "local-fixture-model"):
+        if provider_id not in (None, "local-fixture-provider") or model not in (
+            None,
+            "local-fixture-model",
+        ):
             raise ValueError("requested model is outside the isolated local fixture")
         return {
             "provider_id": provider_id or "local-fixture-provider",

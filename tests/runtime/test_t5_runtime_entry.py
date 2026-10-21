@@ -1,7 +1,7 @@
 """T5-B 启动参数与入口隔离的最小反例。"""
 
-from pathlib import Path
 import os
+from pathlib import Path
 
 import pytest
 

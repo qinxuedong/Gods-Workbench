@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """C8-T7：真实单镜头审阅与交付的浏览器收口证据。
 
 该用例只在明确设置 ``GW_C8_REAL_E2E=1`` 且提供真实 RunningHub 配置时运行。
@@ -10,20 +9,18 @@ from __future__ import annotations
 
 import json
 import os
-from pathlib import Path
 import re
 import secrets
 import socket
 import subprocess
 import sys
 import time
+from pathlib import Path
 from urllib.error import URLError
 from urllib.request import urlopen
 
 import pytest
-
 from playwright_support import open_playwright
-
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 EVIDENCE_ROOT = REPO_ROOT / ".local" / "qa" / "C8-evidence"
@@ -87,7 +84,9 @@ def _require_real_config() -> dict[str, object]:
         or not isinstance(node.get("inputs"), dict)
         for node in raw.values()
     ):
-        raise AssertionError("GW_C8_WORKFLOW_JSON 含不完整节点，必须提供真实 API prompt")
+        raise AssertionError(
+            "GW_C8_WORKFLOW_JSON 含不完整节点，必须提供真实 API prompt"
+        )
     config["workflow_path"] = str(workflow_path)
     config["prompt"] = raw
     return config
@@ -103,7 +102,10 @@ def _evidence_dir() -> Path:
 
 
 def _write_json(path: Path, payload: object) -> None:
-    path.write_text(json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    path.write_text(
+        json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
 
 
 def _screenshot(page, name: str) -> None:
@@ -134,7 +136,11 @@ def _health_ready(port: int) -> bool:
     try:
         with urlopen(f"http://127.0.0.1:{port}/healthz", timeout=1) as response:
             body = json.loads(response.read(4096).decode("utf-8"))
-        return response.status == 200 and body.get("status") == "ok" and body.get("mode") == "cleanroom"
+        return (
+            response.status == 200
+            and body.get("status") == "ok"
+            and body.get("mode") == "cleanroom"
+        )
     except (OSError, URLError, ValueError, json.JSONDecodeError):
         return False
 
@@ -161,7 +167,12 @@ class _OwnedServer:
                 "PYTHONPATH": str(self.root),
             }
         )
-        for name in ("GW_PROVIDER_RUNTIME_JSON", "GW_CHAT_API_KEY", "GW_CHAT_BASE_URL", "GW_CLI_EXECUTION"):
+        for name in (
+            "GW_PROVIDER_RUNTIME_JSON",
+            "GW_CHAT_API_KEY",
+            "GW_CHAT_BASE_URL",
+            "GW_CLI_EXECUTION",
+        ):
             self.env.pop(name, None)
         self.process: subprocess.Popen[bytes] | None = None
 
@@ -240,7 +251,10 @@ def _production_url(base: str, project_id: str) -> str:
 
 def _wait_for_review_page(page, state: str = "pending_review") -> None:
     page.wait_for_function("!window.GWAuthGate || window.GWAuthGate.loaded === true")
-    page.wait_for_selector(f"#productionReviewPanel [data-production-review-state='{state}']", timeout=30_000)
+    page.wait_for_selector(
+        f"#productionReviewPanel [data-production-review-state='{state}']",
+        timeout=30_000,
+    )
 
 
 def test_c8_real_single_shot_review_delivery_browser(monkeypatch, tmp_path):
@@ -269,8 +283,12 @@ def test_c8_real_single_shot_review_delivery_browser(monkeypatch, tmp_path):
             except browser_api.Error as exc:
                 pytest.skip(f"Chrome 不可启动：{exc}")
 
-            context_owner = browser.new_context(viewport={"width": 1800, "height": 1000})
-            context_owner.route("**/*", lambda route: _route_same_origin(route, server.base))
+            context_owner = browser.new_context(
+                viewport={"width": 1800, "height": 1000}
+            )
+            context_owner.route(
+                "**/*", lambda route: _route_same_origin(route, server.base)
+            )
             setup = context_owner.request.post(
                 f"{server.base}/api/asset-auth/local/setup",
                 data={"username": "owner_c8_t7", "password": PASSWORD_OWNER},
@@ -297,7 +315,11 @@ def test_c8_real_single_shot_review_delivery_browser(monkeypatch, tmp_path):
             canvas_body = _assert_status(
                 context_owner.request.post(
                     f"{server.base}/api/canvases",
-                    data={"project_id": project_id, "title": "SC01 real shot canvas", "mode": "classic"},
+                    data={
+                        "project_id": project_id,
+                        "title": "SC01 real shot canvas",
+                        "mode": "classic",
+                    },
                     headers={"Origin": server.base},
                 ),
                 201,
@@ -389,29 +411,55 @@ def test_c8_real_single_shot_review_delivery_browser(monkeypatch, tmp_path):
                 )
                 current = response["shot"]
                 shot_responses.append(current)
-                if current.get("status") == "completed" and current.get("asset_id") and current.get("version_id"):
+                if (
+                    current.get("status") == "completed"
+                    and current.get("asset_id")
+                    and current.get("version_id")
+                ):
                     completed_shot = current
                     break
                 if current.get("status") in {"failed", "unknown"}:
-                    raise AssertionError(f"真实 RunningHub 镜头未成功：{json.dumps(current, ensure_ascii=False)}")
+                    raise AssertionError(
+                        f"真实 RunningHub 镜头未成功：{json.dumps(current, ensure_ascii=False)}"
+                    )
                 time.sleep(5)
-            assert completed_shot is not None, "真实 RunningHub 任务未在超时前形成已登记资产"
-            _write_json(evidence / "shot_completed.json", {"responses": shot_responses, "final": completed_shot})
+            assert completed_shot is not None, (
+                "真实 RunningHub 任务未在超时前形成已登记资产"
+            )
+            _write_json(
+                evidence / "shot_completed.json",
+                {"responses": shot_responses, "final": completed_shot},
+            )
 
-            owner_page.goto(_production_url(server.base, project_id), wait_until="networkidle")
+            owner_page.goto(
+                _production_url(server.base, project_id), wait_until="networkidle"
+            )
             _wait_for_review_page(owner_page)
-            assert owner_page.locator("#currentProjectDisplayTitle").inner_text().startswith("《C8 T7 real browser project》")
+            assert (
+                owner_page.locator("#currentProjectDisplayTitle")
+                .inner_text()
+                .startswith("《C8 T7 real browser project》")
+            )
             assert owner_page.locator("#currentShotTitle").inner_text() == shot_id
-            assert owner_page.locator("#productionReviewPanel").get_attribute("data-gw-degradation") is None
+            assert (
+                owner_page.locator("#productionReviewPanel").get_attribute(
+                    "data-gw-degradation"
+                )
+                is None
+            )
             _screenshot(owner_page, "owner_pending_review.png")
 
             comment_text = "通过精确真实版本，记录交付前检查。"
             owner_page.locator("#productionReviewComment").fill(comment_text)
             owner_page.get_by_role("button", name="评论", exact=True).click()
-            owner_page.locator("[data-production-review-comments]").get_by_text(comment_text, exact=True).wait_for()
+            owner_page.locator("[data-production-review-comments]").get_by_text(
+                comment_text, exact=True
+            ).wait_for()
             owner_page.get_by_role("button", name="通过", exact=True).click()
             _wait_for_review_page(owner_page, "approved")
-            owner_state = owner_page.evaluate("() => window.WorkbenchProduction.getState()")
+            owner_state = owner_page.evaluate(
+                "() => window.WorkbenchProduction.getState()"
+            )
             approval = owner_state["review"]["approvals"][-1]
             _screenshot(owner_page, "owner_approved_review.png")
 
@@ -434,7 +482,10 @@ def test_c8_real_single_shot_review_delivery_browser(monkeypatch, tmp_path):
                     });
                     return {status: response.status, body: await response.json()};
                 }""",
-                {"sessionId": owner_state["review"]["sessionId"], "payload": delivery_payload},
+                {
+                    "sessionId": owner_state["review"]["sessionId"],
+                    "payload": delivery_payload,
+                },
             )
             assert delivery_body["status"] == 201, delivery_body
             delivery = delivery_body["body"]["delivery"]
@@ -451,8 +502,13 @@ def test_c8_real_single_shot_review_delivery_browser(monkeypatch, tmp_path):
 
             owner_page.reload(wait_until="networkidle")
             _wait_for_review_page(owner_page, "approved")
-            refreshed_state = owner_page.evaluate("() => window.WorkbenchProduction.getState()")
-            assert refreshed_state["review"]["delivery"]["delivery_id"] == delivery["delivery_id"]
+            refreshed_state = owner_page.evaluate(
+                "() => window.WorkbenchProduction.getState()"
+            )
+            assert (
+                refreshed_state["review"]["delivery"]["delivery_id"]
+                == delivery["delivery_id"]
+            )
             _screenshot(owner_page, "owner_delivery_after_refresh.png")
 
             # 真正停止并重启本次服务进程，使用同一隔离数据目录回读关系。
@@ -460,12 +516,21 @@ def test_c8_real_single_shot_review_delivery_browser(monkeypatch, tmp_path):
             server.start()
             owner_page.reload(wait_until="networkidle")
             _wait_for_review_page(owner_page, "approved")
-            restarted_state = owner_page.evaluate("() => window.WorkbenchProduction.getState()")
-            assert restarted_state["review"]["delivery"]["delivery_id"] == delivery["delivery_id"]
+            restarted_state = owner_page.evaluate(
+                "() => window.WorkbenchProduction.getState()"
+            )
+            assert (
+                restarted_state["review"]["delivery"]["delivery_id"]
+                == delivery["delivery_id"]
+            )
             _screenshot(owner_page, "owner_delivery_after_restart.png")
 
-            context_reviewer = browser.new_context(viewport={"width": 1800, "height": 1000})
-            context_reviewer.route("**/*", lambda route: _route_same_origin(route, server.base))
+            context_reviewer = browser.new_context(
+                viewport={"width": 1800, "height": 1000}
+            )
+            context_reviewer.route(
+                "**/*", lambda route: _route_same_origin(route, server.base)
+            )
             login = context_reviewer.request.post(
                 f"{server.base}/api/asset-auth/local/login",
                 data={"username": "reviewer_c8_t7", "password": PASSWORD_REVIEWER},
@@ -473,18 +538,31 @@ def test_c8_real_single_shot_review_delivery_browser(monkeypatch, tmp_path):
             )
             _assert_status(login, 200)
             reviewer_read = context_reviewer.request.get(
-                f"{server.base}/api/projects/{project_id}", headers={"Origin": server.base}
+                f"{server.base}/api/projects/{project_id}",
+                headers={"Origin": server.base},
             )
             assert reviewer_read.status in {403, 404}
             reviewer_page = context_reviewer.new_page()
-            reviewer_page.goto(_production_url(server.base, project_id), wait_until="networkidle")
-            reviewer_page.wait_for_function("!window.GWAuthGate || window.GWAuthGate.loaded === true")
-            reviewer_page.locator("#productionReviewPanel[data-gw-degradation='not_integrated']").wait_for()
-            assert "未接入" in reviewer_page.locator("#productionReviewPanel").inner_text()
+            reviewer_page.goto(
+                _production_url(server.base, project_id), wait_until="networkidle"
+            )
+            reviewer_page.wait_for_function(
+                "!window.GWAuthGate || window.GWAuthGate.loaded === true"
+            )
+            reviewer_page.locator(
+                "#productionReviewPanel[data-gw-degradation='not_integrated']"
+            ).wait_for()
+            assert (
+                "未接入" in reviewer_page.locator("#productionReviewPanel").inner_text()
+            )
             _screenshot(reviewer_page, "reviewer_cross_account_blocked.png")
             _write_json(
                 evidence / "cross_account.json",
-                {"project_id": project_id, "reviewer_project_status": reviewer_read.status, "owner_delivery_id": delivery["delivery_id"]},
+                {
+                    "project_id": project_id,
+                    "reviewer_project_status": reviewer_read.status,
+                    "owner_delivery_id": delivery["delivery_id"],
+                },
             )
             assert page_errors == []
             _write_json(

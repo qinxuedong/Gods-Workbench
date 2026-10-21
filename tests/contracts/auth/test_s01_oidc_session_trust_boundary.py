@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """S-01 回归：OIDC 会话与信任根失效边界。
 
 背景（2026-09-28 独立技术审计观察，**未**证实为可外部利用的攻击链）
@@ -105,7 +104,13 @@ def _break_config(env, *, drop_issuer: bool = True, drop_audience: bool = True) 
     gw_config.reset_runtime_auth_config_cache()
 
 
-def _inject_session(*, issuer: str = ISSUER, audience: str = AUDIENCE, generation: str | None = None, **overrides):
+def _inject_session(
+    *,
+    issuer: str = ISSUER,
+    audience: str = AUDIENCE,
+    generation: str | None = None,
+    **overrides,
+):
     """直接向内存会话库注入一条会话（不走登录流程，模拟遗留/被注入会话）。"""
     principal = {
         "username": "injected-user",
@@ -114,7 +119,9 @@ def _inject_session(*, issuer: str = ISSUER, audience: str = AUDIENCE, generatio
         "groups": ["gw-admin"],
         "issuer": issuer,
         "audience": audience,
-        "config_generation": gw_config.auth_config_generation() if generation is None else generation,
+        "config_generation": gw_config.auth_config_generation()
+        if generation is None
+        else generation,
     }
     principal.update(overrides)
     return session_store.create_session(principal)
@@ -133,6 +140,7 @@ def _events(name: str):
 # ---------------------------------------------------------------------------
 # 1. 纯判据：会话信任根失效原因必须是封闭集合
 # ---------------------------------------------------------------------------
+
 
 def test_bound_session_under_ready_config_has_no_failure(clean_env):
     """配置就绪且会话绑定当前信任根时，不得报失效。"""
@@ -169,9 +177,12 @@ def test_empty_issuer_or_audience_is_not_ready(clean_env):
     generation = gw_config.auth_config_generation()
 
     # 运行期 issuer 非空但会话绑定为空：必须判为发行者失配（不得因空值而通过）。
-    assert oidc_session_trust_failure_reason(
-        {"issuer": "", "config_generation": generation}, runtime
-    ) == "issuer_mismatch"
+    assert (
+        oidc_session_trust_failure_reason(
+            {"issuer": "", "config_generation": generation}, runtime
+        )
+        == "issuer_mismatch"
+    )
     # 运行期就绪但会话缺少绑定字段：一律失效，不放行。
     assert oidc_session_trust_failure_reason({}, runtime) == "issuer_mismatch"
 
@@ -209,9 +220,10 @@ def test_missing_generation_is_treated_as_changed(clean_env):
 
     _configure_oidc(clean_env)
     runtime = gw_config.load_runtime_auth_config()
-    assert oidc_session_trust_failure_reason(
-        {"issuer": ISSUER}, runtime
-    ) == "trust_root_changed"
+    assert (
+        oidc_session_trust_failure_reason({"issuer": ISSUER}, runtime)
+        == "trust_root_changed"
+    )
 
 
 def test_failure_reasons_are_closed_vocabulary(clean_env):
@@ -229,19 +241,25 @@ def test_failure_reasons_are_closed_vocabulary(clean_env):
     generation = gw_config.auth_config_generation()
 
     # 对照组：就绪 + 绑定正确 -> 不是失效，必须返回 None。
-    assert oidc_session_trust_failure_reason(
-        {"issuer": ISSUER, "config_generation": generation}, runtime
-    ) is None
+    assert (
+        oidc_session_trust_failure_reason(
+            {"issuer": ISSUER, "config_generation": generation}, runtime
+        )
+        is None
+    )
 
     # 三种确定失效的输入，原因必须全部落在封闭集合内。
     observed = {
         oidc_session_trust_failure_reason(
-            {"issuer": "https://other.example.test", "config_generation": generation}, runtime
+            {"issuer": "https://other.example.test", "config_generation": generation},
+            runtime,
         ),
         oidc_session_trust_failure_reason(
             {"issuer": ISSUER, "config_generation": "deadbeef"}, runtime
         ),
-        oidc_session_trust_failure_reason({"issuer": "", "config_generation": ""}, runtime),
+        oidc_session_trust_failure_reason(
+            {"issuer": "", "config_generation": ""}, runtime
+        ),
     }
     assert observed <= allowed, observed
     assert None not in observed, observed
@@ -249,14 +267,18 @@ def test_failure_reasons_are_closed_vocabulary(clean_env):
     # 未就绪配置同样必须给出封闭集合内的原因。
     _break_config(clean_env)
     unready_runtime = gw_config.load_runtime_auth_config()
-    assert oidc_session_trust_failure_reason(
-        {"issuer": ISSUER, "config_generation": generation}, unready_runtime
-    ) in allowed
+    assert (
+        oidc_session_trust_failure_reason(
+            {"issuer": ISSUER, "config_generation": generation}, unready_runtime
+        )
+        in allowed
+    )
 
 
 # ---------------------------------------------------------------------------
 # 2. 行为级：未就绪配置下人工内存会话不得得到项目列表 200
 # ---------------------------------------------------------------------------
+
 
 def test_injected_session_cannot_list_projects_when_config_unready(clean_env):
     """人工注入的内存会话，在 oidc_ready=false 时不能得到项目列表 200。
@@ -335,10 +357,13 @@ def test_rotation_to_unready_then_back_does_not_revive_session(clean_env):
     _break_config(clean_env)
 
     with TestClient(_app()) as api:
-        assert api.get(
-            "/api/projects",
-            headers={"Cookie": f"{session_store.SESSION_COOKIE_NAME}={session_id}"},
-        ).status_code == 401
+        assert (
+            api.get(
+                "/api/projects",
+                headers={"Cookie": f"{session_store.SESSION_COOKIE_NAME}={session_id}"},
+            ).status_code
+            == 401
+        )
 
     # 把配置改回就绪：会话已撤销，不得凭原 Cookie 恢复访问。
     _configure_oidc(clean_env)
@@ -393,7 +418,9 @@ def test_ready_config_still_accepts_bound_session(clean_env):
         )
     assert listing.status_code == 200, listing.text
     assert created.status_code == 201, created.text
-    assert session_store.get_session(session_id) is not None, "就绪配置下会话不应被误撤销"
+    assert session_store.get_session(session_id) is not None, (
+        "就绪配置下会话不应被误撤销"
+    )
 
 
 def test_role_boundary_is_unchanged_for_bound_session(clean_env):
@@ -436,6 +463,7 @@ def test_hashed_bearer_path_is_unaffected_by_session_binding(clean_env):
 # ---------------------------------------------------------------------------
 # 3. OIDC Cookie 写路径的 Origin 门禁（与 local_account 同口径）
 # ---------------------------------------------------------------------------
+
 
 def test_oidc_write_without_origin_is_rejected(clean_env):
     """OIDC Cookie 写操作缺失 Origin 时一律 403（与 local_account 同口径）。"""
@@ -524,6 +552,7 @@ def test_oidc_read_requests_are_not_subject_to_origin_gate(clean_env):
 # 4. 契约语义不变（401/403/409/202 与错误码）
 # ---------------------------------------------------------------------------
 
+
 def test_unready_config_still_returns_401_contract(clean_env):
     """未就绪配置下的拒绝仍是 401 + 既有错误码，不引入新状态码。"""
     _configure_oidc(clean_env)
@@ -557,7 +586,9 @@ def test_logout_still_returns_204_idempotently(clean_env):
     """
     from gw.api.app import CSRF_ORIGIN_EXEMPT_PATHS
 
-    assert "/api/asset-auth/logout" in CSRF_ORIGIN_EXEMPT_PATHS, "登出必须豁免 Origin 门禁"
+    assert "/api/asset-auth/logout" in CSRF_ORIGIN_EXEMPT_PATHS, (
+        "登出必须豁免 Origin 门禁"
+    )
 
     _configure_oidc(clean_env)
     session_id = _inject_session()
@@ -598,7 +629,9 @@ def test_business_write_routes_are_not_exempt_from_origin_gate(clean_env):
         "/api/canvases",
         "/api/settings",
     ):
-        assert candidate not in CSRF_ORIGIN_EXEMPT_PATHS, candidate + " 不得豁免 Origin 门禁"
+        assert candidate not in CSRF_ORIGIN_EXEMPT_PATHS, (
+            candidate + " 不得豁免 Origin 门禁"
+        )
 
 
 def test_local_account_write_gate_is_not_loosened_by_oidc_exemptions(clean_env):
@@ -631,9 +664,7 @@ def test_two_middlewares_share_one_trust_predicate():
     断言范围**只限该判据函数体本身**：登录成功时绑定代际（``_principal_from_identity``）
     本来就必须调用 ``auth_config_generation``，不得被本条误伤。
     """
-    source = (
-        REPO_ROOT / "gw" / "api" / "routes_auth.py"
-    ).read_text(encoding="utf-8")
+    source = (REPO_ROOT / "gw" / "api" / "routes_auth.py").read_text(encoding="utf-8")
     start_at = source.find("def _oidc_session_still_bound")
     assert start_at != -1
     stop_at = source.find("\ndef ", start_at + 1)
@@ -647,12 +678,9 @@ def test_two_middlewares_share_one_trust_predicate():
     assert "getattr(runtime" not in region, "不得在本模块重复解析运行期 issuer/audience"
 
 
-
 def test_core_auth_does_not_reintroduce_unsafe_session_shortcut():
     """安全反向断言：``core/auth.py`` 不得再出现裸 `return AuthContext` 于未校验会话分支。"""
-    source = (
-        REPO_ROOT / "gw" / "core" / "auth.py"
-    ).read_text(encoding="utf-8")
+    source = (REPO_ROOT / "gw" / "core" / "auth.py").read_text(encoding="utf-8")
     anchor = source.find("if runtime.mode == AUTH_MODE_OIDC:")
     assert anchor != -1
     region = source[anchor : anchor + 4000]

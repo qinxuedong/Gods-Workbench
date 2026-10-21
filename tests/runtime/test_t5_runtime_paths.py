@@ -10,8 +10,8 @@ from gw.core.runtime_paths import (
     MODE_DEV,
     MODE_PROD,
     MODE_TEST,
-    RuntimePathError,
     VIDEO_DATA_DIR_ENV,
+    RuntimePathError,
     resolve_runtime_paths,
 )
 
@@ -19,7 +19,9 @@ from gw.core.runtime_paths import (
 def test_dev_defaults_are_fixed_under_runtime_sandbox(tmp_path: Path):
     paths = resolve_runtime_paths(MODE_DEV, repo_root=tmp_path, env={})
     assert paths.data_root == tmp_path / ".local" / "runtime-dev" / "data"
-    assert paths.auth_db == tmp_path / ".local" / "runtime-dev" / "auth" / "auth.sqlite3"
+    assert (
+        paths.auth_db == tmp_path / ".local" / "runtime-dev" / "auth" / "auth.sqlite3"
+    )
     assert paths.video_root == tmp_path / ".local" / "runtime-dev" / "video"
     assert not (tmp_path / ".local" / "runtime-dev").exists()
 
@@ -71,7 +73,9 @@ def test_prod_requires_explicit_localappdata_when_missing(tmp_path: Path):
 
 def test_prod_defaults_are_outside_repo(tmp_path: Path):
     user_root = tmp_path / "user-localappdata"
-    paths = resolve_runtime_paths(MODE_PROD, repo_root=tmp_path / "repo", localappdata=user_root, env={})
+    paths = resolve_runtime_paths(
+        MODE_PROD, repo_root=tmp_path / "repo", localappdata=user_root, env={}
+    )
     assert paths.data_root == user_root / "GodsWorkbench" / "data"
     assert paths.auth_db == user_root / "GodsWorkbench" / "auth" / "auth.sqlite3"
     assert paths.video_root == user_root / "GodsWorkbench" / "video"
@@ -81,7 +85,9 @@ def test_prod_defaults_are_outside_repo(tmp_path: Path):
 def test_prod_rejects_repo_localappdata(tmp_path: Path):
     repo = tmp_path / "repo"
     with pytest.raises(RuntimePathError, match="源码仓库"):
-        resolve_runtime_paths(MODE_PROD, repo_root=repo, localappdata=repo / ".local", env={})
+        resolve_runtime_paths(
+            MODE_PROD, repo_root=repo, localappdata=repo / ".local", env={}
+        )
 
 
 def test_existing_symlink_in_any_root_is_rejected(tmp_path: Path):

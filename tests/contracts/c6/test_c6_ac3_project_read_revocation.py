@@ -1,4 +1,5 @@
 """C6-AC3：撤销项目读权限后的资源、分享链接与审计脱敏回归。"""
+
 from __future__ import annotations
 
 import hashlib
@@ -62,7 +63,9 @@ def _audit_entries() -> list[dict]:
         return list(state.get("read_audit") or [])
 
 
-def test_c6_ac3_revocation_blocks_project_resource_share_and_redacts_audit(client: TestClient):
+def test_c6_ac3_revocation_blocks_project_resource_share_and_redacts_audit(
+    client: TestClient,
+):
     """撤销后资源返回 403/404，reader 创建的分享失效，审计不落完整主体。"""
     project_id = _create_project(client)
     asset_id = _create_asset(client)
@@ -78,7 +81,9 @@ def test_c6_ac3_revocation_blocks_project_resource_share_and_redacts_audit(clien
     assert visible.status_code == 200, visible.text
     registry_projects = client.get("/api/asset-registry/projects", headers=READER)
     assert registry_projects.status_code == 200, registry_projects.text
-    assert project_id in [item["project_id"] for item in registry_projects.json().get("projects", [])]
+    assert project_id in [
+        item["project_id"] for item in registry_projects.json().get("projects", [])
+    ]
 
     share = client.post(
         "/api/asset-reviews/shares",
@@ -94,10 +99,13 @@ def test_c6_ac3_revocation_blocks_project_resource_share_and_redacts_audit(clien
 
     blocked_project = client.get(f"/api/projects/{project_id}", headers=READER)
     assert blocked_project.status_code in (403, 404), blocked_project.text
-    blocked_registry_projects = client.get("/api/asset-registry/projects", headers=READER)
+    blocked_registry_projects = client.get(
+        "/api/asset-registry/projects", headers=READER
+    )
     assert blocked_registry_projects.status_code == 200, blocked_registry_projects.text
     assert project_id not in [
-        item["project_id"] for item in blocked_registry_projects.json().get("projects", [])
+        item["project_id"]
+        for item in blocked_registry_projects.json().get("projects", [])
     ]
     blocked_share = client.get(f"/api/public/shares/{share_token}")
     assert blocked_share.status_code == 404, blocked_share.text

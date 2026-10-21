@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """QIN-189 / C9-T5：审阅阻塞、下一步和批准失效契约。"""
 
 from __future__ import annotations
@@ -117,7 +116,9 @@ def test_c9_version_change_invalidates_approval_and_delivery_with_next_action():
         ("unknown", ("unknown", "PROVIDER_UNKNOWN", "reconcile_unknown_job")),
     ],
 )
-def test_c9_provider_states_expose_blocker_and_safe_next_action(provider_status, projection):
+def test_c9_provider_states_expose_blocker_and_safe_next_action(
+    provider_status, projection
+):
     with TestClient(create_app()) as client:
         session = _create(client, provider_status=provider_status)
         assert (

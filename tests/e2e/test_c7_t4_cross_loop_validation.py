@@ -10,25 +10,32 @@
 子测试在独立 Python 进程中运行，避免把父 pytest 的内存状态当作跨链证据。
 证据目录可由 ``GW_C7_T4_EVIDENCE_DIR`` 指定；未指定时写入 pytest 临时目录。
 """
+
 from __future__ import annotations
 
 import hashlib
 import json
 import os
-from pathlib import Path
 import re
 import shutil
 import subprocess
 import sys
-from typing import Mapping
+from collections.abc import Mapping
+from pathlib import Path
 
 import pytest
-
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 TEXT_NODE = "tests/e2e/test_c7_text_loop_browser.py::test_c7_p3_text_loop_real_browser_readback_and_export"
 MEDIA_NODE = "tests/e2e/test_c7_media_loop_browser.py"
-REAL_HOST_FIXTURE = REPO_ROOT / "tests" / "contracts" / "fixtures" / "runninghub" / "outputs_success_real_host.json"
+REAL_HOST_FIXTURE = (
+    REPO_ROOT
+    / "tests"
+    / "contracts"
+    / "fixtures"
+    / "runninghub"
+    / "outputs_success_real_host.json"
+)
 REAL_HOST = "rh-images-tos.xiaoyaoyou.com"
 
 
@@ -49,9 +56,18 @@ def _child_env(*, evidence: Path, text: bool) -> dict[str, str]:
             "GW_RUNTIME_MODE": "test",
             "GW_AUTH_MODE": "local_account",
             "GW_CLI_EXECUTION": "0",
-            "GW_DATA_DIR": str(evidence / "runtime" / ("text-data" if text else "media-data")),
-            "GW_LOCAL_AUTH_DB": str(evidence / "runtime" / ("text-auth" if text else "media-auth") / "auth.sqlite3"),
-            "GW_VIDEO_DATA_DIR": str(evidence / "runtime" / ("text-video" if text else "media-video")),
+            "GW_DATA_DIR": str(
+                evidence / "runtime" / ("text-data" if text else "media-data")
+            ),
+            "GW_LOCAL_AUTH_DB": str(
+                evidence
+                / "runtime"
+                / ("text-auth" if text else "media-auth")
+                / "auth.sqlite3"
+            ),
+            "GW_VIDEO_DATA_DIR": str(
+                evidence / "runtime" / ("text-video" if text else "media-video")
+            ),
         }
     )
     if text:
@@ -73,7 +89,9 @@ def _run_child(node: str, *, env: Mapping[str, str]) -> str:
     )
     output = (completed.stdout or "") + (completed.stderr or "")
     if completed.returncode != 0:
-        raise AssertionError(f"{node} 失败（退出码 {completed.returncode}）：\n{output}")
+        raise AssertionError(
+            f"{node} 失败（退出码 {completed.returncode}）：\n{output}"
+        )
     if re.search(r"\b\d+ skipped\b", output):
         raise AssertionError(f"{node} 未取得浏览器证据，测试被跳过：\n{output}")
     if not re.search(r"\b\d+ passed\b", output):
@@ -90,7 +108,10 @@ def _sha256(path: Path) -> str:
 
 
 def _write_sha256sums(root: Path, paths: list[Path]) -> None:
-    lines = [f"{_sha256(path)}  {path.relative_to(root).as_posix()}" for path in sorted(paths)]
+    lines = [
+        f"{_sha256(path)}  {path.relative_to(root).as_posix()}"
+        for path in sorted(paths)
+    ]
     (root / "SHA256SUMS").write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
@@ -130,12 +151,21 @@ def test_c7_t4_cross_loop_validation_real_browser(tmp_path):
     )
     _assert_expected_shots(
         media_dir,
-        ["1-workflow-browser-completed-task.png", "2-workflow-browser-outcome-unknown.png"],
+        [
+            "1-workflow-browser-completed-task.png",
+            "2-workflow-browser-outcome-unknown.png",
+        ],
     )
 
-    assert REAL_HOST_FIXTURE.is_file(), f"RunningHub 真实宿主 fixture 不存在：{REAL_HOST_FIXTURE}"
+    assert REAL_HOST_FIXTURE.is_file(), (
+        f"RunningHub 真实宿主 fixture 不存在：{REAL_HOST_FIXTURE}"
+    )
     fixture = json.loads(REAL_HOST_FIXTURE.read_text(encoding="utf-8"))
-    urls = [item.get("fileUrl", "") for item in fixture.get("data", []) if isinstance(item, dict)]
+    urls = [
+        item.get("fileUrl", "")
+        for item in fixture.get("data", [])
+        if isinstance(item, dict)
+    ]
     assert urls and all(Path(url).name for url in urls)
     assert all(REAL_HOST in url for url in urls), urls
     fixture_copy = evidence / "c7-t4-runninghub-real-host-fixture.json"
@@ -145,7 +175,14 @@ def test_c7_t4_cross_loop_validation_real_browser(tmp_path):
     (media_dir / "test.log").write_text(media_log, encoding="utf-8")
     combined_log = evidence / "test.log"
     combined_log.write_text(
-        "[text] " + TEXT_NODE + "\n" + text_log + "\n[media] " + MEDIA_NODE + "\n" + media_log,
+        "[text] "
+        + TEXT_NODE
+        + "\n"
+        + text_log
+        + "\n[media] "
+        + MEDIA_NODE
+        + "\n"
+        + media_log,
         encoding="utf-8",
     )
 
@@ -192,5 +229,12 @@ def test_c7_t4_cross_loop_validation_real_browser(tmp_path):
     _write_sha256sums(evidence, _proof_files(evidence))
 
     # 证据清单本身也必须可回读，避免只凭 pytest 摘要宣称完成。
-    assert json.loads(manifest_path.read_text(encoding="utf-8").split("```json\n", 1)[1].rsplit("\n```", 1)[0])["acceptance"] == "C7-AC4"
+    assert (
+        json.loads(
+            manifest_path.read_text(encoding="utf-8")
+            .split("```json\n", 1)[1]
+            .rsplit("\n```", 1)[0]
+        )["acceptance"]
+        == "C7-AC4"
+    )
     assert (evidence / "SHA256SUMS").read_text(encoding="utf-8").count("  ") >= 7

@@ -4,6 +4,7 @@
 POST /tasks/{id}/abandon 的成功/幂等/拒绝路径与审计事件，以及任务被放弃后
 轮询、回收、取消全部按终态短路、不再触碰远端。
 """
+
 from __future__ import annotations
 
 import sys
@@ -14,7 +15,7 @@ from fastapi.testclient import TestClient
 
 sys.path.insert(0, str(Path(__file__).resolve().parent / "media_double"))
 
-from media_doubles import FakeComfy, FakeRunningHub, HEADERS, TASKS  # noqa: E402
+from media_doubles import HEADERS, TASKS, FakeComfy, FakeRunningHub  # noqa: E402
 
 from gw.core import audit  # noqa: E402
 from gw.god_workflow import registry, routes  # noqa: E402
@@ -26,6 +27,7 @@ UNKNOWN_TASK_ID = "00000000-0000-0000-0000-000000000000"
 @pytest.fixture
 def client():
     from gw.api.app import create_app
+
     with TestClient(create_app()) as value:
         yield value
 
@@ -52,13 +54,21 @@ def clean_audit():
 
 
 def unknown_task(context, *, workflow_id=None):
-    return registry.create_task(context, workflow_id=workflow_id, prompt_id=None,
-                                target="rh_cloud", outcome_unknown=True)
+    return registry.create_task(
+        context,
+        workflow_id=workflow_id,
+        prompt_id=None,
+        target="rh_cloud",
+        outcome_unknown=True,
+    )
 
 
 def abandon_events():
-    return [event for event in audit.list_auth_events()
-            if event["event"] == audit.EVENT_WORKFLOW_TASK_ABANDONED]
+    return [
+        event
+        for event in audit.list_auth_events()
+        if event["event"] == audit.EVENT_WORKFLOW_TASK_ABANDONED
+    ]
 
 
 # ---------------------------------------------------------------------------
@@ -81,15 +91,22 @@ def test_unknown_no_remote_task_exposes_derived_error_code(client, context):
 
 
 def test_unknown_with_remote_task_id_gets_plain_unknown_code(client, context):
-    task = registry.create_task(context, workflow_id=None, prompt_id="rh-remote-9",
-                                target="rh_cloud", outcome_unknown=True)
+    task = registry.create_task(
+        context,
+        workflow_id=None,
+        prompt_id="rh-remote-9",
+        target="rh_cloud",
+        outcome_unknown=True,
+    )
     detail = client.get(f"{TASKS}/{task['job_id']}", headers=HEADERS)
     assert detail.status_code == 200, detail.text
     assert detail.json()["error_code"] == "OUTCOME_UNKNOWN"
 
 
 def test_non_terminal_task_error_code_is_none(client, context, fake_executors):
-    task = registry.create_task(context, workflow_id=None, prompt_id="comfy-remote-1", target="local_comfy")
+    task = registry.create_task(
+        context, workflow_id=None, prompt_id="comfy-remote-1", target="local_comfy"
+    )
     detail = client.get(f"{TASKS}/{task['job_id']}", headers=HEADERS)
     assert detail.status_code == 200, detail.text
     assert detail.json()["status"] == "running"
@@ -99,7 +116,9 @@ def test_non_terminal_task_error_code_is_none(client, context, fake_executors):
 # ---------------------------------------------------------------------------
 # POST /tasks/{id}/abandon
 # ---------------------------------------------------------------------------
-def test_abandon_succeeds_is_idempotent_and_never_submits(client, context, fake_executors, clean_audit):
+def test_abandon_succeeds_is_idempotent_and_never_submits(
+    client, context, fake_executors, clean_audit
+):
     fake_comfy, fake_rh = fake_executors
     task = unknown_task(context)
     assert fake_comfy.names() == [] and fake_rh.names() == []
@@ -123,7 +142,9 @@ def test_abandon_succeeds_is_idempotent_and_never_submits(client, context, fake_
     assert events[0]["reason"] == "outcome_unknown_no_remote_id"
     assert events[0]["subject"] == context.subject
     assert events[0]["role"] == "editor"
-    second = client.post(f"{TASKS}/{task['job_id']}/abandon", json={"reason": "again"}, headers=HEADERS)
+    second = client.post(
+        f"{TASKS}/{task['job_id']}/abandon", json={"reason": "again"}, headers=HEADERS
+    )
     assert second.status_code == 200, second.text
     assert second.json()["already_abandoned"] is True
     assert second.json()["abandoned"] is True
@@ -135,7 +156,9 @@ def test_abandon_succeeds_is_idempotent_and_never_submits(client, context, fake_
 
 def test_abandon_reason_is_clipped_and_persisted(client, context, clean_audit):
     task = unknown_task(context)
-    response = client.post(f"{TASKS}/{task['job_id']}/abandon", json={"reason": "x" * 300}, headers=HEADERS)
+    response = client.post(
+        f"{TASKS}/{task['job_id']}/abandon", json={"reason": "x" * 300}, headers=HEADERS
+    )
     assert response.status_code == 200, response.text
     assert response.json()["abandon_reason"] == "x" * 200
     reloaded = registry.load_task(context, task["job_id"])
@@ -146,7 +169,9 @@ def test_abandon_reason_is_clipped_and_persisted(client, context, clean_audit):
 @pytest.mark.parametrize("body", [{"reason": 123}, ["not", "an", "object"]])
 def test_abandon_bad_body_is_invalid_request(client, context, clean_audit, body):
     task = unknown_task(context)
-    response = client.post(f"{TASKS}/{task['job_id']}/abandon", json=body, headers=HEADERS)
+    response = client.post(
+        f"{TASKS}/{task['job_id']}/abandon", json=body, headers=HEADERS
+    )
     assert response.status_code == 400, response.text
     assert response.json()["detail"]["code"] == "INVALID_REQUEST"
     assert registry.load_task(context, task["job_id"])["status"] == "outcome_unknown"
@@ -154,7 +179,9 @@ def test_abandon_bad_body_is_invalid_request(client, context, clean_audit, body)
 
 
 def test_abandon_rejected_for_task_with_remote_id(client, context, clean_audit):
-    task = registry.create_task(context, workflow_id=None, prompt_id="rh-remote-1", target="rh_cloud")
+    task = registry.create_task(
+        context, workflow_id=None, prompt_id="rh-remote-1", target="rh_cloud"
+    )
     path = registry._task_path(context, task["job_id"])
     before = path.read_bytes()
     response = client.post(f"{TASKS}/{task['job_id']}/abandon", headers=HEADERS)
@@ -170,9 +197,13 @@ def test_abandon_rejected_for_task_with_remote_id(client, context, clean_audit):
 
 @pytest.mark.parametrize("stage", ["accepted", "completed"])
 def test_abandon_rejected_when_not_outcome_unknown(client, context, clean_audit, stage):
-    task = registry.create_task(context, workflow_id=None, prompt_id=None, target="local_comfy")
+    task = registry.create_task(
+        context, workflow_id=None, prompt_id=None, target="local_comfy"
+    )
     if stage == "completed":
-        registry.update_task(context, task["job_id"], status="completed", execution_status="completed")
+        registry.update_task(
+            context, task["job_id"], status="completed", execution_status="completed"
+        )
     response = client.post(f"{TASKS}/{task['job_id']}/abandon", headers=HEADERS)
     assert response.status_code == 409, response.text
     assert response.json()["detail"]["code"] == "TASK_NOT_OUTCOME_UNKNOWN"
@@ -189,16 +220,23 @@ def test_abandon_unknown_task_is_404(client, clean_audit):
 
 def test_abandon_requires_edit_access(client, context, clean_audit):
     task = unknown_task(context)
-    response = client.post(f"{TASKS}/{task['job_id']}/abandon", headers=READONLY_HEADERS)
+    response = client.post(
+        f"{TASKS}/{task['job_id']}/abandon", headers=READONLY_HEADERS
+    )
     assert response.status_code == 403, response.text
     assert registry.load_task(context, task["job_id"])["status"] == "outcome_unknown"
     assert abandon_events() == []
 
 
-def test_abandoned_task_is_terminal_for_poll_collect_cancel(client, context, fake_executors, clean_audit):
+def test_abandoned_task_is_terminal_for_poll_collect_cancel(
+    client, context, fake_executors, clean_audit
+):
     fake_comfy, fake_rh = fake_executors
     task = unknown_task(context)
-    assert client.post(f"{TASKS}/{task['job_id']}/abandon", headers=HEADERS).status_code == 200
+    assert (
+        client.post(f"{TASKS}/{task['job_id']}/abandon", headers=HEADERS).status_code
+        == 200
+    )
     polled = client.get(f"{TASKS}/{task['job_id']}", headers=HEADERS)
     assert polled.status_code == 200, polled.text
     assert polled.json()["status"] == "abandoned"

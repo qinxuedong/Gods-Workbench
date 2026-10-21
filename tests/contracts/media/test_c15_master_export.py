@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 # Copyright 2026 Gods-Workbench Authors
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -24,13 +23,12 @@ import subprocess
 from pathlib import Path
 
 import pytest
-from gw.api.app import create_app
 from fastapi.testclient import TestClient
 
 from gw.api import routes_export
+from gw.api.app import create_app
 from gw.core.errors import CleanroomException
 from gw.media import ffmpeg_master
-
 
 AUTH = {"Authorization": "Bearer cleanroom-test", "X-User-Role": "editor"}
 FIXTURE_ID = "c15-t3-master-export-001"
@@ -67,15 +65,15 @@ def _manifest() -> dict:
             {
                 "track_id": "audio-01",
                 "kind": "audio",
-                "clips": [
-                    {"asset_id": "asset-audio-001", "at": 0.0, "duration": 2.5}
-                ],
+                "clips": [{"asset_id": "asset-audio-001", "at": 0.0, "duration": 2.5}],
             },
         ],
     }
 
 
-def test_build_master_command_keeps_timeline_gaps_crop_and_audio_alignment(tmp_path: Path):
+def test_build_master_command_keeps_timeline_gaps_crop_and_audio_alignment(
+    tmp_path: Path,
+):
     manifest = _manifest()
     paths = {
         "asset-video-001": tmp_path / "one.mp4",
@@ -104,10 +102,16 @@ def test_build_master_command_keeps_timeline_gaps_crop_and_audio_alignment(tmp_p
     assert manifest["tracks"][0]["clips"][0]["overrides"]["crop"]["width"] == 0.8
 
 
-def test_build_master_command_rejects_missing_assets_and_overlapping_clips(tmp_path: Path):
+def test_build_master_command_rejects_missing_assets_and_overlapping_clips(
+    tmp_path: Path,
+):
     with pytest.raises(CleanroomException) as missing:
         ffmpeg_master.build_ffmpeg_command(
-            _manifest(), {}, tmp_path / "out.mp4", ffmpeg_path="ffmpeg", encoder="libx264"
+            _manifest(),
+            {},
+            tmp_path / "out.mp4",
+            ffmpeg_path="ffmpeg",
+            encoder="libx264",
         )
     assert missing.value.code == "MEDIA_NOT_AVAILABLE"
 
@@ -135,26 +139,48 @@ def test_master_export_falls_back_to_cpu_after_hardware_encoder_failure(
     source.write_bytes(b"input")
     calls: list[list[str]] = []
 
-    monkeypatch.setattr(ffmpeg_master, "_hardware_encoder", lambda _ffmpeg: "h264_nvenc")
+    monkeypatch.setattr(
+        ffmpeg_master, "_hardware_encoder", lambda _ffmpeg: "h264_nvenc"
+    )
     monkeypatch.setattr(
         ffmpeg_master,
         "_probe_output",
-        lambda _path, _ffprobe: {"duration_seconds": 1.0, "width": 1920, "height": 1080, "frame_count": 24,
-                                 "video_codec": "h264", "audio_codec": None},
+        lambda _path, _ffprobe: {
+            "duration_seconds": 1.0,
+            "width": 1920,
+            "height": 1080,
+            "frame_count": 24,
+            "video_codec": "h264",
+            "audio_codec": None,
+        },
     )
 
     def fake_run(command, *, timeout):
         calls.append(command)
         if "h264_nvenc" in command:
-            return subprocess.CompletedProcess(command, 1, stdout=b"", stderr=b"no device")
+            return subprocess.CompletedProcess(
+                command, 1, stdout=b"", stderr=b"no device"
+            )
         Path(command[-1]).write_bytes(b"valid-mp4")
         return subprocess.CompletedProcess(command, 0, stdout=b"", stderr=b"")
 
     monkeypatch.setattr(ffmpeg_master, "_run", fake_run)
     result = ffmpeg_master.render_master_mp4(
-        {"tracks": [{"kind": "video", "clips": [
-            {"asset_id": "video-001", "media_type": "video", "at": 0, "duration": 1}
-        ]}]},
+        {
+            "tracks": [
+                {
+                    "kind": "video",
+                    "clips": [
+                        {
+                            "asset_id": "video-001",
+                            "media_type": "video",
+                            "at": 0,
+                            "duration": 1,
+                        }
+                    ],
+                }
+            ]
+        },
         {"video-001": source},
         tmp_path / "master.mp4",
         ffmpeg_path="fake-ffmpeg",
@@ -175,14 +201,18 @@ def test_master_export_rejects_missing_frames_before_publishing(
 ):
     source = tmp_path / "source.mp4"
     source.write_bytes(b"input")
-    monkeypatch.setattr(ffmpeg_master, "_probe_output", lambda *_args: {
-        "duration_seconds": 23 / 24,
-        "width": 1920,
-        "height": 1080,
-        "frame_count": 23,
-        "video_codec": "h264",
-        "audio_codec": None,
-    })
+    monkeypatch.setattr(
+        ffmpeg_master,
+        "_probe_output",
+        lambda *_args: {
+            "duration_seconds": 23 / 24,
+            "width": 1920,
+            "height": 1080,
+            "frame_count": 23,
+            "video_codec": "h264",
+            "audio_codec": None,
+        },
+    )
 
     def fake_run(command, *, timeout):
         Path(command[-1]).write_bytes(b"truncated-mp4")
@@ -192,9 +222,21 @@ def test_master_export_rejects_missing_frames_before_publishing(
     output = tmp_path / "master.mp4"
     with pytest.raises(CleanroomException) as mismatch:
         ffmpeg_master.render_master_mp4(
-            {"tracks": [{"kind": "video", "clips": [
-                {"asset_id": "video-001", "media_type": "video", "at": 0, "duration": 1}
-            ]}]},
+            {
+                "tracks": [
+                    {
+                        "kind": "video",
+                        "clips": [
+                            {
+                                "asset_id": "video-001",
+                                "media_type": "video",
+                                "at": 0,
+                                "duration": 1,
+                            }
+                        ],
+                    }
+                ]
+            },
             {"video-001": source},
             output,
             ffmpeg_path="fake-ffmpeg",
@@ -207,7 +249,9 @@ def test_master_export_rejects_missing_frames_before_publishing(
     assert not (tmp_path / "master.part.mp4").exists()
 
 
-def test_c15_ac3_real_ffmpeg_export_has_1080p_video_and_synchronized_audio(tmp_path: Path):
+def test_c15_ac3_real_ffmpeg_export_has_1080p_video_and_synchronized_audio(
+    tmp_path: Path,
+):
     ffmpeg = shutil.which("ffmpeg")
     ffprobe = shutil.which("ffprobe")
     if not ffmpeg or not ffprobe:
@@ -216,15 +260,39 @@ def test_c15_ac3_real_ffmpeg_export_has_1080p_video_and_synchronized_audio(tmp_p
     video = tmp_path / "source.mp4"
     audio = tmp_path / "dialogue.wav"
     video_result = subprocess.run(
-        [ffmpeg, "-v", "error", "-y", "-f", "lavfi", "-i",
-         "color=c=blue:s=64x36:r=24:d=0.4", "-c:v", "libx264", "-pix_fmt", "yuv420p", str(video)],
+        [
+            ffmpeg,
+            "-v",
+            "error",
+            "-y",
+            "-f",
+            "lavfi",
+            "-i",
+            "color=c=blue:s=64x36:r=24:d=0.4",
+            "-c:v",
+            "libx264",
+            "-pix_fmt",
+            "yuv420p",
+            str(video),
+        ],
         capture_output=True,
         timeout=30,
         check=False,
     )
     audio_result = subprocess.run(
-        [ffmpeg, "-v", "error", "-y", "-f", "lavfi", "-i",
-         "sine=frequency=1000:sample_rate=48000:duration=0.4", "-c:a", "pcm_s16le", str(audio)],
+        [
+            ffmpeg,
+            "-v",
+            "error",
+            "-y",
+            "-f",
+            "lavfi",
+            "-i",
+            "sine=frequency=1000:sample_rate=48000:duration=0.4",
+            "-c:a",
+            "pcm_s16le",
+            str(audio),
+        ],
         capture_output=True,
         timeout=30,
         check=False,
@@ -234,12 +302,21 @@ def test_c15_ac3_real_ffmpeg_export_has_1080p_video_and_synchronized_audio(tmp_p
 
     manifest = {
         "tracks": [
-            {"kind": "video", "clips": [
-                {"asset_id": "video-001", "media_type": "video", "at": 0.0, "duration": 0.4}
-            ]},
-            {"kind": "audio", "clips": [
-                {"asset_id": "audio-001", "at": 0.0, "duration": 0.4}
-            ]},
+            {
+                "kind": "video",
+                "clips": [
+                    {
+                        "asset_id": "video-001",
+                        "media_type": "video",
+                        "at": 0.0,
+                        "duration": 0.4,
+                    }
+                ],
+            },
+            {
+                "kind": "audio",
+                "clips": [{"asset_id": "audio-001", "at": 0.0, "duration": 0.4}],
+            },
         ]
     }
     output = tmp_path / "master.mp4"
@@ -252,9 +329,17 @@ def test_c15_ac3_real_ffmpeg_export_has_1080p_video_and_synchronized_audio(tmp_p
     )
 
     probed = subprocess.run(
-        [ffprobe, "-v", "error", "-count_frames", "-show_entries",
-         "format=duration:stream=codec_type,codec_name,width,height,duration,nb_read_frames",
-         "-of", "json", str(output)],
+        [
+            ffprobe,
+            "-v",
+            "error",
+            "-count_frames",
+            "-show_entries",
+            "format=duration:stream=codec_type,codec_name,width,height,duration,nb_read_frames",
+            "-of",
+            "json",
+            str(output),
+        ],
         capture_output=True,
         text=True,
         timeout=30,
@@ -271,8 +356,12 @@ def test_c15_ac3_real_ffmpeg_export_has_1080p_video_and_synchronized_audio(tmp_p
         ffprobe_path=ffprobe,
         prefer_hardware=True,
     )
-    video_duration = float(streams["video"].get("duration") or metadata["format"]["duration"])
-    audio_duration = float(streams["audio"].get("duration") or metadata["format"]["duration"])
+    video_duration = float(
+        streams["video"].get("duration") or metadata["format"]["duration"]
+    )
+    audio_duration = float(
+        streams["audio"].get("duration") or metadata["format"]["duration"]
+    )
 
     assert result["encoder"] == "libx264"
     assert result["hardware_accelerated"] is False
@@ -286,7 +375,9 @@ def test_c15_ac3_real_ffmpeg_export_has_1080p_video_and_synchronized_audio(tmp_p
     assert result["sha256"] == hashlib.sha256(output.read_bytes()).hexdigest()
     assert int(streams["video"]["nb_read_frames"]) == 10
     assert result["frame_count"] == 10
-    assert automatic_result["hardware_accelerated"] == (automatic_result["encoder"] != "libx264")
+    assert automatic_result["hardware_accelerated"] == (
+        automatic_result["encoder"] != "libx264"
+    )
     assert automatic_output.is_file()
     assert FIXTURE_ID == "c15-t3-master-export-001"
 
@@ -296,27 +387,47 @@ def test_export_route_requires_edit_access_and_returns_only_relative_output(
 ):
     source = tmp_path / "registered-source.mp4"
     source.write_bytes(b"source")
-    manifest = {"tracks": [{"kind": "video", "clips": [
-        {"asset_id": "video-001", "media_type": "video", "at": 0, "duration": 0.4}
-    ]}]}
+    manifest = {
+        "tracks": [
+            {
+                "kind": "video",
+                "clips": [
+                    {
+                        "asset_id": "video-001",
+                        "media_type": "video",
+                        "at": 0,
+                        "duration": 0.4,
+                    }
+                ],
+            }
+        ]
+    }
     monkeypatch.setattr(
         routes_export.episode_repository,
         "get_timeline_manifest",
         lambda _pipeline_id: {"timeline_manifest": manifest},
     )
-    monkeypatch.setattr(routes_export.asset_repository, "media_file", lambda _asset_id: source)
+    monkeypatch.setattr(
+        routes_export.asset_repository, "media_file", lambda _asset_id: source
+    )
 
     def fake_render(_manifest, _paths, output_path, **_kwargs):
         Path(output_path).write_bytes(b"mp4")
-        return {"bytes": 3, "duration_seconds": 0.4, "width": 1920, "height": 1080,
-                "video_codec": "h264", "audio_codec": None, "encoder": "libx264",
-                "hardware_accelerated": False}
+        return {
+            "bytes": 3,
+            "duration_seconds": 0.4,
+            "width": 1920,
+            "height": 1080,
+            "video_codec": "h264",
+            "audio_codec": None,
+            "encoder": "libx264",
+            "hardware_accelerated": False,
+        }
 
     monkeypatch.setattr(routes_export.ffmpeg_master, "render_master_mp4", fake_render)
     app = create_app()
     client = TestClient(app)
     assert "/api/episode-pipelines/{pipeline_id}/export" in app.openapi()["paths"]
-
 
     denied = client.post("/api/episode-pipelines/pipeline-001/export")
     assert denied.status_code == 401

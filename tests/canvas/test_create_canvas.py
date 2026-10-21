@@ -3,9 +3,7 @@
 from fastapi.testclient import TestClient
 
 
-def test_local_account_can_create_default_canvas(
-    tmp_path, monkeypatch
-):
+def test_local_account_can_create_default_canvas(tmp_path, monkeypatch):
     monkeypatch.setenv("GW_RUNTIME_MODE", "test")
     monkeypatch.setenv("GW_AUTH_MODE", "local_account")
     monkeypatch.setenv("GW_DATA_DIR", str(tmp_path / "data"))

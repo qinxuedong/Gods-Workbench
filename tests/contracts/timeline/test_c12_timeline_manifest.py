@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """C12-AC3 OpenFilm timeline_manifest 契约测试。"""
 
 from __future__ import annotations
@@ -88,7 +87,9 @@ def test_timeline_manifest_initializes_persists_and_reads_back():
         ]
         assert manifest["tracks"][0]["clips"][0]["at"] == 0.0
         assert manifest["tracks"][0]["clips"][0]["duration"] == 2.5
-        assert manifest["tracks"][0]["clips"][0]["overrides"]["src"].endswith("#t=0,2.5")
+        assert manifest["tracks"][0]["clips"][0]["overrides"]["src"].endswith(
+            "#t=0,2.5"
+        )
 
         reread = client.get(
             f"/api/episode-pipelines/{pipeline_id}/timeline-manifest",
@@ -117,7 +118,10 @@ def test_timeline_manifest_update_requires_cas_and_rejects_stale_version():
         )
         assert updated.status_code == 200
         assert updated.json()["timeline_manifest"]["version"] == 2
-        assert updated.json()["timeline_manifest"]["tracks"][0]["clips"][0]["duration"] == 4.0
+        assert (
+            updated.json()["timeline_manifest"]["tracks"][0]["clips"][0]["duration"]
+            == 4.0
+        )
 
         missing = client.put(
             f"/api/episode-pipelines/{pipeline_id}/timeline-manifest",

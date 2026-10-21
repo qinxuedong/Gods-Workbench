@@ -16,7 +16,6 @@ from gw.media.duration_fitting import (
     validate_duration_match,
 )
 
-
 FIXTURE_ID = "c14-t1-duration-fitting-001"
 
 
@@ -96,7 +95,9 @@ def test_c14_ac1_validates_actual_duration_with_default_tolerance():
 
 def test_c14_ac1_rejects_duration_outside_tolerance():
     with pytest.raises(CleanroomException) as exc:
-        validate_duration_match(actual_duration=4.31, target_duration=4.2, tolerance=0.1)
+        validate_duration_match(
+            actual_duration=4.31, target_duration=4.2, tolerance=0.1
+        )
 
     assert exc.value.code == "DURATION_TOLERANCE_EXCEEDED"
     assert exc.value.status_code == 422
@@ -119,9 +120,13 @@ def test_c14_ac1_rejects_duration_outside_tolerance():
         (3.0, math.inf),
     ],
 )
-def test_c14_ac1_rejects_non_positive_or_non_finite_duration(source_duration, target_duration):
+def test_c14_ac1_rejects_non_positive_or_non_finite_duration(
+    source_duration, target_duration
+):
     with pytest.raises(CleanroomException) as exc:
-        fit_video_duration(source_duration=source_duration, target_duration=target_duration)
+        fit_video_duration(
+            source_duration=source_duration, target_duration=target_duration
+        )
 
     assert exc.value.code in {"INVALID_SOURCE_DURATION", "INVALID_TARGET_DURATION"}
 

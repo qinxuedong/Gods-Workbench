@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Phase 9I：真实外部 IdP（生产级端点）接线核验（opt-in，默认 skip）。
 
 与既有用例的分工
@@ -65,7 +64,11 @@ def _real_idp_target():
     hosts = os.environ.get(REAL_IDP_HOSTS_ENV, "").strip()
     if not issuer or not hosts:
         pytest.skip(
-            "未设置 " + REAL_IDP_ISSUER_ENV + " / " + REAL_IDP_HOSTS_ENV + "，跳过真实外部 IdP 接线核验"
+            "未设置 "
+            + REAL_IDP_ISSUER_ENV
+            + " / "
+            + REAL_IDP_HOSTS_ENV
+            + "，跳过真实外部 IdP 接线核验"
         )
     return issuer, hosts
 
@@ -115,7 +118,9 @@ def test_real_idp_discovery_issuer_matches_and_jwks_is_public(real_idp_env):
 
     issuer = real_idp_env["issuer"]
     document = gw_config.load_discovery_document(issuer)
-    assert document.get("issuer") == issuer, "discovery 文档 issuer 必须与配置 issuer 逐字一致"
+    assert document.get("issuer") == issuer, (
+        "discovery 文档 issuer 必须与配置 issuer 逐字一致"
+    )
 
     jwks_url = gw_config.resolve_jwks_url(issuer, "")
     assert gw_config.is_allowed_jwks_url(jwks_url), "jwks_uri 不在部署方显式白名单内"
@@ -136,7 +141,9 @@ def test_real_idp_discovery_issuer_matches_and_jwks_is_public(real_idp_env):
             "jwks_uri": jwks_url,
             "authorization_endpoint": document.get("authorization_endpoint"),
             "token_endpoint": document.get("token_endpoint"),
-            "id_token_signing_alg_values_supported": document.get("id_token_signing_alg_values_supported"),
+            "id_token_signing_alg_values_supported": document.get(
+                "id_token_signing_alg_values_supported"
+            ),
             "jwks_key_count": len(keys),
             "jwks_kids": [k.get("kid") for k in keys],
             "jwks_has_private_material": False,
@@ -153,7 +160,9 @@ def test_real_idp_endpoints_are_trusted_and_https(real_idp_env):
     for name in ("authorization_endpoint", "token_endpoint"):
         endpoint = gw_config.resolve_endpoint(issuer, name)
         assert endpoint.startswith("https://"), name + " 必须是 HTTPS"
-        assert gw_config.is_trusted_endpoint(endpoint, issuer), name + " 未被白名单判定为可信端点"
+        assert gw_config.is_trusted_endpoint(endpoint, issuer), (
+            name + " 未被白名单判定为可信端点"
+        )
         resolved[name] = endpoint
     _write_evidence("endpoints.json", resolved)
 
@@ -161,10 +170,17 @@ def test_real_idp_endpoints_are_trusted_and_https(real_idp_env):
 def test_real_idp_authorization_url_uses_pkce_and_leaks_no_secret(real_idp_env):
     """真实 authorization_endpoint 上构造的授权 URL 必须 PKCE S256 且不含任何密钥。"""
     from gw.core import config as gw_config
-    from gw.core.oidc import build_authorization_url, generate_nonce, generate_pkce_pair, generate_state
+    from gw.core.oidc import (
+        build_authorization_url,
+        generate_nonce,
+        generate_pkce_pair,
+        generate_state,
+    )
 
     issuer = real_idp_env["issuer"]
-    authorization_endpoint = gw_config.resolve_endpoint(issuer, "authorization_endpoint")
+    authorization_endpoint = gw_config.resolve_endpoint(
+        issuer, "authorization_endpoint"
+    )
     state = generate_state()
     nonce = generate_nonce()
     _, code_challenge = generate_pkce_pair()
@@ -182,18 +198,27 @@ def test_real_idp_authorization_url_uses_pkce_and_leaks_no_secret(real_idp_env):
     assert query.get("code_challenge_method") == ["S256"]
     assert query.get("state") == [state] and query.get("nonce") == [nonce]
     assert query.get("client_id") == [PROBE_CLIENT_ID]
-    for forbidden in ("client_secret", "access_token", "id_token", "refresh_token", "code_verifier"):
+    for forbidden in (
+        "client_secret",
+        "access_token",
+        "id_token",
+        "refresh_token",
+        "code_verifier",
+    ):
         assert forbidden not in query, forbidden + " 不得出现在授权 URL 中"
     assert url.startswith("https://"), "真实 IdP 授权端点必须是 HTTPS"
-    _write_evidence("authorization_url_shape.json", {"endpoint": authorization_endpoint, "params": sorted(query)})
+    _write_evidence(
+        "authorization_url_shape.json",
+        {"endpoint": authorization_endpoint, "params": sorted(query)},
+    )
 
 
 def test_real_idp_runtime_wiring_is_ready_and_fails_closed(real_idp_env):
     """运行期：oidc_ready=true、/login 200；缺失/伪造凭据与提权头一律 401。"""
     from fastapi.testclient import TestClient
 
-    from gw.core import config as gw_config
     from gw.api.app import create_app
+    from gw.core import config as gw_config
 
     runtime = gw_config.load_runtime_auth_config()
     assert runtime.mode == "oidc"
@@ -218,13 +243,20 @@ def test_real_idp_runtime_wiring_is_ready_and_fails_closed(real_idp_env):
         "no_credential": {},
         "forged_bearer": {"Authorization": "Bearer not-a-real-token"},
         "role_header_only": {"X-User-Role": "governor"},
-        "local_legacy_credential": {"Authorization": "Bearer invalid", "X-User-Role": "governor"},
+        "local_legacy_credential": {
+            "Authorization": "Bearer invalid",
+            "X-User-Role": "governor",
+        },
     }
     observed = {}
     for label, headers in cases.items():
-        response = client.post("/api/asset-registry/projects", json=body, headers=headers)
+        response = client.post(
+            "/api/asset-registry/projects", json=body, headers=headers
+        )
         observed[label] = response.status_code
-        assert response.status_code == 401, label + " 必须失败关闭为 401，实际 " + str(response.status_code)
+        assert response.status_code == 401, (
+            label + " 必须失败关闭为 401，实际 " + str(response.status_code)
+        )
     _write_evidence(
         "runtime_fail_closed.json",
         {

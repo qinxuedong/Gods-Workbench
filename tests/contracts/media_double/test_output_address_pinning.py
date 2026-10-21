@@ -3,6 +3,7 @@
 助手与下载链测试全部走纯代码与替身（伪造 _getaddrinfo / MockTransport），
 TLS 证书校验用本机自签证书服务器验证，不访问外部网络。
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -10,15 +11,22 @@ import ipaddress
 import socket
 import ssl
 import threading
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import httpx
 import pytest
+from media_doubles import (
+    APPROVED_HOST,
+    FIXED_PNG,
+    HEADERS,
+    TASKS,
+    execute,
+    prepare_workflow,
+)
 
 from gw.core.errors import CleanroomException
 from gw.god_workflow import platforms, routes
-from media_doubles import APPROVED_HOST, FIXED_PNG, HEADERS, TASKS, execute, prepare_workflow
 
 ALLOWED = frozenset({APPROVED_HOST})
 OTHER_HOST = "other.example"
@@ -37,11 +45,26 @@ def test_fakeip_addresses_pass_only_for_allowlisted_host(address):
     assert routes._output_address_allowed(OTHER_HOST, address, ALLOWED) is False
 
 
-@pytest.mark.parametrize("address", [
-    "127.0.0.1", "10.0.0.1", "192.168.1.1", "172.16.0.1", "169.254.169.254",
-    "0.0.0.0", "224.0.0.1", "240.0.0.1", "::1", "fe80::1", "fc00::1",
-    "::ffff:127.0.0.1", "::ffff:10.0.0.1", "::ffff:169.254.169.254", "ff02::1",
-])
+@pytest.mark.parametrize(
+    "address",
+    [
+        "127.0.0.1",
+        "10.0.0.1",
+        "192.168.1.1",
+        "172.16.0.1",
+        "169.254.169.254",
+        "0.0.0.0",
+        "224.0.0.1",
+        "240.0.0.1",
+        "::1",
+        "fe80::1",
+        "fc00::1",
+        "::ffff:127.0.0.1",
+        "::ffff:10.0.0.1",
+        "::ffff:169.254.169.254",
+        "ff02::1",
+    ],
+)
 def test_private_and_local_addresses_rejected_even_for_allowlisted_host(address):
     """回环/私网/链路本地/多播/保留/未指定及 IPv6 等价形式永不放行。"""
     assert routes._output_address_allowed(APPROVED_HOST, address, ALLOWED) is False
@@ -62,13 +85,21 @@ def test_fakeip_range_boundary_is_exact():
 
 def test_non_global_outside_fakeip_not_rescued_by_allowlist():
     """非全局且不在 fake-ip 网段（TEST-NET-2）时，白名单不能救行。"""
-    assert routes._output_address_allowed(APPROVED_HOST, "198.51.100.1", ALLOWED) is False
+    assert (
+        routes._output_address_allowed(APPROVED_HOST, "198.51.100.1", ALLOWED) is False
+    )
 
 
 def test_allowlisted_host_normalized_before_match():
     """主机名比较前先转小写并去掉结尾根点。"""
-    assert routes._output_address_allowed("APPROVED.EXAMPLE.", "198.18.0.5", ALLOWED) is True
-    assert routes._output_address_allowed("approved.example.", "198.18.0.5", ALLOWED) is True
+    assert (
+        routes._output_address_allowed("APPROVED.EXAMPLE.", "198.18.0.5", ALLOWED)
+        is True
+    )
+    assert (
+        routes._output_address_allowed("approved.example.", "198.18.0.5", ALLOWED)
+        is True
+    )
 
 
 def test_unparsable_address_rejected():
@@ -83,8 +114,14 @@ def test_unparsable_address_rejected():
 def _address_infos(addresses: list[str], port: int = 443) -> list[tuple]:
     infos = []
     for address in addresses:
-        family = socket.AF_INET6 if ipaddress.ip_address(address).version == 6 else socket.AF_INET
-        sockaddr = (address, port, 0, 0) if family == socket.AF_INET6 else (address, port)
+        family = (
+            socket.AF_INET6
+            if ipaddress.ip_address(address).version == 6
+            else socket.AF_INET
+        )
+        sockaddr = (
+            (address, port, 0, 0) if family == socket.AF_INET6 else (address, port)
+        )
         infos.append((family, socket.SOCK_STREAM, 6, "", sockaddr))
     return infos
 
@@ -113,7 +150,9 @@ def test_resolve_pins_first_address_when_all_allowed(monkeypatch):
 
 def test_resolve_rejects_mixed_resolution(monkeypatch):
     """解析结果混入未获准地址时整体拒绝。"""
-    resolver_calls = _install_resolver(monkeypatch, {APPROVED_HOST: [["198.18.0.7", "127.0.0.1"]]})
+    resolver_calls = _install_resolver(
+        monkeypatch, {APPROVED_HOST: [["198.18.0.7", "127.0.0.1"]]}
+    )
     with pytest.raises(CleanroomException) as excinfo:
         asyncio.run(routes._resolve_pinned(APPROVED_HOST, 443, ALLOWED))
     assert excinfo.value.code == "OUTPUT_ADDRESS_NOT_ALLOWED"
@@ -130,8 +169,12 @@ def test_resolve_rejects_empty_resolution(monkeypatch):
 
 def test_resolve_rejects_rebound_resolution(monkeypatch):
     """重绑定场景：首次解析 198.18.0.7 获准并钉住；解析被换成立即拒绝。"""
-    resolver_calls = _install_resolver(monkeypatch, {APPROVED_HOST: [["198.18.0.7"], ["127.0.0.1"]]})
-    assert asyncio.run(routes._resolve_pinned(APPROVED_HOST, 443, ALLOWED)) == "198.18.0.7"
+    resolver_calls = _install_resolver(
+        monkeypatch, {APPROVED_HOST: [["198.18.0.7"], ["127.0.0.1"]]}
+    )
+    assert (
+        asyncio.run(routes._resolve_pinned(APPROVED_HOST, 443, ALLOWED)) == "198.18.0.7"
+    )
     with pytest.raises(CleanroomException) as excinfo:
         asyncio.run(routes._resolve_pinned(APPROVED_HOST, 443, ALLOWED))
     assert excinfo.value.code == "OUTPUT_ADDRESS_NOT_ALLOWED"
@@ -146,7 +189,9 @@ def test_resolve_rejects_fakeip_for_unlisted_host(monkeypatch):
     assert excinfo.value.code == "OUTPUT_ADDRESS_NOT_ALLOWED"
 
 
-@pytest.mark.parametrize("address", ["127.0.0.1", "10.0.0.1", "192.168.1.1", "172.16.0.1", "169.254.169.254"])
+@pytest.mark.parametrize(
+    "address", ["127.0.0.1", "10.0.0.1", "192.168.1.1", "172.16.0.1", "169.254.169.254"]
+)
 def test_resolve_rejects_private_answers_for_allowlisted_host(monkeypatch, address):
     """白名单主机解析到私网/链路本地地址：拒绝。"""
     _install_resolver(monkeypatch, {APPROVED_HOST: [[address]]})
@@ -158,7 +203,10 @@ def test_resolve_rejects_private_answers_for_allowlisted_host(monkeypatch, addre
 def test_resolve_pins_ipv6_global_address(monkeypatch):
     """全局 IPv6 地址按全局规则放行并原样钉住。"""
     _install_resolver(monkeypatch, {APPROVED_HOST: [["2606:4700:4700::1111"]]})
-    assert asyncio.run(routes._resolve_pinned(APPROVED_HOST, 443, ALLOWED)) == "2606:4700:4700::1111"
+    assert (
+        asyncio.run(routes._resolve_pinned(APPROVED_HOST, 443, ALLOWED))
+        == "2606:4700:4700::1111"
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -172,8 +220,11 @@ def _install_download_transport(monkeypatch, handler):
         seen.append(request)
         return handler(request)
 
-    monkeypatch.setattr(routes, "_output_transport",
-                        lambda allowed_hosts=None, verify=True: httpx.MockTransport(handle))
+    monkeypatch.setattr(
+        routes,
+        "_output_transport",
+        lambda allowed_hosts=None, verify=True: httpx.MockTransport(handle),
+    )
     return seen
 
 
@@ -184,10 +235,15 @@ def _png_response() -> httpx.Response:
 def test_download_pins_fakeip_and_sends_original_hostname(monkeypatch):
     """下载目标为钉住 IP，Host 头与 sni_hostname 扩展保留原主机名；每跳只解析一次。"""
     seen = _install_download_transport(monkeypatch, lambda request: _png_response())
-    resolver_calls = _install_resolver(monkeypatch, {APPROVED_HOST: [["198.18.0.7"], ["127.0.0.1"]]})
+    resolver_calls = _install_resolver(
+        monkeypatch, {APPROVED_HOST: [["198.18.0.7"], ["127.0.0.1"]]}
+    )
 
     content, media_type = asyncio.run(
-        routes._download_pinned_output(f"https://{APPROVED_HOST}/out.png?expires=1", ALLOWED))
+        routes._download_pinned_output(
+            f"https://{APPROVED_HOST}/out.png?expires=1", ALLOWED
+        )
+    )
 
     assert content == FIXED_PNG and media_type == "image/png"
     assert resolver_calls == [(APPROVED_HOST, 443)]
@@ -202,11 +258,17 @@ def test_download_pins_fakeip_and_sends_original_hostname(monkeypatch):
 def test_download_rejects_redirect_to_unapproved_host(monkeypatch):
     """重定向到未获准主机：URL 层拒绝，不发出第二跳请求。"""
     seen = _install_download_transport(
-        monkeypatch, lambda request: httpx.Response(302, headers={"location": f"https://{OTHER_HOST}/other.png"}))
+        monkeypatch,
+        lambda request: httpx.Response(
+            302, headers={"location": f"https://{OTHER_HOST}/other.png"}
+        ),
+    )
     _install_resolver(monkeypatch, {APPROVED_HOST: [["198.18.0.7"]]})
 
     with pytest.raises(CleanroomException) as excinfo:
-        asyncio.run(routes._download_pinned_output(f"https://{APPROVED_HOST}/out.png", ALLOWED))
+        asyncio.run(
+            routes._download_pinned_output(f"https://{APPROVED_HOST}/out.png", ALLOWED)
+        )
     assert excinfo.value.code == "OUTPUT_URL_NOT_ALLOWED"
     assert len(seen) == 1
     assert seen[0].url.host == "198.18.0.7"
@@ -215,43 +277,59 @@ def test_download_rejects_redirect_to_unapproved_host(monkeypatch):
 def test_download_redirect_to_allowed_host_reresolves_and_repins(monkeypatch):
     """重定向到另一获准主机：重新校验 URL、重新解析并钉住新地址。"""
     allowed = frozenset({APPROVED_HOST, SECOND_HOST})
-    resolver_calls = _install_resolver(monkeypatch, {
-        APPROVED_HOST: [["198.18.0.7"]],
-        SECOND_HOST: [["198.18.0.8"]],
-    })
+    resolver_calls = _install_resolver(
+        monkeypatch,
+        {
+            APPROVED_HOST: [["198.18.0.7"]],
+            SECOND_HOST: [["198.18.0.8"]],
+        },
+    )
 
     def handler(request: httpx.Request) -> httpx.Response:
         if request.url.host == "198.18.0.7":
-            return httpx.Response(302, headers={"location": f"https://{SECOND_HOST}/other.png"})
+            return httpx.Response(
+                302, headers={"location": f"https://{SECOND_HOST}/other.png"}
+            )
         return _png_response()
 
     seen = _install_download_transport(monkeypatch, handler)
     content, _media = asyncio.run(
-        routes._download_pinned_output(f"https://{APPROVED_HOST}/out.png", allowed))
+        routes._download_pinned_output(f"https://{APPROVED_HOST}/out.png", allowed)
+    )
 
     assert content == FIXED_PNG
     assert [request.url.host for request in seen] == ["198.18.0.7", "198.18.0.8"]
     assert [request.headers["host"] for request in seen] == [APPROVED_HOST, SECOND_HOST]
-    assert [request.extensions.get("sni_hostname") for request in seen] == [APPROVED_HOST, SECOND_HOST]
+    assert [request.extensions.get("sni_hostname") for request in seen] == [
+        APPROVED_HOST,
+        SECOND_HOST,
+    ]
     assert resolver_calls == [(APPROVED_HOST, 443), (SECOND_HOST, 443)]
 
 
 def test_download_redirect_hop_with_private_resolution_rejected(monkeypatch):
     """第二跳解析到私网地址：拒绝，不再发出该跳下载请求。"""
     allowed = frozenset({APPROVED_HOST, SECOND_HOST})
-    _install_resolver(monkeypatch, {
-        APPROVED_HOST: [["198.18.0.7"]],
-        SECOND_HOST: [["10.0.0.1"]],
-    })
+    _install_resolver(
+        monkeypatch,
+        {
+            APPROVED_HOST: [["198.18.0.7"]],
+            SECOND_HOST: [["10.0.0.1"]],
+        },
+    )
 
     def handler(request: httpx.Request) -> httpx.Response:
         if request.url.host == "198.18.0.7":
-            return httpx.Response(302, headers={"location": f"https://{SECOND_HOST}/other.png"})
+            return httpx.Response(
+                302, headers={"location": f"https://{SECOND_HOST}/other.png"}
+            )
         return _png_response()
 
     seen = _install_download_transport(monkeypatch, handler)
     with pytest.raises(CleanroomException) as excinfo:
-        asyncio.run(routes._download_pinned_output(f"https://{APPROVED_HOST}/out.png", allowed))
+        asyncio.run(
+            routes._download_pinned_output(f"https://{APPROVED_HOST}/out.png", allowed)
+        )
     assert excinfo.value.code == "OUTPUT_ADDRESS_NOT_ALLOWED"
     assert len(seen) == 1
 
@@ -259,21 +337,31 @@ def test_download_redirect_hop_with_private_resolution_rejected(monkeypatch):
 def test_download_redirect_hops_capped_at_three(monkeypatch):
     """重定向超过 3 跳：拒绝，共发出 1 + 3 个请求。"""
     seen = _install_download_transport(
-        monkeypatch, lambda request: httpx.Response(302, headers={"location": f"https://{APPROVED_HOST}/next.png"}))
+        monkeypatch,
+        lambda request: httpx.Response(
+            302, headers={"location": f"https://{APPROVED_HOST}/next.png"}
+        ),
+    )
     _install_resolver(monkeypatch, {APPROVED_HOST: [["198.18.0.7"]]})
 
     with pytest.raises(CleanroomException) as excinfo:
-        asyncio.run(routes._download_pinned_output(f"https://{APPROVED_HOST}/out.png", ALLOWED))
+        asyncio.run(
+            routes._download_pinned_output(f"https://{APPROVED_HOST}/out.png", ALLOWED)
+        )
     assert excinfo.value.code == "DOWNLOAD_FAILED"
     assert len(seen) == 4
 
 
 def test_pinned_target_brackets_ipv6(monkeypatch):
     """IPv6 钉住地址写入目标 URL 时加方括号，路径与查询串保留。"""
-    assert routes._pinned_target("https://a.example/x.png?q=1", "2606:4700:4700::1111") == \
-        "https://[2606:4700:4700::1111]/x.png?q=1"
-    assert routes._pinned_target("https://a.example/x.png?q=1", "198.18.0.7") == \
-        "https://198.18.0.7/x.png?q=1"
+    assert (
+        routes._pinned_target("https://a.example/x.png?q=1", "2606:4700:4700::1111")
+        == "https://[2606:4700:4700::1111]/x.png?q=1"
+    )
+    assert (
+        routes._pinned_target("https://a.example/x.png?q=1", "198.18.0.7")
+        == "https://198.18.0.7/x.png?q=1"
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -294,15 +382,24 @@ def test_output_allowed_hosts_defaults_and_override(monkeypatch):
 # ---------------------------------------------------------------------------
 # 端到端回收测试：真实下载链 + 替身 DNS 与传输层
 # ---------------------------------------------------------------------------
-def test_e2e_collection_pins_fakeip_and_keeps_tls_hostname(media_client, fake_rh, monkeypatch):
+def test_e2e_collection_pins_fakeip_and_keeps_tls_hostname(
+    media_client, fake_rh, monkeypatch
+):
     """回收全程走真实下载链：fake-ip 放行、钉住 IP、Host 头与 SNI 扩展仍是原主机名。"""
     monkeypatch.setenv("GW_WORKFLOW_OUTPUT_HOSTS", APPROVED_HOST)
     seen = _install_download_transport(monkeypatch, lambda request: _png_response())
 
     async def query(task_id, api_key, domain=platforms.RUNNINGHUB_DEFAULT_DOMAIN):
-        return {"status": "SUCCESS",
-                "outputs": [{"fileUrl": f"https://{APPROVED_HOST}/out-0001.png",
-                             "fileName": "out-0001.png"}], "raw": {}}
+        return {
+            "status": "SUCCESS",
+            "outputs": [
+                {
+                    "fileUrl": f"https://{APPROVED_HOST}/out-0001.png",
+                    "fileName": "out-0001.png",
+                }
+            ],
+            "raw": {},
+        }
 
     monkeypatch.setattr(platforms, "query_rh_task_outputs", query)
 
@@ -361,21 +458,30 @@ def _generate_self_signed_cert(directory, common_name: str):
 
     key = ec.generate_private_key(ec.SECP256R1())
     name = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, common_name)])
-    now = datetime.now(timezone.utc)
-    cert = (x509.CertificateBuilder()
-            .subject_name(name).issuer_name(name)
-            .public_key(key.public_key())
-            .serial_number(x509.random_serial_number())
-            .not_valid_before(now - timedelta(days=1))
-            .not_valid_after(now + timedelta(days=1))
-            .add_extension(x509.SubjectAlternativeName([x509.DNSName(common_name)]), critical=False)
-            .sign(key, hashes.SHA256()))
+    now = datetime.now(UTC)
+    cert = (
+        x509.CertificateBuilder()
+        .subject_name(name)
+        .issuer_name(name)
+        .public_key(key.public_key())
+        .serial_number(x509.random_serial_number())
+        .not_valid_before(now - timedelta(days=1))
+        .not_valid_after(now + timedelta(days=1))
+        .add_extension(
+            x509.SubjectAlternativeName([x509.DNSName(common_name)]), critical=False
+        )
+        .sign(key, hashes.SHA256())
+    )
     cert_path = directory / "cert.pem"
     key_path = directory / "key.pem"
     cert_path.write_bytes(cert.public_bytes(serialization.Encoding.PEM))
-    key_path.write_bytes(key.private_bytes(
-        serialization.Encoding.PEM, serialization.PrivateFormat.TraditionalOpenSSL,
-        serialization.NoEncryption()))
+    key_path.write_bytes(
+        key.private_bytes(
+            serialization.Encoding.PEM,
+            serialization.PrivateFormat.TraditionalOpenSSL,
+            serialization.NoEncryption(),
+        )
+    )
     return cert_path, key_path
 
 
@@ -395,7 +501,9 @@ def local_tls_server(tmp_path):
     thread.join(timeout=5)
 
 
-def test_tls_certificate_hostname_verification_on_real_transport(media_client, fake_rh, local_tls_server, monkeypatch):
+def test_tls_certificate_hostname_verification_on_real_transport(
+    media_client, fake_rh, local_tls_server, monkeypatch
+):
     """真实传输层：sni_hostname 用原主机名做 SNI 与证书校验；主机名不符映射 DOWNLOAD_ERROR。
 
     地址判定在本用例中替换为固定 127.0.0.1，只验证 TLS 层行为；沙箱无法绑定特权
@@ -407,7 +515,8 @@ def test_tls_certificate_hostname_verification_on_real_transport(media_client, f
 
     def pinned_target_on_local_port(url, pinned_ip):
         return real_pinned_target(url, pinned_ip).replace(
-            "https://127.0.0.1/", f"https://127.0.0.1:{server_port}/")
+            "https://127.0.0.1/", f"https://127.0.0.1:{server_port}/"
+        )
 
     monkeypatch.setattr(routes, "_pinned_target", pinned_target_on_local_port)
 
@@ -418,17 +527,26 @@ def test_tls_certificate_hostname_verification_on_real_transport(media_client, f
     monkeypatch.setattr(routes, "_resolve_pinned", resolve_to_loopback)
 
     async def query(task_id, api_key, domain=platforms.RUNNINGHUB_DEFAULT_DOMAIN):
-        return {"status": "SUCCESS",
-                "outputs": [{"fileUrl": f"https://{APPROVED_HOST}/ok.png", "fileName": "ok.png"},
-                            {"fileUrl": f"https://{OTHER_HOST}/bad.png", "fileName": "bad.png"}],
-                "raw": {}}
+        return {
+            "status": "SUCCESS",
+            "outputs": [
+                {"fileUrl": f"https://{APPROVED_HOST}/ok.png", "fileName": "ok.png"},
+                {"fileUrl": f"https://{OTHER_HOST}/bad.png", "fileName": "bad.png"},
+            ],
+            "raw": {},
+        }
 
     monkeypatch.setattr(platforms, "query_rh_task_outputs", query)
 
     # 仅在本用例把传输层证书信任指向本机自签 CA（真实 _output_transport 的 verify 参数）。
     client_ssl = ssl.create_default_context(cafile=str(cert_path))
-    monkeypatch.setattr(routes, "_output_transport",
-                        lambda allowed_hosts=None, verify=True: REAL_OUTPUT_TRANSPORT(allowed_hosts, verify=client_ssl))
+    monkeypatch.setattr(
+        routes,
+        "_output_transport",
+        lambda allowed_hosts=None, verify=True: REAL_OUTPUT_TRANSPORT(
+            allowed_hosts, verify=client_ssl
+        ),
+    )
 
     _, workflow = prepare_workflow(media_client)
     started = execute(media_client, workflow, "rh_cloud", key="rh-pin-tls")

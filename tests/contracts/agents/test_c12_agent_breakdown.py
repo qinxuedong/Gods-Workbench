@@ -21,7 +21,11 @@ from gw.agent_runtime.templates import BREAKDOWN_TEMPLATE
 
 
 def _element(element_id: str, name: str) -> dict[str, object]:
-    return {"element_id": element_id, "name": name, "description": f"{name} 的可执行制片描述"}
+    return {
+        "element_id": element_id,
+        "name": name,
+        "description": f"{name} 的可执行制片描述",
+    }
 
 
 def _scene() -> dict[str, object]:
@@ -123,4 +127,3 @@ def test_agent_breakdown_rejects_natural_language_camera_values_and_missing_cate
     del missing_category["scenes"][0]["elements"]["08_VEHICLES"]
     with pytest.raises(ExportRejected):
         parse_agent_breakdown(missing_category)
-

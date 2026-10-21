@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """C11-T5：R3 长时间浏览器试运行的真实观测门禁。
 
 默认只验证真实浏览器门禁与报告口径。长跑必须由操作者显式设置
@@ -12,14 +11,12 @@ from __future__ import annotations
 import hashlib
 import json
 import os
-from pathlib import Path
 import subprocess
+from pathlib import Path
 from typing import Any
 
 import pytest
-
 from workflow_support import settings_browser
-
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 EVIDENCE_ROOT = REPO_ROOT / ".local" / "qa" / "C11-evidence"
@@ -94,7 +91,9 @@ def _response_record(response: Any, path: str) -> dict[str, Any]:
         "status": response.status,
         "content_type": response.headers.get("content-type", ""),
         "data_status": body.get("data_status") if isinstance(body, dict) else None,
-        "item_count": len(body.get("items", [])) if isinstance(body, dict) and isinstance(body.get("items"), list) else None,
+        "item_count": len(body.get("items", []))
+        if isinstance(body, dict) and isinstance(body.get("items"), list)
+        else None,
         "path": path,
     }
 
@@ -105,7 +104,9 @@ def _goto_stability_route(page: Any, url: str) -> None:
     page.wait_for_function("!window.GWAuthGate || window.GWAuthGate.loaded === true")
 
 
-def test_c11_real_browser_gate_requires_explicit_opt_in(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_c11_real_browser_gate_requires_explicit_opt_in(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     monkeypatch.delenv("GW_C11_REAL_E2E", raising=False)
     assert _real_run_enabled() is False
 
@@ -142,10 +143,13 @@ def test_c11_r3_stability_real_browser_observation(
     screenshots: list[str] = []
     route_errors: list[str] = []
     with settings_browser(monkeypatch, tmp_path) as (page, base, errors, _):
+
         def capture(response: Any) -> None:
             if "/api/observability/tasks" not in response.url:
                 return
-            responses.append(_response_record(response, response.url.split(base, 1)[-1]))
+            responses.append(
+                _response_record(response, response.url.split(base, 1)[-1])
+            )
 
         page.context.on("response", capture)
         for index in range(MIN_ROUTE_ROUNDTRIPS):
@@ -161,7 +165,12 @@ def test_c11_r3_stability_real_browser_observation(
             body = poll.json()
             assert isinstance(body, dict)
             assert isinstance(body.get("items"), list)
-            assert body.get("data_status") in {"ok", "complete", "degraded", "not_integrated"}
+            assert body.get("data_status") in {
+                "ok",
+                "complete",
+                "degraded",
+                "not_integrated",
+            }
             poll_records.append(_response_record(poll, POLL_PATH))
 
             if index in {0, 249, 499}:
@@ -194,7 +203,9 @@ def test_c11_r3_stability_real_browser_observation(
             "seed": "c11-t5-stability-v001",
             "route_roundtrips": MIN_ROUTE_ROUNDTRIPS,
             "task_polls": len(poll_records),
-            "routes_sha256": hashlib.sha256("\n".join(ROUTES).encode("utf-8")).hexdigest(),
+            "routes_sha256": hashlib.sha256(
+                "\n".join(ROUTES).encode("utf-8")
+            ).hexdigest(),
         },
         "observations": {
             "samples": samples,
@@ -214,7 +225,7 @@ def test_c11_r3_stability_real_browser_observation(
     assert "达标" not in serialized
     assert "已通过" not in serialized
     _write_json(_evidence_dir() / "c11-t5-stability-report.json", report)
-    ( _evidence_dir() / "c11-r3-stability-whitepaper.md").write_text(
+    (_evidence_dir() / "c11-r3-stability-whitepaper.md").write_text(
         "# Gods' Workbench R3 稳定版资质审查报告\n\n"
         "状态：待秦先生审核。\n\n"
         f"- Commit：`{report['commit_sha']}`\n"

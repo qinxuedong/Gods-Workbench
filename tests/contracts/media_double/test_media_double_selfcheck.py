@@ -1,4 +1,5 @@
 """C3 媒体替身自检：确定性、无网络、数据目录隔离（C3-MD-NONET-01 / C3-MD-ISOLATION-01）。"""
+
 from __future__ import annotations
 
 import asyncio
@@ -9,9 +10,18 @@ from pathlib import Path
 import httpx
 import pytest
 from fastapi.testclient import TestClient
-
-from media_doubles import (HEADERS, NetworkBlocked, count_assets, FIXED_PNG, FIXED_PNG_SHA256, MODES, TEST_API_KEY, FakeComfy, FakeRunningHub,
-                           output_transport)
+from media_doubles import (
+    FIXED_PNG,
+    FIXED_PNG_SHA256,
+    HEADERS,
+    MODES,
+    TEST_API_KEY,
+    FakeComfy,
+    FakeRunningHub,
+    NetworkBlocked,
+    count_assets,
+    output_transport,
+)
 
 # 裁定 9c 要求放 docs/fixtures/，但 docs/fixtures/ 受 H03 准入清单逐文件约束
 # （tests/hygiene/fixtures/cleanroom_admission_metadata.json + 其哈希钉在 test_cleanroom_hygiene.py，二者均为 C1 冻结文件），
@@ -29,10 +39,14 @@ def _rh_script(mode):
 
     async def run():
         out = []
-        for call in (lambda: fake.upload_rh_input(FIXED_PNG, "a.png", "image/png", TEST_API_KEY),
-                     lambda: fake.create_rh_cloud_task(None, [], TEST_API_KEY, workflow={"1": {}}),
-                     lambda: fake.query_rh_task_outputs("fake-rh-task-0001", TEST_API_KEY),
-                     lambda: fake.query_rh_task_outputs("fake-rh-task-0001", TEST_API_KEY)):
+        for call in (
+            lambda: fake.upload_rh_input(FIXED_PNG, "a.png", "image/png", TEST_API_KEY),
+            lambda: fake.create_rh_cloud_task(
+                None, [], TEST_API_KEY, workflow={"1": {}}
+            ),
+            lambda: fake.query_rh_task_outputs("fake-rh-task-0001", TEST_API_KEY),
+            lambda: fake.query_rh_task_outputs("fake-rh-task-0001", TEST_API_KEY),
+        ):
             try:
                 out.append(await call())
             except Exception as exc:  # noqa: BLE001 - 记录异常码用于确定性比较
@@ -53,8 +67,15 @@ def test_rh_double_success_script():
     assert results[1] == {"taskId": "fake-rh-task-0001"}
     assert results[2]["status"] == "RUNNING"
     assert results[3]["status"] == "SUCCESS"
-    assert results[3]["outputs"][0]["fileUrl"] == "https://approved.example/out-0001.png"
-    assert names == ["upload_rh_input", "create_rh_cloud_task", "query_rh_task_outputs", "query_rh_task_outputs"]
+    assert (
+        results[3]["outputs"][0]["fileUrl"] == "https://approved.example/out-0001.png"
+    )
+    assert names == [
+        "upload_rh_input",
+        "create_rh_cloud_task",
+        "query_rh_task_outputs",
+        "query_rh_task_outputs",
+    ]
 
 
 def test_rh_double_timeout_uses_real_error_codes():
@@ -94,6 +115,7 @@ def test_output_transport_only_serves_approved_host():
 
 def test_no_network_guard_blocks_real_http(no_network):
     """C3-MD-NONET-01：替身没覆盖到的真实 HTTP 调用直接失败。"""
+
     async def run():
         async with httpx.AsyncClient() as client:
             await client.get("https://www.runninghub.cn/")
@@ -107,6 +129,7 @@ def test_no_network_guard_blocks_real_http(no_network):
 
 def test_fake_media_installs_on_module_attributes(fake_media, media_env):
     from gw.god_workflow import comfy_executor, platforms
+
     assert platforms.create_rh_cloud_task == fake_media.rh.create_rh_cloud_task
     assert platforms.upload_rh_input == fake_media.rh.upload_rh_input
     assert platforms.query_rh_task_outputs == fake_media.rh.query_rh_task_outputs

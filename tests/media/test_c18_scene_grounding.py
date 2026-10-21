@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """C18-AC2 本地 FFmpeg 镜头切片与 WebP 关键帧契约测试。"""
 
 from __future__ import annotations

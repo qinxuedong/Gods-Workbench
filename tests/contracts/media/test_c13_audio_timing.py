@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """C13-AC1 对白定长与 Auto-Timing 契约测试。"""
 
 from __future__ import annotations
@@ -18,7 +17,6 @@ from gw.media.audio_timing import (
     normalize_word_timestamps,
 )
 
-
 FIXTURE_ID = "c13-t1-audio-timing-001"
 
 
@@ -33,8 +31,18 @@ def _manifest() -> dict:
                 "track_id": "video-01",
                 "kind": "video",
                 "clips": [
-                    {"shot_id": "SC01_SH001", "asset_id": "asset-shot-001", "at": 0.0, "duration": 2.0},
-                    {"shot_id": "SC01_SH002", "asset_id": "asset-shot-002", "at": 2.0, "duration": 3.0},
+                    {
+                        "shot_id": "SC01_SH001",
+                        "asset_id": "asset-shot-001",
+                        "at": 0.0,
+                        "duration": 2.0,
+                    },
+                    {
+                        "shot_id": "SC01_SH002",
+                        "asset_id": "asset-shot-002",
+                        "at": 2.0,
+                        "duration": 3.0,
+                    },
                 ],
             }
         ],
@@ -230,7 +238,10 @@ def test_c13_ac1_rejects_missing_or_stale_cas_without_mutating_manifest():
     [
         [],
         [{"word": "x", "start": 0.4, "end": 0.2}],
-        [{"word": "x", "start": 0.0, "end": 0.2}, {"word": "y", "start": 0.1, "end": 0.3}],
+        [
+            {"word": "x", "start": 0.0, "end": 0.2},
+            {"word": "y", "start": 0.1, "end": 0.3},
+        ],
     ],
 )
 def test_c13_ac1_rejects_invalid_word_timestamps(timestamps):

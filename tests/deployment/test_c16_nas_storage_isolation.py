@@ -2,9 +2,8 @@
 
 from __future__ import annotations
 
-from pathlib import Path
 import re
-
+from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 DOCKERFILE = ROOT / "deploy" / "docker" / "Dockerfile"
@@ -22,7 +21,10 @@ def test_nas_dockerfile_uses_python311_and_hash_locked_runtime() -> None:
     assert re.search(r"^FROM python:3\.11-slim(?:\s|$)", source, re.MULTILINE)
     assert "WORKDIR /app" in source
     assert "COPY requirements.lock.hashes /tmp/requirements.lock.hashes" in source
-    assert "pip install --no-cache-dir --require-hashes -r /tmp/requirements.lock.hashes" in source
+    assert (
+        "pip install --no-cache-dir --require-hashes -r /tmp/requirements.lock.hashes"
+        in source
+    )
     assert "COPY gw ./gw" in source
     assert "COPY tools ./tools" in source
     assert "COPY web ./web" in source
@@ -31,7 +33,11 @@ def test_nas_dockerfile_uses_python311_and_hash_locked_runtime() -> None:
     assert re.search(r"GW_HOST=0.0.0.0(?:\s|\\\n)", source)
     assert re.search(r"GW_PORT=2077(?:\s|\\\n)", source)
     assert re.search(r"LOCALAPPDATA=/var/lib/gods-workbench(?:\s|\\\n)", source)
-    assert re.search(r"^CMD\s+\[\s*\"python\"\s*,\s*\"run\.py\"\s*,\s*\"--prod\"", source, re.MULTILINE)
+    assert re.search(
+        r"^CMD\s+\[\s*\"python\"\s*,\s*\"run\.py\"\s*,\s*\"--prod\"",
+        source,
+        re.MULTILINE,
+    )
 
 
 def test_nas_compose_binds_only_the_three_production_storage_roots() -> None:

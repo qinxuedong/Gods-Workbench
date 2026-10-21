@@ -5,6 +5,7 @@
 另覆盖：导入被拒时记录并打印上游 provider_code，以及启动时 stdout/stderr 强制 UTF-8。
 越过门槛的用例用进程内替身客户端，不启动应用、不联网。
 """
+
 from __future__ import annotations
 
 import importlib.util
@@ -15,10 +16,11 @@ import types
 from pathlib import Path
 
 import pytest
-
 from media_doubles import TEST_API_KEY
 
-SCRIPT = Path(__file__).resolve().parents[3] / "tools/c3_acceptance/ac8_runninghub_real.py"
+SCRIPT = (
+    Path(__file__).resolve().parents[3] / "tools/c3_acceptance/ac8_runninghub_real.py"
+)
 
 
 def _load_script():
@@ -32,7 +34,9 @@ def _load_script():
 def _run(monkeypatch, tmp_path, *argv):
     module = _load_script()
     out = tmp_path / "ac8-result.json"
-    monkeypatch.setattr(sys, "argv", ["ac8_runninghub_real.py", "--out", str(out), *argv])
+    monkeypatch.setattr(
+        sys, "argv", ["ac8_runninghub_real.py", "--out", str(out), *argv]
+    )
     code = module.main()
     assert out.is_file(), "拒绝时也必须写出结果 JSON"
     body = json.loads(out.read_text(encoding="utf-8"))
@@ -41,13 +45,21 @@ def _run(monkeypatch, tmp_path, *argv):
     return code, body
 
 
-@pytest.mark.parametrize("argv,env_key", [
-    ([], None),                                   # 无 key、无其余门槛
-    ([], TEST_API_KEY),                           # 有 key 但无 --i-accept-cost / --workflow-id
-    (["--i-accept-cost"], TEST_API_KEY),          # 有 key、接受计费，但无 --workflow-id
-    (["--i-accept-cost", "--workflow-id", "1234"], TEST_API_KEY),  # workflow-id 格式不合法
-])
-def test_owner_script_refuses_without_gates(monkeypatch, tmp_path, no_network, argv, env_key):
+@pytest.mark.parametrize(
+    "argv,env_key",
+    [
+        ([], None),  # 无 key、无其余门槛
+        ([], TEST_API_KEY),  # 有 key 但无 --i-accept-cost / --workflow-id
+        (["--i-accept-cost"], TEST_API_KEY),  # 有 key、接受计费，但无 --workflow-id
+        (
+            ["--i-accept-cost", "--workflow-id", "1234"],
+            TEST_API_KEY,
+        ),  # workflow-id 格式不合法
+    ],
+)
+def test_owner_script_refuses_without_gates(
+    monkeypatch, tmp_path, no_network, argv, env_key
+):
     """C3-AC8-OWNER-GATE-01：三道门槛缺一即退出码 2，零网络尝试。"""
     monkeypatch.delenv("GW_RUNNINGHUB_API_KEY", raising=False)
     if env_key is not None:
@@ -80,10 +92,14 @@ class _RejectedResponse:
 
     @staticmethod
     def json():
-        return {"detail": {"code": "RH_SOURCE_REJECTED",
-                           "message": "RunningHub 已配置的工作流源请求被拒绝（RunningHub 错误码 380）；"
-                                      "请检查凭据、源权限与链接，或上传原始工作流 JSON",
-                           "provider_code": "380"}}
+        return {
+            "detail": {
+                "code": "RH_SOURCE_REJECTED",
+                "message": "RunningHub 已配置的工作流源请求被拒绝（RunningHub 错误码 380）；"
+                "请检查凭据、源权限与链接，或上传原始工作流 JSON",
+                "provider_code": "380",
+            }
+        }
 
 
 class _RejectedClient:
@@ -119,16 +135,31 @@ class _StreamSpy:
 
 
 def test_owner_script_records_and_prints_provider_code_on_import_rejection(
-        monkeypatch, tmp_path, no_network, capsys):
+    monkeypatch, tmp_path, no_network, capsys
+):
     """C3-AC8-OWNER-GATE-03：导入被 RH 拒绝（380）时，结果记录并打印上游错误码，不打印 key。"""
     monkeypatch.setenv("GW_RUNNINGHUB_API_KEY", TEST_API_KEY)
-    monkeypatch.setitem(sys.modules, "fastapi.testclient",
-                        types.SimpleNamespace(TestClient=_RejectedClient))
+    monkeypatch.setitem(
+        sys.modules,
+        "fastapi.testclient",
+        types.SimpleNamespace(TestClient=_RejectedClient),
+    )
     import gw.api.app as app_module
+
     monkeypatch.setattr(app_module, "create_app", lambda: object(), raising=True)
     out = tmp_path / "ac8-result.json"
-    monkeypatch.setattr(sys, "argv", ["ac8_runninghub_real.py", "--out", str(out), "--i-accept-cost",
-                                      "--workflow-id", "2108837566177959938"])
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "ac8_runninghub_real.py",
+            "--out",
+            str(out),
+            "--i-accept-cost",
+            "--workflow-id",
+            "2108837566177959938",
+        ],
+    )
     snapshot = dict(os.environ)
     try:
         code = _load_script().main()
@@ -162,8 +193,15 @@ def test_owner_script_reconfigures_stdout_stderr_to_utf8(monkeypatch, tmp_path, 
 
 
 _WORKFLOW_ID = "1234567890"
-_ENV_KEYS = ("GW_RUNTIME_MODE", "GW_AUTH_MODE", "GW_DATA_DIR", "GW_LOCAL_AUTH_DB",
-             "GW_VIDEO_DATA_DIR", "GW_DISABLE_AGENT_INTEGRATION", "GW_WORKFLOW_OUTPUT_HOSTS")
+_ENV_KEYS = (
+    "GW_RUNTIME_MODE",
+    "GW_AUTH_MODE",
+    "GW_DATA_DIR",
+    "GW_LOCAL_AUTH_DB",
+    "GW_VIDEO_DATA_DIR",
+    "GW_DISABLE_AGENT_INTEGRATION",
+    "GW_WORKFLOW_OUTPUT_HOSTS",
+)
 
 
 class _FakeResponse:
@@ -205,7 +243,9 @@ class _ClientContext:
 
 def _install_doubles(monkeypatch, client):
     monkeypatch.setattr("gw.api.app.create_app", lambda: object())
-    monkeypatch.setattr("fastapi.testclient.TestClient", lambda app: _ClientContext(client))
+    monkeypatch.setattr(
+        "fastapi.testclient.TestClient", lambda app: _ClientContext(client)
+    )
 
 
 def _run_past_gates(monkeypatch, tmp_path, client, *argv, leading=None):
@@ -215,10 +255,16 @@ def _run_past_gates(monkeypatch, tmp_path, client, *argv, leading=None):
     """
     module = _load_script()
     out = tmp_path / "ac8-result.json"
-    prefix = ["--i-accept-cost", "--workflow-id", _WORKFLOW_ID] if leading is None else list(leading)
+    prefix = (
+        ["--i-accept-cost", "--workflow-id", _WORKFLOW_ID]
+        if leading is None
+        else list(leading)
+    )
     monkeypatch.delenv("GW_RUNNINGHUB_API_KEY", raising=False)
     monkeypatch.setenv("GW_RUNNINGHUB_API_KEY", TEST_API_KEY)
-    monkeypatch.setattr(sys, "argv", ["ac8_runninghub_real.py", "--out", str(out), *prefix, *argv])
+    monkeypatch.setattr(
+        sys, "argv", ["ac8_runninghub_real.py", "--out", str(out), *prefix, *argv]
+    )
     _install_doubles(monkeypatch, client)
     saved = {key: os.environ.get(key) for key in _ENV_KEYS}
     try:
@@ -235,51 +281,73 @@ def _run_past_gates(monkeypatch, tmp_path, client, *argv, leading=None):
 
 
 @pytest.mark.parametrize("status_code", [200, 201])
-def test_import_success_proceeds_past_import(monkeypatch, tmp_path, no_network, status_code):
+def test_import_success_proceeds_past_import(
+    monkeypatch, tmp_path, no_network, status_code
+):
     """C3-AC8-OWNER-IMPORT-01：parse-link 返回 200 或 201 都视为导入成功并继续执行。"""
-    client = _FakeClient([
-        _FakeResponse(status_code, {"workflow_id": "wf-ac8", "version": 3}),
-        _FakeResponse(400, {"detail": {"code": "EXECUTE_REJECTED"}}),
-    ])
+    client = _FakeClient(
+        [
+            _FakeResponse(status_code, {"workflow_id": "wf-ac8", "version": 3}),
+            _FakeResponse(400, {"detail": {"code": "EXECUTE_REJECTED"}}),
+        ]
+    )
     code, body = _run_past_gates(monkeypatch, tmp_path, client)
     assert code == 1
     assert body["result"] == "FAILED"
     assert body["reason"] == "execute_rejected"
     assert body["workflow_id"] == "wf-ac8"
-    assert [step["step"] for step in body["steps"]] == ["import_workflow", "execute_task"]
+    assert [step["step"] for step in body["steps"]] == [
+        "import_workflow",
+        "execute_task",
+    ]
     assert body["steps"][0]["http_status"] == status_code
     assert body["steps"][1]["code"] == "EXECUTE_REJECTED"
     assert no_network == []
 
 
-@pytest.mark.parametrize("status_code,body,text,expect_code", [
-    (400, {"detail": {"code": "PARSE_FAILED"}}, "", "PARSE_FAILED"),
-    (400, {"detail": "plain string"}, "", None),
-    (400, None, "<html>not json</html>", None),
-])
-def test_import_failure_is_rejected_without_crashing(monkeypatch, tmp_path, no_network,
-                                                     status_code, body, text, expect_code):
+@pytest.mark.parametrize(
+    "status_code,body,text,expect_code",
+    [
+        (400, {"detail": {"code": "PARSE_FAILED"}}, "", "PARSE_FAILED"),
+        (400, {"detail": "plain string"}, "", None),
+        (400, None, "<html>not json</html>", None),
+    ],
+)
+def test_import_failure_is_rejected_without_crashing(
+    monkeypatch, tmp_path, no_network, status_code, body, text, expect_code
+):
     """C3-AC8-OWNER-IMPORT-02：导入 400 记 import_rejected；非 JSON 或 detail 为字符串时不崩溃。"""
     client = _FakeClient([_FakeResponse(status_code, body, text)])
     code, result = _run_past_gates(monkeypatch, tmp_path, client)
     assert code == 1
     assert result["result"] == "FAILED"
     assert result["reason"] == "import_rejected"
-    assert result["steps"] == [{"step": "import_workflow", "http_status": status_code, "code": expect_code}]
+    assert result["steps"] == [
+        {"step": "import_workflow", "http_status": status_code, "code": expect_code}
+    ]
     assert no_network == []
 
 
 @pytest.mark.parametrize("status_code", [200, 201, 202])
-def test_execute_outcome_unknown_records_messages(monkeypatch, tmp_path, no_network, status_code):
+def test_execute_outcome_unknown_records_messages(
+    monkeypatch, tmp_path, no_network, status_code
+):
     """C3-AC8-OWNER-EXEC-01：execute 的 2xx 成功码放行；outcome_unknown 把任务消息写入结果。"""
     messages = ["RH_SUBMIT_INTERNAL_ERROR", "exception: UnicodeEncodeError"]
-    task = {"job_id": "job-ac8", "status": "outcome_unknown", "collection_status": "pending",
-            "messages": messages, "remote_task_id": None}
-    client = _FakeClient([
-        _FakeResponse(201, {"workflow_id": "wf-ac8", "version": 1}),
-        _FakeResponse(status_code, task),
-        _FakeResponse(200, task),
-    ])
+    task = {
+        "job_id": "job-ac8",
+        "status": "outcome_unknown",
+        "collection_status": "pending",
+        "messages": messages,
+        "remote_task_id": None,
+    }
+    client = _FakeClient(
+        [
+            _FakeResponse(201, {"workflow_id": "wf-ac8", "version": 1}),
+            _FakeResponse(status_code, task),
+            _FakeResponse(200, task),
+        ]
+    )
     code, body = _run_past_gates(monkeypatch, tmp_path, client)
     assert code == 1
     assert body["result"] == "FAILED"
@@ -304,13 +372,29 @@ class _RecollectClient(_FakeClient):
 
 
 def _recollect_responses(job_id="job-ac8-recollect"):
-    task = {"job_id": job_id, "status": "failed", "execution_status": "completed",
-            "collection_status": "partial_failed", "workflow_id": "wf-from-task",
-            "messages": ["OUTPUT_HOSTS_NOT_CONFIGURED host=rh-images.xiaoyaoyou.com"], "outputs": []}
-    collected = {"job_id": job_id, "status": "completed", "collection_status": "completed",
-                 "workflow_id": "wf-from-task", "messages": [],
-                 "outputs": [{"asset_id": "asset-recollect", "registered": True}]}
-    asset = {"asset": {"task_id": job_id, "metadata": {"workflow_id": "wf-from-task", "workflow_version": 2}}}
+    task = {
+        "job_id": job_id,
+        "status": "failed",
+        "execution_status": "completed",
+        "collection_status": "partial_failed",
+        "workflow_id": "wf-from-task",
+        "messages": ["OUTPUT_HOSTS_NOT_CONFIGURED host=rh-images.xiaoyaoyou.com"],
+        "outputs": [],
+    }
+    collected = {
+        "job_id": job_id,
+        "status": "completed",
+        "collection_status": "completed",
+        "workflow_id": "wf-from-task",
+        "messages": [],
+        "outputs": [{"asset_id": "asset-recollect", "registered": True}],
+    }
+    asset = {
+        "asset": {
+            "task_id": job_id,
+            "metadata": {"workflow_id": "wf-from-task", "workflow_version": 2},
+        }
+    }
     return [
         _FakeResponse(200, task),
         _FakeResponse(200, collected),
@@ -319,22 +403,34 @@ def _recollect_responses(job_id="job-ac8-recollect"):
     ]
 
 
-def test_recollect_mode_does_not_submit_or_require_cost(monkeypatch, tmp_path, no_network):
+def test_recollect_mode_does_not_submit_or_require_cost(
+    monkeypatch, tmp_path, no_network
+):
     """C3-AC8-OWNER-RECOLLECT-01：只回收不调用 parse-link/execute，也不要求 --i-accept-cost。"""
     monkeypatch.delenv("GW_WORKFLOW_OUTPUT_HOSTS", raising=False)
     data_dir = tmp_path / "gw-ac8-existing"
     data_dir.mkdir()
     client = _RecollectClient(_recollect_responses())
     code, body = _run_past_gates(
-        monkeypatch, tmp_path, client,
-        leading=["--recollect-job-id", "job-ac8-recollect", "--data-dir", str(data_dir)])
+        monkeypatch,
+        tmp_path,
+        client,
+        leading=[
+            "--recollect-job-id",
+            "job-ac8-recollect",
+            "--data-dir",
+            str(data_dir),
+        ],
+    )
     assert code == 0
     assert body["mode"] == "recollect"
     assert body["result"] == "PASS"
     assert body["workflow_id"] == "wf-from-task"
     assert body["asset_verification"]["workflow_id_matches"] is True
     urls = [url for _method, url in client.calls]
-    assert not any("parse-link" in url or url.endswith("/tasks/execute") for url in urls)
+    assert not any(
+        "parse-link" in url or url.endswith("/tasks/execute") for url in urls
+    )
     assert urls[0].endswith("/tasks/job-ac8-recollect")
     assert urls[1].endswith("/tasks/job-ac8-recollect/collect")
     # 脚本不再注入默认产物主机；单一事实来源在服务端（未设置时服务端用 RH 内置默认）。
@@ -342,22 +438,41 @@ def test_recollect_mode_does_not_submit_or_require_cost(monkeypatch, tmp_path, n
     assert no_network == []
 
 
-def test_recollect_keeps_existing_output_hosts_unless_overridden(monkeypatch, tmp_path, no_network):
+def test_recollect_keeps_existing_output_hosts_unless_overridden(
+    monkeypatch, tmp_path, no_network
+):
     """已设置的 GW_WORKFLOW_OUTPUT_HOSTS 保持不变；--output-hosts 才覆盖。"""
     monkeypatch.setenv("GW_WORKFLOW_OUTPUT_HOSTS", "already.example")
     data_dir = tmp_path / "gw-ac8-existing"
     data_dir.mkdir()
     kept = _RecollectClient(_recollect_responses())
     code, _body = _run_past_gates(
-        monkeypatch, tmp_path, kept,
-        leading=["--recollect-job-id", "job-ac8-recollect", "--data-dir", str(data_dir)])
+        monkeypatch,
+        tmp_path,
+        kept,
+        leading=[
+            "--recollect-job-id",
+            "job-ac8-recollect",
+            "--data-dir",
+            str(data_dir),
+        ],
+    )
     assert code == 0
     assert kept.output_hosts == "already.example"
     overridden = _RecollectClient(_recollect_responses())
     code, body = _run_past_gates(
-        monkeypatch, tmp_path, overridden,
-        leading=["--recollect-job-id", "job-ac8-recollect", "--data-dir", str(data_dir),
-                 "--output-hosts", "cdn.example"])
+        monkeypatch,
+        tmp_path,
+        overridden,
+        leading=[
+            "--recollect-job-id",
+            "job-ac8-recollect",
+            "--data-dir",
+            str(data_dir),
+            "--output-hosts",
+            "cdn.example",
+        ],
+    )
     assert code == 0 and body["mode"] == "recollect"
     assert overridden.output_hosts == "cdn.example"
     assert no_network == []

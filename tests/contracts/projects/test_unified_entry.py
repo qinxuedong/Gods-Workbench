@@ -6,24 +6,37 @@ from pathlib import Path
 from urllib.parse import urlencode, urlsplit
 
 import pytest
+from fastapi.testclient import TestClient
 from playwright_support import open_playwright
 
-from fastapi.testclient import TestClient
-
 from gw.api.app import app
-
 
 ROOT = Path(__file__).resolve().parents[3]
 STATIC = ROOT / "web"
 
 
 LEGACY_REDIRECTS = {
-    "/static/asset-manager.html": ("/static/pages/assets.html", ("project_id", "pipeline_id", "asset_id")),
-    "/static/api-settings.html": ("/static/pages/settings.html", ("section", "project_id")),
-    "/static/canvas-list.html": ("/static/pages/storyboard.html", ("project_id", "entity_id", "canvas_id", "view", "filter", "layout")),
-    "/static/episode-pipeline.html": ("/static/pages/workshop.html", ("project_id", "pipeline_id", "step", "agent")),
+    "/static/asset-manager.html": (
+        "/static/pages/assets.html",
+        ("project_id", "pipeline_id", "asset_id"),
+    ),
+    "/static/api-settings.html": (
+        "/static/pages/settings.html",
+        ("section", "project_id"),
+    ),
+    "/static/canvas-list.html": (
+        "/static/pages/storyboard.html",
+        ("project_id", "entity_id", "canvas_id", "view", "filter", "layout"),
+    ),
+    "/static/episode-pipeline.html": (
+        "/static/pages/workshop.html",
+        ("project_id", "pipeline_id", "step", "agent"),
+    ),
     "/static/task-center.html": ("/static/pages/collab.html", ("view", "project_id")),
-    "/static/governance.html": ("/static/pages/projects.html", ("openTrash", "project_id")),
+    "/static/governance.html": (
+        "/static/pages/projects.html",
+        ("openTrash", "project_id"),
+    ),
 }
 
 
@@ -52,13 +65,17 @@ def test_legacy_user_entries_redirect_to_pages_and_preserve_context():
             if source.endswith("canvas-list.html"):
                 context["view"] = "canvas"
             response = client.get(
-                source + "?" + "&".join(f"{key}={value}" for key, value in context.items()),
+                source
+                + "?"
+                + "&".join(f"{key}={value}" for key, value in context.items()),
                 follow_redirects=False,
             )
             assert response.status_code == 307
             location = response.headers["location"]
             expected_query = urlencode([(key, context[key]) for key in keys])
-            expected_location = f"{target}?{expected_query}" if expected_query else target
+            expected_location = (
+                f"{target}?{expected_query}" if expected_query else target
+            )
             assert location == expected_location
 
 
@@ -75,7 +92,9 @@ def test_embedded_legacy_slices_remain_available_to_workbench():
 def test_public_asset_share_deep_link_remains_anonymous_boundary():
     """公共分享页是匿名深链例外，不得被统一入口重定向。"""
     with TestClient(app) as client:
-        response = client.get("/static/asset-share.html?token=share-test", follow_redirects=False)
+        response = client.get(
+            "/static/asset-share.html?token=share-test", follow_redirects=False
+        )
     assert response.status_code == 200
     assert response.headers.get("location") is None
     assert "/static/v2/" not in response.text
@@ -94,14 +113,19 @@ def test_workbench_user_surface_has_no_legacy_external_open_links():
         STATIC / "js" / "core" / "hardware-telemetry.js",
     ]
     legacy = r"/static/(?:asset-manager|api-settings|canvas-list|episode-pipeline|task-center|governance)\.html"
-    opening = re.compile(r"(?:href|src|location\\.href|window\\.open|dataset\\.src|targetUrl|new URL)\s*[^\n]*" + legacy)
+    opening = re.compile(
+        r"(?:href|src|location\\.href|window\\.open|dataset\\.src|targetUrl|new URL)\s*[^\n]*"
+        + legacy
+    )
     for path in files:
         text = path.read_text(encoding="utf-8")
         for line in text.splitlines():
             if 'target="_blank"' in line:
                 assert not re.search(legacy, line), f"仍有独立业务入口: {path}: {line}"
             if re.search(legacy, line) and opening.search(line):
-                assert "embedded=1" in line or "embeddedCanvasRoute" in line, f"普通用户入口仍直达 legacy 页面: {path}: {line}"
+                assert "embedded=1" in line or "embeddedCanvasRoute" in line, (
+                    f"普通用户入口仍直达 legacy 页面: {path}: {line}"
+                )
 
 
 def test_legacy_asset_manager_fallback_merges_query_parameters_safely():
@@ -132,6 +156,7 @@ def test_workbench_copy_uses_single_entry_language():
         text = (STATIC / "pages" / name).read_text(encoding="utf-8")
         assert "独立窗口" not in text
         assert "完整视图 ↗" not in text
+
 
 # 此表仅保留已登记的旧 URL 精确兼容，不构成新路径约定。
 LEGACY_STATIC_REDIRECTS = {
@@ -188,7 +213,9 @@ def _launch_local_chrome(browser_api, playwright):
     LEGACY_STATIC_REDIRECTS.items(),
     ids=[path.removeprefix("/static/") for path in LEGACY_STATIC_REDIRECTS],
 )
-def test_static_v2_compat_redirects_are_temporary_until_old_clients_are_retired(legacy_path, new_path):
+def test_static_v2_compat_redirects_are_temporary_until_old_clients_are_retired(
+    legacy_path, new_path
+):
     """临时旧静态 URL 必须逐条跳到新资源；仅在旧客户端与受支持外链完成清退并经人工批准后删除本测试及兼容路由。"""
     with TestClient(app) as client:
         response = client.get(legacy_path + "?keep=one", follow_redirects=False)
@@ -216,9 +243,12 @@ def test_workbench_shell_intercepts_static_pages_navigation_without_document_rel
             document_requests = []
             page.on(
                 "request",
-                lambda request: document_requests.append(request.url)
-                if request.resource_type == "document" and request.frame == page.main_frame
-                else None,
+                lambda request: (
+                    document_requests.append(request.url)
+                    if request.resource_type == "document"
+                    and request.frame == page.main_frame
+                    else None
+                ),
             )
             page.add_init_script(
                 "window.__gw_document_token = Math.random().toString(36);"
@@ -237,7 +267,9 @@ def test_workbench_shell_intercepts_static_pages_navigation_without_document_rel
             # gw:route-loaded 在页面脚本按序加载完成后才派发，晚于 DOM 替换；等待事件再断言，避免竞态。
             page.wait_for_function("window.__gw_route_events.length >= 1")
 
-            assert page.evaluate("window.__gw_document_token") == original_document_token
+            assert (
+                page.evaluate("window.__gw_document_token") == original_document_token
+            )
             assert page.evaluate("window.__gw_route_events.length") == 1
             assert len(document_requests) == 1, "站内切页不应再发起 document 导航请求"
         finally:
@@ -304,8 +336,18 @@ def test_view_mode_local_storage_does_not_migrate_missing_or_invalid_legacy_valu
     """缺失或非法旧值不得触发迁移写入，也不得改写旧值。"""
     browser_api = pytest.importorskip("playwright.sync_api")
     cases = (
-        ("/static/pages/index.html", "v2_proj_view_mode", "workbench_proj_view_mode", "WorkbenchHome"),
-        ("/static/pages/projects.html", "v2_projects_view_mode", "workbench_projects_view_mode", "WorkbenchProjects"),
+        (
+            "/static/pages/index.html",
+            "v2_proj_view_mode",
+            "workbench_proj_view_mode",
+            "WorkbenchHome",
+        ),
+        (
+            "/static/pages/projects.html",
+            "v2_projects_view_mode",
+            "workbench_projects_view_mode",
+            "WorkbenchProjects",
+        ),
     )
     with TestClient(app) as client, open_playwright(browser_api) as playwright:
         browser = _launch_local_chrome(browser_api, playwright)
@@ -330,7 +372,9 @@ def test_view_mode_local_storage_does_not_migrate_missing_or_invalid_legacy_valu
                         )
                         context.add_init_script(init_script)
                         page = context.new_page()
-                        page.route("**/*", lambda route: _serve_local_app(client, route))
+                        page.route(
+                            "**/*", lambda route: _serve_local_app(client, route)
+                        )
                         page.goto("http://testserver" + page_path)
                         page.wait_for_function(f"Boolean(window.{controller})")
                         stored = page.evaluate(

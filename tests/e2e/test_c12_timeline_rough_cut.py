@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """C12-T5：时间线粗剪连播的真实浏览器收口门禁。
 
 本测试只在操作者显式设置 ``GW_C12_REAL_E2E=1`` 时启动 Chrome 和隔离服务。
@@ -11,19 +10,17 @@ from __future__ import annotations
 
 import json
 import os
-from pathlib import Path
 import socket
 import subprocess
 import sys
 import time
+from pathlib import Path
 from typing import Any
 from urllib.error import URLError
 from urllib.request import urlopen
 
 import pytest
-
 from playwright_support import open_playwright
-
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 EVIDENCE_ROOT = REPO_ROOT / ".local" / "qa" / "C12-evidence"
@@ -153,7 +150,12 @@ class _OwnedServer:
                 "PYTHONPATH": str(REPO_ROOT),
             }
         )
-        for name in ("GW_PROVIDER_RUNTIME_JSON", "GW_CHAT_API_KEY", "GW_CHAT_BASE_URL", "GW_CLI_EXECUTION"):
+        for name in (
+            "GW_PROVIDER_RUNTIME_JSON",
+            "GW_CHAT_API_KEY",
+            "GW_CHAT_BASE_URL",
+            "GW_CLI_EXECUTION",
+        ):
             self.env.pop(name, None)
         self.process: subprocess.Popen[bytes] | None = None
 
@@ -173,7 +175,9 @@ class _OwnedServer:
             deadline = time.monotonic() + 20
             while time.monotonic() < deadline:
                 if self.process.poll() is not None:
-                    raise AssertionError(f"C12-T5 测试服务提前退出，日志见 {self.log_path}")
+                    raise AssertionError(
+                        f"C12-T5 测试服务提前退出，日志见 {self.log_path}"
+                    )
                 if _health_ready(self.port):
                     return
                 time.sleep(0.1)
@@ -198,7 +202,9 @@ class _OwnedServer:
 
 
 def _same_origin(route: Any, base: str) -> None:
-    if route.request.url.startswith(base + "/") or route.request.url.startswith("data:"):
+    if route.request.url.startswith(base + "/") or route.request.url.startswith(
+        "data:"
+    ):
         route.continue_()
     else:
         route.abort()
@@ -215,8 +221,12 @@ def _dependency_snapshot(request: Any, base: str) -> dict[str, Any]:
     openapi = request.get(f"{base}/openapi.json", headers={"Origin": base})
     paths = openapi.json().get("paths", {}) if openapi.status == 200 else {}
     api_ready = any("timeline-manifest" in str(path) for path in paths)
-    storyboard = request.get(f"{base}/static/pages/storyboard.html", headers={"Origin": base})
-    production = request.get(f"{base}/static/pages/production.html", headers={"Origin": base})
+    storyboard = request.get(
+        f"{base}/static/pages/storyboard.html", headers={"Origin": base}
+    )
+    production = request.get(
+        f"{base}/static/pages/production.html", headers={"Origin": base}
+    )
     storyboard_html = storyboard.text() if storyboard.status == 200 else ""
     production_html = production.text() if production.status == 200 else ""
     return {
@@ -229,7 +239,9 @@ def _dependency_snapshot(request: Any, base: str) -> dict[str, Any]:
     }
 
 
-def test_c12_real_browser_gate_requires_explicit_opt_in(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_c12_real_browser_gate_requires_explicit_opt_in(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     monkeypatch.delenv(REAL_RUN_ENV, raising=False)
     assert _real_run_enabled() is False
     assert _real_run_enabled({REAL_RUN_ENV: "true"}) is True
@@ -271,7 +283,10 @@ def test_c12_timeline_rough_cut_real_browser_refresh_and_restart(
             try:
                 browser = playwright.chromium.launch(channel="chrome", headless=True)
             except browser_api.Error as exc:
-                evidence.update(status="blocked_environment", blocker=f"Chrome 不可启动：{type(exc).__name__}")
+                evidence.update(
+                    status="blocked_environment",
+                    blocker=f"Chrome 不可启动：{type(exc).__name__}",
+                )
                 _write_json(_evidence_dir() / "c12-t5-dependency-gate.json", evidence)
                 pytest.skip(f"Chrome 不可启动：{type(exc).__name__}")
 
@@ -292,19 +307,28 @@ def test_c12_timeline_rough_cut_real_browser_refresh_and_restart(
                 evidence["dependencies"] = dependencies
                 if not all(
                     dependencies.get(key)
-                    for key in ("api_timeline_manifest", "storyboard_sync_control", "production_play_control")
+                    for key in (
+                        "api_timeline_manifest",
+                        "storyboard_sync_control",
+                        "production_play_control",
+                    )
                 ):
                     evidence.update(
                         status="blocked_dependency",
                         blocker="C12-T3/T4 尚未合入当前 master；未执行伪造的连播验收",
                     )
-                    _write_json(_evidence_dir() / "c12-t5-dependency-gate.json", evidence)
+                    _write_json(
+                        _evidence_dir() / "c12-t5-dependency-gate.json", evidence
+                    )
                     pytest.skip("当前 master 缺少 QIN-209/QIN-213 时间线依赖")
 
                 project = _json_response(
                     request.post(
                         f"{server.base}/api/asset-registry/projects",
-                        data={"name": "C12 T5 timeline rough cut", "project_type": "film"},
+                        data={
+                            "name": "C12 T5 timeline rough cut",
+                            "project_type": "film",
+                        },
                         headers={"Origin": server.base},
                     ),
                     201,
@@ -323,7 +347,14 @@ def test_c12_timeline_rough_cut_real_browser_refresh_and_restart(
                                         "episode_id": "EP01",
                                         "code": "EP01",
                                         "name": "C12 T5",
-                                        "scenes": [{"scene_id": "SC01", "code": "SC01", "name": "Timeline", "shots": []}],
+                                        "scenes": [
+                                            {
+                                                "scene_id": "SC01",
+                                                "code": "SC01",
+                                                "name": "Timeline",
+                                                "shots": [],
+                                            }
+                                        ],
                                     }
                                 ]
                             },
@@ -345,61 +376,104 @@ def test_c12_timeline_rough_cut_real_browser_refresh_and_restart(
                 )
                 manifest = created["timeline_manifest"]
                 assert manifest["version"] == 1
-                assert [clip["shot_id"] for clip in manifest["tracks"][0]["clips"]] == fixture_contract["shot_ids"]
+                assert [
+                    clip["shot_id"] for clip in manifest["tracks"][0]["clips"]
+                ] == fixture_contract["shot_ids"]
                 _write_json(
                     _evidence_dir() / "c12-t5-timeline-api.json",
-                    {"project": project, "pipeline": pipeline, "fixture": fixture_contract, "create": created},
+                    {
+                        "project": project,
+                        "pipeline": pipeline,
+                        "fixture": fixture_contract,
+                        "create": created,
+                    },
                 )
 
                 page_errors: list[str] = []
                 storyboard_page = context.new_page()
-                storyboard_page.on("pageerror", lambda error: page_errors.append(str(error)))
+                storyboard_page.on(
+                    "pageerror", lambda error: page_errors.append(str(error))
+                )
                 storyboard_page.goto(
                     f"{server.base}/static/pages/storyboard.html?project_id={project_id}&view=storyboard",
                     wait_until="networkidle",
                 )
-                storyboard_page.wait_for_function("!window.GWAuthGate || window.GWAuthGate.loaded === true")
+                storyboard_page.wait_for_function(
+                    "!window.GWAuthGate || window.GWAuthGate.loaded === true"
+                )
                 storyboard_page.locator("#btnSyncTimeline").wait_for(state="visible")
-                storyboard_page.screenshot(path=str(_evidence_dir() / "c12-t5-storyboard.png"), full_page=True)
+                storyboard_page.screenshot(
+                    path=str(_evidence_dir() / "c12-t5-storyboard.png"), full_page=True
+                )
                 evidence["screenshots"].append("c12-t5-storyboard.png")
 
                 production_page = context.new_page()
-                production_page.on("pageerror", lambda error: page_errors.append(str(error)))
+                production_page.on(
+                    "pageerror", lambda error: page_errors.append(str(error))
+                )
                 production_url = f"{server.base}/static/pages/production.html?project_id={project_id}"
                 production_page.goto(production_url, wait_until="networkidle")
-                production_page.wait_for_function("!window.GWAuthGate || window.GWAuthGate.loaded === true")
+                production_page.wait_for_function(
+                    "!window.GWAuthGate || window.GWAuthGate.loaded === true"
+                )
                 production_page.wait_for_function(
                     "() => window.WorkbenchProduction?.getState?.().timelineClips?.length === 2",
                     timeout=30_000,
                 )
-                state = production_page.evaluate("() => window.WorkbenchProduction.getState()")
-                assert state["timelineManifest"]["manifest_id"] == manifest["manifest_id"]
-                assert [clip["shot_id"] for clip in state["timelineClips"]] == fixture_contract["shot_ids"]
-                production_page.screenshot(path=str(_evidence_dir() / "c12-t5-rough-cut-start.png"), full_page=True)
+                state = production_page.evaluate(
+                    "() => window.WorkbenchProduction.getState()"
+                )
+                assert (
+                    state["timelineManifest"]["manifest_id"] == manifest["manifest_id"]
+                )
+                assert [
+                    clip["shot_id"] for clip in state["timelineClips"]
+                ] == fixture_contract["shot_ids"]
+                production_page.screenshot(
+                    path=str(_evidence_dir() / "c12-t5-rough-cut-start.png"),
+                    full_page=True,
+                )
                 evidence["screenshots"].append("c12-t5-rough-cut-start.png")
 
-                production_page.evaluate("() => window.WorkbenchProduction.playTimeline()")
+                production_page.evaluate(
+                    "() => window.WorkbenchProduction.playTimeline()"
+                )
                 production_page.wait_for_function(
                     "() => window.WorkbenchProduction.getState().timelinePlaying === true",
                     timeout=5_000,
                 )
-                production_page.screenshot(path=str(_evidence_dir() / "c12-t5-rough-cut-playing.png"), full_page=True)
+                production_page.screenshot(
+                    path=str(_evidence_dir() / "c12-t5-rough-cut-playing.png"),
+                    full_page=True,
+                )
                 evidence["screenshots"].append("c12-t5-rough-cut-playing.png")
                 production_page.wait_for_function(
                     "() => window.WorkbenchProduction.getState().timelinePlaying === false && window.WorkbenchProduction.getState().activeTimelineIndex === 1",
                     timeout=10_000,
                 )
-                evidence["playback"] = production_page.evaluate("() => window.WorkbenchProduction.getState()")
+                evidence["playback"] = production_page.evaluate(
+                    "() => window.WorkbenchProduction.getState()"
+                )
 
                 production_page.reload(wait_until="networkidle")
                 production_page.wait_for_function(
                     "() => window.WorkbenchProduction?.getState?.().timelineClips?.length === 2",
                     timeout=30_000,
                 )
-                refreshed = production_page.evaluate("() => window.WorkbenchProduction.getState()")
-                assert refreshed["timelineManifest"]["manifest_id"] == manifest["manifest_id"]
-                assert [clip["asset_id"] for clip in refreshed["timelineClips"]] == fixture_contract["asset_ids"]
-                production_page.screenshot(path=str(_evidence_dir() / "c12-t5-after-refresh.png"), full_page=True)
+                refreshed = production_page.evaluate(
+                    "() => window.WorkbenchProduction.getState()"
+                )
+                assert (
+                    refreshed["timelineManifest"]["manifest_id"]
+                    == manifest["manifest_id"]
+                )
+                assert [
+                    clip["asset_id"] for clip in refreshed["timelineClips"]
+                ] == fixture_contract["asset_ids"]
+                production_page.screenshot(
+                    path=str(_evidence_dir() / "c12-t5-after-refresh.png"),
+                    full_page=True,
+                )
                 evidence["screenshots"].append("c12-t5-after-refresh.png")
 
                 server.stop()
@@ -409,12 +483,27 @@ def test_c12_timeline_rough_cut_real_browser_refresh_and_restart(
                     "() => window.WorkbenchProduction?.getState?.().timelineClips?.length === 2",
                     timeout=30_000,
                 )
-                restarted = production_page.evaluate("() => window.WorkbenchProduction.getState()")
-                assert restarted["timelineManifest"]["manifest_id"] == manifest["manifest_id"]
-                assert [clip["shot_id"] for clip in restarted["timelineClips"]] == fixture_contract["shot_ids"]
-                production_page.screenshot(path=str(_evidence_dir() / "c12-t5-after-restart.png"), full_page=True)
+                restarted = production_page.evaluate(
+                    "() => window.WorkbenchProduction.getState()"
+                )
+                assert (
+                    restarted["timelineManifest"]["manifest_id"]
+                    == manifest["manifest_id"]
+                )
+                assert [
+                    clip["shot_id"] for clip in restarted["timelineClips"]
+                ] == fixture_contract["shot_ids"]
+                production_page.screenshot(
+                    path=str(_evidence_dir() / "c12-t5-after-restart.png"),
+                    full_page=True,
+                )
                 evidence["screenshots"].append("c12-t5-after-restart.png")
-                evidence.update(status="observed", project_id=project_id, pipeline_id=pipeline_id, manifest_id=manifest["manifest_id"])
+                evidence.update(
+                    status="observed",
+                    project_id=project_id,
+                    pipeline_id=pipeline_id,
+                    manifest_id=manifest["manifest_id"],
+                )
                 evidence["page_errors"] = page_errors
                 assert not page_errors, page_errors
                 _write_json(_evidence_dir() / "c12-t5-report.json", evidence)

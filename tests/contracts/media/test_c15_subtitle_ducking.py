@@ -1,8 +1,7 @@
-# -*- coding: utf-8 -*-
 """C15-AC2 词级字幕与音频闪避契约测试。"""
 
-from gw.media.subtitle_align import generate_webvtt
 from gw.media.audio_ducking import build_ducking_envelope
+from gw.media.subtitle_align import generate_webvtt
 
 
 def test_c15_ac2_generates_word_timed_karaoke_webvtt():

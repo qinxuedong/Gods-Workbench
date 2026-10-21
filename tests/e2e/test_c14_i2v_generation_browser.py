@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """QIN-219 / C14-T4: ten-shot I2V and multi-take browser closeout.
 
 The real-browser run is opt-in through ``GW_C14_REAL_E2E=1``. It uses the
@@ -12,24 +11,23 @@ from __future__ import annotations
 import importlib
 import json
 import os
-from pathlib import Path
 import re
 import shutil
 import socket
 import subprocess
 import threading
 import time
+from pathlib import Path
 from typing import Any
 from urllib.error import URLError
 from urllib.request import urlopen
 
 import pytest
 import uvicorn
+from playwright_support import open_playwright
 
 from gw.api.routes_workflow_jobs import create_video_jobs_router
 from gw.god_workflow.video_executor import VideoJobExecutor
-from playwright_support import open_playwright
-
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 EVIDENCE_ROOT = REPO_ROOT / ".local" / "qa" / "C14-evidence"
@@ -63,12 +61,18 @@ def _write_json(path: Path, payload: object) -> None:
 
 def _git_sha() -> str:
     result = subprocess.run(
-        ["git", "rev-parse", "HEAD"], cwd=REPO_ROOT, capture_output=True, text=True, check=False
+        ["git", "rev-parse", "HEAD"],
+        cwd=REPO_ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
     )
     return result.stdout.strip() if result.returncode == 0 else "unknown"
 
 
-def _write_artifacts(evidence: dict[str, Any], api_evidence: dict[str, Any] | None = None) -> None:
+def _write_artifacts(
+    evidence: dict[str, Any], api_evidence: dict[str, Any] | None = None
+) -> None:
     root = _evidence_dir()
     _write_json(root / "c14-t4-report.json", evidence)
     if api_evidence is not None:
@@ -99,7 +103,8 @@ def _write_artifacts(evidence: dict[str, Any], api_evidence: dict[str, Any] | No
         f"- 版本指向：`{summary.get('version_pointer_status', '未测量')}`。",
         f"- 默认应用是否挂载 C14 视频作业路由：`{evidence.get('default_app_video_job_route_mounted', '未测量')}`；E2E 通过测试 host 挂载真实路由工厂并使用确定性 provider fixture。",
         "- API 证据：`c14-t4-api.json`；机器报告：`c14-t4-report.json`；测试记录：`c14-t4-test-log.json`。",
-        "- 截图：" + ("、".join(f"`{name}`" for name in screenshots) if screenshots else "无"),
+        "- 截图："
+        + ("、".join(f"`{name}`" for name in screenshots) if screenshots else "无"),
     ]
     if evidence.get("failure"):
         lines.extend(["", f"- 失败：`{evidence['failure']}`"])
@@ -164,7 +169,9 @@ class _OwnedServer:
         self.port = _free_port()
         self.base = f"http://127.0.0.1:{self.port}"
         self.provider = _DeterministicVideoProvider()
-        self.executor = VideoJobExecutor(self.provider, storage_root="c14-e2e-artifacts")
+        self.executor = VideoJobExecutor(
+            self.provider, storage_root="c14-e2e-artifacts"
+        )
         self.default_video_route_mounted: bool | None = None
         self.preview_paths: dict[str, Path] = {}
         self.preview_mode = "unavailable"
@@ -259,7 +266,9 @@ class _OwnedServer:
             async def serve_fixture_preview(filename: str) -> FileResponse:
                 match = re.fullmatch(r"EP01_SC01_SH\d{3}_(v00[123])_raw\.mp4", filename)
                 if match is None or match.group(1) not in self.preview_paths:
-                    raise HTTPException(status_code=404, detail="fixture preview not found")
+                    raise HTTPException(
+                        status_code=404, detail="fixture preview not found"
+                    )
                 return FileResponse(
                     self.preview_paths[match.group(1)],
                     media_type="video/mp4",
@@ -281,7 +290,9 @@ class _OwnedServer:
         listener.setblocking(False)
         self.socket = listener
         self.server = uvicorn.Server(
-            uvicorn.Config(app, host="127.0.0.1", port=self.port, log_level="error", lifespan="off")
+            uvicorn.Config(
+                app, host="127.0.0.1", port=self.port, log_level="error", lifespan="off"
+            )
         )
         self.thread = threading.Thread(
             target=self.server.run,
@@ -324,7 +335,9 @@ def _same_origin(route: Any, base: str, preview_media_available: bool) -> None:
             route.continue_()
         else:
             route.abort()
-    elif route.request.url.startswith(base + "/") or route.request.url.startswith("data:"):
+    elif route.request.url.startswith(base + "/") or route.request.url.startswith(
+        "data:"
+    ):
         route.continue_()
     else:
         route.abort()
@@ -334,7 +347,9 @@ def _shot_id(number: int) -> str:
     return f"SC01_SH{number:03d}"
 
 
-def _make_shots(generated: dict[tuple[str, int], dict[str, Any]]) -> list[dict[str, Any]]:
+def _make_shots(
+    generated: dict[tuple[str, int], dict[str, Any]],
+) -> list[dict[str, Any]]:
     shots: list[dict[str, Any]] = []
     for number, duration in enumerate(SHOT_DURATIONS, start=1):
         shot_id = _shot_id(number)
@@ -380,7 +395,9 @@ def _make_shots(generated: dict[tuple[str, int], dict[str, Any]]) -> list[dict[s
     return shots
 
 
-def _submit_and_poll_takes(request: Any, base: str, project_id: str) -> tuple[dict[tuple[str, int], dict[str, Any]], list[dict[str, Any]]]:
+def _submit_and_poll_takes(
+    request: Any, base: str, project_id: str
+) -> tuple[dict[tuple[str, int], dict[str, Any]], list[dict[str, Any]]]:
     generated: dict[tuple[str, int], dict[str, Any]] = {}
     api_jobs: list[dict[str, Any]] = []
     for number, duration in enumerate(SHOT_DURATIONS, start=1):
@@ -415,9 +432,9 @@ def _submit_and_poll_takes(request: Any, base: str, project_id: str) -> tuple[di
             assert submit["status"] == "accepted"
             assert submit["payload"]["target_duration"] == duration
             assert submit["payload"]["fixture_id"] == FIXTURE_ID
-            assert submit["payload"]["camera_ctrl"]["trajectory"][-1]["x"] == pytest.approx(
-                0.2 * version
-            )
+            assert submit["payload"]["camera_ctrl"]["trajectory"][-1][
+                "x"
+            ] == pytest.approx(0.2 * version)
             assert submit["payload"]["lora"] == body["lora"]
             polled = _json_response(
                 request.get(
@@ -448,7 +465,9 @@ def _submit_and_poll_takes(request: Any, base: str, project_id: str) -> tuple[di
     return generated, api_jobs
 
 
-def _promote_via_ui(page: Any, pipeline_id: str, shot_id: str, take_id: str, expected_version: int) -> dict[str, Any]:
+def _promote_via_ui(
+    page: Any, pipeline_id: str, shot_id: str, take_id: str, expected_version: int
+) -> dict[str, Any]:
     selector = (
         f'[data-contact-sheet][data-shot-id="{shot_id}"] '
         f'[data-shot-action="promote-take"][data-take-id="{take_id}"]'
@@ -456,8 +475,12 @@ def _promote_via_ui(page: Any, pipeline_id: str, shot_id: str, take_id: str, exp
     button = page.locator(selector)
     assert button.count() == 1, f"找不到 {shot_id} 的回选按钮 {take_id}"
     with page.expect_response(
-        lambda response: response.url.endswith(f"/api/episode-pipelines/{pipeline_id}/timeline-manifest")
-        and response.request.method == "PUT",
+        lambda response: (
+            response.url.endswith(
+                f"/api/episode-pipelines/{pipeline_id}/timeline-manifest"
+            )
+            and response.request.method == "PUT"
+        ),
         timeout=15_000,
     ) as response_info:
         button.click()
@@ -482,7 +505,9 @@ def _promote_via_ui(page: Any, pipeline_id: str, shot_id: str, take_id: str, exp
     }
 
 
-def test_c14_real_browser_gate_requires_explicit_opt_in(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_c14_real_browser_gate_requires_explicit_opt_in(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     monkeypatch.delenv(REAL_RUN_ENV, raising=False)
     assert _real_run_enabled() is False
     assert _real_run_enabled({REAL_RUN_ENV: "true"}) is True
@@ -535,7 +560,10 @@ def test_c14_i2v_ten_shot_generation_and_multitake_browser_closeout(
         try:
             browser_api = importlib.import_module("playwright.sync_api")
         except ImportError as exc:
-            evidence.update(status="blocked_environment", blocker=f"Playwright 不可用：{type(exc).__name__}")
+            evidence.update(
+                status="blocked_environment",
+                blocker=f"Playwright 不可用：{type(exc).__name__}",
+            )
             _write_artifacts(evidence, api_evidence)
             pytest.skip("Playwright 不可用；真实浏览器证据未取得")
 
@@ -551,7 +579,9 @@ def test_c14_i2v_ten_shot_generation_and_multitake_browser_closeout(
         try:
             with open_playwright(browser_api) as playwright:
                 try:
-                    browser = playwright.chromium.launch(channel="chrome", headless=True)
+                    browser = playwright.chromium.launch(
+                        channel="chrome", headless=True
+                    )
                 except browser_api.Error as exc:
                     evidence.update(
                         status="blocked_environment",
@@ -563,14 +593,19 @@ def test_c14_i2v_ten_shot_generation_and_multitake_browser_closeout(
                 context = browser.new_context(viewport={"width": 1800, "height": 1000})
                 context.route(
                     "**/*",
-                    lambda route: _same_origin(route, server.base, bool(server.preview_paths)),
+                    lambda route: _same_origin(
+                        route, server.base, bool(server.preview_paths)
+                    ),
                 )
                 request = context.request
                 try:
                     _json_response(
                         request.post(
                             f"{server.base}/api/asset-auth/local/setup",
-                            data={"username": "c14_t4_browser_owner", "password": "Test2026"},
+                            data={
+                                "username": "c14_t4_browser_owner",
+                                "password": "Test2026",
+                            },
                             headers={"Origin": server.base},
                         ),
                         201,
@@ -578,7 +613,10 @@ def test_c14_i2v_ten_shot_generation_and_multitake_browser_closeout(
                     project_payload = _json_response(
                         request.post(
                             f"{server.base}/api/asset-registry/projects",
-                            data={"name": "C14 T4 ten-shot browser evidence", "project_type": "film"},
+                            data={
+                                "name": "C14 T4 ten-shot browser evidence",
+                                "project_type": "film",
+                            },
                             headers={"Origin": server.base},
                         ),
                         201,
@@ -586,7 +624,11 @@ def test_c14_i2v_ten_shot_generation_and_multitake_browser_closeout(
                     project = project_payload["project"]
                     project_id = project["project_id"]
                     shot_context = [
-                        {"shot_id": _shot_id(number), "id": _shot_id(number), "code": _shot_id(number)}
+                        {
+                            "shot_id": _shot_id(number),
+                            "id": _shot_id(number),
+                            "code": _shot_id(number),
+                        }
                         for number in range(1, SHOT_COUNT + 1)
                     ]
                     pipeline_payload = _json_response(
@@ -622,11 +664,17 @@ def test_c14_i2v_ten_shot_generation_and_multitake_browser_closeout(
                     )
                     pipeline = pipeline_payload.get("pipeline", pipeline_payload)
                     pipeline_id = pipeline["pipeline_id"]
-                    generated, api_jobs = _submit_and_poll_takes(request, server.base, project_id)
+                    generated, api_jobs = _submit_and_poll_takes(
+                        request, server.base, project_id
+                    )
                     shots = _make_shots(generated)
                     assert len(shots) == SHOT_COUNT
-                    assert all(len(shot["takes"]) == len(TAKE_VERSIONS) for shot in shots)
-                    evidence["assertions"].append("10 镜 × 3 Take；30 个真实 API submit/poll 响应")
+                    assert all(
+                        len(shot["takes"]) == len(TAKE_VERSIONS) for shot in shots
+                    )
+                    evidence["assertions"].append(
+                        "10 镜 × 3 Take；30 个真实 API submit/poll 响应"
+                    )
                     api_evidence.update(
                         {
                             "fixture_id": FIXTURE_ID,
@@ -649,31 +697,56 @@ def test_c14_i2v_ten_shot_generation_and_multitake_browser_closeout(
                         f"?project_id={project_id}&view=storyboard&shot_id={_shot_id(1)}",
                         wait_until="networkidle",
                     )
-                    page.wait_for_function("!window.GWAuthGate || window.GWAuthGate.loaded === true")
+                    page.wait_for_function(
+                        "!window.GWAuthGate || window.GWAuthGate.loaded === true"
+                    )
                     page.wait_for_function(
                         "args => window.WorkbenchStoryboard?.getState?.().pipelineId === args.pipelineId",
                         arg={"pipelineId": pipeline_id},
                         timeout=20_000,
                     )
-                    page.evaluate("shots => window.WorkbenchStoryboard.setShots(shots)", shots)
-                    page.locator('#storyboardGrid [data-contact-sheet][data-shot-id]').first.wait_for(state="visible")
-                    assert page.locator("#storyboardGrid [data-contact-sheet][data-shot-id]").count() == SHOT_COUNT
-                    assert page.locator('[data-take-version="v001"]').count() == SHOT_COUNT
-                    assert page.locator('[data-take-version="v002"]').count() == SHOT_COUNT
-                    assert page.locator('[data-take-version="v003"]').count() == SHOT_COUNT
+                    page.evaluate(
+                        "shots => window.WorkbenchStoryboard.setShots(shots)", shots
+                    )
+                    page.locator(
+                        "#storyboardGrid [data-contact-sheet][data-shot-id]"
+                    ).first.wait_for(state="visible")
+                    assert (
+                        page.locator(
+                            "#storyboardGrid [data-contact-sheet][data-shot-id]"
+                        ).count()
+                        == SHOT_COUNT
+                    )
+                    assert (
+                        page.locator('[data-take-version="v001"]').count() == SHOT_COUNT
+                    )
+                    assert (
+                        page.locator('[data-take-version="v002"]').count() == SHOT_COUNT
+                    )
+                    assert (
+                        page.locator('[data-take-version="v003"]').count() == SHOT_COUNT
+                    )
                     if server.preview_paths:
                         page.wait_for_function(
                             "() => { const videos = Array.from(document.querySelectorAll('#storyboardGrid video[data-take-preview]')); return videos.length === 30 && videos.every(video => video.readyState >= 2); }",
                             timeout=20_000,
                         )
-                        evidence["assertions"].append("30 个 Take 预览均由本地合成 MP4 在 Chrome 中解码")
-                    page.screenshot(path=str(_evidence_dir() / "c14-t4-contact-sheets-before.png"), full_page=True)
+                        evidence["assertions"].append(
+                            "30 个 Take 预览均由本地合成 MP4 在 Chrome 中解码"
+                        )
+                    page.screenshot(
+                        path=str(_evidence_dir() / "c14-t4-contact-sheets-before.png"),
+                        full_page=True,
+                    )
                     evidence["screenshots"].append("c14-t4-contact-sheets-before.png")
 
                     with page.expect_response(
-                        lambda response: response.url.endswith(
-                            f"/api/episode-pipelines/{pipeline_id}/timeline-manifest"
-                        ) and response.request.method == "POST",
+                        lambda response: (
+                            response.url.endswith(
+                                f"/api/episode-pipelines/{pipeline_id}/timeline-manifest"
+                            )
+                            and response.request.method == "POST"
+                        ),
                         timeout=15_000,
                     ) as create_response_info:
                         page.locator("#btnSyncTimeline").click()
@@ -686,7 +759,9 @@ def test_c14_i2v_ten_shot_generation_and_multitake_browser_closeout(
                         "() => window.WorkbenchStoryboard.getState().timelineManifest?.version === 1",
                         timeout=10_000,
                     )
-                    evidence["assertions"].append("真实分镜台创建 10 段持久化时间线，初始 manifest version=1")
+                    evidence["assertions"].append(
+                        "真实分镜台创建 10 段持久化时间线，初始 manifest version=1"
+                    )
 
                     promotions: list[dict[str, Any]] = []
                     expected_version = 1
@@ -716,17 +791,27 @@ def test_c14_i2v_ten_shot_generation_and_multitake_browser_closeout(
                     grid.evaluate("element => { element.parentElement.scrollTop = 0; }")
                     page.wait_for_timeout(200)
                     page.screenshot(
-                        path=str(_evidence_dir() / "c14-t4-contact-sheets-after-top.png"),
+                        path=str(
+                            _evidence_dir() / "c14-t4-contact-sheets-after-top.png"
+                        ),
                         full_page=True,
                     )
-                    evidence["screenshots"].append("c14-t4-contact-sheets-after-top.png")
-                    grid.evaluate("element => { element.parentElement.scrollTop = element.parentElement.scrollHeight; }")
+                    evidence["screenshots"].append(
+                        "c14-t4-contact-sheets-after-top.png"
+                    )
+                    grid.evaluate(
+                        "element => { element.parentElement.scrollTop = element.parentElement.scrollHeight; }"
+                    )
                     page.wait_for_timeout(200)
                     page.screenshot(
-                        path=str(_evidence_dir() / "c14-t4-contact-sheets-after-bottom.png"),
+                        path=str(
+                            _evidence_dir() / "c14-t4-contact-sheets-after-bottom.png"
+                        ),
                         full_page=True,
                     )
-                    evidence["screenshots"].append("c14-t4-contact-sheets-after-bottom.png")
+                    evidence["screenshots"].append(
+                        "c14-t4-contact-sheets-after-bottom.png"
+                    )
                     final_payload = _json_response(
                         request.get(
                             f"{server.base}/api/episode-pipelines/{pipeline_id}/timeline-manifest",
@@ -738,7 +823,9 @@ def test_c14_i2v_ten_shot_generation_and_multitake_browser_closeout(
                     clips = final_manifest["tracks"][0]["clips"]
                     by_shot = {clip["shot_id"]: clip for clip in clips}
                     assert len(by_shot) == SHOT_COUNT
-                    assert set(by_shot) == {_shot_id(number) for number in range(1, SHOT_COUNT + 1)}
+                    assert set(by_shot) == {
+                        _shot_id(number) for number in range(1, SHOT_COUNT + 1)
+                    }
                     assert final_manifest["version"] == 1 + len(promotions)
                     assert [item["expected_version"] for item in promotions] == list(
                         range(1, 1 + len(promotions))
@@ -748,9 +835,13 @@ def test_c14_i2v_ten_shot_generation_and_multitake_browser_closeout(
                         shot_id = _shot_id(number)
                         selected_version = 3 if number in (1, SHOT_COUNT) else 2
                         clip = by_shot[shot_id]
-                        expected_version_id = f"EP01_SC01_SH{number:03d}_v{selected_version:03d}"
+                        expected_version_id = (
+                            f"EP01_SC01_SH{number:03d}_v{selected_version:03d}"
+                        )
                         expected_take_id = f"{shot_id}-take-{selected_version}"
-                        expected_asset = generated[(shot_id, selected_version)]["asset"]["asset_id"]
+                        expected_asset = generated[(shot_id, selected_version)][
+                            "asset"
+                        ]["asset_id"]
                         assert clip["version_id"] == expected_version_id
                         assert clip["take_id"] == expected_take_id
                         assert clip["asset_id"] == expected_asset
@@ -759,12 +850,15 @@ def test_c14_i2v_ten_shot_generation_and_multitake_browser_closeout(
                         assert clip["overrides"]["src"].endswith(f"#t=0,{duration:g}")
                         expected_at += duration
                     assert expected_at == pytest.approx(41.9, abs=1e-9)
-                    assert final_manifest["metadata"]["primary_take_by_shot"][_shot_id(1)]["take_id"] == (
-                        f"{_shot_id(1)}-take-3"
+                    assert final_manifest["metadata"]["primary_take_by_shot"][
+                        _shot_id(1)
+                    ]["take_id"] == (f"{_shot_id(1)}-take-3")
+                    assert (
+                        final_manifest["metadata"]["primary_take_by_shot"][
+                            _shot_id(SHOT_COUNT)
+                        ]["take_id"]
+                        == f"{_shot_id(SHOT_COUNT)}-take-3"
                     )
-                    assert final_manifest["metadata"]["primary_take_by_shot"][_shot_id(SHOT_COUNT)][
-                        "take_id"
-                    ] == f"{_shot_id(SHOT_COUNT)}-take-3"
                     assert not page_errors, page_errors
 
                     total_duration = round(sum(clip["duration"] for clip in clips), 3)
@@ -784,7 +878,10 @@ def test_c14_i2v_ten_shot_generation_and_multitake_browser_closeout(
                             "job_count": len(api_jobs),
                             "default_app_video_job_route_mounted": server.default_video_route_mounted,
                             "timeline_summary": timeline_summary,
-                            "browser": {"engine": "Chrome via Playwright", "real_opt_in": True},
+                            "browser": {
+                                "engine": "Chrome via Playwright",
+                                "real_opt_in": True,
+                            },
                             "page_errors": page_errors,
                         }
                     )

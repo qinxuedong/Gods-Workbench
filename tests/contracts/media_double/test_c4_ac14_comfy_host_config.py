@@ -9,6 +9,7 @@
   executors.local_comfy 与 data_gaps 等既有字段保持向后兼容。
 - GET /comfy-control 未配置时如实返回 unconfigured 状态而非猜测本地端口。
 """
+
 from __future__ import annotations
 
 import json
@@ -20,9 +21,17 @@ WF = "/api/god_workflow"
 #: 「RunningHub 凭证与本地 ComfyUI 环境设置」弹窗（inputComfyUrl）中配置。
 SETTINGS_PATH = "/static/pages/workflow.html"
 
-CANVAS_DOCUMENT = {"nodes": [
-    {"id": "1", "kind": "AcmeSource", "title": "Source", "inputs": {"text": "seed-value", "count": 7}},
-], "connections": []}
+CANVAS_DOCUMENT = {
+    "nodes": [
+        {
+            "id": "1",
+            "kind": "AcmeSource",
+            "title": "Source",
+            "inputs": {"text": "seed-value", "count": 7},
+        },
+    ],
+    "connections": [],
+}
 
 
 def _unconfigure(monkeypatch):
@@ -38,7 +47,9 @@ def _assert_no_default_host_probe(attempts) -> list[str]:
     return urls
 
 
-def test_open_in_comfy_unconfigured_returns_409_with_settings_path(media_client, no_network, monkeypatch):
+def test_open_in_comfy_unconfigured_returns_409_with_settings_path(
+    media_client, no_network, monkeypatch
+):
     """C4-AC14-OPEN-01：未配置 → 409 COMFY_HOST_NOT_CONFIGURED + settings_path；全程零网络请求。"""
     _unconfigure(monkeypatch)
     opened = media_client.post(f"{WF}/open-in-comfy", headers=HEADERS)
@@ -51,13 +62,18 @@ def test_open_in_comfy_unconfigured_returns_409_with_settings_path(media_client,
     _assert_no_default_host_probe(no_network)
 
 
-def test_open_in_comfy_unconfigured_with_document_queues_nothing(media_client, no_network, monkeypatch):
+def test_open_in_comfy_unconfigured_with_document_queues_nothing(
+    media_client, no_network, monkeypatch
+):
     """C4-AC14-OPEN-02：带 workflow_id 且未配置 → 409，不排队导入指令、不产生任何网络请求。"""
     from gw.god_workflow import routes
+
     # 指令队列是模块级全局；先清掉其他用例遗留条目，断言才只反映本用例行为。
     monkeypatch.setattr(routes, "_PENDING_COMFY_COMMAND", {})
     _unconfigure(monkeypatch)
-    saved = media_client.post(f"{WF}/documents?source=canvas", json=CANVAS_DOCUMENT, headers=HEADERS)
+    saved = media_client.post(
+        f"{WF}/documents?source=canvas", json=CANVAS_DOCUMENT, headers=HEADERS
+    )
     assert saved.status_code == 201, saved.text
     workflow_id = saved.json()["workflow_id"]
     opened = media_client.post(f"{WF}/open-in-comfy/{workflow_id}", headers=HEADERS)
@@ -71,7 +87,9 @@ def test_open_in_comfy_unconfigured_with_document_queues_nothing(media_client, n
     _assert_no_default_host_probe(no_network)
 
 
-def test_open_in_comfy_configured_but_offline_returns_503(media_client, no_network, monkeypatch):
+def test_open_in_comfy_configured_but_offline_returns_503(
+    media_client, no_network, monkeypatch
+):
     """C4-AC14-OPEN-03：已配置 loopback 地址但连不上 → 503 COMFY_HOST_UNREACHABLE；
     探测只允许打向已配置地址，绝无 127.0.0.1:8188 默认回退。"""
     monkeypatch.setenv("GW_COMFYUI_URL", "http://127.0.0.1:9")
@@ -83,22 +101,31 @@ def test_open_in_comfy_configured_but_offline_returns_503(media_client, no_netwo
     assert all(url.startswith("http://127.0.0.1:9/") for url in urls), urls
 
 
-def test_open_in_comfy_starting_keeps_comfy_start_pending(media_client, no_network, monkeypatch):
+def test_open_in_comfy_starting_keeps_comfy_start_pending(
+    media_client, no_network, monkeypatch
+):
     """C4-AC14-OPEN-04：宿主启动中 → 仍为 503 COMFY_START_PENDING，既有语义不变。"""
     from gw.god_workflow import routes
+
     monkeypatch.setenv("GW_COMFYUI_URL", "http://127.0.0.1:9")
-    monkeypatch.setattr(routes, "_comfy_operation",
-                        lambda *a, **k: {"ok": True, "status": "starting", "highlight": False})
+    monkeypatch.setattr(
+        routes,
+        "_comfy_operation",
+        lambda *a, **k: {"ok": True, "status": "starting", "highlight": False},
+    )
     opened = media_client.post(f"{WF}/open-in-comfy", headers=HEADERS)
     assert opened.status_code == 503, opened.text
     assert opened.json()["detail"]["code"] == "COMFY_START_PENDING"
     assert no_network == []
 
 
-def test_comfy_operation_without_config_reports_unconfigured(media_client, no_network, monkeypatch):
+def test_comfy_operation_without_config_reports_unconfigured(
+    media_client, no_network, monkeypatch
+):
     """C4-AC14-CTRL-01：真实 _comfy_operation 未配置时如实返回 unconfigured，不猜测默认端口、不探测。"""
     _unconfigure(monkeypatch)
     from gw.god_workflow import routes
+
     context = routes._auth(HEADERS["Authorization"], "editor", False)
     result = routes._comfy_operation(context, "status")
     assert result["status"] == "unconfigured"
@@ -108,7 +135,9 @@ def test_comfy_operation_without_config_reports_unconfigured(media_client, no_ne
     assert no_network == []
 
 
-def test_comfy_control_endpoint_reports_unconfigured_state(media_client, no_network, monkeypatch):
+def test_comfy_control_endpoint_reports_unconfigured_state(
+    media_client, no_network, monkeypatch
+):
     """C4-AC14-CTRL-02：GET /comfy-control 未配置 → 200 且 status=unconfigured，而非对默认端口探测。"""
     _unconfigure(monkeypatch)
     status = media_client.get(f"{WF}/comfy-control", headers=HEADERS)
@@ -120,7 +149,9 @@ def test_comfy_control_endpoint_reports_unconfigured_state(media_client, no_netw
     assert no_network == []
 
 
-def test_capabilities_reports_comfy_host_states_without_probing(media_client, no_network, monkeypatch):
+def test_capabilities_reports_comfy_host_states_without_probing(
+    media_client, no_network, monkeypatch
+):
     """C4-AC14-CAP-01：capabilities 如实报告 comfy_host 两态且零探测；executors/data_gaps 向后兼容。"""
     _unconfigure(monkeypatch)
     body = media_client.get(f"{WF}/capabilities", headers=HEADERS).json()
@@ -131,7 +162,9 @@ def test_capabilities_reports_comfy_host_states_without_probing(media_client, no
 
     # 仅主体设置配置地址（清空环境变量）同样如实报告 configured。
     admin = {**HEADERS, "X-User-Role": "admin"}
-    saved = media_client.post(f"{WF}/settings", json={"comfy_url": "http://127.0.0.1:8188"}, headers=admin)
+    saved = media_client.post(
+        f"{WF}/settings", json={"comfy_url": "http://127.0.0.1:8188"}, headers=admin
+    )
     assert saved.status_code == 200, saved.text
     body = media_client.get(f"{WF}/capabilities", headers=HEADERS).json()
     assert body["comfy_host"] == "configured"
