@@ -11,6 +11,7 @@
 --data-dir 为包含 asset_registry.json 与 asset_library.json 的目录（即服务的 GW_DATA_DIR 数据根）。
 省略 --data-dir 时读取环境变量 GW_DATA_DIR。退出码：0=一致，1=发现不一致，2=输入错误。
 """
+
 from __future__ import annotations
 
 import argparse
@@ -18,20 +19,20 @@ import json
 import os
 import sys
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 REGISTRY_FILE = "asset_registry.json"
 LIBRARY_FILE = "asset_library.json"
 
 
-def _read_json(path: Path) -> Optional[Dict[str, Any]]:
+def _read_json(path: Path) -> dict[str, Any] | None:
     if not path.is_file():
         return None
     with open(path, "rb") as handle:  # 只读二进制打开
         return json.loads(handle.read().decode("utf-8"))
 
 
-def _library_items(library: Dict[str, Any]) -> List[Dict[str, Any]]:
+def _library_items(library: dict[str, Any]) -> list[dict[str, Any]]:
     out = []
     for lib_id, lib in (library.get("libraries") or {}).items():
         for category in lib.get("categories") or []:
@@ -43,25 +44,25 @@ def _library_items(library: Dict[str, Any]) -> List[Dict[str, Any]]:
     return out
 
 
-def _owner(asset: Dict[str, Any]) -> Optional[str]:
+def _owner(asset: dict[str, Any]) -> str | None:
     meta = asset.get("metadata") or {}
     return meta.get("workflow_owner") or asset.get("workflow_owner")
 
 
-def inventory(registry: Dict[str, Any], library: Dict[str, Any]) -> Dict[str, Any]:
-    assets: Dict[str, Any] = registry.get("assets") or {}
-    recycle: Dict[str, Any] = registry.get("recycle_bin") or {}
+def inventory(registry: dict[str, Any], library: dict[str, Any]) -> dict[str, Any]:
+    assets: dict[str, Any] = registry.get("assets") or {}
+    recycle: dict[str, Any] = registry.get("recycle_bin") or {}
     items = _library_items(library)
-    lib_by_id: Dict[str, List[Dict[str, Any]]] = {}
+    lib_by_id: dict[str, list[dict[str, Any]]] = {}
     for item in items:
         lib_by_id.setdefault(str(item.get("asset_id")), []).append(item)
 
-    recycled_ids: Dict[str, List[str]] = {}
+    recycled_ids: dict[str, list[str]] = {}
     for entry_id, entry in recycle.items():
         if entry.get("kind") == "asset":
             recycled_ids.setdefault(str(entry.get("asset_id")), []).append(entry_id)
 
-    findings: Dict[str, List[Dict[str, Any]]] = {
+    findings: dict[str, list[dict[str, Any]]] = {
         "registry_only_bridged": [],
         "library_only_bridged": [],
         "library_item_of_recycled_asset": [],
@@ -77,22 +78,49 @@ def inventory(registry: Dict[str, Any], library: Dict[str, Any]) -> Dict[str, An
         owner = _owner(asset)
         hits = lib_by_id.get(asset_id, [])
         if owner and not hits:
-            findings["registry_only_bridged"].append({"asset_id": asset_id, "kind": asset.get("kind"),
-                                                      "name": asset.get("name"), "workflow_owner": owner})
+            findings["registry_only_bridged"].append(
+                {
+                    "asset_id": asset_id,
+                    "kind": asset.get("kind"),
+                    "name": asset.get("name"),
+                    "workflow_owner": owner,
+                }
+            )
         for item in hits:
-            if item.get("workflow_owner") and owner and item.get("workflow_owner") != owner:
-                findings["owner_mismatch"].append({"asset_id": asset_id, "registry_owner": owner,
-                                                   "library_owner": item.get("workflow_owner")})
+            if (
+                item.get("workflow_owner")
+                and owner
+                and item.get("workflow_owner") != owner
+            ):
+                findings["owner_mismatch"].append(
+                    {
+                        "asset_id": asset_id,
+                        "registry_owner": owner,
+                        "library_owner": item.get("workflow_owner"),
+                    }
+                )
 
     for asset_id, hits in lib_by_id.items():
         if len(hits) > 1:
-            findings["duplicate_library_items"].append({"asset_id": asset_id, "count": len(hits),
-                                                        "locations": [[h.get("library_id"), h.get("category_id")] for h in hits]})
+            findings["duplicate_library_items"].append(
+                {
+                    "asset_id": asset_id,
+                    "count": len(hits),
+                    "locations": [
+                        [h.get("library_id"), h.get("category_id")] for h in hits
+                    ],
+                }
+            )
         if asset_id in assets:
             continue
         for item in hits:
-            row = {"asset_id": asset_id, "name": item.get("name"), "library_id": item.get("library_id"),
-                   "category_id": item.get("category_id"), "workflow_owner": item.get("workflow_owner")}
+            row = {
+                "asset_id": asset_id,
+                "name": item.get("name"),
+                "library_id": item.get("library_id"),
+                "category_id": item.get("category_id"),
+                "workflow_owner": item.get("workflow_owner"),
+            }
             if asset_id in recycled_ids:
                 row["recycle_entry_ids"] = recycled_ids[asset_id]
                 findings["library_item_of_recycled_asset"].append(row)
@@ -101,25 +129,39 @@ def inventory(registry: Dict[str, Any], library: Dict[str, Any]) -> Dict[str, An
 
     for asset_id, entry_ids in recycled_ids.items():
         if asset_id in assets:
-            findings["recycle_entry_for_live_asset"].append({"asset_id": asset_id, "recycle_entry_ids": entry_ids})
+            findings["recycle_entry_for_live_asset"].append(
+                {"asset_id": asset_id, "recycle_entry_ids": entry_ids}
+            )
         if len(entry_ids) > 1:
-            findings["multiple_recycle_entries"].append({"asset_id": asset_id, "recycle_entry_ids": entry_ids})
+            findings["multiple_recycle_entries"].append(
+                {"asset_id": asset_id, "recycle_entry_ids": entry_ids}
+            )
     for entry_id, entry in recycle.items():
         stash = (entry.get("payload") or {}).get("library_item")
         if not isinstance(stash, dict):
             continue
         if str(stash.get("asset_id")) != str(entry.get("asset_id")):
-            findings["recycle_stash_id_mismatch"].append({"entry_id": entry_id, "asset_id": entry.get("asset_id"),
-                                                          "stash_asset_id": stash.get("asset_id")})
+            findings["recycle_stash_id_mismatch"].append(
+                {
+                    "entry_id": entry_id,
+                    "asset_id": entry.get("asset_id"),
+                    "stash_asset_id": stash.get("asset_id"),
+                }
+            )
         if str(entry.get("asset_id")) in lib_by_id:
-            findings["recycle_stash_still_in_library"].append({"entry_id": entry_id, "asset_id": entry.get("asset_id")})
+            findings["recycle_stash_still_in_library"].append(
+                {"entry_id": entry_id, "asset_id": entry.get("asset_id")}
+            )
 
     counts = {key: len(rows) for key, rows in findings.items()}
     return {
         "schema": "gw.c4-asset-inventory/v1",
-        "totals": {"registry_assets": len(assets), "registry_recycle_entries": len(recycle),
-                   "library_items": len(items),
-                   "library_items_bridged": sum(1 for i in items if i.get("workflow_owner"))},
+        "totals": {
+            "registry_assets": len(assets),
+            "registry_recycle_entries": len(recycle),
+            "library_items": len(items),
+            "library_items_bridged": sum(1 for i in items if i.get("workflow_owner")),
+        },
         "counts": counts,
         "consistent": not any(counts.values()),
         "findings": findings,
@@ -139,12 +181,14 @@ LABELS = {
 }
 
 
-def summary(report: Dict[str, Any]) -> str:
+def summary(report: dict[str, Any]) -> str:
     t = report["totals"]
-    lines = ["C4-AC6 资产盘点（只读）",
-             f"注册表资产 {t['registry_assets']}，回收站 {t['registry_recycle_entries']}，"
-             f"素材库条目 {t['library_items']}（桥接 {t['library_items_bridged']}）",
-             "结论：一致" if report["consistent"] else "结论：发现不一致"]
+    lines = [
+        "C4-AC6 资产盘点（只读）",
+        f"注册表资产 {t['registry_assets']}，回收站 {t['registry_recycle_entries']}，"
+        f"素材库条目 {t['library_items']}（桥接 {t['library_items_bridged']}）",
+        "结论：一致" if report["consistent"] else "结论：发现不一致",
+    ]
     for key, count in report["counts"].items():
         if count:
             lines.append(f"- {LABELS[key]}: {count}")
@@ -155,10 +199,12 @@ def summary(report: Dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
-def main(argv: Optional[List[str]] = None) -> int:
+def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="C4-AC6 只读资产盘点")
     parser.add_argument("--data-dir", default=os.environ.get("GW_DATA_DIR"))
-    parser.add_argument("--out", help="JSON 报告输出路径（不得位于数据目录内）；省略则打印到 stdout")
+    parser.add_argument(
+        "--out", help="JSON 报告输出路径（不得位于数据目录内）；省略则打印到 stdout"
+    )
     args = parser.parse_args(argv)
     if not args.data_dir:
         print("缺少 --data-dir（或环境变量 GW_DATA_DIR）", file=sys.stderr)
@@ -167,7 +213,10 @@ def main(argv: Optional[List[str]] = None) -> int:
     registry = _read_json(data_dir / REGISTRY_FILE)
     library = _read_json(data_dir / LIBRARY_FILE)
     if registry is None and library is None:
-        print(f"数据目录中没有 {REGISTRY_FILE} / {LIBRARY_FILE}: {data_dir}", file=sys.stderr)
+        print(
+            f"数据目录中没有 {REGISTRY_FILE} / {LIBRARY_FILE}: {data_dir}",
+            file=sys.stderr,
+        )
         return 2
     report = inventory(registry or {}, library or {})
     report["data_dir"] = str(data_dir)
@@ -175,7 +224,9 @@ def main(argv: Optional[List[str]] = None) -> int:
     if args.out:
         out = Path(args.out).resolve()
         if out == data_dir or data_dir in out.parents:
-            print("--out 不得位于数据目录内（盘点必须对数据目录零写入）", file=sys.stderr)
+            print(
+                "--out 不得位于数据目录内（盘点必须对数据目录零写入）", file=sys.stderr
+            )
             return 2
         out.write_text(text, encoding="utf-8")
         print(summary(report))

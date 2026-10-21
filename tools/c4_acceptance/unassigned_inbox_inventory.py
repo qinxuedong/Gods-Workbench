@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 # Copyright 2026 Gods-Workbench Authors
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -41,14 +40,14 @@ import json
 import sys
 import time
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 
-def inventory_unassigned_assets() -> Dict[str, Any]:
+def inventory_unassigned_assets() -> dict[str, Any]:
     """返回无 project_id 资产的数量与 ID 清单；全程只读，不修改任何数据。"""
     from gw.asset_registry import repository as repo
 
@@ -59,7 +58,9 @@ def inventory_unassigned_assets() -> Dict[str, Any]:
         key=lambda record: str(record.get("asset_id") or ""),
     )
     unassigned_ids = [str(record.get("asset_id") or "") for record in unassigned]
-    with_owner = sum(1 for record in unassigned if repo._record_owner(record) is not None)
+    with_owner = sum(
+        1 for record in unassigned if repo._record_owner(record) is not None
+    )
     return {
         "tool": "unassigned-inbox-inventory",
         "read_only": True,
