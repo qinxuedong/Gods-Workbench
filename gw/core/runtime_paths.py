@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 # Copyright 2026 Gods-Workbench Authors
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -22,12 +21,12 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 import os
-from pathlib import Path, PureWindowsPath
 import stat
-from typing import Mapping, Optional
-
+from collections.abc import Mapping
+from dataclasses import dataclass
+from pathlib import Path, PureWindowsPath
+from typing import Optional
 
 RUNTIME_MODE_ENV = "GW_RUNTIME_MODE"
 DATA_DIR_ENV = "GW_DATA_DIR"
@@ -162,7 +161,7 @@ def _same_path(left: Path, right: Path) -> bool:
     return left == right
 
 
-def _env_value(env: Mapping[str, str], name: str) -> Optional[str]:
+def _env_value(env: Mapping[str, str], name: str) -> str | None:
     value = env.get(name)
     if value is None:
         return None
@@ -198,12 +197,12 @@ def _validate_target_shape(paths: tuple[Path, Path, Path]) -> None:
         _fail("INVALID_RUNTIME_PATH", "账户库路径无法安全核验")
 
 
-def _repo_root(raw: Optional[Path]) -> Path:
+def _repo_root(raw: Path | None) -> Path:
     value = raw if raw is not None else Path(__file__).resolve().parents[2]
     return _canonical(value, code="INVALID_REPO_ROOT")
 
 
-def _localappdata(raw: Optional[Path], env: Mapping[str, str]) -> Path:
+def _localappdata(raw: Path | None, env: Mapping[str, str]) -> Path:
     value: object = raw if raw is not None else _env_value(env, "LOCALAPPDATA")
     if value is None:
         # 非 Windows 不存在 LOCALAPPDATA；安全策略是显式拒绝，而不是偷偷写入
@@ -218,11 +217,11 @@ def _localappdata(raw: Optional[Path], env: Mapping[str, str]) -> Path:
 
 
 def resolve_runtime_paths(
-    mode: Optional[str] = None,
+    mode: str | None = None,
     *,
-    repo_root: Optional[Path] = None,
-    env: Optional[Mapping[str, str]] = None,
-    localappdata: Optional[Path] = None,
+    repo_root: Path | None = None,
+    env: Mapping[str, str] | None = None,
+    localappdata: Path | None = None,
 ) -> RuntimePaths:
     """一次性解析并校验测试、开发或生产三态的 data/auth/video 三根路径。
 
@@ -231,13 +230,17 @@ def resolve_runtime_paths(
     临时父目录）。所有校验完成后才返回快照。
     """
     source = env if env is not None else os.environ
-    selected = (mode or _env_value(source, RUNTIME_MODE_ENV) or MODE_DEV).strip().lower()
+    selected = (
+        (mode or _env_value(source, RUNTIME_MODE_ENV) or MODE_DEV).strip().lower()
+    )
     if selected not in _VALID_MODES:
         _fail("INVALID_RUNTIME_MODE", "运行态必须是 test、dev 或 prod")
     root = _repo_root(repo_root)
 
     if selected == MODE_DEV:
-        runtime_root = _canonical(root / ".local" / "runtime-dev", code="INVALID_RUNTIME_PATH")
+        runtime_root = _canonical(
+            root / ".local" / "runtime-dev", code="INVALID_RUNTIME_PATH"
+        )
         defaults = (
             runtime_root / "data",
             runtime_root / "auth" / "auth.sqlite3",
@@ -245,16 +248,31 @@ def resolve_runtime_paths(
         )
         paths = (
             _read_override(source, DATA_DIR_ENV, default=defaults[0], mode=selected),
-            _read_override(source, LOCAL_AUTH_DB_ENV, default=defaults[1], mode=selected),
-            _read_override(source, VIDEO_DATA_DIR_ENV, default=defaults[2], mode=selected),
+            _read_override(
+                source, LOCAL_AUTH_DB_ENV, default=defaults[1], mode=selected
+            ),
+            _read_override(
+                source, VIDEO_DATA_DIR_ENV, default=defaults[2], mode=selected
+            ),
         )
         for path in paths:
-            _require_inside(path, runtime_root, code="DEV_PATH_OUTSIDE_SANDBOX", message="开发态路径必须位于 .local/runtime-dev 内")
-        if not (_same_path(paths[0], defaults[0]) and _same_path(paths[1], defaults[1]) and _same_path(paths[2], defaults[2])):
+            _require_inside(
+                path,
+                runtime_root,
+                code="DEV_PATH_OUTSIDE_SANDBOX",
+                message="开发态路径必须位于 .local/runtime-dev 内",
+            )
+        if not (
+            _same_path(paths[0], defaults[0])
+            and _same_path(paths[1], defaults[1])
+            and _same_path(paths[2], defaults[2])
+        ):
             _fail("DEV_PATH_NOT_ALLOWED", "开发态只允许固定三根运行路径")
     elif selected == MODE_PROD:
         local_root = _localappdata(localappdata, source)
-        runtime_root = _canonical(local_root / "GodsWorkbench", code="INVALID_PRODUCTION_ROOT")
+        runtime_root = _canonical(
+            local_root / "GodsWorkbench", code="INVALID_PRODUCTION_ROOT"
+        )
         defaults = (
             runtime_root / "data",
             runtime_root / "auth" / "auth.sqlite3",
@@ -262,23 +280,44 @@ def resolve_runtime_paths(
         )
         paths = (
             _read_override(source, DATA_DIR_ENV, default=defaults[0], mode=selected),
-            _read_override(source, LOCAL_AUTH_DB_ENV, default=defaults[1], mode=selected),
-            _read_override(source, VIDEO_DATA_DIR_ENV, default=defaults[2], mode=selected),
+            _read_override(
+                source, LOCAL_AUTH_DB_ENV, default=defaults[1], mode=selected
+            ),
+            _read_override(
+                source, VIDEO_DATA_DIR_ENV, default=defaults[2], mode=selected
+            ),
         )
         # 生产环境固定落到用户数据树，不允许通过变量把数据写回仓库或其它目录。
         for path in paths:
-            _require_inside(path, runtime_root, code="PROD_PATH_OUTSIDE_SANDBOX", message="生产态路径必须位于 LOCALAPPDATA/GodsWorkbench 内")
-        if not (_same_path(paths[0], defaults[0]) and _same_path(paths[1], defaults[1]) and _same_path(paths[2], defaults[2])):
+            _require_inside(
+                path,
+                runtime_root,
+                code="PROD_PATH_OUTSIDE_SANDBOX",
+                message="生产态路径必须位于 LOCALAPPDATA/GodsWorkbench 内",
+            )
+        if not (
+            _same_path(paths[0], defaults[0])
+            and _same_path(paths[1], defaults[1])
+            and _same_path(paths[2], defaults[2])
+        ):
             _fail("PROD_PATH_NOT_ALLOWED", "生产态只允许固定三根运行路径")
         for path in (runtime_root, *paths):
             if _inside(path, root):
                 _fail("PROD_PATH_IN_REPOSITORY", "生产态路径不得位于源码仓库内")
     else:
         runtime_root = root / ".local" / "runtime-test"
-        raw_values = (_env_value(source, DATA_DIR_ENV), _env_value(source, LOCAL_AUTH_DB_ENV), _env_value(source, VIDEO_DATA_DIR_ENV))
+        raw_values = (
+            _env_value(source, DATA_DIR_ENV),
+            _env_value(source, LOCAL_AUTH_DB_ENV),
+            _env_value(source, VIDEO_DATA_DIR_ENV),
+        )
         if any(value is None for value in raw_values):
-            _fail("TEST_PATHS_REQUIRED", "测试态必须显式提供 data、auth、video 三根路径")
-        paths = tuple(_canonical(value, code="INVALID_RUNTIME_PATH") for value in raw_values)  # type: ignore[arg-type]
+            _fail(
+                "TEST_PATHS_REQUIRED", "测试态必须显式提供 data、auth、video 三根路径"
+            )
+        paths = tuple(
+            _canonical(value, code="INVALID_RUNTIME_PATH") for value in raw_values
+        )  # type: ignore[arg-type]
     _validate_target_shape(paths)
     return RuntimePaths(
         mode=selected,
@@ -290,11 +329,9 @@ def resolve_runtime_paths(
     )
 
 
-
 # 易读别名；实现保持单一入口，避免三态校验口径漂移。
 parse_runtime_paths = resolve_runtime_paths
 runtime_paths = resolve_runtime_paths
-
 
 
 __all__ = [
@@ -311,4 +348,3 @@ __all__ = [
     "resolve_runtime_paths",
     "runtime_paths",
 ]
-

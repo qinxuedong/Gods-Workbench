@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 # Copyright 2026 Gods-Workbench Authors
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -22,8 +21,9 @@ import re
 import subprocess
 import threading
 import time
-from datetime import datetime, timezone
-from typing import Any, Dict, Optional, Sequence, Tuple
+from collections.abc import Sequence
+from datetime import UTC, datetime, timezone
+from typing import Any, Dict, Optional, Tuple
 from urllib.parse import urlsplit
 
 from gw.core.errors import CleanroomException
@@ -41,7 +41,7 @@ _USER_CODE = re.compile(r"^[A-Za-z0-9-]{4,64}$")
 
 
 def _now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
+    return datetime.now(UTC).isoformat(timespec="seconds").replace("+00:00", "Z")
 
 
 def _raise_cli_error(
@@ -50,11 +50,11 @@ def _raise_cli_error(
     message: str,
     endpoint: str,
     *,
-    result_unknown: Optional[bool] = None,
-    returncode: Optional[int] = None,
+    result_unknown: bool | None = None,
+    returncode: int | None = None,
     data_status: str = "failed",
 ) -> None:
-    extra: Dict[str, Any] = {"endpoint": endpoint, "data_status": data_status}
+    extra: dict[str, Any] = {"endpoint": endpoint, "data_status": data_status}
     exposed = {"endpoint", "data_status"}
     if result_unknown is not None:
         extra["result_unknown"] = result_unknown
@@ -62,12 +62,14 @@ def _raise_cli_error(
     if returncode is not None:
         extra["returncode"] = returncode
         exposed.add("returncode")
-    raise CleanroomException(status_code, code, message, extra=extra, expose_extra_fields=exposed)
+    raise CleanroomException(
+        status_code, code, message, extra=extra, expose_extra_fields=exposed
+    )
 
 
-def _popen_options() -> Dict[str, Any]:
+def _popen_options() -> dict[str, Any]:
     """固定子进程 I/O 与平台选项，不经过 shell，也不弹出 Windows 控制台。"""
-    options: Dict[str, Any] = {
+    options: dict[str, Any] = {
         "stdin": subprocess.DEVNULL,
         "stdout": subprocess.PIPE,
         "stderr": subprocess.STDOUT,
@@ -107,7 +109,7 @@ def run_limited_process(
     process: subprocess.Popen,
     timeout_seconds: float,
     max_bytes: int = MAX_OUTPUT_BYTES,
-) -> Tuple[Optional[int], bytes, Optional[str]]:
+) -> tuple[int | None, bytes, str | None]:
     """按实际读取字节限制输出，并主动执行超时/超量进程回收。"""
     output = bytearray()
     output_lock = threading.Lock()
@@ -140,8 +142,8 @@ def run_limited_process(
     reader = threading.Thread(target=drain, name="gw-cli-output-reader", daemon=True)
     reader.start()
     deadline = time.monotonic() + max(0.0, timeout_seconds)
-    reason: Optional[str] = None
-    returncode: Optional[int] = None
+    reason: str | None = None
+    returncode: int | None = None
     while True:
         if overflow.is_set():
             reason = "output_limit"
@@ -197,8 +199,12 @@ def _allowed_hosts() -> set[str]:
     return {part.strip().rstrip(".").lower() for part in raw.split(",") if part.strip()}
 
 
-def _validated_verification_uri(candidate: str) -> Optional[str]:
-    if not candidate or len(candidate) > 2048 or any(ord(char) < 0x21 or ord(char) > 0x7E for char in candidate):
+def _validated_verification_uri(candidate: str) -> str | None:
+    if (
+        not candidate
+        or len(candidate) > 2048
+        or any(ord(char) < 0x21 or ord(char) > 0x7E for char in candidate)
+    ):
         return None
     if "\\" in candidate:
         return None
@@ -225,12 +231,14 @@ def _validated_verification_uri(candidate: str) -> Optional[str]:
     return candidate
 
 
-def parse_authorization_material(output: bytes) -> Tuple[Optional[str], Optional[str]]:
+def parse_authorization_material(output: bytes) -> tuple[str | None, str | None]:
     """只解析输出中明确命名的 verification_uri 与 user_code 字段。"""
     text = output.decode("utf-8", errors="replace")
     uri_match = _FIELD_PATTERNS["verification_uri"].search(text)
     code_match = _FIELD_PATTERNS["user_code"].search(text)
-    verification_uri = _validated_verification_uri(uri_match.group(1)) if uri_match else None
+    verification_uri = (
+        _validated_verification_uri(uri_match.group(1)) if uri_match else None
+    )
     user_code = code_match.group(1).strip() if code_match else None
     if not user_code or not _USER_CODE.fullmatch(user_code):
         user_code = None
@@ -248,14 +256,14 @@ class LoginController:
         self._login_timeout_seconds = login_timeout_seconds
         self._generation = 0
         self._closed = False
-        self._owner: Optional[str] = None
-        self._process: Optional[subprocess.Popen] = None
-        self._timer: Optional[threading.Timer] = None
-        self._termination_reason: Optional[str] = None
-        self._state: Dict[str, Any] = self._unknown_state()
+        self._owner: str | None = None
+        self._process: subprocess.Popen | None = None
+        self._timer: threading.Timer | None = None
+        self._termination_reason: str | None = None
+        self._state: dict[str, Any] = self._unknown_state()
 
     @staticmethod
-    def _unknown_state() -> Dict[str, Any]:
+    def _unknown_state() -> dict[str, Any]:
         return {
             "protocol": "jimeng",
             "running": False,
@@ -275,7 +283,7 @@ class LoginController:
             "data_gaps": [],
         }
 
-    def _snapshot_locked(self) -> Dict[str, Any]:
+    def _snapshot_locked(self) -> dict[str, Any]:
         data = dict(self._state)
         if not data.get("running"):
             data["verification_uri"] = None
@@ -284,26 +292,56 @@ class LoginController:
 
     def _check_owner_locked(self, actor_key: str, endpoint: str) -> None:
         if self._owner is not None and self._owner != actor_key:
-            _raise_cli_error(403, "CLI_SUBJECT_MISMATCH", "该本机 CLI 操作仅对发起主体可见。", endpoint,
-                             data_status="failed")
+            _raise_cli_error(
+                403,
+                "CLI_SUBJECT_MISMATCH",
+                "该本机 CLI 操作仅对发起主体可见。",
+                endpoint,
+                data_status="failed",
+            )
 
-    def status(self, actor_key: str, endpoint: str = "/api/jimeng/login/status") -> Dict[str, Any]:
+    def status(
+        self, actor_key: str, endpoint: str = "/api/jimeng/login/status"
+    ) -> dict[str, Any]:
         with self._lock:
             self._check_owner_locked(actor_key, endpoint)
             return self._snapshot_locked()
 
-    def _begin_locked(self, actor_key: str, operation: str, endpoint: str, idempotent_login: bool = False) -> Optional[int]:
+    def _begin_locked(
+        self,
+        actor_key: str,
+        operation: str,
+        endpoint: str,
+        idempotent_login: bool = False,
+    ) -> int | None:
         if self._closed:
-            _raise_cli_error(503, "CLI_CONTROLLER_CLOSED", "CLI 控制器已关闭，未启动外部进程。", endpoint,
-                             data_status="not_integrated")
+            _raise_cli_error(
+                503,
+                "CLI_CONTROLLER_CLOSED",
+                "CLI 控制器已关闭，未启动外部进程。",
+                endpoint,
+                data_status="not_integrated",
+            )
         if self._state.get("running"):
             if actor_key != self._owner:
-                _raise_cli_error(409, "CLI_OPERATION_IN_PROGRESS", "其他主体正在操作本机共享 CLI 账户。", endpoint,
-                                 data_status="degraded", result_unknown=True)
+                _raise_cli_error(
+                    409,
+                    "CLI_OPERATION_IN_PROGRESS",
+                    "其他主体正在操作本机共享 CLI 账户。",
+                    endpoint,
+                    data_status="degraded",
+                    result_unknown=True,
+                )
             if idempotent_login and self._state.get("last_operation") == operation:
                 return None
-            _raise_cli_error(409, "CLI_OPERATION_IN_PROGRESS", "本机 CLI 账户已有操作正在进行。", endpoint,
-                             data_status="degraded", result_unknown=True)
+            _raise_cli_error(
+                409,
+                "CLI_OPERATION_IN_PROGRESS",
+                "本机 CLI 账户已有操作正在进行。",
+                endpoint,
+                data_status="degraded",
+                result_unknown=True,
+            )
         self._generation += 1
         generation = self._generation
         self._owner = actor_key
@@ -330,7 +368,9 @@ class LoginController:
         }
         return generation
 
-    def _publish_material(self, generation: int, process: subprocess.Popen, output: bytes) -> None:
+    def _publish_material(
+        self, generation: int, process: subprocess.Popen, output: bytes
+    ) -> None:
         uri, user_code = parse_authorization_material(output)
         with self._lock:
             if (
@@ -349,9 +389,15 @@ class LoginController:
                     self._state["state"] = "unrecognized_output"
                     self._state["data_status"] = "degraded"
 
-    def _set_termination(self, generation: int, process: subprocess.Popen, reason: str) -> bool:
+    def _set_termination(
+        self, generation: int, process: subprocess.Popen, reason: str
+    ) -> bool:
         with self._lock:
-            if generation != self._generation or process is not self._process or not self._state.get("running"):
+            if (
+                generation != self._generation
+                or process is not self._process
+                or not self._state.get("running")
+            ):
                 return False
             if self._termination_reason is None:
                 self._termination_reason = reason
@@ -359,7 +405,11 @@ class LoginController:
                 self._state["user_code"] = None
                 self._state["logged_in"] = None
                 self._state["result_unknown"] = True
-                self._state["state"] = "output_limit_exceeded" if reason == "output_limit" else "result_unknown"
+                self._state["state"] = (
+                    "output_limit_exceeded"
+                    if reason == "output_limit"
+                    else "result_unknown"
+                )
                 self._state["data_status"] = "degraded"
             return True
 
@@ -367,7 +417,9 @@ class LoginController:
         if self._set_termination(generation, process, "timeout"):
             _terminate_owned(process)
 
-    def _finalize(self, generation: int, process: subprocess.Popen, returncode: Optional[int]) -> None:
+    def _finalize(
+        self, generation: int, process: subprocess.Popen, returncode: int | None
+    ) -> None:
         with self._lock:
             if generation != self._generation or process is not self._process:
                 return
@@ -389,7 +441,11 @@ class LoginController:
                 self._state["logged_in"] = None
                 self._state["result_unknown"] = True
                 self._state["last_operation_failed"] = True
-                self._state["state"] = "output_limit_exceeded" if reason == "output_limit" else "result_unknown"
+                self._state["state"] = (
+                    "output_limit_exceeded"
+                    if reason == "output_limit"
+                    else "result_unknown"
+                )
                 self._state["data_status"] = "degraded"
             elif returncode == 0 and operation == "login":
                 self._state["logged_in"] = True
@@ -421,27 +477,33 @@ class LoginController:
         with self._lock:
             if generation != self._generation:
                 return
-            self._state.update({
-                "running": False,
-                "logged_in": None,
-                "result_unknown": False,
-                "last_operation_failed": True,
-                "last_operation": operation,
-                "state": "operation_failed",
-                "source": "last_operation",
-                "observed_at": _now_iso(),
-                "returncode": None,
-                "verification_uri": None,
-                "user_code": None,
-                "data_status": "failed",
-            })
+            self._state.update(
+                {
+                    "running": False,
+                    "logged_in": None,
+                    "result_unknown": False,
+                    "last_operation_failed": True,
+                    "last_operation": operation,
+                    "state": "operation_failed",
+                    "source": "last_operation",
+                    "observed_at": _now_iso(),
+                    "returncode": None,
+                    "verification_uri": None,
+                    "user_code": None,
+                    "data_status": "failed",
+                }
+            )
             self._process = None
             self._timer = None
             self._termination_reason = None
 
     def _attach_process(self, generation: int, process: subprocess.Popen) -> bool:
         with self._lock:
-            if self._closed or generation != self._generation or not self._state.get("running"):
+            if (
+                self._closed
+                or generation != self._generation
+                or not self._state.get("running")
+            ):
                 valid = False
             else:
                 valid = True
@@ -452,27 +514,53 @@ class LoginController:
             return False
         return True
 
-    def start_login(self, actor_key: str, executable: str, endpoint: str = "/api/jimeng/login/start") -> Dict[str, Any]:
+    def start_login(
+        self, actor_key: str, executable: str, endpoint: str = "/api/jimeng/login/start"
+    ) -> dict[str, Any]:
         with self._lock:
-            generation = self._begin_locked(actor_key, "login", endpoint, idempotent_login=True)
+            generation = self._begin_locked(
+                actor_key, "login", endpoint, idempotent_login=True
+            )
             if generation is None:
                 return self._snapshot_locked()
         try:
             process = subprocess.Popen([executable, "login"], **_popen_options())
         except OSError:
             self._record_start_failure(generation, "login")
-            _raise_cli_error(503, "CLI_START_FAILED", "Dreamina CLI 无法启动，未回显本机输出。", endpoint,
-                             result_unknown=False)
+            _raise_cli_error(
+                503,
+                "CLI_START_FAILED",
+                "Dreamina CLI 无法启动，未回显本机输出。",
+                endpoint,
+                result_unknown=False,
+            )
         if not self._attach_process(generation, process):
             self._record_start_failure(generation, "login")
-            _raise_cli_error(503, "CLI_CONTROLLER_CLOSED", "CLI 控制器已关闭，子进程已回收。", endpoint,
-                             data_status="not_integrated")
-        timer = threading.Timer(self._login_timeout_seconds, self._on_login_timeout, args=(generation, process))
+            _raise_cli_error(
+                503,
+                "CLI_CONTROLLER_CLOSED",
+                "CLI 控制器已关闭，子进程已回收。",
+                endpoint,
+                data_status="not_integrated",
+            )
+        timer = threading.Timer(
+            self._login_timeout_seconds,
+            self._on_login_timeout,
+            args=(generation, process),
+        )
         timer.daemon = True
-        worker = threading.Thread(target=self._drain_login, args=(generation, process),
-                                  name="gw-dreamina-login-%d" % generation, daemon=True)
+        worker = threading.Thread(
+            target=self._drain_login,
+            args=(generation, process),
+            name="gw-dreamina-login-%d" % generation,
+            daemon=True,
+        )
         with self._lock:
-            if generation == self._generation and process is self._process and self._state.get("running"):
+            if (
+                generation == self._generation
+                and process is self._process
+                and self._state.get("running")
+            ):
                 self._timer = timer
                 timer.start()
                 worker.start()
@@ -524,7 +612,7 @@ class LoginController:
         argv: Sequence[str],
         endpoint: str,
         timeout_seconds: float = SHORT_COMMAND_TIMEOUT_SECONDS,
-    ) -> Tuple[Dict[str, Any], bytes]:
+    ) -> tuple[dict[str, Any], bytes]:
         """用相同代次/独占控制器执行余额或登出短命令。"""
         with self._lock:
             generation = self._begin_locked(actor_key, operation, endpoint)
@@ -532,12 +620,22 @@ class LoginController:
             process = subprocess.Popen([executable, *argv], **_popen_options())
         except OSError:
             self._record_start_failure(generation, operation)
-            _raise_cli_error(503, "CLI_START_FAILED", "Dreamina CLI 无法启动，未回显本机输出。", endpoint,
-                             result_unknown=False)
+            _raise_cli_error(
+                503,
+                "CLI_START_FAILED",
+                "Dreamina CLI 无法启动，未回显本机输出。",
+                endpoint,
+                result_unknown=False,
+            )
         if not self._attach_process(generation, process):
             self._record_start_failure(generation, operation)
-            _raise_cli_error(503, "CLI_CONTROLLER_CLOSED", "CLI 控制器已关闭，子进程已回收。", endpoint,
-                             data_status="not_integrated")
+            _raise_cli_error(
+                503,
+                "CLI_CONTROLLER_CLOSED",
+                "CLI 控制器已关闭，子进程已回收。",
+                endpoint,
+                data_status="not_integrated",
+            )
         returncode, output, reason = run_limited_process(process, timeout_seconds)
         if reason is not None:
             # 登出操作超时/超量不证明账户退出；余额调用亦不伪造完整结果。
@@ -545,12 +643,30 @@ class LoginController:
         self._finalize(generation, process, returncode)
         state = self.status(actor_key, endpoint)
         if reason is not None:
-            code = "CLI_COMMAND_TIMEOUT" if reason == "timeout" else "CLI_OUTPUT_LIMIT_EXCEEDED"
-            _raise_cli_error(503, code, "CLI 操作结果未知；未自动重试且未回显本机输出。", endpoint,
-                             result_unknown=True, returncode=returncode, data_status="degraded")
+            code = (
+                "CLI_COMMAND_TIMEOUT"
+                if reason == "timeout"
+                else "CLI_OUTPUT_LIMIT_EXCEEDED"
+            )
+            _raise_cli_error(
+                503,
+                code,
+                "CLI 操作结果未知；未自动重试且未回显本机输出。",
+                endpoint,
+                result_unknown=True,
+                returncode=returncode,
+                data_status="degraded",
+            )
         if returncode != 0:
-            _raise_cli_error(503, "CLI_COMMAND_FAILED", "CLI 以非零状态退出，不能据此推断登录状态。", endpoint,
-                             result_unknown=True, returncode=returncode, data_status="failed")
+            _raise_cli_error(
+                503,
+                "CLI_COMMAND_FAILED",
+                "CLI 以非零状态退出，不能据此推断登录状态。",
+                endpoint,
+                result_unknown=True,
+                returncode=returncode,
+                data_status="failed",
+            )
         return state, output
 
     def shutdown(self) -> None:
@@ -562,17 +678,19 @@ class LoginController:
             self._timer = None
             if self._state.get("running"):
                 self._termination_reason = "shutdown"
-                self._state.update({
-                    "running": False,
-                    "logged_in": None,
-                    "result_unknown": True,
-                    "last_operation_failed": True,
-                    "state": "result_unknown",
-                    "verification_uri": None,
-                    "user_code": None,
-                    "data_status": "degraded",
-                    "observed_at": _now_iso(),
-                })
+                self._state.update(
+                    {
+                        "running": False,
+                        "logged_in": None,
+                        "result_unknown": True,
+                        "last_operation_failed": True,
+                        "state": "result_unknown",
+                        "verification_uri": None,
+                        "user_code": None,
+                        "data_status": "degraded",
+                        "observed_at": _now_iso(),
+                    }
+                )
         if timer is not None:
             timer.cancel()
         if process is not None:

@@ -31,7 +31,17 @@ from typing import Any, Optional
 
 #: 封闭修饰词字典
 MODIFIER_WHITELIST: frozenset[str] = frozenset(
-    {"raw", "master", "proxy", "preview", "thumb", "sprite", "waveform", "approved", "part"}
+    {
+        "raw",
+        "master",
+        "proxy",
+        "preview",
+        "thumb",
+        "sprite",
+        "waveform",
+        "approved",
+        "part",
+    }
 )
 
 #: 正则表达式模式
@@ -45,7 +55,9 @@ _RE_SAFE_SEGMENT = re.compile(r"^[A-Za-z0-9_-]+$")
 #: 存储层非法字符集（包括 Windows 设备保留与常见路径注入符）
 _RE_DANGEROUS_CHARS = re.compile(r'[\\/:*?"<>| \t\r\n\x00-\x1f]')
 _WINDOWS_RESERVED_NAMES = frozenset(
-    {"CON", "PRN", "AUX", "NUL"} | {f"COM{i}" for i in range(1, 10)} | {f"LPT{i}" for i in range(1, 10)}
+    {"CON", "PRN", "AUX", "NUL"}
+    | {f"COM{i}" for i in range(1, 10)}
+    | {f"LPT{i}" for i in range(1, 10)}
 )
 
 
@@ -59,24 +71,24 @@ def format_version(version: int | str) -> str:
         if version < 1:
             raise NamingValidationError(f"版本序号必须为正整数: {version}")
         return f"v{version:03d}"
-    
+
     val = str(version).strip()
     match = _RE_VERSION.match(val)
     if match:
         num = int(match.group(1))
         return f"v{num:03d}"
-    
+
     # 纯数字字符串兼容
     if val.isdigit():
         num = int(val)
         if num < 1:
             raise NamingValidationError(f"版本序号必须为正整数: {val}")
         return f"v{num:03d}"
-    
+
     raise NamingValidationError(f"非法版本格式: '{version}'，必须为正整数或 v001 格式")
 
 
-def format_episode(episode: int | str, season: Optional[int | str] = None) -> str:
+def format_episode(episode: int | str, season: int | str | None = None) -> str:
     """格式化分集标记 (如 EP01, EP120, S01EP01)。"""
     ep_num: int
     if isinstance(episode, int):
@@ -95,10 +107,10 @@ def format_episode(episode: int | str, season: Optional[int | str] = None) -> st
                 e_num = int(match_se.group(2))
                 return f"S{s_num:02d}EP{e_num:02d}"
             raise NamingValidationError(f"非法分集格式: '{episode}'")
-    
+
     if ep_num < 1:
         raise NamingValidationError(f"分集序号必须为正整数: {episode}")
-    
+
     ep_tag = f"EP{ep_num:03d}" if ep_num >= 100 else f"EP{ep_num:02d}"
 
     if season is not None:
@@ -160,26 +172,30 @@ def format_artifact_filename(
     name: str,
     *,
     version: int | str = 1,
-    scene: Optional[int | str] = None,
-    shot: Optional[int | str] = None,
-    episode: Optional[int | str] = None,
-    season: Optional[int | str] = None,
-    project_slug: Optional[str] = None,
-    modifier: Optional[str] = None,
-    extension: Optional[str] = None,
-    ext: Optional[str] = None,
+    scene: int | str | None = None,
+    shot: int | str | None = None,
+    episode: int | str | None = None,
+    season: int | str | None = None,
+    project_slug: str | None = None,
+    modifier: str | None = None,
+    extension: str | None = None,
+    ext: str | None = None,
 ) -> str:
     """按照 GNS-2026 规范拼装语义展示与导出文件名。
-    
+
     公式：[PROJ_][分集_][场次_][镜头_]<主体描述>_<版本号>[_<修饰词>].<扩展名>
     """
     clean_name = str(name).strip().replace(" ", "-")
     if not clean_name:
         raise NamingValidationError("主体描述 (name) 不能为空")
     if not _RE_SAFE_SEGMENT.match(clean_name):
-        raise NamingValidationError(f"主体描述包含非法字符: '{name}'，仅限英文字母、数字、短横线与下划线")
+        raise NamingValidationError(
+            f"主体描述包含非法字符: '{name}'，仅限英文字母、数字、短横线与下划线"
+        )
 
-    resolved_ext = ext if ext is not None else (extension if extension is not None else "mp4")
+    resolved_ext = (
+        ext if ext is not None else (extension if extension is not None else "mp4")
+    )
     clean_ext = str(resolved_ext).lstrip(".").strip().lower()
     if not clean_ext:
         raise NamingValidationError("扩展名不能为空")
@@ -306,9 +322,9 @@ def parse_artifact_filename(filename: str) -> dict[str, Any]:
     return result
 
 
-def sanitize_storage_filename(filename: str, fallback_id: Optional[str] = None) -> str:
+def sanitize_storage_filename(filename: str, fallback_id: str | None = None) -> str:
     """清洗文件名，确保物理落盘 100% 纯 ASCII、无空格、无路径遍历字符。
-    
+
     若文件名包含非 ASCII 字符或非法字符，则清洗为安全形式；
     若清洗后为空或命中系统保留名，则回退到 fallback_id 或标准 hash 替代名。
     """
@@ -317,7 +333,9 @@ def sanitize_storage_filename(filename: str, fallback_id: Optional[str] = None) 
     ext = pure.suffix.lower().lstrip(".")
 
     # 移除非 ASCII 字符（Unicode 归一化）
-    normalized = unicodedata.normalize("NFKD", stem).encode("ascii", "ignore").decode("ascii")
+    normalized = (
+        unicodedata.normalize("NFKD", stem).encode("ascii", "ignore").decode("ascii")
+    )
     # 替换危险字符与空格为下划线
     cleaned_stem = _RE_DANGEROUS_CHARS.sub("_", normalized)
     # 收敛连续下划线
@@ -334,7 +352,7 @@ def sanitize_storage_filename(filename: str, fallback_id: Optional[str] = None) 
     return f"{cleaned_stem}{final_ext}"
 
 
-def validate_artifact_filename(filename: str) -> tuple[bool, Optional[str]]:
+def validate_artifact_filename(filename: str) -> tuple[bool, str | None]:
     """便捷校验文件名是否符合 GNS 规范，返回 (True, None) 或 (False, 原因)。"""
     try:
         parse_artifact_filename(filename)

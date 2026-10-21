@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 # Copyright 2026 Gods-Workbench Authors
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -30,11 +29,17 @@
 """
 
 import hashlib
+from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Any, Mapping, Optional
+from typing import Any, Optional
 
 from gw.core import audit as audit_log
-from gw.core.config import AUTH_MODE_LOCAL, AUTH_MODE_OIDC, AUTH_MODE_LOCAL_ACCOUNT, load_runtime_auth_config
+from gw.core.config import (
+    AUTH_MODE_LOCAL,
+    AUTH_MODE_LOCAL_ACCOUNT,
+    AUTH_MODE_OIDC,
+    load_runtime_auth_config,
+)
 from gw.core.errors import ForbiddenException, UnauthorizedException
 
 KNOWN_ROLES = frozenset({"admin", "governor", "editor", "reviewer", "readonly"})
@@ -47,13 +52,15 @@ class AuthContext:
     """请求认证后的最小上下文，不保存凭据原文。"""
 
     role: str
-    subject: Optional[str] = None
+    subject: str | None = None
     mode: str = AUTH_MODE_LOCAL_ACCOUNT
-    identity_domain: Optional[str] = None
-    display_name: Optional[str] = None
+    identity_domain: str | None = None
+    display_name: str | None = None
 
 
-def oidc_session_trust_failure_reason(principal: Mapping[str, Any], runtime: Any) -> Optional[str]:
+def oidc_session_trust_failure_reason(
+    principal: Mapping[str, Any], runtime: Any
+) -> str | None:
     """判定一条 OIDC 服务端会话当前是否仍处在可用信任根之内。
 
     返回 ``None`` 表示会话仍绑定当前信任根、可以继续使用；否则返回**封闭集合**内的
@@ -109,7 +116,7 @@ def revoke_oidc_session(principal: Mapping[str, Any], reason: str) -> None:
     )
 
 
-def _extract_bearer_token(authorization: Optional[str]) -> str:
+def _extract_bearer_token(authorization: str | None) -> str:
     """从 Authorization 头提取 Bearer 令牌；缺失或格式错误一律拒绝。"""
     raw = (authorization or "").strip()
     scheme, separator, token = raw.partition(" ")
@@ -119,8 +126,8 @@ def _extract_bearer_token(authorization: Optional[str]) -> str:
 
 
 def require_authenticated(
-    authorization: Optional[str],
-    user_role: Optional[str] = "editor",
+    authorization: str | None,
+    user_role: str | None = "editor",
 ) -> AuthContext:
     """要求已认证会话并返回角色上下文。
 
@@ -137,13 +144,22 @@ def require_authenticated(
 
     if runtime.mode == AUTH_MODE_LOCAL_ACCOUNT:
         from gw.core import session as session_store
+
         principal = session_store.get_current_principal()
         if not principal:
             raise UnauthorizedException(message="请先登录本地账户")
         role = str(principal.get("role") or "")
         if role not in KNOWN_ROLES:
             raise ForbiddenException(message="账户权限无效")
-        return AuthContext(role=role, subject=principal["user_id"], mode=AUTH_MODE_LOCAL_ACCOUNT, identity_domain="local_account", display_name=str(principal.get("display_name") or principal.get("username") or ""))
+        return AuthContext(
+            role=role,
+            subject=principal["user_id"],
+            mode=AUTH_MODE_LOCAL_ACCOUNT,
+            identity_domain="local_account",
+            display_name=str(
+                principal.get("display_name") or principal.get("username") or ""
+            ),
+        )
 
     if runtime.mode == AUTH_MODE_OIDC:
         # 优先使用中间件写入的服务端会话身份（Cookie 承载不透明会话标识）。
@@ -225,7 +241,13 @@ def require_authenticated(
                 auth_mode=AUTH_MODE_OIDC,
             )
             raise ForbiddenException(message="IdP 角色映射未授权，已拒绝请求")
-        return AuthContext(role=role, subject=identity.subject, mode=AUTH_MODE_OIDC, identity_domain=f"oidc:{runtime.oidc.issuer}", display_name=identity.subject)
+        return AuthContext(
+            role=role,
+            subject=identity.subject,
+            mode=AUTH_MODE_OIDC,
+            identity_domain=f"oidc:{runtime.oidc.issuer}",
+            display_name=identity.subject,
+        )
 
     # 本地/测试模式：仅用于开发期，凭证内容不作真实性校验。
     if token.lower() in {"invalid", "expired"}:
@@ -235,10 +257,18 @@ def require_authenticated(
         raise ForbiddenException(message="未知用户角色，已拒绝请求")
     # 本地模式不暴露 Bearer 原文；用摘要作为进程内稳定主体，供资源范围过滤。
     subject = hashlib.sha256(token.encode("utf-8")).hexdigest()[:32]
-    return AuthContext(role=role, subject=f"local:{subject}", mode=AUTH_MODE_LOCAL, identity_domain="local_dev", display_name=f"local:{subject}")
+    return AuthContext(
+        role=role,
+        subject=f"local:{subject}",
+        mode=AUTH_MODE_LOCAL,
+        identity_domain="local_dev",
+        display_name=f"local:{subject}",
+    )
 
 
-def require_edit_access(authorization: Optional[str], user_role: Optional[str] = "editor") -> AuthContext:
+def require_edit_access(
+    authorization: str | None, user_role: str | None = "editor"
+) -> AuthContext:
     """要求已认证且具备项目/画布写权限。"""
     context = require_authenticated(authorization, user_role)
     if context.role not in EDIT_ROLES:
@@ -247,8 +277,8 @@ def require_edit_access(authorization: Optional[str], user_role: Optional[str] =
 
 
 def require_governance_access(
-    authorization: Optional[str],
-    user_role: Optional[str] = "editor",
+    authorization: str | None,
+    user_role: str | None = "editor",
 ) -> AuthContext:
     """要求已认证且具备项目生命周期治理权限。"""
     context = require_authenticated(authorization, user_role)
