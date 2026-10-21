@@ -131,22 +131,26 @@ def test_readonly_role_can_read_storage_settings(api_client: TestClient):
     assert res.status_code == 200
 
 
-def test_patch_storage_settings_success_and_cas_conflict(api_client: TestClient):
+def test_patch_storage_settings_success_and_cas_conflict(api_client: TestClient, tmp_path: Path):
     """保存成功后 revision 递增；错误 expected_version 必须 409 VERSION_CONFLICT。"""
+    assets = tmp_path / "assets"
+    other_assets = tmp_path / "other-assets"
+    assets.mkdir()
+    other_assets.mkdir()
     ok = api_client.patch(
         "/api/storage-settings",
-        json={"dirs": {"local": "D:/assets"}, "expected_version": 1},
+        json={"dirs": {"local": str(assets)}, "expected_version": 1},
         headers=EDITOR,
     )
     assert ok.status_code == 200, ok.text
     body = ok.json()
     assert body["configured"] is True
     assert body["revision"] == 2
-    assert body["dirs"]["local"] == "D:/assets"
+    assert body["dirs"]["local"] == str(assets)
 
     conflict = api_client.patch(
         "/api/storage-settings",
-        json={"dirs": {"local": "D:/other"}, "expected_version": 1},
+        json={"dirs": {"local": str(other_assets)}, "expected_version": 1},
         headers=EDITOR,
     )
     assert conflict.status_code == 409

@@ -182,6 +182,7 @@ const registryRootFoldersLoading = new Set();
 let registryAssets = [];
 // 结构数据只缓存服务端返回的稳定 structure_id 投影，不作为资产或版本真源。
 let registryAssetStructures = new Map();
+let registryAssetStructuresRevision = 1;
 let registryAssetStructureRequestSeq = 0;
 let registryStructureMenu = null;
 let registryStructureMutationId = '';
@@ -970,6 +971,7 @@ async function removeAssetSourceRegistrations(sourceIds=[]){
         extra_local_entries:entries,
         local_library_names:names,
         local_library_order:localLibraries.map(lib => lib.id).filter(id => !removableIds.has(String(id))),
+        expected_version:Number(storageSettingsState.revision || 1),
     }));
     applyStorageSettingsData(data || {});
     registryAssets = registryAssets.filter(item => !removableIds.has(String(item.storage_root_id || '')));
@@ -1087,7 +1089,7 @@ function renderAssetDirectorySettingsBody(){
         <label class="storage-dir-row"><span>托管资产库</span><input value="${escapeAttr(managedLibraryName)}" readonly aria-readonly="true" placeholder="等待资产服务返回名称" title="索引服务返回的托管资产库名称"></label>
         <label class="storage-dir-row"><span>资产库目录</span><input value="${escapeAttr(managedLibraryPath)}" readonly aria-readonly="true" placeholder="等待资产服务返回目录" title="索引服务返回的托管资产库目录"></label>`;
     const saveRows = ['upload','generated'].map(key => `
-        <label class="storage-dir-row"><span>${STORAGE_KIND_LABELS[key]}</span><input id="storageDir_${key}" value="${escapeAttr(dirs[key] || '')}" placeholder="${escapeAttr(storageSettingsState.defaults?.[key] || '')}"></label>
+        <label class="storage-dir-row"><span>${STORAGE_KIND_LABELS[key]}</span><input id="storageDir_${key}" value="${escapeAttr(dirs[key] || '')}" title="${escapeAttr(dirs[key] || '')}" placeholder="${escapeAttr(storageSettingsState.defaults?.[key] || '')}"></label>
     `).join('');
     return `<section class="asset-pref-section board-directory-settings" data-board-directories-settings>
         <div class="asset-pref-title"><i data-lucide="folder-cog"></i><span>目录</span></div>
@@ -1300,7 +1302,8 @@ async function attachPathToAssetBoard(boardId, sourceName, path){
             dirs:storageSettingsState.dirs || {},
             extra_local_entries:entries,
             local_library_names:{...storageLocalLibraryNames(), [id]:storageCleanName(sourceName, '用户素材')},
-            local_library_order:[...localLibraries.map(lib => lib.id).filter(Boolean), id]
+            local_library_order:[...localLibraries.map(lib => lib.id).filter(Boolean), id],
+            expected_version:Number(storageSettingsState.revision || 1),
         }));
         applyStorageSettingsData(data || {});
         const created = localLibraries.find(lib => lib.id === id) || localLibraries.find(lib => pathCompareKey(lib.path) === pathCompareKey(cleanPath));
@@ -1396,6 +1399,7 @@ async function updateBoardSourcePath(sourceId, name, path){
         extra_local_entries:entries,
         local_library_names:names,
         local_library_order:localLibraries.map(lib => lib.id).filter(Boolean),
+        expected_version:Number(storageSettingsState.revision || 1),
     }));
     applyStorageSettingsData(saved || {});
     const updated = localLibraries.find(item => item.id === sourceId) || {id:sourceId, name:storageCleanName(name, '用户素材'), path:cleanPath};
@@ -1614,7 +1618,7 @@ function renderProjectWorkspaceSettingsBody(){
         <div class="asset-pref-title"><i data-lucide="folder-cog"></i><span>项目工作区</span><small>只影响之后新建的项目</small></div>
         <p class="board-settings-hint">更改根目录不会迁移、删除或重命名已有项目的工作区。</p>
         <div class="storage-dir-grid">
-            <label class="storage-dir-row"><span>项目工作区根目录</span><div class="directory-input-row"><input id="storageDir_projects" value="${escapeAttr(dirs.projects || '')}" placeholder="${escapeAttr(defaultRoot)}" autocomplete="off"><button type="button" class="hw-btn hw-btn-icon directory-picker-btn" data-directory-picker="projects" title="选择目录" aria-label="选择项目工作区根目录"><i data-lucide="folder-open"></i></button></div></label>
+            <label class="storage-dir-row"><span>项目工作区根目录</span><div class="directory-input-row"><input id="storageDir_projects" value="${escapeAttr(dirs.projects || '')}" title="${escapeAttr(dirs.projects || '')}" placeholder="${escapeAttr(defaultRoot)}" autocomplete="off"><button type="button" class="hw-btn hw-btn-icon directory-picker-btn" data-directory-picker="projects" title="选择目录" aria-label="选择项目工作区根目录"><i data-lucide="folder-open"></i></button></div></label>
         </div>
         <div class="storage-settings-actions inline">
             <button class="hw-btn" type="button" data-project-directory-template-manager-open><i data-lucide="folders"></i><span>管理目录模板</span></button>
@@ -1921,7 +1925,7 @@ function openDirectoryMountConfirmDialog(key, label, folderName){
                 suggestedPath = currentPath + separator + folderName;
             }
         } else {
-            suggestedPath = folderName;
+            suggestedPath = '';
         }
     }
     overlay.innerHTML = `
@@ -1932,7 +1936,7 @@ function openDirectoryMountConfirmDialog(key, label, folderName){
                         <i data-lucide="folder-check"></i>
                         <span>挂载与确认目录：${escapeHtml(label || '本地素材目录')}</span>
                     </strong>
-                    <span class="directory-mount-subtitle">系统已响应所选目录。核对或输入本地完整物理路径，确认后将自动挂载。</span>
+                    <span class="directory-mount-subtitle">浏览器选择器只提供目录名称提示，不会返回物理路径。请核对或输入完整绝对路径后确认。</span>
                 </div>
                 <button type="button" class="hw-btn hw-btn-icon directory-mount-close-btn" data-directory-mount-close aria-label="关闭"><i data-lucide="x"></i></button>
             </div>
@@ -1944,7 +1948,7 @@ function openDirectoryMountConfirmDialog(key, label, folderName){
                 <div class="directory-mount-field">
                     <label for="mountConfirmPathInput" class="directory-mount-label">完整本地物理路径 (Absolute Path):</label>
                     <input id="mountConfirmPathInput" class="directory-mount-input" value="${escapeAttr(suggestedPath)}" autocomplete="off" placeholder="例如 D:\\Working\\Code Pro\\Gods-Workbench\\.local\\user_data">
-                    <span class="directory-mount-hint">支持一键粘贴或手动编辑。按回车或点击“确认并自动挂载”后自动持久化并挂载。</span>
+                    <span class="directory-mount-hint">请填写完整物理路径；按回车或点击“确认并自动挂载”后验证并保存。</span>
                 </div>
                 <div class="directory-mount-actions">
                     <button type="button" class="hw-btn directory-btn-cancel" data-directory-mount-close>取消</button>
@@ -2031,7 +2035,7 @@ async function saveStorageSettings(){
         local_library_names:storageLocalLibraryNames(),
         local_library_order:(localLibraries.length ? localLibraries : storageSettingsState.localLibraries || []).map(lib => lib.id).filter(Boolean)
     };
-    if(Number.isFinite(Number(storageSettingsState.revision))) payload.expected_revision = Number(storageSettingsState.revision);
+    if(Number.isFinite(Number(storageSettingsState.revision))) payload.expected_version = Number(storageSettingsState.revision);
     try {
         const data = await apiJsonResponse(assetManagerApi.updateStorageSettings(payload));
         applyStorageSettingsData(data || {});
@@ -2116,7 +2120,7 @@ async function loadGlobalDirectorySettings(){
 function renderGlobalDirectorySettings(){
     let host = document.getElementById('storageSettingsOverlay');
     if(!host){ host = document.createElement('main'); host.id = 'storageSettingsOverlay'; host.className = 'directory-page'; document.body.appendChild(host); }
-    const input = (key, label, value, readonly=false) => `<label class="storage-dir-row"><span>${escapeHtml(label)}</span><div class="directory-input-row"><input id="storageDir_${key}" value="${escapeAttr(value || '')}" ${readonly ? 'readonly' : ''} autocomplete="off" title="${readonly ? '' : '输入路径后按回车可自动挂载并保存'}">${readonly ? '' : `<button type="button" class="hw-btn hw-btn-icon directory-picker-btn" data-directory-picker="${escapeAttr(key)}" title="选择目录并自动挂载" aria-label="选择${escapeAttr(label)}目录"><i data-lucide="folder-open"></i></button>`}</div></label>`;
+    const input = (key, label, value, readonly=false) => `<label class="storage-dir-row"><span>${escapeHtml(label)}</span><div class="directory-input-row"><input id="storageDir_${key}" value="${escapeAttr(value || '')}" ${readonly ? 'readonly' : ''} autocomplete="off" title="${escapeAttr(value || (readonly ? '' : '输入完整物理路径'))}">${readonly ? '' : `<button type="button" class="hw-btn hw-btn-icon directory-picker-btn" data-directory-picker="${escapeAttr(key)}" title="选择目录并确认物理路径" aria-label="选择${escapeAttr(label)}目录"><i data-lucide="folder-open"></i></button>`}</div></label>`;
     const dirs = storageSettingsState.dirs || {};
     const managed = registryStatus?.overview?.roots?.find(item => item.kind === 'managed_library');
     host.innerHTML = `<header class="directory-page-header"><h1><i data-lucide="folder-cog"></i>目录设置</h1><button type="button" class="hw-btn" data-directory-reload title="重新读取目录设置" ${directorySettingsSaving ? 'disabled' : ''}><i data-lucide="refresh-cw"></i>重新读取</button></header>
@@ -2126,7 +2130,7 @@ function renderGlobalDirectorySettings(){
         <section class="asset-pref-section"><div class="asset-pref-title"><i data-lucide="hard-drive"></i><span>上传与生成</span></div><div class="storage-dir-grid">${input('upload','上传素材',dirs.upload)}${input('generated','生成素材',dirs.generated)}</div></section>
         ${renderProjectWorkspaceSettingsBody()}
         <section class="asset-pref-section">${renderAssetThumbnailCacheDirectoryBody()}<div class="storage-settings-actions"><button class="hw-btn" type="button" data-directory-cache-save><i data-lucide="save"></i>保存缓存目录</button></div></section>
-        <section class="asset-pref-section"><div class="asset-pref-title"><i data-lucide="trash-2"></i><span>回收站目录</span></div><div class="storage-dir-grid">${input('trash','统一回收根目录（留空跟随素材源）',dirs.trash)}</div><p class="board-settings-hint">新回收素材保存在此目录的 god-ecycler 子目录中；更改目录不会移动已有回收文件，历史记录仍可恢复。项目与画布继续使用原有逻辑回收记录。</p></section>
+        <section class="asset-pref-section"><div class="asset-pref-title"><i data-lucide="trash-2"></i><span>回收站目录</span></div><div class="storage-dir-grid">${input('trash','统一回收根目录（留空跟随素材源）',dirs.trash)}</div><p class="board-settings-hint">新回收素材保存在此目录的 god-recycler 子目录中；更改目录不会移动已有回收文件，历史记录仍可恢复。项目与画布继续使用原有逻辑回收记录。</p></section>
         </fieldset><footer class="directory-footer"><div id="assetStatus" class="directory-status" role="status" aria-live="polite">${escapeHtml(currentStatusText)}</div><button class="hw-btn hw-btn-gold" type="button" data-storage-save ${directorySettingsSaving ? 'disabled' : ''}><i data-lucide="save"></i>${directorySettingsSaving ? '保存中…' : '保存目录'}</button></footer>`}`;
     host.querySelector('.project-workspace-settings [data-storage-save]')?.remove();
     refreshIcons();
@@ -3241,6 +3245,7 @@ async function saveLocalLibrarySettings(){
         extra_local_entries:storageExtraLocalEntries().filter(entry => entry.path),
         local_library_names:storageLocalLibraryNames(),
         local_library_order:localLibraries.map(lib => lib.id).filter(Boolean),
+        expected_version:Number(storageSettingsState.revision || 1),
     }));
     applyStorageSettingsData(data || {});
     return data;
@@ -3859,6 +3864,8 @@ async function refreshRegistryAssetStructures({
             if(sequence !== registryAssetStructureRequestSeq || requestId !== registryRequestSeq) return false;
             pages.push(page);
         }
+        const latestRevision = Number(pages[pages.length - 1]?.revision);
+        if(Number.isFinite(latestRevision) && latestRevision >= 1) registryAssetStructuresRevision = latestRevision;
         const requestedIds = new Set(ids);
         const next = replace ? new Map() : new Map(registryAssetStructures);
         if(!replace){
@@ -3940,7 +3947,9 @@ async function createRegistryVersionStructure(assetIds=[]){
             kind:'version',
             asset_ids:ids,
             current_asset_id:ids[0],
+            expected_version:registryAssetStructuresRevision,
         }));
+        registryAssetStructuresRevision += 1;
         const structure = normalizeRegistryAssetStructure(data?.structure || {});
         if(!registryStructureIsRenderable(structure)) throw new Error('服务端未返回可用的版本结构');
         registryAssetStructures.set(structure.id, structure);
@@ -3971,7 +3980,9 @@ async function createRegistryGroupStructure(assetIds=[]){
             kind:'group',
             asset_ids:ids,
             current_asset_id:ids[0],
+            expected_version:registryAssetStructuresRevision,
         }));
+        registryAssetStructuresRevision += 1;
         const structure = normalizeRegistryAssetStructure(data?.structure || {});
         if(!registryStructureIsRenderable(structure) || structure.structure_type !== 'group') throw new Error('服务端未返回可用的组结构');
         registryAssetStructures.set(structure.id, structure);
@@ -4514,7 +4525,9 @@ async function confirmRegistryVersionStructureRemoval(){
     renderRegistryVersionStructureRemoveDialog();
     render();
     try {
-        await apiJsonResponse(assetManagerApi.deleteAssetStructure(structure.id, structure.version));
+        const deleted = await apiJsonResponse(assetManagerApi.deleteAssetStructure(structure.id, structure.version));
+        const latestRevision = Number(deleted?.revision);
+        if(Number.isFinite(latestRevision) && latestRevision >= 1) registryAssetStructuresRevision = latestRevision;
         const restoredAssetId = structure.current_asset_id;
         registryAssetStructures.delete(structure.id);
         registryStructureMutationId = '';
@@ -4638,7 +4651,7 @@ function renderRegistryRecycleButton(item={}, className=''){
         return `<button class="${escapeAttr(className)} registry-card-recycle" type="button" data-registry-delete-remote="${escapeAttr(item.id || '')}" title="删除 URL 资产" aria-label="删除 ${escapeAttr(item.name || 'URL 资产')}"><i data-lucide="trash-2"></i></button>`;
     }
     const disabled = !registryCanRecycle(item);
-    const title = disabled ? '当前素材来源为只读，不能移入回收站' : '移入 god-ecycler';
+    const title = disabled ? '当前素材来源为只读，不能移入回收站' : '移入 god-recycler';
     return `<button class="${escapeAttr(className)} registry-card-recycle" type="button" data-registry-recycle="${escapeAttr(item.id || '')}" title="${escapeAttr(title)}" aria-label="删除 ${escapeAttr(item.name || '素材')}" ${disabled ? 'disabled' : ''}><i data-lucide="trash-2"></i></button>`;
 }
 function deferRegistryPreviewThumb(markup){
@@ -6079,8 +6092,8 @@ async function deleteRegistryRemoteAsset(id){
 }
 function registryRecyclerPath(item={}){
     const rootPath = String(item.storage_root_path || '').replace(/[\\/]+$/, '');
-    if(!rootPath) return '当前素材库根目录 / god-ecycler';
-    return `${rootPath}${rootPath.includes('\\') ? '\\' : '/'}god-ecycler`;
+    if(!rootPath) return '当前素材库根目录 / god-recycler';
+    return `${rootPath}${rootPath.includes('\\') ? '\\' : '/'}god-recycler`;
 }
 function closeRegistryRecycleDialog(force=false){
     if(registryRecycleState.busy && !force) return;
@@ -6100,8 +6113,8 @@ function renderRegistryRecycleDialog(){
     }
     overlay.innerHTML = `<section class="registry-recycle-dialog" data-floating-content role="dialog" aria-modal="true" aria-labelledby="registryRecycleTitle">
         <header><span><i data-lucide="trash-2"></i></span><div><strong id="registryRecycleTitle">确认删除吗？</strong><small>${escapeHtml(item.name || '未命名素材')}</small></div><button type="button" data-registry-recycle-close aria-label="关闭" ${registryRecycleState.busy ? 'disabled' : ''}><i data-lucide="x"></i></button></header>
-        <div class="registry-recycle-body"><p>当前操作并非永久删除，永久删除请前往当前素材库文件夹：</p><code>${escapeHtml(registryRecyclerPath(item))}</code><div class="registry-recycle-note"><i data-lucide="info"></i><span>原文件将移动到 <b>god-ecycler</b>，缩略图等缓存会同步清理。</span></div>${registryRecycleState.error ? `<div class="registry-recycle-error">${escapeHtml(registryRecycleState.error)}</div>` : ''}</div>
-        <label class="registry-recycle-skip"><input id="registryRecycleDontAsk" type="checkbox" ${registryRecycleState.dontAsk ? 'checked' : ''} ${registryRecycleState.busy ? 'disabled' : ''}><span class="registry-feature-switch ${registryRecycleState.dontAsk ? 'is-on' : ''}"><i></i></span><span><strong>不再提醒</strong><small>以后点击删除按钮将直接移入 god-ecycler</small></span></label>
+        <div class="registry-recycle-body"><p>当前操作并非永久删除，永久删除请前往当前素材库文件夹：</p><code>${escapeHtml(registryRecyclerPath(item))}</code><div class="registry-recycle-note"><i data-lucide="info"></i><span>原文件将移动到 <b>god-recycler</b>，缩略图等缓存会同步清理。</span></div>${registryRecycleState.error ? `<div class="registry-recycle-error">${escapeHtml(registryRecycleState.error)}</div>` : ''}</div>
+        <label class="registry-recycle-skip"><input id="registryRecycleDontAsk" type="checkbox" ${registryRecycleState.dontAsk ? 'checked' : ''} ${registryRecycleState.busy ? 'disabled' : ''}><span class="registry-feature-switch ${registryRecycleState.dontAsk ? 'is-on' : ''}"><i></i></span><span><strong>不再提醒</strong><small>以后点击删除按钮将直接移入 god-recycler</small></span></label>
         <footer><button class="hw-btn" type="button" data-registry-recycle-close ${registryRecycleState.busy ? 'disabled' : ''}>取消</button><button class="hw-btn hw-btn-danger registry-recycle-confirm" type="button" data-registry-recycle-confirm ${registryRecycleState.busy ? 'disabled' : ''}><i data-lucide="${registryRecycleState.busy ? 'loader-2' : 'trash-2'}"></i><span>${registryRecycleState.busy ? '正在移动…' : '移入回收站'}</span></button></footer>
     </section>`;
     markAssetFloatingSurface(overlay, {surface:'asset-registry-recycle', content:'.registry-recycle-dialog', close:closeRegistryRecycleDialog});
@@ -6129,7 +6142,7 @@ async function recycleRegistryAsset(assetId, silent=false){
         closeRegistryRecycleDialog(true);
         await Promise.all([refreshRegistryAssets(false), refreshRegistryFacetData()]);
         render();
-        setStatus(`已移入 god-ecycler${Number(data.recycled?.removed_previews || 0) ? `，清理 ${Number(data.recycled.removed_previews)} 个缓存` : ''}`);
+        setStatus(`已移入 god-recycler${Number(data.recycled?.removed_previews || 0) ? `，清理 ${Number(data.recycled.removed_previews)} 个缓存` : ''}`);
     } catch(err){
         registryRecycleState = {...registryRecycleState, open:!silent, busy:false, error:err.message || '移入回收站失败'};
         if(silent) setStatus(registryRecycleState.error); else renderRegistryRecycleDialog();
@@ -6175,8 +6188,8 @@ function renderRegistryRecycleBin(){
                 }).join('')}</div>`
                 : `<div class="registry-recycle-bin-empty"><i data-lucide="trash-2"></i><strong>回收站暂无素材</strong><span>从资产中心删除的本地素材会显示在这里。</span></div>`;
     overlay.innerHTML = `<section class="registry-recycle-bin-modal" data-floating-content role="dialog" aria-modal="true" aria-labelledby="registryRecycleBinTitle">
-        <header class="storage-settings-head"><div><strong id="registryRecycleBinTitle">回收站</strong><span>找回从资产中心移入 god-ecycler 的素材。</span></div><button type="button" data-registry-recycle-bin-close aria-label="关闭" ${registryRecycleBinState.restoringId ? 'disabled' : ''}><i data-lucide="x"></i></button></header>
-        <div class="registry-recycle-bin-notice"><i data-lucide="shield-check"></i><div><strong>这里只提供恢复，不提供清空</strong><span>永久删除原素材，请手动进入对应素材库的 <b>god-ecycler</b> 文件夹处理。</span></div></div>
+        <header class="storage-settings-head"><div><strong id="registryRecycleBinTitle">回收站</strong><span>找回从资产中心移入 god-recycler 的素材。</span></div><button type="button" data-registry-recycle-bin-close aria-label="关闭" ${registryRecycleBinState.restoringId ? 'disabled' : ''}><i data-lucide="x"></i></button></header>
+        <div class="registry-recycle-bin-notice"><i data-lucide="shield-check"></i><div><strong>这里只提供恢复，不提供清空</strong><span>永久删除原素材，请手动进入对应素材库的 <b>god-recycler</b> 文件夹处理。</span></div></div>
         ${recyclerDirectories.length ? `<div class="registry-recycle-bin-paths"><strong>回收目录</strong>${recyclerDirectories.map(path => `<code>${escapeHtml(path)}</code>`).join('')}</div>` : ''}
         <div class="registry-recycle-bin-body">${body}</div>
         <footer><span>共 ${items.length} 项</span><button class="hw-btn" type="button" data-registry-recycle-bin-close ${registryRecycleBinState.restoringId ? 'disabled' : ''}>关闭</button></footer>

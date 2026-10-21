@@ -331,7 +331,7 @@ def test_asset_structure_get_and_patch_success_roundtrip(monkeypatch):
             "/api/asset-registry/asset-structures",
             headers=EDITOR,
             json={"kind": "version", "asset_ids": ["phase12-asset-a", "phase12-asset-b"],
-                  "current_asset_id": "phase12-asset-a"},
+                  "current_asset_id": "phase12-asset-a", "expected_version": 1},
         )
         assert created.status_code == 201, created.text
         structure = created.json()["structure"]
