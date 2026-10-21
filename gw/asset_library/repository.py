@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 # Copyright 2026 Gods-Workbench Authors
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -55,7 +54,7 @@ _LOCAL_ASSET_DOMAIN_LOCK = threading.RLock()
 MAX_UPLOAD_BYTES = 32 * 1024 * 1024
 
 #: 确定性分类规则：类别 → 扩展名集合。顺序即优先级，命中即返回。
-EXTENSION_RULES: Tuple[Tuple[str, str], ...] = (
+EXTENSION_RULES: tuple[tuple[str, str], ...] = (
     ("image", ".png .jpg .jpeg .webp .bmp .gif .tif .tiff .avif .heic"),
     ("video", ".mp4 .mov .mkv .avi .webm .m4v .flv .wmv"),
     ("audio", ".wav .mp3 .flac .aac .ogg .m4a .wma"),
@@ -76,6 +75,7 @@ IMAGE_SUFFIXES = frozenset(".png .jpg .jpeg .webp .bmp .gif .tif .tiff".split())
 # 确定性分类
 # ---------------------------------------------------------------------------
 
+
 def classify_name(name: str) -> str:
     """按扩展名做确定性归类；无法判定返回「未分类」。"""
     suffix = Path(name or "").suffix.lower()
@@ -87,26 +87,38 @@ def classify_name(name: str) -> str:
     return "未分类"
 
 
-def get_classification_prompt() -> Dict[str, Any]:
-    state = storage.JsonState(NS_CLASSIFY_PROMPT, lambda: {"prompt": DEFAULT_CLASSIFY_PROMPT})
-    return {"prompt": state.read().get("prompt", DEFAULT_CLASSIFY_PROMPT), "data_status": "ok"}
+def get_classification_prompt() -> dict[str, Any]:
+    state = storage.JsonState(
+        NS_CLASSIFY_PROMPT, lambda: {"prompt": DEFAULT_CLASSIFY_PROMPT}
+    )
+    return {
+        "prompt": state.read().get("prompt", DEFAULT_CLASSIFY_PROMPT),
+        "data_status": "ok",
+    }
 
 
-def set_classification_prompt(prompt: str) -> Dict[str, Any]:
+def set_classification_prompt(prompt: str) -> dict[str, Any]:
     clean = (prompt or "").strip()
     if not clean:
         raise CleanroomException(400, "INVALID_REQUEST", "提示词不能为空")
-    storage.JsonState(NS_CLASSIFY_PROMPT, lambda: {"prompt": DEFAULT_CLASSIFY_PROMPT}).write({"prompt": clean})
+    storage.JsonState(
+        NS_CLASSIFY_PROMPT, lambda: {"prompt": DEFAULT_CLASSIFY_PROMPT}
+    ).write({"prompt": clean})
     return {"prompt": clean, "data_status": "ok"}
 
 
 def _job_state() -> storage.JsonState:
-    return storage.JsonState(NS_CLASSIFY_JOBS, lambda: {"jobs": {}, "sequence": 0, "active": None})
+    return storage.JsonState(
+        NS_CLASSIFY_JOBS, lambda: {"jobs": {}, "sequence": 0, "active": None}
+    )
 
 
-def record_classification_job(results: List[Dict[str, Any]], requested: int) -> Dict[str, Any]:
+def record_classification_job(
+    results: list[dict[str, Any]], requested: int
+) -> dict[str, Any]:
     """记录一次真实完成的分类任务，返回真实 job_id 与 poll_hint。"""
-    def mutate(raw: Dict[str, Any]) -> Any:
+
+    def mutate(raw: dict[str, Any]) -> Any:
         raw["sequence"] = int(raw.get("sequence", 0)) + 1
         job_id = "acjob_%04d" % raw["sequence"]
         raw.setdefault("jobs", {})[job_id] = {
@@ -119,22 +131,29 @@ def record_classification_job(results: List[Dict[str, Any]], requested: int) -> 
         }
         raw["active"] = None
         return dict(raw["jobs"][job_id])
+
     job = _job_state().mutate(mutate)
-    return {"job_id": job["job_id"], "state": job["state"], "results": job["results"],
-            "classified": job["classified"], "poll_hint": "/api/asset-classification/jobs/%s" % job["job_id"]}
+    return {
+        "job_id": job["job_id"],
+        "state": job["state"],
+        "results": job["results"],
+        "classified": job["classified"],
+        "poll_hint": "/api/asset-classification/jobs/%s" % job["job_id"],
+    }
 
 
-def stop_classification_job() -> Dict[str, Any]:
-    def mutate(raw: Dict[str, Any]) -> Any:
+def stop_classification_job() -> dict[str, Any]:
+    def mutate(raw: dict[str, Any]) -> Any:
         active = raw.get("active")
         if active and active in raw.get("jobs", {}):
             raw["jobs"][active]["state"] = "cancelled"
         raw["active"] = None
         return {"cancelled": bool(active), "active": None}
+
     return _job_state().mutate(mutate)
 
 
-def get_classification_job(job_id: str) -> Dict[str, Any]:
+def get_classification_job(job_id: str) -> dict[str, Any]:
     job = _job_state().read().get("jobs", {}).get(job_id)
     if not job:
         raise CleanroomException(404, "CLASSIFICATION_JOB_NOT_FOUND", "分类任务不存在")
@@ -145,61 +164,107 @@ def get_classification_job(job_id: str) -> Dict[str, Any]:
 # 素材文本内容与不可变版本历史
 # ---------------------------------------------------------------------------
 
+
 def _content_state() -> storage.JsonState:
     return storage.JsonState(NS_CONTENT, lambda: {"documents": {}})
 
 
-def _doc(raw: Dict[str, Any], asset_id: str) -> Dict[str, Any]:
-    return raw["documents"].setdefault(asset_id, {"content": "", "version_id": None, "versions": []})
+def _doc(raw: dict[str, Any], asset_id: str) -> dict[str, Any]:
+    return raw["documents"].setdefault(
+        asset_id, {"content": "", "version_id": None, "versions": []}
+    )
 
 
-def get_content(asset_id: str) -> Dict[str, Any]:
+def get_content(asset_id: str) -> dict[str, Any]:
     doc = _content_state().read()["documents"].get(asset_id)
     if doc is None or not doc.get("version_id"):
-        return {"asset_id": asset_id, "content": "", "version_id": None,
-                "data_status": "empty", "data_gaps": ["content_not_created"]}
-    return {"asset_id": asset_id, "content": doc["content"], "version_id": doc["version_id"], "data_status": "ok"}
+        return {
+            "asset_id": asset_id,
+            "content": "",
+            "version_id": None,
+            "data_status": "empty",
+            "data_gaps": ["content_not_created"],
+        }
+    return {
+        "asset_id": asset_id,
+        "content": doc["content"],
+        "version_id": doc["version_id"],
+        "data_status": "ok",
+    }
 
 
-def set_content(asset_id: str, content: str) -> Dict[str, Any]:
-    def mutate(raw: Dict[str, Any]) -> Any:
+def set_content(asset_id: str, content: str) -> dict[str, Any]:
+    def mutate(raw: dict[str, Any]) -> Any:
         doc = _doc(raw, asset_id)
         if doc.get("version_id"):
-            doc["versions"].append({"version_id": doc["version_id"], "content": doc["content"],
-                                    "created_at": storage.now_iso()})
+            doc["versions"].append(
+                {
+                    "version_id": doc["version_id"],
+                    "content": doc["content"],
+                    "created_at": storage.now_iso(),
+                }
+            )
         version_id = "ver_%s_%04d" % (asset_id, len(doc["versions"]) + 1)
         doc["content"] = content
         doc["version_id"] = version_id
-        return {"asset_id": asset_id, "version_id": version_id, "content": content, "data_status": "ok"}
+        return {
+            "asset_id": asset_id,
+            "version_id": version_id,
+            "content": content,
+            "data_status": "ok",
+        }
+
     return _content_state().mutate(mutate)
 
 
-def list_versions(asset_id: str) -> Dict[str, Any]:
+def list_versions(asset_id: str) -> dict[str, Any]:
     doc = _content_state().read()["documents"].get(asset_id)
     if doc is None:
         return {"asset_id": asset_id, "versions": [], "data_status": "empty"}
-    versions: List[Dict[str, Any]] = []
+    versions: list[dict[str, Any]] = []
     if doc.get("version_id"):
-        versions.append({"version_id": doc["version_id"], "content": doc["content"],
-                         "created_at": None, "current": True})
+        versions.append(
+            {
+                "version_id": doc["version_id"],
+                "content": doc["content"],
+                "created_at": None,
+                "current": True,
+            }
+        )
     for entry in doc.get("versions", []):
-        versions.append({"version_id": entry["version_id"], "content": entry["content"],
-                         "created_at": entry["created_at"], "current": False})
+        versions.append(
+            {
+                "version_id": entry["version_id"],
+                "content": entry["content"],
+                "created_at": entry["created_at"],
+                "current": False,
+            }
+        )
     return {"asset_id": asset_id, "versions": versions, "data_status": "ok"}
 
 
-def get_version(asset_id: str, version_id: str) -> Dict[str, Any]:
+def get_version(asset_id: str, version_id: str) -> dict[str, Any]:
     doc = _content_state().read()["documents"].get(asset_id) or {}
     if doc.get("version_id") == version_id:
-        return {"asset_id": asset_id, "version_id": version_id, "content": doc["content"], "current": True}
+        return {
+            "asset_id": asset_id,
+            "version_id": version_id,
+            "content": doc["content"],
+            "current": True,
+        }
     for entry in doc.get("versions", []):
         if entry["version_id"] == version_id:
-            return {"asset_id": asset_id, "version_id": version_id, "content": entry["content"], "current": False}
+            return {
+                "asset_id": asset_id,
+                "version_id": version_id,
+                "content": entry["content"],
+                "current": False,
+            }
     raise CleanroomException(404, "VERSION_NOT_FOUND", "版本不存在")
 
 
-def update_version(asset_id: str, version_id: str, content: str) -> Dict[str, Any]:
-    def mutate(raw: Dict[str, Any]) -> Any:
+def update_version(asset_id: str, version_id: str, content: str) -> dict[str, Any]:
+    def mutate(raw: dict[str, Any]) -> Any:
         doc = raw["documents"].get(asset_id)
         if doc is None:
             raise CleanroomException(404, "VERSION_NOT_FOUND", "版本不存在")
@@ -212,27 +277,38 @@ def update_version(asset_id: str, version_id: str, content: str) -> Dict[str, An
                     break
             else:
                 raise CleanroomException(404, "VERSION_NOT_FOUND", "版本不存在")
-        return {"asset_id": asset_id, "version_id": version_id, "content": content, "data_status": "ok"}
+        return {
+            "asset_id": asset_id,
+            "version_id": version_id,
+            "content": content,
+            "data_status": "ok",
+        }
+
     return _content_state().mutate(mutate)
 
 
-def delete_version(asset_id: str, version_id: str) -> Dict[str, Any]:
-    def mutate(raw: Dict[str, Any]) -> Any:
+def delete_version(asset_id: str, version_id: str) -> dict[str, Any]:
+    def mutate(raw: dict[str, Any]) -> Any:
         doc = raw["documents"].get(asset_id)
         if doc is None:
             raise CleanroomException(404, "VERSION_NOT_FOUND", "版本不存在")
         if doc.get("version_id") == version_id:
-            raise CleanroomException(409, "CANNOT_DELETE_CURRENT_VERSION", "不能删除当前版本")
+            raise CleanroomException(
+                409, "CANNOT_DELETE_CURRENT_VERSION", "不能删除当前版本"
+            )
         before = len(doc.get("versions", []))
-        doc["versions"] = [e for e in doc.get("versions", []) if e["version_id"] != version_id]
+        doc["versions"] = [
+            e for e in doc.get("versions", []) if e["version_id"] != version_id
+        ]
         if len(doc["versions"]) == before:
             raise CleanroomException(404, "VERSION_NOT_FOUND", "版本不存在")
         return {"asset_id": asset_id, "version_id": version_id, "deleted": True}
+
     return _content_state().mutate(mutate)
 
 
-def restore_version(asset_id: str, version_id: str) -> Dict[str, Any]:
-    def mutate(raw: Dict[str, Any]) -> Any:
+def restore_version(asset_id: str, version_id: str) -> dict[str, Any]:
+    def mutate(raw: dict[str, Any]) -> Any:
         doc = raw["documents"].get(asset_id)
         if doc is None:
             raise CleanroomException(404, "VERSION_NOT_FOUND", "版本不存在")
@@ -244,18 +320,30 @@ def restore_version(asset_id: str, version_id: str) -> Dict[str, Any]:
         if content is None:
             raise CleanroomException(404, "VERSION_NOT_FOUND", "版本不存在")
         if doc.get("version_id"):
-            doc["versions"].append({"version_id": doc["version_id"], "content": doc["content"],
-                                    "created_at": storage.now_iso()})
+            doc["versions"].append(
+                {
+                    "version_id": doc["version_id"],
+                    "content": doc["content"],
+                    "created_at": storage.now_iso(),
+                }
+            )
         doc["content"] = content
         doc["version_id"] = "ver_%s_%04d" % (asset_id, len(doc["versions"]) + 1)
-        return {"asset_id": asset_id, "version_id": doc["version_id"], "content": content,
-                "restored_from": version_id, "data_status": "ok"}
+        return {
+            "asset_id": asset_id,
+            "version_id": doc["version_id"],
+            "content": content,
+            "restored_from": version_id,
+            "data_status": "ok",
+        }
+
     return _content_state().mutate(mutate)
 
 
 def content_pdf(asset_id: str) -> bytes:
     """完整中文正文导出；UTF-8附件保存分页/转义前原文。"""
     from gw.core.text_pdf import build_text_pdf
+
     doc = _content_state().read()["documents"].get(asset_id)
     text = (doc or {}).get("content") or "（该素材暂无已保存内容）"
     return build_text_pdf(text)
@@ -265,24 +353,27 @@ def content_pdf(asset_id: str) -> bytes:
 # 本机文件（严格锚定 GW_ALLOWED_ROOTS）
 # ---------------------------------------------------------------------------
 
-def file_info(raw_path: str) -> Dict[str, Any]:
+
+def file_info(raw_path: str) -> dict[str, Any]:
     """返回允许根目录内真实文件元数据；图片额外读真实宽高。"""
     path = storage.resolve_within_roots(raw_path)
     if not path.is_file():
         raise CleanroomException(404, "FILE_NOT_FOUND", "目标文件不存在")
     stat = path.stat()
-    payload: Dict[str, Any] = {
+    payload: dict[str, Any] = {
         "display_path": storage.relative_display(path),
         "name": path.name,
         "size_bytes": stat.st_size,
         "modified_at": int(stat.st_mtime),
         "extension": path.suffix.lower(),
-        "content_type": mimetypes.guess_type(path.name)[0] or "application/octet-stream",
+        "content_type": mimetypes.guess_type(path.name)[0]
+        or "application/octet-stream",
         "data_status": "ok",
     }
     if payload["extension"] in IMAGE_SUFFIXES:
         try:
             from PIL import Image
+
             with Image.open(path) as image:
                 payload["width"], payload["height"] = image.size
         except Exception:
@@ -290,14 +381,19 @@ def file_info(raw_path: str) -> Dict[str, Any]:
     return payload
 
 
-def reveal_file(raw_path: str) -> Dict[str, Any]:
+def reveal_file(raw_path: str) -> dict[str, Any]:
     """只解析并确认路径在允许根目录内，不启动任何外部进程。"""
     path = storage.resolve_within_roots(raw_path)
-    return {"display_path": storage.relative_display(path), "exists": path.exists(),
-            "revealed": False, "reason": "未启动外部文件管理器；仅完成路径准入校验", "data_status": "ok"}
+    return {
+        "display_path": storage.relative_display(path),
+        "exists": path.exists(),
+        "revealed": False,
+        "reason": "未启动外部文件管理器；仅完成路径准入校验",
+        "data_status": "ok",
+    }
 
 
-def save_upload(raw_path: str, content_b64: str) -> Dict[str, Any]:
+def save_upload(raw_path: str, content_b64: str) -> dict[str, Any]:
     """把 base64 内容真实写入允许根目录内的目标路径。"""
     path = storage.resolve_within_roots(raw_path)
     if path.exists() and path.is_dir():
@@ -305,7 +401,11 @@ def save_upload(raw_path: str, content_b64: str) -> Dict[str, Any]:
     payload = _decode_upload_payload(content_b64)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_bytes(payload)
-    return {"display_path": storage.relative_display(path), "size_bytes": len(payload), "written": True}
+    return {
+        "display_path": storage.relative_display(path),
+        "size_bytes": len(payload),
+        "written": True,
+    }
 
 
 def _decode_upload_payload(content_b64: str) -> bytes:
@@ -318,9 +418,13 @@ def _decode_upload_payload(content_b64: str) -> bytes:
     return payload
 
 
-def _write_upload_stage(target: Path, payload: bytes | None = None, source=None) -> Path:
+def _write_upload_stage(
+    target: Path, payload: bytes | None = None, source=None
+) -> Path:
     """在目标目录写完并同步临时文件，供上传提交或回滚时原子替换。"""
-    descriptor, raw_stage = tempfile.mkstemp(prefix=".gw-upload-pending-", dir=str(target.parent))
+    descriptor, raw_stage = tempfile.mkstemp(
+        prefix=".gw-upload-pending-", dir=str(target.parent)
+    )
     stage = Path(raw_stage)
     try:
         with os.fdopen(descriptor, "wb") as output:
@@ -342,7 +446,7 @@ def _write_upload_stage(target: Path, payload: bytes | None = None, source=None)
 
 def upload_and_index_local_asset(
     raw_path: str, content_b64: str, kind: str = "auto"
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """原子协调本地素材上传、索引预检与索引提交，失败时补偿文件内容。"""
     payload = _decode_upload_payload(content_b64)
     with _LOCAL_ASSET_DOMAIN_LOCK:
@@ -364,7 +468,9 @@ def upload_and_index_local_asset(
         restore_stage: Path | None = None
         target_replaced = False
 
-        with tempfile.SpooledTemporaryFile(max_size=4 * 1024 * 1024, mode="w+b") as backup:
+        with tempfile.SpooledTemporaryFile(
+            max_size=4 * 1024 * 1024, mode="w+b"
+        ) as backup:
             if existed:
                 with path.open("rb") as original:
                     shutil.copyfileobj(original, backup)
@@ -377,7 +483,9 @@ def upload_and_index_local_asset(
                 result = index_local_files([str(path)], kind)
                 if result.get("count") != 1:
                     raise CleanroomException(
-                        500, "LOCAL_ASSET_INDEX_UPDATE_FAILED", "上传文件未能登记到本地素材索引"
+                        500,
+                        "LOCAL_ASSET_INDEX_UPDATE_FAILED",
+                        "上传文件未能登记到本地素材索引",
                     )
             except Exception as exc:
                 if target_replaced:
@@ -397,7 +505,9 @@ def upload_and_index_local_asset(
                 if isinstance(exc, CleanroomException):
                     raise
                 raise CleanroomException(
-                    500, "LOCAL_ASSET_INDEX_UPDATE_FAILED", "索引提交失败，已补偿上传文件"
+                    500,
+                    "LOCAL_ASSET_INDEX_UPDATE_FAILED",
+                    "索引提交失败，已补偿上传文件",
                 ) from exc
             finally:
                 for temporary_path in (stage, restore_stage):
@@ -407,15 +517,19 @@ def upload_and_index_local_asset(
                         except OSError:
                             pass
 
-        return {"display_path": display_path, "size_bytes": len(payload), "written": True}
+        return {
+            "display_path": display_path,
+            "size_bytes": len(payload),
+            "written": True,
+        }
 
 
-def delete_local_files(raw_paths: List[str]) -> Dict[str, Any]:
+def delete_local_files(raw_paths: list[str]) -> dict[str, Any]:
     with _LOCAL_ASSET_DOMAIN_LOCK:
         return _delete_local_files_locked(raw_paths)
 
 
-def _delete_local_files_locked(raw_paths: List[str]) -> Dict[str, Any]:
+def _delete_local_files_locked(raw_paths: list[str]) -> dict[str, Any]:
     """删除真实文件，并在路径隐藏前移除对应索引记录。"""
     deleted, skipped, partial_failures = [], [], []
     state = _local_state()
@@ -428,30 +542,39 @@ def _delete_local_files_locked(raw_paths: List[str]) -> Dict[str, Any]:
         display_path = storage.relative_display(path)
         root_identity = _local_root_identity(path)
         # 先校验现有索引归属，再暂存文件；多根同名路径冲突必须在任何磁盘副作用前失败。
-        _local_index_entry_for_root(state.read().get("entries", {}), display_path, root_identity)
+        _local_index_entry_for_root(
+            state.read().get("entries", {}), display_path, root_identity
+        )
         tombstone = path.with_name(".gw-delete-pending-" + path.name)
         if tombstone.exists():
-            partial_failures.append({
-                "display_path": display_path,
-                "code": "DELETE_STAGING_PATH_EXISTS",
-                "index_updated": False,
-            })
+            partial_failures.append(
+                {
+                    "display_path": display_path,
+                    "code": "DELETE_STAGING_PATH_EXISTS",
+                    "index_updated": False,
+                }
+            )
             continue
         try:
             # 同目录原子改名暂存，便于索引写入失败时恢复原文件。
             path.replace(tombstone)
         except OSError:
-            partial_failures.append({
-                "display_path": display_path,
-                "code": "LOCAL_ASSET_DELETE_FAILED",
-                "index_updated": False,
-            })
+            partial_failures.append(
+                {
+                    "display_path": display_path,
+                    "code": "LOCAL_ASSET_DELETE_FAILED",
+                    "index_updated": False,
+                }
+            )
             continue
 
         try:
-            def remove_index_entry(raw_state: Dict[str, Any]) -> bool:
+
+            def remove_index_entry(raw_state: dict[str, Any]) -> bool:
                 entries = raw_state.setdefault("entries", {})
-                match = _local_index_entry_for_root(entries, display_path, root_identity)
+                match = _local_index_entry_for_root(
+                    entries, display_path, root_identity
+                )
                 if match is None:
                     return False
                 del entries[match[0]]
@@ -468,21 +591,27 @@ def _delete_local_files_locked(raw_paths: List[str]) -> Dict[str, Any]:
                 except OSError:
                     restored = False
             if restored:
-                partial_failures.append({
-                    "display_path": display_path,
-                    "code": "LOCAL_ASSET_INDEX_UPDATE_FAILED",
-                    "index_updated": False,
-                    "filesystem_state": "restored",
-                })
+                partial_failures.append(
+                    {
+                        "display_path": display_path,
+                        "code": "LOCAL_ASSET_INDEX_UPDATE_FAILED",
+                        "index_updated": False,
+                        "filesystem_state": "restored",
+                    }
+                )
             else:
                 # 补偿也失败时，优先移除失效路径记录；如存储仍不可写则如实标记未闭环。
-                index_removed = _remove_local_index_path_best_effort(state, display_path, root_identity)
-                partial_failures.append({
-                    "display_path": display_path,
-                    "code": "LOCAL_ASSET_DELETE_PARTIAL_FAILURE",
-                    "index_updated": index_removed,
-                    "filesystem_state": "staged",
-                })
+                index_removed = _remove_local_index_path_best_effort(
+                    state, display_path, root_identity
+                )
+                partial_failures.append(
+                    {
+                        "display_path": display_path,
+                        "code": "LOCAL_ASSET_DELETE_PARTIAL_FAILURE",
+                        "index_updated": index_removed,
+                        "filesystem_state": "staged",
+                    }
+                )
             continue
 
         try:
@@ -490,12 +619,14 @@ def _delete_local_files_locked(raw_paths: List[str]) -> Dict[str, Any]:
             deleted.append(display_path)
         except OSError:
             # 原始展示路径已不存在且索引已移除，但暂存文件仍留在磁盘；不得谎报删除完成。
-            partial_failures.append({
-                "display_path": display_path,
-                "code": "LOCAL_ASSET_DELETE_PARTIAL_FAILURE",
-                "index_updated": True,
-                "filesystem_state": "staged",
-            })
+            partial_failures.append(
+                {
+                    "display_path": display_path,
+                    "code": "LOCAL_ASSET_DELETE_PARTIAL_FAILURE",
+                    "index_updated": True,
+                    "filesystem_state": "staged",
+                }
+            )
     return {
         "deleted": deleted,
         "skipped": skipped,
@@ -504,12 +635,12 @@ def _delete_local_files_locked(raw_paths: List[str]) -> Dict[str, Any]:
     }
 
 
-def move_local_file(source: str, target: str) -> Dict[str, Any]:
+def move_local_file(source: str, target: str) -> dict[str, Any]:
     with _LOCAL_ASSET_DOMAIN_LOCK:
         return _move_local_file_locked(source, target)
 
 
-def _move_local_file_locked(source: str, target: str) -> Dict[str, Any]:
+def _move_local_file_locked(source: str, target: str) -> dict[str, Any]:
     """移动真实文件并同步索引；索引写入失败时补偿磁盘移动。"""
     src = storage.resolve_within_roots(source)
     dst = storage.resolve_within_roots(target)
@@ -524,29 +655,42 @@ def _move_local_file_locked(source: str, target: str) -> Dict[str, Any]:
     state = _local_state()
     before = state.read().get("entries", {})
     _local_index_entry_for_root(before, source_key, source_root_identity)
-    if target_key != source_key and _find_local_index_entry(before, target_key) is not None:
-        raise CleanroomException(409, "LOCAL_ASSET_INDEX_TARGET_CONFLICT", "目标相对路径已有索引记录")
+    if (
+        target_key != source_key
+        and _find_local_index_entry(before, target_key) is not None
+    ):
+        raise CleanroomException(
+            409, "LOCAL_ASSET_INDEX_TARGET_CONFLICT", "目标相对路径已有索引记录"
+        )
     dst.parent.mkdir(parents=True, exist_ok=True)
     src.replace(dst)
 
     try:
-        def move_index_entry(raw: Dict[str, Any]) -> Dict[str, Any]:
+
+        def move_index_entry(raw: dict[str, Any]) -> dict[str, Any]:
             entries = raw.setdefault("entries", {})
-            match = _local_index_entry_for_root(entries, source_key, source_root_identity)
+            match = _local_index_entry_for_root(
+                entries, source_key, source_root_identity
+            )
             record_key = match[0] if match else None
             # 先在完整索引中确定性修复重复 ID，再弹出移动记录，避免被移动项漏出修复扫描。
             repairs = _repair_duplicate_local_asset_ids(raw)
             record = entries.pop(record_key, None) if record_key is not None else None
             if record is not None:
-                record.update({
-                    "name": dst.name,
-                    "display_path": target_key,
-                    "size_bytes": dst.stat().st_size,
-                    "moved_at": storage.now_iso(),
-                    "_root_identity": target_root_identity,
-                })
+                record.update(
+                    {
+                        "name": dst.name,
+                        "display_path": target_key,
+                        "size_bytes": dst.stat().st_size,
+                        "moved_at": storage.now_iso(),
+                        "_root_identity": target_root_identity,
+                    }
+                )
                 entries[target_key] = record
-            return {"asset_id": record.get("asset_id") if record else None, "id_repairs": repairs}
+            return {
+                "asset_id": record.get("asset_id") if record else None,
+                "id_repairs": repairs,
+            }
 
         indexed = state.mutate(move_index_entry)
     except Exception as exc:
@@ -567,7 +711,12 @@ def _move_local_file_locked(source: str, target: str) -> Dict[str, Any]:
 
         # 磁盘反向补償失败時，先将索引尽力对齐到仍存在的目标路径。
         reconciled = _reconcile_local_index_move(
-            state, source_key, target_key, dst, source_root_identity, target_root_identity
+            state,
+            source_key,
+            target_key,
+            dst,
+            source_root_identity,
+            target_root_identity,
         )
         if reconciled is not None:
             return {
@@ -582,7 +731,12 @@ def _move_local_file_locked(source: str, target: str) -> Dict[str, Any]:
             500,
             "LOCAL_ASSET_MOVE_PARTIAL_FAILURE",
             "文件已移动，但索引更新与磁盘补偿均失败；请按返回路径重新索引",
-            extra={"from": source_key, "to": target_key, "filesystem_state": "target", "index_consistent": False},
+            extra={
+                "from": source_key,
+                "to": target_key,
+                "filesystem_state": "target",
+                "index_consistent": False,
+            },
             expose_extra_fields={"from", "to", "filesystem_state", "index_consistent"},
         ) from exc
 
@@ -593,9 +747,12 @@ def _move_local_file_locked(source: str, target: str) -> Dict[str, Any]:
         "asset_id": indexed.get("asset_id"),
         "id_repairs": indexed.get("id_repairs", []),
     }
+
+
 # ---------------------------------------------------------------------------
 # 本地素材索引与存储产物
 # ---------------------------------------------------------------------------
+
 
 def _local_state() -> storage.JsonState:
     return storage.JsonState(NS_LOCAL, lambda: {"entries": {}, "sequence": 0})
@@ -611,21 +768,28 @@ def _local_root_identity(path: Path) -> str:
             continue
         canonical_root = os.path.normcase(str(root.resolve()))
         return hashlib.sha256(canonical_root.encode("utf-8")).hexdigest()
-    raise CleanroomException(403, "PATH_OUTSIDE_ALLOWED_ROOTS", "目标文件不在允许根目录内")
+    raise CleanroomException(
+        403, "PATH_OUTSIDE_ALLOWED_ROOTS", "目标文件不在允许根目录内"
+    )
 
 
-def _find_local_index_entry(entries: Dict[str, Any], display_path: str):
+def _find_local_index_entry(entries: dict[str, Any], display_path: str):
     matches = [
-        (key, entry) for key, entry in entries.items()
+        (key, entry)
+        for key, entry in entries.items()
         if key == display_path or entry.get("display_path") == display_path
     ]
     if len(matches) > 1:
-        raise CleanroomException(409, "LOCAL_ASSET_PATH_AMBIGUOUS", "相对路径对应多条索引记录，拒绝猜测文件身份")
+        raise CleanroomException(
+            409,
+            "LOCAL_ASSET_PATH_AMBIGUOUS",
+            "相对路径对应多条索引记录，拒绝猜测文件身份",
+        )
     return matches[0] if matches else None
 
 
 def _local_index_entry_for_root(
-    entries: Dict[str, Any], display_path: str, root_identity: str
+    entries: dict[str, Any], display_path: str, root_identity: str
 ):
     match = _find_local_index_entry(entries, display_path)
     if match is None:
@@ -641,16 +805,18 @@ def _local_index_entry_for_root(
             )
         entry["_root_identity"] = root_identity
     elif stored_identity != root_identity:
-        raise CleanroomException(409, "LOCAL_ASSET_PATH_AMBIGUOUS", "相对路径已属于另一个允许根，拒绝覆盖")
+        raise CleanroomException(
+            409, "LOCAL_ASSET_PATH_AMBIGUOUS", "相对路径已属于另一个允许根，拒绝覆盖"
+        )
     return match
 
 
-def _public_local_asset_entry(entry: Dict[str, Any]) -> Dict[str, Any]:
+def _public_local_asset_entry(entry: dict[str, Any]) -> dict[str, Any]:
     """移除仅供索引内部判定使用的根身份字段。"""
     return {key: value for key, value in entry.items() if not key.startswith("_")}
 
 
-def _local_sequence(raw: Dict[str, Any]) -> int:
+def _local_sequence(raw: dict[str, Any]) -> int:
     """把持久化高水位与当前记录合并，避免删除末尾条目后复用 asset_id。"""
     try:
         sequence = max(0, int(raw.get("sequence", 0) or 0))
@@ -665,14 +831,14 @@ def _local_sequence(raw: Dict[str, Any]) -> int:
     return sequence
 
 
-def _next_local_asset_id(raw: Dict[str, Any]) -> str:
+def _next_local_asset_id(raw: dict[str, Any]) -> str:
     sequence = _local_sequence(raw) + 1
     raw["sequence"] = sequence
     return "local_%04d" % sequence
 
 
-def _duplicate_local_asset_ids(raw: Dict[str, Any]) -> List[str]:
-    counts: Dict[str, int] = {}
+def _duplicate_local_asset_ids(raw: dict[str, Any]) -> list[str]:
+    counts: dict[str, int] = {}
     for entry in raw.get("entries", {}).values():
         asset_id = str(entry.get("asset_id") or "")
         if asset_id:
@@ -680,25 +846,30 @@ def _duplicate_local_asset_ids(raw: Dict[str, Any]) -> List[str]:
     return sorted(asset_id for asset_id, count in counts.items() if count > 1)
 
 
-def _repair_duplicate_local_asset_ids(raw: Dict[str, Any]) -> List[Dict[str, str]]:
+def _repair_duplicate_local_asset_ids(raw: dict[str, Any]) -> list[dict[str, str]]:
     """按展示路径稳定修复旧冲突，并返回完整映射，绝不让歧义 ID 指向任一对象。"""
     duplicates = set(_duplicate_local_asset_ids(raw))
     if not duplicates:
         _local_sequence(raw)
         return []
-    repaired: List[Dict[str, str]] = []
+    repaired: list[dict[str, str]] = []
     entries = raw.setdefault("entries", {})
-    for key, entry in sorted(entries.items(), key=lambda pair: (str(pair[1].get("display_path") or pair[0]), pair[0])):
+    for key, entry in sorted(
+        entries.items(),
+        key=lambda pair: (str(pair[1].get("display_path") or pair[0]), pair[0]),
+    ):
         previous = str(entry.get("asset_id") or "")
         if previous not in duplicates:
             continue
         replacement = _next_local_asset_id(raw)
         entry["asset_id"] = replacement
-        repaired.append({
-            "display_path": str(entry.get("display_path") or key),
-            "previous_asset_id": previous,
-            "asset_id": replacement,
-        })
+        repaired.append(
+            {
+                "display_path": str(entry.get("display_path") or key),
+                "previous_asset_id": previous,
+                "asset_id": replacement,
+            }
+        )
     return repaired
 
 
@@ -725,7 +896,7 @@ def _reconcile_local_index_move(
     target_path: Path,
     source_root_identity: str,
     target_root_identity: str,
-) -> Dict[str, Any] | None:
+) -> dict[str, Any] | None:
     try:
         raw = state.read()
         entries = raw.setdefault("entries", {})
@@ -734,18 +905,25 @@ def _reconcile_local_index_move(
         repairs = _repair_duplicate_local_asset_ids(raw)
         record = entries.pop(record_key, None) if record_key is not None else None
         if record is not None:
-            record.update({
-                "name": target_path.name,
-                "display_path": target_key,
-                "size_bytes": target_path.stat().st_size,
-                "moved_at": storage.now_iso(),
-                "_root_identity": target_root_identity,
-            })
+            record.update(
+                {
+                    "name": target_path.name,
+                    "display_path": target_key,
+                    "size_bytes": target_path.stat().st_size,
+                    "moved_at": storage.now_iso(),
+                    "_root_identity": target_root_identity,
+                }
+            )
             entries[target_key] = record
         state.write(raw)
-        return {"asset_id": record.get("asset_id") if record else None, "id_repairs": repairs}
+        return {
+            "asset_id": record.get("asset_id") if record else None,
+            "id_repairs": repairs,
+        }
     except Exception:
         return None
+
+
 def _local_dir() -> Path:
     return storage.data_root() / "local_assets"
 
@@ -757,7 +935,7 @@ def _safe_name(name: str, *, what: str = "名称") -> str:
     return clean
 
 
-def list_local_assets(kind: str | None = None) -> Dict[str, Any]:
+def list_local_assets(kind: str | None = None) -> dict[str, Any]:
     raw = _local_state().read()
     entries = list(raw.get("entries", {}).values())
     if kind:
@@ -768,16 +946,25 @@ def list_local_assets(kind: str | None = None) -> Dict[str, Any]:
         "items": [_public_local_asset_entry(entry) for entry in entries],
         "count": len(entries),
         "data_status": "ok" if entries else "empty",
-        "data_gaps": ([{"code": "LOCAL_ASSET_ID_AMBIGUOUS", "asset_ids": ambiguous}] if ambiguous else []),
+        "data_gaps": (
+            [{"code": "LOCAL_ASSET_ID_AMBIGUOUS", "asset_ids": ambiguous}]
+            if ambiguous
+            else []
+        ),
     }
-def index_local_files(raw_paths: List[str], kind: str = "auto") -> Dict[str, Any]:
+
+
+def index_local_files(raw_paths: list[str], kind: str = "auto") -> dict[str, Any]:
     with _LOCAL_ASSET_DOMAIN_LOCK:
         return _index_local_files_locked(raw_paths, kind)
 
 
-def _index_local_files_locked(raw_paths: List[str], kind: str = "auto") -> Dict[str, Any]:
+def _index_local_files_locked(
+    raw_paths: list[str], kind: str = "auto"
+) -> dict[str, Any]:
     """把允许根目录内真实文件登记到本地素材索引。"""
-    def mutate(raw: Dict[str, Any]) -> Any:
+
+    def mutate(raw: dict[str, Any]) -> Any:
         repaired = _repair_duplicate_local_asset_ids(raw)
         added = []
         for raw_path in raw_paths:
@@ -787,26 +974,41 @@ def _index_local_files_locked(raw_paths: List[str], kind: str = "auto") -> Dict[
             key = storage.relative_display(path)
             root_identity = _local_root_identity(path)
             match = _local_index_entry_for_root(raw["entries"], key, root_identity)
-            entry_key, entry = match if match else (key, {"asset_id": _next_local_asset_id(raw)})
-            entry.update({
-                "name": path.name,
-                "display_path": key,
-                "size_bytes": path.stat().st_size,
-                "kind": kind if kind != "auto" else classify_name(path.name),
-                "indexed_at": storage.now_iso(),
-                "_root_identity": root_identity,
-            })
+            entry_key, entry = (
+                match if match else (key, {"asset_id": _next_local_asset_id(raw)})
+            )
+            entry.update(
+                {
+                    "name": path.name,
+                    "display_path": key,
+                    "size_bytes": path.stat().st_size,
+                    "kind": kind if kind != "auto" else classify_name(path.name),
+                    "indexed_at": storage.now_iso(),
+                    "_root_identity": root_identity,
+                }
+            )
             raw["entries"][entry_key] = entry
             added.append(_public_local_asset_entry(entry))
         return {"items": added, "count": len(added), "id_repairs": repaired}
+
     return _local_state().mutate(mutate)
-def update_local_entry(asset_id: str, payload: Dict[str, Any]) -> Dict[str, Any]:
-    def mutate(raw: Dict[str, Any]) -> Any:
-        matches = [entry for entry in raw.get("entries", {}).values() if entry.get("asset_id") == asset_id]
+
+
+def update_local_entry(asset_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+    def mutate(raw: dict[str, Any]) -> Any:
+        matches = [
+            entry
+            for entry in raw.get("entries", {}).values()
+            if entry.get("asset_id") == asset_id
+        ]
         if not matches:
             raise CleanroomException(404, "LOCAL_ASSET_NOT_FOUND", "本地素材不存在")
         if len(matches) > 1:
-            raise CleanroomException(409, "LOCAL_ASSET_ID_AMBIGUOUS", "该素材标识对应多条历史记录，请先重新索引并读取新标识")
+            raise CleanroomException(
+                409,
+                "LOCAL_ASSET_ID_AMBIGUOUS",
+                "该素材标识对应多条历史记录，请先重新索引并读取新标识",
+            )
         entry = matches[0]
         if payload.get("name"):
             entry["name"] = str(payload["name"]).strip()
@@ -814,9 +1016,12 @@ def update_local_entry(asset_id: str, payload: Dict[str, Any]) -> Dict[str, Any]
             entry["kind"] = str(payload["kind"])
         entry["updated_at"] = storage.now_iso()
         return _public_local_asset_entry(entry)
+
     return _local_state().mutate(mutate)
-def classify_local_entries(asset_ids: List[str]) -> Dict[str, Any]:
-    def mutate(raw: Dict[str, Any]) -> Any:
+
+
+def classify_local_entries(asset_ids: list[str]) -> dict[str, Any]:
+    def mutate(raw: dict[str, Any]) -> Any:
         results = []
         for entry in raw["entries"].values():
             if asset_ids and entry.get("asset_id") not in asset_ids:
@@ -826,43 +1031,51 @@ def classify_local_entries(asset_ids: List[str]) -> Dict[str, Any]:
             entry["classified_at"] = storage.now_iso()
             results.append({"asset_id": entry.get("asset_id"), "kind": label})
         return {"results": results, "count": len(results)}
+
     return _local_state().mutate(mutate)
 
 
-def caption_local_entries(asset_ids: List[str]) -> Dict[str, Any]:
+def caption_local_entries(asset_ids: list[str]) -> dict[str, Any]:
     """生成基于真实文件名的确定性说明（不做内容语义猜测）。"""
-    def mutate(raw: Dict[str, Any]) -> Any:
+
+    def mutate(raw: dict[str, Any]) -> Any:
         results = []
         for entry in raw["entries"].values():
             if asset_ids and entry.get("asset_id") not in asset_ids:
                 continue
             name = str(entry.get("name") or "")
-            caption = "%s（%s，%s 字节）" % (name, classify_name(name), entry.get("size_bytes", 0))
+            caption = "%s（%s，%s 字节）" % (
+                name,
+                classify_name(name),
+                entry.get("size_bytes", 0),
+            )
             entry["caption"] = caption
             results.append({"asset_id": entry.get("asset_id"), "caption": caption})
         return {"results": results, "count": len(results)}
+
     return _local_state().mutate(mutate)
 
 
-def save_local_caption(asset_id: str, caption: str) -> Dict[str, Any]:
-    def mutate(raw: Dict[str, Any]) -> Any:
+def save_local_caption(asset_id: str, caption: str) -> dict[str, Any]:
+    def mutate(raw: dict[str, Any]) -> Any:
         for entry in raw["entries"].values():
             if entry.get("asset_id") == asset_id:
                 entry["caption"] = caption
                 entry["updated_at"] = storage.now_iso()
                 return {"asset_id": asset_id, "caption": caption, "saved": True}
         raise CleanroomException(404, "LOCAL_ASSET_NOT_FOUND", "本地素材不存在")
+
     return _local_state().mutate(mutate)
 
 
-def create_local_folder(name: str) -> Dict[str, Any]:
+def create_local_folder(name: str) -> dict[str, Any]:
     clean = _safe_name(name, what="文件夹名称")
     folder = _local_dir() / clean
     folder.mkdir(parents=True, exist_ok=True)
     return {"name": clean, "display_path": "local_assets/" + clean, "created": True}
 
 
-def rename_local_folder(name: str, new_name: str) -> Dict[str, Any]:
+def rename_local_folder(name: str, new_name: str) -> dict[str, Any]:
     src = _local_dir() / _safe_name(name, what="文件夹名称")
     clean = _safe_name(new_name, what="新文件夹名称")
     if not src.is_dir():
@@ -871,10 +1084,14 @@ def rename_local_folder(name: str, new_name: str) -> Dict[str, Any]:
     if dst.exists():
         raise CleanroomException(409, "TARGET_EXISTS", "目标文件夹已存在")
     src.replace(dst)
-    return {"from": "local_assets/" + src.name, "to": "local_assets/" + dst.name, "renamed": True}
+    return {
+        "from": "local_assets/" + src.name,
+        "to": "local_assets/" + dst.name,
+        "renamed": True,
+    }
 
 
-def storage_files() -> Dict[str, Any]:
+def storage_files() -> dict[str, Any]:
     """只列服务端产物，不枚举根目录JSON/数据库等内部状态。"""
     items = []
     for relative, path in storage.iter_output_paths():
@@ -882,15 +1099,23 @@ def storage_files() -> Dict[str, Any]:
             info = storage.resolve_output_path(relative).stat()
         except (CleanroomException, OSError):
             continue
-        items.append({"name": relative, "size_bytes": info.st_size,
-                      "modified_at": int(info.st_mtime)})
+        items.append(
+            {
+                "name": relative,
+                "size_bytes": info.st_size,
+                "modified_at": int(info.st_mtime),
+            }
+        )
     items.sort(key=lambda item: item["name"])
-    return {"items": items, "count": len(items),
-            "allowed_roots_configured": bool(storage.allowed_roots()),
-            "data_status": "ok" if items else "empty"}
+    return {
+        "items": items,
+        "count": len(items),
+        "allowed_roots_configured": bool(storage.allowed_roots()),
+        "data_status": "ok" if items else "empty",
+    }
 
 
-def delete_storage_files(names: List[str]) -> Dict[str, Any]:
+def delete_storage_files(names: list[str]) -> dict[str, Any]:
     """完整预检后逐个删除准入产物；磁盘失败如实报告，不承诺文件系统事务。"""
     for name in names:
         storage.resolve_output_path(name, must_exist=False)
@@ -907,37 +1132,63 @@ def delete_storage_files(names: List[str]) -> Dict[str, Any]:
             failed.append({"name": name, "code": "OUTPUT_PATH_CHANGED"})
         except OSError:
             failed.append({"name": name, "code": "OUTPUT_DELETE_FAILED"})
-    return {"deleted": deleted, "skipped": skipped, "failed": failed,
-            "count": len(deleted), "data_status": "partial" if failed else "ok"}
+    return {
+        "deleted": deleted,
+        "skipped": skipped,
+        "failed": failed,
+        "count": len(deleted),
+        "data_status": "partial" if failed else "ok",
+    }
 
 
 # ---------------------------------------------------------------------------
 # 头像登记（本地登记，不调用外部平台）
 # ---------------------------------------------------------------------------
 
+
 def _avatar_state() -> storage.JsonState:
     return storage.JsonState(NS_AVATAR, lambda: {"items": {}})
 
 
-def avatar_status(asset_id: str) -> Dict[str, Any]:
+def avatar_status(asset_id: str) -> dict[str, Any]:
     entry = _avatar_state().read()["items"].get(asset_id)
     if not entry:
-        return {"asset_id": asset_id, "registered": False, "avatar_path": None,
-                "data_status": "ok", "data_gaps": ["avatar_not_registered"]}
-    return {"asset_id": asset_id, "registered": True, "avatar_path": entry["display_path"],
-            "registered_at": entry["registered_at"], "data_status": "ok"}
+        return {
+            "asset_id": asset_id,
+            "registered": False,
+            "avatar_path": None,
+            "data_status": "ok",
+            "data_gaps": ["avatar_not_registered"],
+        }
+    return {
+        "asset_id": asset_id,
+        "registered": True,
+        "avatar_path": entry["display_path"],
+        "registered_at": entry["registered_at"],
+        "data_status": "ok",
+    }
 
 
-def register_avatar(asset_id: str, avatar_path: str) -> Dict[str, Any]:
+def register_avatar(asset_id: str, avatar_path: str) -> dict[str, Any]:
     path = storage.resolve_within_roots(avatar_path)
     if not path.is_file():
         raise CleanroomException(404, "FILE_NOT_FOUND", "头像文件不存在")
     display = storage.relative_display(path)
-    entry = {"asset_id": asset_id, "display_path": display, "registered_at": storage.now_iso()}
+    entry = {
+        "asset_id": asset_id,
+        "display_path": display,
+        "registered_at": storage.now_iso(),
+    }
 
-    def mutate(raw: Dict[str, Any]) -> Any:
+    def mutate(raw: dict[str, Any]) -> Any:
         raw["items"][asset_id] = entry
         return dict(entry)
+
     _avatar_state().mutate(mutate)
-    return {"asset_id": asset_id, "registered": True, "avatar_path": display,
-            "registered_at": entry["registered_at"], "data_status": "ok"}
+    return {
+        "asset_id": asset_id,
+        "registered": True,
+        "avatar_path": display,
+        "registered_at": entry["registered_at"],
+        "data_status": "ok",
+    }

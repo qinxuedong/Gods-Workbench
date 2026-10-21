@@ -4,7 +4,6 @@ import hashlib
 import json
 from pathlib import Path
 
-
 PROMPT_REQUIRED_FIELDS = {
     "id",
     "sourceId",
@@ -137,9 +136,14 @@ def test_prompt_registry_snapshot_hashes_and_v1_record_schema() -> None:
     assert "davidwu-gpt-image2-prompts" not in source_ids
     excluded = excluded_sources["davidwu-gpt-image2-prompts"]
     assert excluded["status"] == "EXCLUDED_LICENSE_TEXT_INCOMPLETE"
-    assert excluded["sourceSha256"] == "bc61473b87e53acd514d14e1936f3490fe7d9db3cf004d5730dda9f28cda1dbf"
+    assert (
+        excluded["sourceSha256"]
+        == "bc61473b87e53acd514d14e1936f3490fe7d9db3cf004d5730dda9f28cda1dbf"
+    )
     assert "README" in excluded["reason"] and "MIT" in excluded["reason"]
-    assert not (repo_root / "web/prompt-registry/sources/davidwu-gpt-image2-prompts.json").exists()
+    assert not (
+        repo_root / "web/prompt-registry/sources/davidwu-gpt-image2-prompts.json"
+    ).exists()
 
 
 def test_vendor_assets_match_recorded_source_and_local_hashes() -> None:
@@ -163,7 +167,9 @@ def test_vendor_assets_match_recorded_source_and_local_hashes() -> None:
         "web/vendor/fonts/SourceHanSansCN-Normal.otf",
     }
     for license_hash in PROMPT_LICENSE_HASHES.values():
-        assert license_hash in (repo_root / "web/prompt-registry/NOTICE.md").read_text(encoding="utf-8")
+        assert license_hash in (repo_root / "web/prompt-registry/NOTICE.md").read_text(
+            encoding="utf-8"
+        )
     assert "Version 2.005" in licenses_text
     assert "BLOCKED" in licenses_text
     assert "全仓 SBOM 与完整 NOTICE 仍缺失" in licenses_text

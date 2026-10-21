@@ -1,4 +1,5 @@
 """LangGraph executor for injected, domain-neutral runtime capabilities."""
+
 from __future__ import annotations
 
 from collections.abc import Awaitable, Callable, Mapping
@@ -7,7 +8,13 @@ from typing import Any, TypedDict
 from langgraph.graph import END, START, StateGraph
 
 from gw.agent_runtime.models import ArtifactRef, ConfigSnapshot, Identifier, StageId
-from gw.agent_runtime.policy import ORCHESTRATION_ACTIONS, CapabilityRegistry, OrchestrationProposal, ReviewDraft, RuntimePolicy
+from gw.agent_runtime.policy import (
+    ORCHESTRATION_ACTIONS,
+    CapabilityRegistry,
+    OrchestrationProposal,
+    ReviewDraft,
+    RuntimePolicy,
+)
 
 
 class RuntimeGraphState(TypedDict, total=False):
@@ -62,15 +69,39 @@ class LangGraphRuntimeExecutor:
 
         planner = StateGraph(RuntimeGraphState)
         planner.add_node("invoke_orchestrator", self._invoke_orchestrator)
-        for action in ("clarify", "select_capability", "create", "review", "revise", "rollback"):
+        for action in (
+            "clarify",
+            "select_capability",
+            "create",
+            "review",
+            "revise",
+            "rollback",
+        ):
             planner.add_node(f"action_{action}", self._route_action)
         planner.add_edge(START, "invoke_orchestrator")
         planner.add_conditional_edges(
             "invoke_orchestrator",
             self._proposal_route,
-            {action: f"action_{action}" for action in ("clarify", "select_capability", "create", "review", "revise", "rollback")},
+            {
+                action: f"action_{action}"
+                for action in (
+                    "clarify",
+                    "select_capability",
+                    "create",
+                    "review",
+                    "revise",
+                    "rollback",
+                )
+            },
         )
-        for action in ("clarify", "select_capability", "create", "review", "revise", "rollback"):
+        for action in (
+            "clarify",
+            "select_capability",
+            "create",
+            "review",
+            "revise",
+            "rollback",
+        ):
             planner.add_edge(f"action_{action}", END)
         self.orchestration_graph = planner.compile()
 
@@ -98,10 +129,19 @@ class LangGraphRuntimeExecutor:
             "score_config": score_config,
         }
         if existing_candidate is not None:
-            initial.update({"artifact": existing_candidate[0], "artifact_content": existing_candidate[1], "existing_candidate": True})
-        return await self._invoke_graph(self.graph, {
-            **initial,
-        })
+            initial.update(
+                {
+                    "artifact": existing_candidate[0],
+                    "artifact_content": existing_candidate[1],
+                    "existing_candidate": True,
+                }
+            )
+        return await self._invoke_graph(
+            self.graph,
+            {
+                **initial,
+            },
+        )
 
     async def propose_stage_action(
         self,
@@ -112,13 +152,16 @@ class LangGraphRuntimeExecutor:
         execution_input: Mapping[str, Any],
         runtime_context: Mapping[str, Any],
     ) -> RuntimeGraphState:
-        return await self._invoke_graph(self.orchestration_graph, {
-            "stage": stage,
-            "actor_id": actor_id,
-            "orchestrator_role": orchestrator_role,
-            "execution_input": dict(execution_input),
-            "runtime_context": dict(runtime_context),
-        })
+        return await self._invoke_graph(
+            self.orchestration_graph,
+            {
+                "stage": stage,
+                "actor_id": actor_id,
+                "orchestrator_role": orchestrator_role,
+                "execution_input": dict(execution_input),
+                "runtime_context": dict(runtime_context),
+            },
+        )
 
     @staticmethod
     async def _invoke_graph(graph: Any, state: Mapping[str, Any]) -> RuntimeGraphState:
@@ -155,13 +198,19 @@ class LangGraphRuntimeExecutor:
         await self._assert_dispatch_allowed(state, state["writer_role"])
         value = state["writer_result"]
         if not hasattr(value, "content") or not isinstance(value.content, str):
-            raise TypeError("A registered writer must return an ArtifactVersionInput-like object with text content.")
+            raise TypeError(
+                "A registered writer must return an ArtifactVersionInput-like object with text content."
+            )
         # Artifact ownership is injected by the runtime service, never by the graph/model.
         factory = state.get("artifact_factory")
         if factory is None:
             raise RuntimeError("No artifact repository factory was injected.")
         artifact, content = await factory(value)
-        return {"artifact_input": value, "artifact": artifact, "artifact_content": content}
+        return {
+            "artifact_input": value,
+            "artifact": artifact,
+            "artifact_content": content,
+        }
 
     async def _run_reviewer(self, state: RuntimeGraphState) -> dict[str, Any]:
         await self._assert_dispatch_allowed(state, state["reviewer_role"])
@@ -175,7 +224,9 @@ class LangGraphRuntimeExecutor:
             _runtime_context=state.get("runtime_context"),
         )
         if not isinstance(draft, ReviewDraft):
-            raise TypeError("A registered reviewer must return ReviewDraft; model self-reported score/conclusion is not authoritative.")
+            raise TypeError(
+                "A registered reviewer must return ReviewDraft; model self-reported score/conclusion is not authoritative."
+            )
         return {"review_draft": draft}
 
     async def _apply_gate(self, state: RuntimeGraphState) -> dict[str, Any]:
@@ -201,7 +252,9 @@ class LangGraphRuntimeExecutor:
             _runtime_context=state.get("runtime_context"),
         )
         if not isinstance(proposal, OrchestrationProposal):
-            raise TypeError("The orchestrator must return a structured OrchestrationProposal.")
+            raise TypeError(
+                "The orchestrator must return a structured OrchestrationProposal."
+            )
         if proposal.action not in ORCHESTRATION_ACTIONS:
             raise ValueError("The orchestrator proposed an unsupported action.")
         return {"orchestration_proposal": proposal}
@@ -223,7 +276,11 @@ class LangGraphRuntimeExecutor:
     @staticmethod
     async def _assert_dispatch_allowed(state: RuntimeGraphState, role: str) -> None:
         context = state.get("runtime_context") or {}
-        guard = context.get("assert_dispatch_allowed") if isinstance(context, Mapping) else None
+        guard = (
+            context.get("assert_dispatch_allowed")
+            if isinstance(context, Mapping)
+            else None
+        )
         if guard is not None:
             result = guard(role)
             if hasattr(result, "__await__"):

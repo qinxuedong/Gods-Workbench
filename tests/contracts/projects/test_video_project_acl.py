@@ -36,9 +36,11 @@ def test_claim_binds_source_without_rebinding_actor_or_refreshing_grant(tmp_path
         "prj-claim", "grantee-b", "grantee-b", source_owner_key="source-a"
     )
     with store.reader() as db:
-        original = dict(db.execute(
-            "SELECT * FROM video_projects WHERE project_id=?", ("prj-claim",)
-        ).fetchone())
+        original = dict(
+            db.execute(
+                "SELECT * FROM video_projects WHERE project_id=?", ("prj-claim",)
+            ).fetchone()
+        )
 
     store.claim_unowned_project(
         "prj-claim", "grantee-b", "grantee-b", source_owner_key="source-a"
@@ -57,9 +59,11 @@ def test_claim_binds_source_without_rebinding_actor_or_refreshing_grant(tmp_path
     assert takeover.value.code == "PROJECT_ACCESS_EXISTS"
 
     with store.reader() as db:
-        after = dict(db.execute(
-            "SELECT * FROM video_projects WHERE project_id=?", ("prj-claim",)
-        ).fetchone())
+        after = dict(
+            db.execute(
+                "SELECT * FROM video_projects WHERE project_id=?", ("prj-claim",)
+            ).fetchone()
+        )
     assert after == original
 
 
@@ -68,20 +72,31 @@ def test_legacy_null_source_fails_closed_until_same_actor_governance_claim(tmp_p
     store = VideoTaskStore(tmp_path / "video")
     store.register_project_owner("prj-owner", "source-a", "source-a")
     with store.transaction() as db:
-        db.execute("UPDATE video_projects SET source_owner_key=NULL WHERE project_id=?", ("prj-owner",))
+        db.execute(
+            "UPDATE video_projects SET source_owner_key=NULL WHERE project_id=?",
+            ("prj-owner",),
+        )
     store.require_project_owner("prj-owner", "source-a", "source-a")
     with store.reader() as db:
-        assert db.execute(
-            "SELECT source_owner_key FROM video_projects WHERE project_id='prj-owner'"
-        ).fetchone()[0] is None
+        assert (
+            db.execute(
+                "SELECT source_owner_key FROM video_projects WHERE project_id='prj-owner'"
+            ).fetchone()[0]
+            is None
+        )
 
     store.register_project_owner("prj-legacy", "grantee-b", "legacy-grant")
     with store.transaction() as db:
-        db.execute("UPDATE video_projects SET source_owner_key=NULL WHERE project_id=?", ("prj-legacy",))
+        db.execute(
+            "UPDATE video_projects SET source_owner_key=NULL WHERE project_id=?",
+            ("prj-legacy",),
+        )
     with store.reader() as db:
-        before = dict(db.execute(
-            "SELECT * FROM video_projects WHERE project_id='prj-legacy'"
-        ).fetchone())
+        before = dict(
+            db.execute(
+                "SELECT * FROM video_projects WHERE project_id='prj-legacy'"
+            ).fetchone()
+        )
 
     with pytest.raises(CleanroomException) as before_claim:
         store.require_project_owner("prj-legacy", "grantee-b", "source-a")
@@ -91,9 +106,11 @@ def test_legacy_null_source_fails_closed_until_same_actor_governance_claim(tmp_p
     )
     store.require_project_owner("prj-legacy", "grantee-b", "source-a")
     with store.reader() as db:
-        after = dict(db.execute(
-            "SELECT * FROM video_projects WHERE project_id='prj-legacy'"
-        ).fetchone())
+        after = dict(
+            db.execute(
+                "SELECT * FROM video_projects WHERE project_id='prj-legacy'"
+            ).fetchone()
+        )
     assert after["source_owner_key"] == "source-a"
     assert after["granted_by"] == before["granted_by"]
     assert after["created_at"] == before["created_at"]
@@ -118,9 +135,11 @@ def test_legacy_null_claim_update_failure_rolls_back_entire_acl_row(tmp_path):
             BEFORE UPDATE OF source_owner_key ON video_projects
             WHEN OLD.source_owner_key IS NULL
             BEGIN SELECT RAISE(ABORT,'blocked test source backfill'); END""")
-        before = dict(db.execute(
-            "SELECT * FROM video_projects WHERE project_id='prj-legacy-fail'"
-        ).fetchone())
+        before = dict(
+            db.execute(
+                "SELECT * FROM video_projects WHERE project_id='prj-legacy-fail'"
+            ).fetchone()
+        )
 
     with pytest.raises(CleanroomException) as excinfo:
         store.claim_unowned_project(
@@ -128,9 +147,11 @@ def test_legacy_null_claim_update_failure_rolls_back_entire_acl_row(tmp_path):
         )
     assert excinfo.value.status_code == 503
     with store.reader() as db:
-        after = dict(db.execute(
-            "SELECT * FROM video_projects WHERE project_id='prj-legacy-fail'"
-        ).fetchone())
+        after = dict(
+            db.execute(
+                "SELECT * FROM video_projects WHERE project_id='prj-legacy-fail'"
+            ).fetchone()
+        )
     assert after == before
 
 
@@ -184,29 +205,76 @@ def _create_legacy_video_database(root, *, version="1", reject_version_upgrade=F
                 size_bytes INTEGER NOT NULL, media_json TEXT NOT NULL, created_at TEXT NOT NULL,
                 FOREIGN KEY(job_id) REFERENCES video_jobs(job_id));
         """)
-        db.execute("INSERT INTO video_meta(key,value) VALUES('schema_version',?)", (version,))
+        db.execute(
+            "INSERT INTO video_meta(key,value) VALUES('schema_version',?)", (version,)
+        )
         db.execute(
             "INSERT INTO video_projects(project_id,owner_key,granted_by,created_at) VALUES(?,?,?,?)",
             ("prj-legacy", "source-a", "source-a", "2026-01-01T00:00:00+00:00"),
         )
         rows = [
-            ("job-canceled", "actor-a", "video-generation", "idem-canceled", "hash-c", "{}", "canceled",
-             "prj-legacy", "canvas-a", "entity-a", "provider-a", "model-a", None, 0, None, None, 0,
-             "2026-01-01T00:00:00+00:00", "2026-01-01T00:00:01+00:00"),
-            ("job-succeeded", "actor-a", "video-generation", "idem-succeeded", "hash-s", "{}", "succeeded",
-             "prj-legacy", "canvas-a", "entity-a", "provider-a", "model-a", "upstream-a", 0, None, None, 0,
-             "2026-01-01T00:00:00+00:00", "2026-01-01T00:00:02+00:00"),
+            (
+                "job-canceled",
+                "actor-a",
+                "video-generation",
+                "idem-canceled",
+                "hash-c",
+                "{}",
+                "canceled",
+                "prj-legacy",
+                "canvas-a",
+                "entity-a",
+                "provider-a",
+                "model-a",
+                None,
+                0,
+                None,
+                None,
+                0,
+                "2026-01-01T00:00:00+00:00",
+                "2026-01-01T00:00:01+00:00",
+            ),
+            (
+                "job-succeeded",
+                "actor-a",
+                "video-generation",
+                "idem-succeeded",
+                "hash-s",
+                "{}",
+                "succeeded",
+                "prj-legacy",
+                "canvas-a",
+                "entity-a",
+                "provider-a",
+                "model-a",
+                "upstream-a",
+                0,
+                None,
+                None,
+                0,
+                "2026-01-01T00:00:00+00:00",
+                "2026-01-01T00:00:02+00:00",
+            ),
         ]
         db.executemany(
             "INSERT INTO video_jobs(job_id,actor_key,operation,idempotency_key,request_hash,request_json,status,"
             "project_id,canvas_id,entity_id,provider_id,model,upstream_task_id,result_unknown,error_code,error_message,"
-            "remote_may_continue,created_at,updated_at) VALUES(" + ",".join("?" for _ in rows[0]) + ")",
+            "remote_may_continue,created_at,updated_at) VALUES("
+            + ",".join("?" for _ in rows[0])
+            + ")",
             rows,
         )
         db.execute(
             "INSERT INTO video_artifacts(asset_id,job_id,path,size_bytes,media_json,created_at) "
             "VALUES(?,?,?,?,?,?)",
-            ("asset-succeeded", "job-succeeded", "artifact.mp4", 123, "{}", "2026-01-01T00:00:02+00:00"),
+            (
+                "asset-succeeded",
+                "job-succeeded",
+                "artifact.mp4",
+                123,
+                "{}",
+                "2026-01-01T00:00:02+00:00",
+            ),
         )
         if reject_version_upgrade:
             db.executescript("""
@@ -226,13 +294,24 @@ def test_old_video_schema_migration_preserves_acl_jobs_artifacts_and_risk(tmp_pa
 
     store = VideoTaskStore(root)
     with store.reader() as db:
-        assert db.execute("SELECT value FROM video_meta WHERE key='schema_version'").fetchone()[0] == "3"
-        project = db.execute("SELECT * FROM video_projects WHERE project_id='prj-legacy'").fetchone()
+        assert (
+            db.execute(
+                "SELECT value FROM video_meta WHERE key='schema_version'"
+            ).fetchone()[0]
+            == "3"
+        )
+        project = db.execute(
+            "SELECT * FROM video_projects WHERE project_id='prj-legacy'"
+        ).fetchone()
         assert project["owner_key"] == "source-a"
         assert project["granted_by"] == "source-a"
         assert project["source_owner_key"] is None
-        jobs = {row["job_id"]: dict(row) for row in db.execute("SELECT * FROM video_jobs")}
-        artifact = db.execute("SELECT * FROM video_artifacts WHERE asset_id='asset-succeeded'").fetchone()
+        jobs = {
+            row["job_id"]: dict(row) for row in db.execute("SELECT * FROM video_jobs")
+        }
+        artifact = db.execute(
+            "SELECT * FROM video_artifacts WHERE asset_id='asset-succeeded'"
+        ).fetchone()
     assert set(jobs) == {"job-canceled", "job-succeeded"}
     assert jobs["job-canceled"]["idempotency_key"] == "idem-canceled"
     assert jobs["job-canceled"]["upstream_create_dispatched"] == 1
@@ -243,7 +322,12 @@ def test_old_video_schema_migration_preserves_acl_jobs_artifacts_and_risk(tmp_pa
 
     VideoTaskStore(root)
     with store.reader() as db:
-        assert db.execute("SELECT source_owner_key FROM video_projects WHERE project_id='prj-legacy'").fetchone()[0] is None
+        assert (
+            db.execute(
+                "SELECT source_owner_key FROM video_projects WHERE project_id='prj-legacy'"
+            ).fetchone()[0]
+            is None
+        )
         assert db.execute("SELECT COUNT(*) FROM video_jobs").fetchone()[0] == 2
         assert db.execute("SELECT COUNT(*) FROM video_artifacts").fetchone()[0] == 1
 
@@ -257,6 +341,8 @@ def test_video_schema_migration_failure_rolls_back_added_column(tmp_path):
     assert excinfo.value.status_code == 503
     with sqlite3.connect(root / "video_tasks.sqlite3") as db:
         columns = {row[1] for row in db.execute("PRAGMA table_info(video_projects)")}
-        version = db.execute("SELECT value FROM video_meta WHERE key='schema_version'").fetchone()[0]
+        version = db.execute(
+            "SELECT value FROM video_meta WHERE key='schema_version'"
+        ).fetchone()[0]
     assert "source_owner_key" not in columns
     assert version == "2"

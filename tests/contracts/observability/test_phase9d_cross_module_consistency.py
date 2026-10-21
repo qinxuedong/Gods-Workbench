@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Phase 9D 跨模块降级语义一致性守卫（Node 真实执行，防未来漂移）。
 
 背景：独立复核（`docs/governance/agent-reports-2026-09-21/P9-D-INDEPENDENT-REVIEW.md`）
@@ -92,16 +91,15 @@ def probe_rows() -> list[dict]:
             cwd=str(work),
             timeout=120,
         )
-        assert completed.returncode == 0, f"Node 探针执行失败：{completed.stderr[:2000]}"
+        assert completed.returncode == 0, (
+            f"Node 探针执行失败：{completed.stderr[:2000]}"
+        )
         return json.loads(completed.stdout.strip().splitlines()[-1])
 
 
 def test_degradation_js_and_transport_js_agree(probe_rows):
     """两侧判定必须逐条一致（含 503 与业务 404 的分流）。"""
-    mismatches = [
-        row for row in probe_rows
-        if row["degradation"] != row["transport"]
-    ]
+    mismatches = [row for row in probe_rows if row["degradation"] != row["transport"]]
     assert mismatches == [], f"跨模块降级语义不一致：{mismatches}"
 
 

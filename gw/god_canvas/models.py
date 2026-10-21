@@ -19,6 +19,7 @@
 
 from enum import Enum
 from typing import Any, Dict, List, Optional
+
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
@@ -84,8 +85,8 @@ class NodeReferences(BaseModel):
 
     model_config = ConfigDict(extra="allow")
 
-    asset_id: Optional[str] = None
-    job_id: Optional[str] = None
+    asset_id: str | None = None
+    job_id: str | None = None
 
 
 class CanvasNode(BaseModel):
@@ -94,10 +95,14 @@ class CanvasNode(BaseModel):
     model_config = ConfigDict(extra="allow")
 
     entity_id: str = Field(..., description="稳定节点标识")
-    kind: CanvasNodeKind | str = Field(..., description="多模态类型或旧工作流自定义类型")
-    position: Optional[NodePosition] = Field(None, description="节点坐标")
-    refs: Optional[NodeReferences] = Field(default_factory=NodeReferences, description="节点关联引用")
-    ports: Optional[List[CanvasPort]] = None
+    kind: CanvasNodeKind | str = Field(
+        ..., description="多模态类型或旧工作流自定义类型"
+    )
+    position: NodePosition | None = Field(None, description="节点坐标")
+    refs: NodeReferences | None = Field(
+        default_factory=NodeReferences, description="节点关联引用"
+    )
+    ports: list[CanvasPort] | None = None
 
     @model_validator(mode="after")
     def validate_ports(self):
@@ -123,12 +128,14 @@ class CanvasTopology(BaseModel):
     model_config = ConfigDict(populate_by_name=True, extra="allow")
 
     canvas_id: str = Field(..., description="画布标识")
-    project_id: Optional[str] = None
+    project_id: str | None = None
     version: int = Field(1, description="CAS 版本号")
-    viewport: Optional[Dict[str, Any]] = None
-    nodes: List[CanvasNode] = Field(default_factory=list, description="节点列表")
-    connections: List[CanvasConnection] = Field(default_factory=list, description="连接列表")
-    references: Optional[Dict[str, Any]] = Field(None, description="画布级别全局引用")
+    viewport: dict[str, Any] | None = None
+    nodes: list[CanvasNode] = Field(default_factory=list, description="节点列表")
+    connections: list[CanvasConnection] = Field(
+        default_factory=list, description="连接列表"
+    )
+    references: dict[str, Any] | None = Field(None, description="画布级别全局引用")
 
     @model_validator(mode="after")
     def validate_graph(self):
@@ -141,7 +148,10 @@ class CanvasTopology(BaseModel):
             raise ValueError("连线 connection_id 必须唯一")
         known_nodes = set(node_ids)
         for connection in self.connections:
-            if connection.from_node not in known_nodes or connection.to_node not in known_nodes:
+            if (
+                connection.from_node not in known_nodes
+                or connection.to_node not in known_nodes
+            ):
                 raise ValueError("连线端点必须引用现有节点 entity_id")
         return self
 
@@ -156,14 +166,14 @@ class CanvasItem(BaseModel):
     project_id: str
     version: int
     mode: CanvasMode
-    kind: Optional[str] = None
-    sub_canvas_type: Optional[SubCanvasType] = None
+    kind: str | None = None
+    sub_canvas_type: SubCanvasType | None = None
 
 
 class CanvasListResponse(BaseModel):
     """画布列表响应体。"""
 
-    canvases: List[CanvasItem] = Field(default_factory=list)
+    canvases: list[CanvasItem] = Field(default_factory=list)
 
 
 class CanvasCreateRequest(BaseModel):
@@ -174,8 +184,8 @@ class CanvasCreateRequest(BaseModel):
     project_id: str = Field(default="default", description="所属项目 ID")
     title: str = Field(default="未命名智能画布", min_length=1, description="画布标题")
     mode: CanvasMode = Field(default=CanvasMode.SMART, description="画布模式")
-    initial_payload: Optional[Dict[str, Any]] = Field(None, description="可选初始拓扑")
-    sub_canvas_type: Optional[SubCanvasType] = None
+    initial_payload: dict[str, Any] | None = Field(None, description="可选初始拓扑")
+    sub_canvas_type: SubCanvasType | None = None
 
     @model_validator(mode="before")
     @classmethod
@@ -185,7 +195,9 @@ class CanvasCreateRequest(BaseModel):
             raw_title = str(data.get("title") or "").strip()
             title = raw_title if raw_title else "未命名智能画布"
             raw_mode = data.get("mode") or data.get("kind") or "smart"
-            mode = "smart" if str(raw_mode).lower() in {"smart", "classic"} else raw_mode
+            mode = (
+                "smart" if str(raw_mode).lower() in {"smart", "classic"} else raw_mode
+            )
             data["project_id"] = pid
             data["title"] = title
             data["mode"] = mode
@@ -211,10 +223,12 @@ class CanvasTopologyUpdateRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     expected_version: int = Field(..., ge=1, strict=True, description="期望 CAS 版本")
-    viewport: Optional[Dict[str, Any]] = None
-    nodes: List[CanvasNode] = Field(default_factory=list, description="最新节点集合")
-    connections: List[CanvasConnection] = Field(default_factory=list, description="最新连线集合")
-    references: Optional[Dict[str, Any]] = Field(None, description="画布级别全局引用")
+    viewport: dict[str, Any] | None = None
+    nodes: list[CanvasNode] = Field(default_factory=list, description="最新节点集合")
+    connections: list[CanvasConnection] = Field(
+        default_factory=list, description="最新连线集合"
+    )
+    references: dict[str, Any] | None = Field(None, description="画布级别全局引用")
 
     @model_validator(mode="after")
     def validate_graph(self):
@@ -227,7 +241,10 @@ class CanvasTopologyUpdateRequest(BaseModel):
             raise ValueError("连线 connection_id 必须唯一")
         known_nodes = set(node_ids)
         for connection in self.connections:
-            if connection.from_node not in known_nodes or connection.to_node not in known_nodes:
+            if (
+                connection.from_node not in known_nodes
+                or connection.to_node not in known_nodes
+            ):
                 raise ValueError("连线端点必须引用现有节点 entity_id")
         return self
 
@@ -237,7 +254,7 @@ class CanvasImportReport(BaseModel):
 
     nodes_imported: int
     connections_imported: int
-    warnings: List[str] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
 
 
 class CanvasImportResponse(BaseModel):

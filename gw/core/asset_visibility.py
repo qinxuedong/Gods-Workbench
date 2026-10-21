@@ -1,4 +1,5 @@
 """工作流私有资产的请求主体边界；跨主体隐藏资源而非泄露归属。"""
+
 from __future__ import annotations
 
 import hashlib
@@ -6,10 +7,15 @@ from contextvars import ContextVar
 from typing import Optional
 
 from fastapi import Header
+
 from gw.core.auth import require_authenticated
 
-current_asset_owner: ContextVar[Optional[str]] = ContextVar("current_asset_owner", default=None)
-current_auth_context: ContextVar[Optional[object]] = ContextVar("current_auth_context", default=None)
+current_asset_owner: ContextVar[str | None] = ContextVar(
+    "current_asset_owner", default=None
+)
+current_auth_context: ContextVar[object | None] = ContextVar(
+    "current_auth_context", default=None
+)
 
 
 def asset_owner_key(context) -> str:
@@ -18,7 +24,9 @@ def asset_owner_key(context) -> str:
 
 
 def asset_visible(record: dict) -> bool:
-    owner = record.get("workflow_owner") or record.get("metadata", {}).get("workflow_owner")
+    owner = record.get("workflow_owner") or record.get("metadata", {}).get(
+        "workflow_owner"
+    )
     if owner:
         return owner == current_asset_owner.get()
     project_ids = list(record.get("project_ids") or [])
@@ -28,6 +36,7 @@ def asset_visible(record: dict) -> bool:
         context = current_auth_context.get()
         if context is not None:
             from gw.projects_hub import service as projects_service_module
+
             owner_key = None
             role = str(getattr(context, "role", "") or "")
             try:
@@ -36,7 +45,9 @@ def asset_visible(record: dict) -> bool:
                 owner_key = None
             can_read = False
             for pid in project_ids:
-                if projects_service_module.default_projects_service.can_read_project(pid, owner_key=owner_key, role=role):
+                if projects_service_module.default_projects_service.can_read_project(
+                    pid, owner_key=owner_key, role=role
+                ):
                     can_read = True
                     break
             if not can_read:
@@ -46,8 +57,10 @@ def asset_visible(record: dict) -> bool:
     return not ("/api/god_workflow/assets/" in url or "/pages/workflow.html?id=" in url)
 
 
-async def asset_request_scope(authorization: Optional[str] = Header(None),
-                              x_user_role: str = Header("editor", alias="X-User-Role")):
+async def asset_request_scope(
+    authorization: str | None = Header(None),
+    x_user_role: str = Header("editor", alias="X-User-Role"),
+):
     context = require_authenticated(authorization, x_user_role)
     token = current_asset_owner.set(asset_owner_key(context))
     auth_token = current_auth_context.set(context)

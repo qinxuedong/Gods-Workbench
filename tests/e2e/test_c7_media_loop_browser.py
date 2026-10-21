@@ -5,6 +5,7 @@
 - C7-AC4：两条闭环在实际浏览器中完成；刷新与重启后关系仍在，跨账户访问受控，失败与未知状态不伪造。
 - Proof：API JSON、fixture id、test log。
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -15,9 +16,9 @@ from urllib.parse import quote, urlsplit
 
 import httpx
 import pytest
+from workflow_support import goto_ready, settings_browser
 
 from gw.god_workflow import platforms, routes
-from workflow_support import goto_ready, settings_browser
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 REAL_RH_FIXTURE = (
@@ -57,7 +58,10 @@ def test_c7_media_loop_browser_runninghub_real_host_task_and_unified_asset(
         def handler(request: httpx.Request) -> httpx.Response:
             if request.headers.get("host") not in ("www.runninghub.cn", real_host):
                 raise httpx.ConnectError(f"refuse host {request.headers.get('host')}")
-            return httpx.Response(200, content=FIXED_PNG, headers={"content-type": "image/png"})
+            return httpx.Response(
+                200, content=FIXED_PNG, headers={"content-type": "image/png"}
+            )
+
         return httpx.MockTransport(handler)
 
     monkeypatch.setattr(routes, "_output_transport", real_host_transport)
@@ -66,6 +70,7 @@ def test_c7_media_loop_browser_runninghub_real_host_task_and_unified_asset(
         return {"taskId": real_remote_task_id}
 
     query_count = 0
+
     async def query_real_task_outputs(task_id, api_key, domain=None):
         nonlocal query_count
         query_count += 1
@@ -99,7 +104,11 @@ def test_c7_media_loop_browser_runninghub_real_host_task_and_unified_asset(
 
         canvas_res = page.context.request.post(
             f"{base}/api/canvases",
-            data={"project_id": project_id, "title": "分镜 SC01 媒体工作流画布", "mode": "classic"},
+            data={
+                "project_id": project_id,
+                "title": "分镜 SC01 媒体工作流画布",
+                "mode": "classic",
+            },
             headers={"Origin": base},
         )
         assert canvas_res.status == 201, canvas_res.text()
@@ -123,8 +132,14 @@ def test_c7_media_loop_browser_runninghub_real_host_task_and_unified_asset(
         wf_doc_res = page.context.request.post(
             f"{base}/api/god_workflow/documents?name=" + quote("c7-real-rh-workflow"),
             data={
-                "1": {"class_type": "LoadImage", "inputs": {"image": input_asset["filename"]}},
-                "2": {"class_type": "SaveImage", "inputs": {"filename_prefix": "c7_rh_render"}},
+                "1": {
+                    "class_type": "LoadImage",
+                    "inputs": {"image": input_asset["filename"]},
+                },
+                "2": {
+                    "class_type": "SaveImage",
+                    "inputs": {"filename_prefix": "c7_rh_render"},
+                },
             },
             headers={"Origin": base},
         )
@@ -145,8 +160,16 @@ def test_c7_media_loop_browser_runninghub_real_host_task_and_unified_asset(
                 "target": "rh_cloud",
                 "key": "c7-e2e-rh-key-01",
                 "node_info_list": [
-                    {"nodeId": "1", "fieldName": "image", "fieldValue": input_asset["filename"]},
-                    {"nodeId": "2", "fieldName": "filename_prefix", "fieldValue": "c7_rh_render"},
+                    {
+                        "nodeId": "1",
+                        "fieldName": "image",
+                        "fieldValue": input_asset["filename"],
+                    },
+                    {
+                        "nodeId": "2",
+                        "fieldName": "filename_prefix",
+                        "fieldValue": "c7_rh_render",
+                    },
                 ],
                 "source_context": source_context,
             },
@@ -165,7 +188,10 @@ def test_c7_media_loop_browser_runninghub_real_host_task_and_unified_asset(
             )
             assert poll_res.status == 200
             data = poll_res.json()
-            if data.get("status") == "completed" and data.get("collection_status") == "completed":
+            if (
+                data.get("status") == "completed"
+                and data.get("collection_status") == "completed"
+            ):
                 done_task = data
                 break
         assert done_task is not None, "任务轮询未在超时时间内达到完成终态"
@@ -185,17 +211,25 @@ def test_c7_media_loop_browser_runninghub_real_host_task_and_unified_asset(
 
         # 5. 断言浏览器 DOM 中的统一资产徽标与来源回跳
         page.wait_for_selector(".wf-task-asset-badge")
-        asset_badge = page.locator(f".wf-task-asset-badge[data-asset-id='{registered_asset_id}']")
+        asset_badge = page.locator(
+            f".wf-task-asset-badge[data-asset-id='{registered_asset_id}']"
+        )
         assert asset_badge.count() >= 1, "抽屉中必须渲染统一资产徽标并携带正确 asset_id"
 
-        view_asset_link = page.locator(f"a[data-action='view-asset'][href*='{registered_asset_id}']")
+        view_asset_link = page.locator(
+            f"a[data-action='view-asset'][href*='{registered_asset_id}']"
+        )
         assert view_asset_link.count() >= 1, "抽屉中必须渲染查看资产详情链接"
 
         # 验证来源回跳区域
         page.wait_for_selector("[data-source-provenance]")
         source_prov = page.locator("[data-source-provenance]")
-        project_jump = source_prov.locator(f"a[data-action='return-to-source-project'][href*='{project_id}']")
-        canvas_jump = source_prov.locator(f"a[data-action='return-to-source-canvas'][href*='{canvas_id}']")
+        project_jump = source_prov.locator(
+            f"a[data-action='return-to-source-project'][href*='{project_id}']"
+        )
+        canvas_jump = source_prov.locator(
+            f"a[data-action='return-to-source-canvas'][href*='{canvas_id}']"
+        )
         assert project_jump.count() >= 1, "必须包含返回来源项目入口"
         assert canvas_jump.count() >= 1, "必须包含返回来源画布入口"
 
@@ -210,8 +244,13 @@ def test_c7_media_loop_browser_runninghub_real_host_task_and_unified_asset(
             page.locator("#btnViewTaskDrawer").click()
             page.wait_for_selector("#taskModal.open")
 
-        page.wait_for_selector(f".wf-task-asset-badge[data-asset-id='{registered_asset_id}']")
-        assert page.locator(f"[data-source-provenance] a[href*='{project_id}']").count() >= 1
+        page.wait_for_selector(
+            f".wf-task-asset-badge[data-asset-id='{registered_asset_id}']"
+        )
+        assert (
+            page.locator(f"[data-source-provenance] a[href*='{project_id}']").count()
+            >= 1
+        )
 
         assert errors == []
 
@@ -219,7 +258,11 @@ def test_c7_media_loop_browser_runninghub_real_host_task_and_unified_asset(
 def test_c7_media_loop_browser_cross_tenant_isolation(monkeypatch, tmp_path):
     """C7-AC4: 跨租户跨项目防护在浏览器端点及服务层严格阻断（403/404 fail-closed）。"""
     from gw.god_workflow.comfy_executor import ComfyEndpoint
-    monkeypatch.setattr("gw.god_workflow.comfy_executor.require_endpoint", lambda: ComfyEndpoint("http://127.0.0.1:8188", 30.0))
+
+    monkeypatch.setattr(
+        "gw.god_workflow.comfy_executor.require_endpoint",
+        lambda: ComfyEndpoint("http://127.0.0.1:8188", 30.0),
+    )
 
     with settings_browser(monkeypatch, tmp_path) as (page, base, errors, _):
         # 1. 主体 A 创建项目
@@ -254,7 +297,9 @@ def test_c7_media_loop_browser_cross_tenant_isolation(monkeypatch, tmp_path):
             },
             headers={"Origin": base},
         )
-        assert illegal_task.status in (403, 404), f"未授权项目必须返回 403 或 404，实际: {illegal_task.status}"
+        assert illegal_task.status in (403, 404), (
+            f"未授权项目必须返回 403 或 404，实际: {illegal_task.status}"
+        )
 
 
 def test_c7_media_loop_browser_outcome_unknown_failsafe(monkeypatch, tmp_path):
@@ -286,9 +331,17 @@ def test_c7_media_loop_browser_outcome_unknown_failsafe(monkeypatch, tmp_path):
         def fulfill_tasks(route):
             path = urlsplit(route.request.url).path
             if path == "/api/god_workflow/tasks":
-                route.fulfill(status=200, content_type="application/json", body=json.dumps({"tasks": [unknown_task_payload]}))
+                route.fulfill(
+                    status=200,
+                    content_type="application/json",
+                    body=json.dumps({"tasks": [unknown_task_payload]}),
+                )
             elif path.endswith(UNKNOWN_JOB):
-                route.fulfill(status=200, content_type="application/json", body=json.dumps(unknown_task_payload))
+                route.fulfill(
+                    status=200,
+                    content_type="application/json",
+                    body=json.dumps(unknown_task_payload),
+                )
             else:
                 route.continue_()
 

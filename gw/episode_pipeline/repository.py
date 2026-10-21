@@ -541,14 +541,22 @@ def _touch(raw: Dict[str, Any], pipeline: Dict[str, Any]) -> None:
     pipeline["version"] = int(pipeline.get("version") or 1) + 1
 
 
+def _require_stage_version(payload: Dict[str, Any], stage: Dict[str, Any]) -> int:
+    expected = payload.get("expected_version")
+    if type(expected) is not int or expected < 1:
+        raise CleanroomException(400, "INVALID_REQUEST", "expected_version 必须为正整数")
+    current = int(stage.get("version") or 1)
+    if expected != current:
+        raise VersionConflictException(expected, current, "阶段版本冲突，请重新读取后重试")
+    return expected
+
+
 def start_stage(pipeline_id: str, stage_id: str, payload: Dict[str, Any]) -> Dict[str, Any]:
     payload = payload if isinstance(payload, dict) else {}
 
     def mutate(raw: Dict[str, Any]) -> Dict[str, Any]:
         stage = _find_stage(raw, pipeline_id, stage_id)
-        expected = payload.get("expected_version")
-        if expected is not None and int(expected) != int(stage.get("version") or 1):
-            raise VersionConflictException(int(expected), int(stage.get("version") or 1), "阶段版本冲突，请重新读取后重试")
+        _require_stage_version(payload, stage)
         if stage.get("status") == "running":
             raise CleanroomException(409, "INVALID_STATE_TRANSITION", "阶段已在运行")
         if stage.get("status") in ("completed", "cancelled"):
@@ -569,6 +577,7 @@ def complete_stage(pipeline_id: str, stage_id: str, payload: Dict[str, Any]) -> 
 
     def mutate(raw: Dict[str, Any]) -> Dict[str, Any]:
         stage = _find_stage(raw, pipeline_id, stage_id)
+        _require_stage_version(payload, stage)
         if stage.get("status") == "pending":
             raise CleanroomException(409, "INVALID_STATE_TRANSITION", "阶段尚未启动，不能直接完成")
         if stage.get("status") in ("completed", "cancelled"):
@@ -598,9 +607,7 @@ def cancel_stage(pipeline_id: str, stage_id: str, payload: Dict[str, Any]) -> Di
 
     def mutate(raw: Dict[str, Any]) -> Dict[str, Any]:
         stage = _find_stage(raw, pipeline_id, stage_id)
-        expected = payload.get("expected_version")
-        if expected is not None and int(expected) != int(stage.get("version") or 1):
-            raise VersionConflictException(int(expected), int(stage.get("version") or 1), "阶段版本冲突，请重新读取后重试")
+        _require_stage_version(payload, stage)
         if stage.get("status") in ("completed", "cancelled"):
             raise CleanroomException(409, "INVALID_STATE_TRANSITION", "阶段已终态，不能取消")
         stage["status"] = "cancelled"

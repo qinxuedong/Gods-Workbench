@@ -1,27 +1,37 @@
 from __future__ import annotations
 
 import os
-from urllib.parse import urlencode
 from pathlib import Path
+from urllib.parse import urlencode
 
 import pytest
 from fastapi.routing import APIRoute
 
 from gw.api.app import app
 
-
 LEGACY_PAGE_TARGETS = {
-    "asset-manager": ("/static/pages/assets.html", ("project_id", "pipeline_id", "asset_id")),
+    "asset-manager": (
+        "/static/pages/assets.html",
+        ("project_id", "pipeline_id", "asset_id"),
+    ),
     "api-settings": ("/static/pages/settings.html", ("section", "project_id")),
-    "canvas-list": ("/static/pages/storyboard.html", ("project_id", "entity_id", "canvas_id", "view", "filter", "layout")),
-    "episode-pipeline": ("/static/pages/workshop.html", ("project_id", "pipeline_id", "step", "agent")),
+    "canvas-list": (
+        "/static/pages/storyboard.html",
+        ("project_id", "entity_id", "canvas_id", "view", "filter", "layout"),
+    ),
+    "episode-pipeline": (
+        "/static/pages/workshop.html",
+        ("project_id", "pipeline_id", "step", "agent"),
+    ),
     "task-center": ("/static/pages/collab.html", ("view", "project_id")),
     "governance": ("/static/pages/projects.html", ("openTrash", "project_id")),
 }
 
 
 @pytest.mark.parametrize("legacy_name,target_and_keys", LEGACY_PAGE_TARGETS.items())
-def test_root_legacy_pages_redirect_to_pages_with_exact_query_whitelist(client, legacy_name: str, target_and_keys):
+def test_root_legacy_pages_redirect_to_pages_with_exact_query_whitelist(
+    client, legacy_name: str, target_and_keys
+):
     """根级旧页必须以307跳到确定的新页，且严格过滤查询参数。"""
     target, allowed_keys = target_and_keys
     values = {key: f"{key} value/&" for key in allowed_keys}
@@ -40,7 +50,9 @@ def test_root_legacy_pages_redirect_to_pages_with_exact_query_whitelist(client, 
 @pytest.mark.parametrize("legacy_name", LEGACY_PAGE_TARGETS)
 def test_root_legacy_pages_stay_direct_when_embedded(client, legacy_name: str):
     """embedded=1 是 iframe 边界，不能被兼容重定向打断。"""
-    response = client.get(f"/static/{legacy_name}.html?embedded=1", follow_redirects=False)
+    response = client.get(
+        f"/static/{legacy_name}.html?embedded=1", follow_redirects=False
+    )
     assert response.status_code == 200
     assert response.headers.get("content-type", "").startswith("text/html")
     assert "<html" in response.text.lower()
@@ -60,6 +72,7 @@ def test_asset_share_page_and_public_share_shell_are_direct(client):
 
 def test_canvas_trash_route_is_registered_before_canvas_id_route():
     """固定回收站路径必须先于动态 canvas_id 路径注册。"""
+
     def flattened(routes):
         for route in routes:
             if type(route).__name__ == "_IncludedRouter":
@@ -68,8 +81,12 @@ def test_canvas_trash_route_is_registered_before_canvas_id_route():
                 yield route
 
     routes = [route for route in flattened(app.routes) if isinstance(route, APIRoute)]
-    trash_index = next(i for i, route in enumerate(routes) if route.path == "/api/canvases/trash")
-    dynamic_index = next(i for i, route in enumerate(routes) if route.path == "/api/canvases/{canvas_id}")
+    trash_index = next(
+        i for i, route in enumerate(routes) if route.path == "/api/canvases/trash"
+    )
+    dynamic_index = next(
+        i for i, route in enumerate(routes) if route.path == "/api/canvases/{canvas_id}"
+    )
     assert trash_index < dynamic_index
 
 

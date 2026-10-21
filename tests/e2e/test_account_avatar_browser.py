@@ -26,14 +26,25 @@ def test_avatar_opens_auth_modal_and_discloses_local_mode(monkeypatch):
                     route.abort()
                     return
                 path = parsed.path + ("?" + parsed.query if parsed.query else "")
-                response = client.request(route.request.method, path, content=route.request.post_data)
-                route.fulfill(status=response.status_code, body=response.content,
-                              headers={"content-type": response.headers.get("content-type", "text/plain")})
+                response = client.request(
+                    route.request.method, path, content=route.request.post_data
+                )
+                route.fulfill(
+                    status=response.status_code,
+                    body=response.content,
+                    headers={
+                        "content-type": response.headers.get(
+                            "content-type", "text/plain"
+                        )
+                    },
+                )
 
             # 以当前应用响应加载真实页面，不访问外部 IdP 或用户生产服务。
             page.route("**/*", serve)
             page.goto("http://testserver/static/pages/projects.html")
-            page.wait_for_function("window.HardwareDeck && HardwareDeck.authState.auth_mode === 'local'")
+            page.wait_for_function(
+                "window.HardwareDeck && HardwareDeck.authState.auth_mode === 'local'"
+            )
             for activation in ("click", "Enter", " "):
                 avatar = page.locator(".hw-avatar-keycap").first
                 if activation == "click":
@@ -47,7 +58,9 @@ def test_avatar_opens_auth_modal_and_discloses_local_mode(monkeypatch):
                 page.evaluate("HardwareDeck.closeModal('accountModal')")
 
             # 替换头像后仍需响应，覆盖动态 shell 重建 DOM 的场景。
-            page.evaluate("const avatar = document.querySelector('.hw-avatar-keycap'); avatar.replaceWith(avatar.cloneNode(true));")
+            page.evaluate(
+                "const avatar = document.querySelector('.hw-avatar-keycap'); avatar.replaceWith(avatar.cloneNode(true));"
+            )
             page.locator(".hw-avatar-keycap").first.click()
             page.wait_for_selector("#accountModal.open")
         finally:

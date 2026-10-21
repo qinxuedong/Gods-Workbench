@@ -1,4 +1,5 @@
 """C3 媒体链替身夹具：隔离数据目录、禁用网络、挂接 RH / ComfyUI 替身。"""
+
 from __future__ import annotations
 
 from types import SimpleNamespace
@@ -6,9 +7,17 @@ from types import SimpleNamespace
 import httpx
 import pytest
 from fastapi.testclient import TestClient
+from media_doubles import (
+    APPROVED_HOST,
+    TEST_API_KEY,
+    FakeComfy,
+    FakeRunningHub,
+    NetworkBlocked,
+    count_assets,
+    install_fake_resolver,
+    install_output_transport,
+)
 
-from media_doubles import (APPROVED_HOST, TEST_API_KEY, FakeComfy, FakeRunningHub, NetworkBlocked,
-                           count_assets, install_fake_resolver, install_output_transport)
 
 @pytest.fixture
 def no_network(monkeypatch):
@@ -22,7 +31,10 @@ def no_network(monkeypatch):
         raise NetworkBlocked(f"测试替身禁止真实网络: {request.url.host}")
 
     def refuse_sync(self, request, *args, **kwargs):
-        if isinstance(getattr(self, "_transport", None), (httpx.MockTransport,)) or request.url.host == "testserver":
+        if (
+            isinstance(getattr(self, "_transport", None), (httpx.MockTransport,))
+            or request.url.host == "testserver"
+        ):
             return original_sync(self, request, *args, **kwargs)
         attempts.append(str(request.url))
         raise NetworkBlocked(f"测试替身禁止真实网络: {request.url.host}")
@@ -71,6 +83,7 @@ def media_env(tmp_path, monkeypatch):
 @pytest.fixture
 def media_client(media_env):
     from gw.api.app import create_app
+
     with TestClient(create_app()) as client:
         yield client
 

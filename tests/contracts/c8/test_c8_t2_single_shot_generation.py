@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """C8-T2 单镜头真实生成与来源绑定契约测试。
 
 测试替身只验证 API 的持久化、幂等和失败关闭边界；C8-AC1 的真实
@@ -9,10 +8,9 @@ from __future__ import annotations
 
 from fastapi.testclient import TestClient
 
-from gw.api.app import create_app
 from gw.api import routes_episode_pipeline_b7 as episode_routes
+from gw.api.app import create_app
 from gw.core.errors import CleanroomException
-
 
 AUTH = {"Authorization": "Bearer cleanroom-test", "X-User-Role": "editor"}
 
@@ -66,7 +64,9 @@ def test_single_shot_requires_auth_and_idempotency_key():
 def test_single_shot_binds_real_job_asset_and_source_after_poll(monkeypatch):
     calls = {"submit": 0, "poll": 0}
 
-    async def fake_execute(request, authorization=None, x_user_role="editor", idempotency_key=None):
+    async def fake_execute(
+        request, authorization=None, x_user_role="editor", idempotency_key=None
+    ):
         calls["submit"] += 1
         return {
             "job_id": "job-c8-fixture-001",
@@ -75,7 +75,10 @@ def test_single_shot_binds_real_job_asset_and_source_after_poll(monkeypatch):
             "target": "local_comfy",
             "remote_task_id": "comfy-prompt-c8-001",
             "remote_id_missing": False,
-            "source_context": {"project_id": "proj-01", "canvas_id": "canvas-c8-fixture-01"},
+            "source_context": {
+                "project_id": "proj-01",
+                "canvas_id": "canvas-c8-fixture-01",
+            },
             "data_status": "ok",
             "data_gaps": [],
         }
@@ -90,7 +93,10 @@ def test_single_shot_binds_real_job_asset_and_source_after_poll(monkeypatch):
             "execution_status": "completed",
             "target": "local_comfy",
             "remote_task_id": "comfy-prompt-c8-001",
-            "source_context": {"project_id": "proj-01", "canvas_id": "canvas-c8-fixture-01"},
+            "source_context": {
+                "project_id": "proj-01",
+                "canvas_id": "canvas-c8-fixture-01",
+            },
             "outputs": [
                 {
                     "asset_id": "asset-c8-fixture-001",
@@ -139,12 +145,16 @@ def test_single_shot_binds_real_job_asset_and_source_after_poll(monkeypatch):
             "workflow_artifact_id": "workflow-c8-fixture-01",
         }
 
-        pipeline = client.get(f"/api/episode-pipelines/{pipeline_id}", headers=AUTH).json()["pipeline"]
+        pipeline = client.get(
+            f"/api/episode-pipelines/{pipeline_id}", headers=AUTH
+        ).json()["pipeline"]
         assert pipeline["shots"][0]["version_id"] == "asset-c8-fixture-001-v001"
 
 
 def test_single_shot_idempotency_conflict_and_unknown_state(monkeypatch):
-    async def fake_execute(request, authorization=None, x_user_role="editor", idempotency_key=None):
+    async def fake_execute(
+        request, authorization=None, x_user_role="editor", idempotency_key=None
+    ):
         return {
             "job_id": "job-c8-unknown-001",
             "task_id": "job-c8-unknown-001",
@@ -174,13 +184,17 @@ def test_single_shot_idempotency_conflict_and_unknown_state(monkeypatch):
 
         conflict_payload = _payload()
         conflict_payload["node_info_list"][0]["fieldValue"] = "different prompt"
-        conflict = client.post(_path(pipeline_id), headers=headers, json=conflict_payload)
+        conflict = client.post(
+            _path(pipeline_id), headers=headers, json=conflict_payload
+        )
         assert conflict.status_code == 409
         assert conflict.json()["detail"]["code"] == "IDEMPOTENCY_CONFLICT"
 
 
 def test_single_shot_missing_remote_identity_never_binds_registered_output(monkeypatch):
-    async def fake_execute(request, authorization=None, x_user_role="editor", idempotency_key=None):
+    async def fake_execute(
+        request, authorization=None, x_user_role="editor", idempotency_key=None
+    ):
         return {
             "job_id": "job-c8-no-remote-001",
             "task_id": "job-c8-no-remote-001",
@@ -213,7 +227,9 @@ def test_single_shot_missing_remote_identity_never_binds_registered_output(monke
 def test_single_shot_idempotent_replay_ignores_advanced_pipeline_version(monkeypatch):
     calls = {"submit": 0}
 
-    async def fake_execute(request, authorization=None, x_user_role="editor", idempotency_key=None):
+    async def fake_execute(
+        request, authorization=None, x_user_role="editor", idempotency_key=None
+    ):
         calls["submit"] += 1
         return {
             "job_id": "job-c8-cas-replay-001",
@@ -238,7 +254,9 @@ def test_single_shot_idempotent_replay_ignores_advanced_pipeline_version(monkeyp
 
 
 def test_single_shot_executor_failure_is_explicit_and_not_success(monkeypatch):
-    async def unavailable(request, authorization=None, x_user_role="editor", idempotency_key=None):
+    async def unavailable(
+        request, authorization=None, x_user_role="editor", idempotency_key=None
+    ):
         raise CleanroomException(503, "WORKFLOW_EXECUTOR_UNAVAILABLE", "ComfyUI 未连接")
 
     monkeypatch.setattr(episode_routes.workflow_routes, "execute_task", unavailable)

@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 # Copyright 2026 Gods-Workbench Authors
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -46,10 +45,18 @@ NS_SETTINGS = "media_settings"
 NS_JOBS = "media_jobs"
 
 MIME_BY_SUFFIX = {
-    ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
-    ".webp": "image/webp", ".gif": "image/gif", ".bmp": "image/bmp",
-    ".mp4": "video/mp4", ".mov": "video/quicktime", ".webm": "video/webm",
-    ".wav": "audio/wav", ".mp3": "audio/mpeg", ".m4a": "audio/mp4",
+    ".png": "image/png",
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".webp": "image/webp",
+    ".gif": "image/gif",
+    ".bmp": "image/bmp",
+    ".mp4": "video/mp4",
+    ".mov": "video/quicktime",
+    ".webm": "video/webm",
+    ".wav": "audio/wav",
+    ".mp3": "audio/mpeg",
+    ".m4a": "audio/mp4",
 }
 
 MAX_REMOTE_BYTES = 16 * 1024 * 1024
@@ -60,25 +67,42 @@ ALLOWED_INTERNAL_HOSTS = frozenset({"127.0.0.1", "localhost"})
 
 
 def settings_state() -> storage.JsonState:
-    def _default() -> Dict[str, Any]:
+    def _default() -> dict[str, Any]:
         return {
             "revision": 1,
-            "asset_proxy": {"enabled": False, "project_id": "", "notice": "尚未配置代理；关闭转发，不伪造远程地址"},
-            "thumbnails": {"mode": "source", "directory": "", "cache_folder": "god-cache", "width": 256},
+            "asset_proxy": {
+                "enabled": False,
+                "project_id": "",
+                "notice": "尚未配置代理；关闭转发，不伪造远程地址",
+            },
+            "thumbnails": {
+                "mode": "source",
+                "directory": "",
+                "cache_folder": "god-cache",
+                "width": 256,
+            },
         }
+
     return storage.JsonState(NS_SETTINGS, _default)
 
 
 def jobs_state() -> storage.JsonState:
-    def _default() -> Dict[str, Any]:
+    def _default() -> dict[str, Any]:
         return {"revision": 1, "jobs": {}}
+
     return storage.JsonState(NS_JOBS, _default)
 
 
 def _unavailable(endpoint: str, code: str, message: str) -> None:
     raise CleanroomException(
-        503, code, message,
-        extra={"endpoint": endpoint, "unavailable": True, "data_status": "not_integrated"},
+        503,
+        code,
+        message,
+        extra={
+            "endpoint": endpoint,
+            "unavailable": True,
+            "data_status": "not_integrated",
+        },
         expose_extra_fields={"endpoint", "unavailable", "data_status"},
     )
 
@@ -86,11 +110,13 @@ def _unavailable(endpoint: str, code: str, message: str) -> None:
 def _tool(name: str) -> str:
     path = shutil.which(name)
     if not path:
-        _unavailable("/api/media", "FFMPEG_NOT_AVAILABLE", "未找到 %s，媒体处理能力不可用" % name)
+        _unavailable(
+            "/api/media", "FFMPEG_NOT_AVAILABLE", "未找到 %s，媒体处理能力不可用" % name
+        )
     return path
 
 
-def _run(args: List[str], timeout: int = FFMPEG_TIMEOUT) -> subprocess.CompletedProcess:
+def _run(args: list[str], timeout: int = FFMPEG_TIMEOUT) -> subprocess.CompletedProcess:
     try:
         return subprocess.run(args, capture_output=True, timeout=timeout, check=False)
     except (OSError, subprocess.TimeoutExpired):
@@ -101,7 +127,8 @@ def _run(args: List[str], timeout: int = FFMPEG_TIMEOUT) -> subprocess.Completed
 # 设置
 # ---------------------------------------------------------------------------
 
-def get_proxy_settings(project_id: Optional[str] = None) -> Dict[str, Any]:
+
+def get_proxy_settings(project_id: str | None = None) -> dict[str, Any]:
     raw = settings_state().read()
     data = dict(raw["asset_proxy"])
     if project_id:
@@ -109,8 +136,8 @@ def get_proxy_settings(project_id: Optional[str] = None) -> Dict[str, Any]:
     return {**data, "revision": raw["revision"], "data_status": "ok", "data_gaps": []}
 
 
-def patch_proxy_settings(payload: Dict[str, Any]) -> Dict[str, Any]:
-    def mutate(raw: Dict[str, Any]) -> Dict[str, Any]:
+def patch_proxy_settings(payload: dict[str, Any]) -> dict[str, Any]:
+    def mutate(raw: dict[str, Any]) -> dict[str, Any]:
         current = raw["asset_proxy"]
         for key, value in (payload or {}).items():
             if key in ("enabled",):
@@ -127,13 +154,18 @@ def patch_proxy_settings(payload: Dict[str, Any]) -> Dict[str, Any]:
     return {**data, "data_status": "ok", "data_gaps": []}
 
 
-def get_thumbnail_settings() -> Dict[str, Any]:
+def get_thumbnail_settings() -> dict[str, Any]:
     raw = settings_state().read()
-    return {**dict(raw["thumbnails"]), "revision": raw["revision"], "data_status": "ok", "data_gaps": []}
+    return {
+        **dict(raw["thumbnails"]),
+        "revision": raw["revision"],
+        "data_status": "ok",
+        "data_gaps": [],
+    }
 
 
-def patch_thumbnail_settings(payload: Dict[str, Any]) -> Dict[str, Any]:
-    def mutate(raw: Dict[str, Any]) -> Dict[str, Any]:
+def patch_thumbnail_settings(payload: dict[str, Any]) -> dict[str, Any]:
+    def mutate(raw: dict[str, Any]) -> dict[str, Any]:
         current = raw["thumbnails"]
         for key in ("mode", "directory", "cache_folder"):
             if payload.get(key) is not None:
@@ -142,7 +174,9 @@ def patch_thumbnail_settings(payload: Dict[str, Any]) -> Dict[str, Any]:
             width = int(payload.get("width"))
             current["width"] = max(64, min(2048, width))
         if current.get("mode") not in ("source", "custom"):
-            raise CleanroomException(400, "INVALID_REQUEST", "mode 只接受 source/custom")
+            raise CleanroomException(
+                400, "INVALID_REQUEST", "mode 只接受 source/custom"
+            )
         raw["revision"] = int(raw.get("revision") or 1) + 1
         return dict(current)
 
@@ -153,6 +187,7 @@ def patch_thumbnail_settings(payload: Dict[str, Any]) -> Dict[str, Any]:
 # ---------------------------------------------------------------------------
 # 素材定位（必须经允许根目录）
 # ---------------------------------------------------------------------------
+
 
 def _pil():
     """延迟导入 PIL；未安装返回 None（调用方据此失败关闭）。"""
@@ -166,13 +201,14 @@ def _pil():
 def _registry_path(asset_id: str) -> Path:
     """从素材注册表取真实本地文件；不存在即失败关闭，绝不编造。"""
     from gw.asset_registry import repository as asset_repo
+
     path = asset_repo.media_file(asset_id)
     if path is None:
         _unavailable("/api/media", "MEDIA_NOT_AVAILABLE", "该素材没有可读取的本地文件")
     return path
 
 
-def _resolve_input(payload: Dict[str, Any]) -> Path:
+def _resolve_input(payload: dict[str, Any]) -> Path:
     """解析输入：优先 asset_id（走注册表），其次显式 path（必须落在允许根目录内）。"""
     asset_id = str((payload or {}).get("asset_id") or "").strip()
     if asset_id:
@@ -201,6 +237,7 @@ def _mime(path: Path) -> str:
 # 缩略图与预览（PIL 真实重采样）
 # ---------------------------------------------------------------------------
 
+
 def _thumbnail_bytes(path: Path, width: int) -> bytes:
     Image = _pil()
     if Image is None:
@@ -212,6 +249,7 @@ def _thumbnail_bytes(path: Path, width: int) -> bytes:
             height = max(1, int(round(image.height * ratio)))
             resized = image.resize((max(1, int(width)), height))
             import io as _io
+
             buffer = _io.BytesIO()
             resized.save(buffer, format="PNG")
             return buffer.getvalue()
@@ -221,7 +259,7 @@ def _thumbnail_bytes(path: Path, width: int) -> bytes:
         _unavailable("/api/media", "THUMBNAIL_FAILED", "无法把该文件解码为图片")
 
 
-def generate_thumbnail(payload: Dict[str, Any]) -> Dict[str, Any]:
+def generate_thumbnail(payload: dict[str, Any]) -> dict[str, Any]:
     """真实生成缩略图并落盘；返回可核验的输出文件信息。"""
     path = _resolve_input(payload)
     width = int((payload or {}).get("width") or 256)
@@ -230,7 +268,9 @@ def generate_thumbnail(payload: Dict[str, Any]) -> Dict[str, Any]:
     out_dir = _output_dir("thumbnails")
     key = str((payload or {}).get("asset_id") or _stem(path))
     target = out_dir / _thumbnail_filename(key)
-    target = storage.resolve_output_path(target.relative_to(storage.data_root().resolve()).as_posix(), must_exist=False)
+    target = storage.resolve_output_path(
+        target.relative_to(storage.data_root().resolve()).as_posix(), must_exist=False
+    )
     target.write_bytes(data)
     return {
         "asset_id": str((payload or {}).get("asset_id") or ""),
@@ -250,7 +290,7 @@ def _stem(path: Path) -> str:
     return safe[:80]
 
 
-def preview_bytes(payload: Dict[str, Any]) -> Dict[str, Any]:
+def preview_bytes(payload: dict[str, Any]) -> dict[str, Any]:
     """给图片/BMP 等返回真实重采样缩略字节；视频走 ffmpeg 抽帧。"""
     path = _resolve_input(payload)
     width = int((payload or {}).get("w") or 256)
@@ -262,16 +302,32 @@ def preview_bytes(payload: Dict[str, Any]) -> Dict[str, Any]:
     else:
         data = _thumbnail_bytes(path, width)
         media_type = "image/png"
-    return {"bytes": data, "media_type": media_type, "source": storage.relative_display(path)}
+    return {
+        "bytes": data,
+        "media_type": media_type,
+        "source": storage.relative_display(path),
+    }
 
 
 def _video_frame_bytes(path: Path, width: int) -> bytes:
     ffmpeg = _tool("ffmpeg")
     import tempfile
+
     with tempfile.TemporaryDirectory() as tmp:
         target = Path(tmp) / "frame.jpg"
-        completed = _run([ffmpeg, "-y", "-i", str(path), "-frames:v", "1",
-                          "-vf", "scale=%d:-1" % width, str(target)])
+        completed = _run(
+            [
+                ffmpeg,
+                "-y",
+                "-i",
+                str(path),
+                "-frames:v",
+                "1",
+                "-vf",
+                "scale=%d:-1" % width,
+                str(target),
+            ]
+        )
         if completed.returncode != 0 or not target.is_file():
             _unavailable("/api/media", "MEDIA_PROCESS_FAILED", "视频抽帧失败")
         return target.read_bytes()
@@ -281,7 +337,8 @@ def _video_frame_bytes(path: Path, width: int) -> bytes:
 # 波形（ffmpeg 解码 → 固定桶 RMS 包络）
 # ---------------------------------------------------------------------------
 
-def waveform(payload: Dict[str, Any]) -> Dict[str, Any]:
+
+def waveform(payload: dict[str, Any]) -> dict[str, Any]:
     """用 ffmpeg 把音频解码为 16-bit PCM，再按固定桶算真实 RMS 包络。
 
     无音频流 → 400；ffmpeg 缺失或失败 → 503；**禁止**随机/常量假曲线。
@@ -290,11 +347,27 @@ def waveform(payload: Dict[str, Any]) -> Dict[str, Any]:
     ffmpeg = _tool("ffmpeg")
     import array
     import tempfile
+
     with tempfile.TemporaryDirectory() as tmp:
         target = Path(tmp) / "audio.pcm"
-        completed = _run([ffmpeg, "-y", "-i", str(path), "-vn",
-                          "-f", "s16le", "-acodec", "pcm_s16le", "-ac", "1",
-                          "-ar", "16000", str(target)])
+        completed = _run(
+            [
+                ffmpeg,
+                "-y",
+                "-i",
+                str(path),
+                "-vn",
+                "-f",
+                "s16le",
+                "-acodec",
+                "pcm_s16le",
+                "-ac",
+                "1",
+                "-ar",
+                "16000",
+                str(target),
+            ]
+        )
         if completed.returncode != 0 or not target.is_file():
             # 有视频但无音频流属请求错误；其它失败按 503 失败关闭。
             raise CleanroomException(400, "NO_AUDIO_STREAM", "该文件没有可解码的音频流")
@@ -302,13 +375,13 @@ def waveform(payload: Dict[str, Any]) -> Dict[str, Any]:
     if len(pcm) < 2:
         raise CleanroomException(400, "NO_AUDIO_STREAM", "该文件没有可解码的音频流")
     samples = array.array("h")
-    samples.frombytes(pcm[:len(pcm) - (len(pcm) % 2)])
+    samples.frombytes(pcm[: len(pcm) - (len(pcm) % 2)])
     if not samples:
         raise CleanroomException(400, "NO_AUDIO_STREAM", "该文件没有可解码的音频流")
     sample_rate = 16000
     duration = len(samples) / float(sample_rate)
     bucket_count = min(WAVEFORM_BUCKETS, max(1, len(samples)))
-    buckets: List[Tuple[float, float]] = []
+    buckets: list[tuple[float, float]] = []
     size = len(samples) / float(bucket_count)
     for index in range(bucket_count):
         start = int(index * size)
@@ -335,20 +408,39 @@ def waveform(payload: Dict[str, Any]) -> Dict[str, Any]:
 # 转码
 # ---------------------------------------------------------------------------
 
-def transcode(payload: Dict[str, Any]) -> Dict[str, Any]:
+
+def transcode(payload: dict[str, Any]) -> dict[str, Any]:
     """用 ffmpeg 真实转码到数据目录（默认 H.264 MP4）；失败 503。"""
     path = _resolve_input(payload)
     ffmpeg = _tool("ffmpeg")
     out_dir = _output_dir("transcode")
     target = out_dir / ("%s.mp4" % _stem(path))
-    completed = _run([ffmpeg, "-y", "-i", str(path),
-                      "-c:v", "libx264", "-preset", "veryfast", "-crf", "23",
-                      "-c:a", "aac", "-movflags", "+faststart", str(target)])
+    completed = _run(
+        [
+            ffmpeg,
+            "-y",
+            "-i",
+            str(path),
+            "-c:v",
+            "libx264",
+            "-preset",
+            "veryfast",
+            "-crf",
+            "23",
+            "-c:a",
+            "aac",
+            "-movflags",
+            "+faststart",
+            str(target),
+        ]
+    )
     if completed.returncode != 0 or not target.is_file():
         _unavailable("/api/media", "MEDIA_PROCESS_FAILED", "媒体转码失败")
     return {
         "source": storage.relative_display(path),
-        "output": target.resolve().relative_to(storage.data_root().resolve()).as_posix(),
+        "output": target.resolve()
+        .relative_to(storage.data_root().resolve())
+        .as_posix(),
         "bytes": int(target.stat().st_size),
         "data_status": "ok",
         "data_gaps": [],
@@ -359,7 +451,8 @@ def transcode(payload: Dict[str, Any]) -> Dict[str, Any]:
 # 下载输出（只允许数据目录内）
 # ---------------------------------------------------------------------------
 
-def download_path(payload: Dict[str, Any]) -> Dict[str, Any]:
+
+def download_path(payload: dict[str, Any]) -> dict[str, Any]:
     """所有显式路径和ID推导候选均只准入独立产物目录，不能触达内部状态。"""
     raw_target = str((payload or {}).get("path") or "").strip()
     if not raw_target:
@@ -368,17 +461,25 @@ def download_path(payload: Dict[str, Any]) -> Dict[str, Any]:
             raise CleanroomException(400, "INVALID_REQUEST", "缺少 path 或 asset_id")
         for relative, candidate in storage.iter_output_paths("media_output"):
             if candidate.stem == asset_id or candidate.stem.startswith(asset_id + "_"):
-                return {"path": candidate, "relative_path": relative, "filename": candidate.name}
+                return {
+                    "path": candidate,
+                    "relative_path": relative,
+                    "filename": candidate.name,
+                }
         raise CleanroomException(404, "FILE_NOT_FOUND", "没有可下载的输出文件")
     resolved = storage.resolve_output_path(raw_target)
     relative = resolved.relative_to(storage.data_root().resolve()).as_posix()
-    return {"path": resolved, "relative_path": relative,
-            "filename": str((payload or {}).get("name") or resolved.name)}
+    return {
+        "path": resolved,
+        "relative_path": relative,
+        "filename": str((payload or {}).get("name") or resolved.name),
+    }
 
 
 # ---------------------------------------------------------------------------
 # 远端图片（httpx 真实抓取 + SSRF 防护 + 大小上限）
 # ---------------------------------------------------------------------------
+
 
 def _guard_url(url: str) -> None:
     """SSRF 防护：只允许 http/https，且拒绝内网/回环/链路本地地址。
@@ -400,7 +501,9 @@ def _guard_url(url: str) -> None:
         return
     # 解析全部地址：任一解析结果落在受限网段即拒绝（防止 DNS 重绑定）。
     try:
-        infos = socket.getaddrinfo(host, parsed.port or (443 if parsed.scheme == "https" else 80))
+        infos = socket.getaddrinfo(
+            host, parsed.port or (443 if parsed.scheme == "https" else 80)
+        )
     except socket.gaierror:
         raise CleanroomException(400, "INVALID_URL", "主机名无法解析")
     for info in infos:
@@ -409,11 +512,19 @@ def _guard_url(url: str) -> None:
             ip = ipaddress.ip_address(address)
         except ValueError:
             raise CleanroomException(400, "INVALID_URL", "解析出的地址不合法")
-        if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved or ip.is_multicast:
-            raise CleanroomException(403, "SSRF_BLOCKED", "该地址属于受限网段，已拒绝请求")
+        if (
+            ip.is_private
+            or ip.is_loopback
+            or ip.is_link_local
+            or ip.is_reserved
+            or ip.is_multicast
+        ):
+            raise CleanroomException(
+                403, "SSRF_BLOCKED", "该地址属于受限网段，已拒绝请求"
+            )
 
 
-def fetch_remote_image(payload: Dict[str, Any]) -> Dict[str, Any]:
+def fetch_remote_image(payload: dict[str, Any]) -> dict[str, Any]:
     """真实抓取远端图片并落盘到数据目录；失败 503，越界 400/403。"""
     url = str((payload or {}).get("url") or "").strip()
     if not url:
@@ -422,17 +533,29 @@ def fetch_remote_image(payload: Dict[str, Any]) -> Dict[str, Any]:
     try:
         import httpx
     except Exception:
-        _unavailable("/api/online-image", "HTTPX_NOT_AVAILABLE", "未安装 httpx，无法抓取远端图片")
+        _unavailable(
+            "/api/online-image", "HTTPX_NOT_AVAILABLE", "未安装 httpx，无法抓取远端图片"
+        )
     try:
-        with httpx.Client(timeout=20.0, follow_redirects=False, trust_env=False) as client:
-            with client.stream("GET", url, headers={"User-Agent": "Gods-Workbench/cleanroom"}) as response:
+        with httpx.Client(
+            timeout=20.0, follow_redirects=False, trust_env=False
+        ) as client:
+            with client.stream(
+                "GET", url, headers={"User-Agent": "Gods-Workbench/cleanroom"}
+            ) as response:
                 if not 200 <= response.status_code < 300:
-                    _unavailable("/api/online-image", "REMOTE_FETCH_FAILED", "远端图片未返回成功状态")
+                    _unavailable(
+                        "/api/online-image",
+                        "REMOTE_FETCH_FAILED",
+                        "远端图片未返回成功状态",
+                    )
                 content_type = response.headers.get("content-type") or ""
                 content = bytearray()
                 for chunk in response.iter_bytes(chunk_size=65536):
                     if len(content) + len(chunk) > MAX_REMOTE_BYTES:
-                        raise CleanroomException(413, "PAYLOAD_TOO_LARGE", "远端图片超过16MB上限")
+                        raise CleanroomException(
+                            413, "PAYLOAD_TOO_LARGE", "远端图片超过16MB上限"
+                        )
                     content.extend(chunk)
     except CleanroomException:
         raise
@@ -441,6 +564,7 @@ def fetch_remote_image(payload: Dict[str, Any]) -> Dict[str, Any]:
     if not content:
         _unavailable("/api/online-image", "REMOTE_FETCH_FAILED", "远端图片内容为空")
     import hashlib
+
     out_dir = _output_dir("online")
     # 确定性文件名：用 URL 的 SHA-256 摘要前缀，避免跨进程非确定（不依赖 hash()）。
     name = "online-%s.img" % hashlib.sha256(url.encode("utf-8")).hexdigest()[:16]
@@ -460,11 +584,14 @@ def fetch_remote_image(payload: Dict[str, Any]) -> Dict[str, Any]:
 # 后台缩略图任务（真实执行 + JsonState 落盘，可回读）
 # ---------------------------------------------------------------------------
 
+
 def _job_state() -> storage.JsonState:
-    return storage.JsonState(NS_JOBS, lambda: {"revision": 1, "sequence": 0, "jobs": {}})
+    return storage.JsonState(
+        NS_JOBS, lambda: {"revision": 1, "sequence": 0, "jobs": {}}
+    )
 
 
-def run_background_thumbnail(payload: Dict[str, Any]) -> Tuple[str, str]:
+def run_background_thumbnail(payload: dict[str, Any]) -> tuple[str, str]:
     """真实生成缩略图并登记为一个可回读的后台任务。
 
     与 ``generate_thumbnail`` 使用同一真实实现，不做假进度：
@@ -473,7 +600,7 @@ def run_background_thumbnail(payload: Dict[str, Any]) -> Tuple[str, str]:
     result = generate_thumbnail(payload)
     file_name = Path(result["output"]).name
 
-    def mutate(raw: Dict[str, Any]) -> Tuple[str, Dict[str, Any]]:
+    def mutate(raw: dict[str, Any]) -> tuple[str, dict[str, Any]]:
         raw["sequence"] = int(raw.get("sequence", 0)) + 1
         job_id = "tjob_%04d" % raw["sequence"]
         record = {
@@ -496,7 +623,7 @@ def run_background_thumbnail(payload: Dict[str, Any]) -> Tuple[str, str]:
     return job_id, "/api/asset-thumbnails/jobs/%s" % job_id
 
 
-def get_job(job_id: str) -> Dict[str, Any]:
+def get_job(job_id: str) -> dict[str, Any]:
     """读取后台缩略图任务；不存在一律 404，不返回伪造状态。"""
     job = _job_state().read().get("jobs", {}).get(str(job_id))
     if not job:
@@ -517,7 +644,8 @@ def get_job(job_id: str) -> Dict[str, Any]:
 # 生成的缓存输出删除（真实删除后不可再读到）
 # ---------------------------------------------------------------------------
 
-def _asset_ids(payload: Dict[str, Any]) -> List[str]:
+
+def _asset_ids(payload: dict[str, Any]) -> list[str]:
     raw = (payload or {}).get("asset_ids")
     if raw is None:
         single = (payload or {}).get("asset_id")
@@ -530,19 +658,26 @@ def _asset_ids(payload: Dict[str, Any]) -> List[str]:
 
 
 def _thumbnail_filename(asset_id: str) -> str:
-    if not asset_id or len(asset_id) > 128 or not all(ch.isalnum() or ch in "_-" for ch in asset_id):
+    if (
+        not asset_id
+        or len(asset_id) > 128
+        or not all(ch.isalnum() or ch in "_-" for ch in asset_id)
+    ):
         raise CleanroomException(400, "INVALID_ASSET_ID", "素材标识不是安全单段")
     return asset_id + ".jpg.png"
 
 
-def delete_outputs(kind: str, payload: Dict[str, Any]) -> Dict[str, Any]:
+def delete_outputs(kind: str, payload: dict[str, Any]) -> dict[str, Any]:
     """仅删除本模块精确生成的缓存；所有候选先预检，失败不虚报整批完成。"""
     if kind not in ("thumbnails", "storyboards"):
-        raise CleanroomException(400, "INVALID_REQUEST", "kind只接受thumbnails/storyboards")
+        raise CleanroomException(
+            400, "INVALID_REQUEST", "kind只接受thumbnails/storyboards"
+        )
     ids = _asset_ids(payload)
     if not ids:
         raise CleanroomException(400, "INVALID_REQUEST", "缺少asset_ids")
     from gw.asset_registry import media_probe
+
     candidates = []
     for asset_id in dict.fromkeys(ids):
         if kind == "thumbnails":
@@ -554,7 +689,9 @@ def delete_outputs(kind: str, payload: Dict[str, Any]) -> Dict[str, Any]:
             directory = media_probe.storyboard_directory(asset_id)
             if directory.exists():
                 for child in sorted(directory.iterdir()):
-                    relative = child.relative_to(storage.data_root().resolve()).as_posix()
+                    relative = child.relative_to(
+                        storage.data_root().resolve()
+                    ).as_posix()
                     # 非生成文件也校验链接，避免忽略目录中指向其他资产的别名。
                     storage.resolve_output_path(relative)
                     if media_probe.is_storyboard_cache_name(child.name):
@@ -569,6 +706,14 @@ def delete_outputs(kind: str, payload: Dict[str, Any]) -> Dict[str, Any]:
             failed.append({"name": relative, "code": "CACHE_PATH_CHANGED"})
         except OSError:
             failed.append({"name": relative, "code": "CACHE_DELETE_FAILED"})
-    return {"kind": kind, "asset_ids": ids, "removed": len(removed), "removed_files": removed,
-            "failed": failed, "data_status": "partial" if failed else "ok",
-            "data_gaps": ["legacy_shared_frames_preserved"] if kind == "storyboards" else []}
+    return {
+        "kind": kind,
+        "asset_ids": ids,
+        "removed": len(removed),
+        "removed_files": removed,
+        "failed": failed,
+        "data_status": "partial" if failed else "ok",
+        "data_gaps": ["legacy_shared_frames_preserved"]
+        if kind == "storyboards"
+        else [],
+    }

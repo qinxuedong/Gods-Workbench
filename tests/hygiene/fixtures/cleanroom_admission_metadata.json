@@ -1,6 +1,6 @@
 {
   "schema": "gw.cleanroom-admission/v1",
-  "as_of": "2026-10-11",
+  "as_of": "2026-10-20",
   "release_authorized": true,
   "purpose": "新仓当前准入边界、来源分类和排除项的机器可读登记；不保存旧仓正文、凭据或授权账本正文。",
   "accepted_roots": [
@@ -791,6 +791,20 @@
       "classification": "curated_project_governance",
       "authorization_basis": "user_local_directory_specification_2026-10-12",
       "sha256": "fae7e58bd5efa3aba972144206c3e6141c5d1a656a8da16f500c87233520b38f",
+      "admission": "accepted"
+    },
+    {
+      "path": "docs/contracts/R4-I2V-GENERATION-CONTRACT.md",
+      "classification": "frozen_interface_contract",
+      "authorization_basis": "owner_approval_C14_T1_QIN-216_2026-10-20",
+      "sha256": "49aa4528b1798d0a573cc48a457223b4343368b1030e2c8c38a4719ce929ba9a",
+      "admission": "accepted"
+    },
+    {
+      "path": "docs/contracts/R4-MASTER-EXPORT-CONTRACT.md",
+      "classification": "frozen_interface_contract",
+      "authorization_basis": "owner_approval_C15_T1_QIN-220_2026-10-21",
+      "sha256": "87a7b487f1283b01285d8d8940c817a0da407e70122e405609d12f929c589d84",
       "admission": "accepted"
     }
   ]

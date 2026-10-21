@@ -23,19 +23,19 @@ import json
 import logging
 import os
 import re
-import time
 import threading
+import time
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from gw.core.auth import AuthContext, require_authenticated
-from gw.core.storage import JsonState, data_root, now_iso
 from gw.core.errors import (
     CanvasVersionConflictException,
     CleanroomException,
     ForbiddenException,
 )
+from gw.core.storage import JsonState, data_root, now_iso
 from gw.god_canvas.godmap import export_to_godmap, parse_godmap_content
 from gw.god_canvas.models import (
     CanvasConnection,
@@ -58,7 +58,6 @@ from gw.god_canvas.tasks import (
     TaskStatus,
 )
 
-
 _PERSISTENCE_LOCK = threading.RLock()
 
 
@@ -70,13 +69,13 @@ class GodCanvasService:
         self.persistent = persistent
         # 构造不访问运行目录；真实快照只在请求/显式服务操作时读取。
         self._state = JsonState("canvases_registry", lambda: None)
-        self._canvases: Dict[str, CanvasItem] = {}
-        self._topologies: Dict[str, CanvasTopology] = {}
-        self._jobs: Dict[str, SmartCanvasTaskResponse] = {}
+        self._canvases: dict[str, CanvasItem] = {}
+        self._topologies: dict[str, CanvasTopology] = {}
+        self._jobs: dict[str, SmartCanvasTaskResponse] = {}
         # 黄金种子无归属：仅内部夹具可读，HTTP不得公开。
-        self._job_owners: Dict[str, Dict[str, str]] = {}
-        self._canvas_owners: Dict[str, str] = {}
-        self._lifecycle: Dict[str, Dict[str, Any]] = {}
+        self._job_owners: dict[str, dict[str, str]] = {}
+        self._canvas_owners: dict[str, str] = {}
+        self._lifecycle: dict[str, dict[str, Any]] = {}
         self._seq = 1 if seed_golden_fixture and not persistent else 0
         self._job_seq = 1 if seed_golden_fixture and not persistent else 0
 
@@ -135,50 +134,98 @@ class GodCanvasService:
                 "archived_at": None,
             }
 
-    def _snapshot(self) -> Dict[str, Any]:
+    def _snapshot(self) -> dict[str, Any]:
         """注册快照为跨表提交真源，拓扑文件是可重建的读取投影。"""
         return {
-            "schema": "gw.canvas-state/v001", "seq": self._seq, "job_seq": self._job_seq,
-            "canvases": {k:v.model_dump(mode="json", by_alias=True) for k,v in self._canvases.items()},
-            "topologies": {k:v.model_dump(mode="json", by_alias=True) for k,v in self._topologies.items()},
-            "jobs": {k:v.model_dump(mode="json") for k,v in self._jobs.items()},
+            "schema": "gw.canvas-state/v001",
+            "seq": self._seq,
+            "job_seq": self._job_seq,
+            "canvases": {
+                k: v.model_dump(mode="json", by_alias=True)
+                for k, v in self._canvases.items()
+            },
+            "topologies": {
+                k: v.model_dump(mode="json", by_alias=True)
+                for k, v in self._topologies.items()
+            },
+            "jobs": {k: v.model_dump(mode="json") for k, v in self._jobs.items()},
             "job_owners": copy.deepcopy(self._job_owners),
             "canvas_owners": copy.deepcopy(self._canvas_owners),
             "lifecycle": copy.deepcopy(self._lifecycle),
         }
 
-    def _load_snapshot(self, state: Dict[str, Any]) -> None:
+    def _load_snapshot(self, state: dict[str, Any]) -> None:
         """验证全部表后才替换缓存；损坏状态不得伪装为空库。"""
         if not isinstance(state, dict) or state.get("schema") != "gw.canvas-state/v001":
             raise ValueError("未知画布存储格式")
-        for name in ("canvases", "topologies", "jobs", "job_owners", "canvas_owners", "lifecycle"):
+        for name in (
+            "canvases",
+            "topologies",
+            "jobs",
+            "job_owners",
+            "canvas_owners",
+            "lifecycle",
+        ):
             if not isinstance(state.get(name), dict):
                 raise ValueError("画布状态表缺失")
-        if any(type(state.get(k)) is not int or state[k] < 0 for k in ("seq", "job_seq")):
+        if any(
+            type(state.get(k)) is not int or state[k] < 0 for k in ("seq", "job_seq")
+        ):
             raise ValueError("画布序号不合法")
-        canvases = {k:CanvasItem.model_validate(v) for k,v in state["canvases"].items()}
-        topologies = {k:CanvasTopology.model_validate(v) for k,v in state["topologies"].items()}
-        jobs = {k:SmartCanvasTaskResponse.model_validate(v) for k,v in state["jobs"].items()}
+        canvases = {
+            k: CanvasItem.model_validate(v) for k, v in state["canvases"].items()
+        }
+        topologies = {
+            k: CanvasTopology.model_validate(v) for k, v in state["topologies"].items()
+        }
+        jobs = {
+            k: SmartCanvasTaskResponse.model_validate(v)
+            for k, v in state["jobs"].items()
+        }
         if set(canvases) != set(topologies):
             raise ValueError("画布与拓扑不一致")
-        for cid,item in canvases.items():
-            if not re.fullmatch(r"cv-[0-9]{4,}", cid) or item.canvas_id != cid or topologies[cid].canvas_id != cid or item.version != topologies[cid].version:
+        for cid, item in canvases.items():
+            if (
+                not re.fullmatch(r"cv-[0-9]{4,}", cid)
+                or item.canvas_id != cid
+                or topologies[cid].canvas_id != cid
+                or item.version != topologies[cid].version
+            ):
                 raise ValueError("画布标识或版本不一致")
-            if item.version < 1 or (topologies[cid].project_id is not None and topologies[cid].project_id != item.project_id):
+            if item.version < 1 or (
+                topologies[cid].project_id is not None
+                and topologies[cid].project_id != item.project_id
+            ):
                 raise ValueError("画布项目或版本不一致")
-        for jid,job in jobs.items():
-            if not re.fullmatch(r"job-[0-9]{4,}", jid) or job.job_id != jid or job.state not in {s.value for s in TaskStatus}:
+        for jid, job in jobs.items():
+            if (
+                not re.fullmatch(r"job-[0-9]{4,}", jid)
+                or job.job_id != jid
+                or job.state not in {s.value for s in TaskStatus}
+            ):
                 raise ValueError("任务标识或状态不合法")
         if canvases and state["seq"] < max(int(cid[3:]) for cid in canvases):
             raise ValueError("画布序号回退")
         if jobs and state["job_seq"] < max(int(jid[4:]) for jid in jobs):
             raise ValueError("任务序号回退")
-        if set(state["lifecycle"]) != set(canvases) or any(not isinstance(v, dict) for v in state["lifecycle"].values()):
+        if set(state["lifecycle"]) != set(canvases) or any(
+            not isinstance(v, dict) for v in state["lifecycle"].values()
+        ):
             raise ValueError("生命周期表不一致")
-        if any(k not in canvases or not isinstance(v, str) or not v for k,v in state["canvas_owners"].items()):
+        if any(
+            k not in canvases or not isinstance(v, str) or not v
+            for k, v in state["canvas_owners"].items()
+        ):
             raise ValueError("画布主体表不合法")
-        for jid,binding in state["job_owners"].items():
-            if jid not in jobs or not isinstance(binding, dict) or any(not isinstance(binding.get(k), str) or not binding[k] for k in ("owner_key","canvas_id","project_id")):
+        for jid, binding in state["job_owners"].items():
+            if (
+                jid not in jobs
+                or not isinstance(binding, dict)
+                or any(
+                    not isinstance(binding.get(k), str) or not binding[k]
+                    for k in ("owner_key", "canvas_id", "project_id")
+                )
+            ):
                 raise ValueError("任务归属表不合法")
         self._canvases, self._topologies, self._jobs = canvases, topologies, jobs
         self._job_owners = copy.deepcopy(state["job_owners"])
@@ -189,16 +236,18 @@ class GodCanvasService:
     @staticmethod
     def _check_storage_path(path: Path) -> None:
         """固定状态路径拒绝链接/重解析点，避免落盘越过数据根。"""
-        if path.is_symlink() or (path.exists() and getattr(path.lstat(), "st_file_attributes", 0) & 0x400):
+        if path.is_symlink() or (
+            path.exists() and getattr(path.lstat(), "st_file_attributes", 0) & 0x400
+        ):
             raise ValueError("画布存储不接受链接")
 
-    def _sync_topology_views(self, state: Dict[str, Any]) -> None:
+    def _sync_topology_views(self, state: dict[str, Any]) -> None:
         folder = data_root() / "canvases"
         self._check_storage_path(folder)
         if not state["topologies"]:
             return
         folder.mkdir(parents=True, exist_ok=True)
-        for cid,payload in state["topologies"].items():
+        for cid, payload in state["topologies"].items():
             path = folder / (cid + ".json")
             pending = folder / (cid + ".json.pending")
             self._check_storage_path(path)
@@ -230,12 +279,28 @@ class GodCanvasService:
                 if stored is None:
                     if registry.exists():
                         raise ValueError("画布注册快照损坏")
-                    stored = {"schema":"gw.canvas-state/v001", "seq":0,"job_seq":0,
-                              **{k:{} for k in ("canvases","topologies","jobs","job_owners","canvas_owners","lifecycle")}}
+                    stored = {
+                        "schema": "gw.canvas-state/v001",
+                        "seq": 0,
+                        "job_seq": 0,
+                        **{
+                            k: {}
+                            for k in (
+                                "canvases",
+                                "topologies",
+                                "jobs",
+                                "job_owners",
+                                "canvas_owners",
+                                "lifecycle",
+                            )
+                        },
+                    }
                 self._load_snapshot(stored)
                 self._sync_topology_views(stored)
             except (OSError, ValueError, TypeError, KeyError):
-                raise CleanroomException(503, "CANVAS_STORAGE_UNAVAILABLE", "画布存储不可用，未覆盖原状态") from None
+                raise CleanroomException(
+                    503, "CANVAS_STORAGE_UNAVAILABLE", "画布存储不可用，未覆盖原状态"
+                ) from None
             before = self._snapshot()
             try:
                 yield
@@ -246,7 +311,9 @@ class GodCanvasService:
                     self._state.write(after)
             except (OSError, ValueError, TypeError, KeyError):
                 self._load_snapshot(before)
-                raise CleanroomException(503, "CANVAS_STORAGE_UNAVAILABLE", "画布存储不可用，未覆盖原状态") from None
+                raise CleanroomException(
+                    503, "CANVAS_STORAGE_UNAVAILABLE", "画布存储不可用，未覆盖原状态"
+                ) from None
             except BaseException:
                 self._load_snapshot(before)
                 raise
@@ -254,6 +321,7 @@ class GodCanvasService:
     def authorize_project(self, project_id: str, context: AuthContext) -> str:
         """持久画布必须校验当前项目归属；独立参考画布另记主体。"""
         from gw.projects_hub.service import owner_key_for_context
+
         if project_id == "default":
             return owner_key_for_context(context)
         return self._check_project_access(project_id, context)
@@ -261,20 +329,30 @@ class GodCanvasService:
     def authorize_canvas(self, canvas_id: str, context: AuthContext) -> CanvasItem:
         """HTTP 入口复用同一项目真源，跨主体统一隐藏。"""
         from gw.projects_hub.service import owner_key_for_context
+
         with self._transaction():
             item = self._canvases.get(canvas_id)
             if item is None:
-                raise CleanroomException(404, "CANVAS_NOT_FOUND", "画布不存在或不可访问")
+                raise CleanroomException(
+                    404, "CANVAS_NOT_FOUND", "画布不存在或不可访问"
+                )
             if self.persistent:
                 owner = self.authorize_project(item.project_id, context)
-                if (item.project_id == "default" and self._canvas_owners.get(canvas_id) != owner_key_for_context(context)) or (self._canvas_owners.get(canvas_id) not in (None, owner)):
-                    raise CleanroomException(404, "CANVAS_NOT_FOUND", "画布不存在或不可访问")
+                if (
+                    item.project_id == "default"
+                    and self._canvas_owners.get(canvas_id)
+                    != owner_key_for_context(context)
+                ) or (self._canvas_owners.get(canvas_id) not in (None, owner)):
+                    raise CleanroomException(
+                        404, "CANVAS_NOT_FOUND", "画布不存在或不可访问"
+                    )
             return copy.deepcopy(item)
 
     @staticmethod
     def _project_read_allowed(project_id: str, context: AuthContext) -> bool:
         """项目读可见性统一交由项目真源判定；未知或不可读项目一律视为不可见。"""
         from gw.projects_hub import service as projects
+
         owner_key = None
         try:
             owner_key = projects.owner_key_for_context(context)
@@ -286,9 +364,12 @@ class GodCanvasService:
             role=str(getattr(context, "role", "") or ""),
         )
 
-    def _reference_canvas_owner_guard(self, canvas_id: str, context: AuthContext) -> None:
+    def _reference_canvas_owner_guard(
+        self, canvas_id: str, context: AuthContext
+    ) -> None:
         """无归属画布（project_id=default）只按登记主体隔离，不借用项目权限。"""
         from gw.projects_hub.service import owner_key_for_context
+
         try:
             owner_key = owner_key_for_context(context)
         except CleanroomException:
@@ -301,26 +382,40 @@ class GodCanvasService:
         with self._transaction():
             item = self._canvases.get(canvas_id)
             if item is None:
-                raise CleanroomException(404, "CANVAS_NOT_FOUND", "画布不存在或不可访问")
+                raise CleanroomException(
+                    404, "CANVAS_NOT_FOUND", "画布不存在或不可访问"
+                )
             if item.project_id == "default":
                 self._reference_canvas_owner_guard(canvas_id, context)
             else:
                 if context.mode == "local_account":
                     owner = self.authorize_project(item.project_id, context)
                     if self._canvas_owners.get(canvas_id) not in (None, owner):
-                        raise CleanroomException(404, "CANVAS_NOT_FOUND", "画布不存在或不可访问")
+                        raise CleanroomException(
+                            404, "CANVAS_NOT_FOUND", "画布不存在或不可访问"
+                        )
                 if not self._project_read_allowed(item.project_id, context):
-                    raise CleanroomException(404, "CANVAS_NOT_FOUND", "画布不存在或不可访问")
+                    raise CleanroomException(
+                        404, "CANVAS_NOT_FOUND", "画布不存在或不可访问"
+                    )
             return copy.deepcopy(item)
 
-    def authorize_canvas_write(self, canvas_id: str, context: AuthContext) -> CanvasItem:
+    def authorize_canvas_write(
+        self, canvas_id: str, context: AuthContext
+    ) -> CanvasItem:
         """写门禁：仅项目写者放行；无权写者 404 隐藏，只读项目 403 PROJECT_READ_ONLY。"""
         from gw.core.auth import EDIT_ROLES
-        from gw.projects_hub.service import require_project_write_context, owner_key_for_context
+        from gw.projects_hub.service import (
+            owner_key_for_context,
+            require_project_write_context,
+        )
+
         with self._transaction():
             item = self._canvases.get(canvas_id)
             if item is None:
-                raise CleanroomException(404, "CANVAS_NOT_FOUND", "画布不存在或不可访问")
+                raise CleanroomException(
+                    404, "CANVAS_NOT_FOUND", "画布不存在或不可访问"
+                )
             if item.project_id == "default":
                 self._reference_canvas_owner_guard(canvas_id, context)
                 if context.role not in EDIT_ROLES:
@@ -329,39 +424,55 @@ class GodCanvasService:
 
             if context.role not in EDIT_ROLES:
                 from gw.projects_hub import service as projects
+
                 owner_key = None
                 try:
                     owner_key = owner_key_for_context(context)
                 except CleanroomException:
                     owner_key = None
                 with projects.default_projects_service._operation() as (_, state, __):
-                    is_owner = bool(owner_key and state.get("owners", {}).get(item.project_id) == owner_key)
+                    is_owner = bool(
+                        owner_key
+                        and state.get("owners", {}).get(item.project_id) == owner_key
+                    )
                 if is_owner:
                     raise ForbiddenException(message="无当前资源写权限，已降级为只读")
-                raise CleanroomException(404, "CANVAS_NOT_FOUND", "画布不存在或不可访问")
+                raise CleanroomException(
+                    404, "CANVAS_NOT_FOUND", "画布不存在或不可访问"
+                )
 
             if context.mode == "local_account":
                 owner = self._check_project_access(item.project_id, context)
                 if self._canvas_owners.get(canvas_id) not in (None, owner):
-                    raise CleanroomException(404, "CANVAS_NOT_FOUND", "画布不存在或不可访问")
+                    raise CleanroomException(
+                        404, "CANVAS_NOT_FOUND", "画布不存在或不可访问"
+                    )
 
             try:
                 require_project_write_context(item.project_id, context)
             except CleanroomException as exc:
                 if exc.status_code == 404:
-                    raise CleanroomException(404, "CANVAS_NOT_FOUND", "画布不存在或不可访问") from None
+                    raise CleanroomException(
+                        404, "CANVAS_NOT_FOUND", "画布不存在或不可访问"
+                    ) from None
                 raise
             return copy.deepcopy(item)
 
-    def _require_version(self, expected_version: Optional[int]) -> None:
-        if self.persistent and (type(expected_version) is not int or expected_version < 1):
-            raise CleanroomException(400, "EXPECTED_VERSION_REQUIRED", "画布修改必须携带正整数 expected_version")
+    def _require_version(self, expected_version: int | None) -> None:
+        if self.persistent and (
+            type(expected_version) is not int or expected_version < 1
+        ):
+            raise CleanroomException(
+                400,
+                "EXPECTED_VERSION_REQUIRED",
+                "画布修改必须携带正整数 expected_version",
+            )
 
     # ------------------------------------------------------------------
     # 1. 普通画布拓扑管理能力 (Classic Topology Management)
     # ------------------------------------------------------------------
 
-    def list_canvases(self, project_id: str) -> List[CanvasItem]:
+    def list_canvases(self, project_id: str) -> list[CanvasItem]:
         """返回指定项目可见的画布集合。"""
         with self._transaction():
             # 已入回收站或已归档的画布不在活跃列表；两者各有独立视图端点。
@@ -381,7 +492,7 @@ class GodCanvasService:
     # 侧表键必须与 ``canvas_id`` 一致，禁止另起别名。
     # ------------------------------------------------------------------
 
-    def ensure_lifecycle(self, canvas_id: str) -> Dict[str, Any]:
+    def ensure_lifecycle(self, canvas_id: str) -> dict[str, Any]:
         """返回目标画布的生命周期记录；不存在时按活跃画布惰性建立。"""
         with self._transaction():
             if canvas_id not in self._canvases:
@@ -406,7 +517,7 @@ class GodCanvasService:
                 self._lifecycle[canvas_id] = record
             return copy.deepcopy(record)
 
-    def list_lifecycle(self) -> List[Dict[str, Any]]:
+    def list_lifecycle(self) -> list[dict[str, Any]]:
         """返回全部画布的生命周期投影（含 canvas_id，供观测 / 画布资产索引读取）。"""
         with self._transaction():
             out = []
@@ -432,7 +543,7 @@ class GodCanvasService:
                 )
             return out
 
-    def list_trash(self, view: str = "deleted") -> List[Dict[str, Any]]:
+    def list_trash(self, view: str = "deleted") -> list[dict[str, Any]]:
         """返回回收站（已删除）或归档列表；无内容时必须是空数组。"""
         if view not in {"deleted", "archived"}:
             raise CleanroomException(
@@ -451,7 +562,7 @@ class GodCanvasService:
             out.append(entry)
         return out
 
-    def set_canvas_kind(self, canvas_id: str, kind: str) -> Dict[str, Any]:
+    def set_canvas_kind(self, canvas_id: str, kind: str) -> dict[str, Any]:
         """设置画布类型（classic / smart / reference）；仅接受白名单取值。"""
         if kind not in {"classic", "smart", "reference"}:
             raise CleanroomException(
@@ -475,9 +586,9 @@ class GodCanvasService:
     def update_canvas_meta(
         self,
         canvas_id: str,
-        patch: Dict[str, Any],
-        expected_version: Optional[int] = None,
-    ) -> Dict[str, Any]:
+        patch: dict[str, Any],
+        expected_version: int | None = None,
+    ) -> dict[str, Any]:
         """更新画布元信息；CAS 不一致严格返回 409 CANVAS_VERSION_CONFLICT。"""
         self._require_version(expected_version)
         with self._transaction():
@@ -524,7 +635,9 @@ class GodCanvasService:
                 top.version = item.version
                 if patch.get("reference_payload") is not None:
                     references = dict(top.references or {})
-                    references["reference_canvas"] = copy.deepcopy(patch["reference_payload"])
+                    references["reference_canvas"] = copy.deepcopy(
+                        patch["reference_payload"]
+                    )
                     top.references = references
             record["updated_at"] = int(time.time())
             return self._project_canvas(canvas_id)
@@ -533,8 +646,8 @@ class GodCanvasService:
         self,
         canvas_id: str,
         operation: str,
-        expected_version: Optional[int] = None,
-    ) -> Dict[str, Any]:
+        expected_version: int | None = None,
+    ) -> dict[str, Any]:
         """归档 / 解归档画布；只做状态翻转，不改内容，且必须递增 version。"""
         if operation not in ("archive", "unarchive"):
             raise CleanroomException(
@@ -579,20 +692,28 @@ class GodCanvasService:
                 top.version = item.version
             return self._project_canvas(canvas_id)
 
-    def move_to_trash(self, canvas_id: str, expected_version: Optional[int] = None) -> Dict[str, Any]:
+    def move_to_trash(
+        self, canvas_id: str, expected_version: int | None = None
+    ) -> dict[str, Any]:
         """把画布移入回收站（软删除）；不删除拓扑，可 restore。"""
-        return self._set_deleted(canvas_id, deleted=True, expected_version=expected_version)
+        return self._set_deleted(
+            canvas_id, deleted=True, expected_version=expected_version
+        )
 
-    def restore_from_trash(self, canvas_id: str, expected_version: Optional[int] = None) -> Dict[str, Any]:
+    def restore_from_trash(
+        self, canvas_id: str, expected_version: int | None = None
+    ) -> dict[str, Any]:
         """从回收站恢复画布；与既有的 ``restore_canvas`` 语义一致。"""
-        return self._set_deleted(canvas_id, deleted=False, expected_version=expected_version)
+        return self._set_deleted(
+            canvas_id, deleted=False, expected_version=expected_version
+        )
 
     def _set_deleted(
         self,
         canvas_id: str,
         deleted: bool,
-        expected_version: Optional[int] = None,
-    ) -> Dict[str, Any]:
+        expected_version: int | None = None,
+    ) -> dict[str, Any]:
         self._require_version(expected_version)
         with self._transaction():
             item = self._canvases.get(canvas_id)
@@ -630,7 +751,9 @@ class GodCanvasService:
                 top.version = item.version
             return self._project_canvas(canvas_id)
 
-    def purge_canvas(self, canvas_id: str, expected_version: Optional[int] = None) -> Dict[str, Any]:
+    def purge_canvas(
+        self, canvas_id: str, expected_version: int | None = None
+    ) -> dict[str, Any]:
         """彻底删除回收站中的画布；未入回收站一律拒绝，禁止越权直删。"""
         self._require_version(expected_version)
         with self._transaction():
@@ -643,7 +766,9 @@ class GodCanvasService:
                 )
             record = self._lifecycle.get(canvas_id) or {}
             if expected_version is not None and item.version != expected_version:
-                raise CanvasVersionConflictException(expected_version, item.version, canvas_id)
+                raise CanvasVersionConflictException(
+                    expected_version, item.version, canvas_id
+                )
             if not record.get("deleted_at"):
                 raise CleanroomException(
                     status_code=409,
@@ -657,7 +782,7 @@ class GodCanvasService:
             self._canvas_owners.pop(canvas_id, None)
             return {"canvas_id": canvas_id, "version": version, "purged": True}
 
-    def get_reference_payload(self, canvas_id: str) -> Optional[Dict[str, Any]]:
+    def get_reference_payload(self, canvas_id: str) -> dict[str, Any] | None:
         """读取参考画布载荷（存放于拓扑 references.reference_canvas）。"""
         with self._transaction():
             top = self._topologies.get(canvas_id)
@@ -666,7 +791,7 @@ class GodCanvasService:
             payload = top.references.get("reference_canvas")
             return copy.deepcopy(payload) if isinstance(payload, dict) else None
 
-    def _project_canvas(self, canvas_id: str) -> Dict[str, Any]:
+    def _project_canvas(self, canvas_id: str) -> dict[str, Any]:
         """生成画布生命周期投影。
 
         ``id`` / ``project`` 是前端既有读取面的兼容别名，服务端另有
@@ -699,7 +824,11 @@ class GodCanvasService:
         with self._transaction():
             item = self._canvases.get(canvas_id)
             if not item:
-                raise CleanroomException(status_code=404, code="CANVAS_NOT_FOUND", message=f"画布 {canvas_id} 不存在")
+                raise CleanroomException(
+                    status_code=404,
+                    code="CANVAS_NOT_FOUND",
+                    message=f"画布 {canvas_id} 不存在",
+                )
             return copy.deepcopy(item)
 
     def get_topology(self, canvas_id: str) -> CanvasTopology:
@@ -707,19 +836,33 @@ class GodCanvasService:
         with self._transaction():
             top = self._topologies.get(canvas_id)
             if not top:
-                raise CleanroomException(status_code=404, code="CANVAS_NOT_FOUND", message=f"画布 {canvas_id} 不存在")
+                raise CleanroomException(
+                    status_code=404,
+                    code="CANVAS_NOT_FOUND",
+                    message=f"画布 {canvas_id} 不存在",
+                )
             return copy.deepcopy(top)
 
-    def get_canvas_meta(self, canvas_id: str) -> Dict[str, Any]:
+    def get_canvas_meta(self, canvas_id: str) -> dict[str, Any]:
         """返回同一提交快照中的元信息投影。"""
         with self._transaction():
             if canvas_id not in self._canvases:
                 raise CleanroomException(404, "CANVAS_NOT_FOUND", "画布不存在")
             return copy.deepcopy(self._project_canvas(canvas_id))
 
-    def create_canvas(self, payload: CanvasCreateRequest, *, owner_key: Optional[str] = None, canvas_kind: Optional[str] = None) -> CanvasMutationResult:
+    def create_canvas(
+        self,
+        payload: CanvasCreateRequest,
+        *,
+        owner_key: str | None = None,
+        canvas_kind: str | None = None,
+    ) -> CanvasMutationResult:
         """创建新画布并分配初始版本 1。"""
-        if canvas_kind is not None and canvas_kind not in {"classic", "smart", "reference"}:
+        if canvas_kind is not None and canvas_kind not in {
+            "classic",
+            "smart",
+            "reference",
+        }:
             raise CleanroomException(400, "INVALID_REQUEST", "画布类型不合法")
         with self._transaction():
             self._seq += 1
@@ -755,13 +898,16 @@ class GodCanvasService:
             if payload.initial_payload and isinstance(payload.initial_payload, dict):
                 try:
                     initial_topology = CanvasTopology(
-                        canvas_id=cid, version=1,
+                        canvas_id=cid,
+                        version=1,
                         nodes=payload.initial_payload.get("nodes", []),
                         connections=payload.initial_payload.get("connections", []),
                         references=payload.initial_payload.get("references"),
                     )
                 except ValueError:
-                    raise CleanroomException(400, "INVALID_TOPOLOGY", "初始画布拓扑不合法") from None
+                    raise CleanroomException(
+                        400, "INVALID_TOPOLOGY", "初始画布拓扑不合法"
+                    ) from None
                 nodes = initial_topology.nodes
                 connections = initial_topology.connections
                 references = initial_topology.references
@@ -791,7 +937,11 @@ class GodCanvasService:
             item = self._canvases.get(canvas_id)
             top = self._topologies.get(canvas_id)
             if not item or not top:
-                raise CleanroomException(status_code=404, code="CANVAS_NOT_FOUND", message=f"画布 {canvas_id} 不存在")
+                raise CleanroomException(
+                    status_code=404,
+                    code="CANVAS_NOT_FOUND",
+                    message=f"画布 {canvas_id} 不存在",
+                )
 
             if top.version != payload.expected_version:
                 raise CanvasVersionConflictException(
@@ -810,14 +960,20 @@ class GodCanvasService:
 
             return CanvasMutationResult(canvas_id=canvas_id, version=top.version)
 
-    def restore_canvas(self, canvas_id: str, expected_version: int) -> CanvasMutationResult:
+    def restore_canvas(
+        self, canvas_id: str, expected_version: int
+    ) -> CanvasMutationResult:
         """恢复画布；按章程强制 CAS：版本不一致严格返回 409 CANVAS_VERSION_CONFLICT。"""
         self._require_version(expected_version)
         with self._transaction():
             item = self._canvases.get(canvas_id)
             top = self._topologies.get(canvas_id)
             if not item or not top:
-                raise CleanroomException(status_code=404, code="CANVAS_NOT_FOUND", message=f"画布 {canvas_id} 不存在")
+                raise CleanroomException(
+                    status_code=404,
+                    code="CANVAS_NOT_FOUND",
+                    message=f"画布 {canvas_id} 不存在",
+                )
 
             if top.version != expected_version:
                 raise CanvasVersionConflictException(
@@ -850,7 +1006,11 @@ class GodCanvasService:
             item = self._canvases.get(canvas_id)
             top = self._topologies.get(canvas_id)
             if not item or not top:
-                raise CleanroomException(status_code=404, code="CANVAS_NOT_FOUND", message=f"画布 {canvas_id} 不存在")
+                raise CleanroomException(
+                    status_code=404,
+                    code="CANVAS_NOT_FOUND",
+                    message=f"画布 {canvas_id} 不存在",
+                )
 
             if top.version != expected_version:
                 raise CanvasVersionConflictException(
@@ -922,20 +1082,32 @@ class GodCanvasService:
     ) -> str:
         """导出画布拓扑为指定格式字符串。"""
         if export_format not in {"json", "godmap"}:
-            raise CleanroomException(status_code=400, code="UNSUPPORTED_FORMAT", message="仅支持 json 或 godmap 导出")
+            raise CleanroomException(
+                status_code=400,
+                code="UNSUPPORTED_FORMAT",
+                message="仅支持 json 或 godmap 导出",
+            )
         if include_resources:
-            raise CleanroomException(status_code=400, code="UNSUPPORTED_OPTION", message="当前洁净切片不内嵌外部资源")
+            raise CleanroomException(
+                status_code=400,
+                code="UNSUPPORTED_OPTION",
+                message="当前洁净切片不内嵌外部资源",
+            )
         top = self.get_topology(canvas_id)
         if export_format == "godmap":
             return export_to_godmap(top)
         return top.model_dump_json(by_alias=True, indent=2)
 
     @staticmethod
-    def _rekey_insert(existing_nodes, existing_connections, imported_nodes, imported_connections):
+    def _rekey_insert(
+        existing_nodes, existing_connections, imported_nodes, imported_connections
+    ):
         """为 insert 导入的冲突 ID 分配稳定后缀并重写连线端点。"""
         node_ids = {node.entity_id for node in existing_nodes}
-        connection_ids = {connection.connection_id for connection in existing_connections}
-        node_map: Dict[str, str] = {}
+        connection_ids = {
+            connection.connection_id for connection in existing_connections
+        }
+        node_map: dict[str, str] = {}
         rekeyed_nodes = []
         for node in copy.deepcopy(imported_nodes):
             original_id = node.entity_id
@@ -959,7 +1131,9 @@ class GodCanvasService:
                 suffix += 1
             connection_ids.add(candidate)
             connection.connection_id = candidate
-            connection.from_node = node_map.get(connection.from_node, connection.from_node)
+            connection.from_node = node_map.get(
+                connection.from_node, connection.from_node
+            )
             connection.to_node = node_map.get(connection.to_node, connection.to_node)
             rekeyed_connections.append(connection)
         return rekeyed_nodes, rekeyed_connections
@@ -972,7 +1146,7 @@ class GodCanvasService:
         self,
         canvas_id: str,
         payload: SmartCanvasTaskRequest,
-        authorization: Optional[str] = None,
+        authorization: str | None = None,
         user_role: str = "editor",
     ) -> SmartCanvasTaskResponse:
         """发起智能画布任务，返回 202 Accepted 及稳定 job_id。"""
@@ -994,13 +1168,21 @@ class GodCanvasService:
             item = self._canvases.get(canvas_id)
             top = self._topologies.get(canvas_id)
             if not item or not top:
-                raise CleanroomException(status_code=404, code="CANVAS_NOT_FOUND", message=f"画布 {canvas_id} 不存在")
+                raise CleanroomException(
+                    status_code=404,
+                    code="CANVAS_NOT_FOUND",
+                    message=f"画布 {canvas_id} 不存在",
+                )
 
             from gw.projects_hub.service import owner_key_for_context
+
             owner_key = owner_key_for_context(context)
 
             # CAS 校验
-            if payload.expected_version is not None and top.version != payload.expected_version:
+            if (
+                payload.expected_version is not None
+                and top.version != payload.expected_version
+            ):
                 raise CanvasVersionConflictException(
                     expected_version=payload.expected_version,
                     current_version=top.version,
@@ -1008,7 +1190,9 @@ class GodCanvasService:
                 )
 
             node_ids = {node.entity_id for node in top.nodes}
-            missing_entry_nodes = [node_id for node_id in payload.entry_nodes if node_id not in node_ids]
+            missing_entry_nodes = [
+                node_id for node_id in payload.entry_nodes if node_id not in node_ids
+            ]
             if missing_entry_nodes:
                 raise CleanroomException(
                     status_code=409,
@@ -1027,47 +1211,77 @@ class GodCanvasService:
                 poll_hint=poll_hint,
             )
             self._jobs[job_id] = task_resp
-            self._job_owners[job_id] = {"owner_key": owner_key, "canvas_id": canvas_id, "project_id": item.project_id}
+            self._job_owners[job_id] = {
+                "owner_key": owner_key,
+                "canvas_id": canvas_id,
+                "project_id": item.project_id,
+            }
             self._audit_job_access("submit", 202, context)
             return task_resp
 
     @staticmethod
-    def _audit_job_access(operation: str, status_code: int, context: Optional[AuthContext] = None) -> None:
+    def _audit_job_access(
+        operation: str, status_code: int, context: AuthContext | None = None
+    ) -> None:
         """只记录操作、结果和认证模式，不记录Cookie、输入、路径或资源存在性。"""
         from gw.projects_hub.service import owner_key_for_context
-        logging.getLogger("gw.audit").info("canvas_job_access %s", json.dumps({
-            "operation": operation, "status_code": status_code,
-            "auth_mode": context.mode if context else None,
-            "subject_key": owner_key_for_context(context) if context and context.subject and context.identity_domain else None,
-        }, sort_keys=True))
+
+        logging.getLogger("gw.audit").info(
+            "canvas_job_access %s",
+            json.dumps(
+                {
+                    "operation": operation,
+                    "status_code": status_code,
+                    "auth_mode": context.mode if context else None,
+                    "subject_key": owner_key_for_context(context)
+                    if context and context.subject and context.identity_domain
+                    else None,
+                },
+                sort_keys=True,
+            ),
+        )
 
     @staticmethod
     def _check_project_access(project_id: str, context: AuthContext) -> str:
         from gw.projects_hub import service as projects
+
         owner_key = projects.owner_key_for_context(context)
         if project_id == "default":
             return owner_key
-        project = projects.default_projects_service.get_owned_project(project_id, owner_key)
+        project = projects.default_projects_service.get_owned_project(
+            project_id, owner_key
+        )
         if project.deleted_at or project.archived_at:
             raise CleanroomException(404, "JOB_NOT_FOUND", "任务不存在或不可访问")
         return owner_key
 
-    def get_owned_job(self, job_id: str, context: AuthContext) -> SmartCanvasTaskResponse:
+    def get_owned_job(
+        self, job_id: str, context: AuthContext
+    ) -> SmartCanvasTaskResponse:
         """HTTP/观测专用：主体侧表不能替代每次读取的项目真源ACL。"""
         from gw.projects_hub.service import owner_key_for_context
+
         try:
             owner_key = owner_key_for_context(context)
             with self._transaction():
                 binding = self._job_owners.get(job_id)
-                if not binding or binding["owner_key"] != owner_key or job_id not in self._jobs:
-                    raise CleanroomException(404, "JOB_NOT_FOUND", "任务不存在或不可访问")
+                if (
+                    not binding
+                    or binding["owner_key"] != owner_key
+                    or job_id not in self._jobs
+                ):
+                    raise CleanroomException(
+                        404, "JOB_NOT_FOUND", "任务不存在或不可访问"
+                    )
                 if self.persistent:
                     self.authorize_project(binding["project_id"], context)
                 else:
                     self._check_project_access(binding["project_id"], context)
                 item = self._canvases.get(binding["canvas_id"])
                 if item is None or item.project_id != binding["project_id"]:
-                    raise CleanroomException(404, "JOB_NOT_FOUND", "任务不存在或不可访问")
+                    raise CleanroomException(
+                        404, "JOB_NOT_FOUND", "任务不存在或不可访问"
+                    )
                 result = copy.deepcopy(self._jobs[job_id])
         except CleanroomException as exc:
             self._audit_job_access("query", exc.status_code, context)
@@ -1075,21 +1289,26 @@ class GodCanvasService:
         self._audit_job_access("query", 200, context)
         return result
 
-    def recover_interrupted_jobs(self) -> List[str]:
+    def recover_interrupted_jobs(self) -> list[str]:
         """启动恢复：上次进程遗留的 accepted/running 任务标为中断终态，不自动重发。"""
-        interrupted: List[str] = []
+        interrupted: list[str] = []
         with self._transaction():
             stamp = now_iso()
             for job_id, job in self._jobs.items():
                 if job.state in (TaskStatus.ACCEPTED.value, TaskStatus.RUNNING.value):
-                    self._jobs[job_id] = SmartCanvasTaskResponse.model_validate({
-                        **job.model_dump(mode="json"), "state": TaskStatus.FAILED.value,
-                        "error": "CANVAS_TASK_INTERRUPTED", "poll_hint": None, "interrupted_at": stamp,
-                    })
+                    self._jobs[job_id] = SmartCanvasTaskResponse.model_validate(
+                        {
+                            **job.model_dump(mode="json"),
+                            "state": TaskStatus.FAILED.value,
+                            "error": "CANVAS_TASK_INTERRUPTED",
+                            "poll_hint": None,
+                            "interrupted_at": stamp,
+                        }
+                    )
                     interrupted.append(job_id)
         return interrupted
 
-    def list_owned_jobs(self, context: AuthContext) -> List[SmartCanvasTaskResponse]:
+    def list_owned_jobs(self, context: AuthContext) -> list[SmartCanvasTaskResponse]:
         """观测列表使用与单任务相同的当前项目权限，不公开种子。"""
         with self._transaction():
             job_ids = list(self._jobs)
@@ -1102,7 +1321,7 @@ class GodCanvasService:
                     raise
         return result
 
-    def list_jobs(self) -> List[SmartCanvasTaskResponse]:
+    def list_jobs(self) -> list[SmartCanvasTaskResponse]:
         """只读返回当前进程内全部任务快照（供观测层读取，不暴露内部字典）。
 
         返回深拷贝，调用方无法借返回值修改服务内部状态。
@@ -1116,27 +1335,47 @@ class GodCanvasService:
         with self._transaction():
             job = self._jobs.get(job_id)
             if not job:
-                raise CleanroomException(status_code=404, code="JOB_NOT_FOUND", message=f"任务 {job_id} 不存在")
+                raise CleanroomException(
+                    status_code=404,
+                    code="JOB_NOT_FOUND",
+                    message=f"任务 {job_id} 不存在",
+                )
             return copy.deepcopy(job)
 
     def update_job_state(
         self,
         job_id: str,
         state: str,
-        result: Optional[Dict[str, Any]] = None,
-        error: Optional[str] = None,
+        result: dict[str, Any] | None = None,
+        error: str | None = None,
     ) -> SmartCanvasTaskResponse:
         """推进任务状态机状态（线程安全）。"""
         with self._transaction():
             job = self._jobs.get(job_id)
             if not job:
-                raise CleanroomException(status_code=404, code="JOB_NOT_FOUND", message=f"任务 {job_id} 不存在")
+                raise CleanroomException(
+                    status_code=404,
+                    code="JOB_NOT_FOUND",
+                    message=f"任务 {job_id} 不存在",
+                )
 
             # 终端状态不可再变更
             allowed_transitions = {
                 "accepted": {"running", "cancelled"},
-                "running": {"waiting_review", "paused", "completed", "failed", "cancelled"},
-                "waiting_review": {"running", "paused", "completed", "failed", "cancelled"},
+                "running": {
+                    "waiting_review",
+                    "paused",
+                    "completed",
+                    "failed",
+                    "cancelled",
+                },
+                "waiting_review": {
+                    "running",
+                    "paused",
+                    "completed",
+                    "failed",
+                    "cancelled",
+                },
                 "paused": {"running", "failed", "cancelled"},
             }
             terminal_states = {"completed", "failed", "cancelled"}
@@ -1168,5 +1407,7 @@ class GodCanvasService:
 
 # 兼容别名与单例实例
 CanvasService = GodCanvasService
-default_god_canvas_service = GodCanvasService(seed_golden_fixture=False, persistent=True)
+default_god_canvas_service = GodCanvasService(
+    seed_golden_fixture=False, persistent=True
+)
 default_canvas_service = default_god_canvas_service

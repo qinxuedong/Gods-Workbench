@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 # Copyright 2026 Gods-Workbench Authors
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -73,7 +72,7 @@ OBSERVABILITY_QUERY_PARAMS = (
 )
 
 
-def _collect_query(request: Request) -> Dict[str, Any]:
+def _collect_query(request: Request) -> dict[str, Any]:
     """把原始查询串收集为映射；未识别参数由服务层按已知键取用，不会导致 500。"""
     return {key: value for key, value in request.query_params.items()}
 
@@ -81,22 +80,22 @@ def _collect_query(request: Request) -> Dict[str, Any]:
 def _filters(
     request: Request,
     *,
-    range: Optional[str] = None,
-    limit: Optional[int] = None,
-    status_value: Optional[str] = None,
-    source: Optional[str] = None,
-    level: Optional[str] = None,
-    project_id: Optional[str] = None,
-    job_id: Optional[str] = None,
-    entity_id: Optional[str] = None,
-    asset_id: Optional[str] = None,
-    canvas_id: Optional[str] = None,
-    stable_id: Optional[str] = None,
-    cursor: Optional[str] = None,
-    start_ms: Optional[str] = None,
-    end_ms: Optional[str] = None,
-    metrics: Optional[str] = None,
-    event_id: Optional[str] = None,
+    range: str | None = None,
+    limit: int | None = None,
+    status_value: str | None = None,
+    source: str | None = None,
+    level: str | None = None,
+    project_id: str | None = None,
+    job_id: str | None = None,
+    entity_id: str | None = None,
+    asset_id: str | None = None,
+    canvas_id: str | None = None,
+    stable_id: str | None = None,
+    cursor: str | None = None,
+    start_ms: str | None = None,
+    end_ms: str | None = None,
+    metrics: str | None = None,
+    event_id: str | None = None,
 ) -> AppliedFilters:
     """构造过滤条件：显式声明的参数覆盖原始查询串中的同名项。"""
     params = _collect_query(request)
@@ -132,9 +131,11 @@ def _filters(
 )
 def get_observability_index(
     request: Request,
-    range: Optional[str] = Query(None, description="时间范围：15m/1h/24h/7d/all"),
-    authorization: Optional[str] = Header(None),
-    x_user_role: str = Header("editor", alias="X-User-Role", description="用户角色权限"),
+    range: str | None = Query(None, description="时间范围：15m/1h/24h/7d/all"),
+    authorization: str | None = Header(None),
+    x_user_role: str = Header(
+        "editor", alias="X-User-Role", description="用户角色权限"
+    ),
 ):
     """返回本阶段已实现的观测资源索引；仅读能力，只读角色可用。"""
     require_authenticated(authorization, x_user_role)
@@ -149,10 +150,12 @@ def get_observability_index(
 )
 def get_observability_overview(
     request: Request,
-    range: Optional[str] = Query(None, description="时间范围：15m/1h/24h/7d/all"),
-    limit: Optional[int] = Query(None, ge=1, description="分页条数（本端点仅回显）"),
-    authorization: Optional[str] = Header(None),
-    x_user_role: str = Header("editor", alias="X-User-Role", description="用户角色权限"),
+    range: str | None = Query(None, description="时间范围：15m/1h/24h/7d/all"),
+    limit: int | None = Query(None, ge=1, description="分页条数（本端点仅回显）"),
+    authorization: str | None = Header(None),
+    x_user_role: str = Header(
+        "editor", alias="X-User-Role", description="用户角色权限"
+    ),
 ):
     """项目/任务计数来自真实进程内服务；未接入指标（p95 延迟）为 null 并登记在 data_gaps。"""
     auth = require_authenticated(authorization, x_user_role)
@@ -169,17 +172,23 @@ def get_observability_overview(
 )
 def get_observability_series(
     request: Request,
-    range: Optional[str] = Query(None, description="时间范围：15m/1h/24h/7d/all"),
-    metrics: Optional[str] = Query(None, description="逗号分隔的指标名，如 asset_response_bytes"),
-    start_ms: Optional[str] = Query(None, description="窗口起始时间戳（毫秒）"),
-    end_ms: Optional[str] = Query(None, description="窗口结束时间戳（毫秒）"),
-    authorization: Optional[str] = Header(None),
-    x_user_role: str = Header("editor", alias="X-User-Role", description="用户角色权限"),
+    range: str | None = Query(None, description="时间范围：15m/1h/24h/7d/all"),
+    metrics: str | None = Query(
+        None, description="逗号分隔的指标名，如 asset_response_bytes"
+    ),
+    start_ms: str | None = Query(None, description="窗口起始时间戳（毫秒）"),
+    end_ms: str | None = Query(None, description="窗口结束时间戳（毫秒）"),
+    authorization: str | None = Header(None),
+    x_user_role: str = Header(
+        "editor", alias="X-User-Role", description="用户角色权限"
+    ),
 ):
     """读取真实采样存储；样本不足 2 点返回 degraded，绝不插值伪造波形。"""
     require_authenticated(authorization, x_user_role)
     return default_observability_service.series(
-        _filters(request, range=range, metrics=metrics, start_ms=start_ms, end_ms=end_ms)
+        _filters(
+            request, range=range, metrics=metrics, start_ms=start_ms, end_ms=end_ms
+        )
     )
 
 
@@ -191,23 +200,25 @@ def get_observability_series(
 )
 def get_observability_events(
     request: Request,
-    range: Optional[str] = Query(None, description="时间范围：15m/1h/24h/7d/all"),
-    limit: Optional[int] = Query(None, ge=1, description="分页条数（1..200）"),
-    status_value: Optional[str] = Query(None, alias="status", description="事件状态过滤"),
-    source: Optional[str] = Query(None, description="来源过滤（当前仅 core.audit）"),
-    level: Optional[str] = Query(None, description="级别过滤：info/warn"),
-    project_id: Optional[str] = Query(None, description="项目过滤（审计事件无该关联）"),
-    job_id: Optional[str] = Query(None, description="任务过滤（审计事件无该关联）"),
-    entity_id: Optional[str] = Query(None, description="实体过滤（审计事件无该关联）"),
-    asset_id: Optional[str] = Query(None, description="素材过滤（审计事件无该关联）"),
-    canvas_id: Optional[str] = Query(None, description="画布过滤（审计事件无该关联）"),
-    stable_id: Optional[str] = Query(None, description="稳定 ID 过滤（审计事件无该关联）"),
-    event_id: Optional[str] = Query(None, description="指定事件标识"),
-    cursor: Optional[str] = Query(None, description="分页游标"),
-    start_ms: Optional[str] = Query(None, description="窗口起始时间戳（毫秒）"),
-    end_ms: Optional[str] = Query(None, description="窗口结束时间戳（毫秒）"),
-    authorization: Optional[str] = Header(None),
-    x_user_role: str = Header("editor", alias="X-User-Role", description="用户角色权限"),
+    range: str | None = Query(None, description="时间范围：15m/1h/24h/7d/all"),
+    limit: int | None = Query(None, ge=1, description="分页条数（1..200）"),
+    status_value: str | None = Query(None, alias="status", description="事件状态过滤"),
+    source: str | None = Query(None, description="来源过滤（当前仅 core.audit）"),
+    level: str | None = Query(None, description="级别过滤：info/warn"),
+    project_id: str | None = Query(None, description="项目过滤（审计事件无该关联）"),
+    job_id: str | None = Query(None, description="任务过滤（审计事件无该关联）"),
+    entity_id: str | None = Query(None, description="实体过滤（审计事件无该关联）"),
+    asset_id: str | None = Query(None, description="素材过滤（审计事件无该关联）"),
+    canvas_id: str | None = Query(None, description="画布过滤（审计事件无该关联）"),
+    stable_id: str | None = Query(None, description="稳定 ID 过滤（审计事件无该关联）"),
+    event_id: str | None = Query(None, description="指定事件标识"),
+    cursor: str | None = Query(None, description="分页游标"),
+    start_ms: str | None = Query(None, description="窗口起始时间戳（毫秒）"),
+    end_ms: str | None = Query(None, description="窗口结束时间戳（毫秒）"),
+    authorization: str | None = Header(None),
+    x_user_role: str = Header(
+        "editor", alias="X-User-Role", description="用户角色权限"
+    ),
 ):
     """只返回真实脱敏审计事件；无事件返回空数组，无法求值的过滤条件返回空 + degraded。"""
     require_authenticated(authorization, x_user_role)
@@ -241,20 +252,22 @@ def get_observability_events(
 )
 def get_observability_tasks(
     request: Request,
-    range: Optional[str] = Query(None, description="时间范围（任务无时间戳，故不支持）"),
-    limit: Optional[int] = Query(None, ge=1, description="分页条数（1..200）"),
-    status_value: Optional[str] = Query(None, alias="status", description="任务状态过滤"),
-    job_id: Optional[str] = Query(None, description="任务标识过滤"),
-    project_id: Optional[str] = Query(None, description="项目过滤（任务无该关联）"),
-    entity_id: Optional[str] = Query(None, description="实体过滤（任务无该关联）"),
-    asset_id: Optional[str] = Query(None, description="素材过滤（任务无该关联）"),
-    canvas_id: Optional[str] = Query(None, description="画布过滤（任务无该关联）"),
-    stable_id: Optional[str] = Query(None, description="稳定 ID 过滤（任务无该关联）"),
-    cursor: Optional[str] = Query(None, description="分页游标"),
-    start_ms: Optional[str] = Query(None, description="窗口起始时间戳（毫秒）"),
-    end_ms: Optional[str] = Query(None, description="窗口结束时间戳（毫秒）"),
-    authorization: Optional[str] = Header(None),
-    x_user_role: str = Header("editor", alias="X-User-Role", description="用户角色权限"),
+    range: str | None = Query(None, description="时间范围（任务无时间戳，故不支持）"),
+    limit: int | None = Query(None, ge=1, description="分页条数（1..200）"),
+    status_value: str | None = Query(None, alias="status", description="任务状态过滤"),
+    job_id: str | None = Query(None, description="任务标识过滤"),
+    project_id: str | None = Query(None, description="项目过滤（任务无该关联）"),
+    entity_id: str | None = Query(None, description="实体过滤（任务无该关联）"),
+    asset_id: str | None = Query(None, description="素材过滤（任务无该关联）"),
+    canvas_id: str | None = Query(None, description="画布过滤（任务无该关联）"),
+    stable_id: str | None = Query(None, description="稳定 ID 过滤（任务无该关联）"),
+    cursor: str | None = Query(None, description="分页游标"),
+    start_ms: str | None = Query(None, description="窗口起始时间戳（毫秒）"),
+    end_ms: str | None = Query(None, description="窗口结束时间戳（毫秒）"),
+    authorization: str | None = Header(None),
+    x_user_role: str = Header(
+        "editor", alias="X-User-Role", description="用户角色权限"
+    ),
 ):
     """返回真实内存任务投影；无法求值的过滤条件返回空 + degraded，不静默忽略。"""
     auth = require_authenticated(authorization, x_user_role)
@@ -273,7 +286,8 @@ def get_observability_tasks(
             cursor=cursor,
             start_ms=start_ms,
             end_ms=end_ms,
-        ), auth_context=auth
+        ),
+        auth_context=auth,
     )
 
 
@@ -285,8 +299,10 @@ def get_observability_tasks(
 )
 def get_observability_health(
     request: Request,
-    authorization: Optional[str] = Header(None),
-    x_user_role: str = Header("editor", alias="X-User-Role", description="用户角色权限"),
+    authorization: str | None = Header(None),
+    x_user_role: str = Header(
+        "editor", alias="X-User-Role", description="用户角色权限"
+    ),
 ):
     """如实反映本进程组件可用性；不可求值组件标 not_integrated，绝不无条件返回 ok。"""
     auth = require_authenticated(authorization, x_user_role)
@@ -301,18 +317,27 @@ def get_observability_health(
 )
 def get_observability_sources(
     request: Request,
-    range: Optional[str] = Query(None, description="时间范围：15m/1h/24h/7d/all"),
-    limit: Optional[int] = Query(None, ge=1, description="分页条数（1..200）"),
-    cursor: Optional[str] = Query(None, description="分页游标"),
-    start_ms: Optional[str] = Query(None, description="窗口起始时间戳（毫秒）"),
-    end_ms: Optional[str] = Query(None, description="窗口结束时间戳（毫秒）"),
-    authorization: Optional[str] = Header(None),
-    x_user_role: str = Header("editor", alias="X-User-Role", description="用户角色权限"),
+    range: str | None = Query(None, description="时间范围：15m/1h/24h/7d/all"),
+    limit: int | None = Query(None, ge=1, description="分页条数（1..200）"),
+    cursor: str | None = Query(None, description="分页游标"),
+    start_ms: str | None = Query(None, description="窗口起始时间戳（毫秒）"),
+    end_ms: str | None = Query(None, description="窗口结束时间戳（毫秒）"),
+    authorization: str | None = Header(None),
+    x_user_role: str = Header(
+        "editor", alias="X-User-Role", description="用户角色权限"
+    ),
 ):
     """返回真实登记的数据源注册表；登记为空才降级说明。"""
     require_authenticated(authorization, x_user_role)
     return default_observability_service.sources(
-        _filters(request, range=range, limit=limit, cursor=cursor, start_ms=start_ms, end_ms=end_ms)
+        _filters(
+            request,
+            range=range,
+            limit=limit,
+            cursor=cursor,
+            start_ms=start_ms,
+            end_ms=end_ms,
+        )
     )
 
 
@@ -324,16 +349,25 @@ def get_observability_sources(
 )
 def get_observability_asset_volumes(
     request: Request,
-    range: Optional[str] = Query(None, description="时间范围：15m/1h/24h/7d/all"),
-    limit: Optional[int] = Query(None, ge=1, description="分页条数（1..200）"),
-    cursor: Optional[str] = Query(None, description="分页游标"),
-    start_ms: Optional[str] = Query(None, description="窗口起始时间戳（毫秒）"),
-    end_ms: Optional[str] = Query(None, description="窗口结束时间戳（毫秒）"),
-    authorization: Optional[str] = Header(None),
-    x_user_role: str = Header("editor", alias="X-User-Role", description="用户角色权限"),
+    range: str | None = Query(None, description="时间范围：15m/1h/24h/7d/all"),
+    limit: int | None = Query(None, ge=1, description="分页条数（1..200）"),
+    cursor: str | None = Query(None, description="分页游标"),
+    start_ms: str | None = Query(None, description="窗口起始时间戳（毫秒）"),
+    end_ms: str | None = Query(None, description="窗口结束时间戳（毫秒）"),
+    authorization: str | None = Header(None),
+    x_user_role: str = Header(
+        "editor", alias="X-User-Role", description="用户角色权限"
+    ),
 ):
     """真实遍历 GW_ALLOWED_ROOTS 统计素材体积；未配置根目录才返回空 + not_integrated。"""
     require_authenticated(authorization, x_user_role)
     return default_observability_service.asset_volumes(
-        _filters(request, range=range, limit=limit, cursor=cursor, start_ms=start_ms, end_ms=end_ms)
+        _filters(
+            request,
+            range=range,
+            limit=limit,
+            cursor=cursor,
+            start_ms=start_ms,
+            end_ms=end_ms,
+        )
     )

@@ -1,0 +1,15 @@
+{
+  "id": "/static/pages/index.html",
+  "name": "Gods\u0027 Workbench",
+  "short_name": "Workbench",
+  "description": "本地优先的创意制作工作台",
+  "lang": "zh-CN",
+  "start_url": "/static/pages/index.html",
+  "scope": "/static/",
+  "display": "standalone",
+  "display_override": ["standalone", "minimal-ui"],
+  "orientation": "landscape",
+  "background_color": "#090a0d",
+  "theme_color": "#090a0d",
+  "icons": [{"src":"data:image/svg+xml,%3Csvg%20xmlns=%22http://www.w3.org/2000/svg%22%20viewBox=%220%200%20512%20512%22%3E%3Crect%20width=%22512%22%20height=%22512%22%20rx=%2296%22%20fill=%22%23090a0d%22/%3E%3Crect%20x=%2236%22%20y=%2236%22%20width=%22440%22%20height=%22440%22%20rx=%2272%22%20fill=%22none%22%20stroke=%22%23dfc384%22%20stroke-width=%2218%22/%3E%3Cpath%20d=%22M349%20170c-23-25-53-38-91-38-74%200-126%2054-126%20128s52%20128%20126%20128c39%200%2072-13%2099-39v-85H258v38h54v30c-14%2011-32%2017-54%2017-48%200-80-36-80-89s32-89%2080-89c24%200%2042%207%2057%2022z%22%20fill=%22%23dfc384%22/%3E%3C/svg%3E","sizes":"any","type":"image/svg+xml","purpose":"any maskable"}]
+}

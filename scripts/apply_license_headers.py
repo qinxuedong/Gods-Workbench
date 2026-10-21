@@ -23,9 +23,9 @@ from __future__ import annotations
 
 import argparse
 import ast
-from pathlib import Path
 import re
 import sys
+from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
@@ -154,7 +154,9 @@ def collect_target_files() -> list[Path]:
     return targets
 
 
-def process_files(dry_run: bool = False, check_only: bool = False) -> tuple[int, int, int]:
+def process_files(
+    dry_run: bool = False, check_only: bool = False
+) -> tuple[int, int, int]:
     targets = collect_target_files()
     injected_count = 0
     skipped_count = 0
@@ -186,7 +188,10 @@ def process_files(dry_run: bool = False, check_only: bool = False) -> tuple[int,
             try:
                 ast.parse(new_content, filename=rel_path)
             except SyntaxError as e:
-                print(f"[ERROR] Syntax error when injecting {rel_path}: {e}", file=sys.stderr)
+                print(
+                    f"[ERROR] Syntax error when injecting {rel_path}: {e}",
+                    file=sys.stderr,
+                )
                 sys.exit(1)
         elif path.suffix == ".js":
             new_content = inject_js_header(content, newline)
@@ -204,12 +209,22 @@ def process_files(dry_run: bool = False, check_only: bool = False) -> tuple[int,
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Inject Apache License 2.0 headers into source files.")
-    parser.add_argument("--dry-run", action="store_true", help="Simulate injection without modifying files.")
-    parser.add_argument("--check", action="store_true", help="Check compliance without modifying files.")
+    parser = argparse.ArgumentParser(
+        description="Inject Apache License 2.0 headers into source files."
+    )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Simulate injection without modifying files.",
+    )
+    parser.add_argument(
+        "--check", action="store_true", help="Check compliance without modifying files."
+    )
     args = parser.parse_args()
 
-    injected, skipped, missing = process_files(dry_run=args.dry_run, check_only=args.check)
+    injected, skipped, missing = process_files(
+        dry_run=args.dry_run, check_only=args.check
+    )
 
     print("\n--- Summary ---")
     print(f"Processed: {injected + skipped}")

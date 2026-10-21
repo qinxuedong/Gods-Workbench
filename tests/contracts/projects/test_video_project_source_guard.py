@@ -4,17 +4,17 @@ from __future__ import annotations
 
 import json
 import os
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from pathlib import Path
 import subprocess
 import sys
 import threading
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
 
-from gw.api.app import create_app
 from gw.api import routes_asset_registry, routes_projects
+from gw.api.app import create_app
 from gw.core.auth import AuthContext, require_edit_access
 from gw.projects_hub import service as projects_service_module
 from gw.projects_hub.models import ProjectCreateRequest, ProjectType
@@ -76,15 +76,17 @@ def _persistent_http_service(tmp_path, monkeypatch, provider_url):
     monkeypatch.setenv("GW_PROVIDER_REVIEW_KEY", "local-review-fixture")
     monkeypatch.setenv(
         "GW_PROVIDER_RUNTIME_JSON",
-        json.dumps({
-            "review": {
-                "base_url": provider_url,
-                "api_key_env": "GW_PROVIDER_REVIEW_KEY",
-                "models": ["model"],
-                "default_model": "model",
-                "video_protocol": "newapi_video",
+        json.dumps(
+            {
+                "review": {
+                    "base_url": provider_url,
+                    "api_key_env": "GW_PROVIDER_REVIEW_KEY",
+                    "models": ["model"],
+                    "default_model": "model",
+                    "video_protocol": "newapi_video",
+                }
             }
-        }),
+        ),
     )
 
     projects = ProjectsService(seed_golden_fixture=False, persistent=True)
@@ -168,7 +170,10 @@ def test_new_process_quarantines_recovery_when_project_source_cannot_be_trusted(
     server, thread, provider_url, provider_state = _provider_server()
     try:
         project_id, job_id = _create_http_video_job(
-            tmp_path, monkeypatch, provider_url, with_upstream=job_kind == "known-upstream"
+            tmp_path,
+            monkeypatch,
+            provider_url,
+            with_upstream=job_kind == "known-upstream",
         )
         data_root = tmp_path / "data"
         snapshot = data_root / "projects.json"
@@ -207,7 +212,8 @@ def test_new_process_quarantines_recovery_when_project_source_cannot_be_trusted(
         result = json.loads(child.stdout)
         assert result["status"] == "interrupted", result
         assert result["error_code"] in {
-            "VIDEO_PROJECT_NOT_FOUND", "VIDEO_PROJECT_SOURCE_UNAVAILABLE"
+            "VIDEO_PROJECT_NOT_FOUND",
+            "VIDEO_PROJECT_SOURCE_UNAVAILABLE",
         }
         assert provider_state == {"posts": 0, "polls": 0, "downloads": 0}
     finally:
@@ -216,7 +222,9 @@ def test_new_process_quarantines_recovery_when_project_source_cannot_be_trusted(
         thread.join(timeout=3)
 
 
-def test_authorize_asset_http_rejects_missing_project_snapshot_before_asset_resolution(tmp_path, monkeypatch):
+def test_authorize_asset_http_rejects_missing_project_snapshot_before_asset_resolution(
+    tmp_path, monkeypatch
+):
     """HTTP授权入口先核对项目真源；孤儿视频ACL不能创建素材授权。"""
     _persistent_http_service(tmp_path, monkeypatch, "http://127.0.0.1:9")
     with TestClient(create_app()) as client:
@@ -238,19 +246,26 @@ def test_authorize_asset_http_rejects_missing_project_snapshot_before_asset_reso
         assert response.status_code == 503, response.text
         assert response.json()["detail"]["code"] == "VIDEO_PROJECT_SOURCE_UNAVAILABLE"
         with service.store.reader() as db:
-            assert db.execute(
-                "SELECT 1 FROM video_project_assets WHERE project_id=? AND asset_id=?",
-                (project_id, "ast-review"),
-            ).fetchone() is None
+            assert (
+                db.execute(
+                    "SELECT 1 FROM video_project_assets WHERE project_id=? AND asset_id=?",
+                    (project_id, "ast-review"),
+                ).fetchone()
+                is None
+            )
 
 
-def test_local_export_recovery_is_quarantined_when_project_snapshot_is_missing(tmp_path, monkeypatch):
+def test_local_export_recovery_is_quarantined_when_project_snapshot_is_missing(
+    tmp_path, monkeypatch
+):
     """本地导出恢复同样需要项目真源；缺快照不得解析素材或发布产物。"""
     data_root = tmp_path / "data"
     monkeypatch.setenv("GW_DATA_DIR", str(data_root))
     projects = ProjectsService(seed_golden_fixture=False, persistent=True)
     monkeypatch.setattr(video_service_module, "default_projects_service", projects)
-    context = AuthContext(role="editor", subject="export-owner", mode="local", identity_domain="local_dev")
+    context = AuthContext(
+        role="editor", subject="export-owner", mode="local", identity_domain="local_dev"
+    )
     owner = VideoTaskService.actor(context)
     created = projects.create_project(
         ProjectCreateRequest(name="本地导出真源审核", project_type=ProjectType.FILM),
@@ -277,15 +292,21 @@ def test_local_export_recovery_is_quarantined_when_project_snapshot_is_missing(t
         assert blocked["error_code"] == "VIDEO_PROJECT_SOURCE_UNAVAILABLE"
         assert list(store.artifact_root.glob("*.mp4")) == []
         with store.reader() as db:
-            assert db.execute(
-                "SELECT COUNT(*) FROM video_artifacts WHERE job_id=?", (row["job_id"],)
-            ).fetchone()[0] == 0
+            assert (
+                db.execute(
+                    "SELECT COUNT(*) FROM video_artifacts WHERE job_id=?",
+                    (row["job_id"],),
+                ).fetchone()[0]
+                == 0
+            )
     finally:
         service.executor.shutdown(wait=True, cancel_futures=True)
 
 
 @pytest.mark.parametrize("damage", ["missing", "corrupt"])
-def test_http_claim_fails_closed_without_trusted_project_snapshot(tmp_path, monkeypatch, damage):
+def test_http_claim_fails_closed_without_trusted_project_snapshot(
+    tmp_path, monkeypatch, damage
+):
     """项目真源缺失或损坏时，真实claim路由不得新建/修改视频ACL。"""
     _persistent_http_service(tmp_path, monkeypatch, "http://127.0.0.1:9")
     projects = video_service_module.default_projects_service
@@ -319,8 +340,11 @@ def test_http_claim_fails_closed_without_trusted_project_snapshot(tmp_path, monk
     with service.store.reader() as db:
         assert db.execute("SELECT COUNT(*) FROM video_projects").fetchone()[0] == 0
 
+
 @pytest.mark.parametrize("damage", ["missing", "corrupt"])
-def test_original_actor_can_observe_and_cancel_during_project_source_outage(tmp_path, monkeypatch, damage):
+def test_original_actor_can_observe_and_cancel_during_project_source_outage(
+    tmp_path, monkeypatch, damage
+):
     """真实回环轮询在途时，源故障不切断任务止损；其他主体和产物仍隔离。"""
     entered, release = threading.Event(), threading.Event()
 
@@ -347,7 +371,10 @@ def test_original_actor_can_observe_and_cancel_during_project_source_outage(tmp_
             snapshot.rename(snapshot.with_suffix(".saved"))
         else:
             snapshot.write_text("{损坏", encoding="utf-8")
-        outsider = {"Authorization": "Bearer independent-outside-actor", "X-User-Role": "editor"}
+        outsider = {
+            "Authorization": "Bearer independent-outside-actor",
+            "X-User-Role": "editor",
+        }
         with TestClient(create_app()) as client:
             detail = client.get(f"/api/video-tasks/{job_id}", headers=AUTH)
             assert detail.status_code == 200, detail.text
@@ -356,10 +383,26 @@ def test_original_actor_can_observe_and_cancel_during_project_source_outage(tmp_
             listed = client.get("/api/video-tasks", headers=AUTH)
             assert listed.status_code == 200, listed.text
             assert job_id in {row["job_id"] for row in listed.json()["items"]}
-            assert client.get(f"/api/video-tasks/{job_id}", headers=outsider).status_code == 404
-            assert client.post(f"/api/video-tasks/{job_id}/cancel", headers=outsider).status_code == 404
-            assert client.get("/api/video-tasks", headers=outsider).json()["items"] == []
-            assert client.post(f"/api/video-tasks/{job_id}/cancel", headers={**AUTH, "X-User-Role": "readonly"}).status_code == 403
+            assert (
+                client.get(f"/api/video-tasks/{job_id}", headers=outsider).status_code
+                == 404
+            )
+            assert (
+                client.post(
+                    f"/api/video-tasks/{job_id}/cancel", headers=outsider
+                ).status_code
+                == 404
+            )
+            assert (
+                client.get("/api/video-tasks", headers=outsider).json()["items"] == []
+            )
+            assert (
+                client.post(
+                    f"/api/video-tasks/{job_id}/cancel",
+                    headers={**AUTH, "X-User-Role": "readonly"},
+                ).status_code
+                == 403
+            )
             media = client.get(f"/api/video-tasks/{job_id}/content", headers=AUTH)
             assert media.status_code == 503
             assert media.json()["detail"]["code"] == "VIDEO_PROJECT_SOURCE_UNAVAILABLE"

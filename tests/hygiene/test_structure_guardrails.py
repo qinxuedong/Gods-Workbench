@@ -1,4 +1,5 @@
 """新仓的结构与防熵增门禁；路径例外必须逐条登记。"""
+
 from __future__ import annotations
 
 import ast
@@ -6,8 +7,8 @@ import importlib.util
 import re
 import subprocess
 from collections import defaultdict
+from collections.abc import Iterable
 from pathlib import Path, PurePosixPath
-from typing import Iterable
 
 import pytest
 
@@ -20,6 +21,7 @@ _ROOT_ALLOWLIST = frozenset(
         ".local",
         "gw",
         "web",
+        "clients",
         "docs",
         "scripts",
         "tests",
@@ -37,6 +39,7 @@ _ROOT_ALLOWLIST = frozenset(
         "requirements-dev.txt",
         "requirements.lock",
         "requirements.lock.hashes",
+        "ruff.toml",
         "start.bat",
         "run.py",
     }
@@ -126,6 +129,7 @@ _BATCH_SUFFIX = re.compile(r"_b[0-9]+$", re.IGNORECASE)
 _FROZEN_ROUTE_PATHS = frozenset(
     {
         "gw/api/routes_ai.py",
+        "gw/api/routes_export.py",
         "gw/api/routes_asset_library.py",
         "gw/api/routes_asset_library_b4.py",
         "gw/api/routes_asset_registry.py",
@@ -294,7 +298,18 @@ def _route_group_key(path: str) -> str | None:
 
 
 _ROUTE_DECORATORS = frozenset(
-    {"get", "post", "put", "patch", "delete", "options", "head", "api_route", "websocket", "websocket_route"}
+    {
+        "get",
+        "post",
+        "put",
+        "patch",
+        "delete",
+        "options",
+        "head",
+        "api_route",
+        "websocket",
+        "websocket_route",
+    }
 )
 
 
@@ -306,7 +321,11 @@ def _is_router_carrier_source(source: str) -> bool:
         return False
     router_names = {"APIRouter"}
     for node in ast.walk(tree):
-        if isinstance(node, ast.ImportFrom) and node.module and node.module.startswith("fastapi"):
+        if (
+            isinstance(node, ast.ImportFrom)
+            and node.module
+            and node.module.startswith("fastapi")
+        ):
             router_names.update(
                 alias.asname or alias.name
                 for alias in node.names
@@ -328,8 +347,13 @@ def _is_router_carrier_source(source: str) -> bool:
                 return True
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
             for decorator in node.decorator_list:
-                decorated = decorator.func if isinstance(decorator, ast.Call) else decorator
-                if isinstance(decorated, ast.Attribute) and decorated.attr in _ROUTE_DECORATORS:
+                decorated = (
+                    decorator.func if isinstance(decorator, ast.Call) else decorator
+                )
+                if (
+                    isinstance(decorated, ast.Attribute)
+                    and decorated.attr in _ROUTE_DECORATORS
+                ):
                     return True
     return False
 
@@ -338,7 +362,11 @@ def _route_carrier_sources(paths: Iterable[str]) -> dict[str, str]:
     carriers: dict[str, str] = {}
     for raw_path in paths:
         path = raw_path.replace("\\", "/")
-        if not path.startswith("gw/") or not path.endswith(".py") or path == "gw/api/app.py":
+        if (
+            not path.startswith("gw/")
+            or not path.endswith(".py")
+            or path == "gw/api/app.py"
+        ):
             continue
         source_path = _REPO_ROOT.joinpath(*PurePosixPath(path).parts)
         try:
@@ -359,7 +387,11 @@ def _router_api_prefix_domains(source: str) -> frozenset[str]:
 
     router_names = {"APIRouter"}
     for node in ast.walk(tree):
-        if isinstance(node, ast.ImportFrom) and node.module and node.module.startswith("fastapi"):
+        if (
+            isinstance(node, ast.ImportFrom)
+            and node.module
+            and node.module.startswith("fastapi")
+        ):
             router_names.update(
                 alias.asname or alias.name
                 for alias in node.names
@@ -371,18 +403,25 @@ def _router_api_prefix_domains(source: str) -> frozenset[str]:
         if not isinstance(node, ast.Call):
             continue
         called = node.func
-        is_router = (
-            isinstance(called, ast.Name) and called.id in router_names
-        ) or (isinstance(called, ast.Attribute) and called.attr == "APIRouter")
+        is_router = (isinstance(called, ast.Name) and called.id in router_names) or (
+            isinstance(called, ast.Attribute) and called.attr == "APIRouter"
+        )
         if not is_router:
             continue
 
-        prefix_node = next((keyword.value for keyword in node.keywords if keyword.arg == "prefix"), None)
+        prefix_node = next(
+            (keyword.value for keyword in node.keywords if keyword.arg == "prefix"),
+            None,
+        )
         if prefix_node is None and node.args:
             prefix_node = node.args[0]
-        if not isinstance(prefix_node, ast.Constant) or not isinstance(prefix_node.value, str):
+        if not isinstance(prefix_node, ast.Constant) or not isinstance(
+            prefix_node.value, str
+        ):
             continue
-        segments = [segment for segment in prefix_node.value.strip("/").split("/") if segment]
+        segments = [
+            segment for segment in prefix_node.value.strip("/").split("/") if segment
+        ]
         if len(segments) >= 2 and segments[0].casefold() == "api":
             domains.add(_canonical_route_domain(segments[1]))
     return frozenset(domains)
@@ -392,7 +431,9 @@ def _new_parallel_route_paths(
     route_sources: dict[str, str], baseline_paths: Iterable[str] = _FROZEN_ROUTE_PATHS
 ) -> list[str]:
     baseline = {path.replace("\\", "/") for path in baseline_paths}
-    baseline_domains = {domain for path in baseline if (domain := _route_group_key(path))}
+    baseline_domains = {
+        domain for path in baseline if (domain := _route_group_key(path))
+    }
     route_carriers = {
         path.replace("\\", "/"): source
         for path, source in route_sources.items()
@@ -416,6 +457,7 @@ def _new_parallel_route_paths(
         if domain in baseline_domains or len(paths_for_domain) > 1:
             offenders.update(paths_for_domain)
     return sorted(offenders)
+
 
 def _module_info(path: Path, package_root: Path) -> tuple[str, str | None, bool]:
     relative = path.relative_to(package_root)
@@ -446,9 +488,13 @@ def _domain_import_graph(package_root: Path) -> dict[str, set[str]]:
         if source_domain not in domains:
             continue
         try:
-            tree = ast.parse(source_path.read_text(encoding="utf-8"), filename=str(source_path))
+            tree = ast.parse(
+                source_path.read_text(encoding="utf-8"), filename=str(source_path)
+            )
         except (OSError, SyntaxError) as exc:
-            pytest.fail(f"领域源码无法静态解析 {source_path.relative_to(_REPO_ROOT)}：{exc}")
+            pytest.fail(
+                f"领域源码无法静态解析 {source_path.relative_to(_REPO_ROOT)}：{exc}"
+            )
         for node in ast.walk(tree):
             imported_modules: set[str] = set()
             if isinstance(node, ast.Import):
@@ -481,6 +527,7 @@ def _directed_cycles(graph: dict[str, set[str]]) -> frozenset[tuple[str, ...]]:
     """列举规范化的简单有向环，避免依赖额外图算法套件。"""
     cycles: set[tuple[str, ...]] = set()
     for start in sorted(graph):
+
         def visit(node: str, path: list[str]) -> None:
             for neighbor in sorted(graph.get(node, set())):
                 if neighbor == start and len(path) > 1:
@@ -503,16 +550,22 @@ def test_root_contains_only_approved_top_level_items() -> None:
 def test_only_local_readme_may_be_tracked() -> None:
     tracked = _git_ls_files("--", ".local/")
     unexpected = _unapproved_local_tracked_paths(tracked)
-    assert not unexpected, ".local/ 除 README 外不得跟踪运行数据：" + ", ".join(unexpected)
+    assert not unexpected, ".local/ 除 README 外不得跟踪运行数据：" + ", ".join(
+        unexpected
+    )
 
 
 def _init_temp_git_repo_with_ignored_local(root: Path) -> None:
-    subprocess.run(["git", "init", "--quiet"], cwd=root, check=True, capture_output=True, text=True)
+    subprocess.run(
+        ["git", "init", "--quiet"], cwd=root, check=True, capture_output=True, text=True
+    )
     (root / ".gitignore").write_text(".local/*\n!.local/README.md\n", encoding="utf-8")
     (root / ".local").mkdir()
 
 
-def test_local_guard_detects_data_even_when_force_tracked_in_git(tmp_path: Path) -> None:
+def test_local_guard_detects_data_even_when_force_tracked_in_git(
+    tmp_path: Path,
+) -> None:
     _init_temp_git_repo_with_ignored_local(tmp_path)
     (tmp_path / ".local" / "data").write_text("runtime payload", encoding="utf-8")
     subprocess.run(
@@ -530,7 +583,9 @@ def test_local_guard_detects_data_even_when_force_tracked_in_git(tmp_path: Path)
 
 def test_local_guard_allows_only_readme_in_a_real_git_index(tmp_path: Path) -> None:
     _init_temp_git_repo_with_ignored_local(tmp_path)
-    (tmp_path / ".local" / "README.md").write_text("local-only guidance", encoding="utf-8")
+    (tmp_path / ".local" / "README.md").write_text(
+        "local-only guidance", encoding="utf-8"
+    )
     subprocess.run(
         ["git", "add", "--", ".local/README.md"],
         cwd=tmp_path,
@@ -545,7 +600,9 @@ def test_local_guard_allows_only_readme_in_a_real_git_index(tmp_path: Path) -> N
 
 
 def test_path_segments_reject_only_named_markers_and_use_exact_exceptions() -> None:
-    assert not _path_violations({"gw/prompt_registry/template.py", "tests/attempt/test_retry.py"})
+    assert not _path_violations(
+        {"gw/prompt_registry/template.py", "tests/attempt/test_retry.py"}
+    )
     assert not _path_violations({"gw/api/routes_asset_library_b4.py"})
     assert not _path_violations({"tests/contracts/auth/test_phase11_b1_auth.py"})
     assert _path_violations({"gw/tmp/probe.py"})
@@ -558,8 +615,12 @@ def test_path_segments_reject_only_named_markers_and_use_exact_exceptions() -> N
 def test_no_new_path_uses_a_prohibited_segment_or_suffix() -> None:
     violations = _path_violations(_working_tree_paths())
     if violations:
-        details = [f"{path}: {', '.join(reasons)}" for path, reasons in violations.items()]
-        pytest.fail("新增路径含施工标记；仅允许冻结树中的精确路径例外：\n" + "\n".join(details))
+        details = [
+            f"{path}: {', '.join(reasons)}" for path, reasons in violations.items()
+        ]
+        pytest.fail(
+            "新增路径含施工标记；仅允许冻结树中的精确路径例外：\n" + "\n".join(details)
+        )
 
 
 def test_no_new_parallel_route_module_for_an_existing_domain() -> None:
@@ -581,9 +642,9 @@ def test_parallel_route_detector_rejects_a_second_projects_router() -> None:
     source = """from fastapi import APIRouter
 router = APIRouter()
 """
-    assert _new_parallel_route_paths({"gw/api/routes_projects_calendar.py": source}, baseline) == [
-        "gw/api/routes_projects_calendar.py"
-    ]
+    assert _new_parallel_route_paths(
+        {"gw/api/routes_projects_calendar.py": source}, baseline
+    ) == ["gw/api/routes_projects_calendar.py"]
 
 
 def test_parallel_route_detector_rejects_an_arbitrarily_named_domain_router() -> None:
@@ -600,7 +661,9 @@ def test_parallel_route_detector_rejects_a_new_api_router_module() -> None:
 router = APIRouter(prefix="/api/projects")
 """
     candidate = "gw/api/projects_extra.py"
-    assert _new_parallel_route_paths({candidate: source}, {"gw/api/routes_projects.py"}) == [candidate]
+    assert _new_parallel_route_paths(
+        {candidate: source}, {"gw/api/routes_projects.py"}
+    ) == [candidate]
 
 
 def test_parallel_route_detector_rejects_cross_directory_existing_api_prefix() -> None:
@@ -608,14 +671,25 @@ def test_parallel_route_detector_rejects_cross_directory_existing_api_prefix() -
 router = APIRouter(prefix="/api/projects")
 """
     candidate = "gw/other_domain/router.py"
-    assert _new_parallel_route_paths({candidate: source}, {"gw/api/routes_projects.py"}) == [candidate]
+    assert _new_parallel_route_paths(
+        {candidate: source}, {"gw/api/routes_projects.py"}
+    ) == [candidate]
 
 
 def test_parallel_route_detector_preserves_frozen_dual_generation_routes() -> None:
     route_pairs = {
-        "asset_library": ("gw/api/routes_asset_library.py", "gw/api/routes_asset_library_b4.py"),
-        "asset_review": ("gw/api/routes_asset_review.py", "gw/api/routes_asset_review_b6.py"),
-        "prompt_library": ("gw/api/routes_prompt_library.py", "gw/api/routes_prompt_library_b8.py"),
+        "asset_library": (
+            "gw/api/routes_asset_library.py",
+            "gw/api/routes_asset_library_b4.py",
+        ),
+        "asset_review": (
+            "gw/api/routes_asset_review.py",
+            "gw/api/routes_asset_review_b6.py",
+        ),
+        "prompt_library": (
+            "gw/api/routes_prompt_library.py",
+            "gw/api/routes_prompt_library_b8.py",
+        ),
     }
     sources: dict[str, str] = {}
     baseline: set[str] = set()
@@ -648,10 +722,6 @@ def test_cycle_detector_catches_a_three_domain_counterexample() -> None:
     assert ("auth", "projects", "god_canvas") in _directed_cycles(graph)
 
 
-
-
-
-
 # ---------------------------------------------------------------------------
 # 2026-10-07 工作流批次新增载体登记
 # 这两个文件属于既有领域包 gw/god_workflow/（该包未登记在 _FROZEN_ROUTE_PATHS，
@@ -676,12 +746,17 @@ def test_workflow_domain_carriers_do_not_declare_new_api_prefix_domains() -> Non
     ``_FROZEN_ROUTE_PATHS`` 只登记 ``gw/api/`` 下的路由文件，因此这里不断言
     它们出现在该基线中——只断言它们没有把新的 ``/api/<领域>`` 前缀带进来。
     """
-    baseline = {domain for path in _FROZEN_ROUTE_PATHS if (domain := _route_group_key(path))}
+    baseline = {
+        domain for path in _FROZEN_ROUTE_PATHS if (domain := _route_group_key(path))
+    }
     for relative in _WORKFLOW_DOMAIN_CARRIER_FILES:
         source = (_REPO_ROOT / relative).read_text(encoding="utf-8")
         assert not _router_api_prefix_domains(source), relative
         assert not _is_router_carrier_source(source), relative
-        assert _route_group_key(relative) not in baseline or _route_group_key(relative) == "god_workflow", relative
+        assert (
+            _route_group_key(relative) not in baseline
+            or _route_group_key(relative) == "god_workflow"
+        ), relative
 
 
 # ---------------------------------------------------------------------------
@@ -701,21 +776,28 @@ def test_working_tree_paths_are_strictly_ascii_and_space_free() -> None:
     """依据 GNS 规范，工作树中所有纳入版本与未忽略文件路径必须为纯 ASCII 且不含空格。"""
     paths = _working_tree_paths()
     non_ascii_paths = [p for p in paths if not p.isascii()]
-    assert not non_ascii_paths, f"发现非 ASCII 文件/目录路径，违反全局命名规范：{non_ascii_paths}"
+    assert not non_ascii_paths, (
+        f"发现非 ASCII 文件/目录路径，违反全局命名规范：{non_ascii_paths}"
+    )
 
     space_paths = [p for p in paths if " " in p]
-    assert not space_paths, f"发现包含空格的文件/目录路径，违反全局命名规范：{space_paths}"
+    assert not space_paths, (
+        f"发现包含空格的文件/目录路径，违反全局命名规范：{space_paths}"
+    )
 
 
 def test_frontend_controller_naming_convention() -> None:
     """前端控制器必须遵循 *-controller.js 规范；历史遗留文件逐条冻结。"""
     controller_paths = [
-        p for p in _working_tree_paths()
+        p
+        for p in _working_tree_paths()
         if p.startswith("web/js/controllers/") and p.endswith(".js")
     ]
     violations = [
-        p for p in controller_paths
+        p
+        for p in controller_paths
         if not p.endswith("-controller.js") and p not in _FROZEN_LEGACY_CONTROLLER_PATHS
     ]
-    assert not violations, f"前端控制器命名违反规范（应为 *-controller.js）：{violations}"
-
+    assert not violations, (
+        f"前端控制器命名违反规范（应为 *-controller.js）：{violations}"
+    )

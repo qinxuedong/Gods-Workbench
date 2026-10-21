@@ -3,13 +3,13 @@
 保障仓库零旧仓实现泄漏、零未授权二进制资源、零插件协议隐式实现。
 """
 
-from pathlib import Path, PurePosixPath
 import hashlib
 import json
 import re
 import subprocess
-import pytest
+from pathlib import Path, PurePosixPath
 
+import pytest
 
 # 禁用扩展名 / 白名单的**唯一事实来源**：`tests/hygiene/cleanroom_extensions.py`。
 # 历史教训：同一份清单曾在三个位置各写一遍，并已实际漂移（39 / 39 / 27 项）。
@@ -54,7 +54,9 @@ def _git_visible_paths(repo_root: Path) -> list[str]:
         capture_output=True,
     )
     if result.returncode:
-        pytest.fail(f"无法读取 Git 可见文件清单：{result.stderr.decode('utf-8', errors='replace')}")
+        pytest.fail(
+            f"无法读取 Git 可见文件清单：{result.stderr.decode('utf-8', errors='replace')}"
+        )
     return [entry.decode("utf-8") for entry in result.stdout.split(b"\0") if entry]
 
 
@@ -76,14 +78,14 @@ def test_no_banned_binary_assets(repo_root: Path):
     """确保 Git 可见文件中绝不存在白名单外的受限二进制资源。"""
     found_banned = _banned_binary_paths(repo_root)
     assert not found_banned, (
-        "发现受限二进制资源进入仓库"
-        f"（不在白名单内）: {found_banned}"
+        f"发现受限二进制资源进入仓库（不在白名单内）: {found_banned}"
     )
 
 
-
 def _init_binary_scan_repo(root: Path) -> None:
-    subprocess.run(["git", "init", "--quiet"], cwd=root, check=True, capture_output=True)
+    subprocess.run(
+        ["git", "init", "--quiet"], cwd=root, check=True, capture_output=True
+    )
 
 
 def test_binary_allowlist_is_path_exact(tmp_path: Path) -> None:
@@ -96,7 +98,9 @@ def test_binary_allowlist_is_path_exact(tmp_path: Path) -> None:
 
     (tmp_path / "tools").mkdir()
     (tmp_path / "tools" / "start.bat").write_bytes(b"not approved here")
-    (tmp_path / "web" / "vendor" / "fonts" / "Other.otf").write_bytes(b"not approved font")
+    (tmp_path / "web" / "vendor" / "fonts" / "Other.otf").write_bytes(
+        b"not approved font"
+    )
 
     assert _banned_binary_paths(tmp_path) == [
         "tools/start.bat",
@@ -107,7 +111,9 @@ def test_binary_allowlist_is_path_exact(tmp_path: Path) -> None:
 def test_ignored_local_runtime_video_passes_until_force_tracked(tmp_path: Path) -> None:
     """忽略的开发视频不扫描；一旦加入 Git 索引就必须被二进制门禁拒绝。"""
     _init_binary_scan_repo(tmp_path)
-    (tmp_path / ".gitignore").write_text(".local/*\n!.local/README.md\n", encoding="utf-8")
+    (tmp_path / ".gitignore").write_text(
+        ".local/*\n!.local/README.md\n", encoding="utf-8"
+    )
     runtime_dir = tmp_path / ".local" / "runtime-dev"
     runtime_dir.mkdir(parents=True)
     video = runtime_dir / "sample.mp4"
@@ -140,7 +146,9 @@ def test_ci_workflow_banned_extensions_match_single_source(repo_root: Path):
     导致「本地绿 / CI 空窗」。此用例把 CI 清单也钉在唯一来源上，
     任何一侧单独改动都会立刻变红。
     """
-    workflow = (repo_root / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
+    workflow = (repo_root / ".github" / "workflows" / "ci.yml").read_text(
+        encoding="utf-8"
+    )
     block = re.search(r"banned_extensions = \{(.*?)\}", workflow, re.S)
     assert block, "CI 工作流中未找到 banned_extensions 清单"
     ci_set = set(re.findall(r'"(\.[a-z0-9]+)"', block.group(1)))
@@ -165,7 +173,9 @@ def test_phase6_deep_hygiene_uses_single_source(repo_root: Path):
     other = (repo_root / "tests" / "hygiene" / "test_phase6_deep_hygiene.py").read_text(
         encoding="utf-8"
     )
-    assert "cleanroom_extensions" in other, "Phase 6 套件必须导入唯一来源，禁止自带字面量清单"
+    assert "cleanroom_extensions" in other, (
+        "Phase 6 套件必须导入唯一来源，禁止自带字面量清单"
+    )
     literal = re.search(r"banned_extensions\s*=\s*\{", other)
     assert not literal, "Phase 6 套件仍存在自带 banned_extensions 字面量"
 
@@ -178,7 +188,9 @@ def test_src_has_no_legacy_code_artifacts(repo_root: Path):
     for py_file in src_dir.rglob("*.py"):
         text = py_file.read_text(encoding="utf-8")
         # 严禁在实现代码中硬编码旧仓路径
-        assert "Gods-Workbench-release" not in text, f"{py_file.name} 中不得出现旧仓路径"
+        assert "Gods-Workbench-release" not in text, (
+            f"{py_file.name} 中不得出现旧仓路径"
+        )
         assert "import tools.photoshop" not in text
         assert "import asset_registry.canvas_engine" not in text
 
@@ -255,7 +267,9 @@ def test_static_layer_has_no_legacy_integration_markers(repo_root: Path):
             content = path.read_text(encoding="utf-8").lower()
             for marker in deleted_reference_markers:
                 if marker in content:
-                    reference_violations.append(f"{path.relative_to(repo_root)}: {marker}")
+                    reference_violations.append(
+                        f"{path.relative_to(repo_root)}: {marker}"
+                    )
     assert not reference_violations, f"保留页面引用已删除路径: {reference_violations}"
 
     # 工作流工作台是本轮明确准入的新领域页面；其 provider 标识属于真实工作流
@@ -277,8 +291,7 @@ def test_static_layer_has_no_legacy_integration_markers(repo_root: Path):
                 if marker in content:
                     scope_marker_violations.append(f"{relative}: {marker}")
     assert not scope_marker_violations, (
-        "静态层不得保留 comfyui/runninghub 业务标识或调用: "
-        f"{scope_marker_violations}"
+        f"静态层不得保留 comfyui/runninghub 业务标识或调用: {scope_marker_violations}"
     )
 
 
@@ -286,8 +299,12 @@ def test_static_layer_has_no_legacy_integration_markers(repo_root: Path):
 # 登记只保存当前新仓的分类、准入依据和规范化哈希；不保存旧仓源码、提示词正文、
 # 凭据或完整历史授权账本。历史材料继续留在洁净源仓，不因测试需要复制进新仓。
 ADMISSION_METADATA_PATH = "tests/hygiene/fixtures/cleanroom_admission_metadata.json"
-ADMISSION_METADATA_SHA256 = "e8f62b78d123b1925fce3b2fe1d843b42715d22eb7c949594fa06f5ea461edd4"
-QUARANTINED_PROMPT_ORIGINAL_PATH = "web/system-prompts/infinite-canvas-prompt-templates.md"
+ADMISSION_METADATA_SHA256 = (
+    "7b7560e38708c49b2294e4b318736b1911887820a664f5307da37978493a0f93"
+)
+QUARANTINED_PROMPT_ORIGINAL_PATH = (
+    "web/system-prompts/infinite-canvas-prompt-templates.md"
+)
 QUARANTINED_PROMPT_URL = "/static/system-prompts/infinite-canvas-prompt-templates.md"
 
 
@@ -322,7 +339,8 @@ def test_quarantined_prompt_is_absent_from_static_tree(repo_root: Path):
 
     metadata = _load_admission_metadata(repo_root)
     records = [
-        item for item in metadata.get("excluded_artifacts", [])
+        item
+        for item in metadata.get("excluded_artifacts", [])
         if item.get("source_path") == QUARANTINED_PROMPT_ORIGINAL_PATH
     ]
     assert len(records) == 1, "隔离提示词必须有且仅有一条不含正文的排除登记"
@@ -341,7 +359,9 @@ def test_quarantined_prompt_url_is_rejected_by_real_http(client):
         for method in ("GET", "HEAD"):
             response = client.request(method, url, follow_redirects=False)
             assert not response.is_success, f"隔离 URL 被提供: {method} {url}"
-            assert not response.is_redirect, f"隔离 URL 不得通过跳转逃逸: {method} {url}"
+            assert not response.is_redirect, (
+                f"隔离 URL 不得通过跳转逃逸: {method} {url}"
+            )
             if method == "GET":
                 assert "无限画布" not in response.text and "v2.0" not in response.text
 
@@ -350,7 +370,8 @@ def test_quarantine_registry_records_metadata_without_prompt_body(repo_root: Pat
     """隔离登记只含路径、状态和裁决，不得内嵌提示词正文或正文副本。"""
     metadata = _load_admission_metadata(repo_root)
     records = [
-        item for item in metadata.get("excluded_artifacts", [])
+        item
+        for item in metadata.get("excluded_artifacts", [])
         if item.get("source_path") == QUARANTINED_PROMPT_ORIGINAL_PATH
     ]
     assert len(records) == 1
@@ -366,7 +387,9 @@ def test_quarantined_prompt_excluded_from_delivery_export_manifest(repo_root: Pa
     metadata = _load_admission_metadata(repo_root)
     admitted_paths = {entry.get("path") for entry in metadata.get("admitted_files", [])}
     assert QUARANTINED_PROMPT_ORIGINAL_PATH not in admitted_paths
-    assert all("infinite-canvas-prompt-templates.md" not in path for path in admitted_paths)
+    assert all(
+        "infinite-canvas-prompt-templates.md" not in path for path in admitted_paths
+    )
     assert not (repo_root / QUARANTINED_PROMPT_ORIGINAL_PATH).exists()
 
 
@@ -395,7 +418,9 @@ def test_accepted_non_canvas_slices_match_migration_manifest(repo_root: Path):
             for path in (repo_root / root).rglob("*")
             if path.is_file()
         }
-        assert actual <= admitted_paths, f"冻结输入未登记: {sorted(actual - admitted_paths)}"
+        assert actual <= admitted_paths, (
+            f"冻结输入未登记: {sorted(actual - admitted_paths)}"
+        )
 
 
 def test_classification_target_hashes_match_manifest_and_files(repo_root: Path):
@@ -404,7 +429,8 @@ def test_classification_target_hashes_match_manifest_and_files(repo_root: Path):
     admitted_paths = _metadata_admitted_paths(metadata)
     root_classes = {
         item["path"]: item["classification"]
-        for item in metadata.get("accepted_roots", []) + metadata.get("curated_files", [])
+        for item in metadata.get("accepted_roots", [])
+        + metadata.get("curated_files", [])
         if isinstance(item, dict) and "path" in item and "classification" in item
     }
     allowed_classes = {
@@ -420,9 +446,12 @@ def test_classification_target_hashes_match_manifest_and_files(repo_root: Path):
         relative = entry["path"]
         path = repo_root / relative
         assert ".." not in Path(relative).parts and not Path(relative).is_absolute()
-        assert relative in admitted_paths and path.is_file(), f"准入文件不存在: {relative}"
+        assert relative in admitted_paths and path.is_file(), (
+            f"准入文件不存在: {relative}"
+        )
         matching = [
-            root for root in root_classes
+            root
+            for root in root_classes
             if relative == root or relative.startswith(root.rstrip("/") + "/")
         ]
         assert matching, f"准入文件没有边界分类: {relative}"
@@ -436,19 +465,37 @@ def test_admission_metadata_hashes_match_current_files(repo_root: Path):
     """当前准入文件哈希必须与机器登记一致；不复用旧 Phase-2 账本。"""
     metadata = _load_admission_metadata(repo_root)
     entries = metadata.get("admitted_files", [])
-    assert len(entries) == 100, "当前准入登记数量必须与 H01、已批准按钮规范、全局命名规范及本地文件夹规范实物集合一致"
+    assert len(entries) == 102, (
+        "当前准入登记数量必须与 H01、已批准按钮规范、全局命名规范及本地文件夹规范实物集合一致"
+    )
     for entry in entries:
         path = repo_root / entry["path"]
         assert path.is_file(), f"准入文件缺失: {entry['path']}"
-        assert _canonical_sha256(path) == entry["sha256"], f"准入哈希不匹配: {entry['path']}"
+        assert _canonical_sha256(path) == entry["sha256"], (
+            f"准入哈希不匹配: {entry['path']}"
+        )
 
 
-_DOCS_SCAN_IGNORED_DIRS = frozenset({
-    ".git", "__pycache__", ".pytest_cache", "node_modules", ".venv", "venv", "env",
-    "build", "dist", ".mypy_cache", ".ruff_cache",
-})
+_DOCS_SCAN_IGNORED_DIRS = frozenset(
+    {
+        ".git",
+        "__pycache__",
+        ".pytest_cache",
+        "node_modules",
+        ".venv",
+        "venv",
+        "env",
+        "build",
+        "dist",
+        ".mypy_cache",
+        ".ruff_cache",
+    }
+)
 
-def _docs_file_paths(repo_root: Path, git_visible_paths: list[str] | None = None) -> set[str]:
+
+def _docs_file_paths(
+    repo_root: Path, git_visible_paths: list[str] | None = None
+) -> set[str]:
     """合并 Git 可见与实际 docs 文件；缓存段只排除 Git 不可见的本地产物。"""
     docs_root = repo_root / "docs"
     candidates = set()
@@ -470,11 +517,18 @@ def _docs_file_paths(repo_root: Path, git_visible_paths: list[str] | None = None
     result = set()
     for relative in candidates:
         parts = PurePosixPath(relative).parts
-        if not parts or parts[0] != "docs" or ".." in parts or PurePosixPath(relative).is_absolute():
+        if (
+            not parts
+            or parts[0] != "docs"
+            or ".." in parts
+            or PurePosixPath(relative).is_absolute()
+        ):
             continue
         normalized = PurePosixPath(*parts).as_posix()
         is_git_visible = normalized in git_visible_docs
-        if not is_git_visible and any(part in _DOCS_SCAN_IGNORED_DIRS for part in parts[1:-1]):
+        if not is_git_visible and any(
+            part in _DOCS_SCAN_IGNORED_DIRS for part in parts[1:-1]
+        ):
             continue
         if repo_root.joinpath(*parts).is_file():
             result.add(normalized)
@@ -518,10 +572,14 @@ def test_accepted_doc_slices_match_migration_manifest(repo_root: Path):
 
     unadmitted, missing = _docs_admission_delta(repo_root, metadata)
     assert not missing, f"H03 docs 准入登记文件缺失于 Git 可见/实际文件集合: {missing}"
-    assert not unadmitted, f"发现未按 H03 admitted_files 精确登记的 docs 文件: {unadmitted}"
+    assert not unadmitted, (
+        f"发现未按 H03 admitted_files 精确登记的 docs 文件: {unadmitted}"
+    )
 
 
-def test_docs_admission_rejects_unregistered_design_and_governance_files(tmp_path: Path):
+def test_docs_admission_rejects_unregistered_design_and_governance_files(
+    tmp_path: Path,
+):
     """设计/治理目录不构成目录级准入；新增文件必须逐路径登记。"""
     admitted = [
         "docs/design/approved.md",
@@ -555,11 +613,14 @@ def test_docs_admission_rejects_unregistered_design_and_governance_files(tmp_pat
 # 可疑码点区间：西里尔（与拉丁同形）、零宽字符、双向控制/隐形字符、软连字符。
 # 说明：中文全角标点（U+FF00 段）属正常书写，不在本守卫范围。
 _SUSPICIOUS_RANGES = (
-    (0x0400, 0x04FF),   # 西里尔字母（U+0441 / U+0435 / U+043E / U+0430 / U+0440 / U+0445 等与拉丁同形）
-    (0x200B, 0x200F),   # 零宽空格/零宽连接符/双向控制
-    (0x2060, 0x2064),   # 词连接符、不可见分隔符
-    (0xFE00, 0xFE0F),   # 变体选择符
-    (0x00AD, 0x00AD),   # 软连字符
+    (
+        0x0400,
+        0x04FF,
+    ),  # 西里尔字母（U+0441 / U+0435 / U+043E / U+0430 / U+0440 / U+0445 等与拉丁同形）
+    (0x200B, 0x200F),  # 零宽空格/零宽连接符/双向控制
+    (0x2060, 0x2064),  # 词连接符、不可见分隔符
+    (0xFE00, 0xFE0F),  # 变体选择符
+    (0x00AD, 0x00AD),  # 软连字符
 )
 
 # 扫描范围：仓库自有文本（代码/文档/测试/配置）。
@@ -567,8 +628,20 @@ _SUSPICIOUS_RANGES = (
 #   * web/vendor/            —— 上游不可变制品；
 #   * web/prompt-registry/sources/ —— 第三方内容数据（含合法双向标记）。
 _HOMOGLYPH_TEXT_SUFFIXES = {
-    ".py", ".js", ".html", ".css", ".json",
-    ".yml", ".yaml", ".md", ".txt", ".toml", ".cfg", ".ini", ".sh", ".ps1",
+    ".py",
+    ".js",
+    ".html",
+    ".css",
+    ".json",
+    ".yml",
+    ".yaml",
+    ".md",
+    ".txt",
+    ".toml",
+    ".cfg",
+    ".ini",
+    ".sh",
+    ".ps1",
 }
 _HOMOGLYPH_EXCLUDED_PREFIXES = (
     "web/vendor/",
@@ -631,9 +704,21 @@ def test_no_homoglyph_confusables(repo_root: Path):
         if not path.is_file():
             continue
         if any(
-            part in {
-                ".git", ".local", ".agents", "__pycache__", ".pytest_cache", "node_modules",
-                ".venv", "venv", "env", "build", "dist", ".mypy_cache", ".ruff_cache",
+            part
+            in {
+                ".git",
+                ".local",
+                ".agents",
+                "__pycache__",
+                ".pytest_cache",
+                "node_modules",
+                ".venv",
+                "venv",
+                "env",
+                "build",
+                "dist",
+                ".mypy_cache",
+                ".ruff_cache",
             }
             for part in path.parts
         ):
@@ -642,7 +727,10 @@ def test_no_homoglyph_confusables(repo_root: Path):
         if relative.startswith(_HOMOGLYPH_EXCLUDED_PREFIXES):
             continue
         suffix = path.suffix.lower()
-        if suffix not in _HOMOGLYPH_TEXT_SUFFIXES and path.name not in {".gitattributes", ".gitignore"}:
+        if suffix not in _HOMOGLYPH_TEXT_SUFFIXES and path.name not in {
+            ".gitattributes",
+            ".gitignore",
+        }:
             continue
         try:
             text = path.read_text(encoding="utf-8")
@@ -650,8 +738,12 @@ def test_no_homoglyph_confusables(repo_root: Path):
             continue
         for token, offset in _scan_homoglyph_tokens(text):
             line = text.count("\n", 0, offset) + 1
-            codepoints = " ".join(f"U+{ord(c):04X}" for c in token if _is_suspicious_codepoint(ord(c)))
-            violations.append(f"{relative}:{line} token={token!r} 可疑码点={codepoints}")
+            codepoints = " ".join(
+                f"U+{ord(c):04X}" for c in token if _is_suspicious_codepoint(ord(c))
+            )
+            violations.append(
+                f"{relative}:{line} token={token!r} 可疑码点={codepoints}"
+            )
     assert not violations, "发现同形字/隐形字符污染:\n" + "\n".join(violations)
 
 
@@ -661,11 +753,14 @@ def test_homoglyph_guard_detects_injected_pollution():
     用 chr() 在运行时构造一个「西里尔 U+0441 + 零宽空格 U+200B」伪装的 ``credential``，
     守卫必须命中；否则守卫失效（例如区间写错、匹配逻辑恒假）。
     """
-    polluted = chr(0x0441) + "redential"          # U+0441 CYRILLIC SMALL LETTER ES
+    polluted = chr(0x0441) + "redential"  # U+0441 CYRILLIC SMALL LETTER ES
     polluted_zwsp = "cred" + chr(0x200B) + "ential"  # 零宽空格
     assert _scan_homoglyph_tokens(polluted), "守卫未能识别西里尔同形字"
     assert _scan_homoglyph_tokens(polluted_zwsp), "守卫未能识别零宽空格"
-    assert all(isinstance(item, tuple) and len(item) == 2 for item in _scan_homoglyph_tokens(polluted))
+    assert all(
+        isinstance(item, tuple) and len(item) == 2
+        for item in _scan_homoglyph_tokens(polluted)
+    )
     # 反向对照：纯 ASCII 与正常中文不得误报
     assert not _scan_homoglyph_tokens("credential"), "纯 ASCII 被误判"
     assert not _scan_homoglyph_tokens("会话失效，请重新登录。"), "正常中文被误判"

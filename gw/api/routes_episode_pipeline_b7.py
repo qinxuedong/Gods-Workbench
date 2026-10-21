@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 # Copyright 2026 Gods-Workbench Authors
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -38,15 +37,15 @@ from gw.god_workflow import routes as workflow_routes
 router = APIRouter(tags=["episode-pipeline-b7"])
 
 
-def _read(authorization: Optional[str], role: str):
+def _read(authorization: str | None, role: str):
     return require_authenticated(authorization, role)
 
 
-def _write(authorization: Optional[str], role: str):
+def _write(authorization: str | None, role: str):
     return require_edit_access(authorization, role)
 
 
-async def _json(request: Request) -> Dict[str, Any]:
+async def _json(request: Request) -> dict[str, Any]:
     try:
         payload = await request.json()
     except Exception:
@@ -54,7 +53,7 @@ async def _json(request: Request) -> Dict[str, Any]:
     return payload if isinstance(payload, dict) else {}
 
 
-def _internal_workflow_request(payload: Dict[str, Any]) -> Request:
+def _internal_workflow_request(payload: dict[str, Any]) -> Request:
     """把已认证的单镜头请求交给现有工作流 handler，不复制执行逻辑。"""
     raw = json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
     sent = False
@@ -83,8 +82,8 @@ def _internal_workflow_request(payload: Dict[str, Any]) -> Request:
 
 @router.get("/api/episode-pipelines", status_code=status.HTTP_200_OK)
 def list_pipelines(
-    project_id: Optional[str] = None,
-    authorization: Optional[str] = Header(None),
+    project_id: str | None = None,
+    authorization: str | None = Header(None),
     x_user_role: str = Header("editor", alias="X-User-Role"),
 ):
     """按项目读取流水线集合；空集合返回 pipelines: []。"""
@@ -95,7 +94,7 @@ def list_pipelines(
 @router.post("/api/episode-pipelines", status_code=status.HTTP_201_CREATED)
 async def create_pipeline(
     request: Request,
-    authorization: Optional[str] = Header(None),
+    authorization: str | None = Header(None),
     x_user_role: str = Header("editor", alias="X-User-Role"),
 ):
     """创建流水线并建立 4 个阶段（script/assets/video/audio_compose）。"""
@@ -106,7 +105,7 @@ async def create_pipeline(
 @router.get("/api/episode-pipelines/{pipeline_id}", status_code=status.HTTP_200_OK)
 def get_pipeline(
     pipeline_id: str,
-    authorization: Optional[str] = Header(None),
+    authorization: str | None = Header(None),
     x_user_role: str = Header("editor", alias="X-User-Role"),
 ):
     """读取单个流水线；不存在 404。"""
@@ -114,12 +113,15 @@ def get_pipeline(
     return repo.get_pipeline(pipeline_id)
 
 
-@router.post("/api/episode-pipelines/{pipeline_id}/stages/{stage_id}/start", status_code=status.HTTP_200_OK)
+@router.post(
+    "/api/episode-pipelines/{pipeline_id}/stages/{stage_id}/start",
+    status_code=status.HTTP_200_OK,
+)
 async def start_stage(
     pipeline_id: str,
     stage_id: str,
     request: Request,
-    authorization: Optional[str] = Header(None),
+    authorization: str | None = Header(None),
     x_user_role: str = Header("editor", alias="X-User-Role"),
 ):
     """把阶段推进到 running；非法流转 409，CAS 冲突 409。"""
@@ -127,12 +129,15 @@ async def start_stage(
     return repo.start_stage(pipeline_id, stage_id, await _json(request))
 
 
-@router.post("/api/episode-pipelines/{pipeline_id}/stages/{stage_id}/complete", status_code=status.HTTP_200_OK)
+@router.post(
+    "/api/episode-pipelines/{pipeline_id}/stages/{stage_id}/complete",
+    status_code=status.HTTP_200_OK,
+)
 async def complete_stage(
     pipeline_id: str,
     stage_id: str,
     request: Request,
-    authorization: Optional[str] = Header(None),
+    authorization: str | None = Header(None),
     x_user_role: str = Header("editor", alias="X-User-Role"),
 ):
     """把阶段推进到 completed/failed；未启动直接完成 409。"""
@@ -140,12 +145,15 @@ async def complete_stage(
     return repo.complete_stage(pipeline_id, stage_id, await _json(request))
 
 
-@router.post("/api/episode-pipelines/{pipeline_id}/stages/{stage_id}/cancel", status_code=status.HTTP_200_OK)
+@router.post(
+    "/api/episode-pipelines/{pipeline_id}/stages/{stage_id}/cancel",
+    status_code=status.HTTP_200_OK,
+)
 async def cancel_stage(
     pipeline_id: str,
     stage_id: str,
     request: Request,
-    authorization: Optional[str] = Header(None),
+    authorization: str | None = Header(None),
     x_user_role: str = Header("editor", alias="X-User-Role"),
 ):
     """取消阶段；已终态 409。"""
@@ -170,7 +178,7 @@ async def cancel_stage(
 )
 def get_timeline_manifest(
     pipeline_id: str,
-    authorization: Optional[str] = Header(None),
+    authorization: str | None = Header(None),
     x_user_role: str = Header("editor", alias="X-User-Role"),
 ):
     """读取 OpenFilm timeline_manifest；数据来自 episode_pipeline 落盘命名空间。"""
@@ -196,7 +204,7 @@ def get_timeline_manifest(
 async def create_timeline_manifest(
     pipeline_id: str,
     request: Request,
-    authorization: Optional[str] = Header(None),
+    authorization: str | None = Header(None),
     x_user_role: str = Header("editor", alias="X-User-Role"),
 ):
     """初始化轻量时间线清单；片段可携带 <img> 的 src 与 #t 覆盖属性。"""
@@ -222,7 +230,7 @@ async def create_timeline_manifest(
 async def update_timeline_manifest(
     pipeline_id: str,
     request: Request,
-    authorization: Optional[str] = Header(None),
+    authorization: str | None = Header(None),
     x_user_role: str = Header("editor", alias="X-User-Role"),
 ):
     """更新时间线清单；必须携带 expected_version 执行 CAS。"""
@@ -238,8 +246,8 @@ async def generate_single_shot(
     pipeline_id: str,
     shot_id: str,
     request: Request,
-    idempotency_key: Optional[str] = Header(None, alias="Idempotency-Key"),
-    authorization: Optional[str] = Header(None),
+    idempotency_key: str | None = Header(None, alias="Idempotency-Key"),
+    authorization: str | None = Header(None),
     x_user_role: str = Header("editor", alias="X-User-Role"),
 ):
     """提交一个镜头到真实工作流执行器，并持久化来源绑定。"""
@@ -262,7 +270,11 @@ async def generate_single_shot(
         actor_key=f"{getattr(context, 'identity_domain', '')}:{getattr(context, 'subject', '')}",
     )
     if not reserved["needs_submit"]:
-        return {"shot": reserved["shot"], "data_status": "ok", "data_gaps": reserved["shot"].get("data_gaps", [])}
+        return {
+            "shot": reserved["shot"],
+            "data_status": "ok",
+            "data_gaps": reserved["shot"].get("data_gaps", []),
+        }
 
     try:
         execution = await workflow_routes.execute_task(
@@ -272,13 +284,19 @@ async def generate_single_shot(
             idempotency_key=idempotency_key,
         )
         if not isinstance(execution, dict):
-            raise CleanroomException(502, "WORKFLOW_PROVIDER_INVALID_RESPONSE", "执行器未返回任务对象")
+            raise CleanroomException(
+                502, "WORKFLOW_PROVIDER_INVALID_RESPONSE", "执行器未返回任务对象"
+            )
     except CleanroomException as exc:
         repo.mark_single_shot_failure(pipeline_id, shot_id, exc.code, exc.message)
         raise
     except Exception as exc:
-        repo.mark_single_shot_failure(pipeline_id, shot_id, "WORKFLOW_SUBMIT_FAILED", type(exc).__name__)
-        raise CleanroomException(503, "WORKFLOW_SUBMIT_FAILED", "工作流执行器提交失败，请读取镜头状态") from None
+        repo.mark_single_shot_failure(
+            pipeline_id, shot_id, "WORKFLOW_SUBMIT_FAILED", type(exc).__name__
+        )
+        raise CleanroomException(
+            503, "WORKFLOW_SUBMIT_FAILED", "工作流执行器提交失败，请读取镜头状态"
+        ) from None
 
     return repo.bind_single_shot(pipeline_id, shot_id, execution)
 
@@ -290,14 +308,18 @@ async def generate_single_shot(
 async def get_single_shot(
     pipeline_id: str,
     shot_id: str,
-    authorization: Optional[str] = Header(None),
+    authorization: str | None = Header(None),
     x_user_role: str = Header("editor", alias="X-User-Role"),
 ):
     """读取镜头生成快照；有真实 job_id 时只查询既有任务，不重新提交。"""
     _read(authorization, x_user_role)
     current = repo.get_single_shot(pipeline_id, shot_id)
     shot = current["shot"]
-    if not shot.get("job_id") or shot.get("status") in {"completed", "failed", "unknown"}:
+    if not shot.get("job_id") or shot.get("status") in {
+        "completed",
+        "failed",
+        "unknown",
+    }:
         return current
     try:
         execution = await workflow_routes.task_status(
@@ -305,6 +327,8 @@ async def get_single_shot(
         )
     except CleanroomException as exc:
         if exc.status_code >= 500:
-            return repo.mark_single_shot_failure(pipeline_id, shot_id, exc.code, exc.message)
+            return repo.mark_single_shot_failure(
+                pipeline_id, shot_id, exc.code, exc.message
+            )
         raise
     return repo.bind_single_shot(pipeline_id, shot_id, execution)

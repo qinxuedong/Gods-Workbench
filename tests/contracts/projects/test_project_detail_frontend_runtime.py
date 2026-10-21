@@ -80,16 +80,22 @@ const context={registryLoading:false,registryPageLoading:false,registryHasMoreAs
  registryRequestSeq:1,registryNextOffset:2,registryNextCursor:'old',registryQueryString:()=>'',
  cancelRegistryPrefetchTimer(){},registryAppendDomContext:()=>null,contextSentinelBusy(){},root:{querySelector:()=>null},
  registryAssetsQueryCache:new Map(),registryPrefetchInFlight:false,beginRegistryAssetRequest:()=>null,
- assetManagerApi:{getRegistryAssets:()=>({ok:false,status:409,json:async()=>({detail:{code:'VERSION_CONFLICT',message:'列表变化'}})})},
+ assetManagerApi:{getRegistryAssets:()=>({ok:false,status:409,json:async()=>({detail:{code:'VERSION_CONFLICT',message:'列表变化'}})}),
+ getAssetLibrary:()=>({ok:true,json:async()=>({library:{}})}),
+ getPromptLibraries:()=>({ok:true,json:async()=>({library:{}})}),
+ getPromptLibraryItems:()=>({ok:true,json:async()=>({revision:1,items:[]})}),
+ getRegistryStatus:()=>({ok:true,json:async()=>({revision:1})})},
  refreshRegistryAssets:async()=>{reloads++;context.registryRequestSeq++;context.registryNextCursor='';context.registryNextOffset=0;context.registryPageLoading=false;},
+ refreshRegistryFacetData:async()=>{},normalizeAssetState(){},render(){},
  setStatus(){},applyRegistryAssetResponse(){applied++;},setRegistryAssetCache(){},isRegistryAbortError:()=>false};
-vm.createContext(context);vm.runInContext(source.slice(a,b)+'\n'+source.slice(c,d),context);
+vm.createContext(context);vm.runInContext('const VERSION_CONFLICT_MESSAGE = String.fromCharCode(20869,23481,24050,21464,21270,65292,35831,21047,26032); let casRefreshInFlight=false;\n'+source.slice(a,b)+'\n'+source.slice(c,d),context);
 (async()=>{
- try{await context.apiJsonResponse(context.assetManagerApi.getRegistryAssets())}catch(e){if(e.code!=='VERSION_CONFLICT'||e.status!==409||e.message!=='列表变化')throw e;}
+ try{await context.apiJsonResponse(context.assetManagerApi.getRegistryAssets())}catch(e){if(e.code!=='VERSION_CONFLICT'||e.status!==409||e.message!=='内容已变化，请刷新')throw e;}
  await context.loadMoreRegistryAssets();
  console.log(JSON.stringify({reloads,applied,cursor:context.registryNextCursor,offset:context.registryNextOffset}));
 })().catch(e=>{console.error(e);process.exitCode=1;});
 """
     result = subprocess.run([node, "-e", script, str(ROOT / "web/js/modules/asset-manager.js")],
-                            capture_output=True, text=True, encoding="utf-8", timeout=30, check=True)
+                            capture_output=True, text=True, encoding="utf-8", timeout=30)
+    assert result.returncode == 0, result.stderr
     assert json.loads(result.stdout) == {"reloads": 1, "applied": 0, "cursor": "", "offset": 0}

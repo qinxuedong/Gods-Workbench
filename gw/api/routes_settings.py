@@ -16,16 +16,21 @@
 """设置页 API 路由实现（Phase 10D）。
 
 严格对齐 ``docs/contracts/SETTINGS-INTERFACE-CATALOG.yaml``（version: p10d-frozen-1）的
-8 条归一化路径 / 13 个方法：
+8 条归一化路径 / 13 个方法，并承接 C16-T2 的服务端凭据边界：
 
 - ``GET/PATCH  /api/storage-settings``              存储设置读取 / 保存（CAS revision）
 - ``GET/PUT    /api/providers``                     平台集合读取 / 整体替换（CAS revision）
 - ``POST       /api/providers/fetch-models``        拉取模型（本阶段 fail-closed）
 - ``POST       /api/providers/probe-async``         协议探测（本阶段 fail-closed）
 - ``POST       /api/providers/test-connection``     连通性验证（本阶段 fail-closed）
+- ``GET        /api/providers/credentials``         服务端凭据状态（仅布尔字段）
+- ``POST       /api/providers/{provider_id}/gateway/chat`` 单向出口鉴权（客户端零凭据）
 - ``GET/POST   /api/asset-registry/asset-structures``        结构集合读取 / 创建
 - ``GET/PATCH/DELETE /api/asset-registry/asset-structures/{structure_id}``  单结构读写删
 - ``PATCH      /api/asset-registry/asset-structures/{structure_id}/current`` 切换当前
+
+C16 路由只允许稳定 ``provider_id`` 与消息进入网关；Provider 密钥由服务端密文快照
+读取并注入上游请求，绝不进入响应、日志或客户端请求体。
 
 边界：其余相邻端点（``/api/asset-registry/assets*``、``/api/local-assets*``、
 ``/api/storage-files*``、``/api/asset-registry/reindex``、``/api/asset-registry/project-directory*``
@@ -35,8 +40,11 @@
 from typing import Any, Dict, List, Optional, Union
 
 from fastapi import APIRouter, Body, Header, Query, status
+from pydantic import BaseModel, ConfigDict, Field
 
 from gw.core.auth import require_authenticated, require_edit_access
+from gw.core.credentials_vault import CredentialVault
+from gw.settings import chat as chat_runtime
 from gw.settings.models import (
     AssetStructureCreateRequest,
     AssetStructureCurrentRequest,
@@ -58,6 +66,21 @@ from gw.settings.service import (
 )
 
 router = APIRouter(tags=["settings"])
+
+
+class ProviderGatewayChatRequest(BaseModel):
+    """只允许消息与服务端已登记模型；客户端不得提交地址或凭据。"""
+
+    model_config = ConfigDict(extra="forbid", strict=True)
+
+    message: str = Field(..., min_length=1, max_length=200_000)
+    model: Optional[str] = Field(None, max_length=256)
+    mode: Optional[str] = Field(None, max_length=64)
+
+
+def _credential_vault() -> CredentialVault:
+    """每次按当前设置服务构造边界，兼容测试态的依赖注入。"""
+    return CredentialVault(default_provider_service)
 
 
 # ---------------------------------------------------------------------------
@@ -91,7 +114,7 @@ def patch_storage_settings(
     authorization: Optional[str] = Header(None),
     x_user_role: str = Header("editor", alias="X-User-Role", description="用户角色权限"),
 ):
-    """保存存储设置；要求写权限，revision 不一致返回 409 VERSION_CONFLICT。"""
+    """保存存储设置；要求 expected_version，版本不一致返回 409 VERSION_CONFLICT。"""
     require_edit_access(authorization, x_user_role)
     return default_storage_settings_service.patch(payload)
 
@@ -139,7 +162,7 @@ def replace_providers(
         raw: Any = payload["providers"]
     else:
         raw = payload
-    return default_provider_service.replace(raw, expected_version)
+    return _credential_vault().replace(raw, expected_version)
 
 
 @router.post(
@@ -200,6 +223,44 @@ def test_provider_connection(
     """真实往返并记录实测延迟；失败 503，绝不伪造连通性或延迟数字。"""
     require_edit_access(authorization, x_user_role)
     return provider_probes.test_connection(payload or {})
+
+
+@router.get(
+    "/api/providers/credentials",
+    summary="读取服务端凭据状态",
+    status_code=status.HTTP_200_OK,
+)
+def list_provider_credentials(
+    authorization: Optional[str] = Header(None),
+    x_user_role: str = Header("editor", alias="X-User-Role", description="用户角色权限"),
+):
+    """只返回已配置字段的布尔状态，不返回密文、原文、URL 或环境变量名。"""
+    require_authenticated(authorization, x_user_role)
+    return _credential_vault().public_snapshot()
+
+
+@router.post(
+    "/api/providers/{provider_id}/gateway/chat",
+    summary="通过服务端凭据网关发起 Chat 请求",
+    status_code=status.HTTP_200_OK,
+)
+def provider_gateway_chat(
+    provider_id: str,
+    payload: ProviderGatewayChatRequest,
+    authorization: Optional[str] = Header(None),
+    x_user_role: str = Header("editor", alias="X-User-Role", description="用户角色权限"),
+):
+    """客户端只提交消息与稳定 provider_id；服务端读取密钥并向上游注入鉴权。"""
+    require_edit_access(authorization, x_user_role)
+    vault = _credential_vault()
+    vault.require(provider_id)
+    request_payload = payload.model_dump(exclude_none=True)
+    request_payload["provider_id"] = provider_id
+    vault.reject_client_credentials(request_payload)
+    try:
+        return chat_runtime.complete(request_payload, agent=False)
+    except CleanroomException as exc:
+        return chat_runtime.error_response(exc)
 
 
 # ---------------------------------------------------------------------------
@@ -300,7 +361,7 @@ def set_asset_structure_current(
 )
 def delete_asset_structure(
     structure_id: str,
-    expected_version: Optional[int] = Query(None, ge=1, description="目标结构 CAS 期望版本；缺省表示不校验"),
+    expected_version: Optional[int] = Query(None, ge=1, description="删除结构必须携带的 CAS 期望版本"),
     authorization: Optional[str] = Header(None),
     x_user_role: str = Header("editor", alias="X-User-Role", description="用户角色权限"),
 ):

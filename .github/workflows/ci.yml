@@ -95,8 +95,8 @@ jobs:
           export GW_RUNNINGHUB_API_KEY="${GITHUB_SHA}"
           python -m pytest -v --no-header -p no:cacheprovider
 
-      - name: 运行 Agent Tasks 前端回归测试
-        run: node --test tests/frontend/agent-tasks.test.mjs
+      - name: 运行前端契约回归测试
+        run: node --test tests/frontend/agent-tasks.test.mjs tests/frontend/c16-t3-pwa-installable.test.mjs
 
       - name: 扫描二进制白名单
         if: ${{ always() }}
@@ -146,3 +146,34 @@ jobs:
               sys.exit(1)
           print("二进制白名单扫描通过；允许项仅为根 start.bat 和 3 个 Source Han Sans CN 字体精确路径。")
           PY
+
+  desktop:
+    name: Windows desktop tests and installer
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Check Rust formatting
+        run: cargo fmt --check --manifest-path clients/desktop/Cargo.toml
+
+      - name: Run desktop unit tests
+        run: cargo test --locked --manifest-path clients/desktop/Cargo.toml
+
+      - name: Install Tauri CLI
+        run: cargo install tauri-cli --version 2.12.3 --locked
+
+      - name: Build Windows NSIS installer
+        working-directory: clients/desktop
+        run: cargo tauri build --bundles nsis --ci -- --locked
+
+      - name: Upload Windows installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: gods-workbench-desktop-windows
+          path: clients/desktop/target/release/bundle/nsis/*-setup.exe
+          if-no-files-found: error
+          retention-days: 30

@@ -29,14 +29,16 @@
 不得在本模块重复实现或绕过条目父库/分类引用校验。
 
 认证：读端点需认证；写端点需 ``require_edit_access``（只读角色 403）。
-删除端点的 CAS 期望值经查询串 ``expected_version`` 传入（前端以空体 DELETE 调用）。
+所有写端点都要求正整数 ``expected_version``；删除端点经查询串传入。
 """
 
-from typing import Optional
+from typing import Optional, Type, TypeVar
 
-from fastapi import APIRouter, Header, Query, status
+from fastapi import APIRouter, Header, Query, Request, status
+from pydantic import BaseModel, ValidationError
 
 from gw.core.auth import require_authenticated, require_edit_access
+from gw.core.errors import CleanroomException
 from gw.prompt_library.models import (
     PromptCategoryCreateRequest,
     PromptCategoryCreateResponse,
@@ -52,6 +54,34 @@ from gw.prompt_library.models import (
 from gw.prompt_library.service import default_prompt_library_service
 
 router = APIRouter(prefix="/api/prompt-libraries", tags=["prompt-library"])
+RequestModel = TypeVar("RequestModel", bound=BaseModel)
+
+
+async def _validated_write_payload(request: Request, model: Type[RequestModel]) -> RequestModel:
+    """以 400 返回缺失版本，再验证提示词树写请求模型。"""
+    try:
+        payload = await request.json()
+    except Exception:
+        payload = {}
+    if not isinstance(payload, dict):
+        payload = {}
+    expected = payload.get("expected_version")
+    if type(expected) is not int or expected < 1:
+        raise CleanroomException(400, "INVALID_REQUEST", "expected_version 必须为正整数")
+    try:
+        return model.model_validate(payload)
+    except ValidationError as exc:
+        raise CleanroomException(400, "INVALID_REQUEST", "提示词库请求字段无效") from exc
+
+
+def _request_body_schema(model: Type[BaseModel]) -> dict:
+    """保留由 Request 手动验证时的 JSON 请求体模型文档。"""
+    return {
+        "requestBody": {
+            "required": True,
+            "content": {"application/json": {"schema": model.model_json_schema()}},
+        }
+    }
 
 
 @router.get(
@@ -74,14 +104,16 @@ def get_prompt_libraries(
     response_model=PromptLibraryCreateResponse,
     summary="创建提示词库",
     status_code=status.HTTP_201_CREATED,
+    openapi_extra=_request_body_schema(PromptLibraryCreateRequest),
 )
-def create_prompt_library(
-    payload: PromptLibraryCreateRequest,
+async def create_prompt_library(
+    request: Request,
     authorization: Optional[str] = Header(None),
     x_user_role: str = Header("editor", alias="X-User-Role", description="用户角色权限"),
 ):
     """创建提示词库；要求写权限，重名或目录版本冲突失败关闭。"""
     require_edit_access(authorization, x_user_role)
+    payload = await _validated_write_payload(request, PromptLibraryCreateRequest)
     library, snapshot = default_prompt_library_service.create_library(payload)
     return PromptLibraryCreateResponse(prompt_library=library, library=snapshot)
 
@@ -91,15 +123,17 @@ def create_prompt_library(
     response_model=PromptLibraryRenameResponse,
     summary="重命名提示词库",
     status_code=status.HTTP_200_OK,
+    openapi_extra=_request_body_schema(PromptLibraryRenameRequest),
 )
-def rename_prompt_library(
+async def rename_prompt_library(
     library_id: str,
-    payload: PromptLibraryRenameRequest,
+    request: Request,
     authorization: Optional[str] = Header(None),
     x_user_role: str = Header("editor", alias="X-User-Role", description="用户角色权限"),
 ):
     """重命名提示词库；要求写权限，目标不存在、重名或 CAS 冲突失败关闭。"""
     require_edit_access(authorization, x_user_role)
+    payload = await _validated_write_payload(request, PromptLibraryRenameRequest)
     library, snapshot = default_prompt_library_service.rename_library(library_id, payload)
     return PromptLibraryRenameResponse(prompt_library=library, library=snapshot)
 
@@ -112,7 +146,7 @@ def rename_prompt_library(
 )
 def delete_prompt_library(
     library_id: str,
-    expected_version: Optional[int] = Query(None, ge=1, description="目标库 CAS 期望版本；缺省表示不校验"),
+    expected_version: Optional[int] = Query(None, ge=1, description="必填正整数；缺失返回 400，过期返回 409"),
     authorization: Optional[str] = Header(None),
     x_user_role: str = Header("editor", alias="X-User-Role", description="用户角色权限"),
 ):
@@ -127,14 +161,16 @@ def delete_prompt_library(
     response_model=PromptCategoryCreateResponse,
     summary="创建提示词分类",
     status_code=status.HTTP_201_CREATED,
+    openapi_extra=_request_body_schema(PromptCategoryCreateRequest),
 )
-def create_prompt_library_category(
-    payload: PromptCategoryCreateRequest,
+async def create_prompt_library_category(
+    request: Request,
     authorization: Optional[str] = Header(None),
     x_user_role: str = Header("editor", alias="X-User-Role", description="用户角色权限"),
 ):
     """在指定提示词库下创建分类；要求写权限，父库不存在或版本冲突失败关闭。"""
     require_edit_access(authorization, x_user_role)
+    payload = await _validated_write_payload(request, PromptCategoryCreateRequest)
     category, snapshot = default_prompt_library_service.create_category(payload)
     return PromptCategoryCreateResponse(category=category, library=snapshot)
 
@@ -144,15 +180,17 @@ def create_prompt_library_category(
     response_model=PromptCategoryRenameResponse,
     summary="重命名提示词分类",
     status_code=status.HTTP_200_OK,
+    openapi_extra=_request_body_schema(PromptCategoryRenameRequest),
 )
-def rename_prompt_library_category(
+async def rename_prompt_library_category(
     category_id: str,
-    payload: PromptCategoryRenameRequest,
+    request: Request,
     authorization: Optional[str] = Header(None),
     x_user_role: str = Header("editor", alias="X-User-Role", description="用户角色权限"),
 ):
     """重命名分类；要求写权限，目标不存在、同库重名或 CAS 冲突失败关闭。"""
     require_edit_access(authorization, x_user_role)
+    payload = await _validated_write_payload(request, PromptCategoryRenameRequest)
     category, snapshot = default_prompt_library_service.rename_category(category_id, payload)
     return PromptCategoryRenameResponse(category=category, library=snapshot)
 
@@ -165,7 +203,7 @@ def rename_prompt_library_category(
 )
 def delete_prompt_library_category(
     category_id: str,
-    expected_version: Optional[int] = Query(None, ge=1, description="目标分类 CAS 期望版本；缺省表示不校验"),
+    expected_version: Optional[int] = Query(None, ge=1, description="必填正整数；缺失返回 400，过期返回 409"),
     authorization: Optional[str] = Header(None),
     x_user_role: str = Header("editor", alias="X-User-Role", description="用户角色权限"),
 ):

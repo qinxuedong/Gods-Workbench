@@ -63,16 +63,19 @@ def seeded_client(monkeypatch) -> TestClient:
 
 def _create_library(client: TestClient, name: str = "角色提示词库") -> dict:
     """辅助：创建一个提示词库并返回创建响应体。"""
-    res = client.post("/api/prompt-libraries", json={"name": name}, headers=EDITOR)
+    version = client.get("/api/prompt-libraries", headers=EDITOR).json()["library"]["version"]
+    res = client.post("/api/prompt-libraries", json={"name": name, "expected_version": version}, headers=EDITOR)
     assert res.status_code == 201, res.text
     return res.json()
 
 
 def _create_category(client: TestClient, library_id: str, name: str = "视角") -> dict:
     """辅助：在指定库下创建一个分类并返回创建响应体。"""
+    libraries = client.get("/api/prompt-libraries", headers=EDITOR).json()["library"]["libraries"]
+    library = next(item for item in libraries if item["library_id"] == library_id)
     res = client.post(
         "/api/prompt-libraries/categories",
-        json={"library_id": library_id, "name": name},
+        json={"library_id": library_id, "name": name, "expected_version": library["version"]},
         headers=EDITOR,
     )
     assert res.status_code == 201, res.text
@@ -200,7 +203,8 @@ def test_create_library_returns_stable_id_and_increments_version(api_client: Tes
 def test_create_library_duplicate_name_conflicts(api_client: TestClient):
     """重名（含大小写/空白差异）必须 409 DUPLICATE_LIBRARY_NAME。"""
     _create_library(api_client, "角色库")
-    res = api_client.post("/api/prompt-libraries", json={"name": "  角色库  "}, headers=EDITOR)
+    version = api_client.get("/api/prompt-libraries", headers=EDITOR).json()["library"]["version"]
+    res = api_client.post("/api/prompt-libraries", json={"name": "  角色库  ", "expected_version": version}, headers=EDITOR)
     assert res.status_code == 409
     assert res.json()["detail"]["code"] == "DUPLICATE_LIBRARY_NAME"
 
@@ -264,7 +268,8 @@ def test_rename_library_success(api_client: TestClient):
 
 def test_rename_library_not_found(api_client: TestClient):
     """目标库不存在必须 404 LIBRARY_NOT_FOUND。"""
-    res = api_client.patch("/api/prompt-libraries/plib_missing", json={"name": "x"}, headers=EDITOR)
+    res = api_client.patch("/api/prompt-libraries/plib_missing",
+                           json={"name": "x", "expected_version": 1}, headers=EDITOR)
     assert res.status_code == 404
     assert res.json()["detail"]["code"] == "LIBRARY_NOT_FOUND"
 
@@ -294,7 +299,7 @@ def test_rename_library_duplicate_name_conflicts(api_client: TestClient):
 
     res = api_client.patch(
         f"/api/prompt-libraries/{library_id}",
-        json={"name": "库一"},
+        json={"name": "库一", "expected_version": second["prompt_library"]["version"]},
         headers=EDITOR,
     )
     assert res.status_code == 409
@@ -319,7 +324,7 @@ def test_delete_library_success(api_client: TestClient):
     created = _create_library(api_client)
     library_id = created["prompt_library"]["library_id"]
 
-    res = api_client.delete(f"/api/prompt-libraries/{library_id}", headers=EDITOR)
+    res = api_client.delete(f"/api/prompt-libraries/{library_id}?expected_version=1", headers=EDITOR)
     assert res.status_code == 200
     snapshot = res.json()["library"]
     assert snapshot["libraries"] == []
@@ -329,7 +334,7 @@ def test_delete_library_success(api_client: TestClient):
 
 def test_delete_non_empty_library_conflicts(seeded_client: TestClient):
     """含分类的库删除必须 409 LIBRARY_NOT_EMPTY，且树保持不变（禁止静默级联）。"""
-    res = seeded_client.delete("/api/prompt-libraries/plib_default", headers=EDITOR)
+    res = seeded_client.delete("/api/prompt-libraries/plib_default?expected_version=2", headers=EDITOR)
     assert res.status_code == 409
     assert res.json()["detail"]["code"] == "LIBRARY_NOT_EMPTY"
 
@@ -350,7 +355,7 @@ def test_delete_library_cas_conflict(seeded_client: TestClient):
 
 def test_delete_library_not_found(api_client: TestClient):
     """目标库不存在必须 404 LIBRARY_NOT_FOUND。"""
-    res = api_client.delete("/api/prompt-libraries/plib_missing", headers=EDITOR)
+    res = api_client.delete("/api/prompt-libraries/plib_missing?expected_version=1", headers=EDITOR)
     assert res.status_code == 404
     assert res.json()["detail"]["code"] == "LIBRARY_NOT_FOUND"
 
@@ -372,7 +377,7 @@ def test_create_category_requires_existing_library(api_client: TestClient):
     """父库不存在必须 404 LIBRARY_NOT_FOUND。"""
     res = api_client.post(
         "/api/prompt-libraries/categories",
-        json={"library_id": "plib_missing", "name": "视角"},
+        json={"library_id": "plib_missing", "name": "视角", "expected_version": 1},
         headers=EDITOR,
     )
     assert res.status_code == 404
@@ -469,7 +474,7 @@ def test_rename_category_not_found(api_client: TestClient):
     """目标分类不存在必须 404 CATEGORY_NOT_FOUND。"""
     res = api_client.patch(
         "/api/prompt-libraries/categories/pcat_missing",
-        json={"name": "x"},
+        json={"name": "x", "expected_version": 1},
         headers=EDITOR,
     )
     assert res.status_code == 404
@@ -505,7 +510,7 @@ def test_rename_category_duplicate_name_conflicts(api_client: TestClient):
 
     res = api_client.patch(
         f"/api/prompt-libraries/categories/{category_id}",
-        json={"name": "分类一"},
+        json={"name": "分类一", "expected_version": second["category"]["version"]},
         headers=EDITOR,
     )
     assert res.status_code == 409
@@ -538,7 +543,7 @@ def test_delete_category_success(api_client: TestClient):
     category = _create_category(api_client, library_id)
     category_id = category["category"]["category_id"]
 
-    res = api_client.delete(f"/api/prompt-libraries/categories/{category_id}", headers=EDITOR)
+    res = api_client.delete(f"/api/prompt-libraries/categories/{category_id}?expected_version=1", headers=EDITOR)
     assert res.status_code == 200
     snapshot = res.json()["library"]
     assert snapshot["libraries"][0]["categories"] == []
@@ -566,7 +571,7 @@ def test_delete_category_cas_conflict(api_client: TestClient):
 
 def test_delete_category_not_found(api_client: TestClient):
     """目标分类不存在必须 404 CATEGORY_NOT_FOUND。"""
-    res = api_client.delete("/api/prompt-libraries/categories/pcat_missing", headers=EDITOR)
+    res = api_client.delete("/api/prompt-libraries/categories/pcat_missing?expected_version=1", headers=EDITOR)
     assert res.status_code == 404
     assert res.json()["detail"]["code"] == "CATEGORY_NOT_FOUND"
 
@@ -575,6 +580,40 @@ def test_delete_category_readonly_role_forbidden(seeded_client: TestClient):
     """只读角色删除分类必须 403。"""
     res = seeded_client.delete("/api/prompt-libraries/categories/pcat_default", headers=READONLY)
     assert res.status_code == 403
+
+
+def test_prompt_tree_writes_require_versions(api_client: TestClient):
+    """提示词库和分类每条写路径都拒绝缺失版本且不产生副作用。"""
+    missing_create = api_client.post("/api/prompt-libraries", json={"name": "缺少版本"}, headers=EDITOR)
+    assert missing_create.status_code == 400
+    assert api_client.get("/api/prompt-libraries", headers=EDITOR).json()["library"]["libraries"] == []
+
+    created = _create_library(api_client)
+    library_id = created["prompt_library"]["library_id"]
+    assert api_client.patch(f"/api/prompt-libraries/{library_id}", json={"name": "新名"}, headers=EDITOR).status_code == 400
+    assert api_client.post("/api/prompt-libraries/categories", json={
+        "library_id": library_id, "name": "缺版本分类",
+    }, headers=EDITOR).status_code == 400
+
+    category = _create_category(api_client, library_id)
+    category_id = category["category"]["category_id"]
+    assert api_client.patch(f"/api/prompt-libraries/categories/{category_id}",
+                            json={"name": "新分类"}, headers=EDITOR).status_code == 400
+    assert api_client.delete(f"/api/prompt-libraries/categories/{category_id}", headers=EDITOR).status_code == 400
+    assert api_client.delete(f"/api/prompt-libraries/{library_id}", headers=EDITOR).status_code == 400
+
+    snapshot = api_client.get("/api/prompt-libraries", headers=EDITOR).json()["library"]
+    assert snapshot["libraries"][0]["categories"][0]["category_id"] == category_id
+
+    openapi = api_client.get("/openapi.json").json()
+    for path, method in (
+        ("/api/prompt-libraries", "post"),
+        ("/api/prompt-libraries/{library_id}", "patch"),
+        ("/api/prompt-libraries/categories", "post"),
+        ("/api/prompt-libraries/categories/{category_id}", "patch"),
+    ):
+        schema = openapi["paths"][path][method]["requestBody"]["content"]["application/json"]["schema"]
+        assert "expected_version" in schema["required"]
 
 
 # ---------------------------------------------------------------------------
@@ -629,12 +668,12 @@ def test_fixture_not_empty_deletion_matches_exception():
 
 
 def test_fixture_create_request_matches_model():
-    """创建请求夹具必须可被契约模型接受。"""
+    """旧夹具的业务字段可被契约模型接受并补入必需 CAS 版本。"""
     from gw.prompt_library.models import PromptLibraryCreateRequest
 
     payload = json.loads(
         (REPO_ROOT / "docs" / "fixtures" / "prompt-library-create-request.json").read_text(encoding="utf-8")
     )
-    req = PromptLibraryCreateRequest.model_validate(payload)
+    req = PromptLibraryCreateRequest.model_validate({**payload, "expected_version": 1})
     assert req.name == "角色提示词库"
-    assert req.expected_version is None
+    assert req.expected_version == 1

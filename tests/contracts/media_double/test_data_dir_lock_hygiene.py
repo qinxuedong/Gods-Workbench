@@ -1,4 +1,5 @@
 """Windows 数据目录锁文件不得进入持久化机密扫描。"""
+
 from __future__ import annotations
 
 from media_doubles import iter_persisted_files

@@ -56,7 +56,9 @@ def test_api_settings_boot_path_renders_icons():
     js = _read(API_SETTINGS_JS)
 
     # 1. 必须存在 refreshIcons 定义（说明渲染入口存在），且其实现调用 lucide.createIcons()
-    assert "function refreshIcons" in js, "api-settings.js 应定义 refreshIcons() 渲染入口"
+    assert "function refreshIcons" in js, (
+        "api-settings.js 应定义 refreshIcons() 渲染入口"
+    )
     assert "createIcons()" in js, "refreshIcons() 应通过 lucide.createIcons() 渲染图标"
 
     # 2. 定位并截取 window.onload 引导块函数体

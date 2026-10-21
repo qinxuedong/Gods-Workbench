@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Phase 11 B2 平台、项目兼容路径与 AI/CLI 回归契约测试。"""
 
 from __future__ import annotations
@@ -64,7 +63,11 @@ def _fixture(name: str) -> dict:
 
 def test_catalog_declares_exact_b2_surface():
     """契约声明恰好覆盖 B2 与 Phase 12 R3 的配置读取接口。"""
-    pairs = set(re.findall(r"method:\s*(\w+)\s*\n\s*path:\s*(\S+)", CATALOG.read_text(encoding="utf-8")))
+    pairs = set(
+        re.findall(
+            r"method:\s*(\w+)\s*\n\s*path:\s*(\S+)", CATALOG.read_text(encoding="utf-8")
+        )
+    )
     assert pairs == EXPECTED_PAIRS
 
 
@@ -90,12 +93,18 @@ def test_app_info_is_truthful_and_authenticated(api_client: TestClient):
     assert data["data_status"] == "ok"
 
 
-def test_cli_status_observes_path_without_execution(api_client: TestClient, monkeypatch):
+def test_cli_status_observes_path_without_execution(
+    api_client: TestClient, monkeypatch
+):
     from gw.core import cli_runtime
     from gw.core.cli_login import LoginController
+
     monkeypatch.setattr(platform_service, "_find_cli_path", lambda candidates: None)
     monkeypatch.setattr(cli_runtime, "login_controller", LoginController())
-    for path, protocol in (("/api/codex/status", "codex"), ("/api/gemini-cli/status", "gemini-cli")):
+    for path, protocol in (
+        ("/api/codex/status", "codex"),
+        ("/api/gemini-cli/status", "gemini-cli"),
+    ):
         response = api_client.get(path, headers=AUTH)
         assert response.status_code == 200
         data = response.json()
@@ -113,9 +122,12 @@ def test_cli_status_observes_path_without_execution(api_client: TestClient, monk
     assert data["state"] == "unknown" and data["data_status"] == "not_integrated"
 
 
-def test_jimeng_login_status_starts_unknown_and_never_fakes_qr(api_client: TestClient, monkeypatch):
+def test_jimeng_login_status_starts_unknown_and_never_fakes_qr(
+    api_client: TestClient, monkeypatch
+):
     from gw.core import cli_runtime
     from gw.core.cli_login import LoginController
+
     monkeypatch.setattr(platform_service, "_find_cli_path", lambda candidates: None)
     monkeypatch.setattr(cli_runtime, "login_controller", LoginController())
     response = api_client.get("/api/jimeng/login/status", headers=GOVERNOR)
@@ -130,7 +142,9 @@ def test_jimeng_login_status_starts_unknown_and_never_fakes_qr(api_client: TestC
     assert response.headers["cache-control"].startswith("no-store")
 
 
-def test_chat_configuration_is_read_only_and_authenticated(api_client: TestClient, monkeypatch):
+def test_chat_configuration_is_read_only_and_authenticated(
+    api_client: TestClient, monkeypatch
+):
     """配置状态 GET 要求认证且不访问 Provider 网络。"""
     monkeypatch.delenv("GW_PROVIDER_RUNTIME_JSON", raising=False)
     monkeypatch.delenv("GW_CHAT_BASE_URL", raising=False)
@@ -142,15 +156,25 @@ def test_chat_configuration_is_read_only_and_authenticated(api_client: TestClien
     assert data["configured"] is False
     assert data["providers"] == []
     serialized = json.dumps(data, ensure_ascii=False)
-    assert "api_key" not in serialized and "api_key_env" not in serialized and "base_url" not in serialized
+    assert (
+        "api_key" not in serialized
+        and "api_key_env" not in serialized
+        and "base_url" not in serialized
+    )
 
 
-def test_external_actions_fail_closed_without_leaking_payload(api_client: TestClient, monkeypatch):
+def test_external_actions_fail_closed_without_leaking_payload(
+    api_client: TestClient, monkeypatch
+):
     """GW_CLI_EXECUTION 未启用时 CLI 与对话必须 503，且不回显 payload。"""
     monkeypatch.delenv("GW_CLI_EXECUTION", raising=False)
     calls = [
         ("post", "/api/chat", {"json": {"message": "绝密提示词"}}),
-        ("post", "/api/chat/agent", {"json": {"message": "绝密提示词", "agent_id": "a"}}),
+        (
+            "post",
+            "/api/chat/agent",
+            {"json": {"message": "绝密提示词", "agent_id": "a"}},
+        ),
         ("post", "/api/codex/help", {"json": {"command": "--help"}}),
         ("post", "/api/gemini-cli/help", {"json": {"command": "--help"}}),
         ("get", "/api/jimeng/credit", {}),
@@ -169,7 +193,12 @@ def test_external_actions_fail_closed_without_leaking_payload(api_client: TestCl
         "/api/jimeng/logout": "JIMENG_LOGIN_NOT_INTEGRATED",
     }
     for method, path, kwargs in calls:
-        headers = GOVERNOR if path in {"/api/jimeng/credit", "/api/jimeng/login/start", "/api/jimeng/logout"} else AUTH
+        headers = (
+            GOVERNOR
+            if path
+            in {"/api/jimeng/credit", "/api/jimeng/login/start", "/api/jimeng/logout"}
+            else AUTH
+        )
         response = getattr(api_client, method)(path, headers=headers, **kwargs)
         assert response.status_code == 503, (method, path, response.text)
         detail = response.json()["detail"]
@@ -183,8 +212,10 @@ def test_external_actions_fail_closed_without_leaking_payload(api_client: TestCl
 def test_ai_upload_persists_real_file(api_client: TestClient):
     """上传必须真实落盘并可经 download-output 回读。"""
     import os
+
     response = api_client.post(
-        "/api/ai/upload", headers=AUTH,
+        "/api/ai/upload",
+        headers=AUTH,
         files={"files": ("note.txt", b"cleanroom-upload", "text/plain")},
     )
     assert response.status_code == 200, response.text
@@ -195,8 +226,9 @@ def test_ai_upload_persists_real_file(api_client: TestClient):
     assert record["size_bytes"] == len(b"cleanroom-upload")
     real = os.path.join(os.environ["GW_DATA_DIR"], record["display_path"])
     assert os.path.isfile(real)
-    fetched = api_client.get("/api/download-output", headers=AUTH,
-                             params={"path": record["display_path"]})
+    fetched = api_client.get(
+        "/api/download-output", headers=AUTH, params={"path": record["display_path"]}
+    )
     assert fetched.status_code == 200
     assert fetched.content == b"cleanroom-upload"
 
@@ -204,7 +236,9 @@ def test_ai_upload_persists_real_file(api_client: TestClient):
 def test_cli_help_executes_when_gated(api_client: TestClient, monkeypatch):
     """GW_CLI_EXECUTION=1 且命令存在时真实执行固定 --help，返回真实输出。"""
     monkeypatch.setenv("GW_CLI_EXECUTION", "1")
-    monkeypatch.setattr("gw.core.cli_runtime.find_cli", lambda protocol: "C:/fake/codex.exe")
+    monkeypatch.setattr(
+        "gw.core.cli_runtime.find_cli", lambda protocol: "C:/fake/codex.exe"
+    )
     captured = {}
 
     class Done:
@@ -220,9 +254,12 @@ def test_cli_help_executes_when_gated(api_client: TestClient, monkeypatch):
         return Done()
 
     import gw.core.cli_runtime as runtime
+
     monkeypatch.setattr(runtime, "find_cli", lambda protocol: "C:/fake/codex.exe")
     monkeypatch.setattr(runtime.subprocess, "run", fake_run_real)
-    response = api_client.post("/api/codex/help", headers=AUTH, json={"command": "rm -rf /"})
+    response = api_client.post(
+        "/api/codex/help", headers=AUTH, json={"command": "rm -rf /"}
+    )
     assert response.status_code == 200, response.text
     assert response.json()["text"] == "Usage: codex [options]"
     # 调用方命令文本绝不进入 argv；argv 只有固定参数。
@@ -242,8 +279,11 @@ def test_readonly_does_not_get_external_write_execution(api_client: TestClient):
     assert response.status_code == 403
     response = api_client.get("/api/jimeng/credit", headers=AUTH)
     assert response.status_code == 403
-    upload = api_client.post("/api/ai/upload", headers=READONLY,
-                             files={"files": ("x.txt", b"x", "text/plain")})
+    upload = api_client.post(
+        "/api/ai/upload",
+        headers=READONLY,
+        files={"files": ("x.txt", b"x", "text/plain")},
+    )
     assert upload.status_code == 403
 
 

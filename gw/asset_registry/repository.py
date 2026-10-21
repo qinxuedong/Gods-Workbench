@@ -95,13 +95,17 @@ def _bump(raw: Dict[str, Any]) -> int:
     return raw["revision"]
 
 
-def _cas(raw: Dict[str, Any], expected: Optional[int]) -> None:
-    """CAS：期望版本与当前 revision 不一致即 409。"""
+def _cas(raw: Dict[str, Any], expected: Optional[int], *, required: bool = False) -> None:
+    """CAS：需要版本的写操作拒绝缺失值，过期版本返回 409。"""
     current = int(raw.get("revision", 1))
-    if expected is not None and int(expected) != current:
+    if expected is None and not required:
+        return
+    if type(expected) is not int or expected < 1:
+        raise CleanroomException(400, "INVALID_REQUEST", "expected_version 必须为正整数")
+    if expected != current:
         raise CleanroomException(
             409, "VERSION_CONFLICT", "注册表版本冲突，请重新读取后重试",
-            extra={"expected_version": int(expected), "current_version": current},
+            extra={"expected_version": expected, "current_version": current},
             expose_extra_fields={"expected_version", "current_version"},
         )
 
@@ -216,12 +220,12 @@ def delete_asset(asset_id: str, expected_version: Optional[int], context=None) -
     from gw.asset_library.service import default_asset_library_service
     snapshot = state().read()
     _require(snapshot, asset_id)
-    _cas(snapshot, expected_version)
+    _cas(snapshot, expected_version, required=True)
     library_item = default_asset_library_service.remove_item_snapshot(asset_id)
     try:
         def mutate(raw: Dict[str, Any]) -> Any:
             item = _require(raw, asset_id)
-            _cas(raw, expected_version)
+            _cas(raw, expected_version, required=True)
             del raw["assets"][asset_id]
             payload = dict(item)
             if library_item is not None:
@@ -241,7 +245,7 @@ def delete_asset(asset_id: str, expected_version: Optional[int], context=None) -
         raise
 
 
-def restore_from_recycle(entry_id: str, context=None) -> Dict[str, Any]:
+def restore_from_recycle(entry_id: str, context=None, expected_version: Optional[int] = None) -> Dict[str, Any]:
     """从回收站恢复条目（同进同出：见 delete_asset docstring 的裁定）。
 
     回收站条目 payload["library_item"] 暂存过素材库条目时，恢复会把该条目原样放回
@@ -251,6 +255,7 @@ def restore_from_recycle(entry_id: str, context=None) -> Dict[str, Any]:
     """
     from gw.asset_library.service import default_asset_library_service
     peek = state().read()
+    _cas(peek, expected_version, required=True)
     existing = peek["recycle_bin"].get(entry_id)
     if existing is None:
         raise CleanroomException(404, "RECYCLE_ENTRY_NOT_FOUND", "回收站条目不存在")
@@ -265,6 +270,7 @@ def restore_from_recycle(entry_id: str, context=None) -> Dict[str, Any]:
         inserted = default_asset_library_service.insert_item_snapshot(stashed)
     try:
         def mutate(raw: Dict[str, Any]) -> Any:
+            _cas(raw, expected_version, required=True)
             entry = raw["recycle_bin"].get(entry_id)
             if entry is None:
                 raise CleanroomException(404, "RECYCLE_ENTRY_NOT_FOUND", "回收站条目不存在")
@@ -1248,8 +1254,8 @@ def cascade_preview(asset_id: str) -> Dict[str, Any]:
             "counts": {"projects": len(projects), "canvases": 0}, "data_status": DATA_STATUS_OK}
 
 
-def restore_asset_trash(entry_id: str, context=None) -> Dict[str, Any]:
-    return restore_from_recycle(entry_id, context)
+def restore_asset_trash(entry_id: str, context=None, expected_version: Optional[int] = None) -> Dict[str, Any]:
+    return restore_from_recycle(entry_id, context, expected_version)
 
 
 def restore_canvas(canvas_id: str) -> Dict[str, Any]:

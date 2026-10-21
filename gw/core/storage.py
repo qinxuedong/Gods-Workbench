@@ -28,12 +28,14 @@ from __future__ import annotations
 
 import json
 import hashlib
+import ntpath
 import os
 import shutil
 import stat
 import tempfile
 import threading
 import time
+import unicodedata
 from pathlib import Path
 from collections.abc import Mapping, Sequence
 from typing import Any, Callable, Dict, Iterator, List, Optional
@@ -82,6 +84,54 @@ def allowed_roots() -> List[Path]:
             raise CleanroomException(400, "INVALID_ALLOWED_ROOT", "GW_ALLOWED_ROOTS 只接受绝对路径")
         roots.append(candidate.resolve())
     return roots
+
+
+def normalize_directory_path(raw_path: str) -> str:
+    """规范化一个用户配置的绝对目录路径，不推断相对路径根。"""
+    if not isinstance(raw_path, str):
+        raise CleanroomException(400, "INVALID_PATH", "目录必须是绝对路径")
+    value = unicodedata.normalize("NFC", raw_path.strip())
+    if not value or any(ord(char) < 32 for char in value):
+        raise CleanroomException(400, "INVALID_PATH", "目录必须是绝对路径")
+
+    windows_drive, windows_tail = ntpath.splitdrive(value)
+    windows_absolute = bool(
+        windows_drive
+        and (
+            windows_drive.startswith(("\\\\", "//"))
+            and len(windows_drive.lstrip("\\/").split("\\" if "\\" in windows_drive else "/")) >= 2
+            or windows_tail.startswith(("\\", "/"))
+        )
+    )
+    if os.path.isabs(value):
+        return os.path.normpath(value)
+    if windows_absolute:
+        return ntpath.normpath(value)
+    raise CleanroomException(400, "INVALID_PATH", "目录必须是绝对路径")
+
+
+def directory_path_key(raw_path: str) -> str:
+    """生成路径比较键；Windows 盘符与 UNC 使用 Unicode casefold。"""
+    normalized = normalize_directory_path(raw_path)
+    if ntpath.splitdrive(normalized)[0]:
+        return ntpath.normcase(normalized).casefold()
+    return os.path.normcase(normalized).casefold()
+
+
+def validate_directory_path(raw_path: str) -> str:
+    """校验目录在当前主机存在且可读、可写、可遍历，并返回规范路径。"""
+    normalized = normalize_directory_path(raw_path)
+    if ntpath.splitdrive(normalized)[0] and os.name != "nt" and not os.path.isabs(normalized):
+        raise CleanroomException(503, "INVALID_PATH", "目录在当前主机不可访问")
+    candidate = Path(normalized)
+    try:
+        if not candidate.is_dir():
+            raise CleanroomException(400, "INVALID_PATH", "目录不存在或不可访问")
+        if not os.access(candidate, os.R_OK | os.W_OK | os.X_OK):
+            raise CleanroomException(400, "INVALID_PATH", "目录不存在或不可访问")
+    except (OSError, RuntimeError, ValueError) as exc:
+        raise CleanroomException(503, "INVALID_PATH", "目录暂时不可访问") from exc
+    return normalized
 
 
 def resolve_within_roots(raw_path: str) -> Path:

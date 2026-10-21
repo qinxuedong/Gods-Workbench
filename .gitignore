@@ -39,3 +39,7 @@ _hg_check.py
 # 谷歌备份
 .tmp.drivedownload
 .tmp.driveupload
+
+# Tauri build outputs
+/clients/desktop/target/
+/clients/desktop/gen/schemas/

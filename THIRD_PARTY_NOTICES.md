@@ -82,7 +82,23 @@ Detailed attribution and origins are documented in [`web/prompt-registry/NOTICE.
 
 ---
 
-## 4. License Texts
+## 4. Rust Desktop Client Dependencies
+
+Direct dependencies for the Tauri client are pinned in [`clients/desktop/Cargo.lock`](clients/desktop/Cargo.lock):
+
+| Package | Version | License | Copyright / Upstream |
+| :--- | :--- | :--- | :--- |
+| **Tauri** | 2.12.4 | Apache-2.0 OR MIT | Tauri contributors ([tauri-apps/tauri](https://github.com/tauri-apps/tauri)) |
+| **tauri-build** | 2.7.3 | Apache-2.0 OR MIT | Tauri contributors ([tauri-apps/tauri](https://github.com/tauri-apps/tauri)) |
+| **futures-util** | 0.3.34 | MIT OR Apache-2.0 | Futures-rs contributors ([futures-rs](https://github.com/rust-lang/futures-rs)) |
+| **if-addrs** | 0.13.4 | MIT OR BSD-3-Clause | messense ([if-addrs](https://github.com/messense/if-addrs)) |
+| **reqwest** | 0.12.28 | MIT OR Apache-2.0 | Sean McArthur ([reqwest](https://github.com/seanmonstar/reqwest)) |
+| **serde** | 1.0.229 | MIT OR Apache-2.0 | Serde contributors ([serde](https://github.com/serde-rs/serde)) |
+| **serde_json** | 1.0.154 | MIT OR Apache-2.0 | Serde contributors ([serde_json](https://github.com/serde-rs/json)) |
+
+---
+
+## 5. License Texts
 
 ### Apache License Version 2.0
 See [`LICENSE`](LICENSE) for the full Apache-2.0 license text.

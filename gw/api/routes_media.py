@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 # Copyright 2026 Gods-Workbench Authors
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -40,15 +39,15 @@ from gw.media import repository as repo
 router = APIRouter(tags=["media-b5"])
 
 
-def _read(authorization: Optional[str], role: str):
+def _read(authorization: str | None, role: str):
     return require_authenticated(authorization, role)
 
 
-def _write(authorization: Optional[str], role: str):
+def _write(authorization: str | None, role: str):
     return require_edit_access(authorization, role)
 
 
-async def _json(request: Request) -> Dict[str, Any]:
+async def _json(request: Request) -> dict[str, Any]:
     try:
         payload = await request.json()
     except Exception:
@@ -56,7 +55,7 @@ async def _json(request: Request) -> Dict[str, Any]:
     return payload if isinstance(payload, dict) else {}
 
 
-def _query_dict(request: Request) -> Dict[str, Any]:
+def _query_dict(request: Request) -> dict[str, Any]:
     return {key: request.query_params.get(key) for key in request.query_params.keys()}
 
 
@@ -64,10 +63,11 @@ def _query_dict(request: Request) -> Dict[str, Any]:
 # 代理 / 缩略图设置（JsonState 落盘，写后可读回）
 # ---------------------------------------------------------------------------
 
+
 @router.get("/api/asset-proxy/settings", status_code=status.HTTP_200_OK)
 def get_proxy_settings(
-    project_id: Optional[str] = None,
-    authorization: Optional[str] = Header(None),
+    project_id: str | None = None,
+    authorization: str | None = Header(None),
     x_user_role: str = Header("editor", alias="X-User-Role"),
 ):
     """读取代理设置；凭据字段永不回显。"""
@@ -78,7 +78,7 @@ def get_proxy_settings(
 @router.patch("/api/asset-proxy/settings", status_code=status.HTTP_200_OK)
 async def patch_proxy_settings(
     request: Request,
-    authorization: Optional[str] = Header(None),
+    authorization: str | None = Header(None),
     x_user_role: str = Header("editor", alias="X-User-Role"),
 ):
     """更新代理设置；凭据字段一律剥离，不落库不回显。"""
@@ -88,7 +88,7 @@ async def patch_proxy_settings(
 
 @router.get("/api/asset-thumbnails/settings", status_code=status.HTTP_200_OK)
 def get_thumb_settings(
-    authorization: Optional[str] = Header(None),
+    authorization: str | None = Header(None),
     x_user_role: str = Header("editor", alias="X-User-Role"),
 ):
     _read(authorization, x_user_role)
@@ -98,7 +98,7 @@ def get_thumb_settings(
 @router.patch("/api/asset-thumbnails/settings", status_code=status.HTTP_200_OK)
 async def patch_thumb_settings(
     request: Request,
-    authorization: Optional[str] = Header(None),
+    authorization: str | None = Header(None),
     x_user_role: str = Header("editor", alias="X-User-Role"),
 ):
     _write(authorization, x_user_role)
@@ -109,10 +109,11 @@ async def patch_thumb_settings(
 # 缩略图
 # ---------------------------------------------------------------------------
 
+
 @router.post("/api/asset-thumbnails/generate", status_code=status.HTTP_200_OK)
 async def generate_thumbs(
     request: Request,
-    authorization: Optional[str] = Header(None),
+    authorization: str | None = Header(None),
     x_user_role: str = Header("editor", alias="X-User-Role"),
 ):
     """真实生成缩略图（PIL 重采样），输出落盘到数据目录。"""
@@ -120,25 +121,31 @@ async def generate_thumbs(
     return repo.generate_thumbnail(await _json(request))
 
 
-@router.post("/api/asset-thumbnails/generate-background", status_code=status.HTTP_202_ACCEPTED)
+@router.post(
+    "/api/asset-thumbnails/generate-background", status_code=status.HTTP_202_ACCEPTED
+)
 async def generate_thumbs_background(
     request: Request,
-    authorization: Optional[str] = Header(None),
+    authorization: str | None = Header(None),
     x_user_role: str = Header("editor", alias="X-User-Role"),
 ):
     """后台生成：真实执行后返回稳定 job_id + poll_hint，可被 GET /jobs/{job_id} 查到。"""
     _write(authorization, x_user_role)
     payload = await _json(request)
     job_id, poll_hint = repo.run_background_thumbnail(payload)
-    return {"task": {"id": job_id, "job_id": job_id, "poll_hint": poll_hint},
-            "job_id": job_id, "poll_hint": poll_hint,
-            "data_status": "ok", "data_gaps": []}
+    return {
+        "task": {"id": job_id, "job_id": job_id, "poll_hint": poll_hint},
+        "job_id": job_id,
+        "poll_hint": poll_hint,
+        "data_status": "ok",
+        "data_gaps": [],
+    }
 
 
 @router.get("/api/asset-thumbnails/jobs/{job_id}", status_code=status.HTTP_200_OK)
 def get_thumb_job(
     job_id: str,
-    authorization: Optional[str] = Header(None),
+    authorization: str | None = Header(None),
     x_user_role: str = Header("editor", alias="X-User-Role"),
 ):
     """读取后台任务状态；不存在 404。"""
@@ -149,7 +156,7 @@ def get_thumb_job(
 @router.post("/api/asset-thumbnails/delete", status_code=status.HTTP_200_OK)
 async def delete_thumbs(
     request: Request,
-    authorization: Optional[str] = Header(None),
+    authorization: str | None = Header(None),
     x_user_role: str = Header("editor", alias="X-User-Role"),
 ):
     """删除真实生成的缩略图缓存；删除后不再返回。"""
@@ -160,7 +167,7 @@ async def delete_thumbs(
 @router.post("/api/asset-thumbnails/delete-storyboards", status_code=status.HTTP_200_OK)
 async def delete_storyboards(
     request: Request,
-    authorization: Optional[str] = Header(None),
+    authorization: str | None = Header(None),
     x_user_role: str = Header("editor", alias="X-User-Role"),
 ):
     """删除真实生成的分镜缓存；删除后不再返回。"""
@@ -172,10 +179,11 @@ async def delete_storyboards(
 # 媒体读取
 # ---------------------------------------------------------------------------
 
+
 @router.get("/api/media-preview", status_code=status.HTTP_200_OK)
 def media_preview(
     request: Request,
-    authorization: Optional[str] = Header(None),
+    authorization: str | None = Header(None),
     x_user_role: str = Header("editor", alias="X-User-Role"),
 ):
     """对允许根目录内的真实文件返回真实缩略字节；越界 403，依赖缺失 503。"""
@@ -191,10 +199,11 @@ def media_preview(
 # C11-T4 轻量代理：结构化状态与受控派生内容
 # ---------------------------------------------------------------------------
 
+
 @router.get("/api/media-proxy", status_code=status.HTTP_200_OK)
 def media_proxy_descriptor(
     request: Request,
-    authorization: Optional[str] = Header(None),
+    authorization: str | None = Header(None),
     x_user_role: str = Header("editor", alias="X-User-Role"),
 ):
     """返回真实代理的 ready 状态，或不伪造媒体的规范降级状态。"""
@@ -205,7 +214,7 @@ def media_proxy_descriptor(
 @router.post("/api/media-proxy", status_code=status.HTTP_200_OK)
 async def media_proxy_descriptor_post(
     request: Request,
-    authorization: Optional[str] = Header(None),
+    authorization: str | None = Header(None),
     x_user_role: str = Header("editor", alias="X-User-Role"),
 ):
     """POST 形态供检索结果直接提交结构化代理请求。"""
@@ -216,7 +225,7 @@ async def media_proxy_descriptor_post(
 @router.get("/api/media-proxy/content", status_code=status.HTTP_200_OK)
 def media_proxy_content(
     request: Request,
-    authorization: Optional[str] = Header(None),
+    authorization: str | None = Header(None),
     x_user_role: str = Header("editor", alias="X-User-Role"),
 ):
     """读取代理派生文件；源离线或依赖缺失时返回带动作的 503 错误包。"""
@@ -225,7 +234,9 @@ def media_proxy_content(
         path, metadata = media_proxy.artifact_path(_query_dict(request))
         content = path.read_bytes()
     except CleanroomException as exc:
-        return JSONResponse(status_code=exc.status_code, content=media_proxy.error_payload(exc))
+        return JSONResponse(
+            status_code=exc.status_code, content=media_proxy.error_payload(exc)
+        )
     except OSError:
         error = CleanroomException(503, "MEDIA_PROCESS_FAILED", "代理产物暂时不可读")
         return JSONResponse(status_code=503, content=media_proxy.error_payload(error))
@@ -239,7 +250,7 @@ def media_proxy_content(
 @router.get("/api/media-transcode", status_code=status.HTTP_200_OK)
 def media_transcode(
     request: Request,
-    authorization: Optional[str] = Header(None),
+    authorization: str | None = Header(None),
     x_user_role: str = Header("editor", alias="X-User-Role"),
 ):
     """真实 ffmpeg 转码并可下载输出；ffmpeg 缺失或失败 503。"""
@@ -248,14 +259,17 @@ def media_transcode(
     path = (repo.storage.data_root() / result["output"]).resolve()
     if not path.is_file():
         raise CleanroomException(404, "FILE_NOT_FOUND", "转码输出不存在")
-    return Response(content=path.read_bytes(), media_type="video/mp4",
-                    headers={"X-Transcoded-Bytes": str(result["bytes"])})
+    return Response(
+        content=path.read_bytes(),
+        media_type="video/mp4",
+        headers={"X-Transcoded-Bytes": str(result["bytes"])},
+    )
 
 
 @router.get("/api/audio-waveform-data", status_code=status.HTTP_200_OK)
 def waveform(
     request: Request,
-    authorization: Optional[str] = Header(None),
+    authorization: str | None = Header(None),
     x_user_role: str = Header("editor", alias="X-User-Role"),
 ):
     """真实 RMS 包络（ffmpeg 解码）；无音频流 400，ffmpeg 缺失 503。"""
@@ -266,7 +280,7 @@ def waveform(
 @router.get("/api/download-output", status_code=status.HTTP_200_OK)
 def download_output(
     request: Request,
-    authorization: Optional[str] = Header(None),
+    authorization: str | None = Header(None),
     x_user_role: str = Header("editor", alias="X-User-Role"),
 ):
     """只允许下载数据目录内的输出文件；越界 403，不存在 404。"""
@@ -275,13 +289,19 @@ def download_output(
     # 响应读取前再次校验，避免把此前准入结果当作永久授权。
     path = repo.storage.resolve_output_path(result["relative_path"])
     from urllib.parse import quote
-    safe = "".join(ch for ch in result["filename"] if ch not in '\\/:*?"<>|\r\n').strip() or path.name
+
+    safe = (
+        "".join(ch for ch in result["filename"] if ch not in '\\/:*?"<>|\r\n').strip()
+        or path.name
+    )
     ascii_name = safe.encode("ascii", "ignore").decode("ascii").strip() or "output"
     return Response(
         content=path.read_bytes(),
         media_type=repo._mime(path),
-        headers={"Content-Disposition": "attachment; filename=\"%s\"; filename*=UTF-8''%s"
-                                        % (ascii_name, quote(safe, safe=""))},
+        headers={
+            "Content-Disposition": "attachment; filename=\"%s\"; filename*=UTF-8''%s"
+            % (ascii_name, quote(safe, safe=""))
+        },
     )
 
 
@@ -289,10 +309,11 @@ def download_output(
 # 远端图片
 # ---------------------------------------------------------------------------
 
+
 @router.post("/api/online-image", status_code=status.HTTP_200_OK)
 async def online_image(
     request: Request,
-    authorization: Optional[str] = Header(None),
+    authorization: str | None = Header(None),
     x_user_role: str = Header("editor", alias="X-User-Role"),
 ):
     """真实抓取远端图片；SSRF 受限地址 403，网络失败 503。"""

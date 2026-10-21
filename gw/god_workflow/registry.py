@@ -2,6 +2,7 @@
 
 数据落在运行时 workflow 主体目录。凭据复用本地保护器加密，接口只返回掩码。
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -11,7 +12,7 @@ import re
 import tempfile
 import threading
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timezone
 from pathlib import Path
 from typing import Any, Optional
 
@@ -65,7 +66,8 @@ _CREDENTIAL_ENV = {
 }
 #: 兼容旧的字段名映射；保持 _SECRET_FIELDS 形态以免破坏既有导入。
 _SECRET_FIELDS = {
-    field: (masked_key, f"{field}_hash") for field, (_env, masked_key) in _CREDENTIAL_ENV.items()
+    field: (masked_key, f"{field}_hash")
+    for field, (_env, masked_key) in _CREDENTIAL_ENV.items()
 }
 
 
@@ -104,9 +106,9 @@ def _workflow_root() -> Path:
     return root
 
 
-def principal_digest(identity_domain: Optional[str], subject: Optional[str]) -> str:
+def principal_digest(identity_domain: str | None, subject: str | None) -> str:
     """Filesystem-safe, non-reversible principal folder name."""
-    material = f"{identity_domain or ''}\x00{subject or 'anonymous'}".encode("utf-8")
+    material = f"{identity_domain or ''}\x00{subject or 'anonymous'}".encode()
     return hashlib.sha256(material).hexdigest()[:32]
 
 
@@ -153,7 +155,9 @@ def _task_path(context: Any, task_id: str) -> Path:
 # ---------------------------------------------------------------------------
 def _atomic_write(path: Path, payload: Any) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    fd, temp_name = tempfile.mkstemp(prefix=f".{path.stem}.", suffix=".tmp", dir=path.parent)
+    fd, temp_name = tempfile.mkstemp(
+        prefix=f".{path.stem}.", suffix=".tmp", dir=path.parent
+    )
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as stream:
             json.dump(payload, stream, ensure_ascii=False, indent=2)
@@ -221,8 +225,12 @@ def _sanitize_settings_payload(body: dict[str, Any], context: Any) -> dict[str, 
             value = raw.strip()
             if value:
                 if body.get(f"clear_{field}"):
-                    raise CleanroomException(400, "INVALID_REQUEST", "不能同时填写和清除同一凭据")
-                owner = "workflow:" + principal_digest(context.identity_domain, context.subject)
+                    raise CleanroomException(
+                        400, "INVALID_REQUEST", "不能同时填写和清除同一凭据"
+                    )
+                owner = "workflow:" + principal_digest(
+                    context.identity_domain, context.subject
+                )
                 stored[f"{field}_encrypted"] = credentials.protect(owner, field, value)
                 stored[masked_key] = _mask(value)
         if f"clear_{field}" in body and not isinstance(body[f"clear_{field}"], bool):
@@ -242,7 +250,7 @@ def load_settings(context: Any) -> dict[str, Any]:
     return stored
 
 
-def read_settings(context: Any, request: Optional[Request] = None) -> dict[str, Any]:
+def read_settings(context: Any, request: Request | None = None) -> dict[str, Any]:
     """Assemble the GET /settings response; never returns a plaintext secret.
 
     本地密文优先、环境变量回退。损坏密文不会伪造配置状态。
@@ -251,7 +259,9 @@ def read_settings(context: Any, request: Optional[Request] = None) -> dict[str, 
     providers = {
         provider: {
             "configured": get_provider(provider).configured,
-            "status": "available" if get_provider(provider).configured else "unavailable",
+            "status": "available"
+            if get_provider(provider).configured
+            else "unavailable",
         }
         for provider in PROVIDERS
     }
@@ -267,9 +277,19 @@ def read_settings(context: Any, request: Optional[Request] = None) -> dict[str, 
         "rh_access_token_masked": _mask(access_token),
         "rh_api_key_env": credential_env_name("rh_api_key"),
         "rh_access_token_env": credential_env_name("rh_access_token"),
-        "rh_api_key_source": "local" if "rh_api_key_encrypted" in stored else "environment" if api_key else "none",
-        "rh_access_token_source": "local" if "rh_access_token_encrypted" in stored else "environment" if access_token else "none",
-        "credential_source": "local" if any(f"{field}_encrypted" in stored for field in _CREDENTIAL_ENV) else "environment",
+        "rh_api_key_source": "local"
+        if "rh_api_key_encrypted" in stored
+        else "environment"
+        if api_key
+        else "none",
+        "rh_access_token_source": "local"
+        if "rh_access_token_encrypted" in stored
+        else "environment"
+        if access_token
+        else "none",
+        "credential_source": "local"
+        if any(f"{field}_encrypted" in stored for field in _CREDENTIAL_ENV)
+        else "environment",
         "provider_status": providers,
     }
 
@@ -298,7 +318,7 @@ def update_settings(context: Any, body: dict[str, Any]) -> dict[str, Any]:
 # clipboard
 # ---------------------------------------------------------------------------
 def record_clipboard(context: Any, entries: list[dict[str, Any]]) -> dict[str, Any]:
-    now = datetime.now(timezone.utc).isoformat()
+    now = datetime.now(UTC).isoformat()
     history = _read_json(_clipboard_path(context), [])
     if not isinstance(history, list):
         history = []
@@ -329,7 +349,11 @@ def read_clipboard(context: Any) -> dict[str, Any]:
 def _media_type_for(filename: str, declared: str) -> str:
     declared = (declared or "").split(";", 1)[0].strip().lower()
     if declared and declared != "application/octet-stream":
-        if declared in IMAGE_MEDIA_TYPES or declared in VIDEO_MEDIA_TYPES or declared in DOCUMENT_MEDIA_TYPES:
+        if (
+            declared in IMAGE_MEDIA_TYPES
+            or declared in VIDEO_MEDIA_TYPES
+            or declared in DOCUMENT_MEDIA_TYPES
+        ):
             return declared
     suffix = Path(filename).suffix.lower()
     return EXTENSION_MEDIA_TYPES.get(suffix, "application/octet-stream")
@@ -375,7 +399,9 @@ def load_assets(context: Any) -> list[dict[str, Any]]:
     if not isinstance(manifest, list):
         # 损坏清单不能跳过已核验凭单的补偿恢复。
         manifest = []
-    items = [item for item in manifest if isinstance(item, dict) and item.get("asset_id")]
+    items = [
+        item for item in manifest if isinstance(item, dict) and item.get("asset_id")
+    ]
     # 先写恢复凭单再写文件；清单失败或进程中断后以哈希核验原文件补登，不删除产物。
     with _STORAGE_LOCK:
         recovery_root = _principal_root(context) / "output_recovery"
@@ -392,7 +418,9 @@ def load_assets(context: Any) -> list[dict[str, Any]]:
             target = _assets_root(context) / f"{receipt.stem}{extension}"
             if not target.is_file() or target.stat().st_size != asset.get("size_bytes"):
                 continue
-            if hashlib.sha256(target.read_bytes()).hexdigest() != asset.get("content_sha256"):
+            if hashlib.sha256(target.read_bytes()).hexdigest() != asset.get(
+                "content_sha256"
+            ):
                 continue
             items.insert(0, asset)
             changed = True
@@ -405,7 +433,9 @@ def list_assets(context: Any) -> list[dict[str, Any]]:
     """Manifest entries whose backing file still exists."""
     items: list[dict[str, Any]] = []
     for item in load_assets(context):
-        if (_assets_root(context) / f"{item['asset_id']}{item.get('extension', '')}").is_file():
+        if (
+            _assets_root(context) / f"{item['asset_id']}{item.get('extension', '')}"
+        ).is_file():
             items.append(item)
     return items
 
@@ -425,14 +455,20 @@ async def _read_upload(upload: UploadFile) -> bytes:
 async def store_upload(context: Any, request: Request) -> dict[str, Any]:
     content_type = request.headers.get("content-type", "").split(";", 1)[0].lower()
     if content_type != "multipart/form-data":
-        raise CleanroomException(400, "INVALID_ASSET_UPLOAD", "素材上传必须使用 multipart/form-data")
+        raise CleanroomException(
+            400, "INVALID_ASSET_UPLOAD", "素材上传必须使用 multipart/form-data"
+        )
     try:
         form = await request.form()
     except Exception as exc:
-        raise CleanroomException(400, "INVALID_ASSET_UPLOAD", "multipart 上传不可读取") from exc
+        raise CleanroomException(
+            400, "INVALID_ASSET_UPLOAD", "multipart 上传不可读取"
+        ) from exc
     upload = form.get("file")
     if upload is None or not hasattr(upload, "read"):
-        raise CleanroomException(400, "INVALID_ASSET_UPLOAD", "multipart 请求缺少 file 字段")
+        raise CleanroomException(
+            400, "INVALID_ASSET_UPLOAD", "multipart 请求缺少 file 字段"
+        )
     declared_name = _safe_filename(getattr(upload, "filename", "asset") or "asset")
     declared_type = str(getattr(upload, "content_type", "") or "")
     payload = await _read_upload(upload)
@@ -442,7 +478,9 @@ async def store_upload(context: Any, request: Request) -> dict[str, Any]:
     return store_bytes(context, payload, declared_name, declared_type)
 
 
-def resolve_asset_file(context: Any, asset_id: str) -> Optional[tuple[Path, dict[str, Any]]]:
+def resolve_asset_file(
+    context: Any, asset_id: str
+) -> tuple[Path, dict[str, Any]] | None:
     for item in load_assets(context):
         if item.get("asset_id") == asset_id:
             path = _assets_root(context) / f"{asset_id}{item.get('extension', '')}"
@@ -452,8 +490,14 @@ def resolve_asset_file(context: Any, asset_id: str) -> Optional[tuple[Path, dict
     return None
 
 
-def store_bytes(context: Any, payload: bytes, filename: str, media_type: str,
-                *, task_id: Optional[str] = None) -> dict[str, Any]:
+def store_bytes(
+    context: Any,
+    payload: bytes,
+    filename: str,
+    media_type: str,
+    *,
+    task_id: str | None = None,
+) -> dict[str, Any]:
     """把执行输出字节登记为素材（与上传共用同一清单与命名规则）。
 
     接受图像、视频及 PSD 原件；PSD 保留字节并提供下载，不伪造图层预览。
@@ -466,20 +510,33 @@ def store_bytes(context: Any, payload: bytes, filename: str, media_type: str,
     resolved_type = _media_type_for(safe_name, media_type)
     kind = classify_media_type(resolved_type)
     if kind == "file":
-        raise CleanroomException(400, "UNSUPPORTED_ASSET_MEDIA_TYPE", "仅支持图像、视频或 PSD 原件")
+        raise CleanroomException(
+            400, "UNSUPPORTED_ASSET_MEDIA_TYPE", "仅支持图像、视频或 PSD 原件"
+        )
     width, height = _probe_dimensions(payload, resolved_type)
     if kind == "document":
         # 只核验 PSD 标准文件头；图层数据原样保存，浏览器不尝试解释。
-        if len(payload) < 26 or payload[:6] != b'8BPS\x00\x01' or payload[6:12] != bytes(6):
+        if (
+            len(payload) < 26
+            or payload[:6] != b"8BPS\x00\x01"
+            or payload[6:12] != bytes(6)
+        ):
             raise CleanroomException(400, "INVALID_PSD_HEADER", "PSD 文件头无效")
-        height, width = int.from_bytes(payload[14:18], 'big'), int.from_bytes(payload[18:22], 'big')
+        height, width = (
+            int.from_bytes(payload[14:18], "big"),
+            int.from_bytes(payload[18:22], "big"),
+        )
         if not 0 < width <= 30000 or not 0 < height <= 30000:
             raise CleanroomException(400, "INVALID_PSD_HEADER", "PSD 图像尺寸无效")
     asset_id = str(uuid.uuid4())
     # 存储后缀与恢复白名单一致，原始文件名仍保留为显示/去重字段。
     extension = Path(safe_name).suffix.lower()
     if extension not in EXTENSION_MEDIA_TYPES:
-        extension = IMAGE_MEDIA_TYPES.get(resolved_type) or VIDEO_MEDIA_TYPES.get(resolved_type) or DOCUMENT_MEDIA_TYPES.get(resolved_type, "")
+        extension = (
+            IMAGE_MEDIA_TYPES.get(resolved_type)
+            or VIDEO_MEDIA_TYPES.get(resolved_type)
+            or DOCUMENT_MEDIA_TYPES.get(resolved_type, "")
+        )
     asset = {
         "asset_id": asset_id,
         "filename": safe_name,
@@ -489,7 +546,7 @@ def store_bytes(context: Any, payload: bytes, filename: str, media_type: str,
         "width": width,
         "height": height,
         "extension": extension,
-        "created_at": datetime.now(timezone.utc).isoformat(),
+        "created_at": datetime.now(UTC).isoformat(),
         "url": f"/api/god_workflow/assets/{asset_id}/content",
         "origin": "task" if task_id else "upload",
         "task_id": task_id,
@@ -502,22 +559,35 @@ def store_bytes(context: Any, payload: bytes, filename: str, media_type: str,
             if error.status_code != 404:
                 raise
         else:
-            asset.update({"job_id": task["job_id"], "workflow_id": task.get("workflow_id"),
-                          "workflow_version": task.get("workflow_version"),
-                          "source_context": task.get("source_context", {})})
+            asset.update(
+                {
+                    "job_id": task["job_id"],
+                    "workflow_id": task.get("workflow_id"),
+                    "workflow_version": task.get("workflow_version"),
+                    "source_context": task.get("source_context", {}),
+                }
+            )
             asset.update(task.get("source_context", {}))
     with _STORAGE_LOCK:
         digest = hashlib.sha256(payload).hexdigest()
         manifest = load_assets(context)
         if task_id:
             for existing in manifest:
-                if existing.get("task_id") == task_id and existing.get("filename") == safe_name and existing.get("content_sha256") == digest:
+                if (
+                    existing.get("task_id") == task_id
+                    and existing.get("filename") == safe_name
+                    and existing.get("content_sha256") == digest
+                ):
                     return existing
         asset["content_sha256"] = digest
         target = _assets_root(context) / f"{asset_id}{extension}"
         # 凭单先落盘；文件原子替换后才宣称清单登记成功。凭单保留作为补偿记录。
-        _atomic_write(_principal_root(context) / "output_recovery" / f"{asset_id}.json", asset)
-        fd, temp_name = tempfile.mkstemp(prefix=".output.", suffix=".tmp", dir=target.parent)
+        _atomic_write(
+            _principal_root(context) / "output_recovery" / f"{asset_id}.json", asset
+        )
+        fd, temp_name = tempfile.mkstemp(
+            prefix=".output.", suffix=".tmp", dir=target.parent
+        )
         try:
             with os.fdopen(fd, "wb") as stream:
                 stream.write(payload)
@@ -535,11 +605,19 @@ def store_bytes(context: Any, payload: bytes, filename: str, media_type: str,
 # ---------------------------------------------------------------------------
 # tasks
 # ---------------------------------------------------------------------------
-def create_task(context: Any, *, workflow_id: Optional[str], prompt_id: Optional[str], target: str,
-                node_count: int = 0, idempotency_key: Optional[str] = None,
-                request_fingerprint: Optional[str] = None, outcome_unknown: bool = False) -> dict[str, Any]:
+def create_task(
+    context: Any,
+    *,
+    workflow_id: str | None,
+    prompt_id: str | None,
+    target: str,
+    node_count: int = 0,
+    idempotency_key: str | None = None,
+    request_fingerprint: str | None = None,
+    outcome_unknown: bool = False,
+) -> dict[str, Any]:
     """持久化任务身份与状态；本地 task_id 兼容保留，job_id 是公共稳定键。"""
-    now = datetime.now(timezone.utc).isoformat()
+    now = datetime.now(UTC).isoformat()
     job_id = str(uuid.uuid4())
     public_status = "outcome_unknown" if outcome_unknown else "accepted"
     task = {
@@ -568,48 +646,72 @@ def create_task(context: Any, *, workflow_id: Optional[str], prompt_id: Optional
         try:
             _atomic_write(_task_path(context, task["task_id"]), task)
         except OSError:
-            raise CleanroomException(503, "TASK_LEDGER_WRITE_FAILED", "任务账本写入失败，未发送请求") from None
+            raise CleanroomException(
+                503, "TASK_LEDGER_WRITE_FAILED", "任务账本写入失败，未发送请求"
+            ) from None
     return task
 
 
 def reserve_task(context: Any, **kwargs: Any) -> tuple[dict[str, Any], bool]:
     """单进程原子幂等预留；发送后中断保持未知，不自动重复副作用。"""
     with _STORAGE_LOCK:
-        existing = find_idempotent_task(context, kwargs.get("idempotency_key") or "", kwargs["request_fingerprint"])
+        existing = find_idempotent_task(
+            context, kwargs.get("idempotency_key") or "", kwargs["request_fingerprint"]
+        )
         if existing is not None:
             return load_task(context, existing["task_id"]), True
-        return create_task(context, prompt_id=None, outcome_unknown=True, **kwargs), False
+        return create_task(
+            context, prompt_id=None, outcome_unknown=True, **kwargs
+        ), False
 
 
-def find_idempotent_task(context: Any, idempotency_key: str, request_fingerprint: str) -> dict[str, Any] | None:
+def find_idempotent_task(
+    context: Any, idempotency_key: str, request_fingerprint: str
+) -> dict[str, Any] | None:
     """按主体范围查找幂等账本；同键不同指纹由调用方拒绝。"""
-    key = str(idempotency_key or '').strip()
+    key = str(idempotency_key or "").strip()
     if not key:
         return None
     for path in _tasks_root(context).glob("*.json"):
         task = _read_json(path, None)
         if not isinstance(task, dict):
-            raise CleanroomException(503, "TASK_LEDGER_UNREADABLE", "任务账本无法读取，拒绝重复提交")
+            raise CleanroomException(
+                503, "TASK_LEDGER_UNREADABLE", "任务账本无法读取，拒绝重复提交"
+            )
         if task.get("idempotency_key") != key:
             continue
         if task.get("request_fingerprint") != request_fingerprint:
-            raise CleanroomException(409, "IDEMPOTENCY_CONFLICT", "幂等键已用于不同请求")
+            raise CleanroomException(
+                409, "IDEMPOTENCY_CONFLICT", "幂等键已用于不同请求"
+            )
         return task
     return None
 
 
 def list_tasks(context: Any) -> list[dict[str, Any]]:
     with _STORAGE_LOCK:
-        tasks = [load_task(context, path.stem) for path in _tasks_root(context).glob("*.json")]
-        return sorted(tasks, key=lambda task: task.get("created_at", ""), reverse=True)[:100]
+        tasks = [
+            load_task(context, path.stem)
+            for path in _tasks_root(context).glob("*.json")
+        ]
+        return sorted(tasks, key=lambda task: task.get("created_at", ""), reverse=True)[
+            :100
+        ]
 
 
-def list_tasks_page(context: Any, *, workflow_id: Optional[str] = None,
-                    limit: int = 20,
-                    after: Optional[tuple[str, str]] = None) -> tuple[list[dict[str, Any]], Optional[tuple[str, str]]]:
+def list_tasks_page(
+    context: Any,
+    *,
+    workflow_id: str | None = None,
+    limit: int = 20,
+    after: tuple[str, str] | None = None,
+) -> tuple[list[dict[str, Any]], tuple[str, str] | None]:
     """按 (created_at, task_id) 键集分页读取任务账本；先按 workflow_id 过滤再切片，不受百条截断限制。"""
     with _STORAGE_LOCK:
-        tasks = [load_task(context, path.stem) for path in _tasks_root(context).glob("*.json")]
+        tasks = [
+            load_task(context, path.stem)
+            for path in _tasks_root(context).glob("*.json")
+        ]
         if workflow_id is not None:
             tasks = [task for task in tasks if task.get("workflow_id") == workflow_id]
 
@@ -633,10 +735,19 @@ def load_task(context: Any, task_id: str) -> dict[str, Any]:
     task.setdefault("job_id", task["task_id"])
     task.setdefault("remote_task_id", task.get("prompt_id"))
     task.setdefault("source_status", task.get("status"))
-    task["status"] = {"queued": "accepted", "succeeded": "completed", "canceled": "cancelled", "interrupted": "cancelled"}.get(task.get("status"), task.get("status"))
+    task["status"] = {
+        "queued": "accepted",
+        "succeeded": "completed",
+        "canceled": "cancelled",
+        "interrupted": "cancelled",
+    }.get(task.get("status"), task.get("status"))
     # error_code 是派生字段：按归一化后的当前状态重算，不信任落盘旧值。
     if task["status"] == "outcome_unknown":
-        task["error_code"] = "OUTCOME_UNKNOWN_NO_REMOTE_ID" if not task.get("remote_task_id") else "OUTCOME_UNKNOWN"
+        task["error_code"] = (
+            "OUTCOME_UNKNOWN_NO_REMOTE_ID"
+            if not task.get("remote_task_id")
+            else "OUTCOME_UNKNOWN"
+        )
     elif task["status"] == "abandoned":
         task["error_code"] = "TASK_ABANDONED"
     else:
@@ -644,45 +755,69 @@ def load_task(context: Any, task_id: str) -> dict[str, Any]:
     return task
 
 
-def abandon_task(context: Any, task_id: str, *, reason: str = "") -> tuple[dict[str, Any], bool]:
+def abandon_task(
+    context: Any, task_id: str, *, reason: str = ""
+) -> tuple[dict[str, Any], bool]:
     """把结果未知且无远端 ID 的任务标记为放弃；绝不触发任何远端提交或重发。"""
     with _STORAGE_LOCK:
         task = load_task(context, task_id)
         if task.get("status") == "abandoned":
             return task, False
         if task.get("remote_task_id"):
-            raise CleanroomException(409, "TASK_HAS_REMOTE_ID", "任务已有远端 ID，不能标记放弃，请查询或回收")
+            raise CleanroomException(
+                409, "TASK_HAS_REMOTE_ID", "任务已有远端 ID，不能标记放弃，请查询或回收"
+            )
         if task.get("status") != "outcome_unknown":
-            raise CleanroomException(409, "TASK_NOT_OUTCOME_UNKNOWN", "只有结果未知且无远端 ID 的任务可以标记放弃")
-        now = datetime.now(timezone.utc).isoformat()
-        task.update({
-            "status": "abandoned",
-            "execution_status": "abandoned",
-            "abandoned_at": now,
-            "abandon_reason": str(reason or "")[:200],
-            "previous_status": "outcome_unknown",
-            "error_code": "TASK_ABANDONED",
-            "updated_at": now,
-        })
+            raise CleanroomException(
+                409,
+                "TASK_NOT_OUTCOME_UNKNOWN",
+                "只有结果未知且无远端 ID 的任务可以标记放弃",
+            )
+        now = datetime.now(UTC).isoformat()
+        task.update(
+            {
+                "status": "abandoned",
+                "execution_status": "abandoned",
+                "abandoned_at": now,
+                "abandon_reason": str(reason or "")[:200],
+                "previous_status": "outcome_unknown",
+                "error_code": "TASK_ABANDONED",
+                "updated_at": now,
+            }
+        )
         try:
             _atomic_write(_task_path(context, task_id), task)
         except OSError:
-            raise CleanroomException(503, "TASK_LEDGER_WRITE_FAILED", "任务账本写入失败，请查询恢复") from None
+            raise CleanroomException(
+                503, "TASK_LEDGER_WRITE_FAILED", "任务账本写入失败，请查询恢复"
+            ) from None
     return task, True
 
 
-def update_task(context: Any, task_id: str, *, only_if_active: bool = False, **changes: Any) -> dict[str, Any]:
+def update_task(
+    context: Any, task_id: str, *, only_if_active: bool = False, **changes: Any
+) -> dict[str, Any]:
     with _STORAGE_LOCK:
         task = load_task(context, task_id)
         # 多入口轮询的迟到回包不能覆盖已确认终态；显式回收重试不受此条件限制。
-        if only_if_active and task.get("status") in {"completed", "failed", "cancelled", "outcome_unknown", "abandoned"}:
+        if only_if_active and task.get("status") in {
+            "completed",
+            "failed",
+            "cancelled",
+            "outcome_unknown",
+            "abandoned",
+        }:
             return task
         task.update(changes)
-        task["updated_at"] = datetime.now(timezone.utc).isoformat()
+        task["updated_at"] = datetime.now(UTC).isoformat()
         try:
             _atomic_write(_task_path(context, task_id), task)
         except OSError:
-            raise CleanroomException(503, "TASK_LEDGER_WRITE_FAILED", "任务账本写入失败，请查询恢复，勿重新生成") from None
+            raise CleanroomException(
+                503,
+                "TASK_LEDGER_WRITE_FAILED",
+                "任务账本写入失败，请查询恢复，勿重新生成",
+            ) from None
     return task
 
 

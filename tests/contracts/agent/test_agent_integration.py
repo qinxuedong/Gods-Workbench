@@ -1,9 +1,12 @@
 """Host HTTP contract tests for the same-process durable Agent integration."""
+
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
+from datetime import UTC
 from pathlib import Path
-from typing import Any, Mapping
+from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
@@ -79,7 +82,9 @@ def host_agent(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     from gw.projects_hub.service import ProjectsService, owner_key_for_context
 
     session.reset_stores()
-    principal, session_token = local_accounts.create_first_admin("agentowner", "AgentTest2026")
+    principal, session_token = local_accounts.create_first_admin(
+        "agentowner", "AgentTest2026"
+    )
     auth = AuthContext(
         role=principal["role"],
         subject=principal["user_id"],
@@ -95,7 +100,13 @@ def host_agent(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     config: dict[str, Any] = {
         "configured": True,
         "default_provider_id": "fake-provider",
-        "providers": [{"provider_id": "fake-provider", "configured": True, "models": ["fake-model"]}],
+        "providers": [
+            {
+                "provider_id": "fake-provider",
+                "configured": True,
+                "models": ["fake-model"],
+            }
+        ],
     }
 
     def model_resolver(provider_id: str | None, model: str | None) -> Mapping[str, str]:
@@ -126,7 +137,15 @@ def host_agent(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
         client.cookies.set(session_cookie_name(), session_token)
         profiles = integration.config_summary()["profiles"]
         profile_ids = {item["mode"]: item["config_snapshot_id"] for item in profiles}
-        yield Harness(client, integration, project.project_id, principal, session_token, gateway, profile_ids)
+        yield Harness(
+            client,
+            integration,
+            project.project_id,
+            principal,
+            session_token,
+            gateway,
+            profile_ids,
+        )
     session.reset_stores()
 
 
@@ -151,7 +170,9 @@ def _run_count(integration: Any) -> int:
         return int(db.execute("SELECT COUNT(*) FROM runs").fetchone()[0])
 
 
-def test_agent_config_and_create_fail_closed_without_allowlisted_model(host_agent: Harness):
+def test_agent_config_and_create_fail_closed_without_allowlisted_model(
+    host_agent: Harness,
+):
     integration = host_agent.integration
     integration.configuration_provider = lambda: {
         "configured": False,
@@ -173,7 +194,9 @@ def test_agent_config_and_create_fail_closed_without_allowlisted_model(host_agen
     assert response.json()["detail"]["code"] == "AGENT_NOT_INTEGRATED"
     assert _run_count(integration) == 0
     with integration.database.connect() as db:
-        assert db.execute("SELECT COUNT(*) FROM host_agent_create_keys").fetchone()[0] == 0
+        assert (
+            db.execute("SELECT COUNT(*) FROM host_agent_create_keys").fetchone()[0] == 0
+        )
     assert host_agent.gateway.calls == []
 
 
@@ -184,14 +207,22 @@ def test_agent_config_exposes_stable_content_addressed_profiles(host_agent: Harn
     assert first.status_code == 200
     assert first.json()["ready"] is True
     profiles = first.json()["profiles"]
-    assert {(item["provider_id"], item["model"], item["mode"]) for item in profiles} == {
+    assert {
+        (item["provider_id"], item["model"], item["mode"]) for item in profiles
+    } == {
         ("fake-provider", "fake-model", "approval"),
         ("fake-provider", "fake-model", "automatic"),
     }
     for item in profiles:
         assert item["config_snapshot_id"].startswith("cfg:")
         assert item["version"] == item["config_snapshot_id"]
-        assert set(item) >= {"config_snapshot_id", "version", "provider_id", "model", "mode"}
+        assert set(item) >= {
+            "config_snapshot_id",
+            "version",
+            "provider_id",
+            "model",
+            "mode",
+        }
         assert "pass_score" not in item
         assert "stage_score_weights" not in item
 
@@ -211,7 +242,9 @@ def test_agent_config_exposes_stable_content_addressed_profiles(host_agent: Harn
     assert host_agent.gateway.calls == []
 
 
-def test_agent_create_requires_explicit_inputs_and_fails_closed_on_source_refs(host_agent: Harness):
+def test_agent_create_requires_explicit_inputs_and_fails_closed_on_source_refs(
+    host_agent: Harness,
+):
     payload = _create_payload(host_agent)
     without_profile = dict(payload)
     without_profile.pop("config_snapshot_id")
@@ -235,10 +268,15 @@ def test_agent_create_requires_explicit_inputs_and_fails_closed_on_source_refs(h
         ),
     )
     assert unsupported_refs.status_code == 400
-    assert unsupported_refs.json()["detail"]["code"] == "AGENT_INPUT_ARTIFACT_REFS_UNSUPPORTED"
+    assert (
+        unsupported_refs.json()["detail"]["code"]
+        == "AGENT_INPUT_ARTIFACT_REFS_UNSUPPORTED"
+    )
     assert _run_count(host_agent.integration) == 0
     with host_agent.integration.database.connect() as db:
-        assert db.execute("SELECT COUNT(*) FROM host_agent_create_keys").fetchone()[0] == 0
+        assert (
+            db.execute("SELECT COUNT(*) FROM host_agent_create_keys").fetchone()[0] == 0
+        )
     assert host_agent.gateway.calls == []
 
 
@@ -252,18 +290,26 @@ def test_agent_create_rejects_unknown_and_mismatched_profiles(host_agent: Harnes
 
     mismatched = host_agent.client.post(
         "/api/agent/runs",
-        json=_create_payload(host_agent, config_snapshot_id=host_agent.profile_ids["automatic"]),
+        json=_create_payload(
+            host_agent, config_snapshot_id=host_agent.profile_ids["automatic"]
+        ),
     )
     assert mismatched.status_code == 400
     assert mismatched.json()["detail"]["code"] == "AGENT_CONFIG_PROFILE_MISMATCH"
     assert _run_count(host_agent.integration) == 0
     with host_agent.integration.database.connect() as db:
-        assert db.execute("SELECT COUNT(*) FROM host_agent_create_keys").fetchone()[0] == 0
+        assert (
+            db.execute("SELECT COUNT(*) FROM host_agent_create_keys").fetchone()[0] == 0
+        )
     assert host_agent.gateway.calls == []
 
 
-def test_agent_configuration_route_applies_only_current_profiles_to_paused_runs(host_agent: Harness):
-    created = host_agent.client.post("/api/agent/runs", json=_create_payload(host_agent))
+def test_agent_configuration_route_applies_only_current_profiles_to_paused_runs(
+    host_agent: Harness,
+):
+    created = host_agent.client.post(
+        "/api/agent/runs", json=_create_payload(host_agent)
+    )
     assert created.status_code == 202, created.text
     run_id = created.json()["run_id"]
 
@@ -293,7 +339,9 @@ def test_agent_configuration_route_applies_only_current_profiles_to_paused_runs(
     assert expired.json()["detail"]["code"] == "CAPABILITY_UNSUPPORTED"
     host_agent.integration.configuration_provider = configured_provider
 
-    not_paused = apply(host_agent.profile_ids["automatic"], 0, "agent-config-running-key")
+    not_paused = apply(
+        host_agent.profile_ids["automatic"], 0, "agent-config-running-key"
+    )
     assert not_paused.status_code == 409
     assert not_paused.json()["detail"]["code"] == "REVISION_CONFLICT"
 
@@ -306,7 +354,11 @@ def test_agent_configuration_route_applies_only_current_profiles_to_paused_runs(
         },
     )
     assert pause.status_code == 200
-    applied = apply(host_agent.profile_ids["automatic"], pause.json()["version"], "agent-config-apply-key")
+    applied = apply(
+        host_agent.profile_ids["automatic"],
+        pause.json()["version"],
+        "agent-config-apply-key",
+    )
     assert applied.status_code == 200, applied.text
     run = applied.json()
     assert run["run_id"] == run_id
@@ -322,15 +374,25 @@ def test_agent_configuration_route_applies_only_current_profiles_to_paused_runs(
         "default_provider_id": None,
         "providers": [],
     }
-    replay = apply(host_agent.profile_ids["automatic"], pause.json()["version"], "agent-config-apply-key")
+    replay = apply(
+        host_agent.profile_ids["automatic"],
+        pause.json()["version"],
+        "agent-config-apply-key",
+    )
     assert replay.status_code == 200, replay.text
     assert replay.json()["version"] == run["version"]
 
-    changed_replay = apply(host_agent.profile_ids["automatic"], run["version"], "agent-config-apply-key")
+    changed_replay = apply(
+        host_agent.profile_ids["automatic"], run["version"], "agent-config-apply-key"
+    )
     assert changed_replay.status_code == 409
     assert changed_replay.json()["detail"]["code"] == "IDEMPOTENCY_CONFLICT"
 
-    expired_new_mutation = apply(host_agent.profile_ids["automatic"], run["version"], "agent-config-expired-new-key")
+    expired_new_mutation = apply(
+        host_agent.profile_ids["automatic"],
+        run["version"],
+        "agent-config-expired-new-key",
+    )
     assert expired_new_mutation.status_code == 422
     assert expired_new_mutation.json()["detail"]["code"] == "CAPABILITY_UNSUPPORTED"
     host_agent.integration.configuration_provider = configured_provider
@@ -420,12 +482,16 @@ def test_agent_cookie_routes_create_idempotently_and_page_events(host_agent: Har
     assert cancelled.status_code == 200
     assert cancelled.json()["status"] == "cancelled"
 
-    first_page = client.get(f"/api/agent/runs/{run['run_id']}/events?after_version=0&limit=1")
+    first_page = client.get(
+        f"/api/agent/runs/{run['run_id']}/events?after_version=0&limit=1"
+    )
     assert first_page.status_code == 200
     first_data = first_page.json()
     assert first_data["events"]
     assert first_data["next_cursor"] is not None
-    assert len({event["event_id"] for event in first_data["events"]}) == len(first_data["events"])
+    assert len({event["event_id"] for event in first_data["events"]}) == len(
+        first_data["events"]
+    )
     cursor = first_data["cursor"]
     second_page = client.get(
         f"/api/agent/runs/{run['run_id']}/events?after_version=0&limit=1&cursor={cursor}"
@@ -510,7 +576,9 @@ def test_app_lifespan_accepts_callable_integration_factory(host_agent: Harness):
     assert calls == ["called"]
 
 
-def test_app_lifespan_cleans_up_when_agent_startup_fails(monkeypatch: pytest.MonkeyPatch):
+def test_app_lifespan_cleans_up_when_agent_startup_fails(
+    monkeypatch: pytest.MonkeyPatch,
+):
     from gw.api import agent_integration
     from gw.api.app import create_app
     from gw.asset_registry import index_jobs
@@ -539,7 +607,9 @@ def test_app_lifespan_cleans_up_when_agent_startup_fails(monkeypatch: pytest.Mon
     assert calls == ["start", "stop", "shutdown_index_jobs"]
 
 
-def test_app_lifespan_preserves_startup_error_when_stop_fails(monkeypatch: pytest.MonkeyPatch):
+def test_app_lifespan_preserves_startup_error_when_stop_fails(
+    monkeypatch: pytest.MonkeyPatch,
+):
     from gw.api import agent_integration
     from gw.api.app import create_app
     from gw.asset_registry import index_jobs
@@ -571,7 +641,9 @@ def test_app_lifespan_preserves_startup_error_when_stop_fails(monkeypatch: pytes
     assert str(raised.value.__cause__) == "synthetic cleanup failure"
 
 
-def test_agent_write_contract_requires_cas_and_exact_review_binding(host_agent: Harness):
+def test_agent_write_contract_requires_cas_and_exact_review_binding(
+    host_agent: Harness,
+):
     blank_goal = host_agent.client.post(
         "/api/agent/runs",
         json=_create_payload(host_agent, user_goal="   "),
@@ -579,12 +651,17 @@ def test_agent_write_contract_requires_cas_and_exact_review_binding(host_agent: 
     assert blank_goal.status_code == 400
     assert _run_count(host_agent.integration) == 0
 
-    invalid_cursor = host_agent.client.get("/api/agent/runs/not-a-run/events?cursor=%20")
+    invalid_cursor = host_agent.client.get(
+        "/api/agent/runs/not-a-run/events?cursor=%20"
+    )
     assert invalid_cursor.status_code == 400
 
     missing_mutation = host_agent.client.post(
         "/api/agent/runs/not-a-run/pause",
-        json={"idempotency_key": "agent-pause-key-0002", "request_id": "agent-pause-request-0002"},
+        json={
+            "idempotency_key": "agent-pause-key-0002",
+            "request_id": "agent-pause-request-0002",
+        },
     )
     assert missing_mutation.status_code == 400
     assert missing_mutation.json()["detail"]["code"] == "INVALID_REQUEST"
@@ -628,11 +705,13 @@ def _episode_text_content(stage: str) -> str:
         "outline_characters": {
             "source_brief_version_id": "brief-source-v1",
             "logline": "Synthetic outline logline.",
-            "sections": [{
-                "section_id": "section-1",
-                "title": "Act I",
-                "summary": "Initial introduction.",
-            }],
+            "sections": [
+                {
+                    "section_id": "section-1",
+                    "title": "Act I",
+                    "summary": "Initial introduction.",
+                }
+            ],
             "characters": [],
             "relationships": [],
         },
@@ -640,40 +719,55 @@ def _episode_text_content(stage: str) -> str:
             "source_brief_version_id": "brief-source-v1",
             "source_outline_version_id": "outline-source-v1",
             "title": "Contract Test Episode",
-            "scenes": [{
-                "scene_id": "scene-1",
-                "title": "Opening",
-                "time": "Day",
-                "location": "Studio",
-                "content": "A concise synthetic scene.",
-            }],
+            "scenes": [
+                {
+                    "scene_id": "scene-1",
+                    "title": "Opening",
+                    "time": "Day",
+                    "location": "Studio",
+                    "content": "A concise synthetic scene.",
+                }
+            ],
         },
         "scene_script": {
             "source_full_script_version_id": "script-source-v1",
-            "scenes": [{
-                "scene_id": "scene-1",
-                "title": "Opening Scene Breakdown",
-                "time": "Day",
-                "location": "Studio",
-                "content": "A detailed synthetic scene breakdown.",
-            }],
+            "scenes": [
+                {
+                    "scene_id": "scene-1",
+                    "title": "Opening Scene Breakdown",
+                    "time": "Day",
+                    "location": "Studio",
+                    "content": "A detailed synthetic scene breakdown.",
+                }
+            ],
         },
         "storyboard_text": {
             "source_full_script_version_id": "script-source-v1",
             "source_scene_script_version_id": "scene-script-source-v1",
-            "shots": [{"shot_id": "shot-1", "scene_id": "scene-1", "description": "Wide shot."}],
+            "shots": [
+                {
+                    "shot_id": "shot-1",
+                    "scene_id": "scene-1",
+                    "description": "Wide shot.",
+                }
+            ],
         },
         "delivery_check": {
-            "checked_artifacts": [{
-                "stage": "full_script",
-                "artifact_id": "script-artifact",
-                "version_id": "script-version",
-            }],
+            "checked_artifacts": [
+                {
+                    "stage": "full_script",
+                    "artifact_id": "script-artifact",
+                    "version_id": "script-version",
+                }
+            ],
             "verified_requirements": ["Synthetic contract requirement."],
             "summary": "Synthetic delivery check.",
         },
     }
-    return json.dumps({"schema_version": 1, "stage": stage, "content": payloads[stage]}, sort_keys=True)
+    return json.dumps(
+        {"schema_version": 1, "stage": stage, "content": payloads[stage]},
+        sort_keys=True,
+    )
 
 
 def _create_export_test_run(host_agent: Harness, mode: str) -> str:
@@ -736,42 +830,52 @@ def _seed_export_test_records(
         attempts: list[Any] = []
         reviews: list[Any] = []
         approvals: list[Any] = []
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
 
         for index, record in enumerate(records):
             label = record["label"]
             stage = StageId(record["stage"])
             content = _episode_text_content(stage.value)
-            artifact = await service.artifacts.create_version(ArtifactVersionInput(
-                artifact_id=Identifier(f"artifact-{run_id[:8]}-{label}"),
-                parent_version_id=None,
-                content=content,
-                metadata={"run_id": run_id, "runtime_stage": stage.value},
-                source_refs=[],
-                idempotency_key=Identifier(f"export-artifact-key-{run_id[:8]}-{label}"),
-            ))
+            artifact = await service.artifacts.create_version(
+                ArtifactVersionInput(
+                    artifact_id=Identifier(f"artifact-{run_id[:8]}-{label}"),
+                    parent_version_id=None,
+                    content=content,
+                    metadata={"run_id": run_id, "runtime_stage": stage.value},
+                    source_refs=[],
+                    idempotency_key=Identifier(
+                        f"export-artifact-key-{run_id[:8]}-{label}"
+                    ),
+                )
+            )
             review_id = Identifier(f"review-{run_id[:8]}-{label}")
             score = float(record.get("score", 9.5))
             exact_score = record.get("exact_score", str(score))
             program_passed = record.get("program_passed", True)
-            review = ReviewRecord.model_validate({
-                "schema_version": 1,
-                "review_id": review_id,
-                "run_id": run_identifier,
-                "artifact": artifact,
-                "rule_version": config["scoring_rule_version"],
-                "dimension_scores": {"quality": {"score": 9.5, "evidence": ["Synthetic evidence."]}},
-                "program_validation_passed": program_passed,
-                "program_checks": [{
-                    "check_id": f"check-{label}",
-                    "passed": program_passed,
-                    "message": "Synthetic export eligibility check.",
-                }],
-                "overall_score": score,
-                "overall_score_decimal": exact_score,
-                "conclusion": record.get("conclusion", "pass"),
-                "created_at": now,
-            })
+            review = ReviewRecord.model_validate(
+                {
+                    "schema_version": 1,
+                    "review_id": review_id,
+                    "run_id": run_identifier,
+                    "artifact": artifact,
+                    "rule_version": config["scoring_rule_version"],
+                    "dimension_scores": {
+                        "quality": {"score": 9.5, "evidence": ["Synthetic evidence."]}
+                    },
+                    "program_validation_passed": program_passed,
+                    "program_checks": [
+                        {
+                            "check_id": f"check-{label}",
+                            "passed": program_passed,
+                            "message": "Synthetic export eligibility check.",
+                        }
+                    ],
+                    "overall_score": score,
+                    "overall_score_decimal": exact_score,
+                    "conclusion": record.get("conclusion", "pass"),
+                    "created_at": now,
+                }
+            )
             attempt = StageAttempt(
                 schema_version=1,
                 stage_attempt_id=Identifier(f"attempt-{run_id[:8]}-{label}"),
@@ -793,42 +897,75 @@ def _seed_export_test_records(
 
             decision = record.get("approval")
             if decision:
-                approvals.append(ApprovalRecord(
-                    schema_version=1,
-                    approval_id=Identifier(f"approval-{run_id[:8]}-{label}"),
-                    run_id=run_identifier,
-                    review_id=Identifier(record.get("approval_review_id", review_id.root)),
-                    artifact_version_id=Identifier(record.get("approval_version_id", artifact.version_id.root)),
-                    decision=ApprovalDecision(decision),
-                    actor_id=Identifier("synthetic-reviewer"),
-                    reason="Synthetic exact-version approval.",
-                    expected_version=run.version,
-                    created_at=now,
-                ))
+                approvals.append(
+                    ApprovalRecord(
+                        schema_version=1,
+                        approval_id=Identifier(f"approval-{run_id[:8]}-{label}"),
+                        run_id=run_identifier,
+                        review_id=Identifier(
+                            record.get("approval_review_id", review_id.root)
+                        ),
+                        artifact_version_id=Identifier(
+                            record.get("approval_version_id", artifact.version_id.root)
+                        ),
+                        decision=ApprovalDecision(decision),
+                        actor_id=Identifier("synthetic-reviewer"),
+                        reason="Synthetic exact-version approval.",
+                        expected_version=run.version,
+                        created_at=now,
+                    )
+                )
 
         for label in duplicate_attempt_labels:
-            original = next(attempt for attempt in attempts if review_ids[label] == attempt.review_id.root)
-            attempts.append(original.model_copy(update={"stage_attempt_id": Identifier(f"duplicate-{original.stage_attempt_id.root}")}))
+            original = next(
+                attempt
+                for attempt in attempts
+                if review_ids[label] == attempt.review_id.root
+            )
+            attempts.append(
+                original.model_copy(
+                    update={
+                        "stage_attempt_id": Identifier(
+                            f"duplicate-{original.stage_attempt_id.root}"
+                        )
+                    }
+                )
+            )
 
-        stage_by_label = {record["label"]: StageId(record["stage"]) for record in records}
+        stage_by_label = {
+            record["label"]: StageId(record["stage"]) for record in records
+        }
         state["current_artifacts_by_stage"] = {
             stage_by_label[label].value: artifacts[label].version_id.root
             for label in current_labels
         }
-        state["released_versions"] = [artifacts[label].version_id.root for label in released_labels]
-        lease = await repository.claim_lease(run_identifier, service.owner_id, service.lease_seconds)
+        state["released_versions"] = [
+            artifacts[label].version_id.root for label in released_labels
+        ]
+        lease = await repository.claim_lease(
+            run_identifier, service.owner_id, service.lease_seconds
+        )
         assert lease is not None
-        next_run = run.model_copy(update={
-            "status": RunStatus.succeeded,
-            "current_stage": None,
-            "version": Version(run.version.root + 1),
-        })
+        next_run = run.model_copy(
+            update={
+                "status": RunStatus.succeeded,
+                "current_stage": None,
+                "version": Version(run.version.root + 1),
+            }
+        )
         try:
             await repository.commit_transition(
                 run_identifier,
                 run.version.root,
                 next_run,
-                [make_event(run_identifier, next_run.version.root, "test.export.fixture", "Seed exact export evidence for a contract test.")],
+                [
+                    make_event(
+                        run_identifier,
+                        next_run.version.root,
+                        "test.export.fixture",
+                        "Seed exact export evidence for a contract test.",
+                    )
+                ],
                 {},
                 lease=lease,
                 runtime_state=state,
@@ -843,7 +980,9 @@ def _seed_export_test_records(
     return asyncio.run(seed())
 
 
-def test_reviews_report_automatic_formats_from_current_released_attempts(host_agent: Harness, monkeypatch: pytest.MonkeyPatch):
+def test_reviews_report_automatic_formats_from_current_released_attempts(
+    host_agent: Harness, monkeypatch: pytest.MonkeyPatch
+):
     from gw.agent_runtime.models import StageId
 
     run_id = _create_export_test_run(host_agent, "automatic")
@@ -868,7 +1007,11 @@ def test_reviews_report_automatic_formats_from_current_released_attempts(host_ag
         raise AssertionError("reviews must not generate complete export payloads")
 
     with monkeypatch.context() as export_probe:
-        export_probe.setattr(host_agent.integration.service.artifact_exporter, "export", record_serializer_call)
+        export_probe.setattr(
+            host_agent.integration.service.artifact_exporter,
+            "export",
+            record_serializer_call,
+        )
         response = host_agent.client.get(f"/api/agent/runs/{run_id}/reviews")
     assert response.status_code == 200, response.text
     items = {item["review"]["review_id"]: item for item in response.json()["reviews"]}
@@ -917,7 +1060,11 @@ def test_reviews_require_manual_exact_approval_and_program_pass(host_agent: Harn
         run_id,
         mode="approval",
         records=[
-            {"label": "approved-script", "stage": StageId.full_script.value, "approval": "approve"},
+            {
+                "label": "approved-script",
+                "stage": StageId.full_script.value,
+                "approval": "approve",
+            },
             {"label": "unapproved-storyboard", "stage": StageId.storyboard_text.value},
             {
                 "label": "invalid-delivery",
@@ -942,25 +1089,32 @@ def test_reviews_require_manual_exact_approval_and_program_pass(host_agent: Harn
         host_agent.integration,
         missing_score_run,
         mode="approval",
-        records=[{
-            "label": "missing-score-script",
-            "stage": StageId.full_script.value,
-            "exact_score": None,
-            "approval": "approve",
-        }],
+        records=[
+            {
+                "label": "missing-score-script",
+                "stage": StageId.full_script.value,
+                "exact_score": None,
+                "approval": "approve",
+            }
+        ],
         current_labels=["missing-score-script"],
         released_labels=[],
     )
-    missing_score_response = host_agent.client.get(f"/api/agent/runs/{missing_score_run}/reviews")
+    missing_score_response = host_agent.client.get(
+        f"/api/agent/runs/{missing_score_run}/reviews"
+    )
     assert missing_score_response.status_code == 200, missing_score_response.text
     missing_score_item = next(
-        item for item in missing_score_response.json()["reviews"]
+        item
+        for item in missing_score_response.json()["reviews"]
         if item["review"]["review_id"] == missing_score_ids["missing-score-script"]
     )
     assert missing_score_item["export_formats"] == []
 
 
-def test_reviews_require_automatic_release_and_unique_durable_stage_attempt(host_agent: Harness):
+def test_reviews_require_automatic_release_and_unique_durable_stage_attempt(
+    host_agent: Harness,
+):
     from gw.agent_runtime.models import StageId
 
     unreleased_run = _create_export_test_run(host_agent, "automatic")
@@ -972,10 +1126,13 @@ def test_reviews_require_automatic_release_and_unique_durable_stage_attempt(host
         current_labels=["unreleased-script"],
         released_labels=[],
     )
-    unreleased_response = host_agent.client.get(f"/api/agent/runs/{unreleased_run}/reviews")
+    unreleased_response = host_agent.client.get(
+        f"/api/agent/runs/{unreleased_run}/reviews"
+    )
     assert unreleased_response.status_code == 200, unreleased_response.text
     unreleased_item = next(
-        item for item in unreleased_response.json()["reviews"]
+        item
+        for item in unreleased_response.json()["reviews"]
         if item["review"]["review_id"] == unreleased_ids["unreleased-script"]
     )
     assert unreleased_item["export_formats"] == []
@@ -985,18 +1142,23 @@ def test_reviews_require_automatic_release_and_unique_durable_stage_attempt(host
         host_agent.integration,
         low_score_run,
         mode="automatic",
-        records=[{
-            "label": "low-score-script",
-            "stage": StageId.full_script.value,
-            "score": 8.0,
-        }],
+        records=[
+            {
+                "label": "low-score-script",
+                "stage": StageId.full_script.value,
+                "score": 8.0,
+            }
+        ],
         current_labels=["low-score-script"],
         released_labels=["low-score-script"],
     )
-    low_score_response = host_agent.client.get(f"/api/agent/runs/{low_score_run}/reviews")
+    low_score_response = host_agent.client.get(
+        f"/api/agent/runs/{low_score_run}/reviews"
+    )
     assert low_score_response.status_code == 200, low_score_response.text
     low_score_item = next(
-        item for item in low_score_response.json()["reviews"]
+        item
+        for item in low_score_response.json()["reviews"]
         if item["review"]["review_id"] == low_score_ids["low-score-script"]
     )
     assert low_score_item["export_formats"] == []
@@ -1011,10 +1173,13 @@ def test_reviews_require_automatic_release_and_unique_durable_stage_attempt(host
         released_labels=["duplicate-script"],
         duplicate_attempt_labels=("duplicate-script",),
     )
-    duplicate_response = host_agent.client.get(f"/api/agent/runs/{duplicate_run}/reviews")
+    duplicate_response = host_agent.client.get(
+        f"/api/agent/runs/{duplicate_run}/reviews"
+    )
     assert duplicate_response.status_code == 200, duplicate_response.text
     duplicate_item = next(
-        item for item in duplicate_response.json()["reviews"]
+        item
+        for item in duplicate_response.json()["reviews"]
         if item["review"]["review_id"] == duplicate_ids["duplicate-script"]
     )
     assert duplicate_item["export_formats"] == []
@@ -1080,22 +1245,32 @@ def test_agent_requires_valid_server_call_limit_before_ready_or_queueing(
 
     assert _run_count(integration) == 0
     with integration.database.connect() as db:
-        assert db.execute("SELECT COUNT(*) FROM host_agent_create_keys").fetchone()[0] == 0
+        assert (
+            db.execute("SELECT COUNT(*) FROM host_agent_create_keys").fetchone()[0] == 0
+        )
     assert host_agent.gateway.calls == []
 
 
-def test_unknown_cost_budget_enforces_per_run_boundary_across_restart(host_agent: Harness):
+def test_unknown_cost_budget_enforces_per_run_boundary_across_restart(
+    host_agent: Harness,
+):
     import asyncio
 
+    from gw.agent_runtime.models import (
+        BudgetReservationRequest,
+        BudgetState,
+        Identifier,
+    )
     from gw.api.agent_integration import UnknownCostBudget
-    from gw.agent_runtime.models import BudgetReservationRequest, BudgetState, Identifier
 
     database = host_agent.integration.database
     first_process_budget = UnknownCostBudget(database, max_model_calls_per_run=2)
 
     def request(index: int):
         return BudgetReservationRequest(
-            operation_id=Identifier(f"episode:budget-run-1:stage-{index}:writer:digest-{index}"),
+            operation_id=Identifier(
+                f"episode:budget-run-1:stage-{index}:writer:digest-{index}"
+            ),
             upper_bound_amount=None,
             currency=None,
             unknown_reason="Test quota is explicit; provider price is unknown.",
@@ -1116,24 +1291,37 @@ def test_unknown_cost_budget_enforces_per_run_boundary_across_restart(host_agent
     assert duplicate.state is BudgetState.allowed
     assert duplicate.amount is None
     with database.connect() as db:
-        assert db.execute(
-            "SELECT COUNT(*) FROM host_agent_budget_ledger WHERE run_id='budget-run-1' AND state IN ('reserved_unknown','unknown')"
-        ).fetchone()[0] == 2
+        assert (
+            db.execute(
+                "SELECT COUNT(*) FROM host_agent_budget_ledger WHERE run_id='budget-run-1' AND state IN ('reserved_unknown','unknown')"
+            ).fetchone()[0]
+            == 2
+        )
     assert host_agent.gateway.calls == []
 
 
-def test_unknown_cost_budget_concurrent_reservations_do_not_exceed_run_limit(host_agent: Harness):
+def test_unknown_cost_budget_concurrent_reservations_do_not_exceed_run_limit(
+    host_agent: Harness,
+):
     import asyncio
     from concurrent.futures import ThreadPoolExecutor
 
+    from gw.agent_runtime.models import (
+        BudgetReservationRequest,
+        BudgetState,
+        Identifier,
+    )
     from gw.api.agent_integration import UnknownCostBudget
-    from gw.agent_runtime.models import BudgetReservationRequest, BudgetState, Identifier
 
-    budget = UnknownCostBudget(host_agent.integration.database, max_model_calls_per_run=2)
+    budget = UnknownCostBudget(
+        host_agent.integration.database, max_model_calls_per_run=2
+    )
 
     def reserve(index: int) -> BudgetState:
         request = BudgetReservationRequest(
-            operation_id=Identifier(f"episode:budget-concurrent:stage-{index}:writer:digest-{index}"),
+            operation_id=Identifier(
+                f"episode:budget-concurrent:stage-{index}:writer:digest-{index}"
+            ),
             upper_bound_amount=None,
             currency=None,
             unknown_reason="Concurrent quota test; provider price is unknown.",
@@ -1146,9 +1334,12 @@ def test_unknown_cost_budget_concurrent_reservations_do_not_exceed_run_limit(hos
     assert outcomes.count(BudgetState.allowed) == 2
     assert outcomes.count(BudgetState.denied) == 10
     with host_agent.integration.database.connect() as db:
-        assert db.execute(
-            "SELECT COUNT(*) FROM host_agent_budget_ledger WHERE run_id='budget-concurrent' AND state IN ('reserved_unknown','unknown')"
-        ).fetchone()[0] == 2
+        assert (
+            db.execute(
+                "SELECT COUNT(*) FROM host_agent_budget_ledger WHERE run_id='budget-concurrent' AND state IN ('reserved_unknown','unknown')"
+            ).fetchone()[0]
+            == 2
+        )
     assert host_agent.gateway.calls == []
 
 
@@ -1171,7 +1362,9 @@ def test_archived_project_keeps_existing_agent_runs_read_only(host_agent: Harnes
     run_id = created.json()["run_id"]
 
     project = host_agent.integration.projects.get_project(host_agent.project_id)
-    archived = host_agent.integration.projects.archive_project(host_agent.project_id, project.version)
+    archived = host_agent.integration.projects.archive_project(
+        host_agent.project_id, project.version
+    )
     assert archived.archived_at is not None
 
     status_read = host_agent.client.get(f"/api/agent/runs/{run_id}")
@@ -1201,9 +1394,12 @@ def test_archived_project_keeps_existing_agent_runs_read_only(host_agent: Harnes
     assert new_run.status_code == 403
     assert _run_count(host_agent.integration) == 1
     with host_agent.integration.database.connect() as db:
-        assert db.execute(
-            "SELECT COUNT(*) FROM host_agent_create_keys WHERE idempotency_key='agent-archive-new-run-key'"
-        ).fetchone()[0] == 0
+        assert (
+            db.execute(
+                "SELECT COUNT(*) FROM host_agent_create_keys WHERE idempotency_key='agent-archive-new-run-key'"
+            ).fetchone()[0]
+            == 0
+        )
 
     auth = AuthContext(
         role=host_agent.principal["role"],
@@ -1215,13 +1411,21 @@ def test_archived_project_keeps_existing_agent_runs_read_only(host_agent: Harnes
 
     async def adapter_checks():
         context = await host_agent.integration.context_for_run(
-            auth, fingerprint, run_id, "agent-archive-read-context", edit_required=False,
+            auth,
+            fingerprint,
+            run_id,
+            "agent-archive-read-context",
+            edit_required=False,
         )
         can_read = await host_agent.integration.use_case.identity.authorize(
-            context, Identifier("agent.run.read"), [Identifier(host_agent.project_id)],
+            context,
+            Identifier("agent.run.read"),
+            [Identifier(host_agent.project_id)],
         )
         can_mutate = await host_agent.integration.use_case.identity.authorize(
-            context, Identifier("agent.run.pause"), [Identifier(host_agent.project_id)],
+            context,
+            Identifier("agent.run.pause"),
+            [Identifier(host_agent.project_id)],
         )
         can_dispatch = await host_agent.integration.authorize_background(
             Identifier(host_agent.project_id),
@@ -1241,8 +1445,12 @@ def test_legacy_budget_rows_backfill_only_from_unique_invocation_owner(
 ):
     import asyncio
 
+    from gw.agent_runtime.models import (
+        BudgetReservationRequest,
+        BudgetState,
+        Identifier,
+    )
     from gw.api.agent_integration import UnknownCostBudget
-    from gw.agent_runtime.models import BudgetReservationRequest, BudgetState, Identifier
 
     def create_run(label: str) -> str:
         response = host_agent.client.post(
@@ -1272,7 +1480,13 @@ def test_legacy_budget_rows_backfill_only_from_unique_invocation_owner(
             (operation_id,),
         )
 
-        owners = [run_a] if mapping == "unique" else [run_a, run_b] if mapping == "ambiguous" else []
+        owners = (
+            [run_a]
+            if mapping == "unique"
+            else [run_a, run_b]
+            if mapping == "ambiguous"
+            else []
+        )
         for index, run_id in enumerate(owners):
             db.execute(
                 "INSERT INTO invocations(invocation_id,run_id,idempotency_key,request_fingerprint,record_json,result_json) "
@@ -1308,7 +1522,9 @@ def test_legacy_budget_rows_backfill_only_from_unique_invocation_owner(
 
     def reserve(run_id: str, index: int) -> BudgetState:
         request = BudgetReservationRequest(
-            operation_id=Identifier(f"episode:{run_id}:migration-{index}:writer:digest-{index}"),
+            operation_id=Identifier(
+                f"episode:{run_id}:migration-{index}:writer:digest-{index}"
+            ),
             upper_bound_amount=None,
             currency=None,
             unknown_reason="Migration test; provider price is unknown.",
@@ -1326,12 +1542,16 @@ def test_legacy_budget_rows_backfill_only_from_unique_invocation_owner(
         # consume a slot for each run instead of being assigned speculatively.
         token = budget.bind_run(Identifier(run_a))
         try:
-            replay = asyncio.run(budget.reserve(BudgetReservationRequest(
-                operation_id=Identifier(operation_id),
-                upper_bound_amount=None,
-                currency=None,
-                unknown_reason="Legacy operation remains unscoped.",
-            )))
+            replay = asyncio.run(
+                budget.reserve(
+                    BudgetReservationRequest(
+                        operation_id=Identifier(operation_id),
+                        upper_bound_amount=None,
+                        currency=None,
+                        unknown_reason="Legacy operation remains unscoped.",
+                    )
+                )
+            )
         finally:
             budget.reset_run(token)
         assert replay.state is BudgetState.allowed
@@ -1342,18 +1562,31 @@ def test_legacy_budget_rows_backfill_only_from_unique_invocation_owner(
                 (operation_id, f"{operation_id}:{run_a}"),
             ).fetchall()
         assert len(legacy_rows) == 2
-        assert next(row for row in legacy_rows if row["operation_id"] == operation_id)["run_id"] is None
-        assert next(row for row in legacy_rows if row["operation_id"] == f"{operation_id}:{run_a}")["run_id"] == run_a
+        assert (
+            next(row for row in legacy_rows if row["operation_id"] == operation_id)[
+                "run_id"
+            ]
+            is None
+        )
+        assert (
+            next(
+                row
+                for row in legacy_rows
+                if row["operation_id"] == f"{operation_id}:{run_a}"
+            )["run_id"]
+            == run_a
+        )
         assert reserve(run_a, 1) is BudgetState.denied
         assert reserve(run_b, 1) is BudgetState.allowed
         assert reserve(run_b, 2) is BudgetState.denied
     assert host_agent.gateway.calls == []
 
 
-def test_migrated_legacy_operation_replay_reuses_the_unique_row_and_respects_limit(host_agent: Harness):
+def test_migrated_legacy_operation_replay_reuses_the_unique_row_and_respects_limit(
+    host_agent: Harness,
+):
     import asyncio
 
-    from gw.api.agent_integration import UnknownCostBudget
     from gw.agent_runtime.models import (
         BudgetOutcomeState,
         BudgetReservationRequest,
@@ -1361,6 +1594,7 @@ def test_migrated_legacy_operation_replay_reuses_the_unique_row_and_respects_lim
         BudgetState,
         Identifier,
     )
+    from gw.api.agent_integration import UnknownCostBudget
 
     created = host_agent.client.post(
         "/api/agent/runs",
@@ -1399,7 +1633,13 @@ def test_migrated_legacy_operation_replay_reuses_the_unique_row_and_respects_lim
         db.execute(
             "INSERT INTO invocations(invocation_id,run_id,idempotency_key,request_fingerprint,record_json,result_json) "
             "VALUES(?,?,?,?,?,NULL)",
-            ("legacy-invocation-release", run_id, released_operation_id, "1" * 64, "{}"),
+            (
+                "legacy-invocation-release",
+                run_id,
+                released_operation_id,
+                "1" * 64,
+                "{}",
+            ),
         )
 
     integration = _build_secondary_integration(host_agent)
@@ -1425,7 +1665,10 @@ def test_migrated_legacy_operation_replay_reuses_the_unique_row_and_respects_lim
         assert asyncio.run(budget.reserve(reservation)).state is BudgetState.allowed
         asyncio.run(budget.settle(settlement))
         asyncio.run(budget.settle(settlement))
-        assert asyncio.run(budget.release_unspent(Identifier(released_operation_id))).state is BudgetState.allowed
+        assert (
+            asyncio.run(budget.release_unspent(Identifier(released_operation_id))).state
+            is BudgetState.allowed
+        )
     finally:
         budget.reset_run(token)
 
@@ -1453,7 +1696,9 @@ def test_migrated_legacy_operation_replay_reuses_the_unique_row_and_respects_lim
 
     def reserve_new(index: int) -> BudgetState:
         request = BudgetReservationRequest(
-            operation_id=Identifier(f"episode:{run_id}:post-migration-{index}:writer:digest-{index}"),
+            operation_id=Identifier(
+                f"episode:{run_id}:post-migration-{index}:writer:digest-{index}"
+            ),
             upper_bound_amount=None,
             currency=None,
             unknown_reason="New call after legacy replay; monetary cost is unknown.",
@@ -1465,13 +1710,17 @@ def test_migrated_legacy_operation_replay_reuses_the_unique_row_and_respects_lim
     assert host_agent.gateway.calls == []
 
 
-def test_agent_job_id_is_distinct_durable_and_polled_through_workbench_route(host_agent: Harness):
+def test_agent_job_id_is_distinct_durable_and_polled_through_workbench_route(
+    host_agent: Harness,
+):
     from fastapi.testclient import TestClient
 
     from gw.api.app import create_app
     from gw.core.session import session_cookie_name
 
-    created = host_agent.client.post("/api/agent/runs", json=_create_payload(host_agent))
+    created = host_agent.client.post(
+        "/api/agent/runs", json=_create_payload(host_agent)
+    )
     assert created.status_code == 202, created.text
     accepted = created.json()
     job_id = accepted["job_id"]
@@ -1518,7 +1767,9 @@ def test_agent_job_id_is_distinct_durable_and_polled_through_workbench_route(hos
     assert recovered.json()["run_id"] == run_id
 
 
-def test_agent_job_poll_requires_cookie_and_hides_unknown_and_foreign_jobs(host_agent: Harness):
+def test_agent_job_poll_requires_cookie_and_hides_unknown_and_foreign_jobs(
+    host_agent: Harness,
+):
     from fastapi.testclient import TestClient
 
     from gw.api.app import create_app
@@ -1527,7 +1778,11 @@ def test_agent_job_poll_requires_cookie_and_hides_unknown_and_foreign_jobs(host_
 
     created = host_agent.client.post(
         "/api/agent/runs",
-        json=_create_payload(host_agent, idempotency_key="agent-job-acl-key", request_id="agent-job-acl-create"),
+        json=_create_payload(
+            host_agent,
+            idempotency_key="agent-job-acl-key",
+            request_id="agent-job-acl-create",
+        ),
     )
     assert created.status_code == 202, created.text
     job_id = created.json()["job_id"]
@@ -1544,7 +1799,13 @@ def test_agent_job_poll_requires_cookie_and_hides_unknown_and_foreign_jobs(host_
     with local_accounts.database() as db:
         db.execute(
             "INSERT INTO local_users(user_id,username,salt,password_hash,role) VALUES(?,?,?,?,?)",
-            ("usr-agent-job-outsider", "agentoutsider", salt, local_accounts.password_hash(password, salt), "editor"),
+            (
+                "usr-agent-job-outsider",
+                "agentoutsider",
+                salt,
+                local_accounts.password_hash(password, salt),
+                "editor",
+            ),
         )
     _, outsider_token = local_accounts.login("agentoutsider", password, "agent-job-acl")
     outsider = TestClient(
@@ -1570,10 +1831,14 @@ def test_agent_job_poll_requires_cookie_and_hides_unknown_and_foreign_jobs(host_
 def test_agent_run_status_projection_and_terminal_poll_hint_contract():
     from types import SimpleNamespace
 
-    from gw.api.routes_god_canvas import agent_run_job_payload
     import yaml
 
-    catalog_path = Path(__file__).resolve().parents[3] / "docs/contracts/AGENT-WORKBENCH-INTERFACE-CATALOG.yaml"
+    from gw.api.routes_god_canvas import agent_run_job_payload
+
+    catalog_path = (
+        Path(__file__).resolve().parents[3]
+        / "docs/contracts/AGENT-WORKBENCH-INTERFACE-CATALOG.yaml"
+    )
     catalog = yaml.safe_load(catalog_path.read_text(encoding="utf-8"))
     expected = catalog["task_status_projection"]["agent_to_workbench"]
     terminal = set(catalog["task_status_projection"]["terminal_agent_statuses"])
@@ -1630,12 +1895,16 @@ def test_agent_job_id_migration_backfills_legacy_create_keys_once(host_agent: Ha
     assert migrated_again.job_id_for_run("legacy-run") == job_id
 
 
-def test_agent_legacy_create_fingerprint_replays_same_durable_job_and_run(host_agent: Harness):
+def test_agent_legacy_create_fingerprint_replays_same_durable_job_and_run(
+    host_agent: Harness,
+):
     import hashlib
     import json
 
     idempotency_key = "agent-legacy-fingerprint-replay"
-    payload = _create_payload(host_agent, idempotency_key=idempotency_key, request_id="legacy-create-first")
+    payload = _create_payload(
+        host_agent, idempotency_key=idempotency_key, request_id="legacy-create-first"
+    )
     created = host_agent.client.post("/api/agent/runs", json=payload)
     assert created.status_code == 202, created.text
     first = created.json()
@@ -1651,9 +1920,14 @@ def test_agent_legacy_create_fingerprint_replays_same_durable_job_and_run(host_a
         "actor_id": host_agent.principal["user_id"],
         "identity_domain": "local_account",
     }
-    old_fingerprint = hashlib.sha256(json.dumps(
-        old_canonical, ensure_ascii=False, sort_keys=True, separators=(",", ":"),
-    ).encode()).hexdigest()
+    old_fingerprint = hashlib.sha256(
+        json.dumps(
+            old_canonical,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode()
+    ).hexdigest()
     with host_agent.integration.database.connect() as db:
         db.execute(
             "UPDATE host_agent_create_keys SET request_fingerprint=? "
@@ -1676,7 +1950,11 @@ def test_agent_legacy_create_fingerprint_replays_same_durable_job_and_run(host_a
 
     changed = host_agent.client.post(
         "/api/agent/runs",
-        json={**replay_payload, "request_id": "legacy-create-conflict", "user_goal": "different stored request"},
+        json={
+            **replay_payload,
+            "request_id": "legacy-create-conflict",
+            "user_goal": "different stored request",
+        },
     )
     assert changed.status_code == 409
     assert changed.json()["detail"]["code"] == "IDEMPOTENCY_CONFLICT"
@@ -1743,7 +2021,9 @@ def test_agent_legacy_host_schema_migration_serializes_concurrent_initialization
                 if thread_name.endswith("_0"):
                     first_budget_columns_read.set()
                     if not release_first_migration.wait(timeout=10):
-                        raise TimeoutError("test did not release the first host-schema migration")
+                        raise TimeoutError(
+                            "test did not release the first host-schema migration"
+                        )
                 elif thread_name.endswith("_1"):
                     second_budget_columns_read.set()
                 return _BufferedRows(rows)
@@ -1763,7 +2043,9 @@ def test_agent_legacy_host_schema_migration_serializes_concurrent_initialization
         return ObservedConnection(connection)
 
     monkeypatch.setattr(database, "connect", tracked_connect)
-    with ThreadPoolExecutor(max_workers=2, thread_name_prefix="agent-host-migrate") as pool:
+    with ThreadPoolExecutor(
+        max_workers=2, thread_name_prefix="agent-host-migrate"
+    ) as pool:
         first = pool.submit(_build_secondary_integration, host_agent)
         second = None
         try:
@@ -1783,8 +2065,18 @@ def test_agent_legacy_host_schema_migration_serializes_concurrent_initialization
         assert second_result is not None
 
     with database.connect() as migrated:
-        create_columns = {row["name"] for row in migrated.execute("PRAGMA table_info(host_agent_create_keys)").fetchall()}
-        budget_columns = {row["name"] for row in migrated.execute("PRAGMA table_info(host_agent_budget_ledger)").fetchall()}
+        create_columns = {
+            row["name"]
+            for row in migrated.execute(
+                "PRAGMA table_info(host_agent_create_keys)"
+            ).fetchall()
+        }
+        budget_columns = {
+            row["name"]
+            for row in migrated.execute(
+                "PRAGMA table_info(host_agent_budget_ledger)"
+            ).fetchall()
+        }
         create_key = migrated.execute(
             "SELECT job_id FROM host_agent_create_keys WHERE idempotency_key='legacy-key'"
         ).fetchone()
@@ -1797,9 +2089,11 @@ def test_agent_legacy_host_schema_migration_serializes_concurrent_initialization
     assert ledger["run_id"] == "legacy-run"
 
 
-def test_c7_t1_text_production_loop_full_six_stage_lifecycle_and_project_export(host_agent: Harness):
+def test_c7_t1_text_production_loop_full_six_stage_lifecycle_and_project_export(
+    host_agent: Harness,
+):
     """C7-T1 (QIN-167 / C7-AC1): 验证一个项目的六阶段文本 Agent 完整闭环。
-    
+
     涵盖：
     1. 初始项目无文本产物；
     2. 绑定项目创建六阶段文本 Agent 运行；
@@ -1810,13 +2104,16 @@ def test_c7_t1_text_production_loop_full_six_stage_lifecycle_and_project_export(
     7. 校验权限隔离与只读安全性。
     """
     import asyncio
-    from gw.core.auth import AuthContext
+
     from gw.agent_runtime.models import StageId
+    from gw.core.auth import AuthContext
 
     project_id = host_agent.project_id
 
     # 1. 验证初始状态：该项目产物列表为空
-    initial_artifacts = host_agent.client.get(f"/api/agent/projects/{project_id}/artifacts")
+    initial_artifacts = host_agent.client.get(
+        f"/api/agent/projects/{project_id}/artifacts"
+    )
     assert initial_artifacts.status_code == 200, initial_artifacts.text
     assert initial_artifacts.json()["items"] == []
 
@@ -1831,6 +2128,7 @@ def test_c7_t1_text_production_loop_full_six_stage_lifecycle_and_project_export(
 
     # 校验 AgentIntegration 领域方法 list_project_runs
     import hashlib
+
     auth = AuthContext(
         role=host_agent.principal["role"],
         subject=host_agent.principal["user_id"],
@@ -1838,17 +2136,39 @@ def test_c7_t1_text_production_loop_full_six_stage_lifecycle_and_project_export(
         identity_domain="local_account",
     )
     fingerprint = hashlib.sha256(host_agent.session_token.encode("utf-8")).hexdigest()
-    runs = asyncio.run(host_agent.integration.list_project_runs(auth, fingerprint, project_id))
+    runs = asyncio.run(
+        host_agent.integration.list_project_runs(auth, fingerprint, project_id)
+    )
     assert any(r.run_id.root == run_id for r in runs)
 
     # 4. 塞入并经历全部六阶段：brief, outline_characters, full_script, scene_script, storyboard_text, delivery_check
     six_stages = [
         {"label": "stage1-brief", "stage": StageId.brief.value, "approval": "approve"},
-        {"label": "stage2-outline", "stage": StageId.outline_characters.value, "approval": "approve"},
-        {"label": "stage3-script", "stage": StageId.full_script.value, "approval": "approve"},
-        {"label": "stage4-scene", "stage": StageId.scene_script.value, "approval": "approve"},
-        {"label": "stage5-storyboard", "stage": StageId.storyboard_text.value, "approval": "approve"},
-        {"label": "stage6-delivery", "stage": StageId.delivery_check.value, "approval": "approve"},
+        {
+            "label": "stage2-outline",
+            "stage": StageId.outline_characters.value,
+            "approval": "approve",
+        },
+        {
+            "label": "stage3-script",
+            "stage": StageId.full_script.value,
+            "approval": "approve",
+        },
+        {
+            "label": "stage4-scene",
+            "stage": StageId.scene_script.value,
+            "approval": "approve",
+        },
+        {
+            "label": "stage5-storyboard",
+            "stage": StageId.storyboard_text.value,
+            "approval": "approve",
+        },
+        {
+            "label": "stage6-delivery",
+            "stage": StageId.delivery_check.value,
+            "approval": "approve",
+        },
     ]
     current_labels = [s["label"] for s in six_stages]
     review_ids = _seed_export_test_records(
@@ -1861,7 +2181,9 @@ def test_c7_t1_text_production_loop_full_six_stage_lifecycle_and_project_export(
     )
 
     # 5. 回到项目并查询文本产物精确版本（C7-AC1）
-    project_artifacts_res = host_agent.client.get(f"/api/agent/projects/{project_id}/artifacts")
+    project_artifacts_res = host_agent.client.get(
+        f"/api/agent/projects/{project_id}/artifacts"
+    )
     assert project_artifacts_res.status_code == 200, project_artifacts_res.text
     artifacts = project_artifacts_res.json()["items"]
     assert len(artifacts) == 6
@@ -1875,7 +2197,9 @@ def test_c7_t1_text_production_loop_full_six_stage_lifecycle_and_project_export(
         assert item["review_id"] in review_ids.values()
 
     # 6. 验证可导出文本产物（Markdown, CSV, exact-JSON）
-    script_artifact = next(item for item in artifacts if item["review_id"] == review_ids["stage3-script"])
+    script_artifact = next(
+        item for item in artifacts if item["review_id"] == review_ids["stage3-script"]
+    )
     assert "markdown" in script_artifact["export_formats"]
     assert script_artifact["export_uri"] is not None
 
@@ -1891,7 +2215,11 @@ def test_c7_t1_text_production_loop_full_six_stage_lifecycle_and_project_export(
     assert exported_md.headers["content-type"].startswith("text/markdown")
     assert b"Contract Test Episode" in exported_md.content
 
-    storyboard_artifact = next(item for item in artifacts if item["review_id"] == review_ids["stage5-storyboard"])
+    storyboard_artifact = next(
+        item
+        for item in artifacts
+        if item["review_id"] == review_ids["stage5-storyboard"]
+    )
     assert "csv" in storyboard_artifact["export_formats"]
     exported_csv = host_agent.client.get(
         f"/api/agent/runs/{run_id}/export",
@@ -1904,7 +2232,9 @@ def test_c7_t1_text_production_loop_full_six_stage_lifecycle_and_project_export(
     assert exported_csv.status_code == 200
     assert exported_csv.headers["content-type"].startswith("text/csv")
 
-    delivery_artifact = next(item for item in artifacts if item["review_id"] == review_ids["stage6-delivery"])
+    delivery_artifact = next(
+        item for item in artifacts if item["review_id"] == review_ids["stage6-delivery"]
+    )
     assert "exact-json" in delivery_artifact["export_formats"]
     exported_json = host_agent.client.get(
         f"/api/agent/runs/{run_id}/export",
@@ -1919,7 +2249,7 @@ def test_c7_t1_text_production_loop_full_six_stage_lifecycle_and_project_export(
     assert b"Synthetic delivery check." in exported_json.content
 
     # 7. 跨项目隔离验证：查询未授权或不存在项目
-    not_found = host_agent.client.get("/api/agent/projects/non-existent-project-00000000/artifacts")
+    not_found = host_agent.client.get(
+        "/api/agent/projects/non-existent-project-00000000/artifacts"
+    )
     assert not_found.status_code == 404
-
-

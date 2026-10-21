@@ -44,7 +44,9 @@ def test_c5_owner_cross_domain_flow_preserves_project_identity(client, monkeypat
     canvas_view = canvas.json().get("canvas", canvas.json())
     assert canvas_view["project_id"] == project_id
 
-    workflow = client.get(f"/api/god_workflow/documents/{ids['workflow_id']}", headers=owner)
+    workflow = client.get(
+        f"/api/god_workflow/documents/{ids['workflow_id']}", headers=owner
+    )
     assert workflow.status_code == 200, workflow.text
     workflow_view = workflow.json().get("workflow", workflow.json())
     source_context = workflow_view.get("metadata", {}).get("source_context", {})

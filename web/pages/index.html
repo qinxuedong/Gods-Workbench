@@ -5,6 +5,8 @@
   <link rel="stylesheet" href="/static/vendor/css/fonts.css?v=v0.0.1-alpha-2026">
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#090a0d">
+  <link rel="manifest" href="/static/manifest.json">
   <title>控制台 · Gods' Workbench</title>
 
   <!-- Tailwind CSS & Lucide Icons -->
@@ -1550,5 +1552,12 @@
     });
   </script>
 <script src="/static/js/core/workbench-shell.js?v=20261009-parse-cf7"></script>
+  <script>
+    if ("serviceWorker" in navigator && window.isSecureContext) {
+      window.addEventListener("load", () => {
+        navigator.serviceWorker.register("/static/sw.js", { scope: "/static/" }).catch(() => {});
+      });
+    }
+  </script>
 </body>
 </html>

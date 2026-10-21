@@ -81,6 +81,27 @@ def _optional_int(request: Request, name: str) -> Optional[int]:
     return value
 
 
+def _required_payload_version(payload: Dict[str, Any]) -> int:
+    value = payload.get("expected_version")
+    if type(value) is not int or value < 1:
+        raise CleanroomException(400, "INVALID_REQUEST", "expected_version 必须为正整数")
+    return value
+
+
+def _expected_versions(payload: Dict[str, Any]) -> Optional[Dict[str, int]]:
+    value = payload.get("expected_versions")
+    if value is not None and not isinstance(value, dict):
+        raise CleanroomException(400, "INVALID_REQUEST", "expected_versions 必须是素材库版本映射")
+    return value
+
+
+def _required_query_version(request: Request) -> int:
+    value = _optional_int(request, "expected_version")
+    if value is None:
+        raise CleanroomException(400, "INVALID_REQUEST", "缺少必填参数：expected_version")
+    return value
+
+
 def _ids(payload: Dict[str, Any], key: str = "asset_ids") -> List[str]:
     value = payload.get(key) or []
     return [str(item) for item in value] if isinstance(value, list) else []
@@ -103,7 +124,8 @@ def _registry_linked_item(snapshot: Optional[Dict[str, Any]]) -> bool:
 def _delete_item_via_registry(asset_id: str, context=None) -> Dict[str, Any]:
     """把桥接条目的删除统一交给注册表：素材库条目随注册表删除移入回收站并可恢复。"""
     from gw.asset_registry import repository as asset_repo
-    result = asset_repo.delete_asset(str(asset_id), None, context)
+    revision = int(asset_repo.state().read().get("revision", 1))
+    result = asset_repo.delete_asset(str(asset_id), revision, context)
     return {"asset_id": str(asset_id), "deleted": True,
             "deleted_via": "asset_registry", "recycle_entry_id": result["recycle_entry_id"]}
 
@@ -358,23 +380,39 @@ async def delete_asset_library_items(
 ):
     """批量删除素材条目；桥接登记条目改走注册表删除（同进同出，可恢复）。"""
     context = _write(authorization, x_user_role)
+    payload = await _body(request)
+    expected_version = _required_payload_version(payload)
+    expected_versions = _expected_versions(payload)
     linked, plain = [], []
-    for asset_id in _ids(await _body(request)):
-        snapshot = library_service.find_item_snapshot(str(asset_id))
+    ids = _ids(payload)
+    snapshots = {str(asset_id): library_service.find_item_snapshot(str(asset_id)) for asset_id in ids}
+    missing = [asset_id for asset_id, snapshot in snapshots.items() if snapshot is None]
+    if missing:
+        raise CleanroomException(404, "ASSET_NOT_FOUND", "素材不存在",
+                                 extra={"missing_asset_ids": missing},
+                                 expose_extra_fields={"missing_asset_ids"})
+    for asset_id in ids:
+        snapshot = snapshots[str(asset_id)]
         if _registry_linked_item(snapshot):
             linked.append(str(asset_id))
         else:
             plain.append(asset_id)
-    deleted: List[str] = []
     for asset_id in linked:
-        try:
-            _delete_item_via_registry(asset_id, context)
-        except CleanroomException:
-            continue
-        deleted.append(asset_id)
+        snapshot = snapshots[asset_id] or {}
+        version = (expected_versions or {}).get(str(snapshot.get("library_id") or ""), expected_version)
+        library_service.ensure_item_version(asset_id, version)
+    deleted: List[str] = []
+    results: List[Dict[str, Any]] = []
     if plain:
-        deleted.extend(library_service.delete_items(plain)["deleted"])
-    return {"deleted": deleted, "count": len(deleted)}
+        plain_result = library_service.delete_items(plain, expected_version, expected_versions)
+        deleted.extend(plain_result["deleted"])
+        results.extend(plain_result["results"])
+    for asset_id in linked:
+        result = _delete_item_via_registry(asset_id, context)
+        deleted.append(asset_id)
+        results.append({"asset_id": asset_id, "deleted": True,
+                        "recycle_entry_id": result.get("recycle_entry_id")})
+    return {"deleted": deleted, "results": results, "count": len(deleted)}
 
 
 @router.post("/api/asset-library/items/move", status_code=status.HTTP_200_OK)
@@ -386,7 +424,10 @@ async def move_asset_library_items(
     """批量移动素材条目到目标分类。"""
     _write(authorization, x_user_role)
     payload = await _body(request)
-    return library_service.move_items(_ids(payload), str(payload.get("category_id") or ""))
+    expected_version = _required_payload_version(payload)
+    expected_versions = _expected_versions(payload)
+    return library_service.move_items(_ids(payload), str(payload.get("category_id") or ""),
+                                      expected_version, expected_versions)
 
 
 @router.patch("/api/asset-library/items/{item_id}", status_code=status.HTTP_200_OK)
@@ -410,7 +451,7 @@ def delete_asset_library_item(
 ):
     """删除单个素材条目；桥接登记条目改走注册表删除（同进同出，可恢复）。"""
     context = _write(authorization, x_user_role)
-    expected_version = _optional_int(request, "expected_version")
+    expected_version = _required_query_version(request)
     snapshot = library_service.find_item_snapshot(item_id)
     if _registry_linked_item(snapshot):
         library_service.ensure_item_version(item_id, expected_version)

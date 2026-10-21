@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 # Copyright 2026 Gods-Workbench Authors
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -21,8 +20,9 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
-from typing import Any, Mapping
+from collections.abc import Mapping
+from datetime import UTC, datetime, timezone
+from typing import Any
 
 from gw.core.errors import CleanroomException
 
@@ -61,27 +61,45 @@ def is_version_bound_payload(payload: Mapping[str, Any] | None) -> bool:
     )
 
 
-def validate_version_binding(payload: Mapping[str, Any], *, require_source: bool = False) -> tuple[str, int]:
+def validate_version_binding(
+    payload: Mapping[str, Any], *, require_source: bool = False
+) -> tuple[str, int]:
     """校验 C8 版本绑定的最小字段，不生成任何缺失 ID。"""
     if not isinstance(payload, Mapping):
         raise CleanroomException(400, "INVALID_REQUEST", "请求体必须是对象")
     asset_id = str(payload.get("asset_id") or "").strip()
     version_id = str(payload.get("version_id") or "").strip()
     if not asset_id or not version_id:
-        raise CleanroomException(400, "INVALID_REQUEST", "C8 审阅必须携带 asset_id 和 version_id")
-    if any(not value.isascii() or any(ch.isspace() for ch in value) for value in (asset_id, version_id)):
-        raise CleanroomException(400, "INVALID_REQUEST", "asset_id 和 version_id 必须是无空格 ASCII 标识")
+        raise CleanroomException(
+            400, "INVALID_REQUEST", "C8 审阅必须携带 asset_id 和 version_id"
+        )
+    if any(
+        not value.isascii() or any(ch.isspace() for ch in value)
+        for value in (asset_id, version_id)
+    ):
+        raise CleanroomException(
+            400, "INVALID_REQUEST", "asset_id 和 version_id 必须是无空格 ASCII 标识"
+        )
     try:
         version = int(payload.get("version"))
     except (TypeError, ValueError):
-        raise CleanroomException(400, "INVALID_REQUEST", "version 必须是正整数") from None
+        raise CleanroomException(
+            400, "INVALID_REQUEST", "version 必须是正整数"
+        ) from None
     if version < 1:
         raise CleanroomException(400, "INVALID_REQUEST", "version 必须是正整数")
     if require_source:
         source = payload.get("source")
-        if not isinstance(source, Mapping) or not str(source.get("provider") or "").strip():
-            raise CleanroomException(400, "INVALID_REQUEST", "C8 审阅必须携带可核验 source.provider")
-    elif payload.get("source") is not None and not isinstance(payload.get("source"), Mapping):
+        if (
+            not isinstance(source, Mapping)
+            or not str(source.get("provider") or "").strip()
+        ):
+            raise CleanroomException(
+                400, "INVALID_REQUEST", "C8 审阅必须携带可核验 source.provider"
+            )
+    elif payload.get("source") is not None and not isinstance(
+        payload.get("source"), Mapping
+    ):
         raise CleanroomException(400, "INVALID_REQUEST", "source 必须是对象")
     return version_id, version
 
@@ -143,7 +161,7 @@ _PROVIDER_STATE_KEYS = (
 
 def now_iso() -> str:
     """返回稳定的 UTC ISO 时间，写入 blocker 快照。"""
-    return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+    return datetime.now(UTC).isoformat().replace("+00:00", "Z")
 
 
 def provider_state(value: Mapping[str, Any] | None) -> str | None:
@@ -210,12 +228,18 @@ def closure_projection(
             action = None
         return {
             "closure_status": existing_status or "blocked",
-            "blocker": dict(existing_blocker) if isinstance(existing_blocker, Mapping) else None,
-            "recovery": dict(item["recovery"]) if isinstance(item.get("recovery"), Mapping) else item.get("recovery"),
+            "blocker": dict(existing_blocker)
+            if isinstance(existing_blocker, Mapping)
+            else None,
+            "recovery": dict(item["recovery"])
+            if isinstance(item.get("recovery"), Mapping)
+            else item.get("recovery"),
             "next_action": (
                 None
                 if action is None and existing_status == "closed"
-                else action if action in C9_NEXT_ACTIONS else (action or "inspect_persisted_state")
+                else action
+                if action in C9_NEXT_ACTIONS
+                else (action or "inspect_persisted_state")
             ),
         }
 
@@ -241,7 +265,9 @@ def closure_projection(
         }
 
     review_status = str(item.get("review_status") or "").strip().lower()
-    status = str(item.get("status") or item.get("delivery_status") or "").strip().lower()
+    status = (
+        str(item.get("status") or item.get("delivery_status") or "").strip().lower()
+    )
     if review_status in {"approval_invalidated", "superseded"} or status in {
         "approval_invalidated",
         "superseded",
@@ -274,10 +300,25 @@ def closure_projection(
             "next_action": "regenerate_version",
         }
     if item.get("delivery_status") == "delivered" or status == "delivered":
-        return {"closure_status": "closed", "blocker": None, "recovery": None, "next_action": None}
+        return {
+            "closure_status": "closed",
+            "blocker": None,
+            "recovery": None,
+            "next_action": None,
+        }
     if status == "approved" or review_status == "approved":
-        return {"closure_status": "open", "blocker": None, "recovery": None, "next_action": "deliver"}
-    return {"closure_status": "open", "blocker": None, "recovery": None, "next_action": "review"}
+        return {
+            "closure_status": "open",
+            "blocker": None,
+            "recovery": None,
+            "next_action": "deliver",
+        }
+    return {
+        "closure_status": "open",
+        "blocker": None,
+        "recovery": None,
+        "next_action": "review",
+    }
 
 
 def apply_closure_projection(

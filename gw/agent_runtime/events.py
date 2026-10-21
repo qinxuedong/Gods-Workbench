@@ -1,4 +1,5 @@
 """Sanitized, reference-rich run event construction helpers."""
+
 from __future__ import annotations
 
 import uuid

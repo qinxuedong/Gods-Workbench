@@ -7,15 +7,15 @@
 4. 敏感凭据防泄漏与明确排除项（插件协议）隔离性审计
 """
 
-from pathlib import Path
 import re
+from pathlib import Path
+
 import pytest
 
 # 从唯一事实来源导入禁用扩展名与白名单，避免多份清单再次漂移。
 from cleanroom_extensions import ALLOWED_BINARY_ALLOWLIST, BANNED_EXTENSIONS
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
-
 
 
 def test_repo_wide_zero_binary_assets():
@@ -26,7 +26,17 @@ def test_repo_wide_zero_binary_assets():
     # 禁用扩展名清单来自**唯一事实来源**，禁止在此自带字面量（历史曾漂移 27 vs 39）。
     banned_extensions = BANNED_EXTENSIONS
 
-    ignored_dirs = {".git", ".pytest_cache", "__pycache__", ".venv", "venv", ".idea", ".vscode", ".local", ".agents"}
+    ignored_dirs = {
+        ".git",
+        ".pytest_cache",
+        "__pycache__",
+        ".venv",
+        "venv",
+        ".idea",
+        ".vscode",
+        ".local",
+        ".agents",
+    }
 
     violating_files = []
     for path in REPO_ROOT.rglob("*"):
@@ -41,7 +51,9 @@ def test_repo_wide_zero_binary_assets():
                     continue
                 violating_files.append(relative_path)
 
-    assert not violating_files, f"发现受限二进制资产，违反《洁净实现章程》: {violating_files}"
+    assert not violating_files, (
+        f"发现受限二进制资产，违反《洁净实现章程》: {violating_files}"
+    )
 
 
 def test_port_standard_2077_enforcement():
@@ -80,12 +92,18 @@ def test_unified_naming_and_stable_id_spec():
     required_ids = ["project_id", "canvas_id", "entity_id", "job_id", "asset_id"]
     routes_god_canvas_file = src_dir / "api" / "routes_god_canvas.py"
     models_file = src_dir / "god_canvas" / "models.py"
-    assert routes_god_canvas_file.exists(), "路由文件必须统一命名为 routes_god_canvas.py"
+    assert routes_god_canvas_file.exists(), (
+        "路由文件必须统一命名为 routes_god_canvas.py"
+    )
     assert models_file.exists(), "模型文件必须存在 models.py"
 
-    combined_code = routes_god_canvas_file.read_text(encoding="utf-8") + models_file.read_text(encoding="utf-8")
+    combined_code = routes_god_canvas_file.read_text(
+        encoding="utf-8"
+    ) + models_file.read_text(encoding="utf-8")
     for field_id in required_ids:
-        assert field_id in combined_code, f"核心模块中必须显式使用契约规约的标准实体字段: {field_id}"
+        assert field_id in combined_code, (
+            f"核心模块中必须显式使用契约规约的标准实体字段: {field_id}"
+        )
 
 
 def test_cleanroom_secrets_and_plugin_protocol_exclusion():
@@ -93,15 +111,22 @@ def test_cleanroom_secrets_and_plugin_protocol_exclusion():
     src_dir = REPO_ROOT / "gw"
     suspicious_patterns = [
         re.compile(r"-----BEGIN (RSA|EC|DSA|OPENSSH|PRIVATE) KEY-----"),
-        re.compile(r"(api_key|secret_key|private_key)\s*=\s*['\"][a-zA-Z0-9_\-]{20,}['\"]", re.IGNORECASE),
+        re.compile(
+            r"(api_key|secret_key|private_key)\s*=\s*['\"][a-zA-Z0-9_\-]{20,}['\"]",
+            re.IGNORECASE,
+        ),
     ]
 
     for py_file in src_dir.rglob("*.py"):
         text = py_file.read_text(encoding="utf-8")
         for pattern in suspicious_patterns:
-            assert not pattern.search(text), f"在 {py_file} 中检测到疑似硬编码敏感密钥/凭据"
+            assert not pattern.search(text), (
+                f"在 {py_file} 中检测到疑似硬编码敏感密钥/凭据"
+            )
 
     # 验证插件协议排除红线：src/ 中不得存在插件协议运行时
     for path in src_dir.rglob("*"):
         name_lower = path.name.lower()
-        assert "plugin_protocol" not in name_lower, f"发现受限排除项插件协议实现: {path}"
+        assert "plugin_protocol" not in name_lower, (
+            f"发现受限排除项插件协议实现: {path}"
+        )

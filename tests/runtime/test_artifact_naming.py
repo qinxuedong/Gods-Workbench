@@ -162,7 +162,9 @@ def test_sanitize_storage_filename() -> None:
     assert sanitize_storage_filename("my hero shot.png") == "my_hero_shot.png"
 
     # 路径遍历与非法字符清除
-    assert sanitize_storage_filename("../../dangerous:file?.mp4") == "dangerous_file.mp4"
+    assert (
+        sanitize_storage_filename("../../dangerous:file?.mp4") == "dangerous_file.mp4"
+    )
 
     # Windows 设备保留名回退
     assert sanitize_storage_filename("CON.mp4", fallback_id="ast_123") == "ast_123.mp4"

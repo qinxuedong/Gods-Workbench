@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 # Copyright 2026 Gods-Workbench Authors
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -43,8 +42,9 @@ import json
 import os
 import threading
 import time
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
-from typing import Any, Callable, Mapping, Optional, Tuple
+from typing import Any, Optional, Tuple
 from urllib.parse import urlencode, urlparse
 from urllib.request import HTTPRedirectHandler, Request, build_opener
 
@@ -152,9 +152,13 @@ DEFAULT_SCOPES = "openid profile email"
 DISCOVERY_CACHE_SECONDS = 300
 
 
-def resolve_auth_mode(value: Optional[str] = None) -> str:
+def resolve_auth_mode(value: str | None = None) -> str:
     """解析认证模式；空值默认使用本地账户，未知值按 ``oidc`` 失败关闭。"""
-    raw = (value if value is not None else os.environ.get(AUTH_MODE_ENV, "")).strip().lower()
+    raw = (
+        (value if value is not None else os.environ.get(AUTH_MODE_ENV, ""))
+        .strip()
+        .lower()
+    )
     if raw in KNOWN_AUTH_MODES:
         return raw
     if not raw:
@@ -190,7 +194,9 @@ def resolve_endpoint_hosts() -> frozenset:
     if not raw_value.strip():
         return frozenset()
     parts = raw_value.replace(",", " ").split()
-    return frozenset(host for host in (normalize_endpoint_host(part) for part in parts) if host)
+    return frozenset(
+        host for host in (normalize_endpoint_host(part) for part in parts) if host
+    )
 
 
 def is_allowed_jwks_url(url: str) -> bool:
@@ -243,9 +249,13 @@ def fetch_jwks(config: JwksEndpointConfig) -> Mapping[str, Any]:
     if not is_allowed_jwks_url(config.url):
         raise ValueError("JWKS URL 不在允许范围（仅 HTTPS 或本地回环）")
     request = Request(config.url, headers={"Accept": "application/json"}, method="GET")
-    payload = _read_limited(request, JWKS_MAX_BYTES, "JWKS 端点", config.timeout_seconds)
+    payload = _read_limited(
+        request, JWKS_MAX_BYTES, "JWKS 端点", config.timeout_seconds
+    )
     document = json.loads(payload.decode("utf-8"))
-    if not isinstance(document, dict) or not isinstance(document.get("keys"), (list, tuple)):
+    if not isinstance(document, dict) or not isinstance(
+        document.get("keys"), (list, tuple)
+    ):
         raise ValueError("JWKS 文档结构无效")
     return document
 
@@ -256,7 +266,9 @@ def fetch_discovery_document(issuer: str) -> Mapping[str, Any]:
     discovery_url = base + DISCOVERY_PATH
     if not is_allowed_jwks_url(discovery_url):
         raise ValueError("discovery 端点不在允许范围（仅 HTTPS 或本地回环）")
-    request = Request(discovery_url, headers={"Accept": "application/json"}, method="GET")
+    request = Request(
+        discovery_url, headers={"Accept": "application/json"}, method="GET"
+    )
     payload = _read_limited(request, DISCOVERY_MAX_BYTES, "discovery 端点")
     document = json.loads(payload.decode("utf-8"))
     if not isinstance(document, dict):
@@ -299,7 +311,9 @@ def build_jwks_fetcher(config: JwksEndpointConfig) -> Callable[[], Mapping[str, 
     def fetcher() -> Mapping[str, Any]:
         now = time.time()
         cached = cache.get("document")
-        if cached is not None and now - float(cache.get("at") or 0.0) < max(0, int(config.cache_seconds)):
+        if cached is not None and now - float(cache.get("at") or 0.0) < max(
+            0, int(config.cache_seconds)
+        ):
             return cached
         return _load()
 
@@ -311,7 +325,10 @@ def build_jwks_fetcher(config: JwksEndpointConfig) -> Callable[[], Mapping[str, 
         """
         now = time.time()
         cached = cache.get("document")
-        if cached is not None and now - float(cache.get("force_at") or 0.0) < FORCE_REFRESH_MIN_SECONDS:
+        if (
+            cached is not None
+            and now - float(cache.get("force_at") or 0.0) < FORCE_REFRESH_MIN_SECONDS
+        ):
             return cached
         document = _load()
         cache["force_at"] = now
@@ -352,7 +369,7 @@ def auth_config_generation() -> str:
     return hashlib.sha256(material.encode("utf-8")).hexdigest()
 
 
-def _environment_fingerprint() -> Tuple[str, ...]:
+def _environment_fingerprint() -> tuple[str, ...]:
     """采集与认证配置相关的环境变量快照，用作运行期配置缓存键。"""
     return (
         os.environ.get(AUTH_MODE_ENV, ""),
@@ -392,7 +409,10 @@ def load_runtime_auth_config() -> RuntimeAuthConfig:
     if cached is not None:
         return cached
     negative = _NEGATIVE_CACHE.get(fingerprint)
-    if negative is not None and time.time() - float(negative[0]) < NEGATIVE_CACHE_SECONDS:
+    if (
+        negative is not None
+        and time.time() - float(negative[0]) < NEGATIVE_CACHE_SECONDS
+    ):
         return negative[1]
     runtime = _build_runtime_auth_config(fingerprint)
     if runtime.ready:
@@ -406,7 +426,7 @@ def load_runtime_auth_config() -> RuntimeAuthConfig:
     return runtime
 
 
-def _build_runtime_auth_config(fingerprint: Tuple[str, ...]) -> RuntimeAuthConfig:
+def _build_runtime_auth_config(fingerprint: tuple[str, ...]) -> RuntimeAuthConfig:
     """按环境变量快照构造运行期认证配置（失败一律 ``ready=False``）。"""
     mode = resolve_auth_mode(fingerprint[0])
     if mode != AUTH_MODE_OIDC:
@@ -417,7 +437,7 @@ def _build_runtime_auth_config(fingerprint: Tuple[str, ...]) -> RuntimeAuthConfi
     groups_claim = fingerprint[4].strip() or DEFAULT_GROUPS_CLAIM
     client_id = (fingerprint[6] if len(fingerprint) > 6 else "").strip()
     redirect_uri = (fingerprint[7] if len(fingerprint) > 7 else "").strip()
-    scopes = ((fingerprint[8] if len(fingerprint) > 8 else "").strip() or DEFAULT_SCOPES)
+    scopes = (fingerprint[8] if len(fingerprint) > 8 else "").strip() or DEFAULT_SCOPES
     if not issuer or not audience:
         return RuntimeAuthConfig(
             mode=mode,
@@ -432,7 +452,9 @@ def _build_runtime_auth_config(fingerprint: Tuple[str, ...]) -> RuntimeAuthConfi
         jwks_url = resolve_jwks_url(issuer, fingerprint[3])
     except Exception:
         # discovery 失败、jwks_uri 缺失或 scheme 非法：失败关闭。
-        return RuntimeAuthConfig(mode=mode, ready=False, reason="JWKS 端点配置无效，已拒绝请求")
+        return RuntimeAuthConfig(
+            mode=mode, ready=False, reason="JWKS 端点配置无效，已拒绝请求"
+        )
 
     try:
         leeway = int(fingerprint[5])
@@ -452,7 +474,11 @@ def _build_runtime_auth_config(fingerprint: Tuple[str, ...]) -> RuntimeAuthConfi
     )
     # 登录入口可用性：校验配置就绪 + 客户端标识与回调地址齐备。
     login_ready = bool(client_id and redirect_uri)
-    login_reason = "已启用外部 IdP 校验" if login_ready else "授权码流程配置缺失（client_id / redirect_uri）"
+    login_reason = (
+        "已启用外部 IdP 校验"
+        if login_ready
+        else "授权码流程配置缺失（client_id / redirect_uri）"
+    )
     return RuntimeAuthConfig(
         mode=mode,
         ready=True,
@@ -464,6 +490,7 @@ def _build_runtime_auth_config(fingerprint: Tuple[str, ...]) -> RuntimeAuthConfi
         scopes=scopes,
         login_ready=login_ready,
     )
+
 
 # ---------------------------------------------------------------------------
 # 授权码 + PKCE 流程：discovery 端点缓存与令牌交换
@@ -492,7 +519,9 @@ def _require_document_issuer_matches(document: Mapping[str, Any], base: str) -> 
         raise ValueError("discovery 文档缺少 issuer，已拒绝")
 
 
-def load_discovery_document(issuer: str, *, cache_seconds: Optional[int] = None) -> Mapping[str, Any]:
+def load_discovery_document(
+    issuer: str, *, cache_seconds: int | None = None
+) -> Mapping[str, Any]:
     """按 issuer 读取 discovery 文档，带 TTL 缓存（避免每个登录请求都外呼 IdP）。
 
     返回前强制校验文档自述 ``issuer`` 与请求 issuer 逐字一致（见
@@ -501,7 +530,9 @@ def load_discovery_document(issuer: str, *, cache_seconds: Optional[int] = None)
     base = (issuer or "").strip().rstrip("/")
     if not base:
         raise ValueError("issuer 缺失")
-    ttl = DISCOVERY_CACHE_SECONDS if cache_seconds is None else max(0, int(cache_seconds))
+    ttl = (
+        DISCOVERY_CACHE_SECONDS if cache_seconds is None else max(0, int(cache_seconds))
+    )
     cached = _DISCOVERY_CACHE.get("document")
     if (
         cached is not None
@@ -516,7 +547,9 @@ def load_discovery_document(issuer: str, *, cache_seconds: Optional[int] = None)
     return document
 
 
-def is_trusted_endpoint(endpoint: str, issuer: str, hosts: Optional[frozenset] = None) -> bool:
+def is_trusted_endpoint(
+    endpoint: str, issuer: str, hosts: frozenset | None = None
+) -> bool:
     """端点是否可信：**逐字同源**，或端点主机**精确命中** opt-in 受信主机白名单。
 
     设计要点（安全关键）：
