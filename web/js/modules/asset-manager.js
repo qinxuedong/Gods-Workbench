@@ -3027,6 +3027,7 @@ function promptCountForCategory(category, lib=activePromptLibrary()){
     return items.filter(item => (item.category || 'custom') === category).length;
 }
 function assetKind(item){
+    if(workflowSourceId(item)) return 'workflow';
     const url = String(item?.url || '').toLowerCase();
     const kind = String(item?.kind || item?.type || '').toLowerCase();
     if(kind.includes('video') || ASSET_VIDEO_EXTENSIONS.has(assetFileExtension(item)) || /\.(mp4|webm|mov|m4v)(\?|#|$)/.test(url)) return 'video';
@@ -3085,6 +3086,7 @@ function assetKindLabel(item){
     const kind = assetKind(item);
     if(kind === 'video') return '视频';
     if(kind === 'audio') return '音频';
+    if(kind === 'workflow') return '工作流';
     if(kind === 'text') return '文本';
     return '图片';
 }
@@ -3136,6 +3138,7 @@ function assetVideoUrl(url, item={}){
     return `/api/media-transcode?${params.toString()}`;
 }
 function assetThumb(item){
+    if(workflowSourceId(item)) return workflowThumb(item);
     const kind = assetKind(item);
     // 首帧与视频分层显示，避免浏览器把 video poster 按元素尺寸拉伸。
     if(kind === 'video'){
@@ -4113,6 +4116,7 @@ function registryCoverflowAsset(item={}){
     };
 }
 function registryCoverflowSourceMediaKind(source, item={}){
+    if(workflowSourceId(item)) return '';
     const declaredKind = String(item?.kind || item?.type || item?.media_type || item?.mediaType || '').trim().toLowerCase();
     // A server-declared kind is authoritative. Only records without kind may
     // fall back to extension-based detailViewerType inference.
@@ -6624,7 +6628,40 @@ function scheduleRegistryPreviewImages(){
         deferredImages.forEach(image => observer.observe(image));
     });
 }
+function registryPreviewCacheKey(image){
+    const card = image.closest?.('[data-registry-card]');
+    if(!card) return '';
+    const imageIndex = [...card.querySelectorAll('img')].indexOf(image);
+    return imageIndex < 0 ? '' : `${card.dataset.registryCard || ''}:${imageIndex}`;
+}
+function captureRegistryPreviewImages(){
+    const cache = new Map();
+    root?.querySelectorAll('img[data-registry-preview-loaded="true"]').forEach(image => {
+        const key = registryPreviewCacheKey(image);
+        if(!key) return;
+        const entries = cache.get(key) || [];
+        entries.push({image, source:image.currentSrc || image.src});
+        cache.set(key, entries);
+    });
+    return cache;
+}
+function restoreRegistryPreviewImages(cache){
+    if(!cache?.size) return;
+    root?.querySelectorAll('img[data-registry-preview-src]').forEach(image => {
+        const key = registryPreviewCacheKey(image);
+        const entries = cache.get(key) || [];
+        const source = String(image.dataset.registryPreviewSrc || '');
+        if(!key || !source) return;
+        let expectedSource = '';
+        try { expectedSource = new URL(source, document.baseURI).href; } catch(_) { return; }
+        const index = entries.findIndex(entry => !entry.image.isConnected && entry.source === expectedSource);
+        if(index < 0) return;
+        const [loaded] = entries.splice(index, 1);
+        image.replaceWith(loaded.image);
+    });
+}
 function render(){
+    const registryPreviewCache = captureRegistryPreviewImages();
     disconnectRegistryPreviewScheduling();
     const previewScheduleRevision = registryPreviewScheduleRevision;
     const focusedRegistryCard = document.activeElement?.closest?.('[data-registry-card]');
@@ -6675,6 +6712,7 @@ function render(){
     else if(assetBoardById(activeTab)?.system === false) renderCustomAssetLibrary(assetBoardById(activeTab));
     else renderAssetManager();
     if(activeTab === 'registry' || customLibraryActive) renderRegistryFreshNotice();
+    restoreRegistryPreviewImages(registryPreviewCache);
     refreshIcons();
     scheduleRegistryMasonryLayout();
     if(scrollState.length){
@@ -7994,6 +8032,17 @@ function syncRegistrySelectionDom(){
     if(detailPanel && !registryDetailPanelCollapsed) detailPanel.innerHTML = renderRegistryDetail();
     refreshIcons();
 }
+function clearRegistrySelectionDom(){
+    if(!selectedRegistryAssetId && !registryDetail && !registrySelectedIds.size && !registryManageMode && !registryBulkPanel) return false;
+    selectedRegistryAssetId = '';
+    registryDetail = null;
+    registrySelectedIds.clear();
+    registrySelectionAnchorId = '';
+    registryManageMode = false;
+    registryBulkPanel = '';
+    syncRegistrySelectionDom();
+    return true;
+}
 function renderRegistryToolbar(board, title, subtitle, options={}){
     const selectedIds = registryActiveSelectedIds(board);
     const selectedGroupIds = selectedRegistryCustomGroupIds(board);
@@ -8116,9 +8165,9 @@ function registryDetailPanelToggleButton(collapsed=registryDetailPanelCollapsed)
 }
 function renderRegistryDetailPanel(){
     if(registryDetailPanelCollapsed){
-        return `<aside class="asset-panel asset-detail registry-detail-panel is-collapsed"><button class="registry-detail-expand" type="button" data-registry-detail-toggle aria-expanded="false" title="展开资产详情" aria-label="展开资产详情"><i data-lucide="panel-right-open"></i><span>资产详情</span></button></aside>`;
+        return `<aside class="asset-panel asset-detail registry-detail-panel is-collapsed" data-registry-detail><button class="registry-detail-expand" type="button" data-registry-detail-toggle aria-expanded="false" title="展开资产详情" aria-label="展开资产详情"><i data-lucide="panel-right-open"></i><span>资产详情</span></button></aside>`;
     }
-    return `<aside class="asset-panel asset-detail registry-detail-panel">${renderRegistryDetail()}</aside>`;
+    return `<aside class="asset-panel asset-detail registry-detail-panel" data-registry-detail>${renderRegistryDetail()}</aside>`;
 }
 function renderRegistryDetailResizer(){
     if(registryDetailPanelCollapsed) return '';
@@ -10201,15 +10250,7 @@ async function handleClick(event){
     const registryAssetsBlank = target.closest?.('.registry-assets-scroll');
     if(registryAssetsBlank && !target.closest?.('[data-registry-card]')){
         if(Date.now() < registryMarqueeSuppressClickUntil) return;
-        if(selectedRegistryAssetId || registrySelectedIds.size){
-            selectedRegistryAssetId = '';
-            registryDetail = null;
-            registrySelectedIds.clear();
-            registrySelectionAnchorId = '';
-            registryManageMode = false;
-            registryBulkPanel = '';
-            render();
-        }
+        clearRegistrySelectionDom();
         return;
     }
     const registryCard = target.closest?.('[data-registry-card]');
@@ -10959,6 +11000,7 @@ function detailViewerUrl(source, item={}){
     return item.url || item.public_url || '';
 }
 function detailViewerType(source, item={}){
+    if(workflowSourceId(item)) return 'workflow';
     const extension = assetFileExtension(item);
     const kind = source === 'local' ? String(item.kind || localItemKind(item)).toLowerCase() : assetKind(item);
     if(source === 'prompt') return 'text';
@@ -10973,7 +11015,7 @@ function detailViewerType(source, item={}){
     return 'other';
 }
 function detailViewerTypeLabel(type){
-    return {image:'图片',video:'视频',audio:'音频',text:'文本',model:'3D 模型',font:'字体',other:'文件'}[type] || '文件';
+    return {image:'图片',video:'视频',audio:'音频',text:'文本',workflow:'工作流',model:'3D 模型',font:'字体',other:'文件'}[type] || '文件';
 }
 function detailViewerNameHtml(value=''){
     return escapeHtml(value || '未命名素材').replace(/([_.-])/g, '$1<wbr>');
@@ -11699,10 +11741,12 @@ function renderDetailMediaCanvasNode(source, item){
     const grouped = Boolean(group);
     const selected = !grouped && detailMediaCanvasSelectedIds().has(item.id);
     const selectedViaGroup = Boolean(group && detailMediaCanvasSelectedIds().has(group.id));
-    const previewFallback = assetPreviewUrl(url, 2048, item);
-    const media = type === 'video'
-        ? `<video class="asset-detail-media-node-content asset-detail-player" src="${escapeAttr(assetVideoUrl(url, item))}" playsinline preload="auto" data-detail-media-natural="${escapeAttr(item.id)}"></video>`
-        : `<img class="asset-detail-media-node-content" src="${escapeAttr(url)}" data-detail-media-preview-fallback="${escapeAttr(previewFallback)}" data-preview-fallback="${escapeAttr(item.name || '图片')}" data-detail-media-natural="${escapeAttr(item.id)}" alt="${escapeAttr(item.name || '画布素材')}" draggable="false" loading="eager" decoding="async">`;
+    const previewFallback = type === 'workflow' ? '' : assetPreviewUrl(url, 2048, item);
+    const media = type === 'workflow'
+        ? workflowThumb(item)
+        : type === 'video'
+            ? `<video class="asset-detail-media-node-content asset-detail-player" src="${escapeAttr(assetVideoUrl(url, item))}" playsinline preload="auto" data-detail-media-natural="${escapeAttr(item.id)}"></video>`
+            : `<img class="asset-detail-media-node-content" src="${escapeAttr(url)}" data-detail-media-preview-fallback="${escapeAttr(previewFallback)}" data-preview-fallback="${escapeAttr(item.name || '图片')}" data-detail-media-natural="${escapeAttr(item.id)}" alt="${escapeAttr(item.name || '画布素材')}" draggable="false" loading="eager" decoding="async">`;
     const centerPlay = type === 'video'
         ? `<button class="asset-detail-video-center-play" type="button" data-detail-video-action="toggle" data-detail-video-for="${escapeAttr(item.id)}" aria-label="Play video"><i data-lucide="play"></i></button>`
         : '';
@@ -11905,7 +11949,10 @@ function renderDetailMediaCanvas(source){
                     const type = detailViewerType(source, value);
                     const url = detailViewerUrl(source, value);
                     const box = detailViewerState.mediaCanvasLayout?.[value.id] || {};
-                    return `<button class="${value.id === activeId ? 'is-active' : ''}" type="button" data-detail-media-canvas-node="${escapeAttr(value.id)}" title="${escapeAttr(value.name || '画布素材')}" style="left:${(Number(box.x || 0)-metrics.minX) * minimapScale}px;top:${(Number(box.y || 0)-metrics.minY) * minimapScale}px;width:${Math.max(2,Number(box.width || 0) * minimapScale)}px;height:${Math.max(2,Number(box.height || 0) * minimapScale)}px"><img src="${escapeAttr(assetPreviewUrl(url, 320, value))}" alt=""></button>`;
+                    const preview = type === 'workflow'
+                        ? workflowThumb(value)
+                        : `<img src="${escapeAttr(assetPreviewUrl(url, 320, value))}" alt="">`;
+                    return `<button class="${value.id === activeId ? 'is-active' : ''}" type="button" data-detail-media-canvas-node="${escapeAttr(value.id)}" title="${escapeAttr(value.name || '画布素材')}" style="left:${(Number(box.x || 0)-metrics.minX) * minimapScale}px;top:${(Number(box.y || 0)-metrics.minY) * minimapScale}px;width:${Math.max(2,Number(box.width || 0) * minimapScale)}px;height:${Math.max(2,Number(box.height || 0) * minimapScale)}px">${preview}</button>`;
                 }).join('')}</div>
             </aside>
             ${renderDetailMediaCanvasContextMenu()}
@@ -11931,6 +11978,7 @@ function captureDetailMediaCanvasNaturalSize(event){
 function renderDetailViewerMedia(source, item, type){
     const url = detailViewerUrl(source, item);
     const extension = assetFileExtension(item);
+    if(type === 'workflow' || workflowSourceId(item)) return workflowThumb(item);
     if(type === 'video'){
         return `<video class="asset-lightbox-video asset-detail-player" src="${escapeAttr(assetVideoUrl(url, item))}" poster="${escapeAttr(assetPreviewUrl(url, 1280, item))}" controls playsinline preload="metadata"></video>`;
     }
@@ -14889,6 +14937,7 @@ async function renderDetailMediaCanvasPng(scopeOverride=''){
         const box = detailViewerState.mediaCanvasLayout?.[item.id];
         if(!box) continue;
         const type = detailViewerType(detailViewerState.source,item);
+        if(type === 'workflow' || workflowSourceId(item)) { skipped += 1; continue; }
         const sourceUrl = type === 'video' ? assetPreviewUrl(detailViewerUrl(detailViewerState.source,item),2048,item) : detailViewerUrl(detailViewerState.source,item);
         try {
             const bitmap = await loadDetailMediaCanvasBitmap(sourceUrl);
@@ -16341,6 +16390,7 @@ function beginMarqueeSelection(event){
     const selector = marqueeTargetSelector();
     if(!selector) return;
     if(event.button !== 0) return;
+    if(event.target.closest?.('[data-registry-detail], .registry-detail-panel, .asset-detail-viewer, .asset-detail-stage, .asset-detail-stage-content, .asset-detail-player, .detail-media, [data-floating-content]')) return;
     if(event.target.closest?.('button,input,textarea,select,.side-upload-card,.upload-grid-card,.asset-search-wrap')) return;
     const area = event.target.closest?.('.content-scroll');
     if(!area) return;
@@ -16431,13 +16481,7 @@ function endMarqueeSelection(){
     marqueeState = null;
     pendingBatchDelete = '';
     if(state.mode === 'registry' && !state.moved){
-        selectedRegistryAssetId = '';
-        registryDetail = null;
-        registrySelectedIds.clear();
-        registrySelectionAnchorId = '';
-        registryManageMode = false;
-        registryBulkPanel = '';
-        render();
+        clearRegistrySelectionDom();
         return;
     }
     if(state.moved){
