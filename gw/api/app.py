@@ -30,6 +30,7 @@ from gw.api.routes_local_assets import router as local_assets_router
 from gw.api.routes_media import router as media_router
 from gw.api.routes_asset_review_b6 import router as asset_review_b6_router
 from gw.api.routes_episode_pipeline_b7 import router as episode_pipeline_b7_router
+from gw.api.routes_export import router as export_router
 from gw.api.routes_prompt_library_b8 import router as prompt_library_b8_router
 from gw.api.routes_public_b9 import router as public_b9_router
 from gw.api.routes_auth import router as auth_router
@@ -358,6 +359,7 @@ def create_app(*, agent_integration_factory=None) -> FastAPI:
     app.include_router(media_router)
     app.include_router(asset_review_b6_router)
     app.include_router(episode_pipeline_b7_router)
+    app.include_router(export_router)
     app.include_router(prompt_library_b8_router)
     app.include_router(public_b9_router)
     app.include_router(asset_registry_router)
