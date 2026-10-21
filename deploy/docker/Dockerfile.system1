@@ -1,0 +1,57 @@
+# Copyright 2026 Gods-Workbench Authors
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+FROM python:3.11-slim-bookworm
+
+LABEL org.opencontainers.image.title="Gods-Workbench System 1" \
+      org.opencontainers.image.description="Kev-0.8B pure CPU decision service base" \
+      org.opencontainers.image.licenses="Apache-2.0"
+
+# 不在镜像中下载模型或保存凭据；模型由 Compose 以只读卷提供。
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1 \
+    GW_RUNTIME_MODE=prod \
+    LOCALAPPDATA=/var/lib \
+    GW_DISABLE_AGENT_INTEGRATION=1 \
+    GW_CPU_ONLY=1 \
+    KEV_MODEL_REVISION=9a45d25e \
+    GW_MODEL_OFFLINE=1 \
+    HF_HUB_OFFLINE=1 \
+    TRANSFORMERS_OFFLINE=1 \
+    CUDA_VISIBLE_DEVICES="" \
+    NVIDIA_VISIBLE_DEVICES=void \
+    OMP_NUM_THREADS=2 \
+    MKL_NUM_THREADS=2
+
+RUN groupadd --system --gid 10001 gw \
+    && useradd --system --uid 10001 --gid 10001 --home-dir /app --no-create-home gw
+
+WORKDIR /app
+
+COPY requirements.txt ./requirements.txt
+RUN python -m pip install --no-cache-dir --disable-pip-version-check -r requirements.txt
+
+COPY gw ./gw
+COPY web ./web
+COPY tools ./tools
+COPY run.py ./run.py
+
+RUN install --directory --owner=10001 --group=10001 /var/lib/GodsWorkbench /models/kev
+
+EXPOSE 2077
+
+USER 10001:10001
+
+CMD ["python", "-m", "uvicorn", "gw.api.app:app", "--host", "0.0.0.0", "--port", "2077", "--workers", "1"]
