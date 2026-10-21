@@ -135,12 +135,15 @@ def test_c10_inventory_structured_filters_and_bad_queries_are_explicit(client: T
     for params, code in (
         ({"sort": "invented"}, "UNSUPPORTED_OPTION"),
         ({"view": "invented"}, "UNSUPPORTED_OPTION"),
-        ({"root_id": "root_0001"}, "UNSUPPORTED_OPTION"),
         ({"recent_days": 0}, "INVALID_REQUEST"),
     ):
         rejected = client.get(path, headers=AUTH, params=params)
         assert rejected.status_code == 400, rejected.text
         assert rejected.json()["detail"]["code"] == code
+
+    unknown_root = client.get(path, headers=AUTH, params={"root_id": "root_0001"})
+    assert unknown_root.status_code == 404, unknown_root.text
+    assert unknown_root.json()["detail"]["code"] == "ROOT_NOT_FOUND"
 
 
 def test_c10_inventory_media_thumbnail_and_missing_dependency_are_truthful(

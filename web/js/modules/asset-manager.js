@@ -1253,7 +1253,12 @@ async function createPresetAssetBoard(){
     let source = null;
     if(path){
         setStatus('正在添加素材来源...');
-        source = await attachPathToAssetBoard('', `${name}素材`, path);
+        try {
+            source = await attachPathToAssetBoard('', `${name}素材`, path);
+        } catch(err) {
+            setStatus(err.message || '素材库索引失败');
+            return;
+        }
         if(!source){ setStatus('素材来源添加失败，请检查路径'); return; }
     }
     const state = ensureBoardNavigationState();
@@ -1264,7 +1269,7 @@ async function createPresetAssetBoard(){
     saveBoardNavigationState();
     closeCreateLibraryModal();
     renderBoardNavigation();
-    setStatus(`已创建资源库“${name}”`);
+    setStatus(`已创建资源库“${name}”${source ? '，来源索引已完成' : ''}`);
     await activateAssetBoard(id);
 }
 function attachSourceRecordToBoard(boardId, source){
@@ -1290,6 +1295,26 @@ async function reindexAssetSource(sourceId){
     assetReindexRequests.set(sourceId, request);
     return request;
 }
+async function waitForAssetIndexJob(jobId, sourceName='素材库'){
+    if(!jobId) throw new Error('索引任务未返回任务编号');
+    const deadline = Date.now() + 120000;
+    while(Date.now() < deadline){
+        const data = await apiJsonResponse(assetManagerApi.getWorkspaceJob(jobId));
+        const job = data?.job || {};
+        if(job.status === 'succeeded'){
+            await Promise.allSettled([refreshRegistryAssets(false), refreshRegistryFacetData()]);
+            if(activeTab === 'registry' || assetBoardById(activeTab)?.system === false) render();
+            setStatus(`素材库“${sourceName}”索引完成，已扫描 ${Number(job.result?.scanned || 0)} 项`);
+            return job;
+        }
+        if(['failed','cancelled','interrupted'].includes(job.status)){
+            throw new Error(`素材库索引失败：${job.error_code || job.status}`);
+        }
+        setStatus(`正在索引素材库“${sourceName}”… 已扫描 ${Number(job.progress?.scanned || 0)} 项`);
+        await new Promise(resolve => setTimeout(resolve, 500));
+    }
+    throw new Error(`素材库“${sourceName}”索引仍在后台运行，可稍后刷新查看`);
+}
 async function attachPathToAssetBoard(boardId, sourceName, path){
     const cleanPath = String(path || '').trim();
     if(!cleanPath) return null;
@@ -1297,31 +1322,37 @@ async function attachPathToAssetBoard(boardId, sourceName, path){
     applyStorageSettingsData(settings || {});
     const known = localLibraries.find(lib => pathCompareKey(lib.path) === pathCompareKey(cleanPath));
     let source = known ? {id:known.id, name:storageCleanName(sourceName || known.name, known.name), path:known.path} : null;
+    let accepted = null;
     if(!source){
         const id = storageNewExtraId();
-        const entries = storageExtraLocalEntries();
-        entries.push({id, kind:id, name:storageCleanName(sourceName, '用户素材'), path:cleanPath});
-        const data = await apiJsonResponse(assetManagerApi.updateStorageSettings({
-            dirs:storageSettingsState.dirs || {},
-            extra_local_entries:entries,
-            local_library_names:{...storageLocalLibraryNames(), [id]:storageCleanName(sourceName, '用户素材')},
-            local_library_order:[...localLibraries.map(lib => lib.id).filter(Boolean), id],
-            expected_version:Number(storageSettingsState.revision || 1),
-        }));
-        applyStorageSettingsData(data || {});
+        const cleanName = storageCleanName(sourceName, '用户素材');
+        const nonce = globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+        setStatus(`正在校验并登记素材库“${cleanName}”…`);
+        accepted = await apiJsonResponse(assetManagerApi.registerAssetRoot({
+            background:true,
+            hash_files:true,
+            max_files:250000,
+            roots:[id],
+            register_root:{id, name:cleanName, path:cleanPath, expected_version:Number(storageSettingsState.revision || 1)},
+        }, {headers:{'Idempotency-Key':`asset-register:${id}:${nonce}`}}));
+        const saved = await apiJsonResponse(assetManagerApi.getStorageSettings());
+        applyStorageSettingsData(saved || {});
         const created = localLibraries.find(lib => lib.id === id) || localLibraries.find(lib => pathCompareKey(lib.path) === pathCompareKey(cleanPath));
         source = {id:created?.id || id, name:created?.name || storageCleanName(sourceName, '用户素材'), path:created?.path || cleanPath};
     }
     if(boardId) attachSourceRecordToBoard(boardId, source);
-    // 【修复问题7】索引任务启动失败时给出可见警告，但来源登记仍然完成
-    const reindexed = await reindexAssetSource(source.id);
-    if(reindexed && reindexed.ok === false){
-        setStatus(`来源已登记，但索引任务启动失败：${reindexed.error || '未知错误'}`);
-        // 触发一次索引状态刷新，让用户能在设置与统计中看到当前索引状态
-        apiJsonResponse(assetManagerApi.getRegistryStatus()).then(statusData => {
-            if(statusData && typeof statusData === 'object') registryStatus = statusData;
-        }).catch(() => {});
+    if(!accepted){
+        const reindexed = await reindexAssetSource(source.id);
+        if(reindexed && reindexed.ok === false){
+            setStatus(`来源已登记，但索引任务启动失败：${reindexed.error || '未知错误'}`);
+            apiJsonResponse(assetManagerApi.getRegistryStatus()).then(statusData => {
+                if(statusData && typeof statusData === 'object') registryStatus = statusData;
+            }).catch(() => {});
+            return source;
+        }
+        accepted = reindexed.data;
     }
+    await waitForAssetIndexJob(accepted?.job_id, source.name);
     return source;
 }
 function renderBoardSourceModal(){

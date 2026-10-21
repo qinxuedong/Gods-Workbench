@@ -66,19 +66,65 @@ def _owner(actor):
 
 
 def _roots():
-    """来源别名只能指向允许根；允许根另有不含路径的稳定标识。"""
+    """解析允许根与来源别名；每个别名保存其根 ID、相对前缀和筛选 ID。"""
     from gw.settings.service import default_storage_settings_service
     roots = storage.allowed_roots()
     if not roots:
         _error(503, "INDEX_SOURCE_NOT_AVAILABLE", "未配置允许根目录",
                data_status="not_integrated", unavailable=True)
     canonical = {"root_" + hashlib.sha256(os.path.normcase(str(p)).encode()).hexdigest()[:24]: p for p in roots}
-    aliases = dict(canonical)
+    aliases = {
+        root_id: {"root_id": root_id, "root": root, "prefix": "", "storage_root_id": root_id,
+                  "name": root.name or root_id}
+        for root_id, root in canonical.items()
+    }
     for item in default_storage_settings_service.get_snapshot().local_libraries:
-        path = Path(str(item.get("path") or ""))
-        if path.is_absolute() and path.resolve() in roots:
-            aliases[str(item["id"])] = path.resolve()
+        source_id = str(item.get("id") or "")
+        raw_path = str(item.get("path") or "")
+        path = Path(raw_path)
+        if not source_id or not path.is_absolute():
+            continue
+        try:
+            resolved = path.resolve(strict=True)
+        except (OSError, RuntimeError, ValueError):
+            continue
+        matches = []
+        for root_id, root in canonical.items():
+            try:
+                relative = resolved.relative_to(root)
+            except ValueError:
+                continue
+            matches.append((root_id, root, relative))
+        if not matches:
+            continue
+        root_id, root, relative = max(matches, key=lambda match: len(match[1].parts))
+        aliases[source_id] = {
+            "root_id": root_id,
+            "root": root,
+            "prefix": "" if str(relative) == "." else relative.as_posix(),
+            "storage_root_id": source_id,
+            "name": str(item.get("name") or source_id),
+        }
     return canonical, aliases
+
+
+def root_facets():
+    """返回可筛选来源及资产数，不暴露服务器绝对路径。"""
+    from gw.asset_registry import repository as repo
+    try:
+        _, aliases = _roots()
+    except CleanroomException:
+        return []
+    raw = repo.state().read()
+    counts = {}
+    for asset in raw["assets"].values():
+        if not repo._visible(asset):
+            continue
+        source_id = str(asset.get("storage_root_id") or asset.get("root_id") or "")
+        if source_id:
+            counts[source_id] = counts.get(source_id, 0) + 1
+    return [{"id": source_id, "name": alias["name"], "count": counts.get(source_id, 0)}
+            for source_id, alias in sorted(aliases.items())]
 
 
 def _admission(actor):
@@ -248,14 +294,23 @@ class IndexJobs:
         if selected is not None and (not isinstance(selected, list) or not selected or len(selected) > 64
                                       or any(not isinstance(x, str) or x not in aliases for x in selected)):
             _error(400, "INDEX_ROOT_INVALID", "来源必须为已准入的根标识")
-        root_ids = sorted(k for k, p in canonical.items() if selected is None or p in [aliases[x] for x in selected])
+        selected_aliases = ([alias for alias in aliases.values()
+                             if alias["storage_root_id"] == alias["root_id"]]
+                            if selected is None else [aliases[source_id] for source_id in selected])
+        scopes = [{"root_id": alias["root_id"], "prefix": alias["prefix"],
+                   "storage_root_id": alias["storage_root_id"]} for alias in selected_aliases]
+        # 同一来源可能通过多个别名被重复选中，合并完全相同的扫描范围。
+        scopes = list({(scope["root_id"], scope["prefix"], scope["storage_root_id"]): scope
+                       for scope in scopes}.values())
+        root_ids = sorted({scope["root_id"] for scope in scopes})
         max_files = payload.get("max_files", MAX_FILES)
         if type(max_files) is not int or not 1 <= max_files <= MAX_FILES:
             _error(400, "INDEX_LIMIT_INVALID", "扫描文件数上限无效")
         hash_files = payload.get("hash_files", False)
         if not isinstance(hash_files, bool):
             _error(400, "INDEX_HASH_INVALID", "hash_files必须为布尔值")
-        request = {"kind": kind, "roots": root_ids, "max_files": max_files, "hash_files": hash_files}
+        request = {"kind": kind, "roots": root_ids, "scopes": scopes,
+                   "max_files": max_files, "hash_files": hash_files}
         fingerprint = _digest({k: str(v) for k, v in sorted(aliases.items())})
         request_digest = _digest([request, fingerprint])
         key_digest = _digest([_owner(actor), key])
@@ -428,14 +483,26 @@ class IndexJobs:
     def _scan(self, job_id, attempt, roots, request):
         files = []
         entries = 0
-        for root_id in request["roots"]:
+        scopes = request.get("scopes") or [
+            {"root_id": root_id, "prefix": "", "storage_root_id": root_id}
+            for root_id in request["roots"]
+        ]
+        for scope in scopes:
+            root_id = scope["root_id"]
             root = roots[root_id]
+            scan_root = root.joinpath(*Path(scope.get("prefix") or ".").parts)
             with self.condition:
                 self._checkpoint(job_id, attempt)
-                if not root.is_dir():
+                try:
+                    scan_root_resolved = scan_root.resolve(strict=True)
+                except (OSError, RuntimeError, ValueError):
+                    scan_root_resolved = None
+                if (not scan_root.is_dir() or scan_root_resolved is None
+                        or scan_root_resolved != scan_root.absolute()
+                        or not scan_root_resolved.is_relative_to(root)):
                     _error(503, "INDEX_ROOT_UNAVAILABLE", "索引来源目录不可用",
                            data_status="not_integrated", unavailable=True)
-            pending = [root]
+            pending = [scan_root]
             while pending:
                 folder = pending.pop()
                 for child in self._children(job_id, attempt, folder, root):
@@ -459,7 +526,9 @@ class IndexJobs:
                                 continue
                             if len(files) >= request["max_files"]:
                                 _error(413, "INDEX_SCAN_LIMIT", "扫描文件数量超过上限")
-                            item = {"root_id": root_id, "display_path": path.relative_to(root).as_posix(),
+                            item = {"root_id": root_id,
+                                    "storage_root_id": scope.get("storage_root_id") or root_id,
+                                    "display_path": path.relative_to(root).as_posix(),
                                     "name": path.name, "size_bytes": info.st_size}
                         if request["hash_files"]:
                             if info.st_size > 512 * 1024 * 1024:
@@ -489,21 +558,27 @@ class IndexJobs:
             receipts = raw.setdefault("index_job_receipts", {})
             if receipt_id in receipts:
                 return receipts[receipt_id]
-            known = {(a.get("root_id"), a.get("display_path")) for a in raw["assets"].values()}
+            known = {(a.get("root_id"), a.get("display_path")): a for a in raw["assets"].values()}
             disk = {(x["root_id"], x["display_path"]) for x in files}
             added = 0
+            updated = 0
             if job["_request"]["kind"] == "reindex":
                 for item in files:
                     identity = (item["root_id"], item["display_path"])
-                    if identity in known:
+                    existing = known.get(identity)
+                    if existing is not None:
+                        if existing.get("storage_root_id") != item.get("storage_root_id"):
+                            existing["storage_root_id"] = item.get("storage_root_id")
+                            existing["updated_at"] = storage.now_iso()
+                            updated += 1
                         continue
                     asset_id = repo._seq(raw, "ast_", raw["assets"].keys())
                     raw["assets"][asset_id] = repo._plain_asset(asset_id, item["name"], "indexed", **{k:v for k,v in item.items() if k != "name"})
-                    known.add(identity)
+                    known[identity] = raw["assets"][asset_id]
                     added += 1
-                if added:
+                if added or updated:
                     repo._bump(raw)
-                result = {"indexed": added, "scanned": len(files), "revision": raw["revision"]}
+                result = {"indexed": added, "updated": updated, "scanned": len(files), "revision": raw["revision"]}
             else:
                 scoped = {x for x in known if x[0] in job["_request"]["roots"]}
                 result = {"on_disk": len(disk), "registered": len(scoped),
