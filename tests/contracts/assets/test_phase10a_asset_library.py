@@ -60,7 +60,7 @@ def test_get_library_requires_authentication(api_client: TestClient):
 
 def test_create_library_returns_stable_id_and_increments_version(api_client: TestClient):
     """创建素材库返回 201 + 稳定 library_id，顶层目录版本递增。"""
-    res = api_client.post("/api/asset-library/libraries", json={"name": "角色参考库"}, headers=EDITOR)
+    res = api_client.post("/api/asset-library/libraries", json={"name": "角色参考库", "expected_version": 1}, headers=EDITOR)
     assert res.status_code == 201
     body = res.json()
     assert body["library"]["library_id"] == "library_0001"
@@ -76,8 +76,8 @@ def test_create_library_returns_stable_id_and_increments_version(api_client: Tes
 
 def test_create_library_duplicate_name_conflicts(api_client: TestClient):
     """重名（含大小写/空白差异）必须 409 DUPLICATE_LIBRARY_NAME。"""
-    assert api_client.post("/api/asset-library/libraries", json={"name": "角色库"}, headers=EDITOR).status_code == 201
-    res = api_client.post("/api/asset-library/libraries", json={"name": "  角色库  "}, headers=EDITOR)
+    assert api_client.post("/api/asset-library/libraries", json={"name": "角色库", "expected_version": 1}, headers=EDITOR).status_code == 201
+    res = api_client.post("/api/asset-library/libraries", json={"name": "  角色库  ", "expected_version": 2}, headers=EDITOR)
     assert res.status_code == 409
     assert res.json()["detail"]["code"] == "DUPLICATE_LIBRARY_NAME"
 
@@ -98,7 +98,7 @@ def test_create_library_cas_conflict(api_client: TestClient):
 
 def test_create_library_blank_name_rejected(api_client: TestClient):
     """全空白名称必须失败关闭（400）。"""
-    res = api_client.post("/api/asset-library/libraries", json={"name": "   "}, headers=EDITOR)
+    res = api_client.post("/api/asset-library/libraries", json={"name": "   ", "expected_version": 1}, headers=EDITOR)
     assert res.status_code == 400
     assert res.json()["detail"]["code"] == "INVALID_REQUEST"
 
@@ -123,7 +123,7 @@ def test_create_category_requires_existing_library(api_client: TestClient):
 
 def test_create_category_success_and_parent_version_increment(api_client: TestClient):
     """创建分类返回 201 + 稳定 category_id，父库版本递增。"""
-    created = api_client.post("/api/asset-library/libraries", json={"name": "角色库"}, headers=EDITOR).json()
+    created = api_client.post("/api/asset-library/libraries", json={"name": "角色库", "expected_version": 1}, headers=EDITOR).json()
     library_id = created["library"]["library_id"]
 
     res = api_client.post(

@@ -118,16 +118,52 @@ def test_a2_asset_update_archive_delete_roundtrip(client, assets):
     assert updated.json()["asset"]["version"] == 2
     assert client.get(f"/api/asset-registry/assets/{asset_id}", headers=AUTH).json()["asset"]["name"] == "角色参考-改名"
 
-    deleted = client.delete(f"/api/asset-registry/assets/{asset_id}", headers=AUTH)
+    registry_revision = client.get("/api/asset-registry/status", headers=AUTH).json()["revision"]
+    deleted = client.request("DELETE", f"/api/asset-registry/assets/{asset_id}", headers=AUTH,
+                             json={"expected_version": registry_revision})
     assert deleted.status_code == 200
     entry_id = deleted.json()["recycle_entry_id"]
     assert client.get(f"/api/asset-registry/assets/{asset_id}", headers=AUTH).status_code == 404
     recycle = client.get("/api/asset-registry/recycle-bin", headers=AUTH).json()
     assert entry_id in [item["entry_id"] for item in recycle["items"]]
 
-    restored = client.post(f"/api/asset-registry/recycle-bin/{entry_id}/restore", headers=GOVERNOR)
+    registry_revision = client.get("/api/asset-registry/status", headers=AUTH).json()["revision"]
+    restored = client.post(f"/api/asset-registry/recycle-bin/{entry_id}/restore", headers=GOVERNOR,
+                           json={"expected_version": registry_revision})
     assert restored.status_code == 200
     assert client.get(f"/api/asset-registry/assets/{asset_id}", headers=AUTH).status_code == 200
+
+
+def test_asset_delete_and_recycle_restore_require_registry_revision(client, assets):
+    """注册表删除与回收恢复拒绝缺失/过期版本，冲突时保持状态不变。"""
+    asset_id = assets[0]
+    base = "/api/asset-registry"
+    current = client.get(base + "/status", headers=AUTH).json()["revision"]
+
+    missing_delete = client.request("DELETE", f"{base}/assets/{asset_id}", headers=AUTH, json={})
+    assert missing_delete.status_code == 400
+    stale_delete = client.request("DELETE", f"{base}/assets/{asset_id}", headers=AUTH,
+                                  json={"expected_version": current + 1})
+    assert stale_delete.status_code == 409
+    assert client.get(f"{base}/assets/{asset_id}", headers=AUTH).status_code == 200
+
+    deleted = client.request("DELETE", f"{base}/assets/{asset_id}", headers=AUTH,
+                             json={"expected_version": current})
+    assert deleted.status_code == 200, deleted.text
+    entry_id = deleted.json()["recycle_entry_id"]
+    current = client.get(base + "/status", headers=AUTH).json()["revision"]
+
+    missing_restore = client.post(f"{base}/recycle-bin/{entry_id}/restore", headers=GOVERNOR, json={})
+    assert missing_restore.status_code == 400
+    stale_restore = client.post(f"{base}/recycle-bin/{entry_id}/restore", headers=GOVERNOR,
+                                json={"expected_version": current + 1})
+    assert stale_restore.status_code == 409
+    assert client.get(f"{base}/assets/{asset_id}", headers=AUTH).status_code == 404
+
+    restored = client.post(f"{base}/recycle-bin/{entry_id}/restore", headers=GOVERNOR,
+                           json={"expected_version": current})
+    assert restored.status_code == 200, restored.text
+    assert client.get(f"{base}/assets/{asset_id}", headers=AUTH).status_code == 200
 
 
 def test_a2_tags_relations_and_reference_resolve(client, assets):

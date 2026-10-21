@@ -76,8 +76,8 @@ def _require_name(raw: str, label: str) -> str:
 
 
 def _require_positive_version(expected_version: Optional[int], label: str) -> None:
-    """expected_version 若提供必须为正整数；否则 400。"""
-    if expected_version is not None and (not isinstance(expected_version, int) or expected_version < 1):
+    """写请求必须携带严格的正整数 expected_version。"""
+    if type(expected_version) is not int or expected_version < 1:
         raise CleanroomException(
             status_code=400,
             code="INVALID_REQUEST",
@@ -87,8 +87,7 @@ def _require_positive_version(expected_version: Optional[int], label: str) -> No
 
 def _assert_expected_version(expected_version: Optional[int], current_version: int, label: str) -> None:
     """CAS 校验：期望值与当前值不一致即 409，禁止静默覆盖。"""
-    if expected_version is None:
-        return
+    _require_positive_version(expected_version, label)
     if expected_version != current_version:
         raise VersionConflictException(
             expected_version=expected_version,

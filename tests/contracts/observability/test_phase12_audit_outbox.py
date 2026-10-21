@@ -15,11 +15,18 @@ GOV = {**AUTH, "X-User-Role": "governor"}
 BASE = "/api/asset-registry"
 
 
+def registry_revision(client, headers=GOV):
+    response = client.get(BASE + "/status", headers=headers)
+    assert response.status_code == 200, response.text
+    return response.json()["revision"]
+
+
 def source_event(client):
     imported = client.post(BASE + "/assets/import", headers=AUTH, json={"items": [{"name": "审计夹具", "kind": "document"}]})
     assert imported.status_code == 200
     asset_id = imported.json()["assets"][0]["asset_id"]
-    deleted = client.delete(BASE + "/assets/" + asset_id, headers=AUTH)
+    deleted = client.request("DELETE", BASE + "/assets/" + asset_id, headers=AUTH,
+                             json={"expected_version": registry_revision(client, AUTH)})
     assert deleted.status_code == 200
     return deleted.json()
 
@@ -39,7 +46,8 @@ def test_http_delete_restore_ack_readback_and_private_receipts():
         assert receipt["event_id"] == deleted["event_id"]
         assert "actor_key" not in receipt
         assert client.get("/api/download-output?path=asset_audit_receipts.json", headers=AUTH).status_code == 403
-        restore = client.post(BASE + "/recycle-bin/" + deleted["recycle_entry_id"] + "/restore", headers=GOV)
+        restore = client.post(BASE + "/recycle-bin/" + deleted["recycle_entry_id"] + "/restore",
+                              headers=GOV, json={"expected_version": registry_revision(client, GOV)})
         assert restore.status_code == 200
         assert client.post(BASE + "/governance/audit-outbox/reconcile", headers=GOV).json()["count"] == 1
         assert client.post(BASE + "/governance/audit-outbox/reconcile", headers=GOV).json()["count"] == 0
@@ -166,10 +174,13 @@ def test_failed_first_batch_cannot_starve_later_healthy_http_event(monkeypatch):
                                json={"items": [{"name": f"审计批次{i}", "kind": "document"} for i in range(101)]})
         assert imported.status_code == 200
         events = []
+        revision = imported.json()["revision"]
         for asset in imported.json()["assets"]:
-            response = client.delete(BASE + "/assets/" + asset["asset_id"], headers=AUTH)
-            assert response.status_code == 200
+            response = client.request("DELETE", BASE + "/assets/" + asset["asset_id"], headers=AUTH,
+                                      json={"expected_version": revision})
+            assert response.status_code == 200, response.text
             events.append(response.json()["event_id"])
+            revision = response.json()["revision"]
         original = audit_sink.deliver
         blocked = set(events[:100])
         def selective_failure(event, digest):

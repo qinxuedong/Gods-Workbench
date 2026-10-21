@@ -185,12 +185,13 @@ def test_c9_t4_asset_registry_routes_expose_recovery_projection(client):
     )
     assert created.status_code == 200, created.text
     asset_id = created.json()["asset_ids"][0]
+    revision = client.get("/api/asset-registry/status", headers=AUTH).json()["revision"]
 
     deleted = client.request(
         "DELETE",
         f"/api/asset-registry/assets/{asset_id}",
         headers=AUTH,
-        json={"idempotency_key": "delete:c9:route"},
+        json={"idempotency_key": "delete:c9:route", "expected_version": revision},
     )
     assert deleted.status_code == 200, deleted.text
     entry_id = deleted.json()["recycle_entry_id"]
@@ -201,7 +202,8 @@ def test_c9_t4_asset_registry_routes_expose_recovery_projection(client):
     restored = client.post(
         f"/api/asset-registry/recycle-bin/{entry_id}/restore",
         headers=GOVERNOR,
-        json={"idempotency_key": f"restore:{entry_id}"},
+        json={"idempotency_key": f"restore:{entry_id}",
+              "expected_version": client.get("/api/asset-registry/status", headers=GOVERNOR).json()["revision"]},
     )
     assert restored.status_code == 200, restored.text
     assert restored.json()["closure_status"] == "closed"

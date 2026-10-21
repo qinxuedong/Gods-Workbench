@@ -182,6 +182,7 @@ const registryRootFoldersLoading = new Set();
 let registryAssets = [];
 // 结构数据只缓存服务端返回的稳定 structure_id 投影，不作为资产或版本真源。
 let registryAssetStructures = new Map();
+let registryAssetStructuresRevision = 1;
 let registryAssetStructureRequestSeq = 0;
 let registryStructureMenu = null;
 let registryStructureMutationId = '';
@@ -190,6 +191,9 @@ let registryCoverflowCurrentAssetId = '';
 let registryCoverflowBoardId = '';
 let registryFacets = {kinds:[], categories:[], tags:[], collections:[], roots:[]};
 let registryStatus = {ready:false, backend:'', jobs:[], overview:{}};
+let promptItemSnapshot = {revision:0, items:[]};
+let casRefreshInFlight = false;
+const VERSION_CONFLICT_MESSAGE = '内容已变化，请刷新';
 let registryAutoPollTimer = 0;
 let registryAutoPollBusy = false;
 let registryObservedJobKey = '';
@@ -970,6 +974,7 @@ async function removeAssetSourceRegistrations(sourceIds=[]){
         extra_local_entries:entries,
         local_library_names:names,
         local_library_order:localLibraries.map(lib => lib.id).filter(id => !removableIds.has(String(id))),
+        expected_version:Number(storageSettingsState.revision || 1),
     }));
     applyStorageSettingsData(data || {});
     registryAssets = registryAssets.filter(item => !removableIds.has(String(item.storage_root_id || '')));
@@ -1087,7 +1092,7 @@ function renderAssetDirectorySettingsBody(){
         <label class="storage-dir-row"><span>托管资产库</span><input value="${escapeAttr(managedLibraryName)}" readonly aria-readonly="true" placeholder="等待资产服务返回名称" title="索引服务返回的托管资产库名称"></label>
         <label class="storage-dir-row"><span>资产库目录</span><input value="${escapeAttr(managedLibraryPath)}" readonly aria-readonly="true" placeholder="等待资产服务返回目录" title="索引服务返回的托管资产库目录"></label>`;
     const saveRows = ['upload','generated'].map(key => `
-        <label class="storage-dir-row"><span>${STORAGE_KIND_LABELS[key]}</span><input id="storageDir_${key}" value="${escapeAttr(dirs[key] || '')}" placeholder="${escapeAttr(storageSettingsState.defaults?.[key] || '')}"></label>
+        <label class="storage-dir-row"><span>${STORAGE_KIND_LABELS[key]}</span><input id="storageDir_${key}" value="${escapeAttr(dirs[key] || '')}" title="${escapeAttr(dirs[key] || '')}" placeholder="${escapeAttr(storageSettingsState.defaults?.[key] || '')}"></label>
     `).join('');
     return `<section class="asset-pref-section board-directory-settings" data-board-directories-settings>
         <div class="asset-pref-title"><i data-lucide="folder-cog"></i><span>目录</span></div>
@@ -1300,7 +1305,8 @@ async function attachPathToAssetBoard(boardId, sourceName, path){
             dirs:storageSettingsState.dirs || {},
             extra_local_entries:entries,
             local_library_names:{...storageLocalLibraryNames(), [id]:storageCleanName(sourceName, '用户素材')},
-            local_library_order:[...localLibraries.map(lib => lib.id).filter(Boolean), id]
+            local_library_order:[...localLibraries.map(lib => lib.id).filter(Boolean), id],
+            expected_version:Number(storageSettingsState.revision || 1),
         }));
         applyStorageSettingsData(data || {});
         const created = localLibraries.find(lib => lib.id === id) || localLibraries.find(lib => pathCompareKey(lib.path) === pathCompareKey(cleanPath));
@@ -1396,6 +1402,7 @@ async function updateBoardSourcePath(sourceId, name, path){
         extra_local_entries:entries,
         local_library_names:names,
         local_library_order:localLibraries.map(lib => lib.id).filter(Boolean),
+        expected_version:Number(storageSettingsState.revision || 1),
     }));
     applyStorageSettingsData(saved || {});
     const updated = localLibraries.find(item => item.id === sourceId) || {id:sourceId, name:storageCleanName(name, '用户素材'), path:cleanPath};
@@ -1530,9 +1537,40 @@ async function apiJsonResponse(response){
         const error = new Error((typeof detail === 'object' ? detail?.message : detail) || data.message || '操作失败');
         error.status = res.status;
         error.code = typeof detail === 'object' ? detail?.code : null;
+        if(error.status === 409 && error.code === 'VERSION_CONFLICT'){
+            error.message = VERSION_CONFLICT_MESSAGE;
+            setStatus(`${VERSION_CONFLICT_MESSAGE}（版本冲突）`);
+            void refreshCASReadState();
+        }
         throw error;
     }
     return data;
+}
+async function refreshCASReadState(){
+    if(casRefreshInFlight) return;
+    casRefreshInFlight = true;
+    try {
+        const results = await Promise.allSettled([
+            apiJsonResponse(assetManagerApi.getAssetLibrary()),
+            apiJsonResponse(assetManagerApi.getPromptLibraries()),
+            apiJsonResponse(assetManagerApi.getPromptLibraryItems()),
+            apiJsonResponse(assetManagerApi.getRegistryStatus()),
+        ]);
+        if(results[0].status === 'fulfilled') assetLibrary = results[0].value.library || assetLibrary;
+        if(results[1].status === 'fulfilled') promptLibrary = results[1].value.library || promptLibrary;
+        if(results[2].status === 'fulfilled') promptItemSnapshot = results[2].value;
+        if(results[3].status === 'fulfilled') registryStatus = results[3].value;
+        await Promise.allSettled([refreshRegistryAssets(false), refreshRegistryFacetData()]);
+        normalizeAssetState();
+        render();
+    } finally {
+        casRefreshInFlight = false;
+    }
+}
+function requireExpectedVersion(value, label){
+    const version = Number(value);
+    if(!Number.isSafeInteger(version) || version < 1) throw new Error(`${label}版本缺失，请刷新`);
+    return version;
 }
 const STORAGE_KIND_LABELS = {upload:'\u4e0a\u4f20\u7d20\u6750', generated:'\u751f\u6210\u7d20\u6750', local:'\u672c\u5730\u7d20\u6750'};
 const DEFAULT_LOCAL_LIBRARY_NAME = '\u672c\u5730\u7d20\u6750';
@@ -1614,7 +1652,7 @@ function renderProjectWorkspaceSettingsBody(){
         <div class="asset-pref-title"><i data-lucide="folder-cog"></i><span>项目工作区</span><small>只影响之后新建的项目</small></div>
         <p class="board-settings-hint">更改根目录不会迁移、删除或重命名已有项目的工作区。</p>
         <div class="storage-dir-grid">
-            <label class="storage-dir-row"><span>项目工作区根目录</span><div class="directory-input-row"><input id="storageDir_projects" value="${escapeAttr(dirs.projects || '')}" placeholder="${escapeAttr(defaultRoot)}" autocomplete="off"><button type="button" class="hw-btn hw-btn-icon directory-picker-btn" data-directory-picker="projects" title="选择目录" aria-label="选择项目工作区根目录"><i data-lucide="folder-open"></i></button></div></label>
+            <label class="storage-dir-row"><span>项目工作区根目录</span><div class="directory-input-row"><input id="storageDir_projects" value="${escapeAttr(dirs.projects || '')}" title="${escapeAttr(dirs.projects || '')}" placeholder="${escapeAttr(defaultRoot)}" autocomplete="off"><button type="button" class="hw-btn hw-btn-icon directory-picker-btn" data-directory-picker="projects" title="选择目录" aria-label="选择项目工作区根目录"><i data-lucide="folder-open"></i></button></div></label>
         </div>
         <div class="storage-settings-actions inline">
             <button class="hw-btn" type="button" data-project-directory-template-manager-open><i data-lucide="folders"></i><span>管理目录模板</span></button>
@@ -1921,7 +1959,7 @@ function openDirectoryMountConfirmDialog(key, label, folderName){
                 suggestedPath = currentPath + separator + folderName;
             }
         } else {
-            suggestedPath = folderName;
+            suggestedPath = '';
         }
     }
     overlay.innerHTML = `
@@ -1932,7 +1970,7 @@ function openDirectoryMountConfirmDialog(key, label, folderName){
                         <i data-lucide="folder-check"></i>
                         <span>挂载与确认目录：${escapeHtml(label || '本地素材目录')}</span>
                     </strong>
-                    <span class="directory-mount-subtitle">系统已响应所选目录。核对或输入本地完整物理路径，确认后将自动挂载。</span>
+                    <span class="directory-mount-subtitle">浏览器选择器只提供目录名称提示，不会返回物理路径。请核对或输入完整绝对路径后确认。</span>
                 </div>
                 <button type="button" class="hw-btn hw-btn-icon directory-mount-close-btn" data-directory-mount-close aria-label="关闭"><i data-lucide="x"></i></button>
             </div>
@@ -1944,7 +1982,7 @@ function openDirectoryMountConfirmDialog(key, label, folderName){
                 <div class="directory-mount-field">
                     <label for="mountConfirmPathInput" class="directory-mount-label">完整本地物理路径 (Absolute Path):</label>
                     <input id="mountConfirmPathInput" class="directory-mount-input" value="${escapeAttr(suggestedPath)}" autocomplete="off" placeholder="例如 D:\\Working\\Code Pro\\Gods-Workbench\\.local\\user_data">
-                    <span class="directory-mount-hint">支持一键粘贴或手动编辑。按回车或点击“确认并自动挂载”后自动持久化并挂载。</span>
+                    <span class="directory-mount-hint">请填写完整物理路径；按回车或点击“确认并自动挂载”后验证并保存。</span>
                 </div>
                 <div class="directory-mount-actions">
                     <button type="button" class="hw-btn directory-btn-cancel" data-directory-mount-close>取消</button>
@@ -2031,7 +2069,7 @@ async function saveStorageSettings(){
         local_library_names:storageLocalLibraryNames(),
         local_library_order:(localLibraries.length ? localLibraries : storageSettingsState.localLibraries || []).map(lib => lib.id).filter(Boolean)
     };
-    if(Number.isFinite(Number(storageSettingsState.revision))) payload.expected_revision = Number(storageSettingsState.revision);
+    if(Number.isFinite(Number(storageSettingsState.revision))) payload.expected_version = Number(storageSettingsState.revision);
     try {
         const data = await apiJsonResponse(assetManagerApi.updateStorageSettings(payload));
         applyStorageSettingsData(data || {});
@@ -2116,7 +2154,7 @@ async function loadGlobalDirectorySettings(){
 function renderGlobalDirectorySettings(){
     let host = document.getElementById('storageSettingsOverlay');
     if(!host){ host = document.createElement('main'); host.id = 'storageSettingsOverlay'; host.className = 'directory-page'; document.body.appendChild(host); }
-    const input = (key, label, value, readonly=false) => `<label class="storage-dir-row"><span>${escapeHtml(label)}</span><div class="directory-input-row"><input id="storageDir_${key}" value="${escapeAttr(value || '')}" ${readonly ? 'readonly' : ''} autocomplete="off" title="${readonly ? '' : '输入路径后按回车可自动挂载并保存'}">${readonly ? '' : `<button type="button" class="hw-btn hw-btn-icon directory-picker-btn" data-directory-picker="${escapeAttr(key)}" title="选择目录并自动挂载" aria-label="选择${escapeAttr(label)}目录"><i data-lucide="folder-open"></i></button>`}</div></label>`;
+    const input = (key, label, value, readonly=false) => `<label class="storage-dir-row"><span>${escapeHtml(label)}</span><div class="directory-input-row"><input id="storageDir_${key}" value="${escapeAttr(value || '')}" ${readonly ? 'readonly' : ''} autocomplete="off" title="${escapeAttr(value || (readonly ? '' : '输入完整物理路径'))}">${readonly ? '' : `<button type="button" class="hw-btn hw-btn-icon directory-picker-btn" data-directory-picker="${escapeAttr(key)}" title="选择目录并确认物理路径" aria-label="选择${escapeAttr(label)}目录"><i data-lucide="folder-open"></i></button>`}</div></label>`;
     const dirs = storageSettingsState.dirs || {};
     const managed = registryStatus?.overview?.roots?.find(item => item.kind === 'managed_library');
     host.innerHTML = `<header class="directory-page-header"><h1><i data-lucide="folder-cog"></i>目录设置</h1><button type="button" class="hw-btn" data-directory-reload title="重新读取目录设置" ${directorySettingsSaving ? 'disabled' : ''}><i data-lucide="refresh-cw"></i>重新读取</button></header>
@@ -2126,7 +2164,7 @@ function renderGlobalDirectorySettings(){
         <section class="asset-pref-section"><div class="asset-pref-title"><i data-lucide="hard-drive"></i><span>上传与生成</span></div><div class="storage-dir-grid">${input('upload','上传素材',dirs.upload)}${input('generated','生成素材',dirs.generated)}</div></section>
         ${renderProjectWorkspaceSettingsBody()}
         <section class="asset-pref-section">${renderAssetThumbnailCacheDirectoryBody()}<div class="storage-settings-actions"><button class="hw-btn" type="button" data-directory-cache-save><i data-lucide="save"></i>保存缓存目录</button></div></section>
-        <section class="asset-pref-section"><div class="asset-pref-title"><i data-lucide="trash-2"></i><span>回收站目录</span></div><div class="storage-dir-grid">${input('trash','统一回收根目录（留空跟随素材源）',dirs.trash)}</div><p class="board-settings-hint">新回收素材保存在此目录的 god-ecycler 子目录中；更改目录不会移动已有回收文件，历史记录仍可恢复。项目与画布继续使用原有逻辑回收记录。</p></section>
+        <section class="asset-pref-section"><div class="asset-pref-title"><i data-lucide="trash-2"></i><span>回收站目录</span></div><div class="storage-dir-grid">${input('trash','统一回收根目录（留空跟随素材源）',dirs.trash)}</div><p class="board-settings-hint">新回收素材保存在此目录的 god-recycler 子目录中；更改目录不会移动已有回收文件，历史记录仍可恢复。项目与画布继续使用原有逻辑回收记录。</p></section>
         </fieldset><footer class="directory-footer"><div id="assetStatus" class="directory-status" role="status" aria-live="polite">${escapeHtml(currentStatusText)}</div><button class="hw-btn hw-btn-gold" type="button" data-storage-save ${directorySettingsSaving ? 'disabled' : ''}><i data-lucide="save"></i>${directorySettingsSaving ? '保存中…' : '保存目录'}</button></footer>`}`;
     host.querySelector('.project-workspace-settings [data-storage-save]')?.remove();
     refreshIcons();
@@ -2817,6 +2855,26 @@ function activeAssetLibrary(){
     const libs = assetLibraries();
     return libs.find(lib => lib.id === activeAssetLibraryId) || libs[0] || null;
 }
+function assetLibraryForItemId(assetId){
+    const id = String(assetId || '');
+    for(const lib of assetLibraries()) for(const cat of lib.categories || []) for(const item of cat.items || []){
+        if(String(item.id || item.asset_id || '') === id || workflowAssetId(item) === id) return lib;
+    }
+    return null;
+}
+function assetLibraryVersionForItem(assetId){
+    const library = assetLibraryForItemId(assetId);
+    return requireExpectedVersion(library?.version, '素材库');
+}
+function expectedAssetLibraryVersions(assetIds){
+    const versions = {};
+    for(const assetId of new Set((assetIds || []).map(value => String(value || '')).filter(Boolean))){
+        const library = assetLibraryForItemId(assetId);
+        if(!library) throw new Error('素材已变化，请刷新');
+        versions[library.id] = requireExpectedVersion(library.version, '素材库');
+    }
+    return versions;
+}
 function activeWorkflowLibrary(){
     const libs = assetLibraries();
     return libs.find(lib => workflowLibraryId(lib) === activeWorkflowLibraryId) || libs[0] || null;
@@ -2878,6 +2936,28 @@ function isSystemPromptLibrary(lib){
 function activePromptLibrary(){
     const libs = promptLibraries();
     return libs.find(lib => lib.id === activePromptLibraryId) || libs[0] || null;
+}
+function promptCategoryVersion(categoryId){
+    for(const lib of promptLibraries()) for(const category of lib.categories || []){
+        if(String(category.id || category.category_id || '') === String(categoryId || '')){
+            return requireExpectedVersion(category.version, '提示词分类');
+        }
+    }
+    throw new Error('提示词分类已变化，请刷新');
+}
+async function currentPromptItemSnapshot(){
+    promptItemSnapshot = await apiJsonResponse(assetManagerApi.getPromptLibraryItems());
+    return promptItemSnapshot;
+}
+async function currentPromptItemsRevision(){
+    const snapshot = await currentPromptItemSnapshot();
+    return requireExpectedVersion(snapshot.revision, '提示词条目集合');
+}
+async function promptItemVersion(itemId){
+    const snapshot = await currentPromptItemSnapshot();
+    const item = (snapshot.items || []).find(value => String(value.item_id || value.id || '') === String(itemId || ''));
+    if(!item) throw new Error('提示词条目已变化，请刷新');
+    return requireExpectedVersion(item.version, '提示词条目');
 }
 // 按“某个库自身”解析分类：库有自己的分类就用它；只有系统库在完全为空时才补默认内置分类。
 // 新建的普通库分类为空 → 返回 []，不能借用当前激活库/系统库的分类（否则树里会错显系统分类）。
@@ -2947,6 +3027,7 @@ function promptCountForCategory(category, lib=activePromptLibrary()){
     return items.filter(item => (item.category || 'custom') === category).length;
 }
 function assetKind(item){
+    if(workflowSourceId(item)) return 'workflow';
     const url = String(item?.url || '').toLowerCase();
     const kind = String(item?.kind || item?.type || '').toLowerCase();
     if(kind.includes('video') || ASSET_VIDEO_EXTENSIONS.has(assetFileExtension(item)) || /\.(mp4|webm|mov|m4v)(\?|#|$)/.test(url)) return 'video';
@@ -3005,6 +3086,7 @@ function assetKindLabel(item){
     const kind = assetKind(item);
     if(kind === 'video') return '视频';
     if(kind === 'audio') return '音频';
+    if(kind === 'workflow') return '工作流';
     if(kind === 'text') return '文本';
     return '图片';
 }
@@ -3056,6 +3138,7 @@ function assetVideoUrl(url, item={}){
     return `/api/media-transcode?${params.toString()}`;
 }
 function assetThumb(item){
+    if(workflowSourceId(item)) return workflowThumb(item);
     const kind = assetKind(item);
     // 首帧与视频分层显示，避免浏览器把 video poster 按元素尺寸拉伸。
     if(kind === 'video'){
@@ -3241,6 +3324,7 @@ async function saveLocalLibrarySettings(){
         extra_local_entries:storageExtraLocalEntries().filter(entry => entry.path),
         local_library_names:storageLocalLibraryNames(),
         local_library_order:localLibraries.map(lib => lib.id).filter(Boolean),
+        expected_version:Number(storageSettingsState.revision || 1),
     }));
     applyStorageSettingsData(data || {});
     return data;
@@ -3859,6 +3943,8 @@ async function refreshRegistryAssetStructures({
             if(sequence !== registryAssetStructureRequestSeq || requestId !== registryRequestSeq) return false;
             pages.push(page);
         }
+        const latestRevision = Number(pages[pages.length - 1]?.revision);
+        if(Number.isFinite(latestRevision) && latestRevision >= 1) registryAssetStructuresRevision = latestRevision;
         const requestedIds = new Set(ids);
         const next = replace ? new Map() : new Map(registryAssetStructures);
         if(!replace){
@@ -3940,7 +4026,9 @@ async function createRegistryVersionStructure(assetIds=[]){
             kind:'version',
             asset_ids:ids,
             current_asset_id:ids[0],
+            expected_version:registryAssetStructuresRevision,
         }));
+        registryAssetStructuresRevision += 1;
         const structure = normalizeRegistryAssetStructure(data?.structure || {});
         if(!registryStructureIsRenderable(structure)) throw new Error('服务端未返回可用的版本结构');
         registryAssetStructures.set(structure.id, structure);
@@ -3971,7 +4059,9 @@ async function createRegistryGroupStructure(assetIds=[]){
             kind:'group',
             asset_ids:ids,
             current_asset_id:ids[0],
+            expected_version:registryAssetStructuresRevision,
         }));
+        registryAssetStructuresRevision += 1;
         const structure = normalizeRegistryAssetStructure(data?.structure || {});
         if(!registryStructureIsRenderable(structure) || structure.structure_type !== 'group') throw new Error('服务端未返回可用的组结构');
         registryAssetStructures.set(structure.id, structure);
@@ -4026,6 +4116,7 @@ function registryCoverflowAsset(item={}){
     };
 }
 function registryCoverflowSourceMediaKind(source, item={}){
+    if(workflowSourceId(item)) return '';
     const declaredKind = String(item?.kind || item?.type || item?.media_type || item?.mediaType || '').trim().toLowerCase();
     // A server-declared kind is authoritative. Only records without kind may
     // fall back to extension-based detailViewerType inference.
@@ -4514,7 +4605,9 @@ async function confirmRegistryVersionStructureRemoval(){
     renderRegistryVersionStructureRemoveDialog();
     render();
     try {
-        await apiJsonResponse(assetManagerApi.deleteAssetStructure(structure.id, structure.version));
+        const deleted = await apiJsonResponse(assetManagerApi.deleteAssetStructure(structure.id, structure.version));
+        const latestRevision = Number(deleted?.revision);
+        if(Number.isFinite(latestRevision) && latestRevision >= 1) registryAssetStructuresRevision = latestRevision;
         const restoredAssetId = structure.current_asset_id;
         registryAssetStructures.delete(structure.id);
         registryStructureMutationId = '';
@@ -4638,7 +4731,7 @@ function renderRegistryRecycleButton(item={}, className=''){
         return `<button class="${escapeAttr(className)} registry-card-recycle" type="button" data-registry-delete-remote="${escapeAttr(item.id || '')}" title="删除 URL 资产" aria-label="删除 ${escapeAttr(item.name || 'URL 资产')}"><i data-lucide="trash-2"></i></button>`;
     }
     const disabled = !registryCanRecycle(item);
-    const title = disabled ? '当前素材来源为只读，不能移入回收站' : '移入 god-ecycler';
+    const title = disabled ? '当前素材来源为只读，不能移入回收站' : '移入 god-recycler';
     return `<button class="${escapeAttr(className)} registry-card-recycle" type="button" data-registry-recycle="${escapeAttr(item.id || '')}" title="${escapeAttr(title)}" aria-label="删除 ${escapeAttr(item.name || '素材')}" ${disabled ? 'disabled' : ''}><i data-lucide="trash-2"></i></button>`;
 }
 function deferRegistryPreviewThumb(markup){
@@ -6079,8 +6172,8 @@ async function deleteRegistryRemoteAsset(id){
 }
 function registryRecyclerPath(item={}){
     const rootPath = String(item.storage_root_path || '').replace(/[\\/]+$/, '');
-    if(!rootPath) return '当前素材库根目录 / god-ecycler';
-    return `${rootPath}${rootPath.includes('\\') ? '\\' : '/'}god-ecycler`;
+    if(!rootPath) return '当前素材库根目录 / god-recycler';
+    return `${rootPath}${rootPath.includes('\\') ? '\\' : '/'}god-recycler`;
 }
 function closeRegistryRecycleDialog(force=false){
     if(registryRecycleState.busy && !force) return;
@@ -6100,8 +6193,8 @@ function renderRegistryRecycleDialog(){
     }
     overlay.innerHTML = `<section class="registry-recycle-dialog" data-floating-content role="dialog" aria-modal="true" aria-labelledby="registryRecycleTitle">
         <header><span><i data-lucide="trash-2"></i></span><div><strong id="registryRecycleTitle">确认删除吗？</strong><small>${escapeHtml(item.name || '未命名素材')}</small></div><button type="button" data-registry-recycle-close aria-label="关闭" ${registryRecycleState.busy ? 'disabled' : ''}><i data-lucide="x"></i></button></header>
-        <div class="registry-recycle-body"><p>当前操作并非永久删除，永久删除请前往当前素材库文件夹：</p><code>${escapeHtml(registryRecyclerPath(item))}</code><div class="registry-recycle-note"><i data-lucide="info"></i><span>原文件将移动到 <b>god-ecycler</b>，缩略图等缓存会同步清理。</span></div>${registryRecycleState.error ? `<div class="registry-recycle-error">${escapeHtml(registryRecycleState.error)}</div>` : ''}</div>
-        <label class="registry-recycle-skip"><input id="registryRecycleDontAsk" type="checkbox" ${registryRecycleState.dontAsk ? 'checked' : ''} ${registryRecycleState.busy ? 'disabled' : ''}><span class="registry-feature-switch ${registryRecycleState.dontAsk ? 'is-on' : ''}"><i></i></span><span><strong>不再提醒</strong><small>以后点击删除按钮将直接移入 god-ecycler</small></span></label>
+        <div class="registry-recycle-body"><p>当前操作并非永久删除，永久删除请前往当前素材库文件夹：</p><code>${escapeHtml(registryRecyclerPath(item))}</code><div class="registry-recycle-note"><i data-lucide="info"></i><span>原文件将移动到 <b>god-recycler</b>，缩略图等缓存会同步清理。</span></div>${registryRecycleState.error ? `<div class="registry-recycle-error">${escapeHtml(registryRecycleState.error)}</div>` : ''}</div>
+        <label class="registry-recycle-skip"><input id="registryRecycleDontAsk" type="checkbox" ${registryRecycleState.dontAsk ? 'checked' : ''} ${registryRecycleState.busy ? 'disabled' : ''}><span class="registry-feature-switch ${registryRecycleState.dontAsk ? 'is-on' : ''}"><i></i></span><span><strong>不再提醒</strong><small>以后点击删除按钮将直接移入 god-recycler</small></span></label>
         <footer><button class="hw-btn" type="button" data-registry-recycle-close ${registryRecycleState.busy ? 'disabled' : ''}>取消</button><button class="hw-btn hw-btn-danger registry-recycle-confirm" type="button" data-registry-recycle-confirm ${registryRecycleState.busy ? 'disabled' : ''}><i data-lucide="${registryRecycleState.busy ? 'loader-2' : 'trash-2'}"></i><span>${registryRecycleState.busy ? '正在移动…' : '移入回收站'}</span></button></footer>
     </section>`;
     markAssetFloatingSurface(overlay, {surface:'asset-registry-recycle', content:'.registry-recycle-dialog', close:closeRegistryRecycleDialog});
@@ -6122,14 +6215,14 @@ async function recycleRegistryAsset(assetId, silent=false){
     registryRecycleState = {...registryRecycleState, open:!silent, assetId, busy:true, error:''};
     if(!silent) renderRegistryRecycleDialog();
     try {
-        const data = await apiJsonResponse(assetManagerApi.deleteRegistryAsset(assetId));
+        const data = await apiJsonResponse(assetManagerApi.deleteRegistryAsset(assetId, requireExpectedVersion(registryStatus.revision, '资产注册表')));
         if(detailViewerState.open && detailViewerState.source === 'registry' && detailViewerState.id === assetId) closeDetailPreview(true);
         registrySelectedIds.delete(assetId);
         if(selectedRegistryAssetId === assetId){ selectedRegistryAssetId=''; registryDetail=null; }
         closeRegistryRecycleDialog(true);
         await Promise.all([refreshRegistryAssets(false), refreshRegistryFacetData()]);
         render();
-        setStatus(`已移入 god-ecycler${Number(data.recycled?.removed_previews || 0) ? `，清理 ${Number(data.recycled.removed_previews)} 个缓存` : ''}`);
+        setStatus(`已移入 god-recycler${Number(data.recycled?.removed_previews || 0) ? `，清理 ${Number(data.recycled.removed_previews)} 个缓存` : ''}`);
     } catch(err){
         registryRecycleState = {...registryRecycleState, open:!silent, busy:false, error:err.message || '移入回收站失败'};
         if(silent) setStatus(registryRecycleState.error); else renderRegistryRecycleDialog();
@@ -6175,8 +6268,8 @@ function renderRegistryRecycleBin(){
                 }).join('')}</div>`
                 : `<div class="registry-recycle-bin-empty"><i data-lucide="trash-2"></i><strong>回收站暂无素材</strong><span>从资产中心删除的本地素材会显示在这里。</span></div>`;
     overlay.innerHTML = `<section class="registry-recycle-bin-modal" data-floating-content role="dialog" aria-modal="true" aria-labelledby="registryRecycleBinTitle">
-        <header class="storage-settings-head"><div><strong id="registryRecycleBinTitle">回收站</strong><span>找回从资产中心移入 god-ecycler 的素材。</span></div><button type="button" data-registry-recycle-bin-close aria-label="关闭" ${registryRecycleBinState.restoringId ? 'disabled' : ''}><i data-lucide="x"></i></button></header>
-        <div class="registry-recycle-bin-notice"><i data-lucide="shield-check"></i><div><strong>这里只提供恢复，不提供清空</strong><span>永久删除原素材，请手动进入对应素材库的 <b>god-ecycler</b> 文件夹处理。</span></div></div>
+        <header class="storage-settings-head"><div><strong id="registryRecycleBinTitle">回收站</strong><span>找回从资产中心移入 god-recycler 的素材。</span></div><button type="button" data-registry-recycle-bin-close aria-label="关闭" ${registryRecycleBinState.restoringId ? 'disabled' : ''}><i data-lucide="x"></i></button></header>
+        <div class="registry-recycle-bin-notice"><i data-lucide="shield-check"></i><div><strong>这里只提供恢复，不提供清空</strong><span>永久删除原素材，请手动进入对应素材库的 <b>god-recycler</b> 文件夹处理。</span></div></div>
         ${recyclerDirectories.length ? `<div class="registry-recycle-bin-paths"><strong>回收目录</strong>${recyclerDirectories.map(path => `<code>${escapeHtml(path)}</code>`).join('')}</div>` : ''}
         <div class="registry-recycle-bin-body">${body}</div>
         <footer><span>共 ${items.length} 项</span><button class="hw-btn" type="button" data-registry-recycle-bin-close ${registryRecycleBinState.restoringId ? 'disabled' : ''}>关闭</button></footer>
@@ -6204,7 +6297,7 @@ async function restoreRegistryRecycleEntry(entryId){
     registryRecycleBinState = {...registryRecycleBinState, restoringId:entryId, error:''};
     renderRegistryRecycleBin();
     try {
-        const data = await apiJsonResponse(assetManagerApi.restoreRegistryRecycleEntry(entryId));
+        const data = await apiJsonResponse(assetManagerApi.restoreRegistryRecycleEntry(entryId, requireExpectedVersion(registryStatus.revision, '资产注册表')));
         registryRecycleBinState = {...registryRecycleBinState, restoringId:'', items:registryRecycleBinState.items.filter(item => item.id !== entryId)};
         await Promise.all([refreshRegistryAssets(false), refreshRegistryFacetData()]);
         // 【修复问题1】回收站恢复属于用户显式失效，保留会话级 bump（仅影响旧版 url 参数 URL）
@@ -6535,7 +6628,40 @@ function scheduleRegistryPreviewImages(){
         deferredImages.forEach(image => observer.observe(image));
     });
 }
+function registryPreviewCacheKey(image){
+    const card = image.closest?.('[data-registry-card]');
+    if(!card) return '';
+    const imageIndex = [...card.querySelectorAll('img')].indexOf(image);
+    return imageIndex < 0 ? '' : `${card.dataset.registryCard || ''}:${imageIndex}`;
+}
+function captureRegistryPreviewImages(){
+    const cache = new Map();
+    root?.querySelectorAll('img[data-registry-preview-loaded="true"]').forEach(image => {
+        const key = registryPreviewCacheKey(image);
+        if(!key) return;
+        const entries = cache.get(key) || [];
+        entries.push({image, source:image.currentSrc || image.src});
+        cache.set(key, entries);
+    });
+    return cache;
+}
+function restoreRegistryPreviewImages(cache){
+    if(!cache?.size) return;
+    root?.querySelectorAll('img[data-registry-preview-src]').forEach(image => {
+        const key = registryPreviewCacheKey(image);
+        const entries = cache.get(key) || [];
+        const source = String(image.dataset.registryPreviewSrc || '');
+        if(!key || !source) return;
+        let expectedSource = '';
+        try { expectedSource = new URL(source, document.baseURI).href; } catch(_) { return; }
+        const index = entries.findIndex(entry => !entry.image.isConnected && entry.source === expectedSource);
+        if(index < 0) return;
+        const [loaded] = entries.splice(index, 1);
+        image.replaceWith(loaded.image);
+    });
+}
 function render(){
+    const registryPreviewCache = captureRegistryPreviewImages();
     disconnectRegistryPreviewScheduling();
     const previewScheduleRevision = registryPreviewScheduleRevision;
     const focusedRegistryCard = document.activeElement?.closest?.('[data-registry-card]');
@@ -6586,6 +6712,7 @@ function render(){
     else if(assetBoardById(activeTab)?.system === false) renderCustomAssetLibrary(assetBoardById(activeTab));
     else renderAssetManager();
     if(activeTab === 'registry' || customLibraryActive) renderRegistryFreshNotice();
+    restoreRegistryPreviewImages(registryPreviewCache);
     refreshIcons();
     scheduleRegistryMasonryLayout();
     if(scrollState.length){
@@ -7905,6 +8032,17 @@ function syncRegistrySelectionDom(){
     if(detailPanel && !registryDetailPanelCollapsed) detailPanel.innerHTML = renderRegistryDetail();
     refreshIcons();
 }
+function clearRegistrySelectionDom(){
+    if(!selectedRegistryAssetId && !registryDetail && !registrySelectedIds.size && !registryManageMode && !registryBulkPanel) return false;
+    selectedRegistryAssetId = '';
+    registryDetail = null;
+    registrySelectedIds.clear();
+    registrySelectionAnchorId = '';
+    registryManageMode = false;
+    registryBulkPanel = '';
+    syncRegistrySelectionDom();
+    return true;
+}
 function renderRegistryToolbar(board, title, subtitle, options={}){
     const selectedIds = registryActiveSelectedIds(board);
     const selectedGroupIds = selectedRegistryCustomGroupIds(board);
@@ -8027,9 +8165,9 @@ function registryDetailPanelToggleButton(collapsed=registryDetailPanelCollapsed)
 }
 function renderRegistryDetailPanel(){
     if(registryDetailPanelCollapsed){
-        return `<aside class="asset-panel asset-detail registry-detail-panel is-collapsed"><button class="registry-detail-expand" type="button" data-registry-detail-toggle aria-expanded="false" title="展开资产详情" aria-label="展开资产详情"><i data-lucide="panel-right-open"></i><span>资产详情</span></button></aside>`;
+        return `<aside class="asset-panel asset-detail registry-detail-panel is-collapsed" data-registry-detail><button class="registry-detail-expand" type="button" data-registry-detail-toggle aria-expanded="false" title="展开资产详情" aria-label="展开资产详情"><i data-lucide="panel-right-open"></i><span>资产详情</span></button></aside>`;
     }
-    return `<aside class="asset-panel asset-detail registry-detail-panel">${renderRegistryDetail()}</aside>`;
+    return `<aside class="asset-panel asset-detail registry-detail-panel" data-registry-detail>${renderRegistryDetail()}</aside>`;
 }
 function renderRegistryDetailResizer(){
     if(registryDetailPanelCollapsed) return '';
@@ -8910,7 +9048,7 @@ async function uploadFiles(files){
         name:file.name || 'asset'
     }));
     if(!items.length) throw new Error('没有可保存的素材');
-    const data = await apiJsonResponse(assetManagerApi.createAssetLibraryItemsBatch({library_id:activeAssetLibraryId, category_id:activeAssetCategoryId, items}));
+    const data = await apiJsonResponse(assetManagerApi.createAssetLibraryItemsBatch({library_id:activeAssetLibraryId, category_id:activeAssetCategoryId, items, expected_version:requireExpectedVersion(activeAssetLibrary()?.version, '素材库')}));
     assetLibrary = data.library || assetLibrary;
     selectedAssetIds.clear();
     selectedAssetId = data.items?.[0]?.id || selectedAssetId;
@@ -9156,7 +9294,7 @@ async function renameWorkflowItem(id){
         await apiJsonResponse(assetManagerApi.renameWorkflowDocument(workflow_id, {name:String(name).trim(), expected_version:source.version}));
         await loadAll(); setStatus('已重命名工作流'); return;
     }
-    const data = await apiJsonResponse(assetManagerApi.updateAssetLibraryItem(id, {name}));
+    const data = await apiJsonResponse(assetManagerApi.updateAssetLibraryItem(id, {name, expected_version:assetLibraryVersionForItem(id)}));
     assetLibrary = data.library || assetLibrary;
     render();
     setStatus('已重命名工作流');
@@ -9186,13 +9324,23 @@ async function deleteWorkflowItem(id){
     if(workflow_id){
         workflowDeleteBusy.add(id);
         render();
+        let deleteError = null;
         try {
             await apiJsonResponse(assetManagerApi.deleteWorkflowDocument(workflow_id, workflowDeleteVersions.get(id)));
+        } catch(error) {
+            deleteError = error;
         } finally { workflowDeleteBusy.delete(id); workflowDeleteVersions.delete(id); pendingDeleteAssetId = ''; render(); }
+        if(deleteError){
+            if(deleteError.status === 409 && deleteError.code === 'VERSION_CONFLICT'){
+                setStatus(`${VERSION_CONFLICT_MESSAGE}（版本冲突）`);
+                return;
+            }
+            throw deleteError;
+        }
         selectedWorkflowIds.delete(id); selectedWorkflowId = '';
         await loadAll(); setStatus('已删除工作流'); return;
     }
-    const data = await apiJsonResponse(assetManagerApi.deleteAssetLibraryItem(id));
+    const data = await apiJsonResponse(assetManagerApi.deleteAssetLibraryItem(id, assetLibraryVersionForItem(id)));
     assetLibrary = data.library || assetLibrary;
     selectedWorkflowIds.delete(id);
     selectedWorkflowId = '';
@@ -9222,7 +9370,7 @@ async function deleteSelectedWorkflows(){
         setStatus(failure ? `已删除${removed}个，其余未删除：${failure.message}` : `已删除${removed}个工作流`);
         return;
     }
-    const data = await apiJsonResponse(assetManagerApi.deleteAssetLibraryItems({library_id:activeWorkflowLibraryId, ids}));
+    const data = await apiJsonResponse(assetManagerApi.deleteAssetLibraryItems({library_id:activeWorkflowLibraryId, asset_ids:ids, expected_version:requireExpectedVersion(activeWorkflowLibrary()?.version, '素材库'), expected_versions:expectedAssetLibraryVersions(ids)}));
     assetLibrary = data.library || assetLibrary;
     selectedWorkflowIds.clear();
     selectedWorkflowId = '';
@@ -10102,15 +10250,7 @@ async function handleClick(event){
     const registryAssetsBlank = target.closest?.('.registry-assets-scroll');
     if(registryAssetsBlank && !target.closest?.('[data-registry-card]')){
         if(Date.now() < registryMarqueeSuppressClickUntil) return;
-        if(selectedRegistryAssetId || registrySelectedIds.size){
-            selectedRegistryAssetId = '';
-            registryDetail = null;
-            registrySelectedIds.clear();
-            registrySelectionAnchorId = '';
-            registryManageMode = false;
-            registryBulkPanel = '';
-            render();
-        }
+        clearRegistrySelectionDom();
         return;
     }
     const registryCard = target.closest?.('[data-registry-card]');
@@ -10860,6 +11000,7 @@ function detailViewerUrl(source, item={}){
     return item.url || item.public_url || '';
 }
 function detailViewerType(source, item={}){
+    if(workflowSourceId(item)) return 'workflow';
     const extension = assetFileExtension(item);
     const kind = source === 'local' ? String(item.kind || localItemKind(item)).toLowerCase() : assetKind(item);
     if(source === 'prompt') return 'text';
@@ -10874,7 +11015,7 @@ function detailViewerType(source, item={}){
     return 'other';
 }
 function detailViewerTypeLabel(type){
-    return {image:'图片',video:'视频',audio:'音频',text:'文本',model:'3D 模型',font:'字体',other:'文件'}[type] || '文件';
+    return {image:'图片',video:'视频',audio:'音频',text:'文本',workflow:'工作流',model:'3D 模型',font:'字体',other:'文件'}[type] || '文件';
 }
 function detailViewerNameHtml(value=''){
     return escapeHtml(value || '未命名素材').replace(/([_.-])/g, '$1<wbr>');
@@ -11600,10 +11741,12 @@ function renderDetailMediaCanvasNode(source, item){
     const grouped = Boolean(group);
     const selected = !grouped && detailMediaCanvasSelectedIds().has(item.id);
     const selectedViaGroup = Boolean(group && detailMediaCanvasSelectedIds().has(group.id));
-    const previewFallback = assetPreviewUrl(url, 2048, item);
-    const media = type === 'video'
-        ? `<video class="asset-detail-media-node-content asset-detail-player" src="${escapeAttr(assetVideoUrl(url, item))}" playsinline preload="auto" data-detail-media-natural="${escapeAttr(item.id)}"></video>`
-        : `<img class="asset-detail-media-node-content" src="${escapeAttr(url)}" data-detail-media-preview-fallback="${escapeAttr(previewFallback)}" data-preview-fallback="${escapeAttr(item.name || '图片')}" data-detail-media-natural="${escapeAttr(item.id)}" alt="${escapeAttr(item.name || '画布素材')}" draggable="false" loading="eager" decoding="async">`;
+    const previewFallback = type === 'workflow' ? '' : assetPreviewUrl(url, 2048, item);
+    const media = type === 'workflow'
+        ? workflowThumb(item)
+        : type === 'video'
+            ? `<video class="asset-detail-media-node-content asset-detail-player" src="${escapeAttr(assetVideoUrl(url, item))}" playsinline preload="auto" data-detail-media-natural="${escapeAttr(item.id)}"></video>`
+            : `<img class="asset-detail-media-node-content" src="${escapeAttr(url)}" data-detail-media-preview-fallback="${escapeAttr(previewFallback)}" data-preview-fallback="${escapeAttr(item.name || '图片')}" data-detail-media-natural="${escapeAttr(item.id)}" alt="${escapeAttr(item.name || '画布素材')}" draggable="false" loading="eager" decoding="async">`;
     const centerPlay = type === 'video'
         ? `<button class="asset-detail-video-center-play" type="button" data-detail-video-action="toggle" data-detail-video-for="${escapeAttr(item.id)}" aria-label="Play video"><i data-lucide="play"></i></button>`
         : '';
@@ -11806,7 +11949,10 @@ function renderDetailMediaCanvas(source){
                     const type = detailViewerType(source, value);
                     const url = detailViewerUrl(source, value);
                     const box = detailViewerState.mediaCanvasLayout?.[value.id] || {};
-                    return `<button class="${value.id === activeId ? 'is-active' : ''}" type="button" data-detail-media-canvas-node="${escapeAttr(value.id)}" title="${escapeAttr(value.name || '画布素材')}" style="left:${(Number(box.x || 0)-metrics.minX) * minimapScale}px;top:${(Number(box.y || 0)-metrics.minY) * minimapScale}px;width:${Math.max(2,Number(box.width || 0) * minimapScale)}px;height:${Math.max(2,Number(box.height || 0) * minimapScale)}px"><img src="${escapeAttr(assetPreviewUrl(url, 320, value))}" alt=""></button>`;
+                    const preview = type === 'workflow'
+                        ? workflowThumb(value)
+                        : `<img src="${escapeAttr(assetPreviewUrl(url, 320, value))}" alt="">`;
+                    return `<button class="${value.id === activeId ? 'is-active' : ''}" type="button" data-detail-media-canvas-node="${escapeAttr(value.id)}" title="${escapeAttr(value.name || '画布素材')}" style="left:${(Number(box.x || 0)-metrics.minX) * minimapScale}px;top:${(Number(box.y || 0)-metrics.minY) * minimapScale}px;width:${Math.max(2,Number(box.width || 0) * minimapScale)}px;height:${Math.max(2,Number(box.height || 0) * minimapScale)}px">${preview}</button>`;
                 }).join('')}</div>
             </aside>
             ${renderDetailMediaCanvasContextMenu()}
@@ -11832,6 +11978,7 @@ function captureDetailMediaCanvasNaturalSize(event){
 function renderDetailViewerMedia(source, item, type){
     const url = detailViewerUrl(source, item);
     const extension = assetFileExtension(item);
+    if(type === 'workflow' || workflowSourceId(item)) return workflowThumb(item);
     if(type === 'video'){
         return `<video class="asset-lightbox-video asset-detail-player" src="${escapeAttr(assetVideoUrl(url, item))}" poster="${escapeAttr(assetPreviewUrl(url, 1280, item))}" controls playsinline preload="metadata"></video>`;
     }
@@ -13017,7 +13164,7 @@ async function saveDetailViewerName(){
         registryAssets = registryAssets.map(value => value.id === item.id ? {...value,...updated} : value);
         registryDetail = updated;
     } else if(source === 'asset' || source === 'workflow'){
-        const data = await apiJsonResponse(assetManagerApi.updateAssetLibraryItem(item.id, {name}));
+        const data = await apiJsonResponse(assetManagerApi.updateAssetLibraryItem(item.id, {name, expected_version:assetLibraryVersionForItem(item.id)}));
         assetLibrary = data.library || assetLibrary;
         updated = source === 'asset' ? findAssetItem(item.id) : findWorkflowItem(item.id);
     } else if(source === 'localup'){
@@ -14790,6 +14937,7 @@ async function renderDetailMediaCanvasPng(scopeOverride=''){
         const box = detailViewerState.mediaCanvasLayout?.[item.id];
         if(!box) continue;
         const type = detailViewerType(detailViewerState.source,item);
+        if(type === 'workflow' || workflowSourceId(item)) { skipped += 1; continue; }
         const sourceUrl = type === 'video' ? assetPreviewUrl(detailViewerUrl(detailViewerState.source,item),2048,item) : detailViewerUrl(detailViewerState.source,item);
         try {
             const bitmap = await loadDetailMediaCanvasBitmap(sourceUrl);
@@ -16242,6 +16390,7 @@ function beginMarqueeSelection(event){
     const selector = marqueeTargetSelector();
     if(!selector) return;
     if(event.button !== 0) return;
+    if(event.target.closest?.('[data-registry-detail], .registry-detail-panel, .asset-detail-viewer, .asset-detail-stage, .asset-detail-stage-content, .asset-detail-player, .detail-media, [data-floating-content]')) return;
     if(event.target.closest?.('button,input,textarea,select,.side-upload-card,.upload-grid-card,.asset-search-wrap')) return;
     const area = event.target.closest?.('.content-scroll');
     if(!area) return;
@@ -16332,13 +16481,7 @@ function endMarqueeSelection(){
     marqueeState = null;
     pendingBatchDelete = '';
     if(state.mode === 'registry' && !state.moved){
-        selectedRegistryAssetId = '';
-        registryDetail = null;
-        registrySelectedIds.clear();
-        registrySelectionAnchorId = '';
-        registryManageMode = false;
-        registryBulkPanel = '';
-        render();
+        clearRegistrySelectionDom();
         return;
     }
     if(state.moved){
@@ -16349,7 +16492,7 @@ function endMarqueeSelection(){
 async function createAssetLibrary(){
     const name = window.prompt('资产库名称', '新资产库');
     if(!String(name || '').trim()) return;
-    const data = await apiJsonResponse(assetManagerApi.createAssetLibrary({name}));
+    const data = await apiJsonResponse(assetManagerApi.createAssetLibrary({name, expected_version:requireExpectedVersion(assetLibrary.version, '素材库目录')}));
     assetLibrary = data.library || assetLibrary;
     activeAssetLibraryId = data.asset_library?.id || activeAssetLibraryId;
     activeAssetCategoryId = '';
@@ -16365,7 +16508,7 @@ async function saveAssetTreeEdit(){
     }
     let data = null;
     if(assetTreeEdit.kind === 'library-new'){
-        data = await apiJsonResponse(assetManagerApi.createAssetLibrary({name}));
+        data = await apiJsonResponse(assetManagerApi.createAssetLibrary({name, expected_version:requireExpectedVersion(assetLibrary.version, '素材库目录')}));
         assetLibrary = data.library || assetLibrary;
         activeAssetLibraryId = data.asset_library?.id || activeAssetLibraryId;
         activeAssetClassFilter = '';
@@ -16373,11 +16516,11 @@ async function saveAssetTreeEdit(){
     } else if(assetTreeEdit.kind === 'library-rename'){
         const lib = activeAssetLibrary();
         if(!lib) return;
-        data = await apiJsonResponse(assetManagerApi.renameAssetLibrary(lib.id, {name}));
+        data = await apiJsonResponse(assetManagerApi.renameAssetLibrary(lib.id, {name, expected_version:requireExpectedVersion(lib.version, '素材库')}));
         assetLibrary = data.library || assetLibrary;
         assetTreeFocus = 'library';
     } else if(assetTreeEdit.kind === 'category-new'){
-        data = await apiJsonResponse(assetManagerApi.createAssetLibraryCategory({library_id:activeAssetLibraryId, name, type:'image'}));
+        data = await apiJsonResponse(assetManagerApi.createAssetLibraryCategory({library_id:activeAssetLibraryId, name, type:'image', expected_version:requireExpectedVersion(activeAssetLibrary()?.version, '素材库')}));
         assetLibrary = data.library || assetLibrary;
         activeAssetCategoryId = data.category?.id || activeAssetCategoryId;
         activeAssetClassFilter = '';
@@ -16385,7 +16528,7 @@ async function saveAssetTreeEdit(){
     } else if(assetTreeEdit.kind === 'category-rename'){
         const cat = activeAssetCategory();
         if(!cat) return;
-        data = await apiJsonResponse(assetManagerApi.renameAssetLibraryCategory(cat.id, {name, library_id:activeAssetLibraryId}));
+        data = await apiJsonResponse(assetManagerApi.renameAssetLibraryCategory(cat.id, {name, library_id:activeAssetLibraryId, expected_version:requireExpectedVersion(cat.version, '素材分类')}));
         assetLibrary = data.library || assetLibrary;
         assetTreeFocus = 'category';
     }
@@ -16415,7 +16558,7 @@ async function saveWorkflowTreeEdit(){
         const cat = activeWorkflowCategory();
         const categoryId = workflowTreeEdit.categoryId || cat?.id || activeWorkflowCategoryId;
         if(!categoryId) return;
-        const data = await apiJsonResponse(assetManagerApi.renameAssetLibraryCategory(categoryId, {name, library_id:activeWorkflowLibraryId}));
+        const data = await apiJsonResponse(assetManagerApi.renameAssetLibraryCategory(categoryId, {name, library_id:activeWorkflowLibraryId, expected_version:requireExpectedVersion(cat?.version, '素材分类')}));
         assetLibrary = data.library || assetLibrary;
         activeWorkflowCategoryId = categoryId;
     }
@@ -16436,7 +16579,7 @@ async function deleteWorkflowCategory(){
         setStatus('再次点击确认删除工作流分组');
         return;
     }
-    const data = await apiJsonResponse(assetManagerApi.deleteAssetLibraryCategory(cat.id, {libraryId}));
+    const data = await apiJsonResponse(assetManagerApi.deleteAssetLibraryCategory(cat.id, {libraryId, expectedVersion:requireExpectedVersion(cat.version, '素材分类')}));
     assetLibrary = data.library || assetLibrary;
     activeWorkflowCategoryId = '';
     selectedWorkflowId = '';
@@ -16449,7 +16592,7 @@ async function renameAssetLibrary(){
     const lib = activeAssetLibrary();
     const name = window.prompt('资产库名称', lib?.name || '');
     if(!lib || !String(name || '').trim()) return;
-    const data = await apiJsonResponse(assetManagerApi.renameAssetLibrary(lib.id, {name}));
+    const data = await apiJsonResponse(assetManagerApi.renameAssetLibrary(lib.id, {name, expected_version:requireExpectedVersion(lib.version, '素材库')}));
     assetLibrary = data.library || assetLibrary;
     render();
 }
@@ -16464,7 +16607,7 @@ async function deleteAssetLibrary(){
         setStatus('再次点击确认删除资产库');
         return;
     }
-    const data = await apiJsonResponse(assetManagerApi.deleteAssetLibrary(lib.id));
+    const data = await apiJsonResponse(assetManagerApi.deleteAssetLibrary(lib.id, requireExpectedVersion(lib.version, '素材库')));
     assetLibrary = data.library || assetLibrary;
     activeAssetLibraryId = assetLibrary.active_library_id || assetLibraries()[0]?.id || '';
     activeAssetCategoryId = '';
@@ -16477,7 +16620,7 @@ async function deleteAssetLibrary(){
 async function createAssetCategory(){
     const name = window.prompt('分组名称', '新分组');
     if(!String(name || '').trim()) return;
-    const data = await apiJsonResponse(assetManagerApi.createAssetLibraryCategory({library_id:activeAssetLibraryId, name, type:'image'}));
+    const data = await apiJsonResponse(assetManagerApi.createAssetLibraryCategory({library_id:activeAssetLibraryId, name, type:'image', expected_version:requireExpectedVersion(activeAssetLibrary()?.version, '素材库')}));
     assetLibrary = data.library || assetLibrary;
     activeAssetCategoryId = data.category?.id || activeAssetCategoryId;
     activeAssetClassFilter = '';
@@ -16488,7 +16631,7 @@ async function renameAssetCategory(){
     const cat = activeAssetCategory();
     const name = window.prompt('分组名称', cat?.name || '');
     if(!cat || !String(name || '').trim()) return;
-    const data = await apiJsonResponse(assetManagerApi.renameAssetLibraryCategory(cat.id, {name, library_id:activeAssetLibraryId}));
+    const data = await apiJsonResponse(assetManagerApi.renameAssetLibraryCategory(cat.id, {name, library_id:activeAssetLibraryId, expected_version:requireExpectedVersion(cat.version, '素材分类')}));
     assetLibrary = data.library || assetLibrary;
     render();
 }
@@ -16503,7 +16646,7 @@ async function deleteAssetCategory(){
         setStatus('再次点击确认删除分组');
         return;
     }
-    const data = await apiJsonResponse(assetManagerApi.deleteAssetLibraryCategory(cat.id, {libraryId:activeAssetLibraryId}));
+    const data = await apiJsonResponse(assetManagerApi.deleteAssetLibraryCategory(cat.id, {libraryId:activeAssetLibraryId, expectedVersion:requireExpectedVersion(cat.version, '素材分类')}));
     assetLibrary = data.library || assetLibrary;
     activeAssetCategoryId = '';
     activeAssetClassFilter = '';
@@ -16530,7 +16673,7 @@ async function saveAssetEdit(id){
         setStatus('素材名称不能为空');
         return;
     }
-    const data = await apiJsonResponse(assetManagerApi.updateAssetLibraryItem(id, {name}));
+    const data = await apiJsonResponse(assetManagerApi.updateAssetLibraryItem(id, {name, expected_version:assetLibraryVersionForItem(id)}));
     assetLibrary = data.library || assetLibrary;
     selectedAssetId = id;
     assetEditMode = false;
@@ -16541,7 +16684,7 @@ async function saveAssetInlineName(id, name){
     const item = findAssetItem(id);
     if(!item || !String(name || '').trim()) return;
     if(String(item.name || '') === String(name || '')) return;
-    const data = await apiJsonResponse(assetManagerApi.updateAssetLibraryItem(id, {name}));
+    const data = await apiJsonResponse(assetManagerApi.updateAssetLibraryItem(id, {name, expected_version:assetLibraryVersionForItem(id)}));
     assetLibrary = data.library || assetLibrary;
     selectedAssetId = id;
     render();
@@ -16618,7 +16761,7 @@ function scheduleAvatarPoll(id, providerId){
 async function deleteAssetItem(id){
     const item = findAssetItem(id);
     if(!item) return;
-    const data = await apiJsonResponse(assetManagerApi.deleteAssetLibraryItem(id));
+    const data = await apiJsonResponse(assetManagerApi.deleteAssetLibraryItem(id, assetLibraryVersionForItem(id)));
     assetLibrary = data.library || assetLibrary;
     selectedAssetIds.delete(id);
     if(selectedAssetId === id) selectedAssetId = '';
@@ -16629,7 +16772,7 @@ async function deleteAssetItem(id){
 async function deleteSelectedAssets(){
     if(!selectedAssetIds.size) return;
     const ids = [...selectedAssetIds];
-    const data = await apiJsonResponse(assetManagerApi.deleteAssetLibraryItems({library_id:activeAssetLibraryId, ids}));
+    const data = await apiJsonResponse(assetManagerApi.deleteAssetLibraryItems({library_id:activeAssetLibraryId, asset_ids:ids, expected_version:requireExpectedVersion(activeAssetLibrary()?.version, '素材库'), expected_versions:expectedAssetLibraryVersions(ids)}));
     assetLibrary = data.library || assetLibrary;
     if(ids.includes(selectedAssetId)) selectedAssetId = '';
     selectedAssetIds.clear();
@@ -16656,7 +16799,8 @@ async function pasteAssetClipboard(){
     if(!assetClipboard?.ids?.length) return;
     if(assetClipboard.mode === 'cut'){
         if(assetClipboard.sourceLibraryId === activeAssetLibraryId && assetClipboard.sourceCategoryId === activeAssetCategoryId) return;
-        const data = await apiJsonResponse(assetManagerApi.moveAssetLibraryItems({library_id:assetClipboard.sourceLibraryId, target_library_id:activeAssetLibraryId, target_category_id:activeAssetCategoryId, ids:assetClipboard.ids}));
+        const sourceVersion = requireExpectedVersion(assetLibraries().find(lib => lib.id === assetClipboard.sourceLibraryId)?.version, '素材库');
+        const data = await apiJsonResponse(assetManagerApi.moveAssetLibraryItems({library_id:assetClipboard.sourceLibraryId, target_library_id:activeAssetLibraryId, category_id:activeAssetCategoryId, asset_ids:assetClipboard.ids, expected_version:sourceVersion, expected_versions:expectedAssetLibraryVersions(assetClipboard.ids)}));
         assetLibrary = data.library || assetLibrary;
         setStatus(`已移动 ${data.moved || 0} 个素材`);
     } else {
@@ -16664,6 +16808,7 @@ async function pasteAssetClipboard(){
         const data = await apiJsonResponse(assetManagerApi.createAssetLibraryItemsBatch({
             library_id:activeAssetLibraryId,
             category_id:activeAssetCategoryId,
+            expected_version:requireExpectedVersion(activeAssetLibrary()?.version, '素材库'),
             items,
         }));
         assetLibrary = data.library || assetLibrary;
@@ -16729,7 +16874,7 @@ async function moveSelectedAssets(){
     const [targetLibraryId, targetCategoryId] = assetMoveTarget.split('::');
     if(!targetLibraryId || !targetCategoryId) return;
     const ids = [...selectedAssetIds];
-    const data = await apiJsonResponse(assetManagerApi.moveAssetLibraryItems({library_id:activeAssetLibraryId, target_library_id:targetLibraryId, target_category_id:targetCategoryId, ids}));
+    const data = await apiJsonResponse(assetManagerApi.moveAssetLibraryItems({library_id:activeAssetLibraryId, target_library_id:targetLibraryId, category_id:targetCategoryId, asset_ids:ids, expected_version:requireExpectedVersion(activeAssetLibrary()?.version, '素材库'), expected_versions:expectedAssetLibraryVersions(ids)}));
     assetLibrary = data.library || assetLibrary;
     selectedAssetIds.clear();
     if(ids.includes(selectedAssetId)) selectedAssetId = '';
@@ -16745,7 +16890,7 @@ function openLocalItem(id){
 async function createPromptLibrary(){
     const name = window.prompt('提示词库名称', '新提示词库');
     if(!String(name || '').trim()) return;
-    const data = await apiJsonResponse(assetManagerApi.createPromptLibrary({name}));
+    const data = await apiJsonResponse(assetManagerApi.createPromptLibrary({name, expected_version:requireExpectedVersion(promptLibrary.version, '提示词库目录')}));
     promptLibrary = data.library || promptLibrary;
     activePromptLibraryId = data.prompt_library?.id || activePromptLibraryId;
     activePromptCategory = 'all';
@@ -16761,7 +16906,7 @@ async function savePromptTreeEdit(){
     }
     let data = null;
     if(promptTreeEdit.kind === 'library-new'){
-        data = await apiJsonResponse(assetManagerApi.createPromptLibrary({name}));
+        data = await apiJsonResponse(assetManagerApi.createPromptLibrary({name, expected_version:requireExpectedVersion(promptLibrary.version, '提示词库目录')}));
         promptLibrary = data.library || promptLibrary;
         activePromptLibraryId = data.prompt_library?.id || activePromptLibraryId;
         activePromptCategory = 'all';
@@ -16769,17 +16914,17 @@ async function savePromptTreeEdit(){
     } else if(promptTreeEdit.kind === 'library-rename'){
         const lib = activePromptLibrary();
         if(!lib) return;
-        data = await apiJsonResponse(assetManagerApi.renamePromptLibrary(lib.id, {name}));
+        data = await apiJsonResponse(assetManagerApi.renamePromptLibrary(lib.id, {name, expected_version:requireExpectedVersion(lib.version, '提示词库')}));
         promptLibrary = data.library || promptLibrary;
         promptTreeFocus = 'library';
     } else if(promptTreeEdit.kind === 'category-new'){
         const lib = activePromptLibrary();
-        data = await apiJsonResponse(assetManagerApi.createPromptLibraryCategory({library_id:lib?.id || 'system', name}));
+        data = await apiJsonResponse(assetManagerApi.createPromptLibraryCategory({library_id:lib?.id || 'system', name, expected_version:requireExpectedVersion(lib?.version, '提示词库')}));
         promptLibrary = data.library || promptLibrary;
         activePromptCategory = data.category?.id || activePromptCategory;
         promptTreeFocus = 'category';
     } else if(promptTreeEdit.kind === 'category-rename'){
-        data = await apiJsonResponse(assetManagerApi.renamePromptLibraryCategory(activePromptCategory, {name}));
+        data = await apiJsonResponse(assetManagerApi.renamePromptLibraryCategory(activePromptCategory, {name, expected_version:promptCategoryVersion(activePromptCategory)}));
         promptLibrary = data.library || promptLibrary;
         promptTreeFocus = 'category';
     }
@@ -16801,7 +16946,7 @@ async function deletePromptCategory(){
         setStatus('再次点击确认删除分组');
         return;
     }
-    const data = await apiJsonResponse(assetManagerApi.deletePromptLibraryCategory(activePromptCategory));
+    const data = await apiJsonResponse(assetManagerApi.deletePromptLibraryCategory(activePromptCategory, promptCategoryVersion(activePromptCategory)));
     promptLibrary = data.library || promptLibrary;
     activePromptCategory = 'all';
     pendingTreeDelete = '';
@@ -16812,7 +16957,7 @@ async function renamePromptLibrary(){
     const lib = activePromptLibrary();
     const name = window.prompt('提示词库名称', lib?.name || '');
     if(!lib || !String(name || '').trim()) return;
-    const data = await apiJsonResponse(assetManagerApi.renamePromptLibrary(lib.id, {name}));
+    const data = await apiJsonResponse(assetManagerApi.renamePromptLibrary(lib.id, {name, expected_version:requireExpectedVersion(lib.version, '提示词库')}));
     promptLibrary = data.library || promptLibrary;
     render();
 }
@@ -16828,7 +16973,7 @@ async function deletePromptLibrary(){
         setStatus('再次点击确认删除提示词库');
         return;
     }
-    const data = await apiJsonResponse(assetManagerApi.deletePromptLibrary(lib.id));
+    const data = await apiJsonResponse(assetManagerApi.deletePromptLibrary(lib.id, requireExpectedVersion(lib.version, '提示词库')));
     promptLibrary = data.library || promptLibrary;
     activePromptLibraryId = promptLibrary.active_library_id || promptLibraries()[0]?.id || 'system';
     activePromptCategory = 'all';
@@ -16848,7 +16993,7 @@ async function createPromptItem(){
     if(!String(positive || '').trim()) return;
     const negative = window.prompt('负向提示词内容', '') || '';
     const category = activePromptCategory === 'all' ? 'custom' : activePromptCategory;
-    const data = await apiJsonResponse(assetManagerApi.createPromptLibraryItem({library_id:lib.id, name, positive, negative, category, scene}));
+    const data = await apiJsonResponse(assetManagerApi.createPromptLibraryItem({library_id:lib.id, name, positive, negative, category, scene, expected_version:await currentPromptItemsRevision()}));
     promptLibrary = data.library || promptLibrary;
     selectedPromptId = data.item?.id || selectedPromptId;
     render();
@@ -16865,7 +17010,7 @@ async function savePromptCreate(){
         return;
     }
     const category = activePromptCategory === 'all' ? 'custom' : activePromptCategory;
-    const data = await apiJsonResponse(assetManagerApi.createPromptLibraryItem({library_id:lib.id, name, positive, negative, category, scene}));
+    const data = await apiJsonResponse(assetManagerApi.createPromptLibraryItem({library_id:lib.id, name, positive, negative, category, scene, expected_version:await currentPromptItemsRevision()}));
     promptLibrary = data.library || promptLibrary;
     selectedPromptId = data.item?.id || selectedPromptId;
     promptCreateMode = false;
@@ -16882,7 +17027,7 @@ async function editPromptItem(id){
     const positive = window.prompt('正向提示词内容', item.positive || '');
     if(!String(positive || '').trim()) return;
     const negative = window.prompt('负向提示词内容', item.negative || '') || '';
-    const data = await apiJsonResponse(assetManagerApi.updatePromptLibraryItem(id, {library_id:lib.id, name, positive, negative, category:item.category || 'custom', scene}));
+    const data = await apiJsonResponse(assetManagerApi.updatePromptLibraryItem(id, {library_id:lib.id, name, positive, negative, category:item.category || 'custom', scene, expected_version:await promptItemVersion(id)}));
     promptLibrary = data.library || promptLibrary;
     selectedPromptId = id;
     render();
@@ -16899,7 +17044,7 @@ async function savePromptEdit(id){
         setStatus('名称和正向提示词不能为空');
         return;
     }
-    const data = await apiJsonResponse(assetManagerApi.updatePromptLibraryItem(id, {library_id:lib.id, name, positive, negative, category:item.category || 'custom', scene}));
+    const data = await apiJsonResponse(assetManagerApi.updatePromptLibraryItem(id, {library_id:lib.id, name, positive, negative, category:item.category || 'custom', scene, expected_version:await promptItemVersion(id)}));
     promptLibrary = data.library || promptLibrary;
     selectedPromptId = id;
     promptEditMode = false;
@@ -16909,7 +17054,7 @@ async function savePromptEdit(id){
 async function deletePromptItem(id){
     const item = findPromptItem(id);
     if(!item) return;
-    const data = await apiJsonResponse(assetManagerApi.deletePromptLibraryItem(id));
+    const data = await apiJsonResponse(assetManagerApi.deletePromptLibraryItem(id, await currentPromptItemsRevision()));
     promptLibrary = data.library || promptLibrary;
     selectedPromptIds.delete(id);
     if(selectedPromptId === id) selectedPromptId = '';
@@ -16926,7 +17071,7 @@ async function deleteSelectedPrompts(){
         return;
     }
     const ids = [...selectedPromptIds];
-    const data = await apiJsonResponse(assetManagerApi.deletePromptLibraryItems({ids}));
+    const data = await apiJsonResponse(assetManagerApi.deletePromptLibraryItems({ids, expected_version:await currentPromptItemsRevision()}));
     promptLibrary = data.library || promptLibrary;
     if(ids.includes(selectedPromptId)) selectedPromptId = '';
     selectedPromptIds.clear();
@@ -17808,7 +17953,8 @@ root.addEventListener('change', event => {
     }
     const inlineWorkflowName = event.target.closest?.('[data-workflow-inline-name]');
     if(inlineWorkflowName){
-        apiJsonResponse(assetManagerApi.updateAssetLibraryItem(inlineWorkflowName.dataset.workflowInlineName || '', {name:inlineWorkflowName.value || ''})).then(data => {
+        const itemId = inlineWorkflowName.dataset.workflowInlineName || '';
+        apiJsonResponse(assetManagerApi.updateAssetLibraryItem(itemId, {name:inlineWorkflowName.value || '', expected_version:assetLibraryVersionForItem(itemId)})).then(data => {
             assetLibrary = data.library || assetLibrary;
             render();
             setStatus('已保存工作流名称');

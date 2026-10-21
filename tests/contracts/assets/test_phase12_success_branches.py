@@ -41,6 +41,11 @@ def _library_snapshot(client: TestClient) -> dict:
     return response.json()["library"]
 
 
+def _library_version(client: TestClient, library_id: str) -> int:
+    library = next(item for item in _library_snapshot(client)["libraries"] if item["library_id"] == library_id)
+    return library["version"]
+
+
 def _library_and_category(client: TestClient, *, suffix: str = "fixture") -> tuple[str, str]:
     library = client.post(
         "/api/asset-library/libraries",
@@ -179,11 +184,13 @@ def test_library_category_and_item_success_lifecycle():
         keep_id, delete_id, move_id = batch.json()["asset_ids"]
 
         moved = client.post("/api/asset-library/items/move", headers=EDITOR,
-                            json={"asset_ids": [move_id], "category_id": target_id})
+                            json={"asset_ids": [move_id], "category_id": target_id,
+                                  "expected_version": _library_version(client, library_id)})
         assert moved.status_code == 200, moved.text
         assert moved.json()["moved"] == [move_id]
         batch_deleted = client.post("/api/asset-library/items/delete", headers=EDITOR,
-                                   json={"asset_ids": [delete_id]})
+                                   json={"asset_ids": [delete_id],
+                                         "expected_version": _library_version(client, library_id)})
         assert batch_deleted.status_code == 200, batch_deleted.text
         assert batch_deleted.json()["deleted"] == [delete_id]
 
@@ -198,7 +205,8 @@ def test_library_category_and_item_success_lifecycle():
         # 先清空两类，再按真实版本删除；被测删除语义是 HTTP 接口，而非直接调用 service。
         for asset_id in (keep_id, move_id):
             removed = client.post("/api/asset-library/items/delete", headers=EDITOR,
-                                  json={"asset_ids": [asset_id]})
+                                  json={"asset_ids": [asset_id],
+                                        "expected_version": _library_version(client, library_id)})
             assert removed.status_code == 200, removed.text
             assert removed.json()["deleted"] == [asset_id]
 
@@ -331,7 +339,7 @@ def test_asset_structure_get_and_patch_success_roundtrip(monkeypatch):
             "/api/asset-registry/asset-structures",
             headers=EDITOR,
             json={"kind": "version", "asset_ids": ["phase12-asset-a", "phase12-asset-b"],
-                  "current_asset_id": "phase12-asset-a"},
+                  "current_asset_id": "phase12-asset-a", "expected_version": 1},
         )
         assert created.status_code == 201, created.text
         structure = created.json()["structure"]

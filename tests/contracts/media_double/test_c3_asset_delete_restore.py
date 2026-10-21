@@ -26,14 +26,32 @@ def _recycle_ids(client):
     return [item["entry_id"] for item in response.json()["items"]]
 
 
+def _registry_revision(client, headers=HEADERS):
+    response = client.get(f"{REGISTRY}/status", headers=headers)
+    assert response.status_code == 200, response.text
+    return response.json()["revision"]
+
+
 def _delete(client, asset_id):
-    response = client.delete(f"{REGISTRY}/assets/{asset_id}", headers=HEADERS)
+    response = client.request("DELETE", f"{REGISTRY}/assets/{asset_id}", headers=HEADERS,
+                              json={"expected_version": _registry_revision(client)})
     assert response.status_code == 200, response.text
     return response.json()["recycle_entry_id"]
 
 
 def _restore(client, entry_id):
-    return client.post(f"{REGISTRY}/recycle-bin/{entry_id}/restore", headers=GOVERNOR)
+    return client.post(f"{REGISTRY}/recycle-bin/{entry_id}/restore", headers=GOVERNOR,
+                       json={"expected_version": _registry_revision(client, GOVERNOR)})
+
+
+def _library_version(client, asset_id):
+    response = client.get("/api/asset-library", headers=HEADERS)
+    assert response.status_code == 200, response.text
+    library = response.json()["library"]
+    for item in library["libraries"]:
+        if any(asset["asset_id"] == asset_id for category in item["categories"] for asset in category["items"]):
+            return item["version"]
+    raise AssertionError(f"asset {asset_id} is missing from the asset library")
 
 
 def _library_item(client, asset_id):
@@ -117,7 +135,8 @@ def test_restore_requires_governance_role(media_client, fake_media):
     """裁定第 7 条：恢复需要 governance 权限，编辑者不能恢复。"""
     _, _, asset_id = _completed_output(media_client)
     entry_id = _delete(media_client, asset_id)
-    denied = media_client.post(f"{REGISTRY}/recycle-bin/{entry_id}/restore", headers=HEADERS)
+    denied = media_client.post(f"{REGISTRY}/recycle-bin/{entry_id}/restore", headers=HEADERS,
+                               json={"expected_version": _registry_revision(media_client)})
     assert denied.status_code in (401, 403), denied.text
     assert entry_id in _recycle_ids(media_client)
 
@@ -140,8 +159,11 @@ def test_library_delete_goes_through_registry(media_client, fake_media, asset_co
     settled = asset_counts()
 
     # 批量端点：删除后两份存储同时 -1，注册表出现可恢复回收条目。
+    library = media_client.get("/api/asset-library", headers=HEADERS).json()["library"]
+    library_item = next(item for item in library["libraries"]
+                        if any(asset["asset_id"] == asset_id for category in item["categories"] for asset in category["items"]))
     batch = media_client.post("/api/asset-library/items/delete", headers=HEADERS,
-                              json={"asset_ids": [asset_id]})
+                              json={"asset_ids": [asset_id], "expected_version": library_item["version"]})
     assert batch.status_code == 200, batch.text
     assert batch.json()["deleted"] == [asset_id]
     deleted = asset_counts()
@@ -154,7 +176,8 @@ def test_library_delete_goes_through_registry(media_client, fake_media, asset_co
     assert asset_counts() == settled
 
     # 单条端点：同样经注册表删除并留下回收条目。
-    single = media_client.delete(f"/api/asset-library/items/{asset_id}", headers=HEADERS)
+    single = media_client.delete(f"/api/asset-library/items/{asset_id}", headers=HEADERS,
+                                 params={"expected_version": _library_version(media_client, asset_id)})
     assert single.status_code == 200, single.text
     assert single.json()["deleted"] is True
     assert asset_counts()["registry"] == settled["registry"] - 1
