@@ -167,17 +167,34 @@ class DecisionRouter:
             raise DecisionInputError("type 必须是 choice、scoring 或 boolean")
         payload["decision_type"] = decision_type
         backend = self._backend_for(payload)
-        raw = backend.decide(payload)
-        if inspect.isawaitable(raw):
-            raw = await raw
+        try:
+            raw = backend.decide(payload)
+            if inspect.isawaitable(raw):
+                raw = await raw
+            return self._response_for(payload, raw, backend.name)
+        except (RuntimeError, TimeoutError, OSError) as backend_error:
+            if backend.name != "kev-cpu":
+                raise
+            try:
+                fallback = self.backend.decide(payload)
+                if inspect.isawaitable(fallback):
+                    fallback = await fallback
+                return self._response_for(payload, fallback, self.backend.name)
+            except Exception as fallback_error:
+                raise backend_error from fallback_error
+
+    @classmethod
+    def _response_for(
+        cls, payload: Mapping[str, Any], raw: Any, provider: str
+    ) -> dict[str, Any]:
         if not isinstance(raw, Mapping):
             raise RuntimeError("决策后端返回了非对象结果")
-
+        decision_type = payload["decision_type"]
         if decision_type == "choice":
-            return self._choice_response(payload, raw, backend.name)
+            return cls._choice_response(payload, raw, provider)
         if decision_type == "scoring":
-            return self._scoring_response(payload, raw, backend.name)
-        return self._boolean_response(payload, raw, backend.name)
+            return cls._scoring_response(payload, raw, provider)
+        return cls._boolean_response(payload, raw, provider)
 
     def _backend_for(self, payload: Mapping[str, Any]) -> DecisionBackend:
         provider = payload.get("provider", "local")
@@ -191,7 +208,7 @@ class DecisionRouter:
             if self.remote_backend is None:
                 raise RuntimeError("远程决策后端尚未配置")
             return self.remote_backend
-        raise DecisionInputError("provider 必须是 local 或 remote")
+        raise DecisionInputError("provider 必须是 local、remote 或 kev-cpu")
 
     @staticmethod
     def _choice_ids(options: Any) -> tuple[str, ...]:
