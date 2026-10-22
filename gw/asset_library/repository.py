@@ -29,7 +29,9 @@
 from __future__ import annotations
 
 import base64
+import binascii
 import hashlib
+import json
 import mimetypes
 import os
 import shutil
@@ -414,13 +416,27 @@ def reveal_file(raw_path: str) -> dict[str, Any]:
 
 
 def save_upload(raw_path: str, content_b64: str) -> dict[str, Any]:
-    """把 base64 内容真实写入允许根目录内的目标路径。"""
+    """把 base64 内容原子写入允许根目录；已存在路径要求显式覆盖。"""
     path = storage.resolve_within_roots(raw_path)
     if path.exists() and path.is_dir():
         raise CleanroomException(400, "INVALID_PATH", "目标路径是目录")
     payload = _decode_upload_payload(content_b64)
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_bytes(payload)
+    if path.exists():
+        raise CleanroomException(
+            409, "PATH_CONFLICT", "目标文件已存在；显式覆盖必须走版本化更新接口"
+        )
+    partial = path.parent / (path.stem + ".part" + path.suffix)
+    try:
+        with partial.open("wb") as output:
+            output.write(payload)
+            output.flush()
+            os.fsync(output.fileno())
+        os.replace(partial, path)
+    except OSError:
+        raise CleanroomException(503, "FILE_WRITE_FAILED", "目标文件写入失败") from None
+    finally:
+        partial.unlink(missing_ok=True)
     return {
         "display_path": storage.relative_display(path),
         "size_bytes": len(payload),
@@ -955,17 +971,87 @@ def _safe_name(name: str, *, what: str = "名称") -> str:
     return clean
 
 
-def list_local_assets(kind: str | None = None) -> dict[str, Any]:
+def _local_asset_cursor_key(entry: dict[str, Any]) -> tuple[str, str, str, str]:
+    display_path = str(entry.get("display_path") or "")
+    return (
+        display_path.casefold(),
+        display_path,
+        str(entry.get("_root_identity") or ""),
+        str(entry.get("asset_id") or entry.get("id") or ""),
+    )
+
+
+def _encode_local_asset_cursor(kind: str | None, key: tuple[str, str, str, str]) -> str:
+    payload = json.dumps(
+        {"v": 1, "kind": kind, "last": list(key)},
+        ensure_ascii=False,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    return base64.urlsafe_b64encode(payload).decode("ascii").rstrip("=")
+
+
+def _decode_local_asset_cursor(cursor: str, kind: str | None) -> tuple[str, str, str, str]:
+    try:
+        if not isinstance(cursor, str) or not cursor or len(cursor) > 2048:
+            raise ValueError
+        padded = cursor + "=" * (-len(cursor) % 4)
+        payload = json.loads(
+            base64.b64decode(padded.encode("ascii"), altchars=b"-_", validate=True)
+        )
+        last = payload["last"]
+        if (
+            type(payload.get("v")) is not int
+            or payload.get("v") != 1
+            or payload.get("kind") != kind
+            or not isinstance(last, list)
+            or len(last) != 4
+            or any(not isinstance(value, str) for value in last)
+        ):
+            raise ValueError
+        return tuple(last)
+    except (
+        ValueError,
+        TypeError,
+        KeyError,
+        UnicodeError,
+        json.JSONDecodeError,
+        binascii.Error,
+    ):
+        raise CleanroomException(400, "INVALID_CURSOR", "本地素材分页游标无效") from None
+
+
+def list_local_assets(
+    kind: str | None = None,
+    *,
+    limit: int = 100,
+    cursor: str | None = None,
+) -> dict[str, Any]:
+    if type(limit) is not int or not 1 <= limit <= 500:
+        raise CleanroomException(400, "INVALID_LIMIT", "limit 必须为 1 到 500 的整数")
     raw = _local_state().read()
     entries = list(raw.get("entries", {}).values())
     if kind:
         entries = [entry for entry in entries if entry.get("kind") == kind]
-    entries.sort(key=lambda item: item.get("display_path", ""))
+    entries.sort(key=_local_asset_cursor_key)
+    total = len(entries)
+    if cursor:
+        after = _decode_local_asset_cursor(cursor, kind)
+        entries = [entry for entry in entries if _local_asset_cursor_key(entry) > after]
+    page = entries[:limit]
+    has_more = len(entries) > limit
     ambiguous = _duplicate_local_asset_ids(raw)
     return {
-        "items": [_public_local_asset_entry(entry) for entry in entries],
-        "count": len(entries),
-        "data_status": "ok" if entries else "empty",
+        "items": [_public_local_asset_entry(entry) for entry in page],
+        "count": total,
+        "total": total,
+        "limit": limit,
+        "has_more": has_more,
+        "next_cursor": (
+            _encode_local_asset_cursor(kind, _local_asset_cursor_key(page[-1]))
+            if has_more and page
+            else None
+        ),
+        "data_status": "ok" if total else "empty",
         "data_gaps": (
             [{"code": "LOCAL_ASSET_ID_AMBIGUOUS", "asset_ids": ambiguous}]
             if ambiguous

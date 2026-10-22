@@ -27,6 +27,7 @@
 from __future__ import annotations
 
 import re
+import uuid
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
@@ -352,6 +353,7 @@ def list_image_versions(
 def get_image_version_media(
     asset_id: str,
     version_id: str,
+    range_header: Optional[str] = Header(None, alias="Range"),
     authorization: Optional[str] = Header(None),
     x_user_role: str = Header("editor", alias="X-User-Role"),
 ):
@@ -361,13 +363,18 @@ def get_image_version_media(
         repo._unavailable(
             "/api/asset-registry/assets/{asset_id}/image-versions/{version_id}/media",
             "MEDIA_NOT_AVAILABLE", "该版本没有可读取的媒体文件")
-    return Response(content=path.read_bytes(), media_type=_media_type(path),
-                    headers={"X-Media-Display": _header_safe(repo.storage.relative_display(path))})
+    return _media_file_response(
+        path,
+        _media_type(path),
+        range_header,
+        {"X-Media-Display": _header_safe(repo.storage.relative_display(path))},
+    )
 
 
 @router.get("/assets/{asset_id}/media", summary="读取素材媒体", status_code=status.HTTP_200_OK)
 def get_asset_media(
     asset_id: str,
+    range_header: Optional[str] = Header(None, alias="Range"),
     authorization: Optional[str] = Header(None),
     x_user_role: str = Header("editor", alias="X-User-Role"),
 ):
@@ -380,16 +387,103 @@ def get_asset_media(
             resolved = workflow_registry.resolve_asset_file(context, asset_id)
             if resolved:
                 private_path, asset = resolved
-                return FileResponse(private_path, media_type=asset["content_type"])
+                return _media_file_response(
+                    private_path, asset["content_type"], range_header
+                )
         repo._unavailable("/api/asset-registry/assets/{asset_id}/media",
                           "MEDIA_NOT_AVAILABLE", "该素材没有可读取的媒体文件")
-    return Response(content=path.read_bytes(), media_type=_media_type(path),
-                    headers={"X-Media-Display": _header_safe(repo.storage.relative_display(path))})
+    return _media_file_response(
+        path,
+        _media_type(path),
+        range_header,
+        {"X-Media-Display": _header_safe(repo.storage.relative_display(path))},
+    )
 
 
 def _header_safe(value: str) -> str:
     """把展示串降级为 HTTP 头可承载的 latin-1 内容。"""
     return (value or "").encode("ascii", "replace").decode("ascii")
+
+
+def _media_file_response(path, media_type: str, range_header: Optional[str], extra_headers=None):
+    """流式返回本地媒体，支持单段 Range 且不把完整文件载入内存。"""
+    size = path.stat().st_size
+    base_headers = {
+        "Accept-Ranges": "bytes",
+        "Cache-Control": "private",
+        "Content-Length": str(size),
+        **(extra_headers or {}),
+    }
+    if range_header is None:
+        return FileResponse(path, media_type=media_type, headers=base_headers)
+
+    match = re.fullmatch(r"bytes=(\d*)-(\d*)", range_header.strip(), re.IGNORECASE)
+    if (
+        not match
+        or size == 0
+        or (not match.group(1) and not match.group(2))
+        or len(match.group(1)) > 20
+        or len(match.group(2)) > 20
+    ):
+        return Response(
+            status_code=416,
+            headers={
+                "Accept-Ranges": "bytes",
+                "Cache-Control": "private",
+                "Content-Range": f"bytes */{size}",
+                **(extra_headers or {}),
+            },
+        )
+
+    first, last = match.groups()
+    if first:
+        start = int(first)
+        end = min(int(last), size - 1) if last else size - 1
+        if start >= size or end < start:
+            start = end = -1
+    else:
+        suffix_length = int(last)
+        if suffix_length <= 0:
+            start = end = -1
+        else:
+            start = max(0, size - suffix_length)
+            end = size - 1
+    if start < 0:
+        return Response(
+            status_code=416,
+            headers={
+                "Accept-Ranges": "bytes",
+                "Cache-Control": "private",
+                "Content-Range": f"bytes */{size}",
+                **(extra_headers or {}),
+            },
+        )
+
+    length = end - start + 1
+
+    def stream_range():
+        with path.open("rb") as media_file:
+            media_file.seek(start)
+            remaining = length
+            while remaining:
+                chunk = media_file.read(min(256 * 1024, remaining))
+                if not chunk:
+                    break
+                remaining -= len(chunk)
+                yield chunk
+
+    return StreamingResponse(
+        stream_range(),
+        status_code=206,
+        media_type=media_type,
+        headers={
+            "Accept-Ranges": "bytes",
+            "Cache-Control": "private",
+            "Content-Length": str(length),
+            "Content-Range": f"bytes {start}-{end}/{size}",
+            **(extra_headers or {}),
+        },
+    )
 
 
 def _media_type(path) -> str:
@@ -1074,7 +1168,14 @@ def reindex_registry(
     body = _payload(payload)
     if body.get("register_root") is not None and body.get("background") is not True:
         raise CleanroomException(400, "INVALID_REQUEST", "登记素材库必须通过后台索引请求提交")
-    if body.get("background") is True:
+    background = body.get("background", True)
+    if type(background) is not bool:
+        raise CleanroomException(400, "INVALID_REQUEST", "background 必须为布尔值")
+    if not background:
+        raise CleanroomException(400, "INVALID_REQUEST", "重建素材索引必须通过后台任务提交")
+    if background:
+        if "background" not in body and not idempotency_key:
+            idempotency_key = uuid.uuid4().hex
         register_root = body.get("register_root")
         if register_root is not None:
             if not isinstance(register_root, dict):

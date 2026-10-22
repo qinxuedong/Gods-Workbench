@@ -21,6 +21,8 @@
 
 from __future__ import annotations
 
+import hashlib
+import os
 import re
 import shutil
 import subprocess
@@ -122,7 +124,7 @@ def probe(video: Path) -> dict[str, Any]:
     return {"width": width, "height": height, "duration_seconds": duration}
 
 
-def storyboard_directory(asset_id: str) -> Path:
+def storyboard_directory(asset_id: str, version: str | None = None) -> Path:
     """专用分镜根按精确稳定ID分区，禁止路径别名及目录链接。"""
     if (
         not asset_id
@@ -130,14 +132,20 @@ def storyboard_directory(asset_id: str) -> Path:
         or not all(ch.isalnum() or ch in "_-" for ch in asset_id)
     ):
         raise CleanroomException(400, "INVALID_ASSET_ID", "素材标识不是安全单段")
-    return storage.resolve_output_directory(
-        "media_output/storyboards/" + asset_id, must_exist=False
-    )
+    if version is None:
+        relative = "media_output/storyboards/" + asset_id
+    else:
+        # 版本桶：同一资产不同版本走独立目录，避免复用旧帧。
+        digest = hashlib.sha256(str(version).encode("utf-8")).hexdigest()[:12]
+        relative = "media_output/storyboards/%s/v-%s" % (asset_id, digest)
+    return storage.resolve_output_directory(relative, must_exist=False)
 
 
 def is_storyboard_cache_name(name: str) -> bool:
     """与本模块抽帧生成命名共享精确规则，不删除任意扩展名或前缀。"""
-    return re.fullmatch(r"frame_[0-9]+_[0-9]{3}\.png", name) is not None
+    if re.fullmatch(r"frame_[0-9]+_[0-9]{3}\.png", name):
+        return True
+    return name.endswith(".part.png")
 
 
 def extract_frame(asset_id: str, at: float) -> dict[str, Any]:
@@ -145,13 +153,19 @@ def extract_frame(asset_id: str, at: float) -> dict[str, Any]:
 
 
 def _extract_frame(
-    asset_id: str, at: float, *, storyboard_cache: bool
+    asset_id: str,
+    at: float,
+    *,
+    storyboard_cache: bool,
+    version: str | None = None,
 ) -> dict[str, Any]:
     """在指定时间点真实抽帧并落盘，返回真实输出文件信息。"""
     video = _local_video(asset_id)
     ffmpeg = _ffmpeg("ffmpeg")
     directory = (
-        storyboard_directory(asset_id) if storyboard_cache else _output_dir(asset_id)
+        storyboard_directory(asset_id, version)
+        if storyboard_cache
+        else _output_dir(asset_id)
     )
     directory.mkdir(parents=True, exist_ok=True)
     out = directory / ("frame_%.3f.png" % float(at)).replace(".", "_", 1)
@@ -163,21 +177,28 @@ def _extract_frame(
         out = storage.resolve_output_path(
             out.relative_to(storage.data_root().resolve()).as_posix(), must_exist=False
         )
-    completed = _run(
-        [
-            ffmpeg,
-            "-y",
-            "-ss",
-            "%.3f" % float(at),
-            "-i",
-            str(video),
-            "-frames:v",
-            "1",
-            str(out),
-        ]
-    )
-    if completed.returncode != 0 or not out.is_file():
-        repo._unavailable("/api/asset-registry", "MEDIA_PROCESS_FAILED", "抽帧失败")
+    partial = out.parent / (out.stem + ".part" + out.suffix)
+    try:
+        completed = _run(
+            [
+                ffmpeg,
+                "-y",
+                "-ss",
+                "%.3f" % float(at),
+                "-i",
+                str(video),
+                "-frames:v",
+                "1",
+                str(partial),
+            ]
+        )
+        if completed.returncode != 0 or not partial.is_file():
+            repo._unavailable(
+                "/api/asset-registry", "MEDIA_PROCESS_FAILED", "抽帧失败"
+            )
+        partial.replace(out)
+    finally:
+        partial.unlink(missing_ok=True)
     payload = {
         "asset_id": asset_id,
         "at_seconds": float(at),
@@ -205,7 +226,9 @@ def storyboard(asset_id: str, version: str | None) -> dict[str, Any]:
     step = duration / (count + 1)
     frames = []
     for index in range(1, count + 1):
-        frame = _extract_frame(asset_id, step * index, storyboard_cache=True)
+        frame = _extract_frame(
+            asset_id, step * index, storyboard_cache=True, version=version
+        )
         frames.append(
             {
                 "index": index,
@@ -235,31 +258,39 @@ def clip(
         raise CleanroomException(
             400, "INVALID_TIME_RANGE", "结束时间必须大于开始时间且非负"
         )
-    video = _local_video(asset_id)
-    ffmpeg = _ffmpeg("ffmpeg")
-    out = _output_dir(asset_id) / (
+    out_dir = _output_dir(asset_id)
+    out = out_dir / (
         "clip_%s_%s.mp4" % ("%.3f" % float(start), "%.3f" % float(end))
     ).replace(".", "_", 1)
-    completed = _run(
-        [
-            ffmpeg,
-            "-y",
-            "-ss",
-            "%.3f" % float(start),
-            "-to",
-            "%.3f" % float(end),
-            "-i",
-            str(video),
-            "-c",
-            "copy",
-            str(out),
-        ]
-    )
-    if completed.returncode != 0 or not out.is_file():
-        repo._unavailable("/api/asset-registry", "MEDIA_PROCESS_FAILED", "视频剪辑失败")
+    partial = out.parent / (out.stem + ".part" + out.suffix)
 
     def mutate(raw: dict[str, Any]) -> Any:
         repo._cas(raw, expected_version)
+        video = _local_video(asset_id)
+        ffmpeg = _ffmpeg("ffmpeg")
+        try:
+            completed = _run(
+                [
+                    ffmpeg,
+                    "-y",
+                    "-ss",
+                    "%.3f" % float(start),
+                    "-to",
+                    "%.3f" % float(end),
+                    "-i",
+                    str(video),
+                    "-c",
+                    "copy",
+                    str(partial),
+                ]
+            )
+            if completed.returncode != 0 or not partial.is_file():
+                repo._unavailable(
+                    "/api/asset-registry", "MEDIA_PROCESS_FAILED", "视频剪辑失败"
+                )
+            partial.replace(out)
+        finally:
+            partial.unlink(missing_ok=True)
         clip_id = repo._seq(raw, "clip_")
         record = {
             "clip_id": clip_id,
