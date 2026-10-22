@@ -763,6 +763,23 @@ def delete_registry_asset(
                 raise CleanroomException(404, "ASSET_NOT_FOUND", f"素材 {asset_id} 不存在")
             raise
     result = repo.delete_asset(asset_id, _version(_payload(payload), required=True), context)
+    from gw.asset_registry import lifecycle
+    try:
+        operation = lifecycle.recycle_asset(asset_id, result, context)
+        if operation is not None:
+            result = {**result, "operation": operation}
+    except Exception:
+        from gw.asset_library.service import default_asset_library_service
+        stashed = dict((repo.state().read().get("recycle_bin", {}).get(result.get("recycle_entry_id"), {}) or {}).get("payload") or {}).get("library_item")
+        if stashed is not None:
+            default_asset_library_service.insert_item_snapshot(stashed)
+        def undo(raw_state):
+            entry = raw_state["recycle_bin"].pop(result.get("recycle_entry_id"), None)
+            if entry is not None:
+                raw_state["assets"][asset_id] = entry.get("payload") or {}
+                repo._bump(raw_state)
+        repo.state().mutate(undo)
+        raise
     return _asset_closure_projection(
         result,
         asset_id=asset_id,
@@ -771,6 +788,30 @@ def delete_registry_asset(
         closure_status="recovery_required",
         next_action="restore_reference",
     )
+
+
+@router.post("/assets/{asset_id}/file-operations/rename", summary="物理重命名单文件",
+             status_code=status.HTTP_200_OK)
+def rename_asset_file(
+    asset_id: str,
+    payload: Optional[Dict[str, Any]] = Body(None),
+    authorization: Optional[str] = Header(None),
+    x_user_role: str = Header("editor", alias="X-User-Role"),
+):
+    context = _edit_auth(authorization, x_user_role)
+    from gw.asset_registry import lifecycle
+    return lifecycle.rename_file(asset_id, _payload(payload), context)
+
+
+@router.get("/file-operations/{op_id}", summary="读取单文件操作日志", status_code=status.HTTP_200_OK)
+def get_asset_file_operation(
+    op_id: str,
+    authorization: Optional[str] = Header(None),
+    x_user_role: str = Header("editor", alias="X-User-Role"),
+):
+    _read_auth(authorization, x_user_role)
+    from gw.asset_registry import lifecycle
+    return {"operation": lifecycle.get_operation(op_id), "data_status": "ok"}
 
 
 @router.post("/assets/{asset_id}/image-versions", summary="创建图片版本", status_code=status.HTTP_200_OK)
@@ -786,6 +827,22 @@ def create_image_version(
         asset_id, str(body.get("source_path") or ""), _version(body),
         edit=body.get("edit") if isinstance(body.get("edit"), dict) else None,
         canvas_id=str(body.get("canvas_id") or "") or None,
+    )
+
+
+@router.post("/assets/{asset_id}/derived-assets", summary="登记本地派生物", status_code=status.HTTP_200_OK)
+def register_derived_asset(
+    asset_id: str,
+    payload: Optional[Dict[str, Any]] = Body(None),
+    authorization: Optional[str] = Header(None),
+    x_user_role: str = Header("editor", alias="X-User-Role"),
+):
+    _edit_auth(authorization, x_user_role)
+    body = _payload(payload)
+    return repo.register_derived_asset(
+        asset_id,
+        str(body.get("name") or ""),
+        str(body.get("path") or ""),
     )
 
 
@@ -1347,7 +1404,17 @@ def restore_recycle_entry(
 ):
     context = _governance_auth(authorization, x_user_role)
     asset_id, version_id = _recycle_asset_subject(entry_id)
-    result = repo.restore_from_recycle(entry_id, context, _version(_payload(payload), required=True))
+    body = _payload(payload)
+    if body.get("resolution") not in (None, "reject", "suffix"):
+        raise CleanroomException(400, "INVALID_REQUEST", "恢复策略不合法")
+    resolution = str(body.get("resolution") or "reject")
+    from gw.asset_registry import lifecycle
+    result = lifecycle.restore_asset_files(
+        entry_id,
+        resolution,
+        context,
+        _version(body, required=True),
+    )
     return _asset_closure_projection(
         result,
         asset_id=asset_id or result.get("asset_id"),
