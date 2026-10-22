@@ -881,8 +881,15 @@ export function createAssetManagerApi(http) {
             });
         },
         getLocalAssets(kind, init = {}) {
-            return transport.request(`/api/local-assets?kind=${encodeURIComponent(kind)}`, {
-                ...init,
+            const {limit, cursor, ...requestInit} = init;
+            const query = new URLSearchParams();
+            if(kind) query.set('kind', kind);
+            if(limit != null) query.set('limit', String(limit));
+            if(cursor) query.set('cursor', cursor);
+            const params = query.toString();
+            const suffix = params ? `?${params}` : '';
+            return transport.request(`/api/local-assets${suffix}`, {
+                ...requestInit,
                 credentials: 'same-origin',
             });
         },

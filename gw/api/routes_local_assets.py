@@ -54,12 +54,14 @@ def _ids(payload: dict[str, Any], key: str = "paths") -> list[str]:
 @router.get("/api/local-assets", status_code=status.HTTP_200_OK)
 def list_local_assets(
     kind: str | None = Query(None),
+    limit: int = Query(100, ge=1, le=500),
+    cursor: str | None = Query(None, max_length=2048),
     authorization: str | None = Header(None),
     x_user_role: str = Header("editor", alias="X-User-Role"),
 ):
     """列出真实本地素材索引；无条目返回空集合。"""
     _read(authorization, x_user_role)
-    return repo.list_local_assets(kind)
+    return repo.list_local_assets(kind, limit=limit, cursor=cursor)
 
 
 @router.post("/api/local-assets/upload", status_code=status.HTTP_201_CREATED)
