@@ -45,7 +45,7 @@ class SystemOneRequest(BaseModel):
     probabilities: dict[str, float] | list[float] | None = None
     samples: list[dict[str, float] | list[float]] | None = Field(default=None, max_length=128)
     value: bool | None = None
-    provider: Literal["local", "remote"] = "local"
+    provider: Literal["local", "remote", "kev-cpu"] = "local"
 
 
 async def system_one(payload: SystemOneRequest) -> dict[str, Any] | JSONResponse:
@@ -59,7 +59,7 @@ async def system_one(payload: SystemOneRequest) -> dict[str, Any] | JSONResponse
             status_code=400,
             content={"detail": {"code": "DECISION_INVALID", "message": str(exc)}},
         )
-    except (RuntimeError, TimeoutError) as exc:
+    except (RuntimeError, TimeoutError, OSError) as exc:
         return JSONResponse(
             status_code=503,
             content={"detail": {"code": "DECISION_BACKEND_UNAVAILABLE", "message": str(exc)}},
