@@ -673,7 +673,7 @@ def _move_local_file_locked(source: str, target: str) -> dict[str, Any]:
     _local_index_entry_for_root(before, source_key, source_root_identity)
     if (
         target_key != source_key
-        and _find_local_index_entry(before, target_key) is not None
+        and _find_local_index_entry(before, target_key, target_root_identity) is not None
     ):
         raise CleanroomException(
             409, "LOCAL_ASSET_INDEX_TARGET_CONFLICT", "目标相对路径已有索引记录"
@@ -700,9 +700,11 @@ def _move_local_file_locked(source: str, target: str) -> dict[str, Any]:
                         "size_bytes": dst.stat().st_size,
                         "moved_at": storage.now_iso(),
                         "_root_identity": target_root_identity,
+                        "root_id": target_root_identity,
+                        "canonical_relpath": storage.canonical_relpath(target_key),
                     }
                 )
-                entries[target_key] = record
+                entries[_local_entry_key(target_root_identity, target_key)] = record
             return {
                 "asset_id": record.get("asset_id") if record else None,
                 "id_repairs": repairs,
@@ -789,12 +791,29 @@ def _local_root_identity(path: Path) -> str:
     )
 
 
-def _find_local_index_entry(entries: dict[str, Any], display_path: str):
+def _local_entry_key(root_identity: str, display_path: str) -> str:
+    return "%s:%s" % (root_identity, storage.canonical_relpath(display_path))
+
+
+def _find_local_index_entry(
+    entries: dict[str, Any], display_path: str, root_identity: str | None = None
+):
+    canonical = storage.canonical_relpath(display_path)
     matches = [
         (key, entry)
         for key, entry in entries.items()
-        if key == display_path or entry.get("display_path") == display_path
+        if key == display_path
+        or entry.get("display_path") == display_path
+        or entry.get("canonical_relpath") == canonical
     ]
+    if root_identity is not None:
+        owned = [
+            match
+            for match in matches
+            if match[1].get("_root_identity") == root_identity
+        ]
+        legacy = [match for match in matches if not match[1].get("_root_identity")]
+        matches = owned or legacy
     if len(matches) > 1:
         raise CleanroomException(
             409,
@@ -807,7 +826,7 @@ def _find_local_index_entry(entries: dict[str, Any], display_path: str):
 def _local_index_entry_for_root(
     entries: dict[str, Any], display_path: str, root_identity: str
 ):
-    match = _find_local_index_entry(entries, display_path)
+    match = _find_local_index_entry(entries, display_path, root_identity)
     if match is None:
         return None
     _, entry = match
@@ -820,10 +839,8 @@ def _local_index_entry_for_root(
                 "历史索引缺少允许根身份，当前多根配置下拒绝读写该相对路径",
             )
         entry["_root_identity"] = root_identity
-    elif stored_identity != root_identity:
-        raise CleanroomException(
-            409, "LOCAL_ASSET_PATH_AMBIGUOUS", "相对路径已属于另一个允许根，拒绝覆盖"
-        )
+    entry["root_id"] = root_identity
+    entry["canonical_relpath"] = storage.canonical_relpath(display_path)
     return match
 
 
@@ -928,9 +945,11 @@ def _reconcile_local_index_move(
                     "size_bytes": target_path.stat().st_size,
                     "moved_at": storage.now_iso(),
                     "_root_identity": target_root_identity,
+                    "root_id": target_root_identity,
+                    "canonical_relpath": storage.canonical_relpath(target_key),
                 }
             )
-            entries[target_key] = record
+            entries[_local_entry_key(target_root_identity, target_key)] = record
         state.write(raw)
         return {
             "asset_id": record.get("asset_id") if record else None,
@@ -952,10 +971,13 @@ def _safe_name(name: str, *, what: str = "名称") -> str:
 
 
 def _local_asset_cursor_key(entry: dict[str, Any]) -> tuple[str, str, str, str]:
-    display_path = str(entry.get("display_path") or "")
+    canonical_relpath = str(
+        entry.get("canonical_relpath")
+        or storage.canonical_relpath(str(entry.get("display_path") or ""))
+    )
     return (
-        display_path.casefold(),
-        display_path,
+        canonical_relpath.casefold(),
+        canonical_relpath,
         str(entry.get("_root_identity") or ""),
         str(entry.get("asset_id") or entry.get("id") or ""),
     )
@@ -1061,12 +1083,19 @@ def _index_local_files_locked(
             root_identity = _local_root_identity(path)
             match = _local_index_entry_for_root(raw["entries"], key, root_identity)
             entry_key, entry = (
-                match if match else (key, {"asset_id": _next_local_asset_id(raw)})
+                match
+                if match
+                else (
+                    _local_entry_key(root_identity, key),
+                    {"asset_id": _next_local_asset_id(raw)},
+                )
             )
             entry.update(
                 {
                     "name": path.name,
                     "display_path": key,
+                    "canonical_relpath": storage.canonical_relpath(key),
+                    "root_id": root_identity,
                     "size_bytes": path.stat().st_size,
                     "kind": kind if kind != "auto" else classify_name(path.name),
                     "indexed_at": storage.now_iso(),

@@ -1331,6 +1331,46 @@ async function waitForAssetIndexJob(jobId, sourceName='素材库'){
     }
     throw new Error(`素材库“${sourceName}”索引仍在后台运行，可稍后刷新查看`);
 }
+function confirmRootAliasSuggestion(path, candidates){
+    return new Promise(resolve => {
+        const overlay = document.createElement('div');
+        overlay.className = 'storage-settings-overlay root-alias-confirm-overlay';
+        const options = candidates.map(candidate => `<button class="hw-btn hw-btn-gold" type="button" data-root-alias-confirm="${escapeAttr(candidate.storage_root_id)}">确认绑定到「${escapeHtml(candidate.name || candidate.storage_root_id)}」</button>`).join('');
+        overlay.innerHTML = `<section class="board-source-modal" data-floating-content role="dialog" aria-modal="true" aria-labelledby="rootAliasConfirmTitle">
+            <header class="storage-settings-head"><div><strong id="rootAliasConfirmTitle">发现已登记素材路径</strong><span>请确认该路径是否为以下来源的另一种访问方式。</span></div></header>
+            <p class="board-create-summary">${escapeHtml(path)}</p>
+            <div class="board-create-actions">${options}<button class="hw-btn" type="button" data-root-alias-cancel>取消</button></div>
+        </section>`;
+        document.body.appendChild(overlay);
+        markAssetFloatingSurface(overlay, {surface:'asset-root-alias-confirm', content:'[role="dialog"]', close:() => { overlay.remove(); resolve(null); }});
+        let finished = false;
+        const close = value => {
+            if(finished) return;
+            finished = true;
+            overlay.remove();
+            resolve(value);
+        };
+        overlay.addEventListener('click', async event => {
+            if(event.target.closest('[data-root-alias-cancel]')){ close(null); return; }
+            const button = event.target.closest('[data-root-alias-confirm]');
+            if(!button) return;
+            const candidate = candidates.find(item => String(item.storage_root_id) === button.dataset.rootAliasConfirm);
+            if(!candidate) return;
+            button.disabled = true;
+            try {
+                const confirmation = await apiJsonResponse(assetManagerApi.confirmRootAlias({
+                    path,
+                    storage_root_id:candidate.storage_root_id,
+                }));
+                close({candidate, confirmation});
+            } catch(err) {
+                button.disabled = false;
+                setStatus(err.message || '素材路径别名确认失败');
+            }
+        });
+        refreshIcons();
+    });
+}
 async function attachPathToAssetBoard(boardId, sourceName, path){
     const cleanPath = String(path || '').trim();
     if(!cleanPath) return null;
@@ -1340,21 +1380,36 @@ async function attachPathToAssetBoard(boardId, sourceName, path){
     let source = known ? {id:known.id, name:storageCleanName(sourceName || known.name, known.name), path:known.path} : null;
     let accepted = null;
     if(!source){
-        const id = storageNewExtraId();
-        const cleanName = storageCleanName(sourceName, '用户素材');
-        const nonce = globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2)}`;
-        setStatus(`正在校验并登记素材库“${cleanName}”…`);
-        accepted = await apiJsonResponse(assetManagerApi.registerAssetRoot({
-            background:true,
-            hash_files:true,
-            max_files:250000,
-            roots:[id],
-            register_root:{id, name:cleanName, path:cleanPath, expected_version:Number(storageSettingsState.revision || 1)},
-        }, {headers:{'Idempotency-Key':`asset-register:${id}:${nonce}`}}));
-        const saved = await apiJsonResponse(assetManagerApi.getStorageSettings());
-        applyStorageSettingsData(saved || {});
-        const created = localLibraries.find(lib => lib.id === id) || localLibraries.find(lib => pathCompareKey(lib.path) === pathCompareKey(cleanPath));
-        source = {id:created?.id || id, name:created?.name || storageCleanName(sourceName, '用户素材'), path:created?.path || cleanPath};
+        const suggestionData = await apiJsonResponse(assetManagerApi.getRootAliasSuggestions({path:cleanPath}));
+        const candidates = Array.isArray(suggestionData?.candidates) ? suggestionData.candidates : [];
+        if(candidates.length){
+            const choice = await confirmRootAliasSuggestion(cleanPath, candidates);
+            if(!choice?.confirmation?.bound) return null;
+            const saved = await apiJsonResponse(assetManagerApi.getStorageSettings());
+            applyStorageSettingsData(saved || {});
+            const registered = localLibraries.find(lib => String(lib.id) === String(choice.candidate.storage_root_id));
+            source = {
+                id:choice.candidate.storage_root_id,
+                name:storageCleanName(sourceName || choice.candidate.name, choice.candidate.name || '用户素材'),
+                path:registered?.path || cleanPath,
+            };
+        } else {
+            const id = storageNewExtraId();
+            const cleanName = storageCleanName(sourceName, '用户素材');
+            const nonce = globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+            setStatus(`正在校验并登记素材库“${cleanName}”…`);
+            accepted = await apiJsonResponse(assetManagerApi.registerAssetRoot({
+                background:true,
+                hash_files:true,
+                max_files:250000,
+                roots:[id],
+                register_root:{id, name:cleanName, path:cleanPath, expected_version:Number(storageSettingsState.revision || 1)},
+            }, {headers:{'Idempotency-Key':`asset-register:${id}:${nonce}`}}));
+            const saved = await apiJsonResponse(assetManagerApi.getStorageSettings());
+            applyStorageSettingsData(saved || {});
+            const created = localLibraries.find(lib => lib.id === id) || localLibraries.find(lib => pathCompareKey(lib.path) === pathCompareKey(cleanPath));
+            source = {id:created?.id || id, name:created?.name || cleanName, path:created?.path || cleanPath};
+        }
     }
     if(boardId) attachSourceRecordToBoard(boardId, source);
     if(!accepted){
@@ -4759,6 +4814,13 @@ function registrySourceLabel(item={}, board=null){
     const facet = (registryFacets.roots || []).find(source => String(source.id || '') === sourceId);
     return boardSource?.name || item.storage_root_name || facet?.name || '自动归档';
 }
+function registryRootIsOffline(item={}){
+    if(String(item.root_availability || '') === 'offline') return true;
+    const sourceId = String(item.storage_root_id || item.root_id || '');
+    return (registryFacets.roots || []).some(source =>
+        String(source.id || '') === sourceId && String(source.availability || '') === 'offline'
+    );
+}
 function registryGroupedSections(items=[], board=null){
     const values = Array.isArray(items) ? items : [];
     if(registryGroupMode === 'none') return [{id:'all', name:'', items:values}];
@@ -7855,7 +7917,7 @@ function renderRegistryFilterChips(){
 function renderRegistryFacetRow(item, type, activeValue=''){
     const active = String(item.id || item.name) === String(activeValue || '');
     return `<button class="registry-facet-basic ${active ? 'active' : ''}" type="button" data-registry-${type}="${escapeAttr(item.id || item.name || '')}">
-        <span>${escapeHtml(type === 'kind' ? registryKindLabel(item.name) : (item.name || '未命名'))}</span><em>${Number(item.count || 0)}</em>
+        <span>${escapeHtml(type === 'kind' ? registryKindLabel(item.name) : (item.name || '未命名'))}${type === 'root' && item.availability === 'offline' ? ' · 离线' : ''}</span><em>${Number(item.count || 0)}</em>
     </button>`;
 }
 function renderAssetSmartFilterContents(contextLabel='当前看板'){
@@ -8031,7 +8093,7 @@ function renderRegistryCard(item){
         <div class="asset-card-body">
             <div class="registry-card-caption"><div class="asset-card-name" data-registry-card-name title="${escapeAttr(name)}">${escapeHtml(name)}</div><span class="registry-card-measure">${escapeHtml(item.kind === 'video' ? formatMediaDuration(item.duration || item.metadata?.duration) : formatFileSize(item.size || 0))}</span></div>
             <div class="asset-card-meta"><span>${escapeHtml(registryAssetTypeLabel(item))}</span><span>${escapeHtml(formatDate(item.created_at))}</span></div>
-            <div class="registry-card-source" title="${escapeAttr(registrySourceNames(item).join(' · '))}"><i data-lucide="${registrySourceNames(item).length > 1 ? 'database-zap' : 'database'}"></i><span>${escapeHtml(registrySourceNames(item).join(' · '))}</span>${registrySourceNames(item).length > 1 ? `<em>${registrySourceNames(item).length} 库</em>` : ''}</div>
+            <div class="registry-card-source" title="${escapeAttr(registrySourceNames(item).join(' · '))}"><i data-lucide="${registrySourceNames(item).length > 1 ? 'database-zap' : 'database'}"></i><span>${escapeHtml(registrySourceNames(item).join(' · '))}${registryRootIsOffline(item) ? ' · 离线' : ''}</span>${registrySourceNames(item).length > 1 ? `<em>${registrySourceNames(item).length} 库</em>` : ''}</div>
         </div>
     </article>`;
 }
@@ -18036,6 +18098,8 @@ root.addEventListener('compositionend', event => {
     scheduleSearchRender(id, event.target.selectionStart || String(event.target.value || '').length, 0);
 });
 root.addEventListener('input', event => {
+    if(event.target?.id === 'boardCreateName') boardCreateState.name = event.target.value || '';
+    if(event.target?.id === 'boardCreatePath') boardCreateState.path = event.target.value || '';
     const searchId = event.target?.id || '';
     if(SEARCH_INPUT_IDS.has(searchId)){
         updateSearchQueryFromInput(searchId, event.target.value || '');

@@ -393,10 +393,19 @@ def list_assets(limit: int, offset: int, query: Optional[str], kind: Optional[st
             if len(cursor) > 2048:
                 raise ValueError()
             decoded = json.loads(base64.b64decode(cursor + "=" * (-len(cursor) % 4), altchars=b"-_", validate=True))
-            if (not isinstance(decoded, dict) or set(decoded) != {"offset", "revision", "query"}
+            cursor_keys = set(decoded) if isinstance(decoded, dict) else set()
+            if (not isinstance(decoded, dict)
+                    or cursor_keys not in ({"offset", "revision", "query"},
+                                           {"offset", "revision", "query", "last_location"})
                     or type(decoded["offset"]) is not int or decoded["offset"] < 0
                     or type(decoded["revision"]) is not int or decoded["query"] != fingerprint
                     or (offset and offset != decoded["offset"])):
+                raise ValueError()
+            if "last_location" in decoded and (
+                not isinstance(decoded["last_location"], dict)
+                or set(decoded["last_location"]) != {"root_id", "canonical_relpath"}
+                or not all(isinstance(value, str) for value in decoded["last_location"].values())
+            ):
                 raise ValueError()
         except (ValueError, TypeError, KeyError, UnicodeError):
             raise CleanroomException(400, "INVALID_CURSOR", "分页游标无效或不属于当前查询") from None
@@ -407,9 +416,27 @@ def list_assets(limit: int, offset: int, query: Optional[str], kind: Optional[st
         offset = decoded["offset"]
     from gw.core.asset_visibility import asset_visible
     items = [dict(a) for a in raw["assets"].values() if asset_visible(a)]
-    if root_id:
+    root_facets = []
+    if root_id or any(
+        not item.get("is_remote") and (item.get("storage_root_id") or item.get("root_id"))
+        for item in items
+    ):
         from gw.asset_registry import index_jobs
-        known_roots = {item["id"] for item in index_jobs.root_facets()}
+
+        root_facets = index_jobs.root_facets()
+    root_availability = {
+        str(root.get("id") or ""): str(root.get("availability") or "offline")
+        for root in root_facets
+    }
+    for item in items:
+        source_id = str(item.get("storage_root_id") or "")
+        asset_root_id = str(item.get("root_id") or "")
+        if not item.get("is_remote") and (source_id or asset_root_id):
+            item["root_availability"] = root_availability.get(
+                source_id, root_availability.get(asset_root_id, "offline")
+            )
+    if root_id:
+        known_roots = {item["id"] for item in root_facets}
         known_roots.update(str(a.get("storage_root_id") or a.get("root_id") or "") for a in items)
         if root_id not in known_roots:
             raise CleanroomException(404, "ROOT_NOT_FOUND", "素材来源根不存在")
@@ -460,8 +487,16 @@ def list_assets(limit: int, offset: int, query: Optional[str], kind: Optional[st
     next_offset = offset + len(page) if has_more else None
     next_cursor = None
     if has_more:
-        next_cursor = base64.urlsafe_b64encode(json.dumps({"offset": next_offset, "revision": raw["revision"],
-            "query": fingerprint}, separators=(",", ":")).encode()).decode().rstrip("=")
+        last_asset = page[-1]
+        next_cursor = base64.urlsafe_b64encode(json.dumps({
+            "offset": next_offset,
+            "revision": raw["revision"],
+            "query": fingerprint,
+            "last_location": {
+                "root_id": str(last_asset.get("root_id") or ""),
+                "canonical_relpath": str(last_asset.get("canonical_relpath") or ""),
+            },
+        }, separators=(",", ":")).encode()).decode().rstrip("=")
     return {"assets": page, "items": page, "total": total, "total_known": True,
             "limit": limit, "offset": offset, "has_more": has_more, "next_offset": next_offset,
             "next_cursor": next_cursor, "revision": raw["revision"],
@@ -1651,45 +1686,42 @@ def export_pdf(asset_ids: List[str]) -> bytes:
 # Phase 12 路由对齐补充（A2）
 # ---------------------------------------------------------------------------
 
-def _resolve_display(display: str) -> Path:
+def _resolve_display(display: str, *, root_id: Optional[str] = None) -> Path:
     """把相对展示路径解析回允许根目录内的真实文件；越界或缺失一律失败关闭。"""
     roots = storage.allowed_roots()
     if not roots:
         raise CleanroomException(403, "LOCAL_FILE_ACCESS_NOT_ADMITTED",
                                  "本机文件访问未获准入（未配置允许根目录）")
     candidate = Path(display)
-    if candidate.is_absolute():
-        return storage.resolve_within_roots(str(candidate))
-    for root in roots:
-        target = (root / candidate).resolve()
-        try:
-            target.relative_to(root)
-        except ValueError:
-            continue
-        if target.is_file():
-            return target
-    raise CleanroomException(404, "FILE_NOT_FOUND", "登记的文件不存在或已不可访问")
+    return storage.resolve_within_roots(str(candidate), root_id=root_id)
 
 
 def media_file(asset_id: str, version_id: Optional[str] = None) -> Optional[Path]:
     """返回素材/版本对应的真实本地文件；没有登记或文件缺失时返回 None。"""
     raw = state().read()
+    root_id = None
     if version_id:
         record = raw["image_versions"].get(asset_id, {}).get(version_id)
         if record is None:
             raise CleanroomException(404, "VERSION_NOT_FOUND", "图片版本不存在")
         display = record.get("display_path")
+        root_id = record.get("root_id")
+        if not root_id:
+            root_id = raw["assets"].get(asset_id, {}).get("root_id")
     else:
         item = _require(raw, asset_id)
         display = item.get("display_path")
+        root_id = item.get("root_id")
         if not display:
             versions = sorted(raw["image_versions"].get(asset_id, {}).values(),
                               key=lambda x: x["version_id"], reverse=True)
-            display = next((v.get("display_path") for v in versions if v.get("display_path")), None)
+            version = next((v for v in versions if v.get("display_path")), None)
+            display = version.get("display_path") if version else None
+            root_id = (version or {}).get("root_id") or root_id
     if not display:
         return None
     try:
-        path = _resolve_display(str(display))
+        path = _resolve_display(str(display), root_id=str(root_id) if root_id else None)
     except CleanroomException:
         return None
     return path if path.is_file() else None
