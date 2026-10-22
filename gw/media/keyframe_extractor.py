@@ -19,6 +19,7 @@ from __future__ import annotations
 import io
 import json
 import math
+import os
 import shutil
 import subprocess
 from collections.abc import Iterable, Mapping
@@ -117,8 +118,12 @@ def _save_sprite(thumbnails: list[Path], target: Path, columns: int) -> None:
             sprite.paste(tile, (x, y))
         buffer = io.BytesIO()
         sprite.save(buffer, format="WEBP", quality=75, method=6)
-        with target.open("xb") as output:
+        partial = target.parent / (target.stem + ".part" + target.suffix)
+        with partial.open("xb") as output:
             output.write(buffer.getvalue())
+            output.flush()
+            os.fsync(output.fileno())
+        os.replace(partial, target)
     finally:
         sprite.close()
 
@@ -173,6 +178,7 @@ def extract_keyframes(
     created: list[Path] = []
     try:
         for scene, target in zip(metadata, thumbnail_paths):
+            partial = target.parent / (target.stem + ".part" + target.suffix)
             result = _run(
                 [
                     ffmpeg,
@@ -196,15 +202,16 @@ def extract_keyframes(
                     "libwebp",
                     "-quality",
                     "75",
-                    str(target),
+                    str(partial),
                 ]
             )
             if (
                 result.returncode != 0
-                or not target.is_file()
-                or target.stat().st_size <= 0
+                or not partial.is_file()
+                or partial.stat().st_size <= 0
             ):
                 _fail(503, "KEYFRAME_EXTRACTION_FAILED", "FFmpeg 无法抽取场景关键帧")
+            partial.replace(target)
             created.append(target)
 
         _save_sprite(thumbnail_paths, sprite_path, columns)
@@ -218,8 +225,9 @@ def extract_keyframes(
             for scene, target in zip(metadata, thumbnail_paths)
         ]
         registry_metadata = {"video_segments": segments}
-        with metadata_path.open("x", encoding="utf-8", newline="\n") as output:
-            created.append(metadata_path)
+        partial_metadata = metadata_path.parent / (metadata_path.stem + ".part" + metadata_path.suffix)
+        with partial_metadata.open("x", encoding="utf-8", newline="\n") as output:
+            created.append(partial_metadata)
             json.dump(
                 {"metadata": registry_metadata},
                 output,
@@ -227,6 +235,7 @@ def extract_keyframes(
                 indent=2,
             )
             output.write("\n")
+        os.replace(partial_metadata, metadata_path)
     except CleanroomException:
         for item in created:
             item.unlink(missing_ok=True)

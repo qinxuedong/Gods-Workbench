@@ -118,7 +118,9 @@ def test_b5_local_file_read_write_and_thumbnail(tmp_path, monkeypatch):
         assert g.status_code == 200 and g.json()["status"] == "succeeded"
 
         # 删除后不可再读。
-        d = c.post("/api/asset-thumbnails/delete", headers=AUTH, json={"asset_ids": ["pic"]})
+        # 派生物 key 已改为源身份摘要；删除按返回 output 的精确文件名。
+        d = c.post("/api/asset-thumbnails/delete", headers=AUTH,
+                   json={"asset_ids": [Path(data["output"]).stem.split(".")[0]]})
         assert d.status_code == 200 and d.json()["removed"] >= 1
         assert not list(real.glob("pic*.png"))
 
