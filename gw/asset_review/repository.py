@@ -29,6 +29,7 @@
 from __future__ import annotations
 
 import hashlib
+import re
 import secrets
 import time
 from collections.abc import Mapping
@@ -47,6 +48,44 @@ APPROVAL_STATES = ("approved", "changes_requested", "locked")
 COMMENT_STATES = ("open", "resolved")
 
 _SHARE_ROUNDS = 60000
+
+# 批注颜色只允许无引号、边界、实体与控制字符的 CSS 颜色形状，供 SVG 属性安全渲染。
+_ANNOTATION_COLOR_RE = re.compile(
+    r"^(?:#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})"
+    r"|rgba?\([^()'\x22<>&;\\]{1,80}\)"
+    r"|hsla?\([^()'\x22<>&;\\]{1,80}\)"
+    r"|transparent|currentcolor|[a-zA-Z]{3,32})$"
+)
+_SAFE_ANNOTATION_COLOR = "#ff4d67"
+
+
+def _safe_annotation_color(value: Any, fallback: str = _SAFE_ANNOTATION_COLOR) -> str:
+    """清洗批注颜色；非法或可疑输入统一回退，不保留可注入原文。"""
+    if not isinstance(value, str):
+        return fallback
+    normalized = value.strip().lower()
+    return normalized if _ANNOTATION_COLOR_RE.fullmatch(normalized) else fallback
+
+
+def _sanitize_annotation(annotation: Any) -> Any:
+    if not isinstance(annotation, dict):
+        return annotation
+    style = annotation.get("style")
+    if not isinstance(style, dict):
+        return annotation
+    return {
+        **annotation,
+        "style": {
+            **style,
+            "color": _safe_annotation_color(style.get("color")),
+        },
+    }
+
+
+def _sanitize_annotations(value: Any) -> list[Any]:
+    if not isinstance(value, list):
+        return []
+    return [_sanitize_annotation(annotation) for annotation in value]
 
 
 def _unix_time() -> float:
@@ -566,7 +605,7 @@ def create_comment(session_id: str, payload: dict[str, Any]) -> dict[str, Any]:
             "timecode_ms": payload.get("timecode_ms"),
             "in_ms": payload.get("in_ms"),
             "out_ms": payload.get("out_ms"),
-            "annotations": list(payload.get("annotations") or []),
+            "annotations": _sanitize_annotations(payload.get("annotations")),
             "created_at": now,
             "created_at_epoch": _now_epoch(),
             "occurred_at": now,
@@ -1441,7 +1480,7 @@ def public_comment(
     guest_name = str(payload.get("guest_name") or "访客").strip() or "访客"
     if len(guest_name) > 100:
         raise CleanroomException(400, "INVALID_REQUEST", "访客称呼不能超过 100 个字符")
-    annotations = payload.get("annotations") or []
+    annotations = _sanitize_annotations(payload.get("annotations"))
     if not isinstance(annotations, list) or len(annotations) > 100:
         raise CleanroomException(
             400, "INVALID_REQUEST", "annotations 必须是最多 100 项的数组"
