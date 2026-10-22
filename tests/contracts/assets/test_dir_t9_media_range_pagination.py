@@ -1,5 +1,6 @@
 """QIN-246 DIR-T9：媒体 Range、本地素材分页和后台重索引契约。"""
 
+import os
 import threading
 import time
 from pathlib import Path
@@ -11,6 +12,7 @@ from gw.api.app import create_app
 from gw.asset_library import repository as local_repo
 from gw.asset_registry import index_jobs
 from gw.asset_registry import repository as registry_repo
+from gw.core import storage
 
 
 BASE = "/api/asset-registry"
@@ -166,7 +168,15 @@ def test_local_assets_cursor_pages_are_stable_opaque_and_filter_bound(
         assert len(names_seen) == len(set(names_seen)) == 5
 
 
-def test_registry_cursor_pages_keep_root_and_sort_filters_bound(dir_t9_runtime):
+def test_registry_cursor_pages_keep_root_and_sort_filters_bound(dir_t9_runtime, tmp_path, monkeypatch):
+    other_root = tmp_path / "other-allowed"
+    other_root.mkdir()
+    monkeypatch.setenv(
+        "GW_ALLOWED_ROOTS",
+        os.pathsep.join((str(dir_t9_runtime), str(other_root))),
+    )
+    first_root_id = storage.root_identity_id(dir_t9_runtime.resolve())
+    second_root_id = storage.root_identity_id(other_root.resolve())
     with TestClient(create_app()) as client:
         imported = client.post(
             BASE + "/assets/import",
@@ -184,11 +194,15 @@ def test_registry_cursor_pages_keep_root_and_sort_filters_bound(dir_t9_runtime):
 
         def assign_roots(raw):
             for asset_id in asset_ids[:-1]:
-                raw["assets"][asset_id]["storage_root_id"] = "root-main"
-            raw["assets"][asset_ids[-1]]["storage_root_id"] = "root-other"
+                raw["assets"][asset_id]["root_id"] = first_root_id
+                raw["assets"][asset_id]["storage_root_id"] = first_root_id
+                raw["assets"][asset_id]["canonical_relpath"] = raw["assets"][asset_id]["name"]
+            raw["assets"][asset_ids[-1]]["root_id"] = second_root_id
+            raw["assets"][asset_ids[-1]]["storage_root_id"] = second_root_id
+            raw["assets"][asset_ids[-1]]["canonical_relpath"] = raw["assets"][asset_ids[-1]]["name"]
 
         registry_repo.state().mutate(assign_roots)
-        query = {"root_id": "root-main", "category": "image", "sort": "name", "limit": 2}
+        query = {"root_id": first_root_id, "category": "image", "sort": "name", "limit": 2}
         first_response = client.get(BASE + "/assets", headers=AUTH, params=query)
         assert first_response.status_code == 200, first_response.text
         first = first_response.json()
@@ -206,7 +220,7 @@ def test_registry_cursor_pages_keep_root_and_sort_filters_bound(dir_t9_runtime):
         wrong_root = client.get(
             BASE + "/assets",
             headers=AUTH,
-            params={**query, "root_id": "root-other", "cursor": first["next_cursor"]},
+            params={**query, "root_id": second_root_id, "cursor": first["next_cursor"]},
         )
         assert wrong_root.status_code == 400, wrong_root.text
         assert wrong_root.json()["detail"]["code"] == "INVALID_CURSOR"

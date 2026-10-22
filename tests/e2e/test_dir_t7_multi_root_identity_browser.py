@@ -43,6 +43,7 @@ def test_dir_t7_alias_suggestion_waits_for_explicit_user_confirmation(
                 status=200,
                 content_type="application/json",
                 body=json.dumps({
+                    "revision": 7,
                     "candidates": [{
                         "storage_root_id": "existing_nas_source",
                         "name": "NAS 素材",
@@ -61,6 +62,7 @@ def test_dir_t7_alias_suggestion_waits_for_explicit_user_confirmation(
                     "storage_root_id": "existing_nas_source",
                     "name": "NAS 素材",
                     "path": r"\\server\share\library",
+                    "revision": 8,
                 }, ensure_ascii=False),
             )
 
@@ -93,7 +95,12 @@ def test_dir_t7_alias_suggestion_waits_for_explicit_user_confirmation(
         vault.locator('[data-board-preset="other"]').click()
         vault.locator("#boardCreateName").fill("DIR-T7 别名库")
         vault.locator("#boardCreatePath").fill(str(candidate))
-        assert vault.locator("#boardCreatePath").input_value() == str(candidate)
+        path_input = vault.locator("#boardCreatePath")
+        assert path_input.input_value() == str(candidate), (
+            f"input={path_input.evaluate('(el) => el.outerHTML')!r}, "
+            f"active={vault.locator(':focus').evaluate('(el) => el.id')!r}, "
+            f"body={vault.locator('body').inner_text()!r}, errors={errors!r}"
+        )
         assert vault.locator("[data-board-create-confirm]").is_visible()
         assert vault.locator("[data-board-create-confirm]").is_enabled()
         try:
@@ -139,6 +146,25 @@ def test_dir_t7_alias_suggestion_waits_for_explicit_user_confirmation(
         assert reindex_requests == []
         assert "NAS 素材" in vault.locator("[aria-labelledby='rootAliasConfirmTitle']").inner_text()
 
+        close_button = vault.locator("[data-root-alias-close]")
+        assert close_button.is_visible()
+        assert close_button.get_attribute("aria-label") == "关闭"
+        close_button.click()
+        assert not vault.locator("[aria-labelledby='rootAliasConfirmTitle']").is_visible()
+        assert confirmation_requests == []
+        assert reindex_requests == []
+
+        with page.expect_request(
+            lambda request: request.url.endswith(
+                "/api/asset-registry/root-aliases/suggestions"
+            )
+            and request.method == "POST",
+            timeout=10000,
+        ) as retried_suggestion:
+            vault.locator("[data-board-create-confirm]").click()
+        assert retried_suggestion.value.post_data_json == {"path": str(candidate)}
+        alias_confirm.wait_for(state="visible", timeout=10000)
+
         with page.expect_response(
             lambda response: response.url.endswith("/api/asset-registry/root-aliases/confirm")
             and response.request.method == "POST"
@@ -147,4 +173,5 @@ def test_dir_t7_alias_suggestion_waits_for_explicit_user_confirmation(
         assert confirmed.value.status == 200
         assert confirmation_requests[0]["storage_root_id"] == "existing_nas_source"
         assert confirmation_requests[0]["path"] == str(candidate)
+        assert confirmation_requests[0]["expected_version"] == 7
         assert errors == []

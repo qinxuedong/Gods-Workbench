@@ -109,7 +109,9 @@ def _roots():
         if not source_id or not path.is_absolute():
             continue
         try:
-            resolved = path.resolve(strict=True)
+            # 缺失的已登记子目录也保留为来源 facet，便于显示 offline；
+            # resolve(strict=False) 仍会解析已存在的父级符号链接，再由 allowed root 限定边界。
+            resolved = path.resolve()
         except (OSError, RuntimeError, ValueError):
             continue
         matches = []
@@ -509,6 +511,7 @@ class IndexJobs:
             "kind": kind,
             "roots": root_ids,
             "scopes": scopes,
+            "legacy_identity_scan_complete": selected is None,
             "max_files": max_files,
             "hash_files": hash_files,
         }
@@ -902,7 +905,10 @@ class IndexJobs:
                         canonical_relpath = None
                 if not asset_root_id:
                     matches = by_relpath.get(canonical_relpath or "", [])
-                    if len(matches) == 1:
+                    if (
+                        job["_request"].get("legacy_identity_scan_complete")
+                        and len(matches) == 1
+                    ):
                         asset_root_id = matches[0]["root_id"]
                         asset["root_id"] = asset_root_id
                         asset["storage_root_id"] = matches[0]["storage_root_id"]

@@ -130,9 +130,12 @@ def _local_file(asset_id: str) -> Path:
 def _local_file_from_record(repo: Any, item: Dict[str, Any]) -> Path:
     path = None
     asset_id = str(item.get("asset_id") or item.get("id") or "")
+    root_id = item.get("root_id")
     display = item.get("display_path")
     if display:
-        path = repo._resolve_display(str(display))
+        path = repo._resolve_display(
+            str(display), root_id=str(root_id) if root_id else None
+        )
     else:
         raw = repo.state().read()
         versions = sorted(
@@ -145,7 +148,13 @@ def _local_file_from_record(repo: Any, item: Dict[str, Any]) -> Path:
             if not display:
                 continue
             try:
-                path = repo._resolve_display(str(display))
+                version_root_id = record.get("root_id") or root_id
+                path = repo._resolve_display(
+                    str(display),
+                    root_id=(
+                        str(version_root_id) if version_root_id else None
+                    ),
+                )
                 break
             except CleanroomException:
                 continue
@@ -305,7 +314,11 @@ def recycle_asset(
     derived_records = metadata.get("derived_assets") if isinstance(metadata.get("derived_assets"), dict) else {}
     for name, record in derived_records.items():
         try:
-            candidate = storage.resolve_within_roots(str(record.get("path") or ""))
+            derived_root_id = record.get("root_id") or asset.get("root_id")
+            candidate = storage.resolve_within_roots(
+                str(record.get("path") or ""),
+                root_id=str(derived_root_id) if derived_root_id else None,
+            )
         except CleanroomException:
             continue
         if not _is_allowed_root_path(candidate):

@@ -106,6 +106,22 @@ def root_identity_id(root: Path) -> str:
     return "root_" + hashlib.sha256(value.encode()).hexdigest()[:24]
 
 
+def location_identity(path: Path) -> tuple[str, str]:
+    """返回路径所属最深允许根的稳定 root_id 与 canonical_relpath。"""
+    resolved = Path(path).resolve()
+    matches = []
+    for root in allowed_roots():
+        try:
+            matches.append((root, resolved.relative_to(root)))
+        except ValueError:
+            continue
+    if not matches:
+        raise CleanroomException(403, "PATH_OUTSIDE_ALLOWED_ROOTS", "目标路径不在允许根目录内")
+    root, relative = max(matches, key=lambda item: len(item[0].parts))
+    canonical = "" if str(relative) == "." else canonical_relpath(relative.as_posix())
+    return root_identity_id(root), canonical
+
+
 def normalize_directory_path(raw_path: str) -> str:
     """规范化一个用户配置的绝对目录路径，不推断相对路径根。"""
     if not isinstance(raw_path, str):
@@ -182,11 +198,13 @@ def resolve_within_roots(raw_path: str, *, root_id: Optional[str] = None) -> Pat
         candidate = Path(raw_path).expanduser()
         if not candidate.is_absolute():
             if selected_root is None:
-                if len(roots) > 1:
+                if ".." in candidate.parts:
                     raise CleanroomException(
-                        409, "ROOT_ID_REQUIRED", "多根配置下解析相对路径必须指定 root_id"
+                        403, "PATH_OUTSIDE_ALLOWED_ROOTS", "目标路径不在允许根目录内"
                     )
-                selected_root = roots[0]
+                raise CleanroomException(
+                    409, "ROOT_ID_REQUIRED", "解析相对路径必须指定 root_id"
+                )
             candidate = selected_root / candidate
         resolved = candidate.resolve()
     except (OSError, RuntimeError, ValueError):

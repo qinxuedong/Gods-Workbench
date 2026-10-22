@@ -1331,13 +1331,13 @@ async function waitForAssetIndexJob(jobId, sourceName='素材库'){
     }
     throw new Error(`素材库“${sourceName}”索引仍在后台运行，可稍后刷新查看`);
 }
-function confirmRootAliasSuggestion(path, candidates){
+function confirmRootAliasSuggestion(path, candidates, expectedVersion){
     return new Promise(resolve => {
         const overlay = document.createElement('div');
         overlay.className = 'storage-settings-overlay root-alias-confirm-overlay';
         const options = candidates.map(candidate => `<button class="hw-btn hw-btn-gold" type="button" data-root-alias-confirm="${escapeAttr(candidate.storage_root_id)}">确认绑定到「${escapeHtml(candidate.name || candidate.storage_root_id)}」</button>`).join('');
         overlay.innerHTML = `<section class="board-source-modal" data-floating-content role="dialog" aria-modal="true" aria-labelledby="rootAliasConfirmTitle">
-            <header class="storage-settings-head"><div><strong id="rootAliasConfirmTitle">发现已登记素材路径</strong><span>请确认该路径是否为以下来源的另一种访问方式。</span></div></header>
+            <header class="storage-settings-head"><div><strong id="rootAliasConfirmTitle">发现已登记素材路径</strong><span>请确认该路径是否为以下来源的另一种访问方式。</span></div><button class="hw-btn" type="button" data-root-alias-cancel data-root-alias-close aria-label="关闭" title="关闭"><i data-lucide="x"></i></button></header>
             <p class="board-create-summary">${escapeHtml(path)}</p>
             <div class="board-create-actions">${options}<button class="hw-btn" type="button" data-root-alias-cancel>取消</button></div>
         </section>`;
@@ -1361,6 +1361,7 @@ function confirmRootAliasSuggestion(path, candidates){
                 const confirmation = await apiJsonResponse(assetManagerApi.confirmRootAlias({
                     path,
                     storage_root_id:candidate.storage_root_id,
+                    expected_version:Number(expectedVersion),
                 }));
                 close({candidate, confirmation});
             } catch(err) {
@@ -1383,7 +1384,7 @@ async function attachPathToAssetBoard(boardId, sourceName, path){
         const suggestionData = await apiJsonResponse(assetManagerApi.getRootAliasSuggestions({path:cleanPath}));
         const candidates = Array.isArray(suggestionData?.candidates) ? suggestionData.candidates : [];
         if(candidates.length){
-            const choice = await confirmRootAliasSuggestion(cleanPath, candidates);
+            const choice = await confirmRootAliasSuggestion(cleanPath, candidates, suggestionData?.revision);
             if(!choice?.confirmation?.bound) return null;
             const saved = await apiJsonResponse(assetManagerApi.getStorageSettings());
             applyStorageSettingsData(saved || {});

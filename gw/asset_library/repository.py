@@ -779,13 +779,18 @@ def _local_state() -> storage.JsonState:
 def _local_root_identity(path: Path) -> str:
     """返回允许根的不可逆身份摘要，不把根目录绝对路径暴露给索引接口。"""
     resolved = path.resolve()
+    matches = []
     for root in storage.allowed_roots():
+        canonical_root = root.resolve()
         try:
-            resolved.relative_to(root)
+            resolved.relative_to(canonical_root)
         except ValueError:
             continue
-        canonical_root = os.path.normcase(str(root.resolve()))
-        return hashlib.sha256(canonical_root.encode("utf-8")).hexdigest()
+        matches.append(canonical_root)
+    if matches:
+        canonical_root = max(matches, key=lambda root: len(root.parts))
+        value = os.path.normcase(str(canonical_root))
+        return hashlib.sha256(value.encode("utf-8")).hexdigest()
     raise CleanroomException(
         403, "PATH_OUTSIDE_ALLOWED_ROOTS", "目标文件不在允许根目录内"
     )
