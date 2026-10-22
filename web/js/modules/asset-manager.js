@@ -35,6 +35,7 @@ function signalFlowAccentColor(){
 }
 
 let currentStatusText = '准备就绪';
+let currentIndexState = '';
 function currentStatusElement(){ return document.getElementById('assetStatus'); }
 const uploadInput = document.getElementById('assetUploadInput');
 const assetTabsEl = document.getElementById('assetBoardTabs');
@@ -574,11 +575,20 @@ const LOCAL_MEDIA_EXTS = /\.(jpe?g|png|gif|webp|bmp|tiff?|heic|heif|avif|raw|svg
 const SEARCH_INPUT_IDS = new Set(['registrySearch','assetSearch','workflowSearch','promptSearch','localSearch','localUploadSearch','canvasAssetSearch']);
 
 function refreshIcons(){ if(window.lucide) lucide.createIcons(); }
+function markIndexState(state=''){
+    currentIndexState = String(state || '');
+    const el = currentStatusElement();
+    if(!el) return;
+    if(currentIndexState) el.setAttribute('data-gw-index-state', currentIndexState);
+    else el.removeAttribute('data-gw-index-state');
+}
 function setStatus(text='准备就绪'){
     currentStatusText = text || '准备就绪';
     const el = currentStatusElement();
     if(el){
         el.textContent = currentStatusText;
+        if(currentIndexState) el.setAttribute('data-gw-index-state', currentIndexState);
+        else el.removeAttribute('data-gw-index-state');
         // 显式降级标记（用户 2026-09-21 裁决第 3 项）：未接入 / 暂不可用必须可被核验，
         // 不得静默。父页 /static/pages/assets.html 会读取该标记并同步展示。
         const kind = /未纳入当前切片/.test(currentStatusText) ? 'not_integrated'
@@ -873,7 +883,7 @@ function renderBoardNavigation(){
         return `<button class="asset-board-tab btn-segmented-item ${active ? 'active' : ''} ${board.fixed ? 'fixed' : ''} ${board.sourceBoard ? 'source-board' : ''}" type="button" role="tab" aria-selected="${active}" tabindex="${active ? '0' : '-1'}" data-tab="${escapeAttr(board.id)}" ${movable ? `draggable="true" data-board-drag="${escapeAttr(board.id)}"` : ''} title="${title}"><i data-lucide="${escapeAttr(board.icon)}"></i><span>${escapeHtml(board.name)}</span>${board.fixed ? '<i class="asset-board-lock" data-lucide="lock-keyhole"></i>' : ''}</button>`;
     }).join('')}<button class="hw-btn asset-board-add" type="button" data-board-create aria-label="新增资源库"><i data-lucide="plus"></i><span>新增资源库</span></button></div>
     <div class="asset-board-menu-actions">
-        <div id="assetStatus" class="asset-status" role="status" aria-live="polite">${escapeHtml(currentStatusText)}</div>
+        <div id="assetStatus" class="asset-status" role="status" aria-live="polite"${currentIndexState ? ` data-gw-index-state="${escapeAttr(currentIndexState)}"` : ''}>${escapeHtml(currentStatusText)}</div>
         <button class="hw-btn" type="button" data-refresh-assets><i data-lucide="refresh-cw"></i><span>刷新</span></button>
         <button class="hw-btn" type="button" data-board-settings-open><i data-lucide="panel-top"></i><span>资产设置</span></button>
     </div>`;
@@ -1182,7 +1192,16 @@ function renderCreateLibraryModal(){
     </div>`;
     markAssetFloatingSurface(overlay, {surface:'asset-board-create', content:'.board-create-modal', close:closeCreateLibraryModal});
     refreshIcons();
-    requestAnimationFrame(() => document.getElementById('boardCreateName')?.focus());
+    // 只在焦点还没进入其他表单控件时聚焦名称。预设重绘会替换整段 innerHTML，
+    // 若无条件把焦点拉回名称，随后对路径框的填入会落进 maxlength=32 的名称框，路径为空就静默跳过索引。
+    requestAnimationFrame(() => {
+        const name = document.getElementById('boardCreateName');
+        const modal = document.querySelector('#boardCreateOverlay .board-create-modal');
+        const active = document.activeElement;
+        if(!name || !modal) return;
+        if(active && modal.contains(active) && active !== name && active.matches?.('input, textarea, select, button')) return;
+        name.focus();
+    });
 }
 function openCreateLibraryModal(){
     const preset = ASSET_LIBRARY_PRESETS.find(item => item.id === boardCreateState.preset) || ASSET_LIBRARY_PRESETS[3];
@@ -1259,21 +1278,45 @@ async function saveBoardEdit(){
         setStatus(err.message || '资源库修改失败');
     }
 }
+function syncBoardCreateDraftFromDom(){
+    if(!boardCreateState.open) return;
+    const name = document.getElementById('boardCreateName');
+    const path = document.getElementById('boardCreatePath');
+    if(!name && !path) return;
+    boardCreateState = {
+        ...boardCreateState,
+        name: name ? String(name.value || '') : boardCreateState.name,
+        path: path ? String(path.value || '') : boardCreateState.path,
+    };
+}
 async function createPresetAssetBoard(){
     const preset = ASSET_LIBRARY_PRESETS.find(item => item.id === boardCreateState.preset) || ASSET_LIBRARY_PRESETS[3];
+    syncBoardCreateDraftFromDom();
     const name = String(document.getElementById('boardCreateName')?.value || boardCreateState.name || preset.name).trim().slice(0, 32);
     const path = String(document.getElementById('boardCreatePath')?.value || boardCreateState.path || '').trim();
+    boardCreateState = {...boardCreateState, name, path};
     if(!name){ setStatus('请输入资源库名称'); return; }
+    if(!boardCreateState.open){
+        markIndexState('failed');
+        setStatus('资源库窗口已关闭，未建立索引');
+        return;
+    }
     let source = null;
     if(path){
+        markIndexState('pending');
         setStatus('正在添加素材来源...');
         try {
             source = await attachPathToAssetBoard('', `${name}素材`, path);
         } catch(err) {
+            markIndexState('failed');
             setStatus(err.message || '素材库索引失败');
             return;
         }
-        if(!source){ setStatus('素材来源添加失败，请检查路径'); return; }
+        if(!source){
+            markIndexState('failed');
+            setStatus('素材来源添加失败，未建立索引');
+            return;
+        }
     }
     const state = ensureBoardNavigationState();
     const id = `library_${preset.id}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`;
@@ -1283,7 +1326,13 @@ async function createPresetAssetBoard(){
     saveBoardNavigationState();
     closeCreateLibraryModal();
     renderBoardNavigation();
-    setStatus(`已创建资源库“${name}”${source ? '，来源索引已完成' : ''}`);
+    if(source){
+        markIndexState('indexed');
+        setStatus(`已创建资源库“${name}”，来源索引已完成`);
+    } else {
+        markIndexState('skipped');
+        setStatus(`已创建资源库“${name}”，未填写路径，未建立索引`);
+    }
     await activateAssetBoard(id);
 }
 function attachSourceRecordToBoard(boardId, source){
@@ -1333,7 +1382,7 @@ async function waitForAssetIndexJob(jobId, sourceName='素材库'){
 }
 async function attachPathToAssetBoard(boardId, sourceName, path){
     const cleanPath = String(path || '').trim();
-    if(!cleanPath) return null;
+    if(!cleanPath) throw new Error('未填写素材路径，已跳过索引');
     const settings = await apiJsonResponse(assetManagerApi.getStorageSettings());
     applyStorageSettingsData(settings || {});
     const known = localLibraries.find(lib => pathCompareKey(lib.path) === pathCompareKey(cleanPath));
@@ -1359,15 +1408,15 @@ async function attachPathToAssetBoard(boardId, sourceName, path){
     if(boardId) attachSourceRecordToBoard(boardId, source);
     if(!accepted){
         const reindexed = await reindexAssetSource(source.id);
-        if(reindexed && reindexed.ok === false){
-            setStatus(`来源已登记，但索引任务启动失败：${reindexed.error || '未知错误'}`);
+        if(!reindexed || reindexed.ok === false){
             apiJsonResponse(assetManagerApi.getRegistryStatus()).then(statusData => {
                 if(statusData && typeof statusData === 'object') registryStatus = statusData;
             }).catch(() => {});
-            return source;
+            throw new Error(`来源已登记，但索引任务启动失败：${reindexed?.error || '未知错误'}`);
         }
         accepted = reindexed.data;
     }
+    if(!accepted?.job_id) throw new Error('索引任务未返回任务编号');
     await waitForAssetIndexJob(accepted?.job_id, source.name);
     return source;
 }
@@ -10191,9 +10240,10 @@ async function handleClick(event){
     if(boardPreset){
         const preset = ASSET_LIBRARY_PRESETS.find(item => item.id === boardPreset.dataset.boardPreset);
         if(preset){
-            boardCreateState.path = String(document.getElementById('boardCreatePath')?.value || boardCreateState.path || '');
+            syncBoardCreateDraftFromDom();
+            const typedName = String(document.getElementById('boardCreateName')?.value || '').trim();
             boardCreateState.preset = preset.id;
-            boardCreateState.name = preset.name;
+            boardCreateState.name = typedName || preset.name;
             renderCreateLibraryModal();
         }
         return;
@@ -17867,6 +17917,10 @@ document.addEventListener('scroll', event => {
     }
 }, true);
 document.addEventListener('input', event => {
+    if(event.target?.id === 'boardCreateName' || event.target?.id === 'boardCreatePath'){
+        syncBoardCreateDraftFromDom();
+        return;
+    }
     if(event.target?.closest?.('[data-project-directory-template-editor]')){
         syncProjectDirectoryTemplateDraft();
         return;
