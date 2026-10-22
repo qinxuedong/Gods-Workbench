@@ -237,10 +237,17 @@ class IndexJobs:
             for job in raw["jobs"].values():
                 receipt = receipts.get(f"{job['job_id']}:{job['attempt']}")
                 if receipt:
-                    job.update(status="succeeded", result=receipt, error_code=None)
+                    job.update(
+                        status="succeeded",
+                        phase="completed",
+                        result=receipt,
+                        error_code=None,
+                    )
                 elif job["status"] not in TERMINAL:
                     job.update(
-                        status="interrupted", error_code="INDEX_PROCESS_INTERRUPTED"
+                        status="interrupted",
+                        phase="interrupted",
+                        error_code="INDEX_PROCESS_INTERRUPTED",
                     )
                 else:
                     continue
@@ -282,7 +289,12 @@ class IndexJobs:
             .get(f"{job['job_id']}:{job['attempt']}")
         )
         if receipt is not None and job["status"] != "succeeded":
-            job.update(status="succeeded", result=receipt, error_code=None)
+            job.update(
+                status="succeeded",
+                phase="completed",
+                result=receipt,
+                error_code=None,
+            )
             job["version"] += 1
             # 状态盘仍故障时按已持久化收据投影成功；动作判断使用同一投影。
             with suppress(OSError):
@@ -352,6 +364,15 @@ class IndexJobs:
         public["progress"] = {
             "scanned": job["scanned"],
             "error_count": job["error_count"],
+            "phase": job.get("phase")
+            or {
+                "queued": "queued",
+                "running": "scanning",
+                "succeeded": "completed",
+                "failed": "failed",
+                "cancelled": "cancelled",
+                "interrupted": "interrupted",
+            }.get(status, status),
         }
         return public
 
@@ -472,6 +493,7 @@ class IndexJobs:
                 "job_type": "asset.index" if kind == "reindex" else "asset.index.sync",
                 "name": "重建素材索引" if kind == "reindex" else "同步索引差集",
                 "status": "queued",
+                "phase": "queued",
                 "version": 1,
                 "attempt": 1,
                 "max_attempts": 5,
@@ -497,7 +519,11 @@ class IndexJobs:
         try:
             self.executor.submit(self._run, job["job_id"], job["attempt"])
         except RuntimeError:
-            job.update(status="failed", error_code="INDEX_EXECUTOR_UNAVAILABLE")
+            job.update(
+                status="failed",
+                phase="failed",
+                error_code="INDEX_EXECUTOR_UNAVAILABLE",
+            )
             job["version"] += 1
             self._save(job)
 
@@ -544,6 +570,7 @@ class IndexJobs:
                     _error(429, "INDEX_QUEUE_FULL", "索引任务容量已满")
                 job.update(
                     status="queued",
+                    phase="queued",
                     attempt=job["attempt"] + 1,
                     scanned=0,
                     error_count=0,
@@ -556,6 +583,8 @@ class IndexJobs:
                     "resume": "running",
                     "cancel": "cancelled",
                 }[action]
+                if action == "cancel":
+                    job["phase"] = "cancelled"
             job["version"] += 1
             self._save(job)
             self.condition.notify_all()
@@ -582,6 +611,7 @@ class IndexJobs:
                     return
                 if job["status"] == "queued":
                     job["status"] = "running"
+                    job["phase"] = "scanning"
                     job["version"] += 1
                     self._save(job)
             job = self._checkpoint(job_id, attempt)
@@ -589,6 +619,8 @@ class IndexJobs:
             files = self._scan(job_id, attempt, roots, job["_request"])
             with self.condition:
                 job = self._checkpoint(job_id, attempt)
+                job.update(phase="indexing", scanned=len(files))
+                self._save(job)
                 if job["error_count"]:
                     _error(
                         503,
@@ -598,6 +630,7 @@ class IndexJobs:
                 result = self._commit(job, files)
                 job.update(
                     status="succeeded",
+                    phase="completed",
                     result=result,
                     scanned=len(files),
                     error_code=None,
@@ -624,6 +657,9 @@ class IndexJobs:
                 )
                 job.update(
                     status="succeeded"
+                    if receipt
+                    else ("interrupted" if self.closed else "failed"),
+                    phase="completed"
                     if receipt
                     else ("interrupted" if self.closed else "failed"),
                     result=receipt,

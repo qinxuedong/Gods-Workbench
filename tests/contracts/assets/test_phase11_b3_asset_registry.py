@@ -10,6 +10,7 @@ from __future__ import annotations
 import io
 import json
 import re
+import time
 import zipfile
 from pathlib import Path
 
@@ -367,9 +368,24 @@ def test_a2_index_scans_allowed_roots_for_real(client, tmp_path, monkeypatch):
     (root / "b.txt").write_text("hello", encoding="utf-8")
     monkeypatch.setenv("GW_ALLOWED_ROOTS", str(root))
     result = client.post("/api/asset-registry/reindex", headers=AUTH, json={})
-    assert result.status_code == 200
-    assert result.json()["scanned"] == 2
-    assert result.json()["indexed"] == 2
+    assert result.status_code == 202
+    job_id = result.json()["job_id"]
+    deadline = time.monotonic() + 8
+    while time.monotonic() < deadline:
+        polled = client.get(
+            f"/api/asset-registry/workspace-jobs/{job_id}", headers=AUTH
+        )
+        assert polled.status_code == 200, polled.text
+        job = polled.json()["job"]
+        if job["status"] in {"succeeded", "failed", "cancelled", "interrupted"}:
+            break
+        time.sleep(0.02)
+    else:
+        pytest.fail("默认后台重索引任务未及时结束")
+    assert job["status"] == "succeeded", job
+    assert job["result"]["scanned"] == 2
+    assert job["result"]["indexed"] == 2
+    assert job["progress"]["phase"] == "completed"
     sync = client.post("/api/asset-registry/index/sync", headers=AUTH, json={})
     assert sync.status_code == 200
     assert sync.json()["on_disk"] == 2

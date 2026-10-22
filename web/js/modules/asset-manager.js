@@ -427,6 +427,13 @@ let localAutoClassify = savedLocalCaptionSettings.autoClassify === true;
 let localClassifyPromptOpen = false;
 let localAssets = [];
 let localAssetsLoaded = false;
+let localAssetsCursor = '';
+let localAssetsHasMore = false;
+let localAssetsLoading = false;
+let localAssetsError = '';
+let localAssetsTotal = 0;
+let localAssetsRequestId = 0;
+const LOCAL_ASSET_PAGE_SIZE = 100;
 let localLibraries = [];
 let activeLocalLibraryId = 'local';
 let localLibraryDragId = '';
@@ -920,6 +927,13 @@ async function activateAssetBoard(id){
         if(!cached) refreshRegistryAssets(false).then(() => { if(activeTab === id) render(); }).catch(err => setStatus(err.message || '绱犳潗搴撳姞杞藉け璐?'));
         return;
     }
+    if(board.id === 'local' && !localAssetsLoaded){
+        const loading = loadLocalAssets();
+        render();
+        await loading;
+        if(activeTab === id) render();
+        return;
+    }
     render();
 }
 function reorderAssetBoard(sourceId, targetId){
@@ -1310,7 +1324,9 @@ async function waitForAssetIndexJob(jobId, sourceName='素材库'){
         if(['failed','cancelled','interrupted'].includes(job.status)){
             throw new Error(`素材库索引失败：${job.error_code || job.status}`);
         }
-        setStatus(`正在索引素材库“${sourceName}”… 已扫描 ${Number(job.progress?.scanned || 0)} 项`);
+        const phase = job.progress?.phase || job.status;
+        const phaseLabel = phase === 'queued' ? '等待扫描' : phase === 'indexing' ? '正在写入索引' : '正在扫描';
+        setStatus(`素材库“${sourceName}”${phaseLabel}… 已扫描 ${Number(job.progress?.scanned || 0)} 项`);
         await new Promise(resolve => setTimeout(resolve, 500));
     }
     throw new Error(`素材库“${sourceName}”索引仍在后台运行，可稍后刷新查看`);
@@ -3310,21 +3326,57 @@ async function loadLocalStorageSettings(){
         if(settings) applyStorageSettingsData(settings);
     } catch(_) {}
 }
-async function loadLocalAssets(){
-    try {
-        await loadLocalStorageSettings();
-        const data = await apiJsonResponse(assetManagerApi.getLocalAssets(activeLocalLibraryKind()));
-        localAssets = Array.isArray(data.items) ? data.items : [];
-        localUploadTree = data.tree || {id:'__root__', path:'', name:'根目录', count:localAssets.length, items:[], children:[]};
-    } catch(err) {
-        localAssets = [];
-        localUploadTree = {id:'__root__', path:'', name:'根目录', count:0, items:[], children:[]};
+async function loadLocalAssets({append=false}={}){
+    if(append && localAssetsLoading) return localAssets;
+    const requestId = append ? localAssetsRequestId : ++localAssetsRequestId;
+    const kind = activeLocalLibraryKind();
+    if(!append){
+        localAssetsCursor = '';
+        localAssetsHasMore = false;
+        localAssetsTotal = 0;
     }
+    localAssetsError = '';
+    localAssetsLoading = true;
+    try {
+        if(!append) await loadLocalStorageSettings();
+        const data = await apiJsonResponse(assetManagerApi.getLocalAssets(kind, {
+            limit:LOCAL_ASSET_PAGE_SIZE,
+            ...(append && localAssetsCursor ? {cursor:localAssetsCursor} : {}),
+        }));
+        if(requestId !== localAssetsRequestId) return localAssets;
+        const pageItems = Array.isArray(data.items) ? data.items : [];
+        if(append){
+            const seen = new Set(localAssets.map(item => item.id));
+            localAssets = [...localAssets, ...pageItems.filter(item => !seen.has(item.id))];
+        } else {
+            localAssets = pageItems;
+        }
+        localAssetsTotal = Number(data.total ?? data.count ?? localAssets.length) || 0;
+        localAssetsCursor = data.next_cursor || '';
+        localAssetsHasMore = Boolean(data.has_more);
+        localUploadTree = data.tree || {id:'__root__', path:'', name:'根目录', count:localAssetsTotal, items:[], children:[]};
+    } catch(err) {
+        if(requestId !== localAssetsRequestId) return localAssets;
+        localAssetsError = err?.message || '加载本地素材失败';
+        if(!append){
+            localAssets = [];
+            localUploadTree = {id:'__root__', path:'', name:'根目录', count:0, items:[], children:[]};
+        }
+    } finally {
+        if(requestId === localAssetsRequestId){
+            localAssetsLoading = false;
+            localAssetsLoaded = true;
+        }
+    }
+    if(requestId !== localAssetsRequestId) return localAssets;
     if(activeLocalUploadFolder && !localUploadFolderExists(activeLocalUploadFolder)) activeLocalUploadFolder = '';
     if(activeLocalUploadClassFilter && !activeLocalUploadClassEntry()) activeLocalUploadClassFilter = '';
     selectedLocalUploadIds = new Set([...selectedLocalUploadIds].filter(id => localAssets.some(item => item.id === id)));
-    localAssetsLoaded = true;
     return localAssets;
+}
+async function loadMoreLocalAssets(){
+    if(!localAssetsHasMore || localAssetsLoading) return localAssets;
+    return loadLocalAssets({append:true});
 }
 function renderLocalLibraryTabs(){
     const libs = localLibraries.length ? localLibraries : [{id:'local', kind:'local', name:DEFAULT_LOCAL_LIBRARY_NAME, path:''}];
@@ -5534,7 +5586,7 @@ function renderLocalLibrarySources(){
     const libs = localLibraries.length ? localLibraries : [{id:'local', kind:'local', name:DEFAULT_LOCAL_LIBRARY_NAME, path:''}];
     return `<section class="library-source-section local-source-section">
         <div class="registry-facet-title"><strong>上传来源</strong><button type="button" data-board-source-add="" title="添加素材路径"><i data-lucide="folder-plus"></i></button></div>
-        <div class="library-source-list">${libs.map(lib => `<button class="library-source-row ${lib.id === activeLocalLibraryId ? 'active' : ''}" type="button" data-local-library-tab="${escapeAttr(lib.id)}" title="${escapeAttr(lib.path || '')}"><span><i data-lucide="${lib.id === 'local' ? 'cloud-upload' : 'folder'}"></i></span><b>${escapeHtml(storageCleanName(lib.name, DEFAULT_LOCAL_LIBRARY_NAME))}</b><small>${lib.id === activeLocalLibraryId ? localAssets.length : customBoardSourceCount(lib.id)}</small></button>`).join('')}</div>
+        <div class="library-source-list">${libs.map(lib => `<button class="library-source-row ${lib.id === activeLocalLibraryId ? 'active' : ''}" type="button" data-local-library-tab="${escapeAttr(lib.id)}" title="${escapeAttr(lib.path || '')}"><span><i data-lucide="${lib.id === 'local' ? 'cloud-upload' : 'folder'}"></i></span><b>${escapeHtml(storageCleanName(lib.name, DEFAULT_LOCAL_LIBRARY_NAME))}</b><small>${lib.id === activeLocalLibraryId ? localAssetsTotal : customBoardSourceCount(lib.id)}</small></button>`).join('')}</div>
     </section>`;
 }
 function registryVisibleAssetList(items=[]){
@@ -7043,7 +7095,7 @@ function localUploadFolderTitle(){
 function localUploadViewSubtitle(items){
     const entry = activeLocalUploadClassEntry();
     if(entry) return `智能分类：${entry.label} / ${items.length} 个素材`;
-    return `${items.length} / ${(localAssets || []).length} 个素材`;
+    return `${items.length} / ${localAssetsTotal || (localAssets || []).length} 个素材`;
 }
 function localUploadClassEntries(){
     return assetClassificationEntriesForItems((localAssets || []).filter(item => assetKind(item) === 'image'));
@@ -7109,6 +7161,23 @@ function selectedLocalUploadImageItems(){
 function selectedAssetImageItems(){
     return [...selectedAssetIds].map(id => findAssetItem(id)).filter(item => item && assetKind(item) === 'image');
 }
+function renderLocalAssetsPagination(){
+    if(localAssetsError){
+        return `<div class="tree-empty" role="status"><span>${escapeHtml(localAssetsError)}</span><button class="hw-btn" type="button" data-localup-retry>重试</button></div>`;
+    }
+    if(localAssetsLoading){
+        return `<div class="tree-empty" role="status">正在加载素材…</div>`;
+    }
+    if(!localAssets.length && localAssetsLoaded){
+        return '<div class="tree-empty" role="status">暂无本地素材</div>';
+    }
+    if(localAssetsHasMore){
+        return `<div class="tree-empty" role="status">已加载 ${localAssets.length} / ${localAssetsTotal} 个素材 <button class="hw-btn" type="button" data-localup-load-more>加载更多</button></div>`;
+    }
+    return localAssets.length
+        ? `<div class="tree-empty" role="status">已加载全部 ${localAssetsTotal} 个素材</div>`
+        : '';
+}
 function renderLocalManager(){
     normalizeLocalCaptionSettings();
     const items = localUploadItems();
@@ -7117,7 +7186,7 @@ function renderLocalManager(){
     if(selectedLocalUploadId && !findLocalUpload(selectedLocalUploadId)) selectedLocalUploadId = '';
     if(!selectedLocalUploadId && items.length) selectedLocalUploadId = items[0].id;
     const detail = findLocalUpload(selectedLocalUploadId);
-    const total = (localAssets || []).length;
+    const total = localAssetsTotal || (localAssets || []).length;
     const imageCount = selectedLocalUploadImageItems().length;
     const folderTitle = localUploadFolderTitle();
     root.innerHTML = `
@@ -7158,7 +7227,7 @@ function renderLocalManager(){
                     <span class="manage-group-title">管理</span>
                     <span class="manage-summary">已选 ${selectedLocalUploadIds.size} 个，其中 ${imageCount} 张图片</span>
                     <div class="asset-tools local-manage-actions">
-                        <button class="hw-btn" type="button" data-localup-select-all ${items.length ? '' : 'disabled'}><i data-lucide="check-square"></i><span>全选</span></button>
+                        <button class="hw-btn" type="button" data-localup-select-all ${items.length ? '' : 'disabled'}><i data-lucide="check-square"></i><span>全选已加载</span></button>
                         <button class="hw-btn" type="button" data-localup-clear ${selectedLocalUploadIds.size ? '' : 'disabled'}><i data-lucide="square"></i><span>清空</span></button>
                         <button class="hw-btn" type="button" data-localup-download-selected ${selectedLocalUploadIds.size ? '' : 'disabled'}><i data-lucide="download"></i><span>下载</span></button>
                         <button class="hw-btn" type="button" data-localup-canvas-selected ${selectedLocalUploadIds.size ? '' : 'disabled'}><i data-lucide="clipboard-paste"></i><span>复制到画布</span></button>
@@ -7177,6 +7246,7 @@ function renderLocalManager(){
                     ${renderLocalUploadAddCard()}
                     ${items.map(item => renderLocalUploadCard(item)).join('')}
                 </div>
+                ${renderLocalAssetsPagination()}
             </div>
         </section>
         <aside class="asset-panel asset-detail">
@@ -10506,8 +10576,14 @@ async function handleClick(event){
     if(tabBtn){
         activeTab = tabBtn.dataset.tab || 'assets';
         selectedAssetIds.clear(); selectedWorkflowIds.clear(); selectedPromptIds.clear(); selectedLocalIds.clear(); selectedLocalUploadIds.clear(); selectedCanvasAssetIds.clear();
-        render();
-        if(activeTab === 'local' && !localAssetsLoaded) loadLocalAssets().then(() => { if(activeTab === 'local') render(); });
+        if(activeTab === 'local' && !localAssetsLoaded){
+            const loading = loadLocalAssets();
+            render();
+            await loading;
+            if(activeTab === 'local') render();
+        } else {
+            render();
+        }
         return;
     }
     const assetPreview = target.closest?.('[data-asset-preview]');
@@ -10519,6 +10595,22 @@ async function handleClick(event){
     const localUpPreview = target.closest?.('[data-localup-preview]');
     if(localUpPreview){ showDetailPreview('localup', localUpPreview.dataset.localupPreview || ''); return; }
     if(target.closest?.('[data-localup-upload]')){ uploadInput?.click(); return; }
+    if(target.closest?.('[data-localup-load-more]')){
+        const loading = loadMoreLocalAssets();
+        render();
+        await loading;
+        if(activeTab === 'local') render();
+        return;
+    }
+    if(target.closest?.('[data-localup-retry]')){
+        const loading = localAssetsHasMore
+            ? loadMoreLocalAssets()
+            : loadLocalAssets();
+        render();
+        await loading;
+        if(activeTab === 'local') render();
+        return;
+    }
     if(target.closest?.('[data-localup-folder-new]')){ await createLocalUploadFolder(); return; }
     if(target.closest?.('[data-localup-folder-rename]')){ await renameLocalUploadFolder(); return; }
     const localUpFolder = target.closest?.('[data-localup-folder]');
@@ -15040,7 +15132,9 @@ async function pasteImageBlobToDetailMediaCanvas(blob,sourceName=''){
     const data = await apiJsonResponse(assetManagerApi.uploadLocalAssets(form));
     const uploaded = Array.isArray(data.files) ? data.files[0] : null;
     if(!uploaded?.id) throw new Error('剪贴板图片导入失败');
+    const existed = localAssets.some(item => item.id === uploaded.id);
     localAssets = [uploaded,...localAssets.filter(item => item.id !== uploaded.id)];
+    if(!existed) localAssetsTotal += 1;
     localAssetsLoaded = true;
     syncDetailReferenceTitleFromDom();
     pushDetailMediaCanvasHistory();
