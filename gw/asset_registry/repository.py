@@ -343,8 +343,6 @@ def list_assets(limit: int, offset: int, query: Optional[str], kind: Optional[st
             sort=sort,
             include=include,
         )
-    if root_id or collection_id:
-        raise CleanroomException(400, "UNSUPPORTED_OPTION", "注册表尚无存储根或集合关联，不能应用该过滤")
     cutoff = None
     if recent_days is not None:
         if type(recent_days) is not int or not 1 <= recent_days <= 36500:
@@ -359,7 +357,8 @@ def list_assets(limit: int, offset: int, query: Optional[str], kind: Optional[st
         raise CleanroomException(400, "UNSUPPORTED_OPTION", "不支持的资产显示方式")
     includes = sorted({part.strip() for part in (include_tags or "").split(",") if part.strip()})
     excludes = sorted({part.strip() for part in (exclude_tags or "").split(",") if part.strip()})
-    filters = [query or "", kind or "", archived, ordering, category or "", tag or "", project_id or "", includes, excludes, cutoff]
+    filters = [query or "", kind or "", archived, ordering, category or "", tag or "", project_id or "",
+               includes, excludes, cutoff, root_id or "", collection_id or ""]
     fingerprint = hashlib.sha256(json.dumps(filters, ensure_ascii=False).encode("utf-8")).hexdigest()
     if cursor:
         try:
@@ -380,6 +379,22 @@ def list_assets(limit: int, offset: int, query: Optional[str], kind: Optional[st
         offset = decoded["offset"]
     from gw.core.asset_visibility import asset_visible
     items = [dict(a) for a in raw["assets"].values() if asset_visible(a)]
+    if root_id:
+        from gw.asset_registry import index_jobs
+        known_roots = {item["id"] for item in index_jobs.root_facets()}
+        known_roots.update(str(a.get("storage_root_id") or a.get("root_id") or "") for a in items)
+        if root_id not in known_roots:
+            raise CleanroomException(404, "ROOT_NOT_FOUND", "素材来源根不存在")
+        items = [a for a in items if str(a.get("storage_root_id") or a.get("root_id") or "") == root_id]
+    if collection_id:
+        def belongs_to_collection(asset: Dict[str, Any]) -> bool:
+            value = asset.get("collection_id")
+            if value is None:
+                value = asset.get("folder_id")
+            if isinstance(value, (list, tuple, set)):
+                return collection_id in {str(item) for item in value}
+            return str(value or "") == collection_id
+        items = [a for a in items if belongs_to_collection(a)]
     if archived is not None:
         items = [a for a in items if bool(a.get("archived")) == bool(archived)]
     if kind:
@@ -768,9 +783,10 @@ def facets() -> Dict[str, Any]:
     tag_counts = Counter(tag for asset in assets for tag in set(asset.get("tags", [])))
     tags = [{**value, "count": tag_counts.get(value["tag_id"], 0)}
             for value in sorted(raw["tags"].values(), key=lambda item: item["tag_id"])]
+    from gw.asset_registry import index_jobs
     return {"kinds": [{"name": name, "count": count} for name, count in sorted(kinds.items())],
             "categories": [{"name": name, "count": count} for name, count in sorted(categories.items())],
-            "tags": tags, "collections": [], "roots": [], "revision": raw["revision"],
+            "tags": tags, "collections": [], "roots": index_jobs.root_facets(), "revision": raw["revision"],
             "data_status": DATA_STATUS_OK, "data_gaps": []}
 
 

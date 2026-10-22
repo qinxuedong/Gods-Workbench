@@ -539,10 +539,12 @@ def test_asset_recent_filter_and_unimplemented_scopes_are_not_silently_ignored(c
     assert [a["asset_id"] for a in result.json()["assets"]] == [created[1]]
     for days in (0, -1, 36501):
         assert client.get(path, headers=AUTH, params={"recent_days": days}).status_code == 400
-    for scope in ("root_id", "collection_id"):
-        rejected = client.get(path, headers=AUTH, params={scope: "unknown"})
-        assert rejected.status_code == 400
-        assert rejected.json()["detail"]["code"] == "UNSUPPORTED_OPTION"
+    unknown_root = client.get(path, headers=AUTH, params={"root_id": "unknown"})
+    assert unknown_root.status_code == 404
+    assert unknown_root.json()["detail"]["code"] == "ROOT_NOT_FOUND"
+    unknown_collection = client.get(path, headers=AUTH, params={"collection_id": "unknown"})
+    assert unknown_collection.status_code == 200
+    assert unknown_collection.json()["assets"] == []
 
 
 def test_project_recycle_restore_uses_project_state_machine_and_cas(client):

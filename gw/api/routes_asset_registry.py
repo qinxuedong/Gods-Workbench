@@ -26,6 +26,7 @@
 
 from __future__ import annotations
 
+import re
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
@@ -39,6 +40,7 @@ from gw.asset_registry.service import (
     DATA_STATUS_OK,
     default_asset_registry_service,
 )
+from gw.core import storage
 from gw.core.auth import require_authenticated, require_edit_access, require_governance_access
 from gw.core.errors import CleanroomException
 from gw.projects_hub.service import (
@@ -46,6 +48,8 @@ from gw.projects_hub.service import (
     owner_key_for_context,
     require_project_write_context,
 )
+from gw.settings.models import StorageSettingsPatchRequest
+from gw.settings.service import default_storage_settings_service
 
 from gw.core.asset_visibility import asset_owner_key, asset_request_scope
 
@@ -1011,7 +1015,51 @@ def reindex_registry(
 ):
     actor = _edit_auth(authorization, x_user_role)
     body = _payload(payload)
+    if body.get("register_root") is not None and body.get("background") is not True:
+        raise CleanroomException(400, "INVALID_REQUEST", "登记素材库必须通过后台索引请求提交")
     if body.get("background") is True:
+        register_root = body.get("register_root")
+        if register_root is not None:
+            if not isinstance(register_root, dict):
+                raise CleanroomException(400, "INVALID_REQUEST", "register_root 必须为对象")
+            source_id = str(register_root.get("id") or "").strip()
+            source_name = str(register_root.get("name") or "").strip()
+            raw_path = register_root.get("path")
+            if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}", source_id):
+                raise CleanroomException(400, "INVALID_REQUEST", "素材来源标识无效")
+            if not source_name or len(source_name) > 32:
+                raise CleanroomException(400, "INVALID_REQUEST", "素材来源名称必须为 1 到 32 个字符")
+            expected_version = _version(register_root, required=True)
+            root, prefix = storage.resolve_asset_registration_root(raw_path)
+            registered_path = str(root.joinpath(*prefix.split("/"))) if prefix else str(root)
+            snapshot = default_storage_settings_service.get_snapshot()
+            existing = next((item for item in snapshot.local_libraries if str(item.get("id")) == source_id), None)
+            if existing:
+                if storage.directory_path_key(str(existing.get("path") or "")) != storage.directory_path_key(registered_path):
+                    raise CleanroomException(409, "ASSET_ROOT_ID_CONFLICT", "素材来源标识已用于其他目录")
+                source_name = str(existing.get("name") or source_name)
+            else:
+                duplicate = next((item for item in snapshot.local_libraries
+                                  if item.get("path") and
+                                  storage.directory_path_key(str(item["path"])) == storage.directory_path_key(registered_path)), None)
+                if duplicate:
+                    raise CleanroomException(409, "ASSET_ROOT_ALREADY_REGISTERED", "该目录已登记为素材来源")
+                entries = [dict(item) for item in snapshot.extra_local_entries]
+                entries.append({"id": source_id, "kind": source_id, "name": source_name, "path": registered_path})
+                names = dict(snapshot.local_library_names)
+                names[source_id] = source_name
+                order = [str(item) for item in snapshot.local_library_order if str(item) != source_id]
+                order.append(source_id)
+                default_storage_settings_service.patch(StorageSettingsPatchRequest(
+                    dirs=dict(snapshot.dirs), extra_local_entries=entries,
+                    local_library_names=names, local_library_order=order,
+                    expected_version=expected_version,
+                ))
+            index_payload = {key: value for key, value in body.items() if key != "register_root"}
+            index_payload["roots"] = [source_id]
+            accepted = index_jobs.service().submit("reindex", index_payload, actor, idempotency_key)
+            return JSONResponse({**accepted, "registered_root": {"id": source_id, "name": source_name}},
+                                status_code=202)
         return JSONResponse(index_jobs.service().submit("reindex", body, actor, idempotency_key), status_code=202)
     return repo.reindex(_version(_payload(payload)))
 

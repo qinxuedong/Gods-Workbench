@@ -167,6 +167,43 @@ def resolve_within_roots(raw_path: str) -> Path:
     raise CleanroomException(403, "PATH_OUTSIDE_ALLOWED_ROOTS", "目标路径不在允许根目录内")
 
 
+def resolve_asset_registration_root(raw_path: str) -> tuple[Path, str]:
+    """校验资产库登记目录，并返回其允许根与相对前缀。
+
+    登记只接受规范化后的绝对目录；不会像通用路径解析器那样把相对路径
+    拼接到任何一个允许根。路径通过 DIR-T2 的存在性与访问权限校验后，
+    必须落在某个 ``GW_ALLOWED_ROOTS`` 根目录内。
+    """
+    roots = allowed_roots()
+    if not roots:
+        raise CleanroomException(
+            403,
+            "LOCAL_FILE_ACCESS_NOT_ADMITTED",
+            "请由管理员在服务端配置 GW_ALLOWED_ROOTS 后再登记素材库",
+        )
+    normalized = validate_directory_path(normalize_directory_path(raw_path))
+    try:
+        candidate = Path(normalized).resolve(strict=True)
+    except (OSError, RuntimeError, ValueError):
+        raise CleanroomException(400, "INVALID_PATH", "目录不存在或不可访问") from None
+    matches = []
+    for root in roots:
+        try:
+            relative = candidate.relative_to(root)
+        except ValueError:
+            continue
+        matches.append((root, relative))
+    if not matches:
+        raise CleanroomException(
+            403,
+            "PATH_OUTSIDE_ALLOWED_ROOTS",
+            "该素材目录不在服务器允许根目录内，请由管理员配置 GW_ALLOWED_ROOTS 后重试",
+        )
+    root, relative = max(matches, key=lambda item: len(item[0].parts))
+    prefix = "" if str(relative) == "." else relative.as_posix()
+    return root, prefix
+
+
 def relative_display(path: Path) -> str:
     """把绝对路径降级为相对允许根的展示串；找不到允许根时返回文件名，不回显绝对路径。"""
     for root in allowed_roots():

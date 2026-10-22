@@ -150,6 +150,19 @@ export function createAssetManagerApi(http) {
                 credentials: 'same-origin',
             });
         },
+        registerAssetRoot(payload, init = {}) {
+            return transport.request('/api/asset-registry/reindex', {
+                ...jsonInit(payload, {...init, method: 'POST'}),
+                credentials: 'same-origin',
+            });
+        },
+        getWorkspaceJob(jobId, init = {}) {
+            return transport.request(`/api/asset-registry/workspace-jobs/${encodeURIComponent(jobId)}`, {
+                ...init,
+                method: 'GET',
+                credentials: 'same-origin',
+            });
+        },
         getStorageSettings(init = {}) {
             return transport.request('/api/storage-settings', {...init, credentials: 'same-origin'});
         },
