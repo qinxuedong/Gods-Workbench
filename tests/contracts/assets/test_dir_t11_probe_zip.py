@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import errno
 import hashlib
 import io
+import subprocess
 import zipfile
 from pathlib import Path
 
@@ -163,6 +165,37 @@ def test_proxy_corrupt_source_is_degraded_and_never_complete(tmp_path, monkeypat
     assert str(roots) not in response.text
 
 
+def test_video_proxy_timeout_has_its_own_degraded_code(tmp_path, monkeypatch):
+    roots = tmp_path / "roots"
+    roots.mkdir()
+    source = roots / "slow.mp4"
+    source.write_bytes(b"video source")
+    output = tmp_path / "proxy"
+    output.mkdir()
+    monkeypatch.setenv("GW_ALLOWED_ROOTS", str(roots))
+    monkeypatch.setattr(media_proxy, "_output_dir", lambda: output)
+    monkeypatch.setattr(media_proxy.shutil, "which", lambda _name: "ffmpeg")
+
+    def timeout(cmd, **kwargs):
+        partial = Path(cmd[-1])
+        partial.write_bytes(b"partial proxy")
+        raise subprocess.TimeoutExpired(cmd, kwargs["timeout"])
+
+    monkeypatch.setattr(media_proxy.subprocess, "run", timeout)
+    with TestClient(create_app()) as client:
+        response = client.get("/api/media-proxy", headers=AUTH, params={"path": str(source)})
+
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["availability"] == "unavailable"
+    assert body["data_status"] == "degraded"
+    assert body["reason_code"] == "PROXY_GENERATION_TIMEOUT"
+    assert body["data_gaps"] == ["PROXY_GENERATION_TIMEOUT"]
+    assert body["next_action"] == "retry_proxy_generation"
+    assert body["retryable"] is True
+    assert list(output.iterdir()) == []
+
+
 def test_proxy_permission_error_keeps_403_and_structured_error(monkeypatch, tmp_path):
     Image = pytest.importorskip("PIL.Image")
     roots = tmp_path / "roots"
@@ -218,6 +251,61 @@ def test_asset_file_info_reports_valid_corrupt_and_unsupported_images(tmp_path, 
     assert unsupported_response.status_code == 200
     assert unsupported_body["data_status"] == "partial"
     assert unsupported_body["data_gaps"] == ["image_probe_unsupported_format"]
+
+
+def test_asset_file_info_classifies_truncated_recognized_image_as_corrupt(tmp_path, monkeypatch):
+    Image = pytest.importorskip("PIL.Image")
+    roots = tmp_path / "roots"
+    roots.mkdir()
+    complete = roots / "complete.png"
+    Image.new("RGB", (12, 8), (9, 8, 7)).save(complete)
+    truncated = roots / "truncated.png"
+    truncated.write_bytes(complete.read_bytes()[:-20])
+    monkeypatch.setenv("GW_ALLOWED_ROOTS", str(roots))
+
+    with TestClient(create_app()) as client:
+        response = client.get(
+            "/api/asset-file-info", headers=AUTH, params={"path": str(truncated)}
+        )
+
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["data_status"] == "partial"
+    assert body["data_gaps"] == ["image_probe_corrupt"]
+    assert "width" not in body and "height" not in body
+
+
+def test_asset_file_info_classifies_verify_io_error_as_unreadable(tmp_path, monkeypatch):
+    Image = pytest.importorskip("PIL.Image")
+    roots = tmp_path / "roots"
+    roots.mkdir()
+    source = roots / "image.png"
+    source.write_bytes(b"image placeholder")
+    monkeypatch.setenv("GW_ALLOWED_ROOTS", str(roots))
+
+    class VerifyEioImage:
+        size = (5, 5)
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def verify(self):
+            raise OSError(errno.EIO, "simulated image read failure")
+
+    monkeypatch.setattr(Image, "open", lambda *_args, **_kwargs: VerifyEioImage())
+    with TestClient(create_app()) as client:
+        response = client.get(
+            "/api/asset-file-info", headers=AUTH, params={"path": str(source)}
+        )
+
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["data_status"] == "partial"
+    assert body["data_gaps"] == ["image_probe_unreadable"]
+    assert "width" not in body and "height" not in body
 
 
 @pytest.mark.parametrize(
@@ -304,6 +392,44 @@ def test_archive_deduplicates_asset_ids_and_stabilizes_duplicate_names(tmp_path,
     with zipfile.ZipFile(io.BytesIO(repeated.content)) as archive:
         assert archive.namelist() == names
     assert hashlib.sha256(response.content).digest() == hashlib.sha256(repeated.content).digest()
+
+
+def test_archive_avoids_casefold_name_collisions(tmp_path, monkeypatch, client):
+    first_dir = tmp_path / "first"
+    second_dir = tmp_path / "second"
+    first_dir.mkdir()
+    second_dir.mkdir()
+    first = first_dir / "Scene.png"
+    second = second_dir / "scene.png"
+    first.write_bytes(b"upper-case name")
+    second.write_bytes(b"lower-case name")
+    paths = {"asset-a": first, "asset-b": second}
+    monkeypatch.setattr(asset_registry_repo, "media_file", lambda asset_id: paths[asset_id])
+
+    response = client.post(
+        "/api/asset-registry/assets/archive",
+        headers=AUTH,
+        json={"asset_ids": ["asset-a", "asset-b"]},
+    )
+
+    assert response.status_code == 200, response.text
+    with zipfile.ZipFile(io.BytesIO(response.content)) as archive:
+        names = archive.namelist()
+        assert len(names) == 2
+        assert len({name.casefold() for name in names}) == 2
+        assert names[0] == "Scene.png"
+        assert "asset-b" in names[1]
+        assert archive.read(names[0]) == b"upper-case name"
+        assert archive.read(names[1]) == b"lower-case name"
+
+    repeated = client.post(
+        "/api/asset-registry/assets/archive",
+        headers=AUTH,
+        json={"asset_ids": ["asset-a", "asset-b"]},
+    )
+    assert repeated.status_code == 200, repeated.text
+    with zipfile.ZipFile(io.BytesIO(repeated.content)) as archive:
+        assert archive.namelist() == names
 
 
 def test_archive_reports_unavailable_asset_id_instead_of_silent_partial_zip(

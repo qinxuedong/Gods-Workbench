@@ -231,7 +231,12 @@ def _ffmpeg_proxy(path: Path, width: int, target: Path) -> dict[str, Any]:
     ]
     try:
         completed = subprocess.run(args, capture_output=True, timeout=120, check=False)
-    except (OSError, subprocess.TimeoutExpired):
+    except subprocess.TimeoutExpired:
+        partial.unlink(missing_ok=True)
+        raise CleanroomException(
+            503, "PROXY_GENERATION_TIMEOUT", "代理生成超时"
+        ) from None
+    except OSError:
         partial.unlink(missing_ok=True)
         raise CleanroomException(
             503, "MEDIA_PROCESS_FAILED", "视频代理处理失败"

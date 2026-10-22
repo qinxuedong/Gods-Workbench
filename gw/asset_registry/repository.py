@@ -1786,7 +1786,7 @@ def export_archive(asset_ids: List[str]) -> bytes:
             continue
         name = path.name
         arcname = name
-        if arcname in used_names:
+        if arcname.casefold() in used_names:
             path_name = Path(name)
             safe_id = "".join(
                 char
@@ -1799,7 +1799,7 @@ def export_archive(asset_ids: List[str]) -> bytes:
             if safe_id != asset_id:
                 safe_id += "-" + digest
             arcname = "%s--%s%s" % (path_name.stem, safe_id, path_name.suffix)
-            if arcname in used_names:
+            if arcname.casefold() in used_names:
                 arcname = "%s--%s-%s%s" % (
                     path_name.stem,
                     safe_id,
@@ -1807,7 +1807,7 @@ def export_archive(asset_ids: List[str]) -> bytes:
                     path_name.suffix,
                 )
             suffix = 2
-            while arcname in used_names:
+            while arcname.casefold() in used_names:
                 arcname = "%s--%s-%s-%d%s" % (
                     path_name.stem,
                     safe_id,
@@ -1816,7 +1816,7 @@ def export_archive(asset_ids: List[str]) -> bytes:
                     path_name.suffix,
                 )
                 suffix += 1
-        used_names.add(arcname)
+        used_names.add(arcname.casefold())
         entries.append((arcname, path, asset_id))
     if unavailable_asset_ids:
         first_unavailable = unavailable_asset_ids[0]

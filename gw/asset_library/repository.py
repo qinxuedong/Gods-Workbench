@@ -383,8 +383,10 @@ def file_info(raw_path: str) -> dict[str, Any]:
             payload["data_status"] = "partial"
             payload["data_gaps"] = ["image_probe_dependency_missing"]
         else:
+            image_recognized = False
             try:
                 with Image.open(path) as image:
+                    image_recognized = True
                     width, height = image.size
                     image.verify()
                 payload["width"], payload["height"] = width, height
@@ -394,9 +396,13 @@ def file_info(raw_path: str) -> dict[str, Any]:
             except UnidentifiedImageError:
                 payload["data_status"] = "partial"
                 payload["data_gaps"] = ["image_probe_corrupt"]
-            except OSError:
+            except OSError as exc:
                 payload["data_status"] = "partial"
-                payload["data_gaps"] = ["image_probe_unreadable"]
+                payload["data_gaps"] = [
+                    "image_probe_corrupt"
+                    if image_recognized and exc.errno is None
+                    else "image_probe_unreadable"
+                ]
             except Exception:
                 payload["data_status"] = "partial"
                 payload["data_gaps"] = ["image_probe_internal_error"]
