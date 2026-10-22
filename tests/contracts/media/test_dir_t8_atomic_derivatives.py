@@ -172,6 +172,7 @@ def test_storyboard_cache_isolated_per_version(
     monkeypatch.setattr(
         media_probe, "probe", lambda _path: {"width": 64, "height": 64, "duration_seconds": 4.0}
     )
+    monkeypatch.setattr(media_probe, "_ffmpeg", lambda _name: "ffmpeg-test-double")
 
     def fake_run(args: list[str]) -> subprocess.CompletedProcess:
         target = Path(args[-1])
@@ -204,6 +205,7 @@ def test_clip_cas_conflict_leaves_no_orphan_media(
     monkeypatch.setattr(
         media_probe, "probe", lambda _path: {"width": 64, "height": 64, "duration_seconds": 8.0}
     )
+    monkeypatch.setattr(media_probe, "_ffmpeg", lambda _name: "ffmpeg-test-double")
 
     def fake_run(args: list[str]) -> subprocess.CompletedProcess:
         target = Path(args[-1])
@@ -238,6 +240,7 @@ def test_keyframe_extractor_writes_part_then_replaces(
     video = root / "scene.mp4"
     video.write_bytes(b"fixture-not-a-real-mp4")
     output_dir = media_runtime["data"] / "keyframes"
+    monkeypatch.setattr(keyframe_extractor, "_tool", lambda _name: "ffmpeg-test-double")
 
     def fake_run(args: list[str]) -> subprocess.CompletedProcess:
         target = Path(args[-1])
@@ -315,6 +318,7 @@ def test_storyboard_delete_outputs_removes_versioned_cache(
     monkeypatch.setattr(
         media_probe, "probe", lambda _path: {"width": 16, "height": 16, "duration_seconds": 2.0}
     )
+    monkeypatch.setattr(media_probe, "_ffmpeg", lambda _name: "ffmpeg-test-double")
 
     def fake_run(args: list[str]) -> subprocess.CompletedProcess:
         target = Path(args[-1])
