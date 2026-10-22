@@ -102,6 +102,7 @@ def _roots():
         }
         for root_id, root in canonical.items()
     }
+    registered_locations = {}
     for item in default_storage_settings_service.get_snapshot().local_libraries:
         source_id = str(item.get("id") or "")
         raw_path = str(item.get("path") or "")
@@ -124,12 +125,18 @@ def _roots():
         if not matches:
             continue
         root_id, root, relative = max(matches, key=lambda match: len(match[1].parts))
+        prefix = "" if str(relative) == "." else relative.as_posix()
         aliases[source_id] = {
             "root_id": root_id,
             "root": root,
-            "prefix": "" if str(relative) == "." else relative.as_posix(),
+            "prefix": prefix,
             "storage_root_id": source_id,
             "name": str(item.get("name") or source_id),
+        }
+        registered_locations[source_id] = {
+            "root_id": root_id,
+            "prefix": prefix,
+            "available": resolved.is_dir(),
         }
     # 已确认的路径别名仅作为同一登记来源的离线恢复通道；未确认候选不参与索引。
     from gw.asset_registry import repository as repo
@@ -137,7 +144,13 @@ def _roots():
     bound_aliases = repo.state().read().get("root_aliases", {})
     for item in default_storage_settings_service.get_snapshot().local_libraries:
         source_id = str(item.get("id") or "")
-        if not source_id or source_id in aliases:
+        if not source_id:
+            continue
+        registered = registered_locations.get(source_id)
+        # 登记目录仍可访问时只使用登记路径；已离线时才考虑确认过的别名。
+        if source_id in aliases and (
+            registered is None or registered["available"]
+        ):
             continue
         bound = bound_aliases.get(source_id)
         bound_root_id = str(bound.get("root_id") or "") if isinstance(bound, dict) else ""
@@ -151,6 +164,44 @@ def _roots():
                 alias_path = Path(raw_alias_path).resolve(strict=True)
             except (OSError, RuntimeError, ValueError):
                 continue
+            if not alias_path.is_dir():
+                continue
+
+            if registered is not None:
+                # 离线来源的身份与 canonical 前缀必须仍与持久绑定完全一致。
+                if bound_root_id != registered["root_id"]:
+                    continue
+                bound_prefix = bound.get("canonical_relpath")
+                if not isinstance(bound_prefix, str):
+                    continue
+                try:
+                    expected_prefix = (
+                        storage.canonical_relpath(registered["prefix"])
+                        if registered["prefix"]
+                        else ""
+                    )
+                    confirmed_prefix = (
+                        storage.canonical_relpath(bound_prefix) if bound_prefix else ""
+                    )
+                except CleanroomException:
+                    continue
+                root = canonical.get(bound_root_id)
+                if (
+                    confirmed_prefix != expected_prefix
+                    or root is None
+                ):
+                    continue
+                aliases[source_id] = {
+                    "root_id": bound_root_id,
+                    "root": root,
+                    "prefix": registered["prefix"],
+                    "scan_path": alias_path,
+                    "storage_root_id": source_id,
+                    "name": str(item.get("name") or source_id),
+                }
+                break
+
+            # 旧绑定路径位于 allowed root 内时保留原有支持，不把外部路径升格为 allowed root。
             matches = []
             for allowed_root in roots:
                 try:
@@ -158,7 +209,7 @@ def _roots():
                 except ValueError:
                     continue
                 matches.append((allowed_root, relative))
-            if not alias_path.is_dir() or not matches:
+            if not matches:
                 continue
             root, relative = max(matches, key=lambda match: len(match[0].parts))
             existing_root = canonical.get(bound_root_id)
@@ -197,7 +248,11 @@ def root_facets():
             "name": alias["name"],
             "count": counts.get(source_id, 0),
             "availability": "available"
-            if alias["root"].joinpath(*Path(alias.get("prefix") or ".").parts).is_dir()
+            if (
+                Path(alias["scan_path"]).is_dir()
+                if alias.get("scan_path") is not None
+                else alias["root"].joinpath(*Path(alias.get("prefix") or ".").parts).is_dir()
+            )
             else "offline",
         }
         for source_id, alias in sorted(aliases.items())
@@ -490,6 +545,11 @@ class IndexJobs:
                 "root_id": alias["root_id"],
                 "prefix": alias["prefix"],
                 "storage_root_id": alias["storage_root_id"],
+                **(
+                    {"scan_path": str(alias["scan_path"])}
+                    if alias.get("scan_path") is not None
+                    else {}
+                ),
             }
             for alias in selected_aliases
         ]
@@ -793,7 +853,14 @@ class IndexJobs:
         for scope in scopes:
             root_id = scope["root_id"]
             root = roots[root_id]
-            scan_root = root.joinpath(*Path(scope.get("prefix") or ".").parts)
+            prefix = scope.get("prefix") or ""
+            scan_path = scope.get("scan_path")
+            scan_root = (
+                Path(scan_path)
+                if scan_path is not None
+                else root.joinpath(*Path(prefix or ".").parts)
+            )
+            boundary = scan_root if scan_path is not None else root
             with self.condition:
                 self._checkpoint(job_id, attempt)
                 try:
@@ -804,7 +871,10 @@ class IndexJobs:
                     not scan_root.is_dir()
                     or scan_root_resolved is None
                     or scan_root_resolved != scan_root.absolute()
-                    or not scan_root_resolved.is_relative_to(root)
+                    or (
+                        scan_path is None
+                        and not scan_root_resolved.is_relative_to(root)
+                    )
                 ):
                     _error(
                         503,
@@ -816,7 +886,7 @@ class IndexJobs:
             pending = [scan_root]
             while pending:
                 folder = pending.pop()
-                for child in self._children(job_id, attempt, folder, root):
+                for child in self._children(job_id, attempt, folder, boundary):
                     entries += 1
                     if entries > MAX_ENTRIES:
                         _error(413, "INDEX_SCAN_LIMIT", "扫描目录项数量超过上限")
@@ -833,7 +903,7 @@ class IndexJobs:
                             path = Path(child.path)
                             if (
                                 path.resolve() != path.absolute()
-                                or not path.resolve().is_relative_to(root)
+                                or not path.resolve().is_relative_to(boundary)
                             ):
                                 continue
                             if stat.S_ISDIR(info.st_mode):
@@ -843,7 +913,16 @@ class IndexJobs:
                                 continue
                             if len(files) >= request["max_files"]:
                                 _error(413, "INDEX_SCAN_LIMIT", "扫描文件数量超过上限")
-                            display_path = path.relative_to(root).as_posix()
+                            relative_path = path.relative_to(boundary).as_posix()
+                            display_path = (
+                                "/".join(
+                                    part
+                                    for part in (prefix, relative_path)
+                                    if part and part != "."
+                                )
+                                if scan_path is not None
+                                else relative_path
+                            )
                             item = {
                                 "root_id": root_id,
                                 "storage_root_id": scope.get("storage_root_id")
