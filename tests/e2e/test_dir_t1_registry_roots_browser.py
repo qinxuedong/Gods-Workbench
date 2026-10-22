@@ -61,7 +61,22 @@ def test_dir_t1_create_library_index_and_filter_from_browser(monkeypatch, tmp_pa
             )
             assert linked.status == 200, linked.text()
 
+        # 页面会自动选中第一个项目，并在关联完成前把空的项目范围列表缓存下来。
+        # 关联之后必须重新读取，来源看板才会显示刚索引的真实文件。
         vault.locator('[data-tab]').filter(has_text="DIR-T1 中文素材库").click()
+        visible = False
+        for _ in range(3):
+            with page.expect_response(lambda item: "/api/asset-registry/assets?" in item.url
+                                      and f"root_id={root_id}" in item.url
+                                      and item.request.method == "GET",
+                                      timeout=15000) as refreshed:
+                vault.locator("[data-refresh-assets]").click()
+            body = refreshed.value.json()
+            assert refreshed.value.status == 200, refreshed.value.text()
+            visible = any(item.get("name") == "浏览器素材-甲.txt" for item in body.get("assets") or [])
+            if visible:
+                break
+        assert visible, body
         vault.locator("[data-registry-card]").filter(has_text="浏览器素材-甲.txt").wait_for(timeout=15000)
 
         vault.locator('[data-tab="registry"]').click()

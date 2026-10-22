@@ -256,11 +256,18 @@ class IndexJobs:
 
         self.store.mutate(restore)
 
-    def shutdown(self):
+    def _same_root(self) -> bool:
+        """数据根已经切走时，旧线程不得再把任务或资产写进新的数据目录。"""
+        try:
+            return storage.data_root().resolve() == self.root
+        except (CleanroomException, OSError, RuntimeError):
+            return False
+
+    def shutdown(self, *, wait: bool = True):
         with self.condition:
             self.closed = True
             self.condition.notify_all()
-        self.executor.shutdown(wait=True, cancel_futures=True)
+        self.executor.shutdown(wait=wait, cancel_futures=True)
 
     def _check(self, job):
         if self.closed or storage.data_root().resolve() != self.root:
@@ -302,6 +309,8 @@ class IndexJobs:
         return job
 
     def _save(self, job):
+        if not self._same_root():
+            return
         job["updated_at"] = storage.now_iso()
         self.store.mutate(lambda raw: raw["jobs"].__setitem__(job["job_id"], job))
 
@@ -898,13 +907,21 @@ _default_lock = threading.Lock()
 
 def service():
     global _default
+    stale = None
     with _default_lock:
         root = storage.data_root().resolve()
-        if _default is None or _default.root != root or _default.closed:
-            if _default is not None:
-                _default.shutdown()
+        if _default is not None and (_default.root != root or _default.closed):
+            # 请求线程不能等上一个数据根的扫描结束。全量套件里残留的索引
+            # 线程会把下一次 POST /reindex 堵在 shutdown(wait=True) 上，
+            # 浏览器只能看到响应超时，而不是 202。
+            stale = _default
+            _default = None
+        if _default is None:
             _default = IndexJobs()
-        return _default
+        current = _default
+    if stale is not None:
+        stale.shutdown(wait=False)
+    return current
 
 
 def shutdown():

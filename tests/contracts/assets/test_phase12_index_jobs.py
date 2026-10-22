@@ -35,6 +35,36 @@ def index_runtime(tmp_path, monkeypatch):
     jobs._default = None
 
 
+def test_replacing_data_root_does_not_wait_for_previous_index_executor(tmp_path, monkeypatch):
+    """上一个数据根的索引线程还在跑时，新的 service() 必须立刻返回。"""
+    started, release, finished = threading.Event(), threading.Event(), threading.Event()
+    previous = jobs.service()
+
+    def hold():
+        started.set()
+        release.wait(30)
+        finished.set()
+
+    previous.executor.submit(hold)
+    assert started.wait(3)
+    monkeypatch.setenv("GW_DATA_DIR", str(tmp_path / "next-data"))
+    monkeypatch.setenv("GW_LOCAL_AUTH_DB", str(tmp_path / "next-auth.sqlite3"))
+    monkeypatch.setenv("GW_VIDEO_DATA_DIR", str(tmp_path / "next-video"))
+    try:
+        began = time.monotonic()
+        current = jobs.service()
+        elapsed = time.monotonic() - began
+        assert elapsed < 1, elapsed
+        assert current is not previous
+        assert current.root == (tmp_path / "next-data").resolve()
+        assert previous.closed is True
+        assert finished.is_set() is False
+    finally:
+        release.set()
+        assert finished.wait(5)
+        previous.executor.shutdown(wait=True, cancel_futures=True)
+
+
 def test_application_shutdown_stops_index_executor(tmp_path, monkeypatch):
     """应用退出必须停掉索引线程池，不能只依赖已删除的 add_event_handler。"""
     monkeypatch.setenv("GW_DATA_DIR", str(tmp_path / "gw-data"))
