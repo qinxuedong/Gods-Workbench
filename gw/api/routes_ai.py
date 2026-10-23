@@ -905,7 +905,7 @@ async def upload_ai_files(
             400, "INVALID_REQUEST", "上传必须使用 multipart/form-data"
         )
     form = await request.form()
-    payloads: List[tuple] = []
+    payloads: list[tuple] = []
     for key in ("files", "file"):
         for item in form.getlist(key):
             if hasattr(item, "read"):
