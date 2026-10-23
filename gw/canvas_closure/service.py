@@ -31,7 +31,7 @@ from __future__ import annotations
 import copy
 import threading
 import time
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from gw.asset_registry.service import (
     AssetRegistryService,
