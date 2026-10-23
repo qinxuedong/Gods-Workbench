@@ -51,7 +51,7 @@ from gw.core.errors import CleanroomException
 
 NS_REGISTRY = "asset_registry"
 DATA_STATUS_OK = "ok"
-_ENTITY_FILTER_INDEX_CACHE_KEY: Optional[Tuple[str, int]] = None
+_ENTITY_FILTER_INDEX_CACHE_KEY: Optional[Tuple[str, int, int, int]] = None
 _ENTITY_FILTER_INDEX_CACHE_VALUE: Tuple[
     Dict[str, Tuple[str, str]], Dict[str, set[str]], Dict[Tuple[str, str], set[str]]
 ] = ({}, {}, {})
@@ -710,19 +710,35 @@ def _entity_filter_index() -> Tuple[
 
     from gw.entities import repository as entities_repository
 
-    raw = entities_repository.state().read()
+    entity_state = entities_repository.state()
+    raw = entity_state.read()
     if not isinstance(raw, dict):
         raw = {}
     revision_value = raw.get("revision", 1)
-    if type(revision_value) is int and revision_value >= 1:
-        revision = revision_value
-    else:
-        revision = 1
+    if type(revision_value) is not int or revision_value < 1:
+        raise CleanroomException(
+            503,
+            "ENTITY_INDEX_UNAVAILABLE",
+            "实体母库版本无效，筛选暂不可用",
+        )
+    revision = revision_value
 
-    cache_key = (str(storage.data_root().resolve()), revision)
-    with _ENTITY_FILTER_INDEX_CACHE_LOCK:
-        if _ENTITY_FILTER_INDEX_CACHE_KEY == cache_key:
-            return _ENTITY_FILTER_INDEX_CACHE_VALUE, revision
+    entity_data_file = storage.data_root() / f"{entity_state.namespace}.json"
+    try:
+        entity_stat = entity_data_file.stat()
+    except OSError:
+        cache_key = None
+    else:
+        cache_key = (
+            str(storage.data_root().resolve()),
+            revision,
+            entity_stat.st_mtime_ns,
+            entity_stat.st_size,
+        )
+    if cache_key is not None:
+        with _ENTITY_FILTER_INDEX_CACHE_LOCK:
+            if _ENTITY_FILTER_INDEX_CACHE_KEY == cache_key:
+                return _ENTITY_FILTER_INDEX_CACHE_VALUE, revision
 
     by_id: Dict[str, Tuple[str, str]] = {}
     by_type: Dict[str, set[str]] = {}
@@ -760,6 +776,8 @@ def _entity_filter_index() -> Tuple[
             ).add(entity_id)
 
     index = (by_id, by_type, by_project_type)
+    if cache_key is None:
+        return index, revision
     with _ENTITY_FILTER_INDEX_CACHE_LOCK:
         if _ENTITY_FILTER_INDEX_CACHE_KEY != cache_key:
             _ENTITY_FILTER_INDEX_CACHE_KEY = cache_key

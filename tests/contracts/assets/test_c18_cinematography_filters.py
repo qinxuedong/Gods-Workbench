@@ -358,6 +358,46 @@ def test_c18_archived_entities_do_not_match_filters(client: TestClient) -> None:
     assert body["items"] == []
 
 
+def test_c18_entity_filter_cache_invalidates_when_content_changes_without_revision(
+    client: TestClient,
+) -> None:
+    entity_id = _create_entity("character", "Mira")
+    _register_assets(client, [("mira.png", {"entity_ids": [entity_id]})])
+
+    first, first_response = _query(client, {"entity_type": ["character"]})
+    assert first_response.status_code == 200, first_response.text
+    assert first["total"] == 1
+
+    raw = entity_repository.state().read()
+    raw["entities"][entity_id]["entity_type"] = "location"
+    entity_repository.state().write(raw)
+
+    updated, updated_response = _query(client, {"entity_type": ["character"]})
+
+    assert updated_response.status_code == 200, updated_response.text
+    assert updated["total"] == 0
+    assert updated["items"] == []
+
+
+@pytest.mark.parametrize("entity_revision", [True, 0, -1, "oops", 1.5, None])
+def test_c18_entity_filter_fails_closed_for_invalid_stored_revision(
+    client: TestClient, entity_revision: object
+) -> None:
+    _, warm_response = _query(client, {"entity_type": ["character"]})
+    assert warm_response.status_code == 200, warm_response.text
+
+    entity_id = _create_entity("character", "Mira")
+    _register_assets(client, [("mira.png", {"entity_ids": [entity_id]})])
+    raw = entity_repository.state().read()
+    raw["revision"] = entity_revision
+    entity_repository.state().write(raw)
+
+    _, response = _query(client, {"entity_type": ["character"]})
+
+    assert response.status_code == 503, response.text
+    assert response.json()["detail"]["code"] == "ENTITY_INDEX_UNAVAILABLE"
+
+
 def test_c18_entity_filter_cursor_paginates_and_detects_entity_changes(
     client: TestClient,
 ) -> None:
