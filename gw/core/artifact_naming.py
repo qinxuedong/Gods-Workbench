@@ -27,7 +27,7 @@ from __future__ import annotations
 import re
 import unicodedata
 from pathlib import PurePosixPath
-from typing import Any, Optional
+from typing import Any
 
 #: 封闭修饰词字典
 MODIFIER_WHITELIST: frozenset[str] = frozenset(
