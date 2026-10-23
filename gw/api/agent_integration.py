@@ -9,9 +9,7 @@ import hashlib
 import inspect
 import json
 import os
-import uuid
 from collections.abc import Callable, Mapping
-from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -23,7 +21,6 @@ from gw.agent_runtime.application import HostIdentityProjectAdapter, RuntimeAgen
 from gw.agent_runtime.errors import DomainError
 from gw.agent_runtime.models import (
     BudgetDecision,
-    BudgetOutcomeState,
     BudgetReservationRequest,
     BudgetSettlement,
     BudgetState,
@@ -33,7 +30,6 @@ from gw.agent_runtime.models import (
     ErrorCode,
     FinishReason,
     Identifier,
-    InvocationLimits,
     MessageRole,
     Mode,
     ModelCapabilities,
@@ -63,7 +59,7 @@ from gw.core.config import (
     load_runtime_auth_config,
 )
 from gw.core.errors import CleanroomException, ForbiddenException, UnauthorizedException
-from gw.core.runtime_paths import RuntimePathError, RuntimePaths, resolve_runtime_paths
+from gw.core.runtime_paths import RuntimePaths, resolve_runtime_paths
 from gw.core.storage import next_sequence
 from gw.projects_hub import service as projects_service_module
 from gw.projects_hub.service import ProjectsService, owner_key_for_context
