@@ -17,8 +17,6 @@
 严格对齐 docs/contracts/PROJECTS-HUB-INTERFACE-CATALOG.yaml 定义的 7 个端点，接驳 ProjectsService。
 """
 
-from typing import Optional
-
 from fastapi import APIRouter, Body, Header, Query, status
 
 from gw.core.auth import (
