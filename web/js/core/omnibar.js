@@ -127,7 +127,15 @@
       try {
         const destination = new URL(result.href, global.location.href);
         if (destination.origin === global.location.origin) global.location.assign(destination.href);
-      } catch (_) {}
+      } catch (error) {
+        global.dispatchEvent?.(new global.CustomEvent('gw:omnibar-error', {
+          detail: {
+            code: 'INVALID_RESULT_URL',
+            href: result.href,
+            message: String(error?.message || error),
+          },
+        }));
+      }
     }
     close();
     return true;
@@ -211,6 +219,7 @@
     input.addEventListener('input', emitQuery);
     input.addEventListener('keydown', event => {
       if (event.key !== 'Enter') return;
+      if (event.isComposing || event.keyCode === 229) return;
       event.preventDefault();
       event.stopPropagation();
       if (mode === 'agent') emitAgentSubmit();
@@ -256,7 +265,12 @@
     if (!connected(target)) return;
     const focus = () => {
       if (connected(target)) {
-        try { target.focus({preventScroll: true}); } catch (_) { target.focus(); }
+        try {
+          target.focus({preventScroll: true});
+        } catch (_) {
+          // 旧版浏览器不支持 preventScroll 时，仍要把焦点还给触发控件。
+          target.focus();
+        }
       }
     };
     const raf = global.requestAnimationFrame || (callback => global.setTimeout(callback, 0));
@@ -277,7 +291,12 @@
   }
 
   function parentFrameFor(doc) {
-    try { return doc?.defaultView?.frameElement || null; } catch (_) { return null; }
+    try {
+      return doc?.defaultView?.frameElement || null;
+    } catch (_) {
+      // 跨域文档禁止读取 frameElement；将其视为没有可返回焦点的父 frame。
+      return null;
+    }
   }
 
   function open(trigger = document.activeElement, openerDocument = document) {
