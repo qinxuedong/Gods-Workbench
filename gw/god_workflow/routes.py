@@ -14,13 +14,12 @@ import re
 import shutil
 import socket
 import tempfile
-import threading
 import time
 import uuid
 from copy import deepcopy
-from datetime import UTC, datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 from urllib.parse import quote, urljoin, urlsplit
 
 import httpx
@@ -50,7 +49,6 @@ from gw.god_workflow.layout import compute_layout
 from gw.god_workflow.legacy_reparse import legacy_reparse_state
 from gw.god_workflow.models import WorkflowSource
 from gw.god_workflow.parser import (
-    MAX_PNG_TEXT_BYTES,
     MAX_UPLOAD_BYTES,
     WorkflowParseError,
     _api_link,
