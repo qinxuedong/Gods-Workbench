@@ -216,7 +216,7 @@ def update_asset(asset_id: str, payload: Dict[str, Any]) -> Dict[str, Any]:
                 item[key] = payload[key]
         if payload.get("display_path") is not None:
             requested_root_id = str(payload.get("root_id") or item.get("root_id") or "")
-            path = storage.resolve_within_roots(
+            path = storage.resolve_request_path(
                 str(payload["display_path"]),
                 root_id=requested_root_id or None,
             )
