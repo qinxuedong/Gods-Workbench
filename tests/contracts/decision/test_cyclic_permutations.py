@@ -1,4 +1,3 @@
-import pytest
 from gw.decision.debiasing import cyclic_permutations
 
 def test_cyclic_permutations_empty():
