@@ -18,13 +18,19 @@ from __future__ import annotations
 
 import hashlib
 import importlib
+import logging
 import math
 import sqlite3
 import struct
 import threading
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Sequence
+
+logger = logging.getLogger(__name__)
+
+MAX_SEARCH_LIMIT = 1000
+MAX_QUERY_LENGTH = 4096
 
 
 @dataclass(frozen=True, slots=True)
@@ -120,8 +126,7 @@ def _fts_index_text(text: str) -> str:
 
 
 def _fts_query(query: str) -> str:
-    if not isinstance(query, str):
-        raise ValueError("query 必须是字符串")
+    _validate_query(query)
     terms: list[str] = []
     for is_cjk_unit, value in _search_units(query.strip()):
         if is_cjk_unit and len(value) > 1:
@@ -130,6 +135,14 @@ def _fts_query(query: str) -> str:
             terms.append(value)
     # OR 保留多词查询的召回率；每个词项都显式引用，不能注入 FTS5 语法。
     return " OR ".join(f'"{term}"' for term in dict.fromkeys(terms))
+
+
+def _validate_query(query: str) -> str:
+    if not isinstance(query, str):
+        raise ValueError("query 必须是字符串")
+    if len(query) > MAX_QUERY_LENGTH:
+        raise ValueError(f"query 长度不得超过 {MAX_QUERY_LENGTH} 个字符")
+    return query
 
 
 class SQLiteVecEngine:
@@ -149,6 +162,7 @@ class SQLiteVecEngine:
         self.dimensions = dimensions
         self.vector_enabled = False
         self.vector_error: str | None = None
+        self._vector_search_state = threading.local()
         self._lock = threading.RLock()
         self._closed = False
 
@@ -193,6 +207,7 @@ class SQLiteVecEngine:
             _load_sqlite_vec(self._db)
         except Exception as exc:
             self.vector_error = f"sqlite-vec unavailable: {type(exc).__name__}"
+            logger.warning("sqlite-vec 未能加载，检索降级为 FTS5：%s", self.vector_error)
             return
 
         try:
@@ -208,6 +223,7 @@ class SQLiteVecEngine:
                 raise RuntimeError("现有 sqlite-vec 索引维度与配置不匹配")
         except Exception as exc:
             self.vector_error = f"sqlite-vec schema unavailable: {type(exc).__name__}"
+            logger.warning("sqlite-vec 索引不可用，检索降级为 FTS5：%s", self.vector_error)
             return
         self.vector_enabled = True
         self.vector_error = None
@@ -218,8 +234,12 @@ class SQLiteVecEngine:
 
     @staticmethod
     def _validate_limit(limit: int) -> int:
-        if isinstance(limit, bool) or not isinstance(limit, int) or limit < 1:
-            raise ValueError("limit 必须是正整数")
+        if (
+            isinstance(limit, bool)
+            or not isinstance(limit, int)
+            or not 1 <= limit <= MAX_SEARCH_LIMIT
+        ):
+            raise ValueError(f"limit 必须在 1 到 {MAX_SEARCH_LIMIT} 之间")
         return limit
 
     def upsert_document(
@@ -236,11 +256,12 @@ class SQLiteVecEngine:
             raise ValueError("asset_id 不能为空")
         if not isinstance(title, str) or not isinstance(content, str):
             raise ValueError("title 与 content 必须是字符串")
-        vector_blob = (
+        validated_embedding = (
             _serialize_vector(embedding, self.dimensions)
-            if embedding is not None and self.vector_enabled
+            if embedding is not None
             else None
         )
+        vector_blob = validated_embedding if self.vector_enabled else None
         vector_hash = hashlib.sha256(vector_blob).hexdigest() if vector_blob else None
 
         with self._lock:
@@ -248,17 +269,17 @@ class SQLiteVecEngine:
             self._db.execute("BEGIN IMMEDIATE")
             try:
                 row = self._db.execute(
-                    f"SELECT row_id FROM {self._DOCUMENTS} WHERE asset_id=?",
+                    f"SELECT row_id FROM {self._DOCUMENTS} WHERE asset_id=?",  # noqa: S608
                     (asset_id,),
                 ).fetchone()
                 if row:
                     row_id = int(row["row_id"])
                     self._db.execute(
-                        f"UPDATE {self._DOCUMENTS} SET title=?,content=?,vector_hash=? WHERE row_id=?",
+                        f"UPDATE {self._DOCUMENTS} SET title=?,content=?,vector_hash=? WHERE row_id=?",  # noqa: S608
                         (title, content, vector_hash, row_id),
                     )
                     self._db.execute(
-                        f"DELETE FROM {self._FTS} WHERE rowid=?", (row_id,)
+                        f"DELETE FROM {self._FTS} WHERE rowid=?", (row_id,)  # noqa: S608
                     )
                 else:
                     cursor = self._db.execute(
@@ -278,7 +299,7 @@ class SQLiteVecEngine:
                 )
                 if self.vector_enabled:
                     self._db.execute(
-                        f"DELETE FROM {self._VECTORS} WHERE rowid=?", (row_id,)
+                        f"DELETE FROM {self._VECTORS} WHERE rowid=?", (row_id,)  # noqa: S608
                     )
                     if vector_blob is not None:
                         self._db.execute(
@@ -301,7 +322,7 @@ class SQLiteVecEngine:
             self._db.execute("BEGIN IMMEDIATE")
             try:
                 row = self._db.execute(
-                    f"SELECT row_id FROM {self._DOCUMENTS} WHERE asset_id=?",
+                    f"SELECT row_id FROM {self._DOCUMENTS} WHERE asset_id=?",  # noqa: S608
                     (asset_id,),
                 ).fetchone()
                 if not row:
@@ -309,14 +330,14 @@ class SQLiteVecEngine:
                     return False
                 row_id = int(row["row_id"])
                 self._db.execute(
-                    f"DELETE FROM {self._FTS} WHERE rowid=?", (row_id,)
+                    f"DELETE FROM {self._FTS} WHERE rowid=?", (row_id,)  # noqa: S608
                 )
                 if self.vector_enabled:
                     self._db.execute(
-                        f"DELETE FROM {self._VECTORS} WHERE rowid=?", (row_id,)
+                        f"DELETE FROM {self._VECTORS} WHERE rowid=?", (row_id,)  # noqa: S608
                     )
                 self._db.execute(
-                    f"DELETE FROM {self._DOCUMENTS} WHERE row_id=?", (row_id,)
+                    f"DELETE FROM {self._DOCUMENTS} WHERE row_id=?", (row_id,)  # noqa: S608
                 )
                 self._db.commit()
             except Exception:
@@ -325,36 +346,43 @@ class SQLiteVecEngine:
         return True
 
     def search_fts(self, query: str, *, limit: int = 20) -> list[FTSMatch]:
+        """搜索关键词；limit 不在 1~1000 时抛 ValueError，query 最长 4096 字符。"""
         self._ensure_open()
         limit = self._validate_limit(limit)
-        expression = _fts_query(query)
+        expression = _fts_query(_validate_query(query))
         if not expression:
             return []
         with self._lock:
             self._ensure_open()
-            rows = self._db.execute(
+            sql = (
                 f"""SELECT d.asset_id, bm25({self._FTS}) AS rank
                     FROM {self._FTS} AS f
                     JOIN {self._DOCUMENTS} AS d ON d.row_id=f.rowid
                     WHERE {self._FTS} MATCH ?
                     ORDER BY rank ASC, d.asset_id ASC
-                    LIMIT ?""",
-                (expression, limit),
-            ).fetchall()
+                    LIMIT ?"""  # noqa: S608
+            )
+            rows = self._db.execute(sql, (expression, limit)).fetchall()
         return [FTSMatch(asset_id=str(row["asset_id"]), score=-float(row["rank"])) for row in rows]
 
     def search_vectors(
         self, query_vector: Sequence[float], *, limit: int = 20
     ) -> list[VectorMatch]:
+        """搜索向量；limit 不在 1~1000 时抛 ValueError。
+
+        单次 SQLite 查询错误只让本次调用降级，不会关闭已加载的向量轨。
+        """
         self._ensure_open()
         limit = self._validate_limit(limit)
+        self._vector_search_state.degraded = False
         if not self.vector_enabled:
+            self._vector_search_state.degraded = True
             return []
         vector_blob = _serialize_vector(query_vector, self.dimensions)
         with self._lock:
             self._ensure_open()
             try:
-                rows = self._db.execute(
+                sql = (
                     f"""SELECT d.asset_id, nearest.distance
                         FROM (
                             SELECT rowid, distance
@@ -365,17 +393,25 @@ class SQLiteVecEngine:
                         ) AS nearest
                         JOIN {self._DOCUMENTS} AS d ON d.row_id=nearest.rowid
                         WHERE d.vector_hash IS NOT NULL
-                        ORDER BY nearest.distance ASC, d.asset_id ASC""",
-                    (vector_blob, limit),
-                ).fetchall()
-            except sqlite3.Error as exc:
-                self.vector_enabled = False
-                self.vector_error = f"sqlite-vec query unavailable: {type(exc).__name__}"
+                        ORDER BY nearest.distance ASC, d.asset_id ASC"""  # noqa: S608
+                )
+                rows = self._db.execute(sql, (vector_blob, limit)).fetchall()
+            except (sqlite3.Error, OverflowError) as exc:
+                self._vector_search_state.degraded = True
+                logger.warning(
+                    "sqlite-vec 查询失败，本次混合检索暂用 FTS5：%s",
+                    type(exc).__name__,
+                )
                 return []
         return [
             VectorMatch(asset_id=str(row["asset_id"]), distance=float(row["distance"]))
             for row in rows
         ]
+
+    @property
+    def last_vector_search_degraded(self) -> bool:
+        """返回当前线程最近一次向量查询是否临时降级。"""
+        return bool(getattr(self._vector_search_state, "degraded", False))
 
     @property
     def vector_version(self) -> str | None:

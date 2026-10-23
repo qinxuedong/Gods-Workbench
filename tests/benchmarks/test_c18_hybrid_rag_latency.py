@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import platform
 import random
+import sqlite3
 import time
 from math import ceil
 from pathlib import Path
@@ -16,6 +18,40 @@ import pytest
 import gw.core.sqlite_vec_engine as sqlite_vec_engine
 from gw.asset_registry.hybrid_search import HybridAssetSearcher
 from gw.core.sqlite_vec_engine import SQLiteVecEngine
+
+
+class _FailingKnnConnection:
+    """在一次 KNN 查询或过大 LIMIT 时注入瞬时 SQLite 错误。"""
+
+    def __init__(
+        self,
+        connection: sqlite3.Connection,
+        *,
+        failure: Exception | None = None,
+        fail_limit_above: int | None = None,
+    ) -> None:
+        self.connection = connection
+        self.failure = failure
+        self.fail_limit_above = fail_limit_above
+
+    def execute(self, sql: str, parameters: tuple[object, ...] = ()) -> object:
+        if "FROM c18_vectors" in sql:
+            limit = int(parameters[-1])
+            should_fail = (
+                self.failure is not None
+                or self.fail_limit_above is not None
+                and limit > self.fail_limit_above
+            )
+            if should_fail:
+                if self.failure is not None:
+                    failure = self.failure
+                    self.failure = None
+                    raise failure
+                raise sqlite3.OperationalError("KNN LIMIT exceeds test boundary")
+        return self.connection.execute(sql, parameters)
+
+    def close(self) -> None:
+        self.connection.close()
 
 
 def _nearest_rank_percentile(samples: list[float], quantile: float) -> float:
@@ -90,6 +126,7 @@ def test_hybrid_search_merges_and_deduplicates_both_tracks(
         assert len({hit.asset_id for hit in hits}) == len(hits)
         assert hits[0].lexical_rank == 2
         assert hits[0].vector_rank == 1
+        assert hits[0].vector_track_degraded is False
         assert hits[1].lexical_rank == 1
         assert hits[1].vector_rank is None
     finally:
@@ -117,6 +154,7 @@ def test_hybrid_search_degrades_to_fts5_when_sqlite_vec_is_unavailable(
         assert [hit.asset_id for hit in hits] == ["asset-1"]
         assert hits[0].lexical_rank == 1
         assert hits[0].vector_rank is None
+        assert hits[0].vector_track_degraded is True
     finally:
         engine.close()
 
@@ -150,13 +188,135 @@ def test_sqlite_vec_returns_nearest_neighbors_when_extension_is_available(
         engine.close()
 
 
+@pytest.mark.parametrize(
+    "failure",
+    [
+        sqlite3.OperationalError("temporary busy"),
+        OverflowError("temporary KNN overflow"),
+    ],
+    ids=["sqlite-error", "overflow-error"],
+)
+def test_hybrid_runtime_query_error_degrades_once_without_disabling_vector_track(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture, failure: Exception
+) -> None:
+    """单次查询错误应告警并临时降级，下一次查询仍可走向量轨。"""
+    pytest.importorskip("sqlite_vec", reason="当前运行时未安装 sqlite-vec 扩展")
+    engine = SQLiteVecEngine(tmp_path / "transient.sqlite3", dimensions=3)
+    try:
+        engine.upsert_document(
+            asset_id="asset-ocean",
+            title="海边日落",
+            content="大海与海浪",
+            embedding=[1.0, 0.0, 0.0],
+        )
+        engine._db = _FailingKnnConnection(
+            engine._db, failure=failure
+        )  # type: ignore[assignment]
+        searcher = HybridAssetSearcher(engine)
+
+        with caplog.at_level(logging.WARNING):
+            degraded = searcher.search(
+                "大海", query_vector=[1.0, 0.0, 0.0], limit=5
+            )
+
+        assert engine.vector_enabled is True
+        assert degraded and all(hit.vector_track_degraded for hit in degraded)
+        assert any(record.levelno == logging.WARNING for record in caplog.records)
+
+        recovered = searcher.search("大海", query_vector=[1.0, 0.0, 0.0], limit=5)
+        assert engine.vector_enabled is True
+        assert any(hit.vector_rank is not None for hit in recovered)
+        assert all(not hit.vector_track_degraded for hit in recovered)
+    finally:
+        engine.close()
+
+
+def test_hybrid_limit_1400_keeps_vector_track_usable(
+    tmp_path: Path,
+) -> None:
+    """limit=1400 被拒绝后，向量轨仍可查询且不会被 SQLite 错误误关。"""
+    pytest.importorskip("sqlite_vec", reason="当前运行时未安装 sqlite-vec 扩展")
+    engine = SQLiteVecEngine(tmp_path / "large-limit.sqlite3", dimensions=3)
+    try:
+        engine.upsert_document(
+            asset_id="asset-ocean",
+            title="海边日落",
+            content="大海与海浪",
+            embedding=[1.0, 0.0, 0.0],
+        )
+        engine._db = _FailingKnnConnection(
+            engine._db, fail_limit_above=1000
+        )  # type: ignore[assignment]
+        searcher = HybridAssetSearcher(engine)
+
+        with pytest.raises(ValueError, match="limit"):
+            searcher.search("大海", query_vector=[1.0, 0.0, 0.0], limit=1400)
+
+        assert engine.vector_enabled is True
+        assert engine.search_vectors([1.0, 0.0, 0.0], limit=1)
+    finally:
+        engine.close()
+
+
+def test_limit_and_query_length_bounds_and_degraded_upsert_validation(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """检索上限统一截断，非正数/超长查询拒绝，降级 upsert 仍校验维度。"""
+    monkeypatch.setattr(sqlite_vec_engine, "_load_sqlite_vec", lambda _db: False)
+    engine = SQLiteVecEngine(tmp_path / "bounds.sqlite3", dimensions=3)
+    try:
+        with pytest.raises(ValueError, match="维度"):
+            engine.upsert_document(
+                asset_id="bad-vector",
+                title="不正确维度",
+                content="仍须验证",
+                embedding=[1.0, 0.0],
+            )
+        engine.upsert_document(
+            asset_id="asset-ocean", title="海边", content="大海与海浪"
+        )
+        with pytest.raises(ValueError, match="limit"):
+            engine.search_fts("大海", limit=0)
+        with pytest.raises(ValueError, match="limit"):
+            engine.search_vectors([1.0, 0.0, 0.0], limit=-1)
+        with pytest.raises(ValueError, match="limit"):
+            engine.search_fts("大海", limit=1400)
+        with pytest.raises(ValueError, match="query"):
+            engine.search_fts(
+                "x" * (sqlite_vec_engine.MAX_QUERY_LENGTH + 1), limit=1
+            )
+        with pytest.raises(ValueError, match="query"):
+            HybridAssetSearcher(engine).search(
+                "x" * (sqlite_vec_engine.MAX_QUERY_LENGTH + 1)
+            )
+
+        observed_limits: list[int] = []
+        original_search_fts = engine.search_fts
+
+        def record_limit(query: str, *, limit: int = 20) -> list[object]:
+            observed_limits.append(limit)
+            return original_search_fts(query, limit=limit)
+
+        engine.search_fts = record_limit  # type: ignore[method-assign]
+        searcher = HybridAssetSearcher(engine)
+        searcher.search("大海", limit=300)
+        searcher.search("大海", limit=20, candidate_limit=1000)
+        assert observed_limits == [900, 1000]
+        with pytest.raises(ValueError, match="candidate_limit"):
+            searcher.search("大海", candidate_limit=0)
+        with pytest.raises(ValueError, match="candidate_limit"):
+            searcher.search("大海", limit=334)
+    finally:
+        engine.close()
+
+
 def test_c18_hybrid_search_latency_and_memory_report(tmp_path: Path) -> None:
     """以预计算向量测量本机 SQLite 检索路径，不把模型推理计入时延。"""
     pytest.importorskip("sqlite_vec", reason="当前运行时未安装 sqlite-vec 扩展")
     document_count = int(os.getenv("GW_C18_BENCHMARK_DOCUMENTS", "1000"))
     dimensions = 128
     iterations = 200
-    rng = random.Random(18)
+    rng = random.Random(18)  # noqa: S311 - 固定种子保证基准数据可复现
     process = psutil.Process()
     rss_before = process.memory_info().rss
     rss_peak = rss_before
@@ -200,6 +360,7 @@ def test_c18_hybrid_search_latency_and_memory_report(tmp_path: Path) -> None:
                 (time.perf_counter_ns() - started) / 1_000_000
             )
             assert hybrid_hits
+            assert any(hit.vector_rank is not None for hit in hybrid_hits)
             rss_peak = max(rss_peak, process.memory_info().rss)
 
         report = {

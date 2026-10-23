@@ -16,10 +16,14 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Sequence
 
-from gw.core.sqlite_vec_engine import SQLiteVecEngine
+from gw.core.sqlite_vec_engine import (
+    MAX_QUERY_LENGTH,
+    MAX_SEARCH_LIMIT,
+    SQLiteVecEngine,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -32,6 +36,7 @@ class HybridSearchResult:
     vector_distance: float | None
     lexical_rank: int | None
     vector_rank: int | None
+    vector_track_degraded: bool
 
 
 @dataclass(slots=True)
@@ -50,6 +55,16 @@ def _positive_int(value: int, name: str) -> int:
     return value
 
 
+def _bounded_search_limit(value: int, name: str) -> int:
+    if (
+        isinstance(value, bool)
+        or not isinstance(value, int)
+        or not 1 <= value <= MAX_SEARCH_LIMIT
+    ):
+        raise ValueError(f"{name} 必须在 1 到 {MAX_SEARCH_LIMIT} 之间")
+    return value
+
+
 class HybridAssetSearcher:
     """按 reciprocal rank fusion 合并关键词与向量召回。"""
 
@@ -65,11 +80,17 @@ class HybridAssetSearcher:
         limit: int = 20,
         candidate_limit: int | None = None,
     ) -> list[HybridSearchResult]:
-        """合并两轨排名；任一轨不可用时返回另一轨结果。"""
-        limit = _positive_int(limit, "limit")
+        """合并两轨排名。
+
+        limit/candidate_limit 不在 1~1000 时抛 ValueError；
+        query 最长 4096 字符。任一轨暂时不可用时返回另一轨结果并标记向量降级。
+        """
+        limit = _bounded_search_limit(limit, "limit")
         if not isinstance(query, str):
             raise ValueError("query 必须是字符串")
-        candidate_limit = _positive_int(
+        if len(query) > MAX_QUERY_LENGTH:
+            raise ValueError(f"query 长度不得超过 {MAX_QUERY_LENGTH} 个字符")
+        candidate_limit = _bounded_search_limit(
             candidate_limit if candidate_limit is not None else max(limit * 3, limit),
             "candidate_limit",
         )
@@ -83,6 +104,7 @@ class HybridAssetSearcher:
             candidate.lexical_score = match.score
             candidate.lexical_rank = rank
 
+        vector_track_degraded = False
         if query_vector is not None:
             for rank, match in enumerate(
                 self.engine.search_vectors(query_vector, limit=candidate_limit), start=1
@@ -91,6 +113,7 @@ class HybridAssetSearcher:
                 candidate.score += 1.0 / (self.rrf_k + rank)
                 candidate.vector_distance = match.distance
                 candidate.vector_rank = rank
+            vector_track_degraded = self.engine.last_vector_search_degraded
 
         ordered = sorted(candidates.values(), key=lambda item: (-item.score, item.asset_id))
         return [
@@ -101,6 +124,7 @@ class HybridAssetSearcher:
                 vector_distance=item.vector_distance,
                 lexical_rank=item.lexical_rank,
                 vector_rank=item.vector_rank,
+                vector_track_degraded=vector_track_degraded,
             )
             for item in ordered[:limit]
         ]
