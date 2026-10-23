@@ -21,15 +21,13 @@ import http.client
 import ipaddress
 import json
 import math
-import os
 import shutil
 import socket
 import subprocess
-import tempfile
 import threading
 import time
 from pathlib import Path
-from typing import Any, Dict, Optional, Tuple
+from typing import Any
 from urllib.parse import quote, urljoin, urlsplit
 
 from gw.asset_registry import repository as asset_repo

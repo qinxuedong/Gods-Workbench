@@ -33,8 +33,8 @@ import re
 import secrets
 import time
 from collections.abc import Mapping
-from datetime import UTC, datetime, timezone
-from typing import Any, Dict, List, Optional
+from datetime import UTC, datetime
+from typing import Any
 
 from gw.asset_review import service as review_service
 from gw.core import storage
@@ -567,8 +567,6 @@ def get_session(session_id: str) -> dict[str, Any]:
 
 def _now_epoch() -> int:
     """数字 epoch（毫秒），前端 new Date(Number(created_at)) 依赖该口径。"""
-    import time
-
     return int(_unix_time() * 1000)
 
 
