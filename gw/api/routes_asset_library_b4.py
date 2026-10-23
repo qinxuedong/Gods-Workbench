@@ -26,7 +26,7 @@
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional
+from typing import Any, Optional
 
 from fastapi import APIRouter, Depends, Header, Request, Response, status
 
@@ -40,7 +40,7 @@ from gw.core.asset_visibility import asset_request_scope
 router = APIRouter(tags=["asset-library-b4"], dependencies=[Depends(asset_request_scope)])
 
 
-async def _body(request: Request) -> Dict[str, Any]:
+async def _body(request: Request) -> dict[str, Any]:
     """宽容读取 JSON 请求体；空体或非对象等价于空字典。"""
     try:
         payload = await request.json()
@@ -81,14 +81,14 @@ def _optional_int(request: Request, name: str) -> Optional[int]:
     return value
 
 
-def _required_payload_version(payload: Dict[str, Any]) -> int:
+def _required_payload_version(payload: dict[str, Any]) -> int:
     value = payload.get("expected_version")
     if type(value) is not int or value < 1:
         raise CleanroomException(400, "INVALID_REQUEST", "expected_version 必须为正整数")
     return value
 
 
-def _expected_versions(payload: Dict[str, Any]) -> Optional[Dict[str, int]]:
+def _expected_versions(payload: dict[str, Any]) -> Optional[dict[str, int]]:
     value = payload.get("expected_versions")
     if value is not None and not isinstance(value, dict):
         raise CleanroomException(400, "INVALID_REQUEST", "expected_versions 必须是素材库版本映射")
@@ -102,12 +102,12 @@ def _required_query_version(request: Request) -> int:
     return value
 
 
-def _ids(payload: Dict[str, Any], key: str = "asset_ids") -> List[str]:
+def _ids(payload: dict[str, Any], key: str = "asset_ids") -> list[str]:
     value = payload.get(key) or []
     return [str(item) for item in value] if isinstance(value, list) else []
 
 
-def _registry_linked_item(snapshot: Optional[Dict[str, Any]]) -> bool:
+def _registry_linked_item(snapshot: Optional[dict[str, Any]]) -> bool:
     """同进同出（C4-AC6）：桥接登记条目 = 带 workflow_owner 且注册表存在同名可见资产。
 
     注册表是资产存在性的唯一真源（见 gw.asset_registry.repository.delete_asset docstring）；
@@ -121,7 +121,7 @@ def _registry_linked_item(snapshot: Optional[Dict[str, Any]]) -> bool:
     return record is not None and asset_visible(record)
 
 
-def _delete_item_via_registry(asset_id: str, context=None) -> Dict[str, Any]:
+def _delete_item_via_registry(asset_id: str, context=None) -> dict[str, Any]:
     """把桥接条目的删除统一交给注册表：素材库条目随注册表删除移入回收站并可恢复。"""
     from gw.asset_registry import repository as asset_repo
     revision = int(asset_repo.state().read().get("revision", 1))
@@ -405,8 +405,8 @@ async def delete_asset_library_items(
         snapshot = snapshots[asset_id] or {}
         version = (expected_versions or {}).get(str(snapshot.get("library_id") or ""), expected_version)
         library_service.ensure_item_version(asset_id, version)
-    deleted: List[str] = []
-    results: List[Dict[str, Any]] = []
+    deleted: list[str] = []
+    results: list[dict[str, Any]] = []
     if plain:
         plain_result = library_service.delete_items(plain, expected_version, expected_versions)
         deleted.extend(plain_result["deleted"])
