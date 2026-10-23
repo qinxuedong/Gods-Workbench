@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 # Copyright 2026 Gods-Workbench Authors
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -55,7 +54,9 @@ def _bump(raw: Dict[str, Any]) -> int:
 
 def _cas(raw: Dict[str, Any], expected: Optional[int], label: str) -> None:
     if type(expected) is not int or expected < 1:
-        raise CleanroomException(400, "INVALID_REQUEST", "expected_version 必须为正整数")
+        raise CleanroomException(
+            400, "INVALID_REQUEST", "expected_version 必须为正整数"
+        )
     if int(expected) != int(raw.get("revision") or 1):
         raise VersionConflictException(
             expected_version=int(expected),
@@ -97,8 +98,12 @@ def _validate_parent_refs(library_id: str, category_id: Optional[str] = None) ->
         raise CleanroomException(404, "LIBRARY_NOT_FOUND", "提示词库不存在")
     if category_id:
         categories = library.get("categories", [])
-        if not any(category.get("category_id") == category_id for category in categories):
-            raise CleanroomException(404, "CATEGORY_NOT_FOUND", "提示词分类不存在或不属于该提示词库")
+        if not any(
+            category.get("category_id") == category_id for category in categories
+        ):
+            raise CleanroomException(
+                404, "CATEGORY_NOT_FOUND", "提示词分类不存在或不属于该提示词库"
+            )
 
 
 def _reference_gaps(items: List[Dict[str, Any]]) -> List[Dict[str, str]]:
@@ -108,13 +113,21 @@ def _reference_gaps(items: List[Dict[str, Any]]) -> List[Dict[str, str]]:
         library_id = str(item.get("library_id") or "")
         library = libraries.get(library_id)
         if library is None:
-            gaps.append({"item_id": str(item.get("item_id") or ""), "code": "LIBRARY_NOT_FOUND"})
+            gaps.append(
+                {"item_id": str(item.get("item_id") or ""), "code": "LIBRARY_NOT_FOUND"}
+            )
             continue
         category_id = item.get("category_id")
         if category_id and not any(
-            category.get("category_id") == category_id for category in library.get("categories", [])
+            category.get("category_id") == category_id
+            for category in library.get("categories", [])
         ):
-            gaps.append({"item_id": str(item.get("item_id") or ""), "code": "CATEGORY_NOT_FOUND"})
+            gaps.append(
+                {
+                    "item_id": str(item.get("item_id") or ""),
+                    "code": "CATEGORY_NOT_FOUND",
+                }
+            )
     return gaps
 
 
@@ -144,6 +157,7 @@ def create_item(payload: Dict[str, Any]) -> Dict[str, Any]:
     if not library_id:
         raise CleanroomException(400, "INVALID_REQUEST", "library_id 不能为空")
     category_id = str(payload.get("category_id") or "").strip() or None
+
     def mutate(raw: Dict[str, Any]) -> Dict[str, Any]:
         expected = payload.get("expected_version")
         _cas(raw, expected, "提示词条目集合")
@@ -182,10 +196,14 @@ def update_item(item_id: str, payload: Dict[str, Any]) -> Dict[str, Any]:
             raise CleanroomException(404, "ITEM_NOT_FOUND", "提示词条目不存在")
         expected = payload.get("expected_version")
         if type(expected) is not int or expected < 1:
-            raise CleanroomException(400, "INVALID_REQUEST", "expected_version 必须为正整数")
+            raise CleanroomException(
+                400, "INVALID_REQUEST", "expected_version 必须为正整数"
+            )
         current = int(record.get("version") or 1)
         if expected != current:
-            raise VersionConflictException(expected, current, "提示词条目版本冲突，请重新读取后重试")
+            raise VersionConflictException(
+                expected, current, "提示词条目版本冲突，请重新读取后重试"
+            )
         if payload.get("name") is not None:
             text = str(payload.get("name")).strip()
             if not text:
@@ -239,8 +257,11 @@ def bulk_delete(ids: List[str], expected_version: Optional[int]) -> Dict[str, An
         missing = [item_id for item_id in normalized_ids if item_id not in raw["items"]]
         if missing:
             raise CleanroomException(
-                404, "ITEM_NOT_FOUND", "提示词条目不存在",
-                extra={"missing_item_ids": missing}, expose_extra_fields={"missing_item_ids"},
+                404,
+                "ITEM_NOT_FOUND",
+                "提示词条目不存在",
+                extra={"missing_item_ids": missing},
+                expose_extra_fields={"missing_item_ids"},
             )
         deleted: List[str] = []
         results: List[Dict[str, Any]] = []
@@ -249,7 +270,12 @@ def bulk_delete(ids: List[str], expected_version: Optional[int]) -> Dict[str, An
             deleted.append(item_id)
             results.append({"item_id": item_id, "deleted": True})
         _bump(raw)
-        return {"deleted": deleted, "results": results, "deleted_count": len(deleted), "revision": raw["revision"]}
+        return {
+            "deleted": deleted,
+            "results": results,
+            "deleted_count": len(deleted),
+            "revision": raw["revision"],
+        }
 
     with coordination.PROMPT_LIBRARY_DOMAIN_LOCK:
         return state().mutate(mutate)

@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 # Copyright 2026 Gods-Workbench Authors
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -35,8 +34,8 @@
 from __future__ import annotations
 
 import copy
-from datetime import datetime, timezone
 import threading
+from datetime import datetime, timezone
 from typing import Dict, List, Optional, Tuple
 
 from gw.core import storage
@@ -85,7 +84,9 @@ def _require_positive_version(expected_version: Optional[int], label: str) -> No
         )
 
 
-def _assert_expected_version(expected_version: Optional[int], current_version: int, label: str) -> None:
+def _assert_expected_version(
+    expected_version: Optional[int], current_version: int, label: str
+) -> None:
     """CAS 校验：期望值与当前值不一致即 409，禁止静默覆盖。"""
     _require_positive_version(expected_version, label)
     if expected_version != current_version:
@@ -153,7 +154,11 @@ class PromptLibraryService:
         legacy_library_seq, legacy_category_seq = self._legacy_id_highwaters()
         if state_path.exists():
             if not isinstance(raw, dict) or raw.get("schema_version") != 1:
-                raise CleanroomException(503, "PROMPT_LIBRARY_STATE_INVALID", "提示词库持久化数据格式不受支持")
+                raise CleanroomException(
+                    503,
+                    "PROMPT_LIBRARY_STATE_INVALID",
+                    "提示词库持久化数据格式不受支持",
+                )
             try:
                 libraries = {
                     key: PromptLibraryItem.model_validate(value)
@@ -181,7 +186,9 @@ class PromptLibraryService:
                     legacy_category_seq,
                 )
             except Exception as exc:
-                raise CleanroomException(503, "PROMPT_LIBRARY_STATE_INVALID", "提示词库持久化数据无法读取") from exc
+                raise CleanroomException(
+                    503, "PROMPT_LIBRARY_STATE_INVALID", "提示词库持久化数据无法读取"
+                ) from exc
         else:
             self._directory_version = 1
             self._active_library_id = None
@@ -221,7 +228,9 @@ class PromptLibraryService:
             return self._build_snapshot_locked()
 
     def _build_snapshot_locked(self) -> PromptLibrarySnapshot:
-        libraries = [copy.deepcopy(self._libraries[key]) for key in sorted(self._libraries)]
+        libraries = [
+            copy.deepcopy(self._libraries[key]) for key in sorted(self._libraries)
+        ]
         return PromptLibrarySnapshot(
             version=self._directory_version,
             active_library_id=self._active_library_id,
@@ -237,7 +246,9 @@ class PromptLibraryService:
         """创建提示词库；目录 CAS 冲突或重名失败关闭。"""
         with coordination.PROMPT_LIBRARY_DOMAIN_LOCK, self._lock:
             self._ensure_loaded_locked()
-            _assert_expected_version(payload.expected_version, self._directory_version, "提示词库目录")
+            _assert_expected_version(
+                payload.expected_version, self._directory_version, "提示词库目录"
+            )
             name = _require_name(payload.name, "提示词库名称")
             self._assert_unique_library_name_locked(name)
 
@@ -269,7 +280,9 @@ class PromptLibraryService:
             target = self._libraries.get(library_id)
             if target is None:
                 raise self._library_not_found(library_id)
-            _assert_expected_version(payload.expected_version, target.version, f"提示词库 {library_id}")
+            _assert_expected_version(
+                payload.expected_version, target.version, f"提示词库 {library_id}"
+            )
 
             name = _require_name(payload.name, "提示词库名称")
             self._assert_unique_library_name_locked(name, skip_library_id=library_id)
@@ -281,7 +294,9 @@ class PromptLibraryService:
             self._persist_locked()
             return copy.deepcopy(target), self._build_snapshot_locked()
 
-    def delete_library(self, library_id: str, expected_version: Optional[int]) -> PromptLibrarySnapshot:
+    def delete_library(
+        self, library_id: str, expected_version: Optional[int]
+    ) -> PromptLibrarySnapshot:
         """删除提示词库；非空库（仍有分类）返回 409 LIBRARY_NOT_EMPTY，禁止静默级联。"""
         with coordination.PROMPT_LIBRARY_DOMAIN_LOCK, self._lock:
             self._ensure_loaded_locked()
@@ -289,10 +304,18 @@ class PromptLibraryService:
             target = self._libraries.get(library_id)
             if target is None:
                 raise self._library_not_found(library_id)
-            _assert_expected_version(expected_version, target.version, f"提示词库 {library_id}")
+            _assert_expected_version(
+                expected_version, target.version, f"提示词库 {library_id}"
+            )
 
-            stored_items = storage.JsonState(NS_PROMPT_ITEMS, lambda: {"items": {}}).read().get("items", {})
-            has_items = any(item.get("library_id") == library_id for item in stored_items.values())
+            stored_items = (
+                storage.JsonState(NS_PROMPT_ITEMS, lambda: {"items": {}})
+                .read()
+                .get("items", {})
+            )
+            has_items = any(
+                item.get("library_id") == library_id for item in stored_items.values()
+            )
             if target.categories or has_items:
                 raise CleanroomException(
                     status_code=409,
@@ -319,7 +342,11 @@ class PromptLibraryService:
             parent = self._libraries.get(payload.library_id)
             if parent is None:
                 raise self._library_not_found(payload.library_id)
-            _assert_expected_version(payload.expected_version, parent.version, f"提示词库 {parent.library_id}")
+            _assert_expected_version(
+                payload.expected_version,
+                parent.version,
+                f"提示词库 {parent.library_id}",
+            )
 
             name = _require_name(payload.name, "分类名称")
             self._assert_unique_category_name_locked(parent, name)
@@ -349,10 +376,14 @@ class PromptLibraryService:
         with coordination.PROMPT_LIBRARY_DOMAIN_LOCK, self._lock:
             self._ensure_loaded_locked()
             parent, target = self._locate_category_locked(category_id)
-            _assert_expected_version(payload.expected_version, target.version, f"分类 {category_id}")
+            _assert_expected_version(
+                payload.expected_version, target.version, f"分类 {category_id}"
+            )
 
             name = _require_name(payload.name, "分类名称")
-            self._assert_unique_category_name_locked(parent, name, skip_category_id=category_id)
+            self._assert_unique_category_name_locked(
+                parent, name, skip_category_id=category_id
+            )
 
             target.name = name
             target.version += 1
@@ -363,23 +394,35 @@ class PromptLibraryService:
             self._persist_locked()
             return copy.deepcopy(target), self._build_snapshot_locked()
 
-    def delete_category(self, category_id: str, expected_version: Optional[int]) -> PromptLibrarySnapshot:
+    def delete_category(
+        self, category_id: str, expected_version: Optional[int]
+    ) -> PromptLibrarySnapshot:
         """删除分类；目标分类 CAS 冲突失败关闭。"""
         with coordination.PROMPT_LIBRARY_DOMAIN_LOCK, self._lock:
             self._ensure_loaded_locked()
             _require_positive_version(expected_version, f"分类 {category_id}")
             parent, target = self._locate_category_locked(category_id)
-            _assert_expected_version(expected_version, target.version, f"分类 {category_id}")
+            _assert_expected_version(
+                expected_version, target.version, f"分类 {category_id}"
+            )
 
-            stored_items = storage.JsonState(NS_PROMPT_ITEMS, lambda: {"items": {}}).read().get("items", {})
-            has_items = any(item.get("category_id") == category_id for item in stored_items.values())
+            stored_items = (
+                storage.JsonState(NS_PROMPT_ITEMS, lambda: {"items": {}})
+                .read()
+                .get("items", {})
+            )
+            has_items = any(
+                item.get("category_id") == category_id for item in stored_items.values()
+            )
             if has_items:
                 raise CleanroomException(
                     status_code=409,
                     code="CATEGORY_NOT_EMPTY",
                     message=f"分类 {category_id} 仍被提示词条目引用，请先移除引用后再删除",
                 )
-            parent.categories = [item for item in parent.categories if item.category_id != category_id]
+            parent.categories = [
+                item for item in parent.categories if item.category_id != category_id
+            ]
             parent.version += 1
             parent.updated_at = _now_iso()
             self._directory_version += 1
@@ -389,7 +432,9 @@ class PromptLibraryService:
     # ------------------------------------------------------------------
     # 内部断言与定位
     # ------------------------------------------------------------------
-    def _locate_category_locked(self, category_id: str) -> Tuple[PromptLibraryItem, PromptCategoryItem]:
+    def _locate_category_locked(
+        self, category_id: str
+    ) -> Tuple[PromptLibraryItem, PromptCategoryItem]:
         for library in self._libraries.values():
             for category in library.categories:
                 if category.category_id == category_id:
@@ -407,7 +452,9 @@ class PromptLibraryService:
             message=f"提示词库 {library_id} 不存在",
         )
 
-    def _assert_unique_library_name_locked(self, name: str, skip_library_id: Optional[str] = None) -> None:
+    def _assert_unique_library_name_locked(
+        self, name: str, skip_library_id: Optional[str] = None
+    ) -> None:
         key = _name_key(name)
         for library_id, item in self._libraries.items():
             if library_id == skip_library_id:
@@ -420,7 +467,10 @@ class PromptLibraryService:
                 )
 
     def _assert_unique_category_name_locked(
-        self, parent: PromptLibraryItem, name: str, skip_category_id: Optional[str] = None
+        self,
+        parent: PromptLibraryItem,
+        name: str,
+        skip_category_id: Optional[str] = None,
     ) -> None:
         key = _name_key(name)
         for item in parent.categories:
