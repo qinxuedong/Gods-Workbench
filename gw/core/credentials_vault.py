@@ -31,7 +31,7 @@ from __future__ import annotations
 
 import re
 from collections.abc import Mapping
-from typing import Any, Optional
+from typing import Any
 
 from gw.core.errors import CleanroomException
 
