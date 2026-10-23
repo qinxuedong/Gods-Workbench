@@ -10,7 +10,6 @@
 
 from __future__ import annotations
 
-
 from tests.contracts.projects.c5_permission_fixtures import headers, seed
 
 
