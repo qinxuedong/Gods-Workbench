@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import base64
 import json
-from datetime import UTC, datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import pytest
 from fastapi.testclient import TestClient

@@ -24,11 +24,8 @@ Phase 7 已取证前端存在大量调用后端**未实现**端点（真实 HTTP
 - **不得**为了让测试通过而放宽断言或删除条目而不做上述记录。
 """
 
-import os
 import re
 from pathlib import Path
-
-import pytest
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent.parent
 STATIC_DIR = REPO_ROOT / "web"
