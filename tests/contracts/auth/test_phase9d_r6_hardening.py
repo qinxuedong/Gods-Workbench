@@ -9,7 +9,6 @@ from __future__ import annotations
 import os
 import sys
 from pathlib import Path
-from urllib.parse import parse_qs, urlparse
 
 import pytest
 from fastapi.testclient import TestClient

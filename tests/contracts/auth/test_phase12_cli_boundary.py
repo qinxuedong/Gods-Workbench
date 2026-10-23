@@ -1,7 +1,6 @@
 """CLI受控边界：只运行隔离的Python夹具，不调用真实厂商CLI或登录账户。"""
 
 import sys
-from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
