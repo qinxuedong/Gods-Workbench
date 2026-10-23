@@ -27,7 +27,7 @@ import threading
 import time
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from gw.core.auth import AuthContext, require_authenticated
 from gw.core.errors import (
@@ -52,7 +52,6 @@ from gw.god_canvas.models import (
     NodeReferences,
 )
 from gw.god_canvas.tasks import (
-    SmartCanvasRunMode,
     SmartCanvasTaskRequest,
     SmartCanvasTaskResponse,
     TaskStatus,
