@@ -15,7 +15,7 @@ from __future__ import annotations
 
 from collections import Counter
 from collections.abc import Mapping
-from typing import Any, Optional
+from typing import Any
 
 from .parser import WorkflowParseError, extract_source_graph, parse_workflow
 
