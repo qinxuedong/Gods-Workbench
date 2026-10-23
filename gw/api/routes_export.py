@@ -34,13 +34,11 @@ from gw.media import ffmpeg_master
 router = APIRouter()
 
 
-
 def _timeline_manifest(payload: Mapping[str, Any]) -> Mapping[str, Any]:
     manifest = payload.get("timeline_manifest")
     if not isinstance(manifest, Mapping):
         raise CleanroomException(400, "INVALID_TIMELINE_MANIFEST", "timeline_manifest 不存在或结构不合法")
     return manifest
-
 
 
 def _registered_media_paths(manifest: Mapping[str, Any]) -> dict[str, Path]:
@@ -66,7 +64,6 @@ def _registered_media_paths(manifest: Mapping[str, Any]) -> dict[str, Path]:
                     raise CleanroomException(404, "MEDIA_NOT_AVAILABLE", "时间线素材未登记或不可用")
                 paths[asset_id] = Path(media_path)
     return paths
-
 
 
 @router.post("/api/episode-pipelines/{pipeline_id}/export")
