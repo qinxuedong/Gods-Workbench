@@ -291,9 +291,41 @@
     script.onload = () => window.WorkbenchShortcuts?.bind?.();
     host.appendChild(script);
   }
+  function loadWorkbenchOmnibar() {
+    if (window.GWOmnibar?.init) {
+      window.GWOmnibar.init();
+      return;
+    }
+    const host = document.head || document.body;
+    if (!host || !document.createElement) return;
+    function appendOmnibarScript() {
+      if (document.querySelector('script[data-gw-omnibar]')) return;
+      const script = document.createElement('script');
+      script.src = '/static/js/core/omnibar.js';
+      script.async = false;
+      script.dataset.gwOmnibar = '1';
+      script.onload = () => window.GWOmnibar?.init?.();
+      host.appendChild(script);
+    }
+    let stylesheet = document.querySelector('link[data-gw-omnibar-styles]');
+    if (!stylesheet) {
+      const link = document.createElement('link');
+      link.rel = 'stylesheet';
+      link.href = '/static/css/components/omnibar.css';
+      link.dataset.gwOmnibarStyles = '1';
+      host.appendChild(link);
+      stylesheet = document.querySelector('link[data-gw-omnibar-styles]');
+    }
+    if (stylesheet?.sheet) appendOmnibarScript();
+    else if (stylesheet) {
+      stylesheet.addEventListener('load', appendOmnibarScript, {once: true});
+      stylesheet.addEventListener('error', appendOmnibarScript, {once: true});
+    }
+  }
   function init() {
     seedInitialRouteScripts();
     loadWorkbenchShortcuts();
+    loadWorkbenchOmnibar();
     standardRightDeck();
     bindComfyControl();
     injectTrash();
