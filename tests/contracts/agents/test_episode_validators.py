@@ -1,7 +1,5 @@
 """Tests for deterministic episode validators."""
 
-import pytest
-
 from gw.agent_runtime.models import (
     ArtifactLifecycle,
     ArtifactRef,

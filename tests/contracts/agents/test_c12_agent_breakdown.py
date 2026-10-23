@@ -5,7 +5,6 @@ from __future__ import annotations
 import json
 
 import pytest
-from pydantic import ValidationError
 
 from gw.agent_episode.exports import (
     BREAKDOWN_TEMPLATE_ID,

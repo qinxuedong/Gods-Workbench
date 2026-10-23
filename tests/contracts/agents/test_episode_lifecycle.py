@@ -19,7 +19,7 @@ from gw.agent_episode.lifecycle import (
     downstream_stages,
     mark_derived_versions_stale,
 )
-from gw.agent_episode.models import STAGE_ORDER, StageId
+from gw.agent_episode.models import STAGE_ORDER
 
 
 def test_downstream_stages():

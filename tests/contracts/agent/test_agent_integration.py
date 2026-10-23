@@ -798,7 +798,7 @@ def _seed_export_test_records(
     duplicate_attempt_labels: tuple[str, ...] = (),
 ) -> dict[str, str]:
     import asyncio
-    from datetime import datetime, timezone
+    from datetime import datetime
 
     from gw.agent_runtime.events import make_event
     from gw.agent_runtime.models import (
@@ -1450,7 +1450,6 @@ def test_legacy_budget_rows_backfill_only_from_unique_invocation_owner(
         BudgetState,
         Identifier,
     )
-    from gw.api.agent_integration import UnknownCostBudget
 
     def create_run(label: str) -> str:
         response = host_agent.client.post(
