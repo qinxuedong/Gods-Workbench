@@ -62,13 +62,13 @@
   border-radius: 8px;
   background: linear-gradient(145deg, #f4d99d, #bb8b3e);
   box-shadow: 0 0 16px rgba(223, 175, 90, 0.26), inset 0 1px 0 rgba(255, 250, 228, 0.68);
-  font: 800 10px/1 ui-monospace, SFMono-Regular, Consolas, monospace;
+  font: 800 var(--gw-type-button-xs)/1 var(--gw-font-mono);
   letter-spacing: 0.04em;
 }
 
 .gw-omnibar-title {
   color: #f3e7cb;
-  font-size: 14px;
+  font-size: var(--gw-type-body-md);
   font-weight: 700;
   letter-spacing: 0.04em;
 }
@@ -79,7 +79,7 @@
   border: 1px solid rgba(205, 165, 94, 0.22);
   border-radius: 5px;
   background: rgba(193, 142, 59, 0.06);
-  font: 700 9px/1 ui-monospace, SFMono-Regular, Consolas, monospace;
+  font: 700 var(--gw-type-button-xs)/1 var(--gw-font-mono);
   letter-spacing: 0.12em;
 }
 
@@ -93,7 +93,10 @@
   border-radius: 8px;
   background: rgba(255, 255, 255, 0.035);
   cursor: pointer;
-  font: 400 22px/1 system-ui, sans-serif;
+  font-family: system-ui, sans-serif;
+  font-size: var(--gw-icon-size-title);
+  font-weight: 400;
+  line-height: 1;
   transition: color 120ms ease, border-color 120ms ease, background 120ms ease;
 }
 
@@ -118,7 +121,7 @@
   background: transparent;
   cursor: pointer;
   font: inherit;
-  font-size: 12px;
+  font-size: var(--gw-type-button-md);
   font-weight: 600;
   line-height: 1.25;
   transition: color 120ms ease, border-color 120ms ease, background 120ms ease;
@@ -151,7 +154,10 @@
 
 .gw-omnibar-search-icon {
   color: #c8a365;
-  font: 400 23px/1 system-ui, sans-serif;
+  font-family: system-ui, sans-serif;
+  font-size: var(--gw-icon-size-lg);
+  font-weight: 400;
+  line-height: 1;
 }
 
 .gw-omnibar-input {
@@ -164,7 +170,7 @@
   outline: 0;
   background: transparent;
   font: inherit;
-  font-size: 16px;
+  font-size: var(--gw-type-body-lg);
   font-weight: 500;
   line-height: 1.4;
   caret-color: #e8bd6e;
@@ -210,7 +216,7 @@
 .gw-omnibar-result-title {
   overflow: hidden;
   color: #eee4d2;
-  font-size: 13px;
+  font-size: var(--gw-type-label-lg);
   font-weight: 650;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -219,7 +225,7 @@
 .gw-omnibar-result-description {
   overflow: hidden;
   color: #8c8578;
-  font-size: 11px;
+  font-size: var(--gw-type-label-md);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -228,7 +234,7 @@
   margin: 0;
   padding: 16px 12px 21px;
   color: #8b8377;
-  font-size: 12px;
+  font-size: var(--gw-type-body-sm);
   text-align: center;
 }
 
@@ -237,7 +243,7 @@
   padding: 7px 18px;
   color: #777064;
   border-top: 1px solid rgba(223, 195, 132, 0.1);
-  font-size: 10px;
+  font-size: var(--gw-type-body-sm);
 }
 
 .gw-omnibar-hint {
@@ -253,7 +259,7 @@
   border: 1px solid rgba(221, 207, 178, 0.18);
   border-radius: 4px;
   background: rgba(255, 255, 255, 0.035);
-  font: 700 9px/1 ui-monospace, SFMono-Regular, Consolas, monospace;
+  font: 700 var(--gw-type-button-xs)/1 var(--gw-font-mono);
   text-align: center;
 }
 
