@@ -20,12 +20,11 @@ import base64
 import hashlib
 import os
 import re
-import secrets
 import sqlite3
 import threading
 from collections.abc import Iterable, Iterator, Mapping
 from contextlib import contextmanager
-from datetime import UTC, datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 

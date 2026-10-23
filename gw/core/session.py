@@ -37,7 +37,7 @@ import secrets
 import time
 from collections.abc import Mapping
 from dataclasses import dataclass, field
-from typing import Any, Dict, Optional
+from typing import Any
 
 # 会话有效期与流程状态有效期（秒）。流程状态刻意更短：只在用户往返 IdP 期间有效。
 SESSION_TTL_SECONDS = 8 * 60 * 60
