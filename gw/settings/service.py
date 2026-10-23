@@ -38,7 +38,8 @@ import copy
 from datetime import datetime, timezone
 import stat
 import threading
-from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
+from collections.abc import Iterable, Sequence
+from typing import Any, Optional
 
 from pydantic import ValidationError
 from gw.core import storage
@@ -112,7 +113,7 @@ def strip_credential_fields(value: Any) -> Any:
     ``password`` 的字段都不落库、不进入响应。
     """
     if isinstance(value, dict):
-        cleaned: Dict[str, Any] = {}
+        cleaned: dict[str, Any] = {}
         for key, item in value.items():
             if _is_credential_key(key):
                 continue
@@ -159,7 +160,7 @@ def _conflict(
     )
 
 
-def _normalize_asset_ids(raw: Any, label: str) -> List[str]:
+def _normalize_asset_ids(raw: Any, label: str) -> list[str]:
     """校验并规范化 asset_ids：至少 2 个、去重后不得为空、禁止重复项。"""
     if not isinstance(raw, (list, tuple)):
         raise CleanroomException(
@@ -196,7 +197,7 @@ class StorageSettingsService:
         self._state = storage.JsonState("storage_settings", self._empty_state)
 
     @staticmethod
-    def _empty_state() -> Dict[str, Any]:
+    def _empty_state() -> dict[str, Any]:
         return {
             "revision": 1,
             "configured": False,
@@ -215,7 +216,7 @@ class StorageSettingsService:
         return self._build_snapshot(self._state.read())
 
     @staticmethod
-    def _build_snapshot(state: Dict[str, Any]) -> StorageSettingsSnapshot:
+    def _build_snapshot(state: dict[str, Any]) -> StorageSettingsSnapshot:
         dirs = copy.deepcopy(state.get("dirs") or {})
         entries = copy.deepcopy(state.get("extra_local_entries") or [])
         configured = bool(state.get("configured", False))
@@ -240,10 +241,10 @@ class StorageSettingsService:
 
     @staticmethod
     def _build_local_libraries(
-        dirs: Dict[str, Any], entries: List[Dict[str, Any]], names: Dict[str, str], configured: bool
-    ) -> List[Dict[str, Any]]:
+        dirs: dict[str, Any], entries: list[dict[str, Any]], names: dict[str, str], configured: bool
+    ) -> list[dict[str, Any]]:
         """把本地目录与附加来源投影为前端直接可用的本地素材库列表。"""
-        libraries: List[Dict[str, Any]] = []
+        libraries: list[dict[str, Any]] = []
         local_path = str(dirs.get("local") or "").strip()
         if local_path or configured:
             libraries.append(
@@ -274,7 +275,7 @@ class StorageSettingsService:
         expected = _resolve_expected_version(payload)
         _require_positive_version(expected, "存储设置")
 
-        def update(state: Dict[str, Any]) -> StorageSettingsSnapshot:
+        def update(state: dict[str, Any]) -> StorageSettingsSnapshot:
             revision = int(state.get("revision", 1))
             if expected != revision:
                 raise _conflict(
@@ -309,7 +310,7 @@ class StorageSettingsService:
         return self._state.mutate(update)
 
     @staticmethod
-    def _normalize_directory_mapping(dirs: Dict[str, Any]) -> Dict[str, Any]:
+    def _normalize_directory_mapping(dirs: dict[str, Any]) -> dict[str, Any]:
         def normalize(value: Any) -> Any:
             if isinstance(value, str):
                 if not value.strip():
@@ -325,8 +326,8 @@ class StorageSettingsService:
         return {str(key): normalize(value) for key, value in dirs.items()}
 
     @staticmethod
-    def _normalize_extra_local_entries(entries: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-        normalized: List[Dict[str, Any]] = []
+    def _normalize_extra_local_entries(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        normalized: list[dict[str, Any]] = []
         for entry in entries:
             if not isinstance(entry, dict) or not isinstance(entry.get("path"), str):
                 raise CleanroomException(400, "INVALID_PATH", "素材目录必须是绝对路径")
@@ -427,7 +428,7 @@ class ProviderService:
                 code="INVALID_REQUEST",
                 message="provider 请求体必须为数组",
             )
-        normalized: List[ProviderEntryRequest] = []
+        normalized: list[ProviderEntryRequest] = []
         seen: set = set()
         for index, item in enumerate(raw_providers):
             if not isinstance(item, dict):
@@ -504,7 +505,7 @@ class AssetStructureService:
         self._lock = threading.Lock()
         self._revision = 1
         self._sequence = 0
-        self._structures: Dict[str, AssetStructureItem] = {}
+        self._structures: dict[str, AssetStructureItem] = {}
 
     # ------------------------------------------------------------------
     # 查询
@@ -535,7 +536,7 @@ class AssetStructureService:
                 raise self._not_found(structure_id)
             return copy.deepcopy(item)
 
-    def _sorted_structures_locked(self) -> List[AssetStructureItem]:
+    def _sorted_structures_locked(self) -> list[AssetStructureItem]:
         return [self._structures[key] for key in sorted(self._structures)]
 
     @staticmethod
@@ -655,7 +656,7 @@ class AssetStructureService:
             self._structures[item.structure_id] = updated
             return copy.deepcopy(updated)
 
-    def delete_structure(self, structure_id: str, expected_version: Optional[int]) -> Tuple[str, int]:
+    def delete_structure(self, structure_id: str, expected_version: Optional[int]) -> tuple[str, int]:
         """删除结构；结构级 CAS 冲突失败关闭，成功则集合 revision 递增。"""
         _require_positive_version(expected_version, "结构")
         with self._lock:
@@ -677,7 +678,7 @@ class AssetStructureService:
     # 内部工具
     # ------------------------------------------------------------------
     @staticmethod
-    def _build_members(asset_ids: Iterable[str]) -> List[AssetStructureMember]:
+    def _build_members(asset_ids: Iterable[str]) -> list[AssetStructureMember]:
         """按调用方给定顺序建立成员；不编造任何素材元数据。"""
         return [
             AssetStructureMember(asset_id=asset_id, sort_order=index)
