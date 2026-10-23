@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import hashlib
 import json
 import os
 import shutil
@@ -16,7 +15,6 @@ import pytest
 from fastapi.testclient import TestClient
 
 from gw.api import routes_asset_registry, routes_projects
-from gw.api.app import app
 from gw.core.auth import require_authenticated
 from gw.core.errors import CleanroomException
 from gw.projects_hub import service as projects_service_module
