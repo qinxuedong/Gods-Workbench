@@ -32,7 +32,7 @@
 所有写端点都要求正整数 ``expected_version``；删除端点经查询串传入。
 """
 
-from typing import Optional, Type, TypeVar
+from typing import Optional, TypeVar
 
 from fastapi import APIRouter, Header, Query, Request, status
 from pydantic import BaseModel, ValidationError
@@ -57,7 +57,7 @@ router = APIRouter(prefix="/api/prompt-libraries", tags=["prompt-library"])
 RequestModel = TypeVar("RequestModel", bound=BaseModel)
 
 
-async def _validated_write_payload(request: Request, model: Type[RequestModel]) -> RequestModel:
+async def _validated_write_payload(request: Request, model: type[RequestModel]) -> RequestModel:
     """以 400 返回缺失版本，再验证提示词树写请求模型。"""
     try:
         payload = await request.json()
@@ -74,7 +74,7 @@ async def _validated_write_payload(request: Request, model: Type[RequestModel]) 
         raise CleanroomException(400, "INVALID_REQUEST", "提示词库请求字段无效") from exc
 
 
-def _request_body_schema(model: Type[BaseModel]) -> dict:
+def _request_body_schema(model: type[BaseModel]) -> dict:
     """保留由 Request 手动验证时的 JSON 请求体模型文档。"""
     return {
         "requestBody": {
