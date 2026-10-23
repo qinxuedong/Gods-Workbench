@@ -1,6 +1,5 @@
 """后台索引生产HTTP来源、任务控制、失败与提交竞争。"""
 
-import json
 import os
 import subprocess
 import sys

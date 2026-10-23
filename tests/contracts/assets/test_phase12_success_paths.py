@@ -1,5 +1,4 @@
 """审核覆盖补齐：受控HTTP、真实文件和写后读回，不调用付费服务。"""
-import base64
 from contextlib import contextmanager
 import hashlib
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
