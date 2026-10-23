@@ -26,10 +26,10 @@ import os
 import secrets
 from collections.abc import Iterable
 from dataclasses import dataclass, field
-from datetime import UTC, datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from threading import RLock
-from typing import Any, Optional
+from typing import Any
 
 from gw.core import audit as audit_log
 from gw.core.auth import GOVERNANCE_ROLES, KNOWN_ROLES

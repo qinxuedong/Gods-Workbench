@@ -43,7 +43,7 @@ import secrets
 import time
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
-from typing import Any, Optional, Tuple
+from typing import Any
 from urllib.parse import urlencode
 
 from gw.core.errors import UnauthorizedException
