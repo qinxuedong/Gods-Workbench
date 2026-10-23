@@ -99,19 +99,52 @@ window.GWUnassignedInbox = (() => {
 
   function entry() { return document.getElementById('btnUnassignedInbox'); }
 
+  function clearEntryError(button) {
+    document.getElementById('unassignedInboxEntryStatus')?.remove();
+    button?.removeAttribute('aria-describedby');
+    if (button?.dataset) delete button.dataset.unassignedLoadState;
+  }
+
+  function showEntryError(button) {
+    let status = document.getElementById('unassignedInboxEntryStatus');
+    if (!status) {
+      status = document.createElement('div');
+      status.id = 'unassignedInboxEntryStatus';
+      status.dataset.unassignedEntryStatus = 'true';
+      status.setAttribute('role', 'status');
+      status.setAttribute('aria-live', 'polite');
+      status.style.cssText = 'display:flex;align-items:center;justify-content:space-between;gap:8px;padding:4px 8px;color:#fbbf24;font-size:12px;';
+      button.insertAdjacentElement('afterend', status);
+    }
+    status.innerHTML = '<span>未归属资产暂时无法读取。</span><button type="button" class="hw-btn btn-size-sm" data-unassigned-retry>重试</button>';
+    status.querySelector('[data-unassigned-retry]').addEventListener('click', async event => {
+      event.currentTarget.disabled = true;
+      await refreshEntry();
+    });
+    button.setAttribute('aria-describedby', status.id);
+    if (button.dataset) button.dataset.unassignedLoadState = 'error';
+  }
+
   async function refreshEntry() {
     const button = entry();
     if (!button) return 'missing';
     try {
       await load();
+      clearEntryError(button);
       button.style.display = '';
       const count = button.querySelector('[data-unassigned-count]');
       if (count) count.textContent = String(snapshot.total);
+      if (button.dataset) button.dataset.unassignedLoadState = 'ready';
       return 'shown';
     } catch (error) {
-      // 匿名或无权：入口不显示（只对所有者显示）；其他错误同样隐藏，不打扰。
-      button.style.display = 'none';
-      return error.status === 401 || error.status === 403 ? 'hidden' : 'error';
+      if (error.status === 401 || error.status === 403) {
+        clearEntryError(button);
+        button.style.display = 'none';
+        return 'hidden';
+      }
+      button.style.display = '';
+      showEntryError(button);
+      return 'error';
     }
   }
 

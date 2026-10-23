@@ -171,6 +171,22 @@ def _image_proxy(path: Path, width: int, target_base: Path) -> dict[str, Any]:
             }
     except CleanroomException:
         raise
+    except PermissionError:
+        raise CleanroomException(
+            403, "MEDIA_PERMISSION_DENIED", "没有权限读取源媒体"
+        ) from None
+    except OSError as exc:
+        try:
+            from PIL import UnidentifiedImageError
+        except ImportError:
+            UnidentifiedImageError = ()
+        if isinstance(exc, UnidentifiedImageError):
+            raise CleanroomException(
+                503, "SOURCE_MEDIA_CORRUPT", "源图片损坏或无法解码"
+            ) from None
+        raise CleanroomException(
+            503, "SOURCE_MEDIA_UNREADABLE", "源图片暂时无法读取"
+        ) from None
     except Exception:
         raise CleanroomException(
             503, "THUMBNAIL_FAILED", "无法把该文件解码为图片"
@@ -217,7 +233,12 @@ def _ffmpeg_proxy(path: Path, width: int, target: Path) -> dict[str, Any]:
     ]
     try:
         completed = subprocess.run(args, capture_output=True, timeout=120, check=False)
-    except (OSError, subprocess.TimeoutExpired):
+    except subprocess.TimeoutExpired:
+        partial.unlink(missing_ok=True)
+        raise CleanroomException(
+            503, "PROXY_GENERATION_TIMEOUT", "代理生成超时"
+        ) from None
+    except OSError:
         partial.unlink(missing_ok=True)
         raise CleanroomException(
             503, "MEDIA_PROCESS_FAILED", "视频代理处理失败"
@@ -272,6 +293,10 @@ def _next_action(code: str) -> str:
         return "install_media_dependency"
     if code == "MEDIA_NOT_AVAILABLE":
         return "restore_source_media"
+    if code == "MEDIA_PERMISSION_DENIED":
+        return "check_source_permissions"
+    if code == "SOURCE_MEDIA_CORRUPT":
+        return "replace_source_media"
     return "retry_proxy_generation"
 
 
@@ -297,6 +322,7 @@ def _degraded_payload(
         if availability == "not_integrated"
         else "degraded",
         "data_gaps": [code],
+        "retryable": True,
     }
 
 
@@ -308,6 +334,16 @@ def descriptor(payload: dict[str, Any]) -> dict[str, Any]:
         if exc.status_code != 503:
             raise
         return _degraded_payload(payload, exc)
+    except TimeoutError:
+        return _degraded_payload(
+            payload,
+            CleanroomException(503, "PROXY_GENERATION_TIMEOUT", "代理生成超时"),
+        )
+    except Exception:
+        return _degraded_payload(
+            payload,
+            CleanroomException(503, "PROXY_GENERATION_FAILED", "代理生成失败"),
+        )
     query: dict[str, str] = {"artifact_id": result["artifact_id"]}
     query["profile"] = result["profile"]
     query["width"] = str(result.get("_request_width") or result["width"] or "")
@@ -366,5 +402,6 @@ def error_payload(exc: CleanroomException) -> dict[str, Any]:
             "data_status": "not_integrated"
             if exc.code in DEPENDENCY_CODES
             else "degraded",
+            "retryable": exc.status_code in {408, 429, 500, 502, 503, 504},
         }
     }
