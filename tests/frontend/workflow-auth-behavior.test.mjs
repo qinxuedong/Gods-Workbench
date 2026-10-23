@@ -22,7 +22,7 @@ function harness() {
   h.loads=0;h.loadSettingsState=async()=>h.loads++;h.refreshMediaAssetsCache=async()=>{};h.refreshWorkflowList=async()=>{};
   h.selectWorkflow=async()=>{};h.restoreWorkflowTask=async()=>{};h.startComfySyncWatcher=()=>{};h.disposeWorkbench=()=>{};
   h.handleParseLink=async()=>assert.fail('不应默认解析供应商');
-  h.wfQueryAll=()=>[];h.wfGet=()=>null;h.clearEmptyWorkbenchView=()=>{};h.renderHeaderTelemetry=()=>{};
+  h.wfQueryAll=()=>[];h.wfGet=()=>null;h.clearEmptyWorkbenchView=()=>{};h.renderHeaderTelemetry=()=>{};h.renderProjectContextBadge=()=>{};
   runInNewContext(controller.slice(controller.indexOf('function resetWorkflowIdentity()'),controller.indexOf('window.WorkbenchWorkflow =')),h);
   runInNewContext(controller.slice(controller.indexOf('async function initWorkbench()'),controller.indexOf('async function restoreWorkflowTask()')),h);
   return Object.assign(h,{deck,gate:window.GWAuthGate,requests});
