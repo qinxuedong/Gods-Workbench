@@ -14,8 +14,6 @@
 
 """视频任务 HTTP 路由。"""
 
-from typing import Optional
-
 from fastapi import APIRouter, Header, Query, status
 from fastapi.responses import FileResponse
 
