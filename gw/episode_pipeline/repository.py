@@ -30,7 +30,8 @@ from __future__ import annotations
 import hashlib
 import json
 import math
-from typing import Any, Dict, List, Mapping, Optional
+from collections.abc import Mapping
+from typing import Any, Optional
 
 from gw.core import storage
 from gw.core.errors import CleanroomException, VersionConflictException
@@ -65,7 +66,7 @@ def state() -> storage.JsonState:
     return storage.JsonState(NS, _blank)
 
 
-def _blank() -> Dict[str, Any]:
+def _blank() -> dict[str, Any]:
     return {
         "revision": 1,
         "pipelines": {},
@@ -78,12 +79,12 @@ def _blank() -> Dict[str, Any]:
     }
 
 
-def _bump(raw: Dict[str, Any]) -> int:
+def _bump(raw: dict[str, Any]) -> int:
     raw["revision"] = int(raw.get("revision") or 1) + 1
     return raw["revision"]
 
 
-def _cas(raw: Dict[str, Any], expected: Optional[int], label: str) -> None:
+def _cas(raw: dict[str, Any], expected: Optional[int], label: str) -> None:
     if expected is None:
         return
     if int(expected) != int(raw.get("revision") or 1):
@@ -94,7 +95,7 @@ def _cas(raw: Dict[str, Any], expected: Optional[int], label: str) -> None:
         )
 
 
-def _stage_view(item: Dict[str, Any], prompt_item_ids: Dict[str, str]) -> Dict[str, Any]:
+def _stage_view(item: dict[str, Any], prompt_item_ids: dict[str, str]) -> dict[str, Any]:
     key = item["stage_key"]
     return {
         "stage_id": item["stage_id"],
@@ -111,7 +112,7 @@ def _stage_view(item: Dict[str, Any], prompt_item_ids: Dict[str, str]) -> Dict[s
     }
 
 
-def _ensure_shot_state(raw: Dict[str, Any]) -> None:
+def _ensure_shot_state(raw: dict[str, Any]) -> None:
     """兼容 C8-T2 加入前已有的 episode_pipeline 快照。"""
     if not isinstance(raw.get("shots"), dict):
         raw["shots"] = {}
@@ -119,7 +120,7 @@ def _ensure_shot_state(raw: Dict[str, Any]) -> None:
         raw["shot_seq"] = 0
 
 
-def _shot_view(item: Dict[str, Any]) -> Dict[str, Any]:
+def _shot_view(item: dict[str, Any]) -> dict[str, Any]:
     status = str(item.get("status") or "unknown")
     if status not in SHOT_STATUS:
         status = "unknown"
@@ -148,9 +149,9 @@ def _shot_view(item: Dict[str, Any]) -> Dict[str, Any]:
     return result
 
 
-def _latest_shot_records(raw: Dict[str, Any], pipeline_id: str) -> List[Dict[str, Any]]:
+def _latest_shot_records(raw: dict[str, Any], pipeline_id: str) -> list[dict[str, Any]]:
     _ensure_shot_state(raw)
-    latest: Dict[str, Dict[str, Any]] = {}
+    latest: dict[str, dict[str, Any]] = {}
     for item in raw["shots"].values():
         if item.get("pipeline_id") != pipeline_id:
             continue
@@ -161,7 +162,7 @@ def _latest_shot_records(raw: Dict[str, Any], pipeline_id: str) -> List[Dict[str
     return sorted(latest.values(), key=lambda item: str(item.get("shot_id") or ""))
 
 
-def _pipeline_view(raw: Dict[str, Any], item: Dict[str, Any]) -> Dict[str, Any]:
+def _pipeline_view(raw: dict[str, Any], item: dict[str, Any]) -> dict[str, Any]:
     _ensure_shot_state(raw)
     stages = [
         _stage_view(v, item.get("prompt_item_ids") or {})
@@ -185,7 +186,7 @@ def _pipeline_view(raw: Dict[str, Any], item: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
-def list_pipelines(project_id: Optional[str]) -> Dict[str, Any]:
+def list_pipelines(project_id: Optional[str]) -> dict[str, Any]:
     raw = state().read()
     items = [dict(v) for v in raw["pipelines"].values()]
     if project_id:
@@ -199,13 +200,13 @@ def list_pipelines(project_id: Optional[str]) -> Dict[str, Any]:
     }
 
 
-def create_pipeline(payload: Dict[str, Any]) -> Dict[str, Any]:
+def create_pipeline(payload: dict[str, Any]) -> dict[str, Any]:
     if not isinstance(payload, dict):
         raise CleanroomException(400, "INVALID_REQUEST", "请求体必须是对象")
     if not str(payload.get("project_id") or "").strip():
         raise CleanroomException(400, "INVALID_REQUEST", "project_id 不能为空")
 
-    def mutate(raw: Dict[str, Any]) -> Dict[str, Any]:
+    def mutate(raw: dict[str, Any]) -> dict[str, Any]:
         _ensure_shot_state(raw)
         raw["seq"] = int(raw.get("seq") or 0) + 1
         pipeline_id = "ep-%04d" % raw["seq"]
@@ -249,7 +250,7 @@ def create_pipeline(payload: Dict[str, Any]) -> Dict[str, Any]:
     return state().mutate(mutate)
 
 
-def get_pipeline(pipeline_id: str) -> Dict[str, Any]:
+def get_pipeline(pipeline_id: str) -> dict[str, Any]:
     raw = state().read()
     item = raw["pipelines"].get(pipeline_id)
     if item is None:
@@ -282,7 +283,7 @@ class TimelineClip(BaseModel):
     asset_id: str = Field(..., min_length=1, max_length=128)
     at: float = Field(..., ge=0)
     duration: float = Field(..., gt=0)
-    overrides: Dict[str, Any] = Field(default_factory=dict)
+    overrides: dict[str, Any] = Field(default_factory=dict)
 
     @field_validator("shot_id", "asset_id")
     @classmethod
@@ -298,7 +299,7 @@ class TimelineClip(BaseModel):
 
     @field_validator("overrides")
     @classmethod
-    def validate_overrides(cls, value: Dict[str, Any]):
+    def validate_overrides(cls, value: dict[str, Any]):
         if not isinstance(value, dict):
             raise ValueError("overrides 必须是对象")
         return value
@@ -311,7 +312,7 @@ class TimelineTrack(BaseModel):
 
     track_id: str = Field(..., min_length=1, max_length=128)
     kind: str = Field(default="video", min_length=1, max_length=32)
-    clips: List[TimelineClip] = Field(default_factory=list)
+    clips: list[TimelineClip] = Field(default_factory=list)
 
     @field_validator("track_id")
     @classmethod
@@ -337,8 +338,8 @@ class TimelineManifest(BaseModel):
     project_id: str = Field(..., min_length=1, max_length=128)
     schema_version: str = Field(default="openfilm.timeline_manifest.v1", min_length=1, max_length=64)
     version: int = Field(default=1, ge=1)
-    tracks: List[TimelineTrack] = Field(..., min_length=1)
-    metadata: Dict[str, Any] = Field(default_factory=dict)
+    tracks: list[TimelineTrack] = Field(..., min_length=1)
+    metadata: dict[str, Any] = Field(default_factory=dict)
     created_at: Optional[str] = None
     updated_at: Optional[str] = None
 
@@ -355,7 +356,7 @@ class TimelineManifest(BaseModel):
         return value
 
 
-def _ensure_timeline_state(raw: Dict[str, Any]) -> None:
+def _ensure_timeline_state(raw: dict[str, Any]) -> None:
     """兼容 C12-T3 之前已落盘的 episode_pipeline 快照。"""
     if not isinstance(raw.get("timeline_manifests"), dict):
         raw["timeline_manifests"] = {}
@@ -363,7 +364,7 @@ def _ensure_timeline_state(raw: Dict[str, Any]) -> None:
         raw["timeline_seq"] = 0
 
 
-def _timeline_response(raw: Dict[str, Any], manifest: Dict[str, Any]) -> Dict[str, Any]:
+def _timeline_response(raw: dict[str, Any], manifest: dict[str, Any]) -> dict[str, Any]:
     """统一时间线响应，同时保留顶层字段方便现有前端逐步接入。"""
     clean = dict(manifest)
     response = {
@@ -377,7 +378,7 @@ def _timeline_response(raw: Dict[str, Any], manifest: Dict[str, Any]) -> Dict[st
     return response
 
 
-def _timeline_payload(payload: Mapping[str, Any]) -> tuple[Dict[str, Any], Any]:
+def _timeline_payload(payload: Mapping[str, Any]) -> tuple[dict[str, Any], Any]:
     """兼容直接 body 与 {timeline_manifest, expected_version} 两种输入。"""
     if not isinstance(payload, Mapping):
         raise CleanroomException(400, "INVALID_TIMELINE_MANIFEST", "timeline_manifest 请求体必须是对象")
@@ -411,9 +412,9 @@ def _timeline_payload(payload: Mapping[str, Any]) -> tuple[Dict[str, Any], Any]:
 
 
 def _validated_timeline(
-    raw: Dict[str, Any], pipeline_id: str, payload: Mapping[str, Any], *, version: int, manifest_id: str,
+    raw: dict[str, Any], pipeline_id: str, payload: Mapping[str, Any], *, version: int, manifest_id: str,
     now: str,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     pipeline = raw.get("pipelines", {}).get(pipeline_id)
     if pipeline is None:
         raise CleanroomException(404, "PIPELINE_NOT_FOUND", "剧集流水线不存在")
@@ -449,9 +450,9 @@ def _required_timeline_version(value: Any) -> int:
     return value
 
 
-def create_timeline_manifest(pipeline_id: str, payload: Mapping[str, Any]) -> Dict[str, Any]:
+def create_timeline_manifest(pipeline_id: str, payload: Mapping[str, Any]) -> dict[str, Any]:
     """创建并持久化一个 OpenFilm timeline_manifest。"""
-    def mutate(raw: Dict[str, Any]) -> Dict[str, Any]:
+    def mutate(raw: dict[str, Any]) -> dict[str, Any]:
         _ensure_timeline_state(raw)
         if pipeline_id not in raw.get("pipelines", {}):
             raise CleanroomException(404, "PIPELINE_NOT_FOUND", "剧集流水线不存在")
@@ -472,7 +473,7 @@ def create_timeline_manifest(pipeline_id: str, payload: Mapping[str, Any]) -> Di
     return state().mutate(mutate)
 
 
-def get_timeline_manifest(pipeline_id: str) -> Dict[str, Any]:
+def get_timeline_manifest(pipeline_id: str) -> dict[str, Any]:
     """读取流水线的 timeline_manifest；不存在时明确 404。"""
     raw = state().read()
     _ensure_timeline_state(raw)
@@ -487,14 +488,14 @@ def get_timeline_manifest(pipeline_id: str) -> Dict[str, Any]:
     return _timeline_response(raw, manifest)
 
 
-def update_timeline_manifest(pipeline_id: str, payload: Mapping[str, Any]) -> Dict[str, Any]:
+def update_timeline_manifest(pipeline_id: str, payload: Mapping[str, Any]) -> dict[str, Any]:
     """以 expected_version CAS 更新现有 timeline_manifest。"""
     data, expected = _timeline_payload(payload)
     if expected is None:
         raise CleanroomException(400, "EXPECTED_VERSION_REQUIRED", "更新 timeline_manifest 必须携带 expected_version")
     expected_int = _required_timeline_version(expected)
 
-    def mutate(raw: Dict[str, Any]) -> Dict[str, Any]:
+    def mutate(raw: dict[str, Any]) -> dict[str, Any]:
         _ensure_timeline_state(raw)
         if pipeline_id not in raw.get("pipelines", {}):
             raise CleanroomException(404, "PIPELINE_NOT_FOUND", "剧集流水线不存在")
@@ -524,7 +525,7 @@ initialize_timeline_manifest = create_timeline_manifest
 list_timeline_manifest = get_timeline_manifest
 
 
-def _find_stage(raw: Dict[str, Any], pipeline_id: str, stage_id: str) -> Dict[str, Any]:
+def _find_stage(raw: dict[str, Any], pipeline_id: str, stage_id: str) -> dict[str, Any]:
     if pipeline_id not in raw["pipelines"]:
         raise CleanroomException(404, "PIPELINE_NOT_FOUND", "剧集流水线不存在")
     for item in raw["stages"].values():
@@ -536,12 +537,12 @@ def _find_stage(raw: Dict[str, Any], pipeline_id: str, stage_id: str) -> Dict[st
     raise CleanroomException(404, "STAGE_NOT_FOUND", "流水线阶段不存在")
 
 
-def _touch(raw: Dict[str, Any], pipeline: Dict[str, Any]) -> None:
+def _touch(raw: dict[str, Any], pipeline: dict[str, Any]) -> None:
     pipeline["updated_at"] = storage.now_iso()
     pipeline["version"] = int(pipeline.get("version") or 1) + 1
 
 
-def _require_stage_version(payload: Dict[str, Any], stage: Dict[str, Any]) -> int:
+def _require_stage_version(payload: dict[str, Any], stage: dict[str, Any]) -> int:
     expected = payload.get("expected_version")
     if type(expected) is not int or expected < 1:
         raise CleanroomException(400, "INVALID_REQUEST", "expected_version 必须为正整数")
@@ -551,10 +552,10 @@ def _require_stage_version(payload: Dict[str, Any], stage: Dict[str, Any]) -> in
     return expected
 
 
-def start_stage(pipeline_id: str, stage_id: str, payload: Dict[str, Any]) -> Dict[str, Any]:
+def start_stage(pipeline_id: str, stage_id: str, payload: dict[str, Any]) -> dict[str, Any]:
     payload = payload if isinstance(payload, dict) else {}
 
-    def mutate(raw: Dict[str, Any]) -> Dict[str, Any]:
+    def mutate(raw: dict[str, Any]) -> dict[str, Any]:
         stage = _find_stage(raw, pipeline_id, stage_id)
         _require_stage_version(payload, stage)
         if stage.get("status") == "running":
@@ -572,10 +573,10 @@ def start_stage(pipeline_id: str, stage_id: str, payload: Dict[str, Any]) -> Dic
     return state().mutate(mutate)
 
 
-def complete_stage(pipeline_id: str, stage_id: str, payload: Dict[str, Any]) -> Dict[str, Any]:
+def complete_stage(pipeline_id: str, stage_id: str, payload: dict[str, Any]) -> dict[str, Any]:
     payload = payload if isinstance(payload, dict) else {}
 
-    def mutate(raw: Dict[str, Any]) -> Dict[str, Any]:
+    def mutate(raw: dict[str, Any]) -> dict[str, Any]:
         stage = _find_stage(raw, pipeline_id, stage_id)
         _require_stage_version(payload, stage)
         if stage.get("status") == "pending":
@@ -602,10 +603,10 @@ def complete_stage(pipeline_id: str, stage_id: str, payload: Dict[str, Any]) -> 
     return state().mutate(mutate)
 
 
-def cancel_stage(pipeline_id: str, stage_id: str, payload: Dict[str, Any]) -> Dict[str, Any]:
+def cancel_stage(pipeline_id: str, stage_id: str, payload: dict[str, Any]) -> dict[str, Any]:
     payload = payload if isinstance(payload, dict) else {}
 
-    def mutate(raw: Dict[str, Any]) -> Dict[str, Any]:
+    def mutate(raw: dict[str, Any]) -> dict[str, Any]:
         stage = _find_stage(raw, pipeline_id, stage_id)
         _require_stage_version(payload, stage)
         if stage.get("status") in ("completed", "cancelled"):
@@ -635,12 +636,12 @@ def _shot_identifier(value: Any) -> str:
     return shot_id
 
 
-def _request_fingerprint(payload: Dict[str, Any]) -> str:
+def _request_fingerprint(payload: dict[str, Any]) -> str:
     encoded = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
     return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
 
 
-def _shot_record(raw: Dict[str, Any], pipeline_id: str, shot_id: str, *, generation_id: Optional[str] = None) -> Dict[str, Any]:
+def _shot_record(raw: dict[str, Any], pipeline_id: str, shot_id: str, *, generation_id: Optional[str] = None) -> dict[str, Any]:
     _ensure_shot_state(raw)
     candidates = [
         item for item in raw["shots"].values()
@@ -652,7 +653,7 @@ def _shot_record(raw: Dict[str, Any], pipeline_id: str, shot_id: str, *, generat
     return max(candidates, key=lambda item: int(item.get("sequence") or 0))
 
 
-def _shot_source(target: str, workflow_id: str, output: Dict[str, Any], asset_id: str) -> Dict[str, Any]:
+def _shot_source(target: str, workflow_id: str, output: dict[str, Any], asset_id: str) -> dict[str, Any]:
     source_url = output.get("url") or output.get("content_url")
     if not isinstance(source_url, str) or not source_url.strip():
         source_url = f"/api/god_workflow/assets/{asset_id}/content"
@@ -662,7 +663,7 @@ def _shot_source(target: str, workflow_id: str, output: Dict[str, Any], asset_id
     return source
 
 
-def _task_state(task: Dict[str, Any]) -> tuple[str, str]:
+def _task_state(task: dict[str, Any]) -> tuple[str, str]:
     status = str(task.get("status") or task.get("execution_status") or "").strip().lower()
     if status in {"accepted", "queued", "pending"}:
         return "queued", "poll_job"
@@ -677,7 +678,7 @@ def _task_state(task: Dict[str, Any]) -> tuple[str, str]:
     return "waiting", "poll_job"
 
 
-def _registered_output(task: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+def _registered_output(task: dict[str, Any]) -> Optional[dict[str, Any]]:
     outputs = task.get("outputs")
     if not isinstance(outputs, list):
         return None
@@ -693,11 +694,11 @@ def _registered_output(task: Dict[str, Any]) -> Optional[Dict[str, Any]]:
 def reserve_single_shot(
     pipeline_id: str,
     shot_id: str,
-    payload: Dict[str, Any],
+    payload: dict[str, Any],
     idempotency_key: Any,
     *,
     actor_key: str = "",
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """原子预留一条镜头生成意图，确保外部副作用前已有可恢复账本。"""
     if not isinstance(payload, dict):
         raise CleanroomException(400, "INVALID_REQUEST", "请求体必须是 JSON 对象")
@@ -708,7 +709,7 @@ def reserve_single_shot(
     if not isinstance(source, dict):
         raise CleanroomException(400, "INVALID_REQUEST", "来源上下文必须是对象")
 
-    def mutate(raw: Dict[str, Any]) -> Dict[str, Any]:
+    def mutate(raw: dict[str, Any]) -> dict[str, Any]:
         _ensure_shot_state(raw)
         pipeline = raw["pipelines"].get(pipeline_id)
         if pipeline is None:
@@ -797,12 +798,12 @@ def reserve_single_shot(
     return state().mutate(mutate)
 
 
-def bind_single_shot(pipeline_id: str, shot_id: str, task: Dict[str, Any]) -> Dict[str, Any]:
+def bind_single_shot(pipeline_id: str, shot_id: str, task: dict[str, Any]) -> dict[str, Any]:
     """把执行器返回的真实任务/资产绑定到镜头；不从缺失字段推造成功。"""
     if not isinstance(task, dict):
         raise CleanroomException(502, "WORKFLOW_PROVIDER_INVALID_RESPONSE", "执行器响应无效")
 
-    def mutate(raw: Dict[str, Any]) -> Dict[str, Any]:
+    def mutate(raw: dict[str, Any]) -> dict[str, Any]:
         item = _shot_record(raw, pipeline_id, _shot_identifier(shot_id))
         pipeline = raw["pipelines"][pipeline_id]
         job_id = str(task.get("job_id") or task.get("task_id") or "").strip()
@@ -860,9 +861,9 @@ def bind_single_shot(pipeline_id: str, shot_id: str, task: Dict[str, Any]) -> Di
     return state().mutate(mutate)
 
 
-def mark_single_shot_failure(pipeline_id: str, shot_id: str, code: str, message: str) -> Dict[str, Any]:
+def mark_single_shot_failure(pipeline_id: str, shot_id: str, code: str, message: str) -> dict[str, Any]:
     """记录执行器未接入、失败或未知，供轮询/刷新显示下一步。"""
-    def mutate(raw: Dict[str, Any]) -> Dict[str, Any]:
+    def mutate(raw: dict[str, Any]) -> dict[str, Any]:
         item = _shot_record(raw, pipeline_id, _shot_identifier(shot_id))
         pipeline = raw["pipelines"][pipeline_id]
         code_value = str(code or "WORKFLOW_EXECUTION_FAILED")
@@ -885,7 +886,7 @@ def mark_single_shot_failure(pipeline_id: str, shot_id: str, code: str, message:
     return state().mutate(mutate)
 
 
-def get_single_shot(pipeline_id: str, shot_id: str) -> Dict[str, Any]:
+def get_single_shot(pipeline_id: str, shot_id: str) -> dict[str, Any]:
     raw = state().read()
     if pipeline_id not in raw.get("pipelines", {}):
         raise CleanroomException(404, "PIPELINE_NOT_FOUND", "剧集流水线不存在")
