@@ -1,3 +1,17 @@
+# Copyright 2026 Gods-Workbench Authors
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 """System One 标准决策适配器。"""
 
 from __future__ import annotations
@@ -9,7 +23,11 @@ from typing import Any, Protocol
 
 from fastapi import APIRouter
 
-from .debiasing import debias_probability_runs, normalize_probabilities, position_bias_drift
+from .debiasing import (
+    debias_probability_runs,
+    normalize_probabilities,
+    position_bias_drift,
+)
 
 
 class DecisionBackend(Protocol):
@@ -17,7 +35,9 @@ class DecisionBackend(Protocol):
 
     name: str
 
-    def decide(self, payload: Mapping[str, Any]) -> Mapping[str, Any] | Awaitable[Mapping[str, Any]]: ...
+    def decide(
+        self, payload: Mapping[str, Any]
+    ) -> Mapping[str, Any] | Awaitable[Mapping[str, Any]]: ...
 
 
 class DecisionInputError(ValueError):
@@ -49,8 +69,12 @@ class RemoteDecisionBackend:
 
     name = "remote"
 
-    def __init__(self, endpoint: str, *, transport: Callable[..., Any] | None = None) -> None:
-        if not isinstance(endpoint, str) or not endpoint.startswith(("http://", "https://")):
+    def __init__(
+        self, endpoint: str, *, transport: Callable[..., Any] | None = None
+    ) -> None:
+        if not isinstance(endpoint, str) or not endpoint.startswith(
+            ("http://", "https://")
+        ):
             raise ValueError("远程决策端点必须使用 http:// 或 https://")
         self.endpoint = endpoint
         self._transport = transport
@@ -83,10 +107,14 @@ class KevDecisionBackend:
 
     name = "kev-cpu"
 
-    def __init__(self, endpoint: str | None, *, transport: Callable[..., Any] | None = None) -> None:
+    def __init__(
+        self, endpoint: str | None, *, transport: Callable[..., Any] | None = None
+    ) -> None:
         if not endpoint:
             raise ValueError("必须通过 KEV_ENDPOINT 显式配置 Kev 推理端点")
-        if not isinstance(endpoint, str) or not endpoint.startswith(("http://", "https://")):
+        if not isinstance(endpoint, str) or not endpoint.startswith(
+            ("http://", "https://")
+        ):
             raise ValueError("KEV_ENDPOINT 必须使用 http:// 或 https://")
         self.endpoint = endpoint
         self._transport = transport
@@ -98,7 +126,9 @@ class KevDecisionBackend:
             request["questions"] = {
                 "decision": {
                     "type": "choice",
-                    "criteria": {item["id"]: None for item in payload.get("options", ())},
+                    "criteria": {
+                        item["id"]: None for item in payload.get("options", ())
+                    },
                 }
             }
         elif decision_type == "boolean":
@@ -126,7 +156,9 @@ class KevDecisionBackend:
         if not isinstance(result, Mapping):
             raise RuntimeError("Kev 推理服务返回了非对象结果")
         if decision_type == "choice":
-            probabilities = result.get("answers", {}).get("decision", {}).get("probabilities")
+            probabilities = (
+                result.get("answers", {}).get("decision", {}).get("probabilities")
+            )
             if not isinstance(probabilities, Mapping):
                 raise RuntimeError("Kev 推理服务未返回 choice probabilities")
             return {"probabilities": dict(probabilities)}
@@ -139,7 +171,11 @@ class KevDecisionBackend:
         if not isinstance(score, (int, float)) or isinstance(score, bool):
             raise RuntimeError("Kev 推理服务未返回 score")
         option_count = max(1, len(payload.get("options", ())))
-        return {"scores": {"decision": float(score) * 100.0 / float(max(option_count - 1, 1))}}
+        return {
+            "scores": {
+                "decision": float(score) * 100.0 / float(max(option_count - 1, 1))
+            }
+        }
 
 
 class DecisionRouter:
@@ -161,7 +197,11 @@ class DecisionRouter:
     async def decide(self, request: Mapping[str, Any]) -> dict[str, Any]:
         payload = dict(request)
         decision_type = payload.get("decision_type") or payload.get("type")
-        if payload.get("decision_type") and payload.get("type") and payload["decision_type"] != payload["type"]:
+        if (
+            payload.get("decision_type")
+            and payload.get("type")
+            and payload["decision_type"] != payload["type"]
+        ):
             raise DecisionInputError("type 与 decision_type 必须一致")
         if decision_type not in self._TYPES:
             raise DecisionInputError("type 必须是 choice、scoring 或 boolean")
@@ -237,7 +277,11 @@ class DecisionRouter:
         provider: str,
     ) -> dict[str, Any]:
         option_ids = cls._choice_ids(payload.get("options"))
-        runs = raw.get("samples") if raw.get("samples") is not None else payload.get("samples")
+        runs = (
+            raw.get("samples")
+            if raw.get("samples") is not None
+            else payload.get("samples")
+        )
         if runs is not None:
             if not isinstance(runs, Sequence) or isinstance(runs, (str, bytes)):
                 raise DecisionInputError("samples 必须是多轮决策结果数组")
@@ -261,13 +305,15 @@ class DecisionRouter:
             try:
                 if isinstance(values, Mapping):
                     probabilities = normalize_probabilities(values)
-                elif isinstance(values, Sequence) and not isinstance(values, (str, bytes)):
+                elif isinstance(values, Sequence) and not isinstance(
+                    values, (str, bytes)
+                ):
                     if not option_ids or len(values) != len(option_ids):
                         raise DecisionInputError("choice 概率数量必须与 options 一致")
                     normalized = normalize_probabilities(values)
                     if not isinstance(normalized, tuple):
                         raise DecisionInputError("choice 概率结果格式无效")
-                    probabilities = dict(zip(option_ids, normalized))
+                    probabilities = dict(zip(option_ids, normalized, strict=True))
                 else:
                     raise DecisionInputError("choice 概率结果必须是对象或数组")
             except ValueError as exc:
@@ -277,12 +323,15 @@ class DecisionRouter:
         if not isinstance(probabilities, Mapping):
             if not option_ids or len(probabilities) != len(option_ids):
                 raise DecisionInputError("choice 概率数量必须与 options 一致")
-            probabilities = dict(zip(option_ids, probabilities))
+            probabilities = dict(zip(option_ids, probabilities, strict=True))
         if option_ids and set(probabilities) != set(option_ids):
             raise DecisionInputError("choice 概率结果必须覆盖全部 options")
         if not probabilities:
             raise DecisionInputError("choice 至少需要一个选项")
-        if not all(math.isfinite(float(value)) and 0 <= float(value) <= 1 for value in probabilities.values()):
+        if not all(
+            math.isfinite(float(value)) and 0 <= float(value) <= 1
+            for value in probabilities.values()
+        ):
             raise DecisionInputError("choice 概率必须是 0 到 1 之间的有限数")
         chosen = max(probabilities, key=probabilities.get)
         return {
@@ -290,8 +339,13 @@ class DecisionRouter:
             "decision_type": "choice",
             "provider": provider,
             "result": {"choice_id": str(chosen)},
-            "probabilities": {str(key): float(value) for key, value in probabilities.items()},
-            "debias": {"method": "anyjev-cyclic-shift-v1", "position_bias_drift_pct": float(drift)},
+            "probabilities": {
+                str(key): float(value) for key, value in probabilities.items()
+            },
+            "debias": {
+                "method": "anyjev-cyclic-shift-v1",
+                "position_bias_drift_pct": float(drift),
+            },
         }
 
     @staticmethod
@@ -321,7 +375,9 @@ class DecisionRouter:
             try:
                 score = float(value)
             except (TypeError, ValueError, OverflowError) as exc:
-                raise DecisionInputError("scoring 分数必须是 0 到 100 之间的数字") from exc
+                raise DecisionInputError(
+                    "scoring 分数必须是 0 到 100 之间的数字"
+                ) from exc
             if not math.isfinite(score) or not 0 <= score <= 100:
                 raise DecisionInputError("scoring 分数必须是 0 到 100 之间的数字")
             scores[score_id] = score
@@ -352,7 +408,9 @@ class DecisionRouter:
 def build_decision_api_router(endpoint: Callable[..., Any]) -> APIRouter:
     """创建唯一的 System One HTTP 路由载体。"""
     api_router = APIRouter(tags=["system-one"])
-    api_router.add_api_route("/v1/systemone", endpoint, methods=["POST"], response_model=None)
+    api_router.add_api_route(
+        "/v1/systemone", endpoint, methods=["POST"], response_model=None
+    )
     return api_router
 
 

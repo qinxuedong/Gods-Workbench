@@ -1,3 +1,17 @@
+# Copyright 2026 Gods-Workbench Authors
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 """System One 的轻量循环去偏与概率归一化算法。"""
 
 from __future__ import annotations
@@ -5,7 +19,6 @@ from __future__ import annotations
 import math
 from collections.abc import Mapping, Sequence
 from typing import TypeVar
-
 
 T = TypeVar("T")
 NumericValues = Mapping[str, float] | Sequence[float]
@@ -20,13 +33,17 @@ def cyclic_shift(values: Sequence[T], offset: int) -> tuple[T, ...]:
     return items[shift:] + items[:shift]
 
 
-def cyclic_permutations(options: Sequence[T], *, include_reverse: bool = True) -> tuple[tuple[T, ...], ...]:
+def cyclic_permutations(
+    options: Sequence[T], *, include_reverse: bool = True
+) -> tuple[tuple[T, ...], ...]:
     """生成全部循环位移，可选加入反向顺序的循环位移。"""
     items = tuple(options)
     rotations = [cyclic_shift(items, offset) for offset in range(len(items))]
     if include_reverse:
         reversed_items = tuple(reversed(items))
-        rotations.extend(cyclic_shift(reversed_items, offset) for offset in range(len(items)))
+        rotations.extend(
+            cyclic_shift(reversed_items, offset) for offset in range(len(items))
+        )
     return tuple(dict.fromkeys(rotations))
 
 
@@ -42,7 +59,9 @@ def _finite_non_negative(value: float) -> float:
     return numeric
 
 
-def normalize_probabilities(values: NumericValues) -> dict[str, float] | tuple[float, ...]:
+def normalize_probabilities(
+    values: NumericValues,
+) -> dict[str, float] | tuple[float, ...]:
     """将非负权重归一化；全零输入转为均匀分布。"""
     if isinstance(values, Mapping):
         items: list[tuple[str, float]] = []
@@ -76,7 +95,9 @@ def normalize_probabilities(values: NumericValues) -> dict[str, float] | tuple[f
     return tuple(value / total for value in items)
 
 
-def debias_probability_runs(runs: Sequence[NumericValues]) -> dict[str, float] | tuple[float, ...]:
+def debias_probability_runs(
+    runs: Sequence[NumericValues],
+) -> dict[str, float] | tuple[float, ...]:
     """平均多轮选项乱序结果并归一化，抵消位置偏好。"""
     if isinstance(runs, (str, bytes)) or not runs:
         raise ValueError("至少需要一轮决策结果")
@@ -88,9 +109,13 @@ def debias_probability_runs(runs: Sequence[NumericValues]) -> dict[str, float] |
             raise ValueError("每轮决策必须包含唯一的非空选项 id")
         totals = {key: 0.0 for key in keys}
         for run in runs:
-            if not isinstance(run, Mapping) or {str(key).strip() for key in run} != set(keys):
+            if not isinstance(run, Mapping) or {str(key).strip() for key in run} != set(
+                keys
+            ):
                 raise ValueError("每轮决策必须包含同一组选项")
-            normalized = normalize_probabilities({str(key).strip(): value for key, value in run.items()})
+            normalized = normalize_probabilities(
+                {str(key).strip(): value for key, value in run.items()}
+            )
             if not isinstance(normalized, dict):
                 raise ValueError("每轮决策结果格式不一致")
             for key in keys:
