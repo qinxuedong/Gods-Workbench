@@ -5,7 +5,6 @@ import os
 import re
 import tempfile
 from pathlib import Path
-from typing import Optional, Tuple
 
 from gw.core.errors import CleanroomException
 

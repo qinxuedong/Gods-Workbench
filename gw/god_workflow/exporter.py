@@ -7,9 +7,7 @@
 
 from __future__ import annotations
 
-import re
 import uuid
-from collections.abc import Mapping
 from copy import deepcopy
 from typing import Any
 

@@ -14,7 +14,7 @@
 
 """核心通用数据模型与基类。"""
 
-from typing import Generic, Optional, TypeVar
+from typing import TypeVar
 
 from pydantic import BaseModel, ConfigDict
 

@@ -25,7 +25,7 @@ import json
 import logging
 import uuid
 from functools import wraps
-from typing import Any, Dict, Optional
+from typing import Any
 
 from gw.asset_library.service import default_asset_library_service
 from gw.asset_registry import repository as asset_repo
