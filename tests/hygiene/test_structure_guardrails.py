@@ -529,12 +529,12 @@ def _directed_cycles(graph: dict[str, set[str]]) -> frozenset[tuple[str, ...]]:
     cycles: set[tuple[str, ...]] = set()
     for start in sorted(graph):
 
-        def visit(node: str, path: list[str]) -> None:
+        def visit(node: str, path: list[str], start: str = start) -> None:
             for neighbor in sorted(graph.get(node, set())):
                 if neighbor == start and len(path) > 1:
                     cycles.add(tuple(path))
                 elif neighbor not in path and neighbor >= start:
-                    visit(neighbor, [*path, neighbor])
+                    visit(neighbor, [*path, neighbor], start=start)
 
         visit(start, [start])
     return frozenset(cycles)

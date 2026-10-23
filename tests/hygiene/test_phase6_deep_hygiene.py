@@ -10,8 +10,6 @@
 import re
 from pathlib import Path
 
-import pytest
-
 # 从唯一事实来源导入禁用扩展名与白名单，避免多份清单再次漂移。
 from cleanroom_extensions import ALLOWED_BINARY_ALLOWLIST, BANNED_EXTENSIONS
 
