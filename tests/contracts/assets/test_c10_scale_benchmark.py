@@ -15,7 +15,7 @@ import subprocess
 import sys
 import time
 from collections.abc import Callable
-from datetime import UTC, datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
