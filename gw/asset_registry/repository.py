@@ -32,6 +32,7 @@ import io
 import base64
 import hashlib
 import json
+import threading
 from collections import Counter
 from datetime import datetime, timedelta, timezone
 import zipfile
@@ -41,6 +42,7 @@ from typing import Any, Dict, List, Optional, Tuple
 from pydantic import ValidationError
 
 from gw.core import storage
+from gw.cinematography.schema import MasterEntityType
 from gw.asset_registry import audit_sink
 from gw.asset_registry import media_probe
 from gw.asset_registry.models import CinematographyAssetFilters
@@ -49,6 +51,11 @@ from gw.core.errors import CleanroomException
 
 NS_REGISTRY = "asset_registry"
 DATA_STATUS_OK = "ok"
+_ENTITY_FILTER_INDEX_CACHE_KEY: Optional[Tuple[str, int]] = None
+_ENTITY_FILTER_INDEX_CACHE_VALUE: Tuple[
+    Dict[str, Tuple[str, str]], Dict[str, set[str]], Dict[Tuple[str, str], set[str]]
+] = ({}, {}, {})
+_ENTITY_FILTER_INDEX_CACHE_LOCK = threading.RLock()
 
 
 def _blank() -> Dict[str, Any]:
@@ -629,9 +636,20 @@ def _separate_cinematography_filters(filters: Any) -> Tuple[Dict[str, Any], Any]
     legacy = {key: value for key, value in parsed.items() if key not in fields}
     try:
         normalized = CinematographyAssetFilters.model_validate(selected)
-    except ValidationError:
+    except ValidationError as exc:
+        paths = sorted(
+            {
+                ".".join(str(part) for part in error.get("loc", ()))
+                for error in exc.errors()
+            }
+        )
+        field_paths = ", ".join(
+            f"filters.{path}" if path else "filters" for path in paths
+        ) or "filters"
         raise CleanroomException(
-            400, "UNSUPPORTED_FILTER_VALUE", "摄制或实体母库过滤值无效"
+            400,
+            "UNSUPPORTED_FILTER_VALUE",
+            f"摄制或实体母库过滤字段无效：{field_paths}",
         ) from None
     return normalized.model_dump(mode="json", exclude_unset=True), legacy
 
@@ -679,8 +697,87 @@ def _asset_master_entity_ids(asset: Dict[str, Any]) -> set[str]:
     }
 
 
+def _entity_filter_index() -> Tuple[
+    Tuple[
+        Dict[str, Tuple[str, str]],
+        Dict[str, set[str]],
+        Dict[Tuple[str, str], set[str]],
+    ],
+    int,
+]:
+    """按母库 revision 缓存实体 ID、类型及项目/类型组合索引。"""
+    global _ENTITY_FILTER_INDEX_CACHE_KEY, _ENTITY_FILTER_INDEX_CACHE_VALUE
+
+    from gw.entities import repository as entities_repository
+
+    raw = entities_repository.state().read()
+    if not isinstance(raw, dict):
+        raw = {}
+    revision_value = raw.get("revision", 1)
+    if type(revision_value) is int and revision_value >= 1:
+        revision = revision_value
+    else:
+        revision = 1
+
+    cache_key = (str(storage.data_root().resolve()), revision)
+    with _ENTITY_FILTER_INDEX_CACHE_LOCK:
+        if _ENTITY_FILTER_INDEX_CACHE_KEY == cache_key:
+            return _ENTITY_FILTER_INDEX_CACHE_VALUE, revision
+
+    by_id: Dict[str, Tuple[str, str]] = {}
+    by_type: Dict[str, set[str]] = {}
+    by_project_type: Dict[Tuple[str, str], set[str]] = {}
+    records = raw.get("entities")
+    if isinstance(records, dict):
+        for key, record in records.items():
+            if not isinstance(record, dict) or record.get("archived"):
+                continue
+            entity_id = record.get("entity_id")
+            project_id = record.get("project_id")
+            entity_type = record.get("entity_type")
+            if (
+                not isinstance(entity_id, str)
+                or entity_id != str(key)
+                or entity_id != entity_id.strip()
+                or not entity_id
+                or not entity_id.isascii()
+                or any(char.isspace() for char in entity_id)
+                or not isinstance(project_id, str)
+                or project_id != project_id.strip()
+                or not project_id
+                or not project_id.isascii()
+                or any(char.isspace() for char in project_id)
+            ):
+                continue
+            try:
+                normalized_type = MasterEntityType(entity_type).value
+            except (TypeError, ValueError):
+                continue
+            by_id[entity_id] = (normalized_type, project_id)
+            by_type.setdefault(normalized_type, set()).add(entity_id)
+            by_project_type.setdefault(
+                (project_id, normalized_type), set()
+            ).add(entity_id)
+
+    index = (by_id, by_type, by_project_type)
+    with _ENTITY_FILTER_INDEX_CACHE_LOCK:
+        if _ENTITY_FILTER_INDEX_CACHE_KEY != cache_key:
+            _ENTITY_FILTER_INDEX_CACHE_KEY = cache_key
+            _ENTITY_FILTER_INDEX_CACHE_VALUE = index
+        return _ENTITY_FILTER_INDEX_CACHE_VALUE, revision
+
+
 def _apply_cinematography_filters(
-    items: List[Dict[str, Any]], filters: Dict[str, Any]
+    items: List[Dict[str, Any]],
+    filters: Dict[str, Any],
+    *,
+    entity_indexes: Optional[
+        Tuple[
+            Dict[str, Tuple[str, str]],
+            Dict[str, set[str]],
+            Dict[Tuple[str, str], set[str]],
+        ]
+    ] = None,
 ) -> List[Dict[str, Any]]:
     for field in (
         "shot_size",
@@ -701,20 +798,35 @@ def _apply_cinematography_filters(
     selected_entity_ids = set(filters.get("entity_id") or [])
     selected_entity_types = set(filters.get("entity_type") or [])
     if selected_entity_ids or selected_entity_types:
-        from gw.entities import repository as entities_repository
-
-        active_entities = entities_repository.list_entities()["entities"]
-        active_types = {
-            str(entity["entity_id"]): str(entity["entity_type"])
-            for entity in active_entities
-        }
-        eligible_ids = {
-            entity_id
-            for entity_id, entity_type in active_types.items()
-            if not selected_entity_types or entity_type in selected_entity_types
-        }
+        if entity_indexes is None:
+            entity_indexes, _ = _entity_filter_index()
+        by_id, by_type, by_project_type = entity_indexes
+        project_scope = set(filters.get("project_id") or [])
         if selected_entity_ids:
-            eligible_ids.intersection_update(selected_entity_ids)
+            # 精确 ID 过滤直接查映射，避免随母库规模增长而扫描全部实体。
+            eligible_ids = set()
+            for entity_id in selected_entity_ids:
+                record = by_id.get(entity_id)
+                if record is None:
+                    continue
+                entity_type, project_id = record
+                if selected_entity_types and entity_type not in selected_entity_types:
+                    continue
+                if project_scope and project_id not in project_scope:
+                    continue
+                eligible_ids.add(entity_id)
+        elif project_scope:
+            eligible_ids = set().union(
+                *(
+                    by_project_type.get((project_id, entity_type), set())
+                    for project_id in project_scope
+                    for entity_type in selected_entity_types
+                )
+            )
+        else:
+            eligible_ids = set().union(
+                *(by_type.get(entity_type, set()) for entity_type in selected_entity_types)
+            )
         items = [
             asset
             for asset in items
@@ -745,6 +857,20 @@ def _list_structured_assets(
     )
     normalized["filters"].update(cinematography_filters)
     raw = state().read()
+    filter_values = normalized["filters"]
+    has_entity_filter = bool(
+        filter_values.get("entity_id") or filter_values.get("entity_type")
+    )
+    entity_indexes: Optional[
+        Tuple[
+            Dict[str, Tuple[str, str]],
+            Dict[str, set[str]],
+            Dict[Tuple[str, str], set[str]],
+        ]
+    ] = None
+    entity_revision: Optional[int] = None
+    if has_entity_filter:
+        entity_indexes, entity_revision = _entity_filter_index()
     fingerprint = _structured_cursor_fingerprint(normalized)
     cursor_last_id: Optional[str] = None
     if cursor:
@@ -754,12 +880,22 @@ def _list_structured_assets(
             decoded = json.loads(
                 base64.b64decode(cursor + "=" * (-len(cursor) % 4), altchars=b"-_", validate=True)
             )
+            expected_cursor_keys = {"offset", "revision", "query", "last_id"}
+            if has_entity_filter:
+                expected_cursor_keys.add("entity_revision")
             if (
                 not isinstance(decoded, dict)
-                or set(decoded) != {"offset", "revision", "query", "last_id"}
+                or set(decoded) != expected_cursor_keys
                 or type(decoded["offset"]) is not int
                 or decoded["offset"] < 0
                 or type(decoded["revision"]) is not int
+                or (
+                    has_entity_filter
+                    and (
+                        type(decoded["entity_revision"]) is not int
+                        or decoded["entity_revision"] < 1
+                    )
+                )
                 or decoded["query"] != fingerprint
                 or (offset and offset != decoded["offset"])
                 or not isinstance(decoded["last_id"], str)
@@ -775,12 +911,22 @@ def _list_structured_assets(
                 extra={"expected_version": decoded["revision"], "current_version": raw["revision"]},
                 expose_extra_fields={"expected_version", "current_version"},
             )
+        if has_entity_filter and decoded["entity_revision"] != entity_revision:
+            raise CleanroomException(
+                409,
+                "VERSION_CONFLICT",
+                "实体母库已变化，请从第一页重新读取",
+                extra={
+                    "expected_version": decoded["entity_revision"],
+                    "current_version": entity_revision,
+                },
+                expose_extra_fields={"expected_version", "current_version"},
+            )
         offset = decoded["offset"]
         cursor_last_id = decoded["last_id"]
 
     from gw.core.asset_visibility import asset_visible
 
-    filter_values = normalized["filters"]
     items = [dict(asset) for asset in raw["assets"].values() if asset_visible(asset)]
     needle = normalized["text"].casefold()
     if needle:
@@ -828,7 +974,9 @@ def _list_structured_assets(
             filtered.append(asset)
         items = filtered
 
-    items = _apply_cinematography_filters(items, filter_values)
+    items = _apply_cinematography_filters(
+        items, filter_values, entity_indexes=entity_indexes
+    )
 
     # 先按稳定 ID，再按主排序键，保证同值时 ID 升序且跨页不重不漏。
     items.sort(key=lambda asset: str(asset.get("asset_id") or ""))
@@ -850,16 +998,16 @@ def _list_structured_assets(
     next_offset = offset + len(page) if has_more else None
     next_cursor = None
     if has_more:
+        cursor_payload = {
+            "offset": next_offset,
+            "revision": raw["revision"],
+            "query": fingerprint,
+            "last_id": page[-1]["asset_id"],
+        }
+        if has_entity_filter:
+            cursor_payload["entity_revision"] = entity_revision
         next_cursor = base64.urlsafe_b64encode(
-            json.dumps(
-                {
-                    "offset": next_offset,
-                    "revision": raw["revision"],
-                    "query": fingerprint,
-                    "last_id": page[-1]["asset_id"],
-                },
-                separators=(",", ":"),
-            ).encode("utf-8")
+            json.dumps(cursor_payload, separators=(",", ":")).encode("utf-8")
         ).decode("ascii").rstrip("=")
 
     include_values = set(normalized["include"])
