@@ -11,7 +11,7 @@ import ipaddress
 import socket
 import ssl
 import threading
-from datetime import UTC, datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import httpx
