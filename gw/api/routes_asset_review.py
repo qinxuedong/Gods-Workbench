@@ -20,8 +20,6 @@
 
 from __future__ import annotations
 
-from typing import Optional
-
 from fastapi import APIRouter, Header, Request, status
 
 from gw.asset_review.service import unavailable

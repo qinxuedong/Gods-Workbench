@@ -24,7 +24,7 @@ from __future__ import annotations
 import uuid
 from collections.abc import Mapping
 from contextlib import asynccontextmanager
-from typing import Any, Dict, Literal, Optional
+from typing import Any, Literal
 
 from fastapi import APIRouter, Body, Header, Query, Request, Response, status
 from fastapi.responses import JSONResponse

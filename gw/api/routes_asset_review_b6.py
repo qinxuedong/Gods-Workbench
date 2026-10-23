@@ -27,9 +27,9 @@
 
 from __future__ import annotations
 
-from typing import Any, Dict, Optional
+from typing import Any
 
-from fastapi import APIRouter, Body, Header, Request, Response, status
+from fastapi import APIRouter, Header, Request, Response, status
 
 from gw.asset_review import repository as repo
 from gw.core.auth import require_authenticated, require_edit_access

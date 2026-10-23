@@ -24,8 +24,6 @@
 workflows/upload）仍属 KNOWN_UNIMPLEMENTED，未获契约授权，本模块**不得**顺带实现。
 """
 
-from typing import Optional
-
 from fastapi import APIRouter, Depends, Header, status
 
 from gw.asset_library.models import (
