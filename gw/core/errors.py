@@ -17,7 +17,7 @@
 严格对齐 docs/contracts 及 docs/fixtures 中的 401、403、409 契约规范与黄金夹具。
 """
 
-from typing import Any, Dict, Optional
+from typing import Any
 
 from pydantic import BaseModel, Field
 
