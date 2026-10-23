@@ -37,7 +37,7 @@ import threading
 import time
 import unicodedata
 from pathlib import Path
-from collections.abc import Mapping, Sequence
+from collections.abc import Mapping
 from typing import Any, Callable, Dict, Iterator, List, Optional
 
 from gw.core.errors import CleanroomException
