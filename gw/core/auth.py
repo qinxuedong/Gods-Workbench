@@ -31,7 +31,7 @@
 import hashlib
 from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Any, Optional
+from typing import Any
 
 from gw.core import audit as audit_log
 from gw.core.config import (
