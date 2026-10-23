@@ -18,7 +18,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from copy import deepcopy
-from typing import Any, Dict
+from typing import Any
 
 from gw.core.errors import CleanroomException, VersionConflictException
 from gw.episode_pipeline import repository
