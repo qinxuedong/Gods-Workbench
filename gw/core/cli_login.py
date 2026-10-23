@@ -22,8 +22,8 @@ import subprocess
 import threading
 import time
 from collections.abc import Sequence
-from datetime import UTC, datetime, timezone
-from typing import Any, Dict, Optional, Tuple
+from datetime import UTC, datetime
+from typing import Any
 from urllib.parse import urlsplit
 
 from gw.core.errors import CleanroomException
