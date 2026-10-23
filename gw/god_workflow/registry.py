@@ -12,9 +12,9 @@ import re
 import tempfile
 import threading
 import uuid
-from datetime import UTC, datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 from fastapi import Request
 from starlette.datastructures import UploadFile
