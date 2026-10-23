@@ -34,7 +34,7 @@
 只读角色（readonly/reviewer）可读，不做写权限要求。
 """
 
-from typing import Any, Dict, Optional
+from typing import Any
 
 from fastapi import APIRouter, Header, Query, Request, status
 
