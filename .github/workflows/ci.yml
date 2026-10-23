@@ -96,7 +96,7 @@ jobs:
           python -m pytest -v --no-header -p no:cacheprovider
 
       - name: 运行前端契约回归测试
-        run: node --test tests/frontend/agent-tasks.test.mjs tests/frontend/c16-t3-pwa-installable.test.mjs
+        run: node --test tests/frontend/agent-tasks.test.mjs tests/frontend/c16-t3-pwa-installable.test.mjs tests/frontend/test_c18_omnibar_hotkeys.mjs
 
       - name: 扫描二进制白名单
         if: ${{ always() }}

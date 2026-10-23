@@ -139,9 +139,9 @@ function harness({frames = []} = {}) {
   return {document, window, omnibar: window.GWOmnibar};
 }
 
-function keyEvent({key, code, ctrlKey = false, metaKey = false, altKey = false, shiftKey = false}) {
+function keyEvent({key, code, ctrlKey = false, metaKey = false, altKey = false, shiftKey = false, isComposing = false, keyCode = 0}) {
   return {
-    type: 'keydown', key, code, ctrlKey, metaKey, altKey, shiftKey, defaultPrevented: false,
+    type: 'keydown', key, code, ctrlKey, metaKey, altKey, shiftKey, isComposing, keyCode, defaultPrevented: false,
     preventDefault() { this.defaultPrevented = true; },
     stopPropagation() { this.propagationStopped = true; },
     stopImmediatePropagation() { this.immediatePropagationStopped = true; },
@@ -232,6 +232,76 @@ test('Tab 与 Shift+Tab 在 Omnibar 控件间循环，不会移出模态面板',
   window.flushFrames();
   assert.equal(backward.defaultPrevented, true);
   assert.equal(document.activeElement, input);
+});
+
+test('IME composing 时 Enter 不提交 Agent 请求，也不阻止上屏', () => {
+  const {document, window} = harness();
+  document.dispatchEvent(keyEvent({key: ' ', code: 'Space', ctrlKey: true}));
+  const input = document.getElementById('gwOmnibarInput');
+  input.value = '继续生成';
+  window.GWOmnibar.setMode('agent');
+  let submitCount = 0;
+  window.addEventListener('gw:omnibar-agent-submit', () => { submitCount++; });
+
+  const event = keyEvent({key: 'Enter', code: 'Enter', isComposing: true});
+  input.dispatchEvent(event);
+
+  assert.equal(event.defaultPrevented, false);
+  assert.equal(event.propagationStopped, undefined);
+  assert.equal(submitCount, 0);
+});
+
+test('旧版 IME 用 keyCode 229 标记 Enter 时不提交，也不阻止上屏', () => {
+  const {document, window} = harness();
+  document.dispatchEvent(keyEvent({key: ' ', code: 'Space', ctrlKey: true}));
+  const input = document.getElementById('gwOmnibarInput');
+  input.value = '继续生成';
+  window.GWOmnibar.setMode('agent');
+  let submitCount = 0;
+  window.addEventListener('gw:omnibar-agent-submit', () => { submitCount++; });
+
+  const event = keyEvent({key: 'Enter', code: 'Enter', keyCode: 229});
+  input.dispatchEvent(event);
+
+  assert.equal(event.defaultPrevented, false);
+  assert.equal(event.propagationStopped, undefined);
+  assert.equal(submitCount, 0);
+});
+
+test('非 composing Enter 仍正常提交 Agent 请求', () => {
+  const {document, window} = harness();
+  document.dispatchEvent(keyEvent({key: ' ', code: 'Space', ctrlKey: true}));
+  const input = document.getElementById('gwOmnibarInput');
+  input.value = '继续生成';
+  window.GWOmnibar.setMode('agent');
+  let submittedPrompt = null;
+  window.addEventListener('gw:omnibar-agent-submit', event => { submittedPrompt = event.detail.prompt; });
+
+  const event = keyEvent({key: 'Enter', code: 'Enter'});
+  input.dispatchEvent(event);
+
+  assert.equal(event.defaultPrevented, true);
+  assert.equal(event.propagationStopped, true);
+  assert.equal(submittedPrompt, '继续生成');
+});
+
+test('无效结果链接会发出可观察的 Omnibar 错误事件', () => {
+  const {document, window, omnibar} = harness();
+  document.dispatchEvent(keyEvent({key: ' ', code: 'Space', ctrlKey: true}));
+  omnibar.setResults([{title: '无效链接', href: 'http://['}]);
+  document.dispatchEvent(keyEvent({key: 'ArrowDown', code: 'ArrowDown'}));
+  const errors = [];
+  window.addEventListener('gw:omnibar-error', event => { errors.push(event.detail); });
+
+  const enter = keyEvent({key: 'Enter', code: 'Enter'});
+  assert.doesNotThrow(() => document.getElementById('gwOmnibarInput').dispatchEvent(enter));
+
+  assert.equal(enter.defaultPrevented, true);
+  assert.equal(errors.length, 1);
+  assert.equal(errors[0].code, 'INVALID_RESULT_URL');
+  assert.equal(errors[0].href, 'http://[');
+  assert.equal(typeof errors[0].message, 'string');
+  assert.notEqual(errors[0].message, '');
 });
 
 test('同源嵌入页中的 Ctrl+F 也会打开顶层面板', () => {
