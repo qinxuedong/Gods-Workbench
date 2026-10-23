@@ -27,7 +27,6 @@ import shutil
 import sys
 from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Optional
 
 from gw import __version__
 from gw.core.cli_runtime import CLI_CANDIDATES, cli_execution_enabled
