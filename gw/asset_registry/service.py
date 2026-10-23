@@ -26,8 +26,8 @@ from __future__ import annotations
 import copy
 import json
 import threading
-from datetime import UTC, datetime, timezone
-from typing import Any, Dict, List, Optional
+from datetime import UTC, datetime
+from typing import Any
 
 from gw.core.errors import CleanroomException
 

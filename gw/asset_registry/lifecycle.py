@@ -207,11 +207,6 @@ def _safe_file_name(raw_name: Any) -> str:
 
 def rename_file(asset_id: str, payload: Dict[str, Any], actor: Any) -> Dict[str, Any]:
     """同步执行单文件重命名，先落 pending 日志，成功后更新登记与索引。"""
-    from gw.asset_library.repository import (
-        _local_root_identity,
-        _local_state,
-        _remove_local_index_path_best_effort,
-    )
     from gw.asset_registry import repository as repo
 
     expected = payload.get("expected_version")
