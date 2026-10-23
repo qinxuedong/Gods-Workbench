@@ -25,7 +25,7 @@ import logging
 import threading
 import time
 from collections import deque
-from typing import Any, Deque, Dict, List, Optional
+from typing import Any
 
 logger = logging.getLogger("gw.audit")
 AUDIT_MAX_EVENTS = 2048
