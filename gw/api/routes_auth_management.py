@@ -16,7 +16,7 @@
 
 from __future__ import annotations
 
-from typing import Literal, Optional
+from typing import Literal
 
 from fastapi import APIRouter, Header, Query, status
 from fastapi.responses import JSONResponse
