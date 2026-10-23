@@ -18,21 +18,18 @@
 端点路径保持契约一致（/api/canvases 与 /api/jobs），服务由 GodCanvasService 提供。
 """
 
-from typing import Optional
 from uuid import uuid4
 
 from fastapi import APIRouter, Header, Query, Request, Response, status
 
 from gw.agent_runtime.errors import DomainError
 from gw.agent_runtime.models import ErrorCode, Identifier
-from gw.core.auth import EDIT_ROLES, require_authenticated, require_edit_access
+from gw.core.auth import EDIT_ROLES, require_authenticated
 from gw.core.errors import CleanroomException, ForbiddenException, UnauthorizedException
 from gw.god_canvas.models import (
     CanvasCreateRequest,
     CanvasExportRequest,
-    CanvasExportResponse,
     CanvasImportResponse,
-    CanvasItem,
     CanvasListResponse,
     CanvasMutationResponse,
     CanvasTopology,

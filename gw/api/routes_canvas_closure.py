@@ -36,8 +36,6 @@
 因此 ``api/app.py`` 中本 router 必须**先于** ``god_canvas_router`` 注册。
 """
 
-from typing import Optional
-
 from fastapi import APIRouter, Body, Header, Query, status
 
 from gw.canvas_closure.models import (
@@ -57,7 +55,6 @@ from gw.canvas_closure.models import (
     SharedFolderDeleteResponse,
     SharedFolderListResponse,
     SharedFolderResponse,
-    VideoTaskListResponse,
 )
 from gw.canvas_closure.service import (
     default_canvas_closure_service as closure,
