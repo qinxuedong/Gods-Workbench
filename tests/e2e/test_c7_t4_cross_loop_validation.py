@@ -23,8 +23,6 @@ import sys
 from collections.abc import Mapping
 from pathlib import Path
 
-import pytest
-
 REPO_ROOT = Path(__file__).resolve().parents[2]
 TEXT_NODE = "tests/e2e/test_c7_text_loop_browser.py::test_c7_p3_text_loop_real_browser_readback_and_export"
 MEDIA_NODE = "tests/e2e/test_c7_media_loop_browser.py"

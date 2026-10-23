@@ -272,7 +272,7 @@ def test_real_backend_paging_loads_all_130_tasks_without_duplicates(
     """真实后端联调：当前工作流 130 条 + 其他工作流 5 条（含运行中），「加载更多」逐页取全且无重复。
     后端尚未提供分页（无 next_cursor）时跳过；后端分页由 PR #35 提供。"""
     import uuid
-    from datetime import datetime, timedelta, timezone
+    from datetime import datetime, timedelta
 
     import pytest
 

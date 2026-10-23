@@ -6,11 +6,9 @@
 - 未知内容文件时，提示无「升级适配」按钮，文件内容未变。
 """
 
-import hashlib
 from pathlib import Path
 from urllib.parse import quote
 
-import pytest
 from workflow_support import goto_ready, settings_browser
 
 

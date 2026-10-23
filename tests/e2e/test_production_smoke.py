@@ -7,7 +7,6 @@
 4. 验证生产启动脚本 run.py 严格绑定默认 2077 端口
 """
 
-import pytest
 from fastapi.testclient import TestClient
 
 from gw.api.app import app
