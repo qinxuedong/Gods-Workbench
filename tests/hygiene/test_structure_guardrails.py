@@ -30,6 +30,7 @@ _ROOT_ALLOWLIST = frozenset(
         ".gitattributes",
         ".gitignore",
         "AGENTS.md",
+        "JULES.md",
         "LICENSE",
         "THIRD_PARTY_NOTICES.md",
         "Changelog.md",
