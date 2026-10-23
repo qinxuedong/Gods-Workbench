@@ -36,7 +36,7 @@ from __future__ import annotations
 import copy
 import threading
 from datetime import datetime, timezone
-from typing import Dict, List, Optional, Tuple
+from typing import Optional
 
 from gw.core import storage
 from gw.core.errors import CleanroomException, VersionConflictException
@@ -101,7 +101,7 @@ NS_PROMPT_TREE = "prompt_library_tree"
 NS_PROMPT_ITEMS = "prompt_library"
 
 
-def _blank_prompt_tree() -> Dict[str, object]:
+def _blank_prompt_tree() -> dict[str, object]:
     return {
         "schema_version": 1,
         "directory_version": 1,
@@ -112,7 +112,7 @@ def _blank_prompt_tree() -> Dict[str, object]:
     }
 
 
-def _sequence_for(prefix: str, values: List[str]) -> int:
+def _sequence_for(prefix: str, values: list[str]) -> int:
     maximum = 0
     for value in values:
         tail = str(value or "").removeprefix(prefix)
@@ -130,11 +130,11 @@ class PromptLibraryService:
         self._loaded_root: Optional[str] = None
         self._directory_version = 1
         self._active_library_id: Optional[str] = None
-        self._libraries: Dict[str, PromptLibraryItem] = {}
+        self._libraries: dict[str, PromptLibraryItem] = {}
         self._library_seq = 0
         self._category_seq = 0
 
-    def _legacy_id_highwaters(self) -> Tuple[int, int]:
+    def _legacy_id_highwaters(self) -> tuple[int, int]:
         """读取升级前只落盘条目中的父 ID，仅用作高水位，不猜测恢复父对象。"""
         raw = storage.JsonState(NS_PROMPT_ITEMS, lambda: {"items": {}}).read()
         library_ids, category_ids = [], []
@@ -242,7 +242,7 @@ class PromptLibraryService:
     # ------------------------------------------------------------------
     def create_library(
         self, payload: PromptLibraryCreateRequest
-    ) -> Tuple[PromptLibraryItem, PromptLibrarySnapshot]:
+    ) -> tuple[PromptLibraryItem, PromptLibrarySnapshot]:
         """创建提示词库；目录 CAS 冲突或重名失败关闭。"""
         with coordination.PROMPT_LIBRARY_DOMAIN_LOCK, self._lock:
             self._ensure_loaded_locked()
@@ -273,7 +273,7 @@ class PromptLibraryService:
 
     def rename_library(
         self, library_id: str, payload: PromptLibraryRenameRequest
-    ) -> Tuple[PromptLibraryItem, PromptLibrarySnapshot]:
+    ) -> tuple[PromptLibraryItem, PromptLibrarySnapshot]:
         """重命名提示词库；目标不存在、重名或 CAS 冲突失败关闭。"""
         with coordination.PROMPT_LIBRARY_DOMAIN_LOCK, self._lock:
             self._ensure_loaded_locked()
@@ -335,7 +335,7 @@ class PromptLibraryService:
     # ------------------------------------------------------------------
     def create_category(
         self, payload: PromptCategoryCreateRequest
-    ) -> Tuple[PromptCategoryItem, PromptLibrarySnapshot]:
+    ) -> tuple[PromptCategoryItem, PromptLibrarySnapshot]:
         """在指定提示词库下创建分类；父库不存在或父库 CAS 冲突失败关闭。"""
         with coordination.PROMPT_LIBRARY_DOMAIN_LOCK, self._lock:
             self._ensure_loaded_locked()
@@ -371,7 +371,7 @@ class PromptLibraryService:
 
     def rename_category(
         self, category_id: str, payload: PromptCategoryRenameRequest
-    ) -> Tuple[PromptCategoryItem, PromptLibrarySnapshot]:
+    ) -> tuple[PromptCategoryItem, PromptLibrarySnapshot]:
         """重命名分类；目标不存在、同库重名或 CAS 冲突失败关闭。"""
         with coordination.PROMPT_LIBRARY_DOMAIN_LOCK, self._lock:
             self._ensure_loaded_locked()
@@ -434,7 +434,7 @@ class PromptLibraryService:
     # ------------------------------------------------------------------
     def _locate_category_locked(
         self, category_id: str
-    ) -> Tuple[PromptLibraryItem, PromptCategoryItem]:
+    ) -> tuple[PromptLibraryItem, PromptCategoryItem]:
         for library in self._libraries.values():
             for category in library.categories:
                 if category.category_id == category_id:

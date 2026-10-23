@@ -26,7 +26,7 @@
 
 from __future__ import annotations
 
-from typing import List, Optional
+from typing import Optional
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -54,7 +54,7 @@ class PromptLibraryItem(BaseModel):
     version: int = Field(..., ge=1, description="提示词库 CAS 版本号")
     created_at: str = Field(..., description="创建时间（ISO 8601 UTC）")
     updated_at: str = Field(..., description="最近更新时间（ISO 8601 UTC）")
-    categories: List[PromptCategoryItem] = Field(
+    categories: list[PromptCategoryItem] = Field(
         default_factory=list, description="分类集合"
     )
 
@@ -68,7 +68,7 @@ class PromptLibrarySnapshot(BaseModel):
     active_library_id: Optional[str] = Field(
         None, description="当前激活提示词库标识；空目录为 null"
     )
-    libraries: List[PromptLibraryItem] = Field(
+    libraries: list[PromptLibraryItem] = Field(
         default_factory=list, description="提示词库集合"
     )
 
