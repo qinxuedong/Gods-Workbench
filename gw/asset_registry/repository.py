@@ -38,9 +38,12 @@ import zipfile
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
+from pydantic import ValidationError
+
 from gw.core import storage
 from gw.asset_registry import audit_sink
 from gw.asset_registry import media_probe
+from gw.asset_registry.models import CinematographyAssetFilters
 from gw.asset_registry.service import normalize_asset_query, parse_utc_datetime
 from gw.core.errors import CleanroomException
 
@@ -605,6 +608,121 @@ def _structured_asset_projection(asset: Dict[str, Any], *, include_preview: bool
     return item
 
 
+def _separate_cinematography_filters(filters: Any) -> Tuple[Dict[str, Any], Any]:
+    """把新摄制筛选从旧过滤器中分出，其余字段仍交给 C11 校验器。"""
+    parsed = filters
+    if isinstance(filters, str):
+        stripped = filters.strip()
+        if not stripped.startswith("{"):
+            return {}, filters
+        try:
+            parsed = json.loads(stripped)
+        except (TypeError, ValueError):
+            return {}, filters
+    if not isinstance(parsed, dict):
+        return {}, filters
+
+    fields = set(CinematographyAssetFilters.model_fields)
+    selected = {key: value for key, value in parsed.items() if key in fields}
+    if not selected:
+        return {}, filters
+    legacy = {key: value for key, value in parsed.items() if key not in fields}
+    try:
+        normalized = CinematographyAssetFilters.model_validate(selected)
+    except ValidationError:
+        raise CleanroomException(
+            400, "UNSUPPORTED_FILTER_VALUE", "摄制或实体母库过滤值无效"
+        ) from None
+    return normalized.model_dump(mode="json", exclude_unset=True), legacy
+
+
+def _asset_metadata_value(asset: Dict[str, Any], field: str) -> Any:
+    metadata = asset.get("metadata")
+    if not isinstance(metadata, dict):
+        metadata = {}
+    for source in (
+        metadata.get("cinematography"),
+        asset.get("cinematography"),
+        metadata,
+        asset,
+    ):
+        if isinstance(source, dict) and source.get(field) is not None:
+            return source[field]
+    return None
+
+
+def _matches_metadata_values(
+    asset: Dict[str, Any], field: str, expected: set[str]
+) -> bool:
+    value = _asset_metadata_value(asset, field)
+    values = value if isinstance(value, (list, tuple, set)) else (value,)
+    return any(
+        str(getattr(item, "value", item)) in expected
+        for item in values
+        if item is not None
+    )
+
+
+def _asset_master_entity_ids(asset: Dict[str, Any]) -> set[str]:
+    metadata = asset.get("metadata")
+    if not isinstance(metadata, dict):
+        metadata = {}
+    values = metadata.get("entity_ids", asset.get("entity_ids", []))
+    if isinstance(values, str):
+        values = [values]
+    if not isinstance(values, (list, tuple, set)):
+        return set()
+    return {
+        value.strip()
+        for value in values
+        if isinstance(value, str) and value.strip() and value.isascii()
+    }
+
+
+def _apply_cinematography_filters(
+    items: List[Dict[str, Any]], filters: Dict[str, Any]
+) -> List[Dict[str, Any]]:
+    for field in (
+        "shot_size",
+        "camera_movement",
+        "focal_length",
+        "lighting_phase",
+        "aspect_ratio",
+    ):
+        expected = set(filters.get(field) or [])
+        if not expected:
+            continue
+        items = [
+            asset
+            for asset in items
+            if _matches_metadata_values(asset, field, expected)
+        ]
+
+    selected_entity_ids = set(filters.get("entity_id") or [])
+    selected_entity_types = set(filters.get("entity_type") or [])
+    if selected_entity_ids or selected_entity_types:
+        from gw.entities import repository as entities_repository
+
+        active_entities = entities_repository.list_entities()["entities"]
+        active_types = {
+            str(entity["entity_id"]): str(entity["entity_type"])
+            for entity in active_entities
+        }
+        eligible_ids = {
+            entity_id
+            for entity_id, entity_type in active_types.items()
+            if not selected_entity_types or entity_type in selected_entity_types
+        }
+        if selected_entity_ids:
+            eligible_ids.intersection_update(selected_entity_ids)
+        items = [
+            asset
+            for asset in items
+            if _asset_master_entity_ids(asset).intersection(eligible_ids)
+        ]
+    return items
+
+
 def _list_structured_assets(
     *,
     limit: int,
@@ -616,14 +734,16 @@ def _list_structured_assets(
     sort: Optional[str],
     include: Any,
 ) -> Dict[str, Any]:
+    cinematography_filters, legacy_filters = _separate_cinematography_filters(filters)
     normalized = normalize_asset_query(
         scope=scope,
         text=text,
-        filters=filters,
+        filters=legacy_filters,
         sort=sort,
         limit=limit,
         include=include,
     )
+    normalized["filters"].update(cinematography_filters)
     raw = state().read()
     fingerprint = _structured_cursor_fingerprint(normalized)
     cursor_last_id: Optional[str] = None
@@ -707,6 +827,8 @@ def _list_structured_assets(
                 continue
             filtered.append(asset)
         items = filtered
+
+    items = _apply_cinematography_filters(items, filter_values)
 
     # 先按稳定 ID，再按主排序键，保证同值时 ID 升序且跨页不重不漏。
     items.sort(key=lambda asset: str(asset.get("asset_id") or ""))
