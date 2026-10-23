@@ -34,7 +34,7 @@ from __future__ import annotations
 import copy
 from datetime import datetime, timezone
 import threading
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Optional
 
 from gw.asset_library.models import (
     AssetItem,
@@ -60,12 +60,12 @@ def _name_key(value: str) -> str:
     return (value or "").strip().casefold()
 
 
-def _default_raw() -> Dict[str, Any]:
+def _default_raw() -> dict[str, Any]:
     return {"directory_version": 1, "active_library_id": None, "libraries": {},
             "sequences": {"library": 0, "category": 0, "asset": 0}}
 
 
-def _seeded_raw() -> Dict[str, Any]:
+def _seeded_raw() -> dict[str, Any]:
     timestamp = "2026-09-22T06:00:00Z"
     category = {
         "category_id": "category_image", "library_id": "library_default", "name": "图片",
@@ -86,17 +86,17 @@ class AssetLibraryService:
     def __init__(self, seed_golden_fixture: bool = False) -> None:
         self._seed_fixture = bool(seed_golden_fixture)
         self._lock = threading.Lock()
-        self._memory: Dict[str, Any] | None = _seeded_raw() if seed_golden_fixture else None
+        self._memory: dict[str, Any] | None = _seeded_raw() if seed_golden_fixture else None
 
     # ------------------------------------------------------------------
     # 状态读写
     # ------------------------------------------------------------------
-    def _read_raw(self) -> Dict[str, Any]:
+    def _read_raw(self) -> dict[str, Any]:
         if self._seed_fixture:
             return copy.deepcopy(self._memory)
         return storage.JsonState(NS_LIBRARY, _default_raw).read()
 
-    def _write_raw(self, raw: Dict[str, Any]) -> None:
+    def _write_raw(self, raw: dict[str, Any]) -> None:
         if self._seed_fixture:
             self._memory = copy.deepcopy(raw)
         else:
@@ -118,7 +118,7 @@ class AssetLibraryService:
             raw = self._read_raw()
             return self._snapshot(raw)
 
-    def _snapshot(self, raw: Dict[str, Any]) -> AssetLibrarySnapshot:
+    def _snapshot(self, raw: dict[str, Any]) -> AssetLibrarySnapshot:
         from gw.core.asset_visibility import asset_visible
         raw = copy.deepcopy(raw)
         for library in raw.get("libraries", {}).values():
@@ -144,14 +144,14 @@ class AssetLibraryService:
     # 内部定位与断言
     # ------------------------------------------------------------------
     @staticmethod
-    def _library(raw: Dict[str, Any], library_id: str) -> Dict[str, Any]:
+    def _library(raw: dict[str, Any], library_id: str) -> dict[str, Any]:
         library = raw.get("libraries", {}).get(library_id)
         if library is None:
             raise CleanroomException(404, "LIBRARY_NOT_FOUND", "素材库 %s 不存在" % library_id)
         return library
 
     @staticmethod
-    def _category(raw: Dict[str, Any], category_id: str) -> Tuple[Dict[str, Any], Dict[str, Any]]:
+    def _category(raw: dict[str, Any], category_id: str) -> tuple[dict[str, Any], dict[str, Any]]:
         for library in raw.get("libraries", {}).values():
             for category in library.get("categories", []):
                 if category.get("category_id") == category_id:
@@ -159,7 +159,7 @@ class AssetLibraryService:
         raise CleanroomException(404, "CATEGORY_NOT_FOUND", "分类 %s 不存在" % category_id)
 
     @staticmethod
-    def _locate(raw: Dict[str, Any], asset_id: str) -> Tuple[Optional[Dict[str, Any]], Optional[Dict[str, Any]], Optional[Dict[str, Any]]]:
+    def _locate(raw: dict[str, Any], asset_id: str) -> tuple[Optional[dict[str, Any]], Optional[dict[str, Any]], Optional[dict[str, Any]]]:
         """跨全部库/分类按 asset_id 定位条目；找不到返回 (None, None, None)，不抛异常。"""
         for library in raw.get("libraries", {}).values():
             for category in library.get("categories", []):
@@ -169,7 +169,7 @@ class AssetLibraryService:
         return None, None, None
 
     @staticmethod
-    def _asset(raw: Dict[str, Any], asset_id: str) -> Tuple[Dict[str, Any], Dict[str, Any], Dict[str, Any]]:
+    def _asset(raw: dict[str, Any], asset_id: str) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any]]:
         for library in raw.get("libraries", {}).values():
             for category in library.get("categories", []):
                 for item in category.get("items", []):
@@ -191,21 +191,21 @@ class AssetLibraryService:
             )
 
     @staticmethod
-    def _next_seq(raw: Dict[str, Any], key: str) -> int:
+    def _next_seq(raw: dict[str, Any], key: str) -> int:
         sequences = raw.setdefault("sequences", {})
         sequences[key] = int(sequences.get(key, 0)) + 1
         return sequences[key]
 
     @staticmethod
-    def _touch(raw: Dict[str, Any]) -> None:
+    def _touch(raw: dict[str, Any]) -> None:
         raw["directory_version"] = int(raw.get("directory_version", 1)) + 1
 
     # ------------------------------------------------------------------
     # 创建
     # ------------------------------------------------------------------
-    def create_library(self, payload: AssetLibraryCreateRequest) -> Tuple[LibraryItem, AssetLibrarySnapshot]:
+    def create_library(self, payload: AssetLibraryCreateRequest) -> tuple[LibraryItem, AssetLibrarySnapshot]:
         """创建素材库；重名或 CAS 冲突失败关闭。"""
-        def mutator(raw: Dict[str, Any]) -> Any:
+        def mutator(raw: dict[str, Any]) -> Any:
             self._check_version(payload.expected_version, int(raw.get("directory_version", 1)))
             name = payload.name.strip()
             if not name:
@@ -226,9 +226,9 @@ class AssetLibraryService:
         item = self._mutate(mutator)
         return LibraryItem.model_validate(item), self.get_snapshot()
 
-    def create_category(self, payload: CategoryCreateRequest) -> Tuple[CategoryItem, LibraryItem]:
+    def create_category(self, payload: CategoryCreateRequest) -> tuple[CategoryItem, LibraryItem]:
         """在指定素材库下创建分类；父库不存在或版本冲突失败关闭。"""
-        def mutator(raw: Dict[str, Any]) -> Any:
+        def mutator(raw: dict[str, Any]) -> Any:
             parent = self._library(raw, payload.library_id)
             self._check_version(payload.expected_version, parent["version"])
             name = payload.name.strip()
@@ -256,7 +256,7 @@ class AssetLibraryService:
     # 素材库 / 分类 变更
     # ------------------------------------------------------------------
     def rename_library(self, library_id: str, name: str, expected_version: Optional[int]) -> LibraryItem:
-        def mutator(raw: Dict[str, Any]) -> Any:
+        def mutator(raw: dict[str, Any]) -> Any:
             library = self._library(raw, library_id)
             self._check_version(expected_version, library["version"])
             clean = (name or "").strip()
@@ -272,8 +272,8 @@ class AssetLibraryService:
             return library
         return LibraryItem.model_validate(self._visible_library(self._mutate(mutator)))
 
-    def delete_library(self, library_id: str, expected_version: Optional[int]) -> Dict[str, Any]:
-        def mutator(raw: Dict[str, Any]) -> Any:
+    def delete_library(self, library_id: str, expected_version: Optional[int]) -> dict[str, Any]:
+        def mutator(raw: dict[str, Any]) -> Any:
             library = self._library(raw, library_id)
             from gw.core.asset_visibility import asset_visible
             if any(not asset_visible(item) for category in library.get("categories", []) for item in category.get("items", [])):
@@ -287,7 +287,7 @@ class AssetLibraryService:
         return self._mutate(mutator)
 
     def rename_category(self, category_id: str, name: str, expected_version: Optional[int]) -> CategoryItem:
-        def mutator(raw: Dict[str, Any]) -> Any:
+        def mutator(raw: dict[str, Any]) -> Any:
             library, category = self._category(raw, category_id)
             self._check_version(expected_version, category["version"])
             clean = (name or "").strip()
@@ -304,8 +304,8 @@ class AssetLibraryService:
             return category
         return CategoryItem.model_validate(self._visible_category(self._mutate(mutator)))
 
-    def delete_category(self, category_id: str, expected_version: Optional[int]) -> Dict[str, Any]:
-        def mutator(raw: Dict[str, Any]) -> Any:
+    def delete_category(self, category_id: str, expected_version: Optional[int]) -> dict[str, Any]:
+        def mutator(raw: dict[str, Any]) -> Any:
             library, category = self._category(raw, category_id)
             from gw.core.asset_visibility import asset_visible
             if any(not asset_visible(item) for item in category.get("items", [])):
@@ -320,9 +320,9 @@ class AssetLibraryService:
     # ------------------------------------------------------------------
     # 素材条目
     # ------------------------------------------------------------------
-    def create_items(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+    def create_items(self, payload: dict[str, Any]) -> dict[str, Any]:
         """批量创建素材条目，返回真实稳定 asset_id。"""
-        def mutator(raw: Dict[str, Any]) -> Any:
+        def mutator(raw: dict[str, Any]) -> Any:
             library = self._library(raw, str(payload.get("library_id") or ""))
             self._check_version(payload.get("expected_version"), library["version"])
             category_id = str(payload.get("category_id") or "")
@@ -355,8 +355,8 @@ class AssetLibraryService:
             return {"items": created, "asset_ids": [item["asset_id"] for item in created]}
         return self._mutate(mutator)
 
-    def update_item(self, asset_id: str, payload: Dict[str, Any]) -> AssetItem:
-        def mutator(raw: Dict[str, Any]) -> Any:
+    def update_item(self, asset_id: str, payload: dict[str, Any]) -> AssetItem:
+        def mutator(raw: dict[str, Any]) -> Any:
             library, category, item = self._asset(raw, asset_id)
             self._check_version(payload.get("expected_version"), library["version"])
             if payload.get("name"):
@@ -380,13 +380,13 @@ class AssetLibraryService:
             return item
         return AssetItem.model_validate(self._mutate(mutator))
 
-    def delete_item(self, asset_id: str, expected_version: Optional[int] = None) -> Dict[str, Any]:
+    def delete_item(self, asset_id: str, expected_version: Optional[int] = None) -> dict[str, Any]:
         """删除单个素材条目（普通条目原语义）。
 
         同进同出（C4-AC6）：工作流桥接登记条目的删除由 API 层改道注册表删除
         （见 routes_asset_library_b4），本方法只负责非桥接条目。
         """
-        def mutator(raw: Dict[str, Any]) -> Any:
+        def mutator(raw: dict[str, Any]) -> Any:
             library, category, _ = self._asset(raw, asset_id)
             self._check_version(expected_version, library["version"])
             category["items"] = [i for i in category["items"] if i["asset_id"] != asset_id]
@@ -398,10 +398,10 @@ class AssetLibraryService:
 
     def delete_items(
         self,
-        asset_ids: List[str],
+        asset_ids: list[str],
         expected_version: Optional[int],
-        expected_versions: Optional[Dict[str, int]] = None,
-    ) -> Dict[str, Any]:
+        expected_versions: Optional[dict[str, int]] = None,
+    ) -> dict[str, Any]:
         """批量删除普通素材条目；所有 ID 与父库版本先在同一 mutate 内核验。
 
         同进同出（C4-AC6）：工作流桥接登记条目的删除由 API 层改道注册表删除
@@ -410,7 +410,7 @@ class AssetLibraryService:
         if expected_versions is not None and not isinstance(expected_versions, dict):
             raise CleanroomException(400, "INVALID_REQUEST", "expected_versions 必须是素材库版本映射")
 
-        def mutator(raw: Dict[str, Any]) -> Any:
+        def mutator(raw: dict[str, Any]) -> Any:
             locations = []
             missing = []
             for asset_id in asset_ids:
@@ -441,7 +441,7 @@ class AssetLibraryService:
             return {"deleted": removed, "results": results, "count": len(removed)}
         return self._mutate(mutator)
 
-    def find_item_snapshot(self, asset_id: str) -> Optional[Dict[str, Any]]:
+    def find_item_snapshot(self, asset_id: str) -> Optional[dict[str, Any]]:
         """只读回传 asset_id 对应条目的完整快照；不存在或对当前主体不可见时返回 None。"""
         from gw.core.asset_visibility import asset_visible
         with self._lock:
@@ -459,7 +459,7 @@ class AssetLibraryService:
         if library is not None:
             self._check_version(expected_version, library["version"])
 
-    def remove_item_snapshot(self, asset_id: str) -> Optional[Dict[str, Any]]:
+    def remove_item_snapshot(self, asset_id: str) -> Optional[dict[str, Any]]:
         """原子移除并返回 asset_id 对应条目的完整快照（同进同出暂存用）。
 
         不存在或对当前主体不可见时返回 None（幂等，不抛异常）；
@@ -467,7 +467,7 @@ class AssetLibraryService:
         """
         from gw.core.asset_visibility import asset_visible
 
-        def mutator(raw: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        def mutator(raw: dict[str, Any]) -> Optional[dict[str, Any]]:
             library, category, item = self._locate(raw, str(asset_id))
             if item is None or not asset_visible(item):
                 return None
@@ -478,7 +478,7 @@ class AssetLibraryService:
             return copy.deepcopy(item)
         return self._mutate(mutator)
 
-    def insert_item_snapshot(self, snapshot: Dict[str, Any]) -> bool:
+    def insert_item_snapshot(self, snapshot: dict[str, Any]) -> bool:
         """原样插回条目快照（同 id/同库/同分类/同字段），返回是否真的插入。
 
         同 asset_id 条目已存在时幂等跳过；原库或原分类已被删除时不复活条目
@@ -487,7 +487,7 @@ class AssetLibraryService:
         if not isinstance(snapshot, dict) or not snapshot.get("asset_id"):
             return False
 
-        def mutator(raw: Dict[str, Any]) -> bool:
+        def mutator(raw: dict[str, Any]) -> bool:
             asset_id = str(snapshot["asset_id"])
             _, _, existing = self._locate(raw, asset_id)
             if existing is not None:
@@ -511,15 +511,15 @@ class AssetLibraryService:
 
     def move_items(
         self,
-        asset_ids: List[str],
+        asset_ids: list[str],
         category_id: str,
         expected_version: Optional[int],
-        expected_versions: Optional[Dict[str, int]] = None,
-    ) -> Dict[str, Any]:
+        expected_versions: Optional[dict[str, int]] = None,
+    ) -> dict[str, Any]:
         if expected_versions is not None and not isinstance(expected_versions, dict):
             raise CleanroomException(400, "INVALID_REQUEST", "expected_versions 必须是素材库版本映射")
 
-        def mutator(raw: Dict[str, Any]) -> Any:
+        def mutator(raw: dict[str, Any]) -> Any:
             locations = []
             missing = []
             for asset_id in asset_ids:
@@ -561,11 +561,11 @@ class AssetLibraryService:
             return {"moved": moved, "results": results, "count": len(moved)}
         return self._mutate(mutator)
 
-    def classify_items(self, asset_ids: List[str]) -> Dict[str, Any]:
+    def classify_items(self, asset_ids: list[str]) -> dict[str, Any]:
         """对真实条目做确定性扩展名归类并写回。"""
         from gw.asset_library.repository import classify_name
 
-        def mutator(raw: Dict[str, Any]) -> Any:
+        def mutator(raw: dict[str, Any]) -> Any:
             results = []
             for asset_id in asset_ids:
                 try:
@@ -583,8 +583,8 @@ class AssetLibraryService:
         return self._mutate(mutator)
 
     def ensure_default_category(
-        self, raw: Dict[str, Any], cat_type: str, default_name: str
-    ) -> Tuple[Dict[str, Any], Dict[str, Any]]:
+        self, raw: dict[str, Any], cat_type: str, default_name: str
+    ) -> tuple[dict[str, Any], dict[str, Any]]:
         """确保存在激活素材库以及指定类型的分类。返回 (library_dict, category_dict)"""
         if not raw.get("libraries"):
             library_id = "library_default"
@@ -654,7 +654,7 @@ class AssetLibraryService:
         workflow_owner: Optional[str] = None,
     ) -> AssetItem:
         """登记或更新素材条目（保证全局稳定 asset_id 绑定）。"""
-        def mutator(raw: Dict[str, Any]) -> Any:
+        def mutator(raw: dict[str, Any]) -> Any:
             library, category = self.ensure_default_category(raw, category_type, category_name)
             stamp = _now_iso()
 
