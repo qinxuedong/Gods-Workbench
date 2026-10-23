@@ -24,9 +24,9 @@ import re
 import threading
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
-from datetime import UTC, datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from gw.core import storage
 from gw.core.errors import CleanroomException, VersionConflictException
