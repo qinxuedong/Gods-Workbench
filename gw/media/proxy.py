@@ -24,9 +24,9 @@ import hashlib
 import re
 import shutil
 import subprocess
-from datetime import UTC, datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Dict, Optional, Tuple
+from typing import Any
 from urllib.parse import urlencode
 
 from gw.asset_registry import repository as asset_registry_repo
