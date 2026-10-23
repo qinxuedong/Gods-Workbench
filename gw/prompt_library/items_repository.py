@@ -27,7 +27,7 @@
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional
+from typing import Any, Optional
 
 from gw.core import storage
 from gw.core.errors import CleanroomException, VersionConflictException
@@ -43,16 +43,16 @@ def state() -> storage.JsonState:
     return storage.JsonState(NS, _blank)
 
 
-def _blank() -> Dict[str, Any]:
+def _blank() -> dict[str, Any]:
     return {"revision": 1, "items": {}}
 
 
-def _bump(raw: Dict[str, Any]) -> int:
+def _bump(raw: dict[str, Any]) -> int:
     raw["revision"] = int(raw.get("revision") or 1) + 1
     return raw["revision"]
 
 
-def _cas(raw: Dict[str, Any], expected: Optional[int], label: str) -> None:
+def _cas(raw: dict[str, Any], expected: Optional[int], label: str) -> None:
     if type(expected) is not int or expected < 1:
         raise CleanroomException(
             400, "INVALID_REQUEST", "expected_version 必须为正整数"
@@ -65,7 +65,7 @@ def _cas(raw: Dict[str, Any], expected: Optional[int], label: str) -> None:
         )
 
 
-def _view(item: Dict[str, Any]) -> Dict[str, Any]:
+def _view(item: dict[str, Any]) -> dict[str, Any]:
     """对外条目视图：只回显真实存储字段，不补默认文本。"""
     view = {
         "item_id": item["item_id"],
@@ -86,7 +86,7 @@ def _view(item: Dict[str, Any]) -> Dict[str, Any]:
 TREE_NS = "prompt_library_tree"
 
 
-def _tree_state() -> Dict[str, Any]:
+def _tree_state() -> dict[str, Any]:
     return storage.JsonState(TREE_NS, lambda: {"libraries": {}}).read()
 
 
@@ -106,9 +106,9 @@ def _validate_parent_refs(library_id: str, category_id: Optional[str] = None) ->
             )
 
 
-def _reference_gaps(items: List[Dict[str, Any]]) -> List[Dict[str, str]]:
+def _reference_gaps(items: list[dict[str, Any]]) -> list[dict[str, str]]:
     libraries = _tree_state().get("libraries", {})
-    gaps: List[Dict[str, str]] = []
+    gaps: list[dict[str, str]] = []
     for item in items:
         library_id = str(item.get("library_id") or "")
         library = libraries.get(library_id)
@@ -131,7 +131,7 @@ def _reference_gaps(items: List[Dict[str, Any]]) -> List[Dict[str, str]]:
     return gaps
 
 
-def list_items(library_id: Optional[str] = None) -> Dict[str, Any]:
+def list_items(library_id: Optional[str] = None) -> dict[str, Any]:
     with coordination.PROMPT_LIBRARY_DOMAIN_LOCK:
         raw = state().read()
         items = [dict(v) for v in raw["items"].values()]
@@ -147,7 +147,7 @@ def list_items(library_id: Optional[str] = None) -> Dict[str, Any]:
         }
 
 
-def create_item(payload: Dict[str, Any]) -> Dict[str, Any]:
+def create_item(payload: dict[str, Any]) -> dict[str, Any]:
     if not isinstance(payload, dict):
         raise CleanroomException(400, "INVALID_REQUEST", "请求体必须是对象")
     name = str(payload.get("name") or "").strip()
@@ -158,7 +158,7 @@ def create_item(payload: Dict[str, Any]) -> Dict[str, Any]:
         raise CleanroomException(400, "INVALID_REQUEST", "library_id 不能为空")
     category_id = str(payload.get("category_id") or "").strip() or None
 
-    def mutate(raw: Dict[str, Any]) -> Dict[str, Any]:
+    def mutate(raw: dict[str, Any]) -> dict[str, Any]:
         expected = payload.get("expected_version")
         _cas(raw, expected, "提示词条目集合")
         item_id = storage.next_sequence("pitem_", list(raw["items"].keys()))
@@ -186,11 +186,11 @@ def create_item(payload: Dict[str, Any]) -> Dict[str, Any]:
     return {"prompt_item": item, "item": item}
 
 
-def update_item(item_id: str, payload: Dict[str, Any]) -> Dict[str, Any]:
+def update_item(item_id: str, payload: dict[str, Any]) -> dict[str, Any]:
     if not isinstance(payload, dict):
         raise CleanroomException(400, "INVALID_REQUEST", "请求体必须是对象")
 
-    def mutate(raw: Dict[str, Any]) -> Dict[str, Any]:
+    def mutate(raw: dict[str, Any]) -> dict[str, Any]:
         record = raw["items"].get(item_id)
         if record is None:
             raise CleanroomException(404, "ITEM_NOT_FOUND", "提示词条目不存在")
@@ -233,8 +233,8 @@ def update_item(item_id: str, payload: Dict[str, Any]) -> Dict[str, Any]:
     return {"prompt_item": item, "item": item}
 
 
-def delete_item(item_id: str, expected_version: Optional[int]) -> Dict[str, Any]:
-    def mutate(raw: Dict[str, Any]) -> Dict[str, Any]:
+def delete_item(item_id: str, expected_version: Optional[int]) -> dict[str, Any]:
+    def mutate(raw: dict[str, Any]) -> dict[str, Any]:
         record = raw["items"].get(item_id)
         if record is None:
             raise CleanroomException(404, "ITEM_NOT_FOUND", "提示词条目不存在")
@@ -247,11 +247,11 @@ def delete_item(item_id: str, expected_version: Optional[int]) -> Dict[str, Any]
         return state().mutate(mutate)
 
 
-def bulk_delete(ids: List[str], expected_version: Optional[int]) -> Dict[str, Any]:
+def bulk_delete(ids: list[str], expected_version: Optional[int]) -> dict[str, Any]:
     if not isinstance(ids, list) or not ids:
         raise CleanroomException(400, "INVALID_REQUEST", "ids 不能为空")
 
-    def mutate(raw: Dict[str, Any]) -> Dict[str, Any]:
+    def mutate(raw: dict[str, Any]) -> dict[str, Any]:
         _cas(raw, expected_version, "提示词条目集合")
         normalized_ids = [str(item_id) for item_id in ids]
         missing = [item_id for item_id in normalized_ids if item_id not in raw["items"]]
@@ -263,8 +263,8 @@ def bulk_delete(ids: List[str], expected_version: Optional[int]) -> Dict[str, An
                 extra={"missing_item_ids": missing},
                 expose_extra_fields={"missing_item_ids"},
             )
-        deleted: List[str] = []
-        results: List[Dict[str, Any]] = []
+        deleted: list[str] = []
+        results: list[dict[str, Any]] = []
         for item_id in normalized_ids:
             del raw["items"][item_id]
             deleted.append(item_id)
