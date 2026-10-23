@@ -9,7 +9,6 @@ import os
 import subprocess
 import sys
 import threading
-import types
 from pathlib import Path
 from types import SimpleNamespace
 

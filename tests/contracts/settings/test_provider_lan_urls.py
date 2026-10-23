@@ -1,6 +1,5 @@
 """明确配置的局域网API准入、版本地址与凭据绑定；仅合成数据。"""
 
-import json
 import socket
 
 import httpx

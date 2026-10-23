@@ -3,7 +3,6 @@
 import io
 import json
 from copy import deepcopy
-from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
