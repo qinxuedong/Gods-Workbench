@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Mapping
-from datetime import UTC, datetime, timezone
+from datetime import UTC, datetime
 from decimal import Decimal
 from hashlib import sha256
 from typing import Any
@@ -61,7 +61,6 @@ from .prompts import (
 )
 from .revisions import RollbackProposal, validate_revision_responses
 from .scoring import (
-    SCORING_RULE_VERSION,
     STAGE_WEIGHTS,
     evaluate_score_gate,
 )

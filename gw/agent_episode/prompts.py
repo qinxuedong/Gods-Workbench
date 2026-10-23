@@ -18,7 +18,6 @@ from gw.agent_runtime.models import PromptTemplate, PromptTemplateRef, StageId
 from .models import (
     STAGE_CONTENT_MODELS,
     EpisodeModel,
-    IndependentReviewOutput,
     OpaqueText,
     ReviewDimension,
     ReviewFinding,
