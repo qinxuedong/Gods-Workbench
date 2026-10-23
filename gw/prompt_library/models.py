@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 # Copyright 2026 Gods-Workbench Authors
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -55,7 +54,9 @@ class PromptLibraryItem(BaseModel):
     version: int = Field(..., ge=1, description="提示词库 CAS 版本号")
     created_at: str = Field(..., description="创建时间（ISO 8601 UTC）")
     updated_at: str = Field(..., description="最近更新时间（ISO 8601 UTC）")
-    categories: List[PromptCategoryItem] = Field(default_factory=list, description="分类集合")
+    categories: List[PromptCategoryItem] = Field(
+        default_factory=list, description="分类集合"
+    )
 
 
 class PromptLibrarySnapshot(BaseModel):
@@ -64,8 +65,12 @@ class PromptLibrarySnapshot(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
     version: int = Field(..., ge=1, description="顶层目录 CAS 版本号")
-    active_library_id: Optional[str] = Field(None, description="当前激活提示词库标识；空目录为 null")
-    libraries: List[PromptLibraryItem] = Field(default_factory=list, description="提示词库集合")
+    active_library_id: Optional[str] = Field(
+        None, description="当前激活提示词库标识；空目录为 null"
+    )
+    libraries: List[PromptLibraryItem] = Field(
+        default_factory=list, description="提示词库集合"
+    )
 
 
 class PromptLibraryCreateRequest(BaseModel):
@@ -74,7 +79,9 @@ class PromptLibraryCreateRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     name: str = Field(..., min_length=1, max_length=128, description="提示词库名称")
-    expected_version: int = Field(..., ge=1, strict=True, description="必填的顶层目录 CAS 期望版本")
+    expected_version: int = Field(
+        ..., ge=1, strict=True, description="必填的顶层目录 CAS 期望版本"
+    )
 
 
 class PromptLibraryRenameRequest(BaseModel):
@@ -83,7 +90,9 @@ class PromptLibraryRenameRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     name: str = Field(..., min_length=1, max_length=128, description="新的提示词库名称")
-    expected_version: int = Field(..., ge=1, strict=True, description="必填的目标库 CAS 期望版本")
+    expected_version: int = Field(
+        ..., ge=1, strict=True, description="必填的目标库 CAS 期望版本"
+    )
 
 
 class PromptCategoryCreateRequest(BaseModel):
@@ -91,9 +100,13 @@ class PromptCategoryCreateRequest(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    library_id: str = Field(..., min_length=1, max_length=128, description="父提示词库标识")
+    library_id: str = Field(
+        ..., min_length=1, max_length=128, description="父提示词库标识"
+    )
     name: str = Field(..., min_length=1, max_length=128, description="分类名称")
-    expected_version: int = Field(..., ge=1, strict=True, description="必填的父库 CAS 期望版本")
+    expected_version: int = Field(
+        ..., ge=1, strict=True, description="必填的父库 CAS 期望版本"
+    )
 
 
 class PromptCategoryRenameRequest(BaseModel):
@@ -102,7 +115,9 @@ class PromptCategoryRenameRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     name: str = Field(..., min_length=1, max_length=128, description="新的分类名称")
-    expected_version: int = Field(..., ge=1, strict=True, description="必填的目标分类 CAS 期望版本")
+    expected_version: int = Field(
+        ..., ge=1, strict=True, description="必填的目标分类 CAS 期望版本"
+    )
 
 
 class PromptLibraryResponse(BaseModel):
