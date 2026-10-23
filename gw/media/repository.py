@@ -37,7 +37,7 @@ import hashlib
 import os
 import subprocess
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 from urllib.parse import urlparse
 
 from gw.core import storage
