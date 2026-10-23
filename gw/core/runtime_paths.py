@@ -26,7 +26,6 @@ import stat
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path, PureWindowsPath
-from typing import Optional
 
 RUNTIME_MODE_ENV = "GW_RUNTIME_MODE"
 DATA_DIR_ENV = "GW_DATA_DIR"
