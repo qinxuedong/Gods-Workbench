@@ -24,7 +24,6 @@ from gw.god_canvas.models import (
     CanvasNode,
     CanvasPort,
     CanvasTopologyUpdateRequest,
-    SubCanvasType,
 )
 from gw.god_canvas.service import GodCanvasService
 from gw.god_canvas.tasks import SmartCanvasTaskRequest

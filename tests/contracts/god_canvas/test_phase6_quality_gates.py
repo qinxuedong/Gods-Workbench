@@ -30,7 +30,7 @@ from gw.god_canvas.models import (
 )
 from gw.god_canvas.service import GodCanvasService
 from gw.god_canvas.tasks import SmartCanvasRunMode, SmartCanvasTaskRequest
-from gw.projects_hub.models import ProjectCreateRequest, ProjectUpdateRequest
+from gw.projects_hub.models import ProjectUpdateRequest
 from gw.projects_hub.service import ProjectsService
 
 
