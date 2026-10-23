@@ -22,12 +22,11 @@
 from __future__ import annotations
 
 import hashlib
-import os
 import re
 import shutil
 import subprocess
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from gw.asset_registry import repository as repo
 from gw.core import storage
