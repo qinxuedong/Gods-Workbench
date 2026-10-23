@@ -218,7 +218,9 @@ def _resolve_input(payload: dict[str, Any]) -> Path:
     raw_path = str((payload or {}).get("path") or "").strip()
     if not raw_path:
         raise CleanroomException(400, "INVALID_REQUEST", "缺少 asset_id 或 path")
-    path = storage.resolve_within_roots(raw_path)
+    path = storage.resolve_request_path(
+        raw_path, root_id=str((payload or {}).get("root_id") or "").strip() or None
+    )
     if not path.is_file():
         raise CleanroomException(404, "FILE_NOT_FOUND", "目标文件不存在或不可访问")
     return path

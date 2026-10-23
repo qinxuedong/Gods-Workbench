@@ -94,7 +94,9 @@ def _source(payload: dict[str, Any]) -> tuple[Path, str | None, str | None]:
         return path, asset_id, version_id
     if not raw_path:
         raise CleanroomException(400, "INVALID_REQUEST", "缺少 asset_id 或 path")
-    path = storage.resolve_within_roots(raw_path)
+    path = storage.resolve_request_path(
+        raw_path, root_id=str(payload.get("root_id") or "").strip() or None
+    )
     if not path.is_file():
         raise CleanroomException(404, "FILE_NOT_FOUND", "目标文件不存在或不可访问")
     return path, None, None
@@ -112,7 +114,7 @@ def _identity(
     stat = path.stat()
     logical = "|".join(
         (
-            asset_id or storage.relative_display(path),
+            asset_id or "%s:%s" % storage.location_identity(path),
             version_id or "",
             profile,
             str(width),
@@ -315,7 +317,9 @@ def descriptor(payload: dict[str, Any]) -> dict[str, Any]:
         query["version_id"] = result["version_id"]
     elif not result.get("asset_id"):
         try:
-            query["path"] = storage.relative_display(_source(payload)[0])
+            source_path = _source(payload)[0]
+            query["path"] = storage.relative_display(source_path)
+            query["root_id"] = storage.location_identity(source_path)[0]
         except Exception:
             pass
     result["proxy_url"] = "/api/media-proxy/content?" + urlencode(query)

@@ -222,6 +222,48 @@ def resolve_within_roots(raw_path: str, *, root_id: Optional[str] = None) -> Pat
     raise CleanroomException(403, "PATH_OUTSIDE_ALLOWED_ROOTS", "目标路径不在允许根目录内")
 
 
+def coerce_root_id(root_id: Optional[str]) -> Optional[str]:
+    """把请求或索引记录里的根身份归一为 ``root_identity_id`` 形态。
+
+    既有本地素材索引使用完整 SHA-256 摘要作为 root_id；这里把它映射到当前
+    允许根的 ``root_<24hex>`` 身份。空值返回 None；无法识别的值原样返回，
+    由 ``resolve_within_roots`` 以 404 ROOT_NOT_FOUND 失败关闭。
+    """
+    if root_id is None:
+        return None
+    value = str(root_id).strip()
+    if not value:
+        return None
+    for root in allowed_roots():
+        if value == root_identity_id(root):
+            return value
+        digest = hashlib.sha256(os.path.normcase(str(root)).encode("utf-8")).hexdigest()
+        if value == digest:
+            return root_identity_id(root)
+    return value
+
+
+def resolve_request_path(raw_path: str, *, root_id: Optional[str] = None) -> Path:
+    """请求级路径解析：显式 root_id 优先；相对路径在单根部署下取唯一根。
+
+    严格解析器 ``resolve_within_roots`` 仍然对无 root_id 的相对路径返回
+    409 ROOT_ID_REQUIRED。本函数只在**恰好配置了一个允许根**时才为相对路径
+    补上该唯一根，多根部署绝不猜测（不存在 ``roots[0]`` 回退），调用方必须
+    从请求或索引记录透传 root_id。
+    """
+    selected = coerce_root_id(root_id)
+    if selected is None and isinstance(raw_path, str) and raw_path.strip():
+        roots = allowed_roots()
+        if len(roots) == 1:
+            try:
+                relative = not Path(raw_path).expanduser().is_absolute()
+            except (OSError, RuntimeError, ValueError):
+                relative = False
+            if relative:
+                selected = root_identity_id(roots[0])
+    return resolve_within_roots(raw_path, root_id=selected)
+
+
 def resolve_asset_registration_root(raw_path: str) -> tuple[Path, str]:
     """校验资产库登记目录，并返回其允许根与相对前缀。
 

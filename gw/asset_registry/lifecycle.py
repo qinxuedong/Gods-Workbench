@@ -168,9 +168,12 @@ def _local_file_from_record(repo: Any, item: Dict[str, Any]) -> Path:
 def _identity(path: Path) -> Dict[str, str]:
     from gw.asset_library.repository import _local_root_identity
 
+    # canonical_relpath 必须与 index_jobs/仓库写入的位置身份一致（NFC，Windows 下 casefold）；
+    # display_path 保留磁盘原名，用于展示与恢复，避免规范化丢失文件名大小写。
     return {
         "root_id": _local_root_identity(path),
-        "canonical_relpath": storage.relative_display(path),
+        "canonical_relpath": storage.location_identity(path)[1],
+        "display_path": storage.relative_display(path),
     }
 
 
@@ -246,7 +249,7 @@ def rename_file(asset_id: str, payload: Dict[str, Any], actor: Any) -> Dict[str,
             asset_id,
             expected,
             target.name,
-            target_identity["canonical_relpath"],
+            target_identity["display_path"],
         )
     except Exception as exc:
         code = exc.code if isinstance(exc, CleanroomException) else "FILE_RENAME_FAILED"
@@ -263,7 +266,7 @@ def rename_file(asset_id: str, payload: Dict[str, Any], actor: Any) -> Dict[str,
         op_id,
         state="done",
         finished_at=storage.now_iso(),
-        result={"display_path": target_identity["canonical_relpath"]},
+        result={"display_path": target_identity["display_path"]},
     )
     return {
         **updated,
@@ -312,14 +315,24 @@ def recycle_asset(
     plan: list[tuple[Path, Path]] = [(source, original_target)]
     metadata = asset.get("metadata") if isinstance(asset.get("metadata"), dict) else {}
     derived_records = metadata.get("derived_assets") if isinstance(metadata.get("derived_assets"), dict) else {}
+    partial_failures: list[dict[str, Any]] = []
     for name, record in derived_records.items():
         try:
             derived_root_id = record.get("root_id") or asset.get("root_id")
-            candidate = storage.resolve_within_roots(
+            candidate = storage.resolve_request_path(
                 str(record.get("path") or ""),
                 root_id=str(derived_root_id) if derived_root_id else None,
             )
-        except CleanroomException:
+        except CleanroomException as exc:
+            if exc.code in {"ROOT_ID_REQUIRED", "ROOT_NOT_FOUND"}:
+                # 无法确定来源根的派生物不能被静默漏回收：记入操作日志，由人工确认。
+                partial_failures.append(
+                    {
+                        "name": str(name),
+                        "code": exc.code,
+                        "recycled": False,
+                    }
+                )
             continue
         if not _is_allowed_root_path(candidate):
             # 服务端托管产物归数据目录治理，不随用户本地源文件进回收目录。
@@ -406,6 +419,7 @@ def recycle_asset(
             "recycler_path": original_target.relative_to(storage.data_root()).as_posix(),
         },
         "derived": derived,
+        "partial_failures": partial_failures,
         "created_at": storage.now_iso(),
     }
     manifest_path = directory / "manifest.json"
@@ -444,6 +458,7 @@ def recycle_asset(
         "started_at": manifest["created_at"],
         "finished_at": storage.now_iso(),
         "recycler": recycler,
+        "partial_failures": partial_failures,
         "error_code": None,
         "error_message": None,
     }
@@ -453,6 +468,7 @@ def recycle_asset(
         started_at=manifest["created_at"],
         finished_at=record["finished_at"],
         recycler=recycler,
+        partial_failures=partial_failures,
     )
     return get_operation(op_id)
 
@@ -490,7 +506,9 @@ def restore_asset_files(
     except (OSError, ValueError) as exc:
         raise CleanroomException(500, "RESTORE_MANIFEST_INVALID", "回收清单与文件不一致")
     root = _allowed_root_for_identity(str(original.get("root_id") or ""))
-    original_target = root / str(original.get("canonical_relpath") or "")
+    original_target = root / str(
+        original.get("display_path") or original.get("canonical_relpath") or ""
+    )
     target = original_target
     suffix_applied = False
     if target.exists():
@@ -518,7 +536,12 @@ def restore_asset_files(
         else:
             derived_root = _allowed_root_for_identity(str(item_source.get("root_id") or ""))
             plan_target = (
-                derived_root / str(item_source.get("canonical_relpath") or "").lstrip("/\\")
+                derived_root
+                / str(
+                    item_source.get("display_path")
+                    or item_source.get("canonical_relpath")
+                    or ""
+                ).lstrip("/\\")
             ).resolve()
             plan_target.relative_to(derived_root)
         if plan_target.exists() and suffix_applied:
@@ -600,14 +623,14 @@ def restore_asset_files(
         op_id,
         state="done",
         finished_at=storage.now_iso(),
-        result={"display_path": _identity(target)["canonical_relpath"]},
+        result={"display_path": _identity(target)["display_path"]},
     )
     return {
         **updated,
         "asset_id": entry.get("asset_id"),
         "operation": get_operation(op_id),
         "suffix_applied": suffix_applied,
-        "display_path": _identity(target)["canonical_relpath"],
+        "display_path": _identity(target)["display_path"],
         "data_status": "ok",
         "data_gaps": [],
     }

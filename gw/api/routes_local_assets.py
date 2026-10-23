@@ -46,6 +46,13 @@ def _write(authorization: str | None, x_user_role: str):
     return require_edit_access(authorization, x_user_role)
 
 
+def _root_hint(payload: dict[str, Any], key: str = "root_id") -> str | None:
+    """可选的来源根身份；缺省时由仓库按索引记录或单根唯一根解析。"""
+    value = payload.get(key)
+    text = str(value).strip() if value is not None else ""
+    return text or None
+
+
 def _ids(payload: dict[str, Any], key: str = "paths") -> list[str]:
     value = payload.get(key) or []
     return [str(item) for item in value] if isinstance(value, list) else []
@@ -78,6 +85,7 @@ async def upload_local_assets(
         target,
         str(payload.get("content_base64") or ""),
         str(payload.get("kind") or "auto"),
+        root_id=_root_hint(payload),
     )
 
 
@@ -90,7 +98,7 @@ async def delete_local_assets(
     """真实删除允许根目录内的文件。"""
     _write(authorization, x_user_role)
     payload = await _body(request)
-    return repo.delete_local_files(_ids(payload))
+    return repo.delete_local_files(_ids(payload), root_id=_root_hint(payload))
 
 
 @router.post("/api/local-assets/move", status_code=status.HTTP_200_OK)
@@ -102,8 +110,12 @@ async def move_local_assets(
     """在允许根目录内真实移动文件。"""
     _write(authorization, x_user_role)
     payload = await _body(request)
+    shared = _root_hint(payload)
     return repo.move_local_file(
-        str(payload.get("source") or ""), str(payload.get("target") or "")
+        str(payload.get("source") or ""),
+        str(payload.get("target") or ""),
+        source_root_id=_root_hint(payload, "source_root_id") or shared,
+        target_root_id=_root_hint(payload, "target_root_id"),
     )
 
 
