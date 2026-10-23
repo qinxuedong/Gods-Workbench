@@ -6,13 +6,11 @@ import hashlib
 import json
 import uuid
 from collections.abc import Sequence
-from typing import Any
 
 from gw.agent_runtime.errors import DomainError
 from gw.agent_runtime.models import (
     ArtifactLifecycle,
     ArtifactRef,
-    ArtifactSourceRef,
     ArtifactVersionInput,
     ErrorCode,
     Identifier,
