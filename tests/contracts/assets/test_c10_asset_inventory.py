@@ -23,6 +23,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from gw.api.app import create_app
+from gw.core import storage
 
 AUTH = {"Authorization": "Bearer cleanroom-test", "X-User-Role": "editor"}
 
@@ -198,7 +199,12 @@ def test_c10_inventory_media_thumbnail_and_missing_dependency_are_truthful(
     path = "/api/asset-registry/assets"
     assert (
         client.patch(
-            f"{path}/{created[0]}", headers=AUTH, json={"display_path": source.name}
+            f"{path}/{created[0]}",
+            headers=AUTH,
+            json={
+                "display_path": source.name,
+                "root_id": storage.root_identity_id(source.parent.resolve()),
+            },
         ).status_code
         == 200
     )

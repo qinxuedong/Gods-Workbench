@@ -86,6 +86,42 @@ def allowed_roots() -> List[Path]:
     return roots
 
 
+def canonical_relpath(raw_path: str, *, windows: Optional[bool] = None) -> str:
+    """生成根目录内相对路径的稳定身份键。"""
+    if not isinstance(raw_path, str) or not raw_path:
+        raise CleanroomException(400, "INVALID_PATH", "相对路径参数不合法")
+    value = unicodedata.normalize("NFC", raw_path.replace("\\", "/"))
+    if value.startswith("/") or ntpath.splitdrive(value)[0]:
+        raise CleanroomException(400, "INVALID_PATH", "相对路径参数不合法")
+    components = value.split("/")
+    if any(component in {"", ".", ".."} for component in components):
+        raise CleanroomException(400, "INVALID_PATH", "相对路径参数不合法")
+    use_casefold = os.name == "nt" if windows is None else windows
+    return value.casefold() if use_casefold else value
+
+
+def root_identity_id(root: Path) -> str:
+    """返回兼容既有注册表的允许根身份 ID。"""
+    value = os.path.normcase(str(root))
+    return "root_" + hashlib.sha256(value.encode()).hexdigest()[:24]
+
+
+def location_identity(path: Path) -> tuple[str, str]:
+    """返回路径所属最深允许根的稳定 root_id 与 canonical_relpath。"""
+    resolved = Path(path).resolve()
+    matches = []
+    for root in allowed_roots():
+        try:
+            matches.append((root, resolved.relative_to(root)))
+        except ValueError:
+            continue
+    if not matches:
+        raise CleanroomException(403, "PATH_OUTSIDE_ALLOWED_ROOTS", "目标路径不在允许根目录内")
+    root, relative = max(matches, key=lambda item: len(item[0].parts))
+    canonical = "" if str(relative) == "." else canonical_relpath(relative.as_posix())
+    return root_identity_id(root), canonical
+
+
 def normalize_directory_path(raw_path: str) -> str:
     """规范化一个用户配置的绝对目录路径，不推断相对路径根。"""
     if not isinstance(raw_path, str):
@@ -134,7 +170,7 @@ def validate_directory_path(raw_path: str) -> str:
     return normalized
 
 
-def resolve_within_roots(raw_path: str) -> Path:
+def resolve_within_roots(raw_path: str, *, root_id: Optional[str] = None) -> Path:
     """把调用方给出的路径解析到允许根目录内；越界或未配置根目录一律失败关闭。
 
     安全约束：
@@ -151,20 +187,81 @@ def resolve_within_roots(raw_path: str) -> Path:
         )
     if not isinstance(raw_path, str) or not raw_path.strip():
         raise CleanroomException(400, "INVALID_PATH", "路径参数不合法")
+    root_by_id = {root_identity_id(root): root for root in roots}
+    if root_id is not None:
+        selected_root = root_by_id.get(str(root_id))
+        if selected_root is None:
+            raise CleanroomException(404, "ROOT_NOT_FOUND", "素材来源根不存在")
+    else:
+        selected_root = None
     try:
         candidate = Path(raw_path).expanduser()
         if not candidate.is_absolute():
-            candidate = (roots[0] / candidate)
+            if selected_root is None:
+                if ".." in candidate.parts:
+                    raise CleanroomException(
+                        403, "PATH_OUTSIDE_ALLOWED_ROOTS", "目标路径不在允许根目录内"
+                    )
+                raise CleanroomException(
+                    409, "ROOT_ID_REQUIRED", "解析相对路径必须指定 root_id"
+                )
+            candidate = selected_root / candidate
         resolved = candidate.resolve()
     except (OSError, RuntimeError, ValueError):
         raise CleanroomException(400, "INVALID_PATH", "路径参数不合法")
-    for root in roots:
+    candidates = [selected_root] if selected_root is not None else roots
+    matches = []
+    for root in candidates:
         try:
             resolved.relative_to(root)
         except ValueError:
             continue
+        matches.append(root)
+    if matches:
         return resolved
     raise CleanroomException(403, "PATH_OUTSIDE_ALLOWED_ROOTS", "目标路径不在允许根目录内")
+
+
+def coerce_root_id(root_id: Optional[str]) -> Optional[str]:
+    """把请求或索引记录里的根身份归一为 ``root_identity_id`` 形态。
+
+    既有本地素材索引使用完整 SHA-256 摘要作为 root_id；这里把它映射到当前
+    允许根的 ``root_<24hex>`` 身份。空值返回 None；无法识别的值原样返回，
+    由 ``resolve_within_roots`` 以 404 ROOT_NOT_FOUND 失败关闭。
+    """
+    if root_id is None:
+        return None
+    value = str(root_id).strip()
+    if not value:
+        return None
+    for root in allowed_roots():
+        if value == root_identity_id(root):
+            return value
+        digest = hashlib.sha256(os.path.normcase(str(root)).encode("utf-8")).hexdigest()
+        if value == digest:
+            return root_identity_id(root)
+    return value
+
+
+def resolve_request_path(raw_path: str, *, root_id: Optional[str] = None) -> Path:
+    """请求级路径解析：显式 root_id 优先；相对路径在单根部署下取唯一根。
+
+    严格解析器 ``resolve_within_roots`` 仍然对无 root_id 的相对路径返回
+    409 ROOT_ID_REQUIRED。本函数只在**恰好配置了一个允许根**时才为相对路径
+    补上该唯一根，多根部署绝不猜测（不存在 ``roots[0]`` 回退），调用方必须
+    从请求或索引记录透传 root_id。
+    """
+    selected = coerce_root_id(root_id)
+    if selected is None and isinstance(raw_path, str) and raw_path.strip():
+        roots = allowed_roots()
+        if len(roots) == 1:
+            try:
+                relative = not Path(raw_path).expanduser().is_absolute()
+            except (OSError, RuntimeError, ValueError):
+                relative = False
+            if relative:
+                selected = root_identity_id(roots[0])
+    return resolve_within_roots(raw_path, root_id=selected)
 
 
 def resolve_asset_registration_root(raw_path: str) -> tuple[Path, str]:
@@ -206,11 +303,15 @@ def resolve_asset_registration_root(raw_path: str) -> tuple[Path, str]:
 
 def relative_display(path: Path) -> str:
     """把绝对路径降级为相对允许根的展示串；找不到允许根时返回文件名，不回显绝对路径。"""
+    matches = []
     for root in allowed_roots():
         try:
-            return path.resolve().relative_to(root).as_posix()
+            matches.append((root, path.resolve().relative_to(root)))
         except ValueError:
             continue
+    if matches:
+        _, relative = max(matches, key=lambda item: len(item[0].parts))
+        return relative.as_posix()
     return path.name
 
 

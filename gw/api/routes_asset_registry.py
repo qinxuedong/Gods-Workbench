@@ -26,9 +26,11 @@
 
 from __future__ import annotations
 
+import os
 import re
 import uuid
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Body, Depends, File, Form, Header, Query, Request, Response, status, UploadFile
@@ -921,6 +923,7 @@ def create_image_version(
         asset_id, str(body.get("source_path") or ""), _version(body),
         edit=body.get("edit") if isinstance(body.get("edit"), dict) else None,
         canvas_id=str(body.get("canvas_id") or "") or None,
+        root_id=str(body.get("root_id") or "") or None,
     )
 
 
@@ -1220,6 +1223,166 @@ def reindex_registry(
                                 status_code=202)
         return JSONResponse(index_jobs.service().submit("reindex", body, actor, idempotency_key), status_code=202)
     return repo.reindex(_version(_payload(payload)))
+
+
+def _root_alias_candidate(path: Path, source: Dict[str, Any], bound: Any) -> Optional[Dict[str, str]]:
+    """只为已登记且经文件系统确认的来源生成别名候选。"""
+    source_id = str(source.get("id") or "")
+    if not source_id:
+        return None
+    known_paths = [str(source.get("path") or "")]
+    if isinstance(bound, dict) and isinstance(bound.get("aliases"), list):
+        known_paths.extend(str(value) for value in bound["aliases"] if value)
+    same_source = False
+    for raw_known in known_paths:
+        if not raw_known:
+            continue
+        try:
+            known_path = Path(storage.normalize_directory_path(raw_known)).resolve(strict=True)
+            if os.path.samefile(path, known_path):
+                same_source = True
+                break
+        except (OSError, RuntimeError, ValueError):
+            continue
+    if not same_source:
+        return None
+    root_id = str(bound.get("root_id") or "") if isinstance(bound, dict) else ""
+    canonical_relpath = str(bound.get("canonical_relpath") or "") if isinstance(bound, dict) else ""
+    if not root_id:
+        try:
+            source_root, source_prefix = storage.resolve_asset_registration_root(
+                str(source.get("path") or "")
+            )
+            root_id = storage.root_identity_id(source_root)
+            canonical_relpath = storage.canonical_relpath(source_prefix) if source_prefix else ""
+        except CleanroomException:
+            return None
+    return {
+        "storage_root_id": source_id,
+        "name": str(source.get("name") or source_id),
+        "root_id": root_id,
+        "canonical_relpath": canonical_relpath,
+    }
+
+
+def _root_alias_path(raw_path: Any) -> tuple[str, Path, str, str]:
+    if not isinstance(raw_path, str) or not raw_path.strip():
+        raise CleanroomException(400, "INVALID_PATH", "路径参数不合法")
+    normalized = storage.normalize_directory_path(raw_path)
+    try:
+        path = Path(normalized).resolve(strict=True)
+    except (OSError, RuntimeError, ValueError):
+        raise CleanroomException(400, "INVALID_PATH", "目录不存在或不可访问") from None
+    if not path.is_dir():
+        raise CleanroomException(400, "INVALID_PATH", "目录不存在或不可访问")
+    try:
+        root, prefix = storage.resolve_asset_registration_root(normalized)
+    except CleanroomException as exc:
+        if exc.code != "PATH_OUTSIDE_ALLOWED_ROOTS":
+            raise
+        # 外部 alias 仅在后续与已准入来源通过 samefile 验证后才可建议/绑定；
+        # 不把候选路径本身加入允许根或用于文件读取。
+        return normalized, path, "", ""
+    canonical = storage.canonical_relpath(prefix) if prefix else ""
+    return normalized, path, storage.root_identity_id(root), canonical
+
+
+@router.post("/root-aliases/suggestions", summary="建议已登记素材来源的路径别名")
+def suggest_root_aliases(
+    payload: Optional[Dict[str, Any]] = Body(None),
+    authorization: Optional[str] = Header(None),
+    x_user_role: str = Header("editor", alias="X-User-Role"),
+):
+    _edit_auth(authorization, x_user_role)
+    normalized, path, candidate_root_id, _canonical = _root_alias_path(
+        _payload(payload).get("path")
+    )
+    registry_state = repo.state().read()
+    state_aliases = registry_state.get("root_aliases", {})
+    candidates = []
+    for source in default_storage_settings_service.get_snapshot().local_libraries:
+        source_id = str(source.get("id") or "")
+        candidate = _root_alias_candidate(
+            path, source, state_aliases.get(source_id, {})
+        )
+        if candidate and candidate["storage_root_id"] not in {
+            item["storage_root_id"] for item in candidates
+        }:
+            candidates.append(candidate)
+    if not candidates and not candidate_root_id:
+        raise CleanroomException(
+            403, "PATH_OUTSIDE_ALLOWED_ROOTS", "目标路径不在允许根目录内"
+        )
+    return {
+        "path": normalized,
+        "candidates": candidates,
+        "revision": registry_state["revision"],
+    }
+
+
+@router.post("/root-aliases/confirm", summary="确认素材来源路径别名")
+def confirm_root_alias(
+    payload: Optional[Dict[str, Any]] = Body(None),
+    authorization: Optional[str] = Header(None),
+    x_user_role: str = Header("editor", alias="X-User-Role"),
+):
+    _edit_auth(authorization, x_user_role)
+    body = _payload(payload)
+    expected_version = _version(body, required=True)
+    normalized, path, candidate_root_id, _ = _root_alias_path(
+        body.get("path")
+    )
+    source_id = str(body.get("storage_root_id") or "")
+    source = next(
+        (
+            item
+            for item in default_storage_settings_service.get_snapshot().local_libraries
+            if str(item.get("id") or "") == source_id
+        ),
+        None,
+    )
+    if source is None:
+        raise CleanroomException(404, "ROOT_NOT_FOUND", "素材来源根不存在")
+    state_aliases = repo.state().read().get("root_aliases", {})
+    candidate = _root_alias_candidate(path, source, state_aliases.get(source_id, {}))
+    if candidate is None:
+        if not candidate_root_id:
+            raise CleanroomException(
+                403, "PATH_OUTSIDE_ALLOWED_ROOTS", "目标路径不在允许根目录内"
+            )
+        raise CleanroomException(409, "ROOT_ALIAS_MISMATCH", "该路径未指向所选的已登记来源")
+    bound_root_id = candidate["root_id"] or candidate_root_id
+    bound_relpath = candidate["canonical_relpath"]
+
+    def bind(raw: Dict[str, Any]) -> Dict[str, Any]:
+        repo._cas(raw, expected_version, required=True)
+        aliases = raw.setdefault("root_aliases", {})
+        record = aliases.get(source_id)
+        if not isinstance(record, dict):
+            record = {
+                "root_id": bound_root_id,
+                "canonical_relpath": bound_relpath,
+                "aliases": [],
+            }
+            aliases[source_id] = record
+        elif record.get("root_id") != bound_root_id:
+            raise CleanroomException(409, "ROOT_ALIAS_IDENTITY_CONFLICT", "素材来源根身份已改变")
+        values = record.setdefault("aliases", [])
+        if normalized not in values:
+            values.append(normalized)
+            record["canonical_relpath"] = bound_relpath
+            repo._bump(raw)
+        return {
+            "bound": True,
+            "storage_root_id": source_id,
+            "name": str(source.get("name") or source_id),
+            "path": normalized,
+            "root_id": bound_root_id,
+            "canonical_relpath": bound_relpath,
+            "revision": raw["revision"],
+        }
+
+    return repo.state().mutate(bind)
 
 
 # ---------------------------------------------------------------------------

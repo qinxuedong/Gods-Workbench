@@ -136,6 +136,43 @@ def _plain_asset(asset_id: str, name: str, kind: str, **extra: Any) -> Dict[str,
     return payload
 
 
+def _storage_source_for_location(
+    root_id: str, canonical_relpath: str, prior_source_id: str = ""
+) -> str:
+    """根据新位置匹配最长的已登记素材库前缀。"""
+    from gw.asset_registry import index_jobs
+
+    _, aliases = index_jobs._roots()
+    matches = []
+    for alias_id, alias in aliases.items():
+        if str(alias.get("root_id") or "") != root_id:
+            continue
+        raw_prefix = str(alias.get("prefix") or "")
+        prefix = storage.canonical_relpath(raw_prefix) if raw_prefix else ""
+        if prefix and (
+            canonical_relpath != prefix
+            and not canonical_relpath.startswith(prefix + "/")
+        ):
+            continue
+        matches.append((len(prefix), str(alias.get("storage_root_id") or alias_id)))
+    if not matches:
+        return root_id
+
+    longest_prefix = max(length for length, _ in matches)
+    source_ids = sorted(
+        source_id for length, source_id in matches if length == longest_prefix
+    )
+    if prior_source_id in source_ids:
+        return prior_source_id
+    if len(source_ids) > 1:
+        raise CleanroomException(
+            409,
+            "ASSET_SOURCE_AMBIGUOUS",
+            "素材路径匹配多个相同优先级的已登记来源",
+        )
+    return source_ids[0]
+
+
 def _unavailable(endpoint: str, code: str, message: str) -> None:
     raise CleanroomException(
         503, code, message,
@@ -177,6 +214,21 @@ def update_asset(asset_id: str, payload: Dict[str, Any]) -> Dict[str, Any]:
         for key in ("kind", "display_path", "archived"):
             if key in payload and payload[key] is not None:
                 item[key] = payload[key]
+        if payload.get("display_path") is not None:
+            requested_root_id = str(payload.get("root_id") or item.get("root_id") or "")
+            path = storage.resolve_request_path(
+                str(payload["display_path"]),
+                root_id=requested_root_id or None,
+            )
+            root_id, canonical_relpath = storage.location_identity(path)
+            if requested_root_id and root_id != requested_root_id:
+                raise CleanroomException(409, "ROOT_ID_MISMATCH", "素材路径与来源根身份不匹配")
+            prior_source_id = str(item.get("storage_root_id") or "")
+            item["root_id"] = root_id
+            item["storage_root_id"] = _storage_source_for_location(
+                root_id, canonical_relpath, prior_source_id
+            )
+            item["canonical_relpath"] = canonical_relpath
         item["version"] = int(item.get("version", 1)) + 1
         item["updated_at"] = storage.now_iso()
         revision = _bump(raw)
@@ -204,6 +256,7 @@ def rename_asset_file(
             )
         item["name"] = new_name
         item["display_path"] = display_path
+        item["canonical_relpath"] = storage.canonical_relpath(display_path)
         item["version"] = int(item.get("version", 1)) + 1
         item["updated_at"] = storage.now_iso()
         revision = _bump(raw)
@@ -393,10 +446,19 @@ def list_assets(limit: int, offset: int, query: Optional[str], kind: Optional[st
             if len(cursor) > 2048:
                 raise ValueError()
             decoded = json.loads(base64.b64decode(cursor + "=" * (-len(cursor) % 4), altchars=b"-_", validate=True))
-            if (not isinstance(decoded, dict) or set(decoded) != {"offset", "revision", "query"}
+            cursor_keys = set(decoded) if isinstance(decoded, dict) else set()
+            if (not isinstance(decoded, dict)
+                    or cursor_keys not in ({"offset", "revision", "query"},
+                                           {"offset", "revision", "query", "last_location"})
                     or type(decoded["offset"]) is not int or decoded["offset"] < 0
                     or type(decoded["revision"]) is not int or decoded["query"] != fingerprint
                     or (offset and offset != decoded["offset"])):
+                raise ValueError()
+            if "last_location" in decoded and (
+                not isinstance(decoded["last_location"], dict)
+                or set(decoded["last_location"]) != {"root_id", "canonical_relpath"}
+                or not all(isinstance(value, str) for value in decoded["last_location"].values())
+            ):
                 raise ValueError()
         except (ValueError, TypeError, KeyError, UnicodeError):
             raise CleanroomException(400, "INVALID_CURSOR", "分页游标无效或不属于当前查询") from None
@@ -407,10 +469,28 @@ def list_assets(limit: int, offset: int, query: Optional[str], kind: Optional[st
         offset = decoded["offset"]
     from gw.core.asset_visibility import asset_visible
     items = [dict(a) for a in raw["assets"].values() if asset_visible(a)]
-    if root_id:
+    root_facets = []
+    if root_id or any(
+        not item.get("is_remote") and (item.get("storage_root_id") or item.get("root_id"))
+        for item in items
+    ):
         from gw.asset_registry import index_jobs
-        known_roots = {item["id"] for item in index_jobs.root_facets()}
-        known_roots.update(str(a.get("storage_root_id") or a.get("root_id") or "") for a in items)
+
+        root_facets = index_jobs.root_facets()
+    root_availability = {
+        str(root.get("id") or ""): str(root.get("availability") or "offline")
+        for root in root_facets
+    }
+    for item in items:
+        source_id = str(item.get("storage_root_id") or "")
+        asset_root_id = str(item.get("root_id") or "")
+        if not item.get("is_remote") and (source_id or asset_root_id):
+            availability_id = source_id or asset_root_id
+            item["root_availability"] = root_availability.get(
+                availability_id, "offline"
+            )
+    if root_id:
+        known_roots = {item["id"] for item in root_facets}
         if root_id not in known_roots:
             raise CleanroomException(404, "ROOT_NOT_FOUND", "素材来源根不存在")
         items = [a for a in items if str(a.get("storage_root_id") or a.get("root_id") or "") == root_id]
@@ -460,8 +540,16 @@ def list_assets(limit: int, offset: int, query: Optional[str], kind: Optional[st
     next_offset = offset + len(page) if has_more else None
     next_cursor = None
     if has_more:
-        next_cursor = base64.urlsafe_b64encode(json.dumps({"offset": next_offset, "revision": raw["revision"],
-            "query": fingerprint}, separators=(",", ":")).encode()).decode().rstrip("=")
+        last_asset = page[-1]
+        next_cursor = base64.urlsafe_b64encode(json.dumps({
+            "offset": next_offset,
+            "revision": raw["revision"],
+            "query": fingerprint,
+            "last_location": {
+                "root_id": str(last_asset.get("root_id") or ""),
+                "canonical_relpath": str(last_asset.get("canonical_relpath") or ""),
+            },
+        }, separators=(",", ":")).encode()).decode().rstrip("=")
     return {"assets": page, "items": page, "total": total, "total_known": True,
             "limit": limit, "offset": offset, "has_more": has_more, "next_offset": next_offset,
             "next_cursor": next_cursor, "revision": raw["revision"],
@@ -936,25 +1024,32 @@ def resolve_reference(reference: str) -> Dict[str, Any]:
 
 def create_image_version(asset_id: str, source_path: str, expected_version: Optional[int],
                          edit: Optional[Dict[str, Any]] = None,
-                         canvas_id: Optional[str] = None) -> Dict[str, Any]:
+                         canvas_id: Optional[str] = None,
+                         root_id: Optional[str] = None) -> Dict[str, Any]:
     """创建图片版本；edit 为前端序列化的非破坏性编辑参数（原样落盘，不做推测）。"""
     def mutate(raw: Dict[str, Any]) -> Any:
         _require(raw, asset_id)
         _cas(raw, expected_version)
         display = None
         size = None
+        location_root_id = None
+        canonical_relpath = None
         if source_path:
-            path = storage.resolve_within_roots(source_path)
+            path = storage.resolve_within_roots(source_path, root_id=root_id)
             if not path.is_file():
                 raise CleanroomException(404, "FILE_NOT_FOUND", "源图片不存在")
             display = storage.relative_display(path)
             size = path.stat().st_size
+            location_root_id, canonical_relpath = storage.location_identity(path)
+            if root_id and location_root_id != root_id:
+                raise CleanroomException(409, "ROOT_ID_MISMATCH", "素材路径与来源根身份不匹配")
         version_id = _seq(raw, "imgv_", raw["image_versions"].get(asset_id, {}).keys())
         existing = len(raw["image_versions"].setdefault(asset_id, {}))
         record = {"id": version_id, "version_id": version_id, "asset_id": asset_id,
                   "version_number": existing + 1, "is_hidden": False, "hidden": False,
                   "edit": dict(edit) if isinstance(edit, dict) else None,
                   "canvas_id": canvas_id or None, "display_path": display,
+                  "root_id": location_root_id, "canonical_relpath": canonical_relpath,
                   "size_bytes": size, "created_at": storage.now_iso(), "label": None}
         raw["image_versions"].setdefault(asset_id, {})[version_id] = record
         revision = _bump(raw)
@@ -1031,7 +1126,11 @@ def derived_files(asset_id: str) -> Dict[str, Path]:
     if isinstance(metadata, dict):
         for name, record in metadata.get("derived_assets", {}).items():
             try:
-                path = storage.resolve_within_roots(str(record.get("path") or ""))
+                root_id = record.get("root_id") or (item or {}).get("root_id")
+                path = storage.resolve_within_roots(
+                    str(record.get("path") or ""),
+                    root_id=str(root_id) if root_id else None,
+                )
             except CleanroomException:
                 continue
             if path.is_file():
@@ -1052,14 +1151,22 @@ def register_derived_asset(asset_id: str, name: str, raw_path: str) -> Dict[str,
     clean_name = "".join(ch for ch in (name or "") if ch.isalnum() or ch in "-_. ").strip()
     if not clean_name or not raw_path:
         raise CleanroomException(400, "INVALID_REQUEST", "缺少派生物名称或路径")
-    path = storage.resolve_within_roots(raw_path)
+    item_snapshot = _require(state().read(), asset_id)
+    previous_root_id = str(item_snapshot.get("root_id") or "")
+    path = storage.resolve_within_roots(raw_path, root_id=previous_root_id or None)
     if not path.is_file():
         raise CleanroomException(404, "FILE_NOT_FOUND", "派生物文件不存在")
+    root_id, canonical_relpath = storage.location_identity(path)
 
     def mutate(raw: Dict[str, Any]) -> Any:
         item = _require(raw, asset_id)
         records = item.setdefault("metadata", {}).setdefault("derived_assets", {})
-        records[clean_name] = {"path": storage.relative_display(path), "registered_at": storage.now_iso()}
+        records[clean_name] = {
+            "path": storage.relative_display(path),
+            "root_id": root_id,
+            "canonical_relpath": canonical_relpath,
+            "registered_at": storage.now_iso(),
+        }
         revision = _bump(raw)
         return {"asset_id": asset_id, "name": clean_name, "registered": True,
                 "revision": revision, "data_status": DATA_STATUS_OK}
@@ -1072,7 +1179,8 @@ def open_local(asset_id: str) -> Dict[str, Any]:
     display = item.get("display_path")
     if not display:
         raise CleanroomException(409, "NO_LOCAL_PATH", "该素材未登记本地路径")
-    path = storage.resolve_within_roots(str(display))
+    root_id = str(item.get("root_id") or "")
+    path = storage.resolve_within_roots(str(display), root_id=root_id or None)
     return {"asset_id": asset_id, "display_path": storage.relative_display(path),
             "exists": path.exists(), "opened": False,
             "reason": "未启动外部文件管理器；仅完成路径准入校验", "data_status": DATA_STATUS_OK}
@@ -1651,48 +1759,111 @@ def export_pdf(asset_ids: List[str]) -> bytes:
 # Phase 12 路由对齐补充（A2）
 # ---------------------------------------------------------------------------
 
-def _resolve_display(display: str) -> Path:
+def _resolve_display(display: str, *, root_id: Optional[str] = None) -> Path:
     """把相对展示路径解析回允许根目录内的真实文件；越界或缺失一律失败关闭。"""
+    normalized = str(display or "").replace("\\", "/")
+    if normalized.startswith("registry_uploads/"):
+        return storage.resolve_output_path(normalized)
     roots = storage.allowed_roots()
     if not roots:
         raise CleanroomException(403, "LOCAL_FILE_ACCESS_NOT_ADMITTED",
                                  "本机文件访问未获准入（未配置允许根目录）")
     candidate = Path(display)
-    if candidate.is_absolute():
-        return storage.resolve_within_roots(str(candidate))
-    for root in roots:
-        target = (root / candidate).resolve()
-        try:
-            target.relative_to(root)
-        except ValueError:
-            continue
-        if target.is_file():
-            return target
-    raise CleanroomException(404, "FILE_NOT_FOUND", "登记的文件不存在或已不可访问")
+    return storage.resolve_within_roots(str(candidate), root_id=root_id)
+
+
+def _confirmed_alias_media_path(
+    storage_root_id: str, root_id: str, canonical_relpath: str
+) -> Optional[Path]:
+    """仅通过与资产来源及位置身份匹配的已确认离线 alias 回读媒体。"""
+    if not storage_root_id or not root_id or not canonical_relpath:
+        return None
+    try:
+        canonical = storage.canonical_relpath(canonical_relpath)
+        from gw.asset_registry import index_jobs
+
+        _, aliases = index_jobs._roots()
+        alias = aliases.get(storage_root_id)
+        if (
+            not isinstance(alias, dict)
+            or str(alias.get("root_id") or "") != root_id
+            or str(alias.get("storage_root_id") or "") != storage_root_id
+            or alias.get("scan_path") is None
+        ):
+            return None
+        prefix = str(alias.get("prefix") or "")
+        prefix = storage.canonical_relpath(prefix) if prefix else ""
+        if prefix:
+            if canonical == prefix or not canonical.startswith(prefix + "/"):
+                return None
+            relative = canonical[len(prefix) + 1 :]
+        else:
+            relative = canonical
+        if not relative:
+            return None
+
+        boundary = Path(alias["scan_path"])
+        target = boundary.joinpath(*relative.split("/"))
+        resolved_boundary = boundary.resolve(strict=True)
+        resolved_target = target.resolve(strict=True)
+    except (CleanroomException, OSError, RuntimeError, TypeError, ValueError):
+        return None
+    if (
+        resolved_boundary != boundary.absolute()
+        or resolved_target != target.absolute()
+        or not resolved_target.is_relative_to(resolved_boundary)
+        or not resolved_target.is_file()
+    ):
+        return None
+    return resolved_target
 
 
 def media_file(asset_id: str, version_id: Optional[str] = None) -> Optional[Path]:
     """返回素材/版本对应的真实本地文件；没有登记或文件缺失时返回 None。"""
     raw = state().read()
+    root_id = None
+    asset_record = raw["assets"].get(asset_id, {})
     if version_id:
         record = raw["image_versions"].get(asset_id, {}).get(version_id)
         if record is None:
             raise CleanroomException(404, "VERSION_NOT_FOUND", "图片版本不存在")
         display = record.get("display_path")
+        root_id = record.get("root_id")
+        if not root_id:
+            root_id = asset_record.get("root_id")
+        storage_root_id = record.get("storage_root_id") or asset_record.get("storage_root_id")
+        canonical_relpath = record.get("canonical_relpath") or asset_record.get(
+            "canonical_relpath"
+        )
     else:
         item = _require(raw, asset_id)
         display = item.get("display_path")
+        root_id = item.get("root_id")
+        storage_root_id = item.get("storage_root_id") or ""
+        canonical_relpath = item.get("canonical_relpath") or ""
         if not display:
             versions = sorted(raw["image_versions"].get(asset_id, {}).values(),
                               key=lambda x: x["version_id"], reverse=True)
-            display = next((v.get("display_path") for v in versions if v.get("display_path")), None)
+            version = next((v for v in versions if v.get("display_path")), None)
+            display = version.get("display_path") if version else None
+            root_id = (version or {}).get("root_id") or root_id
+            storage_root_id = (version or {}).get("storage_root_id") or storage_root_id
+            canonical_relpath = (version or {}).get("canonical_relpath") or canonical_relpath
     if not display:
         return None
     try:
-        path = _resolve_display(str(display))
-    except CleanroomException:
-        return None
-    return path if path.is_file() else None
+        path = _resolve_display(str(display), root_id=str(root_id) if root_id else None)
+    except CleanroomException as exc:
+        if exc.code == "ROOT_ID_REQUIRED":
+            raise
+        path = None
+    if path is not None and path.is_file():
+        return path
+    return _confirmed_alias_media_path(
+        str(storage_root_id or ""),
+        str(root_id or ""),
+        str(canonical_relpath or ""),
+    )
 
 
 def stored_upload_path(asset_id: str, filename: str) -> Path:

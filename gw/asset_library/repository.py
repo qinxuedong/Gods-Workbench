@@ -357,14 +357,70 @@ def content_pdf(asset_id: str) -> bytes:
 # ---------------------------------------------------------------------------
 
 
-def file_info(raw_path: str) -> dict[str, Any]:
+def _indexed_root_id(
+    raw_path: str, entries: dict[str, Any] | None = None
+) -> str | None:
+    """相对路径在多根部署下仅当本地索引里恰有一个来源根拥有它时才返回该根。
+
+    返回 ``root_identity_id`` 形态；零个或多个候选一律返回 None，由严格解析器
+    继续给出 409 ROOT_ID_REQUIRED，不对多根做任何猜测。
+    """
+    roots = storage.allowed_roots()
+    if len(roots) < 2 or not isinstance(raw_path, str) or not raw_path.strip():
+        return None
+    try:
+        if Path(raw_path).expanduser().is_absolute():
+            return None
+        canonical = storage.canonical_relpath(raw_path)
+    except (CleanroomException, OSError, RuntimeError, ValueError):
+        return None
+    if entries is None:
+        entries = _local_state().read().get("entries", {})
+    known = {storage.root_identity_id(root) for root in roots}
+    owners: set[str] = set()
+    for entry in entries.values():
+        recorded = entry.get("canonical_relpath")
+        if not recorded:
+            try:
+                recorded = storage.canonical_relpath(str(entry.get("display_path") or ""))
+            except CleanroomException:
+                continue
+        if recorded != canonical:
+            continue
+        owner = storage.coerce_root_id(entry.get("_root_identity") or entry.get("root_id"))
+        if owner in known:
+            owners.add(owner)
+    return next(iter(owners)) if len(owners) == 1 else None
+
+
+def _resolve_local_path(
+    raw_path: str,
+    root_id: str | None = None,
+    entries: dict[str, Any] | None = None,
+) -> Path:
+    """本地文件请求解析：显式 root_id > 唯一索引记录的根 > 单根唯一根；否则 409。"""
+    selected = storage.coerce_root_id(root_id)
+    if selected is None:
+        selected = _indexed_root_id(raw_path, entries)
+    return storage.resolve_request_path(raw_path, root_id=selected)
+
+
+def _is_relative_request(raw_path: str) -> bool:
+    try:
+        return bool(str(raw_path).strip()) and not Path(str(raw_path)).expanduser().is_absolute()
+    except (OSError, RuntimeError, ValueError):
+        return False
+
+
+def file_info(raw_path: str, root_id: str | None = None) -> dict[str, Any]:
     """返回允许根目录内真实文件元数据；图片额外读真实宽高。"""
-    path = storage.resolve_within_roots(raw_path)
+    path = _resolve_local_path(raw_path, root_id)
     if not path.is_file():
         raise CleanroomException(404, "FILE_NOT_FOUND", "目标文件不存在")
     stat = path.stat()
     payload: dict[str, Any] = {
         "display_path": storage.relative_display(path),
+        "root_id": storage.location_identity(path)[0],
         "name": path.name,
         "size_bytes": stat.st_size,
         "modified_at": int(stat.st_mtime),
@@ -409,11 +465,12 @@ def file_info(raw_path: str) -> dict[str, Any]:
     return payload
 
 
-def reveal_file(raw_path: str) -> dict[str, Any]:
+def reveal_file(raw_path: str, root_id: str | None = None) -> dict[str, Any]:
     """只解析并确认路径在允许根目录内，不启动任何外部进程。"""
-    path = storage.resolve_within_roots(raw_path)
+    path = _resolve_local_path(raw_path, root_id)
     return {
         "display_path": storage.relative_display(path),
+        "root_id": storage.location_identity(path)[0],
         "exists": path.exists(),
         "revealed": False,
         "reason": "未启动外部文件管理器；仅完成路径准入校验",
@@ -421,9 +478,11 @@ def reveal_file(raw_path: str) -> dict[str, Any]:
     }
 
 
-def save_upload(raw_path: str, content_b64: str) -> dict[str, Any]:
+def save_upload(
+    raw_path: str, content_b64: str, root_id: str | None = None
+) -> dict[str, Any]:
     """把 base64 内容原子写入允许根目录；已存在路径要求显式覆盖。"""
-    path = storage.resolve_within_roots(raw_path)
+    path = _resolve_local_path(raw_path, root_id)
     if path.exists() and path.is_dir():
         raise CleanroomException(400, "INVALID_PATH", "目标路径是目录")
     payload = _decode_upload_payload(content_b64)
@@ -445,6 +504,7 @@ def save_upload(raw_path: str, content_b64: str) -> dict[str, Any]:
         partial.unlink(missing_ok=True)
     return {
         "display_path": storage.relative_display(path),
+        "root_id": storage.location_identity(path)[0],
         "size_bytes": len(payload),
         "written": True,
     }
@@ -487,12 +547,12 @@ def _write_upload_stage(
 
 
 def upload_and_index_local_asset(
-    raw_path: str, content_b64: str, kind: str = "auto"
+    raw_path: str, content_b64: str, kind: str = "auto", root_id: str | None = None
 ) -> dict[str, Any]:
     """原子协调本地素材上传、索引预检与索引提交，失败时补偿文件内容。"""
     payload = _decode_upload_payload(content_b64)
     with _LOCAL_ASSET_DOMAIN_LOCK:
-        path = storage.resolve_within_roots(raw_path)
+        path = _resolve_local_path(raw_path, root_id)
         if path.exists() and path.is_dir():
             raise CleanroomException(400, "INVALID_PATH", "目标路径是目录")
 
@@ -566,17 +626,21 @@ def upload_and_index_local_asset(
         }
 
 
-def delete_local_files(raw_paths: list[str]) -> dict[str, Any]:
+def delete_local_files(
+    raw_paths: list[str], root_id: str | None = None
+) -> dict[str, Any]:
     with _LOCAL_ASSET_DOMAIN_LOCK:
-        return _delete_local_files_locked(raw_paths)
+        return _delete_local_files_locked(raw_paths, root_id)
 
 
-def _delete_local_files_locked(raw_paths: list[str]) -> dict[str, Any]:
+def _delete_local_files_locked(
+    raw_paths: list[str], root_id: str | None = None
+) -> dict[str, Any]:
     """删除真实文件，并在路径隐藏前移除对应索引记录。"""
     deleted, skipped, partial_failures = [], [], []
     state = _local_state()
     for raw in raw_paths:
-        path = storage.resolve_within_roots(raw)
+        path = _resolve_local_path(raw, root_id)
         if not path.is_file():
             skipped.append(storage.relative_display(path))
             continue
@@ -677,29 +741,50 @@ def _delete_local_files_locked(raw_paths: list[str]) -> dict[str, Any]:
     }
 
 
-def move_local_file(source: str, target: str) -> dict[str, Any]:
+def move_local_file(
+    source: str,
+    target: str,
+    source_root_id: str | None = None,
+    target_root_id: str | None = None,
+) -> dict[str, Any]:
     with _LOCAL_ASSET_DOMAIN_LOCK:
-        return _move_local_file_locked(source, target)
+        return _move_local_file_locked(source, target, source_root_id, target_root_id)
 
 
-def _move_local_file_locked(source: str, target: str) -> dict[str, Any]:
-    """移动真实文件并同步索引；索引写入失败时补偿磁盘移动。"""
-    src = storage.resolve_within_roots(source)
-    dst = storage.resolve_within_roots(target)
+def _move_local_file_locked(
+    source: str,
+    target: str,
+    source_root_id: str | None = None,
+    target_root_id: str | None = None,
+) -> dict[str, Any]:
+    """移动真实文件并同步索引；索引写入失败时补偿磁盘移动。
+
+    相对目标未显式给出 target_root_id 时，按源文件所在根解析（同根移动），
+    这是由源身份确定的，不是多根猜测。
+    """
+    src = _resolve_local_path(source, source_root_id)
+    explicit_target_root = storage.coerce_root_id(target_root_id) or storage.coerce_root_id(
+        source_root_id
+    )
+    if explicit_target_root is None and _is_relative_request(target):
+        explicit_target_root = storage.location_identity(src)[0]
+    dst = storage.resolve_request_path(target, root_id=explicit_target_root)
     if not src.is_file():
         raise CleanroomException(404, "FILE_NOT_FOUND", "源文件不存在")
     if dst.exists():
         raise CleanroomException(409, "TARGET_EXISTS", "目标路径已存在")
     source_key = storage.relative_display(src)
     target_key = storage.relative_display(dst)
+    source_location = storage.location_identity(src)
+    target_location = storage.location_identity(dst)
     source_root_identity = _local_root_identity(src)
     target_root_identity = _local_root_identity(dst)
     state = _local_state()
     before = state.read().get("entries", {})
     _local_index_entry_for_root(before, source_key, source_root_identity)
     if (
-        target_key != source_key
-        and _find_local_index_entry(before, target_key) is not None
+        source_location != target_location
+        and _find_local_index_entry(before, target_key, target_root_identity) is not None
     ):
         raise CleanroomException(
             409, "LOCAL_ASSET_INDEX_TARGET_CONFLICT", "目标相对路径已有索引记录"
@@ -726,9 +811,11 @@ def _move_local_file_locked(source: str, target: str) -> dict[str, Any]:
                         "size_bytes": dst.stat().st_size,
                         "moved_at": storage.now_iso(),
                         "_root_identity": target_root_identity,
+                        "root_id": target_root_identity,
+                        "canonical_relpath": target_location[1],
                     }
                 )
-                entries[target_key] = record
+                entries[_local_entry_key(target_root_identity, target_key)] = record
             return {
                 "asset_id": record.get("asset_id") if record else None,
                 "id_repairs": repairs,
@@ -803,24 +890,46 @@ def _local_state() -> storage.JsonState:
 def _local_root_identity(path: Path) -> str:
     """返回允许根的不可逆身份摘要，不把根目录绝对路径暴露给索引接口。"""
     resolved = path.resolve()
+    matches = []
     for root in storage.allowed_roots():
+        canonical_root = root.resolve()
         try:
-            resolved.relative_to(root)
+            resolved.relative_to(canonical_root)
         except ValueError:
             continue
-        canonical_root = os.path.normcase(str(root.resolve()))
-        return hashlib.sha256(canonical_root.encode("utf-8")).hexdigest()
+        matches.append(canonical_root)
+    if matches:
+        canonical_root = max(matches, key=lambda root: len(root.parts))
+        value = os.path.normcase(str(canonical_root))
+        return hashlib.sha256(value.encode("utf-8")).hexdigest()
     raise CleanroomException(
         403, "PATH_OUTSIDE_ALLOWED_ROOTS", "目标文件不在允许根目录内"
     )
 
 
-def _find_local_index_entry(entries: dict[str, Any], display_path: str):
+def _local_entry_key(root_identity: str, display_path: str) -> str:
+    return "%s:%s" % (root_identity, storage.canonical_relpath(display_path))
+
+
+def _find_local_index_entry(
+    entries: dict[str, Any], display_path: str, root_identity: str | None = None
+):
+    canonical = storage.canonical_relpath(display_path)
     matches = [
         (key, entry)
         for key, entry in entries.items()
-        if key == display_path or entry.get("display_path") == display_path
+        if key == display_path
+        or entry.get("display_path") == display_path
+        or entry.get("canonical_relpath") == canonical
     ]
+    if root_identity is not None:
+        owned = [
+            match
+            for match in matches
+            if match[1].get("_root_identity") == root_identity
+        ]
+        legacy = [match for match in matches if not match[1].get("_root_identity")]
+        matches = owned or legacy
     if len(matches) > 1:
         raise CleanroomException(
             409,
@@ -833,7 +942,7 @@ def _find_local_index_entry(entries: dict[str, Any], display_path: str):
 def _local_index_entry_for_root(
     entries: dict[str, Any], display_path: str, root_identity: str
 ):
-    match = _find_local_index_entry(entries, display_path)
+    match = _find_local_index_entry(entries, display_path, root_identity)
     if match is None:
         return None
     _, entry = match
@@ -846,10 +955,8 @@ def _local_index_entry_for_root(
                 "历史索引缺少允许根身份，当前多根配置下拒绝读写该相对路径",
             )
         entry["_root_identity"] = root_identity
-    elif stored_identity != root_identity:
-        raise CleanroomException(
-            409, "LOCAL_ASSET_PATH_AMBIGUOUS", "相对路径已属于另一个允许根，拒绝覆盖"
-        )
+    entry["root_id"] = root_identity
+    entry["canonical_relpath"] = storage.canonical_relpath(display_path)
     return match
 
 
@@ -954,9 +1061,11 @@ def _reconcile_local_index_move(
                     "size_bytes": target_path.stat().st_size,
                     "moved_at": storage.now_iso(),
                     "_root_identity": target_root_identity,
+                    "root_id": target_root_identity,
+                    "canonical_relpath": storage.canonical_relpath(target_key),
                 }
             )
-            entries[target_key] = record
+            entries[_local_entry_key(target_root_identity, target_key)] = record
         state.write(raw)
         return {
             "asset_id": record.get("asset_id") if record else None,
@@ -978,10 +1087,13 @@ def _safe_name(name: str, *, what: str = "名称") -> str:
 
 
 def _local_asset_cursor_key(entry: dict[str, Any]) -> tuple[str, str, str, str]:
-    display_path = str(entry.get("display_path") or "")
+    canonical_relpath = str(
+        entry.get("canonical_relpath")
+        or storage.canonical_relpath(str(entry.get("display_path") or ""))
+    )
     return (
-        display_path.casefold(),
-        display_path,
+        canonical_relpath.casefold(),
+        canonical_relpath,
         str(entry.get("_root_identity") or ""),
         str(entry.get("asset_id") or entry.get("id") or ""),
     )
@@ -1066,13 +1178,15 @@ def list_local_assets(
     }
 
 
-def index_local_files(raw_paths: list[str], kind: str = "auto") -> dict[str, Any]:
+def index_local_files(
+    raw_paths: list[str], kind: str = "auto", root_id: str | None = None
+) -> dict[str, Any]:
     with _LOCAL_ASSET_DOMAIN_LOCK:
-        return _index_local_files_locked(raw_paths, kind)
+        return _index_local_files_locked(raw_paths, kind, root_id)
 
 
 def _index_local_files_locked(
-    raw_paths: list[str], kind: str = "auto"
+    raw_paths: list[str], kind: str = "auto", root_id: str | None = None
 ) -> dict[str, Any]:
     """把允许根目录内真实文件登记到本地素材索引。"""
 
@@ -1080,19 +1194,26 @@ def _index_local_files_locked(
         repaired = _repair_duplicate_local_asset_ids(raw)
         added = []
         for raw_path in raw_paths:
-            path = storage.resolve_within_roots(raw_path)
+            path = _resolve_local_path(raw_path, root_id, raw["entries"])
             if not path.is_file():
                 continue
             key = storage.relative_display(path)
             root_identity = _local_root_identity(path)
             match = _local_index_entry_for_root(raw["entries"], key, root_identity)
             entry_key, entry = (
-                match if match else (key, {"asset_id": _next_local_asset_id(raw)})
+                match
+                if match
+                else (
+                    _local_entry_key(root_identity, key),
+                    {"asset_id": _next_local_asset_id(raw)},
+                )
             )
             entry.update(
                 {
                     "name": path.name,
                     "display_path": key,
+                    "canonical_relpath": storage.location_identity(path)[1],
+                    "root_id": root_identity,
                     "size_bytes": path.stat().st_size,
                     "kind": kind if kind != "auto" else classify_name(path.name),
                     "indexed_at": storage.now_iso(),
@@ -1281,8 +1402,10 @@ def avatar_status(asset_id: str) -> dict[str, Any]:
     }
 
 
-def register_avatar(asset_id: str, avatar_path: str) -> dict[str, Any]:
-    path = storage.resolve_within_roots(avatar_path)
+def register_avatar(
+    asset_id: str, avatar_path: str, root_id: str | None = None
+) -> dict[str, Any]:
+    path = _resolve_local_path(avatar_path, root_id)
     if not path.is_file():
         raise CleanroomException(404, "FILE_NOT_FOUND", "头像文件不存在")
     display = storage.relative_display(path)

@@ -121,6 +121,8 @@ KNOWN_IMPLEMENTED = frozenset(
         "/api/asset-registry/governance/projects/{p}/restore",
         "/api/asset-registry/projects",
         "/api/asset-registry/projects/{p}",
+        "/api/asset-registry/root-aliases/suggestions",
+        "/api/asset-registry/root-aliases/confirm",
         # 2026-09-27 项目持久化阶段门已接入受权集合GET与创建后回读。
         "/api/asset-registry/projects/{p}/gates",
         "/api/asset-registry/projects/{p}/trash",
@@ -373,6 +375,8 @@ KNOWN_BACKEND_PATHS = frozenset(
         "/api/asset-registry/governance/projects/{p}/restore",
         "/api/asset-registry/projects",
         "/api/asset-registry/projects/{p}",
+        "/api/asset-registry/root-aliases/suggestions",
+        "/api/asset-registry/root-aliases/confirm",
         "/api/asset-registry/projects/{p}/trash",
         "/api/asset-registry/projects/{p}/trash/restore",
         "/api/canvases",

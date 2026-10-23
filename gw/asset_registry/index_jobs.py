@@ -91,10 +91,7 @@ def _roots():
             data_status="not_integrated",
             unavailable=True,
         )
-    canonical = {
-        "root_" + hashlib.sha256(os.path.normcase(str(p)).encode()).hexdigest()[:24]: p
-        for p in roots
-    }
+    canonical = {storage.root_identity_id(root): root for root in roots}
     aliases = {
         root_id: {
             "root_id": root_id,
@@ -105,6 +102,7 @@ def _roots():
         }
         for root_id, root in canonical.items()
     }
+    registered_locations = {}
     for item in default_storage_settings_service.get_snapshot().local_libraries:
         source_id = str(item.get("id") or "")
         raw_path = str(item.get("path") or "")
@@ -112,7 +110,9 @@ def _roots():
         if not source_id or not path.is_absolute():
             continue
         try:
-            resolved = path.resolve(strict=True)
+            # 缺失的已登记子目录也保留为来源 facet，便于显示 offline；
+            # resolve(strict=False) 仍会解析已存在的父级符号链接，再由 allowed root 限定边界。
+            resolved = path.resolve()
         except (OSError, RuntimeError, ValueError):
             continue
         matches = []
@@ -125,13 +125,104 @@ def _roots():
         if not matches:
             continue
         root_id, root, relative = max(matches, key=lambda match: len(match[1].parts))
+        prefix = "" if str(relative) == "." else relative.as_posix()
         aliases[source_id] = {
             "root_id": root_id,
             "root": root,
-            "prefix": "" if str(relative) == "." else relative.as_posix(),
+            "prefix": prefix,
             "storage_root_id": source_id,
             "name": str(item.get("name") or source_id),
         }
+        registered_locations[source_id] = {
+            "root_id": root_id,
+            "prefix": prefix,
+            "available": resolved.is_dir(),
+        }
+    # 已确认的路径别名仅作为同一登记来源的离线恢复通道；未确认候选不参与索引。
+    from gw.asset_registry import repository as repo
+
+    bound_aliases = repo.state().read().get("root_aliases", {})
+    for item in default_storage_settings_service.get_snapshot().local_libraries:
+        source_id = str(item.get("id") or "")
+        if not source_id:
+            continue
+        registered = registered_locations.get(source_id)
+        # 登记目录仍可访问时只使用登记路径；已离线时才考虑确认过的别名。
+        if source_id in aliases and (
+            registered is None or registered["available"]
+        ):
+            continue
+        bound = bound_aliases.get(source_id)
+        bound_root_id = str(bound.get("root_id") or "") if isinstance(bound, dict) else ""
+        if not bound_root_id:
+            continue
+        paths = bound.get("aliases", [])
+        if not isinstance(paths, list):
+            continue
+        for raw_alias_path in sorted(str(value) for value in paths if value):
+            try:
+                alias_path = Path(raw_alias_path).resolve(strict=True)
+            except (OSError, RuntimeError, ValueError):
+                continue
+            if not alias_path.is_dir():
+                continue
+
+            if registered is not None:
+                # 离线来源的身份与 canonical 前缀必须仍与持久绑定完全一致。
+                if bound_root_id != registered["root_id"]:
+                    continue
+                bound_prefix = bound.get("canonical_relpath")
+                if not isinstance(bound_prefix, str):
+                    continue
+                try:
+                    expected_prefix = (
+                        storage.canonical_relpath(registered["prefix"])
+                        if registered["prefix"]
+                        else ""
+                    )
+                    confirmed_prefix = (
+                        storage.canonical_relpath(bound_prefix) if bound_prefix else ""
+                    )
+                except CleanroomException:
+                    continue
+                root = canonical.get(bound_root_id)
+                if (
+                    confirmed_prefix != expected_prefix
+                    or root is None
+                ):
+                    continue
+                aliases[source_id] = {
+                    "root_id": bound_root_id,
+                    "root": root,
+                    "prefix": registered["prefix"],
+                    "scan_path": alias_path,
+                    "storage_root_id": source_id,
+                    "name": str(item.get("name") or source_id),
+                }
+                break
+
+            # 旧绑定路径位于 allowed root 内时保留原有支持，不把外部路径升格为 allowed root。
+            matches = []
+            for allowed_root in roots:
+                try:
+                    relative = alias_path.relative_to(allowed_root)
+                except ValueError:
+                    continue
+                matches.append((allowed_root, relative))
+            if not matches:
+                continue
+            root, relative = max(matches, key=lambda match: len(match[0].parts))
+            existing_root = canonical.get(bound_root_id)
+            if existing_root is None or not existing_root.is_dir():
+                canonical[bound_root_id] = root
+            aliases[source_id] = {
+                "root_id": bound_root_id,
+                "root": root,
+                "prefix": "" if str(relative) == "." else relative.as_posix(),
+                "storage_root_id": source_id,
+                "name": str(item.get("name") or source_id),
+            }
+            break
     return canonical, aliases
 
 
@@ -152,7 +243,18 @@ def root_facets():
         if source_id:
             counts[source_id] = counts.get(source_id, 0) + 1
     return [
-        {"id": source_id, "name": alias["name"], "count": counts.get(source_id, 0)}
+        {
+            "id": source_id,
+            "name": alias["name"],
+            "count": counts.get(source_id, 0),
+            "availability": "available"
+            if (
+                Path(alias["scan_path"]).is_dir()
+                if alias.get("scan_path") is not None
+                else alias["root"].joinpath(*Path(alias.get("prefix") or ".").parts).is_dir()
+            )
+            else "offline",
+        }
         for source_id, alias in sorted(aliases.items())
     ]
 
@@ -443,6 +545,11 @@ class IndexJobs:
                 "root_id": alias["root_id"],
                 "prefix": alias["prefix"],
                 "storage_root_id": alias["storage_root_id"],
+                **(
+                    {"scan_path": str(alias["scan_path"])}
+                    if alias.get("scan_path") is not None
+                    else {}
+                ),
             }
             for alias in selected_aliases
         ]
@@ -464,6 +571,7 @@ class IndexJobs:
             "kind": kind,
             "roots": root_ids,
             "scopes": scopes,
+            "legacy_identity_scan_complete": selected is None,
             "max_files": max_files,
             "hash_files": hash_files,
         }
@@ -745,7 +853,14 @@ class IndexJobs:
         for scope in scopes:
             root_id = scope["root_id"]
             root = roots[root_id]
-            scan_root = root.joinpath(*Path(scope.get("prefix") or ".").parts)
+            prefix = scope.get("prefix") or ""
+            scan_path = scope.get("scan_path")
+            scan_root = (
+                Path(scan_path)
+                if scan_path is not None
+                else root.joinpath(*Path(prefix or ".").parts)
+            )
+            boundary = scan_root if scan_path is not None else root
             with self.condition:
                 self._checkpoint(job_id, attempt)
                 try:
@@ -756,7 +871,10 @@ class IndexJobs:
                     not scan_root.is_dir()
                     or scan_root_resolved is None
                     or scan_root_resolved != scan_root.absolute()
-                    or not scan_root_resolved.is_relative_to(root)
+                    or (
+                        scan_path is None
+                        and not scan_root_resolved.is_relative_to(root)
+                    )
                 ):
                     _error(
                         503,
@@ -768,7 +886,7 @@ class IndexJobs:
             pending = [scan_root]
             while pending:
                 folder = pending.pop()
-                for child in self._children(job_id, attempt, folder, root):
+                for child in self._children(job_id, attempt, folder, boundary):
                     entries += 1
                     if entries > MAX_ENTRIES:
                         _error(413, "INDEX_SCAN_LIMIT", "扫描目录项数量超过上限")
@@ -785,7 +903,7 @@ class IndexJobs:
                             path = Path(child.path)
                             if (
                                 path.resolve() != path.absolute()
-                                or not path.resolve().is_relative_to(root)
+                                or not path.resolve().is_relative_to(boundary)
                             ):
                                 continue
                             if stat.S_ISDIR(info.st_mode):
@@ -795,11 +913,22 @@ class IndexJobs:
                                 continue
                             if len(files) >= request["max_files"]:
                                 _error(413, "INDEX_SCAN_LIMIT", "扫描文件数量超过上限")
+                            relative_path = path.relative_to(boundary).as_posix()
+                            display_path = (
+                                "/".join(
+                                    part
+                                    for part in (prefix, relative_path)
+                                    if part and part != "."
+                                )
+                                if scan_path is not None
+                                else relative_path
+                            )
                             item = {
                                 "root_id": root_id,
                                 "storage_root_id": scope.get("storage_root_id")
                                 or root_id,
-                                "display_path": path.relative_to(root).as_posix(),
+                                "display_path": display_path,
+                                "canonical_relpath": storage.canonical_relpath(display_path),
                                 "name": path.name,
                                 "size_bytes": info.st_size,
                             }
@@ -837,22 +966,54 @@ class IndexJobs:
             receipts = raw.setdefault("index_job_receipts", {})
             if receipt_id in receipts:
                 return receipts[receipt_id]
-            known = {
-                (a.get("root_id"), a.get("display_path")): a
-                for a in raw["assets"].values()
-            }
-            disk = {(x["root_id"], x["display_path"]) for x in files}
+            by_relpath = {}
+            for item in files:
+                by_relpath.setdefault(item["canonical_relpath"], []).append(item)
+            repair_queue = raw.setdefault("identity_repair_queue", [])
+            if not isinstance(repair_queue, list):
+                repair_queue = raw["identity_repair_queue"] = []
+            known = {}
+            for asset in raw["assets"].values():
+                display_path = asset.get("display_path")
+                asset_root_id = asset.get("root_id")
+                canonical_relpath = asset.get("canonical_relpath")
+                if display_path and not canonical_relpath:
+                    try:
+                        canonical_relpath = storage.canonical_relpath(str(display_path))
+                    except CleanroomException:
+                        canonical_relpath = None
+                if not asset_root_id:
+                    matches = by_relpath.get(canonical_relpath or "", [])
+                    if (
+                        job["_request"].get("legacy_identity_scan_complete")
+                        and len(matches) == 1
+                    ):
+                        asset_root_id = matches[0]["root_id"]
+                        asset["root_id"] = asset_root_id
+                        asset["storage_root_id"] = matches[0]["storage_root_id"]
+                    else:
+                        asset["identity_status"] = "ambiguous"
+                        asset_id = str(asset.get("asset_id") or asset.get("id") or "")
+                        if asset_id and asset_id not in repair_queue:
+                            repair_queue.append(asset_id)
+                        continue
+                if canonical_relpath:
+                    asset["canonical_relpath"] = canonical_relpath
+                    known[(asset_root_id, canonical_relpath)] = asset
+            disk = {(x["root_id"], x["canonical_relpath"]) for x in files}
             added = 0
             updated = 0
             if job["_request"]["kind"] == "reindex":
                 for item in files:
-                    identity = (item["root_id"], item["display_path"])
+                    identity = (item["root_id"], item["canonical_relpath"])
                     existing = known.get(identity)
                     if existing is not None:
-                        if existing.get("storage_root_id") != item.get(
-                            "storage_root_id"
-                        ):
-                            existing["storage_root_id"] = item.get("storage_root_id")
+                        changed = False
+                        for field in ("storage_root_id", "canonical_relpath"):
+                            if existing.get(field) != item.get(field):
+                                existing[field] = item.get(field)
+                                changed = True
+                        if changed:
                             existing["updated_at"] = storage.now_iso()
                             updated += 1
                         continue

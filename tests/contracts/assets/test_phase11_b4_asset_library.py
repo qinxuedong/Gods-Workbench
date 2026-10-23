@@ -602,10 +602,9 @@ def test_b4_state_survives_restart_within_same_data_dir():
         assert prompt["prompt"] == "落盘的提示词"
 
 
-def test_b4_local_assets_with_same_relative_path_fail_closed_across_roots(tmp_path, monkeypatch):
-    """多允许根出现同名相对路径时，索引/移动/删除不得跨根覆盖。"""
+def test_b4_local_assets_with_same_relative_path_remain_isolated_across_roots(tmp_path, monkeypatch):
+    """多允许根出现同名相对路径时，索引/移动/删除按根身份隔离。"""
     from gw.asset_library import repository as repo
-    from gw.core.errors import CleanroomException
 
     root_a = tmp_path / "allowed-a"
     root_b = tmp_path / "allowed-b"
@@ -624,33 +623,22 @@ def test_b4_local_assets_with_same_relative_path_fail_closed_across_roots(tmp_pa
     assert updated_a["name"] == "root-a-only.png"
     assert repo.list_local_assets()["items"][0]["asset_id"] == asset_a_id
 
-    with pytest.raises(CleanroomException) as index_error:
-        repo.index_local_files([str(file_b)])
-    assert index_error.value.status_code == 409
-    assert index_error.value.code == "LOCAL_ASSET_PATH_AMBIGUOUS"
+    second = repo.index_local_files([str(file_b)])
+    asset_b_id = second["items"][0]["asset_id"]
+    assert asset_b_id != asset_a_id
+    assert second["items"][0]["size_bytes"] == 22
 
-    with pytest.raises(CleanroomException) as move_error:
-        repo.move_local_file(str(file_b), str(root_b / "moved.png"))
-    assert move_error.value.status_code == 409
-    assert move_error.value.code == "LOCAL_ASSET_PATH_AMBIGUOUS"
-    with pytest.raises(CleanroomException) as delete_error:
-        repo.delete_local_files([str(file_b)])
-    assert delete_error.value.status_code == 409
-    assert delete_error.value.code == "LOCAL_ASSET_PATH_AMBIGUOUS"
+    moved_b = root_b / "moved-b.png"
+    move_b = repo.move_local_file(str(file_b), str(moved_b))
+    assert move_b["asset_id"] == asset_b_id
     assert file_a.read_bytes() == b"A" * 10
-    assert file_b.read_bytes() == b"B" * 22
-    assert not (root_b / "moved.png").exists()
+    assert moved_b.read_bytes() == b"B" * 22
 
     moved = root_a / "moved.png"
     move_a = repo.move_local_file(str(file_a), str(moved))
     assert move_a["asset_id"] == asset_a_id
     assert moved.read_bytes() == b"A" * 10
-    assert file_b.read_bytes() == b"B" * 22
-
-    second = repo.index_local_files([str(file_b)])
-    asset_b_id = second["items"][0]["asset_id"]
-    assert asset_b_id != asset_a_id
-    assert second["items"][0]["size_bytes"] == 22
+    assert moved_b.read_bytes() == b"B" * 22
 
     # API/新状态读取仅暴露稳定展示信息，不暴露内部允许根摘要或原始绝对根路径。
     with _client() as client:
@@ -659,15 +647,16 @@ def test_b4_local_assets_with_same_relative_path_fail_closed_across_roots(tmp_pa
     body = response.json()
     assert body["count"] == 2
     assert {item["asset_id"] for item in body["items"]} == {asset_a_id, asset_b_id}
-    assert {item["display_path"] for item in body["items"]} == {"same.png", "moved.png"}
+    assert {item["display_path"] for item in body["items"]} == {"moved.png", "moved-b.png"}
+    assert len({item["root_id"] for item in body["items"]}) == 2
     serialized = json.dumps(body, ensure_ascii=False)
     assert "_root_identity" not in serialized
     assert str(root_a) not in serialized and str(root_b) not in serialized
     assert body["data_gaps"] == []
 
-    removed_b = repo.delete_local_files([str(file_b)])
-    assert removed_b["deleted"] == ["same.png"]
-    assert not file_b.exists()
+    removed_b = repo.delete_local_files([str(moved_b)])
+    assert removed_b["deleted"] == ["moved-b.png"]
+    assert not moved_b.exists()
     assert moved.read_bytes() == b"A" * 10
     after_delete = repo.list_local_assets()
     assert after_delete["count"] == 1
@@ -676,8 +665,8 @@ def test_b4_local_assets_with_same_relative_path_fail_closed_across_roots(tmp_pa
     assert after_delete["data_gaps"] == []
 
 
-def test_b4_local_asset_upload_cross_root_conflict_preserves_existing_target(tmp_path, monkeypatch):
-    """上传命中另一允许根的同名索引时，HTTP 409 不得覆盖目标原内容。"""
+def test_b4_local_asset_upload_same_relative_path_keeps_other_root_record(tmp_path, monkeypatch):
+    """向同相对路径的另一允许根上传时，仅更新目标根记录。"""
     root_a = tmp_path / "allowed-a"
     root_b = tmp_path / "allowed-b"
     root_a.mkdir()
@@ -690,22 +679,22 @@ def test_b4_local_asset_upload_cross_root_conflict_preserves_existing_target(tmp
 
     from gw.asset_library import repository as repo
     indexed = repo.index_local_files([str(file_a)])
-    before_hash = hashlib.sha256(file_b.read_bytes()).hexdigest()
+    content = b"root-B-uploaded-content"
 
     with _client() as client:
         response = client.post("/api/local-assets/upload", headers=EDITOR, json={
             "path": str(file_b),
-            "content_base64": base64.b64encode(b"overwritten-despite-409").decode("ascii"),
+            "content_base64": base64.b64encode(content).decode("ascii"),
         })
         listing = client.get("/api/local-assets", headers=EDITOR).json()
 
-    assert response.status_code == 409, response.text
-    assert response.json()["detail"]["code"] == "LOCAL_ASSET_PATH_AMBIGUOUS"
-    assert hashlib.sha256(file_b.read_bytes()).hexdigest() == before_hash
-    assert file_b.read_bytes() == b"root-B-original-payload"
-    assert listing["count"] == 1
-    assert listing["items"][0]["asset_id"] == indexed["items"][0]["asset_id"]
-    assert listing["items"][0]["display_path"] == "same.png"
+    assert response.status_code == 201, response.text
+    assert file_a.read_bytes() == b"root-A-indexed"
+    assert file_b.read_bytes() == content
+    assert listing["count"] == 2
+    assert indexed["items"][0]["asset_id"] in {item["asset_id"] for item in listing["items"]}
+    assert {item["display_path"] for item in listing["items"]} == {"same.png"}
+    assert len({item["root_id"] for item in listing["items"]}) == 2
     assert listing["data_gaps"] == []
 
 
@@ -760,8 +749,8 @@ def test_b4_local_asset_upload_index_failure_restores_existing_and_removes_new_t
     assert listing["data_gaps"] == []
 
 
-def test_b4_local_asset_upload_serializes_conflicting_index_registration(tmp_path, monkeypatch):
-    """上传预检到索引提交期间，同相对路径索引必须等待同一域锁。"""
+def test_b4_local_asset_upload_serializes_independent_cross_root_registration(tmp_path, monkeypatch):
+    """上传提交时跨根同相对路径索引等待锁后保留两条身份记录。"""
     allowed_a = tmp_path / "allowed-a"
     allowed_b = tmp_path / "allowed-b"
     allowed_a.mkdir()
@@ -772,8 +761,6 @@ def test_b4_local_asset_upload_serializes_conflicting_index_registration(tmp_pat
     source.write_bytes(b"root-A-source")
 
     from gw.asset_library import repository as repo
-    from gw.core.errors import CleanroomException
-
     stage_ready = threading.Event()
     release_upload = threading.Event()
     index_attempted = threading.Event()
@@ -861,12 +848,12 @@ def test_b4_local_asset_upload_serializes_conflicting_index_registration(tmp_pat
     assert not uploader.is_alive(), "上传线程发生死锁"
     assert not indexer.is_alive(), "竞争索引线程发生死锁"
     assert isinstance(results.get("upload"), dict), repr(results.get("upload"))
-    assert isinstance(results.get("index"), CleanroomException)
-    assert results["index"].status_code == 409
-    assert results["index"].code == "LOCAL_ASSET_PATH_AMBIGUOUS"
+    assert isinstance(results.get("index"), dict), repr(results.get("index"))
+    assert results["index"]["count"] == 1
     assert source.read_bytes() == b"root-A-source"
     assert target.read_bytes() == b"root-B-uploaded"
     listing = repo.list_local_assets()
-    assert listing["count"] == 1
+    assert listing["count"] == 2
+    assert len({item["root_id"] for item in listing["items"]}) == 2
     assert listing["data_gaps"] == []
     assert not list(allowed_b.glob(".gw-upload-pending-*"))

@@ -156,6 +156,18 @@ export function createAssetManagerApi(http) {
                 credentials: 'same-origin',
             });
         },
+        getRootAliasSuggestions(payload, init = {}) {
+            return transport.request('/api/asset-registry/root-aliases/suggestions', {
+                ...jsonInit(payload, {...init, method: 'POST'}),
+                credentials: 'same-origin',
+            });
+        },
+        confirmRootAlias(payload, init = {}) {
+            return transport.request('/api/asset-registry/root-aliases/confirm', {
+                ...jsonInit(payload, {...init, method: 'POST'}),
+                credentials: 'same-origin',
+            });
+        },
         getWorkspaceJob(jobId, init = {}) {
             return transport.request(`/api/asset-registry/workspace-jobs/${encodeURIComponent(jobId)}`, {
                 ...init,

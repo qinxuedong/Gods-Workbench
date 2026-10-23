@@ -58,7 +58,10 @@ def _local_video(asset_id: str) -> Path:
         repo._unavailable(
             "/api/asset-registry", "MEDIA_NOT_AVAILABLE", "该素材未登记本地视频路径"
         )
-    path = storage.resolve_within_roots(str(display))
+    root_id = item.get("root_id")
+    path = storage.resolve_within_roots(
+        str(display), root_id=str(root_id) if root_id else None
+    )
     if not path.is_file() or path.suffix.lower() not in VIDEO_SUFFIXES:
         repo._unavailable(
             "/api/asset-registry", "MEDIA_NOT_AVAILABLE", "该素材没有可读取的本地视频"

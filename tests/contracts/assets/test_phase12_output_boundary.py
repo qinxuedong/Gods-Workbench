@@ -7,6 +7,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from gw.api.app import create_app
+from gw.core import storage
 
 AUTH = {"Authorization": "Bearer output-boundary-fixture", "X-User-Role": "editor"}
 READ = {**AUTH, "X-User-Role": "readonly"}
@@ -285,7 +286,10 @@ def test_thumbnail_generation_and_deletion_use_exact_asset_id(tmp_path, monkeypa
             client.patch(
                 "/api/asset-registry/assets/" + asset_id,
                 headers=AUTH,
-                json={"display_path": source.name},
+                json={
+                    "display_path": source.name,
+                    "root_id": storage.root_identity_id(root.resolve()),
+                },
             ).status_code
             == 200
         )

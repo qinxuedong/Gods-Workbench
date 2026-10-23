@@ -11,6 +11,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from gw.api.app import create_app
+from gw.core import storage
 
 
 BASE = "/api/asset-registry"
@@ -52,7 +53,11 @@ def _register_local_asset(client: TestClient, root: Path) -> str:
     patched = client.patch(
         f"{BASE}/assets/{asset_id}",
         headers=AUTH,
-        json={"display_path": "原文件.txt", "expected_version": revision},
+        json={
+            "display_path": "原文件.txt",
+            "root_id": storage.root_identity_id(root.resolve()),
+            "expected_version": revision,
+        },
     )
     assert patched.status_code == 200, patched.text
     assert client.get(f"{BASE}/assets/{asset_id}/media", headers=AUTH).content == b"single-file"

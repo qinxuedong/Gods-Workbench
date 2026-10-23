@@ -306,7 +306,8 @@ def get_asset_file_info(
 ):
     """返回允许根目录内真实文件元数据；越界 403。"""
     _read(authorization, x_user_role)
-    return repo.file_info(_required(request, "path"))
+    root_id = str(request.query_params.get("root_id") or "").strip() or None
+    return repo.file_info(_required(request, "path"), root_id=root_id)
 
 
 @router.post("/api/asset-file-reveal", status_code=status.HTTP_200_OK)
@@ -318,7 +319,10 @@ async def reveal_asset_file(
     """只做路径准入校验，不启动外部文件管理器。"""
     _write(authorization, x_user_role)
     payload = await _body(request)
-    return repo.reveal_file(str(payload.get("path") or ""))
+    return repo.reveal_file(
+        str(payload.get("path") or ""),
+        root_id=str(payload.get("root_id") or "").strip() or None,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -480,7 +484,11 @@ async def register_asset_avatar(
     """登记素材头像（本地登记，不调用外部平台）。"""
     _write(authorization, x_user_role)
     payload = await _body(request)
-    return repo.register_avatar(item_id, str(payload.get("avatar_path") or ""))
+    return repo.register_avatar(
+        item_id,
+        str(payload.get("avatar_path") or ""),
+        root_id=str(payload.get("root_id") or "").strip() or None,
+    )
 
 
 @router.patch("/api/asset-library/libraries/{library_id}", status_code=status.HTTP_200_OK)
@@ -517,4 +525,8 @@ async def upload_asset_library_workflows(
     """导入工作流文件（真实解码 + 落盘到允许根目录）。"""
     _write(authorization, x_user_role)
     payload = await _body(request)
-    return repo.save_upload(str(payload.get("path") or ""), str(payload.get("content_base64") or ""))
+    return repo.save_upload(
+        str(payload.get("path") or ""),
+        str(payload.get("content_base64") or ""),
+        root_id=str(payload.get("root_id") or "").strip() or None,
+    )

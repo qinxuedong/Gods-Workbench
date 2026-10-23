@@ -413,7 +413,10 @@ class VideoTaskService:
         display_path = item.get("display_path")
         if not display_path:
             raise _err("VIDEO_ASSET_NOT_LOCAL", "素材未登记本地媒体文件", 409)
-        path = core_storage.resolve_within_roots(str(display_path))
+        root_id = item.get("root_id")
+        path = core_storage.resolve_within_roots(
+            str(display_path), root_id=str(root_id) if root_id else None
+        )
         if not path.is_file() or path.suffix.lower() not in VIDEO_SUFFIXES:
             raise _err("VIDEO_ASSET_NOT_VIDEO", "素材不是可读取的本地视频", 409)
         return path

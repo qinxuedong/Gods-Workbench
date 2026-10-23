@@ -13,6 +13,7 @@ import pytest
 
 from fastapi.testclient import TestClient
 from gw.api.app import create_app
+from gw.core import storage
 
 AUTH = {"Authorization": "Bearer cleanroom-test", "X-User-Role": "editor"}
 GOV = {**AUTH, "X-User-Role": "governor"}
@@ -108,7 +109,14 @@ def test_registered_media_download_zip_hash_and_recycle_readback(tmp_path, monke
             (source / name).write_bytes(data)
             created = client.post(path + "/import", headers=AUTH, json={"items": [{"name": name}]}).json()["asset_ids"][0]
             ids.append(created)
-            assert client.patch(path + "/" + created, headers=AUTH, json={"display_path": name}).status_code == 200
+            assert client.patch(
+                path + "/" + created,
+                headers=AUTH,
+                json={
+                    "display_path": name,
+                    "root_id": storage.root_identity_id(source.resolve()),
+                },
+            ).status_code == 200
             media = client.get(path + "/" + created + "/media", headers=AUTH)
             assert media.status_code == 200 and media.content == data
         archive = client.post(path + "/archive", headers=AUTH, json={"asset_ids": ids})
@@ -220,7 +228,14 @@ def test_real_ffmpeg_registered_frame_storyboard_clip_and_transcode(tmp_path, mo
     path = "/api/asset-registry/assets"
     with TestClient(create_app()) as client:
         created = client.post(path + "/import", headers=AUTH, json={"items": [{"name": "合成视频", "kind": "video"}]}).json()["asset_ids"][0]
-        assert client.patch(path + "/" + created, headers=AUTH, json={"display_path": source.name}).status_code == 200
+        assert client.patch(
+            path + "/" + created,
+            headers=AUTH,
+            json={
+                "display_path": source.name,
+                "root_id": storage.root_identity_id(root.resolve()),
+            },
+        ).status_code == 200
         frame = client.get(path + "/" + created + "/video/frame", headers=AUTH, params={"at": 0.5})
         assert frame.status_code == 200, frame.text
         with Image.open(data_root / frame.json()["output_name"]) as image:
@@ -378,7 +393,14 @@ def test_local_reveal_contract_checks_path_without_launching_program(tmp_path, m
         asset_id = client.post("/api/asset-registry/assets/import", headers=AUTH,
             json={"items": [{"name": media.name}]}).json()["asset_ids"][0]
         resource = "/api/asset-registry/assets/" + asset_id
-        assert client.patch(resource, headers=AUTH, json={"display_path": media.name}).status_code == 200
+        assert client.patch(
+            resource,
+            headers=AUTH,
+            json={
+                "display_path": media.name,
+                "root_id": storage.root_identity_id(source.resolve()),
+            },
+        ).status_code == 200
         opened = client.post(resource + "/open-local", headers=AUTH)
         assert opened.status_code == 200 and opened.json()["opened"] is False
         assert opened.json()["exists"] is True
