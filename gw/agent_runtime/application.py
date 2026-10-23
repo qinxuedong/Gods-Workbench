@@ -15,7 +15,6 @@ from gw.projects_hub.service import ProjectsService, owner_key_for_context
 from .errors import DomainError
 from .models import (
     AgentRun,
-    ApplyConfigRequest,
     ApprovalDecision,
     ApprovalRecord,
     ArtifactLifecycle,
@@ -30,7 +29,6 @@ from .models import (
     RequestContext,
     ReviewCandidateRead,
     ReviewDecisionRequest,
-    RollbackRequest,
     StageId,
     TextExportFormat,
     VersionedMutation,

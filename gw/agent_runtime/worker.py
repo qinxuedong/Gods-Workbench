@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
-from collections.abc import Callable
 from typing import Any
 
 from gw.agent_runtime.errors import DomainError

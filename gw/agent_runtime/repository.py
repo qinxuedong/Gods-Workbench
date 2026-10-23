@@ -7,7 +7,7 @@ import json
 import sqlite3
 import uuid
 from collections.abc import Mapping, Sequence
-from datetime import UTC, datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from typing import Any, Protocol
 
 from gw.agent_runtime.errors import DomainError

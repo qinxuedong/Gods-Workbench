@@ -2,16 +2,13 @@
 
 from __future__ import annotations
 
-import uuid
 from dataclasses import dataclass
-from typing import Any
 
 from gw.agent_runtime.events import make_event
 from gw.agent_runtime.models import (
     AgentRun,
     Identifier,
     InvocationRecord,
-    LeaseGrant,
     PausedReason,
     RunStatus,
     UtcDateTime,
