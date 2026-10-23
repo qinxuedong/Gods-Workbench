@@ -28,7 +28,7 @@
 
 from __future__ import annotations
 
-from typing import Annotated, Any, Dict, List, Literal, Optional
+from typing import Annotated, Any, Literal, Optional
 from urllib.parse import urlsplit
 
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints, field_validator, model_validator
@@ -53,15 +53,15 @@ class StorageSettingsSnapshot(BaseModel):
 
     configured: bool = Field(..., description="是否已有真实配置来源")
     revision: int = Field(..., ge=1, description="存储设置 CAS 版本号")
-    dirs: Dict[str, Any] = Field(default_factory=dict, description="目录映射；未配置时为空对象")
-    defaults: Dict[str, Any] = Field(default_factory=dict, description="默认目录建议；无来源时为空对象")
-    extra_local_dirs: List[str] = Field(default_factory=list, description="附加本地目录路径列表")
-    extra_local_entries: List[Dict[str, Any]] = Field(default_factory=list, description="附加本地来源条目")
-    local_library_names: Dict[str, str] = Field(default_factory=dict, description="本地素材库显示名")
-    local_library_order: List[str] = Field(default_factory=list, description="本地素材库排序")
-    local_libraries: List[Dict[str, Any]] = Field(default_factory=list, description="本地素材库投影")
+    dirs: dict[str, Any] = Field(default_factory=dict, description="目录映射；未配置时为空对象")
+    defaults: dict[str, Any] = Field(default_factory=dict, description="默认目录建议；无来源时为空对象")
+    extra_local_dirs: list[str] = Field(default_factory=list, description="附加本地目录路径列表")
+    extra_local_entries: list[dict[str, Any]] = Field(default_factory=list, description="附加本地来源条目")
+    local_library_names: dict[str, str] = Field(default_factory=dict, description="本地素材库显示名")
+    local_library_order: list[str] = Field(default_factory=list, description="本地素材库排序")
+    local_libraries: list[dict[str, Any]] = Field(default_factory=list, description="本地素材库投影")
     data_status: str = Field(DATA_STATUS_NOT_CONFIGURED, description="ok 或 not_configured")
-    data_gaps: List[str] = Field(default_factory=list, description="未接入 / 未配置原因")
+    data_gaps: list[str] = Field(default_factory=list, description="未接入 / 未配置原因")
 
 
 class StorageSettingsPatchRequest(BaseModel):
@@ -69,10 +69,10 @@ class StorageSettingsPatchRequest(BaseModel):
 
     model_config = ConfigDict(extra="ignore")
 
-    dirs: Optional[Dict[str, Any]] = None
-    extra_local_entries: Optional[List[Dict[str, Any]]] = None
-    local_library_names: Optional[Dict[str, str]] = None
-    local_library_order: Optional[List[str]] = None
+    dirs: Optional[dict[str, Any]] = None
+    extra_local_entries: Optional[list[dict[str, Any]]] = None
+    local_library_names: Optional[dict[str, str]] = None
+    local_library_order: Optional[list[str]] = None
     expected_version: Optional[int] = Field(None, ge=1, description="保存目录设置必须携带的 CAS 期望版本")
 
 
@@ -81,17 +81,17 @@ class ProviderSnapshot(BaseModel):
 
     model_config = ConfigDict(extra="ignore")
 
-    providers: List[Dict[str, Any]] = Field(default_factory=list, description="provider 条目；默认必须为空数组")
+    providers: list[dict[str, Any]] = Field(default_factory=list, description="provider 条目；默认必须为空数组")
     revision: int = Field(..., ge=1, description="provider 集合 CAS 版本号")
     configured: bool = Field(..., description="是否已有真实 provider 配置")
     data_status: str = Field(DATA_STATUS_NOT_CONFIGURED, description="ok 或 not_configured")
-    data_gaps: List[str] = Field(default_factory=list, description="未接入 / 未配置原因")
+    data_gaps: list[str] = Field(default_factory=list, description="未接入 / 未配置原因")
 
 
 ProviderId = Annotated[str, StringConstraints(strict=True, pattern=r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")]
 ModelId = Annotated[str, StringConstraints(strict=True, pattern=r"^[^\s\x00-\x1f]{1,256}$")]
 Label = Annotated[str, StringConstraints(strict=True, max_length=256)]
-ModelList = Annotated[List[ModelId], Field(max_length=256)]
+ModelList = Annotated[list[ModelId], Field(max_length=256)]
 Protocol = Literal["openai", "apimart", "gemini", "grok", "volcengine", "jimeng", "codex", "gemini-cli"]
 SecretInput = Annotated[str, StringConstraints(strict=True, max_length=8192)]
 
@@ -122,14 +122,14 @@ class ProviderEntryRequest(BaseModel):
     image_models: ModelList = Field(default_factory=list)
     chat_models: ModelList = Field(default_factory=list)
     video_models: ModelList = Field(default_factory=list)
-    model_names: Dict[ModelId, Label] = Field(default_factory=dict)
-    model_protocols: Dict[ModelId, Literal["openai", "gemini"]] = Field(default_factory=dict)
+    model_names: dict[ModelId, Label] = Field(default_factory=dict)
+    model_protocols: dict[ModelId, Literal["openai", "gemini"]] = Field(default_factory=dict)
     image_request_mode: Literal["openai", "openai-json", "openai-video-proxy", "openai-responses", "openai-async-image", "tudou-async", "newapi-sync-image"] = "openai"
     image_edit_route: Literal["general", "auto", "chat"] = "general"
     video_protocol: Optional[Literal["newapi_video"]] = None
     image_generation_endpoint: str = Field("", max_length=256, pattern=r"^(/[^?#:\s\x00-\x1f]{0,255})?$")
     image_edit_endpoint: str = Field("", max_length=256, pattern=r"^(/[^?#:\s\x00-\x1f]{0,255})?$")
-    ms_loras: List[ProviderLora] = Field(default_factory=list, max_length=256)
+    ms_loras: list[ProviderLora] = Field(default_factory=list, max_length=256)
     ms_defaults_version: int = Field(0, ge=0)
     volcengine_project_name: Label = ""
     volcengine_region: Label = ""
@@ -194,7 +194,7 @@ class ProviderPutRequest(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    providers: List[ProviderEntryRequest] = Field(..., max_length=128)
+    providers: list[ProviderEntryRequest] = Field(..., max_length=128)
 
 
 class AssetStructureMember(BaseModel):
@@ -217,7 +217,7 @@ class AssetStructureItem(BaseModel):
     version: int = Field(..., ge=1, description="结构级 CAS 版本号")
     created_at: str = Field(..., description="创建时间（ISO 8601 UTC）")
     updated_at: str = Field(..., description="最近更新时间（ISO 8601 UTC）")
-    members: List[AssetStructureMember] = Field(default_factory=list, description="成员集合")
+    members: list[AssetStructureMember] = Field(default_factory=list, description="成员集合")
 
 
 class AssetStructureListResponse(BaseModel):
@@ -225,11 +225,11 @@ class AssetStructureListResponse(BaseModel):
 
     model_config = ConfigDict(extra="ignore")
 
-    items: List[AssetStructureItem] = Field(default_factory=list, description="结构集合")
+    items: list[AssetStructureItem] = Field(default_factory=list, description="结构集合")
     total: int = Field(0, ge=0, description="结构总数")
     revision: int = Field(..., ge=1, description="结构集合 CAS 版本号")
     data_status: str = Field(DATA_STATUS_OK, description="ok 或 not_configured")
-    data_gaps: List[str] = Field(default_factory=list, description="未接入原因")
+    data_gaps: list[str] = Field(default_factory=list, description="未接入原因")
 
 
 class AssetStructureCreateRequest(BaseModel):
@@ -238,7 +238,7 @@ class AssetStructureCreateRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     kind: str = Field(..., min_length=1, description="version 或 group")
-    asset_ids: List[str] = Field(..., description="成员素材标识；至少 2 个且不重复")
+    asset_ids: list[str] = Field(..., description="成员素材标识；至少 2 个且不重复")
     current_asset_id: Optional[str] = Field(None, description="当前代表素材；必须是成员之一")
     expected_version: Optional[int] = Field(None, ge=1, description="创建结构必须携带的集合 CAS 期望版本")
 
@@ -248,7 +248,7 @@ class AssetStructureUpdateRequest(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    asset_ids: Optional[List[str]] = None
+    asset_ids: Optional[list[str]] = None
     current_asset_id: Optional[str] = None
     expected_version: Optional[int] = Field(None, ge=1, description="更新结构必须携带的结构 CAS 期望版本")
 
