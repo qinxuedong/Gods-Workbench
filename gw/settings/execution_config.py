@@ -20,7 +20,6 @@ import json
 import os
 import re
 from dataclasses import dataclass, replace
-from typing import Dict, Optional, Tuple
 from urllib.parse import urlsplit, urlunsplit
 
 from gw.core.errors import CleanroomException
