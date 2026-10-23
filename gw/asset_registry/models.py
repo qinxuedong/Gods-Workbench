@@ -42,6 +42,7 @@ class CinematographyAssetFilters(BaseModel):
 
     各字段内部按 OR 匹配，字段之间按 AND 组合。实体引用使用资产
     ``metadata.entity_ids``（或同名顶层字段）中的稳定 entity_id。
+    多值字段接受数组或逗号分隔字符串，内部统一归一化为数组。
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -55,6 +56,22 @@ class CinematographyAssetFilters(BaseModel):
         default=None, description="实体母库类型：角色、道具或场景（location）"
     )
     entity_id: list[str] | None = Field(default=None, description="实体母库稳定 ID")
+
+    @field_validator(
+        "shot_size",
+        "camera_movement",
+        "focal_length",
+        "lighting_phase",
+        "aspect_ratio",
+        "entity_type",
+        "entity_id",
+        mode="before",
+    )
+    @classmethod
+    def normalize_csv_values(cls, values):
+        if isinstance(values, str):
+            return [part.strip() for part in values.split(",") if part.strip()]
+        return values
 
     @field_validator(
         "shot_size",
