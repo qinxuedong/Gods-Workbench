@@ -37,8 +37,8 @@ import threading
 import time
 import unicodedata
 from pathlib import Path
-from collections.abc import Mapping
-from typing import Any, Callable, Dict, Iterator, List, Optional
+from collections.abc import Callable, Iterator, Mapping
+from typing import Any, Optional
 
 from gw.core.errors import CleanroomException
 from gw.core.runtime_paths import MODE_TEST, RuntimePathError, RuntimePaths, resolve_runtime_paths
@@ -50,7 +50,7 @@ BACKUP_FORMAT = "gods-workbench-runtime-backup-v1"
 _BACKUP_ROOTS = frozenset({"data", "auth", "video"})
 
 _LOCK = threading.RLock()
-_NAMESPACE_LOCKS: Dict[str, threading.RLock] = {}
+_NAMESPACE_LOCKS: dict[str, threading.RLock] = {}
 
 
 class RuntimeBackupError(RuntimeError):
@@ -69,12 +69,12 @@ def data_root() -> Path:
         raise CleanroomException(400, exc.code, str(exc)) from None
 
 
-def allowed_roots() -> List[Path]:
+def allowed_roots() -> list[Path]:
     """返回允许访问的本机文件根目录清单；未配置即为空（等价于禁止一切本机文件访问）。"""
     raw = os.environ.get(ALLOWED_ROOTS_ENV, "").strip()
     if not raw:
         return []
-    roots: List[Path] = []
+    roots: list[Path] = []
     for item in raw.split(os.pathsep):
         item = item.strip()
         if not item:
@@ -320,7 +320,7 @@ def relative_display(path: Path) -> str:
 OUTPUT_NAMESPACES = frozenset({"ai_uploads", "media_output", "registry_uploads", "local_assets"})
 
 
-def _output_parts(raw_path: str) -> List[str]:
+def _output_parts(raw_path: str) -> list[str]:
     from pathlib import PureWindowsPath
     raw = str(raw_path or "")
     pieces = raw.replace("\\", "/").split("/")
@@ -658,7 +658,7 @@ def create_runtime_backup(
     source_state_version: int | str | None = None,
     target_state_version: int | str | None = None,
     metadata: Mapping[str, Any] | None = None,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """在隔离测试态复制 data/auth/video 并生成带哈希清单的备份。"""
     _ensure_test_runtime(paths)
     target = _backup_destination(paths, destination)
@@ -686,7 +686,7 @@ def create_runtime_backup(
                     "size": target_file.stat().st_size,
                     "sha256": _sha256(target_file),
                 })
-        manifest: Dict[str, Any] = {
+        manifest: dict[str, Any] = {
             "format": BACKUP_FORMAT,
             "schema_version": 1,
             "backup_id": backup_id,
@@ -726,7 +726,7 @@ def _backup_path(backup: object) -> Path:
     return _canonical_backup_path(backup)
 
 
-def _load_backup_manifest(backup: object) -> tuple[Path, Dict[str, Any]]:
+def _load_backup_manifest(backup: object) -> tuple[Path, dict[str, Any]]:
     directory = _backup_path(backup)
     manifest_path = directory / "manifest.json"
     _reject_links(manifest_path)
@@ -836,7 +836,7 @@ def _restore_commit(paths: RuntimePaths, stage: Path, backup_id: str) -> None:
         raise
 
 
-def restore_runtime_backup(paths: RuntimePaths, backup: object) -> Dict[str, Any]:
+def restore_runtime_backup(paths: RuntimePaths, backup: object) -> dict[str, Any]:
     """校验并恢复隔离测试态备份，恢复前后不触碰开发或生产根。"""
     _ensure_test_runtime(paths)
     directory, manifest = _load_backup_manifest(backup)
@@ -875,7 +875,7 @@ def upgrade_runtime(
     source_state_version: int | str | None = None,
     target_state_version: int | str | None = None,
     metadata: Mapping[str, Any] | None = None,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """先备份再执行隔离升级；升级异常时自动恢复同一备份。"""
     if not callable(upgrader):
         _backup_fail("UPGRADE_CALLBACK_INVALID", "升级操作必须是可调用对象")
@@ -906,7 +906,7 @@ def upgrade_runtime(
     }
 
 
-def rollback_runtime(paths: RuntimePaths, backup: object) -> Dict[str, Any]:
+def rollback_runtime(paths: RuntimePaths, backup: object) -> dict[str, Any]:
     """把隔离测试态恢复到指定备份，并保留可审计的回滚耗时。"""
     result = restore_runtime_backup(paths, backup)
     result["status"] = "rolled_back"
@@ -959,7 +959,7 @@ class DataDirLock:
             self._handle = None
 
 
-_HELD_DATA_LOCKS: Dict[str, DataDirLock] = {}
+_HELD_DATA_LOCKS: dict[str, DataDirLock] = {}
 
 
 def is_data_dir_lock_held(root: Path) -> bool:
