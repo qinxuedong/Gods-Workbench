@@ -37,7 +37,7 @@ C16 路由只允许稳定 ``provider_id`` 与消息进入网关；Provider 密�
 等）仍属 KNOWN_UNIMPLEMENTED，未获契约授权，本模块**不得**顺带实现。
 """
 
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Optional, Union
 
 from fastapi import APIRouter, Body, Header, Query, status
 from pydantic import BaseModel, ConfigDict, Field
@@ -145,7 +145,7 @@ def list_providers(
     status_code=status.HTTP_200_OK,
 )
 def replace_providers(
-    payload: Union[List[Any], Dict[str, Any], None] = Body(
+    payload: Union[list[Any], dict[str, Any], None] = Body(
         None, description="provider 数组（前端既有调用面）或 {\"providers\": [...]} 包装"
     ),
     expected_version: Optional[int] = Query(None, ge=1, description="provider 集合 CAS 期望版本；保存时必填"),
@@ -274,7 +274,7 @@ def provider_gateway_chat(
     status_code=status.HTTP_200_OK,
 )
 def list_asset_structures(
-    asset_ids: Optional[List[str]] = Query(None, description="按成员过滤（可重复）"),
+    asset_ids: Optional[list[str]] = Query(None, description="按成员过滤（可重复）"),
     authorization: Optional[str] = Header(None),
     x_user_role: str = Header("editor", alias="X-User-Role", description="用户角色权限"),
 ):
