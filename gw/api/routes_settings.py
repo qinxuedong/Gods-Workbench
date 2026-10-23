@@ -62,7 +62,6 @@ from gw.settings.service import (
     default_asset_structure_service,
     default_provider_service,
     default_storage_settings_service,
-    raise_probe_not_integrated,
 )
 
 router = APIRouter(tags=["settings"])
