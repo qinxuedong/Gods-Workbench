@@ -67,7 +67,8 @@ window.WorkbenchAgents = (function () {
     if (!bar) {
       bar = document.createElement('div');
       bar.id = 'agentProjectContextBar';
-      bar.className = 'col-span-12 w-full px-3 py-1.5 bg-[#12151c] border-b border-[#dfc384]/20 flex items-center justify-between text-xs font-mono shrink-0';
+      bar.className = 'col-span-12 w-full px-3 py-1.5 bg-[#12151c] border-b border-[#dfc384]/20 flex items-center justify-between font-mono shrink-0';
+      bar.style.cssText = 'font-size:var(--gw-type-body-sm)';
       const main = document.getElementById('agentsMain');
       if (main && typeof main.insertBefore === 'function') {
         main.insertBefore(bar, main.firstChild);
@@ -84,7 +85,7 @@ window.WorkbenchAgents = (function () {
         <span class="w-1.5 h-1.5 rounded-full bg-[#dfc384] animate-pulse"></span>
         <span class="text-slate-400">当前项目上下文:</span>
         <span class="text-[#eddab3] font-bold">${safeName}</span>
-        <span class="text-slate-500 font-mono text-[11px]">${safeId}</span>
+        <span class="text-slate-500 font-mono" style="font-size:var(--gw-type-label-md)">${safeId}</span>
       </div>
       <div class="flex items-center space-x-2">
         <a href="/static/pages/projects.html?project_id=${encodeURIComponent(state.projectId)}" id="agentBackToProjectLink" class="hw-btn hw-btn-sm text-amber-300 hover:text-amber-200 flex items-center space-x-1" title="返回项目中心">

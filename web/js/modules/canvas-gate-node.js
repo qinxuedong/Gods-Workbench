@@ -158,7 +158,7 @@
         'border-radius:999px',
         'background:rgba(8,10,14,.88)',
         'color:#a5f3fc',
-        'font:700 11px/1 var(--gw-font-mono, monospace)',
+        'font:700 var(--gw-type-label-md)/1 var(--gw-font-mono, monospace)',
         'letter-spacing:.08em',
         'pointer-events:none'
       ].join(';');
