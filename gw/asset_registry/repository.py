@@ -1771,19 +1771,86 @@ def project_gates(
 
 def export_archive(asset_ids: List[str]) -> bytes:
     """把已登记的本地文件真实打包为 zip；无文件可打包时 503，不返回空假包。"""
-    entries: List[Tuple[str, Path]] = []
-    for asset_id in asset_ids:
+    entries: List[Tuple[str, Path, str]] = []
+    unavailable_asset_ids: List[str] = []
+    seen_asset_ids: set[str] = set()
+    used_names: set[str] = set()
+    for raw_asset_id in asset_ids:
+        asset_id = str(raw_asset_id or "").strip()
+        if not asset_id or asset_id in seen_asset_ids:
+            continue
+        seen_asset_ids.add(asset_id)
         path = media_file(asset_id)
         if path is None:
+            unavailable_asset_ids.append(asset_id)
             continue
-        entries.append((path.name, path))
+        name = path.name
+        arcname = name
+        if arcname.casefold() in used_names:
+            path_name = Path(name)
+            safe_id = "".join(
+                char
+                for char in asset_id
+                if char.isascii() and (char.isalnum() or char in "-_")
+            )
+            digest = hashlib.sha256(asset_id.encode("utf-8")).hexdigest()[:10]
+            if not safe_id:
+                safe_id = "asset"
+            if safe_id != asset_id:
+                safe_id += "-" + digest
+            arcname = "%s--%s%s" % (path_name.stem, safe_id, path_name.suffix)
+            if arcname.casefold() in used_names:
+                arcname = "%s--%s-%s%s" % (
+                    path_name.stem,
+                    safe_id,
+                    digest,
+                    path_name.suffix,
+                )
+            suffix = 2
+            while arcname.casefold() in used_names:
+                arcname = "%s--%s-%s-%d%s" % (
+                    path_name.stem,
+                    safe_id,
+                    digest,
+                    suffix,
+                    path_name.suffix,
+                )
+                suffix += 1
+        used_names.add(arcname.casefold())
+        entries.append((arcname, path, asset_id))
+    if unavailable_asset_ids:
+        first_unavailable = unavailable_asset_ids[0]
+        if not entries:
+            raise CleanroomException(
+                503,
+                "NO_LOCAL_FILES",
+                "所选素材没有可打包的本地文件（asset_id=%s）" % first_unavailable,
+                extra={"asset_id": first_unavailable, "data_status": "partial"},
+                expose_extra_fields={"asset_id", "data_status"},
+            )
+        raise CleanroomException(
+            503,
+            "ARCHIVE_ITEM_UNAVAILABLE",
+            "所选素材缺少可读取的本地文件（asset_id=%s）" % first_unavailable,
+            extra={"asset_id": first_unavailable, "data_status": "partial"},
+            expose_extra_fields={"asset_id", "data_status"},
+        )
     if not entries:
         _unavailable("/api/asset-registry/assets/archive", "NO_LOCAL_FILES",
                      "所选素材没有可打包的本地文件")
     buffer = io.BytesIO()
     with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as archive:
-        for name, path in entries:
-            archive.write(path, arcname=name)
+        for arcname, path, asset_id in entries:
+            try:
+                archive.write(path, arcname=arcname)
+            except Exception:
+                raise CleanroomException(
+                    503,
+                    "ARCHIVE_ITEM_UNREADABLE",
+                    "所选素材读取失败（asset_id=%s）" % asset_id,
+                    extra={"asset_id": asset_id, "data_status": "partial"},
+                    expose_extra_fields={"asset_id", "data_status"},
+                ) from None
     return buffer.getvalue()
 
 

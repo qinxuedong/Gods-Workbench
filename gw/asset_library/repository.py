@@ -71,6 +71,7 @@ DEFAULT_CLASSIFY_PROMPT = (
 )
 
 IMAGE_SUFFIXES = frozenset(".png .jpg .jpeg .webp .bmp .gif .tif .tiff".split())
+UNSUPPORTED_IMAGE_PROBE_SUFFIXES = frozenset({".avif", ".heic"})
 
 
 # ---------------------------------------------------------------------------
@@ -372,14 +373,39 @@ def file_info(raw_path: str) -> dict[str, Any]:
         or "application/octet-stream",
         "data_status": "ok",
     }
-    if payload["extension"] in IMAGE_SUFFIXES:
+    if payload["extension"] in UNSUPPORTED_IMAGE_PROBE_SUFFIXES:
+        payload["data_status"] = "partial"
+        payload["data_gaps"] = ["image_probe_unsupported_format"]
+    elif payload["extension"] in IMAGE_SUFFIXES:
         try:
-            from PIL import Image
-
-            with Image.open(path) as image:
-                payload["width"], payload["height"] = image.size
-        except Exception:
-            payload["data_gaps"] = ["image_probe_failed"]
+            from PIL import Image, UnidentifiedImageError
+        except ImportError:
+            payload["data_status"] = "partial"
+            payload["data_gaps"] = ["image_probe_dependency_missing"]
+        else:
+            image_recognized = False
+            try:
+                with Image.open(path) as image:
+                    image_recognized = True
+                    width, height = image.size
+                    image.verify()
+                payload["width"], payload["height"] = width, height
+            except PermissionError:
+                payload["data_status"] = "partial"
+                payload["data_gaps"] = ["image_probe_permission_denied"]
+            except UnidentifiedImageError:
+                payload["data_status"] = "partial"
+                payload["data_gaps"] = ["image_probe_corrupt"]
+            except OSError as exc:
+                payload["data_status"] = "partial"
+                payload["data_gaps"] = [
+                    "image_probe_corrupt"
+                    if image_recognized and exc.errno is None
+                    else "image_probe_unreadable"
+                ]
+            except Exception:
+                payload["data_status"] = "partial"
+                payload["data_gaps"] = ["image_probe_internal_error"]
     return payload
 
 
