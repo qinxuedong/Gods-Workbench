@@ -21,11 +21,11 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping
-from copy import deepcopy
 import json
 import logging
-from typing import Any, Tuple
+from collections.abc import Callable, Mapping
+from copy import deepcopy
+from typing import Any
 
 from fastapi import APIRouter, Body, Header, Query, status
 from pydantic import BaseModel, ConfigDict, Field
@@ -52,7 +52,7 @@ def _blank() -> dict[str, Any]:
     return {"revision": 1, "entities": {}, "sequences": {}}
 
 
-def _strict_read_entities() -> Tuple[dict[str, Any], bool]:
+def _strict_read_entities() -> tuple[dict[str, Any], bool]:
     """严格读取实体母库数据。
 
     返回 (data, is_new)：
