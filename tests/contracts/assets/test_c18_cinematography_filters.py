@@ -4,12 +4,15 @@ from __future__ import annotations
 
 import base64
 import json
+import os
+from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
 
 from gw.asset_registry import repository as asset_repository
 from gw.entities import repository as entity_repository
+from gw.core import storage
 
 AUTH = {"Authorization": "Bearer cleanroom-test", "X-User-Role": "editor"}
 PATH = "/api/asset-registry/assets"
@@ -356,6 +359,212 @@ def test_c18_archived_entities_do_not_match_filters(client: TestClient) -> None:
     assert response.status_code == 200, response.text
     assert body["total"] == 0
     assert body["items"] == []
+
+
+def test_c18_entity_filter_cache_invalidates_when_content_changes_without_revision(
+    client: TestClient,
+) -> None:
+    entity_id = _create_entity("character", "Mira")
+    _register_assets(client, [("mira.png", {"entity_ids": [entity_id]})])
+
+    first, first_response = _query(client, {"entity_type": ["character"]})
+    assert first_response.status_code == 200, first_response.text
+    assert first["total"] == 1
+
+    raw = entity_repository.state().read()
+    raw["entities"][entity_id]["entity_type"] = "location"
+    entity_repository.state().write(raw)
+
+    updated, updated_response = _query(client, {"entity_type": ["character"]})
+
+    assert updated_response.status_code == 200, updated_response.text
+    assert updated["total"] == 0
+    assert updated["items"] == []
+
+
+def test_c18_entity_filter_cache_uses_read_snapshot_during_external_write_race(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    project_a = _create_project(client, "C18 race project A")
+    project_b = _create_project(client, "C18 race project B")
+    entity_id = _create_entity("character", "Mira", project_id=project_a)
+    asset_ids = _register_assets(
+        client, [("race-character.png", {"entity_ids": [entity_id]})]
+    )
+    _assign_asset_project(asset_ids[0], project_a)
+
+    first, first_response = _query(
+        client, {"project_id": [project_a], "entity_type": ["character"]}
+    )
+    assert first_response.status_code == 200, first_response.text
+    assert first["total"] == 1
+
+    entity_state = entity_repository.state()
+    entity_file = storage.data_root() / f"{entity_state.namespace}.json"
+    original_load = storage.load
+    original_read_bytes = Path.read_bytes
+    rewrite_pending = True
+
+    def rewrite_after_snapshot() -> None:
+        nonlocal rewrite_pending
+        if not rewrite_pending:
+            return
+        rewrite_pending = False
+        raw = json.loads(original_read_bytes(entity_file))
+        raw["entities"][entity_id]["project_id"] = project_b
+        entity_file.write_bytes(
+            json.dumps(raw, ensure_ascii=False, indent=1, sort_keys=True).encode("utf-8")
+        )
+
+    def load_with_external_write(namespace: str, default: object = None) -> object:
+        result = original_load(namespace, default)
+        if namespace == entity_state.namespace:
+            rewrite_after_snapshot()
+        return result
+
+    def read_bytes_with_external_write(path: Path) -> bytes:
+        content = original_read_bytes(path)
+        if path == entity_file:
+            rewrite_after_snapshot()
+        return content
+
+    monkeypatch.setattr(storage, "load", load_with_external_write)
+    monkeypatch.setattr(Path, "read_bytes", read_bytes_with_external_write)
+
+    raced, raced_response = _query(
+        client, {"project_id": [project_a], "entity_type": ["character"]}
+    )
+    assert raced_response.status_code == 200, raced_response.text
+    assert raced["total"] == 1
+
+    updated, updated_response = _query(
+        client, {"project_id": [project_a], "entity_type": ["character"]}
+    )
+    assert updated_response.status_code == 200, updated_response.text
+    assert updated["total"] == 0
+    assert updated["items"] == []
+    assert rewrite_pending is False
+
+
+def test_c18_entity_filter_cache_detects_same_size_same_mtime_rewrite(
+    client: TestClient,
+) -> None:
+    project_a = _create_project(client, "C18 metadata project A")
+    project_b = _create_project(client, "C18 metadata project B")
+    entity_id = _create_entity("character", "Mira", project_id=project_a)
+    asset_ids = _register_assets(
+        client, [("same-stat-character.png", {"entity_ids": [entity_id]})]
+    )
+    _assign_asset_project(asset_ids[0], project_a)
+
+    first, first_response = _query(
+        client, {"project_id": [project_a], "entity_type": ["character"]}
+    )
+    assert first_response.status_code == 200, first_response.text
+    assert first["total"] == 1
+
+    entity_state = entity_repository.state()
+    entity_file = storage.data_root() / f"{entity_state.namespace}.json"
+    original_stat = entity_file.stat()
+    raw = entity_state.read()
+    raw["entities"][entity_id]["project_id"] = project_b
+    entity_state.write(raw)
+    os.utime(entity_file, ns=(original_stat.st_atime_ns, original_stat.st_mtime_ns))
+
+    rewritten_stat = entity_file.stat()
+    assert rewritten_stat.st_size == original_stat.st_size
+    assert rewritten_stat.st_mtime_ns == original_stat.st_mtime_ns
+
+    updated, updated_response = _query(
+        client, {"project_id": [project_a], "entity_type": ["character"]}
+    )
+    assert updated_response.status_code == 200, updated_response.text
+    assert updated["total"] == 0
+    assert updated["items"] == []
+
+
+def test_c18_entity_filter_fails_closed_when_stored_revision_is_missing(
+    client: TestClient,
+) -> None:
+    _create_entity("character", "Mira")
+    raw = entity_repository.state().read()
+    raw.pop("revision")
+    entity_repository.state().write(raw)
+
+    _, response = _query(client, {"entity_type": ["character"]})
+
+    assert response.status_code == 503, response.text
+    assert response.json()["detail"]["code"] == "ENTITY_INDEX_UNAVAILABLE"
+
+
+def test_c18_entity_filter_fails_closed_when_entity_data_is_not_a_dict(
+    client: TestClient,
+) -> None:
+    entity_repository.state().write(["invalid", "entity data"])
+
+    _, response = _query(client, {"entity_type": ["character"]})
+
+    assert response.status_code == 503, response.text
+    assert response.json()["detail"]["code"] == "ENTITY_INDEX_UNAVAILABLE"
+
+
+def test_c18_entity_filter_defaults_revision_only_when_file_is_missing(
+    client: TestClient,
+) -> None:
+    entity_state = entity_repository.state()
+    entity_file = storage.data_root() / f"{entity_state.namespace}.json"
+    entity_file.unlink(missing_ok=True)
+
+    body, response = _query(client, {"entity_type": ["character"]})
+
+    assert response.status_code == 200, response.text
+    assert body["total"] == 0
+    assert body["items"] == []
+
+
+def test_c18_entity_filter_logs_and_fails_closed_on_read_oserror(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    _create_entity("character", "Mira")
+    entity_state = entity_repository.state()
+    entity_file = storage.data_root() / f"{entity_state.namespace}.json"
+    original_read_bytes = Path.read_bytes
+
+    def fail_entity_read(path: Path) -> bytes:
+        if path == entity_file:
+            raise PermissionError("fixture read failure")
+        return original_read_bytes(path)
+
+    monkeypatch.setattr(Path, "read_bytes", fail_entity_read)
+
+    _, response = _query(client, {"entity_type": ["character"]})
+
+    assert response.status_code == 503, response.text
+    assert response.json()["detail"]["code"] == "ENTITY_INDEX_UNAVAILABLE"
+    assert "读取实体母库文件失败" in caplog.text
+
+
+@pytest.mark.parametrize(
+    "entity_revision", [True, 0, -1, "oops", 1.5, None, "5", 1.0]
+)
+def test_c18_entity_filter_fails_closed_for_invalid_stored_revision(
+    client: TestClient, entity_revision: object
+) -> None:
+    _, warm_response = _query(client, {"entity_type": ["character"]})
+    assert warm_response.status_code == 200, warm_response.text
+
+    entity_id = _create_entity("character", "Mira")
+    _register_assets(client, [("mira.png", {"entity_ids": [entity_id]})])
+    raw = entity_repository.state().read()
+    raw["revision"] = entity_revision
+    entity_repository.state().write(raw)
+
+    _, response = _query(client, {"entity_type": ["character"]})
+
+    assert response.status_code == 503, response.text
+    assert response.json()["detail"]["code"] == "ENTITY_INDEX_UNAVAILABLE"
 
 
 def test_c18_entity_filter_cursor_paginates_and_detects_entity_changes(
