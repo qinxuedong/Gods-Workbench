@@ -382,6 +382,28 @@ def test_c18_entity_filter_cache_invalidates_when_content_changes_without_revisi
     assert updated["items"] == []
 
 
+def test_c18_entity_filter_uses_shared_strict_entity_snapshot_reader(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _create_entity("character", "Mira")
+    from gw.entities import repository as entities_repository
+
+    original_reader = entities_repository.read_entities_snapshot
+    calls = 0
+
+    def track_read():
+        nonlocal calls
+        calls += 1
+        return original_reader()
+
+    monkeypatch.setattr(entities_repository, "read_entities_snapshot", track_read)
+
+    _, response = _query(client, {"entity_type": ["character"]})
+
+    assert response.status_code == 200, response.text
+    assert calls == 1
+
+
 def test_c18_entity_filter_cache_uses_read_snapshot_during_external_write_race(
     client: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -581,7 +603,7 @@ def test_c18_entity_filter_fails_closed_when_file_is_invalid_json(
 
     assert response.status_code == 503, response.text
     assert response.json()["detail"]["code"] == "ENTITY_INDEX_UNAVAILABLE"
-    assert "文件损坏" in caplog.text or "数据无效" in caplog.text
+    assert "JSON 解析失败" in caplog.text
 
 
 def test_c18_entity_filter_fails_closed_when_file_is_invalid_utf8(
@@ -596,7 +618,7 @@ def test_c18_entity_filter_fails_closed_when_file_is_invalid_utf8(
 
     assert response.status_code == 503, response.text
     assert response.json()["detail"]["code"] == "ENTITY_INDEX_UNAVAILABLE"
-    assert "文件损坏" in caplog.text or "数据无效" in caplog.text
+    assert "编码非 UTF-8" in caplog.text
 
 
 def test_c18_entity_filter_fails_closed_when_file_is_empty_or_whitespace_or_bom(
