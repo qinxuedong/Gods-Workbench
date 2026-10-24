@@ -31,11 +31,12 @@ import hashlib
 import json
 import math
 from collections.abc import Mapping
-from typing import Any, Optional
+from typing import Any
+
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 
 from gw.core import storage
 from gw.core.errors import CleanroomException, VersionConflictException
-from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 
 NS = "episode_pipeline"
 DATA_STATUS_OK = "ok"
@@ -84,7 +85,7 @@ def _bump(raw: dict[str, Any]) -> int:
     return raw["revision"]
 
 
-def _cas(raw: dict[str, Any], expected: Optional[int], label: str) -> None:
+def _cas(raw: dict[str, Any], expected: int | None, label: str) -> None:
     if expected is None:
         return
     if int(expected) != int(raw.get("revision") or 1):
@@ -186,7 +187,7 @@ def _pipeline_view(raw: dict[str, Any], item: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def list_pipelines(project_id: Optional[str]) -> dict[str, Any]:
+def list_pipelines(project_id: str | None) -> dict[str, Any]:
     raw = state().read()
     items = [dict(v) for v in raw["pipelines"].values()]
     if project_id:
@@ -340,8 +341,8 @@ class TimelineManifest(BaseModel):
     version: int = Field(default=1, ge=1)
     tracks: list[TimelineTrack] = Field(..., min_length=1)
     metadata: dict[str, Any] = Field(default_factory=dict)
-    created_at: Optional[str] = None
-    updated_at: Optional[str] = None
+    created_at: str | None = None
+    updated_at: str | None = None
 
     @field_validator("manifest_id", "pipeline_id", "project_id")
     @classmethod
@@ -641,7 +642,7 @@ def _request_fingerprint(payload: dict[str, Any]) -> str:
     return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
 
 
-def _shot_record(raw: dict[str, Any], pipeline_id: str, shot_id: str, *, generation_id: Optional[str] = None) -> dict[str, Any]:
+def _shot_record(raw: dict[str, Any], pipeline_id: str, shot_id: str, *, generation_id: str | None = None) -> dict[str, Any]:
     _ensure_shot_state(raw)
     candidates = [
         item for item in raw["shots"].values()
@@ -678,7 +679,7 @@ def _task_state(task: dict[str, Any]) -> tuple[str, str]:
     return "waiting", "poll_job"
 
 
-def _registered_output(task: dict[str, Any]) -> Optional[dict[str, Any]]:
+def _registered_output(task: dict[str, Any]) -> dict[str, Any] | None:
     outputs = task.get("outputs")
     if not isinstance(outputs, list):
         return None

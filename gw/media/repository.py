@@ -30,11 +30,11 @@
 
 from __future__ import annotations
 
+import hashlib
 import ipaddress
+import os
 import shutil
 import socket
-import hashlib
-import os
 import subprocess
 from pathlib import Path
 from typing import Any
@@ -506,8 +506,8 @@ def _guard_url(url: str) -> None:
     """
     try:
         parsed = urlparse(url)
-    except ValueError:
-        raise CleanroomException(400, "INVALID_URL", "URL 不合法")
+    except ValueError as e:
+        raise CleanroomException(400, "INVALID_URL", "URL 不合法") from e
     if parsed.scheme not in ("http", "https"):
         raise CleanroomException(400, "INVALID_URL", "只接受 http/https URL")
     if parsed.username is not None or parsed.password is not None:
@@ -522,14 +522,14 @@ def _guard_url(url: str) -> None:
         infos = socket.getaddrinfo(
             host, parsed.port or (443 if parsed.scheme == "https" else 80)
         )
-    except socket.gaierror:
-        raise CleanroomException(400, "INVALID_URL", "主机名无法解析")
+    except socket.gaierror as e:
+        raise CleanroomException(400, "INVALID_URL", "主机名无法解析") from e
     for info in infos:
         address = info[4][0]
         try:
             ip = ipaddress.ip_address(address)
-        except ValueError:
-            raise CleanroomException(400, "INVALID_URL", "解析出的地址不合法")
+        except ValueError as e:
+            raise CleanroomException(400, "INVALID_URL", "解析出的地址不合法") from e
         if (
             ip.is_private
             or ip.is_loopback
