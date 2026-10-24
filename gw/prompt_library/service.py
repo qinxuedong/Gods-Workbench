@@ -36,7 +36,6 @@ from __future__ import annotations
 import copy
 import threading
 from datetime import datetime, timezone
-from typing import Optional
 
 from gw.core import storage
 from gw.core.errors import CleanroomException, VersionConflictException
@@ -74,7 +73,7 @@ def _require_name(raw: str, label: str) -> str:
     return name
 
 
-def _require_positive_version(expected_version: Optional[int], label: str) -> None:
+def _require_positive_version(expected_version: int | None, label: str) -> None:
     """写请求必须携带严格的正整数 expected_version。"""
     if type(expected_version) is not int or expected_version < 1:
         raise CleanroomException(
@@ -85,7 +84,7 @@ def _require_positive_version(expected_version: Optional[int], label: str) -> No
 
 
 def _assert_expected_version(
-    expected_version: Optional[int], current_version: int, label: str
+    expected_version: int | None, current_version: int, label: str
 ) -> None:
     """CAS 校验：期望值与当前值不一致即 409，禁止静默覆盖。"""
     _require_positive_version(expected_version, label)
@@ -127,9 +126,9 @@ class PromptLibraryService:
     def __init__(self, seed_structural_fixture: bool = False) -> None:
         self._lock = threading.Lock()
         self._seed_structural_fixture = seed_structural_fixture
-        self._loaded_root: Optional[str] = None
+        self._loaded_root: str | None = None
         self._directory_version = 1
-        self._active_library_id: Optional[str] = None
+        self._active_library_id: str | None = None
         self._libraries: dict[str, PromptLibraryItem] = {}
         self._library_seq = 0
         self._category_seq = 0
@@ -295,7 +294,7 @@ class PromptLibraryService:
             return copy.deepcopy(target), self._build_snapshot_locked()
 
     def delete_library(
-        self, library_id: str, expected_version: Optional[int]
+        self, library_id: str, expected_version: int | None
     ) -> PromptLibrarySnapshot:
         """删除提示词库；非空库（仍有分类）返回 409 LIBRARY_NOT_EMPTY，禁止静默级联。"""
         with coordination.PROMPT_LIBRARY_DOMAIN_LOCK, self._lock:
@@ -395,7 +394,7 @@ class PromptLibraryService:
             return copy.deepcopy(target), self._build_snapshot_locked()
 
     def delete_category(
-        self, category_id: str, expected_version: Optional[int]
+        self, category_id: str, expected_version: int | None
     ) -> PromptLibrarySnapshot:
         """删除分类；目标分类 CAS 冲突失败关闭。"""
         with coordination.PROMPT_LIBRARY_DOMAIN_LOCK, self._lock:
@@ -453,7 +452,7 @@ class PromptLibraryService:
         )
 
     def _assert_unique_library_name_locked(
-        self, name: str, skip_library_id: Optional[str] = None
+        self, name: str, skip_library_id: str | None = None
     ) -> None:
         key = _name_key(name)
         for library_id, item in self._libraries.items():
@@ -470,7 +469,7 @@ class PromptLibraryService:
         self,
         parent: PromptLibraryItem,
         name: str,
-        skip_category_id: Optional[str] = None,
+        skip_category_id: str | None = None,
     ) -> None:
         key = _name_key(name)
         for item in parent.categories:
