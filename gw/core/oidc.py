@@ -121,8 +121,8 @@ def _b64url_decode(segment: str) -> bytes:
     try:
         # validate=True：让 Python 对非法字符直接抛错，而不是静默丢弃后返回空字节串。
         return base64.b64decode(padded.encode("ascii"), altchars=b"-_", validate=True)
-    except (binascii.Error, ValueError, UnicodeEncodeError):
-        raise UnauthorizedException(message="令牌片段不是合法 Base64URL，已拒绝")
+    except (binascii.Error, ValueError, UnicodeEncodeError) as exc:
+        raise UnauthorizedException(message="令牌片段不是合法 Base64URL，已拒绝") from exc
 
 
 def _decode_json_segment(segment: str, description: str) -> Mapping[str, Any]:
@@ -130,8 +130,8 @@ def _decode_json_segment(segment: str, description: str) -> Mapping[str, Any]:
     raw = _b64url_decode(segment)
     try:
         value = json.loads(raw.decode("utf-8"))
-    except (UnicodeDecodeError, json.JSONDecodeError):
-        raise UnauthorizedException(message=f"{description}不是合法 JSON，已拒绝")
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise UnauthorizedException(message=f"{description}不是合法 JSON，已拒绝") from exc
     if not isinstance(value, dict):
         raise UnauthorizedException(message=f"{description}不是 JSON 对象，已拒绝")
     return value
@@ -293,8 +293,8 @@ def _jwk_base64url_to_int(value: Any) -> int:
     padded = value + "=" * (-len(value) % 4)
     try:
         raw = base64.urlsafe_b64decode(padded.encode("ascii"))
-    except (binascii.Error, ValueError, UnicodeEncodeError):
-        raise UnauthorizedException(message="JWKS 参数不是合法 Base64URL，已拒绝")
+    except (binascii.Error, ValueError, UnicodeEncodeError) as exc:
+        raise UnauthorizedException(message="JWKS 参数不是合法 Base64URL，已拒绝") from exc
     return int.from_bytes(raw, "big")
 
 
@@ -325,8 +325,8 @@ def _jwk_to_public_key(jwk: Mapping[str, Any]) -> Any:
     exponent = _jwk_base64url_to_int(jwk.get("e"))
     try:
         return rsa.RSAPublicNumbers(e=exponent, n=modulus).public_key()
-    except ValueError:
-        raise UnauthorizedException(message="JWKS 公钥参数无效，已拒绝")
+    except ValueError as exc:
+        raise UnauthorizedException(message="JWKS 公钥参数无效，已拒绝") from exc
 
 
 def _find_jwk(jwks: Any, kid: str) -> Mapping[str, Any] | None:
@@ -355,8 +355,8 @@ def _resolve_public_key(kid: str, config: OidcConfig) -> Any:
         try:
             # 第一跳：走 fetcher 的常规路径（TTL 内命中缓存，不产生外呼）。
             fetched = config.jwks_fetcher()
-        except Exception:
-            raise UnauthorizedException(message="JWKS 刷新失败，已拒绝令牌")
+        except Exception as exc:
+            raise UnauthorizedException(message="JWKS 刷新失败，已拒绝令牌") from exc
         jwk = _find_jwk(fetched, kid)
         if jwk is None:
             # 仍未命中即疑似密钥轮换：受控强刷一次（绕过 TTL，带最小间隔限流）。
@@ -364,8 +364,8 @@ def _resolve_public_key(kid: str, config: OidcConfig) -> Any:
             if callable(force_refresh):
                 try:
                     refreshed = force_refresh()
-                except Exception:
-                    raise UnauthorizedException(message="JWKS 刷新失败，已拒绝令牌")
+                except Exception as exc:
+                    raise UnauthorizedException(message="JWKS 刷新失败，已拒绝令牌") from exc
                 jwk = _find_jwk(refreshed, kid)
     if jwk is None:
         raise UnauthorizedException(message="令牌 kid 未受信任，已拒绝")
@@ -465,10 +465,10 @@ def _verify_signature(signing_input: bytes, signature: bytes, public_key: Any) -
     """使用 RS256（RSASSA-PKCS1-v1_5 + SHA-256）校验签名。"""
     try:
         public_key.verify(signature, signing_input, padding.PKCS1v15(), hashes.SHA256())
-    except InvalidSignature:
-        raise UnauthorizedException(message="令牌签名校验失败，已拒绝")
-    except ValueError:
-        raise UnauthorizedException(message="令牌签名格式无效，已拒绝")
+    except InvalidSignature as exc:
+        raise UnauthorizedException(message="令牌签名校验失败，已拒绝") from exc
+    except ValueError as exc:
+        raise UnauthorizedException(message="令牌签名格式无效，已拒绝") from exc
 
 
 # ---------------------------------------------------------------------------

@@ -275,8 +275,8 @@ class TeamMessageRepository:
                     connection.close()
             except TeamMessageStorageUnavailable:
                 raise
-            except (OSError, sqlite3.Error, RuntimeError, ValueError):
-                raise self._unavailable()
+            except (OSError, sqlite3.Error, RuntimeError, ValueError) as exc:
+                raise self._unavailable() from exc
             _INITIALIZED_PATHS.add(key)
 
     @contextmanager
@@ -289,18 +289,18 @@ class TeamMessageRepository:
             connection.execute("PRAGMA busy_timeout=5000")
             connection.execute("PRAGMA foreign_keys=ON")
             connection.execute("PRAGMA synchronous=FULL")
-        except (OSError, sqlite3.Error, RuntimeError, ValueError):
-            raise self._unavailable()
+        except (OSError, sqlite3.Error, RuntimeError, ValueError) as exc:
+            raise self._unavailable() from exc
         try:
             yield connection
         except CleanroomException:
             if connection.in_transaction:
                 connection.rollback()
             raise
-        except (OSError, sqlite3.Error, RuntimeError, ValueError):
+        except (OSError, sqlite3.Error, RuntimeError, ValueError) as exc:
             if connection.in_transaction:
                 connection.rollback()
-            raise self._unavailable()
+            raise self._unavailable() from exc
         finally:
             connection.close()
 
@@ -341,8 +341,8 @@ class TeamMessageRepository:
                 state = self._read_state(connection)
             except TeamMessageStorageUnavailable:
                 raise
-            except sqlite3.Error:
-                raise self._unavailable()
+            except sqlite3.Error as exc:
+                raise self._unavailable() from exc
             return state
 
     def save_governance_state(
@@ -394,10 +394,10 @@ class TeamMessageRepository:
                 if connection.in_transaction:
                     connection.rollback()
                 raise
-            except (sqlite3.Error, OSError, RuntimeError, ValueError, KeyError):
+            except (sqlite3.Error, OSError, RuntimeError, ValueError, KeyError) as exc:
                 if connection.in_transaction:
                     connection.rollback()
-                raise self._unavailable()
+                raise self._unavailable() from exc
 
     def reset_for_tests(self) -> None:
         """仅 pytest 显式重置当前测试数据目录，绝不用于生产启动。"""
@@ -486,8 +486,8 @@ class TeamMessageRepository:
             ).decode("utf-8")
             scoped_team, raw_sequence = raw.rsplit(":", 1)
             sequence = int(raw_sequence)
-        except (ValueError, UnicodeError, TypeError, base64.binascii.Error):
-            raise TeamMessageInvalidCursor()
+        except (ValueError, UnicodeError, TypeError, base64.binascii.Error) as exc:
+            raise TeamMessageInvalidCursor() from exc
         if scoped_team != team_id or sequence < 0:
             raise TeamMessageInvalidCursor()
         return sequence
@@ -557,10 +557,10 @@ class TeamMessageRepository:
                 if connection.in_transaction:
                     connection.rollback()
                 raise
-            except sqlite3.Error:
+            except sqlite3.Error as exc:
                 if connection.in_transaction:
                     connection.rollback()
-                raise self._unavailable()
+                raise self._unavailable() from exc
 
     def create_message(
         self,
@@ -656,7 +656,7 @@ class TeamMessageRepository:
                 if connection.in_transaction:
                     connection.rollback()
                 raise
-            except (sqlite3.Error, OSError, RuntimeError, ValueError):
+            except (sqlite3.Error, OSError, RuntimeError, ValueError) as exc:
                 if connection.in_transaction:
                     connection.rollback()
-                raise self._unavailable()
+                raise self._unavailable() from exc
