@@ -32,7 +32,7 @@
 所有写端点都要求正整数 ``expected_version``；删除端点经查询串传入。
 """
 
-from typing import Optional, TypeVar
+from typing import TypeVar
 
 from fastapi import APIRouter, Header, Query, Request, status
 from pydantic import BaseModel, ValidationError
@@ -91,7 +91,7 @@ def _request_body_schema(model: type[BaseModel]) -> dict:
     status_code=status.HTTP_200_OK,
 )
 def get_prompt_libraries(
-    authorization: Optional[str] = Header(None),
+    authorization: str | None = Header(None),
     x_user_role: str = Header("editor", alias="X-User-Role", description="用户角色权限"),
 ):
     """返回当前身份可见的提示词库树；空目录返回空数组，不伪造提示词内容。"""
@@ -108,7 +108,7 @@ def get_prompt_libraries(
 )
 async def create_prompt_library(
     request: Request,
-    authorization: Optional[str] = Header(None),
+    authorization: str | None = Header(None),
     x_user_role: str = Header("editor", alias="X-User-Role", description="用户角色权限"),
 ):
     """创建提示词库；要求写权限，重名或目录版本冲突失败关闭。"""
@@ -128,7 +128,7 @@ async def create_prompt_library(
 async def rename_prompt_library(
     library_id: str,
     request: Request,
-    authorization: Optional[str] = Header(None),
+    authorization: str | None = Header(None),
     x_user_role: str = Header("editor", alias="X-User-Role", description="用户角色权限"),
 ):
     """重命名提示词库；要求写权限，目标不存在、重名或 CAS 冲突失败关闭。"""
@@ -146,8 +146,8 @@ async def rename_prompt_library(
 )
 def delete_prompt_library(
     library_id: str,
-    expected_version: Optional[int] = Query(None, ge=1, description="必填正整数；缺失返回 400，过期返回 409"),
-    authorization: Optional[str] = Header(None),
+    expected_version: int | None = Query(None, ge=1, description="必填正整数；缺失返回 400，过期返回 409"),
+    authorization: str | None = Header(None),
     x_user_role: str = Header("editor", alias="X-User-Role", description="用户角色权限"),
 ):
     """删除提示词库；要求写权限，非空库返回 409 LIBRARY_NOT_EMPTY，禁止静默级联删除。"""
@@ -165,7 +165,7 @@ def delete_prompt_library(
 )
 async def create_prompt_library_category(
     request: Request,
-    authorization: Optional[str] = Header(None),
+    authorization: str | None = Header(None),
     x_user_role: str = Header("editor", alias="X-User-Role", description="用户角色权限"),
 ):
     """在指定提示词库下创建分类；要求写权限，父库不存在或版本冲突失败关闭。"""
@@ -185,7 +185,7 @@ async def create_prompt_library_category(
 async def rename_prompt_library_category(
     category_id: str,
     request: Request,
-    authorization: Optional[str] = Header(None),
+    authorization: str | None = Header(None),
     x_user_role: str = Header("editor", alias="X-User-Role", description="用户角色权限"),
 ):
     """重命名分类；要求写权限，目标不存在、同库重名或 CAS 冲突失败关闭。"""
@@ -203,8 +203,8 @@ async def rename_prompt_library_category(
 )
 def delete_prompt_library_category(
     category_id: str,
-    expected_version: Optional[int] = Query(None, ge=1, description="必填正整数；缺失返回 400，过期返回 409"),
-    authorization: Optional[str] = Header(None),
+    expected_version: int | None = Query(None, ge=1, description="必填正整数；缺失返回 400，过期返回 409"),
+    authorization: str | None = Header(None),
     x_user_role: str = Header("editor", alias="X-User-Role", description="用户角色权限"),
 ):
     """删除分类；要求写权限，目标不存在或 CAS 冲突失败关闭。"""
