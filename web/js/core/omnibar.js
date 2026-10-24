@@ -14,6 +14,15 @@
  * limitations under the License.
  */
 
+/**
+ * Browser event contract:
+ * - URL parse failures emit window `gw:omnibar-error` with
+ *   `{code: 'INVALID_RESULT_URL', href, message}`; `message` is diagnostic
+ *   parser text and may vary by browser.
+ * - The Omnibar handles this event with an inline alert and stays open so the
+ *   user can retry or close it. Successful same-origin navigation emits no
+ *   error event. Exceptions from `location.assign()` are not URL parse errors.
+ */
 (function omnibar(global, document) {
   'use strict';
 
@@ -29,6 +38,7 @@
   let modeButtons = new Map();
   let resultList = null;
   let emptyState = null;
+  let errorState = null;
   let results = [];
   let selectedIndex = -1;
   let mode = 'search';
@@ -113,8 +123,21 @@
   function setResults(nextResults) {
     results = Array.isArray(nextResults) ? [...nextResults] : [];
     selectedIndex = -1;
+    clearError();
     renderResults();
     return results.length;
+  }
+
+  function clearError() {
+    if (!errorState) return;
+    errorState.hidden = true;
+    errorState.textContent = '';
+  }
+
+  function handleOmnibarError(event) {
+    if (event?.detail?.code !== 'INVALID_RESULT_URL' || !errorState) return;
+    errorState.textContent = '无法打开该结果链接，请重新搜索或关闭面板。';
+    errorState.hidden = false;
   }
 
   function activateResult(index = selectedIndex) {
@@ -124,9 +147,9 @@
     global.dispatchEvent?.(new global.CustomEvent('gw:omnibar-result-select', {detail: {result, index}}));
     if (typeof result.activate === 'function') result.activate(result);
     else if (typeof result.href === 'string') {
+      let destination;
       try {
-        const destination = new URL(result.href, global.location.href);
-        if (destination.origin === global.location.origin) global.location.assign(destination.href);
+        destination = new URL(result.href, global.location.href);
       } catch (error) {
         global.dispatchEvent?.(new global.CustomEvent('gw:omnibar-error', {
           detail: {
@@ -135,13 +158,16 @@
             message: String(error?.message || error),
           },
         }));
+        return true;
       }
+      if (destination.origin === global.location.origin) global.location.assign(destination.href);
     }
     close();
     return true;
   }
 
   function emitQuery() {
+    clearError();
     const query = input?.value || '';
     if (mode === 'search' && (query.trim().startsWith('/') || SEARCH_HINT.test(query.trim()))) setMode('agent');
     global.dispatchEvent?.(new global.CustomEvent('gw:omnibar-query', {detail: {query, mode}}));
@@ -235,7 +261,13 @@
     resultList.setAttribute('aria-label', '搜索结果');
     emptyState = makeElement('p', 'gw-omnibar-empty', '输入关键词以搜索可访问内容。');
     emptyState.setAttribute('role', 'status');
-    resultsRegion.append(resultList, emptyState);
+    errorState = makeElement('p', 'gw-omnibar-error');
+    errorState.id = 'gwOmnibarError';
+    errorState.setAttribute('id', errorState.id);
+    errorState.setAttribute('role', 'alert');
+    errorState.setAttribute('aria-atomic', 'true');
+    errorState.hidden = true;
+    resultsRegion.append(resultList, emptyState, errorState);
 
     const footer = makeElement('footer', 'gw-omnibar-footer');
     const hint = makeElement('span', 'gw-omnibar-hint', '↑ ↓ 选择');
@@ -311,6 +343,7 @@
     overlay.hidden = false;
     overlay.setAttribute('aria-hidden', 'false');
     isOpen = true;
+    clearError();
     input.value = '';
     setResults([]);
     setMode('search');
@@ -416,6 +449,7 @@
     }
     if (!initialized) {
       global.addEventListener?.('gw:route-loaded', bindFrames);
+      global.addEventListener?.('gw:omnibar-error', handleOmnibarError);
       initialized = true;
     }
     return true;

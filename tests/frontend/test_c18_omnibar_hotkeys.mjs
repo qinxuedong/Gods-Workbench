@@ -302,6 +302,52 @@ test('无效结果链接会发出可观察的 Omnibar 错误事件', () => {
   assert.equal(errors[0].href, 'http://[');
   assert.equal(typeof errors[0].message, 'string');
   assert.notEqual(errors[0].message, '');
+
+  const errorState = document.getElementById('gwOmnibarError');
+  assert.ok(errorState, 'Omnibar 应创建错误提示节点');
+  assert.equal(errorState.hidden, false, '解析失败后错误态应可见');
+  assert.equal(errorState.getAttribute('role'), 'alert', '错误态应由辅助技术及时播报');
+  assert.match(errorState.textContent, /无法打开/, '错误态应提供面向用户的反馈');
+  assert.equal(omnibar.snapshot().open, true, '解析失败后 Omnibar 应保持打开');
+  assert.equal(document.getElementById('gwOmnibar').hidden, false);
+});
+
+test('正常同源结果链接会跳转且不显示 Omnibar 错误态', () => {
+  const {document, window, omnibar} = harness();
+  let assignedUrl = '';
+  const errors = [];
+  window.location.assign = url => { assignedUrl = url; };
+  window.addEventListener('gw:omnibar-error', event => { errors.push(event.detail); });
+  document.dispatchEvent(keyEvent({key: ' ', code: 'Space', ctrlKey: true}));
+  omnibar.setResults([{title: '项目', href: '/projects?project_id=project-1'}]);
+  document.dispatchEvent(keyEvent({key: 'ArrowDown', code: 'ArrowDown'}));
+
+  const enter = keyEvent({key: 'Enter', code: 'Enter'});
+  document.getElementById('gwOmnibarInput').dispatchEvent(enter);
+
+  assert.equal(assignedUrl, 'http://workbench.local/projects?project_id=project-1');
+  assert.deepEqual(errors, []);
+  assert.equal(document.getElementById('gwOmnibarError').hidden, true);
+  assert.equal(omnibar.snapshot().open, false, '成功跳转后 Omnibar 仍应关闭');
+});
+
+test('同源 URL 导航异常不误报为 URL 解析失败', () => {
+  const {document, window, omnibar} = harness();
+  const errors = [];
+  window.location.assign = () => { throw new Error('navigation failed'); };
+  window.addEventListener('gw:omnibar-error', event => { errors.push(event.detail); });
+  document.dispatchEvent(keyEvent({key: ' ', code: 'Space', ctrlKey: true}));
+  omnibar.setResults([{title: '项目', href: '/projects?project_id=project-1'}]);
+  document.dispatchEvent(keyEvent({key: 'ArrowDown', code: 'ArrowDown'}));
+
+  assert.throws(
+    () => document.getElementById('gwOmnibarInput').dispatchEvent(keyEvent({key: 'Enter', code: 'Enter'})),
+    /navigation failed/,
+  );
+
+  assert.deepEqual(errors, [], 'URL 解析成功时，导航异常不能发 INVALID_RESULT_URL');
+  assert.equal(document.getElementById('gwOmnibarError').hidden, true);
+  assert.equal(omnibar.snapshot().open, true, '导航未完成时 Omnibar 保持打开');
 });
 
 test('同源嵌入页中的 Ctrl+F 也会打开顶层面板', () => {
