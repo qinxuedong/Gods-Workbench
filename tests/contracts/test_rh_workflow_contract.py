@@ -1033,7 +1033,7 @@ def test_compare_local_uses_real_object_info_probe(monkeypatch):
     monkeypatch.setenv("GW_RUNTIME_MODE", "test")
     monkeypatch.setenv("GW_AUTH_MODE", "local")
     monkeypatch.setenv("GW_COMFYUI_URL", "http://comfy.local:8188")
-    import gw.god_workflow.routes as routes_module
+    import gw.god_workflow.routes as routes_module  # noqa: F401  # import side effect required
 
     captured: dict[str, str] = {}
 
@@ -2164,7 +2164,7 @@ def test_r0_local_registration_disk_failure_is_item_error(client, monkeypatch):
 
 
 def test_r0_store_bytes_enforces_size_limit(client, monkeypatch):
-    from gw.god_workflow import registry, routes
+    from gw.god_workflow import registry, routes  # noqa: F401  # import side effect required
 
     monkeypatch.setattr(registry, "MAX_ASSET_BYTES", 3)
     with pytest.raises(CleanroomException) as error:
@@ -2220,7 +2220,7 @@ def test_r0_cloud_output_limits_and_redirects(client, monkeypatch, case, expecte
     import asyncio
     import socket
 
-    from gw.god_workflow import registry, routes
+    from gw.god_workflow import registry, routes  # noqa: F401  # import side effect required
 
     requests = []
 
@@ -2288,7 +2288,7 @@ def test_r0_cloud_redirect_to_allowed_host_is_followed_and_repinned(
     import asyncio
     import socket
 
-    from gw.god_workflow import registry, routes
+    from gw.god_workflow import registry, routes  # noqa: F401  # import side effect required
 
     requests = []
 

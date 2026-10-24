@@ -23,7 +23,6 @@
 from __future__ import annotations
 
 import base64
-import shutil
 import subprocess
 from pathlib import Path
 from typing import Any
@@ -32,8 +31,8 @@ import pytest
 from PIL import Image
 
 from gw.asset_library import repository as library_repo
-from gw.asset_registry import media_probe, repository as asset_repo
-from gw.core import storage
+from gw.asset_registry import media_probe
+from gw.asset_registry import repository as asset_repo
 from gw.core.errors import CleanroomException
 from gw.media import repository as media_repo
 
