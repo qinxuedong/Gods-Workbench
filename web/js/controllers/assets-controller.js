@@ -113,7 +113,7 @@ window.GWUnassignedInbox = (() => {
       status.dataset.unassignedEntryStatus = 'true';
       status.setAttribute('role', 'status');
       status.setAttribute('aria-live', 'polite');
-      status.style.cssText = 'display:flex;align-items:center;justify-content:space-between;gap:8px;padding:4px 8px;color:#fbbf24;font-size:var(--gw-type-body-sm);';
+      status.style.cssText = 'display:flex;align-items:center;justify-content:space-between;gap:8px;padding:4px 8px;color:#fbbf24;font-size:var(--gw-type-body-sm, 12px);';
       button.insertAdjacentElement('afterend', status);
     }
     status.innerHTML = '<span>未归属资产暂时无法读取。</span><button type="button" class="hw-btn btn-size-sm" data-unassigned-retry>重试</button>';
