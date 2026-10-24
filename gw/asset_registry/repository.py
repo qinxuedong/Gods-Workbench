@@ -731,6 +731,20 @@ def _entity_filter_index() -> Tuple[
         content_bytes = b""
     else:
         content_bytes = entity_bytes
+        if not entity_bytes or not entity_bytes.strip():
+            _LOGGER.warning("实体母库文件为空或仅包含空白字符，筛选暂不可用")
+            raise CleanroomException(
+                503,
+                "ENTITY_INDEX_UNAVAILABLE",
+                "实体母库数据无效，筛选暂不可用",
+            )
+        if entity_bytes.startswith(b"\xef\xbb\xbf"):
+            _LOGGER.warning("实体母库文件包含非法 UTF-8 BOM，筛选暂不可用")
+            raise CleanroomException(
+                503,
+                "ENTITY_INDEX_UNAVAILABLE",
+                "实体母库数据无效，筛选暂不可用",
+            )
         try:
             raw = json.loads(entity_bytes.decode("utf-8"))
         except (UnicodeDecodeError, json.JSONDecodeError) as exc:

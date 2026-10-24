@@ -599,6 +599,35 @@ def test_c18_entity_filter_fails_closed_when_file_is_invalid_utf8(
     assert "文件损坏" in caplog.text or "数据无效" in caplog.text
 
 
+def test_c18_entity_filter_fails_closed_when_file_is_empty_or_whitespace_or_bom(
+    client: TestClient, caplog: pytest.LogCaptureFixture
+) -> None:
+    _create_entity("character", "Mira")
+    entity_file = storage.file_for(entity_repository.NS_ENTITIES)
+
+    # 1. 零字节
+    entity_file.write_bytes(b"")
+    caplog.clear()
+    _, response = _query(client, {"entity_type": ["character"]})
+    assert response.status_code == 503
+    assert response.json()["detail"]["code"] == "ENTITY_INDEX_UNAVAILABLE"
+
+    # 2. 纯空白
+    entity_file.write_bytes(b"   \r\n\t  ")
+    caplog.clear()
+    _, response = _query(client, {"entity_type": ["character"]})
+    assert response.status_code == 503
+    assert response.json()["detail"]["code"] == "ENTITY_INDEX_UNAVAILABLE"
+
+    # 3. 带 BOM
+    entity_file.write_bytes(b'\xef\xbb\xbf{"revision": 1, "entities": {}}')
+    caplog.clear()
+    _, response = _query(client, {"entity_type": ["character"]})
+    assert response.status_code == 503
+    assert response.json()["detail"]["code"] == "ENTITY_INDEX_UNAVAILABLE"
+    assert "BOM" in caplog.text
+
+
 @pytest.mark.parametrize("invalid_entities", [None, [], "not_a_dict", 123])
 def test_c18_entity_filter_fails_closed_when_entities_field_is_missing_or_not_dict(
     client: TestClient, invalid_entities: object, caplog: pytest.LogCaptureFixture
