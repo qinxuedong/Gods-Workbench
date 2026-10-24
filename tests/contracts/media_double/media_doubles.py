@@ -10,7 +10,7 @@ from __future__ import annotations
 import base64
 import hashlib
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 import httpx
 from fastapi.testclient import TestClient

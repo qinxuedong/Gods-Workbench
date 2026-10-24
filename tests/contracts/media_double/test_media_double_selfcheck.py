@@ -9,17 +9,14 @@ from pathlib import Path
 
 import httpx
 import pytest
-from fastapi.testclient import TestClient
 from media_doubles import (
     FIXED_PNG,
     FIXED_PNG_SHA256,
-    HEADERS,
     MODES,
     TEST_API_KEY,
     FakeComfy,
     FakeRunningHub,
     NetworkBlocked,
-    count_assets,
     output_transport,
 )
 

@@ -226,7 +226,7 @@ def test_open_in_comfy_remote_host_is_rejected_without_writing(
     media_client, no_network, comfy_host, monkeypatch
 ):
     """C3-AC9-OPEN-03：非本机宿主地址 → 422，不向远端写入。"""
-    from gw.god_workflow import routes
+    from gw.god_workflow import routes  # noqa: F401  # import side effect required
 
     monkeypatch.setenv("GW_COMFYUI_URL", "http://comfy.example.internal:8188")
     workflow = save_document(media_client)
