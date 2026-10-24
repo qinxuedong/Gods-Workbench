@@ -270,7 +270,7 @@ def test_c7_media_loop_browser_cross_tenant_isolation(monkeypatch, tmp_path):
             headers={"Origin": base},
         )
         assert proj_res.status == 201
-        project_a_id = proj_res.json()["project"]["project_id"]
+        proj_res.json()["project"]["project_id"]
 
         wf_res = page.context.request.post(
             f"{base}/api/god_workflow/documents?name=test_wf",
