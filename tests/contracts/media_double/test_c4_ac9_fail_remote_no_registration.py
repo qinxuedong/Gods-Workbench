@@ -22,7 +22,6 @@ from media_doubles import (
     HEADERS,
     TASKS,
     NetworkBlocked,
-    count_assets,
     execute,
     prepare_workflow,
 )

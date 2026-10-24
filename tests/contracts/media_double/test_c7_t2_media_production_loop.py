@@ -10,7 +10,6 @@ from __future__ import annotations
 import hashlib
 from typing import Any
 
-import pytest
 from fastapi.testclient import TestClient
 from media_doubles import (
     APPROVED_HOST,
@@ -18,7 +17,6 @@ from media_doubles import (
     FIXED_PNG_SHA256,
     HEADERS,
     TASKS,
-    count_assets,
     execute,
     prepare_workflow,
 )

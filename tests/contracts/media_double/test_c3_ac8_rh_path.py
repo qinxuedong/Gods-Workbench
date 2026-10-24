@@ -15,7 +15,6 @@ from media_doubles import (
     HEADERS,
     TASKS,
     TEST_API_KEY,
-    count_assets,
     execute,
     prepare_workflow,
 )
