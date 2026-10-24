@@ -209,7 +209,6 @@ def delete_user(
         actor_role=context.role,
         auth_mode=context.mode,
     )
-    return None
 
 
 @router.get("/teams", status_code=status.HTTP_200_OK)
@@ -259,7 +258,6 @@ def delete_team(
         actor_role=context.role,
         auth_mode=context.mode,
     )
-    return None
 
 
 @router.put("/teams/{team_id}/members", status_code=status.HTTP_200_OK)
@@ -302,7 +300,6 @@ def delete_team_member(
         actor_role=context.role,
         auth_mode=context.mode,
     )
-    return None
 
 
 @router.get("/identity-binding", status_code=status.HTTP_200_OK)
