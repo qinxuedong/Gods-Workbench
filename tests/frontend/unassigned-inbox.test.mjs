@@ -7,15 +7,17 @@ import test from 'node:test';
 const source = readFileSync(new URL('../../web/js/controllers/assets-controller.js', import.meta.url), 'utf8');
 const response = (data, status = 200) => ({ok: status < 400, status, json: async () => data});
 
-function fakeElement() {
+function fakeElement(elements = null) {
   return {
     style: {}, dataset: {}, attributes: {}, listeners: {},
     setAttribute(name, value) { this.attributes[name] = value; },
     removeAttribute(name) { delete this.attributes[name]; },
+    remove() { if (elements && this.id) delete elements[this.id]; },
+    insertAdjacentElement(_position, element) { if (elements && element.id) elements[element.id] = element; },
     addEventListener(name, handler) { this.listeners[name] = handler; },
     querySelector(selector) {
       if (selector === '[data-unassigned-retry]' && this.innerHTML?.includes('data-unassigned-retry')) {
-        return this.retryButton ||= fakeElement();
+        return this.retryButton ||= fakeElement(elements);
       }
       return null;
     },
@@ -23,10 +25,13 @@ function fakeElement() {
 }
 
 function harness(plan, elements = {}) {
+  for (const element of Object.values(elements)) {
+    element.insertAdjacentElement = (_position, child) => { elements[child.id] = child; };
+  }
   const requests = [];
   const context = createContext({
     window: {addEventListener() {}, location: {search: ''}},
-    document: {getElementById: id => elements[id] || null, body: {appendChild() {}}, createElement: () => fakeElement()},
+    document: {getElementById: id => elements[id] || null, body: {appendChild() {}}, createElement: () => fakeElement(elements)},
     MutationObserver: class { observe() {} disconnect() {} }, CSS: {escape: v => v}, console,
     fetch: async (url, options = {}) => {
       requests.push({url, ...options});
@@ -34,6 +39,7 @@ function harness(plan, elements = {}) {
       assert.ok(step, `意外请求 ${url}`);
       if (step.url) assert.equal(url, step.url);
       if (step.expected !== undefined) { const body = JSON.parse(options.body); assert.equal(body.expected_asset_version, step.expected); assert.equal('expected_version' in body, false); }
+      if (step.error) throw step.error;
       return response(step.data, step.status || 200);
     },
   });
@@ -46,6 +52,12 @@ const INBOX = '/api/assets/unassigned?limit=500';
 const MOVE = '/api/assets/a1/move-to-project';
 const asset = (id, meta = {}, v = 1) => ({asset_id: id, name: id, metadata: meta, asset_version: v});
 const inbox = (revision, assets) => ({assets, items: assets, total: assets.length, revision});
+const inboxButton = count => {
+  const button = fakeElement();
+  button.style.display = 'none';
+  button.querySelector = selector => selector === '[data-unassigned-count]' ? count : null;
+  return button;
+};
 
 test('C4-AC5b 来源未知只取后端 source_unknown，不按字段缺失推断', () => {
   const {inbox: box} = harness([]);
@@ -103,4 +115,69 @@ test('C4-AC5b 匿名 401 不显示入口，所有者显示数量', async () => {
   assert.equal(button.style.display, '');
   assert.equal(count.textContent, '2');
   assert.equal(anon.plan.length + owner.plan.length, 0);
+});
+
+test('QIN-316 500 和网络错误显示可操作的入口重试状态', async () => {
+  const failures = [
+    {name: '500', step: {url: INBOX, status: 500, data: {detail: {message: '服务暂不可用'}}}},
+    {name: '网络错误', step: {url: INBOX, error: new TypeError('网络不可用')}},
+  ];
+
+  for (const {name, step} of failures) {
+    const button = inboxButton({textContent: ''});
+    const h = harness([step], {btnUnassignedInbox: button});
+
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(button.style.display, '', name);
+    assert.equal(button.dataset.unassignedLoadState, 'error', name);
+    assert.equal(button.attributes['aria-describedby'], 'unassignedInboxEntryStatus', name);
+    const status = h.elements.unassignedInboxEntryStatus;
+    assert.ok(status, `${name} 应显示错误状态`);
+    assert.match(status.innerHTML, /重试/, name);
+    assert.equal(typeof status.querySelector('[data-unassigned-retry]').listeners.click, 'function', name);
+    assert.equal(h.requests.length, 1, name);
+    assert.equal(h.plan.length, 0, name);
+  }
+});
+
+test('QIN-316 重试成功清除错误态并更新入口数量', async () => {
+  const count = {textContent: ''};
+  const button = inboxButton(count);
+  const h = harness([
+    {url: INBOX, status: 500, data: {detail: {message: '服务暂不可用'}}},
+    {url: INBOX, data: inbox(12, [asset('a1'), asset('a2')])},
+  ], {btnUnassignedInbox: button});
+
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(button.dataset.unassignedLoadState, 'error');
+  const retry = h.elements.unassignedInboxEntryStatus.querySelector('[data-unassigned-retry]');
+  await retry.listeners.click({currentTarget: retry});
+
+  assert.equal(retry.disabled, true);
+  assert.equal(button.style.display, '');
+  assert.equal(button.dataset.unassignedLoadState, 'ready');
+  assert.equal(count.textContent, '2');
+  assert.equal('aria-describedby' in button.attributes, false);
+  assert.equal(h.elements.unassignedInboxEntryStatus, undefined);
+  assert.equal(h.requests.length, 2);
+  assert.equal(h.plan.length, 0);
+});
+
+test('QIN-316 401 隐藏入口并清除已有错误态', async () => {
+  const button = inboxButton({textContent: ''});
+  const h = harness([
+    {url: INBOX, error: new TypeError('网络不可用')},
+    {url: INBOX, status: 401, data: {detail: {code: 'UNAUTHENTICATED', message: '请登录'}}},
+  ], {btnUnassignedInbox: button});
+
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(button.dataset.unassignedLoadState, 'error');
+  assert.ok(h.elements.unassignedInboxEntryStatus);
+  assert.equal(await h.inbox.refreshEntry(), 'hidden');
+
+  assert.equal(button.style.display, 'none');
+  assert.equal(button.dataset.unassignedLoadState, undefined);
+  assert.equal('aria-describedby' in button.attributes, false);
+  assert.equal(h.elements.unassignedInboxEntryStatus, undefined);
+  assert.equal(h.plan.length, 0);
 });
