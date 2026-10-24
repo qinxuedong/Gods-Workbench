@@ -56,7 +56,7 @@ async def _json(request: Request) -> dict[str, Any]:
 
 
 def _query_dict(request: Request) -> dict[str, Any]:
-    return {key: request.query_params.get(key) for key in request.query_params.keys()}
+    return {key: request.query_params.get(key) for key in request.query_params}
 
 
 # ---------------------------------------------------------------------------
@@ -299,8 +299,7 @@ def download_output(
         content=path.read_bytes(),
         media_type=repo._mime(path),
         headers={
-            "Content-Disposition": "attachment; filename=\"%s\"; filename*=UTF-8''%s"
-            % (ascii_name, quote(safe, safe=""))
+            "Content-Disposition": f"attachment; filename=\"{ascii_name}\"; filename*=UTF-8''{quote(safe, safe='')}"
         },
     )
 
