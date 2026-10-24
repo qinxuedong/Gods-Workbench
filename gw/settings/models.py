@@ -28,10 +28,17 @@
 
 from __future__ import annotations
 
-from typing import Annotated, Any, Literal, Optional
+from typing import Annotated, Any, Literal
 from urllib.parse import urlsplit
 
-from pydantic import BaseModel, ConfigDict, Field, StringConstraints, field_validator, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    StringConstraints,
+    field_validator,
+    model_validator,
+)
 
 #: 数据可用性口径；无真实来源时必须如实标记，不得谎报 ok。
 DATA_STATUS_OK = "ok"
@@ -69,11 +76,11 @@ class StorageSettingsPatchRequest(BaseModel):
 
     model_config = ConfigDict(extra="ignore")
 
-    dirs: Optional[dict[str, Any]] = None
-    extra_local_entries: Optional[list[dict[str, Any]]] = None
-    local_library_names: Optional[dict[str, str]] = None
-    local_library_order: Optional[list[str]] = None
-    expected_version: Optional[int] = Field(None, ge=1, description="保存目录设置必须携带的 CAS 期望版本")
+    dirs: dict[str, Any] | None = None
+    extra_local_entries: list[dict[str, Any]] | None = None
+    local_library_names: dict[str, str] | None = None
+    local_library_order: list[str] | None = None
+    expected_version: int | None = Field(None, ge=1, description="保存目录设置必须携带的 CAS 期望版本")
 
 
 class ProviderSnapshot(BaseModel):
@@ -112,8 +119,8 @@ class ProviderEntryRequest(BaseModel):
     """平台元数据与显式凭据更新意图；响应不使用该输入模型。"""
 
     model_config = ConfigDict(extra="forbid", strict=True)
-    id: Optional[ProviderId] = None
-    provider_id: Optional[ProviderId] = None
+    id: ProviderId | None = None
+    provider_id: ProviderId | None = None
     name: Label = ""
     base_url: str = Field("", max_length=2048)
     protocol: Protocol = "openai"
@@ -126,17 +133,17 @@ class ProviderEntryRequest(BaseModel):
     model_protocols: dict[ModelId, Literal["openai", "gemini"]] = Field(default_factory=dict)
     image_request_mode: Literal["openai", "openai-json", "openai-video-proxy", "openai-responses", "openai-async-image", "tudou-async", "newapi-sync-image"] = "openai"
     image_edit_route: Literal["general", "auto", "chat"] = "general"
-    video_protocol: Optional[Literal["newapi_video"]] = None
+    video_protocol: Literal["newapi_video"] | None = None
     image_generation_endpoint: str = Field("", max_length=256, pattern=r"^(/[^?#:\s\x00-\x1f]{0,255})?$")
     image_edit_endpoint: str = Field("", max_length=256, pattern=r"^(/[^?#:\s\x00-\x1f]{0,255})?$")
     ms_loras: list[ProviderLora] = Field(default_factory=list, max_length=256)
     ms_defaults_version: int = Field(0, ge=0)
     volcengine_project_name: Label = ""
     volcengine_region: Label = ""
-    api_key: Optional[SecretInput] = Field(None, repr=False)
-    wallet_api_key: Optional[SecretInput] = Field(None, repr=False)
-    volcengine_access_key_id: Optional[SecretInput] = Field(None, repr=False)
-    volcengine_secret_access_key: Optional[SecretInput] = Field(None, repr=False)
+    api_key: SecretInput | None = Field(None, repr=False)
+    wallet_api_key: SecretInput | None = Field(None, repr=False)
+    volcengine_access_key_id: SecretInput | None = Field(None, repr=False)
+    volcengine_secret_access_key: SecretInput | None = Field(None, repr=False)
     clear_key: bool = False
     clear_wallet_key: bool = False
     clear_volcengine_access_key_id: bool = False
@@ -239,8 +246,8 @@ class AssetStructureCreateRequest(BaseModel):
 
     kind: str = Field(..., min_length=1, description="version 或 group")
     asset_ids: list[str] = Field(..., description="成员素材标识；至少 2 个且不重复")
-    current_asset_id: Optional[str] = Field(None, description="当前代表素材；必须是成员之一")
-    expected_version: Optional[int] = Field(None, ge=1, description="创建结构必须携带的集合 CAS 期望版本")
+    current_asset_id: str | None = Field(None, description="当前代表素材；必须是成员之一")
+    expected_version: int | None = Field(None, ge=1, description="创建结构必须携带的集合 CAS 期望版本")
 
 
 class AssetStructureUpdateRequest(BaseModel):
@@ -248,9 +255,9 @@ class AssetStructureUpdateRequest(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    asset_ids: Optional[list[str]] = None
-    current_asset_id: Optional[str] = None
-    expected_version: Optional[int] = Field(None, ge=1, description="更新结构必须携带的结构 CAS 期望版本")
+    asset_ids: list[str] | None = None
+    current_asset_id: str | None = None
+    expected_version: int | None = Field(None, ge=1, description="更新结构必须携带的结构 CAS 期望版本")
 
 
 class AssetStructureCurrentRequest(BaseModel):
@@ -259,7 +266,7 @@ class AssetStructureCurrentRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     current_asset_id: str = Field(..., min_length=1, description="新的当前代表素材；必须是成员之一")
-    expected_version: Optional[int] = Field(None, ge=1, description="切换当前素材必须携带的结构 CAS 期望版本")
+    expected_version: int | None = Field(None, ge=1, description="切换当前素材必须携带的结构 CAS 期望版本")
 
 
 class AssetStructureResponse(BaseModel):
