@@ -221,7 +221,7 @@ def require_authenticated(
                 auth_mode=AUTH_MODE_OIDC,
             )
             raise
-        except Exception:
+        except Exception as exc:
             # 校验器任何非预期异常都转为 401，避免泄漏内部细节。
             audit_log.record_auth_event(
                 audit_log.EVENT_TOKEN_REJECTED,
@@ -229,7 +229,7 @@ def require_authenticated(
                 reason="token_verification_error",
                 auth_mode=AUTH_MODE_OIDC,
             )
-            raise UnauthorizedException(message="令牌校验失败，已拒绝请求")
+            raise UnauthorizedException(message="令牌校验失败，已拒绝请求") from exc
         role = identity.role
         if role not in KNOWN_ROLES:
             audit_log.record_auth_event(

@@ -292,7 +292,7 @@ def auth_login(request: Request):
         authorization_endpoint = resolve_endpoint(
             runtime.oidc.issuer, "authorization_endpoint"
         )
-    except Exception:
+    except Exception as exc:
         audit_log.record_auth_event(
             audit_log.EVENT_LOGIN_DENIED,
             outcome=audit_log.OUTCOME_DENIED,
@@ -301,7 +301,7 @@ def auth_login(request: Request):
         )
         raise OidcNotConfiguredException(
             "IdP authorization_endpoint 不可用，已拒绝登录"
-        )
+        ) from exc
 
     state = generate_state()
     nonce = generate_nonce()
@@ -323,7 +323,7 @@ def auth_login(request: Request):
             reason="authorization_url_invalid",
             auth_mode=runtime.mode,
         )
-        raise OidcNotConfiguredException(str(exc.message))
+        raise OidcNotConfiguredException(str(exc.message)) from exc
 
     session_store.create_flow_state(
         state=state,
