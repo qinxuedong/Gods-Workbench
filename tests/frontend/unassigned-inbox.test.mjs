@@ -7,11 +7,26 @@ import test from 'node:test';
 const source = readFileSync(new URL('../../web/js/controllers/assets-controller.js', import.meta.url), 'utf8');
 const response = (data, status = 200) => ({ok: status < 400, status, json: async () => data});
 
+function fakeElement() {
+  return {
+    style: {}, dataset: {}, attributes: {}, listeners: {},
+    setAttribute(name, value) { this.attributes[name] = value; },
+    removeAttribute(name) { delete this.attributes[name]; },
+    addEventListener(name, handler) { this.listeners[name] = handler; },
+    querySelector(selector) {
+      if (selector === '[data-unassigned-retry]' && this.innerHTML?.includes('data-unassigned-retry')) {
+        return this.retryButton ||= fakeElement();
+      }
+      return null;
+    },
+  };
+}
+
 function harness(plan, elements = {}) {
   const requests = [];
   const context = createContext({
     window: {addEventListener() {}, location: {search: ''}},
-    document: {getElementById: id => elements[id] || null, body: {appendChild() {}}, createElement: () => ({})},
+    document: {getElementById: id => elements[id] || null, body: {appendChild() {}}, createElement: () => fakeElement()},
     MutationObserver: class { observe() {} disconnect() {} }, CSS: {escape: v => v}, console,
     fetch: async (url, options = {}) => {
       requests.push({url, ...options});
@@ -25,7 +40,7 @@ function harness(plan, elements = {}) {
   context.window.window = context.window;
   runInContext(source, context);
   const inbox = context.window.GWUnassignedInbox;
-  return {inbox, requests, plan};
+  return {inbox, requests, plan, elements};
 }
 const INBOX = '/api/assets/unassigned?limit=500';
 const MOVE = '/api/assets/a1/move-to-project';
@@ -76,7 +91,9 @@ test('C4-AC5b 已被归属（409 ASSET_ALREADY_ASSIGNED）不重试，刷新列�
 
 test('C4-AC5b 匿名 401 不显示入口，所有者显示数量', async () => {
   const count = {textContent: ''};
-  const button = {style: {display: 'none'}, querySelector: () => count};
+  const button = fakeElement();
+  button.style.display = 'none';
+  button.querySelector = () => count;
   const anon = harness([{url: INBOX, status: 401, data: {detail: {code: 'UNAUTHENTICATED', message: 'x'}}}], {btnUnassignedInbox: button});
   // 构造时 rebind 已触发一次 refreshEntry；等待其完成。
   await new Promise(r => setImmediate(r));
