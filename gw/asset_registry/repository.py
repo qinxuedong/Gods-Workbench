@@ -756,74 +756,10 @@ def _entity_filter_index() -> Tuple[
 
     from gw.entities import repository as entities_repository
 
-    entity_state = entities_repository.state()
-    entity_data_file = storage.file_for(entity_state.namespace)
-    try:
-        entity_bytes: Optional[bytes] = entity_data_file.read_bytes()
-    except FileNotFoundError:
-        entity_bytes = None
-    except OSError as exc:
-        _LOGGER.warning("读取实体母库文件失败，筛选暂不可用：%s", exc)
-        raise CleanroomException(
-            503,
-            "ENTITY_INDEX_UNAVAILABLE",
-            "实体母库读取失败，筛选暂不可用",
-        ) from None
-
-    if entity_bytes is None:
-        raw: Any = {"revision": 1, "entities": {}}
-        content_bytes = b""
-    else:
-        content_bytes = entity_bytes
-        if not entity_bytes or not entity_bytes.strip():
-            _LOGGER.warning("实体母库文件为空或仅包含空白字符，筛选暂不可用")
-            raise CleanroomException(
-                503,
-                "ENTITY_INDEX_UNAVAILABLE",
-                "实体母库数据无效，筛选暂不可用",
-            )
-        if entity_bytes.startswith(b"\xef\xbb\xbf"):
-            _LOGGER.warning("实体母库文件包含非法 UTF-8 BOM，筛选暂不可用")
-            raise CleanroomException(
-                503,
-                "ENTITY_INDEX_UNAVAILABLE",
-                "实体母库数据无效，筛选暂不可用",
-            )
-        try:
-            raw = json.loads(entity_bytes.decode("utf-8"))
-        except (UnicodeDecodeError, json.JSONDecodeError) as exc:
-            _LOGGER.warning("实体母库文件损坏，筛选暂不可用：%s", exc)
-            raise CleanroomException(
-                503,
-                "ENTITY_INDEX_UNAVAILABLE",
-                "实体母库数据无效，筛选暂不可用",
-            ) from None
-    if not isinstance(raw, dict):
-        _LOGGER.warning("实体母库数据损坏（顶层非字典），筛选暂不可用")
-        raise CleanroomException(
-            503,
-            "ENTITY_INDEX_UNAVAILABLE",
-            "实体母库数据无效，筛选暂不可用",
-        )
-
-    revision_value = raw.get("revision")
-    if type(revision_value) is not int or revision_value < 1:
-        _LOGGER.warning("实体母库 revision 非法（当前值为 %r），筛选暂不可用", revision_value)
-        raise CleanroomException(
-            503,
-            "ENTITY_INDEX_UNAVAILABLE",
-            "实体母库版本无效，筛选暂不可用",
-        )
-    revision = revision_value
-
-    records = raw.get("entities")
-    if not isinstance(records, dict):
-        _LOGGER.warning("实体母库缺少有效 entities 字典字段，筛选暂不可用")
-        raise CleanroomException(
-            503,
-            "ENTITY_INDEX_UNAVAILABLE",
-            "实体母库数据无效，筛选暂不可用",
-        )
+    raw, _, entity_bytes = entities_repository.read_entities_snapshot()
+    content_bytes = entity_bytes if entity_bytes is not None else b""
+    revision = raw["revision"]
+    records = raw["entities"]
 
     cache_key = (
         str(storage.data_root()),

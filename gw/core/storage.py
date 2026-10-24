@@ -402,7 +402,8 @@ def iter_output_paths(namespace: Optional[str] = None) -> Iterator[tuple[str, Pa
             continue
 
 
-def _namespace_lock(namespace: str) -> threading.RLock:
+def namespace_lock(namespace: str) -> threading.RLock:
+    """返回指定存储命名空间的进程内重入锁。"""
     with _LOCK:
         lock = _NAMESPACE_LOCKS.get(namespace)
         if lock is None:
@@ -425,7 +426,7 @@ _file_for = file_for
 def load(namespace: str, default: Any = None) -> Any:
     """读取命名空间快照；文件不存在或损坏时返回默认值，不抛出。"""
     path = _file_for(namespace)
-    with _namespace_lock(namespace):
+    with namespace_lock(namespace):
         if not path.exists():
             return default
         try:
@@ -438,7 +439,7 @@ def load(namespace: str, default: Any = None) -> Any:
 def save(namespace: str, payload: Any) -> None:
     """原子写入命名空间快照：先写临时文件再替换，避免半截文件。"""
     path = _file_for(namespace)
-    with _namespace_lock(namespace):
+    with namespace_lock(namespace):
         path.parent.mkdir(parents=True, exist_ok=True)
         tmp = path.with_name(path.name + ".tmp")
         with open(tmp, "w", encoding="utf-8", newline="\n") as handle:
@@ -459,11 +460,6 @@ class JsonState:
     def namespace(self) -> str:
         return self._namespace
 
-    @property
-    def file_path(self) -> Path:
-        """返回当前命名空间落盘的绝对文件路径。"""
-        return file_for(self._namespace)
-
     def read(self) -> Any:
         value = load(self._namespace, None)
         if value is None:
@@ -475,7 +471,7 @@ class JsonState:
 
     def mutate(self, mutator: Callable[[Any], Any]) -> Any:
         """在命名空间锁内完成读-改-写，返回 mutator 结果。"""
-        with _namespace_lock(self._namespace):
+        with namespace_lock(self._namespace):
             state = self.read()
             result = mutator(state)
             self.write(state)
