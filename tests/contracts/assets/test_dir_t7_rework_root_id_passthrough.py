@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """QIN-244 / PR #149 返工：相对路径 root_id 透传与位置身份回归契约。
 
 覆盖独立审核指出的 11 个生产调用点不再把单根部署的相对路径请求变成
@@ -20,7 +19,8 @@ from PIL import Image
 
 from gw.api.app import create_app
 from gw.asset_library import repository as local_repo
-from gw.asset_registry import lifecycle, repository as registry_repo
+from gw.asset_registry import lifecycle
+from gw.asset_registry import repository as registry_repo
 from gw.core import storage
 from gw.core.errors import CleanroomException
 

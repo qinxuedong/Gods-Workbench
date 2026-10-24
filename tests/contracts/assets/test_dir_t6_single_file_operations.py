@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """DIR-T6 单文件操作、god-recycler、派生物恢复与操作日志契约。"""
 
 from __future__ import annotations
@@ -12,7 +11,6 @@ from fastapi.testclient import TestClient
 
 from gw.api.app import create_app
 from gw.core import storage
-
 
 BASE = "/api/asset-registry"
 AUTH = {"Authorization": "Bearer cleanroom-test", "X-User-Role": "editor"}
