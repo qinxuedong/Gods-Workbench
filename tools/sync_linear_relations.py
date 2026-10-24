@@ -10,6 +10,7 @@ Linear 工单底层 Blocking 物理阻断关系同步与核验门禁工具。
 """
 
 import argparse
+import contextlib
 import json
 import os
 import sys
@@ -106,10 +107,8 @@ def fetch_all_issues(identifiers: set[str]) -> dict[str, dict]:
     numbers = []
     for ident in identifiers:
         if ident.startswith("QIN-"):
-            try:
+            with contextlib.suppress(ValueError):
                 numbers.append(int(ident.replace("QIN-", "")))
-            except ValueError:
-                pass
 
     query = """
     query GetIssues($numbers: [Float!]!) {
@@ -296,9 +295,9 @@ def verify_relations() -> bool:
         for m in missing:
             print(f"  - {m}", file=sys.stderr)
         return False
-    else:
-        print("[PASS] 全量预期阻断关系 100% 具备底层物理绑定，无虚假关联！")
-        return True
+
+    print("[PASS] 全量预期阻断关系 100% 具备底层物理绑定，无虚假关联！")
+    return True
 
 
 def check_merge(target_ident: str) -> bool:
@@ -343,11 +342,11 @@ def check_merge(target_ident: str) -> bool:
             file=sys.stderr,
         )
         return False
-    else:
-        print(
-            f"\n[PERMIT] 验证通过！工单 {target_ident} 的所有前置阻断工单均已达成 Done，准予合入 master！"
-        )
-        return True
+
+    print(
+        f"\n[PERMIT] 验证通过！工单 {target_ident} 的所有前置阻断工单均已达成 Done，准予合入 master！"
+    )
+    return True
 
 
 def main():
@@ -374,17 +373,14 @@ def main():
         parser.print_help()
         sys.exit(1)
 
-    if args.sync:
-        if not sync_relations():
-            sys.exit(1)
+    if args.sync and not sync_relations():
+        sys.exit(1)
 
-    if args.verify:
-        if not verify_relations():
-            sys.exit(1)
+    if args.verify and not verify_relations():
+        sys.exit(1)
 
-    if args.check_merge:
-        if not check_merge(args.check_merge):
-            sys.exit(1)
+    if args.check_merge and not check_merge(args.check_merge):
+        sys.exit(1)
 
     sys.exit(0)
 
