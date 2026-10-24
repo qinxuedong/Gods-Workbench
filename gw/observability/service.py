@@ -523,7 +523,7 @@ class ObservabilityService:
         ]
 
         selected: list[ObservabilityEvent] = []
-        for event, record in zip(projected, records):
+        for event, record in zip(projected, records, strict=False):
             if filters.event_id and event.event_id != filters.event_id:
                 continue
             if filters.status and event.status != filters.status.strip().lower():
