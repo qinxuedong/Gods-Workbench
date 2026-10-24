@@ -890,10 +890,10 @@ class VideoTaskService:
                 return
             try:
                 process.wait(timeout=600)
-            except subprocess.TimeoutExpired:
+            except subprocess.TimeoutExpired as e:
                 process.kill()
                 process.wait(timeout=5)
-                raise _err("VIDEO_FFMPEG_TIMEOUT", "本地视频渲染超时", 504)
+                raise _err("VIDEO_FFMPEG_TIMEOUT", "本地视频渲染超时", 504) from e
             current = self.store.get_by_id(row["job_id"])
             if current and current["status"] == "canceled":
                 return
