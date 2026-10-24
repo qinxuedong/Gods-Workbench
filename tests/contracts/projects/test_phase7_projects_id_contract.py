@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Phase 7 P7-A3 项目中心实体 ID 归一化回归守卫测试。
 
 背景（真实缺陷，已由真实浏览器实测复现）：
@@ -43,7 +42,7 @@ def assert_normalizes_project_id(source: str) -> None:
     """
     anchor = source.find(_INGEST_ANCHOR)
     assert anchor != -1, (
-        "未定位到项目列表摄取锚点 `%s`；若摄取位置被重构，请同步更新本守卫测试。" % _INGEST_ANCHOR
+        f"未定位到项目列表摄取锚点 `{_INGEST_ANCHOR}`；若摄取位置被重构，请同步更新本守卫测试。"
     )
     region = source[anchor : anchor + _INGEST_WINDOW]
 
