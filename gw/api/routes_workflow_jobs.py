@@ -16,7 +16,7 @@ def _http_error(error: CleanroomException) -> Exception:
     """创建 FastAPI 错误对象；延迟导入保持本模块可被纯契约测试使用。"""
     from importlib import import_module
 
-    http_exception = getattr(import_module("fastapi"), "HTTPException")
+    http_exception = import_module("fastapi").HTTPException
     return http_exception(
         status_code=error.status_code, detail=error.to_envelope().model_dump()["detail"]
     )
@@ -31,7 +31,7 @@ def create_video_jobs_router(
     """
     from importlib import import_module
 
-    router_class = getattr(import_module("fastapi"), "APIRouter")
+    router_class = import_module("fastapi").APIRouter
     router = router_class(prefix=prefix, tags=["workflow-video-jobs"])
 
     async def submit_video_job(body: dict[str, Any]) -> dict[str, Any]:
@@ -40,7 +40,7 @@ def create_video_jobs_router(
         except CleanroomException as error:
             raise _http_error(error) from error
         except (TypeError, ValueError) as error:
-            http_exception = getattr(import_module("fastapi"), "HTTPException")
+            http_exception = import_module("fastapi").HTTPException
             raise http_exception(
                 status_code=400,
                 detail={"code": "INVALID_REQUEST", "message": str(error)},
@@ -58,7 +58,7 @@ def create_video_jobs_router(
         except CleanroomException as error:
             raise _http_error(error) from error
 
-    add_route = getattr(router, "add_api_route")
+    add_route = router.add_api_route
     add_route("", submit_video_job, methods=["POST"], status_code=202)
     add_route("/{job_id}", poll_video_job, methods=["GET"])
     add_route("/{job_id}/cancel", cancel_video_job, methods=["POST"])

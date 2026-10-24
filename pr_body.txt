@@ -1,0 +1,17 @@
+QIN-358 | Issue: #358 | Linear: QIN-358
+
+## 改动文件
+- gw/agent_runtime/repository.py
+- gw/api/routes_workflow_jobs.py
+
+## 测试
+- `node --test $(cat tests/frontend/node-files.txt | tr '\n' ' ')` → 316 passed
+- `python -m pytest -v --no-header -p no:cacheprovider` → all passed
+
+## 待本地实机验收
+- （无）
+
+## 范围外发现
+- （无）
+
+执行人: jules
