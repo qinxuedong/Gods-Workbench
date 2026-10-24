@@ -425,7 +425,7 @@ class AssetLibraryService:
                 raise CleanroomException(404, "ASSET_NOT_FOUND", "素材不存在",
                                          extra={"missing_asset_ids": missing},
                                          expose_extra_fields={"missing_asset_ids"})
-            for asset_id, library, _, _ in locations:
+            for _asset_id, library, _, _ in locations:
                 version = (expected_versions or {}).get(str(library["library_id"]), expected_version)
                 self._check_version(version, library["version"])
             removed = []

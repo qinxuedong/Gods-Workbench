@@ -291,7 +291,7 @@ def load_series(
         flush_http_samples()
     raw = _samples_state().read()
     points: list[dict[str, Any]] = []
-    for key, item in sorted((raw.get("samples") or {}).items()):
+    for _key, item in sorted((raw.get("samples") or {}).items()):
         try:
             ts_ms = int(item.get("ts_ms"))
         except Exception:

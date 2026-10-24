@@ -1327,7 +1327,7 @@ def rename_local_folder(name: str, new_name: str) -> dict[str, Any]:
 def storage_files() -> dict[str, Any]:
     """只列服务端产物，不枚举根目录JSON/数据库等内部状态。"""
     items = []
-    for relative, path in storage.iter_output_paths():
+    for relative, _path in storage.iter_output_paths():
         try:
             info = storage.resolve_output_path(relative).stat()
         except (CleanroomException, OSError):
