@@ -8,8 +8,8 @@
 from __future__ import annotations
 
 import json
-import re
 import os
+import re
 import shutil
 import wave
 from pathlib import Path
@@ -18,8 +18,6 @@ import pytest
 from fastapi.testclient import TestClient
 
 from gw.api.app import create_app
-
-
 
 ROOT = Path(__file__).resolve().parents[3]
 CATALOG = ROOT / "docs/contracts/MEDIA-INTERFACE-CATALOG.yaml"
@@ -100,7 +98,7 @@ def test_b5_local_file_read_write_and_thumbnail(tmp_path, monkeypatch):
         data = r.json()
         assert data["data_status"] == "ok" and data["generated"] == 1
         assert str(roots) not in json.dumps(data, ensure_ascii=False)
-        out = Path(r.json()["output"])
+        Path(r.json()["output"])
         # output 是相对展示串；真实文件落在 GW_DATA_DIR 内。
         real = Path(os.environ["GW_DATA_DIR"]) / "media_output" / "thumbnails"
         files = list(real.glob("*.png"))
@@ -174,7 +172,7 @@ def test_b5_missing_dependency_fails_closed(tmp_path, monkeypatch):
     from PIL import Image
     Image.new("RGB", (40, 40)).save(source)
     monkeypatch.setenv("GW_ALLOWED_ROOTS", str(roots))
-    import gw.media.repository as repo
+    import gw.media.repository as repo  # noqa: F401  # import side effect required
     monkeypatch.setattr(shutil, "which", lambda name: None)
     with TestClient(create_app()) as c:
         r = c.get("/api/media-preview", headers=AUTH,
