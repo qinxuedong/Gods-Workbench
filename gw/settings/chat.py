@@ -488,7 +488,7 @@ def complete_messages(
             "Accept": "application/json",
             "Content-Type": "application/json",
             "User-Agent": "Gods-Workbench/cleanroom",
-            "Authorization": "Bearer %s" % config["api_key"],
+            "Authorization": f"Bearer {config['api_key']}",
         }
         started_at = time.monotonic()
         try:
@@ -521,8 +521,7 @@ def complete_messages(
             _fail(
                 503,
                 "CHAT_PROVIDER_FAILED",
-                "上游返回错误状态 %d，未返回任何回复；不会自动重试付费请求"
-                % response.status_code,
+                f"上游返回错误状态 {response.status_code}，未返回任何回复；不会自动重试付费请求",
                 endpoint,
                 reason="upstream_error",
                 provider_id=config["provider_id"],

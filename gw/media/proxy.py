@@ -114,7 +114,7 @@ def _identity(
     stat = path.stat()
     logical = "|".join(
         (
-            asset_id or "%s:%s" % storage.location_identity(path),
+            asset_id or "{}:{}".format(*storage.location_identity(path)),
             version_id or "",
             profile,
             str(width),
@@ -210,7 +210,7 @@ def _ffmpeg_proxy(path: Path, width: int, target: Path) -> dict[str, Any]:
         "-i",
         str(path),
         "-vf",
-        "scale=%d:-2" % width,
+        f"scale={width}:-2",
         "-c:v",
         "libx264",
         "-preset",
