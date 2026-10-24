@@ -21,11 +21,11 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping
-from copy import deepcopy
 import json
 import logging
-from typing import Any, Tuple
+from collections.abc import Callable, Mapping
+from copy import deepcopy
+from typing import Any
 
 from fastapi import APIRouter, Body, Header, Query, status
 from pydantic import BaseModel, ConfigDict, Field
@@ -52,7 +52,7 @@ def _blank() -> dict[str, Any]:
     return {"revision": 1, "entities": {}, "sequences": {}}
 
 
-def read_entities_snapshot() -> Tuple[dict[str, Any], bool, bytes | None]:
+def read_entities_snapshot() -> tuple[dict[str, Any], bool, bytes | None]:
     """严格读取一次实体母库快照，供实体仓储和资产过滤共同使用。
 
     返回 (data, is_new, raw_bytes)。仅缺失文件使用初始结构；已有文件的任何
