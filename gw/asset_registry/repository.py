@@ -32,6 +32,7 @@ import io
 import base64
 import hashlib
 import json
+import logging
 import threading
 from collections import Counter
 from datetime import datetime, timedelta, timezone
@@ -51,11 +52,12 @@ from gw.core.errors import CleanroomException
 
 NS_REGISTRY = "asset_registry"
 DATA_STATUS_OK = "ok"
-_ENTITY_FILTER_INDEX_CACHE_KEY: Optional[Tuple[str, int, int, int]] = None
+_ENTITY_FILTER_INDEX_CACHE_KEY: Optional[Tuple[str, str]] = None
 _ENTITY_FILTER_INDEX_CACHE_VALUE: Tuple[
     Dict[str, Tuple[str, str]], Dict[str, set[str]], Dict[Tuple[str, str], set[str]]
 ] = ({}, {}, {})
 _ENTITY_FILTER_INDEX_CACHE_LOCK = threading.RLock()
+_LOGGER = logging.getLogger(__name__)
 
 
 def _blank() -> Dict[str, Any]:
@@ -705,16 +707,46 @@ def _entity_filter_index() -> Tuple[
     ],
     int,
 ]:
-    """按母库 revision 缓存实体 ID、类型及项目/类型组合索引。"""
+    """按本次读取的母库内容缓存实体 ID、类型及项目/类型组合索引。"""
     global _ENTITY_FILTER_INDEX_CACHE_KEY, _ENTITY_FILTER_INDEX_CACHE_VALUE
 
     from gw.entities import repository as entities_repository
 
     entity_state = entities_repository.state()
-    raw = entity_state.read()
+    entity_data_file = storage.data_root() / f"{entity_state.namespace}.json"
+    try:
+        entity_bytes: Optional[bytes] = entity_data_file.read_bytes()
+    except FileNotFoundError:
+        entity_bytes = None
+    except OSError as exc:
+        _LOGGER.warning("读取实体母库文件失败，筛选暂不可用：%s", exc)
+        raise CleanroomException(
+            503,
+            "ENTITY_INDEX_UNAVAILABLE",
+            "实体母库读取失败，筛选暂不可用",
+        ) from None
+
+    if entity_bytes is None:
+        raw: Any = {"revision": 1, "entities": {}}
+        content_bytes = b""
+    else:
+        content_bytes = entity_bytes
+        try:
+            raw = json.loads(entity_bytes.decode("utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError):
+            raise CleanroomException(
+                503,
+                "ENTITY_INDEX_UNAVAILABLE",
+                "实体母库数据无效，筛选暂不可用",
+            ) from None
     if not isinstance(raw, dict):
-        raw = {}
-    revision_value = raw.get("revision", 1)
+        raise CleanroomException(
+            503,
+            "ENTITY_INDEX_UNAVAILABLE",
+            "实体母库数据无效，筛选暂不可用",
+        )
+
+    revision_value = raw.get("revision")
     if type(revision_value) is not int or revision_value < 1:
         raise CleanroomException(
             503,
@@ -723,61 +755,56 @@ def _entity_filter_index() -> Tuple[
         )
     revision = revision_value
 
-    entity_data_file = storage.data_root() / f"{entity_state.namespace}.json"
-    try:
-        entity_stat = entity_data_file.stat()
-    except OSError:
-        cache_key = None
-    else:
-        cache_key = (
-            str(storage.data_root().resolve()),
-            revision,
-            entity_stat.st_mtime_ns,
-            entity_stat.st_size,
+    records = raw.get("entities")
+    if not isinstance(records, dict):
+        raise CleanroomException(
+            503,
+            "ENTITY_INDEX_UNAVAILABLE",
+            "实体母库数据无效，筛选暂不可用",
         )
-    if cache_key is not None:
-        with _ENTITY_FILTER_INDEX_CACHE_LOCK:
-            if _ENTITY_FILTER_INDEX_CACHE_KEY == cache_key:
-                return _ENTITY_FILTER_INDEX_CACHE_VALUE, revision
+
+    cache_key = (
+        str(storage.data_root()),
+        hashlib.sha256(content_bytes).hexdigest(),
+    )
+    with _ENTITY_FILTER_INDEX_CACHE_LOCK:
+        if _ENTITY_FILTER_INDEX_CACHE_KEY == cache_key:
+            return _ENTITY_FILTER_INDEX_CACHE_VALUE, revision
 
     by_id: Dict[str, Tuple[str, str]] = {}
     by_type: Dict[str, set[str]] = {}
     by_project_type: Dict[Tuple[str, str], set[str]] = {}
-    records = raw.get("entities")
-    if isinstance(records, dict):
-        for key, record in records.items():
-            if not isinstance(record, dict) or record.get("archived"):
-                continue
-            entity_id = record.get("entity_id")
-            project_id = record.get("project_id")
-            entity_type = record.get("entity_type")
-            if (
-                not isinstance(entity_id, str)
-                or entity_id != str(key)
-                or entity_id != entity_id.strip()
-                or not entity_id
-                or not entity_id.isascii()
-                or any(char.isspace() for char in entity_id)
-                or not isinstance(project_id, str)
-                or project_id != project_id.strip()
-                or not project_id
-                or not project_id.isascii()
-                or any(char.isspace() for char in project_id)
-            ):
-                continue
-            try:
-                normalized_type = MasterEntityType(entity_type).value
-            except (TypeError, ValueError):
-                continue
-            by_id[entity_id] = (normalized_type, project_id)
-            by_type.setdefault(normalized_type, set()).add(entity_id)
-            by_project_type.setdefault(
-                (project_id, normalized_type), set()
-            ).add(entity_id)
+    for key, record in records.items():
+        if not isinstance(record, dict) or record.get("archived"):
+            continue
+        entity_id = record.get("entity_id")
+        project_id = record.get("project_id")
+        entity_type = record.get("entity_type")
+        if (
+            not isinstance(entity_id, str)
+            or entity_id != str(key)
+            or entity_id != entity_id.strip()
+            or not entity_id
+            or not entity_id.isascii()
+            or any(char.isspace() for char in entity_id)
+            or not isinstance(project_id, str)
+            or project_id != project_id.strip()
+            or not project_id
+            or not project_id.isascii()
+            or any(char.isspace() for char in project_id)
+        ):
+            continue
+        try:
+            normalized_type = MasterEntityType(entity_type).value
+        except (TypeError, ValueError):
+            continue
+        by_id[entity_id] = (normalized_type, project_id)
+        by_type.setdefault(normalized_type, set()).add(entity_id)
+        by_project_type.setdefault(
+            (project_id, normalized_type), set()
+        ).add(entity_id)
 
     index = (by_id, by_type, by_project_type)
-    if cache_key is None:
-        return index, revision
     with _ENTITY_FILTER_INDEX_CACHE_LOCK:
         if _ENTITY_FILTER_INDEX_CACHE_KEY != cache_key:
             _ENTITY_FILTER_INDEX_CACHE_KEY = cache_key
