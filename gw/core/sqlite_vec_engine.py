@@ -165,6 +165,7 @@ class SQLiteVecEngine:
         self._vector_search_state = threading.local()
         self._lock = threading.RLock()
         self._closed = False
+        self._vector_version_warning_emitted = False
 
         if isinstance(db_path, str) and db_path == ":memory:":
             sqlite_path = ":memory:"
@@ -423,7 +424,9 @@ class SQLiteVecEngine:
             try:
                 row = self._db.execute("SELECT vec_version()").fetchone()
             except sqlite3.Error as exc:
-                logger.warning("sqlite-vec version probe failed: %s", exc)
+                if not self._vector_version_warning_emitted:
+                    self._vector_version_warning_emitted = True
+                    logger.warning("sqlite-vec version probe failed: %s", exc)
                 return None
         return str(row[0]) if row else None
 
