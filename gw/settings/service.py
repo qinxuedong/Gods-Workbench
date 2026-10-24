@@ -380,8 +380,8 @@ class ProviderService:
                     raise ValueError()
                 if any(not isinstance(value, str) or not value for value in fields.values()):
                     raise ValueError()
-        except (ValidationError, ValueError, TypeError) as e:
-            raise CleanroomException(503, "PROVIDER_STORAGE_UNAVAILABLE", "平台配置快照格式无效") from e
+        except (ValidationError, ValueError, TypeError):
+            raise CleanroomException(503, "PROVIDER_STORAGE_UNAVAILABLE", "平台配置快照格式无效") from None
         return state
 
     @staticmethod
@@ -440,9 +440,9 @@ class ProviderService:
                 )
             try:
                 model = ProviderEntryRequest.model_validate(item)
-            except ValidationError as e:
+            except ValidationError:
                 # Pydantic异常包含input；不可把原文或字段值写入响应与日志。
-                raise CleanroomException(400, "INVALID_REQUEST", f"平台第{index + 1}项字段或更新意图不合法") from e
+                raise CleanroomException(400, "INVALID_REQUEST", f"平台第{index + 1}项字段或更新意图不合法") from None
             provider_id = model.provider_id or model.id
             if provider_id in seen:
                 raise CleanroomException(
@@ -483,8 +483,8 @@ class ProviderService:
         try:
             self._check_files()
             return self._state.mutate(commit)
-        except OSError as e:
-            raise CleanroomException(503, "PROVIDER_STORAGE_UNAVAILABLE", "平台配置未能落盘，原配置保持不变") from e
+        except OSError:
+            raise CleanroomException(503, "PROVIDER_STORAGE_UNAVAILABLE", "平台配置未能落盘，原配置保持不变") from None
 
     def credential(self, provider_id: str, field: str = "api_key", *, expected_version: int | None = None) -> str:
         """仅供执行服务按稳定ID读取；HTTP响应不得调用后回显原文。"""
