@@ -46,6 +46,7 @@ from gw.video_tasks.routes import router as video_tasks_router
 from gw.api.routes_prompt_library import router as prompt_library_router
 from gw.api.routes_settings import router as settings_router
 from gw.api.routes_decision import router as decision_router
+from gw.api.routes_entities import router as entities_router
 from gw.god_workflow.routes import router as god_workflow_router
 from gw.core import session as session_store
 from gw.observability import telemetry as observability_telemetry
@@ -370,6 +371,7 @@ def create_app(*, agent_integration_factory=None) -> FastAPI:
     app.include_router(prompt_library_router)
     app.include_router(settings_router)
     app.include_router(decision_router)
+    app.include_router(entities_router)
     app.include_router(god_workflow_router, prefix="/api/god_workflow")
 
     @app.get("/share/{share_token}", include_in_schema=False)
