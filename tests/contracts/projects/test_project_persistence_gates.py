@@ -72,7 +72,7 @@ def test_http_project_and_gates_are_authorized_idempotent_and_recover_in_new_pro
     root = tmp_path / "http-project-state"
     monkeypatch.setenv("GW_DATA_DIR", str(root))
     monkeypatch.setenv("GW_VIDEO_DATA_DIR", str(tmp_path / "http-video-state"))
-    service = _persistent_routes(monkeypatch)
+    _persistent_routes(monkeypatch)
 
     created = client.post(
         "/api/asset-registry/projects", headers=AUTH_OWNER, json=CREATE_PAYLOAD

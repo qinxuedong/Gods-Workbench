@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """QIN-238 目录设置路径、持久化和版本 CAS 契约。"""
 
 from __future__ import annotations
@@ -11,7 +10,11 @@ from fastapi.testclient import TestClient
 from gw.api import routes_settings as routes
 from gw.api.app import create_app
 from gw.core import storage
-from gw.settings.service import AssetStructureService, ProviderService, StorageSettingsService
+from gw.settings.service import (
+    AssetStructureService,
+    ProviderService,
+    StorageSettingsService,
+)
 
 EDITOR = {"X-User-Role": "editor", "Authorization": "Bearer cleanroom-test"}
 

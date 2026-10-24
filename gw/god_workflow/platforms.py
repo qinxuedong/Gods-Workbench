@@ -528,13 +528,12 @@ async def fetch_runninghub_bundle(
                 source_errors.insert(0, exc)
             else:
                 source_errors.append(exc)
-    if canvas is None and api_json is None:
-        if source_errors:
-            # 公开清单不是可用图，不得用它覆盖授权/网络真实失败。
-            from gw.god_workflow.parser import extract_source_graph
+    if canvas is None and api_json is None and source_errors:
+        # 公开清单不是可用图，不得用它覆盖授权/网络真实失败。
+        from gw.god_workflow.parser import extract_source_graph
 
-            if extract_source_graph(detail) is None:
-                raise source_errors[0]
+        if extract_source_graph(detail) is None:
+            raise source_errors[0]
 
     return {
         "workflow_id": workflow_id,

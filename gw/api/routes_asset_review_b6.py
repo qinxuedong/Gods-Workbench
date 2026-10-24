@@ -137,7 +137,7 @@ def export_delivery(
         content=result["pdf"],
         media_type="application/pdf",
         headers={
-            "Content-Disposition": 'attachment; filename="%s"' % ascii_name,
+            "Content-Disposition": f'attachment; filename="{ascii_name}"',
             "X-Delivery-Id": delivery_id,
         },
     )
