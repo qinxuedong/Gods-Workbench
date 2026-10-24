@@ -15,7 +15,6 @@ from gw.decision.router import (
     build_decision_api_router,
 )
 
-
 default_decision_router = DecisionRouter(
     kev_backend=KevDecisionBackend(os.getenv("KEV_ENDPOINT"))
     if os.getenv("KEV_ENDPOINT")
