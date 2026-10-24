@@ -115,6 +115,8 @@ function harness({frames = []} = {}) {
   const document = new FakeDocument();
   const window = new FakeEventTarget();
   const rafQueue = [];
+  const timers = new Map();
+  let nextTimerId = 1;
   class CustomEvent {
     constructor(type, options = {}) { this.type = type; this.detail = options.detail; }
   }
@@ -126,7 +128,25 @@ function harness({frames = []} = {}) {
   window.MutationObserver = MutationObserver;
   window.location = {href: 'http://workbench.local/pages/index.html', origin: 'http://workbench.local', assign() {}};
   window.requestAnimationFrame = callback => { rafQueue.push(callback); };
-  window.setTimeout = callback => { rafQueue.push(callback); };
+  window.setTimeout = (callback, delay = 0) => {
+    if (delay === 0 || typeof delay !== 'number') {
+      rafQueue.push(callback);
+      return rafQueue.length;
+    }
+    const id = nextTimerId++;
+    const nodeTimer = setTimeout(() => {
+      timers.delete(id);
+      callback();
+    }, delay);
+    timers.set(id, nodeTimer);
+    return id;
+  };
+  window.clearTimeout = id => {
+    if (timers.has(id)) {
+      clearTimeout(timers.get(id));
+      timers.delete(id);
+    }
+  };
   window.flushFrames = () => { while (rafQueue.length) rafQueue.shift()(); };
   window.dispatchEvent = event => FakeEventTarget.prototype.dispatchEvent.call(window, event);
   document.defaultView = window;
@@ -490,4 +510,124 @@ test('activate 成功完成后关闭 Omnibar', async () => {
   await pressOmnibarEnter(input);
 
   assert.equal(omnibar.snapshot().open, false);
+});
+
+test('activate 异步命令超时时显示脱敏错误、保持面板与输入焦点，派发 gw:omnibar-error', async () => {
+  const {document, window, omnibar} = harness();
+  const errors = [];
+  window.addEventListener('gw:omnibar-error', event => { errors.push(event.detail); });
+  const input = selectOmnibarResult(document, omnibar, {
+    title: '超时慢命令',
+    timeout: 20,
+    activate() {
+      return new Promise(resolve => setTimeout(resolve, 100));
+    },
+  });
+  input.value = '/slow-operation';
+
+  await pressOmnibarEnter(input);
+  await new Promise(resolve => setTimeout(resolve, 40));
+
+  const errorState = document.getElementById('gwOmnibarError');
+  assert.equal(omnibar.snapshot().open, true, '超时后面板保持打开');
+  assert.equal(errorState.hidden, false, '展示错误态');
+  assert.equal(errorState.textContent, '命令执行超时，请重试。');
+  assert.equal(input.value, '/slow-operation', '保留输入内容');
+  assert.equal(document.activeElement, input, '输入框保持焦点');
+  assert.equal(errors.length, 1);
+  assert.equal(errors[0].code, 'COMMAND_ACTIVATION_TIMEOUT');
+  assert.equal(errors[0].message, '命令执行超时，请重试。');
+});
+
+test('activate 异步命令超时后可用 Enter 重试，成功后关闭面板', async () => {
+  const {document, window, omnibar} = harness();
+  let attempts = 0;
+  const errors = [];
+  window.addEventListener('gw:omnibar-error', event => { errors.push(event.detail); });
+  const input = selectOmnibarResult(document, omnibar, {
+    title: '可重试超时命令',
+    timeout: 20,
+    activate() {
+      attempts++;
+      if (attempts === 1) {
+        return new Promise(resolve => setTimeout(resolve, 100));
+      }
+      return Promise.resolve('success on retry');
+    },
+  });
+  input.value = '/retry-after-timeout';
+
+  await pressOmnibarEnter(input);
+  await new Promise(resolve => setTimeout(resolve, 40));
+
+  assert.equal(attempts, 1);
+  assert.equal(omnibar.snapshot().open, true);
+  assert.equal(errors.length, 1);
+  assert.equal(errors[0].code, 'COMMAND_ACTIVATION_TIMEOUT');
+
+  await pressOmnibarEnter(input);
+  assert.equal(attempts, 2);
+  assert.equal(omnibar.snapshot().open, false, '重试成功后关闭面板');
+});
+
+test('activate 异步命令超时后迟到 resolve/reject 不会关闭面板或触发未捕获错误', async () => {
+  const {document, omnibar} = harness();
+  let lateResolve;
+  let lateReject;
+  const input1 = selectOmnibarResult(document, omnibar, {
+    title: '迟到 resolve 命令',
+    timeout: 20,
+    activate() {
+      return new Promise(resolve => { lateResolve = resolve; });
+    },
+  });
+
+  await pressOmnibarEnter(input1);
+  await new Promise(resolve => setTimeout(resolve, 40));
+  assert.equal(omnibar.snapshot().open, true);
+
+  // 模拟迟到 resolve
+  lateResolve('late data');
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(omnibar.snapshot().open, true, '迟到 resolve 不得意外关闭面板');
+
+  // 测试迟到 reject 不抛出未捕获异常
+  const input2 = selectOmnibarResult(document, omnibar, {
+    title: '迟到 reject 命令',
+    timeout: 20,
+    activate() {
+      return new Promise((_, reject) => { lateReject = reject; });
+    },
+  });
+  await pressOmnibarEnter(input2);
+  await new Promise(resolve => setTimeout(resolve, 40));
+  assert.doesNotThrow(() => {
+    lateReject(new Error('late failure'));
+  });
+});
+
+test('在异步命令超时前按 Escape 关闭面板，会取消挂起的超时定时器', async () => {
+  const {document, window, omnibar} = harness();
+  const errors = [];
+  window.addEventListener('gw:omnibar-error', event => { errors.push(event.detail); });
+  const input = selectOmnibarResult(document, omnibar, {
+    title: '慢命令按 Escape 取消',
+    timeout: 40,
+    activate() {
+      return new Promise(resolve => setTimeout(resolve, 150));
+    },
+  });
+
+  await pressOmnibarEnter(input);
+  // 在 10ms 时按 Escape
+  await new Promise(resolve => setTimeout(resolve, 10));
+  const escapeEvent = keyEvent({key: 'Escape', code: 'Escape'});
+  document.dispatchEvent(escapeEvent);
+  window.flushFrames();
+  assert.equal(omnibar.snapshot().open, false, '面板已关闭');
+
+  // 等待超时时间过去
+  await new Promise(resolve => setTimeout(resolve, 60));
+  assert.equal(errors.length, 0, '提前关闭面板后不应派发超时错误');
+  assert.equal(omnibar.snapshot().open, false, '面板不应被重新打开');
 });
