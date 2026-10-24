@@ -107,7 +107,7 @@ def test_c10_real_asset_browser_measurement(
     """真实浏览器覆盖清单、分页、搜索、缩略图和错误降级。"""
     if not _real_run_enabled():
         pytest.skip("C10 真实浏览器默认关闭；设置 GW_C10_REAL_E2E=1 后才会运行")
-    browser_api = pytest.importorskip("playwright.sync_api")
+    pytest.importorskip("playwright.sync_api")
 
     media_root = tmp_path / "media"
     media_root.mkdir()

@@ -1,0 +1,21 @@
+QIN-366 | Issue: #366 | Linear: QIN-366
+
+## 改动文件
+- tests/contracts/projects/test_project_persistence_gates.py
+- tests/e2e/test_c10_asset_scale_browser.py
+- tests/e2e/test_c11_r3_stability_browser.py
+- tests/e2e/test_c7_media_loop_browser.py
+
+## 测试
+- `ruff check --select F841 tests/...` -> clean
+- `ruff check tests/...` -> clean
+- `GW_RUNNINGHUB_API_KEY=dummy-for-tests python -m pytest -v --no-header -p no:cacheprovider tests/...` -> 14 passed, 2 skipped
+- `node --test $(cat tests/frontend/node-files.txt | tr '\n' ' ')` -> 316 passed
+
+## 待本地实机验收
+- （无）
+
+## 范围外发现
+- （无）
+
+执行人: jules
