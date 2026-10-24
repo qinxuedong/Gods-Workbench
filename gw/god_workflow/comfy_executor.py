@@ -335,27 +335,26 @@ async def fetch_output(
             timeout=httpx.Timeout(endpoint.timeout),
             follow_redirects=False,
             trust_env=False,
-        ) as client:
-            async with client.stream("GET", url, params=params) as response:
-                if response.status_code != 200:
+        ) as client, client.stream("GET", url, params=params) as response:
+            if response.status_code != 200:
+                raise CleanroomException(
+                    502,
+                    "WORKFLOW_PROVIDER_ERROR",
+                    "ComfyUI could not return the output file",
+                )
+            content = bytearray()
+            async for chunk in response.aiter_bytes():
+                content.extend(chunk)
+                if len(content) > MAX_VIEW_BYTES:
                     raise CleanroomException(
                         502,
-                        "WORKFLOW_PROVIDER_ERROR",
-                        "ComfyUI could not return the output file",
+                        "WORKFLOW_PROVIDER_RESPONSE_TOO_LARGE",
+                        "ComfyUI output exceeds the size limit",
                     )
-                content = bytearray()
-                async for chunk in response.aiter_bytes():
-                    content.extend(chunk)
-                    if len(content) > MAX_VIEW_BYTES:
-                        raise CleanroomException(
-                            502,
-                            "WORKFLOW_PROVIDER_RESPONSE_TOO_LARGE",
-                            "ComfyUI output exceeds the size limit",
-                        )
-                media_type = response.headers.get(
-                    "content-type", "application/octet-stream"
-                ).split(";", 1)[0]
-                return bytes(content), media_type
+            media_type = response.headers.get(
+                "content-type", "application/octet-stream"
+            ).split(";", 1)[0]
+            return bytes(content), media_type
     except httpx.TimeoutException:
         raise CleanroomException(
             504, "WORKFLOW_PROVIDER_TIMEOUT", "ComfyUI output request timed out"
