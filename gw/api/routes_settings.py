@@ -37,14 +37,16 @@ C16 路由只允许稳定 ``provider_id`` 与消息进入网关；Provider 密�
 等）仍属 KNOWN_UNIMPLEMENTED，未获契约授权，本模块**不得**顺带实现。
 """
 
-from typing import Any, Optional, Union
+from typing import Any, Union
 
 from fastapi import APIRouter, Body, Header, Query, status
 from pydantic import BaseModel, ConfigDict, Field
 
 from gw.core.auth import require_authenticated, require_edit_access
 from gw.core.credentials_vault import CredentialVault
+from gw.core.errors import CleanroomException
 from gw.settings import chat as chat_runtime
+from gw.settings import probes as provider_probes
 from gw.settings.models import (
     AssetStructureCreateRequest,
     AssetStructureCurrentRequest,
@@ -56,8 +58,6 @@ from gw.settings.models import (
     StorageSettingsPatchRequest,
     StorageSettingsSnapshot,
 )
-from gw.settings import probes as provider_probes
-from gw.core.errors import CleanroomException
 from gw.settings.service import (
     default_asset_structure_service,
     default_provider_service,
@@ -73,8 +73,8 @@ class ProviderGatewayChatRequest(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
 
     message: str = Field(..., min_length=1, max_length=200_000)
-    model: Optional[str] = Field(None, max_length=256)
-    mode: Optional[str] = Field(None, max_length=64)
+    model: str | None = Field(None, max_length=256)
+    mode: str | None = Field(None, max_length=64)
 
 
 def _credential_vault() -> CredentialVault:
@@ -94,7 +94,7 @@ def _credential_vault() -> CredentialVault:
     status_code=status.HTTP_200_OK,
 )
 def get_storage_settings(
-    authorization: Optional[str] = Header(None),
+    authorization: str | None = Header(None),
     x_user_role: str = Header("editor", alias="X-User-Role", description="用户角色权限"),
 ):
     """返回存储设置真值；无真实来源时如实标记未配置，不编造根目录/容量/路径。"""
@@ -110,7 +110,7 @@ def get_storage_settings(
 )
 def patch_storage_settings(
     payload: StorageSettingsPatchRequest,
-    authorization: Optional[str] = Header(None),
+    authorization: str | None = Header(None),
     x_user_role: str = Header("editor", alias="X-User-Role", description="用户角色权限"),
 ):
     """保存存储设置；要求 expected_version，版本不一致返回 409 VERSION_CONFLICT。"""
@@ -130,7 +130,7 @@ def patch_storage_settings(
     status_code=status.HTTP_200_OK,
 )
 def list_providers(
-    authorization: Optional[str] = Header(None),
+    authorization: str | None = Header(None),
     x_user_role: str = Header("editor", alias="X-User-Role", description="用户角色权限"),
 ):
     """返回平台集合真值；默认必须为空数组，绝不预置任何厂商条目。"""
@@ -148,8 +148,8 @@ def replace_providers(
     payload: Union[list[Any], dict[str, Any], None] = Body(
         None, description="provider 数组（前端既有调用面）或 {\"providers\": [...]} 包装"
     ),
-    expected_version: Optional[int] = Query(None, ge=1, description="provider 集合 CAS 期望版本；保存时必填"),
-    authorization: Optional[str] = Header(None),
+    expected_version: int | None = Query(None, ge=1, description="provider 集合 CAS 期望版本；保存时必填"),
+    authorization: str | None = Header(None),
     x_user_role: str = Header("editor", alias="X-User-Role", description="用户角色权限"),
 ):
     """严格验证平台集合并原子保存元数据与密文；必填CAS，凭据原文不回显。"""
@@ -170,8 +170,8 @@ def replace_providers(
     status_code=status.HTTP_200_OK,
 )
 def fetch_provider_models(
-    payload: Optional[dict] = Body(None),
-    authorization: Optional[str] = Header(None),
+    payload: dict | None = Body(None),
+    authorization: str | None = Header(None),
     x_user_role: str = Header("editor", alias="X-User-Role", description="用户角色权限"),
 ):
     """按实际目录协议请求；根地址/版本地址均支持，不能据目录宣称生成能力。"""
@@ -185,8 +185,8 @@ def fetch_provider_models(
     status_code=status.HTTP_200_OK,
 )
 def probe_provider_async(
-    payload: Optional[dict] = Body(None),
-    authorization: Optional[str] = Header(None),
+    payload: dict | None = Body(None),
+    authorization: str | None = Header(None),
     x_user_role: str = Header("editor", alias="X-User-Role", description="用户角色权限"),
 ):
     """请求完成后保存历史结果；兼容job_id/poll_hint，不存在后台排队。"""
@@ -201,7 +201,7 @@ def probe_provider_async(
 )
 def get_provider_probe_job(
     job_id: str,
-    authorization: Optional[str] = Header(None),
+    authorization: str | None = Header(None),
     x_user_role: str = Header("editor", alias="X-User-Role", description="用户角色权限"),
 ):
     """读取旧地址下的已完成探测记录；不存在404，不承诺后台任务。"""
@@ -215,8 +215,8 @@ def get_provider_probe_job(
     status_code=status.HTTP_200_OK,
 )
 def test_provider_connection(
-    payload: Optional[dict] = Body(None),
-    authorization: Optional[str] = Header(None),
+    payload: dict | None = Body(None),
+    authorization: str | None = Header(None),
     x_user_role: str = Header("editor", alias="X-User-Role", description="用户角色权限"),
 ):
     """真实往返并记录实测延迟；失败 503，绝不伪造连通性或延迟数字。"""
@@ -230,7 +230,7 @@ def test_provider_connection(
     status_code=status.HTTP_200_OK,
 )
 def list_provider_credentials(
-    authorization: Optional[str] = Header(None),
+    authorization: str | None = Header(None),
     x_user_role: str = Header("editor", alias="X-User-Role", description="用户角色权限"),
 ):
     """只返回已配置字段的布尔状态，不返回密文、原文、URL 或环境变量名。"""
@@ -246,7 +246,7 @@ def list_provider_credentials(
 def provider_gateway_chat(
     provider_id: str,
     payload: ProviderGatewayChatRequest,
-    authorization: Optional[str] = Header(None),
+    authorization: str | None = Header(None),
     x_user_role: str = Header("editor", alias="X-User-Role", description="用户角色权限"),
 ):
     """客户端只提交消息与稳定 provider_id；服务端读取密钥并向上游注入鉴权。"""
@@ -274,8 +274,8 @@ def provider_gateway_chat(
     status_code=status.HTTP_200_OK,
 )
 def list_asset_structures(
-    asset_ids: Optional[list[str]] = Query(None, description="按成员过滤（可重复）"),
-    authorization: Optional[str] = Header(None),
+    asset_ids: list[str] | None = Query(None, description="按成员过滤（可重复）"),
+    authorization: str | None = Header(None),
     x_user_role: str = Header("editor", alias="X-User-Role", description="用户角色权限"),
 ):
     """返回结构集合；无结构时 items: []，不编造成员素材元数据。"""
@@ -291,7 +291,7 @@ def list_asset_structures(
 )
 def create_asset_structure(
     payload: AssetStructureCreateRequest,
-    authorization: Optional[str] = Header(None),
+    authorization: str | None = Header(None),
     x_user_role: str = Header("editor", alias="X-User-Role", description="用户角色权限"),
 ):
     """创建版本/组结构；要求写权限，集合 CAS 冲突返回 409 STRUCTURE_VERSION_CONFLICT。"""
@@ -308,7 +308,7 @@ def create_asset_structure(
 )
 def get_asset_structure(
     structure_id: str,
-    authorization: Optional[str] = Header(None),
+    authorization: str | None = Header(None),
     x_user_role: str = Header("editor", alias="X-User-Role", description="用户角色权限"),
 ):
     """返回目标结构真值；不存在必须 404 STRUCTURE_NOT_FOUND。"""
@@ -325,7 +325,7 @@ def get_asset_structure(
 def update_asset_structure(
     structure_id: str,
     payload: AssetStructureUpdateRequest,
-    authorization: Optional[str] = Header(None),
+    authorization: str | None = Header(None),
     x_user_role: str = Header("editor", alias="X-User-Role", description="用户角色权限"),
 ):
     """更新结构成员或当前素材；要求写权限，结构 CAS 冲突返回 409 STRUCTURE_VERSION_CONFLICT。"""
@@ -343,7 +343,7 @@ def update_asset_structure(
 def set_asset_structure_current(
     structure_id: str,
     payload: AssetStructureCurrentRequest,
-    authorization: Optional[str] = Header(None),
+    authorization: str | None = Header(None),
     x_user_role: str = Header("editor", alias="X-User-Role", description="用户角色权限"),
 ):
     """切换当前代表素材；要求写权限，结构 CAS 冲突返回 409 STRUCTURE_VERSION_CONFLICT。"""
@@ -360,8 +360,8 @@ def set_asset_structure_current(
 )
 def delete_asset_structure(
     structure_id: str,
-    expected_version: Optional[int] = Query(None, ge=1, description="删除结构必须携带的 CAS 期望版本"),
-    authorization: Optional[str] = Header(None),
+    expected_version: int | None = Query(None, ge=1, description="删除结构必须携带的 CAS 期望版本"),
+    authorization: str | None = Header(None),
     x_user_role: str = Header("editor", alias="X-User-Role", description="用户角色权限"),
 ):
     """删除结构；要求写权限，结构 CAS 冲突返回 409 STRUCTURE_VERSION_CONFLICT。"""
