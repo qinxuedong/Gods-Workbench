@@ -35,13 +35,14 @@
 from __future__ import annotations
 
 import copy
-from datetime import datetime, timezone
 import stat
 import threading
 from collections.abc import Iterable, Sequence
-from typing import Any, Optional
+from datetime import datetime, timezone
+from typing import Any
 
 from pydantic import ValidationError
+
 from gw.core import storage
 from gw.core.errors import CleanroomException
 from gw.settings import credentials
@@ -58,8 +59,8 @@ from gw.settings.models import (
     AssetStructureListResponse,
     AssetStructureMember,
     AssetStructureUpdateRequest,
-    ProviderSnapshot,
     ProviderEntryRequest,
+    ProviderSnapshot,
     StorageSettingsPatchRequest,
     StorageSettingsSnapshot,
 )
@@ -124,7 +125,7 @@ def strip_credential_fields(value: Any) -> Any:
     return copy.deepcopy(value)
 
 
-def _require_positive_version(expected_version: Optional[int], label: str) -> None:
+def _require_positive_version(expected_version: int | None, label: str) -> None:
     """写请求必须提供正整数 expected_version；缺失与非法值分别返回 400。"""
     if expected_version is None:
         raise CleanroomException(
@@ -140,7 +141,7 @@ def _require_positive_version(expected_version: Optional[int], label: str) -> No
         )
 
 
-def _resolve_expected_version(payload: Any) -> Optional[int]:
+def _resolve_expected_version(payload: Any) -> int | None:
     """读取写请求的 CAS 期望版本。"""
     return getattr(payload, "expected_version", None)
 
@@ -379,8 +380,8 @@ class ProviderService:
                     raise ValueError()
                 if any(not isinstance(value, str) or not value for value in fields.values()):
                     raise ValueError()
-        except (ValidationError, ValueError, TypeError):
-            raise CleanroomException(503, "PROVIDER_STORAGE_UNAVAILABLE", "平台配置快照格式无效") from None
+        except (ValidationError, ValueError, TypeError) as e:
+            raise CleanroomException(503, "PROVIDER_STORAGE_UNAVAILABLE", "平台配置快照格式无效") from e
         return state
 
     @staticmethod
@@ -417,7 +418,7 @@ class ProviderService:
             data_gaps=[] if configured else [GAP_PROVIDER_REGISTRY_SOURCE],
         )
 
-    def replace(self, raw_providers: Any, expected_version: Optional[int]) -> ProviderSnapshot:
+    def replace(self, raw_providers: Any, expected_version: int | None) -> ProviderSnapshot:
         """整体验证后持锁提交；空密钥保持、clear显式删除、非空密钥替换。"""
         _require_positive_version(expected_version, "provider 集合")
         if expected_version is None:
@@ -439,9 +440,9 @@ class ProviderService:
                 )
             try:
                 model = ProviderEntryRequest.model_validate(item)
-            except ValidationError:
+            except ValidationError as e:
                 # Pydantic异常包含input；不可把原文或字段值写入响应与日志。
-                raise CleanroomException(400, "INVALID_REQUEST", f"平台第{index + 1}项字段或更新意图不合法") from None
+                raise CleanroomException(400, "INVALID_REQUEST", f"平台第{index + 1}项字段或更新意图不合法") from e
             provider_id = model.provider_id or model.id
             if provider_id in seen:
                 raise CleanroomException(
@@ -482,10 +483,10 @@ class ProviderService:
         try:
             self._check_files()
             return self._state.mutate(commit)
-        except OSError:
-            raise CleanroomException(503, "PROVIDER_STORAGE_UNAVAILABLE", "平台配置未能落盘，原配置保持不变") from None
+        except OSError as e:
+            raise CleanroomException(503, "PROVIDER_STORAGE_UNAVAILABLE", "平台配置未能落盘，原配置保持不变") from e
 
-    def credential(self, provider_id: str, field: str = "api_key", *, expected_version: Optional[int] = None) -> str:
+    def credential(self, provider_id: str, field: str = "api_key", *, expected_version: int | None = None) -> str:
         """仅供执行服务按稳定ID读取；HTTP响应不得调用后回显原文。"""
         if field not in self._secrets:
             raise ValueError("凭据字段不受支持")
@@ -510,7 +511,7 @@ class AssetStructureService:
     # ------------------------------------------------------------------
     # 查询
     # ------------------------------------------------------------------
-    def list_structures(self, asset_ids: Optional[Sequence[str]] = None) -> AssetStructureListResponse:
+    def list_structures(self, asset_ids: Sequence[str] | None = None) -> AssetStructureListResponse:
         """返回结构集合；给定 asset_ids 时按成员做真实过滤。"""
         wanted = {str(item or "").strip() for item in (asset_ids or []) if str(item or "").strip()}
         with self._lock:
@@ -656,7 +657,7 @@ class AssetStructureService:
             self._structures[item.structure_id] = updated
             return copy.deepcopy(updated)
 
-    def delete_structure(self, structure_id: str, expected_version: Optional[int]) -> tuple[str, int]:
+    def delete_structure(self, structure_id: str, expected_version: int | None) -> tuple[str, int]:
         """删除结构；结构级 CAS 冲突失败关闭，成功则集合 revision 递增。"""
         _require_positive_version(expected_version, "结构")
         with self._lock:
@@ -686,7 +687,7 @@ class AssetStructureService:
         ]
 
     @staticmethod
-    def _resolve_current(raw_current: Optional[str], asset_ids: Sequence[str]) -> str:
+    def _resolve_current(raw_current: str | None, asset_ids: Sequence[str]) -> str:
         """解析当前代表素材；缺省取首个成员，非成员一律 400。"""
         requested = str(raw_current or "").strip()
         if not requested:
