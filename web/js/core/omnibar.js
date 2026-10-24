@@ -14,6 +14,16 @@
  * limitations under the License.
  */
 
+/**
+ * Browser event contract:
+ * - Invalid URL syntax emits `gw:omnibar-error` with `INVALID_RESULT_URL`.
+ * - Cross-origin destinations and non-HTTP(S) protocols emit
+ *   `CROSS_ORIGIN_URL_BLOCKED`; command activation failures emit
+ *   `COMMAND_ACTIVATION_FAILED`. Both use static, sanitized UI messages and
+ *   never expose the original exception.
+ * - The Omnibar displays an inline alert and stays open on these errors.
+ *   Successful same-origin navigation and command activation close it.
+ */
 (function omnibar(global, document) {
   'use strict';
 
@@ -29,6 +39,7 @@
   let modeButtons = new Map();
   let resultList = null;
   let emptyState = null;
+  let errorState = null;
   let results = [];
   let selectedIndex = -1;
   let mode = 'search';
@@ -88,7 +99,7 @@
       const description = makeElement('span', 'gw-omnibar-result-description', String(result?.description || result?.subtitle || ''));
       option.append(title, description);
       option.addEventListener('mousemove', () => selectIndex(index));
-      option.addEventListener('click', () => activateResult(index));
+      option.addEventListener('click', () => activateResult(index).catch(() => {}));
       resultList.appendChild(option);
     });
     emptyState.hidden = results.length > 0;
@@ -113,20 +124,60 @@
   function setResults(nextResults) {
     results = Array.isArray(nextResults) ? [...nextResults] : [];
     selectedIndex = -1;
+    clearError();
     renderResults();
     return results.length;
   }
 
-  function activateResult(index = selectedIndex) {
+  function clearError() {
+    if (!errorState) return;
+    errorState.hidden = true;
+    errorState.textContent = '';
+  }
+
+  function handleOmnibarError(event) {
+    if (!errorState) return;
+    let message;
+    switch (event?.detail?.code) {
+      case 'INVALID_RESULT_URL':
+        message = '无法打开该结果链接，请重新搜索或关闭面板。';
+        break;
+      case 'CROSS_ORIGIN_URL_BLOCKED':
+        message = '不支持跳转到外部地址';
+        break;
+      case 'COMMAND_ACTIVATION_FAILED':
+        message = '命令执行失败，请重试。';
+        break;
+      default:
+        return;
+    }
+    errorState.textContent = message;
+    errorState.hidden = false;
+  }
+
+  async function activateResult(index = selectedIndex) {
     const result = results[index];
     if (!result) return false;
     selectedIndex = index;
     global.dispatchEvent?.(new global.CustomEvent('gw:omnibar-result-select', {detail: {result, index}}));
-    if (typeof result.activate === 'function') result.activate(result);
-    else if (typeof result.href === 'string') {
+    if (typeof result.activate === 'function') {
       try {
-        const destination = new URL(result.href, global.location.href);
-        if (destination.origin === global.location.origin) global.location.assign(destination.href);
+        await Promise.resolve(result.activate(result));
+      } catch (err) {
+        void err;
+        global.dispatchEvent?.(new global.CustomEvent('gw:omnibar-error', {
+          detail: {
+            code: 'COMMAND_ACTIVATION_FAILED',
+            message: '命令执行失败，请重试。',
+          },
+        }));
+        input?.focus({preventScroll: true});
+        return true;
+      }
+    } else if (typeof result.href === 'string') {
+      let destination;
+      try {
+        destination = new URL(result.href, global.location.href);
       } catch (error) {
         global.dispatchEvent?.(new global.CustomEvent('gw:omnibar-error', {
           detail: {
@@ -135,13 +186,26 @@
             message: String(error?.message || error),
           },
         }));
+        return true;
       }
+      const isHttpProtocol = destination.protocol === 'http:' || destination.protocol === 'https:';
+      if (destination.origin !== global.location.origin || !isHttpProtocol) {
+        global.dispatchEvent?.(new global.CustomEvent('gw:omnibar-error', {
+          detail: {
+            code: 'CROSS_ORIGIN_URL_BLOCKED',
+            message: '不支持跳转到外部地址',
+          },
+        }));
+        return true;
+      }
+      global.location.assign(destination.href);
     }
     close();
     return true;
   }
 
   function emitQuery() {
+    clearError();
     const query = input?.value || '';
     if (mode === 'search' && (query.trim().startsWith('/') || SEARCH_HINT.test(query.trim()))) setMode('agent');
     global.dispatchEvent?.(new global.CustomEvent('gw:omnibar-query', {detail: {query, mode}}));
@@ -223,7 +287,7 @@
       event.preventDefault();
       event.stopPropagation();
       if (mode === 'agent') emitAgentSubmit();
-      else activateResult();
+      else activateResult().catch(() => {});
     });
     inputRow.append(makeElement('span', 'gw-omnibar-search-icon', '⌕'), input);
 
@@ -235,7 +299,13 @@
     resultList.setAttribute('aria-label', '搜索结果');
     emptyState = makeElement('p', 'gw-omnibar-empty', '输入关键词以搜索可访问内容。');
     emptyState.setAttribute('role', 'status');
-    resultsRegion.append(resultList, emptyState);
+    errorState = makeElement('p', 'gw-omnibar-error');
+    errorState.id = 'gwOmnibarError';
+    errorState.setAttribute('id', errorState.id);
+    errorState.setAttribute('role', 'alert');
+    errorState.setAttribute('aria-atomic', 'true');
+    errorState.hidden = true;
+    resultsRegion.append(resultList, emptyState, errorState);
 
     const footer = makeElement('footer', 'gw-omnibar-footer');
     const hint = makeElement('span', 'gw-omnibar-hint', '↑ ↓ 选择');
@@ -311,6 +381,7 @@
     overlay.hidden = false;
     overlay.setAttribute('aria-hidden', 'false');
     isOpen = true;
+    clearError();
     input.value = '';
     setResults([]);
     setMode('search');
@@ -416,6 +487,7 @@
     }
     if (!initialized) {
       global.addEventListener?.('gw:route-loaded', bindFrames);
+      global.addEventListener?.('gw:omnibar-error', handleOmnibarError);
       initialized = true;
     }
     return true;
