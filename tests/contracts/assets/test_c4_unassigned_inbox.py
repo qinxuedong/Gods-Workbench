@@ -24,7 +24,6 @@ from pathlib import Path
 
 import pytest
 
-from gw.api.app import create_app
 from gw.core.asset_visibility import asset_owner_key
 from gw.core.auth import require_authenticated
 
@@ -368,7 +367,7 @@ def test_move_to_project_success_and_readback(client):
     asset_id = _register_asset("c4-owner-a", "ast-c4-m1", "待归位.png")
     project_id = _create_project(client)
     asset_version = _inbox_asset_version(client, asset_id)
-    revision = _inbox(client).json()["revision"]
+    _inbox(client).json()["revision"]
 
     moved = client.post(
         MOVE.format(asset_id=asset_id),

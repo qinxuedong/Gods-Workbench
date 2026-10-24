@@ -29,7 +29,11 @@ import pytest
 from fastapi.testclient import TestClient
 
 from gw.api.app import create_app
-from tests.contracts.projects.c5_permission_fixtures import headers, seed, subject
+from tests.contracts.projects.c5_permission_fixtures import (  # noqa: F401  # pytest fixture
+    headers,
+    seed,
+    subject,
+)
 
 
 @pytest.fixture
