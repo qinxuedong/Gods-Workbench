@@ -8139,13 +8139,13 @@ function renderRegistryCard(item){
     const referenceCanvasId = boardReferenceCanvasSelection[activeTab] || '';
     const mediaAspectStyle = registryMediaAspectStyle(item);
     const matchedSegment = item.kind === 'video' ? findMatchedVideoSegment(item, registryQuery) : null;
-    const segmentBadge = matchedSegment ? `<span class="registry-card-segment-badge" data-video-jump-sec="${matchedSegment.start_sec}" data-video-jump-end="${matchedSegment.end_sec}" data-video-asset-id="${escapeAttr(item.id)}" title="命中片段：${escapeAttr(formatVideoSegmentRange(matchedSegment.start_sec, matchedSegment.end_sec))} ${escapeAttr(Array.isArray(matchedSegment.tags)?matchedSegment.tags.join(' · '):'')}"><i data-lucide="play-circle"></i><strong>${escapeHtml(formatVideoSegmentRange(matchedSegment.start_sec, matchedSegment.end_sec))}</strong></span>` : '';
+    const fps = Number(item.frame_rate || item.metadata?.frame_rate || 0);
+    const segmentBadge = matchedSegment ? `<span class="registry-card-segment-badge" data-video-jump-sec="${matchedSegment.start_sec}" data-video-jump-end="${matchedSegment.end_sec}" data-video-asset-id="${escapeAttr(item.id)}" data-video-frame-rate="${fps || ''}" title="命中片段：${escapeAttr(formatVideoSegmentRange(matchedSegment.start_sec, matchedSegment.end_sec))} ${escapeAttr(Array.isArray(matchedSegment.tags)?matchedSegment.tags.join(' · '):'')}"><i data-lucide="play-circle"></i><strong>${escapeHtml(formatVideoSegmentRange(matchedSegment.start_sec, matchedSegment.end_sec))}</strong></span>` : '';
     return `<article class="asset-card registry-card asset-type-${registryVisualType(item)} ${item.id === selectedRegistryAssetId ? 'active' : ''} ${selected ? 'selected' : ''}" data-registry-card="${escapeAttr(item.id)}" ${referenceCanvasId ? `data-reference-canvas-open="${escapeAttr(referenceCanvasId)}"` : ''} tabindex="0" role="button" aria-label="查看资产 ${escapeAttr(name)}">
         <input class="asset-card-check" type="checkbox" aria-label="选择 ${escapeAttr(name)}" data-registry-check="${escapeAttr(item.id)}" ${selected ? 'checked' : ''}>
         <span class="registry-card-format" aria-label="文件格式 ${escapeAttr(format)}">${escapeHtml(format)}</span>
-        ${segmentBadge}
         ${renderRegistryRecycleButton(item)}
-        <div class="asset-thumb"${mediaAspectStyle ? ` style="${mediaAspectStyle}"` : ''}>${deferRegistryPreviewThumb(assetThumb(item))}<span class="registry-card-selection-overlay" aria-hidden="true"></span></div>
+        <div class="asset-thumb"${mediaAspectStyle ? ` style="${mediaAspectStyle}"` : ''}>${deferRegistryPreviewThumb(assetThumb(item))}${segmentBadge}<span class="registry-card-selection-overlay" aria-hidden="true"></span></div>
         <div class="asset-card-body">
             <div class="registry-card-caption"><div class="asset-card-name" data-registry-card-name title="${escapeAttr(name)}">${escapeHtml(name)}</div><span class="registry-card-measure">${escapeHtml(item.kind === 'video' ? formatMediaDuration(item.duration || item.metadata?.duration) : formatFileSize(item.size || 0))}</span></div>
             <div class="asset-card-meta"><span>${escapeHtml(registryAssetTypeLabel(item))}</span><span>${escapeHtml(formatDate(item.created_at))}</span></div>
@@ -10473,6 +10473,24 @@ async function handleClick(event){
         clearRegistrySelectionDom();
         return;
     }
+    const videoJump = target.closest?.('[data-video-jump-sec]');
+    if(videoJump){
+        event.stopPropagation();
+        const rawSec = parseFloat(videoJump.dataset.videoJumpSec);
+        const fps = parseFloat(videoJump.dataset.videoFrameRate || '') || 0;
+        const assetId = videoJump.dataset.videoAssetId || selectedRegistryAssetId;
+        const currentItem = detailViewerVideoItem();
+        const effectiveFps = fps || Number(currentItem?.frame_rate || currentItem?.metadata?.frame_rate || 0);
+        const sec = alignTimeToFps(rawSec, effectiveFps);
+        if(Number.isFinite(sec)){
+            if(detailViewerState.open){
+                seekDetailVideoTo(sec, { play: true, fps: effectiveFps });
+            } else if(assetId){
+                showDetailPreview('registry', assetId, { startTime: sec, fps: effectiveFps });
+            }
+        }
+        return;
+    }
     const registryCard = target.closest?.('[data-registry-card]');
     if(registryCard){
         const id = registryCard.dataset.registryCard || '';
@@ -10505,19 +10523,7 @@ async function handleClick(event){
         }
         return;
     }
-    const videoJump = target.closest?.('[data-video-jump-sec]');
-    if(videoJump){
-        const sec = parseFloat(videoJump.dataset.videoJumpSec);
-        const assetId = videoJump.dataset.videoAssetId || selectedRegistryAssetId;
-        if(Number.isFinite(sec)){
-            if(detailViewerState.open){
-                seekDetailVideoTo(sec, { play: true });
-            } else if(assetId){
-                showDetailPreview('registry', assetId, { startTime: sec });
-            }
-        }
-        return;
-    }
+
     const registryPreview = target.closest?.('[data-registry-preview]');
     if(registryPreview){ showDetailPreview('registry',registryPreview.dataset.registryPreview||'');return; }
     if(target.closest?.('[data-project-create]')){ await createRegistryProject();return; }
@@ -11374,18 +11380,28 @@ function formatVideoSegmentTime(seconds){
 function formatVideoSegmentRange(startSec, endSec){
     return `${formatVideoSegmentTime(startSec)}~${formatVideoSegmentTime(endSec)}`;
 }
+function alignTimeToFps(seconds, fps = 0){
+    const sec = Math.max(0, Number(seconds || 0));
+    if(!Number.isFinite(sec)) return 0;
+    let rate = Number(fps || 0);
+    if(rate <= 0) return sec;
+    if(Math.abs(rate - 29.97) < 0.01) rate = 30000 / 1001;
+    else if(Math.abs(rate - 23.98) < 0.01 || Math.abs(rate - 23.976) < 0.01) rate = 24000 / 1001;
+    else if(Math.abs(rate - 59.94) < 0.01) rate = 60000 / 1001;
+    const frameIndex = Math.round(sec * rate);
+    return frameIndex / rate;
+}
 function findMatchedVideoSegment(item, query=''){
     const segments = item?.metadata?.video_segments || item?.video_segments;
     if(!Array.isArray(segments) || !segments.length) return null;
     const q = String(query || '').trim().toLowerCase();
-    if(q){
-        const matched = segments.find(s => {
-            const tags = Array.isArray(s.tags) ? s.tags : [];
-            return tags.some(t => String(t).toLowerCase().includes(q));
-        });
-        if(matched) return matched;
-    }
-    return segments[0] || null;
+    if(!q) return null;
+    const matched = segments.find(s => {
+        const tags = Array.isArray(s.tags) ? s.tags : [];
+        return tags.some(t => String(t).toLowerCase().includes(q))
+            || (s.summary && String(s.summary).toLowerCase().includes(q));
+    });
+    return matched || null;
 }
 function detailViewerMetaRows(source, item, type){
     const extension = assetFileExtension(item).toUpperCase() || detailViewerTypeLabel(type);
@@ -11583,16 +11599,17 @@ function renderDetailVideoSegments(item={}, source=detailViewerState.source){
     if(detailViewerType(source, item) !== 'video') return '';
     const segments = item.metadata?.video_segments || item.video_segments;
     if(!Array.isArray(segments) || !segments.length) return '';
+    const fps = Number(item.frame_rate || item.metadata?.frame_rate || 0);
     return `<section class="asset-video-segments-panel" aria-label="视频内容场景切片">
         <div class="asset-video-segments-head">
             <span class="segments-title"><i data-lucide="clapperboard"></i><strong>场景切片 (${segments.length})</strong></span>
-            <small>点击直接跳帧播放</small>
+            <small>${fps ? `${Number.isInteger(fps) ? fps : fps.toFixed(2)} fps` : '点击直接跳帧播放'}</small>
         </div>
         <div class="asset-video-segments-grid">
             ${segments.map((seg) => {
                 const range = formatVideoSegmentRange(seg.start_sec, seg.end_sec);
                 const tags = Array.isArray(seg.tags) ? seg.tags.join(' · ') : '';
-                return `<button type="button" class="asset-video-segment-chip" data-video-jump-sec="${seg.start_sec}" data-video-jump-end="${seg.end_sec}" data-video-asset-id="${escapeAttr(item.id)}" title="点击跳至 ${range} 起播">
+                return `<button type="button" class="asset-video-segment-chip" data-video-jump-sec="${seg.start_sec}" data-video-jump-end="${seg.end_sec}" data-video-asset-id="${escapeAttr(item.id)}" data-video-frame-rate="${fps || ''}" title="点击跳至 ${range} 起播">
                     <i data-lucide="play-circle"></i>
                     <strong>${range}</strong>
                     ${tags ? `<span class="chip-tags">${escapeHtml(tags)}</span>` : ''}
@@ -12281,7 +12298,14 @@ function renderDetailViewerMedia(source, item, type){
     const extension = assetFileExtension(item);
     if(type === 'workflow' || workflowSourceId(item)) return workflowThumb(item);
     if(type === 'video'){
-        return `<video class="asset-lightbox-video asset-detail-player" src="${escapeAttr(assetVideoUrl(url, item))}" poster="${escapeAttr(assetPreviewUrl(url, 1280, item))}" controls playsinline preload="metadata"></video>`;
+        let videoSrc = assetVideoUrl(url, item);
+        const startTime = detailViewerState.startTime;
+        const fps = Number(item.frame_rate || item.metadata?.frame_rate || 0);
+        if(startTime != null && Number.isFinite(Number(startTime)) && !videoSrc.includes('#t=')){
+            const alignedTime = alignTimeToFps(Number(startTime), fps);
+            videoSrc = `${videoSrc}#t=${alignedTime}`;
+        }
+        return `<video class="asset-lightbox-video asset-detail-player" src="${escapeAttr(videoSrc)}" poster="${escapeAttr(assetPreviewUrl(url, 1280, item))}" controls playsinline preload="metadata" data-frame-rate="${fps || ''}"></video>`;
     }
     if(type === 'audio'){
         const extensionLabel = assetFileExtension(item).toUpperCase() || 'AUDIO';
@@ -13918,10 +13942,11 @@ function showDetailPreview(source, id, options={}){
     if(['registry','canvas-asset'].includes(source) || detailMediaCanvasPersistId(item,source)) hydrateDetailRegistryAsset(item.id);
     document.body.classList.add('asset-lightbox-open');
     if(options.startTime != null && Number.isFinite(Number(options.startTime))){
-        const targetTime = Number(options.startTime);
-        requestAnimationFrame(() => {
-            seekDetailVideoTo(targetTime, { play: true });
-        });
+        const effectiveFps = options.fps || Number(item?.frame_rate || item?.metadata?.frame_rate || 0);
+        const targetTime = alignTimeToFps(Number(options.startTime), effectiveFps);
+        detailViewerState.startTime = targetTime;
+        // seekDetailVideoTo 内部已具备 readyState 状态自适应与 loadedmetadata 事件监听，无需盲等一帧
+        seekDetailVideoTo(targetTime, { play: true, fps: effectiveFps });
     }
 }
 function closeDetailPreview(force=false){
@@ -13937,9 +13962,29 @@ function closeDetailPreview(force=false){
     }
     const returnFocus = detailViewerState.returnFocus;
     const fullscreen = document.fullscreenElement;
-    if(fullscreen?.closest?.('.asset-detail-viewer')) document.exitFullscreen?.().catch?.(() => {});
-    document.querySelector('.asset-detail-viewer')?.querySelectorAll('audio,video').forEach(media => media.pause?.());
-    document.querySelector('.asset-detail-viewer')?.remove();
+    if(fullscreen?.closest?.('.asset-detail-viewer')){
+        const exitPromise = document.exitFullscreen?.();
+        if(exitPromise && typeof exitPromise.catch === 'function') exitPromise.catch(err => console.warn('[AssetManager] 退出全屏失败:', err));
+    }
+    document.querySelector('.asset-detail-viewer')?.querySelectorAll('audio,video').forEach(media => {
+        try {
+            if (typeof media.pause === 'function') media.pause();
+            media.src = '';
+            media.removeAttribute('src');
+            if (typeof media.load === 'function') media.load();
+        } catch (err) {
+            console.warn('[AssetManager] 释放媒体元素资源失败:', err);
+        }
+    });
+    const viewer = document.querySelector('.asset-detail-viewer');
+    if (viewer && window.MediaPreviewPlayer?.destroy) {
+        try {
+            window.MediaPreviewPlayer.destroy(viewer);
+        } catch (err) {
+            console.warn('[AssetManager] 销毁播放器组件失败:', err);
+        }
+    }
+    viewer?.remove();
     detailViewerMediaPreloads.clear();
     document.body.classList.remove('asset-lightbox-open');
     lightboxPanState = null;
@@ -14101,21 +14146,49 @@ function detailViewerVideo(videoId=''){
         || document.querySelector('.asset-detail-viewer .asset-detail-media-node.is-active video.asset-detail-player')
         || document.querySelector('.asset-detail-viewer .asset-lightbox-video.asset-detail-player');
 }
-function seekDetailVideoTo(seconds, { play = false, videoId = '' } = {}){
-    const sec = Math.max(0, Number(seconds || 0));
-    if(!Number.isFinite(sec)) return false;
+function seekDetailVideoTo(seconds, { play = false, videoId = '', fps = 0 } = {}){
+    const rawSec = Math.max(0, Number(seconds || 0));
+    if(!Number.isFinite(rawSec)) return false;
     const video = detailViewerVideo(videoId);
     if(!video) return false;
-    try {
-        video.currentTime = sec;
-        if(play && video.paused && typeof video.play === 'function'){
-            void video.play().catch(() => {});
+    if(video.error || video.networkState === 3) return false;
+    const item = detailViewerVideoItem(videoId);
+    const effectiveFps = fps || Number(video.getAttribute('data-frame-rate') || item?.frame_rate || item?.metadata?.frame_rate || 0);
+    const sec = alignTimeToFps(rawSec, effectiveFps);
+
+    const performSeek = () => {
+        try {
+            video.currentTime = sec;
+            if(play && video.paused && typeof video.play === 'function'){
+                const playPromise = video.play();
+                if(playPromise && typeof playPromise.catch === 'function'){
+                    playPromise.catch(err => {
+                        console.warn('[AssetManager] 自动起播被浏览器策略拦截:', err);
+                        setStatus(`已跳帧至 ${formatVideoSegmentTime(sec)}（自动起播受浏览器策略限制，请手动点击播放）`);
+                    });
+                }
+            }
+            syncDetailVideoControls(video);
+            setStatus(`已跳帧至 ${formatVideoSegmentTime(sec)}`);
+            return true;
+        } catch (err) {
+            console.error('[AssetManager] seekDetailVideoTo 失败:', err);
+            return false;
         }
-        syncDetailVideoControls(video);
-        setStatus(`已跳帧至 ${formatVideoSegmentTime(sec)}`);
+    };
+
+    if(video.readyState >= 1){
+        return performSeek();
+    } else {
+        // 不要只等一帧就直接设置 currentTime，等待 loadedmetadata / canplay 事件准备就绪
+        const onReady = () => {
+            video.removeEventListener('loadedmetadata', onReady);
+            video.removeEventListener('canplay', onReady);
+            performSeek();
+        };
+        video.addEventListener('loadedmetadata', onReady, { once: true });
+        video.addEventListener('canplay', onReady, { once: true });
         return true;
-    } catch(_) {
-        return false;
     }
 }
 function detailViewerVideoItem(videoId=''){
@@ -18558,6 +18631,7 @@ Object.defineProperties(window, {
     registrySelectedIds:{configurable:true, get:() => registrySelectedIds},
     formatVideoSegmentTime:{configurable:true, value:formatVideoSegmentTime},
     formatVideoSegmentRange:{configurable:true, value:formatVideoSegmentRange},
+    alignTimeToFps:{configurable:true, value:alignTimeToFps},
     findMatchedVideoSegment:{configurable:true, value:findMatchedVideoSegment},
     seekDetailVideoTo:{configurable:true, value:seekDetailVideoTo},
     openRegistryAssetFromGlobalSearch:{configurable:true, value:openRegistryAssetFromGlobalSearch},
