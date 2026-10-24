@@ -5682,7 +5682,7 @@ async function openRegistryAsset(id){
         }
     } catch(err){ setStatus(err.message || '读取资产详情失败'); }
 }
-async function openRegistryAssetFromGlobalSearch(assetId){
+async function openRegistryAssetFromGlobalSearch(assetId, startTime = null){
     const id = touchbarStableId(assetId);
     if(!id) return;
     activeTab = 'registry';
@@ -5690,6 +5690,9 @@ async function openRegistryAssetFromGlobalSearch(assetId){
     registryDetailPanelCollapsed = false;
     await refreshRegistryAssets(false);
     await openRegistryAsset(id);
+    if(startTime != null && Number.isFinite(Number(startTime))){
+        showDetailPreview('registry', id, { startTime: Number(startTime) });
+    }
 }
 function registryVisibleAssets(){
     return registryVisibleAssetList(registryAssets);
@@ -8135,9 +8138,12 @@ function renderRegistryCard(item){
     const format = registryAssetExtension(item).toUpperCase() || 'FILE';
     const referenceCanvasId = boardReferenceCanvasSelection[activeTab] || '';
     const mediaAspectStyle = registryMediaAspectStyle(item);
+    const matchedSegment = item.kind === 'video' ? findMatchedVideoSegment(item, registryQuery) : null;
+    const segmentBadge = matchedSegment ? `<span class="registry-card-segment-badge" data-video-jump-sec="${matchedSegment.start_sec}" data-video-jump-end="${matchedSegment.end_sec}" data-video-asset-id="${escapeAttr(item.id)}" title="命中片段：${escapeAttr(formatVideoSegmentRange(matchedSegment.start_sec, matchedSegment.end_sec))} ${escapeAttr(Array.isArray(matchedSegment.tags)?matchedSegment.tags.join(' · '):'')}"><i data-lucide="play-circle"></i><strong>${escapeHtml(formatVideoSegmentRange(matchedSegment.start_sec, matchedSegment.end_sec))}</strong></span>` : '';
     return `<article class="asset-card registry-card asset-type-${registryVisualType(item)} ${item.id === selectedRegistryAssetId ? 'active' : ''} ${selected ? 'selected' : ''}" data-registry-card="${escapeAttr(item.id)}" ${referenceCanvasId ? `data-reference-canvas-open="${escapeAttr(referenceCanvasId)}"` : ''} tabindex="0" role="button" aria-label="查看资产 ${escapeAttr(name)}">
         <input class="asset-card-check" type="checkbox" aria-label="选择 ${escapeAttr(name)}" data-registry-check="${escapeAttr(item.id)}" ${selected ? 'checked' : ''}>
         <span class="registry-card-format" aria-label="文件格式 ${escapeAttr(format)}">${escapeHtml(format)}</span>
+        ${segmentBadge}
         ${renderRegistryRecycleButton(item)}
         <div class="asset-thumb"${mediaAspectStyle ? ` style="${mediaAspectStyle}"` : ''}>${deferRegistryPreviewThumb(assetThumb(item))}<span class="registry-card-selection-overlay" aria-hidden="true"></span></div>
         <div class="asset-card-body">
@@ -8469,7 +8475,7 @@ function renderRegistryDetail(){
             <div class="detail-media"><button class="detail-media-frame detail-media-zoomable" type="button" aria-label="放大预览 ${escapeAttr(item.name || 'asset')}" data-registry-preview="${escapeAttr(item.id)}">${mediaType === 'video' ? `<span class="asset-thumb detail-media-video-thumb">${assetThumb(detailPreviewItem)}</span>` : assetThumb(detailPreviewItem)}</button></div>
             <div class="detail-body">
                 <div class="detail-name">${escapeHtml(item.name || 'asset')}</div>
-                ${mediaType === 'video' ? `${renderDetailVideoStoryboardPanel(item,'registry')}${renderDetailVideoSummary(item,'registry')}` : `<div class="detail-meta-grid">
+                ${mediaType === 'video' ? `${renderDetailVideoStoryboardPanel(item,'registry')}${renderDetailVideoSegments(item,'registry')}${renderDetailVideoSummary(item,'registry')}` : `<div class="detail-meta-grid">
                     <div class="detail-meta"><span>稳定 ID</span><strong title="${escapeAttr(item.id)}">${escapeHtml(String(item.id).slice(0,8))}</strong></div>
                     <div class="detail-meta"><span>大小</span><strong>${escapeHtml(formatFileSize(item.size))}</strong></div>
                     <div class="detail-meta"><span>关联库</span><strong>${linkedBoards.length}</strong></div>
@@ -10499,6 +10505,19 @@ async function handleClick(event){
         }
         return;
     }
+    const videoJump = target.closest?.('[data-video-jump-sec]');
+    if(videoJump){
+        const sec = parseFloat(videoJump.dataset.videoJumpSec);
+        const assetId = videoJump.dataset.videoAssetId || selectedRegistryAssetId;
+        if(Number.isFinite(sec)){
+            if(detailViewerState.open){
+                seekDetailVideoTo(sec, { play: true });
+            } else if(assetId){
+                showDetailPreview('registry', assetId, { startTime: sec });
+            }
+        }
+        return;
+    }
     const registryPreview = target.closest?.('[data-registry-preview]');
     if(registryPreview){ showDetailPreview('registry',registryPreview.dataset.registryPreview||'');return; }
     if(target.closest?.('[data-project-create]')){ await createRegistryProject();return; }
@@ -11344,6 +11363,30 @@ function formatDetailVideoTime(value){
     const remain = whole % 60;
     return hours ? `${hours}:${String(minutes).padStart(2,'0')}:${String(remain).padStart(2,'0')}` : `${minutes}:${String(remain).padStart(2,'0')}`;
 }
+function formatVideoSegmentTime(seconds){
+    const sec = Math.max(0, Number(seconds || 0));
+    if(!Number.isFinite(sec)) return '00:00';
+    const whole = Math.floor(sec);
+    const minutes = Math.floor(whole / 60);
+    const remain = whole % 60;
+    return `${String(minutes).padStart(2,'0')}:${String(remain).padStart(2,'0')}`;
+}
+function formatVideoSegmentRange(startSec, endSec){
+    return `${formatVideoSegmentTime(startSec)}~${formatVideoSegmentTime(endSec)}`;
+}
+function findMatchedVideoSegment(item, query=''){
+    const segments = item?.metadata?.video_segments || item?.video_segments;
+    if(!Array.isArray(segments) || !segments.length) return null;
+    const q = String(query || '').trim().toLowerCase();
+    if(q){
+        const matched = segments.find(s => {
+            const tags = Array.isArray(s.tags) ? s.tags : [];
+            return tags.some(t => String(t).toLowerCase().includes(q));
+        });
+        if(matched) return matched;
+    }
+    return segments[0] || null;
+}
 function detailViewerMetaRows(source, item, type){
     const extension = assetFileExtension(item).toUpperCase() || detailViewerTypeLabel(type);
     const created = item.created_at || item.lastModified || item.canvas_updated_at || 0;
@@ -11534,6 +11577,28 @@ function renderDetailVideoStoryboardPanel(item={},source=detailViewerState.sourc
             <img src="${escapeAttr(url)}" alt="${escapeAttr(item.name || '视频')}九宫格预览" loading="lazy">
             <span><i data-lucide="grid-3x3"></i>九宫格预览</span>
         </button>
+    </section>`;
+}
+function renderDetailVideoSegments(item={}, source=detailViewerState.source){
+    if(detailViewerType(source, item) !== 'video') return '';
+    const segments = item.metadata?.video_segments || item.video_segments;
+    if(!Array.isArray(segments) || !segments.length) return '';
+    return `<section class="asset-video-segments-panel" aria-label="视频内容场景切片">
+        <div class="asset-video-segments-head">
+            <span class="segments-title"><i data-lucide="clapperboard"></i><strong>场景切片 (${segments.length})</strong></span>
+            <small>点击直接跳帧播放</small>
+        </div>
+        <div class="asset-video-segments-grid">
+            ${segments.map((seg) => {
+                const range = formatVideoSegmentRange(seg.start_sec, seg.end_sec);
+                const tags = Array.isArray(seg.tags) ? seg.tags.join(' · ') : '';
+                return `<button type="button" class="asset-video-segment-chip" data-video-jump-sec="${seg.start_sec}" data-video-jump-end="${seg.end_sec}" data-video-asset-id="${escapeAttr(item.id)}" title="点击跳至 ${range} 起播">
+                    <i data-lucide="play-circle"></i>
+                    <strong>${range}</strong>
+                    ${tags ? `<span class="chip-tags">${escapeHtml(tags)}</span>` : ''}
+                </button>`;
+            }).join('')}
+        </div>
     </section>`;
 }
 function renderDetailVideoSummary(item={},source=detailViewerState.source){
@@ -12402,7 +12467,7 @@ function renderDetailViewerInspectorContent(item, type, tags, rows, url, extraCo
         <div class="asset-detail-title"><span>${escapeHtml(detailViewerTypeLabel(type))}</span>${editableName
             ? `<label class="asset-detail-name-editor"><span>文件名称</span><div><input type="text" value="${escapeAttr(item.name || '')}" data-detail-name-input aria-label="文件名称"><button type="button" data-detail-name-save title="保存文件名称"><i data-lucide="check"></i></button></div></label>`
             : `<h2>${detailViewerNameHtml(item.name)}</h2>`}<p>${escapeHtml(detailViewerSourceLabel(source, item))}</p></div>
-        ${type === 'video' ? `${renderDetailVideoStoryboardPanel(item,source)}${renderDetailVideoSummary(item,source)}` : ''}
+        ${type === 'video' ? `${renderDetailVideoStoryboardPanel(item,source)}${renderDetailVideoSegments(item,source)}${renderDetailVideoSummary(item,source)}` : ''}
         ${inspectorRows.length ? `<dl class="asset-detail-facts">${renderDetailViewerMetaRows(inspectorRows, item)}</dl>` : ''}
         ${source === 'registry' ? `<section class="asset-detail-registry-meta">${workflowProvenanceLinks(item)}${renderRegistryEditableTags(item, 'viewer')}${renderRegistryRelations(item)}</section>` : (tags.length ? `<section class="asset-detail-tags"><strong>智能分类与标签</strong><div>${tags.map(tag => `<span>${escapeHtml(tag)}</span>`).join('')}</div></section>` : '')}
         ${type === 'text' && detailViewerCanEditText(source, item) ? renderDetailTextVersions() : ''}
@@ -13852,6 +13917,12 @@ function showDetailPreview(source, id, options={}){
     loadDetailViewerFileInfo();
     if(['registry','canvas-asset'].includes(source) || detailMediaCanvasPersistId(item,source)) hydrateDetailRegistryAsset(item.id);
     document.body.classList.add('asset-lightbox-open');
+    if(options.startTime != null && Number.isFinite(Number(options.startTime))){
+        const targetTime = Number(options.startTime);
+        requestAnimationFrame(() => {
+            seekDetailVideoTo(targetTime, { play: true });
+        });
+    }
 }
 function closeDetailPreview(force=false){
     if(detailViewerState.textVersionEditing && !force){
@@ -14029,6 +14100,23 @@ function detailViewerVideo(videoId=''){
     return nodeVideo
         || document.querySelector('.asset-detail-viewer .asset-detail-media-node.is-active video.asset-detail-player')
         || document.querySelector('.asset-detail-viewer .asset-lightbox-video.asset-detail-player');
+}
+function seekDetailVideoTo(seconds, { play = false, videoId = '' } = {}){
+    const sec = Math.max(0, Number(seconds || 0));
+    if(!Number.isFinite(sec)) return false;
+    const video = detailViewerVideo(videoId);
+    if(!video) return false;
+    try {
+        video.currentTime = sec;
+        if(play && video.paused && typeof video.play === 'function'){
+            void video.play().catch(() => {});
+        }
+        syncDetailVideoControls(video);
+        setStatus(`已跳帧至 ${formatVideoSegmentTime(sec)}`);
+        return true;
+    } catch(_) {
+        return false;
+    }
 }
 function detailViewerVideoItem(videoId=''){
     const id = videoId || detailViewerState.mediaCanvasActiveId || '';
@@ -18446,6 +18534,21 @@ window.addEventListener('message', event => {
         syncRegistryOnReveal().catch(err => setStatus(err.message || '增量同步资产失败'));
     }
 });
+window.addEventListener('gw:omnibar-result-select', (event) => {
+    const detail = event?.detail || {};
+    const result = detail.result || {};
+    const assetId = result.asset_id || result.id;
+    let targetTime = null;
+    if (result.start_sec != null) targetTime = Number(result.start_sec);
+    else if (result.time != null) targetTime = Number(result.time);
+    else if (typeof result.href === 'string' && result.href.includes('#t=')) {
+        const match = result.href.match(/#t=([\d.]+)/);
+        if (match) targetTime = Number(match[1]);
+    }
+    if (assetId) {
+        openRegistryAssetFromGlobalSearch(assetId, targetTime).catch(() => {});
+    }
+});
 // asset-review.js remains a classic script during the incremental M3 migration.
 // Keep the page globals it consumes available after asset-manager.js becomes a module.
 Object.defineProperties(window, {
@@ -18453,6 +18556,11 @@ Object.defineProperties(window, {
     readStoredNumber:{configurable:true, value:readStoredNumber},
     selectedRegistryAsset:{configurable:true, value:selectedRegistryAsset},
     registrySelectedIds:{configurable:true, get:() => registrySelectedIds},
+    formatVideoSegmentTime:{configurable:true, value:formatVideoSegmentTime},
+    formatVideoSegmentRange:{configurable:true, value:formatVideoSegmentRange},
+    findMatchedVideoSegment:{configurable:true, value:findMatchedVideoSegment},
+    seekDetailVideoTo:{configurable:true, value:seekDetailVideoTo},
+    openRegistryAssetFromGlobalSearch:{configurable:true, value:openRegistryAssetFromGlobalSearch},
 });
 if(!directorySettingsPage) renderBoardNavigation();
 document.addEventListener('DOMContentLoaded', () => {

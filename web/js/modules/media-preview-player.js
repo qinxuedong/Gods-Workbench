@@ -63,7 +63,12 @@
       ? 'video'
       : kind === 'audio' || type.indexOf('audio/') === 0 ? 'audio' : 'img';
     const node = document.createElement(tag);
-    node.src = descriptor.proxy_url;
+    let proxyUrl = descriptor.proxy_url;
+    const startTimeRaw = element.dataset.startTime || element.dataset.time || element.dataset.t;
+    if (startTimeRaw && (tag === 'video' || tag === 'audio') && !proxyUrl.includes('#t=')) {
+      proxyUrl = `${proxyUrl}#t=${encodeURIComponent(startTimeRaw)}`;
+    }
+    node.src = proxyUrl;
     node.dataset.proxyArtifactId = text(descriptor.artifact_id, '');
     node.dataset.previewAvailability = READY;
     node.setAttribute('data-preview-source', 'proxy');
@@ -75,6 +80,20 @@
       node.controls = true;
       node.preload = 'metadata';
       node.playsInline = true;
+      if (startTimeRaw) {
+        const parsed = parseFloat(startTimeRaw);
+        if (Number.isFinite(parsed) && parsed >= 0) {
+          const syncCurrentTime = () => {
+            try {
+              if (Math.abs(node.currentTime - parsed) > 0.05) {
+                node.currentTime = parsed;
+              }
+            } catch (_) {}
+          };
+          node.addEventListener('loadedmetadata', syncCurrentTime, { once: true });
+          node.addEventListener('canplay', syncCurrentTime, { once: true });
+        }
+      }
     }
     node.addEventListener('error', () => fallback(element, 'unavailable', '代理产物读取失败；请重新生成或检查源文件'));
     return node;
@@ -126,17 +145,47 @@
     return Promise.all(nodes.map((node) => mount(node, options)));
   }
 
+  function seekTo(element, seconds, options = {}) {
+    if (!element) return false;
+    const time = Math.max(0, Number(seconds || 0));
+    if (!Number.isFinite(time)) return false;
+    element.dataset.startTime = String(time);
+    const media = element.querySelector('video, audio');
+    if (media) {
+      try {
+        media.currentTime = time;
+        if (options.play && media.paused && typeof media.play === 'function') {
+          void media.play();
+        }
+        return true;
+      } catch (_) {
+        return false;
+      }
+    }
+    return false;
+  }
+
   function destroy(element) {
     if (!element) return;
     if (element._mediaPreviewController) element._mediaPreviewController.abort();
     element._mediaPreviewController = null;
+    const media = element.querySelector('video, audio');
+    if (media) {
+      try {
+        if (typeof media.pause === 'function') media.pause();
+        media.src = '';
+        media.removeAttribute('src');
+        if (typeof media.load === 'function') media.load();
+      } catch (_) {}
+    }
     clear(element);
     delete element.dataset.previewState;
     delete element.dataset.previewAvailability;
     delete element.dataset.gwDegradation;
+    delete element.dataset.startTime;
   }
 
-  global.MediaPreviewPlayer = Object.freeze({ mount, mountAll, fallback, destroy, requestUrl });
+  global.MediaPreviewPlayer = Object.freeze({ mount, mountAll, fallback, destroy, requestUrl, seekTo });
   if (global.document) {
     const boot = () => { void mountAll(global.document); };
     if (global.document.readyState === 'loading') global.document.addEventListener('DOMContentLoaded', boot, { once: true });
