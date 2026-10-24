@@ -27,7 +27,7 @@
 
 from __future__ import annotations
 
-from typing import Any, Optional
+from typing import Any
 
 from gw.core import storage
 from gw.core.errors import CleanroomException, VersionConflictException
@@ -52,7 +52,7 @@ def _bump(raw: dict[str, Any]) -> int:
     return raw["revision"]
 
 
-def _cas(raw: dict[str, Any], expected: Optional[int], label: str) -> None:
+def _cas(raw: dict[str, Any], expected: int | None, label: str) -> None:
     if type(expected) is not int or expected < 1:
         raise CleanroomException(
             400, "INVALID_REQUEST", "expected_version 必须为正整数"
@@ -90,7 +90,7 @@ def _tree_state() -> dict[str, Any]:
     return storage.JsonState(TREE_NS, lambda: {"libraries": {}}).read()
 
 
-def _validate_parent_refs(library_id: str, category_id: Optional[str] = None) -> None:
+def _validate_parent_refs(library_id: str, category_id: str | None = None) -> None:
     """条目只能引用真实父库；分类必须真实存在并属于该父库。"""
     libraries = _tree_state().get("libraries", {})
     library = libraries.get(library_id)
@@ -131,7 +131,7 @@ def _reference_gaps(items: list[dict[str, Any]]) -> list[dict[str, str]]:
     return gaps
 
 
-def list_items(library_id: Optional[str] = None) -> dict[str, Any]:
+def list_items(library_id: str | None = None) -> dict[str, Any]:
     with coordination.PROMPT_LIBRARY_DOMAIN_LOCK:
         raw = state().read()
         items = [dict(v) for v in raw["items"].values()]
@@ -233,7 +233,7 @@ def update_item(item_id: str, payload: dict[str, Any]) -> dict[str, Any]:
     return {"prompt_item": item, "item": item}
 
 
-def delete_item(item_id: str, expected_version: Optional[int]) -> dict[str, Any]:
+def delete_item(item_id: str, expected_version: int | None) -> dict[str, Any]:
     def mutate(raw: dict[str, Any]) -> dict[str, Any]:
         record = raw["items"].get(item_id)
         if record is None:
@@ -247,7 +247,7 @@ def delete_item(item_id: str, expected_version: Optional[int]) -> dict[str, Any]
         return state().mutate(mutate)
 
 
-def bulk_delete(ids: list[str], expected_version: Optional[int]) -> dict[str, Any]:
+def bulk_delete(ids: list[str], expected_version: int | None) -> dict[str, Any]:
     if not isinstance(ids, list) or not ids:
         raise CleanroomException(400, "INVALID_REQUEST", "ids 不能为空")
 

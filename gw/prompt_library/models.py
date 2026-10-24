@@ -26,8 +26,6 @@
 
 from __future__ import annotations
 
-from typing import Optional
-
 from pydantic import BaseModel, ConfigDict, Field
 
 
@@ -65,7 +63,7 @@ class PromptLibrarySnapshot(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
     version: int = Field(..., ge=1, description="顶层目录 CAS 版本号")
-    active_library_id: Optional[str] = Field(
+    active_library_id: str | None = Field(
         None, description="当前激活提示词库标识；空目录为 null"
     )
     libraries: list[PromptLibraryItem] = Field(
