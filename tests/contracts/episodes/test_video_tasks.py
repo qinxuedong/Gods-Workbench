@@ -665,7 +665,7 @@ def test_local_ffmpeg_export_normalizes_mixed_inputs_and_registers_verified_outp
     first = _make_clip(tmp_path / "first.mp4", size="64x64", rate=10, duration="0.6")
     second = _make_clip(tmp_path / "second.mp4", size="96x64", rate=12, duration="0.6")
     service, context = _service(tmp_path, monkeypatch=monkeypatch)
-    actor = service.actor(context)
+    service.actor(context)
     asset_paths = {"asset-1": first, "asset-2": second}
     service._authorized_asset_path = lambda asset_id, _project_id, _actor: asset_paths[
         asset_id

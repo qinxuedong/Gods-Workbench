@@ -1499,7 +1499,7 @@ def test_legacy_budget_rows_backfill_only_from_unique_invocation_owner(
                 ),
             )
 
-    migrated = _build_secondary_integration(host_agent)
+    _build_secondary_integration(host_agent)
     with database.connect() as db:
         row = db.execute(
             "SELECT run_id FROM host_agent_budget_ledger WHERE operation_id=?",
