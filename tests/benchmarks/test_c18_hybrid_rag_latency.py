@@ -159,6 +159,21 @@ def test_hybrid_search_degrades_to_fts5_when_sqlite_vec_is_unavailable(
         engine.close()
 
 
+def test_degraded_vector_search_still_validates_query_dimensions(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """降级状态下向量查询仍拒绝错误维度。"""
+    monkeypatch.setattr(sqlite_vec_engine, "_load_sqlite_vec", lambda _db: False)
+    engine = SQLiteVecEngine(tmp_path / "degraded-dimensions.sqlite3", dimensions=3)
+    try:
+        assert engine.vector_enabled is False
+
+        with pytest.raises(ValueError, match="维度"):
+            engine.search_vectors([1.0, 0.0], limit=1)
+    finally:
+        engine.close()
+
+
 def test_sqlite_vec_returns_nearest_neighbors_when_extension_is_available(
     tmp_path: Path,
 ) -> None:

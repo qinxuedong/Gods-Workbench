@@ -375,10 +375,10 @@ class SQLiteVecEngine:
         self._ensure_open()
         limit = self._validate_limit(limit)
         self._vector_search_state.degraded = False
+        vector_blob = _serialize_vector(query_vector, self.dimensions)
         if not self.vector_enabled:
             self._vector_search_state.degraded = True
             return []
-        vector_blob = _serialize_vector(query_vector, self.dimensions)
         with self._lock:
             self._ensure_open()
             try:
