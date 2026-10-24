@@ -18,6 +18,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import dataclass
+from typing import overload
 
 from gw.core.sqlite_vec_engine import (
     MAX_QUERY_LENGTH,
@@ -52,6 +53,22 @@ class HybridSearchResults(list[HybridSearchResult]):
     ) -> None:
         super().__init__(results)
         self.vector_track_degraded = vector_track_degraded
+
+    @overload
+    def __getitem__(self, index: int) -> HybridSearchResult: ...
+
+    @overload
+    def __getitem__(self, index: slice) -> HybridSearchResults: ...
+
+    def __getitem__(
+        self, index: int | slice
+    ) -> HybridSearchResult | HybridSearchResults:
+        if isinstance(index, slice):
+            sliced: list[HybridSearchResult] = super().__getitem__(index)
+            return HybridSearchResults(
+                sliced, vector_track_degraded=self.vector_track_degraded
+            )
+        return super().__getitem__(index)
 
 
 @dataclass(slots=True)

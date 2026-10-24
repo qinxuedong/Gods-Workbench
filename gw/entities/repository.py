@@ -52,19 +52,17 @@ def _blank() -> dict[str, Any]:
     return {"revision": 1, "entities": {}, "sequences": {}}
 
 
-def _strict_read_entities() -> tuple[dict[str, Any], bool]:
-    """严格读取实体母库数据。
+def read_entities_snapshot() -> tuple[dict[str, Any], bool, bytes | None]:
+    """严格读取一次实体母库快照，供实体仓储和资产过滤共同使用。
 
-    返回 (data, is_new)：
-    - 若物理文件不存在，返回全新的初始结构与 True；
-    - 若文件存在但损坏或非法，一律记录一条 WARNING 日志并抛出 503 CleanroomException；
-    - 绝不在响应体中携带物理路径、errno 或 traceback。
+    返回 (data, is_new, raw_bytes)。仅缺失文件使用初始结构；已有文件的任何
+    读取或内容错误均记录 WARNING 并抛出 503。响应不携带物理路径、errno 或 traceback。
     """
     path = storage.file_for(NS_ENTITIES)
     try:
-        if not path.exists():
-            return _blank(), True
         raw_bytes = path.read_bytes()
+    except FileNotFoundError:
+        return _blank(), True, None
     except OSError as exc:
         _LOGGER.warning("读取实体母库文件失败，服务暂不可用：%s", exc)
         raise CleanroomException(
@@ -145,7 +143,7 @@ def _strict_read_entities() -> tuple[dict[str, Any], bool]:
     if "sequences" not in data or not isinstance(data.get("sequences"), dict):
         data["sequences"] = {}
 
-    return data, False
+    return data, False, raw_bytes
 
 
 def _mutate_entities(mutator: Callable[[dict[str, Any]], Any]) -> Any:
@@ -153,8 +151,8 @@ def _mutate_entities(mutator: Callable[[dict[str, Any]], Any]) -> Any:
 
     若文件存在但已损坏，在读取阶段直接抛出 503，整个过程绝不调用存储写入，原文件不被覆盖。
     """
-    with storage._namespace_lock(NS_ENTITIES):
-        raw, _ = _strict_read_entities()
+    with storage.namespace_lock(NS_ENTITIES):
+        raw, _, _ = read_entities_snapshot()
         result = mutator(raw)
         storage.save(NS_ENTITIES, raw)
         return result
@@ -164,7 +162,7 @@ class _EntityJsonState(storage.JsonState):
     """实体母库专属严格 JSON 状态容器。"""
 
     def read(self) -> Any:
-        data, _ = _strict_read_entities()
+        data, _, _ = read_entities_snapshot()
         return data
 
     def mutate(self, mutator: Callable[[Any], Any]) -> Any:
@@ -178,7 +176,7 @@ def state() -> storage.JsonState:
 
 
 def _read_state() -> dict[str, Any]:
-    data, _ = _strict_read_entities()
+    data, _, _ = read_entities_snapshot()
     return data
 
 

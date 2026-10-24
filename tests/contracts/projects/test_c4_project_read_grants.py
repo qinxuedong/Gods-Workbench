@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """C4-AC7/AC8 项目显式读授权（owner 决定模型）契约测试。
 
 覆盖口径（对齐 agent_tasks 规格）：
@@ -62,7 +61,7 @@ def _create_asset(client: TestClient, name: str = "c4-review.png") -> str:
 
 def _link_asset(client: TestClient, project_id: str, asset_id: str) -> None:
     response = client.post(
-        "/api/asset-registry/projects/%s/assets" % project_id, headers=OWNER,
+        f"/api/asset-registry/projects/{project_id}/assets", headers=OWNER,
         json={"asset_ids": [asset_id]},
     )
     assert response.status_code == 200, response.text
@@ -122,19 +121,19 @@ def test_revoke_immediately_blocks_detail_and_both_lists(client: TestClient):
     project_id = _create_project(client)
 
     # 新建项目默认 explicit：未授权的已认证用户不可读。
-    blocked = client.get("/api/projects/%s" % project_id, headers=OTHER)
+    blocked = client.get(f"/api/projects/{project_id}", headers=OTHER)
     assert blocked.status_code == 403
     assert blocked.json()["detail"]["code"] == "PROJECT_READ_FORBIDDEN"
 
     granted = _grant(client, project_id, OTHER_TOKEN)
     assert granted.status_code == 200, granted.text
-    assert client.get("/api/projects/%s" % project_id, headers=OTHER).status_code == 200
+    assert client.get(f"/api/projects/{project_id}", headers=OTHER).status_code == 200
     assert project_id in _ids(client.get("/api/projects", headers=OTHER).json())
     assert project_id in _ids(client.get("/api/asset-registry/projects", headers=OTHER).json())
 
     revoked = _revoke(client, project_id, OTHER_TOKEN)
     assert revoked.status_code == 200, revoked.text
-    blocked_again = client.get("/api/projects/%s" % project_id, headers=OTHER)
+    blocked_again = client.get(f"/api/projects/{project_id}", headers=OTHER)
     assert blocked_again.status_code == 403
     assert blocked_again.json()["detail"]["code"] == "PROJECT_READ_FORBIDDEN"
     assert project_id not in _ids(client.get("/api/projects", headers=OTHER).json())
@@ -156,21 +155,21 @@ def test_revocation_invalidates_only_revoked_creator_share_links(client: TestCli
 
     token_other = _share(client, asset_id, OTHER)
     token_third = _share(client, asset_id, THIRD)
-    assert client.get("/api/public/shares/%s" % token_other).status_code == 200
-    assert client.get("/api/public/shares/%s" % token_third).status_code == 200
+    assert client.get(f"/api/public/shares/{token_other}").status_code == 200
+    assert client.get(f"/api/public/shares/{token_third}").status_code == 200
 
     assert _revoke(client, project_id, OTHER_TOKEN).status_code == 200
 
-    revoked_meta = client.get("/api/public/shares/%s" % token_other)
+    revoked_meta = client.get(f"/api/public/shares/{token_other}")
     assert revoked_meta.status_code == 404
     assert revoked_meta.json()["detail"]["code"] == "SHARE_NOT_FOUND"
-    revoked_access = client.post("/api/public/shares/%s/access" % token_other, json={})
+    revoked_access = client.post(f"/api/public/shares/{token_other}/access", json={})
     assert revoked_access.status_code == 404
     assert revoked_access.json()["detail"]["code"] == "SHARE_NOT_FOUND"
 
     # 其他用户的分享照常可用。
-    assert client.get("/api/public/shares/%s" % token_third).status_code == 200
-    third_access = client.post("/api/public/shares/%s/access" % token_third, json={})
+    assert client.get(f"/api/public/shares/{token_third}").status_code == 200
+    third_access = client.post(f"/api/public/shares/{token_third}/access", json={})
     assert third_access.status_code == 200, third_access.text
 
 
@@ -184,20 +183,20 @@ def test_share_survives_until_creator_loses_any_project_read(client: TestClient)
     assert _grant(client, project_a, OTHER_TOKEN).status_code == 200
     assert _grant(client, project_b, OTHER_TOKEN).status_code == 200
     token = _share(client, asset_id, OTHER)
-    assert client.get("/api/public/shares/%s" % token).status_code == 200
+    assert client.get(f"/api/public/shares/{token}").status_code == 200
 
     assert _revoke(client, project_b, OTHER_TOKEN).status_code == 200
-    assert client.get("/api/public/shares/%s" % token).status_code == 404
+    assert client.get(f"/api/public/shares/{token}").status_code == 404
 
     assert _grant(client, project_b, OTHER_TOKEN).status_code == 200
-    assert client.get("/api/public/shares/%s" % token).status_code == 200
+    assert client.get(f"/api/public/shares/{token}").status_code == 200
 
 
 def test_unlinked_asset_share_not_affected_by_grants(client: TestClient):
     """未关联任何项目的素材分享不参与读授权判定（legacy 行为保持）。"""
     asset_id = _create_asset(client)
     token = _share(client, asset_id, OTHER)
-    assert client.get("/api/public/shares/%s" % token).status_code == 200
+    assert client.get(f"/api/public/shares/{token}").status_code == 200
 
 
 # ---------------------------------------------------------------------------
@@ -207,15 +206,15 @@ def test_unlinked_asset_share_not_affected_by_grants(client: TestClient):
 def test_governor_and_admin_keep_read_after_revocation(client: TestClient):
     project_id = _create_project(client)
     # explicit 项目：治理角色经全局角色即可读。
-    assert client.get("/api/projects/%s" % project_id, headers=GOV).status_code == 200
-    assert client.get("/api/projects/%s" % project_id, headers=ADMIN).status_code == 200
+    assert client.get(f"/api/projects/{project_id}", headers=GOV).status_code == 200
+    assert client.get(f"/api/projects/{project_id}", headers=ADMIN).status_code == 200
 
     assert _revoke(client, project_id, GOV_TOKEN).status_code == 200
     assert _revoke(client, project_id, ADMIN_TOKEN).status_code == 200
 
-    assert client.get("/api/projects/%s" % project_id, headers=GOV).status_code == 200
-    assert client.get("/api/projects/%s" % project_id, headers=ADMIN).status_code == 200
-    assert client.get("/api/projects/%s" % project_id, headers=OTHER).status_code == 403
+    assert client.get(f"/api/projects/{project_id}", headers=GOV).status_code == 200
+    assert client.get(f"/api/projects/{project_id}", headers=ADMIN).status_code == 200
+    assert client.get(f"/api/projects/{project_id}", headers=OTHER).status_code == 403
 
     view = client.get(GRANTS_BASE.format(pid=project_id), headers=OWNER).json()
     gov_prefix = hashlib.sha256(("local_dev\0" + local_subject(GOV_TOKEN)).encode("utf-8")).hexdigest()[:12]
@@ -239,9 +238,9 @@ def test_only_owner_and_global_admin_manage_read_grants(client: TestClient):
     # owner 与全局 admin（非 owner）都可读视图并执行授权。
     assert client.get(GRANTS_BASE.format(pid=project_id), headers=ADMIN).status_code == 200
     assert _grant(client, project_id, THIRD_TOKEN, headers=ADMIN).status_code == 200
-    assert client.get("/api/projects/%s" % project_id, headers=THIRD).status_code == 200
+    assert client.get(f"/api/projects/{project_id}", headers=THIRD).status_code == 200
     assert _revoke(client, project_id, THIRD_TOKEN, headers=ADMIN).status_code == 200
-    assert client.get("/api/projects/%s" % project_id, headers=THIRD).status_code == 403
+    assert client.get(f"/api/projects/{project_id}", headers=THIRD).status_code == 403
 
 
 # ---------------------------------------------------------------------------
@@ -254,26 +253,26 @@ def test_legacy_project_open_by_default_and_revocable(client: TestClient):
     view = client.get(GRANTS_BASE.format(pid=legacy), headers=ADMIN)
     assert view.status_code == 200, view.text
     assert view.json()["mode"] == "legacy_open"
-    assert client.get("/api/projects/%s" % legacy, headers=OTHER).status_code == 200
+    assert client.get(f"/api/projects/{legacy}", headers=OTHER).status_code == 200
 
     assert _revoke(client, legacy, OTHER_TOKEN, headers=ADMIN).status_code == 200
-    assert client.get("/api/projects/%s" % legacy, headers=OTHER).status_code == 403
+    assert client.get(f"/api/projects/{legacy}", headers=OTHER).status_code == 403
     assert _grant(client, legacy, OTHER_TOKEN, headers=ADMIN).status_code == 200
-    assert client.get("/api/projects/%s" % legacy, headers=OTHER).status_code == 200
+    assert client.get(f"/api/projects/{legacy}", headers=OTHER).status_code == 200
 
 
 def test_legacy_project_switches_to_explicit_one_way(client: TestClient):
     legacy = _create_project(client, "C4 存量项目 2")
     _make_legacy(legacy)
-    assert client.get("/api/projects/%s" % legacy, headers=THIRD).status_code == 200
+    assert client.get(f"/api/projects/{legacy}", headers=THIRD).status_code == 200
     switched = client.post(GRANTS_BASE.format(pid=legacy) + "/explicit", headers=ADMIN)
     assert switched.status_code == 200, switched.text
     assert switched.json()["mode"] == "explicit"
     # 切换后未授权用户立即失去读取（无切换回 legacy 的路径）。
-    assert client.get("/api/projects/%s" % legacy, headers=THIRD).status_code == 403
+    assert client.get(f"/api/projects/{legacy}", headers=THIRD).status_code == 403
     again = client.post(GRANTS_BASE.format(pid=legacy) + "/explicit", headers=ADMIN)
     assert again.status_code == 200
-    assert client.get("/api/projects/%s" % legacy, headers=THIRD).status_code == 403
+    assert client.get(f"/api/projects/{legacy}", headers=THIRD).status_code == 403
 
 
 def test_owner_cannot_be_granted_or_revoked_and_revoke_is_idempotent(client: TestClient):
@@ -289,7 +288,7 @@ def test_owner_cannot_be_granted_or_revoked_and_revoke_is_idempotent(client: Tes
     second = client.get(GRANTS_BASE.format(pid=project_id), headers=OWNER).json()
     assert second["revoked"] == first["revoked"]
     assert second["version"] == first["version"]
-    assert client.get("/api/projects/%s" % project_id, headers=OTHER).status_code == 403
+    assert client.get(f"/api/projects/{project_id}", headers=OTHER).status_code == 403
 
 
 def test_unknown_project_returns_404_on_read_grant_routes(client: TestClient):
@@ -305,7 +304,7 @@ def test_unknown_project_returns_404_on_read_grant_routes(client: TestClient):
 
 def test_anonymous_gets_401_and_audit_is_redacted(client: TestClient):
     project_id = _create_project(client)
-    assert client.get("/api/projects/%s" % project_id).status_code == 401
+    assert client.get(f"/api/projects/{project_id}").status_code == 401
     assert client.get("/api/projects").status_code == 401
     assert client.get(GRANTS_BASE.format(pid=project_id)).status_code == 401
     assert client.post(GRANTS_BASE.format(pid=project_id), json={"subject": "x"}).status_code == 401

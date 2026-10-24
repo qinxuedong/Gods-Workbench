@@ -23,7 +23,7 @@ import os
 import re
 import threading
 from collections.abc import Callable, Iterator
-from contextlib import contextmanager
+from contextlib import contextmanager, suppress
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -138,10 +138,8 @@ def _atomic_write(path: Path, value: dict[str, Any]) -> None:
             os.fsync(handle.fileno())
         os.replace(temporary, path)
     except (OSError, TypeError, ValueError) as exc:
-        try:
+        with suppress(OSError):
             temporary.unlink(missing_ok=True)
-        except OSError:
-            pass
         raise _state_error(
             "PROJECT_STATE_WRITE_FAILED", "项目状态写入失败，已拒绝发布"
         ) from exc
@@ -454,10 +452,9 @@ class ProjectsService:
         return state, reservations
 
     def _commit_state(self, root: Path | None, state: dict[str, Any]) -> None:
-        if root is not None:
-            if self._persistent:
-                _atomic_write(root / _PROJECTS_FILE, state)
-                return
+        if root is not None and self._persistent:
+            _atomic_write(root / _PROJECTS_FILE, state)
+            return
         self._projects = {
             project_id: ProjectItem.model_validate(raw)
             for project_id, raw in state["projects"].items()
@@ -503,13 +500,13 @@ class ProjectsService:
             seen.add(canonical_code)
             normalized.append({"code": canonical_code, "name": name})
         request_id = payload.client_request_id
-        if request_id is not None:
-            if not isinstance(request_id, str) or not _IDEMPOTENCY_CHARS.fullmatch(
-                request_id
-            ):
-                raise CleanroomException(
-                    400, "INVALID_REQUEST", "client_request_id长度或格式不合法"
-                )
+        if request_id is not None and (
+            not isinstance(request_id, str)
+            or not _IDEMPOTENCY_CHARS.fullmatch(request_id)
+        ):
+            raise CleanroomException(
+                400, "INVALID_REQUEST", "client_request_id长度或格式不合法"
+            )
         if normalized and not request_id:
             raise CleanroomException(
                 400, "INVALID_REQUEST", "包含阶段门的项目创建必须提供client_request_id"

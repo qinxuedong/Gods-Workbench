@@ -329,9 +329,9 @@ def save_uploads(files: list[tuple[str, bytes]]) -> dict[str, Any]:
         records: list[dict[str, Any]] = []
         for name, payload in files:
             raw["sequence"] = int(raw.get("sequence", 0)) + 1
-            file_id = "upl_%04d" % raw["sequence"]
+            file_id = f"upl_{raw['sequence']:04d}"
             safe = _safe_name(name)
-            target = directory / ("%s_%s" % (file_id, safe))
+            target = directory / f"{file_id}_{safe}"
             target.write_bytes(payload)
             display = target.relative_to(storage.data_root()).as_posix()
             record = {
@@ -339,7 +339,7 @@ def save_uploads(files: list[tuple[str, bytes]]) -> dict[str, Any]:
                 "name": Path(str(name or safe)).name,
                 "size_bytes": len(payload),
                 "display_path": display,
-                "url": "/api/download-output?path=%s" % display,
+                "url": f"/api/download-output?path={display}",
                 "created_at": storage.now_iso(),
             }
             raw.setdefault("files", {})[file_id] = record

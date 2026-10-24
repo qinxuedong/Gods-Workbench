@@ -63,7 +63,12 @@
       ? 'video'
       : kind === 'audio' || type.indexOf('audio/') === 0 ? 'audio' : 'img';
     const node = document.createElement(tag);
-    node.src = descriptor.proxy_url;
+    let proxyUrl = descriptor.proxy_url;
+    const startTimeRaw = element.dataset.startTime || element.dataset.time || element.dataset.t;
+    if (startTimeRaw && (tag === 'video' || tag === 'audio') && !proxyUrl.includes('#t=')) {
+      proxyUrl = `${proxyUrl}#t=${encodeURIComponent(startTimeRaw)}`;
+    }
+    node.src = proxyUrl;
     node.dataset.proxyArtifactId = text(descriptor.artifact_id, '');
     node.dataset.previewAvailability = READY;
     node.setAttribute('data-preview-source', 'proxy');
@@ -75,6 +80,26 @@
       node.controls = true;
       node.preload = 'metadata';
       node.playsInline = true;
+      if (startTimeRaw) {
+        const parsed = parseFloat(startTimeRaw);
+        if (Number.isFinite(parsed) && parsed >= 0) {
+          const syncCurrentTime = () => {
+            try {
+              if (Math.abs(node.currentTime - parsed) > 0.05) {
+                node.currentTime = parsed;
+              }
+            } catch (err) {
+              console.warn('[MediaPreviewPlayer] syncCurrentTime error:', err);
+            }
+          };
+          if (node.readyState >= 1) {
+            syncCurrentTime();
+          } else {
+            node.addEventListener('loadedmetadata', syncCurrentTime, { once: true });
+            node.addEventListener('canplay', syncCurrentTime, { once: true });
+          }
+        }
+      }
     }
     node.addEventListener('error', () => fallback(element, 'unavailable', '代理产物读取失败；请重新生成或检查源文件'));
     return node;
@@ -126,17 +151,130 @@
     return Promise.all(nodes.map((node) => mount(node, options)));
   }
 
+  function alignTimeToFps(seconds, fps = 0) {
+    const sec = Math.max(0, Number(seconds || 0));
+    if (!Number.isFinite(sec)) return 0;
+    let rate = Number(fps || 0);
+    if (rate <= 0) return sec;
+    if (Math.abs(rate - 29.97) < 0.01) rate = 30000 / 1001;
+    else if (Math.abs(rate - 23.98) < 0.01 || Math.abs(rate - 23.976) < 0.01) rate = 24000 / 1001;
+    else if (Math.abs(rate - 59.94) < 0.01) rate = 60000 / 1001;
+    const frameIndex = Math.round(sec * rate);
+    return frameIndex / rate;
+  }
+
+  function formatVideoSegmentTime(seconds) {
+    const sec = Math.max(0, Number(seconds || 0));
+    if (!Number.isFinite(sec)) return '00:00';
+    const whole = Math.floor(sec);
+    const minutes = Math.floor(whole / 60);
+    const remain = whole % 60;
+    return `${String(minutes).padStart(2, '0')}:${String(remain).padStart(2, '0')}`;
+  }
+
+  function formatVideoSegmentRange(startSec, endSec) {
+    return `${formatVideoSegmentTime(startSec)}~${formatVideoSegmentTime(endSec)}`;
+  }
+
+  function findMatchedVideoSegment(item, query = '') {
+    const segments = item?.metadata?.video_segments || item?.video_segments;
+    if (!Array.isArray(segments) || !segments.length) return null;
+    const q = String(query || '').trim().toLowerCase();
+    if (!q) return null;
+    const matched = segments.find(s => {
+      const tags = Array.isArray(s.tags) ? s.tags : [];
+      return tags.some(t => String(t).toLowerCase().includes(q))
+        || (s.summary && String(s.summary).toLowerCase().includes(q));
+    });
+    return matched || null;
+  }
+
+  function seekTo(element, seconds, options = {}) {
+    if (!element) return false;
+    const time = Math.max(0, Number(seconds || 0));
+    if (!Number.isFinite(time)) return false;
+    element.dataset.startTime = String(time);
+    const media = (element.tagName === 'VIDEO' || element.tagName === 'AUDIO')
+      ? element
+      : (typeof element.querySelector === 'function' ? element.querySelector('video, audio') : null);
+    if (media) {
+      if (media.error) return false;
+      if (media.networkState === 3) return false;
+      if (media.readyState === 0 && !media.src) return false;
+
+      const performSeek = () => {
+        try {
+          media.currentTime = time;
+          if (options.play && media.paused && typeof media.play === 'function') {
+            const playPromise = media.play();
+            if (playPromise && typeof playPromise.catch === 'function') {
+              playPromise.catch((err) => {
+                console.warn('[MediaPreviewPlayer] play() rejected (autoplay restricted or error):', err);
+              });
+            }
+          }
+          return true;
+        } catch (err) {
+          console.error('[MediaPreviewPlayer] seekTo error:', err);
+          return false;
+        }
+      };
+
+      if (media.readyState >= 1) {
+        return performSeek();
+      } else {
+        // 不要只等一帧就直接设置 currentTime，等待 loadedmetadata / canplay 事件就绪
+        const onReady = () => {
+          media.removeEventListener('loadedmetadata', onReady);
+          media.removeEventListener('canplay', onReady);
+          performSeek();
+        };
+        media.addEventListener('loadedmetadata', onReady, { once: true });
+        media.addEventListener('canplay', onReady, { once: true });
+        return true;
+      }
+    }
+    return false;
+  }
+
   function destroy(element) {
     if (!element) return;
     if (element._mediaPreviewController) element._mediaPreviewController.abort();
     element._mediaPreviewController = null;
-    clear(element);
+    const media = (element.tagName === 'VIDEO' || element.tagName === 'AUDIO')
+      ? element
+      : (typeof element.querySelector === 'function' ? element.querySelector('video, audio') : null);
+    if (media) {
+      try {
+        if (typeof media.pause === 'function') media.pause();
+        media.src = '';
+        media.removeAttribute('src');
+        if (typeof media.load === 'function') media.load();
+      } catch (err) {
+        console.warn('[MediaPreviewPlayer] destroy error:', err);
+      }
+    }
+    if (element !== media && typeof clear === 'function') {
+      clear(element);
+    }
     delete element.dataset.previewState;
     delete element.dataset.previewAvailability;
     delete element.dataset.gwDegradation;
+    delete element.dataset.startTime;
   }
 
-  global.MediaPreviewPlayer = Object.freeze({ mount, mountAll, fallback, destroy, requestUrl });
+  global.MediaPreviewPlayer = Object.freeze({
+    mount,
+    mountAll,
+    fallback,
+    destroy,
+    requestUrl,
+    seekTo,
+    alignTimeToFps,
+    formatVideoSegmentTime,
+    formatVideoSegmentRange,
+    findMatchedVideoSegment,
+  });
   if (global.document) {
     const boot = () => { void mountAll(global.document); };
     if (global.document.readyState === 'loading') global.document.addEventListener('DOMContentLoaded', boot, { once: true });

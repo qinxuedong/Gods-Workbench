@@ -16,6 +16,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import os
 import re
 import subprocess
@@ -99,10 +100,8 @@ def _terminate_owned(process: subprocess.Popen) -> None:
             process.kill()
     except (OSError, ProcessLookupError):
         pass
-    try:
+    with contextlib.suppress(subprocess.TimeoutExpired, OSError):
         process.wait(timeout=2.0)
-    except (subprocess.TimeoutExpired, OSError):
-        pass
 
 
 def run_limited_process(
@@ -177,10 +176,8 @@ def run_limited_process(
     stopped.set()
     reader.join(timeout=0.5)
     if reader.is_alive() and process.stdout is not None:
-        try:
+        with contextlib.suppress(OSError, ValueError):
             process.stdout.close()
-        except (OSError, ValueError):
-            pass
         reader.join(timeout=0.2)
     # 子进程可能先退出、读取线程稍后才发现超量；终态后再核验一次竞态标记。
     if reason is None and overflow.is_set():
@@ -552,7 +549,7 @@ class LoginController:
         worker = threading.Thread(
             target=self._drain_login,
             args=(generation, process),
-            name="gw-dreamina-login-%d" % generation,
+            name=f"gw-dreamina-login-{generation}",
             daemon=True,
         )
         with self._lock:

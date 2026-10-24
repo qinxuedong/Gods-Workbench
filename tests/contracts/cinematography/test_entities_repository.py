@@ -323,3 +323,42 @@ def test_entities_repository_oserror_directory_placeholder_fails_closed(
         assert create_res.json()["detail"]["code"] == "ENTITY_INDEX_UNAVAILABLE"
         assert str(tmp_path) not in create_res.text
         assert entity_path.is_dir()
+
+
+def test_entity_repository_uses_public_namespace_lock(monkeypatch, tmp_path):
+    from gw.core import storage
+    from gw.entities import repository as entity_repo
+
+    monkeypatch.setenv("GW_RUNTIME_MODE", "test")
+    monkeypatch.setenv("GW_AUTH_MODE", "local")
+    monkeypatch.setenv("GW_DATA_DIR", str(tmp_path / "data"))
+
+    public_lock = getattr(storage, "namespace_lock", None)
+    assert callable(public_lock)
+    lock_namespaces = []
+
+    def track_namespace_lock(namespace):
+        lock_namespaces.append(namespace)
+        return public_lock(namespace)
+
+    monkeypatch.setattr(storage, "namespace_lock", track_namespace_lock)
+
+    with TestClient(_app()) as client:
+        created = client.post(
+            "/api/entities",
+            headers=AUTH,
+            json={
+                "project_id": "proj_1",
+                "entity_type": "character",
+                "name": "Lock Contract",
+            },
+        )
+
+    assert created.status_code == 201, created.text
+    assert entity_repo.NS_ENTITIES in lock_namespaces
+
+
+def test_json_state_does_not_expose_unused_file_path_property():
+    from gw.core import storage
+
+    assert not hasattr(storage.JsonState("unused", dict), "file_path")
