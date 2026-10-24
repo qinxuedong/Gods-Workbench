@@ -353,7 +353,7 @@ def export_to_comfy_litegraph(
                 elif not isinstance(widget_value, dict):
                     widgets_values.append(deepcopy(widget_value))
         elif isinstance(node.get("inputs"), dict):
-            for k, v in node["inputs"].items():
+            for v in node["inputs"].values():
                 if not (
                     isinstance(v, (list, tuple))
                     and len(v) >= 2
