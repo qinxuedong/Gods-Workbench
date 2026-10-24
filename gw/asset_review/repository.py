@@ -996,14 +996,14 @@ def _resolve_assets(asset_ids):
         except CleanroomException:
             gaps.append(str(asset_id))
             continue
-        except Exception:
+        except Exception as e:
             raise CleanroomException(
                 503,
                 "SHARE_ASSETS_UNAVAILABLE",
                 "素材注册表不可用，已拒绝返回未经验证的素材",
                 extra={"data_status": "not_integrated"},
                 expose_extra_fields={"data_status"},
-            )
+            ) from e
         resolved.append(
             {
                 "id": item.get("asset_id"),
@@ -1053,10 +1053,10 @@ def _normalize_expiry(value: Any) -> str | None:
             parsed = parsed.astimezone(UTC)
         else:
             raise ValueError("unsupported")
-    except (OverflowError, OSError, ValueError):
+    except (OverflowError, OSError, ValueError) as e:
         raise CleanroomException(
             400, "INVALID_SHARE_EXPIRY", "expires_at 必须为毫秒时间戳或带时区 ISO-8601"
-        )
+        ) from e
     return parsed.isoformat(timespec="milliseconds").replace("+00:00", "Z")
 
 
@@ -1137,10 +1137,10 @@ def create_share(payload: dict[str, Any], context: Any = None) -> dict[str, Any]
         )
     try:
         max_access_count = int(payload.get("max_access_count") or 0)
-    except (TypeError, ValueError):
+    except (TypeError, ValueError) as e:
         raise CleanroomException(
             400, "INVALID_REQUEST", "max_access_count 必须是非负整数"
-        )
+        ) from e
     if max_access_count < 0 or max_access_count > 2_147_483_647:
         raise CleanroomException(
             400, "INVALID_REQUEST", "max_access_count 必须是非负整数"
@@ -1626,12 +1626,12 @@ def public_media(
         _require_ticket(record, ticket)
         try:
             asset = asset_repo.get_asset(canonical_asset_id)
-        except CleanroomException:
-            raise CleanroomException(404, "SHARE_ASSET_NOT_FOUND", "该素材不属于此分享")
-        except Exception:
+        except CleanroomException as e:
+            raise CleanroomException(404, "SHARE_ASSET_NOT_FOUND", "该素材不属于此分享") from e
+        except Exception as e:
             raise CleanroomException(
                 503, "SHARE_ASSETS_UNAVAILABLE", "素材注册表暂时不可用"
-            )
+            ) from e
         path = asset_repo.media_file(canonical_asset_id)
         if path is None or not path.is_file():
             raise CleanroomException(404, "SHARE_MEDIA_NOT_FOUND", "分享媒体不可用")
