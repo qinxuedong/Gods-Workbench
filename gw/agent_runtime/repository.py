@@ -213,14 +213,13 @@ class SQLiteRunRepository(RunRepository):
                 else None,
             }
         )
-        if config_snapshot is not None:
-            if (
-                config_snapshot.config_snapshot_id.root
-                != request.config_snapshot_id.root
-                or config_snapshot.mode is not request.mode
-            ):
-                raise DomainError(
-                    ErrorCode.VALIDATION_FAILED,
+        if config_snapshot is not None and (
+            config_snapshot.config_snapshot_id.root
+            != request.config_snapshot_id.root
+            or config_snapshot.mode is not request.mode
+        ):
+            raise DomainError(
+                ErrorCode.VALIDATION_FAILED,
                     "The resolved configuration snapshot does not match the run request.",
                     request_id=request.request_id.root,
                 )
@@ -628,7 +627,7 @@ class SQLiteRunRepository(RunRepository):
                 (run_id.root,),
             ).fetchone()
             now = utc_now()
-            now_text = utc_text(now)
+            utc_text(now)
             if row:
                 expires = datetime.fromisoformat(
                     row["expires_at"].replace("Z", "+00:00")
