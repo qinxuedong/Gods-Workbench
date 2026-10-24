@@ -1952,10 +1952,10 @@ class AgentRuntimeService:
                             result_key,
                             operation_fingerprint,
                         )
-                    except DomainError:
+                    except DomainError as inner_exc:
                         # Recovery will persist the pause if the lease was
                         # fenced while the upstream outcome was being recorded.
-                        raise exc
+                        raise exc from inner_exc
             if exc.code in {
                 ErrorCode.VALIDATION_FAILED,
                 ErrorCode.QUOTA_EXCEEDED,

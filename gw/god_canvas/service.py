@@ -371,8 +371,8 @@ class GodCanvasService:
 
         try:
             owner_key = owner_key_for_context(context)
-        except CleanroomException:
-            raise CleanroomException(404, "CANVAS_NOT_FOUND", "画布不存在或不可访问")
+        except CleanroomException as e:
+            raise CleanroomException(404, "CANVAS_NOT_FOUND", "画布不存在或不可访问") from e
         if self._canvas_owners.get(canvas_id) not in (None, owner_key):
             raise CleanroomException(404, "CANVAS_NOT_FOUND", "画布不存在或不可访问")
 
@@ -1045,7 +1045,7 @@ class GodCanvasService:
                     status_code=400,
                     code="INVALID_TOPOLOGY",
                     message=f"工作流拓扑结构不合法: {str(e)}",
-                )
+                ) from e
 
             if merge_mode == "replace":
                 top.nodes = imported_nodes
