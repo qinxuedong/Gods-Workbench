@@ -112,6 +112,164 @@ def test_fts5_indexes_literal_text_and_replaces_documents(
         engine.close()
 
 
+def test_batch_upsert_matches_repeated_single_upserts(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """批量写入的索引结果与逐条 upsert 一致，并按输入顺序返回结果。"""
+    monkeypatch.setattr(sqlite_vec_engine, "_load_sqlite_vec", lambda _db: False)
+    single_engine = SQLiteVecEngine(tmp_path / "single.sqlite3", dimensions=3)
+    batch_engine = SQLiteVecEngine(tmp_path / "batch.sqlite3", dimensions=3)
+    documents = [
+        {"asset_id": "asset-ocean", "title": "海边日落", "content": "潮汐与海浪"},
+        {"asset_id": "asset-mountain", "title": "雪山", "content": "山峰与云层"},
+        {"asset_id": "asset-ocean", "title": "更新后的海岸", "content": "旧文本已替换"},
+    ]
+    try:
+        single_results = [
+            single_engine.upsert_document(**document) for document in documents
+        ]
+
+        batch_results = batch_engine.batch_upsert_documents(documents, batch_size=2)
+
+        assert batch_results == single_results == [False, False, False]
+        for query in ("海岸", "日落", "山峰", "旧文本"):
+            assert [hit.asset_id for hit in batch_engine.search_fts(query)] == [
+                hit.asset_id for hit in single_engine.search_fts(query)
+            ]
+    finally:
+        single_engine.close()
+        batch_engine.close()
+
+
+def test_batch_upsert_rolls_back_only_the_batch_that_fails(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """失败批次整体回滚，之前已提交的批次仍可检索。"""
+    monkeypatch.setattr(sqlite_vec_engine, "_load_sqlite_vec", lambda _db: False)
+    engine = SQLiteVecEngine(tmp_path / "batch-rollback.sqlite3", dimensions=3)
+    documents = [
+        {"asset_id": "asset-a", "title": "已提交资产一", "content": "第一批"},
+        {"asset_id": "asset-b", "title": "已提交资产二", "content": "第一批"},
+        {"asset_id": "asset-c", "title": "待回滚资产", "content": "当前批次"},
+        {
+            "asset_id": "asset-invalid",
+            "title": "错误向量",
+            "content": "触发失败",
+            "embedding": [1.0, 0.0],
+        },
+    ]
+    try:
+        with pytest.raises(ValueError, match="维度"):
+            engine.batch_upsert_documents(documents, batch_size=2)
+
+        committed = engine.search_fts("第一批", limit=10)
+        assert [hit.asset_id for hit in committed] == ["asset-a", "asset-b"]
+        assert engine.search_fts("待回滚", limit=10) == []
+        assert engine.search_fts("触发失败", limit=10) == []
+    finally:
+        engine.close()
+
+
+def test_batch_upsert_commits_every_500_documents_by_default(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """默认批大小为 500，1001 条记录分 3 个事务提交。"""
+    monkeypatch.setattr(sqlite_vec_engine, "_load_sqlite_vec", lambda _db: False)
+    engine = SQLiteVecEngine(tmp_path / "batch-default-size.sqlite3", dimensions=3)
+    statements: list[str] = []
+    engine._db.set_trace_callback(statements.append)
+    documents = [
+        {"asset_id": f"asset-{index}", "title": f"素材 {index}", "content": "批量索引"}
+        for index in range(1001)
+    ]
+    try:
+        results = engine.batch_upsert_documents(documents)
+
+        transactions = [
+            statement
+            for statement in statements
+            if statement in {"BEGIN IMMEDIATE", "COMMIT"}
+        ]
+        assert len(results) == 1001
+        assert transactions == ["BEGIN IMMEDIATE", "COMMIT"] * 3
+    finally:
+        engine.close()
+
+
+def test_batch_upsert_matches_single_vector_results_when_extension_is_available(
+    tmp_path: Path,
+) -> None:
+    """批量 upsert 的 FTS5 与 sqlite-vec 检索结果和逐条写入相同。"""
+    pytest.importorskip("sqlite_vec", reason="当前运行时未安装 sqlite-vec 扩展")
+    single_engine = SQLiteVecEngine(tmp_path / "single-vectors.sqlite3", dimensions=3)
+    batch_engine = SQLiteVecEngine(tmp_path / "batch-vectors.sqlite3", dimensions=3)
+    documents = [
+        {
+            "asset_id": "asset-ocean",
+            "title": "海岸日落",
+            "content": "潮汐海浪",
+            "embedding": [1.0, 0.0, 0.0],
+        },
+        {
+            "asset_id": "asset-mountain",
+            "title": "雪山云层",
+            "content": "山峰",
+            "embedding": [0.0, 1.0, 0.0],
+        },
+    ]
+    try:
+        single_results = [
+            single_engine.upsert_document(**document) for document in documents
+        ]
+        batch_results = batch_engine.batch_upsert_documents(documents)
+
+        assert batch_results == single_results == [True, True]
+        single_hits = single_engine.search_vectors([0.9, 0.1, 0.0], limit=2)
+        batch_hits = batch_engine.search_vectors([0.9, 0.1, 0.0], limit=2)
+        assert [(hit.asset_id, hit.distance) for hit in batch_hits] == [
+            (hit.asset_id, hit.distance) for hit in single_hits
+        ]
+        assert [hit.asset_id for hit in batch_engine.search_fts("海浪")] == [
+            hit.asset_id for hit in single_engine.search_fts("海浪")
+        ]
+    finally:
+        single_engine.close()
+        batch_engine.close()
+
+
+def test_batch_upsert_rolls_back_vector_and_fts_indexes_together(
+    tmp_path: Path,
+) -> None:
+    """失败批次不会留下孤立的 FTS5 文档或 sqlite-vec 向量。"""
+    pytest.importorskip("sqlite_vec", reason="当前运行时未安装 sqlite-vec 扩展")
+    engine = SQLiteVecEngine(tmp_path / "vector-batch-rollback.sqlite3", dimensions=3)
+    try:
+        assert engine.vector_enabled is True
+        with pytest.raises(ValueError, match="维度"):
+            engine.batch_upsert_documents(
+                [
+                    {
+                        "asset_id": "asset-rolled-back",
+                        "title": "回滚标记",
+                        "content": "向量与全文必须一起撤回",
+                        "embedding": [1.0, 0.0, 0.0],
+                    },
+                    {
+                        "asset_id": "asset-invalid",
+                        "title": "错误向量",
+                        "content": "维度错误",
+                        "embedding": [1.0, 0.0],
+                    },
+                ],
+                batch_size=2,
+            )
+
+        assert engine.search_fts("回滚标记") == []
+        assert engine.search_vectors([1.0, 0.0, 0.0], limit=10) == []
+    finally:
+        engine.close()
+
+
 def test_hybrid_search_merges_and_deduplicates_both_tracks(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
