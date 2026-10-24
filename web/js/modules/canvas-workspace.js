@@ -221,7 +221,7 @@
         if (global.GodCanvasGateNode?.isGate?.(node)) {
           nodeEl.insertAdjacentHTML(
             'afterbegin',
-            `<div class="gate-node-badge" style="display:flex;align-items:center;gap:5px;padding:2px 6px;margin-bottom:5px;border:1px solid rgba(165,243,252,.38);border-radius:999px;background:rgba(165,243,252,.08);color:#a5f3fc;font:700 var(--gw-type-button-xs)/1 var(--gw-font-mono, monospace);letter-spacing:.08em;">SYSTEM 1</div>`
+            `<div class="gate-node-badge" style="display:flex;align-items:center;gap:5px;padding:2px 6px;margin-bottom:5px;border:1px solid rgba(165,243,252,.38);border-radius:999px;background:rgba(165,243,252,.08);color:#a5f3fc;font:700 var(--gw-type-button-xs, 9.5px)/1 var(--gw-font-mono, monospace);letter-spacing:.08em;">SYSTEM 1</div>`
           );
         }
 
