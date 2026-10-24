@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Phase 12 A3 剧集流水线契约测试（真实落盘 + 阶段状态机）。
 
 覆盖：401 / 403 / 4 阶段建立 / 状态机合法与非法流转 / CAS 冲突 / 写后读回 /
@@ -49,7 +48,7 @@ def test_auth_boundary():
             u = real(p)
             payload = {} if m == "POST" else None
             r = c.request(m, u, json=payload) if payload is not None else c.request(m, u)
-            assert r.status_code == 401, "%s %s" % (m, u)
+            assert r.status_code == 401, "{} {}".format(m, u)
             if m == "POST":
                 assert c.request(m, u, headers=R, json=payload).status_code == 403
 
@@ -58,7 +57,7 @@ def _create(c, project_id="proj-01"):
     res = c.post("/api/episode-pipelines", headers=A, json={
         "project_id": project_id, "title": "T", "seed": "s",
         "prompt_library_id": "episode",
-        "prompt_item_ids": {key: "p-%s" % key for key in STAGES},
+        "prompt_item_ids": {key: "p-{}".format(key) for key in STAGES},
     })
     assert res.status_code == 201
     return res.json()
@@ -75,13 +74,13 @@ def test_create_list_read_and_stage_order():
             assert re.fullmatch(r"stg-\d{4}", stage["stage_id"])
             assert stage["status"] == "pending"
             assert stage["result"] == {}
-        assert all(s["prompt_item_id"] == "p-%s" % s["stage"] for s in created["stages"])
+        assert all(s["prompt_item_id"] == "p-{}".format(s["stage"]) for s in created["stages"])
 
         listed = c.get("/api/episode-pipelines?project_id=proj-01", headers=A).json()
         assert any(item["pipeline_id"] == pid for item in listed["pipelines"])
         assert listed["data_gaps"] == []
 
-        detail = c.get("/api/episode-pipelines/%s" % pid, headers=A).json()
+        detail = c.get("/api/episode-pipelines/{}".format(pid), headers=A).json()
         assert detail["pipeline"]["pipeline_id"] == pid
         assert len(detail["pipeline"]["stages"]) == 4
 
@@ -92,29 +91,29 @@ def test_stage_state_machine_and_cas():
         pid = _create(c)["pipeline_id"]
 
         # 未启动直接完成 -> 409
-        assert c.post("/api/episode-pipelines/%s/stages/script/complete" % pid,
+        assert c.post("/api/episode-pipelines/{}/stages/script/complete".format(pid),
                       headers=A, json={"expected_version": 1}).status_code == 409
 
-        missing_start = c.post("/api/episode-pipelines/%s/stages/script/start" % pid, headers=A, json={})
+        missing_start = c.post("/api/episode-pipelines/{}/stages/script/start".format(pid), headers=A, json={})
         assert missing_start.status_code == 400
-        started = c.post("/api/episode-pipelines/%s/stages/script/start" % pid, headers=A,
+        started = c.post("/api/episode-pipelines/{}/stages/script/start".format(pid), headers=A,
                          json={"expected_version": 1})
         assert started.status_code == 200 and started.json()["stage"]["status"] == "running"
         version = started.json()["stage"]["version"]
 
         # 重复启动 -> 409
-        assert c.post("/api/episode-pipelines/%s/stages/script/start" % pid,
+        assert c.post("/api/episode-pipelines/{}/stages/script/start".format(pid),
                       headers=A, json={"expected_version": version}).status_code == 409
 
         # CAS 冲突 -> 409
-        conflict = c.post("/api/episode-pipelines/%s/stages/script/cancel" % pid, headers=A,
+        conflict = c.post("/api/episode-pipelines/{}/stages/script/cancel".format(pid), headers=A,
                           json={"expected_version": version + 5})
         assert conflict.status_code == 409 and conflict.json()["detail"]["code"] == "VERSION_CONFLICT"
 
-        missing_complete = c.post("/api/episode-pipelines/%s/stages/script/complete" % pid, headers=A, json={})
+        missing_complete = c.post("/api/episode-pipelines/{}/stages/script/complete".format(pid), headers=A, json={})
         assert missing_complete.status_code == 400
 
-        done = c.post("/api/episode-pipelines/%s/stages/script/complete" % pid, headers=A, json={
+        done = c.post("/api/episode-pipelines/{}/stages/script/complete".format(pid), headers=A, json={
             "status": "completed", "output_text": "剧本文本", "output_asset_ids": ["ast_0001"],
             "message": "完成", "expected_version": version,
         })
@@ -125,10 +124,10 @@ def test_stage_state_machine_and_cas():
         assert stage["result"]["output_asset_ids"] == ["ast_0001"]
 
         # 终态再操作 -> 409
-        assert c.post("/api/episode-pipelines/%s/stages/script/start" % pid,
+        assert c.post("/api/episode-pipelines/{}/stages/script/start".format(pid),
                       headers=A, json={"expected_version": stage["version"]}).status_code == 409
         # 写后读回
-        after = c.get("/api/episode-pipelines/%s" % pid, headers=A).json()["pipeline"]
+        after = c.get("/api/episode-pipelines/{}".format(pid), headers=A).json()["pipeline"]
         assert after["stages"][0]["status"] == "completed"
 
 
@@ -136,12 +135,12 @@ def test_cancel_stage_is_terminal_and_visible():
     """取消后状态可读回，且不能再次启动（终态 409）。"""
     with TestClient(create_app()) as c:
         pid = _create(c)["pipeline_id"]
-        cancelled = c.post("/api/episode-pipelines/%s/stages/assets/cancel" % pid, headers=A,
+        cancelled = c.post("/api/episode-pipelines/{}/stages/assets/cancel".format(pid), headers=A,
                            json={"message": "用户取消", "expected_version": 1})
         assert cancelled.status_code == 200 and cancelled.json()["stage"]["status"] == "cancelled"
-        after = c.get("/api/episode-pipelines/%s" % pid, headers=A).json()["pipeline"]
+        after = c.get("/api/episode-pipelines/{}".format(pid), headers=A).json()["pipeline"]
         assert [s for s in after["stages"] if s["stage"] == "assets"][0]["status"] == "cancelled"
-        assert c.post("/api/episode-pipelines/%s/stages/assets/start" % pid,
+        assert c.post("/api/episode-pipelines/{}/stages/assets/start".format(pid),
                       headers=A, json={"expected_version": 2}).status_code == 409
 
 
@@ -172,5 +171,5 @@ def test_not_found_semantics():
     with TestClient(create_app()) as c:
         assert c.get("/api/episode-pipelines/ep-9999", headers=A).status_code == 404
         pid = _create(c)["pipeline_id"]
-        assert c.post("/api/episode-pipelines/%s/stages/stg-9999/start" % pid,
+        assert c.post("/api/episode-pipelines/{}/stages/stg-9999/start".format(pid),
                       headers=A, json={}).status_code == 404
