@@ -22,6 +22,25 @@ import {formatDate, formatFileSize} from './asset-manager/formatters.js';
 import {pathCompareKey} from './asset-manager/path-utils.js';
 import {workflowAssetId, workflowLibraryId, workflowCategoryId, workflowSourceId, zipWorkflowFiles} from './asset-manager/workflow-assets.js';
 
+let mediaPreviewPlayerLoading = null;
+export async function ensureMediaPreviewPlayer() {
+    if (typeof window !== 'undefined' && window.MediaPreviewPlayer) return window.MediaPreviewPlayer;
+    if (mediaPreviewPlayerLoading) return mediaPreviewPlayerLoading;
+    mediaPreviewPlayerLoading = (async () => {
+        try {
+            const mod = await import('./media-preview-player.js');
+            if (mod && mod.MediaPreviewPlayer && typeof window !== 'undefined') {
+                window.MediaPreviewPlayer = mod.MediaPreviewPlayer;
+            }
+            return mod?.MediaPreviewPlayer || window?.MediaPreviewPlayer || null;
+        } catch (err) {
+            console.warn('[AssetManager] 动态加载 media-preview-player.js 失败:', err);
+            return null;
+        }
+    })();
+    return mediaPreviewPlayerLoading;
+}
+
 const root = document.getElementById('assetManagerRoot');
 const directorySettingsPage = new URLSearchParams(location.search).get('settings') === 'directories';
 let directorySettingsReady = false;
@@ -8139,6 +8158,9 @@ function renderRegistryCard(item){
     const referenceCanvasId = boardReferenceCanvasSelection[activeTab] || '';
     const mediaAspectStyle = registryMediaAspectStyle(item);
     const matchedSegment = item.kind === 'video' ? findMatchedVideoSegment(item, registryQuery) : null;
+    if (item.kind === 'video' && typeof window !== 'undefined' && !window.MediaPreviewPlayer) {
+        ensureMediaPreviewPlayer();
+    }
     const fps = Number(item.frame_rate || item.metadata?.frame_rate || 0);
     const segmentBadge = matchedSegment ? `<span class="registry-card-segment-badge" data-video-jump-sec="${matchedSegment.start_sec}" data-video-jump-end="${matchedSegment.end_sec}" data-video-asset-id="${escapeAttr(item.id)}" data-video-frame-rate="${fps || ''}" title="命中片段：${escapeAttr(formatVideoSegmentRange(matchedSegment.start_sec, matchedSegment.end_sec))} ${escapeAttr(Array.isArray(matchedSegment.tags)?matchedSegment.tags.join(' · '):'')}"><i data-lucide="play-circle"></i><strong>${escapeHtml(formatVideoSegmentRange(matchedSegment.start_sec, matchedSegment.end_sec))}</strong></span>` : '';
     return `<article class="asset-card registry-card asset-type-${registryVisualType(item)} ${item.id === selectedRegistryAssetId ? 'active' : ''} ${selected ? 'selected' : ''}" data-registry-card="${escapeAttr(item.id)}" ${referenceCanvasId ? `data-reference-canvas-open="${escapeAttr(referenceCanvasId)}"` : ''} tabindex="0" role="button" aria-label="查看资产 ${escapeAttr(name)}">
@@ -13941,6 +13963,9 @@ function showDetailPreview(source, id, options={}){
     loadDetailViewerFileInfo();
     if(['registry','canvas-asset'].includes(source) || detailMediaCanvasPersistId(item,source)) hydrateDetailRegistryAsset(item.id);
     document.body.classList.add('asset-lightbox-open');
+    if((detailViewerType(source, item) === 'video' || options.startTime != null) && typeof window !== 'undefined' && !window.MediaPreviewPlayer){
+        ensureMediaPreviewPlayer();
+    }
     if(options.startTime != null && Number.isFinite(Number(options.startTime))){
         const effectiveFps = options.fps || Number(item?.frame_rate || item?.metadata?.frame_rate || 0);
         const targetTime = alignTimeToFps(Number(options.startTime), effectiveFps);
@@ -18633,6 +18658,7 @@ Object.defineProperties(window, {
     formatVideoSegmentRange:{configurable:true, value:formatVideoSegmentRange},
     alignTimeToFps:{configurable:true, value:alignTimeToFps},
     findMatchedVideoSegment:{configurable:true, value:findMatchedVideoSegment},
+    ensureMediaPreviewPlayer:{configurable:true, value:ensureMediaPreviewPlayer},
     seekDetailVideoTo:{configurable:true, value:seekDetailVideoTo},
     openRegistryAssetFromGlobalSearch:{configurable:true, value:openRegistryAssetFromGlobalSearch},
 });

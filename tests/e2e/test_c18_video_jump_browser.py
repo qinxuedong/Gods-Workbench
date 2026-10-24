@@ -69,15 +69,16 @@ def test_c18_video_jump_e2e_real_browser(monkeypatch: pytest.MonkeyPatch, tmp_pa
             "真实后端检索未通过切片标签命中资产"
         )
 
-        # 3. 访问实际页面，确认 media-preview-player.js 正常加载
+        # 3. 访问实际页面，确认渲染视频卡片后按需动态加载 media-preview-player.js
         goto_ready(page, f"{base}/static/embeds/asset-manager.html")
         page.wait_for_selector('#registrySearch', timeout=15000)
-        has_player = page.evaluate("() => typeof window.MediaPreviewPlayer !== 'undefined'")
-        assert has_player, "页面未正确加载 media-preview-player.js"
 
-        # 等待资产列表初次加载完成并渲染出卡片
+        # 等待资产列表初次加载完成并渲染出视频卡片（触发视频播放器按需就绪）
         card_selector = f'[data-registry-card="{asset_id}"]'
         page.locator(card_selector).wait_for(state="visible", timeout=15000)
+        page.wait_for_function("() => typeof window.MediaPreviewPlayer !== 'undefined'", timeout=15000)
+        has_player = page.evaluate("() => typeof window.MediaPreviewPlayer !== 'undefined'")
+        assert has_player, "页面未正确加载 media-preview-player.js"
 
         # 验证未输入搜索词时，绝不回退显示第一段时间徽标
         badge_selector = f'{card_selector} .registry-card-segment-badge'
