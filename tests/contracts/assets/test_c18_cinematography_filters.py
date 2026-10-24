@@ -724,3 +724,77 @@ def test_c18_entity_cursor_rejects_invalid_entity_revision(
 
     assert malformed.status_code == 400, malformed.text
     assert malformed.json()["detail"]["code"] == "INVALID_CURSOR"
+
+
+def test_c18_unstructured_query_params_filter_entities_and_empty_project_returns_empty(
+    client: TestClient,
+) -> None:
+    """QIN-343: 新项目无实体文件时，entity_type / entity_id 筛选指向不存在实体的资产应返回空结果。"""
+    project_id = _create_project(client, "C18 QIN-343 Empty Project")
+    # 确保实体母库文件物理不存在
+    entity_state = entity_repository.state()
+    entity_file = storage.data_root() / f"{entity_state.namespace}.json"
+    entity_file.unlink(missing_ok=True)
+
+    # 注册一个指向不存在实体的资产，并分配到该新项目
+    asset_ids = _register_assets(
+        client,
+        [("orphan-asset.png", {"entity_ids": ["ent_ghost_999"]})],
+    )
+    _assign_asset_project(asset_ids[0], project_id)
+
+    # 1. 显式 project_id + entity_type query 参数筛选，应返回空结果
+    res1 = client.get(
+        f"{PATH}?project_id={project_id}&entity_type=character",
+        headers=AUTH,
+    )
+    assert res1.status_code == 200, res1.text
+    body1 = res1.json()
+    assert body1["total"] == 0
+    assert body1["items"] == []
+
+    # 2. 全局 entity_type query 参数筛选（未指定 project_id），应返回空结果
+    res2 = client.get(
+        f"{PATH}?entity_type=character",
+        headers=AUTH,
+    )
+    assert res2.status_code == 200, res2.text
+    body2 = res2.json()
+    assert body2["total"] == 0
+    assert body2["items"] == []
+
+    # 3. 显式 project_id + entity_id query 参数筛选（指向不存在实体），应返回空结果
+    res3 = client.get(
+        f"{PATH}?project_id={project_id}&entity_id=ent_ghost_999",
+        headers=AUTH,
+    )
+    assert res3.status_code == 200, res3.text
+    body3 = res3.json()
+    assert body3["total"] == 0
+    assert body3["items"] == []
+
+    # 4. 非法实体类型传参拦截，返回 400 UNSUPPORTED_FILTER_VALUE
+    res4 = client.get(
+        f"{PATH}?project_id={project_id}&entity_type=invalid_kind",
+        headers=AUTH,
+    )
+    assert res4.status_code == 400, res4.text
+    assert res4.json()["detail"]["code"] == "UNSUPPORTED_FILTER_VALUE"
+
+    # 5. 实体文件损坏时，非结构化查询传入 entity_type 也必须安全返回 503 ENTITY_INDEX_UNAVAILABLE
+    entity_file.write_bytes(b"")
+    res5 = client.get(
+        f"{PATH}?project_id={project_id}&entity_type=character",
+        headers=AUTH,
+    )
+    assert res5.status_code == 503, res5.text
+    assert res5.json()["detail"]["code"] == "ENTITY_INDEX_UNAVAILABLE"
+    entity_file.unlink(missing_ok=True)
+
+    # 6. 结构化查询混用顶层 entity_type 拦截，返回 400 UNSUPPORTED_FILTER_VALUE
+    res6 = client.get(
+        f"{PATH}?scope=%5B%22asset%22%5D&entity_type=character",
+        headers=AUTH,
+    )
+    assert res6.status_code == 400, res6.text
+    assert res6.json()["detail"]["code"] == "UNSUPPORTED_FILTER_VALUE"

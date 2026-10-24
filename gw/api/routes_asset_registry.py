@@ -290,11 +290,31 @@ def list_registry_assets(
     text: Optional[str] = Query(None),
     filters: Optional[str] = Query(None),
     include: Optional[str] = Query(None),
+    entity_type: Optional[str] = Query(None),
+    entity_id: Optional[str] = Query(None),
+    shot_size: Optional[str] = Query(None),
+    camera_movement: Optional[str] = Query(None),
+    focal_length: Optional[str] = Query(None),
+    lighting_phase: Optional[str] = Query(None),
+    aspect_ratio: Optional[str] = Query(None),
     authorization: Optional[str] = Header(None),
     x_user_role: str = Header("editor", alias="X-User-Role"),
 ):
     context = _read_auth(authorization, x_user_role)
     structured = any(value is not None for value in (scope, text, filters, include))
+    if structured and any(
+        value is not None
+        for value in (
+            entity_type,
+            entity_id,
+            shot_size,
+            camera_movement,
+            focal_length,
+            lighting_phase,
+            aspect_ratio,
+        )
+    ):
+        raise CleanroomException(400, "UNSUPPORTED_FILTER_VALUE", "结构化查询不能混用旧版过滤参数")
     if limit is None:
         effective_limit = 50 if structured else 100
     else:
@@ -327,7 +347,11 @@ def list_registry_assets(
                             include_tags=include_tags, exclude_tags=exclude_tags, root_id=root_id,
                             collection_id=collection_id, recent_days=recent_days,
                             structured=structured, scope=scope, text=structured_text,
-                            filters=filters, include=include)
+                            filters=filters, include=include,
+                            entity_type=entity_type, entity_id=entity_id,
+                            shot_size=shot_size, camera_movement=camera_movement,
+                            focal_length=focal_length, lighting_phase=lighting_phase,
+                            aspect_ratio=aspect_ratio)
 
 
 @router.get("/assets/{asset_id}", summary="读取素材登记详情", status_code=status.HTTP_200_OK)

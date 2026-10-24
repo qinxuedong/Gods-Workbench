@@ -446,11 +446,39 @@ def list_assets(limit: int, offset: int, query: Optional[str], kind: Optional[st
                 exclude_tags: Optional[str] = None, root_id: Optional[str] = None,
                 collection_id: Optional[str] = None, recent_days: Optional[int] = None,
                 structured: bool = False, scope: Any = None, text: Optional[str] = None,
-                filters: Any = None, include: Any = None) -> Dict[str, Any]:
+                filters: Any = None, include: Any = None,
+                entity_type: Optional[str] = None,
+                entity_id: Optional[str] = None,
+                shot_size: Optional[str] = None,
+                camera_movement: Optional[str] = None,
+                focal_length: Optional[str] = None,
+                lighting_phase: Optional[str] = None,
+                aspect_ratio: Optional[str] = None) -> Dict[str, Any]:
     if structured:
-        if root_id or collection_id or any(value is not None for value in (kind, archived, category, tag,
-                                                                            project_id, include_tags,
-                                                                            exclude_tags, recent_days)):
+        if (
+            root_id
+            or collection_id
+            or any(
+                value is not None
+                for value in (
+                    kind,
+                    archived,
+                    category,
+                    tag,
+                    project_id,
+                    include_tags,
+                    exclude_tags,
+                    recent_days,
+                    entity_type,
+                    entity_id,
+                    shot_size,
+                    camera_movement,
+                    focal_length,
+                    lighting_phase,
+                    aspect_ratio,
+                )
+            )
+        ):
             raise CleanroomException(400, "UNSUPPORTED_FILTER_VALUE",
                                      "结构化查询不能混用旧版过滤参数")
         return _list_structured_assets(
@@ -475,11 +503,51 @@ def list_assets(limit: int, offset: int, query: Optional[str], kind: Optional[st
         raise CleanroomException(400, "UNSUPPORTED_OPTION", "不支持的资产排序")
     if view and view not in {"card", "grid", "list"}:
         raise CleanroomException(400, "UNSUPPORTED_OPTION", "不支持的资产显示方式")
+
+    cinematography_input: Dict[str, Any] = {}
+    for key, val in (
+        ("entity_type", entity_type),
+        ("entity_id", entity_id),
+        ("shot_size", shot_size),
+        ("camera_movement", camera_movement),
+        ("focal_length", focal_length),
+        ("lighting_phase", lighting_phase),
+        ("aspect_ratio", aspect_ratio),
+    ):
+        if val is not None:
+            cinematography_input[key] = val
+
+    normalized_cinematography: Dict[str, Any] = {}
+    if cinematography_input:
+        try:
+            validated = CinematographyAssetFilters.model_validate(cinematography_input)
+            normalized_cinematography = validated.model_dump(
+                mode="json", exclude_unset=True
+            )
+        except ValidationError as exc:
+            paths = sorted(
+                {
+                    ".".join(str(part) for part in error.get("loc", ()))
+                    for error in exc.errors()
+                }
+            )
+            field_paths = ", ".join(paths) or "filters"
+            raise CleanroomException(
+                400,
+                "UNSUPPORTED_FILTER_VALUE",
+                f"摄制或实体母库过滤字段无效：{field_paths}",
+            ) from None
+
     includes = sorted({part.strip() for part in (include_tags or "").split(",") if part.strip()})
     excludes = sorted({part.strip() for part in (exclude_tags or "").split(",") if part.strip()})
+    cinematography_tokens = sorted(
+        (key, tuple(val) if isinstance(val, list) else val)
+        for key, val in normalized_cinematography.items()
+    )
     filters = [query or "", kind or "", archived, ordering, category or "", tag or "", project_id or "",
-               includes, excludes, cutoff, root_id or "", collection_id or ""]
-    fingerprint = hashlib.sha256(json.dumps(filters, ensure_ascii=False).encode("utf-8")).hexdigest()
+               includes, excludes, cutoff, root_id or "", collection_id or "",
+               cinematography_tokens]
+    fingerprint = hashlib.sha256(json.dumps(filters, ensure_ascii=False, sort_keys=True).encode("utf-8")).hexdigest()
     if cursor:
         try:
             if len(cursor) > 2048:
@@ -582,6 +650,11 @@ def list_assets(limit: int, offset: int, query: Optional[str], kind: Optional[st
         items = [a for a in items if all(tagged(a, selected) for selected in includes)]
     if excludes:
         items = [a for a in items if not any(tagged(a, selected) for selected in excludes)]
+    if normalized_cinematography:
+        active_cinematography = dict(normalized_cinematography)
+        if project_id and "project_id" not in active_cinematography:
+            active_cinematography["project_id"] = [project_id]
+        items = _apply_cinematography_filters(items, active_cinematography)
     # 先以稳定ID排序，再稳定按所选字段排序，保证同值分页不重复/丢项。
     items.sort(key=lambda a: a["asset_id"])
     if ordering in {"newest", "oldest"}:
@@ -908,7 +981,10 @@ def _apply_cinematography_filters(
         if entity_indexes is None:
             entity_indexes, _ = _entity_filter_index()
         by_id, by_type, by_project_type = entity_indexes
-        project_scope = set(filters.get("project_id") or [])
+        raw_project_scope = filters.get("project_id") or []
+        if isinstance(raw_project_scope, str):
+            raw_project_scope = [raw_project_scope]
+        project_scope = set(raw_project_scope)
         if selected_entity_ids:
             # 精确 ID 过滤直接查映射，避免随母库规模增长而扫描全部实体。
             eligible_ids = set()
@@ -916,17 +992,17 @@ def _apply_cinematography_filters(
                 record = by_id.get(entity_id)
                 if record is None:
                     continue
-                entity_type, project_id = record
+                entity_type, entity_project_id = record
                 if selected_entity_types and entity_type not in selected_entity_types:
                     continue
-                if project_scope and project_id not in project_scope:
+                if project_scope and entity_project_id not in project_scope:
                     continue
                 eligible_ids.add(entity_id)
         elif project_scope:
             eligible_ids = set().union(
                 *(
-                    by_project_type.get((project_id, entity_type), set())
-                    for project_id in project_scope
+                    by_project_type.get((proj_id, entity_type), set())
+                    for proj_id in project_scope
                     for entity_type in selected_entity_types
                 )
             )
