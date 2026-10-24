@@ -308,11 +308,10 @@ def test_isolated_environment_restores_after_exception(
     monkeypatch.setenv("GW_CLI_EXECUTION", "1")
     before = {name: os.environ.get(name) for name in names}
     monitor: dict[str, Any] = {}
-    with pytest.raises(RuntimeError, match="injected"):
-        with probe._isolated_environment(tmp_path / "isolated", monitor):
-            assert os.environ["GW_CLI_EXECUTION"] == "0"
-            assert Path(os.environ["GW_DATA_DIR"]).is_relative_to(tmp_path)
-            raise RuntimeError("injected")
+    with pytest.raises(RuntimeError, match="injected"), probe._isolated_environment(tmp_path / "isolated", monitor):
+        assert os.environ["GW_CLI_EXECUTION"] == "0"
+        assert Path(os.environ["GW_DATA_DIR"]).is_relative_to(tmp_path)
+        raise RuntimeError("injected")
     assert {name: os.environ.get(name) for name in names} == before
     assert monitor["environment_restored"] is True
 
@@ -321,18 +320,16 @@ def test_network_and_process_guards_block_then_restore(monkeypatch: pytest.Monke
     original_run = subprocess.run
     original_connect = socket.create_connection
     monitor = {"network_attempts_blocked": 0, "real_process_attempts_blocked": 0}
-    with pytest.raises(RuntimeError, match="Phase 12"):
-        with probe._side_effect_guard(monitor):
-            socket.create_connection(("example.invalid", 80))
+    with pytest.raises(RuntimeError, match="Phase 12"), probe._side_effect_guard(monitor):
+        socket.create_connection(("example.invalid", 80))
     assert monitor["network_guard_installed"] is True
     assert monitor["network_attempts_blocked"] == 1
     assert monitor["side_effect_guards_restored"] is True
     assert subprocess.run is original_run
     assert socket.create_connection is original_connect
 
-    with pytest.raises(RuntimeError, match="Phase 12"):
-        with probe._side_effect_guard(monitor):
-            subprocess.run(["definitely-not-a-real-command"])
+    with pytest.raises(RuntimeError, match="Phase 12"), probe._side_effect_guard(monitor):
+        subprocess.run(["definitely-not-a-real-command"])
     assert monitor["real_process_attempts_blocked"] == 1
     assert monitor["side_effect_guards_restored"] is True
     assert subprocess.run is original_run
