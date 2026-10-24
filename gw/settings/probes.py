@@ -215,13 +215,13 @@ def guard_provider_url(url: str, *, allow_lan: bool = False) -> str:
     port = port or (443 if parsed.scheme == "https" else 80)
     try:
         infos = socket.getaddrinfo(host, port)
-    except socket.gaierror:
-        raise CleanroomException(400, "INVALID_URL", "base_url 主机名无法解析")
+    except socket.gaierror as e:
+        raise CleanroomException(400, "INVALID_URL", "base_url 主机名无法解析") from e
     for info in infos:
         try:
             ip = ipaddress.ip_address(info[4][0])
-        except ValueError:
-            raise CleanroomException(400, "INVALID_URL", "解析出的地址不合法")
+        except ValueError as e:
+            raise CleanroomException(400, "INVALID_URL", "解析出的地址不合法") from e
         if (
             ip.is_private
             or ip.is_loopback
