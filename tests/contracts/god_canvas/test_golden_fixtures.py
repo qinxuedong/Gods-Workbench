@@ -5,23 +5,36 @@
 
 import json
 from pathlib import Path
+
 from fastapi.testclient import TestClient
 
-from gw.god_canvas.godmap import parse_godmap_content, export_to_godmap
-from gw.god_canvas.models import CanvasTopology
-from gw.god_canvas.tasks import SmartCanvasTaskResponse
-from gw.core.errors import (
-    ErrorEnvelope,
-    UnauthorizedException,
-    ForbiddenException,
-    VersionConflictException,
-    CanvasVersionConflictException,
-)
 from gw.asset_library.models import (
     AssetLibraryCreateRequest,
     AssetLibraryResponse,
     CategoryCreateRequest,
     CategoryType,
+)
+from gw.canvas_closure.models import (
+    CanvasAssetIndexResponse,
+    CanvasTrashResponse,
+    SharedFolderListResponse,
+    VideoTaskListResponse,
+)
+from gw.core.errors import (
+    CanvasVersionConflictException,
+    CleanroomException,
+    ErrorEnvelope,
+    ForbiddenException,
+    UnauthorizedException,
+    VersionConflictException,
+)
+from gw.god_canvas.godmap import export_to_godmap, parse_godmap_content
+from gw.god_canvas.models import CanvasTopology
+from gw.god_canvas.tasks import SmartCanvasTaskResponse
+from gw.projects_hub.models import (
+    ProjectCreateRequest,
+    ProjectListResponse,
+    ProjectType,
 )
 from gw.prompt_library.models import (
     PromptLibraryCreateRequest,
@@ -31,25 +44,13 @@ from gw.settings.models import (
     ProviderSnapshot,
     StorageSettingsSnapshot,
 )
-from gw.core.errors import CleanroomException
-from gw.canvas_closure.models import (
-    CanvasAssetIndexResponse,
-    CanvasTrashResponse,
-    SharedFolderListResponse,
-    VideoTaskListResponse,
-)
-from gw.projects_hub.models import (
-    ProjectCreateRequest,
-    ProjectListResponse,
-    ProjectType,
-)
 
 
 def test_manifest_integrity(fixtures_dir: Path):
     """验证黄金夹具清单完整性与文件存在性。"""
     manifest_path = fixtures_dir / "GOLDEN-FIXTURE-MANIFEST.json"
     assert manifest_path.exists(), "GOLDEN-FIXTURE-MANIFEST.json 必须存在"
-    with open(manifest_path, "r", encoding="utf-8") as f:
+    with open(manifest_path, encoding="utf-8") as f:
         data = json.load(f)
     assert data["meta"]["distribution"] == "NOT AUTHORIZED FOR PUBLIC DISTRIBUTION"
     # 2026-09-22 Phase 10A：素材库阶段新增 6 个黄金夹具（9 -> 15）。
@@ -67,7 +68,7 @@ def test_manifest_integrity(fixtures_dir: Path):
 def test_fixture_projects_hub_list_active(fixtures_dir: Path):
     """验证 projects-hub-list-active.json 契约匹配。"""
     file_path = fixtures_dir / "projects-hub-list-active.json"
-    with open(file_path, "r", encoding="utf-8") as f:
+    with open(file_path, encoding="utf-8") as f:
         content = json.load(f)
     res = ProjectListResponse.model_validate(content)
     assert len(res.projects) == 1
@@ -81,7 +82,7 @@ def test_fixture_projects_hub_list_active(fixtures_dir: Path):
 def test_fixture_projects_hub_create_request(fixtures_dir: Path):
     """验证 projects-hub-create-request.json 契约匹配。"""
     file_path = fixtures_dir / "projects-hub-create-request.json"
-    with open(file_path, "r", encoding="utf-8") as f:
+    with open(file_path, encoding="utf-8") as f:
         content = json.load(f)
     req = ProjectCreateRequest.model_validate(content)
     assert req.name == "示例项目 B"
@@ -92,7 +93,7 @@ def test_fixture_projects_hub_create_request(fixtures_dir: Path):
 def test_fixture_projects_hub_update_conflict_409(fixtures_dir: Path):
     """验证 projects-hub-update-conflict-409.json 错误语义匹配。"""
     file_path = fixtures_dir / "projects-hub-update-conflict-409.json"
-    with open(file_path, "r", encoding="utf-8") as f:
+    with open(file_path, encoding="utf-8") as f:
         content = json.load(f)
     envelope = ErrorEnvelope.model_validate(content)
     assert envelope.detail.code == "VERSION_CONFLICT"
@@ -108,7 +109,7 @@ def test_fixture_projects_hub_update_conflict_409(fixtures_dir: Path):
 def test_fixture_canvas_workflow_minimal_json(fixtures_dir: Path):
     """验证 canvas-workflow-minimal.json 契约匹配。"""
     file_path = fixtures_dir / "canvas-workflow-minimal.json"
-    with open(file_path, "r", encoding="utf-8") as f:
+    with open(file_path, encoding="utf-8") as f:
         content = json.load(f)
     top = CanvasTopology.model_validate(content)
     assert top.canvas_id == "cv-0001"
@@ -123,7 +124,7 @@ def test_fixture_canvas_workflow_minimal_json(fixtures_dir: Path):
 def test_fixture_canvas_workflow_minimal_godmap(fixtures_dir: Path):
     """验证 canvas-workflow-minimal.godmap 编解码契约。"""
     file_path = fixtures_dir / "canvas-workflow-minimal.godmap"
-    with open(file_path, "r", encoding="utf-8") as f:
+    with open(file_path, encoding="utf-8") as f:
         raw_str = f.read()
     doc = parse_godmap_content(raw_str)
     assert doc.format == "godmap"
@@ -148,7 +149,7 @@ def test_fixture_canvas_workflow_minimal_godmap(fixtures_dir: Path):
 def test_fixture_canvas_save_conflict_409(fixtures_dir: Path):
     """验证 canvas-save-conflict-409.json 错误语义匹配。"""
     file_path = fixtures_dir / "canvas-save-conflict-409.json"
-    with open(file_path, "r", encoding="utf-8") as f:
+    with open(file_path, encoding="utf-8") as f:
         content = json.load(f)
     envelope = ErrorEnvelope.model_validate(content)
     assert envelope.detail.code == "CANVAS_VERSION_CONFLICT"
@@ -163,7 +164,7 @@ def test_fixture_canvas_save_conflict_409(fixtures_dir: Path):
 def test_fixture_canvas_task_accepted_202(fixtures_dir: Path):
     """验证 canvas-task-accepted-202.json 异步契约匹配。"""
     file_path = fixtures_dir / "canvas-task-accepted-202.json"
-    with open(file_path, "r", encoding="utf-8") as f:
+    with open(file_path, encoding="utf-8") as f:
         content = json.load(f)
     res = SmartCanvasTaskResponse.model_validate(content)
     assert res.job_id == "job-0001"
@@ -174,7 +175,7 @@ def test_fixture_canvas_task_accepted_202(fixtures_dir: Path):
 def test_fixture_canvas_auth_401(fixtures_dir: Path):
     """验证 canvas-auth-401.json 错误语义匹配。"""
     file_path = fixtures_dir / "canvas-auth-401.json"
-    with open(file_path, "r", encoding="utf-8") as f:
+    with open(file_path, encoding="utf-8") as f:
         content = json.load(f)
     envelope = ErrorEnvelope.model_validate(content)
     assert envelope.detail.code == "UNAUTHORIZED"
@@ -186,7 +187,7 @@ def test_fixture_canvas_auth_401(fixtures_dir: Path):
 def test_fixture_canvas_forbidden_403(fixtures_dir: Path):
     """验证 canvas-forbidden-403.json 错误语义匹配。"""
     file_path = fixtures_dir / "canvas-forbidden-403.json"
-    with open(file_path, "r", encoding="utf-8") as f:
+    with open(file_path, encoding="utf-8") as f:
         content = json.load(f)
     envelope = ErrorEnvelope.model_validate(content)
     assert envelope.detail.code == "FORBIDDEN"
