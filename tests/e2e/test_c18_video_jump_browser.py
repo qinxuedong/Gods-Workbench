@@ -3,10 +3,8 @@
 from __future__ import annotations
 
 import json
-from typing import Any
 
 import pytest
-
 from workflow_support import goto_ready, settings_browser
 
 
