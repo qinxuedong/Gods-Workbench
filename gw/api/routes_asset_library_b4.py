@@ -26,7 +26,7 @@
 
 from __future__ import annotations
 
-from typing import Any, Optional
+from typing import Any
 
 from fastapi import APIRouter, Depends, Header, Request, Response, status
 
@@ -48,12 +48,12 @@ async def _body(request: Request) -> dict[str, Any]:
     return payload if isinstance(payload, dict) else {}
 
 
-def _read(authorization: Optional[str], x_user_role: str):
+def _read(authorization: str | None, x_user_role: str):
     """读权限：未认证一律 401。"""
     return require_authenticated(authorization, x_user_role)
 
 
-def _write(authorization: Optional[str], x_user_role: str):
+def _write(authorization: str | None, x_user_role: str):
     """写权限：未认证 401，只读角色 403。"""
     return require_edit_access(authorization, x_user_role)
 
@@ -66,15 +66,15 @@ def _required(request: Request, name: str) -> str:
     return value
 
 
-def _optional_int(request: Request, name: str) -> Optional[int]:
+def _optional_int(request: Request, name: str) -> int | None:
     """从查询串读取可选正整数参数；非法一律 400。"""
     raw = request.query_params.get(name)
     if raw is None or not raw.strip():
         return None
     try:
         value = int(raw)
-    except ValueError:
-        raise CleanroomException(400, "INVALID_REQUEST", "参数 %s 必须是整数" % name)
+    except ValueError as e:
+        raise CleanroomException(400, "INVALID_REQUEST", "参数 %s 必须是整数" % name) from e
     if value < 1:
         raise CleanroomException(400, "INVALID_REQUEST", "参数 %s 必须为正整数" % name)
     return value
@@ -87,7 +87,7 @@ def _required_payload_version(payload: dict[str, Any]) -> int:
     return value
 
 
-def _expected_versions(payload: dict[str, Any]) -> Optional[dict[str, int]]:
+def _expected_versions(payload: dict[str, Any]) -> dict[str, int] | None:
     value = payload.get("expected_versions")
     if value is not None and not isinstance(value, dict):
         raise CleanroomException(400, "INVALID_REQUEST", "expected_versions 必须是素材库版本映射")
@@ -106,7 +106,7 @@ def _ids(payload: dict[str, Any], key: str = "asset_ids") -> list[str]:
     return [str(item) for item in value] if isinstance(value, list) else []
 
 
-def _registry_linked_item(snapshot: Optional[dict[str, Any]]) -> bool:
+def _registry_linked_item(snapshot: dict[str, Any] | None) -> bool:
     """同进同出（C4-AC6）：桥接登记条目 = 带 workflow_owner 且注册表存在同名可见资产。
 
     注册表是资产存在性的唯一真源（见 gw.asset_registry.repository.delete_asset docstring）；
@@ -135,7 +135,7 @@ def _delete_item_via_registry(asset_id: str, context=None) -> dict[str, Any]:
 
 @router.get("/api/asset-classification-prompt", status_code=status.HTTP_200_OK)
 def get_asset_classification_prompt(
-    authorization: Optional[str] = Header(None),
+    authorization: str | None = Header(None),
     x_user_role: str = Header("editor", alias="X-User-Role"),
 ):
     """读取落盘的真实分类提示词。"""
@@ -146,7 +146,7 @@ def get_asset_classification_prompt(
 @router.patch("/api/asset-classification-prompt", status_code=status.HTTP_200_OK)
 async def update_asset_classification_prompt(
     request: Request,
-    authorization: Optional[str] = Header(None),
+    authorization: str | None = Header(None),
     x_user_role: str = Header("editor", alias="X-User-Role"),
 ):
     """更新分类提示词并落盘。"""
@@ -158,7 +158,7 @@ async def update_asset_classification_prompt(
 @router.post("/api/asset-classification/background", status_code=status.HTTP_200_OK)
 async def start_asset_classification_background(
     request: Request,
-    authorization: Optional[str] = Header(None),
+    authorization: str | None = Header(None),
     x_user_role: str = Header("editor", alias="X-User-Role"),
 ):
     """启动真实分类任务，返回真实 job_id 与 poll_hint。"""
@@ -171,7 +171,7 @@ async def start_asset_classification_background(
 
 @router.delete("/api/asset-classification/background", status_code=status.HTTP_200_OK)
 def stop_asset_classification_background(
-    authorization: Optional[str] = Header(None),
+    authorization: str | None = Header(None),
     x_user_role: str = Header("editor", alias="X-User-Role"),
 ):
     """停止当前分类任务并置为 cancelled。"""
@@ -182,7 +182,7 @@ def stop_asset_classification_background(
 @router.get("/api/asset-classification/jobs/{job_id}", status_code=status.HTTP_200_OK)
 def get_asset_classification_job(
     job_id: str,
-    authorization: Optional[str] = Header(None),
+    authorization: str | None = Header(None),
     x_user_role: str = Header("editor", alias="X-User-Role"),
 ):
     """查询真实分类任务状态；不存在返回 404。"""
@@ -197,7 +197,7 @@ def get_asset_classification_job(
 @router.get("/api/asset-content", status_code=status.HTTP_200_OK)
 def get_asset_content(
     request: Request,
-    authorization: Optional[str] = Header(None),
+    authorization: str | None = Header(None),
     x_user_role: str = Header("editor", alias="X-User-Role"),
 ):
     """读取真实素材内容；未创建时返回显式空态。"""
@@ -208,7 +208,7 @@ def get_asset_content(
 @router.patch("/api/asset-content", status_code=status.HTTP_200_OK)
 async def update_asset_content(
     request: Request,
-    authorization: Optional[str] = Header(None),
+    authorization: str | None = Header(None),
     x_user_role: str = Header("editor", alias="X-User-Role"),
 ):
     """写入真实素材内容并生成新版本。"""
@@ -221,7 +221,7 @@ async def update_asset_content(
 @router.get("/api/asset-content/pdf", status_code=status.HTTP_200_OK)
 def get_asset_content_pdf(
     request: Request,
-    authorization: Optional[str] = Header(None),
+    authorization: str | None = Header(None),
     x_user_role: str = Header("editor", alias="X-User-Role"),
 ):
     """用纯标准库生成真实合法 PDF 字节流。"""
@@ -235,7 +235,7 @@ def get_asset_content_pdf(
 @router.get("/api/asset-content/versions", status_code=status.HTTP_200_OK)
 def get_asset_content_versions(
     request: Request,
-    authorization: Optional[str] = Header(None),
+    authorization: str | None = Header(None),
     x_user_role: str = Header("editor", alias="X-User-Role"),
 ):
     """列出真实版本历史（当前版 + 历史版）。"""
@@ -247,7 +247,7 @@ def get_asset_content_versions(
 def get_asset_content_version(
     version_id: str,
     request: Request,
-    authorization: Optional[str] = Header(None),
+    authorization: str | None = Header(None),
     x_user_role: str = Header("editor", alias="X-User-Role"),
 ):
     """读取指定版本；不存在返回 404。"""
@@ -259,7 +259,7 @@ def get_asset_content_version(
 async def update_asset_content_version(
     version_id: str,
     request: Request,
-    authorization: Optional[str] = Header(None),
+    authorization: str | None = Header(None),
     x_user_role: str = Header("editor", alias="X-User-Role"),
 ):
     """修改指定版本内容。"""
@@ -273,7 +273,7 @@ async def update_asset_content_version(
 def delete_asset_content_version(
     version_id: str,
     request: Request,
-    authorization: Optional[str] = Header(None),
+    authorization: str | None = Header(None),
     x_user_role: str = Header("editor", alias="X-User-Role"),
 ):
     """删除历史版本；当前版本不可删除。"""
@@ -285,7 +285,7 @@ def delete_asset_content_version(
 def restore_asset_content_version(
     version_id: str,
     request: Request,
-    authorization: Optional[str] = Header(None),
+    authorization: str | None = Header(None),
     x_user_role: str = Header("editor", alias="X-User-Role"),
 ):
     """把历史版本恢复为当前版（新增版本号，不改写历史）。"""
@@ -300,7 +300,7 @@ def restore_asset_content_version(
 @router.get("/api/asset-file-info", status_code=status.HTTP_200_OK)
 def get_asset_file_info(
     request: Request,
-    authorization: Optional[str] = Header(None),
+    authorization: str | None = Header(None),
     x_user_role: str = Header("editor", alias="X-User-Role"),
 ):
     """返回允许根目录内真实文件元数据；越界 403。"""
@@ -312,7 +312,7 @@ def get_asset_file_info(
 @router.post("/api/asset-file-reveal", status_code=status.HTTP_200_OK)
 async def reveal_asset_file(
     request: Request,
-    authorization: Optional[str] = Header(None),
+    authorization: str | None = Header(None),
     x_user_role: str = Header("editor", alias="X-User-Role"),
 ):
     """只做路径准入校验，不启动外部文件管理器。"""
@@ -332,7 +332,7 @@ async def reveal_asset_file(
 async def rename_asset_library_category(
     category_id: str,
     request: Request,
-    authorization: Optional[str] = Header(None),
+    authorization: str | None = Header(None),
     x_user_role: str = Header("editor", alias="X-User-Role"),
 ):
     """重命名分类（CAS）。"""
@@ -345,7 +345,7 @@ async def rename_asset_library_category(
 def delete_asset_library_category(
     category_id: str,
     request: Request,
-    authorization: Optional[str] = Header(None),
+    authorization: str | None = Header(None),
     x_user_role: str = Header("editor", alias="X-User-Role"),
 ):
     """删除分类（CAS）。"""
@@ -356,7 +356,7 @@ def delete_asset_library_category(
 @router.post("/api/asset-library/items/batch", status_code=status.HTTP_201_CREATED)
 async def create_asset_library_items_batch(
     request: Request,
-    authorization: Optional[str] = Header(None),
+    authorization: str | None = Header(None),
     x_user_role: str = Header("editor", alias="X-User-Role"),
 ):
     """批量创建素材条目，返回真实 asset_id。"""
@@ -367,7 +367,7 @@ async def create_asset_library_items_batch(
 @router.post("/api/asset-library/items/classify", status_code=status.HTTP_200_OK)
 async def classify_asset_library_items(
     request: Request,
-    authorization: Optional[str] = Header(None),
+    authorization: str | None = Header(None),
     x_user_role: str = Header("editor", alias="X-User-Role"),
 ):
     """对真实条目做确定性扩展名归类并写回。"""
@@ -378,7 +378,7 @@ async def classify_asset_library_items(
 @router.post("/api/asset-library/items/delete", status_code=status.HTTP_200_OK)
 async def delete_asset_library_items(
     request: Request,
-    authorization: Optional[str] = Header(None),
+    authorization: str | None = Header(None),
     x_user_role: str = Header("editor", alias="X-User-Role"),
 ):
     """批量删除素材条目；桥接登记条目改走注册表删除（同进同出，可恢复）。"""
@@ -421,7 +421,7 @@ async def delete_asset_library_items(
 @router.post("/api/asset-library/items/move", status_code=status.HTTP_200_OK)
 async def move_asset_library_items(
     request: Request,
-    authorization: Optional[str] = Header(None),
+    authorization: str | None = Header(None),
     x_user_role: str = Header("editor", alias="X-User-Role"),
 ):
     """批量移动素材条目到目标分类。"""
@@ -437,7 +437,7 @@ async def move_asset_library_items(
 async def update_asset_library_item(
     item_id: str,
     request: Request,
-    authorization: Optional[str] = Header(None),
+    authorization: str | None = Header(None),
     x_user_role: str = Header("editor", alias="X-User-Role"),
 ):
     """修改素材条目（名称/所属分类，CAS）。"""
@@ -449,7 +449,7 @@ async def update_asset_library_item(
 def delete_asset_library_item(
     item_id: str,
     request: Request,
-    authorization: Optional[str] = Header(None),
+    authorization: str | None = Header(None),
     x_user_role: str = Header("editor", alias="X-User-Role"),
 ):
     """删除单个素材条目；桥接登记条目改走注册表删除（同进同出，可恢复）。"""
@@ -465,7 +465,7 @@ def delete_asset_library_item(
 @router.post("/api/asset-library/items/{item_id}/avatar-status", status_code=status.HTTP_200_OK)
 def check_asset_avatar_status(
     item_id: str,
-    authorization: Optional[str] = Header(None),
+    authorization: str | None = Header(None),
     x_user_role: str = Header("editor", alias="X-User-Role"),
 ):
     """查询素材头像登记状态（依据真实落盘登记，不做外部平台调用）。"""
@@ -477,7 +477,7 @@ def check_asset_avatar_status(
 async def register_asset_avatar(
     item_id: str,
     request: Request,
-    authorization: Optional[str] = Header(None),
+    authorization: str | None = Header(None),
     x_user_role: str = Header("editor", alias="X-User-Role"),
 ):
     """登记素材头像（本地登记，不调用外部平台）。"""
@@ -494,7 +494,7 @@ async def register_asset_avatar(
 async def rename_asset_library(
     library_id: str,
     request: Request,
-    authorization: Optional[str] = Header(None),
+    authorization: str | None = Header(None),
     x_user_role: str = Header("editor", alias="X-User-Role"),
 ):
     """重命名素材库（CAS）。"""
@@ -507,7 +507,7 @@ async def rename_asset_library(
 def delete_asset_library(
     library_id: str,
     request: Request,
-    authorization: Optional[str] = Header(None),
+    authorization: str | None = Header(None),
     x_user_role: str = Header("editor", alias="X-User-Role"),
 ):
     """删除素材库（CAS）。"""
@@ -518,7 +518,7 @@ def delete_asset_library(
 @router.post("/api/asset-library/workflows/upload", status_code=status.HTTP_200_OK)
 async def upload_asset_library_workflows(
     request: Request,
-    authorization: Optional[str] = Header(None),
+    authorization: str | None = Header(None),
     x_user_role: str = Header("editor", alias="X-User-Role"),
 ):
     """导入工作流文件（真实解码 + 落盘到允许根目录）。"""
