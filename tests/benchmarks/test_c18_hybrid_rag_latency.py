@@ -54,6 +54,15 @@ class _FailingKnnConnection:
         self.connection.close()
 
 
+class _FailingVersionConnection:
+    """在读取 sqlite-vec 版本时注入 SQLite 错误。"""
+
+    def execute(self, sql: str, parameters: tuple[object, ...] = ()) -> object:
+        if "vec_version()" in sql:
+            raise sqlite3.OperationalError("version probe failed")
+        raise AssertionError(f"unexpected SQL: {sql}")
+
+
 def _nearest_rank_percentile(samples: list[float], quantile: float) -> float:
     if not samples:
         raise ValueError("至少需要一个延迟样本")
@@ -316,11 +325,56 @@ def test_limit_and_query_length_bounds_and_degraded_upsert_validation(
         searcher = HybridAssetSearcher(engine)
         searcher.search("大海", limit=300)
         searcher.search("大海", limit=20, candidate_limit=1000)
-        assert observed_limits == [900, 1000]
         with pytest.raises(ValueError, match="candidate_limit"):
             searcher.search("大海", candidate_limit=0)
-        with pytest.raises(ValueError, match="candidate_limit"):
-            searcher.search("大海", limit=334)
+        searcher.search("大海", limit=334)
+        searcher.search("大海", limit=1000)
+        assert observed_limits == [900, 1000, 1000, 1000]
+    finally:
+        engine.close()
+
+
+def test_vector_version_sqlite_error_logs_warning(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    """版本探测失败可诊断，且仍返回 None。"""
+    monkeypatch.setattr(sqlite_vec_engine, "_load_sqlite_vec", lambda _db: False)
+    engine = SQLiteVecEngine(tmp_path / "vector-version.sqlite3", dimensions=3)
+    try:
+        with monkeypatch.context() as patch:
+            patch.setattr(engine, "_db", _FailingVersionConnection())
+            patch.setattr(engine, "vector_enabled", True)
+            with caplog.at_level(logging.WARNING, logger=sqlite_vec_engine.logger.name):
+                assert engine.vector_version is None
+        assert any(
+            record.levelno == logging.WARNING
+            and "version" in record.getMessage().lower()
+            for record in caplog.records
+        )
+    finally:
+        engine.close()
+
+
+def test_empty_hybrid_results_expose_vector_degraded_state(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """无关键词命中且向量轨降级时，空结果仍携带降级信号。"""
+    monkeypatch.setattr(sqlite_vec_engine, "_load_sqlite_vec", lambda _db: False)
+    engine = SQLiteVecEngine(tmp_path / "empty-degraded.sqlite3", dimensions=3)
+    try:
+        monkeypatch.setattr(engine, "search_fts", lambda _query, *, limit=20: [])
+
+        def degraded_search(_query_vector, *, limit: int = 20) -> list[object]:
+            engine._vector_search_state.degraded = True
+            return []
+
+        monkeypatch.setattr(engine, "search_vectors", degraded_search)
+        results = HybridAssetSearcher(engine).search(
+            "无匹配内容", query_vector=[1.0, 0.0, 0.0]
+        )
+
+        assert results == []
+        assert results.vector_track_degraded is True
     finally:
         engine.close()
 

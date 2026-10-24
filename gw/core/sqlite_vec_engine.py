@@ -422,7 +422,8 @@ class SQLiteVecEngine:
         with self._lock:
             try:
                 row = self._db.execute("SELECT vec_version()").fetchone()
-            except sqlite3.Error:
+            except sqlite3.Error as exc:
+                logger.warning("sqlite-vec version probe failed: %s", exc)
                 return None
         return str(row[0]) if row else None
 
