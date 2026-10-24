@@ -600,9 +600,8 @@ def test_app_lifespan_cleans_up_when_agent_startup_fails(
     monkeypatch.setattr(agent_integration, "stop_agent_integration", stop)
     monkeypatch.setattr(index_jobs, "shutdown", shutdown_index_jobs)
 
-    with pytest.raises(RuntimeError, match="synthetic agent startup failure"):
-        with TestClient(create_app()):
-            pytest.fail("startup failure must prevent serving requests")
+    with pytest.raises(RuntimeError, match="synthetic agent startup failure"), TestClient(create_app()):
+        pytest.fail("startup failure must prevent serving requests")
 
     assert calls == ["start", "stop", "shutdown_index_jobs"]
 
@@ -632,9 +631,8 @@ def test_app_lifespan_preserves_startup_error_when_stop_fails(
     monkeypatch.setattr(agent_integration, "stop_agent_integration", fail_stop)
     monkeypatch.setattr(index_jobs, "shutdown", shutdown_index_jobs)
 
-    with pytest.raises(ValueError, match="synthetic startup failure") as raised:
-        with TestClient(create_app()):
-            pytest.fail("startup failure must prevent serving requests")
+    with pytest.raises(ValueError, match="synthetic startup failure") as raised, TestClient(create_app()):
+        pytest.fail("startup failure must prevent serving requests")
 
     assert calls == ["start", "stop", "shutdown_index_jobs"]
     assert isinstance(raised.value.__cause__, RuntimeError)
