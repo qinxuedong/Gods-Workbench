@@ -550,7 +550,7 @@ def test_c18_entity_filter_logs_and_fails_closed_on_read_oserror(
     "entity_revision", [True, 0, -1, "oops", 1.5, None, "5", 1.0]
 )
 def test_c18_entity_filter_fails_closed_for_invalid_stored_revision(
-    client: TestClient, entity_revision: object
+    client: TestClient, entity_revision: object, caplog: pytest.LogCaptureFixture
 ) -> None:
     _, warm_response = _query(client, {"entity_type": ["character"]})
     assert warm_response.status_code == 200, warm_response.text
@@ -561,10 +561,61 @@ def test_c18_entity_filter_fails_closed_for_invalid_stored_revision(
     raw["revision"] = entity_revision
     entity_repository.state().write(raw)
 
+    caplog.clear()
     _, response = _query(client, {"entity_type": ["character"]})
 
     assert response.status_code == 503, response.text
     assert response.json()["detail"]["code"] == "ENTITY_INDEX_UNAVAILABLE"
+    assert "revision 非法" in caplog.text
+
+
+def test_c18_entity_filter_fails_closed_when_file_is_invalid_json(
+    client: TestClient, caplog: pytest.LogCaptureFixture
+) -> None:
+    _create_entity("character", "Mira")
+    entity_file = storage.file_for(entity_repository.NS_ENTITIES)
+    entity_file.write_bytes(b"{not a valid json")
+
+    caplog.clear()
+    _, response = _query(client, {"entity_type": ["character"]})
+
+    assert response.status_code == 503, response.text
+    assert response.json()["detail"]["code"] == "ENTITY_INDEX_UNAVAILABLE"
+    assert "文件损坏" in caplog.text or "数据无效" in caplog.text
+
+
+def test_c18_entity_filter_fails_closed_when_file_is_invalid_utf8(
+    client: TestClient, caplog: pytest.LogCaptureFixture
+) -> None:
+    _create_entity("character", "Mira")
+    entity_file = storage.file_for(entity_repository.NS_ENTITIES)
+    entity_file.write_bytes(b"\xff\xfe\x00\x00\x12\x34")
+
+    caplog.clear()
+    _, response = _query(client, {"entity_type": ["character"]})
+
+    assert response.status_code == 503, response.text
+    assert response.json()["detail"]["code"] == "ENTITY_INDEX_UNAVAILABLE"
+    assert "文件损坏" in caplog.text or "数据无效" in caplog.text
+
+
+@pytest.mark.parametrize("invalid_entities", [None, [], "not_a_dict", 123])
+def test_c18_entity_filter_fails_closed_when_entities_field_is_missing_or_not_dict(
+    client: TestClient, invalid_entities: object, caplog: pytest.LogCaptureFixture
+) -> None:
+    _create_entity("character", "Mira")
+    entity_file = storage.file_for(entity_repository.NS_ENTITIES)
+    payload: dict[str, object] = {"revision": 2}
+    if invalid_entities is not None:
+        payload["entities"] = invalid_entities
+    entity_file.write_bytes(json.dumps(payload, ensure_ascii=False).encode("utf-8"))
+
+    caplog.clear()
+    _, response = _query(client, {"entity_type": ["character"]})
+
+    assert response.status_code == 503, response.text
+    assert response.json()["detail"]["code"] == "ENTITY_INDEX_UNAVAILABLE"
+    assert "entities" in caplog.text
 
 
 def test_c18_entity_filter_cursor_paginates_and_detects_entity_changes(

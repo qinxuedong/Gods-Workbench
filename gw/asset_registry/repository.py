@@ -713,7 +713,7 @@ def _entity_filter_index() -> Tuple[
     from gw.entities import repository as entities_repository
 
     entity_state = entities_repository.state()
-    entity_data_file = storage.data_root() / f"{entity_state.namespace}.json"
+    entity_data_file = storage.file_for(entity_state.namespace)
     try:
         entity_bytes: Optional[bytes] = entity_data_file.read_bytes()
     except FileNotFoundError:
@@ -733,13 +733,15 @@ def _entity_filter_index() -> Tuple[
         content_bytes = entity_bytes
         try:
             raw = json.loads(entity_bytes.decode("utf-8"))
-        except (UnicodeDecodeError, json.JSONDecodeError):
+        except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+            _LOGGER.warning("实体母库文件损坏，筛选暂不可用：%s", exc)
             raise CleanroomException(
                 503,
                 "ENTITY_INDEX_UNAVAILABLE",
                 "实体母库数据无效，筛选暂不可用",
             ) from None
     if not isinstance(raw, dict):
+        _LOGGER.warning("实体母库数据损坏（顶层非字典），筛选暂不可用")
         raise CleanroomException(
             503,
             "ENTITY_INDEX_UNAVAILABLE",
@@ -748,6 +750,7 @@ def _entity_filter_index() -> Tuple[
 
     revision_value = raw.get("revision")
     if type(revision_value) is not int or revision_value < 1:
+        _LOGGER.warning("实体母库 revision 非法（当前值为 %r），筛选暂不可用", revision_value)
         raise CleanroomException(
             503,
             "ENTITY_INDEX_UNAVAILABLE",
@@ -757,6 +760,7 @@ def _entity_filter_index() -> Tuple[
 
     records = raw.get("entities")
     if not isinstance(records, dict):
+        _LOGGER.warning("实体母库缺少有效 entities 字典字段，筛选暂不可用")
         raise CleanroomException(
             503,
             "ENTITY_INDEX_UNAVAILABLE",

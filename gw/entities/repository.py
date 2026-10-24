@@ -23,6 +23,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from copy import deepcopy
+import logging
 from typing import Any
 
 from fastapi import APIRouter, Body, Header, Query, status
@@ -43,6 +44,9 @@ DATA_STATUS_OK = "ok"
 FIXTURE_ID = "c12-t1-master-catalog-001"
 
 
+_LOGGER = logging.getLogger(__name__)
+
+
 def _blank() -> dict[str, Any]:
     return {"revision": 1, "entities": {}, "sequences": {}}
 
@@ -51,6 +55,18 @@ def state() -> storage.JsonState:
     """返回实体母库命名空间状态容器。"""
 
     return storage.JsonState(NS_ENTITIES, _blank)
+
+
+def _read_state() -> dict[str, Any]:
+    raw = state().read()
+    if not isinstance(raw, dict) or not isinstance(raw.get("entities"), dict):
+        _LOGGER.warning("实体母库缺少有效 entities 字典字段，服务暂不可用")
+        raise CleanroomException(
+            503,
+            "ENTITY_INDEX_UNAVAILABLE",
+            "实体母库数据无效，服务暂不可用",
+        )
+    return raw
 
 
 def _bump(raw: dict[str, Any]) -> int:
@@ -167,7 +183,7 @@ def list_entities(
 
     project = _validate_project_id(project_id) if project_id is not None else None
     kind = EntityType(entity_type) if entity_type is not None else None
-    raw = state().read()
+    raw = _read_state()
     records: list[dict[str, Any]] = []
     for value in raw.get("entities", {}).values():
         if not isinstance(value, dict):
@@ -192,7 +208,7 @@ def list_entities(
 def get_entity(entity_id: str, *, project_id: str | None = None) -> dict[str, Any]:
     """读取一个未归档实体，并在提供项目时执行主体范围校验。"""
 
-    raw = state().read()
+    raw = _read_state()
     record = _entity_or_404(raw, str(entity_id))
     if project_id is not None and record.get("project_id") != _validate_project_id(
         project_id

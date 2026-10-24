@@ -125,3 +125,43 @@ def test_repository_cas_conflict(monkeypatch, tmp_path):
         assert conflict.status_code == 409
         assert conflict.json()["detail"]["code"] == "VERSION_CONFLICT"
 
+
+def test_entities_repository_fails_closed_when_entities_field_is_missing_or_invalid(
+    monkeypatch, tmp_path, caplog
+):
+    import json
+    from gw.core import storage
+    from gw.entities import repository as entity_repo
+
+    monkeypatch.setenv("GW_RUNTIME_MODE", "test")
+    monkeypatch.setenv("GW_AUTH_MODE", "local")
+    monkeypatch.setenv("GW_DATA_DIR", str(tmp_path / "data"))
+
+    with TestClient(_app()) as client:
+        # 先正常创建一个实体以落盘文件
+        created = client.post(
+            "/api/entities",
+            headers=AUTH,
+            json={
+                "project_id": "proj_1",
+                "entity_type": "character",
+                "name": "Bob",
+            },
+        )
+        assert created.status_code == 201
+
+        # 模拟文件被外部写入，缺少 entities 字段
+        entity_file = storage.file_for(entity_repo.NS_ENTITIES)
+        entity_file.write_bytes(json.dumps({"revision": 2}, ensure_ascii=False).encode("utf-8"))
+
+        caplog.clear()
+        # 实体模块读取列表应该 fail-closed 返回 503
+        list_res = client.get("/api/entities?project_id=proj_1", headers=AUTH)
+        assert list_res.status_code == 503
+        assert list_res.json()["detail"]["code"] == "ENTITY_INDEX_UNAVAILABLE"
+        assert "entities" in caplog.text
+
+        # 实体模块读取单条应该同样 fail-closed 返回 503
+        get_res = client.get("/api/entities/ent_1?project_id=proj_1", headers=AUTH)
+        assert get_res.status_code == 503
+        assert get_res.json()["detail"]["code"] == "ENTITY_INDEX_UNAVAILABLE"

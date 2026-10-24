@@ -411,11 +411,15 @@ def _namespace_lock(namespace: str) -> threading.RLock:
         return lock
 
 
-def _file_for(namespace: str) -> Path:
+def file_for(namespace: str) -> Path:
+    """返回指定命名空间快照落盘的绝对 JSON 路径。"""
     safe = "".join(ch for ch in namespace if ch.isalnum() or ch in "-_.")
     if not safe:
         raise CleanroomException(400, "INVALID_NAMESPACE", "存储命名空间不合法")
     return data_root() / (safe + ".json")
+
+
+_file_for = file_for
 
 
 def load(namespace: str, default: Any = None) -> Any:
@@ -454,6 +458,11 @@ class JsonState:
     @property
     def namespace(self) -> str:
         return self._namespace
+
+    @property
+    def file_path(self) -> Path:
+        """返回当前命名空间落盘的绝对文件路径。"""
+        return file_for(self._namespace)
 
     def read(self) -> Any:
         value = load(self._namespace, None)
