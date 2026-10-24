@@ -30,6 +30,12 @@ from gw.core import storage
 from gw.core.auth import EDIT_ROLES
 from gw.core.config import load_runtime_auth_config
 from gw.core.errors import CleanroomException
+from gw.core.runtime_paths import (
+    DATA_DIR_ENV,
+    LOCAL_AUTH_DB_ENV,
+    RUNTIME_MODE_ENV,
+    VIDEO_DATA_DIR_ENV,
+)
 
 MAX_ACTIVE = 16
 MAX_JOBS = 1000
@@ -76,6 +82,19 @@ def _actor(auth):
 
 def _owner(actor):
     return _digest([actor["mode"], actor["domain"], actor["subject"]])
+
+
+def _runtime_path_configuration():
+    return tuple(
+        (name, os.environ.get(name))
+        for name in (
+            RUNTIME_MODE_ENV,
+            DATA_DIR_ENV,
+            LOCAL_AUTH_DB_ENV,
+            VIDEO_DATA_DIR_ENV,
+            "LOCALAPPDATA",
+        )
+    )
 
 
 def _roots():
@@ -327,6 +346,8 @@ class IndexJobs:
         self.lock = threading.RLock()
         self.condition = threading.Condition(self.lock)
         self.executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="gw-index")
+        self._root_snapshot_cache = {}
+        self._runtime_path_configuration = _runtime_path_configuration()
         self.closed = False
         self._recover()
 
@@ -364,12 +385,45 @@ class IndexJobs:
             self.condition.notify_all()
         self.executor.shutdown(wait=True, cancel_futures=True)
 
+    def _root_snapshot_key(self):
+        """廉价探测根配置快照是否改变，避免每个 NAS 文件都重新 resolve 全部根。"""
+        try:
+            state_files = []
+            for namespace in ("storage_settings", "asset_registry"):
+                path = self.root / f"{namespace}.json"
+                try:
+                    info = path.stat()
+                except FileNotFoundError:
+                    state_files.append(None)
+                else:
+                    state_files.append((info.st_mtime_ns, info.st_size))
+            return _digest(
+                {
+                    "allowed_roots": os.environ.get(storage.ALLOWED_ROOTS_ENV, ""),
+                    "state_files": state_files,
+                }
+            )
+        except (CleanroomException, OSError, ValueError):
+            return None
+
     def _check(self, job):
-        if self.closed or storage.data_root().resolve() != self.root:
+        if (
+            self.closed
+            or _runtime_path_configuration() != self._runtime_path_configuration
+        ):
             _error(409, "INDEX_PROCESS_INTERRUPTED", "任务执行环境已停止")
         _admission(job["_actor"])
-        canonical, aliases = _roots()
-        fingerprint = _digest({k: str(v) for k, v in sorted(aliases.items())})
+        cache_key = self._root_snapshot_key()
+        cached = self._root_snapshot_cache.get(cache_key) if cache_key else None
+        if cached is None:
+            canonical, aliases = _roots()
+            fingerprint = _digest({k: str(v) for k, v in sorted(aliases.items())})
+            if cache_key:
+                self._root_snapshot_cache[cache_key] = (fingerprint, canonical)
+                if len(self._root_snapshot_cache) > MAX_ACTIVE:
+                    self._root_snapshot_cache.pop(next(iter(self._root_snapshot_cache)))
+        else:
+            fingerprint, canonical = cached
         if fingerprint != job["_fingerprint"]:
             _error(403, "INDEX_ROOTS_CHANGED", "允许根或来源配置已改变")
         return canonical
@@ -784,14 +838,12 @@ class IndexJobs:
                 with suppress(Exception):
                     self._save(job)
 
-    def _children(self, job_id, attempt, folder, root):
-        # 目录项枚举及每次磁盘读取均在检查点锁内，paused后不继续扫描。
+    def _children(self, job_id, attempt, folder, root, *, hash_files=False):
+        # 目录项枚举与元数据读取共享一次检查点，paused 后不继续读取新条目。
         with self.condition:
             self._checkpoint(job_id, attempt)
-            if (
-                folder.resolve() != folder.absolute()
-                or not folder.resolve().is_relative_to(root)
-            ):
+            resolved_folder = folder.resolve()
+            if resolved_folder != folder.absolute() or not resolved_folder.is_relative_to(root):
                 _error(403, "INDEX_PATH_CHANGED", "扫描目录已改变")
             iterator = os.scandir(folder)
         try:
@@ -802,7 +854,21 @@ class IndexJobs:
                         child = next(iterator)
                     except StopIteration:
                         break
-                yield child
+                    try:
+                        # 哈希流程需要真实 inode/dev 与打开句柄比对；普通扫描使用
+                        # DirEntry 的枚举元数据，避免每个 NAS 文件再单独 lstat。
+                        info = (
+                            Path(child.path).lstat()
+                            if hash_files
+                            else child.stat(follow_symlinks=False)
+                        )
+                        is_symlink = child.is_symlink()
+                        stat_error = None
+                    except OSError as exc:
+                        info = None
+                        is_symlink = False
+                        stat_error = exc
+                yield child, info, is_symlink, stat_error
         finally:
             iterator.close()
 
@@ -886,52 +952,50 @@ class IndexJobs:
             pending = [scan_root]
             while pending:
                 folder = pending.pop()
-                for child in self._children(job_id, attempt, folder, boundary):
+                for child, info, is_symlink, stat_error in self._children(
+                    job_id,
+                    attempt,
+                    folder,
+                    boundary,
+                    hash_files=request["hash_files"],
+                ):
                     entries += 1
                     if entries > MAX_ENTRIES:
                         _error(413, "INDEX_SCAN_LIMIT", "扫描目录项数量超过上限")
                     try:
-                        with self.condition:
-                            self._checkpoint(job_id, attempt)
-                            # Windows DirEntry缓存的inode/dev可能为0；使用真实lstat作身份比较。
-                            info = Path(child.path).lstat()
-                            if (
-                                child.is_symlink()
-                                or getattr(info, "st_file_attributes", 0) & 0x400
-                            ):
-                                continue
-                            path = Path(child.path)
-                            if (
-                                path.resolve() != path.absolute()
-                                or not path.resolve().is_relative_to(boundary)
-                            ):
-                                continue
-                            if stat.S_ISDIR(info.st_mode):
-                                pending.append(path)
-                                continue
-                            if not stat.S_ISREG(info.st_mode):
-                                continue
-                            if len(files) >= request["max_files"]:
-                                _error(413, "INDEX_SCAN_LIMIT", "扫描文件数量超过上限")
-                            relative_path = path.relative_to(boundary).as_posix()
-                            display_path = (
-                                "/".join(
-                                    part
-                                    for part in (prefix, relative_path)
-                                    if part and part != "."
-                                )
-                                if scan_path is not None
-                                else relative_path
+                        if stat_error is not None:
+                            raise stat_error
+                        if info is None:
+                            continue
+                        if is_symlink or getattr(info, "st_file_attributes", 0) & 0x400:
+                            continue
+                        path = Path(child.path)
+                        if stat.S_ISDIR(info.st_mode):
+                            pending.append(path)
+                            continue
+                        if not stat.S_ISREG(info.st_mode):
+                            continue
+                        if len(files) >= request["max_files"]:
+                            _error(413, "INDEX_SCAN_LIMIT", "扫描文件数量超过上限")
+                        relative_path = path.relative_to(boundary).as_posix()
+                        display_path = (
+                            "/".join(
+                                part
+                                for part in (prefix, relative_path)
+                                if part and part != "."
                             )
-                            item = {
-                                "root_id": root_id,
-                                "storage_root_id": scope.get("storage_root_id")
-                                or root_id,
-                                "display_path": display_path,
-                                "canonical_relpath": storage.canonical_relpath(display_path),
-                                "name": path.name,
-                                "size_bytes": info.st_size,
-                            }
+                            if scan_path is not None
+                            else relative_path
+                        )
+                        item = {
+                            "root_id": root_id,
+                            "storage_root_id": scope.get("storage_root_id")
+                            or root_id,
+                            "display_path": display_path,
+                            "canonical_relpath": storage.canonical_relpath(display_path),
+                            "name": path.name,
+                            "size_bytes": info.st_size,
+                        }
                         if request["hash_files"]:
                             if info.st_size > 512 * 1024 * 1024:
                                 _error(
@@ -1004,6 +1068,8 @@ class IndexJobs:
             added = 0
             updated = 0
             if job["_request"]["kind"] == "reindex":
+                search_documents = {}
+                next_asset_number = repo._asset_sequence_start(raw)
                 for item in files:
                     identity = (item["root_id"], item["canonical_relpath"])
                     existing = known.get(identity)
@@ -1016,18 +1082,25 @@ class IndexJobs:
                         if changed:
                             existing["updated_at"] = storage.now_iso()
                             updated += 1
+                        asset_id = str(existing.get("asset_id") or existing.get("id") or "")
+                        if asset_id:
+                            search_documents[asset_id] = existing
                         continue
-                    asset_id = repo._seq(raw, "ast_", raw["assets"].keys())
-                    raw["assets"][asset_id] = repo._plain_asset(
+                    asset_id = f"ast_{next_asset_number:04d}"
+                    next_asset_number += 1
+                    record = repo._plain_asset(
                         asset_id,
                         item["name"],
                         "indexed",
                         **{k: v for k, v in item.items() if k != "name"},
                     )
-                    known[identity] = raw["assets"][asset_id]
+                    raw["assets"][asset_id] = record
+                    known[identity] = record
+                    search_documents[asset_id] = record
                     added += 1
                 if added or updated:
                     repo._bump(raw)
+                repo._upsert_asset_search_documents(search_documents.values())
                 result = {
                     "indexed": added,
                     "updated": updated,

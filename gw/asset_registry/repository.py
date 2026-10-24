@@ -33,6 +33,7 @@ import base64
 import hashlib
 import json
 import logging
+import os
 import threading
 from collections import Counter
 from datetime import datetime, timedelta, timezone
@@ -51,6 +52,7 @@ from gw.asset_registry.service import normalize_asset_query, parse_utc_datetime
 from gw.core.errors import CleanroomException
 
 NS_REGISTRY = "asset_registry"
+ASSET_SEARCH_INDEX_FILENAME = "asset_registry_search.sqlite3"
 DATA_STATUS_OK = "ok"
 _ENTITY_FILTER_INDEX_CACHE_KEY: Optional[Tuple[str, str]] = None
 _ENTITY_FILTER_INDEX_CACHE_VALUE: Tuple[
@@ -103,6 +105,14 @@ def _seq(raw: Dict[str, Any], prefix: str, taken: Any = None) -> str:
     return storage.next_sequence(prefix, keys)
 
 
+def _asset_sequence_start(raw: Dict[str, Any]) -> int:
+    """一次读取现有资产 ID 高水位，避免扫描时每新增一条都重扫完整集合。"""
+    next_id = storage.next_sequence(
+        "ast_", [*raw.get("sequences", {}).keys(), *raw.get("assets", {}).keys()]
+    )
+    return int(next_id[len("ast_"):])
+
+
 def _bump(raw: Dict[str, Any]) -> int:
     raw["revision"] = int(raw.get("revision", 1)) + 1
     return raw["revision"]
@@ -146,6 +156,44 @@ def _plain_asset(asset_id: str, name: str, kind: str, **extra: Any) -> Dict[str,
     }
     payload.update({k: v for k, v in extra.items() if v is not None})
     return payload
+
+
+def _upsert_asset_search_documents(assets: Any) -> List[bool]:
+    """把资产的可检索字段通过批量接口写入本地 FTS/向量索引。"""
+    documents: Dict[str, Dict[str, str]] = {}
+    for asset in assets:
+        if not isinstance(asset, dict):
+            continue
+        asset_id = str(asset.get("asset_id") or asset.get("id") or "").strip()
+        title = str(asset.get("name") or "").strip()
+        if not asset_id or not title:
+            continue
+        tags = asset.get("tags")
+        tag_text = [
+            tag.strip() for tag in tags
+            if isinstance(tag, str) and tag.strip()
+        ] if isinstance(tags, list) else []
+        content = " ".join(
+            value for value in (
+                str(asset.get("kind") or "").strip(),
+                str(asset.get("display_path") or "").strip(),
+                *tag_text,
+            ) if value
+        )
+        documents[asset_id] = {
+            "asset_id": asset_id,
+            "title": title,
+            "content": content,
+        }
+    if not documents:
+        return []
+
+    from gw.core.sqlite_vec_engine import SQLiteVecEngine
+
+    db_path = storage.data_root() / ASSET_SEARCH_INDEX_FILENAME
+    db_path.parent.mkdir(parents=True, exist_ok=True)
+    with SQLiteVecEngine(db_path) as engine:
+        return engine.batch_upsert_documents(list(documents.values()))
 
 
 def _storage_source_for_location(
@@ -228,6 +276,7 @@ def import_assets(items: List[Dict[str, Any]], source_kind: str, expected_versio
             raw["assets"][asset_id] = record
             raw["sequences"][asset_id] = True
             created.append(dict(record))
+        _upsert_asset_search_documents(created)
         revision = _bump(raw)
         return {"assets": created, "asset_ids": [a["asset_id"] for a in created],
                 "revision": revision, "data_status": DATA_STATUS_OK, "data_gaps": []}
@@ -1930,15 +1979,45 @@ def _scan_allowed_roots() -> Tuple[List[Dict[str, Any]], List[str]]:
     if not roots:
         return [], ["allowed_roots_not_configured"]
     found: List[Dict[str, Any]] = []
-    for root in roots:
-        if not root.is_dir():
-            continue
-        for path in root.rglob("*"):
-            if not path.is_file():
-                continue
+
+    def display_path(path: Path) -> str:
+        matches = []
+        for allowed_root in roots:
             try:
-                found.append({"display_path": storage.relative_display(path), "name": path.name,
-                              "size_bytes": path.stat().st_size})
+                matches.append((allowed_root, path.relative_to(allowed_root)))
+            except ValueError:
+                continue
+        if not matches:
+            return path.name
+        _, relative = max(matches, key=lambda item: len(item[0].parts))
+        return relative.as_posix()
+
+    for root in roots:
+        pending = [root]
+        while pending:
+            directory = pending.pop()
+            try:
+                with os.scandir(directory) as entries:
+                    for entry in entries:
+                        try:
+                            if entry.is_dir(follow_symlinks=False):
+                                pending.append(Path(entry.path))
+                                continue
+                            if not entry.is_file():
+                                continue
+                            info = entry.stat()
+                            path = Path(entry.path)
+                            found.append({
+                                "display_path": (
+                                    storage.relative_display(path)
+                                    if entry.is_symlink()
+                                    else display_path(path)
+                                ),
+                                "name": entry.name,
+                                "size_bytes": info.st_size,
+                            })
+                        except OSError:
+                            continue
             except OSError:
                 continue
     return found, []
@@ -1952,16 +2031,30 @@ def reindex(expected_version: Optional[int]) -> Dict[str, Any]:
                      "未配置允许根目录，无法建立索引")
     def mutate(raw: Dict[str, Any]) -> Any:
         _cas(raw, expected_version)
-        known = {a.get("display_path") for a in raw["assets"].values()}
+        known = {
+            a.get("display_path"): a
+            for a in raw["assets"].values()
+            if a.get("display_path")
+        }
         added = []
+        search_documents: Dict[str, Dict[str, Any]] = {}
+        next_asset_number = _asset_sequence_start(raw)
         for item in files:
-            if item["display_path"] in known:
+            existing = known.get(item["display_path"])
+            if existing is not None:
+                asset_id = str(existing.get("asset_id") or existing.get("id") or "")
+                if asset_id:
+                    search_documents[asset_id] = existing
                 continue
-            asset_id = _seq(raw, "ast_", raw["assets"].keys())
+            asset_id = f"ast_{next_asset_number:04d}"
+            next_asset_number += 1
             record = _plain_asset(asset_id, item["name"], "indexed",
                                   size_bytes=item["size_bytes"], display_path=item["display_path"])
             raw["assets"][asset_id] = record
+            known[item["display_path"]] = record
+            search_documents[asset_id] = record
             added.append(dict(record))
+        _upsert_asset_search_documents(search_documents.values())
         revision = _bump(raw)
         return {"indexed": len(added), "assets": added, "scanned": len(files),
                 "revision": revision, "data_status": DATA_STATUS_OK}
