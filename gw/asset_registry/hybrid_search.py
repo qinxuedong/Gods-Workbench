@@ -39,6 +39,21 @@ class HybridSearchResult:
     vector_track_degraded: bool
 
 
+class HybridSearchResults(list[HybridSearchResult]):
+    """兼容列表操作的结果集合，并保留空结果上的轨道降级状态。"""
+
+    __slots__ = ("vector_track_degraded",)
+
+    def __init__(
+        self,
+        results: Sequence[HybridSearchResult],
+        *,
+        vector_track_degraded: bool,
+    ) -> None:
+        super().__init__(results)
+        self.vector_track_degraded = vector_track_degraded
+
+
 @dataclass(slots=True)
 class _Candidate:
     asset_id: str
@@ -79,7 +94,7 @@ class HybridAssetSearcher:
         query_vector: Sequence[float] | None = None,
         limit: int = 20,
         candidate_limit: int | None = None,
-    ) -> list[HybridSearchResult]:
+    ) -> HybridSearchResults:
         """合并两轨排名。
 
         limit/candidate_limit 不在 1~1000 时抛 ValueError；
@@ -91,7 +106,9 @@ class HybridAssetSearcher:
         if len(query) > MAX_QUERY_LENGTH:
             raise ValueError(f"query 长度不得超过 {MAX_QUERY_LENGTH} 个字符")
         candidate_limit = _bounded_search_limit(
-            candidate_limit if candidate_limit is not None else max(limit * 3, limit),
+            candidate_limit
+            if candidate_limit is not None
+            else min(limit * 3, MAX_SEARCH_LIMIT),
             "candidate_limit",
         )
 
@@ -116,15 +133,18 @@ class HybridAssetSearcher:
             vector_track_degraded = self.engine.last_vector_search_degraded
 
         ordered = sorted(candidates.values(), key=lambda item: (-item.score, item.asset_id))
-        return [
-            HybridSearchResult(
-                asset_id=item.asset_id,
-                score=item.score,
-                lexical_score=item.lexical_score,
-                vector_distance=item.vector_distance,
-                lexical_rank=item.lexical_rank,
-                vector_rank=item.vector_rank,
-                vector_track_degraded=vector_track_degraded,
-            )
-            for item in ordered[:limit]
-        ]
+        return HybridSearchResults(
+            [
+                HybridSearchResult(
+                    asset_id=item.asset_id,
+                    score=item.score,
+                    lexical_score=item.lexical_score,
+                    vector_distance=item.vector_distance,
+                    lexical_rank=item.lexical_rank,
+                    vector_rank=item.vector_rank,
+                    vector_track_degraded=vector_track_degraded,
+                )
+                for item in ordered[:limit]
+            ],
+            vector_track_degraded=vector_track_degraded,
+        )
