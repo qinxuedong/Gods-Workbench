@@ -204,3 +204,16 @@ test('动态调用 setProjectId 更新上下文与回到项目链接', async () 
   assert.ok(bar, '动态设置后应生成 bar');
   assert.match(bar.innerHTML, /proj-dynamic-888/, '链接应更新为新项目');
 });
+
+test('QIN-319: agents-controller 与 assets-controller 包含单属性 var() 兜底值', () => {
+  const agentsSource = readFileSync(new URL('../../web/js/controllers/agents-controller.js', import.meta.url), 'utf8');
+  const assetsSource = readFileSync(new URL('../../web/js/controllers/assets-controller.js', import.meta.url), 'utf8');
+
+  // agents-controller: bar cssText 与 safeId span 的 style 必须包含 fallback 兜底值
+  assert.match(agentsSource, /var\(--gw-type-body-sm,\s*12px\)/, 'agents-controller 应包含 --gw-type-body-sm 兜底值 12px');
+  assert.match(agentsSource, /var\(--gw-leading-label-md,\s*16px\)/, 'agents-controller 应包含 --gw-leading-label-md 兜底值 16px');
+  assert.match(agentsSource, /var\(--gw-type-label-md,\s*11px\)/, 'agents-controller 应包含 --gw-type-label-md 兜底值 11px');
+
+  // assets-controller: status cssText 必须包含 fallback 兜底值
+  assert.match(assetsSource, /var\(--gw-type-body-sm,\s*12px\)/, 'assets-controller 应包含 --gw-type-body-sm 兜底值 12px');
+});
