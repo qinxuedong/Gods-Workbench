@@ -1,0 +1,14 @@
+Refs #347 | Linear: QIN-347
+
+## 改动文件
+- tests/contracts/assets/test_phase11_b6_review.py
+## 测试
+- `python -m pytest tests/contracts/assets/test_phase11_b6_review.py -v` -> 6 passed
+- `python -m pytest -v --no-header -p no:cacheprovider` -> 412 passed (tested in bg)
+- `node --test` suite -> 296 passed
+## 待本地实机验收
+- （无）
+## 范围外发现
+- （无）
+
+执行人: jules
