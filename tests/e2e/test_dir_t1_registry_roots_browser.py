@@ -7,7 +7,6 @@ from pathlib import Path
 
 from playwright.sync_api import TimeoutError as PlaywrightTimeout
 from playwright.sync_api import expect
-
 from workflow_support import goto_ready, settings_browser
 
 
@@ -105,9 +104,8 @@ def test_dir_t1_create_library_index_and_filter_from_browser(monkeypatch, tmp_pa
         try:
             # Playwright 的 Frame 没有 expect_response，由 page 接收 iframe 内的响应。
             # 确认点击落在当前 frame，避免 iframe 重载后点到另一份文档。
-            with page.expect_response(_storage_settings_get, timeout=60_000) as settings_got:
-                with page.expect_response(_reindex_post, timeout=60_000) as registration:
-                    frame.locator("[data-board-create-confirm]").click()
+            with page.expect_response(_storage_settings_get, timeout=60_000) as settings_got, page.expect_response(_reindex_post, timeout=60_000) as registration:
+                frame.locator("[data-board-create-confirm]").click()
         except PlaywrightTimeout as exc:
             raise AssertionError(
                 "确认建库后未观察到 storage-settings 或 reindex 响应。"
