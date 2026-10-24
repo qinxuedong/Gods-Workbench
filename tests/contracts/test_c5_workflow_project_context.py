@@ -51,7 +51,7 @@ def test_workflow_project_writer_sees_read_only_state_before_cas(client):
 def test_workflow_bridge_requires_an_authorized_project_context(client):
     """资产桥接只能在可写项目上下文中执行。"""
 
-    ids = seed(client, "active", action="workflow_bridge", role="owner")
+    seed(client, "active", action="workflow_bridge", role="owner")
     response = client.post(
         "/api/god_workflow/asset-hub/reconcile",
         headers=headers("read_grantee_editor"),
