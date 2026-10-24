@@ -206,8 +206,25 @@ def import_assets(items: List[Dict[str, Any]], source_kind: str, expected_versio
             if not name:
                 raise CleanroomException(400, "INVALID_REQUEST", "资产名称不能为空")
             asset_id = _seq(raw, "ast_", raw["assets"].keys())
+            metadata = dict(entry.get("metadata") or {})
+            if "video_segments" in entry:
+                metadata["video_segments"] = entry["video_segments"]
+            tags = list(entry.get("tags") or [])
+            extra: Dict[str, Any] = {
+                "size_bytes": entry.get("size_bytes"),
+                "tags": tags,
+                "metadata": metadata,
+            }
+            if entry.get("frame_rate") is not None:
+                extra["frame_rate"] = entry["frame_rate"]
+            if entry.get("duration") is not None:
+                extra["duration"] = entry["duration"]
+            if entry.get("project_id") is not None:
+                extra["project_id"] = entry["project_id"]
+            if entry.get("project_ids") is not None:
+                extra["project_ids"] = list(entry["project_ids"])
             record = _plain_asset(asset_id, name, str(entry.get("kind") or source_kind or "unknown"),
-                                  size_bytes=entry.get("size_bytes"))
+                                  **extra)
             raw["assets"][asset_id] = record
             raw["sequences"][asset_id] = True
             created.append(dict(record))
@@ -226,6 +243,16 @@ def update_asset(asset_id: str, payload: Dict[str, Any]) -> Dict[str, Any]:
         for key in ("kind", "display_path", "archived"):
             if key in payload and payload[key] is not None:
                 item[key] = payload[key]
+        if "tags" in payload and isinstance(payload["tags"], list):
+            item["tags"] = payload["tags"]
+        if "metadata" in payload and isinstance(payload["metadata"], dict):
+            item.setdefault("metadata", {}).update(payload["metadata"])
+        if "video_segments" in payload and isinstance(payload["video_segments"], list):
+            item.setdefault("metadata", {})["video_segments"] = payload["video_segments"]
+        if "frame_rate" in payload and payload["frame_rate"] is not None:
+            item["frame_rate"] = payload["frame_rate"]
+        if "duration" in payload and payload["duration"] is not None:
+            item["duration"] = payload["duration"]
         if payload.get("display_path") is not None:
             requested_root_id = str(payload.get("root_id") or item.get("root_id") or "")
             path = storage.resolve_request_path(
@@ -521,7 +548,24 @@ def list_assets(limit: int, offset: int, query: Optional[str], kind: Optional[st
         items = [a for a in items if a.get("kind") == kind]
     if query:
         needle = query.casefold()
-        items = [a for a in items if needle in str(a.get("name", "")).casefold()]
+        def _matches_query(a: Dict[str, Any]) -> bool:
+            if needle in str(a.get("name", "")).casefold():
+                return True
+            if needle in str(a.get("asset_id", "")).casefold():
+                return True
+            for tag_val in a.get("tags") or []:
+                if needle in str(tag_val).casefold():
+                    return True
+            metadata = a.get("metadata") or {}
+            for seg in metadata.get("video_segments") or []:
+                if isinstance(seg, dict):
+                    for st in seg.get("tags") or []:
+                        if needle in str(st).casefold():
+                            return True
+                    if needle in str(seg.get("summary") or "").casefold():
+                        return True
+            return False
+        items = [a for a in items if _matches_query(a)]
     if cutoff:
         items = [a for a in items if str(a.get("created_at") or "") >= cutoff]
     if category:
@@ -929,12 +973,25 @@ def _list_structured_assets(
     items = [dict(asset) for asset in raw["assets"].values() if asset_visible(asset)]
     needle = normalized["text"].casefold()
     if needle:
-        items = [
-            asset
-            for asset in items
-            if needle in str(asset.get("name") or "").casefold()
-            or needle in str(asset.get("asset_id") or "").casefold()
-        ]
+        def _matches_text(asset: Dict[str, Any]) -> bool:
+            if needle in str(asset.get("name") or "").casefold():
+                return True
+            if needle in str(asset.get("asset_id") or "").casefold():
+                return True
+            for tag_val in asset.get("tags") or []:
+                if needle in str(tag_val).casefold():
+                    return True
+            metadata = asset.get("metadata") or {}
+            for seg in metadata.get("video_segments") or []:
+                if isinstance(seg, dict):
+                    for st in seg.get("tags") or []:
+                        if needle in str(st).casefold():
+                            return True
+                    if needle in str(seg.get("summary") or "").casefold():
+                        return True
+            return False
+
+        items = [asset for asset in items if _matches_text(asset)]
     if filter_values.get("kind"):
         kinds = set(filter_values["kind"])
         items = [asset for asset in items if _asset_category(asset) in kinds]

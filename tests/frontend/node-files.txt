@@ -29,6 +29,7 @@ tests/frontend/project-artifact-links.test.mjs
 tests/frontend/qin-197-ui-defects.test.mjs
 tests/frontend/qin-200-canvas-create.test.mjs
 tests/frontend/test_c18_omnibar_hotkeys.mjs
+tests/frontend/test_c18_video_jump.mjs
 tests/frontend/typography-governance.test.mjs
 tests/frontend/ui-governance.test.mjs
 tests/frontend/unassigned-inbox.test.mjs
