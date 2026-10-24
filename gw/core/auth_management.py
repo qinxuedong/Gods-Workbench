@@ -894,8 +894,8 @@ class AuthManagementStore:
                 cursor.encode("ascii") + b"=" * (-len(cursor) % 4)
             ).decode("ascii")
             offset = int(raw)
-        except (ValueError, UnicodeError, TypeError, base64.binascii.Error):
-            raise AuthManagementInvalidCursor()
+        except (ValueError, UnicodeError, TypeError, base64.binascii.Error) as exc:
+            raise AuthManagementInvalidCursor() from exc
         if offset < 0:
             raise AuthManagementInvalidCursor()
         return offset

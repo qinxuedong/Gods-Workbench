@@ -92,8 +92,8 @@ async def _json(request: Request) -> dict[str, Any]:
                 raise CleanroomException(
                     413, "PAYLOAD_TOO_LARGE", "公开分享请求体超过 16 KiB 上限"
                 )
-        except ValueError:
-            raise CleanroomException(400, "INVALID_REQUEST", "Content-Length 不合法")
+        except ValueError as exc:
+            raise CleanroomException(400, "INVALID_REQUEST", "Content-Length 不合法") from exc
     chunks = []
     size = 0
     async for chunk in request.stream():
@@ -107,8 +107,8 @@ async def _json(request: Request) -> dict[str, Any]:
         return {}
     try:
         payload = json.loads(b"".join(chunks))
-    except (UnicodeDecodeError, json.JSONDecodeError):
-        raise CleanroomException(400, "INVALID_REQUEST", "请求体必须是有效 JSON")
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise CleanroomException(400, "INVALID_REQUEST", "请求体必须是有效 JSON") from exc
     if not isinstance(payload, dict):
         raise CleanroomException(400, "INVALID_REQUEST", "请求体必须是 JSON 对象")
     return payload
