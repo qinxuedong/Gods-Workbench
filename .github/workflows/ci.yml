@@ -18,6 +18,11 @@ jobs:
       - name: 检出代码
         uses: actions/checkout@v4
 
+      - name: 配置 Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
       - name: 配置 Python 3.11
         uses: actions/setup-python@v5
         with:
@@ -95,8 +100,34 @@ jobs:
           export GW_RUNNINGHUB_API_KEY="${GITHUB_SHA}"
           python -m pytest -v --no-header -p no:cacheprovider
 
-      - name: 运行前端契约回归测试
-        run: node --test tests/frontend/agent-tasks.test.mjs tests/frontend/c16-t3-pwa-installable.test.mjs tests/frontend/test_c18_omnibar_hotkeys.mjs
+      - name: 校验前端测试清单完整性（防漏门禁）
+        run: |
+          python - <<'PY'
+          import subprocess, sys
+          from pathlib import Path
+
+          tracked = set(subprocess.check_output(
+              ["git", "ls-files", "tests/frontend/*.mjs"],
+              text=True, encoding="utf-8"
+          ).splitlines())
+          tracked = {line.strip().replace("\\", "/") for line in tracked if line.strip()}
+
+          manifest = Path("tests/frontend/node-files.txt").read_text(encoding="utf-8")
+          listed = {line.strip().replace("\\", "/") for line in manifest.splitlines() if line.strip()}
+
+          missing = tracked - listed
+          extra = listed - tracked
+          if missing or extra:
+              if missing:
+                  print("发现未在 tests/frontend/node-files.txt 登记的前端测试:", sorted(missing))
+              if extra:
+                  print("tests/frontend/node-files.txt 中存在多余或未跟踪的条目:", sorted(extra))
+              sys.exit(1)
+          print(f"前端测试防漏检查通过：{len(listed)} 个测试文件全部已登记。")
+          PY
+
+      - name: 运行前端契约回归测试（全量 39 个文件）
+        run: node --test $(cat tests/frontend/node-files.txt | tr -d '\r')
 
       - name: 扫描二进制白名单
         if: ${{ always() }}
