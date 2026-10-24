@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Phase 12 A1 素材库与本地素材真实接入契约回归。
 
 覆盖 docs/contracts/ASSET-LIBRARY-B4-INTERFACE-CATALOG.yaml 与
@@ -14,12 +13,12 @@ LOCAL-ASSET-INTERFACE-CATALOG.yaml 声明的 40 个操作：
 from __future__ import annotations
 
 import base64
-from concurrent.futures import ThreadPoolExecutor
 import hashlib
 import json
 import os
 import re
 import threading
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import pytest
@@ -526,7 +525,7 @@ def test_b4_content_versions_and_real_pdf():
         assert len(versions["versions"]) == 2
         history_id = [v["version_id"] for v in versions["versions"] if not v["current"]][0]
 
-        restored = client.post("/api/asset-content/versions/%s/restore" % history_id,
+        restored = client.post(f"/api/asset-content/versions/{history_id}/restore",
                                headers=EDITOR, params={"asset_id": "asset_0001"})
         assert restored.status_code == 200, restored.text
         assert restored.json()["content"] == "第一版"
@@ -586,8 +585,8 @@ def test_b4_classification_job_is_real_and_queryable():
                               json={"asset_ids": []})
         assert started.status_code == 200, started.text
         job_id = started.json()["job_id"]
-        assert started.json()["poll_hint"] == "/api/asset-classification/jobs/%s" % job_id
-        queried = client.get("/api/asset-classification/jobs/%s" % job_id, headers=EDITOR)
+        assert started.json()["poll_hint"] == f"/api/asset-classification/jobs/{job_id}"
+        queried = client.get(f"/api/asset-classification/jobs/{job_id}", headers=EDITOR)
         assert queried.status_code == 200
         assert queried.json()["state"] == "completed"
 
