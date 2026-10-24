@@ -1,10 +1,9 @@
+import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
-import pytest
 
 from gw.api.routes_entities import router
 from gw.core.errors import CleanroomException
-
 
 AUTH = {"Authorization": "Bearer test-user", "X-User-Role": "editor"}
 
@@ -131,6 +130,7 @@ def test_entities_repository_fails_closed_when_entities_field_is_missing_or_inva
     monkeypatch, tmp_path, caplog
 ):
     import json
+
     from gw.core import storage
     from gw.entities import repository as entity_repo
 
@@ -194,7 +194,7 @@ CORRUPT_CASES = [
 def test_entities_repository_corrupt_files_fail_closed_on_read(
     monkeypatch, tmp_path, caplog, case_name, corrupt_bytes
 ):
-    import hashlib
+
     from gw.core import storage
     from gw.entities import repository as entity_repo
 
@@ -226,6 +226,7 @@ def test_entities_repository_corrupt_files_fail_closed_on_write_and_preserve_fil
     monkeypatch, tmp_path, caplog, case_name, corrupt_bytes
 ):
     import hashlib
+
     from gw.core import storage
     from gw.entities import repository as entity_repo
 
