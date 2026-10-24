@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 # Copyright 2026 Gods-Workbench Authors
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -26,8 +25,9 @@
 
 from __future__ import annotations
 
-import json
+import contextlib
 import hashlib
+import json
 import ntpath
 import os
 import shutil
@@ -36,12 +36,17 @@ import tempfile
 import threading
 import time
 import unicodedata
-from pathlib import Path
 from collections.abc import Callable, Iterator, Mapping
-from typing import Any, Optional
+from pathlib import Path
+from typing import Any
 
 from gw.core.errors import CleanroomException
-from gw.core.runtime_paths import MODE_TEST, RuntimePathError, RuntimePaths, resolve_runtime_paths
+from gw.core.runtime_paths import (
+    MODE_TEST,
+    RuntimePathError,
+    RuntimePaths,
+    resolve_runtime_paths,
+)
 
 DATA_DIR_ENV = "GW_DATA_DIR"
 ALLOWED_ROOTS_ENV = "GW_ALLOWED_ROOTS"
@@ -86,7 +91,7 @@ def allowed_roots() -> list[Path]:
     return roots
 
 
-def canonical_relpath(raw_path: str, *, windows: Optional[bool] = None) -> str:
+def canonical_relpath(raw_path: str, *, windows: bool | None = None) -> str:
     """生成根目录内相对路径的稳定身份键。"""
     if not isinstance(raw_path, str) or not raw_path:
         raise CleanroomException(400, "INVALID_PATH", "相对路径参数不合法")
@@ -170,7 +175,7 @@ def validate_directory_path(raw_path: str) -> str:
     return normalized
 
 
-def resolve_within_roots(raw_path: str, *, root_id: Optional[str] = None) -> Path:
+def resolve_within_roots(raw_path: str, *, root_id: str | None = None) -> Path:
     """把调用方给出的路径解析到允许根目录内；越界或未配置根目录一律失败关闭。
 
     安全约束：
@@ -207,8 +212,8 @@ def resolve_within_roots(raw_path: str, *, root_id: Optional[str] = None) -> Pat
                 )
             candidate = selected_root / candidate
         resolved = candidate.resolve()
-    except (OSError, RuntimeError, ValueError):
-        raise CleanroomException(400, "INVALID_PATH", "路径参数不合法")
+    except (OSError, RuntimeError, ValueError) as e:
+        raise CleanroomException(400, "INVALID_PATH", "路径参数不合法") from e
     candidates = [selected_root] if selected_root is not None else roots
     matches = []
     for root in candidates:
@@ -222,7 +227,7 @@ def resolve_within_roots(raw_path: str, *, root_id: Optional[str] = None) -> Pat
     raise CleanroomException(403, "PATH_OUTSIDE_ALLOWED_ROOTS", "目标路径不在允许根目录内")
 
 
-def coerce_root_id(root_id: Optional[str]) -> Optional[str]:
+def coerce_root_id(root_id: str | None) -> str | None:
     """把请求或索引记录里的根身份归一为 ``root_identity_id`` 形态。
 
     既有本地素材索引使用完整 SHA-256 摘要作为 root_id；这里把它映射到当前
@@ -243,7 +248,7 @@ def coerce_root_id(root_id: Optional[str]) -> Optional[str]:
     return value
 
 
-def resolve_request_path(raw_path: str, *, root_id: Optional[str] = None) -> Path:
+def resolve_request_path(raw_path: str, *, root_id: str | None = None) -> Path:
     """请求级路径解析：显式 root_id 优先；相对路径在单根部署下取唯一根。
 
     严格解析器 ``resolve_within_roots`` 仍然对无 root_id 的相对路径返回
@@ -375,7 +380,7 @@ def resolve_output_directory(raw_path: str, *, must_exist: bool = True) -> Path:
     return _checked_output_path(raw_path, must_exist=must_exist, directory=True)
 
 
-def iter_output_paths(namespace: Optional[str] = None) -> Iterator[tuple[str, Path]]:
+def iter_output_paths(namespace: str | None = None) -> Iterator[tuple[str, Path]]:
     """先检查目录组件再遍历，绝不先递归进入Junction后才过滤结果。"""
     roots = [namespace] if namespace in OUTPUT_NAMESPACES else sorted(OUTPUT_NAMESPACES)
     if namespace is not None and namespace not in OUTPUT_NAMESPACES:
@@ -430,7 +435,7 @@ def load(namespace: str, default: Any = None) -> Any:
         if not path.exists():
             return default
         try:
-            with open(path, "r", encoding="utf-8") as handle:
+            with open(path, encoding="utf-8") as handle:
                 return json.load(handle)
         except (OSError, json.JSONDecodeError):
             return default
@@ -669,7 +674,7 @@ def create_runtime_backup(
     target = _backup_destination(paths, destination)
     started = time.perf_counter()
     created_at = now_iso()
-    seed = f"{created_at}:{time.time_ns()}:{paths.data_root}:{paths.auth_db}:{paths.video_root}".encode("utf-8")
+    seed = f"{created_at}:{time.time_ns()}:{paths.data_root}:{paths.auth_db}:{paths.video_root}".encode()
     backup_id = "backup_" + hashlib.sha256(seed).hexdigest()[:20]
     final = target / backup_id
     staging = target / f".{backup_id}.staging"
@@ -831,10 +836,8 @@ def _restore_commit(paths: RuntimePaths, stage: Path, backup_id: str) -> None:
             _remove_path(old)
     except Exception:
         for target in reversed(new_paths):
-            try:
+            with contextlib.suppress(RuntimeBackupError):
                 _remove_path(target)
-            except RuntimeBackupError:
-                pass
         for target, old in reversed(old_paths):
             if _lexists(old) and not _lexists(target):
                 os.replace(old, target)
@@ -932,7 +935,7 @@ def next_sequence(prefix: str, existing: Iterator[str]) -> str:
         tail = item[len(prefix):]
         if tail.isdigit():
             max_seen = max(max_seen, int(tail))
-    return "%s%04d" % (prefix, max_seen + 1)
+    return f"{prefix}{max_seen + 1:04d}"
 
 
 
