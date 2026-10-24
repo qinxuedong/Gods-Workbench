@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Phase 10A 素材库契约测试。
 
 覆盖 docs/contracts/ASSET-LIBRARY-INTERFACE-CATALOG.yaml（p10a-frozen-1）的 3 个端点：
@@ -13,8 +12,8 @@
 import pytest
 from fastapi.testclient import TestClient
 
-from gw.api.app import create_app
 from gw.api import routes_asset_library as routes
+from gw.api.app import create_app
 from gw.asset_library.service import AssetLibraryService
 
 EDITOR = {"X-User-Role": "editor", "Authorization": "Bearer cleanroom-test"}
