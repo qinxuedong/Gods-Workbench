@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """DIR-T10 外部分享 SVG 注入安全契约与指定候选 spot-check。"""
 
 from __future__ import annotations
@@ -12,7 +11,6 @@ import pytest
 from fastapi.testclient import TestClient
 
 from gw.api.app import create_app
-
 
 ROOT = Path(__file__).resolve().parents[3]
 AUTH = {"Authorization": "Bearer cleanroom-test", "X-User-Role": "editor"}

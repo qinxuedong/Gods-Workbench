@@ -141,7 +141,7 @@ def test_proxy_missing_pillow_dependency_is_not_integrated_and_retryable(tmp_pat
     assert body["reason_code"] == "PIL_NOT_AVAILABLE"
     assert body["next_action"] == "install_media_dependency"
     assert body["retryable"] is True
-    assert "complete" != body["data_status"]
+    assert body["data_status"] != "complete"
 
 
 def test_proxy_corrupt_source_is_degraded_and_never_complete(tmp_path, monkeypatch):
@@ -464,7 +464,7 @@ def test_archive_reports_asset_id_when_file_fails_during_zip_read(
     monkeypatch.setattr(asset_registry_repo, "media_file", lambda _asset_id: source)
 
     def fail_write(*_args, **_kwargs):
-        raise PermissionError("cannot read %s" % source)
+        raise PermissionError(f"cannot read {source}")
 
     monkeypatch.setattr(asset_registry_repo.zipfile.ZipFile, "write", fail_write)
     response = client.post(

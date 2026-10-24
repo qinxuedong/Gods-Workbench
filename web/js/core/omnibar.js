@@ -19,7 +19,8 @@
  * - Invalid URL syntax emits `gw:omnibar-error` with `INVALID_RESULT_URL`.
  * - Cross-origin destinations and non-HTTP(S) protocols emit
  *   `CROSS_ORIGIN_URL_BLOCKED`; command activation failures emit
- *   `COMMAND_ACTIVATION_FAILED`. Both use static, sanitized UI messages and
+ *   `COMMAND_ACTIVATION_FAILED`; command activation timeouts emit
+ *   `COMMAND_ACTIVATION_TIMEOUT`. Both use static, sanitized UI messages and
  *   never expose the original exception.
  * - The Omnibar displays an inline alert and stays open on these errors.
  *   Successful same-origin navigation and command activation close it.
@@ -27,6 +28,7 @@
 (function omnibar(global, document) {
   'use strict';
 
+  const DEFAULT_COMMAND_TIMEOUT_MS = 10000;
   const SEARCH_HINT = /[?？]|^(请|帮我|如何|怎么|为什么|解释|分析|总结|生成|改写)/;
   const RESULT_SELECTOR = '[role="option"]';
   const boundDocuments = new Set();
@@ -47,6 +49,26 @@
   let returnFocus = null;
   let frameObserver = null;
   let initialized = false;
+  let activeCommandTimer = null;
+
+  function safeClearTimeout(timerId) {
+    if (timerId === null || timerId === undefined) return;
+    if (typeof global.clearTimeout === 'function') {
+      global.clearTimeout(timerId);
+    } else if (typeof clearTimeout === 'function') {
+      clearTimeout(timerId);
+    }
+  }
+
+  function safeSetTimeout(callback, delayMs) {
+    if (typeof global.setTimeout === 'function') {
+      return global.setTimeout(callback, delayMs);
+    }
+    if (typeof setTimeout === 'function') {
+      return setTimeout(callback, delayMs);
+    }
+    return null;
+  }
 
   function makeElement(tagName, className, text) {
     const element = document.createElement(tagName);
@@ -148,6 +170,9 @@
       case 'COMMAND_ACTIVATION_FAILED':
         message = '命令执行失败，请重试。';
         break;
+      case 'COMMAND_ACTIVATION_TIMEOUT':
+        message = '命令执行超时，请重试。';
+        break;
       default:
         return;
     }
@@ -161,18 +186,36 @@
     selectedIndex = index;
     global.dispatchEvent?.(new global.CustomEvent('gw:omnibar-result-select', {detail: {result, index}}));
     if (typeof result.activate === 'function') {
+      const timeoutMs = Number(result?.timeout) > 0 ? Number(result.timeout) : DEFAULT_COMMAND_TIMEOUT_MS;
+      safeClearTimeout(activeCommandTimer);
+      activeCommandTimer = null;
       try {
-        await Promise.resolve(result.activate(result));
+        let timer = null;
+        const actionPromise = Promise.resolve(result.activate(result));
+        actionPromise.catch(() => {});
+        const timeoutPromise = new Promise((_, reject) => {
+          timer = safeSetTimeout(() => {
+            const error = new Error('Command activation timed out');
+            error.code = 'COMMAND_ACTIVATION_TIMEOUT';
+            reject(error);
+          }, timeoutMs);
+          activeCommandTimer = timer;
+        });
+        await Promise.race([actionPromise, timeoutPromise]);
       } catch (err) {
-        void err;
+        if (!isOpen) return false;
+        const isTimeout = err?.code === 'COMMAND_ACTIVATION_TIMEOUT';
         global.dispatchEvent?.(new global.CustomEvent('gw:omnibar-error', {
           detail: {
-            code: 'COMMAND_ACTIVATION_FAILED',
-            message: '命令执行失败，请重试。',
+            code: isTimeout ? 'COMMAND_ACTIVATION_TIMEOUT' : 'COMMAND_ACTIVATION_FAILED',
+            message: isTimeout ? '命令执行超时，请重试。' : '命令执行失败，请重试。',
           },
         }));
         input?.focus({preventScroll: true});
         return true;
+      } finally {
+        safeClearTimeout(activeCommandTimer);
+        activeCommandTimer = null;
       }
     } else if (typeof result.href === 'string') {
       let destination;
@@ -348,6 +391,8 @@
   }
 
   function close() {
+    safeClearTimeout(activeCommandTimer);
+    activeCommandTimer = null;
     if (!overlay || overlay.hidden) return false;
     overlay.hidden = true;
     overlay.setAttribute('aria-hidden', 'true');

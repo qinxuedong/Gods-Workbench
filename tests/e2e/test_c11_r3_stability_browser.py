@@ -135,7 +135,7 @@ def test_c11_r3_stability_real_browser_observation(
     """执行 500 次页面路由往返与 500 次真实任务投影轮询并留证。"""
     if not _real_run_enabled():
         pytest.skip("C11 真实长跑默认关闭；设置 GW_C11_REAL_E2E=1 后才会运行")
-    browser_api = pytest.importorskip("playwright.sync_api")
+    pytest.importorskip("playwright.sync_api")
 
     responses: list[dict[str, Any]] = []
     poll_records: list[dict[str, Any]] = []

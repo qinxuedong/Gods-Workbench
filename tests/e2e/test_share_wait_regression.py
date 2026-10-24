@@ -21,9 +21,8 @@ class _GateServer(ThreadingHTTPServer):
         self.requests = []
 
     def record(self, text):
-        with self.log_lock:
-            with self.log_path.open("a", encoding="utf-8") as log:
-                log.write(text + "\n")
+        with self.log_lock, self.log_path.open("a", encoding="utf-8") as log:
+            log.write(text + "\n")
 
 
 class _GateHandler(BaseHTTPRequestHandler):

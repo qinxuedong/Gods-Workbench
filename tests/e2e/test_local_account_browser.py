@@ -233,9 +233,8 @@ def test_startup_exception_reaps_only_the_owned_child(monkeypatch, tmp_path):
     monkeypatch.setitem(
         start_owned_server.__globals__, "local_health_ready", broken_probe
     )
-    with (tmp_path / "server.log").open("wb") as log:
-        with pytest.raises(RuntimeError, match="fixture-startup-exception"):
-            start_owned_server([], {}, log, 12345)
+    with (tmp_path / "server.log").open("wb") as log, pytest.raises(RuntimeError, match="fixture-startup-exception"):
+        start_owned_server([], {}, log, 12345)
     assert child.stopped and child.waited
 
 

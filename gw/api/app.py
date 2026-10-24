@@ -14,10 +14,12 @@
 
 """FastAPI 洁净室应用工厂与核心中间件。"""
 
+import contextlib
 import os
 from contextlib import asynccontextmanager
 from pathlib import Path
 from urllib.parse import urlencode
+
 from fastapi import FastAPI, Request, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
@@ -26,34 +28,39 @@ from fastapi.staticfiles import StaticFiles
 from gw.api.routes_ai import router as ai_router
 from gw.api.routes_asset_library import router as asset_library_router
 from gw.api.routes_asset_library_b4 import router as asset_library_b4_router
-from gw.api.routes_local_assets import router as local_assets_router
-from gw.api.routes_media import router as media_router
+from gw.api.routes_asset_registry import router as asset_registry_router
+from gw.api.routes_asset_registry import unassigned_router as asset_unassigned_router
 from gw.api.routes_asset_review_b6 import router as asset_review_b6_router
-from gw.api.routes_episode_pipeline_b7 import router as episode_pipeline_b7_router
-from gw.api.routes_export import router as export_router
-from gw.api.routes_prompt_library_b8 import router as prompt_library_b8_router
-from gw.api.routes_public_b9 import router as public_b9_router
 from gw.api.routes_auth import router as auth_router
 from gw.api.routes_auth_management import router as auth_management_router
 from gw.api.routes_canvas_closure import router as canvas_closure_router
-from gw.api.routes_god_canvas import jobs_router, router as god_canvas_router
+from gw.api.routes_decision import router as decision_router
+from gw.api.routes_entities import router as entities_router
+from gw.api.routes_episode_pipeline_b7 import router as episode_pipeline_b7_router
+from gw.api.routes_export import router as export_router
+from gw.api.routes_god_canvas import jobs_router
+from gw.api.routes_god_canvas import router as god_canvas_router
+from gw.api.routes_local_accounts import router as local_accounts_router
+from gw.api.routes_local_assets import router as local_assets_router
+from gw.api.routes_media import router as media_router
 from gw.api.routes_observability import router as observability_router
 from gw.api.routes_projects import legacy_router as projects_compat_router
 from gw.api.routes_projects import router as projects_router
-from gw.api.routes_asset_registry import router as asset_registry_router
-from gw.api.routes_asset_registry import unassigned_router as asset_unassigned_router
-from gw.video_tasks.routes import router as video_tasks_router
 from gw.api.routes_prompt_library import router as prompt_library_router
+from gw.api.routes_prompt_library_b8 import router as prompt_library_b8_router
+from gw.api.routes_public_b9 import router as public_b9_router
 from gw.api.routes_settings import router as settings_router
-from gw.api.routes_decision import router as decision_router
-from gw.api.routes_entities import router as entities_router
-from gw.god_workflow.routes import router as god_workflow_router
-from gw.core import session as session_store
-from gw.observability import telemetry as observability_telemetry
 from gw.core import local_accounts
-from gw.api.routes_local_accounts import router as local_accounts_router
-from gw.core.config import AUTH_MODE_OIDC, AUTH_MODE_LOCAL_ACCOUNT, load_runtime_auth_config
+from gw.core import session as session_store
+from gw.core.config import (
+    AUTH_MODE_LOCAL_ACCOUNT,
+    AUTH_MODE_OIDC,
+    load_runtime_auth_config,
+)
 from gw.core.errors import CleanroomException
+from gw.god_workflow.routes import router as god_workflow_router
+from gw.observability import telemetry as observability_telemetry
+from gw.video_tasks.routes import router as video_tasks_router
 
 # 同进程 Agent 领域错误处理是可选的：当运行期未提供 3.11+ StrEnum / 新版
 # jsonschema 等 agent 依赖时，工作流与其余既有接口必须仍可导入与提供。
@@ -101,7 +108,11 @@ async def _app_lifespan(app: FastAPI):
     primary_error = None
     owned_data_lock = None
     try:
-        from gw.core.storage import acquire_data_dir_lock, data_root, is_data_dir_lock_held
+        from gw.core.storage import (
+            acquire_data_dir_lock,
+            data_root,
+            is_data_dir_lock_held,
+        )
         from gw.god_canvas.service import default_god_canvas_service
         # 先持有数据目录锁再做启动恢复；绕过 run.py 直接用 uvicorn 启动也受保护。
         preheld = is_data_dir_lock_held(data_root())
@@ -111,7 +122,10 @@ async def _app_lifespan(app: FastAPI):
         default_god_canvas_service.recover_interrupted_jobs()
         if integration_enabled:
             try:
-                from gw.api.agent_integration import start_agent_integration, stop_agent_integration
+                from gw.api.agent_integration import (
+                    start_agent_integration,
+                    stop_agent_integration,
+                )
                 stop_integration = stop_agent_integration
                 await start_agent_integration(app)
             except (ImportError, ModuleNotFoundError) as dep_err:
@@ -262,12 +276,10 @@ def create_app(*, agent_integration_factory=None) -> FastAPI:
                     size = len(body)
         except Exception:
             size = 0
-        try:
+        with contextlib.suppress(Exception):
             observability_telemetry.record_http_observation(
                 request.url.path, response_bytes=size, duration_ms=elapsed_ms
             )
-        except Exception:
-            pass
         return response
 
     @app.middleware("http")

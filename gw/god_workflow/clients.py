@@ -74,36 +74,35 @@ class ProviderClient:
                 timeout=httpx.Timeout(self.timeout),
                 follow_redirects=False,
                 trust_env=False,
-            ) as client:
-                async with client.stream(
-                    "GET",
-                    url,
-                    headers={
-                        "Authorization": f"Bearer {os.environ[self.api_key_env]}",
-                        "Accept": "application/json",
-                    },
-                ) as response:
-                    if response.status_code == 404:
-                        raise CleanroomException(
-                            404,
-                            "PROVIDER_WORKFLOW_NOT_FOUND",
-                            "Provider workflow not found",
-                        )
-                    if response.status_code != 200:
+            ) as client, client.stream(
+                "GET",
+                url,
+                headers={
+                    "Authorization": f"Bearer {os.environ[self.api_key_env]}",
+                    "Accept": "application/json",
+                },
+            ) as response:
+                if response.status_code == 404:
+                    raise CleanroomException(
+                        404,
+                        "PROVIDER_WORKFLOW_NOT_FOUND",
+                        "Provider workflow not found",
+                    )
+                if response.status_code != 200:
+                    raise CleanroomException(
+                        502,
+                        "WORKFLOW_PROVIDER_ERROR",
+                        "Provider rejected the fetch request",
+                    )
+                content = bytearray()
+                async for chunk in response.aiter_bytes():
+                    content.extend(chunk)
+                    if len(content) > MAX_PROVIDER_BYTES:
                         raise CleanroomException(
                             502,
-                            "WORKFLOW_PROVIDER_ERROR",
-                            "Provider rejected the fetch request",
+                            "WORKFLOW_PROVIDER_RESPONSE_TOO_LARGE",
+                            "Provider response exceeds the size limit",
                         )
-                    content = bytearray()
-                    async for chunk in response.aiter_bytes():
-                        content.extend(chunk)
-                        if len(content) > MAX_PROVIDER_BYTES:
-                            raise CleanroomException(
-                                502,
-                                "WORKFLOW_PROVIDER_RESPONSE_TOO_LARGE",
-                                "Provider response exceeds the size limit",
-                            )
             result = json.loads(content)
             if not isinstance(result, dict):
                 raise ValueError()

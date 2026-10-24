@@ -8,7 +8,11 @@
 from __future__ import annotations
 
 from media_doubles import GOVERNOR, HEADERS, TASKS, prepare_workflow
-from test_c3_media_closed_loop import assert_traceable, registry_asset, run_to_completion
+from test_c3_media_closed_loop import (
+    assert_traceable,
+    registry_asset,
+    run_to_completion,
+)
 
 REGISTRY = "/api/asset-registry"
 
@@ -204,6 +208,7 @@ def test_restore_twice_does_not_duplicate_library_items(media_client, fake_media
 def test_failed_registry_delete_rolls_back_library_item(media_client, fake_media, asset_counts):
     """C4-AC6-ROLLBACK-01：注册表删除失败（CAS 冲突）时素材库条目原样回插，两处计数不变。"""
     import pytest
+
     from gw.asset_registry import repository as repo
     from gw.core.errors import CleanroomException
     _, _, asset_id = _completed_output(media_client)

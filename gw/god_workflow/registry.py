@@ -348,13 +348,12 @@ def read_clipboard(context: Any) -> dict[str, Any]:
 # ---------------------------------------------------------------------------
 def _media_type_for(filename: str, declared: str) -> str:
     declared = (declared or "").split(";", 1)[0].strip().lower()
-    if declared and declared != "application/octet-stream":
-        if (
-            declared in IMAGE_MEDIA_TYPES
-            or declared in VIDEO_MEDIA_TYPES
-            or declared in DOCUMENT_MEDIA_TYPES
-        ):
-            return declared
+    if declared and declared != "application/octet-stream" and (
+        declared in IMAGE_MEDIA_TYPES
+        or declared in VIDEO_MEDIA_TYPES
+        or declared in DOCUMENT_MEDIA_TYPES
+    ):
+        return declared
     suffix = Path(filename).suffix.lower()
     return EXTENSION_MEDIA_TYPES.get(suffix, "application/octet-stream")
 

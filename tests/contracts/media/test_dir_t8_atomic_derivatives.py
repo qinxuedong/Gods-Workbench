@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 # Copyright 2026 Gods-Workbench Authors
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -122,8 +121,8 @@ def test_thumbnail_payload_with_asset_id_keeps_fingerprint_key(
     first = media_repo.generate_thumbnail(payload)
     second = media_repo.generate_thumbnail({**payload, "width": 256})
 
-    assert Path(first["output"]).name == "%s.jpg.png" % asset_id
-    assert Path(second["output"]).name == "%s.jpg.png" % asset_id
+    assert Path(first["output"]).name == f"{asset_id}.jpg.png"
+    assert Path(second["output"]).name == f"{asset_id}.jpg.png"
     assert first["output"] == second["output"]
 
 
@@ -142,7 +141,7 @@ def test_download_path_prefers_registry_identity_over_stem(
     result = media_repo.download_path({"asset_id": asset_id})
 
     assert asset_id in result["filename"]
-    assert "unique-source" != Path(result["path"]).stem
+    assert Path(result["path"]).stem != "unique-source"
 
 
 def test_storyboard_directory_is_version_scoped(

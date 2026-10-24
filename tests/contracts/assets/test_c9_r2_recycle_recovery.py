@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """C9-T4：R2 全域回收恢复的稳定引用、CAS、幂等与部分失败契约。"""
 
 from __future__ import annotations
@@ -9,7 +8,6 @@ from gw.asset_registry.service import AssetRegistryService
 from gw.canvas_closure.service import CanvasClosureService
 from gw.core.errors import CleanroomException
 from gw.god_canvas.service import GodCanvasService
-
 
 AUTH = {"Authorization": "Bearer cleanroom-test", "X-User-Role": "editor"}
 GOVERNOR = {"Authorization": "Bearer cleanroom-test", "X-User-Role": "governor"}

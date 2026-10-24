@@ -991,7 +991,7 @@ def acquire_data_dir_lock(root: Path) -> DataDirLock:
         if held is not None and held._handle is not None:
             return held
     path = root / ".gw-data.lock"
-    handle = open(path, "a+", encoding="utf-8")
+    handle = open(path, "a+", encoding="utf-8")  # noqa: SIM115
     try:
         if os.name == "nt":
             import msvcrt

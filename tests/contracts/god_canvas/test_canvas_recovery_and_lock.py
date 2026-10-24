@@ -55,7 +55,7 @@ def test_restart_marks_running_and_accepted_jobs_interrupted():
         assert job.state == "failed"
         assert job.error == "CANVAS_TASK_INTERRUPTED"
         assert job.poll_hint is None
-        assert getattr(job, "interrupted_at")
+        assert job.interrupted_at
     assert fresh.get_job(completed).state == "completed"
     assert fresh.get_job(paused).state == "paused"
     assert (fresh.get_job(failed).state, fresh.get_job(failed).error) == (
@@ -155,9 +155,8 @@ def test_app_startup_takes_lock_before_recovery():
     )
     try:
         assert holder.stdout.readline().strip() == "HELD"
-        with pytest.raises(DataDirLockedError):
-            with TestClient(app):
-                pass
+        with pytest.raises(DataDirLockedError), TestClient(app):
+            pass
     finally:
         holder.kill()
         holder.wait()
