@@ -1,12 +1,13 @@
 """工作流实际浏览器回归，账户、存储与网络均隔离。"""
-from workflow_support import goto_ready, settings_browser
-from pathlib import Path
-from urllib.parse import urlsplit, quote
+import base64
 import io
 import json
 import zipfile
-import base64
+from pathlib import Path
+from urllib.parse import quote, urlsplit
+
 import pytest
+from workflow_support import goto_ready, settings_browser
 
 
 def create_workflow(page, base, image, name='workflow'):
@@ -509,10 +510,10 @@ def test_embedded_png_workflow_uses_real_metadata_without_opening_host(monkeypat
     with settings_browser(monkeypatch, tmp_path) as (page, base, errors, _):
         if entry == 'clipboard':
             # 隔离系统剪贴板，实际控制器读到含原始元数据的ClipboardItem。
-            page.add_init_script('''Object.defineProperty(navigator, 'clipboard', {value: {
-              readText: async()=>'', read: async()=>[{types:['image/png'], getType: async()=>
-              new Blob([Uint8Array.from(atob('%s'), c=>c.charCodeAt(0))], {type:'image/png'})}]
-            }});''' % encoded)
+            page.add_init_script('''Object.defineProperty(navigator, 'clipboard', {{value: {{
+              readText: async()=>'', read: async()=>[{{types:['image/png'], getType: async()=>
+              new Blob([Uint8Array.from(atob('{0}'), c=>c.charCodeAt(0))], {{type:'image/png'}})}}]
+            }}}});'''.format(encoded))
         goto_ready(page, base + '/static/pages/workflow.html')
         if entry == 'upload':
             image = tmp_path / 'embedded.png'
@@ -800,8 +801,9 @@ def test_asset_host_workflow_ids_native_export_cas_and_edit_jump(monkeypatch, tm
 
 def test_project_workflow_output_asset_source_roundtrip_in_browser(monkeypatch, tmp_path):
     """真实项目/工作流/素材页；引擎为隔离替身，不宣称供应商验收。"""
-    from gw.god_workflow import comfy_executor
     from PIL import Image
+
+    from gw.god_workflow import comfy_executor
     pixels = io.BytesIO()
     Image.new('RGB', (2, 2), 'blue').save(pixels, format='PNG')
     output_bytes = pixels.getvalue()

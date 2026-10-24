@@ -17,10 +17,9 @@ from pathlib import Path
 
 import pytest
 import uvicorn
-
-from gw.api.app import create_app
 from playwright_support import open_playwright
 
+from gw.api.app import create_app
 
 ROOT = Path(__file__).resolve().parents[2]
 EVIDENCE_ENV = "GW_C15_LOCAL_RENDER_EVIDENCE_DIR"
@@ -135,8 +134,8 @@ def test_c15_local_master_render_plays_in_chrome(monkeypatch, tmp_path):
         timeout=30,
     )
 
-    from gw.projects_hub import service as project_module
     from gw.api import routes_asset_registry, routes_projects
+    from gw.projects_hub import service as project_module
 
     projects = project_module.ProjectsService(seed_golden_fixture=False, persistent=True)
     monkeypatch.setattr(project_module, "default_projects_service", projects)
