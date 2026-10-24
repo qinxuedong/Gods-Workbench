@@ -21,9 +21,11 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from copy import deepcopy
-from typing import Any
+import json
+import logging
+from typing import Any, Tuple
 
 from fastapi import APIRouter, Body, Header, Query, status
 from pydantic import BaseModel, ConfigDict, Field
@@ -43,14 +45,141 @@ DATA_STATUS_OK = "ok"
 FIXTURE_ID = "c12-t1-master-catalog-001"
 
 
+_LOGGER = logging.getLogger(__name__)
+
+
 def _blank() -> dict[str, Any]:
     return {"revision": 1, "entities": {}, "sequences": {}}
 
 
-def state() -> storage.JsonState:
-    """返回实体母库命名空间状态容器。"""
+def _strict_read_entities() -> Tuple[dict[str, Any], bool]:
+    """严格读取实体母库数据。
 
-    return storage.JsonState(NS_ENTITIES, _blank)
+    返回 (data, is_new)：
+    - 若物理文件不存在，返回全新的初始结构与 True；
+    - 若文件存在但损坏或非法，一律记录一条 WARNING 日志并抛出 503 CleanroomException；
+    - 绝不在响应体中携带物理路径、errno 或 traceback。
+    """
+    path = storage.file_for(NS_ENTITIES)
+    try:
+        if not path.exists():
+            return _blank(), True
+        raw_bytes = path.read_bytes()
+    except OSError as exc:
+        _LOGGER.warning("读取实体母库文件失败，服务暂不可用：%s", exc)
+        raise CleanroomException(
+            503,
+            "ENTITY_INDEX_UNAVAILABLE",
+            "实体母库数据无效，服务暂不可用",
+        ) from None
+
+    # 1. 零字节与仅空白字符
+    if not raw_bytes or not raw_bytes.strip():
+        _LOGGER.warning("实体母库文件为空或仅包含空白字符，服务暂不可用")
+        raise CleanroomException(
+            503,
+            "ENTITY_INDEX_UNAVAILABLE",
+            "实体母库数据无效，服务暂不可用",
+        )
+
+    # 2. 带 UTF-8 BOM
+    if raw_bytes.startswith(b"\xef\xbb\xbf"):
+        _LOGGER.warning("实体母库文件包含非法 UTF-8 BOM，服务暂不可用")
+        raise CleanroomException(
+            503,
+            "ENTITY_INDEX_UNAVAILABLE",
+            "实体母库数据无效，服务暂不可用",
+        )
+
+    # 3. 非 UTF-8 编码
+    try:
+        text = raw_bytes.decode("utf-8")
+    except UnicodeDecodeError as exc:
+        _LOGGER.warning("实体母库文件编码非 UTF-8，服务暂不可用：%s", exc)
+        raise CleanroomException(
+            503,
+            "ENTITY_INDEX_UNAVAILABLE",
+            "实体母库数据无效，服务暂不可用",
+        ) from None
+
+    # 4. JSON 语法与截断
+    try:
+        data = json.loads(text)
+    except json.JSONDecodeError as exc:
+        _LOGGER.warning("实体母库文件 JSON 解析失败，数据截断或格式损坏：%s", exc)
+        raise CleanroomException(
+            503,
+            "ENTITY_INDEX_UNAVAILABLE",
+            "实体母库数据无效，服务暂不可用",
+        ) from None
+
+    # 5. 顶层非字典（null, list, number, string, bool 等）
+    if not isinstance(data, dict):
+        _LOGGER.warning("实体母库数据损坏（顶层非字典，类型为 %s），服务暂不可用", type(data).__name__)
+        raise CleanroomException(
+            503,
+            "ENTITY_INDEX_UNAVAILABLE",
+            "实体母库数据无效，服务暂不可用",
+        )
+
+    # 6. revision 非法（如 "x", NaN, 0, 负数, 布尔值, 浮点数, null）
+    rev = data.get("revision")
+    if type(rev) is not int or rev < 1:
+        _LOGGER.warning("实体母库 revision 非法（当前值为 %r），服务暂不可用", rev)
+        raise CleanroomException(
+            503,
+            "ENTITY_INDEX_UNAVAILABLE",
+            "实体母库数据无效，服务暂不可用",
+        )
+
+    # 7. 缺少 entities 或 entities 非字典
+    records = data.get("entities")
+    if not isinstance(records, dict):
+        _LOGGER.warning("实体母库缺少有效 entities 字典字段，服务暂不可用")
+        raise CleanroomException(
+            503,
+            "ENTITY_INDEX_UNAVAILABLE",
+            "实体母库数据无效，服务暂不可用",
+        )
+
+    if "sequences" not in data or not isinstance(data.get("sequences"), dict):
+        data["sequences"] = {}
+
+    return data, False
+
+
+def _mutate_entities(mutator: Callable[[dict[str, Any]], Any]) -> Any:
+    """在命名空间锁内安全执行实体母库读-改-写。
+
+    若文件存在但已损坏，在读取阶段直接抛出 503，整个过程绝不调用存储写入，原文件不被覆盖。
+    """
+    with storage._namespace_lock(NS_ENTITIES):
+        raw, _ = _strict_read_entities()
+        result = mutator(raw)
+        storage.save(NS_ENTITIES, raw)
+        return result
+
+
+class _EntityJsonState(storage.JsonState):
+    """实体母库专属严格 JSON 状态容器。"""
+
+    def read(self) -> Any:
+        data, _ = _strict_read_entities()
+        return data
+
+    def mutate(self, mutator: Callable[[Any], Any]) -> Any:
+        return _mutate_entities(mutator)
+
+
+def state() -> storage.JsonState:
+    """返回实体母库命名空间严格状态容器。"""
+
+    return _EntityJsonState(NS_ENTITIES, _blank)
+
+
+def _read_state() -> dict[str, Any]:
+    data, _ = _strict_read_entities()
+    return data
 
 
 def _bump(raw: dict[str, Any]) -> int:
@@ -167,7 +296,7 @@ def list_entities(
 
     project = _validate_project_id(project_id) if project_id is not None else None
     kind = EntityType(entity_type) if entity_type is not None else None
-    raw = state().read()
+    raw = _read_state()
     records: list[dict[str, Any]] = []
     for value in raw.get("entities", {}).values():
         if not isinstance(value, dict):
@@ -192,7 +321,7 @@ def list_entities(
 def get_entity(entity_id: str, *, project_id: str | None = None) -> dict[str, Any]:
     """读取一个未归档实体，并在提供项目时执行主体范围校验。"""
 
-    raw = state().read()
+    raw = _read_state()
     record = _entity_or_404(raw, str(entity_id))
     if project_id is not None and record.get("project_id") != _validate_project_id(
         project_id
