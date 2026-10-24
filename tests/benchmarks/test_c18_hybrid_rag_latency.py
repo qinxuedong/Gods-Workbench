@@ -164,6 +164,9 @@ def test_hybrid_search_degrades_to_fts5_when_sqlite_vec_is_unavailable(
         assert hits[0].lexical_rank == 1
         assert hits[0].vector_rank is None
         assert hits[0].vector_track_degraded is True
+        sliced_hits = hits[:1]
+        assert sliced_hits == hits
+        assert sliced_hits.vector_track_degraded is True
     finally:
         engine.close()
 
@@ -346,11 +349,14 @@ def test_vector_version_sqlite_error_logs_warning(
             patch.setattr(engine, "vector_enabled", True)
             with caplog.at_level(logging.WARNING, logger=sqlite_vec_engine.logger.name):
                 assert engine.vector_version is None
-        assert any(
+                assert engine.vector_version is None
+        warnings = [
             record.levelno == logging.WARNING
             and "version" in record.getMessage().lower()
             for record in caplog.records
-        )
+        ]
+        assert any(warnings)
+        assert sum(warnings) == 1
     finally:
         engine.close()
 

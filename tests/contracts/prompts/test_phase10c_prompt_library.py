@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Phase 10C 提示词库契约测试。
 
 覆盖 docs/contracts/PROMPT-LIBRARY-INTERFACE-CATALOG.yaml（p10c-frozen-1）的 7 个端点：
@@ -638,9 +637,9 @@ def test_items_endpoints_now_implemented_with_real_auth_semantics(seeded_client:
     for method, path, body in probes:
         request = getattr(seeded_client, method)
         unauth = request(path, json=body) if body is not None else request(path)
-        assert unauth.status_code == 401, "%s %s 未认证应 401，实际 %s" % (method.upper(), path, unauth.status_code)
+        assert unauth.status_code == 401, f"{method.upper()} {path} 未认证应 401，实际 {unauth.status_code}"
         forbidden = request(path, json=body, headers=READONLY) if body is not None else request(path, headers=READONLY)
-        assert forbidden.status_code == 403, "%s %s 只读应 403，实际 %s" % (method.upper(), path, forbidden.status_code)
+        assert forbidden.status_code == 403, f"{method.upper()} {path} 只读应 403，实际 {forbidden.status_code}"
         assert forbidden.status_code != 503, "items* 不应再返回 503 未接入"
 
 

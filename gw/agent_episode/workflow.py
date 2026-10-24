@@ -106,10 +106,7 @@ class EpisodeTextPlugin:
             reviewer_prompt,
             sources,
         ) = await self._prepare(request)
-        source_ref_by_stage = {
-            stage: ref
-            for stage, ref in zip(STAGE_INPUTS[request.stage], sources, strict=True)
-        }
+        source_ref_by_stage = dict(zip(STAGE_INPUTS[request.stage], sources, strict=True))
         feedback = self._feedback(request.revision_findings, request.revision_responses)
         create_context = self._stage_context(
             request, inputs, source_ref_by_stage, feedback
@@ -208,10 +205,7 @@ class EpisodeTextPlugin:
                 "The persisted candidate envelope is invalid.", request
             ) from exc
 
-        source_ref_by_stage = {
-            stage: ref
-            for stage, ref in zip(STAGE_INPUTS[request.stage], sources, strict=True)
-        }
+        source_ref_by_stage = dict(zip(STAGE_INPUTS[request.stage], sources, strict=True))
         parsed_content, payload_validation = validate_stage_payload(
             request.stage,
             canonical_payload,

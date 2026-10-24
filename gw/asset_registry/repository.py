@@ -206,8 +206,25 @@ def import_assets(items: List[Dict[str, Any]], source_kind: str, expected_versio
             if not name:
                 raise CleanroomException(400, "INVALID_REQUEST", "资产名称不能为空")
             asset_id = _seq(raw, "ast_", raw["assets"].keys())
+            metadata = dict(entry.get("metadata") or {})
+            if "video_segments" in entry:
+                metadata["video_segments"] = entry["video_segments"]
+            tags = list(entry.get("tags") or [])
+            extra: Dict[str, Any] = {
+                "size_bytes": entry.get("size_bytes"),
+                "tags": tags,
+                "metadata": metadata,
+            }
+            if entry.get("frame_rate") is not None:
+                extra["frame_rate"] = entry["frame_rate"]
+            if entry.get("duration") is not None:
+                extra["duration"] = entry["duration"]
+            if entry.get("project_id") is not None:
+                extra["project_id"] = entry["project_id"]
+            if entry.get("project_ids") is not None:
+                extra["project_ids"] = list(entry["project_ids"])
             record = _plain_asset(asset_id, name, str(entry.get("kind") or source_kind or "unknown"),
-                                  size_bytes=entry.get("size_bytes"))
+                                  **extra)
             raw["assets"][asset_id] = record
             raw["sequences"][asset_id] = True
             created.append(dict(record))
@@ -226,6 +243,16 @@ def update_asset(asset_id: str, payload: Dict[str, Any]) -> Dict[str, Any]:
         for key in ("kind", "display_path", "archived"):
             if key in payload and payload[key] is not None:
                 item[key] = payload[key]
+        if "tags" in payload and isinstance(payload["tags"], list):
+            item["tags"] = payload["tags"]
+        if "metadata" in payload and isinstance(payload["metadata"], dict):
+            item.setdefault("metadata", {}).update(payload["metadata"])
+        if "video_segments" in payload and isinstance(payload["video_segments"], list):
+            item.setdefault("metadata", {})["video_segments"] = payload["video_segments"]
+        if "frame_rate" in payload and payload["frame_rate"] is not None:
+            item["frame_rate"] = payload["frame_rate"]
+        if "duration" in payload and payload["duration"] is not None:
+            item["duration"] = payload["duration"]
         if payload.get("display_path") is not None:
             requested_root_id = str(payload.get("root_id") or item.get("root_id") or "")
             path = storage.resolve_request_path(
@@ -419,11 +446,39 @@ def list_assets(limit: int, offset: int, query: Optional[str], kind: Optional[st
                 exclude_tags: Optional[str] = None, root_id: Optional[str] = None,
                 collection_id: Optional[str] = None, recent_days: Optional[int] = None,
                 structured: bool = False, scope: Any = None, text: Optional[str] = None,
-                filters: Any = None, include: Any = None) -> Dict[str, Any]:
+                filters: Any = None, include: Any = None,
+                entity_type: Optional[str] = None,
+                entity_id: Optional[str] = None,
+                shot_size: Optional[str] = None,
+                camera_movement: Optional[str] = None,
+                focal_length: Optional[str] = None,
+                lighting_phase: Optional[str] = None,
+                aspect_ratio: Optional[str] = None) -> Dict[str, Any]:
     if structured:
-        if root_id or collection_id or any(value is not None for value in (kind, archived, category, tag,
-                                                                            project_id, include_tags,
-                                                                            exclude_tags, recent_days)):
+        if (
+            root_id
+            or collection_id
+            or any(
+                value is not None
+                for value in (
+                    kind,
+                    archived,
+                    category,
+                    tag,
+                    project_id,
+                    include_tags,
+                    exclude_tags,
+                    recent_days,
+                    entity_type,
+                    entity_id,
+                    shot_size,
+                    camera_movement,
+                    focal_length,
+                    lighting_phase,
+                    aspect_ratio,
+                )
+            )
+        ):
             raise CleanroomException(400, "UNSUPPORTED_FILTER_VALUE",
                                      "结构化查询不能混用旧版过滤参数")
         return _list_structured_assets(
@@ -448,11 +503,51 @@ def list_assets(limit: int, offset: int, query: Optional[str], kind: Optional[st
         raise CleanroomException(400, "UNSUPPORTED_OPTION", "不支持的资产排序")
     if view and view not in {"card", "grid", "list"}:
         raise CleanroomException(400, "UNSUPPORTED_OPTION", "不支持的资产显示方式")
+
+    cinematography_input: Dict[str, Any] = {}
+    for key, val in (
+        ("entity_type", entity_type),
+        ("entity_id", entity_id),
+        ("shot_size", shot_size),
+        ("camera_movement", camera_movement),
+        ("focal_length", focal_length),
+        ("lighting_phase", lighting_phase),
+        ("aspect_ratio", aspect_ratio),
+    ):
+        if val is not None:
+            cinematography_input[key] = val
+
+    normalized_cinematography: Dict[str, Any] = {}
+    if cinematography_input:
+        try:
+            validated = CinematographyAssetFilters.model_validate(cinematography_input)
+            normalized_cinematography = validated.model_dump(
+                mode="json", exclude_unset=True
+            )
+        except ValidationError as exc:
+            paths = sorted(
+                {
+                    ".".join(str(part) for part in error.get("loc", ()))
+                    for error in exc.errors()
+                }
+            )
+            field_paths = ", ".join(paths) or "filters"
+            raise CleanroomException(
+                400,
+                "UNSUPPORTED_FILTER_VALUE",
+                f"摄制或实体母库过滤字段无效：{field_paths}",
+            ) from None
+
     includes = sorted({part.strip() for part in (include_tags or "").split(",") if part.strip()})
     excludes = sorted({part.strip() for part in (exclude_tags or "").split(",") if part.strip()})
+    cinematography_tokens = sorted(
+        (key, tuple(val) if isinstance(val, list) else val)
+        for key, val in normalized_cinematography.items()
+    )
     filters = [query or "", kind or "", archived, ordering, category or "", tag or "", project_id or "",
-               includes, excludes, cutoff, root_id or "", collection_id or ""]
-    fingerprint = hashlib.sha256(json.dumps(filters, ensure_ascii=False).encode("utf-8")).hexdigest()
+               includes, excludes, cutoff, root_id or "", collection_id or "",
+               cinematography_tokens]
+    fingerprint = hashlib.sha256(json.dumps(filters, ensure_ascii=False, sort_keys=True).encode("utf-8")).hexdigest()
     if cursor:
         try:
             if len(cursor) > 2048:
@@ -521,7 +616,24 @@ def list_assets(limit: int, offset: int, query: Optional[str], kind: Optional[st
         items = [a for a in items if a.get("kind") == kind]
     if query:
         needle = query.casefold()
-        items = [a for a in items if needle in str(a.get("name", "")).casefold()]
+        def _matches_query(a: Dict[str, Any]) -> bool:
+            if needle in str(a.get("name", "")).casefold():
+                return True
+            if needle in str(a.get("asset_id", "")).casefold():
+                return True
+            for tag_val in a.get("tags") or []:
+                if needle in str(tag_val).casefold():
+                    return True
+            metadata = a.get("metadata") or {}
+            for seg in metadata.get("video_segments") or []:
+                if isinstance(seg, dict):
+                    for st in seg.get("tags") or []:
+                        if needle in str(st).casefold():
+                            return True
+                    if needle in str(seg.get("summary") or "").casefold():
+                        return True
+            return False
+        items = [a for a in items if _matches_query(a)]
     if cutoff:
         items = [a for a in items if str(a.get("created_at") or "") >= cutoff]
     if category:
@@ -538,6 +650,11 @@ def list_assets(limit: int, offset: int, query: Optional[str], kind: Optional[st
         items = [a for a in items if all(tagged(a, selected) for selected in includes)]
     if excludes:
         items = [a for a in items if not any(tagged(a, selected) for selected in excludes)]
+    if normalized_cinematography:
+        active_cinematography = dict(normalized_cinematography)
+        if project_id and "project_id" not in active_cinematography:
+            active_cinematography["project_id"] = [project_id]
+        items = _apply_cinematography_filters(items, active_cinematography)
     # 先以稳定ID排序，再稳定按所选字段排序，保证同值分页不重复/丢项。
     items.sort(key=lambda a: a["asset_id"])
     if ordering in {"newest", "oldest"}:
@@ -712,74 +829,10 @@ def _entity_filter_index() -> Tuple[
 
     from gw.entities import repository as entities_repository
 
-    entity_state = entities_repository.state()
-    entity_data_file = storage.file_for(entity_state.namespace)
-    try:
-        entity_bytes: Optional[bytes] = entity_data_file.read_bytes()
-    except FileNotFoundError:
-        entity_bytes = None
-    except OSError as exc:
-        _LOGGER.warning("读取实体母库文件失败，筛选暂不可用：%s", exc)
-        raise CleanroomException(
-            503,
-            "ENTITY_INDEX_UNAVAILABLE",
-            "实体母库读取失败，筛选暂不可用",
-        ) from None
-
-    if entity_bytes is None:
-        raw: Any = {"revision": 1, "entities": {}}
-        content_bytes = b""
-    else:
-        content_bytes = entity_bytes
-        if not entity_bytes or not entity_bytes.strip():
-            _LOGGER.warning("实体母库文件为空或仅包含空白字符，筛选暂不可用")
-            raise CleanroomException(
-                503,
-                "ENTITY_INDEX_UNAVAILABLE",
-                "实体母库数据无效，筛选暂不可用",
-            )
-        if entity_bytes.startswith(b"\xef\xbb\xbf"):
-            _LOGGER.warning("实体母库文件包含非法 UTF-8 BOM，筛选暂不可用")
-            raise CleanroomException(
-                503,
-                "ENTITY_INDEX_UNAVAILABLE",
-                "实体母库数据无效，筛选暂不可用",
-            )
-        try:
-            raw = json.loads(entity_bytes.decode("utf-8"))
-        except (UnicodeDecodeError, json.JSONDecodeError) as exc:
-            _LOGGER.warning("实体母库文件损坏，筛选暂不可用：%s", exc)
-            raise CleanroomException(
-                503,
-                "ENTITY_INDEX_UNAVAILABLE",
-                "实体母库数据无效，筛选暂不可用",
-            ) from None
-    if not isinstance(raw, dict):
-        _LOGGER.warning("实体母库数据损坏（顶层非字典），筛选暂不可用")
-        raise CleanroomException(
-            503,
-            "ENTITY_INDEX_UNAVAILABLE",
-            "实体母库数据无效，筛选暂不可用",
-        )
-
-    revision_value = raw.get("revision")
-    if type(revision_value) is not int or revision_value < 1:
-        _LOGGER.warning("实体母库 revision 非法（当前值为 %r），筛选暂不可用", revision_value)
-        raise CleanroomException(
-            503,
-            "ENTITY_INDEX_UNAVAILABLE",
-            "实体母库版本无效，筛选暂不可用",
-        )
-    revision = revision_value
-
-    records = raw.get("entities")
-    if not isinstance(records, dict):
-        _LOGGER.warning("实体母库缺少有效 entities 字典字段，筛选暂不可用")
-        raise CleanroomException(
-            503,
-            "ENTITY_INDEX_UNAVAILABLE",
-            "实体母库数据无效，筛选暂不可用",
-        )
+    raw, _, entity_bytes = entities_repository.read_entities_snapshot()
+    content_bytes = entity_bytes if entity_bytes is not None else b""
+    revision = raw["revision"]
+    records = raw["entities"]
 
     cache_key = (
         str(storage.data_root()),
@@ -864,7 +917,10 @@ def _apply_cinematography_filters(
         if entity_indexes is None:
             entity_indexes, _ = _entity_filter_index()
         by_id, by_type, by_project_type = entity_indexes
-        project_scope = set(filters.get("project_id") or [])
+        raw_project_scope = filters.get("project_id") or []
+        if isinstance(raw_project_scope, str):
+            raw_project_scope = [raw_project_scope]
+        project_scope = set(raw_project_scope)
         if selected_entity_ids:
             # 精确 ID 过滤直接查映射，避免随母库规模增长而扫描全部实体。
             eligible_ids = set()
@@ -872,17 +928,17 @@ def _apply_cinematography_filters(
                 record = by_id.get(entity_id)
                 if record is None:
                     continue
-                entity_type, project_id = record
+                entity_type, entity_project_id = record
                 if selected_entity_types and entity_type not in selected_entity_types:
                     continue
-                if project_scope and project_id not in project_scope:
+                if project_scope and entity_project_id not in project_scope:
                     continue
                 eligible_ids.add(entity_id)
         elif project_scope:
             eligible_ids = set().union(
                 *(
-                    by_project_type.get((project_id, entity_type), set())
-                    for project_id in project_scope
+                    by_project_type.get((proj_id, entity_type), set())
+                    for proj_id in project_scope
                     for entity_type in selected_entity_types
                 )
             )
@@ -993,12 +1049,25 @@ def _list_structured_assets(
     items = [dict(asset) for asset in raw["assets"].values() if asset_visible(asset)]
     needle = normalized["text"].casefold()
     if needle:
-        items = [
-            asset
-            for asset in items
-            if needle in str(asset.get("name") or "").casefold()
-            or needle in str(asset.get("asset_id") or "").casefold()
-        ]
+        def _matches_text(asset: Dict[str, Any]) -> bool:
+            if needle in str(asset.get("name") or "").casefold():
+                return True
+            if needle in str(asset.get("asset_id") or "").casefold():
+                return True
+            for tag_val in asset.get("tags") or []:
+                if needle in str(tag_val).casefold():
+                    return True
+            metadata = asset.get("metadata") or {}
+            for seg in metadata.get("video_segments") or []:
+                if isinstance(seg, dict):
+                    for st in seg.get("tags") or []:
+                        if needle in str(st).casefold():
+                            return True
+                    if needle in str(seg.get("summary") or "").casefold():
+                        return True
+            return False
+
+        items = [asset for asset in items if _matches_text(asset)]
     if filter_values.get("kind"):
         kinds = set(filter_values["kind"])
         items = [asset for asset in items if _asset_category(asset) in kinds]

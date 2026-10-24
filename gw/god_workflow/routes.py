@@ -927,7 +927,7 @@ async def _resolve_definitions_in_workbench(
         return True
     try:
         compile_prompt(document, schemas)
-    except CleanroomException as error:
+    except CleanroomException:
         return True
     return False
 
@@ -1561,7 +1561,7 @@ async def task_status(
                 "data_status": "ok",
                 "data_gaps": ([] if complete else ["output_collection_incomplete"]),
             }
-        elif st == "RUNNING":
+        if st == "RUNNING":
             task = registry.update_task(
                 context,
                 task_id,
@@ -1576,7 +1576,7 @@ async def task_status(
                 "data_status": "ok",
                 "data_gaps": [],
             }
-        elif st == "FAILED":
+        if st == "FAILED":
             msg = query_res.get("message") or "RunningHub 任务执行失败"
             task = registry.update_task(
                 context,
@@ -3230,7 +3230,6 @@ async def open_in_comfy(
     launched = bool(control.get("launched"))
     effective_root = comfy_root
 
-    safe_name = ""
     safe_filename = ""
     saved_path_str = ""
     write_error = None
@@ -3607,18 +3606,17 @@ def _probe_comfy_url(object_info_url: str) -> dict[str, Any] | None:
             timeout=httpx.Timeout(_COMFY_PROBE_TIMEOUT),
             follow_redirects=False,
             trust_env=False,
-        ) as client:
-            with client.stream(
-                "GET", object_info_url, headers={"Accept": "application/json"}
-            ) as response:
-                if response.status_code != 200:
+        ) as client, client.stream(
+            "GET", object_info_url, headers={"Accept": "application/json"}
+        ) as response:
+            if response.status_code != 200:
+                return None
+            content = bytearray()
+            for chunk in response.iter_bytes():
+                content.extend(chunk)
+                if len(content) > _COMFY_PROBE_MAX_BYTES:
                     return None
-                content = bytearray()
-                for chunk in response.iter_bytes():
-                    content.extend(chunk)
-                    if len(content) > _COMFY_PROBE_MAX_BYTES:
-                        return None
-        payload = json.loads(content)
+            payload = json.loads(content)
     except (httpx.HTTPError, ValueError, UnicodeDecodeError, json.JSONDecodeError):
         return None
     return payload if isinstance(payload, dict) else None

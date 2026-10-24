@@ -227,7 +227,7 @@ def _persist_http_payload(payload: dict[str, float]) -> None:
         suffix = 1
         while key in bucket:
             suffix += 1
-            key = "%s-%d" % (ts_ms, suffix)
+            key = f"{ts_ms}-{suffix}"
         bucket[key] = {"ts_ms": ts_ms, "values": dict(values), "sample_key": key}
         keys = sorted(bucket.keys())
         for stale in keys[:-500]:
@@ -267,7 +267,7 @@ def record_sample() -> dict[str, Any]:
         suffix = 1
         while key in bucket:
             suffix += 1
-            key = "%s-%d" % (ts_ms, suffix)
+            key = f"{ts_ms}-{suffix}"
         point["sample_key"] = key
         bucket[key] = point
         # 只保留最近 500 个采样点，避免无界增长。

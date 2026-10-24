@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Phase 12 A3 提示词条目契约测试（真实落盘）。
 
 覆盖：401 / 403 / 创建写后读回 / 更新 CAS / 删除后不再返回 / 批量删除 /
@@ -50,7 +49,7 @@ def test_auth_boundary():
             u = real(p)
             payload = {} if m in ("POST", "PATCH", "DELETE") else None
             r = c.request(m, u, json=payload) if payload is not None else c.request(m, u)
-            assert r.status_code == 401, "%s %s" % (m, u)
+            assert r.status_code == 401, f"{m} {u}"
             if m in ("POST", "PATCH", "DELETE"):
                 assert c.request(m, u, headers=R, json=payload).status_code == 403
 
@@ -75,13 +74,13 @@ def test_create_read_update_delete_roundtrip():
         assert any(item["item_id"] == iid for item in listed["items"])
         assert listed["data_gaps"] == []
 
-        patched = c.patch("/api/prompt-libraries/items/%s" % iid, headers=A,
+        patched = c.patch(f"/api/prompt-libraries/items/{iid}", headers=A,
                           json={"name": "新名称", "expected_version": 1})
         assert patched.status_code == 200, patched.text
         assert patched.json()["item"]["name"] == "新名称" and patched.json()["item"]["version"] == 2
 
         revision = c.get("/api/prompt-libraries/items", headers=A).json()["revision"]
-        assert c.delete("/api/prompt-libraries/items/%s?expected_version=%s" % (iid, revision), headers=A).status_code == 200
+        assert c.delete(f"/api/prompt-libraries/items/{iid}?expected_version={revision}", headers=A).status_code == 200
         after = c.get("/api/prompt-libraries/items", headers=A).json()
         assert all(item["item_id"] != iid for item in after["items"])
 def test_bulk_delete_only_removes_existing_ids():
@@ -114,7 +113,7 @@ def test_not_found_and_cas_semantics():
         revision = c.get("/api/prompt-libraries/items", headers=A).json()["revision"]
         iid = c.post("/api/prompt-libraries/items", headers=A,
                      json={"library_id": library_id, "name": "C", "expected_version": revision}).json()["item"]["item_id"]
-        conflict = c.patch("/api/prompt-libraries/items/%s" % iid, headers=A,
+        conflict = c.patch(f"/api/prompt-libraries/items/{iid}", headers=A,
                            json={"name": "D", "expected_version": 99})
         assert conflict.status_code == 409 and conflict.json()["detail"]["code"] == "VERSION_CONFLICT"
 
@@ -190,17 +189,17 @@ def test_item_parent_and_category_references_fail_closed():
                          json={"library_id": first_library, "category_id": first_category, "name": "受保护条目", "expected_version": revision})
         assert created.status_code == 201, created.text
         item_id = created.json()["item"]["item_id"]
-        category_delete = c.delete("/api/prompt-libraries/categories/%s?expected_version=1" % first_category,
+        category_delete = c.delete(f"/api/prompt-libraries/categories/{first_category}?expected_version=1",
                                    headers=A)
         assert category_delete.status_code == 409
         assert category_delete.json()["detail"]["code"] == "CATEGORY_NOT_EMPTY"
-        library_delete = c.delete("/api/prompt-libraries/%s?expected_version=2" % first_library, headers=A)
+        library_delete = c.delete(f"/api/prompt-libraries/{first_library}?expected_version=2", headers=A)
         assert library_delete.status_code == 409
         assert library_delete.json()["detail"]["code"] == "LIBRARY_NOT_EMPTY"
         assert any(item["item_id"] == item_id for item in c.get("/api/prompt-libraries/items", headers=A).json()["items"])
 
         deletable = _create_library(c, "删除后不能挂接")
-        removed = c.delete("/api/prompt-libraries/%s?expected_version=1" % deletable, headers=A)
+        removed = c.delete(f"/api/prompt-libraries/{deletable}?expected_version=1", headers=A)
         assert removed.status_code == 200, removed.text
         after_delete = c.post("/api/prompt-libraries/items", headers=A,
                               json={"library_id": deletable, "name": "不得挂接"})
@@ -214,7 +213,10 @@ def test_orphan_legacy_parent_ids_are_preserved_but_never_reused(tmp_path, monke
 
     from gw.core import storage
     from gw.prompt_library.items_repository import list_items
-    from gw.prompt_library.models import PromptCategoryCreateRequest, PromptLibraryCreateRequest
+    from gw.prompt_library.models import (
+        PromptCategoryCreateRequest,
+        PromptLibraryCreateRequest,
+    )
     from gw.prompt_library.service import PromptLibraryService
 
     legacy_item = {
@@ -421,7 +423,10 @@ def test_category_delete_and_item_reclassification_share_one_atomic_domain_lock(
     """改分类先完成引用校验并提交后，竞争分类删除必须因非空返回 409。"""
     from gw.core.errors import CleanroomException
     from gw.prompt_library import items_repository
-    from gw.prompt_library.models import PromptCategoryCreateRequest, PromptLibraryCreateRequest
+    from gw.prompt_library.models import (
+        PromptCategoryCreateRequest,
+        PromptLibraryCreateRequest,
+    )
     from gw.prompt_library.service import PromptLibraryService
 
     service = PromptLibraryService()

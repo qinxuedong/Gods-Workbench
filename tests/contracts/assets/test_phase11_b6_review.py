@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Phase 12 A3 资产审查与交付契约测试（真实落盘语义）。
 
 覆盖：401 / 403 / 状态机合法与非法流转 / 写后读回 / 交付导出真实 PDF 字节 /
@@ -46,7 +45,7 @@ def test_auth_boundary():
             u = real(p)
             payload = {} if m in ("POST", "PATCH", "PUT") else None
             r = c.request(m, u, json=payload) if payload is not None else c.request(m, u)
-            assert r.status_code == 401, "%s %s" % (m, u)
+            assert r.status_code == 401, f"{m} {u}"
             if m in ("POST", "PATCH", "PUT"):
                 assert c.request(m, u, headers=R, json=payload).status_code == 403
 
@@ -61,7 +60,7 @@ def test_session_machine_and_delivery_export():
         assert created["id"] == sid and created["version"] == 1
 
         # 非法流转：open 状态直接审批 -> 409
-        assert c.put("/api/asset-reviews/sessions/%s/approval" % sid, headers=A,
+        assert c.put(f"/api/asset-reviews/sessions/{sid}/approval", headers=A,
                      json={"status": "approved"}).status_code == 409
 
         # 写后读回
@@ -69,20 +68,20 @@ def test_session_machine_and_delivery_export():
         assert any(item["id"] == sid for item in listed["sessions"])
         assert listed["data_gaps"] == []
 
-        delivery = c.post("/api/asset-reviews/sessions/%s/delivery" % sid, headers=A,
+        delivery = c.post(f"/api/asset-reviews/sessions/{sid}/delivery", headers=A,
                           json={"title": "D"}).json()["delivery"]
         did = delivery["delivery_id"]
         assert re.fullmatch(r"dlv-\d{4}", did)
         assert delivery["id"] == did
 
-        exported = c.post("/api/asset-reviews/deliveries/%s/export" % did, headers=A)
+        exported = c.post(f"/api/asset-reviews/deliveries/{did}/export", headers=A)
         assert exported.status_code == 200
         assert exported.headers["content-type"].startswith("application/pdf")
         assert exported.content.startswith(b"%PDF-") and b"%%EOF" in exported.content
 
-        assert c.put("/api/asset-reviews/sessions/%s/approval" % sid, headers=A,
+        assert c.put(f"/api/asset-reviews/sessions/{sid}/approval", headers=A,
                      json={"status": "approved"}).status_code == 200
-        detail = c.get("/api/asset-reviews/sessions/%s" % sid, headers=A).json()
+        detail = c.get(f"/api/asset-reviews/sessions/{sid}", headers=A).json()
         assert detail["session"]["status"] == "approved"
         assert len(detail["approvals"]) == 1 and detail["delivery"]["id"] == did
 
@@ -92,19 +91,19 @@ def test_comment_write_read_and_patch():
     with TestClient(create_app()) as c:
         sid = c.post("/api/asset-reviews/sessions", headers=A,
                      json={"asset_id": "ast_0001", "title": "T"}).json()["session"]["session_id"]
-        comment = c.post("/api/asset-reviews/sessions/%s/comments" % sid, headers=A,
+        comment = c.post(f"/api/asset-reviews/sessions/{sid}/comments", headers=A,
                          json={"body": "需要修改", "author_name": "审阅人", "timecode_ms": 1200}).json()["comment"]
         cid = comment["id"]
         assert re.fullmatch(r"rc-\d{4}", cid)
         assert isinstance(comment["created_at"], int) and comment["created_at"] > 0
         assert comment["status"] == "open" and comment["timecode_ms"] == 1200
 
-        detail = c.get("/api/asset-reviews/sessions/%s" % sid, headers=A).json()
+        detail = c.get(f"/api/asset-reviews/sessions/{sid}", headers=A).json()
         assert any(item["id"] == cid for item in detail["comments"])
 
-        patched = c.patch("/api/asset-reviews/comments/%s" % cid, headers=A, json={"resolved": True})
+        patched = c.patch(f"/api/asset-reviews/comments/{cid}", headers=A, json={"resolved": True})
         assert patched.status_code == 200 and patched.json()["comment"]["status"] == "resolved"
-        after = c.get("/api/asset-reviews/sessions/%s" % sid, headers=A).json()
+        after = c.get(f"/api/asset-reviews/sessions/{sid}", headers=A).json()
         assert after["comments"][0]["resolved"] is True
 
 
@@ -127,10 +126,10 @@ def test_share_token_hash_only_and_one_time_plaintext():
         assert token not in C.read_text(encoding="utf-8")
 
         # 明文可查到元信息
-        meta = c.get("/api/public/shares/%s" % token)
+        meta = c.get(f"/api/public/shares/{token}")
         assert meta.status_code == 200 and meta.json()["available"] is True
         # 篡改令牌 404
-        bad = c.get("/api/public/shares/%s" % (token + "x"))
+        bad = c.get(f"/api/public/shares/{token}x")
         assert bad.status_code == 404 and bad.json()["detail"]["code"] == "SHARE_NOT_FOUND"
 
 
