@@ -351,22 +351,24 @@ test('正常同源结果链接会跳转且不显示 Omnibar 错误态', () => {
   assert.equal(omnibar.snapshot().open, false, '成功跳转后 Omnibar 仍应关闭');
 });
 
-test('同源 URL 导航异常不误报解析错误，也不会形成未处理异常', async () => {
+test('同源 URL 跳转异常派发独立错误，不误报解析失败且保持面板打开', async () => {
   const {document, window, omnibar} = harness();
   const errors = [];
-  window.location.assign = () => { throw new Error('navigation failed'); };
+  window.location.assign = () => { throw new Error('C:\\private\\browser.js:42 secret stack'); };
   window.addEventListener('gw:omnibar-error', event => { errors.push(event.detail); });
-  document.dispatchEvent(keyEvent({key: ' ', code: 'Space', ctrlKey: true}));
-  omnibar.setResults([{title: '项目', href: '/projects?project_id=project-1'}]);
-  document.dispatchEvent(keyEvent({key: 'ArrowDown', code: 'ArrowDown'}));
+  const input = selectOmnibarResult(document, omnibar, {title: '项目', href: '/projects?project_id=project-1'});
 
-  await assert.rejects(omnibar.activateResult(), /navigation failed/);
-  document.getElementById('gwOmnibarInput').dispatchEvent(keyEvent({key: 'Enter', code: 'Enter'}));
-  await new Promise(resolve => setImmediate(resolve));
+  await pressOmnibarEnter(input);
 
-  assert.deepEqual(errors, [], 'URL 解析成功时，导航异常不能发 INVALID_RESULT_URL');
-  assert.equal(document.getElementById('gwOmnibarError').hidden, true);
-  assert.equal(omnibar.snapshot().open, true, '导航未完成时 Omnibar 保持打开');
+  const errorState = document.getElementById('gwOmnibarError');
+  assert.equal(errors.length, 1);
+  assert.equal(errors[0].code, 'NAVIGATION_FAILED');
+  assert.equal(errors[0].href, '/projects?project_id=project-1');
+  assert.equal(errors[0].message, '无法打开该结果链接，请重新搜索或关闭面板。');
+  assert.equal(JSON.stringify(errors[0]).includes('secret'), false);
+  assert.equal(errorState.hidden, false);
+  assert.equal(errorState.textContent, '无法打开该结果链接，请重新搜索或关闭面板。');
+  assert.equal(omnibar.snapshot().open, true, '导航失败时 Omnibar 保持打开');
 });
 
 test('同源嵌入页中的 Ctrl+F 也会打开顶层面板', () => {
@@ -500,7 +502,7 @@ test('activate 异步 reject 后可用 Enter 重试，成功后才关闭', async
   assert.equal(omnibar.snapshot().open, false, '重试成功后才关闭');
 });
 
-test('activate 成功完成后关闭 Omnibar', async () => {
+test('Search 模式下非 composing Enter 激活成功命令并关闭 Omnibar', async () => {
   const {document, omnibar} = harness();
   const input = selectOmnibarResult(document, omnibar, {
     title: '成功命令',
@@ -631,3 +633,25 @@ test('在异步命令超时前按 Escape 关闭面板，会取消挂起的超时
   assert.equal(errors.length, 0, '提前关闭面板后不应派发超时错误');
   assert.equal(omnibar.snapshot().open, false, '面板不应被重新打开');
 });
+for (const {label, imeFlags} of [
+  {label: 'isComposing', imeFlags: {isComposing: true}},
+  {label: 'keyCode 229', imeFlags: {keyCode: 229}},
+]) {
+  test(`Search 模式 ${label} Enter 不激活结果，也不阻止上屏`, () => {
+    const {document, omnibar} = harness();
+    let activationCount = 0;
+    const input = selectOmnibarResult(document, omnibar, {
+      title: '搜索结果',
+      activate: () => { activationCount++; },
+    });
+    assert.equal(omnibar.snapshot().mode, 'search');
+
+    const event = keyEvent({key: 'Enter', code: 'Enter', ...imeFlags});
+    input.dispatchEvent(event);
+
+    assert.equal(activationCount, 0);
+    assert.equal(event.defaultPrevented, false);
+    assert.equal(event.propagationStopped, undefined);
+    assert.equal(omnibar.snapshot().open, true);
+  });
+}

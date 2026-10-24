@@ -17,6 +17,7 @@
 /**
  * Browser event contract:
  * - Invalid URL syntax emits `gw:omnibar-error` with `INVALID_RESULT_URL`.
+ * - Same-origin navigation failures emit `NAVIGATION_FAILED` separately.
  * - Cross-origin destinations and non-HTTP(S) protocols emit
  *   `CROSS_ORIGIN_URL_BLOCKED`; command activation failures emit
  *   `COMMAND_ACTIVATION_FAILED`; command activation timeouts emit
@@ -164,6 +165,9 @@
       case 'INVALID_RESULT_URL':
         message = '无法打开该结果链接，请重新搜索或关闭面板。';
         break;
+      case 'NAVIGATION_FAILED':
+        message = '无法打开该结果链接，请重新搜索或关闭面板。';
+        break;
       case 'CROSS_ORIGIN_URL_BLOCKED':
         message = '不支持跳转到外部地址';
         break;
@@ -241,7 +245,19 @@
         }));
         return true;
       }
-      global.location.assign(destination.href);
+      try {
+        global.location.assign(destination.href);
+      } catch (error) {
+        void error;
+        global.dispatchEvent?.(new global.CustomEvent('gw:omnibar-error', {
+          detail: {
+            code: 'NAVIGATION_FAILED',
+            href: result.href,
+            message: '无法打开该结果链接，请重新搜索或关闭面板。',
+          },
+        }));
+        return true;
+      }
     }
     close();
     return true;
