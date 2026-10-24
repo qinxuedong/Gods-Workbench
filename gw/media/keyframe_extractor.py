@@ -177,7 +177,7 @@ def extract_keyframes(
 
     created: list[Path] = []
     try:
-        for scene, target in zip(metadata, thumbnail_paths):
+        for scene, target in zip(metadata, thumbnail_paths, strict=False):
             partial = target.parent / (target.stem + ".part" + target.suffix)
             result = _run(
                 [
@@ -222,7 +222,7 @@ def extract_keyframes(
                 **scene,
                 "thumbnail": target.name,
             }
-            for scene, target in zip(metadata, thumbnail_paths)
+            for scene, target in zip(metadata, thumbnail_paths, strict=False)
         ]
         registry_metadata = {"video_segments": segments}
         partial_metadata = metadata_path.parent / (metadata_path.stem + ".part" + metadata_path.suffix)

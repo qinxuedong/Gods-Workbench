@@ -1004,7 +1004,7 @@ class ProjectsService:
                 "version": 1,
             }
             # C4-AC7：新建项目一律 explicit 读授权（仅 owner + admin/governor + 授权名单）。
-            for gate_id, gate_input in zip(gate_ids, gates):
+            for gate_id, gate_input in zip(gate_ids, gates, strict=False):
                 next_state["gates"][gate_id] = {
                     "gate_id": gate_id,
                     "project_id": project_id,

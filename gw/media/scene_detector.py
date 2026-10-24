@@ -154,7 +154,7 @@ def detect_scenes(
             "tags": [],
             "thumbnail": None,
         }
-        for start_ms, end_ms in zip(boundaries_ms, boundaries_ms[1:])
+        for start_ms, end_ms in zip(boundaries_ms, boundaries_ms[1:], strict=False)
         if end_ms > start_ms
     ]
 
