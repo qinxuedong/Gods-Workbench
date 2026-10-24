@@ -16,12 +16,13 @@
 
 /**
  * Browser event contract:
- * - URL parse failures emit window `gw:omnibar-error` with
- *   `{code: 'INVALID_RESULT_URL', href, message}`; `message` is diagnostic
- *   parser text and may vary by browser.
- * - The Omnibar handles this event with an inline alert and stays open so the
- *   user can retry or close it. Successful same-origin navigation emits no
- *   error event. Exceptions from `location.assign()` are not URL parse errors.
+ * - Invalid URL syntax emits `gw:omnibar-error` with `INVALID_RESULT_URL`.
+ * - Cross-origin destinations and non-HTTP(S) protocols emit
+ *   `CROSS_ORIGIN_URL_BLOCKED`; command activation failures emit
+ *   `COMMAND_ACTIVATION_FAILED`. Both use static, sanitized UI messages and
+ *   never expose the original exception.
+ * - The Omnibar displays an inline alert and stays open on these errors.
+ *   Successful same-origin navigation and command activation close it.
  */
 (function omnibar(global, document) {
   'use strict';
@@ -98,7 +99,7 @@
       const description = makeElement('span', 'gw-omnibar-result-description', String(result?.description || result?.subtitle || ''));
       option.append(title, description);
       option.addEventListener('mousemove', () => selectIndex(index));
-      option.addEventListener('click', () => activateResult(index));
+      option.addEventListener('click', () => activateResult(index).catch(() => {}));
       resultList.appendChild(option);
     });
     emptyState.hidden = results.length > 0;
@@ -135,18 +136,45 @@
   }
 
   function handleOmnibarError(event) {
-    if (event?.detail?.code !== 'INVALID_RESULT_URL' || !errorState) return;
-    errorState.textContent = '无法打开该结果链接，请重新搜索或关闭面板。';
+    if (!errorState) return;
+    let message;
+    switch (event?.detail?.code) {
+      case 'INVALID_RESULT_URL':
+        message = '无法打开该结果链接，请重新搜索或关闭面板。';
+        break;
+      case 'CROSS_ORIGIN_URL_BLOCKED':
+        message = '不支持跳转到外部地址';
+        break;
+      case 'COMMAND_ACTIVATION_FAILED':
+        message = '命令执行失败，请重试。';
+        break;
+      default:
+        return;
+    }
+    errorState.textContent = message;
     errorState.hidden = false;
   }
 
-  function activateResult(index = selectedIndex) {
+  async function activateResult(index = selectedIndex) {
     const result = results[index];
     if (!result) return false;
     selectedIndex = index;
     global.dispatchEvent?.(new global.CustomEvent('gw:omnibar-result-select', {detail: {result, index}}));
-    if (typeof result.activate === 'function') result.activate(result);
-    else if (typeof result.href === 'string') {
+    if (typeof result.activate === 'function') {
+      try {
+        await Promise.resolve(result.activate(result));
+      } catch (err) {
+        void err;
+        global.dispatchEvent?.(new global.CustomEvent('gw:omnibar-error', {
+          detail: {
+            code: 'COMMAND_ACTIVATION_FAILED',
+            message: '命令执行失败，请重试。',
+          },
+        }));
+        input?.focus({preventScroll: true});
+        return true;
+      }
+    } else if (typeof result.href === 'string') {
       let destination;
       try {
         destination = new URL(result.href, global.location.href);
@@ -160,7 +188,17 @@
         }));
         return true;
       }
-      if (destination.origin === global.location.origin) global.location.assign(destination.href);
+      const isHttpProtocol = destination.protocol === 'http:' || destination.protocol === 'https:';
+      if (destination.origin !== global.location.origin || !isHttpProtocol) {
+        global.dispatchEvent?.(new global.CustomEvent('gw:omnibar-error', {
+          detail: {
+            code: 'CROSS_ORIGIN_URL_BLOCKED',
+            message: '不支持跳转到外部地址',
+          },
+        }));
+        return true;
+      }
+      global.location.assign(destination.href);
     }
     close();
     return true;
@@ -249,7 +287,7 @@
       event.preventDefault();
       event.stopPropagation();
       if (mode === 'agent') emitAgentSubmit();
-      else activateResult();
+      else activateResult().catch(() => {});
     });
     inputRow.append(makeElement('span', 'gw-omnibar-search-icon', '⌕'), input);
 

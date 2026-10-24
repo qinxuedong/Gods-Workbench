@@ -331,7 +331,7 @@ test('正常同源结果链接会跳转且不显示 Omnibar 错误态', () => {
   assert.equal(omnibar.snapshot().open, false, '成功跳转后 Omnibar 仍应关闭');
 });
 
-test('同源 URL 导航异常不误报为 URL 解析失败', () => {
+test('同源 URL 导航异常不误报解析错误，也不会形成未处理异常', async () => {
   const {document, window, omnibar} = harness();
   const errors = [];
   window.location.assign = () => { throw new Error('navigation failed'); };
@@ -340,10 +340,9 @@ test('同源 URL 导航异常不误报为 URL 解析失败', () => {
   omnibar.setResults([{title: '项目', href: '/projects?project_id=project-1'}]);
   document.dispatchEvent(keyEvent({key: 'ArrowDown', code: 'ArrowDown'}));
 
-  assert.throws(
-    () => document.getElementById('gwOmnibarInput').dispatchEvent(keyEvent({key: 'Enter', code: 'Enter'})),
-    /navigation failed/,
-  );
+  await assert.rejects(omnibar.activateResult(), /navigation failed/);
+  document.getElementById('gwOmnibarInput').dispatchEvent(keyEvent({key: 'Enter', code: 'Enter'}));
+  await new Promise(resolve => setImmediate(resolve));
 
   assert.deepEqual(errors, [], 'URL 解析成功时，导航异常不能发 INVALID_RESULT_URL');
   assert.equal(document.getElementById('gwOmnibarError').hidden, true);
@@ -386,4 +385,109 @@ test('工作台壳在全站入口挂载 Omnibar 脚本与黑金样式', () => {
   assert.match(shellSource, /\/static\/js\/core\/omnibar\.js/);
   assert.match(shellSource, /\/static\/css\/components\/omnibar\.css/);
   assert.match(shellSource, /loadWorkbenchOmnibar\(\);/);
+});
+
+function selectOmnibarResult(document, omnibar, result) {
+  document.dispatchEvent(keyEvent({key: ' ', code: 'Space', ctrlKey: true}));
+  omnibar.setResults([result]);
+  document.dispatchEvent(keyEvent({key: 'ArrowDown', code: 'ArrowDown'}));
+  return document.getElementById('gwOmnibarInput');
+}
+
+async function pressOmnibarEnter(input) {
+  const event = keyEvent({key: 'Enter', code: 'Enter'});
+  input.dispatchEvent(event);
+  await new Promise(resolve => setImmediate(resolve));
+  return event;
+}
+
+for (const {label, href} of [
+  {label: '跨源域名', href: 'https://evil.example/phish'},
+  {label: '跨源端口', href: 'http://workbench.local:8080/path'},
+  {label: '跨源协议', href: 'https://workbench.local/secure'},
+  {label: 'javascript 伪协议', href: 'javascript:alert(1)'},
+  {label: 'data 伪协议', href: 'data:text/html,<h1>bad</h1>'},
+]) {
+  test(`${label} URL 被拦截并显示错误，不关闭 Omnibar`, () => {
+    const {document, window, omnibar} = harness();
+    let assignedUrl = '';
+    const errors = [];
+    window.location.assign = url => { assignedUrl = url; };
+    window.addEventListener('gw:omnibar-error', event => { errors.push(event.detail); });
+    selectOmnibarResult(document, omnibar, {title: label, href});
+    document.getElementById('gwOmnibarInput').dispatchEvent(keyEvent({key: 'Enter', code: 'Enter'}));
+
+    assert.equal(assignedUrl, '', '危险 URL 不得触发跳转');
+    assert.equal(omnibar.snapshot().open, true, '错误时面板保持打开');
+    assert.equal(errors.length, 1);
+    assert.equal(errors[0].code, 'CROSS_ORIGIN_URL_BLOCKED');
+    assert.equal(document.getElementById('gwOmnibarError').textContent, '不支持跳转到外部地址');
+  });
+}
+
+test('activate 同步抛错时显示脱敏错误、保留输入焦点和面板', async () => {
+  const {document, window, omnibar} = harness();
+  const errors = [];
+  window.addEventListener('gw:omnibar-error', event => { errors.push(event.detail); });
+  const input = selectOmnibarResult(document, omnibar, {
+    title: '失败命令',
+    activate() { throw new Error('C:\\private\\source.js:77 secret stack'); },
+  });
+  input.value = '/run private';
+
+  assert.doesNotThrow(() => input.dispatchEvent(keyEvent({key: 'Enter', code: 'Enter'})));
+  await new Promise(resolve => setImmediate(resolve));
+
+  const errorState = document.getElementById('gwOmnibarError');
+  assert.equal(omnibar.snapshot().open, true);
+  assert.equal(errorState.hidden, false);
+  assert.equal(input.value, '/run private');
+  assert.equal(document.activeElement, input);
+  assert.equal(errors.length, 1);
+  assert.equal(errors[0].code, 'COMMAND_ACTIVATION_FAILED');
+  assert.equal(errorState.textContent, '命令执行失败，请重试。');
+  assert.doesNotMatch(errorState.textContent, /private|source\.js|stack/i);
+  assert.equal(JSON.stringify(errors[0]).includes('C:\\private'), false);
+});
+
+test('activate 异步 reject 后可用 Enter 重试，成功后才关闭', async () => {
+  const {document, window, omnibar} = harness();
+  let attempts = 0;
+  const errors = [];
+  window.addEventListener('gw:omnibar-error', event => { errors.push(event.detail); });
+  const input = selectOmnibarResult(document, omnibar, {
+    title: '异步命令',
+    activate() {
+      attempts++;
+      if (attempts === 1) return Promise.reject(new Error('C:\\private\\backend.py:91 secret stack'));
+      return Promise.resolve('done');
+    },
+  });
+  input.value = '/retry command';
+
+  await pressOmnibarEnter(input);
+  assert.equal(attempts, 1);
+  assert.equal(omnibar.snapshot().open, true);
+  assert.equal(input.value, '/retry command');
+  assert.equal(document.activeElement, input);
+  assert.equal(document.getElementById('gwOmnibarError').textContent, '命令执行失败，请重试。');
+  assert.equal(errors.length, 1);
+  assert.equal(errors[0].code, 'COMMAND_ACTIVATION_FAILED');
+  assert.equal(JSON.stringify(errors[0]).includes('backend.py'), false);
+
+  await pressOmnibarEnter(input);
+  assert.equal(attempts, 2);
+  assert.equal(omnibar.snapshot().open, false, '重试成功后才关闭');
+});
+
+test('activate 成功完成后关闭 Omnibar', async () => {
+  const {document, omnibar} = harness();
+  const input = selectOmnibarResult(document, omnibar, {
+    title: '成功命令',
+    activate: () => Promise.resolve('done'),
+  });
+
+  await pressOmnibarEnter(input);
+
+  assert.equal(omnibar.snapshot().open, false);
 });
