@@ -23,9 +23,10 @@ import math
 import sqlite3
 import struct
 import threading
-from collections.abc import Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -253,6 +254,72 @@ class SQLiteVecEngine:
     ) -> bool:
         """写入或替换一条资产文档；返回本次是否写入了向量索引。"""
         self._ensure_open()
+        prepared = self._prepare_document(asset_id, title, content, embedding)
+
+        with self._lock:
+            self._ensure_open()
+            self._db.execute("BEGIN IMMEDIATE")
+            try:
+                vector_indexed = self._upsert_document_in_transaction(*prepared)
+                self._db.commit()
+            except Exception:
+                self._db.rollback()
+                raise
+        return vector_indexed
+
+    def batch_upsert_documents(
+        self,
+        documents: Iterable[Mapping[str, Any]],
+        *,
+        batch_size: int = 500,
+    ) -> list[bool]:
+        """分批写入资产文档；每批原子提交，返回各条记录的向量写入结果。"""
+        self._ensure_open()
+        if (
+            isinstance(batch_size, bool)
+            or not isinstance(batch_size, int)
+            or batch_size < 1
+        ):
+            raise ValueError("batch_size 必须是正整数")
+
+        iterator = iter(documents)
+        vector_results: list[bool] = []
+        while True:
+            batch: list[Mapping[str, Any]] = []
+            try:
+                for _ in range(batch_size):
+                    batch.append(next(iterator))
+            except StopIteration:
+                pass
+            if not batch:
+                return vector_results
+
+            with self._lock:
+                self._ensure_open()
+                self._db.execute("BEGIN IMMEDIATE")
+                try:
+                    for document in batch:
+                        prepared = self._prepare_document(
+                            document.get("asset_id"),
+                            document.get("title"),
+                            document.get("content"),
+                            document.get("embedding"),
+                        )
+                        vector_results.append(
+                            self._upsert_document_in_transaction(*prepared)
+                        )
+                    self._db.commit()
+                except Exception:
+                    self._db.rollback()
+                    raise
+
+    def _prepare_document(
+        self,
+        asset_id: Any,
+        title: Any,
+        content: Any,
+        embedding: Any,
+    ) -> tuple[str, str, str, bytes | None, str | None]:
         if not isinstance(asset_id, str) or not asset_id.strip():
             raise ValueError("asset_id 不能为空")
         if not isinstance(title, str) or not isinstance(content, str):
@@ -264,53 +331,54 @@ class SQLiteVecEngine:
         )
         vector_blob = validated_embedding if self.vector_enabled else None
         vector_hash = hashlib.sha256(vector_blob).hexdigest() if vector_blob else None
+        return asset_id, title, content, vector_blob, vector_hash
 
-        with self._lock:
-            self._ensure_open()
-            self._db.execute("BEGIN IMMEDIATE")
-            try:
-                row = self._db.execute(
-                    f"SELECT row_id FROM {self._DOCUMENTS} WHERE asset_id=?",  # noqa: S608
-                    (asset_id,),
-                ).fetchone()
-                if row:
-                    row_id = int(row["row_id"])
-                    self._db.execute(
-                        f"UPDATE {self._DOCUMENTS} SET title=?,content=?,vector_hash=? WHERE row_id=?",  # noqa: S608
-                        (title, content, vector_hash, row_id),
-                    )
-                    self._db.execute(
-                        f"DELETE FROM {self._FTS} WHERE rowid=?", (row_id,)  # noqa: S608
-                    )
-                else:
-                    cursor = self._db.execute(
-                        f"INSERT INTO {self._DOCUMENTS}(asset_id,title,content,vector_hash) VALUES(?,?,?,?)",
-                        (asset_id, title, content, vector_hash),
-                    )
-                    row_id = int(cursor.lastrowid)
+    def _upsert_document_in_transaction(
+        self,
+        asset_id: str,
+        title: str,
+        content: str,
+        vector_blob: bytes | None,
+        vector_hash: str | None,
+    ) -> bool:
+        row = self._db.execute(
+            f"SELECT row_id FROM {self._DOCUMENTS} WHERE asset_id=?",  # noqa: S608
+            (asset_id,),
+        ).fetchone()
+        if row:
+            row_id = int(row["row_id"])
+            self._db.execute(
+                f"UPDATE {self._DOCUMENTS} SET title=?,content=?,vector_hash=? WHERE row_id=?",  # noqa: S608
+                (title, content, vector_hash, row_id),
+            )
+            self._db.execute(
+                f"DELETE FROM {self._FTS} WHERE rowid=?", (row_id,)  # noqa: S608
+            )
+        else:
+            cursor = self._db.execute(
+                f"INSERT INTO {self._DOCUMENTS}(asset_id,title,content,vector_hash) VALUES(?,?,?,?)",
+                (asset_id, title, content, vector_hash),
+            )
+            row_id = int(cursor.lastrowid)
 
+        self._db.execute(
+            f"INSERT INTO {self._FTS}(rowid,asset_id,title,content) VALUES(?,?,?,?)",
+            (
+                row_id,
+                asset_id,
+                _fts_index_text(title),
+                _fts_index_text(content),
+            ),
+        )
+        if self.vector_enabled:
+            self._db.execute(
+                f"DELETE FROM {self._VECTORS} WHERE rowid=?", (row_id,)  # noqa: S608
+            )
+            if vector_blob is not None:
                 self._db.execute(
-                    f"INSERT INTO {self._FTS}(rowid,asset_id,title,content) VALUES(?,?,?,?)",
-                    (
-                        row_id,
-                        asset_id,
-                        _fts_index_text(title),
-                        _fts_index_text(content),
-                    ),
+                    f"INSERT INTO {self._VECTORS}(rowid,embedding) VALUES(?,?)",
+                    (row_id, vector_blob),
                 )
-                if self.vector_enabled:
-                    self._db.execute(
-                        f"DELETE FROM {self._VECTORS} WHERE rowid=?", (row_id,)  # noqa: S608
-                    )
-                    if vector_blob is not None:
-                        self._db.execute(
-                            f"INSERT INTO {self._VECTORS}(rowid,embedding) VALUES(?,?)",
-                            (row_id, vector_blob),
-                        )
-                self._db.commit()
-            except Exception:
-                self._db.rollback()
-                raise
         return vector_blob is not None
 
     def delete_document(self, asset_id: str) -> bool:
