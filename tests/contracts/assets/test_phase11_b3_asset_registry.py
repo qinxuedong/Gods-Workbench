@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Phase 12 A2 素材注册表真实落盘契约回归。
 
 覆盖：真实 CRUD 写→读回、稳定 ID、CAS 409、路径准入失败关闭、
@@ -219,13 +218,13 @@ def test_a2_image_versions_lifecycle(client, assets):
 
 
 def test_a2_folders_presets_and_directory_templates(client):
-    folders = [client.post("/api/asset-registry/folders", headers=AUTH, json={"name": "目录%d" % i}).json()
+    folders = [client.post("/api/asset-registry/folders", headers=AUTH, json={"name": f"目录{i}"}).json()
                for i in range(2)]
     assert [f["folder"]["folder_id"] for f in folders] == ["fld_0001", "fld_0002"]
     assert len(client.get("/api/asset-registry/folders", headers=AUTH).json()["folders"]) == 2
 
     presets = [client.post("/api/asset-registry/presets", headers=AUTH,
-                           json={"name": "预设%d" % i, "definition": {"kind": "image"}}).json()
+                           json={"name": f"预设{i}", "definition": {"kind": "image"}}).json()
                for i in range(2)]
     assert [p["preset"]["id"] for p in presets] == ["pre_0001", "pre_0002"]
     assert len(client.get("/api/asset-registry/presets", headers=AUTH).json()["presets"]) == 2
