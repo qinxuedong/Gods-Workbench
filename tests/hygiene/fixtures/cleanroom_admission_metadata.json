@@ -1,6 +1,6 @@
 {
   "schema": "gw.cleanroom-admission/v1",
-  "as_of": "2026-10-20",
+  "as_of": "2026-10-25",
   "release_authorized": true,
   "purpose": "新仓当前准入边界、来源分类和排除项的机器可读登记；不保存旧仓正文、凭据或授权账本正文。",
   "accepted_roots": [
@@ -58,6 +58,12 @@
       "path": "docs/governance/LOCAL-DIRECTORY-SPEC.md",
       "classification": "curated_project_governance",
       "authorization_basis": "user_local_directory_specification_2026-10-12",
+      "admission": "accepted"
+    },
+    {
+      "path": "docs/CI-SKIPPED-TEST-COVERAGE.md",
+      "classification": "curated_test_coverage",
+      "authorization_basis": "QIN-376_user_authorization_2026-10-25",
       "admission": "accepted"
     }
   ],
@@ -805,6 +811,13 @@
       "classification": "frozen_interface_contract",
       "authorization_basis": "owner_approval_C15_T1_QIN-220_2026-10-21",
       "sha256": "87a7b487f1283b01285d8d8940c817a0da407e70122e405609d12f929c589d84",
+      "admission": "accepted"
+    },
+    {
+      "path": "docs/CI-SKIPPED-TEST-COVERAGE.md",
+      "classification": "curated_test_coverage",
+      "authorization_basis": "QIN-376_user_authorization_2026-10-25",
+      "sha256": "02d1e236de676e23336bd6ec2da39d0976d956d7cecbab566a32cc0da154fa8a",
       "admission": "accepted"
     }
   ]
