@@ -64,6 +64,8 @@ def isolated_data_dir(tmp_path, monkeypatch):
     （未配置即禁止本机文件访问，符合失败关闭口径）。
     """
     monkeypatch.setenv("GW_RUNTIME_MODE", "test")
+    # Playwright 的 wait_for_function 仅在测试态需要 eval；生产策略会拒绝此开关。
+    monkeypatch.setenv("GW_TEST_ALLOW_CSP_UNSAFE_EVAL", "1")
     # 大多数历史契约用例依赖显式开发认证；默认本地账户的行为由认证专用用例在清空环境后验证。
     monkeypatch.setenv("GW_AUTH_MODE", "local")
     monkeypatch.setenv("GW_DATA_DIR", str(tmp_path / "gw-data"))

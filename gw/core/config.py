@@ -70,6 +70,9 @@ DISCOVERY_PATH = "/.well-known/openid-configuration"
 # 完全无法接线。开启本白名单后，端点除必须满足 HTTPS（或本地回环）之外，
 # **其主机名与 issuer 主机名都必须与白名单条目逐条精确相等**；未开启时仍强制逐字同源。
 ENDPOINT_HOSTS_ENV = "GW_OIDC_ENDPOINT_HOSTS"
+ALLOWED_HOSTS_ENV = "GW_ALLOWED_HOSTS"
+DEFAULT_ALLOWED_HOSTS = frozenset({"localhost", "127.0.0.1"})
+TEST_ALLOWED_HOSTS = frozenset({"testserver", "attacker.test"})
 # **默认留空 = 严格同源**：不预置任何第三方主机，避免"默认放松"的隐性风险。
 # 部署方如需接入跨主机 IdP（例：Google 的 issuer=accounts.google.com 但
 # jwks_uri=www.googleapis.com），显式设置：
@@ -180,6 +183,36 @@ def normalize_endpoint_host(host: Any) -> str:
     if not isinstance(host, str):
         return ""
     return host.strip().lower().rstrip(".")
+
+
+def normalize_allowed_host(host: Any) -> str:
+    """规范化 Host 白名单项；允许配置 hostname、IP 或带端口的形式。"""
+    normalized = normalize_endpoint_host(host)
+    if normalized.startswith("["):
+        end = normalized.find("]")
+        if end > 0 and normalized[end + 1:].startswith(":"):
+            return normalized[1:end]
+        if end == len(normalized) - 1:
+            return normalized[1:end]
+    if normalized.count(":") == 1:
+        hostname, separator, port = normalized.rpartition(":")
+        if separator and port.isdigit():
+            return hostname
+    return normalized
+
+
+def resolve_allowed_hosts() -> frozenset[str]:
+    """解析本地 HTTP Host 白名单并合并部署方显式配置。"""
+    raw_value = os.environ.get(ALLOWED_HOSTS_ENV, "")
+    configured = raw_value.replace(",", " ").split()
+    hosts = set(DEFAULT_ALLOWED_HOSTS)
+    hosts.update(
+        host for host in (normalize_allowed_host(item) for item in configured) if host
+    )
+    if os.environ.get("GW_RUNTIME_MODE", "").strip().lower() == "test":
+        # TestClient 的默认 Host 和既有 CSRF 测试专用；生产运行态绝不放行。
+        hosts.update(TEST_ALLOWED_HOSTS)
+    return frozenset(hosts)
 
 
 def resolve_endpoint_hosts() -> frozenset:
