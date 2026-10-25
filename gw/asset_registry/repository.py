@@ -2001,7 +2001,15 @@ def _scan_allowed_roots() -> Tuple[List[Dict[str, Any]], List[str]]:
                     for entry in entries:
                         try:
                             if entry.is_dir(follow_symlinks=False):
-                                pending.append(Path(entry.path))
+                                child_path = Path(entry.path)
+                                if os.name == "nt" and storage._is_reparse_point_info(
+                                    entry.stat(follow_symlinks=False)
+                                ):
+                                    try:
+                                        storage.resolve_within_roots(str(child_path))
+                                    except CleanroomException:
+                                        continue
+                                pending.append(child_path)
                                 continue
                             if not entry.is_file():
                                 continue

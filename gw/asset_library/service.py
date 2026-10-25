@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 # Copyright 2026 Gods-Workbench Authors
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -32,9 +31,9 @@ Phase 12 变更：默认模式把整棵素材库树落到单实例 JSON（重启
 from __future__ import annotations
 
 import copy
-from datetime import datetime, timezone
 import threading
-from typing import Any, Optional
+from datetime import UTC, datetime
+from typing import Any
 
 from gw.asset_library.models import (
     AssetItem,
@@ -52,7 +51,7 @@ NS_LIBRARY = "asset_library"
 
 def _now_iso() -> str:
     """生成标准 ISO 8601 UTC 时间戳字符串。"""
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()
 
 
 def _name_key(value: str) -> str:
@@ -147,7 +146,7 @@ class AssetLibraryService:
     def _library(raw: dict[str, Any], library_id: str) -> dict[str, Any]:
         library = raw.get("libraries", {}).get(library_id)
         if library is None:
-            raise CleanroomException(404, "LIBRARY_NOT_FOUND", "素材库 %s 不存在" % library_id)
+            raise CleanroomException(404, "LIBRARY_NOT_FOUND", f"素材库 {library_id} 不存在")
         return library
 
     @staticmethod
@@ -156,10 +155,10 @@ class AssetLibraryService:
             for category in library.get("categories", []):
                 if category.get("category_id") == category_id:
                     return library, category
-        raise CleanroomException(404, "CATEGORY_NOT_FOUND", "分类 %s 不存在" % category_id)
+        raise CleanroomException(404, "CATEGORY_NOT_FOUND", f"分类 {category_id} 不存在")
 
     @staticmethod
-    def _locate(raw: dict[str, Any], asset_id: str) -> tuple[Optional[dict[str, Any]], Optional[dict[str, Any]], Optional[dict[str, Any]]]:
+    def _locate(raw: dict[str, Any], asset_id: str) -> tuple[dict[str, Any] | None, dict[str, Any] | None, dict[str, Any] | None]:
         """跨全部库/分类按 asset_id 定位条目；找不到返回 (None, None, None)，不抛异常。"""
         for library in raw.get("libraries", {}).values():
             for category in library.get("categories", []):
@@ -178,10 +177,10 @@ class AssetLibraryService:
                         if not asset_visible(item):
                             raise CleanroomException(404, "ASSET_NOT_FOUND", "素材不存在")
                         return library, category, item
-        raise CleanroomException(404, "ASSET_NOT_FOUND", "素材 %s 不存在" % asset_id)
+        raise CleanroomException(404, "ASSET_NOT_FOUND", f"素材 {asset_id} 不存在")
 
     @staticmethod
-    def _check_version(expected: Optional[int], current: int) -> None:
+    def _check_version(expected: int | None, current: int) -> None:
         if type(expected) is not int or expected < 1:
             raise CleanroomException(400, "INVALID_REQUEST", "expected_version 必须为正整数")
         if expected != int(current):
@@ -192,9 +191,26 @@ class AssetLibraryService:
 
     @staticmethod
     def _next_seq(raw: dict[str, Any], key: str) -> int:
+        """先持久化预留序号，再更新业务快照，避免写入失败后复用 ID。"""
+        prefix = key + "_"
         sequences = raw.setdefault("sequences", {})
-        sequences[key] = int(sequences.get(key, 0)) + 1
-        return sequences[key]
+        previous = int(sequences.get(key, 0))
+
+        def reserve(reservations: dict[str, Any]) -> int:
+            reserved_sequences = reservations.setdefault("sequences", {})
+            last = max(previous, int(reserved_sequences.get(prefix, 0)))
+            reservation_id = storage.next_sequence(
+                prefix, (f"{prefix}{last:04d}",)
+            )
+            sequence = int(reservation_id[len(prefix):])
+            reserved_sequences[prefix] = sequence
+            return sequence
+
+        sequence = storage.JsonState(
+            "id_reservations", lambda: {"sequences": {}}
+        ).mutate(reserve)
+        sequences[key] = sequence
+        return sequence
 
     @staticmethod
     def _touch(raw: dict[str, Any]) -> None:
@@ -212,8 +228,8 @@ class AssetLibraryService:
                 raise CleanroomException(400, "INVALID_REQUEST", "素材库名称不能为空或全空白")
             for other in raw["libraries"].values():
                 if _name_key(other["name"]) == _name_key(name):
-                    raise CleanroomException(409, "DUPLICATE_LIBRARY_NAME", "素材库名称已存在：%s" % name)
-            library_id = "library_%04d" % self._next_seq(raw, "library")
+                    raise CleanroomException(409, "DUPLICATE_LIBRARY_NAME", f"素材库名称已存在：{name}")
+            library_id = f"library_{self._next_seq(raw, 'library'):04d}"
             stamp = _now_iso()
             raw["libraries"][library_id] = {
                 "library_id": library_id, "name": name, "version": 1,
@@ -236,8 +252,8 @@ class AssetLibraryService:
                 raise CleanroomException(400, "INVALID_REQUEST", "分类名称不能为空或全空白")
             for other in parent["categories"]:
                 if _name_key(other["name"]) == _name_key(name):
-                    raise CleanroomException(409, "DUPLICATE_CATEGORY_NAME", "分类名称已存在：%s" % name)
-            category_id = "category_%04d" % self._next_seq(raw, "category")
+                    raise CleanroomException(409, "DUPLICATE_CATEGORY_NAME", f"分类名称已存在：{name}")
+            category_id = f"category_{self._next_seq(raw, 'category'):04d}"
             stamp = _now_iso()
             kind = payload.type.value if hasattr(payload.type, "value") else str(payload.type)
             category = {
@@ -255,7 +271,7 @@ class AssetLibraryService:
     # ------------------------------------------------------------------
     # 素材库 / 分类 变更
     # ------------------------------------------------------------------
-    def rename_library(self, library_id: str, name: str, expected_version: Optional[int]) -> LibraryItem:
+    def rename_library(self, library_id: str, name: str, expected_version: int | None) -> LibraryItem:
         def mutator(raw: dict[str, Any]) -> Any:
             library = self._library(raw, library_id)
             self._check_version(expected_version, library["version"])
@@ -272,7 +288,7 @@ class AssetLibraryService:
             return library
         return LibraryItem.model_validate(self._visible_library(self._mutate(mutator)))
 
-    def delete_library(self, library_id: str, expected_version: Optional[int]) -> dict[str, Any]:
+    def delete_library(self, library_id: str, expected_version: int | None) -> dict[str, Any]:
         def mutator(raw: dict[str, Any]) -> Any:
             library = self._library(raw, library_id)
             from gw.core.asset_visibility import asset_visible
@@ -286,7 +302,7 @@ class AssetLibraryService:
             return {"library_id": library_id, "deleted": True}
         return self._mutate(mutator)
 
-    def rename_category(self, category_id: str, name: str, expected_version: Optional[int]) -> CategoryItem:
+    def rename_category(self, category_id: str, name: str, expected_version: int | None) -> CategoryItem:
         def mutator(raw: dict[str, Any]) -> Any:
             library, category = self._category(raw, category_id)
             self._check_version(expected_version, category["version"])
@@ -304,7 +320,7 @@ class AssetLibraryService:
             return category
         return CategoryItem.model_validate(self._visible_category(self._mutate(mutator)))
 
-    def delete_category(self, category_id: str, expected_version: Optional[int]) -> dict[str, Any]:
+    def delete_category(self, category_id: str, expected_version: int | None) -> dict[str, Any]:
         def mutator(raw: dict[str, Any]) -> Any:
             library, category = self._category(raw, category_id)
             from gw.core.asset_visibility import asset_visible
@@ -342,7 +358,7 @@ class AssetLibraryService:
                 name = str(entry).strip()
                 if not name:
                     raise CleanroomException(400, "INVALID_REQUEST", "素材名称不能为空")
-                asset_id = "asset_%04d" % self._next_seq(raw, "asset")
+                asset_id = f"asset_{self._next_seq(raw, 'asset'):04d}"
                 item = AssetItem(
                     asset_id=asset_id, library_id=library["library_id"], category_id=category_id,
                     name=name, url=None, created_at=stamp,
@@ -380,7 +396,7 @@ class AssetLibraryService:
             return item
         return AssetItem.model_validate(self._mutate(mutator))
 
-    def delete_item(self, asset_id: str, expected_version: Optional[int] = None) -> dict[str, Any]:
+    def delete_item(self, asset_id: str, expected_version: int | None = None) -> dict[str, Any]:
         """删除单个素材条目（普通条目原语义）。
 
         同进同出（C4-AC6）：工作流桥接登记条目的删除由 API 层改道注册表删除
@@ -399,8 +415,8 @@ class AssetLibraryService:
     def delete_items(
         self,
         asset_ids: list[str],
-        expected_version: Optional[int],
-        expected_versions: Optional[dict[str, int]] = None,
+        expected_version: int | None,
+        expected_versions: dict[str, int] | None = None,
     ) -> dict[str, Any]:
         """批量删除普通素材条目；所有 ID 与父库版本先在同一 mutate 内核验。
 
@@ -441,7 +457,7 @@ class AssetLibraryService:
             return {"deleted": removed, "results": results, "count": len(removed)}
         return self._mutate(mutator)
 
-    def find_item_snapshot(self, asset_id: str) -> Optional[dict[str, Any]]:
+    def find_item_snapshot(self, asset_id: str) -> dict[str, Any] | None:
         """只读回传 asset_id 对应条目的完整快照；不存在或对当前主体不可见时返回 None。"""
         from gw.core.asset_visibility import asset_visible
         with self._lock:
@@ -450,7 +466,7 @@ class AssetLibraryService:
                 return None
             return copy.deepcopy(item)
 
-    def ensure_item_version(self, asset_id: str, expected_version: Optional[int]) -> None:
+    def ensure_item_version(self, asset_id: str, expected_version: int | None) -> None:
         """只读校验条目所在素材库的 CAS 版本；条目不存在时静默跳过（由删除路径报 404）。"""
         if expected_version is None:
             return
@@ -459,7 +475,7 @@ class AssetLibraryService:
         if library is not None:
             self._check_version(expected_version, library["version"])
 
-    def remove_item_snapshot(self, asset_id: str) -> Optional[dict[str, Any]]:
+    def remove_item_snapshot(self, asset_id: str) -> dict[str, Any] | None:
         """原子移除并返回 asset_id 对应条目的完整快照（同进同出暂存用）。
 
         不存在或对当前主体不可见时返回 None（幂等，不抛异常）；
@@ -467,7 +483,7 @@ class AssetLibraryService:
         """
         from gw.core.asset_visibility import asset_visible
 
-        def mutator(raw: dict[str, Any]) -> Optional[dict[str, Any]]:
+        def mutator(raw: dict[str, Any]) -> dict[str, Any] | None:
             library, category, item = self._locate(raw, str(asset_id))
             if item is None or not asset_visible(item):
                 return None
@@ -513,8 +529,8 @@ class AssetLibraryService:
         self,
         asset_ids: list[str],
         category_id: str,
-        expected_version: Optional[int],
-        expected_versions: Optional[dict[str, int]] = None,
+        expected_version: int | None,
+        expected_versions: dict[str, int] | None = None,
     ) -> dict[str, Any]:
         if expected_versions is not None and not isinstance(expected_versions, dict):
             raise CleanroomException(400, "INVALID_REQUEST", "expected_versions 必须是素材库版本映射")
@@ -650,8 +666,8 @@ class AssetLibraryService:
         name: str,
         category_type: str,
         category_name: str,
-        url: Optional[str] = None,
-        workflow_owner: Optional[str] = None,
+        url: str | None = None,
+        workflow_owner: str | None = None,
     ) -> AssetItem:
         """登记或更新素材条目（保证全局稳定 asset_id 绑定）。"""
         def mutator(raw: dict[str, Any]) -> Any:

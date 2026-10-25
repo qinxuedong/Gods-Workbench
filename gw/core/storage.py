@@ -111,11 +111,59 @@ def root_identity_id(root: Path) -> str:
     return "root_" + hashlib.sha256(value.encode()).hexdigest()[:24]
 
 
+def _is_reparse_point_info(info: os.stat_result) -> bool:
+    """识别普通符号链接与 Windows 重解析点。"""
+    return stat.S_ISLNK(info.st_mode) or bool(
+        getattr(info, "st_file_attributes", 0) & 0x0400
+    )
+
+
+def _iter_reparse_points(path: Path) -> Iterator[Path]:
+    """逐组件产出路径中的重解析点，供各路径边界复用。"""
+    current = Path(path.anchor) if path.anchor else Path()
+    parts = path.parts[1:] if path.anchor else path.parts
+    for part in parts:
+        if not part:
+            continue
+        current = current / part
+        try:
+            info = current.lstat()
+        except FileNotFoundError:
+            continue
+        if _is_reparse_point_info(info):
+            yield current
+
+
+def _ensure_reparse_targets_within_roots(path: Path, roots: list[Path]) -> None:
+    """Windows 路径经重解析点时，逐个确认目标仍位于授权根内。"""
+    if os.name != "nt":
+        return
+    try:
+        for reparse_point in _iter_reparse_points(path):
+            target = reparse_point.resolve()
+            if not any(target == root or target.is_relative_to(root) for root in roots):
+                raise CleanroomException(
+                    403,
+                    "PATH_OUTSIDE_ALLOWED_ROOTS",
+                    "目标路径不在允许根目录内",
+                )
+    except CleanroomException:
+        raise
+    except (OSError, RuntimeError, ValueError):
+        raise CleanroomException(
+            403,
+            "PATH_OUTSIDE_ALLOWED_ROOTS",
+            "目标路径无法安全核验",
+        ) from None
+
+
 def location_identity(path: Path) -> tuple[str, str]:
     """返回路径所属最深允许根的稳定 root_id 与 canonical_relpath。"""
+    roots = allowed_roots()
+    _ensure_reparse_targets_within_roots(path, roots)
     resolved = Path(path).resolve()
     matches = []
-    for root in allowed_roots():
+    for root in roots:
         try:
             matches.append((root, resolved.relative_to(root)))
         except ValueError:
@@ -199,6 +247,7 @@ def resolve_within_roots(raw_path: str, *, root_id: str | None = None) -> Path:
             raise CleanroomException(404, "ROOT_NOT_FOUND", "素材来源根不存在")
     else:
         selected_root = None
+    candidates = [selected_root] if selected_root is not None else roots
     try:
         candidate = Path(raw_path).expanduser()
         if not candidate.is_absolute():
@@ -211,10 +260,10 @@ def resolve_within_roots(raw_path: str, *, root_id: str | None = None) -> Path:
                     409, "ROOT_ID_REQUIRED", "解析相对路径必须指定 root_id"
                 )
             candidate = selected_root / candidate
+        _ensure_reparse_targets_within_roots(candidate, candidates)
         resolved = candidate.resolve()
     except (OSError, RuntimeError, ValueError) as e:
         raise CleanroomException(400, "INVALID_PATH", "路径参数不合法") from e
-    candidates = [selected_root] if selected_root is not None else roots
     matches = []
     for root in candidates:
         try:
@@ -516,7 +565,7 @@ def _reject_links(path: Path) -> None:
             continue
         except (OSError, RuntimeError):
             _backup_fail("BACKUP_PATH_UNSAFE", "运行时备份路径无法安全核验")
-        if stat.S_ISLNK(info.st_mode) or getattr(info, "st_file_attributes", 0) & 0x0400:
+        if _is_reparse_point_info(info):
             _backup_fail("BACKUP_PATH_LINK", "运行时备份不允许符号链接或重解析点")
 
 

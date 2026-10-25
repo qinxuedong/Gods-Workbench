@@ -6,6 +6,7 @@ FROM python:3.11-slim
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     GW_RUNTIME_MODE=prod \
+    GW_AUTH_MODE=oidc \
     GW_HOST=0.0.0.0 \
     GW_PORT=2077 \
     LOCALAPPDATA=/var/lib/gods-workbench

@@ -119,6 +119,8 @@ python run.py --prod --open-browser
 python run.py
 ```
 
+安全提示：`GW_AUTH_MODE=local` 仅限开发与隔离测试，且只能绑定 `127.0.0.1`、`::1` 或 `localhost`。容器及局域网部署必须显式使用非 local 认证模式，例如 `oidc`。
+
 ### 3. 命令行参数说明
 
 | 参数项 | 默认值 | 功能说明 |
