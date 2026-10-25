@@ -89,8 +89,22 @@ def test_app_info_is_truthful_and_authenticated(api_client: TestClient):
     data = response.json()
     assert data["runtime"] == "cleanroom"
     assert data["version"] == _fixture("phase11-b2-app-info.json")["version"]
-    assert data["release_authorized"] is True
+    assert data["release_authorized"] is False
     assert data["data_status"] == "ok"
+
+
+def test_health_and_app_info_share_release_authorization_source(
+    api_client: TestClient,
+):
+    health_response = api_client.get("/healthz")
+    app_info_response = api_client.get("/api/app-info", headers=AUTH)
+
+    assert health_response.status_code == 200
+    assert app_info_response.status_code == 200
+    health_value = health_response.json()["release_authorized"]
+    app_info_value = app_info_response.json()["release_authorized"]
+    assert health_value == app_info_value
+    assert health_value is platform_service.RELEASE_AUTHORIZED is False
 
 
 def test_cli_status_observes_path_without_execution(

@@ -33,6 +33,8 @@ from gw.core.cli_runtime import CLI_CANDIDATES, cli_execution_enabled
 from gw.core.config import load_runtime_auth_config
 from gw.core.errors import CleanroomException
 
+RELEASE_AUTHORIZED = False
+
 AI_UPLOAD_NOT_INTEGRATED = "AI_UPLOAD_NOT_INTEGRATED"
 CHAT_NOT_INTEGRATED = "CHAT_NOT_INTEGRATED"
 CLI_HELP_NOT_INTEGRATED = "CLI_HELP_NOT_INTEGRATED"
@@ -106,7 +108,7 @@ def app_info() -> dict:
         "python_version": platform_module.python_version(),
         "platform": sys.platform,
         "auth_mode": auth.mode,
-        "release_authorized": True,
+        "release_authorized": RELEASE_AUTHORIZED,
         "data_status": "ok",
         "data_gaps": [],
     }
