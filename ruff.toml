@@ -3,7 +3,7 @@ target-version = "py311"
 [lint]
 select = ["E4", "E7", "E9", "F", "I", "UP", "B", "ASYNC", "RET", "SIM", "S"]
 fixable = ["I", "UP"]
-# QIN-379：Ruff 0.17.2 在基线 95b1c6d 的盘点；排除 49 条有存量诊断的规则（共 1,012 条）。
+# QIN-379：Ruff 0.17.2 在基线 b1dd98b 的盘点；排除 49 条有存量诊断的规则（共 1,007 条）。
 # 剩余 258 条稳定规则当前为零诊断，由 `ruff check .` 持续门禁。
 ignore = [
     "ASYNC109",

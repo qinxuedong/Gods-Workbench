@@ -35,7 +35,7 @@ python -m pytest -v --no-header -p no:cacheprovider
 # 3) 前端契约回归（CI 原命令，需 Node）
 node --test tests/frontend/agent-tasks.test.mjs tests/frontend/c16-t3-pwa-installable.test.mjs
 ```
-Lint：开发依赖与哈希锁固定 Ruff 0.17.2。基于 master `95b1c6d` 盘点了 `ruff.toml` 中 307 条稳定规则：258 条零诊断规则进入门禁，49 条含 1,012 条存量诊断的规则暂不检查。CI 执行 `ruff check .`；本地对改动文件执行：
+Lint：开发依赖与哈希锁固定 Ruff 0.17.2。基于 master `b1dd98b` 盘点了 `ruff.toml` 中 307 条稳定规则：258 条零诊断规则进入门禁，49 条含 1,007 条存量诊断的规则暂不检查。CI 执行 `ruff check .`；本地对改动文件执行：
 ```bash
 ruff check <changed files>
 ```
