@@ -237,14 +237,14 @@ OTHER DEALINGS IN THE FONT SOFTWARE.
 
 本轮仅替换 AGENTS 白名单中的三个精确路径为 Adobe 官方 `2.005R` 固定提交的 OTF 原始字节；各文件的 Git blob SHA-1、SHA-256、大小、内嵌版本与 OFL-1.1 版权行见 `MANIFEST.md` 与 §4。源/本地字节相同，组件级许可证通知已随附；这不构成根仓发布授权。
 
-### 5.2 `js/tailwindcss-cdn.js` — 组件通知已附；公开分发 **RELEASED**
+### 5.2 `js/tailwindcss-cdn.js` — 组件通知已附；公开分发仍 **BLOCKED**
 
 - 本地制品：`js/tailwindcss-cdn.js`（836034 字节）；SHA-256 `D11003B2F6FBE0CA79340ECD3349DFFE61E11A3FEB224B3FDFA3D24900F70E83`。
 - 来源：自有浏览器适配源码 manifest SHA-256 `5e5318923643b88f7b123047a975fd7ba6cbe9f78bb131dda5e0761357fdd175`；Stage-B R09 构建输出。Tailwind CSS `3.4.17`、`@tailwindcss/forms 0.5.10`、`@tailwindcss/container-queries 0.1.1`。esbuild `0.24.0` 为构建工具，不属于 bundle runtime。
 - 运行依赖闭包：候选 manifest 标记 15 个实际 runtime 包；`dlv` 仅存在于冻结安装/黑盒测试树，不进入此 runtime。下列 15 个 runtime 组件通知来自固定哈希的通知草案 `a2299c367c7ca1ccfe8ed0655ead1c070cdc52482e5fdebf21095ab1941cfcd4`；仅标题级别为嵌入本节而调整，组件来源说明、版权通知与许可原文保持原文。
 - `@tailwindcss/container-queries 0.1.1`：后继同源提交 `e53d76e6c5fd45005e30029417feb45683f0de2c` 的 LICENSE 及源码树/package.json 同源证据见通知原文。此证据**不**证明该 LICENSE 已存在于原 npm tarball，也不单独证明 npm `dist` 的逐字节生成映射。
 - 构建/测试边界：Stage-B post-execution 独立复核记录 0 阻断；FULL-R03 记录 `956/8/1`、41 pins 未变。该证据仅在其受限候选构建/探针范围内通过，不等于产品全量测试或法律审核。不得将本节解释为法律意见、许可授予或公开分发授权。
-- 产品与组件公开分发状态已 **RELEASED**；本文件仅提供 `web/vendor/` 组件级通知，不新增根级 `NOTICE`，也不声明全仓 SBOM/NOTICE 完成。
+- 产品与组件公开分发状态继续 **BLOCKED**；本文件仅提供 `web/vendor/` 组件级通知，不新增根级 `NOTICE`，也不声明全仓 SBOM/NOTICE 完成。
 
 #### 运行期第三方组件通知（草案 SHA-256 `a2299c367c7ca1ccfe8ed0655ead1c070cdc52482e5fdebf21095ab1941cfcd4`）
 ##### @alloc/quick-lru 5.3.0

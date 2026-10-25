@@ -38,3 +38,4 @@ tests/frontend/workflow-auth-behavior.test.mjs
 tests/frontend/workflow-link-slots.test.mjs
 tests/frontend/workflow-remediation.test.mjs
 tests/frontend/workflow-workbench.test.mjs
+tests/frontend/i18n-core-date-range.test.mjs
