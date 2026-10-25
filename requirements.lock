@@ -18,7 +18,7 @@
 #   * Playwright 1.63.0 及其传递依赖 greenlet/pyee 已纳入测试与 CI 闭包；浏览器二进制仍由 CI 安装。
 #   * 边界：本轮在**当前 Windows 环境**复算，并用 Linux x86_64 wheel 实测补齐跨平台哈希。
 #   * 当前工作树于 2026-10-07 增加智能体运行依赖闭包：在下方保留 33 条宿主基线并
-#     追加 29 个锁定版本；当前总计 65 个有效 pin（含本次 3 个 CI 浏览器依赖）。`websockets` 从基线 17.1 调整为
+#     追加 29 个锁定版本；加入 3 个 CI 浏览器依赖及 QIN-379 的 Ruff 0.17.2 后，当前共 66 个有效 pin。`websockets` 从基线 17.1 调整为
 #     16.1.1，以满足 langgraph-sdk 的 `<17` 约束；安装与 `pip check` 已在宿主 Windows venv 验证。
 #     哈希锁补充了 Windows 与 Linux wheel SHA；Linux 侧仅核验 wheel 哈希，未运行 Linux 安装测试。
 #
@@ -110,3 +110,5 @@ zstandard==0.25.0
 greenlet==3.3.2
 playwright==1.63.0
 pyee==13.0.1
+# ---- CI Ruff 门禁依赖（QIN-379；2026-10-26）----
+ruff==0.17.2

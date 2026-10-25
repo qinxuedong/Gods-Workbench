@@ -28,8 +28,8 @@
 #   * colorama 仅 Windows 安装；Linux 不装，pip 不会因缺少 colorama 哈希而失败
 #     （其 py2.py3-none-any 哈希两平台相同，已合并保留）。
 #   * 历史 33 包基线曾在独立干净 venv 实测 `--require-hashes` 安装通过。
-#   * 当前 65 pin 在宿主 Windows venv 按精确锁安装并通过 `pip check`；新增 Linux wheel
-#     SHA-256 已按下载的 python:3.11-slim 兼容 manylinux x86_64 wheel 计算核验。
+#   * 既有 65 pin 在宿主 Windows venv 按精确锁安装并通过 `pip check`；QIN-379 增加 Ruff 0.17.2，当前共 66 个 pin。
+#   * Ruff 哈希覆盖 Windows win_amd64 与 Linux manylinux x86_64；既有 Linux wheel SHA-256 已按下载的 python:3.11-slim 兼容 wheel 计算核验。
 # ---------------------------------------------------------------------------
 annotated-doc==0.0.5 --hash=sha256:117bac03a25ede5df5440e855b32d556049ca169ead221505badf432fed4b101
 annotated-types==0.8.0 --hash=sha256:f072f4d804ea359e4eaf198b1af7a8b0943881a87f31bb764f8bf219bb9419e0
@@ -100,3 +100,5 @@ zstandard==0.25.0 --hash=sha256:daab68faadb847063d0c56f361a289c4f268706b598afbf9
 greenlet==3.3.2 --hash=sha256:1e692b2dae4cc7077cbb11b47d258533b48c8fde69a33d0d8a82e2fe8d8531d5 --hash=sha256:8e2cd90d413acbf5e77ae41e5d3c9b3ac1d011a756d7284d7f3f2b806bbd6358
 playwright==1.63.0 --hash=sha256:2f9a707a6c6c91157ed77bff2b8caeb04b3c8d46e70d585fc134298cbe4b5cc6 --hash=sha256:ad21bc07516b187965a7521c5cf0df0bd657b17482eaad74335272d35a2b07de
 pyee==13.0.1 --hash=sha256:af2f8fede4171ef667dfded53f96e2ed0d6e6bd7ee3bb46437f77e3b57689228
+# ---- CI Ruff 门禁依赖（QIN-379；2026-10-26）----
+ruff==0.17.2 --hash=sha256:1b59d447f197bef9ef48a22ba1a6016137753c6099e9bac9c36eb566e422424c --hash=sha256:c60f93fec7142dba5b8f487f94bf2f6231dae24dc11e4c48648347c8b0720004
