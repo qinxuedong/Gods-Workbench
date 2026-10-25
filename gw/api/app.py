@@ -18,7 +18,7 @@ import contextlib
 import os
 from contextlib import asynccontextmanager
 from pathlib import Path
-from urllib.parse import urlencode
+from urllib.parse import urlencode, urlsplit
 
 from fastapi import FastAPI, Request, status
 from fastapi.exceptions import RequestValidationError
@@ -57,6 +57,8 @@ from gw.core.config import (
     AUTH_MODE_LOCAL_ACCOUNT,
     AUTH_MODE_OIDC,
     load_runtime_auth_config,
+    normalize_allowed_host,
+    resolve_allowed_hosts,
     resolve_auth_mode,
 )
 from gw.core.errors import CleanroomException
@@ -495,6 +497,58 @@ def create_app(*, agent_integration_factory=None) -> FastAPI:
     # 挂载静态文件目录。隔离路径已由上方显式路由拦截，不会进入本挂载。
     if STATIC_DIR.exists():
         app.mount("/static", StaticFiles(directory=str(STATIC_DIR), html=True), name="static")
+
+    @app.middleware("http")
+    async def host_and_security_headers_middleware(request: Request, call_next):
+        """拒绝未配置的 Host，并给所有正常响应附加安全头。"""
+        raw_host = request.headers.get("host", "")
+        try:
+            parsed_host = urlsplit("//" + raw_host)
+            # 读取 port 同时验证其语法；Host 中不能包含用户信息或路径部分。
+            _ = parsed_host.port
+            if (
+                not parsed_host.hostname
+                or parsed_host.username is not None
+                or parsed_host.password is not None
+                or parsed_host.path
+                or parsed_host.query
+                or parsed_host.fragment
+            ):
+                hostname = ""
+            else:
+                hostname = normalize_allowed_host(parsed_host.hostname)
+        except ValueError:
+            hostname = ""
+
+        if hostname not in resolve_allowed_hosts():
+            response = JSONResponse(
+                status_code=400,
+                content={"detail": "Invalid host header"},
+            )
+        else:
+            response = await call_next(request)
+
+        script_src = "'self' 'unsafe-inline'"
+        if (
+            os.environ.get("GW_RUNTIME_MODE", "").strip().lower() == "test"
+            and os.environ.get("GW_TEST_ALLOW_CSP_UNSAFE_EVAL") == "1"
+        ):
+            # Playwright 的 wait_for_function 仅在隔离测试态需要 eval。
+            script_src += " 'unsafe-eval'"
+
+        response.headers["Content-Security-Policy"] = (
+            "default-src 'self'; base-uri 'self'; object-src 'none'; "
+            "frame-ancestors 'self'; form-action 'self'; "
+            f"script-src {script_src}; style-src 'self' 'unsafe-inline'; "
+            "img-src 'self' data: blob:; font-src 'self' data:; "
+            "media-src 'self' data: blob:; connect-src 'self'"
+        )
+        response.headers["X-Frame-Options"] = "SAMEORIGIN"
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers.setdefault(
+            "Referrer-Policy", "strict-origin-when-cross-origin"
+        )
+        return response
 
     return app
 
