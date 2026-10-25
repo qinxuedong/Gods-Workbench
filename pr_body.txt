@@ -1,0 +1,14 @@
+QIN-380 | Linear: QIN-380
+
+## 改动文件
+- THIRD_PARTY_NOTICES.md
+- web/vendor/LICENSES.md
+## 测试
+- `node --test $(cat tests/frontend/node-files.txt | tr '\n' ' ')` → 322 passed
+- `python -m pytest tests/hygiene -v` → 50 passed
+## 待本地实机验收
+- （无）
+## 范围外发现
+- （无）
+
+执行人: jules

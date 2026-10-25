@@ -19,6 +19,12 @@ The following open-source Python packages are used by the backend runtime (`gw/`
 | **idna** | 3.10+ | BSD-3-Clause | Copyright (c) 2013-2024, Kim Davies |
 | **PyMuPDF** | 1.25+ | AGPL-3.0 / Commercial | Artifex Software, Inc. (Used strictly in independent audit tooling) |
 | **Playwright** | 1.50+ | Apache-2.0 | Copyright (c) Microsoft Corporation (Used strictly in test suites) |
+| **cryptography** | 46.0.7 | Apache-2.0 OR BSD-3-Clause | The Python Cryptographic Authority and individual contributors |
+| **psutil** | 7.2.2 | BSD-3-Clause | Giampaolo Rodola |
+| **python-multipart** | 0.0.32 | Apache-2.0 | Andrew Dunham |
+| **pillow** | 12.3.0 | MIT-CMU | Jeffrey 'Alex' Clark |
+| **langgraph** | 1.2.12 | MIT | - |
+| **jsonschema** | 4.26.0 | MIT | Julian Berman |
 
 ---
 
@@ -144,3 +150,5 @@ OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 
 ### Creative Commons Attribution 4.0 International (CC-BY-4.0)
 You are free to share and adapt the material for any purpose, even commercially, under the condition that appropriate credit is given and a link to the license is provided: https://creativecommons.org/licenses/by/4.0/
+
+*Applies to `caniuse-lite` and the datasets `youmind-gpt-image-2`, `youmind-nano-banana-pro`.*

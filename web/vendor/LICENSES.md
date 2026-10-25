@@ -2,9 +2,9 @@
 
 本文件只覆盖 `web/vendor/` 目录内的第三方组件，逐组件给出**许可正文或版权通知、可核对的上游来源链接、本地制品哈希**。
 
-本文件**不是**根级 NOTICE、**不是**根级 LICENSE，也**不是**全仓第三方通知。仓库当前不存在 `NOTICE`：根级 `LICENSE` **有意未提供**，因为 CLEANROOM-CHARTER 禁止在独立审计完成前添加正式开源许可证。`web/vendor/` 的第三方义务**只在本目录范围内**被记录；全仓 SBOM 与完整 NOTICE 仍缺失。
+本文件**不是**根级 NOTICE、**不是**根级 LICENSE，也**不是**全仓第三方通知。仓库当前不存在 `NOTICE`，但根级 `LICENSE` 已提供。`web/vendor/` 的第三方义务**只在本目录范围内**被记录；全仓 SBOM 与完整 NOTICE 仍缺失。
 
-## 发布状态：RELEASED
+## 发布状态：BLOCKED
 
 本目录第三方静态资源已完成组件级证据闭环，并随主项目 Apache-2.0 授权及根级 `THIRD_PARTY_NOTICES.md` 正式发布。组件级核验状态如下：
 
