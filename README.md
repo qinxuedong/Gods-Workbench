@@ -165,6 +165,36 @@ RH 链接解析不要求先保存或云端运行；平台未提供完整原图�
 
 ---
 
+### 7. 数据存储与 SQLite 数据库 (5 SQLite DBs)
+
+神工坊的数据存储包含以下 5 个主要 SQLite 数据库：
+- **`auth.sqlite3`** (`gw/core/runtime_paths.py`, `gw/core/auth.py`): 本地安全认证与用户会话数据库。
+- **`team_messages.sqlite3`** (`gw/core/team_messages.py`): 团队治理状态与纯文本消息的持久化。
+- **`runtime.sqlite3`** (`gw/agent_runtime/storage/sqlite.py`): Workspace-confined SQLite connection factory for development/test adapters (Agent Runtime)。
+- **`video_tasks.sqlite3`** (`gw/video_tasks/store.py`): 视频异步任务 SQLite 存储；状态、幂等和产物登记由事务保护。
+- **`asset_registry_search.sqlite3`** (`gw/asset_registry/repository.py`): 配合 `gw/core/sqlite_vec_engine.py` 等用于素材注册表的 FTS5 / sqlite-vec 轻量双轨召回与排序融合索引。
+
+**备份机制 (Backup):**
+运行时的备份逻辑在 `gw/core/storage.py` 中，使用 `create_runtime_backup` 对隔离测试态下的 data, auth, video 目录生成带哈希清单的备份至运行时目录的 `backups/` 目录下。
+
+### 8. 平台与环境变量配置
+
+#### LiblibAI 平台接入 (Liblib Platform)
+工作流抓取支持 LiblibAI 平台（`gw/god_workflow/platforms.py`），提供免登录拉取 Liblib 工作流功能（获取模型详情和版本附件 OSS 原始画布）。
+相关配置环境变量（`gw/god_workflow/clients.py`）包括：
+- `GW_LIBLIB_URL`
+- `GW_LIBLIB_API_KEY`
+- `GW_LIBLIB_TIMEOUT_SECONDS`
+- 必须通过显式设置 `GW_LIBLIB_FETCH_ENABLED=1` 启用该网关接入。
+
+#### 认证模式配置 (GW_AUTH_MODE)
+`GW_AUTH_MODE` (`gw/core/config.py`) 支持以下取值：
+- **`local_account`**（默认）：使用 SQLite 账户与服务端会话（个人与小型团队）。
+- **`local`**：仅供显式开发/测试使用。
+- **`oidc`**：当显式设置时启用真实外部 IdP 校验。
+
+---
+
 ## 💾 数据存储说明
 
 为了保证用户资产与源代码严格解耦，神工坊实施严格的“三态三根”物理隔离规范：
