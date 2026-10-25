@@ -2,6 +2,7 @@
 import base64
 import io
 import json
+import logging
 import zipfile
 from pathlib import Path
 from urllib.parse import quote, urlsplit
@@ -736,13 +737,52 @@ def test_native_wire_centres_type_and_source_at_zoom_and_pan(monkeypatch, tmp_pa
         assert errors == []
 
 
-def test_asset_host_workflow_ids_native_export_cas_and_edit_jump(monkeypatch, tmp_path):
+def _capture_workflow_delete_cas_failure(page, base, workflow_id, asset_id, tmp_path, caplog, responses):
+    screenshot = tmp_path / 'workflow-delete-cas-failure.png'
+    diagnostics = tmp_path / 'workflow-delete-cas-failure.json'
+    state = {}
+    try:
+        page.screenshot(path=str(screenshot), full_page=True)
+    except Exception as error:
+        state['screenshot_error'] = str(error)
+    try:
+        state['browser'] = page.evaluate('''(assetId) => ({
+            statuses: [...document.querySelectorAll('#assetStatus')].map(el => ({text:el.textContent, visible:!!el.getClientRects().length})),
+            cards: [...document.querySelectorAll('[data-workflow-card]')].map(el => ({id:el.dataset.workflowCard, text:el.innerText})),
+            deleteButtons: [...document.querySelectorAll('[data-workflow-delete]')]
+                .filter(el => el.dataset.workflowDelete === assetId)
+                .map(el => ({title:el.title, disabled:el.disabled, busy:el.getAttribute('aria-busy')})),
+        })''', asset_id)
+    except Exception as error:
+        state['browser_state_error'] = str(error)
+    try:
+        response = page.context.request.get(base + '/api/god_workflow/item/' + workflow_id)
+        state['workflow_response'] = {
+            'status': response.status,
+            'body': response.json() if response.ok else response.text(),
+        }
+    except Exception as error:
+        state['workflow_response_error'] = str(error)
+    state['delete_responses'] = responses
+    state['server_logs'] = caplog.text
+    diagnostics.write_text(json.dumps(state, ensure_ascii=False, indent=2), encoding='utf-8')
+    return screenshot, diagnostics
+
+
+def test_asset_host_workflow_ids_native_export_cas_and_edit_jump(monkeypatch, tmp_path, caplog):
     """实际素材页点击和下载字节验证桥接入口，全部使用临时主体。"""
+    caplog.set_level(logging.ERROR, logger='uvicorn.error')
     async def probe():
         return {'online': True, 'object_info': {'LoadImage': {'input': {'required': {'image': ['STRING', {}]}}}}}
     monkeypatch.setenv('GW_COMFYUI_URL', 'http://127.0.0.1:8199')
     monkeypatch.setattr('gw.god_workflow.comfy_executor.probe', probe)
     with settings_browser(monkeypatch, tmp_path) as (page, base, errors, _):
+        delete_responses = []
+        page.on('response', lambda response: delete_responses.append({
+            'method': response.request.method,
+            'url': response.url,
+            'status': response.status,
+        }) if response.request.method == 'DELETE' else None)
         first = create_workflow(page, base, 'first.png', '中秋工作流')
         second = create_workflow(page, base, 'second.png', '中秋工作流')
         first_doc = page.context.request.get(base + '/api/god_workflow/item/' + first).json()
@@ -785,9 +825,26 @@ def test_asset_host_workflow_ids_native_export_cas_and_edit_jump(monkeypatch, tm
         concurrent = page.context.request.put(base + '/api/god_workflow/item/' + first + '/name',
             data={'name': '并发新版本', 'expected_version': 2}, headers={'Origin': base})
         assert concurrent.status == 200
-        page.locator('[data-workflow-delete="' + first_asset + '"]').click()
-        page.locator('#assetStatus').filter(has_text='版本').wait_for()
-        assert page.context.request.get(base + '/api/god_workflow/item/' + first).json()['version'] == 3
+        try:
+            with page.expect_response(lambda response: response.request.method == 'DELETE'
+                    and response.url.split('?', 1)[0] == base + '/api/god_workflow/item/' + first) as deletion:
+                page.locator('[data-workflow-delete="' + first_asset + '"]').click()
+            conflict = deletion.value
+            assert conflict.status == 409, conflict.text()
+            detail = conflict.json().get('detail', {})
+            assert isinstance(detail, dict) and detail.get('code') == 'VERSION_CONFLICT'
+            # 等删除请求回收确认态；共享状态提示文字可能被其他异步刷新更新。
+            page.locator(f'[data-workflow-delete="{first_asset}"][title="删除"]').wait_for()
+            latest = page.context.request.get(base + '/api/god_workflow/item/' + first)
+            assert latest.status == 200
+            assert latest.json()['version'] == 3
+        except Exception as error:
+            screenshot, diagnostics = _capture_workflow_delete_cas_failure(
+                page, base, first, first_asset, tmp_path, caplog, delete_responses
+            )
+            raise AssertionError(
+                f'工作流删除 CAS 未到达预期终态；截图 {screenshot}，状态与服务日志 {diagnostics}'
+            ) from error
         page.locator('[data-workflow-delete="' + first_asset + '"]').click()
         page.locator('[data-workflow-delete="' + first_asset + '"]').click()
         page.wait_for_function('(id) => !document.querySelector(`[data-workflow-card="${id}"]`)', arg=first_asset)
