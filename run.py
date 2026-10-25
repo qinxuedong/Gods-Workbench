@@ -21,19 +21,19 @@
 from __future__ import annotations
 
 import argparse
-from datetime import datetime, timezone
 import hashlib
 import json
 import os
-from pathlib import Path
 import shutil
 import stat
 import threading
 import time
 import uuid
-from typing import Sequence
-from urllib.request import urlopen
 import webbrowser
+from collections.abc import Sequence
+from datetime import UTC, datetime
+from pathlib import Path
+from urllib.request import urlopen
 
 import uvicorn
 
@@ -253,7 +253,7 @@ def migrate_legacy_data(
             "source_layout": "GodsWorkbenchClear",
             "destination_layout": "GodsWorkbench",
             "manifests": manifests,
-            "created_at": datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z"),
+            "created_at": datetime.now(UTC).replace(microsecond=0).isoformat().replace("+00:00", "Z"),
             "source_preserved": True,
             "source_read_only": True,
         }
@@ -288,11 +288,11 @@ def _open_browser_when_ready(url: str, health_url: str, timeout: float = 30.0) -
         deadline = time.monotonic() + timeout
         while time.monotonic() < deadline:
             try:
-                with urlopen(health_url, timeout=1.0) as response:
+                with urlopen(health_url, timeout=1.0) as response:  # noqa: S310  # local health check
                     if 200 <= response.status < 300:
                         webbrowser.open(url)
                         return
-            except Exception:
+            except Exception:  # noqa: S110  # ignore health check failures
                 pass
             time.sleep(0.25)
     threading.Thread(target=worker, name="gw-open-browser", daemon=True).start()
