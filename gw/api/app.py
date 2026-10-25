@@ -52,10 +52,12 @@ from gw.api.routes_public_b9 import router as public_b9_router
 from gw.api.routes_settings import router as settings_router
 from gw.core import local_accounts
 from gw.core import session as session_store
+from gw.core.auth import validate_auth_mode_host
 from gw.core.config import (
     AUTH_MODE_LOCAL_ACCOUNT,
     AUTH_MODE_OIDC,
     load_runtime_auth_config,
+    resolve_auth_mode,
 )
 from gw.core.errors import CleanroomException
 from gw.god_workflow.routes import router as god_workflow_router
@@ -169,6 +171,9 @@ async def _app_lifespan(app: FastAPI):
 
 def create_app(*, agent_integration_factory=None) -> FastAPI:
     """构建并配置洁净应用实例。"""
+    validate_auth_mode_host(
+        resolve_auth_mode(), os.environ.get("GW_HOST", "127.0.0.1")
+    )
     app = FastAPI(
         title="Gods-Workbench Cleanroom API",
         version="0.1.0",

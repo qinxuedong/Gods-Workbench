@@ -31,6 +31,7 @@
 import hashlib
 from collections.abc import Mapping
 from dataclasses import dataclass
+from ipaddress import ip_address
 from typing import Any
 
 from gw.core import audit as audit_log
@@ -45,6 +46,25 @@ from gw.core.errors import ForbiddenException, UnauthorizedException
 KNOWN_ROLES = frozenset({"admin", "governor", "editor", "reviewer", "readonly"})
 EDIT_ROLES = frozenset({"admin", "governor", "editor"})
 GOVERNANCE_ROLES = frozenset({"admin", "governor"})
+
+
+def validate_auth_mode_host(auth_mode: str, host: str) -> None:
+    """拒绝把仅供开发的 local 认证模式绑定到非回环地址。"""
+    if str(auth_mode or "").strip().lower() != AUTH_MODE_LOCAL:
+        return
+
+    normalized_host = str(host or "").strip().lower().rstrip(".")
+    if normalized_host == "localhost":
+        return
+    try:
+        is_loopback = ip_address(normalized_host).is_loopback
+    except ValueError:
+        is_loopback = False
+    if not is_loopback:
+        raise ValueError(
+            "不安全的认证/监听地址组合：GW_AUTH_MODE=local 仅允许绑定 "
+            "127.0.0.1、::1 或 localhost；请改用回环地址或非 local 认证模式。"
+        )
 
 
 @dataclass(frozen=True)
