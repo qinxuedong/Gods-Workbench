@@ -333,6 +333,15 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(f"已清理开发沙盒目标: {target}")
         return 0
 
+    host = os.environ.get("GW_HOST", DEFAULT_HOST)
+    from gw.core.auth import validate_auth_mode_host
+    from gw.core.config import resolve_auth_mode
+
+    try:
+        validate_auth_mode_host(resolve_auth_mode(), host)
+    except ValueError as exc:
+        parser.error(str(exc))
+
     try:
         paths = _prepare_paths(mode)
     except RuntimePathError as exc:
@@ -347,7 +356,6 @@ def main(argv: Sequence[str] | None = None) -> int:
     # 根路径验证和目录准备完成后才允许导入应用。
     from gw.api.app import app
 
-    host = os.environ.get("GW_HOST", DEFAULT_HOST)
     try:
         port = args.port if args.port is not None else int(os.environ.get("GW_PORT", str(DEFAULT_PORT)))
     except ValueError:
