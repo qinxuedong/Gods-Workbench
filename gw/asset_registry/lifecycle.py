@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """DIR-T6 单文件生命周期：操作日志、物理重命名、回收与恢复。"""
 
 from __future__ import annotations
@@ -8,13 +7,12 @@ import json
 import os
 import shutil
 import threading
-import uuid
+from contextlib import suppress
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any
 
 from gw.core import storage
 from gw.core.errors import CleanroomException
-
 
 JOURNAL_RELATIVE = "data/journal/asset-file-operations.jsonl"
 _JOURNAL_LOCK = threading.RLock()
@@ -44,14 +42,13 @@ def _read_journal() -> list[dict[str, Any]]:
     return records
 
 
-def _append_journal(record: Dict[str, Any]) -> None:
+def _append_journal(record: dict[str, Any]) -> None:
     path = _journal_path()
     path.parent.mkdir(parents=True, exist_ok=True)
-    with _JOURNAL_LOCK:
-        with path.open("a", encoding="utf-8", newline="\n") as handle:
-            handle.write(json.dumps(record, ensure_ascii=False, sort_keys=True) + "\n")
-            handle.flush()
-            os.fsync(handle.fileno())
+    with _JOURNAL_LOCK, path.open("a", encoding="utf-8", newline="\n") as handle:
+        handle.write(json.dumps(record, ensure_ascii=False, sort_keys=True) + "\n")
+        handle.flush()
+        os.fsync(handle.fileno())
 
 
 def _replace_journal(records: list[dict[str, Any]]) -> None:
@@ -77,7 +74,7 @@ def _update_journal(op_id: str, **changes: Any) -> None:
             _replace_journal(records)
 
 
-def get_operation(op_id: str) -> Dict[str, Any]:
+def get_operation(op_id: str) -> dict[str, Any]:
     _recover_once()
     for record in reversed(_read_journal()):
         if record.get("op_id") == op_id:
@@ -127,7 +124,7 @@ def _local_file(asset_id: str) -> Path:
     return _local_file_from_record(repo, repo.get_asset(asset_id))
 
 
-def _local_file_from_record(repo: Any, item: Dict[str, Any]) -> Path:
+def _local_file_from_record(repo: Any, item: dict[str, Any]) -> Path:
     path = None
     asset_id = str(item.get("asset_id") or item.get("id") or "")
     root_id = item.get("root_id")
@@ -165,7 +162,7 @@ def _local_file_from_record(repo: Any, item: Dict[str, Any]) -> Path:
     return path
 
 
-def _identity(path: Path) -> Dict[str, str]:
+def _identity(path: Path) -> dict[str, str]:
     from gw.asset_library.repository import _local_root_identity
 
     # canonical_relpath 必须与 index_jobs/仓库写入的位置身份一致（NFC，Windows 下 casefold）；
@@ -177,7 +174,7 @@ def _identity(path: Path) -> Dict[str, str]:
     }
 
 
-def _file_record(path: Path) -> Dict[str, Any]:
+def _file_record(path: Path) -> dict[str, Any]:
     """生成可恢复路径身份；数据根内产物用相对产物路径表示。"""
     try:
         relative = path.resolve().relative_to(storage.data_root().resolve()).as_posix()
@@ -189,7 +186,19 @@ def _file_record(path: Path) -> Dict[str, Any]:
 
 
 def _next_id(prefix: str) -> str:
-    return prefix + storage.now_iso().replace("-", "").replace(":", "") + "_" + uuid.uuid4().hex[:6]
+    """先持久化预留确定性 ID，避免日志写入失败后复用序号。"""
+    def reserve(reservations: dict[str, Any]) -> str:
+        sequences = reservations.setdefault("sequences", {})
+        last = int(sequences.get(prefix, 0))
+        reservation_id = storage.next_sequence(
+            prefix, (f"{prefix}{last:04d}",)
+        )
+        sequences[prefix] = int(reservation_id[len(prefix):])
+        return reservation_id
+
+    return storage.JsonState(
+        "id_reservations", lambda: {"sequences": {}}
+    ).mutate(reserve)
 
 
 def _safe_file_name(raw_name: Any) -> str:
@@ -205,7 +214,7 @@ def _safe_file_name(raw_name: Any) -> str:
     return value
 
 
-def rename_file(asset_id: str, payload: Dict[str, Any], actor: Any) -> Dict[str, Any]:
+def rename_file(asset_id: str, payload: dict[str, Any], actor: Any) -> dict[str, Any]:
     """同步执行单文件重命名，先落 pending 日志，成功后更新登记与索引。"""
     from gw.asset_registry import repository as repo
 
@@ -281,8 +290,8 @@ def _recycler_dir(kind: str, op_id: str) -> Path:
 
 
 def recycle_asset(
-    asset_id: str, delete_result: Dict[str, Any], actor: Any
-) -> Dict[str, Any]:
+    asset_id: str, delete_result: dict[str, Any], actor: Any
+) -> dict[str, Any]:
     """把原文件、manifest 与已登记派生物物理移入受控回收目录。"""
     from gw.asset_library.repository import (
         _local_root_identity,
@@ -380,10 +389,8 @@ def recycle_asset(
     except Exception as exc:
         for plan_source, plan_target in reversed(moved_pairs):
             if plan_target.exists() and not plan_source.exists():
-                try:
+                with suppress(OSError):
                     shutil.move(str(plan_target), str(plan_source))
-                except OSError:
-                    pass
         code = exc.code if isinstance(exc, CleanroomException) else "RECYCLE_FAILED"
         message = str(exc) if isinstance(exc, CleanroomException) else "文件回收失败"
         _update_journal(
@@ -427,7 +434,7 @@ def recycle_asset(
         "derived": derived_paths,
     }
 
-    def mutate(raw_state: Dict[str, Any]) -> bool:
+    def mutate(raw_state: dict[str, Any]) -> bool:
         recycle_entry = raw_state.get("recycle_bin", {}).get(entry_id)
         if recycle_entry is None:
             raise CleanroomException(
@@ -470,7 +477,7 @@ def recycle_asset(
 
 def restore_asset_files(
     entry_id: str, resolution: str, actor: Any, context_version: int
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """按 manifest 恢复原文件与派生物，路径冲突必须显式选择后缀。"""
     from gw.asset_library.repository import (
         _local_root_identity,
@@ -498,8 +505,11 @@ def restore_asset_files(
     try:
         if _fingerprint(source) != str(original.get("fingerprint") or ""):
             raise ValueError
-    except (OSError, ValueError) as exc:
-        raise CleanroomException(500, "RESTORE_MANIFEST_INVALID", "回收清单与文件不一致")
+    except (OSError, ValueError):
+        # Preserve the existing exception context for this manifest failure.
+        raise CleanroomException(  # noqa: B904
+            500, "RESTORE_MANIFEST_INVALID", "回收清单与文件不一致"
+        )
     root = _allowed_root_for_identity(str(original.get("root_id") or ""))
     original_target = root / str(
         original.get("display_path") or original.get("canonical_relpath") or ""
@@ -600,10 +610,8 @@ def restore_asset_files(
     except Exception as exc:
         for moved_source, moved_target in reversed(moved_pairs):
             if moved_target.exists() and not moved_source.exists():
-                try:
+                with suppress(Exception):
                     shutil.move(str(moved_target), str(moved_source))
-                except Exception:
-                    pass
         code = exc.code if isinstance(exc, CleanroomException) else "FILE_RESTORE_FAILED"
         message = str(exc) if isinstance(exc, CleanroomException) else "文件恢复失败"
         _update_journal(
