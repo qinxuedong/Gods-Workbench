@@ -62,6 +62,7 @@ from gw.core.config import (
     resolve_auth_mode,
 )
 from gw.core.errors import CleanroomException
+from gw.core.platform import RELEASE_AUTHORIZED
 from gw.god_workflow.routes import router as god_workflow_router
 from gw.observability import telemetry as observability_telemetry
 from gw.video_tasks.routes import router as video_tasks_router
@@ -229,7 +230,7 @@ def create_app(*, agent_integration_factory=None) -> FastAPI:
             "auth_mode": auth_runtime.mode,
             "oidc_ready": bool(auth_runtime.ready),
             "frozen_contracts": False,
-            "release_authorized": False,
+            "release_authorized": RELEASE_AUTHORIZED,
         }
 
     @app.get("/", include_in_schema=False)
