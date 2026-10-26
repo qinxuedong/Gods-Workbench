@@ -93,6 +93,9 @@ jobs:
                 f"平台差异项 {sorted(platform_only)}。")
           PY
 
+      - name: Ruff 静态检查（零诊断规则集）
+        run: ruff check .
+
       - name: 运行全量测试
         # C7 媒体浏览器夹具会在测试内替换 RunningHub 调用与输出传输；
         # 仅为通过配置闸门注入本次提交 SHA，不代表真实供应商验收或凭据。
