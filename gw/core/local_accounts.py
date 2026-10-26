@@ -26,7 +26,6 @@ from pathlib import Path
 from gw.core.errors import CleanroomException
 from gw.core.runtime_paths import RuntimePathError, resolve_runtime_paths
 
-SESSION_SECONDS = 8 * 60 * 60
 USERNAME = re.compile(r"[A-Za-z0-9_.-]{3,64}\Z")
 
 
@@ -57,14 +56,53 @@ def database():
             CREATE TABLE IF NOT EXISTS local_sessions (
                 token_hash TEXT PRIMARY KEY,
                 user_id TEXT NOT NULL REFERENCES local_users(user_id) ON DELETE CASCADE,
-                expires_at REAL NOT NULL
+                expires_at REAL
             );
             CREATE TABLE IF NOT EXISTS local_login_limits (
                 client_key TEXT PRIMARY KEY,
                 window_start REAL NOT NULL,
                 attempts INTEGER NOT NULL
             );
+            CREATE TABLE IF NOT EXISTS oidc_sessions (
+                token_hash TEXT PRIMARY KEY,
+                subject TEXT NOT NULL,
+                principal_json TEXT NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_oidc_sessions_subject
+                ON oidc_sessions(subject);
         """)
+        expires_column = next(
+            row
+            for row in connection.execute("PRAGMA table_info(local_sessions)")
+            if row["name"] == "expires_at"
+        )
+        if expires_column["notnull"]:
+            connection.execute("BEGIN IMMEDIATE")
+            try:
+                connection.execute("DROP TABLE IF EXISTS local_sessions_migration")
+                connection.execute(
+                    """CREATE TABLE local_sessions_migration (
+                        token_hash TEXT PRIMARY KEY,
+                        user_id TEXT NOT NULL REFERENCES local_users(user_id) ON DELETE CASCADE,
+                        expires_at REAL
+                    )"""
+                )
+                connection.execute(
+                    """INSERT INTO local_sessions_migration
+                       (token_hash, user_id, expires_at)
+                       SELECT token_hash, user_id,
+                              CASE WHEN expires_at > ? THEN NULL ELSE expires_at END
+                       FROM local_sessions""",
+                    (time.time(),),
+                )
+                connection.execute("DROP TABLE local_sessions")
+                connection.execute(
+                    "ALTER TABLE local_sessions_migration RENAME TO local_sessions"
+                )
+                connection.commit()
+            except BaseException:
+                connection.rollback()
+                raise
         with connection:
             yield connection
     finally:
@@ -101,13 +139,16 @@ def _principal(row) -> dict:
 
 def _new_session(db, user_id: str) -> str:
     token = secrets.token_urlsafe(32)
-    db.execute("DELETE FROM local_sessions WHERE expires_at <= ?", (time.time(),))
+    db.execute(
+        "DELETE FROM local_sessions WHERE expires_at IS NOT NULL AND expires_at <= ?",
+        (time.time(),),
+    )
     db.execute(
         "INSERT INTO local_sessions VALUES (?, ?, ?)",
         (
             hashlib.sha256(token.encode()).hexdigest(),
             user_id,
-            time.time() + SESSION_SECONDS,
+            None,
         ),
     )
     return token
@@ -195,7 +236,8 @@ def get_session(token: str | None):
     with database() as db:
         row = db.execute(
             """SELECT u.* FROM local_sessions s JOIN local_users u USING(user_id)
-                            WHERE s.token_hash=? AND s.expires_at > ?""",
+                            WHERE s.token_hash=?
+                              AND (s.expires_at IS NULL OR s.expires_at > ?)""",
             (hashlib.sha256(token.encode()).hexdigest(), time.time()),
         ).fetchone()
         return _principal(row) if row else None
@@ -213,7 +255,8 @@ def get_session_by_fingerprint(user_id: str, token_fingerprint: str):
     with database() as db:
         row = db.execute(
             """SELECT u.* FROM local_sessions s JOIN local_users u USING(user_id)
-               WHERE s.token_hash=? AND s.user_id=? AND s.expires_at>?""",
+               WHERE s.token_hash=? AND s.user_id=?
+                 AND (s.expires_at IS NULL OR s.expires_at>?)""",
             (fingerprint, user_id, time.time()),
         ).fetchone()
         return _principal(row) if row else None

@@ -77,7 +77,11 @@ def test_local_account_browser_setup_login_restart_logout(tmp_path):
     browser_api = pytest.importorskip("playwright.sync_api")
     with open_playwright(browser_api) as pw:
         try:
-            browser = pw.chromium.launch(channel="chrome", headless=True)
+            browser = pw.chromium.launch_persistent_context(
+                user_data_dir=str(tmp_path / "browser-profile"),
+                channel="chrome",
+                headless=True,
+            )
         except browser_api.Error as exc:
             pytest.skip(f"Chrome 不可启动：{exc}")
         with socket.socket() as sock:
@@ -132,11 +136,26 @@ def test_local_account_browser_setup_login_restart_logout(tmp_path):
             })).status""")
             assert status == 201
 
-            # 完全重启应用进程，同一数据库仍能恢复账户与现有登录会话。
+            # 完全重启浏览器和应用进程，同一配置文件与数据库恢复现有会话。
+            browser.close()
             process.terminate()
             process.wait(timeout=5)
             process = start_server()
-            page.reload()
+            browser = pw.chromium.launch_persistent_context(
+                user_data_dir=str(tmp_path / "browser-profile"),
+                channel="chrome",
+                headless=True,
+            )
+            page = browser.new_page()
+            page.route(
+                "**/*",
+                lambda route: (
+                    route.continue_()
+                    if route.request.url.startswith(base + "/")
+                    else route.abort()
+                ),
+            )
+            page.goto(base + "/static/pages/projects.html")
             page.wait_for_function("HardwareDeck.authState.authenticated === true")
             page.locator(".hw-avatar-keycap").first.click()
             assert "本地账户数据库" in page.locator("#accountModalDialog").inner_text()

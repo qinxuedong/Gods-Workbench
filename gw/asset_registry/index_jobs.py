@@ -291,7 +291,8 @@ def _admission(actor):
                 "SELECT role FROM local_users WHERE user_id=?", (actor["subject"],)
             ).fetchone()
             live = db.execute(
-                "SELECT 1 FROM local_sessions WHERE user_id=? AND expires_at>? LIMIT 1",
+                "SELECT 1 FROM local_sessions WHERE user_id=? "
+                "AND (expires_at IS NULL OR expires_at>?) LIMIT 1",
                 (actor["subject"], time.time()),
             ).fetchone()
         if not row or row["role"] not in EDIT_ROLES or not live:
@@ -301,12 +302,9 @@ def _admission(actor):
 
         if actor["domain"] != "oidc:" + runtime.oidc.issuer:
             _error(403, "INDEX_AUTH_CHANGED", "身份域已改变")
-        now = time.time()
         if not any(
-            s.principal.get("username") == actor["subject"]
-            and s.principal.get("role") in EDIT_ROLES
-            and min(s.expires_at, s.absolute_expires_at) > now
-            for s in list(session._SESSIONS.values())
+            principal.get("role") in EDIT_ROLES
+            for principal in session.get_sessions_for_subject(actor["subject"])
         ):
             _error(
                 403, "INDEX_SESSION_REQUIRED", "后台索引需要持续有效的服务端登录会话"
