@@ -44,7 +44,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from gw.core.auth import require_authenticated, require_edit_access
 from gw.core.credentials_vault import CredentialVault
-from gw.core.errors import CleanroomException
+from gw.core.errors import CleanroomException, ForbiddenException
 from gw.settings import chat as chat_runtime
 from gw.settings import probes as provider_probes
 from gw.settings.models import (
@@ -100,6 +100,23 @@ def get_storage_settings(
     """返回存储设置真值；无真实来源时如实标记未配置，不编造根目录/容量/路径。"""
     require_authenticated(authorization, x_user_role)
     return default_storage_settings_service.get_snapshot()
+
+
+@router.get(
+    "/api/storage-settings/browse",
+    summary="只读浏览服务器目录",
+    status_code=status.HTTP_200_OK,
+)
+def browse_server_directories(
+    path: str | None = Query(None, max_length=4096),
+    authorization: str | None = Header(None),
+    x_user_role: str = Header("editor", alias="X-User-Role", description="用户角色权限"),
+):
+    """仅管理员可读取受限目录列表；响应不包含文件，服务层负责路径约束。"""
+    context = require_authenticated(authorization, x_user_role)
+    if context.role != "admin":
+        raise ForbiddenException(message="仅管理员可浏览服务器目录")
+    return default_storage_settings_service.browse_directories(path)
 
 
 @router.patch(

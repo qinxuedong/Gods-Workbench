@@ -8,6 +8,8 @@ const read = (relativePath) =>
   readFileSync(path.join(repoRoot, relativePath), "utf8");
 
 const assetVault = read("web/css/pages/asset-vault.css");
+const assetManager = read("web/js/modules/asset-manager.js");
+const directorySettings = read("web/css/pages/directory-settings.css");
 const templateLayout = () => {
   const start = assetVault.indexOf("/* 项目目录模板管理浮窗");
   const end = assetVault.indexOf(
@@ -50,4 +52,17 @@ test("资产管理内嵌页加载 asset-vault 且不加载 signal-flow", () => {
 
   assert.match(entry, /asset-vault\.css/);
   assert.doesNotMatch(entry, /signal-flow\.css/);
+});
+
+test("目录设置移除空托管框并使用服务器目录即选即存", () => {
+  assert.doesNotMatch(assetManager, /managed_name|managed_path/);
+  assert.doesNotMatch(
+    assetManager,
+    /openDirectoryMountConfirmDialog|directoryMountDialogOverlay|data-directory-mount-confirm/,
+  );
+  assert.match(assetManager, /api\/storage-settings\/browse/);
+  assert.match(assetManager, /data-server-directory-browser/);
+  assert.match(assetManager, /data-server-directory-mount/);
+  assert.match(assetManager, /canBrowseServerDirectories[\s\S]*?=== 'admin'/);
+  assert.doesNotMatch(directorySettings, /\.directory-mount-/);
 });

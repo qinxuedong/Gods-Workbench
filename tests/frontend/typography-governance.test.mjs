@@ -114,7 +114,7 @@ test('跨页操作输入及主名称不得误映辅助字号',()=>{
   'canvas-list':['.ws-project-name','.ws-primary-btn','.ws-newproj-input'],
   'asset-manager':['.asset-card-name','.local-caption-prompt-input'],
   'workflow-workbench':['.workflow-workbench .wf-tree-name','.workflow-workbench .param-label-row'],
-  'directory-settings':['.directory-page .asset-btn','.directory-mount-input'],
+  'directory-settings':['.directory-page .asset-btn','.server-directory-enter'],
   'episode-pipeline':['.shot-card input, .shot-card textarea']
  };
  for(const [file,selectors] of Object.entries(matrix)){

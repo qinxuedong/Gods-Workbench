@@ -322,149 +322,126 @@ html.directory-settings-page { height:100%; background:var(--gw-surface-bg); }
 }
 
 /* ========================================================================= */
-/* 挂载与确认目录拟物弹窗 (Directory Mount Modal)                              */
+/* 页内服务器目录浏览器                                                       */
 /* ========================================================================= */
-.directory-mount-overlay {
-  position: fixed;
-  inset: 0;
-  background: rgba(0, 0, 0, 0.75);
-  backdrop-filter: blur(4px);
-  z-index: 9999;
+.server-directory-browser {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 12px;
+  padding: 12px;
+  color: var(--gw-text);
+  background: var(--gw-surface-panel);
+  border: 1px solid var(--gw-border);
+  border-radius: 10px;
+}
+.server-directory-browser-head,
+.server-directory-browser-toolbar,
+.server-directory-row {
   display: flex;
   align-items: center;
-  justify-content: center;
-}
-.directory-mount-modal {
-  max-width: 520px;
-  width: 92%;
-  margin: auto;
-  background:linear-gradient(170deg,var(--gw-surface-card),var(--gw-surface-card-end));
-  border: 1px solid rgba(223, 195, 132, 0.35) !important;
-  border-top-color: rgba(250, 226, 200, 0.6) !important;
-  border-radius: 14px !important;
-  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.95), 0 0 25px rgba(223, 195, 132, 0.15) !important;
-  overflow: hidden;
-  box-sizing: border-box;
-}
-.directory-mount-head {
-  padding: 14px 16px;
-  border-bottom: 1px solid rgba(223, 195, 132, 0.18);
-  display: flex;
-  align-items: flex-start;
   justify-content: space-between;
-  gap: 12px;
+  gap: 10px;
 }
-.directory-mount-title-group {
+.server-directory-browser-head > div {
   display: flex;
   flex-direction: column;
+  min-width: 0;
+  gap: 4px;
 }
-.directory-mount-title {
-  
-  
-  color: #fae2c8;
-  display: flex;
-  align-items: center;
-  gap: 8px;
- font-size: var(--gw-type-headline-sm); line-height: var(--gw-leading-headline-sm); font-weight:var(--gw-weight-medium); letter-spacing: 0; text-transform: none;}
-.directory-mount-title svg {
+.server-directory-browser-head strong {
   color: var(--gold-primary);
-  width: 15px;
-  height: 15px;
-  flex-shrink: 0;
+  font-size: var(--gw-type-body-md);
+  line-height: var(--gw-leading-body-md);
 }
-.directory-mount-subtitle {
-  
-  color: #8892a4;
-  margin-top: 3px;
-  
- font-size: var(--gw-type-body-sm); line-height: var(--gw-leading-body-sm); font-weight:var(--gw-weight-regular); letter-spacing: 0; text-transform: none;}
-
-
-.directory-mount-close-btn svg {
-  width: 15px;
-  height: 15px;
-}
-.directory-mount-body {
-  padding: 16px;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  box-sizing: border-box;
-}
-.directory-mount-folder-chip {
-  background: #090c12;
-  border: 1px solid rgba(223, 195, 132, 0.25);
-  border-radius: 8px;
-  padding: 7px 12px;
+.server-directory-browser-head code {
+  overflow: hidden;
+  color: var(--muted);
+  font-family: var(--gw-font-mono);
   font-size: var(--gw-type-label-md);
-  color: #dfc384;
-  display: flex;
-  align-items: center;
-  gap: 8px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
-.directory-mount-folder-chip svg {
-  width: 14px;
-  height: 14px;
-  flex-shrink: 0;
+.server-directory-browser-toolbar {
+  flex-wrap: wrap;
 }
-.directory-mount-field {
+.server-directory-list {
   display: flex;
   flex-direction: column;
   gap: 5px;
-}
-.directory-mount-label {
-  
-  
-  color: #cbd5e1;
- font-size: var(--gw-type-body-md); line-height: var(--gw-leading-body-md); font-weight: var(--gw-weight-medium); letter-spacing: 0; text-transform: none;}
-.directory-mount-input {
-  box-sizing: border-box;
-  width: 100%;
-  min-height:40px; height:auto;
-  background: #080a0e;
-  border: 1px solid rgba(223, 195, 132, 0.45);
+  max-height: 300px;
+  min-height: 44px;
+  overflow: auto;
+  padding: 4px;
+  border: 1px solid var(--gw-border);
   border-radius: 8px;
-  padding: 0 10px;
-  color: #f8fafc;
-  
-  font-family: var(--gw-font-mono);
-  transition: border-color 0.15s ease, box-shadow 0.15s ease;
- font-size: var(--gw-type-body-md); line-height: var(--gw-leading-body-md); font-weight: var(--gw-weight-regular); letter-spacing: 0; text-transform: none; min-height:40px;}
-.directory-mount-input:focus {
-  outline: none;
-  border-color: #dfc384;
-  box-shadow: 0 0 10px rgba(223, 195, 132, 0.3);
+  background: var(--gw-control-bg);
 }
-.directory-mount-hint {
-  font-size: var(--gw-type-label-md);
-  color: #64748b;
-  line-height: 1.4;
+.server-directory-row {
+  justify-content: space-between;
 }
-.directory-mount-actions {
+.server-directory-enter {
   display: flex;
-  flex-wrap: wrap;
-  justify-content: flex-end;
+  flex: 1;
+  align-items: center;
+  min-width: 0;
+  min-height: 36px;
   gap: 8px;
-  margin-top: 4px;
+  padding: 5px 9px;
+  color: var(--gw-text);
+  text-align: left;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: var(--gw-type-body-md);
+  line-height: var(--gw-leading-body-md);
 }
-.directory-mount-actions .asset-btn {
-  min-height: 30px;
-  min-height:36px; height:auto;
-  border-radius: 8px;
-  padding: 0 14px;
-  
-  
- font-size: var(--gw-type-body-md); line-height: var(--gw-leading-body-md); font-weight: var(--gw-weight-medium); letter-spacing: 0; text-transform: none; min-height:36px;}
-.directory-mount-actions .asset-btn.primary {
-  background: linear-gradient(180deg, #fae2c8 0%, #dfc384 50%, #b8823f 100%);
-  color: #1a1308;
-  border: 1px solid rgba(255, 255, 255, 0.8);
-  box-shadow: 0 4px 14px rgba(223, 195, 132, 0.45);
-  font-weight: 700;
+.server-directory-enter:hover,
+.server-directory-enter:focus-visible {
+  background: var(--gw-surface-card);
+  border-color: var(--gw-border);
+  outline: none;
 }
-.directory-mount-actions .asset-btn.primary:hover {
-  filter: brightness(1.08);
-  box-shadow: 0 4px 18px rgba(223, 195, 132, 0.65);
+.server-directory-enter svg {
+  width: 15px;
+  height: 15px;
+  color: var(--gold-primary);
+  flex: 0 0 auto;
+}
+.server-directory-enter span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.server-directory-enter small {
+  margin-left: auto;
+  color: var(--muted);
+  font-size: var(--gw-type-label-md);
+  flex: 0 0 auto;
+}
+.server-directory-mount {
+  min-height: 34px;
+  flex: 0 0 auto;
+}
+.server-directory-browser-message,
+.server-directory-browser-note,
+.server-directory-browser-error {
+  margin: 0;
+  color: var(--muted);
+  font-size: var(--gw-type-label-md);
+  line-height: 1.45;
+}
+.server-directory-browser-message {
+  padding: 10px 6px;
+  text-align: center;
+}
+.server-directory-browser-note {
+  color: var(--muted);
+}
+.server-directory-browser-error {
+  color: var(--gw-error);
 }
 
 @media(max-width: 700px) {
@@ -472,6 +449,8 @@ html.directory-settings-page { height:100%; background:var(--gw-surface-bg); }
   .directory-page .storage-dir-grid, .directory-page .thumbnail-cache-directory { grid-template-columns: minmax(0, 1fr); }
   .directory-page-header, .directory-page .directory-footer { align-items: flex-start; flex-wrap: wrap; }
   .directory-page h1 { font-size: var(--gw-type-body-md); }
+  .server-directory-row { align-items: stretch; flex-direction: column; }
+  .server-directory-mount { align-self: flex-end; }
 }
 
 .directory-page h1 { line-height:var(--gw-leading-headline-md); }

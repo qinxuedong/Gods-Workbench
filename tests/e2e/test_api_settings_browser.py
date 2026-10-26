@@ -5,6 +5,7 @@ import socket
 import threading
 import time
 from contextlib import contextmanager
+from pathlib import Path
 
 import pytest
 import uvicorn
@@ -396,4 +397,33 @@ def test_directory_settings_saves_full_path_and_restores_after_reload(
         local_path.wait_for()
         assert local_path.input_value() == str(target)
         assert local_path.get_attribute("title") == str(target)
+        assert errors == [] and writes == []
+
+
+def test_server_directory_picker_saves_selected_server_directory_immediately(
+    monkeypatch, tmp_path
+):
+    with settings_browser(monkeypatch, tmp_path) as (page, base, errors, writes):
+        page.goto(
+            base + "/static/asset-manager.html?settings=directories&embedded=1",
+            wait_until="networkidle",
+        )
+        picker = page.locator('[data-directory-picker="projects"]')
+        picker.wait_for(state="visible")
+        picker.click()
+        browser = page.locator("[data-server-directory-browser]")
+        browser.wait_for(state="visible")
+        mount = browser.locator("[data-server-directory-mount]").first
+        mount.wait_for(state="visible")
+        with page.expect_response(
+            lambda response: (
+                response.request.method == "PATCH"
+                and response.url.split("?", 1)[0].endswith("/api/storage-settings")
+            )
+        ) as saved:
+            mount.click()
+        assert saved.value.status == 200, saved.value.text()
+        selected_path = saved.value.json()["dirs"]["projects"]
+        assert Path(selected_path).is_dir()
+        assert page.locator("#directoryMountDialogOverlay").count() == 0
         assert errors == [] and writes == []
