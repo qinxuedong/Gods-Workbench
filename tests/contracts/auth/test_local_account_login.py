@@ -49,6 +49,8 @@ def test_first_admin_login_business_write_and_logout(local_client):
     response = setup(client)
     assert response.status_code == 201, response.text
     assert "httponly" in response.headers["set-cookie"].lower()
+    assert "max-age=2147483647" in response.headers["set-cookie"].lower()
+    assert "samesite=strict" in response.headers["set-cookie"].lower()
     assert PASSWORD not in response.text
     state = client.get("/api/asset-auth/status").json()
     assert state["authenticated"] is True and state["principal"]["role"] == "admin"

@@ -67,7 +67,7 @@ router = APIRouter(prefix="/api/asset-auth", tags=["asset-auth"])
 # 登录成功后的应用落点；固定内部路径，禁止把用户重定向到外部站点。
 DEFAULT_POST_LOGIN_REDIRECT = "/static/pages/index.html"
 _FLOW_COOKIE_MAX_AGE = 600
-_SESSION_COOKIE_MAX_AGE = 8 * 60 * 60
+_SESSION_COOKIE_MAX_AGE = session_store.SESSION_COOKIE_MAX_AGE
 
 # 回调失败原因必须落在**封闭集合**内再入账：``?error=`` 由请求方控制，
 # 若原样写入审计 ``reason``，任何外部文本都能污染审计记录（伪造事件语义）。

@@ -59,7 +59,7 @@ def _session_response(request: Request, principal: dict, token: str, code: int):
     response.set_cookie(
         session.session_cookie_name(),
         token,
-        max_age=local_accounts.SESSION_SECONDS,
+        max_age=session.SESSION_COOKIE_MAX_AGE,
         httponly=True,
         samesite="strict",
         secure=request.url.scheme == "https",

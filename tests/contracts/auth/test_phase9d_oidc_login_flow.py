@@ -356,6 +356,9 @@ def test_callback_happy_path_establishes_session_and_role_from_idp(
         assert callback.status_code == 302, callback.text
         assert callback.headers["location"] == "/static/pages/index.html"
         assert session_store.SESSION_COOKIE_NAME in callback.cookies
+        session_cookie = "; ".join(callback.headers.get_list("set-cookie")).lower()
+        assert "max-age=2147483647" in session_cookie
+        assert "httponly" in session_cookie and "samesite=lax" in session_cookie
         assert local_idp["holder"]["token_calls"] == 1
 
         status_body = api.get("/api/asset-auth/status").json()
