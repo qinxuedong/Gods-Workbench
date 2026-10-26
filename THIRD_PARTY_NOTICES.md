@@ -19,6 +19,12 @@ The following open-source Python packages are used by the backend runtime (`gw/`
 | **idna** | 3.10+ | BSD-3-Clause | Copyright (c) 2013-2024, Kim Davies |
 | **PyMuPDF** | 1.25+ | AGPL-3.0 / Commercial | Artifex Software, Inc. (Used strictly in independent audit tooling) |
 | **Playwright** | 1.50+ | Apache-2.0 | Copyright (c) Microsoft Corporation (Used strictly in test suites) |
+| **cryptography** | 46.0.7 | Apache-2.0 OR BSD-3-Clause | Python Cryptographic Authority and individual contributors ([release metadata](https://pypi.org/project/cryptography/46.0.7/)) |
+| **psutil** | 7.2.2 | BSD-3-Clause | Giampaolo Rodola and contributors ([release metadata](https://pypi.org/project/psutil/7.2.2/)) |
+| **python-multipart** | 0.0.32 | Apache-2.0 | Andrew Dunham; maintained by Kludex ([release metadata](https://pypi.org/project/python-multipart/0.0.32/)) |
+| **Pillow** | 12.3.0 | MIT-CMU | Jeffrey Clark and contributors ([release metadata](https://pypi.org/project/pillow/12.3.0/)) |
+| **langgraph** | 1.2.12 | MIT | LangChain ([release metadata](https://pypi.org/project/langgraph/1.2.12/)) |
+| **jsonschema** | 4.26.0 | MIT | Julian Berman and contributors ([release metadata](https://pypi.org/project/jsonschema/4.26.0/)) |
 
 ---
 
@@ -79,6 +85,8 @@ Detailed attribution and origins are documented in [`web/prompt-registry/NOTICE.
 | `awesome-gpt4o-image-prompts`| 76 | MIT | ImgEdify | [Awesome-GPT4o-Image-Prompts](https://github.com/ImgEdify/Awesome-GPT4o-Image-Prompts) |
 | `youmind-gpt-image-2` | 126 | CC-BY-4.0 | YouMind OpenLab | [awesome-gpt-image-2](https://github.com/YouMind-OpenLab/awesome-gpt-image-2) |
 | `youmind-nano-banana-pro` | 129 | CC-BY-4.0 | YouMind OpenLab | [awesome-nano-banana-pro-prompts](https://github.com/YouMind-OpenLab/awesome-nano-banana-pro-prompts) |
+
+**CC-BY-4.0 dataset attribution:** `youmind-gpt-image-2` is from YouMind OpenLab's *Awesome GPT Image 2* (© 2026), and `youmind-nano-banana-pro` is from YouMind OpenLab's *Awesome Nano Banana Pro Prompts* (© 2025). When sharing or adapting either dataset, retain the YouMind OpenLab attribution, the corresponding upstream link, and the [CC BY 4.0 license](https://creativecommons.org/licenses/by/4.0/); indicate if changes were made. Pinned source details and license texts are in [`web/prompt-registry/NOTICE.md`](web/prompt-registry/NOTICE.md).
 
 ---
 

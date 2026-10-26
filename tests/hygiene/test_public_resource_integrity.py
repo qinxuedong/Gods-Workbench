@@ -171,5 +171,8 @@ def test_vendor_assets_match_recorded_source_and_local_hashes() -> None:
             encoding="utf-8"
         )
     assert "Version 2.005" in licenses_text
-    assert "BLOCKED" in licenses_text
-    assert "全仓 SBOM 与完整 NOTICE 仍缺失" in licenses_text
+    assert "## 发布状态：RELEASED" in licenses_text
+    assert (repo_root / "LICENSE").is_file()
+    assert "根级 `LICENSE` 已存在" in licenses_text
+    assert "根级 `LICENSE` **有意未提供**" not in licenses_text
+    assert "BLOCKED" not in licenses_text
