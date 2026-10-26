@@ -1282,9 +1282,113 @@
           <h3 class="gw-type-section font-bold text-slate-100">请保存本次恢复码</h3>
           <p class="gw-type-body-sm text-amber-200">这些恢复码只显示一次。请保存或打印；每条只能使用一次。</p>
           <ol id="localRecoveryCodes" class="grid grid-cols-2 gap-1 font-mono gw-type-body-sm text-slate-100">${items}</ol>
+          <div class="flex flex-wrap gap-2">
+            <button id="localRecoveryCopyAll" type="button" class="hw-btn" onclick="HardwareDeck.copyRecoveryCodes(document.getElementById('localRecoveryCodes'), this, document.getElementById('localRecoveryCopyStatus'))">复制全部</button>
+            <button id="localRecoveryRegenerate" type="button" class="hw-btn" onclick="HardwareDeck.confirmLocalRecoveryCodeRegeneration()">重新生成</button>
+          </div>
+          <p id="localRecoveryCopyStatus" class="gw-type-body-sm text-slate-300" role="status" aria-live="polite"></p>
+          <form id="localRecoveryRegenerationForm" class="hidden space-y-2" onsubmit="HardwareDeck.handleLocalRecoveryCodeRegeneration(event)">
+            <label class="block gw-type-body-sm text-slate-300" for="localRecoveryCurrentPassword">当前账户密码</label>
+            <input id="localRecoveryCurrentPassword" name="current_password" type="password" autocomplete="current-password" required maxlength="128" class="w-full bg-black/40 border border-white/20 rounded-lg p-2 text-slate-100" placeholder="输入当前账户密码">
+            <p id="localRecoveryRegenerationError" class="gw-type-body-sm text-red-300 hidden" role="alert"></p>
+            <button type="submit" class="hw-btn hw-btn-gold">确认重新生成</button>
+          </form>
           <label class="flex items-center gap-2 gw-type-body-sm text-slate-300"><input id="localRecoverySaved" type="checkbox" onchange="HardwareDeck.handleRecoveryCodeAcknowledgement()">我已保存这些恢复码</label>
           <button id="localRecoveryContinue" type="button" disabled class="hw-btn hw-btn-gold w-full opacity-50 cursor-not-allowed" onclick="window.location.reload()">保存后继续登录</button>
         </div>`;
+    },
+
+    copyRecoveryCodes: async function(list, button, status) {
+      if (!list || !button) return false;
+      const text = Array.from(list.querySelectorAll('li'), item => item.textContent.trim()).join('\n');
+      if (!text) return false;
+      let copied = false;
+      try {
+        const clipboard = typeof navigator !== 'undefined' ? navigator.clipboard : null;
+        if (clipboard && typeof clipboard.writeText === 'function') {
+          await clipboard.writeText(text);
+          copied = true;
+        }
+      } catch (_) {
+        // 不安全上下文或浏览器权限可能拒绝 Clipboard API，继续尝试传统复制。
+      }
+      if (!copied && typeof document.execCommand === 'function') {
+        let textarea;
+        try {
+          textarea = document.createElement('textarea');
+          textarea.value = text;
+          textarea.setAttribute('readonly', '');
+          textarea.style.position = 'fixed';
+          textarea.style.left = '-9999px';
+          document.body.appendChild(textarea);
+          textarea.select();
+          copied = document.execCommand('copy') === true;
+        } catch (_) {
+          copied = false;
+        } finally {
+          if (textarea) textarea.remove();
+        }
+      }
+      if (copied) {
+        button.textContent = '已复制';
+        if (status) status.textContent = '已复制';
+        window.setTimeout(() => {
+          if (button.textContent === '已复制') button.textContent = '复制全部';
+          if (status && status.textContent === '已复制') status.textContent = '';
+        }, 1500);
+        return true;
+      }
+      try {
+        const selection = window.getSelection();
+        const range = document.createRange();
+        range.selectNodeContents(list);
+        selection.removeAllRanges();
+        selection.addRange(range);
+      } catch (_) {
+        // 仍告知用户手动选择恢复码，避免静默失败。
+      }
+      if (status) status.textContent = '无法自动复制，恢复码已选中，请按 Ctrl+C 手动复制。';
+      return false;
+    },
+
+    confirmLocalRecoveryCodeRegeneration: function() {
+      if (!window.confirm('确认重新生成？旧码将全部作废。')) return;
+      const form = document.getElementById('localRecoveryRegenerationForm');
+      if (!form) return;
+      form.classList.remove('hidden');
+      const password = form.querySelector('#localRecoveryCurrentPassword');
+      if (password) password.focus();
+    },
+
+    handleLocalRecoveryCodeRegeneration: async function(event) {
+      event.preventDefault();
+      const form = event.target;
+      const password = form.querySelector('#localRecoveryCurrentPassword');
+      const error = document.getElementById('localRecoveryRegenerationError');
+      const button = form.querySelector('button[type="submit"]');
+      if (!password || !button || !error) return;
+      error.classList.add('hidden');
+      button.disabled = true;
+      const currentPassword = password.value;
+      password.value = '';
+      try {
+        const response = await this.requestLocalAccount(
+          'regenerateLocalRecoveryCodes',
+          '/api/asset-auth/local/recovery-codes/regenerate',
+          {current_password: currentPassword}
+        );
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(data.detail?.message || '无法重新生成恢复码。');
+        if (!Array.isArray(data.recovery_codes) || data.recovery_codes.length === 0) {
+          throw new Error('服务器未返回新的恢复码。');
+        }
+        this.renderLocalRecoveryCodes(data.recovery_codes);
+      } catch (failure) {
+        error.textContent = failure.message || '无法连接本地恢复服务。';
+        error.classList.remove('hidden');
+      } finally {
+        button.disabled = false;
+      }
     },
 
     handleRecoveryCodeAcknowledgement: function() {
@@ -1314,6 +1418,8 @@
         if (!response.ok) throw new Error(data.detail?.message || '无法重新生成恢复码。');
         const list = document.getElementById('settingsRecoveryCodeList');
         list.innerHTML = data.recovery_codes.map(code => `<li class="rounded bg-black/40 border border-white/10 px-2 py-1"><code>${escapeHtml(code)}</code></li>`).join('');
+        const copyStatus = document.getElementById('settingsRecoveryCopyStatus');
+        if (copyStatus) copyStatus.textContent = '';
         document.getElementById('settingsRecoveryCodes').classList.remove('hidden');
         form.reset();
       } catch (failure) {
@@ -1327,7 +1433,9 @@
     dismissRecoveryCodes: function() {
       const container = document.getElementById('settingsRecoveryCodes');
       const list = document.getElementById('settingsRecoveryCodeList');
+      const copyStatus = document.getElementById('settingsRecoveryCopyStatus');
       if (list) list.replaceChildren();
+      if (copyStatus) copyStatus.textContent = '';
       if (container) container.classList.add('hidden');
     },
 
