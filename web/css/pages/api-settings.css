@@ -1,6 +1,7 @@
 
 /* API设置页：唯一页面样式入口，共享黑金变量与本地字体。 */
 @import url("../base/hardware-tokens.css");
+@import url("./settings-workbench.css?v=20261026-qin411");
 
 :root {
   color-scheme: dark;
@@ -379,3 +380,8 @@ body.api-settings-page {
   .provider-key-title, .jimeng-cli-head { min-width: 0; overflow-wrap: anywhere; }
   .picker-cat-tabs { max-width: 100%; }
 }
+
+/* 仅嵌入设置页采用工作台标题与黑底卡片。 */
+.workspace-embedded .api-settings-page .content { min-width:0; padding:0; border:0; border-radius:0; background:transparent; }
+.workspace-embedded .api-settings-page .content-head { padding:0; border:0; }
+.workspace-embedded .api-settings-page .block { padding:16px; background:var(--gw-settings-card-background); border:1px solid var(--gw-settings-card-border); border-radius:12px; box-shadow:var(--gw-settings-card-shadow); }

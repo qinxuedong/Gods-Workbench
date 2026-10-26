@@ -180,11 +180,12 @@ def test_empty_settings_shows_aligned_cards_without_recommendations(
                 assert abs(content["y"] - sidebar["y"]) <= 1
                 assert abs(content["height"] - sidebar["height"]) <= 1
                 assert content["x"] > sidebar["x"] + sidebar["width"]
-            assert frame.locator(".layout > .content").evaluate(
-                "el => getComputedStyle(el).borderRadius"
-            ) == frame.locator(".layout > .sidebar").evaluate(
-                "el => getComputedStyle(el).borderRadius"
+            content_style = frame.locator(".layout > .content").evaluate(
+                "el => ({borderWidth: getComputedStyle(el).borderWidth, borderRadius: getComputedStyle(el).borderRadius, backgroundColor: getComputedStyle(el).backgroundColor})"
             )
+            assert content_style["borderWidth"] == "0px"
+            assert content_style["borderRadius"] == "0px"
+            assert content_style["backgroundColor"] == "rgba(0, 0, 0, 0)"
         assert writes == [] and errors == []
 
 
@@ -208,6 +209,16 @@ def test_existing_platform_opens_parameter_card_without_recommendations(
         assert frame.locator("#settingsContent").is_visible()
         assert frame.locator("#providerEditor").is_visible()
         assert not frame.locator("#providerEmptyState").is_visible()
+        assert frame.locator(".layout > .content").evaluate(
+            "el => getComputedStyle(el).borderWidth"
+        ) == "0px"
+        block_style = frame.locator("#providerEditor .block").first.evaluate(
+            "el => ({backgroundColor: getComputedStyle(el).backgroundColor, borderRadius: getComputedStyle(el).borderRadius})"
+        )
+        assert block_style == {
+            "backgroundColor": "rgb(8, 10, 14)",
+            "borderRadius": "12px",
+        }
         assert (
             frame.locator(
                 "#openRecommendApiBtn, #recommendContent, #recommendApiOverlay"

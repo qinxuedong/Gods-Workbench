@@ -10,7 +10,7 @@
   <script src="/static/vendor/js/lucide.js?v=1.16.0"></script>
   <link rel="stylesheet" href="/static/css/base/hardware-design-system.css?ui=20261011-final">
   <link rel="stylesheet" href="/static/css/pages/directory-settings.css?v=20261007&ui=20261011-final">
-  <link rel="stylesheet" href="/static/css/pages/settings-workbench.css?v=20261008">
+  <link rel="stylesheet" href="/static/css/pages/settings-workbench.css?v=20261026-qin411">
   <style>
     /* 选项卡面板激活与隐藏控制 */
     [data-panel] {
@@ -298,7 +298,7 @@
           <span>目录设置</span>
         </button>
         <button type="button" data-section="prompt-sources" class="w-full flex items-center space-x-2.5 transition cursor-pointer hw-btn" aria-pressed="false">
-          <i data-lucide="sparkles" class="w-4 h-4 text-cyan-400"></i>
+          <i data-lucide="sparkles" class="w-4 h-4 text-[#dfc384]"></i>
           <span>提示词来源 (本地快照)</span>
         </button>
         <button type="button" data-section="api-settings" class="w-full flex items-center space-x-2.5 transition cursor-pointer hw-btn" aria-pressed="false">
@@ -306,7 +306,7 @@
           <span>API 与密钥配置</span>
         </button>
         <button type="button" data-section="permissions" class="w-full flex items-center space-x-2.5 transition cursor-pointer hw-btn" aria-pressed="false">
-          <i data-lucide="shield-check" class="w-4 h-4 text-emerald-400"></i>
+          <i data-lucide="shield-check" class="w-4 h-4 text-[#dfc384]"></i>
           <span>席位与资产权限</span>
         </button>
       </nav>
@@ -329,7 +329,7 @@
 
       <!-- 分区 1: 通用设置与外观 (data-panel="general") -->
       <section class="active h-full flex flex-col overflow-y-auto pr-1" data-panel="general">
-        <div class="mb-4">
+        <div class="gw-settings-panel-head">
           <h2 class="text-slate-100 flex items-center space-x-2 gw-type-title">
             <i data-lucide="sliders" class="w-5 h-5 text-[#dfc384]"></i>
             <span>通用工作台与工程环境设置</span>
@@ -387,7 +387,7 @@
           <!-- 槽 2: 外观与语言 -->
           <div class="bay-inset p-4 rounded-xl space-y-3.5">
             <div class="flex items-center space-x-2 pb-2 border-b border-white/5">
-              <i data-lucide="palette" class="w-4 h-4 text-cyan-400"></i>
+              <i data-lucide="palette" class="w-4 h-4 text-[#dfc384]"></i>
               <h3 class="text-slate-200 gw-type-section">界面外观与显示偏好</h3>
             </div>
 
@@ -466,7 +466,7 @@
           <!-- 槽 4: 系统运行信息 -->
           <div class="bay-inset p-4 rounded-xl space-y-3">
             <div class="flex items-center space-x-2 pb-2 border-b border-white/5">
-              <i data-lucide="info" class="w-4 h-4 text-emerald-400"></i>
+              <i data-lucide="info" class="w-4 h-4 text-[#dfc384]"></i>
               <h3 class="text-slate-200 gw-type-section">系统信息与版本状态</h3>
             </div>
             <div id="systemInfo" class="space-y-2 gw-type-body-sm font-mono text-slate-300">
@@ -487,10 +487,10 @@
 
       <!-- 分区 2: 提示词来源 (data-panel="prompt-sources") -->
       <section class="h-full flex flex-col overflow-y-auto pr-1" data-panel="prompt-sources">
-        <div class="flex items-center justify-between mb-4 pb-3 border-b border-white/10">
+        <div class="flex items-center justify-between gw-settings-panel-head">
           <div>
             <h2 class="text-slate-100 flex items-center space-x-2 gw-type-title">
-              <i data-lucide="sparkles" class="w-5 h-5 text-cyan-400"></i>
+              <i data-lucide="sparkles" class="w-5 h-5 text-[#dfc384]"></i>
               <span>本地提示词来源快照管理</span>
             </h2>
             <p class="gw-type-body-md text-slate-400 mt-0.5">管理随应用分发的本地提示词源。所有条目来自固定本地快照，离线纯本地运行。</p>
@@ -499,8 +499,8 @@
         </div>
 
         <!-- 政策说明框 -->
-        <div class="bay-inset p-3 rounded-xl mb-3 flex items-center space-x-3 border border-cyan-500/20">
-          <i data-lucide="shield-check" class="w-5 h-5 text-cyan-400 shrink-0"></i>
+        <div class="bay-inset p-4 rounded-xl gw-settings-card mb-4 flex items-center space-x-3 border border-[#dfc384]/20">
+          <i data-lucide="shield-check" class="w-5 h-5 text-[#dfc384] shrink-0"></i>
           <div class="gw-type-body-sm text-slate-300">
             <strong class="text-slate-100 block">固定本地快照策略</strong>
             <span class="text-slate-400 gw-type-body-sm">仅读取 <code>/static/prompt-registry/</code> 内的 manifest 和来源文件，关闭来源后资产中心与画布会立即隐藏对应条目。</span>
@@ -517,10 +517,10 @@
 
       <!-- 分区 3: API 与密钥配置 (data-panel="api-settings") -->
       <section class="h-full flex flex-col overflow-hidden" data-panel="api-settings">
-        <div class="flex items-center justify-between mb-2.5 pb-2.5 border-b border-white/10 shrink-0">
+        <div class="flex items-center justify-between gw-settings-panel-head shrink-0">
           <div>
             <h2 class="text-slate-100 flex items-center space-x-2 gw-type-title">
-              <i data-lucide="key" class="w-4 h-4 text-amber-400"></i>
+              <i data-lucide="key" class="w-4 h-4 text-[#dfc384]"></i>
               <span>API 平台与大模型密钥配置</span>
             </h2>
             <p class="gw-type-body-md text-slate-400 mt-0.5 font-mono">配置各推理服务商地址、模型矩阵、即梦/GPT/Antigravity CLI 及本地密钥环境</p>
@@ -529,14 +529,14 @@
             <span class="px-2 py-0.5 rounded bg-black/60 border border-white/10 font-mono gw-type-body-sm text-[#dfc384]">SECURE ENV</span>
           </div>
         </div>
-        <div class="flex-1 w-full h-full min-h-0 bay-inset rounded-xl overflow-hidden border border-white/10 relative">
+        <div class="flex-1 w-full h-full min-h-0 overflow-hidden relative">
           <iframe id="iframeApiSettings" src="/static/api-settings.html?embedded=1" class="w-full h-full border-0 bg-transparent" title="API与密钥配置视窗"></iframe>
         </div>
       </section>
 
       <!-- 分区 5: 席位与资产权限 (data-panel="permissions") -->
       <section class="h-full flex flex-col overflow-hidden" data-panel="permissions">
-        <div class="flex items-center justify-between mb-2.5 pb-2.5 border-b border-white/10 shrink-0">
+        <div class="flex items-center justify-between gw-settings-panel-head shrink-0">
           <div>
             <h2 class="text-slate-100 flex items-center space-x-2 gw-type-title">
               <i data-lucide="users" class="w-4 h-4 text-[#dfc384]"></i>
@@ -552,10 +552,10 @@
             </button>
           </div>
         </div>
-        <div class="flex-1 w-full h-full min-h-0 bay-inset rounded-xl p-4 overflow-y-auto border border-white/10 relative space-y-4">
+        <div class="flex-1 w-full h-full min-h-0 overflow-y-auto relative space-y-4">
           <!-- 快捷直达卡片 -->
           <div class="grid grid-cols-2 gap-3">
-            <a href="/static/pages/collab.html" class="bay-inset p-3 rounded-xl flex items-center justify-between group hover:border-[#dfc384]/40 transition border border-white/5">
+            <a href="/static/pages/collab.html" class="bay-inset p-4 rounded-xl gw-settings-card flex items-center justify-between group hover:border-[#dfc384]/40 transition">
               <div class="flex items-center space-x-2.5">
                 <div class="w-8 h-8 rounded-lg bg-[#dfc384]/15 border border-[#dfc384]/30 flex items-center justify-center text-[#eddab3]">
                   <i data-lucide="network" class="w-4 h-4"></i>
@@ -568,25 +568,25 @@
               <i data-lucide="chevron-right" class="w-4 h-4 text-slate-500 group-hover:text-[#eddab3] transition"></i>
             </a>
 
-            <a href="/static/pages/assets.html" class="bay-inset p-3 rounded-xl flex items-center justify-between group hover:border-[#dfc384]/40 transition border border-white/5">
+            <a href="/static/pages/assets.html" class="bay-inset p-4 rounded-xl gw-settings-card flex items-center justify-between group hover:border-[#dfc384]/40 transition">
               <div class="flex items-center space-x-2.5">
-                <div class="w-8 h-8 rounded-lg bg-cyan-500/15 border border-cyan-500/30 flex items-center justify-center text-cyan-300">
+                <div class="w-8 h-8 rounded-lg bg-[#dfc384]/15 border border-[#dfc384]/30 flex items-center justify-center text-[#eddab3]">
                   <i data-lucide="shield-alert" class="w-4 h-4"></i>
                 </div>
                 <div>
-                  <div class="font-bold text-slate-200 group-hover:text-cyan-300 transition gw-type-body-sm">权限与团队审批</div>
+                  <div class="font-bold text-slate-200 group-hover:text-[#eddab3] transition gw-type-body-sm">权限与团队审批</div>
                   <div class="gw-type-body-sm font-mono text-slate-400">/static/pages/assets.html</div>
                 </div>
               </div>
-              <i data-lucide="external-link" class="w-4 h-4 text-slate-500 group-hover:text-cyan-300 transition"></i>
+              <i data-lucide="external-link" class="w-4 h-4 text-slate-500 group-hover:text-[#eddab3] transition"></i>
             </a>
           </div>
 
           <!-- 当前登录席位状态与权限详情 -->
-          <div class="bay-inset p-3 rounded-xl border border-white/5 space-y-2">
+          <div class="bay-inset p-4 rounded-xl gw-settings-card space-y-2">
             <div class="flex items-center justify-between gw-type-body-sm font-bold text-slate-200 pb-2 border-b border-white/5">
               <div class="flex items-center space-x-2">
-                <i data-lucide="shield-check" class="w-4 h-4 text-emerald-400"></i>
+                <i data-lucide="shield-check" class="w-4 h-4 text-[#dfc384]"></i>
                 <span>当前席位凭据与治理策略</span>
               </div>
               <span class="gw-type-body-sm font-mono text-amber-300 px-2 py-0.5 rounded bg-amber-500/10 border border-amber-500/20" id="settingsSessionBadge" data-gw-degradation="not_integrated">SESSION 读取中…</span>
@@ -607,7 +607,7 @@
             </div>
           </div>
 
-          <div id="localRecoverySettings" class="bay-inset p-3 rounded-xl border border-[#dfc384]/20 space-y-3 hidden">
+          <div id="localRecoverySettings" class="bay-inset p-4 rounded-xl gw-settings-card space-y-3 hidden">
             <div>
               <h3 class="gw-type-body-md font-bold text-slate-100">本地账户恢复码</h3>
               <p class="gw-type-body-sm text-slate-400 mt-1">重新生成会立即作废旧恢复码。新码只显示一次，请保存或打印。</p>
@@ -630,7 +630,7 @@
           </div>
 
           <!-- 动态团队席位成员列表 (对接 /api/asset-auth/teams 与 /api/asset-auth/users) -->
-          <div class="space-y-2">
+          <div class="bay-inset p-4 rounded-xl gw-settings-card space-y-2">
             <div class="flex items-center justify-between">
               <span class="gw-type-body-sm font-bold text-[#dfc384] font-mono">团队空间与席位成员</span>
               <span class="gw-type-body-sm font-mono text-slate-500">未接入时明说「未接入」，不伪造席位</span>
