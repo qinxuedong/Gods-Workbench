@@ -621,7 +621,11 @@
             <div id="settingsRecoveryCodes" class="hidden space-y-2" aria-live="polite">
               <p class="gw-type-body-sm text-amber-200">请现在保存以下恢复码；关闭后无法再次查看。</p>
               <ol id="settingsRecoveryCodeList" class="grid sm:grid-cols-2 gap-1 font-mono gw-type-body-sm text-slate-100"></ol>
-              <button type="button" class="hw-btn" onclick="HardwareDeck.dismissRecoveryCodes()">我已保存，隐藏恢复码</button>
+              <div class="flex flex-wrap gap-2">
+                <button id="settingsRecoveryCopyAll" type="button" class="hw-btn" onclick="HardwareDeck.copyRecoveryCodes(document.getElementById('settingsRecoveryCodeList'), this, document.getElementById('settingsRecoveryCopyStatus'))">复制全部</button>
+                <button type="button" class="hw-btn" onclick="HardwareDeck.dismissRecoveryCodes()">我已保存，隐藏恢复码</button>
+              </div>
+              <p id="settingsRecoveryCopyStatus" class="gw-type-body-sm text-slate-300" role="status" aria-live="polite"></p>
             </div>
           </div>
 

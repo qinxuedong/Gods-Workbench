@@ -88,6 +88,7 @@ def test_local_account_browser_setup_login_restart_logout(tmp_path):
             sock.bind(("127.0.0.1", 0))
             port = sock.getsockname()[1]
         base = f"http://127.0.0.1:{port}"
+        browser.grant_permissions(["clipboard-read", "clipboard-write"], origin=base)
         env = os.environ.copy()
         env.update(
             GW_RUNTIME_MODE="test",
@@ -129,7 +130,75 @@ def test_local_account_browser_setup_login_restart_logout(tmp_path):
             page.wait_for_selector("#localRecoveryCodes li")
             recovery_codes = page.locator("#localRecoveryCodes li").all_text_contents()
             assert len(recovery_codes) == 8
+            popup_session = page.evaluate("""async () => {
+                const response = await fetch('/api/asset-auth/status', {
+                    credentials: 'same-origin', cache: 'no-store'
+                });
+                const body = await response.json();
+                return {
+                    status: response.status,
+                    auth_mode: body.auth_mode,
+                    authenticated: body.authenticated
+                };
+            }""")
+            assert popup_session == {
+                "status": 200,
+                "auth_mode": "local_account",
+                "authenticated": True,
+            }
+            page.get_by_role("button", name="复制全部", exact=True).click()
+            page.wait_for_function(
+                "document.querySelector('#localRecoveryCopyStatus').textContent === '已复制'"
+            )
+            assert page.evaluate("navigator.clipboard.readText()").splitlines() == recovery_codes
             page.screenshot(path=str(tmp_path / "local-account-recovery-codes.png"))
+
+            regeneration_url = "/api/asset-auth/local/recovery-codes/regenerate"
+            regeneration_requests = []
+            page.on(
+                "request",
+                lambda request: regeneration_requests.append(request.url)
+                if request.url.endswith(regeneration_url)
+                else None,
+            )
+            page.once("dialog", lambda dialog: dialog.dismiss())
+            page.get_by_role("button", name="重新生成", exact=True).click()
+            assert regeneration_requests == []
+            assert page.locator("#localRecoveryCurrentPassword").is_visible() is False
+
+            page.check("#localRecoverySaved")
+            assert page.locator("#localRecoveryContinue").is_enabled()
+            page.once("dialog", lambda dialog: dialog.accept())
+            page.get_by_role("button", name="重新生成", exact=True).click()
+            page.fill("#localRecoveryCurrentPassword", "Wrong-password-2026!")
+            with page.expect_response(
+                lambda response: response.url.endswith(regeneration_url)
+                and response.request.method == "POST"
+            ) as failed_regeneration:
+                page.get_by_role("button", name="确认重新生成", exact=True).click()
+            assert failed_regeneration.value.status == 401
+            assert page.locator("#localRecoveryRegenerationError").is_visible()
+            assert page.locator("#localRecoveryCodes li").all_text_contents() == recovery_codes
+
+            page.fill("#localRecoveryCurrentPassword", password)
+            with page.expect_response(
+                lambda response: response.url.endswith(regeneration_url)
+                and response.request.method == "POST"
+            ) as successful_regeneration:
+                page.get_by_role("button", name="确认重新生成", exact=True).click()
+            assert successful_regeneration.value.status == 200
+            regenerated_codes = page.locator("#localRecoveryCodes li").all_text_contents()
+            assert len(regenerated_codes) == 8
+            assert set(regenerated_codes).isdisjoint(recovery_codes)
+            assert page.locator("#localRecoverySaved").is_checked() is False
+            assert page.locator("#localRecoveryContinue").is_disabled()
+            recovery_codes = regenerated_codes
+            page.get_by_role("button", name="复制全部", exact=True).click()
+            page.wait_for_function(
+                "document.querySelector('#localRecoveryCopyStatus').textContent === '已复制'"
+            )
+            assert page.evaluate("navigator.clipboard.readText()").splitlines() == recovery_codes
+
             page.check("#localRecoverySaved")
             with page.expect_navigation():
                 page.click("#localRecoveryContinue")
@@ -152,6 +221,7 @@ def test_local_account_browser_setup_login_restart_logout(tmp_path):
                 channel="chrome",
                 headless=True,
             )
+            browser.grant_permissions(["clipboard-read", "clipboard-write"], origin=base)
             page = browser.new_page()
             page.route(
                 "**/*",
@@ -204,6 +274,11 @@ def test_local_account_browser_setup_login_restart_logout(tmp_path):
             new_codes = page.locator("#settingsRecoveryCodeList li").all_text_contents()
             assert len(new_codes) == 8
             assert recovery_codes[1] not in new_codes
+            page.get_by_role("button", name="复制全部", exact=True).click()
+            page.wait_for_function(
+                "document.querySelector('#settingsRecoveryCopyStatus').textContent === '已复制'"
+            )
+            assert page.evaluate("navigator.clipboard.readText()").splitlines() == new_codes
             stale_code_status = page.evaluate(
                 """async code => (await fetch('/api/asset-auth/local/reset-password', {
                     method: 'POST', headers: {'Content-Type': 'application/json'},
