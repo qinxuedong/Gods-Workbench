@@ -41,3 +41,4 @@ tests/frontend/workflow-auth-behavior.test.mjs
 tests/frontend/workflow-link-slots.test.mjs
 tests/frontend/workflow-remediation.test.mjs
 tests/frontend/workflow-workbench.test.mjs
+tests/frontend/settings-workbench-visual.test.mjs

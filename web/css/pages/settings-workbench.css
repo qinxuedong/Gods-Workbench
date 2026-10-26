@@ -30,6 +30,21 @@
 
 .gw-settings-page > main [data-panel] p.gw-type-body-sm { font-weight:var(--gw-weight-regular); line-height:var(--gw-leading-body-sm); }
 
+:root {
+  --gw-settings-card-background:#080a0e;
+  --gw-settings-card-border:rgba(223,195,132,.12);
+  --gw-settings-card-shadow:inset 0 2px 5px rgba(0,0,0,.95), inset 0 0 0 1px rgba(255,255,255,.03), 0 1px 0 rgba(255,255,255,.04);
+}
+.gw-settings-page .gw-settings-panel-head,
+.directory-page .gw-settings-panel-head,
+.workspace-embedded .gw-settings-panel-head { margin:0 0 1rem; padding:0; border:0; }
+.gw-settings-card {
+  background:var(--gw-settings-card-background);
+  border:1px solid var(--gw-settings-card-border);
+  border-radius:12px;
+  box-shadow:var(--gw-settings-card-shadow);
+}
+
 @media (max-width:600px) {
   .gw-settings-page [data-panel="general"] > .grid { grid-template-columns:minmax(0,1fr); }
   .gw-settings-page .prompt-source-title { flex-wrap:wrap; }
