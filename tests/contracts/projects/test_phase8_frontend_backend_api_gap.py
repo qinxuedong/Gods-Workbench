@@ -147,6 +147,7 @@ KNOWN_IMPLEMENTED = frozenset(
         "/api/prompt-libraries/{p}",
         # 2026-09-22 Phase 10D：设置页阶段 8 条归一化路径。
         "/api/storage-settings",
+        "/api/storage-settings/browse",
         "/api/providers",
         "/api/providers/fetch-models",
         "/api/providers/probe-async",
@@ -402,6 +403,7 @@ KNOWN_BACKEND_PATHS = frozenset(
         "/api/prompt-libraries/{p}",
         # 2026-09-22 Phase 10D：设置页阶段 8 条归一化路径。
         "/api/storage-settings",
+        "/api/storage-settings/browse",
         "/api/providers",
         "/api/providers/fetch-models",
         "/api/providers/probe-async",

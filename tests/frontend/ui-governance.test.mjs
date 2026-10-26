@@ -215,6 +215,14 @@ test('资产内嵌文档只加载硬件主题，所有弹层继承根级语义�
   const review=read('web/js/modules/asset-review.js');assert.match(review,/aria-label="关闭登录"/);assert.match(review,/hw-btn hw-btn-gold review-primary/);
 });
 
+test('QIN-412 目录设置移除空框并由页内服务器目录树即选即存',()=>{
+  const manager=read('web/js/modules/asset-manager.js');
+  assert.doesNotMatch(manager,/managed_name|managed_path|directoryMountDialogOverlay|openDirectoryMountConfirmDialog/);
+  assert.match(manager,/api\/storage-settings\/browse/);
+  assert.match(manager,/data-server-directory-browser/);
+  assert.match(manager,/data-server-directory-mount/);
+});
+
 test('表面 token 共享层：hardware-tokens 登记 surface 与控件 token',()=>{
   const t=read('web/css/base/hardware-tokens.css');
   assert.match(t,/--gw-surface-bg:\s*var\(--chassis-bg\)/);

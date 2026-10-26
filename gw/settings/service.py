@@ -35,10 +35,12 @@
 from __future__ import annotations
 
 import copy
+import os
 import stat
 import threading
 from collections.abc import Iterable, Sequence
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any
 
 from pydantic import ValidationError
@@ -67,6 +69,7 @@ from gw.settings.models import (
 
 #: 结构类型白名单；其余取值一律 400 失败关闭。
 ALLOWED_STRUCTURE_KINDS = frozenset({"version", "group"})
+DIRECTORY_BROWSE_LIMIT = 100
 
 #: 凭据类字段名（小写比对）；命中即剥离，绝不落库或回显。
 _CREDENTIAL_KEY_MARKERS = (
@@ -215,6 +218,119 @@ class StorageSettingsService:
     def get_snapshot(self) -> StorageSettingsSnapshot:
         """返回存储设置真值快照；无真实来源时如实标记未配置。"""
         return self._build_snapshot(self._state.read())
+
+    @staticmethod
+    def _directory_browse_roots() -> list[dict[str, str]]:
+        """返回服务器可浏览的文件系统根目录，不读取其文件内容。"""
+        if os.name == "nt":
+            try:
+                import ctypes
+
+                mask = ctypes.windll.kernel32.GetLogicalDrives()
+            except (AttributeError, OSError):
+                mask = 0
+            roots = [
+                f"{chr(ord('A') + index)}:\\"
+                for index in range(26)
+                if mask & (1 << index)
+            ]
+        else:
+            roots = [os.path.abspath(os.sep)]
+        result = []
+        for root in roots:
+            try:
+                if os.path.isdir(root):
+                    result.append({"name": root, "path": root})
+            except OSError:
+                continue
+        return result[:DIRECTORY_BROWSE_LIMIT]
+
+    @staticmethod
+    def _is_directory_link(path: Path, info: Any | None = None) -> bool:
+        """识别符号链接及 Windows junction/reparse point。"""
+        stat_result = info or path.lstat()
+        if stat.S_ISLNK(stat_result.st_mode):
+            return True
+        if os.name == "nt":
+            reparse_flag = getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0x400)
+            if getattr(stat_result, "st_file_attributes", 0) & reparse_flag:
+                return True
+        is_junction = getattr(path, "is_junction", None)
+        return bool(callable(is_junction) and is_junction())
+
+    @staticmethod
+    def _reject_directory_symlinks(path: Path) -> None:
+        """拒绝路径中的链接组件，避免浏览器沿链接跳出目录树。"""
+        current = Path(path.anchor)
+        for component in path.parts[1:]:
+            current = current / component
+            info = current.lstat()
+            if StorageSettingsService._is_directory_link(current, info):
+                raise CleanroomException(400, "INVALID_PATH", "服务器目录浏览不允许经过符号链接")
+
+    def browse_directories(self, path: str | None = None) -> dict[str, Any]:
+        """只读列出服务器目录；限制单次结果数并跳过不可访问的子项。"""
+        if path is None or not str(path).strip():
+            roots = self._directory_browse_roots()
+            return {
+                "path": None,
+                "parent": None,
+                "directories": roots,
+                "limit": DIRECTORY_BROWSE_LIMIT,
+                "truncated": len(roots) > DIRECTORY_BROWSE_LIMIT,
+            }
+
+        raw_path = str(path).strip()
+        path_parts = raw_path.replace("\\", "/").split("/")
+        if (
+            len(raw_path) > 4096
+            or "\x00" in raw_path
+            or not os.path.isabs(raw_path)
+            or ".." in path_parts
+        ):
+            raise CleanroomException(400, "INVALID_PATH", "服务器目录必须是无路径穿越的绝对路径")
+
+        target = Path(raw_path)
+        try:
+            self._reject_directory_symlinks(target)
+            resolved = target.resolve(strict=True)
+            if not resolved.is_dir():
+                raise CleanroomException(400, "INVALID_PATH", "所选路径不是目录")
+            directories: list[dict[str, str]] = []
+            truncated = False
+            with os.scandir(resolved) as entries:
+                for entry in entries:
+                    try:
+                        if not entry.is_dir(follow_symlinks=False):
+                            continue
+                        child = Path(entry.path)
+                        if self._is_directory_link(child):
+                            continue
+                        directories.append({"name": entry.name, "path": str(child)})
+                        if len(directories) > DIRECTORY_BROWSE_LIMIT:
+                            truncated = True
+                            directories.pop()
+                            break
+                    except (OSError, PermissionError):
+                        continue
+        except CleanroomException:
+            raise
+        except FileNotFoundError as exc:
+            raise CleanroomException(404, "DIRECTORY_NOT_FOUND", "服务器目录不存在") from exc
+        except PermissionError as exc:
+            raise CleanroomException(403, "DIRECTORY_INACCESSIBLE", "无权读取服务器目录") from exc
+        except OSError as exc:
+            raise CleanroomException(400, "INVALID_PATH", "服务器目录不可读取") from exc
+
+        directories.sort(key=lambda item: (item["name"].casefold(), item["name"]))
+        parent = resolved.parent
+        return {
+            "path": str(resolved),
+            "parent": None if parent == resolved else str(parent),
+            "directories": directories,
+            "limit": DIRECTORY_BROWSE_LIMIT,
+            "truncated": truncated,
+        }
 
     @staticmethod
     def _build_snapshot(state: dict[str, Any]) -> StorageSettingsSnapshot:

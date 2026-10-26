@@ -5,6 +5,7 @@ import socket
 import threading
 import time
 from contextlib import contextmanager
+from pathlib import Path
 
 import pytest
 import uvicorn
@@ -16,7 +17,7 @@ from gw.settings.service import ProviderService, StorageSettingsService
 
 
 @contextmanager
-def settings_browser(monkeypatch, tmp_path, *, populated=False):
+def settings_browser(monkeypatch, tmp_path, *, populated=False, directory_root=None):
     browser_api = pytest.importorskip("playwright.sync_api")
     monkeypatch.setenv("GW_AUTH_MODE", "local_account")
     monkeypatch.delenv("GW_PROVIDER_RUNTIME_JSON", raising=False)
@@ -24,8 +25,16 @@ def settings_browser(monkeypatch, tmp_path, *, populated=False):
     monkeypatch.delenv("GW_CHAT_BASE_URL", raising=False)
     monkeypatch.delenv("GW_CLI_EXECUTION", raising=False)
     monkeypatch.setattr(routes_settings, "default_provider_service", ProviderService())
+    storage_settings_service = StorageSettingsService()
+    if directory_root is not None:
+        root_path = str(Path(directory_root).resolve())
+        monkeypatch.setattr(
+            storage_settings_service,
+            "_directory_browse_roots",
+            lambda: [{"name": root_path, "path": root_path}],
+        )
     monkeypatch.setattr(
-        routes_settings, "default_storage_settings_service", StorageSettingsService()
+        routes_settings, "default_storage_settings_service", storage_settings_service
     )
     listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     listener.bind(("127.0.0.1", 0))
@@ -396,4 +405,60 @@ def test_directory_settings_saves_full_path_and_restores_after_reload(
         local_path.wait_for()
         assert local_path.input_value() == str(target)
         assert local_path.get_attribute("title") == str(target)
+        assert errors == [] and writes == []
+
+
+def test_server_directory_picker_saves_selected_server_directory_immediately(
+    monkeypatch, tmp_path
+):
+    target = (tmp_path / "server-directory-choice").resolve()
+    target.mkdir()
+    with settings_browser(
+        monkeypatch, tmp_path, directory_root=tmp_path
+    ) as (page, base, errors, writes):
+        page.goto(
+            base + "/static/asset-manager.html?settings=directories&embedded=1",
+            wait_until="networkidle",
+        )
+        picker = page.locator('[data-directory-picker="projects"]')
+        picker.wait_for(state="visible")
+        picker.click()
+        browser = page.locator("[data-server-directory-browser]")
+        browser.wait_for(state="visible")
+        entries = browser.locator("[data-server-directory-enter]")
+        entries.first.wait_for(state="visible")
+        assert entries.count() == 1
+        assert entries.first.get_attribute("data-server-directory-enter") == str(
+            tmp_path.resolve()
+        )
+        with page.expect_response(
+            lambda response: (
+                response.request.method == "GET"
+                and response.url.split("?", 1)[0].endswith(
+                    "/api/storage-settings/browse"
+                )
+            )
+        ) as listing:
+            entries.first.click()
+        assert listing.value.status == 200, listing.value.text()
+        mounts = browser.locator("[data-server-directory-mount]")
+        mount = None
+        for index in range(mounts.count()):
+            candidate = mounts.nth(index)
+            if candidate.get_attribute("data-server-directory-mount") == str(target):
+                mount = candidate
+                break
+        assert mount is not None, f"目录浏览器未列出可挂载目录 {target}"
+        mount.wait_for(state="visible")
+        with page.expect_response(
+            lambda response: (
+                response.request.method == "PATCH"
+                and response.url.split("?", 1)[0].endswith("/api/storage-settings")
+            )
+        ) as saved:
+            mount.click()
+        assert saved.value.status == 200, saved.value.text()
+        selected_path = saved.value.json()["dirs"]["projects"]
+        assert Path(selected_path).is_dir()
+        assert page.locator("#directoryMountDialogOverlay").count() == 0
         assert errors == [] and writes == []

@@ -15,6 +15,7 @@
  */
 
 import assetManagerApi from './asset-manager/api.js';
+import assetManagerHttp from './asset-manager/http.js';
 import assetAuthApi from './asset-auth/api.js';
 import {createAssetClassificationHelpers} from './asset-manager/classification.js';
 import {readStoredBoolean, readStoredNumber} from './asset-manager/storage.js';
@@ -532,6 +533,7 @@ let searchCompositionActive = false;
 let searchRenderTimer = null;
 let lastSearchCompositionEndAt = 0;
 let storageSettingsState = {open:false, tab:'boards', focusSection:'', dirs:{}, defaults:{}, revision:null, extraLocalDirs:[], extraLocalEntries:[], localLibraryNames:{}, localLibraries:[]};
+let serverDirectoryBrowserState = {open:false, path:null, parent:null, directories:[], loading:false, saving:false, error:'', key:'projects'};
 let storageSettingsReturnFocus = null;
 let assetAiSettingsState = {rule:'', defaultRule:'', loading:false, saving:false, message:'', backgroundTaskId:''};
 let assetProxySettingsState = {projectId:'', enabled:false, autoQueue:false, maxWidth:960, maxHeight:540, loading:false, saving:false, message:''};
@@ -1127,22 +1129,11 @@ function renderAssetThumbnailCacheDirectoryBody(){
 }
 function renderAssetDirectorySettingsBody(){
     const dirs = storageSettingsState.dirs || {};
-    const overviewRoots = Array.isArray(registryStatus?.overview?.roots) ? registryStatus.overview.roots : [];
-    const managedRoot = overviewRoots.find(root => root.kind === 'managed_library') || {};
-    const managedLibraryName = String(managedRoot.name || '');
-    const managedLibraryPath = String(managedRoot.path || '');
-    const registeredRows = `
-        <label class="storage-dir-row"><span>托管资产库</span><input value="${escapeAttr(managedLibraryName)}" readonly aria-readonly="true" placeholder="等待资产服务返回名称" title="索引服务返回的托管资产库名称"></label>
-        <label class="storage-dir-row"><span>资产库目录</span><input value="${escapeAttr(managedLibraryPath)}" readonly aria-readonly="true" placeholder="等待资产服务返回目录" title="索引服务返回的托管资产库目录"></label>`;
     const saveRows = ['upload','generated'].map(key => `
         <label class="storage-dir-row"><span>${STORAGE_KIND_LABELS[key]}</span><input id="storageDir_${key}" value="${escapeAttr(dirs[key] || '')}" title="${escapeAttr(dirs[key] || '')}" placeholder="${escapeAttr(storageSettingsState.defaults?.[key] || '')}"></label>
     `).join('');
     return `<section class="asset-pref-section board-directory-settings" data-board-directories-settings>
         <div class="asset-pref-title"><i data-lucide="folder-cog"></i><span>目录</span></div>
-        <div class="asset-pref-title"><i data-lucide="folder-check"></i><span>登记目录</span></div>
-        <p class="board-settings-hint">托管资产库由索引服务登记并自动监测文件变化，不从页面路径推断资产关系。</p>
-        <div class="storage-dir-grid">${registeredRows}</div>
-        <div class="board-settings-divider" aria-hidden="true"></div>
         <div class="asset-pref-title"><i data-lucide="save"></i><span>上传与生成目录</span></div>
         <p class="board-settings-hint">上传素材与生成素材目录可按工作磁盘调整。</p>
         <div class="storage-dir-grid">${saveRows}</div>
@@ -1805,6 +1796,112 @@ function canManageProjectWorkspaceSettings(){
     const role = String(registryPrincipal?.role || '').trim().toLowerCase();
     return Boolean(registryPrincipal?.local_mode) || role === 'admin';
 }
+function canBrowseServerDirectories(){
+    if(registryPrincipalLoading) return false;
+    return String(registryPrincipal?.role || '').trim().toLowerCase() === 'admin';
+}
+function renderServerDirectoryBrowser(){
+    const state = serverDirectoryBrowserState;
+    if(!state.open) return '';
+    const rows = state.directories.map(directory =>
+        '<div class="server-directory-row">' +
+            '<button type="button" class="server-directory-enter" data-server-directory-enter="' + escapeAttr(directory.path) + '"' + (state.loading || state.saving ? ' disabled' : '') + '>' +
+                '<i data-lucide="folder"></i><span>' + escapeHtml(directory.name) + '</span><small>进入</small>' +
+            '</button>' +
+            '<button type="button" class="hw-btn hw-btn-gold server-directory-mount" data-server-directory-mount="' + escapeAttr(directory.path) + '"' + (state.loading || state.saving ? ' disabled' : '') + '><i data-lucide="check"></i>选择并挂载</button>' +
+        '</div>'
+    ).join('');
+    const path = state.path || '服务器根目录';
+    const parentButton = '<button type="button" class="hw-btn" data-server-directory-parent' + (!state.parent || state.loading || state.saving ? ' disabled' : '') + '><i data-lucide="corner-left-up"></i>上级目录</button>';
+    const currentButton = state.path
+        ? '<button type="button" class="hw-btn hw-btn-gold" data-server-directory-mount-current="' + escapeAttr(state.path) + '"' + (state.loading || state.saving ? ' disabled' : '') + '><i data-lucide="check"></i>选择当前目录并挂载</button>'
+        : '';
+    const message = state.loading
+        ? '<p class="server-directory-browser-message" role="status">正在读取目录…</p>'
+        : (!rows && !state.error
+            ? '<p class="server-directory-browser-message">' + (state.path ? '此目录下没有可浏览的子目录。' : '服务器没有可浏览的根目录。') + '</p>'
+            : '');
+    return '<section class="server-directory-browser" data-server-directory-browser aria-busy="' + (state.loading || state.saving ? 'true' : 'false') + '">' +
+        '<header class="server-directory-browser-head"><div><strong>浏览服务器目录</strong><code title="' + escapeAttr(path) + '">' + escapeHtml(path) + '</code></div>' +
+            '<button type="button" class="hw-btn hw-btn-icon" data-server-directory-close aria-label="关闭服务器目录浏览器" title="关闭"><i data-lucide="x"></i></button></header>' +
+        '<div class="server-directory-browser-toolbar">' + parentButton + currentButton + '</div>' +
+        (state.error ? '<p class="server-directory-browser-error" role="alert">' + escapeHtml(state.error) + '</p>' : '') +
+        '<div class="server-directory-list" role="tree" aria-label="服务器子目录">' + message + rows + '</div>' +
+        (state.truncated ? '<p class="server-directory-browser-note">目录较多，仅显示前 ' + (state.limit || 100) + ' 项。</p>' : '') +
+        '<p class="server-directory-browser-note">仅显示文件夹。选择并挂载会立即保存所选目录字段。</p>' +
+    '</section>';
+}
+async function loadServerDirectoryBrowser(pathValue=null){
+    const state = serverDirectoryBrowserState;
+    state.path = pathValue;
+    state.parent = null;
+    state.directories = [];
+    state.truncated = false;
+    state.loading = true;
+    state.error = '';
+    renderStorageSettingsModal();
+    try {
+        const query = pathValue ? '?path=' + encodeURIComponent(pathValue) : '';
+        const response = await apiJsonResponse(assetManagerHttp.request('/api/storage-settings/browse' + query, {method:'GET', credentials:'same-origin'}));
+        if(!serverDirectoryBrowserState.open) return;
+        serverDirectoryBrowserState = {
+            ...serverDirectoryBrowserState,
+            path:response.path ?? null,
+            parent:response.parent ?? null,
+            directories:Array.isArray(response.directories) ? response.directories : [],
+            truncated:Boolean(response.truncated),
+            limit:Number(response.limit) || 100,
+            loading:false,
+            error:''
+        };
+    } catch(error){
+        if(!serverDirectoryBrowserState.open) return;
+        serverDirectoryBrowserState = {...serverDirectoryBrowserState, loading:false, error:error.message || '服务器目录读取失败'};
+    }
+    renderStorageSettingsModal();
+}
+async function openServerDirectoryBrowser(key){
+    if(!key || !canBrowseServerDirectories()) return;
+    serverDirectoryBrowserState = {open:true, path:null, parent:null, directories:[], loading:false, saving:false, error:'', key, truncated:false, limit:100};
+    renderStorageSettingsModal();
+    await loadServerDirectoryBrowser(null);
+}
+async function saveDirectoryPath(key, pathValue, closeBrowser=false){
+    const trimmed = String(pathValue || '').trim();
+    if(!trimmed){ setStatus('目录路径不能为空'); return; }
+    const input = document.getElementById('storageDir_' + key);
+    if(input) input.value = trimmed;
+    syncStorageSettingsInputsToState();
+    if(closeBrowser){
+        serverDirectoryBrowserState.saving = true;
+        serverDirectoryBrowserState.error = '';
+    }
+    if(directorySettingsPage){
+        directorySettingsSaving = true;
+        renderGlobalDirectorySettings();
+    } else if(closeBrowser) {
+        renderStorageSettingsModal();
+    }
+    try {
+        await saveStorageSettings();
+        if(closeBrowser){
+            serverDirectoryBrowserState = {...serverDirectoryBrowserState, open:false, saving:false, error:''};
+            setStatus('已挂载并保存目录：' + trimmed);
+        }
+    } catch(error){
+        if(closeBrowser){
+            serverDirectoryBrowserState = {...serverDirectoryBrowserState, saving:false, error:error.message || '挂载目录失败'};
+        }
+        setStatus(error.message || '保存目录失败');
+    } finally {
+        if(directorySettingsPage){
+            directorySettingsSaving = false;
+            renderGlobalDirectorySettings();
+        } else if(closeBrowser) {
+            renderStorageSettingsModal();
+        }
+    }
+}
 function renderProjectWorkspaceSettingsBody(){
     if(registryPrincipalLoading){
         return `<section class="asset-pref-section project-workspace-settings" data-project-workspace-settings aria-busy="true">
@@ -1823,8 +1920,9 @@ function renderProjectWorkspaceSettingsBody(){
         <div class="asset-pref-title"><i data-lucide="folder-cog"></i><span>项目工作区</span><small>只影响之后新建的项目</small></div>
         <p class="board-settings-hint">更改根目录不会迁移、删除或重命名已有项目的工作区。</p>
         <div class="storage-dir-grid">
-            <label class="storage-dir-row"><span>项目工作区根目录</span><div class="directory-input-row"><input id="storageDir_projects" value="${escapeAttr(dirs.projects || '')}" title="${escapeAttr(dirs.projects || '')}" placeholder="${escapeAttr(defaultRoot)}" autocomplete="off"><button type="button" class="hw-btn hw-btn-icon directory-picker-btn" data-directory-picker="projects" title="选择目录" aria-label="选择项目工作区根目录"><i data-lucide="folder-open"></i></button></div></label>
+            <label class="storage-dir-row"><span>项目工作区根目录</span><div class="directory-input-row"><input id="storageDir_projects" value="${escapeAttr(dirs.projects || '')}" title="${escapeAttr(dirs.projects || '')}" placeholder="${escapeAttr(defaultRoot)}" autocomplete="off">${canBrowseServerDirectories() ? '<button type="button" class="hw-btn hw-btn-icon directory-picker-btn" data-directory-picker="projects" title="浏览服务器目录" aria-label="浏览服务器项目工作区目录"><i data-lucide="folder-open"></i></button>' : ''}</div></label>
         </div>
+        ${renderServerDirectoryBrowser()}
         <div class="storage-settings-actions inline">
             <button class="hw-btn" type="button" data-project-directory-template-manager-open><i data-lucide="folders"></i><span>管理目录模板</span></button>
             <button class="hw-btn hw-btn-gold" type="button" data-storage-save><i data-lucide="save"></i><span>保存目录</span></button>
@@ -2108,126 +2206,6 @@ async function pollAssetClassificationJob(taskId){
         else setStatus(task.error || 'AI 分类后台任务失败');
     } catch(_) {}
 }
-function openDirectoryMountConfirmDialog(key, label, folderName){
-    let overlay = document.getElementById('directoryMountDialogOverlay');
-    if(!overlay){
-        overlay = document.createElement('div');
-        overlay.id = 'directoryMountDialogOverlay';
-        overlay.className = 'storage-settings-overlay directory-mount-overlay';
-        document.body.appendChild(overlay);
-    }
-    const input = document.getElementById(`storageDir_${key}`);
-    const currentPath = input ? input.value.trim() : '';
-    let suggestedPath = currentPath;
-    if(folderName){
-        if(currentPath && (currentPath.includes('\\') || currentPath.includes('/'))){
-            const separator = currentPath.includes('\\') ? '\\' : '/';
-            const parts = currentPath.split(/[\\/]/).filter(Boolean);
-            if(parts.length > 1){
-                parts.pop();
-                suggestedPath = parts.join(separator) + separator + folderName;
-            } else {
-                suggestedPath = currentPath + separator + folderName;
-            }
-        } else {
-            suggestedPath = '';
-        }
-    }
-    overlay.innerHTML = `
-        <div class="storage-settings-modal board-settings-modal directory-mount-modal" data-floating-content role="dialog" aria-modal="true" aria-labelledby="directoryMountTitle" tabindex="-1">
-            <div class="storage-settings-head directory-mount-head">
-                <div class="directory-mount-title-group">
-                    <strong id="directoryMountTitle" class="directory-mount-title">
-                        <i data-lucide="folder-check"></i>
-                        <span>挂载与确认目录：${escapeHtml(label || '本地素材目录')}</span>
-                    </strong>
-                    <span class="directory-mount-subtitle">浏览器选择器只提供目录名称提示，不会返回物理路径。请核对或输入完整绝对路径后确认。</span>
-                </div>
-                <button type="button" class="hw-btn hw-btn-icon directory-mount-close-btn" data-directory-mount-close aria-label="关闭"><i data-lucide="x"></i></button>
-            </div>
-            <div class="directory-mount-body">
-                ${folderName ? `<div class="directory-mount-folder-chip">
-                    <i data-lucide="folder"></i>
-                    <span>已选定目标文件夹：<strong>${escapeHtml(folderName)}</strong></span>
-                </div>` : ''}
-                <div class="directory-mount-field">
-                    <label for="mountConfirmPathInput" class="directory-mount-label">完整本地物理路径 (Absolute Path):</label>
-                    <input id="mountConfirmPathInput" class="directory-mount-input" value="${escapeAttr(suggestedPath)}" autocomplete="off" placeholder="例如 D:\\Working\\Code Pro\\Gods-Workbench\\.local\\user_data">
-                    <span class="directory-mount-hint">请填写完整物理路径；按回车或点击“确认并自动挂载”后验证并保存。</span>
-                </div>
-                <div class="directory-mount-actions">
-                    <button type="button" class="hw-btn directory-btn-cancel" data-directory-mount-close>取消</button>
-                    <button type="button" class="hw-btn hw-btn-gold directory-btn-confirm" data-directory-mount-confirm="${escapeAttr(key)}"><i data-lucide="check"></i>确认并自动挂载</button>
-                </div>
-            </div>
-        </div>
-    `;
-
-    // 直接在 overlay 上绑定独立的点击与快捷键监听，确保交互 100% 响应
-    overlay.onclick = async (event) => {
-        const closeBtn = event.target.closest?.('[data-directory-mount-close]');
-        if(closeBtn || event.target === overlay){
-            event.preventDefault();
-            event.stopPropagation();
-            overlay.remove();
-            return;
-        }
-        const confirmBtn = event.target.closest?.('[data-directory-mount-confirm]');
-        if(confirmBtn){
-            event.preventDefault();
-            event.stopPropagation();
-            const targetKey = confirmBtn.dataset.directoryMountConfirm || key;
-            const pathInp = document.getElementById('mountConfirmPathInput');
-            await executeDirectoryMount(targetKey, pathInp?.value);
-        }
-    };
-
-    overlay.onkeydown = async (event) => {
-        if(event.key === 'Escape'){
-            event.preventDefault();
-            overlay.remove();
-        } else if(event.key === 'Enter' && event.target?.id === 'mountConfirmPathInput'){
-            event.preventDefault();
-            const pathInp = document.getElementById('mountConfirmPathInput');
-            await executeDirectoryMount(key, pathInp?.value);
-        }
-    };
-
-    markAssetFloatingSurface(overlay, {surface:'directory-mount-confirm', content:'.storage-settings-modal', close:() => overlay.remove()});
-    refreshIcons();
-    setTimeout(() => {
-        const inp = document.getElementById('mountConfirmPathInput');
-        if(inp){ inp.focus(); inp.select(); }
-    }, 50);
-}
-
-async function executeDirectoryMount(key, pathValue){
-    const trimmed = String(pathValue || '').trim();
-    if(!trimmed){
-        setStatus('目录路径不能为空');
-        return;
-    }
-    const input = document.getElementById(`storageDir_${key}`);
-    if(input) input.value = trimmed;
-    document.getElementById('directoryMountDialogOverlay')?.remove();
-    syncStorageSettingsInputsToState();
-    if(directorySettingsPage){
-        directorySettingsSaving = true;
-        renderGlobalDirectorySettings();
-    }
-    try {
-        await saveStorageSettings();
-        setStatus(`已成功挂载目录：${trimmed}`);
-    } catch(error){
-        setStatus(error.message || '挂载目录失败');
-    } finally {
-        if(directorySettingsPage){
-            directorySettingsSaving = false;
-            renderGlobalDirectorySettings();
-        }
-    }
-}
-
 async function saveStorageSettings(){
     syncStorageSettingsInputsToState();
     const dirs = {...(storageSettingsState.dirs || {})};
@@ -2325,13 +2303,17 @@ async function loadGlobalDirectorySettings(){
 function renderGlobalDirectorySettings(){
     let host = document.getElementById('storageSettingsOverlay');
     if(!host){ host = document.createElement('main'); host.id = 'storageSettingsOverlay'; host.className = 'directory-page'; document.body.appendChild(host); }
-    const input = (key, label, value, readonly=false) => `<label class="storage-dir-row"><span>${escapeHtml(label)}</span><div class="directory-input-row"><input id="storageDir_${key}" value="${escapeAttr(value || '')}" ${readonly ? 'readonly' : ''} autocomplete="off" title="${escapeAttr(value || (readonly ? '' : '输入完整物理路径'))}">${readonly ? '' : `<button type="button" class="hw-btn hw-btn-icon directory-picker-btn" data-directory-picker="${escapeAttr(key)}" title="选择目录并确认物理路径" aria-label="选择${escapeAttr(label)}目录"><i data-lucide="folder-open"></i></button>`}</div></label>`;
+    const input = (key, label, value, readonly=false) => {
+        const picker = !readonly && canBrowseServerDirectories()
+            ? '<button type="button" class="hw-btn hw-btn-icon directory-picker-btn" data-directory-picker="' + escapeAttr(key) + '" title="浏览服务器目录" aria-label="浏览服务器' + escapeAttr(label) + '目录"><i data-lucide="folder-open"></i></button>'
+            : '';
+        return '<label class="storage-dir-row"><span>' + escapeHtml(label) + '</span><div class="directory-input-row"><input id="storageDir_' + escapeAttr(key) + '" value="' + escapeAttr(value || '') + '" ' + (readonly ? 'readonly' : '') + ' autocomplete="off" title="' + escapeAttr(value || (readonly ? '' : '输入完整物理路径')) + '">' + picker + '</div></label>';
+    };
     const dirs = storageSettingsState.dirs || {};
-    const managed = registryStatus?.overview?.roots?.find(item => item.kind === 'managed_library');
     host.innerHTML = `<header class="directory-page-header gw-settings-panel-head"><h1><i data-lucide="folder-cog"></i>目录设置</h1><button type="button" class="hw-btn" data-directory-reload title="重新读取目录设置" ${directorySettingsSaving ? 'disabled' : ''}><i data-lucide="refresh-cw"></i>重新读取</button></header>
         ${directorySettingsError ? `<div class="directory-error" role="alert">${escapeHtml(directorySettingsError)}</div>` : ''}
         ${!directorySettingsReady ? `<p class="directory-status" role="status">${directorySettingsError ? '请检查权限或连接后重新读取。' : '正在读取目录设置…'}</p>` : `<fieldset ${directorySettingsSaving ? 'disabled' : ''}>
-        <section class="asset-pref-section bay-inset p-4 rounded-xl gw-settings-card" data-board-directories-settings><div class="asset-pref-title"><i data-lucide="folder-check"></i><span>登记目录</span></div><div class="storage-dir-grid">${input('managed_name','托管资产库',managed?.name,true)}${input('managed_path','资产库目录',managed?.path,true)}${input('local','本地素材目录',dirs.local)}</div><div class="directory-registered">${storageExtraLocalEntries().map(item=>`<div><span>${escapeHtml(item.name)}</span><code>${escapeHtml(item.path)}</code></div>`).join('')}</div></section>
+        <section class="asset-pref-section bay-inset p-4 rounded-xl gw-settings-card" data-board-directories-settings><div class="asset-pref-title"><i data-lucide="folder-check"></i><span>登记目录</span></div><div class="storage-dir-grid">${input('local','本地素材目录',dirs.local)}</div><div class="directory-registered">${storageExtraLocalEntries().map(item=>`<div><span>${escapeHtml(item.name)}</span><code>${escapeHtml(item.path)}</code></div>`).join('')}</div></section>
         <section class="asset-pref-section bay-inset p-4 rounded-xl gw-settings-card"><div class="asset-pref-title"><i data-lucide="hard-drive"></i><span>上传与生成</span></div><div class="storage-dir-grid">${input('upload','上传素材',dirs.upload)}${input('generated','生成素材',dirs.generated)}</div></section>
         ${renderProjectWorkspaceSettingsBody()}
         <section class="asset-pref-section bay-inset p-4 rounded-xl gw-settings-card">${renderAssetThumbnailCacheDirectoryBody()}<div class="storage-settings-actions"><button class="hw-btn" type="button" data-directory-cache-save><i data-lucide="save"></i>保存缓存目录</button></div></section>
@@ -10008,37 +9990,34 @@ async function linkSelectedRegistryAssets(){
 }
 async function handleClick(event){
     const target = event.target;
-    const directoryMountClose = target.closest?.('[data-directory-mount-close]');
-    if(directoryMountClose){
-        document.getElementById('directoryMountDialogOverlay')?.remove();
+    const directoryBrowserClose = target.closest?.('[data-server-directory-close]');
+    if(directoryBrowserClose){
+        serverDirectoryBrowserState = {...serverDirectoryBrowserState, open:false, loading:false};
+        renderStorageSettingsModal();
         return;
     }
-    const directoryMountConfirm = target.closest?.('[data-directory-mount-confirm]');
-    if(directoryMountConfirm){
-        const key = directoryMountConfirm.dataset.directoryMountConfirm;
-        const input = document.getElementById('mountConfirmPathInput');
-        await executeDirectoryMount(key, input?.value);
+    const directoryBrowserParent = target.closest?.('[data-server-directory-parent]');
+    if(directoryBrowserParent && serverDirectoryBrowserState.parent){
+        await loadServerDirectoryBrowser(serverDirectoryBrowserState.parent);
+        return;
+    }
+    const directoryBrowserEnter = target.closest?.('[data-server-directory-enter]');
+    if(directoryBrowserEnter){
+        await loadServerDirectoryBrowser(directoryBrowserEnter.dataset.serverDirectoryEnter || null);
+        return;
+    }
+    const directoryBrowserMount = target.closest?.('[data-server-directory-mount],[data-server-directory-mount-current]');
+    if(directoryBrowserMount){
+        const pathValue = directoryBrowserMount.dataset.serverDirectoryMount || directoryBrowserMount.dataset.serverDirectoryMountCurrent;
+        await saveDirectoryPath(serverDirectoryBrowserState.key || 'projects', pathValue, true);
         return;
     }
     const directoryPicker = target.closest?.('[data-directory-picker]');
     if(directoryPicker){
         const key = directoryPicker.dataset.directoryPicker;
-        const input = document.getElementById(`storageDir_${key}`);
-        if(!input || input.readOnly) return;
-        const label = input.closest?.('.storage-dir-row')?.querySelector('span')?.textContent?.trim() || key;
-        if(typeof window.showDirectoryPicker === 'function'){
-            try {
-                const handle = await window.showDirectoryPicker({mode:'read'});
-                const folderName = handle?.name || '';
-                openDirectoryMountConfirmDialog(key, label, folderName);
-            } catch(error){
-                if(error?.name !== 'AbortError') {
-                    openDirectoryMountConfirmDialog(key, label, '');
-                }
-            }
-        } else {
-            openDirectoryMountConfirmDialog(key, label, '');
-        }
+        const input = document.getElementById('storageDir_' + key);
+        if(!input || input.readOnly || !canBrowseServerDirectories()) return;
+        await openServerDirectoryBrowser(key);
         return;
     }
     if(target.closest('[data-directory-reload]')){
@@ -17788,7 +17767,7 @@ document.addEventListener('click', event => {
     if(detailNavigate){ navigateDetailPreview(Number(detailNavigate.dataset.detailNavigate || 0)); return; }
     const detailZoom = event.target.closest?.('[data-detail-zoom]');
     if(detailZoom){ adjustDetailPreviewZoom(Number(detailZoom.dataset.detailZoom || 0)); return; }
-    if(event.target.closest?.('#storageSettingsOverlay,#directoryMountDialogOverlay,#boardCreateOverlay,#boardSourceOverlay,#boardEditOverlay,#boardFolderCreateOverlay,#thumbnailGeneratorOverlay')){
+    if(event.target.closest?.('#storageSettingsOverlay,#boardCreateOverlay,#boardSourceOverlay,#boardEditOverlay,#boardFolderCreateOverlay,#thumbnailGeneratorOverlay')){
         handleClick(event).catch(err => setStatus(err.message || '操作失败'));
         return;
     }
@@ -17849,24 +17828,18 @@ function handleDetailCinemaPointer(event){
     detailCinemaClickState = {id,at:now};
 }
 document.addEventListener('keydown', event => {
-    if(event.key === 'Escape' && document.getElementById('directoryMountDialogOverlay')){
+    if(event.key === 'Escape' && serverDirectoryBrowserState.open){
         event.preventDefault();
-        document.getElementById('directoryMountDialogOverlay')?.remove();
+        serverDirectoryBrowserState = {...serverDirectoryBrowserState, open:false, loading:false};
+        renderStorageSettingsModal();
         return;
     }
     if(event.key === 'Enter'){
-        const mountConfirmInput = event.target?.closest?.('#mountConfirmPathInput');
-        if(mountConfirmInput){
-            event.preventDefault();
-            const btn = document.querySelector('[data-directory-mount-confirm]');
-            if(btn) btn.click();
-            return;
-        }
         const storageInput = event.target?.closest?.('[id^="storageDir_"]');
         if(storageInput && !storageInput.readOnly){
             event.preventDefault();
             const key = storageInput.id.replace('storageDir_', '');
-            executeDirectoryMount(key, storageInput.value);
+            saveDirectoryPath(key, storageInput.value).catch(error => setStatus(error.message || '保存目录失败'));
             return;
         }
     }
