@@ -637,6 +637,10 @@ def list_assets(limit: int, offset: int, query: Optional[str], kind: Optional[st
         str(root.get("id") or ""): str(root.get("availability") or "offline")
         for root in root_facets
     }
+    root_availability_reason = {
+        str(root.get("id") or ""): str(root.get("availability_reason") or "")
+        for root in root_facets
+    }
     for item in items:
         source_id = str(item.get("storage_root_id") or "")
         asset_root_id = str(item.get("root_id") or "")
@@ -644,6 +648,9 @@ def list_assets(limit: int, offset: int, query: Optional[str], kind: Optional[st
             availability_id = source_id or asset_root_id
             item["root_availability"] = root_availability.get(
                 availability_id, "offline"
+            )
+            item["root_availability_reason"] = root_availability_reason.get(
+                availability_id, "MOUNT_ROOT_REMOVED"
             )
     if root_id:
         known_roots = {item["id"] for item in root_facets}

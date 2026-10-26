@@ -533,6 +533,7 @@ let searchCompositionActive = false;
 let searchRenderTimer = null;
 let lastSearchCompositionEndAt = 0;
 let storageSettingsState = {open:false, tab:'boards', focusSection:'', dirs:{}, defaults:{}, revision:null, extraLocalDirs:[], extraLocalEntries:[], localLibraryNames:{}, localLibraries:[]};
+let allowedRootSettingsState = {revision:null, roots:[], loading:false, saving:false, error:''};
 let serverDirectoryBrowserState = {open:false, path:null, parent:null, directories:[], loading:false, saving:false, error:'', key:'projects'};
 let storageSettingsReturnFocus = null;
 let assetAiSettingsState = {rule:'', defaultRule:'', loading:false, saving:false, message:'', backgroundTaskId:''};
@@ -1800,6 +1801,7 @@ function canBrowseServerDirectories(){
     if(registryPrincipalLoading) return false;
     return String(registryPrincipal?.role || '').trim().toLowerCase() === 'admin';
 }
+function canManageAllowedRoots(){ return canBrowseServerDirectories(); }
 function renderServerDirectoryBrowser(){
     const state = serverDirectoryBrowserState;
     if(!state.open) return '';
@@ -2287,18 +2289,62 @@ async function loadGlobalDirectorySettings(){
     try {
         await loadRegistryPrincipal();
         if(!canManageProjectWorkspaceSettings()) throw new Error('仅管理员可查看和修改目录设置');
-        const [storage, thumbnail, status] = await Promise.all([
+        const [storage, thumbnail, status, roots] = await Promise.all([
             apiJsonResponse(assetManagerApi.getStorageSettings()),
             apiJsonResponse(assetManagerApi.getThumbnailSettings()),
             apiJsonResponse(assetManagerApi.getRegistryStatus()),
+            canManageAllowedRoots()
+                ? apiJsonResponse(assetManagerHttp.request('/api/storage-settings/roots', {method:'GET', credentials:'same-origin'}))
+                : Promise.resolve(null),
         ]);
         applyStorageSettingsData(storage);
+        if(roots) applyAllowedRootSettingsData(roots);
         registryStatus = status;
         thumbnailGeneratorState = {...thumbnailGeneratorState, mode:thumbnail.mode, directory:thumbnail.directory || '', cacheFolder:thumbnail.cache_folder || 'god-cache', loading:false};
         directorySettingsReady = true;
         currentStatusText = '目录已同步';
     } catch(error){ directorySettingsError = error.message || '目录设置读取失败'; }
     renderGlobalDirectorySettings();
+}
+function applyAllowedRootSettingsData(data={}){
+    allowedRootSettingsState = {
+        ...allowedRootSettingsState,
+        revision:Number.isFinite(Number(data.revision)) ? Number(data.revision) : allowedRootSettingsState.revision,
+        roots:Array.isArray(data.roots) ? data.roots.map(root => ({
+            id:String(root.id || ''), path:String(root.path || ''), source:String(root.source || 'persistent'),
+            readOnly:Boolean(root.read_only), active:root.active !== false,
+            aliases:Array.isArray(root.aliases) ? root.aliases.map(String) : [],
+            aliasCandidates:Array.isArray(root.alias_candidates) ? root.alias_candidates : [],
+            availability:String(root.availability || 'offline'),
+            availabilityReason:String(root.availability_reason || ''),
+            availabilityMessage:String(root.availability_message || '')
+        })) : [],
+        error:''
+    };
+}
+function renderAllowedRootsSettings(){
+    if(!canManageAllowedRoots()) return '';
+    const statusLabel = root => root.availability === 'available' ? '在线'
+        : root.availability === 'removed' ? '已移除' : root.availability === 'invalid' ? '无效' : '离线';
+    const roots = allowedRootSettingsState.roots.map(root => `<article class="allowed-root-row" data-allowed-root="${escapeAttr(root.id)}">
+        <div class="allowed-root-info"><strong>${escapeHtml(root.readOnly ? '系统根（只读）' : root.active ? '持久允许根' : '已移除')}</strong><code title="${escapeAttr(root.path)}">${escapeHtml(root.path)}</code>
+            <small class="allowed-root-status allowed-root-status--${escapeAttr(root.availability)}">${escapeHtml(statusLabel(root))}${root.availabilityReason ? ` · ${escapeHtml(root.availabilityReason)}` : ''}</small>
+            ${root.availabilityMessage ? `<small>${escapeHtml(root.availabilityMessage)}</small>` : ''}
+            ${root.aliases.map(alias => `<small>已确认别名：<code>${escapeHtml(alias)}</code></small>`).join('')}
+        </div>
+        <div class="allowed-root-actions">${root.active ? root.aliasCandidates.map(candidate => `<button type="button" class="hw-btn" data-storage-root-alias-confirm="${escapeAttr(root.id)}" data-storage-root-alias-path="${escapeAttr(candidate.path || '')}" ${allowedRootSettingsState.saving ? 'disabled' : ''}>确认别名：${escapeHtml(candidate.path || '')}</button>`).join('') : ''}
+            ${root.active && !root.readOnly ? `<button type="button" class="hw-btn allowed-root-remove" data-storage-root-delete="${escapeAttr(root.id)}" ${allowedRootSettingsState.saving ? 'disabled' : ''}>移除</button>` : ''}
+        </div>
+    </article>`).join('');
+    return `<section class="asset-pref-section allowed-roots-settings" data-allowed-roots-settings>
+        <div class="asset-pref-title"><i data-lucide="shield-check"></i><span>允许根</span><small>管理员管理；环境变量根只读</small></div>
+        <p class="board-settings-hint">登记后立即生效并保存到 data/allowed_roots.json。移除只撤销扫描授权，已索引记录和源文件保留。</p>
+        ${allowedRootSettingsState.error ? `<p class="allowed-root-error" role="alert">${escapeHtml(allowedRootSettingsState.error)}</p>` : ''}
+        <div class="allowed-root-add"><label class="storage-dir-row"><span>服务器绝对路径</span><input id="allowedRootPath" value="" autocomplete="off" placeholder="例如 Z:\\测试素材库"></label>
+            <button type="button" class="hw-btn hw-btn-gold" data-storage-root-add ${allowedRootSettingsState.saving ? 'disabled' : ''}>登记允许根</button>
+        </div>
+        <div class="allowed-root-list">${roots || '<p class="directory-status">尚无允许根；可先登记持久根，或配置 GW_ALLOWED_ROOTS。</p>'}</div>
+    </section>`;
 }
 function renderGlobalDirectorySettings(){
     let host = document.getElementById('storageSettingsOverlay');
@@ -2314,6 +2360,7 @@ function renderGlobalDirectorySettings(){
         ${directorySettingsError ? `<div class="directory-error" role="alert">${escapeHtml(directorySettingsError)}</div>` : ''}
         ${!directorySettingsReady ? `<p class="directory-status" role="status">${directorySettingsError ? '请检查权限或连接后重新读取。' : '正在读取目录设置…'}</p>` : `<fieldset ${directorySettingsSaving ? 'disabled' : ''}>
         <section class="asset-pref-section bay-inset p-4 rounded-xl gw-settings-card" data-board-directories-settings><div class="asset-pref-title"><i data-lucide="folder-check"></i><span>登记目录</span></div><div class="storage-dir-grid">${input('local','本地素材目录',dirs.local)}</div><div class="directory-registered">${storageExtraLocalEntries().map(item=>`<div><span>${escapeHtml(item.name)}</span><code>${escapeHtml(item.path)}</code></div>`).join('')}</div></section>
+        ${renderAllowedRootsSettings()}
         <section class="asset-pref-section bay-inset p-4 rounded-xl gw-settings-card"><div class="asset-pref-title"><i data-lucide="hard-drive"></i><span>上传与生成</span></div><div class="storage-dir-grid">${input('upload','上传素材',dirs.upload)}${input('generated','生成素材',dirs.generated)}</div></section>
         ${renderProjectWorkspaceSettingsBody()}
         <section class="asset-pref-section bay-inset p-4 rounded-xl gw-settings-card">${renderAssetThumbnailCacheDirectoryBody()}<div class="storage-settings-actions"><button class="hw-btn" type="button" data-directory-cache-save><i data-lucide="save"></i>保存缓存目录</button></div></section>
@@ -2322,6 +2369,58 @@ function renderGlobalDirectorySettings(){
     host.querySelector('.project-workspace-settings [data-storage-save]')?.remove();
     refreshIcons();
 }
+async function saveAllowedRootsRequest(url, method, payload){
+    allowedRootSettingsState = {...allowedRootSettingsState, saving:true, error:''};
+    renderGlobalDirectorySettings();
+    try {
+        const data = await apiJsonResponse(assetManagerHttp.request(url, {
+            method, credentials:'same-origin', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload)
+        }));
+        applyAllowedRootSettingsData(data);
+        if(method === 'POST' && url === '/api/storage-settings/roots'){
+            const input = document.getElementById('allowedRootPath');
+            if(input) input.value = '';
+        }
+        setStatus(method === 'POST' && url.includes('/aliases/confirm') ? '路径别名已确认' : '允许根设置已更新');
+    } catch(error){
+        allowedRootSettingsState = {
+            ...allowedRootSettingsState,
+            error:`${error.code ? `${error.code}：` : ''}${error.message || '允许根设置失败'}`
+        };
+        setStatus(error.message || '允许根设置失败');
+    } finally {
+        allowedRootSettingsState = {...allowedRootSettingsState, saving:false};
+        renderGlobalDirectorySettings();
+    }
+}
+document.addEventListener('click', event => {
+    const target = event.target?.closest?.('[data-storage-root-add],[data-storage-root-delete],[data-storage-root-alias-confirm]');
+    if(!target) return;
+    event.preventDefault();
+    if(allowedRootSettingsState.saving) return;
+    const expectedVersion = Number(allowedRootSettingsState.revision || 1);
+    if(target.hasAttribute('data-storage-root-add')){
+        const path = String(document.getElementById('allowedRootPath')?.value || '').trim();
+        if(!path){
+            allowedRootSettingsState = {...allowedRootSettingsState, error:'请输入服务器绝对路径'};
+            renderGlobalDirectorySettings();
+            return;
+        }
+        void saveAllowedRootsRequest('/api/storage-settings/roots', 'POST', {path, expected_version:expectedVersion});
+        return;
+    }
+    const removeRootId = target.getAttribute('data-storage-root-delete');
+    if(removeRootId){
+        if(!window.confirm('移除该允许根？已索引记录和源文件会保留，目录将停止扫描并显示为已移除。')) return;
+        void saveAllowedRootsRequest(`/api/storage-settings/roots/${encodeURIComponent(removeRootId)}`, 'DELETE', {expected_version:expectedVersion});
+        return;
+    }
+    const rootId = target.getAttribute('data-storage-root-alias-confirm');
+    const path = target.getAttribute('data-storage-root-alias-path') || '';
+    if(rootId && path){
+        void saveAllowedRootsRequest(`/api/storage-settings/roots/${encodeURIComponent(rootId)}/aliases/confirm`, 'POST', {path, expected_version:expectedVersion});
+    }
+});
 function renderStorageSettingsModal(){
     if(!storageSettingsState.open) return;
     if(directorySettingsPage){ renderGlobalDirectorySettings(); return; }

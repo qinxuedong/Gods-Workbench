@@ -300,7 +300,7 @@ def test_static_layer_has_no_legacy_integration_markers(repo_root: Path):
 # 凭据或完整历史授权账本。历史材料继续留在洁净源仓，不因测试需要复制进新仓。
 ADMISSION_METADATA_PATH = "tests/hygiene/fixtures/cleanroom_admission_metadata.json"
 ADMISSION_METADATA_SHA256 = (
-    "85875ed5866170e14f790f33d1e22d5df28cd87c9911b25a3d748823785043f4"
+    "7d293a0da62a7a35022a414ab0509d82d866c7965aed5c525829e6b06f873927"
 )
 QUARANTINED_PROMPT_ORIGINAL_PATH = (
     "web/system-prompts/infinite-canvas-prompt-templates.md"
@@ -320,6 +320,31 @@ def _load_admission_metadata(repo_root: Path) -> dict:
     assert metadata.get("release_authorized") is True
     assert _canonical_sha256(metadata_path) == ADMISSION_METADATA_SHA256
     return metadata
+
+
+def test_mvp1_t0_contract_tests_are_explicitly_authorized(repo_root: Path):
+    """MVP1-T0 新增测试逐文件登记，且新增 Node 测试进入执行清单。"""
+    metadata = _load_admission_metadata(repo_root)
+    expected = {
+        "tests/contracts/assets/test_mvp1_t0_alias_offline.py",
+        "tests/contracts/settings/test_mvp1_t0_mount_validation.py",
+        "tests/frontend/mvp1-t0-mount-errors.test.mjs",
+    }
+    entries = metadata.get("authorized_test_files", [])
+    assert {entry.get("path") for entry in entries} == expected
+    for entry in entries:
+        path = repo_root / entry["path"]
+        assert path.is_file(), f"MVP1-T0 授权测试文件缺失: {entry['path']}"
+        assert entry.get("authorization_basis") == "MVP1-T0_Cut_2026-10-26"
+        assert re.fullmatch(r"[0-9a-f]{64}", entry.get("sha256", ""))
+        assert _canonical_sha256(path) == entry["sha256"]
+
+    node_manifest = (repo_root / "tests/frontend/node-files.txt").read_text(
+        encoding="utf-8"
+    )
+    assert "tests/frontend/mvp1-t0-mount-errors.test.mjs" in {
+        line.strip() for line in node_manifest.splitlines() if line.strip()
+    }
 
 
 def test_quarantined_prompt_is_absent_from_static_tree(repo_root: Path):
