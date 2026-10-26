@@ -343,6 +343,13 @@ KNOWN_UNIMPLEMENTED = frozenset(
     [
         # 2026-09-21 第二轮更正：helper 拼接类调用（如 `${canvasUrl(id)}/meta`）入集。
         # 旧扫描器只认以 /api 起头的字面量，这 8 条真实可达路径被结构性漏扫。
+        # 2026-10-27 MVP1-T8a-UI（issue #346）：收集面板前端 mock 契约（前端 mock adapter，
+        # 不新增后端路由）；后端由 #338 落地后按文件头指引迁出本基线并补契约声明。
+        # 契约方法：POST /api/asset-collect/url、POST /api/asset-collect/files、
+        #           GET /api/asset-collect/jobs/{job_id}
+        "/api/asset-collect/url",
+        "/api/asset-collect/files",
+        "/api/asset-collect/jobs/{p}",
     ]
 )
 

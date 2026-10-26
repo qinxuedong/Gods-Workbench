@@ -22,6 +22,7 @@ import {readStoredBoolean, readStoredNumber} from './asset-manager/storage.js';
 import {formatDate, formatFileSize} from './asset-manager/formatters.js';
 import {pathCompareKey} from './asset-manager/path-utils.js';
 import {workflowAssetId, workflowLibraryId, workflowCategoryId, workflowSourceId, zipWorkflowFiles} from './asset-manager/workflow-assets.js';
+import {openAssetCollectOverlay} from './asset-collect-panel.js';
 
 let mediaPreviewPlayerLoading = null;
 export async function ensureMediaPreviewPlayer() {
@@ -7335,6 +7336,7 @@ function renderLocalManager(){
                 <div class="asset-tools">
                     <label class="asset-search-wrap"><i data-lucide="search"></i><input id="localUploadSearch" class="asset-search" type="search" value="${escapeAttr(localUploadQuery)}" placeholder="搜索本地上传"></label>
                     <button class="hw-btn hw-btn-gold" type="button" data-localup-upload><i data-lucide="upload"></i><span>上传文件</span></button>
+                    <button class="hw-btn" type="button" data-asset-collect-open><i data-lucide="cloud-download"></i><span>网络收集</span></button>
                     <button class="${localUploadManageMode ? 'hw-btn hw-btn-gold' : 'hw-btn'}" type="button" data-localup-manage ${total ? '' : 'disabled'}><i data-lucide="list-checks"></i><span>${localUploadManageMode ? '完成管理' : '批量管理'}</span></button>
                 </div>
             </div>
@@ -18508,6 +18510,7 @@ assetTabsEl?.addEventListener('click', event => {
     if(tab) activateAssetBoard(tab.dataset.tab || 'registry').catch(err => setStatus(err.message || '打开看板失败'));
 });
 root.addEventListener('click', event => {
+    if(event.target.closest?.('[data-asset-collect-open]')){ openAssetCollectOverlay(event.target.closest('[data-asset-collect-open]')); return; }
     const create = event.target.closest?.('[data-script-create]');
     if(create){ openEpisodePipelineFromAsset({projectId:localStorage.getItem('workspace_project_id') || ''}); return; }
     const open = event.target.closest?.('[data-script-open]');
