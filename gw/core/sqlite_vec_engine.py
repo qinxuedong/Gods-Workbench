@@ -50,6 +50,36 @@ class VectorMatch:
     distance: float
 
 
+@dataclass(frozen=True, slots=True)
+class ShotRecord:
+    """镜头级索引行；内容哈希是幂等与查重候选的事实键。"""
+
+    asset_id: str
+    root_id: str
+    shot_index: int
+    start_sec: float
+    end_sec: float
+    content_hash: str
+
+
+@dataclass(frozen=True, slots=True)
+class ShotDuplicateGroup:
+    """按内容哈希聚合的重复镜头候选组；只报告，不删除。"""
+
+    content_hash: str
+    members: tuple[ShotRecord, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class IndexMetadata:
+    """索引元数据；记录产出该索引的模型 id/版本、维度与量化格式。"""
+
+    model_id: str | None
+    model_version: str | None
+    dimensions: int
+    quantization: str | None
+
+
 def _load_sqlite_vec(connection: sqlite3.Connection) -> bool:
     """若 Python 环境提供官方 sqlite-vec 绑定，则安全地短暂开放扩展加载。"""
     module = importlib.import_module("sqlite_vec")
@@ -203,6 +233,32 @@ class SQLiteVecEngine:
         self._db.execute(
             f"""CREATE VIRTUAL TABLE IF NOT EXISTS {self._FTS} USING fts5(
                 asset_id UNINDEXED, title, content, tokenize='unicode61'
+            )"""
+        )
+        # MVP1 镜头级表与索引元数据：全部使用字面量静态 SQL（含 DDL/DML），
+        # 数据值一律参数绑定，杜绝动态拼接。
+        self._db.execute(
+            """CREATE TABLE IF NOT EXISTS mvp1_shots (
+                row_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                asset_id TEXT NOT NULL,
+                root_id TEXT NOT NULL DEFAULT '',
+                shot_index INTEGER NOT NULL,
+                start_sec REAL NOT NULL,
+                end_sec REAL NOT NULL,
+                content_hash TEXT NOT NULL,
+                UNIQUE(asset_id, shot_index)
+            )"""
+        )
+        self._db.execute(
+            "CREATE INDEX IF NOT EXISTS mvp1_shots_hash ON mvp1_shots(content_hash)"
+        )
+        self._db.execute(
+            """CREATE TABLE IF NOT EXISTS mvp1_index_metadata (
+                id INTEGER PRIMARY KEY CHECK (id = 1),
+                model_id TEXT,
+                model_version TEXT,
+                dimensions INTEGER NOT NULL,
+                quantization TEXT
             )"""
         )
         try:
@@ -413,6 +469,312 @@ class SQLiteVecEngine:
                 self._db.rollback()
                 raise
         return True
+
+    def batch_upsert_shots(
+        self,
+        shots: Iterable[Mapping[str, Any]],
+        *,
+        batch_size: int = 500,
+    ) -> int:
+        """分批写入镜头级索引行，按 (asset_id, shot_index) 幂等替换。
+
+        返回实际写入的行数；同一批内重复的 (asset_id, shot_index) 以最后
+        一条为准，不产生重复镜头行。
+        """
+        self._ensure_open()
+        if (
+            isinstance(batch_size, bool)
+            or not isinstance(batch_size, int)
+            or batch_size < 1
+        ):
+            raise ValueError("batch_size 必须是正整数")
+
+        iterator = iter(shots)
+        written = 0
+        while True:
+            batch: list[Mapping[str, Any]] = []
+            try:
+                for _ in range(batch_size):
+                    batch.append(next(iterator))
+            except StopIteration:
+                pass
+            if not batch:
+                return written
+
+            with self._lock:
+                self._ensure_open()
+                self._db.execute("BEGIN IMMEDIATE")
+                try:
+                    for shot in batch:
+                        prepared = self._prepare_shot(shot)
+                        self._upsert_shot_in_transaction(*prepared)
+                        written += 1
+                    self._db.commit()
+                except Exception:
+                    self._db.rollback()
+                    raise
+
+    def _prepare_shot(
+        self, shot: Mapping[str, Any]
+    ) -> tuple[str, str, int, float, float, str]:
+        if not isinstance(shot, Mapping):
+            raise ValueError("镜头行必须是映射")
+        asset_id = shot.get("asset_id")
+        if not isinstance(asset_id, str) or not asset_id.strip():
+            raise ValueError("asset_id 不能为空")
+        root_id = shot.get("root_id")
+        if root_id is None:
+            root_id = ""
+        if not isinstance(root_id, str):
+            raise ValueError("root_id 必须是字符串")
+        shot_index = shot.get("shot_index")
+        if (
+            isinstance(shot_index, bool)
+            or not isinstance(shot_index, int)
+            or shot_index < 0
+        ):
+            raise ValueError("shot_index 必须是非负整数")
+        for name, value in (
+            ("start_sec", shot.get("start_sec")),
+            ("end_sec", shot.get("end_sec")),
+        ):
+            if isinstance(value, bool) or not isinstance(value, (int, float)):
+                raise ValueError(f"{name} 必须是数值")
+            if not math.isfinite(float(value)):
+                raise ValueError(f"{name} 必须是有限数值")
+        start_sec = float(shot["start_sec"])
+        end_sec = float(shot["end_sec"])
+        if start_sec < 0 or end_sec <= start_sec:
+            raise ValueError("镜头时间戳必须满足 0 <= start_sec < end_sec")
+        content_hash = shot.get("content_hash")
+        if not isinstance(content_hash, str) or not content_hash.strip():
+            raise ValueError("content_hash 不能为空")
+        return asset_id, root_id, shot_index, start_sec, end_sec, content_hash
+
+    def _upsert_shot_in_transaction(
+        self,
+        asset_id: str,
+        root_id: str,
+        shot_index: int,
+        start_sec: float,
+        end_sec: float,
+        content_hash: str,
+    ) -> None:
+        row = self._db.execute(
+            "SELECT row_id FROM mvp1_shots WHERE asset_id=? AND shot_index=?",
+            (asset_id, shot_index),
+        ).fetchone()
+        if row:
+            self._db.execute(
+                """UPDATE mvp1_shots
+                   SET root_id=?, start_sec=?, end_sec=?, content_hash=?
+                   WHERE row_id=?""",
+                (root_id, start_sec, end_sec, content_hash, int(row["row_id"])),
+            )
+        else:
+            self._db.execute(
+                """INSERT INTO mvp1_shots
+                   (asset_id, root_id, shot_index, start_sec, end_sec, content_hash)
+                   VALUES(?,?,?,?,?,?)""",
+                (asset_id, root_id, shot_index, start_sec, end_sec, content_hash),
+            )
+
+    def delete_shots(self, asset_id: str) -> int:
+        """删除一个资产的全部镜头行，返回删除数量；不触碰文档与向量。"""
+        self._ensure_open()
+        if not isinstance(asset_id, str) or not asset_id.strip():
+            raise ValueError("asset_id 不能为空")
+        with self._lock:
+            self._ensure_open()
+            self._db.execute("BEGIN IMMEDIATE")
+            try:
+                cursor = self._db.execute(
+                    "DELETE FROM mvp1_shots WHERE asset_id=?", (asset_id,)
+                )
+                removed = int(cursor.rowcount)
+                self._db.commit()
+            except Exception:
+                self._db.rollback()
+                raise
+        return removed
+
+    def list_shots(
+        self,
+        *,
+        asset_id: str | None = None,
+        content_hash: str | None = None,
+        limit: int = 1000,
+    ) -> list[ShotRecord]:
+        """按条件读取镜头行；默认按 asset_id、shot_index 稳定排序。"""
+        self._ensure_open()
+        limit = self._validate_limit(limit)
+        if asset_id is not None:
+            if not isinstance(asset_id, str) or not asset_id.strip():
+                raise ValueError("asset_id 不能为空")
+        if content_hash is not None:
+            if not isinstance(content_hash, str) or not content_hash.strip():
+                raise ValueError("content_hash 不能为空")
+        with self._lock:
+            self._ensure_open()
+            # WHERE 只从固定分支选取，语句为字面量，取值全部参数绑定。
+            if asset_id is not None and content_hash is not None:
+                rows = self._db.execute(
+                    """SELECT asset_id, root_id, shot_index, start_sec, end_sec, content_hash
+                       FROM mvp1_shots WHERE asset_id=? AND content_hash=?
+                       ORDER BY asset_id ASC, shot_index ASC LIMIT ?""",
+                    (asset_id, content_hash, limit),
+                ).fetchall()
+            elif asset_id is not None:
+                rows = self._db.execute(
+                    """SELECT asset_id, root_id, shot_index, start_sec, end_sec, content_hash
+                       FROM mvp1_shots WHERE asset_id=?
+                       ORDER BY asset_id ASC, shot_index ASC LIMIT ?""",
+                    (asset_id, limit),
+                ).fetchall()
+            elif content_hash is not None:
+                rows = self._db.execute(
+                    """SELECT asset_id, root_id, shot_index, start_sec, end_sec, content_hash
+                       FROM mvp1_shots WHERE content_hash=?
+                       ORDER BY asset_id ASC, shot_index ASC LIMIT ?""",
+                    (content_hash, limit),
+                ).fetchall()
+            else:
+                rows = self._db.execute(
+                    """SELECT asset_id, root_id, shot_index, start_sec, end_sec, content_hash
+                       FROM mvp1_shots
+                       ORDER BY asset_id ASC, shot_index ASC LIMIT ?""",
+                    (limit,),
+                ).fetchall()
+        return [
+            ShotRecord(
+                asset_id=str(row["asset_id"]),
+                root_id=str(row["root_id"]),
+                shot_index=int(row["shot_index"]),
+                start_sec=float(row["start_sec"]),
+                end_sec=float(row["end_sec"]),
+                content_hash=str(row["content_hash"]),
+            )
+            for row in rows
+        ]
+
+    def shot_duplicate_candidates(
+        self, *, limit: int = 1000
+    ) -> list[ShotDuplicateGroup]:
+        """按内容哈希聚合重复镜头候选；每组至少两行，只报告不删除。"""
+        self._ensure_open()
+        limit = self._validate_limit(limit)
+        candidate_limit = limit * 2
+        with self._lock:
+            self._ensure_open()
+            rows = self._db.execute(
+                """SELECT asset_id, root_id, shot_index, start_sec, end_sec, content_hash
+                   FROM mvp1_shots
+                   WHERE content_hash IN (
+                       SELECT content_hash FROM mvp1_shots
+                       GROUP BY content_hash HAVING COUNT(*) > 1
+                   )
+                   ORDER BY content_hash ASC, asset_id ASC, shot_index ASC
+                   LIMIT ?""",
+                (candidate_limit,),
+            ).fetchall()
+        grouped: dict[str, list[ShotRecord]] = {}
+        for row in rows:
+            record = ShotRecord(
+                asset_id=str(row["asset_id"]),
+                root_id=str(row["root_id"]),
+                shot_index=int(row["shot_index"]),
+                start_sec=float(row["start_sec"]),
+                end_sec=float(row["end_sec"]),
+                content_hash=str(row["content_hash"]),
+            )
+            grouped.setdefault(str(row["content_hash"]), []).append(record)
+        return [
+            ShotDuplicateGroup(content_hash=content_hash, members=tuple(members))
+            for content_hash, members in sorted(grouped.items())[:limit]
+        ]
+
+    def set_index_metadata(
+        self,
+        *,
+        model_id: str | None,
+        model_version: str | None,
+        dimensions: int,
+        quantization: str | None,
+    ) -> None:
+        """写入单行索引元数据；维度必须与当前索引配置一致。"""
+        self._ensure_open()
+        for name, value in (("model_id", model_id), ("model_version", model_version)):
+            if value is not None and (not isinstance(value, str) or not value.strip()):
+                raise ValueError(f"{name} 必须是 None 或非空字符串")
+        if (
+            isinstance(dimensions, bool)
+            or not isinstance(dimensions, int)
+            or dimensions < 1
+        ):
+            raise ValueError("dimensions 必须是正整数")
+        if dimensions != self.dimensions:
+            raise ValueError("dimensions 与当前索引配置的向量维度不一致")
+        if quantization is not None and (
+            not isinstance(quantization, str) or not quantization.strip()
+        ):
+            raise ValueError("quantization 必须是 None 或非空字符串")
+        with self._lock:
+            self._ensure_open()
+            self._db.execute("BEGIN IMMEDIATE")
+            try:
+                self._db.execute("DELETE FROM mvp1_index_metadata WHERE id=1")
+                self._db.execute(
+                    """INSERT INTO mvp1_index_metadata
+                       (id, model_id, model_version, dimensions, quantization)
+                       VALUES(1,?,?,?,?)""",
+                    (model_id, model_version, dimensions, quantization),
+                )
+                self._db.commit()
+            except Exception:
+                self._db.rollback()
+                raise
+
+    def index_metadata(self) -> IndexMetadata | None:
+        """读取索引元数据；尚未写入时返回 None。"""
+        self._ensure_open()
+        with self._lock:
+            self._ensure_open()
+            row = self._db.execute(
+                """SELECT model_id, model_version, dimensions, quantization
+                   FROM mvp1_index_metadata WHERE id=1"""
+            ).fetchone()
+        if row is None:
+            return None
+        return IndexMetadata(
+            model_id=row["model_id"] if row["model_id"] is None else str(row["model_id"]),
+            model_version=(
+                row["model_version"]
+                if row["model_version"] is None
+                else str(row["model_version"])
+            ),
+            dimensions=int(row["dimensions"]),
+            quantization=(
+                row["quantization"]
+                if row["quantization"] is None
+                else str(row["quantization"])
+            ),
+        )
+
+    def document_count(self) -> int:
+        """返回文档表行数。"""
+        self._ensure_open()
+        with self._lock:
+            self._ensure_open()
+            row = self._db.execute("SELECT COUNT(*) FROM c18_documents").fetchone()
+        return int(row[0])
+
+    def shot_count(self) -> int:
+        """返回镜头表行数。"""
+        self._ensure_open()
+        with self._lock:
+            self._ensure_open()
+            row = self._db.execute("SELECT COUNT(*) FROM mvp1_shots").fetchone()
+        return int(row[0])
 
     def search_fts(self, query: str, *, limit: int = 20) -> list[FTSMatch]:
         """搜索关键词；limit 不在 1~1000 时抛 ValueError，query 最长 4096 字符。"""
