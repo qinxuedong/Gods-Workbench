@@ -300,7 +300,7 @@ def test_static_layer_has_no_legacy_integration_markers(repo_root: Path):
 # 凭据或完整历史授权账本。历史材料继续留在洁净源仓，不因测试需要复制进新仓。
 ADMISSION_METADATA_PATH = "tests/hygiene/fixtures/cleanroom_admission_metadata.json"
 ADMISSION_METADATA_SHA256 = (
-    "624d643a20a2bf3f8c08c6dab653621e9095777202c9064b73eea7bafc10b1b2"
+    "85875ed5866170e14f790f33d1e22d5df28cd87c9911b25a3d748823785043f4"
 )
 QUARANTINED_PROMPT_ORIGINAL_PATH = (
     "web/system-prompts/infinite-canvas-prompt-templates.md"
@@ -437,6 +437,7 @@ def test_classification_target_hashes_match_manifest_and_files(repo_root: Path):
         "frozen_behavior_contract",
         "frozen_interface_contract",
         "golden_fixture",
+        "curated_architecture_plan",
         "curated_design_system",
         "curated_project_governance",
         "curated_provider_boundary",
@@ -466,8 +467,8 @@ def test_admission_metadata_hashes_match_current_files(repo_root: Path):
     """当前准入文件哈希必须与机器登记一致；不复用旧 Phase-2 账本。"""
     metadata = _load_admission_metadata(repo_root)
     entries = metadata.get("admitted_files", [])
-    assert len(entries) == 103, (
-        "当前准入登记数量必须包含 H01、已批准规范与 QIN-376 的单文件测试覆盖清单"
+    assert len(entries) == 104, (
+        "当前准入登记数量必须包含 H01、已批准规范、QIN-376 测试覆盖清单与 QIN-382 方案"
     )
     for entry in entries:
         path = repo_root / entry["path"]
@@ -555,6 +556,22 @@ def _docs_admission_delta(
     return sorted(unadmitted), sorted(missing)
 
 
+def test_qin_382_plan_has_explicit_curated_admission(repo_root: Path):
+    """QIN-382 的方案文档按批准路径单文件进入 curated 与 H03 清单。"""
+    metadata_path = repo_root / ADMISSION_METADATA_PATH
+    metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+    target = "docs/architecture/asset-manager-js-split-plan.md"
+
+    curated_paths = {entry.get("path") for entry in metadata.get("curated_files", [])}
+    assert target in curated_paths
+
+    admitted_paths = {entry.get("path") for entry in metadata.get("admitted_files", [])}
+    assert target in admitted_paths
+    entry = next(entry for entry in metadata["admitted_files"] if entry["path"] == target)
+    assert entry["classification"] == "curated_architecture_plan"
+    assert entry["authorization_basis"] == "QIN-382_Cut_2026-10-25"
+
+
 def test_accepted_doc_slices_match_migration_manifest(repo_root: Path):
     """H01 文档准入必须与 H03 文件清单逐路径一致，不按目录名放宽准入。"""
     metadata = _load_admission_metadata(repo_root)
@@ -568,6 +585,7 @@ def test_accepted_doc_slices_match_migration_manifest(repo_root: Path):
         "docs/governance/LOCAL-DIRECTORY-SPEC.md",
         "docs/contracts/PROVIDER-PROTOCOL-BOUNDARIES.md",
         "docs/CI-SKIPPED-TEST-COVERAGE.md",
+        "docs/architecture/asset-manager-js-split-plan.md",
     }
     admitted_paths = _metadata_admitted_paths(metadata)
     assert curated_paths <= admitted_paths
