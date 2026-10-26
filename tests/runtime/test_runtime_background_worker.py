@@ -44,7 +44,7 @@ def create_agent_run(status: RunStatus = RunStatus.queued) -> AgentRun:
         updated_at=now,
     )
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_start_stop() -> None:
     integration = FakeIntegration()
     worker = RuntimeBackgroundWorker(integration, poll_seconds=0.01)
@@ -68,7 +68,7 @@ async def test_start_stop() -> None:
     await worker.stop()
     assert worker._task is None
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_run_once_success() -> None:
     integration = FakeIntegration()
     worker = RuntimeBackgroundWorker(integration)
@@ -87,7 +87,7 @@ async def test_run_once_success() -> None:
     assert integration.repository.scan_recoverable.call_count == 2
     worker._advance.assert_awaited_once_with(queued_run)
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_run_once_ignores_other_statuses() -> None:
     integration = FakeIntegration()
     worker = RuntimeBackgroundWorker(integration)
@@ -100,7 +100,7 @@ async def test_run_once_ignores_other_statuses() -> None:
     await worker.run_once()
     worker._advance.assert_not_awaited()
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_run_once_catches_advance_exception() -> None:
     integration = FakeIntegration()
     worker = RuntimeBackgroundWorker(integration)
@@ -114,7 +114,7 @@ async def test_run_once_catches_advance_exception() -> None:
     await worker.run_once()
     worker._advance.assert_awaited_once_with(queued_run)
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_advance_no_binding() -> None:
     integration = FakeIntegration()
     worker = RuntimeBackgroundWorker(integration)
@@ -132,7 +132,7 @@ async def test_advance_no_binding() -> None:
     )
     integration.service.start_run.assert_not_called()
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_advance_unauthorized() -> None:
     integration = FakeIntegration()
     worker = RuntimeBackgroundWorker(integration)
@@ -152,7 +152,7 @@ async def test_advance_unauthorized() -> None:
         queued_run, "The authenticated session or project permission is no longer valid."
     )
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_advance_queued_to_running() -> None:
     integration = FakeIntegration()
     worker = RuntimeBackgroundWorker(integration)
@@ -174,7 +174,7 @@ async def test_advance_queued_to_running() -> None:
         Identifier("p-1"), Identifier("r-1"), expected_version=1, idempotency_key=Identifier("host-execute:r-1:1"), actor_id=Identifier("a-1"), writer_role="writer", reviewer_role="reviewer"
     )
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_advance_queued_not_running() -> None:
     integration = FakeIntegration()
     worker = RuntimeBackgroundWorker(integration)
@@ -192,7 +192,7 @@ async def test_advance_queued_not_running() -> None:
     integration.service.start_run.assert_awaited_once()
     integration.service.execute_current_stage.assert_not_awaited()
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_advance_execute_stage_not_authorized() -> None:
     integration = FakeIntegration()
     worker = RuntimeBackgroundWorker(integration)
@@ -213,7 +213,7 @@ async def test_advance_execute_stage_not_authorized() -> None:
         running_run, "The authenticated session or project permission was revoked during execution."
     )
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_advance_execute_stage_other_error() -> None:
     integration = FakeIntegration()
     worker = RuntimeBackgroundWorker(integration)
@@ -230,7 +230,7 @@ async def test_advance_execute_stage_other_error() -> None:
         await worker._advance(running_run)
     assert exc_info.value.code == ErrorCode.VALIDATION_FAILED
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_pause_for_authorization_success() -> None:
     integration = FakeIntegration()
     worker = RuntimeBackgroundWorker(integration)
@@ -244,7 +244,7 @@ async def test_pause_for_authorization_success() -> None:
         Identifier("p-1"), Identifier("r-1"), expected_version=1, idempotency_key=Identifier("host-auth-pause:r-1:1"), reason="reason"
     )
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_pause_for_authorization_error() -> None:
     integration = FakeIntegration()
     worker = RuntimeBackgroundWorker(integration)
