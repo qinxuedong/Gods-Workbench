@@ -607,6 +607,24 @@
             </div>
           </div>
 
+          <div id="localRecoverySettings" class="bay-inset p-3 rounded-xl border border-[#dfc384]/20 space-y-3 hidden">
+            <div>
+              <h3 class="gw-type-body-md font-bold text-slate-100">本地账户恢复码</h3>
+              <p class="gw-type-body-sm text-slate-400 mt-1">重新生成会立即作废旧恢复码。新码只显示一次，请保存或打印。</p>
+            </div>
+            <form id="localRecoveryRegenerationForm" class="grid gap-2 sm:grid-cols-[1fr_auto]" onsubmit="HardwareDeck.handleRecoveryCodeRegeneration(event)">
+              <label class="sr-only" for="settingsRecoveryCurrentPassword">当前账户密码</label>
+              <input id="settingsRecoveryCurrentPassword" name="current_password" type="password" autocomplete="current-password" required maxlength="128" placeholder="输入当前账户密码" class="w-full bg-black/40 border border-white/20 rounded-lg p-2 text-slate-100">
+              <button type="submit" class="hw-btn hw-btn-gold">重新生成恢复码</button>
+              <p id="settingsRecoveryError" class="gw-type-body-sm text-red-300 hidden sm:col-span-2" role="alert"></p>
+            </form>
+            <div id="settingsRecoveryCodes" class="hidden space-y-2" aria-live="polite">
+              <p class="gw-type-body-sm text-amber-200">请现在保存以下恢复码；关闭后无法再次查看。</p>
+              <ol id="settingsRecoveryCodeList" class="grid sm:grid-cols-2 gap-1 font-mono gw-type-body-sm text-slate-100"></ol>
+              <button type="button" class="hw-btn" onclick="HardwareDeck.dismissRecoveryCodes()">我已保存，隐藏恢复码</button>
+            </div>
+          </div>
+
           <!-- 动态团队席位成员列表 (对接 /api/asset-auth/teams 与 /api/asset-auth/users) -->
           <div class="space-y-2">
             <div class="flex items-center justify-between">
@@ -644,6 +662,7 @@
   <script src="/static/js/core/degradation.js?v=v0.0.1-alpha-2026"></script>
   <script src="/static/js/controllers/settings.js?v=v0.0.1-alpha-2026&m3=directories-20260916"></script>
   <script src="/static/js/core/hardware-telemetry.js?v=20261008-auth6"></script>
+  <script type="module" src="/static/js/modules/asset-auth/api.js?v=20261026-local-recovery"></script>
 
   <!-- 拟物仪表微动态与图标初始化 -->
   <script>

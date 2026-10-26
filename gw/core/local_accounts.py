@@ -27,6 +27,10 @@ from gw.core.errors import CleanroomException
 from gw.core.runtime_paths import RuntimePathError, resolve_runtime_paths
 
 USERNAME = re.compile(r"[A-Za-z0-9_.-]{3,64}\Z")
+RECOVERY_CODE = re.compile(r"RC-([0-9a-f]{8})-([A-Za-z0-9_-]{20,64})\Z")
+RECOVERY_CODE_COUNT = 8
+RECOVERY_LIMIT = 10
+RECOVERY_WINDOW_SECONDS = 60
 
 
 def database_path() -> Path:
@@ -59,6 +63,20 @@ def database():
                 expires_at REAL
             );
             CREATE TABLE IF NOT EXISTS local_login_limits (
+                client_key TEXT PRIMARY KEY,
+                window_start REAL NOT NULL,
+                attempts INTEGER NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS local_recovery_codes (
+                user_id TEXT NOT NULL REFERENCES local_users(user_id) ON DELETE CASCADE,
+                code_id TEXT NOT NULL,
+                salt BLOB NOT NULL,
+                code_hash BLOB NOT NULL,
+                created_at REAL NOT NULL,
+                used_at REAL,
+                PRIMARY KEY(user_id, code_id)
+            );
+            CREATE TABLE IF NOT EXISTS local_recovery_limits (
                 client_key TEXT PRIMARY KEY,
                 window_start REAL NOT NULL,
                 attempts INTEGER NOT NULL
@@ -120,6 +138,179 @@ def password_hash(password: str, salt: bytes) -> bytes:
         maxmem=64 * 1024 * 1024,
         dklen=32,
     )
+
+
+def _valid_password(password: str) -> bool:
+    return (
+        isinstance(password, str)
+        and 8 <= len(password) <= 128
+        and re.search(r"[A-Za-z]", password) is not None
+        and re.search(r"[0-9]", password) is not None
+    )
+
+
+def _issue_recovery_codes(db, user_id: str) -> list[str]:
+    now = time.time()
+    db.execute(
+        "UPDATE local_recovery_codes SET used_at=? WHERE user_id=? AND used_at IS NULL",
+        (now, user_id),
+    )
+    codes = []
+    for _ in range(RECOVERY_CODE_COUNT):
+        code_id = secrets.token_hex(4)
+        secret = secrets.token_urlsafe(18)
+        code = f"RC-{code_id}-{secret}"
+        salt = secrets.token_bytes(16)
+        db.execute(
+            """INSERT INTO local_recovery_codes
+               (user_id, code_id, salt, code_hash, created_at, used_at)
+               VALUES (?, ?, ?, ?, ?, NULL)""",
+            (user_id, code_id, salt, password_hash(secret, salt), now),
+        )
+        codes.append(code)
+    return codes
+
+
+def ensure_recovery_codes(user_id: str) -> list[str]:
+    """为从未配置恢复码的旧账户首次登录补发一组；后续登录不再显示。"""
+    with database() as db:
+        db.execute("BEGIN IMMEDIATE")
+        exists = db.execute(
+            "SELECT 1 FROM local_users WHERE user_id=?", (user_id,)
+        ).fetchone()
+        if not exists:
+            raise CleanroomException(404, "LOCAL_ACCOUNT_NOT_FOUND", "本地账户不存在")
+        existing = db.execute(
+            "SELECT 1 FROM local_recovery_codes WHERE user_id=? LIMIT 1", (user_id,)
+        ).fetchone()
+        return [] if existing else _issue_recovery_codes(db, user_id)
+
+
+def list_accounts() -> list[str]:
+    """返回可供本机恢复命令选择的账户名，不包含凭据。"""
+    with database() as db:
+        return [
+            row["username"]
+            for row in db.execute("SELECT username FROM local_users ORDER BY username")
+        ]
+
+
+def reset_password_local(username: str, new_password: str) -> list[str]:
+    """本机命令专用重置入口：改密、撤销会话并重新签发恢复码。"""
+    if not USERNAME.fullmatch(username) or not _valid_password(new_password):
+        raise CleanroomException(
+            400, "LOCAL_ACCOUNT_INVALID", "账号或新密码格式不符合要求"
+        )
+    with database() as db:
+        db.execute("BEGIN IMMEDIATE")
+        row = db.execute(
+            "SELECT user_id FROM local_users WHERE username=?", (username.lower(),)
+        ).fetchone()
+        if not row:
+            raise CleanroomException(404, "LOCAL_ACCOUNT_NOT_FOUND", "本地账户不存在")
+        salt = secrets.token_bytes(16)
+        db.execute(
+            "UPDATE local_users SET salt=?, password_hash=? WHERE user_id=?",
+            (salt, password_hash(new_password, salt), row["user_id"]),
+        )
+        db.execute("DELETE FROM local_sessions WHERE user_id=?", (row["user_id"],))
+        return _issue_recovery_codes(db, row["user_id"])
+
+
+def reset_password_with_recovery(
+    username: str, recovery_code: str, new_password: str, client_key: str
+) -> None:
+    """验证并一次性消费恢复码，改密后在同一事务中撤销全部本地会话。"""
+    if not _valid_password(new_password):
+        raise CleanroomException(
+            400,
+            "LOCAL_ACCOUNT_INVALID",
+            "新密码需8–128个字符且同时包含字母和数字",
+        )
+
+    now = time.time()
+    with database() as db:
+        db.execute("BEGIN IMMEDIATE")
+        db.execute(
+            "DELETE FROM local_recovery_limits WHERE window_start < ?",
+            (now - RECOVERY_WINDOW_SECONDS,),
+        )
+        limit = db.execute(
+            "SELECT window_start, attempts FROM local_recovery_limits WHERE client_key=?",
+            (client_key,),
+        ).fetchone()
+        if limit and limit["attempts"] >= RECOVERY_LIMIT:
+            rate_limited = True
+        else:
+            rate_limited = False
+            db.execute(
+                """INSERT INTO local_recovery_limits VALUES (?, ?, 1)
+                   ON CONFLICT(client_key) DO UPDATE SET
+                     window_start=CASE WHEN window_start < ? THEN excluded.window_start ELSE window_start END,
+                     attempts=CASE WHEN window_start < ? THEN 1 ELSE attempts+1 END""",
+                (
+                    client_key,
+                    now,
+                    now - RECOVERY_WINDOW_SECONDS,
+                    now - RECOVERY_WINDOW_SECONDS,
+                ),
+            )
+        if not rate_limited:
+            match = RECOVERY_CODE.fullmatch(recovery_code or "")
+            normalized_username = username.lower() if USERNAME.fullmatch(username or "") else ""
+            user = db.execute(
+                "SELECT * FROM local_users WHERE username=?", (normalized_username,)
+            ).fetchone()
+            recovery = (
+                db.execute(
+                    """SELECT * FROM local_recovery_codes
+                       WHERE user_id=? AND code_id=? AND used_at IS NULL""",
+                    (user["user_id"], match.group(1)),
+                ).fetchone()
+                if user and match
+                else None
+            )
+            salt = recovery["salt"] if recovery else b"\x00" * 16
+            expected = recovery["code_hash"] if recovery else b"\x00" * 32
+            secret = match.group(2) if match else "invalid-recovery-code"
+            valid = hmac.compare_digest(password_hash(secret, salt), expected)
+            if user and recovery and match and valid:
+                password_salt = secrets.token_bytes(16)
+                db.execute(
+                    "UPDATE local_users SET salt=?, password_hash=? WHERE user_id=?",
+                    (password_salt, password_hash(new_password, password_salt), user["user_id"]),
+                )
+                db.execute(
+                    "UPDATE local_recovery_codes SET used_at=? WHERE user_id=? AND code_id=?",
+                    (now, user["user_id"], recovery["code_id"]),
+                )
+                db.execute("DELETE FROM local_sessions WHERE user_id=?", (user["user_id"],))
+                db.execute(
+                    "DELETE FROM local_recovery_limits WHERE client_key=?", (client_key,)
+                )
+                return
+    if rate_limited:
+        raise CleanroomException(
+            429, "RECOVERY_RATE_LIMITED", "恢复码尝试过于频繁，请一分钟后重试"
+        )
+    raise CleanroomException(401, "LOCAL_RECOVERY_FAILED", "账户或恢复码错误")
+
+
+def regenerate_recovery_codes(user_id: str, current_password: str) -> list[str]:
+    """核验当前密码后作废旧码并返回新的一组恢复码。"""
+    with database() as db:
+        db.execute("BEGIN IMMEDIATE")
+        user = db.execute(
+            "SELECT * FROM local_users WHERE user_id=?", (user_id,)
+        ).fetchone()
+        if not user or len(current_password) > 128 or not hmac.compare_digest(
+            password_hash(current_password, user["salt"] if user else b"\x00" * 16),
+            user["password_hash"] if user else b"\x00" * 32,
+        ):
+            raise CleanroomException(
+                401, "LOCAL_ACCOUNT_CREDENTIALS_INVALID", "当前密码错误"
+            )
+        return _issue_recovery_codes(db, user_id)
 
 
 def setup_required() -> bool:

@@ -113,6 +113,9 @@ KNOWN_IMPLEMENTED = frozenset(
         # 2026-09-26 用户确认增补本地数据库账户登录，不替代 OIDC 路径。
         "/api/asset-auth/local/login",
         "/api/asset-auth/local/setup",
+        # 2026-10-26 QIN-394：恢复码密码重置与当前密码验证后的恢复码轮换。
+        "/api/asset-auth/local/reset-password",
+        "/api/asset-auth/local/recovery-codes/regenerate",
         "/api/asset-auth/logout",
         "/api/asset-auth/status",
         "/api/asset-registry/governance/projects/{p}/restore",

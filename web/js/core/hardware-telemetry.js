@@ -22,6 +22,8 @@
 (function(window) {
   'use strict';
 
+  const escapeHtml = value => String(value ?? '').replace(/[&<>"']/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
+
   // 所有受保护读请求共用这一道认证闸门；认证状态未知或未登录时不发业务请求。
   const authGate = window.GWAuthGate = window.GWAuthGate || {
     loaded: false,
@@ -914,6 +916,13 @@
       const latEl = document.getElementById('settingsAuthLatency');
       if (!badge && !roleEl && !chanEl && !latEl) return;
 
+      const recoveryPanel = document.getElementById('localRecoverySettings');
+      if (recoveryPanel) {
+        const canManageCodes = this.authState.authenticated
+          && this.authState.auth_mode === 'local_account';
+        recoveryPanel.classList.toggle('hidden', !canManageCodes);
+      }
+
       const setText = (node, text) => { if (node) node.textContent = text; };
       const mark = (node, kind, title) => {
         if (!node) return;
@@ -1142,7 +1151,17 @@
           ${setup ? '<label class="block gw-type-body-md text-slate-300" for="localPasswordConfirm">确认密码</label><input id="localPasswordConfirm" type="password" class="w-full bg-black/40 border border-white/20 rounded-lg p-2 text-slate-100" autocomplete="new-password" required minlength="8" maxlength="128">' : ''}
           <p id="localLoginError" role="alert" class="gw-type-body-sm text-red-300 hidden"></p>
           <button id="localLoginSubmit" type="submit" class="hw-btn hw-btn-gold w-full">${setup ? '创建管理员并登录' : '登录'}</button>
-        </form>`;
+        </form>
+        ${setup ? '' : '<button id="showLocalRecoveryReset" type="button" class="mt-3 gw-type-body-sm text-[#dfc384] hover:underline" onclick="HardwareDeck.showLocalRecoveryReset()">用恢复码重置密码</button>'}`;
+    },
+
+    requestLocalAccount: function(method, path, payload) {
+      const api = window.GodsWorkbenchAssetAuthApi;
+      if (api && typeof api[method] === 'function') return api[method](payload);
+      return fetch(path, {
+        method: 'POST', credentials: 'same-origin',
+        headers: {'Content-Type': 'application/json'}, body: JSON.stringify(payload)
+      });
     },
 
     handleLocalAccountSubmit: async function(event) {
@@ -1161,14 +1180,20 @@
       button.disabled = true;
       button.setAttribute('aria-busy', 'true');
       try {
-        const path = this.authState.setup_required ? '/api/asset-auth/local/setup' : '/api/asset-auth/local/login';
-        const response = await fetch(path, {
-          method: 'POST', credentials: 'same-origin', headers: {'Content-Type': 'application/json'},
-          body: JSON.stringify({username: form.querySelector('#localUsername').value.trim(), password})
-        });
-        const data = await response.json();
+        const setup = this.authState.setup_required;
+        const payload = {username: form.querySelector('#localUsername').value.trim(), password};
+        const response = await this.requestLocalAccount(
+          setup ? 'setupLocalAccount' : 'loginLocalAccount',
+          setup ? '/api/asset-auth/local/setup' : '/api/asset-auth/local/login',
+          payload
+        );
+        const data = await response.json().catch(() => ({}));
         if (!response.ok) throw new Error(data.detail?.message || '登录失败，请稍后重试。');
         form.reset();
+        if (Array.isArray(data.recovery_codes) && data.recovery_codes.length) {
+          this.renderLocalRecoveryCodes(data.recovery_codes);
+          return;
+        }
         // 各业务页重新读取真实会话和权限，避免保留登录前的只读状态。
         window.location.reload();
       } catch (failure) {
@@ -1177,6 +1202,133 @@
         button.disabled = false;
         button.setAttribute('aria-busy', 'false');
       }
+    },
+
+    showLocalRecoveryReset: function() {
+      this.renderLocalRecoveryResetForm(document.getElementById('accountModalDialog'));
+    },
+
+    renderLocalRecoveryResetForm: function(dialog) {
+      if (!dialog) return;
+      dialog.innerHTML = `
+        <div class="flex items-center justify-between pb-3 mb-3 border-b border-white/10">
+          <h3 class="gw-type-section font-bold text-slate-100">用恢复码重置密码</h3>
+          <button type="button" aria-label="关闭恢复码重置" class="hw-btn text-slate-400" onclick="HardwareDeck.closeModal('accountModal')">关闭</button>
+        </div>
+        <p class="mb-3 gw-type-body-sm text-slate-400">输入账户名和一条未使用的恢复码。成功后旧会话将退出，恢复码只能使用一次。</p>
+        <form id="localRecoveryResetForm" class="space-y-3" onsubmit="HardwareDeck.handleLocalRecoverySubmit(event)">
+          <label class="block gw-type-body-md text-slate-300" for="localRecoveryUsername">账号</label>
+          <input id="localRecoveryUsername" name="username" autocomplete="username" required minlength="3" maxlength="64" class="w-full bg-black/40 border border-white/20 rounded-lg p-2 text-slate-100">
+          <label class="block gw-type-body-md text-slate-300" for="localRecoveryCode">恢复码</label>
+          <input id="localRecoveryCode" name="recovery_code" autocomplete="off" required maxlength="128" spellcheck="false" class="w-full bg-black/40 border border-white/20 rounded-lg p-2 font-mono text-slate-100">
+          <label class="block gw-type-body-md text-slate-300" for="localRecoveryNewPassword">新密码</label>
+          <input id="localRecoveryNewPassword" name="new_password" type="password" autocomplete="new-password" required minlength="8" maxlength="128" pattern="(?=.*[A-Za-z])(?=.*[0-9]).{8,128}" class="w-full bg-black/40 border border-white/20 rounded-lg p-2 text-slate-100" placeholder="至少8位，包含字母和数字">
+          <label class="block gw-type-body-md text-slate-300" for="localRecoveryConfirmPassword">确认新密码</label>
+          <input id="localRecoveryConfirmPassword" type="password" autocomplete="new-password" required minlength="8" maxlength="128" class="w-full bg-black/40 border border-white/20 rounded-lg p-2 text-slate-100">
+          <p id="localRecoveryError" role="alert" class="gw-type-body-sm text-red-300 hidden"></p>
+          <div class="flex items-center justify-between gap-3">
+            <button type="button" class="hw-btn" onclick="HardwareDeck.renderLocalAccountForm(document.getElementById('accountModalDialog'))">返回登录</button>
+            <button id="localRecoverySubmit" type="submit" class="hw-btn hw-btn-gold">重置密码</button>
+          </div>
+        </form>`;
+    },
+
+    handleLocalRecoverySubmit: async function(event) {
+      event.preventDefault();
+      const form = event.target;
+      const error = form.querySelector('#localRecoveryError');
+      const password = form.querySelector('#localRecoveryNewPassword').value;
+      const confirmation = form.querySelector('#localRecoveryConfirmPassword').value;
+      const button = form.querySelector('#localRecoverySubmit');
+      error.classList.add('hidden');
+      if (password !== confirmation) {
+        error.textContent = '两次输入的新密码不一致。';
+        error.classList.remove('hidden');
+        return;
+      }
+      button.disabled = true;
+      try {
+        const response = await this.requestLocalAccount(
+          'resetLocalPassword',
+          '/api/asset-auth/local/reset-password',
+          {
+            username: form.querySelector('#localRecoveryUsername').value.trim(),
+            recovery_code: form.querySelector('#localRecoveryCode').value.trim(),
+            new_password: password
+          }
+        );
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(data.detail?.message || '恢复码无效或已使用。');
+        const dialog = document.getElementById('accountModalDialog');
+        dialog.innerHTML = `
+          <div class="space-y-4">
+            <h3 class="gw-type-section font-bold text-slate-100">密码已重置</h3>
+            <p role="status" class="gw-type-body-sm text-slate-300">所有旧会话已退出。请使用新密码重新登录。</p>
+            <button type="button" class="hw-btn hw-btn-gold w-full" onclick="HardwareDeck.renderLocalAccountForm(document.getElementById('accountModalDialog'))">返回登录</button>
+          </div>`;
+      } catch (failure) {
+        error.textContent = failure.message || '无法连接本地恢复服务。';
+        error.classList.remove('hidden');
+        button.disabled = false;
+      }
+    },
+
+    renderLocalRecoveryCodes: function(codes) {
+      const dialog = document.getElementById('accountModalDialog');
+      if (!dialog) return;
+      const items = codes.map(code => `<li class="rounded bg-black/40 border border-white/10 px-2 py-1"><code>${escapeHtml(code)}</code></li>`).join('');
+      dialog.innerHTML = `
+        <div class="space-y-3">
+          <h3 class="gw-type-section font-bold text-slate-100">请保存本次恢复码</h3>
+          <p class="gw-type-body-sm text-amber-200">这些恢复码只显示一次。请保存或打印；每条只能使用一次。</p>
+          <ol id="localRecoveryCodes" class="grid grid-cols-2 gap-1 font-mono gw-type-body-sm text-slate-100">${items}</ol>
+          <label class="flex items-center gap-2 gw-type-body-sm text-slate-300"><input id="localRecoverySaved" type="checkbox" onchange="HardwareDeck.handleRecoveryCodeAcknowledgement()">我已保存这些恢复码</label>
+          <button id="localRecoveryContinue" type="button" disabled class="hw-btn hw-btn-gold w-full opacity-50 cursor-not-allowed" onclick="window.location.reload()">保存后继续登录</button>
+        </div>`;
+    },
+
+    handleRecoveryCodeAcknowledgement: function() {
+      const checkbox = document.getElementById('localRecoverySaved');
+      const button = document.getElementById('localRecoveryContinue');
+      if (!checkbox || !button) return;
+      button.disabled = !checkbox.checked;
+      button.classList.toggle('opacity-50', button.disabled);
+      button.classList.toggle('cursor-not-allowed', button.disabled);
+    },
+
+    handleRecoveryCodeRegeneration: async function(event) {
+      event.preventDefault();
+      const form = event.target;
+      const error = document.getElementById('settingsRecoveryError');
+      const password = form.querySelector('#settingsRecoveryCurrentPassword').value;
+      const button = form.querySelector('button[type="submit"]');
+      error.classList.add('hidden');
+      button.disabled = true;
+      try {
+        const response = await this.requestLocalAccount(
+          'regenerateLocalRecoveryCodes',
+          '/api/asset-auth/local/recovery-codes/regenerate',
+          {current_password: password}
+        );
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(data.detail?.message || '无法重新生成恢复码。');
+        const list = document.getElementById('settingsRecoveryCodeList');
+        list.innerHTML = data.recovery_codes.map(code => `<li class="rounded bg-black/40 border border-white/10 px-2 py-1"><code>${escapeHtml(code)}</code></li>`).join('');
+        document.getElementById('settingsRecoveryCodes').classList.remove('hidden');
+        form.reset();
+      } catch (failure) {
+        error.textContent = failure.message || '无法连接本地恢复服务。';
+        error.classList.remove('hidden');
+      } finally {
+        button.disabled = false;
+      }
+    },
+
+    dismissRecoveryCodes: function() {
+      const container = document.getElementById('settingsRecoveryCodes');
+      const list = document.getElementById('settingsRecoveryCodeList');
+      if (list) list.replaceChildren();
+      if (container) container.classList.add('hidden');
     },
 
     handleLoginSubmit: async function(e) {
