@@ -125,8 +125,14 @@ def test_local_account_browser_setup_login_restart_logout(tmp_path):
             page.fill("#localUsername", "browser_owner")
             page.fill("#localPassword", password)
             page.fill("#localPasswordConfirm", password)
+            page.click("#localLoginSubmit")
+            page.wait_for_selector("#localRecoveryCodes li")
+            recovery_codes = page.locator("#localRecoveryCodes li").all_text_contents()
+            assert len(recovery_codes) == 8
+            page.screenshot(path=str(tmp_path / "local-account-recovery-codes.png"))
+            page.check("#localRecoverySaved")
             with page.expect_navigation():
-                page.click("#localLoginSubmit")
+                page.click("#localRecoveryContinue")
             page.wait_for_function("HardwareDeck.authState.authenticated === true")
             assert page.evaluate("HardwareDeck.authState.principal.role") == "admin"
             assert "gw_session" not in page.evaluate("document.cookie")
@@ -170,6 +176,44 @@ def test_local_account_browser_setup_login_restart_logout(tmp_path):
             with page.expect_navigation():
                 page.click("#localLoginSubmit")
             page.wait_for_function("HardwareDeck.authState.authenticated === true")
+
+            # 使用另一条恢复码重置密码，并验证旧码只可使用一次。
+            page.locator(".hw-avatar-keycap").first.click()
+            page.get_by_role("button", name="退出登录", exact=True).click()
+            page.wait_for_selector("#localPassword")
+            page.click("#showLocalRecoveryReset")
+            page.fill("#localRecoveryUsername", "browser_owner")
+            page.fill("#localRecoveryCode", recovery_codes[0])
+            page.fill("#localRecoveryNewPassword", "Reset2026")
+            page.fill("#localRecoveryConfirmPassword", "Reset2026")
+            page.click("#localRecoverySubmit")
+            page.get_by_role("heading", name="密码已重置").wait_for()
+            page.get_by_role("button", name="返回登录").click()
+            page.fill("#localUsername", "browser_owner")
+            page.fill("#localPassword", "Reset2026")
+            with page.expect_navigation():
+                page.click("#localLoginSubmit")
+            page.wait_for_function("HardwareDeck.authState.authenticated === true")
+
+            # 设置页用当前密码重发，旧码作废；新码只显示在当前页面。
+            page.goto(base + "/static/pages/settings.html?section=permissions")
+            page.wait_for_selector("#localRecoverySettings:not(.hidden)")
+            page.fill("#settingsRecoveryCurrentPassword", "Reset2026")
+            page.get_by_role("button", name="重新生成恢复码").click()
+            page.wait_for_selector("#settingsRecoveryCodeList li")
+            new_codes = page.locator("#settingsRecoveryCodeList li").all_text_contents()
+            assert len(new_codes) == 8
+            assert recovery_codes[1] not in new_codes
+            stale_code_status = page.evaluate(
+                """async code => (await fetch('/api/asset-auth/local/reset-password', {
+                    method: 'POST', headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({username: 'browser_owner', recovery_code: code,
+                        new_password: 'Other2026'})
+                })).status""",
+                recovery_codes[1],
+            )
+            assert stale_code_status == 401
+
             # 退出后，业务接口必须立即恢复为未认证。
             assert (
                 page.evaluate(

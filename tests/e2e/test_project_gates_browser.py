@@ -75,8 +75,15 @@ def test_browser_creates_and_reads_back_project_gates(monkeypatch, tmp_path):
                 page.fill("#localUsername", "stage_gate_browser_owner")
                 page.fill("#localPassword", "StageGate2026")
                 page.fill("#localPasswordConfirm", "StageGate2026")
+                page.click("#localLoginSubmit")
+                page.wait_for_selector("#localRecoveryCodes li")
+                recovery_codes = page.locator(
+                    "#localRecoveryCodes li"
+                ).all_text_contents()
+                assert len(recovery_codes) == 8
+                page.check("#localRecoverySaved")
                 with page.expect_navigation():
-                    page.click("#localLoginSubmit")
+                    page.click("#localRecoveryContinue")
                 page.wait_for_function(
                     "window.HardwareDeck?.authState?.authenticated === true"
                 )

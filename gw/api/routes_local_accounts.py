@@ -33,6 +33,18 @@ class Credentials(BaseModel):
     password: SecretStr
 
 
+class RecoveryReset(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    username: str = Field(min_length=3, max_length=64)
+    recovery_code: str = Field(min_length=12, max_length=128)
+    new_password: SecretStr
+
+
+class RecoveryCodeRegeneration(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    current_password: SecretStr
+
+
 def require_local_mode():
     if load_runtime_auth_config().mode != AUTH_MODE_LOCAL_ACCOUNT:
         raise CleanroomException(
@@ -49,11 +61,22 @@ def _loopback(host: str) -> bool:
         return False
 
 
-def _session_response(request: Request, principal: dict, token: str, code: int):
+def _session_response(
+    request: Request,
+    principal: dict,
+    token: str,
+    code: int,
+    recovery_codes: list[str],
+):
     # 登录成功后撤销浏览器原会话，不能利用固定旧 Cookie 获得新身份。
     local_accounts.delete_session(session.cookie_value(request.cookies, "session"))
     response = JSONResponse(
-        {"authenticated": True, "principal": principal}, status_code=code
+        {
+            "authenticated": True,
+            "principal": principal,
+            "recovery_codes": recovery_codes,
+        },
+        status_code=code,
     )
     response.headers["Cache-Control"] = "no-store"
     response.set_cookie(
@@ -85,7 +108,8 @@ def setup(payload: Credentials, request: Request):
     principal, token = local_accounts.create_first_admin(
         payload.username, payload.password.get_secret_value()
     )
-    return _session_response(request, principal, token, 201)
+    recovery_codes = local_accounts.ensure_recovery_codes(principal["user_id"])
+    return _session_response(request, principal, token, 201, recovery_codes)
 
 
 @router.post("/login")
@@ -96,4 +120,42 @@ def login(payload: Credentials, request: Request):
         payload.password.get_secret_value(),
         request.client.host if request.client else "unknown",
     )
-    return _session_response(request, principal, token, 200)
+    recovery_codes = local_accounts.ensure_recovery_codes(principal["user_id"])
+    return _session_response(request, principal, token, 200, recovery_codes)
+
+
+@router.post("/reset-password")
+def reset_password(payload: RecoveryReset, request: Request):
+    require_local_mode()
+    local_accounts.reset_password_with_recovery(
+        payload.username,
+        payload.recovery_code,
+        payload.new_password.get_secret_value(),
+        request.client.host if request.client else "unknown",
+    )
+    response = JSONResponse({"password_reset": True}, status_code=200)
+    response.headers["Cache-Control"] = "no-store"
+    response.delete_cookie(
+        session.session_cookie_name(),
+        path="/",
+        samesite="strict",
+        secure=request.url.scheme == "https",
+    )
+    return response
+
+
+@router.post("/recovery-codes/regenerate")
+def regenerate_recovery_codes(payload: RecoveryCodeRegeneration, request: Request):
+    require_local_mode()
+    token = session.cookie_value(request.cookies, "session")
+    principal = local_accounts.get_session(token)
+    if principal is None:
+        raise CleanroomException(
+            401, "AUTHENTICATION_REQUIRED", "请先使用本地账户登录"
+        )
+    recovery_codes = local_accounts.regenerate_recovery_codes(
+        principal["user_id"], payload.current_password.get_secret_value()
+    )
+    response = JSONResponse({"recovery_codes": recovery_codes}, status_code=200)
+    response.headers["Cache-Control"] = "no-store"
+    return response

@@ -55,6 +55,30 @@ export function createAssetAuthApi(http) {
         getStatus(init = {}) {
             return request('/api/asset-auth/status', sameOriginInit(init));
         },
+        setupLocalAccount(payload, init = {}) {
+            return request(
+                '/api/asset-auth/local/setup',
+                jsonInit(payload, sameOriginInit({...init, method: 'POST'})),
+            );
+        },
+        loginLocalAccount(payload, init = {}) {
+            return request(
+                '/api/asset-auth/local/login',
+                jsonInit(payload, sameOriginInit({...init, method: 'POST'})),
+            );
+        },
+        resetLocalPassword(payload, init = {}) {
+            return request(
+                '/api/asset-auth/local/reset-password',
+                jsonInit(payload, sameOriginInit({...init, method: 'POST'})),
+            );
+        },
+        regenerateLocalRecoveryCodes(payload, init = {}) {
+            return request(
+                '/api/asset-auth/local/recovery-codes/regenerate',
+                jsonInit(payload, sameOriginInit({...init, method: 'POST'})),
+            );
+        },
         /**
          * 本仓当前切片**未提供** /api/asset-auth/bootstrap（本地首位管理员初始化）。
          * 保留该 façade 仅为兼容既有调用方；调用方必须按未接入错误显式降级，
