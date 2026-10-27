@@ -300,7 +300,7 @@ def test_static_layer_has_no_legacy_integration_markers(repo_root: Path):
 # 凭据或完整历史授权账本。历史材料继续留在洁净源仓，不因测试需要复制进新仓。
 ADMISSION_METADATA_PATH = "tests/hygiene/fixtures/cleanroom_admission_metadata.json"
 ADMISSION_METADATA_SHA256 = (
-    "f592c16c1271062222533be9dfd86e64a7c76f8929092275406b31374c65957f"
+    "83d2ea1be13e168254071e56ad07595c2179b9778d5a04a791f618f28ceb3d8d"
 )
 QUARANTINED_PROMPT_ORIGINAL_PATH = (
     "web/system-prompts/infinite-canvas-prompt-templates.md"
