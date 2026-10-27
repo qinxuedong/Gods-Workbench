@@ -367,6 +367,7 @@ def test_browser_conflict_preserves_name_and_unsaved_secret(monkeypatch, tmp_pat
 def test_directory_settings_saves_full_path_and_restores_after_reload(
     monkeypatch, tmp_path
 ):
+    monkeypatch.setenv("GW_ALLOWED_ROOTS", str(tmp_path))
     directories = {}
     for key in ("local", "upload", "generated", "projects"):
         directory = tmp_path / f"目录-{key}"

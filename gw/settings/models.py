@@ -83,6 +83,41 @@ class StorageSettingsPatchRequest(BaseModel):
     expected_version: int | None = Field(None, ge=1, description="保存目录设置必须携带的 CAS 期望版本")
 
 
+class StorageAllowedRoot(BaseModel):
+    """允许根管理界面的单个根目录投影。"""
+
+    id: str
+    path: str
+    source: Literal["system", "persistent"]
+    read_only: bool
+    active: bool = True
+    aliases: list[str] = Field(default_factory=list)
+    alias_candidates: list[dict[str, str]] = Field(default_factory=list)
+    availability: str = "available"
+    availability_reason: str = ""
+    availability_message: str = ""
+
+
+class StorageAllowedRootsSnapshot(BaseModel):
+    """环境变量根与持久允许根的 CAS 快照。"""
+
+    revision: int = Field(..., ge=1)
+    roots: list[StorageAllowedRoot] = Field(default_factory=list)
+
+
+class StorageAllowedRootRequest(BaseModel):
+    """新增允许根或确认挂载别名的 CAS 请求。"""
+
+    path: str
+    expected_version: int = Field(..., ge=1)
+
+
+class StorageAllowedRootDeleteRequest(BaseModel):
+    """移除持久允许根的 CAS 请求。"""
+
+    expected_version: int = Field(..., ge=1)
+
+
 class ProviderSnapshot(BaseModel):
     """``GET/PUT /api/providers`` 响应：模型平台集合快照。"""
 

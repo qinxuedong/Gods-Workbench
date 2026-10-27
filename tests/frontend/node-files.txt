@@ -29,6 +29,7 @@ tests/frontend/http-transport-asset-helpers.test.mjs
 tests/frontend/i18n-core-date-range.test.mjs
 tests/frontend/local-account-recovery.test.mjs
 tests/frontend/local-account-recovery-copy.test.mjs
+tests/frontend/mvp1-t0-mount-errors.test.mjs
 tests/frontend/mvp1-t8a-ui-collect-panel.test.mjs
 tests/frontend/project-artifact-links.test.mjs
 tests/frontend/qin-197-ui-defects.test.mjs

@@ -20,7 +20,8 @@ EDITOR = {"X-User-Role": "editor", "Authorization": "Bearer cleanroom-test"}
 
 
 @pytest.fixture()
-def api_client(monkeypatch) -> TestClient:
+def api_client(monkeypatch, tmp_path: Path) -> TestClient:
+    monkeypatch.setenv(storage.ALLOWED_ROOTS_ENV, str(tmp_path))
     monkeypatch.setattr(routes, "default_storage_settings_service", StorageSettingsService())
     monkeypatch.setattr(routes, "default_provider_service", ProviderService())
     monkeypatch.setattr(routes, "default_asset_structure_service", AssetStructureService())
@@ -43,8 +44,8 @@ def test_directory_paths_require_absolute_and_invalid_paths_do_not_write(api_cli
         json={"dirs": {"local": str(tmp_path / "missing")}, "expected_version": 1},
         headers=EDITOR,
     )
-    assert unavailable.status_code in (400, 503), unavailable.text
-    assert unavailable.json()["detail"]["code"] == "INVALID_PATH"
+    assert unavailable.status_code == 404, unavailable.text
+    assert unavailable.json()["detail"]["code"] == "MOUNT_NOT_FOUND"
     snapshot = api_client.get("/api/storage-settings", headers=EDITOR).json()
     assert snapshot["revision"] == 1
     assert snapshot["configured"] is False

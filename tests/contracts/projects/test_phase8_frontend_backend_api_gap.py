@@ -148,6 +148,9 @@ KNOWN_IMPLEMENTED = frozenset(
         # 2026-09-22 Phase 10D：设置页阶段 8 条归一化路径。
         "/api/storage-settings",
         "/api/storage-settings/browse",
+        "/api/storage-settings/roots",
+        "/api/storage-settings/roots/{p}",
+        "/api/storage-settings/roots/{p}/aliases/confirm",
         "/api/providers",
         "/api/providers/fetch-models",
         "/api/providers/probe-async",
