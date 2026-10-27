@@ -248,4 +248,60 @@ def extract_keyframes(
     return {"metadata": registry_metadata, "sprite": sprite_name}
 
 
-__all__ = ["extract_keyframes"]
+def decode_keyframe_to_memory(video_path: str | Path, at_sec: float) -> bytes:
+    """经 ``ffmpeg -f image2pipe`` 把指定时刻单帧解码为内存 PNG bytes。
+
+    供镜头级纯提取复用：全程走 stdout 管道，不写任何落盘路径。时刻必须是
+    有限非负秒数；进程失败或产物不是可解码图像时失败关闭，不伪造帧内容。
+    """
+    try:
+        path = Path(video_path)
+    except (TypeError, ValueError):
+        _fail(400, "INVALID_VIDEO_PATH", "视频路径无效")
+    if not path.is_file():
+        _fail(400, "VIDEO_NOT_AVAILABLE", "视频文件不存在")
+    if (
+        isinstance(at_sec, bool)
+        or not isinstance(at_sec, (int, float))
+        or not math.isfinite(float(at_sec))
+        or at_sec < 0
+    ):
+        _fail(400, "INVALID_KEYFRAME_TIMESTAMP", "关键帧时刻必须是有限非负秒数")
+
+    ffmpeg = _tool("ffmpeg")
+    try:
+        result = subprocess.run(
+            [
+                ffmpeg,
+                "-hide_banner",
+                "-loglevel",
+                "error",
+                "-ss",
+                f"{float(at_sec):.3f}",
+                "-i",
+                str(path),
+                "-frames:v",
+                "1",
+                "-f",
+                "image2pipe",
+                "-vcodec",
+                "png",
+                "-",
+            ],
+            capture_output=True,
+            timeout=_PROCESS_TIMEOUT_SECONDS,
+            check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        _fail(503, "MEDIA_PROCESS_FAILED", "本地媒体处理进程失败")
+    if result.returncode != 0 or not result.stdout:
+        _fail(503, "KEYFRAME_EXTRACTION_FAILED", "FFmpeg 无法解码关键帧到内存")
+    try:
+        with Image.open(io.BytesIO(result.stdout)) as frame:
+            frame.load()
+    except Exception:
+        _fail(503, "KEYFRAME_EXTRACTION_FAILED", "内存关键帧解码失败")
+    return result.stdout
+
+
+__all__ = ["decode_keyframe_to_memory", "extract_keyframes"]

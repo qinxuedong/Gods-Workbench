@@ -300,7 +300,7 @@ def test_static_layer_has_no_legacy_integration_markers(repo_root: Path):
 # 凭据或完整历史授权账本。历史材料继续留在洁净源仓，不因测试需要复制进新仓。
 ADMISSION_METADATA_PATH = "tests/hygiene/fixtures/cleanroom_admission_metadata.json"
 ADMISSION_METADATA_SHA256 = (
-    "0b4aa3487d098b003a0e38c42d8a8544e1eef0ec32d0b8590ce8181df2b9bdb2"
+    "2997742a12f950d022dbefca918d07471c98631a7ed83af346168b0a160d1471"
 )
 QUARANTINED_PROMPT_ORIGINAL_PATH = (
     "web/system-prompts/infinite-canvas-prompt-templates.md"
@@ -487,8 +487,9 @@ def test_admission_metadata_hashes_match_current_files(repo_root: Path):
     """当前准入文件哈希必须与机器登记一致；不复用旧 Phase-2 账本。"""
     metadata = _load_admission_metadata(repo_root)
     entries = metadata.get("admitted_files", [])
-    assert len(entries) == 104, (
-        "当前准入登记数量必须包含 H01、已批准规范、QIN-376 测试覆盖清单与 QIN-382 方案"
+    assert len(entries) == 105, (
+        "当前准入登记数量必须包含 H01、已批准规范、QIN-376 测试覆盖清单、QIN-382 方案"
+        "与 MVP1-T4a 嵌入基准冒烟测试"
     )
     for entry in entries:
         path = repo_root / entry["path"]
@@ -606,6 +607,7 @@ def test_accepted_doc_slices_match_migration_manifest(repo_root: Path):
         "docs/contracts/PROVIDER-PROTOCOL-BOUNDARIES.md",
         "docs/CI-SKIPPED-TEST-COVERAGE.md",
         "docs/architecture/asset-manager-js-split-plan.md",
+        "tests/contracts/assets/test_mvp1_t4a_bench_script.py",
     }
     admitted_paths = _metadata_admitted_paths(metadata)
     assert curated_paths <= admitted_paths

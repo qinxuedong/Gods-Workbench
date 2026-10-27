@@ -5,7 +5,7 @@
 ## 1. 绑定版本
 
 - 判定对象 SHA：`<合并后在本清单第 2 节命令所在 HEAD 上执行 git rev-parse HEAD 填入>`（先合并 C3 分支再验收；不要在旧 HEAD 上出证）
-- 本机仓库：`/workspace/Gods-Workbench`（或当前共用副本），Python：`/workspace/.gw-venv/bin/python`
+- 本机仓库：`<本地工作区路径>`（或当前共用副本），Python：`python`
 
 ## 2. 配置 key（只进本机环境变量，不写进任何文件）
 
@@ -19,8 +19,8 @@ export GW_RUNNINGHUB_API_KEY='<你的 RunningHub 付费 apiKey>'   # 只在本�
 ## 3. 运行验收命令
 
 ```bash
-cd <本机仓库根目录>
-/workspace/.gw-venv/bin/python tools/c3_acceptance/ac8_runninghub_real.py \
+cd <本地工作区路径>
+python tools/c3_acceptance/ac8_runninghub_real.py \
   --out .local/qa/C3-evidence/AC8/ac8-result.json \
   --workflow-id <RunningHub 工作流数字ID> \
   --i-accept-cost

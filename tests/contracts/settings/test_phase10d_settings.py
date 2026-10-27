@@ -25,6 +25,7 @@ from fastapi.testclient import TestClient
 
 from gw.api import routes_settings as routes
 from gw.api.app import create_app
+from gw.core import storage
 from gw.settings.models import PROVIDER_PROBE_NOT_INTEGRATED
 from gw.settings.service import (
     AssetStructureService,
@@ -149,12 +150,19 @@ def test_readonly_role_can_read_storage_settings(api_client: TestClient):
     assert res.status_code == 200
 
 
-def test_patch_storage_settings_success_and_cas_conflict(api_client: TestClient, tmp_path: Path):
+def test_patch_storage_settings_success_and_cas_conflict(
+    api_client: TestClient, tmp_path: Path, monkeypatch
+):
     """保存成功后 revision 递增；错误 expected_version 必须 409 VERSION_CONFLICT。"""
-    assets = tmp_path / "assets"
-    other_assets = tmp_path / "other-assets"
+    allowed_root = tmp_path / "allowed-root"
+    allowed_root.mkdir()
+    assets = allowed_root / "assets"
+    other_assets = allowed_root / "other-assets"
     assets.mkdir()
     other_assets.mkdir()
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    monkeypatch.setenv(storage.ALLOWED_ROOTS_ENV, str(allowed_root))
     ok = api_client.patch(
         "/api/storage-settings",
         json={"dirs": {"local": str(assets)}, "expected_version": 1},
@@ -176,6 +184,14 @@ def test_patch_storage_settings_success_and_cas_conflict(api_client: TestClient,
     assert detail["code"] == "VERSION_CONFLICT"
     assert detail["expected_version"] == 1
     assert detail["current_version"] == 2
+
+    rejected = api_client.patch(
+        "/api/storage-settings",
+        json={"dirs": {"local": str(outside)}, "expected_version": 2},
+        headers=EDITOR,
+    )
+    assert rejected.status_code == 403, rejected.text
+    assert rejected.json()["detail"]["code"] == "MOUNT_OUTSIDE_ALLOWED_ROOTS"
 
 
 def test_patch_storage_settings_readonly_forbidden(api_client: TestClient):
