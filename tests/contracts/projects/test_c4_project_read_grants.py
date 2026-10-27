@@ -354,7 +354,7 @@ def test_read_grants_view_roundtrip_after_grant(client: TestClient):
 
 
 def test_asset_registry_project_list_requires_login(client: TestClient):
-    """秦先生裁定：GET /api/asset-registry/projects 匿名 401；登录后按读授权过滤。"""
+    """用户裁定：GET /api/asset-registry/projects 匿名 401；登录后按读授权过滤。"""
     project_id = _create_project(client, "C4 列表登录")
     for url in ("/api/asset-registry/projects", "/api/asset-registry/projects?archived=false"):
         anon = client.get(url)

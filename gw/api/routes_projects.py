@@ -56,7 +56,7 @@ def list_projects(
     x_user_role: str = Header("editor", alias="X-User-Role"),
 ):
     """根据查询条件返回项目集合；必须登录，只返回调用方可读的项目（C4-AC7）。"""
-    # C4-AC7（秦先生裁定 2026-10-15）：必须登录，匿名 401；已认证按读授权过滤。
+    # C4-AC7（用户裁定 2026-10-15）：必须登录，匿名 401；已认证按读授权过滤。
     owner_key, role = _viewer(require_authenticated(authorization, x_user_role))
     projects = default_projects_service.list_projects(
         archived=archived, deleted=deleted, viewer_owner_key=owner_key, viewer_role=role
