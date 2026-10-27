@@ -6,8 +6,8 @@
 - 报告只写到 stdout，或写到 --out 指定的路径（该路径不得位于数据目录内）。
 
 用法（Windows PowerShell，在仓库根目录）：
-    python tools\\c4_acceptance\\asset_inventory.py --data-dir "D:\\GodsWorkbench\\data"
-    python tools\\c4_acceptance\\asset_inventory.py --data-dir "D:\\GodsWorkbench\\data" --out "$env:USERPROFILE\\Desktop\\c4-inventory.json"
+    python tools\\c4_acceptance\\asset_inventory.py --data-dir "$env:GW_DATA_DIR"
+    python tools\\c4_acceptance\\asset_inventory.py --data-dir "$env:GW_DATA_DIR" --out "$env:TEMP\\c4-inventory.json"
 --data-dir 为包含 asset_registry.json 与 asset_library.json 的目录（即服务的 GW_DATA_DIR 数据根）。
 省略 --data-dir 时读取环境变量 GW_DATA_DIR。退出码：0=一致，1=发现不一致，2=输入错误。
 """

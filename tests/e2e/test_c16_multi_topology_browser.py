@@ -21,7 +21,7 @@ import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 EVIDENCE_ROOT = REPO_ROOT / ".local" / "qa" / "C16-evidence"
-NAS_BASE_URL = "http://192.168.0.199:2077"
+NAS_BASE_URL = "http://192.168.0.10:2077"
 READ_ONLY_PATHS = ("/healthz", "/static/manifest.json", "/static/sw.js")
 
 
