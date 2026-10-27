@@ -277,7 +277,7 @@
       "path": "docs/contracts/ASSET-REGISTRY-INTERFACE-CATALOG.yaml",
       "classification": "frozen_interface_contract",
       "authorization_basis": "cleanroom_frozen_input; GitHub_Issue_366_2026-10-28",
-      "sha256": "62b6b30b92be7bf1a3ea57d45a7620da852c9faaa350701d718a44b0251263f2",
+      "sha256": "707836d70b204f1999df3bb9412df3f77dfe5c7097677ee8b4e191fd25c344c1",
       "admission": "accepted"
     },
     {
@@ -942,7 +942,7 @@
       "path": "tests/contracts/assets/test_mvp2_t2_provenance.py",
       "classification": "curated_test_coverage",
       "authorization_basis": "GitHub_Issue_366_2026-10-28",
-      "sha256": "c1d90a3623c0c504beac9c04280a76b4f408961554d777d00b05672d2bbba122",
+      "sha256": "3074c1505cad4e5d6d2251e0c6825bdb1afde4af79c9e4f07b2e5e4bc8c30cf6",
       "admission": "accepted"
     }
   ],
@@ -989,7 +989,7 @@
     {
       "path": "tests/contracts/assets/test_mvp2_t2_provenance.py",
       "authorization_basis": "GitHub_Issue_366_2026-10-28",
-      "sha256": "c1d90a3623c0c504beac9c04280a76b4f408961554d777d00b05672d2bbba122"
+      "sha256": "3074c1505cad4e5d6d2251e0c6825bdb1afde4af79c9e4f07b2e5e4bc8c30cf6"
     },
     {
       "path": "tests/contracts/assets/test_mvp1_t5_governance.py",
