@@ -18,6 +18,21 @@
       ]
     },
     {
+      "issue": 334,
+      "authorization_basis": "GitHub Issue #334, user-approved scope decision 2026-10-27",
+      "files": [
+        "gw/asset_registry/embedder.py",
+        "gw/core/sqlite_vec_engine.py",
+        "EXTERNAL-PROJECTS-REGISTRY.md",
+        "requirements-embedding.txt",
+        "requirements-embedding.lock",
+        "tests/contracts/assets/test_mvp1_t4_embedder_offline.py",
+        "tests/hygiene/fixtures/cleanroom_admission_metadata.json",
+        "tests/hygiene/test_cleanroom_hygiene.py",
+        "tests/hygiene/test_structure_guardrails.py"
+      ]
+    },
+    {
       "issue": 345,
       "authorization_basis": "GitHub Issue #345, 2026-10-27",
       "files": [
@@ -902,6 +917,11 @@
       "path": "tests/frontend/mvp1-t0-mount-errors.test.mjs",
       "authorization_basis": "MVP1-T0_Cut_2026-10-26",
       "sha256": "9ef0180276f04a1baff9aa06ee581a60a9ee51075d24837cb26f23d4562faee9"
+    },
+    {
+      "path": "tests/contracts/assets/test_mvp1_t4_embedder_offline.py",
+      "authorization_basis": "GitHub_Issue_334_QIN-418_2026-10-27",
+      "sha256": "5ad494a842431497adeaaa75298071b659130b0883bc8caafa729698fc748d9e"
     }
   ]
 }

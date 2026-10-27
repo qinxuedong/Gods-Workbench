@@ -300,7 +300,7 @@ def test_static_layer_has_no_legacy_integration_markers(repo_root: Path):
 # 凭据或完整历史授权账本。历史材料继续留在洁净源仓，不因测试需要复制进新仓。
 ADMISSION_METADATA_PATH = "tests/hygiene/fixtures/cleanroom_admission_metadata.json"
 ADMISSION_METADATA_SHA256 = (
-    "6d1f46a2348b2c9f6db668ab27673a892e7afeff766dd9bca76eb4da04b49ddd"
+    "e83bd1698dbbfc70d82aae3a7f96f4e122526c55ab5140a05fe703144b053aa2"
 )
 QUARANTINED_PROMPT_ORIGINAL_PATH = (
     "web/system-prompts/infinite-canvas-prompt-templates.md"
@@ -339,6 +339,31 @@ def test_github_issue_345_file_scope_is_registered(repo_root: Path):
         "tests/contracts/assets/test_mvp1_t5a_governance_rules.py",
         "tests/hygiene/fixtures/cleanroom_admission_metadata.json",
         "tests/hygiene/test_cleanroom_hygiene.py",
+    }
+
+
+def test_github_issue_334_file_scope_is_registered(repo_root: Path):
+    """#334 的嵌入依赖清单与隔离锁按用户批准范围登记。"""
+    metadata = _load_admission_metadata(repo_root)
+    registrations = [
+        item
+        for item in metadata.get("authorized_issue_file_sets", [])
+        if item.get("issue") == 334
+    ]
+    assert len(registrations) == 1
+    assert registrations[0].get("authorization_basis") == (
+        "GitHub Issue #334, user-approved scope decision 2026-10-27"
+    )
+    assert set(registrations[0].get("files", [])) == {
+        "gw/asset_registry/embedder.py",
+        "gw/core/sqlite_vec_engine.py",
+        "EXTERNAL-PROJECTS-REGISTRY.md",
+        "requirements-embedding.txt",
+        "requirements-embedding.lock",
+        "tests/contracts/assets/test_mvp1_t4_embedder_offline.py",
+        "tests/hygiene/fixtures/cleanroom_admission_metadata.json",
+        "tests/hygiene/test_cleanroom_hygiene.py",
+        "tests/hygiene/test_structure_guardrails.py",
     }
 
 
