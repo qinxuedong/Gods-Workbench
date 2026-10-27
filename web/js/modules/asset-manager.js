@@ -22,6 +22,7 @@ import {readStoredBoolean, readStoredNumber} from './asset-manager/storage.js';
 import {formatDate, formatFileSize} from './asset-manager/formatters.js';
 import {pathCompareKey} from './asset-manager/path-utils.js';
 import {workflowAssetId, workflowLibraryId, workflowCategoryId, workflowSourceId, zipWorkflowFiles} from './asset-manager/workflow-assets.js';
+import {renderProvenanceChain} from './asset-manager/provenance.js';
 import {openAssetCollectOverlay} from './asset-collect-panel.js';
 
 let mediaPreviewPlayerLoading = null;
@@ -8589,6 +8590,7 @@ function renderRegistryDetail(){
                     ${mediaType === 'video' && frameRate ? `<div class="detail-meta"><span>帧率</span><strong>${Number.isInteger(frameRate) ? frameRate : frameRate.toFixed(2)} fps</strong></div>` : ''}
                 </div>`}
                 ${classification.summary ? `<div class="detail-caption"><strong>智能描述</strong><p>${escapeHtml(classification.summary)}</p></div>` : ''}
+                ${renderProvenanceChain(item)}
                 ${workflowProvenanceLinks(item)}
                 ${renderRegistryEditableTags(item, 'side')}
                 ${renderRegistryRelations(item)}
@@ -12574,7 +12576,7 @@ function renderDetailModelInspector(item, tags, rows, url){
     const statusLabel = detailViewerState.modelInfoLoading ? '正在分析' : previewSource === 'logo' ? 'Logo 降级' : previewSource === 'default' ? '默认封面' : '预览可用';
     const statusClass = fallback ? 'is-fallback' : detailViewerState.modelInfoLoading ? 'is-loading' : 'is-ready';
     const registryMeta = detailViewerState.source === 'registry'
-        ? `<section class="asset-detail-registry-meta">${workflowProvenanceLinks(item)}${renderRegistryEditableTags(item, 'viewer')}${renderRegistryRelations(item)}</section>`
+        ? `<section class="asset-detail-registry-meta">${renderProvenanceChain(item)}${workflowProvenanceLinks(item)}${renderRegistryEditableTags(item, 'viewer')}${renderRegistryRelations(item)}</section>`
         : (tags.length ? `<section class="asset-detail-tags"><strong>智能分类与标签</strong><div>${tags.map(tag => `<span>${escapeHtml(tag)}</span>`).join('')}</div></section>` : '');
     return `<aside class="asset-detail-inspector asset-detail-model-inspector ${detailViewerInspectorCollapsed ? 'is-collapsed' : ''}" data-detail-inspector>
         ${renderDetailInspectorHeader()}
@@ -12610,7 +12612,7 @@ function renderDetailViewerInspectorContent(item, type, tags, rows, url, extraCo
             : `<h2>${detailViewerNameHtml(item.name)}</h2>`}<p>${escapeHtml(detailViewerSourceLabel(source, item))}</p></div>
         ${type === 'video' ? `${renderDetailVideoStoryboardPanel(item,source)}${renderDetailVideoSegments(item,source)}${renderDetailVideoSummary(item,source)}` : ''}
         ${inspectorRows.length ? `<dl class="asset-detail-facts">${renderDetailViewerMetaRows(inspectorRows, item)}</dl>` : ''}
-        ${source === 'registry' ? `<section class="asset-detail-registry-meta">${workflowProvenanceLinks(item)}${renderRegistryEditableTags(item, 'viewer')}${renderRegistryRelations(item)}</section>` : (tags.length ? `<section class="asset-detail-tags"><strong>智能分类与标签</strong><div>${tags.map(tag => `<span>${escapeHtml(tag)}</span>`).join('')}</div></section>` : '')}
+        ${source === 'registry' ? `<section class="asset-detail-registry-meta">${renderProvenanceChain(item)}${workflowProvenanceLinks(item)}${renderRegistryEditableTags(item, 'viewer')}${renderRegistryRelations(item)}</section>` : (tags.length ? `<section class="asset-detail-tags"><strong>智能分类与标签</strong><div>${tags.map(tag => `<span>${escapeHtml(tag)}</span>`).join('')}</div></section>` : '')}
         ${type === 'text' && detailViewerCanEditText(source, item) ? renderDetailTextVersions() : ''}
         ${extraContent}
         <div class="asset-detail-actions">
