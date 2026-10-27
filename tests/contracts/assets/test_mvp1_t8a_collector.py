@@ -141,24 +141,39 @@ def test_collected_video_registers_scene_metadata_and_shot_index(monkeypatch):
     assert rows == [(asset["asset_id"], 0.0, 2.0)]
 
 
-def test_real_synthetic_video_collect_extracts_shots(tmp_path):
-    import shutil
+def test_video_collect_extracts_and_indexes_shots_without_external_binaries(monkeypatch):
     import sqlite3
-    import subprocess
     from gw.asset_registry import repository
     from gw.core import storage
+    from gw.media import keyframe_extractor, scene_detector
 
-    assert shutil.which("ffmpeg") and shutil.which("ffprobe")
-    source = tmp_path / "clip.mp4"
-    subprocess.run(
-        ["ffmpeg", "-v", "error", "-f", "lavfi", "-i", "color=c=blue:s=64x64:r=5:d=1",
-         "-c:v", "mpeg4", "-y", str(source)], check=True, timeout=30,
+    scenes = [{
+        "start_sec": 0.0,
+        "end_sec": 1.0,
+        "tags": [],
+        "summary": "",
+        "width": 64,
+        "height": 64,
+        "codec": "mpeg4",
+        "bit_rate": 50000,
+        "container": "mp4",
+        "source_url": None,
+    }]
+    decoded_midpoints = []
+    monkeypatch.setattr(scene_detector, "detect_scenes", lambda path: scenes)
+    monkeypatch.setattr(
+        keyframe_extractor,
+        "decode_keyframe_to_memory",
+        lambda path, timestamp: decoded_midpoints.append(timestamp) or object(),
     )
-    result = collector.store_content(source.read_bytes(), "clip.mp4", owner="owner")
+    result = collector.store_content(b"synthetic video data", "clip.mp4", owner="owner")
     asset = result["asset"]
     assert asset["kind"] == "video"
     assert asset["metadata"]["video_metadata"]["scene_detection_status"] == "complete"
-    assert asset["metadata"]["video_segments"]
+    assert asset["metadata"]["video_metadata"]["keyframe_status"] == "decoded_in_memory"
+    assert asset["metadata"]["video_segments"] == scenes
+    assert asset["duration"] == 1.0
+    assert decoded_midpoints == [0.5]
     with sqlite3.connect(storage.data_root() / repository.ASSET_SEARCH_INDEX_FILENAME) as db:
         count = db.execute("SELECT count(*) FROM mvp1_shots WHERE asset_id = ?", (asset["asset_id"],)).fetchone()[0]
     assert count == len(asset["metadata"]["video_segments"])
