@@ -300,7 +300,7 @@ def test_static_layer_has_no_legacy_integration_markers(repo_root: Path):
 # 凭据或完整历史授权账本。历史材料继续留在洁净源仓，不因测试需要复制进新仓。
 ADMISSION_METADATA_PATH = "tests/hygiene/fixtures/cleanroom_admission_metadata.json"
 ADMISSION_METADATA_SHA256 = (
-    "60bcec998c73019e168337eaf654e94c9b33d9e3e4baa2d776e4242db8d2bc30"
+    "67c2805427b73c46cb1fa9cf0c5a259f1b2b94de778dfc4e6e95700ac7fc34d3"
 )
 QUARANTINED_PROMPT_ORIGINAL_PATH = (
     "web/system-prompts/infinite-canvas-prompt-templates.md"
@@ -431,6 +431,7 @@ def test_classification_target_hashes_match_manifest_and_files(repo_root: Path):
         item["path"]: item["classification"]
         for item in metadata.get("accepted_roots", [])
         + metadata.get("curated_files", [])
+        + metadata.get("accepted_test_files", [])
         if isinstance(item, dict) and "path" in item and "classification" in item
     }
     allowed_classes = {
@@ -467,9 +468,9 @@ def test_admission_metadata_hashes_match_current_files(repo_root: Path):
     """当前准入文件哈希必须与机器登记一致；不复用旧 Phase-2 账本。"""
     metadata = _load_admission_metadata(repo_root)
     entries = metadata.get("admitted_files", [])
-    assert len(entries) == 105, (
+    assert len(entries) == 106, (
         "当前准入登记数量必须包含 H01、已批准规范、QIN-376 测试覆盖清单、QIN-382 方案"
-        "与 MVP1-T4a 嵌入基准冒烟测试"
+        "与 MVP1-T4a/T9a 回归测试"
     )
     for entry in entries:
         path = repo_root / entry["path"]
