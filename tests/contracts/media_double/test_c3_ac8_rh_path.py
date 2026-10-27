@@ -1,4 +1,4 @@
-"""C3-AC8 替身彩排（RH 专属路径）：真实供应商验收由秦先生本人执行（cut 2026-10-13 10:38，团队不碰 key）。
+"""C3-AC8 替身彩排（RH 专属路径）：真实供应商验收由用户本人执行（cut 2026-10-13 10:38，团队不碰 key）。
 
 本文件只用现有媒体替身（media_doubles + conftest），把 RH 路径的关键接线锁定为契约：
 monkeypatch gw.god_workflow.platforms 的三个模块属性（upload_rh_input / create_rh_cloud_task /

@@ -92,7 +92,7 @@ def test_c10_thresholds_are_never_asserted_by_browser_gate() -> None:
         "thresholds": {
             "status": "pending_user_confirmation",
             "values": None,
-            "note": "只记录观察值，待秦先生确认规模、p95、首屏、RPO/RTO 与试运行期限",
+            "note": "只记录观察值，待用户确认规模、p95、首屏、RPO/RTO 与试运行期限",
         },
     }
     serialized = json.dumps(proposal, ensure_ascii=False)
@@ -263,7 +263,7 @@ def test_c10_real_asset_browser_measurement(
         "thresholds": {
             "status": "pending_user_confirmation",
             "values": None,
-            "note": "只记录本机观察值；阈值冻结需秦先生确认",
+            "note": "只记录本机观察值；阈值冻结需用户确认",
         },
     }
     serialized = json.dumps(report, ensure_ascii=False)

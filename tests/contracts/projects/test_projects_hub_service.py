@@ -121,7 +121,7 @@ def test_api_static_and_projects_integration(client: TestClient):
     assert "影视工坊" in resp_workshop.text
 
     # 真实项目列表 API 接口打通
-    # C4-AC7（秦先生裁定 2026-10-15）：项目列表必须登录，匿名 401。
+    # C4-AC7（用户裁定 2026-10-15）：项目列表必须登录，匿名 401。
     assert client.get("/api/asset-registry/projects").status_code == 401
     resp_api = client.get(
         "/api/asset-registry/projects",

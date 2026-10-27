@@ -211,7 +211,7 @@
       "path": "docs/contracts/R3-SEARCH-PREVIEW-CONTRACT.md",
       "classification": "frozen_interface_contract",
       "authorization_basis": "owner_approval_C11_T1_2026-10-18",
-      "sha256": "43958d7ad5821c6f7a13f5d2f87964d86fb5ab6c744133e1cc497455cd71a414",
+      "sha256": "1423ded308736dd4b782e82f9c18cf6c53b8c0cfede967b7af017aa7b6cd3365",
       "admission": "accepted"
     },
     {
@@ -869,14 +869,14 @@
       "path": "docs/CI-SKIPPED-TEST-COVERAGE.md",
       "classification": "curated_test_coverage",
       "authorization_basis": "QIN-376_user_authorization_2026-10-25",
-      "sha256": "7a8930bedb4f2340354d7822d3dfc623c54c50f880c0a9430f24eefe4430d411",
+      "sha256": "c5b9858fc1d1d91c0af1adf157e07a0d7147b0cd566704ed6f92bcfac6de549d",
       "admission": "accepted"
     },
     {
       "path": "docs/architecture/asset-manager-js-split-plan.md",
       "classification": "curated_architecture_plan",
       "authorization_basis": "QIN-382_Cut_2026-10-25",
-      "sha256": "79364b32230d5e363411523379e8e9ef6c9e2084d9d2b16266e6dbd29303674f",
+      "sha256": "ecac1724a1a052ccc76a13c8c9ac487c28d6d8abea6d0d6919285ec3b511a36f",
       "admission": "accepted"
     },
     {
@@ -917,6 +917,11 @@
       "path": "tests/frontend/mvp1-t0-mount-errors.test.mjs",
       "authorization_basis": "MVP1-T0_Cut_2026-10-26",
       "sha256": "9ef0180276f04a1baff9aa06ee581a60a9ee51075d24837cb26f23d4562faee9"
+    },
+    {
+      "path": "tests/contracts/assets/test_mvp1_t2_ingest_resume.py",
+      "authorization_basis": "MVP1-T2_Cut_2026-10-26",
+      "sha256": "7864756ff5005b2bdad12c0a6ddf4d4a129d4e6b411a93f3c9cbf18fb370c4cf"
     },
     {
       "path": "tests/contracts/assets/test_mvp1_t4_embedder_offline.py",

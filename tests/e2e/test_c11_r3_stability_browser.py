@@ -116,7 +116,7 @@ def test_c11_stability_contract_keeps_thresholds_pending_user_confirmation() -> 
         "qualification": {
             "status": "pending_user_confirmation",
             "thresholds": None,
-            "note": "只记录本机观察值；稳定版资格与阈值由秦先生审核",
+            "note": "只记录本机观察值；稳定版资格与阈值由用户审核",
         },
         "minimum_route_roundtrips": MIN_ROUTE_ROUNDTRIPS,
         "minimum_task_polls": MIN_TASK_POLLS,
@@ -218,7 +218,7 @@ def test_c11_r3_stability_real_browser_observation(
         "qualification": {
             "status": "pending_user_confirmation",
             "thresholds": None,
-            "note": "真实观测已记录；内存、DOM、句柄阈值与 R3 资格需秦先生审核",
+            "note": "真实观测已记录；内存、DOM、句柄阈值与 R3 资格需用户审核",
         },
     }
     serialized = json.dumps(report, ensure_ascii=False)
@@ -227,7 +227,7 @@ def test_c11_r3_stability_real_browser_observation(
     _write_json(_evidence_dir() / "c11-t5-stability-report.json", report)
     (_evidence_dir() / "c11-r3-stability-whitepaper.md").write_text(
         "# Gods' Workbench R3 稳定版资质审查报告\n\n"
-        "状态：待秦先生审核。\n\n"
+        "状态：待用户审核。\n\n"
         f"- Commit：`{report['commit_sha']}`\n"
         f"- 路由往返：{MIN_ROUTE_ROUNDTRIPS}\n"
         f"- 任务轮询：{len(poll_records)}\n"
