@@ -33,6 +33,7 @@ import base64
 import hashlib
 import json
 import logging
+import math
 import os
 import threading
 from collections import Counter
@@ -158,33 +159,106 @@ def _plain_asset(asset_id: str, name: str, kind: str, **extra: Any) -> Dict[str,
     return payload
 
 
+def _asset_search_document(asset: Dict[str, Any]) -> Optional[Dict[str, str]]:
+    """从资产记录提取可检索文档；缺 id 或名称的记录不进入索引。"""
+    if not isinstance(asset, dict):
+        return None
+    asset_id = str(asset.get("asset_id") or asset.get("id") or "").strip()
+    title = str(asset.get("name") or "").strip()
+    if not asset_id or not title:
+        return None
+    tags = asset.get("tags")
+    tag_text = [
+        tag.strip() for tag in tags
+        if isinstance(tag, str) and tag.strip()
+    ] if isinstance(tags, list) else []
+    content = " ".join(
+        value for value in (
+            str(asset.get("kind") or "").strip(),
+            str(asset.get("display_path") or "").strip(),
+            *tag_text,
+        ) if value
+    )
+    return {"asset_id": asset_id, "title": title, "content": content}
+
+
+def shot_content_hash(segment: Dict[str, Any]) -> str:
+    """按登记内容稳定计算镜头内容哈希（MVP1-AC2/AC10 幂等与重建键）。
+
+    哈希输入仅取注册表中登记的镜头内容字段（起止时间戳、标签、摘要），
+    不含派生缩略图等可再生产物；同内容必得同哈希，重建前后一致。
+    """
+    payload = {
+        "start_sec": float(segment["start_sec"]),
+        "end_sec": float(segment["end_sec"]),
+        "tags": list(segment.get("tags") or []),
+        "summary": str(segment.get("summary") or ""),
+    }
+    canonical = json.dumps(
+        payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")
+    )
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+
+def _asset_shot_rows(asset: Dict[str, Any]) -> Tuple[List[Dict[str, Any]], int]:
+    """把资产登记的 video_segments 转成镜头级索引行（MVP1-T1 契约）。
+
+    只收敛字段完整且时间戳合法的段落，序号按收敛后顺序从 0 连续编号；
+    非法段落跳过并计数返回，不伪造缺省时间戳。
+    """
+    asset_id = str(asset.get("asset_id") or asset.get("id") or "").strip()
+    if not asset_id:
+        return [], 0
+    metadata = asset.get("metadata")
+    segments = metadata.get("video_segments") if isinstance(metadata, dict) else None
+    if not isinstance(segments, list):
+        return [], 0
+    root_id = str(asset.get("root_id") or asset.get("storage_root_id") or "")
+    rows: List[Dict[str, Any]] = []
+    skipped = 0
+    for segment in segments:
+        if not isinstance(segment, dict):
+            skipped += 1
+            continue
+        start = segment.get("start_sec")
+        end = segment.get("end_sec")
+        if isinstance(start, bool) or isinstance(end, bool):
+            skipped += 1
+            continue
+        if not isinstance(start, (int, float)) or not isinstance(end, (int, float)):
+            skipped += 1
+            continue
+        try:
+            start_sec = float(start)
+            end_sec = float(end)
+        except (TypeError, ValueError, OverflowError):
+            skipped += 1
+            continue
+        if not (math.isfinite(start_sec) and math.isfinite(end_sec)):
+            skipped += 1
+            continue
+        if start_sec < 0 or end_sec <= start_sec:
+            skipped += 1
+            continue
+        rows.append({
+            "asset_id": asset_id,
+            "root_id": root_id,
+            "shot_index": len(rows),
+            "start_sec": start_sec,
+            "end_sec": end_sec,
+            "content_hash": shot_content_hash(segment),
+        })
+    return rows, skipped
+
+
 def _upsert_asset_search_documents(assets: Any) -> List[bool]:
     """把资产的可检索字段通过批量接口写入本地 FTS/向量索引。"""
     documents: Dict[str, Dict[str, str]] = {}
     for asset in assets:
-        if not isinstance(asset, dict):
+        document = _asset_search_document(asset)
+        if document is None:
             continue
-        asset_id = str(asset.get("asset_id") or asset.get("id") or "").strip()
-        title = str(asset.get("name") or "").strip()
-        if not asset_id or not title:
-            continue
-        tags = asset.get("tags")
-        tag_text = [
-            tag.strip() for tag in tags
-            if isinstance(tag, str) and tag.strip()
-        ] if isinstance(tags, list) else []
-        content = " ".join(
-            value for value in (
-                str(asset.get("kind") or "").strip(),
-                str(asset.get("display_path") or "").strip(),
-                *tag_text,
-            ) if value
-        )
-        documents[asset_id] = {
-            "asset_id": asset_id,
-            "title": title,
-            "content": content,
-        }
+        documents[document["asset_id"]] = document
     if not documents:
         return []
 
@@ -2089,6 +2163,87 @@ def index_sync() -> Dict[str, Any]:
             "missing_from_registry": sorted(on_disk - known),
             "missing_from_disk": sorted(known - on_disk),
             "revision": raw["revision"], "data_status": DATA_STATUS_OK}
+
+
+def rebuild_search_index() -> Dict[str, Any]:
+    """从 JSON 注册表真源完整重建本地检索索引（MVP1-AC10 重建钩子）。
+
+    只读注册表，不改写、不删除任何资产或源文件；索引固定落在三态 data 根
+    （MVP1-AC1），先写 .part 临时文件再原子替换，失败清理临时文件并保留旧索引。
+    重建内容：资产文档、镜头级索引行与索引元数据；元数据如实记录当前无嵌入
+    模型（model_id/model_version 为空），维度与向量存储量化格式取自引擎实况。
+    """
+    raw = state().read()
+    assets = [a for a in raw["assets"].values() if isinstance(a, dict) and _visible(a)]
+    documents = []
+    for asset in assets:
+        document = _asset_search_document(asset)
+        if document is not None:
+            documents.append(document)
+    shot_rows: List[Dict[str, Any]] = []
+    skipped_segments = 0
+    for asset in assets:
+        rows, skipped = _asset_shot_rows(asset)
+        shot_rows.extend(rows)
+        skipped_segments += skipped
+
+    from gw.core.sqlite_vec_engine import SQLiteVecEngine
+
+    db_path = storage.data_root() / ASSET_SEARCH_INDEX_FILENAME
+    db_path.parent.mkdir(parents=True, exist_ok=True)
+    part_path = db_path.with_name(db_path.stem + ".part" + db_path.suffix)
+    if part_path.exists():
+        part_path.unlink()
+    try:
+        with SQLiteVecEngine(part_path) as engine:
+            engine.batch_upsert_documents(documents)
+            if shot_rows:
+                engine.batch_upsert_shots(shot_rows)
+            engine.set_index_metadata(
+                model_id=None,
+                model_version=None,
+                dimensions=engine.dimensions,
+                quantization="float32" if engine.vector_enabled else None,
+            )
+        os.replace(part_path, db_path)
+    except Exception:
+        try:
+            part_path.unlink()
+        except OSError:
+            pass
+        raise
+    return {
+        "documents": len(documents),
+        "shots": len(shot_rows),
+        "skipped_segments": skipped_segments,
+        "path": str(db_path),
+        "data_status": DATA_STATUS_OK,
+    }
+
+
+def search_index_status() -> Dict[str, Any]:
+    """只读检索索引状态：文件位置、文档/镜头行数与索引元数据。"""
+    from gw.core.sqlite_vec_engine import SQLiteVecEngine
+
+    db_path = storage.data_root() / ASSET_SEARCH_INDEX_FILENAME
+    if not db_path.is_file():
+        return {"path": str(db_path), "exists": False, "documents": 0, "shots": 0,
+                "metadata": None, "data_status": DATA_STATUS_OK}
+    with SQLiteVecEngine(db_path) as engine:
+        metadata = engine.index_metadata()
+        return {
+            "path": str(db_path),
+            "exists": True,
+            "documents": engine.document_count(),
+            "shots": engine.shot_count(),
+            "metadata": None if metadata is None else {
+                "model_id": metadata.model_id,
+                "model_version": metadata.model_version,
+                "dimensions": metadata.dimensions,
+                "quantization": metadata.quantization,
+            },
+            "data_status": DATA_STATUS_OK,
+        }
 
 
 # ---------------------------------------------------------------------------

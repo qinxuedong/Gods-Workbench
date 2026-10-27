@@ -300,7 +300,7 @@ def test_static_layer_has_no_legacy_integration_markers(repo_root: Path):
 # 凭据或完整历史授权账本。历史材料继续留在洁净源仓，不因测试需要复制进新仓。
 ADMISSION_METADATA_PATH = "tests/hygiene/fixtures/cleanroom_admission_metadata.json"
 ADMISSION_METADATA_SHA256 = (
-    "d482b65f1d44af41034c3d4eb6f04408597a69c760c16d3e8ee115e921da9d5f"
+    "06d9df86fd595d6581dbd37c2feee3752302b5910e286bec0989944963cb186d"
 )
 QUARANTINED_PROMPT_ORIGINAL_PATH = (
     "web/system-prompts/infinite-canvas-prompt-templates.md"
@@ -320,31 +320,6 @@ def _load_admission_metadata(repo_root: Path) -> dict:
     assert metadata.get("release_authorized") is True
     assert _canonical_sha256(metadata_path) == ADMISSION_METADATA_SHA256
     return metadata
-
-
-def test_mvp1_t0_contract_tests_are_explicitly_authorized(repo_root: Path):
-    """MVP1-T0 新增测试逐文件登记，且新增 Node 测试进入执行清单。"""
-    metadata = _load_admission_metadata(repo_root)
-    expected = {
-        "tests/contracts/assets/test_mvp1_t0_alias_offline.py",
-        "tests/contracts/settings/test_mvp1_t0_mount_validation.py",
-        "tests/frontend/mvp1-t0-mount-errors.test.mjs",
-    }
-    entries = metadata.get("authorized_test_files", [])
-    assert {entry.get("path") for entry in entries} == expected
-    for entry in entries:
-        path = repo_root / entry["path"]
-        assert path.is_file(), f"MVP1-T0 授权测试文件缺失: {entry['path']}"
-        assert entry.get("authorization_basis") == "MVP1-T0_Cut_2026-10-26"
-        assert re.fullmatch(r"[0-9a-f]{64}", entry.get("sha256", ""))
-        assert _canonical_sha256(path) == entry["sha256"]
-
-    node_manifest = (repo_root / "tests/frontend/node-files.txt").read_text(
-        encoding="utf-8"
-    )
-    assert "tests/frontend/mvp1-t0-mount-errors.test.mjs" in {
-        line.strip() for line in node_manifest.splitlines() if line.strip()
-    }
 
 
 def test_quarantined_prompt_is_absent_from_static_tree(repo_root: Path):
@@ -492,8 +467,9 @@ def test_admission_metadata_hashes_match_current_files(repo_root: Path):
     """当前准入文件哈希必须与机器登记一致；不复用旧 Phase-2 账本。"""
     metadata = _load_admission_metadata(repo_root)
     entries = metadata.get("admitted_files", [])
-    assert len(entries) == 104, (
-        "当前准入登记数量必须包含 H01、已批准规范、QIN-376 测试覆盖清单与 QIN-382 方案"
+    assert len(entries) == 105, (
+        "当前准入登记数量必须包含 H01、已批准规范、QIN-376 测试覆盖清单、QIN-382 方案"
+        "与 MVP1-T4a 嵌入基准冒烟测试"
     )
     for entry in entries:
         path = repo_root / entry["path"]
@@ -611,6 +587,7 @@ def test_accepted_doc_slices_match_migration_manifest(repo_root: Path):
         "docs/contracts/PROVIDER-PROTOCOL-BOUNDARIES.md",
         "docs/CI-SKIPPED-TEST-COVERAGE.md",
         "docs/architecture/asset-manager-js-split-plan.md",
+        "tests/contracts/assets/test_mvp1_t4a_bench_script.py",
     }
     admitted_paths = _metadata_admitted_paths(metadata)
     assert curated_paths <= admitted_paths

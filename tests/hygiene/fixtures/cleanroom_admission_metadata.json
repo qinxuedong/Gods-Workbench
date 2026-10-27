@@ -1,6 +1,6 @@
 {
   "schema": "gw.cleanroom-admission/v1",
-  "as_of": "2026-10-25",
+  "as_of": "2026-10-27",
   "release_authorized": true,
   "purpose": "新仓当前准入边界、来源分类和排除项的机器可读登记；不保存旧仓正文、凭据或授权账本正文。",
   "accepted_roots": [
@@ -70,6 +70,12 @@
       "path": "docs/architecture/asset-manager-js-split-plan.md",
       "classification": "curated_architecture_plan",
       "authorization_basis": "QIN-382_Cut_2026-10-25",
+      "admission": "accepted"
+    },
+    {
+      "path": "tests/contracts/assets/test_mvp1_t4a_bench_script.py",
+      "classification": "curated_test_coverage",
+      "authorization_basis": "MVP1_T4A_issue_343_2026-10-27",
       "admission": "accepted"
     }
   ],
@@ -831,6 +837,13 @@
       "classification": "curated_architecture_plan",
       "authorization_basis": "QIN-382_Cut_2026-10-25",
       "sha256": "79364b32230d5e363411523379e8e9ef6c9e2084d9d2b16266e6dbd29303674f",
+      "admission": "accepted"
+    },
+    {
+      "path": "tests/contracts/assets/test_mvp1_t4a_bench_script.py",
+      "classification": "curated_test_coverage",
+      "authorization_basis": "MVP1_T4A_issue_343_2026-10-27",
+      "sha256": "b44d4c1250a0842c2b3711f81eb9be602e1ef502251dc4f3b80c5b28858d8a4f",
       "admission": "accepted"
     }
   ],
