@@ -100,7 +100,9 @@ def test_c18_video_jump_e2e_real_browser(monkeypatch: pytest.MonkeyPatch, tmp_pa
 
         # 6. 验证徽标布局：徽标不能与 MP4 格式标签重叠
         format_selector = f'{card_selector} .registry-card-format'
-        format_box = page.locator(format_selector).bounding_box()
+        format_loc = page.locator(format_selector)
+        format_loc.wait_for(state="visible", timeout=10000)
+        format_box = format_loc.bounding_box()
         badge_box = page.locator(badge_selector).bounding_box()
         assert format_box and badge_box, "卡片标签或时间段徽标未正常渲染几何边框"
         # 格式标签在左上方 (y ~ 9px)，时间段徽标在左下方 (y 在格式标签之下)，纵向不重叠
