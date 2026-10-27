@@ -170,6 +170,20 @@
   ],
   "admitted_files": [
     {
+      "path": "docs/CI-SKIPPED-TEST-COVERAGE.md",
+      "classification": "curated_test_coverage",
+      "authorization_basis": "QIN-376_user_authorization_2026-10-25",
+      "sha256": "c5b9858fc1d1d91c0af1adf157e07a0d7147b0cd566704ed6f92bcfac6de549d",
+      "admission": "accepted"
+    },
+    {
+      "path": "docs/architecture/asset-manager-js-split-plan.md",
+      "classification": "curated_architecture_plan",
+      "authorization_basis": "QIN-382_Cut_2026-10-25",
+      "sha256": "ecac1724a1a052ccc76a13c8c9ac487c28d6d8abea6d0d6919285ec3b511a36f",
+      "admission": "accepted"
+    },
+    {
       "path": "docs/behavior/BEHAVIOR-SPEC-CANVAS.md",
       "classification": "frozen_behavior_contract",
       "authorization_basis": "cleanroom_frozen_input",
@@ -198,38 +212,10 @@
       "admission": "accepted"
     },
     {
-      "path": "docs/contracts/COMFY-ADAPTER-CONFLICT.md",
+      "path": "docs/contracts/AGENT-WORKBENCH-INTERFACE-CATALOG.yaml",
       "classification": "frozen_interface_contract",
-      "authorization_basis": "owner_approval_C4_AC13_2026-10-15",
-      "sha256": "a33d2fa84ce56b6f1e53f1c9032250031dc40a469b60e518d8c949326dc9d025",
-      "admission": "accepted"
-    },
-    {
-      "path": "docs/contracts/R1-TEXT-MEDIA-LOOP-CONTRACT.md",
-      "classification": "frozen_interface_contract",
-      "authorization_basis": "owner_approval_C7_P5_2026-10-17",
-      "sha256": "97ee98fd981e922ccecc9eb62acbc506866982ee74cff32b700ef5a1d78aae48",
-      "admission": "accepted"
-    },
-    {
-      "path": "docs/contracts/R2-REVIEW-DELIVERY-CONTRACT.md",
-      "classification": "frozen_interface_contract",
-      "authorization_basis": "owner_approval_C8_T1_2026-10-17",
-      "sha256": "b740963000e859b702f9077a72145ed2d7faeae61d6f423763717cf3549fcdab",
-      "admission": "accepted"
-    },
-    {
-      "path": "docs/contracts/R2-CLOSURE-CONTRACT.md",
-      "classification": "frozen_interface_contract",
-      "authorization_basis": "owner_approval_C9_T1_cleanroom_2026-10-18",
-      "sha256": "6ef5b87605924a021b001f8a25aa322542c7fbc0438af4bab4cbda1d5eb599f0",
-      "admission": "accepted"
-    },
-    {
-      "path": "docs/contracts/R3-SEARCH-PREVIEW-CONTRACT.md",
-      "classification": "frozen_interface_contract",
-      "authorization_basis": "owner_approval_C11_T1_2026-10-18",
-      "sha256": "1423ded308736dd4b782e82f9c18cf6c53b8c0cfede967b7af017aa7b6cd3365",
+      "authorization_basis": "user_integration_request_2026-10-08",
+      "sha256": "a3e2f205efa8325295a55065d0dce52bef50b615b47d36d0c756541d928c0975",
       "admission": "accepted"
     },
     {
@@ -289,17 +275,17 @@
       "admission": "accepted"
     },
     {
-      "path": "docs/contracts/AGENT-WORKBENCH-INTERFACE-CATALOG.yaml",
-      "classification": "frozen_interface_contract",
-      "authorization_basis": "user_integration_request_2026-10-08",
-      "sha256": "20ac189e6e03b3257e75262677c109278e2ebf0a0b3b0ab787c1c1b1dea61bfe",
-      "admission": "accepted"
-    },
-    {
       "path": "docs/contracts/CHAT-METRICS-INTERFACE-CATALOG.yaml",
       "classification": "frozen_interface_contract",
       "authorization_basis": "cleanroom_frozen_input",
       "sha256": "501b0136aba45a07e938d907e986b51bd28094f4960790081a0df0eb17f46be9",
+      "admission": "accepted"
+    },
+    {
+      "path": "docs/contracts/COMFY-ADAPTER-CONFLICT.md",
+      "classification": "frozen_interface_contract",
+      "authorization_basis": "owner_approval_C4_AC13_2026-10-15",
+      "sha256": "a33d2fa84ce56b6f1e53f1c9032250031dc40a469b60e518d8c949326dc9d025",
       "admission": "accepted"
     },
     {
@@ -401,6 +387,48 @@
       "admission": "accepted"
     },
     {
+      "path": "docs/contracts/R1-TEXT-MEDIA-LOOP-CONTRACT.md",
+      "classification": "frozen_interface_contract",
+      "authorization_basis": "owner_approval_C7_P5_2026-10-17",
+      "sha256": "97ee98fd981e922ccecc9eb62acbc506866982ee74cff32b700ef5a1d78aae48",
+      "admission": "accepted"
+    },
+    {
+      "path": "docs/contracts/R2-CLOSURE-CONTRACT.md",
+      "classification": "frozen_interface_contract",
+      "authorization_basis": "owner_approval_C9_T1_cleanroom_2026-10-18",
+      "sha256": "6ef5b87605924a021b001f8a25aa322542c7fbc0438af4bab4cbda1d5eb599f0",
+      "admission": "accepted"
+    },
+    {
+      "path": "docs/contracts/R2-REVIEW-DELIVERY-CONTRACT.md",
+      "classification": "frozen_interface_contract",
+      "authorization_basis": "owner_approval_C8_T1_2026-10-17",
+      "sha256": "b740963000e859b702f9077a72145ed2d7faeae61d6f423763717cf3549fcdab",
+      "admission": "accepted"
+    },
+    {
+      "path": "docs/contracts/R3-SEARCH-PREVIEW-CONTRACT.md",
+      "classification": "frozen_interface_contract",
+      "authorization_basis": "owner_approval_C11_T1_2026-10-18",
+      "sha256": "1423ded308736dd4b782e82f9c18cf6c53b8c0cfede967b7af017aa7b6cd3365",
+      "admission": "accepted"
+    },
+    {
+      "path": "docs/contracts/R4-I2V-GENERATION-CONTRACT.md",
+      "classification": "frozen_interface_contract",
+      "authorization_basis": "owner_approval_C14_T1_QIN-216_2026-10-20",
+      "sha256": "49aa4528b1798d0a573cc48a457223b4343368b1030e2c8c38a4719ce929ba9a",
+      "admission": "accepted"
+    },
+    {
+      "path": "docs/contracts/R4-MASTER-EXPORT-CONTRACT.md",
+      "classification": "frozen_interface_contract",
+      "authorization_basis": "owner_approval_C15_T1_QIN-220_2026-10-21",
+      "sha256": "87a7b487f1283b01285d8d8940c817a0da407e70122e405609d12f929c589d84",
+      "admission": "accepted"
+    },
+    {
       "path": "docs/contracts/README.md",
       "classification": "frozen_interface_contract",
       "authorization_basis": "cleanroom_frozen_input",
@@ -447,6 +475,13 @@
       "classification": "frozen_interface_contract",
       "authorization_basis": "user_integration_request_2026-10-07",
       "sha256": "b4089181b6d69fa0b48fd1d5a33213dfac34aed6c8b3e4c996d51eaf25eac925",
+      "admission": "accepted"
+    },
+    {
+      "path": "docs/design/BUTTON-SYSTEM-SPEC.md",
+      "classification": "curated_design_system",
+      "authorization_basis": "UI_buttons_user_decision_and_B0a_B1_B2_approval_2026-10-11",
+      "sha256": "a3d9855b1725823ff1fae5c73fe124ee832d21b4fc63c0396eb6bc7a26ca6a2c",
       "admission": "accepted"
     },
     {
@@ -842,20 +877,6 @@
       "admission": "accepted"
     },
     {
-      "path": "docs/governance/PROJECT-GOVERNANCE.md",
-      "classification": "curated_project_governance",
-      "authorization_basis": "user_global_naming_system_specification_2026-10-12",
-      "sha256": "799d1e90973de84819927810404e2ff8f4cdf908ea89bb933fc5fe519d19c502",
-      "admission": "accepted"
-    },
-    {
-      "path": "docs/design/BUTTON-SYSTEM-SPEC.md",
-      "classification": "curated_design_system",
-      "authorization_basis": "UI_buttons_user_decision_and_B0a_B1_B2_approval_2026-10-11",
-      "sha256": "a3d9855b1725823ff1fae5c73fe124ee832d21b4fc63c0396eb6bc7a26ca6a2c",
-      "admission": "accepted"
-    },
-    {
       "path": "docs/governance/GLOBAL-NAMING-SPEC.md",
       "classification": "curated_project_governance",
       "authorization_basis": "user_global_naming_system_specification_2026-10-12",
@@ -870,31 +891,10 @@
       "admission": "accepted"
     },
     {
-      "path": "docs/contracts/R4-I2V-GENERATION-CONTRACT.md",
-      "classification": "frozen_interface_contract",
-      "authorization_basis": "owner_approval_C14_T1_QIN-216_2026-10-20",
-      "sha256": "49aa4528b1798d0a573cc48a457223b4343368b1030e2c8c38a4719ce929ba9a",
-      "admission": "accepted"
-    },
-    {
-      "path": "docs/contracts/R4-MASTER-EXPORT-CONTRACT.md",
-      "classification": "frozen_interface_contract",
-      "authorization_basis": "owner_approval_C15_T1_QIN-220_2026-10-21",
-      "sha256": "87a7b487f1283b01285d8d8940c817a0da407e70122e405609d12f929c589d84",
-      "admission": "accepted"
-    },
-    {
-      "path": "docs/CI-SKIPPED-TEST-COVERAGE.md",
-      "classification": "curated_test_coverage",
-      "authorization_basis": "QIN-376_user_authorization_2026-10-25",
-      "sha256": "c5b9858fc1d1d91c0af1adf157e07a0d7147b0cd566704ed6f92bcfac6de549d",
-      "admission": "accepted"
-    },
-    {
-      "path": "docs/architecture/asset-manager-js-split-plan.md",
-      "classification": "curated_architecture_plan",
-      "authorization_basis": "QIN-382_Cut_2026-10-25",
-      "sha256": "ecac1724a1a052ccc76a13c8c9ac487c28d6d8abea6d0d6919285ec3b511a36f",
+      "path": "docs/governance/PROJECT-GOVERNANCE.md",
+      "classification": "curated_project_governance",
+      "authorization_basis": "user_global_naming_system_specification_2026-10-12",
+      "sha256": "799d1e90973de84819927810404e2ff8f4cdf908ea89bb933fc5fe519d19c502",
       "admission": "accepted"
     },
     {

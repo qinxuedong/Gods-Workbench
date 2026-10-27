@@ -95,3 +95,137 @@ ownership:
   durable_mapping: "host_agent_create_keys.job_id -> run_id"
   shared_observability_list: "not included until actor/project-filtered enumeration is defined"
   related_canvas_contract: "CANVAS-INTERFACE-CATALOG.yaml: run_smart_canvas_task"
+
+tools:
+  - name: script_generate
+    risk: medium
+    cost: metered
+    idempotency: required
+    stages:
+      - full_script
+      - scene_script
+    schema:
+      type: object
+      additionalProperties: false
+      required:
+        - run_id
+        - stage
+        - idempotency_key
+      properties:
+        run_id:
+          type: string
+        stage:
+          enum:
+            - full_script
+            - scene_script
+        idempotency_key:
+          type: string
+          minLength: 8
+        instructions:
+          type: string
+          maxLength: 4000
+
+  - name: storyboard_generate
+    risk: medium
+    cost: metered
+    idempotency: required
+    stages:
+      - storyboard_text
+    schema:
+      type: object
+      additionalProperties: false
+      required:
+        - run_id
+        - stage
+        - idempotency_key
+      properties:
+        run_id:
+          type: string
+        stage:
+          enum:
+            - storyboard_text
+        idempotency_key:
+          type: string
+          minLength: 8
+        instructions:
+          type: string
+          maxLength: 4000
+
+  - name: i2v_generate
+    risk: high
+    cost: metered
+    idempotency: required
+    gate: i2v_submit
+    schema:
+      type: object
+      additionalProperties: false
+      required:
+        - run_id
+        - idempotency_key
+        - image_asset_id
+        - prompt
+      properties:
+        run_id:
+          type: string
+        idempotency_key:
+          type: string
+          minLength: 8
+        image_asset_id:
+          type: string
+        prompt:
+          type: string
+        model:
+          type: string
+        duration:
+          type: number
+        aspect_ratio:
+          type: string
+
+  - name: timeline_compose
+    risk: medium
+    cost: free
+    idempotency: required
+    schema:
+      type: object
+      additionalProperties: false
+      required:
+        - run_id
+        - idempotency_key
+      properties:
+        run_id:
+          type: string
+        idempotency_key:
+          type: string
+          minLength: 8
+        tracks:
+          type: array
+        options:
+          type: object
+
+  - name: master_render
+    risk: critical
+    cost: free
+    idempotency: required
+    gate: master_output
+    schema:
+      type: object
+      additionalProperties: false
+      required:
+        - run_id
+        - idempotency_key
+      properties:
+        run_id:
+          type: string
+        idempotency_key:
+          type: string
+          minLength: 8
+        manifest_id:
+          type: string
+        manifest:
+          type: object
+        asset_paths:
+          type: object
+        output_filename:
+          type: string
+        options:
+          type: object
