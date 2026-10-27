@@ -193,6 +193,7 @@ class SQLiteVecEngine:
         self.dimensions = dimensions
         self.vector_enabled = False
         self.vector_error: str | None = None
+        self._vec_extension_loaded = False
         self._vector_search_state = threading.local()
         self._lock = threading.RLock()
         self._closed = False
@@ -261,12 +262,20 @@ class SQLiteVecEngine:
                 quantization TEXT
             )"""
         )
+        metadata = self._db.execute(
+            "SELECT dimensions FROM mvp1_index_metadata WHERE id=1"
+        ).fetchone()
+        if metadata is not None:
+            stored_dimensions = metadata["dimensions"]
+            if isinstance(stored_dimensions, int) and stored_dimensions > 0:
+                self.dimensions = stored_dimensions
         try:
             _load_sqlite_vec(self._db)
         except Exception as exc:
             self.vector_error = f"sqlite-vec unavailable: {type(exc).__name__}"
             logger.warning("sqlite-vec 未能加载，检索降级为 FTS5：%s", self.vector_error)
             return
+        self._vec_extension_loaded = True
 
         try:
             self._db.execute(
@@ -733,6 +742,72 @@ class SQLiteVecEngine:
             except Exception:
                 self._db.rollback()
                 raise
+
+    def switch_embedding_model(
+        self,
+        *,
+        model_id: str,
+        model_version: str,
+        dimensions: int,
+        quantization: str = "float32",
+    ) -> bool:
+        """切换嵌入模型并清理旧向量，保留文档及 FTS5 内容。"""
+        self._ensure_open()
+        for name, value in (
+            ("model_id", model_id),
+            ("model_version", model_version),
+            ("quantization", quantization),
+        ):
+            if not isinstance(value, str) or not value.strip():
+                raise ValueError(f"{name} 必须是非空字符串")
+        if isinstance(dimensions, bool) or not isinstance(dimensions, int) or dimensions < 1:
+            raise ValueError("dimensions 必须是正整数")
+
+        with self._lock:
+            self._ensure_open()
+            current = self.index_metadata()
+            unchanged = (
+                current is not None
+                and current.model_id == model_id
+                and current.model_version == model_version
+                and current.dimensions == dimensions
+                and current.quantization
+                == (quantization if self._vec_extension_loaded else None)
+                and self.dimensions == dimensions
+            )
+            if unchanged and (self.vector_enabled or not self._vec_extension_loaded):
+                return False
+
+            stored_quantization = (
+                quantization if self._vec_extension_loaded else None
+            )
+            self._db.execute("BEGIN IMMEDIATE")
+            try:
+                if self._vec_extension_loaded:
+                    self._db.execute(f"DROP TABLE IF EXISTS {self._VECTORS}")
+                    self._db.execute(
+                        f"""CREATE VIRTUAL TABLE {self._VECTORS}
+                            USING vec0(embedding float[{dimensions}])"""
+                    )
+                self._db.execute(
+                    f"UPDATE {self._DOCUMENTS} SET vector_hash=NULL"  # noqa: S608
+                )
+                self._db.execute("DELETE FROM mvp1_index_metadata WHERE id=1")
+                self._db.execute(
+                    """INSERT INTO mvp1_index_metadata
+                       (id, model_id, model_version, dimensions, quantization)
+                       VALUES(1,?,?,?,?)""",
+                    (model_id, model_version, dimensions, stored_quantization),
+                )
+                self._db.commit()
+            except Exception:
+                self._db.rollback()
+                raise
+
+            self.dimensions = dimensions
+            self.vector_enabled = self._vec_extension_loaded
+            self.vector_error = None if self.vector_enabled else self.vector_error
+            return True
 
     def index_metadata(self) -> IndexMetadata | None:
         """读取索引元数据；尚未写入时返回 None。"""
