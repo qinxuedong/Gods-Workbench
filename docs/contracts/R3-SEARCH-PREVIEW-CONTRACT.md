@@ -147,7 +147,7 @@ C11 继续使用现有查询入口；下面是入口接收的逻辑请求形状�
 
 ### 5.2 代理配置与派生约束
 
-- 代理格式、尺寸、帧率、码率和生成耗时由服务端实际配置返回，使用 `profile`、`width`、`height`、`fps`、`bitrate`、`duration_ms` 和 `generated_at` 等字段记录；本契约不预先冻结未经实测和秦先生确认的规模、p95、首屏或 RPO/RTO 阈值。
+- 代理格式、尺寸、帧率、码率和生成耗时由服务端实际配置返回，使用 `profile`、`width`、`height`、`fps`、`bitrate`、`duration_ms` 和 `generated_at` 等字段记录；本契约不预先冻结未经实测和用户确认的规模、p95、首屏或 RPO/RTO 阈值。
 - 视频代理必须保持原始时间轴和音画同步；图像代理必须声明尺寸和 MIME。任何转码失败、缺少 ffmpeg/ffprobe 或源不可读都返回真实降级状态，不登记成功产物。
 - 派生任务应沿用统一任务状态、稳定 `job_id`、幂等语义和主体隔离；未知远端结果禁止盲目重试或伪造 `job_id`。
 - 原片与代理的关系必须可按 `asset_id → version_id → artifact_id/job_id` 回读；删除或回收原片时不得留下可访问的代理 URL。

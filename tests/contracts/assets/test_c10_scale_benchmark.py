@@ -264,7 +264,7 @@ def test_c10_benchmark_records_observations_without_thresholds(tmp_path: Path) -
         "thresholds": {
             "status": "pending_user_confirmation",
             "values": None,
-            "note": "只记录本机观察值；规模、p95、首屏等阈值待秦先生确认",
+            "note": "只记录本机观察值；规模、p95、首屏等阈值待用户确认",
         },
     }
     serialized = json.dumps(report, ensure_ascii=False)

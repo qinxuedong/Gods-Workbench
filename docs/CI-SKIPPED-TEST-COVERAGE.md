@@ -33,7 +33,7 @@
 | 1 | `tests/e2e/test_c13_animatic_radar_browser.py::test_c13_animatic_radar_real_browser_evidence`：真实动画样片与雷达浏览器证据 | `GW_C13_REAL_E2E=1` 未启用。 | 否，不放入常规 PR CI。真实浏览器证据由专用环境单独收集。 |
 | 1 | `tests/e2e/test_c14_i2v_generation_browser.py::test_c14_i2v_ten_shot_generation_and_multitake_browser_closeout`：I2V 十镜头生成与多 Take 浏览器验收 | `GW_C14_REAL_E2E=1` 未启用。 | 否，不放入常规 PR CI；真实生成涉及供应商与外部资源，按专用环境验收。 |
 | 1 | `tests/e2e/test_c15_full_pipeline_browser.py::test_c15_local_master_render_plays_in_chrome`：本地 FFmpeg 母带与 Chrome 解码 | `GW_C15_LOCAL_RENDER_E2E=1` 未启用；该任务需要本地 FFmpeg 与 Chrome。 | 不应成为普通 PR CI 默认任务。若 CI 需要渲染覆盖，应建立具备固定 FFmpeg/Chrome 版本的专用 lane。 |
-| 1 | `tests/e2e/test_c16_multi_topology_browser.py::test_c16_real_nas_read_only_preflight`：飞牛 NAS 只读预检 | `GW_C16_REAL_E2E=1` 未启用；该测试要求完成部署并由秦先生明确通知后再运行。 | 否，绝不自动放进常规 CI。仅在 NAS 部署完成并履行测试前报告后执行；本次没有访问 `<局域网IP>`。 |
+| 1 | `tests/e2e/test_c16_multi_topology_browser.py::test_c16_real_nas_read_only_preflight`：飞牛 NAS 只读预检 | `GW_C16_REAL_E2E=1` 未启用；该测试要求完成部署并由用户明确通知后再运行。 | 否，绝不自动放进常规 CI。仅在 NAS 部署完成并履行测试前报告后执行；本次没有访问 `<局域网IP>`。 |
 | 1 | `tests/runtime/test_t5_runtime_paths.py::test_existing_symlink_in_any_root_is_rejected`：运行时目录根拒绝符号链接 | 当前 Windows 账户未获准创建目录符号链接。 | 应由支持符号链接的平台 CI 覆盖；Windows Junction 行为单独测试，不把权限性 skip 当成通过。 |
 
 ## 结论与补齐建议

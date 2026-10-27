@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-"""C3-AC8 真实 RunningHub 验收（人工门 G2，cut 2026-10-13 10:38：仅秦先生本人在本机运行；团队一律不碰 key）。
+"""C3-AC8 真实 RunningHub 验收（人工门 G2，cut 2026-10-13 10:38：仅用户本人在本机运行；团队一律不碰 key）。
 
 自愿运行的脚本，三道门槛缺一不可，否则以 BLOCKED 退出（退出码 2，并写 BLOCKED JSON）：
 1. 环境变量 GW_RUNNINGHUB_API_KEY 已设置（值只留在本机环境，脚本不打印、不写入任何文件）；

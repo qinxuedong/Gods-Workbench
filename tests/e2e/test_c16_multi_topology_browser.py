@@ -1,6 +1,6 @@
 """QIN-227 / C16-T4 本机拓扑与断线恢复验证。
 
-本文件的可重复测试只使用隔离临时目录和本机服务。NAS 上游实测由秦先生
+本文件的可重复测试只使用隔离临时目录和本机服务。NAS 上游实测由用户
 部署后单独补做；这些本机 fixture 不构成 NAS、跨 PC 或十分钟断网验收。
 """
 
@@ -393,5 +393,5 @@ def test_c16_local_task_survives_client_disconnect_and_app_recomposition(
 def test_c16_real_nas_read_only_preflight() -> None:
     """对真实 NAS 做只读 HTTP 预检；仅在显式批准后运行。"""
     if not _real_run_enabled():
-        pytest.skip("C16 真实 NAS 预检默认关闭；秦先生完成部署并明确通知后再补测")
+        pytest.skip("C16 真实 NAS 预检默认关闭；用户完成部署并明确通知后再补测")
     pytest.fail("NAS 实测暂缓：不得在用户通知部署完成前尝试连接")

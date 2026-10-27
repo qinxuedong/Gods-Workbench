@@ -1,6 +1,6 @@
 """C3-AC8 所有者脚本拒绝门：ac8_runninghub_real.py 缺 env / 缺 --i-accept-cost / 缺 --workflow-id 一律 BLOCKED。
 
-真实供应商验收只由秦先生本人执行（cut 2026-10-13 10:38）；本测试只证明脚本在三道门槛前
+真实供应商验收只由用户本人执行（cut 2026-10-13 10:38）；本测试只证明脚本在三道门槛前
 不联网、不启动应用、不花钱：退出码 2、写出 result=BLOCKED 的 JSON，且没有真实网络尝试。
 另覆盖：导入被拒时记录并打印上游 provider_code，以及启动时 stdout/stderr 强制 UTF-8。
 越过门槛的用例用进程内替身客户端，不启动应用、不联网。
