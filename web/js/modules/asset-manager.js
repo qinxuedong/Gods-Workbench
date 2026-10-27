@@ -18744,7 +18744,10 @@ window.addEventListener('gw:omnibar-result-select', (event) => {
         if (match) targetTime = Number(match[1]);
     }
     if (assetId) {
-        openRegistryAssetFromGlobalSearch(assetId, targetTime).catch(() => {});
+        openRegistryAssetFromGlobalSearch(assetId, targetTime).catch(err => {
+            console.error(err);
+            setStatus(err.message || '打开素材失败');
+        });
     }
 });
 // asset-review.js remains a classic script during the incremental M3 migration.
