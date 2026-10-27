@@ -354,6 +354,156 @@ def list_registry_assets(
                             aspect_ratio=aspect_ratio)
 
 
+#: 镜头级检索单次返回上限，防止一次下钻把整库镜头全部返回。
+MAX_SHOT_SEARCH_LIMIT = 50
+DEFAULT_SHOT_SEARCH_LIMIT = 20
+
+
+def _shot_search_limit(raw: Optional[str]) -> int:
+    """按字符串解析镜头检索 limit，缺省 20，越界或非整数返回 400。"""
+    if raw is None:
+        return DEFAULT_SHOT_SEARCH_LIMIT
+    try:
+        value = int(raw)
+    except (TypeError, ValueError):
+        raise CleanroomException(400, "INVALID_LIMIT", "limit 必须是整数") from None
+    if type(value) is not int or value < 1 or value > MAX_SHOT_SEARCH_LIMIT:
+        raise CleanroomException(
+            400,
+            "INVALID_LIMIT",
+            "limit 超出当前查询允许范围（1 到 %d）" % MAX_SHOT_SEARCH_LIMIT,
+        )
+    return value
+
+
+def _keyword_recalled_assets(query: str, limit: int) -> List[str]:
+    """补齐「镜头文本命中、但资产检索文档未命中」的候选资产（MVP1-AC4）。
+
+    检索文档只收录资产级标签与路径，镜头标签与摘要由 ``list_assets`` 既有的
+    关键词匹配覆盖；这里只取候选 id，词面加权仍由镜头下钻完成，因此不改变
+    既有资产检索的召回口径与排序。
+    """
+    candidate_limit = min(max(limit * 3, limit), 100)
+    try:
+        page = repo.list_assets(candidate_limit, 0, query, None, None)
+    except CleanroomException:
+        return []
+    items = page.get("items") if isinstance(page, dict) else None
+    if not isinstance(items, list):
+        return []
+    asset_ids: List[str] = []
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        asset_id = str(item.get("asset_id") or item.get("id") or "").strip()
+        if asset_id and asset_id not in asset_ids:
+            asset_ids.append(asset_id)
+    return asset_ids
+
+
+@router.get("/search/shots", summary="镜头级素材检索", status_code=status.HTTP_200_OK)
+def search_registry_shots(
+    q: Optional[str] = Query(None),
+    limit: Optional[str] = Query(None),
+    authorization: Optional[str] = Header(None),
+    x_user_role: str = Header("editor", alias="X-User-Role"),
+):
+    """把候选资产下钻到镜头，返回可直接跳转的起止时间戳（MVP1-AC4）。
+
+    候选资产复用 ``HybridAssetSearcher`` 的双轨召回（关键词/向量、限流与降级
+    口径与资产检索完全一致），再按登记镜头做标签与摘要的词面加权。索引文件
+    不存在时如实返回 503，不伪造空结果或假成功。
+    """
+    _read_auth(authorization, x_user_role)
+    query = (q or "").strip()
+    if not query:
+        raise CleanroomException(400, "INVALID_QUERY", "检索词不能为空")
+    bounded_limit = _shot_search_limit(limit)
+
+    from gw.asset_registry.hybrid_search import (
+        HybridAssetSearcher,
+        normalize_shot_records,
+    )
+    from gw.core.sqlite_vec_engine import MAX_QUERY_LENGTH, SQLiteVecEngine
+
+    if len(query) > MAX_QUERY_LENGTH:
+        raise CleanroomException(
+            400, "INVALID_QUERY", "检索词长度不得超过 %d 个字符" % MAX_QUERY_LENGTH
+        )
+    db_path = storage.data_root() / repo.ASSET_SEARCH_INDEX_FILENAME
+    if not db_path.is_file():
+        raise CleanroomException(
+            503,
+            "SEARCH_INDEX_NOT_READY",
+            "本地检索索引尚未建立，请先重建素材索引",
+            extra={"data_status": DATA_STATUS_NOT_INTEGRATED},
+            expose_extra_fields={"data_status"},
+        )
+
+    located: Dict[str, Dict[str, Any]] = {}
+    with SQLiteVecEngine(db_path) as engine:
+
+        def _shot_provider(asset_id: str) -> List[Dict[str, Any]]:
+            """返回该资产已登记镜头；顺带补齐索引中的内容哈希。"""
+            try:
+                record = repo.get_asset(asset_id)
+            except CleanroomException:
+                return []
+            located[asset_id] = record
+            metadata = record.get("metadata")
+            segments = metadata.get("video_segments") if isinstance(metadata, dict) else None
+            records = normalize_shot_records(segments)
+            if not records:
+                return []
+            hashes = {
+                row.shot_index: row.content_hash
+                for row in engine.list_shots(asset_id=asset_id)
+            }
+            return [
+                {**record_row, "content_hash": hashes.get(record_row["shot_index"])}
+                for record_row in records
+            ]
+
+        results = HybridAssetSearcher(engine).search_shots(
+            query,
+            limit=bounded_limit,
+            shot_provider=_shot_provider,
+            extra_asset_ids=_keyword_recalled_assets(query, bounded_limit),
+        )
+
+    items = []
+    for hit in results.hits:
+        record = located.get(hit.asset_id) or {}
+        items.append(
+            {
+                "asset_id": hit.asset_id,
+                "granularity": hit.granularity,
+                "name": str(record.get("name") or ""),
+                "kind": str(record.get("kind") or ""),
+                "display_path": record.get("display_path"),
+                "shot_index": hit.shot_index,
+                "start_sec": hit.start_sec,
+                "end_sec": hit.end_sec,
+                "score": round(hit.score, 6),
+                "asset_score": round(hit.asset_score, 6),
+                "lexical_hits": hit.lexical_hits,
+                "tags": list(hit.tags),
+                "summary": hit.summary,
+                "content_hash": hit.content_hash,
+            }
+        )
+    return {
+        "query": query,
+        "granularity": "shot",
+        "limit": bounded_limit,
+        "items": items,
+        "shot_count": sum(1 for item in items if item["granularity"] == "shot"),
+        "vector_track_degraded": results.vector_track_degraded,
+        "data_status": DATA_STATUS_OK,
+        "data_gaps": [],
+    }
+
+
 @router.get("/assets/{asset_id}", summary="读取素材登记详情", status_code=status.HTTP_200_OK)
 def get_registry_asset(
     asset_id: str,

@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import re
 import shutil
 import subprocess
@@ -47,6 +48,91 @@ HEAVY_VIDEO_CODECS = frozenset(
     {"cineform", "dnxhd", "dnxhr", "rawvideo", "r210", "v210"}
 )
 HIGH_BITRATE_MOV_THRESHOLD = 100_000_000
+#: 按需缩略图/代理缓存的默认预算（20 GiB，MVP1-AC9）；只约束派生产物，
+#: 源素材目录永远不参与清理。
+PROXY_CACHE_BUDGET_BYTES = 20 * 1024 * 1024 * 1024
+PROXY_CACHE_BUDGET_ENV = "GW_PROXY_CACHE_BUDGET_BYTES"
+PROXY_ARTIFACT_PREFIX = "proxy-"
+
+
+def cache_budget_bytes() -> int:
+    """读取代理缓存预算字节数；环境变量非法时回落到默认 20 GiB。"""
+    raw = os.environ.get(PROXY_CACHE_BUDGET_ENV, "").strip()
+    if not raw:
+        return PROXY_CACHE_BUDGET_BYTES
+    try:
+        value = int(raw)
+    except (TypeError, ValueError):
+        return PROXY_CACHE_BUDGET_BYTES
+    return value if value > 0 else PROXY_CACHE_BUDGET_BYTES
+
+
+def _cache_entries(directory: Path) -> list[tuple[float, int, Path]]:
+    """列出缓存目录内可淘汰的派生产物（按 mtime、大小、路径）。"""
+    entries: list[tuple[float, int, Path]] = []
+    try:
+        candidates = list(directory.iterdir())
+    except OSError:
+        return entries
+    for item in candidates:
+        name = item.name
+        if not name.startswith(PROXY_ARTIFACT_PREFIX) or name.endswith(".part"):
+            continue
+        try:
+            if not item.is_file():
+                continue
+            stat = item.stat()
+        except OSError:
+            continue
+        entries.append((stat.st_mtime, stat.st_size, item))
+    return entries
+
+
+def cache_usage(directory: Path) -> dict[str, int]:
+    """统计代理缓存真实占用；读不到的条目跳过，不估算、不伪造大小。"""
+    entries = _cache_entries(directory)
+    return {
+        "bytes": sum(size for _, size, _ in entries),
+        "artifacts": len(entries),
+        "budget_bytes": cache_budget_bytes(),
+    }
+
+
+def touch_cache_artifact(path: Path) -> None:
+    """把本次命中时间写回 mtime，使「最久未用优先淘汰」可判定。
+
+    Windows 上 atime 常被系统关闭，因此用 mtime 近似最近使用时间。
+    """
+    try:
+        os.utime(path, None)
+    except OSError:
+        pass
+
+
+def enforce_cache_budget(
+    directory: Path, *, keep: Path | None = None
+) -> dict[str, int]:
+    """按最近使用时间淘汰最旧派生产物，直到不超过预算。
+
+    只处理 ``media_output/proxy`` 下的 ``proxy-*`` 文件，永远不触碰源素材目录，
+    也不删除本轮刚产出的 ``keep``。返回淘汰后的真实占用与淘汰数量。
+    """
+    budget = cache_budget_bytes()
+    entries = _cache_entries(directory)
+    total = sum(size for _, size, _ in entries)
+    removed = 0
+    for _, size, path in sorted(entries, key=lambda item: (item[0], item[2].name)):
+        if total <= budget:
+            break
+        if keep is not None and path == keep:
+            continue
+        try:
+            path.unlink()
+        except OSError:
+            continue
+        total -= size
+        removed += 1
+    return {"bytes": total, "removed": removed, "budget_bytes": budget}
 
 
 def requires_720p_proxy(video_metadata: dict[str, Any]) -> bool:
@@ -189,6 +275,7 @@ def _image_proxy(path: Path, width: int, target_base: Path) -> dict[str, Any]:
                     partial.replace(target)
                 finally:
                     partial.unlink(missing_ok=True)
+            touch_cache_artifact(target)
             return {
                 "path": target,
                 "media_type": media_type,
@@ -361,6 +448,9 @@ def build_proxy(payload: dict[str, Any]) -> dict[str, Any]:
     else:
         result = _image_proxy(path, width, target_base)
     target = result["path"]
+    # 按需产物落盘后立即做一次 LRU 收口：命中即刷新使用时间，超预算则淘汰最旧派生文件。
+    touch_cache_artifact(target)
+    enforce_cache_budget(directory, keep=target)
     artifact_id = target.name
     return {
         "availability": "ready",
