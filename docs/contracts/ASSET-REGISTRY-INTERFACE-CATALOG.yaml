@@ -462,6 +462,27 @@ interfaces:
     status: [200, 400, 401, 403, 404, 409, 413, 503]
     response_200: "切换真实任务状态；未登记 job_id 404 WORKSPACE_JOB_NOT_FOUND；非法 action 400"
     acceptance: "统一错误包 {detail:{code,message,...}}；写入必须可读回，删除必须不再返回；缺依赖 503 不得静默假成功"
+  - name: post_api_asset_collect_url
+    method: POST
+    path: /api/asset-collect/url
+    body: "JSON object {url, pair_token}"
+    status: [202, 400]
+    response_202: "提交素材收集任务，返回 job_id 与 status"
+    acceptance: "不支持来源（blob:、data: 超限、.m3u8/.mpd、DRM）返回 400 COLLECT_UNSUPPORTED_SOURCE"
+  - name: post_api_asset_collect_files
+    method: POST
+    path: /api/asset-collect/files
+    body: "multipart files[] + pair_token"
+    status: [202, 400]
+    response_202: "提交文件收集任务，返回 job_id 与 accepted 清单"
+    acceptance: "提交文件收集任务"
+  - name: get_api_asset_collect_jobs_job_id
+    method: GET
+    path: /api/asset-collect/jobs/{job_id}
+    body: null
+    status: [200, 404]
+    response_200: "返回收集任务状态与进度"
+    acceptance: "任务不存在返回 404 JOB_NOT_FOUND"
 fixture_contract:
   empty_registry: "docs/fixtures/phase11-b3-empty-registry.json"
   fail_closed: "docs/fixtures/phase11-b3-fail-closed.json"

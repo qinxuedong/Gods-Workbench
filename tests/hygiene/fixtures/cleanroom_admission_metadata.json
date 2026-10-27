@@ -250,7 +250,7 @@
       "path": "docs/contracts/ASSET-REGISTRY-INTERFACE-CATALOG.yaml",
       "classification": "frozen_interface_contract",
       "authorization_basis": "cleanroom_frozen_input",
-      "sha256": "60c8e528aa4683e688ef0344d872cbb97265fe8d7639ae0fed8574bb83ea0d34",
+      "sha256": "2a47e2f641141fadba1272a8c302effff1cdb03c84ab332e5b4c6fb0aabe1e02",
       "admission": "accepted"
     },
     {
