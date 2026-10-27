@@ -17,6 +17,7 @@
 from __future__ import annotations
 
 from enum import Enum
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -101,4 +102,41 @@ class CinematographyAssetFilters(BaseModel):
         return sorted(normalized)
 
 
-__all__ = ["AspectRatio", "CinematographyAssetFilters"]
+class ProducedAssetProvenance(BaseModel):
+    """生产链成片/中间产物回写素材注册表时必须携带的来源链。
+
+    来源链是产物可反查的唯一依据：缺失、字段为 None、``produced_by`` 不是
+    ``agent_pipeline`` 或出现未登记字段时，一律拒绝回写（不写入注册表）。
+    ``reference_asset_ids`` 允许为空列表（产物无上游参考素材），但字段本身必须出现。
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    project_id: str = Field(..., min_length=1, description="产出所属项目稳定 ID")
+    task_id: str = Field(..., min_length=1, description="产出任务稳定 ID")
+    artifact_version_id: str = Field(..., min_length=1, description="产物版本稳定 ID")
+    reference_asset_ids: list[str] = Field(
+        ..., description="上游参考素材 ID 列表（可为空列表，字段必填）"
+    )
+    shot_ids: list[str] = Field(..., description="产物涉及的镜头 ID 列表")
+    produced_by: Literal["agent_pipeline"] = Field(..., description="产出方标识")
+
+    @field_validator("project_id", "task_id", "artifact_version_id")
+    @classmethod
+    def reject_blank_identifier(cls, value: str) -> str:
+        """空白标识符等同缺字段：不接受仅由空白组成的来源链标识。"""
+        if not value.strip():
+            raise ValueError("来源链标识不得为空白字符串")
+        return value.strip()
+
+    @field_validator("reference_asset_ids", "shot_ids")
+    @classmethod
+    def reject_blank_id_items(cls, values: list[str]) -> list[str]:
+        """ID 列表项不得为空白；顺序按调用方给定保留，便于原样反查。"""
+        for value in values:
+            if not value.strip():
+                raise ValueError("来源链 ID 不得为空白字符串")
+        return [value.strip() for value in values]
+
+
+__all__ = ["AspectRatio", "CinematographyAssetFilters", "ProducedAssetProvenance"]
