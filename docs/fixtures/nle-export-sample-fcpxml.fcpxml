@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE fcpxml>
+<fcpxml version="1.8">
+  <resources>
+    <format id="r1" name="FFVideoFormat1080p2398" frameDuration="1001/24000s" width="1920" height="1080" />
+    <asset id="r2" name="asset-video-01" src="file:///asset-video-01" duration="120120/24000s" format="r1" />
+    <asset id="r3" name="asset-video-02" src="file:///asset-video-02" duration="108108/24000s" format="r1" />
+    <asset id="r4" name="asset-audio-01" src="file:///asset-audio-01" duration="228228/24000s" format="r1" />
+  </resources>
+  <library>
+    <event name="TEST_TIMELINE">
+      <project name="TEST_TIMELINE">
+        <sequence format="r1" duration="228228/24000s" tcStart="0s" tcFormat="NDF">
+          <spine>
+            <asset-clip name="Scene 1 Shot A" ref="r2" offset="0s" duration="120120/24000s" start="0s" />
+            <asset-clip name="Scene 1 Shot B" ref="r3" offset="120120/24000s" duration="108108/24000s" start="24024/24000s" />
+            <asset-clip name="BGM Track" ref="r4" offset="0s" duration="228228/24000s" start="0s" lane="-1" />
+          </spine>
+        </sequence>
+      </project>
+    </event>
+  </library>
+</fcpxml>
