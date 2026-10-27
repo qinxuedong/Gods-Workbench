@@ -244,6 +244,11 @@ KNOWN_IMPLEMENTED = frozenset(
         "/api/asset-registry/governance/cascade-preview",
         "/api/asset-registry/governance/operations",
         "/api/asset-registry/governance/overview",
+        # 2026-10-27 MVP1-T5（issue #335）：治理建议清单与逐条确认接口已前后端接线；
+        # 确认记录端点（GET .../suggestions/confirmations）仅后端实现，无前端字面量调用，
+        # 不入本清单，契约目录由后续票补登。
+        "/api/asset-registry/governance/suggestions",
+        "/api/asset-registry/governance/suggestions/confirm",
         "/api/asset-registry/index/sync",
         "/api/asset-registry/preferences/team",
         "/api/asset-registry/presets",

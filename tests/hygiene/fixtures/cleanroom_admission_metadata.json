@@ -41,6 +41,21 @@
         "tests/hygiene/fixtures/cleanroom_admission_metadata.json",
         "tests/hygiene/test_cleanroom_hygiene.py"
       ]
+    },
+    {
+      "issue": 335,
+      "authorization_basis": "GitHub Issue #335, 2026-10-27",
+      "files": [
+        "gw/asset_registry/governance.py",
+        "gw/api/routes_asset_registry.py",
+        "web/js/modules/asset-manager.js",
+        "tests/contracts/assets/test_mvp1_t5_governance.py",
+        "tests/frontend/mvp1-t5-governance-list.test.mjs",
+        "tests/frontend/node-files.txt",
+        "tests/contracts/projects/test_phase8_frontend_backend_api_gap.py",
+        "tests/hygiene/fixtures/cleanroom_admission_metadata.json",
+        "tests/hygiene/test_cleanroom_hygiene.py"
+      ]
     }
   ],
   "accepted_roots": [
@@ -927,6 +942,16 @@
       "path": "tests/contracts/assets/test_mvp1_t4_embedder_offline.py",
       "authorization_basis": "GitHub_Issue_334_QIN-418_2026-10-27",
       "sha256": "5ad494a842431497adeaaa75298071b659130b0883bc8caafa729698fc748d9e"
+    },
+    {
+      "path": "tests/contracts/assets/test_mvp1_t5_governance.py",
+      "authorization_basis": "MVP1-T5_Cut_2026-10-26",
+      "sha256": "06680ca5e82d40e47caf90a602a665953a48712990dafb1cfef9959540f95e7d"
+    },
+    {
+      "path": "tests/frontend/mvp1-t5-governance-list.test.mjs",
+      "authorization_basis": "MVP1-T5_Cut_2026-10-26",
+      "sha256": "85e126650d9ff7b13036cb1040b3c55f5f23b86bc62df5c4014247b69dab0037"
     }
   ]
 }

@@ -300,7 +300,7 @@ def test_static_layer_has_no_legacy_integration_markers(repo_root: Path):
 # 凭据或完整历史授权账本。历史材料继续留在洁净源仓，不因测试需要复制进新仓。
 ADMISSION_METADATA_PATH = "tests/hygiene/fixtures/cleanroom_admission_metadata.json"
 ADMISSION_METADATA_SHA256 = (
-    "78343813fca9d47c8e35ad7ad6e48cba9bd5f28571fb67036a8149a2b2d9d813"
+    "bef3f3dd63eebce1fcc180e7b25abd5ee360499c6d79b6dc77368f9248f5450d"
 )
 QUARANTINED_PROMPT_ORIGINAL_PATH = (
     "web/system-prompts/infinite-canvas-prompt-templates.md"
@@ -364,6 +364,31 @@ def test_github_issue_334_file_scope_is_registered(repo_root: Path):
         "tests/hygiene/fixtures/cleanroom_admission_metadata.json",
         "tests/hygiene/test_cleanroom_hygiene.py",
         "tests/hygiene/test_structure_guardrails.py",
+    }
+
+
+def test_github_issue_335_file_scope_is_registered(repo_root: Path):
+    """#335 的治理建议服务、接口、视图与测试按票面逐项登记。"""
+    metadata = _load_admission_metadata(repo_root)
+    registrations = [
+        item
+        for item in metadata.get("authorized_issue_file_sets", [])
+        if item.get("issue") == 335
+    ]
+    assert len(registrations) == 1
+    assert registrations[0].get("authorization_basis") == (
+        "GitHub Issue #335, 2026-10-27"
+    )
+    assert set(registrations[0].get("files", [])) == {
+        "gw/asset_registry/governance.py",
+        "gw/api/routes_asset_registry.py",
+        "web/js/modules/asset-manager.js",
+        "tests/contracts/assets/test_mvp1_t5_governance.py",
+        "tests/frontend/mvp1-t5-governance-list.test.mjs",
+        "tests/frontend/node-files.txt",
+        "tests/contracts/projects/test_phase8_frontend_backend_api_gap.py",
+        "tests/hygiene/fixtures/cleanroom_admission_metadata.json",
+        "tests/hygiene/test_cleanroom_hygiene.py",
     }
 
 

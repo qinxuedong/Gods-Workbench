@@ -36,7 +36,7 @@ from typing import Any, Dict, List, Optional
 from fastapi import APIRouter, Body, Depends, File, Form, Header, Query, Request, Response, status, UploadFile
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 
-from gw.asset_registry import media_probe, repository as repo, index_jobs
+from gw.asset_registry import governance, media_probe, repository as repo, index_jobs
 from gw.asset_registry.service import (
     ASSET_REGISTRY_NOT_INTEGRATED,
     DATA_STATUS_NOT_INTEGRATED,
@@ -594,6 +594,47 @@ def get_cascade_preview(
                    "canvases": [], "total": len(result["projects"]) + 1},
         "data_status": DATA_STATUS_OK, "data_gaps": [],
     }
+
+
+@router.get("/governance/suggestions", summary="读取治理建议清单（MVP1-T5，只建议）", status_code=status.HTTP_200_OK)
+def get_governance_suggestions(
+    authorization: Optional[str] = Header(None),
+    x_user_role: str = Header("editor", alias="X-User-Role"),
+):
+    """治理建议清单：命名/相似名/查重/向量近重/受控打标，只读不落任何字段。"""
+    context = _governance_auth(authorization, x_user_role)
+    result = governance.build_suggestions()
+    result["operator_role"] = context.role
+    return result
+
+
+@router.post("/governance/suggestions/confirm", summary="确认单条治理建议（写入确认字段）", status_code=status.HTTP_200_OK)
+def confirm_governance_suggestion(
+    payload: Optional[Dict[str, Any]] = Body(None),
+    authorization: Optional[str] = Header(None),
+    x_user_role: str = Header("editor", alias="X-User-Role"),
+):
+    """逐条确认建议：强制 expected_version CAS；确认动作追加只读审计记录。"""
+    context = _governance_auth(authorization, x_user_role)
+    body = _payload(payload)
+    suggestion_id = str(body.get("suggestion_id") or "").strip()
+    if not suggestion_id:
+        raise CleanroomException(400, "INVALID_REQUEST", "suggestion_id 不能为空")
+    expected_version = _version(body, required=True)
+    return governance.confirm_suggestion(
+        suggestion_id,
+        expected_version,
+        operator=context.subject or None,
+    )
+
+
+@router.get("/governance/suggestions/confirmations", summary="读取治理建议确认记录", status_code=status.HTTP_200_OK)
+def get_governance_suggestion_confirmations(
+    authorization: Optional[str] = Header(None),
+    x_user_role: str = Header("editor", alias="X-User-Role"),
+):
+    _governance_auth(authorization, x_user_role)
+    return governance.list_confirmations()
 
 
 @router.get("/preferences/team", summary="读取团队素材偏好", status_code=status.HTTP_200_OK)
