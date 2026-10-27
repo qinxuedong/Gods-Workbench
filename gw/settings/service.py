@@ -63,6 +63,10 @@ from gw.settings.models import (
     AssetStructureUpdateRequest,
     ProviderEntryRequest,
     ProviderSnapshot,
+    StorageAllowedRoot,
+    StorageAllowedRootDeleteRequest,
+    StorageAllowedRootRequest,
+    StorageAllowedRootsSnapshot,
     StorageSettingsPatchRequest,
     StorageSettingsSnapshot,
 )
@@ -428,19 +432,22 @@ class StorageSettingsService:
 
     @staticmethod
     def _normalize_directory_mapping(dirs: dict[str, Any]) -> dict[str, Any]:
-        def normalize(value: Any) -> Any:
+        def normalize(value: Any, *, mount: bool = False) -> Any:
             if isinstance(value, str):
                 if not value.strip():
                     return ""
                 normalized = storage.normalize_directory_path(value)
-                return storage.validate_directory_path(normalized)
+                return storage.validate_mount(normalized) if mount else storage.validate_directory_path(normalized)
             if isinstance(value, list):
-                return [normalize(item) for item in value]
+                return [normalize(item, mount=mount) for item in value]
             if value is None:
                 return None
             raise CleanroomException(400, "INVALID_PATH", "目录必须是绝对路径")
 
-        return {str(key): normalize(value) for key, value in dirs.items()}
+        return {
+            str(key): normalize(value, mount=str(key) in {"local", "extra_local_dirs"})
+            for key, value in dirs.items()
+        }
 
     @staticmethod
     def _normalize_extra_local_entries(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -450,9 +457,215 @@ class StorageSettingsService:
                 raise CleanroomException(400, "INVALID_PATH", "素材目录必须是绝对路径")
             path = storage.normalize_directory_path(entry["path"])
             normalized_entry = copy.deepcopy(entry)
-            normalized_entry["path"] = storage.validate_directory_path(path)
+            normalized_entry["path"] = storage.validate_mount(path)
             normalized.append(normalized_entry)
         return normalized
+
+
+class StorageAllowedRootsService:
+    """环境变量只读根与持久化允许根的 CAS 管理服务。"""
+
+    def __init__(self) -> None:
+        self._state = storage.JsonState("allowed_roots", self._empty_state)
+
+    @staticmethod
+    def _empty_state() -> dict[str, Any]:
+        if (storage.data_root() / "allowed_roots.json").exists():
+            raise CleanroomException(
+                503,
+                "ALLOWED_ROOTS_STORAGE_UNAVAILABLE",
+                "允许根配置无法读取，未覆盖已有配置",
+            )
+        return {"schema_version": 1, "revision": 1, "roots": [], "system_aliases": {}}
+
+    @staticmethod
+    def _expected_version(state: dict[str, Any], expected: int) -> int:
+        current = int(state.get("revision", 1))
+        if expected != current:
+            raise _conflict(
+                "VERSION_CONFLICT",
+                expected,
+                current,
+                f"允许根版本冲突（期望 {expected}，当前 {current}），请重新读取后重试",
+            )
+        return current
+
+    @staticmethod
+    def _path_status(path: str) -> dict[str, str | bool]:
+        status = storage.probe_mount(path)
+        return {
+            "availability": "available" if status["available"] else "offline",
+            "availability_reason": str(status["reason"] or ""),
+            "availability_message": str(status["message"] or ""),
+        }
+
+    def get_snapshot(self) -> StorageAllowedRootsSnapshot:
+        state = self._state.read()
+        roots: list[StorageAllowedRoot] = []
+        for path in storage.environment_allowed_roots():
+            path_text = str(path)
+            root_id = storage.root_identity_id(path)
+            aliases = [
+                str(item)
+                for item in state.get("system_aliases", {}).get(root_id, [])
+            ]
+            candidates = [
+                item
+                for item in storage.mount_alias_candidates(path_text)
+                if storage.directory_path_key(item["path"])
+                not in {storage.directory_path_key(alias) for alias in aliases}
+            ]
+            roots.append(
+                StorageAllowedRoot(
+                    id=root_id,
+                    path=path_text,
+                    source="system",
+                    read_only=True,
+                    aliases=aliases,
+                    alias_candidates=candidates,
+                    **self._path_status(path_text),
+                )
+            )
+        for record in state.get("roots", []):
+            active = bool(record.get("active"))
+            path_text = str(record.get("path") or "")
+            if active:
+                status = self._path_status(path_text)
+                aliases = [str(item) for item in record.get("aliases", [])]
+                candidates = [
+                    item
+                    for item in storage.mount_alias_candidates(path_text)
+                    if storage.directory_path_key(item["path"])
+                    not in {storage.directory_path_key(alias) for alias in aliases}
+                ]
+            else:
+                status = {
+                    "availability": "removed",
+                    "availability_reason": "MOUNT_ROOT_REMOVED",
+                    "availability_message": "允许根已移除；已有索引与源文件保留",
+                }
+                candidates = []
+            roots.append(
+                StorageAllowedRoot(
+                    id=str(record.get("id") or ""),
+                    path=path_text,
+                    source="persistent",
+                    read_only=False,
+                    active=active,
+                    aliases=[str(item) for item in record.get("aliases", [])],
+                    alias_candidates=candidates,
+                    **status,
+                )
+            )
+        return StorageAllowedRootsSnapshot(revision=int(state.get("revision", 1)), roots=roots)
+
+    def add_root(self, payload: StorageAllowedRootRequest) -> StorageAllowedRootsSnapshot:
+        normalized = storage.normalize_directory_path(payload.path)
+        status = storage.probe_mount(normalized)
+        if not status["available"]:
+            code = str(status["reason"] or "MOUNT_OFFLINE")
+            raise CleanroomException(503 if code == "MOUNT_OFFLINE" else 403, code, str(status["message"]))
+
+        def update(state: dict[str, Any]) -> None:
+            current = self._expected_version(state, payload.expected_version)
+            keys = {
+                storage.directory_path_key(str(root))
+                for root in storage.environment_allowed_roots()
+            }
+            for record in state.get("roots", []):
+                if record.get("active"):
+                    keys.add(storage.directory_path_key(str(record.get("path") or "")))
+                    keys.update(storage.directory_path_key(str(alias)) for alias in record.get("aliases", []))
+            if storage.directory_path_key(normalized) in keys:
+                raise CleanroomException(409, "ALLOWED_ROOT_ALREADY_REGISTERED", "该目录已登记为允许根")
+            root_id = storage.root_identity_id(Path(normalized))
+            state.setdefault("roots", []).append(
+                {
+                    "id": root_id,
+                    "path": normalized,
+                    "aliases": [],
+                    "active": True,
+                    "network_mount": storage._is_network_path(normalized),
+                }
+            )
+            state["revision"] = current + 1
+
+        self._state.mutate(update)
+        return self.get_snapshot()
+
+    def remove_root(
+        self, root_id: str, payload: StorageAllowedRootDeleteRequest
+    ) -> StorageAllowedRootsSnapshot:
+        system_ids = {storage.root_identity_id(path) for path in storage.environment_allowed_roots()}
+        if root_id in system_ids:
+            raise CleanroomException(403, "SYSTEM_ROOT_READ_ONLY", "环境变量系统根为只读，不能移除")
+
+        def update(state: dict[str, Any]) -> None:
+            current = self._expected_version(state, payload.expected_version)
+            record = next(
+                (item for item in state.get("roots", []) if item.get("id") == root_id and item.get("active")),
+                None,
+            )
+            if record is None:
+                raise CleanroomException(404, "ROOT_NOT_FOUND", "允许根不存在或已移除")
+            record["active"] = False
+            record["aliases"] = []
+            state["revision"] = current + 1
+
+        self._state.mutate(update)
+        return self.get_snapshot()
+
+    def confirm_alias(
+        self, root_id: str, payload: StorageAllowedRootRequest
+    ) -> StorageAllowedRootsSnapshot:
+        normalized = storage.normalize_directory_path(payload.path)
+        roots_state = self._state.read()
+        self._expected_version(roots_state, payload.expected_version)
+        record = next(
+            (item for item in roots_state.get("roots", []) if item.get("id") == root_id and item.get("active")),
+            None,
+        )
+        system_root = next(
+            (path for path in storage.environment_allowed_roots() if storage.root_identity_id(path) == root_id),
+            None,
+        )
+        if record is None and system_root is None:
+            raise CleanroomException(404, "ROOT_NOT_FOUND", "允许根不存在或已移除")
+        root_path = str(record.get("path") or "") if record else str(system_root)
+        for path in (root_path, normalized):
+            status = storage.probe_mount(path)
+            if not status["available"]:
+                code = str(status["reason"] or "MOUNT_OFFLINE")
+                raise CleanroomException(503 if code == "MOUNT_OFFLINE" else 403, code, str(status["message"]))
+        same_mount = storage.verify_mount_alias(root_path, normalized)
+        if same_mount is None:
+            raise CleanroomException(503, "MOUNT_OFFLINE", "挂载别名核验超时，路径暂时离线")
+        if not same_mount:
+            raise CleanroomException(409, "MOUNT_ALIAS_MISMATCH", "该路径未被系统证明为同一挂载点")
+
+        def update(state: dict[str, Any]) -> None:
+            current = self._expected_version(state, payload.expected_version)
+            current_record = next(
+                (item for item in state.get("roots", []) if item.get("id") == root_id and item.get("active")),
+                None,
+            )
+            if current_record is None and not any(
+                storage.root_identity_id(path) == root_id
+                for path in storage.environment_allowed_roots()
+            ):
+                raise CleanroomException(404, "ROOT_NOT_FOUND", "允许根不存在或已移除")
+            if current_record is None:
+                aliases = state.setdefault("system_aliases", {}).setdefault(root_id, [])
+            else:
+                aliases = current_record.setdefault("aliases", [])
+                if storage._is_network_path(normalized):
+                    current_record["network_mount"] = True
+            if not any(storage.directory_path_key(item) == storage.directory_path_key(normalized) for item in aliases):
+                aliases.append(normalized)
+                state["revision"] = current + 1
+
+        self._state.mutate(update)
+        return self.get_snapshot()
 
 
 class ProviderService:
@@ -832,5 +1045,6 @@ def raise_probe_not_integrated(endpoint: str) -> None:
 
 #: 进程内服务单例；设置 JSON 可重启恢复，结构服务仅进程内有效，不支持多 worker 共享。
 default_storage_settings_service = StorageSettingsService()
+default_storage_allowed_roots_service = StorageAllowedRootsService()
 default_provider_service = ProviderService()
 default_asset_structure_service = AssetStructureService()

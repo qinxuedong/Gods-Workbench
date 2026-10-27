@@ -26,6 +26,7 @@
 from __future__ import annotations
 
 import contextlib
+import copy
 import hashlib
 import json
 import ntpath
@@ -42,9 +43,12 @@ from typing import Any
 
 from gw.core.errors import CleanroomException
 from gw.core.runtime_paths import (
+    LOCAL_AUTH_DB_ENV,
     MODE_TEST,
+    RUNTIME_MODE_ENV,
     RuntimePathError,
     RuntimePaths,
+    VIDEO_DATA_DIR_ENV,
     resolve_runtime_paths,
 )
 
@@ -56,6 +60,11 @@ _BACKUP_ROOTS = frozenset({"data", "auth", "video"})
 
 _LOCK = threading.RLock()
 _NAMESPACE_LOCKS: dict[str, threading.RLock] = {}
+_MOUNT_PROBE_SLOTS = threading.BoundedSemaphore(4)
+_ALLOWED_ROOTS_STATE_CACHE: tuple[tuple[str, int, int], dict[str, Any]] | None = None
+_ALLOWED_ROOTS_STATE_CACHE_LOCK = threading.RLock()
+_ALLOWED_ROOTS_STATE_PATH_CACHE: tuple[tuple[tuple[str, str | None], ...], Path] | None = None
+MOUNT_PROBE_TIMEOUT_SECONDS = 0.75
 
 
 class RuntimeBackupError(RuntimeError):
@@ -74,8 +83,115 @@ def data_root() -> Path:
         raise CleanroomException(400, exc.code, str(exc)) from None
 
 
-def allowed_roots() -> list[Path]:
-    """返回允许访问的本机文件根目录清单；未配置即为空（等价于禁止一切本机文件访问）。"""
+def _allowed_roots_state() -> dict[str, Any]:
+    """读取允许根快照；损坏时失败关闭，避免在后续保存中覆盖坏文件。"""
+    global _ALLOWED_ROOTS_STATE_CACHE, _ALLOWED_ROOTS_STATE_PATH_CACHE
+    runtime_path_configuration = tuple(
+        (name, os.environ.get(name))
+        for name in (
+            RUNTIME_MODE_ENV,
+            DATA_DIR_ENV,
+            LOCAL_AUTH_DB_ENV,
+            VIDEO_DATA_DIR_ENV,
+            "LOCALAPPDATA",
+        )
+    )
+    with _ALLOWED_ROOTS_STATE_CACHE_LOCK:
+        cached_path = _ALLOWED_ROOTS_STATE_PATH_CACHE
+        if cached_path and cached_path[0] == runtime_path_configuration:
+            path = cached_path[1]
+        else:
+            path = _file_for("allowed_roots")
+            _ALLOWED_ROOTS_STATE_PATH_CACHE = (runtime_path_configuration, path)
+    missing = False
+    try:
+        info = path.stat()
+        signature = (os.path.normcase(os.path.abspath(path)), info.st_mtime_ns, info.st_size)
+    except FileNotFoundError:
+        missing = True
+        signature = (os.path.normcase(os.path.abspath(path)), 0, 0)
+    except OSError as exc:
+        raise CleanroomException(503, "ALLOWED_ROOTS_STORAGE_UNAVAILABLE", "允许根配置暂时不可读取") from exc
+    with _ALLOWED_ROOTS_STATE_CACHE_LOCK:
+        if _ALLOWED_ROOTS_STATE_CACHE and _ALLOWED_ROOTS_STATE_CACHE[0] == signature:
+            return copy.deepcopy(_ALLOWED_ROOTS_STATE_CACHE[1])
+        if missing:
+            state = {"schema_version": 1, "revision": 1, "roots": []}
+        else:
+            try:
+                with path.open(encoding="utf-8") as handle:
+                    state = json.load(handle)
+            except (OSError, json.JSONDecodeError) as exc:
+                raise CleanroomException(503, "ALLOWED_ROOTS_STORAGE_UNAVAILABLE", "允许根配置无法读取，未覆盖已有配置") from exc
+            if (
+                not isinstance(state, dict)
+                or state.get("schema_version") != 1
+                or type(state.get("revision")) is not int
+                or state["revision"] < 1
+                or not isinstance(state.get("roots"), list)
+                or not isinstance(state.get("system_aliases", {}), dict)
+                or any(
+                    not isinstance(root_id, str)
+                    or not isinstance(aliases, list)
+                    or any(not isinstance(alias, str) for alias in aliases)
+                    for root_id, aliases in state.get("system_aliases", {}).items()
+                )
+                or any(
+                    not isinstance(root, dict)
+                    or not isinstance(root.get("id"), str)
+                    or not isinstance(root.get("path"), str)
+                    or not isinstance(root.get("aliases", []), list)
+                    or type(root.get("active")) is not bool
+                    or (
+                        "network_mount" in root
+                        and type(root.get("network_mount")) is not bool
+                    )
+                    for root in state["roots"]
+                )
+            ):
+                raise CleanroomException(503, "ALLOWED_ROOTS_STORAGE_UNAVAILABLE", "允许根配置格式无效，未覆盖已有配置")
+        _ALLOWED_ROOTS_STATE_CACHE = (signature, copy.deepcopy(state))
+        return state
+
+
+def _persistent_root_for_path(path: Path) -> dict[str, Any] | None:
+    try:
+        key = directory_path_key(str(path))
+    except CleanroomException:
+        return None
+    for record in _allowed_roots_state()["roots"]:
+        if not record.get("active"):
+            continue
+        for candidate in [record["path"], *record.get("aliases", [])]:
+            try:
+                if directory_path_key(candidate) == key:
+                    return record
+            except CleanroomException:
+                continue
+    return None
+
+
+def _persisted_network_drive(drive: str) -> bool:
+    """Retain network-drive classification after a mapped drive is disconnected."""
+    target = ntpath.normcase(drive).casefold()
+    if not target:
+        return False
+    try:
+        roots = _allowed_roots_state()["roots"]
+    except CleanroomException:
+        return False
+    for record in roots:
+        if not record.get("active") or not record.get("network_mount"):
+            continue
+        for raw_path in [record.get("path", ""), *record.get("aliases", [])]:
+            candidate_drive, _tail = ntpath.splitdrive(str(raw_path))
+            if candidate_drive and ntpath.normcase(candidate_drive).casefold() == target:
+                return True
+    return False
+
+
+def environment_allowed_roots() -> list[Path]:
+    """返回只读的 GW_ALLOWED_ROOTS 根目录。"""
     raw = os.environ.get(ALLOWED_ROOTS_ENV, "").strip()
     if not raw:
         return []
@@ -87,7 +203,52 @@ def allowed_roots() -> list[Path]:
         candidate = Path(item).expanduser()
         if not candidate.is_absolute():
             raise CleanroomException(400, "INVALID_ALLOWED_ROOT", "GW_ALLOWED_ROOTS 只接受绝对路径")
-        roots.append(candidate.resolve())
+        normalized = normalize_directory_path(str(candidate))
+        normalized_candidate = Path(normalized)
+        roots.append(
+            normalized_candidate
+            if _is_network_path(normalized)
+            else normalized_candidate.resolve()
+        )
+    return roots
+
+
+def allowed_roots() -> list[Path]:
+    """返回环境变量根与 data/allowed_roots.json 中的持久根及已确认别名。"""
+    environment_roots = environment_allowed_roots()
+    raw_data_root = os.environ.get(DATA_DIR_ENV, "").strip()
+    if raw_data_root and not _is_network_path(raw_data_root):
+        try:
+            (Path(normalize_directory_path(raw_data_root)) / "allowed_roots.json").stat()
+        except FileNotFoundError:
+            state = {"schema_version": 1, "revision": 1, "roots": []}
+        except OSError:
+            state = _allowed_roots_state()
+        else:
+            state = _allowed_roots_state()
+    else:
+        state = _allowed_roots_state()
+    roots = list(environment_roots)
+    seen = {directory_path_key(str(root)) for root in roots}
+    for record in state["roots"]:
+        if not record.get("active"):
+            continue
+        for raw_path in [record["path"], *record.get("aliases", [])]:
+            candidate = Path(raw_path)
+            key = directory_path_key(raw_path)
+            if key not in seen:
+                roots.append(candidate)
+                seen.add(key)
+    system_ids = {_root_identity_hash(root) for root in environment_roots}
+    for root_id, aliases in state.get("system_aliases", {}).items():
+        if root_id not in system_ids:
+            continue
+        for raw_path in aliases:
+            candidate = Path(raw_path)
+            key = directory_path_key(raw_path)
+            if key not in seen:
+                roots.append(candidate)
+                seen.add(key)
     return roots
 
 
@@ -107,6 +268,22 @@ def canonical_relpath(raw_path: str, *, windows: bool | None = None) -> str:
 
 def root_identity_id(root: Path) -> str:
     """返回兼容既有注册表的允许根身份 ID。"""
+    persistent = _persistent_root_for_path(Path(root))
+    if persistent:
+        return str(persistent["id"])
+    target_key = directory_path_key(str(root))
+    state = _allowed_roots_state()
+    for env_root in environment_allowed_roots():
+        env_id = _root_identity_hash(env_root)
+        if any(
+            directory_path_key(alias) == target_key
+            for alias in state.get("system_aliases", {}).get(env_id, [])
+        ):
+            return env_id
+    return _root_identity_hash(root)
+
+
+def _root_identity_hash(root: Path) -> str:
     value = os.path.normcase(str(root))
     return "root_" + hashlib.sha256(value.encode()).hexdigest()[:24]
 
@@ -223,6 +400,286 @@ def validate_directory_path(raw_path: str) -> str:
     return normalized
 
 
+def _mapped_drive_unc(raw_path: str) -> str | None:
+    """返回 Windows 映射盘路径对应的 UNC 路径；非 Windows 返回 None。"""
+    if os.name != "nt":
+        return None
+    try:
+        import ctypes
+
+        normalized = normalize_directory_path(raw_path)
+        drive, tail = ntpath.splitdrive(normalized)
+        if not drive or drive.startswith(("\\\\", "//")):
+            return None
+        drive_root = drive + "\\"
+        if ctypes.windll.kernel32.GetDriveTypeW(drive_root) != 4:
+            return None
+        remote_name = ctypes.create_unicode_buffer(32768)
+        size = ctypes.c_ulong(len(remote_name))
+        result = ctypes.windll.mpr.WNetGetConnectionW(
+            drive, remote_name, ctypes.byref(size)
+        )
+        if result != 0 or not remote_name.value:
+            return None
+        return ntpath.normpath(ntpath.join(remote_name.value, tail.lstrip("\\/")))
+    except (AttributeError, OSError, RuntimeError, ValueError):
+        return None
+
+
+def _windows_path_contains(parent: str, child: str) -> bool:
+    try:
+        common = ntpath.commonpath([ntpath.normcase(parent), ntpath.normcase(child)])
+    except (ValueError, OSError):
+        return False
+    return ntpath.normcase(common) == ntpath.normcase(parent)
+
+
+def mount_alias_candidates(raw_path: str, roots: list[Path] | None = None) -> list[dict[str, str]]:
+    """给出映射盘与 UNC 之间的未确认对应建议，不自动授权或合并身份。"""
+    normalized = normalize_directory_path(raw_path)
+    allowed = roots if roots is not None else allowed_roots()
+    candidates: list[dict[str, str]] = []
+    seen: set[tuple[str, str]] = set()
+    mapped_result = _run_bounded_mount_call(
+        lambda: _mapped_drive_unc(normalized), MOUNT_PROBE_TIMEOUT_SECONDS
+    )
+    mapped_path = mapped_result if isinstance(mapped_result, str) else None
+    for root in allowed:
+        root_text = str(root)
+        root_id = root_identity_id(root)
+        candidate_path = None
+        if mapped_path and _windows_path_contains(root_text, normalized):
+            candidate_path = mapped_path
+        elif mapped_path and _windows_path_contains(root_text, mapped_path):
+            candidate_path = normalized
+        else:
+            mapped_result = _run_bounded_mount_call(
+                lambda path=root_text: _mapped_drive_unc(path),
+                MOUNT_PROBE_TIMEOUT_SECONDS,
+            )
+            mapped_root = mapped_result if isinstance(mapped_result, str) else None
+            if mapped_root and _windows_path_contains(mapped_root, normalized):
+                candidate_path = normalized
+        if not candidate_path:
+            continue
+        key = (root_id, directory_path_key(candidate_path))
+        if key in seen:
+            continue
+        seen.add(key)
+        candidates.append({"root_id": root_id, "path": candidate_path})
+    return candidates
+
+
+def mount_alias_matches(root_path: str, alias_path: str) -> bool:
+    """确认两个目录是否为同一挂载点；映射盘对应关系也可由 WinAPI 证明。"""
+    root = normalize_directory_path(root_path)
+    alias = normalize_directory_path(alias_path)
+    try:
+        if os.path.samefile(root, alias):
+            return True
+    except (OSError, RuntimeError, ValueError):
+        pass
+    for candidate in mount_alias_candidates(alias, [Path(root)]):
+        if candidate["root_id"] == root_identity_id(Path(root)):
+            return True
+    mapped_alias = _mapped_drive_unc(alias)
+    return bool(mapped_alias and directory_path_key(mapped_alias) == directory_path_key(root))
+
+
+def verify_mount_alias(root_path: str, alias_path: str) -> bool | None:
+    """用有界等待核验根路径与别名，避免网络文件系统阻塞设置请求。"""
+    result = _run_bounded_mount_call(
+        lambda: mount_alias_matches(root_path, alias_path),
+        MOUNT_PROBE_TIMEOUT_SECONDS,
+    )
+    return None if result is None else bool(result)
+
+
+def _is_network_path(raw_path: str) -> bool:
+    drive, _tail = ntpath.splitdrive(raw_path)
+    if drive.startswith(("\\\\", "//")):
+        return True
+    if os.name == "nt" and drive:
+        drive_type = None
+        try:
+            import ctypes
+
+            drive_type = ctypes.windll.kernel32.GetDriveTypeW(drive + "\\")
+            if drive_type == 4:
+                return True
+        except (AttributeError, OSError, ValueError):
+            pass
+        if _mapped_drive_unc(raw_path):
+            return True
+        if drive_type == 1 and _persisted_network_drive(drive):
+            return True
+        return False
+    return bool(_mapped_drive_unc(raw_path))
+
+
+def _network_root_path(raw_path: str) -> str | None:
+    """返回 UNC 共享根或映射盘根，供区分缺失子目录与离线共享。"""
+    drive, _tail = ntpath.splitdrive(raw_path)
+    if drive.startswith(("\\\\", "//")):
+        return drive
+    if os.name == "nt" and drive:
+        mapped_root = _mapped_drive_unc(raw_path)
+        if mapped_root:
+            return ntpath.splitdrive(mapped_root)[0]
+        drive_type = None
+        try:
+            import ctypes
+
+            drive_type = ctypes.windll.kernel32.GetDriveTypeW(drive + "\\")
+            if drive_type == 4:
+                return drive + "\\"
+        except (AttributeError, OSError, ValueError):
+            pass
+        if drive_type == 1 and _persisted_network_drive(drive):
+            return drive + "\\"
+    return None
+
+
+def _probe_mount_sync(raw_path: str) -> dict[str, str | bool]:
+    candidate = Path(raw_path)
+    network_path = _is_network_path(raw_path)
+    try:
+        info = candidate.stat()
+        if not stat.S_ISDIR(info.st_mode):
+            return {"available": False, "reason": "MOUNT_NOT_FOUND", "message": "目录不存在或不是文件夹"}
+        with os.scandir(candidate) as entries:
+            next(entries, None)
+    except FileNotFoundError:
+        code = "MOUNT_NOT_FOUND"
+        message = "目录不存在"
+        if network_path:
+            network_root = _network_root_path(raw_path)
+            try:
+                if not network_root:
+                    raise FileNotFoundError
+                Path(network_root).stat()
+            except PermissionError:
+                code = "MOUNT_ACCESS_DENIED"
+                message = "当前服务账户无权读取该网络共享"
+            except OSError:
+                code = "MOUNT_OFFLINE"
+                message = "网络目录不可达，或服务账户看不到映射盘"
+        return {"available": False, "reason": code, "message": message}
+    except PermissionError:
+        return {"available": False, "reason": "MOUNT_ACCESS_DENIED", "message": "当前服务账户无权读取该目录"}
+    except OSError as exc:
+        code = "MOUNT_OFFLINE" if network_path else "MOUNT_ACCESS_DENIED"
+        message = "网络目录不可达，或服务账户看不到映射盘" if network_path else "当前服务账户无法读取该目录"
+        if getattr(exc, "winerror", None) in {53, 64, 67, 121, 1231}:
+            code = "MOUNT_OFFLINE"
+            message = "网络目录不可达；Windows 服务账户可改用 UNC 路径"
+        return {"available": False, "reason": code, "message": message}
+    return {"available": True, "reason": "", "message": ""}
+
+
+def _run_bounded_mount_call(call: Callable[[], Any], timeout: float) -> Any | None:
+    """在受限 daemon 线程中探测，超时或已满载时立即返回，避免卡住 API。"""
+    if not _MOUNT_PROBE_SLOTS.acquire(blocking=False):
+        return None
+    completed = threading.Event()
+    outcome: dict[str, Any] = {}
+
+    def run() -> None:
+        try:
+            outcome["value"] = call()
+        except Exception as exc:
+            outcome["error"] = exc
+        finally:
+            _MOUNT_PROBE_SLOTS.release()
+            completed.set()
+
+    threading.Thread(target=run, name="gw-mount-probe", daemon=True).start()
+    if not completed.wait(timeout):
+        return None
+    error = outcome.get("error")
+    if error is not None:
+        raise error
+    return outcome.get("value")
+
+
+def probe_mount(raw_path: str, *, timeout: float = MOUNT_PROBE_TIMEOUT_SECONDS) -> dict[str, str | bool]:
+    """以有界等待检查挂载可达性，避免网络盘拖住 API 事件循环。"""
+    normalized = normalize_directory_path(raw_path)
+    result = _run_bounded_mount_call(lambda: _probe_mount_sync(normalized), timeout)
+    if result is None:
+        return {
+            "available": False,
+            "reason": "MOUNT_OFFLINE",
+            "message": "目录连接检查超时或探测资源已满，路径暂时离线；Windows 服务账户可改用 UNC 路径",
+        }
+    return result
+
+
+def resolve_mount_path(raw_path: str, *, strict: bool = False) -> Path | None:
+    """有界解析挂载路径；路径解析被网络文件系统阻塞时返回 None。"""
+    normalized = normalize_directory_path(raw_path)
+    result = _run_bounded_mount_call(
+        lambda: Path(normalized).resolve(strict=strict), MOUNT_PROBE_TIMEOUT_SECONDS
+    )
+    return result if isinstance(result, Path) else None
+
+
+def _validate_mount_sync(normalized: str) -> tuple[str, str]:
+    status = _probe_mount_sync(normalized)
+    if not status["available"]:
+        return str(status["reason"]), str(status["message"])
+    candidate = Path(normalized)
+    roots = allowed_roots()
+    try:
+        _ensure_reparse_targets_within_roots(candidate, roots)
+        if os.name == "nt" and _is_network_path(normalized) and any(
+            _windows_path_contains(str(root), normalized) for root in roots
+        ):
+            # Path.resolve() may turn a mapped-drive spelling into its UNC target.
+            # Keep the explicitly registered spelling valid without treating the
+            # separate UNC spelling as an alias before the user confirms it.
+            return "", ""
+        resolved = candidate.resolve(strict=True)
+        matches = [root for root in roots if resolved == root or resolved.is_relative_to(root)]
+    except CleanroomException as exc:
+        if exc.code == "PATH_OUTSIDE_ALLOWED_ROOTS":
+            return "MOUNT_OUTSIDE_ALLOWED_ROOTS", "该目录不在已授权的允许根内，请检查链接目标或重新登记根目录"
+        return exc.code, exc.message
+    except (OSError, RuntimeError, ValueError):
+        matches = []
+    if matches:
+        return "", ""
+    suggestions = mount_alias_candidates(normalized, roots)
+    if suggestions:
+        return (
+            "MOUNT_ALIAS_UNCONFIRMED",
+            "检测到可能对应的映射盘或 UNC 路径，请在允许根设置中明确确认别名后再保存",
+        )
+    return "MOUNT_OUTSIDE_ALLOWED_ROOTS", "该目录不在已授权的允许根内，请先由管理员登记允许根"
+
+
+def validate_mount(raw_path: str) -> str:
+    """校验目录存在、可读、未离线且位于允许根；不自动合并路径别名。"""
+    normalized = normalize_directory_path(raw_path)
+    result = _run_bounded_mount_call(
+        lambda: _validate_mount_sync(normalized), MOUNT_PROBE_TIMEOUT_SECONDS
+    )
+    if result is None:
+        code, message = "MOUNT_OFFLINE", "目录连接检查超时或探测资源已满，路径暂时离线"
+    else:
+        code, message = result
+    if code:
+        status_code = {
+            "MOUNT_NOT_FOUND": 404,
+            "MOUNT_ACCESS_DENIED": 403,
+            "MOUNT_OUTSIDE_ALLOWED_ROOTS": 403,
+            "MOUNT_ALIAS_UNCONFIRMED": 409,
+            "MOUNT_OFFLINE": 503,
+        }.get(code, 403)
+        raise CleanroomException(status_code, code, message)
+    return normalized
+
+
 def resolve_within_roots(raw_path: str, *, root_id: str | None = None) -> Path:
     """把调用方给出的路径解析到允许根目录内；越界或未配置根目录一律失败关闭。
 
@@ -240,18 +697,19 @@ def resolve_within_roots(raw_path: str, *, root_id: str | None = None) -> Path:
         )
     if not isinstance(raw_path, str) or not raw_path.strip():
         raise CleanroomException(400, "INVALID_PATH", "路径参数不合法")
-    root_by_id = {root_identity_id(root): root for root in roots}
+    roots_by_id: dict[str, list[Path]] = {}
+    for root in roots:
+        roots_by_id.setdefault(root_identity_id(root), []).append(root)
     if root_id is not None:
-        selected_root = root_by_id.get(str(root_id))
-        if selected_root is None:
+        candidates = roots_by_id.get(str(root_id), [])
+        if not candidates:
             raise CleanroomException(404, "ROOT_NOT_FOUND", "素材来源根不存在")
     else:
-        selected_root = None
-    candidates = [selected_root] if selected_root is not None else roots
+        candidates = roots
     try:
         candidate = Path(raw_path).expanduser()
         if not candidate.is_absolute():
-            if selected_root is None:
+            if root_id is None:
                 if ".." in candidate.parts:
                     raise CleanroomException(
                         403, "PATH_OUTSIDE_ALLOWED_ROOTS", "目标路径不在允许根目录内"
@@ -259,20 +717,19 @@ def resolve_within_roots(raw_path: str, *, root_id: str | None = None) -> Path:
                 raise CleanroomException(
                     409, "ROOT_ID_REQUIRED", "解析相对路径必须指定 root_id"
                 )
-            candidate = selected_root / candidate
-        _ensure_reparse_targets_within_roots(candidate, candidates)
-        resolved = candidate.resolve()
+            possible = [root / candidate for root in candidates]
+        else:
+            possible = [candidate]
     except (OSError, RuntimeError, ValueError) as e:
         raise CleanroomException(400, "INVALID_PATH", "路径参数不合法") from e
-    matches = []
-    for root in candidates:
+    for possible_candidate in possible:
         try:
-            resolved.relative_to(root)
-        except ValueError:
+            _ensure_reparse_targets_within_roots(possible_candidate, candidates)
+            resolved = possible_candidate.resolve()
+        except (OSError, RuntimeError, ValueError):
             continue
-        matches.append(root)
-    if matches:
-        return resolved
+        if any(resolved == root or resolved.is_relative_to(root) for root in candidates):
+            return resolved
     raise CleanroomException(403, "PATH_OUTSIDE_ALLOWED_ROOTS", "目标路径不在允许根目录内")
 
 
@@ -308,13 +765,14 @@ def resolve_request_path(raw_path: str, *, root_id: str | None = None) -> Path:
     selected = coerce_root_id(root_id)
     if selected is None and isinstance(raw_path, str) and raw_path.strip():
         roots = allowed_roots()
-        if len(roots) == 1:
+        unique_roots = {root_identity_id(root) for root in roots}
+        if len(unique_roots) == 1:
             try:
                 relative = not Path(raw_path).expanduser().is_absolute()
             except (OSError, RuntimeError, ValueError):
                 relative = False
             if relative:
-                selected = root_identity_id(roots[0])
+                selected = next(iter(unique_roots))
     return resolve_within_roots(raw_path, root_id=selected)
 
 

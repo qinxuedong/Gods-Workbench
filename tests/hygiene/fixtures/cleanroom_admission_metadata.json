@@ -846,5 +846,22 @@
       "sha256": "b44d4c1250a0842c2b3711f81eb9be602e1ef502251dc4f3b80c5b28858d8a4f",
       "admission": "accepted"
     }
+  ],
+  "authorized_test_files": [
+    {
+      "path": "tests/contracts/assets/test_mvp1_t0_alias_offline.py",
+      "authorization_basis": "MVP1-T0_Cut_2026-10-26",
+      "sha256": "2f48f5d12b3b38e44283cfafb657cf4bf9e3dda7d8152c8da64e0bd78dbcf32b"
+    },
+    {
+      "path": "tests/contracts/settings/test_mvp1_t0_mount_validation.py",
+      "authorization_basis": "MVP1-T0_Cut_2026-10-26",
+      "sha256": "1fd2fea264ed289a018a6c029fa13fc6bfba445ead49f21eb2c31f4dd676f8cd"
+    },
+    {
+      "path": "tests/frontend/mvp1-t0-mount-errors.test.mjs",
+      "authorization_basis": "MVP1-T0_Cut_2026-10-26",
+      "sha256": "9ef0180276f04a1baff9aa06ee581a60a9ee51075d24837cb26f23d4562faee9"
+    }
   ]
 }

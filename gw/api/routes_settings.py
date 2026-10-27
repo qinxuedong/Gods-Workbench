@@ -39,7 +39,7 @@ C16 路由只允许稳定 ``provider_id`` 与消息进入网关；Provider 密�
 
 from typing import Any, Union
 
-from fastapi import APIRouter, Body, Header, Query, status
+from fastapi import APIRouter, Body, Header, Path, Query, status
 from pydantic import BaseModel, ConfigDict, Field
 
 from gw.core.auth import require_authenticated, require_edit_access
@@ -55,12 +55,16 @@ from gw.settings.models import (
     AssetStructureResponse,
     AssetStructureUpdateRequest,
     ProviderSnapshot,
+    StorageAllowedRootDeleteRequest,
+    StorageAllowedRootRequest,
+    StorageAllowedRootsSnapshot,
     StorageSettingsPatchRequest,
     StorageSettingsSnapshot,
 )
 from gw.settings.service import (
     default_asset_structure_service,
     default_provider_service,
+    default_storage_allowed_roots_service,
     default_storage_settings_service,
 )
 
@@ -133,6 +137,74 @@ def patch_storage_settings(
     """保存存储设置；要求 expected_version，版本不一致返回 409 VERSION_CONFLICT。"""
     require_edit_access(authorization, x_user_role)
     return default_storage_settings_service.patch(payload)
+
+
+def _require_storage_admin(authorization: str | None, x_user_role: str):
+    context = require_authenticated(authorization, x_user_role)
+    if context.role != "admin":
+        raise ForbiddenException(message="仅管理员可管理允许根目录")
+    return context
+
+
+@router.get(
+    "/api/storage-settings/roots",
+    response_model=StorageAllowedRootsSnapshot,
+    summary="读取系统根与持久允许根",
+    status_code=status.HTTP_200_OK,
+)
+def get_storage_allowed_roots(
+    authorization: str | None = Header(None),
+    x_user_role: str = Header("editor", alias="X-User-Role", description="用户角色权限"),
+):
+    _require_storage_admin(authorization, x_user_role)
+    return default_storage_allowed_roots_service.get_snapshot()
+
+
+@router.post(
+    "/api/storage-settings/roots",
+    response_model=StorageAllowedRootsSnapshot,
+    summary="登记持久允许根",
+    status_code=status.HTTP_200_OK,
+)
+def add_storage_allowed_root(
+    payload: StorageAllowedRootRequest,
+    authorization: str | None = Header(None),
+    x_user_role: str = Header("editor", alias="X-User-Role", description="用户角色权限"),
+):
+    _require_storage_admin(authorization, x_user_role)
+    return default_storage_allowed_roots_service.add_root(payload)
+
+
+@router.delete(
+    "/api/storage-settings/roots/{root_id}",
+    response_model=StorageAllowedRootsSnapshot,
+    summary="移除持久允许根",
+    status_code=status.HTTP_200_OK,
+)
+def remove_storage_allowed_root(
+    root_id: str = Path(..., min_length=1, max_length=128),
+    payload: StorageAllowedRootDeleteRequest = Body(...),  # noqa: B008
+    authorization: str | None = Header(None),
+    x_user_role: str = Header("editor", alias="X-User-Role", description="用户角色权限"),
+):
+    _require_storage_admin(authorization, x_user_role)
+    return default_storage_allowed_roots_service.remove_root(root_id, payload)
+
+
+@router.post(
+    "/api/storage-settings/roots/{root_id}/aliases/confirm",
+    response_model=StorageAllowedRootsSnapshot,
+    summary="确认允许根的路径别名",
+    status_code=status.HTTP_200_OK,
+)
+def confirm_storage_allowed_root_alias(
+    root_id: str = Path(..., min_length=1, max_length=128),
+    payload: StorageAllowedRootRequest = Body(...),  # noqa: B008
+    authorization: str | None = Header(None),
+    x_user_role: str = Header("editor", alias="X-User-Role", description="用户角色权限"),
+):
+    _require_storage_admin(authorization, x_user_role)
+    return default_storage_allowed_roots_service.confirm_alias(root_id, payload)
 
 
 # ---------------------------------------------------------------------------
