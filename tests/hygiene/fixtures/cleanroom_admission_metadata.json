@@ -60,6 +60,24 @@
         "tests/frontend/mvp1-t8a-ui-collect-panel.test.mjs",
         "tests/hygiene/test_structure_guardrails.py"
       ]
+    },
+    {
+      "issue": 336,
+      "authorization_basis": "GitHub Issue #336, 2026-10-28",
+      "files": [
+        "gw/asset_registry/hybrid_search.py",
+        "gw/api/routes_asset_registry.py",
+        "gw/media/proxy.py",
+        "web/js/core/omnibar.js",
+        "web/js/modules/asset-manager.js",
+        "tests/contracts/assets/test_mvp1_t6_shot_search.py",
+        "tests/frontend/mvp1-t6-omnibar-asset.test.mjs",
+        "tests/frontend/node-files.txt",
+        "tests/e2e/test_mvp1_t6_search_jump_browser.py",
+        "tests/contracts/projects/test_phase8_frontend_backend_api_gap.py",
+        "tests/hygiene/fixtures/cleanroom_admission_metadata.json",
+        "tests/hygiene/test_cleanroom_hygiene.py"
+      ]
     }
   ],
   "accepted_roots": [
