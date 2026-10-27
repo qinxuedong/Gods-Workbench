@@ -11360,7 +11360,13 @@ function detailViewerItem(source, id){
 }
 function detailViewerUrl(source, item={}){
     if(source === 'local') return localObjectUrl(item);
-    return item.url || item.public_url || '';
+    const explicit = item.url || item.public_url || '';
+    if(explicit) return explicit;
+    // MVP1-T6：仅导入登记、尚未回填 url 的素材仍可通过素材端点读取已登记媒体，
+    // 否则镜头命中后详情拿不到媒体地址，跳帧与预览都会退化成空播放器。
+    if(source !== 'registry') return '';
+    const assetId = detailMediaCanvasPersistId(item, source);
+    return assetId ? `/api/asset-registry/assets/${encodeURIComponent(assetId)}/media` : '';
 }
 function detailViewerType(source, item={}){
     if(workflowSourceId(item)) return 'workflow';
@@ -12162,10 +12168,19 @@ function renderDetailMediaCanvasNode(source, item){
     const selected = !grouped && detailMediaCanvasSelectedIds().has(item.id);
     const selectedViaGroup = Boolean(group && detailMediaCanvasSelectedIds().has(group.id));
     const previewFallback = type === 'workflow' ? '' : assetPreviewUrl(url, 2048, item);
+    const videoSource = type === 'video' ? assetVideoUrl(url, item) : '';
+    const jumpTarget = active && detailViewerState.startTime != null
+        && Number.isFinite(Number(detailViewerState.startTime))
+        ? alignTimeToFps(Number(detailViewerState.startTime), Number(item.frame_rate || item.metadata?.frame_rate || 0))
+        : null;
+    // 跳帧目标同时写进媒体地址：节点重建不会丢时间点，浏览器加载后直接从该帧起播。
+    const videoSrcWithJump = jumpTarget != null && videoSource && !videoSource.includes('#t=')
+        ? `${videoSource}#t=${jumpTarget}`
+        : videoSource;
     const media = type === 'workflow'
         ? workflowThumb(item)
         : type === 'video'
-            ? `<video class="asset-detail-media-node-content asset-detail-player" src="${escapeAttr(assetVideoUrl(url, item))}" playsinline preload="auto" data-detail-media-natural="${escapeAttr(item.id)}"></video>`
+            ? `<video class="asset-detail-media-node-content asset-detail-player" src="${escapeAttr(videoSrcWithJump)}" playsinline preload="auto" data-detail-media-natural="${escapeAttr(item.id)}"></video>`
             : `<img class="asset-detail-media-node-content" src="${escapeAttr(url)}" data-detail-media-preview-fallback="${escapeAttr(previewFallback)}" data-preview-fallback="${escapeAttr(item.name || '图片')}" data-detail-media-natural="${escapeAttr(item.id)}" alt="${escapeAttr(item.name || '画布素材')}" draggable="false" loading="eager" decoding="async">`;
     const centerPlay = type === 'video'
         ? `<button class="asset-detail-video-center-play" type="button" data-detail-video-action="toggle" data-detail-video-for="${escapeAttr(item.id)}" aria-label="Play video"><i data-lucide="play"></i></button>`
@@ -14029,6 +14044,11 @@ function showDetailPreview(source, id, options={}){
         mediaCanvasLibraryVisible:mediaCanvasItems.length > 1 || referenceCanvasMode,
         mediaCanvasScale:1, mediaCanvasX:0, mediaCanvasY:0, mediaCanvasFitted:false,
         videoRanges:{}, videoExportRootId:'', videoExportBusy:'', videoStoryboardExpandedId:'',
+        // MVP1-T6：跳帧目标必须在首帧渲染前就写入状态，否则媒体画布节点重建后
+        // 会丢掉只挂过一次的 loadedmetadata 监听，跳帧静默失效。
+        startTime:options.startTime != null && Number.isFinite(Number(options.startTime))
+            ? alignTimeToFps(Number(options.startTime), options.fps || Number(item?.frame_rate || item?.metadata?.frame_rate || 0))
+            : null,
         imageVersions:[],imageVersionsAssetId:'',imageVersionsLoading:false,imageVersionSelectedId:'',imageVersionPanelCollapsed:true,
         referenceCanvasId:storedReferenceCanvas ? String(item.canvas_id || '') : '', referenceCanvasTitle:String(options.referenceCanvasTitle || (storedReferenceCanvas ? item.canvas_title || '参考画布' : '参考画布')), referenceCanvasMode, referenceCanvasStructureId:referenceCanvasMode ? String(options.referenceCanvasStructureId || '') : '', referenceCanvasSaving:false,
         originTab:options.originTab || activeTab, returnFocus:options.returnFocus || document.activeElement
@@ -14274,6 +14294,8 @@ function seekDetailVideoTo(seconds, { play = false, videoId = '', fps = 0 } = {}
                 }
             }
             syncDetailVideoControls(video);
+            // 跳帧目标已在本次定位中消费，后续重渲染不得再把播放位置拉回旧时间点。
+            detailViewerState.startTime = null;
             setStatus(`已跳帧至 ${formatVideoSegmentTime(sec)}`);
             return true;
         } catch (err) {
@@ -18696,7 +18718,10 @@ window.addEventListener('message', event => {
     if(event.data?.type === 'asset-global-search'){
         const assetId = touchbarStableId(event.data.asset_id);
         if(event.origin !== location.origin || event.source !== window.parent || !assetId) return;
-        openRegistryAssetFromGlobalSearch(assetId)
+        // MVP1-T6：壳层 Omnibar 的镜头命中会带上 start_sec，直接复用 C18-T5 跳帧。
+        const rawStart = event.data.start_sec;
+        const startSec = rawStart == null || rawStart === '' ? null : Number(rawStart);
+        openRegistryAssetFromGlobalSearch(assetId, Number.isFinite(startSec) ? Math.max(0, startSec) : null)
             .catch(err => setStatus(err.message || '打开素材失败'));
     }
     if(event.data?.type === 'asset-refresh'){

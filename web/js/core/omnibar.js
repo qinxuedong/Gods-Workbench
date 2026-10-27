@@ -32,6 +32,22 @@
   const DEFAULT_COMMAND_TIMEOUT_MS = 10000;
   const SEARCH_HINT = /[?？]|^(请|帮我|如何|怎么|为什么|解释|分析|总结|生成|改写)/;
   const RESULT_SELECTOR = '[role="option"]';
+  // MVP1-T6：素材模式直接消费镜头级检索 API，命中项带 asset_id + start_sec，
+  // 由既有「选中结果」事件驱动素材页把播放器跳到命中时间戳。
+  const ASSET_SHOT_SEARCH_API = '/api/asset-registry/search/shots';
+  const ASSET_SEARCH_LIMIT = 12;
+  const ASSET_SEARCH_DEBOUNCE_MS = 160;
+  const MODE_LABELS = [['search', '检索'], ['agent', 'Agent'], ['asset', '素材']];
+  const MODE_PLACEHOLDER = {
+    search: '搜索项目、画布、资产与任务…',
+    agent: '向 Agent 提问，或输入 / 开始对话…',
+    asset: '搜索素材镜头，Enter 跳到命中时间戳…',
+  };
+  const MODE_EMPTY = {
+    search: '输入关键词以搜索可访问内容。',
+    agent: 'Agent 对话入口已就绪。输入问题后按 Enter 发送。',
+    asset: '输入关键词（如「海边 日落」）检索素材镜头。',
+  };
   const boundDocuments = new Set();
   const boundFrames = new WeakSet();
   const frameDocuments = new Map();
@@ -51,6 +67,8 @@
   let frameObserver = null;
   let initialized = false;
   let activeCommandTimer = null;
+  let assetSearchTimer = null;
+  let assetSearchSeq = 0;
 
   function safeClearTimeout(timerId) {
     if (timerId === null || timerId === undefined) return;
@@ -87,7 +105,7 @@
   }
 
   function setMode(nextMode, {manual = false} = {}) {
-    if (nextMode !== 'search' && nextMode !== 'agent') return false;
+    if (nextMode !== 'search' && nextMode !== 'agent' && nextMode !== 'asset') return false;
     mode = nextMode;
     if (panel) panel.dataset.mode = mode;
     modeButtons.forEach((button, name) => {
@@ -96,15 +114,22 @@
       button.classList.toggle('is-active', active);
     });
     if (input) {
-      input.placeholder = mode === 'agent' ? '向 Agent 提问，或输入 / 开始对话…' : '搜索项目、画布、资产与任务…';
-      input.setAttribute('aria-label', mode === 'agent' ? '向 Agent 提问' : '搜索项目、画布、资产与任务');
+      input.placeholder = MODE_PLACEHOLDER[mode];
+      input.setAttribute('aria-label', mode === 'agent' ? '向 Agent 提问' : mode === 'asset' ? '搜索素材镜头' : '搜索项目、画布、资产与任务');
     }
     if (emptyState) {
-      emptyState.textContent = mode === 'agent'
-        ? 'Agent 对话入口已就绪。输入问题后按 Enter 发送。'
-        : '输入关键词以搜索可访问内容。';
+      emptyState.textContent = MODE_EMPTY[mode];
     }
     if (manual) panel?.setAttribute('data-mode-selection', 'manual');
+    if (mode === 'asset') {
+      // 切到素材模式时清掉其他模式的旧结果，避免把项目/任务结果当成镜头结果打开。
+      if (manual) setResults([]);
+    } else {
+      // 离开素材模式即作废仍在途的检索，防止迟到响应覆盖当前列表。
+      safeClearTimeout(assetSearchTimer);
+      assetSearchTimer = null;
+      assetSearchSeq += 1;
+    }
     global.dispatchEvent?.(new global.CustomEvent('gw:omnibar-mode-change', {detail: {mode, manual}}));
     return true;
   }
@@ -177,6 +202,12 @@
       case 'COMMAND_ACTIVATION_TIMEOUT':
         message = '命令执行超时，请重试。';
         break;
+      case 'ASSET_SEARCH_FAILED':
+        message = '素材检索失败，请稍后重试。';
+        break;
+      case 'SEARCH_INDEX_NOT_READY':
+        message = '素材检索索引尚未建立，请先在素材页重建索引。';
+        break;
       default:
         return;
     }
@@ -189,6 +220,7 @@
     if (!result) return false;
     selectedIndex = index;
     global.dispatchEvent?.(new global.CustomEvent('gw:omnibar-result-select', {detail: {result, index}}));
+    if (mode === 'asset') relayAssetSelection(result);
     if (typeof result.activate === 'function') {
       const timeoutMs = Number(result?.timeout) > 0 ? Number(result.timeout) : DEFAULT_COMMAND_TIMEOUT_MS;
       safeClearTimeout(activeCommandTimer);
@@ -267,7 +299,136 @@
     clearError();
     const query = input?.value || '';
     if (mode === 'search' && (query.trim().startsWith('/') || SEARCH_HINT.test(query.trim()))) setMode('agent');
+    if (mode === 'asset') scheduleAssetSearch(query);
     global.dispatchEvent?.(new global.CustomEvent('gw:omnibar-query', {detail: {query, mode}}));
+  }
+
+  function formatShotTime(seconds) {
+    const total = Math.max(0, Math.floor(Number(seconds) || 0));
+    const minutes = Math.floor(total / 60);
+    const remain = total % 60;
+    return `${String(minutes).padStart(2, '0')}:${String(remain).padStart(2, '0')}`;
+  }
+
+  function mapShotResults(payload) {
+    const items = Array.isArray(payload?.items) ? payload.items : [];
+    return items.map((item, index) => {
+      const name = String(item?.name || item?.asset_id || '未命名素材');
+      const startSec = Number(item?.start_sec);
+      const isShot = item?.granularity === 'shot' && item?.start_sec != null && Number.isFinite(startSec);
+      const range = isShot ? `${formatShotTime(startSec)}~${formatShotTime(item?.end_sec)}` : '';
+      const tags = Array.isArray(item?.tags) ? item.tags.filter(tag => typeof tag === 'string' && tag) : [];
+      const summary = String(item?.summary || '').trim();
+      return {
+        id: String(item?.asset_id || `asset-${index}`),
+        asset_id: String(item?.asset_id || ''),
+        granularity: isShot ? 'shot' : 'asset',
+        start_sec: isShot ? startSec : null,
+        title: range ? `${name} · ${range}` : name,
+        description: [range, ...tags, summary].filter(Boolean).join(' · '),
+      };
+    }).filter(result => result.asset_id);
+  }
+
+  function assetSearchError(code) {
+    global.dispatchEvent?.(new global.CustomEvent('gw:omnibar-error', {
+      detail: {code, message: '素材检索失败，请稍后重试。'},
+    }));
+  }
+
+  // 素材页在 shell 的 iframe 里运行，窗口内事件到不了它；复用既有
+  // asset-global-search 桥接把命中时间戳一并递给素材页（AC7 时间戳跳转）。
+  function assetFrameMatches(frame) {
+    const raw = String(frame?.getAttribute?.('src') || frame?.src || '');
+    if (!raw) return false;
+    try {
+      const resolved = new URL(raw, global.location.href);
+      return resolved.origin === global.location.origin && resolved.pathname.includes('asset-manager');
+    } catch (_) {
+      return false;
+    }
+  }
+
+  function relayAssetSelection(result) {
+    const assetId = String(result?.asset_id || '').trim();
+    if (!assetId) return false;
+    const frames = document.querySelectorAll?.('iframe');
+    if (!frames || !frames.length) return false;
+    const startSec = Number(result?.start_sec);
+    const payload = {
+      type: 'asset-global-search',
+      asset_id: assetId,
+    };
+    if (result?.granularity === 'shot' && Number.isFinite(startSec)) payload.start_sec = startSec;
+    let relayed = false;
+    Array.prototype.forEach.call(frames, frame => {
+      if (!assetFrameMatches(frame)) return;
+      const target = frame.contentWindow;
+      if (!target || typeof target.postMessage !== 'function') return;
+      try {
+        target.postMessage(payload, global.location.origin);
+        relayed = true;
+      } catch (_) {
+        // 跨源或未就绪的 frame 直接跳过，不影响同页事件路径。
+      }
+    });
+    return relayed;
+  }
+
+  function scheduleAssetSearch(rawQuery) {
+    const query = String(rawQuery || '').trim();
+    assetSearchSeq += 1;
+    const seq = assetSearchSeq;
+    safeClearTimeout(assetSearchTimer);
+    assetSearchTimer = null;
+    if (!query) {
+      setResults([]);
+      return;
+    }
+    assetSearchTimer = safeSetTimeout(() => {
+      assetSearchTimer = null;
+      void runAssetSearch(query, seq);
+    }, ASSET_SEARCH_DEBOUNCE_MS);
+  }
+
+  async function runAssetSearch(query, seq) {
+    const fetchImpl = typeof global.fetch === 'function' ? global.fetch : null;
+    if (!fetchImpl) {
+      assetSearchError('ASSET_SEARCH_FAILED');
+      return false;
+    }
+    const params = new URLSearchParams({q: query, limit: String(ASSET_SEARCH_LIMIT)});
+    try {
+      const response = await fetchImpl(`${ASSET_SHOT_SEARCH_API}?${params.toString()}`, {
+        credentials: 'same-origin',
+        headers: {'Accept': 'application/json'},
+      });
+      if (seq !== assetSearchSeq || !isOpen) return false;
+      let body = null;
+      try {
+        body = await response.json();
+      } catch (_) {
+        body = null;
+      }
+      if (seq !== assetSearchSeq || !isOpen) return false;
+      if (!response.ok) {
+        assetSearchError(body?.detail?.code === 'SEARCH_INDEX_NOT_READY'
+          ? 'SEARCH_INDEX_NOT_READY'
+          : 'ASSET_SEARCH_FAILED');
+        return false;
+      }
+      const mapped = mapShotResults(body);
+      setResults(mapped);
+      if (emptyState) {
+        emptyState.textContent = mapped.length
+          ? MODE_EMPTY.asset
+          : `未找到与「${query}」匹配的素材镜头。`;
+      }
+      return true;
+    } catch (_) {
+      if (seq === assetSearchSeq && isOpen) assetSearchError('ASSET_SEARCH_FAILED');
+      return false;
+    }
   }
 
   function emitAgentSubmit() {
@@ -313,9 +474,9 @@
     modeGroup.setAttribute('role', 'group');
     modeGroup.setAttribute('aria-label', '命令模式');
     modeButtons = new Map();
-    [['search', '检索'], ['agent', 'Agent']].forEach(([name, label]) => {
+    MODE_LABELS.forEach(([name, label]) => {
       const button = makeButton(label, 'gw-omnibar-mode');
-      button.id = `gwOmnibarMode${name === 'search' ? 'Search' : 'Agent'}`;
+      button.id = `gwOmnibarMode${name === 'search' ? 'Search' : name === 'agent' ? 'Agent' : 'Asset'}`;
       button.setAttribute('id', button.id);
       button.dataset.mode = name;
       button.setAttribute('aria-pressed', String(name === mode));
@@ -346,7 +507,7 @@
       event.preventDefault();
       event.stopPropagation();
       if (mode === 'agent') emitAgentSubmit();
-      else activateResult().catch(() => {});
+      else activateResult(mode === 'asset' && selectedIndex < 0 && results.length ? 0 : selectedIndex).catch(() => {});
     });
     inputRow.append(makeElement('span', 'gw-omnibar-search-icon', '⌕'), input);
 
@@ -409,6 +570,9 @@
   function close() {
     safeClearTimeout(activeCommandTimer);
     activeCommandTimer = null;
+    safeClearTimeout(assetSearchTimer);
+    assetSearchTimer = null;
+    assetSearchSeq += 1;
     if (!overlay || overlay.hidden) return false;
     overlay.hidden = true;
     overlay.setAttribute('aria-hidden', 'true');
