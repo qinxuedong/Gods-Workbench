@@ -845,6 +845,21 @@
       "authorization_basis": "MVP1_T4A_issue_343_2026-10-27",
       "sha256": "b44d4c1250a0842c2b3711f81eb9be602e1ef502251dc4f3b80c5b28858d8a4f",
       "admission": "accepted"
+    },
+    {
+      "path": "tests/contracts/assets/test_mvp1_t9a_recycle_regression.py",
+      "classification": "curated_test_coverage",
+      "authorization_basis": "QIN-347_GitHub_Cut_2026-10-26",
+      "sha256": "8c5a3972fffb01b29c85325dbeab30e401c2ff4089aa4ff2b6434f977b30cc5b",
+      "admission": "accepted"
+    }
+  ],
+  "accepted_test_files": [
+    {
+      "path": "tests/contracts/assets/test_mvp1_t9a_recycle_regression.py",
+      "classification": "curated_test_coverage",
+      "authorization_basis": "QIN-347_GitHub_Cut_2026-10-26",
+      "admission": "accepted"
     }
   ],
   "authorized_test_files": [
