@@ -135,10 +135,10 @@ def test_openai_base_address_completes_once_before_save(suffix, monkeypatch, tmp
     ):
         page.goto(base + ENTRIES[0], wait_until="networkidle")
         page.locator("#providerList .provider-card").first.wait_for()
-        page.locator("#baseInput").fill("http://192.168.0.199:3100" + suffix)
+        page.locator("#baseInput").fill("http://192.168.0.10:3100" + suffix)
         page.locator("#keyInput").fill("synthetic-lan-browser-key")
         assert (
-            page.locator("#baseInput").input_value() == "http://192.168.0.199:3100/v1"
+            page.locator("#baseInput").input_value() == "http://192.168.0.10:3100/v1"
         )
         with page.expect_response(
             lambda response: (
@@ -149,7 +149,7 @@ def test_openai_base_address_completes_once_before_save(suffix, monkeypatch, tmp
         assert saved.value.status == 200
         assert (
             saved.value.json()["providers"][0]["base_url"]
-            == "http://192.168.0.199:3100/v1"
+            == "http://192.168.0.10:3100/v1"
         )
         page.reload(wait_until="networkidle")
         page.locator("#keyHint").filter(has_text="providers.json").wait_for()
