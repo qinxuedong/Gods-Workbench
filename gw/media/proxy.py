@@ -21,6 +21,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import re
 import shutil
 import subprocess
@@ -42,6 +43,31 @@ PROFILE_ALIASES = {"low": "small", "proxy": "preview"}
 ARTIFACT_RE = re.compile(r"^proxy-[A-Za-z0-9_-]{16,64}\.(?:png|jpg|mp4)$")
 IMAGE_FORMATS = {".png": ("image/png", "png"), ".jpg": ("image/jpeg", "jpeg")}
 DEPENDENCY_CODES = frozenset({"PIL_NOT_AVAILABLE", "FFMPEG_NOT_AVAILABLE"})
+HEAVY_VIDEO_CODECS = frozenset(
+    {"cineform", "dnxhd", "dnxhr", "rawvideo", "r210", "v210"}
+)
+HIGH_BITRATE_MOV_THRESHOLD = 100_000_000
+
+
+def requires_720p_proxy(video_metadata: dict[str, Any]) -> bool:
+    """只为 4K、专业中间编码、RAW 或高码率 MOV 标记 720p 代理需求。"""
+    if not isinstance(video_metadata, dict):
+        return False
+    try:
+        width = int(video_metadata.get("width") or 0)
+        height = int(video_metadata.get("height") or 0)
+        bit_rate = int(video_metadata.get("bit_rate") or 0)
+    except (TypeError, ValueError, OverflowError):
+        return False
+    codec = str(video_metadata.get("codec") or "").strip().lower()
+    container = str(video_metadata.get("container") or "").strip().lower()
+    return (
+        width >= 3840
+        or height >= 2160
+        or codec.startswith("prores")
+        or codec in HEAVY_VIDEO_CODECS
+        or (container == "mov" and bit_rate >= HIGH_BITRATE_MOV_THRESHOLD)
+    )
 
 
 def _pil():
@@ -193,7 +219,65 @@ def _image_proxy(path: Path, width: int, target_base: Path) -> dict[str, Any]:
         ) from None
 
 
-def _ffmpeg_proxy(path: Path, width: int, target: Path) -> dict[str, Any]:
+def _probe_video_metadata(path: Path) -> dict[str, Any]:
+    """读取代理判定需要的轻量视频元数据；探测不可用时回退原代理规格。"""
+    ffprobe = shutil.which("ffprobe")
+    if not ffprobe:
+        return {}
+    try:
+        completed = subprocess.run(
+            [
+                ffprobe,
+                "-v",
+                "error",
+                "-select_streams",
+                "v:0",
+                "-show_entries",
+                "stream=codec_name,width,height:format=bit_rate",
+                "-of",
+                "json",
+                str(path),
+            ],
+            capture_output=True,
+            text=True,
+            timeout=30,
+            check=False,
+        )
+        if completed.returncode != 0:
+            return {}
+        payload = json.loads(completed.stdout)
+        stream = payload["streams"][0]
+        width = int(stream["width"])
+        height = int(stream["height"])
+        codec = str(stream["codec_name"]).strip()
+        try:
+            bit_rate = int(payload.get("format", {}).get("bit_rate") or 0)
+        except (TypeError, ValueError, OverflowError):
+            bit_rate = 0
+    except (OSError, subprocess.SubprocessError, IndexError, KeyError, TypeError, ValueError):
+        return {}
+    if width <= 0 or height <= 0 or not codec:
+        return {}
+    return {
+        "width": width,
+        "height": height,
+        "codec": codec,
+        "bit_rate": bit_rate,
+        "container": path.suffix.lower().lstrip("."),
+    }
+
+
+def _720p_proxy_dimensions(video_metadata: dict[str, Any]) -> tuple[int, int]:
+    """保持源宽高比并把重格式代理限制到 720 行。"""
+    width = int(video_metadata["width"])
+    height = int(video_metadata["height"])
+    scaled_width = max(2, int(round(width * 720 / height / 2)) * 2)
+    return scaled_width, 720
+
+
+def _ffmpeg_proxy(
+    path: Path, width: int, target: Path, *, target_height: int | None = None
+) -> dict[str, Any]:
     ffmpeg = shutil.which("ffmpeg")
     if not ffmpeg:
         raise CleanroomException(
@@ -210,7 +294,7 @@ def _ffmpeg_proxy(path: Path, width: int, target: Path) -> dict[str, Any]:
         "-i",
         str(path),
         "-vf",
-        f"scale={width}:-2",
+        f"scale=-2:{target_height}" if target_height else f"scale={width}:-2",
         "-c:v",
         "libx264",
         "-preset",
@@ -251,19 +335,29 @@ def _ffmpeg_proxy(path: Path, width: int, target: Path) -> dict[str, Any]:
         partial.unlink(missing_ok=True)
         raise CleanroomException(503, "MEDIA_PROCESS_FAILED", "视频代理处理失败")
     partial.replace(target)
-    return {"path": target, "media_type": "video/mp4", "width": width, "height": None}
+    return {
+        "path": target,
+        "media_type": "video/mp4",
+        "width": width,
+        "height": target_height,
+    }
 
 
 def build_proxy(payload: dict[str, Any]) -> dict[str, Any]:
     """生成或读取确定性的真实代理，并返回不含绝对路径的元数据。"""
     path, asset_id, version_id = _source(payload)
     profile, width = _profile(payload)
+    is_video = path.suffix.lower() in VIDEO_SUFFIXES
+    target_height = None
+    if is_video:
+        video_metadata = _probe_video_metadata(path)
+        if requires_720p_proxy(video_metadata):
+            width, target_height = _720p_proxy_dimensions(video_metadata)
     identity = _identity(path, asset_id, version_id, profile, width)
     directory = _output_dir()
-    is_video = path.suffix.lower() in VIDEO_SUFFIXES
     target_base = directory / ("proxy-" + identity + (".mp4" if is_video else ".png"))
     if is_video:
-        result = _ffmpeg_proxy(path, width, target_base)
+        result = _ffmpeg_proxy(path, width, target_base, target_height=target_height)
     else:
         result = _image_proxy(path, width, target_base)
     target = result["path"]

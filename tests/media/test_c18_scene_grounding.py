@@ -20,7 +20,15 @@ def test_detect_scenes_builds_millisecond_segment_metadata(tmp_path, monkeypatch
     def fake_run(args, **kwargs):
         calls.append(args)
         if "ffprobe" in args[0]:
-            return subprocess.CompletedProcess(args, 0, stdout="2.000000\n", stderr="")
+            return subprocess.CompletedProcess(
+                args,
+                0,
+                stdout=(
+                    '{"streams":[{"codec_name":"h264","width":160,"height":90}],'
+                    '"format":{"duration":"2.000000","bit_rate":"1000000"}}'
+                ),
+                stderr="",
+            )
         return subprocess.CompletedProcess(
             args,
             0,
@@ -37,8 +45,32 @@ def test_detect_scenes_builds_millisecond_segment_metadata(tmp_path, monkeypatch
     scenes = detect_scenes(video)
 
     assert scenes == [
-        {"start_sec": 0.0, "end_sec": 1.0, "tags": [], "thumbnail": None},
-        {"start_sec": 1.0, "end_sec": 2.0, "tags": [], "thumbnail": None},
+        {
+            "start_sec": 0.0,
+            "end_sec": 1.0,
+            "duration_sec": 1.0,
+            "width": 160,
+            "height": 90,
+            "codec": "h264",
+            "bit_rate": 1000000,
+            "container": "mp4",
+            "source_url": None,
+            "tags": [],
+            "thumbnail": None,
+        },
+        {
+            "start_sec": 1.0,
+            "end_sec": 2.0,
+            "duration_sec": 1.0,
+            "width": 160,
+            "height": 90,
+            "codec": "h264",
+            "bit_rate": 1000000,
+            "container": "mp4",
+            "source_url": None,
+            "tags": [],
+            "thumbnail": None,
+        },
     ]
     assert len(calls) == 2
     assert any("gt(scene,0.3)" in argument for argument in calls[1])
@@ -90,6 +122,11 @@ def test_real_ffmpeg_detects_scene_and_writes_webp_keyframes_and_sprite(tmp_path
     assert scenes[0]["start_sec"] == 0.0
     assert abs(scenes[1]["start_sec"] - 1.0) <= 0.1
     assert scenes[-1]["end_sec"] == 2.0
+    assert scenes[0]["width"] == 160
+    assert scenes[0]["height"] == 90
+    assert scenes[0]["codec"] == "h264"
+    assert scenes[0]["duration_sec"] == scenes[0]["end_sec"]
+    assert scenes[0]["source_url"] is None
 
     result = extract_keyframes(video, scenes, tmp_path / "grounding")
     metadata_file = tmp_path / "grounding" / "metadata.json"
