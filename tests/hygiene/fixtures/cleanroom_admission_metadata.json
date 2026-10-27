@@ -33,6 +33,17 @@
       ]
     },
     {
+      "issue": 368,
+      "authorization_basis": "GitHub Issue #368, 2026-10-28",
+      "files": [
+        "gw/agent_runtime/adapters/pipeline_tools.py",
+        "docs/contracts/AGENT-WORKBENCH-INTERFACE-CATALOG.yaml",
+        "tests/contracts/agent/test_mvp2_t4_pipeline_tools.py",
+        "tests/hygiene/fixtures/cleanroom_admission_metadata.json",
+        "tests/hygiene/test_cleanroom_hygiene.py"
+      ]
+    },
+    {
       "issue": 345,
       "authorization_basis": "GitHub Issue #345, 2026-10-27",
       "files": [
@@ -292,7 +303,7 @@
       "path": "docs/contracts/AGENT-WORKBENCH-INTERFACE-CATALOG.yaml",
       "classification": "frozen_interface_contract",
       "authorization_basis": "user_integration_request_2026-10-08",
-      "sha256": "20ac189e6e03b3257e75262677c109278e2ebf0a0b3b0ab787c1c1b1dea61bfe",
+      "sha256": "8953036f098d59aeb07dbbd50853d37f1d412f5d02b3e36ecd17d064c89c55b3",
       "admission": "accepted"
     },
     {

@@ -95,3 +95,87 @@ ownership:
   durable_mapping: "host_agent_create_keys.job_id -> run_id"
   shared_observability_list: "not included until actor/project-filtered enumeration is defined"
   related_canvas_contract: "CANVAS-INTERFACE-CATALOG.yaml: run_smart_canvas_task"
+
+# MVP2-T4 前段工具注册（GitHub #368）。字段名与 `gw.agent_runtime.policy.ToolRegistration`
+# 对齐：risk_level / cost_state / idempotency_supported / input_schema。
+tools:
+  - name: script_generate
+    stage_scope: "full_script | scene_script"
+    registration: "gw/agent_runtime/adapters/pipeline_tools.py: register_pipeline_tools"
+    service_key: "script"
+    risk_level: medium
+    cost_state: metered
+    idempotency_supported: true
+    required_permissions: []
+    input_schema:
+      type: object
+      additionalProperties: false
+      required:
+        - run_id
+        - stage
+        - idempotency_key
+      properties:
+        run_id:
+          type: string
+        stage:
+          enum:
+            - full_script
+            - scene_script
+        idempotency_key:
+          type: string
+          minLength: 8
+        instructions:
+          type: string
+          maxLength: 4000
+    output_rules:
+      - "返回值递归清洗：不含 POSIX 绝对路径、Windows 盘符与 UNC 风格路径（含 dict key）"
+      - "返回值不含任何凭据字段（含 access_token / refresh-token 等变体键名），发现即失败关闭"
+    errors:
+      VALIDATION_FAILED: "参数不合 schema，或产物含绝对路径/凭据字段"
+      QUOTA_EXCEEDED: "metered 工具未携带显式允许预算"
+      UPSTREAM_UNAVAILABLE: "注入的 service 调用失败；原始异常不外泄"
+  - name: storyboard_generate
+    stage_scope: "storyboard_text"
+    registration: "gw/agent_runtime/adapters/pipeline_tools.py: register_pipeline_tools"
+    service_key: "storyboard"
+    risk_level: medium
+    cost_state: metered
+    idempotency_supported: true
+    required_permissions: []
+    input_schema:
+      type: object
+      additionalProperties: false
+      required:
+        - run_id
+        - stage
+        - idempotency_key
+      properties:
+        run_id:
+          type: string
+        stage:
+          enum:
+            - storyboard_text
+        idempotency_key:
+          type: string
+          minLength: 8
+        instructions:
+          type: string
+          maxLength: 4000
+    output_rules:
+      - "同 script_generate"
+    errors:
+      VALIDATION_FAILED: "参数不合 schema，或产物含绝对路径/凭据字段"
+      QUOTA_EXCEEDED: "metered 工具未携带显式允许预算"
+      UPSTREAM_UNAVAILABLE: "注入的 service 调用失败；原始异常不外泄"
+
+# 检索结论：后端（gw/）没有明确的样片生成入口，故本期不注册。
+deferred_tools:
+  - name: animatic_generate
+    status: "not_registered"
+    reason: "gw/ 内无样片生成入口；仅 web/js/controllers/production-controller.js 的播放展示逻辑、tests/e2e/test_c13_animatic_radar_browser.py 的证据用例与 docs/governance/LOCAL-DIRECTORY-SPEC.md 的产物目录约定。"
+    searched_locations:
+      - "gw/agent_runtime/（register_tool / ToolRegistration 调用点检索）"
+      - "gw/agent_episode/workflow.py（EpisodeTextPlugin.create_candidate，仅文本阶段）"
+      - "gw/media/、gw/asset_registry/media_probe.py（仅分镜缩略图/取帧）"
+      - "web/js/controllers/production-controller.js（前端播放，非生成入口）"
+    registration_rule: "后端出现明确样片生成入口后再补注册，字段命名与本文件 tools: 保持一致。"
