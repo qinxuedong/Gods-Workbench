@@ -28,6 +28,11 @@
     background: rgba(0, 0, 0, 0.55);
 }
 
+/* 类选择器的 display:flex 会压过 UA 的 [hidden] 规则，必须显式声明隐藏态。 */
+.asset-collect-overlay[hidden] {
+    display: none !important;
+}
+
 .asset-collect-panel {
     width: min(560px, calc(100vw - 32px));
     max-height: min(680px, calc(100vh - 48px));

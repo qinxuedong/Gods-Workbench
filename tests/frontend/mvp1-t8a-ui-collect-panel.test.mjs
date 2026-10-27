@@ -157,6 +157,20 @@ test('GW-UI-FW-01 浮窗规范：显式关闭、Escape、点外关闭与焦点�
   assert.match(panelSource, /destroy\(\)/);
 });
 
+test('浮窗接入全局 FloatingDismissal 契约，面板内点击与 Escape 不被吞（QA 回归）', () => {
+  // role="dialog" 会被 floating-dismissal.js 自动登记为浮层；必须显式声明
+  // 内容边界与关闭语义，否则捕获阶段把面板内点击当"外部"吞掉。
+  assert.match(panelSource, /data-floating-surface="asset-collect-panel"/);
+  assert.match(panelSource, /data-floating-content="self"/);
+  assert.match(panelSource, /data-floating-dismiss="outside"/);
+  assert.match(panelSource, /data-floating-escape="close-only"/);
+  assert.match(panelSource, /data-collect-close data-floating-close/);
+});
+
+test('遮罩 hidden 属性不被 display:flex 覆盖（QA 回归）', () => {
+  assert.match(collectCss, /\.asset-collect-overlay\[hidden\]\s*\{[^}]*display:\s*none\s*!important/);
+});
+
 test('收集面板挂载入口与样式注入已接入资产工作台', () => {
   assert.match(managerSource, /import \{openAssetCollectOverlay\} from '\.\/asset-collect-panel\.js';/);
   assert.match(managerSource, /data-asset-collect-open/);

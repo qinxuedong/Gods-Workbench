@@ -253,13 +253,17 @@ export function ensureAssetCollectStyles(doc) {
 }
 
 const PANEL_MARKUP = `
-    <section class="asset-collect-panel" role="dialog" aria-modal="true" aria-label="素材收集">
+    <section class="asset-collect-panel" role="dialog" aria-modal="true" aria-label="素材收集"
+             data-floating-surface="asset-collect-panel"
+             data-floating-content="self"
+             data-floating-dismiss="outside"
+             data-floating-escape="close-only">
         <header class="asset-collect-head">
             <div class="asset-collect-heading">
                 <strong>素材收集</strong>
                 <small>粘贴链接或拖入文件，后台任务自动收集入库</small>
             </div>
-            <button type="button" class="asset-collect-close" data-collect-close aria-label="关闭收集面板">&times;</button>
+            <button type="button" class="asset-collect-close" data-collect-close data-floating-close aria-label="关闭收集面板">&times;</button>
         </header>
         <form class="asset-collect-url-form" data-collect-url-form novalidate>
             <input class="asset-collect-url-input" data-collect-url-input type="url" name="collect-url"
