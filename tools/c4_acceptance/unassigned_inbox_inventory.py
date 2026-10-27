@@ -26,7 +26,7 @@ ID 清单，输出 JSON 到 stdout。只读：仅调用 ``repository.state().rea
 同一次 CAS 写入内把 metadata.workflow_owner 回填为自己的归属键。
 
 用法：
-    /workspace/.gw-venv/bin/python tools/c4_acceptance/unassigned_inbox_inventory.py
+    python tools/c4_acceptance/unassigned_inbox_inventory.py
 
     默认 dev 态读取仓库 .local/runtime-dev/data；如需指向其他数据目录，
     测试态必须同时显式提供三根环境变量：

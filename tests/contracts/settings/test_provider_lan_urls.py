@@ -20,7 +20,7 @@ AUTH = {"Authorization": "Bearer lan-fixture", "X-User-Role": "editor"}
 @pytest.mark.parametrize(
     "url",
     (
-        "http://192.168.0.199:3100/v1",
+        "http://192.168.0.10:3100/v1",
         "http://10.0.0.8:3100",
         "http://172.16.0.8:3100",
         "http://[fd00::8]:3100",
@@ -47,7 +47,7 @@ def test_domain_resolving_to_lan_stays_blocked(monkeypatch):
         socket,
         "getaddrinfo",
         lambda *_: [
-            (socket.AF_INET, socket.SOCK_STREAM, 6, "", ("192.168.0.199", 3100))
+            (socket.AF_INET, socket.SOCK_STREAM, 6, "", ("192.168.0.10", 3100))
         ],
     )
     with pytest.raises(CleanroomException) as denied:
@@ -91,13 +91,13 @@ def test_lan_directory_uses_one_v1_and_direct_transport(monkeypatch, suffix, end
             "/api/providers/" + endpoint,
             headers=AUTH,
             json={
-                "base_url": "http://192.168.0.199:3100" + suffix,
+                "base_url": "http://192.168.0.10:3100" + suffix,
                 "protocol": "openai",
                 "api_key": "synthetic-lan-key",
             },
         )
     assert response.status_code == 200
-    assert hits == [("http://192.168.0.199:3100/v1/models", "Bearer synthetic-lan-key")]
+    assert hits == [("http://192.168.0.10:3100/v1/models", "Bearer synthetic-lan-key")]
     assert options[0]["trust_env"] is False and options[0]["follow_redirects"] is False
     assert "synthetic-lan-key" not in response.text
 
@@ -125,24 +125,24 @@ def test_saved_root_can_reuse_its_key_without_redirecting_credentials(monkeypatc
         [
             {
                 "id": "lan",
-                "base_url": "http://192.168.0.199:3100",
+                "base_url": "http://192.168.0.10:3100",
                 "api_key": "synthetic-old-key",
                 "chat_models": ["synthetic-chat"],
             }
         ],
         1,
     )
-    assert saved.providers[0]["base_url"] == "http://192.168.0.199:3100/v1"
+    assert saved.providers[0]["base_url"] == "http://192.168.0.10:3100/v1"
     # 模拟旧版已保存的根地址；生产文件绝不参与。
     state = storage.JsonState("providers", ProviderService._empty_state).read()
-    state["providers"][0]["base_url"] = "http://192.168.0.199:3100"
+    state["providers"][0]["base_url"] = "http://192.168.0.10:3100"
     storage.JsonState("providers", ProviderService._empty_state).write(state)
     base, _, key = probes._probe_payload(
-        {"provider_id": "lan", "base_url": "http://192.168.0.199:3100/v1"}
+        {"provider_id": "lan", "base_url": "http://192.168.0.10:3100/v1"}
     )
     assert base.endswith("/v1") and key == "synthetic-old-key"
     runtime = execution_config.resolve_provider("lan")
-    assert runtime.base_url == "http://192.168.0.199:3100/v1"
+    assert runtime.base_url == "http://192.168.0.10:3100/v1"
     assert execution_config.provider_api_key(runtime) == "synthetic-old-key"
     with pytest.raises(CleanroomException) as denied:
         probes._probe_payload(
@@ -159,7 +159,7 @@ def test_saved_lan_provider_chat_uses_the_same_versioned_endpoint(monkeypatch):
         [
             {
                 "id": "lan",
-                "base_url": "http://192.168.0.199:3100",
+                "base_url": "http://192.168.0.10:3100",
                 "api_key": "synthetic-chat-lan",
                 "chat_models": ["synthetic-chat"],
             }
@@ -191,7 +191,7 @@ def test_saved_lan_provider_chat_uses_the_same_versioned_endpoint(monkeypatch):
         )
     assert result.status_code == 200, result.text
     assert hits == [
-        ("http://192.168.0.199:3100/v1/chat/completions", "Bearer synthetic-chat-lan")
+        ("http://192.168.0.10:3100/v1/chat/completions", "Bearer synthetic-chat-lan")
     ]
     assert options[0]["trust_env"] is False
     assert "synthetic-chat-lan" not in result.text
