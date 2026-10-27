@@ -17,6 +17,7 @@
 from __future__ import annotations
 
 import hashlib
+import importlib
 import json
 import os
 import stat
@@ -41,6 +42,9 @@ MAX_ACTIVE = 16
 MAX_JOBS = 1000
 MAX_FILES = 250000
 MAX_ENTRIES = 500000
+VIDEO_SUFFIXES = frozenset(
+    {".mp4", ".mov", ".mkv", ".avi", ".webm", ".m4v", ".flv", ".wmv"}
+)
 TERMINAL = {"succeeded", "failed", "cancelled", "interrupted"}
 ACTIONS = {
     "pause": {"queued", "running"},
@@ -95,6 +99,79 @@ def _runtime_path_configuration():
             "LOCALAPPDATA",
         )
     )
+
+
+def _video_index_data(path: Path) -> tuple[dict, float | None]:
+    """为本地视频登记镜头与技术元数据，关键帧逐张解码后立即释放。"""
+    decode_keyframe_to_memory = importlib.import_module(
+        "gw.media.keyframe_extractor"
+    ).decode_keyframe_to_memory
+    detect_scenes = importlib.import_module("gw.media.scene_detector").detect_scenes
+
+    scenes = []
+    try:
+        scenes = detect_scenes(path)
+    except CleanroomException as exc:
+        return (
+            {
+                "video_segments": [],
+                "video_metadata": {
+                    "scene_detection_status": "unavailable",
+                    "keyframe_status": "unavailable",
+                    "reason_code": exc.code,
+                    "source_url": None,
+                },
+            },
+            None,
+        )
+
+    if not scenes:
+        return (
+            {
+                "video_segments": [],
+                "video_metadata": {
+                    "scene_detection_status": "unavailable",
+                    "keyframe_status": "unavailable",
+                    "reason_code": "SCENE_DETECTION_FAILED",
+                    "source_url": None,
+                },
+            },
+            None,
+        )
+
+    first = scenes[0]
+    duration = scenes[-1]["end_sec"]
+    video_metadata = {
+        "width": first["width"],
+        "height": first["height"],
+        "duration_sec": duration,
+        "codec": first["codec"],
+        "bit_rate": first.get("bit_rate"),
+        "container": first.get("container") or path.suffix.lower().lstrip("."),
+        "source_url": first.get("source_url"),
+        "scene_detection_status": "complete",
+        "keyframe_status": "pending",
+    }
+    try:
+        for scene in scenes:
+            midpoint = scene["start_sec"] + (
+                scene["end_sec"] - scene["start_sec"]
+            ) / 2
+            keyframe = decode_keyframe_to_memory(path, midpoint)
+            del keyframe
+    except CleanroomException as exc:
+        video_metadata["keyframe_status"] = "unavailable"
+        video_metadata["reason_code"] = exc.code
+        return (
+            {
+                "video_segments": scenes,
+                "video_metadata": video_metadata,
+            },
+            duration,
+        )
+
+    video_metadata["keyframe_status"] = "decoded_in_memory"
+    return {"video_segments": scenes, "video_metadata": video_metadata}, duration
 
 
 def _roots():
@@ -994,6 +1071,11 @@ class IndexJobs:
                             "name": path.name,
                             "size_bytes": info.st_size,
                         }
+                        if path.suffix.lower() in VIDEO_SUFFIXES:
+                            video_metadata, duration = _video_index_data(path)
+                            item["metadata"] = video_metadata
+                            if duration is not None:
+                                item["duration"] = duration
                         if request["hash_files"]:
                             if info.st_size > 512 * 1024 * 1024:
                                 _error(
@@ -1077,6 +1159,30 @@ class IndexJobs:
                             if existing.get(field) != item.get(field):
                                 existing[field] = item.get(field)
                                 changed = True
+                        if "metadata" in item:
+                            current_metadata = existing.get("metadata")
+                            if not isinstance(current_metadata, dict):
+                                current_metadata = existing["metadata"] = {}
+                            scanned_metadata = item["metadata"]
+                            scanned_video = scanned_metadata.get("video_metadata", {})
+                            current_video = current_metadata.get("video_metadata", {})
+                            if (
+                                scanned_video.get("scene_detection_status") == "complete"
+                                or not current_video
+                            ):
+                                for field in ("video_segments", "video_metadata"):
+                                    if current_metadata.get(field) != scanned_metadata.get(
+                                        field
+                                    ):
+                                        current_metadata[field] = scanned_metadata.get(
+                                            field
+                                        )
+                                        changed = True
+                        if "duration" in item and existing.get("duration") != item[
+                            "duration"
+                        ]:
+                            existing["duration"] = item["duration"]
+                            changed = True
                         if changed:
                             existing["updated_at"] = storage.now_iso()
                             updated += 1

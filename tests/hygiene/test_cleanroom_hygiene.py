@@ -300,7 +300,7 @@ def test_static_layer_has_no_legacy_integration_markers(repo_root: Path):
 # 凭据或完整历史授权账本。历史材料继续留在洁净源仓，不因测试需要复制进新仓。
 ADMISSION_METADATA_PATH = "tests/hygiene/fixtures/cleanroom_admission_metadata.json"
 ADMISSION_METADATA_SHA256 = (
-    "60bcec998c73019e168337eaf654e94c9b33d9e3e4baa2d776e4242db8d2bc30"
+    "0b273dd21abe863290e0e08515f6dd902c8cf91738cecce2b379a4fa4b701d7b"
 )
 QUARANTINED_PROMPT_ORIGINAL_PATH = (
     "web/system-prompts/infinite-canvas-prompt-templates.md"
@@ -320,6 +320,29 @@ def _load_admission_metadata(repo_root: Path) -> dict:
     assert metadata.get("release_authorized") is True
     assert _canonical_sha256(metadata_path) == ADMISSION_METADATA_SHA256
     return metadata
+
+
+def test_github_issue_333_file_scope_is_registered(repo_root: Path):
+    """#333 的代码、测试与卫生登记文件按票面逐项登记。"""
+    metadata = _load_admission_metadata(repo_root)
+    registrations = [
+        item
+        for item in metadata.get("authorized_issue_file_sets", [])
+        if item.get("issue") == 333
+    ]
+    assert len(registrations) == 1
+    assert registrations[0].get("authorization_basis") == (
+        "GitHub Issue #333, 2026-10-27"
+    )
+    assert set(registrations[0].get("files", [])) == {
+        "gw/media/scene_detector.py",
+        "gw/asset_registry/index_jobs.py",
+        "gw/media/proxy.py",
+        "tests/media/test_mvp1_t3_inmemory_keyframes.py",
+        "tests/media/test_c18_scene_grounding.py",
+        "tests/hygiene/fixtures/cleanroom_admission_metadata.json",
+        "tests/hygiene/test_cleanroom_hygiene.py",
+    }
 
 
 def test_quarantined_prompt_is_absent_from_static_tree(repo_root: Path):

@@ -16,6 +16,7 @@
 
 from __future__ import annotations
 
+import json
 import math
 import re
 import shutil
@@ -66,26 +67,53 @@ def _run(args: list[str]) -> subprocess.CompletedProcess[str]:
         _fail(503, "MEDIA_PROCESS_FAILED", "本地媒体处理进程失败")
 
 
-def _duration_seconds(path: Path) -> float:
+def _video_metadata(path: Path) -> dict[str, Any]:
     result = _run(
         [
             _tool("ffprobe"),
             "-v",
             "error",
+            "-select_streams",
+            "v:0",
             "-show_entries",
-            "format=duration",
+            "stream=codec_name,width,height:format=duration,bit_rate",
             "-of",
-            "default=noprint_wrappers=1:nokey=1",
+            "json",
             str(path),
         ]
     )
     try:
-        duration = float(result.stdout.strip())
-    except (TypeError, ValueError):
-        _fail(503, "MEDIA_PROBE_FAILED", "无法读取视频时长")
-    if result.returncode != 0 or not math.isfinite(duration) or duration <= 0:
-        _fail(503, "MEDIA_PROBE_FAILED", "无法读取视频时长")
-    return duration
+        payload = json.loads(result.stdout)
+        stream = payload["streams"][0]
+        duration = float(payload["format"]["duration"])
+        width = int(stream["width"])
+        height = int(stream["height"])
+        codec = str(stream["codec_name"]).strip()
+        raw_bit_rate = payload.get("format", {}).get("bit_rate")
+        try:
+            bit_rate = int(raw_bit_rate) if raw_bit_rate is not None else None
+        except (TypeError, ValueError, OverflowError):
+            bit_rate = None
+    except (IndexError, KeyError, TypeError, ValueError, OverflowError):
+        _fail(503, "MEDIA_PROBE_FAILED", "无法读取视频技术元数据")
+    if (
+        result.returncode != 0
+        or not math.isfinite(duration)
+        or duration <= 0
+        or width <= 0
+        or height <= 0
+        or not codec
+    ):
+        _fail(503, "MEDIA_PROBE_FAILED", "无法读取视频技术元数据")
+    return {
+        "duration_sec": duration,
+        "width": width,
+        "height": height,
+        "codec": codec,
+        "bit_rate": bit_rate,
+        "container": path.suffix.lower().lstrip("."),
+        "source_url": None,
+    }
 
 
 def detect_scenes(
@@ -112,7 +140,8 @@ def detect_scenes(
         )
 
     path = _video_path(video_path)
-    duration = _duration_seconds(path)
+    metadata = _video_metadata(path)
+    duration = metadata["duration_sec"]
     threshold_text = f"{score:.6f}".rstrip("0").rstrip(".")
     scene_filter = f"select='gt(scene,{threshold_text})',showinfo"
     result = _run(
@@ -151,6 +180,13 @@ def detect_scenes(
         {
             "start_sec": round(start_ms / 1000, 3),
             "end_sec": round(end_ms / 1000, 3),
+            "duration_sec": round((end_ms - start_ms) / 1000, 3),
+            "width": metadata["width"],
+            "height": metadata["height"],
+            "codec": metadata["codec"],
+            "bit_rate": metadata["bit_rate"],
+            "container": metadata["container"],
+            "source_url": metadata["source_url"],
             "tags": [],
             "thumbnail": None,
         }
