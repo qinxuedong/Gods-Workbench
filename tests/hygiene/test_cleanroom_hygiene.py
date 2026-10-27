@@ -300,7 +300,7 @@ def test_static_layer_has_no_legacy_integration_markers(repo_root: Path):
 # 凭据或完整历史授权账本。历史材料继续留在洁净源仓，不因测试需要复制进新仓。
 ADMISSION_METADATA_PATH = "tests/hygiene/fixtures/cleanroom_admission_metadata.json"
 ADMISSION_METADATA_SHA256 = (
-    "bef3f3dd63eebce1fcc180e7b25abd5ee360499c6d79b6dc77368f9248f5450d"
+    "bf349d98635c2060d4a47286f64aac2efcf59ee68f7be0ce2d033c3a47594161"
 )
 QUARANTINED_PROMPT_ORIGINAL_PATH = (
     "web/system-prompts/infinite-canvas-prompt-templates.md"
@@ -337,6 +337,34 @@ def test_github_issue_345_file_scope_is_registered(repo_root: Path):
     assert set(registrations[0].get("files", [])) == {
         "gw/asset_registry/governance_rules.py",
         "tests/contracts/assets/test_mvp1_t5a_governance_rules.py",
+        "tests/hygiene/fixtures/cleanroom_admission_metadata.json",
+        "tests/hygiene/test_cleanroom_hygiene.py",
+    }
+
+
+def test_github_issue_336_file_scope_is_registered(repo_root: Path):
+    """#336（MVP1-T6）的检索、前端、端到端测试与卫生登记按票面逐项登记。"""
+    metadata = _load_admission_metadata(repo_root)
+    registrations = [
+        item
+        for item in metadata.get("authorized_issue_file_sets", [])
+        if item.get("issue") == 336
+    ]
+    assert len(registrations) == 1
+    assert registrations[0].get("authorization_basis") == (
+        "GitHub Issue #336, 2026-10-28"
+    )
+    assert set(registrations[0].get("files", [])) == {
+        "gw/asset_registry/hybrid_search.py",
+        "gw/api/routes_asset_registry.py",
+        "gw/media/proxy.py",
+        "web/js/core/omnibar.js",
+        "web/js/modules/asset-manager.js",
+        "tests/contracts/assets/test_mvp1_t6_shot_search.py",
+        "tests/frontend/mvp1-t6-omnibar-asset.test.mjs",
+        "tests/frontend/node-files.txt",
+        "tests/e2e/test_mvp1_t6_search_jump_browser.py",
+        "tests/contracts/projects/test_phase8_frontend_backend_api_gap.py",
         "tests/hygiene/fixtures/cleanroom_admission_metadata.json",
         "tests/hygiene/test_cleanroom_hygiene.py",
     }
