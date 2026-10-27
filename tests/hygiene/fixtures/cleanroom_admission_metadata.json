@@ -78,6 +78,18 @@
         "tests/hygiene/fixtures/cleanroom_admission_metadata.json",
         "tests/hygiene/test_cleanroom_hygiene.py"
       ]
+    },
+    {
+      "issue": 366,
+      "authorization_basis": "GitHub Issue #366, 2026-10-28",
+      "files": [
+        "gw/asset_registry/models.py",
+        "gw/asset_registry/service.py",
+        "docs/contracts/ASSET-REGISTRY-INTERFACE-CATALOG.yaml",
+        "tests/contracts/assets/test_mvp2_t2_provenance.py",
+        "tests/hygiene/fixtures/cleanroom_admission_metadata.json",
+        "tests/hygiene/test_cleanroom_hygiene.py"
+      ]
     }
   ],
   "accepted_roots": [
@@ -268,8 +280,8 @@
     {
       "path": "docs/contracts/ASSET-REGISTRY-INTERFACE-CATALOG.yaml",
       "classification": "frozen_interface_contract",
-      "authorization_basis": "cleanroom_frozen_input",
-      "sha256": "60c8e528aa4683e688ef0344d872cbb97265fe8d7639ae0fed8574bb83ea0d34",
+      "authorization_basis": "cleanroom_frozen_input; GitHub_Issue_366_2026-10-28",
+      "sha256": "62b6b30b92be7bf1a3ea57d45a7620da852c9faaa350701d718a44b0251263f2",
       "admission": "accepted"
     },
     {
@@ -929,6 +941,13 @@
       "authorization_basis": "QIN-347_GitHub_Cut_2026-10-26",
       "sha256": "8c5a3972fffb01b29c85325dbeab30e401c2ff4089aa4ff2b6434f977b30cc5b",
       "admission": "accepted"
+    },
+    {
+      "path": "tests/contracts/assets/test_mvp2_t2_provenance.py",
+      "classification": "curated_test_coverage",
+      "authorization_basis": "GitHub_Issue_366_2026-10-28",
+      "sha256": "c1d90a3623c0c504beac9c04280a76b4f408961554d777d00b05672d2bbba122",
+      "admission": "accepted"
     }
   ],
   "accepted_test_files": [
@@ -936,6 +955,12 @@
       "path": "tests/contracts/assets/test_mvp1_t9a_recycle_regression.py",
       "classification": "curated_test_coverage",
       "authorization_basis": "QIN-347_GitHub_Cut_2026-10-26",
+      "admission": "accepted"
+    },
+    {
+      "path": "tests/contracts/assets/test_mvp2_t2_provenance.py",
+      "classification": "curated_test_coverage",
+      "authorization_basis": "GitHub_Issue_366_2026-10-28",
       "admission": "accepted"
     }
   ],
@@ -964,6 +989,11 @@
       "path": "tests/contracts/assets/test_mvp1_t4_embedder_offline.py",
       "authorization_basis": "GitHub_Issue_334_QIN-418_2026-10-27",
       "sha256": "5ad494a842431497adeaaa75298071b659130b0883bc8caafa729698fc748d9e"
+    },
+    {
+      "path": "tests/contracts/assets/test_mvp2_t2_provenance.py",
+      "authorization_basis": "GitHub_Issue_366_2026-10-28",
+      "sha256": "c1d90a3623c0c504beac9c04280a76b4f408961554d777d00b05672d2bbba122"
     }
   ]
 }

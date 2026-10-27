@@ -25,10 +25,16 @@ from __future__ import annotations
 
 import copy
 import json
+import re
 import threading
+from collections.abc import Mapping
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import Any
 
+from pydantic import ValidationError
+
+from gw.asset_registry.models import ProducedAssetProvenance
 from gw.core.errors import CleanroomException
 
 DATA_STATUS_OK = "ok"
@@ -40,11 +46,21 @@ ASSET_ALREADY_EXISTS = "ASSET_ALREADY_EXISTS"
 RECYCLE_ENTRY_NOT_FOUND = "RECYCLE_ENTRY_NOT_FOUND"
 ASSET_RESTORE_CONFLICT = "ASSET_RESTORE_CONFLICT"
 ASSET_RESTORE_PARTIAL_FAILURE = "ASSET_RESTORE_PARTIAL_FAILURE"
+# MVP2-T2：生产链产物回写的来源链相关错误码。
+PROVENANCE_REQUIRED = "PROVENANCE_REQUIRED"
+PROVENANCE_CONFLICT = "PROVENANCE_CONFLICT"
+PROVENANCE_NOT_FOUND = "PROVENANCE_NOT_FOUND"
+UNKNOWN_TARGET_ROOT = "UNKNOWN_TARGET_ROOT"
 
 _GAP_REGISTRY_SOURCE = "asset_registry_source_not_connected"
 _GAP_MEDIA_SOURCE = "media_storage_not_connected"
 _GAP_REMOTE_SOURCE = "remote_asset_source_not_connected"
 _GAP_INDEX_SOURCE = "asset_index_not_connected"
+
+# 产物回写只允许出现在已配置产出根下的相对目录；sidecar 文件名由 asset_id 生成。
+_PROVENANCE_SIDECAR_DIR = "provenance"
+# asset_id 参与 sidecar 文件名，必须排除路径分隔符与遍历写法。
+_SAFE_ASSET_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
 
 _STRUCTURED_KINDS = {"image", "video", "audio", "document", "model", "font", "other"}
 _STRUCTURED_FILTER_FIELDS = {"kind", "project_id", "tag_id", "created_at", "status"}
@@ -242,6 +258,48 @@ def _now_iso() -> str:
     return datetime.now(UTC).isoformat().replace("+00:00", "Z")
 
 
+def _normalized_roots(roots: Mapping[str, str | Path]) -> dict[str, Path]:
+    """把调用方注入的根映射规范化为 root_id -> 路径，不接受空 root_id。"""
+    return {
+        str(root_id).strip(): Path(str(root_path))
+        for root_id, root_path in roots.items()
+        if str(root_id).strip()
+    }
+
+
+def _is_within(candidate: Path, parent: Path) -> bool:
+    """判断候选路径是否位于父目录内（含父目录自身）。"""
+    try:
+        candidate.relative_to(parent)
+    except ValueError:
+        return False
+    return True
+
+
+def _normalize_produced_provenance(provenance: Any) -> dict[str, Any]:
+    """校验并规范化产物来源链；缺字段、None、非法取值或多余字段都失败关闭。"""
+    if not isinstance(provenance, dict):
+        raise CleanroomException(
+            400,
+            PROVENANCE_REQUIRED,
+            "产物回写素材注册表必须携带 provenance 来源链对象",
+        )
+    try:
+        model = ProducedAssetProvenance.model_validate(provenance)
+    except ValidationError as exc:
+        invalid_fields = sorted(
+            {str(error["loc"][0]) for error in exc.errors() if error.get("loc")}
+        )
+        raise CleanroomException(
+            400,
+            PROVENANCE_REQUIRED,
+            "provenance 来源链不完整或不合法，已拒绝回写素材注册表",
+            extra={"invalid_fields": invalid_fields},
+            expose_extra_fields={"invalid_fields"},
+        ) from None
+    return model.model_dump()
+
+
 class AssetRegistryService:
     """素材注册表的最小进程内真值。
 
@@ -258,6 +316,9 @@ class AssetRegistryService:
         self._recycle_sequence = 0
         # 只缓存显式幂等键对应的本地事实；不以键推断或重放外部副作用。
         self._idempotent_results: dict[str, dict[str, Any]] = {}
+        # MVP2-T2：产出根与源素材根只由调用方配置注入，本模块不固化任何默认路径。
+        self._output_roots: dict[str, Path] = {}
+        self._source_roots: dict[str, Path] = {}
         self._team_preferences: dict[str, Any] = {
             "team_id": None,
             "default_library_id": None,
@@ -833,6 +894,158 @@ class AssetRegistryService:
         if feature_id not in known:
             _not_found("FEATURE_NOT_FOUND", f"素材注册表能力 {feature_id} 不存在")
 
+    # ------------------------------------------------------------------
+    # MVP2-T2：生产链成片/中间产物回写的来源链（provenance）
+    # ------------------------------------------------------------------
+
+    def configure_produced_roots(
+        self,
+        output_roots: Mapping[str, str | Path],
+        *,
+        source_roots: Mapping[str, str | Path] | None = None,
+    ) -> None:
+        """注入产出根与源素材根。
+
+        本票不固化任何默认路径：产出根只能由调用方（部署配置或测试）注入，
+        未配置时产物回写一律失败关闭，绝不落到源素材目录。
+        """
+        with self._lock:
+            self._output_roots = _normalized_roots(output_roots)
+            self._source_roots = _normalized_roots(source_roots or {})
+
+    def _resolve_produced_root(self, target_root_id: str) -> tuple[str, Path]:
+        """解析产出根；未配置或位于源素材目录内都失败关闭。"""
+        root_id = str(target_root_id or "").strip()
+        root_path = self._output_roots.get(root_id)
+        if root_path is None:
+            raise CleanroomException(
+                400,
+                UNKNOWN_TARGET_ROOT,
+                f"产出根 {root_id or '（空）'} 未配置；产物只能回写到已配置的产出根",
+                extra={"target_root_id": root_id},
+                expose_extra_fields={"target_root_id"},
+            )
+        resolved = root_path.resolve()
+        if any(
+            _is_within(resolved, source.resolve())
+            for source in self._source_roots.values()
+        ):
+            raise CleanroomException(
+                400,
+                UNKNOWN_TARGET_ROOT,
+                "产出根位于源素材目录内；产物回写不得写入源素材目录",
+                extra={"target_root_id": root_id},
+                expose_extra_fields={"target_root_id"},
+            )
+        return root_id, resolved
+
+    @staticmethod
+    def _write_provenance_sidecar(target: Path, payload: dict[str, Any]) -> None:
+        """把来源链标记写入产出根内的相对路径；返回值只暴露 root_id 与相对路径。"""
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(
+            json.dumps(payload, ensure_ascii=False, sort_keys=True, indent=2) + "\n",
+            encoding="utf-8",
+        )
+
+    def register_produced_asset(
+        self,
+        asset_id: str,
+        *,
+        provenance: dict[str, Any],
+        target_root_id: str,
+        metadata: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """登记生产链产物：来源链必填、产出根必须是已配置的产出根。
+
+        同 asset_id 且同来源链重复回写幂等；来源链或产出根不一致返回 409，
+        绝不静默覆盖已有登记。落盘标记只写在产出根下，并在登记前完成，
+        落盘失败时注册表不留半成品条目。
+        """
+        asset_id = str(asset_id or "").strip()
+        if not asset_id:
+            raise CleanroomException(400, "INVALID_REQUEST", "asset_id 不能为空")
+        if not _SAFE_ASSET_ID.fullmatch(asset_id):
+            raise CleanroomException(
+                400,
+                "INVALID_REQUEST",
+                "asset_id 只允许字母、数字、点、下划线与连字符",
+            )
+        normalized = _normalize_produced_provenance(provenance)
+        root_id, resolved_root = self._resolve_produced_root(target_root_id)
+        with self._lock:
+            existing = self._assets.get(asset_id)
+            if existing is None:
+                item: dict[str, Any] = {
+                    "id": asset_id,
+                    "asset_id": asset_id,
+                    "version": 1,
+                    "source_ref": {},
+                    "references": {},
+                    "metadata": copy.deepcopy(metadata)
+                    if isinstance(metadata, dict)
+                    else {},
+                    "provenance": copy.deepcopy(normalized),
+                    "target_root_id": root_id,
+                }
+            else:
+                if existing.get("provenance") != normalized or existing.get(
+                    "target_root_id"
+                ) != root_id:
+                    raise CleanroomException(
+                        409,
+                        PROVENANCE_CONFLICT,
+                        f"素材 {asset_id} 已登记且来源链或产出根不一致，已拒绝覆盖",
+                    )
+                item = existing
+            self._write_provenance_sidecar(
+                resolved_root / _PROVENANCE_SIDECAR_DIR / f"{asset_id}.json",
+                {
+                    "asset_id": asset_id,
+                    "target_root_id": root_id,
+                    "provenance": normalized,
+                },
+            )
+            if existing is None:
+                self._assets[asset_id] = item
+                self._revision += 1
+            return {
+                "asset_id": asset_id,
+                "asset": copy.deepcopy(item),
+                "provenance": copy.deepcopy(normalized),
+                "target_root_id": root_id,
+                "sidecar_path": f"{_PROVENANCE_SIDECAR_DIR}/{asset_id}.json",
+                "revision": self._revision,
+                **_truthful_meta(),
+            }
+
+    def provenance_chain(self, asset_id: str) -> dict[str, Any]:
+        """按 asset_id 反查来源链，并标注每个参考素材当前是否已登记。"""
+        with self._lock:
+            item = self._assets.get(str(asset_id or "").strip())
+            if item is None:
+                _not_found(ASSET_NOT_FOUND, f"素材 {asset_id} 不存在")
+            provenance = item.get("provenance")
+            if not isinstance(provenance, dict) or not provenance:
+                raise CleanroomException(
+                    404,
+                    PROVENANCE_NOT_FOUND,
+                    f"素材 {asset_id} 没有来源链登记，无法反查产出来源",
+                )
+            provenance = copy.deepcopy(provenance)
+            references = [
+                {"asset_id": reference, "exists": reference in self._assets}
+                for reference in provenance.get("reference_asset_ids", [])
+            ]
+            return {
+                "asset_id": item["asset_id"],
+                "provenance": provenance,
+                "references": references,
+                "target_root_id": item.get("target_root_id"),
+                "revision": self._revision,
+                **_truthful_meta(),
+            }
+
 
 # 单例只保存非敏感、进程内可重建状态。
 default_asset_registry_service = AssetRegistryService()
@@ -847,6 +1060,10 @@ __all__ = [
     "DATA_STATUS_NOT_INTEGRATED",
     "DATA_STATUS_OK",
     "JOB_NOT_FOUND",
+    "PROVENANCE_CONFLICT",
+    "PROVENANCE_NOT_FOUND",
+    "PROVENANCE_REQUIRED",
+    "UNKNOWN_TARGET_ROOT",
     "normalize_asset_query",
     "parse_utc_datetime",
     "RECYCLE_ENTRY_NOT_FOUND",

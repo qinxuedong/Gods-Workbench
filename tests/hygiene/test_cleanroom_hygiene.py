@@ -300,7 +300,7 @@ def test_static_layer_has_no_legacy_integration_markers(repo_root: Path):
 # 凭据或完整历史授权账本。历史材料继续留在洁净源仓，不因测试需要复制进新仓。
 ADMISSION_METADATA_PATH = "tests/hygiene/fixtures/cleanroom_admission_metadata.json"
 ADMISSION_METADATA_SHA256 = (
-    "9d37db2f728d3397970b66572a720df2159bcb7e79b0a484ad340e2016f3593d"
+    "e76e6e9b7fbb08914579c617db6080a44fc09970b1d913fc557bd36a8892cabe"
 )
 QUARANTINED_PROMPT_ORIGINAL_PATH = (
     "web/system-prompts/infinite-canvas-prompt-templates.md"
@@ -376,6 +376,28 @@ def test_github_issue_336_file_scope_is_registered(repo_root: Path):
         "tests/frontend/node-files.txt",
         "tests/e2e/test_mvp1_t6_search_jump_browser.py",
         "tests/contracts/projects/test_phase8_frontend_backend_api_gap.py",
+        "tests/hygiene/fixtures/cleanroom_admission_metadata.json",
+        "tests/hygiene/test_cleanroom_hygiene.py",
+    }
+
+
+def test_github_issue_366_file_scope_is_registered(repo_root: Path):
+    """#366（MVP2-T2）的产物来源链契约：模型、服务、契约目录与卫生登记按票面登记。"""
+    metadata = _load_admission_metadata(repo_root)
+    registrations = [
+        item
+        for item in metadata.get("authorized_issue_file_sets", [])
+        if item.get("issue") == 366
+    ]
+    assert len(registrations) == 1
+    assert registrations[0].get("authorization_basis") == (
+        "GitHub Issue #366, 2026-10-28"
+    )
+    assert set(registrations[0].get("files", [])) == {
+        "gw/asset_registry/models.py",
+        "gw/asset_registry/service.py",
+        "docs/contracts/ASSET-REGISTRY-INTERFACE-CATALOG.yaml",
+        "tests/contracts/assets/test_mvp2_t2_provenance.py",
         "tests/hygiene/fixtures/cleanroom_admission_metadata.json",
         "tests/hygiene/test_cleanroom_hygiene.py",
     }
@@ -552,9 +574,9 @@ def test_admission_metadata_hashes_match_current_files(repo_root: Path):
     """当前准入文件哈希必须与机器登记一致；不复用旧 Phase-2 账本。"""
     metadata = _load_admission_metadata(repo_root)
     entries = metadata.get("admitted_files", [])
-    assert len(entries) == 106, (
+    assert len(entries) == 107, (
         "当前准入登记数量必须包含 H01、已批准规范、QIN-376 测试覆盖清单、QIN-382 方案"
-        "、MVP1-T4a 嵌入基准冒烟测试与 QIN-347 回归测试"
+        "、MVP1-T4a 嵌入基准冒烟测试、QIN-347 回归测试与 QIN-440 产物来源链契约测试"
     )
     for entry in entries:
         path = repo_root / entry["path"]
