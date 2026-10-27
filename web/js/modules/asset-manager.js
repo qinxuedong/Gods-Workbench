@@ -23,6 +23,7 @@ import {formatDate, formatFileSize} from './asset-manager/formatters.js';
 import {pathCompareKey} from './asset-manager/path-utils.js';
 import {workflowAssetId, workflowLibraryId, workflowCategoryId, workflowSourceId, zipWorkflowFiles} from './asset-manager/workflow-assets.js';
 import {openAssetCollectOverlay} from './asset-collect-panel.js';
+import {renderProvenanceChain, handleProvenanceNodeClick} from './asset-manager/provenance.js';
 
 let mediaPreviewPlayerLoading = null;
 export async function ensureMediaPreviewPlayer() {
@@ -9256,6 +9257,7 @@ function renderAssetDetail(item){
                     <div class="detail-meta"><span>分组</span><strong>${escapeHtml(activeAssetCategory()?.name || '分组')}</strong></div>
                 </div>
                 <div class="detail-url">${escapeHtml(item.url || '')}</div>
+                ${renderProvenanceChain(item)}
                 ${isImage ? `<div class="detail-caption-card">
                     <div class="detail-caption-head"><strong>智能分类</strong></div>
                     <div class="detail-classification-body">${renderClassificationChips(item, 32, {kind:'asset', libraryId:activeAssetLibraryId}) || '<span class="classification-empty">暂无智能分类，可以选中图片后点击“智能分类”。</span>'}</div>
@@ -10951,6 +10953,7 @@ async function handleClick(event){
         }
         return;
     }
+    if(handleProvenanceNodeClick(event)) return;
     const assetPreview = target.closest?.('[data-asset-preview]');
     if(assetPreview){ showDetailPreview('asset', assetPreview.dataset.assetPreview || ''); return; }
     const canvasAssetPreview = target.closest?.('[data-canvas-asset-preview]');
