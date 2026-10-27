@@ -1319,8 +1319,14 @@ class IndexJobs:
                     existing = known.get(identity)
                     if existing is not None:
                         changed = False
-                        for field in ("storage_root_id", "canonical_relpath"):
-                            if existing.get(field) != item.get(field):
+                        for field in (
+                            "storage_root_id",
+                            "canonical_relpath",
+                            "name",
+                            "size_bytes",
+                            "sha256",
+                        ):
+                            if field in item and existing.get(field) != item[field]:
                                 existing[field] = item.get(field)
                                 changed = True
                         if changed:

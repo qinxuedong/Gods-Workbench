@@ -862,6 +862,11 @@
       "path": "tests/frontend/mvp1-t0-mount-errors.test.mjs",
       "authorization_basis": "MVP1-T0_Cut_2026-10-26",
       "sha256": "9ef0180276f04a1baff9aa06ee581a60a9ee51075d24837cb26f23d4562faee9"
+    },
+    {
+      "path": "tests/contracts/assets/test_mvp1_t2_ingest_resume.py",
+      "authorization_basis": "MVP1-T2_Cut_2026-10-26",
+      "sha256": "7864756ff5005b2bdad12c0a6ddf4d4a129d4e6b411a93f3c9cbf18fb370c4cf"
     }
   ]
 }
