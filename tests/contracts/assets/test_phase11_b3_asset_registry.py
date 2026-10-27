@@ -383,6 +383,10 @@ def test_a2_index_scans_allowed_roots_for_real(client, tmp_path, monkeypatch):
     assert job["result"]["scanned"] == 2
     assert job["result"]["indexed"] == 2
     assert job["progress"]["phase"] == "completed"
+    assert job["attempt"] == 1 and job["max_attempts"] == 5
+    assert job["progress"]["scanned"] == 2
+    assert job["progress"]["error_count"] == 0
+    assert job["error_code"] is None
     sync = client.post("/api/asset-registry/index/sync", headers=AUTH, json={})
     assert sync.status_code == 200
     assert sync.json()["on_disk"] == 2
