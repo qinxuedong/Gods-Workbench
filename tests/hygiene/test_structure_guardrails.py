@@ -132,6 +132,7 @@ _BATCH_SUFFIX = re.compile(r"_b[0-9]+$", re.IGNORECASE)
 # 只列已存在的路由文件路径；同一领域不得再加第二个路由承载文件。
 _FROZEN_ROUTE_PATHS = frozenset(
     {
+        "gw/api/routes_agent_references.py",
         "gw/api/routes_ai.py",
         "gw/api/routes_export.py",
         "gw/api/routes_asset_library.py",

@@ -373,6 +373,8 @@ KNOWN_CONTRACT_WITHOUT_FRONTEND_PATH_LITERAL = frozenset(
 #: 后端已实现路由的归一化路径（用于断言后端集合未被意外缩小）
 KNOWN_BACKEND_PATHS = frozenset(
     [
+        "/api/agent/sessions/{p}/references",
+        "/api/agent/sessions/{p}/references/{p}",
         "/api/god_workflow/item/{p}/resolve-definitions",
         "/api/chat/config",
         "/api/asset-library",

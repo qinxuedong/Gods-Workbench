@@ -300,7 +300,7 @@ def test_static_layer_has_no_legacy_integration_markers(repo_root: Path):
 # 凭据或完整历史授权账本。历史材料继续留在洁净源仓，不因测试需要复制进新仓。
 ADMISSION_METADATA_PATH = "tests/hygiene/fixtures/cleanroom_admission_metadata.json"
 ADMISSION_METADATA_SHA256 = (
-    "78343813fca9d47c8e35ad7ad6e48cba9bd5f28571fb67036a8149a2b2d9d813"
+    "5e494ced730721ff138fe8ac77dfe2042841bb2022a62df32f351e88d430a1ba"
 )
 QUARANTINED_PROMPT_ORIGINAL_PATH = (
     "web/system-prompts/infinite-canvas-prompt-templates.md"
@@ -337,6 +337,30 @@ def test_github_issue_345_file_scope_is_registered(repo_root: Path):
     assert set(registrations[0].get("files", [])) == {
         "gw/asset_registry/governance_rules.py",
         "tests/contracts/assets/test_mvp1_t5a_governance_rules.py",
+        "tests/hygiene/fixtures/cleanroom_admission_metadata.json",
+        "tests/hygiene/test_cleanroom_hygiene.py",
+    }
+
+
+def test_github_issue_445_file_scope_is_registered(repo_root: Path):
+    """QIN-445 参考策展会话模型 + API 按授权范围登记。"""
+    metadata = _load_admission_metadata(repo_root)
+    registrations = [
+        item
+        for item in metadata.get("authorized_issue_file_sets", [])
+        if item.get("issue") == 445
+    ]
+    assert len(registrations) == 1
+    assert registrations[0].get("authorization_basis") == (
+        "GitHub Issue QIN-445, 2026-10-27"
+    )
+    assert set(registrations[0].get("files", [])) == {
+        "gw/agent_episode/references.py",
+        "gw/api/routes_agent_references.py",
+        "gw/api/app.py",
+        "docs/contracts/AGENT-WORKBENCH-INTERFACE-CATALOG.yaml",
+        "tests/contracts/agent/test_mvp2_t1_references.py",
+        "tests/contracts/projects/test_phase8_frontend_backend_api_gap.py",
         "tests/hygiene/fixtures/cleanroom_admission_metadata.json",
         "tests/hygiene/test_cleanroom_hygiene.py",
     }

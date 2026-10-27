@@ -41,6 +41,20 @@
         "tests/hygiene/fixtures/cleanroom_admission_metadata.json",
         "tests/hygiene/test_cleanroom_hygiene.py"
       ]
+    },
+    {
+      "issue": 445,
+      "authorization_basis": "GitHub Issue QIN-445, 2026-10-27",
+      "files": [
+        "gw/agent_episode/references.py",
+        "gw/api/routes_agent_references.py",
+        "gw/api/app.py",
+        "docs/contracts/AGENT-WORKBENCH-INTERFACE-CATALOG.yaml",
+        "tests/contracts/agent/test_mvp2_t1_references.py",
+        "tests/contracts/projects/test_phase8_frontend_backend_api_gap.py",
+        "tests/hygiene/fixtures/cleanroom_admission_metadata.json",
+        "tests/hygiene/test_cleanroom_hygiene.py"
+      ]
     }
   ],
   "accepted_roots": [
@@ -274,7 +288,7 @@
       "path": "docs/contracts/AGENT-WORKBENCH-INTERFACE-CATALOG.yaml",
       "classification": "frozen_interface_contract",
       "authorization_basis": "user_integration_request_2026-10-08",
-      "sha256": "20ac189e6e03b3257e75262677c109278e2ebf0a0b3b0ab787c1c1b1dea61bfe",
+      "sha256": "5866fe4ea15ca5ff3c87a24c192b18156c35dae7568aff6e56409a7242cf2b83",
       "admission": "accepted"
     },
     {

@@ -73,6 +73,45 @@ interfaces:
       404: "任务不存在或当前主体无权读取；故意统一响应以隐藏任务存在性"
     acceptance: "Agent 分支在读取状态前校验当前 Cookie 主体、身份域及项目所有权；终态时 Workbench poll_hint 为 null。此 Agent 专用 404 隐藏策略是通用 403 规则的端点例外。"
 
+  - name: get_agent_session_references
+    method: GET
+    path: /api/agent/sessions/{session_id}/references
+    status:
+      - 200
+      - 404
+    schema:
+      response_200:
+        session_id: string
+        project_id: string
+        items: "array[ReferenceItem]"
+        version: integer
+    errors:
+      404: "会话不存在 (SESSION_NOT_FOUND)"
+
+  - name: update_agent_session_reference_item
+    method: PUT
+    path: /api/agent/sessions/{session_id}/references/{asset_id}
+    body:
+      project_id: string
+      decision: "enum(pending|selected|rejected)"
+      note: "string | null (max 500 chars)"
+      order: "integer (>= 0)"
+      expected_version: integer
+    status:
+      - 200
+      - 400
+      - 409
+    schema:
+      response_200:
+        session_id: string
+        project_id: string
+        items: "array[ReferenceItem]"
+        version: integer
+    errors:
+      400: "请求参数不合法或缺少 project_id"
+      409: "版本冲突 (VERSION_CONFLICT) 或项目上下文不符 (PROJECT_MISMATCH)"
+    acceptance: "对同一 item 重复提交相同值的 PUT 保持幂等（version 不变）；expected_version 不符合当前版本返回 409。"
+
 task_status_projection:
   review_status: "signed_off_by_host_owner; 选项B扩展宿主TaskStatus已签认并实施"
   agent_to_workbench:

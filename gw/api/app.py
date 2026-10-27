@@ -25,6 +25,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
+from gw.api.routes_agent_references import router as agent_references_router
 from gw.api.routes_ai import router as ai_router
 from gw.api.routes_asset_library import router as asset_library_router
 from gw.api.routes_asset_library_b4 import router as asset_library_b4_router
@@ -367,6 +368,7 @@ def create_app(*, agent_integration_factory=None) -> FastAPI:
     app.include_router(auth_router)
     app.include_router(local_accounts_router)
     app.include_router(ai_router)
+    app.include_router(agent_references_router)
     app.include_router(auth_management_router)
     app.include_router(projects_router)
     app.include_router(projects_compat_router)
