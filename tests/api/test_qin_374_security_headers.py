@@ -23,10 +23,10 @@ SECURITY_HEADERS = {
 
 def test_allowed_hosts_include_loopback_defaults_and_configured_hosts(monkeypatch):
     monkeypatch.setenv("GW_RUNTIME_MODE", "prod")
-    monkeypatch.setenv("GW_ALLOWED_HOSTS", " NAS.Example. , 192.168.0.199 ")
+    monkeypatch.setenv("GW_ALLOWED_HOSTS", " NAS.Example. , 192.168.0.10 ")
 
     assert resolve_allowed_hosts() == frozenset(
-        {"localhost", "127.0.0.1", "nas.example", "192.168.0.199"}
+        {"localhost", "127.0.0.1", "nas.example", "192.168.0.10"}
     )
 
 

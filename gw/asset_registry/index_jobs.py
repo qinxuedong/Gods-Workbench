@@ -75,6 +75,23 @@ def _digest(value):
     ).hexdigest()
 
 
+def _root_configuration_fingerprint(aliases):
+    """只对来源身份配置做指纹；挂载可达性属于运行时状态。"""
+    volatile = {"availability", "availability_reason", "availability_message", "alias_candidates"}
+    stable = {
+        source_id: str(
+            {key: value for key, value in alias.items() if key not in volatile}
+        )
+        for source_id, alias in sorted(aliases.items())
+    }
+    return _digest(stable)
+
+
+def _legacy_root_configuration_fingerprint(aliases):
+    """读取升级前已入队任务使用的指纹格式。"""
+    return _digest({key: str(value) for key, value in sorted(aliases.items())})
+
+
 def _actor(auth):
     return {
         "subject": auth.subject,
@@ -179,7 +196,210 @@ def _roots():
     from gw.settings.service import default_storage_settings_service
 
     roots = storage.allowed_roots()
-    if not roots:
+    canonical = {}
+    root_statuses = {}
+    root_resolutions = {}
+    for root in roots:
+        root_id = storage.root_identity_id(root)
+        status = storage.probe_mount(str(root))
+        resolved_root = storage.resolve_mount_path(str(root)) if status["available"] else None
+        if status["available"] and resolved_root is None:
+            status = {
+                "available": False,
+                "reason": "MOUNT_OFFLINE",
+                "message": "允许根路径解析检查超时，目录暂时离线",
+            }
+        path_key = storage.directory_path_key(str(root))
+        root_statuses[path_key] = status
+        root_resolutions[path_key] = resolved_root
+        if root_id not in canonical or (
+            not root_statuses[
+                storage.directory_path_key(str(canonical[root_id]))
+            ]["available"]
+            and status["available"]
+        ):
+            canonical[root_id] = root
+    aliases = {}
+    for root_id, root in canonical.items():
+        status = root_statuses[storage.directory_path_key(str(root))]
+        aliases[root_id] = {
+            "root_id": root_id,
+            "root": root,
+            "prefix": "",
+            "storage_root_id": root_id,
+            "name": root.name or root_id,
+            "availability": "available" if status["available"] else "offline",
+            "availability_reason": str(status["reason"] or ""),
+            "availability_message": str(status["message"] or ""),
+        }
+    registered_locations = {}
+    local_libraries = default_storage_settings_service.get_snapshot().local_libraries
+    removed_roots = [
+        record
+        for record in storage._allowed_roots_state().get("roots", [])
+        if not record.get("active") and record.get("path")
+    ]
+
+    def removed_root_for_path(path):
+        for record in removed_roots:
+            try:
+                relative = path.relative_to(Path(record["path"]))
+            except (OSError, RuntimeError, ValueError):
+                continue
+            return record, relative
+        return None
+
+    def record_unavailable_location(source_id, item, path, status):
+        matches = []
+        for allowed_root in roots:
+            try:
+                relative = path.relative_to(allowed_root)
+            except ValueError:
+                continue
+            matches.append((allowed_root, relative))
+        if matches:
+            root_path, relative = max(matches, key=lambda match: len(match[0].parts))
+            root_id = storage.root_identity_id(root_path)
+            root = canonical[root_id]
+            prefix = "" if str(relative) == "." else relative.as_posix()
+            aliases[source_id] = {
+                "root_id": root_id,
+                "root": root,
+                "prefix": prefix,
+                "storage_root_id": source_id,
+                "name": str(item.get("name") or source_id),
+                "availability": "offline",
+                "availability_reason": str(status["reason"] or "MOUNT_OFFLINE"),
+                "availability_message": str(status["message"] or "目录暂时不可访问"),
+            }
+            registered_locations[source_id] = {
+                "root_id": root_id,
+                "prefix": prefix,
+                "available": False,
+            }
+            return
+        aliases[source_id] = {
+            "root_id": source_id,
+            "root": None,
+            "prefix": "",
+            "storage_root_id": source_id,
+            "name": str(item.get("name") or source_id),
+            "availability": "offline",
+            "availability_reason": str(status["reason"] or "MOUNT_OFFLINE"),
+            "availability_message": str(status["message"] or "目录暂时不可访问"),
+        }
+
+    for item in local_libraries:
+        source_id = str(item.get("id") or "")
+        raw_path = str(item.get("path") or "")
+        path = Path(raw_path)
+        if not source_id:
+            continue
+        if not raw_path or not path.is_absolute():
+            aliases[source_id] = {
+                "root_id": source_id,
+                "root": None,
+                "prefix": "",
+                "storage_root_id": source_id,
+                "name": str(item.get("name") or source_id),
+                "availability": "invalid",
+                "availability_reason": "MOUNT_NOT_FOUND",
+                "availability_message": "素材来源没有有效的绝对目录路径",
+            }
+            continue
+        removed = removed_root_for_path(path)
+        if removed is not None:
+            record, relative = removed
+            root_id = str(record.get("id") or source_id)
+            prefix = "" if str(relative) == "." else relative.as_posix()
+            aliases[source_id] = {
+                "root_id": root_id,
+                "root": None,
+                "prefix": prefix,
+                "storage_root_id": source_id,
+                "name": str(item.get("name") or source_id),
+                "availability": "removed",
+                "availability_reason": "MOUNT_ROOT_REMOVED",
+                "availability_message": "允许根已移除；已有索引与源文件保留",
+            }
+            registered_locations[source_id] = {
+                "root_id": root_id,
+                "prefix": prefix,
+                "available": False,
+            }
+            continue
+        status = storage.probe_mount(raw_path)
+        if not status["available"]:
+            record_unavailable_location(source_id, item, path, status)
+            continue
+        # 路径解析也有界；探测或解析超时均保留离线 facet，不让网络盘卡住索引请求。
+        resolved = storage.resolve_mount_path(raw_path)
+        if resolved is None:
+            record_unavailable_location(
+                source_id,
+                item,
+                path,
+                {
+                    "reason": "MOUNT_OFFLINE",
+                    "message": "素材目录路径解析检查超时，目录暂时离线",
+                },
+            )
+            continue
+        matches = []
+        for allowed_root in roots:
+            root_resolved = root_resolutions.get(
+                storage.directory_path_key(str(allowed_root))
+            )
+            if root_resolved is None:
+                continue
+            try:
+                relative = resolved.relative_to(root_resolved)
+            except ValueError:
+                continue
+            matches.append((allowed_root, relative))
+        if not matches:
+            suggestions = storage.mount_alias_candidates(raw_path, roots)
+            code = "MOUNT_ALIAS_UNCONFIRMED" if suggestions else "MOUNT_OUTSIDE_ALLOWED_ROOTS"
+            message = (
+                "该路径可能是允许根的映射盘或 UNC 别名，尚未确认"
+                if suggestions
+                else "该素材来源不在已授权的允许根内"
+            )
+            aliases[source_id] = {
+                "root_id": source_id,
+                "root": None,
+                "prefix": "",
+                "storage_root_id": source_id,
+                "name": str(item.get("name") or source_id),
+                "availability": "invalid",
+                "availability_reason": code,
+                "availability_message": message,
+                "alias_candidates": suggestions,
+            }
+            continue
+        root_path, relative = max(matches, key=lambda match: len(match[0].parts))
+        root_id = storage.root_identity_id(root_path)
+        root = canonical[root_id]
+        prefix = "" if str(relative) == "." else relative.as_posix()
+        alias_record = {
+            "root_id": root_id,
+            "root": root,
+            "prefix": prefix,
+            "storage_root_id": source_id,
+            "name": str(item.get("name") or source_id),
+            "availability": "available" if status["available"] else "offline",
+            "availability_reason": str(status["reason"] or ""),
+            "availability_message": str(status["message"] or ""),
+        }
+        if storage.directory_path_key(str(root_path)) != storage.directory_path_key(str(root)):
+            alias_record["scan_path"] = resolved
+        aliases[source_id] = alias_record
+        registered_locations[source_id] = {
+            "root_id": root_id,
+            "prefix": prefix,
+            "available": bool(status["available"]),
+        }
+    if not roots and not local_libraries:
         _error(
             503,
             "INDEX_SOURCE_NOT_AVAILABLE",
@@ -187,58 +407,11 @@ def _roots():
             data_status="not_integrated",
             unavailable=True,
         )
-    canonical = {storage.root_identity_id(root): root for root in roots}
-    aliases = {
-        root_id: {
-            "root_id": root_id,
-            "root": root,
-            "prefix": "",
-            "storage_root_id": root_id,
-            "name": root.name or root_id,
-        }
-        for root_id, root in canonical.items()
-    }
-    registered_locations = {}
-    for item in default_storage_settings_service.get_snapshot().local_libraries:
-        source_id = str(item.get("id") or "")
-        raw_path = str(item.get("path") or "")
-        path = Path(raw_path)
-        if not source_id or not path.is_absolute():
-            continue
-        try:
-            # 缺失的已登记子目录也保留为来源 facet，便于显示 offline；
-            # resolve(strict=False) 仍会解析已存在的父级符号链接，再由 allowed root 限定边界。
-            resolved = path.resolve()
-        except (OSError, RuntimeError, ValueError):
-            continue
-        matches = []
-        for root_id, root in canonical.items():
-            try:
-                relative = resolved.relative_to(root)
-            except ValueError:
-                continue
-            matches.append((root_id, root, relative))
-        if not matches:
-            continue
-        root_id, root, relative = max(matches, key=lambda match: len(match[1].parts))
-        prefix = "" if str(relative) == "." else relative.as_posix()
-        aliases[source_id] = {
-            "root_id": root_id,
-            "root": root,
-            "prefix": prefix,
-            "storage_root_id": source_id,
-            "name": str(item.get("name") or source_id),
-        }
-        registered_locations[source_id] = {
-            "root_id": root_id,
-            "prefix": prefix,
-            "available": resolved.is_dir(),
-        }
     # 已确认的路径别名仅作为同一登记来源的离线恢复通道；未确认候选不参与索引。
     from gw.asset_registry import repository as repo
 
     bound_aliases = repo.state().read().get("root_aliases", {})
-    for item in default_storage_settings_service.get_snapshot().local_libraries:
+    for item in local_libraries:
         source_id = str(item.get("id") or "")
         if not source_id:
             continue
@@ -260,7 +433,7 @@ def _roots():
                 alias_path = Path(raw_alias_path).resolve(strict=True)
             except (OSError, RuntimeError, ValueError):
                 continue
-            if not alias_path.is_dir():
+            if not storage.probe_mount(str(alias_path))["available"]:
                 continue
 
             if registered is not None:
@@ -301,8 +474,8 @@ def _roots():
             matches = []
             for allowed_root in roots:
                 try:
-                    relative = alias_path.relative_to(allowed_root)
-                except ValueError:
+                    relative = alias_path.relative_to(allowed_root.resolve())
+                except (OSError, RuntimeError, ValueError):
                     continue
                 matches.append((allowed_root, relative))
             if not matches:
@@ -338,21 +511,45 @@ def root_facets():
         source_id = str(asset.get("storage_root_id") or asset.get("root_id") or "")
         if source_id:
             counts[source_id] = counts.get(source_id, 0) + 1
-    return [
-        {
+    facets = {}
+    for source_id, alias in sorted(aliases.items()):
+        availability = str(alias.get("availability") or "available")
+        reason = str(alias.get("availability_reason") or "")
+        message = str(alias.get("availability_message") or "")
+        if availability != "invalid" and alias.get("root") is not None:
+            path = (
+                Path(alias["scan_path"])
+                if alias.get("scan_path") is not None
+                else alias["root"].joinpath(*Path(alias.get("prefix") or ".").parts)
+            )
+            status = storage.probe_mount(str(path))
+            availability = "available" if status["available"] else "offline"
+            reason = str(status["reason"] or "")
+            message = str(status["message"] or "")
+        facets[source_id] = {
             "id": source_id,
             "name": alias["name"],
             "count": counts.get(source_id, 0),
-            "availability": "available"
-            if (
-                Path(alias["scan_path"]).is_dir()
-                if alias.get("scan_path") is not None
-                else alias["root"].joinpath(*Path(alias.get("prefix") or ".").parts).is_dir()
-            )
-            else "offline",
+            "availability": availability,
+            "availability_reason": reason,
+            "availability_message": message,
         }
-        for source_id, alias in sorted(aliases.items())
-    ]
+    removed_root_ids = {
+        str(record.get("id") or "")
+        for record in storage._allowed_roots_state().get("roots", [])
+        if not record.get("active")
+    }
+    for source_id, count in counts.items():
+        if source_id in removed_root_ids and source_id not in facets:
+            facets[source_id] = {
+                "id": source_id,
+                "name": source_id,
+                "count": count,
+                "availability": "removed",
+                "availability_reason": "MOUNT_ROOT_REMOVED",
+                "availability_message": "允许根已移除；已有索引与源文件保留",
+            }
+    return sorted(facets.values(), key=lambda item: item["id"])
 
 
 def _admission(actor):
@@ -464,7 +661,7 @@ class IndexJobs:
         """廉价探测根配置快照是否改变，避免每个 NAS 文件都重新 resolve 全部根。"""
         try:
             state_files = []
-            for namespace in ("storage_settings", "asset_registry"):
+            for namespace in ("storage_settings", "asset_registry", "allowed_roots"):
                 path = self.root / f"{namespace}.json"
                 try:
                     info = path.stat()
@@ -492,14 +689,19 @@ class IndexJobs:
         cached = self._root_snapshot_cache.get(cache_key) if cache_key else None
         if cached is None:
             canonical, aliases = _roots()
-            fingerprint = _digest({k: str(v) for k, v in sorted(aliases.items())})
+            fingerprint = _root_configuration_fingerprint(aliases)
+            legacy_fingerprint = _legacy_root_configuration_fingerprint(aliases)
             if cache_key:
-                self._root_snapshot_cache[cache_key] = (fingerprint, canonical)
+                self._root_snapshot_cache[cache_key] = (
+                    fingerprint,
+                    legacy_fingerprint,
+                    canonical,
+                )
                 if len(self._root_snapshot_cache) > MAX_ACTIVE:
                     self._root_snapshot_cache.pop(next(iter(self._root_snapshot_cache)))
         else:
-            fingerprint, canonical = cached
-        if fingerprint != job["_fingerprint"]:
+            fingerprint, legacy_fingerprint, canonical = cached
+        if job["_fingerprint"] not in {fingerprint, legacy_fingerprint}:
             _error(403, "INDEX_ROOTS_CHANGED", "允许根或来源配置已改变")
         return canonical
 
@@ -660,15 +862,30 @@ class IndexJobs:
             or any(not isinstance(x, str) or x not in aliases for x in selected)
         ):
             _error(400, "INDEX_ROOT_INVALID", "来源必须为已准入的根标识")
+        invalid_aliases = [
+            aliases[source_id]
+            for source_id in (selected or aliases.keys())
+            if source_id in aliases and aliases[source_id].get("availability") == "invalid"
+        ]
+        if invalid_aliases:
+            invalid = invalid_aliases[0]
+            _error(
+                409,
+                str(invalid.get("availability_reason") or "MOUNT_INVALID"),
+                str(invalid.get("availability_message") or "索引来源路径无效"),
+            )
         selected_aliases = (
             [
                 alias
                 for alias in aliases.values()
                 if alias["storage_root_id"] == alias["root_id"]
+                and alias.get("availability") != "invalid"
             ]
             if selected is None
             else [aliases[source_id] for source_id in selected]
         )
+        if not selected_aliases:
+            _error(503, "INDEX_SOURCE_NOT_AVAILABLE", "没有可用的已登记索引来源", unavailable=True)
         scopes = [
             {
                 "root_id": alias["root_id"],
@@ -704,7 +921,7 @@ class IndexJobs:
             "max_files": max_files,
             "hash_files": hash_files,
         }
-        fingerprint = _digest({k: str(v) for k, v in sorted(aliases.items())})
+        fingerprint = _root_configuration_fingerprint(aliases)
         request_digest = _digest([request, fingerprint])
         key_digest = _digest([_owner(actor), key])
         with self.condition:
@@ -913,12 +1130,22 @@ class IndexJobs:
                 with suppress(Exception):
                     self._save(job)
 
-    def _children(self, job_id, attempt, folder, root, *, hash_files=False):
+    def _children(self, job_id, attempt, folder, root, *, hash_files=False, resolved_root=None):
         # 目录项枚举与元数据读取共享一次检查点，paused 后不继续读取新条目。
         with self.condition:
             self._checkpoint(job_id, attempt)
             resolved_folder = folder.resolve()
-            if resolved_folder != folder.absolute() or not resolved_folder.is_relative_to(root):
+            if resolved_root is None:
+                resolved_root = root.resolve()
+            mapped_drive_path = storage._is_network_path(str(folder))
+            inside_resolved_root = (
+                resolved_folder == resolved_root
+                or resolved_folder.is_relative_to(resolved_root)
+            )
+            if (
+                (resolved_folder != folder.absolute() and not mapped_drive_path)
+                or not inside_resolved_root
+            ):
                 _error(403, "INDEX_PATH_CHANGED", "扫描目录已改变")
             iterator = os.scandir(folder)
         try:
@@ -1006,15 +1233,31 @@ class IndexJobs:
                 self._checkpoint(job_id, attempt)
                 try:
                     scan_root_resolved = scan_root.resolve(strict=True)
+                    root_resolved = root.resolve(strict=True) if scan_path is None else None
                 except (OSError, RuntimeError, ValueError):
                     scan_root_resolved = None
+                    root_resolved = None
+                mapped_drive_path = storage._is_network_path(str(scan_root))
                 if (
                     not scan_root.is_dir()
                     or scan_root_resolved is None
-                    or scan_root_resolved != scan_root.absolute()
+                    or (
+                        scan_path is not None
+                        and scan_root_resolved != scan_root.absolute()
+                    )
                     or (
                         scan_path is None
-                        and not scan_root_resolved.is_relative_to(root)
+                        and (
+                            root_resolved is None
+                            or not (
+                                scan_root_resolved == root_resolved
+                                or scan_root_resolved.is_relative_to(root_resolved)
+                            )
+                            or (
+                                scan_root_resolved != scan_root.absolute()
+                                and not mapped_drive_path
+                            )
+                        )
                     )
                 ):
                     _error(
@@ -1033,6 +1276,9 @@ class IndexJobs:
                     folder,
                     boundary,
                     hash_files=request["hash_files"],
+                    resolved_root=(
+                        scan_root_resolved if scan_path is not None else root_resolved
+                    ),
                 ):
                     entries += 1
                     if entries > MAX_ENTRIES:
