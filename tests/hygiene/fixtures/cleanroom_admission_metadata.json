@@ -59,6 +59,15 @@
         "tests/hygiene/fixtures/cleanroom_admission_metadata.json",
         "tests/hygiene/test_cleanroom_hygiene.py"
       ]
+    },
+    {
+      "issue": 354,
+      "authorization_basis": "GitHub Issue #354, 2026-10-28",
+      "files": [
+        "tests/contracts/assets/test_qin_431_restore_suffix_metadata.py",
+        "tests/hygiene/fixtures/cleanroom_admission_metadata.json",
+        "tests/hygiene/test_cleanroom_hygiene.py"
+      ]
     }
   ],
   "accepted_roots": [
@@ -945,6 +954,11 @@
       "path": "tests/contracts/assets/test_mvp1_t4_embedder_offline.py",
       "authorization_basis": "GitHub_Issue_334_QIN-418_2026-10-27",
       "sha256": "5ad494a842431497adeaaa75298071b659130b0883bc8caafa729698fc748d9e"
+    },
+    {
+      "path": "tests/contracts/assets/test_qin_431_restore_suffix_metadata.py",
+      "authorization_basis": "QIN-431_Issue_354_2026-10-28",
+      "sha256": "60c6ccceb8223ad57a77d6c0ecd7691d2904133baf167c23fc4b8423894e9ba2"
     }
   ]
 }
