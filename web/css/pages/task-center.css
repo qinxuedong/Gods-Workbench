@@ -7,3 +7,10 @@ body.gw-page--task-center h3 { font-size:var(--gw-type-headline-sm) !important; 
 
 body.gw-page--task-center :is(button,a,select,input,textarea):focus-visible { outline:2px solid var(--gold-primary,#dfc384); outline-offset:2px; }
 @media (max-width:720px) { body.gw-page--task-center .task-table-wrap { overflow-x:auto; } body.gw-page--task-center .view-heading, body.gw-page--task-center .panel-heading { align-items:flex-start; flex-wrap:wrap; } }
+
+/* MVP2-T7 Agent 门禁卡、参考卡与进度面板 */
+#agentGatePanel { display: flex; flex-direction: column; gap: 12px; margin-top: 12px; }
+.agent-reference-card, .agent-gate-card, .agent-progress-panel { background-color: var(--surface-raised, #141720); border-color: var(--border-gold, rgba(223, 195, 132, 0.25)); font-family: var(--gw-font-body); }
+.agent-reference-card[data-status="selected"] { border-color: var(--primary, #dfc384); }
+.agent-reference-card[data-status="rejected"] { border-color: var(--gw-danger-cap, #8c0000); opacity: 0.8; }
+.agent-gate-card[data-status="finished"] { border-color: var(--emerald, #10b981); }

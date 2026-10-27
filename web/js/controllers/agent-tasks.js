@@ -329,6 +329,7 @@
     if (byId('agentTaskReview')) byId('agentTaskReview').hidden = true;
     if (byId('agentTaskClarification')) byId('agentTaskClarification').hidden = true;
     if (byId('agentTaskExports')) byId('agentTaskExports').replaceChildren();
+    if (byId('agentGatePanel')) byId('agentGatePanel').replaceChildren();
     syncControls();
   }
 
@@ -354,10 +355,72 @@
       refreshEvents(runId, generation, sequence),
       refreshCandidate(runId, generation, sequence),
       refreshClarifications(runId, generation, sequence),
-      refreshExports(runId, generation, sequence)
+      refreshExports(runId, generation, sequence),
+      refreshGatePanel(runId, generation, sequence)
     ]);
     if (!isCurrentRefresh(runId, generation, sequence)) return;
     syncControls();
+  }
+
+  async function refreshGatePanel(runId, generation, sequence) {
+    if (!runId) return;
+    const container = byId('agentGatePanel');
+    if (!container) return;
+    const gateCardModule = window.GodAgentGateCard;
+    if (!gateCardModule) return;
+
+    try {
+      let panelData = null;
+      try {
+        panelData = await request(route(runId, '/panel'));
+      } catch (_) {
+        const [refData, gateData] = await Promise.all([
+          request(route(runId, '/references')).catch(() => null),
+          request(route(runId, '/gates')).catch(() => null)
+        ]);
+        panelData = {
+          references: refData?.references || state.run?.references || [],
+          gates: gateData?.gates || state.run?.gates || [],
+          progress: {
+            current_step: state.run?.stage || state.run?.status || '初始阶段',
+            total_steps: state.run?.total_steps || null,
+            status: state.run?.status || 'running',
+            failure_reason: state.run?.error || state.run?.failure_reason || ''
+          }
+        };
+      }
+      if (!isCurrentRefresh(runId, generation, sequence)) return;
+      gateCardModule.createAgentPanel(container, panelData, {
+        onSubmitDecision: async (gate, decision) => {
+          await request(route(runId, `/gates/${encodeURIComponent(gate.gate_id)}/decision`), {
+            method: 'POST',
+            body: JSON.stringify({ decision })
+          });
+          await refreshRun();
+        },
+        onSelect: async (ref) => {
+          await request(route(runId, `/references/${encodeURIComponent(ref.asset_id)}`), {
+            method: 'PATCH',
+            body: JSON.stringify({ status: 'selected' })
+          });
+        },
+        onReject: async (ref) => {
+          await request(route(runId, `/references/${encodeURIComponent(ref.asset_id)}`), {
+            method: 'PATCH',
+            body: JSON.stringify({ status: 'rejected' })
+          });
+        },
+        onNoteChange: async (ref, note) => {
+          await request(route(runId, `/references/${encodeURIComponent(ref.asset_id)}`), {
+            method: 'PATCH',
+            body: JSON.stringify({ note })
+          });
+        }
+      });
+    } catch (error) {
+      if (!isCurrentRefresh(runId, generation, sequence)) return;
+      gateCardModule.renderError(container, error.message);
+    }
   }
 
   async function refreshEvents(runId, generation, sequence) {

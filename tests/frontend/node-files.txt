@@ -47,3 +47,4 @@ tests/frontend/workflow-link-slots.test.mjs
 tests/frontend/workflow-remediation.test.mjs
 tests/frontend/workflow-workbench.test.mjs
 tests/frontend/settings-workbench-visual.test.mjs
+tests/frontend/mvp2-t7-agent-panel.test.mjs
