@@ -95,3 +95,32 @@ ownership:
   durable_mapping: "host_agent_create_keys.job_id -> run_id"
   shared_observability_list: "not included until actor/project-filtered enumeration is defined"
   related_canvas_contract: "CANVAS-INTERFACE-CATALOG.yaml: run_smart_canvas_task"
+
+tools:
+  - name: asset_search
+    risk_level: low
+    cost_state: free
+    idempotency_supported: true
+    input_schema:
+      type: object
+      additionalProperties: false
+      required:
+        - query
+      properties:
+        query:
+          type: string
+          minLength: 1
+          maxLength: 4096
+        limit:
+          type: integer
+          minimum: 1
+          maximum: 50
+          default: 10
+    output_schema:
+      items:
+        - asset_id: string
+          score: float
+          lexical_rank: "integer | null"
+          vector_rank: "integer | null"
+      vector_track_degraded: boolean
+    description: "Agent 素材检索工具（只读，基于现有 HybridAssetSearcher 混合检索）"
