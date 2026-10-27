@@ -95,3 +95,58 @@ ownership:
   durable_mapping: "host_agent_create_keys.job_id -> run_id"
   shared_observability_list: "not included until actor/project-filtered enumeration is defined"
   related_canvas_contract: "CANVAS-INTERFACE-CATALOG.yaml: run_smart_canvas_task"
+
+tools:
+  - name: script_generate
+    risk: medium
+    cost: metered
+    idempotency: required
+    stages:
+      - full_script
+      - scene_script
+    schema:
+      type: object
+      additionalProperties: false
+      required:
+        - run_id
+        - stage
+        - idempotency_key
+      properties:
+        run_id:
+          type: string
+        stage:
+          enum:
+            - full_script
+            - scene_script
+        idempotency_key:
+          type: string
+          minLength: 8
+        instructions:
+          type: string
+          maxLength: 4000
+
+  - name: storyboard_generate
+    risk: medium
+    cost: metered
+    idempotency: required
+    stages:
+      - storyboard_text
+    schema:
+      type: object
+      additionalProperties: false
+      required:
+        - run_id
+        - stage
+        - idempotency_key
+      properties:
+        run_id:
+          type: string
+        stage:
+          enum:
+            - storyboard_text
+        idempotency_key:
+          type: string
+          minLength: 8
+        instructions:
+          type: string
+          maxLength: 4000
