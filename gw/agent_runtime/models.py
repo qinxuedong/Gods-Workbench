@@ -107,6 +107,53 @@ class ApprovalDecision(StrEnum):
     override = "override"
 
 
+class GateKind(StrEnum):
+    script = "script"
+    storyboard = "storyboard"
+    animatic = "animatic"
+    i2v_submit = "i2v_submit"
+    master_output = "master_output"
+
+
+class GateState(StrEnum):
+    pending = "pending"
+    approved = "approved"
+    changes_requested = "changes_requested"
+    rolled_back = "rolled_back"
+
+
+class GateHistoryEntry(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    from_state: GateState = Field(..., alias="from")
+    to_state: GateState = Field(..., alias="to")
+    actor_id: Identifier
+    reason: NonEmptyText
+    at: UtcDateTime
+
+    @property
+    def from_val(self) -> GateState:
+        return self.from_state
+
+    @property
+    def to_val(self) -> GateState:
+        return self.to_state
+
+
+
+class GateRecord(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    gate_id: Identifier
+    run_id: Identifier
+    kind: GateKind
+    state: GateState
+    version: Version
+    history: list[GateHistoryEntry]
+
+
 class DispatchState(StrEnum):
     not_sent = "not_sent"
     sent = "sent"
