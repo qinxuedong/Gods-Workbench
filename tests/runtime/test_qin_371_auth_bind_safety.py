@@ -25,7 +25,7 @@ def _validator():
 
 
 @pytest.mark.parametrize(
-    "host", [ALL_INTERFACES_HOST, "::", "192.168.1.20", "workstation.lan"]
+    "host", [ALL_INTERFACES_HOST, "::", "192.168.0.10", "workstation.lan"]
 )
 def test_local_auth_rejects_non_loopback_hosts(host: str):
     with pytest.raises(ValueError, match="GW_AUTH_MODE=local"):

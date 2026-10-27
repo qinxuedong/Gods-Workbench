@@ -372,8 +372,8 @@ mod tests {
 
     #[test]
     fn server_urls_default_to_nas_port_and_reject_non_local_hosts() {
-        let url = normalize_server_url("http://192.168.1.20").unwrap();
-        assert_eq!(url.as_str(), "http://192.168.1.20:2077/");
+        let url = normalize_server_url("http://192.168.0.10").unwrap();
+        assert_eq!(url.as_str(), "http://192.168.0.10:2077/");
         let secure_url = normalize_server_url("https://nas.local/").unwrap();
         assert_eq!(secure_url.as_str(), "https://nas.local/");
         assert!(normalize_server_url("https://nas.local:8443/").is_ok());
