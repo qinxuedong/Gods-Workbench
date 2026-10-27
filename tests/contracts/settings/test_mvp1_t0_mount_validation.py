@@ -6,6 +6,7 @@ import json
 import threading
 import time
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 from fastapi.testclient import TestClient
@@ -265,7 +266,7 @@ def test_mapped_drive_spelling_inside_allowed_root_saves_without_alias_merge(
 ):
     root = r"Q:\素材库"
     candidate = r"Q:\素材库\样片"
-    monkeypatch.setattr(storage.os, "name", "nt")
+    monkeypatch.setattr(storage, "os", SimpleNamespace(name="nt"))
     monkeypatch.setattr(storage, "_probe_mount_sync", lambda _path: {"available": True, "reason": "", "message": ""})
     monkeypatch.setattr(storage, "_is_network_path", lambda _path: True)
     monkeypatch.setattr(storage, "allowed_roots", lambda: [Path(root)])

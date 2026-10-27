@@ -843,7 +843,7 @@
     {
       "path": "tests/contracts/settings/test_mvp1_t0_mount_validation.py",
       "authorization_basis": "MVP1-T0_Cut_2026-10-26",
-      "sha256": "a15abf575d43af815142cacfb7932e5efa80c3b4235152efea20cd8751dc2a3d"
+      "sha256": "1fd2fea264ed289a018a6c029fa13fc6bfba445ead49f21eb2c31f4dd676f8cd"
     },
     {
       "path": "tests/frontend/mvp1-t0-mount-errors.test.mjs",
