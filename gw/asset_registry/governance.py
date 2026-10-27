@@ -184,6 +184,50 @@ def _display_paths(assets: Sequence[Dict[str, Any]]) -> List[str]:
     return paths
 
 
+def _basename(path: str) -> str:
+    return path.replace("\\", "/").rsplit("/", 1)[-1]
+
+
+def _naming_subject(asset: Dict[str, Any]) -> str:
+    """命名建议对照的字符串：有登记路径时用文件名，否则用逻辑名。"""
+    path = str(asset.get("display_path") or "").strip()
+    if path:
+        return _basename(path)
+    return str(asset.get("name") or "").strip()
+
+
+def _naming_already_resolved(asset: Dict[str, Any], suggested_name: Optional[str]) -> bool:
+    """逻辑名已合规，或已经等于建议名时，不再重复提出命名建议。
+
+    确认只写入 name，不改 display_path，也不改源文件。若仍只看路径文件名，
+    同一条建议会在确认后无限再生。
+    """
+    logical = str(asset.get("name") or "").strip()
+    if not logical:
+        return False
+    if suggested_name and logical == suggested_name:
+        return True
+    return not validate_name(logical, DEFAULT_NAMING_RULES).violations
+
+
+def _distinct_member_asset_ids(members: Sequence[Any]) -> List[str]:
+    """按出现顺序折叠镜头成员，只保留不同 asset_id。"""
+    asset_ids: List[str] = []
+    for member in members:
+        if not isinstance(member, dict):
+            continue
+        asset_id = str(member.get("asset_id") or "").strip()
+        if asset_id and asset_id not in asset_ids:
+            asset_ids.append(asset_id)
+    return asset_ids
+
+
+def _reject_self_relation(left: str, right: str) -> None:
+    """查重确认不得登记 from=to。"""
+    if str(left).strip() and str(left).strip() == str(right).strip():
+        raise CleanroomException(400, "INVALID_REQUEST", "查重建议不能关联同一资产")
+
+
 def _tagging_suggestions(
     raw: Dict[str, Any], assets: Sequence[Dict[str, Any]]
 ) -> List[Dict[str, Any]]:
@@ -325,12 +369,13 @@ def build_suggestions() -> Dict[str, Any]:
     paths = _display_paths(assets)
     naming: List[Dict[str, Any]] = []
     for asset in assets:
-        path = str(asset.get("display_path") or asset.get("name") or "").strip()
-        if not path:
+        subject = _naming_subject(asset)
+        if not subject:
             continue
-        basename = path.replace("\\", "/").rsplit("/", 1)[-1]
-        assessment = validate_name(basename, DEFAULT_NAMING_RULES)
-        if not assessment.violations:
+        assessment = validate_name(subject, DEFAULT_NAMING_RULES)
+        if not assessment.violations or _naming_already_resolved(
+            asset, assessment.suggested_name
+        ):
             continue
         naming.append(
             {
@@ -395,10 +440,12 @@ def build_suggestions() -> Dict[str, Any]:
     duplicate_shots = []
     for item in index_snapshot["shot_duplicate_groups"]:
         members = item.get("members") or []
-        pair = frozenset(
-            str(member.get("asset_id") or "") for member in members[:2]
-        )
-        if len(pair) == 2 and pair in related_pairs:
+        asset_ids = _distinct_member_asset_ids(members)
+        # 同一资产的多镜头不能互为 duplicate；至少两个不同资产才建议。
+        if len(asset_ids) < 2:
+            continue
+        pair = frozenset(asset_ids[:2])
+        if pair in related_pairs:
             continue
         duplicate_shots.append(
             {
@@ -409,9 +456,11 @@ def build_suggestions() -> Dict[str, Any]:
         )
     vector_duplicates = []
     for item in index_snapshot["vector_duplicate_pairs"]:
-        pair = frozenset(
-            (str(item.get("left_asset_id") or ""), str(item.get("right_asset_id") or ""))
-        )
+        left_id = str(item.get("left_asset_id") or "")
+        right_id = str(item.get("right_asset_id") or "")
+        if not left_id or not right_id or left_id == right_id:
+            continue
+        pair = frozenset((left_id, right_id))
         if pair in related_pairs:
             continue
         vector_duplicates.append(
@@ -480,22 +529,26 @@ def _apply_confirmation(entry: Dict[str, Any], expected_version: int) -> Dict[st
         return repo.add_tags([asset_id], tags, expected_version)
     if kind == "duplicate_files":
         left, right = _require_asset_ids(entry)[:2]
+        _reject_self_relation(left, right)
         return repo.create_relation(left, right, "duplicate", expected_version)
     if kind == "duplicate_shots":
         members = entry.get("members") or []
         if len(members) < 2:
             raise CleanroomException(400, "INVALID_REQUEST", "镜头查重建议成员不足")
+        asset_ids = _distinct_member_asset_ids(members)
+        if len(asset_ids) < 2:
+            raise CleanroomException(
+                400, "INVALID_REQUEST", "镜头查重建议不能关联同一资产"
+            )
         return repo.create_relation(
-            str(members[0]["asset_id"]),
-            str(members[1]["asset_id"]),
-            "duplicate",
-            expected_version,
+            asset_ids[0], asset_ids[1], "duplicate", expected_version
         )
     if kind == "vector_duplicates":
         left = str(entry.get("left_asset_id") or "")
         right = str(entry.get("right_asset_id") or "")
         if not left or not right:
             raise CleanroomException(400, "INVALID_REQUEST", "向量近重建议成员不完整")
+        _reject_self_relation(left, right)
         return repo.create_relation(left, right, "duplicate", expected_version)
     if kind == "naming":
         suggested = str(entry.get("suggested_name") or "").strip()
@@ -506,12 +559,8 @@ def _apply_confirmation(entry: Dict[str, Any], expected_version: int) -> Dict[st
             asset_id, {"name": suggested, "expected_version": expected_version}
         )
     if kind == "similar_names":
-        asset_ids = _require_asset_ids(entry)
-        canonical = str(entry.get("normalized_name") or "").strip()
-        if not canonical:
-            raise CleanroomException(400, "INVALID_REQUEST", "相似名建议缺少规范名")
-        return repo.update_asset(
-            asset_ids[0], {"name": canonical, "expected_version": expected_version}
+        raise CleanroomException(
+            400, "INVALID_REQUEST", "相似名建议仅提示，不提供确认写入"
         )
     raise CleanroomException(400, "INVALID_REQUEST", "不支持的治理建议类型")
 

@@ -25,6 +25,8 @@ from fastapi.testclient import TestClient
 from gw.api.app import create_app
 from gw.asset_registry import governance, repository as repo
 from gw.core import storage
+from gw.core.errors import CleanroomException
+from gw.core.sqlite_vec_engine import SQLiteVecEngine
 
 ADMIN = {"Authorization": "Bearer cleanroom-admin", "X-User-Role": "admin"}
 EDITOR = {"Authorization": "Bearer cleanroom-editor", "X-User-Role": "editor"}
@@ -259,8 +261,6 @@ def test_confirm_unknown_suggestion_returns_not_found(client):
 
 def _build_index_with_shots_and_vectors(asset_ids: list[str]) -> None:
     """构造真实检索索引：重复镜头内容哈希 + 相同嵌入向量（AC6 双通道）。"""
-    from gw.core.sqlite_vec_engine import SQLiteVecEngine
-
     db_path = storage.data_root() / repo.ASSET_SEARCH_INDEX_FILENAME
     vector = (1.0 / math.sqrt(384),) * 384
     with SQLiteVecEngine(db_path) as engine:
@@ -356,3 +356,155 @@ def test_suggestion_identifiers_are_stable_across_rebuilds(client):
     first = client.get(SUGGESTIONS_URL, headers=ADMIN).json()
     second = client.get(SUGGESTIONS_URL, headers=ADMIN).json()
     assert first["suggestions"] == second["suggestions"]
+
+
+def test_confirm_naming_suppresses_repeat_without_rewriting_display_path(client):
+    """确认命名只写逻辑名；display_path 仍杂乱时，同一资产不得再生成命名建议。"""
+    asset_id = _seed_asset("我的 素材", display_path="roots/local/我的 素材.mp4")
+    listing = client.get(SUGGESTIONS_URL, headers=ADMIN).json()
+    naming = _suggestion(listing, "naming", asset_id=asset_id)
+    assert naming["suggested_name"] == "我的_素材_v001.mp4"
+
+    response = client.post(
+        CONFIRM_URL,
+        headers=ADMIN,
+        json={
+            "suggestion_id": naming["suggestion_id"],
+            "expected_version": listing["revision"],
+        },
+    )
+    assert response.status_code == 200, response.text
+
+    raw = repo.state().read()
+    assert raw["assets"][asset_id]["name"] == "我的_素材_v001.mp4"
+    assert raw["assets"][asset_id]["display_path"] == "roots/local/我的 素材.mp4"
+
+    direct = governance.build_suggestions()
+    regenerated = client.get(SUGGESTIONS_URL, headers=ADMIN).json()
+    for result in (direct, regenerated):
+        remaining = [
+            entry
+            for entry in result["suggestions"]["naming"]
+            if entry.get("asset_id") == asset_id
+        ]
+        assert remaining == [], "已确认的命名建议不得因未改写的 display_path 再生"
+
+
+def _index_shots(shots: list[dict]) -> None:
+    db_path = storage.data_root() / repo.ASSET_SEARCH_INDEX_FILENAME
+    with SQLiteVecEngine(db_path) as engine:
+        engine.batch_upsert_shots(shots)
+
+
+def _shot(asset_id: str, shot_index: int, content_hash: str, start: float) -> dict:
+    return {
+        "asset_id": asset_id,
+        "root_id": "root_local",
+        "shot_index": shot_index,
+        "start_sec": start,
+        "end_sec": start + 1.0,
+        "content_hash": content_hash,
+    }
+
+
+def test_same_asset_shot_duplicates_are_not_suggested_or_self_related(client):
+    """同一资产的多条相同内容哈希镜头不构成查重建议，确认也不得自关联。"""
+    asset_id = _seed_asset("shot_self", display_path="roots/local/shot_self.mp4")
+    digest = "d" * 64
+    _index_shots(
+        [
+            _shot(asset_id, 0, digest, 0.0),
+            _shot(asset_id, 1, digest, 1.0),
+        ]
+    )
+
+    listing = client.get(SUGGESTIONS_URL, headers=ADMIN).json()
+    assert all(
+        entry.get("content_hash") != digest
+        for entry in listing["suggestions"]["duplicate_shots"]
+    ), "同一资产的镜头不得生成查重建议"
+    assert governance.build_suggestions()["suggestions"]["duplicate_shots"] == (
+        listing["suggestions"]["duplicate_shots"]
+    )
+
+    with pytest.raises(CleanroomException) as raised:
+        governance._apply_confirmation(
+            {
+                "kind": "duplicate_shots",
+                "members": [
+                    {"asset_id": asset_id, "shot_index": 0},
+                    {"asset_id": asset_id, "shot_index": 1},
+                ],
+            },
+            listing["revision"],
+        )
+    assert raised.value.status_code == 400
+    assert raised.value.code == "INVALID_REQUEST"
+
+    raw = repo.state().read()
+    assert not any(
+        item["kind"] == "duplicate"
+        and item["from_asset_id"] == asset_id
+        and item["to_asset_id"] == asset_id
+        for item in raw["relations"]
+    ), "确认不得登记同一资产的 duplicate 自关系"
+
+
+def test_shot_duplicates_fold_to_distinct_assets_before_confirm(client):
+    """同一资产多镜头与另一资产同哈希时，只在不同资产之间建议并确认。"""
+    left = _seed_asset("shot_left", display_path="roots/local/shot_left.mp4")
+    right = _seed_asset("shot_right", display_path="roots/local/shot_right.mp4")
+    digest = "e" * 64
+    _index_shots(
+        [
+            _shot(left, 0, digest, 0.0),
+            _shot(left, 1, digest, 1.0),
+            _shot(right, 0, digest, 0.0),
+        ]
+    )
+
+    listing = client.get(SUGGESTIONS_URL, headers=ADMIN).json()
+    shots = _suggestion(listing, "duplicate_shots", content_hash=digest)
+    assert {member["asset_id"] for member in shots["members"]} == {left, right}
+
+    response = client.post(
+        CONFIRM_URL,
+        headers=ADMIN,
+        json={
+            "suggestion_id": shots["suggestion_id"],
+            "expected_version": listing["revision"],
+        },
+    )
+    assert response.status_code == 200, response.text
+    raw = repo.state().read()
+    relations = [
+        item for item in raw["relations"] if item["kind"] == "duplicate"
+    ]
+    assert len(relations) == 1
+    assert {relations[0]["from_asset_id"], relations[0]["to_asset_id"]} == {left, right}
+    assert relations[0]["from_asset_id"] != relations[0]["to_asset_id"]
+
+
+def test_similar_names_confirm_is_rejected(client):
+    """相似名只提示：确认接口返回 400，且不改逻辑名或路径。"""
+    left = _seed_asset("镜头甲", display_path="roots/local/镜头01.mp4")
+    right = _seed_asset("镜头乙", display_path="roots/local/镜头01(1).mp4")
+    listing = client.get(SUGGESTIONS_URL, headers=ADMIN).json()
+    similar = _suggestion(listing, "similar_names")
+
+    response = client.post(
+        CONFIRM_URL,
+        headers=ADMIN,
+        json={
+            "suggestion_id": similar["suggestion_id"],
+            "expected_version": listing["revision"],
+        },
+    )
+    assert response.status_code == 400
+    assert response.json()["detail"]["code"] == "INVALID_REQUEST"
+
+    raw = repo.state().read()
+    assert raw["assets"][left]["name"] == "镜头甲"
+    assert raw["assets"][right]["name"] == "镜头乙"
+    assert raw["assets"][left]["display_path"] == "roots/local/镜头01.mp4"
+    assert raw["assets"][right]["display_path"] == "roots/local/镜头01(1).mp4"
