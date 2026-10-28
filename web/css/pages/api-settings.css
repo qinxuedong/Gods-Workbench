@@ -25,6 +25,9 @@ body.api-settings-page {
   font-family:var(--gw-font-body);
   font-size:var(--gw-type-body); line-height:var(--gw-leading-body-md);
 }
+/* QIN-473：嵌入设置工作台时，页面基底复用「通用与外观偏好」的容器梯度，避免整片近黑；板块仍保持黑底。 */
+html.workspace-embedded { background:var(--gw-settings-container-background); }
+.workspace-embedded body.api-settings-page { background:var(--gw-settings-container-background); }
 .api-settings-page [hidden] { display:none; }
 .api-settings-page input,
 .api-settings-page select,
