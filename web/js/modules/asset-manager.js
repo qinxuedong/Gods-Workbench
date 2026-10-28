@@ -23,6 +23,7 @@ import {formatDate, formatFileSize} from './asset-manager/formatters.js';
 import {pathCompareKey} from './asset-manager/path-utils.js';
 import {workflowAssetId, workflowLibraryId, workflowCategoryId, workflowSourceId, zipWorkflowFiles} from './asset-manager/workflow-assets.js';
 import {openAssetCollectOverlay} from './asset-collect-panel.js';
+import {createHttpCollectAdapter} from './asset-collect-panel.js';
 import {renderProvenanceChain, handleProvenanceNodeClick} from './asset-manager/provenance.js';
 
 let mediaPreviewPlayerLoading = null;
@@ -18758,8 +18759,49 @@ assetTabsEl?.addEventListener('click', event => {
     const tab = event.target.closest?.('[data-tab]');
     if(tab) activateAssetBoard(tab.dataset.tab || 'registry').catch(err => setStatus(err.message || '打开看板失败'));
 });
-root.addEventListener('click', event => {
-    if(event.target.closest?.('[data-asset-collect-open]')){ openAssetCollectOverlay(event.target.closest('[data-asset-collect-open]')); return; }
+root.addEventListener('click', async event => {
+    if(event.target.closest?.('[data-asset-collect-open]')){
+        const trigger = event.target.closest('[data-asset-collect-open]');
+        try {
+            const pair = await fetch('/api/asset-collect/pair', {method:'POST'});
+            if(!pair.ok) throw new Error('无法连接本机收集服务');
+            let {pair_token} = await pair.json();
+            let pairExpires = Date.now() + 50 * 60 * 1000;
+            const adapter = createHttpCollectAdapter(async (...args) => {
+                if(Date.now() >= pairExpires){
+                    const renewed = await fetch('/api/asset-collect/pair', {method:'POST'});
+                    if(!renewed.ok) throw new Error('配对已失效，请重新登录');
+                    pair_token = (await renewed.json()).pair_token;
+                    pairExpires = Date.now() + 50 * 60 * 1000;
+                }
+                const [url, request = {}] = args;
+                if(request.body instanceof FormData) request.body.set('pair_token', pair_token);
+                else if(typeof request.body === 'string'){
+                    const payload = JSON.parse(request.body);
+                    payload.pair_token = pair_token;
+                    request.body = JSON.stringify(payload);
+                }
+                request.headers = {...request.headers, 'X-Collect-Token':pair_token};
+                args = [url, request];
+                const response = await fetch(...args);
+                if(response.ok){
+                    if(String(url).includes('/asset-collect/jobs/')){
+                        const body = await response.json();
+                        if(body.status === 'failed' && body.message) body.error_code = body.message;
+                        return {ok:true, json:async () => body};
+                    }
+                    return response;
+                }
+                const body = await response.json().catch(() => ({}));
+                const detail = body.detail || {};
+                return {ok:false, status:response.status, json:async () => ({error_code:detail.code, message:detail.message})};
+            });
+            openAssetCollectOverlay(trigger, {adapter, pairToken:pair_token});
+        } catch(error) {
+            window.alert(error?.message || '无法连接本机收集服务');
+        }
+        return;
+    }
     const create = event.target.closest?.('[data-script-create]');
     if(create){ openEpisodePipelineFromAsset({projectId:localStorage.getItem('workspace_project_id') || ''}); return; }
     const open = event.target.closest?.('[data-script-open]');

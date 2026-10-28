@@ -43,6 +43,25 @@
       ]
     },
     {
+      "issue": 338,
+      "authorization_basis": "GitHub Issue #338; PM-approved test scope extensions 2026-10-28",
+      "files": [
+        "gw/asset_registry/collector.py",
+        "gw/api/routes_asset_collect.py",
+        "gw/api/app.py",
+        "web/js/modules/asset-manager.js",
+        "tests/contracts/assets/test_mvp1_t8a_collector.py",
+        "tests/contracts/projects/test_phase8_frontend_backend_api_gap.py",
+        "tests/hygiene/fixtures/cleanroom_admission_metadata.json",
+        "tests/hygiene/test_cleanroom_hygiene.py",
+        "README.md",
+        "tests/frontend/mvp1-t8a-dropzone.test.mjs",
+        "tests/frontend/node-files.txt",
+        "tests/frontend/mvp1-t8a-ui-collect-panel.test.mjs",
+        "tests/hygiene/test_structure_guardrails.py"
+      ]
+    },
+    {
       "issue": 336,
       "authorization_basis": "GitHub Issue #336, 2026-10-28",
       "files": [
