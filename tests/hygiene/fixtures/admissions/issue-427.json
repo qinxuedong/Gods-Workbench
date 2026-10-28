@@ -1,0 +1,13 @@
+{
+  "schema": "gw.cleanroom-admission-shard/v1",
+  "issue": 427,
+  "authorization_basis": "GitHub Issue #427, 2026-10-28",
+  "files": [
+    "gw/asset_registry/index_jobs.py",
+    "tests/contracts/assets/test_qin_466_index_hash_network_path.py",
+    "tests/hygiene/fixtures/admissions/issue-427.json"
+  ],
+  "admitted_files": [],
+  "accepted_test_files": [],
+  "notes": "QIN-466：映射盘哈希路径判定对齐 scandir 分支的网络路径豁免；登记本票代码、新增契约测试与分片自身，不回填基础账本。"
+}

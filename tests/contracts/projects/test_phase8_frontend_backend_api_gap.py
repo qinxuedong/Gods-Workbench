@@ -65,6 +65,10 @@ CONTRACTS = [
 # 故由 KNOWN_UNIMPLEMENTED 迁入本基线。
 KNOWN_IMPLEMENTED = frozenset(
     [
+        "/api/asset-collect/pair",
+        "/api/asset-collect/url",
+        "/api/asset-collect/files",
+        "/api/asset-collect/jobs/{p}",
         # 统一路由以领域包承载，前端基线扫描只识别到前缀根路径。
         "/api/god_workflow",
         "/api/god_workflow/settings",
@@ -151,6 +155,8 @@ KNOWN_IMPLEMENTED = frozenset(
         "/api/storage-settings/roots",
         "/api/storage-settings/roots/{p}",
         "/api/storage-settings/roots/{p}/aliases/confirm",
+        # 2026-10-28 QIN-432：目录设置服务端原生选择器（仅回环管理员）。
+        "/api/settings/directories/pick-native",
         "/api/providers",
         "/api/providers/fetch-models",
         "/api/providers/probe-async",
@@ -244,6 +250,11 @@ KNOWN_IMPLEMENTED = frozenset(
         "/api/asset-registry/governance/cascade-preview",
         "/api/asset-registry/governance/operations",
         "/api/asset-registry/governance/overview",
+        # 2026-10-27 MVP1-T5（issue #335）：治理建议清单与逐条确认接口已前后端接线；
+        # 确认记录端点（GET .../suggestions/confirmations）仅后端实现，无前端字面量调用，
+        # 不入本清单，契约目录由后续票补登。
+        "/api/asset-registry/governance/suggestions",
+        "/api/asset-registry/governance/suggestions/confirm",
         "/api/asset-registry/index/sync",
         "/api/asset-registry/preferences/team",
         "/api/asset-registry/presets",
@@ -348,13 +359,6 @@ KNOWN_UNIMPLEMENTED = frozenset(
     [
         # 2026-09-21 第二轮更正：helper 拼接类调用（如 `${canvasUrl(id)}/meta`）入集。
         # 旧扫描器只认以 /api 起头的字面量，这 8 条真实可达路径被结构性漏扫。
-        # 2026-10-27 MVP1-T8a-UI（issue #346）：收集面板前端 mock 契约（前端 mock adapter，
-        # 不新增后端路由）；后端由 #338 落地后按文件头指引迁出本基线并补契约声明。
-        # 契约方法：POST /api/asset-collect/url、POST /api/asset-collect/files、
-        #           GET /api/asset-collect/jobs/{job_id}
-        "/api/asset-collect/url",
-        "/api/asset-collect/files",
-        "/api/asset-collect/jobs/{p}",
     ]
 )
 
@@ -416,6 +420,8 @@ KNOWN_BACKEND_PATHS = frozenset(
         # 2026-09-22 Phase 10D：设置页阶段 8 条归一化路径。
         "/api/storage-settings",
         "/api/storage-settings/browse",
+        # 2026-10-28 QIN-432：目录设置服务端原生选择器（仅回环管理员）。
+        "/api/settings/directories/pick-native",
         "/api/providers",
         "/api/providers/fetch-models",
         "/api/providers/probe-async",
@@ -1004,6 +1010,16 @@ def test_every_contract_endpoint_has_backend_implementation():
     assert not missing, (
         "以下契约端点在后端没有实现（契约与实现不一致）：\n  " + "\n  ".join(missing)
     )
+
+
+def test_collect_api_methods_are_registered():
+    """QIN-422 收集接口与面板方法对照。"""
+    routes = _backend_routes()
+    for method, path in (("POST", "/api/asset-collect/pair"),
+                         ("POST", "/api/asset-collect/url"),
+                         ("POST", "/api/asset-collect/files"),
+                         ("GET", "/api/asset-collect/jobs/{p}")):
+        assert any(entry[0] == method for entry in routes[path])
 
 
 def test_contract_endpoints_without_frontend_path_literal_match_baseline():

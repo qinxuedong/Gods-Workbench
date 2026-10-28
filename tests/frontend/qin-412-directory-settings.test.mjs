@@ -66,3 +66,50 @@ test("目录设置移除空托管框并使用服务器目录即选即存", () =>
   assert.match(assetManager, /canBrowseServerDirectories[\s\S]*?=== 'admin'/);
   assert.doesNotMatch(directorySettings, /\.directory-mount-/);
 });
+
+test("QIN-432 服务端字段优先原生选择器并保留页面内降级", () => {
+  assert.match(assetManager, /api\/settings\/directories\/pick-native/);
+  assert.match(assetManager, /pickServerDirectoryNative/);
+  // 选中填入字段并提示手动保存；取消不改字段；不可用降级页面内浏览器。
+  assert.match(assetManager, /fillServerDirectoryFromNative/);
+  assert.match(assetManager, /已选择目录：[\s\S]*?保存目录/);
+  assert.match(assetManager, /已切换页面内浏览/);
+  // 非回环 403 与请求失败都进入降级路径。
+  assert.match(
+    assetManager,
+    /pickServerDirectoryNative[\s\S]*?catch\(error\)[\s\S]*?openServerDirectoryBrowser\(key\)/,
+  );
+});
+
+test("QIN-432 目录设置卡片统一双列并在窄屏折单列", () => {
+  assert.match(directorySettings, /\.directory-cards-grid\s*\{[\s\S]*?grid-template-columns:\s*repeat\(2,\s*minmax\(0,\s*1fr\)\)/);
+  assert.match(
+    directorySettings,
+    /@media\s*\(max-width:\s*700px\)[\s\S]*?\.directory-cards-grid\s*\{[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\)/,
+  );
+  assert.match(assetManager, /<fieldset class="directory-cards-grid"/);
+  // 页面级服务器目录浏览器只在目录设置页渲染在页脚之前，不再嵌进项目工作区卡片。
+  assert.match(assetManager, /<\/fieldset>\$\{directorySettingsPage \? renderServerDirectoryBrowser\(\) : ''\}/);
+  assert.match(assetManager, /directorySettingsPage \? '' : renderServerDirectoryBrowser\(\)/);
+});
+
+test("QIN-432 客户端模式检测与客户端来源目录只存本机", () => {
+  assert.match(assetManager, /function isTauriClientMode\(\)/);
+  assert.match(assetManager, /window\.__TAURI__\?\.core\?\.invoke \|\| window\.top\?\.__TAURI__/);
+  assert.match(assetManager, /data-client-directory-picker/);
+  assert.match(assetManager, /id="clientUploadSourceDir"/);
+  assert.match(assetManager, /pick_client_folder/);
+  assert.match(assetManager, /get_client_setting/);
+  assert.match(assetManager, /set_client_setting/);
+  assert.match(assetManager, /CLIENT_SETTING_KEY_UPLOAD_SOURCE = 'upload_source_dir'/);
+  // 客户端上传走客户端对话框 + 会话白名单读取命令，浏览器模式不受影响。
+  assert.match(assetManager, /pick_client_upload_files/);
+  assert.match(assetManager, /read_client_file/);
+  assert.match(assetManager, /uploadViaClientPicker/);
+  assert.match(
+    assetManager,
+    /data-asset-upload\][\s\S]*?isTauriClientMode\(\)[\s\S]*?uploadViaClientPicker/,
+  );
+  // 客户端字段仅在客户端模式渲染。
+  assert.match(assetManager, /\$\{isTauriClientMode\(\) \? clientSourceInput\(\) : ''\}/);
+});
