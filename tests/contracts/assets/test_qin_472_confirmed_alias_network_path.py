@@ -34,11 +34,17 @@ def _alias_boundary(tmp_path: Path) -> Path:
     两者语义相同（同一目录、路径文本不同），本地用 `..` 等价复现该形态差，
     这样无需挂载真实网络盘即可覆盖判定分支。
     """
+    # `outer` 必须真实存在：POSIX 的 resolve(strict=True) 会逐分量检查存在性，
+    # 缺失的 `..` 分量会让解析直接抛 OSError，掩盖真正的形态差判定。
+    outer = tmp_path / "outer"
+    outer.mkdir()
     real = tmp_path / "alias-root"
     (real / "library").mkdir(parents=True)
     (real / "library" / "clip.mp4").write_bytes(PAYLOAD)
-    boundary = tmp_path / "outer" / ".." / "alias-root"
+    boundary = outer / ".." / "alias-root"
+    assert boundary.resolve(strict=True) == real
     assert boundary.resolve() != boundary.absolute()
+    assert (boundary / "library" / "clip.mp4").is_file()
     return boundary
 
 
@@ -111,7 +117,7 @@ def test_network_alias_escape_still_rejected(tmp_path, monkeypatch):
 def test_network_alias_directory_target_still_rejected(tmp_path, monkeypatch):
     """AC2：网络路径上目标不是文件仍失败关闭。"""
     boundary = _alias_boundary(tmp_path)
-    (boundary / "library" / "subdir").mkdir()
+    (boundary / "library" / "subdir").mkdir(parents=True)
     _register_alias(monkeypatch, boundary)
     _treat_as_network(monkeypatch)
 
