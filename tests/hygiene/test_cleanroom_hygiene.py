@@ -313,7 +313,7 @@ def test_static_layer_has_no_legacy_integration_markers(repo_root: Path):
 # 任何票增删自己的分片都不需要重算下面这个常量，也就不会形成并行 PR 的热点。
 ADMISSION_METADATA_PATH = ADMISSION_BASE_METADATA_PATH
 ADMISSION_BASE_METADATA_SHA256 = (
-    "f9920a0ffdf6b768bf62b9e50561e8d011939a677bd6885a6f5c69f53ad308c4"
+    "ca3f788ec27e5218c1eb95e59d7744a90e251521a22c23b37e5f1170890e29d4"
 )
 QUARANTINED_PROMPT_ORIGINAL_PATH = (
     "web/system-prompts/infinite-canvas-prompt-templates.md"
@@ -457,6 +457,38 @@ def test_github_issue_368_file_scope_is_registered(repo_root: Path):
         "tests/hygiene/fixtures/cleanroom_admission_metadata.json",
         "tests/hygiene/test_cleanroom_hygiene.py",
     }
+
+
+def test_github_issue_419_file_scope_is_registered(repo_root: Path):
+    """#419（QIN-461）的时间线工具、接口目录与卫生登记按票面逐项登记。"""
+    metadata = _load_admission_metadata(repo_root)
+    registrations = [
+        item
+        for item in metadata.get("authorized_issue_file_sets", [])
+        if item.get("issue") == 419
+    ]
+    assert len(registrations) == 1
+    assert registrations[0].get("authorization_basis") == (
+        "GitHub Issue #419, 2026-10-28"
+    )
+    assert set(registrations[0].get("files", [])) == {
+        "gw/agent_runtime/adapters/pipeline_tools.py",
+        "docs/contracts/AGENT-WORKBENCH-INTERFACE-CATALOG.yaml",
+        "tests/contracts/agent/test_mvp2_t5b_timeline_tool.py",
+        "tests/hygiene/fixtures/cleanroom_admission_metadata.json",
+        "tests/hygiene/test_cleanroom_hygiene.py",
+    }
+    test_path = "tests/contracts/agent/test_mvp2_t5b_timeline_tool.py"
+    test_entries = [
+        entry
+        for entry in metadata.get("authorized_test_files", [])
+        if entry.get("path") == test_path
+    ]
+    assert len(test_entries) == 1
+    assert test_entries[0].get("authorization_basis") == (
+        "QIN-461_Issue_419_2026-10-28"
+    )
+    assert test_entries[0].get("sha256") == _canonical_sha256(repo_root / test_path)
 
 
 def test_github_issue_366_file_scope_is_registered(repo_root: Path):

@@ -154,7 +154,7 @@ ownership:
   shared_observability_list: "not included until actor/project-filtered enumeration is defined"
   related_canvas_contract: "CANVAS-INTERFACE-CATALOG.yaml: run_smart_canvas_task"
 
-# MVP2-T4（issue #368）：Agent 工具登记。字段与 gw.agent_runtime.policy.ToolRegistration
+# MVP2-T4（issue #368）与 MVP2-T5b（issue #419）：Agent 工具登记。字段与 gw.agent_runtime.policy.ToolRegistration
 # 对齐统一为 risk_level / cost_state / input_schema；样片（animatic_generate）在公开代码
 # 中无生成入口，暂不登记，待能力落地后补录。
 tools:
@@ -212,6 +212,74 @@ tools:
         instructions:
           type: string
           maxLength: 4000
+  - name: i2v_generate
+    description: "提交图生视频生成任务；必须存在唯一且已批准的 i2v_submit 门禁，handler 调用注入的 VideoTaskService。"
+    risk_level: high
+    cost_state: metered
+    required_permissions:
+      - video.generate
+    idempotency_supported: true
+    input_schema:
+      type: object
+      additionalProperties: false
+      required:
+        - run_id
+        - idempotency_key
+        - provider_id
+        - model
+        - prompt
+        - duration
+        - aspect_ratio
+        - production_context
+      properties:
+        run_id:
+          type: string
+          minLength: 1
+        idempotency_key:
+          type: string
+          minLength: 8
+        provider_id:
+          type: string
+          minLength: 1
+          maxLength: 128
+        model:
+          type: string
+          minLength: 1
+          maxLength: 256
+        prompt:
+          type: string
+          minLength: 1
+          maxLength: 20000
+        duration:
+          type: number
+          exclusiveMinimum: 0
+          maximum: 120
+        aspect_ratio:
+          type: string
+          enum:
+            - "16:9"
+            - "9:16"
+            - "1:1"
+        production_context:
+          type: object
+          additionalProperties: false
+          required:
+            - project_id
+            - canvas_id
+            - entity_id
+          properties:
+            project_id:
+              type: string
+              minLength: 1
+              maxLength: 128
+            canvas_id:
+              type: string
+              minLength: 1
+              maxLength: 128
+            entity_id:
+              type: string
+              minLength: 1
+              maxLength: 128
   - name: storyboard_generate
     description: "生成文字分镜候选（storyboard_text）；handler 调用注入的前段候选服务"
     risk_level: medium
@@ -238,3 +306,32 @@ tools:
         instructions:
           type: string
           maxLength: 4000
+  - name: timeline_compose
+    description: "调用注入的现有时间线合成能力；非免费成本状态复用生产链门禁并 fail closed"
+    risk_level: medium
+    cost_state: free
+    idempotency_supported: true
+    input_schema:
+      type: object
+      additionalProperties: false
+      required:
+        - run_id
+        - project_id
+        - pipeline_id
+        - timeline_manifest
+        - idempotency_key
+      properties:
+        run_id:
+          type: string
+          minLength: 1
+        project_id:
+          type: string
+          minLength: 1
+        pipeline_id:
+          type: string
+          minLength: 1
+        timeline_manifest:
+          type: object
+        idempotency_key:
+          type: string
+          minLength: 8
