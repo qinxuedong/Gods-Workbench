@@ -9,11 +9,20 @@
 - AC4 target_root_id 必须是已配置产出根，绝不写入源素材目录，返回值只回显
   root_id + 相对路径；
 - AC5 所有成功返回值与异常 message/extra 都不含绝对路径。
+
+follow-up（GitHub Issue #408）追加两条硬口径：
+- sidecar 落盘 I/O 失败（产出根是文件、只读目录等）包装为 503
+  PROVENANCE_SIDECAR_WRITE_FAILED，只回显 target_root_id 与相对 sidecar_path，
+  且注册表不留条目；
+- configure_produced_roots 拒绝空/空白/非绝对路径（含源素材根），
+  绝不落到进程工作目录。
 """
 
 from __future__ import annotations
 
+import os
 import re
+import sys
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
@@ -419,3 +428,172 @@ def test_success_and_failure_payloads_never_echo_local_paths(env, local_root: st
             {"message": error.message, "extra": error.extra}, local_root
         )
     assert (output_root / "provenance" / "asset-produced-12.json").exists() is False
+
+
+# ---------------------------------------------------------------------------
+# QIN-440-followup（GitHub Issue #408）：sidecar 落盘 I/O 失败包装
+# ---------------------------------------------------------------------------
+
+
+def test_output_root_that_is_a_file_fails_closed(tmp_path: Path, local_root: str):
+    """产出根是已存在文件：mkdir 抛 OSError，必须包成受控异常且注册表不留条目。"""
+    output_file = tmp_path / "produced-output"
+    output_file.write_bytes(b"not-a-directory")
+    service = AssetRegistryService()
+    service.configure_produced_roots({"out_file": output_file}, source_roots={})
+
+    with pytest.raises(CleanroomException) as raised:
+        service.register_produced_asset(
+            "asset-produced-file-root",
+            provenance=_provenance(),
+            target_root_id="out_file",
+        )
+
+    _assert_failure(raised.value, 503, "PROVENANCE_SIDECAR_WRITE_FAILED", local_root)
+    assert raised.value.extra.get("target_root_id") == "out_file"
+    assert raised.value.extra.get("sidecar_path") == (
+        "provenance/asset-produced-file-root.json"
+    )
+    # 原始 OSError 不得随异常链外泄（message 会带本机绝对路径）。
+    assert raised.value.__cause__ is None
+    with pytest.raises(CleanroomException) as not_registered:
+        service.get_asset("asset-produced-file-root")
+    assert not_registered.value.code == "ASSET_NOT_FOUND"
+    assert output_file.read_bytes() == b"not-a-directory"
+
+
+@pytest.mark.skipif(
+    sys.platform == "win32" or (hasattr(os, "geteuid") and os.geteuid() == 0),
+    reason="Windows 目录只读属性不阻止新建文件；root 不受目录写权限限制",
+)
+def test_read_only_output_root_fails_closed(tmp_path: Path, local_root: str):
+    """产出根只读：sidecar 无法落盘，同样受控失败且不写入注册表。"""
+    output_root = tmp_path / "produced-readonly"
+    output_root.mkdir()
+    output_root.chmod(0o500)
+    service = AssetRegistryService()
+    try:
+        service.configure_produced_roots({"out_ro": output_root}, source_roots={})
+
+        with pytest.raises(CleanroomException) as raised:
+            service.register_produced_asset(
+                "asset-produced-readonly",
+                provenance=_provenance(),
+                target_root_id="out_ro",
+            )
+
+        _assert_failure(raised.value, 503, "PROVENANCE_SIDECAR_WRITE_FAILED", local_root)
+        assert raised.value.extra.get("target_root_id") == "out_ro"
+        assert raised.value.extra.get("sidecar_path") == (
+            "provenance/asset-produced-readonly.json"
+        )
+        with pytest.raises(CleanroomException) as not_registered:
+            service.get_asset("asset-produced-readonly")
+        assert not_registered.value.code == "ASSET_NOT_FOUND"
+        assert list(output_root.iterdir()) == []
+    finally:
+        output_root.chmod(0o700)
+
+
+def test_sidecar_failure_does_not_overwrite_existing_registration(tmp_path: Path):
+    """落盘失败时，已登记的产物条目必须原样保留，不得被半成品覆盖。"""
+    output_root = tmp_path / "produced-output"
+    output_root.mkdir()
+    service = AssetRegistryService()
+    service.configure_produced_roots({"out_main": output_root}, source_roots={})
+    service.register_produced_asset(
+        "asset-produced-locked", provenance=_provenance(), target_root_id="out_main"
+    )
+    sidecar = output_root / "provenance" / "asset-produced-locked.json"
+    assert sidecar.is_file()
+    # 已有 sidecar 只读：重复幂等回写也无法落盘，注册表条目必须原样保留。
+    sidecar.chmod(0o400)
+    sidecar.chmod(0o400)
+
+    with pytest.raises(CleanroomException) as raised:
+        service.register_produced_asset(
+            "asset-produced-locked", provenance=_provenance(), target_root_id="out_main"
+        )
+
+    assert raised.value.code == "PROVENANCE_SIDECAR_WRITE_FAILED"
+    assert service.get_asset("asset-produced-locked")["provenance"] == BASE_PROVENANCE
+    sidecar.chmod(0o600)
+
+
+# ---------------------------------------------------------------------------
+# QIN-440-followup：产出根/源素材根配置的严格度（拒绝空串与相对路径）
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("bad_root", ["", "   ", "relative-output", "./output"])
+def test_non_absolute_or_empty_root_is_rejected(
+    tmp_path: Path, local_root: str, monkeypatch: pytest.MonkeyPatch, bad_root: str
+):
+    """空/空白/相对路径不得被 resolve() 落到进程工作目录。"""
+    monkeypatch.chdir(tmp_path)
+    service = AssetRegistryService()
+
+    with pytest.raises(CleanroomException) as raised:
+        service.configure_produced_roots({"out_main": bad_root})
+
+    _assert_failure(raised.value, 400, "UNKNOWN_TARGET_ROOT", local_root)
+    assert raised.value.extra.get("root_id") == "out_main"
+    # 被拒绝的配置不生效，产物回写继续失败关闭，且 CWD 未被写入。
+    with pytest.raises(CleanroomException) as not_configured:
+        service.register_produced_asset(
+            "asset-produced-bad-root",
+            provenance=_provenance(),
+            target_root_id="out_main",
+        )
+    assert not_configured.value.code == "UNKNOWN_TARGET_ROOT"
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_source_roots_are_equally_strict(tmp_path: Path, local_root: str):
+    """源素材根同样拒绝相对路径，且合法产出根不得被部分应用。"""
+    output_root = tmp_path / "produced-output"
+    output_root.mkdir()
+    service = AssetRegistryService()
+
+    with pytest.raises(CleanroomException) as raised:
+        service.configure_produced_roots(
+            {"out_main": output_root}, source_roots={"src_main": "relative-source"}
+        )
+
+    _assert_failure(raised.value, 400, "UNKNOWN_TARGET_ROOT", local_root)
+    assert raised.value.extra.get("root_id") == "src_main"
+    with pytest.raises(CleanroomException) as not_configured:
+        service.register_produced_asset(
+            "asset-produced-src-bad", provenance=_provenance(), target_root_id="out_main"
+        )
+    assert not_configured.value.code == "UNKNOWN_TARGET_ROOT"
+    assert list(output_root.iterdir()) == []
+
+
+@pytest.mark.parametrize("root_id", ["", "   "])
+def test_blank_root_id_is_rejected(tmp_path: Path, root_id: str):
+    service = AssetRegistryService()
+
+    with pytest.raises(CleanroomException) as raised:
+        service.configure_produced_roots({root_id: tmp_path})
+
+    assert raised.value.status_code == 400
+    assert raised.value.code == "INVALID_REQUEST"
+
+
+def test_absolute_roots_still_configure(tmp_path: Path, local_root: str):
+    """严格化不得误伤绝对路径（含字符串形式）。"""
+    output_root = tmp_path / "produced-output"
+    output_root.mkdir()
+    service = AssetRegistryService()
+    service.configure_produced_roots(
+        {"out_main": str(output_root)}, source_roots={"src_main": tmp_path / "source"}
+    )
+
+    result = service.register_produced_asset(
+        "asset-produced-abs", provenance=_provenance(), target_root_id="out_main"
+    )
+
+    assert result["target_root_id"] == "out_main"
+    assert (output_root / "provenance" / "asset-produced-abs.json").is_file()
+    _assert_no_absolute_paths(result, local_root)

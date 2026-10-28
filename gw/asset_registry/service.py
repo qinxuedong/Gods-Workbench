@@ -51,6 +51,9 @@ PROVENANCE_REQUIRED = "PROVENANCE_REQUIRED"
 PROVENANCE_CONFLICT = "PROVENANCE_CONFLICT"
 PROVENANCE_NOT_FOUND = "PROVENANCE_NOT_FOUND"
 UNKNOWN_TARGET_ROOT = "UNKNOWN_TARGET_ROOT"
+# QIN-440-followup（Issue #408）：sidecar 落盘失败统一成受控异常，
+# 避免裸 OSError 把本机绝对路径带回前端。
+PROVENANCE_SIDECAR_WRITE_FAILED = "PROVENANCE_SIDECAR_WRITE_FAILED"
 
 _GAP_REGISTRY_SOURCE = "asset_registry_source_not_connected"
 _GAP_MEDIA_SOURCE = "media_storage_not_connected"
@@ -259,12 +262,31 @@ def _now_iso() -> str:
 
 
 def _normalized_roots(roots: Mapping[str, str | Path]) -> dict[str, Path]:
-    """把调用方注入的根映射规范化为 root_id -> 路径，不接受空 root_id。"""
-    return {
-        str(root_id).strip(): Path(str(root_path))
-        for root_id, root_path in roots.items()
-        if str(root_id).strip()
-    }
+    """把调用方注入的根映射规范化为 root_id -> 绝对路径。
+
+    空/空白 root_id 与非绝对路径（含空串、纯空白、相对路径）一律失败关闭：
+    相对路径会在解析时落到进程工作目录，等于把产物写进不可控位置，
+    因此这里拒绝而不是静默接受。产出根与源素材根共用同一套严格度。
+    """
+    normalized: dict[str, Path] = {}
+    for raw_root_id, raw_root_path in roots.items():
+        root_id = str(raw_root_id).strip()
+        if not root_id:
+            raise CleanroomException(
+                400, "INVALID_REQUEST", "产出根/源素材根的 root_id 不能为空或空白"
+            )
+        candidate = Path(str(raw_root_path).strip())
+        if not candidate.is_absolute():
+            raise CleanroomException(
+                400,
+                UNKNOWN_TARGET_ROOT,
+                "产出根/源素材根必须是绝对路径；空路径与相对路径一律拒绝，"
+                "避免解析后落到进程工作目录",
+                extra={"root_id": root_id},
+                expose_extra_fields={"root_id"},
+            )
+        normalized[root_id] = candidate
+    return normalized
 
 
 def _is_within(candidate: Path, parent: Path) -> bool:
@@ -908,10 +930,14 @@ class AssetRegistryService:
 
         本票不固化任何默认路径：产出根只能由调用方（部署配置或测试）注入，
         未配置时产物回写一律失败关闭，绝不落到源素材目录。
+        空/空白/相对路径同样拒绝，避免解析时落到进程工作目录。
         """
+        # 先整体规范化再落库：任一条目非法都不会留下半套根配置。
+        normalized_output = _normalized_roots(output_roots)
+        normalized_source = _normalized_roots(source_roots or {})
         with self._lock:
-            self._output_roots = _normalized_roots(output_roots)
-            self._source_roots = _normalized_roots(source_roots or {})
+            self._output_roots = normalized_output
+            self._source_roots = normalized_source
 
     def _resolve_produced_root(self, target_root_id: str) -> tuple[str, Path]:
         """解析产出根；未配置或位于源素材目录内都失败关闭。"""
@@ -940,13 +966,34 @@ class AssetRegistryService:
         return root_id, resolved
 
     @staticmethod
-    def _write_provenance_sidecar(target: Path, payload: dict[str, Any]) -> None:
-        """把来源链标记写入产出根内的相对路径；返回值只暴露 root_id 与相对路径。"""
-        target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_text(
-            json.dumps(payload, ensure_ascii=False, sort_keys=True, indent=2) + "\n",
-            encoding="utf-8",
-        )
+    def _write_provenance_sidecar(
+        target: Path,
+        payload: dict[str, Any],
+        *,
+        target_root_id: str,
+        sidecar_path: str,
+    ) -> None:
+        """把来源链标记写入产出根内的相对路径；返回值只暴露 root_id 与相对路径。
+
+        产出根可能是已存在的文件、只读目录或权限不足，裸 OSError 的 message 会
+        带上本机绝对路径；这里统一包成受控异常，只回显 root_id 与相对 sidecar
+        路径，并用 `from None` 断掉原始异常链。
+        """
+        try:
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text(
+                json.dumps(payload, ensure_ascii=False, sort_keys=True, indent=2)
+                + "\n",
+                encoding="utf-8",
+            )
+        except OSError:
+            raise CleanroomException(
+                503,
+                PROVENANCE_SIDECAR_WRITE_FAILED,
+                "来源链标记写入产出根失败；已拒绝回写，素材注册表未写入该产物",
+                extra={"target_root_id": target_root_id, "sidecar_path": sidecar_path},
+                expose_extra_fields={"target_root_id", "sidecar_path"},
+            ) from None
 
     def register_produced_asset(
         self,
@@ -998,6 +1045,7 @@ class AssetRegistryService:
                         f"素材 {asset_id} 已登记且来源链或产出根不一致，已拒绝覆盖",
                     )
                 item = existing
+            sidecar_path = f"{_PROVENANCE_SIDECAR_DIR}/{asset_id}.json"
             self._write_provenance_sidecar(
                 resolved_root / _PROVENANCE_SIDECAR_DIR / f"{asset_id}.json",
                 {
@@ -1005,6 +1053,8 @@ class AssetRegistryService:
                     "target_root_id": root_id,
                     "provenance": normalized,
                 },
+                target_root_id=root_id,
+                sidecar_path=sidecar_path,
             )
             if existing is None:
                 self._assets[asset_id] = item
@@ -1014,7 +1064,7 @@ class AssetRegistryService:
                 "asset": copy.deepcopy(item),
                 "provenance": copy.deepcopy(normalized),
                 "target_root_id": root_id,
-                "sidecar_path": f"{_PROVENANCE_SIDECAR_DIR}/{asset_id}.json",
+                "sidecar_path": sidecar_path,
                 "revision": self._revision,
                 **_truthful_meta(),
             }
@@ -1063,6 +1113,7 @@ __all__ = [
     "PROVENANCE_CONFLICT",
     "PROVENANCE_NOT_FOUND",
     "PROVENANCE_REQUIRED",
+    "PROVENANCE_SIDECAR_WRITE_FAILED",
     "UNKNOWN_TARGET_ROOT",
     "normalize_asset_query",
     "parse_utc_datetime",
