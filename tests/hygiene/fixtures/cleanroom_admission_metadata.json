@@ -116,6 +116,27 @@
         "tests/hygiene/fixtures/cleanroom_admission_metadata.json",
         "tests/hygiene/test_cleanroom_hygiene.py"
       ]
+    },
+    {
+      "issue": 364,
+      "authorization_basis": "GitHub Issue #364, 2026-10-28",
+      "files": [
+        "gw/agent_runtime/adapters/asset_search_tool.py",
+        "docs/contracts/AGENT-WORKBENCH-INTERFACE-CATALOG.yaml",
+        "tests/contracts/agent/test_mvp2_t0_asset_search_tool.py",
+        "tests/hygiene/fixtures/cleanroom_admission_metadata.json",
+        "tests/hygiene/test_cleanroom_hygiene.py"
+      ]
+    },
+    {
+      "issue": 367,
+      "authorization_basis": "GitHub Issue #367, 2026-10-28",
+      "files": [
+        "gw/agent_episode/gates.py",
+        "tests/contracts/agent/test_mvp2_t3_gates.py",
+        "tests/hygiene/fixtures/cleanroom_admission_metadata.json",
+        "tests/hygiene/test_cleanroom_hygiene.py"
+      ]
     }
   ],
   "accepted_roots": [
@@ -349,7 +370,7 @@
       "path": "docs/contracts/AGENT-WORKBENCH-INTERFACE-CATALOG.yaml",
       "classification": "frozen_interface_contract",
       "authorization_basis": "user_integration_request_2026-10-08",
-      "sha256": "c79f5fddf0b502a5f9f6d2d05ddfd48439a10e6b56d11a93d2de0d51f36a0419",
+      "sha256": "b429c06df040286015180710d89930527b979b71b14e1af458da80e86331a48b",
       "admission": "accepted"
     },
     {
@@ -1017,11 +1038,6 @@
       "sha256": "5ad494a842431497adeaaa75298071b659130b0883bc8caafa729698fc748d9e"
     },
     {
-      "path": "tests/contracts/agent/test_mvp2_t4_pipeline_tools.py",
-      "authorization_basis": "QIN-446_Issue_368_2026-10-28",
-      "sha256": "2d781a0c1730e965a2994f133cec396b89c8190ed72e2280a7811804f002d72c"
-    },
-    {
       "path": "tests/contracts/assets/test_mvp2_t2_provenance.py",
       "authorization_basis": "GitHub_Issue_366_2026-10-28",
       "sha256": "3074c1505cad4e5d6d2251e0c6825bdb1afde4af79c9e4f07b2e5e4bc8c30cf6"
@@ -1035,6 +1051,16 @@
       "path": "tests/frontend/mvp1-t5-governance-list.test.mjs",
       "authorization_basis": "MVP1-T5_Cut_2026-10-26",
       "sha256": "85e126650d9ff7b13036cb1040b3c55f5f23b86bc62df5c4014247b69dab0037"
+    },
+    {
+      "path": "tests/contracts/agent/test_mvp2_t0_asset_search_tool.py",
+      "authorization_basis": "MVP2-T0_GitHub_Issue_364_2026-10-28",
+      "sha256": "3ed7bd03e6297e3c13dad571e1b6452b88c8448053c134d651896e1ff7bd966b"
+    },
+    {
+      "path": "tests/contracts/agent/test_mvp2_t4_pipeline_tools.py",
+      "authorization_basis": "QIN-446_Issue_368_2026-10-28",
+      "sha256": "07239fdcf8f898bbfda116a98062ee66488653ae09c92e3521f31e997058183c"
     }
   ]
 }

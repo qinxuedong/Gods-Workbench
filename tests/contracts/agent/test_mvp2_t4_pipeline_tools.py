@@ -237,15 +237,20 @@ def test_handler_output_never_contains_absolute_paths_or_credentials():
 
 
 def test_catalog_tools_section_matches_tool_registrations():
-    """接口目录：tools 字段统一为 risk_level / cost_state / input_schema。"""
+    """接口目录：本票工具字段统一为 risk_level / cost_state / input_schema。
+
+    目录可含其他已合入票的工具（如 asset_search）；本断言只钉住 #368 两枚。
+    """
     catalog_path = (
         Path(__file__).resolve().parents[3]
         / "docs/contracts/AGENT-WORKBENCH-INTERFACE-CATALOG.yaml"
     )
     catalog = yaml.safe_load(catalog_path.read_text(encoding="utf-8"))
     entries = {item["name"]: item for item in catalog["tools"]}
-    assert set(entries) == {"script_generate", "storyboard_generate"}
-    for entry in entries.values():
+    required = {"script_generate", "storyboard_generate"}
+    assert required <= set(entries)
+    for name in required:
+        entry = entries[name]
         assert entry["risk_level"] == "medium"
         assert entry["cost_state"] == "metered"
         assert entry["idempotency_supported"] is True

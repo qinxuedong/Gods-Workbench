@@ -100,6 +100,33 @@ ownership:
 # 对齐统一为 risk_level / cost_state / input_schema；样片（animatic_generate）在公开代码
 # 中无生成入口，暂不登记，待能力落地后补录。
 tools:
+  - name: asset_search
+    risk_level: low
+    cost_state: free
+    idempotency_supported: true
+    input_schema:
+      type: object
+      additionalProperties: false
+      required:
+        - query
+      properties:
+        query:
+          type: string
+          minLength: 1
+          maxLength: 4096
+        limit:
+          type: integer
+          minimum: 1
+          maximum: 50
+          default: 10
+    output_schema:
+      items:
+        - asset_id: string
+          score: float
+          lexical_rank: "integer | null"
+          vector_rank: "integer | null"
+      vector_track_degraded: boolean
+    description: "MVP2-T0 Agent 素材检索工具（只读，封装现有 HybridAssetSearcher 混合检索；检索器异常 fail closed，不泄露路径，不发起网络调用）"
   - name: script_generate
     description: "生成剧本阶段候选（full_script / scene_script）；handler 调用注入的前段候选服务"
     risk_level: medium
