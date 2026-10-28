@@ -97,6 +97,40 @@ interfaces:
       404: "参考策展会话不存在（SESSION_NOT_FOUND）；读路径不隐式创建会话"
     acceptance: "空参考集会话返回合法空 items 而非 404；用同一 SQLite 文件重建台账后会话绑定、条目与版本号完整恢复；响应不含本地绝对路径。"
 
+  - name: put_agent_reference_item
+    method: PUT
+    path: /api/agent/sessions/{session_id}/references/{asset_id}
+    description: "MVP2-T1b 参考策展写入：按 asset_id 写入决策/备注/排序，CAS 冲突 409，同值重复 PUT 幂等"
+    status:
+      - 200
+      - 400
+      - 401
+      - 404
+      - 409
+    schema:
+      request:
+        project_id: "string (必填，须与会话已绑定项目一致)"
+        decision: "enum(pending|selected|rejected)"
+        note: "string | null (<=500)"
+        order: "integer (>=0)"
+        expected_version: "integer (>=1)"
+      response_200:
+        session_id: string
+        project_id: string
+        items:
+          - asset_id: string
+            decision: "enum(pending|selected|rejected)"
+            note: "string | null (<=500)"
+            order: "integer (>=0)"
+            updated_at: "ISO-8601 datetime (UTC)"
+        version: "integer (>=1)"
+    errors:
+      400: "缺少 project_id 或入参不合法（PROJECT_CONTEXT_REQUIRED / INVALID_REQUEST）"
+      401: "未认证：缺少有效会话或令牌"
+      404: "参考策展会话不存在（SESSION_NOT_FOUND）；不隐式创建会话"
+      409: "expected_version 与当前版本不一致（VERSION_CONFLICT）；或 project_id 与会话绑定不一致（PROJECT_CONTEXT_MISMATCH）"
+    acceptance: "增改查往返正确且条目按 order 升序回读；重复相同 PUT 幂等（version 与 updated_at 不变）；版本冲突返回 409 VERSION_CONFLICT 且不落库；同一 SQLite 文件重建台账后数据完整恢复；响应不含本地绝对路径。"
+
 task_status_projection:
   review_status: "signed_off_by_host_owner; 选项B扩展宿主TaskStatus已签认并实施"
   agent_to_workbench:
