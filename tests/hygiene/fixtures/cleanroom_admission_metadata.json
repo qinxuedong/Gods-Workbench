@@ -116,6 +116,16 @@
         "tests/hygiene/fixtures/cleanroom_admission_metadata.json",
         "tests/hygiene/test_cleanroom_hygiene.py"
       ]
+    },
+    {
+      "issue": 367,
+      "authorization_basis": "GitHub Issue #367, 2026-10-28",
+      "files": [
+        "gw/agent_episode/gates.py",
+        "tests/contracts/agent/test_mvp2_t3_gates.py",
+        "tests/hygiene/fixtures/cleanroom_admission_metadata.json",
+        "tests/hygiene/test_cleanroom_hygiene.py"
+      ]
     }
   ],
   "accepted_roots": [

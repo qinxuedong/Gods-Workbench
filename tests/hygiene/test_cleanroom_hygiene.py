@@ -300,7 +300,7 @@ def test_static_layer_has_no_legacy_integration_markers(repo_root: Path):
 # 凭据或完整历史授权账本。历史材料继续留在洁净源仓，不因测试需要复制进新仓。
 ADMISSION_METADATA_PATH = "tests/hygiene/fixtures/cleanroom_admission_metadata.json"
 ADMISSION_METADATA_SHA256 = (
-    "849d7e71628e7e86980a0f6d668714d654e0a8f3f1a1fe7b8a2af989447b3a09"
+    "dbcef98a2af17564666023d9ba60c4c1a3ca8af44e5a4158de87bde97d96937b"
 )
 QUARANTINED_PROMPT_ORIGINAL_PATH = (
     "web/system-prompts/infinite-canvas-prompt-templates.md"
@@ -473,6 +473,25 @@ def test_github_issue_335_file_scope_is_registered(repo_root: Path):
         "tests/hygiene/test_cleanroom_hygiene.py",
     }
 
+
+def test_github_issue_367_file_scope_is_registered(repo_root: Path):
+    """#367（QIN-441）的门禁状态机、契约测试与卫生登记按票面逐项登记。"""
+    metadata = _load_admission_metadata(repo_root)
+    registrations = [
+        item
+        for item in metadata.get("authorized_issue_file_sets", [])
+        if item.get("issue") == 367
+    ]
+    assert len(registrations) == 1
+    assert registrations[0].get("authorization_basis") == (
+        "GitHub Issue #367, 2026-10-28"
+    )
+    assert set(registrations[0].get("files", [])) == {
+        "gw/agent_episode/gates.py",
+        "tests/contracts/agent/test_mvp2_t3_gates.py",
+        "tests/hygiene/fixtures/cleanroom_admission_metadata.json",
+        "tests/hygiene/test_cleanroom_hygiene.py",
+    }
 
 def test_quarantined_prompt_is_absent_from_static_tree(repo_root: Path):
     """隔离提示词不进入静态树；新仓不保存正文副本。"""
