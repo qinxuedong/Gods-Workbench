@@ -25,6 +25,7 @@ import {workflowAssetId, workflowLibraryId, workflowCategoryId, workflowSourceId
 import {openAssetCollectOverlay} from './asset-collect-panel.js';
 import {createHttpCollectAdapter} from './asset-collect-panel.js';
 import {renderProvenanceChain, handleProvenanceNodeClick} from './asset-manager/provenance.js';
+import {renderCollectProvenance, resolveCollectDeleteAssetId} from './asset-manager/collect-provenance.js';
 
 let mediaPreviewPlayerLoading = null;
 export async function ensureMediaPreviewPlayer() {
@@ -9339,6 +9340,7 @@ function renderAssetDetail(item){
                     <div class="detail-meta"><span>分组</span><strong>${escapeHtml(activeAssetCategory()?.name || '分组')}</strong></div>
                 </div>
                 <div class="detail-url">${escapeHtml(item.url || '')}</div>
+                ${renderCollectProvenance(item)}
                 ${renderProvenanceChain(item)}
                 ${isImage ? `<div class="detail-caption-card">
                     <div class="detail-caption-head"><strong>智能分类</strong></div>
@@ -11069,6 +11071,8 @@ async function handleClick(event){
         return;
     }
     if(handleProvenanceNodeClick(event)) return;
+    const collectDeleteAssetId = resolveCollectDeleteAssetId(event);
+    if(collectDeleteAssetId){ await openRegistryRecycleDialog(collectDeleteAssetId); return; }
     const assetPreview = target.closest?.('[data-asset-preview]');
     if(assetPreview){ showDetailPreview('asset', assetPreview.dataset.assetPreview || ''); return; }
     const canvasAssetPreview = target.closest?.('[data-canvas-asset-preview]');
