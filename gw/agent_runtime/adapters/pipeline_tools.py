@@ -13,7 +13,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""MVP2-T4/T5a 生产能力以 Agent 工具形式注册（剧本、分镜、I2V）。
+"""MVP2 生产能力以 Agent 工具形式注册（剧本、分镜、I2V 及注入的时间线能力）。
 
 核查结论（截至基线 ``origin/master`` 4c207e4 / 5b21de3，QIN-446 票面要求）：
 - ``gw/`` 内除 ``gw/agent_runtime/policy.py`` 的 ``CapabilityRegistry.register_tool``
@@ -24,6 +24,7 @@
 
 边界约束：
 - 生产服务一律注入；I2V 只有唯一的 ``i2v_submit`` 门禁获批后才可调用；
+- 非免费时间线工具复用 ``require_gate_for_tool``，无批准状态时 fail closed；
 - 本模块不选择 provider、不读取凭据，真实凭据由服务端视频任务服务管理；
 - 同一 ``run_id`` 与 ``idempotency_key`` 的重复调用只触发一次底层调用（进程内备忘）；
 - 返回值经 ``sanitize_tool_result`` 清洗：绝对路径（POSIX / Windows 盘符 /
@@ -34,11 +35,16 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from typing import Any, Mapping, Protocol, runtime_checkable
+from typing import Any, Callable, Mapping, Protocol, runtime_checkable
 
 from jsonschema import Draft202012Validator
 
-from gw.agent_episode.gates import GateKind, GateStore, require_gate_for_tool
+from gw.agent_episode.gates import (
+    GateKind,
+    GateState,
+    GateStore,
+    require_gate_for_tool,
+)
 from gw.agent_runtime.errors import DomainError
 from gw.agent_runtime.models import ErrorCode, Identifier, ToolCostState, ToolRiskLevel
 from gw.agent_runtime.policy import CapabilityRegistry, ToolRegistration
@@ -100,6 +106,24 @@ _I2V_INPUT_SCHEMA: dict[str, Any] = {
         },
     },
 }
+_TIMELINE_COMPOSE_INPUT_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "additionalProperties": False,
+    "required": [
+        "run_id",
+        "project_id",
+        "pipeline_id",
+        "timeline_manifest",
+        "idempotency_key",
+    ],
+    "properties": {
+        "run_id": {"type": "string", "minLength": 1},
+        "project_id": {"type": "string", "minLength": 1},
+        "pipeline_id": {"type": "string", "minLength": 1},
+        "timeline_manifest": {"type": "object"},
+        "idempotency_key": {"type": "string", "minLength": 8},
+    },
+}
 
 # 三类绝对路径风格的检测（QIN-446 返工项 1：不得只依赖 POSIX 的 os.path.isabs）。
 _WINDOWS_DRIVE_PATTERN = re.compile(r"^[A-Za-z]:(?:[\\/].*)?$")
@@ -135,6 +159,24 @@ class VideoGenerationService(Protocol):
     ) -> Mapping[str, Any]: ...
 
 
+@runtime_checkable
+class TimelineComposeService(Protocol):
+    """注入的现有时间线能力；本模块不实现或重写时间线引擎。"""
+
+    async def compose_timeline(
+        self,
+        *,
+        run_id: str,
+        project_id: str,
+        pipeline_id: str,
+        timeline_manifest: Mapping[str, Any],
+        idempotency_key: str,
+    ) -> Mapping[str, Any]: ...
+
+
+GateLookup = Callable[[str], GateState | None]
+
+
 @dataclass
 class PipelineToolServices:
     """注册时注入的服务集合；测试以 fake 记录调用参数替换真实实现。"""
@@ -143,6 +185,8 @@ class PipelineToolServices:
     video_task: VideoGenerationService | None = None
     gate_store: GateStore | None = None
     video_context: Any | None = None
+    timeline_compose: TimelineComposeService | None = None
+    timeline_cost_state: ToolCostState = ToolCostState.free
 
 
 @dataclass(frozen=True, slots=True)
@@ -277,12 +321,63 @@ def _make_i2v_handler(
     return handler
 
 
-def register_pipeline_tools(
-    registry: CapabilityRegistry, *, services: PipelineToolServices
-) -> None:
-    """按票面工具清单注册前段工具；重复注册由 registry 的唯一性约束拒绝。
+def _make_timeline_handler(
+    services: TimelineComposeService,
+    schema: Mapping[str, Any],
+    memo: dict[str, Any],
+    *,
+    cost_state: ToolCostState,
+    gate_lookup: GateLookup | None,
+) -> Any:
+    """构造时间线 handler：先校验门禁，再幂等调用注入的能力。"""
 
-    幂等备忘按工具隔离：同一 idempotency_key 只在同名工具内去重。
+    async def handler(arguments: Mapping[str, Any]) -> Any:
+        payload = dict(arguments or {})
+        errors = sorted(
+            error.message for error in Draft202012Validator(schema).iter_errors(payload)
+        )
+        if errors:
+            raise DomainError(
+                ErrorCode.VALIDATION_FAILED,
+                "工具入参未通过 schema 校验",
+                request_id=str(payload.get("run_id") or "timeline-tool"),
+            )
+
+        run_id = str(payload["run_id"])
+        gate_state = (
+            gate_lookup(run_id)
+            if cost_state is not ToolCostState.free and gate_lookup is not None
+            else None
+        )
+        require_gate_for_tool(
+            _GateCostRegistration(cost_state), gate_state, request_id=run_id
+        )
+
+        idempotency_key = str(payload["idempotency_key"])
+        if idempotency_key in memo:
+            return sanitize_tool_result(memo[idempotency_key])
+        result = await services.compose_timeline(
+            run_id=run_id,
+            project_id=str(payload["project_id"]),
+            pipeline_id=str(payload["pipeline_id"]),
+            timeline_manifest=dict(payload["timeline_manifest"]),
+            idempotency_key=idempotency_key,
+        )
+        memo[idempotency_key] = result
+        return sanitize_tool_result(result)
+
+    return handler
+
+
+def register_pipeline_tools(
+    registry: CapabilityRegistry,
+    *,
+    services: PipelineToolServices,
+    gate_lookup: GateLookup | None = None,
+) -> None:
+    """注册已注入的前段与时间线工具；重复注册由 registry 唯一性约束拒绝。
+
+    时间线服务未注入时不注册 ``timeline_compose``；幂等备忘按工具隔离。
     """
     registry.register_tool(
         ToolRegistration(
@@ -294,6 +389,23 @@ def register_pipeline_tools(
             idempotency_supported=True,
         )
     )
+    if services.timeline_compose is not None:
+        registry.register_tool(
+            ToolRegistration(
+                name="timeline_compose",
+                handler=_make_timeline_handler(
+                    services.timeline_compose,
+                    _TIMELINE_COMPOSE_INPUT_SCHEMA,
+                    {},
+                    cost_state=services.timeline_cost_state,
+                    gate_lookup=gate_lookup,
+                ),
+                input_schema=_TIMELINE_COMPOSE_INPUT_SCHEMA,
+                risk_level=ToolRiskLevel.medium,
+                cost_state=services.timeline_cost_state,
+                idempotency_supported=True,
+            )
+        )
     registry.register_tool(
         ToolRegistration(
             name="i2v_generate",
@@ -321,6 +433,8 @@ __all__ = [
     "PipelineToolServices",
     "StageCandidateService",
     "VideoGenerationService",
+    "TimelineComposeService",
+    "GateLookup",
     "is_absolute_path_string",
     "register_pipeline_tools",
     "sanitize_tool_result",
