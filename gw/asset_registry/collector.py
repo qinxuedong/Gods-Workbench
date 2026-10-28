@@ -36,6 +36,15 @@ from gw.core import storage
 
 _store_lock = threading.RLock()
 
+#: AC1：不支持来源（blob:、超限内联数据、HLS/DASH 清单、DRM 标记）的统一错误码。
+UNSUPPORTED_SOURCE_CODE = "COLLECT_UNSUPPORTED_SOURCE"
+#: 内联 data: 载荷上限；超过即按不支持来源拒绝，引导用户改用上传。
+MAX_INLINE_DATA_BYTES = 8 * 1024 * 1024
+#: 流媒体清单后缀：清单本身不是可收集的素材文件。
+STREAM_MANIFEST_SUFFIXES = (".m3u8", ".mpd")
+#: 已知 DRM 保护标记，命中即拒绝，避免下载到加密分片。
+DRM_SOURCE_MARKERS = ("drm", "widevine", "playready", "fairplay")
+
 
 class CollectError(ValueError):
     """收集失败及可供界面展示的稳定错误码。"""
@@ -185,6 +194,45 @@ def validate_collect_url(value: str) -> str:
     return url
 
 
+def _inline_data_bytes(value: str) -> int:
+    """按 data: URI 头部声明估算载荷字节数，不真正解码超大载荷。"""
+    header, _, payload = value.partition(",")
+    if ";base64" in header.lower():
+        return len(payload) * 3 // 4
+    return len(payload)
+
+
+def unsupported_source_reason(value: str) -> str | None:
+    """返回不支持来源的中文原因；支持的来源返回 None，全程不发起网络请求。"""
+    url = str(value or "").strip()
+    lowered = url.lower()
+    if lowered.startswith("blob:"):
+        return "浏览器内部地址无法收集，请改用原始链接"
+    if lowered.startswith("data:"):
+        if _inline_data_bytes(url) > MAX_INLINE_DATA_BYTES:
+            return f"内联数据超过 {MAX_INLINE_DATA_BYTES // (1024 * 1024)} MiB 上限，请改为上传文件"
+        return "内联数据地址无法收集，请改为上传文件"
+    try:
+        path = urlsplit(lowered).path
+    except ValueError:
+        # 结构异常的地址交由 validate_collect_url 统一按链接格式不支持处理。
+        return None
+    if path.endswith(STREAM_MANIFEST_SUFFIXES):
+        return "不支持 HLS/DASH 流媒体清单地址，请改用可直接下载的文件链接"
+    for marker in DRM_SOURCE_MARKERS:
+        if re.search(rf"(?:^|[^a-z0-9]){marker}(?:[^a-z0-9]|$)", lowered):
+            return "该来源带有 DRM 保护标记，无法收集"
+    return None
+
+
+def reject_unsupported_source(value: str) -> str:
+    """收集入口的 fail-closed 前哨：命中不支持来源即抛统一错误码。"""
+    reason = unsupported_source_reason(value)
+    if reason:
+        raise CollectError(UNSUPPORTED_SOURCE_CODE, reason)
+    return str(value or "").strip()
+
+
 def validate_public_addresses(addresses: list[str]) -> None:
     """解析结果必须全部为公网地址，避免借 DNS 访问本机或内网。"""
     if not addresses:
@@ -225,7 +273,7 @@ class _PinnedHTTPConnection(http.client.HTTPConnection):
 
 def download_direct(url: str, *, max_bytes: int = 64 * 1024 * 1024) -> tuple[bytes, str]:
     """有界下载直链；每次重定向均重新校验并固定 DNS 解析结果。"""
-    current = validate_collect_url(url)
+    current = validate_collect_url(reject_unsupported_source(url))
     for _ in range(6):
         parsed = urlsplit(current)
         port = parsed.port or (443 if parsed.scheme.lower() == "https" else 80)
@@ -245,7 +293,9 @@ def download_direct(url: str, *, max_bytes: int = 64 * 1024 * 1024) -> tuple[byt
                     location = response.getheader("Location")
                     if not location:
                         raise CollectError("unsupported_url", "重定向缺少目标")
-                    current = validate_collect_url(urljoin(current, location))
+                    current = validate_collect_url(
+                        reject_unsupported_source(urljoin(current, location))
+                    )
                     continue
                 if response.status != 200:
                     raise CollectError("unsupported_url", "素材来源不可下载")
