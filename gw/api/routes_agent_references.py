@@ -12,11 +12,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""MVP2-T1a 参考策展读取 API（QIN-463 / GitHub #421）。
+"""MVP2-T1a/T1b 参考策展读写 API（QIN-463 / #421，QIN-464 / #422）。
 
-只暴露读端点：会话不存在一律 404 ``SESSION_NOT_FOUND``，并且不在服务端隐式
-创建会话；响应只含稳定 ID、策展语义与时间戳，绝不回传本地绝对路径。
-写路径（选中/拒绝/备注/排序）由 MVP2-T1b 在同一个路由模块内追加。
+读端点：会话不存在一律 404 ``SESSION_NOT_FOUND``，并且不在服务端隐式创建
+会话；写端点：``expected_version`` 不符返回 409 ``VERSION_CONFLICT``，项目上下文
+缺失或与会话绑定不一致一律 fail closed。响应只含稳定 ID、策展语义与时间戳，
+绝不回传本地绝对路径。
 """
 
 from __future__ import annotations
@@ -26,10 +27,18 @@ from pathlib import Path
 
 from fastapi import APIRouter, Depends, Header, status
 
-from gw.agent_episode.references import ReferenceSet, ReferenceStore
+from gw.agent_episode.references import (
+    ReferenceProjectContextError,
+    ReferenceSet,
+    ReferenceStore,
+    ReferenceVersionConflict,
+    ReferenceWriteRequest,
+)
+from gw.agent_runtime.errors import DomainError
+from gw.agent_runtime.models import ErrorCode
 from gw.agent_runtime.storage.sqlite import SQLiteDatabase
 from gw.core.auth import require_authenticated
-from gw.core.errors import CleanroomException
+from gw.core.errors import CleanroomException, VersionConflictException
 from gw.core.runtime_paths import resolve_runtime_paths
 
 router = APIRouter(tags=["agent-references"])
@@ -68,6 +77,61 @@ def get_session_references(
     if reference_set is None:
         raise CleanroomException(404, "SESSION_NOT_FOUND", "参考策展会话不存在")
     return reference_set
+
+
+@router.put(
+    "/api/agent/sessions/{session_id}/references/{asset_id}",
+    response_model=ReferenceSet,
+    status_code=status.HTTP_200_OK,
+)
+def put_session_reference(
+    session_id: str,
+    asset_id: str,
+    payload: ReferenceWriteRequest,
+    store: ReferenceStore = Depends(get_reference_store),
+    authorization: str | None = Header(None),
+    x_user_role: str = Header("editor", alias="X-User-Role"),
+) -> ReferenceSet:
+    """写入/更新一条参考条目；CAS 冲突 409，项目上下文不符 fail closed。
+
+    同值重复 PUT 幂等：``decision``/``note``/``order`` 与库内一致时不推进
+    ``version``，响应与上一次写入完全一致，可安全重放。
+    """
+    require_authenticated(authorization, x_user_role)
+    try:
+        return store.upsert_item(
+            session_id=session_id,
+            asset_id=asset_id,
+            project_id=payload.project_id,
+            decision=payload.decision,
+            note=payload.note,
+            order=payload.order,
+            expected_version=payload.expected_version,
+        )
+    except DomainError as exc:
+        raise _as_cleanroom_exception(exc) from exc
+
+
+def _as_cleanroom_exception(exc: DomainError) -> CleanroomException:
+    """把参考集领域错误映射为契约规定的 HTTP 错误包。
+
+    领域层保持框架中立（只给 ``ErrorCode``），形状与状态码由传输层决定：
+    ``VALIDATION_FAILED`` 默认映射 422，与票面「缺 project_id → 400」不一致，
+    因此在此显式收敛，避免沿用默认映射造成契约漂移。
+    """
+    if isinstance(exc, ReferenceVersionConflict):
+        return VersionConflictException(
+            expected_version=exc.expected_version,
+            current_version=exc.current_version,
+            message=exc.message,
+        )
+    if isinstance(exc, ReferenceProjectContextError):
+        if exc.reason == ReferenceProjectContextError.REASON_MISSING:
+            return CleanroomException(400, "PROJECT_CONTEXT_REQUIRED", exc.message)
+        return CleanroomException(409, "PROJECT_CONTEXT_MISMATCH", exc.message)
+    if exc.code is ErrorCode.PROJECT_UNAVAILABLE:
+        return CleanroomException(404, "SESSION_NOT_FOUND", exc.message)
+    return CleanroomException(exc.http_status, str(exc.code), exc.message)
 
 
 __all__ = ["REFERENCE_DB_RELATIVE", "get_reference_store", "router"]

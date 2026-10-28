@@ -3,6 +3,10 @@
 .directory-settings-panel { display: flex !important; flex: 1 1 auto; width: 100%; min-width: 0; min-height: 0; height: 100%; overflow: hidden; }
 .directory-settings-frame { flex: 1 1 auto; width: 100%; height: 100%; min-width: 0; min-height: 0; border: 0; display: block; }
 html.directory-settings-page { height:100%; background:var(--gw-surface-bg); }
+/* QIN-473：嵌入设置工作台时，页面基底复用「通用与外观偏好」的容器梯度，避免整片近黑；卡片仍保持黑底。 */
+html.directory-settings-page.workspace-embedded { height:100%; background:var(--gw-settings-container-background); }
+/* signal-flow.css 对资产路由 body 有 !important 锁底色，嵌入态需以更高权重覆盖。 */
+html.directory-settings-page.workspace-embedded body.gw-signal.gw-page--asset-manager { background:var(--gw-settings-container-background) !important; }
 .directory-settings-page body {
   --card-gradient:linear-gradient(165deg,var(--gw-surface-card),var(--gw-surface-card-end));
   --line-gold:var(--gold-glow); --line-gold-bright:var(--gold-glow);
