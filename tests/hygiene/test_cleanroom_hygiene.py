@@ -300,7 +300,7 @@ def test_static_layer_has_no_legacy_integration_markers(repo_root: Path):
 # 凭据或完整历史授权账本。历史材料继续留在洁净源仓，不因测试需要复制进新仓。
 ADMISSION_METADATA_PATH = "tests/hygiene/fixtures/cleanroom_admission_metadata.json"
 ADMISSION_METADATA_SHA256 = (
-    "80f846ed6caecfd47ed8f841d69efc3d80fba518828c6d4a7d170f87cd466c45"
+    "633401646239dfaae3398fd53040455acae1bfa400d59ed6bba672e4c5705b8a"
 )
 QUARANTINED_PROMPT_ORIGINAL_PATH = (
     "web/system-prompts/infinite-canvas-prompt-templates.md"
@@ -320,6 +320,38 @@ def _load_admission_metadata(repo_root: Path) -> dict:
     assert metadata.get("release_authorized") is True
     assert _canonical_sha256(metadata_path) == ADMISSION_METADATA_SHA256
     return metadata
+
+
+def test_github_issue_364_file_scope_is_registered(repo_root: Path):
+    """#364（MVP2-T0）的工具适配层、接口目录与卫生登记文件按票面逐项登记。"""
+    metadata = _load_admission_metadata(repo_root)
+    registrations = [
+        item
+        for item in metadata.get("authorized_issue_file_sets", [])
+        if item.get("issue") == 364
+    ]
+    assert len(registrations) == 1
+    assert registrations[0].get("authorization_basis") == (
+        "GitHub Issue #364, 2026-10-28"
+    )
+    assert set(registrations[0].get("files", [])) == {
+        "gw/agent_runtime/adapters/asset_search_tool.py",
+        "docs/contracts/AGENT-WORKBENCH-INTERFACE-CATALOG.yaml",
+        "tests/contracts/agent/test_mvp2_t0_asset_search_tool.py",
+        "tests/hygiene/fixtures/cleanroom_admission_metadata.json",
+        "tests/hygiene/test_cleanroom_hygiene.py",
+    }
+
+
+def test_github_issue_338_file_scope_is_registered(repo_root: Path):
+    """QIN-422 收集接口及 PM 批准的旧断言更新列入准入登记。"""
+    metadata = _load_admission_metadata(repo_root)
+    records = [item for item in metadata.get("authorized_issue_file_sets", []) if item.get("issue") == 338]
+    assert len(records) == 1
+    assert {"gw/asset_registry/collector.py", "gw/api/routes_asset_collect.py",
+            "tests/contracts/assets/test_mvp1_t8a_collector.py",
+            "tests/frontend/mvp1-t8a-ui-collect-panel.test.mjs",
+            "tests/hygiene/test_structure_guardrails.py"} <= set(records[0]["files"])
 
 
 def test_github_issue_345_file_scope_is_registered(repo_root: Path):
@@ -370,6 +402,68 @@ def test_github_issue_336_file_scope_is_registered(repo_root: Path):
     }
 
 
+def test_github_issue_354_file_scope_is_registered(repo_root: Path):
+    """#354（QIN-431）的回归测试与卫生登记按票面逐项登记（只测试不改实现）。"""
+    metadata = _load_admission_metadata(repo_root)
+    registrations = [
+        item
+        for item in metadata.get("authorized_issue_file_sets", [])
+        if item.get("issue") == 354
+    ]
+    assert len(registrations) == 1
+    assert registrations[0].get("authorization_basis") == (
+        "GitHub Issue #354, 2026-10-28"
+    )
+    assert set(registrations[0].get("files", [])) == {
+        "tests/contracts/assets/test_qin_431_restore_suffix_metadata.py",
+        "tests/hygiene/fixtures/cleanroom_admission_metadata.json",
+        "tests/hygiene/test_cleanroom_hygiene.py",
+    }
+
+
+def test_github_issue_368_file_scope_is_registered(repo_root: Path):
+    """#368（QIN-446）的前段工具注册、接口目录与卫生登记按票面逐项登记。"""
+    metadata = _load_admission_metadata(repo_root)
+    registrations = [
+        item
+        for item in metadata.get("authorized_issue_file_sets", [])
+        if item.get("issue") == 368
+    ]
+    assert len(registrations) == 1
+    assert registrations[0].get("authorization_basis") == (
+        "GitHub Issue #368, 2026-10-28"
+    )
+    assert set(registrations[0].get("files", [])) == {
+        "gw/agent_runtime/adapters/pipeline_tools.py",
+        "docs/contracts/AGENT-WORKBENCH-INTERFACE-CATALOG.yaml",
+        "tests/contracts/agent/test_mvp2_t4_pipeline_tools.py",
+        "tests/hygiene/fixtures/cleanroom_admission_metadata.json",
+        "tests/hygiene/test_cleanroom_hygiene.py",
+    }
+
+
+def test_github_issue_366_file_scope_is_registered(repo_root: Path):
+    """#366（MVP2-T2）的产物来源链契约：模型、服务、契约目录与卫生登记按票面登记。"""
+    metadata = _load_admission_metadata(repo_root)
+    registrations = [
+        item
+        for item in metadata.get("authorized_issue_file_sets", [])
+        if item.get("issue") == 366
+    ]
+    assert len(registrations) == 1
+    assert registrations[0].get("authorization_basis") == (
+        "GitHub Issue #366, 2026-10-28"
+    )
+    assert set(registrations[0].get("files", [])) == {
+        "gw/asset_registry/models.py",
+        "gw/asset_registry/service.py",
+        "docs/contracts/ASSET-REGISTRY-INTERFACE-CATALOG.yaml",
+        "tests/contracts/assets/test_mvp2_t2_provenance.py",
+        "tests/hygiene/fixtures/cleanroom_admission_metadata.json",
+        "tests/hygiene/test_cleanroom_hygiene.py",
+    }
+
+
 def test_github_issue_387_file_scope_is_registered(repo_root: Path):
     """#387（MVP1 试点测量报告）的报表字段与契约测试按票面逐项登记。"""
     metadata = _load_admission_metadata(repo_root)
@@ -414,6 +508,82 @@ def test_github_issue_334_file_scope_is_registered(repo_root: Path):
         "tests/hygiene/test_structure_guardrails.py",
     }
 
+
+def test_github_issue_335_file_scope_is_registered(repo_root: Path):
+    """#335 的治理建议服务、接口、视图与测试按票面逐项登记。"""
+    metadata = _load_admission_metadata(repo_root)
+    registrations = [
+        item
+        for item in metadata.get("authorized_issue_file_sets", [])
+        if item.get("issue") == 335
+    ]
+    assert len(registrations) == 1
+    assert registrations[0].get("authorization_basis") == (
+        "GitHub Issue #335, 2026-10-27"
+    )
+    assert set(registrations[0].get("files", [])) == {
+        "gw/asset_registry/governance.py",
+        "gw/api/routes_asset_registry.py",
+        "web/js/modules/asset-manager.js",
+        "tests/contracts/assets/test_mvp1_t5_governance.py",
+        "tests/frontend/mvp1-t5-governance-list.test.mjs",
+        "tests/frontend/node-files.txt",
+        "tests/contracts/projects/test_phase8_frontend_backend_api_gap.py",
+        "tests/hygiene/fixtures/cleanroom_admission_metadata.json",
+        "tests/hygiene/test_cleanroom_hygiene.py",
+    }
+
+
+def test_github_issue_356_file_scope_is_registered(repo_root: Path):
+    """#356（QIN-432）的原生选择器、双列布局与客户端桥接按票面登记。"""
+    metadata = _load_admission_metadata(repo_root)
+    registrations = [
+        item
+        for item in metadata.get("authorized_issue_file_sets", [])
+        if item.get("issue") == 356
+    ]
+    assert len(registrations) == 1
+    assert registrations[0].get("authorization_basis") == (
+        "GitHub Issue #356, 2026-10-28"
+    )
+    assert set(registrations[0].get("files", [])) == {
+        "gw/api/routes_settings.py",
+        "gw/settings/native_picker.py",
+        "web/js/modules/asset-manager.js",
+        "web/css/pages/directory-settings.css",
+        "clients/desktop/Cargo.toml",
+        "clients/desktop/Cargo.lock",
+        "clients/desktop/src/main.rs",
+        "clients/desktop/capabilities/default.json",
+        "clients/desktop/README.md",
+        "tests/contracts/settings/test_qin411_412_native_picker.py",
+        "tests/e2e/test_api_settings_browser.py",
+        "tests/frontend/qin-412-directory-settings.test.mjs",
+        "tests/contracts/projects/test_phase8_frontend_backend_api_gap.py",
+        "tests/hygiene/fixtures/cleanroom_admission_metadata.json",
+        "tests/hygiene/test_cleanroom_hygiene.py",
+    }
+
+
+
+def test_github_issue_367_file_scope_is_registered(repo_root: Path):
+    """#367（QIN-441）的门禁状态机、契约测试与卫生登记按票面逐项登记。"""
+    metadata = _load_admission_metadata(repo_root)
+    registrations = [
+        item
+        for item in metadata.get("authorized_issue_file_sets", [])
+        if item.get("issue") == 367
+    ]
+    assert len(registrations) == 1
+    assert registrations[0].get("authorization_basis") == (
+        "GitHub Issue #367, 2026-10-28"
+    )
+    assert set(registrations[0].get("files", [])) == {
+        "gw/agent_episode/gates.py",
+        "tests/contracts/agent/test_mvp2_t3_gates.py",
+        "tests/hygiene/fixtures/cleanroom_admission_metadata.json",
+        "tests/hygiene/test_cleanroom_hygiene.py",
+    }
 
 def test_quarantined_prompt_is_absent_from_static_tree(repo_root: Path):
     """隔离提示词不进入静态树；新仓不保存正文副本。"""
@@ -561,9 +731,9 @@ def test_admission_metadata_hashes_match_current_files(repo_root: Path):
     """当前准入文件哈希必须与机器登记一致；不复用旧 Phase-2 账本。"""
     metadata = _load_admission_metadata(repo_root)
     entries = metadata.get("admitted_files", [])
-    assert len(entries) == 106, (
+    assert len(entries) == 107, (
         "当前准入登记数量必须包含 H01、已批准规范、QIN-376 测试覆盖清单、QIN-382 方案"
-        "、MVP1-T4a 嵌入基准冒烟测试与 QIN-347 回归测试"
+        "、MVP1-T4a 嵌入基准冒烟测试、QIN-347 回归测试与 QIN-440 产物来源链契约测试"
     )
     for entry in entries:
         path = repo_root / entry["path"]

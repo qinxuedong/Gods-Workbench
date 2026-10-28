@@ -43,6 +43,25 @@
       ]
     },
     {
+      "issue": 338,
+      "authorization_basis": "GitHub Issue #338; PM-approved test scope extensions 2026-10-28",
+      "files": [
+        "gw/asset_registry/collector.py",
+        "gw/api/routes_asset_collect.py",
+        "gw/api/app.py",
+        "web/js/modules/asset-manager.js",
+        "tests/contracts/assets/test_mvp1_t8a_collector.py",
+        "tests/contracts/projects/test_phase8_frontend_backend_api_gap.py",
+        "tests/hygiene/fixtures/cleanroom_admission_metadata.json",
+        "tests/hygiene/test_cleanroom_hygiene.py",
+        "README.md",
+        "tests/frontend/mvp1-t8a-dropzone.test.mjs",
+        "tests/frontend/node-files.txt",
+        "tests/frontend/mvp1-t8a-ui-collect-panel.test.mjs",
+        "tests/hygiene/test_structure_guardrails.py"
+      ]
+    },
+    {
       "issue": 336,
       "authorization_basis": "GitHub Issue #336, 2026-10-28",
       "files": [
@@ -55,6 +74,95 @@
         "tests/frontend/mvp1-t6-omnibar-asset.test.mjs",
         "tests/frontend/node-files.txt",
         "tests/e2e/test_mvp1_t6_search_jump_browser.py",
+        "tests/contracts/projects/test_phase8_frontend_backend_api_gap.py",
+        "tests/hygiene/fixtures/cleanroom_admission_metadata.json",
+        "tests/hygiene/test_cleanroom_hygiene.py"
+      ]
+    },
+    {
+      "issue": 354,
+      "authorization_basis": "GitHub Issue #354, 2026-10-28",
+      "files": [
+        "tests/contracts/assets/test_qin_431_restore_suffix_metadata.py",
+        "tests/hygiene/fixtures/cleanroom_admission_metadata.json",
+        "tests/hygiene/test_cleanroom_hygiene.py"
+      ]
+    },
+    {
+      "issue": 368,
+      "authorization_basis": "GitHub Issue #368, 2026-10-28",
+      "files": [
+        "gw/agent_runtime/adapters/pipeline_tools.py",
+        "docs/contracts/AGENT-WORKBENCH-INTERFACE-CATALOG.yaml",
+        "tests/contracts/agent/test_mvp2_t4_pipeline_tools.py",
+        "tests/hygiene/fixtures/cleanroom_admission_metadata.json",
+        "tests/hygiene/test_cleanroom_hygiene.py"
+      ]
+    },
+    {
+      "issue": 366,
+      "authorization_basis": "GitHub Issue #366, 2026-10-28",
+      "files": [
+        "gw/asset_registry/models.py",
+        "gw/asset_registry/service.py",
+        "docs/contracts/ASSET-REGISTRY-INTERFACE-CATALOG.yaml",
+        "tests/contracts/assets/test_mvp2_t2_provenance.py",
+        "tests/hygiene/fixtures/cleanroom_admission_metadata.json",
+        "tests/hygiene/test_cleanroom_hygiene.py"
+      ]
+    },
+    {
+      "issue": 335,
+      "authorization_basis": "GitHub Issue #335, 2026-10-27",
+      "files": [
+        "gw/asset_registry/governance.py",
+        "gw/api/routes_asset_registry.py",
+        "web/js/modules/asset-manager.js",
+        "tests/contracts/assets/test_mvp1_t5_governance.py",
+        "tests/frontend/mvp1-t5-governance-list.test.mjs",
+        "tests/frontend/node-files.txt",
+        "tests/contracts/projects/test_phase8_frontend_backend_api_gap.py",
+        "tests/hygiene/fixtures/cleanroom_admission_metadata.json",
+        "tests/hygiene/test_cleanroom_hygiene.py"
+      ]
+    },
+    {
+      "issue": 364,
+      "authorization_basis": "GitHub Issue #364, 2026-10-28",
+      "files": [
+        "gw/agent_runtime/adapters/asset_search_tool.py",
+        "docs/contracts/AGENT-WORKBENCH-INTERFACE-CATALOG.yaml",
+        "tests/contracts/agent/test_mvp2_t0_asset_search_tool.py",
+        "tests/hygiene/fixtures/cleanroom_admission_metadata.json",
+        "tests/hygiene/test_cleanroom_hygiene.py"
+      ]
+    },
+    {
+      "issue": 367,
+      "authorization_basis": "GitHub Issue #367, 2026-10-28",
+      "files": [
+        "gw/agent_episode/gates.py",
+        "tests/contracts/agent/test_mvp2_t3_gates.py",
+        "tests/hygiene/fixtures/cleanroom_admission_metadata.json",
+        "tests/hygiene/test_cleanroom_hygiene.py"
+      ]
+    },
+    {
+      "issue": 356,
+      "authorization_basis": "GitHub Issue #356, 2026-10-28",
+      "files": [
+        "gw/api/routes_settings.py",
+        "gw/settings/native_picker.py",
+        "web/js/modules/asset-manager.js",
+        "web/css/pages/directory-settings.css",
+        "clients/desktop/Cargo.toml",
+        "clients/desktop/Cargo.lock",
+        "clients/desktop/src/main.rs",
+        "clients/desktop/capabilities/default.json",
+        "clients/desktop/README.md",
+        "tests/contracts/settings/test_qin411_412_native_picker.py",
+        "tests/e2e/test_api_settings_browser.py",
+        "tests/frontend/qin-412-directory-settings.test.mjs",
         "tests/contracts/projects/test_phase8_frontend_backend_api_gap.py",
         "tests/hygiene/fixtures/cleanroom_admission_metadata.json",
         "tests/hygiene/test_cleanroom_hygiene.py"
@@ -259,8 +367,8 @@
     {
       "path": "docs/contracts/ASSET-REGISTRY-INTERFACE-CATALOG.yaml",
       "classification": "frozen_interface_contract",
-      "authorization_basis": "cleanroom_frozen_input",
-      "sha256": "60c8e528aa4683e688ef0344d872cbb97265fe8d7639ae0fed8574bb83ea0d34",
+      "authorization_basis": "cleanroom_frozen_input; GitHub_Issue_366_2026-10-28",
+      "sha256": "707836d70b204f1999df3bb9412df3f77dfe5c7097677ee8b4e191fd25c344c1",
       "admission": "accepted"
     },
     {
@@ -302,7 +410,7 @@
       "path": "docs/contracts/AGENT-WORKBENCH-INTERFACE-CATALOG.yaml",
       "classification": "frozen_interface_contract",
       "authorization_basis": "user_integration_request_2026-10-08",
-      "sha256": "20ac189e6e03b3257e75262677c109278e2ebf0a0b3b0ab787c1c1b1dea61bfe",
+      "sha256": "b429c06df040286015180710d89930527b979b71b14e1af458da80e86331a48b",
       "admission": "accepted"
     },
     {
@@ -920,6 +1028,13 @@
       "authorization_basis": "QIN-347_GitHub_Cut_2026-10-26",
       "sha256": "8c5a3972fffb01b29c85325dbeab30e401c2ff4089aa4ff2b6434f977b30cc5b",
       "admission": "accepted"
+    },
+    {
+      "path": "tests/contracts/assets/test_mvp2_t2_provenance.py",
+      "classification": "curated_test_coverage",
+      "authorization_basis": "GitHub_Issue_366_2026-10-28",
+      "sha256": "3074c1505cad4e5d6d2251e0c6825bdb1afde4af79c9e4f07b2e5e4bc8c30cf6",
+      "admission": "accepted"
     }
   ],
   "accepted_test_files": [
@@ -927,6 +1042,12 @@
       "path": "tests/contracts/assets/test_mvp1_t9a_recycle_regression.py",
       "classification": "curated_test_coverage",
       "authorization_basis": "QIN-347_GitHub_Cut_2026-10-26",
+      "admission": "accepted"
+    },
+    {
+      "path": "tests/contracts/assets/test_mvp2_t2_provenance.py",
+      "classification": "curated_test_coverage",
+      "authorization_basis": "GitHub_Issue_366_2026-10-28",
       "admission": "accepted"
     }
   ],
@@ -955,6 +1076,36 @@
       "path": "tests/contracts/assets/test_mvp1_t4_embedder_offline.py",
       "authorization_basis": "GitHub_Issue_334_QIN-418_2026-10-27",
       "sha256": "5ad494a842431497adeaaa75298071b659130b0883bc8caafa729698fc748d9e"
+    },
+    {
+      "path": "tests/contracts/assets/test_qin_431_restore_suffix_metadata.py",
+      "authorization_basis": "QIN-431_Issue_354_2026-10-28",
+      "sha256": "60c6ccceb8223ad57a77d6c0ecd7691d2904133baf167c23fc4b8423894e9ba2"
+    },
+    {
+      "path": "tests/contracts/assets/test_mvp2_t2_provenance.py",
+      "authorization_basis": "GitHub_Issue_366_2026-10-28",
+      "sha256": "3074c1505cad4e5d6d2251e0c6825bdb1afde4af79c9e4f07b2e5e4bc8c30cf6"
+    },
+    {
+      "path": "tests/contracts/assets/test_mvp1_t5_governance.py",
+      "authorization_basis": "MVP1-T5_Cut_2026-10-26",
+      "sha256": "3909947fda23e3aaad587389f39b75de00fd4111cb4a721523da9e067c9918ed"
+    },
+    {
+      "path": "tests/frontend/mvp1-t5-governance-list.test.mjs",
+      "authorization_basis": "MVP1-T5_Cut_2026-10-26",
+      "sha256": "85e126650d9ff7b13036cb1040b3c55f5f23b86bc62df5c4014247b69dab0037"
+    },
+    {
+      "path": "tests/contracts/agent/test_mvp2_t0_asset_search_tool.py",
+      "authorization_basis": "MVP2-T0_GitHub_Issue_364_2026-10-28",
+      "sha256": "3ed7bd03e6297e3c13dad571e1b6452b88c8448053c134d651896e1ff7bd966b"
+    },
+    {
+      "path": "tests/contracts/agent/test_mvp2_t4_pipeline_tools.py",
+      "authorization_basis": "QIN-446_Issue_368_2026-10-28",
+      "sha256": "07239fdcf8f898bbfda116a98062ee66488653ae09c92e3521f31e997058183c"
     }
   ]
 }
