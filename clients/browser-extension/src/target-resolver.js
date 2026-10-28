@@ -136,8 +136,9 @@
      *
      * 关键契约：用户右键点中的是元素时，元素地址不可用（如 `blob:`）必须**明确失败**，
      * 不能静默退化成「收集当前页面」，否则 AC11 的「blob/MSE 明确提示不支持」会失效。
+     * `options.pageFallback === false` 时不做页面兜底（Ctrl+右键快捷方式用：空白处不拦截原生菜单）。
      */
-    function resolveCollectTarget(input) {
+    function resolveCollectTarget(input, options) {
         var source = input && typeof input === 'object' ? input : {};
         var candidates = candidatesOf(source);
         var firstError = '';
@@ -151,6 +152,9 @@
         }
         if (candidates.list.length) {
             return {errorCode: firstError || 'unsupported_url'};
+        }
+        if (options && options.pageFallback === false) {
+            return {errorCode: 'no_target'};
         }
         var page = classifyUrl(source.pageUrl, undefined);
         if (page.url) return {url: page.url, kind: 'page'};

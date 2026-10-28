@@ -93,6 +93,13 @@
         return source;
     }
 
+    /** 只有这几种「浏览器内部地址」才是需要明确提示的目标；其余不成立的候选继续向上找。 */
+    var INTERNAL_ERROR_CODES = ['blob_url', 'data_url', 'media_stream'];
+
+    /**
+     * 从事件路径上找第一个可用目标。
+     * 快捷方式不做页面兜底：空白处 Ctrl+右键必须放行原生菜单，避免阻断页面操作。
+     */
     function resolveEventTarget(event) {
         var path = typeof event.composedPath === 'function' ? event.composedPath() : [event.target];
         for (var index = 0; index < path.length; index += 1) {
@@ -100,8 +107,11 @@
             if (!node || node.nodeType !== 1) continue;
             var source = describe(node);
             if (!source) continue;
-            var target = root.GwCollectTarget.resolveCollectTarget(source);
-            if (target.url || (target.errorCode && target.errorCode !== 'no_target')) return target;
+            var target = root.GwCollectTarget.resolveCollectTarget(source, {pageFallback: false});
+            if (target.url) return target;
+            if (target.errorCode && INTERNAL_ERROR_CODES.indexOf(target.errorCode) !== -1) {
+                return target;
+            }
         }
         return {errorCode: 'no_target'};
     }

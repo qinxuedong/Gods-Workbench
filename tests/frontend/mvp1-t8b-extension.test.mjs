@@ -294,6 +294,16 @@ test('目标解析：srcset 最大项、背景图、视频海报与浏览器内�
     kind: 'page',
   });
   assert.deepEqual(plain(resolver.resolveCollectTarget({tagName: ''})), {errorCode: 'no_target'});
+
+  // Ctrl+右键快捷方式关掉页面兜底：普通元素（无素材地址）不拦截原生菜单。
+  assert.deepEqual(
+    plain(resolver.resolveCollectTarget({tagName: 'DIV', backgroundImage: 'none', pageUrl: page}, {pageFallback: false})),
+    {errorCode: 'no_target'},
+  );
+  assert.deepEqual(
+    plain(resolver.resolveCollectTarget({tagName: 'IMG', src: '/a.png', pageUrl: page}, {pageFallback: false})),
+    {url: 'https://site.test/a.png', kind: 'image'},
+  );
 });
 
 test('收集客户端按真实契约配对、提交并轮询到终态', async () => {
