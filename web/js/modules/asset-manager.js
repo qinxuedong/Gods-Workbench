@@ -23,6 +23,8 @@ import {formatDate, formatFileSize} from './asset-manager/formatters.js';
 import {pathCompareKey} from './asset-manager/path-utils.js';
 import {workflowAssetId, workflowLibraryId, workflowCategoryId, workflowSourceId, zipWorkflowFiles} from './asset-manager/workflow-assets.js';
 import {openAssetCollectOverlay} from './asset-collect-panel.js';
+import {createHttpCollectAdapter} from './asset-collect-panel.js';
+import {renderProvenanceChain, handleProvenanceNodeClick} from './asset-manager/provenance.js';
 
 let mediaPreviewPlayerLoading = null;
 export async function ensureMediaPreviewPlayer() {
@@ -686,6 +688,7 @@ const SYSTEM_ASSET_BOARDS = [
     {id:'prompts', name:'提示词', icon:'text-cursor-input', system:true},
     {id:'canvas-assets', name:'画布资产', icon:'layout-dashboard', system:true},
     {id:'local', name:'上传资源', icon:'cloud-upload', system:true},
+    {id:'governance', name:'治理建议', icon:'list-checks', system:true},
 ];
 const SCRIPT_ASSET_STORAGE_KEY = 'gwb_script_assets_v1';
 let scriptArchiveItems = [];
@@ -962,6 +965,13 @@ async function activateAssetBoard(id){
     }
     if(board.id === 'local' && !localAssetsLoaded){
         const loading = loadLocalAssets();
+        render();
+        await loading;
+        if(activeTab === id) render();
+        return;
+    }
+    if(board.id === 'governance' && !governanceSuggestionsData && !governanceSuggestionsLoading){
+        const loading = loadGovernanceSuggestions();
         render();
         await loading;
         if(activeTab === id) render();
@@ -6959,6 +6969,113 @@ function restoreRegistryPreviewImages(cache){
         image.replaceWith(loaded.image);
     });
 }
+// ===== MVP1-T5 治理建议清单视图（只建议 + 逐条确认，系统不改源文件、不自动删除） =====
+let governanceSuggestionsData = null;
+let governanceSuggestionsLoading = false;
+const GOVERNANCE_SUGGESTION_KIND_LABELS = {
+    naming:'命名建议', tagging:'受控打标', duplicate_files:'文件查重',
+    duplicate_shots:'镜头查重', vector_duplicates:'向量近重', similar_names:'相似名（仅提示）',
+};
+const GOVERNANCE_INFORMATIONAL_KINDS = new Set(['similar_names']);
+async function loadGovernanceSuggestions(force=false){
+    if(governanceSuggestionsLoading) return;
+    governanceSuggestionsLoading = true;
+    if(force) governanceSuggestionsData = null;
+    if(!force) render();
+    try {
+        governanceSuggestionsData = await apiJsonResponse(fetch('/api/asset-registry/governance/suggestions', {
+            headers:{'Accept':'application/json'},
+        }));
+    } finally {
+        governanceSuggestionsLoading = false;
+    }
+}
+async function refreshGovernanceSuggestions(){
+    await loadGovernanceSuggestions(true);
+    if(activeTab === 'governance') render();
+    setStatus('治理建议已刷新');
+}
+function governanceSuggestionEntries(){
+    const suggestions = governanceSuggestionsData?.suggestions || {};
+    return Object.entries(suggestions).flatMap(([kind, entries]) => (
+        (Array.isArray(entries) ? entries : []).map(entry => ({...entry, kind}))
+    ));
+}
+function renderGovernanceSuggestionCard(item){
+    const kindLabel = GOVERNANCE_SUGGESTION_KIND_LABELS[item.kind] || item.kind;
+    const informational = GOVERNANCE_INFORMATIONAL_KINDS.has(item.kind);
+    let detail = '';
+    if(item.kind === 'naming'){
+        detail = `<p>资产 <code>${escapeHtml(item.name || '')}</code>：${(item.violations || []).map(v => escapeHtml(v.message || v.code || '')).join('；') || '命名不符合规范'}</p><p>建议名称：<code>${escapeHtml(item.suggested_name || '')}</code></p>`;
+    } else if(item.kind === 'tagging'){
+        detail = `<p>来源标签 ${(item.source_tags || []).map(t => `<code>${escapeHtml(t)}</code>`).join('、')} 可归入受控词表：${(item.suggested_tags || []).map(t => `<strong>${escapeHtml(t)}</strong>`).join('、')}</p>`;
+    } else if(item.kind === 'duplicate_files'){
+        detail = `<p>相同内容哈希 <code>${escapeHtml(String(item.content_hash || '').slice(0, 16))}…</code>：</p><ul>${(item.members || []).map(m => `<li>${escapeHtml(m.path || '')}（${Number(m.size_bytes || 0)} 字节）</li>`).join('')}</ul>`;
+    } else if(item.kind === 'duplicate_shots'){
+        detail = `<p>相同镜头内容哈希 <code>${escapeHtml(String(item.content_hash || '').slice(0, 16))}…</code>：</p><ul>${(item.members || []).map(m => `<li>${escapeHtml(m.asset_id || '')} #${escapeHtml(String(m.shot_index ?? ''))}（${Number(m.start_sec || 0).toFixed(2)}s ~ ${Number(m.end_sec || 0).toFixed(2)}s）</li>`).join('')}</ul>`;
+    } else if(item.kind === 'vector_duplicates'){
+        detail = `<p>嵌入相似度 <strong>${escapeHtml(String(item.similarity ?? ''))}</strong>：<code>${escapeHtml(item.left_asset_id || '')}</code> 与 <code>${escapeHtml(item.right_asset_id || '')}</code></p>`;
+    } else if(item.kind === 'similar_names'){
+        detail = `<p>规范化名称 <code>${escapeHtml(item.normalized_name || '')}</code>：</p><ul>${(item.members || []).map(m => `<li>${escapeHtml(m)}</li>`).join('')}</ul>`;
+    }
+    const action = informational ? '<span class="nav-hint">仅提示，不提供写入动作</span>'
+        : `<button class="hw-btn" type="button" data-governance-confirm="${escapeAttr(item.suggestion_id || '')}"><i data-lucide="check"></i><span>确认写入</span></button>`;
+    return `<article class="asset-panel governance-suggestion-card" data-governance-suggestion="${escapeAttr(item.suggestion_id || '')}" data-governance-kind="${escapeAttr(item.kind || '')}" role="listitem">
+        <div class="panel-head"><div class="panel-title"><strong>${escapeHtml(kindLabel)}</strong><span>${escapeHtml(item.suggestion_id || '')}</span></div></div>
+        ${detail}
+        <div class="content-toolbar">${action}</div>
+    </article>`;
+}
+function renderGovernanceSuggestionsManager(){
+    const loading = governanceSuggestionsLoading;
+    const data = governanceSuggestionsData;
+    const entries = data ? governanceSuggestionEntries() : [];
+    const counts = data?.counts || {};
+    const gaps = Array.isArray(data?.data_gaps) ? data.data_gaps : [];
+    const cards = entries.length
+        ? entries.map(renderGovernanceSuggestionCard).join('')
+        : `<div class="nav-hint" data-governance-empty>${loading ? '正在加载治理建议…' : '暂无治理建议：当前登记数据未发现命名、打标或查重候选。'}</div>`;
+    root.innerHTML = `
+        <aside class="asset-panel asset-nav">
+            <div class="panel-head"><div class="panel-title"><strong>治理建议</strong><span>只建议，确认后才写入</span></div><span class="library-board-mark"><i data-lucide="list-checks"></i></span></div>
+            <div class="nav-scroll">
+                <div class="nav-hint">命名与打标建议基于登记数据与受控词表；查重候选来自内容哈希与向量嵌入。系统永不自动删除，也不改源文件；确认动作全程携带版本校验并留确认记录。</div>
+                <section class="asset-context-tree"><div class="nav-section-title">建议分类</div><div class="nav-tree" data-governance-counts role="group" aria-label="建议分类计数">
+                    ${Object.keys(GOVERNANCE_SUGGESTION_KIND_LABELS).map(kind => `<div class="nav-tree-item"><span>${escapeHtml(GOVERNANCE_SUGGESTION_KIND_LABELS[kind])}</span><strong>${Number(counts[kind] || 0)}</strong></div>`).join('')}
+                </div></section>
+                ${gaps.length ? `<div class="nav-hint" data-governance-degraded>数据降级：${escapeHtml(gaps.join('、'))}，查重候选可能不完整。</div>` : ''}
+            </div>
+        </aside>
+        <section class="asset-panel asset-content" data-governance-suggestions role="list" aria-label="治理建议清单">
+            <div class="content-toolbar">
+                <div class="panel-title"><strong>建议清单</strong><span>注册表版本 v${escapeHtml(String(data?.revision ?? '—'))}</span></div>
+                <button class="hw-btn" type="button" data-governance-refresh><i data-lucide="refresh-cw"></i><span>刷新建议</span></button>
+            </div>
+            <div class="nav-scroll governance-suggestion-list">${cards}</div>
+        </section>`;
+    refreshIcons();
+}
+async function confirmGovernanceSuggestion(suggestionId){
+    const id = String(suggestionId || '').trim();
+    if(!id) return;
+    const revision = Number(governanceSuggestionsData?.revision || 0);
+    if(!Number.isInteger(revision) || revision < 1){
+        setStatus('建议清单尚未加载，无法确认');
+        return;
+    }
+    try {
+        await apiJsonResponse(fetch('/api/asset-registry/governance/suggestions/confirm', {
+            method:'POST',
+            headers:{'Content-Type':'application/json', 'Accept':'application/json'},
+            body:JSON.stringify({suggestion_id:id, expected_version:revision}),
+        }));
+        showAssetNotice('建议已确认并写入注册表');
+    } catch(err) {
+        setStatus(err.message || '确认失败');
+    }
+    await loadGovernanceSuggestions(true).catch(() => null);
+    if(activeTab === 'governance') render();
+}
 function render(){
     const registryPreviewCache = captureRegistryPreviewImages();
     disconnectRegistryPreviewScheduling();
@@ -7008,6 +7125,7 @@ function render(){
     else if(activeTab === 'workflows') renderWorkflowManager();
     else if(activeTab === 'local') renderLocalManager();
     else if(activeTab === 'canvas-assets') renderCanvasAssetsManager();
+    else if(activeTab === 'governance') renderGovernanceSuggestionsManager();
     else if(assetBoardById(activeTab)?.system === false) renderCustomAssetLibrary(assetBoardById(activeTab));
     else renderAssetManager();
     if(activeTab === 'registry' || customLibraryActive) renderRegistryFreshNotice();
@@ -9140,6 +9258,7 @@ function renderAssetDetail(item){
                     <div class="detail-meta"><span>分组</span><strong>${escapeHtml(activeAssetCategory()?.name || '分组')}</strong></div>
                 </div>
                 <div class="detail-url">${escapeHtml(item.url || '')}</div>
+                ${renderProvenanceChain(item)}
                 ${isImage ? `<div class="detail-caption-card">
                     <div class="detail-caption-head"><strong>智能分类</strong></div>
                     <div class="detail-classification-body">${renderClassificationChips(item, 32, {kind:'asset', libraryId:activeAssetLibraryId}) || '<span class="classification-empty">暂无智能分类，可以选中图片后点击“智能分类”。</span>'}</div>
@@ -10091,6 +10210,15 @@ async function linkSelectedRegistryAssets(){
 }
 async function handleClick(event){
     const target = event.target;
+    if(target.closest?.('[data-governance-refresh]')){
+        await refreshGovernanceSuggestions();
+        return;
+    }
+    const governanceConfirmTarget = target.closest?.('[data-governance-confirm]');
+    if(governanceConfirmTarget){
+        await confirmGovernanceSuggestion(governanceConfirmTarget.dataset.governanceConfirm || '');
+        return;
+    }
     const directoryBrowserClose = target.closest?.('[data-server-directory-close]');
     if(directoryBrowserClose){
         serverDirectoryBrowserState = {...serverDirectoryBrowserState, open:false, loading:false};
@@ -10826,6 +10954,7 @@ async function handleClick(event){
         }
         return;
     }
+    if(handleProvenanceNodeClick(event)) return;
     const assetPreview = target.closest?.('[data-asset-preview]');
     if(assetPreview){ showDetailPreview('asset', assetPreview.dataset.assetPreview || ''); return; }
     const canvasAssetPreview = target.closest?.('[data-canvas-asset-preview]');
@@ -18630,8 +18759,49 @@ assetTabsEl?.addEventListener('click', event => {
     const tab = event.target.closest?.('[data-tab]');
     if(tab) activateAssetBoard(tab.dataset.tab || 'registry').catch(err => setStatus(err.message || '打开看板失败'));
 });
-root.addEventListener('click', event => {
-    if(event.target.closest?.('[data-asset-collect-open]')){ openAssetCollectOverlay(event.target.closest('[data-asset-collect-open]')); return; }
+root.addEventListener('click', async event => {
+    if(event.target.closest?.('[data-asset-collect-open]')){
+        const trigger = event.target.closest('[data-asset-collect-open]');
+        try {
+            const pair = await fetch('/api/asset-collect/pair', {method:'POST'});
+            if(!pair.ok) throw new Error('无法连接本机收集服务');
+            let {pair_token} = await pair.json();
+            let pairExpires = Date.now() + 50 * 60 * 1000;
+            const adapter = createHttpCollectAdapter(async (...args) => {
+                if(Date.now() >= pairExpires){
+                    const renewed = await fetch('/api/asset-collect/pair', {method:'POST'});
+                    if(!renewed.ok) throw new Error('配对已失效，请重新登录');
+                    pair_token = (await renewed.json()).pair_token;
+                    pairExpires = Date.now() + 50 * 60 * 1000;
+                }
+                const [url, request = {}] = args;
+                if(request.body instanceof FormData) request.body.set('pair_token', pair_token);
+                else if(typeof request.body === 'string'){
+                    const payload = JSON.parse(request.body);
+                    payload.pair_token = pair_token;
+                    request.body = JSON.stringify(payload);
+                }
+                request.headers = {...request.headers, 'X-Collect-Token':pair_token};
+                args = [url, request];
+                const response = await fetch(...args);
+                if(response.ok){
+                    if(String(url).includes('/asset-collect/jobs/')){
+                        const body = await response.json();
+                        if(body.status === 'failed' && body.message) body.error_code = body.message;
+                        return {ok:true, json:async () => body};
+                    }
+                    return response;
+                }
+                const body = await response.json().catch(() => ({}));
+                const detail = body.detail || {};
+                return {ok:false, status:response.status, json:async () => ({error_code:detail.code, message:detail.message})};
+            });
+            openAssetCollectOverlay(trigger, {adapter, pairToken:pair_token});
+        } catch(error) {
+            window.alert(error?.message || '无法连接本机收集服务');
+        }
+        return;
+    }
     const create = event.target.closest?.('[data-script-create]');
     if(create){ openEpisodePipelineFromAsset({projectId:localStorage.getItem('workspace_project_id') || ''}); return; }
     const open = event.target.closest?.('[data-script-open]');
@@ -18744,7 +18914,10 @@ window.addEventListener('gw:omnibar-result-select', (event) => {
         if (match) targetTime = Number(match[1]);
     }
     if (assetId) {
-        openRegistryAssetFromGlobalSearch(assetId, targetTime).catch(() => {});
+        openRegistryAssetFromGlobalSearch(assetId, targetTime).catch(err => {
+            console.error(err);
+            setStatus(err.message || '打开素材失败');
+        });
     }
 });
 // asset-review.js remains a classic script during the incremental M3 migration.

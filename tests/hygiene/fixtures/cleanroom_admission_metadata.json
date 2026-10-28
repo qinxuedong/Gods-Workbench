@@ -43,6 +43,25 @@
       ]
     },
     {
+      "issue": 338,
+      "authorization_basis": "GitHub Issue #338; PM-approved test scope extensions 2026-10-28",
+      "files": [
+        "gw/asset_registry/collector.py",
+        "gw/api/routes_asset_collect.py",
+        "gw/api/app.py",
+        "web/js/modules/asset-manager.js",
+        "tests/contracts/assets/test_mvp1_t8a_collector.py",
+        "tests/contracts/projects/test_phase8_frontend_backend_api_gap.py",
+        "tests/hygiene/fixtures/cleanroom_admission_metadata.json",
+        "tests/hygiene/test_cleanroom_hygiene.py",
+        "README.md",
+        "tests/frontend/mvp1-t8a-dropzone.test.mjs",
+        "tests/frontend/node-files.txt",
+        "tests/frontend/mvp1-t8a-ui-collect-panel.test.mjs",
+        "tests/hygiene/test_structure_guardrails.py"
+      ]
+    },
+    {
       "issue": 336,
       "authorization_basis": "GitHub Issue #336, 2026-10-28",
       "files": [
@@ -55,6 +74,33 @@
         "tests/frontend/mvp1-t6-omnibar-asset.test.mjs",
         "tests/frontend/node-files.txt",
         "tests/e2e/test_mvp1_t6_search_jump_browser.py",
+        "tests/contracts/projects/test_phase8_frontend_backend_api_gap.py",
+        "tests/hygiene/fixtures/cleanroom_admission_metadata.json",
+        "tests/hygiene/test_cleanroom_hygiene.py"
+      ]
+    },
+    {
+      "issue": 366,
+      "authorization_basis": "GitHub Issue #366, 2026-10-28",
+      "files": [
+        "gw/asset_registry/models.py",
+        "gw/asset_registry/service.py",
+        "docs/contracts/ASSET-REGISTRY-INTERFACE-CATALOG.yaml",
+        "tests/contracts/assets/test_mvp2_t2_provenance.py",
+        "tests/hygiene/fixtures/cleanroom_admission_metadata.json",
+        "tests/hygiene/test_cleanroom_hygiene.py"
+      ]
+    },
+    {
+      "issue": 335,
+      "authorization_basis": "GitHub Issue #335, 2026-10-27",
+      "files": [
+        "gw/asset_registry/governance.py",
+        "gw/api/routes_asset_registry.py",
+        "web/js/modules/asset-manager.js",
+        "tests/contracts/assets/test_mvp1_t5_governance.py",
+        "tests/frontend/mvp1-t5-governance-list.test.mjs",
+        "tests/frontend/node-files.txt",
         "tests/contracts/projects/test_phase8_frontend_backend_api_gap.py",
         "tests/hygiene/fixtures/cleanroom_admission_metadata.json",
         "tests/hygiene/test_cleanroom_hygiene.py"
@@ -259,8 +305,8 @@
     {
       "path": "docs/contracts/ASSET-REGISTRY-INTERFACE-CATALOG.yaml",
       "classification": "frozen_interface_contract",
-      "authorization_basis": "cleanroom_frozen_input",
-      "sha256": "60c8e528aa4683e688ef0344d872cbb97265fe8d7639ae0fed8574bb83ea0d34",
+      "authorization_basis": "cleanroom_frozen_input; GitHub_Issue_366_2026-10-28",
+      "sha256": "707836d70b204f1999df3bb9412df3f77dfe5c7097677ee8b4e191fd25c344c1",
       "admission": "accepted"
     },
     {
@@ -920,6 +966,13 @@
       "authorization_basis": "QIN-347_GitHub_Cut_2026-10-26",
       "sha256": "8c5a3972fffb01b29c85325dbeab30e401c2ff4089aa4ff2b6434f977b30cc5b",
       "admission": "accepted"
+    },
+    {
+      "path": "tests/contracts/assets/test_mvp2_t2_provenance.py",
+      "classification": "curated_test_coverage",
+      "authorization_basis": "GitHub_Issue_366_2026-10-28",
+      "sha256": "3074c1505cad4e5d6d2251e0c6825bdb1afde4af79c9e4f07b2e5e4bc8c30cf6",
+      "admission": "accepted"
     }
   ],
   "accepted_test_files": [
@@ -927,6 +980,12 @@
       "path": "tests/contracts/assets/test_mvp1_t9a_recycle_regression.py",
       "classification": "curated_test_coverage",
       "authorization_basis": "QIN-347_GitHub_Cut_2026-10-26",
+      "admission": "accepted"
+    },
+    {
+      "path": "tests/contracts/assets/test_mvp2_t2_provenance.py",
+      "classification": "curated_test_coverage",
+      "authorization_basis": "GitHub_Issue_366_2026-10-28",
       "admission": "accepted"
     }
   ],
@@ -955,6 +1014,21 @@
       "path": "tests/contracts/assets/test_mvp1_t4_embedder_offline.py",
       "authorization_basis": "GitHub_Issue_334_QIN-418_2026-10-27",
       "sha256": "5ad494a842431497adeaaa75298071b659130b0883bc8caafa729698fc748d9e"
+    },
+    {
+      "path": "tests/contracts/assets/test_mvp2_t2_provenance.py",
+      "authorization_basis": "GitHub_Issue_366_2026-10-28",
+      "sha256": "3074c1505cad4e5d6d2251e0c6825bdb1afde4af79c9e4f07b2e5e4bc8c30cf6"
+    },
+    {
+      "path": "tests/contracts/assets/test_mvp1_t5_governance.py",
+      "authorization_basis": "MVP1-T5_Cut_2026-10-26",
+      "sha256": "3909947fda23e3aaad587389f39b75de00fd4111cb4a721523da9e067c9918ed"
+    },
+    {
+      "path": "tests/frontend/mvp1-t5-governance-list.test.mjs",
+      "authorization_basis": "MVP1-T5_Cut_2026-10-26",
+      "sha256": "85e126650d9ff7b13036cb1040b3c55f5f23b86bc62df5c4014247b69dab0037"
     }
   ]
 }
