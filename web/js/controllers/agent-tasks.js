@@ -149,6 +149,15 @@
       state.gateLoadError = '';
     } catch (error) {
       if (!isCurrentRefresh(runId, generation, sequence)) return;
+      if (error.status === 404) {
+        // 门禁 HTTP 接口由 T6b 交付；在接口未上线前静默收起卡片区，
+        // 不把「接口尚未实现」当成故障红字常驻页面。
+        state.gates = [];
+        state.gateLoadError = '';
+        state.gateSignature = '';
+        renderGates();
+        return;
+      }
       state.gateLoadError = error.message;
       renderGates();
       return;

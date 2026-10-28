@@ -408,6 +408,9 @@ test('AC2 控制器以仓库内静态路径动态挂载门禁卡模块', () => {
         assert.ok(url.startsWith('/static/'), `模块地址必须为仓库内静态资源: ${url}`);
         assert.ok(!/^https?:/.test(url), '不得引入外部 CDN');
     }
+    // 门禁 HTTP 接口由 T6b（#412）交付：404 表示接口未上线，控制器应静默收起而非红字常驻。
+    assert.ok(controllerSource.includes('error.status === 404'), '应对 404 做接口未交付降级');
+    assert.ok(controllerSource.includes('state.gateLoadError = \'\''), '降级时应清空错误态，不遗留红字');
     // 控制器自身仍为经典脚本：不得出现静态 import / export，否则页面加载会报错。
     assert.ok(!/^\s*import\s[^'"]*['"][^'"]+['"];?\s*$/m.test(controllerSource), '控制器不得改写为 ES 模块');
     assert.ok(!/^\s*export\s/m.test(controllerSource), '控制器不得导出模块成员');
