@@ -267,6 +267,40 @@ def test_absolute_path_in_shard_is_rejected(tmp_path: Path):
         load_admission_metadata(tmp_path)
 
 
+def test_shard_may_register_path_in_admitted_and_accepted_test_lists(tmp_path: Path):
+    """同一路径既可绑哈希也可提供边界分类，这是既有的真实登记形态。"""
+    _copy_base_ledger(tmp_path)
+    entry = {
+        "path": "tests/contracts/example/test_both_lists.py",
+        "classification": "curated_test_coverage",
+        "authorization_basis": "GitHub Issue #914, 2026-10-28",
+        "sha256": "1" * 64,
+        "admission": "accepted",
+    }
+    _write_shard(
+        tmp_path,
+        914,
+        raw={
+            "schema": SHARD_SCHEMA,
+            "issue": 914,
+            "authorization_basis": "GitHub Issue #914, 2026-10-28",
+            "files": ["tests/contracts/example/test_both_lists.py"],
+            "admitted_files": [entry],
+            "accepted_test_files": [
+                {
+                    "path": entry["path"],
+                    "classification": entry["classification"],
+                    "authorization_basis": entry["authorization_basis"],
+                    "admission": "accepted",
+                }
+            ],
+        },
+    )
+    metadata = load_admission_metadata(tmp_path)
+    assert entry["path"] in {item["path"] for item in metadata["admitted_files"]}
+    assert entry["path"] in {item["path"] for item in metadata["accepted_test_files"]}
+
+
 def test_union_digest_is_order_independent(tmp_path: Path):
     """并集摘要与分片写入顺序无关，可稳定用于审计留痕。"""
     first = tmp_path / "first"

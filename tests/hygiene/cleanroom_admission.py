@@ -272,10 +272,10 @@ def merge_admission_metadata(
             admitted_paths.add(entry["path"])
             admitted.append(entry)
         for entry in shard["accepted_test_files"]:
-            if entry["path"] in admitted_paths:
-                raise AdmissionMetadataError(
-                    f"测试文件既已准入又被 {shard['shard_path']} 重复登记: {entry['path']}"
-                )
+            # 同一路径同时出现在 admitted_files 与 accepted_test_files 是既有真实形态
+            # （前者绑定哈希，后者提供边界分类），此处不视为重复；已登记者以先到为准。
+            if entry["path"] in accepted_paths:
+                continue
             accepted_paths.add(entry["path"])
             accepted_tests.append(entry)
     merged["admitted_files"] = admitted
