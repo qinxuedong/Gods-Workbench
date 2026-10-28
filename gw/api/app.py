@@ -25,6 +25,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
+from gw.api.routes_agent_references import router as agent_references_router
 from gw.api.routes_ai import router as ai_router
 from gw.api.routes_asset_library import router as asset_library_router
 from gw.api.routes_asset_library_b4 import router as asset_library_b4_router
@@ -394,6 +395,9 @@ def create_app(*, agent_integration_factory=None) -> FastAPI:
     app.include_router(settings_router)
     app.include_router(decision_router)
     app.include_router(entities_router)
+    # MVP2-T1a 参考策展读取端点：路径以 /api/agent/sessions/... 独立成段，
+    # 不与 /api/agent/runs 既有 Agent 运行期路由共享载体。
+    app.include_router(agent_references_router)
     app.include_router(god_workflow_router, prefix="/api/god_workflow")
 
     @app.get("/share/{share_token}", include_in_schema=False)
