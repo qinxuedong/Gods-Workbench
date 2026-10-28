@@ -3,8 +3,6 @@
 保障仓库零旧仓实现泄漏、零未授权二进制资源、零插件协议隐式实现。
 """
 
-import hashlib
-import json
 import re
 import subprocess
 from pathlib import Path, PurePosixPath
@@ -18,6 +16,16 @@ from cleanroom_extensions import (  # noqa: E402
     ALLOWED_BINARY_ALLOWLIST,
     BANNED_EXTENSIONS,
     REQUIRED_BANNED_EXTENSIONS,
+)
+
+# 准入登记的加载、合并与校验同为单一来源：`tests/hygiene/cleanroom_admission.py`。
+# QIN-465 起登记按票拆分为 `fixtures/admissions/issue-<票号>.json`，本文件读的是
+# 「基础账本 ∪ 全部分片」的并集视图，历史断言与算法保持不变。
+from cleanroom_admission import (  # noqa: E402
+    BASE_METADATA_PATH as ADMISSION_BASE_METADATA_PATH,
+    AdmissionMetadataError,
+    canonical_sha256,
+    load_admission_metadata as load_admission_union,
 )
 
 
@@ -40,9 +48,9 @@ def _canonical_sha256(path: Path) -> str:
 
     登记表绑定的是**文件内容**，而不是某个平台的检出行尾表示；Windows 工作树
     与 Linux CI 检出必须得到同一结论，因此比较前统一归一化行尾。
+    实现只在 `cleanroom_admission` 中保留一份，此处沿用历史调用名。
     """
-    raw = path.read_bytes().replace(b"\r\n", b"\n").replace(b"\r", b"\n")
-    return hashlib.sha256(raw).hexdigest()
+    return canonical_sha256(path)
 
 
 def _git_visible_paths(repo_root: Path) -> list[str]:
@@ -298,8 +306,13 @@ def test_static_layer_has_no_legacy_integration_markers(repo_root: Path):
 # H03：来源/授权边界采用不含正文的机器可读登记。
 # 登记只保存当前新仓的分类、准入依据和规范化哈希；不保存旧仓源码、提示词正文、
 # 凭据或完整历史授权账本。历史材料继续留在洁净源仓，不因测试需要复制进新仓。
-ADMISSION_METADATA_PATH = "tests/hygiene/fixtures/cleanroom_admission_metadata.json"
-ADMISSION_METADATA_SHA256 = (
+#
+# QIN-465（GitHub #426）起，票面登记不再写进这一个大文件，而是一票一个分片
+# （`fixtures/admissions/issue-<票号>.json`），由 `cleanroom_admission` 加载时并集。
+# 因此这里只钉**几乎不变**的基础账本，分片内容由逐条 sha256 与真实文件绑定；
+# 任何票增删自己的分片都不需要重算下面这个常量，也就不会形成并行 PR 的热点。
+ADMISSION_METADATA_PATH = ADMISSION_BASE_METADATA_PATH
+ADMISSION_BASE_METADATA_SHA256 = (
     "8a6ece1bb265f43fea237188ed7c100c75d5ca0f28b802f2e11353521575362b"
 )
 QUARANTINED_PROMPT_ORIGINAL_PATH = (
@@ -309,17 +322,21 @@ QUARANTINED_PROMPT_URL = "/static/system-prompts/infinite-canvas-prompt-template
 
 
 def _load_admission_metadata(repo_root: Path) -> dict:
-    """读取当前新仓的最小准入元数据；缺失或损坏必须使测试失败。"""
+    """读取并集视图：先钉住基础账本，再合并全部票面分片。
+
+    基础账本缺失或内容漂移必须使测试失败；分片结构非法同样失败，不得降级为通过。
+    票面登记请写入 `fixtures/admissions/issue-<票号>.json`，不要回填基础账本。
+    """
     metadata_path = repo_root / ADMISSION_METADATA_PATH
     assert metadata_path.is_file(), f"缺少 H03 准入元数据: {ADMISSION_METADATA_PATH}"
+    assert _canonical_sha256(metadata_path) == ADMISSION_BASE_METADATA_SHA256, (
+        "基础账本内容已变更：只有全局准入边界变化才应改这里，且必须同步本常量；"
+        "单张票的文件集请写入 tests/hygiene/fixtures/admissions/issue-<票号>.json"
+    )
     try:
-        metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError) as exc:
-        pytest.fail(f"H03 准入元数据不可读取或不是合法 JSON: {exc}")
-    assert metadata.get("schema") == "gw.cleanroom-admission/v1"
-    assert metadata.get("release_authorized") is True
-    assert _canonical_sha256(metadata_path) == ADMISSION_METADATA_SHA256
-    return metadata
+        return load_admission_union(repo_root)
+    except AdmissionMetadataError as exc:
+        pytest.fail(f"H03 准入登记非法: {exc}")
 
 
 def test_github_issue_364_file_scope_is_registered(repo_root: Path):
@@ -824,8 +841,8 @@ def _docs_admission_delta(
 
 def test_qin_382_plan_has_explicit_curated_admission(repo_root: Path):
     """QIN-382 的方案文档按批准路径单文件进入 curated 与 H03 清单。"""
-    metadata_path = repo_root / ADMISSION_METADATA_PATH
-    metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+    # 读并集视图：分片登记的准入文件与基础账本一视同仁，不因登记位置不同而漏检。
+    metadata = _load_admission_metadata(repo_root)
     target = "docs/architecture/asset-manager-js-split-plan.md"
 
     curated_paths = {entry.get("path") for entry in metadata.get("curated_files", [])}
