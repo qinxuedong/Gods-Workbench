@@ -300,7 +300,7 @@ def test_static_layer_has_no_legacy_integration_markers(repo_root: Path):
 # 凭据或完整历史授权账本。历史材料继续留在洁净源仓，不因测试需要复制进新仓。
 ADMISSION_METADATA_PATH = "tests/hygiene/fixtures/cleanroom_admission_metadata.json"
 ADMISSION_METADATA_SHA256 = (
-    "7d21f2ad6fa62101aa08f16a3ee63a4842d143e31821d91c699cffc493e0866e"
+    "f03cc18b1ebe0352a481d21f1bfe81b78cc41d7f65ee10d57ee17b1d5112974f"
 )
 QUARANTINED_PROMPT_ORIGINAL_PATH = (
     "web/system-prompts/infinite-canvas-prompt-templates.md"
@@ -320,6 +320,27 @@ def _load_admission_metadata(repo_root: Path) -> dict:
     assert metadata.get("release_authorized") is True
     assert _canonical_sha256(metadata_path) == ADMISSION_METADATA_SHA256
     return metadata
+
+
+def test_github_issue_364_file_scope_is_registered(repo_root: Path):
+    """#364（MVP2-T0）的工具适配层、接口目录与卫生登记文件按票面逐项登记。"""
+    metadata = _load_admission_metadata(repo_root)
+    registrations = [
+        item
+        for item in metadata.get("authorized_issue_file_sets", [])
+        if item.get("issue") == 364
+    ]
+    assert len(registrations) == 1
+    assert registrations[0].get("authorization_basis") == (
+        "GitHub Issue #364, 2026-10-28"
+    )
+    assert set(registrations[0].get("files", [])) == {
+        "gw/agent_runtime/adapters/asset_search_tool.py",
+        "docs/contracts/AGENT-WORKBENCH-INTERFACE-CATALOG.yaml",
+        "tests/contracts/agent/test_mvp2_t0_asset_search_tool.py",
+        "tests/hygiene/fixtures/cleanroom_admission_metadata.json",
+        "tests/hygiene/test_cleanroom_hygiene.py",
+    }
 
 
 def test_github_issue_338_file_scope_is_registered(repo_root: Path):
