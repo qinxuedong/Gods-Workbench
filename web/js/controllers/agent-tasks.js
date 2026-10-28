@@ -26,8 +26,183 @@
     configReady: false,
     busy: false,
     pollTimer: null,
-    controller: null
+    controller: null,
+    gateCard: null,
+    gateModuleError: '',
+    gateLoadError: '',
+    gates: [],
+    gateViews: new Map(),
+    gateSignature: '',
+    gateBusy: new Set()
   };
+
+  // 门禁卡为独立 ES 模块；宿主页面以经典脚本加载本控制器，故用动态 import 按需载入，
+  // 不新增外部 URL、不引入打包链，也不改动页面脚本清单。
+  const GATE_CARD_MODULE_URL = '/static/js/modules/agent-gate-card.js';
+  const GATE_CONTAINER_ID = 'agentTaskGates';
+  const GATE_DECISION_TITLES = { approve: '确认通过', changes_requested: '要求修改', rolled_back: '退回' };
+
+  // 门禁卡模块按需载入一次；载入失败保留原因，供卡片区展示明确错误态（不白屏）。
+  async function ensureGateCardModule() {
+    if (state.gateCard) return state.gateCard;
+    try {
+      state.gateCard = await import(GATE_CARD_MODULE_URL);
+      state.gateModuleError = '';
+    } catch (error) {
+      state.gateCard = null;
+      state.gateModuleError = `门禁卡片模块加载失败：${error.message}`;
+    }
+    return state.gateCard;
+  }
+
+  // 门禁卡片区容器：页面脚本清单不在本票范围内，故由控制器在既有导出区前自建。
+  function ensureGatesContainer() {
+    const existing = byId(GATE_CONTAINER_ID);
+    if (existing) return existing;
+    const exportsNode = byId('agentTaskExports');
+    if (!exportsNode?.parentElement || typeof exportsNode.parentElement.insertBefore !== 'function') return null;
+    const container = document.createElement('div');
+    container.id = GATE_CONTAINER_ID;
+    container.className = 'space-y-2 border-t border-white/10 pt-2';
+    container.hidden = true;
+    container.setAttribute('aria-label', '生产链门禁确认');
+    exportsNode.parentElement.insertBefore(container, exportsNode);
+    return container;
+  }
+
+  function gateView(gateId) {
+    if (!gateId) return null;
+    if (!state.gateViews.has(gateId)) state.gateViews.set(gateId, { phase: 'idle', message: '', pendingDecision: '', reason: '' });
+    return state.gateViews.get(gateId);
+  }
+
+  function gatesSignature() {
+    return state.gates.map(gate => `${gate.gate_id}:${gate.state || 'unknown'}:${gate.version}`).join('|');
+  }
+
+  // 用户正在输入理由时不重绘，避免焦点与内容被轮询打断。
+  function gateReasonHasFocus() {
+    const active = document.activeElement;
+    return Boolean(active?.dataset && typeof active.dataset.gateReason === 'string');
+  }
+
+  function renderGates() {
+    const container = ensureGatesContainer();
+    if (!container) return;
+    container.replaceChildren();
+    if (!state.gateCard) {
+      container.hidden = false;
+      const notice = document.createElement('p');
+      notice.className = 'gw-type-body-sm text-rose-200';
+      notice.textContent = state.gateModuleError || '门禁卡片模块尚未加载完成。';
+      container.appendChild(notice);
+      return;
+    }
+    if (state.gateLoadError) {
+      container.hidden = false;
+      const notice = document.createElement('p');
+      notice.className = 'gw-type-body-sm text-rose-200';
+      notice.textContent = `门禁列表不可用：${state.gateLoadError}`;
+      container.appendChild(notice);
+      return;
+    }
+    if (!state.gates.length) {
+      container.hidden = true;
+      return;
+    }
+    container.hidden = false;
+    container.innerHTML = state.gateCard.renderGateCards(state.gates, state.gateViews);
+    bindGateCards(container);
+  }
+
+  function bindGateCards(container) {
+    if (typeof container.querySelectorAll !== 'function') return;
+    for (const button of container.querySelectorAll('[data-gate-decision]')) {
+      button.addEventListener('click', () => {
+        const card = button.closest?.('[data-gate-id]') || null;
+        void decideGate(card?.getAttribute?.('data-gate-id'), button.getAttribute('data-gate-decision'));
+      });
+    }
+    for (const field of container.querySelectorAll('[data-gate-reason]')) {
+      field.addEventListener('input', () => {
+        const card = field.closest?.('[data-gate-id]') || null;
+        const view = gateView(card?.getAttribute?.('data-gate-id'));
+        if (view) view.reason = field.value || '';
+      });
+    }
+  }
+
+  // 读取并渲染门禁列表；自身吞掉所有异常，不打断同一批次的其它刷新。
+  async function refreshGates(runId, generation, sequence) {
+    if (!runId) return;
+    try {
+      const module = await ensureGateCardModule();
+      if (!isCurrentRefresh(runId, generation, sequence)) return;
+      if (!module) {
+        state.gateLoadError = state.gateModuleError;
+        renderGates();
+        return;
+      }
+      const data = await request(route(runId, '/gates'));
+      if (!isCurrentRefresh(runId, generation, sequence)) return;
+      state.gates = module.normalizeGates(data);
+      state.gateLoadError = '';
+    } catch (error) {
+      if (!isCurrentRefresh(runId, generation, sequence)) return;
+      state.gateLoadError = error.message;
+      renderGates();
+      return;
+    }
+    const signature = gatesSignature();
+    const viewsActive = [...state.gateViews.values()].some(view => view.phase !== 'idle' || view.reason);
+    if (signature === state.gateSignature && !viewsActive) return;
+    state.gateSignature = signature;
+    if (gateReasonHasFocus()) return;
+    renderGates();
+  }
+
+  async function decideGate(gateId, decision) {
+    if (!gateId || !state.runId || !state.gateCard || state.gateBusy.has(gateId)) return;
+    const gate = state.gates.find(item => item.gate_id === gateId);
+    if (!gate) return;
+    const view = gateView(gateId);
+    const reason = state.gateCard.resolveGateReason(view.reason, decision);
+    if (!reason) {
+      view.phase = 'error';
+      view.message = '要求修改与退回必须填写理由；确认通过可留空。';
+      renderGates();
+      return;
+    }
+    state.gateBusy.add(gateId);
+    view.phase = 'submitting';
+    view.pendingDecision = decision;
+    view.message = '';
+    renderGates();
+    try {
+      const updated = await state.gateCard.submitGateDecision({
+        runId: state.runId,
+        gateId,
+        decision,
+        reason,
+        expectedVersion: gate.version,
+        idempotencyKey: randomId(),
+        requestId: randomId(),
+        fetchImpl: typeof fetch === 'function' ? fetch : null
+      });
+      const index = state.gates.findIndex(item => item.gate_id === gateId);
+      if (index >= 0 && updated) state.gates[index] = updated;
+      state.gateViews.delete(gateId);
+      setStatus(`门禁已${GATE_DECISION_TITLES[decision] || decision}：${state.gateCard.kindLabelOf(gate.kind)}。`, 'info');
+      void refreshRun();
+    } catch (error) {
+      view.phase = 'error';
+      view.pendingDecision = '';
+      view.message = error.message;
+    } finally {
+      state.gateBusy.delete(gateId);
+      renderGates();
+    }
+  }
 
   const byId = id => document.getElementById(id);
   const randomId = () => (window.crypto?.randomUUID ? window.crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2)}`);
@@ -325,10 +500,19 @@
     state.eventVersion = 0;
     state.eventCursor = null;
     state.eventIds.clear();
+    state.gates = [];
+    state.gateViews.clear();
+    state.gateSignature = '';
+    state.gateBusy.clear();
+    state.gateLoadError = '';
     if (byId('agentTraceStream')) byId('agentTraceStream').replaceChildren();
     if (byId('agentTaskReview')) byId('agentTaskReview').hidden = true;
     if (byId('agentTaskClarification')) byId('agentTaskClarification').hidden = true;
     if (byId('agentTaskExports')) byId('agentTaskExports').replaceChildren();
+    if (byId(GATE_CONTAINER_ID)) {
+      byId(GATE_CONTAINER_ID).replaceChildren();
+      byId(GATE_CONTAINER_ID).hidden = true;
+    }
     syncControls();
   }
 
@@ -354,7 +538,8 @@
       refreshEvents(runId, generation, sequence),
       refreshCandidate(runId, generation, sequence),
       refreshClarifications(runId, generation, sequence),
-      refreshExports(runId, generation, sequence)
+      refreshExports(runId, generation, sequence),
+      refreshGates(runId, generation, sequence)
     ]);
     if (!isCurrentRefresh(runId, generation, sequence)) return;
     syncControls();
@@ -602,7 +787,7 @@
     if (!byId('agentTaskForm')) return;
     bind();
     setBusy(false);
-    await Promise.all([loadProjects(), loadAgentConfig()]);
+    await Promise.all([loadProjects(), loadAgentConfig(), ensureGateCardModule()]);
     await restoreSavedRun();
   }
 
