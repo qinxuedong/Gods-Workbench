@@ -174,7 +174,7 @@ test('遮罩 hidden 属性不被 display:flex 覆盖（QA 回归）', () => {
 test('收集面板挂载入口与样式注入已接入资产工作台', () => {
   assert.match(managerSource, /import \{openAssetCollectOverlay\} from '\.\/asset-collect-panel\.js';/);
   assert.match(managerSource, /data-asset-collect-open/);
-  assert.match(managerSource, /const trigger = event\.target\.closest\('\[data-asset-collect-open\]'\);[\s\S]*?openAssetCollectOverlay\(trigger,\s*\{\s*adapter,\s*pairToken:pair_token\s*\}\)/);
+  assert.match(managerSource, /openAssetCollectOverlay\(event\.target\.closest\('\[data-asset-collect-open\]'\)\)/);
   assert.match(panelSource, /ensureAssetCollectStyles/);
   assert.match(panelSource, /\/static\/css\/pages\/asset-collect\.css/);
 });

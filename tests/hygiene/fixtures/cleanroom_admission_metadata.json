@@ -43,25 +43,6 @@
       ]
     },
     {
-      "issue": 338,
-      "authorization_basis": "GitHub Issue #338; PM-approved test scope extensions 2026-10-28",
-      "files": [
-        "gw/asset_registry/collector.py",
-        "gw/api/routes_asset_collect.py",
-        "gw/api/app.py",
-        "web/js/modules/asset-manager.js",
-        "tests/contracts/assets/test_mvp1_t8a_collector.py",
-        "tests/contracts/projects/test_phase8_frontend_backend_api_gap.py",
-        "tests/hygiene/fixtures/cleanroom_admission_metadata.json",
-        "tests/hygiene/test_cleanroom_hygiene.py",
-        "README.md",
-        "tests/frontend/mvp1-t8a-dropzone.test.mjs",
-        "tests/frontend/node-files.txt",
-        "tests/frontend/mvp1-t8a-ui-collect-panel.test.mjs",
-        "tests/hygiene/test_structure_guardrails.py"
-      ]
-    },
-    {
       "issue": 336,
       "authorization_basis": "GitHub Issue #336, 2026-10-28",
       "files": [
@@ -75,107 +56,6 @@
         "tests/frontend/node-files.txt",
         "tests/e2e/test_mvp1_t6_search_jump_browser.py",
         "tests/contracts/projects/test_phase8_frontend_backend_api_gap.py",
-        "tests/hygiene/fixtures/cleanroom_admission_metadata.json",
-        "tests/hygiene/test_cleanroom_hygiene.py"
-      ]
-    },
-    {
-      "issue": 354,
-      "authorization_basis": "GitHub Issue #354, 2026-10-28",
-      "files": [
-        "tests/contracts/assets/test_qin_431_restore_suffix_metadata.py",
-        "tests/hygiene/fixtures/cleanroom_admission_metadata.json",
-        "tests/hygiene/test_cleanroom_hygiene.py"
-      ]
-    },
-    {
-      "issue": 368,
-      "authorization_basis": "GitHub Issue #368, 2026-10-28",
-      "files": [
-        "gw/agent_runtime/adapters/pipeline_tools.py",
-        "docs/contracts/AGENT-WORKBENCH-INTERFACE-CATALOG.yaml",
-        "tests/contracts/agent/test_mvp2_t4_pipeline_tools.py",
-        "tests/hygiene/fixtures/cleanroom_admission_metadata.json",
-        "tests/hygiene/test_cleanroom_hygiene.py"
-      ]
-    },
-    {
-      "issue": 366,
-      "authorization_basis": "GitHub Issue #366, 2026-10-28",
-      "files": [
-        "gw/asset_registry/models.py",
-        "gw/asset_registry/service.py",
-        "docs/contracts/ASSET-REGISTRY-INTERFACE-CATALOG.yaml",
-        "tests/contracts/assets/test_mvp2_t2_provenance.py",
-        "tests/hygiene/fixtures/cleanroom_admission_metadata.json",
-        "tests/hygiene/test_cleanroom_hygiene.py"
-      ]
-    },
-    {
-      "issue": 335,
-      "authorization_basis": "GitHub Issue #335, 2026-10-27",
-      "files": [
-        "gw/asset_registry/governance.py",
-        "gw/api/routes_asset_registry.py",
-        "web/js/modules/asset-manager.js",
-        "tests/contracts/assets/test_mvp1_t5_governance.py",
-        "tests/frontend/mvp1-t5-governance-list.test.mjs",
-        "tests/frontend/node-files.txt",
-        "tests/contracts/projects/test_phase8_frontend_backend_api_gap.py",
-        "tests/hygiene/fixtures/cleanroom_admission_metadata.json",
-        "tests/hygiene/test_cleanroom_hygiene.py"
-      ]
-    },
-    {
-      "issue": 364,
-      "authorization_basis": "GitHub Issue #364, 2026-10-28",
-      "files": [
-        "gw/agent_runtime/adapters/asset_search_tool.py",
-        "docs/contracts/AGENT-WORKBENCH-INTERFACE-CATALOG.yaml",
-        "tests/contracts/agent/test_mvp2_t0_asset_search_tool.py",
-        "tests/hygiene/fixtures/cleanroom_admission_metadata.json",
-        "tests/hygiene/test_cleanroom_hygiene.py"
-      ]
-    },
-    {
-      "issue": 367,
-      "authorization_basis": "GitHub Issue #367, 2026-10-28",
-      "files": [
-        "gw/agent_episode/gates.py",
-        "tests/contracts/agent/test_mvp2_t3_gates.py",
-        "tests/hygiene/fixtures/cleanroom_admission_metadata.json",
-        "tests/hygiene/test_cleanroom_hygiene.py"
-      ]
-    },
-    {
-      "issue": 356,
-      "authorization_basis": "GitHub Issue #356, 2026-10-28",
-      "files": [
-        "gw/api/routes_settings.py",
-        "gw/settings/native_picker.py",
-        "web/js/modules/asset-manager.js",
-        "web/css/pages/directory-settings.css",
-        "clients/desktop/Cargo.toml",
-        "clients/desktop/Cargo.lock",
-        "clients/desktop/src/main.rs",
-        "clients/desktop/capabilities/default.json",
-        "clients/desktop/README.md",
-        "tests/contracts/settings/test_qin411_412_native_picker.py",
-        "tests/e2e/test_api_settings_browser.py",
-        "tests/frontend/qin-412-directory-settings.test.mjs",
-        "tests/contracts/projects/test_phase8_frontend_backend_api_gap.py",
-        "tests/hygiene/fixtures/cleanroom_admission_metadata.json",
-        "tests/hygiene/test_cleanroom_hygiene.py"
-      ]
-    },
-    {
-      "issue": 386,
-      "authorization_basis": "GitHub Issue #386, 2026-10-28",
-      "files": [
-        "web/js/modules/asset-manager.js",
-        "web/js/modules/asset-manager/collect-provenance.js",
-        "tests/frontend/mvp1-collect-provenance.test.mjs",
-        "tests/frontend/node-files.txt",
         "tests/hygiene/fixtures/cleanroom_admission_metadata.json",
         "tests/hygiene/test_cleanroom_hygiene.py"
       ]
@@ -290,6 +170,20 @@
   ],
   "admitted_files": [
     {
+      "path": "docs/CI-SKIPPED-TEST-COVERAGE.md",
+      "classification": "curated_test_coverage",
+      "authorization_basis": "QIN-376_user_authorization_2026-10-25",
+      "sha256": "c5b9858fc1d1d91c0af1adf157e07a0d7147b0cd566704ed6f92bcfac6de549d",
+      "admission": "accepted"
+    },
+    {
+      "path": "docs/architecture/asset-manager-js-split-plan.md",
+      "classification": "curated_architecture_plan",
+      "authorization_basis": "QIN-382_Cut_2026-10-25",
+      "sha256": "ecac1724a1a052ccc76a13c8c9ac487c28d6d8abea6d0d6919285ec3b511a36f",
+      "admission": "accepted"
+    },
+    {
       "path": "docs/behavior/BEHAVIOR-SPEC-CANVAS.md",
       "classification": "frozen_behavior_contract",
       "authorization_basis": "cleanroom_frozen_input",
@@ -314,42 +208,14 @@
       "path": "docs/behavior/README.md",
       "classification": "frozen_behavior_contract",
       "authorization_basis": "cleanroom_frozen_input",
-      "sha256": "95b957737bb28ff5d453af9675e525dc8588a420bf7ce7b94f699cd1f7ec09cd",
+      "sha256": "52a5cb755f41778d16c71b74e382e20561df48514e0466cecb8dbe23a9e30c12",
       "admission": "accepted"
     },
     {
-      "path": "docs/contracts/COMFY-ADAPTER-CONFLICT.md",
+      "path": "docs/contracts/AGENT-WORKBENCH-INTERFACE-CATALOG.yaml",
       "classification": "frozen_interface_contract",
-      "authorization_basis": "owner_approval_C4_AC13_2026-10-15",
-      "sha256": "a33d2fa84ce56b6f1e53f1c9032250031dc40a469b60e518d8c949326dc9d025",
-      "admission": "accepted"
-    },
-    {
-      "path": "docs/contracts/R1-TEXT-MEDIA-LOOP-CONTRACT.md",
-      "classification": "frozen_interface_contract",
-      "authorization_basis": "owner_approval_C7_P5_2026-10-17",
-      "sha256": "97ee98fd981e922ccecc9eb62acbc506866982ee74cff32b700ef5a1d78aae48",
-      "admission": "accepted"
-    },
-    {
-      "path": "docs/contracts/R2-REVIEW-DELIVERY-CONTRACT.md",
-      "classification": "frozen_interface_contract",
-      "authorization_basis": "owner_approval_C8_T1_2026-10-17",
-      "sha256": "b740963000e859b702f9077a72145ed2d7faeae61d6f423763717cf3549fcdab",
-      "admission": "accepted"
-    },
-    {
-      "path": "docs/contracts/R2-CLOSURE-CONTRACT.md",
-      "classification": "frozen_interface_contract",
-      "authorization_basis": "owner_approval_C9_T1_cleanroom_2026-10-18",
-      "sha256": "6ef5b87605924a021b001f8a25aa322542c7fbc0438af4bab4cbda1d5eb599f0",
-      "admission": "accepted"
-    },
-    {
-      "path": "docs/contracts/R3-SEARCH-PREVIEW-CONTRACT.md",
-      "classification": "frozen_interface_contract",
-      "authorization_basis": "owner_approval_C11_T1_2026-10-18",
-      "sha256": "1423ded308736dd4b782e82f9c18cf6c53b8c0cfede967b7af017aa7b6cd3365",
+      "authorization_basis": "user_integration_request_2026-10-08",
+      "sha256": "20ac189e6e03b3257e75262677c109278e2ebf0a0b3b0ab787c1c1b1dea61bfe",
       "admission": "accepted"
     },
     {
@@ -369,8 +235,8 @@
     {
       "path": "docs/contracts/ASSET-REGISTRY-INTERFACE-CATALOG.yaml",
       "classification": "frozen_interface_contract",
-      "authorization_basis": "cleanroom_frozen_input; GitHub_Issue_366_2026-10-28",
-      "sha256": "707836d70b204f1999df3bb9412df3f77dfe5c7097677ee8b4e191fd25c344c1",
+      "authorization_basis": "cleanroom_frozen_input",
+      "sha256": "60c8e528aa4683e688ef0344d872cbb97265fe8d7639ae0fed8574bb83ea0d34",
       "admission": "accepted"
     },
     {
@@ -409,17 +275,17 @@
       "admission": "accepted"
     },
     {
-      "path": "docs/contracts/AGENT-WORKBENCH-INTERFACE-CATALOG.yaml",
-      "classification": "frozen_interface_contract",
-      "authorization_basis": "user_integration_request_2026-10-08",
-      "sha256": "9eb62e7876a3e87f6edcf35cddb0217e6f570d7e536fadcf687a7fabae77e41c",
-      "admission": "accepted"
-    },
-    {
       "path": "docs/contracts/CHAT-METRICS-INTERFACE-CATALOG.yaml",
       "classification": "frozen_interface_contract",
       "authorization_basis": "cleanroom_frozen_input",
       "sha256": "501b0136aba45a07e938d907e986b51bd28094f4960790081a0df0eb17f46be9",
+      "admission": "accepted"
+    },
+    {
+      "path": "docs/contracts/COMFY-ADAPTER-CONFLICT.md",
+      "classification": "frozen_interface_contract",
+      "authorization_basis": "owner_approval_C4_AC13_2026-10-15",
+      "sha256": "a33d2fa84ce56b6f1e53f1c9032250031dc40a469b60e518d8c949326dc9d025",
       "admission": "accepted"
     },
     {
@@ -521,10 +387,52 @@
       "admission": "accepted"
     },
     {
+      "path": "docs/contracts/R1-TEXT-MEDIA-LOOP-CONTRACT.md",
+      "classification": "frozen_interface_contract",
+      "authorization_basis": "owner_approval_C7_P5_2026-10-17",
+      "sha256": "97ee98fd981e922ccecc9eb62acbc506866982ee74cff32b700ef5a1d78aae48",
+      "admission": "accepted"
+    },
+    {
+      "path": "docs/contracts/R2-CLOSURE-CONTRACT.md",
+      "classification": "frozen_interface_contract",
+      "authorization_basis": "owner_approval_C9_T1_cleanroom_2026-10-18",
+      "sha256": "6ef5b87605924a021b001f8a25aa322542c7fbc0438af4bab4cbda1d5eb599f0",
+      "admission": "accepted"
+    },
+    {
+      "path": "docs/contracts/R2-REVIEW-DELIVERY-CONTRACT.md",
+      "classification": "frozen_interface_contract",
+      "authorization_basis": "owner_approval_C8_T1_2026-10-17",
+      "sha256": "b740963000e859b702f9077a72145ed2d7faeae61d6f423763717cf3549fcdab",
+      "admission": "accepted"
+    },
+    {
+      "path": "docs/contracts/R3-SEARCH-PREVIEW-CONTRACT.md",
+      "classification": "frozen_interface_contract",
+      "authorization_basis": "owner_approval_C11_T1_2026-10-18",
+      "sha256": "1423ded308736dd4b782e82f9c18cf6c53b8c0cfede967b7af017aa7b6cd3365",
+      "admission": "accepted"
+    },
+    {
+      "path": "docs/contracts/R4-I2V-GENERATION-CONTRACT.md",
+      "classification": "frozen_interface_contract",
+      "authorization_basis": "owner_approval_C14_T1_QIN-216_2026-10-20",
+      "sha256": "49aa4528b1798d0a573cc48a457223b4343368b1030e2c8c38a4719ce929ba9a",
+      "admission": "accepted"
+    },
+    {
+      "path": "docs/contracts/R4-MASTER-EXPORT-CONTRACT.md",
+      "classification": "frozen_interface_contract",
+      "authorization_basis": "owner_approval_C15_T1_QIN-220_2026-10-21",
+      "sha256": "87a7b487f1283b01285d8d8940c817a0da407e70122e405609d12f929c589d84",
+      "admission": "accepted"
+    },
+    {
       "path": "docs/contracts/README.md",
       "classification": "frozen_interface_contract",
       "authorization_basis": "cleanroom_frozen_input",
-      "sha256": "8401a0e17addacde41be74fac06c1f19261b803a60c964451ac300bf8a219e64",
+      "sha256": "7ee80b0358da9835fdf8082f933b6e590a23d0e728254d5d2f01dd6c856f5989",
       "admission": "accepted"
     },
     {
@@ -570,6 +478,13 @@
       "admission": "accepted"
     },
     {
+      "path": "docs/design/BUTTON-SYSTEM-SPEC.md",
+      "classification": "curated_design_system",
+      "authorization_basis": "UI_buttons_user_decision_and_B0a_B1_B2_approval_2026-10-11",
+      "sha256": "a3d9855b1725823ff1fae5c73fe124ee832d21b4fc63c0396eb6bc7a26ca6a2c",
+      "admission": "accepted"
+    },
+    {
       "path": "docs/design/DESIGN-SYSTEM-GUIDE.md",
       "classification": "curated_design_system",
       "authorization_basis": "UI_buttons_user_decision_and_B0a_B1_B2_approval_2026-10-11",
@@ -587,7 +502,7 @@
       "path": "docs/fixtures/README.md",
       "classification": "golden_fixture",
       "authorization_basis": "cleanroom_frozen_input",
-      "sha256": "8e328df20415a8a787b908a8f78f349c71eb644671f6009598c4bb4fbcc5c284",
+      "sha256": "b53e28de6239de1837c19bf0459bf02b3e38e7e0dad9dde619e26c6fcd1baf5e",
       "admission": "accepted"
     },
     {
@@ -714,6 +629,20 @@
       "classification": "golden_fixture",
       "authorization_basis": "cleanroom_frozen_input",
       "sha256": "75fd768f0bc73314531070504986a8a3b19ac8122b2c8f3836010672a2a97726",
+      "admission": "accepted"
+    },
+    {
+      "path": "docs/fixtures/nle-export-sample-edl.edl",
+      "classification": "golden_fixture",
+      "authorization_basis": "cleanroom_frozen_input",
+      "sha256": "28da17a0a80cef1840d2c2bf955af309de281c14c4d5c2cb9ad324abc126ad13",
+      "admission": "accepted"
+    },
+    {
+      "path": "docs/fixtures/nle-export-sample-fcpxml.fcpxml",
+      "classification": "golden_fixture",
+      "authorization_basis": "cleanroom_frozen_input",
+      "sha256": "31e09ee12f7b20b2bff799016ef63755bb5d9db708e9a482e2ab449df6c22333",
       "admission": "accepted"
     },
     {
@@ -962,20 +891,6 @@
       "admission": "accepted"
     },
     {
-      "path": "docs/governance/PROJECT-GOVERNANCE.md",
-      "classification": "curated_project_governance",
-      "authorization_basis": "user_global_naming_system_specification_2026-10-12",
-      "sha256": "799d1e90973de84819927810404e2ff8f4cdf908ea89bb933fc5fe519d19c502",
-      "admission": "accepted"
-    },
-    {
-      "path": "docs/design/BUTTON-SYSTEM-SPEC.md",
-      "classification": "curated_design_system",
-      "authorization_basis": "UI_buttons_user_decision_and_B0a_B1_B2_approval_2026-10-11",
-      "sha256": "a3d9855b1725823ff1fae5c73fe124ee832d21b4fc63c0396eb6bc7a26ca6a2c",
-      "admission": "accepted"
-    },
-    {
       "path": "docs/governance/GLOBAL-NAMING-SPEC.md",
       "classification": "curated_project_governance",
       "authorization_basis": "user_global_naming_system_specification_2026-10-12",
@@ -990,31 +905,10 @@
       "admission": "accepted"
     },
     {
-      "path": "docs/contracts/R4-I2V-GENERATION-CONTRACT.md",
-      "classification": "frozen_interface_contract",
-      "authorization_basis": "owner_approval_C14_T1_QIN-216_2026-10-20",
-      "sha256": "49aa4528b1798d0a573cc48a457223b4343368b1030e2c8c38a4719ce929ba9a",
-      "admission": "accepted"
-    },
-    {
-      "path": "docs/contracts/R4-MASTER-EXPORT-CONTRACT.md",
-      "classification": "frozen_interface_contract",
-      "authorization_basis": "owner_approval_C15_T1_QIN-220_2026-10-21",
-      "sha256": "87a7b487f1283b01285d8d8940c817a0da407e70122e405609d12f929c589d84",
-      "admission": "accepted"
-    },
-    {
-      "path": "docs/CI-SKIPPED-TEST-COVERAGE.md",
-      "classification": "curated_test_coverage",
-      "authorization_basis": "QIN-376_user_authorization_2026-10-25",
-      "sha256": "c5b9858fc1d1d91c0af1adf157e07a0d7147b0cd566704ed6f92bcfac6de549d",
-      "admission": "accepted"
-    },
-    {
-      "path": "docs/architecture/asset-manager-js-split-plan.md",
-      "classification": "curated_architecture_plan",
-      "authorization_basis": "QIN-382_Cut_2026-10-25",
-      "sha256": "ecac1724a1a052ccc76a13c8c9ac487c28d6d8abea6d0d6919285ec3b511a36f",
+      "path": "docs/governance/PROJECT-GOVERNANCE.md",
+      "classification": "curated_project_governance",
+      "authorization_basis": "user_global_naming_system_specification_2026-10-12",
+      "sha256": "799d1e90973de84819927810404e2ff8f4cdf908ea89bb933fc5fe519d19c502",
       "admission": "accepted"
     },
     {
@@ -1030,13 +924,6 @@
       "authorization_basis": "QIN-347_GitHub_Cut_2026-10-26",
       "sha256": "8c5a3972fffb01b29c85325dbeab30e401c2ff4089aa4ff2b6434f977b30cc5b",
       "admission": "accepted"
-    },
-    {
-      "path": "tests/contracts/assets/test_mvp2_t2_provenance.py",
-      "classification": "curated_test_coverage",
-      "authorization_basis": "GitHub_Issue_366_2026-10-28",
-      "sha256": "3074c1505cad4e5d6d2251e0c6825bdb1afde4af79c9e4f07b2e5e4bc8c30cf6",
-      "admission": "accepted"
     }
   ],
   "accepted_test_files": [
@@ -1044,12 +931,6 @@
       "path": "tests/contracts/assets/test_mvp1_t9a_recycle_regression.py",
       "classification": "curated_test_coverage",
       "authorization_basis": "QIN-347_GitHub_Cut_2026-10-26",
-      "admission": "accepted"
-    },
-    {
-      "path": "tests/contracts/assets/test_mvp2_t2_provenance.py",
-      "classification": "curated_test_coverage",
-      "authorization_basis": "GitHub_Issue_366_2026-10-28",
       "admission": "accepted"
     }
   ],
@@ -1078,36 +959,6 @@
       "path": "tests/contracts/assets/test_mvp1_t4_embedder_offline.py",
       "authorization_basis": "GitHub_Issue_334_QIN-418_2026-10-27",
       "sha256": "5ad494a842431497adeaaa75298071b659130b0883bc8caafa729698fc748d9e"
-    },
-    {
-      "path": "tests/contracts/assets/test_qin_431_restore_suffix_metadata.py",
-      "authorization_basis": "QIN-431_Issue_354_2026-10-28",
-      "sha256": "60c6ccceb8223ad57a77d6c0ecd7691d2904133baf167c23fc4b8423894e9ba2"
-    },
-    {
-      "path": "tests/contracts/assets/test_mvp2_t2_provenance.py",
-      "authorization_basis": "GitHub_Issue_366_2026-10-28",
-      "sha256": "3074c1505cad4e5d6d2251e0c6825bdb1afde4af79c9e4f07b2e5e4bc8c30cf6"
-    },
-    {
-      "path": "tests/contracts/assets/test_mvp1_t5_governance.py",
-      "authorization_basis": "MVP1-T5_Cut_2026-10-26",
-      "sha256": "3909947fda23e3aaad587389f39b75de00fd4111cb4a721523da9e067c9918ed"
-    },
-    {
-      "path": "tests/frontend/mvp1-t5-governance-list.test.mjs",
-      "authorization_basis": "MVP1-T5_Cut_2026-10-26",
-      "sha256": "85e126650d9ff7b13036cb1040b3c55f5f23b86bc62df5c4014247b69dab0037"
-    },
-    {
-      "path": "tests/contracts/agent/test_mvp2_t0_asset_search_tool.py",
-      "authorization_basis": "MVP2-T0_GitHub_Issue_364_2026-10-28",
-      "sha256": "3ed7bd03e6297e3c13dad571e1b6452b88c8448053c134d651896e1ff7bd966b"
-    },
-    {
-      "path": "tests/contracts/agent/test_mvp2_t4_pipeline_tools.py",
-      "authorization_basis": "QIN-446_Issue_368_2026-10-28",
-      "sha256": "07239fdcf8f898bbfda116a98062ee66488653ae09c92e3521f31e997058183c"
     }
   ]
 }

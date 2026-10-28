@@ -99,10 +99,6 @@ python -m pip install -r requirements.txt
 python -m pip install --require-hashes -r requirements.lock.hashes
 ```
 
-网络素材收集可选使用外部工具 yt-dlp。需要时请自行安装并将 `yt-dlp` 加入 PATH，
-或通过环境变量 `GW_YTDLP_PATH` 指向其可执行文件；程序优先使用该变量指定的文件。
-项目不会自动安装或分发此工具；未安装时，依赖该工具的链接会提示安装，直链和文件收集仍可使用。
-
 ### 2. 启动运行
 
 #### 方式一：Windows 一键快速启动（推荐）

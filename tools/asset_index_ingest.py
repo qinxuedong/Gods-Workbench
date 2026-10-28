@@ -12,22 +12,11 @@ import urllib.error
 import urllib.request
 import uuid
 from datetime import UTC, datetime, time as day_time, timedelta
-from pathlib import Path
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 API_PATH = "/api/asset-registry"
 TERMINAL = {"succeeded", "failed", "cancelled", "interrupted"}
 RETRYABLE = {"failed", "cancelled", "interrupted"}
-
-#: 试点报告（QIN-438）要求的机型指标字段白名单。
-PILOT_METRIC_KEYS = (
-    "read_throughput_mb_per_second",
-    "shots_ingested_per_minute",
-    "retrieval_latency_p50_ms",
-    "retrieval_latency_p95_ms",
-    "gpu_name",
-    "gpu_peak_memory_mib",
-)
 
 
 class IngestError(RuntimeError):
@@ -101,38 +90,12 @@ def _parse_timestamp(value: str | None) -> datetime | None:
         return None
 
 
-def _coerce_metric(key: str, value: object) -> float | str | None:
-    """把外部测量值收敛为报表可用的数值或短字符串，异常值一律丢弃。"""
-    if value is None or isinstance(value, bool):
-        return None
-    if key == "gpu_name":
-        return value.strip() if isinstance(value, str) and value.strip() else None
-    if not isinstance(value, (int, float)):
-        return None
-    number = float(value)
-    if number != number or number < 0:
-        return None
-    return round(number, 3)
-
-
-def build_pilot_metrics(measurements: dict | None) -> dict:
-    """按 AC1 白名单收敛试点测量；缺项保留 None，绝不填推测值。"""
-    metrics: dict = {key: None for key in PILOT_METRIC_KEYS}
-    if not isinstance(measurements, dict):
-        return metrics
-    for key in PILOT_METRIC_KEYS:
-        if key in measurements:
-            metrics[key] = _coerce_metric(key, measurements[key])
-    return metrics
-
-
 def make_report(
     job_id: str,
     job: dict,
     *,
     rate_limit: int | None,
     night_window: str | None,
-    measurements: dict | None = None,
 ) -> dict:
     """Build a compact throughput and outcome report without source paths."""
     created = _parse_timestamp(job.get("created_at"))
@@ -155,7 +118,6 @@ def make_report(
         "throughput_files_per_minute": round(scanned * 60.0 / elapsed_for_rate, 3),
         "rate_limit_files_per_minute": rate_limit,
         "night_window": night_window,
-        "pilot_metrics": build_pilot_metrics(measurements),
     }
 
 
@@ -240,7 +202,7 @@ def _wait_for_window(args, window: tuple[int, int] | None, timezone: ZoneInfo | 
         time.sleep(min(60.0, seconds_until_window(_local_now(timezone), window)))
 
 
-def run_job(args, *, measurements: dict | None = None) -> dict:
+def run_job(args) -> dict:
     window = parse_night_window(args.night_window)
     timezone = None
     if args.timezone:
@@ -259,7 +221,6 @@ def run_job(args, *, measurements: dict | None = None) -> dict:
                 job,
                 rate_limit=args.rate_limit,
                 night_window=args.night_window,
-                measurements=measurements,
             )
         if job["status"] in RETRYABLE:
             _wait_for_window(args, window, timezone)
@@ -300,7 +261,6 @@ def run_job(args, *, measurements: dict | None = None) -> dict:
                 job,
                 rate_limit=args.rate_limit,
                 night_window=args.night_window,
-                measurements=measurements,
             )
 
         now = _local_now(timezone)
@@ -361,26 +321,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--timezone", help="IANA 时区；省略时使用本机时区")
     parser.add_argument("--wait-for-window", action="store_true")
     parser.add_argument("--poll-interval", type=float, default=0.5)
-    parser.add_argument(
-        "--measurements",
-        help="本地私有测量 JSON；只取试点指标白名单字段并入报告，缺失时为 null",
-    )
     return parser
-
-
-def load_measurements(path: str | None) -> dict | None:
-    """读取本地私有测量文件；缺失或非法内容按使用错误处理，不回显路径。"""
-    if not path:
-        return None
-    try:
-        payload = json.loads(Path(path).read_text(encoding="utf-8"))
-    except OSError as exc:
-        raise IngestError(f"无法读取测量文件：{exc.strerror or 'IO 错误'}") from exc
-    except json.JSONDecodeError as exc:
-        raise IngestError("测量文件不是合法 JSON") from exc
-    if not isinstance(payload, dict):
-        raise IngestError("测量文件顶层必须是 JSON 对象")
-    return payload
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -393,7 +334,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.poll_interval <= 0:
         parser.error("--poll-interval 必须大于 0")
     try:
-        report = run_job(args, measurements=load_measurements(args.measurements))
+        report = run_job(args)
     except KeyboardInterrupt:
         print("索引命令已中断；可使用 --job-id 继续任务。", file=sys.stderr)
         return 130

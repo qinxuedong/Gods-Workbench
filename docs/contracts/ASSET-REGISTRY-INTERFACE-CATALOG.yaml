@@ -29,7 +29,6 @@ decisions:
   remote_semantics: "POST /remote-assets 用 httpx 真实 HEAD 探测；失败如实记录 data_status=degraded + data_gaps，不编造 content-type/size；非本机地址必须 https，按解析主机和DNS检查受限网段；拒绝URL内凭据，不跟随重定向，不把3xx标为探测成功。"
   open_local_semantics: "POST .../open-local 只做路径准入校验，不调用 explorer/start/subprocess 启动任何外部程序。"
   canvas_boundary: "画布闭环（canvases/{id}/restore、purge-expired）只登记真实操作条目，画布状态不伪造；data_gaps 明示 canvas_store_not_connected。项目回收恢复已复用项目中心状态机，不再属于记录式占位。"
-  produced_asset_provenance: "生产链成片/中间产物回写素材注册表必须携带 ProducedAssetProvenance（project_id、task_id、artifact_version_id、reference_asset_ids、shot_ids、produced_by=agent_pipeline；extra 字段一律拒绝）；缺字段/None/非法 produced_by 一律 400 PROVENANCE_REQUIRED 且不写入注册表。同 asset_id 同来源链重复回写幂等，来源链或产出根不一致 409 PROVENANCE_CONFLICT；已由 register_asset 登记（无来源链）的素材也按冲突处理。产出根只由 configure_produced_roots 注入，本票不固化默认路径；未配置的根、或位于源素材根内的根一律 400 UNKNOWN_TARGET_ROOT。落盘标记只写在产出根下 provenance/<asset_id>.json，返回值只给 target_root_id + 相对路径，不回显绝对路径。根配置不接受空/空白 root_id（400 INVALID_REQUEST）与空/空白/相对路径（400 UNKNOWN_TARGET_ROOT），绝不落到进程工作目录。sidecar 落盘 I/O 失败（产出根为文件、只读目录等）统一 503 PROVENANCE_SIDECAR_WRITE_FAILED，message/extra 只含 target_root_id 与相对 sidecar_path，注册表不写入。"
 interfaces:
 
   - name: get_api_asset_registry
@@ -463,33 +462,6 @@ interfaces:
     status: [200, 400, 401, 403, 404, 409, 413, 503]
     response_200: "切换真实任务状态；未登记 job_id 404 WORKSPACE_JOB_NOT_FOUND；非法 action 400"
     acceptance: "统一错误包 {detail:{code,message,...}}；写入必须可读回，删除必须不再返回；缺依赖 503 不得静默假成功"
-service_interfaces:
-  - name: AssetRegistryService.configure_produced_roots
-    kind: service_method
-    signature: "configure_produced_roots(output_roots: Mapping[str, str | Path], *, source_roots: Mapping[str, str | Path] | None = None) -> None"
-    summary: "注入产出根与源素材根；组件不内置默认路径，未注入即无法回写"
-    errors:
-      - {code: INVALID_REQUEST, status: 400, when: "root_id 为空或空白"}
-      - {code: UNKNOWN_TARGET_ROOT, status: 400, when: "target_root_id 未配置或落在源素材根内；根路径为空、空白或非绝对路径（含源素材根）时配置整批拒绝，不落到进程工作目录"}
-  - name: AssetRegistryService.register_produced_asset
-    kind: service_method
-    signature: "register_produced_asset(asset_id: str, *, provenance: dict, target_root_id: str, metadata: dict | None = None) -> dict"
-    summary: "登记生产链产物：来源链必填，先落盘 sidecar 再登记，返回 asset/provenance/target_root_id/sidecar_path/revision"
-    errors:
-      - {code: INVALID_REQUEST, status: 400, when: "asset_id 为空或含路径字符"}
-      - {code: PROVENANCE_REQUIRED, status: 400, when: "provenance 缺字段、为 None、produced_by 非 agent_pipeline 或含多余字段；注册表不写入"}
-      - {code: UNKNOWN_TARGET_ROOT, status: 400, when: "target_root_id 未配置或位于源素材根内；不写入任何目录"}
-      - {code: PROVENANCE_CONFLICT, status: 409, when: "同 asset_id 已有登记且来源链或产出根不一致（含 register_asset 登记的无来源链素材）"}
-      - {code: PROVENANCE_SIDECAR_WRITE_FAILED, status: 503, when: "sidecar 落盘 I/O 失败（产出根为已存在文件、只读目录等）；只回显 target_root_id 与相对 sidecar_path，注册表不写入"}
-    idempotency: "同 asset_id + 同来源链 + 同产出根重复调用返回一致结果，不 409"
-  - name: AssetRegistryService.provenance_chain
-    kind: service_method
-    signature: "provenance_chain(asset_id: str) -> dict"
-    summary: "按 asset_id 反查来源链，返回 {asset_id, provenance, references:[{asset_id, exists}], target_root_id, revision}"
-    errors:
-      - {code: ASSET_NOT_FOUND, status: 404, when: "asset_id 未登记"}
-      - {code: PROVENANCE_NOT_FOUND, status: 404, when: "已登记但无来源链，不返回空链冒充可反查"}
-    acceptance: "references 的 exists 只按注册表实际登记判定；响应不回显绝对路径"
 fixture_contract:
   empty_registry: "docs/fixtures/phase11-b3-empty-registry.json"
   fail_closed: "docs/fixtures/phase11-b3-fail-closed.json"
