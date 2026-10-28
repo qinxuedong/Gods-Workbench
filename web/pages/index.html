@@ -18,6 +18,7 @@
   <link rel="stylesheet" href="/static/css/base/hardware-design-system.css?ui=20261011-final">
   <link rel="stylesheet" href="/static/css/pages/project-date-range.css">
   <link rel="stylesheet" href="/static/css/pages/directory-settings.css?v=20260917&ui=20261011-final">
+  <link rel="stylesheet" href="/static/css/base/workspace-pages.css?v=20261029-qin478">
   <style>
     /* 设置选项卡面板激活与隐藏控制 */
     [data-panel] {
@@ -259,10 +260,9 @@
     }
 
 
-    /* 主区按可用宽度重排；折叠入口独立于上下文侧栏。 */
+    /* 主区按可用宽度重排；窄屏上下文侧栏置顶显示。 */
     #homeWorkspace, #workbenchMainDashboard, #workbenchMainSettings { min-width: 0; }
     #workbenchMainDashboard > div, #workbenchMainSettings > div { min-width: 0; }
-    #homeContextBusControls { padding: 4px 10px; flex: 0 0 auto; }
     #homeContextBusAside.hidden { display: none; }
     @media (max-width: 1400px) {
       #workbenchMainDashboard { grid-template-columns: repeat(2, minmax(0, 1fr)); overflow-y: auto; align-content: start; align-items: start; grid-auto-rows: max-content; }
@@ -521,14 +521,12 @@
   <!-- ========================================================================= -->
   <div id="homeWorkspace" class="app-shell-workspace flex-1 flex overflow-hidden min-h-0">
 
-    <div id="homeContextBusControls"><button type="button" id="homeContextBusToggle" class="hw-btn" aria-controls="homeContextBusAside" aria-expanded="true">收起上下文总线</button></div>
-
     <!-- LEFT CONSOLE DOCK: 上下文工作流总线 -->
-    <aside id="homeContextBusAside" class="w-64 bg-[#08090d] border-r border-[#191c24] flex flex-col shrink-0 z-30 h-full min-h-0 overflow-hidden">
+    <aside id="homeContextBusAside" class="gw-side-bus-unified w-64 bg-[#08090d] border-r border-[#191c24] flex flex-col shrink-0 z-30 h-full min-h-0 overflow-hidden">
       <div class="flex-1 flex flex-col min-h-0 relative overflow-hidden" id="contextBusContainer">
         <!-- Tree Header -->
-        <div class="p-2 border-b border-white/5 shrink-0">
-          <div class="w-full flex items-center justify-between px-3 py-2 rounded-xl bg-[#141720] border border-[#dfc384]/35 text-[#eddab3] gw-type-body-sm font-semibold shadow-[0_0_12px_rgba(223,195,132,0.12)] relative">
+        <div class="gw-side-bus-header p-2 border-b border-white/5 shrink-0">
+          <div class="gw-side-bus-title w-full flex items-center justify-between px-3 py-2 rounded-xl bg-[#141720] border border-[#dfc384]/35 text-[#eddab3] gw-type-body-sm font-semibold shadow-[0_0_12px_rgba(223,195,132,0.12)] relative">
             <span class="absolute left-0 top-2 bottom-2 w-1 bg-[#dfc384] rounded-r shadow-[0_0_8px_#dfc384]"></span>
             <div class="flex items-center space-x-2.5">
               <i data-lucide="git-branch" class="w-4 h-4 text-[#dfc384]"></i>
@@ -539,7 +537,7 @@
         </div>
 
         <!-- Scrollable Flow Graph -->
-        <div class="flex-1 overflow-y-auto p-2 pr-2 relative space-y-4 min-h-0">
+        <div class="gw-side-bus-list flex-1 overflow-y-auto p-2 pr-2 relative space-y-4 min-h-0">
           <!-- Continuous Bus Trunk Line -->
           <div class="absolute left-3.5 top-2 bottom-4 w-[1.5px] bg-gradient-to-b from-[#dfc384] via-[#dfc384]/40 to-transparent pointer-events-none"></div>
 
@@ -978,14 +976,16 @@
     <!-- ----------------------------------------------------------------------- -->
     <section id="workbenchMainSettings" class="flex-1 p-2.5 min-h-0 hidden gap-2.5 overflow-hidden">
       <!-- LEFT: 导航与分区总线 (Width: 240px) -->
-      <aside class="w-60 flex flex-col h-full shrink-0 champagne-card p-2.5 space-y-3">
-        <div class="px-2 pt-1">
-          <div class="gw-type-body-sm font-mono text-[#dfc384] font-bold">CONTROL BUS</div>
-          <div class="gw-type-body-sm font-bold text-slate-100 mt-0.5">设置分区与配置模块</div>
+      <aside class="gw-side-bus-unified w-60 flex flex-col h-full shrink-0 champagne-card p-2.5 space-y-3">
+        <div class="gw-side-bus-header px-2 pt-1">
+          <div class="gw-side-bus-title">
+            <div class="gw-type-body-sm font-mono text-[#dfc384] font-bold">CONTROL BUS</div>
+            <div class="gw-type-body-sm font-bold text-slate-100 mt-0.5">设置分区与配置模块</div>
+          </div>
         </div>
 
         <!-- 核心分区切换按键 (内部平滑切换，无外链跳转) -->
-        <nav class="space-y-1 settings-index" aria-label="设置分区">
+        <nav class="gw-side-bus-list space-y-1 settings-index" aria-label="设置分区">
           <button type="button" data-section="general" class="w-full flex items-center space-x-2.5 transition active cursor-pointer hw-btn engaged" aria-pressed="true">
             <i data-lucide="sliders" class="w-4 h-4 text-[#dfc384]"></i>
             <span>通用与外观偏好</span>

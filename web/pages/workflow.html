@@ -9,6 +9,7 @@
   <script src="/static/vendor/js/lucide.js?v=1.16.0"></script>
   <link rel="stylesheet" href="/static/css/base/hardware-design-system.css?ui=20261011-final">
   <link rel="stylesheet" href="/static/css/pages/workflow-workbench.css?v=20261009-parse-cf7&ui=20261011-final">
+  <link rel="stylesheet" href="/static/css/base/workspace-pages.css?v=20261029-qin478">
 </head>
 <body data-gw-page="workflow" class="gw-shell bg-[#090a0d] text-slate-200 antialiased h-screen flex flex-col justify-between select-none overflow-hidden px-5 gw-type-body-md">
   <!-- The shared top bar is supplied by the page shell/router. -->
@@ -219,7 +220,7 @@
 
       <div class="workbench-main">
       <!-- 2.1 左栏：工作流目录（多文件夹分类管理 + 底部凭证与环境设置） -->
-      <aside class="left-bus-sidebar" id="leftBusSidebar">
+      <aside class="gw-side-bus-unified left-bus-sidebar" id="leftBusSidebar">
         <!-- 折叠态竖条（折叠后显示） -->
         <div class="col-collapsed-rail" id="leftCollapsedRail" title="点击展开『工作流目录』">
           <button type="button" class="col-rail-expand-btn hw-round-btn" id="btnExpandLeftCol" aria-label="展开工作流目录" aria-controls="leftBusSidebar"><span class="hw-round-inner">▶</span></button>
@@ -228,8 +229,8 @@
         </div>
 
         <div class="sidebar-section" style="flex:1;min-height:0;">
-          <div class="section-header">
-            <div class="section-title-wrap">
+          <div class="gw-side-bus-header section-header">
+            <div class="gw-side-bus-title section-title-wrap">
               <div class="icon-box">📂</div>
               <div>
                 <span class="section-title-cn">工作流目录</span>

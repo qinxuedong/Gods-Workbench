@@ -811,3 +811,190 @@ body:has(.observability-content) { background: var(--paper); }
   .task-progress-track:focus-visible,.asset-volume-track:focus-visible { outline-color: Highlight; }
 }
 
+/* QIN-478: cross-page context-bus sidebar baseline, scoped to opted-in sidebars. */
+.gw-side-bus-unified {
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  padding: 0;
+  overflow: hidden;
+  color: #e5e7eb;
+  background: #08090d;
+  border-right: 1px solid #191c24;
+  border-radius: 0;
+  box-shadow: none;
+}
+.gw-side-bus-unified.gw-side-bus-unified:not(.left-bus-sidebar) {
+  width: 16rem;
+  flex: 0 0 16rem;
+}
+#sidebar.gw-side-bus-unified {
+  width: 16rem;
+  flex: 0 0 16rem;
+}
+#leftBusSidebar.gw-side-bus-unified {
+  color: #e5e7eb;
+  background: #08090d;
+  border-right: 1px solid #191c24;
+  border-radius: 0;
+  box-shadow: none;
+}
+#leftBusSidebar.gw-side-bus-unified:not(.collapsed) {
+  width: 16rem;
+  flex: 0 0 16rem;
+  padding: 0;
+  gap: 0;
+}
+.gw-side-bus-unified .gw-side-bus-header {
+  flex: 0 0 auto;
+  padding: 8px;
+  border-bottom: 1px solid rgba(255,255,255,.06);
+  background: #08090d;
+}
+.gw-side-bus-unified .gw-side-bus-title {
+  min-height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 12px;
+  border: 1px solid rgba(223,195,132,.35);
+  border-radius: 10px;
+  background: #141720;
+  color: #eddab3;
+  box-shadow: 0 0 12px rgba(223,195,132,.12);
+}
+.gw-side-bus-unified .gw-side-bus-list {
+  min-height: 0;
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 8px;
+  overflow: auto;
+}
+.gw-side-bus-unified .gw-side-bus-list > :not([hidden]) ~ :not([hidden]) {
+  margin-top: 0;
+}
+.gw-side-bus-unified .relative.pl-5 {
+  min-width: 0;
+}
+.gw-side-bus-unified .collab-task-item {
+  min-width: 0;
+  min-height: 35px;
+  margin: 0;
+  border: 1px solid rgba(255,255,255,.1);
+  border-radius: 8px;
+  background: #101319;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.03);
+}
+.gw-side-bus-unified .ws-project-list {
+  gap: 8px;
+  padding: 8px;
+}
+.gw-side-bus-unified .ws-project-row {
+  min-height: 35px;
+  padding: 8px 12px;
+  border: 1px solid rgba(255,255,255,.1);
+  border-radius: 8px;
+  background: #101319;
+  color: #f8fafc;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.03);
+}
+.gw-side-bus-unified .ws-project-row:hover {
+  border-color: rgba(223,195,132,.4);
+  background: #101319;
+}
+.gw-side-bus-unified .ws-project-row.active,
+.gw-side-bus-unified .ws-project-row.active:hover {
+  border-color: #dfc384;
+  background: #14171f;
+  color: #dfc384;
+  box-shadow: 0 0 8px rgba(223,195,132,.12), inset 0 0 0 1px rgba(223,195,132,.08);
+}
+.gw-side-bus-unified .ws-project-row.active::before {
+  display: none;
+}
+.gw-side-bus-unified .ws-project-row.active .ws-project-name,
+.gw-side-bus-unified .ws-project-row.active .ws-project-icon {
+  color: #dfc384;
+}
+.gw-side-bus-unified .ws-project-row.active .ws-project-count {
+  background: rgba(223,195,132,.12);
+  color: #dfc384;
+}
+.gw-side-bus-unified #workflowTreeList {
+  min-width: 0;
+  padding: 8px;
+}
+.gw-side-bus-unified .wf-folder-group {
+  gap: 6px;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+.gw-side-bus-unified .wf-folder-header {
+  min-height: 35px;
+  padding: 8px 12px;
+  border: 1px solid rgba(255,255,255,.1);
+  border-radius: 8px;
+  background: #101319;
+  color: #f8fafc;
+}
+.gw-side-bus-unified .wf-folder-header:hover,
+.gw-side-bus-unified .wf-folder-header.active-folder {
+  border-color: #dfc384;
+  background: #14171f;
+  color: #dfc384;
+}
+.gw-side-bus-unified .wf-folder-children {
+  margin-left: 12px;
+  padding-left: 8px;
+  border-left: 1px solid rgba(223,195,132,.35);
+}
+.gw-side-bus-unified .wf-tree-item {
+  min-height: 35px;
+  padding: 8px 12px;
+  border: 1px solid rgba(255,255,255,.1);
+  border-radius: 8px;
+  background: #101319;
+  color: #f8fafc;
+}
+.gw-side-bus-unified .wf-tree-item:hover,
+.gw-side-bus-unified .wf-tree-item.active {
+  border-color: #dfc384;
+  background: #14171f;
+  color: #dfc384;
+  box-shadow: 0 0 8px rgba(223,195,132,.12), inset 0 0 0 1px rgba(223,195,132,.08);
+}
+.gw-side-bus-unified .wf-tree-item.active :is(.wf-tree-name,.wf-tree-idx) {
+  color: #dfc384;
+}
+.gw-side-bus-unified :is(.tree-node-card > span:last-child, #agentList .tree-node-card .rounded-full, #assetCategories [data-asset-category] > span:last-child, #assetCategoryTotal, #collabOnlineCount, .ws-project-count, .wf-source-badge, .wf-folder-actions .capsule-badge) {
+  transform: scale(.5);
+  transform-origin: right center;
+}
+.gw-side-bus-unified #assetCategoryTotal:empty,
+.gw-side-bus-unified .wf-source-badge:empty {
+  display: none;
+}
+@media (max-width: 1056px) {
+  .gw-side-bus-unified.gw-side-bus-unified:not(.left-bus-sidebar) {
+    width: 100%;
+    flex-basis: auto;
+  }
+}
+@media (max-width: 760px) {
+  .gw-side-bus-unified.gw-side-bus-unified.ws-sidebar {
+    width: 100%;
+    flex-basis: auto;
+  }
+  #sidebar.gw-side-bus-unified {
+    width: 100%;
+    flex-basis: auto;
+  }
+}
+

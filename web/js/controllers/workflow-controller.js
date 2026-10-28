@@ -1824,7 +1824,7 @@ function getSourceBadgeText(sourceType) {
   if (["local_file", "comfyui", "canvas"].includes(sourceType)) return "LOCAL";
   if (sourceType === "plugin_ingest") return "PLUG";
   if (["rh_link", "runninghub"].includes(sourceType)) return "RH";
-  return "--";
+  return "";
 }
 
 function renderWorkflowCatalog() {
@@ -1992,7 +1992,7 @@ function renderWorkflowCatalog() {
                       ).padStart(2, "0")}</span>
                       <span class="wf-tree-name">${escapeHtml(item.name)}</span>
                     </div>
-                    <span class="wf-source-badge">${escapeHtml(srcBadge)}</span>
+                    ${srcBadge ? `<span class="wf-source-badge">${escapeHtml(srcBadge)}</span>` : ""}
                   </button>
                 `;
               })
