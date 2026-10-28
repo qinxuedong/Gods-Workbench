@@ -1,0 +1,14 @@
+{
+  "schema": "gw.cleanroom-admission-shard/v1",
+  "issue": 385,
+  "authorization_basis": "GitHub Issue #385, 2026-10-28",
+  "files": [
+    "gw/asset_registry/collector.py",
+    "gw/api/routes_asset_collect.py",
+    "tests/contracts/assets/test_mvp1_collect_unsupported.py",
+    "tests/hygiene/fixtures/admissions/issue-385.json"
+  ],
+  "admitted_files": [],
+  "accepted_test_files": [],
+  "notes": "QIN-436：收集器不支持来源统一失败契约；登记本票代码、新增契约测试与分片自身，不回填基础账本。"
+}
