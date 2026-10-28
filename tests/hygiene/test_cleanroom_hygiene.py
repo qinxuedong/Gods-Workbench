@@ -603,7 +603,6 @@ def test_github_issue_367_file_scope_is_registered(repo_root: Path):
         "tests/hygiene/test_cleanroom_hygiene.py",
     }
 
-
 def test_quarantined_prompt_is_absent_from_static_tree(repo_root: Path):
     """隔离提示词不进入静态树；新仓不保存正文副本。"""
     static_dir = repo_root / "web"
