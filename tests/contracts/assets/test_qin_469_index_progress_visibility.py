@@ -72,8 +72,8 @@ def _submit(client, key, **payload):
     )
 
 
-def test_scanned_progress_advances_while_running(ingest_runtime, monkeypatch):
-    """AC1/AC2：小样本慢文件在运行中即可读到递增的非零 scanned。"""
+def _slow_hash(monkeypatch):
+    """把哈希放慢到每个 0.3s，模拟小样本里单个文件耗时数秒的慢探针。"""
     original_hash = jobs.IndexJobs._hash
 
     def slow_hash(self, *args):
@@ -82,6 +82,11 @@ def test_scanned_progress_advances_while_running(ingest_runtime, monkeypatch):
         return digest
 
     monkeypatch.setattr(jobs.IndexJobs, "_hash", slow_hash)
+
+
+def test_scanned_progress_advances_while_running(ingest_runtime, monkeypatch):
+    """AC1/AC2：小样本慢文件在运行中即可读到递增的非零 scanned。"""
+    _slow_hash(monkeypatch)
     observed = []
     with TestClient(create_app()) as client:
         created = _submit(client, "qin-469-scan-progress", hash_files=True)
@@ -119,3 +124,46 @@ def test_progress_reports_only_known_counts(ingest_runtime):
         assert set(job["progress"]) == {"scanned", "error_count", "phase"}
         assert job["progress"]["scanned"] >= 0
         assert _wait_job(client, job_id)["status"] == "succeeded"
+
+
+def test_progress_save_contention_does_not_fail_ingest(ingest_runtime, monkeypatch):
+    """节流落盘变频繁后，状态盘瞬时不可写不得被记成素材文件错误而整单失败。
+
+    状态盘用 tmp + os.replace 原子替换；Windows 上轮询进度的并发读与替换相撞会抛
+    PermissionError(OSError)。节流把落盘频率从"几乎不写"提到每 0.2s，若让它冒泡到
+    扫描的 per-file 错误处理，一次抖动就足以让整批入库以 INDEX_FILE_ERRORS 失败。
+    """
+    original_save = jobs.IndexJobs._save
+    calls = {"count": 0}
+
+    def flaky_save(self, job):
+        calls["count"] += 1
+        if job.get("phase") == "scanning" and calls["count"] % 2 == 0:
+            raise OSError(13, "state store busy")
+        return original_save(self, job)
+
+    monkeypatch.setattr(jobs.IndexJobs, "_save", flaky_save)
+    _slow_hash(monkeypatch)
+    observed = []
+    with TestClient(create_app()) as client:
+        created = _submit(client, "qin-469-save-contention", hash_files=True)
+        assert created.status_code == 202, created.text
+        job_id = created.json()["job_id"]
+        deadline = time.monotonic() + 20
+        while time.monotonic() < deadline:
+            job = _read_job(client, job_id)
+            if job["status"] in jobs.TERMINAL:
+                break
+            observed.append(job["progress"]["scanned"])
+            time.sleep(0.01)
+        final = _wait_job(client, job_id)
+
+    assert final["status"] == "succeeded", final
+    assert final["progress"] == {
+        "scanned": FILE_COUNT,
+        "error_count": 0,
+        "phase": "completed",
+    }
+    assert any(0 < scanned < FILE_COUNT for scanned in observed), (
+        f"抖动下仍应能观察到递增进度，仅观测到: {sorted(set(observed))}"
+    )

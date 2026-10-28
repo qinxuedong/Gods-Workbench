@@ -1348,10 +1348,15 @@ class IndexJobs:
                             len(files) % PROGRESS_BATCH_SIZE == 0
                             or now - progress_saved_at >= PROGRESS_MIN_INTERVAL_SECONDS
                         ):
-                            with self.condition:
-                                job = self._checkpoint(job_id, attempt)
-                                job["scanned"] = len(files)
-                                self._save(job)
+                            # 进度落盘是尽力而为：状态盘用 tmp + os.replace 原子写入，
+                            # Windows 上若恰有并发读取（轮询进度）正在打开目标文件，
+                            # 替换会抛 PermissionError。这里跳过本个节流点、下一批继续，
+                            # 绝不把状态盘抖动算成素材文件不可读而整单失败（INDEX_FILE_ERRORS）。
+                            with suppress(OSError):
+                                with self.condition:
+                                    job = self._checkpoint(job_id, attempt)
+                                    job["scanned"] = len(files)
+                                    self._save(job)
                             progress_saved_at = now
                     except OSError:
                         with self.condition:
