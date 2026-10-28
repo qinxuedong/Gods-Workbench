@@ -2573,11 +2573,15 @@ def _confirmed_alias_media_path(
         target = boundary.joinpath(*relative.split("/"))
         resolved_boundary = boundary.resolve(strict=True)
         resolved_target = target.resolve(strict=True)
+        # 与 index_jobs 的扫描与哈希分支一致：映射盘上 resolve() 返回 UNC 而
+        # absolute() 保留盘符，形态差本身不代表路径被篡改，故网络路径不按形态判失败。
+        # 真实越界仍由下方 is_relative_to 与 is_file 失败关闭。
+        network_alias = storage._is_network_path(str(boundary))
     except (CleanroomException, OSError, RuntimeError, TypeError, ValueError):
         return None
     if (
-        resolved_boundary != boundary.absolute()
-        or resolved_target != target.absolute()
+        (resolved_boundary != boundary.absolute() and not network_alias)
+        or (resolved_target != target.absolute() and not network_alias)
         or not resolved_target.is_relative_to(resolved_boundary)
         or not resolved_target.is_file()
     ):
