@@ -389,6 +389,7 @@ def test_directory_settings_saves_full_path_and_restores_after_reload(
             base + "/static/asset-manager.html?settings=directories&embedded=1",
             wait_until="networkidle",
         )
+        # QIN-474：目录设置页已无保存按钮，路径字段 Enter 即自动保存并给出成功反馈。
         local_path = page.locator("#storageDir_local")
         local_path.wait_for()
         local_path.fill(str(target))
@@ -398,9 +399,10 @@ def test_directory_settings_saves_full_path_and_restores_after_reload(
                 and "/api/storage-settings" in response.url
             )
         ) as saved:
-            page.locator("[data-storage-save]").click()
+            local_path.press("Enter")
         assert saved.value.status == 200, saved.value.text()
         assert saved.value.json()["dirs"]["local"] == str(target)
+        page.locator("#assetStatus").filter(has_text="保存目录已更新").wait_for()
 
         page.reload(wait_until="networkidle")
         local_path = page.locator("#storageDir_local")
@@ -476,8 +478,8 @@ def test_server_directory_picker_saves_selected_server_directory_immediately(
         assert errors == [] and writes == []
 
 
-def test_server_native_picker_fills_field_without_autosave(monkeypatch, tmp_path):
-    """QIN-432：回环会话原生选择成功后仅填入字段，保存仍由用户显式触发。"""
+def test_server_native_picker_fills_field_and_autosaves(monkeypatch, tmp_path):
+    """QIN-474：回环会话原生选择成功后即填入字段并自动保存（取代 QIN-432 的「不自动保存」契约）。"""
     chosen = (tmp_path / "native-picked").resolve()
     chosen.mkdir()
 
@@ -498,7 +500,15 @@ def test_server_native_picker_fills_field_without_autosave(monkeypatch, tmp_path
         )
         picker = page.locator('[data-directory-picker="projects"]')
         picker.wait_for(state="visible")
-        picker.click()
+        with page.expect_response(
+            lambda response: (
+                response.request.method == "PATCH"
+                and "/api/storage-settings" in response.url
+            )
+        ) as saved:
+            picker.click()
+        assert saved.value.status == 200, saved.value.text()
+        assert saved.value.json()["dirs"]["projects"] == str(chosen)
         field = page.locator("#storageDir_projects")
         field.wait_for(state="visible")
         page.wait_for_function(
@@ -507,7 +517,7 @@ def test_server_native_picker_fills_field_without_autosave(monkeypatch, tmp_path
             timeout=15000,
         )
         assert field.input_value() == str(chosen)
-        # 原生路径不触发页面内浏览器，也不自动保存。
+        # 原生路径不触发页面内浏览器；选完即自动保存并给出成功反馈。
         assert page.locator("[data-server-directory-browser]").count() == 0
-        assert page.locator("#assetStatus").inner_text().find("保存目录") >= 0
+        page.locator("#assetStatus").filter(has_text="保存目录已更新").wait_for()
         assert errors == [] and writes == []

@@ -8,9 +8,10 @@
     "tests/frontend/qin-474-dir-autosave.test.mjs",
     "tests/frontend/qin-412-directory-settings.test.mjs",
     "tests/frontend/node-files.txt",
+    "tests/e2e/test_api_settings_browser.py",
     "tests/hygiene/fixtures/admissions/issue-446.json"
   ],
   "admitted_files": [],
   "accepted_test_files": [],
-  "notes": "QIN-474：目录设置自动保存与缓存根目录选夹；登记本票前端改动、新增窄测、预授权更新的既有测试与分片自身，不回填基础账本。"
+  "notes": "QIN-474：目录设置自动保存与缓存根目录选夹；登记本票前端改动、新增窄测、预授权更新的既有测试与分片自身，不回填基础账本。tests/e2e/test_api_settings_browser.py 由 PM 于 2026-10-28 授权临时纳入（PR #447 卡点回复 A），仅更新两条断言旧保存行为的 e2e 用例。"
 }
