@@ -1,0 +1,14 @@
+{
+  "schema": "gw.cleanroom-admission-shard/v1",
+  "issue": 428,
+  "authorization_basis": "GitHub Issue #428, 2026-10-28",
+  "files": [
+    "gw/asset_registry/repository.py",
+    "gw/api/routes_asset_registry.py",
+    "tests/contracts/assets/test_qin_467_shot_index_ingest.py",
+    "tests/hygiene/fixtures/admissions/issue-428.json"
+  ],
+  "admitted_files": [],
+  "accepted_test_files": [],
+  "notes": "QIN-467：入库即写镜头检索索引并提供产品化重建入口；登记本票实现文件、新增契约测试与分片自身，不回填基础账本。"
+}

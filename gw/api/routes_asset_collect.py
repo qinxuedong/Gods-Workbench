@@ -115,6 +115,11 @@ async def collect_url(payload: UrlRequest, request: Request, authorization: str 
     owner = _owner(authorization, x_user_role)
     _check_token(payload.pair_token, owner)
     try:
+        collector.reject_unsupported_source(payload.url)
+    except collector.CollectError as exc:
+        # AC1/AC2：不支持来源在建立任务与落盘之前即失败，不产生任何 inbox 文件。
+        raise CleanroomException(400, exc.code, str(exc)) from exc
+    try:
         url = collector.validate_collect_url(payload.url)
     except collector.CollectError as exc:
         raise CleanroomException(400, exc.code, str(exc)) from exc

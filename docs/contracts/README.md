@@ -23,5 +23,5 @@ Agent-host 目录定义隔离 Agent 到 Workbench 的 HTTP 适配及共享任务
 
 1. 核心 ID 统一为 `project_id`、`canvas_id`、`entity_id`、`job_id`、`asset_id`。
 2. 错误响应统一包装为 `{"detail": {"code": "...", "message": "..."}}`；未认证 401，权限不足默认 403，明确登记的资源隐藏端点可将未知与越权统一为 404，CAS 版本冲突 409。
-3. 所有契约文件必须在 `tests/hygiene/fixtures/cleanroom_admission_metadata.json` 中登记准入。
+3. 所有契约文件必须完成洁净室准入登记。登记入口分两层：`tests/hygiene/fixtures/cleanroom_admission_metadata.json` 是**基础账本**，只承载全局边界（如 `accepted_roots`）与迁移前的历史票条目，**默认不因新票改动**；新增或变更的契约文件一律登记在**本票分片** `tests/hygiene/fixtures/admissions/issue-<票号>.json`。分片格式、字段约束与本地自检见 [`tests/hygiene/fixtures/admissions/README.md`](../../tests/hygiene/fixtures/admissions/README.md)。
 

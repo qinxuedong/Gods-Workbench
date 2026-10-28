@@ -169,11 +169,13 @@
       ]
     },
     {
-      "issue": 387,
-      "authorization_basis": "GitHub Issue #387, 2026-10-28",
+      "issue": 386,
+      "authorization_basis": "GitHub Issue #386, 2026-10-28",
       "files": [
-        "tools/asset_index_ingest.py",
-        "tests/contracts/assets/test_mvp1_ingest_report.py",
+        "web/js/modules/asset-manager.js",
+        "web/js/modules/asset-manager/collect-provenance.js",
+        "tests/frontend/mvp1-collect-provenance.test.mjs",
+        "tests/frontend/node-files.txt",
         "tests/hygiene/fixtures/cleanroom_admission_metadata.json",
         "tests/hygiene/test_cleanroom_hygiene.py"
       ]
@@ -312,7 +314,7 @@
       "path": "docs/behavior/README.md",
       "classification": "frozen_behavior_contract",
       "authorization_basis": "cleanroom_frozen_input",
-      "sha256": "52a5cb755f41778d16c71b74e382e20561df48514e0466cecb8dbe23a9e30c12",
+      "sha256": "95b957737bb28ff5d453af9675e525dc8588a420bf7ce7b94f699cd1f7ec09cd",
       "admission": "accepted"
     },
     {
@@ -410,7 +412,7 @@
       "path": "docs/contracts/AGENT-WORKBENCH-INTERFACE-CATALOG.yaml",
       "classification": "frozen_interface_contract",
       "authorization_basis": "user_integration_request_2026-10-08",
-      "sha256": "b429c06df040286015180710d89930527b979b71b14e1af458da80e86331a48b",
+      "sha256": "53d50a701d2e3f715f876636606ec153090ff54dad86ceb27daf44e546521c08",
       "admission": "accepted"
     },
     {
@@ -522,7 +524,7 @@
       "path": "docs/contracts/README.md",
       "classification": "frozen_interface_contract",
       "authorization_basis": "cleanroom_frozen_input",
-      "sha256": "7ee80b0358da9835fdf8082f933b6e590a23d0e728254d5d2f01dd6c856f5989",
+      "sha256": "8401a0e17addacde41be74fac06c1f19261b803a60c964451ac300bf8a219e64",
       "admission": "accepted"
     },
     {
@@ -585,7 +587,7 @@
       "path": "docs/fixtures/README.md",
       "classification": "golden_fixture",
       "authorization_basis": "cleanroom_frozen_input",
-      "sha256": "b53e28de6239de1837c19bf0459bf02b3e38e7e0dad9dde619e26c6fcd1baf5e",
+      "sha256": "8e328df20415a8a787b908a8f78f349c71eb644671f6009598c4bb4fbcc5c284",
       "admission": "accepted"
     },
     {
