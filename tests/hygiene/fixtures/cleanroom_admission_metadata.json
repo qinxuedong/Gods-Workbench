@@ -146,6 +146,27 @@
         "tests/hygiene/fixtures/cleanroom_admission_metadata.json",
         "tests/hygiene/test_cleanroom_hygiene.py"
       ]
+    },
+    {
+      "issue": 356,
+      "authorization_basis": "GitHub Issue #356, 2026-10-28",
+      "files": [
+        "gw/api/routes_settings.py",
+        "gw/settings/native_picker.py",
+        "web/js/modules/asset-manager.js",
+        "web/css/pages/directory-settings.css",
+        "clients/desktop/Cargo.toml",
+        "clients/desktop/Cargo.lock",
+        "clients/desktop/src/main.rs",
+        "clients/desktop/capabilities/default.json",
+        "clients/desktop/README.md",
+        "tests/contracts/settings/test_qin411_412_native_picker.py",
+        "tests/e2e/test_api_settings_browser.py",
+        "tests/frontend/qin-412-directory-settings.test.mjs",
+        "tests/contracts/projects/test_phase8_frontend_backend_api_gap.py",
+        "tests/hygiene/fixtures/cleanroom_admission_metadata.json",
+        "tests/hygiene/test_cleanroom_hygiene.py"
+      ]
     }
   ],
   "accepted_roots": [

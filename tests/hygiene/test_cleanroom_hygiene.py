@@ -300,7 +300,7 @@ def test_static_layer_has_no_legacy_integration_markers(repo_root: Path):
 # 凭据或完整历史授权账本。历史材料继续留在洁净源仓，不因测试需要复制进新仓。
 ADMISSION_METADATA_PATH = "tests/hygiene/fixtures/cleanroom_admission_metadata.json"
 ADMISSION_METADATA_SHA256 = (
-    "f79cea3bca14c2ddf45c49ab59895135c4e29cf5c2735c634f94b33c07616498"
+    "52d87a7a4ec7c62597c53766b4e30eeb6e4ccdd0f3beb42793162a7b5638a019"
 )
 QUARANTINED_PROMPT_ORIGINAL_PATH = (
     "web/system-prompts/infinite-canvas-prompt-templates.md"
@@ -512,6 +512,38 @@ def test_github_issue_335_file_scope_is_registered(repo_root: Path):
         "tests/hygiene/fixtures/cleanroom_admission_metadata.json",
         "tests/hygiene/test_cleanroom_hygiene.py",
     }
+
+
+def test_github_issue_356_file_scope_is_registered(repo_root: Path):
+    """#356（QIN-432）的原生选择器、双列布局与客户端桥接按票面登记。"""
+    metadata = _load_admission_metadata(repo_root)
+    registrations = [
+        item
+        for item in metadata.get("authorized_issue_file_sets", [])
+        if item.get("issue") == 356
+    ]
+    assert len(registrations) == 1
+    assert registrations[0].get("authorization_basis") == (
+        "GitHub Issue #356, 2026-10-28"
+    )
+    assert set(registrations[0].get("files", [])) == {
+        "gw/api/routes_settings.py",
+        "gw/settings/native_picker.py",
+        "web/js/modules/asset-manager.js",
+        "web/css/pages/directory-settings.css",
+        "clients/desktop/Cargo.toml",
+        "clients/desktop/Cargo.lock",
+        "clients/desktop/src/main.rs",
+        "clients/desktop/capabilities/default.json",
+        "clients/desktop/README.md",
+        "tests/contracts/settings/test_qin411_412_native_picker.py",
+        "tests/e2e/test_api_settings_browser.py",
+        "tests/frontend/qin-412-directory-settings.test.mjs",
+        "tests/contracts/projects/test_phase8_frontend_backend_api_gap.py",
+        "tests/hygiene/fixtures/cleanroom_admission_metadata.json",
+        "tests/hygiene/test_cleanroom_hygiene.py",
+    }
+
 
 
 def test_github_issue_367_file_scope_is_registered(repo_root: Path):

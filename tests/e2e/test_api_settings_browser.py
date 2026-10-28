@@ -13,6 +13,7 @@ from playwright_support import open_playwright
 
 from gw.api import routes_settings
 from gw.api.app import create_app
+from gw.settings import native_picker as gw_settings_native_picker
 from gw.settings.service import ProviderService, StorageSettingsService
 
 
@@ -412,8 +413,18 @@ def test_directory_settings_saves_full_path_and_restores_after_reload(
 def test_server_directory_picker_saves_selected_server_directory_immediately(
     monkeypatch, tmp_path
 ):
+    """原生选择器不可用时（无图形环境）自动降级页面内浏览器，即选即存行为不变。"""
     target = (tmp_path / "server-directory-choice").resolve()
     target.mkdir()
+    monkeypatch.setattr(
+        gw_settings_native_picker,
+        "pick_directory",
+        lambda title, initial_dir, timeout_seconds: {
+            "status": "unavailable",
+            "path": None,
+            "reason": "no-display",
+        },
+    )
     with settings_browser(
         monkeypatch, tmp_path, directory_root=tmp_path
     ) as (page, base, errors, writes):
@@ -462,4 +473,41 @@ def test_server_directory_picker_saves_selected_server_directory_immediately(
         selected_path = saved.value.json()["dirs"]["projects"]
         assert Path(selected_path).is_dir()
         assert page.locator("#directoryMountDialogOverlay").count() == 0
+        assert errors == [] and writes == []
+
+
+def test_server_native_picker_fills_field_without_autosave(monkeypatch, tmp_path):
+    """QIN-432：回环会话原生选择成功后仅填入字段，保存仍由用户显式触发。"""
+    chosen = (tmp_path / "native-picked").resolve()
+    chosen.mkdir()
+
+    def fake_pick(title, initial_dir, timeout_seconds):
+        assert title == "选择服务器目录"
+        return {"status": "selected", "path": str(chosen), "reason": None}
+
+    monkeypatch.setattr(gw_settings_native_picker, "pick_directory", fake_pick)
+    with settings_browser(monkeypatch, tmp_path, directory_root=tmp_path) as (
+        page,
+        base,
+        errors,
+        writes,
+    ):
+        page.goto(
+            base + "/static/asset-manager.html?settings=directories&embedded=1",
+            wait_until="networkidle",
+        )
+        picker = page.locator('[data-directory-picker="projects"]')
+        picker.wait_for(state="visible")
+        picker.click()
+        field = page.locator("#storageDir_projects")
+        field.wait_for(state="visible")
+        page.wait_for_function(
+            "value => document.getElementById('storageDir_projects')?.value === value",
+            arg=str(chosen),
+            timeout=15000,
+        )
+        assert field.input_value() == str(chosen)
+        # 原生路径不触发页面内浏览器，也不自动保存。
+        assert page.locator("[data-server-directory-browser]").count() == 0
+        assert page.locator("#assetStatus").inner_text().find("保存目录") >= 0
         assert errors == [] and writes == []
