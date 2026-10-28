@@ -125,3 +125,19 @@
 技能本体存放在 Agent 技能库（如 `~/.workbuddy/skills/hygiene-admission-conflict/`），
 不随本仓库提交；本文件只声明结构与红线，二者不一致时以本文件与
 `cleanroom_admission.py` 的实际行为为准。
+
+## 8. 与外部文档的关系
+
+外层 README 的准入条款均已改为「基础账本承载全局边界 + 新票写本票分片」的两层口径
+（QIN-471 / GitHub #439）。读本目录时以本文件与 `cleanroom_admission.py` 为准，
+外层文档只做指引，不另立规则。
+
+| 外层文档 | 条款位置 | 指向 |
+| --- | --- | --- |
+| [`docs/contracts/README.md`](../../../../docs/contracts/README.md) | 第 3 节第 3 条 | 契约文件登记入口 |
+| [`docs/fixtures/README.md`](../../../../docs/fixtures/README.md) | 第 2 节第 3 条 | 黄金夹具不可变基线的登记入口 |
+| [`docs/behavior/README.md`](../../../../docs/behavior/README.md) | 第 2 节第 3 条 | 行为规范文件登记入口 |
+| [`tests/README.md`](../../../README.md) | 第 2 节第 4 条 | 洁净室准入约束（测试侧总口径） |
+
+口径一致要求：上表任一文档若仍把 `cleanroom_admission_metadata.json` 写成
+「唯一登记入口」祈使句，即为过期文案，应改为与本文件一致的分片登记指引。
