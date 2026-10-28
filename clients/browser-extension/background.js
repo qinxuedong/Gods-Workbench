@@ -170,6 +170,7 @@ importScripts('src/target-resolver.js', 'src/collect-client.js');
             ok: !!result.ok,
             status: result.ok ? 'done' : 'failed',
             url: String(result.url || ''),
+            pageUrl: String(result.pageUrl || ''),
             jobId: String(result.jobId || ''),
             errorCode: String(result.errorCode || ''),
             message: result.message || (result.ok ? '' : root.GwCollectClient.copyFor(result.errorCode)),
@@ -193,6 +194,7 @@ importScripts('src/target-resolver.js', 'src/collect-client.js');
                 ok: false,
                 errorCode: classified.errorCode || 'no_target',
                 url: String((request && request.url) || ''),
+                pageUrl: pageUrl,
                 startedAt: startedAt
             });
         }
@@ -200,18 +202,15 @@ importScripts('src/target-resolver.js', 'src/collect-client.js');
             return ensureAppTab(api, settings.endpoint).then(function (tab) {
                 // 先确保令牌就绪（页面源缓存），再让页面源执行提交与轮询。
                 return ensureToken(api, settings.endpoint, tab.id).then(function () {
-                    return sendToTab(api, tab.id, {
-                        type: 'gw:collect-url',
-                        url: classified.url,
-                        title: String((request && request.title) || ''),
-                        referer: pageUrl
-                    }, 3, 200);
+                    // 收集接口只接受 url + pair_token，页面标题/来源页在这里不做隐式扩字段。
+                    return sendToTab(api, tab.id, {type: 'gw:collect-url', url: classified.url}, 3, 200);
                 });
             }).then(function (response) {
                 if (response && response.ok) {
                     return publish(api, {
                         ok: true,
                         url: classified.url,
+                        pageUrl: pageUrl,
                         jobId: response.jobId,
                         elapsedMs: response.elapsedMs,
                         startedAt: startedAt
@@ -222,6 +221,7 @@ importScripts('src/target-resolver.js', 'src/collect-client.js');
                     errorCode: (response && response.errorCode) || 'collect_failed',
                     message: (response && response.message) || '',
                     url: classified.url,
+                    pageUrl: pageUrl,
                     startedAt: startedAt
                 });
             });
@@ -231,6 +231,7 @@ importScripts('src/target-resolver.js', 'src/collect-client.js');
                 errorCode: (error && error.errorCode) || 'collect_failed',
                 message: (error && error.message) || '',
                 url: classified.url,
+                pageUrl: pageUrl,
                 startedAt: startedAt
             });
         });
@@ -305,6 +306,9 @@ importScripts('src/target-resolver.js', 'src/collect-client.js');
             });
         }
         api.runtime.onInstalled.addListener(function () { void buildMenus(); });
+        if (api.action && api.action.onClicked && api.runtime.openOptionsPage) {
+            api.action.onClicked.addListener(function () { void api.runtime.openOptionsPage(); });
+        }
         api.contextMenus.onClicked.addListener(function (info, tab) {
             void dispatchCollect(api, menuRequest(info, tab));
         });

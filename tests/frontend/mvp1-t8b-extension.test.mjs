@@ -432,7 +432,9 @@ test('后台：注册右键菜单并在收集成功后写入延迟日志与徽�
 
   const collectCall = mock.calls.find(call => call.api === 'tabs.sendMessage' && call.message.type === 'gw:collect-url');
   assert.equal(collectCall.message.url, 'https://cdn.test/pic.png');
-  assert.equal(collectCall.message.referer, 'https://site.test/p');
+  // 收集接口只接受 url + pair_token：消息里不得夹带隐式扩展字段。
+  assert.deepEqual(Object.keys(plain(collectCall.message)).sort(), ['type', 'url']);
+  assert.equal(history[0].pageUrl, 'https://site.test/p');
 });
 
 test('后台：浏览器内部地址与工作台不可达都不静默通过', async () => {
