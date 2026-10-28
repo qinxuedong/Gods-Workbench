@@ -100,6 +100,17 @@
       ]
     },
     {
+      "issue": 419,
+      "authorization_basis": "GitHub Issue #419, 2026-10-28",
+      "files": [
+        "gw/agent_runtime/adapters/pipeline_tools.py",
+        "docs/contracts/AGENT-WORKBENCH-INTERFACE-CATALOG.yaml",
+        "tests/contracts/agent/test_mvp2_t5b_timeline_tool.py",
+        "tests/hygiene/fixtures/cleanroom_admission_metadata.json",
+        "tests/hygiene/test_cleanroom_hygiene.py"
+      ]
+    },
+    {
       "issue": 366,
       "authorization_basis": "GitHub Issue #366, 2026-10-28",
       "files": [
@@ -412,7 +423,7 @@
       "path": "docs/contracts/AGENT-WORKBENCH-INTERFACE-CATALOG.yaml",
       "classification": "frozen_interface_contract",
       "authorization_basis": "user_integration_request_2026-10-08",
-      "sha256": "9eb62e7876a3e87f6edcf35cddb0217e6f570d7e536fadcf687a7fabae77e41c",
+      "sha256": "589f371adc7e8b68dbdb419113fff2ad691b2f08f4ce2586b96abc89e705ce71",
       "admission": "accepted"
     },
     {
@@ -1108,6 +1119,11 @@
       "path": "tests/contracts/agent/test_mvp2_t4_pipeline_tools.py",
       "authorization_basis": "QIN-446_Issue_368_2026-10-28",
       "sha256": "07239fdcf8f898bbfda116a98062ee66488653ae09c92e3521f31e997058183c"
+    },
+    {
+      "path": "tests/contracts/agent/test_mvp2_t5b_timeline_tool.py",
+      "authorization_basis": "QIN-461_Issue_419_2026-10-28",
+      "sha256": "172f85c52f145ce4d0fec8f5aab8d85d22e059e37100d481a0212fe738e48c51"
     }
   ]
 }
