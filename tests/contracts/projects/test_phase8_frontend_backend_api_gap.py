@@ -155,6 +155,8 @@ KNOWN_IMPLEMENTED = frozenset(
         "/api/storage-settings/roots",
         "/api/storage-settings/roots/{p}",
         "/api/storage-settings/roots/{p}/aliases/confirm",
+        # 2026-10-28 QIN-432：目录设置服务端原生选择器（仅回环管理员）。
+        "/api/settings/directories/pick-native",
         "/api/providers",
         "/api/providers/fetch-models",
         "/api/providers/probe-async",
@@ -418,6 +420,8 @@ KNOWN_BACKEND_PATHS = frozenset(
         # 2026-09-22 Phase 10D：设置页阶段 8 条归一化路径。
         "/api/storage-settings",
         "/api/storage-settings/browse",
+        # 2026-10-28 QIN-432：目录设置服务端原生选择器（仅回环管理员）。
+        "/api/settings/directories/pick-native",
         "/api/providers",
         "/api/providers/fetch-models",
         "/api/providers/probe-async",

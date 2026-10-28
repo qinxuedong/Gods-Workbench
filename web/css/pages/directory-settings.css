@@ -51,6 +51,15 @@ html.directory-settings-page { height:100%; background:var(--gw-surface-bg); }
 .directory-page fieldset { margin: 0; padding: 0; border: 0; min-width: 0; }
 .directory-page fieldset:disabled { opacity: .65; }
 
+/* QIN-432：目录设置卡片统一双列，窄屏折单列，对齐其他设置子页 */
+.directory-page .directory-cards-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  align-items: start;
+}
+.directory-page .directory-cards-grid > .asset-pref-section { margin: 0; min-width: 0; }
+
 /* 拟物硬件沉槽分区卡片 (Bay-inset 风格) */
 .directory-page .asset-pref-section {
   padding: 1rem;
@@ -446,7 +455,7 @@ html.directory-settings-page { height:100%; background:var(--gw-surface-bg); }
 
 @media(max-width: 700px) {
   .directory-page { padding: 0; }
-  .directory-page .storage-dir-grid, .directory-page .thumbnail-cache-directory { grid-template-columns: minmax(0, 1fr); }
+  .directory-page .storage-dir-grid, .directory-page .thumbnail-cache-directory, .directory-page .directory-cards-grid { grid-template-columns: minmax(0, 1fr); }
   .directory-page-header, .directory-page .directory-footer { align-items: flex-start; flex-wrap: wrap; }
   .directory-page h1 { font-size: var(--gw-type-body-md); }
   .server-directory-row { align-items: stretch; flex-direction: column; }

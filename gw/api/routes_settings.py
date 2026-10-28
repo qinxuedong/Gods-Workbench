@@ -37,15 +37,17 @@ C16 路由只允许稳定 ``provider_id`` 与消息进入网关；Provider 密�
 等）仍属 KNOWN_UNIMPLEMENTED，未获契约授权，本模块**不得**顺带实现。
 """
 
+import asyncio
 from typing import Any, Union
 
-from fastapi import APIRouter, Body, Header, Path, Query, status
+from fastapi import APIRouter, Body, Header, Path, Query, Request, status
 from pydantic import BaseModel, ConfigDict, Field
 
 from gw.core.auth import require_authenticated, require_edit_access
 from gw.core.credentials_vault import CredentialVault
 from gw.core.errors import CleanroomException, ForbiddenException
 from gw.settings import chat as chat_runtime
+from gw.settings import native_picker
 from gw.settings import probes as provider_probes
 from gw.settings.models import (
     AssetStructureCreateRequest,
@@ -79,6 +81,33 @@ class ProviderGatewayChatRequest(BaseModel):
     message: str = Field(..., min_length=1, max_length=200_000)
     model: str | None = Field(None, max_length=256)
     mode: str | None = Field(None, max_length=64)
+
+
+class NativeDirectoryPickRequest(BaseModel):
+    """服务端原生目录选择请求；仅允许标题、初始目录与超时。"""
+
+    model_config = ConfigDict(extra="forbid", strict=True)
+
+    title: str | None = Field(None, max_length=120)
+    initial_dir: str | None = Field(None, max_length=4096)
+    timeout_seconds: int = Field(60, ge=5, le=300)
+
+
+class NativeDirectoryPickResponse(BaseModel):
+    """原生选择结果：selected / cancelled / unavailable 三态，不编造路径。"""
+
+    model_config = ConfigDict(extra="forbid")
+
+    status: str
+    path: str | None = None
+    reason: str | None = None
+
+
+def _is_loopback_request(request: Request) -> bool:
+    """仅服务器本机回环会话允许弹出服务端对话框；远程访问一律拒绝。"""
+    client = request.client
+    host = str(client.host or "").lower() if client else ""
+    return host in {"127.0.0.1", "::1", "localhost"}
 
 
 def _credential_vault() -> CredentialVault:
@@ -121,6 +150,41 @@ def browse_server_directories(
     if context.role != "admin":
         raise ForbiddenException(message="仅管理员可浏览服务器目录")
     return default_storage_settings_service.browse_directories(path)
+
+
+@router.post(
+    "/api/settings/directories/pick-native",
+    response_model=NativeDirectoryPickResponse,
+    summary="弹出服务器系统原生选择文件夹对话框",
+    status_code=status.HTTP_200_OK,
+)
+async def pick_native_directory(
+    request: Request,
+    payload: NativeDirectoryPickRequest,
+    authorization: str | None = Header(None),
+    x_user_role: str = Header("editor", alias="X-User-Role", description="用户角色权限"),
+):
+    """仅服务器本机回环的管理员可触发；子进程弹窗带超时，绝不阻塞事件循环。
+
+    远程访问、非管理员一律拒绝；无图形环境/超时如实返回 ``unavailable``，
+    由前端降级到页面内服务器目录浏览器，不做任何静默兜底。
+    """
+    context = require_authenticated(authorization, x_user_role)
+    if context.role != "admin":
+        raise ForbiddenException(message="仅管理员可调用服务端目录选择器")
+    if not _is_loopback_request(request):
+        raise CleanroomException(
+            status_code=403,
+            code="PICKER_NON_LOOPBACK",
+            message="服务端目录选择器仅限服务器本机会话使用；远程访问请使用页面内目录浏览器",
+        )
+    result = await asyncio.to_thread(
+        native_picker.pick_directory,
+        payload.title or "选择服务器目录",
+        payload.initial_dir or "",
+        payload.timeout_seconds,
+    )
+    return NativeDirectoryPickResponse(**result)
 
 
 @router.patch(

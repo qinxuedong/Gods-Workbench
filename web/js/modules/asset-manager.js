@@ -50,6 +50,37 @@ const directorySettingsPage = new URLSearchParams(location.search).get('settings
 let directorySettingsReady = false;
 let directorySettingsSaving = false;
 let directorySettingsError = '';
+// QIN-432：Tauri 客户端模式下的本机配置（客户端上传来源目录）。
+const CLIENT_SETTING_KEY_UPLOAD_SOURCE = 'upload_source_dir';
+let clientUploadSourceDir = '';
+let clientSettingBusy = false;
+function tauriInvokeFn(){
+    // 目录设置可能运行在 iframe 内；Tauri 注入与宿主同源，top 上同样可用。
+    return window.__TAURI__?.core?.invoke || window.top?.__TAURI__?.core?.invoke || null;
+}
+function isTauriClientMode(){ return Boolean(tauriInvokeFn()); }
+async function loadClientUploadSourceDir(){
+    const invoke = tauriInvokeFn();
+    if(!invoke) return;
+    try {
+        const value = await invoke('get_client_setting', {key: CLIENT_SETTING_KEY_UPLOAD_SOURCE});
+        clientUploadSourceDir = String(value || '');
+    } catch(error){ clientUploadSourceDir = ''; }
+}
+async function saveClientUploadSourceDir(pathValue){
+    const invoke = tauriInvokeFn();
+    if(!invoke || clientSettingBusy) return;
+    clientSettingBusy = true;
+    try {
+        await invoke('set_client_setting', {key: CLIENT_SETTING_KEY_UPLOAD_SOURCE, value: String(pathValue || '')});
+        clientUploadSourceDir = String(pathValue || '');
+        setStatus(clientUploadSourceDir ? '客户端来源目录已保存到本机' : '客户端来源目录已清空');
+    } catch(error){
+        setStatus(error?.message || '客户端设置保存失败');
+    } finally {
+        clientSettingBusy = false;
+    }
+}
 const SIGNAL_FLOW_ACCENT_FALLBACK = '#69d6ff';
 
 function signalFlowAccentColor(){
@@ -1879,6 +1910,48 @@ async function openServerDirectoryBrowser(key){
     renderStorageSettingsModal();
     await loadServerDirectoryBrowser(null);
 }
+async function fillServerDirectoryFromNative(key, pathValue){
+    const input = document.getElementById('storageDir_' + key);
+    if(input) input.value = pathValue;
+    syncStorageSettingsInputsToState();
+    setStatus('已选择目录：' + pathValue + '（点“保存目录”生效）');
+}
+async function pickServerDirectoryNative(key){
+    // 服务器本机会话优先弹系统原生对话框；远程/不可用时降级页面内浏览器。
+    const input = document.getElementById('storageDir_' + key);
+    const currentPath = input ? String(input.value || '').trim() : '';
+    try {
+        const result = await apiJsonResponse(assetManagerHttp.request('/api/settings/directories/pick-native', {
+            method:'POST',
+            credentials:'same-origin',
+            headers:{'Content-Type':'application/json'},
+            body:JSON.stringify({title:'选择服务器目录', initial_dir:currentPath || null})
+        }));
+        if(result.status === 'selected' && result.path){
+            await fillServerDirectoryFromNative(key, result.path);
+            return;
+        }
+        if(result.status === 'cancelled') return;
+        setStatus('服务端目录选择器不可用（' + (result.reason || '未知原因') + '），已切换页面内浏览');
+    } catch(error){
+        setStatus('服务端目录选择器不可用（' + (error.message || '请求失败') + '），已切换页面内浏览');
+    }
+    await openServerDirectoryBrowser(key);
+}
+async function pickClientDirectoryNative(){
+    // 客户端字段：在客户端本机弹原生对话框；路径只存客户端本地配置。
+    const invoke = tauriInvokeFn();
+    if(!invoke) return;
+    try {
+        const picked = await invoke('pick_client_folder', {title:'选择客户端上传来源目录', initialDir:clientUploadSourceDir || null});
+        const pathValue = String(picked || '').trim();
+        const input = document.getElementById('clientUploadSourceDir');
+        if(input) input.value = pathValue;
+        await saveClientUploadSourceDir(pathValue);
+    } catch(error){
+        setStatus(error?.message || '客户端目录选择失败');
+    }
+}
 async function saveDirectoryPath(key, pathValue, closeBrowser=false){
     const trimmed = String(pathValue || '').trim();
     if(!trimmed){ setStatus('目录路径不能为空'); return; }
@@ -1935,7 +2008,7 @@ function renderProjectWorkspaceSettingsBody(){
         <div class="storage-dir-grid">
             <label class="storage-dir-row"><span>项目工作区根目录</span><div class="directory-input-row"><input id="storageDir_projects" value="${escapeAttr(dirs.projects || '')}" title="${escapeAttr(dirs.projects || '')}" placeholder="${escapeAttr(defaultRoot)}" autocomplete="off">${canBrowseServerDirectories() ? '<button type="button" class="hw-btn hw-btn-icon directory-picker-btn" data-directory-picker="projects" title="浏览服务器目录" aria-label="浏览服务器项目工作区目录"><i data-lucide="folder-open"></i></button>' : ''}</div></label>
         </div>
-        ${renderServerDirectoryBrowser()}
+        ${directorySettingsPage ? '' : renderServerDirectoryBrowser()}
         <div class="storage-settings-actions inline">
             <button class="hw-btn" type="button" data-project-directory-template-manager-open><i data-lucide="folders"></i><span>管理目录模板</span></button>
             <button class="hw-btn hw-btn-gold" type="button" data-storage-save><i data-lucide="save"></i><span>保存目录</span></button>
@@ -2312,6 +2385,7 @@ async function loadGlobalDirectorySettings(){
         if(roots) applyAllowedRootSettingsData(roots);
         registryStatus = status;
         thumbnailGeneratorState = {...thumbnailGeneratorState, mode:thumbnail.mode, directory:thumbnail.directory || '', cacheFolder:thumbnail.cache_folder || 'god-cache', loading:false};
+        if(isTauriClientMode()) await loadClientUploadSourceDir();
         directorySettingsReady = true;
         currentStatusText = '目录已同步';
     } catch(error){ directorySettingsError = error.message || '目录设置读取失败'; }
@@ -2367,16 +2441,17 @@ function renderGlobalDirectorySettings(){
         return '<label class="storage-dir-row"><span>' + escapeHtml(label) + '</span><div class="directory-input-row"><input id="storageDir_' + escapeAttr(key) + '" value="' + escapeAttr(value || '') + '" ' + (readonly ? 'readonly' : '') + ' autocomplete="off" title="' + escapeAttr(value || (readonly ? '' : '输入完整物理路径')) + '">' + picker + '</div></label>';
     };
     const dirs = storageSettingsState.dirs || {};
+    const clientSourceInput = () => '<label class="storage-dir-row"><span>客户端上传来源目录</span><div class="directory-input-row"><input id="clientUploadSourceDir" value="' + escapeAttr(clientUploadSourceDir) + '" autocomplete="off" title="保存在客户端本机，仅客户端上传素材时作为默认来源">' + '<button type="button" class="hw-btn hw-btn-icon directory-picker-btn" data-client-directory-picker="upload_source" title="选择客户端目录" aria-label="选择客户端上传来源目录"><i data-lucide="folder-open"></i></button></div></label>';
     host.innerHTML = `<header class="directory-page-header gw-settings-panel-head"><h1><i data-lucide="folder-cog"></i>目录设置</h1><button type="button" class="hw-btn" data-directory-reload title="重新读取目录设置" ${directorySettingsSaving ? 'disabled' : ''}><i data-lucide="refresh-cw"></i>重新读取</button></header>
         ${directorySettingsError ? `<div class="directory-error" role="alert">${escapeHtml(directorySettingsError)}</div>` : ''}
-        ${!directorySettingsReady ? `<p class="directory-status" role="status">${directorySettingsError ? '请检查权限或连接后重新读取。' : '正在读取目录设置…'}</p>` : `<fieldset ${directorySettingsSaving ? 'disabled' : ''}>
-        <section class="asset-pref-section bay-inset p-4 rounded-xl gw-settings-card" data-board-directories-settings><div class="asset-pref-title"><i data-lucide="folder-check"></i><span>登记目录</span></div><div class="storage-dir-grid">${input('local','本地素材目录',dirs.local)}</div><div class="directory-registered">${storageExtraLocalEntries().map(item=>`<div><span>${escapeHtml(item.name)}</span><code>${escapeHtml(item.path)}</code></div>`).join('')}</div></section>
+        ${!directorySettingsReady ? `<p class="directory-status" role="status">${directorySettingsError ? '请检查权限或连接后重新读取。' : '正在读取目录设置…'}</p>` : `<fieldset class="directory-cards-grid" ${directorySettingsSaving ? 'disabled' : ''}>
+        <section class="asset-pref-section bay-inset p-4 rounded-xl gw-settings-card" data-board-directories-settings><div class="asset-pref-title"><i data-lucide="folder-check"></i><span>登记目录</span></div><div class="storage-dir-grid">${input('local','本地素材目录',dirs.local)}${isTauriClientMode() ? clientSourceInput() : ''}</div><div class="directory-registered">${storageExtraLocalEntries().map(item=>`<div><span>${escapeHtml(item.name)}</span><code>${escapeHtml(item.path)}</code></div>`).join('')}</div></section>
         ${renderAllowedRootsSettings()}
         <section class="asset-pref-section bay-inset p-4 rounded-xl gw-settings-card"><div class="asset-pref-title"><i data-lucide="hard-drive"></i><span>上传与生成</span></div><div class="storage-dir-grid">${input('upload','上传素材',dirs.upload)}${input('generated','生成素材',dirs.generated)}</div></section>
         ${renderProjectWorkspaceSettingsBody()}
         <section class="asset-pref-section bay-inset p-4 rounded-xl gw-settings-card">${renderAssetThumbnailCacheDirectoryBody()}<div class="storage-settings-actions"><button class="hw-btn" type="button" data-directory-cache-save><i data-lucide="save"></i>保存缓存目录</button></div></section>
         <section class="asset-pref-section bay-inset p-4 rounded-xl gw-settings-card"><div class="asset-pref-title"><i data-lucide="trash-2"></i><span>回收站目录</span></div><div class="storage-dir-grid">${input('trash','统一回收根目录（留空跟随素材源）',dirs.trash)}</div><p class="board-settings-hint">新回收素材保存在此目录的 god-recycler 子目录中；更改目录不会移动已有回收文件，历史记录仍可恢复。项目与画布继续使用原有逻辑回收记录。</p></section>
-        </fieldset><footer class="directory-footer"><div id="assetStatus" class="directory-status" role="status" aria-live="polite">${escapeHtml(currentStatusText)}</div><button class="hw-btn hw-btn-gold" type="button" data-storage-save ${directorySettingsSaving ? 'disabled' : ''}><i data-lucide="save"></i>${directorySettingsSaving ? '保存中…' : '保存目录'}</button></footer>`}`;
+        </fieldset>${directorySettingsPage ? renderServerDirectoryBrowser() : ''}<footer class="directory-footer"><div id="assetStatus" class="directory-status" role="status" aria-live="polite">${escapeHtml(currentStatusText)}</div><button class="hw-btn hw-btn-gold" type="button" data-storage-save ${directorySettingsSaving ? 'disabled' : ''}><i data-lucide="save"></i>${directorySettingsSaving ? '保存中…' : '保存目录'}</button></footer>`}`;
     host.querySelector('.project-workspace-settings [data-storage-save]')?.remove();
     refreshIcons();
 }
@@ -2431,6 +2506,12 @@ document.addEventListener('click', event => {
     if(rootId && path){
         void saveAllowedRootsRequest(`/api/storage-settings/roots/${encodeURIComponent(rootId)}/aliases/confirm`, 'POST', {path, expected_version:expectedVersion});
     }
+});
+document.addEventListener('change', event => {
+    // 客户端来源目录只保存在客户端本机，不进入服务器 storage settings。
+    const input = event.target?.closest?.('#clientUploadSourceDir');
+    if(!input) return;
+    void saveClientUploadSourceDir(String(input.value || '').trim());
 });
 function renderStorageSettingsModal(){
     if(!storageSettingsState.open) return;
@@ -9820,6 +9901,33 @@ async function deleteSelectedWorkflows(){
     render();
     setStatus(`已删除 ${data.removed || 0} 个工作流`);
 }
+async function uploadViaClientPicker(){
+    // 客户端模式：以已保存的客户端来源目录为默认来源，弹客户端本机对话框选文件。
+    const invoke = tauriInvokeFn();
+    if(!invoke){ uploadInput?.click(); return; }
+    let paths = [];
+    try {
+        paths = await invoke('pick_client_upload_files', {defaultDir: clientUploadSourceDir || null}) || [];
+    } catch(error){
+        setStatus(error?.message || '客户端文件选择失败');
+        return;
+    }
+    if(!Array.isArray(paths) || !paths.length) return;
+    try {
+        const files = [];
+        for(const path of paths){
+            const bytes = await invoke('read_client_file', {path: String(path)});
+            const name = String(path).split(/[\\/]/).pop() || 'asset';
+            files.push(new File([bytes], name));
+        }
+        if(!files.length) return;
+        if(activeTab === 'local') uploadLocalAssets(files);
+        else if(activeTab === 'workflows') uploadWorkflowFiles(files).catch(err => setStatus(err.message || '上传失败'));
+        else uploadFiles(files).catch(err => setStatus(err.message || '上传失败'));
+    } catch(error){
+        setStatus(error?.message || '客户端文件读取失败');
+    }
+}
 async function uploadLocalAssets(files){
     const list = [...files].filter(f => isLocalMediaFile(f));
     if(!list.length){ setStatus('没有可上传的受支持文件'); return; }
@@ -10241,12 +10349,18 @@ async function handleClick(event){
         await saveDirectoryPath(serverDirectoryBrowserState.key || 'projects', pathValue, true);
         return;
     }
+    const clientDirectoryPicker = target.closest?.('[data-client-directory-picker]');
+    if(clientDirectoryPicker){
+        if(clientSettingBusy) return;
+        await pickClientDirectoryNative();
+        return;
+    }
     const directoryPicker = target.closest?.('[data-directory-picker]');
     if(directoryPicker){
         const key = directoryPicker.dataset.directoryPicker;
         const input = document.getElementById('storageDir_' + key);
         if(!input || input.readOnly || !canBrowseServerDirectories()) return;
-        await openServerDirectoryBrowser(key);
+        await pickServerDirectoryNative(key);
         return;
     }
     if(target.closest('[data-directory-reload]')){
@@ -11282,6 +11396,10 @@ async function handleClick(event){
     if(target.closest?.('[data-asset-copy-to-canvas]')){ copySelectedAssetsToCanvas(); return; }
     if(target.closest?.('[data-asset-delete-selected]')){ await deleteSelectedAssets(); return; }
     if(target.closest?.('[data-asset-upload]')){
+        if(isTauriClientMode()){
+            void uploadViaClientPicker();
+            return;
+        }
         if(uploadInput) uploadInput.accept = 'image/*,video/*,audio/*';
         uploadInput?.click();
         return;
