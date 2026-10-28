@@ -1,0 +1,23 @@
+{
+  "schema": "gw.cleanroom-admission-shard/v1",
+  "issue": 418,
+  "authorization_basis": "GitHub Issue #418, 2026-10-28",
+  "files": [
+    "gw/agent_runtime/adapters/pipeline_tools.py",
+    "docs/contracts/AGENT-WORKBENCH-INTERFACE-CATALOG.yaml",
+    "tests/contracts/agent/test_mvp2_t5a_i2v_tool.py",
+    "tests/hygiene/fixtures/cleanroom_admission_metadata.json",
+    "tests/hygiene/test_cleanroom_hygiene.py",
+    "tests/hygiene/fixtures/admissions/issue-418.json"
+  ],
+  "admitted_files": [],
+  "accepted_test_files": [
+    {
+      "path": "tests/contracts/agent/test_mvp2_t5a_i2v_tool.py",
+      "classification": "curated_test_coverage",
+      "authorization_basis": "GitHub Issue #418, 2026-10-28",
+      "admission": "accepted"
+    }
+  ],
+  "notes": "QIN-460：登记 I2V 工具实现、接口目录、新契约测试及卫生文件；基础账本仅同步既有接口目录哈希。"
+}
