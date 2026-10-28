@@ -110,3 +110,18 @@
 - 禁止为了「让测试变绿」而放宽 `cleanroom_admission.py` 的校验或删断言；
 - 基础账本的 `ADMISSION_BASE_METADATA_SHA256` 只在全局边界**确实**变化时更新，
   并在同一次提交里说明原因。
+
+## 7. 配套技能（Agent 侧，不入库）
+
+解登记冲突时使用 Agent 技能 `hygiene-admission-conflict`（**必须 v2.0.0 及以上**）：
+
+- v2 按本文件的「基础账本 + 分片」结构处置冲突：先判断冲突落在分片还是基础账本，
+  旧格式条目搬进本票分片，禁止整文件覆盖；
+- 技能内含 `cleanroom_admission.py` 的报错对照表（票号重复登记、ASCII/空格路径、
+  未知字段、基础账本哈希变更等）与本票分片的最小模板；
+- v1（单文件账本 + 整文件 `ADMISSION_METADATA_SHA256`）已过期，用 v1 处置会重新引入
+  「每票重算整文件哈希」的热点，属于违规操作。
+
+技能本体存放在 Agent 技能库（如 `~/.workbuddy/skills/hygiene-admission-conflict/`），
+不随本仓库提交；本文件只声明结构与红线，二者不一致时以本文件与
+`cleanroom_admission.py` 的实际行为为准。

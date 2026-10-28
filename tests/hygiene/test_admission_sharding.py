@@ -267,6 +267,24 @@ def test_absolute_path_in_shard_is_rejected(tmp_path: Path):
         load_admission_metadata(tmp_path)
 
 
+@pytest.mark.parametrize(
+    ("bad_path", "label"),
+    [
+        ("docs/契约/example.yaml", "非 ASCII（中文目录）"),
+        ("docs/contracts/example copy.yaml", "含空格"),
+    ],
+)
+def test_non_ascii_or_space_path_in_shard_is_rejected(
+    tmp_path: Path, bad_path: str, label: str
+):
+    """全局命名规范要求 ASCII 无空格；错误文案须与实际规则一致。"""
+    _copy_base_ledger(tmp_path)
+    _write_shard(tmp_path, 915, [bad_path])
+    with pytest.raises(AdmissionMetadataError, match="必须是 ASCII 且无空格的规范路径") as exc:
+        load_admission_metadata(tmp_path)
+    assert bad_path in str(exc.value), f"{label} 的场景未在报错中给出原路径"
+
+
 def test_shard_may_register_path_in_admitted_and_accepted_test_lists(tmp_path: Path):
     """同一路径既可绑哈希也可提供边界分类，这是既有的真实登记形态。"""
     _copy_base_ledger(tmp_path)

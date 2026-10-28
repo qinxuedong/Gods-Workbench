@@ -105,7 +105,9 @@ def _require_relative_path(value: Any, label: str) -> str:
     if ".." in parts or "\\" in value:
         raise AdmissionMetadataError(f"{label} 不得包含回溯片段: {value}")
     if not value.isascii() or any(char.isspace() for char in value):
-        raise AdmissionMetadataError(f"{label} 必须是非 ASCII 无空格的规范路径: {value}")
+        raise AdmissionMetadataError(
+            f"{label} 必须是 ASCII 且无空格的规范路径: {value}"
+        )
     return value
 
 
