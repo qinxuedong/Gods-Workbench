@@ -203,6 +203,9 @@ KNOWN_IMPLEMENTED = frozenset(
         "/api/agent/projects/{p}/artifacts",
         "/api/agent/runs",
         "/api/agent/runs/{p}",
+        # 2026-10-28 QIN-457：agent-tasks.js 参考卡新增会话参考策展端点，
+        # 由 gw/api/routes_agent_references.py 真实实现，补登记避免基线漂移告警。
+        "/api/agent/sessions/{p}/references",
         "/api/app-info",
         "/api/chat",
         # 2026-09-27：页面仅读取真实服务端配置，不在加载时发起计费生成。
