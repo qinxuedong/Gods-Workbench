@@ -32,7 +32,7 @@ tests/
 1. **三态绝对隔离**：测试态每例均使用独立的临时沙盒路径（`tmp_path`），在应用导入前完成环境变量隔离；绝对禁止读取或写入真实用户生产数据。
 2. **CAS 乐观并发控制**：所有涉及状态与生命周期变更的测试均严格断言 `expected_version`，并发冲突返回 409（`VERSION_CONFLICT` / `CANVAS_VERSION_CONFLICT`）。
 3. **统一错误语义**：未认证统一返回 401，权限不足返回 403，错误外层统一为 `{"detail": {"code": "...", "message": "..."}}`。
-4. **洁净室准入约束**：所有引入 `docs/` 的文件必须在 `tests/hygiene/fixtures/cleanroom_admission_metadata.json` 登记准入。
+4. **洁净室准入约束**：所有引入 `docs/` 的文件必须完成洁净室准入登记。登记入口分两层：`tests/hygiene/fixtures/cleanroom_admission_metadata.json` 是**基础账本**，只承载全局边界（如 `accepted_roots`）与迁移前的历史票条目，**默认不因新票改动**；新票新增或变更的文件一律登记在**本票分片** `tests/hygiene/fixtures/admissions/issue-<票号>.json`。分片格式、字段约束与本地自检见 [`hygiene/fixtures/admissions/README.md`](hygiene/fixtures/admissions/README.md)。
 
 ## 3. 常用测试执行命令
 
