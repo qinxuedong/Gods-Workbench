@@ -70,9 +70,13 @@ test("目录设置移除空托管框并使用服务器目录即选即存", () =>
 test("QIN-432 服务端字段优先原生选择器并保留页面内降级", () => {
   assert.match(assetManager, /api\/settings\/directories\/pick-native/);
   assert.match(assetManager, /pickServerDirectoryNative/);
-  // 选中填入字段并提示手动保存；取消不改字段；不可用降级页面内浏览器。
+  // QIN-474：选中即写入字段并自动保存，不再提示手动点保存；取消不改字段；不可用降级页面内浏览器。
   assert.match(assetManager, /fillServerDirectoryFromNative/);
-  assert.match(assetManager, /已选择目录：[\s\S]*?保存目录/);
+  assert.match(
+    assetManager,
+    /fillServerDirectoryFromNative\(key, pathValue\)\{[\s\S]*?saveDirectoryPath\(key, pathValue\)/,
+  );
+  assert.doesNotMatch(assetManager, /点“保存目录”生效/);
   assert.match(assetManager, /已切换页面内浏览/);
   // 非回环 403 与请求失败都进入降级路径。
   assert.match(

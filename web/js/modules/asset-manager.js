@@ -1155,9 +1155,21 @@ function renderRegistryFeatureControl(feature){
     const iconName = feature.id === 'thumbnail' ? 'image' : feature.id === 'video_storyboard' ? 'grid-3x3' : feature.id === 'metadata' ? 'file-scan' : feature.id === 'fulltext' ? 'text-search' : feature.id === 'font' ? 'type' : feature.id === 'model' ? 'box' : 'refresh-cw';
     return `<button class="board-feature-control" type="button" role="switch" aria-checked="${Boolean(feature.enabled)}" data-registry-feature-toggle="${escapeAttr(feature.id || '')}" ${registryFeatureBusyId === feature.id ? 'disabled' : ''}><span class="registry-feature-switch ${feature.enabled ? 'is-on' : ''}"><i></i></span><span class="registry-feature-label"><i data-lucide="${iconName}"></i>${escapeHtml(feature.name || '')}</span></button>`;
 }
+// 缓存根目录不是 storageDir_* 字段，用独立 key 复用同一套选夹与自动保存链路。
+const THUMBNAIL_DIRECTORY_FIELD_KEY = 'thumbnail_cache';
+// 允许留空的目录字段：清空后照常保存（如回收根目录留空即跟随素材源）。
+const OPTIONAL_DIRECTORY_FIELDS = new Set(['trash']);
+function directoryFieldInput(key){
+    return key === THUMBNAIL_DIRECTORY_FIELD_KEY
+        ? document.getElementById('thumbnailDirectory')
+        : document.getElementById('storageDir_' + key);
+}
 function renderAssetThumbnailCacheDirectoryBody(){
     const known = thumbnailKnownDirectories();
     const mode = thumbnailGeneratorState.mode === 'custom' ? 'custom' : 'source';
+    const cacheRootPicker = canBrowseServerDirectories()
+        ? '<button type="button" class="hw-btn hw-btn-icon directory-picker-btn" data-directory-picker="' + THUMBNAIL_DIRECTORY_FIELD_KEY + '" title="浏览服务器目录" aria-label="浏览服务器缓存根目录"><i data-lucide="folder-open"></i></button>'
+        : '';
     return `<div class="board-directory-cache">
         <div class="asset-pref-title"><i data-lucide="folder-clock"></i><span>缓存目录</span></div>
         <p class="board-settings-hint">缩略图与视频派生共用 ${escapeHtml(thumbnailGeneratorState.cacheFolder)}；同一源文件优先复用已有缓存。</p>
@@ -1167,7 +1179,7 @@ function renderAssetThumbnailCacheDirectoryBody(){
         </div>
         ${mode === 'custom' ? `<div class="thumbnail-cache-directory">
             <label class="storage-dir-row"><span>选择已登记目录</span><select id="thumbnailDirectoryPreset"><option value="">手工输入路径</option>${known.map(item => `<option value="${escapeAttr(item.path)}" ${pathCompareKey(item.path) === pathCompareKey(thumbnailGeneratorState.directory) ? 'selected' : ''}>${escapeHtml(item.name)} · ${escapeHtml(item.path)}</option>`).join('')}</select></label>
-            <label class="storage-dir-row"><span>缓存根目录</span><input id="thumbnailDirectory" value="${escapeAttr(thumbnailGeneratorState.directory)}" placeholder="例如 D:\\GodsCache"></label>
+            <label class="storage-dir-row"><span>缓存根目录</span><div class="directory-input-row"><input id="thumbnailDirectory" value="${escapeAttr(thumbnailGeneratorState.directory)}" placeholder="例如 D:\\GodsCache" autocomplete="off">${cacheRootPicker}</div></label>
         </div>` : ''}
     </div>`;
 }
@@ -1912,14 +1924,14 @@ async function openServerDirectoryBrowser(key){
     await loadServerDirectoryBrowser(null);
 }
 async function fillServerDirectoryFromNative(key, pathValue){
-    const input = document.getElementById('storageDir_' + key);
+    // 选完文件夹即持久化：写入字段后立即保存，成功与失败都有状态反馈，不静默。
+    const input = directoryFieldInput(key);
     if(input) input.value = pathValue;
-    syncStorageSettingsInputsToState();
-    setStatus('已选择目录：' + pathValue + '（点“保存目录”生效）');
+    await saveDirectoryPath(key, pathValue);
 }
 async function pickServerDirectoryNative(key){
     // 服务器本机会话优先弹系统原生对话框；远程/不可用时降级页面内浏览器。
-    const input = document.getElementById('storageDir_' + key);
+    const input = directoryFieldInput(key);
     const currentPath = input ? String(input.value || '').trim() : '';
     try {
         const result = await apiJsonResponse(assetManagerHttp.request('/api/settings/directories/pick-native', {
@@ -1953,12 +1965,8 @@ async function pickClientDirectoryNative(){
         setStatus(error?.message || '客户端目录选择失败');
     }
 }
-async function saveDirectoryPath(key, pathValue, closeBrowser=false){
-    const trimmed = String(pathValue || '').trim();
-    if(!trimmed){ setStatus('目录路径不能为空'); return; }
-    const input = document.getElementById('storageDir_' + key);
-    if(input) input.value = trimmed;
-    syncStorageSettingsInputsToState();
+// 目录字段保存的统一外壳：负责 saving 态、重渲染与失败反馈，失败一律有状态提示。
+async function withDirectorySaving(closeBrowser, task){
     if(closeBrowser){
         serverDirectoryBrowserState.saving = true;
         serverDirectoryBrowserState.error = '';
@@ -1970,10 +1978,9 @@ async function saveDirectoryPath(key, pathValue, closeBrowser=false){
         renderStorageSettingsModal();
     }
     try {
-        await saveStorageSettings();
+        await task();
         if(closeBrowser){
             serverDirectoryBrowserState = {...serverDirectoryBrowserState, open:false, saving:false, error:''};
-            setStatus('已挂载并保存目录：' + trimmed);
         }
     } catch(error){
         if(closeBrowser){
@@ -1988,6 +1995,30 @@ async function saveDirectoryPath(key, pathValue, closeBrowser=false){
             renderStorageSettingsModal();
         }
     }
+}
+// 缓存根目录走独立的缩略图设置接口，与 storage 目录共用保存外壳与反馈。
+async function saveThumbnailCacheDirectory(pathValue, closeBrowser=false){
+    const trimmed = String(pathValue ?? '').trim();
+    if(!trimmed){ setStatus('缓存根目录不能为空'); return; }
+    thumbnailGeneratorState = {...thumbnailGeneratorState, mode:'custom', directory:trimmed, error:''};
+    const input = document.getElementById('thumbnailDirectory');
+    if(input) input.value = trimmed;
+    await withDirectorySaving(closeBrowser, async () => {
+        await persistThumbnailStorageSettings();
+        setStatus((closeBrowser ? '已挂载并保存缓存目录：' : '缓存目录已保存：') + trimmed);
+    });
+}
+async function saveDirectoryPath(key, pathValue, closeBrowser=false){
+    const trimmed = String(pathValue || '').trim();
+    if(!trimmed && !OPTIONAL_DIRECTORY_FIELDS.has(key)){ setStatus('目录路径不能为空'); return; }
+    if(key === THUMBNAIL_DIRECTORY_FIELD_KEY){ await saveThumbnailCacheDirectory(trimmed, closeBrowser); return; }
+    const input = document.getElementById('storageDir_' + key);
+    if(input) input.value = trimmed;
+    syncStorageSettingsInputsToState();
+    await withDirectorySaving(closeBrowser, async () => {
+        await saveStorageSettings();
+        if(closeBrowser) setStatus('已挂载并保存目录：' + trimmed);
+    });
 }
 function renderProjectWorkspaceSettingsBody(){
     if(registryPrincipalLoading){
@@ -2435,6 +2466,7 @@ function renderAllowedRootsSettings(){
 function renderGlobalDirectorySettings(){
     let host = document.getElementById('storageSettingsOverlay');
     if(!host){ host = document.createElement('main'); host.id = 'storageSettingsOverlay'; host.className = 'directory-page'; document.body.appendChild(host); }
+    const focusId = host.contains(document.activeElement) ? String(document.activeElement?.id || '') : '';
     const input = (key, label, value, readonly=false) => {
         const picker = !readonly && canBrowseServerDirectories()
             ? '<button type="button" class="hw-btn hw-btn-icon directory-picker-btn" data-directory-picker="' + escapeAttr(key) + '" title="浏览服务器目录" aria-label="浏览服务器' + escapeAttr(label) + '目录"><i data-lucide="folder-open"></i></button>'
@@ -2450,11 +2482,17 @@ function renderGlobalDirectorySettings(){
         ${renderAllowedRootsSettings()}
         <section class="asset-pref-section bay-inset p-4 rounded-xl gw-settings-card"><div class="asset-pref-title"><i data-lucide="hard-drive"></i><span>上传与生成</span></div><div class="storage-dir-grid">${input('upload','上传素材',dirs.upload)}${input('generated','生成素材',dirs.generated)}</div></section>
         ${renderProjectWorkspaceSettingsBody()}
-        <section class="asset-pref-section bay-inset p-4 rounded-xl gw-settings-card">${renderAssetThumbnailCacheDirectoryBody()}<div class="storage-settings-actions"><button class="hw-btn" type="button" data-directory-cache-save><i data-lucide="save"></i>保存缓存目录</button></div></section>
+        <section class="asset-pref-section bay-inset p-4 rounded-xl gw-settings-card">${renderAssetThumbnailCacheDirectoryBody()}</section>
         <section class="asset-pref-section bay-inset p-4 rounded-xl gw-settings-card"><div class="asset-pref-title"><i data-lucide="trash-2"></i><span>回收站目录</span></div><div class="storage-dir-grid">${input('trash','统一回收根目录（留空跟随素材源）',dirs.trash)}</div><p class="board-settings-hint">新回收素材保存在此目录的 god-recycler 子目录中；更改目录不会移动已有回收文件，历史记录仍可恢复。项目与画布继续使用原有逻辑回收记录。</p></section>
-        </fieldset>${directorySettingsPage ? renderServerDirectoryBrowser() : ''}<footer class="directory-footer"><div id="assetStatus" class="directory-status" role="status" aria-live="polite">${escapeHtml(currentStatusText)}</div><button class="hw-btn hw-btn-gold" type="button" data-storage-save ${directorySettingsSaving ? 'disabled' : ''}><i data-lucide="save"></i>${directorySettingsSaving ? '保存中…' : '保存目录'}</button></footer>`}`;
+        </fieldset>${directorySettingsPage ? renderServerDirectoryBrowser() : ''}<footer class="directory-footer"><div id="assetStatus" class="directory-status" role="status" aria-live="polite">${escapeHtml(currentStatusText)}</div></footer>`}`;
     host.querySelector('.project-workspace-settings [data-storage-save]')?.remove();
     refreshIcons();
+    // 自动保存会整体重建页面，渲染后把焦点还给原字段，避免打断连续录入。
+    requestAnimationFrame(() => {
+        if(!focusId) return;
+        const next = host.querySelector(`[id="${focusId.replace(/"/g,'')}"]`);
+        if(next && document.activeElement !== next) next.focus({preventScroll:true});
+    });
 }
 async function saveAllowedRootsRequest(url, method, payload){
     allowedRootSettingsState = {...allowedRootSettingsState, saving:true, error:''};
@@ -10360,7 +10398,7 @@ async function handleClick(event){
     const directoryPicker = target.closest?.('[data-directory-picker]');
     if(directoryPicker){
         const key = directoryPicker.dataset.directoryPicker;
-        const input = document.getElementById('storageDir_' + key);
+        const input = directoryFieldInput(key);
         if(!input || input.readOnly || !canBrowseServerDirectories()) return;
         await pickServerDirectoryNative(key);
         return;
@@ -10368,17 +10406,6 @@ async function handleClick(event){
     if(target.closest('[data-directory-reload]')){
         if(directorySettingsReady && !window.confirm('重新读取将放弃当前未保存的目录修改，是否继续？')) return;
         await loadGlobalDirectorySettings(); return;
-    }
-    if(target.closest('[data-directory-cache-save]')){
-        if(directorySettingsSaving) return;
-        syncStorageSettingsInputsToState();
-        thumbnailGeneratorState.directory = document.getElementById('thumbnailDirectory')?.value.trim() || '';
-        if(thumbnailGeneratorState.mode === 'custom' && !thumbnailGeneratorState.directory){ setStatus('请输入缓存根目录'); return; }
-        directorySettingsSaving = true; renderGlobalDirectorySettings();
-        try { await persistThumbnailStorageSettings(); setStatus('缓存目录已保存'); }
-        catch(error){ setStatus(error.message || '缓存目录保存失败'); }
-        finally { directorySettingsSaving = false; renderGlobalDirectorySettings(); }
-        return;
     }
     const structureRemove = target.closest?.('[data-registry-structure-remove]');
     if(structureRemove){
@@ -18209,10 +18236,14 @@ document.addEventListener('keydown', event => {
         return;
     }
     if(event.key === 'Enter'){
-        const storageInput = event.target?.closest?.('[id^="storageDir_"]');
+        // 路径类字段 Enter 即保存：登记目录 / 上传与生成 / 项目工作区 / 回收站 / 缓存根目录。
+        const storageInput = event.target?.closest?.('[id^="storageDir_"]')
+            || (event.target?.id === 'thumbnailDirectory' ? event.target : null);
         if(storageInput && !storageInput.readOnly){
             event.preventDefault();
-            const key = storageInput.id.replace('storageDir_', '');
+            const key = storageInput.id === 'thumbnailDirectory'
+                ? THUMBNAIL_DIRECTORY_FIELD_KEY
+                : storageInput.id.replace('storageDir_', '');
             saveDirectoryPath(key, storageInput.value).catch(error => setStatus(error.message || '保存目录失败'));
             return;
         }
