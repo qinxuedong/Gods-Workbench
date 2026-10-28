@@ -470,6 +470,15 @@ def search_registry_shots(
             shot_provider=_shot_provider,
             extra_asset_ids=_keyword_recalled_assets(query, bounded_limit),
         )
+        # 本次请求未携带查询向量，引擎侧的降级标记恒为 false；此处按索引实况
+        # 补正（MVP1-T7/F2）：没有登记嵌入模型或引擎未启用向量轨时如实报告降级，
+        # 不让「向量轨从未写入」被伪装成双轨正常。
+        index_metadata = engine.index_metadata()
+        vector_track_ready = bool(
+            engine.vector_enabled
+            and index_metadata is not None
+            and index_metadata.model_id
+        )
 
     items = []
     for hit in results.hits:
@@ -498,7 +507,47 @@ def search_registry_shots(
         "limit": bounded_limit,
         "items": items,
         "shot_count": sum(1 for item in items if item["granularity"] == "shot"),
-        "vector_track_degraded": results.vector_track_degraded,
+        "vector_track_degraded": bool(
+            results.vector_track_degraded or not vector_track_ready
+        ),
+        "data_status": DATA_STATUS_OK,
+        "data_gaps": [],
+    }
+
+
+@router.post(
+    "/search-index/rebuild",
+    summary="从注册表重建本地检索索引（文档 + 镜头 + 元数据）",
+    status_code=status.HTTP_200_OK,
+)
+def rebuild_asset_search_index(
+    authorization: Optional[str] = Header(None),
+    x_user_role: str = Header("editor", alias="X-User-Role"),
+):
+    """产品化的索引重建入口（MVP1-AC10 / T7-F2）。
+
+    入库本身已带索引写入（``repository._upsert_asset_search_documents``），本端点
+    用于索引文件丢失、schema 调整或人工要求全量重建：只读 JSON 注册表真源，
+    先写临时文件再原子替换，失败保留旧索引并如实返回 500
+    ``SEARCH_INDEX_REBUILD_FAILED``。响应只给统计与索引文件名，不回显绝对路径。
+    """
+    _edit_auth(authorization, x_user_role)
+    try:
+        result = repo.rebuild_search_index()
+    except CleanroomException:
+        raise
+    except Exception as exc:
+        raise CleanroomException(
+            500,
+            "SEARCH_INDEX_REBUILD_FAILED",
+            "本地检索索引重建失败，已保留原有索引",
+        ) from exc
+    return {
+        "rebuilt": True,
+        "documents": result["documents"],
+        "shots": result["shots"],
+        "skipped_segments": result["skipped_segments"],
+        "index_file": repo.ASSET_SEARCH_INDEX_FILENAME,
         "data_status": DATA_STATUS_OK,
         "data_gaps": [],
     }
