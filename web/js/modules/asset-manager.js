@@ -1157,12 +1157,14 @@ function renderRegistryFeatureControl(feature){
 }
 // 缓存根目录不是 storageDir_* 字段，用独立 key 复用同一套选夹与自动保存链路。
 const THUMBNAIL_DIRECTORY_FIELD_KEY = 'thumbnail_cache';
+// 允许根是「登记」动作而非 storageDir_* 字段，同样用独立 key 复用选夹与自动保存链路。
+const ALLOWED_ROOT_FIELD_KEY = 'allowed_root';
 // 允许留空的目录字段：清空后照常保存（如回收根目录留空即跟随素材源）。
 const OPTIONAL_DIRECTORY_FIELDS = new Set(['trash']);
 function directoryFieldInput(key){
-    return key === THUMBNAIL_DIRECTORY_FIELD_KEY
-        ? document.getElementById('thumbnailDirectory')
-        : document.getElementById('storageDir_' + key);
+    if(key === THUMBNAIL_DIRECTORY_FIELD_KEY) return document.getElementById('thumbnailDirectory');
+    if(key === ALLOWED_ROOT_FIELD_KEY) return document.getElementById('allowedRootPath');
+    return document.getElementById('storageDir_' + key);
 }
 function renderAssetThumbnailCacheDirectoryBody(){
     const known = thumbnailKnownDirectories();
@@ -2010,6 +2012,8 @@ async function saveThumbnailCacheDirectory(pathValue, closeBrowser=false){
 }
 async function saveDirectoryPath(key, pathValue, closeBrowser=false){
     const trimmed = String(pathValue || '').trim();
+    // 允许根是登记动作，空值交给登记逻辑给出更贴切的提示，不走通用目录空值拦截。
+    if(key === ALLOWED_ROOT_FIELD_KEY){ await registerAllowedRootPath(trimmed); return; }
     if(!trimmed && !OPTIONAL_DIRECTORY_FIELDS.has(key)){ setStatus('目录路径不能为空'); return; }
     if(key === THUMBNAIL_DIRECTORY_FIELD_KEY){ await saveThumbnailCacheDirectory(trimmed, closeBrowser); return; }
     const input = document.getElementById('storageDir_' + key);
@@ -2453,11 +2457,14 @@ function renderAllowedRootsSettings(){
             ${root.active && !root.readOnly ? `<button type="button" class="hw-btn allowed-root-remove" data-storage-root-delete="${escapeAttr(root.id)}" ${allowedRootSettingsState.saving ? 'disabled' : ''}>移除</button>` : ''}
         </div>
     </article>`).join('');
+    const allowedRootPicker = canBrowseServerDirectories()
+        ? '<button type="button" class="hw-btn hw-btn-icon directory-picker-btn" data-directory-picker="' + ALLOWED_ROOT_FIELD_KEY + '" title="浏览服务器目录" aria-label="浏览服务器允许根目录"><i data-lucide="folder-open"></i></button>'
+        : '';
     return `<section class="asset-pref-section allowed-roots-settings" data-allowed-roots-settings>
         <div class="asset-pref-title"><i data-lucide="shield-check"></i><span>允许根</span><small>管理员管理；环境变量根只读</small></div>
         <p class="board-settings-hint">登记后立即生效并保存到 data/allowed_roots.json。移除只撤销扫描授权，已索引记录和源文件保留。</p>
         ${allowedRootSettingsState.error ? `<p class="allowed-root-error" role="alert">${escapeHtml(allowedRootSettingsState.error)}</p>` : ''}
-        <div class="allowed-root-add"><label class="storage-dir-row"><span>服务器绝对路径</span><input id="allowedRootPath" value="" autocomplete="off" placeholder="例如 Z:\\测试素材库"></label>
+        <div class="allowed-root-add"><label class="storage-dir-row"><span>服务器绝对路径</span><div class="directory-input-row"><input id="allowedRootPath" value="" autocomplete="off" placeholder="例如 Z:\\测试素材库">${allowedRootPicker}</div></label>
             <button type="button" class="hw-btn hw-btn-gold" data-storage-root-add ${allowedRootSettingsState.saving ? 'disabled' : ''}>登记允许根</button>
         </div>
         <div class="allowed-root-list">${roots || '<p class="directory-status">尚无允许根；可先登记持久根，或配置 GW_ALLOWED_ROOTS。</p>'}</div>
@@ -2518,6 +2525,19 @@ async function saveAllowedRootsRequest(url, method, payload){
         renderGlobalDirectorySettings();
     }
 }
+// 允许根登记：Enter、选文件夹与「登记允许根」按钮共用同一条持久化路径。
+async function registerAllowedRootPath(pathValue){
+    const path = String(pathValue || '').trim();
+    if(!path){
+        allowedRootSettingsState = {...allowedRootSettingsState, error:'请输入服务器绝对路径'};
+        renderGlobalDirectorySettings();
+        setStatus('请输入服务器绝对路径');
+        return;
+    }
+    if(allowedRootSettingsState.saving) return;
+    const payload = {path, expected_version: Number(allowedRootSettingsState.revision || 1)};
+    await saveAllowedRootsRequest('/api/storage-settings/roots', 'POST', payload);
+}
 document.addEventListener('click', event => {
     const target = event.target?.closest?.('[data-storage-root-add],[data-storage-root-delete],[data-storage-root-alias-confirm]');
     if(!target) return;
@@ -2526,12 +2546,7 @@ document.addEventListener('click', event => {
     const expectedVersion = Number(allowedRootSettingsState.revision || 1);
     if(target.hasAttribute('data-storage-root-add')){
         const path = String(document.getElementById('allowedRootPath')?.value || '').trim();
-        if(!path){
-            allowedRootSettingsState = {...allowedRootSettingsState, error:'请输入服务器绝对路径'};
-            renderGlobalDirectorySettings();
-            return;
-        }
-        void saveAllowedRootsRequest('/api/storage-settings/roots', 'POST', {path, expected_version:expectedVersion});
+        void registerAllowedRootPath(path);
         return;
     }
     const removeRootId = target.getAttribute('data-storage-root-delete');
@@ -18236,14 +18251,17 @@ document.addEventListener('keydown', event => {
         return;
     }
     if(event.key === 'Enter'){
-        // 路径类字段 Enter 即保存：登记目录 / 上传与生成 / 项目工作区 / 回收站 / 缓存根目录。
+        // 路径类字段 Enter 即保存：登记目录 / 允许根 / 上传与生成 / 项目工作区 / 回收站 / 缓存根目录。
         const storageInput = event.target?.closest?.('[id^="storageDir_"]')
-            || (event.target?.id === 'thumbnailDirectory' ? event.target : null);
+            || (event.target?.id === 'thumbnailDirectory' ? event.target : null)
+            || (event.target?.id === 'allowedRootPath' ? event.target : null);
         if(storageInput && !storageInput.readOnly){
             event.preventDefault();
             const key = storageInput.id === 'thumbnailDirectory'
                 ? THUMBNAIL_DIRECTORY_FIELD_KEY
-                : storageInput.id.replace('storageDir_', '');
+                : storageInput.id === 'allowedRootPath'
+                    ? ALLOWED_ROOT_FIELD_KEY
+                    : storageInput.id.replace('storageDir_', '');
             saveDirectoryPath(key, storageInput.value).catch(error => setStatus(error.message || '保存目录失败'));
             return;
         }

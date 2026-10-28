@@ -99,6 +99,57 @@ test("AC4 输入 Enter 与选文件夹两条路径都立即持久化", () => {
   );
 });
 
+test("AC4 允许根路径字段回车即登记保存，且有选夹按钮", () => {
+  // 允许根不是 storageDir_* / thumbnailDirectory，用独立 key 接入同一套链路。
+  assert.match(assetManager, /const ALLOWED_ROOT_FIELD_KEY = 'allowed_root'/);
+  assert.match(
+    assetManager,
+    /function directoryFieldInput\(key\)\{[\s\S]*?ALLOWED_ROOT_FIELD_KEY[\s\S]*?getElementById\('allowedRootPath'\)[\s\S]*?getElementById\('storageDir_' \+ key\)/,
+  );
+  // 回车：#allowedRootPath 纳入 Enter 处理器并映射到 allowed_root。
+  assert.match(
+    assetManager,
+    /event\.key === 'Enter'\)\{[\s\S]*?event\.target\?\.id === 'allowedRootPath' \? event\.target : null/,
+  );
+  assert.match(
+    assetManager,
+    /storageInput\.id === 'allowedRootPath'[\s\S]*?\? ALLOWED_ROOT_FIELD_KEY/,
+  );
+  // 保存入口：allowed_root 路由到登记逻辑，落到 /api/storage-settings/roots。
+  assert.match(
+    assetManager,
+    /saveDirectoryPath\(key, pathValue, closeBrowser=false\)\{[\s\S]*?if\(key === ALLOWED_ROOT_FIELD_KEY\)\{ await registerAllowedRootPath\(trimmed\); return; \}/,
+  );
+  assert.match(assetManager, /async function registerAllowedRootPath\(pathValue\)/);
+  assert.match(
+    assetManager,
+    /registerAllowedRootPath\(pathValue\)\{[\s\S]*?saveAllowedRootsRequest\('\/api\/storage-settings\/roots', 'POST', payload\)/,
+  );
+  assert.match(
+    assetManager,
+    /const payload = \{path, expected_version: Number\(allowedRootSettingsState\.revision \|\| 1\)\}/,
+  );
+  // 空值不静默，沿用既有「登记允许根」的空值文案。
+  assert.match(assetManager, /error:'请输入服务器绝对路径'/);
+  assert.match(assetManager, /setStatus\('请输入服务器绝对路径'\)/);
+  // 选夹：允许根输入框旁有选夹按钮，并包进共享行布局。
+  assert.match(assetManager, /const allowedRootPicker = canBrowseServerDirectories\(\)/);
+  assert.match(
+    assetManager,
+    /data-directory-picker="' \+ ALLOWED_ROOT_FIELD_KEY \+ '"/,
+  );
+  assert.match(
+    assetManager,
+    /<input id="allowedRootPath"[\s\S]*?>\$\{allowedRootPicker\}<\/div><\/label>/,
+  );
+  // 「登记允许根」按钮是列表登记动作，保留不删，且与回车共用同一条登记路径。
+  assert.match(assetManager, /data-storage-root-add[\s\S]*?登记允许根<\/button>/);
+  assert.match(
+    assetManager,
+    /target\.hasAttribute\('data-storage-root-add'\)\)\{[\s\S]*?void registerAllowedRootPath\(path\)/,
+  );
+});
+
 test("AC1/AC2 自动保存失败不静默且 cache 与 storage 共用保存外壳", () => {
   assert.match(assetManager, /async function withDirectorySaving\(closeBrowser, task\)/);
   assert.match(assetManager, /setStatus\(error\.message \|\| '保存目录失败'\)/);
