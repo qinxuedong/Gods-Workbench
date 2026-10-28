@@ -182,13 +182,36 @@ def _asset_search_document(asset: Dict[str, Any]) -> Optional[Dict[str, str]]:
     return {"asset_id": asset_id, "title": title, "content": content}
 
 
-def shot_content_hash(segment: Dict[str, Any]) -> str:
+def shot_source_key(asset: Dict[str, Any]) -> str:
+    """素材侧内容指纹：镜头 hash 的「来源素材」维度（QIN-468）。
+
+    优先使用扫描期写入的真实文件 `sha256`，让同一素材的字节副本（不同
+    `asset_id`、不同路径）仍能命中同一镜头哈希，保住跨资产查重能力；
+    素材尚无真实指纹时退回稳定 `asset_id`，宁可漏报跨资产重复，也不
+    再把不同素材折叠成同一 hash。
+    """
+    digest = str(asset.get("sha256") or "").strip().lower()
+    if digest:
+        return "sha256:" + digest
+    asset_id = str(asset.get("asset_id") or asset.get("id") or "").strip()
+    return "asset:" + asset_id
+
+
+def shot_content_hash(segment: Dict[str, Any], source_key: str) -> str:
     """按登记内容稳定计算镜头内容哈希（MVP1-AC2/AC10 幂等与重建键）。
 
-    哈希输入仅取注册表中登记的镜头内容字段（起止时间戳、标签、摘要），
-    不含派生缩略图等可再生产物；同内容必得同哈希，重建前后一致。
+    哈希输入为来源素材指纹 + 注册表中登记的镜头内容字段（起止时间戳、
+    标签、摘要），不含派生缩略图等可再生产物；同输入必得同哈希，重建
+    前后一致。`source_key` 由 `shot_source_key()` 给出且必填：QIN-468 的
+    事故根因正是「只按区间/标签/摘要算哈希」，缺省来源会让不同素材的
+    镜头再次塌缩成同一 hash。
+
+    迁移说明（QIN-468 / AC3）：`content_hash` 只存在于可重建的 SQLite
+    检索索引 `mvp1_shots`，JSON 注册表真源不落该字段，因此语义升级无需
+    数据迁移脚本，升级后执行一次检索索引重建即可得到新哈希。
     """
     payload = {
+        "source": str(source_key),
         "start_sec": float(segment["start_sec"]),
         "end_sec": float(segment["end_sec"]),
         "tags": list(segment.get("tags") or []),
@@ -214,6 +237,7 @@ def _asset_shot_rows(asset: Dict[str, Any]) -> Tuple[List[Dict[str, Any]], int]:
     if not isinstance(segments, list):
         return [], 0
     root_id = str(asset.get("root_id") or asset.get("storage_root_id") or "")
+    source_key = shot_source_key(asset)
     rows: List[Dict[str, Any]] = []
     skipped = 0
     for segment in segments:
@@ -246,7 +270,7 @@ def _asset_shot_rows(asset: Dict[str, Any]) -> Tuple[List[Dict[str, Any]], int]:
             "shot_index": len(rows),
             "start_sec": start_sec,
             "end_sec": end_sec,
-            "content_hash": shot_content_hash(segment),
+            "content_hash": shot_content_hash(segment, source_key),
         })
     return rows, skipped
 
