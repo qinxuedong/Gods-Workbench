@@ -159,6 +159,32 @@ def _plain_asset(asset_id: str, name: str, kind: str, **extra: Any) -> Dict[str,
     return payload
 
 
+def _asset_shot_text(asset: Dict[str, Any]) -> List[str]:
+    """收集资产登记镜头的标签与摘要，供检索文档收录镜头文本（MVP1-T7/F2）。
+
+    镜头索引行只存起止时间戳与内容哈希，不含可检索文本；若资产文档也不收
+    镜头文本，仅出现在镜头标签或摘要里的检索词会整条漏召回，镜头级检索因此
+    永远 0 命中。这里只读取登记内容，不派生新字段。
+    """
+    metadata = asset.get("metadata")
+    segments = metadata.get("video_segments") if isinstance(metadata, dict) else None
+    if not isinstance(segments, list):
+        return []
+    values: List[str] = []
+    for segment in segments:
+        if not isinstance(segment, dict):
+            continue
+        tags = segment.get("tags")
+        if isinstance(tags, list):
+            values.extend(
+                tag.strip() for tag in tags if isinstance(tag, str) and tag.strip()
+            )
+        summary = segment.get("summary")
+        if isinstance(summary, str) and summary.strip():
+            values.append(summary.strip())
+    return values
+
+
 def _asset_search_document(asset: Dict[str, Any]) -> Optional[Dict[str, str]]:
     """从资产记录提取可检索文档；缺 id 或名称的记录不进入索引。"""
     if not isinstance(asset, dict):
@@ -177,18 +203,42 @@ def _asset_search_document(asset: Dict[str, Any]) -> Optional[Dict[str, str]]:
             str(asset.get("kind") or "").strip(),
             str(asset.get("display_path") or "").strip(),
             *tag_text,
+            *_asset_shot_text(asset),
         ) if value
     )
     return {"asset_id": asset_id, "title": title, "content": content}
 
 
-def shot_content_hash(segment: Dict[str, Any]) -> str:
+def shot_source_key(asset: Dict[str, Any]) -> str:
+    """素材侧内容指纹：镜头 hash 的「来源素材」维度（QIN-468）。
+
+    优先使用扫描期写入的真实文件 `sha256`，让同一素材的字节副本（不同
+    `asset_id`、不同路径）仍能命中同一镜头哈希，保住跨资产查重能力；
+    素材尚无真实指纹时退回稳定 `asset_id`，宁可漏报跨资产重复，也不
+    再把不同素材折叠成同一 hash。
+    """
+    digest = str(asset.get("sha256") or "").strip().lower()
+    if digest:
+        return "sha256:" + digest
+    asset_id = str(asset.get("asset_id") or asset.get("id") or "").strip()
+    return "asset:" + asset_id
+
+
+def shot_content_hash(segment: Dict[str, Any], source_key: str) -> str:
     """按登记内容稳定计算镜头内容哈希（MVP1-AC2/AC10 幂等与重建键）。
 
-    哈希输入仅取注册表中登记的镜头内容字段（起止时间戳、标签、摘要），
-    不含派生缩略图等可再生产物；同内容必得同哈希，重建前后一致。
+    哈希输入为来源素材指纹 + 注册表中登记的镜头内容字段（起止时间戳、
+    标签、摘要），不含派生缩略图等可再生产物；同输入必得同哈希，重建
+    前后一致。`source_key` 由 `shot_source_key()` 给出且必填：QIN-468 的
+    事故根因正是「只按区间/标签/摘要算哈希」，缺省来源会让不同素材的
+    镜头再次塌缩成同一 hash。
+
+    迁移说明（QIN-468 / AC3）：`content_hash` 只存在于可重建的 SQLite
+    检索索引 `mvp1_shots`，JSON 注册表真源不落该字段，因此语义升级无需
+    数据迁移脚本，升级后执行一次检索索引重建即可得到新哈希。
     """
     payload = {
+        "source": str(source_key),
         "start_sec": float(segment["start_sec"]),
         "end_sec": float(segment["end_sec"]),
         "tags": list(segment.get("tags") or []),
@@ -214,6 +264,7 @@ def _asset_shot_rows(asset: Dict[str, Any]) -> Tuple[List[Dict[str, Any]], int]:
     if not isinstance(segments, list):
         return [], 0
     root_id = str(asset.get("root_id") or asset.get("storage_root_id") or "")
+    source_key = shot_source_key(asset)
     rows: List[Dict[str, Any]] = []
     skipped = 0
     for segment in segments:
@@ -246,28 +297,79 @@ def _asset_shot_rows(asset: Dict[str, Any]) -> Tuple[List[Dict[str, Any]], int]:
             "shot_index": len(rows),
             "start_sec": start_sec,
             "end_sec": end_sec,
-            "content_hash": shot_content_hash(segment),
+            "content_hash": shot_content_hash(segment, source_key),
         })
     return rows, skipped
 
 
+def _sync_asset_shot_rows(engine: Any, asset: Dict[str, Any]) -> int:
+    """按资产整组刷新镜头行；返回写入行数。
+
+    只处理声明了 ``video_segments`` 的资产（图片等零额外写入）；先删后写保证
+    重扫与重切分都不残留旧镜头行，写入内容与 ``rebuild_search_index`` 完全一致。
+    """
+    metadata = asset.get("metadata")
+    if not isinstance(metadata, dict):
+        return 0
+    if not isinstance(metadata.get("video_segments"), list):
+        return 0
+    asset_id = str(asset.get("asset_id") or asset.get("id") or "").strip()
+    if not asset_id:
+        return 0
+    rows, _skipped = _asset_shot_rows(asset)
+    engine.delete_shots(asset_id)
+    if not rows:
+        return 0
+    engine.batch_upsert_shots(rows)
+    return len(rows)
+
+
 def _upsert_asset_search_documents(assets: Any) -> List[bool]:
-    """把资产的可检索字段通过批量接口写入本地 FTS/向量索引。"""
+    """把资产文档、镜头行与索引元数据写入本地检索索引。
+
+    这是入库（JSON 批量登记、后台索引任务提交）的产品化写入入口（MVP1-T7/F2）：
+    此前只写资产文档，镜头行与索引元数据永远为空，导致 `/search/shots` 对已入库
+    素材 0 命中、查重候选无数据。镜头行只写入声明了 ``video_segments`` 的资产，
+    并按资产整组替换；索引元数据仅在缺失时补写诚实值（无嵌入模型则模型字段为
+    空），不覆盖已登记嵌入模型的既有元数据。
+
+    写入失败一律抛 ``CleanroomException``：调用方的 ``state().mutate()`` 随之放弃
+    提交，不产生「注册表已入库、检索索引缺失」的半成功状态。
+    """
     documents: Dict[str, Dict[str, str]] = {}
+    records: List[Dict[str, Any]] = []
     for asset in assets:
         document = _asset_search_document(asset)
         if document is None:
             continue
         documents[document["asset_id"]] = document
+        records.append(asset)
     if not documents:
         return []
 
     from gw.core.sqlite_vec_engine import SQLiteVecEngine
 
     db_path = storage.data_root() / ASSET_SEARCH_INDEX_FILENAME
-    db_path.parent.mkdir(parents=True, exist_ok=True)
-    with SQLiteVecEngine(db_path) as engine:
-        return engine.batch_upsert_documents(list(documents.values()))
+    try:
+        db_path.parent.mkdir(parents=True, exist_ok=True)
+        with SQLiteVecEngine(db_path) as engine:
+            results = engine.batch_upsert_documents(list(documents.values()))
+            for asset in records:
+                _sync_asset_shot_rows(engine, asset)
+            if engine.index_metadata() is None:
+                engine.set_index_metadata(
+                    model_id=None,
+                    model_version=None,
+                    dimensions=engine.dimensions,
+                    quantization="float32" if engine.vector_enabled else None,
+                )
+    except CleanroomException:
+        raise
+    except Exception as exc:
+        raise CleanroomException(
+            500, "SEARCH_INDEX_WRITE_FAILED", "本地检索索引写入失败，入库已中止"
+        ) from exc
+    return results
 
 
 def _storage_source_for_location(

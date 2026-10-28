@@ -1,0 +1,15 @@
+{
+  "schema": "gw.cleanroom-admission-shard/v1",
+  "issue": 388,
+  "authorization_basis": "GitHub Issue #388, 2026-10-28",
+  "files": [
+    "gw/media/nle_export.py",
+    "docs/fixtures/nle-export-sample-edl.edl",
+    "docs/fixtures/nle-export-sample-fcpxml.fcpxml",
+    "tests/contracts/media/test_nle_export.py",
+    "tests/hygiene/fixtures/admissions/issue-388.json"
+  ],
+  "admitted_files": [],
+  "accepted_test_files": [],
+  "notes": "QIN-443：后期候选 FCPXML/CMX3600 EDL 时间线导出纯序列化器，登记实现文件、两份黄金夹具、契约测试与分片自身，不回填基础账本。"
+}

@@ -5,18 +5,20 @@ use if_addrs::{get_if_addrs, IfAddr};
 use reqwest::{Client, Url};
 use serde::{Deserialize, Serialize};
 use std::{
-    collections::BTreeSet,
+    collections::{BTreeSet, HashSet},
     fs,
     net::{IpAddr, Ipv4Addr},
-    path::PathBuf,
+    path::{Path, PathBuf},
+    sync::Mutex,
     time::Duration,
 };
 use tauri::{
     image::Image,
     menu::{Menu, MenuItem},
     tray::TrayIconBuilder,
-    AppHandle, Manager, WebviewWindow, WindowEvent,
+    AppHandle, Manager, State, WebviewWindow, WindowEvent,
 };
+use tauri_plugin_dialog::DialogExt;
 
 #[derive(Debug, Serialize)]
 struct DiscoveryResult {
@@ -28,6 +30,16 @@ struct DiscoveryResult {
 struct PersistedConfig {
     server_url: String,
 }
+
+/// 客户端本机配置（client.json）：只保存客户端自用字段，绝不提交服务器。
+#[derive(Debug, Deserialize, Serialize, Default, Clone, PartialEq)]
+struct ClientConfig {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    upload_source_dir: Option<String>,
+}
+
+/// 会话级白名单：只允许读取本轮通过对话框明确选中的文件。
+struct ClientSessionState(Mutex<HashSet<PathBuf>>);
 
 #[derive(Debug, Deserialize)]
 struct Healthz {
@@ -46,6 +58,55 @@ fn ensure_local_ui(window: &WebviewWindow) -> Result<(), String> {
     } else {
         Err("Desktop discovery commands are only available from the local client screen.".into())
     }
+}
+
+fn origin_of(url: &Url) -> String {
+    format!(
+        "{}://{}",
+        url.scheme(),
+        url.host_str().unwrap_or_default().to_ascii_lowercase()
+    ) + &url
+        .port()
+        .map(|port| format!(":{port}"))
+        .unwrap_or_default()
+}
+
+fn origins_match(current: &str, saved: &str) -> bool {
+    match (Url::parse(current), Url::parse(saved)) {
+        (Ok(current_url), Ok(saved_url)) => origin_of(&current_url) == origin_of(&saved_url),
+        _ => false,
+    }
+}
+
+/// 客户端桥接命令只对本地发现页与当前已连接的服务器页面开放（QIN-432 AC10）。
+fn ensure_client_bridge_window(app: &AppHandle, window: &WebviewWindow) -> Result<(), String> {
+    if ensure_local_ui(window).is_ok() {
+        return Ok(());
+    }
+    let current = window
+        .url()
+        .map_err(|error| format!("Cannot read window URL: {error}"))?;
+    let saved = last_saved_server_url(app)?;
+    let saved = saved.ok_or_else(|| {
+        "Client bridge commands are only available for the connected server page.".to_string()
+    })?;
+    if origins_match(current.as_str(), &saved) {
+        Ok(())
+    } else {
+        Err("Client bridge commands are only available for the connected server page.".into())
+    }
+}
+
+fn last_saved_server_url(app: &AppHandle) -> Result<Option<String>, String> {
+    let path = config_path(app)?;
+    let content = match fs::read(path) {
+        Ok(content) => content,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(error) => return Err(format!("Cannot read client settings: {error}")),
+    };
+    let config: PersistedConfig = serde_json::from_slice(&content)
+        .map_err(|error| format!("Saved server settings are invalid: {error}"))?;
+    Ok(Some(config.server_url))
 }
 
 fn is_allowed_local_host(host: &str) -> bool {
@@ -199,6 +260,160 @@ fn save_server_url(app: &AppHandle, server_url: &str) -> Result<(), String> {
     fs::write(path, content).map_err(|error| format!("Cannot save client settings: {error}"))
 }
 
+const ALLOWED_CLIENT_SETTING_KEYS: [&str; 1] = ["upload_source_dir"];
+
+fn client_setting_key_is_allowed(key: &str) -> bool {
+    ALLOWED_CLIENT_SETTING_KEYS.contains(&key)
+}
+
+fn client_config_path(app: &AppHandle) -> Result<PathBuf, String> {
+    let directory = app
+        .path()
+        .app_config_dir()
+        .map_err(|error| format!("Cannot locate the client settings directory: {error}"))?;
+    fs::create_dir_all(&directory)
+        .map_err(|error| format!("Cannot create the client settings directory: {error}"))?;
+    Ok(directory.join("client.json"))
+}
+
+fn load_client_config_from(path: &Path) -> ClientConfig {
+    match fs::read(path) {
+        Ok(content) => serde_json::from_slice(&content).unwrap_or_default(),
+        Err(_) => ClientConfig::default(),
+    }
+}
+
+fn save_client_config_to(path: &Path, config: &ClientConfig) -> Result<(), String> {
+    let content = serde_json::to_vec_pretty(config)
+        .map_err(|error| format!("Cannot encode client settings: {error}"))?;
+    fs::write(path, content).map_err(|error| format!("Cannot save client settings: {error}"))
+}
+
+#[tauri::command]
+async fn pick_client_folder(
+    app: AppHandle,
+    window: WebviewWindow,
+    title: Option<String>,
+    initial_dir: Option<String>,
+) -> Result<Option<String>, String> {
+    ensure_client_bridge_window(&app, &window)?;
+    let mut builder = app.dialog().file();
+    builder = builder.set_title(title.unwrap_or_else(|| "选择文件夹".to_string()));
+    if let Some(dir) = initial_dir
+        .as_deref()
+        .filter(|value| !value.trim().is_empty())
+    {
+        builder = builder.set_directory(dir);
+    }
+    let picked = tauri::async_runtime::spawn_blocking(move || builder.blocking_pick_folder())
+        .await
+        .map_err(|error| format!("Folder dialog task failed: {error}"))?;
+    Ok(picked.map(|path| path.to_string()))
+}
+
+#[tauri::command]
+async fn pick_client_upload_files(
+    app: AppHandle,
+    window: WebviewWindow,
+    state: State<'_, ClientSessionState>,
+    default_dir: Option<String>,
+) -> Result<Vec<String>, String> {
+    ensure_client_bridge_window(&app, &window)?;
+    let mut builder = app.dialog().file();
+    builder = builder.set_title("选择要上传的素材");
+    if let Some(dir) = default_dir
+        .as_deref()
+        .filter(|value| !value.trim().is_empty())
+    {
+        builder = builder.set_directory(dir);
+    }
+    builder = builder.add_filter(
+        "媒体文件",
+        &[
+            "png", "jpg", "jpeg", "webp", "gif", "bmp", "mp4", "mov", "webm", "mkv", "mp3", "wav",
+            "flac", "m4a",
+        ],
+    );
+    let picked = tauri::async_runtime::spawn_blocking(move || builder.blocking_pick_files())
+        .await
+        .map_err(|error| format!("File dialog task failed: {error}"))?;
+    let paths: Vec<String> = picked
+        .map(|files| files.iter().map(|path| path.to_string()).collect())
+        .unwrap_or_default();
+    let mut allowed = state
+        .0
+        .lock()
+        .map_err(|error| format!("Client session state is unavailable: {error}"))?;
+    *allowed = paths.iter().map(PathBuf::from).collect();
+    Ok(paths)
+}
+
+#[tauri::command]
+fn read_client_file(
+    app: AppHandle,
+    window: WebviewWindow,
+    state: State<'_, ClientSessionState>,
+    path: String,
+) -> Result<tauri::ipc::Response, String> {
+    ensure_client_bridge_window(&app, &window)?;
+    let candidate = PathBuf::from(&path);
+    let allowed = state
+        .0
+        .lock()
+        .map_err(|error| format!("Client session state is unavailable: {error}"))?;
+    if !allowed.contains(&candidate) {
+        return Err("Only files picked in this session can be read.".into());
+    }
+    drop(allowed);
+    let bytes =
+        fs::read(&candidate).map_err(|error| format!("Cannot read picked file: {error}"))?;
+    Ok(tauri::ipc::Response::new(bytes))
+}
+
+#[tauri::command]
+fn get_client_setting(
+    app: AppHandle,
+    window: WebviewWindow,
+    key: String,
+) -> Result<Option<String>, String> {
+    ensure_client_bridge_window(&app, &window)?;
+    if !client_setting_key_is_allowed(&key) {
+        return Err(format!("Unknown client setting key: {key}"));
+    }
+    let path = client_config_path(&app)?;
+    let config = load_client_config_from(&path);
+    Ok(match key.as_str() {
+        "upload_source_dir" => config
+            .upload_source_dir
+            .filter(|value| !value.trim().is_empty()),
+        _ => None,
+    })
+}
+
+#[tauri::command]
+fn set_client_setting(
+    app: AppHandle,
+    window: WebviewWindow,
+    key: String,
+    value: Option<String>,
+) -> Result<(), String> {
+    ensure_client_bridge_window(&app, &window)?;
+    if !client_setting_key_is_allowed(&key) {
+        return Err(format!("Unknown client setting key: {key}"));
+    }
+    let path = client_config_path(&app)?;
+    let mut config = load_client_config_from(&path);
+    match key.as_str() {
+        "upload_source_dir" => {
+            config.upload_source_dir = value
+                .map(|text| text.trim().to_string())
+                .filter(|text| !text.is_empty());
+        }
+        _ => {}
+    }
+    save_client_config_to(&path, &config)
+}
+
 #[tauri::command]
 async fn discover_lan(window: WebviewWindow) -> Result<Vec<DiscoveryResult>, String> {
     ensure_local_ui(&window)?;
@@ -276,10 +491,17 @@ fn make_tray_icon() -> Image<'static> {
 
 fn main() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_dialog::init())
+        .manage(ClientSessionState(Mutex::new(HashSet::new())))
         .invoke_handler(tauri::generate_handler![
             discover_lan,
             last_server,
-            connect_to_server
+            connect_to_server,
+            pick_client_folder,
+            pick_client_upload_files,
+            read_client_file,
+            get_client_setting,
+            set_client_setting
         ])
         .setup(|app| {
             let window = app
@@ -386,5 +608,56 @@ mod tests {
         assert!(normalize_server_url("http://user:secret@nas.local:2077/").is_err());
         assert!(normalize_server_url("http://nas.local:2077/api/").is_err());
         assert!(normalize_server_url("http://nas.local:2077/?token=secret").is_err());
+    }
+
+    #[test]
+    fn client_setting_keys_are_whitelisted() {
+        assert!(client_setting_key_is_allowed("upload_source_dir"));
+        assert!(!client_setting_key_is_allowed("server_url"));
+        assert!(!client_setting_key_is_allowed(""));
+    }
+
+    #[test]
+    fn client_config_roundtrips_upload_source_dir() {
+        let directory = std::env::temp_dir().join(format!(
+            "gw-desktop-test-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|value| value.as_nanos())
+                .unwrap_or_default()
+        ));
+        fs::create_dir_all(&directory).expect("create temp dir");
+        let path = directory.join("client.json");
+        // 缺失文件按默认配置处理，不报错。
+        assert_eq!(load_client_config_from(&path), ClientConfig::default());
+        let mut config = ClientConfig::default();
+        config.upload_source_dir = Some("<客户端来源目录>".to_string());
+        save_client_config_to(&path, &config).expect("save client config");
+        assert_eq!(
+            load_client_config_from(&path).upload_source_dir,
+            Some("<客户端来源目录>".to_string())
+        );
+        // 损坏文件按默认配置处理，重启后可恢复。
+        fs::write(&path, b"not json").expect("corrupt client config");
+        assert_eq!(load_client_config_from(&path), ClientConfig::default());
+        let _ = fs::remove_dir_all(&directory);
+    }
+
+    #[test]
+    fn bridge_origins_match_only_same_origin() {
+        assert!(origins_match(
+            "http://nas.local:2077/static/pages/index.html",
+            "http://nas.local:2077/"
+        ));
+        assert!(!origins_match(
+            "http://nas.local:2077/static/pages/index.html",
+            "http://evil.example:2077/"
+        ));
+        assert!(!origins_match(
+            "http://nas.local:2077/static/pages/index.html",
+            "https://nas.local:2077/"
+        ));
+        assert!(!origins_match("not a url", "http://nas.local:2077/"));
     }
 }
