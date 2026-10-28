@@ -14,21 +14,6 @@ from playwright_support import open_playwright
 
 ROOT = Path(__file__).resolve().parents[2]
 
-#: 子进程绑定候选端口失败时 uvicorn/Python 可能给出的错误标记。
-#: 全量并发跑 E2E 时「取端口→关闭→交给子进程绑定」之间存在竞争窗口，
-#: 命中窗口会以这些 Errno 退出，属可换端口重试的情形。
-PORT_COLLISION_MARKERS = (
-    "[Errno 13]",
-    "[Errno 98]",
-    "[Errno 10013]",
-    "[Errno 10048]",
-    "[WinError 10013]",
-    "[WinError 10048]",
-    "Address already in use",
-    "Only one usage of each socket address",
-)
-PORT_START_ATTEMPTS = 5
-
 
 def local_health_ready(port):
     """先绑定不同源端口再连接，防止服务尚未监听时Windows TCP连接到自身。"""
@@ -55,39 +40,6 @@ def local_health_ready(port):
             connection.close()
 
 
-class ServerStartError(AssertionError):
-    """子进程启动失败；区分「候选端口被抢」与其它启动故障，便于有限次换端口重试。"""
-
-    def __init__(self, message, *, log_path, port_collision):
-        super().__init__(message)
-        self.log_path = log_path
-        self.port_collision = port_collision
-
-
-def log_tail(log_path, limit=8192):
-    """读取日志尾部用于诊断；读不到时返回空串，不让诊断本身变成二次失败。"""
-    try:
-        with open(log_path, "rb") as handle:
-            handle.seek(0, os.SEEK_END)
-            size = handle.tell()
-            handle.seek(max(0, size - limit))
-            return handle.read().decode("utf-8", "replace")
-    except OSError:
-        return ""
-
-
-def port_collision_in_log(text):
-    """日志里出现端口占用/权限拒绝标记时才判定为可重试的端口碰撞。"""
-    return any(marker in (text or "") for marker in PORT_COLLISION_MARKERS)
-
-
-def free_loopback_port():
-    """取一个空闲回环端口；返回后端口即释放，交给子进程绑定（存在窗口，靠重试兜底）。"""
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
-        sock.bind(("127.0.0.1", 0))
-        return sock.getsockname()[1]
-
-
 def start_owned_server(command, env, log, port):
     """启动失败时也回收本函数创建的子进程，避免句柄尚未返回就泄漏服务。"""
     # 只接受本次子进程绑定完成后的消息；先发TCP探针可能抢占尚未监听的目标端口。
@@ -107,76 +59,18 @@ def start_owned_server(command, env, log, port):
         deadline = time.monotonic() + 15
         while time.monotonic() < deadline:
             if child.poll() is not None:
-                raise ServerStartError(
-                    f"测试服务提前退出；日志：{log_path}",
-                    log_path=log_path,
-                    port_collision=port_collision_in_log(
-                        log_path.read_bytes()[log_offset:].decode("utf-8", "replace")
-                    ),
-                )
+                raise AssertionError(f"测试服务提前退出；日志：{log_path}")
             if listener_message in log_path.read_bytes()[
                 log_offset:
             ] and local_health_ready(port):
                 return child
             time.sleep(0.1)
-        raise ServerStartError("测试服务未就绪", log_path=log_path, port_collision=False)
+        raise AssertionError("测试服务未就绪")
     except BaseException:
         if child.poll() is None:
             child.terminate()
             child.wait(timeout=5)
         raise
-
-
-class OwnedTestServer:
-    """按需取端口并启动真实子进程；候选端口被抢时换新端口有限次重试。
-
-    原实现「bind(0) 取端口 → 立刻 close → 交给子进程绑定」存在 TOCTOU 窗口：
-    全量并发跑 E2E 时其他用例也会大量取端口，子进程可能拿到已被占用的端口并以
-    Errno 13/98/10013/10048 退出。这里在子进程退出且日志出现端口碰撞标记时换新
-    端口重试；非端口原因（导入错误、配置错误等）立即失败，不掩盖真实故障。
-    """
-
-    def __init__(self, command, env, log, *, attempts=PORT_START_ATTEMPTS, port_factory=free_loopback_port):
-        self.command = command
-        self.env = dict(env)
-        self.log = log
-        self.attempts = attempts
-        self.port_factory = port_factory
-        self.port = None
-        self.process = None
-        self.attempts_used = 0
-
-    @property
-    def base(self):
-        assert self.port is not None, "服务尚未启动，没有可用端口"
-        return f"http://127.0.0.1:{self.port}"
-
-    def start(self):
-        last_error = None
-        for attempt in range(1, self.attempts + 1):
-            self.attempts_used = attempt
-            port = self.port_factory()
-            env = {**self.env, "GW_PORT": str(port)}
-            try:
-                self.process = start_owned_server(self.command, env, self.log, port)
-            except ServerStartError as exc:
-                self.process = None
-                if not exc.port_collision:
-                    raise
-                last_error = exc
-                continue
-            self.port = port
-            self.env = env
-            return self.process
-        raise AssertionError(
-            f"候选端口连续 {self.attempts} 次被占用，最后一次：{last_error}"
-        )
-
-    def stop(self, timeout=5):
-        if self.process is not None and self.process.poll() is None:
-            self.process.terminate()
-            self.process.wait(timeout=timeout)
-        self.process = None
 
 
 def test_local_account_browser_setup_login_restart_logout(tmp_path):
@@ -190,6 +84,11 @@ def test_local_account_browser_setup_login_restart_logout(tmp_path):
             )
         except browser_api.Error as exc:
             pytest.skip(f"Chrome 不可启动：{exc}")
+        with socket.socket() as sock:
+            sock.bind(("127.0.0.1", 0))
+            port = sock.getsockname()[1]
+        base = f"http://127.0.0.1:{port}"
+        browser.grant_permissions(["clipboard-read", "clipboard-write"], origin=base)
         env = os.environ.copy()
         env.update(
             GW_RUNTIME_MODE="test",
@@ -197,6 +96,7 @@ def test_local_account_browser_setup_login_restart_logout(tmp_path):
             GW_DATA_DIR=str(tmp_path / "data"),
             GW_LOCAL_AUTH_DB=str(tmp_path / "auth" / "auth.sqlite3"),
             GW_VIDEO_DATA_DIR=str(tmp_path / "video"),
+            GW_PORT=str(port),
             GW_HOST="127.0.0.1",
             GW_RELOAD="false",
             PYTHONPATH=str(ROOT),
@@ -204,21 +104,12 @@ def test_local_account_browser_setup_login_restart_logout(tmp_path):
         command = [sys.executable, str(ROOT / "run.py"), "--test"]
         process = None
         log = (tmp_path / "server.log").open("wb")
-        server = OwnedTestServer(command, env, log)
-        base = ""
 
         def start_server():
-            """启动（或换端口重启）真实子进程，并把 base 同步到实际端口。"""
-            nonlocal base
-            child = server.start()
-            base = server.base
-            return child
+            return start_owned_server(command, env, log, port)
 
         try:
             process = start_server()
-            browser.grant_permissions(
-                ["clipboard-read", "clipboard-write"], origin=base
-            )
             page = browser.new_page()
             page.route(
                 "**/*",
@@ -330,9 +221,7 @@ def test_local_account_browser_setup_login_restart_logout(tmp_path):
                 channel="chrome",
                 headless=True,
             )
-            browser.grant_permissions(
-                ["clipboard-read", "clipboard-write"], origin=base
-            )
+            browser.grant_permissions(["clipboard-read", "clipboard-write"], origin=base)
             page = browser.new_page()
             page.route(
                 "**/*",
@@ -553,87 +442,3 @@ def test_startup_probe_waits_for_current_child_listener(
             if child is not None and child.poll() is None:
                 child.terminate()
                 child.wait(timeout=5)
-
-
-class _AliveChild:
-    """只用于启动流程单测的子进程替身：poll() 表示仍在运行。"""
-
-    def poll(self):
-        return None
-
-
-def test_port_collision_detection_recognizes_bind_errno_messages(tmp_path):
-    """真实 uvicorn/系统给出的绑定失败文案都要被识别为可换端口重试的碰撞。"""
-    for marker in (
-        "[Errno 13] Permission denied",
-        "[Errno 98] Address already in use",
-        "[Errno 10013] error while attempting to bind on address",
-        "[Errno 10048] Only one usage of each socket address is normally permitted",
-        "[WinError 10048] Only one usage of each socket address is normally permitted",
-    ):
-        assert port_collision_in_log(f"Traceback ...\nOSError: {marker}\n"), marker
-    # 非端口原因的启动失败不得被当成碰撞，否则会掩盖真实故障。
-    assert not port_collision_in_log("ModuleNotFoundError: No module named 'gw'")
-    assert not port_collision_in_log("")
-
-
-def test_owned_server_retries_with_fresh_port_when_candidate_is_taken(monkeypatch):
-    """候选端口被子进程抢占（Errno 13/98）时换新端口重试，而不是直接判失败。"""
-    attempts = []
-    sentinel = _AliveChild()
-
-    def flaky_start(command, env, log, port):
-        attempts.append(port)
-        if len(attempts) < 3:
-            raise ServerStartError(
-                "测试服务提前退出", log_path=tmp_path_log, port_collision=True
-            )
-        assert env["GW_PORT"] == str(port)
-        return sentinel
-
-    tmp_path_log = "server.log"  # 诊断字段不做文件访问，只作为错误上下文
-    monkeypatch.setattr(sys.modules[__name__], "start_owned_server", flaky_start)
-    ports = iter([50101, 50102, 50103, 50104])
-    with open(os.devnull, "wb") as log:
-        server = OwnedTestServer(
-            ["noop"], {"GW_PORT": "0"}, log, port_factory=lambda: next(ports)
-        )
-        assert server.start() is sentinel
-    assert attempts == [50101, 50102, 50103]
-    assert server.attempts_used == 3
-    assert server.base == "http://127.0.0.1:50103"
-    assert server.env["GW_PORT"] == "50103"
-
-
-def test_owned_server_does_not_retry_non_port_startup_failure(monkeypatch):
-    """导入/配置类启动失败必须立刻冒泡，不能靠重试掩盖。"""
-    attempts = []
-
-    def failing_start(command, env, log, port):
-        attempts.append(port)
-        raise ServerStartError("测试服务提前退出", log_path="server.log", port_collision=False)
-
-    monkeypatch.setattr(sys.modules[__name__], "start_owned_server", failing_start)
-    with open(os.devnull, "wb") as log:
-        server = OwnedTestServer(
-            ["noop"], {}, log, port_factory=lambda: 50201, attempts=4
-        )
-        with pytest.raises(ServerStartError):
-            server.start()
-    assert attempts == [50201]
-    assert server.attempts_used == 1
-
-
-def test_owned_server_reports_exhausted_candidate_ports(monkeypatch):
-    """连续取到被占端口时给出可诊断的失败，而不是无声挂起。"""
-
-    def always_collides(command, env, log, port):
-        raise ServerStartError("测试服务提前退出", log_path="server.log", port_collision=True)
-
-    monkeypatch.setattr(sys.modules[__name__], "start_owned_server", always_collides)
-    ports = iter([50301, 50302, 50303])
-    with open(os.devnull, "wb") as log:
-        server = OwnedTestServer(["noop"], {}, log, port_factory=lambda: next(ports), attempts=3)
-        with pytest.raises(AssertionError, match="候选端口连续 3 次被占用"):
-            server.start()
-    assert server.attempts_used == 3

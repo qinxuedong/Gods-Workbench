@@ -13,4 +13,4 @@
 
 1. 行为规范描述系统的可观察行为与响应语义，是业务实现与契约测试的唯一合法输入。
 2. 规范中任何涉及写操作、拓扑保存与生命周期变更的行为，必须强制执行 `expected_version` 乐观并发控制，冲突时明确返回 409。
-3. 规范文件必须完成洁净室准入登记；未经准入审核的观察记录不得直接驱动业务实现。`docs/behavior` 属于基础账本 `tests/hygiene/fixtures/cleanroom_admission_metadata.json` 的 `accepted_roots` 全局边界，该账本**默认不因新票改动**；新增或变更的规范文件一律登记在**本票分片** `tests/hygiene/fixtures/admissions/issue-<票号>.json`。分片格式、字段约束与本地自检见 [`tests/hygiene/fixtures/admissions/README.md`](../../tests/hygiene/fixtures/admissions/README.md)。
+3. 规范文件必须在 `tests/hygiene/fixtures/cleanroom_admission_metadata.json` 中登记准入；未经准入审核的观察记录不得直接驱动业务实现。

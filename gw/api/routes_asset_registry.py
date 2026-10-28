@@ -36,7 +36,7 @@ from typing import Any, Dict, List, Optional
 from fastapi import APIRouter, Body, Depends, File, Form, Header, Query, Request, Response, status, UploadFile
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 
-from gw.asset_registry import governance, media_probe, repository as repo, index_jobs
+from gw.asset_registry import media_probe, repository as repo, index_jobs
 from gw.asset_registry.service import (
     ASSET_REGISTRY_NOT_INTEGRATED,
     DATA_STATUS_NOT_INTEGRATED,
@@ -470,15 +470,6 @@ def search_registry_shots(
             shot_provider=_shot_provider,
             extra_asset_ids=_keyword_recalled_assets(query, bounded_limit),
         )
-        # 本次请求未携带查询向量，引擎侧的降级标记恒为 false；此处按索引实况
-        # 补正（MVP1-T7/F2）：没有登记嵌入模型或引擎未启用向量轨时如实报告降级，
-        # 不让「向量轨从未写入」被伪装成双轨正常。
-        index_metadata = engine.index_metadata()
-        vector_track_ready = bool(
-            engine.vector_enabled
-            and index_metadata is not None
-            and index_metadata.model_id
-        )
 
     items = []
     for hit in results.hits:
@@ -507,47 +498,7 @@ def search_registry_shots(
         "limit": bounded_limit,
         "items": items,
         "shot_count": sum(1 for item in items if item["granularity"] == "shot"),
-        "vector_track_degraded": bool(
-            results.vector_track_degraded or not vector_track_ready
-        ),
-        "data_status": DATA_STATUS_OK,
-        "data_gaps": [],
-    }
-
-
-@router.post(
-    "/search-index/rebuild",
-    summary="从注册表重建本地检索索引（文档 + 镜头 + 元数据）",
-    status_code=status.HTTP_200_OK,
-)
-def rebuild_asset_search_index(
-    authorization: Optional[str] = Header(None),
-    x_user_role: str = Header("editor", alias="X-User-Role"),
-):
-    """产品化的索引重建入口（MVP1-AC10 / T7-F2）。
-
-    入库本身已带索引写入（``repository._upsert_asset_search_documents``），本端点
-    用于索引文件丢失、schema 调整或人工要求全量重建：只读 JSON 注册表真源，
-    先写临时文件再原子替换，失败保留旧索引并如实返回 500
-    ``SEARCH_INDEX_REBUILD_FAILED``。响应只给统计与索引文件名，不回显绝对路径。
-    """
-    _edit_auth(authorization, x_user_role)
-    try:
-        result = repo.rebuild_search_index()
-    except CleanroomException:
-        raise
-    except Exception as exc:
-        raise CleanroomException(
-            500,
-            "SEARCH_INDEX_REBUILD_FAILED",
-            "本地检索索引重建失败，已保留原有索引",
-        ) from exc
-    return {
-        "rebuilt": True,
-        "documents": result["documents"],
-        "shots": result["shots"],
-        "skipped_segments": result["skipped_segments"],
-        "index_file": repo.ASSET_SEARCH_INDEX_FILENAME,
+        "vector_track_degraded": results.vector_track_degraded,
         "data_status": DATA_STATUS_OK,
         "data_gaps": [],
     }
@@ -793,47 +744,6 @@ def get_cascade_preview(
                    "canvases": [], "total": len(result["projects"]) + 1},
         "data_status": DATA_STATUS_OK, "data_gaps": [],
     }
-
-
-@router.get("/governance/suggestions", summary="读取治理建议清单（MVP1-T5，只建议）", status_code=status.HTTP_200_OK)
-def get_governance_suggestions(
-    authorization: Optional[str] = Header(None),
-    x_user_role: str = Header("editor", alias="X-User-Role"),
-):
-    """治理建议清单：命名/相似名/查重/向量近重/受控打标，只读不落任何字段。"""
-    context = _governance_auth(authorization, x_user_role)
-    result = governance.build_suggestions()
-    result["operator_role"] = context.role
-    return result
-
-
-@router.post("/governance/suggestions/confirm", summary="确认单条治理建议（写入确认字段）", status_code=status.HTTP_200_OK)
-def confirm_governance_suggestion(
-    payload: Optional[Dict[str, Any]] = Body(None),
-    authorization: Optional[str] = Header(None),
-    x_user_role: str = Header("editor", alias="X-User-Role"),
-):
-    """逐条确认建议：强制 expected_version CAS；确认动作追加只读审计记录。"""
-    context = _governance_auth(authorization, x_user_role)
-    body = _payload(payload)
-    suggestion_id = str(body.get("suggestion_id") or "").strip()
-    if not suggestion_id:
-        raise CleanroomException(400, "INVALID_REQUEST", "suggestion_id 不能为空")
-    expected_version = _version(body, required=True)
-    return governance.confirm_suggestion(
-        suggestion_id,
-        expected_version,
-        operator=context.subject or None,
-    )
-
-
-@router.get("/governance/suggestions/confirmations", summary="读取治理建议确认记录", status_code=status.HTTP_200_OK)
-def get_governance_suggestion_confirmations(
-    authorization: Optional[str] = Header(None),
-    x_user_role: str = Header("editor", alias="X-User-Role"),
-):
-    _governance_auth(authorization, x_user_role)
-    return governance.list_confirmations()
 
 
 @router.get("/preferences/team", summary="读取团队素材偏好", status_code=status.HTTP_200_OK)

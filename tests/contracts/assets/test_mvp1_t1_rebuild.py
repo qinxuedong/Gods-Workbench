@@ -224,67 +224,11 @@ def test_search_index_status_reports_missing_file():
 def test_shot_content_hash_is_stable_and_content_bound():
     base = {"start_sec": 0.0, "end_sec": 2.5, "tags": ["夜景"], "summary": "开场"}
     same = {"end_sec": 2.5, "summary": "开场", "start_sec": 0.0, "tags": ["夜景"]}
-    source = repository.shot_source_key({"asset_id": "ast_0001", "sha256": "a" * 64})
-    assert source == "sha256:" + "a" * 64
-    assert repository.shot_content_hash(base, source) == repository.shot_content_hash(same, source)
+    assert repository.shot_content_hash(base) == repository.shot_content_hash(same)
 
     shifted = dict(base, end_sec=3.0)
     retagged = dict(base, tags=["白天"])
     resummarized = dict(base, summary="结尾")
-    other_source = repository.shot_source_key({"asset_id": "ast_0002", "sha256": "b" * 64})
-    for variant in (shifted, retagged, resummarized):
-        assert repository.shot_content_hash(base, source) != repository.shot_content_hash(variant, source)
-    assert repository.shot_content_hash(base, source) != repository.shot_content_hash(base, other_source)
-
-
-def test_shot_source_key_prefers_real_digest_and_falls_back_to_asset_id():
-    """QIN-468：素材指纹优先真实 sha256（大小写/空白规整），缺失时退回资产 ID。"""
-    assert repository.shot_source_key({"asset_id": "ast_0001", "sha256": "  AB  "}) == "sha256:ab"
-    assert repository.shot_source_key({"asset_id": "ast_0002"}) == "asset:ast_0002"
-    assert repository.shot_source_key({"id": "ast_0003", "sha256": ""}) == "asset:ast_0003"
-
-    segment = {"start_sec": 0.0, "end_sec": 2.5, "tags": ["夜景"], "summary": "开场"}
-    unhashed_left = repository.shot_source_key({"asset_id": "ast_0004"})
-    unhashed_right = repository.shot_source_key({"asset_id": "ast_0005"})
-    assert repository.shot_content_hash(
-        segment, unhashed_left
-    ) != repository.shot_content_hash(segment, unhashed_right)
-
-
-def test_rebuild_creates_distinct_shot_hashes_per_material():
-    """QIN-468 现场复现：9 个不同素材、区间/标签/摘要全同，hash 必须互不相同。"""
-    segments = [{"start_sec": 0.0, "end_sec": 2.5, "tags": ["夜景"], "summary": "开场"}]
-    records = []
-    for index in range(9):
-        record = _asset_record(
-            "ast_%04d" % (index + 1),
-            "mvp1t7素材%02d" % index,
-            metadata={"video_segments": segments},
-        )
-        record["sha256"] = "%064d" % index
-        records.append(record)
-    _write_assets(records)
-
-    result = repository.rebuild_search_index()
-    assert result["shots"] == 9
-    with SQLiteVecEngine(result["path"]) as engine:
-        hashes = {row.content_hash for row in engine.list_shots()}
-        assert len(hashes) == 9
-        assert engine.shot_duplicate_candidates() == []
-
-
-def test_rebuild_keeps_duplicate_detection_for_identical_material():
-    """同指纹的字节副本仍同 hash，跨资产查重能力不被本次修复废掉。"""
-    segments = [{"start_sec": 0.0, "end_sec": 2.5, "tags": ["夜景"], "summary": "开场"}]
-    original = _asset_record("ast_0001", "mvp1t7原片", metadata={"video_segments": segments})
-    copy = _asset_record("ast_0002", "mvp1t7副本", metadata={"video_segments": segments})
-    for record in (original, copy):
-        record["sha256"] = "c" * 64
-    _write_assets([original, copy])
-
-    result = repository.rebuild_search_index()
-    with SQLiteVecEngine(result["path"]) as engine:
-        groups = engine.shot_duplicate_candidates()
-
-    assert len(groups) == 1
-    assert {member.asset_id for member in groups[0].members} == {"ast_0001", "ast_0002"}
+    assert repository.shot_content_hash(base) != repository.shot_content_hash(shifted)
+    assert repository.shot_content_hash(base) != repository.shot_content_hash(retagged)
+    assert repository.shot_content_hash(base) != repository.shot_content_hash(resummarized)
