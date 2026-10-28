@@ -42,6 +42,7 @@ tests/frontend/qin-197-ui-defects.test.mjs
 tests/frontend/qin-200-canvas-create.test.mjs
 tests/frontend/qin-412-directory-settings.test.mjs
 tests/frontend/qin-473-settings-bg.test.mjs
+tests/frontend/qin-476-topbar-telemetry.test.mjs
 tests/frontend/settings-workbench-visual.test.mjs
 tests/frontend/test_c18_omnibar_hotkeys.mjs
 tests/frontend/test_c18_video_jump.mjs
