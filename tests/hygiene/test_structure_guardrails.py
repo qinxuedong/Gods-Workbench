@@ -134,6 +134,7 @@ _FROZEN_ROUTE_PATHS = frozenset(
     {
         "gw/api/routes_ai.py",
         "gw/api/routes_export.py",
+        "gw/api/routes_asset_collect.py",
         "gw/api/routes_asset_library.py",
         "gw/api/routes_asset_library_b4.py",
         "gw/api/routes_asset_registry.py",
@@ -161,6 +162,7 @@ _ROUTE_DOMAIN_PREFIXES = tuple(
     sorted(
         {
             "asset_library",
+            "asset_collect",
             "asset_registry",
             "asset_review",
             "auth_management",

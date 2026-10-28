@@ -147,7 +147,7 @@
       const description = makeElement('span', 'gw-omnibar-result-description', String(result?.description || result?.subtitle || ''));
       option.append(title, description);
       option.addEventListener('mousemove', () => selectIndex(index));
-      option.addEventListener('click', () => activateResult(index).catch(() => {}));
+      option.addEventListener('click', () => activateResult(index).catch(reportActivationFailure));
       resultList.appendChild(option);
     });
     emptyState.hidden = results.length > 0;
@@ -215,6 +215,10 @@
     errorState.hidden = false;
   }
 
+  function reportActivationFailure(error) {
+    console.error(error);
+  }
+
   async function activateResult(index = selectedIndex) {
     const result = results[index];
     if (!result) return false;
@@ -228,7 +232,7 @@
       try {
         let timer = null;
         const actionPromise = Promise.resolve(result.activate(result));
-        actionPromise.catch(() => {});
+        actionPromise.catch(reportActivationFailure);
         const timeoutPromise = new Promise((_, reject) => {
           timer = safeSetTimeout(() => {
             const error = new Error('Command activation timed out');
@@ -507,7 +511,7 @@
       event.preventDefault();
       event.stopPropagation();
       if (mode === 'agent') emitAgentSubmit();
-      else activateResult(mode === 'asset' && selectedIndex < 0 && results.length ? 0 : selectedIndex).catch(() => {});
+      else activateResult(mode === 'asset' && selectedIndex < 0 && results.length ? 0 : selectedIndex).catch(reportActivationFailure);
     });
     inputRow.append(makeElement('span', 'gw-omnibar-search-icon', '⌕'), input);
 

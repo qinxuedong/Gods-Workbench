@@ -300,7 +300,7 @@ def test_static_layer_has_no_legacy_integration_markers(repo_root: Path):
 # 凭据或完整历史授权账本。历史材料继续留在洁净源仓，不因测试需要复制进新仓。
 ADMISSION_METADATA_PATH = "tests/hygiene/fixtures/cleanroom_admission_metadata.json"
 ADMISSION_METADATA_SHA256 = (
-    "a4836d7d0b4f0e7e7765c70b16925128326b1b28128d9a8444c5465d95fc92d1"
+    "863098e27035b1df64503d7d575d567501c2e32b80b96c4a060df7d0afee0d9b"
 )
 QUARANTINED_PROMPT_ORIGINAL_PATH = (
     "web/system-prompts/infinite-canvas-prompt-templates.md"
@@ -320,6 +320,17 @@ def _load_admission_metadata(repo_root: Path) -> dict:
     assert metadata.get("release_authorized") is True
     assert _canonical_sha256(metadata_path) == ADMISSION_METADATA_SHA256
     return metadata
+
+
+def test_github_issue_338_file_scope_is_registered(repo_root: Path):
+    """QIN-422 收集接口及 PM 批准的旧断言更新列入准入登记。"""
+    metadata = _load_admission_metadata(repo_root)
+    records = [item for item in metadata.get("authorized_issue_file_sets", []) if item.get("issue") == 338]
+    assert len(records) == 1
+    assert {"gw/asset_registry/collector.py", "gw/api/routes_asset_collect.py",
+            "tests/contracts/assets/test_mvp1_t8a_collector.py",
+            "tests/frontend/mvp1-t8a-ui-collect-panel.test.mjs",
+            "tests/hygiene/test_structure_guardrails.py"} <= set(records[0]["files"])
 
 
 def test_github_issue_345_file_scope_is_registered(repo_root: Path):
