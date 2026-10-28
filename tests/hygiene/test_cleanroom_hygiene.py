@@ -300,7 +300,7 @@ def test_static_layer_has_no_legacy_integration_markers(repo_root: Path):
 # 凭据或完整历史授权账本。历史材料继续留在洁净源仓，不因测试需要复制进新仓。
 ADMISSION_METADATA_PATH = "tests/hygiene/fixtures/cleanroom_admission_metadata.json"
 ADMISSION_METADATA_SHA256 = (
-    "52d87a7a4ec7c62597c53766b4e30eeb6e4ccdd0f3beb42793162a7b5638a019"
+    "8a6ece1bb265f43fea237188ed7c100c75d5ca0f28b802f2e11353521575362b"
 )
 QUARANTINED_PROMPT_ORIGINAL_PATH = (
     "web/system-prompts/infinite-canvas-prompt-templates.md"
@@ -544,6 +544,27 @@ def test_github_issue_356_file_scope_is_registered(repo_root: Path):
         "tests/hygiene/test_cleanroom_hygiene.py",
     }
 
+
+def test_github_issue_386_file_scope_is_registered(repo_root: Path):
+    """#386（QIN-437）的收集溯源模块、前端接线与 node 测试按票面逐项登记。"""
+    metadata = _load_admission_metadata(repo_root)
+    registrations = [
+        item
+        for item in metadata.get("authorized_issue_file_sets", [])
+        if item.get("issue") == 386
+    ]
+    assert len(registrations) == 1
+    assert registrations[0].get("authorization_basis") == (
+        "GitHub Issue #386, 2026-10-28"
+    )
+    assert set(registrations[0].get("files", [])) == {
+        "web/js/modules/asset-manager.js",
+        "web/js/modules/asset-manager/collect-provenance.js",
+        "tests/frontend/mvp1-collect-provenance.test.mjs",
+        "tests/frontend/node-files.txt",
+        "tests/hygiene/fixtures/cleanroom_admission_metadata.json",
+        "tests/hygiene/test_cleanroom_hygiene.py",
+    }
 
 
 def test_github_issue_367_file_scope_is_registered(repo_root: Path):

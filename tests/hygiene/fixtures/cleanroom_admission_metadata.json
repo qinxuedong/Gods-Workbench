@@ -167,6 +167,18 @@
         "tests/hygiene/fixtures/cleanroom_admission_metadata.json",
         "tests/hygiene/test_cleanroom_hygiene.py"
       ]
+    },
+    {
+      "issue": 386,
+      "authorization_basis": "GitHub Issue #386, 2026-10-28",
+      "files": [
+        "web/js/modules/asset-manager.js",
+        "web/js/modules/asset-manager/collect-provenance.js",
+        "tests/frontend/mvp1-collect-provenance.test.mjs",
+        "tests/frontend/node-files.txt",
+        "tests/hygiene/fixtures/cleanroom_admission_metadata.json",
+        "tests/hygiene/test_cleanroom_hygiene.py"
+      ]
     }
   ],
   "accepted_roots": [
