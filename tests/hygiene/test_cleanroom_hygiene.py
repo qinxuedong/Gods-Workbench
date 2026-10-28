@@ -300,7 +300,7 @@ def test_static_layer_has_no_legacy_integration_markers(repo_root: Path):
 # 凭据或完整历史授权账本。历史材料继续留在洁净源仓，不因测试需要复制进新仓。
 ADMISSION_METADATA_PATH = "tests/hygiene/fixtures/cleanroom_admission_metadata.json"
 ADMISSION_METADATA_SHA256 = (
-    "e4302d90154add283082c6fd4ab40d0cb2c0b067c4479d910134c00033109e76"
+    "f79cea3bca14c2ddf45c49ab59895135c4e29cf5c2735c634f94b33c07616498"
 )
 QUARANTINED_PROMPT_ORIGINAL_PATH = (
     "web/system-prompts/infinite-canvas-prompt-templates.md"
@@ -416,6 +416,27 @@ def test_github_issue_354_file_scope_is_registered(repo_root: Path):
     )
     assert set(registrations[0].get("files", [])) == {
         "tests/contracts/assets/test_qin_431_restore_suffix_metadata.py",
+        "tests/hygiene/fixtures/cleanroom_admission_metadata.json",
+        "tests/hygiene/test_cleanroom_hygiene.py",
+    }
+
+
+def test_github_issue_368_file_scope_is_registered(repo_root: Path):
+    """#368（QIN-446）的前段工具注册、接口目录与卫生登记按票面逐项登记。"""
+    metadata = _load_admission_metadata(repo_root)
+    registrations = [
+        item
+        for item in metadata.get("authorized_issue_file_sets", [])
+        if item.get("issue") == 368
+    ]
+    assert len(registrations) == 1
+    assert registrations[0].get("authorization_basis") == (
+        "GitHub Issue #368, 2026-10-28"
+    )
+    assert set(registrations[0].get("files", [])) == {
+        "gw/agent_runtime/adapters/pipeline_tools.py",
+        "docs/contracts/AGENT-WORKBENCH-INTERFACE-CATALOG.yaml",
+        "tests/contracts/agent/test_mvp2_t4_pipeline_tools.py",
         "tests/hygiene/fixtures/cleanroom_admission_metadata.json",
         "tests/hygiene/test_cleanroom_hygiene.py",
     }
