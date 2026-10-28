@@ -300,7 +300,7 @@ def test_static_layer_has_no_legacy_integration_markers(repo_root: Path):
 # 凭据或完整历史授权账本。历史材料继续留在洁净源仓，不因测试需要复制进新仓。
 ADMISSION_METADATA_PATH = "tests/hygiene/fixtures/cleanroom_admission_metadata.json"
 ADMISSION_METADATA_SHA256 = (
-    "cbe93f0de2b79981a3e4e4185724b1a3f3e16e290faae099aea85545d69cbb9d"
+    "80f846ed6caecfd47ed8f841d69efc3d80fba518828c6d4a7d170f87cd466c45"
 )
 QUARANTINED_PROMPT_ORIGINAL_PATH = (
     "web/system-prompts/infinite-canvas-prompt-templates.md"
@@ -365,6 +365,26 @@ def test_github_issue_336_file_scope_is_registered(repo_root: Path):
         "tests/frontend/node-files.txt",
         "tests/e2e/test_mvp1_t6_search_jump_browser.py",
         "tests/contracts/projects/test_phase8_frontend_backend_api_gap.py",
+        "tests/hygiene/fixtures/cleanroom_admission_metadata.json",
+        "tests/hygiene/test_cleanroom_hygiene.py",
+    }
+
+
+def test_github_issue_387_file_scope_is_registered(repo_root: Path):
+    """#387（MVP1 试点测量报告）的报表字段与契约测试按票面逐项登记。"""
+    metadata = _load_admission_metadata(repo_root)
+    registrations = [
+        item
+        for item in metadata.get("authorized_issue_file_sets", [])
+        if item.get("issue") == 387
+    ]
+    assert len(registrations) == 1
+    assert registrations[0].get("authorization_basis") == (
+        "GitHub Issue #387, 2026-10-28"
+    )
+    assert set(registrations[0].get("files", [])) == {
+        "tools/asset_index_ingest.py",
+        "tests/contracts/assets/test_mvp1_ingest_report.py",
         "tests/hygiene/fixtures/cleanroom_admission_metadata.json",
         "tests/hygiene/test_cleanroom_hygiene.py",
     }

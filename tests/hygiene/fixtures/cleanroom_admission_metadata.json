@@ -59,6 +59,16 @@
         "tests/hygiene/fixtures/cleanroom_admission_metadata.json",
         "tests/hygiene/test_cleanroom_hygiene.py"
       ]
+    },
+    {
+      "issue": 387,
+      "authorization_basis": "GitHub Issue #387, 2026-10-28",
+      "files": [
+        "tools/asset_index_ingest.py",
+        "tests/contracts/assets/test_mvp1_ingest_report.py",
+        "tests/hygiene/fixtures/cleanroom_admission_metadata.json",
+        "tests/hygiene/test_cleanroom_hygiene.py"
+      ]
     }
   ],
   "accepted_roots": [
