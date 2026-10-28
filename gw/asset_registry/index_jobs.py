@@ -45,10 +45,6 @@ MAX_ENTRIES = 500000
 VIDEO_SUFFIXES = frozenset(
     {".mp4", ".mov", ".mkv", ".avi", ".webm", ".m4v", ".flv", ".wmv"}
 )
-# 扫描进度落盘节流：除每 25 项外，距上次落盘超过该秒数也落盘。小样本里单个
-# 视频探针/哈希可能耗时数秒，只按批次落盘会让运行中的 scanned 恒为 0。
-PROGRESS_MIN_INTERVAL_SECONDS = 0.2
-PROGRESS_BATCH_SIZE = 25
 TERMINAL = {"succeeded", "failed", "cancelled", "interrupted"}
 ACTIONS = {
     "pause": {"queued", "running"},
@@ -1085,9 +1081,6 @@ class IndexJobs:
                         "INDEX_FILE_ERRORS",
                         "扫描存在不可读取文件，未提交不完整索引",
                     )
-                # 提交必须与取消/暂停在同一线程锁内线性化：
-                # test_commit_wins_cancel_never_reports_cancelled 覆盖该不变量，
-                # 不能在提交期间放开任务锁。
                 result = self._commit(job, files)
                 job.update(
                     status="succeeded",
@@ -1184,13 +1177,7 @@ class IndexJobs:
     def _hash(self, job_id, attempt, path, expected):
         with self.condition:
             self._checkpoint(job_id, attempt)
-            # 与 scandir 分支一致：映射盘上 resolve() 返回 UNC 而 absolute() 保留
-            # 盘符，形态差本身不代表路径被篡改，故网络路径不按形态判失败。
-            # 真实变更仍由下方打开句柄后的 inode/dev/size 比对失败关闭。
-            if (
-                path.resolve() != path.absolute()
-                and not storage._is_network_path(str(path))
-            ):
+            if path.resolve() != path.absolute():
                 _error(403, "INDEX_PATH_CHANGED", "摘要源路径已改变")
             handle = path.open("rb")
             actual = os.fstat(handle.fileno())
@@ -1227,7 +1214,6 @@ class IndexJobs:
     def _scan(self, job_id, attempt, roots, request):
         files = []
         entries = 0
-        progress_saved_at = time.monotonic()
         scopes = request.get("scopes") or [
             {"root_id": root_id, "prefix": "", "storage_root_id": root_id}
             for root_id in request["roots"]
@@ -1343,21 +1329,11 @@ class IndexJobs:
                                 )
                             item["sha256"] = self._hash(job_id, attempt, path, info)
                         files.append(item)
-                        now = time.monotonic()
-                        if (
-                            len(files) % PROGRESS_BATCH_SIZE == 0
-                            or now - progress_saved_at >= PROGRESS_MIN_INTERVAL_SECONDS
-                        ):
-                            # 进度落盘是尽力而为：状态盘用 tmp + os.replace 原子写入，
-                            # Windows 上若恰有并发读取（轮询进度）正在打开目标文件，
-                            # 替换会抛 PermissionError。这里跳过本个节流点、下一批继续，
-                            # 绝不把状态盘抖动算成素材文件不可读而整单失败（INDEX_FILE_ERRORS）。
-                            with suppress(OSError):
-                                with self.condition:
-                                    job = self._checkpoint(job_id, attempt)
-                                    job["scanned"] = len(files)
-                                    self._save(job)
-                            progress_saved_at = now
+                        if len(files) % 25 == 0:
+                            with self.condition:
+                                job = self._checkpoint(job_id, attempt)
+                                job["scanned"] = len(files)
+                                self._save(job)
                     except OSError:
                         with self.condition:
                             job = self._checkpoint(job_id, attempt)

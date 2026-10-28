@@ -21,5 +21,5 @@
 
 1. **零二进制原则**：夹具仅允许纯文本 JSON 或结构化文本；绝对禁止包含图片、音频、视频、压缩包或未授权字体。
 2. **脱敏与无害化**：所有夹具数据均为确定性模拟载荷，不包含任何真实用户凭据、敏感密钥或实际生产内容。
-3. **不可变基线**：所有夹具文件必须完成洁净室准入登记，未经准入审核禁止擅自增删或改写。`docs/fixtures` 属于基础账本 `tests/hygiene/fixtures/cleanroom_admission_metadata.json` 的 `accepted_roots` 全局边界，该账本**默认不因新票改动**（仅全局准入边界变化时才动）；新增或变更的夹具一律登记在**本票分片** `tests/hygiene/fixtures/admissions/issue-<票号>.json`。分片格式、字段约束与本地自检见 [`tests/hygiene/fixtures/admissions/README.md`](../../tests/hygiene/fixtures/admissions/README.md)。
+3. **不可变基线**：所有夹具文件必须在 `tests/hygiene/fixtures/cleanroom_admission_metadata.json` 的 `accepted_roots` 中完整登记，未经准入审核禁止擅自增删或改写。
 
