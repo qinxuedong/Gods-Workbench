@@ -1177,7 +1177,13 @@ class IndexJobs:
     def _hash(self, job_id, attempt, path, expected):
         with self.condition:
             self._checkpoint(job_id, attempt)
-            if path.resolve() != path.absolute():
+            # 与 scandir 分支一致：映射盘上 resolve() 返回 UNC 而 absolute() 保留
+            # 盘符，形态差本身不代表路径被篡改，故网络路径不按形态判失败。
+            # 真实变更仍由下方打开句柄后的 inode/dev/size 比对失败关闭。
+            if (
+                path.resolve() != path.absolute()
+                and not storage._is_network_path(str(path))
+            ):
                 _error(403, "INDEX_PATH_CHANGED", "摘要源路径已改变")
             handle = path.open("rb")
             actual = os.fstat(handle.fileno())
