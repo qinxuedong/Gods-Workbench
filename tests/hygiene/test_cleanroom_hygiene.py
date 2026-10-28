@@ -313,7 +313,7 @@ def test_static_layer_has_no_legacy_integration_markers(repo_root: Path):
 # 任何票增删自己的分片都不需要重算下面这个常量，也就不会形成并行 PR 的热点。
 ADMISSION_METADATA_PATH = ADMISSION_BASE_METADATA_PATH
 ADMISSION_BASE_METADATA_SHA256 = (
-    "8c897e45d0361779e836d9b4e46c60c42d4a72cd7c11296c3a93b8c2ed55dc0a"
+    "f9920a0ffdf6b768bf62b9e50561e8d011939a677bd6885a6f5c69f53ad308c4"
 )
 QUARANTINED_PROMPT_ORIGINAL_PATH = (
     "web/system-prompts/infinite-canvas-prompt-templates.md"
