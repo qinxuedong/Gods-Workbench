@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="utf-8" />
+    <title>神工坊素材收集 · 设置</title>
+    <style>
+        :root {
+            color-scheme: dark;
+            --gw-bg: #0e0e10;
+            --gw-panel: #16161a;
+            --gw-border: #2c2c33;
+            --gw-gold: #d6b25c;
+            --gw-text: #ececec;
+            --gw-muted: #9a9aa4;
+        }
+        body {
+            margin: 0;
+            padding: 18px 20px 22px;
+            min-width: 420px;
+            background: var(--gw-bg);
+            color: var(--gw-text);
+            font: 14px/1.55 system-ui, "Microsoft YaHei", sans-serif;
+        }
+        h1 {
+            margin: 0 0 4px;
+            font-size: 16px;
+            letter-spacing: 0.02em;
+        }
+        p.hint {
+            margin: 0 0 16px;
+            color: #9a9aa4;
+            font-size: 12px;
+        }
+        fieldset {
+            margin: 0 0 14px;
+            padding: 12px 14px;
+            border: 1px solid var(--gw-border);
+            border-radius: 10px;
+            background: var(--gw-panel);
+        }
+        legend {
+            padding: 0 6px;
+            color: var(--gw-gold);
+            font-size: 12px;
+            letter-spacing: 0.06em;
+        }
+        label.row {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin: 6px 0;
+        }
+        select, button {
+            font: inherit;
+            color: var(--gw-text);
+            background: #1d1d22;
+            border: 1px solid var(--gw-border);
+            border-radius: 8px;
+            padding: 6px 10px;
+        }
+        button {
+            cursor: pointer;
+        }
+        button.primary {
+            border-color: var(--gw-gold);
+            color: #1a1408;
+            background: var(--gw-gold);
+            font-weight: 600;
+        }
+        button.primary:hover {
+            background: #e4c475;
+        }
+        .actions {
+            display: flex;
+            gap: 10px;
+            margin-top: 4px;
+        }
+        dl.status {
+            display: grid;
+            grid-template-columns: 96px 1fr;
+            gap: 4px 10px;
+            margin: 0;
+            font-size: 13px;
+        }
+        dl.status dt {
+            color: #9a9aa4;
+        }
+        dl.status dd {
+            margin: 0;
+            word-break: break-all;
+        }
+        p.feedback {
+            min-height: 18px;
+            margin: 10px 0 0;
+            font-size: 12px;
+        }
+        p.feedback[data-tone="ok"] {
+            color: #6fbf8f;
+        }
+        p.feedback[data-tone="error"] {
+            color: #e07b6a;
+        }
+        a {
+            color: var(--gw-gold);
+        }
+    </style>
+</head>
+<body>
+    <h1>神工坊素材收集</h1>
+    <p class="hint">仅本机收集：端点为 127.0.0.1 或 localhost 的 2077 端口，扩展不持有任何模型密钥。</p>
+
+    <fieldset>
+        <legend>工作台连接</legend>
+        <label class="row">
+            端点
+            <select id="endpoint">
+                <option value="http://127.0.0.1:2077">http://127.0.0.1:2077</option>
+                <option value="http://localhost:2077">http://localhost:2077</option>
+            </select>
+        </label>
+        <label class="row">
+            <input id="ctrl-right-click" type="checkbox" checked />
+            启用 Ctrl+右键快捷收集（关闭后只保留右键菜单）
+        </label>
+        <button id="pair" type="button">立即配对</button>
+    </fieldset>
+
+    <fieldset>
+        <legend>最近一次收集</legend>
+        <dl class="status">
+            <dt>状态</dt>
+            <dd id="last-status">暂无记录</dd>
+            <dt>耗时</dt>
+            <dd id="last-elapsed">—</dd>
+            <dt>地址</dt>
+            <dd id="last-url">—</dd>
+        </dl>
+    </fieldset>
+
+    <div class="actions">
+        <button id="save" type="button" class="primary">保存并配对</button>
+        <button id="open-app" type="button">打开工作台</button>
+    </div>
+    <p class="feedback" id="feedback"></p>
+
+    <script src="options.js"></script>
+</body>
+</html>

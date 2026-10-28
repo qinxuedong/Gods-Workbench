@@ -35,6 +35,7 @@ tests/frontend/mvp1-t5-governance-list.test.mjs
 tests/frontend/mvp1-t6-omnibar-asset.test.mjs
 tests/frontend/mvp1-t8a-dropzone.test.mjs
 tests/frontend/mvp1-t8a-ui-collect-panel.test.mjs
+tests/frontend/mvp1-t8b-extension.test.mjs
 tests/frontend/mvp2-t8-provenance.test.mjs
 tests/frontend/project-artifact-links.test.mjs
 tests/frontend/qin-197-ui-defects.test.mjs

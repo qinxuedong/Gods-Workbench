@@ -1,0 +1,22 @@
+{
+  "schema": "gw.cleanroom-admission-shard/v1",
+  "issue": 339,
+  "authorization_basis": "GitHub Issue #339, 2026-10-28",
+  "files": [
+    "clients/browser-extension/manifest.json",
+    "clients/browser-extension/background.js",
+    "clients/browser-extension/options.html",
+    "clients/browser-extension/options.js",
+    "clients/browser-extension/README.md",
+    "clients/browser-extension/src/target-resolver.js",
+    "clients/browser-extension/src/collect-client.js",
+    "clients/browser-extension/content/app-bridge.js",
+    "clients/browser-extension/content/collect-shortcut.js",
+    "tests/frontend/mvp1-t8b-extension.test.mjs",
+    "tests/frontend/node-files.txt",
+    "tests/hygiene/fixtures/admissions/issue-339.json"
+  ],
+  "admitted_files": [],
+  "accepted_test_files": [],
+  "notes": "QIN-423 / MVP1-T8b：Chrome/Edge MV3 素材收集扩展（右键菜单为主入口，Ctrl+右键可关）。按 hygiene v2 结构登记本票新增目录、node 契约测试与分片自身，不回填基础账本、不整文件覆盖他人登记。"
+}
