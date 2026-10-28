@@ -29,6 +29,7 @@ from gw.api.routes_ai import router as ai_router
 from gw.api.routes_asset_library import router as asset_library_router
 from gw.api.routes_asset_library_b4 import router as asset_library_b4_router
 from gw.api.routes_asset_registry import router as asset_registry_router
+from gw.api.routes_asset_collect import router as asset_collect_router
 from gw.api.routes_asset_registry import unassigned_router as asset_unassigned_router
 from gw.api.routes_asset_review_b6 import router as asset_review_b6_router
 from gw.api.routes_auth import router as auth_router
@@ -385,6 +386,7 @@ def create_app(*, agent_integration_factory=None) -> FastAPI:
     app.include_router(prompt_library_b8_router)
     app.include_router(public_b9_router)
     app.include_router(asset_registry_router)
+    app.include_router(asset_collect_router)
     app.include_router(asset_unassigned_router)
     app.include_router(jobs_router)
     app.include_router(observability_router)
