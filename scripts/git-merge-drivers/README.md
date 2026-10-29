@@ -4,7 +4,7 @@
 
 | 驱动名 | 脚本 | 适用文件 | 行为 |
 | --- | --- | --- | --- |
-| `hygiene-json` | `merge_json_registry.py` | 基础账本、全部票面分片 | JSON 结构化并集 + 哈希重算 |
+| `hygiene-json` | `merge_json_registry.py` | 基础账本、全部票面分片 | JSON 结构化并集 + 相对 base 选哈希 |
 | `hygiene-lines` | `merge_line_list.py` | `tests/frontend/node-files.txt` 等行式白名单 | 行并集 + 排序去重 |
 
 映射写在仓库根目录 `.gitattributes`，驱动实现只依赖 Python 3.11 标准库。
@@ -47,12 +47,23 @@ merge.hygiene-lines.driver = "<python>" "<仓库绝对路径>/scripts/git-merge-
    - 同一键的对象递归合并；顺序为 ours 原有顺序 + theirs 独有条目，稳定可复现。
 3. **纯字符串列表取并集后排序去重**（包括 `files` 与各票的 `files`）。
 4. **标量冲突保留 ours**；仅当 `schema` 不一致时以非零退出，让 Git 保留冲突。
-5. **哈希一律重算**：任何同时含 `path` 与 `sha256` 的对象，都按工作树真实文件内容用
-   `cleanroom_admission.canonical_sha256()` 重算——先把 CRLF / CR 归一为 LF 再取
-   SHA-256，**从不信任任何一侧的旧哈希**。
-   - 目标文件缺失时保留原哈希并向 stderr 告警，不伪造哈希；随后
-     `scripts/fix-hygiene-registry.py --check` 或卫生测试会显式失败。
-6. **输出格式**：UTF-8 原文、`ensure_ascii=False`、2 空格缩进、保留键序、结尾单个换行，
+5. **哈希按三路账本选择，merge 期间绝不从工作树重算**：
+   - 驱动运行在 `git merge` **之中**，被登记的目标文件在工作树里可能仍是 ours/base 的
+     旧内容（theirs 对同一 path 的内容改动可能尚未落到工作树）。此时若按工作树重算，
+     会把对方登记的正确哈希覆盖成陈旧值，且驱动仍退出 0。
+   - 因此任何同时含 `path` 与 `sha256` 的对象，其 `sha256` 取**相对 base 有变化的一侧**：
+     仅一侧变了用那侧；两侧都变且相同用该值；两侧都变且互不相同 → 致命冲突、非零退出
+     让 Git 保留冲突；base 缺失（含 add/add）且两侧不同同理。
+   - 目标文件缺失时不伪造哈希，保留账本值并向 stderr 告警，由 `--check` 显式失败。
+6. **合并后必须自检**：驱动不保证结果哈希等于合并结束后的工作树（它只按三路账本选择），
+   因此每次合并登记文件后都要运行
+
+   ```bash
+   python3 scripts/fix-hygiene-registry.py --check
+   ```
+
+   不一致时再运行 `--fix`——**`--fix` 才按最终工作树重算全部哈希**。
+7. **输出格式**：UTF-8 原文、`ensure_ascii=False`、2 空格缩进、保留键序、结尾单个换行，
    与仓库现有 `cleanroom_admission_metadata.json` / `issue-*.json` 完全一致。
 
 ### 基础账本钉由谁重写
@@ -112,10 +123,14 @@ python3 scripts/fix-hygiene-registry.py --fix
   git rebase origin/master   # 或 git merge origin/master
   ```
 
-  让驱动处理登记文件；若仍有残留问题，运行
-  `python3 scripts/fix-hygiene-registry.py --check` 查看并按提示 `--fix`。
-- **不替代人工判断**：驱动只做并集与哈希重算，不放宽 `cleanroom_admission.py` 的校验，
-  也不会删除、裁剪任何一方的票面分片或条目。
+  让驱动处理登记文件。
+- **合并后必须自检**：驱动在 merge 期间看不到最终工作树（目标文件可能滞后于 theirs 的
+  改动），只按 base/ours/theirs 账本条目选择 `sha256`。因此每次合并后运行
+  `python3 scripts/fix-hygiene-registry.py --check`；报不一致就运行 `--fix`
+  （`--fix` 按最终工作树重算全部哈希）。CI 与卫生测试也会跑同一套 `--check`。
+- **不替代人工判断**：驱动只做并集与哈希选择，不放宽 `cleanroom_admission.py` 的校验，
+  也不会删除、裁剪任何一方的票面分片或条目。两侧 `sha256` 相对 base 都变且不同时，
+  驱动不猜，直接以非零退出保留冲突。
 - **移动仓库后需重装**：本地配置保存的是安装时的绝对路径。
 
 ## 6. 相关文件
@@ -123,4 +138,5 @@ python3 scripts/fix-hygiene-registry.py --fix
 - `.gitattributes`：驱动映射；
 - `tests/hygiene/cleanroom_admission.py`：登记加载、结构与 `canonical_sha256` 唯一来源；
 - `tests/hygiene/fixtures/admissions/README.md`：分片结构与本票登记规范；
-- `tests/hygiene/test_merge_drivers.py`：并集、哈希重算、钉重写与真实 `git merge` 回归。
+- `tests/hygiene/test_merge_drivers.py`：并集、哈希选择（含「工作树滞后」真实 `git merge`
+  回归）、钉重写与自检兜底。

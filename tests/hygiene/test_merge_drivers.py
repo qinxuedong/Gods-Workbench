@@ -1,9 +1,10 @@
-"""洁净室登记合并驱动的并集、哈希重算与真实 Git 合并回归。
+"""洁净室登记合并驱动的并集、哈希选择与真实 Git 合并回归。
 
 覆盖 GitHub Issue #426 的合并驱动配套能力：
 
 - JSON 驱动：对象列表按键并集、纯字符串列表排序去重、标量冲突取 ours；
-- 哈希重算：完全忽略两侧陈旧 ``sha256``，按工作树内容（CRLF→LF）重算；
+- 哈希选择：合并期间**不**按工作树重算哈希，而是取相对 base 变更侧的 ``sha256``
+  （两侧都变且互不相同视为致命冲突）；工作树重算只属于 ``--fix``；
 - 基础账本钉：驱动写出账本后重写 ``ADMISSION_BASE_METADATA_SHA256``；
 - 行驱动：并集、排序、去重并保留顶部注释；
 - 真实仓库：配置驱动后 ``git merge`` 零冲突且结果自动并集；
@@ -27,7 +28,7 @@ if str(_DRIVER_DIR) not in sys.path:
 
 import merge_json_registry  # noqa: E402
 import merge_line_list  # noqa: E402
-from merge_common import BASE_LEDGER_PATH, dump_json  # noqa: E402
+from merge_common import BASE_LEDGER_PATH, canonical_sha256, dump_json  # noqa: E402
 
 FIX_COMMAND = "python3 scripts/fix-hygiene-registry.py --fix"
 
@@ -54,10 +55,24 @@ def _write_file(root: Path, relative: str, content: bytes) -> Path:
     return path
 
 
-def _merge(ours: dict, theirs: dict, root: Path) -> tuple[dict, list[str]]:
-    merged, fatal, _warnings = merge_json_registry.merge_payloads(ours, theirs, root)
+def _merge(
+    ours: dict, theirs: dict, root: Path, base: dict | None = None
+) -> tuple[dict, list[str]]:
+    merged, fatal, _warnings = merge_json_registry.merge_payloads(
+        ours, theirs, root, base
+    )
     assert not fatal, fatal
     return merged, fatal
+
+
+def _merge_result(
+    ours: dict, theirs: dict, root: Path, base: dict | None = None
+) -> tuple[dict, list[str], list[str]]:
+    return merge_json_registry.merge_payloads(ours, theirs, root, base)
+
+
+def _ledger_with(entries: list[dict]) -> dict:
+    return {"schema": "gw.cleanroom-admission/v1", "admitted_files": entries}
 
 
 def test_json_driver_unions_lists_and_dedupes_strings(tmp_path: Path):
@@ -119,26 +134,81 @@ def test_json_driver_unions_lists_and_dedupes_strings(tmp_path: Path):
     assert admitted["docs/contracts/A.yaml"]["classification"] == "frozen_interface_contract"
 
 
-def test_json_driver_recomputes_hashes_from_working_tree(tmp_path: Path):
+def test_json_driver_takes_changed_side_hash_not_working_tree(tmp_path: Path):
+    """回归 #478：工作树仍滞后时，必须采用 theirs（变更侧）登记的正确哈希。"""
     target = _write_file(tmp_path, "docs/contracts/A.yaml", b"line1\r\nline2\r\n")
-    expected = hashlib.sha256(b"line1\nline2\n").hexdigest()
-    ours = {
-        "schema": "gw.cleanroom-admission/v1",
-        "admitted_files": [_entry("docs/contracts/A.yaml", sha="a" * 64)],
-        "authorized_test_files": [
-            {"path": "docs/contracts/A.yaml", "authorization_basis": "x", "sha256": "b" * 64}
-        ],
-    }
-    theirs = {
-        "schema": "gw.cleanroom-admission/v1",
-        "admitted_files": [_entry("docs/contracts/A.yaml", sha="c" * 64)],
-    }
+    stale_hash = hashlib.sha256(b"line1\nline2\n").hexdigest()
+    theirs_hash = "c" * 64
 
-    merged, _ = _merge(ours, theirs, tmp_path)
+    base = _ledger_with([_entry("docs/contracts/A.yaml", sha=stale_hash)])
+    ours = _ledger_with([_entry("docs/contracts/A.yaml", sha=stale_hash)])
+    theirs = _ledger_with([_entry("docs/contracts/A.yaml", sha=theirs_hash)])
 
-    assert merged["admitted_files"][0]["sha256"] == expected
-    assert merged["authorized_test_files"][0]["sha256"] == expected
-    assert target.read_bytes() == b"line1\r\nline2\r\n"
+    merged, _ = _merge(ours, theirs, tmp_path, base)
+
+    # 工作树内容仍是旧内容：驱动若按 WT 重算就会写回 stale_hash。
+    assert stale_hash == canonical_sha256(target)
+    assert merged["admitted_files"][0]["sha256"] == theirs_hash
+
+
+def test_json_driver_keeps_ours_hash_when_only_ours_changed(tmp_path: Path):
+    _write_file(tmp_path, "docs/contracts/A.yaml", b"line1\r\nline2\r\n")
+    base_hash = "a" * 64
+    ours_hash = "b" * 64
+
+    base = _ledger_with([_entry("docs/contracts/A.yaml", sha=base_hash)])
+    ours = _ledger_with([_entry("docs/contracts/A.yaml", sha=ours_hash)])
+    theirs = _ledger_with([_entry("docs/contracts/A.yaml", sha=base_hash)])
+
+    merged, _ = _merge(ours, theirs, tmp_path, base)
+
+    assert merged["admitted_files"][0]["sha256"] == ours_hash
+
+
+def test_json_driver_takes_common_hash_when_both_sides_changed_identically(tmp_path: Path):
+    _write_file(tmp_path, "docs/contracts/A.yaml", b"a: 1\n")
+    base = _ledger_with([_entry("docs/contracts/A.yaml", sha="a" * 64)])
+    ours = _ledger_with([_entry("docs/contracts/A.yaml", sha="b" * 64)])
+    theirs = _ledger_with([_entry("docs/contracts/A.yaml", sha="b" * 64)])
+
+    merged, _ = _merge(ours, theirs, tmp_path, base)
+
+    assert merged["admitted_files"][0]["sha256"] == "b" * 64
+
+
+def test_json_driver_fails_when_both_sides_changed_hash_differently(tmp_path: Path):
+    """两侧都相对 base 改了哈希且互不相同：不猜，交回 Git 保留冲突。"""
+    _write_file(tmp_path, "docs/contracts/A.yaml", b"a: 1\n")
+    base = _ledger_with([_entry("docs/contracts/A.yaml", sha="a" * 64)])
+    ours = _ledger_with([_entry("docs/contracts/A.yaml", sha="b" * 64)])
+    theirs = _ledger_with([_entry("docs/contracts/A.yaml", sha="c" * 64)])
+
+    _merged, fatal = _merge_result(ours, theirs, tmp_path, base)[:2]
+
+    assert fatal, "两侧哈希都变且不同必须视为致命冲突"
+    assert "sha256" in fatal[0]
+
+
+def test_json_driver_fails_when_base_missing_and_hashes_differ(tmp_path: Path):
+    """无基线时无法判定变更侧，同样以非零退出交回 Git。"""
+    _write_file(tmp_path, "docs/contracts/A.yaml", b"a: 1\n")
+    ours = _ledger_with([_entry("docs/contracts/A.yaml", sha="b" * 64)])
+    theirs = _ledger_with([_entry("docs/contracts/A.yaml", sha="c" * 64)])
+
+    _merged, fatal = _merge_result(ours, theirs, tmp_path, None)[:2]
+
+    assert fatal, "基线缺失且两侧哈希不同必须视为致命冲突"
+
+
+def test_json_driver_warns_on_missing_target_without_fabricating_hash(tmp_path: Path):
+    ours = _ledger_with([_entry("docs/contracts/A.yaml", sha="b" * 64)])
+    theirs = _ledger_with([_entry("docs/contracts/A.yaml", sha="b" * 64)])
+
+    merged, fatal, warnings = _merge_result(ours, theirs, tmp_path, None)
+
+    assert not fatal
+    assert merged["admitted_files"][0]["sha256"] == "b" * 64
+    assert any("目标文件缺失" in warning for warning in warnings)
 
 
 def test_json_driver_rejects_schema_mismatch(tmp_path: Path):
@@ -192,8 +262,6 @@ def test_base_ledger_driver_rewrites_pin(tmp_path: Path, monkeypatch):
         pin_path.read_text(encoding="utf-8"),
     )
     assert match, "钉常量未被找到"
-    from merge_common import canonical_sha256
-
     assert match.group(1) == canonical_sha256(ledger_path)
 
 
@@ -283,7 +351,12 @@ def test_real_git_merge_uses_configured_drivers(tmp_path: Path):
     # 分支 ours：账本追加 A，node 清单追加 a。
     assert _git(tmp_path, "checkout", "--quiet", "-b", "ours").returncode == 0
     ours_ledger = json.loads(ledger_path.read_text(encoding="utf-8"))
-    ours_ledger["admitted_files"] = [_entry("docs/contracts/A.yaml")]
+    ours_ledger["admitted_files"] = [
+        _entry(
+            "docs/contracts/A.yaml",
+            sha=canonical_sha256(tmp_path / "docs" / "contracts" / "A.yaml"),
+        )
+    ]
     _write_json(ledger_path, ours_ledger)
     _write_file(
         tmp_path,
@@ -296,7 +369,12 @@ def test_real_git_merge_uses_configured_drivers(tmp_path: Path):
     # 分支 theirs：从同一基线出发，账本追加 B，node 清单追加 b。
     assert _git(tmp_path, "checkout", "--quiet", "-b", "theirs", base_sha).returncode == 0
     theirs_ledger = json.loads(ledger_path.read_text(encoding="utf-8"))
-    theirs_ledger["admitted_files"] = [_entry("docs/contracts/B.yaml")]
+    theirs_ledger["admitted_files"] = [
+        _entry(
+            "docs/contracts/B.yaml",
+            sha=canonical_sha256(tmp_path / "docs" / "contracts" / "B.yaml"),
+        )
+    ]
     _write_json(ledger_path, theirs_ledger)
     _write_file(
         tmp_path,
@@ -314,8 +392,6 @@ def test_real_git_merge_uses_configured_drivers(tmp_path: Path):
     merged = json.loads(ledger_path.read_text(encoding="utf-8"))
     paths = [item["path"] for item in merged["admitted_files"]]
     assert paths == ["docs/contracts/A.yaml", "docs/contracts/B.yaml"]
-    from merge_common import canonical_sha256
-
     for entry in merged["admitted_files"]:
         target = tmp_path.joinpath(*entry["path"].split("/"))
         assert entry["sha256"] == canonical_sha256(target)
@@ -336,6 +412,80 @@ def test_real_git_merge_uses_configured_drivers(tmp_path: Path):
     assert pin_match and pin_match.group(1) == canonical_sha256(ledger_path), (
         "基础账本合并后必须重写 ADMISSION_BASE_METADATA_SHA256"
     )
+
+
+def _init_registry_repo(root: Path, ledger: dict) -> tuple[Path, str]:
+    """写入驱动映射 + 基础账本 + 钉文件，初始化仓库并返回（账本路径, 基线提交）。"""
+    _write_file(
+        root, ".gitattributes", f"{BASE_LEDGER_PATH} merge=hygiene-json\n".encode()
+    )
+    ledger_path = root.joinpath(*BASE_LEDGER_PATH.split("/"))
+    _write_json(ledger_path, ledger)
+    pin_path = root / "tests" / "hygiene" / "test_cleanroom_hygiene.py"
+    pin_path.parent.mkdir(parents=True, exist_ok=True)
+    pin_path.write_text(
+        'ADMISSION_BASE_METADATA_SHA256 = (\n    "' + "0" * 64 + '"\n)\n',
+        encoding="utf-8",
+    )
+    assert _git(root, "init", "--quiet").returncode == 0
+    assert _git(root, "add", "-A").returncode == 0
+    assert _git(root, "commit", "--quiet", "-m", "base").returncode == 0
+    _configure_drivers(root)
+    return ledger_path, _git(root, "rev-parse", "HEAD").stdout.strip()
+
+
+def test_real_git_merge_keeps_theirs_hash_when_working_tree_lags(tmp_path: Path):
+    """回归 #478：驱动不得把对方正确哈希覆盖成滞后的工作树哈希。
+
+    base：A.yaml = OLD，账本登记 OLD；ours：只追加无关条目；theirs：改 A.yaml 为 NEW
+    并登记 NEW。合并后账本必须是 NEW，而不是 merge 瞬间工作树的 OLD。
+    """
+    old_content = b"a: 1\n"
+    new_content = b"a: 1\nb: 2\n"
+    a_path = _write_file(tmp_path, "docs/contracts/A.yaml", old_content)
+    old_hash = canonical_sha256(a_path)
+    ledger = {
+        "schema": "gw.cleanroom-admission/v1",
+        "as_of": "2026-10-28",
+        "authorized_issue_file_sets": [],
+        "admitted_files": [_entry("docs/contracts/A.yaml", sha=old_hash)],
+        "accepted_test_files": [],
+    }
+    ledger_path, base_sha = _init_registry_repo(tmp_path, ledger)
+
+    # ours：A.yaml 与其哈希都不动，只追加无关条目 B.yaml。
+    assert _git(tmp_path, "checkout", "--quiet", "-b", "ours").returncode == 0
+    b_path = _write_file(tmp_path, "docs/contracts/B.yaml", b"b: 2\n")
+    ours_ledger = json.loads(ledger_path.read_text(encoding="utf-8"))
+    ours_ledger["admitted_files"].append(
+        _entry("docs/contracts/B.yaml", sha=canonical_sha256(b_path))
+    )
+    _write_json(ledger_path, ours_ledger)
+    assert _git(tmp_path, "add", "-A").returncode == 0
+    assert _git(tmp_path, "commit", "--quiet", "-m", "ours").returncode == 0
+
+    # theirs：改 A.yaml 内容并登记新哈希。
+    assert _git(tmp_path, "checkout", "--quiet", "-b", "theirs", base_sha).returncode == 0
+    _write_file(tmp_path, "docs/contracts/A.yaml", new_content)
+    new_hash = canonical_sha256(a_path)
+    assert new_hash != old_hash
+    theirs_ledger = json.loads(ledger_path.read_text(encoding="utf-8"))
+    theirs_ledger["admitted_files"] = [_entry("docs/contracts/A.yaml", sha=new_hash)]
+    _write_json(ledger_path, theirs_ledger)
+    assert _git(tmp_path, "add", "-A").returncode == 0
+    assert _git(tmp_path, "commit", "--quiet", "-m", "theirs").returncode == 0
+
+    assert _git(tmp_path, "checkout", "--quiet", "ours").returncode == 0
+    merge = _git(tmp_path, "merge", "--no-edit", "theirs")
+    assert merge.returncode == 0, merge.stdout + merge.stderr
+    assert "CONFLICT" not in merge.stdout + merge.stderr
+
+    assert a_path.read_bytes() == new_content
+    merged = json.loads(ledger_path.read_text(encoding="utf-8"))
+    admitted = {item["path"]: item for item in merged["admitted_files"]}
+    assert admitted["docs/contracts/A.yaml"]["sha256"] == new_hash
+    assert admitted["docs/contracts/A.yaml"]["sha256"] == canonical_sha256(a_path)
+    assert admitted["docs/contracts/B.yaml"]["sha256"] == canonical_sha256(b_path)
 
 
 def test_repository_registry_passes_check(repo_root: Path):

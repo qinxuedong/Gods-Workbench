@@ -25,11 +25,28 @@
   ``issue``（authorized_issue_file_sets）、``source_path``（excluded_artifacts）；
 - 纯字符串列表取并集后排序去重；
 - 标量冲突保留 ours（``schema`` 不一致则视为致命冲突）；
-- 所有带 ``path`` + ``sha256`` 的对象，其 ``sha256`` 一律按工作树真实内容重算，
-  **从不信任任何一侧的旧哈希**；目标文件缺失时保留原哈希并告警，交给校验脚本
-  显式失败；
-- 若被合并的是基础账本，写出结果后同步重写 ``test_cleanroom_hygiene.py`` 里的
-  ``ADMISSION_BASE_METADATA_SHA256``。
+- ``sha256`` 不走「保留 ours」：见下方「哈希时机」。
+
+哈希时机（重要）
+----------------
+驱动运行于 ``git merge`` 之中，被登记的目标文件在工作树里可能仍是 ours/base 的旧
+内容（theirs 对同一 path 的内容改动尚未落到工作树）。因此**合并期间绝不从工作树
+重算哈希**，否则会把对方登记的正确哈希覆盖成陈旧值。
+
+改为按 base/ours/theirs 三路账本条目**选择** ``sha256``，取相对 base 有变化的一侧：
+
+- 仅一侧相对 base 变化 → 用那一侧；
+- 两侧都变且相同 → 用该值；
+- 两侧都变且互不相同 → 致命冲突，非零退出让 Git 保留冲突；
+- base 缺失（或该 path 在 base 中无条目）且两侧不同 → 同样致命冲突，无法判定变更侧。
+
+目标文件缺失时不伪造哈希，仅告警。合并完成后**必须**运行::
+
+    python3 scripts/fix-hygiene-registry.py --check
+
+不一致时再运行 ``--fix``（只有 ``--fix`` 才按最终工作树重算全部哈希）。
+若被合并的是基础账本，写出结果后同步重写 ``test_cleanroom_hygiene.py`` 里的
+``ADMISSION_BASE_METADATA_SHA256``。
 """
 
 from __future__ import annotations
@@ -40,7 +57,7 @@ from pathlib import Path, PurePosixPath
 from typing import Any
 
 import merge_common
-from merge_common import MergeDriverError, canonical_sha256
+from merge_common import MergeDriverError
 
 KEY_CANDIDATES = ("path", "issue", "source_path")
 
@@ -75,6 +92,7 @@ def _merge_string_list(ours: list[str], theirs: list[str]) -> list[str]:
 def _merge_lists(
     ours: list[Any],
     theirs: list[Any],
+    base: Any,
     label: str,
     fatal: list[str],
     warnings: list[str],
@@ -86,13 +104,18 @@ def _merge_lists(
     if _all_dicts(ours) and _all_dicts(theirs):
         key = _common_key([*ours, *theirs])
         if key is not None:
+            base_items: dict[Any, dict[str, Any]] = {}
+            if isinstance(base, list):
+                for item in base:
+                    if isinstance(item, dict) and key in item:
+                        base_items.setdefault(item[key], item)
             merged_items: list[dict[str, Any]] = []
             positions: dict[Any, int] = {}
             for item in ours:
                 item_key = item.get(key)
                 if item_key in positions:
-                    # 同一侧自身重复不应静默丢数据：交给校验脚本报错。
-                    warnings.append(f"{label}: ours 内重复键 {key}={item_key!r}")
+                    # 同一侧自身重复不应静默丢数据：以非零退出让 Git 保留冲突。
+                    fatal.append(f"{label}: ours 内重复键 {key}={item_key!r}")
                     continue
                 positions[item_key] = len(merged_items)
                 merged_items.append(copy.deepcopy(item))
@@ -103,6 +126,7 @@ def _merge_lists(
                     merged_items[index] = _merge_dicts(
                         merged_items[index],
                         item,
+                        base_items.get(item_key),
                         f"{label}[{key}={item_key!r}]",
                         fatal,
                         warnings,
@@ -117,13 +141,44 @@ def _merge_lists(
     return copy.deepcopy(ours)
 
 
+def _select_sha256(
+    base: Any,
+    ours: Any,
+    theirs: Any,
+    label: str,
+    fatal: list[str],
+) -> Any:
+    """按「取相对 base 有变化的一侧」选择 ``sha256``。
+
+    ``base`` 为 ``None`` 表示基线缺失（add/add 或该条目在 base 中不存在），此时无法
+    判定变更侧。两侧相对 base 都变且互不相同是致命冲突：驱动不猜，留给
+    ``fix-hygiene-registry.py --fix`` 按最终工作树重算。
+    """
+    if ours == theirs:
+        return copy.deepcopy(ours)
+    if not isinstance(ours, str) or not isinstance(theirs, str):
+        return copy.deepcopy(ours)
+    if base == ours:
+        return copy.deepcopy(theirs)
+    if base == theirs:
+        return copy.deepcopy(ours)
+    fatal.append(
+        f"{label}: sha256 两侧相对 base 都变化且互不相同"
+        f"（base={base!r}, ours={ours!r}, theirs={theirs!r}），"
+        "请人工确认后运行 scripts/fix-hygiene-registry.py --fix"
+    )
+    return copy.deepcopy(ours)
+
+
 def _merge_dicts(
     ours: dict[str, Any],
     theirs: dict[str, Any],
+    base: Any,
     label: str,
     fatal: list[str],
     warnings: list[str],
 ) -> dict[str, Any]:
+    base_map = base if isinstance(base, dict) else {}
     merged: dict[str, Any] = {}
     for key in _ordered_keys(ours, theirs):
         item_label = f"{label}.{key}" if label else key
@@ -135,6 +190,7 @@ def _merge_dicts(
             continue
         left = ours[key]
         right = theirs[key]
+        base_value = base_map.get(key)
         if key == "schema":
             if left != right:
                 fatal.append(
@@ -142,16 +198,23 @@ def _merge_dicts(
                 )
             merged[key] = copy.deepcopy(left)
             continue
+        if key == "sha256" and isinstance(ours.get("path"), str):
+            # 目标文件的工作树内容在 merge 期间可能滞后，只能按三路账本选哈希。
+            merged[key] = _select_sha256(base_value, left, right, item_label, fatal)
+            continue
         if isinstance(left, list) and isinstance(right, list):
             merged[key] = _merge_lists(
                 left,
                 right,
+                base_value,
                 item_label,
                 fatal,
                 warnings,
             )
         elif isinstance(left, dict) and isinstance(right, dict):
-            merged[key] = _merge_dicts(left, right, item_label, fatal, warnings)
+            merged[key] = _merge_dicts(
+                left, right, base_value, item_label, fatal, warnings
+            )
         elif left == right:
             merged[key] = copy.deepcopy(left)
         elif isinstance(left, (dict, list)) or isinstance(right, (dict, list)):
@@ -163,32 +226,36 @@ def _merge_dicts(
     return merged
 
 
-def _rehash_entries(payload: Any, repo_root: Path, warnings: list[str], label: str = "") -> None:
-    """递归重算所有 ``path`` + ``sha256`` 对象的哈希。"""
+def _warn_missing_targets(payload: Any, repo_root: Path, warnings: list[str], label: str = "") -> None:
+    """告警缺失的登记目标；不改动任何 ``sha256``（重算是 ``--fix`` 的职责）。"""
     if isinstance(payload, dict):
         path_value = payload.get("path")
         hash_value = payload.get("sha256")
         if isinstance(path_value, str) and isinstance(hash_value, str):
             target = repo_root.joinpath(*PurePosixPath(path_value).parts)
-            if target.is_file():
-                payload["sha256"] = canonical_sha256(target)
-            else:
+            if not target.is_file():
                 warnings.append(
-                    f"{label or path_value}: 目标文件缺失，保留原 sha256，等待校验失败"
+                    f"{label or path_value}: 目标文件缺失，保留账本 sha256，等待校验失败"
                 )
         for key, value in payload.items():
-            _rehash_entries(value, repo_root, warnings, f"{label}.{key}" if label else key)
+            _warn_missing_targets(
+                value, repo_root, warnings, f"{label}.{key}" if label else key
+            )
     elif isinstance(payload, list):
         for index, value in enumerate(payload):
-            _rehash_entries(value, repo_root, warnings, f"{label}[{index}]")
+            _warn_missing_targets(value, repo_root, warnings, f"{label}[{index}]")
 
 
 def merge_payloads(
     ours: Any,
     theirs: Any,
     repo_root: Path,
+    base: Any = None,
 ) -> tuple[dict[str, Any], list[str], list[str]]:
-    """合并两份已解析的 JSON，返回 ``(结果, 致命问题, 告警)``。"""
+    """合并两份已解析的 JSON，返回 ``(结果, 致命问题, 告警)``。
+
+    ``base`` 为基线内容（``%O``）；缺失时传 ``None``，此时无法判定 sha256 的变更侧。
+    """
     if ours is None and theirs is None:
         raise MergeDriverError("两侧 JSON 均为空，无法合并")
     fatal: list[str] = []
@@ -200,10 +267,10 @@ def merge_payloads(
     elif not isinstance(ours, dict) or not isinstance(theirs, dict):
         raise MergeDriverError("登记文件顶层必须是 JSON 对象")
     else:
-        merged = _merge_dicts(ours, theirs, "", fatal, warnings)
+        merged = _merge_dicts(ours, theirs, base, "", fatal, warnings)
     if fatal:
         return merged, fatal, warnings
-    _rehash_entries(merged, repo_root, warnings)
+    _warn_missing_targets(merged, repo_root, warnings)
     return merged, fatal, warnings
 
 
@@ -230,7 +297,7 @@ def main(argv: list[str]) -> int:
         base = merge_common.read_json(base_path)
         ours = merge_common.read_json(ours_path)
         theirs = merge_common.read_json(theirs_path)
-        merged, fatal, warnings = merge_payloads(ours, theirs, repo_root)
+        merged, fatal, warnings = merge_payloads(ours, theirs, repo_root, base)
     except MergeDriverError as exc:
         print(f"[merge-json] 合并失败: {exc}", file=sys.stderr)
         return 1
@@ -241,19 +308,24 @@ def main(argv: list[str]) -> int:
             print(f"[merge-json] 冲突: {problem}", file=sys.stderr)
         return 1
 
-    # base 仅用于诊断：本驱动按需求取 ours ∪ theirs，不复活双方都删除的条目。
     if base is not None and not isinstance(base, dict):
-        print("[merge-json] 警告: 基线不是 JSON 对象，已忽略", file=sys.stderr)
+        print("[merge-json] 警告: 基线不是 JSON 对象，按无基线处理", file=sys.stderr)
 
     merge_common.write_text(ours_path, merge_common.dump_json(merged))
     if merge_common.is_base_ledger(rel_path):
         # Git 传入的 %A 可能是临时文件；直接以刚写出的合并结果计算钉值。
         if not merge_common.update_base_pin(repo_root, ours_path):
             print(
-                "[merge-json] 警告: 未能更新 ADMISSION_BASE_METADATA_SHA256，"
+                "[merge-json] 冲突: 未能更新 ADMISSION_BASE_METADATA_SHA256，"
                 "请运行 scripts/fix-hygiene-registry.py --fix",
                 file=sys.stderr,
             )
+            return 1
+    print(
+        "[merge-json] 提示: 合并完成后请运行 "
+        "python3 scripts/fix-hygiene-registry.py --check",
+        file=sys.stderr,
+    )
     return 0
 
 
