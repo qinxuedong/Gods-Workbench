@@ -175,20 +175,21 @@
 
       <div class="flex items-center space-x-4 shrink-0">
         <div class="flex items-center space-x-2">
-          <span class="gw-type-body-sm font-mono text-slate-400 font-bold">FLOW</span>
+          <span class="gw-type-body-sm font-mono text-slate-400 font-bold">FLUX</span>
           <div class="hw-fader-track-horizontal w-28">
             <div class="hw-fader-glow-bar" style="width: 0%;"></div>
             <div class="hw-fader-thumb-3d" style="left: 0%;"></div>
           </div>
-          <span class="gw-type-body-sm font-mono text-amber-300 font-bold" id="flowPipelineReadout" data-gw-degradation="not_integrated" title="真实数据源：GET /api/observability/health">未接入</span>
+          <span class="gw-type-body-sm font-mono text-amber-300 font-bold" id="gpuUtilReadout" data-gw-degradation="not_integrated" title="真实数据源：GET /api/observability/health 的 gpu_telemetry 检查项">未接入</span>
         </div>
+
         <div class="flex items-center space-x-2">
-          <span class="gw-type-body-sm font-mono text-slate-400 font-bold">BUFFER</span>
+          <span class="gw-type-body-sm font-mono text-slate-400 font-bold">VRAM</span>
           <div class="hw-fader-track-horizontal w-24">
             <div class="hw-fader-glow-bar" style="width: 0%; background: linear-gradient(90deg, #38bdf8 0%, #2dd4bf 100%);"></div>
             <div class="hw-fader-thumb-3d" style="left: 0%;"></div>
           </div>
-          <span class="gw-type-body-sm font-mono text-amber-300 font-bold" id="bufferReadout" data-gw-degradation="not_integrated" title="真实数据源：GET /api/observability/health">未接入</span>
+          <span class="gw-type-body-sm font-mono text-amber-300 font-bold" id="gpuVramReadout" data-gw-degradation="not_integrated" title="真实数据源：GET /api/observability/health 的 gpu_telemetry 检查项">未接入</span>
         </div>
       </div>
 
