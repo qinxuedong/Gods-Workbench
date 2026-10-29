@@ -490,6 +490,7 @@
       }
       clearActiveRun();
       setStatus(`任务不可用：${error.message}`, 'error');
+      setProgressError(`任务不可用：${error.message}`, 'error');
     } finally {
       setBusy(false);
       syncControls();
@@ -514,6 +515,7 @@
     state.gateSignature = '';
     state.gateBusy.clear();
     state.gateLoadError = '';
+    resetProgress();
     if (byId('agentTraceStream')) byId('agentTraceStream').replaceChildren();
     if (byId('agentTaskReview')) byId('agentTaskReview').hidden = true;
     if (byId('agentTaskClarification')) byId('agentTaskClarification').hidden = true;
@@ -543,14 +545,20 @@
     state.lastVersion = Number.isInteger(run.version) ? run.version : state.lastVersion;
     const label = `${run.status}${run.stage ? ` · ${run.stage}` : ''} · 版本 ${run.version} · 调用 ${run.cost_ledger?.recorded_model_calls ?? 0} 次 · 费用未知`;
     setStatus(label, run.status === 'failed' ? 'error' : 'info');
+    progressState.refreshError = '';
+    renderProgress();
+    // 事件接口失败不拖垮其余面板：步骤区给出明确错误态（不白屏），不重发模型请求。
     await Promise.all([
-      refreshEvents(runId, generation, sequence),
+      refreshEvents(runId, generation, sequence).catch(error => {
+        if (isCurrentRefresh(runId, generation, sequence)) progressState.refreshError = `任务步骤暂时不可读：${error.message}`;
+      }),
       refreshCandidate(runId, generation, sequence),
       refreshClarifications(runId, generation, sequence),
       refreshExports(runId, generation, sequence),
       refreshGates(runId, generation, sequence)
     ]);
     if (!isCurrentRefresh(runId, generation, sequence)) return;
+    renderProgress();
     syncControls();
   }
 
@@ -571,6 +579,7 @@
       if (event.event_id) row.dataset.eventId = event.event_id;
       row.textContent = `${event.stage || '任务'} · ${event.summary || event.event_type || '状态更新'}`;
       stream.appendChild(row);
+      collectProgressEvent(event);
     }
     if (typeof data.cursor === 'string' && data.cursor) state.eventCursor = data.cursor;
     while (stream.children.length > 80) {
@@ -680,6 +689,7 @@
       } catch (error) {
         if (isCurrentRefresh(runId, generation, sequence)) {
           setStatus(`状态暂时不可读：${error.message}；没有重发模型请求。`, 'pending');
+          setProgressError(`任务状态暂时不可读：${error.message}`, 'pending');
         }
       }
     }, 2000);
@@ -709,10 +719,11 @@
         if (field?.value === jobId) field.value = '';
       }
       if (state.jobId === jobId) clearActiveRun();
-      setStatus(
-        error.status === 404 ? `上次任务已不存在，已清除失效编号：${error.message}` : `上次任务状态暂时不可读：${error.message}`,
-        error.status === 404 ? 'error' : 'pending'
-      );
+      const restoreMessage = error.status === 404
+        ? `上次任务已不存在，已清除失效编号：${error.message}`
+        : `上次任务状态暂时不可读：${error.message}`;
+      setStatus(restoreMessage, error.status === 404 ? 'error' : 'pending');
+      setProgressError(restoreMessage, error.status === 404 ? 'error' : 'pending');
     } finally {
       setBusy(false);
       syncControls();
@@ -775,6 +786,204 @@
       ...mutationBody(),
       config_snapshot_id: profile.config_snapshot_id
     });
+  }
+
+  // ---- MVP2-T7c 任务进度与失败状态（QIN-459 / #417）----
+  // 进度面板完全由「可重新获取的 run + 事件流」推导：重启后从 version=0 重拉事件，
+  // 即可重建相同的步骤与失败状态。所有动态文本一律 textContent，杜绝 HTML 注入。
+  const STAGE_ORDER = ['brief', 'outline_characters', 'full_script', 'scene_script', 'storyboard_text', 'delivery_check'];
+  const STAGE_LABELS = {
+    brief: '简报',
+    outline_characters: '大纲人物',
+    full_script: '完整剧本',
+    scene_script: '分场',
+    storyboard_text: '文字分镜',
+    delivery_check: '交付核验'
+  };
+  const STEP_STATE_TEXT = { done: '已完成', active: '进行中', failed: '已失败', pending: '待处理' };
+
+  const progressState = {
+    panel: null,
+    current: null,
+    steps: null,
+    failure: null,
+    failureReason: null,
+    notice: null,
+    reachedStages: new Set(),
+    failureEvents: [],
+    refreshError: ''
+  };
+
+  function stageLabel(stage) {
+    return STAGE_LABELS[stage] || stage;
+  }
+
+  // 失败事件：event_type 中出现 fail/failed/failure/error/fatal 段（与正常阶段事件区分）。
+  function isFailureEventType(type) {
+    return typeof type === 'string' && /(^|[._-])(fail|failed|failure|error|fatal)([._-]|$)/i.test(type);
+  }
+
+  // 从事件累积已到达阶段与失败事件；这些数据在重启后随事件重拉而重建。
+  function collectProgressEvent(event) {
+    if (typeof event?.stage === 'string' && STAGE_ORDER.includes(event.stage)) {
+      progressState.reachedStages.add(event.stage);
+    }
+    if (isFailureEventType(event?.event_type)) {
+      progressState.failureEvents.push({
+        stage: typeof event.stage === 'string' ? event.stage : null,
+        summary: typeof event.summary === 'string' ? event.summary : ''
+      });
+    }
+  }
+
+  // 失败原因：优先 run 上的显式失败字段（容错后端未来字段），否则取最后一个失败事件摘要。
+  function resolveFailureReason(run) {
+    const direct = [run?.failure_reason, run?.failure, run?.error_message, run?.error, run?.last_error];
+    for (const value of direct) {
+      if (typeof value === 'string' && value.trim()) return value.trim();
+    }
+    for (let index = progressState.failureEvents.length - 1; index >= 0; index -= 1) {
+      const summary = progressState.failureEvents[index].summary;
+      if (summary) return summary;
+    }
+    return '';
+  }
+
+  function resetProgress() {
+    progressState.reachedStages.clear();
+    progressState.failureEvents = [];
+    progressState.refreshError = '';
+    if (progressState.current) progressState.current.textContent = '尚未读取任务。';
+    if (progressState.steps) progressState.steps.replaceChildren();
+    if (progressState.failure) progressState.failure.hidden = true;
+    if (progressState.failureReason) progressState.failureReason.textContent = '';
+    if (progressState.notice) {
+      progressState.notice.hidden = true;
+      progressState.notice.textContent = '';
+    }
+  }
+
+  // API 失败时在进度面板给出明确错误态（不白屏）；kind 决定降级标记。
+  function setProgressError(message, kind = 'error') {
+    const notice = progressState.notice;
+    if (!notice) return;
+    notice.hidden = false;
+    notice.textContent = message;
+    notice.dataset.gwDegradation = kind === 'pending' ? 'pending' : 'service_unavailable';
+  }
+
+  function clearProgressError() {
+    const notice = progressState.notice;
+    if (!notice) return;
+    notice.hidden = true;
+    notice.textContent = '';
+    if (notice.dataset.gwDegradation) delete notice.dataset.gwDegradation;
+  }
+
+  function buildProgressPanel() {
+    const form = byId('agentTaskForm');
+    if (!form || progressState.panel) return;
+    const panel = document.createElement('div');
+    panel.className = 'space-y-2 border-t border-white/10 pt-2';
+    panel.dataset.t7cProgress = 'host';
+
+    const title = document.createElement('p');
+    title.className = 'gw-type-body-sm text-slate-100';
+    title.textContent = '任务进度';
+    panel.appendChild(title);
+
+    const current = document.createElement('p');
+    current.className = 'gw-type-body-sm text-amber-200';
+    current.textContent = '尚未读取任务。';
+    panel.appendChild(current);
+    progressState.current = current;
+
+    const steps = document.createElement('div');
+    steps.className = 'space-y-1';
+    panel.appendChild(steps);
+    progressState.steps = steps;
+
+    const failure = document.createElement('div');
+    failure.className = 'space-y-1 border-t border-white/10 pt-2';
+    failure.hidden = true;
+    const failureTitle = document.createElement('p');
+    failureTitle.className = 'gw-type-body-sm text-red-300';
+    failureTitle.textContent = '任务失败';
+    failure.appendChild(failureTitle);
+    const failureReason = document.createElement('p');
+    failureReason.className = 'gw-type-body-sm text-slate-300 whitespace-pre-wrap break-words';
+    failure.appendChild(failureReason);
+    panel.appendChild(failure);
+    progressState.failure = failure;
+    progressState.failureReason = failureReason;
+
+    const notice = document.createElement('p');
+    notice.className = 'gw-type-body-sm text-red-300';
+    notice.hidden = true;
+    panel.appendChild(notice);
+    progressState.notice = notice;
+
+    // 插入到状态行之后；宿主不支持 insertBefore 时退化为追加到表单末尾（测试环境兼容）。
+    const statusNode = byId('agentTaskStatus');
+    if (statusNode?.parentElement && typeof statusNode.parentElement.insertBefore === 'function') {
+      statusNode.parentElement.insertBefore(panel, statusNode.nextSibling || null);
+    } else {
+      form.appendChild(panel);
+    }
+    progressState.panel = panel;
+  }
+
+  function renderProgress() {
+    const run = state.run;
+    if (!progressState.panel || !run) return;
+    // 子刷新（事件）失败时保留错误态；正常刷新才清除旧错误。
+    if (progressState.refreshError) setProgressError(progressState.refreshError, 'pending');
+    else clearProgressError();
+    const currentIndex = typeof run.stage === 'string' ? STAGE_ORDER.indexOf(run.stage) : -1;
+    const isFailed = run.status === 'failed';
+    const isSucceeded = run.status === 'succeeded';
+
+    if (isSucceeded) {
+      progressState.current.textContent = `任务已完成全部 ${STAGE_ORDER.length} 个步骤。`;
+    } else if (isFailed && currentIndex >= 0) {
+      progressState.current.textContent = `任务在步骤「${stageLabel(run.stage)}」失败（${currentIndex + 1}/${STAGE_ORDER.length}）。`;
+    } else if (isFailed) {
+      progressState.current.textContent = '任务失败；服务端未指明具体步骤。';
+    } else if (currentIndex >= 0) {
+      progressState.current.textContent = `当前步骤：${stageLabel(run.stage)}（${currentIndex + 1}/${STAGE_ORDER.length}）。`;
+    } else {
+      progressState.current.textContent = '任务尚未进入具体步骤。';
+    }
+
+    const rows = STAGE_ORDER.map((stage, index) => {
+      let stepState = 'pending';
+      if (isSucceeded) stepState = 'done';
+      else if (index < currentIndex) stepState = 'done';
+      else if (index === currentIndex) stepState = isFailed ? 'failed' : 'active';
+      // 事件已到达且非当前/失败步骤，也视为完成（容错重拉顺序）。
+      if (stepState === 'pending' && progressState.reachedStages.has(stage)) stepState = 'done';
+      const row = document.createElement('p');
+      row.className = 'gw-type-body-sm ' + (
+        stepState === 'done' ? 'text-slate-400'
+          : stepState === 'active' ? 'text-amber-200'
+            : stepState === 'failed' ? 'text-red-300'
+              : 'text-slate-500'
+      );
+      row.dataset.stepStage = stage;
+      row.dataset.stepState = stepState;
+      row.textContent = `${STEP_STATE_TEXT[stepState]} · ${stageLabel(stage)}`;
+      return row;
+    });
+    progressState.steps.replaceChildren(...rows);
+
+    if (isFailed) {
+      progressState.failure.hidden = false;
+      const reason = resolveFailureReason(run);
+      progressState.failureReason.textContent = reason || '任务失败，但服务端未提供具体原因。';
+    } else {
+      progressState.failure.hidden = true;
+      progressState.failureReason.textContent = '';
+    }
   }
 
   // ---- MVP2-T7a 参考策展卡（QIN-457 / #415）----
@@ -1117,6 +1326,7 @@
   async function init() {
     if (!byId('agentTaskForm')) return;
     bind();
+    buildProgressPanel();
     buildReferencePanel();
     setBusy(false);
     await Promise.all([loadProjects(), loadAgentConfig(), ensureGateCardModule()]);
