@@ -1,0 +1,15 @@
+{
+  "schema": "gw.cleanroom-admission-shard/v1",
+  "issue": 456,
+  "authorization_basis": "GitHub Issue #456, 2026-10-29",
+  "files": [
+    "web/js/modules/asset-manager.js",
+    "web/css/pages/asset-manager.css",
+    "tests/frontend/qin-481-asset-toolbar.test.mjs",
+    "tests/frontend/node-files.txt",
+    "tests/hygiene/fixtures/admissions/issue-456.json"
+  ],
+  "admitted_files": [],
+  "accepted_test_files": [],
+  "notes": "QIN-481：资产库筛选列与工具栏按钮按硬件按钮规范重做、搜索框去黑色遮挡。纯前端外观契约，新增 node 契约测试已登记 node-files.txt；本票只写自身分片，不改基础账本结构。"
+}
