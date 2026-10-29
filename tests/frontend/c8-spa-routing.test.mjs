@@ -24,14 +24,19 @@ test('C8-FIX-198 页面工作区使用显式壳层边界，避免误选内层 ma
   }
 });
 
-test('C8-FIX-198 首页控制条属于 homeWorkspace，离开首页时随工作区移除', () => {
+test('C8-FIX-198 首页收起控件已移除，侧栏仍属于 homeWorkspace', () => {
   const html = read('web/pages/index.html');
-  const workspaceStart = html.indexOf('id="homeWorkspace"');
+  const workspace = html.match(/<div\b[^>]*id="homeWorkspace"[^>]*>/);
+  const workspaceStart = workspace?.index ?? -1;
+  const workspaceContentStart = workspaceStart + (workspace?.[0].length ?? 0);
   const controlsStart = html.indexOf('id="homeContextBusControls"');
-  const asideStart = html.indexOf('id="homeContextBusAside"');
+  const toggleStart = html.indexOf('id="homeContextBusToggle"');
+  const asideStart = html.indexOf('<aside id="homeContextBusAside"');
   assert.ok(workspaceStart >= 0, '首页必须存在 homeWorkspace');
-  assert.ok(controlsStart > workspaceStart, '首页控制条必须位于 homeWorkspace 内');
-  assert.ok(asideStart > controlsStart, '首页控制条应在上下文总线侧栏之前，保持自身可见性控制');
+  assert.equal(controlsStart, -1, '首页收起控件容器必须已删除');
+  assert.equal(toggleStart, -1, '首页收起按钮必须已删除');
+  assert.ok(asideStart > workspaceContentStart, '首页上下文总线侧栏必须保留在 homeWorkspace 内');
+  assert.equal(html.slice(workspaceContentStart, asideStart).includes('</div>'), false, 'homeWorkspace 必须在侧栏之前保持打开');
 });
 
 test('C8-FIX-198 targetWorkspace 优先完整壳层与顶栏后的根节点，再回退内层 main', () => {
