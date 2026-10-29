@@ -67,7 +67,7 @@ window.WorkbenchAgents = (function () {
     if (!bar) {
       bar = document.createElement('div');
       bar.id = 'agentProjectContextBar';
-      bar.className = 'col-span-12 w-full px-3 py-1.5 bg-[#12151c] border-b border-[#dfc384]/20 flex items-center justify-between font-mono shrink-0';
+      bar.className = 'col-span-12 champagne-card p-3 flex min-w-0 flex-col gap-3 sm:flex-row sm:items-center sm:justify-between';
       bar.style.cssText = 'font-size:var(--gw-type-body-sm, 12px);line-height:var(--gw-leading-label-md, 16px)';
       const main = document.getElementById('agentsMain');
       if (main && typeof main.insertBefore === 'function') {
@@ -79,17 +79,27 @@ window.WorkbenchAgents = (function () {
       }
     }
     const safeId = esc(state.projectId);
-    const safeName = esc(state.projectName || state.projectId);
+    const safeName = state.projectName ? esc(state.projectName) : '';
     bar.innerHTML = `
-      <div class="flex items-center space-x-2">
-        <span class="w-1.5 h-1.5 rounded-full bg-[#dfc384] animate-pulse"></span>
-        <span class="text-slate-400">当前项目上下文:</span>
-        <span class="text-[#eddab3] font-bold">${safeName}</span>
-        <span class="text-slate-500 font-mono" style="font-size:var(--gw-type-label-md, 11px);line-height:var(--gw-leading-label-md, 16px)">${safeId}</span>
+      <div class="min-w-0 flex-1">
+        <h2 class="gw-type-section" style="color:var(--gw-text)">当前项目上下文</h2>
+        <dl class="m-0 mt-2 grid min-w-0 grid-cols-1 gap-x-6 gap-y-2 ${safeName ? 'sm:grid-cols-2' : ''}">
+          ${safeName ? `
+          <div class="min-w-0">
+            <dt class="gw-type-body-sm" style="color:var(--gw-text-muted)">项目</dt>
+            <dd class="m-0 mt-0.5 gw-type-body-md break-words" style="color:var(--gw-text)">${safeName}</dd>
+          </div>
+          ` : ''}
+          <div class="min-w-0">
+            <dt class="gw-type-body-sm" style="color:var(--gw-text-muted)">项目 ID</dt>
+            <dd class="m-0 mt-0.5 break-all font-mono" style="color:var(--gw-text)"><span style="font-size:var(--gw-type-label-md, 11px);line-height:var(--gw-leading-label-md, 16px)">${safeId}</span></dd>
+          </div>
+        </dl>
       </div>
-      <div class="flex items-center space-x-2">
-        <a href="/static/pages/projects.html?project_id=${encodeURIComponent(state.projectId)}" id="agentBackToProjectLink" class="hw-btn hw-btn-sm text-amber-300 hover:text-amber-200 flex items-center space-x-1" title="返回项目中心">
-          <span>回到项目</span>
+      <div class="flex shrink-0 items-center">
+        <a href="/static/pages/projects.html?project_id=${encodeURIComponent(state.projectId)}" id="agentBackToProjectLink" class="hw-btn hw-btn-sm flex items-center gap-2" title="返回项目中心">
+          <span>回到项目中心</span>
+          <i data-lucide="arrow-up-right" class="h-3.5 w-3.5" aria-hidden="true"></i>
         </a>
       </div>
     `;
