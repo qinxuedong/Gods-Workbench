@@ -1,0 +1,15 @@
+{
+  "schema": "gw.cleanroom-admission-shard/v1",
+  "issue": 457,
+  "authorization_basis": "GitHub Issue #457, 2026-10-29",
+  "files": [
+    "web/pages/collab.html",
+    "web/js/controllers/collab-controller.js",
+    "tests/frontend/qin-482-collab-audit.test.mjs",
+    "tests/frontend/node-files.txt",
+    "tests/hygiene/fixtures/admissions/issue-457.json"
+  ],
+  "admitted_files": [],
+  "accepted_test_files": [],
+  "notes": "QIN-482：协作页「影视工程快照与变更审计历史」板块头部 #collabTimelineSource 去除与范围文案重复的「变更审计」字样，新增窄测并登记 node-files.txt；collab-controller.js 列入票面可改集（范围文案）但本轮零改动。"
+}
