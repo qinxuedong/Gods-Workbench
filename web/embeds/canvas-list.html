@@ -44,7 +44,6 @@
         }
     </script>
   <link rel="stylesheet" href="/static/css/base/hardware-buttons.css?ui=20261012-b3">
-  <link rel="stylesheet" href="/static/css/base/workspace-pages.css?v=20261029-qin478">
 </head>
 <body class="gw-signal gw-page--canvas gw-type-body-md">
     <script>
@@ -54,9 +53,9 @@
     </script>
     <div id="workspace" class="workspace">
         <!-- LEFT: project sidebar -->
-        <aside id="sidebar" class="gw-side-bus-unified ws-sidebar is-open">
-            <div class="gw-side-bus-header ws-side-head">
-                <div class="gw-side-bus-title ws-side-title">项目</div>
+        <aside id="sidebar" class="ws-sidebar is-open">
+            <div class="ws-side-head">
+                <div class="ws-side-title">项目</div>
                 <button id="newProjectBtn" class="ws-side-add hw-btn" type="button" title="新建画布" aria-label="新建画布">
                     <i data-lucide="plus" class="w-4 h-4"></i>
                     <span class="ws-side-add-label">新建画布</span>
@@ -67,7 +66,7 @@
                 <button id="newProjectConfirm" class="ws-mini-btn hw-btn hw-btn-sm hw-btn-icon hw-btn-gold" type="button" title="确定" aria-label="确定"><i data-lucide="check" class="w-3.5 h-3.5"></i></button>
                 <button id="newProjectCancel" class="ws-mini-btn hw-btn hw-btn-sm hw-btn-icon" type="button" data-floating-close title="取消" aria-label="取消"><i data-lucide="x" class="w-3.5 h-3.5"></i></button>
             </div>
-            <div id="projectList" class="gw-side-bus-list ws-project-list"></div>
+            <div id="projectList" class="ws-project-list"></div>
             <div class="ws-side-foot">
                 <button id="trashEntry" class="ws-trash-entry ws-icon-btn hw-btn" type="button" title="回收站" aria-label="回收站" aria-controls="trashPanel" aria-expanded="false">
                     <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
