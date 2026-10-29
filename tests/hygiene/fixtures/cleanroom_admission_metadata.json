@@ -423,7 +423,7 @@
       "path": "docs/contracts/AGENT-WORKBENCH-INTERFACE-CATALOG.yaml",
       "classification": "frozen_interface_contract",
       "authorization_basis": "user_integration_request_2026-10-08",
-      "sha256": "589f371adc7e8b68dbdb419113fff2ad691b2f08f4ce2586b96abc89e705ce71",
+      "sha256": "b63c021d06e493c2cf1ddbc4cbaa114aad50804cc7d944927bf2bb128ecc24a9",
       "admission": "accepted"
     },
     {

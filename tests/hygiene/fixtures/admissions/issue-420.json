@@ -1,0 +1,23 @@
+{
+  "schema": "gw.cleanroom-admission-shard/v1",
+  "issue": 420,
+  "authorization_basis": "GitHub Issue #420, 2026-10-29",
+  "files": [
+    "gw/agent_runtime/adapters/pipeline_tools.py",
+    "docs/contracts/AGENT-WORKBENCH-INTERFACE-CATALOG.yaml",
+    "tests/contracts/agent/test_mvp2_t5c_master_tool.py",
+    "tests/hygiene/fixtures/cleanroom_admission_metadata.json",
+    "tests/hygiene/test_cleanroom_hygiene.py",
+    "tests/hygiene/fixtures/admissions/issue-420.json"
+  ],
+  "admitted_files": [],
+  "accepted_test_files": [
+    {
+      "path": "tests/contracts/agent/test_mvp2_t5c_master_tool.py",
+      "classification": "curated_test_coverage",
+      "authorization_basis": "GitHub Issue #420, 2026-10-29",
+      "admission": "accepted"
+    }
+  ],
+  "notes": "QIN-462：MVP2-T5c 母带工具注册 + master_output 门禁；登记 master_render 实现、接口目录条目、新契约测试与分片自身。接口目录正文变更按票面预授权同步基础账本 admitted_files 既有哈希与 ADMISSION_BASE_METADATA_SHA256 常量（先例同 issue-418）。"
+}
