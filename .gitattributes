@@ -21,3 +21,10 @@
 *.mov binary
 *.zip binary
 *.gz binary
+
+# 洁净室登记文件使用并集合并驱动，避免并行 PR 在热点文件上反复三路合并。
+# 仅本地 git merge/rebase 生效；GitHub 网页合并与 CI 不读取本配置，详见
+# scripts/git-merge-drivers/README.md。
+tests/hygiene/fixtures/cleanroom_admission_metadata.json merge=hygiene-json
+tests/hygiene/fixtures/admissions/issue-*.json merge=hygiene-json
+tests/frontend/node-files.txt merge=hygiene-lines
