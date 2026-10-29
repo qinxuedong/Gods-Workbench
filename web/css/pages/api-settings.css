@@ -388,3 +388,7 @@ html.workspace-embedded { background:var(--gw-settings-container-background); }
 .workspace-embedded .api-settings-page .content { min-width:0; padding:0; border:0; border-radius:0; background:transparent; }
 .workspace-embedded .api-settings-page .content-head { padding:0; border:0; }
 .workspace-embedded .api-settings-page .block { padding:16px; background:var(--gw-settings-card-background); border:1px solid var(--gw-settings-card-border); border-radius:12px; box-shadow:var(--gw-settings-card-shadow); }
+/* QIN-475 AC2：设置页嵌入态的平台列表容器采用设置卡片黑底 token。 */
+.workspace-embedded.settings-host .api-settings-page .sidebar { background:var(--gw-settings-card-background); }
+/* QIN-475 AC3/AC4：外层设置页已提供唯一标题与说明；操作按钮移至该外层标题行，隐藏 iframe 内重复头行。 */
+.workspace-embedded.settings-host .api-settings-page .content-head { display:none; }

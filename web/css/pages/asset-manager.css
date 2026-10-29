@@ -165,7 +165,7 @@ button { border:0; cursor:pointer; }
 .content-heading { min-width:0; }
 .content-heading strong { display:block; color:var(--text);    overflow:hidden; text-overflow:ellipsis; white-space:nowrap;  font-size: var(--gw-type-headline-sm); line-height: var(--gw-leading-headline-sm); font-weight:var(--gw-weight-medium); letter-spacing: 0; text-transform: none;}
 .content-heading span { display:block; margin-top:4px; color:var(--muted);     font-size: var(--gw-type-body-sm); line-height: var(--gw-leading-body-sm); font-weight: var(--gw-weight-medium); letter-spacing: 0; text-transform: none;}
-.asset-search-wrap { width:min(220px, 32vw); height:32px; border-radius:10px; border:1px solid var(--line); background:var(--card); color:var(--muted); display:flex; align-items:center; gap:7px; padding:0 10px; }
+.asset-search-wrap { width:min(220px, 32vw); height:32px; border-radius:9px; border:1px solid rgb(223 195 132 / .2); background:linear-gradient(180deg,#1e222d 0%,#11131a 100%); color:var(--muted); display:flex; align-items:center; gap:7px; padding:0 10px; box-shadow:inset 0 1px 0 rgb(255 255 255 / .1); }
 .asset-search-wrap svg { width:14px; height:14px; flex:0 0 auto; }
 .asset-search { min-width:0; flex:1; height:100%; border:0; outline:0; background:transparent; color:var(--text); font-size: var(--gw-type-label-md); font-weight:750; }
 .asset-drop { margin:12px 12px 0; flex:0 0 auto; min-height:58px; border:1px dashed var(--line-2); border-radius:13px; background:var(--card); color:var(--muted); display:flex; align-items:center; justify-content:center; text-align:center; gap:8px; padding:12px; font-size: var(--gw-type-label-md); line-height:1.35; font-weight:800; }
@@ -1400,19 +1400,18 @@ body.theme-dark .asset-card.active { border-color:rgba(248,250,252,.86); box-sha
 /* 阶段 2：统一资产中心与项目制片 */
 .asset-sort-select { appearance:none; line-height:var(--gw-leading-body-md); height:40px; min-width:96px; border:1px solid var(--line); border-radius:8px; background:var(--card); color:var(--text); padding:0 24px 0 8px; font-size: var(--gw-type-label-md); font-weight:800; outline:none; }
 .registry-facets { gap:14px; }
-.registry-toolbar { align-items:flex-start; }
-.registry-toolbar .content-heading { flex:0 0 150px; padding-top:3px; }
+.registry-toolbar { align-items:center; }
+.registry-toolbar .content-heading { flex:0 0 150px; }
 .registry-toolbar-controls { min-width:0; flex:1; display:flex; align-items:center; justify-content:flex-end; flex-wrap:wrap; gap:5px; }
 .registry-toolbar .asset-search-wrap { min-width:170px; flex:1 1 210px; width:auto; }
-.registry-toolbar-select { flex:0 0 auto; height:28px; border:1px solid var(--line); background:var(--card); display:flex; align-items:center; }
-.registry-toolbar-select > span { height:100%; padding:0 7px; border-right:1px solid var(--line); color:var(--faint); display:flex; align-items:center; font-size: var(--gw-type-label-md); font-weight:900; }
-.registry-toolbar-select .asset-sort-select { min-width:84px; border:0; border-radius:0; background:transparent; }
-.registry-layout-switch { flex:0 0 auto; height:28px; gap:1px; padding:0; border:1px solid var(--line); background:var(--card); display:flex; }
+/* 排序/分组复用 .hw-btn 硬件材质：标签即按钮，内嵌原生 select 保留功能。 */
+.registry-toolbar-select { position:relative; flex:0 0 auto; padding:0 8px 0 10px; gap:5px; }
+.registry-toolbar-select > span { color:#d1d5db; font-size: var(--gw-type-label-md); }
+.registry-toolbar-select .asset-sort-select { min-width:72px; height:auto; border:0; border-radius:0; background:transparent; color:#d1d5db; padding:0 12px 0 0; font-size: var(--gw-type-label-md); font-weight:800; }
+.registry-layout-switch { flex:0 0 auto; }
 
 
 
-.registry-layout-switch svg { width:13px; height:13px; }
-.registry-segment { flex:0 0 auto; height:28px; padding:0; border:1px solid var(--line); background:var(--card); display:flex; align-items:stretch; }
 
 
 
@@ -1430,7 +1429,7 @@ body.theme-dark .asset-card.active { border-color:rgba(248,250,252,.86); box-sha
 .registry-facet-title svg { width:11px; height:11px; }
 .registry-facet-basic { width:100%; min-height:30px; padding:5px 8px; border-radius:8px; border:1px solid transparent; background:transparent; color:var(--muted); display:flex; align-items:center; justify-content:space-between; gap:8px; text-align:left; font-size: var(--gw-type-label-md); font-weight:800; }
 .registry-facet-basic:hover { background:var(--soft); color:var(--text); }
-.registry-facet-basic.active { border-color:var(--strong); background:var(--strong); color:var(--strong-text); }
+.registry-facet-basic.active { border-color:var(--strong); background:var(--soft); color:var(--strong); }
 .registry-facet-basic em,.registry-tag-row em { font-style:normal; opacity:.7; font-size: var(--gw-type-label-md); }
 .registry-tag-list { display:flex; flex-direction:column; gap:3px; }
 .registry-tag-facet-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:9px 7px; }
@@ -1438,18 +1437,18 @@ body.theme-dark .asset-card.active { border-color:rgba(248,250,252,.86); box-sha
 .registry-nav .registry-facets > .registry-facet-section > .registry-facet-title,
 .registry-nav .registry-tag-facet-grid > .registry-facet-section > .registry-facet-title,
 .library-board-nav .nav-scroll > .registry-facet-section > .registry-facet-title,
-.library-board-nav .nav-scroll > .library-source-section > .registry-facet-title { min-height:31px; padding:5px 8px; background:var(--panel); color:#eef3ee; }
+.library-board-nav .nav-scroll > .library-source-section > .registry-facet-title { min-height:31px; padding:5px 8px; background:var(--panel); color:var(--text); }
 .registry-nav .registry-facets > .registry-facet-section > .registry-facet-title strong,
 .registry-nav .registry-tag-facet-grid > .registry-facet-section > .registry-facet-title strong,
 .library-board-nav .nav-scroll > .registry-facet-section > .registry-facet-title strong,
 .library-board-nav .nav-scroll > .library-source-section > .registry-facet-title strong { font-size: var(--gw-type-body-sm); letter-spacing:.02em; }
 .registry-tag-row { min-width:0; display:grid; grid-template-columns:minmax(0,1fr) 24px; gap:3px; }
-.registry-tag-row > button { min-width:0; min-height:28px; border-radius:8px; background:transparent; color:var(--muted); display:flex; align-items:center; justify-content:space-between; gap:7px; padding:4px 7px; text-align:left; font-size: var(--gw-type-label-md); font-weight:800; }
+.registry-tag-row > button { min-width:0; min-height:28px; border:1px solid transparent; box-sizing:border-box; border-radius:8px; background:transparent; color:var(--muted); display:flex; align-items:center; justify-content:space-between; gap:7px; padding:4px 7px; text-align:left; font-size: var(--gw-type-label-md); font-weight:800; }
 .registry-tag-row > button span { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .registry-tag-row > button:hover { background:var(--soft); color:var(--text); }
 .registry-tag-row .registry-tag-exclude { justify-content:center; padding:0; color:var(--faint); }
 .registry-tag-row .registry-tag-exclude svg { width:11px; height:11px; }
-.registry-tag-row.include > button:first-child { background:var(--strong); color:var(--strong-text); }
+.registry-tag-row.include > button:first-child { border:1px solid var(--strong); background:var(--soft); color:var(--strong); }
 .registry-tag-row.exclude > button:first-child,.registry-tag-row.exclude .registry-tag-exclude { background:rgba(220,38,38,.1); color:var(--danger); }
 .registry-preset-row { display:grid; grid-template-columns:minmax(0,1fr) 24px; gap:3px; }
 .registry-preset-row button { min-width:0; min-height:28px; border-radius:8px; background:transparent; color:var(--muted); padding:4px 7px; font-size: var(--gw-type-label-md); font-weight:800; text-align:left; }
@@ -2007,3 +2006,43 @@ body.asset-image-editor-open{overflow:hidden}
 
 /* 资产操作按钮已使用共享族；详情大播放器的布局尺寸由原布局规则保留。 */
 @media(max-width:760px){.script-assets-panel{padding:16px}.asset-workspace-panel-head{align-items:stretch;flex-direction:column}.asset-primary-action{width:100%}}
+
+/* QIN-481：资产库工具栏与搜索框统一硬件按钮材质。
+   asset-vault.css 对工具栏施加 40px 高、内凹黑影与方角容器的旧主题外观，
+   此处用更高特异性 + !important 压回 .hw-btn 同款材质；仅调外观，不改交互。 */
+body.gw-signal.gw-page--asset-manager #assetManagerRoot .asset-panel.registry-content .registry-toolbar .asset-search-wrap {
+  height: 32px !important;
+  min-height: 32px !important;
+  border: 1px solid rgb(223 195 132 / .2) !important;
+  border-radius: 9px !important;
+  background: linear-gradient(180deg,#1e222d 0%,#11131a 100%) !important;
+  color: #94a3b8 !important;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / .1) !important;
+  padding: 0 10px !important;
+}
+body.gw-signal.gw-page--asset-manager #assetManagerRoot .asset-panel.registry-content .registry-toolbar .asset-search-wrap:focus-within { border-color: rgb(223 195 132 / .45) !important; }
+body.gw-signal.gw-page--asset-manager #assetManagerRoot .asset-panel.registry-content .registry-toolbar .asset-search-wrap .asset-search { background: transparent !important; color: #e5e7eb !important; }
+body.gw-signal.gw-page--asset-manager #assetManagerRoot .asset-panel.registry-content .registry-toolbar :is(.registry-toolbar-select, .registry-toolbar-select select, .asset-search) {
+  min-height: 0 !important;
+  max-height: none !important;
+  font-family: var(--gw-font-body) !important;
+  font-weight: var(--gw-weight-bold) !important;
+  font-size: var(--gw-type-button-sm) !important;
+}
+body.gw-signal.gw-page--asset-manager #assetManagerRoot .asset-panel.registry-content .registry-toolbar .registry-toolbar-select {
+  height: 32px !important;
+  min-height: 32px !important;
+  padding: 0 8px 0 10px !important;
+  color: #d1d5db !important;
+}
+body.gw-signal.gw-page--asset-manager #assetManagerRoot .asset-panel.registry-content .registry-toolbar .registry-toolbar-select .asset-sort-select { color: #d1d5db !important; }
+body.gw-signal.gw-page--asset-manager #assetManagerRoot .asset-panel.registry-content .registry-toolbar .registry-layout-switch {
+  height: auto !important;
+  min-height: 0 !important;
+  padding: 3px !important;
+  gap: 0 !important;
+  border: 1px solid rgb(255 255 255 / .08) !important;
+  border-radius: 8px !important;
+  background: #07080c !important;
+  box-shadow: inset 0 2px 5px rgb(0 0 0 / .95),0 1px 0 rgb(255 255 255 / .05) !important;
+}
