@@ -104,11 +104,20 @@ def test_issue_426_shard_registers_its_own_file_set(repo_root: Path):
     assert len(registrations) == 1
     assert registrations[0]["authorization_basis"] == "GitHub Issue #426, 2026-10-28"
     assert set(registrations[0]["files"]) == {
+        ".gitattributes",
+        "scripts/fix-hygiene-registry.py",
+        "scripts/git-merge-drivers/README.md",
+        "scripts/git-merge-drivers/install.py",
+        "scripts/git-merge-drivers/install.sh",
+        "scripts/git-merge-drivers/merge_common.py",
+        "scripts/git-merge-drivers/merge_json_registry.py",
+        "scripts/git-merge-drivers/merge_line_list.py",
         "tests/hygiene/cleanroom_admission.py",
         "tests/hygiene/fixtures/admissions/README.md",
         "tests/hygiene/fixtures/admissions/issue-426.json",
         "tests/hygiene/test_admission_sharding.py",
         "tests/hygiene/test_cleanroom_hygiene.py",
+        "tests/hygiene/test_merge_drivers.py",
     }
     assert registrations[0]["source"] == f"{SHARD_DIR_PATH}/issue-426.json"
 
