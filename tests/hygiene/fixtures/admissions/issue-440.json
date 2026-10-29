@@ -1,0 +1,13 @@
+{
+  "schema": "gw.cleanroom-admission-shard/v1",
+  "issue": 440,
+  "authorization_basis": "GitHub Issue #440, 2026-10-28",
+  "files": [
+    "gw/asset_registry/repository.py",
+    "tests/contracts/assets/test_qin_472_confirmed_alias_network_path.py",
+    "tests/hygiene/fixtures/admissions/issue-440.json"
+  ],
+  "admitted_files": [],
+  "accepted_test_files": [],
+  "notes": "QIN-472：已确认 alias 媒体回读对齐 index_jobs 的网络路径形态差豁免；登记本票代码、新增契约测试与分片自身，不回填基础账本。"
+}
