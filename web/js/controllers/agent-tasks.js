@@ -26,8 +26,192 @@
     configReady: false,
     busy: false,
     pollTimer: null,
-    controller: null
+    controller: null,
+    gateCard: null,
+    gateModuleError: '',
+    gateLoadError: '',
+    gates: [],
+    gateViews: new Map(),
+    gateSignature: '',
+    gateBusy: new Set()
   };
+
+  // 门禁卡为独立 ES 模块；宿主页面以经典脚本加载本控制器，故用动态 import 按需载入，
+  // 不新增外部 URL、不引入打包链，也不改动页面脚本清单。
+  const GATE_CARD_MODULE_URL = '/static/js/modules/agent-gate-card.js';
+  const GATE_CONTAINER_ID = 'agentTaskGates';
+  const GATE_DECISION_TITLES = { approve: '确认通过', changes_requested: '要求修改', rolled_back: '退回' };
+
+  // 门禁卡模块按需载入一次；载入失败保留原因，供卡片区展示明确错误态（不白屏）。
+  async function ensureGateCardModule() {
+    if (state.gateCard) return state.gateCard;
+    try {
+      state.gateCard = await import(GATE_CARD_MODULE_URL);
+      state.gateModuleError = '';
+    } catch (error) {
+      state.gateCard = null;
+      state.gateModuleError = `门禁卡片模块加载失败：${error.message}`;
+    }
+    return state.gateCard;
+  }
+
+  // 门禁卡片区容器：页面脚本清单不在本票范围内，故由控制器在既有导出区前自建。
+  function ensureGatesContainer() {
+    const existing = byId(GATE_CONTAINER_ID);
+    if (existing) return existing;
+    const exportsNode = byId('agentTaskExports');
+    if (!exportsNode?.parentElement || typeof exportsNode.parentElement.insertBefore !== 'function') return null;
+    const container = document.createElement('div');
+    container.id = GATE_CONTAINER_ID;
+    container.className = 'space-y-2 border-t border-white/10 pt-2';
+    container.hidden = true;
+    container.setAttribute('aria-label', '生产链门禁确认');
+    exportsNode.parentElement.insertBefore(container, exportsNode);
+    return container;
+  }
+
+  function gateView(gateId) {
+    if (!gateId) return null;
+    if (!state.gateViews.has(gateId)) state.gateViews.set(gateId, { phase: 'idle', message: '', pendingDecision: '', reason: '' });
+    return state.gateViews.get(gateId);
+  }
+
+  function gatesSignature() {
+    return state.gates.map(gate => `${gate.gate_id}:${gate.state || 'unknown'}:${gate.version}`).join('|');
+  }
+
+  // 用户正在输入理由时不重绘，避免焦点与内容被轮询打断。
+  function gateReasonHasFocus() {
+    const active = document.activeElement;
+    return Boolean(active?.dataset && typeof active.dataset.gateReason === 'string');
+  }
+
+  function renderGates() {
+    const container = ensureGatesContainer();
+    if (!container) return;
+    container.replaceChildren();
+    if (!state.gateCard) {
+      container.hidden = false;
+      const notice = document.createElement('p');
+      notice.className = 'gw-type-body-sm text-rose-200';
+      notice.textContent = state.gateModuleError || '门禁卡片模块尚未加载完成。';
+      container.appendChild(notice);
+      return;
+    }
+    if (state.gateLoadError) {
+      container.hidden = false;
+      const notice = document.createElement('p');
+      notice.className = 'gw-type-body-sm text-rose-200';
+      notice.textContent = `门禁列表不可用：${state.gateLoadError}`;
+      container.appendChild(notice);
+      return;
+    }
+    if (!state.gates.length) {
+      container.hidden = true;
+      return;
+    }
+    container.hidden = false;
+    container.innerHTML = state.gateCard.renderGateCards(state.gates, state.gateViews);
+    bindGateCards(container);
+  }
+
+  function bindGateCards(container) {
+    if (typeof container.querySelectorAll !== 'function') return;
+    for (const button of container.querySelectorAll('[data-gate-decision]')) {
+      button.addEventListener('click', () => {
+        const card = button.closest?.('[data-gate-id]') || null;
+        void decideGate(card?.getAttribute?.('data-gate-id'), button.getAttribute('data-gate-decision'));
+      });
+    }
+    for (const field of container.querySelectorAll('[data-gate-reason]')) {
+      field.addEventListener('input', () => {
+        const card = field.closest?.('[data-gate-id]') || null;
+        const view = gateView(card?.getAttribute?.('data-gate-id'));
+        if (view) view.reason = field.value || '';
+      });
+    }
+  }
+
+  // 读取并渲染门禁列表；自身吞掉所有异常，不打断同一批次的其它刷新。
+  async function refreshGates(runId, generation, sequence) {
+    if (!runId) return;
+    try {
+      const module = await ensureGateCardModule();
+      if (!isCurrentRefresh(runId, generation, sequence)) return;
+      if (!module) {
+        state.gateLoadError = state.gateModuleError;
+        renderGates();
+        return;
+      }
+      const data = await request(route(runId, '/gates'));
+      if (!isCurrentRefresh(runId, generation, sequence)) return;
+      state.gates = module.normalizeGates(data);
+      state.gateLoadError = '';
+    } catch (error) {
+      if (!isCurrentRefresh(runId, generation, sequence)) return;
+      if (error.status === 404) {
+        // 门禁 HTTP 接口由 T6b 交付；在接口未上线前静默收起卡片区，
+        // 不把「接口尚未实现」当成故障红字常驻页面。
+        state.gates = [];
+        state.gateLoadError = '';
+        state.gateSignature = '';
+        renderGates();
+        return;
+      }
+      state.gateLoadError = error.message;
+      renderGates();
+      return;
+    }
+    const signature = gatesSignature();
+    const viewsActive = [...state.gateViews.values()].some(view => view.phase !== 'idle' || view.reason);
+    if (signature === state.gateSignature && !viewsActive) return;
+    state.gateSignature = signature;
+    if (gateReasonHasFocus()) return;
+    renderGates();
+  }
+
+  async function decideGate(gateId, decision) {
+    if (!gateId || !state.runId || !state.gateCard || state.gateBusy.has(gateId)) return;
+    const gate = state.gates.find(item => item.gate_id === gateId);
+    if (!gate) return;
+    const view = gateView(gateId);
+    const reason = state.gateCard.resolveGateReason(view.reason, decision);
+    if (!reason) {
+      view.phase = 'error';
+      view.message = '要求修改与退回必须填写理由；确认通过可留空。';
+      renderGates();
+      return;
+    }
+    state.gateBusy.add(gateId);
+    view.phase = 'submitting';
+    view.pendingDecision = decision;
+    view.message = '';
+    renderGates();
+    try {
+      const updated = await state.gateCard.submitGateDecision({
+        runId: state.runId,
+        gateId,
+        decision,
+        reason,
+        expectedVersion: gate.version,
+        idempotencyKey: randomId(),
+        requestId: randomId(),
+        fetchImpl: typeof fetch === 'function' ? fetch : null
+      });
+      const index = state.gates.findIndex(item => item.gate_id === gateId);
+      if (index >= 0 && updated) state.gates[index] = updated;
+      state.gateViews.delete(gateId);
+      setStatus(`门禁已${GATE_DECISION_TITLES[decision] || decision}：${state.gateCard.kindLabelOf(gate.kind)}。`, 'info');
+      void refreshRun();
+    } catch (error) {
+      view.phase = 'error';
+      view.pendingDecision = '';
+      view.message = error.message;
+    } finally {
+      state.gateBusy.delete(gateId);
+      renderGates();
+    }
+  }
 
   const byId = id => document.getElementById(id);
   const randomId = () => (window.crypto?.randomUUID ? window.crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2)}`);
@@ -306,6 +490,7 @@
       }
       clearActiveRun();
       setStatus(`任务不可用：${error.message}`, 'error');
+      setProgressError(`任务不可用：${error.message}`, 'error');
     } finally {
       setBusy(false);
       syncControls();
@@ -325,10 +510,20 @@
     state.eventVersion = 0;
     state.eventCursor = null;
     state.eventIds.clear();
+    state.gates = [];
+    state.gateViews.clear();
+    state.gateSignature = '';
+    state.gateBusy.clear();
+    state.gateLoadError = '';
+    resetProgress();
     if (byId('agentTraceStream')) byId('agentTraceStream').replaceChildren();
     if (byId('agentTaskReview')) byId('agentTaskReview').hidden = true;
     if (byId('agentTaskClarification')) byId('agentTaskClarification').hidden = true;
     if (byId('agentTaskExports')) byId('agentTaskExports').replaceChildren();
+    if (byId(GATE_CONTAINER_ID)) {
+      byId(GATE_CONTAINER_ID).replaceChildren();
+      byId(GATE_CONTAINER_ID).hidden = true;
+    }
     syncControls();
   }
 
@@ -350,13 +545,20 @@
     state.lastVersion = Number.isInteger(run.version) ? run.version : state.lastVersion;
     const label = `${run.status}${run.stage ? ` · ${run.stage}` : ''} · 版本 ${run.version} · 调用 ${run.cost_ledger?.recorded_model_calls ?? 0} 次 · 费用未知`;
     setStatus(label, run.status === 'failed' ? 'error' : 'info');
+    progressState.refreshError = '';
+    renderProgress();
+    // 事件接口失败不拖垮其余面板：步骤区给出明确错误态（不白屏），不重发模型请求。
     await Promise.all([
-      refreshEvents(runId, generation, sequence),
+      refreshEvents(runId, generation, sequence).catch(error => {
+        if (isCurrentRefresh(runId, generation, sequence)) progressState.refreshError = `任务步骤暂时不可读：${error.message}`;
+      }),
       refreshCandidate(runId, generation, sequence),
       refreshClarifications(runId, generation, sequence),
-      refreshExports(runId, generation, sequence)
+      refreshExports(runId, generation, sequence),
+      refreshGates(runId, generation, sequence)
     ]);
     if (!isCurrentRefresh(runId, generation, sequence)) return;
+    renderProgress();
     syncControls();
   }
 
@@ -377,6 +579,7 @@
       if (event.event_id) row.dataset.eventId = event.event_id;
       row.textContent = `${event.stage || '任务'} · ${event.summary || event.event_type || '状态更新'}`;
       stream.appendChild(row);
+      collectProgressEvent(event);
     }
     if (typeof data.cursor === 'string' && data.cursor) state.eventCursor = data.cursor;
     while (stream.children.length > 80) {
@@ -486,6 +689,7 @@
       } catch (error) {
         if (isCurrentRefresh(runId, generation, sequence)) {
           setStatus(`状态暂时不可读：${error.message}；没有重发模型请求。`, 'pending');
+          setProgressError(`任务状态暂时不可读：${error.message}`, 'pending');
         }
       }
     }, 2000);
@@ -515,10 +719,11 @@
         if (field?.value === jobId) field.value = '';
       }
       if (state.jobId === jobId) clearActiveRun();
-      setStatus(
-        error.status === 404 ? `上次任务已不存在，已清除失效编号：${error.message}` : `上次任务状态暂时不可读：${error.message}`,
-        error.status === 404 ? 'error' : 'pending'
-      );
+      const restoreMessage = error.status === 404
+        ? `上次任务已不存在，已清除失效编号：${error.message}`
+        : `上次任务状态暂时不可读：${error.message}`;
+      setStatus(restoreMessage, error.status === 404 ? 'error' : 'pending');
+      setProgressError(restoreMessage, error.status === 404 ? 'error' : 'pending');
     } finally {
       setBusy(false);
       syncControls();
@@ -583,6 +788,526 @@
     });
   }
 
+  // ---- MVP2-T7c 任务进度与失败状态（QIN-459 / #417）----
+  // 进度面板完全由「可重新获取的 run + 事件流」推导：重启后从 version=0 重拉事件，
+  // 即可重建相同的步骤与失败状态。所有动态文本一律 textContent，杜绝 HTML 注入。
+  const STAGE_ORDER = ['brief', 'outline_characters', 'full_script', 'scene_script', 'storyboard_text', 'delivery_check'];
+  const STAGE_LABELS = {
+    brief: '简报',
+    outline_characters: '大纲人物',
+    full_script: '完整剧本',
+    scene_script: '分场',
+    storyboard_text: '文字分镜',
+    delivery_check: '交付核验'
+  };
+  const STEP_STATE_TEXT = { done: '已完成', active: '进行中', failed: '已失败', pending: '待处理' };
+
+  const progressState = {
+    panel: null,
+    current: null,
+    steps: null,
+    failure: null,
+    failureReason: null,
+    notice: null,
+    reachedStages: new Set(),
+    failureEvents: [],
+    refreshError: ''
+  };
+
+  function stageLabel(stage) {
+    return STAGE_LABELS[stage] || stage;
+  }
+
+  // 失败事件：event_type 中出现 fail/failed/failure/error/fatal 段（与正常阶段事件区分）。
+  function isFailureEventType(type) {
+    return typeof type === 'string' && /(^|[._-])(fail|failed|failure|error|fatal)([._-]|$)/i.test(type);
+  }
+
+  // 从事件累积已到达阶段与失败事件；这些数据在重启后随事件重拉而重建。
+  function collectProgressEvent(event) {
+    if (typeof event?.stage === 'string' && STAGE_ORDER.includes(event.stage)) {
+      progressState.reachedStages.add(event.stage);
+    }
+    if (isFailureEventType(event?.event_type)) {
+      progressState.failureEvents.push({
+        stage: typeof event.stage === 'string' ? event.stage : null,
+        summary: typeof event.summary === 'string' ? event.summary : ''
+      });
+    }
+  }
+
+  // 失败原因：优先 run 上的显式失败字段（容错后端未来字段），否则取最后一个失败事件摘要。
+  function resolveFailureReason(run) {
+    const direct = [run?.failure_reason, run?.failure, run?.error_message, run?.error, run?.last_error];
+    for (const value of direct) {
+      if (typeof value === 'string' && value.trim()) return value.trim();
+    }
+    for (let index = progressState.failureEvents.length - 1; index >= 0; index -= 1) {
+      const summary = progressState.failureEvents[index].summary;
+      if (summary) return summary;
+    }
+    return '';
+  }
+
+  function resetProgress() {
+    progressState.reachedStages.clear();
+    progressState.failureEvents = [];
+    progressState.refreshError = '';
+    if (progressState.current) progressState.current.textContent = '尚未读取任务。';
+    if (progressState.steps) progressState.steps.replaceChildren();
+    if (progressState.failure) progressState.failure.hidden = true;
+    if (progressState.failureReason) progressState.failureReason.textContent = '';
+    if (progressState.notice) {
+      progressState.notice.hidden = true;
+      progressState.notice.textContent = '';
+    }
+  }
+
+  // API 失败时在进度面板给出明确错误态（不白屏）；kind 决定降级标记。
+  function setProgressError(message, kind = 'error') {
+    const notice = progressState.notice;
+    if (!notice) return;
+    notice.hidden = false;
+    notice.textContent = message;
+    notice.dataset.gwDegradation = kind === 'pending' ? 'pending' : 'service_unavailable';
+  }
+
+  function clearProgressError() {
+    const notice = progressState.notice;
+    if (!notice) return;
+    notice.hidden = true;
+    notice.textContent = '';
+    if (notice.dataset.gwDegradation) delete notice.dataset.gwDegradation;
+  }
+
+  function buildProgressPanel() {
+    const form = byId('agentTaskForm');
+    if (!form || progressState.panel) return;
+    const panel = document.createElement('div');
+    panel.className = 'space-y-2 border-t border-white/10 pt-2';
+    panel.dataset.t7cProgress = 'host';
+
+    const title = document.createElement('p');
+    title.className = 'gw-type-body-sm text-slate-100';
+    title.textContent = '任务进度';
+    panel.appendChild(title);
+
+    const current = document.createElement('p');
+    current.className = 'gw-type-body-sm text-amber-200';
+    current.textContent = '尚未读取任务。';
+    panel.appendChild(current);
+    progressState.current = current;
+
+    const steps = document.createElement('div');
+    steps.className = 'space-y-1';
+    panel.appendChild(steps);
+    progressState.steps = steps;
+
+    const failure = document.createElement('div');
+    failure.className = 'space-y-1 border-t border-white/10 pt-2';
+    failure.hidden = true;
+    const failureTitle = document.createElement('p');
+    failureTitle.className = 'gw-type-body-sm text-red-300';
+    failureTitle.textContent = '任务失败';
+    failure.appendChild(failureTitle);
+    const failureReason = document.createElement('p');
+    failureReason.className = 'gw-type-body-sm text-slate-300 whitespace-pre-wrap break-words';
+    failure.appendChild(failureReason);
+    panel.appendChild(failure);
+    progressState.failure = failure;
+    progressState.failureReason = failureReason;
+
+    const notice = document.createElement('p');
+    notice.className = 'gw-type-body-sm text-red-300';
+    notice.hidden = true;
+    panel.appendChild(notice);
+    progressState.notice = notice;
+
+    // 插入到状态行之后；宿主不支持 insertBefore 时退化为追加到表单末尾（测试环境兼容）。
+    const statusNode = byId('agentTaskStatus');
+    if (statusNode?.parentElement && typeof statusNode.parentElement.insertBefore === 'function') {
+      statusNode.parentElement.insertBefore(panel, statusNode.nextSibling || null);
+    } else {
+      form.appendChild(panel);
+    }
+    progressState.panel = panel;
+  }
+
+  function renderProgress() {
+    const run = state.run;
+    if (!progressState.panel || !run) return;
+    // 子刷新（事件）失败时保留错误态；正常刷新才清除旧错误。
+    if (progressState.refreshError) setProgressError(progressState.refreshError, 'pending');
+    else clearProgressError();
+    const currentIndex = typeof run.stage === 'string' ? STAGE_ORDER.indexOf(run.stage) : -1;
+    const isFailed = run.status === 'failed';
+    const isSucceeded = run.status === 'succeeded';
+
+    if (isSucceeded) {
+      progressState.current.textContent = `任务已完成全部 ${STAGE_ORDER.length} 个步骤。`;
+    } else if (isFailed && currentIndex >= 0) {
+      progressState.current.textContent = `任务在步骤「${stageLabel(run.stage)}」失败（${currentIndex + 1}/${STAGE_ORDER.length}）。`;
+    } else if (isFailed) {
+      progressState.current.textContent = '任务失败；服务端未指明具体步骤。';
+    } else if (currentIndex >= 0) {
+      progressState.current.textContent = `当前步骤：${stageLabel(run.stage)}（${currentIndex + 1}/${STAGE_ORDER.length}）。`;
+    } else {
+      progressState.current.textContent = '任务尚未进入具体步骤。';
+    }
+
+    const rows = STAGE_ORDER.map((stage, index) => {
+      let stepState = 'pending';
+      if (isSucceeded) stepState = 'done';
+      else if (index < currentIndex) stepState = 'done';
+      else if (index === currentIndex) stepState = isFailed ? 'failed' : 'active';
+      // 事件已到达且非当前/失败步骤，也视为完成（容错重拉顺序）。
+      if (stepState === 'pending' && progressState.reachedStages.has(stage)) stepState = 'done';
+      const row = document.createElement('p');
+      row.className = 'gw-type-body-sm ' + (
+        stepState === 'done' ? 'text-slate-400'
+          : stepState === 'active' ? 'text-amber-200'
+            : stepState === 'failed' ? 'text-red-300'
+              : 'text-slate-500'
+      );
+      row.dataset.stepStage = stage;
+      row.dataset.stepState = stepState;
+      row.textContent = `${STEP_STATE_TEXT[stepState]} · ${stageLabel(stage)}`;
+      return row;
+    });
+    progressState.steps.replaceChildren(...rows);
+
+    if (isFailed) {
+      progressState.failure.hidden = false;
+      const reason = resolveFailureReason(run);
+      progressState.failureReason.textContent = reason || '任务失败，但服务端未提供具体原因。';
+    } else {
+      progressState.failure.hidden = true;
+      progressState.failureReason.textContent = '';
+    }
+  }
+
+  // ---- MVP2-T7a 参考策展卡（QIN-457 / #415）----
+  // 参考集读写走 MVP2-T1 的会话 API；本面板只负责渲染与提交：
+  // 会话编号或项目上下文缺失一律 fail closed，绝不隐式创建会话；
+  // 所有动态文本走 textContent，杜绝 HTML 注入。
+  const REFERENCE_NOTE_MAX = 500;
+  const REFERENCE_DECISIONS = ['pending', 'selected', 'rejected'];
+  const REFERENCE_DECISION_TEXT = { pending: '待定', selected: '已选', rejected: '已拒' };
+
+  const referenceState = {
+    sessionId: '',
+    version: 0,
+    items: [],
+    busy: false,
+    panel: null,
+    input: null,
+    status: null,
+    list: null
+  };
+
+  function referenceRoute(assetId = '') {
+    const base = `/api/agent/sessions/${encodeURIComponent(referenceState.sessionId)}/references`;
+    return assetId ? `${base}/${encodeURIComponent(assetId)}` : base;
+  }
+
+  function referenceProjectId() {
+    return String(byId('agentTaskProject')?.value || '').trim();
+  }
+
+  function referenceSessionFromLocation() {
+    const search = window.location?.search || '';
+    const value = new URLSearchParams(String(search)).get('session_id');
+    return typeof value === 'string' ? value.trim() : '';
+  }
+
+  function compareReferenceOrder(left, right) {
+    if (left.order !== right.order) return left.order - right.order;
+    if (left.asset_id === right.asset_id) return 0;
+    return left.asset_id < right.asset_id ? -1 : 1;
+  }
+
+  // 只接受服务端给定的稳定 ID 与策展字段；分值/标签为可选摘要，缺失不臆造。
+  function normalizeReferenceItem(raw) {
+    const assetId = typeof raw?.asset_id === 'string' ? raw.asset_id.trim() : '';
+    if (!assetId) return null;
+    return {
+      asset_id: assetId,
+      decision: REFERENCE_DECISIONS.includes(raw?.decision) ? raw.decision : 'pending',
+      note: typeof raw?.note === 'string' ? raw.note : '',
+      order: Number.isInteger(raw?.order) && raw.order >= 0 ? raw.order : 0,
+      score: Number.isFinite(raw?.score) ? raw.score : null,
+      tags: Array.isArray(raw?.tags) ? raw.tags.filter(tag => typeof tag === 'string' && tag.trim()) : [],
+      summary: typeof raw?.summary === 'string' ? raw.summary.trim() : ''
+    };
+  }
+
+  function referenceSummaryText(item) {
+    if (Number.isFinite(item.score)) return `分值 ${item.score}`;
+    if (item.tags.length) return item.tags.join(' · ');
+    if (item.summary) return item.summary;
+    return '暂无摘要';
+  }
+
+  function applyReferenceSet(referenceSet) {
+    const items = Array.isArray(referenceSet?.items)
+      ? referenceSet.items.map(normalizeReferenceItem).filter(Boolean)
+      : [];
+    referenceState.items = items.sort(compareReferenceOrder);
+    if (Number.isInteger(referenceSet?.version)) referenceState.version = referenceSet.version;
+  }
+
+  function setReferenceStatus(message, kind = 'info') {
+    const node = referenceState.status;
+    if (!node) return;
+    node.textContent = message;
+    node.dataset.gwDegradation = kind === 'error' ? 'service_unavailable' : (kind === 'pending' ? 'pending' : 'ready');
+  }
+
+  function buildReferencePanel() {
+    const anchor = byId('agentTaskForm');
+    if (!anchor || referenceState.panel) return;
+    const panel = document.createElement('div');
+    panel.className = 'space-y-2 border-t border-white/10 pt-2';
+
+    const title = document.createElement('p');
+    title.className = 'gw-type-body-sm text-slate-100';
+    title.textContent = '参考策展（Agent 提出的素材参考）';
+    panel.appendChild(title);
+
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.className = 'block w-full mt-1 rounded bg-black/50 border border-white/10 px-2 py-1 gw-type-body-sm text-slate-100';
+    input.placeholder = '参考会话编号';
+    input.value = referenceSessionFromLocation();
+    referenceState.input = input;
+    panel.appendChild(input);
+
+    const loadButton = document.createElement('button');
+    loadButton.type = 'button';
+    loadButton.className = 'hw-btn hw-btn-sm';
+    loadButton.textContent = '读取参考';
+    loadButton.addEventListener('click', () => { void loadReferences(); });
+    panel.appendChild(loadButton);
+
+    const status = document.createElement('p');
+    status.className = 'gw-type-body-sm text-slate-400';
+    status.textContent = '填写参考会话编号后读取；项目上下文取自上方所属项目。';
+    referenceState.status = status;
+    panel.appendChild(status);
+
+    const list = document.createElement('div');
+    list.className = 'space-y-2';
+    referenceState.list = list;
+    panel.appendChild(list);
+
+    anchor.appendChild(panel);
+    referenceState.panel = panel;
+  }
+
+  function buildReferenceCard(item, position, total) {
+    const card = document.createElement('div');
+    card.className = 'space-y-1 border-t border-white/10 pt-2';
+    card.dataset.referenceAssetId = item.asset_id;
+
+    const head = document.createElement('p');
+    head.className = 'gw-type-body-sm text-slate-100';
+    head.textContent = `参考素材 ${item.asset_id}`;
+    card.appendChild(head);
+
+    const meta = document.createElement('p');
+    meta.className = 'gw-type-body-sm text-slate-400';
+    const metaSegments = [
+      `摘要：${referenceSummaryText(item)}`,
+      `当前：${REFERENCE_DECISION_TEXT[item.decision]}`,
+      `顺序 ${item.order}`
+    ];
+    if (item.note) metaSegments.push(`备注：${item.note}`);
+    meta.textContent = metaSegments.join(' · ');
+    card.appendChild(meta);
+
+    const actions = document.createElement('div');
+    actions.className = 'flex flex-wrap gap-1';
+    for (const decision of ['selected', 'rejected']) {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'hw-btn hw-btn-sm';
+      button.textContent = decision === 'selected' ? '选中' : '拒绝';
+      button.addEventListener('click', () => { void submitReference(item, { decision }); });
+      actions.appendChild(button);
+    }
+    card.appendChild(actions);
+
+    const note = document.createElement('textarea');
+    note.className = 'block w-full rounded bg-black/50 border border-white/10 px-2 py-1 gw-type-body-sm text-slate-100';
+    note.rows = 2;
+    note.maxLength = REFERENCE_NOTE_MAX;
+    note.value = item.note || '';
+    note.placeholder = `备注（≤${REFERENCE_NOTE_MAX} 字）`;
+    card.appendChild(note);
+
+    const footer = document.createElement('div');
+    footer.className = 'flex flex-wrap gap-1';
+    const saveButton = document.createElement('button');
+    saveButton.type = 'button';
+    saveButton.className = 'hw-btn hw-btn-sm';
+    saveButton.textContent = '保存备注';
+    saveButton.addEventListener('click', () => { void submitReference(item, { note: note.value }); });
+    footer.appendChild(saveButton);
+
+    const upButton = document.createElement('button');
+    upButton.type = 'button';
+    upButton.className = 'hw-btn hw-btn-sm';
+    upButton.textContent = '上移';
+    upButton.disabled = position <= 0;
+    upButton.addEventListener('click', () => { void moveReference(item, -1); });
+    footer.appendChild(upButton);
+
+    const downButton = document.createElement('button');
+    downButton.type = 'button';
+    downButton.className = 'hw-btn hw-btn-sm';
+    downButton.textContent = '下移';
+    downButton.disabled = position >= total - 1;
+    downButton.addEventListener('click', () => { void moveReference(item, 1); });
+    footer.appendChild(downButton);
+
+    card.appendChild(footer);
+    return card;
+  }
+
+  function renderReferenceItems() {
+    const list = referenceState.list;
+    if (!list) return;
+    const total = referenceState.items.length;
+    const cards = referenceState.items.map((item, position) => buildReferenceCard(item, position, total));
+    list.replaceChildren(...cards);
+  }
+
+  async function loadReferences() {
+    if (referenceState.busy) return;
+    const sessionId = String(referenceState.input?.value || '').trim();
+    referenceState.sessionId = sessionId;
+    if (!sessionId) {
+      setReferenceStatus('请先填写参考会话编号；不会隐式创建会话。', 'error');
+      return;
+    }
+    const projectId = referenceProjectId();
+    if (!projectId) {
+      setReferenceStatus('请先选择所属项目；缺少项目上下文不会读取参考集。', 'error');
+      return;
+    }
+    referenceState.busy = true;
+    setReferenceStatus(`正在读取会话 ${sessionId} 的参考集…`, 'pending');
+    try {
+      const referenceSet = await request(referenceRoute());
+      applyReferenceSet(referenceSet);
+      setReferenceStatus(
+        referenceState.items.length
+          ? `已读取 ${referenceState.items.length} 条参考 · 版本 ${referenceState.version}。`
+          : `会话 ${sessionId} 暂无参考条目 · 版本 ${referenceState.version}。`,
+        'info'
+      );
+    } catch (error) {
+      await handleReferenceError(error, '读取');
+    } finally {
+      referenceState.busy = false;
+      renderReferenceItems();
+    }
+  }
+
+  // 冲突后静默重读：不覆盖已展示的冲突提示以外的状态，失败保持提示。
+  async function refreshReferencesQuietly() {
+    if (!referenceState.sessionId) return;
+    try {
+      const referenceSet = await request(referenceRoute());
+      applyReferenceSet(referenceSet);
+      setReferenceStatus('已重新读取最新参考集，请重新提交。', 'info');
+    } catch (_) {
+      setReferenceStatus('参考集版本已改变，重新读取失败；请稍后重试。', 'error');
+    }
+  }
+
+  async function handleReferenceError(error, action) {
+    const status = error?.status;
+    if (status === 401 || status === 403) {
+      setReferenceStatus(`${action}失败：没有访问权限（HTTP ${status}）；请确认登录后重试。`, 'error');
+      return;
+    }
+    if (status === 404) {
+      setReferenceStatus(`${action}失败：参考策展会话不存在（HTTP 404）；不会隐式创建会话。`, 'error');
+      return;
+    }
+    if (status === 409) {
+      setReferenceStatus(`${action}失败：参考集已被更新（版本冲突），正在重新读取最新状态。`, 'error');
+      await refreshReferencesQuietly();
+      return;
+    }
+    setReferenceStatus(`${action}失败：${error?.message || '未知错误'}；请稍后重试。`, 'error');
+  }
+
+  async function submitReference(item, patch = {}) {
+    if (referenceState.busy) return false;
+    const assetId = item?.asset_id;
+    if (!assetId) return false;
+    const sessionId = referenceState.sessionId;
+    if (!sessionId) {
+      setReferenceStatus('参考会话编号缺失；请先读取参考集。', 'error');
+      return false;
+    }
+    const projectId = referenceProjectId();
+    if (!projectId) {
+      setReferenceStatus('缺少项目上下文；不会提交参考决策。', 'error');
+      return false;
+    }
+    const decision = REFERENCE_DECISIONS.includes(patch.decision) ? patch.decision : (item.decision || 'pending');
+    const note = Object.prototype.hasOwnProperty.call(patch, 'note') ? String(patch.note ?? '') : (item.note || '');
+    if (note.length > REFERENCE_NOTE_MAX) {
+      setReferenceStatus(`备注超过 ${REFERENCE_NOTE_MAX} 字，已拒绝提交（当前 ${note.length} 字）。`, 'error');
+      return false;
+    }
+    const order = Number.isInteger(patch.order) ? patch.order : item.order;
+    referenceState.busy = true;
+    try {
+      const referenceSet = await request(referenceRoute(assetId), {
+        method: 'PUT',
+        body: JSON.stringify({
+          project_id: projectId,
+          decision,
+          note: note || null,
+          order,
+          expected_version: referenceState.version
+        })
+      });
+      applyReferenceSet(referenceSet);
+      setReferenceStatus(`已保存 ${assetId}：${REFERENCE_DECISION_TEXT[decision]} · 顺序 ${order} · 版本 ${referenceState.version}。`, 'info');
+      return true;
+    } catch (error) {
+      await handleReferenceError(error, '提交');
+      return false;
+    } finally {
+      referenceState.busy = false;
+      renderReferenceItems();
+    }
+  }
+
+  // 顺序调整：按新位置整体重编号，只对 order 变化的条目发 PUT，失败即停。
+  async function moveReference(item, offset) {
+    if (referenceState.busy) return;
+    const ordered = referenceState.items.slice().sort(compareReferenceOrder);
+    const index = ordered.findIndex(entry => entry.asset_id === item.asset_id);
+    const target = index + offset;
+    if (index < 0 || target < 0 || target >= ordered.length) return;
+    const reordered = ordered.slice();
+    const [moved] = reordered.splice(index, 1);
+    reordered.splice(target, 0, moved);
+    for (let position = 0; position < reordered.length; position += 1) {
+      const entry = reordered[position];
+      if (entry.order === position) continue;
+      const latest = referenceState.items.find(candidate => candidate.asset_id === entry.asset_id) || entry;
+      const saved = await submitReference(latest, { order: position });
+      if (!saved) return;
+    }
+  }
+
   function bind() {
     byId('agentTaskForm')?.addEventListener('submit', createRun);
     byId('agentTaskLoad')?.addEventListener('click', loadRun);
@@ -601,8 +1326,10 @@
   async function init() {
     if (!byId('agentTaskForm')) return;
     bind();
+    buildProgressPanel();
+    buildReferencePanel();
     setBusy(false);
-    await Promise.all([loadProjects(), loadAgentConfig()]);
+    await Promise.all([loadProjects(), loadAgentConfig(), ensureGateCardModule()]);
     await restoreSavedRun();
   }
 

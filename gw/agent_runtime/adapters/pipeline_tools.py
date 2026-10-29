@@ -13,7 +13,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""MVP2-T4 前段生产能力以 Agent 工具形式注册（剧本/分镜；样片无入口不注册）。
+"""MVP2 生产能力以 Agent 工具形式注册（剧本、分镜、I2V 及注入的时间线能力）。
 
 核查结论（截至基线 ``origin/master`` 4c207e4 / 5b21de3，QIN-446 票面要求）：
 - ``gw/`` 内除 ``gw/agent_runtime/policy.py`` 的 ``CapabilityRegistry.register_tool``
@@ -23,9 +23,12 @@
   任何生成入口 → 按票面**不注册** ``animatic_generate``，待样片能力落地后另行登记。
 
 边界约束：
-- 生产服务一律注入（协议见 ``StageCandidateService``）；本模块不导入
-  ``gw.agent_episode``，不选择 provider，不触发真实付费调用；
-- 同一 ``idempotency_key`` 的重复调用只触发一次底层服务调用（进程内备忘）；
+- 生产服务一律注入；I2V 只有唯一的 ``i2v_submit`` 门禁获批后才可调用；
+- 非免费时间线工具复用 ``require_gate_for_tool``，无批准状态时 fail closed；
+- ``master_render``（MVP2-T5c，QIN-462）虽为本地 free 成本但产物不可逆，
+  必须经唯一的 ``master_output`` 门禁 approved；无批准状态一律 fail closed；
+- 本模块不选择 provider、不读取凭据，真实凭据由服务端视频任务服务管理；
+- 同一 ``run_id`` 与 ``idempotency_key`` 的重复调用只触发一次底层调用（进程内备忘）；
 - 返回值经 ``sanitize_tool_result`` 清洗：绝对路径（POSIX / Windows 盘符 /
   UNC 三种风格）一律脱敏，凭据类字段整体剔除。
 """
@@ -33,13 +36,19 @@
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass, field
-from typing import Any, Mapping, Protocol, runtime_checkable
+from dataclasses import dataclass
+from typing import Any, Callable, Mapping, Protocol, runtime_checkable
 
 from jsonschema import Draft202012Validator
 
+from gw.agent_episode.gates import (
+    GateKind,
+    GateState,
+    GateStore,
+    require_gate_for_tool,
+)
 from gw.agent_runtime.errors import DomainError
-from gw.agent_runtime.models import ErrorCode, ToolCostState, ToolRiskLevel
+from gw.agent_runtime.models import ErrorCode, Identifier, ToolCostState, ToolRiskLevel
 from gw.agent_runtime.policy import CapabilityRegistry, ToolRegistration
 
 # 与票面 schema 样例一致：run_id + stage + idempotency_key 必填，
@@ -64,6 +73,69 @@ _STORYBOARD_INPUT_SCHEMA: dict[str, Any] = {
         "stage": {"type": "string", "enum": ["storyboard_text"]},
         "idempotency_key": {"type": "string", "minLength": 8},
         "instructions": {"type": "string", "maxLength": 4000},
+    },
+}
+_I2V_INPUT_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "additionalProperties": False,
+    "required": [
+        "run_id",
+        "idempotency_key",
+        "provider_id",
+        "model",
+        "prompt",
+        "duration",
+        "aspect_ratio",
+        "production_context",
+    ],
+    "properties": {
+        "run_id": {"type": "string", "minLength": 1},
+        "idempotency_key": {"type": "string", "minLength": 8},
+        "provider_id": {"type": "string", "minLength": 1, "maxLength": 128},
+        "model": {"type": "string", "minLength": 1, "maxLength": 256},
+        "prompt": {"type": "string", "minLength": 1, "maxLength": 20000},
+        "duration": {"type": "number", "exclusiveMinimum": 0, "maximum": 120},
+        "aspect_ratio": {"type": "string", "enum": ["16:9", "9:16", "1:1"]},
+        "production_context": {
+            "type": "object",
+            "additionalProperties": False,
+            "required": ["project_id", "canvas_id", "entity_id"],
+            "properties": {
+                "project_id": {"type": "string", "minLength": 1, "maxLength": 128},
+                "canvas_id": {"type": "string", "minLength": 1, "maxLength": 128},
+                "entity_id": {"type": "string", "minLength": 1, "maxLength": 128},
+            },
+        },
+    },
+}
+_TIMELINE_COMPOSE_INPUT_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "additionalProperties": False,
+    "required": [
+        "run_id",
+        "project_id",
+        "pipeline_id",
+        "timeline_manifest",
+        "idempotency_key",
+    ],
+    "properties": {
+        "run_id": {"type": "string", "minLength": 1},
+        "project_id": {"type": "string", "minLength": 1},
+        "pipeline_id": {"type": "string", "minLength": 1},
+        "timeline_manifest": {"type": "object"},
+        "idempotency_key": {"type": "string", "minLength": 8},
+    },
+}
+
+_MASTER_RENDER_INPUT_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "additionalProperties": False,
+    "required": ["run_id", "project_id", "timeline_manifest", "idempotency_key"],
+    "properties": {
+        "run_id": {"type": "string", "minLength": 1},
+        "project_id": {"type": "string", "minLength": 1},
+        "timeline_manifest": {"type": "object"},
+        "idempotency_key": {"type": "string", "minLength": 8},
     },
 }
 
@@ -92,11 +164,76 @@ class StageCandidateService(Protocol):
     ) -> Mapping[str, Any]: ...
 
 
+@runtime_checkable
+class VideoGenerationService(Protocol):
+    """注入的 I2V 服务边界；真实凭据仅由服务端 VideoTaskService 处理。"""
+
+    def create_generation(
+        self, payload: dict[str, Any], key_value: str | None, context: Any
+    ) -> Mapping[str, Any]: ...
+
+
+@runtime_checkable
+class TimelineComposeService(Protocol):
+    """注入的现有时间线能力；本模块不实现或重写时间线引擎。"""
+
+    async def compose_timeline(
+        self,
+        *,
+        run_id: str,
+        project_id: str,
+        pipeline_id: str,
+        timeline_manifest: Mapping[str, Any],
+        idempotency_key: str,
+    ) -> Mapping[str, Any]: ...
+
+
+@runtime_checkable
+class MasterRenderService(Protocol):
+    """注入的本地母带渲染边界；真实 ffmpeg 进程与落盘路径由实现方管理。
+
+    对接 ``gw/media/ffmpeg_master.py`` 的 ``render_master_mp4``；本模块不
+    直接执行 ffmpeg，也不感知素材绝对路径。
+    """
+
+    async def render_master(
+        self,
+        *,
+        run_id: str,
+        project_id: str,
+        timeline_manifest: Mapping[str, Any],
+        idempotency_key: str,
+    ) -> Mapping[str, Any]: ...
+
+
+GateLookup = Callable[[str], GateState | None]
+
+
 @dataclass
 class PipelineToolServices:
     """注册时注入的服务集合；测试以 fake 记录调用参数替换真实实现。"""
 
     stage_candidate: StageCandidateService
+    video_task: VideoGenerationService | None = None
+    gate_store: GateStore | None = None
+    video_context: Any | None = None
+    timeline_compose: TimelineComposeService | None = None
+    timeline_cost_state: ToolCostState = ToolCostState.free
+    master_render: MasterRenderService | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class _GateCostRegistration:
+    """门禁策略读取所需的最小工具注册视图。"""
+
+    cost_state: ToolCostState
+
+
+_I2V_GATE_REGISTRATION = _GateCostRegistration(ToolCostState.metered)
+
+# master_render 虽为本地 free 成本但不可逆；门禁校验固定以 metered 视图执行，
+# 使 ``require_gate_for_tool`` 不因 cost=free 而放行。
+_MASTER_GATE_REGISTRATION = _GateCostRegistration(ToolCostState.metered)
 
 
 def is_absolute_path_string(value: str) -> bool:
@@ -158,12 +295,179 @@ def _make_stage_handler(
     return handler
 
 
-def register_pipeline_tools(
-    registry: CapabilityRegistry, *, services: PipelineToolServices
-) -> None:
-    """按票面工具清单注册前段工具；重复注册由 registry 的唯一性约束拒绝。
+def _make_i2v_handler(
+    services: PipelineToolServices,
+    schema: Mapping[str, Any],
+    memo: dict[tuple[str, str], Any],
+) -> Any:
+    """仅在唯一 i2v_submit 门禁批准后调用注入的 I2V 服务。"""
 
-    幂等备忘按工具隔离：同一 idempotency_key 只在同名工具内去重。
+    async def handler(arguments: Mapping[str, Any]) -> Any:
+        payload = dict(arguments or {})
+        errors = sorted(
+            error.message for error in Draft202012Validator(schema).iter_errors(payload)
+        )
+        if errors:
+            raise DomainError(
+                ErrorCode.VALIDATION_FAILED,
+                "工具入参未通过 schema 校验",
+                request_id=str(payload.get("run_id") or "i2v-tool"),
+            )
+
+        run_id = str(payload["run_id"])
+        idempotency_key = str(payload["idempotency_key"])
+        gate_records = (
+            services.gate_store.list_for_run(Identifier(run_id))
+            if services.gate_store is not None
+            else ()
+        )
+        i2v_gates = [
+            record for record in gate_records if record.kind is GateKind.i2v_submit
+        ]
+        gate_state = i2v_gates[0].state if len(i2v_gates) == 1 else None
+        require_gate_for_tool(
+            _I2V_GATE_REGISTRATION,
+            gate_state,
+            request_id=run_id,
+        )
+
+        memo_key = (run_id, idempotency_key)
+        if memo_key in memo:
+            return sanitize_tool_result(memo[memo_key])
+        if services.video_task is None or services.video_context is None:
+            raise DomainError(
+                ErrorCode.CAPABILITY_UNSUPPORTED,
+                "I2V generation service is not configured.",
+                request_id="i2v_generate",
+            )
+
+        video_payload = {
+            key: value
+            for key, value in payload.items()
+            if key not in {"run_id", "idempotency_key"}
+        }
+        video_payload["production_context"] = dict(payload["production_context"])
+        result = services.video_task.create_generation(
+            video_payload,
+            idempotency_key,
+            services.video_context,
+        )
+        memo[memo_key] = result
+        return sanitize_tool_result(result)
+
+    return handler
+
+
+def _make_timeline_handler(
+    services: TimelineComposeService,
+    schema: Mapping[str, Any],
+    memo: dict[str, Any],
+    *,
+    cost_state: ToolCostState,
+    gate_lookup: GateLookup | None,
+) -> Any:
+    """构造时间线 handler：先校验门禁，再幂等调用注入的能力。"""
+
+    async def handler(arguments: Mapping[str, Any]) -> Any:
+        payload = dict(arguments or {})
+        errors = sorted(
+            error.message for error in Draft202012Validator(schema).iter_errors(payload)
+        )
+        if errors:
+            raise DomainError(
+                ErrorCode.VALIDATION_FAILED,
+                "工具入参未通过 schema 校验",
+                request_id=str(payload.get("run_id") or "timeline-tool"),
+            )
+
+        run_id = str(payload["run_id"])
+        gate_state = (
+            gate_lookup(run_id)
+            if cost_state is not ToolCostState.free and gate_lookup is not None
+            else None
+        )
+        require_gate_for_tool(
+            _GateCostRegistration(cost_state), gate_state, request_id=run_id
+        )
+
+        idempotency_key = str(payload["idempotency_key"])
+        if idempotency_key in memo:
+            return sanitize_tool_result(memo[idempotency_key])
+        result = await services.compose_timeline(
+            run_id=run_id,
+            project_id=str(payload["project_id"]),
+            pipeline_id=str(payload["pipeline_id"]),
+            timeline_manifest=dict(payload["timeline_manifest"]),
+            idempotency_key=idempotency_key,
+        )
+        memo[idempotency_key] = result
+        return sanitize_tool_result(result)
+
+    return handler
+
+
+def _make_master_render_handler(
+    services: MasterRenderService,
+    schema: Mapping[str, Any],
+    memo: dict[str, Any],
+    gate_store: GateStore | None,
+) -> Any:
+    """构造母带渲染 handler：先强制 ``master_output`` 门禁，再幂等调用注入能力。
+
+    成本虽为 free 但产物不可逆，与 i2v 相同以 metered 视图复用
+    ``require_gate_for_tool``：无唯一的 approved ``master_output`` 门禁即拒绝。
+    """
+
+    async def handler(arguments: Mapping[str, Any]) -> Any:
+        payload = dict(arguments or {})
+        errors = sorted(
+            error.message for error in Draft202012Validator(schema).iter_errors(payload)
+        )
+        if errors:
+            raise DomainError(
+                ErrorCode.VALIDATION_FAILED,
+                "工具入参未通过 schema 校验",
+                request_id=str(payload.get("run_id") or "master-tool"),
+            )
+
+        run_id = str(payload["run_id"])
+        gate_records = (
+            gate_store.list_for_run(Identifier(run_id)) if gate_store is not None else ()
+        )
+        master_gates = [
+            record for record in gate_records if record.kind is GateKind.master_output
+        ]
+        gate_state = master_gates[0].state if len(master_gates) == 1 else None
+        require_gate_for_tool(
+            _MASTER_GATE_REGISTRATION,
+            gate_state,
+            request_id=run_id,
+        )
+
+        idempotency_key = str(payload["idempotency_key"])
+        if idempotency_key in memo:
+            return sanitize_tool_result(memo[idempotency_key])
+        result = await services.render_master(
+            run_id=run_id,
+            project_id=str(payload["project_id"]),
+            timeline_manifest=dict(payload["timeline_manifest"]),
+            idempotency_key=idempotency_key,
+        )
+        memo[idempotency_key] = result
+        return sanitize_tool_result(result)
+
+    return handler
+
+
+def register_pipeline_tools(
+    registry: CapabilityRegistry,
+    *,
+    services: PipelineToolServices,
+    gate_lookup: GateLookup | None = None,
+) -> None:
+    """注册已注入的前段与时间线工具；重复注册由 registry 唯一性约束拒绝。
+
+    时间线服务未注入时不注册 ``timeline_compose``；幂等备忘按工具隔离。
     """
     registry.register_tool(
         ToolRegistration(
@@ -171,6 +475,34 @@ def register_pipeline_tools(
             handler=_make_stage_handler(services, _TOOL_INPUT_SCHEMA, {}),
             input_schema=_TOOL_INPUT_SCHEMA,
             risk_level=ToolRiskLevel.medium,
+            cost_state=ToolCostState.metered,
+            idempotency_supported=True,
+        )
+    )
+    if services.timeline_compose is not None:
+        registry.register_tool(
+            ToolRegistration(
+                name="timeline_compose",
+                handler=_make_timeline_handler(
+                    services.timeline_compose,
+                    _TIMELINE_COMPOSE_INPUT_SCHEMA,
+                    {},
+                    cost_state=services.timeline_cost_state,
+                    gate_lookup=gate_lookup,
+                ),
+                input_schema=_TIMELINE_COMPOSE_INPUT_SCHEMA,
+                risk_level=ToolRiskLevel.medium,
+                cost_state=services.timeline_cost_state,
+                idempotency_supported=True,
+            )
+        )
+    registry.register_tool(
+        ToolRegistration(
+            name="i2v_generate",
+            handler=_make_i2v_handler(services, _I2V_INPUT_SCHEMA, {}),
+            required_permissions=(Identifier("video.generate"),),
+            input_schema=_I2V_INPUT_SCHEMA,
+            risk_level=ToolRiskLevel.high,
             cost_state=ToolCostState.metered,
             idempotency_supported=True,
         )
@@ -185,11 +517,31 @@ def register_pipeline_tools(
             idempotency_supported=True,
         )
     )
+    if services.master_render is not None:
+        registry.register_tool(
+            ToolRegistration(
+                name="master_render",
+                handler=_make_master_render_handler(
+                    services.master_render,
+                    _MASTER_RENDER_INPUT_SCHEMA,
+                    {},
+                    services.gate_store,
+                ),
+                input_schema=_MASTER_RENDER_INPUT_SCHEMA,
+                risk_level=ToolRiskLevel.critical,
+                cost_state=ToolCostState.free,
+                idempotency_supported=True,
+            )
+        )
 
 
 __all__ = [
+    "MasterRenderService",
     "PipelineToolServices",
     "StageCandidateService",
+    "VideoGenerationService",
+    "TimelineComposeService",
+    "GateLookup",
     "is_absolute_path_string",
     "register_pipeline_tools",
     "sanitize_tool_result",

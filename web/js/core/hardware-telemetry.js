@@ -49,25 +49,31 @@
 
   const HardwareDeck = {
     // 1. Clock Engine
+    clockTimer: null,
     initClock: function(elementId = 'masterDeckClock') {
-      const el = document.getElementById(elementId);
+      if (this.clockTimer) {
+        clearInterval(this.clockTimer);
+        this.clockTimer = null;
+      }
       const dateButton = document.getElementById(elementId === 'masterDeckClock' ? 'masterDeckDate' : 'workspaceCyberDate');
       if (dateButton && !dateButton.dataset.gwCalendarBound) {
         dateButton.addEventListener('click', () => this.openProjectCalendar(dateButton));
         dateButton.dataset.gwCalendarBound = '1';
       }
-      if (!el) return;
-      const monthEl = document.getElementById('masterDeckDateMonth');
-      const dayEl = document.getElementById('masterDeckDateDay');
+      if (!document.getElementById(elementId)) return;
       const update = () => {
+        const el = document.getElementById(elementId);
+        if (!el) return;
         const parts = new Intl.DateTimeFormat('en-US', {timeZone: 'Asia/Shanghai', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false, month: 'short', day: '2-digit'}).formatToParts(new Date());
         const value = Object.fromEntries(parts.map(({type, value}) => [type, value]));
         el.textContent = `${value.hour}:${value.minute}:${value.second}`;
+        const monthEl = document.getElementById('masterDeckDateMonth');
+        const dayEl = document.getElementById('masterDeckDateDay');
         if (monthEl) monthEl.textContent = String(value.month || '---').toUpperCase();
         if (dayEl) dayEl.textContent = value.day || '--';
       };
       update();
-      setInterval(update, 1000);
+      this.clockTimer = setInterval(update, 1000);
     },
 
     // 当前页项目排期弹窗：复用真实项目接口，日期按钮不会改变当前 URL。
@@ -205,21 +211,45 @@
       this.vuState[metric].target = Math.max(0, Math.min(100, value));
     },
 
+    probeAccessUnavailableKind: function() {
+      return !authGate.loaded || this.authState.degradation === 'unavailable'
+        ? 'service_unavailable' : 'unauthorized';
+    },
+
     /**
      * 读取真实硬件遥测并驱动 VU 表。
      * 数据来源：GET /api/observability/health 的 hardware_telemetry 检查项；
      * 只在拿到有限数值时接线（integrated=true），失败/缺失一律显式降级。
      */
     syncTelemetry: async function() {
-      if (!authGate.canRead('/api/observability/health')) return;
+      const markUnavailable = kind => {
+        if (typeof this.markTelemetryUnavailable === 'function') this.markTelemetryUnavailable(kind);
+      };
+      if (!authGate.canRead('/api/observability/health')) {
+        // 保持被独立调用/轻量测试接收器调用时兼容；真实 HardwareDeck 始终会更新顶栏状态。
+        const kind = typeof this.probeAccessUnavailableKind === 'function'
+          ? this.probeAccessUnavailableKind() : 'unauthorized';
+        markUnavailable(kind);
+        return;
+      }
       const authRevision = authGate.revision;
       try {
         const res = await fetch('/api/observability/health', {
           credentials: 'same-origin',
-          cache: 'no-store'
+          cache: 'no-store',
+          signal: AbortSignal.timeout(15000)
         });
-        if (res.status === 401) { authGate.invalidate(401, authRevision, '/api/observability/health'); return; }
-        if (!res.ok) throw new Error('health ' + res.status);
+        if (res.status === 401) {
+          markUnavailable('unauthorized');
+          authGate.invalidate(401, authRevision, '/api/observability/health');
+          return;
+        }
+        if (!res.ok) {
+          const kind = res.status === 403 ? 'forbidden'
+            : (res.status === 503 || res.status >= 500 ? 'service_unavailable' : 'not_integrated');
+          markUnavailable(kind);
+          return;
+        }
         const data = await res.json();
         const checks = Array.isArray(data && data.checks) ? data.checks : [];
         const hw = checks.filter(function (c) { return c && c.name === 'hardware_telemetry'; })[0];
@@ -231,14 +261,14 @@
           this.vuState.lastSyncAt = Date.now();
           this.applyVUMeterReading(cpu, mem);
         } else {
-          this.markTelemetryUnavailable(hw ? hw.status : 'not_integrated');
+          markUnavailable(hw ? hw.status : 'not_integrated');
         }
         // 同一次 health 应答里消费真实 GPU 检查项（无则显式降级）。
         const gpu = checks.filter(function (c) { return c && c.name === 'gpu_telemetry'; })[0] || null;
         this.applyGpuTelemetry(gpu);
         this.applyPipelineReadouts(hw);
       } catch (e) {
-        this.markTelemetryUnavailable('service_unavailable');
+        markUnavailable('service_unavailable');
       }
     },
 
@@ -427,32 +457,38 @@
     /** 遥测不可用：表针归零并显式标注原因，绝不显示假数值。 */
     markTelemetryUnavailable: function (kind) {
       this.vuState.integrated = false;
-      const label = kind === 'service_unavailable' ? '暂不可用' : '未接入';
+      const label = kind === 'service_unavailable' ? '暂不可用'
+        : (kind === 'unauthorized' ? '未认证'
+        : (kind === 'forbidden' ? '权限不足' : '未接入'));
+      const degradation = ['service_unavailable', 'unauthorized', 'forbidden'].includes(kind) ? kind : 'not_integrated';
       const reason = kind === 'service_unavailable'
-        ? '硬件遥测端点暂时不可用，未读取到真实 CPU/RAM 负载数据'
-        : '未读取到真实硬件遥测读数，无真实 CPU/RAM 负载数据';
+        ? '硬件遥测暂不可用，未读取到真实 CPU/RAM 负载数据'
+        : (kind === 'unauthorized'
+          ? '当前未认证，未请求受保护的 CPU/RAM 遥测数据'
+          : (kind === 'forbidden'
+            ? '当前无权读取 CPU/RAM 遥测数据'
+            : '未读取到真实硬件遥测读数，无真实 CPU/RAM 负载数据'));
       [['cpu', 'svgNeedleCPU', 'cpuValText'], ['ram', 'svgNeedleRAM', 'ramValText']].forEach(function (entry) {
         const needle = document.getElementById(entry[1]);
         const textEl = document.getElementById(entry[2]);
         if (needle) needle.setAttribute('transform', 'rotate(0 74 48)');
         if (textEl) {
           textEl.textContent = label;
-          textEl.setAttribute('data-gw-degradation', kind === 'service_unavailable' ? 'service_unavailable' : 'not_integrated');
+          textEl.setAttribute('data-gw-degradation', degradation);
           textEl.setAttribute('title', reason);
         }
       });
     },
 
     initVUMeters: function() {
-      const cpuNeedle = document.getElementById('svgNeedleCPU');
-      const cpuText = document.getElementById('cpuValText');
-      const ramNeedle = document.getElementById('svgNeedleRAM');
-      const ramText = document.getElementById('ramValText');
-
       // 先显式降级占位，随后立即用真实 /health 读数覆盖；不启动任何随机抖动。
       this.markTelemetryUnavailable('not_integrated');
 
       const animate = () => {
+        const cpuNeedle = document.getElementById('svgNeedleCPU');
+        const cpuText = document.getElementById('cpuValText');
+        const ramNeedle = document.getElementById('svgNeedleRAM');
+        const ramText = document.getElementById('ramValText');
         ['cpu', 'ram'].forEach(key => {
           const st = this.vuState[key];
           const val = Math.max(0, Math.min(100, st.target));
@@ -550,7 +586,14 @@
     onlineState: { kind: 'unknown', detail: '' },
 
     syncOnlineStatus: async function() {
-      if (!authGate.canRead('/api/observability/health')) return;
+      if (!authGate.canRead('/api/observability/health')) {
+        const kind = this.probeAccessUnavailableKind();
+        const detail = kind === 'service_unavailable'
+          ? '认证状态暂不可用，未请求健康探针'
+          : '当前未认证，未请求健康探针';
+        this.applyOnlineStatus(kind, detail);
+        return;
+      }
       const authRevision = authGate.revision;
       const node = document.getElementById('gwOnlineStatus');
       if (!node) return;
@@ -558,12 +601,18 @@
       try {
         const res = await fetch('/api/observability/health', {
           credentials: 'same-origin',
-          cache: 'no-store'
+          cache: 'no-store',
+          signal: AbortSignal.timeout(15000)
         });
-        if (res.status === 401) { authGate.invalidate(401, authRevision, '/api/observability/health'); return; }
+        if (res.status === 401) {
+          this.applyOnlineStatus('unauthorized', 'health HTTP 401');
+          authGate.invalidate(401, authRevision, '/api/observability/health');
+          return;
+        }
         const body = await res.json().catch(() => ({}));
         if (!res.ok) {
-          const kind = res.status === 503 ? 'service_unavailable' : 'not_integrated';
+          const kind = res.status === 403 ? 'forbidden'
+            : (res.status === 503 || res.status >= 500 ? 'service_unavailable' : 'not_integrated');
           this.applyOnlineStatus(kind, 'health HTTP ' + res.status);
           return;
         }
@@ -606,6 +655,16 @@
         node.className = 'gw-type-body-sm font-mono text-amber-300 font-semibold';
         node.setAttribute('data-gw-degradation', 'service_unavailable');
         node.title = '健康探测端点暂时不可用（' + detail + '）';
+      } else if (kind === 'unauthorized') {
+        node.textContent = '未认证';
+        node.className = 'gw-type-body-sm font-mono text-amber-300 font-semibold';
+        node.setAttribute('data-gw-degradation', 'unauthorized');
+        node.title = '当前未认证，未请求受保护的健康探针（' + detail + '）';
+      } else if (kind === 'forbidden') {
+        node.textContent = '权限不足';
+        node.className = 'gw-type-body-sm font-mono text-amber-300 font-semibold';
+        node.setAttribute('data-gw-degradation', 'forbidden');
+        node.title = '当前无权读取健康探针（' + detail + '）';
       } else {
         node.textContent = '未接入';
         node.className = 'gw-type-body-sm font-mono text-amber-300 font-semibold';
@@ -624,7 +683,9 @@
     applyHeaderTelemetryLabels: function(kind, detail) {
       const label = kind === 'ok' ? '已接入'
         : (kind === 'degraded' ? '部分降级'
-        : (kind === 'service_unavailable' ? '暂不可用' : '未接入'));
+        : (kind === 'service_unavailable' ? '暂不可用'
+        : (kind === 'unauthorized' ? '未认证'
+        : (kind === 'forbidden' ? '权限不足' : '未接入'))));
       const tone = kind === 'ok' ? 'text-emerald-400'
         : (kind === 'degraded' || kind === 'service_unavailable' ? 'text-amber-300' : 'text-amber-300');
       document.querySelectorAll('[data-gw-header-prefix]').forEach(function (el) {
@@ -1072,6 +1133,7 @@
                 <div class="gw-type-body-sm font-mono text-[#dfc384]">${roleMap[user.role] || user.role}</div>
                 <div class="gw-type-body-sm font-mono text-slate-500 mt-0.5">账户ID: ${user.username || user.id || '—'} · 已连接后端认证服务</div>
               </div>
+              <button type="button" class="hw-btn hw-btn-danger shrink-0" onclick="HardwareDeck.handleLogout()">退出登录</button>
             </div>
 
             <div class="p-2.5 rounded-xl bg-black/40 border border-white/5 space-y-1.5 gw-type-body-sm font-mono text-slate-400">
@@ -1081,15 +1143,9 @@
               <div class="flex justify-between"><span>状态端点</span><span class="text-slate-300">GET /api/asset-auth/status</span></div>
             </div>
 
-            <div class="pt-2 border-t border-white/10 flex items-center justify-between">
-              <a href="/static/pages/assets.html" class="gw-type-body-sm font-mono text-[#dfc384] hover:underline flex items-center space-x-1">
-                <i data-lucide="external-link" class="w-3 h-3"></i>
-                <span>打开资产中心与团队分配</span>
-              </a>
-              <div class="flex items-center space-x-2">
-                <button type="button" class="hw-btn" onclick="HardwareDeck.closeModal('accountModal')">关闭</button>
-                <button type="button" class="hw-btn hw-btn-danger" onclick="HardwareDeck.handleLogout()">退出登录</button>
-              </div>
+            <!-- QIN-483：底部操作区清空，保留行高以维持弹窗尺寸不变；关闭走右上角入口 -->
+            <div class="pt-2 border-t border-white/10 flex items-center justify-between" aria-hidden="true">
+              <span class="h-8 w-full"></span>
             </div>
           </div>
         `;
@@ -1803,10 +1859,17 @@
       });
 
       window.FloatingDismissal?.scan();
+    },
+
+    refreshForRoute: async function() {
+      // SPA 路由替换顶栏节点后，单次初始化创建的 timer 会指向已脱离文档的旧节点。
+      this.initClock();
+      await Promise.all([this.syncTelemetry(), this.syncOnlineStatus()]);
     }
   };
 
   window.HardwareDeck = HardwareDeck;
+  window.addEventListener('gw:route-loaded', () => HardwareDeck.refreshForRoute());
 
   // Auto initialize on DOMContentLoaded
   if (document.readyState === 'loading') {

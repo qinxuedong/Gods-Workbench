@@ -1,0 +1,14 @@
+{
+  "schema": "gw.cleanroom-admission-shard/v1",
+  "issue": 415,
+  "authorization_basis": "GitHub Issue #415, 2026-10-28",
+  "files": [
+    "web/js/controllers/agent-tasks.js",
+    "tests/frontend/mvp2-t7a-reference-card.test.mjs",
+    "tests/frontend/node-files.txt",
+    "tests/hygiene/fixtures/admissions/issue-415.json"
+  ],
+  "admitted_files": [],
+  "accepted_test_files": [],
+  "notes": "QIN-457：MVP2-T7a 参考卡 UI（选中/拒绝/备注/顺序）。只扩展既有 Agent 面板控制器，样式沿用黑金 token，不新增 CSS 与设计体系；node 测试全部 mock fetch。"
+}

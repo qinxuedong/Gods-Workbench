@@ -1,0 +1,14 @@
+{
+  "schema": "gw.cleanroom-admission-shard/v1",
+  "issue": 451,
+  "authorization_basis": "GitHub Issue #451, 2026-10-29",
+  "files": [
+    "web/js/core/hardware-telemetry.js",
+    "tests/frontend/qin-476-topbar-telemetry.test.mjs",
+    "tests/frontend/node-files.txt",
+    "tests/hygiene/fixtures/admissions/issue-451.json"
+  ],
+  "admitted_files": [],
+  "accepted_test_files": [],
+  "notes": "QIN-476：SPA 跨页顶栏遥测与时钟回归修复；新测试以本票分片登记，不改基础准入账本。"
+}
