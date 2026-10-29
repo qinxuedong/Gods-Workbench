@@ -225,11 +225,15 @@
       const markUnavailable = kind => {
         if (typeof this.markTelemetryUnavailable === 'function') this.markTelemetryUnavailable(kind);
       };
+      const markGpuUnavailable = kind => {
+        if (typeof this.applyGpuTelemetry === 'function') this.applyGpuTelemetry({ status: kind });
+      };
       if (!authGate.canRead('/api/observability/health')) {
         // 保持被独立调用/轻量测试接收器调用时兼容；真实 HardwareDeck 始终会更新顶栏状态。
         const kind = typeof this.probeAccessUnavailableKind === 'function'
           ? this.probeAccessUnavailableKind() : 'unauthorized';
         markUnavailable(kind);
+        markGpuUnavailable(kind);
         return;
       }
       const authRevision = authGate.revision;
@@ -241,6 +245,7 @@
         });
         if (res.status === 401) {
           markUnavailable('unauthorized');
+          markGpuUnavailable('unauthorized');
           authGate.invalidate(401, authRevision, '/api/observability/health');
           return;
         }
@@ -248,6 +253,7 @@
           const kind = res.status === 403 ? 'forbidden'
             : (res.status === 503 || res.status >= 500 ? 'service_unavailable' : 'not_integrated');
           markUnavailable(kind);
+          markGpuUnavailable(kind);
           return;
         }
         const data = await res.json();
@@ -269,6 +275,7 @@
         this.applyPipelineReadouts(hw);
       } catch (e) {
         markUnavailable('service_unavailable');
+        markGpuUnavailable('service_unavailable');
       }
     },
 
@@ -287,7 +294,7 @@
       const vram = ok ? Number(check.metrics.gpu_memory_percent) : NaN;
       const devices = ok && Array.isArray(check.metrics.devices) ? check.metrics.devices : [];
       const kind = (check && check.status) === 'ok' ? 'ok'
-        : (check && check.status === 'service_unavailable' ? 'service_unavailable' : 'not_integrated');
+        : (check && ['service_unavailable', 'unauthorized', 'forbidden'].includes(check.status) ? check.status : 'not_integrated');
 
       const utilNode = document.getElementById('gpuUtilReadout');
       const vramNode = document.getElementById('gpuVramReadout');
@@ -328,7 +335,8 @@
           if (thumb) thumb.style.left = pct + '%';
         } else {
           if (node) {
-            node.textContent = kind === 'service_unavailable' ? '暂不可用' : '未接入';
+            node.textContent = kind === 'service_unavailable' ? '暂不可用'
+              : (kind === 'unauthorized' ? '未认证' : (kind === 'forbidden' ? '权限不足' : '未接入'));
             node.className = 'text-amber-300';
             node.setAttribute('data-gw-degradation', kind);
             node.title = '无真实 GPU 遥测读数（nvidia-smi 不可用或未检出设备）';
