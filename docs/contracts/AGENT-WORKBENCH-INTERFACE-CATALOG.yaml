@@ -335,3 +335,28 @@ tools:
         idempotency_key:
           type: string
           minLength: 8
+  - name: master_render
+    description: "调用注入的本地母带渲染能力对接 render_master_mp4；成本 free 但不可逆，必须经唯一的 master_output 门禁 approved，无批准状态 fail closed"
+    risk_level: critical
+    cost_state: free
+    idempotency_supported: true
+    input_schema:
+      type: object
+      additionalProperties: false
+      required:
+        - run_id
+        - project_id
+        - timeline_manifest
+        - idempotency_key
+      properties:
+        run_id:
+          type: string
+          minLength: 1
+        project_id:
+          type: string
+          minLength: 1
+        timeline_manifest:
+          type: object
+        idempotency_key:
+          type: string
+          minLength: 8
