@@ -33,15 +33,19 @@ def test_editor_uses_readable_type_scale_and_responsive_controls(
         writes,
     ):
         frame = settings_frame(page, base, entry)
+        save_button = page.locator(".api-page-save-btn")
+        save_button.wait_for(state="visible")
         metrics = frame.evaluate("""() => {
             const style = selector => getComputedStyle(document.querySelector(selector));
             return {title:style('#editorTitle').fontSize, section:style('.block-title').fontSize,
                 label:style('.label').fontSize, input:style('#nameInput').fontSize,
                 hint:style('#keyHint').fontSize, hintWeight:style('#keyHint').fontWeight,
                 hintTracking:style('#keyHint').letterSpacing, family:style('#nameInput').fontFamily,
-                inputHeight:document.querySelector('#nameInput').getBoundingClientRect().height,
-                buttonHeight:document.querySelector('.api-page-save-btn').getBoundingClientRect().height};
+                inputHeight:document.querySelector('#nameInput').getBoundingClientRect().height};
         }""")
+        metrics["buttonHeight"] = save_button.evaluate(
+            "button => button.getBoundingClientRect().height"
+        )
         # 页面主标题角色统一 16/24/700（全站排版规范，不得回退24px）。
         assert metrics["title"] == "16px"
         # 遵循当前已生效的全站排版规范：栏目标题14/22/500，正文14px，说明12px。

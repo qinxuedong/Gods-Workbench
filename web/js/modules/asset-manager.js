@@ -2485,12 +2485,16 @@ function renderGlobalDirectorySettings(){
     host.innerHTML = `<header class="directory-page-header gw-settings-panel-head"><h1><i data-lucide="folder-cog"></i>目录设置</h1><button type="button" class="hw-btn" data-directory-reload title="重新读取目录设置" ${directorySettingsSaving ? 'disabled' : ''}><i data-lucide="refresh-cw"></i>重新读取</button></header>
         ${directorySettingsError ? `<div class="directory-error" role="alert">${escapeHtml(directorySettingsError)}</div>` : ''}
         ${!directorySettingsReady ? `<p class="directory-status" role="status">${directorySettingsError ? '请检查权限或连接后重新读取。' : '正在读取目录设置…'}</p>` : `<fieldset class="directory-cards-grid" ${directorySettingsSaving ? 'disabled' : ''}>
+        <div class="directory-cards-column directory-cards-column--left">
         <section class="asset-pref-section bay-inset p-4 rounded-xl gw-settings-card" data-board-directories-settings><div class="asset-pref-title"><i data-lucide="folder-check"></i><span>登记目录</span></div><div class="storage-dir-grid">${input('local','本地素材目录',dirs.local)}${isTauriClientMode() ? clientSourceInput() : ''}</div><div class="directory-registered">${storageExtraLocalEntries().map(item=>`<div><span>${escapeHtml(item.name)}</span><code>${escapeHtml(item.path)}</code></div>`).join('')}</div></section>
-        ${renderAllowedRootsSettings()}
         <section class="asset-pref-section bay-inset p-4 rounded-xl gw-settings-card"><div class="asset-pref-title"><i data-lucide="hard-drive"></i><span>上传与生成</span></div><div class="storage-dir-grid">${input('upload','上传素材',dirs.upload)}${input('generated','生成素材',dirs.generated)}</div></section>
-        ${renderProjectWorkspaceSettingsBody()}
         <section class="asset-pref-section bay-inset p-4 rounded-xl gw-settings-card">${renderAssetThumbnailCacheDirectoryBody()}</section>
+        </div>
+        <div class="directory-cards-column directory-cards-column--right">
+        ${renderAllowedRootsSettings()}
+        ${renderProjectWorkspaceSettingsBody()}
         <section class="asset-pref-section bay-inset p-4 rounded-xl gw-settings-card"><div class="asset-pref-title"><i data-lucide="trash-2"></i><span>回收站目录</span></div><div class="storage-dir-grid">${input('trash','统一回收根目录（留空跟随素材源）',dirs.trash)}</div><p class="board-settings-hint">新回收素材保存在此目录的 god-recycler 子目录中；更改目录不会移动已有回收文件，历史记录仍可恢复。项目与画布继续使用原有逻辑回收记录。</p></section>
+        </div>
         </fieldset>${directorySettingsPage ? renderServerDirectoryBrowser() : ''}<footer class="directory-footer"><div id="assetStatus" class="directory-status" role="status" aria-live="polite">${escapeHtml(currentStatusText)}</div></footer>`}`;
     host.querySelector('.project-workspace-settings [data-storage-save]')?.remove();
     refreshIcons();

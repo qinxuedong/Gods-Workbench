@@ -1862,8 +1862,73 @@ window.addEventListener('message', event => {
         renderEditor();
     }
 });
+let settingsApiToolbar = null;
+function updateSettingsApiToolbarLabels(){
+    if(!settingsApiToolbar) return;
+    const labels = [
+        ['[data-api-settings-action="delete"] [data-i18n="api.delete"]', 'api.delete'],
+        ['[data-api-settings-action="save"] [data-i18n="api.save"]', 'api.save'],
+    ];
+    labels.forEach(([selector, key]) => {
+        const label = settingsApiToolbar.querySelector(selector);
+        if(label) label.textContent = tr(key);
+    });
+}
+function mountSettingsApiToolbar(){
+    if(window.parent === window || !document.documentElement.classList.contains('workspace-embedded')) return;
+    try {
+        const parentDocument = window.parent.document;
+        if(!parentDocument.location.pathname.endsWith('/pages/settings.html')) return;
+        const panel = parentDocument.querySelector('[data-panel="api-settings"]');
+        const header = panel?.querySelector(':scope > .gw-settings-panel-head');
+        const hostActions = header?.lastElementChild;
+        const providerEditor = document.getElementById('providerEditor');
+        const deleteButton = document.getElementById('deleteBtn');
+        const saveButton = document.querySelector('.api-page-save-btn');
+        if(!hostActions || !providerEditor || !deleteButton || !saveButton) return;
+
+        parentDocument.querySelector('[data-api-settings-toolbar]')?.remove();
+        document.documentElement.classList.add('settings-host');
+        const toolbar = parentDocument.createElement('div');
+        toolbar.dataset.apiSettingsToolbar = 'true';
+        toolbar.setAttribute('role', 'group');
+        toolbar.style.cssText = 'display:flex;align-items:center;gap:8px;flex-shrink:0;';
+        const actions = [
+            [deleteButton, 'delete', deleteProvider],
+            [saveButton, 'save', saveProviders],
+        ];
+        actions.forEach(([button, name, action]) => {
+            button.removeAttribute('onclick');
+            button.dataset.apiSettingsAction = name;
+            button.addEventListener('click', async () => {
+                if(button.disabled) return;
+                button.disabled = true;
+                try { await action(); }
+                finally { button.disabled = false; }
+            });
+            toolbar.appendChild(button);
+        });
+        hostActions.appendChild(toolbar);
+        settingsApiToolbar = toolbar;
+        const syncVisibility = () => {
+            const hidden = providerEditor.hidden;
+            toolbar.hidden = hidden;
+            toolbar.style.display = hidden ? 'none' : 'flex';
+        };
+        const observer = new MutationObserver(syncVisibility);
+        observer.observe(providerEditor, {attributes:true, attributeFilter:['hidden']});
+        syncVisibility();
+        window.addEventListener('pagehide', () => {
+            observer.disconnect();
+            toolbar.remove();
+            settingsApiToolbar = null;
+        }, {once:true});
+        updateSettingsApiToolbarLabels();
+    } catch(_) { /* 非同源或不可访问的宿主继续使用 iframe 内原有操作。 */ }
+}
 window.addEventListener('studio-lang-change', () => {
     renderEditor();
+    updateSettingsApiToolbarLabels();
 });
 window.onload = () => {
     if(window.StudioTheme) window.StudioTheme.apply();
@@ -1891,4 +1956,5 @@ window.onload = () => {
     });
     // 首屏静态图标渲染：loadProviders() 为异步，此处统一刷新一次以替换初始 HTML 中的 data-lucide 占位
     refreshIcons();
+    mountSettingsApiToolbar();
 };

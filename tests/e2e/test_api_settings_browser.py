@@ -275,7 +275,7 @@ def test_embedded_save_failure_is_visible_and_preserves_input(monkeypatch, tmp_p
                 response.request.method == "PUT" and "/api/providers" in response.url
             )
         ):
-            frame.locator(".api-page-save-btn").click()
+            page.locator(".api-page-save-btn").click()
         frame.locator("#status").filter(has_text="服务暂时不可用").wait_for(
             state="attached"
         )

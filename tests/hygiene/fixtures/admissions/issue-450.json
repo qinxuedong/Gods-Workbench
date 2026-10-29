@@ -1,0 +1,19 @@
+{
+  "schema": "gw.cleanroom-admission-shard/v1",
+  "issue": 450,
+  "authorization_basis": "GitHub Issue #450, 2026-10-28; PM scope extension, 2026-10-29",
+  "files": [
+    "web/css/pages/api-settings.css",
+    "web/css/pages/directory-settings.css",
+    "web/js/modules/api-settings.js",
+    "web/js/modules/asset-manager.js",
+    "tests/e2e/test_api_settings_browser.py",
+    "tests/e2e/test_api_settings_visual.py",
+    "tests/frontend/qin-475-settings-ui-polish.test.mjs",
+    "tests/frontend/node-files.txt",
+    "tests/hygiene/fixtures/admissions/issue-450.json"
+  ],
+  "admitted_files": [],
+  "accepted_test_files": [],
+  "notes": "QIN-475：目录设置卡片分列与 UI 间距、API 平台列表黑底、设置页标题栏承接原删除/保存动作；PM 授权两项既有 E2E 改用外层标题栏按钮定位；仅处理本票，不回填基础账本。"
+}

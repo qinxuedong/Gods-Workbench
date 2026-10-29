@@ -56,14 +56,15 @@ html.directory-settings-page.workspace-embedded body.gw-signal.gw-page--asset-ma
 .directory-page fieldset:disabled { opacity: .65; }
 
 /* QIN-432：目录设置卡片统一双列，窄屏折单列，对齐其他设置子页 */
+/* QIN-475 AC1：HTML 将目录三卡和其余三卡分列包装，避免交错 float 把第三张左卡推到右列之后。 */
 .directory-page .directory-cards-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 12px;
   align-items: start;
 }
-.directory-page .directory-cards-grid > .asset-pref-section { margin: 0; min-width: 0; }
-
+.directory-page .directory-cards-column { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.directory-page .directory-cards-column > .asset-pref-section { margin: 0; min-width: 0; }
 /* 拟物硬件沉槽分区卡片 (Bay-inset 风格) */
 .directory-page .asset-pref-section {
   padding: 1rem;
