@@ -1090,6 +1090,10 @@ body.theme-dark .asset-card.active { border-color:rgba(248,250,252,.86); box-sha
 .asset-pref-editor-actions { display:flex; justify-content:flex-end; margin-top:10px; }
 .storage-dir-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:10px; }
 .storage-dir-row { min-width:0; display:flex; flex-direction:column; gap:6px; }
+/* 输入框 + 选夹按钮组合条：与目录设置页同一套行布局，浮窗内也保持一致。 */
+.storage-dir-row .directory-input-row { display:flex; align-items:stretch; gap:6px; min-width:0; }
+.storage-dir-row .directory-input-row input { flex:1 1 auto; min-width:0; }
+.storage-dir-row .directory-input-row .directory-picker-btn { flex:0 0 auto; }
 .storage-dir-row span { color:var(--muted); font-size: var(--gw-type-label-md); font-weight:900; }
 .storage-dir-row input { width:100%; height:36px; border:1px solid var(--line); border-radius:10px; background:var(--soft); color:var(--text); padding:0 10px; font-size: var(--gw-type-body-sm); font-weight:700; outline:none; }
 .storage-dir-row select { width:100%; height:36px; border:1px solid var(--line); border-radius:10px; background:var(--soft); color:var(--text); padding:0 10px; font-size: var(--gw-type-body-sm); font-weight:700; outline:none; }
