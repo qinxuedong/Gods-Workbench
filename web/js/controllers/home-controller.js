@@ -975,28 +975,15 @@ window.WorkbenchHome = (function () {
 
   // 6. 主工作台视图切换 (控制台三列 vs 拟物设置工作台，实现“只切换下面页面，不是整体都变”)
   let settingsInitialized = false;
-  let contextBusCollapsed = false;
 
   function syncContextBus() {
     const aside = document.getElementById('homeContextBusAside');
-    const toggle = document.getElementById('homeContextBusToggle');
-    const controls = document.getElementById('homeContextBusControls');
     const dashboard = document.getElementById('workbenchMainDashboard');
     const inSettings = Boolean(dashboard?.classList.contains('hidden'));
-    aside?.classList.toggle('hidden', contextBusCollapsed || inSettings);
-    controls?.classList.toggle('hidden', inSettings);
-    if (toggle) {
-      toggle.setAttribute('aria-expanded', String(!contextBusCollapsed && !inSettings));
-      toggle.textContent = contextBusCollapsed ? '展开上下文总线' : '收起上下文总线';
-    }
+    aside?.classList.toggle('hidden', inSettings);
   }
 
   function initContextBus() {
-    contextBusCollapsed = Number(window.innerWidth || 1920) <= 1056;
-    document.getElementById('homeContextBusToggle')?.addEventListener('click', () => {
-      contextBusCollapsed = !contextBusCollapsed;
-      syncContextBus();
-    });
     syncContextBus();
   }
 

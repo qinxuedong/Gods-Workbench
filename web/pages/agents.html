@@ -9,6 +9,7 @@
   <script src="/static/vendor/js/tailwindcss-cdn.js?v=3.4.17&amp;build=d11003b2f6fb"></script>
   <script src="/static/vendor/js/lucide.js?v=1.16.0"></script>
   <link rel="stylesheet" href="/static/css/base/hardware-design-system.css?ui=20261011-final">
+  <link rel="stylesheet" href="/static/css/base/workspace-pages.css?v=20261029-qin478">
   <style>
     .aura-trace-row { cursor: pointer; border: 1px solid transparent; border-radius: 8px; padding: 4px 6px; transition: border-color .16s ease, background-color .16s ease; }
     .aura-trace-row:hover, .aura-trace-row:focus-visible, .aura-trace-row.is-expanded { border-color: rgba(223,195,132,.28); background: rgba(255,255,255,.035); outline: none; }
@@ -212,11 +213,11 @@
 
   <div id="agentsWorkspace" class="flex-1 flex overflow-hidden min-h-0">
     <!-- LEFT CONSOLE DOCK: 智能体神经元总线 (与首页同款总线结构) -->
-    <aside class="gw-page-side w-64 bg-[#08090d] border-r border-[#191c24] flex flex-col shrink-0 z-30 h-full min-h-0 overflow-hidden">
+    <aside class="gw-side-bus-unified gw-page-side w-64 bg-[#08090d] border-r border-[#191c24] flex flex-col shrink-0 z-30 h-full min-h-0 overflow-hidden">
       <div class="flex-1 flex flex-col min-h-0 relative overflow-hidden" id="contextBusContainer">
         <!-- Tree Header -->
-        <div class="p-2 border-b border-white/5 shrink-0">
-          <div class="w-full flex items-center justify-between px-3 py-2 rounded-xl bg-[#141720] border border-[#dfc384]/35 text-[#eddab3] gw-type-body-sm font-semibold shadow-[0_0_12px_rgba(223,195,132,0.12)] relative">
+        <div class="gw-side-bus-header p-2 border-b border-white/5 shrink-0">
+          <div class="gw-side-bus-title w-full flex items-center justify-between px-3 py-2 rounded-xl bg-[#141720] border border-[#dfc384]/35 text-[#eddab3] gw-type-body-sm font-semibold shadow-[0_0_12px_rgba(223,195,132,0.12)] relative">
             <span class="absolute left-0 top-2 bottom-2 w-1 bg-[#dfc384] rounded-r shadow-[0_0_8px_#dfc384]"></span>
             <div class="flex items-center space-x-2.5">
               <i data-lucide="git-branch" class="w-4 h-4 text-[#dfc384]"></i>
@@ -230,7 +231,7 @@
         <div class="flex-1 relative min-h-0">
           <!-- Continuous Bus Trunk Line -->
           <div class="absolute left-3.5 top-2 bottom-4 w-[1.5px] bg-gradient-to-b from-[#dfc384] via-[#dfc384]/40 to-transparent pointer-events-none"></div>
-          <div class="h-full overflow-y-auto p-2 pr-2 space-y-2 gw-type-body-sm" id="agentList">
+          <div class="gw-side-bus-list h-full overflow-y-auto p-2 pr-2 space-y-2 gw-type-body-sm" id="agentList">
             <!-- 由 controller 动态加载 -->
           </div>
         </div>

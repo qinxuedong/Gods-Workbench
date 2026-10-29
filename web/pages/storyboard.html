@@ -105,6 +105,7 @@
       #railScrollArea #storyboardSceneNavContainer { max-height: 104px; overflow-y: auto; }
     }
   </style>
+  <link rel="stylesheet" href="/static/css/base/side-bus-unified.css?v=20261029-qin478">
 </head>
 <body class="gw-shell bg-[#090a0d] text-slate-200 antialiased h-screen flex flex-col justify-between select-none overflow-hidden px-5 gw-type-body-md">
 
@@ -269,24 +270,24 @@
 
   <div id="storyboardWorkspace" class="app-shell-workspace flex-1 flex overflow-hidden min-h-0">
     <!-- LEFT: 导航总线（全局画布与创作工具箱） -->
-    <aside id="storyboardRail" class="w-64 bg-[#08090d] border-r border-[#191c24] flex flex-col shrink-0 z-30 h-full min-h-0">
-      <div class="flex-1 overflow-y-auto min-h-0" id="railScrollArea">
+    <aside id="storyboardRail" class="gw-side-bus-unified flex flex-col shrink-0 z-30 h-full min-h-0">
+      <div class="gw-side-bus-list flex-1 overflow-y-auto min-h-0" id="railScrollArea">
         <!-- 分组一：全局画布 -->
-        <section class="canvas-rail-group" aria-label="全局画布">
-          <div class="canvas-rail-heading">全局画布</div>
-          <button class="canvas-rail-item active hw-btn engaged" data-rail-type="canvas" data-canvas-rail="all" type="button" onclick="openCanvasOverview(this, 'all')" aria-pressed="true"><i data-lucide="layout-grid" class="w-3.5 h-3.5"></i><span>画布首页</span></button>
-          <button class="canvas-rail-item hw-btn" data-rail-type="canvas" data-canvas-rail="classic" type="button" onclick="openCanvasOverview(this, 'classic')" aria-pressed="false"><i data-lucide="sparkles" class="w-3.5 h-3.5"></i><span>智能画布</span></button>
-          <button class="canvas-rail-item hw-btn" data-rail-type="canvas" data-canvas-rail="project" type="button" onclick="openCanvasOverview(this, 'project')" aria-pressed="false"><i data-lucide="folder-kanban" class="w-3.5 h-3.5"></i><span>项目画布</span></button>
-          <button class="canvas-rail-item hw-btn" data-rail-type="canvas" data-canvas-rail="reference" type="button" onclick="openCanvasOverview(this, 'reference')" aria-pressed="false"><i data-lucide="image" class="w-3.5 h-3.5"></i><span>参考画布</span></button>
+        <section class="canvas-rail-group gw-side-bus-group" aria-label="全局画布">
+          <div class="canvas-rail-heading gw-side-bus-group-heading">全局画布</div>
+          <button class="canvas-rail-item gw-side-bus-item active hw-btn engaged" data-rail-type="canvas" data-canvas-rail="all" type="button" onclick="openCanvasOverview(this, 'all')" aria-pressed="true"><i data-lucide="layout-grid" class="w-3.5 h-3.5"></i><span>画布首页</span></button>
+          <button class="canvas-rail-item gw-side-bus-item hw-btn" data-rail-type="canvas" data-canvas-rail="classic" type="button" onclick="openCanvasOverview(this, 'classic')" aria-pressed="false"><i data-lucide="sparkles" class="w-3.5 h-3.5"></i><span>智能画布</span></button>
+          <button class="canvas-rail-item gw-side-bus-item hw-btn" data-rail-type="canvas" data-canvas-rail="project" type="button" onclick="openCanvasOverview(this, 'project')" aria-pressed="false"><i data-lucide="folder-kanban" class="w-3.5 h-3.5"></i><span>项目画布</span></button>
+          <button class="canvas-rail-item gw-side-bus-item hw-btn" data-rail-type="canvas" data-canvas-rail="reference" type="button" onclick="openCanvasOverview(this, 'reference')" aria-pressed="false"><i data-lucide="image" class="w-3.5 h-3.5"></i><span>参考画布</span></button>
         </section>
 
         <!-- 分组二：创作工具箱 -->
-        <section class="canvas-rail-group" aria-label="创作工具箱">
-          <div class="canvas-rail-heading tools">创作工具</div>
-          <button class="canvas-rail-item hw-btn" data-rail-type="tool" data-tool-id="storyboard" type="button" onclick="switchToolTab(this, 'storyboard')" aria-pressed="false"><i data-lucide="film" class="w-3.5 h-3.5"></i><span>分镜矩阵 (4幕)</span></button>
-          <button class="canvas-rail-item hw-btn" data-rail-type="tool" data-tool-id="radar" type="button" onclick="switchToolTab(this, 'radar')" aria-pressed="false"><i data-lucide="compass" class="w-3.5 h-3.5"></i><span>机位雷达 (Previs)</span></button>
-          <button class="canvas-rail-item hw-btn" data-rail-type="tool" data-tool-id="palette" type="button" onclick="switchToolTab(this, 'palette')" aria-pressed="false"><i data-lucide="palette" class="w-3.5 h-3.5"></i><span>色彩管理</span></button>
-          <button class="canvas-rail-item hw-btn" data-rail-type="tool" data-tool-id="prompts" type="button" onclick="switchToolTab(this, 'prompts')" aria-pressed="false"><i data-lucide="sparkles" class="w-3.5 h-3.5"></i><span>提示词助手</span></button>
+        <section class="canvas-rail-group gw-side-bus-group" aria-label="创作工具箱">
+          <div class="canvas-rail-heading tools gw-side-bus-group-heading">创作工具</div>
+          <button class="canvas-rail-item gw-side-bus-item hw-btn" data-rail-type="tool" data-tool-id="storyboard" type="button" onclick="switchToolTab(this, 'storyboard')" aria-pressed="false"><i data-lucide="film" class="w-3.5 h-3.5"></i><span>分镜矩阵 (4幕)</span></button>
+          <button class="canvas-rail-item gw-side-bus-item hw-btn" data-rail-type="tool" data-tool-id="radar" type="button" onclick="switchToolTab(this, 'radar')" aria-pressed="false"><i data-lucide="compass" class="w-3.5 h-3.5"></i><span>机位雷达 (Previs)</span></button>
+          <button class="canvas-rail-item gw-side-bus-item hw-btn" data-rail-type="tool" data-tool-id="palette" type="button" onclick="switchToolTab(this, 'palette')" aria-pressed="false"><i data-lucide="palette" class="w-3.5 h-3.5"></i><span>色彩管理</span></button>
+          <button class="canvas-rail-item gw-side-bus-item hw-btn" data-rail-type="tool" data-tool-id="prompts" type="button" onclick="switchToolTab(this, 'prompts')" aria-pressed="false"><i data-lucide="sparkles" class="w-3.5 h-3.5"></i><span>提示词助手</span></button>
         </section>
 
         <!-- 分镜场次目录（仅在分镜矩阵工具激活时展示） -->

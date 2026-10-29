@@ -1133,6 +1133,7 @@
                 <div class="gw-type-body-sm font-mono text-[#dfc384]">${roleMap[user.role] || user.role}</div>
                 <div class="gw-type-body-sm font-mono text-slate-500 mt-0.5">账户ID: ${user.username || user.id || '—'} · 已连接后端认证服务</div>
               </div>
+              <button type="button" class="hw-btn hw-btn-danger shrink-0" onclick="HardwareDeck.handleLogout()">退出登录</button>
             </div>
 
             <div class="p-2.5 rounded-xl bg-black/40 border border-white/5 space-y-1.5 gw-type-body-sm font-mono text-slate-400">
@@ -1142,15 +1143,9 @@
               <div class="flex justify-between"><span>状态端点</span><span class="text-slate-300">GET /api/asset-auth/status</span></div>
             </div>
 
-            <div class="pt-2 border-t border-white/10 flex items-center justify-between">
-              <a href="/static/pages/assets.html" class="gw-type-body-sm font-mono text-[#dfc384] hover:underline flex items-center space-x-1">
-                <i data-lucide="external-link" class="w-3 h-3"></i>
-                <span>打开资产中心与团队分配</span>
-              </a>
-              <div class="flex items-center space-x-2">
-                <button type="button" class="hw-btn" onclick="HardwareDeck.closeModal('accountModal')">关闭</button>
-                <button type="button" class="hw-btn hw-btn-danger" onclick="HardwareDeck.handleLogout()">退出登录</button>
-              </div>
+            <!-- QIN-483：底部操作区清空，保留行高以维持弹窗尺寸不变；关闭走右上角入口 -->
+            <div class="pt-2 border-t border-white/10 flex items-center justify-between" aria-hidden="true">
+              <span class="h-8 w-full"></span>
             </div>
           </div>
         `;

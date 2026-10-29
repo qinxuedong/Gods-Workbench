@@ -172,15 +172,21 @@ test('普通版本变化保留未保存草稿，迟到查询不切回旧文档',
   assert.equal(late.state.currentWorkflow.workflow_id,'B');
 });
 
-test('文档版本刷新不伪称原生宿主保存，来源徽标按真实类型显示',async()=>{
+test('文档版本刷新不伪称原生宿主保存，来源徽标按真实类型显示且未知来源不渲染占位标',async()=>{
   const h=harness(async url=>response(url.endsWith('sync-status')?{revisions:{A:2}}:{...workflow('A'),version:2}));
   h.state.currentWorkflow=workflow('A');h.state.syncRevisions.A=1;
   h.run('refreshWorkflowList=async()=>{};setCurrentWorkflow=wf=>{state.currentWorkflow=wf};showToast=text=>globalThis.toast=text;');
   await h.run('checkComfySavedSyncOnce()');
   assert.equal(h.state.currentWorkflow.version,2);assert.match(h.context.toast,/版本已更新/);assert.doesNotMatch(h.context.toast,/ComfyUI/);
-  for (const [source,badge] of [['canvas','LOCAL'],['comfyui','LOCAL'],['runninghub','RH'],['liblib','LIB'],['unknown','--']]) {
+  for (const [source,badge] of [['canvas','LOCAL'],['comfyui','LOCAL'],['runninghub','RH'],['liblib','LIB'],['unknown','']]) {
     assert.equal(h.run(`getSourceBadgeText(${JSON.stringify(source)})`),badge);
   }
+  h.state.workflows=[{workflow_id:'unknown-source',name:'未知来源工作流',source_type:'unknown'}];
+  h.state.openWorkflowIds=[];
+  h.run('renderWorkflowCatalog()');
+  const treeMarkup=h.element('#workflowTreeList').innerHTML;
+  assert.match(treeMarkup,/未知来源工作流/);
+  assert.doesNotMatch(treeMarkup,/class="wf-source-badge"/, '未知来源不得渲染空标或占位徽标');
 });
 
 test('apiFetch 挂载 detail 到 error.detail',async()=>{

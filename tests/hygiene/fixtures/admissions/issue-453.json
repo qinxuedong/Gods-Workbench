@@ -1,0 +1,25 @@
+{
+  "schema": "gw.cleanroom-admission-shard/v1",
+  "issue": 453,
+  "authorization_basis": "GitHub Issue #453; PM-approved Canvas stylesheet plan C, 2026-10-29",
+  "files": [
+    "tests/frontend/c8-spa-routing.test.mjs",
+    "tests/frontend/workflow-remediation.test.mjs",
+    "tests/hygiene/fixtures/admissions/issue-453.json",
+    "web/css/base/side-bus-unified.css",
+    "web/css/base/workspace-pages.css",
+    "web/js/controllers/home-controller.js",
+    "web/js/controllers/workflow-controller.js",
+    "web/pages/agents.html",
+    "web/pages/assets.html",
+    "web/pages/collab.html",
+    "web/pages/index.html",
+    "web/pages/production.html",
+    "web/pages/settings.html",
+    "web/pages/storyboard.html",
+    "web/pages/workflow.html"
+  ],
+  "admitted_files": [],
+  "accepted_test_files": [],
+  "notes": "QIN-478：隔离共享侧栏样式供工作区页面和 Canvas 导航复用；更新与 AC1、AC4 直接相关的既有 Node 断言。"
+}
