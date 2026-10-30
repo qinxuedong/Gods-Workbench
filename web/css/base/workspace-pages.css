@@ -1,7 +1,8 @@
 @import url("./side-bus-unified.css");
 
 :root {
-  color-scheme: light;
+  /* 兼容旧浅色子组件变量；body 背景已由 hardware-design-system.css 统一提供（--chassis-bg 黑金深色）。
+     color-scheme 与浅色 body background 已移除，不再覆盖黑金主题。 */
   --ink: #202523;
   --ink-2: #303733;
   --muted: #69726d;
@@ -19,16 +20,6 @@
   --danger: #b94632;
   --shadow: 0 18px 55px rgba(26, 32, 28, .12);
   --font: "Source Han Sans CN", "Microsoft YaHei UI", "PingFang SC", Arial, sans-serif;
-}
-* { box-sizing: border-box; }
-html, body { width: 100%; min-height: 100%; margin: 0; }
-body {
-  background:
-    radial-gradient(circle at 82% 8%, rgba(255,255,255,.58), transparent 30%),
-    linear-gradient(135deg, #e7eee6 0%, var(--paper) 56%, #d3dfd4 100%);
-  color: var(--ink);
-  font-family: var(--gw-font-body);
-  font-size: var(--gw-type-body-md);
 }
 button, input, select, textarea { font: inherit; }
 button { color: inherit; }
