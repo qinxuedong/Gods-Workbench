@@ -29,7 +29,6 @@ LEGACY_PROVIDER_ID = "legacy_environment"
 LEGACY_BASE_URL_ENV = "GW_CHAT_BASE_URL"
 LEGACY_API_KEY_ENV = "GW_CHAT_API_KEY"
 LEGACY_MODEL_ENV = "GW_CHAT_MODEL"
-DEFAULT_LEGACY_MODEL = "gpt-4o-mini"
 MAX_RUNTIME_JSON_CHARS = 64_000
 _SUPPORTED_VIDEO_PROTOCOLS = {"newapi_video"}
 _PROVIDER_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
@@ -255,17 +254,16 @@ def _for_capability(
 
 
 def legacy_provider() -> RuntimeProvider | None:
-    """读取既有 GW_CHAT_* 环境配置；客户端字段永远不能覆盖它。"""
+    """读取显式配置的 GW_CHAT_* 环境配置；客户端字段永远不能覆盖它。"""
     base_url = os.environ.get(LEGACY_BASE_URL_ENV, "").strip()
     api_key = os.environ.get(LEGACY_API_KEY_ENV, "").strip()
     if not base_url or not api_key:
         return None
     if not _valid_url_shape(base_url):
         raise RuntimeConfigError("旧版 Chat base_url 配置无效")
-    model = (
-        os.environ.get(LEGACY_MODEL_ENV, DEFAULT_LEGACY_MODEL).strip()
-        or DEFAULT_LEGACY_MODEL
-    )
+    model = os.environ.get(LEGACY_MODEL_ENV, "").strip()
+    if not model:
+        return None
     if not _MODEL_ID.fullmatch(model):
         raise RuntimeConfigError("旧版 Chat model 配置无效")
     return RuntimeProvider(
