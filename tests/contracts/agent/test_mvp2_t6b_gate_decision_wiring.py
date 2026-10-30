@@ -23,7 +23,11 @@ from gw.agent_runtime.models import (
     ToolCostState,
 )
 from gw.agent_runtime.policy import ToolRegistration
-from gw.agent_runtime.service import GateDecisionRequest, ProposedAction
+from gw.agent_runtime.service import (
+    GateDecisionRequest,
+    GateDecisionSignal,
+    ProposedAction,
+)
 
 _PASSWORD = "Test2026"
 _ORIGIN_HEADERS = {"Origin": "http://localhost"}
@@ -255,7 +259,12 @@ def test_review_decisions_write_all_gate_states_and_reject_invalid_transition(
                 GateState.rolled_back,
             )
         ]
-        for index, (record, target) in enumerate(
+        expected_signals = (
+            GateDecisionSignal.continue_execution,
+            GateDecisionSignal.return_for_rework,
+            GateDecisionSignal.stop_at_previous_stable_point,
+        )
+        for index, (record, target, expected_signal) in enumerate(
             zip(
                 records,
                 (
@@ -263,6 +272,7 @@ def test_review_decisions_write_all_gate_states_and_reject_invalid_transition(
                     GateState.changes_requested,
                     GateState.rolled_back,
                 ),
+                expected_signals,
                 strict=True,
             )
         ):
@@ -279,8 +289,10 @@ def test_review_decisions_write_all_gate_states_and_reject_invalid_transition(
                 request,
                 actor_id=actor_id,
             )
-            assert updated.state is target
-            assert service.gate_store.get(record.gate_id) == updated
+            assert updated.signal is expected_signal
+            assert updated.signal.value == expected_signal.value
+            assert updated.record.state is target
+            assert service.gate_store.get(record.gate_id) == updated.record
 
         changed = service.gate_store.get(records[1].gate_id)
         assert changed is not None

@@ -11,6 +11,7 @@ import uuid
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation
+from enum import StrEnum
 from typing import Any
 
 from gw.agent_episode.gates import GateKind, GateRecord, GateState, GateStore
@@ -140,6 +141,23 @@ class GateDecisionRequest:
     target: GateState
     reason: str
     expected_version: int
+
+
+class GateDecisionSignal(StrEnum):
+    """门禁状态变更后交给调用方的可观察流程信号。"""
+
+    await_user_decision = "await_user_decision"
+    continue_execution = "continue_execution"
+    return_for_rework = "return_for_rework"
+    stop_at_previous_stable_point = "stop_at_previous_stable_point"
+
+
+@dataclass(frozen=True, slots=True)
+class GateDecisionResult:
+    """持久门禁状态与对应的后续流程信号。"""
+
+    record: GateRecord
+    signal: GateDecisionSignal
 
 
 @dataclass(frozen=True, slots=True)
@@ -1376,7 +1394,7 @@ class AgentRuntimeService:
         reason: str,
         expected_version: int,
         request_id: str,
-    ) -> GateRecord:
+    ) -> GateDecisionResult:
         if self.gate_store is None:
             raise DomainError(
                 ErrorCode.CAPABILITY_UNSUPPORTED,
@@ -1410,7 +1428,7 @@ class AgentRuntimeService:
                 "The gate does not belong to this run.",
                 request_id=request_id,
             )
-        return self.gate_store.transition(
+        updated = self.gate_store.transition(
             gate_id=gate_id,
             target=target,
             actor_id=actor_id,
@@ -1418,6 +1436,13 @@ class AgentRuntimeService:
             expected_version=expected_version,
             request_id=request_id,
         )
+        signal = {
+            GateState.pending: GateDecisionSignal.await_user_decision,
+            GateState.approved: GateDecisionSignal.continue_execution,
+            GateState.changes_requested: GateDecisionSignal.return_for_rework,
+            GateState.rolled_back: GateDecisionSignal.stop_at_previous_stable_point,
+        }[updated.state]
+        return GateDecisionResult(record=updated, signal=signal)
 
     async def start_run(
         self,
@@ -2211,7 +2236,7 @@ class AgentRuntimeService:
         *,
         actor_id: Identifier,
         pause_on_exhaustion: bool = True,
-    ) -> ApprovalRecord | AgentRun | GateRecord:
+    ) -> ApprovalRecord | AgentRun | GateDecisionResult:
         if isinstance(request, GateDecisionRequest):
             run = await self.repository.read_run_by_id(request.run_id)
             if run is None or not await self._execution_is_authorized(
