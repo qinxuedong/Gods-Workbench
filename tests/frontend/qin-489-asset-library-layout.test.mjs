@@ -57,6 +57,9 @@ test('AC5: 窄屏时左侧导航转为可横向滚动入口', () => {
 
 test('AC7: 左栏全部入口共用固定统计行和工具栏行，视图留在资源库页内切换', () => {
     assert.match(manager, /if\(document\.documentElement\.classList\.contains\('vault-shell-embedded'\)\)[\s\S]*root\.insertAdjacentHTML\('afterbegin', `\$\{renderRegistryOverview\(\)\}\$\{renderRegistryToolbar\(null,/);
+    assert.ok(manager.includes("${embeddedVault ? '' : renderRegistryOverview()}"), '独立资产管理页仍显示统计区');
+    assert.ok(manager.includes("${embeddedVault ? '' : renderRegistryToolbar(null, registryCategoryLabel"), '独立资产总览仍显示工具栏');
+    assert.ok(manager.includes("${embeddedVault ? '' : renderRegistryToolbar(board, board.name"), '独立自建资源库仍显示工具栏');
     assert.match(vaultCss, /#assetManagerRoot > \.registry-overview-shell \{[\s\S]*grid-row: 1;/);
     assert.match(vaultCss, /#assetManagerRoot > \.registry-toolbar \{[\s\S]*grid-row: 2;/);
     assert.match(vaultCss, /#assetManagerRoot > \.asset-panel\.asset-content \{[\s\S]*grid-row: 3;/);
