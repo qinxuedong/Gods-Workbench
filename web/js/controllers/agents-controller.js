@@ -124,11 +124,13 @@ window.WorkbenchAgents = (function () {
     } catch (_) {}
   }
 
-  function setProjectId(id, name) {
+  function setProjectId(id, name, options = {}) {
     state.projectId = id ? String(id).trim() : null;
     state.projectName = name ? String(name).trim() : null;
+    // 只有校验通过的项目才允许落盘，避免地址栏里的无效 ID 覆盖掉已记住的有效项目。
+    const persist = options.persist !== false;
     try {
-      if (state.projectId) window.localStorage?.setItem('workspace_project_id', state.projectId);
+      if (state.projectId && persist) window.localStorage?.setItem('workspace_project_id', state.projectId);
     } catch (_) {}
     // 切换或初始化后立即校正地址栏，避免参数停留在上一个项目。
     syncAddressBarProject(state.projectId);
@@ -137,6 +139,31 @@ window.WorkbenchAgents = (function () {
 
   function getProjectId() {
     return state.projectId;
+  }
+
+  // 地址栏/本地记忆里的项目未必还存在于目录：只有列表接口明确不含它时才校正，
+  // 列表接口本身失败说明后端可疑，此时保持原样，不把有效项目误降级。
+  function validateProjectContext(candidateId) {
+    if (!candidateId) return Promise.resolve(null);
+    return fetch('/api/asset-registry/projects?archived=false&deleted=false', { credentials: 'same-origin' })
+      .then(res => (res && res.ok ? res.json() : null))
+      .then(payload => {
+        const list = Array.isArray(payload?.projects) ? payload.projects : [];
+        const projects = list.filter(item => item && item.project_id && !item.archived_at && !item.deleted_at);
+        if (!projects.length) return null;
+        if (projects.some(item => String(item.project_id) === String(candidateId))) {
+          const matched = projects.find(item => String(item.project_id) === String(candidateId));
+          setProjectId(candidateId, matched?.name);
+          return null;
+        }
+        let remembered = '';
+        try { remembered = String(window.localStorage?.getItem('workspace_project_id') || ''); } catch (_) {}
+        const picked = projects.find(item => String(item.project_id) === remembered) || projects[0];
+        if (!picked) return null;
+        setProjectId(picked.project_id, picked.name);
+        return picked.project_id;
+      })
+      .catch(() => null);
   }
 
   function getAgent(id) {
@@ -529,7 +556,10 @@ window.WorkbenchAgents = (function () {
     state.traceUnsubscribe?.();
     if (state.auraScopeHandler) window.removeEventListener('gw-aura-scope', state.auraScopeHandler);
     state.traces = window.AuraTraceBus?.history?.() || [];
-    setProjectId(resolveProjectId());
+    // 先按候选值渲染（不落盘），再让目录列表决定这个项目是否真的存在。
+    const requestedProjectId = resolveProjectId();
+    setProjectId(requestedProjectId, null, { persist: false });
+    validateProjectContext(requestedProjectId);
     applyAgentProviderStatus();
     renderAgents();
     bindChatSelection();

@@ -217,11 +217,12 @@ test('QIN-180 上下文缺失（无 URL 参数且无 localStorage）触发标准
 });
 
 test('QIN-180 项目不存在或权限不足（404 / 403）严格 fail closed，不伪造展示', async () => {
-  let requestedUrl = '';
+  // QIN-493 起，404 之后还会查一次目录列表确认「项目确实不存在」；两次都失败就必须 fail closed。
+  const requestedUrls = [];
   const { mockWindow, elements } = createMockEnvironment({
     urlSearch: '?project_id=proj_non_existent',
     fetchHandler: async url => {
-      requestedUrl = url;
+      requestedUrls.push(url);
       return {
         ok: false,
         status: 404,
@@ -236,7 +237,8 @@ test('QIN-180 项目不存在或权限不足（404 / 403）严格 fail closed，
 
   await production.initRouting();
 
-  assert.match(requestedUrl, /\/api\/projects\/proj_non_existent/);
+  assert.match(requestedUrls[0], /\/api\/projects\/proj_non_existent/);
+  assert.equal(requestedUrls.some(url => /\/api\/asset-registry\/projects/.test(url)), true, '404 后必须查目录列表，避免把有效项目当成不存在');
   assert.equal(elements.currentProjectDisplayTitle.textContent, '项目数据未接入 · 剧集制片工坊');
   assert.equal(elements.mainMonitorImage.getAttribute('data-gw-degradation'), 'not_integrated');
   assert.match(elements.sceneCatalogList.innerHTML, /data-gw-degradation="not_integrated"/);

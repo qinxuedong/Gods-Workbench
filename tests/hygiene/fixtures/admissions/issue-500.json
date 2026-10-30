@@ -18,6 +18,7 @@
     "web/js/controllers/home-controller.js",
     "web/js/controllers/production-controller.js",
     "web/js/controllers/projects-controller.js",
+    "web/js/controllers/settings.js",
     "web/js/controllers/storyboard-controller.js",
     "web/js/controllers/workflow-controller.js",
     "web/pages/canvas.html",

@@ -733,10 +733,15 @@
           }
 
           if (!requestIsCurrent(generation, epoch)) return;
-          if (projectId && !projects.some(p => p.id === projectId)) {
+          // syncRouteState 会为未知项目造一个本地占位，判断「目录里有没有」必须排除占位，
+          // 否则占位自己会证明自己存在，永远走不到校验和回退。
+          if (projectId && !projects.some(p => p.id === projectId && !p.placeholder)) {
+            // 目录里没有这个项目：可能是详情接口能补出来的项目，也可能真的不存在。
+            // 只有两个详情接口都明确 404 才算「不存在」；网络异常或 5xx 不判定，避免误伤。
+            let missing = false;
             try {
               let pRes = await fetch(`${API_PROJECTS}/${encodeURIComponent(projectId)}`, { credentials: 'same-origin', signal: controller.signal });
-              if (!pRes.ok) {
+              if (pRes.status === 404) {
                 pRes = await fetch(`${API_PROJECTS_FALLBACK}/${encodeURIComponent(projectId)}`, { credentials: 'same-origin', signal: controller.signal });
               }
               if (!requestIsCurrent(generation, epoch)) return;
@@ -748,10 +753,35 @@
                   projects.unshift({ id: projId, name: projObj.name || projId });
                   cachedProjectName = projObj.name || projId;
                   try { localStorage.setItem('workspace_project_name', cachedProjectName); } catch (_) {}
+                } else {
+                  missing = true;
                 }
+              } else if (pRes.status === 404) {
+                missing = true;
               }
             } catch (error) {
-              if (error?.name !== 'AbortError') { /* 详情读取失败不阻断主目录 */ }
+              if (error?.name !== 'AbortError') { /* 详情读取失败不阻断主目录，也不据此判定项目消失 */ }
+            }
+            if (missing && requestIsCurrent(generation, epoch)) {
+              // 回退到目录里真实存在的项目，并把地址栏校正成真正使用的项目（对齐 BEHAVIOR-SPEC 4.5）。
+              let remembered = '';
+              try { remembered = String(localStorage.getItem('workspace_project_id') || ''); } catch (_) {}
+              const candidates = projects.filter(p => p && p.id && !p.placeholder);
+              const fallback = candidates.find(p => p.id === remembered) || candidates[0];
+              if (fallback) {
+                const staleId = projectId;
+                projectId = fallback.id;
+                cachedProjectName = fallback.name || fallback.id;
+                // 去掉为无效项目造出来的本地占位，避免目录里继续挂着一个不存在的项目。
+                projects = projects.filter(p => !(p.id === staleId && p.placeholder));
+                try {
+                  localStorage.setItem('workspace_project_id', projectId);
+                  localStorage.setItem('workspace_project_name', cachedProjectName);
+                } catch (_) {}
+                syncAddressBarProject(projectId);
+                updateProjectDisplay();
+                void fetchEpisodes();
+              }
             }
           }
         } catch (e) {
@@ -1142,9 +1172,14 @@
         const episodesView = document.getElementById('episodesView');
         const pipelineIframe = document.getElementById('pipelineIframe');
 
-        // 更新浏览器地址栏
+        // 更新浏览器地址栏。
+        // project_id 只做校正、不做注入：地址栏本来没有参数（项目来自本地记忆）时保持无参数，
+        // 与 BEHAVIOR-SPEC-PRODUCTION-PROJECTS-HUB.md 4.5 一致；step 是工坊自身的视图状态，可以回写。
         const url = new URL(window.location.href);
-        url.searchParams.set('project_id', projectId);
+        if (url.searchParams.has('project_id')) {
+          if (projectId) url.searchParams.set('project_id', projectId);
+          else url.searchParams.delete('project_id');
+        }
         url.searchParams.set('step', step);
         if (pipelineId) {
           url.searchParams.set('pipeline_id', pipelineId);

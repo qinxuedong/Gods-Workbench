@@ -270,6 +270,24 @@ window.WorkbenchProduction = (function () {
     } catch (_) {}
   }
 
+  // 只有一个项目真的不在目录列表里，才判定「该项目不存在」并回退；
+  // 列表接口本身失败说明后端可疑，此时不猜，保持原状态，避免把有效项目误降级。
+  async function resolveFallbackProjectId(badId) {
+    try {
+      const payload = await requestJson('/api/asset-registry/projects?archived=false');
+      const list = Array.isArray(payload?.projects) ? payload.projects : [];
+      const projects = list.filter(item => item && item.project_id && !item.archived_at && !item.deleted_at);
+      if (!projects.length) return null;
+      if (projects.some(item => String(item.project_id) === String(badId))) return null;
+      let remembered = '';
+      try { remembered = String(localStorage.getItem('workspace_project_id') || ''); } catch (_) {}
+      const picked = projects.find(item => String(item.project_id) === remembered) || projects[0];
+      return picked ? String(picked.project_id) : null;
+    } catch (_) {
+      return null;
+    }
+  }
+
   // 更新页面导航栏上的链接动态设置 ?project_id；没有上下文时不伪造参数。
   function updateNavLinks(projectId) {
     // 每次上下文确定或切换都顺带校正地址栏，避免参数成为过期快照。
@@ -1085,7 +1103,8 @@ window.WorkbenchProduction = (function () {
   }
 
   // 2. 初始化与路由解析
-  async function initRouting(projectIdOverride = '') {
+  // allowFallback：项目读取失败时只回退一次，避免在坏数据上递归打转。
+  async function initRouting(projectIdOverride = '', allowFallback = true) {
     const params = new URLSearchParams(window.location.search);
     const pId = String(projectIdOverride || params.get('project_id') || localStorage.getItem('workspace_project_id') || '').trim();
     state.projectId = pId;
@@ -1103,6 +1122,10 @@ window.WorkbenchProduction = (function () {
       const body = await requestJson(`/api/projects/${encodeURIComponent(pId)}`);
       const proj = body?.project || body;
       if (!proj || !proj.project_id) {
+        if (allowFallback) {
+          const fallback = await resolveFallbackProjectId(pId);
+          if (fallback) return initRouting(fallback, false);
+        }
         state.projectName = '项目数据未接入';
         renderNotIntegratedState();
         updateNavLinks('');
@@ -1143,6 +1166,11 @@ window.WorkbenchProduction = (function () {
       await loadReviewForCurrentShot();
       return true;
     } catch (error) {
+      // 读取失败可能是项目不存在，也可能是后端故障：只有目录列表能证伪时才回退并校正地址栏。
+      if (allowFallback) {
+        const fallback = await resolveFallbackProjectId(pId);
+        if (fallback) return initRouting(fallback, false);
+      }
       state.projectName = '项目数据未接入';
       renderNotIntegratedState();
       updateNavLinks('');
@@ -1155,11 +1183,11 @@ window.WorkbenchProduction = (function () {
     state.projectId = targetId;
     localStorage.setItem('workspace_project_id', targetId);
 
-    // 更新 URL
+    // 更新 URL：项目切换是同一页面的上下文变更，用 replaceState 避免历史里堆出「上一个项目」的死链。
     if (typeof window !== 'undefined' && window.location) {
       const url = new URL(window.location.href);
       url.searchParams.set('project_id', targetId);
-      window.history?.pushState?.({}, '', url.toString());
+      window.history?.replaceState?.({}, '', url.toString());
     }
 
     const loaded = await initRouting(targetId);

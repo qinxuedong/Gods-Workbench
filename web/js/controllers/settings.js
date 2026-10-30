@@ -124,7 +124,18 @@
     document.querySelectorAll('[data-panel]').forEach(panel=>panel.classList.toggle('active',panel.dataset.panel===section));
     const params=new URLSearchParams(location.hash.slice(1));params.set('section',section);if(document.documentElement.classList.contains('workspace-embedded'))params.set('embedded','1');history.replaceState(null,'',`${location.pathname}${location.search}#${params.toString()}`);
   }
+  // 设置页不消费项目上下文（见 BEHAVIOR-SPEC-PRODUCTION-PROJECTS-HUB.md 4.5）：
+  // 旧链接或外部入口带来的 project_id 必须在进入时剔除，避免地址栏谎报一个页面并不持有的上下文。
+  function stripOwnProjectParam(){
+    try{
+      const url=new URL(location.href);
+      if(!url.searchParams.has('project_id'))return;
+      url.searchParams.delete('project_id');
+      history.replaceState(null,'',url.toString());
+    }catch(e){}
+  }
   function init(){
+    stripOwnProjectParam();
     initContextPreferences();
     q('#defaultPage').value=preferences.default_page||'index';
     document.querySelectorAll('[data-setting]').forEach(toggle=>{const name=toggle.dataset.setting;const fallback=['task_refresh','restore_page'].includes(name);const on=preferences[name]??fallback;toggle.classList.toggle('on',on);toggle.setAttribute('aria-pressed',String(on));});

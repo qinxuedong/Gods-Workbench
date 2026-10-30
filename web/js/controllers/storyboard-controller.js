@@ -63,9 +63,26 @@ window.WorkbenchStoryboard = (function () {
     const params = new URLSearchParams(window.location.search);
     const fromUrl = String(params.get('project_id') || '').trim();
     const fromStorage = String(window.localStorage?.getItem('workspace_project_id') || '').trim();
-    const projectId = fromUrl || fromStorage;
-    if (projectId && fromUrl) window.localStorage?.setItem('workspace_project_id', projectId);
-    return projectId;
+    // 只在项目读取成功后落盘（见 loadProjectContext）：地址栏里的 ID 未必真的存在。
+    return fromUrl || fromStorage;
+  }
+
+  // 只有目录列表明确不含该 ID 时才判定「项目不存在」；列表接口失败说明后端可疑，
+  // 此时保持原状态，避免把有效项目误降级。
+  async function resolveFallbackProjectId(badId) {
+    try {
+      const payload = await requestJson('/api/asset-registry/projects?archived=false');
+      const list = Array.isArray(payload?.projects) ? payload.projects : [];
+      const projects = list.filter(item => item && item.project_id && !item.archived_at && !item.deleted_at);
+      if (!projects.length) return null;
+      if (projects.some(item => String(item.project_id) === String(badId))) return null;
+      let remembered = '';
+      try { remembered = String(window.localStorage?.getItem('workspace_project_id') || ''); } catch (_) {}
+      const picked = projects.find(item => String(item.project_id) === remembered) || projects[0];
+      return picked ? String(picked.project_id) : null;
+    } catch (_) {
+      return null;
+    }
   }
 
   function normalizeShot(asset, { allowMissingAsset = false } = {}) {
@@ -1172,6 +1189,8 @@ window.WorkbenchStoryboard = (function () {
       const project = projectPayload?.project || projectPayload;
       if (!project || typeof project !== 'object') throw new Error('project unavailable');
       state.projectName = String(project.name || project.title || projectId);
+      // 项目确实存在才记住它，避免把地址栏里的无效 ID 写成跨页上下文。
+      try { window.localStorage?.setItem('workspace_project_id', projectId); } catch (_) {}
       if (new URLSearchParams(window.location.search).get('view') === 'storyboard') {
         try {
           const pipelineResult = await loadPipelineContext(projectId);
@@ -1208,7 +1227,17 @@ window.WorkbenchStoryboard = (function () {
     renderNotIntegratedState();
     updateProjectLinks();
     if (new URLSearchParams(window.location.search).get('view') === 'canvas') return Promise.resolve(null);
-    return loadProjectContext(state.projectId);
+    return loadProjectContext(state.projectId).then(async result => {
+      if (result || !state.projectId) return result;
+      // 读取失败：只有目录列表能证明该项目不存在时才回退，并把地址栏校正成真正加载的项目。
+      const requestedId = state.projectId;
+      const fallback = await resolveFallbackProjectId(requestedId);
+      if (!fallback) return null;
+      state.projectId = fallback;
+      syncAddressBarProject(fallback);
+      updateProjectLinks();
+      return loadProjectContext(fallback);
+    });
   }
 
   let ready;

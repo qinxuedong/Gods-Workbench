@@ -94,6 +94,7 @@ function createSandbox(options = {}) {
   if (storedProjectId) storage.set('workspace_project_id', storedProjectId);
 
   const replaced = [];
+  const pushed = [];
   const assigned = [];
 
   const documentMock = {
@@ -149,7 +150,7 @@ function createSandbox(options = {}) {
     },
     history: {
       replaceState(_state, _title, url) { replaced.push(String(url)); },
-      pushState(_state, _title, url) { replaced.push(String(url)); }
+      pushState(_state, _title, url) { pushed.push(String(url)); }
     },
     fetch: fetchHandler || defaultFetch,
     addEventListener() {},
@@ -166,7 +167,7 @@ function createSandbox(options = {}) {
   sandbox.parent = sandbox;
   sandbox.globalThis = sandbox;
 
-  return { sandbox, navLinks, replaced, assigned, storage, elements };
+  return { sandbox, navLinks, replaced, pushed, assigned, storage, elements };
 }
 
 const tick = (ms = 30) => new Promise(resolve => setTimeout(resolve, ms));
@@ -359,4 +360,164 @@ test('QIN-493 AC1/AC2：工坊内联导航按白名单改写，不再无条件�
     /document\.querySelectorAll\('#navPillsGroup a, #gotoProductionLink'\)\.forEach/,
     '旧的无条件追加实现必须移除'
   );
+});
+
+// ---------------------------------------------------------------------------
+// QA 返工（PM 退回 19def12）：AC1 设置页、AC3 历史记录、AC4 不存在项目
+// ---------------------------------------------------------------------------
+
+const settingsSource = readFileSync('web/js/controllers/settings.js', 'utf8');
+const storyboardSource = readFileSync('web/js/controllers/storyboard-controller.js', 'utf8');
+
+const PROJECT_LIST = [
+  { project_id: 'projA', name: '工程 A' },
+  { project_id: 'projB', name: '工程 B' }
+];
+
+test('QIN-493 返工 AC1：设置页进入时剔除 project_id', () => {
+  assert.match(settingsSource, /function stripOwnProjectParam\(/, '设置页需具备参数剥离函数');
+  assert.match(
+    settingsSource,
+    /function init\(\)\{\s*stripOwnProjectParam\(\);/,
+    'init 第一件事必须是剥离 project_id，否则后续 setSection 会带着旧参数重写地址栏'
+  );
+  assert.match(settingsSource, /url\.searchParams\.delete\('project_id'\)/, '必须真正删除 project_id');
+});
+
+test('QIN-493 返工 AC3：制片页切换项目只用 replaceState，不新增历史记录', async () => {
+  const { sandbox, replaced, pushed } = createSandbox({
+    urlSearch: '?project_id=projA',
+    pathname: '/static/pages/production.html',
+    navHrefs: [`/workshop.html`],
+    fetchHandler: async url => {
+      const target = String(url);
+      if (target.includes('/api/projects/')) {
+        const id = target.split('/api/projects/')[1];
+        if (id === 'projB') return { ok: true, status: 200, json: async () => ({ project: { project_id: 'projB', name: '工程 B' } }) };
+        return { ok: true, status: 200, json: async () => ({ project: { project_id: 'projA', name: '工程 A' } }) };
+      }
+      if (target.includes('/api/episode-pipelines')) {
+        return { ok: true, status: 200, json: async () => ({ pipelines: [] }) };
+      }
+      return { ok: true, status: 200, json: async () => ({}) };
+    }
+  });
+
+  vm.runInContext(productionSource, vm.createContext(sandbox));
+  await sandbox.WorkbenchProduction.initRouting();
+  await sandbox.WorkbenchProduction.switchProject('projB');
+  await tick();
+
+  assert.deepEqual(pushed, [], '切换项目不得 pushState（Back 会回到上一个项目的死链）');
+  const written = replaced.map(u => new URL(u, ORIGIN)).filter(u => u.searchParams.has('project_id'));
+  assert.equal(written[written.length - 1].searchParams.get('project_id'), 'projB', '地址栏必须跟到新项目');
+});
+
+test('QIN-493 返工 AC4：制片页遇到不存在的项目时回退到可用项目并校正地址栏', async () => {
+  const { sandbox, replaced, storage } = createSandbox({
+    urlSearch: '?project_id=projSTALE&x=1',
+    pathname: '/static/pages/production.html',
+    storedProjectId: 'projA',
+    navHrefs: [`/workshop.html`],
+    fetchHandler: async url => {
+      const target = String(url);
+      if (target.includes('/api/asset-registry/projects')) {
+        return { ok: true, status: 200, json: async () => ({ projects: PROJECT_LIST }) };
+      }
+      if (target.includes('/api/projects/')) {
+        const id = target.split('/api/projects/')[1];
+        if (id === 'projSTALE') return { ok: false, status: 404, json: async () => ({ detail: { message: 'not found' } }) };
+        return { ok: true, status: 200, json: async () => ({ project: { project_id: id, name: '工程' } }) };
+      }
+      if (target.includes('/api/episode-pipelines')) {
+        return { ok: true, status: 200, json: async () => ({ pipelines: [] }) };
+      }
+      return { ok: true, status: 200, json: async () => ({}) };
+    }
+  });
+
+  vm.runInContext(productionSource, vm.createContext(sandbox));
+  await sandbox.WorkbenchProduction.initRouting();
+  await tick();
+
+  const written = replaced.map(u => new URL(u, ORIGIN)).filter(u => u.searchParams.has('project_id'));
+  assert.ok(written.length > 0, '不存在的项目必须校正地址栏，而不是把参数删掉了事');
+  assert.equal(written[written.length - 1].searchParams.get('project_id'), 'projA', '必须校正为真实可用的项目');
+  assert.equal(written[written.length - 1].searchParams.get('x'), '1', '校正时不得丢失其他查询参数');
+  assert.equal(storage.get('workspace_project_id'), 'projA', '不得把不存在的项目写进本地记忆');
+});
+
+test('QIN-493 返工 AC4：智能体页遇到不存在的项目时校正且不覆盖本地记忆', async () => {
+  const { sandbox, replaced, storage } = createSandbox({
+    urlSearch: '?project_id=projSTALE',
+    pathname: '/static/pages/agents.html',
+    storedProjectId: 'projA',
+    fetchHandler: async url => {
+      const target = String(url);
+      if (target.includes('/api/asset-registry/projects')) {
+        return { ok: true, status: 200, json: async () => ({ projects: PROJECT_LIST }) };
+      }
+      return { ok: true, status: 200, json: async () => ({}) };
+    }
+  });
+
+  vm.runInContext(agentsSource, vm.createContext(sandbox));
+  await tick(60);
+
+  assert.equal(storage.get('workspace_project_id'), 'projA', '不存在的 URL 项目不得写入 localStorage');
+  const written = replaced.map(u => new URL(u, ORIGIN)).filter(u => u.searchParams.has('project_id'));
+  assert.equal(written[written.length - 1].searchParams.get('project_id'), 'projA', '地址栏必须校正为实际项目');
+});
+
+test('QIN-493 返工 AC4：分镜页遇到不存在的项目时校正地址栏', async () => {
+  const { sandbox, replaced } = createSandbox({
+    urlSearch: '?project_id=projSTALE',
+    pathname: '/static/pages/storyboard.html',
+    storedProjectId: 'projA',
+    fetchHandler: async url => {
+      const target = String(url);
+      if (target.includes('/api/asset-registry/projects')) {
+        return { ok: true, status: 200, json: async () => ({ projects: PROJECT_LIST }) };
+      }
+      if (target.includes('/api/projects/')) {
+        const id = target.split('/api/projects/')[1];
+        if (id === 'projSTALE') return { ok: false, status: 404, json: async () => ({ detail: { message: 'not found' } }) };
+        return { ok: true, status: 200, json: async () => ({ project: { project_id: id, name: '工程' } }) };
+      }
+      if (target.includes('/api/asset-registry/assets')) {
+        return { ok: true, status: 200, json: async () => ({ assets: [] }) };
+      }
+      return { ok: true, status: 200, json: async () => ({}) };
+    }
+  });
+
+  vm.runInContext(storyboardSource, vm.createContext(sandbox));
+  await sandbox.WorkbenchStoryboard.ready;
+  await tick();
+
+  const written = replaced.map(u => new URL(u, ORIGIN)).filter(u => u.searchParams.has('project_id'));
+  assert.equal(written[written.length - 1].searchParams.get('project_id'), 'projA', '分镜页必须校正为实际项目');
+});
+
+test('QIN-493 返工 AC4：工坊无参数不注入 project_id，且缺失项目会回退', () => {
+  // 无参数进入时（项目来自本地记忆）不得凭空制造 project_id；step 属页面自身视图状态，允许回写。
+  assert.match(
+    workshopHtml,
+    /if \(url\.searchParams\.has\('project_id'\)\) \{\s*\n\s*if \(projectId\) url\.searchParams\.set\('project_id', projectId\);/,
+    '工坊写地址栏前必须先判存在性，不能无条件注入'
+  );
+  assert.doesNotMatch(
+    workshopHtml,
+    /url\.searchParams\.set\('project_id', projectId\);\s*\n\s*url\.searchParams\.set\('step', step\);/,
+    '旧的无条件写入实现必须移除'
+  );
+  // 缺失项目：两个详情接口都 404 才回退，回退后校正地址栏。
+  assert.match(
+    workshopHtml,
+    /!projects\.some\(p => p\.id === projectId && !p\.placeholder\)/,
+    '判断目录里有没有该项目时必须排除本地占位，否则占位会证明自己存在'
+  );
+  assert.match(workshopHtml, /pRes\.status === 404/, '必须用 404 判定项目缺失，不能把 5xx 当缺失');
+  assert.match(workshopHtml, /missing = true;/, '缺失判定必须落到回退分支');
+  assert.match(workshopHtml, /syncAddressBarProject\(projectId\);/, '回退后必须校正地址栏');
 });
