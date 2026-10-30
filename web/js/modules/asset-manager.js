@@ -416,6 +416,51 @@ function requestedRegistryProjectId(){
 const initialRegistryProjectId = requestedRegistryProjectId();
 let activeProjectId = initialRegistryProjectId;
 const explicitRegistryProjectContext = Boolean(initialRegistryProjectId);
+let registryProjectFilterId = '';
+let registryProjectFacetExpanded = false;
+const registryProjectAssetCounts = new Map();
+let registryProjectCountsLoading = false;
+async function refreshRegistryProjectCounts(renderNow = true){
+    if(registryProjectCountsLoading) return;
+    const recent = registryRecentProjects();
+    if(!recent.length) return;
+    registryProjectCountsLoading = true;
+    try {
+        await Promise.all(recent.map(async proj => {
+            try {
+                const res = await apiJsonResponse(assetManagerApi.getRegistryAssets(`project_id=${encodeURIComponent(proj.id)}&limit=1`));
+                const total = Number(res?.total);
+                if(Number.isFinite(total)){
+                    proj.asset_count = total;
+                    registryProjectAssetCounts.set(proj.id, total);
+                }
+            } catch(_) {}
+        }));
+    } finally {
+        registryProjectCountsLoading = false;
+    }
+    if(renderNow) render();
+}
+function registryProjectAssetCount(projOrId){
+    const projId = typeof projOrId === 'object' && projOrId ? (projOrId.id || projOrId.project_id) : String(projOrId || '');
+    const proj = typeof projOrId === 'object' && projOrId ? projOrId : projects.find(item => item.id === projId);
+    if(registryProjectAssetCounts.has(projId)){
+        return registryProjectAssetCounts.get(projId);
+    }
+    if(typeof proj?.asset_count === 'number' && Number.isFinite(proj.asset_count)){
+        return proj.asset_count;
+    }
+    return 0;
+}
+function registryRecentProjects(){
+    return [...projects]
+        .sort((a, b) => {
+            const timeA = new Date(a.updated_at || a.created_at || a.start_at || 0).getTime();
+            const timeB = new Date(b.updated_at || b.created_at || b.start_at || 0).getTime();
+            return timeB - timeA;
+        })
+        .slice(0, 5);
+}
 let projectBoard = null;
 let selectedProjectEntityId = '';
 let assetLibrary = {libraries:[], categories:[]};
@@ -5470,6 +5515,7 @@ function registryFilterDefinition(){
         rootId:registryRootId,
         recentDays:registryRecentDays,
         sort:registrySort,
+        projectId:registryProjectFilterId,
         includeTags:[...registryIncludeTags],
         excludeTags:[...registryExcludeTags],
         groupSimilar:false,
@@ -5484,6 +5530,7 @@ function applyRegistryFilterDefinition(definition={}){
     registryRootId = String(definition.rootId || '');
     registryRecentDays = Number(definition.recentDays || 0);
     registrySort = String(definition.sort || 'newest');
+    registryProjectFilterId = String(definition.project_id || definition.projectId || '');
     registryIncludeTags = new Set(Array.isArray(definition.includeTags) ? definition.includeTags : []);
     registryExcludeTags = new Set(Array.isArray(definition.excludeTags) ? definition.excludeTags : []);
     registryGroupSimilar = false;
@@ -5500,7 +5547,8 @@ function applyRegistryFilterDefinition(definition={}){
 }
 function registryQueryString({offset=0, limit=REGISTRY_PAGE_SIZE, cursor=''}={}){
     const params = new URLSearchParams({limit:String(limit), offset:String(Math.max(0, Number(offset) || 0)), sort:registrySort || 'newest', view:'card'});
-    if(activeProjectId) params.set('project_id', activeProjectId);
+    // 默认呈现全局统一资产金库；仅当用户通过「项目素材」智能筛选选择项目时携带（解耦默认的 activeProjectId）
+    if(registryProjectFilterId) params.set('project_id', registryProjectFilterId);
     if(cursor) params.set('cursor', cursor);
     if(registryQuery.trim()) params.set('search', registryQuery.trim());
     if(registryKind) params.set('kind', registryKind);
@@ -5619,6 +5667,7 @@ async function refreshRegistryAssets(renderNow=true){
             registryStatus = statusData;
             if(activeTab === 'registry') render();
         }).catch(() => {});
+        await refreshRegistryProjectCounts(false);
     } catch(err) {
         if(isRegistryAbortError(err)) return;
         throw err;
@@ -5894,6 +5943,12 @@ async function loadRegistryBootstrap(requestId=beginRegistryBootstrapRequest()){
         // 否则 activeProjectId 为 undefined、项目看板不加载、项目按钮 data-project 为空。
         projects = (Array.isArray(projectData.projects) ? projectData.projects : [])
             .map(item => ({...item, id:item.id || item.project_id}));
+        for(const proj of projects){
+            if(typeof proj.asset_count === 'number'){
+                registryProjectAssetCounts.set(proj.id, proj.asset_count);
+            }
+        }
+        await refreshRegistryProjectCounts(false);
         if(explicitRegistryProjectContext && !projects.some(item => item.id === activeProjectId)){
             const error = new Error('项目不存在或无权访问');
             error.status = 404;
@@ -8344,6 +8399,10 @@ function customBoardTagEntries(items=[]){
 function renderRegistryFilterChips(){
     const tags = new Map((registryFacets.tags || []).map(tag => [tag.id, tag]));
     const chips = [];
+    if(registryProjectFilterId){
+        const proj = projects.find(item => item.id === registryProjectFilterId);
+        chips.push(`<button type="button" data-registry-clear="project">项目：${escapeHtml(proj?.name || registryProjectFilterId)} <i data-lucide="x"></i></button>`);
+    }
     if(registryStatCategory) chips.push(`<button type="button" data-registry-clear="category">统计：${escapeHtml(registryCategoryLabel(registryStatCategory))} <i data-lucide="x"></i></button>`);
     if(registryRecentDays) chips.push(`<button type="button" data-registry-clear="recent">最近 ${registryRecentDays} 天 <i data-lucide="x"></i></button>`);
     if(registryKind) chips.push(`<button type="button" data-registry-clear="kind">类型：${escapeHtml(registryKindLabel(registryKind))} <i data-lucide="x"></i></button>`);
@@ -8365,6 +8424,37 @@ function renderRegistryFacetRow(item, type, activeValue=''){
         <span>${escapeHtml(type === 'kind' ? registryKindLabel(item.name) : (item.name || '未命名'))}${type === 'root' && item.availability === 'offline' ? ' · 离线' : ''}</span><em>${Number(item.count || 0)}</em>
     </button>`;
 }
+function renderRegistryProjectFacetSection(){
+    const recent = registryRecentProjects();
+    const isExpanded = registryProjectFacetExpanded;
+    return `<section class="registry-facet-section registry-facet-projects">
+        <div class="registry-facet-title">
+            <button type="button" class="registry-project-toggle-btn hw-btn ${isExpanded ? 'is-active' : ''}" data-registry-project-toggle aria-expanded="${isExpanded}" title="${isExpanded ? '收起项目素材' : '展开最近项目素材'}">
+                <span class="registry-project-toggle-label">
+                    <i data-lucide="clapperboard"></i>
+                    <strong>项目素材</strong>
+                </span>
+                <i data-lucide="${isExpanded ? 'chevron-down' : 'chevron-right'}"></i>
+            </button>
+        </div>
+        ${isExpanded ? `
+            <div class="registry-project-list" data-registry-project-list>
+                ${recent.map(proj => {
+                    const active = proj.id === registryProjectFilterId;
+                    const count = registryProjectAssetCount(proj);
+                    return `<button type="button" class="registry-facet-basic registry-project-facet-item ${active ? 'active' : ''}" data-registry-project-filter="${escapeAttr(proj.id)}" aria-pressed="${active}" title="${escapeAttr(proj.name)}">
+                        <span class="registry-project-item-name">
+                            <i data-lucide="folder-kanban" class="registry-project-item-icon"></i>
+                            <span class="registry-project-item-text">${escapeHtml(proj.name)}</span>
+                        </span>
+                        <em>${Number(count || 0)}</em>
+                    </button>`;
+                }).join('') || '<div class="tree-empty registry-project-empty">暂无项目</div>'}
+                ${registryProjectFilterId ? `<button type="button" class="hw-btn hw-btn-sm registry-project-clear-btn" data-registry-clear="project" title="清除项目筛选"><i data-lucide="x"></i><span>显示全部资产</span></button>` : ''}
+            </div>
+        ` : ''}
+    </section>`;
+}
 function renderAssetSmartFilterContents(contextLabel='当前看板'){
     const classifiedCount = registryAssets.filter(item => (item.tags || []).length || item.metadata?.classification || item.classification?.summary).length;
     const fallbackKinds = [
@@ -8383,6 +8473,7 @@ function renderAssetSmartFilterContents(contextLabel='当前看板'){
             ${renderRegistryFacetRow({id:'7',name:'最近 7 天',count:''}, 'recent', String(registryRecentDays || ''))}
             ${renderRegistryFacetRow({id:'30',name:'最近 30 天',count:''}, 'recent', String(registryRecentDays || ''))}
         </section>
+        ${renderRegistryProjectFacetSection()}
         <section class="registry-ai-overview asset-smart-filter-ai"><span><i data-lucide="sparkles"></i></span><div><strong>AI 分类与标签</strong><small>${classifiedCount} 个结果已包含智能信息</small></div></section>
         <section class="registry-facet-section asset-smart-filter-section"><div class="registry-facet-title"><strong>素材类型</strong></div>
             ${kinds.map(item => renderRegistryFacetRow(item,'kind',registryKind)).join('')}
@@ -8901,6 +8992,7 @@ function renderRegistryManager(){
                 ${renderRegistryFacetRow({id:'7',name:'最近 7 天',count:''}, 'recent', String(registryRecentDays || ''))}
                 ${renderRegistryFacetRow({id:'30',name:'最近 30 天',count:''}, 'recent', String(registryRecentDays || ''))}
             </section>
+            ${renderRegistryProjectFacetSection()}
             <section class="registry-ai-overview"><span><i data-lucide="sparkles"></i></span><div><strong>AI 分类与标签</strong><small>${classifiedCount} 个结果已包含智能信息</small></div></section>
             <section class="registry-facet-section"><div class="registry-facet-title"><strong>素材类型</strong></div>
                 ${(registryFacets.kinds || []).map(item => renderRegistryFacetRow(item,'kind',registryKind)).join('')}
@@ -8918,7 +9010,7 @@ function renderRegistryManager(){
         </div>
     </aside>
     <section class="asset-panel asset-content registry-content registry-layout-${registryLayout} registry-aspect-${registryAspect} ${registrySimple ? 'registry-simple' : ''} ${registrySelectedIds.size ? 'manage-on' : ''}" style="--registry-card-size:${registryCardSize}px">
-        ${renderRegistryToolbar(null, registryCategoryLabel(registryStatCategory), `${registryTotalSummary(visible.length)}${registryTotalKnown && registryTotal > visible.length ? `，当前显示 ${visible.length} 项` : ''}`, {allowUrl:true})}
+        ${renderRegistryToolbar(null, registryCategoryLabel(registryStatCategory), `${registryProjectFilterId ? `【项目: ${projects.find(item => item.id === registryProjectFilterId)?.name || registryProjectFilterId}】` : ''}${registryTotalSummary(visible.length)}${registryTotalKnown && registryTotal > visible.length ? `，当前显示 ${visible.length} 项` : ''}`, {allowUrl:true})}
         ${renderRegistryFilterChips()}
         <div data-registry-fresh-notice></div>
         <div class="content-scroll registry-assets-scroll" data-registry-zoom-area title="Shift+滚轮调整预览大小">${renderRegistryAssetSections(visible, null, '没有符合条件的资产。可以清空排除条件。')}${renderRegistryPagination()}</div>
@@ -10852,6 +10944,23 @@ async function handleClick(event){
     if(registryRecycle){ event.stopPropagation(); await openRegistryRecycleDialog(registryRecycle.dataset.registryRecycle || ''); return; }
     const registryRecent = target.closest?.('[data-registry-recent]');
     if(registryRecent){ const value=Number(registryRecent.dataset.registryRecent||0); registryRecentDays=registryRecentDays===value?0:value; await refreshRegistryAssets(); return; }
+    const registryProjectToggle = target.closest?.('[data-registry-project-toggle]');
+    if(registryProjectToggle){
+        registryProjectFacetExpanded = !registryProjectFacetExpanded;
+        if(registryProjectFacetExpanded){
+            void refreshRegistryProjectCounts(true);
+        }
+        render();
+        return;
+    }
+    const registryProjectFilter = target.closest?.('[data-registry-project-filter]');
+    if(registryProjectFilter){
+        const pid = registryProjectFilter.dataset.registryProjectFilter || '';
+        registryProjectFilterId = registryProjectFilterId === pid ? '' : pid;
+        if(registryProjectFilterId) activeProjectId = registryProjectFilterId;
+        await refreshRegistryAssets();
+        return;
+    }
     const registryKindBtn = target.closest?.('[data-registry-kind]');
     if(registryKindBtn){ const value=registryKindBtn.dataset.registryKind||''; registryKind=registryKind===value?'':value; await refreshRegistryAssets(); return; }
     const registryRootBtn = target.closest?.('[data-registry-root]');
@@ -10865,7 +10974,7 @@ async function handleClick(event){
     const registryRemoveTag = target.closest?.('[data-registry-remove-tag]');
     if(registryRemoveTag){ const id=registryRemoveTag.dataset.registryRemoveTag||''; registryIncludeTags.delete(id); registryExcludeTags.delete(id); await refreshRegistryAssets(); return; }
     const registryClear = target.closest?.('[data-registry-clear]');
-    if(registryClear){ const key=registryClear.dataset.registryClear||''; if(key==='all') applyRegistryFilterDefinition({groupSimilar:registryGroupSimilar}); else if(key==='recent') registryRecentDays=0; else if(key==='kind') registryKind=''; else if(key==='category') registryStatCategory=''; else if(key==='collection') registryCollectionId=''; else if(key==='root') registryRootId=''; await refreshRegistryAssets(); return; }
+    if(registryClear){ const key=registryClear.dataset.registryClear||''; if(key==='all'){ applyRegistryFilterDefinition({groupSimilar:registryGroupSimilar}); registryProjectFilterId=''; } else if(key==='project'){ registryProjectFilterId=''; } else if(key==='recent') registryRecentDays=0; else if(key==='kind') registryKind=''; else if(key==='category') registryStatCategory=''; else if(key==='collection') registryCollectionId=''; else if(key==='root') registryRootId=''; await refreshRegistryAssets(); return; }
     if(target.closest?.('[data-registry-preset-save]')){ await saveRegistryPreset(); return; }
     const registryPreset = target.closest?.('[data-registry-preset]');
     if(registryPreset){ const item=registryPresets.find(value=>value.id===(registryPreset.dataset.registryPreset||'')); if(item){applyRegistryFilterDefinition(item.definition||{});await refreshRegistryAssets();} return; }

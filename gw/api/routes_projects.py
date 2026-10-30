@@ -61,6 +61,13 @@ def list_projects(
     projects = default_projects_service.list_projects(
         archived=archived, deleted=deleted, viewer_owner_key=owner_key, viewer_role=role
     )
+    try:
+        from gw.asset_registry import repository as asset_repo
+        asset_counts = asset_repo.project_asset_counts()
+        for proj in projects:
+            proj.asset_count = asset_counts.get(proj.project_id, 0)
+    except Exception:
+        pass
     return ProjectListResponse(projects=projects)
 
 
@@ -248,9 +255,14 @@ def get_project_compat(
 ):
     """读取项目详情；不存在返回标准 PROJECT_NOT_FOUND。"""
     context = require_authenticated(authorization, x_user_role)
-    return ProjectDetailResponse(
-        project=default_projects_service.get_readable_project(project_id, context)
-    )
+    proj = default_projects_service.get_readable_project(project_id, context)
+    try:
+        from gw.asset_registry import repository as asset_repo
+        asset_counts = asset_repo.project_asset_counts()
+        proj.asset_count = asset_counts.get(proj.project_id, 0)
+    except Exception:
+        pass
+    return ProjectDetailResponse(project=proj)
 
 
 # ---------------------------------------------------------------------------
