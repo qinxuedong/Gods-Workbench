@@ -1,0 +1,14 @@
+{
+  "schema": "gw.cleanroom-admission-shard/v1",
+  "issue": 412,
+  "authorization_basis": "GitHub Issue #412, 2026-10-30",
+  "files": [
+    "gw/agent_episode/workflow.py",
+    "gw/agent_runtime/service.py",
+    "tests/contracts/agent/test_mvp2_t6b_gate_decision_wiring.py",
+    "tests/hygiene/fixtures/admissions/issue-412.json"
+  ],
+  "admitted_files": [],
+  "accepted_test_files": [],
+  "notes": "QIN-454：非免费工具先请求持久 Gate；提交决定沿用 GateStore CAS 状态机。"
+}
