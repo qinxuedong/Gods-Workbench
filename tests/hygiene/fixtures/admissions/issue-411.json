@@ -1,0 +1,14 @@
+{
+  "schema": "gw.cleanroom-admission-shard/v1",
+  "issue": 411,
+  "authorization_basis": "GitHub Issue #411, 2026-10-30",
+  "files": [
+    "gw/agent_episode/workflow.py",
+    "gw/agent_runtime/service.py",
+    "tests/contracts/agent/test_mvp2_t6a_proposal_wiring.py",
+    "tests/hygiene/fixtures/admissions/issue-411.json"
+  ],
+  "admitted_files": [],
+  "accepted_test_files": [],
+  "notes": "QIN-453：验证规划提案经服务端校验后写入 AgentRun 台账；非法 action 在工具及门禁副作用前失败。"
+}
