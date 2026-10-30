@@ -1,0 +1,23 @@
+{
+  "schema": "gw.cleanroom-admission-shard/v1",
+  "issue": 483,
+  "authorization_basis": "GitHub Issue #483, 2026-10-30",
+  "files": [
+    "gw/god_workflow/routes.py",
+    "gw/media/asset_extract.py",
+    "gw/media/keyframe_extractor.py",
+    "gw/media/proxy.py",
+    "gw/media/scene_detector.py",
+    "gw/observability/telemetry.py",
+    "gw/settings/native_picker.py",
+    "tests/contracts/assets/test_qin_485_subprocess_encoding.py",
+    "tests/frontend/mvp1-board-create-errors.test.mjs",
+    "tests/frontend/node-files.txt",
+    "tests/hygiene/fixtures/admissions/issue-483.json",
+    "web/css/pages/asset-manager.css",
+    "web/js/modules/asset-manager.js"
+  ],
+  "admitted_files": [],
+  "accepted_test_files": [],
+  "notes": "QIN-485：修复 Windows 下 subprocess.run 管道读取缺少 encoding 导致的 GBK UnicodeDecodeError 线程崩溃，以及资产库新增资源库弹窗在校验失败时无错误提示且无 loading 反馈问题。"
+}

@@ -222,7 +222,7 @@ const savedRegistryViewSettings = readRegistryViewSettings();
 let activeTab = 'registry';
 let boardNavigationState = null;
 let boardDragId = '';
-let boardCreateState = {open:false, preset:'image', name:'图片库', path:''};
+let boardCreateState = {open:false, preset:'image', name:'图片库', path:'', saving:false, error:''};
 let boardEditState = {open:false, boardId:'', name:'', path:'', saving:false};
 let boardSourceState = {open:false, boardId:'', editor:'', existingId:'', name:'用户素材', path:''};
 let boardFolderCreateState = {open:false, boardId:'', rootId:'', parent:'', name:'新文件夹', saving:false, error:''};
@@ -1255,8 +1255,9 @@ function renderCreateLibraryModal(){
             <label><span>用户素材路径（可选）</span><input id="boardCreatePath" list="boardKnownPaths" value="${escapeAttr(boardCreateState.path || '')}" placeholder="输入本机或 NAS 素材目录"></label>
             <datalist id="boardKnownPaths">${localLibraries.map(lib => `<option value="${escapeAttr(lib.path || '')}">${escapeHtml(lib.name || '')}</option>`).join('')}</datalist>
             <div class="board-create-summary"><i data-lucide="filter"></i><span>${selected.id === 'other' ? '不限制资源类型，用户路径会作为独立来源显示；未绑定路径的素材库不再自动收纳全部同类素材。' : `自动归档 ${selected.kinds.map(registryKindLabel).concat(selected.extensions.map(ext => `.${ext}`)).slice(0, 8).join('、') || '其他类型'}，用户路径会作为独立来源显示；未绑定路径的素材库不再自动收纳全部同类素材。`}</span></div>
+            ${boardCreateState.error ? `<div class="board-create-error" role="alert"><i data-lucide="alert-triangle"></i><span>${escapeHtml(boardCreateState.error)}</span></div>` : ''}
         </div>
-        <div class="board-create-actions"><button class="hw-btn" type="button" data-board-create-close>取消</button><button class="hw-btn hw-btn-gold" type="button" data-board-create-confirm><i data-lucide="plus"></i><span>创建资源库</span></button></div>
+        <div class="board-create-actions"><button class="hw-btn" type="button" data-board-create-close ${boardCreateState.saving ? 'disabled' : ''}>取消</button><button class="hw-btn hw-btn-gold" type="button" data-board-create-confirm ${boardCreateState.saving ? 'disabled' : ''}><i data-lucide="${boardCreateState.saving ? 'loader' : 'plus'}"></i><span>${boardCreateState.saving ? '正在创建…' : '创建资源库'}</span></button></div>
     </div>`;
     markAssetFloatingSurface(overlay, {surface:'asset-board-create', content:'.board-create-modal', close:closeCreateLibraryModal});
     refreshIcons();
@@ -1273,11 +1274,13 @@ function renderCreateLibraryModal(){
 }
 function openCreateLibraryModal(){
     const preset = ASSET_LIBRARY_PRESETS.find(item => item.id === boardCreateState.preset) || ASSET_LIBRARY_PRESETS[3];
-    boardCreateState = {open:true, preset:preset.id, name:preset.name, path:''};
+    boardCreateState = {open:true, preset:preset.id, name:preset.name, path:'', saving:false, error:''};
     renderCreateLibraryModal();
 }
 function closeCreateLibraryModal(){
     boardCreateState.open = false;
+    boardCreateState.saving = false;
+    boardCreateState.error = '';
     renderCreateLibraryModal();
 }
 function renderBoardEditModal(){
@@ -1358,17 +1361,26 @@ function syncBoardCreateDraftFromDom(){
     };
 }
 async function createPresetAssetBoard(){
+    if(boardCreateState.saving) return;
     const preset = ASSET_LIBRARY_PRESETS.find(item => item.id === boardCreateState.preset) || ASSET_LIBRARY_PRESETS[3];
     syncBoardCreateDraftFromDom();
     const name = String(document.getElementById('boardCreateName')?.value || boardCreateState.name || preset.name).trim().slice(0, 32);
     const path = String(document.getElementById('boardCreatePath')?.value || boardCreateState.path || '').trim();
-    boardCreateState = {...boardCreateState, name, path};
-    if(!name){ setStatus('请输入资源库名称'); return; }
+    boardCreateState = {...boardCreateState, name, path, error:''};
+    if(!name){
+        boardCreateState.error = '请输入资源库名称';
+        renderCreateLibraryModal();
+        setStatus('请输入资源库名称');
+        return;
+    }
     if(!boardCreateState.open){
         markIndexState('failed');
         setStatus('资源库窗口已关闭，未建立索引');
         return;
     }
+    boardCreateState.saving = true;
+    boardCreateState.error = '';
+    renderCreateLibraryModal();
     let source = null;
     if(path){
         markIndexState('pending');
@@ -1376,16 +1388,23 @@ async function createPresetAssetBoard(){
         try {
             source = await attachPathToAssetBoard('', `${name}素材`, path);
         } catch(err) {
+            boardCreateState.saving = false;
+            boardCreateState.error = err.message || '素材库索引失败';
+            renderCreateLibraryModal();
             markIndexState('failed');
             setStatus(err.message || '素材库索引失败');
             return;
         }
         if(!source){
+            boardCreateState.saving = false;
+            boardCreateState.error = '素材来源添加失败，未建立索引';
+            renderCreateLibraryModal();
             markIndexState('failed');
             setStatus('素材来源添加失败，未建立索引');
             return;
         }
     }
+    boardCreateState.saving = false;
     const state = ensureBoardNavigationState();
     const id = `library_${preset.id}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`;
     state.customBoards.push({id, name, preset:preset.id, icon:preset.icon, category:preset.category || '', kinds:[...preset.kinds], extensions:[...preset.extensions], sources:source ? [{...source, hidden:false}] : [], automaticHidden:false, excludedSourceIds:[], system:false});
@@ -1498,7 +1517,12 @@ async function attachPathToAssetBoard(boardId, sourceName, path){
     let source = known ? {id:known.id, name:storageCleanName(sourceName || known.name, known.name), path:known.path} : null;
     let accepted = null;
     if(!source){
-        const suggestionData = await apiJsonResponse(assetManagerApi.getRootAliasSuggestions({path:cleanPath}));
+        let suggestionData = null;
+        try {
+            suggestionData = await apiJsonResponse(assetManagerApi.getRootAliasSuggestions({path:cleanPath}));
+        } catch(_) {
+            suggestionData = null;
+        }
         const candidates = Array.isArray(suggestionData?.candidates) ? suggestionData.candidates : [];
         if(candidates.length){
             const choice = await confirmRootAliasSuggestion(cleanPath, candidates, suggestionData?.revision);
