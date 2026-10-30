@@ -6,6 +6,7 @@ import asyncio
 import hashlib
 import inspect
 import json
+import re
 import uuid
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
@@ -69,6 +70,14 @@ from gw.agent_runtime.repository import (
 )
 
 _KEEP = object()
+_PROPOSAL_ABSOLUTE_PATH = re.compile(
+    r"(?<![A-Za-z0-9])(?:[A-Za-z]:[\\/]|\\\\[^\\/\s]+\\[^\\/\s]+)"
+    r"|(?<![A-Za-z0-9:/])/(?!/)(?:[^/\s]+/)*[^/\s]+"
+)
+_PROPOSAL_CREDENTIAL_VALUE = re.compile(
+    r"(?i)\b(?:api[-_ ]?key|access[-_ ]?token|credential|password|secret|authorization)"
+    r"\b\s*[:=]\s*\S+|\bbearer\s+\S+|\bsk-[A-Za-z0-9_-]{8,}"
+)
 
 
 def _authorizer_accepts_run_id(authorizer: Any) -> bool:
@@ -605,7 +614,14 @@ class AgentRuntimeService:
                 "The orchestrator output did not match the registered action contract.",
                 request_id=plan_identity.root,
             ) from exc
-        proposal = graph_result["orchestration_proposal"]
+        raw_proposal = (
+            graph_result.get("orchestration_proposal")
+            if isinstance(graph_result, Mapping)
+            else None
+        )
+        proposal = self._validate_orchestration_proposal(
+            raw_proposal, plan_identity
+        )
         latest = await self.repository.read_run_by_id(run.run_id)
         if latest is None or latest.status is not RunStatus.running:
             raise DomainError(
@@ -741,6 +757,45 @@ class AgentRuntimeService:
         }
 
     @staticmethod
+    def _validate_orchestration_proposal(
+        proposal: Any, run_id: Identifier
+    ) -> OrchestrationProposal:
+        """持久化前再次校验不可信规划结果的类型与字段。"""
+        if (
+            not isinstance(proposal, OrchestrationProposal)
+            or not isinstance(proposal.action, str)
+            or proposal.action not in ORCHESTRATION_ACTIONS
+            or (
+                proposal.capability is not None
+                and not isinstance(proposal.capability, str)
+            )
+            or (
+                proposal.target_stage is not None
+                and not isinstance(proposal.target_stage, StageId)
+            )
+            or (
+                proposal.question is not None
+                and not isinstance(proposal.question, str)
+            )
+            or any(
+                _PROPOSAL_ABSOLUTE_PATH.search(value)
+                or _PROPOSAL_CREDENTIAL_VALUE.search(value)
+                for value in (proposal.capability, proposal.question)
+                if isinstance(value, str)
+            )
+            or (
+                proposal.action == "clarify"
+                and (proposal.question is None or not proposal.question.strip())
+            )
+        ):
+            raise DomainError(
+                ErrorCode.VALIDATION_FAILED,
+                "The planner output did not match the registered action contract.",
+                request_id=run_id.root,
+            )
+        return proposal
+
+    @staticmethod
     def _proposal_payload(proposal: OrchestrationProposal) -> dict[str, Any]:
         return {
             "action": proposal.action,
@@ -755,15 +810,16 @@ class AgentRuntimeService:
     def _proposal_from_payload(
         payload: Mapping[str, Any], run_id: Identifier
     ) -> OrchestrationProposal:
-        if payload.get("action") not in ORCHESTRATION_ACTIONS:
+        action = payload.get("action")
+        if not isinstance(action, str) or action not in ORCHESTRATION_ACTIONS:
             raise DomainError(
                 ErrorCode.VALIDATION_FAILED,
                 "The persisted planner action is invalid.",
                 request_id=run_id.root,
             )
         target = payload.get("target_stage")
-        return OrchestrationProposal(
-            action=str(payload["action"]),
+        proposal = OrchestrationProposal(
+            action=action,
             capability=payload.get("capability")
             if isinstance(payload.get("capability"), str)
             else None,
@@ -772,6 +828,7 @@ class AgentRuntimeService:
             if isinstance(payload.get("question"), str)
             else None,
         )
+        return AgentRuntimeService._validate_orchestration_proposal(proposal, run_id)
 
     @staticmethod
     def _clear_plan(state: dict[str, Any]) -> None:
