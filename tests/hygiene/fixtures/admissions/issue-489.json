@@ -1,0 +1,15 @@
+{
+  "schema": "gw.cleanroom-admission-shard/v1",
+  "issue": 489,
+  "authorization_basis": "GitHub Issue #489, 2026-10-30",
+  "files": [
+    "tests/frontend/node-files.txt",
+    "tests/frontend/qin-488-asset-project-filter.test.mjs",
+    "tests/hygiene/fixtures/admissions/issue-489.json",
+    "web/css/pages/asset-manager.css",
+    "web/js/modules/asset-manager.js"
+  ],
+  "admitted_files": [],
+  "accepted_test_files": [],
+  "notes": "QIN-488：资产库默认全局统一金库并在智能筛选增加项目素材展开与过滤。"
+}
