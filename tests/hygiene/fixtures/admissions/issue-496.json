@@ -1,0 +1,14 @@
+{
+  "schema": "gw.cleanroom-admission-shard/v1",
+  "issue": 496,
+  "authorization_basis": "GitHub Issue #496, 2026-10-30",
+  "files": [
+    "tests/frontend/node-files.txt",
+    "tests/frontend/qin-491-topbar-upper-overlap.test.mjs",
+    "tests/hygiene/fixtures/admissions/issue-496.json",
+    "web/css/base/hardware-design-system.css"
+  ],
+  "admitted_files": [],
+  "accepted_test_files": [],
+  "notes": "QIN-491：顶栏上层机架右端组由绝对定位改为行内右对齐，消除中央状态位压在播控/时钟/排期下方的叠层。"
+}

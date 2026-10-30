@@ -878,17 +878,22 @@ table tbody td {
       50% { opacity: 0.35; }
     }
 
-/* GW-TOPBAR-T94: 响应式顶栏布局；必达控件保持在自身行内，不以固定宽度制造横向溢出。 */
+/* GW-TOPBAR-T94 / QIN-491: 响应式顶栏布局；必达控件保持在自身行内，不以固定宽度制造横向溢出。
+   上层机架在与 `.topbar-master-deck > .flex { min-width:max-content }` 同宽时会撑满整行，
+   若右端组再绝对定位贴右，中央状态位会滑到「播控 / 时钟 / 排期」下方形成叠层（QIN-491）。
+   故右端组改为行内右对齐：既不压住中央状态位，也不再需要绝对定位脱离文档流。 */
 .topbar-master-deck .master-deck-upper {
   position: relative;
   min-width: 0;
 }
 .topbar-master-deck .master-deck-upper-right {
-  position: absolute;
-  top: 50%;
-  right: 8px;
-  transform: translateY(-50%);
-  z-index: 61;
+  position: static;
+  top: auto;
+  right: auto;
+  transform: none;
+  z-index: auto;
+  flex: 0 0 auto;
+  margin-left: auto;
   min-width: 0;
 }
 .topbar-master-deck .master-deck-upper-right #masterDeckDate {

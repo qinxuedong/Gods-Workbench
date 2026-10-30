@@ -53,6 +53,7 @@ tests/frontend/qin-481-asset-toolbar.test.mjs
 tests/frontend/qin-482-collab-audit.test.mjs
 tests/frontend/qin-483-auth-dialog.test.mjs
 tests/frontend/qin-488-asset-project-filter.test.mjs
+tests/frontend/qin-491-topbar-upper-overlap.test.mjs
 tests/frontend/settings-workbench-visual.test.mjs
 tests/frontend/test_c18_omnibar_hotkeys.mjs
 tests/frontend/test_c18_video_jump.mjs
