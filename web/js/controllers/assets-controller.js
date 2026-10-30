@@ -273,11 +273,12 @@ window.WorkbenchAssets = (() => {
   // 父页状态条必须明说「未接入」并带结构化标记（用户 2026-09-21 裁决第 3 项）。
   function setVaultStatus(text) {
     const projected = text && typeof text === 'object' ? text : null;
-    const value = projected?.message || text || '';
+    const value = projected?.message || text || '准备就绪';
     const kind = projected?.kind || (/未纳入当前切片/.test(value) ? 'not_integrated'
       : (/暂时不可用/.test(value) ? 'service_unavailable' : ''));
     if (!status) return;
     status.textContent = value;
+    status.title = value;
     if (kind) status.setAttribute('data-gw-degradation', kind);
     else status.removeAttribute('data-gw-degradation');
     if (status.dataset) {
@@ -295,6 +296,7 @@ window.WorkbenchAssets = (() => {
     const kind = marked.getAttribute('data-gw-degradation') || 'not_integrated';
     const text = (marked.textContent || '').trim();
     status.textContent = text;
+    status.title = text;
     status.setAttribute('data-gw-degradation', kind);
   }
   function waitForControl(selector) {
@@ -315,14 +317,12 @@ window.WorkbenchAssets = (() => {
     });
   }
 
-  async function selectCategory(id) {
+  async function activateBoard(id) {
     const current = ++revision;
     try {
-      const tab = await waitForControl('[data-tab="registry"]');
-      if (tab.getAttribute('aria-selected') !== 'true') tab.click();
-      const button = await waitForControl(`[data-registry-stat="${CSS.escape(id)}"]`);
+      const button = await waitForControl(`#assetBoardTabs [data-tab="${CSS.escape(id)}"]`);
       if (current !== revision) return;
-      if (button.getAttribute('aria-pressed') !== 'true') button.click();
+      if (button.getAttribute('aria-selected') !== 'true') button.click();
       setVaultStatus('');
     } catch (error) { setVaultStatus(error.message); }
   }
@@ -334,48 +334,81 @@ window.WorkbenchAssets = (() => {
   }
 
   function syncCategories() {
-    if (manager()?.querySelector('[data-tab="registry"][aria-selected="true"]')) setVaultStatus('');
-    const controls = [...(manager()?.querySelectorAll('[data-registry-stat]') || [])];
-    if (!categories) return;
-    if (!controls.length) {
-      categorySnapshot = '';
-      categories.querySelectorAll('[aria-pressed="true"]').forEach(button => {
-        button.setAttribute('aria-pressed', 'false');
-        button.classList.remove('bg-[#12151e]', 'border', 'border-[#dfc384]/30', 'text-[#eddab3]', 'font-semibold');
-        button.classList.add('text-slate-400', 'hover:text-white', 'hover:bg-white/5');
-      });
-      return;
-    }
-    const rows = controls.map(button => ({
-      id: button.dataset.registryStat,
-      name: button.querySelector('small')?.textContent || '',
-      count: button.querySelector('strong')?.textContent || '',
-      active: button.getAttribute('aria-pressed') === 'true',
-    }));
-    const snapshot = JSON.stringify(rows);
+    const doc = manager();
+    if (!categories || !doc) return;
+    const tabs = [...doc.querySelectorAll('#assetBoardTabs .asset-board-tab')];
+    const createControl = doc.querySelector('#assetBoardTabs [data-board-create]');
+    const rows = tabs.map(button => ({
+      id: button.dataset.tab || '',
+      name: button.querySelector('span')?.textContent?.trim() || '',
+      icon: button.querySelector('[data-lucide]')?.getAttribute('data-lucide') || 'folder',
+      active: button.getAttribute('aria-selected') === 'true',
+    })).filter(row => row.id && row.name);
+    const snapshot = JSON.stringify({rows, create: Boolean(createControl)});
     if (categorySnapshot === snapshot) return;
     categorySnapshot = snapshot;
     const fragment = document.createDocumentFragment();
     for (const row of rows) {
       const button = document.createElement('button');
       button.type = 'button';
-      button.className = `w-full text-left px-2.5 py-1.5 rounded-lg transition flex items-center justify-between ${row.active ? 'bg-[#12151e] border border-[#dfc384]/30 text-[#eddab3] font-semibold' : 'text-slate-400 hover:text-white hover:bg-white/5'}`;
-      button.setAttribute('aria-pressed', String(row.active));
-      button.dataset.assetCategory = row.id;
+      button.className = `asset-shell-nav-button${row.active ? ' is-active' : ''}`;
+      button.setAttribute('role', 'tab');
+      button.setAttribute('aria-selected', String(row.active));
+      button.tabIndex = row.active ? 0 : -1;
+      button.dataset.assetBoard = row.id;
+      const icon = document.createElement('i');
+      icon.setAttribute('data-lucide', row.icon);
+      icon.setAttribute('aria-hidden', 'true');
       const label = document.createElement('span');
       label.textContent = row.name;
-      const count = document.createElement('span');
-      count.className = 'gw-type-body-sm font-mono px-1 rounded bg-black/60 text-[#dfc384]';
-      count.textContent = row.count;
-      button.append(label, count);
-      button.addEventListener('click', () => selectCategory(row.id));
+      button.append(icon, label);
+      button.addEventListener('click', () => activateBoard(row.id));
       fragment.append(button);
     }
-    const focused = categories.contains(document.activeElement) ? document.activeElement.dataset.assetCategory : null;
+    if (createControl) {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'asset-shell-nav-button asset-shell-nav-create';
+      button.setAttribute('aria-label', '新建资源');
+      button.dataset.assetBoardCreate = '';
+      const icon = document.createElement('i');
+      icon.setAttribute('data-lucide', 'plus');
+      icon.setAttribute('aria-hidden', 'true');
+      const label = document.createElement('span');
+      label.textContent = '新建资源';
+      button.append(icon, label);
+      button.addEventListener('click', () => createControl.click());
+      fragment.append(button);
+    }
+    const focused = categories.contains(document.activeElement)
+      ? document.activeElement.dataset.assetBoard || (document.activeElement.hasAttribute('data-asset-board-create') ? 'create' : null)
+      : null;
     categories.replaceChildren(fragment);
-    if (focused !== null) categories.querySelector(`[data-asset-category="${CSS.escape(focused)}"]`)?.focus();
-    const total = document.getElementById('assetCategoryTotal');
-    if (total) total.textContent = rows[0].count;
+    window.lucide?.createIcons();
+    if (focused !== null) {
+      const selector = focused === 'create' ? '[data-asset-board-create]' : `[data-asset-board="${CSS.escape(focused)}"]`;
+      categories.querySelector(selector)?.focus();
+    }
+  }
+
+  async function openAssetSettings() {
+    try {
+      const button = await waitForControl('#assetBoardTabs [data-board-settings-open]');
+      button.click();
+    } catch (error) { setVaultStatus(error.message); }
+  }
+
+  function toggleSmartFilter() {
+    const doc = manager();
+    const panel = doc?.getElementById('registryFacetPopover');
+    const root = doc?.getElementById('assetManagerRoot');
+    if (!panel || !root) { setVaultStatus('智能筛选尚未就绪，请刷新页面。'); return; }
+    if (panel.hasAttribute('popover')) {
+      if (panel.matches(':popover-open')) panel.hidePopover();
+      else panel.showPopover();
+      return;
+    }
+    root.classList.toggle('asset-registry-filters-collapsed');
   }
 
   async function uploadAsset() {
@@ -408,9 +441,9 @@ window.WorkbenchAssets = (() => {
       return;
     }
     observer = new MutationObserver(syncCategories);
-    observer.observe(doc.getElementById('assetManagerRoot') || doc.body, {childList: true, subtree: true});
+    observer.observe(doc.getElementById('assetBoardTabs') || doc.body, {childList: true, subtree: true});
     syncCategories();
-    waitForControl('[data-tab="registry"]').then(() => { setVaultStatus(''); mirrorFrameDegradation(); openRequestedAsset(); }).catch(error => { setVaultStatus(error.message); });
+    waitForControl('#assetBoardTabs [data-tab="registry"]').then(() => { syncCategories(); setVaultStatus(''); mirrorFrameDegradation(); openRequestedAsset(); }).catch(error => { setVaultStatus(error.message); });
   }
   function bindElements() {
     frame = document.getElementById('assetVaultFrame');
@@ -458,5 +491,5 @@ window.WorkbenchAssets = (() => {
   // 首屏与壳层部分路由返回时都走同一个幂等绑定入口；不重复执行顶层脚本。
   rebind();
   window.addEventListener('pagehide', () => observer?.disconnect());
-  return {uploadAsset, rebind, showIndexJobStatus, indexJobStatusView: window.GWAssetJobStatus.view};
+  return {uploadAsset, openAssetSettings, toggleSmartFilter, rebind, showIndexJobStatus, indexJobStatusView: window.GWAssetJobStatus.view};
 })();

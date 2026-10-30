@@ -1101,3 +1101,28 @@ def test_homoglyph_guard_detects_injected_pollution():
     # 反向对照：纯 ASCII 与正常中文不得误报
     assert not _scan_homoglyph_tokens("credential"), "纯 ASCII 被误判"
     assert not _scan_homoglyph_tokens("会话失效，请重新登录。"), "正常中文被误判"
+
+
+def test_qin_489_asset_library_layout_files_are_registered(repo_root: Path):
+    """QIN-489 的 UI 回归与外层/内层资产布局文件按本票登记。"""
+    metadata = _load_admission_metadata(repo_root)
+    registrations = [
+        item
+        for item in metadata.get("authorized_issue_file_sets", [])
+        if item.get("issue") == 492
+    ]
+    assert len(registrations) == 1
+    assert registrations[0].get("authorization_basis") == (
+        "GitHub Issue #492, 2026-10-30"
+    )
+    assert set(registrations[0].get("files", [])) == {
+        "web/pages/assets.html",
+        "web/js/controllers/assets-controller.js",
+        "web/js/modules/asset-manager.js",
+        "web/css/pages/asset-manager.css",
+        "web/css/pages/asset-vault.css",
+        "tests/frontend/qin-489-asset-library-layout.test.mjs",
+        "tests/frontend/node-files.txt",
+        "tests/hygiene/fixtures/admissions/issue-492.json",
+        "tests/hygiene/test_cleanroom_hygiene.py",
+    }

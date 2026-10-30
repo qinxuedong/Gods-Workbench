@@ -13,9 +13,27 @@
   <style>
     #assetVaultStage { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
     #assetVaultFrame { flex: 1; width: 100%; min-height: 0; border: 0; background: #0a0b10; }
-    #assetVaultStatus { margin: 0; padding: 8px 12px; color: #eddab3; font-size: var(--gw-type-body-sm); }
-    #assetVaultStatus:empty { display: none; }
-    @media (max-width: 700px) { #assetVaultSidebar { display: none !important; } }
+    #assetVaultStatus { min-width: 0; margin: 0; padding: 0; overflow: hidden; color: #eddab3; font-size: var(--gw-type-body-sm); text-overflow: ellipsis; white-space: nowrap; }
+    .asset-shell-deck-status { flex: 0 0 auto; max-width: 150px; }
+    #assetCategories { gap: 4px; }
+    .asset-shell-nav-button { width: 100%; min-height: 38px; display: flex; align-items: center; gap: 10px; padding: 0 10px; border: 1px solid transparent; border-radius: 7px; background: transparent; color: #9ca3af; text-align: left; transition: background .15s ease, border-color .15s ease, color .15s ease; }
+    .asset-shell-nav-button svg { width: 16px; height: 16px; flex: 0 0 auto; color: #94a3b8; }
+    .asset-shell-nav-button span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .asset-shell-nav-button:hover,.asset-shell-nav-button.is-active { border-color: rgb(223 195 132 / .25); background: #12151e; color: #eddab3; }
+    .asset-shell-nav-button.is-active { font-weight: 600; }
+    .asset-shell-nav-button.is-active svg { color: #dfc384; }
+    .asset-shell-sidebar-actions { padding: 10px; border-top: 1px solid rgb(255 255 255 / .08); background: #050608; }
+    .asset-shell-sidebar-actions .hw-btn { min-height: 36px; }
+    @media (max-width: 700px) {
+      .asset-shell-workspace { flex-direction: column !important; }
+      #assetVaultSidebar { width: 100% !important; max-height: 150px; height: auto !important; flex: 0 0 auto; flex-direction: row !important; border-right: 0 !important; border-bottom: 1px solid #191c24; }
+      #assetVaultSidebar .gw-side-bus-header { display: none !important; }
+      #assetCategories { min-width: 0; min-height: 0; flex: 1 1 auto !important; flex-direction: row !important; overflow-x: auto !important; overflow-y: hidden !important; padding: 8px !important; }
+      .asset-shell-nav-button { width: auto; min-width: 116px; flex: 0 0 auto; }
+      .asset-shell-sidebar-actions { flex: 0 0 auto; display: flex; flex-direction: column; justify-content: center; gap: 5px; padding: 6px; border-top: 0; border-left: 1px solid rgb(255 255 255 / .08); }
+      .asset-shell-sidebar-actions .hw-btn { width: auto !important; min-height: 32px; padding: 0 8px; white-space: nowrap; }
+      .asset-shell-sidebar-actions .hw-btn span { display: none; }
+    }
   </style>
 </head>
 <body class="gw-shell bg-[#090a0d] text-slate-200 antialiased h-screen flex flex-col justify-between select-none overflow-hidden px-5 gw-type-body-md">
@@ -64,9 +82,11 @@
       <div class="flex items-center space-x-2 shrink-0">
         <div class="flex items-center space-x-1.5 bg-[#07080b] px-3 py-1 rounded-lg border border-white/10 shadow-inner">
           <button class="hw-btn hw-btn-icon transition"><i data-lucide="chevron-left" class="w-3.5 h-3.5"></i></button>
-          <div class="flex items-center space-x-2 px-1.5">
+          <div class="flex items-center space-x-2 px-1.5 min-w-0">
             <span class="w-1.5 h-1.5 rounded-full bg-[#dfc384] shadow-[0_0_6px_#dfc384] animate-pulse"></span>
-            <span class="gw-type-body-sm font-mono font-bold text-[#eddab3]">ASSET REPOSITORY VAULT · RAID-06 POOL</span>
+            <span class="gw-type-body-sm font-mono font-bold text-[#eddab3]">ASSET VAULT</span>
+            <span class="h-4 w-px bg-white/15" aria-hidden="true"></span>
+            <p id="assetVaultStatus" role="status" aria-live="polite" class="asset-shell-deck-status">准备就绪</p>
           </div>
           <button class="hw-btn hw-btn-icon transition"><i data-lucide="chevron-right" class="w-3.5 h-3.5"></i></button>
         </div>
@@ -186,38 +206,44 @@
     </div>
   </header>
 
-  <div class="flex-1 flex overflow-hidden min-h-0">
-    <!-- LEFT: 资产类别与标签 -->
+  <div class="asset-shell-workspace flex-1 flex overflow-hidden min-h-0">
+    <!-- 左侧资源库看板导航 -->
     <aside id="assetVaultSidebar" class="gw-side-bus-unified w-64 bg-[#08090d] border-r border-[#191c24] flex flex-col shrink-0 z-30 h-full min-h-0">
       <div class="gw-side-bus-header p-2 border-b border-white/5 shrink-0">
         <div class="gw-side-bus-title w-full flex items-center justify-between px-3 py-2 rounded-xl bg-[#141720] border border-[#dfc384]/35 text-[#eddab3] gw-type-body-sm font-semibold shadow-md">
           <div class="flex items-center space-x-2">
             <i data-lucide="database" class="w-4 h-4 text-[#dfc384]"></i>
-            <span>资产仓储类别</span>
+            <span>资源库</span>
           </div>
-          <span class="gw-type-body-sm font-mono text-[#dfc384]" id="assetCategoryTotal"></span>
         </div>
       </div>
 
-      <div class="gw-side-bus-list flex-1 overflow-y-auto p-2 space-y-1.5 gw-type-body-sm" id="assetCategories">
+      <div class="gw-side-bus-list flex-1 overflow-y-auto p-2 space-y-1.5 gw-type-body-sm" id="assetCategories" role="tablist" aria-label="资源库导航">
         <!-- 动态生成 -->
       </div>
 
-      <div class="p-2.5 bg-[#050608] border-t border-white/5 shrink-0 space-y-1.5">
+      <div class="asset-shell-sidebar-actions shrink-0 space-y-1.5">
         <button type="button" id="btnUnassignedInbox" class="hw-btn w-full flex items-center justify-center space-x-1" style="display:none" onclick="GWUnassignedInbox.open()" title="尚未归属任何项目的资产（仅本人可见）">
           <i data-lucide="inbox" class="w-3.5 h-3.5 text-[#dfc384]"></i>
           <span>未归属</span><span class="font-mono text-[#dfc384]" data-unassigned-count></span>
         </button>
-        <button class="hw-btn hw-btn-gold w-full flex items-center justify-center space-x-1" onclick="WorkbenchAssets.uploadAsset()">
+        <button type="button" id="assetSidebarSmartFilter" class="hw-btn w-full flex items-center justify-center space-x-1" onclick="WorkbenchAssets.toggleSmartFilter()" title="打开或关闭智能筛选" aria-label="智能筛选" aria-controls="registryFacetPopover">
+          <i data-lucide="filter" class="w-3.5 h-3.5 text-[#dfc384]"></i>
+          <span>智能筛选</span>
+        </button>
+        <button type="button" class="hw-btn hw-btn-gold w-full flex items-center justify-center space-x-1" onclick="WorkbenchAssets.uploadAsset()" title="导入外部资产文件" aria-label="导入外部资产文件">
           <i data-lucide="cloud-upload" class="w-3.5 h-3.5 text-[#dfc384]"></i>
           <span>导入外部资产文件</span>
+        </button>
+        <button type="button" id="assetSidebarSettings" class="hw-btn w-full flex items-center justify-center space-x-1" onclick="WorkbenchAssets.openAssetSettings()" title="打开资产库设置">
+          <i data-lucide="settings-2" class="w-3.5 h-3.5 text-[#dfc384]"></i>
+          <span>资产设置</span>
         </button>
       </div>
     </aside>
 
     <!-- MAIN: 资产金库网格与详情 -->
     <main id="assetVaultStage">
-      <p id="assetVaultStatus" role="status" aria-live="polite">正在加载资产库…</p>
       <iframe id="assetVaultFrame" title="资产库" data-src="/static/asset-manager.html?embedded=1&amp;vault=1"></iframe>
     </main>
   </div>

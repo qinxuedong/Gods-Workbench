@@ -91,7 +91,14 @@ function signalFlowAccentColor(){
 
 let currentStatusText = '准备就绪';
 let currentIndexState = '';
-function currentStatusElement(){ return document.getElementById('assetStatus'); }
+function currentStatusElement(){
+    const local = document.getElementById('assetStatus');
+    if(local) return local;
+    try {
+        if(window.parent !== window) return window.parent.document.getElementById('assetVaultStatus');
+    } catch(_) {}
+    return null;
+}
 const uploadInput = document.getElementById('assetUploadInput');
 const assetTabsEl = document.getElementById('assetBoardTabs');
 const registryFacetCompact = window.matchMedia('(max-width: 900px)');
@@ -979,16 +986,17 @@ function visibleAssetBoards(){
 function renderBoardNavigation(){
     if(!assetTabsEl) return;
     const boards = visibleAssetBoards();
+    const embeddedVault = document.documentElement.classList.contains('vault-shell-embedded');
     assetTabsEl.innerHTML = `<div class="asset-board-list">${boards.map(board => {
         const active = board.id === activeTab;
         const movable = !board.fixed && !board.sourceBoard;
         const title = board.sourceBoard ? '已登记素材库' : board.fixed ? '固定看板' : '拖动调整看板顺序';
         return `<button class="asset-board-tab btn-segmented-item ${active ? 'active' : ''} ${board.fixed ? 'fixed' : ''} ${board.sourceBoard ? 'source-board' : ''}" type="button" role="tab" aria-selected="${active}" tabindex="${active ? '0' : '-1'}" data-tab="${escapeAttr(board.id)}" ${movable ? `draggable="true" data-board-drag="${escapeAttr(board.id)}"` : ''} title="${title}"><i data-lucide="${escapeAttr(board.icon)}"></i><span>${escapeHtml(board.name)}</span>${board.fixed ? '<i class="asset-board-lock" data-lucide="lock-keyhole"></i>' : ''}</button>`;
-    }).join('')}<button class="hw-btn asset-board-add" type="button" data-board-create aria-label="新增资源库"><i data-lucide="plus"></i><span>新增资源库</span></button></div>
+    }).join('')}<button class="hw-btn asset-board-add" type="button" data-board-create aria-label="新建资源"><i data-lucide="plus"></i><span>新建资源</span></button></div>
     <div class="asset-board-menu-actions">
-        <div id="assetStatus" class="asset-status" role="status" aria-live="polite"${currentIndexState ? ` data-gw-index-state="${escapeAttr(currentIndexState)}"` : ''}>${escapeHtml(currentStatusText)}</div>
-        <button class="hw-btn" type="button" data-refresh-assets><i data-lucide="refresh-cw"></i><span>刷新</span></button>
-        <button class="hw-btn" type="button" data-board-settings-open><i data-lucide="panel-top"></i><span>资产设置</span></button>
+        ${embeddedVault ? '' : `<div id="assetStatus" class="asset-status" role="status" aria-live="polite"${currentIndexState ? ` data-gw-index-state="${escapeAttr(currentIndexState)}"` : ''}>${escapeHtml(currentStatusText)}</div>`}
+        ${embeddedVault ? '' : '<button class="hw-btn" type="button" data-refresh-assets><i data-lucide="refresh-cw"></i><span>刷新</span></button>'}
+        <button class="hw-btn" type="button" data-board-settings-open ${embeddedVault ? 'hidden aria-hidden="true" tabindex="-1"' : ''}><i data-lucide="panel-top"></i><span>资产设置</span></button>
     </div>`;
     refreshIcons();
 }
@@ -8758,6 +8766,7 @@ function renderRegistryToolbar(board, title, subtitle, options={}){
         <div class="content-heading"><strong>${escapeHtml(title)}</strong><span>${escapeHtml(subtitle)}</span></div>
         <div class="registry-toolbar-controls">
             ${!board && document.documentElement.classList.contains('vault-shell-embedded') ? '<button class="hw-btn hw-btn-icon vault-filters-toggle" type="button" popovertarget="registryFacetPopover" title="智能筛选" aria-label="智能筛选"><i data-lucide="filter"></i></button>' : ''}
+            <button class="hw-btn registry-refresh" type="button" data-refresh-assets title="刷新资产" aria-label="刷新资产"><i data-lucide="refresh-cw"></i><span>刷新</span></button>
             <label class="asset-search-wrap"><i data-lucide="search"></i><input id="registrySearch" class="asset-search" type="search" aria-label="搜索 ${escapeAttr(searchLabel)}" value="${escapeAttr(registryQuery)}" placeholder="搜索文件名 / 标签 / ID"></label>
             <div class="registry-layout-switch btn-segmented-deck" role="group" aria-label="显示方式"><button class="btn-segmented-item btn-size-sm hw-btn-icon ${registryLayout === 'grid' ? 'is-active' : ''}" type="button" data-registry-layout="grid" title="方格视图" aria-label="方格视图" aria-pressed="${registryLayout === 'grid'}"><i data-lucide="grid-2x2"></i></button><button class="btn-segmented-item btn-size-sm hw-btn-icon ${registryLayout === 'list' ? 'is-active' : ''}" type="button" data-registry-layout="list" title="列表视图" aria-label="列表视图" aria-pressed="${registryLayout === 'list'}"><i data-lucide="list"></i></button></div>
             <label class="hw-btn registry-toolbar-select"><i data-lucide="arrow-down-wide-narrow"></i><span>排序</span><select class="asset-sort-select" id="registrySort" aria-label="资产排序"><option value="newest" ${registrySort==='newest'?'selected':''}>最近新增</option><option value="oldest" ${registrySort==='oldest'?'selected':''}>最早新增</option><option value="name" ${registrySort==='name'?'selected':''}>名称</option><option value="size_desc" ${registrySort==='size_desc'?'selected':''}>大小降序</option></select></label>
@@ -19077,6 +19086,7 @@ assetTabsEl?.addEventListener('click', event => {
     if(tab) activateAssetBoard(tab.dataset.tab || 'registry').catch(err => setStatus(err.message || '打开看板失败'));
 });
 root.addEventListener('click', async event => {
+    if(event.target.closest?.('[data-refresh-assets]')){ loadAll().catch(err => setStatus(err.message || '刷新资产失败')); return; }
     if(event.target.closest?.('[data-asset-collect-open]')){
         const trigger = event.target.closest('[data-asset-collect-open]');
         try {
