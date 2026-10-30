@@ -418,6 +418,50 @@ let activeProjectId = initialRegistryProjectId;
 const explicitRegistryProjectContext = Boolean(initialRegistryProjectId);
 let registryProjectFilterId = '';
 let registryProjectFacetExpanded = false;
+const registryProjectAssetCounts = new Map();
+function updateRegistryProjectAssetCounts(assets = registryAssets){
+    if(!Array.isArray(assets)) return;
+    const currentCounts = new Map();
+    for(const asset of assets){
+        if(!asset) continue;
+        const pids = new Set();
+        if(asset.project_id) pids.add(asset.project_id);
+        if(Array.isArray(asset.project_ids)){
+            for(const pid of asset.project_ids) if(pid) pids.add(pid);
+        }
+        for(const pid of pids){
+            currentCounts.set(pid, (currentCounts.get(pid) || 0) + 1);
+        }
+    }
+    for(const [pid, count] of currentCounts){
+        registryProjectAssetCounts.set(pid, Math.max(registryProjectAssetCounts.get(pid) || 0, count));
+    }
+}
+function registryProjectAssetCount(projOrId){
+    const projId = typeof projOrId === 'object' && projOrId ? (projOrId.id || projOrId.project_id) : String(projOrId || '');
+    const proj = typeof projOrId === 'object' && projOrId ? projOrId : projects.find(item => item.id === projId);
+    let count = 0;
+    if(typeof proj?.asset_count === 'number' && Number.isFinite(proj.asset_count)){
+        count = Math.max(count, proj.asset_count);
+    }
+    if(registryProjectAssetCounts.has(projId)){
+        count = Math.max(count, registryProjectAssetCounts.get(projId));
+    }
+    if(Array.isArray(registryAssets)){
+        const matched = registryAssets.filter(asset => {
+            if(!asset) return false;
+            if(asset.project_id === projId) return true;
+            if(Array.isArray(asset.project_ids) && asset.project_ids.includes(projId)) return true;
+            return false;
+        }).length;
+        count = Math.max(count, matched);
+        if(matched > 0) registryProjectAssetCounts.set(projId, count);
+    }
+    if(projectBoard && (projectBoard.id === projId || projectBoard.project_id === projId) && Array.isArray(projectBoard.assets)){
+        count = Math.max(count, projectBoard.assets.length);
+    }
+    return count;
+}
 function registryRecentProjects(){
     return [...projects]
         .sort((a, b) => {
@@ -5568,6 +5612,7 @@ function applyRegistryAssetResponse(data={}, {append=false}={}){
         const existingIds = new Set(registryAssets.map(item => item.id));
         registryAssets = [...registryAssets, ...incoming.filter(item => !existingIds.has(item.id))];
     } else registryAssets = incoming;
+    updateRegistryProjectAssetCounts(registryAssets);
     registryTotalFromResponse(data);
     const responseOffset = Math.max(0, Number(data.offset) || 0);
     const responseNextOffset = data.next_offset === null || data.next_offset === undefined
@@ -5908,16 +5953,14 @@ async function loadRegistryBootstrap(requestId=beginRegistryBootstrapRequest()){
         // 否则 activeProjectId 为 undefined、项目看板不加载、项目按钮 data-project 为空。
         projects = (Array.isArray(projectData.projects) ? projectData.projects : [])
             .map(item => ({...item, id:item.id || item.project_id}));
-        if(explicitRegistryProjectContext && activeTab === 'projects' && !projects.some(item => item.id === activeProjectId)){
+        if(explicitRegistryProjectContext && !projects.some(item => item.id === activeProjectId)){
             const error = new Error('项目不存在或无权访问');
             error.status = 404;
             error.code = 'PROJECT_NOT_FOUND';
             error.detail = {code:error.code, message:error.message};
             throw error;
         }
-        if(!projects.some(item => item.id === activeProjectId)){
-            activeProjectId = projects[0]?.id || '';
-        }
+        if(!activeProjectId && projects.length) activeProjectId = projects[0].id;
         if(activeProjectId) await loadProjectBoard(activeProjectId, false);
         if(requestId !== registryRequestSeq) return false;
         if(activeTab === 'registry' || assetBoardById(activeTab)?.system === false) render();
@@ -8390,8 +8433,8 @@ function renderRegistryProjectFacetSection(){
     const isExpanded = registryProjectFacetExpanded;
     return `<section class="registry-facet-section registry-facet-projects">
         <div class="registry-facet-title">
-            <button type="button" class="registry-project-toggle-btn hw-btn ${isExpanded ? 'is-active' : ''}" data-registry-project-toggle aria-expanded="${isExpanded}" title="${isExpanded ? '收起项目素材' : '展开最近项目素材'}" style="width: 100%; justify-content: space-between;">
-                <span style="display: flex; align-items: center; gap: 6px;">
+            <button type="button" class="registry-project-toggle-btn hw-btn ${isExpanded ? 'is-active' : ''}" data-registry-project-toggle aria-expanded="${isExpanded}" title="${isExpanded ? '收起项目素材' : '展开最近项目素材'}">
+                <span class="registry-project-toggle-label">
                     <i data-lucide="clapperboard"></i>
                     <strong>项目素材</strong>
                 </span>
@@ -8399,18 +8442,19 @@ function renderRegistryProjectFacetSection(){
             </button>
         </div>
         ${isExpanded ? `
-            <div class="registry-project-list" data-registry-project-list style="display: flex; flex-direction: column; gap: 3px; padding-left: 2px;">
+            <div class="registry-project-list" data-registry-project-list>
                 ${recent.map(proj => {
                     const active = proj.id === registryProjectFilterId;
+                    const count = registryProjectAssetCount(proj);
                     return `<button type="button" class="registry-facet-basic registry-project-facet-item ${active ? 'active' : ''}" data-registry-project-filter="${escapeAttr(proj.id)}" aria-pressed="${active}" title="${escapeAttr(proj.name)}">
-                        <span style="display: flex; align-items: center; gap: 6px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
-                            <i data-lucide="folder-kanban" style="width: 12px; height: 12px; flex-shrink: 0;"></i>
-                            <span style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${escapeHtml(proj.name)}</span>
+                        <span class="registry-project-item-name">
+                            <i data-lucide="folder-kanban" class="registry-project-item-icon"></i>
+                            <span class="registry-project-item-text">${escapeHtml(proj.name)}</span>
                         </span>
-                        <em>${Number(proj.asset_count || 0)}</em>
+                        <em>${Number(count || 0)}</em>
                     </button>`;
-                }).join('') || '<div class="tree-empty" style="padding: 6px 8px; color: var(--muted); font-size: var(--gw-type-label-md);">暂无项目</div>'}
-                ${registryProjectFilterId ? `<button type="button" class="hw-btn hw-btn-sm registry-project-clear-btn" data-registry-clear="project" style="width: 100%; margin-top: 4px; justify-content: center;" title="清除项目筛选"><i data-lucide="x"></i><span>显示全部资产</span></button>` : ''}
+                }).join('') || '<div class="tree-empty registry-project-empty">暂无项目</div>'}
+                ${registryProjectFilterId ? `<button type="button" class="hw-btn hw-btn-sm registry-project-clear-btn" data-registry-clear="project" title="清除项目筛选"><i data-lucide="x"></i><span>显示全部资产</span></button>` : ''}
             </div>
         ` : ''}
     </section>`;

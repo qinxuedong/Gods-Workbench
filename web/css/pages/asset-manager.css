@@ -2057,6 +2057,11 @@ body.gw-signal.gw-page--asset-manager #assetManagerRoot .asset-panel.registry-co
   font-weight: 800;
   border-radius: 8px;
 }
+.registry-facet-projects .registry-project-toggle-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
 .registry-facet-projects .registry-project-list {
   display: flex;
   flex-direction: column;
@@ -2088,6 +2093,29 @@ body.gw-signal.gw-page--asset-manager #assetManagerRoot .asset-panel.registry-co
   border-color: var(--strong);
   background: var(--soft);
   color: var(--strong);
+}
+.registry-project-facet-item .registry-project-item-name {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.registry-project-facet-item .registry-project-item-icon {
+  width: 12px;
+  height: 12px;
+  flex-shrink: 0;
+}
+.registry-project-facet-item .registry-project-item-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.registry-project-empty {
+  padding: 6px 8px;
+  color: var(--muted);
+  font-size: var(--gw-type-label-md);
 }
 .registry-project-clear-btn {
   width: 100%;
