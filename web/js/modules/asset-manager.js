@@ -5513,6 +5513,7 @@ function applyRegistryFilterDefinition(definition={}){
 }
 function registryQueryString({offset=0, limit=REGISTRY_PAGE_SIZE, cursor=''}={}){
     const params = new URLSearchParams({limit:String(limit), offset:String(Math.max(0, Number(offset) || 0)), sort:registrySort || 'newest', view:'card'});
+    // 默认呈现全局统一资产金库；仅当用户通过「项目素材」智能筛选选择项目时携带（解耦默认的 activeProjectId）
     if(registryProjectFilterId) params.set('project_id', registryProjectFilterId);
     if(cursor) params.set('cursor', cursor);
     if(registryQuery.trim()) params.set('search', registryQuery.trim());
