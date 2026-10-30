@@ -32,3 +32,19 @@ test('asset-manager.css 中包含 .board-create-error 样式规则', () => {
     assert.match(styles, /\.board-create-error\s*\{[^}]*color:\s*#ef4444/);
     assert.match(styles, /\.board-create-error\s*svg\s*\{[^}]*stroke:\s*#ef4444/);
 });
+
+test('createPresetAssetBoard 成功获取来源后立即创建看板并异步非阻塞跟踪索引 (QIN-487)', () => {
+    assert.match(source, /state\.customBoards\.push\(\{id, name, preset:preset\.id/);
+    assert.match(source, /saveBoardNavigationState\(\);\s*closeCreateLibraryModal\(\);\s*renderBoardNavigation\(\);/);
+    assert.match(source, /waitForAssetIndexJob\(source\.job_id, source\.name\)\.catch\(\(\) => \{\}\);/);
+});
+
+test('waitForAssetIndexJob 超时友好提示且不抛出阻断异常 (QIN-487)', () => {
+    assert.match(source, /setStatus\(`素材库“\$\{sourceName\}”索引仍在后台运行，可稍后刷新查看`\);\s*return null;/);
+    assert.doesNotMatch(source, /throw new Error\(`素材库“\$\{sourceName\}”索引仍在后台运行/);
+});
+
+test('attachPathToAssetBoard 返回带有 job_id 的 source 且不阻塞等待 (QIN-487)', () => {
+    assert.match(source, /if\(accepted\?\.job_id\)\{\s*source\.job_id = accepted\.job_id;\s*\}/);
+    assert.doesNotMatch(source, /await waitForAssetIndexJob\(accepted\?\.job_id/);
+});

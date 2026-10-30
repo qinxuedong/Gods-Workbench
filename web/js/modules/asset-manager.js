@@ -1334,6 +1334,9 @@ async function saveBoardEdit(){
         } else if(!source && path){
             const created = await attachPathToAssetBoard(board.id, `${name}素材`, path);
             if(!created) throw new Error('素材路径添加失败');
+            if(created.job_id){
+                waitForAssetIndexJob(created.job_id, created.name).catch(() => {});
+            }
         }
         board.name = name;
         saveBoardNavigationState();
@@ -1414,8 +1417,14 @@ async function createPresetAssetBoard(){
     closeCreateLibraryModal();
     renderBoardNavigation();
     if(source){
-        markIndexState('indexed');
-        setStatus(`已创建资源库“${name}”，来源索引已完成`);
+        if(source.job_id){
+            markIndexState('pending');
+            setStatus(`已创建资源库“${name}”，素材来源正在建立索引…`);
+            waitForAssetIndexJob(source.job_id, source.name).catch(() => {});
+        } else {
+            markIndexState('indexed');
+            setStatus(`已创建资源库“${name}”`);
+        }
     } else {
         markIndexState('skipped');
         setStatus(`已创建资源库“${name}”，未填写路径，未建立索引`);
@@ -1446,26 +1455,32 @@ async function reindexAssetSource(sourceId){
     return request;
 }
 async function waitForAssetIndexJob(jobId, sourceName='素材库'){
-    if(!jobId) throw new Error('索引任务未返回任务编号');
+    if(!jobId) return null;
     const deadline = Date.now() + 120000;
     while(Date.now() < deadline){
-        const data = await apiJsonResponse(assetManagerApi.getWorkspaceJob(jobId));
-        const job = data?.job || {};
-        if(job.status === 'succeeded'){
-            await Promise.allSettled([refreshRegistryAssets(false), refreshRegistryFacetData()]);
-            if(activeTab === 'registry' || assetBoardById(activeTab)?.system === false) render();
-            setStatus(`素材库“${sourceName}”索引完成，已扫描 ${Number(job.result?.scanned || 0)} 项`);
-            return job;
-        }
-        if(['failed','cancelled','interrupted'].includes(job.status)){
-            throw new Error(`素材库索引失败：${job.error_code || job.status}`);
-        }
-        const phase = job.progress?.phase || job.status;
-        const phaseLabel = phase === 'queued' ? '等待扫描' : phase === 'indexing' ? '正在写入索引' : '正在扫描';
-        setStatus(`素材库“${sourceName}”${phaseLabel}… 已扫描 ${Number(job.progress?.scanned || 0)} 项`);
+        try {
+            const data = await apiJsonResponse(assetManagerApi.getWorkspaceJob(jobId));
+            const job = data?.job || {};
+            if(job.status === 'succeeded'){
+                markIndexState('indexed');
+                await Promise.allSettled([refreshRegistryAssets(false), refreshRegistryFacetData()]);
+                if(activeTab === 'registry' || assetBoardById(activeTab)?.system === false) render();
+                setStatus(`素材库“${sourceName}”索引完成，已扫描 ${Number(job.result?.scanned || 0)} 项`);
+                return job;
+            }
+            if(['failed','cancelled','interrupted'].includes(job.status)){
+                markIndexState('failed');
+                setStatus(`素材库“${sourceName}”索引失败：${job.error_code || job.status}`);
+                return job;
+            }
+            const phase = job.progress?.phase || job.status;
+            const phaseLabel = phase === 'queued' ? '等待扫描' : phase === 'indexing' ? '正在写入索引' : '正在扫描';
+            setStatus(`素材库“${sourceName}”${phaseLabel}… 已扫描 ${Number(job.progress?.scanned || 0)} 项`);
+        } catch(_) {}
         await new Promise(resolve => setTimeout(resolve, 500));
     }
-    throw new Error(`素材库“${sourceName}”索引仍在后台运行，可稍后刷新查看`);
+    setStatus(`素材库“${sourceName}”索引仍在后台运行，可稍后刷新查看`);
+    return null;
 }
 function confirmRootAliasSuggestion(path, candidates, expectedVersion){
     return new Promise(resolve => {
@@ -1554,18 +1569,9 @@ async function attachPathToAssetBoard(boardId, sourceName, path){
         }
     }
     if(boardId) attachSourceRecordToBoard(boardId, source);
-    if(!accepted){
-        const reindexed = await reindexAssetSource(source.id);
-        if(!reindexed || reindexed.ok === false){
-            apiJsonResponse(assetManagerApi.getRegistryStatus()).then(statusData => {
-                if(statusData && typeof statusData === 'object') registryStatus = statusData;
-            }).catch(() => {});
-            throw new Error(`来源已登记，但索引任务启动失败：${reindexed?.error || '未知错误'}`);
-        }
-        accepted = reindexed.data;
+    if(accepted?.job_id){
+        source.job_id = accepted.job_id;
     }
-    if(!accepted?.job_id) throw new Error('索引任务未返回任务编号');
-    await waitForAssetIndexJob(accepted?.job_id, source.name);
     return source;
 }
 function renderBoardSourceModal(){
@@ -1750,6 +1756,9 @@ async function confirmBoardSource(){
         render();
     }
     setStatus(`已添加素材来源“${source.name}”，正在建立索引`);
+    if(source?.job_id){
+        waitForAssetIndexJob(source.job_id, source.name).catch(() => {});
+    }
 }
 async function copyTextToClipboard(text){
     const value = String(text || '');
