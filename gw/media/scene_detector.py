@@ -60,6 +60,8 @@ def _run(args: list[str]) -> subprocess.CompletedProcess[str]:
             args,
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             timeout=_PROCESS_TIMEOUT_SECONDS,
             check=False,
         )

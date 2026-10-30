@@ -89,6 +89,8 @@ def _probe_metadata(path: Path) -> dict[str, Any]:
             ],
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             timeout=_PROCESS_TIMEOUT_SECONDS,
             check=False,
         )

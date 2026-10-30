@@ -4518,6 +4518,8 @@ async def browse_directory(
                 ["powershell", "-Sta", "-Command", ps_script],
                 capture_output=True,
                 text=True,
+                encoding="utf-8",
+                errors="replace",
                 timeout=30,
             )
             if res.returncode == 0 and res.stdout.strip():

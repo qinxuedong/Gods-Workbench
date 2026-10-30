@@ -327,6 +327,8 @@ def _probe_video_metadata(path: Path) -> dict[str, Any]:
             ],
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             timeout=30,
             check=False,
         )

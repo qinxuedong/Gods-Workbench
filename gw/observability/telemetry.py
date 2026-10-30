@@ -77,6 +77,8 @@ def gpu_telemetry() -> dict[str, Any] | None:
             [exe, "--query-gpu=" + _NVIDIA_QUERY, "--format=csv,noheader,nounits"],
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             timeout=_NVIDIA_TIMEOUT_SECONDS,
         )
     except Exception:

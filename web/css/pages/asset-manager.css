@@ -1349,6 +1349,8 @@ body.theme-dark .asset-card.active { border-color:rgba(248,250,252,.86); box-sha
 .board-create-form input:focus { border-color:var(--strong); box-shadow:0 0 0 3px var(--line); }
 .board-create-summary { min-height:36px; color:var(--muted); display:flex; align-items:center; gap:7px; font-size: var(--gw-type-label-md); line-height:1.35; font-weight:750; }
 .board-create-summary svg { width:14px; height:14px; flex:0 0 auto; }
+.board-create-error { grid-column:1/-1; display:flex; align-items:center; gap:8px; padding:8px 12px; border-radius:8px; background:rgba(239,68,68,.12); border:1px solid rgba(239,68,68,.32); color:#ef4444; font-size:var(--gw-type-label-md); font-weight:750; line-height:1.4; }
+.board-create-error svg { width:15px; height:15px; flex:0 0 auto; stroke:#ef4444; }
 .board-create-actions { padding:14px 18px 18px; display:flex; justify-content:flex-end; gap:8px; }
 .board-source-modal { width:min(620px, 94vw); border:1px solid var(--line); border-radius:14px; background:var(--panel); overflow:hidden; }
 .board-source-settings-list { max-height:min(420px,48vh); padding:14px 18px; overflow:auto; display:flex; flex-direction:column; gap:7px; }
