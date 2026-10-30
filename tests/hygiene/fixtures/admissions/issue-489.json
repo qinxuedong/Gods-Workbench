@@ -3,6 +3,10 @@
   "issue": 489,
   "authorization_basis": "GitHub Issue #489, 2026-10-30",
   "files": [
+    "gw/api/routes_projects.py",
+    "gw/asset_registry/repository.py",
+    "gw/projects_hub/models.py",
+    "tests/contracts/assets/test_phase11_b3_asset_registry.py",
     "tests/frontend/node-files.txt",
     "tests/frontend/qin-488-asset-project-filter.test.mjs",
     "tests/hygiene/fixtures/admissions/issue-489.json",

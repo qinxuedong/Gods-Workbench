@@ -1524,6 +1524,23 @@ def move_asset_to_project(asset_id: str, project_id: str, expected_asset_version
     return state().mutate(mutate)
 
 
+def project_asset_counts() -> Dict[str, int]:
+    """统计各可见项目关联的资产总数。"""
+    raw = state().read()
+    from gw.core.asset_visibility import asset_visible
+    counts: Counter[str] = Counter()
+    for a in raw["assets"].values():
+        if not asset_visible(a):
+            continue
+        pids = set(a.get("project_ids") or [])
+        if a.get("project_id"):
+            pids.add(a.get("project_id"))
+        for pid in pids:
+            if pid:
+                counts[pid] += 1
+    return dict(counts)
+
+
 def facets() -> Dict[str, Any]:
     raw = state().read()
     from gw.core.asset_visibility import asset_visible

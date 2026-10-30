@@ -419,48 +419,38 @@ const explicitRegistryProjectContext = Boolean(initialRegistryProjectId);
 let registryProjectFilterId = '';
 let registryProjectFacetExpanded = false;
 const registryProjectAssetCounts = new Map();
-function updateRegistryProjectAssetCounts(assets = registryAssets){
-    if(!Array.isArray(assets)) return;
-    const currentCounts = new Map();
-    for(const asset of assets){
-        if(!asset) continue;
-        const pids = new Set();
-        if(asset.project_id) pids.add(asset.project_id);
-        if(Array.isArray(asset.project_ids)){
-            for(const pid of asset.project_ids) if(pid) pids.add(pid);
-        }
-        for(const pid of pids){
-            currentCounts.set(pid, (currentCounts.get(pid) || 0) + 1);
-        }
+let registryProjectCountsLoading = false;
+async function refreshRegistryProjectCounts(renderNow = true){
+    if(registryProjectCountsLoading) return;
+    const recent = registryRecentProjects();
+    if(!recent.length) return;
+    registryProjectCountsLoading = true;
+    try {
+        await Promise.all(recent.map(async proj => {
+            try {
+                const res = await apiJsonResponse(assetManagerApi.getRegistryAssets(`project_id=${encodeURIComponent(proj.id)}&limit=1`));
+                const total = Number(res?.total);
+                if(Number.isFinite(total)){
+                    proj.asset_count = total;
+                    registryProjectAssetCounts.set(proj.id, total);
+                }
+            } catch(_) {}
+        }));
+    } finally {
+        registryProjectCountsLoading = false;
     }
-    for(const [pid, count] of currentCounts){
-        registryProjectAssetCounts.set(pid, Math.max(registryProjectAssetCounts.get(pid) || 0, count));
-    }
+    if(renderNow) render();
 }
 function registryProjectAssetCount(projOrId){
     const projId = typeof projOrId === 'object' && projOrId ? (projOrId.id || projOrId.project_id) : String(projOrId || '');
     const proj = typeof projOrId === 'object' && projOrId ? projOrId : projects.find(item => item.id === projId);
-    let count = 0;
-    if(typeof proj?.asset_count === 'number' && Number.isFinite(proj.asset_count)){
-        count = Math.max(count, proj.asset_count);
-    }
     if(registryProjectAssetCounts.has(projId)){
-        count = Math.max(count, registryProjectAssetCounts.get(projId));
+        return registryProjectAssetCounts.get(projId);
     }
-    if(Array.isArray(registryAssets)){
-        const matched = registryAssets.filter(asset => {
-            if(!asset) return false;
-            if(asset.project_id === projId) return true;
-            if(Array.isArray(asset.project_ids) && asset.project_ids.includes(projId)) return true;
-            return false;
-        }).length;
-        count = Math.max(count, matched);
-        if(matched > 0) registryProjectAssetCounts.set(projId, count);
+    if(typeof proj?.asset_count === 'number' && Number.isFinite(proj.asset_count)){
+        return proj.asset_count;
     }
-    if(projectBoard && (projectBoard.id === projId || projectBoard.project_id === projId) && Array.isArray(projectBoard.assets)){
-        count = Math.max(count, projectBoard.assets.length);
-    }
-    return count;
+    return 0;
 }
 function registryRecentProjects(){
     return [...projects]
@@ -5612,7 +5602,6 @@ function applyRegistryAssetResponse(data={}, {append=false}={}){
         const existingIds = new Set(registryAssets.map(item => item.id));
         registryAssets = [...registryAssets, ...incoming.filter(item => !existingIds.has(item.id))];
     } else registryAssets = incoming;
-    updateRegistryProjectAssetCounts(registryAssets);
     registryTotalFromResponse(data);
     const responseOffset = Math.max(0, Number(data.offset) || 0);
     const responseNextOffset = data.next_offset === null || data.next_offset === undefined
@@ -5678,6 +5667,7 @@ async function refreshRegistryAssets(renderNow=true){
             registryStatus = statusData;
             if(activeTab === 'registry') render();
         }).catch(() => {});
+        await refreshRegistryProjectCounts(false);
     } catch(err) {
         if(isRegistryAbortError(err)) return;
         throw err;
@@ -5953,6 +5943,12 @@ async function loadRegistryBootstrap(requestId=beginRegistryBootstrapRequest()){
         // 否则 activeProjectId 为 undefined、项目看板不加载、项目按钮 data-project 为空。
         projects = (Array.isArray(projectData.projects) ? projectData.projects : [])
             .map(item => ({...item, id:item.id || item.project_id}));
+        for(const proj of projects){
+            if(typeof proj.asset_count === 'number'){
+                registryProjectAssetCounts.set(proj.id, proj.asset_count);
+            }
+        }
+        await refreshRegistryProjectCounts(false);
         if(explicitRegistryProjectContext && !projects.some(item => item.id === activeProjectId)){
             const error = new Error('项目不存在或无权访问');
             error.status = 404;
@@ -10951,6 +10947,9 @@ async function handleClick(event){
     const registryProjectToggle = target.closest?.('[data-registry-project-toggle]');
     if(registryProjectToggle){
         registryProjectFacetExpanded = !registryProjectFacetExpanded;
+        if(registryProjectFacetExpanded){
+            void refreshRegistryProjectCounts(true);
+        }
         render();
         return;
     }

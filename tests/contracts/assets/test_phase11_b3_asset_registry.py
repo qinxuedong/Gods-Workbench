@@ -268,6 +268,13 @@ def test_a2_project_entities_gates_and_linking(client, assets):
     assert missing.status_code == 404
     assert missing.json()["detail"]["code"] == "ASSET_NOT_FOUND"
 
+    # QIN-488: ProjectItem 返回权威真实的关联素材数 asset_count
+    projects_resp = client.get("/api/asset-registry/projects", headers=AUTH)
+    assert projects_resp.status_code == 200
+    matched_proj = next((p for p in projects_resp.json()["projects"] if p["project_id"] == project_id), None)
+    assert matched_proj is not None
+    assert matched_proj["asset_count"] == 1
+
 
 def test_a2_preferences_features_and_index_automation(client):
     prefs = client.patch("/api/asset-registry/preferences/team", headers=AUTH, json={"view": "list"})
@@ -521,6 +528,16 @@ def test_asset_query_filters_and_facets_use_actual_records(client):
     assert facets["categories"] == [{"name": "image", "count": 2}, {"name": "video", "count": 1}]
     assert facets["kinds"] == facets["categories"]
     assert facets["tags"][0]["count"] == 2
+
+    # QIN-488: 验证删除素材后，项目 asset_count 同步递减
+    projects = client.get("/api/asset-registry/projects", headers=AUTH).json()["projects"]
+    assert next(p for p in projects if p["project_id"] == project_id)["asset_count"] == 1
+    registry_revision = client.get("/api/asset-registry/status", headers=AUTH).json()["revision"]
+    del_resp = client.request("DELETE", f"/api/asset-registry/assets/{created[1]}", headers=AUTH,
+                              json={"expected_version": registry_revision})
+    assert del_resp.status_code == 200
+    projects_after = client.get("/api/asset-registry/projects", headers=AUTH).json()["projects"]
+    assert next(p for p in projects_after if p["project_id"] == project_id)["asset_count"] == 0
 
 
 def test_asset_cursor_is_query_and_revision_bound_and_pages_without_duplicates(client):

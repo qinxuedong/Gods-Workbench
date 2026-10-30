@@ -50,6 +50,7 @@ class ProjectItem(BaseModel):
     archived_at: str | None = Field(None, description="归档时间戳或ISO字符串")
     deleted_at: str | None = Field(None, description="逻辑删除/回收站时间戳或ISO字符串")
     updated_at: str | None = Field(None, description="最近更新时间")
+    asset_count: int = Field(0, ge=0, description="关联素材数")
 
 
 class ProjectDetailResponse(BaseModel):
