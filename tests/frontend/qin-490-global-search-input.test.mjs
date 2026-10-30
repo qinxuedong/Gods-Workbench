@@ -30,7 +30,7 @@ test('AC1 浮层与面板的 aria 文案同步为「全局搜索」', () => {
 
 test('AC2 输入行使用黑灰底，不再用近纯黑透明铺底', () => {
   const row = blockOf('.gw-omnibar-input-row');
-  assert.match(row, /background:\s*#14171c;/, '输入行应为黑灰实色底');
+  assert.match(row, /background:\s*#181c22;/, '输入行应为黑灰实色底');
   assert.doesNotMatch(row, /rgba\(3,\s*5,\s*8/);
 });
 
