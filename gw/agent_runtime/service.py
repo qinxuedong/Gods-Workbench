@@ -11,8 +11,10 @@ import uuid
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation
+from enum import StrEnum
 from typing import Any
 
+from gw.agent_episode.gates import GateKind, GateRecord, GateState, GateStore
 from gw.agent_runtime.errors import DomainError
 from gw.agent_runtime.events import make_event
 from gw.agent_runtime.graph import LangGraphRuntimeExecutor
@@ -44,6 +46,7 @@ from gw.agent_runtime.models import (
     RunStatus,
     StageAttempt,
     StageId,
+    ToolCostState,
     TextExportFormat,
     UtcDateTime,
 )
@@ -68,6 +71,7 @@ from gw.agent_runtime.repository import (
     _fingerprint,
     utc_now,
 )
+from gw.agent_runtime.storage.sqlite import SQLiteDatabase
 
 _KEEP = object()
 _PROPOSAL_ABSOLUTE_PATH = re.compile(
@@ -125,6 +129,35 @@ class ProposedAction:
     kind: str
     capability: str
     arguments: Mapping[str, Any]
+
+
+@dataclass(frozen=True, slots=True)
+class GateDecisionRequest:
+    """通过运行时审核决策服务提交的门禁决定。"""
+
+    request_id: str
+    run_id: Identifier
+    gate_id: Identifier
+    target: GateState
+    reason: str
+    expected_version: int
+
+
+class GateDecisionSignal(StrEnum):
+    """门禁状态变更后交给调用方的可观察流程信号。"""
+
+    await_user_decision = "await_user_decision"
+    continue_execution = "continue_execution"
+    return_for_rework = "return_for_rework"
+    stop_at_previous_stable_point = "stop_at_previous_stable_point"
+
+
+@dataclass(frozen=True, slots=True)
+class GateDecisionResult:
+    """持久门禁状态与对应的后续流程信号。"""
+
+    record: GateRecord
+    signal: GateDecisionSignal
 
 
 @dataclass(frozen=True, slots=True)
@@ -213,6 +246,7 @@ class AgentRuntimeService:
         config_profiles: Mapping[str, ConfigSnapshot] | None = None,
         invocation_dispatcher: InvocationDispatcherPort | None = None,
         artifact_exporter: ArtifactExportPort | None = None,
+        gate_store: GateStore | None = None,
         orchestrator_role: str | None = None,
         execution_authorizer: Any | None = None,
         owner_id: Identifier | None = None,
@@ -227,6 +261,10 @@ class AgentRuntimeService:
         self.config_profiles = dict(config_profiles or {})
         self.invocation_dispatcher = invocation_dispatcher
         self.artifact_exporter = artifact_exporter
+        database = getattr(repository, "database", None)
+        self.gate_store = gate_store or (
+            GateStore(database) if isinstance(database, SQLiteDatabase) else None
+        )
         self.orchestrator_role = orchestrator_role
         self.execution_authorizer = execution_authorizer
         self._execution_authorizer_has_run_id = (
@@ -1262,9 +1300,66 @@ class AgentRuntimeService:
         proposal: ProposedAction,
         *,
         budget: BudgetDecision | None = None,
+        run_id: Identifier | None = None,
+        gate_kind: GateKind | None = None,
     ) -> Any:
-        """Execute only a registered action, with authorization and budget gates."""
+        """分发已注册提案；非免费工具先持久化 Gate，不执行工具。"""
         if proposal.kind == "tool":
+            registration = self.registry.get_tool(proposal.capability)
+            if registration.cost_state is not ToolCostState.free:
+                if self.gate_store is None:
+                    raise DomainError(
+                        ErrorCode.CAPABILITY_UNSUPPORTED,
+                        "A durable gate ledger is required before a metered tool can be proposed.",
+                        request_id=actor_id.root,
+                    )
+                if run_id is None:
+                    raise DomainError(
+                        ErrorCode.VALIDATION_FAILED,
+                        "A run id is required to request a gate for a metered tool.",
+                        request_id=actor_id.root,
+                    )
+                try:
+                    resolved_kind = gate_kind or GateKind(proposal.capability)
+                except ValueError as exc:
+                    raise DomainError(
+                        ErrorCode.VALIDATION_FAILED,
+                        "A metered tool must map to a registered gate kind.",
+                        request_id=actor_id.root,
+                    ) from exc
+                run = await self.repository.read_run_by_id(run_id)
+                if run is None or not await self._execution_is_authorized(
+                    run.project_id, actor_id, run_id
+                ):
+                    raise DomainError(
+                        ErrorCode.NOT_AUTHORIZED,
+                        "The actor is not authorized for this run gate.",
+                        request_id=actor_id.root,
+                    )
+                # Reuse the registry's authorization/schema checks. A missing
+                # budget is rejected by RuntimePolicy before the handler runs.
+                try:
+                    await self.registry.invoke_tool(
+                        proposal.capability,
+                        actor_id,
+                        proposal.arguments,
+                        budget=None,
+                    )
+                except DomainError as exc:
+                    if exc.code is not ErrorCode.QUOTA_EXCEEDED:
+                        raise
+                else:
+                    raise DomainError(
+                        ErrorCode.MANUAL_REVIEW_REQUIRED,
+                        "A metered tool cannot run before its gate is approved.",
+                        request_id=actor_id.root,
+                    )
+                return self.gate_store.create(
+                    gate_id=Identifier(f"gate:{uuid.uuid4().hex}"),
+                    run_id=run_id,
+                    kind=resolved_kind,
+                    request_id=actor_id.root,
+                )
             return await self.registry.invoke_tool(
                 proposal.capability, actor_id, proposal.arguments, budget=budget
             )
@@ -1288,6 +1383,66 @@ class AgentRuntimeService:
             "The proposed action kind is not allowed.",
             request_id=actor_id.root,
         )
+
+    def _submit_gate_decision(
+        self,
+        *,
+        run_id: Identifier,
+        gate_id: Identifier,
+        target: GateState,
+        actor_id: Identifier,
+        reason: str,
+        expected_version: int,
+        request_id: str,
+    ) -> GateDecisionResult:
+        if self.gate_store is None:
+            raise DomainError(
+                ErrorCode.CAPABILITY_UNSUPPORTED,
+                "The durable gate ledger is unavailable.",
+                request_id=request_id,
+            )
+        try:
+            target = GateState(target)
+        except (TypeError, ValueError) as exc:
+            raise DomainError(
+                ErrorCode.VALIDATION_FAILED,
+                "The requested gate decision is invalid.",
+                request_id=request_id,
+            ) from exc
+        if (
+            not isinstance(reason, str)
+            or not reason.strip()
+            or len(reason) > 512
+            or _PROPOSAL_ABSOLUTE_PATH.search(reason)
+            or _PROPOSAL_CREDENTIAL_VALUE.search(reason)
+        ):
+            raise DomainError(
+                ErrorCode.VALIDATION_FAILED,
+                "The gate decision reason contains invalid or sensitive data.",
+                request_id=request_id,
+            )
+        record = self.gate_store.get(gate_id)
+        if record is None or record.run_id != run_id:
+            raise DomainError(
+                ErrorCode.VALIDATION_FAILED,
+                "The gate does not belong to this run.",
+                request_id=request_id,
+            )
+        updated = self.gate_store.transition(
+            gate_id=gate_id,
+            target=target,
+            actor_id=actor_id,
+            reason=reason,
+            expected_version=expected_version,
+            request_id=request_id,
+        )
+        signal = {
+            GateState.pending: GateDecisionSignal.await_user_decision,
+            GateState.approved: GateDecisionSignal.continue_execution,
+            GateState.changes_requested: GateDecisionSignal.return_for_rework,
+            GateState.rolled_back: GateDecisionSignal.stop_at_previous_stable_point,
+        }[updated.state]
+        return GateDecisionResult(record=updated, signal=signal)
 
     async def start_run(
         self,
@@ -2077,11 +2232,30 @@ class AgentRuntimeService:
 
     async def submit_review_decision(
         self,
-        request: ReviewDecisionRequest,
+        request: ReviewDecisionRequest | GateDecisionRequest,
         *,
         actor_id: Identifier,
         pause_on_exhaustion: bool = True,
-    ) -> ApprovalRecord | AgentRun:
+    ) -> ApprovalRecord | AgentRun | GateDecisionResult:
+        if isinstance(request, GateDecisionRequest):
+            run = await self.repository.read_run_by_id(request.run_id)
+            if run is None or not await self._execution_is_authorized(
+                run.project_id, actor_id, request.run_id
+            ):
+                raise DomainError(
+                    ErrorCode.NOT_AUTHORIZED,
+                    "The actor is not authorized to decide this run gate.",
+                    request_id=request.request_id,
+                )
+            return self._submit_gate_decision(
+                run_id=request.run_id,
+                gate_id=request.gate_id,
+                target=request.target,
+                actor_id=actor_id,
+                reason=request.reason,
+                expected_version=request.expected_version,
+                request_id=request.request_id,
+            )
         fingerprint = _fingerprint(
             {
                 "request": request.model_dump(mode="json"),
