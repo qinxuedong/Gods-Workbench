@@ -879,9 +879,16 @@ table tbody td {
     }
 
 /* GW-TOPBAR-T94 / QIN-491: 响应式顶栏布局；必达控件保持在自身行内，不以固定宽度制造横向溢出。
-   上层机架在与 `.topbar-master-deck > .flex { min-width:max-content }` 同宽时会撑满整行，
-   若右端组再绝对定位贴右，中央状态位会滑到「播控 / 时钟 / 排期」下方形成叠层（QIN-491）。
-   故右端组改为行内右对齐：既不压住中央状态位，也不再需要绝对定位脱离文档流。 */
+   三处约束配套才成立：
+   1) `.topbar-master-deck > .flex { min-width:max-content }` 会让上层机架无法收缩，右侧内容
+      被顶出顶栏（header 裁切，且不产生横向滚动条）；须以更高特异度放开。
+   2) 右端组若绝对定位贴右，中央状态位会滑到「播控 / 时钟 / 排期」下方形成同位置叠层；
+      故改为行内右对齐，既不压住中央状态位，也不再脱离文档流。
+   3) 中央状态位默认 `shrink-0` 且文案不换行，宽度不足时会把右端组挤出顶栏；
+      须允许收缩并省略，让「播控 / 时钟 / 排期」优先完整可见。 */
+.topbar-master-deck > .master-deck-upper.flex {
+  min-width: 0;
+}
 .topbar-master-deck .master-deck-upper {
   position: relative;
   min-width: 0;
@@ -902,6 +909,34 @@ table tbody td {
   right: auto !important;
   transform: none !important;
   z-index: auto !important;
+}
+/* 中央状态位让位：可收缩、可省略；内层按键（翻页箭头）不被压缩。 */
+.topbar-master-deck .master-deck-upper > div:nth-child(2) {
+  min-width: 0;
+  flex: 0 1 auto;
+  overflow: hidden;
+}
+.topbar-master-deck .master-deck-upper > div:nth-child(2) > div,
+.topbar-master-deck .master-deck-upper > div:nth-child(2) > div > div {
+  min-width: 0;
+}
+.topbar-master-deck .master-deck-upper > div:nth-child(2) > div {
+  overflow: hidden;
+}
+.topbar-master-deck .master-deck-upper > div:nth-child(2) span {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.topbar-master-deck .master-deck-upper > div:nth-child(2) button {
+  flex: 0 0 auto;
+}
+@media (max-width: 1600px) {
+  /* 1451–1600px 之间 RAM 表体积最大且非必需；先收起它，保留播控/时钟/排期完整可见。 */
+  .topbar-master-deck .master-deck-upper-right > div:nth-of-type(1) {
+    display: none !important;
+  }
 }
 .topbar-master-deck .recessed-deck-slot {
   position: relative;

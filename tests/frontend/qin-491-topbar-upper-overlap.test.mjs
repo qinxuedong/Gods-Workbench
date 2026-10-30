@@ -58,6 +58,40 @@ test('上层机架保持相对定位且允许收缩，中央状态位按整行�
   assert.match(merged, /min-width:\s*0/, '上层机架须允许收缩，不得撑出固定下限');
 });
 
+test('上层机架以更高特异度放开 max-content 下限，右端组不被挤进裁切区', () => {
+  // `.topbar-master-deck > .flex { min-width:max-content }` 会让整行无法收缩；
+  // 只写 `.master-deck-upper { min-width:0 }` 特异度不足，仍会被压回 max-content。
+  assert.match(
+    css,
+    /\.topbar-master-deck\s*>\s*\.master-deck-upper\.flex\s*\{[^}]*min-width:\s*0/,
+    '须用 `.topbar-master-deck > .master-deck-upper.flex` 覆盖 max-content 下限',
+  );
+});
+
+test('中央状态位可收缩并省略文案，优先保全右端播控/时钟/排期', () => {
+  const merged = blocksOf(css, '.topbar-master-deck .master-deck-upper > div:nth-child(2)').join('\n');
+  assert.match(merged, /min-width:\s*0/, '中央状态位须允许收缩');
+  assert.match(merged, /flex:\s*0 1 auto/, '中央状态位可收缩但不得抢占比邻空间');
+  assert.match(merged, /overflow:\s*hidden/, '中央状态位须裁切溢出内容');
+  assert.match(merged, /text-overflow:\s*ellipsis/, '中央状态位文案须以省略号收口');
+  assert.match(merged, /flex:\s*0 0 auto/, '中央状态位内部按键不得被压缩');
+});
+
+test('1451–1600px 先收起 RAM 装饰表，播控按键仍可见', () => {
+  assert.match(
+    css,
+    /@media\s*\(max-width:\s*1600px\)[\s\S]*?\.master-deck-upper-right\s*>\s*div:nth-of-type\(1\)[\s\S]*?display:\s*none/,
+    '1451–1600px 须收起体积最大的 RAM 表，而不是收起播控组',
+  );
+  const narrow = css.match(/@media\s*\(max-width:\s*1600px\)[\s\S]*?\n\}/);
+  assert.ok(narrow, '须存在 1600px 断点规则');
+  assert.doesNotMatch(
+    narrow[0],
+    /nth-of-type\(2\)[\s\S]*?display:\s*none/,
+    '1600px 断点不得收起播控组（nth-of-type(2)）',
+  );
+});
+
 test('三页顶栏保留中央状态位与右端播控/时钟/排期组', () => {
   for (const page of ['index.html', 'agents.html', 'settings.html']) {
     const html = readPage(page);
