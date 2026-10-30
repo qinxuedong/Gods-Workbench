@@ -1,0 +1,13 @@
+{
+  "schema": "gw.cleanroom-admission-shard/v1",
+  "issue": 487,
+  "authorization_basis": "GitHub Issue #487, 2026-10-30",
+  "files": [
+    "tests/frontend/mvp1-board-create-errors.test.mjs",
+    "tests/hygiene/fixtures/admissions/issue-487.json",
+    "web/js/modules/asset-manager.js"
+  ],
+  "admitted_files": [],
+  "accepted_test_files": [],
+  "notes": "QIN-487：修复新增资源库因索引阻塞导致卡死、超时报错及看板未创建问题。彻底解耦看板创建与后台索引，非阻塞异步跟踪进度，优化已登记来源复用。"
+}
