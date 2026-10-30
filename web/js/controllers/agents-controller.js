@@ -97,7 +97,7 @@ window.WorkbenchAgents = (function () {
         </dl>
       </div>
       <div class="flex shrink-0 items-center">
-        <a href="/static/pages/projects.html?project_id=${encodeURIComponent(state.projectId)}" id="agentBackToProjectLink" class="hw-btn hw-btn-sm flex items-center gap-2" title="返回项目中心">
+        <a href="/static/pages/projects.html" id="agentBackToProjectLink" class="hw-btn hw-btn-sm flex items-center gap-2" title="返回项目中心">
           <span>回到项目中心</span>
           <i data-lucide="arrow-up-right" class="h-3.5 w-3.5" aria-hidden="true"></i>
         </a>
@@ -110,12 +110,28 @@ window.WorkbenchAgents = (function () {
     if (window.lucide) window.lucide.createIcons();
   }
 
+  // 地址栏只校正、不注入：已有 project_id 时保持与页面实际项目一致；
+  // 无参数表示「未指定」，由 localStorage 兜底，不主动制造参数（对齐 BEHAVIOR-SPEC 4.5）。
+  function syncAddressBarProject(projectId) {
+    try {
+      const url = new URL(window.location.href);
+      if (!url.searchParams.has('project_id')) return;
+      const current = url.searchParams.get('project_id') || '';
+      if (current === (projectId || '')) return;
+      if (projectId) url.searchParams.set('project_id', projectId);
+      else url.searchParams.delete('project_id');
+      window.history.replaceState({}, '', url);
+    } catch (_) {}
+  }
+
   function setProjectId(id, name) {
     state.projectId = id ? String(id).trim() : null;
     state.projectName = name ? String(name).trim() : null;
     try {
       if (state.projectId) window.localStorage?.setItem('workspace_project_id', state.projectId);
     } catch (_) {}
+    // 切换或初始化后立即校正地址栏，避免参数停留在上一个项目。
+    syncAddressBarProject(state.projectId);
     renderProjectContext();
   }
 

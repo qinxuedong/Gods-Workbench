@@ -56,6 +56,10 @@
       const params = new URLSearchParams(window.location.search);
       const projectId = String(params.get('project_id') || params.get('project') || '').trim();
       const canvasId = String(params.get('canvas_id') || params.get('id') || '').trim();
+      // 显式入口参数是项目上下文的权威来源：回写本地记忆，保证跨页（含顶栏跳转）不换项目。
+      if (projectId) {
+        try { localStorage.setItem('workspace_project_id', projectId); } catch (_) {}
+      }
       const focusNode = String(params.get('focus_node') || '').trim();
       const statusEl = document.getElementById('canvasRadarStatus');
       const workspace = document.getElementById('canvasRadarWorkspace');

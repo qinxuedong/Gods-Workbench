@@ -275,8 +275,8 @@ test('QIN-180 真实项目校验成功（200 OK）正确绑定标题并传递导
   assert.equal(elements.currentProjectDisplayTitle.textContent, '《神谕之地》· 剧集制片工坊');
   assert.equal(storage.get('workspace_project_id'), 'proj_1234567890ab');
 
-  // 导航栏链接自动追加项目上下文
-  assert.match(navLinks[0].getAttribute('href'), /project_id=proj_1234567890ab/);
+  // 导航栏按白名单携带项目上下文（QIN-493）：项目中心是选择器不携带，消费页携带。
+  assert.doesNotMatch(navLinks[0].getAttribute('href'), /project_id=/);
   assert.match(navLinks[1].getAttribute('href'), /project_id=proj_1234567890ab/);
   assert.match(navLinks[2].getAttribute('href'), /project_id=proj_1234567890ab/);
 

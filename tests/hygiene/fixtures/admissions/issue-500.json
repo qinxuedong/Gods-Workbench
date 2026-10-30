@@ -1,0 +1,29 @@
+{
+  "schema": "gw.cleanroom-admission-shard/v1",
+  "issue": 500,
+  "authorization_basis": "GitHub Issue #500, 2026-10-30",
+  "files": [
+    "docs/behavior/BEHAVIOR-SPEC-PRODUCTION-PROJECTS-HUB.md",
+    "tests/frontend/c7-p1-production-controller.test.mjs",
+    "tests/frontend/c7-t1-agents-controller.test.mjs",
+    "tests/frontend/c8-t3-production-review-context.test.mjs",
+    "tests/frontend/node-files.txt",
+    "tests/frontend/qin-493-navigation-project-context.test.mjs",
+    "tests/hygiene/fixtures/admissions/issue-500.json",
+    "tests/hygiene/fixtures/cleanroom_admission_metadata.json",
+    "tests/hygiene/test_cleanroom_hygiene.py",
+    "web/js/controllers/agents-controller.js",
+    "web/js/controllers/assets-controller.js",
+    "web/js/controllers/collab-controller.js",
+    "web/js/controllers/home-controller.js",
+    "web/js/controllers/production-controller.js",
+    "web/js/controllers/projects-controller.js",
+    "web/js/controllers/storyboard-controller.js",
+    "web/js/controllers/workflow-controller.js",
+    "web/pages/canvas.html",
+    "web/pages/workshop.html"
+  ],
+  "admitted_files": [],
+  "accepted_test_files": [],
+  "notes": "QIN-493：顶栏导航按消费页面白名单携带 project_id，页面内切换同步地址栏并校正过期参数。"
+}

@@ -436,16 +436,38 @@ window.WorkbenchHome = (function () {
     }
   }
 
+  // 只有真正消费项目上下文的页面才携带 project_id（对齐 BEHAVIOR-SPEC-PRODUCTION-PROJECTS-HUB.md 4.5）。
+  // 控制台、项目中心、设置本身是选择或配置入口，带参数会让地址栏谎报一个它并不持有的上下文。
+  const PROJECT_CONTEXT_PAGES = new Set([
+    'workshop.html', 'production.html', 'storyboard.html', 'canvas.html',
+    'assets.html', 'agents.html', 'workflow.html', 'collab.html'
+  ]);
+
   function updateNavPills(targetId) {
     if (!targetId) return;
     document.querySelectorAll('#navPillsGroup a').forEach(a => {
       const href = a.getAttribute('href');
       if (href && !href.startsWith('http') && !href.startsWith('#')) {
         const url = new URL(href, window.location.origin);
-        url.searchParams.set('project_id', targetId);
-        a.setAttribute('href', url.pathname.split('/').pop() + url.search);
+        const page = url.pathname.split('/').pop();
+        if (PROJECT_CONTEXT_PAGES.has(page)) {
+          url.searchParams.set('project_id', targetId);
+        } else {
+          url.searchParams.delete('project_id');
+        }
+        a.setAttribute('href', page + url.search);
       }
     });
+  }
+
+  // 控制台不消费项目上下文：清掉旧链接带进来的残留参数，避免地址栏与实际状态不符。
+  function stripOwnProjectParam() {
+    try {
+      const url = new URL(window.location.href);
+      if (!url.searchParams.has('project_id')) return;
+      url.searchParams.delete('project_id');
+      window.history.replaceState({}, '', url);
+    } catch (_) {}
   }
 
   // 2. 选中/切换项目 (单击)
@@ -1629,6 +1651,7 @@ window.WorkbenchHome = (function () {
 
   function init() {
     initContextBus();
+    stripOwnProjectParam();
     syncAuraBusStatus();
     reloadProjects();
     reloadAssetOverview();

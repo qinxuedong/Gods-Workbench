@@ -520,6 +520,42 @@
   <script>
     const WorkbenchWorkshop = (function() {
       const params = new URLSearchParams(window.location.search);
+
+      // 只有真正消费项目上下文的页面才携带 project_id（对齐 BEHAVIOR-SPEC-PRODUCTION-PROJECTS-HUB.md 4.5）。
+      const PROJECT_CONTEXT_PAGES = new Set([
+        'workshop.html', 'production.html', 'storyboard.html', 'canvas.html',
+        'assets.html', 'agents.html', 'workflow.html', 'collab.html'
+      ]);
+
+      // 地址栏只校正、不注入：已有 project_id 时保持与页面实际项目一致；
+      // 无参数表示「未指定」，由 localStorage 兜底，不主动制造参数。
+      function syncAddressBarProject(id) {
+        try {
+          const url = new URL(window.location.href);
+          if (!url.searchParams.has('project_id')) return;
+          const current = url.searchParams.get('project_id') || '';
+          if (current === (id || '')) return;
+          if (id) url.searchParams.set('project_id', id);
+          else url.searchParams.delete('project_id');
+          window.history.replaceState({}, '', url);
+        } catch (_) {}
+      }
+
+      function applyProjectContextLinks(links, id) {
+        links.forEach(a => {
+          const href = a.getAttribute('href');
+          if (!href || href.startsWith('http') || href.startsWith('#')) return;
+          const url = new URL(href, window.location.origin);
+          const page = url.pathname.split('/').pop();
+          if (id && PROJECT_CONTEXT_PAGES.has(page)) {
+            url.searchParams.set('project_id', id);
+          } else {
+            url.searchParams.delete('project_id');
+          }
+          a.setAttribute('href', `${page}${url.search}`);
+        });
+      }
+
       let projectId = params.get('project_id') || localStorage.getItem('workspace_project_id') || 'proj-01';
       let pipelineId = params.get('pipeline_id') || '';
       let newEpisodeModalSnapshot = '';
@@ -744,14 +780,10 @@
           headerTitleEl.textContent = `${current.name}${suffix} · 项目分集`;
         }
 
-        document.querySelectorAll('#navPillsGroup a, #gotoProductionLink').forEach(a => {
-          const href = a.getAttribute('href');
-          if (href && !href.startsWith('http') && !href.startsWith('#')) {
-            const url = new URL(href, window.location.origin);
-            url.searchParams.set('project_id', projectId);
-            a.setAttribute('href', url.pathname.split('/').pop() + url.search);
-          }
-        });
+        // 只有真正消费项目上下文的页面才携带参数（对齐 BEHAVIOR-SPEC-PRODUCTION-PROJECTS-HUB.md 4.5）；
+        // 地址栏只校正、不注入，避免参数停留在上一个项目。
+        syncAddressBarProject(projectId);
+        applyProjectContextLinks(document.querySelectorAll('#navPillsGroup a, #gotoProductionLink'), projectId);
       }
 
       const API_EPISODES = '/api/episode-pipelines';
@@ -1195,6 +1227,8 @@
         }
 
         updateProjectDisplay();
+        // 切换项目后立即校正地址栏（已有参数时改写为实际项目，无参数不注入）。
+        syncAddressBarProject(projectId);
         const targetProjectId = projectId;
         const targetGeneration = lifecycleGeneration;
         const targetEpoch = requestEpoch;
@@ -1274,10 +1308,12 @@
               url.searchParams.set('step', event.data.step);
               window.history.replaceState({}, '', url.toString());
             } else if (event.data?.type === 'episode-open-project-board') {
-              const board = new URL('/static/pages/projects.html', location.origin);
+              // 项目中心是选择器，不带 project_id；目标项目改由 localStorage 传递，由项目中心兜底选中。
               const pid = String(event.data.projectId || '');
-              if (pid) board.searchParams.set('project_id', pid);
-              location.assign(board.href);
+              if (pid) {
+                try { localStorage.setItem('workspace_project_id', pid); } catch (_) {}
+              }
+              location.assign(new URL('/static/pages/projects.html', location.origin).href);
             }
           };
           window.addEventListener('message', messageHandler);

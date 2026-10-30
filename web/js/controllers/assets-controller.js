@@ -466,6 +466,11 @@ window.WorkbenchAssets = (() => {
     for (const key of ['project_id', 'pipeline_id', 'asset_id']) {
       if (contextParams.has(key)) source.searchParams.set(key, contextParams.get(key));
     }
+    // 显式入口参数是项目上下文的权威来源：回写本地记忆，保证跨页（含顶栏跳转）不换项目。
+    try {
+      const entryProjectId = String(contextParams.get('project_id') || '').trim();
+      if (entryProjectId) localStorage.setItem('workspace_project_id', entryProjectId);
+    } catch (_) {}
     source.hash = location.hash;
     if (frame.dataset.gwBoundSrc !== source.href) {
       frame.dataset.gwBoundSrc = source.href;

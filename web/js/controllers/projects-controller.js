@@ -269,7 +269,19 @@ window.WorkbenchProjects = (function () {
       }
     } catch (e) {}
 
+    // 项目中心是选择器而非项目视图：消费完入口参数后即刻移除，地址栏不谎报上下文。
+    stripOwnProjectParam();
+
     render();
+  }
+
+  function stripOwnProjectParam() {
+    try {
+      const url = new URL(window.location.href);
+      if (!url.searchParams.has('project_id')) return;
+      url.searchParams.delete('project_id');
+      window.history.replaceState({}, '', url);
+    } catch (e) {}
   }
 
   async function fetchCounts() {
@@ -780,6 +792,12 @@ window.WorkbenchProjects = (function () {
   }
 
   // 同步更新顶栏胶囊导航的 project_id
+  // 只有真正消费项目上下文的页面才携带参数；项目中心/控制台/设置不带（见 BEHAVIOR-SPEC 4.5）。
+  const PROJECT_CONTEXT_PAGES = new Set([
+    'workshop.html', 'production.html', 'storyboard.html', 'canvas.html',
+    'assets.html', 'agents.html', 'workflow.html', 'collab.html'
+  ]);
+
   function updateNavPillsProject(targetId) {
     const pId = targetId || state.activeProjectId || (state.projects[0] && state.projects[0].id) || localStorage.getItem('workspace_project_id');
     if (!pId) return;
@@ -787,8 +805,13 @@ window.WorkbenchProjects = (function () {
       const href = a.getAttribute('href');
       if (href && !href.startsWith('http') && !href.startsWith('#')) {
         const url = new URL(href, window.location.origin);
-        url.searchParams.set('project_id', pId);
-        a.setAttribute('href', url.pathname.split('/').pop() + url.search);
+        const page = url.pathname.split('/').pop();
+        if (PROJECT_CONTEXT_PAGES.has(page)) {
+          url.searchParams.set('project_id', pId);
+        } else {
+          url.searchParams.delete('project_id');
+        }
+        a.setAttribute('href', page + url.search);
       }
     });
   }

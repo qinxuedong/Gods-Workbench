@@ -1788,6 +1788,10 @@ function renderProjectContextBadge() {
   const params = typeof URLSearchParams !== 'undefined' ? new URLSearchParams(search) : { get: () => null, has: () => false };
   let projectId = String(params.get('project_id') || '').trim();
   let canvasId = String(params.get('canvas_id') || '').trim();
+  // 显式入口参数是项目上下文的权威来源：回写本地记忆，保证跨页（含顶栏跳转）不换项目。
+  if (projectId) {
+    try { localStorage.setItem('workspace_project_id', projectId); } catch (_) {}
+  }
   if (!projectId && state.activeTaskId) {
     const task = state.workflowTasks?.find(t => (t.job_id || t.task_id) === state.activeTaskId);
     const sc = task?.source_context || task?.metadata?.source_context;

@@ -270,13 +270,38 @@ window.WorkbenchStoryboard = (function () {
     return [...grouped.values()].map(({ shotIds, ...scene }) => scene);
   }
 
+  // 只有真正消费项目上下文的页面才携带参数（对齐 BEHAVIOR-SPEC-PRODUCTION-PROJECTS-HUB.md 4.5）。
+  const PROJECT_CONTEXT_PAGES = new Set([
+    'workshop.html', 'production.html', 'storyboard.html', 'canvas.html',
+    'assets.html', 'agents.html', 'workflow.html', 'collab.html'
+  ]);
+
+  // 地址栏只校正、不注入：已有 project_id 时保持与页面实际项目一致。
+  function syncAddressBarProject(projectId) {
+    try {
+      const url = new URL(window.location.href);
+      if (!url.searchParams.has('project_id')) return;
+      const current = url.searchParams.get('project_id') || '';
+      if (current === projectId) return;
+      if (projectId) url.searchParams.set('project_id', projectId);
+      else url.searchParams.delete('project_id');
+      window.history.replaceState({}, '', url);
+    } catch (_) {}
+  }
+
   function updateProjectLinks() {
+    syncAddressBarProject(state.projectId);
     document.querySelectorAll?.('a[href]').forEach(link => {
       const href = link.getAttribute('href');
-      if (!href || !state.projectId || href.startsWith('http') || href.startsWith('#')) return;
+      if (!href || href.startsWith('http') || href.startsWith('#')) return;
       const url = new URL(href, window.location.origin);
-      url.searchParams.set('project_id', state.projectId);
-      link.setAttribute('href', `${url.pathname.split('/').pop()}${url.search}`);
+      const page = url.pathname.split('/').pop();
+      if (state.projectId && PROJECT_CONTEXT_PAGES.has(page)) {
+        url.searchParams.set('project_id', state.projectId);
+      } else {
+        url.searchParams.delete('project_id');
+      }
+      link.setAttribute('href', `${page}${url.search}`);
     });
   }
 

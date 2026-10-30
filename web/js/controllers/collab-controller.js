@@ -18,6 +18,10 @@
 window.WorkbenchCollab = (() => {
   'use strict';
   const projectId = new URLSearchParams(location.search).get('project_id') || '';
+  // 显式入口参数是项目上下文的权威来源：回写本地记忆，保证跨页（含顶栏跳转）不换项目。
+  try {
+    if (projectId) localStorage.setItem('workspace_project_id', projectId);
+  } catch (_) {}
   const pageState = () => ({items: [], status: 'loading', cursor: '', window: null, busy: false});
   const state = {members: pageState(), teams: pageState(), tasks: pageState(), logs: pageState(), audit: pageState(), approvals: pageState(), view: 'tasks'};
   const messageState = {

@@ -250,8 +250,30 @@ window.WorkbenchProduction = (function () {
     }
   }
 
+  // 只有真正消费项目上下文的页面才携带参数（对齐 BEHAVIOR-SPEC-PRODUCTION-PROJECTS-HUB.md 4.5）。
+  const PROJECT_CONTEXT_PAGES = new Set([
+    'workshop.html', 'production.html', 'storyboard.html', 'canvas.html',
+    'assets.html', 'agents.html', 'workflow.html', 'collab.html'
+  ]);
+
+  // 地址栏只校正、不注入：已有 project_id 时保持与页面实际项目一致；
+  // 无参数表示「未指定」，由 localStorage 兜底，不主动制造参数。
+  function syncAddressBarProject(projectId) {
+    try {
+      const url = new URL(window.location.href);
+      if (!url.searchParams.has('project_id')) return;
+      const current = url.searchParams.get('project_id') || '';
+      if (current === projectId) return;
+      if (projectId) url.searchParams.set('project_id', projectId);
+      else url.searchParams.delete('project_id');
+      window.history.replaceState({}, '', url);
+    } catch (_) {}
+  }
+
   // 更新页面导航栏上的链接动态设置 ?project_id；没有上下文时不伪造参数。
   function updateNavLinks(projectId) {
+    // 每次上下文确定或切换都顺带校正地址栏，避免参数成为过期快照。
+    syncAddressBarProject(projectId);
     const origin = (typeof window !== 'undefined' && window.location && window.location.origin && window.location.origin !== 'null')
       ? window.location.origin
       : 'http://localhost';
@@ -259,12 +281,13 @@ window.WorkbenchProduction = (function () {
       const href = a.getAttribute('href');
       if (href && !href.startsWith('http') && !href.startsWith('#')) {
         const url = new URL(href, origin);
-        if (projectId) {
+        const page = url.pathname.split('/').pop();
+        if (projectId && PROJECT_CONTEXT_PAGES.has(page)) {
           url.searchParams.set('project_id', projectId);
         } else {
           url.searchParams.delete('project_id');
         }
-        a.setAttribute('href', url.pathname.split('/').pop() + url.search);
+        a.setAttribute('href', page + url.search);
       }
     });
   }
