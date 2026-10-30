@@ -54,3 +54,13 @@ test('AC5: 窄屏时左侧导航转为可横向滚动入口', () => {
     assert.match(html, /@media \(max-width: 700px\)[\s\S]*?#assetCategories \{[^}]*overflow-x: auto/);
     assert.doesNotMatch(html, /@media \(max-width: 700px\) \{ #assetVaultSidebar \{ display: none/);
 });
+
+test('AC7: 左栏全部入口共用固定统计行和工具栏行，视图留在资源库页内切换', () => {
+    assert.match(manager, /if\(document\.documentElement\.classList\.contains\('vault-shell-embedded'\)\)[\s\S]*root\.insertAdjacentHTML\('afterbegin', `\$\{renderRegistryOverview\(\)\}\$\{renderRegistryToolbar\(null,/);
+    assert.match(vaultCss, /#assetManagerRoot > \.registry-overview-shell \{[\s\S]*grid-row: 1;/);
+    assert.match(vaultCss, /#assetManagerRoot > \.registry-toolbar \{[\s\S]*grid-row: 2;/);
+    assert.match(vaultCss, /#assetManagerRoot > \.asset-panel\.asset-content \{[\s\S]*grid-row: 3;/);
+    for (const id of ['registry', 'scripts', 'projects', 'assets', 'workflows', 'prompts', 'canvas-assets', 'local', 'governance']) {
+        assert.ok(manager.includes(`id:'${id}'`), `资源库缺少入口：${id}`);
+    }
+});

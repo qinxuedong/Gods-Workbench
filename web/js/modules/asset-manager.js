@@ -7363,6 +7363,14 @@ function render(){
     else if(activeTab === 'governance') renderGovernanceSuggestionsManager();
     else if(assetBoardById(activeTab)?.system === false) renderCustomAssetLibrary(assetBoardById(activeTab));
     else renderAssetManager();
+    if(document.documentElement.classList.contains('vault-shell-embedded')){
+        const board = assetBoardById(activeTab);
+        const toolbarTitle = activeTab === 'registry' ? registryCategoryLabel(registryStatCategory) : (board?.name || '资源库');
+        const toolbarSubtitle = activeTab === 'registry' || board?.system === false
+            ? registryTotalSummary(registryVisibleAssets().length)
+            : '统一资产工具';
+        root.insertAdjacentHTML('afterbegin', `${renderRegistryOverview()}${renderRegistryToolbar(null, toolbarTitle, toolbarSubtitle, {allowUrl:true})}`);
+    }
     if(activeTab === 'registry' || customLibraryActive) renderRegistryFreshNotice();
     restoreRegistryPreviewImages(registryPreviewCache);
     refreshIcons();
@@ -8994,7 +9002,7 @@ function renderRegistryManager(){
     const coverflowAvailable = registryCoverflowAssets().length > 0;
     const coverflowLabel = coverflowAvailable ? '打开当前素材库 Coverflow' : '当前素材库没有图片或视频';
     const embeddedVault = document.documentElement.classList.contains('vault-shell-embedded');
-    root.innerHTML = `${renderRegistryOverview()}<aside class="asset-panel asset-nav registry-nav" ${embeddedVault ? 'id="registryFacetPopover" popover="auto" aria-label="智能筛选"' : ''}>
+    root.innerHTML = `<aside class="asset-panel asset-nav registry-nav" ${embeddedVault ? 'id="registryFacetPopover" popover="auto" aria-label="智能筛选"' : ''}>
         <div class="panel-head"><div class="panel-title"><strong>智能筛选</strong><span>点击包含，减号排除</span></div><button class="hw-btn hw-btn-icon registry-coverflow-open" type="button" data-registry-coverflow-open ${coverflowAvailable ? '' : 'disabled'} aria-label="${coverflowLabel}" title="${coverflowLabel}"><i data-lucide="images"></i></button></div>
         <div class="nav-scroll registry-facets">
             <section class="registry-facet-section"><div class="registry-facet-title"><strong>快捷入口</strong></div>
@@ -9019,7 +9027,6 @@ function renderRegistryManager(){
         </div>
     </aside>
     <section class="asset-panel asset-content registry-content registry-layout-${registryLayout} registry-aspect-${registryAspect} ${registrySimple ? 'registry-simple' : ''} ${registrySelectedIds.size ? 'manage-on' : ''}" style="--registry-card-size:${registryCardSize}px">
-        ${renderRegistryToolbar(null, registryCategoryLabel(registryStatCategory), `${registryProjectFilterId ? `【项目: ${projects.find(item => item.id === registryProjectFilterId)?.name || registryProjectFilterId}】` : ''}${registryTotalSummary(visible.length)}${registryTotalKnown && registryTotal > visible.length ? `，当前显示 ${visible.length} 项` : ''}`, {allowUrl:true})}
         ${renderRegistryFilterChips()}
         <div data-registry-fresh-notice></div>
         <div class="content-scroll registry-assets-scroll" data-registry-zoom-area title="Shift+滚轮调整预览大小">${renderRegistryAssetSections(visible, null, '没有符合条件的资产。可以清空排除条件。')}${renderRegistryPagination()}</div>
@@ -9066,7 +9073,6 @@ function renderCustomAssetLibrary(board){
         </div>
     </aside>
     <section class="asset-panel asset-content registry-content registry-layout-${registryLayout} registry-aspect-${registryAspect} ${registrySimple ? 'registry-simple' : ''} ${registrySelectedIds.size ? 'manage-on' : ''}" style="--registry-card-size:${registryCardSize}px">
-        ${renderRegistryToolbar(board, board.name, `${matching.length} 个匹配资产 · ${activeReferenceCanvas ? `参考画布：${activeReferenceCanvas.title || '未命名'}` : sourceLabel}${folderLabel ? ` · ${folderLabel}` : ''}${activeGroup ? ` · ${activeGroup.name}` : ''}`)}
         ${renderRegistryFilterChips()}
         <div data-registry-fresh-notice></div>
         <div class="content-scroll registry-assets-scroll" data-registry-zoom-area title="Shift+滚轮调整预览大小">${renderRegistryAssetSections(visible, board, board.sourceBoard ? `“${board.name}”暂无已索引素材。` : `暂无匹配的${preset.name.replace(/库$/, '')}资产。资产进入统一索引后会自动显示在这里。`)}${renderRegistryPagination()}</div>

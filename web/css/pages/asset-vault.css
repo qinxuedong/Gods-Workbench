@@ -37,7 +37,7 @@ html.vault-shell-embedded body.gw-signal.gw-page--asset-manager #assetBoardTabs 
 html.vault-shell-embedded body.gw-signal.gw-page--asset-manager .registry-toolbar .vault-filters-toggle { display: none !important; }
 body.gw-signal.gw-page--asset-manager #assetManagerRoot.asset-manager-root-registry.asset-registry-filters-collapsed { grid-template-columns: minmax(0,1fr) !important; }
 body.gw-signal.gw-page--asset-manager #assetManagerRoot.asset-manager-root-registry.asset-registry-filters-collapsed > .registry-nav { display: none !important; }
-body.gw-signal.gw-page--asset-manager #assetManagerRoot.asset-manager-root-registry.asset-registry-filters-collapsed > :is(.registry-overview-shell,.registry-content) { grid-column: 1; }
+body.gw-signal.gw-page--asset-manager #assetManagerRoot.asset-manager-root-registry.asset-registry-filters-collapsed > :is(.registry-overview-shell,.registry-toolbar,.registry-content) { grid-column: 1; }
 body.gw-signal.gw-page--asset-manager #assetBoardTabs {
     height: auto !important;
     min-height: 42px !important;
@@ -72,6 +72,11 @@ body.gw-signal.gw-page--asset-manager #assetManagerRoot {
     body.gw-signal.gw-page--asset-manager .asset-manager-root-registry > .registry-overview-shell { grid-column: 2; grid-row: 1; }
     body.gw-signal.gw-page--asset-manager .asset-manager-root-registry > .registry-nav { grid-row: 1 / 3 !important; }
     body.gw-signal.gw-page--asset-manager .asset-manager-root-registry > .registry-content { grid-column: 2; grid-row: 2; }
+    body.gw-signal.gw-page--asset-manager #assetManagerRoot.asset-manager-root-library { grid-template-rows: auto minmax(0,1fr) !important; }
+    body.gw-signal.gw-page--asset-manager .asset-manager-root-library > .registry-overview-shell { grid-column: 2 / 4; grid-row: 1; }
+    body.gw-signal.gw-page--asset-manager .asset-manager-root-library > .library-board-nav { grid-column: 1; grid-row: 1 / 3; }
+    body.gw-signal.gw-page--asset-manager .asset-manager-root-library > .registry-content { grid-column: 2; grid-row: 2; }
+    body.gw-signal.gw-page--asset-manager .asset-manager-root-library > :is(.registry-detail-resizer,.registry-detail-panel) { grid-row: 2; }
     body.gw-signal.gw-page--asset-manager .vault-filters-toggle { display: none; }
 }
 body.gw-signal.gw-page--asset-manager .registry-nav {
@@ -214,6 +219,11 @@ body.gw-signal.gw-page--asset-manager :is(#assetBoardTabs,.registry-content) :is
 @media (max-width: 900px) {
     html.vault-shell-embedded body.gw-signal.gw-page--asset-manager #assetManagerRoot.asset-manager-root-registry { grid-template-columns: minmax(0,1fr) !important; }
     html.vault-shell-embedded body.gw-signal.gw-page--asset-manager .asset-manager-root-registry > :is(.registry-overview-shell, .registry-content) { grid-column: 1; }
+    body.gw-signal.gw-page--asset-manager #assetManagerRoot.asset-manager-root-library { grid-template-columns: minmax(0,1fr) !important; grid-template-rows: auto auto minmax(500px,1fr) auto !important; }
+    body.gw-signal.gw-page--asset-manager .asset-manager-root-library > .registry-overview-shell { grid-column: 1; grid-row: 1; }
+    body.gw-signal.gw-page--asset-manager .asset-manager-root-library > .library-board-nav { grid-column: 1; grid-row: 2; }
+    body.gw-signal.gw-page--asset-manager .asset-manager-root-library > .registry-content { grid-column: 1; grid-row: 3; }
+    body.gw-signal.gw-page--asset-manager .asset-manager-root-library > :is(.registry-detail-resizer,.registry-detail-panel) { grid-column: 1; grid-row: 4; }
     body.gw-signal.gw-page--asset-manager .registry-grid { grid-template-columns: repeat(4,minmax(0,1fr)); }
     body.gw-signal.gw-page--asset-manager .registry-toolbar .content-heading { flex-direction: row; }
     body.gw-signal.gw-page--asset-manager .registry-toolbar .asset-search-wrap { flex-basis: calc(50% - 52px); max-width: calc(50% - 52px); min-width: 116px; }
@@ -253,7 +263,7 @@ body.gw-signal.gw-page--asset-manager #assetManagerRoot:not(.asset-manager-root-
     background: var(--vault-inset) !important;
 }
 body.gw-signal.gw-page--asset-manager #assetManagerRoot.asset-manager-root-library {
-    grid-template-columns: minmax(270px, 20vw) minmax(0, 1fr) var(--registry-detail-width, 340px);
+    grid-template-columns: 240px minmax(0, 1fr) var(--registry-detail-width, 340px);
 }
 body.gw-signal.gw-page--asset-manager #assetManagerRoot:not(.asset-manager-root-registry) > .asset-panel {
     border: 0 !important;
@@ -1105,3 +1115,90 @@ body.gw-signal.gw-page--asset-manager #assetManagerRoot:not(.asset-manager-root-
 body.gw-signal.gw-page--asset-manager .registry-toolbar-select { height:auto; min-height:40px; align-items:center; }
 
 body.gw-signal.gw-page--asset-manager .registry-toolbar .registry-toolbar-select .asset-sort-select { line-height:var(--gw-leading-body-md) !important; }
+
+/* QIN-489: keep the resource overview and shared toolbar in fixed grid rows across every left-nav view. */
+html.vault-shell-embedded body.gw-signal.gw-page--asset-manager #assetManagerRoot {
+    display: grid !important;
+    grid-template-rows: auto auto minmax(0,1fr) !important;
+}
+html.vault-shell-embedded body.gw-signal.gw-page--asset-manager #assetManagerRoot:not(.asset-manager-root-registry):not(.asset-manager-root-library) {
+    grid-template-columns: 240px minmax(0,1fr) minmax(280px,320px) !important;
+}
+html.vault-shell-embedded body.gw-signal.gw-page--asset-manager #assetManagerRoot.asset-manager-root-registry {
+    grid-template-columns: 240px minmax(0,1fr) !important;
+}
+html.vault-shell-embedded body.gw-signal.gw-page--asset-manager #assetManagerRoot.asset-manager-root-library {
+    grid-template-columns: 240px minmax(0,1fr) var(--registry-detail-width,340px) !important;
+    grid-template-rows: auto auto minmax(0,1fr) !important;
+}
+html.vault-shell-embedded body.gw-signal.gw-page--asset-manager #assetManagerRoot.asset-manager-root-page-scripts {
+    grid-template-columns: 240px minmax(0,1fr) !important;
+}
+html.vault-shell-embedded body.gw-signal.gw-page--asset-manager #assetManagerRoot > .registry-overview-shell {
+    grid-column: 2 / -1;
+    grid-row: 1;
+    position: relative;
+    z-index: 8;
+}
+html.vault-shell-embedded body.gw-signal.gw-page--asset-manager #assetManagerRoot > .registry-toolbar {
+    grid-column: 2 / -1;
+    grid-row: 2;
+    position: relative;
+    z-index: 7;
+}
+html.vault-shell-embedded body.gw-signal.gw-page--asset-manager #assetManagerRoot > :is(.asset-panel.asset-nav,.asset-smart-filter-panel,.registry-nav,.library-board-nav) {
+    grid-column: 1;
+    grid-row: 1 / -1 !important;
+}
+html.vault-shell-embedded body.gw-signal.gw-page--asset-manager #assetManagerRoot > .registry-content {
+    grid-column: 2;
+    grid-row: 3;
+}
+html.vault-shell-embedded body.gw-signal.gw-page--asset-manager #assetManagerRoot > .asset-panel.asset-content {
+    grid-column: 2;
+    grid-row: 3;
+}
+html.vault-shell-embedded body.gw-signal.gw-page--asset-manager #assetManagerRoot > :is(.asset-workspace-panel,.script-assets-panel) {
+    grid-column: 2 / -1;
+    grid-row: 3;
+}
+html.vault-shell-embedded body.gw-signal.gw-page--asset-manager #assetManagerRoot > :is(.asset-panel.asset-detail,.registry-detail-panel) {
+    grid-column: 3;
+    grid-row: 3;
+}
+html.vault-shell-embedded body.gw-signal.gw-page--asset-manager #assetManagerRoot > .registry-detail-resizer {
+    grid-column: 3;
+    grid-row: 3;
+}
+html.vault-shell-embedded body.gw-signal.gw-page--asset-manager #assetManagerRoot.asset-manager-root-registry.asset-registry-filters-collapsed {
+    grid-template-columns: minmax(0,1fr) !important;
+}
+html.vault-shell-embedded body.gw-signal.gw-page--asset-manager #assetManagerRoot.asset-manager-root-registry.asset-registry-filters-collapsed > :is(.registry-overview-shell,.registry-toolbar,.registry-content) {
+    grid-column: 1;
+}
+@media (max-width: 900px) {
+    html.vault-shell-embedded body.gw-signal.gw-page--asset-manager #assetManagerRoot {
+        grid-template-columns: minmax(0,1fr) !important;
+        grid-template-rows: auto auto auto minmax(360px,1fr) auto !important;
+    }
+    html.vault-shell-embedded body.gw-signal.gw-page--asset-manager #assetManagerRoot > :is(.registry-overview-shell,.registry-toolbar) {
+        grid-column: 1;
+    }
+    html.vault-shell-embedded body.gw-signal.gw-page--asset-manager #assetManagerRoot > :is(.asset-panel.asset-nav,.asset-smart-filter-panel,.library-board-nav) {
+        grid-column: 1;
+        grid-row: 3;
+    }
+    html.vault-shell-embedded body.gw-signal.gw-page--asset-manager #assetManagerRoot > :is(.registry-content,.asset-panel.asset-content,.asset-workspace-panel,.script-assets-panel) {
+        grid-column: 1;
+        grid-row: 4;
+    }
+    html.vault-shell-embedded body.gw-signal.gw-page--asset-manager #assetManagerRoot > :is(.asset-panel.asset-detail,.registry-detail-panel) {
+        grid-column: 1;
+        grid-row: 5;
+    }
+    html.vault-shell-embedded body.gw-signal.gw-page--asset-manager #assetManagerRoot > .registry-detail-resizer { display: none; }
+    html.vault-shell-embedded body.gw-signal.gw-page--asset-manager #assetManagerRoot.asset-manager-root-registry > .registry-content { grid-row: 3; }
+    html.vault-shell-embedded body.gw-signal.gw-page--asset-manager #assetManagerRoot.asset-manager-root-page-scripts {
+        grid-template-rows: auto auto auto minmax(390px,1fr) !important;
+    }
+}
