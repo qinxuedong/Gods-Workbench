@@ -377,7 +377,7 @@ window.WorkbenchAssets = (() => {
       const label = document.createElement('span');
       label.textContent = '新建资源';
       button.append(icon, label);
-      button.addEventListener('click', () => createControl.click());
+      button.addEventListener('click', () => manager()?.querySelector('#assetBoardTabs [data-board-create]')?.click());
       fragment.append(button);
     }
     const focused = categories.contains(document.activeElement)

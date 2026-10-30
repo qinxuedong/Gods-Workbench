@@ -68,7 +68,7 @@ def test_dir_t1_create_library_index_and_filter_from_browser(monkeypatch, tmp_pa
         )
         goto_ready(page, base + "/static/pages/assets.html")
         vault = page.frame_locator("#assetVaultFrame")
-        vault.locator("[data-board-create]").wait_for(state="visible")
+        page.locator('#assetCategories [data-asset-board-create]').wait_for(state="visible")
         # 首屏会在一次 networkidle 之后再延迟请求 facets。确认建库前先等这轮结束，
         # 否则 storage-settings / reindex 会排在同步扫描后面，30s 内等不到 POST 响应。
         deadline = time.monotonic() + 30
@@ -77,7 +77,7 @@ def test_dir_t1_create_library_index_and_filter_from_browser(monkeypatch, tmp_pa
         assert bootstrap["facets"], "首屏 /api/asset-registry/facets 未返回"
         page.wait_for_load_state("networkidle", timeout=20_000)
 
-        vault.locator("[data-board-create]").click()
+        page.locator('#assetCategories [data-asset-board-create]').click()
         vault.locator('[data-board-preset="other"]').click()
         vault.locator("#boardCreateName").fill("DIR-T1 中文素材库")
         vault.locator("#boardCreatePath").fill(str(library))
@@ -147,10 +147,10 @@ def test_dir_t1_create_library_index_and_filter_from_browser(monkeypatch, tmp_pa
         # 刷新会清掉这份缓存；再打开看板才会按已关联的项目重新请求。
         with page.expect_response(lambda item: "/api/asset-registry/assets?" in item.url, timeout=20000):
             vault.locator("[data-refresh-assets]").click()
-        vault.locator('[data-tab]').filter(has_text="DIR-T1 中文素材库").click()
+        page.locator('#assetCategories [data-asset-board]').filter(has_text="DIR-T1 中文素材库").click()
         vault.locator("[data-registry-card]").filter(has_text="浏览器素材-甲.txt").wait_for(timeout=15000)
 
-        vault.locator('[data-tab="registry"]').click()
+        page.locator('#assetCategories [data-asset-board="registry"]').click()
         source_filter = vault.locator(f'[data-registry-root="{root_id}"]')
         source_filter.wait_for(state="visible", timeout=15000)
         with page.expect_response(lambda item: "/api/asset-registry/assets?" in item.url

@@ -10,6 +10,9 @@
     "web/css/pages/asset-vault.css",
     "tests/frontend/qin-489-asset-library-layout.test.mjs",
     "tests/frontend/node-files.txt",
+    "tests/e2e/test_dir_t1_registry_roots_browser.py",
+    "tests/e2e/test_dir_t7_multi_root_identity_browser.py",
+    "tests/e2e/test_dir_t9_local_assets_pagination_browser.py",
     "tests/hygiene/fixtures/admissions/issue-492.json",
     "tests/hygiene/test_cleanroom_hygiene.py"
   ],

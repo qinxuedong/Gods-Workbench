@@ -91,7 +91,7 @@ def test_dir_t7_alias_suggestion_waits_for_explicit_user_confirmation(
 
         goto_ready(page, base + "/static/pages/assets.html")
         vault = page.frame_locator("#assetVaultFrame")
-        vault.locator("[data-board-create]").click()
+        page.locator('#assetCategories [data-asset-board-create]').click()
         vault.locator('[data-board-preset="other"]').click()
         vault.locator("#boardCreateName").fill("DIR-T7 别名库")
         vault.locator("#boardCreatePath").fill(str(candidate))
