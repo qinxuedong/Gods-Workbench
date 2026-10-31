@@ -1,0 +1,24 @@
+{
+  "schema": "gw.cleanroom-admission-shard/v1",
+  "issue": 513,
+  "authorization_basis": "GitHub Issue #513, 2026-10-31",
+  "files": [
+    "deploy/docker/README.md",
+    "deploy/docker/.env.example",
+    "deploy/docker/Dockerfile",
+    "deploy/docker/docker-compose.nas.yml",
+    "gw/core/local_accounts_cli.py",
+    "tests/contracts/auth/test_local_accounts_cli.py",
+    "tests/hygiene/fixtures/admissions/issue-513.json"
+  ],
+  "admitted_files": [],
+  "accepted_test_files": [
+    {
+      "path": "tests/contracts/auth/test_local_accounts_cli.py",
+      "classification": "curated_test_coverage",
+      "authorization_basis": "GitHub Issue #513, 2026-10-31",
+      "admission": "accepted"
+    }
+  ],
+  "notes": "QIN-499：通用 NAS Docker 部署、非 root 容器权限与本地管理员 CLI 初始化。"
+}
