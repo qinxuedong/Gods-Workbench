@@ -708,6 +708,7 @@
         const controller = new AbortController();
         projectsRequestController = controller;
         const keepPlaceholder = projects.filter(p => p.placeholder);
+        let directoryLoaded = false;
         try {
           let res = await fetch(`${API_PROJECTS}?archived=false`, { credentials: 'same-origin', signal: controller.signal });
           let data = null;
@@ -730,58 +731,34 @@
               return pid ? { id: pid, name: p.name || pid } : null;
             }).filter(Boolean);
             projects = real.concat(keepPlaceholder.filter(ph => !real.some(r => r.id === ph.id)));
+            directoryLoaded = true;
           }
 
           if (!requestIsCurrent(generation, epoch)) return;
           // syncRouteState 会为未知项目造一个本地占位，判断「目录里有没有」必须排除占位，
           // 否则占位自己会证明自己存在，永远走不到校验和回退。
-          if (projectId && !projects.some(p => p.id === projectId && !p.placeholder)) {
-            // 目录里没有这个项目：可能是详情接口能补出来的项目，也可能真的不存在。
-            // 只有两个详情接口都明确 404 才算「不存在」；网络异常或 5xx 不判定，避免误伤。
-            let missing = false;
-            try {
-              let pRes = await fetch(`${API_PROJECTS}/${encodeURIComponent(projectId)}`, { credentials: 'same-origin', signal: controller.signal });
-              if (pRes.status === 404) {
-                pRes = await fetch(`${API_PROJECTS_FALLBACK}/${encodeURIComponent(projectId)}`, { credentials: 'same-origin', signal: controller.signal });
-              }
-              if (!requestIsCurrent(generation, epoch)) return;
-              if (pRes.ok) {
-                const pData = await pRes.json();
-                const projObj = pData?.project || pData;
-                const projId = projObj && (projObj.id || projObj.project_id);
-                if (projId) {
-                  projects.unshift({ id: projId, name: projObj.name || projId });
-                  cachedProjectName = projObj.name || projId;
-                  try { localStorage.setItem('workspace_project_name', cachedProjectName); } catch (_) {}
-                } else {
-                  missing = true;
-                }
-              } else if (pRes.status === 404) {
-                missing = true;
-              }
-            } catch (error) {
-              if (error?.name !== 'AbortError') { /* 详情读取失败不阻断主目录，也不据此判定项目消失 */ }
-            }
-            if (missing && requestIsCurrent(generation, epoch)) {
-              // 回退到目录里真实存在的项目，并把地址栏校正成真正使用的项目（对齐 BEHAVIOR-SPEC 4.5）。
-              let remembered = '';
-              try { remembered = String(localStorage.getItem('workspace_project_id') || ''); } catch (_) {}
-              const candidates = projects.filter(p => p && p.id && !p.placeholder);
-              const fallback = candidates.find(p => p.id === remembered) || candidates[0];
-              if (fallback) {
-                const staleId = projectId;
-                projectId = fallback.id;
-                cachedProjectName = fallback.name || fallback.id;
-                // 去掉为无效项目造出来的本地占位，避免目录里继续挂着一个不存在的项目。
-                projects = projects.filter(p => !(p.id === staleId && p.placeholder));
-                try {
-                  localStorage.setItem('workspace_project_id', projectId);
-                  localStorage.setItem('workspace_project_name', cachedProjectName);
-                } catch (_) {}
-                syncAddressBarProject(projectId);
-                updateProjectDisplay();
-                void fetchEpisodes();
-              }
+          // 存在性只以目录列表为准：/api/asset-registry/projects 没有单项目 GET，
+          // 请求 /projects/{id} 会返回 405 而非 404，按状态码探测等于永远不判定。
+          // 目录本身没读成功（降级或网络异常）时不判定，避免把有效项目误降级。
+          if (directoryLoaded && projectId && !projects.some(p => p.id === projectId && !p.placeholder)) {
+            const candidates = projects.filter(p => p && p.id && !p.placeholder);
+            // 回退到目录里真实存在的项目，并把地址栏校正成真正使用的项目（对齐 BEHAVIOR-SPEC 4.5）。
+            let remembered = '';
+            try { remembered = String(localStorage.getItem('workspace_project_id') || ''); } catch (_) {}
+            const fallback = candidates.find(p => p.id === remembered) || candidates[0];
+            if (fallback && requestIsCurrent(generation, epoch)) {
+              const staleId = projectId;
+              projectId = fallback.id;
+              cachedProjectName = fallback.name || fallback.id;
+              // 去掉为无效项目造出来的本地占位，避免目录里继续挂着一个不存在的项目。
+              projects = projects.filter(p => !(p.id === staleId && p.placeholder));
+              try {
+                localStorage.setItem('workspace_project_id', projectId);
+                localStorage.setItem('workspace_project_name', cachedProjectName);
+              } catch (_) {}
+              syncAddressBarProject(projectId);
+              updateProjectDisplay();
+              void fetchEpisodes();
             }
           }
         } catch (e) {

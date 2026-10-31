@@ -511,15 +511,38 @@ test('QIN-493 返工 AC4：工坊无参数不注入 project_id，且缺失项目
     /url\.searchParams\.set\('project_id', projectId\);\s*\n\s*url\.searchParams\.set\('step', step\);/,
     '旧的无条件写入实现必须移除'
   );
-  // 缺失项目：两个详情接口都 404 才回退，回退后校正地址栏。
+  // 缺失项目：目录列表是唯一真源（见下一条用例），判定后回退并校正地址栏。
   assert.match(
     workshopHtml,
     /!projects\.some\(p => p\.id === projectId && !p\.placeholder\)/,
     '判断目录里有没有该项目时必须排除本地占位，否则占位会证明自己存在'
   );
-  assert.match(workshopHtml, /pRes\.status === 404/, '必须用 404 判定项目缺失，不能把 5xx 当缺失');
-  assert.match(workshopHtml, /missing = true;/, '缺失判定必须落到回退分支');
   assert.match(workshopHtml, /syncAddressBarProject\(projectId\);/, '回退后必须校正地址栏');
+});
+
+test('QIN-493 第三轮返工 AC4：工坊项目存在性只以目录列表判定，不依赖 405 的单项目 GET', () => {
+  // 回归：GET /api/asset-registry/projects/{id} 在服务端未注册，恒返回 405。
+  // 旧实现只在 404 时才走兜底并置 missing，导致无效项目既不回退也不校正地址栏。
+  assert.doesNotMatch(
+    workshopHtml,
+    /\$\{API_PROJECTS\}\/\$\{encodeURIComponent\(projectId\)\}/,
+    '工坊不得再用单项目详情接口探测存在性'
+  );
+  assert.doesNotMatch(workshopHtml, /pRes\.status === 404/, '旧的 404 探测分支必须移除');
+  assert.doesNotMatch(workshopHtml, /missing = true;/, '旧的 missing 判定必须移除');
+  // 目录读取失败（降级/网络异常）时不得判定缺失，否则会把有效项目误降级。
+  assert.match(workshopHtml, /let directoryLoaded = false;/, '需显式记录目录是否读取成功');
+  assert.match(
+    workshopHtml,
+    /if \(directoryLoaded && projectId && !projects\.some\(p => p\.id === projectId && !p\.placeholder\)\)/,
+    '缺失判定必须以目录读取成功为前提，且排除本地占位'
+  );
+  // 回退逻辑必须仍取目录内的真实项目，并清理无效项目的本地占位。
+  assert.match(
+    workshopHtml,
+    /const candidates = projects\.filter\(p => p && p\.id && !p\.placeholder\);[\s\S]{0,1500}projects\.filter\(p => !\(p\.id === staleId && p\.placeholder\)\)/,
+    '回退必须从目录真实项目里选，并清掉无效项目的占位'
+  );
 });
 
 // ---------------------------------------------------------------------------
