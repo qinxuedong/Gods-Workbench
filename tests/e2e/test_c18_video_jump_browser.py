@@ -102,12 +102,6 @@ def test_c18_video_jump_e2e_real_browser(monkeypatch: pytest.MonkeyPatch, tmp_pa
         format_selector = f'{card_selector} .registry-card-format'
         format_loc = page.locator(format_selector)
         format_loc.wait_for(state="visible", timeout=10000)
-        # 搜索触发 refreshRegistryAssets：先以 loading 态 render()（此时徽标已可见），
-        # 请求结束后 finally 再 render()，异步 getRegistryStatus() 返回后又整树 render()。
-        # 每次整树 innerHTML 重绘都会替换徽标/格式标签节点；若分两次往返取几何，
-        # 可能命中已脱离 DOM 的旧节点而得到 None（CI 慢机偶发）。因此先等搜索刷新链的
-        # 网络请求全部结束，再在同一同步 DOM 快照内读取两者几何，语义与 bounding_box() 一致。
-        page.wait_for_load_state("networkidle")
         boxes = page.evaluate(
             """([formatSel, badgeSel]) => {
                 const box = (sel) => {
