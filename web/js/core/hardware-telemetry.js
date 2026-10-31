@@ -1129,7 +1129,7 @@
             <button type="button" class="btn-hw-round text-slate-400 hover:text-white" onclick="HardwareDeck.closeModal('accountModal')" aria-label="关闭"><span class="btn-hw-round-inner"><i data-lucide="x" class="w-4 h-4"></i></span></button>
           </div>
 
-          <div class="space-y-3 gw-type-body-sm">
+          <div class="space-y-3 gw-type-body-sm relative">
             <div class="bay-inset p-3 rounded-xl flex items-center space-x-3 border border-[#dfc384]/20">
               <div class="w-10 h-10 rounded-full bg-gradient-to-tr from-[#dfc384] to-[#947a57] p-0.5 shadow-lg shrink-0">
                 <div class="w-full h-full rounded-full bg-[#08090d] flex items-center justify-center text-[#eddab3] font-bold gw-type-body-md">
@@ -1151,10 +1151,13 @@
               <div class="flex justify-between"><span>状态端点</span><span class="text-slate-300">GET /api/asset-auth/status</span></div>
             </div>
 
-            <!-- QIN-483：底部操作区清空，保留行高以维持弹窗尺寸不变；关闭走右上角入口 -->
+            <!-- QIN-483：保留底部占位行；本地账户入口覆盖其左侧预留位置。 -->
             <div class="pt-2 border-t border-white/10 flex items-center justify-between" aria-hidden="true">
               <span class="h-8 w-full"></span>
             </div>
+            ${this.authState.auth_mode === 'local_account'
+              ? '<button id="accountRecoveryCodesRegenerate" type="button" class="hw-btn hw-btn-gold absolute bottom-0 left-0" onclick="HardwareDeck.confirmAccountRecoveryCodeRegeneration()">重新生成恢复码</button>'
+              : ''}
           </div>
         `;
       } else if (this.authState.auth_mode === 'local_account') {
@@ -1226,6 +1229,63 @@
         method: 'POST', credentials: 'same-origin',
         headers: {'Content-Type': 'application/json'}, body: JSON.stringify(payload)
       });
+    },
+
+    confirmAccountRecoveryCodeRegeneration: function() {
+      if (!window.confirm('确认重新生成恢复码？成功后所有旧恢复码将失效。')) return;
+      const dialog = document.getElementById('accountModalDialog');
+      if (!dialog) return;
+      dialog.innerHTML = `
+        <div class="space-y-3">
+          <div class="flex items-center justify-between pb-2 border-b border-white/10">
+            <h3 class="gw-type-section font-bold text-slate-100">重新生成恢复码</h3>
+            <button type="button" class="btn-hw-round text-slate-400 hover:text-white" onclick="HardwareDeck.closeModal('accountModal')" aria-label="关闭"><span class="btn-hw-round-inner"><i data-lucide="x" class="w-4 h-4"></i></span></button>
+          </div>
+          <p class="gw-type-body-sm text-amber-200" role="status">请输入当前账户密码。密码验证成功后，旧恢复码将全部失效，并仅显示一组新码。</p>
+          <form id="accountRecoveryCodeRegenerationForm" class="space-y-2" onsubmit="HardwareDeck.handleAccountRecoveryCodeRegeneration(event)">
+            <label class="block gw-type-body-sm text-slate-300" for="accountRecoveryCodeCurrentPassword">当前账户密码</label>
+            <input id="accountRecoveryCodeCurrentPassword" name="current_password" type="password" autocomplete="current-password" required maxlength="128" class="w-full bg-black/40 border border-white/20 rounded-lg p-2 text-slate-100" placeholder="输入当前账户密码">
+            <p id="accountRecoveryCodeRegenerationError" class="gw-type-body-sm text-red-300 hidden" role="alert"></p>
+            <div class="flex justify-between pt-2">
+              <button type="button" class="hw-btn" onclick="HardwareDeck.renderAccountModalContent()">取消</button>
+              <button type="submit" class="hw-btn hw-btn-gold">验证并重新生成</button>
+            </div>
+          </form>
+        </div>`;
+      const password = document.getElementById('accountRecoveryCodeCurrentPassword');
+      if (password) password.focus();
+      if (window.lucide) window.lucide.createIcons();
+    },
+
+    handleAccountRecoveryCodeRegeneration: async function(event) {
+      event.preventDefault();
+      const form = event.target;
+      const password = form.querySelector('#accountRecoveryCodeCurrentPassword');
+      const error = document.getElementById('accountRecoveryCodeRegenerationError');
+      const button = form.querySelector('button[type="submit"]');
+      if (!password || !error || !button) return;
+      error.classList.add('hidden');
+      button.disabled = true;
+      const currentPassword = password.value;
+      password.value = '';
+      try {
+        const response = await this.requestLocalAccount(
+          'regenerateLocalRecoveryCodes',
+          '/api/asset-auth/local/recovery-codes/regenerate',
+          {current_password: currentPassword}
+        );
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(data.detail?.message || '无法重新生成恢复码。');
+        if (!Array.isArray(data.recovery_codes) || data.recovery_codes.length === 0) {
+          throw new Error('服务器未返回新的恢复码。');
+        }
+        this.renderLocalRecoveryCodes(data.recovery_codes);
+      } catch (failure) {
+        error.textContent = failure.message || '无法连接本地恢复服务。';
+        error.classList.remove('hidden');
+      } finally {
+        button.disabled = false;
+      }
     },
 
     handleLocalAccountSubmit: async function(event) {

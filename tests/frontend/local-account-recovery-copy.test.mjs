@@ -84,6 +84,118 @@ test('设置页重新生成结果区提供复制全部按钮', () => {
   assert.match(settings, /copyRecoveryCodes\(document\.getElementById\('settingsRecoveryCodeList'\)/);
 });
 
+test('已登录本地账户管理显示恢复码入口，外部 IdP 不显示', () => {
+  const h = harness();
+  h.deck.authState.authenticated = true;
+  h.deck.authState.auth_mode = 'local_account';
+  h.deck.authState.principal = {username: 'owner', role: 'admin'};
+  h.deck.renderAccountModalContent();
+  assert.match(h.dialog.innerHTML, /id="accountRecoveryCodesRegenerate"[^>]*>重新生成恢复码/);
+
+  h.deck.authState.auth_mode = 'oidc';
+  h.deck.renderAccountModalContent();
+  assert.doesNotMatch(h.dialog.innerHTML, /accountRecoveryCodesRegenerate/);
+
+  h.deck.authState.auth_mode = 'local_account';
+  h.deck.authState.authenticated = false;
+  h.deck.authState.principal = null;
+  h.deck.renderAccountModalContent();
+  assert.doesNotMatch(h.dialog.innerHTML, /accountRecoveryCodesRegenerate/);
+});
+
+test('账户管理入口取消确认时不要求密码也不发送请求', () => {
+  const h = harness();
+  h.deck.authState.authenticated = true;
+  h.deck.authState.auth_mode = 'local_account';
+  h.deck.authState.principal = {username: 'owner', role: 'admin'};
+  h.deck.renderAccountModalContent();
+  const before = h.dialog.innerHTML;
+  let requestCount = 0;
+  h.deck.requestLocalAccount = () => { requestCount += 1; };
+  h.window.confirm = message => {
+    assert.match(message, /旧恢复码将失效/);
+    return false;
+  };
+
+  h.deck.confirmAccountRecoveryCodeRegeneration();
+  assert.equal(h.dialog.innerHTML, before);
+  assert.equal(requestCount, 0);
+});
+
+test('账户管理入口验证当前密码后显示新恢复码与一键复制', async () => {
+  const h = harness();
+  h.deck.authState.authenticated = true;
+  h.deck.authState.auth_mode = 'local_account';
+  h.deck.authState.principal = {username: 'owner', role: 'admin'};
+  h.deck.renderAccountModalContent();
+  h.window.confirm = () => true;
+  h.deck.confirmAccountRecoveryCodeRegeneration();
+
+  const password = element();
+  password.value = 'Test2026';
+  const submit = element();
+  const error = element();
+  const form = {
+    querySelector(selector) {
+      if (selector === '#accountRecoveryCodeCurrentPassword') return password;
+      if (selector === 'button[type="submit"]') return submit;
+      return null;
+    },
+  };
+  h.elements.set('accountRecoveryCodeRegenerationError', error);
+  const codes = Array.from({length: 8}, (_, index) => `NEW-RC-${index + 1}`);
+  const requests = [];
+  h.deck.requestLocalAccount = async (method, path, payload) => {
+    requests.push({method, path, payload});
+    return {ok: true, json: async () => ({recovery_codes: codes})};
+  };
+
+  await h.deck.handleAccountRecoveryCodeRegeneration({preventDefault() {}, target: form});
+  assert.equal(requests.length, 1);
+  assert.equal(requests[0].method, 'regenerateLocalRecoveryCodes');
+  assert.equal(requests[0].path, '/api/asset-auth/local/recovery-codes/regenerate');
+  assert.equal(requests[0].payload.current_password, 'Test2026');
+  assert.equal(password.value, '');
+  assert.equal(submit.disabled, false);
+  assert.match(h.dialog.innerHTML, /NEW-RC-1/);
+  assert.match(h.dialog.innerHTML, /id="localRecoveryCopyAll"[^>]*>复制全部/);
+  assert.match(h.dialog.innerHTML, /id="localRecoverySaved"/);
+});
+
+test('账户管理入口密码错误时保留表单并显示错误', async () => {
+  const h = harness();
+  h.deck.authState.authenticated = true;
+  h.deck.authState.auth_mode = 'local_account';
+  h.deck.authState.principal = {username: 'owner', role: 'admin'};
+  h.deck.renderAccountModalContent();
+  h.window.confirm = () => true;
+  h.deck.confirmAccountRecoveryCodeRegeneration();
+
+  const password = element();
+  password.value = 'Wrong2026';
+  const submit = element();
+  const error = element();
+  const form = {
+    querySelector(selector) {
+      if (selector === '#accountRecoveryCodeCurrentPassword') return password;
+      if (selector === 'button[type="submit"]') return submit;
+      return null;
+    },
+  };
+  h.elements.set('accountRecoveryCodeRegenerationError', error);
+  h.deck.requestLocalAccount = async () => ({
+    ok: false,
+    json: async () => ({detail: {message: '当前密码错误'}}),
+  });
+
+  await h.deck.handleAccountRecoveryCodeRegeneration({preventDefault() {}, target: form});
+  assert.equal(password.value, '');
+  assert.equal(submit.disabled, false);
+  assert.equal(error.textContent, '当前密码错误');
+  assert.equal(error.classList.contains('hidden'), false);
+  assert.match(h.dialog.innerHTML, /accountRecoveryCodeCurrentPassword/);
+});
+
 test('复制全部写入 8 条纯文本恢复码并显示已复制', async () => {
   const h = harness();
   const codes = Array.from({length: 8}, (_, index) => `RC-${index + 1}-TOKEN`);
