@@ -393,13 +393,15 @@ const REGISTRY_PAGE_SIZE = 100;
 // a time, instead of re-requesting every previously loaded card in parallel.
 const REGISTRY_STRUCTURE_QUERY_CHUNK_SIZE = 500;
 const REGISTRY_CACHE_MAX_SIZE = 20; // 【优化问题1】限制缓存大小，避免内存膨胀
-const REGISTRY_PREVIEW_ROOT_MARGIN = '320px 0px';
-const REGISTRY_PREVIEW_FALLBACK_LIMIT = 24;
+const REGISTRY_PREVIEW_ROOT_MARGIN = '0px 0px';
+const REGISTRY_PREVIEW_SCROLL_AHEAD_COUNT = 20;
+const REGISTRY_PREVIEW_SCROLL_PRELOAD_INTERVAL_MS = 120;
 const REGISTRY_PREVIEW_CONCURRENCY = 4;
+const registryPreviewImageCache = new Map();
 const REGISTRY_VIRTUAL_WINDOW_SIZE = 120;
 const REGISTRY_VIRTUAL_OVERSCAN_ROWS = 3;
 const REGISTRY_VIRTUAL_GAP = 10;
-const REGISTRY_PREVIEW_PLACEHOLDER = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==';
+const REGISTRY_PREVIEW_PLACEHOLDER = 'data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%221%22 height=%221%22/%3E';
 let registryPreviewQueue = [];
 let registryPreviewActive = 0;
 let registryPreviewQueueRevision = 0;
@@ -408,6 +410,8 @@ let registryPreviewFallbackCleanup = null;
 let registryVirtualScrollCleanup = null;
 let registryVirtualScrollFrame = 0;
 let registryVirtualState = {key:'', start:0, end:0, cols:1, totalHeight:0, rowTops:[], rowHeights:[], itemLayouts:[]};
+const registryVirtualHeightCache = new Map();
+let registryVirtualHeightCacheMode = '';
 let savedScrollPositions = {registry: 0, assets: 0, workflows: 0, prompts: 0, local: 0, canvas: 0}; // 【修复问题4】保存各个标签页的滚动位置
 let registryPreviewScheduleRevision = 0;
 let registryMasonryObserver = null;
@@ -5323,6 +5327,7 @@ function registryVirtualStateKey(items=[]){
         items[items.length - 1]?.id || '',
         registryCardSize,
         registrySimple ? 1 : 0,
+        registryAspect,
     ].join(':');
 }
 function registryVirtualCardHeight(item={}, cardWidth=176){
@@ -5342,34 +5347,159 @@ function registryVirtualCardHeight(item={}, cardWidth=176){
     const bodyHeight = registrySimple ? 0 : 92;
     return Math.max(180, Math.min(720, Math.ceil(mediaHeight + bodyHeight + 24)));
 }
+function registryVirtualHeightCacheKey(item, index=0, cacheMode=''){
+    item = item || {};
+    const width = Number(item?.width || item?.metadata?.width || 0);
+    const height = Number(item?.height || item?.metadata?.height || 0);
+    return `${cacheMode}:${String(item?.id || index)}:${String(item?.kind || item?.type || '')}:${width}x${height}:${String(item?.name || '')}`;
+}
+function registryGridColumnCount(template=''){
+    const value = String(template || '').trim();
+    const repeat = value.match(/repeat\(\s*([^,]+)\s*,/i);
+    if(repeat){
+        const count = Number(repeat[1]);
+        return Number.isInteger(count) && count > 0 ? count : 0;
+    }
+    let depth = 0;
+    let columns = 0;
+    let hasTrack = false;
+    for(const char of value){
+        if(char === '(') depth += 1;
+        else if(char === ')') depth = Math.max(0, depth - 1);
+        if(/\s/.test(char) && depth === 0){
+            if(hasTrack){ columns += 1; hasTrack = false; }
+            continue;
+        }
+        hasTrack = true;
+    }
+    if(hasTrack) columns += 1;
+    return columns;
+}
+function registryVirtualMeasureCardHeights(items=[], options){
+    const {contentWidth=0, cardWidth=0, cols=1, columnGap=REGISTRY_VIRTUAL_GAP, rowGap=REGISTRY_VIRTUAL_GAP, rowHeight=8, cacheMode=''} = options || {};
+    if(!items.length || typeof document === 'undefined' || !document.body || typeof renderRegistryCard !== 'function') return;
+    const missing = items.filter((item,index) => !registryVirtualHeightCache.has(registryVirtualHeightCacheKey(item,index,cacheMode)));
+    if(!missing.length) return;
+    const missingById = new Map(missing.map((item,index) => [String(item?.id || index), {item,index}]));
+    const host = document.createElement('div');
+    host.style.cssText = `position:fixed;left:-100000px;top:0;width:${contentWidth}px;visibility:hidden;pointer-events:none;contain:layout style`;
+    const content = document.createElement('section');
+    content.className = `asset-panel asset-content registry-content registry-layout-grid registry-aspect-${registryAspect} ${registrySimple ? 'registry-simple' : ''}`;
+    content.style.cssText = `width:${contentWidth}px;--registry-card-size:${cardWidth}px`;
+    const grid = document.createElement('div');
+    grid.className = 'asset-grid registry-grid';
+    grid.style.gridTemplateColumns = `repeat(${cols}, minmax(0px, 1fr))`;
+    grid.style.gridAutoRows = `${rowHeight}px`;
+    grid.style.columnGap = `${columnGap}px`;
+    grid.style.rowGap = `${rowGap}px`;
+    grid.innerHTML = missing.map(renderRegistryCard).join('');
+    content.appendChild(grid);
+    host.appendChild(content);
+    document.body.appendChild(host);
+    grid.querySelectorAll(':scope > .registry-card[data-registry-card]').forEach(card => {
+        const id = String(card.dataset.registryCard || '');
+        const entry = missingById.get(id);
+        const height = Number(card.getBoundingClientRect().height || 0);
+        if(entry && height > 0) registryVirtualHeightCache.set(registryVirtualHeightCacheKey(entry.item,entry.index,cacheMode), height);
+    });
+    host.remove();
+}
 function registryVirtualLayout(items=[], width=0){
-    const contentWidth = Math.max(320, Number(width) || root.querySelector('.registry-content')?.clientWidth || window.innerWidth || 1024);
-    const gap = REGISTRY_VIRTUAL_GAP;
+    const grid = root.querySelector('.registry-grid');
+    const contentWidth = Math.max(320, Number(width) || grid?.clientWidth || root.querySelector('.registry-content')?.clientWidth || window.innerWidth || 1024);
+    const gridStyle = grid ? getComputedStyle(grid) : {};
+    const columnGap = Math.max(0, Number.parseFloat(gridStyle.columnGap || gridStyle.gap) || REGISTRY_VIRTUAL_GAP);
+    const rowGap = Math.max(0, Number.parseFloat(gridStyle.rowGap || gridStyle.gap) || REGISTRY_VIRTUAL_GAP);
+    const rowHeight = Math.max(1, Number.parseFloat(gridStyle.gridAutoRows) || 8);
     const preferred = Math.max(REGISTRY_CARD_SIZE.min, Math.min(REGISTRY_CARD_SIZE.max, Number(registryCardSize) || REGISTRY_CARD_SIZE.fallback));
-    const cols = Math.max(1, Math.floor((contentWidth + gap) / (preferred + gap)));
-    const cardWidth = Math.max(96, (contentWidth - gap * Math.max(0, cols - 1)) / cols);
-    const rowHeights = [];
-    items.forEach((item, index) => {
-        const row = Math.floor(index / cols);
-        rowHeights[row] = Math.max(rowHeights[row] || 0, registryVirtualCardHeight(item, cardWidth));
+    const cssColumns = grid ? registryGridColumnCount(gridStyle.gridTemplateColumns) : 0;
+    const cols = Math.max(1, cssColumns || Math.floor((contentWidth + columnGap) / (preferred + columnGap)));
+    const cardWidth = Math.max(96, (contentWidth - columnGap * Math.max(0, cols - 1)) / cols);
+    const pitch = rowHeight + rowGap;
+    const cacheMode = `${cardWidth.toFixed(2)}:${registryAspect}:${registrySimple ? 1 : 0}`;
+    if(registryVirtualHeightCacheMode !== cacheMode){
+        registryVirtualHeightCache.clear();
+        registryVirtualHeightCacheMode = cacheMode;
+    }
+    const measuredDomCards = grid?.querySelectorAll?.(':scope > .registry-card[data-registry-card]') || [];
+    const itemById = new Map(items.map((item,index) => [String(item?.id || index), {item,index}]));
+    measuredDomCards.forEach(card => {
+        const id = String(card.dataset.registryCard || '');
+        const entry = itemById.get(id);
+        if(!entry) return;
+        const thumb = card.querySelector?.('.asset-thumb');
+        const expectedAspect = Number(entry.item?.width || entry.item?.metadata?.width || 0) > 0 && Number(entry.item?.height || entry.item?.metadata?.height || 0) > 0
+            ? (Number(entry.item?.width || entry.item?.metadata?.width || 0) / Number(entry.item?.height || entry.item?.metadata?.height || 1)).toFixed(6)
+            : '';
+        const actualAspect = thumb?.style?.getPropertyValue?.('--asset-media-aspect') || '';
+        const measuredWidth = Number(card.getBoundingClientRect().width || 0);
+        const height = Number(card.getBoundingClientRect().height || 0);
+        if(thumb && actualAspect !== expectedAspect) return;
+        if(measuredWidth > 0 && Math.abs(measuredWidth - cardWidth) > 1) return;
+        if(id && height > 0) registryVirtualHeightCache.set(registryVirtualHeightCacheKey(entry.item,entry.index,cacheMode), height);
     });
-    const rowTops = [];
-    let top = 0;
-    rowHeights.forEach(height => {
-        rowTops.push(top);
-        top += height + gap;
-    });
-    const totalHeight = Math.max(0, top - (rowHeights.length ? gap : 0));
-    const itemLayouts = items.map((item, index) => {
-        const row = Math.floor(index / cols);
-        return {
-            left:(index % cols) * (cardWidth + gap),
-            top:rowTops[row] || 0,
+    registryVirtualMeasureCardHeights(items, {contentWidth, cardWidth, cols, columnGap, rowGap, rowHeight, cacheMode});
+    const occupiedRows = [];
+    const itemLayouts = [];
+    let cursorRow = 0;
+    let cursorColumn = 0;
+    let totalRows = 0;
+    items.forEach((item,index) => {
+        const cachedHeight = registryVirtualHeightCache.get(registryVirtualHeightCacheKey(item,index,cacheMode));
+        const height = Math.max(1, Number(cachedHeight || registryVirtualCardHeight(item, cardWidth)) || 1);
+        const span = Math.max(1, Math.ceil((height + rowGap) / pitch));
+        let row = cursorRow;
+        let column = cursorColumn;
+        while(true){
+            if(column >= cols){
+                row += 1;
+                column = 0;
+                continue;
+            }
+            let fits = true;
+            for(let occupiedRow = row; occupiedRow < row + span; occupiedRow += 1){
+                if(occupiedRows[occupiedRow]?.has(column)){
+                    fits = false;
+                    break;
+                }
+            }
+            if(fits) break;
+            column += 1;
+        }
+        for(let occupiedRow = row; occupiedRow < row + span; occupiedRow += 1){
+            if(!occupiedRows[occupiedRow]) occupiedRows[occupiedRow] = new Set();
+            occupiedRows[occupiedRow].add(column);
+        }
+        itemLayouts.push({
+            left:column * (cardWidth + columnGap),
+            top:row * pitch,
             width:cardWidth,
-            height:rowHeights[row] || registryVirtualCardHeight(item, cardWidth),
-        };
+            height,
+            column,
+            row,
+            span,
+        });
+        totalRows = Math.max(totalRows, row + span);
+        cursorRow = row;
+        cursorColumn = column + 1;
+        if(cursorColumn >= cols){
+            cursorRow += 1;
+            cursorColumn = 0;
+        }
     });
-    return {cols, cardWidth, rowHeights, rowTops, totalHeight, itemLayouts};
+    if(!items.length){
+        registryVirtualHeightCache.clear();
+    }
+    const rowTops = itemLayouts.map(position => position.top);
+    const rowHeights = itemLayouts.map(position => position.height);
+    const itemMaxBottoms = [];
+    let maxBottom = 0;
+    itemLayouts.forEach(position => {
+        maxBottom = Math.max(maxBottom, position.top + position.height);
+        itemMaxBottoms.push(maxBottom);
+    });
+    const totalHeight = Math.max(0, totalRows * rowHeight + Math.max(0, totalRows - 1) * rowGap);
+    return {cols, cardWidth, width:contentWidth, rowHeight, rowGap, rowHeights, rowTops, itemMaxBottoms, totalHeight, itemLayouts};
 }
 function registryVirtualRowAt(layout, target, fallback=0){
     const rows = layout.rowTops || [];
@@ -5385,19 +5515,31 @@ function registryVirtualRowAt(layout, target, fallback=0){
 function registryVirtualRange(items, layout, scrollTop=0, viewportHeight=650){
     if(!items.length) return {start:0, end:0};
     const overscan = REGISTRY_VIRTUAL_OVERSCAN_ROWS;
-    const firstRow = Math.max(0, registryVirtualRowAt(layout, Math.max(0, scrollTop) - overscan * 260));
-    const lastRow = Math.min(
-        Math.max(0, layout.rowHeights.length - 1),
-        registryVirtualRowAt(layout, Math.max(0, scrollTop) + Math.max(320, viewportHeight) + overscan * 260),
-    );
-    let start = Math.min(items.length, firstRow * layout.cols);
-    let end = Math.min(items.length, (lastRow + 1) * layout.cols);
+    const startTarget = Math.max(0, scrollTop) - overscan * 260;
+    const endTarget = Math.max(0, scrollTop) + Math.max(320, viewportHeight) + overscan * 260;
+    const itemMaxBottoms = layout.itemMaxBottoms || [];
+    let start = 0;
+    if(itemMaxBottoms.length === items.length){
+        let low = 0;
+        let high = items.length;
+        while(low < high){
+            const middle = Math.floor((low + high) / 2);
+            if(itemMaxBottoms[middle] < startTarget) low = middle + 1;
+            else high = middle;
+        }
+        start = Math.min(items.length - 1, low);
+    } else {
+        const firstRow = Math.max(0, registryVirtualRowAt(layout, startTarget));
+        start = Math.min(items.length - 1, firstRow * layout.cols);
+    }
+    const lastItem = Math.min(items.length - 1, registryVirtualRowAt(layout, endTarget));
+    let end = Math.min(items.length, Math.max(start + 1, lastItem + 1));
     const focusId = String(registryFocusRestoreId || '');
     if(focusId){
         const focusIndex = items.findIndex(item => String(item?.id || '') === focusId);
         if(focusIndex >= 0){
-            start = Math.min(start, Math.floor(focusIndex / layout.cols) * layout.cols);
-            end = Math.max(end, Math.min(items.length, (Math.floor(focusIndex / layout.cols) + 1) * layout.cols));
+            start = Math.min(start, focusIndex);
+            end = Math.max(end, focusIndex + 1);
         }
     }
     return {start, end};
@@ -5420,12 +5562,26 @@ function registryVirtualGridMarkup(items=[], layout, range={start:0,end:0}){
         <div class="registry-virtual-spacer" data-registry-virtual-spacer="bottom" style="height:${after.toFixed(2)}px" aria-hidden="true"></div>
     </div>`;
 }
+function restoreRegistryVirtualScroll(scrollRoot, previousScrollTop=0, anchorId='', anchorOffset=0){
+    if(!scrollRoot) return;
+    scrollRoot.scrollTop = Math.max(0, Number(previousScrollTop) || 0);
+    if(!anchorId) return;
+    const anchor = [...(scrollRoot.querySelectorAll?.('[data-registry-card]') || [])]
+        .find(card => String(card?.dataset?.registryCard || '') === String(anchorId));
+    if(!anchor) return;
+    const scrollTop = scrollRoot.getBoundingClientRect?.().top || 0;
+    const anchorTop = (anchor.getBoundingClientRect?.().top || 0) - scrollTop;
+    scrollRoot.scrollTop = Math.max(0, scrollRoot.scrollTop + anchorTop - (Number(anchorOffset) || 0));
+}
 function renderRegistryVirtualGrid(items=[], board=null){
-    const layout = registryVirtualLayout(items);
-    const range = registryVirtualRange(items, layout, 0, 650);
+    const scrollRoot = root.querySelector('.registry-assets-scroll');
+    const gridWidth = scrollRoot?.querySelector?.('.registry-grid')?.clientWidth || scrollRoot?.clientWidth || 0;
+    const layout = registryVirtualLayout(items, gridWidth);
+    const scrollTop = scrollRoot ? scrollRoot.scrollTop : (savedScrollPositions.registry || 0);
+    const range = registryVirtualRange(items, layout, scrollTop, scrollRoot?.clientHeight || 650);
     registryVirtualState = {
         ...layout,
-        width:0,
+        width:layout.width,
         key:registryVirtualStateKey(items),
         start:range.start,
         end:range.end,
@@ -5444,9 +5600,13 @@ function updateRegistryVirtualWindow(force=false){
     const {board, items} = registryVirtualItemsForActiveBoard();
     if(!registryVirtualizationEnabled(items, board)) return false;
     const width = Math.max(320, grid.clientWidth || scrollRoot.clientWidth || root.querySelector('.registry-content')?.clientWidth || window.innerWidth || 1024);
-    const layout = registryVirtualLayout(items, width);
-    const range = registryVirtualRange(items, layout, scrollRoot.scrollTop, scrollRoot.clientHeight || 650);
     const key = registryVirtualStateKey(items);
+    const canReuseLayout = !force
+        && registryVirtualState.key === key
+        && registryVirtualState.itemLayouts?.length === items.length
+        && Math.abs(Number(registryVirtualState.width || 0) - width) < 1;
+    const layout = canReuseLayout ? registryVirtualState : registryVirtualLayout(items, width);
+    const range = registryVirtualRange(items, layout, scrollRoot.scrollTop, scrollRoot.clientHeight || 650);
     const sameWindow = !force
         && registryVirtualState.key === key
         && registryVirtualState.start === range.start
@@ -5456,8 +5616,10 @@ function updateRegistryVirtualWindow(force=false){
         && Math.abs(Number(registryVirtualState.totalHeight || 0) - layout.totalHeight) < 1;
     if(sameWindow) return false;
     const savedScrollTop = scrollRoot.scrollTop;
+    const registryPreviewCache = captureRegistryPreviewImages();
     grid.style.setProperty('--registry-virtual-height', `${layout.totalHeight.toFixed(2)}px`);
     grid.innerHTML = registryVirtualGridMarkup(items, layout, range).replace(/^<div class="registry-grid registry-grid-virtualized"[^>]*>/, '').replace(/<\/div>\s*$/, '');
+    restoreRegistryPreviewImages(registryPreviewCache);
     registryVirtualState = {
         ...layout,
         width,
@@ -5516,6 +5678,16 @@ function renderRegistryPagination(){
     // 旧版“加载全部结果后可按相似素材堆叠”入口已移除；保留无障碍
     // sentinel 标记供旧浏览器回退逻辑识别，用户无需点击分页控件。
     return `<div class="registry-infinite-sentinel" aria-live="polite" aria-busy="${registryPageLoading}">${registryPageLoading ? '<i data-lucide="loader-2"></i><span>正在加载更多素材…</span>' : '<span>继续下滑自动加载</span>'}<button type="button" data-registry-load-more hidden tabindex="-1" aria-hidden="true"></button></div>`;
+}
+function syncRegistryVaultFooter(){
+    if(activeTab !== 'registry') return;
+    const footer = root.querySelector('.registry-vault-footer');
+    const spans = Array.from(footer?.querySelectorAll('span') || []);
+    if(spans.length < 3) return;
+    const total = spans[0].querySelector('strong');
+    if(total) total.textContent = registryTotalKnown ? Number(registryTotal || 0).toLocaleString('zh-CN') : '统计中';
+    spans[1].textContent = registryLoading ? '正在读取' : `已加载 ${registryAssets.length} 项`;
+    spans[2].textContent = registryPageHasMore ? '下滑加载更多' : `当前显示 ${registryVisibleAssets().length} 项`;
 }
 function selectedRegistryAsset(){
     return registryAssets.find(item => item.id === selectedRegistryAssetId) || registryDetail || null;
@@ -5817,6 +5989,7 @@ async function loadMoreRegistryAssets(){
         }
         if(appendTarget && !structurePresentationChanged){
             // Fast path has already updated the existing sentinel and cards.
+            syncRegistryVaultFooter();
         } else {
             render();
             requestAnimationFrame(() => {
@@ -7124,27 +7297,57 @@ function activateRegistryPreviewImage(image){
 }
 function scheduleRegistryPreviewFallback(scrollRoot){
     let frame = 0;
-    const activateVisible = () => {
-        frame = 0;
+    let preloadAhead = false;
+    let lastScrollPreloadAt = Number.NEGATIVE_INFINITY;
+    const activateVisible = (preloadOutsideViewport=false) => {
         const rootRect = scrollRoot.getBoundingClientRect();
-        const margin = 320;
-        let remaining = REGISTRY_PREVIEW_FALLBACK_LIMIT;
-        root.querySelectorAll('img[data-registry-preview-src]').forEach(image => {
-            if(remaining <= 0) return;
-            const rect = image.getBoundingClientRect();
-            const visible = rect.bottom >= rootRect.top - margin && rect.top <= rootRect.bottom + margin
-                && rect.right >= rootRect.left && rect.left <= rootRect.right;
-            if(visible && activateRegistryPreviewImage(image)) remaining -= 1;
+        const previews = [...root.querySelectorAll('img[data-registry-preview-src]')]
+            .filter(image => image.dataset.registryPreviewQueued !== 'true')
+            .map(image => ({
+                image,
+                rect:image.getBoundingClientRect(),
+            }))
+            .filter(({rect}) => rect.right >= rootRect.left && rect.left <= rootRect.right);
+        previews.forEach(({image,rect}) => {
+            const visible = rect.bottom >= rootRect.top && rect.top <= rootRect.bottom;
+            if(visible) activateRegistryPreviewImage(image);
+        });
+        if(!preloadOutsideViewport) return;
+        previews.filter(({rect}) => rect.top >= rootRect.bottom)
+            .sort((a,b) => a.rect.top - b.rect.top || a.rect.left - b.rect.left)
+            .slice(0, REGISTRY_PREVIEW_SCROLL_AHEAD_COUNT)
+            .forEach(({image}) => activateRegistryPreviewImage(image));
+    };
+    const scheduleVisible = (preloadOutsideViewport=false) => {
+        if(preloadOutsideViewport) preloadAhead = true;
+        if(frame) return;
+        frame = requestAnimationFrame(() => {
+            frame = 0;
+            const shouldPreloadAhead = preloadAhead;
+            preloadAhead = false;
+            activateVisible(shouldPreloadAhead);
         });
     };
-    const onScroll = () => {
-        if(frame) return;
-        frame = requestAnimationFrame(activateVisible);
+    const onScroll = () => scheduleVisible();
+    const onWheel = event => {
+        if(Number(event.deltaY || 0) <= 0){
+            preloadAhead = false;
+            lastScrollPreloadAt = Number.NEGATIVE_INFINITY;
+            scheduleVisible();
+            return;
+        }
+        const currentTime = performance.now();
+        if(currentTime - lastScrollPreloadAt < REGISTRY_PREVIEW_SCROLL_PRELOAD_INTERVAL_MS) return;
+        lastScrollPreloadAt = currentTime;
+        scheduleVisible(true);
     };
     scrollRoot.addEventListener('scroll', onScroll, {passive:true});
+    scrollRoot.addEventListener('wheel', onWheel, {passive:true});
     registryPreviewFallbackCleanup = () => {
         scrollRoot.removeEventListener('scroll', onScroll);
+        scrollRoot.removeEventListener('wheel', onWheel);
         if(frame) cancelAnimationFrame(frame);
+        preloadAhead = false;
     };
     activateVisible();
 }
@@ -7185,13 +7388,11 @@ function registryPreviewCacheKey(image){
     return imageIndex < 0 ? '' : `${card.dataset.registryCard || ''}:${imageIndex}`;
 }
 function captureRegistryPreviewImages(){
-    const cache = new Map();
+    const cache = registryPreviewImageCache;
     root?.querySelectorAll('img[data-registry-preview-loaded="true"]').forEach(image => {
         const key = registryPreviewCacheKey(image);
         if(!key) return;
-        const entries = cache.get(key) || [];
-        entries.push({image, source:image.currentSrc || image.src});
-        cache.set(key, entries);
+        cache.set(key, {image, source:image.currentSrc || image.src});
     });
     return cache;
 }
@@ -7199,15 +7400,17 @@ function restoreRegistryPreviewImages(cache){
     if(!cache?.size) return;
     root?.querySelectorAll('img[data-registry-preview-src]').forEach(image => {
         const key = registryPreviewCacheKey(image);
-        const entries = cache.get(key) || [];
+        const entry = cache.get(key);
         const source = String(image.dataset.registryPreviewSrc || '');
         if(!key || !source) return;
         let expectedSource = '';
         try { expectedSource = new URL(source, document.baseURI).href; } catch(_) { return; }
-        const index = entries.findIndex(entry => !entry.image.isConnected && entry.source === expectedSource);
-        if(index < 0) return;
-        const [loaded] = entries.splice(index, 1);
-        image.replaceWith(loaded.image);
+        if(!entry || entry.image.isConnected) return;
+        if(entry.source !== expectedSource){
+            cache.delete(key);
+            return;
+        }
+        image.replaceWith(entry.image);
     });
 }
 // ===== MVP1-T5 治理建议清单视图（只建议 + 逐条确认，系统不改源文件、不自动删除） =====
@@ -7328,13 +7531,13 @@ function render(){
     };
     // 【修复问题4】在重新渲染前，保存当前标签页的滚动位置
     const contentScroll = document.querySelector('.content-scroll');
-    if(contentScroll && contentScroll.scrollTop > 0){
-        if(activeTab === 'registry') savedScrollPositions.registry = contentScroll.scrollTop;
-        else if(activeTab === 'assets') savedScrollPositions.assets = contentScroll.scrollTop;
-        else if(activeTab === 'workflows') savedScrollPositions.workflows = contentScroll.scrollTop;
-        else if(activeTab === 'prompts') savedScrollPositions.prompts = contentScroll.scrollTop;
-        else if(activeTab === 'local') savedScrollPositions.local = contentScroll.scrollTop;
-        else if(activeTab === 'canvas-assets') savedScrollPositions.canvas = contentScroll.scrollTop;
+    if(contentScroll){
+        if(activeTab === 'registry' || assetBoardById(activeTab)?.system === false) savedScrollPositions.registry = contentScroll.scrollTop;
+        else if(contentScroll.scrollTop > 0 && activeTab === 'assets') savedScrollPositions.assets = contentScroll.scrollTop;
+        else if(contentScroll.scrollTop > 0 && activeTab === 'workflows') savedScrollPositions.workflows = contentScroll.scrollTop;
+        else if(contentScroll.scrollTop > 0 && activeTab === 'prompts') savedScrollPositions.prompts = contentScroll.scrollTop;
+        else if(contentScroll.scrollTop > 0 && activeTab === 'local') savedScrollPositions.local = contentScroll.scrollTop;
+        else if(contentScroll.scrollTop > 0 && activeTab === 'canvas-assets') savedScrollPositions.canvas = contentScroll.scrollTop;
     }
     // 【修复问题4-增强】按卡片身份锚定滚动：优先聚焦卡片，其次视口内第一张卡片；找不到时仍走序号回退
     let registryScrollAnchorId = '';
@@ -7379,8 +7582,17 @@ function render(){
     }
     if(activeTab === 'registry' || customLibraryActive) renderRegistryFreshNotice();
     restoreRegistryPreviewImages(registryPreviewCache);
+    if(activeTab === 'registry' || customLibraryActive){
+        restoreRegistryVirtualScroll(
+            root.querySelector('.registry-assets-scroll'),
+            contentScroll?.scrollTop ?? savedScrollPositions.registry,
+            registryScrollAnchorId,
+            registryScrollAnchorOffset,
+        );
+    }
     refreshIcons();
     scheduleRegistryMasonryLayout();
+    scheduleRegistryVirtualWindow();
     if(scrollState.length){
         requestAnimationFrame(() => {
             document.querySelectorAll('.nav-scroll,.content-scroll,.detail-scroll').forEach((el, index) => {

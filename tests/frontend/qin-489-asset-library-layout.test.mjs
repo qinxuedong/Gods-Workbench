@@ -8,6 +8,21 @@ const shell = readFileSync(new URL('../../web/js/controllers/assets-controller.j
 const manager = readFileSync(new URL('../../web/js/modules/asset-manager.js', import.meta.url), 'utf8');
 const vaultCss = readFileSync(new URL('../../web/css/pages/asset-vault.css', import.meta.url), 'utf8');
 
+function functionSource(name){
+    const start = manager.indexOf(`function ${name}(`);
+    assert.ok(start >= 0, `缺少函数：${name}`);
+    const open = manager.indexOf('{', start);
+    let depth = 0;
+    for(let index = open; index < manager.length; index += 1){
+        if(manager[index] === '{') depth += 1;
+        else if(manager[index] === '}'){
+            depth -= 1;
+            if(depth === 0) return manager.slice(start, index + 1);
+        }
+    }
+    assert.fail(`函数未闭合：${name}`);
+}
+
 test('AC1: 资源库左侧导航承载资产看板与新建资源入口', () => {
     assert.match(html, /<span>资源库<\/span>/);
     assert.match(html, /id="assetCategories" role="tablist" aria-label="资源库导航"/);
@@ -103,4 +118,335 @@ test('资产列表将本地 indexed 素材映射为媒体 URL 并兼容 size_byt
         size_bytes: 7,
     });
     assert.equal(remote.url, '');
+});
+
+test('QIN-504 AC1: 虚拟网格渲染后重新绑定滚动窗口', () => {
+    const renderStart = manager.indexOf('function render(){');
+    const renderEnd = manager.indexOf('\nfunction updateSearchQueryFromInput', renderStart);
+    assert.ok(renderStart >= 0 && renderEnd > renderStart);
+    const render = manager.slice(renderStart, renderEnd);
+    assert.ok(render.indexOf('scheduleRegistryVirtualWindow();') > render.indexOf('scheduleRegistryMasonryLayout();'));
+});
+
+test('QIN-504 AC2: 虚拟卡片列数沿用实际 CSS 网格列数', () => {
+    const columnSource = functionSource('registryGridColumnCount');
+    const heightKeySource = functionSource('registryVirtualHeightCacheKey');
+    const measureSource = functionSource('registryVirtualMeasureCardHeights');
+    const layoutSource = functionSource('registryVirtualLayout');
+    const grid = {clientWidth:1750,querySelectorAll:() => []};
+    let template = '241.42px 241.42px 241.42px 241.42px 241.42px 241.42px 241.42px';
+    const buildLayout = new Function(
+        'root','getComputedStyle','REGISTRY_VIRTUAL_GAP','REGISTRY_CARD_SIZE','registryCardSize','registrySimple','registryAspect','registryVirtualCardHeight','registryVirtualHeightCache','registryVirtualHeightCacheMode',
+        `${columnSource}\n${heightKeySource}\n${measureSource}\n${layoutSource}\nreturn registryVirtualLayout;`,
+    );
+    const layout = buildLayout(
+        {querySelector:selector => selector === '.registry-grid' ? grid : null},
+        () => ({gridTemplateColumns:template,columnGap:'10px',rowGap:'10px',gridAutoRows:'8px'}),
+        10,
+        {min:96,max:480,fallback:176},
+        176,
+        false,
+        'square',
+        () => 300,
+        new Map(),
+        '',
+    );
+    const regular = layout([{id:'a'},{id:'b'}]);
+    assert.equal(regular.cols, 7);
+    assert.ok(Math.abs(regular.cardWidth - (1750 - 60) / 7) < 0.01);
+    template = 'repeat(7, minmax(0px, 1fr))';
+    assert.equal(layout([{id:'a'},{id:'b'}]).cols, 7);
+});
+
+test('QIN-504 AC6: 瀑布流进入虚拟窗口后保留逐列高度差并完整覆盖可视区', () => {
+    const columnSource = functionSource('registryGridColumnCount');
+    const heightKeySource = functionSource('registryVirtualHeightCacheKey');
+    const measureSource = functionSource('registryVirtualMeasureCardHeights');
+    const layoutSource = functionSource('registryVirtualLayout');
+    const rowSource = functionSource('registryVirtualRowAt');
+    const rangeSource = functionSource('registryVirtualRange');
+    const grid = {clientWidth:1750,querySelectorAll:() => []};
+    const buildVirtualLayout = new Function(
+        'root','getComputedStyle','REGISTRY_VIRTUAL_GAP','REGISTRY_CARD_SIZE','registryCardSize','registrySimple','registryAspect','registryVirtualCardHeight','registryVirtualHeightCache','registryVirtualHeightCacheMode','REGISTRY_VIRTUAL_OVERSCAN_ROWS','registryFocusRestoreId',
+        `${columnSource}\n${heightKeySource}\n${measureSource}\n${layoutSource}\n${rowSource}\n${rangeSource}\nreturn {registryVirtualLayout, registryVirtualRange};`,
+    );
+    const {registryVirtualLayout, registryVirtualRange} = buildVirtualLayout(
+        {querySelector:selector => selector === '.registry-grid' ? grid : null},
+        () => ({gridTemplateColumns:'repeat(7, minmax(0px, 1fr))',columnGap:'10px',rowGap:'10px',gridAutoRows:'8px'}),
+        10,
+        {min:96,max:480,fallback:176},
+        176,
+        false,
+        'original',
+        item => item.virtualHeight,
+        new Map(),
+        '',
+        3,
+        '',
+    );
+    const heights = [500,100,200,300,400,150,250];
+    const items = Array.from({length:301}, (_,index) => ({
+        id:`asset-${index}`,
+        virtualHeight:heights[index % heights.length],
+    }));
+    const beforeAppend = registryVirtualLayout(items.slice(0,100));
+    const layout = registryVirtualLayout(items);
+
+    assert.equal(layout.cols, 7);
+    assert.deepEqual(layout.itemLayouts.slice(0, 7).map(position => position.top), Array(7).fill(0));
+    assert.deepEqual(layout.itemLayouts.slice(0, 7).map(position => position.column), [0,1,2,3,4,5,6]);
+    assert.ok(layout.itemLayouts.slice(7, 21).some((position,index,positions) => index > 0 && position.row !== positions[index - 1].row), '不同高度素材按 CSS 行优先占位形成错落，而不是重新按最短列打乱顺序');
+    assert.ok(layout.rowTops.every((top,index,tops) => index === 0 || top >= tops[index - 1]), '按素材顺序的 top 位置保持单调，供二分窗口定位');
+    assert.deepEqual(
+        layout.itemLayouts.slice(0,100).map(({left,top,span}) => [left,top,span]),
+        beforeAppend.itemLayouts.map(({left,top,span}) => [left,top,span]),
+        '加载第二页时，已有卡片位置不应被重新打乱',
+    );
+
+    const scrollTop = 3000;
+    const viewportHeight = 500;
+    const range = registryVirtualRange(items, layout, scrollTop, viewportHeight);
+    const visibleStart = scrollTop - 3 * 260;
+    const visibleEnd = scrollTop + viewportHeight + 3 * 260;
+    assert.ok(range.start > 0);
+    assert.ok(range.end < items.length);
+    layout.itemLayouts.forEach((position,index) => {
+        if(position.top + position.height >= visibleStart && position.top <= visibleEnd){
+            assert.ok(index >= range.start && index < range.end, `可视区中的 ${items[index].id} 应在虚拟窗口中`);
+        }
+    });
+});
+
+test('QIN-504 AC6: 现有卡片按 DOM 实测高度续接 CSS 瀑布行', () => {
+    const columnSource = functionSource('registryGridColumnCount');
+    const heightKeySource = functionSource('registryVirtualHeightCacheKey');
+    const measureSource = functionSource('registryVirtualMeasureCardHeights');
+    const layoutSource = functionSource('registryVirtualLayout');
+    const measuredCards = [
+        {dataset:{registryCard:'asset-a'},getBoundingClientRect:() => ({height:501})},
+        {dataset:{registryCard:'asset-b'},getBoundingClientRect:() => ({height:101})},
+    ];
+    const grid = {clientWidth:1750,querySelectorAll:() => measuredCards};
+    const buildLayout = new Function(
+        'root','getComputedStyle','REGISTRY_VIRTUAL_GAP','REGISTRY_CARD_SIZE','registryCardSize','registrySimple','registryAspect','registryVirtualCardHeight','registryVirtualHeightCache','registryVirtualHeightCacheMode',
+        `${columnSource}\n${heightKeySource}\n${measureSource}\n${layoutSource}\nreturn registryVirtualLayout;`,
+    );
+    const layout = buildLayout(
+        {querySelector:selector => selector === '.registry-grid' ? grid : null},
+        () => ({gridTemplateColumns:'repeat(7, minmax(0px, 1fr))',columnGap:'10px',rowGap:'10px',gridAutoRows:'8px'}),
+        10,
+        {min:96,max:480,fallback:176},
+        176,
+        false,
+        'original',
+        item => item.virtualHeight,
+        new Map(),
+        '',
+    )([
+        {id:'asset-a',virtualHeight:150},
+        {id:'asset-b',virtualHeight:500},
+        {id:'asset-c',virtualHeight:220},
+    ]);
+
+    assert.equal(layout.itemLayouts[0].height, 501);
+    assert.equal(layout.itemLayouts[1].height, 101);
+    const firstSpan = layout.itemLayouts[0].span;
+    const previousSpanHeight = Math.max(0, firstSpan - 1) * layout.rowHeight + Math.max(0, firstSpan - 2) * layout.rowGap;
+    const assignedSpanHeight = firstSpan * layout.rowHeight + (firstSpan - 1) * layout.rowGap;
+    assert.ok(previousSpanHeight < layout.itemLayouts[0].height && assignedSpanHeight >= layout.itemLayouts[0].height);
+});
+
+test('QIN-504 AC6: 首次虚拟渲染沿用已有滚动窗口，避免回顶后重复绘制', () => {
+    const renderSource = functionSource('renderRegistryVirtualGrid');
+    let measuredWidth = 0;
+    const grid = {clientWidth:1720};
+    const scrollRoot = {clientWidth:1750,clientHeight:700,scrollTop:1234,querySelector:selector => selector === '.registry-grid' ? grid : null};
+    const root = {querySelector:selector => selector === '.registry-assets-scroll' ? scrollRoot : null};
+    const layout = {cols:7,width:1720,totalHeight:9000,itemLayouts:Array.from({length:301},(_,index)=>({top:index*18,left:0,width:241,height:200}))};
+    let rangeArgs = null;
+    const buildRenderer = new Function(
+        'root','registryVirtualLayout','registryVirtualRange','registryVirtualStateKey','registryVirtualGridMarkup','savedScrollPositions',
+        `let registryVirtualState={};\n${renderSource}\nreturn {renderRegistryVirtualGrid, state:()=>registryVirtualState};`,
+    );
+    const renderer = buildRenderer(
+        root,
+        (_items,width) => { measuredWidth = width; return layout; },
+        (...args) => { rangeArgs = args; return {start:30,end:90}; },
+        () => 'asset-key',
+        (_items,_layout,range) => `window:${range.start}-${range.end}`,
+        {registry:0},
+    );
+
+    assert.equal(renderer.renderRegistryVirtualGrid(Array(301).fill({id:'asset'})), 'window:30-90');
+    assert.equal(rangeArgs[2], 1234, '首次窗口应直接匹配已有滚动位置');
+    assert.equal(rangeArgs[3], 700, '首次窗口应使用真实可视区高度');
+    assert.equal(measuredWidth, 1720, '首次布局使用现有网格的实际宽度');
+    assert.equal(renderer.state().width, 1720, '首次绘制即记录实际宽度，避免挂载后无意义整窗重绘');
+});
+
+test('QIN-504 AC6: 新网格首次绘制前同步恢复滚动锚点', () => {
+    const restoreSource = functionSource('restoreRegistryVirtualScroll');
+    let scrollTop = 0;
+    const scrollRoot = {
+        get scrollTop(){ return scrollTop; },
+        set scrollTop(value){ scrollTop = value; },
+        querySelectorAll:() => [{
+            dataset:{registryCard:'asset-a'},
+            getBoundingClientRect:() => ({top:1300 - scrollTop}),
+        }],
+        getBoundingClientRect:() => ({top:0}),
+    };
+    const restore = new Function(`${restoreSource}\nreturn restoreRegistryVirtualScroll;`)();
+
+    restore(scrollRoot, 1200, 'asset-a', 80);
+
+    assert.equal(scrollRoot.scrollTop, 1220, '按旧卡片视口偏移修正新容器位置，避免首帧从顶部重绘');
+});
+
+test('QIN-504 AC3: 快速分页后同步资产库计数与续载状态', () => {
+    const footer = functionSource('syncRegistryVaultFooter');
+    const loadStart = manager.indexOf('async function loadMoreRegistryAssets(){');
+    const loadEnd = manager.indexOf('// 【浏览预加载】契约', loadStart);
+    assert.ok(loadStart >= 0 && loadEnd > loadStart);
+    assert.match(footer, /已加载 \$\{registryAssets\.length\} 项/);
+    assert.match(footer, /registryPageHasMore \? '下滑加载更多'/);
+    assert.match(manager.slice(loadStart, loadEnd), /syncRegistryVaultFooter\(\);/);
+});
+test('QIN-504 AC5: 图片延迟加载使用透明占位，透出素材卡片深色底色', () => {
+    const deferred = functionSource('deferRegistryPreviewThumb');
+    const placeholder = manager.match(/const REGISTRY_PREVIEW_PLACEHOLDER = '([^']+)';/);
+    assert.ok(placeholder, '应定义缩略图占位资源');
+    assert.match(placeholder[1], /^data:image\/svg\+xml,/);
+    assert.doesNotMatch(placeholder[1], /(?:fill=|#(?:fff|ffffff))/i);
+    assert.match(deferred, /setAttribute\('src', REGISTRY_PREVIEW_PLACEHOLDER\)/);
+});
+
+test('QIN-504 AC6: 已加载预览离开虚拟窗口后上下返回仍复用原图片节点', () => {
+    const loadedImage = {
+        dataset:{registryPreviewLoaded:'true'},
+        currentSrc:'https://example.test/thumb/asset-a.png',
+        isConnected:true,
+    };
+    const card = image => ({
+        dataset:{registryCard:'asset-a'},
+        querySelectorAll:() => [image],
+    });
+    loadedImage.closest = () => card(loadedImage);
+    const placeholder = {
+        dataset:{registryPreviewSrc:'/thumb/asset-a.png'},
+        closest:null,
+        replaceWith(image){
+            this.replacedWith = image;
+            image.isConnected = true;
+            this.isConnected = false;
+        },
+    };
+    placeholder.closest = () => card(placeholder);
+    let visibleImages = [loadedImage];
+    const root = {
+        querySelectorAll(selector){
+            return selector.includes('registry-preview-loaded')
+                ? visibleImages.filter(image => image.dataset.registryPreviewLoaded === 'true')
+                : visibleImages.filter(image => image.dataset.registryPreviewSrc);
+        },
+    };
+    const buildCache = new Function(
+        'root','document',
+        `const registryPreviewImageCache = new Map();\n${functionSource('registryPreviewCacheKey')}\n${functionSource('captureRegistryPreviewImages')}\n${functionSource('restoreRegistryPreviewImages')}\nreturn {captureRegistryPreviewImages, restoreRegistryPreviewImages};`,
+    );
+    const {captureRegistryPreviewImages, restoreRegistryPreviewImages} = buildCache(root, {baseURI:'https://example.test/assets.html'});
+    const cache = captureRegistryPreviewImages();
+
+    loadedImage.isConnected = false;
+    visibleImages = [placeholder];
+    restoreRegistryPreviewImages(cache);
+    assert.equal(placeholder.replacedWith, loadedImage);
+
+    loadedImage.isConnected = false;
+    const returnedPlaceholder = {...placeholder, replacedWith:null};
+    returnedPlaceholder.closest = () => card(returnedPlaceholder);
+    visibleImages = [returnedPlaceholder];
+    restoreRegistryPreviewImages(cache);
+    assert.equal(returnedPlaceholder.replacedWith, loadedImage);
+
+    const update = functionSource('updateRegistryVirtualWindow');
+    const captureIndex = update.indexOf('captureRegistryPreviewImages()');
+    const rebuildIndex = update.indexOf('grid.innerHTML =');
+    const restoreIndex = update.indexOf('restoreRegistryPreviewImages(registryPreviewCache)');
+    const scheduleIndex = update.indexOf('scheduleRegistryPreviewImages()');
+    assert.ok(captureIndex >= 0 && rebuildIndex > captureIndex && restoreIndex > rebuildIndex && scheduleIndex > restoreIndex);
+});
+
+test('QIN-504 AC7: 只在向下滚动时预加载视口外下一批20张预览', () => {
+    const visibleImages = [100, 200, 300].map((top,index) => ({id:`visible-${index}`, baseTop:top}));
+    const aheadImages = Array.from({length:40}, (_,index) => ({id:`ahead-${index}`, baseTop:1000 + index * 100}));
+    const images = [...visibleImages, ...aheadImages].map(image => ({
+        id:image.id,
+        dataset:{registryPreviewSrc:`/thumb/${image.id}.png`},
+        getBoundingClientRect(){
+            const top = image.baseTop - scrollRoot.scrollTop;
+            return {top,bottom:top + 80,left:10,right:90};
+        },
+    }));
+    const callbacks = [];
+    const listeners = {};
+    let currentTime = 500;
+    const scrollRoot = {
+        scrollTop:0,
+        addEventListener(name,listener){listeners[name] = listener;},
+        removeEventListener(name){delete listeners[name];},
+        getBoundingClientRect(){return {top:0,bottom:600,left:0,right:100};},
+    };
+    const activated = [];
+    const activate = image => {
+        if(!image.dataset.registryPreviewSrc || image.dataset.registryPreviewQueued === 'true') return false;
+        activated.push(image.id || image.dataset.registryPreviewSrc);
+        image.dataset.registryPreviewQueued = 'true';
+        return true;
+    };
+    const buildScheduler = new Function(
+        'root','REGISTRY_PREVIEW_SCROLL_AHEAD_COUNT','requestAnimationFrame','activateRegistryPreviewImage','performance','REGISTRY_PREVIEW_SCROLL_PRELOAD_INTERVAL_MS',
+        `let registryPreviewFallbackCleanup = null;\n${functionSource('scheduleRegistryPreviewFallback')}\nreturn scheduleRegistryPreviewFallback;`,
+    );
+    const schedule = buildScheduler(
+        {querySelectorAll:() => images.filter(image => image.dataset.registryPreviewSrc)},
+        20,
+        callback => {callbacks.push(callback); return callbacks.length;},
+        activate,
+        {now:() => currentTime},
+        120,
+    );
+    schedule(scrollRoot);
+    assert.deepEqual(activated, visibleImages.map(image => image.id));
+
+    scrollRoot.scrollTop = 50;
+    listeners.scroll();
+    callbacks.shift()();
+    assert.equal(activated.length, 3, '普通滚动只补充当前视口素材');
+
+    listeners.wheel({deltaY:50});
+    callbacks.shift()();
+    assert.equal(activated.length, 23, '下滑后只在当前可见项之外再加载20张');
+    assert.equal(activated.filter(id => id.includes('ahead-')).length, 20);
+
+    currentTime = 550;
+    listeners.wheel({deltaY:50});
+    assert.equal(callbacks.length, 0, '同一连续滚轮动作的重复事件不重复排一批');
+
+    scrollRoot.scrollTop = 0;
+    currentTime = 560;
+    listeners.wheel({deltaY:-50});
+    callbacks.shift()();
+    assert.equal(activated.length, 23, '上滑不继续加载新的视口外批次');
+
+    scrollRoot.scrollTop = 50;
+    currentTime = 570;
+    listeners.wheel({deltaY:50});
+    callbacks.shift()();
+    assert.equal(activated.length, 43, '继续下滑时才加载下一批20张');
+    assert.equal(manager.match(/const REGISTRY_PREVIEW_ROOT_MARGIN = '([^']+)'/)?.[1], '0px 0px');
+
+    assert.match(manager, /const REGISTRY_PAGE_SIZE = 100/);
+    assert.match(functionSource('loadMoreRegistryAssets'), /registryQueryString\(\{offset,cursor\}\)/);
+    assert.match(functionSource('prefetchRegistryNextPage'), /registryQueryString\(\{offset,cursor\}\)/);
 });
