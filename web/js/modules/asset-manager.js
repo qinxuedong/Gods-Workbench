@@ -399,7 +399,7 @@ const REGISTRY_PREVIEW_CONCURRENCY = 4;
 const REGISTRY_VIRTUAL_WINDOW_SIZE = 120;
 const REGISTRY_VIRTUAL_OVERSCAN_ROWS = 3;
 const REGISTRY_VIRTUAL_GAP = 10;
-const REGISTRY_PREVIEW_PLACEHOLDER = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==';
+const REGISTRY_PREVIEW_PLACEHOLDER = 'data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%221%22 height=%221%22/%3E';
 let registryPreviewQueue = [];
 let registryPreviewActive = 0;
 let registryPreviewQueueRevision = 0;

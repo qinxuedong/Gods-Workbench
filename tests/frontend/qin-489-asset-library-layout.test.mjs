@@ -163,3 +163,12 @@ test('QIN-504 AC3: 快速分页后同步资产库计数与续载状态', () => {
     assert.match(footer, /registryPageHasMore \? '下滑加载更多'/);
     assert.match(manager.slice(loadStart, loadEnd), /syncRegistryVaultFooter\(\);/);
 });
+
+test('QIN-504 AC5: 图片延迟加载使用透明占位，透出素材卡片深色底色', () => {
+    const deferred = functionSource('deferRegistryPreviewThumb');
+    const placeholder = manager.match(/const REGISTRY_PREVIEW_PLACEHOLDER = '([^']+)';/);
+    assert.ok(placeholder, '应定义缩略图占位资源');
+    assert.match(placeholder[1], /^data:image\/svg\+xml,/);
+    assert.doesNotMatch(placeholder[1], /(?:fill=|#(?:fff|ffffff))/i);
+    assert.match(deferred, /setAttribute\('src', REGISTRY_PREVIEW_PLACEHOLDER\)/);
+});
