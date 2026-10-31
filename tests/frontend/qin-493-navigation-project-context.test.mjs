@@ -745,3 +745,12 @@ test('QIN-493 扩范围：画布页遇到不存在项目时校正为可用项目
   const offlineRunner = vm.runInContext(`(${settle})`, vm.createContext(offline));
   assert.equal(await offlineRunner('projC'), 'projC');
 });
+
+test('QIN-500 AC1: workshop remains a project-center child page', () => {
+  const projectCenterNav = workshopHtml.match(/<a href="projects\.html" class="([^"]*)"[^>]*title="项目中心"[^>]*aria-current="page"/);
+  assert.ok(projectCenterNav, '工坊页顶栏保留项目中心父级入口并标记当前层级');
+  assert.match(projectCenterNav[1], /\bpill-capsule-active\b/, '工坊页应高亮项目中心父级入口');
+  assert.match(workshopHtml, /function syncWorkshopParentNavigation\(\)/, '壳层导航同步后应恢复项目中心父级状态');
+  assert.match(workshopHtml, /gw:route-loaded/, '局部路由加载后仍应高亮项目中心');
+  assert.match(workshopHtml, /id="workshopProjectTitle"/, '所选项目的工作流留在页面内容区');
+});

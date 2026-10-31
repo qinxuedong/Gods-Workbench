@@ -232,7 +232,7 @@
           <span>首页 · 控制台</span>
         </a>
 
-        <a href="projects.html" class="pill-capsule-inactive px-3.5 py-1.5 gw-type-body-sm font-medium flex items-center space-x-1.5 nav-pill-btn cursor-pointer" title="项目中心">
+        <a href="projects.html" class="pill-capsule-active px-3.5 py-1.5 gw-type-body-sm flex items-center space-x-1.5 nav-pill-btn cursor-pointer" title="项目中心" aria-current="page">
           <i data-lucide="folder-kanban" class="w-3.5 h-3.5"></i>
           <span>项目中心</span>
         </a>
@@ -1430,6 +1430,27 @@
 
     window.WorkbenchWorkshop = WorkbenchWorkshop;
     document.addEventListener('DOMContentLoaded', WorkbenchWorkshop.init);
+
+    // 工坊是项目中心的子页面：保留项目中心为顶栏父级导航，工作流仍显示在本页内容区。
+    function syncWorkshopParentNavigation() {
+      if (window.location.pathname.split('/').pop() !== 'workshop.html') return;
+      const navItems = document.querySelectorAll('.topbar-master-deck .nav-pill-btn[href]');
+      const projectCenter = [...navItems].find(item => {
+        try { return new URL(item.getAttribute('href'), window.location.href).pathname.split('/').pop() === 'projects.html'; }
+        catch (_) { return false; }
+      });
+      if (!projectCenter) return;
+      navItems.forEach(item => {
+        const active = item === projectCenter;
+        item.classList.toggle('pill-capsule-active', active);
+        item.classList.toggle('pill-capsule-inactive', !active);
+        if (active) item.setAttribute('aria-current', 'page');
+        else item.removeAttribute('aria-current');
+      });
+    }
+    document.addEventListener('DOMContentLoaded', () => queueMicrotask(syncWorkshopParentNavigation), { once: true });
+    window.addEventListener('pageshow', syncWorkshopParentNavigation);
+    window.addEventListener('gw:route-loaded', syncWorkshopParentNavigation);
   </script>
 <script src="/static/js/core/degradation.js?v=v0.0.1-alpha-2026"></script>
   <script src="/static/js/core/floating-dismissal.js?v=v0.0.1-alpha-2026&m3=floating-dismissal"></script>
