@@ -229,7 +229,9 @@ const savedRegistryViewSettings = readRegistryViewSettings();
 let activeTab = 'registry';
 let boardNavigationState = null;
 let boardDragId = '';
-let boardCreateState = {open:false, preset:'image', name:'图片库', path:'', saving:false, error:''};
+let boardCreateState = {open:false, preset:'other', name:'', path:'', saving:false, error:''};
+let boardCreateReturnFocus = null;
+let boardCreateFocusTarget = '';
 let boardEditState = {open:false, boardId:'', name:'', path:'', saving:false};
 let boardSourceState = {open:false, boardId:'', editor:'', existingId:'', name:'用户素材', path:''};
 let boardFolderCreateState = {open:false, boardId:'', rootId:'', parent:'', name:'新文件夹', saving:false, error:''};
@@ -1212,11 +1214,13 @@ function renderRegistryFeatureControl(feature){
 const THUMBNAIL_DIRECTORY_FIELD_KEY = 'thumbnail_cache';
 // 允许根是「登记」动作而非 storageDir_* 字段，同样用独立 key 复用选夹与自动保存链路。
 const ALLOWED_ROOT_FIELD_KEY = 'allowed_root';
+const BOARD_CREATE_PATH_FIELD_KEY = 'board_create_path';
 // 允许留空的目录字段：清空后照常保存（如回收根目录留空即跟随素材源）。
 const OPTIONAL_DIRECTORY_FIELDS = new Set(['trash']);
 function directoryFieldInput(key){
     if(key === THUMBNAIL_DIRECTORY_FIELD_KEY) return document.getElementById('thumbnailDirectory');
     if(key === ALLOWED_ROOT_FIELD_KEY) return document.getElementById('allowedRootPath');
+    if(key === BOARD_CREATE_PATH_FIELD_KEY) return document.getElementById('boardCreatePath');
     return document.getElementById('storageDir_' + key);
 }
 function renderAssetThumbnailCacheDirectoryBody(){
@@ -1288,7 +1292,9 @@ function renderAssetVideoSettingsBody(){
 function renderCreateLibraryModal(){
     let overlay = document.getElementById('boardCreateOverlay');
     if(!boardCreateState.open){ overlay?.remove(); return; }
-    const selected = ASSET_LIBRARY_PRESETS.find(item => item.id === boardCreateState.preset) || ASSET_LIBRARY_PRESETS[3];
+    const pathPicker = canBrowseServerDirectories()
+        ? `<button type="button" class="hw-btn hw-btn-icon directory-picker-btn" data-directory-picker="${BOARD_CREATE_PATH_FIELD_KEY}" title="浏览服务器目录" aria-label="选择资源库路径"><i data-lucide="folder-open"></i></button>`
+        : '';
     if(!overlay){
         overlay = document.createElement('div');
         overlay.id = 'boardCreateOverlay';
@@ -1297,26 +1303,24 @@ function renderCreateLibraryModal(){
     }
     overlay.innerHTML = `<div class="board-create-modal" data-floating-content role="dialog" aria-modal="true" aria-labelledby="boardCreateTitle">
         <div class="storage-settings-head">
-            <div><strong id="boardCreateTitle">新增资源库</strong><span>选择常用预设，创建一个独立的资产看板。</span></div>
+            <div><strong id="boardCreateTitle">新增资源库</strong><span>创建一个不限资源类型的独立看板。</span></div>
             <button type="button" data-board-create-close aria-label="关闭"><i data-lucide="x"></i></button>
         </div>
-        <div class="board-preset-grid">${ASSET_LIBRARY_PRESETS.map(preset => `<button class="board-preset-card ${preset.id === selected.id ? 'active' : ''}" type="button" data-board-preset="${escapeAttr(preset.id)}">
-            <span><i data-lucide="${escapeAttr(preset.icon)}"></i></span><strong>${escapeHtml(preset.name)}</strong><small>${escapeHtml(preset.description)}</small><em>${preset.extensions.slice(0, 4).map(ext => `.${escapeHtml(ext)}`).join(' · ')}</em>
-        </button>`).join('')}</div>
         <div class="board-create-form board-create-form-path">
-            <label><span>资源库名称</span><input id="boardCreateName" maxlength="32" value="${escapeAttr(boardCreateState.name || selected.name)}" placeholder="例如：品牌音乐库"></label>
-            <label><span>用户素材路径（可选）</span><input id="boardCreatePath" list="boardKnownPaths" value="${escapeAttr(boardCreateState.path || '')}" placeholder="输入本机或 NAS 素材目录"></label>
+            <label><span>资源库名称</span><input id="boardCreateName" maxlength="32" value="${escapeAttr(boardCreateState.name || '')}" placeholder="例如：品牌素材库"></label>
+            <label class="board-create-path-field"><span>资源路径（可选）</span><div class="directory-input-row"><input id="boardCreatePath" list="boardKnownPaths" value="${escapeAttr(boardCreateState.path || '')}" placeholder="输入本机或 NAS 素材目录">${pathPicker}</div></label>
             <datalist id="boardKnownPaths">${localLibraries.map(lib => `<option value="${escapeAttr(lib.path || '')}">${escapeHtml(lib.name || '')}</option>`).join('')}</datalist>
-            <div class="board-create-summary"><i data-lucide="filter"></i><span>${selected.id === 'other' ? '不限制资源类型，用户路径会作为独立来源显示；未绑定路径的素材库不再自动收纳全部同类素材。' : `自动归档 ${selected.kinds.map(registryKindLabel).concat(selected.extensions.map(ext => `.${ext}`)).slice(0, 8).join('、') || '其他类型'}，用户路径会作为独立来源显示；未绑定路径的素材库不再自动收纳全部同类素材。`}</span></div>
             ${boardCreateState.error ? `<div class="board-create-error" role="alert"><i data-lucide="alert-triangle"></i><span>${escapeHtml(boardCreateState.error)}</span></div>` : ''}
         </div>
         <div class="board-create-actions"><button class="hw-btn" type="button" data-board-create-close ${boardCreateState.saving ? 'disabled' : ''}>取消</button><button class="hw-btn hw-btn-gold" type="button" data-board-create-confirm ${boardCreateState.saving ? 'disabled' : ''}><i data-lucide="${boardCreateState.saving ? 'loader' : 'plus'}"></i><span>${boardCreateState.saving ? '正在创建…' : '创建资源库'}</span></button></div>
     </div>`;
     markAssetFloatingSurface(overlay, {surface:'asset-board-create', content:'.board-create-modal', close:closeCreateLibraryModal});
     refreshIcons();
-    // 只在焦点还没进入其他表单控件时聚焦名称。预设重绘会替换整段 innerHTML，
-    // 若无条件把焦点拉回名称，随后对路径框的填入会落进 maxlength=32 的名称框，路径为空就静默跳过索引。
+    const requestedFocus = boardCreateFocusTarget;
+    boardCreateFocusTarget = '';
     requestAnimationFrame(() => {
+        const requested = requestedFocus ? document.getElementById(requestedFocus) : null;
+        if(requested){ requested.focus(); return; }
         const name = document.getElementById('boardCreateName');
         const modal = document.querySelector('#boardCreateOverlay .board-create-modal');
         const active = document.activeElement;
@@ -1325,16 +1329,29 @@ function renderCreateLibraryModal(){
         name.focus();
     });
 }
-function openCreateLibraryModal(){
-    const preset = ASSET_LIBRARY_PRESETS.find(item => item.id === boardCreateState.preset) || ASSET_LIBRARY_PRESETS[3];
-    boardCreateState = {open:true, preset:preset.id, name:preset.name, path:'', saving:false, error:''};
+function createLibraryTrigger(){
+    try {
+        return window.parent?.document?.getElementById('assetSidebarCreate') || document.querySelector('#assetBoardTabs [data-board-create]');
+    } catch(_) { return document.querySelector('#assetBoardTabs [data-board-create]'); }
+}
+async function openCreateLibraryModal(){
+    await loadRegistryPrincipal();
+    boardCreateReturnFocus = createLibraryTrigger();
+    boardCreateState = {open:true, preset:'other', name:'', path:'', saving:false, error:''};
     renderCreateLibraryModal();
 }
 function closeCreateLibraryModal(){
+    const returnFocus = boardCreateReturnFocus;
+    boardCreateReturnFocus = null;
+    if(serverDirectoryBrowserState.key === BOARD_CREATE_PATH_FIELD_KEY){
+        serverDirectoryBrowserState = {...serverDirectoryBrowserState, open:false, loading:false, saving:false};
+        renderBoardCreatePathBrowser();
+    }
     boardCreateState.open = false;
     boardCreateState.saving = false;
     boardCreateState.error = '';
     renderCreateLibraryModal();
+    if(returnFocus?.isConnected) requestAnimationFrame(() => returnFocus.focus());
 }
 function renderBoardEditModal(){
     let overlay = document.getElementById('boardEditOverlay');
@@ -1416,11 +1433,38 @@ function syncBoardCreateDraftFromDom(){
         path: path ? String(path.value || '') : boardCreateState.path,
     };
 }
+function assetPathWithinAllowedRoot(path, rootPath){
+    const candidate = pathCompareKey(path);
+    const root = pathCompareKey(rootPath);
+    return Boolean(candidate && root && (candidate === root || candidate.startsWith(`${root}/`)));
+}
+async function ensureCreateLibraryPathAllowedRoot(path){
+    await loadRegistryPrincipal();
+    if(!canManageAllowedRoots()) return;
+    for(let attempt = 0; attempt < 2; attempt++){
+        const snapshot = await apiJsonResponse(assetManagerHttp.request('/api/storage-settings/roots', {method:'GET', credentials:'same-origin'}));
+        applyAllowedRootSettingsData(snapshot);
+        if((snapshot.roots || []).some(root => root.active !== false && assetPathWithinAllowedRoot(path, root.path))) return;
+        try {
+            const updated = await apiJsonResponse(assetManagerHttp.request('/api/storage-settings/roots', {
+                method:'POST', credentials:'same-origin',
+                headers:{'Content-Type':'application/json'},
+                body:JSON.stringify({path, expected_version:Number(snapshot.revision || 1)}),
+            }));
+            applyAllowedRootSettingsData(updated);
+            return;
+        } catch(error){
+            if(attempt === 0 && ['ALLOWED_ROOT_ALREADY_REGISTERED','VERSION_CONFLICT'].includes(error.code)) continue;
+            throw error;
+        }
+    }
+    throw new Error('允许根配置已变化，请重新创建资源库');
+}
 async function createPresetAssetBoard(){
     if(boardCreateState.saving) return;
-    const preset = ASSET_LIBRARY_PRESETS.find(item => item.id === boardCreateState.preset) || ASSET_LIBRARY_PRESETS[3];
+    const preset = ASSET_LIBRARY_PRESETS.find(item => item.id === 'other') || ASSET_LIBRARY_PRESETS[ASSET_LIBRARY_PRESETS.length - 1];
     syncBoardCreateDraftFromDom();
-    const name = String(document.getElementById('boardCreateName')?.value || boardCreateState.name || preset.name).trim().slice(0, 32);
+    const name = String(document.getElementById('boardCreateName')?.value || boardCreateState.name || '').trim().slice(0, 32);
     const path = String(document.getElementById('boardCreatePath')?.value || boardCreateState.path || '').trim();
     boardCreateState = {...boardCreateState, name, path, error:''};
     if(!name){
@@ -1440,8 +1484,9 @@ async function createPresetAssetBoard(){
     let source = null;
     if(path){
         markIndexState('pending');
-        setStatus('正在添加素材来源...');
+        setStatus('正在校验路径并登记素材来源…');
         try {
+            await ensureCreateLibraryPathAllowedRoot(path);
             source = await attachPathToAssetBoard('', `${name}素材`, path);
         } catch(err) {
             boardCreateState.saving = false;
@@ -1948,18 +1993,19 @@ function canManageAllowedRoots(){ return canBrowseServerDirectories(); }
 function renderServerDirectoryBrowser(){
     const state = serverDirectoryBrowserState;
     if(!state.open) return '';
+    const createPathSelection = state.key === BOARD_CREATE_PATH_FIELD_KEY;
     const rows = state.directories.map(directory =>
         '<div class="server-directory-row">' +
             '<button type="button" class="server-directory-enter" data-server-directory-enter="' + escapeAttr(directory.path) + '"' + (state.loading || state.saving ? ' disabled' : '') + '>' +
                 '<i data-lucide="folder"></i><span>' + escapeHtml(directory.name) + '</span><small>进入</small>' +
             '</button>' +
-            '<button type="button" class="hw-btn hw-btn-gold server-directory-mount" data-server-directory-mount="' + escapeAttr(directory.path) + '"' + (state.loading || state.saving ? ' disabled' : '') + '><i data-lucide="check"></i>选择并挂载</button>' +
+            '<button type="button" class="hw-btn hw-btn-gold server-directory-mount" data-server-directory-mount="' + escapeAttr(directory.path) + '"' + (state.loading || state.saving ? ' disabled' : '') + '><i data-lucide="check"></i>' + (createPathSelection ? '选择此目录' : '选择并挂载') + '</button>' +
         '</div>'
     ).join('');
     const path = state.path || '服务器根目录';
     const parentButton = '<button type="button" class="hw-btn" data-server-directory-parent' + (!state.parent || state.loading || state.saving ? ' disabled' : '') + '><i data-lucide="corner-left-up"></i>上级目录</button>';
     const currentButton = state.path
-        ? '<button type="button" class="hw-btn hw-btn-gold" data-server-directory-mount-current="' + escapeAttr(state.path) + '"' + (state.loading || state.saving ? ' disabled' : '') + '><i data-lucide="check"></i>选择当前目录并挂载</button>'
+        ? '<button type="button" class="hw-btn hw-btn-gold" data-server-directory-mount-current="' + escapeAttr(state.path) + '"' + (state.loading || state.saving ? ' disabled' : '') + '><i data-lucide="check"></i>' + (createPathSelection ? '选择当前目录' : '选择当前目录并挂载') + '</button>'
         : '';
     const message = state.loading
         ? '<p class="server-directory-browser-message" role="status">正在读取目录…</p>'
@@ -1973,8 +2019,30 @@ function renderServerDirectoryBrowser(){
         (state.error ? '<p class="server-directory-browser-error" role="alert">' + escapeHtml(state.error) + '</p>' : '') +
         '<div class="server-directory-list" role="tree" aria-label="服务器子目录">' + message + rows + '</div>' +
         (state.truncated ? '<p class="server-directory-browser-note">目录较多，仅显示前 ' + (state.limit || 100) + ' 项。</p>' : '') +
-        '<p class="server-directory-browser-note">仅显示文件夹。选择并挂载会立即保存所选目录字段。</p>' +
+        '<p class="server-directory-browser-note">' + (createPathSelection ? '仅显示服务器文件夹；选择后返回创建表单，点击创建时再登记路径。' : '仅显示文件夹。选择并挂载会立即保存所选目录字段。') + '</p>' +
     '</section>';
+}
+function closeBoardCreatePathBrowser(){
+    serverDirectoryBrowserState = {...serverDirectoryBrowserState, open:false, loading:false, saving:false};
+    renderBoardCreatePathBrowser();
+    requestAnimationFrame(() => document.querySelector(`[data-directory-picker="${BOARD_CREATE_PATH_FIELD_KEY}"]`)?.focus());
+}
+function renderBoardCreatePathBrowser(){
+    let overlay = document.getElementById('boardCreatePathPickerOverlay');
+    if(!serverDirectoryBrowserState.open || serverDirectoryBrowserState.key !== BOARD_CREATE_PATH_FIELD_KEY){ overlay?.remove(); return; }
+    if(!overlay){
+        overlay = document.createElement('div');
+        overlay.id = 'boardCreatePathPickerOverlay';
+        overlay.className = 'storage-settings-overlay board-create-path-picker-overlay';
+        document.body.appendChild(overlay);
+    }
+    overlay.innerHTML = renderServerDirectoryBrowser();
+    markAssetFloatingSurface(overlay, {surface:'asset-board-path-picker', content:'.server-directory-browser', close:closeBoardCreatePathBrowser});
+    refreshIcons();
+}
+function renderServerDirectoryBrowserHost(){
+    if(serverDirectoryBrowserState.key === BOARD_CREATE_PATH_FIELD_KEY) renderBoardCreatePathBrowser();
+    else renderStorageSettingsModal();
 }
 async function loadServerDirectoryBrowser(pathValue=null){
     const state = serverDirectoryBrowserState;
@@ -1984,7 +2052,7 @@ async function loadServerDirectoryBrowser(pathValue=null){
     state.truncated = false;
     state.loading = true;
     state.error = '';
-    renderStorageSettingsModal();
+    renderServerDirectoryBrowserHost();
     try {
         const query = pathValue ? '?path=' + encodeURIComponent(pathValue) : '';
         const response = await apiJsonResponse(assetManagerHttp.request('/api/storage-settings/browse' + query, {method:'GET', credentials:'same-origin'}));
@@ -2003,15 +2071,21 @@ async function loadServerDirectoryBrowser(pathValue=null){
         if(!serverDirectoryBrowserState.open) return;
         serverDirectoryBrowserState = {...serverDirectoryBrowserState, loading:false, error:error.message || '服务器目录读取失败'};
     }
-    renderStorageSettingsModal();
+    renderServerDirectoryBrowserHost();
 }
 async function openServerDirectoryBrowser(key){
     if(!key || !canBrowseServerDirectories()) return;
     serverDirectoryBrowserState = {open:true, path:null, parent:null, directories:[], loading:false, saving:false, error:'', key, truncated:false, limit:100};
-    renderStorageSettingsModal();
+    renderServerDirectoryBrowserHost();
     await loadServerDirectoryBrowser(null);
 }
 async function fillServerDirectoryFromNative(key, pathValue){
+    if(key === BOARD_CREATE_PATH_FIELD_KEY){
+        boardCreateState.path = String(pathValue || '').trim();
+        boardCreateFocusTarget = 'boardCreatePath';
+        renderCreateLibraryModal();
+        return;
+    }
     // 选完文件夹即持久化：写入字段后立即保存，成功与失败都有状态反馈，不静默。
     const input = directoryFieldInput(key);
     if(input) input.value = pathValue;
@@ -2098,6 +2172,17 @@ async function saveThumbnailCacheDirectory(pathValue, closeBrowser=false){
 }
 async function saveDirectoryPath(key, pathValue, closeBrowser=false){
     const trimmed = String(pathValue || '').trim();
+    if(key === BOARD_CREATE_PATH_FIELD_KEY){
+        const input = directoryFieldInput(key);
+        if(input) input.value = trimmed;
+        boardCreateState.path = trimmed;
+        serverDirectoryBrowserState = {...serverDirectoryBrowserState, open:false, loading:false, saving:false};
+        boardCreateFocusTarget = 'boardCreatePath';
+        renderCreateLibraryModal();
+        renderBoardCreatePathBrowser();
+        setStatus('路径已选择，点击创建资源库后登记。');
+        return;
+    }
     // 允许根是登记动作，空值交给登记逻辑给出更贴切的提示，不走通用目录空值拦截。
     if(key === ALLOWED_ROOT_FIELD_KEY){ await registerAllowedRootPath(trimmed); return; }
     if(!trimmed && !OPTIONAL_DIRECTORY_FIELDS.has(key)){ setStatus('目录路径不能为空'); return; }
@@ -9047,6 +9132,11 @@ function renderCustomAssetLibrary(board){
         registryDetail = null;
     }
     const preset = ASSET_LIBRARY_PRESETS.find(item => item.id === board.preset) || ASSET_LIBRARY_PRESETS[3];
+    const emptyAssetMessage = board.sourceBoard
+        ? `“${board.name}”暂无已索引素材。`
+        : board.preset === 'other'
+            ? '暂无可见资源。素材进入统一索引后会自动显示在这里。'
+            : `暂无匹配的${preset.name.replace(/库$/, '')}资产。资产进入统一索引后会自动显示在这里。`;
     const kindSummary = preset.kinds.map(registryKindLabel);
     const activeSourceId = board.sourceBoard ? String(board.rootId || '') : (boardSourceSelection[board.id] || '');
     const activeSource = (board.sources || []).find(source => source.id === activeSourceId) || null;
@@ -9078,7 +9168,7 @@ function renderCustomAssetLibrary(board){
         ${embeddedVault ? '' : renderRegistryToolbar(board, board.name, `${matching.length} 个匹配资产 · ${activeReferenceCanvas ? `参考画布：${activeReferenceCanvas.title || '未命名'}` : sourceLabel}${folderLabel ? ` · ${folderLabel}` : ''}${activeGroup ? ` · ${activeGroup.name}` : ''}`)}
         ${renderRegistryFilterChips()}
         <div data-registry-fresh-notice></div>
-        <div class="content-scroll registry-assets-scroll" data-registry-zoom-area title="Shift+滚轮调整预览大小">${renderRegistryAssetSections(visible, board, board.sourceBoard ? `“${board.name}”暂无已索引素材。` : `暂无匹配的${preset.name.replace(/库$/, '')}资产。资产进入统一索引后会自动显示在这里。`)}${renderRegistryPagination()}</div>
+        <div class="content-scroll registry-assets-scroll" data-registry-zoom-area title="Shift+滚轮调整预览大小">${renderRegistryAssetSections(visible, board, emptyAssetMessage)}${renderRegistryPagination()}</div>
         <div class="registry-vault-footer" aria-label="资产库状态"><span>匹配资产 <strong>${Number(matching.length || 0).toLocaleString('zh-CN')}</strong></span><span>${registryLoading ? '正在读取' : `当前显示 ${visible.length} 项`}</span><span>${escapeHtml(sourceLabel)}</span></div>
         ${renderRegistrySelectionBar(board)}
     </section>
@@ -10532,7 +10622,10 @@ async function handleClick(event){
     const directoryBrowserClose = target.closest?.('[data-server-directory-close]');
     if(directoryBrowserClose){
         serverDirectoryBrowserState = {...serverDirectoryBrowserState, open:false, loading:false};
-        renderStorageSettingsModal();
+        renderServerDirectoryBrowserHost();
+        if(serverDirectoryBrowserState.key === BOARD_CREATE_PATH_FIELD_KEY){
+            requestAnimationFrame(() => document.querySelector(`[data-directory-picker="${BOARD_CREATE_PATH_FIELD_KEY}"]`)?.focus());
+        }
         return;
     }
     const directoryBrowserParent = target.closest?.('[data-server-directory-parent]');
@@ -10840,18 +10933,6 @@ async function handleClick(event){
         return;
     }
     if(target.closest?.('[data-board-create-close]')){ closeCreateLibraryModal(); return; }
-    const boardPreset = target.closest?.('[data-board-preset]');
-    if(boardPreset){
-        const preset = ASSET_LIBRARY_PRESETS.find(item => item.id === boardPreset.dataset.boardPreset);
-        if(preset){
-            syncBoardCreateDraftFromDom();
-            const typedName = String(document.getElementById('boardCreateName')?.value || '').trim();
-            boardCreateState.preset = preset.id;
-            boardCreateState.name = typedName || preset.name;
-            renderCreateLibraryModal();
-        }
-        return;
-    }
     if(target.closest?.('[data-board-create-confirm]')){ await createPresetAssetBoard(); return; }
     const registryStat = target.closest?.('[data-registry-stat]');
     if(registryStat){
@@ -18180,6 +18261,7 @@ document.addEventListener('click', event => {
         const overlayId = event.target.id || '';
         if(overlayId === 'storageSettingsOverlay') closeStorageSettings();
         else if(overlayId === 'boardCreateOverlay') closeCreateLibraryModal();
+        else if(overlayId === 'boardCreatePathPickerOverlay') closeBoardCreatePathBrowser();
         else if(overlayId === 'boardSourceOverlay') closeBoardSourceModal();
         else if(overlayId === 'boardEditOverlay') closeBoardEditModal();
         else if(overlayId === 'boardFolderCreateOverlay') closeCustomBoardFolderCreateModal();
@@ -18411,7 +18493,10 @@ document.addEventListener('keydown', event => {
     if(event.key === 'Escape' && serverDirectoryBrowserState.open){
         event.preventDefault();
         serverDirectoryBrowserState = {...serverDirectoryBrowserState, open:false, loading:false};
-        renderStorageSettingsModal();
+        renderServerDirectoryBrowserHost();
+        if(serverDirectoryBrowserState.key === BOARD_CREATE_PATH_FIELD_KEY){
+            requestAnimationFrame(() => document.querySelector(`[data-directory-picker="${BOARD_CREATE_PATH_FIELD_KEY}"]`)?.focus());
+        }
         return;
     }
     if(event.key === 'Enter'){

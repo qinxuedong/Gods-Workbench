@@ -337,14 +337,13 @@ window.WorkbenchAssets = (() => {
     const doc = manager();
     if (!categories || !doc) return;
     const tabs = [...doc.querySelectorAll('#assetBoardTabs .asset-board-tab')];
-    const createControl = doc.querySelector('#assetBoardTabs [data-board-create]');
     const rows = tabs.map(button => ({
       id: button.dataset.tab || '',
       name: button.querySelector('span')?.textContent?.trim() || '',
       icon: button.querySelector('[data-lucide]')?.getAttribute('data-lucide') || 'folder',
       active: button.getAttribute('aria-selected') === 'true',
     })).filter(row => row.id && row.name);
-    const snapshot = JSON.stringify({rows, create: Boolean(createControl)});
+    const snapshot = JSON.stringify(rows);
     if (categorySnapshot === snapshot) return;
     categorySnapshot = snapshot;
     const fragment = document.createDocumentFragment();
@@ -365,30 +364,21 @@ window.WorkbenchAssets = (() => {
       button.addEventListener('click', () => activateBoard(row.id));
       fragment.append(button);
     }
-    if (createControl) {
-      const button = document.createElement('button');
-      button.type = 'button';
-      button.className = 'asset-shell-nav-button asset-shell-nav-create';
-      button.setAttribute('aria-label', '新建资源');
-      button.dataset.assetBoardCreate = '';
-      const icon = document.createElement('i');
-      icon.setAttribute('data-lucide', 'plus');
-      icon.setAttribute('aria-hidden', 'true');
-      const label = document.createElement('span');
-      label.textContent = '新建资源';
-      button.append(icon, label);
-      button.addEventListener('click', () => manager()?.querySelector('#assetBoardTabs [data-board-create]')?.click());
-      fragment.append(button);
-    }
     const focused = categories.contains(document.activeElement)
-      ? document.activeElement.dataset.assetBoard || (document.activeElement.hasAttribute('data-asset-board-create') ? 'create' : null)
+      ? document.activeElement.dataset.assetBoard || null
       : null;
     categories.replaceChildren(fragment);
     window.lucide?.createIcons();
     if (focused !== null) {
-      const selector = focused === 'create' ? '[data-asset-board-create]' : `[data-asset-board="${CSS.escape(focused)}"]`;
-      categories.querySelector(selector)?.focus();
+      categories.querySelector(`[data-asset-board="${CSS.escape(focused)}"]`)?.focus();
     }
+  }
+
+  async function openCreateAssetLibrary() {
+    try {
+      const button = await waitForControl('#assetBoardTabs [data-board-create]');
+      button.click();
+    } catch (error) { setVaultStatus(error.message); }
   }
 
   async function openAssetSettings() {
@@ -531,5 +521,5 @@ window.WorkbenchAssets = (() => {
   // 首屏与壳层部分路由返回时都走同一个幂等绑定入口；不重复执行顶层脚本。
   rebind();
   window.addEventListener('pagehide', () => observer?.disconnect());
-  return {uploadAsset, openAssetSettings, toggleSmartFilter, rebind, showIndexJobStatus, indexJobStatusView: window.GWAssetJobStatus.view};
+  return {uploadAsset, openAssetSettings, openCreateAssetLibrary, toggleSmartFilter, rebind, showIndexJobStatus, indexJobStatusView: window.GWAssetJobStatus.view};
 })();

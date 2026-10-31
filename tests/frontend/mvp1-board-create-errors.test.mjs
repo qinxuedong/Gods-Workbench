@@ -5,6 +5,41 @@ import test from 'node:test';
 
 const source = readFileSync(new URL('../../web/js/modules/asset-manager.js', import.meta.url), 'utf8');
 const styles = readFileSync(new URL('../../web/css/pages/asset-manager.css', import.meta.url), 'utf8');
+const controller = readFileSync(new URL('../../web/js/controllers/assets-controller.js', import.meta.url), 'utf8');
+const shell = readFileSync(new URL('../../web/pages/assets.html', import.meta.url), 'utf8');
+
+test('新建资源入口位于侧栏资源库列表上方并沿用标准硬件按钮', () => {
+    assert.match(shell, /<button type="button" id="assetSidebarCreate" class="hw-btn w-full[^\"]*" onclick="WorkbenchAssets\.openCreateAssetLibrary\(\)"/);
+    assert.match(shell, /id="assetSidebarCreate"[\s\S]*?<\/button>[\s\S]*?<div class="gw-side-bus-list[^\"]*" id="assetCategories"/);
+    assert.match(controller, /async function openCreateAssetLibrary\(\)[\s\S]*?button\.click\(\)/);
+    assert.doesNotMatch(controller, /asset-shell-nav-create/);
+});
+
+test('新增资源库弹窗取消类型预设，只按名称、路径两行填写并使用紧凑居中标准卡片', () => {
+    assert.doesNotMatch(source, /board-preset-grid|data-board-preset/);
+    assert.match(source, /\{id:'other', name:'其他资源'[\s\S]*?category:'', kinds:\[\], extensions:\[\]\}/);
+    assert.match(source, /board-create-form board-create-form-path/);
+    assert.match(source, /<label><span>资源库名称<\/span><input id="boardCreateName"/);
+    assert.match(source, /<label class="board-create-path-field"><span>资源路径（可选）<\/span><div class="directory-input-row"><input id="boardCreatePath"/);
+    assert.match(styles, /\.board-create-modal\s*\{[^}]*width:min\(620px, 94vw\)/);
+    assert.match(styles, /\.board-create-form\s*\{[^}]*grid-template-columns:minmax\(0,1fr\)/);
+    assert.doesNotMatch(styles, /board-preset-grid|board-preset-card/);
+    assert.match(source, /board\.preset === 'other'[\s\S]*?暂无可见资源/);
+});
+
+test('资源路径支持手输及右侧目录选择，选择目录只回填表单', () => {
+    assert.match(source, /class="hw-btn hw-btn-icon directory-picker-btn" data-directory-picker="\$\{BOARD_CREATE_PATH_FIELD_KEY\}"/);
+    assert.match(source, /async function fillServerDirectoryFromNative\(key, pathValue\)\{\s*if\(key === BOARD_CREATE_PATH_FIELD_KEY\)\{\s*boardCreateState\.path = String\(pathValue \|\| ''\)\.trim\(\);/);
+    assert.match(source, /createPathSelection \? '选择此目录' : '选择并挂载'/);
+    assert.match(source, /createPathSelection \? '选择当前目录' : '选择当前目录并挂载'/);
+    assert.match(source, /仅显示服务器文件夹；选择后返回创建表单，点击创建时再登记路径/);
+});
+
+test('管理员创建时将未登记路径加入允许根，非管理员沿用现有权限校验', () => {
+    assert.match(source, /async function ensureCreateLibraryPathAllowedRoot\(path\)\{\s*await loadRegistryPrincipal\(\);\s*if\(!canManageAllowedRoots\(\)\) return;/);
+    assert.match(source, /body:JSON\.stringify\(\{path, expected_version:Number\(snapshot\.revision \|\| 1\)\}\)/);
+    assert.match(source, /await ensureCreateLibraryPathAllowedRoot\(path\);\s*source = await attachPathToAssetBoard\('', `\$\{name\}素材`, path\)/);
+});
 
 test('新增资源库弹窗模板包含错误回显容器与状态图标', () => {
     assert.match(source, /boardCreateState\.error \? `<div class="board-create-error" role="alert">/);
@@ -33,9 +68,11 @@ test('asset-manager.css 中包含 .board-create-error 样式规则', () => {
     assert.match(styles, /\.board-create-error\s*svg\s*\{[^}]*stroke:\s*#ef4444/);
 });
 
-test('createPresetAssetBoard 成功获取来源后立即创建看板并异步非阻塞跟踪索引 (QIN-487)', () => {
+test('新资源库追加到列表下方并自动激活，来源索引异步跟踪 (QIN-487 / QIN-501)', () => {
+    assert.match(source, /ASSET_LIBRARY_PRESETS\.find\(item => item\.id === 'other'\)/);
     assert.match(source, /state\.customBoards\.push\(\{id, name, preset:preset\.id/);
-    assert.match(source, /saveBoardNavigationState\(\);\s*closeCreateLibraryModal\(\);\s*renderBoardNavigation\(\);/);
+    assert.match(source, /state\.order\.push\(id\);\s*if\(source\) boardSourceSelection\[id\] = source\.id;\s*saveBoardNavigationState\(\);\s*closeCreateLibraryModal\(\);\s*renderBoardNavigation\(\);/);
+    assert.match(source, /await activateAssetBoard\(id\);/);
     assert.match(source, /waitForAssetIndexJob\(source\.job_id, source\.name\)\.catch\(\(\) => \{\}\);/);
 });
 
