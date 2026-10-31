@@ -1,0 +1,13 @@
+{
+  "schema": "gw.cleanroom-admission-shard/v1",
+  "issue": 413,
+  "authorization_basis": "GitHub Issue #413, 2026-10-30",
+  "files": [
+    "gw/agent_runtime/service.py",
+    "tests/contracts/agent/test_mvp2_t6c_execute_stage_wiring.py",
+    "tests/hygiene/fixtures/admissions/issue-413.json"
+  ],
+  "admitted_files": [],
+  "accepted_test_files": [],
+  "notes": "QIN-455：execute_current_stage 接线阶段能力工具与产物写回契约；工具失败只登记结果，不回滚已批准产物引用。"
+}
