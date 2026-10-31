@@ -25,4 +25,7 @@ COPY web ./web
 COPY run.py ./run.py
 COPY LICENSE ./LICENSE
 
+# NAS 上以可配置的非 root UID/GID 运行；源码需可读、目录需可遍历。
+RUN chmod -R a+rX /app
+
 CMD ["python", "run.py", "--prod"]

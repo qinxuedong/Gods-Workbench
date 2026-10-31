@@ -13,6 +13,7 @@ services:
       LOCALAPPDATA: /var/lib
       GW_DISABLE_AGENT_INTEGRATION: "1"
       GW_CPU_ONLY: "1"
+      GW_ALLOWED_HOSTS: "${GW_ALLOWED_HOSTS:-}"
       KEV_ENDPOINT: ${KEV_ENDPOINT:?set the Kev inference endpoint}
       KEV_MODEL_FAMILY: kev-0.8b
       KEV_MODEL_REVISION: 9a45d25e
@@ -25,7 +26,7 @@ services:
       MKL_NUM_THREADS: "2"
       SYSTEM1_MAX_P95_MS: "50"
     ports:
-      - "${SYSTEM1_PORT:-2077}:2077"
+      - "${SYSTEM1_PORT:-2078}:2077"
     volumes:
       - system1-models:/models/kev:ro
       - system1-data:/var/lib/GodsWorkbench

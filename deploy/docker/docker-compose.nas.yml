@@ -1,23 +1,26 @@
 services:
-  gods-workbench:
+  app:
+    image: gods-workbench:local
     build:
       context: ../..
       dockerfile: deploy/docker/Dockerfile
     command: ["python", "run.py", "--prod"]
+    user: "${GW_UID:?Set GW_UID}:${GW_GID:?Set GW_GID}"
     init: true
     restart: unless-stopped
     ports:
-      - "${GW_PORT:-2077}:2077"
+      - "${GW_HOST_PORT:-2077}:2077"
     environment:
       GW_RUNTIME_MODE: prod
-      GW_AUTH_MODE: oidc
+      GW_AUTH_MODE: "${GW_AUTH_MODE:-oidc}"
+      GW_ALLOWED_HOSTS: "${GW_ALLOWED_HOSTS:-}"
       GW_HOST: 0.0.0.0
       GW_PORT: "2077"
       LOCALAPPDATA: /var/lib/gods-workbench
     volumes:
-      - "${GW_DATA_DIR:-./data}:/var/lib/gods-workbench/GodsWorkbench/data"
-      - "${GW_AUTH_DIR:-./auth}:/var/lib/gods-workbench/GodsWorkbench/auth"
-      - "${GW_VIDEO_DIR:-./video}:/var/lib/gods-workbench/GodsWorkbench/video"
+      - "${GW_DATA_DIR:?Set GW_DATA_DIR to an absolute NAS path}:/var/lib/gods-workbench/GodsWorkbench/data"
+      - "${GW_AUTH_DIR:?Set GW_AUTH_DIR to an absolute NAS path}:/var/lib/gods-workbench/GodsWorkbench/auth"
+      - "${GW_VIDEO_DIR:?Set GW_VIDEO_DIR to an absolute NAS path}:/var/lib/gods-workbench/GodsWorkbench/video"
     read_only: true
     tmpfs:
       - /tmp

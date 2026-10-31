@@ -10,6 +10,7 @@ import yaml
 REPO_ROOT = Path(__file__).resolve().parents[2]
 DOCKERFILE = REPO_ROOT / "deploy" / "docker" / "Dockerfile.system1"
 COMPOSE_FILE = REPO_ROOT / "deploy" / "docker" / "docker-compose.system1.yml"
+SYSTEM1_ENV_FILE = REPO_ROOT / "deploy" / "docker" / ".env.system1.example"
 
 
 def _compose() -> dict:
@@ -43,6 +44,8 @@ def test_system1_compose_declares_one_cpu_service_and_pinned_build():
     assert service["image"] == "gods-workbench-system1:local"
     assert service["user"] == "10001:10001"
     assert service["environment"]["GW_CPU_ONLY"] == "1"
+    assert service["environment"]["GW_ALLOWED_HOSTS"] == "${GW_ALLOWED_HOSTS:-}"
+    assert service["ports"] == ["${SYSTEM1_PORT:-2078}:2077"]
     assert str(service["environment"]["KEV_ENDPOINT"]).startswith("${KEV_ENDPOINT:?")
     assert service["environment"]["KEV_MODEL_FAMILY"] == "kev-0.8b"
     assert service["environment"]["KEV_MODEL_REVISION"] == "9a45d25e"
@@ -94,3 +97,17 @@ def test_system1_healthcheck_is_local_and_does_not_require_credentials():
     text = DOCKERFILE.read_text(encoding="utf-8") + COMPOSE_FILE.read_text(encoding="utf-8")
     forbidden = ("OPENAI_API_KEY", "ANTHROPIC_API_KEY", "GEMINI_API_KEY", "Authorization:")
     assert not any(marker in text for marker in forbidden)
+
+
+def test_system1_env_example_has_port_host_and_required_kev_endpoint_defaults():
+    values = {}
+    for line in SYSTEM1_ENV_FILE.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if line and not line.startswith("#"):
+            key, separator, value = line.partition("=")
+            assert separator
+            values[key] = value
+
+    assert values["SYSTEM1_PORT"] == "2078"
+    assert values["GW_ALLOWED_HOSTS"] == "nas.example.invalid"
+    assert values["KEV_ENDPOINT"] == "http://kev.example.invalid/v1/systemone"
