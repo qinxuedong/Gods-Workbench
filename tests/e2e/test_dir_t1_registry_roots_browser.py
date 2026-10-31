@@ -69,7 +69,8 @@ def test_dir_t1_create_library_index_and_filter_from_browser(monkeypatch, tmp_pa
         )
         goto_ready(page, base + "/static/pages/assets.html")
         vault = page.frame_locator("#assetVaultFrame")
-        page.locator('#assetCategories [data-asset-board-create]').wait_for(state="visible")
+        create_button = page.locator("#assetSidebarCreate")
+        create_button.wait_for(state="visible")
         # 首屏会在一次 networkidle 之后再延迟请求 facets。确认建库前先等这轮结束，
         # 否则 storage-settings / reindex 会排在同步扫描后面，30s 内等不到 POST 响应。
         deadline = time.monotonic() + 30
@@ -78,8 +79,9 @@ def test_dir_t1_create_library_index_and_filter_from_browser(monkeypatch, tmp_pa
         assert bootstrap["facets"], "首屏 /api/asset-registry/facets 未返回"
         page.wait_for_load_state("networkidle", timeout=20_000)
 
-        page.locator('#assetCategories [data-asset-board-create]').click()
-        vault.locator('[data-board-preset="other"]').click()
+        create_button.click()
+        expect(vault.locator("#boardCreateName")).to_be_visible()
+        assert vault.locator("[data-board-preset]").count() == 0
         vault.locator("#boardCreateName").fill("DIR-T1 中文素材库")
         vault.locator("#boardCreatePath").fill(str(library))
         expect(vault.locator("#boardCreateName")).to_have_value("DIR-T1 中文素材库")
