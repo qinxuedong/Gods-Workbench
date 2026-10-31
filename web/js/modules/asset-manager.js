@@ -4294,9 +4294,15 @@ function normalizeRegistryAsset(item={}){
     const classification = metadata.classification && typeof metadata.classification === 'object'
         ? metadata.classification
         : (metadata.classification === null ? {} : (metadata.classification || {}));
+    const assetId = String(item.id || item.asset_id || '').trim();
+    const localMediaUrl = !item.is_remote && item.storage_root_id && assetId
+        ? `/api/asset-registry/assets/${encodeURIComponent(assetId)}/media`
+        : '';
+    const size = Number(item.size ?? item.size_bytes ?? 0);
     return {
         ...item,
-        url:item.latest_image_version_url || item.public_url || item.url || '',
+        url:item.latest_image_version_url || item.public_url || item.url || localMediaUrl,
+        size:Number.isFinite(size) ? size : 0,
         classification:metadata.classification || metadata.classification === null
             ? classification
             : (metadata.classification || metadata?.classification || {}),
