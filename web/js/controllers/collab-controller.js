@@ -17,7 +17,43 @@
 /** 现有协作接口的只读面板与具备服务端权限检查的团队消息。 */
 window.WorkbenchCollab = (() => {
   'use strict';
-  const projectId = new URLSearchParams(location.search).get('project_id') || '';
+  let projectId = new URLSearchParams(location.search).get('project_id') || '';
+  // 入口 project_id 未必还存在于目录：校验通过后才记住并采用，无效则进入无项目态。
+  // 只有目录列表成功且明确不含该 ID 才判定无效；接口不可用不猜，保持原样。
+  let projectContextSettled = false;
+  async function settleProjectContext() {
+    if (projectContextSettled) return;
+    projectContextSettled = true;
+    const candidate = String(projectId || '').trim();
+    if (!candidate) return;
+    let projects = null;
+    try {
+      const res = await fetch('/api/asset-registry/projects?archived=false', { credentials: 'same-origin' });
+      if (!res || !res.ok) return;
+      const payload = await res.json();
+      const list = Array.isArray(payload?.projects) ? payload.projects : [];
+      projects = list.filter(item => item && item.project_id && !item.archived_at && !item.deleted_at);
+    } catch (_) {
+      return;
+    }
+    if (!projects.length) return;
+    if (projects.some(item => String(item.project_id) === candidate)) {
+      try { localStorage.setItem('workspace_project_id', candidate); } catch (_) {}
+      return;
+    }
+    // 项目不存在：校正为目录里真实可用的项目（优先本地记忆里仍有效的那个），
+    // 不把入口的无效 ID 写进本地记忆。
+    let remembered = '';
+    try { remembered = String(localStorage.getItem('workspace_project_id') || ''); } catch (_) {}
+    const picked = projects.find(item => String(item.project_id) === remembered) || projects[0];
+    if (!picked) return;
+    projectId = String(picked.project_id);
+    try {
+      const url = new URL(location.href);
+      url.searchParams.set('project_id', projectId);
+      history.replaceState(null, '', url.toString());
+    } catch (_) {}
+  }
   const pageState = () => ({items: [], status: 'loading', cursor: '', window: null, busy: false});
   const state = {members: pageState(), teams: pageState(), tasks: pageState(), logs: pageState(), audit: pageState(), approvals: pageState(), view: 'tasks'};
   const messageState = {
@@ -586,8 +622,9 @@ window.WorkbenchCollab = (() => {
     lifecycle = null;
   }
 
-  function init() {
+  async function init() {
     dispose();
+    await settleProjectContext();
     lifecycle = new AbortController();
     const signal = lifecycle.signal;
     bindTabs(signal);

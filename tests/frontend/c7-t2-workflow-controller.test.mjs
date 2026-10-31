@@ -92,7 +92,9 @@ test('C7-T2 轮询完成时展示来源回跳项目与画布链接', async () =>
 
   assert.match(harness.body.innerHTML, /来源回跳/);
   assert.match(harness.body.innerHTML, /data-source-provenance/);
-  assert.match(harness.body.innerHTML, /href="\/static\/pages\/projects\.html\?project_id=prj-c7-001"/);
+  // QIN-493：项目中心是选择器，链接不再携带 project_id；来源项目改由点击时写入本地记忆
+  assert.match(harness.body.innerHTML, /href="\/static\/pages\/projects\.html"/);
+  assert.doesNotMatch(harness.body.innerHTML, /href="\/static\/pages\/projects\.html\?project_id=/);
   assert.match(harness.body.innerHTML, /返回来源项目/);
   assert.match(harness.body.innerHTML, /href="\/static\/pages\/canvas\.html\?canvas_id=cnv-c7-002&(?:amp;)?project_id=prj-c7-001"/);
   assert.match(harness.body.innerHTML, /返回来源画布/);
@@ -176,7 +178,9 @@ test('C7-T2 renderProjectContextBadge 渲染项目与画布导航入口', () => 
   const badge = elements.get('workflowProjectContextBadge');
   assert.ok(badge, '必须在 sub-deck 中挂载项目上下文 badge');
   assert.match(badge.innerHTML, /prj-proj-123/);
-  assert.match(badge.innerHTML, /href="\/static\/pages\/projects\.html\?project_id=prj-proj-123"/);
+  // QIN-493：项目中心是选择器，链接不再携带 project_id（目标项目由本地记忆传递）
+  assert.match(badge.innerHTML, /href="\/static\/pages\/projects\.html"/);
+  assert.doesNotMatch(badge.innerHTML, /href="\/static\/pages\/projects\.html\?project_id=/);
   assert.match(badge.innerHTML, /回到项目/);
   assert.match(badge.innerHTML, /href="\/static\/pages\/canvas\.html\?canvas_id=cnv-456&(?:amp;)?project_id=prj-proj-123"/);
   assert.match(badge.innerHTML, /回到画布/);

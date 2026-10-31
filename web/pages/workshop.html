@@ -520,6 +520,42 @@
   <script>
     const WorkbenchWorkshop = (function() {
       const params = new URLSearchParams(window.location.search);
+
+      // 只有真正消费项目上下文的页面才携带 project_id（对齐 BEHAVIOR-SPEC-PRODUCTION-PROJECTS-HUB.md 4.5）。
+      const PROJECT_CONTEXT_PAGES = new Set([
+        'workshop.html', 'production.html', 'storyboard.html', 'canvas.html',
+        'assets.html', 'agents.html', 'workflow.html', 'collab.html'
+      ]);
+
+      // 地址栏只校正、不注入：已有 project_id 时保持与页面实际项目一致；
+      // 无参数表示「未指定」，由 localStorage 兜底，不主动制造参数。
+      function syncAddressBarProject(id) {
+        try {
+          const url = new URL(window.location.href);
+          if (!url.searchParams.has('project_id')) return;
+          const current = url.searchParams.get('project_id') || '';
+          if (current === (id || '')) return;
+          if (id) url.searchParams.set('project_id', id);
+          else url.searchParams.delete('project_id');
+          window.history.replaceState({}, '', url);
+        } catch (_) {}
+      }
+
+      function applyProjectContextLinks(links, id) {
+        links.forEach(a => {
+          const href = a.getAttribute('href');
+          if (!href || href.startsWith('http') || href.startsWith('#')) return;
+          const url = new URL(href, window.location.origin);
+          const page = url.pathname.split('/').pop();
+          if (id && PROJECT_CONTEXT_PAGES.has(page)) {
+            url.searchParams.set('project_id', id);
+          } else {
+            url.searchParams.delete('project_id');
+          }
+          a.setAttribute('href', `${page}${url.search}`);
+        });
+      }
+
       let projectId = params.get('project_id') || localStorage.getItem('workspace_project_id') || 'proj-01';
       let pipelineId = params.get('pipeline_id') || '';
       let newEpisodeModalSnapshot = '';
@@ -672,6 +708,7 @@
         const controller = new AbortController();
         projectsRequestController = controller;
         const keepPlaceholder = projects.filter(p => p.placeholder);
+        let directoryLoaded = false;
         try {
           let res = await fetch(`${API_PROJECTS}?archived=false`, { credentials: 'same-origin', signal: controller.signal });
           let data = null;
@@ -694,10 +731,19 @@
               return pid ? { id: pid, name: p.name || pid } : null;
             }).filter(Boolean);
             projects = real.concat(keepPlaceholder.filter(ph => !real.some(r => r.id === ph.id)));
+            directoryLoaded = true;
           }
 
           if (!requestIsCurrent(generation, epoch)) return;
-          if (projectId && !projects.some(p => p.id === projectId)) {
+          // syncRouteState 会为未知项目造一个本地占位，判断「目录里有没有」必须排除占位，
+          // 否则占位自己会证明自己存在，永远走不到校验和回退。
+          // 目录读成功仍不含该项目时，再给详情接口一次机会：目录只取 archived=false，
+          // 详情接口能补出目录外的单项目。注意 /api/asset-registry/projects/{id} 在服务端
+          // 未注册单项目 GET，恒返回 405 而不是 404，所以换兜底接口的条件必须是「非 2xx」，
+          // 只认 404 会让 405 既不算存在也不算缺失，回退与地址栏校正永不触发。
+          if (directoryLoaded && projectId && !projects.some(p => p.id === projectId && !p.placeholder)) {
+            // 目录已明确不含它：默认判缺失，只有详情接口确认存在时才改判。
+            let missing = true;
             try {
               let pRes = await fetch(`${API_PROJECTS}/${encodeURIComponent(projectId)}`, { credentials: 'same-origin', signal: controller.signal });
               if (!pRes.ok) {
@@ -712,10 +758,33 @@
                   projects.unshift({ id: projId, name: projObj.name || projId });
                   cachedProjectName = projObj.name || projId;
                   try { localStorage.setItem('workspace_project_name', cachedProjectName); } catch (_) {}
+                  missing = false;
                 }
               }
             } catch (error) {
-              if (error?.name !== 'AbortError') { /* 详情读取失败不阻断主目录 */ }
+              if (error?.name === 'AbortError') return;
+              // 详情接口本身不可用不改变目录结论：目录读成功且不含该项目，仍按缺失回退。
+            }
+            if (missing && requestIsCurrent(generation, epoch)) {
+              const candidates = projects.filter(p => p && p.id && !p.placeholder);
+              // 回退到目录里真实存在的项目，并把地址栏校正成真正使用的项目（对齐 BEHAVIOR-SPEC 4.5）。
+              let remembered = '';
+              try { remembered = String(localStorage.getItem('workspace_project_id') || ''); } catch (_) {}
+              const fallback = candidates.find(p => p.id === remembered) || candidates[0];
+              if (fallback) {
+                const staleId = projectId;
+                projectId = fallback.id;
+                cachedProjectName = fallback.name || fallback.id;
+                // 去掉为无效项目造出来的本地占位，避免目录里继续挂着一个不存在的项目。
+                projects = projects.filter(p => !(p.id === staleId && p.placeholder));
+                try {
+                  localStorage.setItem('workspace_project_id', projectId);
+                  localStorage.setItem('workspace_project_name', cachedProjectName);
+                } catch (_) {}
+                syncAddressBarProject(projectId);
+                updateProjectDisplay();
+                void fetchEpisodes();
+              }
             }
           }
         } catch (e) {
@@ -744,14 +813,10 @@
           headerTitleEl.textContent = `${current.name}${suffix} · 项目分集`;
         }
 
-        document.querySelectorAll('#navPillsGroup a, #gotoProductionLink').forEach(a => {
-          const href = a.getAttribute('href');
-          if (href && !href.startsWith('http') && !href.startsWith('#')) {
-            const url = new URL(href, window.location.origin);
-            url.searchParams.set('project_id', projectId);
-            a.setAttribute('href', url.pathname.split('/').pop() + url.search);
-          }
-        });
+        // 只有真正消费项目上下文的页面才携带参数（对齐 BEHAVIOR-SPEC-PRODUCTION-PROJECTS-HUB.md 4.5）；
+        // 地址栏只校正、不注入，避免参数停留在上一个项目。
+        syncAddressBarProject(projectId);
+        applyProjectContextLinks(document.querySelectorAll('#navPillsGroup a, #gotoProductionLink'), projectId);
       }
 
       const API_EPISODES = '/api/episode-pipelines';
@@ -1110,9 +1175,14 @@
         const episodesView = document.getElementById('episodesView');
         const pipelineIframe = document.getElementById('pipelineIframe');
 
-        // 更新浏览器地址栏
+        // 更新浏览器地址栏。
+        // project_id 只做校正、不做注入：地址栏本来没有参数（项目来自本地记忆）时保持无参数，
+        // 与 BEHAVIOR-SPEC-PRODUCTION-PROJECTS-HUB.md 4.5 一致；step 是工坊自身的视图状态，可以回写。
         const url = new URL(window.location.href);
-        url.searchParams.set('project_id', projectId);
+        if (url.searchParams.has('project_id')) {
+          if (projectId) url.searchParams.set('project_id', projectId);
+          else url.searchParams.delete('project_id');
+        }
         url.searchParams.set('step', step);
         if (pipelineId) {
           url.searchParams.set('pipeline_id', pipelineId);
@@ -1195,6 +1265,8 @@
         }
 
         updateProjectDisplay();
+        // 切换项目后立即校正地址栏（已有参数时改写为实际项目，无参数不注入）。
+        syncAddressBarProject(projectId);
         const targetProjectId = projectId;
         const targetGeneration = lifecycleGeneration;
         const targetEpoch = requestEpoch;
@@ -1274,10 +1346,12 @@
               url.searchParams.set('step', event.data.step);
               window.history.replaceState({}, '', url.toString());
             } else if (event.data?.type === 'episode-open-project-board') {
-              const board = new URL('/static/pages/projects.html', location.origin);
+              // 项目中心是选择器，不带 project_id；目标项目改由 localStorage 传递，由项目中心兜底选中。
               const pid = String(event.data.projectId || '');
-              if (pid) board.searchParams.set('project_id', pid);
-              location.assign(board.href);
+              if (pid) {
+                try { localStorage.setItem('workspace_project_id', pid); } catch (_) {}
+              }
+              location.assign(new URL('/static/pages/projects.html', location.origin).href);
             }
           };
           window.addEventListener('message', messageHandler);

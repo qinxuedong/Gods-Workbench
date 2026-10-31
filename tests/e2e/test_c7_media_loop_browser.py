@@ -222,13 +222,15 @@ def test_c7_media_loop_browser_runninghub_real_host_task_and_unified_asset(
         # 验证来源回跳区域
         page.wait_for_selector("[data-source-provenance]")
         source_prov = page.locator("[data-source-provenance]")
-        project_jump = source_prov.locator(
-            f"a[data-action='return-to-source-project'][href*='{project_id}']"
-        )
+        # QIN-493：项目中心是选择器，不再携带 project_id；来源项目改由点击时写入本地记忆。
+        project_jump = source_prov.locator("a[data-action='return-to-source-project']")
         canvas_jump = source_prov.locator(
             f"a[data-action='return-to-source-canvas'][href*='{canvas_id}']"
         )
         assert project_jump.count() >= 1, "必须包含返回来源项目入口"
+        assert "project_id=" not in (project_jump.first.get_attribute("href") or ""), (
+            "返回来源项目入口不得携带 project_id"
+        )
         assert canvas_jump.count() >= 1, "必须包含返回来源画布入口"
 
         _shot(page, "1-workflow-browser-completed-task.png")

@@ -126,7 +126,7 @@ function createEnvironment(fetchHandler) {
     lucide: { createIcons() {} }
   };
   window.window = window;
-  return { window, elements, reviewComment, navProject };
+  return { window, elements, reviewComment, navProject, navProduction, navStoryboard };
 }
 
 test('QIN-175 静态契约：消费 T2 与审阅 API，禁止演示进度回退', () => {
@@ -190,7 +190,7 @@ test('QIN-175 真实流水线上下文按精确版本回读并可退回', async 
     throw new Error(`unexpected request ${url}`);
   };
 
-  const { window, elements, navProject } = createEnvironment(fetchHandler);
+  const { window, elements, navProject, navProduction, navStoryboard } = createEnvironment(fetchHandler);
   const context = vm.createContext(window);
   vm.runInContext(controllerSource, context);
   const production = window.WorkbenchProduction;
@@ -205,7 +205,10 @@ test('QIN-175 真实流水线上下文按精确版本回读并可退回', async 
   assert.equal(state.review.versionId, 'asset-c8-0001-v001');
   assert.equal(state.review.expectedVersion, 1);
   assert.equal(elements.currentShotTitle.textContent.includes('SC01_SH001'), true);
-  assert.match(navProject.getAttribute('href'), /project_id=project-c8-0001/);
+  // QIN-493：项目中心是选择器不携带参数；消费页（制片/分镜）继续携带当前项目。
+  assert.doesNotMatch(navProject.getAttribute('href'), /project_id=/);
+  assert.match(navProduction.getAttribute('href'), /project_id=project-c8-0001/);
+  assert.match(navStoryboard.getAttribute('href'), /project_id=project-c8-0001/);
 
   const comment = await production.addReviewComment('保留构图');
   assert.equal(comment.comment_id, 'rc-c8-0001');

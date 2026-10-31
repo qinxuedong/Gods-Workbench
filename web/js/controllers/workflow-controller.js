@@ -1783,6 +1783,45 @@ function renderHeaderTelemetry(wf) {
   renderProjectContextBadge();
 }
 
+let workflowProjectContextSettled = false;
+// 入口 project_id 未必还存在于目录：校验通过才记住并保留，无效则剔除地址栏参数进入无项目态。
+// 只有目录列表成功且明确不含该 ID 才判定无效；接口不可用不猜，保持原样。
+function settleWorkflowProjectContext() {
+  if (workflowProjectContextSettled) return;
+  workflowProjectContextSettled = true;
+  let candidate = '';
+  try {
+    candidate = String(new URLSearchParams(window.location.search).get('project_id') || '').trim();
+  } catch (_) {
+    return;
+  }
+  if (!candidate) return;
+  fetch('/api/asset-registry/projects?archived=false', { credentials: 'same-origin' })
+    .then(res => (res && res.ok ? res.json() : null))
+    .then(payload => {
+      const list = Array.isArray(payload?.projects) ? payload.projects : [];
+      const projects = list.filter(item => item && item.project_id && !item.archived_at && !item.deleted_at);
+      if (!projects.length) return;
+      if (projects.some(item => String(item.project_id) === candidate)) {
+        try { localStorage.setItem('workspace_project_id', candidate); } catch (_) {}
+        return;
+      }
+      // 项目不存在：校正为目录里真实可用的项目（优先本地记忆里仍有效的那个），
+      // 不把入口的无效 ID 写进本地记忆。
+      let remembered = '';
+      try { remembered = String(localStorage.getItem('workspace_project_id') || ''); } catch (_) {}
+      const picked = projects.find(item => String(item.project_id) === remembered) || projects[0];
+      if (!picked) return;
+      try {
+        const url = new URL(window.location.href);
+        url.searchParams.set('project_id', String(picked.project_id));
+        window.history.replaceState({}, '', url.toString());
+      } catch (_) {}
+      renderProjectContextBadge();
+    })
+    .catch(() => {});
+}
+
 function renderProjectContextBadge() {
   const search = (typeof window !== 'undefined' && window.location?.search) || (typeof location !== 'undefined' && location?.search) || '';
   const params = typeof URLSearchParams !== 'undefined' ? new URLSearchParams(search) : { get: () => null, has: () => false };
@@ -1814,7 +1853,8 @@ function renderProjectContextBadge() {
   }
   if (!badge) return;
   const projectLabel = projectId ? `项目: ${escapeHtml(projectId)}` : '';
-  const backProject = projectId ? `<a id="workflowBackToProjectLink" class="mini-link-btn" href="/static/pages/projects.html?project_id=${encodeURIComponent(projectId)}" style="margin-left:4px;">回到项目</a>` : '';
+  // 项目中心是选择器，不带 project_id（对齐 BEHAVIOR-SPEC 4.5）；目标项目由本地记忆传递。
+  const backProject = projectId ? `<a id="workflowBackToProjectLink" class="mini-link-btn" href="/static/pages/projects.html" style="margin-left:4px;">回到项目</a>` : '';
   const backCanvas = canvasId ? `<a id="workflowBackToCanvasLink" class="mini-link-btn" href="/static/pages/canvas.html?canvas_id=${encodeURIComponent(canvasId)}&project_id=${encodeURIComponent(projectId)}" style="margin-left:4px;">回到画布</a>` : '';
   badge.innerHTML = `<span>${projectLabel}</span>${backProject}${backCanvas}`;
 }
@@ -3742,12 +3782,18 @@ function startTaskPolling(taskId, target) {
         const sourceProvenanceHtml = (delivered && (projectId || canvasId))
           ? `<div class="hw-bay-row wf-source-provenance" data-source-provenance style="align-items:center;gap:8px;margin-top:6px;padding:6px 10px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.08);border-radius:4px;">
               <span style="color:var(--text-muted);font-size:var(--gw-type-body-sm);font-weight:600;">来源回跳:</span>
-              ${projectId ? `<a class="mini-link-btn" data-action="return-to-source-project" href="/static/pages/projects.html?project_id=${encodeURIComponent(projectId)}" target="_blank" rel="noopener noreferrer">返回来源项目</a>` : ''}
+              ${projectId ? `<a class="mini-link-btn" data-action="return-to-source-project" href="/static/pages/projects.html" target="_blank" rel="noopener noreferrer">返回来源项目</a>` : ''}
               ${canvasId ? `<a class="mini-link-btn" data-action="return-to-source-canvas" href="/static/pages/canvas.html?canvas_id=${encodeURIComponent(canvasId)}&project_id=${encodeURIComponent(projectId)}" target="_blank" rel="noopener noreferrer">返回来源画布</a>` : ''}
             </div>`
           : '';
         bodyEl.innerHTML = `<div class="missing-item-card ${delivered ? "ready-ok" : ""}"><div style="color:${delivered ? "var(--emerald-bright)" : "var(--rose)"};font-weight:700;font-family:var(--gw-font-mono);font-variant-numeric:tabular-nums;">${escapeHtml(collectionIncomplete ? "执行已结束，输出回收未完成" : (label[st] || st))} (Job ID: ${escapeHtml(taskId)})${unknownBadge}</div><div style="font-size:var(--gw-type-body-sm);color:var(--text-muted);">${escapeHtml(message)}</div></div>${abandonButton}${mediaHtml}${sourceProvenanceHtml}`;
         bodyEl.querySelector?.("[data-task-abandon]")?.addEventListener("click", () => abandonWorkflowTask(taskId, target));
+        // 项目中心是选择器，不带 project_id；来源项目通过本地记忆传递。
+        bodyEl.querySelectorAll?.('[data-action="return-to-source-project"]').forEach(link => {
+          link.addEventListener("click", () => {
+            try { if (projectId) localStorage.setItem("workspace_project_id", projectId); } catch (_) {}
+          });
+        });
         return;
       }
       observedActive = true;
@@ -4471,7 +4517,7 @@ function disposeWorkbench() {
   lifecycleAbortController = null;
   workbenchRoot = null;
 }
-function rebindWorkbench() { initWorkbench(); }
+function rebindWorkbench() { initWorkbench(); settleWorkflowProjectContext(); }
 function resetWorkflowIdentity() {
   disposeWorkbench();
   state.workflows = []; state.openWorkflowIds = []; state.folders = [];

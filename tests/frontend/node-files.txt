@@ -57,6 +57,7 @@ tests/frontend/qin-489-asset-library-layout.test.mjs
 tests/frontend/qin-490-global-search-input.test.mjs
 tests/frontend/qin-491-topbar-upper-overlap.test.mjs
 tests/frontend/qin-492-workspace-pages-theme.test.mjs
+tests/frontend/qin-493-navigation-project-context.test.mjs
 tests/frontend/qin-494-topbar-date-consistency.test.mjs
 tests/frontend/qin-497-topbar-upper-shrink.test.mjs
 tests/frontend/settings-workbench-visual.test.mjs

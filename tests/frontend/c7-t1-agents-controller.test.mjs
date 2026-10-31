@@ -165,7 +165,9 @@ test('URL 带有 project_id 时绑定项目上下文并渲染回到项目链接'
   const bar = elements['agentProjectContextBar'];
   assert.ok(bar, '应创建 agentProjectContextBar 容器');
   assert.match(bar.innerHTML, /回到项目/, '应包含“回到项目”文本');
-  assert.match(bar.innerHTML, /projects\.html\?project_id=proj-test-123/, '应包含指向该项目的导航超链接');
+  // QIN-493：项目中心是选择器，不携带 project_id；目标项目由 localStorage 传递。
+  assert.match(bar.innerHTML, /href="\/static\/pages\/projects\.html"/, '应包含指向项目中心的导航超链接');
+  assert.doesNotMatch(bar.innerHTML, /projects\.html\?project_id=/, '项目中心链接不得携带 project_id');
 });
 
 test('服务端 Agent 配置就绪时剧本架构师 script-03 状态为 configured', async () => {
