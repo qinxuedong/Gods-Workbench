@@ -1,0 +1,22 @@
+{
+  "schema": "gw.cleanroom-admission-shard/v1",
+  "issue": 492,
+  "authorization_basis": "GitHub Issue #492, 2026-10-30",
+  "files": [
+    "web/pages/assets.html",
+    "web/js/controllers/assets-controller.js",
+    "web/js/modules/asset-manager.js",
+    "web/css/pages/asset-manager.css",
+    "web/css/pages/asset-vault.css",
+    "tests/frontend/qin-489-asset-library-layout.test.mjs",
+    "tests/frontend/node-files.txt",
+    "tests/e2e/test_dir_t1_registry_roots_browser.py",
+    "tests/e2e/test_dir_t7_multi_root_identity_browser.py",
+    "tests/e2e/test_dir_t9_local_assets_pagination_browser.py",
+    "tests/hygiene/fixtures/admissions/issue-492.json",
+    "tests/hygiene/test_cleanroom_hygiene.py"
+  ],
+  "admitted_files": [],
+  "accepted_test_files": [],
+  "notes": "QIN-489：资产库导航与状态栏布局调整。"
+}
