@@ -410,17 +410,20 @@ button.log-entry { width:100%; border:0; border-radius:0; background:transparent
 }
 
 html[data-theme="dark"] body, body[data-theme="dark"] {
-  --paper: #242b27;
-  --paper-2: #2d3530;
-  --paper-3: #343e37;
-  --ink: #edf2ed;
-  --ink-2: #cbd3cd;
-  --muted: #929f97;
-  --line: #667169;
-  --line-soft: rgba(235,241,236,.16);
-  --dark: #151a17;
+  --paper: #0e1117;
+  --paper-2: #141822;
+  --paper-3: #1a202c;
+  --ink: #e5e7eb;
+  --ink-2: #cbd5e1;
+  --muted: #8c96a5;
+  --line: rgba(223, 195, 132, 0.2);
+  --line-soft: rgba(223, 195, 132, 0.08);
+  --dark: #090a0d;
   color-scheme: dark;
-  background: #242b27;
+  background-color: var(--chassis-bg, #090a0d);
+  background-image:
+    radial-gradient(circle at 50% 0%, rgba(223, 195, 132, 0.05) 0%, transparent 65%),
+    linear-gradient(180deg, #0b0d11 0%, #07080a 100%);
 }
 html[data-theme="dark"] .task-detail-dialog,body[data-theme="dark"] .task-detail-dialog { box-shadow:0 22px 64px rgba(0,0,0,.42); }
 html[data-theme="dark"] .task-safe-error,body[data-theme="dark"] .task-safe-error,html[data-theme="dark"] .task-inline-confirm,body[data-theme="dark"] .task-inline-confirm { background:rgba(185,70,50,.16); }

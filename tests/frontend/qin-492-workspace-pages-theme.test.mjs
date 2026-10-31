@@ -67,4 +67,26 @@ for (const pageRel of targetPages) {
   );
 }
 
+// AC2: 验证暗色模式下（如 settings.html 触发 data-theme="dark" 时）body 背景已统一为黑金底色，不得残留 #242b27
+assert.doesNotMatch(
+  workspacePagesCss,
+  /#242b27/i,
+  'workspace-pages.css 不得残留旧暗色主题背景 #242b27'
+);
+
+const darkBodyRule = workspacePagesCss.match(
+  /html\[data-theme="dark"\]\s+body[^{]*\{([^}]*)\}/is
+);
+assert.ok(darkBodyRule, 'workspace-pages.css 必须包含 dark 模式 body 规则');
+assert.match(
+  darkBodyRule[1],
+  /background-color:\s*var\(--chassis-bg[^)]*\);/,
+  'dark 模式 body 必须使用黑金底色 var(--chassis-bg)'
+);
+assert.doesNotMatch(
+  darkBodyRule[1],
+  /#242b27/,
+  'dark 模式 body 不得使用 #242b27'
+);
+
 console.log('QIN-492 workspace pages theme contracts passed');
