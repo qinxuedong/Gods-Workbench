@@ -5374,28 +5374,33 @@ function registryVirtualLayout(items=[], width=0){
     const cssColumns = grid ? registryGridColumnCount(getComputedStyle(grid).gridTemplateColumns) : 0;
     const cols = Math.max(1, cssColumns || Math.floor((contentWidth + gap) / (preferred + gap)));
     const cardWidth = Math.max(96, (contentWidth - gap * Math.max(0, cols - 1)) / cols);
-    const rowHeights = [];
-    items.forEach((item, index) => {
-        const row = Math.floor(index / cols);
-        rowHeights[row] = Math.max(rowHeights[row] || 0, registryVirtualCardHeight(item, cardWidth));
-    });
-    const rowTops = [];
-    let top = 0;
-    rowHeights.forEach(height => {
-        rowTops.push(top);
-        top += height + gap;
-    });
-    const totalHeight = Math.max(0, top - (rowHeights.length ? gap : 0));
-    const itemLayouts = items.map((item, index) => {
-        const row = Math.floor(index / cols);
+    const columnTops = Array.from({length:cols}, () => 0);
+    const itemLayouts = items.map(item => {
+        let column = 0;
+        for(let candidate = 1; candidate < cols; candidate += 1){
+            if(columnTops[candidate] < columnTops[column]) column = candidate;
+        }
+        const top = columnTops[column];
+        const height = Math.max(1, Number(registryVirtualCardHeight(item, cardWidth)) || 1);
+        columnTops[column] = top + height + gap;
         return {
-            left:(index % cols) * (cardWidth + gap),
-            top:rowTops[row] || 0,
+            left:column * (cardWidth + gap),
+            top,
             width:cardWidth,
-            height:rowHeights[row] || registryVirtualCardHeight(item, cardWidth),
+            height,
+            column,
         };
     });
-    return {cols, cardWidth, rowHeights, rowTops, totalHeight, itemLayouts};
+    const rowTops = itemLayouts.map(position => position.top);
+    const rowHeights = itemLayouts.map(position => position.height);
+    const itemMaxBottoms = [];
+    let maxBottom = 0;
+    itemLayouts.forEach(position => {
+        maxBottom = Math.max(maxBottom, position.top + position.height);
+        itemMaxBottoms.push(maxBottom);
+    });
+    const totalHeight = Math.max(0, Math.max(...columnTops) - (items.length ? gap : 0));
+    return {cols, cardWidth, rowHeights, rowTops, itemMaxBottoms, totalHeight, itemLayouts};
 }
 function registryVirtualRowAt(layout, target, fallback=0){
     const rows = layout.rowTops || [];
@@ -5411,19 +5416,31 @@ function registryVirtualRowAt(layout, target, fallback=0){
 function registryVirtualRange(items, layout, scrollTop=0, viewportHeight=650){
     if(!items.length) return {start:0, end:0};
     const overscan = REGISTRY_VIRTUAL_OVERSCAN_ROWS;
-    const firstRow = Math.max(0, registryVirtualRowAt(layout, Math.max(0, scrollTop) - overscan * 260));
-    const lastRow = Math.min(
-        Math.max(0, layout.rowHeights.length - 1),
-        registryVirtualRowAt(layout, Math.max(0, scrollTop) + Math.max(320, viewportHeight) + overscan * 260),
-    );
-    let start = Math.min(items.length, firstRow * layout.cols);
-    let end = Math.min(items.length, (lastRow + 1) * layout.cols);
+    const startTarget = Math.max(0, scrollTop) - overscan * 260;
+    const endTarget = Math.max(0, scrollTop) + Math.max(320, viewportHeight) + overscan * 260;
+    const itemMaxBottoms = layout.itemMaxBottoms || [];
+    let start = 0;
+    if(itemMaxBottoms.length === items.length){
+        let low = 0;
+        let high = items.length;
+        while(low < high){
+            const middle = Math.floor((low + high) / 2);
+            if(itemMaxBottoms[middle] < startTarget) low = middle + 1;
+            else high = middle;
+        }
+        start = Math.min(items.length - 1, low);
+    } else {
+        const firstRow = Math.max(0, registryVirtualRowAt(layout, startTarget));
+        start = Math.min(items.length - 1, firstRow * layout.cols);
+    }
+    const lastItem = Math.min(items.length - 1, registryVirtualRowAt(layout, endTarget));
+    let end = Math.min(items.length, Math.max(start + 1, lastItem + 1));
     const focusId = String(registryFocusRestoreId || '');
     if(focusId){
         const focusIndex = items.findIndex(item => String(item?.id || '') === focusId);
         if(focusIndex >= 0){
-            start = Math.min(start, Math.floor(focusIndex / layout.cols) * layout.cols);
-            end = Math.max(end, Math.min(items.length, (Math.floor(focusIndex / layout.cols) + 1) * layout.cols));
+            start = Math.min(start, focusIndex);
+            end = Math.max(end, focusIndex + 1);
         }
     }
     return {start, end};

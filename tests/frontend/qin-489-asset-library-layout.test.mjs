@@ -154,6 +154,56 @@ test('QIN-504 AC2: 虚拟卡片列数沿用实际 CSS 网格列数', () => {
     assert.equal(layout([{id:'a'},{id:'b'}]).cols, 7);
 });
 
+test('QIN-504 AC6: 瀑布流进入虚拟窗口后保留逐列高度差并完整覆盖可视区', () => {
+    const columnSource = functionSource('registryGridColumnCount');
+    const layoutSource = functionSource('registryVirtualLayout');
+    const rowSource = functionSource('registryVirtualRowAt');
+    const rangeSource = functionSource('registryVirtualRange');
+    const grid = {clientWidth:1750};
+    const buildVirtualLayout = new Function(
+        'root','getComputedStyle','REGISTRY_VIRTUAL_GAP','REGISTRY_CARD_SIZE','registryCardSize','registrySimple','registryAspect','registryVirtualCardHeight','REGISTRY_VIRTUAL_OVERSCAN_ROWS','registryFocusRestoreId',
+        `${columnSource}\n${layoutSource}\n${rowSource}\n${rangeSource}\nreturn {registryVirtualLayout, registryVirtualRange};`,
+    );
+    const {registryVirtualLayout, registryVirtualRange} = buildVirtualLayout(
+        {querySelector:selector => selector === '.registry-grid' ? grid : null},
+        () => ({gridTemplateColumns:'repeat(7, minmax(0px, 1fr))'}),
+        10,
+        {min:96,max:480,fallback:176},
+        176,
+        false,
+        'original',
+        item => item.virtualHeight,
+        3,
+        '',
+    );
+    const heights = [500,100,200,300,400,150,250];
+    const items = Array.from({length:301}, (_,index) => ({
+        id:`asset-${index}`,
+        virtualHeight:heights[index % heights.length],
+    }));
+    const layout = registryVirtualLayout(items);
+
+    assert.equal(layout.cols, 7);
+    assert.deepEqual(layout.itemLayouts.slice(0, 7).map(position => position.top), Array(7).fill(0));
+    assert.equal(layout.itemLayouts[7].top, 110, '第八张素材进入当前最短瀑布列');
+    assert.equal(layout.itemLayouts[8].top, 160);
+    assert.notEqual(layout.itemLayouts[7].top, layout.itemLayouts[8].top, '同一屏的列不再被强制齐头');
+    assert.ok(layout.rowTops.every((top,index,tops) => index === 0 || top >= tops[index - 1]), '按素材顺序的 top 位置保持单调，供二分窗口定位');
+
+    const scrollTop = 3000;
+    const viewportHeight = 500;
+    const range = registryVirtualRange(items, layout, scrollTop, viewportHeight);
+    const visibleStart = scrollTop - 3 * 260;
+    const visibleEnd = scrollTop + viewportHeight + 3 * 260;
+    assert.ok(range.start > 0);
+    assert.ok(range.end < items.length);
+    layout.itemLayouts.forEach((position,index) => {
+        if(position.top + position.height >= visibleStart && position.top <= visibleEnd){
+            assert.ok(index >= range.start && index < range.end, `可视区中的 ${items[index].id} 应在虚拟窗口中`);
+        }
+    });
+});
+
 test('QIN-504 AC3: 快速分页后同步资产库计数与续载状态', () => {
     const footer = functionSource('syncRegistryVaultFooter');
     const loadStart = manager.indexOf('async function loadMoreRegistryAssets(){');
