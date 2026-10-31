@@ -393,9 +393,11 @@ const REGISTRY_PAGE_SIZE = 100;
 // a time, instead of re-requesting every previously loaded card in parallel.
 const REGISTRY_STRUCTURE_QUERY_CHUNK_SIZE = 500;
 const REGISTRY_CACHE_MAX_SIZE = 20; // 【优化问题1】限制缓存大小，避免内存膨胀
-const REGISTRY_PREVIEW_ROOT_MARGIN = '320px 0px';
-const REGISTRY_PREVIEW_FALLBACK_LIMIT = 24;
+const REGISTRY_PREVIEW_ROOT_MARGIN = '0px 0px';
+const REGISTRY_PREVIEW_SCROLL_AHEAD_COUNT = 20;
+const REGISTRY_PREVIEW_SCROLL_PRELOAD_INTERVAL_MS = 120;
 const REGISTRY_PREVIEW_CONCURRENCY = 4;
+const registryPreviewImageCache = new Map();
 const REGISTRY_VIRTUAL_WINDOW_SIZE = 120;
 const REGISTRY_VIRTUAL_OVERSCAN_ROWS = 3;
 const REGISTRY_VIRTUAL_GAP = 10;
@@ -5480,8 +5482,10 @@ function updateRegistryVirtualWindow(force=false){
         && Math.abs(Number(registryVirtualState.totalHeight || 0) - layout.totalHeight) < 1;
     if(sameWindow) return false;
     const savedScrollTop = scrollRoot.scrollTop;
+    const registryPreviewCache = captureRegistryPreviewImages();
     grid.style.setProperty('--registry-virtual-height', `${layout.totalHeight.toFixed(2)}px`);
     grid.innerHTML = registryVirtualGridMarkup(items, layout, range).replace(/^<div class="registry-grid registry-grid-virtualized"[^>]*>/, '').replace(/<\/div>\s*$/, '');
+    restoreRegistryPreviewImages(registryPreviewCache);
     registryVirtualState = {
         ...layout,
         width,
@@ -7159,27 +7163,57 @@ function activateRegistryPreviewImage(image){
 }
 function scheduleRegistryPreviewFallback(scrollRoot){
     let frame = 0;
-    const activateVisible = () => {
-        frame = 0;
+    let preloadAhead = false;
+    let lastScrollPreloadAt = Number.NEGATIVE_INFINITY;
+    const activateVisible = (preloadOutsideViewport=false) => {
         const rootRect = scrollRoot.getBoundingClientRect();
-        const margin = 320;
-        let remaining = REGISTRY_PREVIEW_FALLBACK_LIMIT;
-        root.querySelectorAll('img[data-registry-preview-src]').forEach(image => {
-            if(remaining <= 0) return;
-            const rect = image.getBoundingClientRect();
-            const visible = rect.bottom >= rootRect.top - margin && rect.top <= rootRect.bottom + margin
-                && rect.right >= rootRect.left && rect.left <= rootRect.right;
-            if(visible && activateRegistryPreviewImage(image)) remaining -= 1;
+        const previews = [...root.querySelectorAll('img[data-registry-preview-src]')]
+            .filter(image => image.dataset.registryPreviewQueued !== 'true')
+            .map(image => ({
+                image,
+                rect:image.getBoundingClientRect(),
+            }))
+            .filter(({rect}) => rect.right >= rootRect.left && rect.left <= rootRect.right);
+        previews.forEach(({image,rect}) => {
+            const visible = rect.bottom >= rootRect.top && rect.top <= rootRect.bottom;
+            if(visible) activateRegistryPreviewImage(image);
+        });
+        if(!preloadOutsideViewport) return;
+        previews.filter(({rect}) => rect.top >= rootRect.bottom)
+            .sort((a,b) => a.rect.top - b.rect.top || a.rect.left - b.rect.left)
+            .slice(0, REGISTRY_PREVIEW_SCROLL_AHEAD_COUNT)
+            .forEach(({image}) => activateRegistryPreviewImage(image));
+    };
+    const scheduleVisible = (preloadOutsideViewport=false) => {
+        if(preloadOutsideViewport) preloadAhead = true;
+        if(frame) return;
+        frame = requestAnimationFrame(() => {
+            frame = 0;
+            const shouldPreloadAhead = preloadAhead;
+            preloadAhead = false;
+            activateVisible(shouldPreloadAhead);
         });
     };
-    const onScroll = () => {
-        if(frame) return;
-        frame = requestAnimationFrame(activateVisible);
+    const onScroll = () => scheduleVisible();
+    const onWheel = event => {
+        if(Number(event.deltaY || 0) <= 0){
+            preloadAhead = false;
+            lastScrollPreloadAt = Number.NEGATIVE_INFINITY;
+            scheduleVisible();
+            return;
+        }
+        const currentTime = performance.now();
+        if(currentTime - lastScrollPreloadAt < REGISTRY_PREVIEW_SCROLL_PRELOAD_INTERVAL_MS) return;
+        lastScrollPreloadAt = currentTime;
+        scheduleVisible(true);
     };
     scrollRoot.addEventListener('scroll', onScroll, {passive:true});
+    scrollRoot.addEventListener('wheel', onWheel, {passive:true});
     registryPreviewFallbackCleanup = () => {
         scrollRoot.removeEventListener('scroll', onScroll);
+        scrollRoot.removeEventListener('wheel', onWheel);
         if(frame) cancelAnimationFrame(frame);
+        preloadAhead = false;
     };
     activateVisible();
 }
@@ -7220,13 +7254,11 @@ function registryPreviewCacheKey(image){
     return imageIndex < 0 ? '' : `${card.dataset.registryCard || ''}:${imageIndex}`;
 }
 function captureRegistryPreviewImages(){
-    const cache = new Map();
+    const cache = registryPreviewImageCache;
     root?.querySelectorAll('img[data-registry-preview-loaded="true"]').forEach(image => {
         const key = registryPreviewCacheKey(image);
         if(!key) return;
-        const entries = cache.get(key) || [];
-        entries.push({image, source:image.currentSrc || image.src});
-        cache.set(key, entries);
+        cache.set(key, {image, source:image.currentSrc || image.src});
     });
     return cache;
 }
@@ -7234,15 +7266,17 @@ function restoreRegistryPreviewImages(cache){
     if(!cache?.size) return;
     root?.querySelectorAll('img[data-registry-preview-src]').forEach(image => {
         const key = registryPreviewCacheKey(image);
-        const entries = cache.get(key) || [];
+        const entry = cache.get(key);
         const source = String(image.dataset.registryPreviewSrc || '');
         if(!key || !source) return;
         let expectedSource = '';
         try { expectedSource = new URL(source, document.baseURI).href; } catch(_) { return; }
-        const index = entries.findIndex(entry => !entry.image.isConnected && entry.source === expectedSource);
-        if(index < 0) return;
-        const [loaded] = entries.splice(index, 1);
-        image.replaceWith(loaded.image);
+        if(!entry || entry.image.isConnected) return;
+        if(entry.source !== expectedSource){
+            cache.delete(key);
+            return;
+        }
+        image.replaceWith(entry.image);
     });
 }
 // ===== MVP1-T5 治理建议清单视图（只建议 + 逐条确认，系统不改源文件、不自动删除） =====

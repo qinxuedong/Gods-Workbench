@@ -171,3 +171,133 @@ test('QIN-504 AC5: 图片延迟加载使用透明占位，透出素材卡片深�
     assert.doesNotMatch(placeholder[1], /(?:fill=|#(?:fff|ffffff))/i);
     assert.match(deferred, /setAttribute\('src', REGISTRY_PREVIEW_PLACEHOLDER\)/);
 });
+
+test('QIN-504 AC6: 已加载预览离开虚拟窗口后上下返回仍复用原图片节点', () => {
+    const loadedImage = {
+        dataset:{registryPreviewLoaded:'true'},
+        currentSrc:'https://example.test/thumb/asset-a.png',
+        isConnected:true,
+    };
+    const card = image => ({
+        dataset:{registryCard:'asset-a'},
+        querySelectorAll:() => [image],
+    });
+    loadedImage.closest = () => card(loadedImage);
+    const placeholder = {
+        dataset:{registryPreviewSrc:'/thumb/asset-a.png'},
+        closest:null,
+        replaceWith(image){
+            this.replacedWith = image;
+            image.isConnected = true;
+            this.isConnected = false;
+        },
+    };
+    placeholder.closest = () => card(placeholder);
+    let visibleImages = [loadedImage];
+    const root = {
+        querySelectorAll(selector){
+            return selector.includes('registry-preview-loaded')
+                ? visibleImages.filter(image => image.dataset.registryPreviewLoaded === 'true')
+                : visibleImages.filter(image => image.dataset.registryPreviewSrc);
+        },
+    };
+    const buildCache = new Function(
+        'root','document',
+        `const registryPreviewImageCache = new Map();\n${functionSource('registryPreviewCacheKey')}\n${functionSource('captureRegistryPreviewImages')}\n${functionSource('restoreRegistryPreviewImages')}\nreturn {captureRegistryPreviewImages, restoreRegistryPreviewImages};`,
+    );
+    const {captureRegistryPreviewImages, restoreRegistryPreviewImages} = buildCache(root, {baseURI:'https://example.test/assets.html'});
+    const cache = captureRegistryPreviewImages();
+
+    loadedImage.isConnected = false;
+    visibleImages = [placeholder];
+    restoreRegistryPreviewImages(cache);
+    assert.equal(placeholder.replacedWith, loadedImage);
+
+    loadedImage.isConnected = false;
+    const returnedPlaceholder = {...placeholder, replacedWith:null};
+    returnedPlaceholder.closest = () => card(returnedPlaceholder);
+    visibleImages = [returnedPlaceholder];
+    restoreRegistryPreviewImages(cache);
+    assert.equal(returnedPlaceholder.replacedWith, loadedImage);
+
+    const update = functionSource('updateRegistryVirtualWindow');
+    const captureIndex = update.indexOf('captureRegistryPreviewImages()');
+    const rebuildIndex = update.indexOf('grid.innerHTML =');
+    const restoreIndex = update.indexOf('restoreRegistryPreviewImages(registryPreviewCache)');
+    const scheduleIndex = update.indexOf('scheduleRegistryPreviewImages()');
+    assert.ok(captureIndex >= 0 && rebuildIndex > captureIndex && restoreIndex > rebuildIndex && scheduleIndex > restoreIndex);
+});
+
+test('QIN-504 AC7: 只在向下滚动时预加载视口外下一批20张预览', () => {
+    const visibleImages = [100, 200, 300].map((top,index) => ({id:`visible-${index}`, baseTop:top}));
+    const aheadImages = Array.from({length:40}, (_,index) => ({id:`ahead-${index}`, baseTop:1000 + index * 100}));
+    const images = [...visibleImages, ...aheadImages].map(image => ({
+        id:image.id,
+        dataset:{registryPreviewSrc:`/thumb/${image.id}.png`},
+        getBoundingClientRect(){
+            const top = image.baseTop - scrollRoot.scrollTop;
+            return {top,bottom:top + 80,left:10,right:90};
+        },
+    }));
+    const callbacks = [];
+    const listeners = {};
+    let currentTime = 500;
+    const scrollRoot = {
+        scrollTop:0,
+        addEventListener(name,listener){listeners[name] = listener;},
+        removeEventListener(name){delete listeners[name];},
+        getBoundingClientRect(){return {top:0,bottom:600,left:0,right:100};},
+    };
+    const activated = [];
+    const activate = image => {
+        if(!image.dataset.registryPreviewSrc || image.dataset.registryPreviewQueued === 'true') return false;
+        activated.push(image.id || image.dataset.registryPreviewSrc);
+        image.dataset.registryPreviewQueued = 'true';
+        return true;
+    };
+    const buildScheduler = new Function(
+        'root','REGISTRY_PREVIEW_SCROLL_AHEAD_COUNT','requestAnimationFrame','activateRegistryPreviewImage','performance','REGISTRY_PREVIEW_SCROLL_PRELOAD_INTERVAL_MS',
+        `let registryPreviewFallbackCleanup = null;\n${functionSource('scheduleRegistryPreviewFallback')}\nreturn scheduleRegistryPreviewFallback;`,
+    );
+    const schedule = buildScheduler(
+        {querySelectorAll:() => images.filter(image => image.dataset.registryPreviewSrc)},
+        20,
+        callback => {callbacks.push(callback); return callbacks.length;},
+        activate,
+        {now:() => currentTime},
+        120,
+    );
+    schedule(scrollRoot);
+    assert.deepEqual(activated, visibleImages.map(image => image.id));
+
+    scrollRoot.scrollTop = 50;
+    listeners.scroll();
+    callbacks.shift()();
+    assert.equal(activated.length, 3, '普通滚动只补充当前视口素材');
+
+    listeners.wheel({deltaY:50});
+    callbacks.shift()();
+    assert.equal(activated.length, 23, '下滑后只在当前可见项之外再加载20张');
+    assert.equal(activated.filter(id => id.includes('ahead-')).length, 20);
+
+    currentTime = 550;
+    listeners.wheel({deltaY:50});
+    assert.equal(callbacks.length, 0, '同一连续滚轮动作的重复事件不重复排一批');
+
+    scrollRoot.scrollTop = 0;
+    currentTime = 560;
+    listeners.wheel({deltaY:-50});
+    callbacks.shift()();
+    assert.equal(activated.length, 23, '上滑不继续加载新的视口外批次');
+
+    scrollRoot.scrollTop = 50;
+    currentTime = 570;
+    listeners.wheel({deltaY:50});
+    callbacks.shift()();
+    assert.equal(activated.length, 43, '继续下滑时才加载下一批20张');
+    assert.equal(manager.match(/const REGISTRY_PREVIEW_ROOT_MARGIN = '([^']+)'/)?.[1], '0px 0px');
+
+    assert.match(manager, /const REGISTRY_PAGE_SIZE = 100/);
+    assert.match(functionSource('loadMoreRegistryAssets'), /registryQueryString\(\{offset,cursor\}\)/);
+    assert.match(functionSource('prefetchRegistryNextPage'), /registryQueryString\(\{offset,cursor\}\)/);
+});
