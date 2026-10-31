@@ -90,25 +90,17 @@ docker compose -p gods-workbench --env-file deploy/docker/.env -f deploy/docker/
 
 当前没有可供 `docker compose pull` 使用的官方应用镜像。后续正式版本镜像发布后，将按版本标签提供拉取与回滚流程。不要使用 `docker compose down -v`；它可能删除容器管理的数据卷。回滚源码构建可恢复到先前代码版本并重新构建；只有确认需要时才从备份恢复数据。
 
-## 可选：部署 System1 CPU 决策服务
+## 可选：部署 System1 决策适配器
 
-System1 是独立的可选 Compose 服务，不会替代主应用，也不是主应用启动前置。容器内仍监听 2077，宿主默认映射到 2078；与主应用一起运行时两者不会抢同一个宿主端口。该镜像在仓库源码上本地构建，不会下载模型或 Kev 推理服务。
+System1 是独立的可选 HTTP 适配器，不替代主应用，也不是启动主应用的前置条件。容器内监听 2077，宿主默认映射到 2078；Kev 推理服务和模型文件单独部署在 NAS 或另一台有 GPU 的主机上。Compose 仅构建适配器，不下载或加载 Kev 模型。完整的模型选择、下载、服务启动、API 调用和排错步骤见[System1 与 Kev 多规格部署指南](SYSTEM1.md)。
 
-从仓库根目录复制单独的配置模板：
+从仓库根目录复制并编辑配置模板：
 
 ~~~sh
 cp deploy/docker/.env.system1.example deploy/docker/.env.system1
 ~~~
 
-编辑 deploy/docker/.env.system1：
-
-- 将 SYSTEM1_PORT 保持为 2078，或改成未占用的 NAS 宿主端口。
-- 将 GW_ALLOWED_HOSTS 改为浏览器或调用方访问 NAS 时实际使用的 IP/DNS 主机名，精确填写，不带协议和端口；多个主机用逗号分隔，不用通配符。
-- 将 KEV_ENDPOINT 改成容器可访问的 Kev System One 推理 API 地址。示例中的 kev.example.invalid 是保留的无效域名；不要直接使用它。若 Kev 服务不在同一容器，不能把 127.0.0.1 当成宿主机或另一容器地址。
-
-docker-compose.system1.yml 使用独立的 Docker 管理卷 gods-workbench-system1-models，并以只读方式挂载到 /models/kev。Compose 不会下载或填充模型。使用前按获准的模型交付方式预置所需的 Kev-0.8B revision 9a45d25e，并确保 Kev 推理 API 已启动且能从 System1 容器访问；此 Compose 只启动 System1 接口，不包含 Kev 模型推理服务本身。
-
-校验、构建并启动：
+将 `KEV_ENDPOINT` 设置为 **System1 容器内可访问**的 Kev `/v1/systemone` 地址；将 `GW_ALLOWED_HOSTS` 设置为客户端访问 System1 时使用的 NAS IP/DNS 主机名（不带协议和端口）。`SYSTEM1_PORT` 默认是 2078，可改为未占用的宿主端口。
 
 ~~~sh
 docker compose -p gods-workbench-system1 --env-file deploy/docker/.env.system1 -f deploy/docker/docker-compose.system1.yml config --quiet
@@ -117,12 +109,4 @@ docker compose -p gods-workbench-system1 --env-file deploy/docker/.env.system1 -
 docker compose -p gods-workbench-system1 --env-file deploy/docker/.env.system1 -f deploy/docker/docker-compose.system1.yml logs --tail=100 system1
 ~~~
 
-健康检查使用容器内 127.0.0.1:2077。NAS 本机可检查 http://127.0.0.1:2078/healthz；局域网调用地址为 http://<NAS主机名或IP>:2078/v1/systemone。若更改 SYSTEM1_PORT，请同步替换宿主侧端口。防火墙需允许所选端口；GW_ALLOWED_HOSTS 必须与 URL 中的主机一致，否则服务返回 Invalid host header。
-
-停止但保留模型和运行数据卷：
-
-~~~sh
-docker compose -p gods-workbench-system1 --env-file deploy/docker/.env.system1 -f deploy/docker/docker-compose.system1.yml down
-~~~
-
-不要加 -v；这会删除 Docker 管理卷。主应用继续单独使用 docker-compose.nas.yml 与宿主默认端口 2077。
+容器健康检查只验证 System1 进程；Kev 服务可达性要另用 `GET /v1/models` 或决策请求验证。停止服务但保留数据卷时执行 `docker compose ... down`，不要加 `-v`。主应用仍使用 `docker-compose.nas.yml` 和宿主默认端口 2077。

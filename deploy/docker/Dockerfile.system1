@@ -15,10 +15,10 @@
 FROM python:3.11-slim-bookworm
 
 LABEL org.opencontainers.image.title="Gods-Workbench System 1" \
-      org.opencontainers.image.description="Kev-0.8B pure CPU decision service base" \
+      org.opencontainers.image.description="System One HTTP adapter for an external Kev-compatible inference endpoint" \
       org.opencontainers.image.licenses="Apache-2.0"
 
-# 不在镜像中下载模型或保存凭据；模型由 Compose 以只读卷提供。
+# 本镜像只运行 System One HTTP 适配器；Kev 模型服务独立部署在 KEV_ENDPOINT 指向的位置。
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \
@@ -26,10 +26,6 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     LOCALAPPDATA=/var/lib \
     GW_DISABLE_AGENT_INTEGRATION=1 \
     GW_CPU_ONLY=1 \
-    KEV_MODEL_REVISION=9a45d25e \
-    GW_MODEL_OFFLINE=1 \
-    HF_HUB_OFFLINE=1 \
-    TRANSFORMERS_OFFLINE=1 \
     CUDA_VISIBLE_DEVICES="" \
     NVIDIA_VISIBLE_DEVICES=void \
     OMP_NUM_THREADS=2 \
@@ -48,7 +44,7 @@ COPY web ./web
 COPY tools ./tools
 COPY run.py ./run.py
 
-RUN install --directory --owner=10001 --group=10001 /var/lib/GodsWorkbench /models/kev
+RUN install --directory --owner=10001 --group=10001 /var/lib/GodsWorkbench
 
 EXPOSE 2077
 

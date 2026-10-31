@@ -1,5 +1,5 @@
-# C17-T2：Kev-0.8B 纯 CPU 服务配置。
-# 模型卷必须由部署者预置；本文件不下载模型、不接收凭据，也不执行生产部署。
+# System1 通用 CPU HTTP 适配器；Kev 模型由 KEV_ENDPOINT 指向的独立服务加载。
+# 本文件不下载模型、不接收上游 Kev 凭据，也不代表真实 NAS 已验收。
 
 services:
   system1:
@@ -15,20 +15,13 @@ services:
       GW_CPU_ONLY: "1"
       GW_ALLOWED_HOSTS: "${GW_ALLOWED_HOSTS:-}"
       KEV_ENDPOINT: ${KEV_ENDPOINT:?set the Kev inference endpoint}
-      KEV_MODEL_FAMILY: kev-0.8b
-      KEV_MODEL_REVISION: 9a45d25e
-      GW_MODEL_OFFLINE: "1"
-      HF_HUB_OFFLINE: "1"
-      TRANSFORMERS_OFFLINE: "1"
       CUDA_VISIBLE_DEVICES: ""
       NVIDIA_VISIBLE_DEVICES: "void"
       OMP_NUM_THREADS: "2"
       MKL_NUM_THREADS: "2"
-      SYSTEM1_MAX_P95_MS: "50"
     ports:
       - "${SYSTEM1_PORT:-2078}:2077"
     volumes:
-      - system1-models:/models/kev:ro
       - system1-data:/var/lib/GodsWorkbench
     read_only: true
     tmpfs:
@@ -56,7 +49,5 @@ services:
       start_period: 20s
 
 volumes:
-  system1-models:
-    name: gods-workbench-system1-models
   system1-data:
     name: gods-workbench-system1-data
