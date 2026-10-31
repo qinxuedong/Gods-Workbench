@@ -8,7 +8,7 @@ import inspect
 import json
 import re
 import uuid
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation
 from enum import StrEnum
@@ -28,6 +28,7 @@ from gw.agent_runtime.models import (
     AttemptKind,
     AttemptStatus,
     BudgetDecision,
+    BudgetState,
     ClarificationQuestion,
     ClarificationRead,
     ConfigSnapshot,
@@ -39,6 +40,7 @@ from gw.agent_runtime.models import (
     ModelInvocationRequest,
     ModelInvocationResult,
     PausedReason,
+    Reason,
     ReviewConclusion,
     ReviewDecisionRequest,
     ReviewRecord,
@@ -82,6 +84,32 @@ _PROPOSAL_CREDENTIAL_VALUE = re.compile(
     r"(?i)\b(?:api[-_ ]?key|access[-_ ]?token|credential|password|secret|authorization)"
     r"\b\s*[:=]\s*\S+|\bbearer\s+\S+|\bsk-[A-Za-z0-9_-]{8,}"
 )
+
+# MVP2-T6c：阶段执行完成后需要接线的已注册生产能力工具（T4/T5 的稳定工具名）。
+# 工具未注册、入参不足以满足其登记 schema、或成本非 free 且门禁未批准时一律
+# 跳过（fail closed），既不伪造调用，也不把跳过当作失败。
+_STAGE_CAPABILITY_TOOLS: dict[str, tuple[str, ...]] = {
+    StageId.full_script.value: ("script_generate",),
+    StageId.scene_script.value: ("script_generate",),
+    StageId.storyboard_text.value: ("storyboard_generate",),
+    StageId.delivery_check.value: ("timeline_compose", "master_render"),
+}
+
+# 阶段与其成本门禁种类：门禁批准即用户已授权该阶段的一次成本工具调用。
+_STAGE_CAPABILITY_GATE: dict[str, GateKind] = {
+    StageId.full_script.value: GateKind.script,
+    StageId.scene_script.value: GateKind.script,
+    StageId.storyboard_text.value: GateKind.storyboard,
+    StageId.delivery_check.value: GateKind.master_output,
+}
+
+# 门禁批准后金额仍未确定，按运行时契约以显式原因登记未知成本。
+_STAGE_TOOL_BUDGET_REASON = (
+    "The approved stage gate explicitly authorizes one unknown-cost capability call."
+)
+
+# 产物写回契约端口：上游实现负责真正的素材注册表写入，此处只负责接线。
+ArtifactWritebackPort = Callable[[Mapping[str, Any]], Any]
 
 
 def _authorizer_accepts_run_id(authorizer: Any) -> bool:
@@ -249,6 +277,7 @@ class AgentRuntimeService:
         gate_store: GateStore | None = None,
         orchestrator_role: str | None = None,
         execution_authorizer: Any | None = None,
+        artifact_writeback: ArtifactWritebackPort | None = None,
         owner_id: Identifier | None = None,
         lease_seconds: int = 120,
     ) -> None:
@@ -267,6 +296,7 @@ class AgentRuntimeService:
         )
         self.orchestrator_role = orchestrator_role
         self.execution_authorizer = execution_authorizer
+        self.artifact_writeback = artifact_writeback
         self._execution_authorizer_has_run_id = (
             _authorizer_accepts_run_id(execution_authorizer)
             if execution_authorizer is not None
@@ -1444,6 +1474,168 @@ class AgentRuntimeService:
         }[updated.state]
         return GateDecisionResult(record=updated, signal=signal)
 
+    def _stage_capability_gate_state(
+        self, run_id: Identifier, kind: GateKind | None
+    ) -> GateState | None:
+        """读取该阶段唯一的门禁状态；缺失、多条或台账不可用都按未批准处理。"""
+        if self.gate_store is None or kind is None:
+            return None
+        records = [
+            record
+            for record in self.gate_store.list_for_run(run_id)
+            if record.kind is kind
+        ]
+        return records[0].state if len(records) == 1 else None
+
+    @staticmethod
+    def _stage_tool_arguments(
+        registration: Any,
+        *,
+        run_id: Identifier,
+        project_id: Identifier,
+        stage: StageId,
+        attempt: StageAttempt,
+    ) -> dict[str, Any] | None:
+        """只按工具登记 schema 声明的字段构造入参；不足以满足必填时返回 None。"""
+        schema = getattr(registration, "input_schema", None)
+        properties = schema.get("properties") if isinstance(schema, Mapping) else None
+        if not isinstance(properties, Mapping):
+            properties = {}
+        values = {
+            "run_id": run_id.root,
+            "project_id": project_id.root,
+            "stage": stage.value,
+            "idempotency_key": (
+                f"stage-tool:{attempt.stage_attempt_id.root}:{registration.name}"
+            ),
+        }
+        arguments = {key: value for key, value in values.items() if key in properties}
+        stage_property = properties.get("stage")
+        if isinstance(stage_property, Mapping):
+            allowed_stages = stage_property.get("enum")
+            if isinstance(allowed_stages, Sequence) and stage.value not in allowed_stages:
+                return None
+        required = schema.get("required") or ()
+        if any(name not in arguments for name in required):
+            return None
+        return arguments
+
+    async def _dispatch_stage_capabilities(
+        self,
+        *,
+        project_id: Identifier,
+        run_id: Identifier,
+        stage: StageId,
+        attempt: StageAttempt,
+        actor_id: Identifier,
+    ) -> dict[str, Any]:
+        """接线该阶段已注册的生产能力工具；失败只登记，不回滚已批准产物引用。"""
+        record: dict[str, Any] = {
+            "stage": stage.value,
+            "invoked": [],
+            "skipped": [],
+            "failed": [],
+        }
+        tool_names = _STAGE_CAPABILITY_TOOLS.get(stage.value, ())
+        if not tool_names:
+            record["skipped"].append(
+                {"tool": None, "reason": "stage_has_no_capability_tool"}
+            )
+            return record
+        gate_state = self._stage_capability_gate_state(
+            run_id, _STAGE_CAPABILITY_GATE.get(stage.value)
+        )
+        for name in tool_names:
+            try:
+                registration = self.registry.get_tool(name)
+            except DomainError:
+                record["skipped"].append({"tool": name, "reason": "tool_not_registered"})
+                continue
+            metered = registration.cost_state is not ToolCostState.free
+            if metered and gate_state is not GateState.approved:
+                record["skipped"].append({"tool": name, "reason": "gate_not_approved"})
+                continue
+            arguments = self._stage_tool_arguments(
+                registration,
+                run_id=run_id,
+                project_id=project_id,
+                stage=stage,
+                attempt=attempt,
+            )
+            if arguments is None:
+                record["skipped"].append(
+                    {"tool": name, "reason": "arguments_unavailable"}
+                )
+                continue
+            budget = (
+                BudgetDecision(
+                    state=BudgetState.allowed,
+                    amount=None,
+                    currency=None,
+                    reason=Reason(_STAGE_TOOL_BUDGET_REASON),
+                )
+                if metered
+                else None
+            )
+            try:
+                await self.registry.invoke_tool(name, actor_id, arguments, budget=budget)
+            except DomainError as exc:
+                # 工具失败不得让已落盘的产物版本与门禁台账失效，只登记稳定错误码。
+                record["failed"].append({"tool": name, "code": exc.code.value})
+                continue
+            except Exception:  # 工具实现的任意异常同属工具失败，不外溢为运行时失败
+                record["failed"].append(
+                    {"tool": name, "code": ErrorCode.UPSTREAM_UNAVAILABLE.value}
+                )
+                continue
+            record["invoked"].append(
+                {
+                    "tool": name,
+                    "stage": stage.value,
+                    "idempotency_key": arguments["idempotency_key"],
+                }
+            )
+        return record
+
+    async def _write_back_stage_artifact(
+        self,
+        *,
+        project_id: Identifier,
+        run_id: Identifier,
+        stage: StageId,
+        attempt: StageAttempt,
+        artifact: ArtifactRef,
+        review: ReviewRecord,
+        gate: Any,
+    ) -> dict[str, Any]:
+        """调用上游产物写回契约；未注入端口时明确 skip，不伪造成功。"""
+        port = self.artifact_writeback
+        if port is None:
+            return {"status": "skipped", "reason": "writeback_port_not_configured"}
+        provenance = {
+            "project_id": project_id.root,
+            "run_id": run_id.root,
+            "task_id": attempt.stage_attempt_id.root,
+            "stage": stage.value,
+            "artifact_id": artifact.artifact_id.root,
+            "artifact_version_id": artifact.version_id.root,
+            "content_hash": artifact.content_hash.root,
+            "review_id": review.review_id.root,
+            "gate": gate.gate.value,
+        }
+        try:
+            written = port(provenance)
+            if inspect.isawaitable(written):
+                await written
+        except DomainError as exc:
+            return {"status": "failed", "code": exc.code.value}
+        except Exception:  # 写回契约失败同样不得回滚已批准的产物引用
+            return {"status": "failed", "code": ErrorCode.UPSTREAM_UNAVAILABLE.value}
+        return {
+            "status": "written",
+            "artifact_version_id": artifact.version_id.root,
+        }
+
     async def start_run(
         self,
         project_id: Identifier,
@@ -2102,6 +2294,38 @@ class AgentRuntimeService:
                 roles_to_revalidate.append(self.orchestrator_role)
             for role_name in dict.fromkeys(roles_to_revalidate):
                 await dispatch_guard(role_name)
+
+            # MVP2-T6c：此时候选产物版本、阶段尝试引用与门禁台账均已持久，
+            # 才接线该阶段已注册的能力工具与产物写回契约；工具或写回失败只登记
+            # 结果，绝不回滚已批准的产物引用。
+            stage_capabilities = await self._dispatch_stage_capabilities(
+                project_id=project_id,
+                run_id=run_id,
+                stage=stage,
+                attempt=attempt,
+                actor_id=actor_id,
+            )
+            state.setdefault("stage_capabilities", {})[stage.value] = stage_capabilities
+            state["stage_artifact_writeback"] = await self._write_back_stage_artifact(
+                project_id=project_id,
+                run_id=run_id,
+                stage=stage,
+                attempt=attempt,
+                artifact=artifact,
+                review=review,
+                gate=gate,
+            )
+            events.append(
+                make_event(
+                    run_id,
+                    run.version.root + 1,
+                    "stage.capability.recorded",
+                    "Stage capability tools and the artifact write-back contract were wired after durable approval evidence.",
+                    stage=stage,
+                    stage_attempt_id=attempt.stage_attempt_id,
+                    artifact_version_ids=[artifact.version_id],
+                )
+            )
 
             # The exact rejection context has now reached the planner, writer,
             # and reviewer. Retire it atomically with this completed revision so
