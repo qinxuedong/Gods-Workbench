@@ -410,6 +410,8 @@ let registryPreviewFallbackCleanup = null;
 let registryVirtualScrollCleanup = null;
 let registryVirtualScrollFrame = 0;
 let registryVirtualState = {key:'', start:0, end:0, cols:1, totalHeight:0, rowTops:[], rowHeights:[], itemLayouts:[]};
+const registryVirtualHeightCache = new Map();
+let registryVirtualHeightCacheMode = '';
 let savedScrollPositions = {registry: 0, assets: 0, workflows: 0, prompts: 0, local: 0, canvas: 0}; // 【修复问题4】保存各个标签页的滚动位置
 let registryPreviewScheduleRevision = 0;
 let registryMasonryObserver = null;
@@ -5325,6 +5327,7 @@ function registryVirtualStateKey(items=[]){
         items[items.length - 1]?.id || '',
         registryCardSize,
         registrySimple ? 1 : 0,
+        registryAspect,
     ].join(':');
 }
 function registryVirtualCardHeight(item={}, cardWidth=176){
@@ -5343,6 +5346,12 @@ function registryVirtualCardHeight(item={}, cardWidth=176){
     // Reserve enough space for the two-line name, metadata and source label.
     const bodyHeight = registrySimple ? 0 : 92;
     return Math.max(180, Math.min(720, Math.ceil(mediaHeight + bodyHeight + 24)));
+}
+function registryVirtualHeightCacheKey(item, index=0, cacheMode=''){
+    item = item || {};
+    const width = Number(item?.width || item?.metadata?.width || 0);
+    const height = Number(item?.height || item?.metadata?.height || 0);
+    return `${cacheMode}:${String(item?.id || index)}:${String(item?.kind || item?.type || '')}:${width}x${height}:${String(item?.name || '')}`;
 }
 function registryGridColumnCount(template=''){
     const value = String(template || '').trim();
@@ -5366,31 +5375,121 @@ function registryGridColumnCount(template=''){
     if(hasTrack) columns += 1;
     return columns;
 }
+function registryVirtualMeasureCardHeights(items=[], options){
+    const {contentWidth=0, cardWidth=0, cols=1, columnGap=REGISTRY_VIRTUAL_GAP, rowGap=REGISTRY_VIRTUAL_GAP, rowHeight=8, cacheMode=''} = options || {};
+    if(!items.length || typeof document === 'undefined' || !document.body || typeof renderRegistryCard !== 'function') return;
+    const missing = items.filter((item,index) => !registryVirtualHeightCache.has(registryVirtualHeightCacheKey(item,index,cacheMode)));
+    if(!missing.length) return;
+    const missingById = new Map(missing.map((item,index) => [String(item?.id || index), {item,index}]));
+    const host = document.createElement('div');
+    host.style.cssText = `position:fixed;left:-100000px;top:0;width:${contentWidth}px;visibility:hidden;pointer-events:none;contain:layout style`;
+    const content = document.createElement('section');
+    content.className = `asset-panel asset-content registry-content registry-layout-grid registry-aspect-${registryAspect} ${registrySimple ? 'registry-simple' : ''}`;
+    content.style.cssText = `width:${contentWidth}px;--registry-card-size:${cardWidth}px`;
+    const grid = document.createElement('div');
+    grid.className = 'asset-grid registry-grid';
+    grid.style.gridTemplateColumns = `repeat(${cols}, minmax(0px, 1fr))`;
+    grid.style.gridAutoRows = `${rowHeight}px`;
+    grid.style.columnGap = `${columnGap}px`;
+    grid.style.rowGap = `${rowGap}px`;
+    grid.innerHTML = missing.map(renderRegistryCard).join('');
+    content.appendChild(grid);
+    host.appendChild(content);
+    document.body.appendChild(host);
+    grid.querySelectorAll(':scope > .registry-card[data-registry-card]').forEach(card => {
+        const id = String(card.dataset.registryCard || '');
+        const entry = missingById.get(id);
+        const height = Number(card.getBoundingClientRect().height || 0);
+        if(entry && height > 0) registryVirtualHeightCache.set(registryVirtualHeightCacheKey(entry.item,entry.index,cacheMode), height);
+    });
+    host.remove();
+}
 function registryVirtualLayout(items=[], width=0){
     const grid = root.querySelector('.registry-grid');
     const contentWidth = Math.max(320, Number(width) || grid?.clientWidth || root.querySelector('.registry-content')?.clientWidth || window.innerWidth || 1024);
-    const gap = REGISTRY_VIRTUAL_GAP;
+    const gridStyle = grid ? getComputedStyle(grid) : {};
+    const columnGap = Math.max(0, Number.parseFloat(gridStyle.columnGap || gridStyle.gap) || REGISTRY_VIRTUAL_GAP);
+    const rowGap = Math.max(0, Number.parseFloat(gridStyle.rowGap || gridStyle.gap) || REGISTRY_VIRTUAL_GAP);
+    const rowHeight = Math.max(1, Number.parseFloat(gridStyle.gridAutoRows) || 8);
     const preferred = Math.max(REGISTRY_CARD_SIZE.min, Math.min(REGISTRY_CARD_SIZE.max, Number(registryCardSize) || REGISTRY_CARD_SIZE.fallback));
-    const cssColumns = grid ? registryGridColumnCount(getComputedStyle(grid).gridTemplateColumns) : 0;
-    const cols = Math.max(1, cssColumns || Math.floor((contentWidth + gap) / (preferred + gap)));
-    const cardWidth = Math.max(96, (contentWidth - gap * Math.max(0, cols - 1)) / cols);
-    const columnTops = Array.from({length:cols}, () => 0);
-    const itemLayouts = items.map(item => {
-        let column = 0;
-        for(let candidate = 1; candidate < cols; candidate += 1){
-            if(columnTops[candidate] < columnTops[column]) column = candidate;
+    const cssColumns = grid ? registryGridColumnCount(gridStyle.gridTemplateColumns) : 0;
+    const cols = Math.max(1, cssColumns || Math.floor((contentWidth + columnGap) / (preferred + columnGap)));
+    const cardWidth = Math.max(96, (contentWidth - columnGap * Math.max(0, cols - 1)) / cols);
+    const pitch = rowHeight + rowGap;
+    const cacheMode = `${cardWidth.toFixed(2)}:${registryAspect}:${registrySimple ? 1 : 0}`;
+    if(registryVirtualHeightCacheMode !== cacheMode){
+        registryVirtualHeightCache.clear();
+        registryVirtualHeightCacheMode = cacheMode;
+    }
+    const measuredDomCards = grid?.querySelectorAll?.(':scope > .registry-card[data-registry-card]') || [];
+    const itemById = new Map(items.map((item,index) => [String(item?.id || index), {item,index}]));
+    measuredDomCards.forEach(card => {
+        const id = String(card.dataset.registryCard || '');
+        const entry = itemById.get(id);
+        if(!entry) return;
+        const thumb = card.querySelector?.('.asset-thumb');
+        const expectedAspect = Number(entry.item?.width || entry.item?.metadata?.width || 0) > 0 && Number(entry.item?.height || entry.item?.metadata?.height || 0) > 0
+            ? (Number(entry.item?.width || entry.item?.metadata?.width || 0) / Number(entry.item?.height || entry.item?.metadata?.height || 1)).toFixed(6)
+            : '';
+        const actualAspect = thumb?.style?.getPropertyValue?.('--asset-media-aspect') || '';
+        const measuredWidth = Number(card.getBoundingClientRect().width || 0);
+        const height = Number(card.getBoundingClientRect().height || 0);
+        if(thumb && actualAspect !== expectedAspect) return;
+        if(measuredWidth > 0 && Math.abs(measuredWidth - cardWidth) > 1) return;
+        if(id && height > 0) registryVirtualHeightCache.set(registryVirtualHeightCacheKey(entry.item,entry.index,cacheMode), height);
+    });
+    registryVirtualMeasureCardHeights(items, {contentWidth, cardWidth, cols, columnGap, rowGap, rowHeight, cacheMode});
+    const occupiedRows = [];
+    const itemLayouts = [];
+    let cursorRow = 0;
+    let cursorColumn = 0;
+    let totalRows = 0;
+    items.forEach((item,index) => {
+        const cachedHeight = registryVirtualHeightCache.get(registryVirtualHeightCacheKey(item,index,cacheMode));
+        const height = Math.max(1, Number(cachedHeight || registryVirtualCardHeight(item, cardWidth)) || 1);
+        const span = Math.max(1, Math.ceil((height + rowGap) / pitch));
+        let row = cursorRow;
+        let column = cursorColumn;
+        while(true){
+            if(column >= cols){
+                row += 1;
+                column = 0;
+                continue;
+            }
+            let fits = true;
+            for(let occupiedRow = row; occupiedRow < row + span; occupiedRow += 1){
+                if(occupiedRows[occupiedRow]?.has(column)){
+                    fits = false;
+                    break;
+                }
+            }
+            if(fits) break;
+            column += 1;
         }
-        const top = columnTops[column];
-        const height = Math.max(1, Number(registryVirtualCardHeight(item, cardWidth)) || 1);
-        columnTops[column] = top + height + gap;
-        return {
-            left:column * (cardWidth + gap),
-            top,
+        for(let occupiedRow = row; occupiedRow < row + span; occupiedRow += 1){
+            if(!occupiedRows[occupiedRow]) occupiedRows[occupiedRow] = new Set();
+            occupiedRows[occupiedRow].add(column);
+        }
+        itemLayouts.push({
+            left:column * (cardWidth + columnGap),
+            top:row * pitch,
             width:cardWidth,
             height,
             column,
-        };
+            row,
+            span,
+        });
+        totalRows = Math.max(totalRows, row + span);
+        cursorRow = row;
+        cursorColumn = column + 1;
+        if(cursorColumn >= cols){
+            cursorRow += 1;
+            cursorColumn = 0;
+        }
     });
+    if(!items.length){
+        registryVirtualHeightCache.clear();
+    }
     const rowTops = itemLayouts.map(position => position.top);
     const rowHeights = itemLayouts.map(position => position.height);
     const itemMaxBottoms = [];
@@ -5399,8 +5498,8 @@ function registryVirtualLayout(items=[], width=0){
         maxBottom = Math.max(maxBottom, position.top + position.height);
         itemMaxBottoms.push(maxBottom);
     });
-    const totalHeight = Math.max(0, Math.max(...columnTops) - (items.length ? gap : 0));
-    return {cols, cardWidth, rowHeights, rowTops, itemMaxBottoms, totalHeight, itemLayouts};
+    const totalHeight = Math.max(0, totalRows * rowHeight + Math.max(0, totalRows - 1) * rowGap);
+    return {cols, cardWidth, width:contentWidth, rowHeight, rowGap, rowHeights, rowTops, itemMaxBottoms, totalHeight, itemLayouts};
 }
 function registryVirtualRowAt(layout, target, fallback=0){
     const rows = layout.rowTops || [];
@@ -5463,12 +5562,26 @@ function registryVirtualGridMarkup(items=[], layout, range={start:0,end:0}){
         <div class="registry-virtual-spacer" data-registry-virtual-spacer="bottom" style="height:${after.toFixed(2)}px" aria-hidden="true"></div>
     </div>`;
 }
+function restoreRegistryVirtualScroll(scrollRoot, previousScrollTop=0, anchorId='', anchorOffset=0){
+    if(!scrollRoot) return;
+    scrollRoot.scrollTop = Math.max(0, Number(previousScrollTop) || 0);
+    if(!anchorId) return;
+    const anchor = [...(scrollRoot.querySelectorAll?.('[data-registry-card]') || [])]
+        .find(card => String(card?.dataset?.registryCard || '') === String(anchorId));
+    if(!anchor) return;
+    const scrollTop = scrollRoot.getBoundingClientRect?.().top || 0;
+    const anchorTop = (anchor.getBoundingClientRect?.().top || 0) - scrollTop;
+    scrollRoot.scrollTop = Math.max(0, scrollRoot.scrollTop + anchorTop - (Number(anchorOffset) || 0));
+}
 function renderRegistryVirtualGrid(items=[], board=null){
-    const layout = registryVirtualLayout(items);
-    const range = registryVirtualRange(items, layout, 0, 650);
+    const scrollRoot = root.querySelector('.registry-assets-scroll');
+    const gridWidth = scrollRoot?.querySelector?.('.registry-grid')?.clientWidth || scrollRoot?.clientWidth || 0;
+    const layout = registryVirtualLayout(items, gridWidth);
+    const scrollTop = scrollRoot ? scrollRoot.scrollTop : (savedScrollPositions.registry || 0);
+    const range = registryVirtualRange(items, layout, scrollTop, scrollRoot?.clientHeight || 650);
     registryVirtualState = {
         ...layout,
-        width:0,
+        width:layout.width,
         key:registryVirtualStateKey(items),
         start:range.start,
         end:range.end,
@@ -5487,9 +5600,13 @@ function updateRegistryVirtualWindow(force=false){
     const {board, items} = registryVirtualItemsForActiveBoard();
     if(!registryVirtualizationEnabled(items, board)) return false;
     const width = Math.max(320, grid.clientWidth || scrollRoot.clientWidth || root.querySelector('.registry-content')?.clientWidth || window.innerWidth || 1024);
-    const layout = registryVirtualLayout(items, width);
-    const range = registryVirtualRange(items, layout, scrollRoot.scrollTop, scrollRoot.clientHeight || 650);
     const key = registryVirtualStateKey(items);
+    const canReuseLayout = !force
+        && registryVirtualState.key === key
+        && registryVirtualState.itemLayouts?.length === items.length
+        && Math.abs(Number(registryVirtualState.width || 0) - width) < 1;
+    const layout = canReuseLayout ? registryVirtualState : registryVirtualLayout(items, width);
+    const range = registryVirtualRange(items, layout, scrollRoot.scrollTop, scrollRoot.clientHeight || 650);
     const sameWindow = !force
         && registryVirtualState.key === key
         && registryVirtualState.start === range.start
@@ -7414,13 +7531,13 @@ function render(){
     };
     // 【修复问题4】在重新渲染前，保存当前标签页的滚动位置
     const contentScroll = document.querySelector('.content-scroll');
-    if(contentScroll && contentScroll.scrollTop > 0){
-        if(activeTab === 'registry') savedScrollPositions.registry = contentScroll.scrollTop;
-        else if(activeTab === 'assets') savedScrollPositions.assets = contentScroll.scrollTop;
-        else if(activeTab === 'workflows') savedScrollPositions.workflows = contentScroll.scrollTop;
-        else if(activeTab === 'prompts') savedScrollPositions.prompts = contentScroll.scrollTop;
-        else if(activeTab === 'local') savedScrollPositions.local = contentScroll.scrollTop;
-        else if(activeTab === 'canvas-assets') savedScrollPositions.canvas = contentScroll.scrollTop;
+    if(contentScroll){
+        if(activeTab === 'registry' || assetBoardById(activeTab)?.system === false) savedScrollPositions.registry = contentScroll.scrollTop;
+        else if(contentScroll.scrollTop > 0 && activeTab === 'assets') savedScrollPositions.assets = contentScroll.scrollTop;
+        else if(contentScroll.scrollTop > 0 && activeTab === 'workflows') savedScrollPositions.workflows = contentScroll.scrollTop;
+        else if(contentScroll.scrollTop > 0 && activeTab === 'prompts') savedScrollPositions.prompts = contentScroll.scrollTop;
+        else if(contentScroll.scrollTop > 0 && activeTab === 'local') savedScrollPositions.local = contentScroll.scrollTop;
+        else if(contentScroll.scrollTop > 0 && activeTab === 'canvas-assets') savedScrollPositions.canvas = contentScroll.scrollTop;
     }
     // 【修复问题4-增强】按卡片身份锚定滚动：优先聚焦卡片，其次视口内第一张卡片；找不到时仍走序号回退
     let registryScrollAnchorId = '';
@@ -7465,6 +7582,14 @@ function render(){
     }
     if(activeTab === 'registry' || customLibraryActive) renderRegistryFreshNotice();
     restoreRegistryPreviewImages(registryPreviewCache);
+    if(activeTab === 'registry' || customLibraryActive){
+        restoreRegistryVirtualScroll(
+            root.querySelector('.registry-assets-scroll'),
+            contentScroll?.scrollTop ?? savedScrollPositions.registry,
+            registryScrollAnchorId,
+            registryScrollAnchorOffset,
+        );
+    }
     refreshIcons();
     scheduleRegistryMasonryLayout();
     scheduleRegistryVirtualWindow();
