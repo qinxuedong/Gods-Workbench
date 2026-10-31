@@ -21,6 +21,7 @@
     "web/js/controllers/assets-controller.js",
     "docs/behavior/BEHAVIOR-SPEC-PRODUCTION-PROJECTS-HUB.md",
     "tests/frontend/qin-493-navigation-project-context.test.mjs",
+    "tests/frontend/ui-governance.test.mjs",
     "tests/frontend/c7-t1-agents-controller.test.mjs",
     "tests/frontend/node-files.txt",
     "tests/hygiene/fixtures/cleanroom_admission_metadata.json",
@@ -29,5 +30,5 @@
   ],
   "admitted_files": [],
   "accepted_test_files": [],
-  "notes": "QIN-500：移除全局影视工坊入口，智能体只按显式项目上下文绑定，资产库不接收 project_id。"
+  "notes": "QIN-500：移除全局影视工坊入口，智能体只按显式项目上下文绑定，资产库不接收 project_id；用户授权同步全站导航数量门禁。"
 }

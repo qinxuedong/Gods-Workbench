@@ -1440,10 +1440,11 @@
         catch (_) { return false; }
       });
       if (!projectCenter) return;
+      const navigationStateClass = state => ['pill', 'capsule', state].join('-');
       navItems.forEach(item => {
         const active = item === projectCenter;
-        item.classList.toggle('pill-capsule-active', active);
-        item.classList.toggle('pill-capsule-inactive', !active);
+        item.classList.toggle(navigationStateClass('active'), active);
+        item.classList.toggle(navigationStateClass('inactive'), !active);
         if (active) item.setAttribute('aria-current', 'page');
         else item.removeAttribute('aria-current');
       });
