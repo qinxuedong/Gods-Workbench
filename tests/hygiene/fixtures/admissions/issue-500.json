@@ -4,6 +4,7 @@
   "authorization_basis": "GitHub Issue #500, 2026-10-30",
   "files": [
     "docs/behavior/BEHAVIOR-SPEC-PRODUCTION-PROJECTS-HUB.md",
+    "tests/e2e/test_c7_media_loop_browser.py",
     "tests/frontend/c7-p1-production-controller.test.mjs",
     "tests/frontend/c7-t1-agents-controller.test.mjs",
     "tests/frontend/c7-t2-workflow-controller.test.mjs",
