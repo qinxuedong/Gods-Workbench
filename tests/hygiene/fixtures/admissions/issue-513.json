@@ -3,12 +3,15 @@
   "issue": 513,
   "authorization_basis": "GitHub Issue #513, 2026-10-31",
   "files": [
-    "deploy/docker/README.md",
     "deploy/docker/.env.example",
-    "deploy/docker/Dockerfile",
+    "deploy/docker/.env.system1.example",
     "deploy/docker/docker-compose.nas.yml",
+    "deploy/docker/docker-compose.system1.yml",
+    "deploy/docker/Dockerfile",
+    "deploy/docker/README.md",
     "gw/core/local_accounts_cli.py",
     "tests/contracts/auth/test_local_accounts_cli.py",
+    "tests/deployment/test_c17_system1_container.py",
     "tests/hygiene/fixtures/admissions/issue-513.json"
   ],
   "admitted_files": [],
@@ -20,5 +23,5 @@
       "admission": "accepted"
     }
   ],
-  "notes": "QIN-499：通用 NAS Docker 部署、非 root 容器权限与本地管理员 CLI 初始化。"
+  "notes": "QIN-499：通用 NAS 与 System1 Docker 部署、非 root 容器权限及本地管理员 CLI 初始化。"
 }
