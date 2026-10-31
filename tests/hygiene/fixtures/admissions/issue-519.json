@@ -1,0 +1,24 @@
+{
+  "schema": "gw.cleanroom-admission-shard/v1",
+  "issue": 519,
+  "authorization_basis": "GitHub Issue #519, 2026-10-31",
+  "files": [
+    "deploy/docker/.env.system1.example",
+    "deploy/docker/Dockerfile.system1",
+    "deploy/docker/docker-compose.system1.yml",
+    "deploy/docker/README.md",
+    "deploy/docker/SYSTEM1.md",
+    "tests/deployment/test_c17_system1_container.py",
+    "tests/hygiene/fixtures/admissions/issue-519.json"
+  ],
+  "admitted_files": [],
+  "accepted_test_files": [
+    {
+      "path": "tests/deployment/test_c17_system1_container.py",
+      "classification": "curated_test_coverage",
+      "authorization_basis": "GitHub Issue #519, 2026-10-31",
+      "admission": "accepted"
+    }
+  ],
+  "notes": "QIN-502：System1 Kev 多规格模型下载、部署、调用指南与通用适配配置。"
+}

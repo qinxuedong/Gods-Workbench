@@ -1,4 +1,4 @@
-"""C17-T2 Kev 纯 CPU 容器配置契约。"""
+"""C17 System1 通用 Kev HTTP 适配器容器配置契约。"""
 
 from __future__ import annotations
 
@@ -17,22 +17,24 @@ def _compose() -> dict:
     return yaml.safe_load(COMPOSE_FILE.read_text(encoding="utf-8"))
 
 
-def test_system1_dockerfile_is_pinned_cpu_only_and_non_root():
+def test_system1_dockerfile_is_generic_cpu_adapter_and_non_root():
     text = DOCKERFILE.read_text(encoding="utf-8")
 
     assert "FROM python:3.11-slim-bookworm" in text
     assert "PIP_NO_CACHE_DIR=1" in text
     assert "GW_CPU_ONLY=1" in text
-    assert "KEV_MODEL_REVISION=9a45d25e" in text
+    assert "external Kev-compatible inference endpoint" in text
+    assert "KEV_MODEL_REVISION" not in text
+    assert "/models/kev" not in text
     assert "CUDA_VISIBLE_DEVICES=\"\"" in text
     assert "NVIDIA_VISIBLE_DEVICES=void" in text
-    assert "HF_HUB_OFFLINE=1" in text
-    assert "TRANSFORMERS_OFFLINE=1" in text
+    assert "HF_HUB_OFFLINE" not in text
+    assert "TRANSFORMERS_OFFLINE" not in text
     assert "USER 10001:10001" in text
     assert "--workers\", \"1\"" in text
 
 
-def test_system1_compose_declares_one_cpu_service_and_pinned_build():
+def test_system1_compose_declares_one_generic_cpu_service():
     document = _compose()
     service = document["services"]["system1"]
 
@@ -47,12 +49,14 @@ def test_system1_compose_declares_one_cpu_service_and_pinned_build():
     assert service["environment"]["GW_ALLOWED_HOSTS"] == "${GW_ALLOWED_HOSTS:-}"
     assert service["ports"] == ["${SYSTEM1_PORT:-2078}:2077"]
     assert str(service["environment"]["KEV_ENDPOINT"]).startswith("${KEV_ENDPOINT:?")
-    assert service["environment"]["KEV_MODEL_FAMILY"] == "kev-0.8b"
-    assert service["environment"]["KEV_MODEL_REVISION"] == "9a45d25e"
+    assert "KEV_MODEL_FAMILY" not in service["environment"]
+    assert "KEV_MODEL_REVISION" not in service["environment"]
+    assert "GW_MODEL_OFFLINE" not in service["environment"]
+    assert "HF_HUB_OFFLINE" not in service["environment"]
+    assert "TRANSFORMERS_OFFLINE" not in service["environment"]
+    assert "SYSTEM1_MAX_P95_MS" not in service["environment"]
     assert service["environment"]["CUDA_VISIBLE_DEVICES"] == ""
     assert service["environment"]["NVIDIA_VISIBLE_DEVICES"] == "void"
-    assert service["environment"]["HF_HUB_OFFLINE"] == "1"
-    assert service["environment"]["TRANSFORMERS_OFFLINE"] == "1"
 
     assert service["deploy"]["resources"]["limits"] == {
         "cpus": "2.0",
@@ -62,12 +66,13 @@ def test_system1_compose_declares_one_cpu_service_and_pinned_build():
     assert service["restart"] == "unless-stopped"
 
 
-def test_system1_compose_uses_read_only_model_input_and_explicit_runtime_storage():
+def test_system1_compose_does_not_mount_model_weights_and_keeps_runtime_storage():
     document = _compose()
     service = document["services"]["system1"]
     volumes = service["volumes"]
 
-    assert "system1-models:/models/kev:ro" in volumes
+    assert all("/models/kev" not in volume for volume in volumes)
+    assert set(document["volumes"]) == {"system1-data"}
     assert "system1-data:/var/lib/GodsWorkbench" in volumes
     assert service["read_only"] is True
     assert service["tmpfs"] == ["/tmp:rw,noexec,nosuid,size=64m"]
