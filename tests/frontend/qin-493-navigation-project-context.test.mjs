@@ -36,8 +36,8 @@ const productionSource = readFileSync('web/js/controllers/production-controller.
 const agentsSource = readFileSync('web/js/controllers/agents-controller.js', 'utf8');
 const workshopHtml = readFileSync('web/pages/workshop.html', 'utf8');
 
-const CONTEXT_PAGES = ['workshop.html', 'production.html', 'storyboard.html', 'canvas.html', 'assets.html', 'agents.html', 'workflow.html', 'collab.html'];
-const NON_CONTEXT_PAGES = ['index.html', 'projects.html', 'settings.html'];
+const CONTEXT_PAGES = ['production.html', 'storyboard.html', 'canvas.html', 'agents.html', 'workflow.html', 'collab.html'];
+const NON_CONTEXT_PAGES = ['index.html', 'projects.html', 'settings.html', 'assets.html'];
 
 function makeElement(id = '') {
   return {
@@ -181,6 +181,24 @@ function hasParam(href, name, value) {
   return url.searchParams.get(name) === value;
 }
 
+test('QIN-500 AC1：全站顶栏移除独立影视工坊入口', () => {
+  const pages = ['index.html', 'projects.html', 'settings.html', 'agents.html', 'assets.html', 'production.html', 'storyboard.html', 'workflow.html', 'collab.html', 'workshop.html'];
+  for (const page of pages) {
+    const source = readFileSync('web/pages/' + page, 'utf8');
+    assert.doesNotMatch(source, /<a\b[^>]*href="workshop\.html"[^>]*title="影视工坊"/, page + ' 不得保留全局影视工坊入口');
+  }
+});
+
+test('QIN-500 AC1：项目卡片的工坊动作打开所选项目生成流程', () => {
+  const { sandbox, assigned, storage } = createSandbox();
+  vm.runInContext(projectsSource, vm.createContext(sandbox));
+  sandbox.WorkbenchProjects.openProject('projB', 'workshop');
+  const destination = new URL(sandbox.location.href, ORIGIN);
+  assert.equal(destination.pathname, '/static/pages/workshop.html');
+  assert.equal(destination.searchParams.get('project_id'), 'projB');
+  assert.equal(storage.get('workspace_project_id'), 'projB');
+});
+
 test('QIN-493 AC1：控制台顶栏不得携带 project_id，并清除自身地址栏残留参数', async () => {
   const { sandbox, navLinks, replaced } = createSandbox({
     urlSearch: '?project_id=projA',
@@ -200,7 +218,8 @@ test('QIN-493 AC1：控制台顶栏不得携带 project_id，并清除自身地�
   for (const page of CONTEXT_PAGES) {
     const link = navLinks.find(l => hrefOf(l).includes(page));
     assert.ok(link, `缺少导航链接 ${page}`);
-    assert.equal(hasParam(hrefOf(link), 'project_id', 'projA'), true, `${page} 应携带 project_id`);
+    const shouldCarryContext = page !== 'agents.html';
+    assert.equal(hasParam(hrefOf(link), 'project_id', 'projA'), shouldCarryContext, `${page} 的项目参数应符合全局入口规则`);
   }
   for (const page of NON_CONTEXT_PAGES) {
     const link = navLinks.find(l => hrefOf(l).includes(page));
@@ -251,7 +270,7 @@ test('QIN-493 AC2/AC3：剧集制片顶栏按白名单携带参数，地址栏�
   const { sandbox, navLinks, replaced } = createSandbox({
     urlSearch: '?project_id=projA',
     pathname: '/static/pages/production.html',
-    navHrefs: [`/projects.html`, `/workshop.html`, `/production.html`, `/index.html`],
+    navHrefs: [`/projects.html`, `/assets.html`, `/production.html`, `/index.html`],
     fetchHandler: async url => {
       const target = String(url);
       if (target.includes('/api/projects/')) {
@@ -274,7 +293,9 @@ test('QIN-493 AC2/AC3：剧集制片顶栏按白名单携带参数，地址栏�
   assert.equal(new URL(hrefOf(projectsLink), ORIGIN).searchParams.has('project_id'), false, '项目中心链接不得携带 project_id');
 
   const workshopLink = navLinks.find(l => hrefOf(l).includes('workshop.html'));
-  assert.equal(hasParam(hrefOf(workshopLink), 'project_id', 'projA'), true, '工坊链接必须携带当前项目');
+  assert.equal(workshopLink, undefined, '顶栏不再提供独立影视工坊入口');
+  const assetsLink = navLinks.find(l => hrefOf(l).includes('assets.html'));
+  assert.equal(new URL(hrefOf(assetsLink), ORIGIN).searchParams.has('project_id'), false, '资产库是全局入口，不得携带 project_id');
 
   const indexLink = navLinks.find(l => hrefOf(l).includes('index.html'));
   assert.equal(new URL(hrefOf(indexLink), ORIGIN).searchParams.has('project_id'), false, '控制台链接不得携带 project_id');
@@ -287,7 +308,7 @@ test('QIN-493 AC4：地址栏参数过期时校正为实际项目，无参数时
   const stale = createSandbox({
     urlSearch: '?project_id=projSTALE',
     pathname: '/static/pages/production.html',
-    navHrefs: [`/workshop.html`],
+    navHrefs: [`/assets.html`],
     fetchHandler: async url => {
       const target = String(url);
       if (target.includes('/api/projects/')) {
@@ -313,7 +334,7 @@ test('QIN-493 AC4：地址栏参数过期时校正为实际项目，无参数时
     urlSearch: '',
     pathname: '/static/pages/production.html',
     storedProjectId: 'projA',
-    navHrefs: [`/workshop.html`],
+    navHrefs: [`/assets.html`],
     fetchHandler: async url => {
       const target = String(url);
       if (target.includes('/api/projects/')) {
@@ -374,6 +395,15 @@ const PROJECT_LIST = [
   { project_id: 'projB', name: '工程 B' }
 ];
 
+test('QIN-500 AC4：settings.html#section=general 是有效的通用设置分区链接', () => {
+  const settingsHtml = readFileSync('web/pages/settings.html', 'utf8');
+  assert.match(settingsHtml, /data-panel="general"/, '设置页应包含通用分区');
+  assert.match(settingsSource, /new URLSearchParams\(location\.hash\.slice\(1\)\)\.get\('section'\)/, '设置页应从 hash 读取分区');
+  const url = new URL('/static/pages/settings.html#section=general', ORIGIN);
+  assert.equal(url.pathname, '/static/pages/settings.html');
+  assert.equal(new URLSearchParams(url.hash.slice(1)).get('section'), 'general');
+});
+
 test('QIN-493 返工 AC1：设置页进入时剔除 project_id', () => {
   assert.match(settingsSource, /function stripOwnProjectParam\(/, '设置页需具备参数剥离函数');
   assert.match(
@@ -388,7 +418,7 @@ test('QIN-493 返工 AC3：制片页切换项目只用 replaceState，不新增�
   const { sandbox, replaced, pushed } = createSandbox({
     urlSearch: '?project_id=projA',
     pathname: '/static/pages/production.html',
-    navHrefs: [`/workshop.html`],
+    navHrefs: [`/assets.html`],
     fetchHandler: async url => {
       const target = String(url);
       if (target.includes('/api/projects/')) {
@@ -418,7 +448,7 @@ test('QIN-493 返工 AC4：制片页遇到不存在的项目时回退到可用�
     urlSearch: '?project_id=projSTALE&x=1',
     pathname: '/static/pages/production.html',
     storedProjectId: 'projA',
-    navHrefs: [`/workshop.html`],
+    navHrefs: [`/assets.html`],
     fetchHandler: async url => {
       const target = String(url);
       if (target.includes('/api/asset-registry/projects')) {
@@ -464,9 +494,10 @@ test('QIN-493 返工 AC4：智能体页遇到不存在的项目时校正且不�
   vm.runInContext(agentsSource, vm.createContext(sandbox));
   await tick(60);
 
-  assert.equal(storage.get('workspace_project_id'), 'projA', '不存在的 URL 项目不得写入 localStorage');
-  const written = replaced.map(u => new URL(u, ORIGIN)).filter(u => u.searchParams.has('project_id'));
-  assert.equal(written[written.length - 1].searchParams.get('project_id'), 'projA', '地址栏必须校正为实际项目');
+  assert.equal(storage.get('workspace_project_id'), 'projA', '无效入口不得覆盖已有本地记忆');
+  assert.equal(sandbox.WorkbenchAgents.getProjectId(), null, '无效入口不得自动绑定到其他项目');
+  const corrected = replaced.map(u => new URL(u, ORIGIN)).filter(u => !u.searchParams.has('project_id'));
+  assert.ok(corrected.length > 0, '无效项目参数应清除，保持无项目上下文');
 });
 
 test('QIN-493 返工 AC4：分镜页遇到不存在的项目时校正地址栏', async () => {
@@ -582,8 +613,39 @@ function extractFunction(source, name) {
   throw new Error(`函数 ${name} 未闭合`);
 }
 
+
+test('QIN-500 AC3：资产库删除工程参数且不写入本地项目', () => {
+  const stripContext = extractFunction(assetsSource, 'settleProjectContext');
+  const sourceFrame = extractFunction(assetsSource, 'syncFrameSource');
+  const replaced = [];
+  const href = ORIGIN + '/static/pages/assets.html?project_id=projB&asset_id=asset-7&keep=1';
+  const location = { href, origin: ORIGIN, search: '?project_id=projB&asset_id=asset-7&keep=1', hash: '' };
+  const sandbox = {
+    URL,
+    URLSearchParams,
+    location,
+    history: {
+      replaceState(_state, _title, next) {
+        replaced.push(String(next));
+        location.href = String(next);
+        location.search = new URL(String(next), ORIGIN).search;
+      }
+    }
+  };
+  const strip = vm.runInContext('(' + stripContext + ')', vm.createContext(sandbox));
+  strip();
+  assert.equal(replaced.length, 1);
+  assert.equal(new URL(replaced[0], ORIGIN).searchParams.has('project_id'), false);
+  assert.equal(new URL(replaced[0], ORIGIN).searchParams.get('asset_id'), 'asset-7');
+  assert.equal(new URL(replaced[0], ORIGIN).searchParams.get('keep'), '1');
+
+  sandbox.frame = { dataset: { src: '/static/asset-manager.html?embedded=1&vault=1&project_id=stale' }, src: '' };
+  const syncFrame = vm.runInContext('(' + sourceFrame + ')', vm.createContext(sandbox));
+  syncFrame();
+  assert.equal(new URL(sandbox.frame.src, ORIGIN).searchParams.has('project_id'), false);
+});
+
 const EXTENDED_PAGES = {
-  '素材库 assets-controller.js': { source: assetsSource, fn: 'settleProjectContext' },
   '协作 collab-controller.js': { source: collabSource, fn: 'settleProjectContext' },
   '工作流 workflow-controller.js': { source: workflowSource, fn: 'settleWorkflowProjectContext' },
   '画布 canvas.html': { source: canvasHtml, fn: 'settleProjectContext' }
@@ -612,7 +674,7 @@ test('QIN-493 扩范围：四页都不再把入口 project_id 照单写入本地
   );
 });
 
-test('QIN-493 扩范围：四页都有目录列表证伪 + 校正逻辑', () => {
+test('QIN-493 扩范围：协作、工作流和画布页都有目录列表证伪 + 校正逻辑', () => {
   for (const [label, { source, fn }] of Object.entries(EXTENDED_PAGES)) {
     const body = extractFunction(source, fn);
     assert.match(body, /\/api\/asset-registry\/projects\?archived=false/, `${label} 必须先查目录列表`);
@@ -682,4 +744,13 @@ test('QIN-493 扩范围：画布页遇到不存在项目时校正为可用项目
   offline.globalThis = offline;
   const offlineRunner = vm.runInContext(`(${settle})`, vm.createContext(offline));
   assert.equal(await offlineRunner('projC'), 'projC');
+});
+
+test('QIN-500 AC1: workshop remains a project-center child page', () => {
+  const projectCenterNav = workshopHtml.match(/<a href="projects\.html" class="([^"]*)"[^>]*title="项目中心"[^>]*aria-current="page"/);
+  assert.ok(projectCenterNav, '工坊页顶栏保留项目中心父级入口并标记当前层级');
+  assert.match(projectCenterNav[1], /\bpill-capsule-active\b/, '工坊页应高亮项目中心父级入口');
+  assert.match(workshopHtml, /function syncWorkshopParentNavigation\(\)/, '壳层导航同步后应恢复项目中心父级状态');
+  assert.match(workshopHtml, /gw:route-loaded/, '局部路由加载后仍应高亮项目中心');
+  assert.match(workshopHtml, /id="workshopProjectTitle"/, '所选项目的工作流留在页面内容区');
 });

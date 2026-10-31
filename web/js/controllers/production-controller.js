@@ -253,7 +253,7 @@ window.WorkbenchProduction = (function () {
   // 只有真正消费项目上下文的页面才携带参数（对齐 BEHAVIOR-SPEC-PRODUCTION-PROJECTS-HUB.md 4.5）。
   const PROJECT_CONTEXT_PAGES = new Set([
     'workshop.html', 'production.html', 'storyboard.html', 'canvas.html',
-    'assets.html', 'agents.html', 'workflow.html', 'collab.html'
+    'agents.html', 'workflow.html', 'collab.html'
   ]);
 
   // 地址栏只校正、不注入：已有 project_id 时保持与页面实际项目一致；

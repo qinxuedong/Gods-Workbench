@@ -795,7 +795,7 @@ window.WorkbenchProjects = (function () {
   // 只有真正消费项目上下文的页面才携带参数；项目中心/控制台/设置不带（见 BEHAVIOR-SPEC 4.5）。
   const PROJECT_CONTEXT_PAGES = new Set([
     'workshop.html', 'production.html', 'storyboard.html', 'canvas.html',
-    'assets.html', 'agents.html', 'workflow.html', 'collab.html'
+    'agents.html', 'workflow.html', 'collab.html'
   ]);
 
   function updateNavPillsProject(targetId) {

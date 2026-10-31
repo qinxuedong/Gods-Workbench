@@ -18,14 +18,14 @@ const contrastRatio=(foreground,background)=>{
   return (Math.max(a,b)+.05)/(Math.min(a,b)+.05);
 };
 
-test('顶栏10导航钮采用新规LG40，保持链接与各页原业务入口',()=>{
+test('顶栏9导航钮采用新规LG40，保持链接与各页原业务入口',()=>{
   const sys=read('web/css/base/hardware-design-system.css');
   const block=sys.match(/\.topbar-master-deck \.nav-pill-btn \{([^}]+)\}/)?.[1]||'';
   assert.match(block,/height:40px !important;\s*min-height:40px !important;/);
   assert.match(block,/font-size:var\(--gw-type-button-md\) !important; font-weight:700/);
   for(const p of pages){
     const links=[...read(p).matchAll(/<(?:a|button)\b[^>]*class="([^"]*\bnav-pill-btn\b[^"]*)"[^>]*>/g)];
-    assert.equal(links.length,10,'每个主页面顶栏必须恰有10个导航按钮：'+p);
+    assert.equal(links.length,9,'全站移除独立工坊入口后每个主页面顶栏必须恰有9个导航按钮：'+p);
   }
 });
 
