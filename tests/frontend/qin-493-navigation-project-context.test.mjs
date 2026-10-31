@@ -520,16 +520,22 @@ test('QIN-493 返工 AC4：工坊无参数不注入 project_id，且缺失项目
   assert.match(workshopHtml, /syncAddressBarProject\(projectId\);/, '回退后必须校正地址栏');
 });
 
-test('QIN-493 第三轮返工 AC4：工坊项目存在性只以目录列表判定，不依赖 405 的单项目 GET', () => {
+test('QIN-493 第三轮返工 AC4：工坊详情探测必须容忍 405，目录结论优先', () => {
   // 回归：GET /api/asset-registry/projects/{id} 在服务端未注册，恒返回 405。
-  // 旧实现只在 404 时才走兜底并置 missing，导致无效项目既不回退也不校正地址栏。
-  assert.doesNotMatch(
+  // 旧实现只在 404 时才换兜底接口并置 missing，导致无效项目既不回退也不校正地址栏。
+  assert.doesNotMatch(workshopHtml, /pRes\.status === 404/, '不得只认 404：405 会让探测两边都不成立');
+  assert.match(
     workshopHtml,
-    /\$\{API_PROJECTS\}\/\$\{encodeURIComponent\(projectId\)\}/,
-    '工坊不得再用单项目详情接口探测存在性'
+    /if \(!pRes\.ok\) \{\s*\n\s*pRes = await fetch\(`\$\{API_PROJECTS_FALLBACK\}/,
+    '任何非 2xx（含 405）都必须换兜底接口继续探测'
   );
-  assert.doesNotMatch(workshopHtml, /pRes\.status === 404/, '旧的 404 探测分支必须移除');
-  assert.doesNotMatch(workshopHtml, /missing = true;/, '旧的 missing 判定必须移除');
+  // 目录读成功且不含该项目时默认判缺失，只有详情接口确认存在才改判。
+  assert.match(workshopHtml, /let missing = true;/, '目录结论应优先：默认缺失，由详情确认才改判');
+  assert.match(
+    workshopHtml,
+    /const projId = projObj && \(projObj\.id \|\| projObj\.project_id\);/,
+    '单项目摄取仍须做 project_id -> id 归一化（契约测试约束）'
+  );
   // 目录读取失败（降级/网络异常）时不得判定缺失，否则会把有效项目误降级。
   assert.match(workshopHtml, /let directoryLoaded = false;/, '需显式记录目录是否读取成功');
   assert.match(
