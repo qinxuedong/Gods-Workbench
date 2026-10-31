@@ -450,7 +450,7 @@
     overlay.setAttribute('role', 'dialog');
     overlay.setAttribute('aria-modal', 'true');
     overlay.setAttribute('aria-hidden', 'true');
-    overlay.setAttribute('aria-label', '全站统一命令总线');
+    overlay.setAttribute('aria-label', '全局搜索');
     overlay.dataset.floatingSurface = 'omnibar';
     overlay.dataset.floatingKind = 'modal';
     overlay.dataset.floatingDismiss = 'outside';
@@ -460,16 +460,16 @@
     panel.id = 'gwOmnibarPanel';
     panel.dataset.mode = mode;
     panel.setAttribute('data-floating-content', 'self');
-    panel.setAttribute('aria-label', 'Omnibar 命令面板');
+    panel.setAttribute('aria-label', '全局搜索面板');
 
     const header = makeElement('header', 'gw-omnibar-header');
     const titleGroup = makeElement('div', 'gw-omnibar-title-group');
     titleGroup.append(
       makeElement('span', 'gw-omnibar-mark', 'GW'),
-      makeElement('span', 'gw-omnibar-title', '统一命令总线'),
+      makeElement('span', 'gw-omnibar-title', '全局搜索'),
       makeElement('span', 'gw-omnibar-status', 'OMNIBAR')
     );
-    closeButton = makeButton('×', 'gw-omnibar-close', '关闭命令面板');
+    closeButton = makeButton('×', 'gw-omnibar-close', '关闭全局搜索');
     closeButton.dataset.floatingClose = 'omnibar';
     closeButton.addEventListener('click', close);
     header.append(titleGroup, closeButton);

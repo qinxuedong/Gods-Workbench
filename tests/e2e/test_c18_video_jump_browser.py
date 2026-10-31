@@ -99,31 +99,28 @@ def test_c18_video_jump_e2e_real_browser(monkeypatch: pytest.MonkeyPatch, tmp_pa
         assert "00:06~00:21" in badge_text, f"卡片未正确显示命中的时间段，当前显示: {badge_text}"
 
         # 6. 验证徽标布局：徽标不能与 MP4 格式标签重叠
-        # 搜索结果异步重绘时，分开读取两个 Locator 可能跨过 DOM 替换帧。
-        # 在同一次页面采样中等待并读取两者几何框，保留真实布局断言。
-        boxes = page.wait_for_function(
-            """({cardSelector, badgeSelector}) => {
-                const card = document.querySelector(cardSelector);
-                const format = card?.querySelector('.registry-card-format');
-                const badge = card?.querySelector('.registry-card-segment-badge');
-                if (!card?.isConnected || !format?.isConnected || !badge?.isConnected) return false;
-                const readBox = element => {
-                    const style = getComputedStyle(element);
-                    if (style.display === 'none' || style.visibility === 'hidden') return null;
-                    const rect = element.getBoundingClientRect();
-                    if (!(rect.width > 0 && rect.height > 0)) return null;
-                    return {x: rect.x, y: rect.y, width: rect.width, height: rect.height};
+        format_selector = f'{card_selector} .registry-card-format'
+        format_loc = page.locator(format_selector)
+        format_loc.wait_for(state="visible", timeout=10000)
+        # 搜索触发 refreshRegistryAssets：先以 loading 态 render()（此时徽标已可见），
+        # 请求结束后 finally 再 render()，异步 getRegistryStatus() 返回后又整树 render()。
+        # 每次整树 innerHTML 重绘都会替换徽标/格式标签节点；若分两次往返取几何，
+        # 可能命中已脱离 DOM 的旧节点而得到 None（CI 慢机偶发）。因此先等搜索刷新链的
+        # 网络请求全部结束，再在同一同步 DOM 快照内读取两者几何，语义与 bounding_box() 一致。
+        page.wait_for_load_state("networkidle")
+        boxes = page.evaluate(
+            """([formatSel, badgeSel]) => {
+                const box = (sel) => {
+                    const el = document.querySelector(sel);
+                    if (!el || !el.isConnected) return null;
+                    const r = el.getBoundingClientRect();
+                    if (!r.width || !r.height) return null;
+                    return { x: r.x, y: r.y, width: r.width, height: r.height };
                 };
-                const formatBox = readBox(format);
-                const badgeBox = readBox(badge);
-                return formatBox && badgeBox ? {format: formatBox, badge: badgeBox} : false;
+                return { format: box(formatSel), badge: box(badgeSel) };
             }""",
-            arg={
-                "cardSelector": card_selector,
-                "badgeSelector": badge_selector,
-            },
-            timeout=10000,
-        ).json_value()
+            [format_selector, badge_selector],
+        )
         format_box = boxes["format"]
         badge_box = boxes["badge"]
         assert format_box and badge_box, "卡片标签或时间段徽标未正常渲染几何边框"

@@ -1,0 +1,14 @@
+{
+  "schema": "gw.cleanroom-admission-shard/v1",
+  "issue": 498,
+  "authorization_basis": "GitHub Issue #498, 2026-10-30",
+  "files": [
+    "tests/frontend/node-files.txt",
+    "tests/frontend/qin-492-workspace-pages-theme.test.mjs",
+    "tests/hygiene/fixtures/admissions/issue-498.json",
+    "web/css/base/workspace-pages.css"
+  ],
+  "admitted_files": [],
+  "accepted_test_files": [],
+  "notes": "QIN-492：修复 workspace-pages.css 浅色 body 背景覆盖黑金主题，移除冲突的浅色声明并补全前端守卫测试。"
+}

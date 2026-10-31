@@ -1,7 +1,8 @@
 @import url("./side-bus-unified.css");
 
 :root {
-  color-scheme: light;
+  /* 兼容旧浅色子组件变量；body 背景已由 hardware-design-system.css 统一提供（--chassis-bg 黑金深色）。
+     color-scheme 与浅色 body background 已移除，不再覆盖黑金主题。 */
   --ink: #202523;
   --ink-2: #303733;
   --muted: #69726d;
@@ -19,16 +20,6 @@
   --danger: #b94632;
   --shadow: 0 18px 55px rgba(26, 32, 28, .12);
   --font: "Source Han Sans CN", "Microsoft YaHei UI", "PingFang SC", Arial, sans-serif;
-}
-* { box-sizing: border-box; }
-html, body { width: 100%; min-height: 100%; margin: 0; }
-body {
-  background:
-    radial-gradient(circle at 82% 8%, rgba(255,255,255,.58), transparent 30%),
-    linear-gradient(135deg, #e7eee6 0%, var(--paper) 56%, #d3dfd4 100%);
-  color: var(--ink);
-  font-family: var(--gw-font-body);
-  font-size: var(--gw-type-body-md);
 }
 button, input, select, textarea { font: inherit; }
 button { color: inherit; }
@@ -419,17 +410,20 @@ button.log-entry { width:100%; border:0; border-radius:0; background:transparent
 }
 
 html[data-theme="dark"] body, body[data-theme="dark"] {
-  --paper: #242b27;
-  --paper-2: #2d3530;
-  --paper-3: #343e37;
-  --ink: #edf2ed;
-  --ink-2: #cbd3cd;
-  --muted: #929f97;
-  --line: #667169;
-  --line-soft: rgba(235,241,236,.16);
-  --dark: #151a17;
+  --paper: #0e1117;
+  --paper-2: #141822;
+  --paper-3: #1a202c;
+  --ink: #e5e7eb;
+  --ink-2: #cbd5e1;
+  --muted: #8c96a5;
+  --line: rgba(223, 195, 132, 0.2);
+  --line-soft: rgba(223, 195, 132, 0.08);
+  --dark: #090a0d;
   color-scheme: dark;
-  background: #242b27;
+  background-color: var(--chassis-bg, #090a0d);
+  background-image:
+    radial-gradient(circle at 50% 0%, rgba(223, 195, 132, 0.05) 0%, transparent 65%),
+    linear-gradient(180deg, #0b0d11 0%, #07080a 100%);
 }
 html[data-theme="dark"] .task-detail-dialog,body[data-theme="dark"] .task-detail-dialog { box-shadow:0 22px 64px rgba(0,0,0,.42); }
 html[data-theme="dark"] .task-safe-error,body[data-theme="dark"] .task-safe-error,html[data-theme="dark"] .task-inline-confirm,body[data-theme="dark"] .task-inline-confirm { background:rgba(185,70,50,.16); }

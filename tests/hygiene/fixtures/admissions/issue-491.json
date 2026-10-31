@@ -1,0 +1,15 @@
+{
+  "schema": "gw.cleanroom-admission-shard/v1",
+  "issue": 491,
+  "authorization_basis": "GitHub Issue #491, 2026-10-30",
+  "files": [
+    "web/js/core/omnibar.js",
+    "web/css/components/omnibar.css",
+    "tests/frontend/node-files.txt",
+    "tests/frontend/qin-490-global-search-input.test.mjs",
+    "tests/hygiene/fixtures/admissions/issue-491.json"
+  ],
+  "admitted_files": [],
+  "accepted_test_files": [],
+  "notes": "QIN-490：Ctrl+Space 浮层更名「全局搜索」，搜索输入框统一黑灰底，焦点高亮作用于整行。仅前端文案与样式 + 新增前端窄测。"
+}

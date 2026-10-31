@@ -141,15 +141,17 @@
   min-height: 58px;
   margin: 9px 18px 13px;
   padding: 0 16px;
-  border: 1px solid rgba(223, 195, 132, 0.29);
+  border: 1px solid rgba(223, 195, 132, 0.26);
   border-radius: 9px;
-  background: rgba(3, 5, 8, 0.72);
-  box-shadow: inset 0 2px 7px rgba(0, 0, 0, 0.75), 0 0 22px rgba(203, 147, 63, 0.05);
+  /* 全局搜索输入区统一黑灰底：整行即输入域，输入元素本身透明无框 */
+  background: #181c22;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.035), inset 0 2px 8px rgba(0, 0, 0, 0.45);
 }
 
+/* 焦点高亮作用于整个输入行，不在输入元素本体上再画一层方框 */
 .gw-omnibar-input-row:focus-within {
-  border-color: rgba(241, 204, 126, 0.7);
-  box-shadow: inset 0 2px 7px rgba(0, 0, 0, 0.75), 0 0 0 3px rgba(217, 170, 83, 0.11);
+  border-color: rgba(241, 204, 126, 0.72);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05), inset 0 2px 8px rgba(0, 0, 0, 0.45), 0 0 0 3px rgba(217, 170, 83, 0.13);
 }
 
 .gw-omnibar-search-icon {
@@ -169,6 +171,8 @@
   border: 0;
   outline: 0;
   background: transparent;
+  -webkit-appearance: none;
+  appearance: none;
   font: inherit;
   font-size: var(--gw-type-body-lg);
   font-weight: 500;
@@ -179,6 +183,35 @@
 .gw-omnibar-input::placeholder {
   color: #766f63;
   opacity: 1;
+}
+
+/* 浮层挂在 body 下，仍受各页 input 皮肤与全局 focus-visible 规则影响；
+   这里以更高特异性 + !important 钉死黑灰无框形态，避免出现白底方块与焦点方框。 */
+.gw-omnibar-panel .gw-omnibar-input,
+.gw-omnibar-panel .gw-omnibar-input:hover,
+.gw-omnibar-panel .gw-omnibar-input:focus,
+.gw-omnibar-panel .gw-omnibar-input:focus-visible {
+  color: #f6ecd6 !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  outline: 0 !important;
+  background: transparent !important;
+  background-color: transparent !important;
+  box-shadow: none !important;
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+.gw-omnibar-panel .gw-omnibar-input::placeholder {
+  color: #7b8290 !important;
+  opacity: 1 !important;
+}
+
+.gw-omnibar-panel .gw-omnibar-input::-webkit-search-decoration,
+.gw-omnibar-panel .gw-omnibar-input::-webkit-search-cancel-button,
+.gw-omnibar-panel .gw-omnibar-input::-webkit-search-results-button {
+  -webkit-appearance: none;
+  appearance: none;
 }
 
 .gw-omnibar-results-region {
@@ -277,15 +310,10 @@
   text-align: center;
 }
 
-.gw-omnibar-panel :focus-visible {
+/* 输入元素不参与面板内通用 focus-visible 描边，焦点只高亮整行 */
+.gw-omnibar-panel :focus-visible:not(.gw-omnibar-input) {
   outline: 2px solid #efca7d;
   outline-offset: 3px;
-}
-
-.gw-omnibar-input:focus,
-.gw-omnibar-input:focus-visible {
-  outline: 0 !important;
-  box-shadow: none !important;
 }
 
 @keyframes gw-omnibar-backdrop-in {
