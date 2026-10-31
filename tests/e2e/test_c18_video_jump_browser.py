@@ -99,11 +99,33 @@ def test_c18_video_jump_e2e_real_browser(monkeypatch: pytest.MonkeyPatch, tmp_pa
         assert "00:06~00:21" in badge_text, f"卡片未正确显示命中的时间段，当前显示: {badge_text}"
 
         # 6. 验证徽标布局：徽标不能与 MP4 格式标签重叠
-        format_selector = f'{card_selector} .registry-card-format'
-        format_loc = page.locator(format_selector)
-        format_loc.wait_for(state="visible", timeout=10000)
-        format_box = format_loc.bounding_box()
-        badge_box = page.locator(badge_selector).bounding_box()
+        # 搜索结果异步重绘时，分开读取两个 Locator 可能跨过 DOM 替换帧。
+        # 在同一次页面采样中等待并读取两者几何框，保留真实布局断言。
+        boxes = page.wait_for_function(
+            """({cardSelector, badgeSelector}) => {
+                const card = document.querySelector(cardSelector);
+                const format = card?.querySelector('.registry-card-format');
+                const badge = card?.querySelector('.registry-card-segment-badge');
+                if (!card?.isConnected || !format?.isConnected || !badge?.isConnected) return false;
+                const readBox = element => {
+                    const style = getComputedStyle(element);
+                    if (style.display === 'none' || style.visibility === 'hidden') return null;
+                    const rect = element.getBoundingClientRect();
+                    if (!(rect.width > 0 && rect.height > 0)) return null;
+                    return {x: rect.x, y: rect.y, width: rect.width, height: rect.height};
+                };
+                const formatBox = readBox(format);
+                const badgeBox = readBox(badge);
+                return formatBox && badgeBox ? {format: formatBox, badge: badgeBox} : false;
+            }""",
+            arg={
+                "cardSelector": card_selector,
+                "badgeSelector": badge_selector,
+            },
+            timeout=10000,
+        ).json_value()
+        format_box = boxes["format"]
+        badge_box = boxes["badge"]
         assert format_box and badge_box, "卡片标签或时间段徽标未正常渲染几何边框"
         # 格式标签在左上方 (y ~ 9px)，时间段徽标在左下方 (y 在格式标签之下)，纵向不重叠
         assert badge_box["y"] >= format_box["y"] + format_box["height"], (
