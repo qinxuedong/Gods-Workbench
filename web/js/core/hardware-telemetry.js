@@ -1129,7 +1129,7 @@
             <button type="button" class="btn-hw-round text-slate-400 hover:text-white" onclick="HardwareDeck.closeModal('accountModal')" aria-label="关闭"><span class="btn-hw-round-inner"><i data-lucide="x" class="w-4 h-4"></i></span></button>
           </div>
 
-          <div class="space-y-3 gw-type-body-sm">
+          <div class="space-y-3 gw-type-body-sm relative">
             <div class="bay-inset p-3 rounded-xl flex items-center space-x-3 border border-[#dfc384]/20">
               <div class="w-10 h-10 rounded-full bg-gradient-to-tr from-[#dfc384] to-[#947a57] p-0.5 shadow-lg shrink-0">
                 <div class="w-full h-full rounded-full bg-[#08090d] flex items-center justify-center text-[#eddab3] font-bold gw-type-body-md">
@@ -1151,11 +1151,13 @@
               <div class="flex justify-between"><span>状态端点</span><span class="text-slate-300">GET /api/asset-auth/status</span></div>
             </div>
 
-            <div class="pt-2 border-t border-white/10 flex items-center justify-between">
-              ${this.authState.auth_mode === 'local_account'
-                ? '<button id="accountRecoveryCodesRegenerate" type="button" class="hw-btn hw-btn-gold" onclick="HardwareDeck.confirmAccountRecoveryCodeRegeneration()">重新生成恢复码</button>'
-                : '<span class="h-8 w-full"></span>'}
+            <!-- QIN-483：保留底部占位行；本地账户入口覆盖其左侧预留位置。 -->
+            <div class="pt-2 border-t border-white/10 flex items-center justify-between" aria-hidden="true">
+              <span class="h-8 w-full"></span>
             </div>
+            ${this.authState.auth_mode === 'local_account'
+              ? '<button id="accountRecoveryCodesRegenerate" type="button" class="hw-btn hw-btn-gold absolute bottom-0 left-0" onclick="HardwareDeck.confirmAccountRecoveryCodeRegeneration()">重新生成恢复码</button>'
+              : ''}
           </div>
         `;
       } else if (this.authState.auth_mode === 'local_account') {
