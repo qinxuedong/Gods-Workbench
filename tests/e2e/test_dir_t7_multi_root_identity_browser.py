@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from playwright.sync_api import expect
 from workflow_support import goto_ready, settings_browser
 
 
@@ -91,8 +92,11 @@ def test_dir_t7_alias_suggestion_waits_for_explicit_user_confirmation(
 
         goto_ready(page, base + "/static/pages/assets.html")
         vault = page.frame_locator("#assetVaultFrame")
-        page.locator('#assetCategories [data-asset-board-create]').click()
-        vault.locator('[data-board-preset="other"]').click()
+        create_button = page.locator("#assetSidebarCreate")
+        create_button.wait_for(state="visible")
+        create_button.click()
+        expect(vault.locator("#boardCreateName")).to_be_visible()
+        assert vault.locator("[data-board-preset]").count() == 0
         vault.locator("#boardCreateName").fill("DIR-T7 别名库")
         vault.locator("#boardCreatePath").fill(str(candidate))
         path_input = vault.locator("#boardCreatePath")

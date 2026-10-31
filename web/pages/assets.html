@@ -24,10 +24,12 @@
     .asset-shell-nav-button.is-active svg { color: #dfc384; }
     .asset-shell-sidebar-actions { padding: 10px; border-top: 1px solid rgb(255 255 255 / .08); background: #050608; }
     .asset-shell-sidebar-actions .hw-btn { min-height: 36px; }
+    #assetSidebarCreate { min-height: 36px; }
     @media (max-width: 700px) {
       .asset-shell-workspace { flex-direction: column !important; }
       #assetVaultSidebar { width: 100% !important; max-height: 150px; height: auto !important; flex: 0 0 auto; flex-direction: row !important; border-right: 0 !important; border-bottom: 1px solid #191c24; }
-      #assetVaultSidebar .gw-side-bus-header { display: none !important; }
+      #assetVaultSidebar .gw-side-bus-header { width: auto; flex: 0 0 auto; display: flex !important; align-items: center; padding: 6px; border-right: 1px solid rgb(255 255 255 / .08); border-bottom: 0 !important; }
+      #assetSidebarCreate { width: auto !important; min-height: 32px; padding: 0 9px; white-space: nowrap; }
       #assetCategories { min-width: 0; min-height: 0; flex: 1 1 auto !important; flex-direction: row !important; overflow-x: auto !important; overflow-y: hidden !important; padding: 8px !important; }
       .asset-shell-nav-button { width: auto; min-width: 116px; flex: 0 0 auto; }
       .asset-shell-sidebar-actions { flex: 0 0 auto; display: flex; flex-direction: column; justify-content: center; gap: 5px; padding: 6px; border-top: 0; border-left: 1px solid rgb(255 255 255 / .08); }
@@ -206,12 +208,10 @@
     <!-- 左侧资源库看板导航 -->
     <aside id="assetVaultSidebar" class="gw-side-bus-unified w-64 bg-[#08090d] border-r border-[#191c24] flex flex-col shrink-0 z-30 h-full min-h-0">
       <div class="gw-side-bus-header p-2 border-b border-white/5 shrink-0">
-        <div class="gw-side-bus-title w-full flex items-center justify-between px-3 py-2 rounded-xl bg-[#141720] border border-[#dfc384]/35 text-[#eddab3] gw-type-body-sm font-semibold shadow-md">
-          <div class="flex items-center space-x-2">
-            <i data-lucide="database" class="w-4 h-4 text-[#dfc384]"></i>
-            <span>资源库</span>
-          </div>
-        </div>
+        <button type="button" id="assetSidebarCreate" class="hw-btn w-full flex items-center justify-center space-x-1" onclick="WorkbenchAssets.openCreateAssetLibrary()" title="新建资源库" aria-label="新建资源库" aria-haspopup="dialog">
+          <i data-lucide="plus" class="w-3.5 h-3.5 text-[#dfc384]" aria-hidden="true"></i>
+          <span>新建资源</span>
+        </button>
       </div>
 
       <div class="gw-side-bus-list flex-1 overflow-y-auto p-2 space-y-1.5 gw-type-body-sm" id="assetCategories" role="tablist" aria-label="资源库导航">
