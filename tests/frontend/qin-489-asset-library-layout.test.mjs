@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import test from 'node:test';
+import {runInNewContext} from 'node:vm';
 
 const html = readFileSync(new URL('../../web/pages/assets.html', import.meta.url), 'utf8');
 const shell = readFileSync(new URL('../../web/js/controllers/assets-controller.js', import.meta.url), 'utf8');
@@ -66,4 +67,40 @@ test('AC7: 左栏全部入口共用固定统计行和工具栏行，视图留在
     for (const id of ['registry', 'scripts', 'projects', 'assets', 'workflows', 'prompts', 'canvas-assets', 'local', 'governance']) {
         assert.ok(manager.includes(`id:'${id}'`), `资源库缺少入口：${id}`);
     }
+});
+
+test('资产列表将本地 indexed 素材映射为媒体 URL 并兼容 size_bytes', () => {
+    const start = manager.indexOf('function normalizeRegistryAsset(item={}){');
+    const end = manager.indexOf('\nfunction registryStructureId', start);
+    assert.ok(start >= 0 && end > start, '资产归一化函数应可定位');
+    const normalizeRegistryAsset = runInNewContext(`${manager.slice(start, end)}\nnormalizeRegistryAsset`);
+
+    const local = normalizeRegistryAsset({
+        id: 'ast_local',
+        kind: 'indexed',
+        storage_root_id: 'root_local',
+        display_path: 'images/frame.png',
+        size_bytes: 2745794,
+    });
+    assert.equal(local.url, '/api/asset-registry/assets/ast_local/media');
+    assert.equal(local.size, 2745794);
+
+    const explicit = normalizeRegistryAsset({
+        id: 'ast_explicit',
+        storage_root_id: 'root_local',
+        latest_image_version_url: '/versions/original/media',
+        public_url: '/public.png',
+        url: '/asset.png',
+        size_bytes: '42',
+    });
+    assert.equal(explicit.url, '/versions/original/media');
+    assert.equal(explicit.size, 42);
+
+    const remote = normalizeRegistryAsset({
+        id: 'ast_remote',
+        is_remote: true,
+        storage_root_id: 'root_local',
+        size_bytes: 7,
+    });
+    assert.equal(remote.url, '');
 });
