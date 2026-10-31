@@ -1,0 +1,16 @@
+{
+  "schema": "gw.cleanroom-admission-shard/v1",
+  "issue": 507,
+  "authorization_basis": "GitHub Issue #507, 2026-10-31",
+  "files": [
+    "tests/e2e/test_qin_497_topbar_schedule_clip.py",
+    "tests/frontend/node-files.txt",
+    "tests/frontend/qin-497-topbar-upper-shrink.test.mjs",
+    "tests/hygiene/fixtures/admissions/issue-507.json",
+    "web/pages/assets.html",
+    "web/pages/workflow.html"
+  ],
+  "admitted_files": [],
+  "accepted_test_files": [],
+  "notes": "QIN-497：素材页与工作流页上层机架补 master-deck-upper 语义类，使其参与 QIN-491 的收缩/省略规则，1451–1500px 不再裁切排期按钮。"
+}
