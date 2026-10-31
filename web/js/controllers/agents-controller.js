@@ -45,16 +45,24 @@ window.WorkbenchAgents = (function () {
 
   const esc = str => String(str ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 
+  function resolveAgentRoute(route) {
+    try {
+      const url = new URL(route, window.location.origin);
+      if (state.projectId) url.searchParams.set('project_id', state.projectId);
+      else url.searchParams.delete('project_id');
+      return `${url.pathname}${url.search}${url.hash}`;
+    } catch (_) {
+      return route;
+    }
+  }
+
   function resolveProjectId() {
     try {
       const urlId = new URLSearchParams(window.location?.search || '').get('project_id');
-      if (urlId && urlId.trim()) return urlId.trim();
-    } catch (_) {}
-    try {
-      const localId = window.localStorage?.getItem('workspace_project_id');
-      if (localId && localId.trim()) return localId.trim();
-    } catch (_) {}
-    return null;
+      return urlId && urlId.trim() ? urlId.trim() : null;
+    } catch (_) {
+      return null;
+    }
   }
 
   function renderProjectContext() {
@@ -104,20 +112,16 @@ window.WorkbenchAgents = (function () {
       </div>
     `;
     const projectSelect = document.getElementById('agentTaskProject');
-    if (projectSelect && state.projectId) {
-      projectSelect.value = state.projectId;
-    }
+    if (projectSelect) projectSelect.value = state.projectId || '';
     if (window.lucide) window.lucide.createIcons();
   }
 
-  // 地址栏只校正、不注入：已有 project_id 时保持与页面实际项目一致；
-  // 无参数表示「未指定」，由 localStorage 兜底，不主动制造参数（对齐 BEHAVIOR-SPEC 4.5）。
+  // URL 项目只在有效项目间切换；智能体内显式选择时可首次写入地址栏。
   function syncAddressBarProject(projectId) {
     try {
       const url = new URL(window.location.href);
-      if (!url.searchParams.has('project_id')) return;
-      const current = url.searchParams.get('project_id') || '';
-      if (current === (projectId || '')) return;
+      const current = url.searchParams.get('project_id');
+      if ((current || '') === (projectId || '')) return;
       if (projectId) url.searchParams.set('project_id', projectId);
       else url.searchParams.delete('project_id');
       window.history.replaceState({}, '', url);
@@ -132,36 +136,45 @@ window.WorkbenchAgents = (function () {
     try {
       if (state.projectId && persist) window.localStorage?.setItem('workspace_project_id', state.projectId);
     } catch (_) {}
-    // 切换或初始化后立即校正地址栏，避免参数停留在上一个项目。
+    // 显式选择项目时同步地址栏；无项目态会清除失效参数。
     syncAddressBarProject(state.projectId);
     renderProjectContext();
+    renderAgents();
   }
 
   function getProjectId() {
     return state.projectId;
   }
 
-  // 地址栏/本地记忆里的项目未必还存在于目录：只有列表接口明确不含它时才校正，
-  // 列表接口本身失败说明后端可疑，此时保持原样，不把有效项目误降级。
+  function renderProjectOptions(projects, selectedId = '') {
+    const select = document.getElementById('agentTaskProject');
+    if (!select) return;
+    const options = ['<option value="">请选择项目</option>'];
+    for (const project of projects) {
+      const id = String(project.project_id || '').trim();
+      if (!id) continue;
+      const name = String(project.name || id);
+      options.push(`<option value="${esc(id)}">${esc(name)}</option>`);
+    }
+    select.innerHTML = options.join('');
+    select.value = selectedId || '';
+  }
+
+  // 只有 URL 明确带入的有效项目才自动绑定；本地记忆与首个项目都不作为默认值。
   function validateProjectContext(candidateId) {
-    if (!candidateId) return Promise.resolve(null);
     return fetch('/api/asset-registry/projects?archived=false&deleted=false', { credentials: 'same-origin' })
       .then(res => (res && res.ok ? res.json() : null))
       .then(payload => {
-        const list = Array.isArray(payload?.projects) ? payload.projects : [];
-        const projects = list.filter(item => item && item.project_id && !item.archived_at && !item.deleted_at);
-        if (!projects.length) return null;
-        if (projects.some(item => String(item.project_id) === String(candidateId))) {
-          const matched = projects.find(item => String(item.project_id) === String(candidateId));
-          setProjectId(candidateId, matched?.name);
-          return null;
+        if (!payload || !Array.isArray(payload.projects)) return null;
+        const projects = payload.projects.filter(item => item && item.project_id && !item.archived_at && !item.deleted_at);
+        const matched = candidateId && projects.find(item => String(item.project_id) === String(candidateId));
+        renderProjectOptions(projects, matched ? String(matched.project_id) : '');
+        if (matched) {
+          setProjectId(matched.project_id, matched.name);
+        } else {
+          setProjectId(null, null, { persist: false });
         }
-        let remembered = '';
-        try { remembered = String(window.localStorage?.getItem('workspace_project_id') || ''); } catch (_) {}
-        const picked = projects.find(item => String(item.project_id) === remembered) || projects[0];
-        if (!picked) return null;
-        setProjectId(picked.project_id, picked.name);
-        return picked.project_id;
+        return null;
       })
       .catch(() => null);
   }
@@ -183,7 +196,7 @@ window.WorkbenchAgents = (function () {
           <div class="card-connector-pin"></div>
           <div class="flex items-center justify-between mb-1">
             <div class="font-bold text-slate-100 gw-type-body-md truncate">${esc(ag.name)}</div>
-            ${ag.route ? `<a href="${esc(ag.route)}" class="btn-hw-round shrink-0" title="打开剧本架构师路由" aria-label="打开剧本架构师路由" onclick="event.stopPropagation()"><span class="btn-hw-round-inner"><i data-lucide="external-link" class="w-3 h-3" aria-hidden="true"></i></span></a>` : ''}
+            ${ag.route && state.projectId ? `<a href="${esc(resolveAgentRoute(ag.route))}" class="btn-hw-round shrink-0" title="打开剧本架构师路由" aria-label="打开剧本架构师路由" onclick="event.stopPropagation()"><span class="btn-hw-round-inner"><i data-lucide="external-link" class="w-3 h-3" aria-hidden="true"></i></span></a>` : ''}
             <span class="gw-type-body-sm font-mono px-1 py-0.5 rounded-full ${ag.status === 'configured' ? 'bg-cyan-500/15 text-cyan-300 border border-cyan-500/30' : 'bg-amber-500/15 text-amber-300 border border-amber-500/30'}"${ag.status !== 'configured' ? ' data-gw-degradation="' + ag.status + '"' : ''}>
               ${ag.status === 'configured' ? 'Provider 已配置' : (ag.status === 'not_integrated' ? '未配置' : (ag.status === 'service_unavailable' ? '配置读取失败' : '配置读取中'))}
             </span>
@@ -261,8 +274,9 @@ window.WorkbenchAgents = (function () {
       if (goalArea && typeof goalArea.focus === 'function') goalArea.focus();
     }
     if (found?.route) {
-      try { localStorage.setItem('gwb_agent_route', found.route); } catch (_) {}
-      window.dispatchEvent(new CustomEvent('gw-agent-route', {detail: {agentId: found.id, route: found.route}}));
+      const route = resolveAgentRoute(found.route);
+      try { localStorage.setItem('gwb_agent_route', route); } catch (_) {}
+      window.dispatchEvent(new CustomEvent('gw-agent-route', {detail: {agentId: found.id, route}}));
     }
   }
 
@@ -568,9 +582,9 @@ window.WorkbenchAgents = (function () {
     renderTraces();
     const projectSelect = document.getElementById('agentTaskProject');
     projectSelect?.addEventListener('change', () => {
-      if (projectSelect.value) {
-        setProjectId(projectSelect.value, projectSelect.options?.[projectSelect.selectedIndex]?.text);
-      }
+      const projectId = String(projectSelect.value || '').trim();
+      const selected = Array.from(projectSelect.options || []).find(option => option.value === projectId);
+      setProjectId(projectId || null, selected?.text || null, { persist: Boolean(projectId) });
     });
     state.traceUnsubscribe = window.AuraTraceBus?.subscribe?.(appendTrace) || null;
     state.auraScopeHandler = () => {

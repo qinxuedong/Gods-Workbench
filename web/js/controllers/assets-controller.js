@@ -463,7 +463,8 @@ window.WorkbenchAssets = (() => {
     if (!frame) return;
     const source = new URL(frame.dataset.src || '/static/asset-manager.html?embedded=1&vault=1', location.origin);
     const contextParams = new URLSearchParams(location.search);
-    for (const key of ['project_id', 'pipeline_id', 'asset_id']) {
+    source.searchParams.delete('project_id');
+    for (const key of ['pipeline_id', 'asset_id']) {
       if (contextParams.has(key)) source.searchParams.set(key, contextParams.get(key));
     }
     source.hash = location.hash;
@@ -473,43 +474,14 @@ window.WorkbenchAssets = (() => {
     }
   }
 
-  // 入口 project_id 未必还存在于目录：先向目录列表核对，再决定是否采用并记住。
-  // 只有列表请求成功且明确不含该 ID 才判定无效（进入无项目态）；接口不可用不猜，保持原样。
-  // 无效 ID 绝不写入 localStorage，避免覆盖已记住的有效项目。
-  let projectContextSettled = false;
-  async function settleProjectContext() {
-    if (projectContextSettled) return;
-    projectContextSettled = true;
-    let entryId = '';
-    try { entryId = String(new URLSearchParams(location.search).get('project_id') || '').trim(); } catch (_) { return; }
-    if (!entryId) return;
-    let projects = null;
-    try {
-      const res = await fetch('/api/asset-registry/projects?archived=false', { credentials: 'same-origin' });
-      if (!res || !res.ok) return;
-      const payload = await res.json();
-      const list = Array.isArray(payload?.projects) ? payload.projects : [];
-      projects = list.filter(item => item && item.project_id && !item.archived_at && !item.deleted_at);
-    } catch (_) {
-      return;
-    }
-    if (!projects.length) return;
-    if (projects.some(item => String(item.project_id) === entryId)) {
-      try { localStorage.setItem('workspace_project_id', entryId); } catch (_) {}
-      return;
-    }
-    // 项目不存在：校正为目录里真实可用的项目（优先本地记忆里仍有效的那个），
-    // 把入口的无效 ID 从地址栏换掉；不把无效 ID 写进本地记忆。
-    let remembered = '';
-    try { remembered = String(localStorage.getItem('workspace_project_id') || ''); } catch (_) {}
-    const picked = projects.find(item => String(item.project_id) === remembered) || projects[0];
-    if (!picked) return;
+  // 资产库是全局入口，清除遗留工程参数，不读取或改写项目记忆。
+  function settleProjectContext() {
     try {
       const url = new URL(location.href);
-      url.searchParams.set('project_id', String(picked.project_id));
+      if (!url.searchParams.has('project_id')) return;
+      url.searchParams.delete('project_id');
       history.replaceState({}, '', url.toString());
-    } catch (_) { return; }
-    syncFrameSource();
+    } catch (_) {}
   }
 
   function rebind() {

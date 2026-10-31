@@ -236,12 +236,6 @@
           <i data-lucide="folder-kanban" class="w-3.5 h-3.5"></i>
           <span>项目中心</span>
         </a>
-
-        <a href="workshop.html" class="pill-capsule-active px-3.5 py-1.5 gw-type-body-sm flex items-center space-x-1.5 nav-pill-btn cursor-pointer" title="影视工坊">
-          <i data-lucide="film" class="w-3.5 h-3.5"></i>
-          <span>影视工坊</span>
-        </a>
-
         <a href="production.html" class="pill-capsule-inactive px-3.5 py-1.5 gw-type-body-sm font-medium flex items-center space-x-1.5 nav-pill-btn cursor-pointer" title="剧集制片">
           <i data-lucide="clapperboard" class="w-3.5 h-3.5"></i>
           <span>剧集制片</span>
@@ -524,7 +518,7 @@
       // 只有真正消费项目上下文的页面才携带 project_id（对齐 BEHAVIOR-SPEC-PRODUCTION-PROJECTS-HUB.md 4.5）。
       const PROJECT_CONTEXT_PAGES = new Set([
         'workshop.html', 'production.html', 'storyboard.html', 'canvas.html',
-        'assets.html', 'agents.html', 'workflow.html', 'collab.html'
+        'agents.html', 'workflow.html', 'collab.html'
       ]);
 
       // 地址栏只校正、不注入：已有 project_id 时保持与页面实际项目一致；

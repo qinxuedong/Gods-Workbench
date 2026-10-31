@@ -311,7 +311,7 @@
       "path": "docs/behavior/BEHAVIOR-SPEC-PRODUCTION-PROJECTS-HUB.md",
       "classification": "frozen_behavior_contract",
       "authorization_basis": "cleanroom_frozen_input",
-      "sha256": "4c1b20d987b322dbe1051bcedbf8523f4986f49072442842694cc73aff9522e8",
+      "sha256": "cf9287e92e628b876ae520c3f86d08b958b72701f94462c60eacd2353841a827",
       "admission": "accepted"
     },
     {

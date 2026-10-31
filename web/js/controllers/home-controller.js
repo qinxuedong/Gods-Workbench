@@ -440,7 +440,7 @@ window.WorkbenchHome = (function () {
   // 控制台、项目中心、设置本身是选择或配置入口，带参数会让地址栏谎报一个它并不持有的上下文。
   const PROJECT_CONTEXT_PAGES = new Set([
     'workshop.html', 'production.html', 'storyboard.html', 'canvas.html',
-    'assets.html', 'agents.html', 'workflow.html', 'collab.html'
+    'workflow.html', 'collab.html'
   ]);
 
   function updateNavPills(targetId) {

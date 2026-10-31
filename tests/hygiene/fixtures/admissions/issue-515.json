@@ -1,0 +1,33 @@
+{
+  "schema": "gw.cleanroom-admission-shard/v1",
+  "issue": 515,
+  "authorization_basis": "GitHub Issue #515, 2026-10-31",
+  "files": [
+    "web/pages/index.html",
+    "web/pages/projects.html",
+    "web/pages/settings.html",
+    "web/pages/agents.html",
+    "web/pages/assets.html",
+    "web/pages/production.html",
+    "web/pages/storyboard.html",
+    "web/pages/workflow.html",
+    "web/pages/collab.html",
+    "web/pages/workshop.html",
+    "web/js/controllers/home-controller.js",
+    "web/js/controllers/projects-controller.js",
+    "web/js/controllers/production-controller.js",
+    "web/js/controllers/storyboard-controller.js",
+    "web/js/controllers/agents-controller.js",
+    "web/js/controllers/assets-controller.js",
+    "docs/behavior/BEHAVIOR-SPEC-PRODUCTION-PROJECTS-HUB.md",
+    "tests/frontend/qin-493-navigation-project-context.test.mjs",
+    "tests/frontend/c7-t1-agents-controller.test.mjs",
+    "tests/frontend/node-files.txt",
+    "tests/hygiene/fixtures/cleanroom_admission_metadata.json",
+    "tests/hygiene/fixtures/admissions/issue-515.json",
+    "tests/hygiene/test_cleanroom_hygiene.py"
+  ],
+  "admitted_files": [],
+  "accepted_test_files": [],
+  "notes": "QIN-500：移除全局影视工坊入口，智能体只按显式项目上下文绑定，资产库不接收 project_id。"
+}
