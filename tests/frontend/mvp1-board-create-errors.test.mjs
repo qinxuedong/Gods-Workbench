@@ -1,6 +1,7 @@
 // QIN-485: 资产库新增资源库弹窗错误回显与交互状态契约测试
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
+import {runInNewContext} from 'node:vm';
 import test from 'node:test';
 
 const source = readFileSync(new URL('../../web/js/modules/asset-manager.js', import.meta.url), 'utf8');
@@ -27,12 +28,29 @@ test('新增资源库弹窗取消类型预设，只按名称、路径两行填�
     assert.match(source, /board\.preset === 'other'[\s\S]*?暂无可见资源/);
 });
 
-test('资源路径支持手输及右侧目录选择，选择目录只回填表单', () => {
+test('资源路径支持手输及右侧目录选择，先选路径时默认补齐末级目录名', () => {
     assert.match(source, /class="hw-btn hw-btn-icon directory-picker-btn" data-directory-picker="\$\{BOARD_CREATE_PATH_FIELD_KEY\}"/);
-    assert.match(source, /async function fillServerDirectoryFromNative\(key, pathValue\)\{\s*if\(key === BOARD_CREATE_PATH_FIELD_KEY\)\{\s*boardCreateState\.path = String\(pathValue \|\| ''\)\.trim\(\);/);
+    assert.match(source, /async function fillServerDirectoryFromNative\(key, pathValue\)\{\s*if\(key === BOARD_CREATE_PATH_FIELD_KEY\)\{\s*updateBoardCreatePath\(pathValue\);/);
     assert.match(source, /createPathSelection \? '选择此目录' : '选择并挂载'/);
     assert.match(source, /createPathSelection \? '选择当前目录' : '选择当前目录并挂载'/);
     assert.match(source, /仅显示服务器文件夹；选择后返回创建表单，点击创建时再登记路径/);
+    assert.ok(source.includes("const nameManuallyEdited = changedField === 'boardCreateName' || boardCreateState.nameManuallyEdited;"));
+    assert.ok(source.includes("name:boardCreateState.nameManuallyEdited ? boardCreateState.name : deriveBoardCreateNameFromPath(path),"));
+    assert.ok(source.includes("syncBoardCreateDraftFromDom(event.target.id);"));
+    const pathFunctions = source.match(/function deriveBoardCreateNameFromPath\(pathValue\)\{[\s\S]*?\n\}\nfunction updateBoardCreatePath\(pathValue\)\{[\s\S]*?\n\}/)?.[0];
+    assert.ok(pathFunctions, '路径命名辅助函数应存在');
+    const pathFirst = {boardCreateState:{name:'', nameManuallyEdited:false, path:''}, pathValue:['D:', 'Assets', 'Brand', ''].join(String.fromCharCode(92))};
+    runInNewContext([pathFunctions, 'updateBoardCreatePath(pathValue);'].join('\n'), pathFirst);
+    assert.equal(pathFirst.boardCreateState.name, 'Brand');
+    const nameFirst = {boardCreateState:{name:'品牌素材', nameManuallyEdited:true, path:''}, pathValue:['D:', 'Assets', 'Brand'].join(String.fromCharCode(92))};
+    runInNewContext([pathFunctions, 'updateBoardCreatePath(pathValue);'].join('\n'), nameFirst);
+    assert.equal(nameFirst.boardCreateState.name, '品牌素材');
+});
+
+test('新建资源库折叠右侧详情栏后释放网格宽度，不保留空白列', () => {
+    assert.match(source, /function syncRegistryDetailGridWidth\(\)\{\s*root\?\.style\.setProperty\('--registry-detail-width',`\$\{registryDetailPanelCollapsed \? 44 : registryDetailPanelWidth\}px`\);\s*\}/);
+    assert.match(source, /root\.classList\.toggle\('registry-detail-collapsed'[\s\S]*?syncRegistryDetailGridWidth\(\);/);
+    assert.match(source, /root\.className = `asset-manager-root[\s\S]*?syncRegistryDetailGridWidth\(\);/);
 });
 
 test('管理员创建时将未登记路径加入允许根，非管理员沿用现有权限校验', () => {

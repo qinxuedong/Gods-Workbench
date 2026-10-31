@@ -82,6 +82,8 @@ def test_dir_t1_create_library_index_and_filter_from_browser(monkeypatch, tmp_pa
         create_button.click()
         expect(vault.locator("#boardCreateName")).to_be_visible()
         assert vault.locator("[data-board-preset]").count() == 0
+        vault.locator("#boardCreatePath").fill(str(library))
+        expect(vault.locator("#boardCreateName")).to_have_value("浏览器测试素材库")
         vault.locator("#boardCreateName").fill("DIR-T1 中文素材库")
         vault.locator("#boardCreatePath").fill(str(library))
         expect(vault.locator("#boardCreateName")).to_have_value("DIR-T1 中文素材库")
@@ -196,6 +198,19 @@ def test_dir_t1_create_library_index_and_filter_from_browser(monkeypatch, tmp_pa
         assert (custom_stats_box["x"], custom_stats_box["y"]) == (overview_stats_box["x"], overview_stats_box["y"])
         assert (custom_toolbar_box["x"], custom_toolbar_box["y"]) == (overview_toolbar_box["x"], overview_toolbar_box["y"])
         vault.locator("[data-registry-card]").filter(has_text="浏览器素材-甲.txt").wait_for(timeout=15000)
+        collapsed_layout = vault.locator("#assetManagerRoot").evaluate("""root => {
+            const content = root.querySelector('.registry-content').getBoundingClientRect();
+            const detail = root.querySelector('.registry-detail-panel').getBoundingClientRect();
+            const bounds = root.getBoundingClientRect();
+            return {
+                width: root.style.getPropertyValue('--registry-detail-width'),
+                contentGap: detail.left - content.right,
+                rightGap: bounds.right - detail.right,
+            };
+        }""")
+        assert collapsed_layout["width"] == "44px", collapsed_layout
+        assert abs(collapsed_layout["contentGap"]) <= 1, collapsed_layout
+        assert abs(collapsed_layout["rightGap"]) <= 1, collapsed_layout
 
         page.locator('#assetCategories [data-asset-board="registry"]').click()
         source_filter = vault.locator(f'[data-registry-root="{root_id}"]')
