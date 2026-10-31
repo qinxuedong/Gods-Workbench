@@ -5342,11 +5342,35 @@ function registryVirtualCardHeight(item={}, cardWidth=176){
     const bodyHeight = registrySimple ? 0 : 92;
     return Math.max(180, Math.min(720, Math.ceil(mediaHeight + bodyHeight + 24)));
 }
+function registryGridColumnCount(template=''){
+    const value = String(template || '').trim();
+    const repeat = value.match(/repeat\(\s*([^,]+)\s*,/i);
+    if(repeat){
+        const count = Number(repeat[1]);
+        return Number.isInteger(count) && count > 0 ? count : 0;
+    }
+    let depth = 0;
+    let columns = 0;
+    let hasTrack = false;
+    for(const char of value){
+        if(char === '(') depth += 1;
+        else if(char === ')') depth = Math.max(0, depth - 1);
+        if(/\s/.test(char) && depth === 0){
+            if(hasTrack){ columns += 1; hasTrack = false; }
+            continue;
+        }
+        hasTrack = true;
+    }
+    if(hasTrack) columns += 1;
+    return columns;
+}
 function registryVirtualLayout(items=[], width=0){
-    const contentWidth = Math.max(320, Number(width) || root.querySelector('.registry-content')?.clientWidth || window.innerWidth || 1024);
+    const grid = root.querySelector('.registry-grid');
+    const contentWidth = Math.max(320, Number(width) || grid?.clientWidth || root.querySelector('.registry-content')?.clientWidth || window.innerWidth || 1024);
     const gap = REGISTRY_VIRTUAL_GAP;
     const preferred = Math.max(REGISTRY_CARD_SIZE.min, Math.min(REGISTRY_CARD_SIZE.max, Number(registryCardSize) || REGISTRY_CARD_SIZE.fallback));
-    const cols = Math.max(1, Math.floor((contentWidth + gap) / (preferred + gap)));
+    const cssColumns = grid ? registryGridColumnCount(getComputedStyle(grid).gridTemplateColumns) : 0;
+    const cols = Math.max(1, cssColumns || Math.floor((contentWidth + gap) / (preferred + gap)));
     const cardWidth = Math.max(96, (contentWidth - gap * Math.max(0, cols - 1)) / cols);
     const rowHeights = [];
     items.forEach((item, index) => {
@@ -5516,6 +5540,16 @@ function renderRegistryPagination(){
     // 旧版“加载全部结果后可按相似素材堆叠”入口已移除；保留无障碍
     // sentinel 标记供旧浏览器回退逻辑识别，用户无需点击分页控件。
     return `<div class="registry-infinite-sentinel" aria-live="polite" aria-busy="${registryPageLoading}">${registryPageLoading ? '<i data-lucide="loader-2"></i><span>正在加载更多素材…</span>' : '<span>继续下滑自动加载</span>'}<button type="button" data-registry-load-more hidden tabindex="-1" aria-hidden="true"></button></div>`;
+}
+function syncRegistryVaultFooter(){
+    if(activeTab !== 'registry') return;
+    const footer = root.querySelector('.registry-vault-footer');
+    const spans = Array.from(footer?.querySelectorAll('span') || []);
+    if(spans.length < 3) return;
+    const total = spans[0].querySelector('strong');
+    if(total) total.textContent = registryTotalKnown ? Number(registryTotal || 0).toLocaleString('zh-CN') : '统计中';
+    spans[1].textContent = registryLoading ? '正在读取' : `已加载 ${registryAssets.length} 项`;
+    spans[2].textContent = registryPageHasMore ? '下滑加载更多' : `当前显示 ${registryVisibleAssets().length} 项`;
 }
 function selectedRegistryAsset(){
     return registryAssets.find(item => item.id === selectedRegistryAssetId) || registryDetail || null;
@@ -5817,6 +5851,7 @@ async function loadMoreRegistryAssets(){
         }
         if(appendTarget && !structurePresentationChanged){
             // Fast path has already updated the existing sentinel and cards.
+            syncRegistryVaultFooter();
         } else {
             render();
             requestAnimationFrame(() => {
@@ -7381,6 +7416,7 @@ function render(){
     restoreRegistryPreviewImages(registryPreviewCache);
     refreshIcons();
     scheduleRegistryMasonryLayout();
+    scheduleRegistryVirtualWindow();
     if(scrollState.length){
         requestAnimationFrame(() => {
             document.querySelectorAll('.nav-scroll,.content-scroll,.detail-scroll').forEach((el, index) => {
