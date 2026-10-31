@@ -167,10 +167,11 @@ def test_direct_app_import_accepts_safe_auth_bind_pairs(
 def test_docker_defaults_explicitly_require_non_local_auth():
     dockerfile = (ROOT / "deploy" / "docker" / "Dockerfile").read_text(encoding="utf-8")
     compose = (ROOT / "deploy" / "docker" / "docker-compose.nas.yml").read_text(encoding="utf-8")
+    env_example = (ROOT / "deploy" / "docker" / ".env.example").read_text(encoding="utf-8")
 
     assert "GW_AUTH_MODE=oidc" in dockerfile
-    assert re.search(r"(?m)^\s+GW_AUTH_MODE:\s*oidc\s*$", compose)
-    assert not re.search(r"(?m)^\s+GW_AUTH_MODE:\s*local(?:\s|$)", compose)
+    assert 'GW_AUTH_MODE: "${GW_AUTH_MODE:-oidc}"' in compose
+    assert re.search(r"(?m)^GW_AUTH_MODE=local_account\s*$", env_example)
 
 
 def test_readme_says_local_auth_mode_is_development_only():

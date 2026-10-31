@@ -45,8 +45,8 @@ def test_nas_compose_binds_only_the_three_production_storage_roots() -> None:
     source = _read(COMPOSE)
 
     assert "services:" in source
-    assert re.search(r"^\s{2}gods-workbench:\s*$", source, re.MULTILINE)
-    assert '"${GW_PORT:-2077}:2077"' in source
+    assert re.search(r"^\s{2}app:\s*$", source, re.MULTILINE)
+    assert '"${GW_HOST_PORT:-2077}:2077"' in source
     assert "GW_RUNTIME_MODE: prod" in source
     assert "GW_HOST: 0.0.0.0" in source
     assert 'GW_PORT: "2077"' in source

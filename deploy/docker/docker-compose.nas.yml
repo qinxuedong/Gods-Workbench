@@ -12,7 +12,7 @@ services:
       - "${GW_HOST_PORT:-2077}:2077"
     environment:
       GW_RUNTIME_MODE: prod
-      GW_AUTH_MODE: "${GW_AUTH_MODE:-local_account}"
+      GW_AUTH_MODE: "${GW_AUTH_MODE:-oidc}"
       GW_ALLOWED_HOSTS: "${GW_ALLOWED_HOSTS:-}"
       GW_HOST: 0.0.0.0
       GW_PORT: "2077"
