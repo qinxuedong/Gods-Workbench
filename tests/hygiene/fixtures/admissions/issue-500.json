@@ -6,6 +6,7 @@
     "docs/behavior/BEHAVIOR-SPEC-PRODUCTION-PROJECTS-HUB.md",
     "tests/frontend/c7-p1-production-controller.test.mjs",
     "tests/frontend/c7-t1-agents-controller.test.mjs",
+    "tests/frontend/c7-t2-workflow-controller.test.mjs",
     "tests/frontend/c8-t3-production-review-context.test.mjs",
     "tests/frontend/node-files.txt",
     "tests/frontend/qin-493-navigation-project-context.test.mjs",

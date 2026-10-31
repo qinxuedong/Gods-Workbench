@@ -51,15 +51,44 @@
     </main>
   </div>
   <script>
-    (function initCameraRadarCanvas() {
+    (async function initCameraRadarCanvas() {
       'use strict';
       const params = new URLSearchParams(window.location.search);
-      const projectId = String(params.get('project_id') || params.get('project') || '').trim();
+      let projectId = String(params.get('project_id') || params.get('project') || '').trim();
       const canvasId = String(params.get('canvas_id') || params.get('id') || '').trim();
-      // 显式入口参数是项目上下文的权威来源：回写本地记忆，保证跨页（含顶栏跳转）不换项目。
-      if (projectId) {
-        try { localStorage.setItem('workspace_project_id', projectId); } catch (_) {}
+      // 入口 project_id 未必还存在于目录：校验通过才记住，无效则剔除参数进入无项目态。
+      // 只有目录列表成功且明确不含该 ID 才判定无效；接口不可用不猜，保持原样。
+      async function settleProjectContext(id) {
+        if (!id) return '';
+        let projects = null;
+        try {
+          const res = await fetch('/api/asset-registry/projects?archived=false', { credentials: 'same-origin' });
+          if (!res || !res.ok) return id;
+          const payload = await res.json();
+          const list = Array.isArray(payload?.projects) ? payload.projects : [];
+          projects = list.filter(item => item && item.project_id && !item.archived_at && !item.deleted_at);
+        } catch (_) {
+          return id;
+        }
+        if (!projects.length) return id;
+        if (projects.some(item => String(item.project_id) === id)) {
+          try { localStorage.setItem('workspace_project_id', id); } catch (_) {}
+          return id;
+        }
+        // 项目不存在：校正为目录里真实可用的项目（优先本地记忆里仍有效的那个），
+        // 不把入口的无效 ID 写进本地记忆。
+        let remembered = '';
+        try { remembered = String(localStorage.getItem('workspace_project_id') || ''); } catch (_) {}
+        const picked = projects.find(item => String(item.project_id) === remembered) || projects[0];
+        if (!picked) return id;
+        try {
+          const url = new URL(window.location.href);
+          url.searchParams.set('project_id', String(picked.project_id));
+          window.history.replaceState({}, '', url.toString());
+        } catch (_) {}
+        return String(picked.project_id);
       }
+      projectId = await settleProjectContext(projectId);
       const focusNode = String(params.get('focus_node') || '').trim();
       const statusEl = document.getElementById('canvasRadarStatus');
       const workspace = document.getElementById('canvasRadarWorkspace');

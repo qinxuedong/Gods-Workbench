@@ -521,3 +521,136 @@ test('QIN-493 返工 AC4：工坊无参数不注入 project_id，且缺失项目
   assert.match(workshopHtml, /missing = true;/, '缺失判定必须落到回退分支');
   assert.match(workshopHtml, /syncAddressBarProject\(projectId\);/, '回退后必须校正地址栏');
 });
+
+// ---------------------------------------------------------------------------
+// PM 扩范围（第二轮 QA 后）：素材、协作、工作流、画布四页也做入口项目校验
+// ---------------------------------------------------------------------------
+
+const assetsSource = readFileSync('web/js/controllers/assets-controller.js', 'utf8');
+const collabSource = readFileSync('web/js/controllers/collab-controller.js', 'utf8');
+const workflowSource = readFileSync('web/js/controllers/workflow-controller.js', 'utf8');
+const canvasHtml = readFileSync('web/pages/canvas.html', 'utf8');
+
+function extractFunction(source, name) {
+  const patterns = [`async function ${name}`, `function ${name}`];
+  let start = -1;
+  for (const needle of patterns) {
+    start = source.indexOf(needle);
+    if (start >= 0) break;
+  }
+  assert.ok(start >= 0, `缺少函数 ${name}`);
+  let depth = 0;
+  let inBlock = false;
+  for (let i = start; i < source.length; i += 1) {
+    if (source[i] === '{') {
+      depth += 1;
+      inBlock = true;
+    } else if (source[i] === '}') {
+      depth -= 1;
+      if (inBlock && depth === 0) return source.slice(start, i + 1);
+    }
+  }
+  throw new Error(`函数 ${name} 未闭合`);
+}
+
+const EXTENDED_PAGES = {
+  '素材库 assets-controller.js': { source: assetsSource, fn: 'settleProjectContext' },
+  '协作 collab-controller.js': { source: collabSource, fn: 'settleProjectContext' },
+  '工作流 workflow-controller.js': { source: workflowSource, fn: 'settleWorkflowProjectContext' },
+  '画布 canvas.html': { source: canvasHtml, fn: 'settleProjectContext' }
+};
+
+test('QIN-493 扩范围：四页都不再把入口 project_id 照单写入本地记忆', () => {
+  assert.doesNotMatch(
+    assetsSource,
+    /entryProjectId\) localStorage\.setItem\('workspace_project_id'/,
+    '素材库不得在校验前直接回写本地记忆'
+  );
+  assert.doesNotMatch(
+    collabSource,
+    /if \(projectId\) localStorage\.setItem\('workspace_project_id', projectId\);/,
+    '协作页不得在校验前直接回写本地记忆'
+  );
+  assert.doesNotMatch(
+    workflowSource,
+    /if \(projectId\) \{\s*\n\s*try \{ localStorage\.setItem\('workspace_project_id'/,
+    '工作流不得在校验前直接回写本地记忆'
+  );
+  assert.doesNotMatch(
+    canvasHtml,
+    /if \(projectId\) \{\s*\n\s*try \{ localStorage\.setItem\('workspace_project_id', projectId\); \} catch \(_\) \{\}\s*\n\s*\}/,
+    '画布不得在校验前直接回写本地记忆'
+  );
+});
+
+test('QIN-493 扩范围：四页都有目录列表证伪 + 校正逻辑', () => {
+  for (const [label, { source, fn }] of Object.entries(EXTENDED_PAGES)) {
+    const body = extractFunction(source, fn);
+    assert.match(body, /\/api\/asset-registry\/projects\?archived=false/, `${label} 必须先查目录列表`);
+    assert.match(body, /projects\.some\(/, `${label} 必须比对目录列表`);
+    assert.match(body, /replaceState/, `${label} 必须校正地址栏`);
+    assert.match(body, /picked/, `${label} 必须回退到目录里可用的项目`);
+    // 只有确认存在（some 命中）时才允许落盘本地记忆
+    const validBranch = body.slice(body.indexOf('projects.some('), body.indexOf('replaceState'));
+    assert.match(validBranch, /localStorage\.setItem\('workspace_project_id'/, `${label} 通过校验后才写本地记忆`);
+  }
+});
+
+test('QIN-493 扩范围：画布页遇到不存在项目时校正为可用项目且不污染本地记忆', async () => {
+  const settle = extractFunction(canvasHtml, 'settleProjectContext');
+  const replaced = [];
+  const storage = new Map([['workspace_project_id', 'projA']]);
+  const sandbox = {
+    console,
+    Promise,
+    URL,
+    URLSearchParams,
+    fetch: async url => {
+      if (String(url).includes('/api/asset-registry/projects')) {
+        return { ok: true, status: 200, json: async () => ({ projects: PROJECT_LIST }) };
+      }
+      return { ok: true, status: 200, json: async () => ({}) };
+    },
+    localStorage: {
+      getItem: k => storage.get(k) ?? null,
+      setItem: (k, v) => storage.set(k, String(v)),
+      removeItem: k => storage.delete(k)
+    },
+    history: { replaceState(_state, _title, url) { replaced.push(String(url)); } }
+  };
+  sandbox.window = {
+    location: { href: `${ORIGIN}/static/pages/canvas.html?project_id=projSTALE&canvas_id=cv1`, search: '?project_id=projSTALE&canvas_id=cv1' },
+    history: sandbox.history
+  };
+  sandbox.globalThis = sandbox;
+
+  const runner = vm.runInContext(`(${settle})`, vm.createContext(sandbox));
+
+  // 不存在的项目：校正为本地记忆里仍有效的 projA，且不写入 projSTALE
+  assert.equal(await runner('projSTALE'), 'projA');
+  assert.equal(storage.get('workspace_project_id'), 'projA');
+  assert.equal(replaced.length, 1);
+  assert.equal(new URL(replaced[0], ORIGIN).searchParams.get('project_id'), 'projA');
+  assert.equal(new URL(replaced[0], ORIGIN).searchParams.get('canvas_id'), 'cv1', '校正时不得丢失其他参数');
+
+  // 有效项目：保留并记住
+  replaced.length = 0;
+  assert.equal(await runner('projB'), 'projB');
+  assert.equal(storage.get('workspace_project_id'), 'projB');
+  assert.deepEqual(replaced, [], '有效项目无需改写地址栏');
+
+  // 目录接口不可用：不猜，保持原值（避免把有效项目误降级）
+  const offline = {
+    console,
+    Promise,
+    URL,
+    URLSearchParams,
+    fetch: async () => ({ ok: false, status: 503, json: async () => ({}) }),
+    localStorage: { getItem: () => 'projA', setItem() {}, removeItem() {} },
+    history: { replaceState() { throw new Error('不得改写'); } }
+  };
+  offline.window = { location: { href: `${ORIGIN}/static/pages/canvas.html?project_id=projC`, search: '?project_id=projC' }, history: offline.history };
+  offline.globalThis = offline;
+  const offlineRunner = vm.runInContext(`(${settle})`, vm.createContext(offline));
+  assert.equal(await offlineRunner('projC'), 'projC');
+});
