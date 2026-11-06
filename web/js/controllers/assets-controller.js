@@ -376,8 +376,10 @@ window.WorkbenchAssets = (() => {
     const selected = String(snapshot.selected_key || '');
     const badge = Math.max(0, Number(snapshot.inbox_badge || 0));
     const roots = Array.isArray(snapshot.roots) ? snapshot.roots : [];
+    const boards = Array.isArray(snapshot.boards) ? snapshot.boards : [];
     const rows = [
       {key:'mine:inbox', name:'收集箱', icon:'inbox', badge, count:''},
+      ...boards.map(board => ({key:`mine:board:${board.id}`, name:String(board.name || '未命名资源库'), icon:String(board.icon || 'library'), count:''})),
       ...roots.map(root => ({key:`mine:root:${root.id}`, name:String(root.name || '未命名来源'), icon:'hard-drive', count:Number(root.count || 0)})),
     ].map(row => ({...row, active: row.key === selected}));
     const serialized = JSON.stringify(rows);

@@ -12348,7 +12348,9 @@ function activateAssetTreeTab(tab){
    - snapshot()：外壳渲染「收集箱 + 挂载根目录」所需数据与当前选中入口 key；
    - activate(key)：外壳点击入口时复用树上同一条点击分发逻辑（资产总览走看板激活）。 */
 function gwAssetTreeEntryKey(){
-    // 外壳侧栏选中口径：收集箱视图、按根目录筛选的资产总览，或未带筛选的资产总览。
+    // 外壳侧栏选中口径：收集箱、用户资源库、按根目录筛选的资产总览，或未带筛选的资产总览。
+    const boardEntry = assetTreeUserBoards().find(board => board.id === activeTab);
+    if(boardEntry) return `mine:board:${boardEntry.id}`;
     if(activeTab === 'inbox') return 'mine:inbox';
     if(activeTab !== 'registry') return '';
     if(String(registryNavFolder?.rootId || '') || String(registryNavFolder?.path || '')) return `mine:root:${registryNavFolder.rootId}`;
@@ -12358,8 +12360,9 @@ function gwAssetTreeEntryKey(){
 function gwAssetTreeSnapshot(){
     return {
         inbox_badge: assetInboxUnreadCount(),
+        boards: assetTreeUserBoards().map(board => ({id:board.id, name:board.name, icon:board.icon})),
         roots: assetTreeRootsList().map(root => ({id:String(root.id || ''), name:root.name, count:Number(root.count || 0)})),
-        selected_key: gwAssetTreeEntryKey(),
+        selected_key: gwAssetTreeEntryKey(), 
     };
 }
 function gwAssetTreeActivate(key){
