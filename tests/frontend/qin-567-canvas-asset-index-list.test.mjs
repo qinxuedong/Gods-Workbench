@@ -43,6 +43,16 @@ assert.ok(
 const uniqueSource = functionSource('uniqueCanvasAssets');
 assert.ok(uniqueSource.includes('item.canvas_id'), '去重键必须包含 canvas_id');
 assert.ok(uniqueSource.includes('item.url'), '去重键必须包含 url');
+// 【QIN-567 修复】url 如实为空（未登记媒体载体的注册表素材）时按资产身份保留，
+// 不得因缺 url 丢条目——列表呈现口径与后端零伪造语义一致。
+assert.ok(
+    uniqueSource.includes('item.asset_id'),
+    '去重必须接受 asset_id 作为身份兜底（url 留空的登记素材不丢条目）'
+);
+assert.ok(
+    uniqueSource.includes("item?.url && !item?.asset_id && !item?.id"),
+    '必须显式保留「url 留空但有稳定身份」的条目，仅丢弃无可标识事实的条目'
+);
 
 // AC2-2：资产卡片消费真实字段——缩略图直通 assetThumb，名称与来源画布同屏。
 const cardSource = functionSource('renderCanvasAssetCard');

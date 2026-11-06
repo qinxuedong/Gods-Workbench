@@ -15,7 +15,8 @@
     "tests/frontend/qin-567-canvas-asset-index-list.test.mjs",
     "tests/hygiene/fixtures/admissions/issue-642.json",
     "tests/hygiene/fixtures/cleanroom_admission_metadata.json",
-    "tests/hygiene/test_cleanroom_hygiene.py"
+    "tests/hygiene/test_cleanroom_hygiene.py",
+    "web/js/modules/asset-manager.js"
   ],
   "admitted_files": [],
   "accepted_test_files": [

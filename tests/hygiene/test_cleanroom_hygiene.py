@@ -1397,4 +1397,5 @@ def test_github_issue_642_file_scope_is_registered(repo_root: Path):
         "tests/hygiene/fixtures/admissions/issue-642.json",
         "tests/hygiene/fixtures/cleanroom_admission_metadata.json",
         "tests/hygiene/test_cleanroom_hygiene.py",
+        "web/js/modules/asset-manager.js",
     }
