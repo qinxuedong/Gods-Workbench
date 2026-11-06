@@ -62,7 +62,14 @@ def test_local_assets_show_error_retry_and_load_next_page(
         expect(vault.locator("#assetManagerRoot.asset-manager-root-page-inbox")).to_be_visible()
         expect(vault.locator("[data-inbox-upload]")).to_be_visible()
 
-        # 本机素材分页契约：首屏 limit=100、503 后重试成功、游标翻页取尾。
+        # 本机素材分页契约：注入一次 503 → 重试后成功返回首屏 limit=100；游标翻页取尾。
+        injected = page.evaluate(
+            """async () => {
+                const response = await fetch('/api/local-assets?limit=100');
+                return response.status;
+            }"""
+        )
+        assert injected == 503, injected
         first_page = page.evaluate(
             """async () => {
                 const response = await fetch('/api/local-assets?limit=100');
@@ -73,7 +80,7 @@ def test_local_assets_show_error_retry_and_load_next_page(
         items = first_page["body"]["items"]
         assert len(items) == 100, len(items)
         cursor = first_page["body"].get("next_cursor") or ""
-        assert cursor, first_page["body"].keys()
+        assert cursor, list(first_page["body"].keys())
         second_page = page.evaluate(
             """async cursor => {
                 const response = await fetch('/api/local-assets?limit=100&cursor=' + encodeURIComponent(cursor));
@@ -83,13 +90,5 @@ def test_local_assets_show_error_retry_and_load_next_page(
         )
         assert second_page["status"] == 200, second_page["status"]
         assert len(second_page["body"]["items"]) == 1, len(second_page["body"]["items"])
-        # 503 注入一次后，页面内重试语义由后续真实请求承接（注入已消费）。
         assert failures["remaining"] == 0
-        retry_probe = page.evaluate(
-            """async () => {
-                const response = await fetch('/api/local-assets?limit=100');
-                return response.status;
-            }"""
-        )
-        assert retry_probe == 200, retry_probe
         assert errors == []

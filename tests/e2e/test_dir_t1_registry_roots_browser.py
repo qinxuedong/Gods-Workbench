@@ -351,8 +351,12 @@ def test_dir_t1_create_library_index_and_filter_from_browser(monkeypatch, tmp_pa
         for board_id, route_name in (("projects", "项目树"), ("governance", "治理建议")):
             _click_asset_tree_board(page, vault, board_id, force_project_toggle=board_id == "projects")
             assert page.url == fixed_url, f"打开 {route_name} 不应导航离开当前页面"
-            board_fixed_rows = sample_fixed_rows("registry", f"桌面{route_name}")
-            assert_fixed_rows_equal(board_fixed_rows, reference_boxes, f"桌面打开 {route_name}")
+            if board_id == "projects":
+                # QIN-566：项目树改为顶栏入口直达项目看板，验证该视图自身固定栏稳定。
+                sample_fixed_rows("projects", f"桌面{route_name}")
+            else:
+                board_fixed_rows = sample_fixed_rows("registry", f"桌面{route_name}")
+                assert_fixed_rows_equal(board_fixed_rows, reference_boxes, f"桌面打开 {route_name}")
         page.set_viewport_size({"width": 500, "height": 900})
         _click_asset_tree_board(page, vault, "registry")
         expect(fixed_stats).to_be_visible()
@@ -370,7 +374,10 @@ def test_dir_t1_create_library_index_and_filter_from_browser(monkeypatch, tmp_pa
         for board_id, route_name in (("projects", "项目树"), ("governance", "治理建议")):
             _click_asset_tree_board(page, vault, board_id, force_project_toggle=board_id == "projects")
             assert page.url == fixed_url, f"窄屏打开 {route_name} 不应导航离开当前页面"
-            board_fixed_rows = sample_fixed_rows("registry", f"窄屏{route_name}")
-            assert_fixed_rows_equal(board_fixed_rows, narrow_reference, f"窄屏打开 {route_name}")
+            if board_id == "projects":
+                sample_fixed_rows("projects", f"窄屏{route_name}")
+            else:
+                board_fixed_rows = sample_fixed_rows("registry", f"窄屏{route_name}")
+                assert_fixed_rows_equal(board_fixed_rows, narrow_reference, f"窄屏打开 {route_name}")
         assert bad_asset_responses == []
         assert errors == []
