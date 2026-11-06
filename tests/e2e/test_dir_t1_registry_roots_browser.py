@@ -149,6 +149,27 @@ def test_dir_t1_create_library_index_and_filter_from_browser(monkeypatch, tmp_pa
         vault = page.frame_locator("#assetVaultFrame")
         create_button = page.locator("#assetSidebarCreate")
         create_button.wait_for(state="visible")
+        page.set_viewport_size({"width": 500, "height": 900})
+        mobile_create_state = create_button.evaluate("""button => {
+            const rect = button.getBoundingClientRect();
+            const hit = document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2);
+            return {
+                viewport: window.innerWidth,
+                left: rect.left,
+                right: rect.right,
+                receivesPointer: hit === button || button.contains(hit)
+            };
+        }""")
+        assert (
+            mobile_create_state["left"] >= 0
+            and mobile_create_state["right"] <= mobile_create_state["viewport"]
+            and mobile_create_state["receivesPointer"]
+        ), f"500px 窄屏新建资源库按钮不可完整点击：{mobile_create_state}"
+        create_button.click()
+        expect(vault.locator("#boardCreateName")).to_be_visible()
+        vault.locator("[data-board-create-close]").first.click()
+        vault.locator("#boardCreateOverlay").wait_for(state="detached")
+        page.set_viewport_size({"width": 1800, "height": 1000})
         # 首屏会在一次 networkidle 之后再延迟请求 facets。确认建库前先等这轮结束，
         # 否则 storage-settings / reindex 会排在同步扫描后面，30s 内等不到 POST 响应。
         deadline = time.monotonic() + 30

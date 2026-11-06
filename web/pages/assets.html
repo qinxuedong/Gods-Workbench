@@ -15,6 +15,22 @@
     #assetVaultFrame { flex: 1; width: 100%; min-height: 0; border: 0; background: #0a0b10; }
     #assetVaultStatus { min-width: 0; margin: 0; padding: 0; overflow: hidden; color: #eddab3; font-size: var(--gw-type-body-sm); text-overflow: ellipsis; white-space: nowrap; }
     .asset-shell-deck-status { flex: 0 0 auto; max-width: 150px; }
+    @media (max-width: 700px) {
+      /* 窄屏把建库键固定在可见导航右侧，并为它预留滚动导航空间。 */
+      .topbar-master-deck .master-deck-upper { z-index: 40; }
+      .topbar-master-deck #assetSidebarCreate {
+        position: absolute;
+        top: 66px;
+        right: 12px;
+        left: auto;
+        z-index: 50;
+      }
+      .topbar-master-deck .recessed-deck-slot > #navPillsGroup {
+        width: calc(100vw - 100px);
+        max-width: calc(100vw - 100px);
+        flex: 0 0 calc(100vw - 100px);
+      }
+    }
   </style>
 </head>
 <body class="gw-shell bg-[#090a0d] text-slate-200 antialiased h-screen flex flex-col justify-between select-none overflow-hidden px-5 gw-type-body-md">
