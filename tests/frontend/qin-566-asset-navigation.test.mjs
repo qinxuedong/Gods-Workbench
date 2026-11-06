@@ -54,9 +54,10 @@ test('AC3: 统计顶栏 LUT 后、画布前依次新增「项目」「剧本」�
   assert.ok(!navTemplate.includes('registry-stat-meter') && !navTemplate.includes('<strong>'), '导航入口不得输出计数/占比/进度条');
 });
 
-test('AC3: 顶栏导航入口点击激活对应系统看板', () => {
+test('AC3: 顶栏导航入口点击激活对应系统看板并收口持久化', () => {
   const block = manager.slice(manager.indexOf("data-registry-nav]')){"), manager.indexOf('const registryStat ='));
   assert.match(block, /activateAssetBoard\(navBoard\)/);
+  assert.match(block, /saveAssetTreeState\(\)/, '顶栏路径同样收口持久化（审核残留修复）');
 });
 
 test('AC4: 内嵌金库模式不再渲染重复树，内容区吃满余宽', () => {

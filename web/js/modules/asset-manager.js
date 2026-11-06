@@ -15019,6 +15019,8 @@ async function handleClick(event){
         // 【QIN-566】顶栏导航入口（项目/剧本/提示词）：激活对应系统看板，目的地与既有看板切换一致。
         const navBoard = target.closest('[data-registry-nav]').dataset.registryNav || '';
         if(assetBoardById(navBoard)) void activateAssetBoard(navBoard);
+        // 【审核残留修复】顶栏路径同样收口持久化，避免外壳侧栏已取消选中而旧 mine:* 键残留复活。
+        saveAssetTreeState();
         return;
     }
     const registryStat = target.closest?.('[data-registry-stat]');
@@ -15034,10 +15036,13 @@ async function handleClick(event){
             activeCanvasAssetCanvasId = '';
             selectedCanvasAssetId = '';
             selectedCanvasAssetIds.clear();
+            saveAssetTreeState();
             render();
             return;
         }
         applyRegistryFilterDefinition({category, groupSimilar:registryGroupSimilar});
+        // 【审核残留修复】统计卡筛选同样收口持久化（侧栏选中清空后旧 mine:* 键不应残留）。
+        saveAssetTreeState();
         // 【QIN-553】首次打开 LUT 库统计视图时，幂等登记内置 LUT 包。
         if(category === 'lut'){
             try { await ensureBuiltinLutsRegistered(); } catch(err){ setStatus(err.message || '内置 LUT 登记失败'); }
