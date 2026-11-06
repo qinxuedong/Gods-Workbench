@@ -81,9 +81,11 @@ tests/frontend/qin-539-asset-source-and-modified.test.mjs
 tests/frontend/qin-541-registry-card-info-layout.test.mjs
 tests/frontend/qin-542-registry-disk-folders.test.mjs
 tests/frontend/qin-544-asset-tree-panel.test.mjs
+tests/frontend/qin-546-asset-organize.test.mjs
 tests/frontend/qin-548-local-assets-contract.test.mjs
 tests/frontend/qin-550-registry-upload-preview.mjs
 tests/frontend/qin-552-lut-library.test.mjs
+tests/frontend/qin-553-builtin-luts.test.mjs
 tests/frontend/qin-559-asset-keyboard.test.mjs
 tests/frontend/qin-563-registry-stat-canvas-filter.test.mjs
 tests/frontend/settings-workbench-visual.test.mjs
