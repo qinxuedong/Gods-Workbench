@@ -12050,13 +12050,48 @@ function assetTreeRootsList(){
     return assetRackRoots();
 }
 function renderAssetTreeSystemTree(){
-    // AC2：系统资源树（只读）：项目制片、剧本资产、画布资产、提示词库
+    // AC2：系统资源树（只读）：项目制片、剧本资产、画布资产（【QIN-563】挂画布分类子分支）、提示词库
     const projectBranch = renderAssetTreeProjectsBranch();
-    const boardNodes = assetTreeSystemBoards().map(board => renderAssetTreeNode({
-        key:`system:${board.id}`, icon:board.icon, name:board.id === 'prompts' ? '提示词库' : board.name, count:'', depth:0,
-        hasChildren:false,
-    })).join('');
+    const boardNodes = assetTreeSystemBoards().map(board => {
+        if(board.id === 'canvas-assets') return renderAssetTreeCanvasBoardNode(board);
+        return renderAssetTreeNode({
+            key:`system:${board.id}`, icon:board.icon, name:board.id === 'prompts' ? '提示词库' : board.name, count:'', depth:0,
+            hasChildren:false,
+        });
+    }).join('');
     return `<div class="asset-tree-scroll" role="tree" aria-label="系统资源树" tabindex="0" data-asset-tree-view="system">${projectBranch}${boardNodes}</div>`;
+}
+function renderAssetTreeCanvasBoardNode(board){
+    // 【QIN-563】「画布资产」节点挂画布分类子分支：顶置「全部画布」聚合入口，下接智能/普通/参考分类，
+    // 分类展开列出各画布子行。数据来自画布资产索引（loadAll 预取的本地状态），无新增 API。
+    const expanded = assetTreeExpanded.has('system:canvas-assets');
+    return renderAssetTreeNode({
+        key:'system:canvas-assets', icon:board?.icon || 'layout-dashboard', name:board?.name || '画布资产', count:'', depth:0,
+        children: expanded ? renderAssetTreeCanvasBranch() : '',
+        expanded, hasChildren:true,
+    });
+}
+function renderAssetTreeCanvasBranch(){
+    // 【QIN-563】画布分类子分支：选中态走 assetTreeSelectedKey（统计卡单击路径会同步设置），
+    // 分类节点计数显示画布数（canvas_count），画布子行计数显示该画布资产数。
+    const catNode = cat => renderAssetTreeNode({
+        key:`system:canvas-assets:cat:${cat.id}`,
+        icon: cat.id === 'all' ? 'layers' : cat.id === 'smart' ? 'sparkles' : cat.id === 'classic' ? 'layout-grid' : 'map',
+        name:cat.name, count:Number(cat.canvas_count || 0), depth:1,
+        children: assetTreeExpanded.has(`system:canvas-assets:cat:${cat.id}`)
+            ? `<div class="asset-tree-children" role="group">${canvasAssetsForCategory(cat.id).map(canvas => renderAssetTreeNode({
+                key:`system:canvas-assets:cat:${cat.id}:canvas:${canvas.id}`,
+                icon: canvas.kind === 'smart' ? 'sparkles' : canvas.kind === 'reference' ? 'map' : 'file-image',
+                name:canvas.title || '未命名画布',
+                count:canvasAssetCountForCanvas(canvas.id),
+                depth:2,
+                hasChildren:false,
+            })).join('')}</div>`
+            : '',
+        expanded: assetTreeExpanded.has(`system:canvas-assets:cat:${cat.id}`),
+        hasChildren:true,
+    });
+    return `<div class="asset-tree-children" role="group">${canvasAssetCategories().map(catNode).join('')}</div>`;
 }
 function renderAssetTreePanel(extraClass=''){
     if(activeTab === 'local') return renderLocalUploadFolderPanel();
@@ -12171,6 +12206,30 @@ function selectAssetTreeNode(key){
             void ensureAssetTreeProjectData(pid).then(() => { void refreshRegistryAssetsFromRack().catch(() => null); render(); });
             return;
         }
+    }
+    if(value.startsWith('system:canvas-assets:cat:')){
+        // 【QIN-563】画布分类子节点（含「全部画布」）：进入画布资产视图并筛选该分类；
+        // 分类下画布子行聚焦单个画布。选中态由 assetTreeSelectedKey 统一承载。
+        const body = value.slice('system:canvas-assets:cat:'.length);
+        const canvasSep = body.indexOf(':canvas:');
+        if(canvasSep >= 0){
+            const catId = body.slice(0, canvasSep);
+            const canvasId = body.slice(canvasSep + ':canvas:'.length);
+            activeCanvasAssetCategory = catId;
+            activeCanvasAssetCanvasId = canvasId;
+            selectedCanvasAssetId = '';
+            selectedCanvasAssetIds.clear();
+            if(activeTab !== 'canvas-assets') activateAssetBoard('canvas-assets');
+            else render();
+            return;
+        }
+        activeCanvasAssetCategory = body;
+        activeCanvasAssetCanvasId = '';
+        selectedCanvasAssetId = '';
+        selectedCanvasAssetIds.clear();
+        if(activeTab !== 'canvas-assets') activateAssetBoard('canvas-assets');
+        else render();
+        return;
     }
     if(value.startsWith('system:')){ activateAssetBoard(value.slice('system:'.length)); return; }
     render();
@@ -14682,7 +14741,9 @@ async function handleClick(event){
         const category = registryStat.dataset.registryStat || '';
         if(category === 'reference-canvas'){
             // 【QIN-563】单击「画布」统计卡：直接筛选展示全部画布资产（智能+普通+参考），不再要求双击。
+            // 树选中态同步到「画布资产」节点下的「全部画布」分类子节点。
             registryStatCategory = '';
+            assetTreeSelectedKey = 'system:canvas-assets:cat:all';
             activeTab = 'canvas-assets';
             activeCanvasAssetCategory = 'all';
             activeCanvasAssetCanvasId = '';

@@ -1301,6 +1301,7 @@ def test_github_issue_636_file_scope_is_registered(repo_root: Path):
         "web/css/pages/asset-vault.css",
         "web/js/modules/asset-manager.js",
         "tests/frontend/qin-531-asset-topbar-cards.test.mjs",
+        "tests/frontend/qin-544-asset-tree-panel.test.mjs",
         "tests/frontend/qin-563-registry-stat-canvas-filter.test.mjs",
         "tests/frontend/node-files.txt",
         "tests/hygiene/fixtures/admissions/issue-636.json",

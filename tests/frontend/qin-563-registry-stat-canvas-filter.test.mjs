@@ -62,3 +62,22 @@ assert.match(js, /return \[all, \.\.\.cats\];/, '「全部画布」必须顶置�
 assert.match(js, /activeCanvasAssetCategory !== 'all' && \(item\.canvas_kind \|\| 'classic'\) !== activeCanvasAssetCategory/, '全部画布不得按画布类型过滤资产');
 assert.match(js, /if\(categoryId === 'all'\)\{\s*\n\s*return \(Array\.isArray\(canvasAssetsData\.canvases\)/, '全部画布必须返回全部画布列表');
 assert.match(js, /const cats = canvasAssetCategories\(\)\.filter\(cat => cat\.id !== 'all'\);/, '默认落地分类必须跳过「全部画布」');
+
+// ---- AC2 树兜底：「全部画布」接入实活系统树 ----
+
+// 系统树「画布资产」节点挂画布分类子分支（收窄口径后 AC2 的实活 UI 承载点）。
+assert.match(js, /function renderAssetTreeCanvasBoardNode\(board\)\{/, '必须存在画布资产树节点渲染函数');
+assert.match(
+  js,
+  /if\(board\.id === 'canvas-assets'\) return renderAssetTreeCanvasBoardNode\(board\);/,
+  '系统树必须为「画布资产」节点挂画布分类子分支'
+);
+assert.match(js, /function renderAssetTreeCanvasBranch\(\)\{/, '必须存在画布分类子分支渲染函数');
+assert.match(js, /`system:canvas-assets:cat:\$\{cat\.id\}`/, '分类子节点 key 必须挂在「画布资产」节点之下');
+assert.match(js, /system:canvas-assets:cat:\$\{cat\.id\}:canvas:\$\{canvas\.id\}/, '分类下必须列画布子行');
+assert.match(js, /count:Number\(cat\.canvas_count \|\| 0\)/, '分类节点计数必须显示画布数');
+
+// 树节点点击分发：分类子节点进入画布资产视图并筛选该分类；画布子行聚焦单个画布。
+assert.match(js, /value\.startsWith\('system:canvas-assets:cat:'\)/, '树点击分发必须处理画布分类子节点');
+assert.match(js, /const canvasSep = body\.indexOf\(':canvas:'\);/, '分发必须区分分类节点与画布子行');
+assert.match(js, /assetTreeSelectedKey = 'system:canvas-assets:cat:all';/, '统计卡单击「画布」必须同步树选中态到「全部画布」子节点');
