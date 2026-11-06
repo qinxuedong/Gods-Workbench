@@ -367,15 +367,15 @@ window.WorkbenchAssets = (() => {
     root.classList.toggle('asset-registry-filters-collapsed');
   }
 
+  // 【QIN-547】「上传资源」看板已并入收集箱：外壳上传入口改为进入收集箱再触发其上传按钮。
   async function uploadAsset() {
     try {
-      const available = manager()?.querySelector('[data-localup-upload]');
+      const available = manager()?.querySelector('[data-inbox-upload]');
       if (available) { available.click(); return; }
-      const tab = await waitForControl('[data-tab="local"]');
-      if (tab.getAttribute('aria-selected') !== 'true') tab.click();
-      // Async navigation cannot retain a file picker's user activation.
-      const upload = await waitForControl('[data-localup-upload]');
-      setVaultStatus('上传资源已打开');
+      const node = await waitForControl('[data-asset-tree-node="mine:inbox"]');
+      node.click();
+      const upload = await waitForControl('[data-inbox-upload]');
+      setVaultStatus('收集箱已打开');
       upload.focus();
     } catch (error) { setVaultStatus(error.message); }
   }

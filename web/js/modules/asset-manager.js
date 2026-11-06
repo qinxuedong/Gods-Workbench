@@ -10088,7 +10088,10 @@ async function openAssetInbox(){
 async function markAssetInboxViewed(){
     try{
         await apiJsonResponse(assetManagerHttp.request('/api/asset-inbox/viewed', {method:'POST', credentials:'same-origin'}));
+        const previous = assetInboxUnreadCount();
         if(inboxSettings) inboxSettings = {...inboxSettings, unread_count:0};
+        // 【QIN-547】角标清零后立即重绘，否则左栏数字要等到下一次 render 才消失。
+        if(previous > 0) render();
     }catch(_){ /* 角标失败不阻断浏览 */ }
 }
 async function uploadAssetInboxFiles(files){
@@ -10114,7 +10117,8 @@ async function migrateAssetLibraryToInbox(){
     try{
         const result = await apiJsonResponse(assetManagerHttp.request('/api/asset-inbox/migrate', {method:'POST', credentials:'same-origin'}));
         const failed = Array.isArray(result.failed) ? result.failed.length : 0;
-        showAssetNotice(`托管资产已并入收集箱：迁入 ${Number(result.moved_files || 0)} 个文件，保留 ${Number(result.url_entries || 0)} 个链接条目${failed ? `，${failed} 个失败` : ''}`);
+        const movedCount = Number(result.moved_files || 0);
+        showAssetNotice(`托管资产已并入收集箱：迁入 ${movedCount} 个文件${movedCount ? '（源文件保留）' : ''}，保留 ${Number(result.url_entries || 0)} 个链接条目${failed ? `，${failed} 个失败，可再次点击重试` : ''}`);
         await loadAssetInbox();
     }catch(error){
         showAssetFailure('迁移托管资产失败', error);
@@ -10139,6 +10143,16 @@ async function saveAssetInboxSettings(){
         const moved = Array.isArray(result.migrated) ? result.migrated.length : 0;
         const conflicts = Array.isArray(result.conflicts) ? result.conflicts.length : 0;
         const skipped = Array.isArray(result.skipped) ? result.skipped.length : 0;
+        // 【QIN-547】后端搬不动文件时不会切换位置（已回滚），此时必须留住设置面板并说明原因，
+        // 否则用户会以为位置已改成功、文件却不见了。
+        if(result.applied === false){
+            inboxSettingsOpen = true;
+            const failed = Array.isArray(result.failed) ? result.failed.length : 0;
+            showAssetFailure('收集箱位置未变更', new Error(`${failed} 个文件搬不动，已回滚到原位置`));
+            await loadAssetInbox();
+            if(activeTab === 'inbox') render();
+            return;
+        }
         showAssetNotice(`收集箱位置已更新${moved ? `，迁移 ${moved} 个文件` : ''}${skipped ? `，${skipped} 个相同文件已存在` : ''}${conflicts ? `，${conflicts} 个同名文件未迁移` : ''}`);
         await loadAssetInbox();
     }catch(error){

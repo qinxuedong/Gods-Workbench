@@ -80,7 +80,25 @@ test('AC2/AC3: 上传落收集箱、迁移托管资产有独立入口', () => {
     const migrate = functionSource('migrateAssetLibraryToInbox');
     assert.match(migrate, /'\/api\/asset-inbox\/migrate'/, '迁移走收集箱迁移接口');
     assert.match(migrate, /moved_files/, '迁移结果回显迁入文件数');
+    assert.match(migrate, /源文件保留/, '迁移提示应说明源文件保留，避免用户以为原位置被清空');
     assert.match(functionSource('renderInboxManager'), /data-inbox-migrate-run/, '视图应有迁移入口');
     assert.match(functionSource('renderInboxManager'), /data-inbox-upload/, '视图应有上传入口');
     assert.match(source, /record:'仅记录'/, '无访问地址的托管记录应有「仅记录」标签，不伪装成链接');
+});
+
+test('AC5: 角标清零后立即重绘，不等下一次 render', () => {
+    const viewed = functionSource('markAssetInboxViewed');
+    assert.match(viewed, /const previous = assetInboxUnreadCount\(\)/, '清零前先记住旧角标');
+    assert.match(viewed, /if\(previous > 0\) render\(\)/, '角标有变化时立即重绘');
+});
+
+test('AC1: 改位置失败时留住面板并说明原因，不假装成功', () => {
+    const save = functionSource('saveAssetInboxSettings');
+    assert.match(save, /result\.applied === false/, '必须识别后端的 applied=false');
+    assert.match(save, /inboxSettingsOpen = true/, '失败时保留设置面板供用户改路径');
+    assert.match(save, /收集箱位置未变更/, '失败时给出明确提示');
+    assert.ok(
+        save.indexOf('result.applied === false') < save.indexOf('收集箱位置已更新'),
+        '失败分支必须早于成功提示，不能先报成功再报失败',
+    );
 });

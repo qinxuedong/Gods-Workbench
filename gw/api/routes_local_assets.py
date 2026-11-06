@@ -25,13 +25,14 @@ import base64
 from pathlib import PurePosixPath
 from typing import Any
 
-from fastapi import APIRouter, Header, Query, Request, status
+from fastapi import APIRouter, Depends, Header, Query, Request, status
 
 from gw.asset_library import inbox, organize, reveal
 from gw.asset_library import repository as repo
 from gw.asset_registry.organize_sync import AssetRegistryOrganizeListener
 from gw.core import storage
 from gw.core.auth import require_authenticated, require_edit_access
+from gw.core.asset_visibility import asset_request_scope
 from gw.core.errors import CleanroomException, ForbiddenException
 organize.register_sync_listener(AssetRegistryOrganizeListener())
 
@@ -548,7 +549,11 @@ async def delete_storage_files(
 # ---------------------------------------------------------------------------
 
 
-@router.get("/api/asset-inbox", status_code=status.HTTP_200_OK)
+@router.get(
+    "/api/asset-inbox",
+    status_code=status.HTTP_200_OK,
+    dependencies=[Depends(asset_request_scope)],
+)
 def list_asset_inbox(
     limit: int = Query(100, ge=1, le=500),
     offset: int = Query(0, ge=0),
@@ -561,7 +566,11 @@ def list_asset_inbox(
     return inbox.list_items(limit, offset, (source or "").strip() or None)
 
 
-@router.post("/api/asset-inbox/viewed", status_code=status.HTTP_200_OK)
+@router.post(
+    "/api/asset-inbox/viewed",
+    status_code=status.HTTP_200_OK,
+    dependencies=[Depends(asset_request_scope)],
+)
 def mark_asset_inbox_viewed(
     authorization: str | None = Header(None),
     x_user_role: str = Header("editor", alias="X-User-Role"),
@@ -571,7 +580,11 @@ def mark_asset_inbox_viewed(
     return inbox.mark_viewed()
 
 
-@router.put("/api/asset-inbox/settings", status_code=status.HTTP_200_OK)
+@router.put(
+    "/api/asset-inbox/settings",
+    status_code=status.HTTP_200_OK,
+    dependencies=[Depends(asset_request_scope)],
+)
 async def update_asset_inbox_settings(
     request: Request,
     authorization: str | None = Header(None),
@@ -588,7 +601,11 @@ async def update_asset_inbox_settings(
     return inbox.update_path(payload.get("path"), migrate)
 
 
-@router.post("/api/asset-inbox/migrate", status_code=status.HTTP_200_OK)
+@router.post(
+    "/api/asset-inbox/migrate",
+    status_code=status.HTTP_200_OK,
+    dependencies=[Depends(asset_request_scope)],
+)
 def migrate_asset_library_into_inbox(
     authorization: str | None = Header(None),
     x_user_role: str = Header("editor", alias="X-User-Role"),
@@ -598,7 +615,11 @@ def migrate_asset_library_into_inbox(
     return inbox.migrate_asset_library()
 
 
-@router.post("/api/asset-inbox/upload", status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/api/asset-inbox/upload",
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(asset_request_scope)],
+)
 async def upload_to_inbox(
     request: Request,
     authorization: str | None = Header(None),

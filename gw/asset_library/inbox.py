@@ -21,8 +21,13 @@
 - 列表同时呈现三类来源：收集箱本地文件、遗留 ``registry_uploads/collect_inbox`` 收集文件、
   托管资产迁移后的 URL 条目；
 - 迁移托管资产按 ``asset_id`` 记账，可重复执行；外部 URL 保留为 URL 条目，
-  仅 ``file://`` 或绝对路径且真实存在的本地文件才会被移动进收集箱；
-- 迁移不删除任何托管资产 JSON 记录，也不改 ``collector.store_content`` 的受管落盘路径。
+  仅 ``file://`` 或绝对路径且真实存在、位于已挂载素材根内的本地文件才会进收集箱；
+- 迁移**不移动、不删除源文件**（硬链接优先、跨卷回退复制）：托管资产记录里的 url
+  仍指向原路径，``shutil.move`` 会让这些记录变成死链；
+- 迁移失败**不入账**，下次调用会重试，不会因为一次失败就被永久跳过；
+- 迁移不删除任何托管资产 JSON 记录，也不改 ``collector.store_content`` 的受管落盘路径；
+- 主体隔离：迁移记录与「已查看」时间点按 ``sha256(owner)`` 分账，遗留收集目录只列
+  当前主体的子目录，避免把别人的收集结果展示出来。
 """
 
 from __future__ import annotations
@@ -32,6 +37,7 @@ import os
 import shutil
 import threading
 import time
+import uuid
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -39,6 +45,7 @@ from urllib.parse import unquote, urlsplit
 
 from gw.asset_library.repository import classify_name
 from gw.core import storage
+from gw.core.asset_visibility import current_asset_owner
 from gw.core.errors import CleanroomException
 
 NS_INBOX = "asset_inbox"
@@ -47,18 +54,31 @@ INBOX_DIRNAME = "inbox"
 MAX_INBOX_UPLOAD_BYTES = 32 * 1024 * 1024
 #: 遗留浏览器收集目录（相对 data_root）；只读展示，不搬迁，避免破坏受管回读契约。
 LEGACY_COLLECT_PARTS = ("registry_uploads", "collect_inbox")
+#: GNS-2026 要求物理落盘名纯 ASCII，用户原名只作为展示名保存在映射表里。
+PHYSICAL_NAME_PREFIX = "inbox_"
+DISPLAY_NAMES_KEY = "display_names"
 
 _lock = threading.RLock()
 
 
 def _default_raw() -> dict[str, Any]:
     return {
-        "version": 1,
+        "version": 2,
         "path": None,
         "last_viewed_at": None,
         "last_viewed_epoch": None,
+        "views": {},
         "migrated": {},
+        DISPLAY_NAMES_KEY: {},
     }
+
+
+def _owner_digest() -> str | None:
+    """当前请求主体的稳定摘要；没有主体上下文时返回 None。"""
+    owner = current_asset_owner.get()
+    if not owner:
+        return None
+    return hashlib.sha256(str(owner).encode("utf-8")).hexdigest()
 
 
 def _state() -> storage.JsonState:
@@ -108,12 +128,55 @@ def _ensure_dir(path: Path) -> Path:
     return path
 
 
-def _ensure_dir_tolerant(path: Path) -> None:
-    """只读接口也保证收集箱是真实文件夹；不可写时不静默失败，由写入路径报错。"""
-    try:
-        path.mkdir(parents=True, exist_ok=True)
-    except OSError:
-        return
+def _ascii_suffix(name: Any) -> str:
+    """只保留纯 ASCII 字母数字扩展名，其余一律丢弃。"""
+    suffix = Path(str(name or "").replace("\\", "/")).suffix.lower()
+    if not suffix or len(suffix) > 11:
+        return ""
+    body = suffix[1:]
+    if not body.isascii() or not body.isalnum():
+        return ""
+    return suffix
+
+
+def _physical_name(name: Any) -> str:
+    """GNS-2026：物理落盘名纯 ASCII，用户原名不进入磁盘名。"""
+    return f"{PHYSICAL_NAME_PREFIX}{uuid.uuid4().hex[:12]}{_ascii_suffix(name)}"
+
+
+def _unique_physical(root: Path, name: Any) -> str:
+    candidate = _physical_name(name)
+    while (root / candidate).exists():
+        candidate = _physical_name(name)
+    return candidate
+
+
+def _display_name(raw: dict[str, Any], relative: str) -> str:
+    """物理名对应的展示名；没有映射时回落到物理名本身。"""
+    names = raw.get(DISPLAY_NAMES_KEY)
+    if isinstance(names, dict):
+        value = str(names.get(relative) or "").strip()
+        if value:
+            return value
+    return Path(relative).name
+
+
+def _unique_display(raw: dict[str, Any], name: Any, extra: dict[str, str] | None = None) -> str:
+    """展示名去重：同名素材显示为 ``shot (2).png``，磁盘上各用各自的 ASCII 物理名。"""
+    base = Path(str(name or "").replace("\\", "/")).name.strip()
+    if base in {"", ".", ".."}:
+        base = "collected.bin"
+    names = raw.get(DISPLAY_NAMES_KEY)
+    taken = {str(value) for value in names.values()} if isinstance(names, dict) else set()
+    if extra:
+        taken.update(str(value) for value in extra.values())
+    if base not in taken:
+        return base
+    stem, suffix = os.path.splitext(base)
+    index = 2
+    while f"{stem} ({index}){suffix}" in taken:
+        index += 1
+    return f"{stem} ({index}){suffix}"
 
 
 def _is_within(child: Path, parent: Path) -> bool:
@@ -140,17 +203,30 @@ def _timestamp(value: Any) -> float:
 
 
 def _iter_files(root: Path) -> list[Path]:
-    """递归枚举真实普通文件；跳过软链接，绝不跟随到收集箱之外。"""
+    """递归枚举真实普通文件；跳过软链接，绝不跟随到收集箱之外。
+
+    根目录不可读时失败关闭（503），不把「读不到」伪装成「没有文件」。
+    """
     if not root.is_dir():
         return []
+    try:
+        root_entries = list(os.scandir(root))
+    except OSError:
+        raise CleanroomException(
+            503, "INBOX_DIRECTORY_UNAVAILABLE", "收集箱目录不可读"
+        ) from None
     files: list[Path] = []
     stack = [root]
     while stack:
         current = stack.pop()
-        try:
-            entries = list(os.scandir(current))
-        except OSError:
-            continue
+        if current == root:
+            entries = root_entries
+        else:
+            try:
+                entries = list(os.scandir(current))
+            except OSError:
+                # 单个子目录损坏只影响自身，不牵连整个收集箱。
+                continue
         for entry in entries:
             try:
                 if entry.is_symlink():
@@ -164,22 +240,29 @@ def _iter_files(root: Path) -> list[Path]:
     return sorted(files, key=lambda path: str(path).casefold())
 
 
-def _local_items(root: Path, source: str) -> list[dict[str, Any]]:
+def _local_items(
+    root: Path,
+    source: str,
+    raw: dict[str, Any] | None = None,
+    prefix: str = "",
+) -> list[dict[str, Any]]:
     items: list[dict[str, Any]] = []
-    prefix = Path(*LEGACY_COLLECT_PARTS).as_posix()
+    payload = raw or {}
     for path in _iter_files(root):
         try:
             relative = path.relative_to(root).as_posix()
             stat = path.stat()
         except (OSError, ValueError):
             continue
+        display = _display_name(payload, relative) if source == "inbox" else path.name
+        location = relative if not prefix else f"{prefix}/{relative}"
         items.append(
             {
                 "id": f"{source}:{relative}",
                 "source": source,
-                "name": path.name,
-                "file": relative if source == "inbox" else f"{prefix}/{relative}",
-                "kind": classify_name(path.name),
+                "name": display,
+                "file": location,
+                "kind": classify_name(display),
                 "size_bytes": stat.st_size,
                 "modified_at": int(stat.st_mtime),
                 "_epoch": stat.st_mtime,
@@ -193,8 +276,13 @@ def _local_items(root: Path, source: str) -> list[dict[str, Any]]:
 def _url_items(raw: dict[str, Any]) -> list[dict[str, Any]]:
     """托管资产迁移后保留在收集箱里的 URL 条目（本地文件已迁走的记录不再重复展示）。"""
     items: list[dict[str, Any]] = []
+    viewer = _owner_digest()
     for asset_id, record in sorted(raw.get("migrated", {}).items()):
         if not isinstance(record, dict) or record.get("file"):
+            continue
+        # 迁移记录按主体分账：别人的记录既不计角标也不展示（缺 owner 的是升级前的老账，照旧可见）。
+        record_owner = record.get("owner")
+        if record_owner and viewer and record_owner != viewer:
             continue
         items.append(
             {
@@ -213,24 +301,67 @@ def _url_items(raw: dict[str, Any]) -> list[dict[str, Any]]:
     return items
 
 
+def _legacy_owner_root() -> Path | None:
+    """遗留收集目录按 ``sha256(owner)`` 分主体；只返回当前主体的子目录。
+
+    没有请求主体上下文时返回 None：宁可少列，也不能把别人的收集结果展示出来。
+    """
+    digest = _owner_digest()
+    if not digest:
+        return None
+    return storage.data_root().joinpath(*LEGACY_COLLECT_PARTS, digest)
+
+
 def _all_items(raw: dict[str, Any] | None = None) -> list[dict[str, Any]]:
     payload = raw if raw is not None else _state().read()
-    root = inbox_root(payload)
-    _ensure_dir_tolerant(root)
-    legacy_root = storage.data_root().joinpath(*LEGACY_COLLECT_PARTS)
-    items = _local_items(root, "inbox")
-    if legacy_root.resolve(strict=False) != root.resolve(strict=False):
-        items.extend(_local_items(legacy_root, "collect_inbox"))
+    # 只读接口也必须保证收集箱是真实文件夹；不可用时失败关闭，不伪装成空箱。
+    root = _ensure_dir(inbox_root(payload))
+    items = _local_items(root, "inbox", payload)
+    legacy_root = _legacy_owner_root()
+    if legacy_root is not None and legacy_root.resolve(strict=False) != root.resolve(strict=False):
+        digest = legacy_root.name
+        legacy_prefix = Path(*LEGACY_COLLECT_PARTS, digest).as_posix()
+        items.extend(_local_items(legacy_root, "collect_inbox", payload, legacy_prefix))
     items.extend(_url_items(payload))
     items.sort(key=lambda item: (-int(item["modified_at"]), str(item["name"]).casefold()))
     return items
 
 
+def _viewed_epoch(raw: dict[str, Any]) -> float:
+    """当前主体最近一次「看过收集箱」的时间点；按主体分账，互不影响。"""
+    digest = _owner_digest()
+    if not digest:
+        return float(raw.get("last_viewed_epoch") or 0)
+    views = raw.get("views")
+    views = views if isinstance(views, dict) else {}
+    if digest in views:
+        return float(views.get(digest) or 0)
+    if not views:
+        # 升级前的全局值：单主体时沿用，避免升级后角标凭空全亮。
+        return float(raw.get("last_viewed_epoch") or 0)
+    return 0.0
+
+
 def _unread_count(items: list[dict[str, Any]], raw: dict[str, Any]) -> int:
-    viewed = float(raw.get("last_viewed_epoch") or 0)
+    viewed = _viewed_epoch(raw)
     if viewed <= 0:
         return len(items)
     return sum(1 for item in items if float(item.get("_epoch") or 0) > viewed)
+
+
+def _visible_migrated(raw: dict[str, Any]) -> dict[str, Any]:
+    """当前主体可见的迁移记录（别人的记录不参与统计）。"""
+    viewer = _owner_digest()
+    records = raw.get("migrated")
+    if not isinstance(records, dict):
+        return {}
+    if not viewer:
+        return records
+    return {
+        asset_id: record
+        for asset_id, record in records.items()
+        if not isinstance(record, dict) or not record.get("owner") or record.get("owner") == viewer
+    }
 
 
 def settings_snapshot(raw: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -245,8 +376,8 @@ def settings_snapshot(raw: dict[str, Any] | None = None) -> dict[str, Any]:
         "count": len(items),
         "unread_count": _unread_count(items, payload),
         "last_viewed_at": payload.get("last_viewed_at"),
-        "last_viewed_epoch": payload.get("last_viewed_epoch"),
-        "migrated_asset_count": len(payload.get("migrated", {})),
+        "last_viewed_epoch": _viewed_epoch(payload) or None,
+        "migrated_asset_count": len(_visible_migrated(payload)),
         "data_status": "ok" if items else "empty",
     }
 
@@ -285,14 +416,24 @@ def list_items(
 
 
 def mark_viewed() -> dict[str, Any]:
-    """记录「已看过收集箱」时间点，角标按该时间点之后的新素材计算。"""
+    """记录「已看过收集箱」时间点，角标按该时间点之后的新素材计算。
+
+    时间点按主体分账保存，一个账号点开不会把另一个账号的角标一起清零。
+    """
 
     def mutate(raw: dict[str, Any]) -> dict[str, Any]:
+        epoch = time.time()
         raw["last_viewed_at"] = storage.now_iso()
-        raw["last_viewed_epoch"] = time.time()
+        raw["last_viewed_epoch"] = epoch
+        digest = _owner_digest()
+        if digest:
+            views = raw.get("views")
+            views = views if isinstance(views, dict) else {}
+            views[digest] = epoch
+            raw["views"] = views
         return {
             "last_viewed_at": raw["last_viewed_at"],
-            "last_viewed_epoch": raw["last_viewed_epoch"],
+            "last_viewed_epoch": epoch,
             "unread_count": 0,
         }
 
@@ -362,8 +503,30 @@ def _iter_files_shallow(root: Path) -> list[Path]:
     return directories
 
 
+def _rollback_moves(moved: list[str], new_root: Path, old_root: Path) -> list[dict[str, str]]:
+    """把本次已搬走的文件搬回旧位置；返回搬不回去的清单。"""
+    failures: list[dict[str, str]] = []
+    for relative in moved:
+        source = new_root / relative
+        target = old_root / relative
+        try:
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.move(str(source), str(target))
+        except OSError:
+            failures.append({"file": relative, "code": "INBOX_ROLLBACK_FAILED"})
+    return failures
+
+
 def update_path(raw_path: Any, migrate: bool = True) -> dict[str, Any]:
-    """修改收集箱位置；同一位置重复提交幂等，不产生重复数据。"""
+    """修改收集箱位置；同一位置重复提交幂等，不产生重复数据。
+
+    有文件搬不动时不切换 ``path``：否则留在旧目录的文件会从界面上消失。默认把
+    已搬走的文件回滚回旧目录；回滚本身也失败时才切换（保住数据可达）。
+
+    位置**不限制在** ``GW_ALLOWED_ROOTS`` 内：收集箱是用户自己的工作文件夹（可以放到
+    任意可写磁盘），Issue #603 明确要求「位置可在设置里改」。搬家只发生在收集箱目录
+    之间，源与目标都是收集箱自己管理的文件，不涉及素材根的越权读取。
+    """
     with _lock:
         raw = _state().read()
         old_root = inbox_root(raw)
@@ -371,6 +534,7 @@ def update_path(raw_path: Any, migrate: bool = True) -> dict[str, Any]:
         if new_root == old_root.resolve(strict=False):
             return {
                 **settings_snapshot(raw),
+                "applied": True,
                 "unchanged": True,
                 "migrated": [],
                 "skipped": [],
@@ -406,6 +570,22 @@ def update_path(raw_path: Any, migrate: bool = True) -> dict[str, Any]:
                     conflicts.append(relative)
             _prune_empty_dirs(old_root)
 
+        if failed or conflicts:
+            rollback_failures = _rollback_moves(moved, new_root, old_root)
+            failed = [*failed, *rollback_failures]
+            if not rollback_failures:
+                return {
+                    **settings_snapshot(raw),
+                    "applied": False,
+                    "unchanged": False,
+                    "migrated": [],
+                    "rolled_back": moved,
+                    "skipped": skipped,
+                    "conflicts": conflicts,
+                    "failed": failed,
+                    "migrate_requested": bool(migrate),
+                }
+
         def mutate(payload: dict[str, Any]) -> dict[str, Any]:
             payload["path"] = str(new_root)
             return payload
@@ -414,8 +594,10 @@ def update_path(raw_path: Any, migrate: bool = True) -> dict[str, Any]:
         snapshot = settings_snapshot(raw)
         return {
             **snapshot,
+            "applied": True,
             "unchanged": False,
             "migrated": moved,
+            "rolled_back": [],
             "skipped": skipped,
             "conflicts": conflicts,
             "failed": failed,
@@ -478,29 +660,42 @@ def _local_file_from_url(url: Any) -> Path | None:
     return resolved
 
 
-def _unique_relative(root: Path, name: str) -> str:
-    base = Path(str(name or "").replace("\\", "/")).name.strip()
-    if base in {"", ".", ".."}:
-        base = "collected.bin"
-    stem, suffix = os.path.splitext(base)
-    candidate = base
-    index = 2
-    while (root / candidate).exists():
-        candidate = f"{stem} ({index}){suffix}"
-        index += 1
-    return candidate
+def _transfer_into(target: Path, source: Path) -> str:
+    """把源文件放进收集箱但**保留源文件**：硬链接优先（同卷不占额外空间），跨卷回退复制。
+
+    不能用 ``shutil.move``：托管资产记录里的 url 仍指向原路径，搬走会让这些记录
+    变成点不开的死链（审核 635-r1 指出）。
+    """
+    target.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        os.link(source, target)
+        return "linked"
+    except OSError:
+        pass
+    shutil.copy2(source, target)
+    return "copied"
 
 
 def migrate_asset_library() -> dict[str, Any]:
-    """把托管资产记录并入收集箱；按 asset_id 记账，重复执行不会多出数据。"""
+    """把托管资产记录并入收集箱；按 asset_id 记账，重复执行不会多出数据。
+
+    两条硬约束（审核 635-r1）：
+
+    - 源文件保留：用硬链接/复制而不是 move，托管资产记录里的 url 不会变成死链；
+    - 失败不入账：搬不动就 ``continue``，下次调用还会重试，不会被永久 skip。
+    """
     with _lock:
         raw = _state().read()
         root = _ensure_dir(inbox_root(raw))
+        viewer = _owner_digest()
         migrated = raw.setdefault("migrated", {})
+        pending_names: dict[str, str] = {}
         moved: list[str] = []
         url_entries: list[str] = []
         skipped: list[str] = []
         failed: list[dict[str, str]] = []
+        linked = 0
+        copied = 0
         for item in _library_items():
             asset_id = str(item.get("asset_id") or "").strip()
             if not asset_id:
@@ -517,20 +712,35 @@ def migrate_asset_library() -> dict[str, Any]:
                 "library_id": item.get("library_id"),
                 "category_id": item.get("category_id"),
                 "category_type": item.get("category_type"),
+                "owner": viewer,
                 "migrated_at": storage.now_iso(),
                 "file": None,
                 "kind": "url",
             }
             local_file = _local_file_from_url(url)
             if local_file is not None:
-                relative = _unique_relative(root, local_file.name)
+                relative = _unique_physical(root, local_file.name)
                 try:
-                    shutil.move(str(local_file), str(root / relative))
+                    transfer = _transfer_into(root / relative, local_file)
                 except OSError:
                     failed.append({"asset_id": asset_id, "code": "INBOX_MIGRATE_FAILED"})
+                    # 失败不入账：留到下次重试，不能因为一次失败就被当成已迁移。
+                    continue
+                display = _unique_display(raw, name, pending_names)
+                record.update(
+                    {
+                        "file": relative,
+                        # 展示名沿用托管资产自己的名字；分类仍按源文件扩展名判定。
+                        "kind": classify_name(local_file.name),
+                        "transfer": transfer,
+                    }
+                )
+                pending_names[relative] = display
+                if transfer == "linked":
+                    linked += 1
                 else:
-                    record.update({"file": relative, "kind": classify_name(relative)})
-                    moved.append(asset_id)
+                    copied += 1
+                moved.append(asset_id)
             if record["file"] is None:
                 url_entries.append(asset_id)
                 # 只有真正的访问地址才算链接条目；url 为空的托管记录标注为「仅记录」，
@@ -541,16 +751,23 @@ def migrate_asset_library() -> dict[str, Any]:
 
         def mutate(payload: dict[str, Any]) -> dict[str, Any]:
             payload.setdefault("migrated", {}).update(migrated)
+            if pending_names:
+                names = payload.get(DISPLAY_NAMES_KEY)
+                names = names if isinstance(names, dict) else {}
+                names.update(pending_names)
+                payload[DISPLAY_NAMES_KEY] = names
             return payload
 
         raw = _state().mutate(mutate)
         snapshot = settings_snapshot(raw)
         return {
             "moved_files": len(moved),
+            "linked": linked,
+            "copied": copied,
             "url_entries": len(url_entries),
             "skipped": len(skipped),
             "failed": failed,
-            "total_records": len(raw.get("migrated", {})),
+            "total_records": len(_visible_migrated(raw)),
             "settings": snapshot,
             "data_status": "partial" if failed else "ok",
         }
@@ -573,7 +790,9 @@ def add_upload(filename: Any, content: bytes) -> dict[str, Any]:
     with _lock:
         raw = _state().read()
         root = _ensure_dir(inbox_root(raw))
-        relative = _unique_relative(root, base)
+        # GNS-2026：磁盘名纯 ASCII，用户原名只做展示名（映射表随状态落盘）。
+        relative = _unique_physical(root, base)
+        display = _unique_display(raw, base)
         target = root / relative
         partial = target.with_name(".gw-inbox-pending-" + target.name)
         try:
@@ -585,13 +804,22 @@ def add_upload(filename: Any, content: bytes) -> dict[str, Any]:
         except OSError:
             partial.unlink(missing_ok=True)
             raise CleanroomException(503, "FILE_WRITE_FAILED", "收集箱写入失败") from None
+
+        def mutate(payload: dict[str, Any]) -> dict[str, Any]:
+            names = payload.get(DISPLAY_NAMES_KEY)
+            names = names if isinstance(names, dict) else {}
+            names[relative] = display
+            payload[DISPLAY_NAMES_KEY] = names
+            return payload
+
+        _state().mutate(mutate)
         stat = target.stat()
         return {
             "id": f"inbox:{relative}",
             "source": "inbox",
-            "name": target.name,
+            "name": display,
             "file": relative,
-            "kind": classify_name(target.name),
+            "kind": classify_name(display),
             "size_bytes": stat.st_size,
             "modified_at": int(stat.st_mtime),
             "url": None,

@@ -3,19 +3,25 @@
 覆盖票面 AC：
 1. 收集箱是 data_root 下的真实文件夹，位置可改；
 2. 托管资产记录并入收集箱（外部 URL 保留为 URL 条目）；
-3. 迁移可重复执行，重复执行不多出数据；
-4. 改位置支持迁移/不迁移；
+3. 迁移可重复执行，重复执行不多出数据；失败不入账、可重试；
+4. 改位置支持迁移/不迁移，搬不动时不切路径；
 5. 新素材角标按「已查看时间点」计算；
-6. 路径校验：拒绝相对路径、互为上下级目录与占用文件。
+6. 路径校验：拒绝相对路径、互为上下级目录与占用文件；
+7. 主体隔离：迁移只覆盖当前主体可见的资产，遗留收集目录只列当前主体的子目录。
 """
 
+import hashlib
+import re
 from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
 
 from gw.api.app import create_app
+from gw.asset_library import inbox
 from gw.asset_library.service import default_asset_library_service
+from gw.core.asset_visibility import asset_owner_key
+from gw.core.auth import require_authenticated
 
 BASE = "/api/asset-inbox"
 AUTH = {"Authorization": "Bearer test-owner", "X-User-Role": "editor"}
@@ -40,13 +46,22 @@ def _error_code(response) -> str:
     return str(detail.get("code") if isinstance(detail, dict) else detail)
 
 
-def _register_item(name: str, url: str | None) -> str:
+def _owner_key() -> str:
+    """与生产一致地推导当前请求主体键（不手写哈希，避免两边算法漂移）。"""
+    context = require_authenticated(AUTH["Authorization"], "editor")
+    return asset_owner_key(context)
+
+
+def _register_item(
+    name: str, url: str | None, owner: str | None = None
+) -> str:
     item = default_asset_library_service.register_item(
         asset_id=f"asset_qin547_{name}",
         name=name,
         category_type="image",
         category_name="图片",
         url=url,
+        workflow_owner=owner,
     )
     return item.asset_id
 
@@ -76,10 +91,10 @@ def test_inbox_defaults_to_real_folder_under_data_root(inbox_runtime):
         assert settings["unread_count"] == 0
 
 
-def test_migrate_moves_local_files_keeps_external_urls_and_is_idempotent(
+def test_migrate_links_local_files_keeps_source_and_external_urls(
     inbox_runtime,
 ):
-    """AC2/AC3：本地文件迁入收集箱、外部 URL 保留条目；重复执行不多出数据。"""
+    """AC2/AC3：本地文件进收集箱、源文件保留、外部 URL 保留条目；重复执行不多出数据。"""
     local_file = inbox_runtime["allowed"] / "reference.png"
     local_file.write_bytes(b"local-payload")
     local_id = _register_item("本地参考图.png", local_file.as_uri())
@@ -92,9 +107,20 @@ def test_migrate_moves_local_files_keeps_external_urls_and_is_idempotent(
         assert payload["moved_files"] == 1, payload
         assert payload["url_entries"] == 1, payload
         assert payload["failed"] == []
-        assert not local_file.exists(), "本地文件应已迁入收集箱"
+        assert payload["linked"] + payload["copied"] == 1, payload
+        # 审核 635-r1 #5：不能用 move，否则 asset_library 里的 url 会变成死链。
+        assert local_file.is_file(), "迁移必须保留源文件"
+        assert local_file.read_bytes() == b"local-payload"
+
         inbox_files = list((inbox_runtime["data"] / "inbox").rglob("*.png"))
-        assert [path.name for path in inbox_files] == ["reference.png"], "磁盘文件名保持原样"
+        assert len(inbox_files) == 1, "收集箱里应多出一份副本"
+        assert inbox_files[0].read_bytes() == b"local-payload"
+        # GNS-2026：磁盘名纯 ASCII 且不可预测，用户原名只做展示名。
+        assert re.fullmatch(r"inbox_[0-9a-f]{12}\.png", inbox_files[0].name), inbox_files[0].name
+
+        listing = client.get(BASE, headers=AUTH).json()
+        local_entry = next(item for item in listing["items"] if item["source"] == "inbox")
+        assert local_entry["name"] == "本地参考图.png", "展示名仍是用户原名"
 
         second = client.post(f"{BASE}/migrate", headers=EDIT_AUTH)
         assert second.status_code == 200, second.text
@@ -103,8 +129,8 @@ def test_migrate_moves_local_files_keeps_external_urls_and_is_idempotent(
         assert again["url_entries"] == 0, "重复迁移不得新增 URL 条目"
         assert again["skipped"] == 2, "两条记录均应记为已迁移"
         assert again["total_records"] == payload["total_records"] == 2
+        assert len(list((inbox_runtime["data"] / "inbox").rglob("*.png"))) == 1, "重复执行不多出文件"
 
-        listing = client.get(BASE, headers=AUTH).json()
         by_asset = {
             item["asset_id"]: item
             for item in listing["items"]
@@ -114,6 +140,55 @@ def test_migrate_moves_local_files_keeps_external_urls_and_is_idempotent(
         assert by_asset[external_id]["url"] == "https://example.com/reference.png"
         assert local_id not in by_asset, "已迁入本地的记录由磁盘文件呈现，不重复列 URL 条目"
         assert listing["settings"]["migrated_asset_count"] == 2
+
+
+def test_migrate_failure_is_not_recorded_and_can_retry(inbox_runtime, monkeypatch):
+    """阻断 1：搬运失败不得入账，否则下次调用会被 skip，文件永远进不了收集箱。"""
+    local_file = inbox_runtime["allowed"] / "flaky.png"
+    local_file.write_bytes(b"flaky")
+    asset_id = _register_item("易失败素材.png", local_file.as_uri())
+
+    with TestClient(create_app()) as client:
+        real_transfer = inbox._transfer_into
+
+        def boom(target, source):
+            raise OSError("磁盘不可写")
+
+        monkeypatch.setattr(inbox, "_transfer_into", boom)
+        broken = client.post(f"{BASE}/migrate", headers=EDIT_AUTH).json()
+        assert broken["failed"] == [
+            {"asset_id": asset_id, "code": "INBOX_MIGRATE_FAILED"}
+        ], broken
+        assert broken["moved_files"] == 0
+        assert broken["total_records"] == 0, "失败记录不得入账"
+
+        monkeypatch.setattr(inbox, "_transfer_into", real_transfer)
+        retried = client.post(f"{BASE}/migrate", headers=EDIT_AUTH).json()
+        assert retried["failed"] == [], retried
+        assert retried["moved_files"] == 1, "第二次调用必须重试并成功"
+        assert retried["skipped"] == 0, "第一次失败不能被当成已迁移"
+        assert list((inbox_runtime["data"] / "inbox").rglob("*.png")), "文件应真的进了收集箱"
+
+
+def test_migrate_only_covers_assets_visible_to_current_owner(inbox_runtime):
+    """阻断 2：迁移经 iter_library_items → asset_visible，必须带上请求主体上下文。"""
+    local_file = inbox_runtime["allowed"] / "shared.png"
+    local_file.write_bytes(b"shared")
+    mine = _register_item("我的素材.png", local_file.as_uri(), owner=_owner_key())
+    other = _register_item("别人的素材.png", local_file.as_uri(), owner="someone-else")
+
+    with TestClient(create_app()) as client:
+        payload = client.post(f"{BASE}/migrate", headers=EDIT_AUTH).json()
+        assert payload["moved_files"] == 1, payload
+        assert payload["total_records"] == 1, "别人的资产不得被迁入"
+        assert payload["failed"] == []
+        listing = client.get(BASE, headers=AUTH).json()
+        assert {item["name"] for item in listing["items"] if item["source"] == "inbox"} == {
+            "我的素材.png"
+        }
+        assert other not in {
+            str(item.get("asset_id") or "") for item in listing["items"]
+        }
 
 
 def test_migrate_marks_records_without_url_as_record_kind(inbox_runtime):
@@ -151,15 +226,17 @@ def test_relocate_with_migrate_moves_files_and_repeat_is_noop(inbox_runtime):
     """AC1/AC6：改位置并迁移；同一位置重复提交幂等。"""
     target = inbox_runtime["tmp"] / "新收集箱"
     with TestClient(create_app()) as client:
-        _upload(client, "take.png", b"payload")
+        uploaded = _upload(client, "take.png", b"payload")
+        stored = uploaded["file"]
         response = client.put(
             f"{BASE}/settings", headers=EDIT_AUTH, json={"path": str(target), "migrate": True}
         )
         assert response.status_code == 200, response.text
         result = response.json()
-        assert result["migrated"] == ["take.png"], result
-        assert (target / "take.png").is_file()
-        assert not (inbox_runtime["data"] / "inbox" / "take.png").exists()
+        assert result["applied"] is True, result
+        assert result["migrated"] == [stored], result
+        assert (target / stored).is_file()
+        assert not (inbox_runtime["data"] / "inbox" / stored).exists()
 
         repeated = client.put(
             f"{BASE}/settings", headers=EDIT_AUTH, json={"path": str(target), "migrate": True}
@@ -167,22 +244,51 @@ def test_relocate_with_migrate_moves_files_and_repeat_is_noop(inbox_runtime):
         assert repeated.status_code == 200, repeated.text
         assert repeated.json()["unchanged"] is True
         assert repeated.json()["migrated"] == []
-        assert list(target.rglob("take.png")) == [target / "take.png"], "重复改位置不得复制文件"
+        assert list(target.rglob(stored)) == [target / stored], "重复改位置不得复制文件"
 
 
 def test_relocate_without_migrate_keeps_old_files(inbox_runtime):
     """AC1：选择不迁移时，旧位置文件保留在原处，新位置为空。"""
     target = inbox_runtime["tmp"] / "空收集箱"
     with TestClient(create_app()) as client:
-        _upload(client, "keep.png", b"payload")
+        uploaded = _upload(client, "keep.png", b"payload")
+        stored = uploaded["file"]
         response = client.put(
             f"{BASE}/settings", headers=EDIT_AUTH, json={"path": str(target), "migrate": False}
         )
         assert response.status_code == 200, response.text
         assert response.json()["migrated"] == []
-        assert (inbox_runtime["data"] / "inbox" / "keep.png").is_file()
+        assert (inbox_runtime["data"] / "inbox" / stored).is_file()
         assert list(target.iterdir()) == []
         assert client.get(BASE, headers=AUTH).json()["count"] == 0
+
+
+def test_relocate_reports_applied_false_when_move_fails(inbox_runtime, monkeypatch):
+    """重要项：有文件搬不动时不切 path，并把已搬走的文件回滚，避免文件从界面消失。"""
+    target = inbox_runtime["tmp"] / "半途失败"
+    with TestClient(create_app()) as client:
+        uploaded = _upload(client, "half.png", b"payload")
+        stored = uploaded["file"]
+        real_move = inbox._move_into
+        calls = {"count": 0}
+
+        def flaky(new_root, relative, source):
+            calls["count"] += 1
+            if calls["count"] == 1:
+                raise OSError("目标卷已满")
+            return real_move(new_root, relative, source)
+
+        monkeypatch.setattr(inbox, "_move_into", flaky)
+        response = client.put(
+            f"{BASE}/settings", headers=EDIT_AUTH, json={"path": str(target), "migrate": True}
+        )
+        payload = response.json()
+        assert response.status_code == 200, response.text
+        assert payload["applied"] is False, payload
+        assert payload["failed"], payload
+        assert Path(payload["path"]) == (inbox_runtime["data"] / "inbox").resolve(), "路径不得切换"
+        assert (inbox_runtime["data"] / "inbox" / stored).is_file(), "文件必须还在旧位置可访问"
+        assert client.get(BASE, headers=AUTH).json()["count"] == 1
 
 
 def test_unread_badge_tracks_new_materials(inbox_runtime):
@@ -202,28 +308,41 @@ def test_unread_badge_tracks_new_materials(inbox_runtime):
 
 
 def test_upload_keeps_same_name_without_overwriting(inbox_runtime):
-    """手动上传落在收集箱；同名文件改名保存，不覆盖已有素材。"""
+    """手动上传落在收集箱；同名素材物理名不同、展示名自动加序号，不覆盖已有素材。"""
     with TestClient(create_app()) as client:
         first = _upload(client, "shot.png", b"first")
         second = _upload(client, "shot.png", b"second")
-        assert first["file"] == "shot.png"
-        assert second["file"] == "shot (2).png"
-        inbox = inbox_runtime["data"] / "inbox"
-        assert (inbox / "shot.png").read_bytes() == b"first"
-        assert (inbox / "shot (2).png").read_bytes() == b"second"
+        assert first["file"] != second["file"], "物理名必须唯一"
+        assert re.fullmatch(r"inbox_[0-9a-f]{12}\.png", first["file"]), first["file"]
+        assert first["name"] == "shot.png"
+        assert second["name"] == "shot (2).png", "展示名加序号以区分同名素材"
+        inbox_dir = inbox_runtime["data"] / "inbox"
+        assert (inbox_dir / first["file"]).read_bytes() == b"first"
+        assert (inbox_dir / second["file"]).read_bytes() == b"second"
 
 
 def test_legacy_collect_files_are_listed_in_inbox(inbox_runtime):
-    """AC2：遗留 collect_inbox 收集文件在收集箱里显示（不搬迁，避免破坏受管回读）。"""
-    legacy = inbox_runtime["data"] / "registry_uploads" / "collect_inbox" / "owner"
+    """AC2：遗留 collect_inbox 收集文件在收集箱里显示（不搬迁，避免破坏受管回读）。
+
+    重要项：遗留目录按主体分账，只列当前主体的子目录，不跨主体全量列出。
+    """
+    owner_directory = hashlib.sha256(_owner_key().encode("utf-8")).hexdigest()
+    legacy = inbox_runtime["data"] / "registry_uploads" / "collect_inbox" / owner_directory
     legacy.mkdir(parents=True)
     (legacy / "collected.png").write_bytes(b"legacy")
+    stranger = inbox_runtime["data"] / "registry_uploads" / "collect_inbox" / ("f" * 64)
+    stranger.mkdir(parents=True)
+    (stranger / "别人的素材.png").write_bytes(b"stranger")
+
     with TestClient(create_app()) as client:
         listing = client.get(BASE, headers=AUTH).json()
         sources = {item["source"] for item in listing["items"]}
         assert "collect_inbox" in sources
-        entry = next(item for item in listing["items"] if item["source"] == "collect_inbox")
-        assert entry["file"] == "registry_uploads/collect_inbox/owner/collected.png"
+        entries = [item for item in listing["items"] if item["source"] == "collect_inbox"]
+        assert [item["name"] for item in entries] == ["collected.png"], "不得列出其他主体的收集结果"
+        assert entries[0]["file"] == (
+            f"registry_uploads/collect_inbox/{owner_directory}/collected.png"
+        )
         assert (legacy / "collected.png").is_file(), "遗留文件保持原处"
 
 
