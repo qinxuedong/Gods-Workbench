@@ -13,11 +13,11 @@ const vaultCss = read('web/css/pages/asset-vault.css');
 
 // ---- AC1：统计条同排等宽 ----
 
-// 10 列网格：主卡 2fr，其余 9 张类型卡统一 .95fr（与画布卡同宽），「其他」不再换行。
+// 13 列网格：主卡 2fr，其余 12 张卡统一 .95fr（9 类型卡 + QIN-566 三张导航入口），「其他」不再换行。
 const statsBlock = vaultCss.match(/body\.gw-signal\.gw-page--asset-manager \.registry-overview-stats \{([\s\S]*?)\n\}/);
 assert.ok(statsBlock, 'asset-vault.css 必须定义概览统计网格');
-assert.match(statsBlock[1], /grid-template-columns:\s*2fr repeat\(9, \.95fr\);/, '统计条应为 10 列：主卡 2fr + 9 张 .95fr 类型卡');
-assert.match(statsBlock[1], /--registry-stat-gap-count: 9;/, '10 列应对应 9 个间距');
+assert.match(statsBlock[1], /grid-template-columns:\s*2fr repeat\(12, \.95fr\);/, '统计条应为 13 列：主卡 2fr + 12 张 .95fr 卡');
+assert.match(statsBlock[1], /--registry-stat-gap-count: 12;/, '13 列应对应 12 个间距');
 // QIN-531 口径不变：8px 间距令牌与 2/3 宽度公式保持原样。
 assert.match(statsBlock[1], /--registry-stat-gap: 8px;/, '卡间距令牌应固定为 8px');
 assert.match(statsBlock[1], /gap: var\(--registry-stat-gap\);/, '卡间距必须沿用 8px 令牌');

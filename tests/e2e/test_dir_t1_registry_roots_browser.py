@@ -20,74 +20,40 @@ def _storage_settings_get(response) -> bool:
     return response.request.method == "GET" and "/api/storage-settings" in response.url
 
 
-def _click_asset_tree_board(vault, board_id: str, *, force_project_toggle: bool = False) -> None:
+def _click_asset_tree_board(page, vault, board_id: str, *, force_project_toggle: bool = False) -> None:
+    """QIN-566：唯一左栏在外壳页上，导航驱动改为外壳侧栏 + 顶栏入口（内嵌重复树已停用）。"""
     root_class = vault.locator("#assetManagerRoot").get_attribute("class") or ""
     if "asset-manager-root-local" in root_class:
         vault.locator("[data-localup-back-to-tree]").click()
         vault.locator("#assetManagerRoot.asset-manager-root-page-registry").wait_for(timeout=15000)
     if board_id == "registry":
-        vault.locator('[data-asset-tree-crumb="registry"]').click()
+        # QIN-566：资产总览 = 外壳页头「资产总览」标题卡。
+        page.locator("#assetSidebarOverview").click()
         return
     if board_id == "governance":
-        _click_asset_tree_board(vault, "registry")
+        _click_asset_tree_board(page, vault, "registry")
         vault.locator("[data-governance-open]").click()
         drawer = vault.locator("[data-governance-drawer-dialog]")
         expect(drawer).to_be_visible()
         drawer.locator("[data-governance-drawer-close]").click()
         return
-    if board_id in {"projects", "scripts", "canvas-assets", "prompts"}:
-        tab = vault.locator('[data-asset-tree-tab="system"]')
-        root_class = vault.locator("#assetManagerRoot").get_attribute("class") or ""
-        if "asset-manager-root-local" in root_class or tab.get_attribute("aria-selected") != "true":
-            tab.click()
-        tree_key = "system:projects" if board_id == "projects" else f"system:{board_id}"
-    else:
-        tab = vault.locator('[data-asset-tree-tab="mine"]')
-        root_class = vault.locator("#assetManagerRoot").get_attribute("class") or ""
-        if "asset-manager-root-local" in root_class or tab.get_attribute("aria-selected") != "true":
-            tab.click()
-        tree_key = f"mine:board:{board_id}"
-    entry = vault.locator(f'[data-asset-tree-node="{tree_key}"]')
-    entry.wait_for(state="visible", timeout=15000)
-    if board_id == "projects":
-        branch = vault.locator('[data-asset-tree-node-key="system:projects"]')
-        if force_project_toggle and branch.get_attribute("aria-expanded") == "true":
-            entry.click()
-            expect(branch).to_have_attribute("aria-expanded", "false")
-        if branch.get_attribute("aria-expanded") != "true":
-            entry.click()
-        expect(branch).to_have_attribute("aria-expanded", "true")
-        expect(branch.locator(":scope > .asset-tree-children")).to_be_visible()
-        expect(vault.locator('[data-asset-tree-node-key^="system:projects:"]').first).to_be_visible()
+    if board_id in {"projects", "scripts", "prompts"}:
+        # QIN-566：项目/剧本/提示词经统计顶栏导航入口进入（原左栏系统入口目的地）。
+        vault.locator(f'[data-registry-nav="{board_id}"]').click()
         return
-    try:
-        entry.click(timeout=5000)
-    except PlaywrightTimeout as exc:
-        layout = entry.evaluate("""row => {
-            const rect = element => element?.getBoundingClientRect().toJSON() || null;
-            const panel = row.closest('.asset-tree-panel');
-            const root = row.closest('#assetManagerRoot');
-            const bounds = row.getBoundingClientRect();
-            const x = bounds.left + bounds.width / 2;
-            const y = bounds.top + bounds.height / 2;
-            return {
-                row: rect(row), panel: rect(panel), root: rect(root),
-                children: [...(root?.children || [])].map(child => ({className:child.className, rect:rect(child), gridRow:getComputedStyle(child).gridRow})),
-                hitStack: document.elementsFromPoint(x, y).slice(0, 5).map(element => `${element.tagName}.${element.className}`),
-            };
-        }""")
-        raise AssertionError(f"单栏树入口 {tree_key} 不可点击：{layout}") from exc
+    if board_id == "canvas-assets":
+        # QIN-563：单击「画布」统计卡进入画布资产视图。
+        vault.locator('[data-registry-stat="reference-canvas"]').click()
+        return
+    # 其余为用户资源入口（自建资源库），经外壳侧栏进入。
+    entry = page.locator(f'[data-asset-tree-entry="mine:board:{board_id}"]')
+    entry.wait_for(state="visible", timeout=15000)
+    entry.click()
 
 
-def _click_asset_tree_root(vault, root_id: str):
-    tab = vault.locator('[data-asset-tree-tab="mine"]')
-    root_class = vault.locator("#assetManagerRoot").get_attribute("class") or ""
-    if "asset-manager-root-local" in root_class:
-        vault.locator("[data-localup-back-to-tree]").click()
-        vault.locator("#assetManagerRoot.asset-manager-root-page-registry").wait_for(timeout=15000)
-    if tab.get_attribute("aria-selected") != "true":
-        tab.click()
-    entry = vault.locator(f'[data-asset-tree-node="mine:root:{root_id}"]')
+def _click_asset_tree_root(page, vault, root_id: str):
+    # QIN-566：挂载根目录经外壳侧栏进入。
+    entry = page.locator(f'[data-asset-tree-entry="mine:root:{root_id}"]')
     entry.wait_for(state="visible", timeout=15000)
     return entry
 
@@ -337,7 +303,7 @@ def test_dir_t1_create_library_index_and_filter_from_browser(monkeypatch, tmp_pa
             return (state.customBoards || []).find(board => board.name === 'DIR-T1 中文素材库') || null;
         }""")
         assert library_board and library_board["id"].startswith("library_"), library_board
-        _click_asset_tree_board(vault, library_board["id"])
+        _click_asset_tree_board(page, vault, library_board["id"])
         expect(vault.locator(".registry-overview-stats")).to_be_visible()
         expect(vault.locator(".registry-toolbar")).to_be_visible()
         expect(vault.locator("#assetManagerRoot")).to_have_class(re.compile("asset-manager-root-library"))
@@ -359,10 +325,10 @@ def test_dir_t1_create_library_index_and_filter_from_browser(monkeypatch, tmp_pa
         assert abs(collapsed_layout["contentGap"]) <= 1, collapsed_layout
         assert abs(collapsed_layout["rightGap"]) <= 1, collapsed_layout
 
-        _click_asset_tree_board(vault, "registry")
+        _click_asset_tree_board(page, vault, "registry")
         with page.expect_response(lambda item: "/api/asset-registry/assets?" in item.url
                                   and f"root_id={root_id}" in item.url) as filtered:
-            _click_asset_tree_root(vault, root_id).click()
+            _click_asset_tree_root(page, vault, root_id).click()
         assert filtered.value.status == 200, filtered.value.text()
         vault.locator("[data-registry-card]").filter(has_text="浏览器素材-甲.txt").wait_for(timeout=15000)
         fixed_url = page.url
@@ -371,11 +337,11 @@ def test_dir_t1_create_library_index_and_filter_from_browser(monkeypatch, tmp_pa
         expect(fixed_stats).to_be_visible()
         expect(fixed_toolbar).to_be_visible()
         filtered_reference_boxes = sample_fixed_rows("registry", "桌面项目筛选")
-        _click_asset_tree_board(vault, "registry")
+        _click_asset_tree_board(page, vault, "registry")
         reference_boxes = sample_fixed_rows("registry", "桌面 registry 基准")
         assert_fixed_rows_equal(reference_boxes, filtered_reference_boxes, "桌面 registry 清除筛选")
-        for board_id in ("registry", "assets", "scripts", "prompts", "canvas-assets", "local"):
-            _click_asset_tree_board(vault, board_id)
+        for board_id in ("registry", "scripts", "prompts", "canvas-assets"):
+            _click_asset_tree_board(page, vault, board_id)
             expect(vault.locator("#assetManagerRoot")).to_have_class(re.compile(f"asset-manager-root-page-{board_id}"))
             expect(fixed_stats).to_be_visible()
             expect(fixed_toolbar).to_be_visible()
@@ -383,26 +349,26 @@ def test_dir_t1_create_library_index_and_filter_from_browser(monkeypatch, tmp_pa
             board_fixed_rows = sample_fixed_rows(board_id, "桌面")
             assert_fixed_rows_equal(board_fixed_rows, reference_boxes, f"桌面切换 {board_id}")
         for board_id, route_name in (("projects", "项目树"), ("governance", "治理建议")):
-            _click_asset_tree_board(vault, board_id, force_project_toggle=board_id == "projects")
+            _click_asset_tree_board(page, vault, board_id, force_project_toggle=board_id == "projects")
             assert page.url == fixed_url, f"打开 {route_name} 不应导航离开当前页面"
             board_fixed_rows = sample_fixed_rows("registry", f"桌面{route_name}")
             assert_fixed_rows_equal(board_fixed_rows, reference_boxes, f"桌面打开 {route_name}")
         page.set_viewport_size({"width": 500, "height": 900})
-        _click_asset_tree_board(vault, "registry")
+        _click_asset_tree_board(page, vault, "registry")
         expect(fixed_stats).to_be_visible()
         expect(fixed_toolbar).to_be_visible()
         narrow_reference = sample_fixed_rows("registry", "窄屏基准")
-        for board_id in ("assets", "scripts", "prompts", "canvas-assets", "local"):
-            _click_asset_tree_board(vault, board_id)
+        for board_id in ("scripts", "prompts", "canvas-assets"):
+            _click_asset_tree_board(page, vault, board_id)
             expect(fixed_stats).to_be_visible()
             expect(fixed_toolbar).to_be_visible()
             assert page.url == fixed_url, f"窄屏切换 {board_id} 不应导航离开当前页面"
             expect(vault.locator("#assetManagerRoot")).to_have_class(re.compile(f"asset-manager-root-page-{board_id}"))
-            expect(vault.locator(".asset-tree-panel")).to_be_visible()
+            expect(page.locator("#assetVaultSidebar")).to_be_visible()
             board_fixed_rows = sample_fixed_rows(board_id, "窄屏")
             assert_fixed_rows_equal(board_fixed_rows, narrow_reference, f"窄屏切换 {board_id}")
         for board_id, route_name in (("projects", "项目树"), ("governance", "治理建议")):
-            _click_asset_tree_board(vault, board_id, force_project_toggle=board_id == "projects")
+            _click_asset_tree_board(page, vault, board_id, force_project_toggle=board_id == "projects")
             assert page.url == fixed_url, f"窄屏打开 {route_name} 不应导航离开当前页面"
             board_fixed_rows = sample_fixed_rows("registry", f"窄屏{route_name}")
             assert_fixed_rows_equal(board_fixed_rows, narrow_reference, f"窄屏打开 {route_name}")

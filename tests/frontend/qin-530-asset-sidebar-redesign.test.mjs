@@ -23,8 +23,11 @@ function functionSource(name, source = manager) {
 }
 
 test('QIN-560 AC1/AC2: 外壳不再渲染第二套资产树导航', () => {
-  assert.doesNotMatch(html, /id="assetVaultSidebar"|id="assetCategories"|asset-shell-nav-(?:button|group)/);
-  assert.doesNotMatch(controller, /syncCategories|assetCategories|asset-shell-nav-/);
+  assert.match(html, /id="assetVaultSidebar"/);
+  assert.match(html, /id="assetCategories"/);
+  assert.match(html, /asset-shell-nav-button/);
+  assert.match(controller, /GWAssetTreeHost/);
+  assert.doesNotMatch(controller, /SYSTEM_NAVIGATION_GROUPS/);
   assert.match(html, /<main id="assetVaultStage">[\s\S]*?<iframe id="assetVaultFrame"/);
   assert.match(manager, /renderAssetTreePanel/);
 });
@@ -118,16 +121,18 @@ test('QIN-560 AC3: 未归属状态桥与 iframe 状态回写仍保留', () => {
   assert.match(controller, /waitForControl\('#assetBoardTabs \[data-tab="registry"\]'\)/);
 });
 
-test('QIN-560 AC4: 主内容区占满工作区且没有外壳栏布局残留', () => {
+test('QIN-566 AC4: 主内容区占满工作区，外壳左栏为唯一侧栏', () => {
   assert.match(html, /#assetVaultStage \{ flex: 1; min-width: 0; min-height: 0; display: flex/);
   assert.match(html, /#assetVaultFrame \{ flex: 1; width: 100%;/);
   assert.match(html, /class="asset-shell-workspace flex-1 flex overflow-hidden min-h-0"/);
-  assert.doesNotMatch(html, /#assetVaultSidebar|#assetCategories/);
+  assert.match(html, /id="assetVaultSidebar"/);
+  assert.doesNotMatch(html, /id="assetSidebarSmartFilter"/);
 });
 
-test('QIN-560 AC7: 创建与挂载操作使用共享硬件按钮类', () => {
+test('QIN-566 AC7: 创建与挂载操作使用共享硬件按钮类', () => {
   const createButton = html.match(/<button type="button" id="assetSidebarCreate"[\s\S]*?<\/button>/)?.[0] || '';
-  assert.match(createButton, /class="hw-btn hw-btn-icon shrink-0"/);
+  assert.match(createButton, /class="hw-btn hw-btn-icon"/);
+  assert.doesNotMatch(createButton, /shrink-0/);
   assert.match(createButton, /WorkbenchAssets\.openCreateAssetLibrary\(\)/);
   assert.match(controller, /async function openCreateAssetLibrary\(\)/);
   assert.match(manager, /parent\?\.document\?\.getElementById\('assetSidebarCreate'\)/);

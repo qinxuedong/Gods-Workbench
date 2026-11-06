@@ -95,8 +95,9 @@ function renderAssetTreePanelForTest(){
         'renderAssetTreeSystemTree',
         'renderAssetTreeMineTree',
         'renderLocalUploadFolderPanel',
+        'document',
         `${functionSource('renderAssetTreePanel')}; return renderAssetTreePanel;`
-    )('registry', 'system', systemTree, () => '', () => '<aside class="local-upload-panel"></aside>');
+    )('registry', 'system', systemTree, () => '', () => '<aside class="local-upload-panel"></aside>', {documentElement:{classList:{contains:() => false}}});
     return panel();
 }
 

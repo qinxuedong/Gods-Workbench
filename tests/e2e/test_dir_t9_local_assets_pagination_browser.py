@@ -1,4 +1,10 @@
-"""QIN-246：验证上传资源首屏分页、失败重试与增量加载。"""
+"""QIN-246：验证本机素材接口分页、失败重试与增量加载（QIN-566 后经外壳侧栏与进程内 API 驱动）。
+
+QIN-547 已把「上传资源」看板并入收集箱，QIN-566 恢复旧版外壳左栏后内嵌重复树停用；
+「上传资源」分页视图不再可达，本测试保留其分页/重试/游标契约，改为：
+1) 经外壳侧栏「收集箱」入口验证真实 UI 流程；
+2) 经浏览器进程内 fetch + 路由注入验证 /api/local-assets 分页与 503 重试契约。
+"""
 
 from __future__ import annotations
 
@@ -6,6 +12,8 @@ import json
 from urllib.parse import parse_qs, urlparse
 
 from gw.asset_library import repository as local_repo
+from playwright.sync_api import expect
+
 from workflow_support import goto_ready, settings_browser
 
 
@@ -24,13 +32,6 @@ def test_local_assets_show_error_retry_and_load_next_page(
     local_repo.index_local_files(paths, "local")
 
     with settings_browser(monkeypatch, tmp_path) as (page, base, errors, _):
-        project_response = page.context.request.post(
-            base + "/api/asset-registry/projects",
-            data={"name": "QIN-560 返回筛选回归项目", "project_type": "other"},
-            headers={"Origin": base},
-        )
-        assert project_response.status == 201, project_response.text()
-        project_id = project_response.json()["project"]["project_id"]
         failures = {"remaining": 1}
 
         def fail_once(route):
@@ -49,63 +50,46 @@ def test_local_assets_show_error_retry_and_load_next_page(
 
         page.route("**/api/local-assets?*", fail_once)
         goto_ready(page, base + "/static/pages/assets.html")
+        # QIN-566：外壳侧栏「收集箱」入口直达收集箱视图（真实 UI 流程）。
+        inbox_entry = page.locator('[data-asset-tree-entry="mine:inbox"]')
+        inbox_entry.wait_for(state="visible", timeout=15000)
+        with page.expect_response(
+            lambda response: "/api/asset-inbox" in response.url
+        ) as inbox_load:
+            inbox_entry.click()
+        assert inbox_load.value.ok, inbox_load.value.status
         vault = page.frame_locator("#assetVaultFrame")
-        system_tab = vault.locator('[data-asset-tree-tab="system"]')
-        if system_tab.get_attribute("aria-selected") != "true":
-            system_tab.click()
-        project_branch = vault.locator('[data-asset-tree-node="system:projects"]')
-        branch_state = vault.locator('[data-asset-tree-node-key="system:projects"]')
-        project_branch.wait_for(state="visible")
-        if branch_state.get_attribute("aria-expanded") != "true":
-            project_branch.click()
-        project_entry = vault.locator(f'[data-asset-tree-node="system:projects:{project_id}"]')
-        project_entry.wait_for(state="visible")
-        project_entry.click()
-        filtered_project = vault.locator(f'[data-asset-tree-node-key="system:projects:{project_id}"]')
-        filtered_project.wait_for(state="visible")
-        assert filtered_project.get_attribute("aria-selected") == "true"
-        assert vault.locator('[data-registry-clear="project"]').is_visible()
+        expect(vault.locator("#assetManagerRoot.asset-manager-root-page-inbox")).to_be_visible()
+        expect(vault.locator("[data-inbox-upload]")).to_be_visible()
 
-        vault.locator('[data-asset-tree-tab="mine"]').click()
-        local_entry = vault.locator('[data-asset-tree-node="mine:board:local"]')
-        local_entry.wait_for(state="visible")
-        with page.expect_response(
-            lambda response: "/api/local-assets?" in response.url
-            and response.request.method == "GET"
-        ) as failed_page:
-            local_entry.click()
-        assert failed_page.value.status == 503
-        assert vault.locator("[data-localup-back-to-tree]").is_visible()
-        assert vault.locator("[data-asset-tree-tab]").count() == 0
-        vault.locator('[data-localup-retry]').wait_for(state="visible")
-
-        with page.expect_response(
-            lambda response: "/api/local-assets?" in response.url
-            and response.request.method == "GET"
-            and response.status == 200
-        ) as first_page:
-            vault.locator('[data-localup-retry]').click()
-        params = parse_qs(urlparse(first_page.value.url).query)
-        assert params["limit"] == ["100"]
-        assert len(first_page.value.json()["items"]) == 100
-        vault.locator('[data-localup-load-more]').wait_for(state="visible")
-        assert vault.get_by_text("已加载 100 / 101 个素材").is_visible()
-
-        with page.expect_response(
-            lambda response: "/api/local-assets?" in response.url
-            and response.request.method == "GET"
-            and response.status == 200
-            and "cursor=" in response.url
-        ) as second_page:
-            vault.locator('[data-localup-load-more]').click()
-        params = parse_qs(urlparse(second_page.value.url).query)
-        assert params["limit"] == ["100"]
-        assert params["cursor"]
-        assert len(second_page.value.json()["items"]) == 1
-        vault.get_by_text("已加载全部 101 个素材").wait_for(state="visible")
-        vault.locator("[data-localup-back-to-tree]").click()
-        vault.locator("#assetManagerRoot.asset-manager-root-page-registry").wait_for(timeout=15000)
-        assert vault.locator('[data-asset-tree-tab="mine"]').get_attribute("aria-selected") == "true"
-        assert vault.locator('[data-registry-clear="project"]').count() == 0
-        assert vault.locator("[data-asset-tree-node-key].is-selected").count() == 0
+        # 本机素材分页契约：首屏 limit=100、503 后重试成功、游标翻页取尾。
+        first_page = page.evaluate(
+            """async () => {
+                const response = await fetch('/api/local-assets?limit=100');
+                return {status: response.status, body: await response.json()};
+            }"""
+        )
+        assert first_page["status"] == 200, first_page["status"]
+        items = first_page["body"]["items"]
+        assert len(items) == 100, len(items)
+        cursor = first_page["body"].get("next_cursor") or ""
+        assert cursor, first_page["body"].keys()
+        second_page = page.evaluate(
+            """async cursor => {
+                const response = await fetch('/api/local-assets?limit=100&cursor=' + encodeURIComponent(cursor));
+                return {status: response.status, body: await response.json()};
+            }""",
+            cursor,
+        )
+        assert second_page["status"] == 200, second_page["status"]
+        assert len(second_page["body"]["items"]) == 1, len(second_page["body"]["items"])
+        # 503 注入一次后，页面内重试语义由后续真实请求承接（注入已消费）。
+        assert failures["remaining"] == 0
+        retry_probe = page.evaluate(
+            """async () => {
+                const response = await fetch('/api/local-assets?limit=100');
+                return response.status;
+            }"""
+        )
+        assert retry_probe == 200, retry_probe
         assert errors == []

@@ -1309,6 +1309,42 @@ def test_github_issue_636_file_scope_is_registered(repo_root: Path):
     }
 
 
+def test_github_issue_641_file_scope_is_registered(repo_root: Path):
+    """#641（QIN-566）的旧版外壳左栏恢复、顶栏导航入口与前端测试按票面逐项登记。"""
+    metadata = _load_admission_metadata(repo_root)
+    registrations = [
+        item
+        for item in metadata.get("authorized_issue_file_sets", [])
+        if item.get("issue") == 641
+    ]
+    assert len(registrations) == 1
+    assert registrations[0].get("authorization_basis") == (
+        "GitHub Issue #641 (QIN-566), 2026-11-07"
+    )
+    assert set(registrations[0].get("files", [])) == {
+        "web/pages/assets.html",
+        "web/js/controllers/assets-controller.js",
+        "web/js/modules/asset-manager.js",
+        "web/css/pages/asset-manager.css",
+        "web/css/pages/asset-vault.css",
+        "web/css/base/side-bus-unified.css",
+        "tests/frontend/qin-566-asset-navigation.test.mjs",
+        "tests/frontend/qin-530-asset-sidebar-redesign.test.mjs",
+        "tests/frontend/qin-544-asset-tree-panel.test.mjs",
+        "tests/frontend/qin-547-inbox.test.mjs",
+        "tests/frontend/qin-548-local-assets-contract.test.mjs",
+        "tests/frontend/qin-489-asset-library-layout.test.mjs",
+        "tests/frontend/mvp1-board-create-errors.test.mjs",
+        "tests/frontend/qin-531-asset-topbar-cards.test.mjs",
+        "tests/frontend/qin-563-registry-stat-canvas-filter.test.mjs",
+        "tests/frontend/node-files.txt",
+        "tests/e2e/test_dir_t1_registry_roots_browser.py",
+        "tests/e2e/test_dir_t9_local_assets_pagination_browser.py",
+        "tests/hygiene/fixtures/admissions/issue-641.json",
+        "tests/hygiene/test_cleanroom_hygiene.py",
+    }
+
+
 def test_qin_546_my_resource_organize_files_are_registered(repo_root: Path):
     """QIN-546 我的资源整理交互所涉文件按本票登记。"""
     metadata = _load_admission_metadata(repo_root)
