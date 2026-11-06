@@ -36,7 +36,7 @@
 因此 ``api/app.py`` 中本 router 必须**先于** ``god_canvas_router`` 注册。
 """
 
-from fastapi import APIRouter, Body, Header, Query, status
+from fastapi import APIRouter, Body, Depends, Header, Query, status
 
 from gw.canvas_closure.models import (
     CanvasAssetAttachRequest,
@@ -63,6 +63,7 @@ from gw.canvas_closure.service import (
     default_shared_folder_service as shared_folders,
 )
 from gw.core.auth import require_authenticated, require_edit_access
+from gw.core.asset_visibility import asset_request_scope
 from gw.core.errors import CleanroomException
 from gw.projects_hub.service import owner_key_for_context
 
@@ -80,7 +81,11 @@ def _canvas_read_context(canvas_id, context):
 
 
 def _owned_projection(result, context):
-    """资产索引、参考与回收站共用项目读可见性过滤。"""
+    """资产索引、参考与回收站共用项目读可见性过滤。
+
+    QIN-567：素材索引的 ``items`` 同样按可见画布过滤，跨项目不可见的画布
+    其素材条目一并隐藏，防止 items 旁路泄露不可见画布的资产引用。
+    """
     visible = []
     for entry in result.get("canvases", []):
         try:
@@ -89,7 +94,14 @@ def _owned_projection(result, context):
         except CleanroomException as exc:
             if exc.status_code != 404:
                 raise
+    visible_ids = {entry["canvas_id"] for entry in visible}
     scoped = {**result, "canvases": visible}
+    if "items" in result:
+        scoped["items"] = [
+            item
+            for item in result.get("items", [])
+            if item.get("canvas_id") in visible_ids
+        ]
     if "categories" in result:
         scoped["categories"] = [
             {
@@ -111,6 +123,7 @@ def _owned_projection(result, context):
     response_model=CanvasAssetIndexResponse,
     summary="读取画布素材索引",
     status_code=status.HTTP_200_OK,
+    dependencies=[Depends(asset_request_scope)],
 )
 def get_canvas_assets(
     authorization: str | None = Header(None),
@@ -118,7 +131,11 @@ def get_canvas_assets(
         "editor", alias="X-User-Role", description="用户角色权限"
     ),
 ):
-    """返回画布索引；素材条目需素材注册表，本阶段为空并如实标记缺口。"""
+    """返回画布素材索引；items 已接线素材注册表与画布产物（QIN-567）。
+
+    ``asset_request_scope`` 建立统一资产可见性作用域，注册表私有素材
+    （工作流归属）跨请求主体时如实隐藏，与素材注册表路由同口径。
+    """
     context = require_authenticated(authorization, x_user_role)
     return _owned_projection(closure.get_canvas_assets(), context)
 

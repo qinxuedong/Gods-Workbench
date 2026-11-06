@@ -40,6 +40,8 @@ DATA_STATUS_NOT_INTEGRATED = "not_integrated"
 
 #: 明确的缺口说明文案（data_gaps）。
 GAP_ASSET_INDEX_SOURCE = "canvas_asset_index_source_not_integrated"
+#: QIN-567：素材索引已接入注册表，节点引用无法在注册表解析时如实标记的缺口。
+GAP_CANVAS_ASSET_NODE_REFS_UNRESOLVED = "canvas_asset_node_refs_unresolved_in_registry"
 GAP_SHARED_FOLDER_TREE = "shared_folder_tree_scan_not_integrated"
 GAP_VIDEO_RENDERER = "video_renderer_source_not_integrated"
 
@@ -134,7 +136,8 @@ class CanvasTrashResponse(BaseModel):
 class CanvasAssetIndexResponse(BaseModel):
     """``GET /api/canvas-assets`` 响应：画布索引 + 真实素材条目。
 
-    素材条目需要素材注册表（本阶段未接入），因此 ``items`` 必须为空并如实标记缺口。
+    QIN-567 接线后 ``items`` 由画布产物（拓扑节点资产引用 / 参考画布条目）
+    join 素材注册表得到；未登记的引用不编造素材，跳过并标记解析缺口。
     """
 
     categories: list[dict[str, Any]] = Field(default_factory=list)

@@ -603,7 +603,7 @@
       "path": "docs/fixtures/GOLDEN-FIXTURE-MANIFEST.json",
       "classification": "golden_fixture",
       "authorization_basis": "cleanroom_frozen_input",
-      "sha256": "70001a36276073d83d1bc145048a0e1686888912c902c337a1f4b9e46d5279b7",
+      "sha256": "66d2c955d067a4b75a3838dc2feeac87ab8487fa57afc00e52b6570b2e11e8b0",
       "admission": "accepted"
     },
     {
@@ -666,7 +666,7 @@
       "path": "docs/fixtures/canvas-closure-asset-index-empty.json",
       "classification": "golden_fixture",
       "authorization_basis": "cleanroom_frozen_input",
-      "sha256": "a7636e5aadd51863fbb5595ce7cb84722c5db925345df816db97f199f542cc92",
+      "sha256": "445955f3e9824a2c36ff19088a0801961c88aebe6ade1c231e9bb2d55527b8d1",
       "admission": "accepted"
     },
     {

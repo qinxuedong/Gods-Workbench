@@ -190,7 +190,7 @@
       "id": "canvas-closure-asset-index-empty-v1",
       "file": "canvas-closure-asset-index-empty.json",
       "kind": "api-response",
-      "purpose": "画布闭环素材索引空快照（三类（smart / classic / reference）计数均为 0、canvases/items 为空，data_status=not_integrated，禁止伪造素材条目）"
+      "purpose": "画布闭环素材索引空快照（三类（smart / classic / reference）计数均为 0、canvases/items 为空，QIN-567 接线后 data_status=ok 且无缺口标记，禁止伪造素材条目）"
     },
     {
       "id": "canvas-closure-shared-folders-empty-v1",

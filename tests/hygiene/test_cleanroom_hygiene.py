@@ -313,7 +313,7 @@ def test_static_layer_has_no_legacy_integration_markers(repo_root: Path):
 # 任何票增删自己的分片都不需要重算下面这个常量，也就不会形成并行 PR 的热点。
 ADMISSION_METADATA_PATH = ADMISSION_BASE_METADATA_PATH
 ADMISSION_BASE_METADATA_SHA256 = (
-    "197f601440c641d4e67aeb74b91204d7f4ff7eb6151adf344500ad5f1555daca"
+    "818c575e279014363e6127c1117b9698bec2dd913e07b6f4862e34dd26dc10bd"
 )
 QUARANTINED_PROMPT_ORIGINAL_PATH = (
     "web/system-prompts/infinite-canvas-prompt-templates.md"
@@ -1367,5 +1367,34 @@ def test_qin_546_my_resource_organize_files_are_registered(repo_root: Path):
         "tests/frontend/node-files.txt",
         "tests/contracts/projects/test_phase8_frontend_backend_api_gap.py",
         "tests/hygiene/fixtures/admissions/issue-602.json",
+        "tests/hygiene/test_cleanroom_hygiene.py",
+    }
+
+
+def test_github_issue_642_file_scope_is_registered(repo_root: Path):
+    """#642（QIN-567）画布素材索引接线所涉文件按票面逐项登记。"""
+    metadata = _load_admission_metadata(repo_root)
+    registrations = [
+        item
+        for item in metadata.get("authorized_issue_file_sets", [])
+        if item.get("issue") == 642
+    ]
+    assert len(registrations) == 1
+    assert registrations[0].get("authorization_basis") == (
+        "GitHub Issue #642 (QIN-567), 2026-11-07"
+    )
+    assert set(registrations[0].get("files", [])) == {
+        "docs/fixtures/GOLDEN-FIXTURE-MANIFEST.json",
+        "docs/fixtures/canvas-closure-asset-index-empty.json",
+        "gw/api/routes_canvas_closure.py",
+        "gw/canvas_closure/models.py",
+        "gw/canvas_closure/service.py",
+        "tests/contracts/god_canvas/test_golden_fixtures.py",
+        "tests/contracts/god_canvas/test_phase10e_canvas_closure.py",
+        "tests/contracts/god_canvas/test_qin567_canvas_asset_index.py",
+        "tests/frontend/node-files.txt",
+        "tests/frontend/qin-567-canvas-asset-index-list.test.mjs",
+        "tests/hygiene/fixtures/admissions/issue-642.json",
+        "tests/hygiene/fixtures/cleanroom_admission_metadata.json",
         "tests/hygiene/test_cleanroom_hygiene.py",
     }
