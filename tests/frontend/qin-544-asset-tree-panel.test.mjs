@@ -40,6 +40,14 @@ function renderAssetTreeNodeForTest(options){
     return renderer(options);
 }
 
+function canvasBoardNodeForTest(board){
+    // 【QIN-563】夹具适配：renderAssetTreeSystemTree 新增「画布资产」节点专用渲染依赖；
+    // 断言零改动，stub 用既有 renderAssetTreeNode 渲染器输出平级节点（折叠态，无子分支）。
+    return renderAssetTreeNodeForTest({
+        key:`system:${board.id}`, icon:board.icon, name:board.name, count:'', depth:0,
+        hasChildren:false,
+    });
+}
 function renderAssetTreePanelForTest(){
     const escape = value => String(value ?? '');
     const renderNode = options => renderAssetTreeNodeForTest(options);
@@ -75,11 +83,12 @@ function renderAssetTreePanelForTest(){
     const systemTree = new Function(
         'renderAssetTreeProjectsBranch',
         'assetTreeSystemBoards',
+        'renderAssetTreeCanvasBoardNode',
         'renderAssetTreeNode',
         'escapeAttr',
         'escapeHtml',
         `${functionSource('renderAssetTreeSystemTree')}; return renderAssetTreeSystemTree;`
-    )(projectBranch, systemBoards, renderNode, escape, escape);
+    )(projectBranch, systemBoards, canvasBoardNodeForTest, renderNode, escape, escape);
     const panel = new Function(
         'activeTab',
         'assetTreeTab',

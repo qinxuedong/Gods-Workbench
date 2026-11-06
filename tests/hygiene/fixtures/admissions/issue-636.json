@@ -1,0 +1,25 @@
+{
+  "schema": "gw.cleanroom-admission-shard/v1",
+  "issue": 636,
+  "authorization_basis": "GitHub Issue #636 (QIN-563), 2026-11-05",
+  "files": [
+    "tests/frontend/node-files.txt",
+    "tests/frontend/qin-531-asset-topbar-cards.test.mjs",
+    "tests/frontend/qin-544-asset-tree-panel.test.mjs",
+    "tests/frontend/qin-563-registry-stat-canvas-filter.test.mjs",
+    "tests/hygiene/fixtures/admissions/issue-636.json",
+    "tests/hygiene/test_cleanroom_hygiene.py",
+    "web/css/pages/asset-vault.css",
+    "web/js/modules/asset-manager.js"
+  ],
+  "admitted_files": [],
+  "accepted_test_files": [
+    {
+      "path": "tests/frontend/qin-563-registry-stat-canvas-filter.test.mjs",
+      "classification": "curated_test_coverage",
+      "authorization_basis": "GitHub Issue #636 (QIN-563), 2026-11-05",
+      "admission": "accepted"
+    }
+  ],
+  "notes": "QIN-563 资产库统计条「其他」同排等宽与「画布」单击筛选修复：统计条 10 列同排（主卡 2fr + 9 张类型卡统一 .95fr）；单击「画布」统计卡直接进入画布资产视图并顶置「全部画布」虚拟分类（智能+普通+参考全量口径）；AC2 收窄口径（2026-11-07 需求负责人拍板）：「全部画布」分支接入实活系统树（renderAssetTreeCanvasBoardNode/renderAssetTreeCanvasBranch），画布素材索引接线（列表内容）另票承接；qin-544 树面板测试仅做夹具注入适配，断言零改动。"
+}
