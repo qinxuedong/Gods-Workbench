@@ -9637,6 +9637,8 @@ function render(){
     }
     scheduleAssetTouchbarReport();
     hydrateVideoStoryboardImages(document);
+    // 【QIN-566】渲染收尾同步外壳侧栏（推送快照 + 持久化入口，仅内嵌金库模式生效）。
+    notifyShellTreeSnapshot();
 }
 function updateSearchQueryFromInput(id, value){
     if(id === 'registrySearch') registryQuery = value || '';
@@ -10431,13 +10433,21 @@ function renderRegistryOverviewStats(){
         {id:'model', name:'模型', value:registryCategoryCount('model'), icon:'box'},
         {id:'font', name:'字体', value:registryCategoryCount('font'), icon:'type'},
         {id:'lut', name:'LUT', value:registryCategoryCount('lut'), icon:'palette'},
+        // 【QIN-566】顶栏导航入口（AC3）：承接原左栏系统入口目的地，排在 LUT 之后、画布/其他之前。
+        {id:'projects', name:'项目', nav:true, icon:'clapperboard'},
+        {id:'scripts', name:'剧本', nav:true, icon:'file-text'},
+        {id:'prompts', name:'提示词', nav:true, icon:'text-cursor-input'},
         // 【QIN-531】卡片更名「画布」；data-registry-stat 仍沿用 reference-canvas，既有跳转不动。
         {id:'reference-canvas', name:'画布', value:canvasTotal, icon:'map'},
         {id:'other', name:'其他', value:registryCategoryCount('other'), icon:'package-open'},
     ];
     return `<section class="registry-overview-stats" aria-label="资产统计">${stats.map(stat => {
         const ratio = globalTotal ? Math.round(Number(stat.value || 0) / globalTotal * 100) : 0;
-        const active = registryStatCategory === stat.id;
+        const active = stat.nav ? activeTab === stat.id : registryStatCategory === stat.id;
+        if(stat.nav){
+            // 【QIN-566】导航入口卡：只承载目的地与选中态，不输出计数/占比/进度条（不伪造统计数据）。
+            return `<button type="button" class="registry-stat-card is-nav ${active ? 'active' : ''}" data-registry-nav="${escapeAttr(stat.id)}" aria-label="${escapeAttr(stat.name)}" title="${escapeAttr(stat.name)}"><span class="registry-stat-icon"><i data-lucide="${stat.icon}"></i></span><span class="registry-stat-copy"><small>${escapeHtml(stat.name)}</small></span></button>`;
+        }
         // 双行结构：第 1 行名称 + 占比，第 2 行「图标 + 数量」与高光渐变进度条。
         return `<button type="button" class="registry-stat-card ${stat.primary ? 'primary' : ''} ${active ? 'active' : ''} ${Number(stat.value || 0) === 0 ? 'is-empty' : ''}" data-registry-stat="${escapeAttr(stat.id)}" aria-pressed="${active}"><span class="registry-stat-icon"><i data-lucide="${stat.icon}"></i></span><span class="registry-stat-copy"><small>${stat.name}</small><strong>${Number(stat.value || 0).toLocaleString('zh-CN')}</strong></span><em>${stat.primary ? '统一资产索引' : `${ratio}%`}</em><span class="registry-stat-meter" aria-hidden="true"><span style="--vault-ratio:${Math.min(100, Math.max(0, ratio))}%"></span></span></button>`;
     }).join('')}</section>`;
@@ -12310,6 +12320,8 @@ function renderAssetTreeCanvasBranch(){
     return `<div class="asset-tree-children" role="group">${canvasAssetCategories().map(catNode).join('')}</div>`;
 }
 function renderAssetTreePanel(extraClass=''){
+    // 【QIN-566】外壳左栏恢复后，内嵌金库模式不再渲染重复树与「系统资源/我的资源」切换栏（AC4 唯一导航）。
+    if(document.documentElement.classList.contains('vault-shell-embedded')) return '';
     if(activeTab === 'local') return renderLocalUploadFolderPanel();
     // AC1：左栏顶部「系统资源 / 我的资源」标签页，各一棵树；AC3 底部「+ 挂载文件夹」
     const mine = assetTreeTab === 'mine';
@@ -12331,6 +12343,53 @@ function activateAssetTreeTab(tab){
     if(assetTreeTab === next) return;
     assetTreeTab = next;
     render();
+}
+/* 【QIN-566】内嵌金库模式对外壳侧栏的树桥接：快照读取 + 入口激活，同源直调，无新增 API。
+   - snapshot()：外壳渲染「收集箱 + 挂载根目录」所需数据与当前选中入口 key；
+   - activate(key)：外壳点击入口时复用树上同一条点击分发逻辑（资产总览走看板激活）。 */
+function gwAssetTreeEntryKey(){
+    // 外壳侧栏选中口径：收集箱视图、按根目录筛选的资产总览，或未带筛选的资产总览。
+    if(activeTab === 'inbox') return 'mine:inbox';
+    if(activeTab !== 'registry') return '';
+    if(String(registryNavFolder?.rootId || '') || String(registryNavFolder?.path || '')) return `mine:root:${registryNavFolder.rootId}`;
+    if(registryStatCategory) return '';
+    return assetTreeSelectedKey.startsWith('mine:') ? assetTreeSelectedKey : 'registry';
+}
+function gwAssetTreeSnapshot(){
+    return {
+        inbox_badge: assetInboxUnreadCount(),
+        roots: assetTreeRootsList().map(root => ({id:String(root.id || ''), name:root.name, count:Number(root.count || 0)})),
+        selected_key: gwAssetTreeEntryKey(),
+    };
+}
+function gwAssetTreeActivate(key){
+    // 外壳入口与树上节点同一条分发路径；「registry」= 资产总览（统计+全部资产）。
+    const value = String(key || '');
+    if(value === 'registry'){ void activateAssetBoard('registry'); return; }
+    selectAssetTreeNode(value);
+}
+function notifyShellTreeSnapshot(){
+    // 每次渲染后同步外壳：推送快照 + 持久化选中入口（刷新/往返不丢目标入口，AC5）。
+    if(!document.documentElement.classList.contains('vault-shell-embedded')) return;
+    try { window.parent?.GWAssetTreeHost?.onTreeSnapshot?.(gwAssetTreeSnapshot()); } catch(_) {}
+    saveAssetTreeState();
+}
+const ASSET_TREE_STATE_KEY = 'gw.asset.tree.state';
+function saveAssetTreeState(){
+    // 持久化当前入口；资产总览（默认态）不落盘，清掉旧记录即可。
+    const entry = gwAssetTreeEntryKey();
+    try {
+        if(!entry || entry === 'registry') sessionStorage.removeItem(ASSET_TREE_STATE_KEY);
+        else sessionStorage.setItem(ASSET_TREE_STATE_KEY, JSON.stringify({entry}));
+    } catch(_) {}
+}
+function restoreAssetTreeState(){
+    let entry = '';
+    try { entry = String(JSON.parse(sessionStorage.getItem(ASSET_TREE_STATE_KEY) || '{}').entry || ''); } catch(_) {}
+    try { sessionStorage.removeItem(ASSET_TREE_STATE_KEY); } catch(_) {}
+    if(!entry || entry === 'registry') return '';
+    gwAssetTreeActivate(entry);
+    return entry;
 }
 function toggleAssetTreeNode(key){
     // 展开/折叠树节点；展开项目节点时懒加载 QIN-543 详情，展开目录时懒加载磁盘子目录
@@ -14951,6 +15010,12 @@ async function handleClick(event){
     }
     if(target.closest?.('[data-board-create-close]')){ closeCreateLibraryModal(); return; }
     if(target.closest?.('[data-board-create-confirm]')){ await createPresetAssetBoard(); return; }
+    if(target.closest?.('[data-registry-nav]')){
+        // 【QIN-566】顶栏导航入口（项目/剧本/提示词）：激活对应系统看板，目的地与既有看板切换一致。
+        const navBoard = target.closest('[data-registry-nav]').dataset.registryNav || '';
+        if(assetBoardById(navBoard)) void activateAssetBoard(navBoard);
+        return;
+    }
     const registryStat = target.closest?.('[data-registry-stat]');
     if(registryStat){
         const category = registryStat.dataset.registryStat || '';
@@ -24127,6 +24192,8 @@ function saveRegistryBrowseSessionForRoute(){
     try { sessionStorage.setItem(REGISTRY_ROUTE_PENDING_KEY, '1'); } catch(_) {}
 }
 window.GWAssetBrowseSession = Object.freeze({save:saveRegistryBrowseSession, saveForRoute:saveRegistryBrowseSessionForRoute});
+// 【QIN-566】外壳侧栏树桥接：同源直调（外壳读快照/驱动入口，内嵌页渲染后主动推送）。
+window.GWAssetTreeBridge = Object.freeze({snapshot:gwAssetTreeSnapshot, activate:gwAssetTreeActivate});
 async function restoreRegistryBrowseSession(){
     try {
         const navigation = performance.getEntriesByType?.('navigation')?.[0];
@@ -24182,6 +24249,8 @@ document.addEventListener('DOMContentLoaded', () => {
     loadGovernanceSuggestions();
     loadAll().then(async () => {
         const restoredScroll = await restoreRegistryBrowseSession();
+        // 【QIN-566】恢复上次外壳侧栏入口（仅内嵌金库模式；刷新/往返不丢目标入口，AC5）。
+        await restoreAssetTreeState();
         registrySessionReady = true;
         if(Number.isFinite(restoredScroll)) await applyRegistryBrowseSessionScroll(restoredScroll);
         saveRegistryBrowseSession();

@@ -119,11 +119,11 @@ body.gw-signal.gw-page--asset-manager .registry-overview-shell { padding: 9px 10
 body.gw-signal.gw-page--asset-manager .registry-overview-stats {
     /* QIN-531 验收：整排卡片宽度压到原来的 2/3，卡间距（gap）保持 8px 不变，整排向左对齐、右侧留白。 */
     --registry-stat-gap: 8px;
-    /* QIN-563：10 张统计卡同排 → 9 个间距。 */
-    --registry-stat-gap-count: 9;
+    /* QIN-566：13 张卡同排 → 12 个间距（主卡 + 9 类型卡 + 3 顶栏导航入口）。 */
+    --registry-stat-gap-count: 12;
     display: grid;
-    /* QIN-563：主卡 2fr，其余 9 张类型卡统一 .95fr（与画布卡同宽），「其他」紧随「画布」不再换行。 */
-    grid-template-columns: 2fr repeat(9, .95fr);
+    /* QIN-566：主卡 2fr，其余 12 张卡统一 .95fr（类型卡与导航入口同宽），「其他」仍紧随「画布」。 */
+    grid-template-columns: 2fr repeat(12, .95fr);
     gap: var(--registry-stat-gap);
     /* 先扣掉 gap 再乘 2/3、最后把 gap 加回：列宽比例不变，每张卡恰为原宽度的三分之二。 */
     width: calc((100% - var(--registry-stat-gap) * var(--registry-stat-gap-count)) * 2 / 3 + var(--registry-stat-gap) * var(--registry-stat-gap-count));
@@ -181,6 +181,11 @@ body.gw-signal.gw-page--asset-manager .registry-stat-icon svg { width: 13px; hei
 /* 深凹槽底轨 + 水平高光渐变填充（微光扩散阴影），高度 4px。 */
 body.gw-signal.gw-page--asset-manager .registry-stat-meter { grid-area: 2 / 3 / 3 / 4; align-self: center; height: 4px; border-radius: 999px; overflow: hidden; background: color-mix(in srgb,#000 52%,var(--vault-well)); box-shadow: inset 0 1px 2px rgb(0 0 0 / .68); }
 body.gw-signal.gw-page--asset-manager .registry-stat-meter > span { display: block; height: 100%; width: var(--vault-ratio,0%); border-radius: inherit; background: linear-gradient(90deg,color-mix(in srgb,var(--vault-meter) 52%,#000) 0%,var(--vault-meter) 62%,color-mix(in srgb,var(--vault-meter) 68%,#fff) 100%); box-shadow: 0 0 6px color-mix(in srgb,var(--vault-meter) 50%,transparent); }
+/* 【QIN-566】顶栏导航入口卡（项目/剧本/提示词）：单行「图标+名称」，无计数/占比/进度条，不伪造统计。 */
+body.gw-signal.gw-page--asset-manager .registry-stat-card.is-nav { grid-template-columns: 16px minmax(0,1fr); grid-template-rows: 1fr; align-content: center; }
+body.gw-signal.gw-page--asset-manager .registry-stat-card.is-nav .registry-stat-icon { grid-area: 1 / 1 / 2 / 2; }
+body.gw-signal.gw-page--asset-manager .registry-stat-card.is-nav .registry-stat-copy { display: block; min-width: 0; }
+body.gw-signal.gw-page--asset-manager .registry-stat-card.is-nav .registry-stat-copy small { grid-area: 1 / 2 / 2 / 3; align-self: center; }
 body.gw-signal.gw-page--asset-manager .registry-stat-card[data-registry-stat="image"] { --stat-type-color: var(--asset-type-image); }
 body.gw-signal.gw-page--asset-manager .registry-stat-card[data-registry-stat="video"] { --stat-type-color: var(--asset-type-video); }
 body.gw-signal.gw-page--asset-manager .registry-stat-card[data-registry-stat="audio"] { --stat-type-color: var(--asset-type-audio); }
