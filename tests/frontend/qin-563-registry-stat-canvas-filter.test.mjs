@@ -74,8 +74,9 @@ assert.match(
 );
 assert.match(js, /function renderAssetTreeCanvasBranch\(\)\{/, '必须存在画布分类子分支渲染函数');
 assert.match(js, /`system:canvas-assets:cat:\$\{cat\.id\}`/, '分类子节点 key 必须挂在「画布资产」节点之下');
-assert.match(js, /system:canvas-assets:cat:\$\{cat\.id\}:canvas:\$\{canvas\.id\}/, '分类下必须列画布子行');
-assert.match(js, /count:Number\(cat\.canvas_count \|\| 0\)/, '分类节点计数必须显示画布数');
+assert.match(js, /system:canvas-assets:cat:\$\{cat\.id\}:canvas:\$\{canvas\.canvas_id \|\| canvas\.id\}/, '分类下必须列画布子行');
+assert.match(js, /count:catCanvases\.length/, '分类节点计数必须本地推导画布数（不依赖 API canvas_count 字段）');
+assert.match(js, /\(canvas\.canvas_id \|\| canvas\.id\) === activeCanvasAssetCanvasId/, '画布聚焦必须兼容 canvas_id 稳定字段');
 
 // 树节点点击分发：分类子节点进入画布资产视图并筛选该分类；画布子行聚焦单个画布。
 assert.match(js, /value\.startsWith\('system:canvas-assets:cat:'\)/, '树点击分发必须处理画布分类子节点');

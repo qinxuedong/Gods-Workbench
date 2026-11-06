@@ -5139,7 +5139,8 @@ function canvasAssetsForCategory(categoryId=activeCanvasAssetCategory){
 }
 function activeCanvasAssetCanvas(){
     if(!activeCanvasAssetCanvasId) return null;
-    return (canvasAssetsData.canvases || []).find(canvas => canvas.id === activeCanvasAssetCanvasId) || null;
+    // 【QIN-563】索引画布元素以 canvas_id 为稳定字段（id 仅为历史兼容），两者都兼容。
+    return (canvasAssetsData.canvases || []).find(canvas => (canvas.canvas_id || canvas.id) === activeCanvasAssetCanvasId) || null;
 }
 function canvasAssetViewTitle(){
     return activeCanvasAssetCanvas()?.title || activeCanvasAssetCategoryInfo().name || '画布资产';
@@ -12073,24 +12074,27 @@ function renderAssetTreeCanvasBoardNode(board){
 }
 function renderAssetTreeCanvasBranch(){
     // 【QIN-563】画布分类子分支：选中态走 assetTreeSelectedKey（统计卡单击路径会同步设置），
-    // 分类节点计数显示画布数（canvas_count），画布子行计数显示该画布资产数。
-    const catNode = cat => renderAssetTreeNode({
-        key:`system:canvas-assets:cat:${cat.id}`,
-        icon: cat.id === 'all' ? 'layers' : cat.id === 'smart' ? 'sparkles' : cat.id === 'classic' ? 'layout-grid' : 'map',
-        name:cat.name, count:Number(cat.canvas_count || 0), depth:1,
-        children: assetTreeExpanded.has(`system:canvas-assets:cat:${cat.id}`)
-            ? `<div class="asset-tree-children" role="group">${canvasAssetsForCategory(cat.id).map(canvas => renderAssetTreeNode({
-                key:`system:canvas-assets:cat:${cat.id}:canvas:${canvas.id}`,
-                icon: canvas.kind === 'smart' ? 'sparkles' : canvas.kind === 'reference' ? 'map' : 'file-image',
-                name:canvas.title || '未命名画布',
-                count:canvasAssetCountForCanvas(canvas.id),
-                depth:2,
-                hasChildren:false,
-            })).join('')}</div>`
-            : '',
-        expanded: assetTreeExpanded.has(`system:canvas-assets:cat:${cat.id}`),
-        hasChildren:true,
-    });
+    // 分类节点计数显示画布数（本地从画布索引推导，不依赖 API canvas_count 字段），画布子行计数显示该画布资产数。
+    const catNode = cat => {
+        const catCanvases = canvasAssetsForCategory(cat.id);
+        return renderAssetTreeNode({
+            key:`system:canvas-assets:cat:${cat.id}`,
+            icon: cat.id === 'all' ? 'layers' : cat.id === 'smart' ? 'sparkles' : cat.id === 'classic' ? 'layout-grid' : 'map',
+            name:cat.name, count:catCanvases.length, depth:1,
+            children: assetTreeExpanded.has(`system:canvas-assets:cat:${cat.id}`)
+                ? `<div class="asset-tree-children" role="group">${catCanvases.map(canvas => renderAssetTreeNode({
+                    key:`system:canvas-assets:cat:${cat.id}:canvas:${canvas.canvas_id || canvas.id}`,
+                    icon: canvas.kind === 'smart' ? 'sparkles' : canvas.kind === 'reference' ? 'map' : 'file-image',
+                    name:canvas.title || '未命名画布',
+                    count:canvasAssetCountForCanvas(canvas.canvas_id || canvas.id),
+                    depth:2,
+                    hasChildren:false,
+                })).join('')}</div>`
+                : '',
+            expanded: assetTreeExpanded.has(`system:canvas-assets:cat:${cat.id}`),
+            hasChildren:true,
+        });
+    };
     return `<div class="asset-tree-children" role="group">${canvasAssetCategories().map(catNode).join('')}</div>`;
 }
 function renderAssetTreePanel(extraClass=''){
