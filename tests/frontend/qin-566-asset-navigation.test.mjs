@@ -71,6 +71,7 @@ test('AC5: 树桥接同源直调（无新增 API），推送+持久化+恢复入
   assert.match(manager, /notifyShellTreeSnapshot\(\)/);
   assert.match(manager, /gw\.asset\.tree\.state/);
   assert.match(manager, /restoreAssetTreeState\(\)/);
+  assert.match(manager, /function gwAssetTreeActivate[\s\S]{0,400}saveAssetTreeState\(\);\s*\n\}/, '持久化必须收口在外壳激活入口（点击时落盘，bootstrap 渲染不触碰该键）');
   assert.match(manager, /loadAll\(\)\.then\(async \(\) => \{\s*\n\s*const restoredScroll = await restoreRegistryBrowseSession\(\);\s*\n\s*\/\/ 【QIN-566】/);
   assert.match(controller, /window\.GWAssetTreeHost = Object\.freeze\(\{onTreeSnapshot: applyTreeSnapshot\}\)/);
   const bridge = manager.slice(manager.indexOf('function gwAssetTreeEntryKey'), manager.indexOf('function toggleAssetTreeNode'));

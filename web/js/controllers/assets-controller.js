@@ -370,6 +370,17 @@ window.WorkbenchAssets = (() => {
     return button;
   }
 
+  // 「资产总览」标题卡高亮随选中入口同步（registry = 总览态）。
+  function syncOverviewSelection(selected) {
+    const overview = document.getElementById('assetSidebarOverview');
+    const registryActive = selected === 'registry';
+    overview?.classList.toggle('is-active', registryActive);
+    overview?.setAttribute('aria-pressed', String(registryActive));
+    if (registryActive) overview?.setAttribute('aria-current', 'page');
+    else overview?.removeAttribute('aria-current');
+    overview?.closest('.asset-shell-overview-card')?.classList.toggle('is-active', registryActive);
+  }
+
   // 应用内嵌页推送的树快照：渲染收集箱 + 挂载根目录，并同步选中态与页头高亮。
   function applyTreeSnapshot(snapshot) {
     if (!categories || !snapshot || typeof snapshot !== 'object') return;
@@ -384,6 +395,8 @@ window.WorkbenchAssets = (() => {
     ].map(row => ({...row, active: row.key === selected}));
     const serialized = JSON.stringify(rows);
     updateSidebarSelection(selected);
+    // 【审核修复2】选中态/页头高亮同步必须先于行集早退：rows 不变而 selected_key 变化时（如顶栏入口与资产总览互切），高亮仍要刷新。
+    syncOverviewSelection(selected);
     if (serialized === sidebarSnapshot) return;
     sidebarSnapshot = serialized;
     const focused = categories.contains(document.activeElement)
@@ -409,13 +422,6 @@ window.WorkbenchAssets = (() => {
     group.append(heading, items);
     fragment.append(group);
     categories.replaceChildren(fragment);
-    const overview = document.getElementById('assetSidebarOverview');
-    const registryActive = selected === 'registry';
-    overview?.classList.toggle('is-active', registryActive);
-    overview?.setAttribute('aria-pressed', String(registryActive));
-    if (registryActive) overview?.setAttribute('aria-current', 'page');
-    else overview?.removeAttribute('aria-current');
-    overview?.closest('.asset-shell-overview-card')?.classList.toggle('is-active', registryActive);
     window.lucide?.createIcons();
     if (focused !== null) {
       categories.querySelector(`[data-asset-tree-entry="${CSS.escape(focused)}"]`)?.focus();

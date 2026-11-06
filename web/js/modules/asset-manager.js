@@ -12367,19 +12367,21 @@ function gwAssetTreeSnapshot(){
 }
 function gwAssetTreeActivate(key){
     // 外壳入口与树上节点同一条分发路径；「registry」= 资产总览（统计+全部资产）。
+    // 持久化在此单一收口：外壳驱动的每次切换（侧栏/页头/顶栏）都会落盘当前入口（AC5 刷新恢复）。
     const value = String(key || '');
-    if(value === 'registry'){ void activateAssetBoard('registry'); return; }
+    if(value === 'registry'){ void activateAssetBoard('registry'); saveAssetTreeState(); return; }
     selectAssetTreeNode(value);
+    saveAssetTreeState();
 }
 function notifyShellTreeSnapshot(){
-    // 每次渲染后同步外壳：推送快照 + 持久化选中入口（刷新/往返不丢目标入口，AC5）。
+    // 每次渲染后同步外壳（推送快照；持久化改由用户点击分发时落盘，见 saveAssetTreeState）。
     if(!document.documentElement.classList.contains('vault-shell-embedded')) return;
     try { window.parent?.GWAssetTreeHost?.onTreeSnapshot?.(gwAssetTreeSnapshot()); } catch(_) {}
-    saveAssetTreeState();
 }
 const ASSET_TREE_STATE_KEY = 'gw.asset.tree.state';
 function saveAssetTreeState(){
-    // 持久化当前入口；资产总览（默认态）不落盘，清掉旧记录即可。
+    // 【审核修复1 终版】持久化只在用户点击分发时落盘（selectAssetTreeNode/面包屑），bootstrap 渲染不触碰该键，
+    // 从机制上消除「刷新后 bootstrap 首渲清掉持久化入口」的 AC5 死路径。
     const entry = gwAssetTreeEntryKey();
     try {
         if(!entry || entry === 'registry') sessionStorage.removeItem(ASSET_TREE_STATE_KEY);
