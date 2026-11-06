@@ -116,10 +116,13 @@ test('AC2 上传资源页面实际渲染来源目录树及新建、重命名入�
     assert.match(markup, /data-localup-folder="incoming\/nested"/);
     assert.match(markup, /class="asset-tree-node is-selected is-path"/);
     assert.match(markup, /data-localup-folder-new/);
+    assert.match(markup, /data-localup-back-to-tree/);
+    assert.match(markup, /role="heading" aria-level="2">上传资源/);
     assert.ok(renameButton, '应渲染文件夹重命名按钮');
     assert.doesNotMatch(renameButton, /\bdisabled\b/);
     assert.doesNotMatch(markup, /<\/aside>}\s*<section/);
     assert.doesNotMatch(markup, /系统资源/);
+    assert.doesNotMatch(markup, /data-asset-tree-tab/);
 });
 
 test('AC2 根目录和智能分类状态下禁用文件夹重命名', () => {

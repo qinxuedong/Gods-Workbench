@@ -9885,7 +9885,8 @@ function renderLocalUploadFolderPanel(){
     const canRename = Boolean(activeLocalUploadFolder) && !activeLocalUploadClassFilter;
     return `<aside class="asset-panel asset-nav asset-tree-panel" aria-label="上传文件夹">
         <div class="asset-tree-tabs" role="group" aria-label="上传目录操作">
-            <div class="asset-tree-tab active" role="heading" aria-level="2">上传文件夹</div>
+            <div class="asset-tree-tab active" role="heading" aria-level="2">上传资源</div>
+            <button class="hw-btn hw-btn-icon" type="button" data-localup-back-to-tree title="返回资源入口" aria-label="返回资源入口"><i data-lucide="arrow-left"></i></button>
             <button class="asset-tree-tab" type="button" data-localup-folder-new title="新建文件夹" aria-label="新建文件夹"><i data-lucide="folder-plus"></i><span>新建</span></button>
         </div>
         <div class="asset-tree-scroll" role="tree" aria-label="上传文件夹树" tabindex="0">${renderLocalUploadFolderBranch(tree)}</div>
@@ -11880,6 +11881,10 @@ function assetTreeSystemBoards(){
     // AC2：系统资源树顶层节点（剧本/画布/提示词）；工作流入口删除（独立页面），系统资源只读
     return ['scripts', 'canvas-assets', 'prompts'].map(id => assetBoardById(id)).filter(Boolean);
 }
+function assetTreeUserBoards(){
+    // QIN-560：补回外壳侧栏退役后仍需直达的托管、上传与用户资源库入口。
+    return visibleAssetBoards().filter(board => board.id === 'assets' || board.id === 'local' || !board.system);
+}
 function renderAssetTreeNode({key, icon, name, count, depth=0, children='', expanded=false, hasChildren=false, groupLabel=false}){
     // AC6 管线样式：竖线与节点圆点由 CSS 依 --tree-depth 定位；is-path=根到选中支路，
     // is-selected=选中淡金底，is-empty=数量为 0 的目录变暗，is-group-label=分组标题小号灰字。
@@ -11985,12 +11990,19 @@ function assetTreeFolderNodeFor(rootId, node, depth=0){
     });
 }
 function renderAssetTreeMineTree(){
-    // AC3：收集箱第一位（QIN-547 未合入，先占位）；挂载文件夹完整磁盘子目录树；底部「+ 挂载文件夹」
+    // AC3：收集箱第一位、资源看板入口、挂载文件夹完整磁盘子目录树；底部「+ 挂载文件夹」
     const inboxCount = Number(document.querySelector('[data-unassigned-count]')?.textContent || '') || 0;
     const inboxNode = renderAssetTreeNode({
         key:'mine:inbox', icon:'inbox', name:'收集箱', count:inboxCount, depth:0,
         hasChildren:false,
     });
+    const boardNodes = assetTreeUserBoards().map(board => renderAssetTreeNode({
+        key:`mine:board:${board.id}`, icon:board.icon, name:board.name, count:'', depth:1,
+        hasChildren:false,
+    })).join('');
+    const boardSection = boardNodes
+        ? `<div class="asset-tree-mount-section"><div class="asset-tree-group-label">资源入口</div>${boardNodes}</div>`
+        : '';
     const roots = assetTreeRootsList();
     const rootNodes = roots.map(root => {
         const key = `mine:root:${root.id}`;
@@ -12006,7 +12018,7 @@ function renderAssetTreeMineTree(){
     }).join('');
     const mountLabel = `<div class="asset-tree-group-label">挂载文件夹</div>`;
     const emptyGuide = roots.length ? '' : `<div class="asset-tree-empty-guide"><p>尚未挂载文件夹</p><small>挂载后按真实磁盘子目录浏览</small></div>`;
-    return `<div class="asset-tree-scroll" role="tree" aria-label="我的资源目录树" tabindex="0" data-asset-tree-view="mine">${inboxNode}<div class="asset-tree-mount-section">${mountLabel}${rootNodes}${emptyGuide}</div></div>`;
+    return `<div class="asset-tree-scroll" role="tree" aria-label="我的资源目录树" tabindex="0" data-asset-tree-view="mine">${inboxNode}${boardSection}<div class="asset-tree-mount-section">${mountLabel}${rootNodes}${emptyGuide}</div></div>`;
 }
 function assetTreeRootsList(){
     // 根目录清单沿用 facets 口径（含离线来源），保证与目录层级数据同源
@@ -12071,10 +12083,16 @@ function toggleAssetTreeNode(key){
     render();
 }
 function selectAssetTreeNode(key){
-    // AC2/AC3：树节点点击分发——系统看板切换、项目/分组/条目素材筛选、目录过滤
+    // AC2/AC3：树节点点击分发——系统看板、用户资源看板、项目/分组/条目筛选、目录过滤
     const value = String(key || '');
     if(!value) return;
     assetTreeSelectedKey = value;
+    if(value.startsWith('mine:board:')){
+        const boardId = value.slice('mine:board:'.length);
+        if(assetBoardById(boardId)){ void activateAssetBoard(boardId); return; }
+        render();
+        return;
+    }
     if(value === 'mine:inbox'){
         // AC3：收集箱由 QIN-547 提供，先占位
         setStatus('收集箱功能即将提供');
@@ -12131,6 +12149,18 @@ function selectAssetTreeNode(key){
     }
     if(value.startsWith('system:')){ activateAssetBoard(value.slice('system:'.length)); return; }
     render();
+}
+function handleAssetTreeNodeClick(event){
+    const node = event?.target?.closest?.('[data-asset-tree-node]');
+    if(!node) return false;
+    selectAssetTreeNode(node.dataset.assetTreeNode || '');
+    return true;
+}
+function handleLocalUploadBackClick(event){
+    const button = event?.target?.closest?.('[data-localup-back-to-tree]');
+    if(!button) return false;
+    handleAssetTreeCrumbClick('registry');
+    return true;
 }
 function renderAssetRack(extraAttrs='', extraClass=''){
     const collapsed = assetRackCollapsed;
@@ -14117,6 +14147,7 @@ async function handleClick(event){
     // 【QIN-524】中栏目录机架：折叠成图标条、目录树展开与目录过滤
     // 【QIN-533】智能筛选页下线，不再有模式切换委托
     // 【QIN-544】左栏单栏树：标签页、展开折叠、选中、挂载、面包屑点击
+    if(handleLocalUploadBackClick(event)) return;
     const treeTabBtn = target.closest?.('[data-asset-tree-tab]');
     if(treeTabBtn){ activateAssetTreeTab(treeTabBtn.dataset.assetTreeTab || ''); return; }
     const treeToggle = target.closest?.('[data-asset-tree-toggle]');
@@ -14125,8 +14156,7 @@ async function handleClick(event){
     if(treeMount){ openBoardSourceModal('', 'new'); return; }
     const treeCrumb = target.closest?.('[data-asset-tree-crumb]');
     if(treeCrumb){ handleAssetTreeCrumbClick(treeCrumb.dataset.assetTreeCrumb || ''); return; }
-    const treeNode = target.closest?.('[data-asset-tree-node]');
-    if(treeNode){ selectAssetTreeNode(treeNode.dataset.assetTreeNode || ''); return; }
+    if(handleAssetTreeNodeClick(event)) return;
     if(target.closest?.('[data-asset-rack-collapse]')){ setAssetRackCollapsed(true); return; }
     if(target.closest?.('[data-asset-rack-expand]')){ setAssetRackCollapsed(false); return; }
     const assetRackToggle = target.closest?.('[data-asset-rack-toggle]');

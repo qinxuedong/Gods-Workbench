@@ -40,6 +40,71 @@ function renderAssetTreeNodeForTest(options){
     return renderer(options);
 }
 
+function renderAssetTreePanelForTest(){
+    const escape = value => String(value ?? '');
+    const renderNode = options => renderAssetTreeNodeForTest(options);
+    const projectBranch = new Function(
+        'assetTreeExpanded',
+        'projects',
+        'AssetRegistryDefaultEntityTypes',
+        'assetTreeProjectDetail',
+        'assetTreeProjectGroupNode',
+        'renderAssetTreeNode',
+        'escapeAttr',
+        'escapeHtml',
+        `${functionSource('renderAssetTreeProjectsBranch')}; return renderAssetTreeProjectsBranch;`
+    )(
+        new Set(['system:projects']),
+        [{id:'project-render-544', name:'渲染验证项目', asset_count:0, template:{entity_types:[]}}],
+        [],
+        () => null,
+        () => '',
+        renderNode,
+        escape,
+        escape
+    );
+    const boards = new Map([
+        ['scripts', {id:'scripts', name:'剧本资产', icon:'scroll'}],
+        ['canvas-assets', {id:'canvas-assets', name:'画布资产', icon:'clapperboard'}],
+        ['prompts', {id:'prompts', name:'提示词库', icon:'text'}],
+    ]);
+    const systemBoards = new Function(
+        'assetBoardById',
+        `${functionSource('assetTreeSystemBoards')}; return assetTreeSystemBoards;`
+    )(id => boards.get(id));
+    const systemTree = new Function(
+        'renderAssetTreeProjectsBranch',
+        'assetTreeSystemBoards',
+        'renderAssetTreeNode',
+        'escapeAttr',
+        'escapeHtml',
+        `${functionSource('renderAssetTreeSystemTree')}; return renderAssetTreeSystemTree;`
+    )(projectBranch, systemBoards, renderNode, escape, escape);
+    const panel = new Function(
+        'activeTab',
+        'assetTreeTab',
+        'renderAssetTreeSystemTree',
+        'renderAssetTreeMineTree',
+        'renderLocalUploadFolderPanel',
+        `${functionSource('renderAssetTreePanel')}; return renderAssetTreePanel;`
+    )('registry', 'system', systemTree, () => '', () => '<aside class="local-upload-panel"></aside>');
+    return panel();
+}
+
+test('AC1/AC2: 单栏树面板实际渲染系统标签、展开项目与三个系统节点', () => {
+    const markup = renderAssetTreePanelForTest();
+    assert.match(markup, /aria-label="资产导航树"/);
+    assert.match(markup, /data-asset-tree-view="system"/);
+    assert.match(markup, /data-asset-tree-node="system:projects"/);
+    assert.match(markup, /aria-expanded="true" data-asset-tree-node-key="system:projects"/);
+    assert.match(markup, /data-asset-tree-node="system:projects:project-render-544"/);
+    for(const key of ['scripts', 'canvas-assets', 'prompts']){
+        assert.match(markup, new RegExp(`data-asset-tree-node="system:${key}"`));
+    }
+    assert.match(markup, /提示词库/);
+    assert.doesNotMatch(markup, /workflows|工作流/);
+});
+
 test('AC1: 左栏顶部系统资源/我的资源两个标签页，各一棵树', () => {
     const panel = functionSource('renderAssetTreePanel');
     assert.match(panel, /data-asset-tree-tab="system"[^>]*>系统资源</, '系统资源标签页应存在');
@@ -72,7 +137,7 @@ test('AC2: 系统资源树只读：项目层级完整、剧本/画布/提示词�
     assert.match(functionSource('ensureAssetTreeProjectData'), /getRegistryProject/, '项目详情走 QIN-543 接口');
 });
 
-test('AC3: 我的资源树：收集箱第一位（占位）、挂载文件夹完整子目录树、底部挂载入口', () => {
+test('AC3: 我的资源树：收集箱、资源入口、挂载文件夹完整子目录树和底部挂载入口', () => {
     const mineTree = functionSource('renderAssetTreeMineTree');
     assert.match(mineTree, /mine:inbox/, '收集箱节点应存在');
     assert.match(mineTree, /收集箱/, '收集箱文案应存在');
@@ -80,6 +145,8 @@ test('AC3: 我的资源树：收集箱第一位（占位）、挂载文件夹完
     const rootsPos = mineTree.indexOf('assetTreeRootsList()');
     assert.ok(inboxPos >= 0 && rootsPos >= 0 && inboxPos < rootsPos, '收集箱应排在挂载文件夹之前');
     assert.match(mineTree, /assetTreeRootsList\(\)/, '挂载文件夹树应接入根目录清单');
+    assert.match(mineTree, /assetTreeUserBoards\(\)/, '托管、上传与用户资源库入口应使用现有看板列表');
+    assert.match(functionSource('assetTreeUserBoards'), /board\.id === 'assets' \|\| board\.id === 'local' \|\| !board\.system/, '资源入口应包含托管资产、上传资源与用户自定义资源库');
     const panel = functionSource('renderAssetTreePanel');
     assert.match(panel, /data-asset-tree-mount/, '面板底部挂载按钮应存在');
     assert.match(functionSource('renderAssetTreeMineTree'), /assetRackFolderTree/, '目录树复用 QIN-542 完整磁盘子目录树');
