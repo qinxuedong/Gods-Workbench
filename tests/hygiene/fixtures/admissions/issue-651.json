@@ -1,0 +1,22 @@
+{
+  "schema": "gw.cleanroom-admission-shard/v1",
+  "issue": 651,
+  "authorization_basis": "GitHub Issue #651 (QIN-571), 2026-11-07",
+  "files": [
+    "tests/frontend/node-files.txt",
+    "tests/frontend/qin-571-vault-blank-strip.test.mjs",
+    "tests/hygiene/fixtures/admissions/issue-651.json",
+    "tests/hygiene/test_cleanroom_hygiene.py",
+    "web/css/pages/asset-vault.css"
+  ],
+  "admitted_files": [],
+  "accepted_test_files": [
+    {
+      "path": "tests/frontend/qin-571-vault-blank-strip.test.mjs",
+      "classification": "curated_test_coverage",
+      "authorization_basis": "GitHub Issue #651 (QIN-571), 2026-11-07",
+      "admission": "accepted"
+    }
+  ],
+  "notes": "QIN-571 资产库嵌入金库页移除孤立面包屑头条与空列（vault 嵌入态隐藏 .asset-page-head 面包屑条；registry 网格首列 240px 收为 0，子项仍落第 2 列；非 vault 独立打开模式不受影响）。仅 CSS + 前端契约断言，无后端改动。"
+}

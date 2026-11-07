@@ -35,6 +35,8 @@ body.gw-signal.gw-page--asset-manager .asset-page {
 }
 html.vault-shell-embedded body.gw-signal.gw-page--asset-manager #assetBoardTabs { display: none !important; }
 html.vault-shell-embedded body.gw-signal.gw-page--asset-manager .registry-toolbar .vault-filters-toggle { display: none !important; }
+/* 【QIN-571】外壳左栏已承接导航语境，嵌入金库隐藏页头孤立面包屑条（“资产库”单字条），统计顶栏上移吃满。 */
+html.vault-shell-embedded body.gw-signal.gw-page--asset-manager .asset-page-head { display: none !important; }
 body.gw-signal.gw-page--asset-manager #assetManagerRoot.asset-manager-root-registry.asset-registry-filters-collapsed { grid-template-columns: minmax(0,1fr) !important; }
 body.gw-signal.gw-page--asset-manager #assetManagerRoot.asset-manager-root-registry.asset-registry-filters-collapsed > .registry-nav { display: none !important; }
 body.gw-signal.gw-page--asset-manager #assetManagerRoot.asset-manager-root-registry.asset-registry-filters-collapsed > :is(.registry-overview-shell,.registry-toolbar,.registry-content) { grid-column: 1; }
@@ -1336,7 +1338,9 @@ html.vault-shell-embedded body.gw-signal.gw-page--asset-manager #assetManagerRoo
     grid-template-columns: 240px minmax(0,1fr) minmax(280px,320px) !important;
 }
 html.vault-shell-embedded body.gw-signal.gw-page--asset-manager #assetManagerRoot.asset-manager-root-registry {
-    grid-template-columns: 240px minmax(0,1fr) !important;
+    /* 【QIN-571】QIN-566 停用内嵌树后左列无内容，首列收为零宽（子项仍落第 2 列，gap:0 无额外间距），
+       收回 QIN-489 为已停用左栏保留的空列；统计条/工具栏/网格左缘与 iframe 左缘对齐。 */
+    grid-template-columns: 0 minmax(0,1fr) !important;
 }
 html.vault-shell-embedded body.gw-signal.gw-page--asset-manager #assetManagerRoot.asset-manager-root-library {
     grid-template-columns: 240px minmax(0,1fr) var(--registry-detail-width,340px) !important;
