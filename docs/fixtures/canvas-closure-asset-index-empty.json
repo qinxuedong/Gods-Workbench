@@ -18,8 +18,6 @@
   ],
   "canvases": [],
   "items": [],
-  "data_status": "not_integrated",
-  "data_gaps": [
-    "canvas_asset_index_source_not_integrated"
-  ]
+  "data_status": "ok",
+  "data_gaps": []
 }

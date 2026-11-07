@@ -1,0 +1,37 @@
+{
+  "schema": "gw.cleanroom-admission-shard/v1",
+  "issue": 642,
+  "authorization_basis": "GitHub Issue #642 (QIN-567), 2026-11-07",
+  "files": [
+    "docs/fixtures/GOLDEN-FIXTURE-MANIFEST.json",
+    "docs/fixtures/canvas-closure-asset-index-empty.json",
+    "gw/api/routes_canvas_closure.py",
+    "gw/canvas_closure/models.py",
+    "gw/canvas_closure/service.py",
+    "tests/contracts/god_canvas/test_golden_fixtures.py",
+    "tests/contracts/god_canvas/test_phase10e_canvas_closure.py",
+    "tests/contracts/god_canvas/test_qin567_canvas_asset_index.py",
+    "tests/frontend/node-files.txt",
+    "tests/frontend/qin-567-canvas-asset-index-list.test.mjs",
+    "tests/hygiene/fixtures/admissions/issue-642.json",
+    "tests/hygiene/fixtures/cleanroom_admission_metadata.json",
+    "tests/hygiene/test_cleanroom_hygiene.py",
+    "web/js/modules/asset-manager.js"
+  ],
+  "admitted_files": [],
+  "accepted_test_files": [
+    {
+      "path": "tests/contracts/god_canvas/test_qin567_canvas_asset_index.py",
+      "classification": "contract_test",
+      "authorization_basis": "GitHub Issue #642 (QIN-567), 2026-11-07",
+      "admission": "accepted"
+    },
+    {
+      "path": "tests/frontend/qin-567-canvas-asset-index-list.test.mjs",
+      "classification": "frontend_test",
+      "authorization_basis": "GitHub Issue #642 (QIN-567), 2026-11-07",
+      "admission": "accepted"
+    }
+  ],
+  "notes": "QIN-567 画布素材索引接线：items 接入素材注册表与画布产物（smart/classic 拓扑节点 refs.asset_id join 注册表；reference 画布保存条目投影），未登记引用不编造并标记 canvas_asset_node_refs_unresolved_in_registry 缺口；黄金夹具 canvas-closure-asset-index-empty.json 与 GOLDEN-FIXTURE-MANIFEST.json 按票面预授权更新哈希（基础账本同步 + 常量重算）；新增后端契约测试与前端静态契约测试并登记 node-files.txt。"
+}

@@ -137,7 +137,7 @@ def test_service_sources_have_no_fabrication_generators():
 
 
 def test_get_canvas_assets_is_empty_and_truthful(api_client: TestClient):
-    """无素材注册表时 items 必须为空并如实标记缺口，且与夹具逐字一致。"""
+    """无素材注册表数据与无画布时 items 为空；QIN-567 接线后状态 ok 且无缺口标记。"""
     res = api_client.get("/api/canvas-assets", headers=EDITOR)
     assert res.status_code == 200, res.text
     body = res.json()

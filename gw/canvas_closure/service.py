@@ -43,6 +43,7 @@ from gw.canvas_closure.models import (
     DATA_STATUS_NOT_INTEGRATED,
     DATA_STATUS_OK,
     GAP_ASSET_INDEX_SOURCE,
+    GAP_CANVAS_ASSET_NODE_REFS_UNRESOLVED,
     GAP_SHARED_FOLDER_TREE,
     GAP_VIDEO_RENDERER,
     SHARED_FOLDER_IMPORT_NOT_INTEGRATED,
@@ -58,11 +59,45 @@ from gw.god_canvas.service import (
 )
 
 #: 画布素材索引的分类，固定三类，不新增臆造分类。
+#: 画布素材索引的分类，固定三类，不新增臆造分类。
 CANVAS_ASSET_CATEGORIES = (
     ("smart", "智能画布"),
     ("classic", "普通画布"),
     ("reference", "参考画布"),
 )
+
+
+def _registry_media_url(record: dict[str, Any], asset_id: str) -> str:
+    """按统一注册表投影口径推导媒体回读地址；无登记载体时留空不编造。
+
+    与前端 ``normalizeRegistryAsset`` 同一规则：本机登记素材
+    （``storage_root_id`` / ``stored_name``）经 ``/media`` 端点回读真实文件。
+    """
+    if record.get("is_remote"):
+        return ""
+    if record.get("public_url"):
+        return str(record["public_url"])
+    if record.get("url"):
+        return str(record["url"])
+    if record.get("storage_root_id") or record.get("stored_name"):
+        return f"/api/asset-registry/assets/{asset_id}/media"
+    return ""
+
+
+def _registry_kind_label(kind: str) -> str:
+    """注册表 kind → 前端画布资产视图的展示类型映射。
+
+    前端画布资产视图只有 图片 / 视频 / 音频 / 文本 四类徽标；
+    ``document``/``text`` → ``text``，其余非媒体类并入 ``image`` 桶（与前端默认一致）。
+    """
+    normalized = kind.strip().lower()
+    if normalized == "video":
+        return "video"
+    if normalized == "audio":
+        return "audio"
+    if normalized in {"document", "text"}:
+        return "text"
+    return "image"
 
 
 class CanvasClosureService:
@@ -691,12 +726,35 @@ class CanvasClosureService:
     # ------------------------------------------------------------------
 
     def get_canvas_assets(self) -> dict[str, Any]:
-        """返回画布资产索引。
+        """返回画布资产索引（QIN-567 素材索引接线）。
 
-        ``canvases`` 来自真实画布服务；``items`` 需要素材注册表（本阶段未接入），
-        因此**必须为空**并如实标记 ``data_gaps``，绝不编造素材条目。
+        ``canvases`` 来自真实画布服务；``items`` 由画布产物 join 素材注册表：
+
+        - 智能画布 / 普通画布：拓扑节点 ``refs.asset_id`` join 素材注册表；
+          未登记的引用不编造素材，跳过并如实标记解析缺口；
+        - 参考画布：``reference_payload.items`` 的真实保存条目
+          （asset_id / name / media_kind / url）；
+        - 注册表媒体回读地址与统一注册表投影同口径：仅对登记了
+          ``storage_root_id`` / ``stored_name`` 的本机素材拼接 ``/media`` 回读地址。
+
+        接线完成后缺口标记不再恒为 ``canvas_asset_index_source_not_integrated``。
         """
         lifecycle = self._canvas_service.list_lifecycle()
+        registry_index = self._registry_asset_index()
+        items: list[dict[str, Any]] = []
+        unresolved = 0
+        for entry in lifecycle:
+            canvas_id = str(entry.get("canvas_id") or "")
+            if not canvas_id:
+                continue
+            per_canvas_items, per_canvas_unresolved = self._canvas_payload_asset_items(
+                canvas_id=canvas_id,
+                canvas_kind=str(entry.get("kind") or "classic"),
+                canvas_title=str(entry.get("title") or ""),
+                registry_index=registry_index,
+            )
+            items.extend(per_canvas_items)
+            unresolved += per_canvas_unresolved
         categories = []
         for category_id, name in CANVAS_ASSET_CATEGORIES:
             categories.append(
@@ -715,14 +773,136 @@ class CanvasClosureService:
         return {
             "categories": categories,
             "canvases": lifecycle,
-            "items": [],
-            "data_status": DATA_STATUS_NOT_INTEGRATED,
-            "data_gaps": [GAP_ASSET_INDEX_SOURCE],
+            "items": items,
+            "data_status": DATA_STATUS_OK,
+            "data_gaps": [GAP_CANVAS_ASSET_NODE_REFS_UNRESOLVED] if unresolved else [],
         }
 
     # ------------------------------------------------------------------
     # 共享文件夹
     # ------------------------------------------------------------------
+
+    def _registry_asset_index(self) -> dict[str, dict[str, Any]]:
+        """读取素材注册表（json-state 仓库）的资产索引；只读、零伪造。
+
+        仅收录通过统一可见性校验的登记资产；仓库不可读时异常如实上抛，
+        不静默降级为空索引（避免把注册表故障伪装成「没有画布资产」）。
+        """
+        from gw.asset_registry import repository as registry_repo
+        from gw.core.asset_visibility import asset_visible
+
+        raw = registry_repo.state().read()
+        return {
+            asset_id: record
+            for asset_id, record in raw.get("assets", {}).items()
+            if asset_visible(record)
+        }
+
+    def _canvas_payload_asset_items(
+        self,
+        *,
+        canvas_id: str,
+        canvas_kind: str,
+        canvas_title: str,
+        registry_index: dict[str, dict[str, Any]],
+    ) -> tuple[list[dict[str, Any]], int]:
+        """提取单个画布的资产条目与未解析引用数（QIN-567）。
+
+        - smart / classic：逐拓扑节点 ``refs.asset_id`` join 注册表；
+        - reference：逐 ``reference_payload.items`` 取真实保存字段；
+        - 未登记的节点引用不编造素材，跳过并计入未解析数。
+        """
+        items: list[dict[str, Any]] = []
+        unresolved = 0
+        if canvas_kind == "reference":
+            payload = self._canvas_service.get_reference_payload(canvas_id) or {}
+            for position, ref_entry in enumerate(payload.get("items") or []):
+                if not isinstance(ref_entry, dict):
+                    continue
+                item = self._reference_item_projection(
+                    entry=ref_entry,
+                    canvas_id=canvas_id,
+                    canvas_title=canvas_title,
+                    position=position,
+                    registry_index=registry_index,
+                )
+                if item is not None:
+                    items.append(item)
+            return items, unresolved
+
+        try:
+            topology = self._canvas_service.get_topology(canvas_id)
+        except CleanroomException as exc:
+            # 没有拓扑的画布（如仅存元信息的归档画布）不含素材引用，如实跳过。
+            if exc.status_code != 404:
+                raise
+            return items, unresolved
+        for node in topology.nodes:
+            asset_id = ""
+            if node.refs is not None:
+                asset_id = str(node.refs.asset_id or "")
+            if not asset_id:
+                continue
+            record = registry_index.get(asset_id) if asset_id else None
+            if record is None:
+                unresolved += 1
+                continue
+            items.append(
+                {
+                    "id": f"{canvas_id}::{node.entity_id}",
+                    "asset_id": asset_id,
+                    "canvas_id": canvas_id,
+                    "canvas_title": canvas_title,
+                    "canvas_kind": canvas_kind,
+                    "name": str(record.get("name") or ""),
+                    "url": _registry_media_url(record, asset_id),
+                    "kind": _registry_kind_label(str(record.get("kind") or "")),
+                    "source": "canvas_node",
+                }
+            )
+        return items, unresolved
+
+    def _reference_item_projection(
+        self,
+        *,
+        entry: dict[str, Any],
+        canvas_id: str,
+        canvas_title: str,
+        position: int,
+        registry_index: dict[str, dict[str, Any]],
+    ) -> dict[str, str] | None:
+        """把参考画布保存条目投影为画布资产索引条目；无可展示事实时返回 None。
+
+        参考画布条目本身携带真实保存的 name / url / media_kind；
+        携带 asset_id 且能在注册表解析时，用注册表记录回填缺失的展示字段。
+        """
+        asset_id = str(entry.get("asset_id") or "").strip()
+        name = str(entry.get("name") or "").strip()
+        url = str(entry.get("url") or entry.get("source_url") or "").strip()
+        record = registry_index.get(asset_id) if asset_id else None
+        if record is not None:
+            name = name or str(record.get("name") or "")
+            url = url or _registry_media_url(record, asset_id)
+        if not name and not url:
+            # 仅有内部引用键、没有任何可展示事实的条目不进索引，避免编造。
+            return None
+        raw_kind = str(
+            entry.get("media_kind") or (record.get("kind") if record else "") or ""
+        )
+        key = str(entry.get("reference_key") or entry.get("id") or "")
+        if not key:
+            key = str(position)
+        return {
+            "id": f"{canvas_id}::ref::{key}",
+            "asset_id": asset_id,
+            "canvas_id": canvas_id,
+            "canvas_title": canvas_title,
+            "canvas_kind": "reference",
+            "name": name,
+            "url": url,
+            "kind": _registry_kind_label(raw_kind),
+            "source": "reference_item",
+        }
 
     def list_shared_folders(self) -> dict[str, Any]:
         """列出已登记的共享文件夹；无内容时必须是空数组。"""

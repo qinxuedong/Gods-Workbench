@@ -478,15 +478,15 @@ def test_fixture_canvas_closure_cas_conflict_409(fixtures_dir: Path):
 
 
 def test_fixture_canvas_closure_asset_index_empty(fixtures_dir: Path):
-    """验证素材索引空快照夹具：三类（smart / classic / reference）计数均为 0，禁止伪造素材条目。"""
+    """验证素材索引空快照夹具：三类计数均为 0，接线后状态 ok 且无缺口标记（QIN-567）。"""
     content = json.loads(
         (fixtures_dir / "canvas-closure-asset-index-empty.json").read_text(encoding="utf-8")
     )
     snapshot = CanvasAssetIndexResponse.model_validate(content)
     assert snapshot.canvases == []
     assert snapshot.items == []
-    assert snapshot.data_status == "not_integrated"
-    assert "canvas_asset_index_source_not_integrated" in snapshot.data_gaps
+    assert snapshot.data_status == "ok"
+    assert snapshot.data_gaps == []
     assert all(category["count"] == 0 for category in snapshot.categories)
 
 

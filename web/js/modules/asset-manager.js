@@ -5128,8 +5128,11 @@ function uniqueCanvasAssets(items){
     const seen = new Set();
     const result = [];
     (items || []).forEach(item => {
-        const key = `${item.canvas_id || ''}::${item.url || ''}`;
-        if(!item?.url || seen.has(key)) return;
+        // 【QIN-567】素材索引接线后条目自带 asset_id/id 稳定身份；未登记媒体载体的
+        // 注册表素材 url 如实为空，不得因缺 url 丢条目，仅按身份去重。
+        const key = `${item.canvas_id || ''}::${item.url || item.asset_id || item.id || ''}`;
+        if(!item?.url && !item?.asset_id && !item?.id) return;
+        if(seen.has(key)) return;
         seen.add(key);
         result.push(item);
     });
