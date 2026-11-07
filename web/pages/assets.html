@@ -266,7 +266,15 @@
 
     <!-- MAIN: 资产金库网格与详情 -->
     <main id="assetVaultStage">
-      <iframe id="assetVaultFrame" title="资产库" data-src="/static/asset-manager.html?embedded=1&amp;vault=1"></iframe>
+      <!-- 【QIN-569 AC1】iframe 未赋 src 前显示 fallback 加载态，不以空白等待。 -->
+      <iframe id="assetVaultFrame" title="资产库" data-src="/static/asset-manager.html?embedded=1&amp;vault=1">
+        <div class="asset-vault-frame-loading" role="status" aria-live="polite" aria-label="资产库加载中" style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;background:#0a0b10;color:#eddab3;font-family:var(--gw-font-body,sans-serif);">
+          <div style="width:34px;height:34px;border-radius:50%;border:3px solid rgba(223,195,132,.25);border-top-color:#dfc384;animation:asset-vault-frame-spin .9s linear infinite;" aria-hidden="true"></div>
+          <strong style="font-size:15px;font-weight:600;color:#f3dfb6;">资产库正在准备</strong>
+          <span style="font-size:13px;color:#7f8b9e;">正在加载统一资产索引，请稍候…</span>
+        </div>
+        <style>@keyframes asset-vault-frame-spin { to { transform: rotate(360deg); } }</style>
+      </iframe>
     </main>
   </div>
 

@@ -328,6 +328,8 @@ let registryPendingApplyScrollBound = null; // 滚回顶部时自动补插新素
 let registryPresets = [];
 let registryTotal = null;
 let registryTotalKnown = false;
+// 【QIN-569 AC1】注册表引导请求失败时的可恢复错误态标记（首屏失败不再空白等待）。
+let registryBootstrapError = '';
 let registryStatCategory = '';
 let registryQuery = '';
 let registryKind = '';
@@ -8900,7 +8902,9 @@ async function loadAll(){
         if(registryRequestId !== registryRequestSeq) return;
         registryLoading = false;
         registryFacets = {kinds:[], categories:[], tags:[], collections:[], roots:[]};
-        if(!registryAssets.length) setStatus(err.message || '统一资产注册表加载失败');
+        // 【QIN-569 AC1】引导请求失败时落可恢复错误态标记，首屏渲染可恢复错误条而非空白列表。
+        registryBootstrapError = err.message || '统一资产注册表加载失败';
+        if(!registryAssets.length) setStatus(registryBootstrapError);
         render();
     });
     const [assetData] = await Promise.all([
@@ -8950,6 +8954,8 @@ async function loadAll(){
     setStatus('准备就绪');
     refreshScriptArchive();
     await registryBootstrap;
+    // 【QIN-569 AC1】本轮引导请求成功收尾后清除错误态标记（失败由 catch 设置）。
+    if(registryRequestId === registryRequestSeq) registryBootstrapError = '';
 }
 function disconnectRegistryPreviewScheduling(){
     registryPreviewScheduleRevision += 1;
@@ -9683,6 +9689,9 @@ function renderCanvasAssetsManager(){
     const items = currentCanvasAssetItems();
     const groups = groupCanvasAssetItems(items);
     const total = uniqueCanvasAssets(canvasAssetsData.items || []).length;
+    // 【QIN-569 AC4】画布对象卡片：展示当前分类下全部画布（含 0 素材画布），
+    // 数据来自现有 canvases + items 计数，点击复用画布行分发（聚焦该画布素材）。
+    const categoryCanvases = canvasAssetsForCategory(activeCanvasAssetCategory);
     const detail = selectedCanvasAsset();
     root.innerHTML = `
         ${renderAssetTreePanel()}}
@@ -9714,9 +9723,10 @@ function renderCanvasAssetsManager(){
                 </div>
             </div>
             <div class="content-scroll">
+                ${renderCanvasObjectBoard(categoryCanvases)}
                 <div class="asset-grid">
                     ${groups.map(group => renderCanvasAssetGroup(group)).join('')}
-                    ${items.length ? '' : '<div class="empty-state">当前分类没有可下载的画布资产。可以点击“刷新资源”，或在画布中生成/导入图片、视频、音频后再查看。</div>'}
+                    ${categoryCanvases.length ? '' : '<div class="empty-state">当前分类没有可下载的画布资产。可以点击“刷新资源”，或在画布中生成/导入图片、视频、音频后再查看。</div>'}
                 </div>
             </div>
         </section>
@@ -9724,6 +9734,24 @@ function renderCanvasAssetsManager(){
             ${renderCanvasAssetDetail(detail)}
         </aside>
     `;
+}
+function renderCanvasObjectBoard(canvases){
+    // 【QIN-569 AC4】画布对象卡片区：当前分类下全部画布对象（含 0 素材画布），
+    // 标题/类型/素材数来自 canvases + canvasAssetCountForCanvas(items 聚合)。
+    // 点击复用画布行分发属性（data-canvas-asset-canvas），聚焦该画布查看素材。
+    if(!Array.isArray(canvases) || !canvases.length) return '';
+    return `<div class="canvas-object-board" role="list" aria-label="画布对象">${canvases.map(canvas => {
+        const canvasId = String(canvas.canvas_id || canvas.id || '');
+        const count = canvasAssetCountForCanvas(canvasId);
+        const active = activeCanvasAssetCanvasId === canvasId;
+        return `<article class="canvas-object-card ${active ? 'active' : ''}" role="listitem" tabindex="0" data-canvas-asset-canvas="${escapeAttr(canvasId)}" data-canvas-asset-canvas-cat="${escapeAttr(activeCanvasAssetCategory || 'all')}" aria-pressed="${active}" aria-label="查看画布 ${escapeAttr(canvas.title || '未命名画布')}">
+            <span class="canvas-object-icon"><i data-lucide="${canvas.kind === 'smart' ? 'sparkles' : canvas.kind === 'reference' ? 'map' : 'layout-dashboard'}"></i></span>
+            <span class="canvas-object-copy">
+                <strong title="${escapeAttr(canvas.title || '未命名画布')}">${escapeHtml(canvas.title || '未命名画布')}</strong>
+                <small>${escapeHtml(canvasKindLabel(canvas.kind))} · ${count} 个素材</small>
+            </span>
+        </article>`;
+    }).join('')}</div>`;
 }
 function renderCanvasAssetTreeBranch(cat){
     const canvases = canvasAssetsForCategory(cat.id);
@@ -10446,7 +10474,13 @@ function renderRegistryOverviewStats(){
     ];
     return `<section class="registry-overview-stats" aria-label="资产统计">${stats.map(stat => {
         const ratio = globalTotal ? Math.round(Number(stat.value || 0) / globalTotal * 100) : 0;
-        const active = stat.nav ? activeTab === stat.id : registryStatCategory === stat.id;
+        // 【QIN-569 AC3/AC4】统计卡选中态跟随真实目的地：导航入口看 activeTab；画布卡在画布资产视图时点亮；
+        // 其余统计卡必须仍处于资产总览（registry）才允许点亮，避免切换到项目/剧本/提示词后 LUT 等高亮残留。
+        const active = stat.nav
+            ? activeTab === stat.id
+            : (stat.id === 'reference-canvas'
+                ? activeTab === 'canvas-assets'
+                : activeTab === 'registry' && registryStatCategory === stat.id);
         if(stat.nav){
             // 【QIN-566】导航入口卡：只承载目的地与选中态，不输出计数/占比/进度条（不伪造统计数据）。
             return `<button type="button" class="registry-stat-card is-nav ${active ? 'active' : ''}" data-registry-nav="${escapeAttr(stat.id)}" aria-label="${escapeAttr(stat.name)}" title="${escapeAttr(stat.name)}"><span class="registry-stat-icon"><i data-lucide="${stat.icon}"></i></span><span class="registry-stat-copy"><small>${escapeHtml(stat.name)}</small></span></button>`;
@@ -13229,6 +13263,7 @@ function renderRegistryManager(){
     <section class="asset-panel asset-content registry-content registry-layout-${registryLayout} registry-aspect-${registryAspect} ${registrySimple ? 'registry-simple' : ''} ${registrySelectedIds.size ? 'manage-on' : ''}" style="--registry-card-size:${registryCardSize}px">
         ${embeddedVault ? '' : renderRegistryToolbar(null, registryCategoryLabel(registryStatCategory), `${registryProjectFilterId ? `【项目: ${projects.find(item => item.id === registryProjectFilterId)?.name || registryProjectFilterId}】` : ''}${registryTotalSummary(visible.length)}${registryTotalKnown && registryTotal > visible.length ? `，当前显示 ${visible.length} 项` : ''}`, {allowUrl:true,hideHeading:true})}
         ${renderRegistryFilterChips()}
+        ${registryBootstrapError ? `<div class="registry-bootstrap-error" role="alert" data-registry-bootstrap-error><i data-lucide="alert-triangle"></i><span>统一资产注册表加载失败：${escapeHtml(registryBootstrapError)}</span><button class="hw-btn btn-size-sm" type="button" data-registry-bootstrap-retry>重试</button></div>` : ''}
         <div class="registry-fresh-notice" data-registry-fresh-notice></div>
         <div class="content-scroll registry-assets-scroll" data-registry-zoom-area title="Shift+滚轮调整预览大小">${renderRegistryAssetSections(visible, null, '没有符合条件的资产。可以清空排除条件。')}${renderRegistryPagination()}</div>
         <div class="registry-vault-footer" aria-label="资产库状态"><span>资产索引 <strong>${registryTotalKnown ? Number(registryTotal).toLocaleString('zh-CN') : '统计中'}</strong></span><span>${registryLoading ? '正在读取' : `已加载${registryPageHasMore ? '' : '全部'} ${registryAssets.length} 项`}</span><span>${registryPageHasMore ? '下滑加载更多' : `当前显示 ${visible.length} 项`}</span></div>
@@ -15018,6 +15053,13 @@ async function handleClick(event){
     }
     if(target.closest?.('[data-board-create-close]')){ closeCreateLibraryModal(); return; }
     if(target.closest?.('[data-board-create-confirm]')){ await createPresetAssetBoard(); return; }
+    if(target.closest?.('[data-registry-bootstrap-retry]')){
+        // 【QIN-569 AC1】首屏失败错误条的重试入口：清错误态并重新走完整引导链路。
+        registryBootstrapError = '';
+        render();
+        void loadAll();
+        return;
+    }
     if(target.closest?.('[data-registry-nav]')){
         // 【QIN-566】顶栏导航入口（项目/剧本/提示词）：激活对应系统看板，目的地与既有看板切换一致。
         const navBoard = target.closest('[data-registry-nav]').dataset.registryNav || '';
@@ -15044,6 +15086,9 @@ async function handleClick(event){
             return;
         }
         applyRegistryFilterDefinition({category, groupSimilar:registryGroupSimilar});
+        // 【QIN-569 AC3】统计卡是资产总览的组件：从其他视图（项目/剧本/提示词等）点击统计卡
+        // 即切换回资产总览并应用该分类筛选，保证「切换回资产分类仍可正常筛选」。
+        if(activeTab !== 'registry') activeTab = 'registry';
         // 【审核残留修复】统计卡筛选同样收口持久化（侧栏选中清空后旧 mine:* 键不应残留）。
         saveAssetTreeState();
         // 【QIN-553】首次打开 LUT 库统计视图时，幂等登记内置 LUT 包。

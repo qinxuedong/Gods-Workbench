@@ -49,7 +49,22 @@
 
         <div id="assetBoardTabs" class="asset-tabs" role="tablist" aria-label="资产中心看板"></div>
 
-        <main id="assetManagerRoot" class="asset-manager-root"></main>
+        <main id="assetManagerRoot" class="asset-manager-root">
+            <!-- 【QIN-569 AC1】首屏骨架：模块加载与首次渲染前立即显示明确加载态，不以空白等待。 -->
+            <style>
+                .asset-boot-skeleton { position: fixed; inset: 0; z-index: 5; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; color: #eddab3; font-family: var(--gw-font-body, sans-serif); background: #0a0b10; }
+                .asset-boot-skeleton[hidden] { display: none !important; }
+                .asset-boot-skeleton .asset-boot-spinner { width: 34px; height: 34px; border-radius: 50%; border: 3px solid rgba(223,195,132,.25); border-top-color: #dfc384; animation: asset-boot-spin 0.9s linear infinite; }
+                .asset-boot-skeleton strong { font-size: var(--gw-type-body-lg, 16px); font-weight: 600; color: #f3dfb6; }
+                .asset-boot-skeleton span { font-size: var(--gw-type-body-sm, 13px); color: #7f8b9e; }
+                @keyframes asset-boot-spin { to { transform: rotate(360deg); } }
+            </style>
+            <div id="assetManagerBootSkeleton" class="asset-boot-skeleton" role="status" aria-live="polite" aria-label="资产库加载中">
+                <div class="asset-boot-spinner" aria-hidden="true"></div>
+                <strong>资产库正在准备</strong>
+                <span>正在加载统一资产索引，请稍候…</span>
+            </div>
+        </main>
     </div>
 
     <input id="assetUploadInput" type="file" accept="image/*,video/*,audio/*,.jpg,.jpeg,.png,.gif,.webp,.bmp,.tiff,.tif,.heic,.heif,.avif,.raw,.svg,.eps,.psd,.ai,.cdr,.txt,.csv,.tsv,.json,.xml,.html,.htm,.md,.rtf,.doc,.docx,.odt,.ppt,.pptx,.odp,.xls,.xlsx,.ods,.pdf,.stl,.3mf,.obj,.fbx,.gltf,.glb,.usd,.usdz,.step,.stp,.iges,.igs,.dxf,.ply,.3ds,.dae,.ifc,.wrl,.vrml,.blend,.c4d,.max,.ma,.mb,.ttf,.otf,.ttc,.otc,.woff,.woff2,.mp4,.webm,.mov,.m4v,.avi,.mkv,.flv,.mts,.m2ts,.wmv,.mpeg,.mpg,.ts,.mxf,.vob,.ogv,.3gp,.zip,application/pdf,application/postscript,application/json,application/zip" multiple hidden>
