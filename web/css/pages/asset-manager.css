@@ -3997,3 +3997,19 @@ html.vault-shell-embedded .asset-manager-root.asset-tree-layout > :is(.registry-
 .inbox-content .inbox-settings-migrate { display:flex; align-items:center; gap:6px; color:var(--muted); font-size:var(--gw-type-label-md); }
 .inbox-content .inbox-settings-migrate input { accent-color:var(--gold-primary,#dfc384); }
 .inbox-content .inbox-card .asset-file-icon { width:100%; height:100%; justify-content:center; }
+
+/* 【QIN-570】真全屏查看器：黑底 contain 铺满，硬件设计系统描边与控件 */
+.gw-asset-fsviewer { position:fixed; inset:0; z-index:1200; display:flex; align-items:center; justify-content:center; background:rgba(4,4,4,0.98); outline:none; }
+.gw-asset-fsviewer:fullscreen { background:#040404; }
+.gw-asset-fsviewer-stage { position:absolute; inset:16px 64px 52px; display:flex; align-items:center; justify-content:center; min-width:0; min-height:0; }
+.gw-asset-fsviewer-stage img,
+.gw-asset-fsviewer-stage video { max-width:100%; max-height:100%; width:auto; height:auto; object-fit:contain; background:#000; border:1px solid rgba(223,195,132,0.24); box-shadow:0 24px 80px rgba(0,0,0,0.85); }
+.gw-asset-fsviewer-nav { position:absolute; top:50%; transform:translateY(-50%); z-index:2; display:flex; align-items:center; justify-content:center; width:44px; height:44px; border:1px solid rgba(223,195,132,0.35); border-radius:10px; background:rgba(12,12,12,0.85); color:var(--gold-primary,#dfc384); cursor:pointer; transition:border-color 0.15s ease, background 0.15s ease; }
+.gw-asset-fsviewer-nav:hover { border-color:var(--gold-primary,#dfc384); background:rgba(24,20,12,0.9); }
+.gw-asset-fsviewer-nav:focus-visible { outline:2px solid var(--gold-primary,#dfc384); outline-offset:2px; }
+.gw-asset-fsviewer-nav svg { width:22px; height:22px; fill:none; stroke:currentColor; stroke-width:2; stroke-linecap:round; stroke-linejoin:round; }
+.gw-asset-fsviewer-nav[data-gw-asset-fsviewer-prev] { left:10px; }
+.gw-asset-fsviewer-nav[data-gw-asset-fsviewer-next] { right:10px; }
+.gw-asset-fsviewer-status { position:absolute; left:0; right:0; bottom:0; z-index:2; display:flex; align-items:center; justify-content:space-between; gap:16px; padding:10px 16px; background:rgba(6,6,6,0.92); border-top:1px solid rgba(223,195,132,0.18); color:#e8dcc0; font-size:var(--gw-type-label-md,12px); }
+.gw-asset-fsviewer-name { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.gw-asset-fsviewer-count { flex:0 0 auto; color:var(--gold-primary,#dfc384); font-variant-numeric:tabular-nums; }

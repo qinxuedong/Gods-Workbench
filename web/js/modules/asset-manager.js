@@ -6016,6 +6016,149 @@ async function loadMoreRegistryCoverflowAssets(board=registryCoverflowBoard(), s
         hasMore:registryHasMoreAssets(),
     };
 }
+let registryFullscreenViewerState = null;
+
+function registryFullscreenViewerMediaUrl(item={}){
+    // 真全屏查看器与 Coverflow 同口径：中央媒体始终使用原片地址。
+    return String(item.mediaSrc || item.url || item.public_url || '').trim();
+}
+
+function registryFullscreenViewerPosterUrl(item={}){
+    const url = registryFullscreenViewerMediaUrl(item);
+    return assetPreviewUrl(url, 512, item) || url;
+}
+
+function closeRegistryAssetFullscreenViewer({restoreFocus=true}={}){
+    const state = registryFullscreenViewerState;
+    if(!state) return false;
+    registryFullscreenViewerState = null;
+    document.removeEventListener('keydown', state.onKeydown, true);
+    document.removeEventListener('fullscreenchange', state.onFullscreenChange);
+    if(document.fullscreenElement && document.exitFullscreen){
+        const exitPromise = document.exitFullscreen();
+        if(exitPromise && typeof exitPromise.catch === 'function'){
+            exitPromise.catch(err => console.warn('[AssetManager] 退出真全屏失败:', err));
+        }
+    }
+    state.overlay?.remove();
+    if(restoreFocus && state.trigger?.focus) state.trigger.focus({preventScroll:true});
+    return true;
+}
+
+function registryFullscreenViewerShow(state, index){
+    const items = state.items;
+    if(!items.length) return;
+    state.index = (index % items.length + items.length) % items.length;
+    const item = items[state.index];
+    const stage = state.overlay.querySelector('[data-gw-asset-fsviewer-stage]');
+    stage.replaceChildren();
+    if(item.mediaKind === 'video'){
+        const video = document.createElement('video');
+        video.src = registryFullscreenViewerMediaUrl(item);
+        const poster = registryFullscreenViewerPosterUrl(item);
+        if(poster && poster !== video.src) video.poster = poster;
+        video.controls = true;
+        video.autoplay = true;
+        video.playsInline = true;
+        video.setAttribute('aria-label', item.name || '视频素材');
+        stage.append(video);
+    } else {
+        const image = document.createElement('img');
+        image.src = registryFullscreenViewerMediaUrl(item);
+        image.alt = item.name || '图片素材';
+        image.decoding = 'async';
+        stage.append(image);
+    }
+    state.overlay.querySelector('[data-gw-asset-fsviewer-name]').textContent = item.name || '';
+    state.overlay.querySelector('[data-gw-asset-fsviewer-count]').textContent = `${state.index + 1} / ${items.length}`;
+}
+
+function openRegistryAssetFullscreenViewer(trigger=null, options={}){
+    if(registryFullscreenViewerState) closeRegistryAssetFullscreenViewer({restoreFocus:false});
+    const board = registryCoverflowBoard();
+    const assets = registryCoverflowAssets(board);
+    if(!assets.length){
+        setStatus('当前素材库没有可展示的图片或视频');
+        return;
+    }
+    const wanted = [options?.currentAssetId, selectedRegistryAssetId, registryCoverflowCurrentAssetId]
+        .map(value => String(value || '').trim())
+        .find(id => assets.some(item => item.id === id)) || assets[0].id;
+    const overlay = document.createElement('section');
+    overlay.className = 'gw-asset-fsviewer';
+    overlay.dataset.gwAssetFsviewer = '';
+    overlay.setAttribute('role', 'dialog');
+    overlay.setAttribute('aria-modal', 'true');
+    overlay.setAttribute('aria-label', '素材真全屏查看');
+    overlay.setAttribute('data-floating-content', '');
+    overlay.innerHTML = [
+        '<button type="button" class="gw-asset-fsviewer-nav" data-gw-asset-fsviewer-prev aria-label="上一张">',
+        '  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg>',
+        '</button>',
+        '<div class="gw-asset-fsviewer-stage" data-gw-asset-fsviewer-stage></div>',
+        '<div class="gw-asset-fsviewer-status">',
+        '  <span class="gw-asset-fsviewer-name" data-gw-asset-fsviewer-name></span>',
+        '  <span class="gw-asset-fsviewer-count" data-gw-asset-fsviewer-count></span>',
+        '</div>',
+        '<button type="button" class="gw-asset-fsviewer-nav gw-asset-fsviewer-nav--next" data-gw-asset-fsviewer-next aria-label="下一张">',
+        '  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>',
+        '</button>',
+    ].join('');
+    document.body.append(overlay);
+    const state = {
+        overlay,
+        items: assets,
+        index: Math.max(0, assets.findIndex(item => item.id === wanted)),
+        trigger: trigger instanceof HTMLElement ? trigger : null,
+        onKeydown: null,
+        onFullscreenChange: null,
+    };
+    registryFullscreenViewerState = state;
+    state.onFullscreenChange = () => {
+        if(registryFullscreenViewerState === state && !document.fullscreenElement){
+            closeRegistryAssetFullscreenViewer();
+        }
+    };
+    document.addEventListener('fullscreenchange', state.onFullscreenChange);
+    state.onKeydown = event => {
+        const key = String(event.key || '');
+        if(['ArrowLeft','ArrowRight'].includes(key)){
+            event.preventDefault();
+            event.stopPropagation();
+            registryFullscreenViewerShow(state, state.index + (key === 'ArrowRight' ? 1 : -1));
+        } else if(key.toLowerCase() === 'f' && !event.ctrlKey && !event.metaKey && !event.altKey){
+            event.preventDefault();
+            event.stopPropagation();
+            closeRegistryAssetFullscreenViewer();
+        } else if(key === 'Escape'){
+            event.preventDefault();
+            event.stopPropagation();
+            closeRegistryAssetFullscreenViewer();
+        } else if((key === ' ' || event.code === 'Space') && !event.target.closest?.('video,button,a,input,textarea,select')){
+            event.preventDefault();
+            event.stopPropagation();
+        } else if(key === 'ArrowUp' || key === 'ArrowDown'){
+            event.preventDefault();
+            event.stopPropagation();
+        }
+    };
+    document.addEventListener('keydown', state.onKeydown, true);
+    overlay.addEventListener('click', event => {
+        if(event.target.closest('[data-gw-asset-fsviewer-prev]')){
+            registryFullscreenViewerShow(state, state.index - 1);
+        } else if(event.target.closest('[data-gw-asset-fsviewer-next]')){
+            registryFullscreenViewerShow(state, state.index + 1);
+        }
+    });
+    markAssetFloatingSurface(overlay, {surface:'asset-fsviewer', kind:'modal', content:'self', close:() => closeRegistryAssetFullscreenViewer()});
+    registryFullscreenViewerShow(state, state.index);
+    overlay.tabIndex = -1;
+    overlay.focus({preventScroll:true});
+    const enterPromise = overlay.requestFullscreen?.();
+    if(enterPromise && typeof enterPromise.catch === 'function'){
+        enterPromise.catch(err => console.warn('[AssetManager] 进入真全屏失败（回落页面内覆盖层）:', err));
+    }
+}
 function openRegistryCoverflow(trigger=null, options={}){
     const board = registryCoverflowBoard();
     const scopedItems = Array.isArray(options?.scopeAssets) ? options.scopeAssets : null;
@@ -23549,6 +23692,12 @@ document.addEventListener('keydown', event => {
         const registryFullscreenShortcut = event.key === 'Enter'
             || (String(event.key || '').toLowerCase() === 'f'
                 && !event.ctrlKey && !event.metaKey && !event.altKey);
+        if(String(event.key || '').toLowerCase() === 'f' && registryFullscreenViewerState){
+            // 真全屏查看器打开时，F 仅负责关闭（捕获阶段监听已处理，此处兜底防穿透）。
+            event.preventDefault();
+            closeRegistryAssetFullscreenViewer();
+            return;
+        }
         if(registryFullscreenShortcut && !interactiveTarget){
             const current = registryAssets.find(item => item.id === selectedRegistryAssetId)
                 || (registryDetail?.id === selectedRegistryAssetId ? registryDetail : null)
@@ -23556,7 +23705,12 @@ document.addEventListener('keydown', event => {
                 || null;
             if(current && registryCoverflowSourceIsVisual('registry', current)){
                 event.preventDefault();
-                openRegistryCoverflow(document.activeElement, {currentAssetId:String(current.asset_id || current.id || '')});
+                if(event.key === 'Enter'){
+                    openRegistryCoverflow(document.activeElement, {currentAssetId:String(current.asset_id || current.id || '')});
+                } else {
+                    // F 键语义（QIN-570）：浏览器真全屏查看当前素材，不再打开 Coverflow。
+                    openRegistryAssetFullscreenViewer(document.activeElement, {currentAssetId:String(current.asset_id || current.id || '')});
+                }
                 return;
             }
         }

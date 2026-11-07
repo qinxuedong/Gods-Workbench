@@ -128,7 +128,9 @@ test('编辑双击退出回到进入前视图，快捷键指南同步', () => {
     assert.match(MANAGER, /if\(detailBackquoteTappedTwice\(event,context\)\)\{[\s\S]*?enterCurrentDetailEditableContent\(\)/);
     assert.match(MANAGER, /exitDetailTextEditFromBackquote\(editor,detailTextEditorBackquoteInput\)/);
     assert.match(MANAGER, /const registryFullscreenShortcut = event\.key === 'Enter'[\s\S]*?!event\.ctrlKey && !event\.metaKey && !event\.altKey/);
-    assert.match(GUIDE, /`Enter` \/ `F`/);
+    // QIN-570：F 改为真全屏查看，Enter 保持 Coverflow，指南拆行
+    assert.match(GUIDE, /`F` \| 真全屏查看当前选中图片\/视频/);
+    assert.match(GUIDE, /`Enter` \| 打开当前选中图片\/视频的 Coverflow 轮播/);
     assert.match(GUIDE, /500ms 内双击/);
     assert.match(GUIDE, /`A` \/ `D`/);
 });
