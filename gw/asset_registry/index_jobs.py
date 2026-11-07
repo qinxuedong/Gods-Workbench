@@ -21,6 +21,7 @@ import importlib
 import json
 import os
 import stat
+import struct
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
@@ -42,6 +43,18 @@ MAX_ACTIVE = 16
 MAX_JOBS = 1000
 MAX_FILES = 250000
 MAX_ENTRIES = 500000
+# 单文件完整 sha256 上限：超过该大小的文件改用采样哈希（QIN-564）。
+# 完整哈希大文件代价过高（试点库 102 个 >512MiB 文件占 48.4% 字节），
+# 原 413 fail-fast 会让整单索引失败，改为首尾 4MiB + 长度的采样哈希。
+_HASH_LIMIT_BYTES = 512 * 1024 * 1024
+_HASH_SAMPLE_BYTES = 4 * 1024 * 1024
+# 采样哈希域分离前缀：摘要输入与完整 sha256（纯文件字节流）结构不同，
+# 理论碰撞空间互斥；查重组按值分组时两种模式不会交叉误配。
+_SAMPLED_HASH_DOMAIN = b"gw-asset-registry-sampled-sha256-v1"
+# hash_mode 诚实标记（QIN-564 AC1/AC3）：完整哈希素材登记 "full"，
+# 超限采样素材登记 "sampled"，查重侧按标记区分降级口径。
+HASH_MODE_FULL = "full"
+HASH_MODE_SAMPLED = "sampled"
 VIDEO_SUFFIXES = frozenset(
     {".mp4", ".mov", ".mkv", ".avi", ".webm", ".m4v", ".flv", ".wmv"}
 )
@@ -1211,9 +1224,55 @@ class IndexJobs:
                 if not chunk:
                     break
                 read_bytes += len(chunk)
-                if read_bytes > 512 * 1024 * 1024:
-                    _error(413, "INDEX_HASH_LIMIT", "单个文件超过摘要计算上限")
                 digest.update(chunk)
+            final = os.fstat(handle.fileno())
+            if (final.st_size, final.st_mtime_ns) != (
+                expected.st_size,
+                expected.st_mtime_ns,
+            ):
+                _error(409, "INDEX_FILE_CHANGED", "摘要计算期间文件已改变")
+        finally:
+            handle.close()
+        return digest.hexdigest()
+
+    def _sampled_hash(self, job_id, attempt, path, expected):
+        """超限文件采样哈希：首尾 4MiB + 长度（QIN-561 基线口径，QIN-564）。
+
+        完整 sha256 对 >512MiB 文件代价过高；采样值经域分离前缀 + 定长
+        长度编码参与摘要，与完整 sha256 不共摘要空间，查重组不会把两种
+        模式交叉误配。同大小文件间「大小不同必然内容不同」，采样分组
+        只在真实同内容副本间命中（首尾相同、中间不同的理论假阳性为
+        采样哈希的已知限制，与 QIN-561 基线工具同口径）。
+
+        防篡改三件套与 _hash 一致：形态差 + 网络路径豁免（QIN-466 口径）、
+        打开句柄后 ino/dev/size 比对、摘要后 size/mtime_ns 终检。
+        """
+        with self.condition:
+            self._checkpoint(job_id, attempt)
+            if (
+                path.resolve() != path.absolute()
+                and not storage._is_network_path(str(path))
+            ):
+                _error(403, "INDEX_PATH_CHANGED", "摘要源路径已改变")
+            handle = path.open("rb")
+            actual = os.fstat(handle.fileno())
+            if (actual.st_ino, actual.st_dev, actual.st_size) != (
+                expected.st_ino,
+                expected.st_dev,
+                expected.st_size,
+            ):
+                handle.close()
+                _error(409, "INDEX_FILE_CHANGED", "摘要源文件已改变")
+        digest = hashlib.sha256()
+        digest.update(_SAMPLED_HASH_DOMAIN)
+        digest.update(struct.pack("<Q", expected.st_size))
+        size = expected.st_size
+        try:
+            for offset in (0, max(0, size - _HASH_SAMPLE_BYTES)):
+                handle.seek(offset)
+                with self.condition:
+                    self._checkpoint(job_id, attempt)
+                digest.update(handle.read(_HASH_SAMPLE_BYTES))
             final = os.fstat(handle.fileno())
             if (final.st_size, final.st_mtime_ns) != (
                 expected.st_size,
@@ -1374,11 +1433,16 @@ class IndexJobs:
                             if duration is not None:
                                 item["duration"] = duration
                         if request["hash_files"]:
-                            if info.st_size > 512 * 1024 * 1024:
-                                _error(
-                                    413, "INDEX_HASH_LIMIT", "单个文件超过摘要计算上限"
+                            # QIN-564：超限文件不再 413 fail-fast 整单失败，
+                            # 改走首尾 4MiB + 长度的采样哈希并诚实标记 hash_mode。
+                            if info.st_size > _HASH_LIMIT_BYTES:
+                                item["sha256"] = self._sampled_hash(
+                                    job_id, attempt, path, info
                                 )
-                            item["sha256"] = self._hash(job_id, attempt, path, info)
+                                item["hash_mode"] = HASH_MODE_SAMPLED
+                            else:
+                                item["sha256"] = self._hash(job_id, attempt, path, info)
+                                item["hash_mode"] = HASH_MODE_FULL
                         files.append(item)
                         now = time.monotonic()
                         if (
@@ -1469,6 +1533,7 @@ class IndexJobs:
                             "name",
                             "size_bytes",
                             "sha256",
+                            "hash_mode",
                             "modified_at",
                             "kind",
                         ):
@@ -1547,6 +1612,19 @@ class IndexJobs:
                     "scanned": len(files),
                     "revision": raw["revision"],
                 }
+                # QIN-564 AC1/AC4：哈希模式任务结果如实区分「完整哈希 N /
+                # 超限转采样 M」；非哈希任务不附加哈希计数（诚实口径）。
+                if job["_request"].get("hash_files"):
+                    result["hashed"] = sum(
+                        1
+                        for x in files
+                        if x.get("hash_mode") == HASH_MODE_FULL
+                    )
+                    result["hash_sampled_oversize"] = sum(
+                        1
+                        for x in files
+                        if x.get("hash_mode") == HASH_MODE_SAMPLED
+                    )
             else:
                 scoped = {x for x in known if x[0] in job["_request"]["roots"]}
                 result = {
