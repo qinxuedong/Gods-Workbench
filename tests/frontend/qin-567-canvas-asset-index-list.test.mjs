@@ -81,15 +81,47 @@ function topLevelFunctionSpan(name){
     return js.slice(start, next === -1 ? js.length : next);
 }
 
-// AC2-4：空库仍显示既有空态文案；有产物时同一容器内改为渲染卡片分组列表。
+// AC2-4：空态文案保留；【QIN-569 AC4】空态语义收紧——只有真正没有画布对象时才显示空态，
+// 有画布（含 0 素材画布）必须展示画布对象卡片区（renderCanvasObjectBoard）而非空态。
 const managerSource = topLevelFunctionSpan('renderCanvasAssetsManager');
 assert.ok(
     managerSource.includes('当前分类没有可下载的画布资产。'),
     '空态文案必须保留'
 );
 assert.ok(
-    managerSource.includes("items.length ? '' : '<div class=\"empty-state\">"),
-    '空态必须仅在列表为空时渲染，有产物时展示列表'
+    managerSource.includes("categoryCanvases.length ? '' : '<div class=\"empty-state\">"),
+    '空态必须仅在当前分类没有画布对象时渲染（QIN-569 AC4：0 素材画布不触发空态）'
+);
+assert.ok(
+    managerSource.includes('${renderCanvasObjectBoard(categoryCanvases)}'),
+    '画布资产视图必须渲染画布对象卡片区（QIN-569 AC4）'
+);
+assert.ok(
+    managerSource.includes('canvasAssetsForCategory(activeCanvasAssetCategory)'),
+    '画布对象卡片数据源必须来自当前分类的画布列表（QIN-569 AC4）'
+);
+
+// 【QIN-569 AC4】画布对象卡片区：消费 canvases + items 聚合计数，点击复用画布行分发属性。
+const objectBoardSource = functionSource('renderCanvasObjectBoard');
+assert.ok(
+    objectBoardSource.includes('canvasAssetCountForCanvas(canvasId)'),
+    '画布对象卡片必须按 items 聚合展示每张画布的素材数'
+);
+assert.ok(
+    objectBoardSource.includes('data-canvas-asset-canvas='),
+    '画布对象卡片必须复用画布行分发属性（data-canvas-asset-canvas）'
+);
+assert.ok(
+    objectBoardSource.includes('data-canvas-asset-canvas-cat='),
+    '画布对象卡片必须携带所属分类（data-canvas-asset-canvas-cat）'
+);
+assert.ok(
+    objectBoardSource.includes("activeCanvasAssetCanvasId === canvasId"),
+    '画布对象卡片选中态必须跟随当前聚焦画布'
+);
+assert.ok(
+    objectBoardSource.includes('canvasKindLabel(canvas.kind)'),
+    '画布对象卡片必须展示画布类型（智能/普通/参考）'
 );
 
 // AC2-5：视图副标题消费 items.length（「N 个资产」口径与统计卡/树分支一致）。

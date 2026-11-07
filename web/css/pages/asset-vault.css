@@ -622,6 +622,77 @@ body.gw-signal.gw-page--asset-manager #assetManagerRoot:not(.asset-manager-root-
 body.gw-signal.gw-page--asset-manager #assetManagerRoot:not(.asset-manager-root-registry) .project-entity-group > header { color: #7f8b9e; font: var(--gw-type-label-md)/1.2 var(--gw-font-mono); }
 body.gw-signal.gw-page--asset-manager #assetManagerRoot:not(.asset-manager-root-registry) .project-entity-group > header strong { color: var(--vault-gold-light); }
 body.gw-signal.gw-page--asset-manager #assetManagerRoot:not(.asset-manager-root-registry) .canvas-asset-group + .canvas-asset-group { border-top-color: var(--vault-line-soft); }
+/* 【QIN-569 AC4】画布对象卡片区：展示当前分类全部画布（含 0 素材画布），选中画布高亮可聚焦。 */
+body.gw-signal.gw-page--asset-manager .canvas-object-board {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(224px, 1fr));
+    gap: 10px;
+    margin: 0 0 13px;
+}
+body.gw-signal.gw-page--asset-manager .canvas-object-card {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-height: 58px;
+    padding: 10px 12px;
+    border: 1px solid var(--vault-line-soft);
+    border-radius: 8px;
+    background: linear-gradient(165deg, var(--vault-card), var(--vault-card-deep));
+    box-shadow: inset 0 1px rgba(255,255,255,.05), 0 8px 18px rgba(0,0,0,.42);
+    cursor: pointer;
+    transition: border-color .15s ease, box-shadow .15s ease;
+}
+body.gw-signal.gw-page--asset-manager .canvas-object-card:hover,
+body.gw-signal.gw-page--asset-manager .canvas-object-card:focus-visible { border-color: var(--vault-gold); }
+body.gw-signal.gw-page--asset-manager .canvas-object-card.active {
+    border-color: var(--vault-gold);
+    background: linear-gradient(180deg, #1a1f2b 0%, #11141c 100%);
+    box-shadow: 0 0 12px rgba(223,195,132,.22), inset 0 0 0 1px rgba(223,195,132,.12);
+}
+body.gw-signal.gw-page--asset-manager .canvas-object-card:focus-visible { outline: 2px solid #dfc384; outline-offset: 2px; }
+body.gw-signal.gw-page--asset-manager .canvas-object-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 34px;
+    height: 34px;
+    flex: 0 0 auto;
+    border: 1px solid rgba(223,195,132,.35);
+    border-radius: 8px;
+    background: #141720;
+    color: var(--vault-gold);
+}
+body.gw-signal.gw-page--asset-manager .canvas-object-icon svg { width: 16px; height: 16px; }
+body.gw-signal.gw-page--asset-manager .canvas-object-copy { min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+body.gw-signal.gw-page--asset-manager .canvas-object-copy strong {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--vault-gold-light);
+    font: 600 var(--gw-type-body-md)/1.2 var(--gw-font-body);
+}
+body.gw-signal.gw-page--asset-manager .canvas-object-copy small {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: #7f8b9e;
+    font: var(--gw-type-body-sm)/1.2 var(--gw-font-body);
+}
+/* 【QIN-569 AC1】注册表引导失败的可恢复错误条：与资产列表同区可见，提供重试入口。 */
+.registry-bootstrap-error {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 0 0 10px;
+    padding: 9px 12px;
+    border: 1px solid rgba(239,100,84,.55);
+    border-radius: 8px;
+    background: rgba(239,100,84,.08);
+    color: #ff8f7d;
+    font: var(--gw-type-body-sm)/1.3 var(--gw-font-body);
+}
+.registry-bootstrap-error svg { width: 15px; height: 15px; flex: 0 0 auto; }
+.registry-bootstrap-error span { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 body.gw-signal.gw-page--asset-manager #assetManagerRoot:not(.asset-manager-root-registry) .canvas-asset-group-head strong { color: var(--vault-gold-light); }
 body.gw-signal.gw-page--asset-manager #assetManagerRoot:not(.asset-manager-root-registry) .canvas-asset-group-head span { color: #748196; }
 body.gw-signal.gw-page--asset-manager #assetManagerRoot:not(.asset-manager-root-registry) .canvas-asset-group-head small { border: 1px solid var(--vault-line-soft); border-radius: 3px; background: #0b0d12; color: var(--vault-gold); }
@@ -1260,7 +1331,8 @@ html.vault-shell-embedded body.gw-signal.gw-page--asset-manager #assetManagerRoo
     display: grid !important;
     grid-template-rows: auto auto minmax(0,1fr) !important;
 }
-html.vault-shell-embedded body.gw-signal.gw-page--asset-manager #assetManagerRoot:not(.asset-manager-root-registry):not(.asset-manager-root-library) {
+html.vault-shell-embedded body.gw-signal.gw-page--asset-manager #assetManagerRoot:not(.asset-manager-root-registry):not(.asset-manager-root-library):not(.asset-manager-root-page-scripts) {
+    /* 【QIN-569 AC2】page-scripts 视图收为单列（见下方专条），不再吃本条三列轨道。 */
     grid-template-columns: 240px minmax(0,1fr) minmax(280px,320px) !important;
 }
 html.vault-shell-embedded body.gw-signal.gw-page--asset-manager #assetManagerRoot.asset-manager-root-registry {
@@ -1271,7 +1343,12 @@ html.vault-shell-embedded body.gw-signal.gw-page--asset-manager #assetManagerRoo
     grid-template-rows: auto auto minmax(0,1fr) !important;
 }
 html.vault-shell-embedded body.gw-signal.gw-page--asset-manager #assetManagerRoot.asset-manager-root-page-scripts {
-    grid-template-columns: 240px minmax(0,1fr) !important;
+    /* 【QIN-569 AC2】外壳已承接导航，嵌入剧本页收为单列网格，内容区吃满可用宽度。 */
+    grid-template-columns: minmax(0,1fr) !important;
+}
+html.vault-shell-embedded body.gw-signal.gw-page--asset-manager #assetManagerRoot.asset-manager-root-page-scripts > :is(.registry-overview-shell,.registry-toolbar) {
+    /* 【QIN-569 AC2】单列布局下统计条与工具栏跨满唯一列（覆盖三列布局的 2/-1 起点）。 */
+    grid-column: 1 / -1;
 }
 html.vault-shell-embedded body.gw-signal.gw-page--asset-manager #assetManagerRoot > .registry-overview-shell {
     grid-column: 2 / -1;
@@ -1300,6 +1377,10 @@ html.vault-shell-embedded body.gw-signal.gw-page--asset-manager #assetManagerRoo
 html.vault-shell-embedded body.gw-signal.gw-page--asset-manager #assetManagerRoot > :is(.asset-workspace-panel,.script-assets-panel) {
     grid-column: 2 / -1;
     grid-row: 3;
+}
+html.vault-shell-embedded body.gw-signal.gw-page--asset-manager #assetManagerRoot.asset-manager-root-page-scripts > .script-assets-panel {
+    /* 【QIN-569 AC2】嵌入剧本页收为单列网格后，内容面板从第 1 列起始吃满余宽。 */
+    grid-column: 1 / -1;
 }
 html.vault-shell-embedded body.gw-signal.gw-page--asset-manager #assetManagerRoot > :is(.asset-panel.asset-detail,.registry-detail-panel) {
     grid-column: 3;
