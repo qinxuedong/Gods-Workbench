@@ -92,6 +92,7 @@ tests/frontend/qin-563-registry-stat-canvas-filter.test.mjs
 tests/frontend/qin-566-asset-navigation.test.mjs
 tests/frontend/qin-567-canvas-asset-index-list.test.mjs
 tests/frontend/qin-570-asset-fsviewer.test.mjs
+tests/frontend/qin-571-vault-blank-strip.test.mjs
 tests/frontend/settings-workbench-visual.test.mjs
 tests/frontend/test_c18_omnibar_hotkeys.mjs
 tests/frontend/test_c18_video_jump.mjs

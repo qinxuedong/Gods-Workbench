@@ -1399,3 +1399,24 @@ def test_github_issue_642_file_scope_is_registered(repo_root: Path):
         "tests/hygiene/test_cleanroom_hygiene.py",
         "web/js/modules/asset-manager.js",
     }
+
+
+def test_github_issue_651_file_scope_is_registered(repo_root: Path):
+    """#651（QIN-571）嵌入金库页头与空列修复所涉文件按票面逐项登记。"""
+    metadata = _load_admission_metadata(repo_root)
+    registrations = [
+        item
+        for item in metadata.get("authorized_issue_file_sets", [])
+        if item.get("issue") == 651
+    ]
+    assert len(registrations) == 1
+    assert registrations[0].get("authorization_basis") == (
+        "GitHub Issue #651 (QIN-571), 2026-11-07"
+    )
+    assert set(registrations[0].get("files", [])) == {
+        "web/css/pages/asset-vault.css",
+        "tests/frontend/qin-571-vault-blank-strip.test.mjs",
+        "tests/frontend/node-files.txt",
+        "tests/hygiene/fixtures/admissions/issue-651.json",
+        "tests/hygiene/test_cleanroom_hygiene.py",
+    }
