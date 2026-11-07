@@ -8953,9 +8953,11 @@ async function loadAll(){
     }).catch(() => {});
     setStatus('准备就绪');
     refreshScriptArchive();
-    await registryBootstrap;
-    // 【QIN-569 AC1】本轮引导请求成功收尾后清除错误态标记（失败由 catch 设置）。
-    if(registryRequestId === registryRequestSeq) registryBootstrapError = '';
+    // 【QIN-569 AC1】仅在本轮引导请求成功时清除错误态标记；catch 设置的失败标记
+    // 必须保持到用户重试成功或新一轮引导接管（loadRegistryBootstrap 的 catch 已吞掉
+    // 拒绝，await 恒常继续，这里必须显式区分成败，否则错误条会被同轮无条件抹掉）。
+    const bootstrapOk = await registryBootstrap.then(() => true, () => false);
+    if(bootstrapOk && registryRequestId === registryRequestSeq) registryBootstrapError = '';
 }
 function disconnectRegistryPreviewScheduling(){
     registryPreviewScheduleRevision += 1;

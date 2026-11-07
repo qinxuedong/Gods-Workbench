@@ -83,3 +83,15 @@ test('AC3: 统计网格 13 卡同排（主卡 2fr + 12×.95fr，间距令牌 12�
   assert.match(vaultCss, /grid-template-columns: 2fr repeat\(12, \.95fr\);/);
   assert.match(vaultCss, /--registry-stat-gap-count: 12;/);
 });
+
+test('QIN-569 AC1: 引导失败错误条可恢复且不被同轮清除', () => {
+  // loadAll catch 设置失败标记并渲染；尾部清除必须区分成败（bootstrapOk），
+  // 否则 loadRegistryBootstrap 吞掉拒绝后 await 恒常继续，错误条会被同轮抹掉。
+  assert.match(manager, /registryBootstrapError = err\.message \|\| '统一资产注册表加载失败';/);
+  assert.match(manager, /const bootstrapOk = await registryBootstrap\.then\(\(\) => true, \(\) => false\);/);
+  assert.match(manager, /if\(bootstrapOk && registryRequestId === registryRequestSeq\) registryBootstrapError = '';/);
+  // registry 视图渲染可恢复错误条与重试入口；重试清标记后重走完整引导链路。
+  assert.match(manager, /registryBootstrapError \? `<div class="registry-bootstrap-error" role="alert" data-registry-bootstrap-error><i data-lucide="alert-triangle"><\/i><span>统一资产注册表加载失败：\$\{escapeHtml\(registryBootstrapError\)\}<\/span><button class="hw-btn btn-size-sm" type="button" data-registry-bootstrap-retry>重试<\/button><\/div>` : ''/);
+  assert.match(manager, /data-registry-bootstrap-retry/);
+  assert.match(manager, /\[data-registry-bootstrap-retry\]'\)\)\{\s*\n\s*\/\/ 【QIN-569 AC1】首屏失败错误条的重试入口：清错误态并重新走完整引导链路。\s*\n\s*registryBootstrapError = '';/);
+});
