@@ -85,9 +85,10 @@ test('AC3: 统计网格 13 卡同排（主卡 2fr + 12×.95fr，间距令牌 12�
 });
 
 test('QIN-569 AC1: 引导失败错误条可恢复且不被同轮清除', () => {
-  // loadAll catch 设置失败标记并渲染；尾部清除必须区分成败（bootstrapOk），
-  // 否则 loadRegistryBootstrap 吞掉拒绝后 await 恒常继续，错误条会被同轮抹掉。
+  // loadAll catch 设置失败标记并渲染后必须 rethrow：catch 吞掉拒绝会让 promise 恒
+  // fulfill，尾部的 bootstrapOk 成败区分退化为恒真，错误条仍会被同轮抹掉。
   assert.match(manager, /registryBootstrapError = err\.message \|\| '统一资产注册表加载失败';/);
+  assert.match(manager, /throw err;\s*\n\s*\}\);/, 'catch 设置标记后必须 rethrow，把失败传给 loadAll 尾部的 bootstrapOk 成败区分');
   assert.match(manager, /const bootstrapOk = await registryBootstrap\.then\(\(\) => true, \(\) => false\);/);
   assert.match(manager, /if\(bootstrapOk && registryRequestId === registryRequestSeq\) registryBootstrapError = '';/);
   // registry 视图渲染可恢复错误条与重试入口；重试清标记后重走完整引导链路。

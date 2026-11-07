@@ -8906,6 +8906,9 @@ async function loadAll(){
         registryBootstrapError = err.message || '统一资产注册表加载失败';
         if(!registryAssets.length) setStatus(registryBootstrapError);
         render();
+        // 【QIN-569 AC1】rethrow 把失败传给 loadAll 尾部的成败区分（bootstrapOk），
+        // 否则 catch 吞掉拒绝后 promise 恒 fulfill，失败标记会被同轮无条件清除。
+        throw err;
     });
     const [assetData] = await Promise.all([
         apiJsonResponse(assetManagerApi.getAssetLibrary()),
