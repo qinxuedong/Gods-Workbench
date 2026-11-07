@@ -70,8 +70,9 @@ function renderLocalManagerMarkup({tree, activeFolder='', classFilter=''}={}){
         'renderLocalUploadFolderPanel',
         'renderAssetTreeMineTree',
         'renderAssetTreeSystemTree',
+        'document',
         `${functionSource('renderAssetTreePanel')}\nreturn renderAssetTreePanel;`
-    )('local', 'system', renderFolderPanel, () => '', () => '');
+    )('local', 'system', renderFolderPanel, () => '', () => '', {documentElement:{classList:{contains:() => false}}});
     const context = {
         root: {innerHTML: ''},
         normalizeLocalCaptionSettings: () => {},

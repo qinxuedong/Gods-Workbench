@@ -65,9 +65,10 @@ function functionSource(name){
     assert.fail(`函数未闭合：${name}`);
 }
 
-test('QIN-560 AC1/AC2: 资产页只保留 QIN-544 内嵌树，创建入口留在顶栏', () => {
-    assert.doesNotMatch(html, /id="assetVaultSidebar"|id="assetCategories"/);
-    assert.match(html, /id="assetSidebarCreate" class="hw-btn hw-btn-icon shrink-0" onclick="WorkbenchAssets\.openCreateAssetLibrary\(\)"/);
+test('QIN-566 AC1/AC2: 资产页恢复旧版外壳左栏，创建入口回到左栏页头', () => {
+    assert.match(html, /id="assetVaultSidebar"/);
+    assert.match(html, /id="assetCategories"/);
+    assert.match(html, /id="assetSidebarCreate" class="hw-btn hw-btn-icon" onclick="WorkbenchAssets\.openCreateAssetLibrary\(\)"/);
     assert.match(html, /<main id="assetVaultStage">[\s\S]*?<iframe id="assetVaultFrame"/);
     assert.match(shell, /async function openCreateAssetLibrary\(\)/);
     assert.match(shell, /waitForControl\('#assetBoardTabs \[data-board-create\]'\)/);
@@ -321,11 +322,12 @@ test('QIN-505 AC6: 虚拟瀑布流缩放后快速重算卡片列与位置', () =
     assert.equal(forceCalls, 2);
 });
 
-test('QIN-560 AC4: 窄屏内容区仍由内嵌单栏树和主区域承载', () => {
-    assert.doesNotMatch(html, /#assetCategories|#assetVaultSidebar/);
+test('QIN-566 AC4: 窄屏由旧版横排外壳左栏和主区域承载，内嵌重复树停用', () => {
+    assert.match(html, /#assetCategories \{ min-width: 0; min-height: 0; flex: 1 1 auto !important; flex-direction: row !important;/);
     assert.match(html, /#assetVaultStage \{ flex: 1; min-width: 0; min-height: 0; display: flex/);
     assert.match(html, /#assetVaultFrame \{ flex: 1; width: 100%;/);
     assert.match(manager, /renderAssetTreePanel\(\)/);
+    assert.match(manager, /vault-shell-embedded.*return ''/s);
 });
 
 test('AC7: 左栏全部入口共用固定统计行和工具栏行，视图留在资源库页内切换', () => {

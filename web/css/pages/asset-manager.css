@@ -3829,6 +3829,13 @@ body.gw-signal.gw-page--asset-manager #assetManagerRoot .registry-toolbar .regis
 .asset-manager-root.asset-tree-layout.asset-manager-root-registry { grid-template-columns:240px minmax(0,1fr); }
 .asset-manager-root.asset-tree-layout.asset-manager-root-library { grid-template-columns:240px minmax(0,1fr) var(--registry-detail-width,360px); }
 .asset-manager-root.asset-tree-layout.asset-manager-root-library.registry-detail-collapsed { grid-template-columns:240px minmax(0,1fr) 41px; }
+/* QIN-566: embedded grid overrides derived from base tree-layout rules */
+html.vault-shell-embedded .asset-manager-root.asset-tree-layout { grid-template-columns:0 minmax(0,1fr); }
+html.vault-shell-embedded .asset-manager-root.asset-tree-layout.asset-manager-root-registry { grid-template-columns:0 minmax(0,1fr); }
+html.vault-shell-embedded .asset-manager-root.asset-tree-layout.asset-manager-root-library { grid-template-columns:0 minmax(0,1fr) var(--registry-detail-width,360px); }
+html.vault-shell-embedded .asset-manager-root.asset-tree-layout.asset-manager-root-library.registry-detail-collapsed { grid-template-columns:0 minmax(0,1fr) 41px; }
+html.vault-shell-embedded .asset-manager-root.asset-tree-layout > :is(.registry-overview-shell,.registry-toolbar,.asset-content) { grid-column:2; }
+html.vault-shell-embedded .asset-manager-root.asset-tree-layout > :is(.registry-detail-resizer,.registry-detail-panel) { grid-column:3; }
 .asset-tree-panel { display:flex; flex-direction:column; min-height:0; overflow:hidden; }
 .asset-tree-tabs { flex:0 0 auto; display:flex; gap:4px; padding:10px 10px 8px; border-bottom:1px solid var(--line); }
 .asset-tree-tab { flex:1; height:32px; border:0; border-radius:9px; background:transparent; color:var(--muted); font-size:var(--gw-type-label-md); font-weight:800; letter-spacing:.03em; transition:background .16s ease, color .16s ease; }

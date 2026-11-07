@@ -281,7 +281,11 @@ window.WorkbenchAssets = (() => {
   let status = null;
   let boundFrame = null;
   let frameLoadHandler = null;
-
+  // 【QIN-566】外壳侧栏状态：数据由内嵌页推送（同源直调），外壳只负责渲染与选中联动。
+  let categories = null;
+  let createButton = null;
+  let createButtonClickHandler = null;
+  let sidebarSnapshot = '';
 
   function manager() {
     try { return frame.contentDocument; } catch (_) { return null; }
@@ -332,6 +336,118 @@ window.WorkbenchAssets = (() => {
       }, 10000);
       watch.observe(doc.body, {childList: true, subtree: true});
     });
+  }
+
+  // 【QIN-566】外壳侧栏唯一导航：内嵌页推送树快照，外壳渲染并联动选中态（同源直调，无新增 API）。
+  function updateSidebarSelection(id) {
+    const selectedId = String(id || '');
+    categories?.querySelectorAll('[data-asset-tree-entry]').forEach(button => {
+      const active = button.dataset.assetTreeEntry === selectedId;
+      button.classList.toggle('is-active', active);
+      if (active) button.setAttribute('aria-current', 'page');
+      else button.removeAttribute('aria-current');
+    });
+  }
+
+  // 侧栏卡片渲染：复用旧版 asset-shell-nav-button + 分支线针脚视觉。
+  function shellNavButton(row) {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = `asset-shell-nav-button tree-node-card${row.active ? ' is-active' : ''}`;
+    if (row.active) button.setAttribute('aria-current', 'page');
+    button.title = row.name;
+    button.dataset.assetTreeEntry = row.key;
+    const pin = document.createElement('div');
+    pin.className = 'card-connector-pin';
+    pin.setAttribute('aria-hidden', 'true');
+    const icon = document.createElement('i');
+    icon.setAttribute('data-lucide', row.icon);
+    const label = document.createElement('span');
+    label.className = 'asset-shell-nav-label';
+    label.textContent = row.name;
+    button.append(pin, icon, label);
+    button.addEventListener('click', () => activateTreeEntry(row.key));
+    return button;
+  }
+
+  // 「资产总览」标题卡高亮随选中入口同步（registry = 总览态）。
+  function syncOverviewSelection(selected) {
+    const overview = document.getElementById('assetSidebarOverview');
+    const registryActive = selected === 'registry';
+    overview?.classList.toggle('is-active', registryActive);
+    overview?.setAttribute('aria-pressed', String(registryActive));
+    if (registryActive) overview?.setAttribute('aria-current', 'page');
+    else overview?.removeAttribute('aria-current');
+    overview?.closest('.asset-shell-overview-card')?.classList.toggle('is-active', registryActive);
+  }
+
+  // 应用内嵌页推送的树快照：渲染收集箱 + 挂载根目录，并同步选中态与页头高亮。
+  function applyTreeSnapshot(snapshot) {
+    if (!categories || !snapshot || typeof snapshot !== 'object') return;
+    const selected = String(snapshot.selected_key || '');
+    const badge = Math.max(0, Number(snapshot.inbox_badge || 0));
+    const roots = Array.isArray(snapshot.roots) ? snapshot.roots : [];
+    const boards = Array.isArray(snapshot.boards) ? snapshot.boards : [];
+    const rows = [
+      {key:'mine:inbox', name:'收集箱', icon:'inbox', badge, count:''},
+      ...boards.map(board => ({key:`mine:board:${board.id}`, name:String(board.name || '未命名资源库'), icon:String(board.icon || 'library'), count:''})),
+      ...roots.map(root => ({key:`mine:root:${root.id}`, name:String(root.name || '未命名来源'), icon:'hard-drive', count:Number(root.count || 0)})),
+    ].map(row => ({...row, active: row.key === selected}));
+    const serialized = JSON.stringify(rows);
+    updateSidebarSelection(selected);
+    // 【审核修复2】选中态/页头高亮同步必须先于行集早退：rows 不变而 selected_key 变化时（如顶栏入口与资产总览互切），高亮仍要刷新。
+    syncOverviewSelection(selected);
+    if (serialized === sidebarSnapshot) return;
+    sidebarSnapshot = serialized;
+    const focused = categories.contains(document.activeElement)
+      ? document.activeElement.dataset.assetTreeEntry || null
+      : null;
+    const fragment = document.createDocumentFragment();
+    const group = document.createElement('div');
+    group.className = 'asset-shell-nav-group';
+    group.setAttribute('role', 'group');
+    group.setAttribute('aria-label', '用户资源');
+    const heading = document.createElement('h3');
+    heading.className = 'asset-shell-nav-group-heading';
+    heading.textContent = '用户资源';
+    const items = document.createElement('div');
+    items.className = 'asset-shell-nav-group-items';
+    for (const row of rows) items.append(shellNavButton(row));
+    if (!roots.length) {
+      const empty = document.createElement('span');
+      empty.className = 'asset-shell-nav-empty';
+      empty.textContent = '尚未挂载文件夹';
+      items.append(empty);
+    }
+    group.append(heading, items);
+    fragment.append(group);
+    categories.replaceChildren(fragment);
+    window.lucide?.createIcons();
+    if (focused !== null) {
+      categories.querySelector(`[data-asset-tree-entry="${CSS.escape(focused)}"]`)?.focus();
+    }
+  }
+
+  // 点击外壳侧栏入口：直接调用内嵌页桥接，选中态先本地乐观更新。
+  async function activateTreeEntry(key) {
+    const selectedId = String(key || '');
+    updateSidebarSelection(selectedId);
+    try {
+      const bridge = frame?.contentWindow?.GWAssetTreeBridge;
+      if (!bridge?.activate) throw new Error('资产库尚未就绪，请刷新页面。');
+      bridge.activate(selectedId);
+    } catch (error) {
+      updateSidebarSelection('');
+      setVaultStatus(error.message);
+    }
+  }
+
+  // 初始与兜底拉取：iframe 加载完成后主动取一次快照，后续以推送为准。
+  function requestSidebarSnapshot() {
+    try {
+      const bridge = frame?.contentWindow?.GWAssetTreeBridge;
+      if (bridge?.snapshot) applyTreeSnapshot(bridge.snapshot());
+    } catch (_) {}
   }
 
   function openRequestedAsset() {
@@ -398,11 +514,20 @@ window.WorkbenchAssets = (() => {
       setVaultStatus('');
       mirrorFrameDegradation();
       openRequestedAsset();
+      requestSidebarSnapshot();
     }).catch(error => { setVaultStatus(error.message); });
   }
   function bindElements() {
     frame = document.getElementById('assetVaultFrame');
     status = document.getElementById('assetVaultStatus');
+    categories = document.getElementById('assetCategories');
+    const nextCreateButton = document.getElementById('assetSidebarCreate');
+    if (nextCreateButton !== createButton) {
+      createButton?.removeEventListener('click', createButtonClickHandler);
+      createButton = nextCreateButton;
+      createButtonClickHandler = createButton ? event => event.stopPropagation() : null;
+      createButton?.addEventListener('click', createButtonClickHandler);
+    }
     if (!frame) return false;
     if (boundFrame !== frame) {
       if (boundFrame && frameLoadHandler) boundFrame.removeEventListener('load', frameLoadHandler);
@@ -477,7 +602,10 @@ window.WorkbenchAssets = (() => {
     return view;
   }
 
+  // 【QIN-566】内嵌页每次树状态变化都会调用宿主回调，外壳侧栏据此渲染与联动。
+  window.GWAssetTreeHost = Object.freeze({onTreeSnapshot: applyTreeSnapshot});
+
   // 首屏与壳层部分路由返回时都走同一个幂等绑定入口；不重复执行顶层脚本。
   rebind();
-  return {uploadAsset, openAssetSettings, openCreateAssetLibrary, toggleSmartFilter, rebind, showIndexJobStatus, indexJobStatusView: window.GWAssetJobStatus.view};
+  return {uploadAsset, openAssetSettings, openCreateAssetLibrary, activateAssetBoard: activateTreeEntry, toggleSmartFilter, rebind, showIndexJobStatus, indexJobStatusView: window.GWAssetJobStatus.view};
 })();
