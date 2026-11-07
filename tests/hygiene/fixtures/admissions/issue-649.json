@@ -1,0 +1,25 @@
+{
+  "schema": "gw.cleanroom-admission-shard/v1",
+  "issue": 649,
+  "authorization_basis": "GitHub Issue #649, user-reported F-key fullscreen fix, 2026-11-07",
+  "files": [
+    "docs/guides/KEYBOARD-SHORTCUTS.md",
+    "tests/frontend/node-files.txt",
+    "tests/frontend/qin-559-asset-keyboard.test.mjs",
+    "tests/frontend/qin-570-asset-fsviewer.test.mjs",
+    "tests/hygiene/fixtures/admissions/issue-556.json",
+    "tests/hygiene/fixtures/admissions/issue-649.json",
+    "web/css/pages/asset-manager.css",
+    "web/js/modules/asset-manager.js"
+  ],
+  "admitted_files": [],
+  "accepted_test_files": [
+    {
+      "path": "tests/frontend/qin-570-asset-fsviewer.test.mjs",
+      "classification": "frontend_test",
+      "authorization_basis": "GitHub Issue #649, 2026-11-07",
+      "admission": "accepted"
+    }
+  ],
+  "notes": "QIN-570：资产库 F 键改为浏览器真全屏查看当前素材；按用户口头授权同步更新已准入快捷键指南在 issue-556 分片中的哈希。"
+}
