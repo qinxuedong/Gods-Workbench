@@ -4,14 +4,14 @@ name: CI
 # 分层原则：日常 PR 校验规范、哈希锁、二进制白名单、前端全量契约与后端核心契约，
 # 目标 3~5 分钟；全量回归、真实浏览器 E2E 与 Windows NSIS 安装包编译
 # 统一由 `.github/workflows/release-desktop.yml`（Tag v* 或手动触发）承接。
-# QIN-568：pytest 串行全量是墙钟瓶颈（实测 528~992s；3698 条结果 × 平均 ~140ms
-# 串行，无病态慢用例），改按域矩阵 3 分片并行，pytest 分片加 --durations=20；
-# 前端防漏检查/契约回归/二进制白名单扫描移入独立 frontend 作业只跑一份；
-# desktop 作业加 rust-cache 复用 Cargo 构建缓存。
-# 分片口径（按实测域耗时配平）：a=projects+assets+hygiene；
-# b=agent/agents+auth+settings；c=tests/contracts 长尾扫尾（--ignore 掉 a/b
-# 已覆盖域）。新增 contracts 域目录自动落入 c 片；a/b 引用目录改名时对应
-# 分片会因收集失败响亮报错，属预期防护。
+# QIN-568：pytest 串行全量是墙钟瓶颈（实测 528~992s 随 runner 档位波动；3698 条
+# 结果 × 平均 ~140ms 串行，无病态慢用例），改按域矩阵 4 分片并行，pytest 分片加
+# --durations=20；前端防漏检查/契约回归/二进制白名单扫描移入独立 frontend 作业
+# 只跑一份；desktop 作业加 rust-cache 复用 Cargo 构建缓存。
+# 分片口径（按 2026-11-07 run 42381324373 同批 VM 实测域耗时配平）：
+# a=projects+media+prompts；b=assets+auth+hygiene；c=agent/agents+settings+god_canvas；
+# d=tests/contracts 长尾扫尾（--ignore 掉 a/b/c 已覆盖域）。新增 contracts 域目录
+# 自动落入 d 片；a/b/c 引用目录改名时对应分片会因收集失败响亮报错，属预期防护。
 on:
   push:
     branches: [main, master]
@@ -37,12 +37,14 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - shard: a-contracts-core
-            pytest_args: "tests/contracts/projects tests/contracts/assets tests/hygiene"
-          - shard: b-agent-auth-settings
-            pytest_args: "tests/contracts/agent tests/contracts/agents tests/contracts/auth tests/contracts/settings"
-          - shard: c-longtail-sweep
-            pytest_args: "tests/contracts --ignore=tests/contracts/projects --ignore=tests/contracts/assets --ignore=tests/contracts/agent --ignore=tests/contracts/agents --ignore=tests/contracts/auth --ignore=tests/contracts/settings"
+          - shard: a-projects-media-prompts
+            pytest_args: "tests/contracts/projects tests/contracts/media tests/contracts/prompts"
+          - shard: b-assets-auth-hygiene
+            pytest_args: "tests/contracts/assets tests/contracts/auth tests/hygiene"
+          - shard: c-agent-settings-godcanvas
+            pytest_args: "tests/contracts/agent tests/contracts/agents tests/contracts/settings tests/contracts/god_canvas"
+          - shard: d-longtail-sweep
+            pytest_args: "tests/contracts --ignore=tests/contracts/projects --ignore=tests/contracts/media --ignore=tests/contracts/prompts --ignore=tests/contracts/assets --ignore=tests/contracts/auth --ignore=tests/contracts/agent --ignore=tests/contracts/agents --ignore=tests/contracts/settings --ignore=tests/contracts/god_canvas"
     runs-on: ubuntu-latest
     steps:
       - name: 检出代码
@@ -82,7 +84,7 @@ jobs:
         # 本层不跑 tests/e2e；少数契约用例使用系统 Chrome（channel="chrome"，
         # 镜像已预装），缺失时按既有策略显式 skip，不伪造浏览器证据。
         # 浏览器内核安装随全量回归下放到 release-desktop.yml。
-        # QIN-568：该步骤随矩阵分片在 3 个作业中各自执行，缓存键一致；缓存未命中
+        # QIN-568：该步骤随矩阵分片在 4 个作业中各自执行，缓存键一致；缓存未命中
         # 时各分片独立安装同一份哈希锁环境，互不冲突。
         run: |
           venv_path="${RUNNER_TEMP}/gw-python-venv"
@@ -159,7 +161,7 @@ jobs:
         # tests/api、tests/runtime、tests/media、tests/canvas、tests/smoke、
         # tests/deployment 与 tests/benchmarks 的全量回归由 release-desktop.yml 承接。
         # QIN-568：改为矩阵分片并行执行；分片参数见 matrix.include.pytest_args，
-        # 三片并集必须等于原全量收集（对账数字留档于本票 PR 正文）。
+        # 四片并集必须等于原全量收集（对账数字留档于本票 PR 正文）。
         # --durations=20 持续输出慢用例清单，防止瓶颈再次不可见。
         run: |
           export GW_RUNNINGHUB_API_KEY="${GITHUB_SHA}"
