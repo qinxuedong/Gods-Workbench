@@ -82,3 +82,33 @@ test('AC4: 首次冷启动（无快照）安全降级，渲染完成后骨架屏
     'render() 完成时必须确保骨架屏 hidden'
   );
 });
+
+test('AC5: 首屏缩略图即时加载，避免二次无谓重绘与清空队列', () => {
+  // 1. 并发度调优至 8
+  assert.match(
+    assetManagerJs,
+    /const REGISTRY_PREVIEW_CONCURRENCY = 8;/,
+    '并发度提升至 8 以加速滚动批次下载'
+  );
+
+  // 2. deferRegistryPreviewThumb 支持首屏 immediate 标记
+  assert.match(
+    assetManagerJs,
+    /function deferRegistryPreviewThumb\(markup,\s*immediate\s*=\s*false\)\s*\{[\s\S]*?if\(immediate\)\s*\{[\s\S]*?image\.setAttribute\('data-registry-preview-loaded',\s*'true'\);[\s\S]*?image\.removeAttribute\('data-registry-preview-src'\);[\s\S]*?image\.removeAttribute\('aria-busy'\);[\s\S]*?return;\s*\}/,
+    '首屏可见卡片图片必须支持 immediate 直出真实 src，避免全部落入透明占位与异步观察者排队'
+  );
+
+  // 3. renderRegistryCard 首屏卡片默认直出
+  assert.match(
+    assetManagerJs,
+    /deferRegistryPreviewThumb\(assetThumb\(item\),\s*Number\(index\)\s*<\s*24\)/,
+    'renderRegistryCard 前 24 张卡片必须开启即时直出'
+  );
+
+  // 4. loadRegistryBootstrap 数据未变时跳过二次全量 render()
+  assert.match(
+    assetManagerJs,
+    /const prevAssetFingerprint = registryAssets\.map[\s\S]*?const newAssetFingerprint = registryAssets\.map[\s\S]*?const assetsChanged = prevAssetFingerprint !== newAssetFingerprint \|\| !hasMountedCards;[\s\S]*?if\(assetsChanged[\s\S]*?render\(\);[\s\S]*?\} else \{[\s\S]*?syncRegistryVaultFooter\(\);[\s\S]*?\}/,
+    '数据无变化且卡片已挂载时禁止推倒 DOM 二次 render，防止打断首屏缩略图网络连接'
+  );
+});

@@ -463,7 +463,7 @@ const REGISTRY_CACHE_MAX_SIZE = 20; // 【优化问题1】限制缓存大小，�
 const REGISTRY_PREVIEW_ROOT_MARGIN = '200px 0px';
 const REGISTRY_PREVIEW_SCROLL_AHEAD_COUNT = 20;
 const REGISTRY_PREVIEW_SCROLL_PRELOAD_INTERVAL_MS = 120;
-const REGISTRY_PREVIEW_CONCURRENCY = 4;
+const REGISTRY_PREVIEW_CONCURRENCY = 8;
 const registryPreviewImageCache = new Map();
 const REGISTRY_VIRTUAL_WINDOW_SIZE = 120;
 const REGISTRY_VIRTUAL_OVERSCAN_ROWS = 3;
@@ -6907,12 +6907,18 @@ function renderRegistryRecycleButton(item={}, className=''){
     const title = disabled ? '当前素材来源为只读，不能移入回收站' : '移入 god-recycler';
     return `<button class="${escapeAttr(className)} registry-card-recycle" type="button" data-registry-recycle="${escapeAttr(item.id || '')}" title="${escapeAttr(title)}" aria-label="删除 ${escapeAttr(item.name || '素材')}" ${disabled ? 'disabled' : ''}><i data-lucide="trash-2"></i></button>`;
 }
-function deferRegistryPreviewThumb(markup){
+function deferRegistryPreviewThumb(markup, immediate=false){
     const template = document.createElement('template');
     template.innerHTML = String(markup || '');
     template.content.querySelectorAll('img[src]').forEach(image => {
         const source = image.getAttribute('src') || '';
         if(!source || source === REGISTRY_PREVIEW_PLACEHOLDER) return;
+        if(immediate){
+            image.setAttribute('data-registry-preview-loaded', 'true');
+            image.removeAttribute('data-registry-preview-src');
+            image.removeAttribute('aria-busy');
+            return;
+        }
         image.setAttribute('src', REGISTRY_PREVIEW_PLACEHOLDER);
         image.setAttribute('data-registry-preview-src', source);
         image.setAttribute('data-registry-preview-loaded', 'false');
@@ -6920,7 +6926,7 @@ function deferRegistryPreviewThumb(markup){
     });
     return template.innerHTML;
 }
-function renderRegistryListRow(item){
+function renderRegistryListRow(item, index=0){
     if(item?.__registry_asset_structure){
         return item.__registry_asset_structure.structure_type === 'group'
             ? renderRegistryGroupStructureListRow(item)
@@ -6931,7 +6937,7 @@ function renderRegistryListRow(item){
     const tags = Array.isArray(item.tags) ? item.tags.slice(0, 4) : [];
     return `<article class="registry-list-row asset-type-${registryVisualType(item)} ${item.id === selectedRegistryAssetId ? 'active' : ''} ${selected ? 'selected' : ''}" data-registry-card="${escapeAttr(item.id)}" draggable="true" data-registry-drag="${escapeAttr(item.id)}" tabindex="0" role="row" aria-label="查看资产 ${escapeAttr(name)}">
         <span class="registry-list-check" role="cell"><input type="checkbox" aria-label="选择 ${escapeAttr(name)}" data-registry-check="${escapeAttr(item.id)}" ${selected ? 'checked' : ''}></span>
-        <span class="registry-list-name" role="cell"><span class="registry-list-thumb">${deferRegistryPreviewThumb(assetThumb(item))}</span><strong data-registry-card-name title="${escapeAttr(name)}">${escapeHtml(name)}</strong></span>
+        <span class="registry-list-name" role="cell"><span class="registry-list-thumb">${deferRegistryPreviewThumb(assetThumb(item), Number(index) < 30)}</span><strong data-registry-card-name title="${escapeAttr(name)}">${escapeHtml(name)}</strong></span>
         <span class="registry-list-type" role="cell"><i data-lucide="${escapeAttr(registryAssetTypeIcon(item))}"></i>${escapeHtml(registryAssetTypeLabel(item))}</span>
         <span role="cell">${escapeHtml(formatFileSize(item.size || 0))}</span>
         <span role="cell">${escapeHtml(registryModifiedLabel(item))}</span>
@@ -7145,7 +7151,7 @@ function registryVirtualRange(items, layout, scrollTop=0, viewportHeight=650){
     return {start, end};
 }
 function registryVirtualCardMarkup(item, index, layout){
-    const markup = renderRegistryCard(item).trim();
+    const markup = renderRegistryCard(item, index).trim();
     const position = layout.itemLayouts[index] || {left:0, top:0, width:layout.cardWidth};
     const end = markup.indexOf('>');
     if(end < 0) return markup;
@@ -7780,22 +7786,24 @@ async function loadRegistryBootstrap(requestId=beginRegistryBootstrapRequest()){
         const assetData = await assetRequest;
         if(requestId !== registryRequestSeq) return false;
         setRegistryAssetCache(queryKey, registryAssetPageCacheEntry(assetData));
+        const prevAssetFingerprint = registryAssets.map(a => `${a.id}:${a.updated_at || a.modified_at || 0}`).join(',');
         applyRegistryAssetResponse(assetData);
         await refreshRegistryAssetStructures({requestId});
         if(requestId !== registryRequestSeq) return false;
         registryRequestAbortController = null;
         registryLoading = false;
-        if(activeTab === 'registry' || assetBoardById(activeTab)?.system === false) render();
+        const newAssetFingerprint = registryAssets.map(a => `${a.id}:${a.updated_at || a.modified_at || 0}`).join(',');
+        const hasMountedCards = Boolean(root.querySelector('.registry-card'));
+        const assetsChanged = prevAssetFingerprint !== newAssetFingerprint || !hasMountedCards;
+        if(assetsChanged && (activeTab === 'registry' || assetBoardById(activeTab)?.system === false)){
+            render();
+        } else {
+            syncRegistryVaultFooter();
+        }
         saveRegistrySnapshot();
         // 【浏览预加载】首屏应用完成后的空闲时机预取下一页数据（只进缓存，不改游标）
         scheduleRegistryPrefetch();
-        // 【优化问题1】增加延迟时间，给首屏素材渲染更多时间，避免阻塞
-        // Facets/status perform aggregate scans. Give the first asset page
-        // and its viewport previews a longer idle window before starting them
-        // so they cannot block a large list on a synchronous scan.
-        await new Promise(resolve => setTimeout(resolve, 500));
-        if(requestId !== registryRequestSeq) return false;
-        // 【优化问题1】并行请求次要数据，但不阻塞主界面渲染
+        // 【优化】次要数据并行请求，无需 500ms 强制延时
         secondaryRequest = Promise.all([
             apiJsonResponse(assetManagerApi.getRegistryFacets()),
             apiJsonResponse(assetManagerApi.getRegistryStatus()).catch(() => ({ready:false, overview:{}})),
@@ -7834,7 +7842,19 @@ async function loadRegistryBootstrap(requestId=beginRegistryBootstrapRequest()){
         if(!activeProjectId && projects.length) activeProjectId = projects[0].id;
         if(activeProjectId) await loadProjectBoard(activeProjectId, false);
         if(requestId !== registryRequestSeq) return false;
-        if(activeTab === 'registry' || assetBoardById(activeTab)?.system === false) render();
+        if(activeTab === 'registry' || assetBoardById(activeTab)?.system === false){
+            if(!root.querySelector('.registry-card')){
+                render();
+            } else {
+                renderBoardNavigation();
+                renderAssetTreeBreadcrumb();
+                syncRegistryVaultFooter();
+                if(!document.documentElement.classList.contains('vault-shell-embedded')){
+                    const overview = root.querySelector('.registry-overview');
+                    if(overview) overview.outerHTML = renderRegistryOverview();
+                }
+            }
+        }
         registryBootstrapCompleted = true; // 引导完成，后续 asset-sync 走轻量增量而非重复引导
         saveRegistrySnapshot();
         return true;
@@ -11238,7 +11258,7 @@ function renderRegistryGroupStructureStack(structure){
     }).join('');
     return `<button type="button" class="registry-structure-group-main" data-registry-structure-group-select="${escapeAttr(structure.id)}" aria-label="选择图片组，共 ${members.length} 张图片"><span class="registry-structure-group-stack" aria-hidden="true">${layers}</span></button>`;
 }
-function renderRegistryVersionStructureCard(item){
+function renderRegistryVersionStructureCard(item, index=0){
     const structure = item.__registry_asset_structure;
     const current = registryStructureMemberAsset(structure, structure.current_asset_id);
     if(!current) return '';
@@ -11248,7 +11268,7 @@ function renderRegistryVersionStructureCard(item){
     return `<section class="asset-card registry-card registry-structure-card registry-structure-version asset-type-image ${selected ? 'active' : ''}" data-registry-structure-card="${escapeAttr(structure.id)}" data-registry-structure-type="version" data-registry-card="structure:${escapeAttr(structure.id)}" tabindex="0" role="group" aria-label="版本结构：${escapeAttr(current.name || '未命名图片')}">
         <div class="registry-structure-main" data-registry-structure-open="${escapeAttr(structure.id)}" role="button" tabindex="0" aria-label="查看当前版本：${escapeAttr(current.name || '未命名图片')}">
             <div class="asset-thumb"${mediaAspectStyle ? ` style="${mediaAspectStyle}"` : ''}>
-                ${deferRegistryPreviewThumb(assetThumb(current))}
+                ${deferRegistryPreviewThumb(assetThumb(current), Number(index) < 24)}
                 ${memberStrip}
             </div>
         </div>
@@ -11264,7 +11284,7 @@ function renderRegistryVersionStructureCard(item){
         </div>
     </section>`;
 }
-function renderRegistryGroupStructureCard(item){
+function renderRegistryGroupStructureCard(item, index=0){
     const structure = item.__registry_asset_structure;
     const members = registryGroupStructureMembers(structure);
     const cover = registryStructureMemberAsset(structure, structure.current_asset_id) || members[0]?.asset;
@@ -11315,11 +11335,11 @@ function renderRegistryGroupStructureListRow(item){
         <span class="registry-list-path registry-structure-list-path" role="cell"><span>${escapeHtml(registrySourceNames(cover).join(' · '))}</span>${renderRegistryStructureCoverflowButton(structure, 'registry-structure-list-coverflow')}${renderRegistryGroupStructureRemoveButton(structure, cover, 'registry-structure-list-remove')}</span>
     </article>`;
 }
-function renderRegistryCard(item){
+function renderRegistryCard(item, index=0){
     if(item?.__registry_asset_structure){
         return item.__registry_asset_structure.structure_type === 'group'
-            ? renderRegistryGroupStructureCard(item)
-            : renderRegistryVersionStructureCard(item);
+            ? renderRegistryGroupStructureCard(item, index)
+            : renderRegistryVersionStructureCard(item, index);
     }
     const selected = registrySelectedIds.has(item.id);
     const name = item.name || 'asset';
@@ -11355,7 +11375,7 @@ function renderRegistryCard(item){
         <input class="asset-card-check" type="checkbox" aria-label="选择 ${escapeAttr(name)}" data-registry-check="${escapeAttr(item.id)}" ${selected ? 'checked' : ''}>
         <span class="registry-card-format" aria-label="文件格式 ${escapeAttr(format)}">${escapeHtml(format)}</span>
         ${renderRegistryRecycleButton(item)}
-        <div class="asset-thumb"${mediaAspectStyle ? ` style="${mediaAspectStyle}"` : ''}>${deferRegistryPreviewThumb(assetThumb(item))}${segmentBadge}<span class="registry-card-selection-overlay" aria-hidden="true"></span></div>
+        <div class="asset-thumb"${mediaAspectStyle ? ` style="${mediaAspectStyle}"` : ''}>${deferRegistryPreviewThumb(assetThumb(item), Number(index) < 24)}${segmentBadge}<span class="registry-card-selection-overlay" aria-hidden="true"></span></div>
         ${cardBody}
     </article>`;
 }
