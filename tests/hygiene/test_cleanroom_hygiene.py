@@ -1265,6 +1265,29 @@ def test_qin_554_lut_preview_files_are_registered(repo_root: Path):
     }
 
 
+def test_qin_580_material_lut_preview_files_are_registered(repo_root: Path):
+    """QIN-580 素材套用 LUT 实时预览所涉文件按本票分片登记。"""
+    metadata = _load_admission_metadata(repo_root)
+    registrations = [
+        item
+        for item in metadata.get("authorized_issue_file_sets", [])
+        if item.get("issue") == 669
+    ]
+    assert len(registrations) == 1
+    assert registrations[0].get("authorization_basis") == (
+        "GitHub Issue #669 (QIN-580), 2026-11-09"
+    )
+    assert set(registrations[0].get("files", [])) == {
+        "web/js/modules/asset-manager/lut-preview.js",
+        "web/js/modules/asset-manager.js",
+        "web/css/pages/asset-manager.css",
+        "tests/frontend/qin-580-material-lut-preview.test.mjs",
+        "tests/frontend/node-files.txt",
+        "tests/hygiene/fixtures/admissions/issue-669.json",
+        "tests/hygiene/test_cleanroom_hygiene.py",
+    }
+
+
 def test_qin_541_registry_card_info_layout_files_are_registered(repo_root: Path):
     """QIN-541 标准卡信息层级重排所涉文件按本票登记。"""
     metadata = _load_admission_metadata(repo_root)

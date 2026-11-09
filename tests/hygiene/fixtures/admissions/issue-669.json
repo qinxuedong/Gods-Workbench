@@ -1,0 +1,24 @@
+{
+  "schema": "gw.cleanroom-admission-shard/v1",
+  "issue": 669,
+  "authorization_basis": "GitHub Issue #669 (QIN-580), 2026-11-09",
+  "files": [
+    "web/js/modules/asset-manager/lut-preview.js",
+    "web/js/modules/asset-manager.js",
+    "web/css/pages/asset-manager.css",
+    "tests/frontend/qin-580-material-lut-preview.test.mjs",
+    "tests/frontend/node-files.txt",
+    "tests/hygiene/fixtures/admissions/issue-669.json",
+    "tests/hygiene/test_cleanroom_hygiene.py"
+  ],
+  "admitted_files": [],
+  "accepted_test_files": [
+    {
+      "path": "tests/frontend/qin-580-material-lut-preview.test.mjs",
+      "classification": "curated_test_coverage",
+      "authorization_basis": "GitHub Issue #669 (QIN-580), 2026-11-09",
+      "admission": "accepted"
+    }
+  ],
+  "notes": "QIN-580 素材套用 LUT 实时预览：在图片/视频详情里给当前素材加载任意已登记 LUT，实时看效果（0-100% 强度、原图/分屏/套用后三态、可清除）。取样与合成全在浏览器内完成，按最长边降采样（图片 1280、视频 720）后逐像素查表。只读取像素，不写盘、不新增资产、不接时间线与导出（保存为资产版本属 QIN-581）。"
+}

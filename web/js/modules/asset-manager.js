@@ -29,8 +29,11 @@ import {renderCollectProvenance, resolveCollectDeleteAssetId} from './asset-mana
 import {
     composeLutPreview,
     LUT_COMPARE_MODES,
+    LUT_MEDIA_SAMPLE_MAX_WIDTH,
     LutPreviewError,
     lutSampleImageData,
+    mediaLutSamplable,
+    mediaToLutSample,
     paintLutFrame,
     parseCubeLut,
 } from './asset-manager/lut-preview.js';
@@ -676,6 +679,7 @@ let detailViewerState = {
     modelInfo:null, modelInfoLoading:false, modelInfoError:'', wheelAt:0, audioZoom:1,
     fontScale:1, fontFit:1, fontLineWidth:0, fontExpanded:'', fontListScrollTop:0,
     lutStrength:1, lutCompare:'applied', lutListScrollTop:0,
+    mediaLutId:'', mediaLutStrength:1, mediaLutCompare:'applied', mediaLutOpen:false, mediaLutError:'',
     mediaCanvasItems:[], mediaCanvasActiveId:'', mediaCanvasSelectedIds:new Set(), mediaCanvasSelectionOrder:[], mediaCanvasLayout:{},
     mediaCanvasAnnotations:[], mediaCanvasDrawings:[], mediaCanvasGroups:[], mediaCanvasContextMenu:null,
     mediaCanvasEditingAnnotationId:'', mediaCanvasHistory:[], mediaCanvasSnap:true, mediaCanvasLibraryVisible:false,
@@ -16856,6 +16860,380 @@ function detailLutCompareMode(){
 function lutPreviewStage(){
     return document.querySelector('.asset-detail-viewer [data-detail-lut-stage]');
 }
+/* ------------------------------------------------------------------ */
+/* QIN-580：给素材（图片 / 视频）实时套用 LUT 预览                      */
+/* 只读：取像素 → 查表 → 画到覆盖 canvas，不写盘、不新增资产。            */
+/* ------------------------------------------------------------------ */
+
+/** 视频逐帧取像素比图片贵，降采样更狠；图片可以放宽到 1280。 */
+const DETAIL_MEDIA_LUT_VIDEO_WIDTH = 720;
+
+const detailMediaLutListCache = {items:null, inflight:null};
+const detailMediaLutRuntime = {lutId:'', lut:null, title:'', sample:null, busy:false, pending:false};
+
+/** 已加载素材里能直接拿到的 LUT；接口失败时的兜底，避免面板空白。 */
+function detailMediaLutFallbackItems(){
+    const unique = new Map();
+    registryAssets.filter(lutPreviewIsAsset).forEach(item => unique.set(String(item.id || ''), item));
+    return [...unique.values()];
+}
+/** 全部已登记 LUT：按 kind 拉取，不依赖当前视图筛选（看图时列表里并没有 LUT）。 */
+function detailMediaLutItems(){
+    if(detailMediaLutListCache.items) return Promise.resolve(detailMediaLutListCache.items);
+    if(detailMediaLutListCache.inflight) return detailMediaLutListCache.inflight;
+    const task = (async () => {
+        let items = [];
+        try {
+            const response = await fetch('/api/asset-registry/assets?kind=lut&limit=200&view=card', {credentials:'same-origin'});
+            if(response.ok){
+                const data = await response.json();
+                items = (Array.isArray(data?.items) ? data.items : []).filter(lutPreviewIsAsset);
+            }
+        } catch(_) { /* 退回已加载素材 */ }
+        if(!items.length) items = detailMediaLutFallbackItems();
+        items.sort((left, right) => String(left.name || '').localeCompare(String(right.name || ''), 'zh-Hans-CN', {numeric:true, sensitivity:'base'}));
+        detailMediaLutListCache.items = items;
+        return items;
+    })();
+    detailMediaLutListCache.inflight = task;
+    task.catch(() => {}).then(() => { detailMediaLutListCache.inflight = null; });
+    return task;
+}
+/**
+ * 强度取 0–1。缺失/非法一律当 100%，
+ * 不能用 `Number(x) || 0`——那会把「没取到」和「用户拖到 0%」压成同一个值，
+ * 表现为选了 LUT 却看不出任何变化（QIN-580 取证踩过）。
+ */
+function detailMediaLutStrengthValue(){
+    const value = Number(detailViewerState.mediaLutStrength);
+    return Number.isFinite(value) ? Math.max(0, Math.min(1, value)) : 1;
+}
+function detailMediaLutStrengthPercent(){
+    return Math.round(detailMediaLutStrengthValue() * 100);
+}
+function detailMediaLutCompareMode(){
+    return LUT_COMPARE_MODES.includes(detailViewerState.mediaLutCompare) ? detailViewerState.mediaLutCompare : 'applied';
+}
+/** 工具条与状态挂在详情舞台上：媒体画布模式与非画布模式都能取到同一锚点。 */
+function detailMediaLutStage(){
+    return document.querySelector('.asset-detail-viewer .asset-detail-stage')
+        || document.querySelector('.asset-detail-viewer [data-detail-media-lut-stage]');
+}
+/**
+ * 当前要套用 LUT 的媒体。
+ * 图片/视频详情默认进媒体画布模式，此时只作用于当前活动节点，
+ * 避免多节点画布上把 LUT 套到用户没选中的素材。
+ */
+function detailMediaLutMedia(){
+    const stage = detailMediaLutStage();
+    if(!stage) return null;
+    const activeNode = stage.querySelector('.asset-detail-media-node.is-active');
+    if(activeNode){
+        return activeNode.querySelector('img.asset-detail-media-node-content, video.asset-detail-media-node-content');
+    }
+    return stage.querySelector('[data-detail-media-lut-stage] img, [data-detail-media-lut-stage] video');
+}
+/** 覆盖 canvas 按需注入媒体容器：节点重建后由绘制逻辑重新挂上。 */
+function detailMediaLutCanvas(media){
+    const host = media?.parentElement;
+    if(!host) return null;
+    let canvas = host.querySelector('[data-detail-media-lut-canvas]');
+    if(!canvas){
+        canvas = document.createElement('canvas');
+        canvas.className = 'asset-detail-media-lut-canvas';
+        canvas.dataset.detailMediaLutCanvas = '';
+        canvas.setAttribute('aria-hidden', 'true');
+        canvas.hidden = true;
+        host.appendChild(canvas);
+    }
+    return canvas;
+}
+/**
+ * 「已套用」状态条挂在工具条里，而不是浮在媒体角上：
+ * 画布模式右上角是工具条、右下角是小地图，绝对定位的角标必撞，改成堆叠就没有遮挡问题。
+ */
+function detailMediaLutBadge(stage){
+    if(!stage) return null;
+    const bar = stage.querySelector('[data-detail-media-lut-bar]');
+    if(!bar) return null;
+    let badge = bar.querySelector('[data-detail-media-lut-badge]');
+    if(!badge){
+        badge = document.createElement('span');
+        badge.className = 'asset-detail-media-lut-badge';
+        badge.dataset.detailMediaLutBadge = '';
+        badge.hidden = true;
+        const toggle = bar.querySelector('[data-detail-media-lut-open]');
+        if(toggle) bar.insertBefore(badge, toggle);
+        else bar.appendChild(badge);
+    }
+    return badge;
+}
+function renderDetailMediaLutPanel(item, type){
+    const strength = detailMediaLutStrengthPercent();
+    const mode = detailMediaLutCompareMode();
+    const enabled = Boolean(String(detailViewerState.mediaLutId || ''));
+    return `<div class="asset-detail-media-lut-panel" data-detail-media-lut-panel>
+        <div class="asset-detail-media-lut-head"><span>选择 LUT</span><button type="button" data-detail-media-lut-clear ${enabled ? '' : 'disabled'}>清除</button></div>
+        <div class="asset-detail-media-lut-list" data-detail-media-lut-list><span class="asset-detail-media-lut-hint"><i data-lucide="loader-2"></i>正在读取 LUT 库…</span></div>
+        <div class="asset-detail-media-lut-controls">
+            <label class="asset-detail-media-lut-strength"><span>强度</span><input type="range" min="0" max="100" step="1" value="${strength}" data-detail-media-lut-strength ${enabled ? '' : 'disabled'} aria-label="LUT 强度"><b data-detail-media-lut-strength-label>${strength}%</b></label>
+            <div class="asset-detail-lut-compare" role="group" aria-label="前后对比">
+                <button type="button" data-detail-media-lut-compare="applied" aria-pressed="${mode === 'applied'}" class="${mode === 'applied' ? 'is-active' : ''}" ${enabled ? '' : 'disabled'}>套用后</button>
+                <button type="button" data-detail-media-lut-compare="split" aria-pressed="${mode === 'split'}" class="${mode === 'split' ? 'is-active' : ''}" ${enabled ? '' : 'disabled'}>分屏</button>
+                <button type="button" data-detail-media-lut-compare="original" aria-pressed="${mode === 'original'}" class="${mode === 'original' ? 'is-active' : ''}" ${enabled ? '' : 'disabled'}>原图</button>
+            </div>
+        </div>
+    </div>`;
+}
+function renderDetailMediaLutBar(item, type){
+    if(type !== 'image' && type !== 'video') return '';
+    const open = Boolean(detailViewerState.mediaLutOpen);
+    return `<div class="asset-detail-media-lut ${open ? 'is-open' : ''}" data-detail-media-lut-bar>
+        <button class="asset-detail-media-lut-toggle" type="button" data-detail-media-lut-open aria-expanded="${open ? 'true' : 'false'}" title="给当前素材套用 LUT 预览"><i data-lucide="palette"></i><span>套用 LUT</span></button>
+        ${open ? renderDetailMediaLutPanel(item, type) : ''}
+        <span class="asset-detail-media-lut-error" data-detail-media-lut-error hidden></span>
+    </div>`;
+}
+/**
+ * 非画布模式的媒体包裹层。
+ * 画布模式的媒体节点由 `renderDetailMediaCanvas` 自行渲染，canvas 与徽标都由绘制逻辑
+ * 在舞台/活动节点上按需注入——模板里放它们，画布模式下根本不会出现在 DOM 里。
+ */
+function renderDetailMediaLutStage(inner, item, type){
+    return `<div class="asset-detail-media-lut-stage" data-detail-media-lut-stage data-lut-state="idle">
+        ${inner}
+    </div>`;
+}
+function resetDetailMediaLutControls(){
+    const enabled = Boolean(String(detailViewerState.mediaLutId || ''));
+    document.querySelectorAll('.asset-detail-viewer [data-detail-media-lut-strength], .asset-detail-viewer [data-detail-media-lut-compare], .asset-detail-viewer [data-detail-media-lut-clear]').forEach(node => {
+        node.disabled = !enabled;
+    });
+}
+function showDetailMediaLutError(message){
+    const stage = detailMediaLutStage();
+    const box = stage?.querySelector('[data-detail-media-lut-error]');
+    if(!box) return;
+    if(message){
+        box.innerHTML = `<i data-lucide="triangle-alert"></i><span>${escapeHtml(message)}</span>`;
+        box.hidden = false;
+        refreshIcons();
+    } else {
+        box.hidden = true;
+        box.innerHTML = '';
+    }
+}
+async function fillDetailMediaLutList(){
+    const list = document.querySelector('.asset-detail-viewer [data-detail-media-lut-list]');
+    if(!list) return;
+    const items = await detailMediaLutItems();
+    if(!list.isConnected) return;
+    if(!items.length){
+        list.innerHTML = '<span class="asset-detail-media-lut-hint">还没有 LUT 素材，先到 LUT 库导入 .cube</span>';
+        return;
+    }
+    const activeId = String(detailViewerState.mediaLutId || '');
+    list.innerHTML = items.map(lut => {
+        const id = String(lut.id || '');
+        const active = Boolean(activeId) && id === activeId;
+        const builtin = lut.metadata?.builtin === true || lut.builtin === true;
+        const label = lut.metadata?.lut?.title || lut.name || '未命名 LUT';
+        return `<button class="asset-detail-media-lut-item ${active ? 'is-active' : ''}" type="button" data-detail-media-lut-item="${escapeAttr(id)}" aria-pressed="${active ? 'true' : 'false'}" title="${escapeAttr(lut.name || '未命名 LUT')}">
+            <i data-lucide="palette"></i><span><strong>${escapeHtml(label)}</strong><small>${escapeHtml(builtin ? '内置' : '用户导入')}</small></span>
+        </button>`;
+    }).join('');
+    refreshIcons();
+}
+/**
+ * 用当前 LUT、强度与对比模式重绘覆盖 canvas。
+ * 图片的像素只取一次，拖强度/切模式复用缓存；视频每帧重取。
+ */
+async function paintDetailMediaLut(){
+    const stage = detailMediaLutStage();
+    if(!stage) return false;
+    const media = detailMediaLutMedia();
+    if(!media) return false;
+    const canvas = detailMediaLutCanvas(media);
+    const badge = detailMediaLutBadge(stage);
+    if(!canvas) return false;
+
+    const lutId = String(detailViewerState.mediaLutId || '');
+    if(!lutId){
+        canvas.hidden = true;
+        if(badge) badge.hidden = true;
+        media.style.visibility = '';
+        stage.dataset.lutState = 'idle';
+        return false;
+    }
+    if(!mediaLutSamplable(media)) return false;
+
+    try {
+        if(detailMediaLutRuntime.lutId !== lutId || !detailMediaLutRuntime.lut){
+            const items = await detailMediaLutItems();
+            const selected = items.find(entry => String(entry.id || '') === lutId);
+            if(!selected) throw new LutPreviewError('LUT_SOURCE_UNAVAILABLE', '该 LUT 已不在素材库中');
+            const sourceUrl = lutPreviewSourceUrl(selected, 'registry');
+            if(!sourceUrl) throw new LutPreviewError('LUT_SOURCE_UNAVAILABLE', '该 LUT 没有可读取的文件');
+            detailMediaLutRuntime.lut = await loadLutPreview(sourceUrl);
+            detailMediaLutRuntime.lutId = lutId;
+            detailMediaLutRuntime.title = String(selected.metadata?.lut?.title || selected.name || 'LUT');
+            detailMediaLutRuntime.sample = null;
+        }
+
+        const isVideo = media.tagName === 'VIDEO';
+        if(!detailMediaLutRuntime.sample || isVideo){
+            detailMediaLutRuntime.sample = mediaToLutSample(media, {maxWidth:isVideo ? DETAIL_MEDIA_LUT_VIDEO_WIDTH : LUT_MEDIA_SAMPLE_MAX_WIDTH});
+        }
+        const strength = detailMediaLutStrengthValue();
+        const frame = composeLutPreview(detailMediaLutRuntime.sample, detailMediaLutRuntime.lut, {
+            mode:detailMediaLutCompareMode(),
+            strength,
+        });
+        if(!paintLutFrame(canvas, frame)) throw new LutPreviewError('LUT_SOURCE_UNAVAILABLE', '画布绘制失败');
+        canvas.hidden = false;
+        media.style.visibility = 'hidden';
+        if(badge){
+            badge.innerHTML = `<i data-lucide="palette"></i><span>${escapeHtml(detailMediaLutRuntime.title || 'LUT')} · ${Math.round(strength * 100)}%</span>`;
+            badge.hidden = false;
+            refreshIcons();
+        }
+        stage.dataset.lutState = 'ready';
+        detailViewerState.mediaLutError = '';
+        showDetailMediaLutError('');
+        return true;
+    } catch(error){
+        const message = error instanceof LutPreviewError ? error.message : `LUT 套用失败：${error?.message || error}`;
+        detailViewerState.mediaLutError = message;
+        stage.dataset.lutState = 'error';
+        canvas.hidden = true;
+        if(badge) badge.hidden = true;
+        media.style.visibility = '';
+        showDetailMediaLutError(message);
+        return false;
+    }
+}
+/** 视频按帧重绘：同一时刻只跑一次合成，期间的请求合并成一次补绘。 */
+function scheduleDetailMediaLutDraw(){
+    if(!detailViewerState.mediaLutId) return;
+    if(detailMediaLutRuntime.busy){
+        detailMediaLutRuntime.pending = true;
+        return;
+    }
+    detailMediaLutRuntime.busy = true;
+    Promise.resolve(paintDetailMediaLut()).finally(() => {
+        detailMediaLutRuntime.busy = false;
+        if(detailMediaLutRuntime.pending){
+            detailMediaLutRuntime.pending = false;
+            scheduleDetailMediaLutDraw();
+        }
+    });
+}
+function bindDetailMediaLutVideo(video){
+    if(!video || video.dataset.mediaLutBound === '1') return;
+    video.dataset.mediaLutBound = '1';
+    video.addEventListener('seeked', scheduleDetailMediaLutDraw);
+    // 暂停时 rVFC 不再回调，这里补一帧，保证暂停画面与当前帧一致。
+    video.addEventListener('pause', scheduleDetailMediaLutDraw);
+    video.addEventListener('loadeddata', scheduleDetailMediaLutDraw);
+    if(typeof video.requestVideoFrameCallback === 'function'){
+        const pump = () => {
+            scheduleDetailMediaLutDraw();
+            video.requestVideoFrameCallback(pump);
+        };
+        video.requestVideoFrameCallback(pump);
+    } else {
+        video.addEventListener('timeupdate', scheduleDetailMediaLutDraw);
+    }
+}
+function bindDetailMediaLutImage(image){
+    if(!image || image.dataset.mediaLutBound === '1') return;
+    image.dataset.mediaLutBound = '1';
+    if(!image.complete){
+        image.addEventListener('load', () => { if(detailViewerState.mediaLutId) paintDetailMediaLut(); }, {once:true});
+    }
+}
+/** 详情渲染后的接线入口。 */
+function initializeDetailMediaLut(overlay, item, type){
+    if(type !== 'image' && type !== 'video') return;
+    const media = detailMediaLutMedia();
+    if(!media) return;
+    if(media.tagName === 'VIDEO') bindDetailMediaLutVideo(media);
+    else bindDetailMediaLutImage(media);
+    if(detailViewerState.mediaLutOpen) fillDetailMediaLutList();
+    if(detailViewerState.mediaLutId) paintDetailMediaLut();
+}
+function toggleDetailMediaLutPanel(){
+    const bar = document.querySelector('.asset-detail-viewer [data-detail-media-lut-bar]');
+    if(!bar) return;
+    const open = !detailViewerState.mediaLutOpen;
+    detailViewerState.mediaLutOpen = open;
+    bar.classList.toggle('is-open', open);
+    bar.querySelector('[data-detail-media-lut-open]')?.setAttribute('aria-expanded', open ? 'true' : 'false');
+    const panel = bar.querySelector('[data-detail-media-lut-panel]');
+    if(open && !panel){
+        const item = detailViewerState.items[detailViewerState.index] || detailViewerItem(detailViewerState.source, detailViewerState.id) || {};
+        bar.insertAdjacentHTML('beforeend', renderDetailMediaLutPanel(item, detailViewerType(detailViewerState.source, item)));
+        refreshIcons();
+        fillDetailMediaLutList();
+    } else if(!open && panel){
+        panel.remove();
+    }
+}
+async function setDetailMediaLutId(id){
+    detailViewerState.mediaLutId = String(id || '');
+    detailViewerState.mediaLutError = '';
+    detailMediaLutRuntime.sample = null;
+    if(detailMediaLutRuntime.lutId !== detailViewerState.mediaLutId){
+        detailMediaLutRuntime.lut = null;
+        detailMediaLutRuntime.lutId = '';
+    }
+    document.querySelectorAll('.asset-detail-viewer [data-detail-media-lut-item]').forEach(button => {
+        const active = String(button.dataset.detailMediaLutItem || '') === detailViewerState.mediaLutId;
+        button.classList.toggle('is-active', active);
+        button.setAttribute('aria-pressed', active ? 'true' : 'false');
+    });
+    resetDetailMediaLutControls();
+    await paintDetailMediaLut();
+}
+function setDetailMediaLutStrength(value){
+    const percent = Math.max(0, Math.min(100, Math.round(Number(value) || 0)));
+    detailViewerState.mediaLutStrength = percent / 100;
+    const label = document.querySelector('.asset-detail-viewer [data-detail-media-lut-strength-label]');
+    if(label) label.textContent = `${percent}%`;
+    paintDetailMediaLut();
+}
+function setDetailMediaLutCompare(mode){
+    if(!LUT_COMPARE_MODES.includes(mode)) return;
+    detailViewerState.mediaLutCompare = mode;
+    document.querySelectorAll('.asset-detail-viewer [data-detail-media-lut-compare]').forEach(button => {
+        const active = button.dataset.detailMediaLutCompare === mode;
+        button.classList.toggle('is-active', active);
+        button.setAttribute('aria-pressed', active ? 'true' : 'false');
+    });
+    paintDetailMediaLut();
+}
+function clearDetailMediaLut(){
+    detailViewerState.mediaLutId = '';
+    detailViewerState.mediaLutError = '';
+    detailMediaLutRuntime.lutId = '';
+    detailMediaLutRuntime.lut = null;
+    detailMediaLutRuntime.sample = null;
+    const stage = detailMediaLutStage();
+    const media = detailMediaLutMedia();
+    const canvas = media?.parentElement?.querySelector('[data-detail-media-lut-canvas]');
+    if(canvas) canvas.hidden = true;
+    const badge = stage?.querySelector('[data-detail-media-lut-badge]');
+    if(badge) badge.hidden = true;
+    if(media) media.style.visibility = '';
+    if(stage) stage.dataset.lutState = 'idle';
+    showDetailMediaLutError('');
+    document.querySelectorAll('.asset-detail-viewer [data-detail-media-lut-item]').forEach(button => {
+        button.classList.remove('is-active');
+        button.setAttribute('aria-pressed', 'false');
+    });
+    resetDetailMediaLutControls();
+}
+
 function renderDetailLutWorkspace(source, item){
     const strength = detailLutStrengthPercent();
     const mode = detailLutCompareMode();
@@ -17988,7 +18366,7 @@ function renderDetailViewerMedia(source, item, type){
             const alignedTime = alignTimeToFps(Number(startTime), fps);
             videoSrc = `${videoSrc}#t=${alignedTime}`;
         }
-        return `<video class="asset-lightbox-video asset-detail-player" src="${escapeAttr(videoSrc)}" poster="${escapeAttr(assetPreviewUrl(url, 1280, item))}" controls playsinline preload="metadata" data-frame-rate="${fps || ''}"></video>`;
+        return renderDetailMediaLutStage(`<video class="asset-lightbox-video asset-detail-player" src="${escapeAttr(videoSrc)}" poster="${escapeAttr(assetPreviewUrl(url, 1280, item))}" controls playsinline preload="metadata" data-frame-rate="${fps || ''}"></video>`, item, 'video');
     }
     if(type === 'audio'){
         const extensionLabel = assetFileExtension(item).toUpperCase() || 'AUDIO';
@@ -18066,7 +18444,7 @@ function renderDetailViewerMedia(source, item, type){
     if(type === 'model') return renderDetailModelMedia(source, item);
     if(type === 'image'){
         const rawPreview = ASSET_BROWSER_PREVIEW_EXTENSIONS.has(extension) ? url : assetPreviewUrl(url, 2048, item);
-        return `<img class="asset-lightbox-image" src="${escapeAttr(rawPreview)}" alt="${escapeAttr(item.name || '素材预览')}" draggable="false">`;
+        return renderDetailMediaLutStage(`<img class="asset-lightbox-image" src="${escapeAttr(rawPreview)}" alt="${escapeAttr(item.name || '素材预览')}" draggable="false">`, item, 'image');
     }
     const thumbnail = source === 'workflow' ? workflowThumb(item) : assetThumb(item);
     return `<div class="asset-detail-thumbnail-fallback" aria-label="${escapeAttr(item.name || '素材缩略图')}"><div class="asset-thumb">${thumbnail}</div></div>`;
@@ -18739,6 +19117,7 @@ function renderDetailViewer(){
                     <button class="asset-detail-page-nav next" type="button" data-detail-navigate="1" ${detailViewerState.index >= detailViewerState.items.length - 1 ? 'disabled' : ''} aria-label="下一个素材"><i data-lucide="chevron-right"></i></button>
                     ${canZoom ? `<div class="asset-detail-zoom-controls"><button type="button" data-detail-zoom="-1" aria-label="缩小"><i data-lucide="minus"></i></button><button type="button" data-detail-zoom="0">适应</button><button type="button" data-detail-zoom="1" aria-label="放大"><i data-lucide="plus"></i></button></div>` : ''}
                 `}
+                ${(type === 'image' || type === 'video') ? renderDetailMediaLutBar(item, type) : ''}
             </section>
             ${type === 'audio' ? renderDetailAudioPlaylist(item) : ''}
             ${inspector}
@@ -18761,6 +19140,8 @@ function renderDetailViewer(){
     if(type === 'font') initializeDetailFontPreview(overlay, url);
     else clearDetailViewerFontFace();
     if(type === 'lut') initializeDetailLutPreview(overlay, item);
+    // 【QIN-580】图片/视频详情接上「套用 LUT」实时预览（只读取像素，不落盘）。
+    if(type === 'image' || type === 'video') initializeDetailMediaLut(overlay, item, type);
     if(mediaCanvasMode && detailMediaCanvasCoverflowVisible){
         const refShell = overlay.querySelector('.asset-detail-media-canvas-shell');
         refShell?.classList.add('gw-coverflow-embedded-host');
@@ -19623,6 +20004,11 @@ function showDetailPreview(source, id, options={}){
             ? alignTimeToFps(Number(options.startTime), options.fps || Number(item?.frame_rate || item?.metadata?.frame_rate || 0))
             : null,
         imageVersions:[],imageVersionsAssetId:'',imageVersionsLoading:false,imageVersionSelectedId:'',imageVersionPanelCollapsed:true,
+        // QIN-580：每次打开详情都是新的对照会话，LUT 选择与强度归零；
+        // 但字段必须显式写在字面量里——整体重新赋值会把没列出的字段抹成 undefined，
+        // 强度取不到值就会退化成 0（等于没套），这里漏一个字段就是「预览看起来没生效」。
+        lutStrength:1, lutCompare:'applied', lutListScrollTop:0,
+        mediaLutId:'', mediaLutStrength:1, mediaLutCompare:'applied', mediaLutOpen:false, mediaLutError:'',
         referenceCanvasId:storedReferenceCanvas ? String(item.canvas_id || '') : '', referenceCanvasTitle:String(options.referenceCanvasTitle || (storedReferenceCanvas ? item.canvas_title || '参考画布' : '参考画布')), referenceCanvasMode, referenceCanvasStructureId:referenceCanvasMode ? String(options.referenceCanvasStructureId || '') : '', referenceCanvasSaving:false,
         originTab:options.originTab || activeTab, returnFocus:options.returnFocus || document.activeElement
     };
@@ -19706,6 +20092,9 @@ function closeDetailPreview(force=false){
         mediaCanvasScale:1, mediaCanvasX:0, mediaCanvasY:0, mediaCanvasFitted:false,
         videoRanges:{}, videoExportRootId:'', videoExportBusy:'', videoStoryboardExpandedId:'',
         imageVersions:[],imageVersionsAssetId:'',imageVersionsLoading:false,imageVersionSelectedId:'',imageVersionPanelCollapsed:true,
+        // 与打开处保持同一份字段表；少写一项，下次打开就拿到 undefined。
+        lutStrength:1, lutCompare:'applied', lutListScrollTop:0,
+        mediaLutId:'', mediaLutStrength:1, mediaLutCompare:'applied', mediaLutOpen:false, mediaLutError:'',
         referenceCanvasId:'', referenceCanvasTitle:'参考画布', referenceCanvasMode:false, referenceCanvasStructureId:'', referenceCanvasSaving:false, originTab:'registry'
     };
     returnFocus?.focus?.({preventScroll:true});
@@ -23605,6 +23994,13 @@ document.addEventListener('click', event => {
     if(lutItem){ navigateDetailLutToId(lutItem.dataset.detailLutItem || ''); return; }
     const lutCompare = event.target.closest?.('[data-detail-lut-compare]');
     if(lutCompare){ setDetailLutCompare(lutCompare.dataset.detailLutCompare || ''); return; }
+    // 【QIN-580】图片/视频详情的「套用 LUT」面板。
+    if(event.target.closest?.('[data-detail-media-lut-open]')){ toggleDetailMediaLutPanel(); return; }
+    const mediaLutItem = event.target.closest?.('[data-detail-media-lut-item]');
+    if(mediaLutItem){ setDetailMediaLutId(mediaLutItem.dataset.detailMediaLutItem || '').catch(() => {}); return; }
+    const mediaLutCompare = event.target.closest?.('[data-detail-media-lut-compare]');
+    if(mediaLutCompare){ setDetailMediaLutCompare(mediaLutCompare.dataset.detailMediaLutCompare || ''); return; }
+    if(event.target.closest?.('[data-detail-media-lut-clear]')){ clearDetailMediaLut(); return; }
     if(event.target.closest?.('[data-detail-viewer-close]')){ closeDetailPreview(); return; }
     if(event.target.closest?.('[data-detail-text-edit]')){ startDetailTextEdit(); return; }
     if(event.target.closest?.('[data-detail-text-cancel]')){ cancelDetailTextEdit(); return; }
@@ -24318,6 +24714,12 @@ document.addEventListener('input', event => {
     const detailLutStrength = event.target?.closest?.('[data-detail-lut-strength]');
     if(detailLutStrength){
         setDetailLutStrength(detailLutStrength.value);
+        return;
+    }
+    // 【QIN-580】素材套用 LUT 的强度滑杆。
+    const detailMediaLutStrength = event.target?.closest?.('[data-detail-media-lut-strength]');
+    if(detailMediaLutStrength){
+        setDetailMediaLutStrength(detailMediaLutStrength.value);
         return;
     }
     if(event.target?.matches?.('[data-detail-reference-title]')) detailViewerState.referenceCanvasTitle = String(event.target.value || '').slice(0, 80);

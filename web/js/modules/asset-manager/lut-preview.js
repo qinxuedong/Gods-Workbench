@@ -372,3 +372,73 @@ export function paintLutFrame(canvas, frame) {
     context.putImageData(new ImageData(new Uint8ClampedArray(frame.data), frame.width, frame.height), 0, 0);
     return true;
 }
+
+/* ------------------------------------------------------------------ */
+/* QIN-580：素材真实像素采样                                            */
+/* ------------------------------------------------------------------ */
+
+/** 素材预览的默认最长边；4K 素材降采样到此宽度再逐像素查表，避免掉帧。 */
+export const LUT_MEDIA_SAMPLE_MAX_WIDTH = 1280;
+
+function mediaNaturalSize(media) {
+    const width = Number(media?.videoWidth || media?.naturalWidth || media?.width || 0);
+    const height = Number(media?.videoHeight || media?.naturalHeight || media?.height || 0);
+    return {width, height};
+}
+
+/**
+ * 把图片或视频的当前帧按最长边降采样成 `{width,height,data}` 采样帧。
+ *
+ * 只读：仅把媒体画到离屏 canvas 后取像素，不修改源媒体、不落盘、不发起写请求。
+ * 降采样交给 canvas `drawImage`（浏览器自带缩放），比手写逐点采样快一个量级。
+ */
+export function mediaToLutSample(media, options = {}) {
+    const {width: naturalWidth, height: naturalHeight} = mediaNaturalSize(media);
+    if (!(naturalWidth > 0) || !(naturalHeight > 0)) {
+        throw new LutPreviewError('LUT_SOURCE_UNAVAILABLE', '素材尺寸不可用，暂不能套用 LUT');
+    }
+    if (typeof document === 'undefined' || !document.createElement) {
+        throw new LutPreviewError('LUT_SOURCE_UNAVAILABLE', '当前环境不支持画布取样');
+    }
+    const maxWidth = Math.max(8, Math.round(Number(options.maxWidth) || LUT_MEDIA_SAMPLE_MAX_WIDTH));
+    const scale = Math.min(1, maxWidth / naturalWidth);
+    const width = Math.max(1, Math.round(naturalWidth * scale));
+    const height = Math.max(1, Math.round(naturalHeight * scale));
+
+    const canvas = document.createElement('canvas');
+    canvas.width = width;
+    canvas.height = height;
+    const context = typeof canvas.getContext === 'function'
+        ? canvas.getContext('2d', {willReadFrequently: true})
+        : null;
+    if (!context) throw new LutPreviewError('LUT_SOURCE_UNAVAILABLE', '画布上下文不可用');
+
+    try {
+        context.drawImage(media, 0, 0, width, height);
+    } catch (error) {
+        throw new LutPreviewError('LUT_SOURCE_UNAVAILABLE', `素材像素读取失败：${error?.message || error}`);
+    }
+
+    let imageData;
+    try {
+        imageData = context.getImageData(0, 0, width, height);
+    } catch (error) {
+        throw new LutPreviewError('LUT_SOURCE_UNAVAILABLE', `素材像素被跨源保护阻断：${error?.message || error}`);
+    }
+    return {width, height, data: imageData.data};
+}
+
+/**
+ * 素材是否已具备取像素条件。
+ * 用 tagName 判型而不是 `instanceof`：跨 iframe / 跨 realm 的媒体节点 instanceof 会失配，
+ * 但画布取样本身是可以工作的。
+ */
+export function mediaLutSamplable(media) {
+    if (!media) return false;
+    if (!(mediaNaturalSize(media).width > 0)) return false;
+    const tag = String(media.tagName || '').toUpperCase();
+    if (tag === 'VIDEO') return Number(media.readyState) >= 2;
+    if (tag === 'IMG') return media.complete !== false;
+    return true;
+}
+
