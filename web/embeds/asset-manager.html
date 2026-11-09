@@ -64,6 +64,15 @@
                 <strong>资产库正在准备</strong>
                 <span>正在加载统一资产索引，请稍候…</span>
             </div>
+            <!-- 【QIN-573 AC2】快照直出探针：若存在会话快照则立即隐藏骨架屏，避免首屏闪现转圈 -->
+            <script>
+                try {
+                    if (sessionStorage.getItem('gw_asset_registry_snapshot_v1')) {
+                        var _sk = document.getElementById('assetManagerBootSkeleton');
+                        if (_sk) _sk.hidden = true;
+                    }
+                } catch(_) {}
+            </script>
         </main>
     </div>
 

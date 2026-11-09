@@ -1446,3 +1446,26 @@ def test_github_issue_654_file_scope_is_registered(repo_root: Path):
         "web/js/modules/asset-manager.js",
     }
 
+
+def test_github_issue_656_file_scope_is_registered(repo_root: Path):
+    """#656（QIN-573）资产库首屏秒开范围文件登记。"""
+    metadata = _load_admission_metadata(repo_root)
+    registrations = [
+        item
+        for item in metadata.get("authorized_issue_file_sets", [])
+        if item.get("issue") == 656
+    ]
+    assert len(registrations) == 1
+    assert registrations[0].get("authorization_basis") == (
+        "GitHub Issue #656 (QIN-573), 2026-11-09"
+    )
+    assert set(registrations[0].get("files", [])) == {
+        "tests/frontend/node-files.txt",
+        "tests/frontend/qin-573-asset-vault-fast-boot.test.mjs",
+        "tests/hygiene/fixtures/admissions/issue-656.json",
+        "tests/hygiene/test_cleanroom_hygiene.py",
+        "web/embeds/asset-manager.html",
+        "web/js/controllers/assets-controller.js",
+        "web/js/modules/asset-manager.js",
+        "web/pages/assets.html",
+    }

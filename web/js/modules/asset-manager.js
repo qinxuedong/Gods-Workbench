@@ -7528,6 +7528,8 @@ function appendRegistryAssetPageCards(items=[], context){
     });
     if(!inserted) return 0;
     refreshIcons();
+    const bootSkeleton = document.getElementById('assetManagerBootSkeleton');
+    if(bootSkeleton) bootSkeleton.hidden = true;
     scheduleRegistryMasonryLayout();
     scheduleRegistryVirtualWindow();
     scheduleRegistryPreviewImages();
@@ -7784,6 +7786,7 @@ async function loadRegistryBootstrap(requestId=beginRegistryBootstrapRequest()){
         registryRequestAbortController = null;
         registryLoading = false;
         if(activeTab === 'registry' || assetBoardById(activeTab)?.system === false) render();
+        saveRegistrySnapshot();
         // 【浏览预加载】首屏应用完成后的空闲时机预取下一页数据（只进缓存，不改游标）
         scheduleRegistryPrefetch();
         // 【优化问题1】增加延迟时间，给首屏素材渲染更多时间，避免阻塞
@@ -7833,6 +7836,7 @@ async function loadRegistryBootstrap(requestId=beginRegistryBootstrapRequest()){
         if(requestId !== registryRequestSeq) return false;
         if(activeTab === 'registry' || assetBoardById(activeTab)?.system === false) render();
         registryBootstrapCompleted = true; // 引导完成，后续 asset-sync 走轻量增量而非重复引导
+        saveRegistrySnapshot();
         return true;
     } catch(err) {
         if(secondaryRequest) void secondaryRequest.catch(() => {});
@@ -8519,6 +8523,8 @@ function insertPendingRegistryCards(newItems=[], context){
     if(!insertedAny) return;
     // 与现有渲染一致的后处理：图标、masonry span、懒加载预览观察；不动滚动位置、不抢焦点
     refreshIcons();
+    const bootSkeleton = document.getElementById('assetManagerBootSkeleton');
+    if(bootSkeleton) bootSkeleton.hidden = true;
     scheduleRegistryMasonryLayout();
     scheduleRegistryPreviewImages();
 }
@@ -9065,6 +9071,8 @@ async function refreshCanvasAssets(){
     }
 }
 async function loadAll(){
+    // 【QIN-573 AC2】快照优先秒开：若存在会话快照，在网络请求到达前先行挂载渲染
+    tryApplyRegistrySnapshot();
     const registryRequestId = beginRegistryBootstrapRequest();
     setStatus('加载中...');
     const registryBootstrap = loadRegistryBootstrap(registryRequestId).catch(err => {
@@ -9784,6 +9792,8 @@ function render(){
         );
     }
     refreshIcons();
+    const bootSkeleton = document.getElementById('assetManagerBootSkeleton');
+    if(bootSkeleton) bootSkeleton.hidden = true;
     scheduleRegistryMasonryLayout();
     scheduleRegistryVirtualWindow();
     if(scrollState.length){
@@ -24447,6 +24457,7 @@ Object.defineProperties(window, {
     openRegistryAssetFromGlobalSearch:{configurable:true, value:openRegistryAssetFromGlobalSearch},
 });
 const REGISTRY_SESSION_KEY = 'gw.registry.browse.session';
+const REGISTRY_SNAPSHOT_KEY = 'gw_asset_registry_snapshot_v1';
 const REGISTRY_ROUTE_PENDING_KEY = 'gw.registry.browse.route.pending';
 let registryBrowseInteracted = false;
 let registrySessionReady = false;
@@ -24455,7 +24466,53 @@ document.addEventListener('keydown', () => { registryBrowseInteracted = true; },
 // 【QIN-544】树面板键盘导航（捕获阶段委托，render 重建 DOM 不受影响）
 document.addEventListener('keydown', handleAssetTreeKeydown, {capture:true});
 
+// 【QIN-573 AC2】保存当前首屏核心快照供下次打开资产库时秒开
+function saveRegistrySnapshot(){
+    try {
+        if(!Array.isArray(registryAssets) || !registryAssets.length) return false;
+        const snapshot = {
+            version: 1,
+            savedAt: Date.now(),
+            tab: activeTab,
+            total: registryTotal,
+            totalKnown: registryTotalKnown,
+            facets: {
+                kinds: Array.isArray(registryFacets?.kinds) ? registryFacets.kinds : [],
+                categories: Array.isArray(registryFacets?.categories) ? registryFacets.categories : [],
+                tags: Array.isArray(registryFacets?.tags) ? registryFacets.tags : [],
+                collections: Array.isArray(registryFacets?.collections) ? registryFacets.collections : [],
+                roots: Array.isArray(registryFacets?.roots) ? registryFacets.roots : [],
+            },
+            status: registryStatus && typeof registryStatus === 'object' ? registryStatus : {},
+            items: registryAssets.slice(0, 60),
+        };
+        sessionStorage.setItem(REGISTRY_SNAPSHOT_KEY, JSON.stringify(snapshot));
+        return true;
+    } catch(_) { return false; }
+}
+
+// 【QIN-573 AC2】优先从会话快照恢复首屏渲染，隐藏骨架屏
+function tryApplyRegistrySnapshot(){
+    try {
+        const raw = sessionStorage.getItem(REGISTRY_SNAPSHOT_KEY);
+        if(!raw) return false;
+        const snapshot = JSON.parse(raw);
+        if(!snapshot || !Array.isArray(snapshot.items) || !snapshot.items.length) return false;
+        if(registryAssets.length > 0 && registryBootstrapCompleted) return false;
+        registryAssets = snapshot.items;
+        if(typeof snapshot.total === 'number') registryTotal = snapshot.total;
+        registryTotalKnown = Boolean(snapshot.totalKnown);
+        if(snapshot.facets && typeof snapshot.facets === 'object') registryFacets = snapshot.facets;
+        if(snapshot.status && typeof snapshot.status === 'object') registryStatus = snapshot.status;
+        const skeleton = document.getElementById('assetManagerBootSkeleton');
+        if(skeleton) skeleton.hidden = true;
+        if(activeTab === 'registry' || assetBoardById(activeTab)?.system === false) render();
+        return true;
+    } catch(_) { return false; }
+}
+
 function saveRegistryBrowseSession(){
+    saveRegistrySnapshot();
     if(!registrySessionReady || !assetBoardById(activeTab)) return false;
     try {
         sessionStorage.setItem(REGISTRY_SESSION_KEY, JSON.stringify({
@@ -24469,7 +24526,12 @@ function saveRegistryBrowseSessionForRoute(){
     if(!saveRegistryBrowseSession()) return;
     try { sessionStorage.setItem(REGISTRY_ROUTE_PENDING_KEY, '1'); } catch(_) {}
 }
-window.GWAssetBrowseSession = Object.freeze({save:saveRegistryBrowseSession, saveForRoute:saveRegistryBrowseSessionForRoute});
+window.GWAssetBrowseSession = Object.freeze({
+    save: saveRegistryBrowseSession,
+    saveForRoute: saveRegistryBrowseSessionForRoute,
+    saveSnapshot: saveRegistrySnapshot,
+    applySnapshot: tryApplyRegistrySnapshot,
+});
 // 【QIN-566】外壳侧栏树桥接：同源直调（外壳读快照/驱动入口，内嵌页渲染后主动推送）。
 window.GWAssetTreeBridge = Object.freeze({snapshot:gwAssetTreeSnapshot, activate:gwAssetTreeActivate});
 async function restoreRegistryBrowseSession(){
@@ -24517,9 +24579,14 @@ window.addEventListener('pagehide', saveRegistryBrowseSession);
 document.addEventListener('click', () => {
     if(registrySessionReady) setTimeout(saveRegistryBrowseSession, 250);
 });
-if(!directorySettingsPage) renderBoardNavigation();
+if(!directorySettingsPage){
+    renderBoardNavigation();
+    if(document.readyState !== 'loading') tryApplyRegistrySnapshot();
+}
 document.addEventListener('DOMContentLoaded', () => {
     if(directorySettingsPage){ loadGlobalDirectorySettings(); return; }
+    // 【QIN-573 AC2】优先从会话快照恢复首屏渲染，隐藏骨架屏
+    tryApplyRegistrySnapshot();
     void loadAssetInbox().then(() => {
         if(assetInboxUnreadCount() > 0 && activeTab !== 'inbox') render();
     }).catch(() => null);
