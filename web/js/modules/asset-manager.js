@@ -12695,8 +12695,12 @@ function renderAssetTreeMineTree(){
     return `<div class="asset-tree-scroll" role="tree" aria-label="我的资源目录树" tabindex="0" data-asset-tree-view="mine">${inboxNode}${boardSection}<div class="asset-tree-mount-section">${mountLabel}${rootNodes}${emptyGuide}</div></div>`;
 }
 function assetTreeRootsList(){
-    // 根目录清单沿用 facets 口径（含离线来源），保证与目录层级数据同源
-    return assetRackRoots();
+    // 根目录清单沿用 facets 口径（含离线来源），排除系统预置的历史占位根（视频库素材/图片库素材）
+    return assetRackRoots().filter(root => {
+        const id = String(root?.id || '').toLowerCase();
+        const name = String(root?.name || '').trim();
+        return id !== 'video' && id !== 'image' && name !== '视频库素材' && name !== '图片库素材';
+    });
 }
 function renderAssetTreeSystemTree(){
     // AC2：系统资源树（只读）：项目制片、剧本资产、画布资产（【QIN-563】挂画布分类子分支）、提示词库
@@ -12783,11 +12787,43 @@ function gwAssetTreeEntryKey(){
     if(registryStatCategory) return '';
     return assetTreeSelectedKey.startsWith('mine:') ? assetTreeSelectedKey : 'registry';
 }
+function serializeAssetRackFolderNode(rootId, node, depth=1){
+    const key = `mine:root:${rootId}::${node.path}`;
+    const expanded = assetTreeExpanded.has(key);
+    return {
+        key,
+        name: node.name,
+        path: node.path,
+        count: Number(node.count || 0),
+        depth,
+        hasChildren: Array.isArray(node.children) && node.children.length > 0,
+        expanded,
+        draggable: true,
+        children: expanded && Array.isArray(node.children)
+            ? node.children.map(child => serializeAssetRackFolderNode(rootId, child, depth + 1))
+            : [],
+    };
+}
 function gwAssetTreeSnapshot(){
     return {
         inbox_badge: assetInboxUnreadCount(),
         boards: assetTreeUserBoards().map(board => ({id:board.id, name:board.name, icon:board.icon})),
-        roots: assetTreeRootsList().map(root => ({id:String(root.id || ''), name:root.name, count:Number(root.count || 0)})),
+        roots: assetTreeRootsList().map(root => {
+            const key = `mine:root:${root.id}`;
+            const expanded = assetTreeExpanded.has(key);
+            const tree = expanded ? assetRackFolderTree(root.id) : [];
+            return {
+                id: String(root.id || ''),
+                name: root.name,
+                count: Number(root.count || 0),
+                key,
+                writable: assetOrganizeWritableRoot(root.id),
+                expanded,
+                hasChildren: true,
+                draggable: assetOrganizeWritableRoot(root.id),
+                children: expanded ? tree.map(node => serializeAssetRackFolderNode(root.id, node, 1)) : [],
+            };
+        }),
         selected_key: gwAssetTreeEntryKey(), 
     };
 }
@@ -12962,7 +12998,7 @@ function handleLocalUploadBackClick(event){
  * - 新建的 body 级浮层（菜单/弹窗/toast）必须登记到文档级点击委托清单。
  * ------------------------------------------------------------------------- */
 function assetOrganizeIsMineTree(){
-    return assetTreeTab === 'mine';
+    return assetTreeTab === 'mine' || (typeof document !== 'undefined' && Boolean(document?.documentElement?.classList?.contains('vault-shell-embedded')));
 }
 function assetOrganizeWritableRoot(rootId){
     // 聚合根没有单一物理目录；离线根没有可写路径；其余挂载根按真实磁盘路径判定
@@ -12977,6 +13013,8 @@ function assetOrganizeTargetFromKey(key){
     const body = value.slice('mine:root:'.length);
     const separator = body.indexOf('::');
     const rootId = separator > 0 ? body.slice(0, separator) : body;
+    const lowerRoot = String(rootId || '').toLowerCase();
+    if(lowerRoot === 'video' || lowerRoot === 'image') return null;
     const rawPath = separator > 0 ? body.slice(separator + 2) : '';
     if(!assetOrganizeWritableRoot(rootId)) return null;
     const path = rawPath === '__root__' ? '' : rawPath;
@@ -13389,6 +13427,7 @@ function beginAssetOrganizeDrag(event){
     event.dataTransfer?.setData('text/plain', ids.join('\n'));
     event.dataTransfer.effectAllowed = 'move';
     card.classList.add('is-organize-dragging');
+    try { if(window.parent !== window) window.parent.GWAssetDragState = assetOrganizeDrag; } catch(_) {}
 }
 function assetOrganizeDropTargetFor(event){
     const row = event.target.closest?.('.asset-tree-row');
@@ -13436,6 +13475,7 @@ async function dropAssetOrganize(event){
 }
 function endAssetOrganizeDrag(){
     assetOrganizeDrag = null;
+    try { if(window.parent !== window) window.parent.GWAssetDragState = null; } catch(_) {}
     clearAssetOrganizeDropHint();
     document.querySelectorAll('.is-organize-dragging').forEach(el => el.classList.remove('is-organize-dragging'));
 }
@@ -24915,6 +24955,134 @@ window.GWAssetBrowseSession = Object.freeze({save:saveRegistryBrowseSession, sav
 window.GWAssetRegistrySnapshot = Object.freeze({save:saveRegistrySnapshot, apply:tryApplyRegistrySnapshot});
 // 【QIN-566】外壳侧栏树桥接：同源直调（外壳读快照/驱动入口，内嵌页渲染后主动推送）。
 window.GWAssetTreeBridge = Object.freeze({snapshot:gwAssetTreeSnapshot, activate:gwAssetTreeActivate});
+// 【QIN-579】外壳侧栏整理能力桥接：右键菜单/双击改名/拖拽移动/重名/撤销
+async function gwAssetTreeOpenInSystem(key){
+    await loadAssetAllowedRootPaths?.();
+    const target = assetOrganizeTargetFromKey(key);
+    if(!target) return {status:'failed', message:'目标不可整理'};
+    return assetOrganizeOpenFolderInSystem(target);
+}
+async function gwAssetTreeCreateFolder(parentKey, folderName){
+    await loadAssetAllowedRootPaths?.();
+    let target = parentKey ? assetOrganizeTargetFromKey(parentKey) : null;
+    let rootId = target?.rootId || '';
+    if(!target){
+        rootId = assetOrganizeDefaultRootId();
+        if(!rootId) throw new Error('未找到可写挂载目录');
+    }
+    const name = assetOrganizeValidateFolderName(folderName);
+    const parentPath = target ? target.path : '';
+    const newPath = parentPath ? `${parentPath}/${name}` : name;
+    const abs = assetOrganizeAbsPath(rootId, newPath);
+    if(!abs) throw new Error('挂载路径不可用，无法新建文件夹');
+    const data = await assetOrganizeRequest('/api/local-assets/folders', {
+        path: abs,
+        root_id: rootId,
+    });
+    assetOrganizePushUndo(data, `新建文件夹「${name}」`, rootId);
+    showAssetOrganizeToast(`已新建文件夹「${name}」`, {undoable:true});
+    setStatus(`已新建文件夹「${name}」`);
+    assetTreeSelectedKey = `mine:root:${rootId}::${newPath}`;
+    await assetOrganizeRefresh(rootId);
+    return data;
+}
+async function gwAssetTreeCommitRename(key, newName){
+    await loadAssetAllowedRootPaths?.();
+    const target = assetOrganizeTargetFromKey(key);
+    if(!target || target.isRoot) return false;
+    const current = assetOrganizeLeafName(target.path);
+    const next = String(newName || '').trim();
+    if(!next || next === current) return true;
+    try {
+        const name = assetOrganizeValidateFolderName(next);
+        const abs = assetOrganizeAbsPath(target.rootId, target.path);
+        const data = await assetOrganizeRequest('/api/local-assets/folders', {
+            path: abs,
+            name: name,
+            root_id: target.rootId,
+        }, {method:'PATCH'});
+        assetOrganizePushUndo(data, `重命名为「${name}」`, target.rootId);
+        showAssetOrganizeToast(`已重命名文件夹为「${name}」`, {undoable:true});
+        setStatus(`已重命名文件夹为「${name}」`);
+        const parent = assetOrganizeParentPath(target.path);
+        const nextPath = parent ? `${parent}/${name}` : name;
+        assetTreeSelectedKey = `mine:root:${target.rootId}::${nextPath}`;
+        await assetOrganizeRefresh(target.rootId);
+        return true;
+    } catch(err) {
+        showAssetOrganizeToast(assetOrganizeErrorText(err));
+        setStatus(assetOrganizeErrorText(err));
+        return false;
+    }
+}
+async function gwAssetTreeDeleteFolder(key){
+    await loadAssetAllowedRootPaths?.();
+    const target = assetOrganizeTargetFromKey(key);
+    if(!target || target.isRoot) return false;
+    const label = assetOrganizeFolderLabel(target);
+    const absPath = assetOrganizeAbsPath(target.rootId, target.path);
+    try {
+        const data = await assetOrganizeRequest('/api/local-assets/folders/delete', {
+            path: absPath,
+            root_id: target.rootId,
+        });
+        assetOrganizePushUndo(data, `删除 ${label}`, target.rootId);
+        showAssetOrganizeToast(`已移入回收站：${label}`, {undoable:true});
+        setStatus(`已删除文件夹「${label}」`);
+        assetTreeSelectedKey = `mine:root:${target.rootId}`;
+        await assetOrganizeRefresh(target.rootId);
+        return true;
+    } catch(err) {
+        showAssetOrganizeToast(assetOrganizeErrorText(err));
+        setStatus(assetOrganizeErrorText(err));
+        return false;
+    }
+}
+async function gwAssetTreeMoveFolder(dragKey, targetKey, zone='into'){
+    await loadAssetAllowedRootPaths?.();
+    const drag = assetOrganizeTargetFromKey(dragKey);
+    const target = assetOrganizeTargetFromKey(targetKey);
+    if(!drag || !target || drag.isRoot) return false;
+    if(drag.rootId !== target.rootId){
+        showAssetOrganizeToast('仅支持在同一挂载文件夹内移动');
+        setStatus('仅支持在同一挂载文件夹内移动');
+        return false;
+    }
+    const leaf = assetOrganizeLeafName(drag.path);
+    let destPath = '';
+    if(zone === 'into'){
+        destPath = target.path ? `${target.path}/${leaf}` : leaf;
+    } else {
+        const parent = assetOrganizeParentPath(target.path);
+        destPath = parent ? `${parent}/${leaf}` : leaf;
+    }
+    await assetOrganizeMoveFolder(drag, target.rootId, destPath);
+    return true;
+}
+async function gwAssetTreeMoveAssets(assetIds, targetKey){
+    await loadAssetAllowedRootPaths?.();
+    const target = assetOrganizeTargetFromKey(targetKey);
+    if(!target) return false;
+    await assetOrganizeMoveAssets(assetIds, target.rootId, target.path);
+    return true;
+}
+window.GWAssetOrganizeBridge = Object.freeze({
+    toggleExpand: toggleAssetTreeNode,
+    canOrganize: key => Boolean(assetOrganizeTargetFromKey(key)),
+    getTarget: key => assetOrganizeTargetFromKey(key),
+    openInSystem: gwAssetTreeOpenInSystem,
+    createFolder: gwAssetTreeCreateFolder,
+    commitRename: gwAssetTreeCommitRename,
+    deleteFolder: gwAssetTreeDeleteFolder,
+    moveFolder: gwAssetTreeMoveFolder,
+    moveAssets: gwAssetTreeMoveAssets,
+    undoLast: assetOrganizeUndoLast,
+    getSelectedAssetIds: () => Array.from(registrySelectedIds),
+    defaultRootId: () => assetOrganizeDefaultRootId(),
+    askConflict: assetOrganizeAskConflict,
+    hasUndo: () => assetOrganizeUndoStack.length > 0,
+    folderLabel: key => assetOrganizeFolderLabel(assetOrganizeTargetFromKey(key)),
+});
 async function restoreRegistryBrowseSession(){
     try {
         const navigation = performance.getEntriesByType?.('navigation')?.[0];
