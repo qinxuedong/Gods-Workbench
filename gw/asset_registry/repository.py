@@ -367,25 +367,20 @@ def _hidden_builtin(record: Dict[str, Any]) -> bool:
 
 
 def _removed_root_ids() -> set[str]:
+    """停用来源根 ID；只读允许根状态，不触发来源挂载探测链（QIN-582）。
+
+    旧实现先遍历 ``root_facets()`` 找 ``availability == "removed"`` 的 facet，再叠加
+    allowed_roots 快照。但 removed facet 的 id 本就取自同一份允许根状态里的停用根
+    id（``root_facets`` 用它判定），快照又会对每个活跃根做有界 probe_mount，两处
+    都是重复且昂贵的磁盘探测。这里直接读状态，ID 集合等价。
+    """
     removed: set[str] = set()
     try:
-        from gw.asset_registry import index_jobs
-        for facet in index_jobs.root_facets():
-            if str(facet.get("availability") or "") == "removed":
-                if facet.get("id"):
-                    removed.add(str(facet["id"]))
-                if facet.get("root_id"):
-                    removed.add(str(facet["root_id"]))
-                if facet.get("storage_root_id"):
-                    removed.add(str(facet["storage_root_id"]))
-    except Exception:
-        pass
-    try:
-        from gw.settings.service import default_storage_allowed_roots_service
-        snapshot = default_storage_allowed_roots_service.get_snapshot()
-        for root in snapshot.roots:
-            if not root.active:
-                removed.add(str(root.id))
+        for record in storage._allowed_roots_state().get("roots", []):
+            if not record.get("active"):
+                root_id = str(record.get("id") or "")
+                if root_id:
+                    removed.add(root_id)
     except Exception:
         pass
     return removed
@@ -414,20 +409,23 @@ def _iso_from_epoch(seconds: Any) -> str:
     return datetime.fromtimestamp(value, timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
-def _source_display_names() -> Dict[str, str]:
+def _source_display_names(
+    facets: Optional[Iterable[Dict[str, Any]]] = None,
+) -> Dict[str, str]:
     """来源 ID 到显示名映射：与左栏资产库同源（``root_facets``），不另存副本。
 
-    ``root_facets`` 本身对每个来源做有界挂载探测，异常时按空表处理——宁可显示名
-    缺失，也不能让一次探测失败把整个列表请求打成 500。
+    调用方可传入同一请求内已算好的 ``root_facets`` 结果（QIN-582 请求内复用），
+    避免为取显示名再跑一遍探测链；未传入时才自行取一次。异常时按空表处理——
+    宁可显示名缺失，也不能让一次探测失败把整个列表请求打成 500。
     """
     from gw.asset_registry import index_jobs
 
     names: Dict[str, str] = {}
     try:
-        facets = index_jobs.root_facets()
+        resolved = list(facets) if facets is not None else index_jobs.root_facets()
     except Exception:
         return names
-    for facet in facets:
+    for facet in resolved:
         source_id = str(facet.get("id") or "")
         name = str(facet.get("name") or "").strip()
         if source_id and name and source_id not in names:
@@ -466,6 +464,7 @@ def annotate_asset_provenance(
     *,
     raw: Optional[Dict[str, Any]] = None,
     resolve_modified: bool = True,
+    root_facets: Optional[Iterable[Dict[str, Any]]] = None,
 ) -> List[Dict[str, Any]]:
     """补下发真实来源库名与文件修改时间（QIN-539 / GitHub #592）。
 
@@ -478,7 +477,7 @@ def annotate_asset_provenance(
     只装饰调用方给到的条目（分页后的当前页），不对全库逐条 stat。
     """
     snapshot = raw if raw is not None else state().read()
-    names = _source_display_names()
+    names = _source_display_names(root_facets)
     decorated: List[Dict[str, Any]] = []
     for item in items:
         entry = dict(item)
@@ -1484,7 +1483,8 @@ def list_assets(limit: int, offset: int, query: Optional[str], kind: Optional[st
         limit = min(limit, dynamic_limit)
     page = items[offset:offset + limit]
     # 只装饰当前页：来源名与文件修改时间按页下发，避免为全库逐条 stat。
-    page = annotate_asset_provenance(page, raw=raw)
+    # QIN-582：复用本请求已算好的 root_facets，不再为显示名重复跑探测链。
+    page = annotate_asset_provenance(page, raw=raw, root_facets=root_facets or None)
     # 分页副本上补关联素材摘要：只读路径不回写状态，副本避免污染后续 mutate 的原始记录。
     relation_index = _relation_target_index(raw)
     page = [
