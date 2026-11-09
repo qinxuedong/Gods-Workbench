@@ -8,14 +8,20 @@ const managerJs = readFileSync(new URL('../../web/js/modules/asset-manager.js', 
 
 test('AC1: vault 嵌入态提示词与画布资产视图首列收为零宽，消除 240px 空白列', () => {
   // 必须存在针对 prompts、canvas-assets 的零宽规则，且右侧保留 minmax(280px,320px) 抽屉列
+  // 【QIN-580】LUT 库同为首列无内容的子页面，一并纳入这份清单。
   assert.match(
     vaultCss,
-    /html\.vault-shell-embedded body\.gw-signal\.gw-page--asset-manager #assetManagerRoot:is\(\.asset-manager-root-page-prompts,\.asset-manager-root-page-canvas-assets,\.asset-manager-root-page-workflows\)\s*\{\s*\/\* 【QIN-574】[^]*?\*\/\s*grid-template-columns:\s*0\s+minmax\(0,1fr\)\s+minmax\(280px,320px\)\s*!important;/
+    /html\.vault-shell-embedded body\.gw-signal\.gw-page--asset-manager #assetManagerRoot:is\(\.asset-manager-root-page-prompts,\.asset-manager-root-page-lut,\.asset-manager-root-page-canvas-assets,\.asset-manager-root-page-workflows\)\s*\{\s*\/\* 【QIN-574】[^]*?\*\/\s*grid-template-columns:\s*0\s+minmax\(0,1fr\)\s+minmax\(280px,320px\)\s*!important;/
   );
-  // 三列兜底选择器必须排除 prompts、canvas-assets 与 workflows
+  // 三列兜底选择器必须排除 prompts、LUT、canvas-assets 与 workflows
   assert.match(
     vaultCss,
-    /#assetManagerRoot:not\(\.asset-manager-root-registry\):not\(\.asset-manager-root-library\):not\(\.asset-manager-root-page-scripts\):not\(\.asset-manager-root-page-projects\):not\(\.asset-manager-root-page-prompts\):not\(\.asset-manager-root-page-canvas-assets\):not\(\.asset-manager-root-page-workflows\)/
+    /#assetManagerRoot:not\(\.asset-manager-root-registry\):not\(\.asset-manager-root-library\):not\(\.asset-manager-root-page-scripts\):not\(\.asset-manager-root-page-projects\):not\(\.asset-manager-root-page-prompts\):not\(\.asset-manager-root-page-lut\):not\(\.asset-manager-root-page-canvas-assets\):not\(\.asset-manager-root-page-workflows\)/
+  );
+  // 详情抽屉收起时轨道同步收到 44px，不留 280px 空列
+  assert.match(
+    vaultCss,
+    /#assetManagerRoot\.asset-manager-root-page-lut\.registry-detail-collapsed\s*\{\s*\/\* 【QIN-580】[^]*?\*\/\s*grid-template-columns:\s*0\s+minmax\(0,1fr\)\s+44px\s*!important;/
   );
 });
 

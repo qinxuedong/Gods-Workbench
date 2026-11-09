@@ -7,7 +7,10 @@ const manager = readFileSync(new URL('../../web/js/modules/asset-manager.js', im
 test('QIN-552：LUT 库只匹配 .cube，并在资产分类与统计中单列', () => {
     assert.match(manager, /\{id:'lut', name:'LUT库',[^\n]*kinds:\['lut'\], extensions:\['cube'\]\}/);
     assert.match(manager, /lut:new Set\(\['cube'\]\)/);
-    assert.match(manager, /id:'lut', name:'LUT',[^\n]*registryCategoryCount\('lut'\)/);
+    // 【QIN-580】LUT 保留顶栏导航入口（排在「提示词」之后），但不出统计数值卡、不计入「资产总量」；
+    // 分类口径（lut / .cube）本身不变。
+    assert.doesNotMatch(manager, /id:'lut', name:'LUT',[^\n]*registryCategoryCount\('lut'\)/);
+    assert.match(manager, /\{id:'lut', name:'LUT', nav:true, icon:'palette'\}/);
     assert.match(manager, /lut:'LUT'/);
     assert.match(manager, /cube:'Cube LUT 色彩查找表（\.cube）'/);
     assert.match(manager, /const isLut = String\(item\.kind \|\| item\.media_type \|\| item\.type \|\| ''\)\.toLowerCase\(\) === 'lut'\s*\|\| registryAssetExtension\(item\)\.toLowerCase\(\) === 'cube';/);

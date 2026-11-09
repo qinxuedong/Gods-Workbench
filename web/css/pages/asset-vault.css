@@ -183,8 +183,11 @@ body.gw-signal.gw-page--asset-manager .registry-stat-icon svg { width: 13px; hei
 /* 深凹槽底轨 + 水平高光渐变填充（微光扩散阴影），高度 4px。 */
 body.gw-signal.gw-page--asset-manager .registry-stat-meter { grid-area: 2 / 3 / 3 / 4; align-self: center; height: 4px; border-radius: 999px; overflow: hidden; background: color-mix(in srgb,#000 52%,var(--vault-well)); box-shadow: inset 0 1px 2px rgb(0 0 0 / .68); }
 body.gw-signal.gw-page--asset-manager .registry-stat-meter > span { display: block; height: 100%; width: var(--vault-ratio,0%); border-radius: inherit; background: linear-gradient(90deg,color-mix(in srgb,var(--vault-meter) 52%,#000) 0%,var(--vault-meter) 62%,color-mix(in srgb,var(--vault-meter) 68%,#fff) 100%); box-shadow: 0 0 6px color-mix(in srgb,var(--vault-meter) 50%,transparent); }
-/* 【QIN-566】顶栏导航入口卡（项目/剧本/提示词）：单行「图标+名称」，无计数/占比/进度条，不伪造统计。 */
-body.gw-signal.gw-page--asset-manager .registry-stat-card.is-nav { grid-template-columns: 16px minmax(0,1fr); grid-template-rows: 1fr; align-content: center; }
+/* 【QIN-566】顶栏导航入口卡（项目/剧本/提示词）：单行「图标+名称」，无计数/占比/进度条，不伪造统计。
+   【QIN-580】统计条回到 13 张卡（含 LUT 入口）后，2/3 宽度公式会把「提示词」这类三字标签压成省略号；
+   名称列最小宽度钉在 max-content，网格轨道按内容自然向右借用留白区、最多铺满容器——
+   既不改 2/3 公式与列数（QIN-531/QIN-563 契约），也不靠缩小字号掩盖。 */
+body.gw-signal.gw-page--asset-manager .registry-stat-card.is-nav { grid-template-columns: 16px minmax(max-content,1fr); grid-template-rows: 1fr; align-content: center; }
 body.gw-signal.gw-page--asset-manager .registry-stat-card.is-nav .registry-stat-icon { grid-area: 1 / 1 / 2 / 2; }
 body.gw-signal.gw-page--asset-manager .registry-stat-card.is-nav .registry-stat-copy { display: block; min-width: 0; }
 body.gw-signal.gw-page--asset-manager .registry-stat-card.is-nav .registry-stat-copy small { grid-area: 1 / 2 / 2 / 3; align-self: center; }
@@ -1333,7 +1336,7 @@ html.vault-shell-embedded body.gw-signal.gw-page--asset-manager #assetManagerRoo
     display: grid !important;
     grid-template-rows: auto auto minmax(0,1fr) !important;
 }
-html.vault-shell-embedded body.gw-signal.gw-page--asset-manager #assetManagerRoot:not(.asset-manager-root-registry):not(.asset-manager-root-library):not(.asset-manager-root-page-scripts):not(.asset-manager-root-page-projects):not(.asset-manager-root-page-prompts):not(.asset-manager-root-page-canvas-assets):not(.asset-manager-root-page-workflows) {
+html.vault-shell-embedded body.gw-signal.gw-page--asset-manager #assetManagerRoot:not(.asset-manager-root-registry):not(.asset-manager-root-library):not(.asset-manager-root-page-scripts):not(.asset-manager-root-page-projects):not(.asset-manager-root-page-prompts):not(.asset-manager-root-page-lut):not(.asset-manager-root-page-canvas-assets):not(.asset-manager-root-page-workflows) {
     /* 【QIN-569 AC2 / QIN-572 / QIN-574】内置提示词/画布/工作流等视图首列均收为零宽，不再吃本条三列轨道。 */
     grid-template-columns: 240px minmax(0,1fr) minmax(280px,320px) !important;
 }
@@ -1346,8 +1349,13 @@ html.vault-shell-embedded body.gw-signal.gw-page--asset-manager #assetManagerRoo
     /* 【QIN-572】项目视图首列收为零宽，消除 240px 中间空栏，网格与工具栏左缘与 iframe 对齐。 */
     grid-template-columns: 0 minmax(0,1fr) !important;
 }
-html.vault-shell-embedded body.gw-signal.gw-page--asset-manager #assetManagerRoot:is(.asset-manager-root-page-prompts,.asset-manager-root-page-canvas-assets,.asset-manager-root-page-workflows) {
-    /* 【QIN-574】提示词、画布与工作流视图首列收为零宽，消除 240px 中间空栏，右侧保留详情抽屉列。 */
+html.vault-shell-embedded body.gw-signal.gw-page--asset-manager #assetManagerRoot.asset-manager-root-page-lut.registry-detail-collapsed {
+    /* 【QIN-580】LUT 库复用资产详情抽屉：收起时轨道同步收到 44px，避免留一条 280px 的空列。 */
+    grid-template-columns: 0 minmax(0,1fr) 44px !important;
+}
+html.vault-shell-embedded body.gw-signal.gw-page--asset-manager #assetManagerRoot:is(.asset-manager-root-page-prompts,.asset-manager-root-page-lut,.asset-manager-root-page-canvas-assets,.asset-manager-root-page-workflows) {
+    /* 【QIN-574】提示词、画布与工作流视图首列收为零宽，消除 240px 中间空栏，右侧保留详情抽屉列。
+       【QIN-580】LUT 库同为首列无内容的子页面，一并收零，布局与提示词一致。 */
     grid-template-columns: 0 minmax(0,1fr) minmax(280px,320px) !important;
 }
 html.vault-shell-embedded body.gw-signal.gw-page--asset-manager #assetManagerRoot.asset-manager-root-library {
