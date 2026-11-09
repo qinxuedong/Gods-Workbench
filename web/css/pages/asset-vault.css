@@ -1333,7 +1333,7 @@ html.vault-shell-embedded body.gw-signal.gw-page--asset-manager #assetManagerRoo
     display: grid !important;
     grid-template-rows: auto auto minmax(0,1fr) !important;
 }
-html.vault-shell-embedded body.gw-signal.gw-page--asset-manager #assetManagerRoot:not(.asset-manager-root-registry):not(.asset-manager-root-library):not(.asset-manager-root-page-scripts):not(.asset-manager-root-page-projects):not(.asset-manager-root-page-prompts):not(.asset-manager-root-page-canvas-assets):not(.asset-manager-root-page-workflows) {
+html.vault-shell-embedded body.gw-signal.gw-page--asset-manager #assetManagerRoot:not(.asset-manager-root-registry):not(.asset-manager-root-library):not(.asset-manager-root-page-scripts):not(.asset-manager-root-page-projects):not(.asset-manager-root-page-prompts):not(.asset-manager-root-page-lut):not(.asset-manager-root-page-canvas-assets):not(.asset-manager-root-page-workflows) {
     /* 【QIN-569 AC2 / QIN-572 / QIN-574】内置提示词/画布/工作流等视图首列均收为零宽，不再吃本条三列轨道。 */
     grid-template-columns: 240px minmax(0,1fr) minmax(280px,320px) !important;
 }
@@ -1346,8 +1346,13 @@ html.vault-shell-embedded body.gw-signal.gw-page--asset-manager #assetManagerRoo
     /* 【QIN-572】项目视图首列收为零宽，消除 240px 中间空栏，网格与工具栏左缘与 iframe 对齐。 */
     grid-template-columns: 0 minmax(0,1fr) !important;
 }
-html.vault-shell-embedded body.gw-signal.gw-page--asset-manager #assetManagerRoot:is(.asset-manager-root-page-prompts,.asset-manager-root-page-canvas-assets,.asset-manager-root-page-workflows) {
-    /* 【QIN-574】提示词、画布与工作流视图首列收为零宽，消除 240px 中间空栏，右侧保留详情抽屉列。 */
+html.vault-shell-embedded body.gw-signal.gw-page--asset-manager #assetManagerRoot.asset-manager-root-page-lut.registry-detail-collapsed {
+    /* 【QIN-580】LUT 库复用资产详情抽屉：收起时轨道同步收到 44px，避免留一条 280px 的空列。 */
+    grid-template-columns: 0 minmax(0,1fr) 44px !important;
+}
+html.vault-shell-embedded body.gw-signal.gw-page--asset-manager #assetManagerRoot:is(.asset-manager-root-page-prompts,.asset-manager-root-page-lut,.asset-manager-root-page-canvas-assets,.asset-manager-root-page-workflows) {
+    /* 【QIN-574】提示词、画布与工作流视图首列收为零宽，消除 240px 中间空栏，右侧保留详情抽屉列。
+       【QIN-580】LUT 库同为首列无内容的子页面，一并收零，布局与提示词一致。 */
     grid-template-columns: 0 minmax(0,1fr) minmax(280px,320px) !important;
 }
 html.vault-shell-embedded body.gw-signal.gw-page--asset-manager #assetManagerRoot.asset-manager-root-library {

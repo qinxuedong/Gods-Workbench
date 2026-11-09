@@ -31,7 +31,7 @@ test('AC1: 嵌入态下剧本标签隐藏 content-heading，实现 Coverflow 与
   );
 });
 
-test('AC2: 顶栏概览统计卡片顺序调整为 LUT → 画布 → 其他 → 项目 → 剧本 → 提示词', () => {
+test('AC2: 顶栏概览统计卡片顺序调整为 画布 → 其他 → 项目 → 剧本 → 提示词 → LUT', () => {
   const statsSlice = managerJs.slice(
     managerJs.indexOf('function renderRegistryOverviewStats'),
     managerJs.indexOf('function toggleRegistryFeature')
@@ -47,9 +47,11 @@ test('AC2: 顶栏概览统计卡片顺序调整为 LUT → 画布 → 其他 →
     assert.ok(pos > 0, '所有关键统计卡片与导航入口必须存在于 stats 数组中');
   }
 
+  // 【QIN-580】LUT 由统计卡改为导航入口，按产品要求排在「提示词」之后，
+  // 因此本票原先「LUT 打头」的顺序调整为「画布 → 其他 → 项目 → 剧本 → 提示词 → LUT」。
   assert.ok(
-    lut < canvas && canvas < other && other < projects && projects < scripts && scripts < prompts,
-    '卡片顺序必须为 LUT → 画布 → 其他 → 项目 → 剧本 → 提示词'
+    canvas < other && other < projects && projects < scripts && scripts < prompts && prompts < lut,
+    '卡片顺序必须为 画布 → 其他 → 项目 → 剧本 → 提示词 → LUT'
   );
 });
 

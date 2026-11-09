@@ -679,7 +679,7 @@ let detailViewerState = {
     modelInfo:null, modelInfoLoading:false, modelInfoError:'', wheelAt:0, audioZoom:1,
     fontScale:1, fontFit:1, fontLineWidth:0, fontExpanded:'', fontListScrollTop:0,
     lutStrength:1, lutCompare:'applied', lutListScrollTop:0,
-    mediaLutId:'', mediaLutStrength:1, mediaLutCompare:'applied', mediaLutOpen:false, mediaLutError:'',
+    mediaCanvasLut:{}, mediaCanvasLutPanel:'', mediaLutMenu:{open:false, step:'asset', assetId:''},
     mediaCanvasItems:[], mediaCanvasActiveId:'', mediaCanvasSelectedIds:new Set(), mediaCanvasSelectionOrder:[], mediaCanvasLayout:{},
     mediaCanvasAnnotations:[], mediaCanvasDrawings:[], mediaCanvasGroups:[], mediaCanvasContextMenu:null,
     mediaCanvasEditingAnnotationId:'', mediaCanvasHistory:[], mediaCanvasSnap:true, mediaCanvasLibraryVisible:false,
@@ -878,10 +878,12 @@ const SYSTEM_ASSET_BOARDS = [
     {id:'projects', name:'项目制片', icon:'clapperboard', system:true},
     {id:'workflows', name:'工作流', icon:'workflow', system:true},
     {id:'prompts', name:'提示词', icon:'text-cursor-input', system:true},
+    // 【QIN-580】LUT 从统计卡升级为独立子页面：紧跟在「提示词」之后，与导航入口同构。
+    {id:'lut', name:'LUT 库', icon:'palette', system:true},
     {id:'canvas-assets', name:'画布资产', icon:'layout-dashboard', system:true},
 ];
 // QIN-549：治理建议由资产工具栏顶栏入口打开，不再占用左侧看板。
-const SYSTEM_BOARD_RACK_TABS = ['scripts','projects','workflows','prompts','canvas-assets'];
+const SYSTEM_BOARD_RACK_TABS = ['scripts','projects','workflows','prompts','lut','canvas-assets'];
 const SCRIPT_ASSET_STORAGE_KEY = 'gwb_script_assets_v1';
 let scriptArchiveItems = [];
 function readScriptWorkspaceAssets(){
@@ -1182,7 +1184,23 @@ async function activateAssetBoard(id){
         }
         return;
     }
-    if(board.id === 'registry' && previousBoard?.system === false){
+    if(id === 'lut'){
+        // 【QIN-580】LUT 库是独立子页面：按 kind=lut 取数，客户端再按 .cube 收口。
+        try { await ensureBuiltinLutsRegistered(); } catch(err){ setStatus(err.message || '内置 LUT 登记失败'); }
+        applyRegistryFilterDefinition({kind:'lut'});
+        const queryKey = registryQueryString();
+        const cached = registryAssetsQueryCache.get(queryKey);
+        if(cached) applyRegistryAssetResponse(cached);
+        else { registryAssets = []; registryTotal = null; registryTotalKnown = false; }
+        registryLoading = !cached;
+        render();
+        if(!cached){
+            refreshRegistryAssets(false).then(() => { if(activeTab === id) render(); }).catch(err => setStatus(err.message || 'LUT 库加载失败'));
+        }
+        return;
+    }
+    // 【QIN-580】LUT 库会把 registryKind 钉成 lut，回总览时必须清掉，否则总览只剩 LUT。
+    if(board.id === 'registry' && (previousBoard?.system === false || previousBoard?.id === 'lut')){
         applyRegistryFilterDefinition({groupSimilar:registryGroupSimilar});
         const queryKey = registryQueryString();
         const cached = registryAssetsQueryCache.get(queryKey);
@@ -9923,12 +9941,13 @@ function render(){
     const customLibraryActive = assetBoardById(activeTab)?.system === false;
     const systemRackActive = systemBoardRackActive();
     const pageClass = String(activeTab || 'assets').replace(/[^a-z0-9_-]/gi, '-');
-    root.className = `asset-manager-root asset-tree-layout asset-manager-root-page-${pageClass}${activeTab === 'local' ? ' asset-manager-root-local' : ''}${activeTab === 'registry' ? ' asset-manager-root-registry' : ''}${customLibraryActive ? ' asset-manager-root-library' : ''}${customLibraryActive && registryDetailPanelCollapsed ? ' registry-detail-collapsed' : ''}${systemRackActive ? ' asset-manager-root-rack' : ''}`;
+    root.className = `asset-manager-root asset-tree-layout asset-manager-root-page-${pageClass}${activeTab === 'local' ? ' asset-manager-root-local' : ''}${activeTab === 'registry' ? ' asset-manager-root-registry' : ''}${customLibraryActive ? ' asset-manager-root-library' : ''}${customLibraryActive && registryDetailPanelCollapsed ? ' registry-detail-collapsed' : ''}${activeTab === 'lut' && registryDetailPanelCollapsed ? ' registry-detail-collapsed' : ''}${systemRackActive ? ' asset-manager-root-rack' : ''}`;
     syncRegistryDetailGridWidth();
     if(activeTab === 'registry') renderRegistryManager();
     else if(activeTab === 'scripts') renderScriptAssetsManager();
     else if(activeTab === 'projects') renderProjectManager();
     else if(activeTab === 'prompts') renderPromptManager();
+    else if(activeTab === 'lut') renderLutManager();
     else if(activeTab === 'workflows') renderWorkflowManager();
     else if(activeTab === 'inbox') renderInboxManager();
     else if(activeTab === 'local') renderLocalManager();
@@ -10829,7 +10848,6 @@ function renderRegistryOverviewStats(){
         {id:'document', name:'文档', value:registryCategoryCount('document'), icon:'files'},
         {id:'model', name:'模型', value:registryCategoryCount('model'), icon:'box'},
         {id:'font', name:'字体', value:registryCategoryCount('font'), icon:'type'},
-        {id:'lut', name:'LUT', value:registryCategoryCount('lut'), icon:'palette'},
         // 【QIN-531】卡片更名「画布」；data-registry-stat 仍沿用 reference-canvas，既有跳转不动。
         {id:'reference-canvas', name:'画布', value:canvasTotal, icon:'map'},
         {id:'other', name:'其他', value:registryCategoryCount('other'), icon:'package-open'},
@@ -10837,6 +10855,9 @@ function renderRegistryOverviewStats(){
         {id:'projects', name:'项目', nav:true, icon:'clapperboard'},
         {id:'scripts', name:'剧本', nav:true, icon:'file-text'},
         {id:'prompts', name:'提示词', nav:true, icon:'text-cursor-input'},
+        // 【QIN-580】LUT 改为导航入口：紧跟在「提示词」之后，只出图标 + 名称，
+        // 不再输出计数、占比与进度条（不计入统计口径），点击进入独立 LUT 库子页面。
+        {id:'lut', name:'LUT', nav:true, icon:'palette'},
     ];
     return `<section class="registry-overview-stats" aria-label="资产统计">${stats.map(stat => {
         const ratio = globalTotal ? Math.round(Number(stat.value || 0) / globalTotal * 100) : 0;
@@ -11260,7 +11281,8 @@ function renderRegistryFilterChips(){
     }
     if(registryStatCategory) chips.push(`<button type="button" data-registry-clear="category">统计：${escapeHtml(registryCategoryLabel(registryStatCategory))} <i data-lucide="x"></i></button>`);
     // 【QIN-553】LUT 视图存在已隐藏的内置条目时，提供一键恢复显示入口。
-    if(registryBuiltinHiddenIds.size && registryStatCategory === 'lut'){
+    // 【QIN-580】LUT 改成独立子页面后，入口条件同时认 category 与 board。
+    if(registryBuiltinHiddenIds.size && (registryStatCategory === 'lut' || activeTab === 'lut')){
         chips.push(`<button type="button" data-registry-reveal-builtin>恢复显示内置 LUT（${registryBuiltinHiddenIds.size}）<i data-lucide="eye"></i></button>`);
     }
     if(registryRecentDays) chips.push(`<button type="button" data-registry-clear="recent">最近 ${registryRecentDays} 天 <i data-lucide="x"></i></button>`);
@@ -13705,6 +13727,32 @@ function renderRegistryManager(){
     syncRegistryFacetLayout();
     // 【QIN-544】树面板常驻，目录索引与根目录清单始终加载（不再依赖中栏折叠态）
     loadAssetRackRegisteredFolders().catch(() => null);
+    void ensureAssetRackDirectoryIndex();
+}
+/** 【QIN-580】LUT 库子页面的取数口径：索引里所有 .cube。 */
+function lutLibraryAssets(){
+    return (registryAssets || []).filter(item => registryAssetCategory(item) === 'lut');
+}
+function renderLutManager(){
+    // 与「提示词」「画布资产」同构：机架布局 + 右栏详情，只是取数钉在 kind=lut。
+    const embeddedVault = document.documentElement.classList.contains('vault-shell-embedded');
+    const items = lutLibraryAssets();
+    const visible = registryVisibleAssetList(items);
+    if(selectedRegistryAssetId && !items.some(item => item.id === selectedRegistryAssetId)){
+        selectedRegistryAssetId = '';
+        registryDetail = null;
+    }
+    root.innerHTML = `${renderAssetTreePanel()}
+    <section class="asset-panel asset-content registry-content registry-layout-${registryLayout} registry-aspect-${registryAspect} ${registrySimple ? 'registry-simple' : ''} ${registrySelectedIds.size ? 'manage-on' : ''}" style="--registry-card-size:${registryCardSize}px">
+        ${embeddedVault ? '' : renderRegistryToolbar(null, 'LUT 库', `${items.length} 个色彩查找表（.cube）`)}
+        ${renderRegistryFilterChips()}
+        <div class="registry-fresh-notice" data-registry-fresh-notice></div>
+        <div class="content-scroll registry-assets-scroll" data-registry-zoom-area title="Shift+滚轮调整预览大小">${renderRegistryAssetSections(visible, null, '暂无 LUT。把 .cube 文件放进素材目录后会自动出现在这里。')}${renderRegistryPagination()}</div>
+        <div class="registry-vault-footer" aria-label="资产库状态"><span>匹配 LUT <strong>${Number(items.length || 0).toLocaleString('zh-CN')}</strong></span><span>${registryLoading ? '正在读取' : registryPageHasMore ? `已加载 ${visible.length} 项` : `已加载全部 ${visible.length} 项`}</span><span>色彩查找表</span></div>
+        ${renderRegistrySelectionBar(null)}
+    </section>
+    ${renderRegistryDetailResizer()}
+    ${renderRegistryDetailPanel()}`;
     void ensureAssetRackDirectoryIndex();
 }
 function renderCustomAssetLibrary(board){
@@ -16861,17 +16909,23 @@ function lutPreviewStage(){
     return document.querySelector('.asset-detail-viewer [data-detail-lut-stage]');
 }
 /* ------------------------------------------------------------------ */
-/* QIN-580：给素材（图片 / 视频）实时套用 LUT 预览                      */
+/* QIN-580：参考画布素材套用 LUT 预览                                    */
 /* 只读：取像素 → 查表 → 画到覆盖 canvas，不写盘、不新增资产。            */
+/* 入口是画布工具条的「套用 LUT」，节点右上角角标打开强度/对比浮窗。        */
 /* ------------------------------------------------------------------ */
 
 /** 视频逐帧取像素比图片贵，降采样更狠；图片可以放宽到 1280。 */
 const DETAIL_MEDIA_LUT_VIDEO_WIDTH = 720;
 
 const detailMediaLutListCache = {items:null, inflight:null};
-const detailMediaLutRuntime = {lutId:'', lut:null, title:'', sample:null, busy:false, pending:false};
+/** lutId → {lut, title}：每个节点各用各的 LUT，不能只缓存一个。 */
+const detailMediaLutCache = new Map();
+/** 正在合成 / 待补绘的节点，避免同一节点并发合成。 */
+const detailMediaLutDraw = {busy:new Set(), pending:new Set()};
+/** 图片元素 → 已取样帧：拖强度、切对比模式复用像素，切 LUT 不必重取。 */
+const detailMediaLutSamples = new WeakMap();
 
-/** 已加载素材里能直接拿到的 LUT；接口失败时的兜底，避免面板空白。 */
+/** 已加载素材里能直接拿到的 LUT；接口失败时的兜底，避免菜单空白。 */
 function detailMediaLutFallbackItems(){
     const unique = new Map();
     registryAssets.filter(lutPreviewIsAsset).forEach(item => unique.set(String(item.id || ''), item));
@@ -16899,39 +16953,69 @@ function detailMediaLutItems(){
     task.catch(() => {}).then(() => { detailMediaLutListCache.inflight = null; });
     return task;
 }
+function detailMediaLutLabel(lut){
+    return String(lut?.metadata?.lut?.title || lut?.name || '未命名 LUT');
+}
+function detailMediaLutIsBuiltin(lut){
+    return lut?.metadata?.builtin === true || lut?.builtin === true;
+}
+
+/* ---- 节点配置 ---- */
+
+function detailMediaLutMap(){
+    const map = detailViewerState.mediaCanvasLut;
+    return map && typeof map === 'object' ? map : {};
+}
+/** 节点当前的 LUT 配置；没套用返回 null。 */
+function detailMediaLutEntry(itemId){
+    const key = String(itemId || '');
+    if(!key) return null;
+    const entry = detailMediaLutMap()[key];
+    return entry && entry.lutId ? entry : null;
+}
 /**
  * 强度取 0–1。缺失/非法一律当 100%，
  * 不能用 `Number(x) || 0`——那会把「没取到」和「用户拖到 0%」压成同一个值，
  * 表现为选了 LUT 却看不出任何变化（QIN-580 取证踩过）。
  */
-function detailMediaLutStrengthValue(){
-    const value = Number(detailViewerState.mediaLutStrength);
+function detailMediaLutStrengthOf(entry){
+    const value = Number(entry?.strength);
     return Number.isFinite(value) ? Math.max(0, Math.min(1, value)) : 1;
 }
-function detailMediaLutStrengthPercent(){
-    return Math.round(detailMediaLutStrengthValue() * 100);
+function detailMediaLutCompareOf(entry){
+    return LUT_COMPARE_MODES.includes(entry?.compare) ? entry.compare : 'applied';
 }
-function detailMediaLutCompareMode(){
-    return LUT_COMPARE_MODES.includes(detailViewerState.mediaLutCompare) ? detailViewerState.mediaLutCompare : 'applied';
+/** 画布里能套 LUT 的素材（下拉一级菜单的数据源）。 */
+function detailMediaLutCanvasTargets(){
+    return (detailViewerState.mediaCanvasItems || []).filter(item => {
+        const type = detailViewerType(detailViewerState.source, item);
+        return type === 'image' || type === 'video';
+    });
 }
-/** 工具条与状态挂在详情舞台上：媒体画布模式与非画布模式都能取到同一锚点。 */
-function detailMediaLutStage(){
-    return document.querySelector('.asset-detail-viewer .asset-detail-stage')
-        || document.querySelector('.asset-detail-viewer [data-detail-media-lut-stage]');
+function detailMediaLutTargetById(itemId){
+    const key = String(itemId || '');
+    return detailMediaLutCanvasTargets().find(item => String(item.id || '') === key) || null;
 }
-/**
- * 当前要套用 LUT 的媒体。
- * 图片/视频详情默认进媒体画布模式，此时只作用于当前活动节点，
- * 避免多节点画布上把 LUT 套到用户没选中的素材。
- */
-function detailMediaLutMedia(){
-    const stage = detailMediaLutStage();
-    if(!stage) return null;
-    const activeNode = stage.querySelector('.asset-detail-media-node.is-active');
-    if(activeNode){
-        return activeNode.querySelector('img.asset-detail-media-node-content, video.asset-detail-media-node-content');
-    }
-    return stage.querySelector('[data-detail-media-lut-stage] img, [data-detail-media-lut-stage] video');
+/** 记一次配置变更：没套用就把键删掉，别留 `{lutId:''}` 这种脏数据。 */
+function writeDetailMediaLutEntry(itemId, entry){
+    const key = String(itemId || '');
+    if(!key) return;
+    const map = {...detailMediaLutMap()};
+    if(entry && entry.lutId) map[key] = entry;
+    else delete map[key];
+    detailViewerState.mediaCanvasLut = map;
+}
+
+/* ---- DOM 定位 ---- */
+
+function detailMediaLutNode(itemId){
+    const key = String(itemId || '');
+    if(!key) return null;
+    return [...document.querySelectorAll('.asset-detail-viewer [data-detail-media-canvas-node]')]
+        .find(node => String(node.dataset.detailMediaCanvasNode || '') === key) || null;
+}
+function detailMediaLutNodeMedia(node){
+    return node?.querySelector('.asset-detail-media-node-clip > img.asset-detail-media-node-content, .asset-detail-media-node-clip > video.asset-detail-media-node-content') || null;
 }
 /** 覆盖 canvas 按需注入媒体容器：节点重建后由绘制逻辑重新挂上。 */
 function detailMediaLutCanvas(media){
@@ -16948,290 +17032,467 @@ function detailMediaLutCanvas(media){
     }
     return canvas;
 }
-/**
- * 「已套用」状态条挂在工具条里，而不是浮在媒体角上：
- * 画布模式右上角是工具条、右下角是小地图，绝对定位的角标必撞，改成堆叠就没有遮挡问题。
- */
-function detailMediaLutBadge(stage){
-    if(!stage) return null;
-    const bar = stage.querySelector('[data-detail-media-lut-bar]');
-    if(!bar) return null;
-    let badge = bar.querySelector('[data-detail-media-lut-badge]');
-    if(!badge){
-        badge = document.createElement('span');
-        badge.className = 'asset-detail-media-lut-badge';
-        badge.dataset.detailMediaLutBadge = '';
-        badge.hidden = true;
-        const toggle = bar.querySelector('[data-detail-media-lut-open]');
-        if(toggle) bar.insertBefore(badge, toggle);
-        else bar.appendChild(badge);
-    }
-    return badge;
-}
-function renderDetailMediaLutPanel(item, type){
-    const strength = detailMediaLutStrengthPercent();
-    const mode = detailMediaLutCompareMode();
-    const enabled = Boolean(String(detailViewerState.mediaLutId || ''));
-    return `<div class="asset-detail-media-lut-panel" data-detail-media-lut-panel>
-        <div class="asset-detail-media-lut-head"><span>选择 LUT</span><button type="button" data-detail-media-lut-clear ${enabled ? '' : 'disabled'}>清除</button></div>
-        <div class="asset-detail-media-lut-list" data-detail-media-lut-list><span class="asset-detail-media-lut-hint"><i data-lucide="loader-2"></i>正在读取 LUT 库…</span></div>
-        <div class="asset-detail-media-lut-controls">
-            <label class="asset-detail-media-lut-strength"><span>强度</span><input type="range" min="0" max="100" step="1" value="${strength}" data-detail-media-lut-strength ${enabled ? '' : 'disabled'} aria-label="LUT 强度"><b data-detail-media-lut-strength-label>${strength}%</b></label>
-            <div class="asset-detail-lut-compare" role="group" aria-label="前后对比">
-                <button type="button" data-detail-media-lut-compare="applied" aria-pressed="${mode === 'applied'}" class="${mode === 'applied' ? 'is-active' : ''}" ${enabled ? '' : 'disabled'}>套用后</button>
-                <button type="button" data-detail-media-lut-compare="split" aria-pressed="${mode === 'split'}" class="${mode === 'split' ? 'is-active' : ''}" ${enabled ? '' : 'disabled'}>分屏</button>
-                <button type="button" data-detail-media-lut-compare="original" aria-pressed="${mode === 'original'}" class="${mode === 'original' ? 'is-active' : ''}" ${enabled ? '' : 'disabled'}>原图</button>
-            </div>
-        </div>
-    </div>`;
-}
-function renderDetailMediaLutBar(item, type){
-    if(type !== 'image' && type !== 'video') return '';
-    const open = Boolean(detailViewerState.mediaLutOpen);
-    return `<div class="asset-detail-media-lut ${open ? 'is-open' : ''}" data-detail-media-lut-bar>
-        <button class="asset-detail-media-lut-toggle" type="button" data-detail-media-lut-open aria-expanded="${open ? 'true' : 'false'}" title="给当前素材套用 LUT 预览"><i data-lucide="palette"></i><span>套用 LUT</span></button>
-        ${open ? renderDetailMediaLutPanel(item, type) : ''}
-        <span class="asset-detail-media-lut-error" data-detail-media-lut-error hidden></span>
-    </div>`;
-}
-/**
- * 非画布模式的媒体包裹层。
- * 画布模式的媒体节点由 `renderDetailMediaCanvas` 自行渲染，canvas 与徽标都由绘制逻辑
- * 在舞台/活动节点上按需注入——模板里放它们，画布模式下根本不会出现在 DOM 里。
- */
-function renderDetailMediaLutStage(inner, item, type){
-    return `<div class="asset-detail-media-lut-stage" data-detail-media-lut-stage data-lut-state="idle">
-        ${inner}
-    </div>`;
-}
-function resetDetailMediaLutControls(){
-    const enabled = Boolean(String(detailViewerState.mediaLutId || ''));
-    document.querySelectorAll('.asset-detail-viewer [data-detail-media-lut-strength], .asset-detail-viewer [data-detail-media-lut-compare], .asset-detail-viewer [data-detail-media-lut-clear]').forEach(node => {
-        node.disabled = !enabled;
-    });
-}
-function showDetailMediaLutError(message){
-    const stage = detailMediaLutStage();
-    const box = stage?.querySelector('[data-detail-media-lut-error]');
-    if(!box) return;
-    if(message){
-        box.innerHTML = `<i data-lucide="triangle-alert"></i><span>${escapeHtml(message)}</span>`;
-        box.hidden = false;
-        refreshIcons();
-    } else {
-        box.hidden = true;
-        box.innerHTML = '';
-    }
-}
-async function fillDetailMediaLutList(){
-    const list = document.querySelector('.asset-detail-viewer [data-detail-media-lut-list]');
-    if(!list) return;
-    const items = await detailMediaLutItems();
-    if(!list.isConnected) return;
-    if(!items.length){
-        list.innerHTML = '<span class="asset-detail-media-lut-hint">还没有 LUT 素材，先到 LUT 库导入 .cube</span>';
-        return;
-    }
-    const activeId = String(detailViewerState.mediaLutId || '');
-    list.innerHTML = items.map(lut => {
-        const id = String(lut.id || '');
-        const active = Boolean(activeId) && id === activeId;
-        const builtin = lut.metadata?.builtin === true || lut.builtin === true;
-        const label = lut.metadata?.lut?.title || lut.name || '未命名 LUT';
-        return `<button class="asset-detail-media-lut-item ${active ? 'is-active' : ''}" type="button" data-detail-media-lut-item="${escapeAttr(id)}" aria-pressed="${active ? 'true' : 'false'}" title="${escapeAttr(lut.name || '未命名 LUT')}">
-            <i data-lucide="palette"></i><span><strong>${escapeHtml(label)}</strong><small>${escapeHtml(builtin ? '内置' : '用户导入')}</small></span>
-        </button>`;
-    }).join('');
-    refreshIcons();
-}
-/**
- * 用当前 LUT、强度与对比模式重绘覆盖 canvas。
- * 图片的像素只取一次，拖强度/切模式复用缓存；视频每帧重取。
- */
-async function paintDetailMediaLut(){
-    const stage = detailMediaLutStage();
-    if(!stage) return false;
-    const media = detailMediaLutMedia();
-    if(!media) return false;
-    const canvas = detailMediaLutCanvas(media);
-    const badge = detailMediaLutBadge(stage);
-    if(!canvas) return false;
 
-    const lutId = String(detailViewerState.mediaLutId || '');
-    if(!lutId){
+/* ---- 绘制 ---- */
+
+async function loadDetailMediaLut(lutId){
+    const key = String(lutId || '');
+    if(!key) throw new LutPreviewError('LUT_SOURCE_UNAVAILABLE', '还没有选择 LUT');
+    if(detailMediaLutCache.has(key)) return detailMediaLutCache.get(key);
+    const items = await detailMediaLutItems();
+    const selected = items.find(entry => String(entry.id || '') === key);
+    if(!selected) throw new LutPreviewError('LUT_SOURCE_UNAVAILABLE', '该 LUT 已不在素材库中');
+    const sourceUrl = lutPreviewSourceUrl(selected, 'registry');
+    if(!sourceUrl) throw new LutPreviewError('LUT_SOURCE_UNAVAILABLE', '该 LUT 没有可读取的文件');
+    const record = {lut: await loadLutPreview(sourceUrl), title: detailMediaLutLabel(selected)};
+    detailMediaLutCache.set(key, record);
+    return record;
+}
+/** 单个节点的覆盖绘制；失败只影响该节点，不静默把原图当结果。 */
+async function paintDetailMediaLutNode(itemId, options = {}){
+    const key = String(itemId || '');
+    const entry = detailMediaLutEntry(key);
+    const node = detailMediaLutNode(key);
+    const media = detailMediaLutNodeMedia(node);
+    if(!node || !media) return false;
+    const canvas = detailMediaLutCanvas(media);
+    if(!canvas) return false;
+    if(!entry){
         canvas.hidden = true;
-        if(badge) badge.hidden = true;
         media.style.visibility = '';
-        stage.dataset.lutState = 'idle';
+        node.dataset.lutState = 'idle';
         return false;
     }
-    if(!mediaLutSamplable(media)) return false;
-
+    if(!mediaLutSamplable(media)){
+        // 视频还没元数据、图片还没解码，等加载事件回来再补画。
+        node.dataset.lutState = 'pending';
+        return false;
+    }
     try {
-        if(detailMediaLutRuntime.lutId !== lutId || !detailMediaLutRuntime.lut){
-            const items = await detailMediaLutItems();
-            const selected = items.find(entry => String(entry.id || '') === lutId);
-            if(!selected) throw new LutPreviewError('LUT_SOURCE_UNAVAILABLE', '该 LUT 已不在素材库中');
-            const sourceUrl = lutPreviewSourceUrl(selected, 'registry');
-            if(!sourceUrl) throw new LutPreviewError('LUT_SOURCE_UNAVAILABLE', '该 LUT 没有可读取的文件');
-            detailMediaLutRuntime.lut = await loadLutPreview(sourceUrl);
-            detailMediaLutRuntime.lutId = lutId;
-            detailMediaLutRuntime.title = String(selected.metadata?.lut?.title || selected.name || 'LUT');
-            detailMediaLutRuntime.sample = null;
-        }
-
+        const record = await loadDetailMediaLut(entry.lutId);
         const isVideo = media.tagName === 'VIDEO';
-        if(!detailMediaLutRuntime.sample || isVideo){
-            detailMediaLutRuntime.sample = mediaToLutSample(media, {maxWidth:isVideo ? DETAIL_MEDIA_LUT_VIDEO_WIDTH : LUT_MEDIA_SAMPLE_MAX_WIDTH});
+        let sample = isVideo ? null : detailMediaLutSamples.get(media);
+        if(!sample){
+            sample = mediaToLutSample(media, {maxWidth:isVideo ? DETAIL_MEDIA_LUT_VIDEO_WIDTH : LUT_MEDIA_SAMPLE_MAX_WIDTH});
+            if(!isVideo) detailMediaLutSamples.set(media, sample);
         }
-        const strength = detailMediaLutStrengthValue();
-        const frame = composeLutPreview(detailMediaLutRuntime.sample, detailMediaLutRuntime.lut, {
-            mode:detailMediaLutCompareMode(),
-            strength,
+        const frame = composeLutPreview(sample, record.lut, {
+            mode:detailMediaLutCompareOf(entry),
+            strength:detailMediaLutStrengthOf(entry),
         });
         if(!paintLutFrame(canvas, frame)) throw new LutPreviewError('LUT_SOURCE_UNAVAILABLE', '画布绘制失败');
         canvas.hidden = false;
         media.style.visibility = 'hidden';
+        node.dataset.lutState = 'ready';
+        // 首次套用时 LUT 清单还没加载完，角标标题是占位的「LUT」，这里补成真实名字。
+        const badge = node.querySelector('[data-detail-media-node-lut]');
         if(badge){
-            badge.innerHTML = `<i data-lucide="palette"></i><span>${escapeHtml(detailMediaLutRuntime.title || 'LUT')} · ${Math.round(strength * 100)}%</span>`;
-            badge.hidden = false;
-            refreshIcons();
+            badge.title = `LUT · ${record.title}`;
+            badge.setAttribute('aria-label', `LUT ${record.title}`);
         }
-        stage.dataset.lutState = 'ready';
-        detailViewerState.mediaLutError = '';
-        showDetailMediaLutError('');
         return true;
     } catch(error){
         const message = error instanceof LutPreviewError ? error.message : `LUT 套用失败：${error?.message || error}`;
-        detailViewerState.mediaLutError = message;
-        stage.dataset.lutState = 'error';
+        node.dataset.lutState = 'error';
         canvas.hidden = true;
-        if(badge) badge.hidden = true;
         media.style.visibility = '';
-        showDetailMediaLutError(message);
+        if(options.notify) setStatus(message);
         return false;
     }
 }
-/** 视频按帧重绘：同一时刻只跑一次合成，期间的请求合并成一次补绘。 */
-function scheduleDetailMediaLutDraw(){
-    if(!detailViewerState.mediaLutId) return;
-    if(detailMediaLutRuntime.busy){
-        detailMediaLutRuntime.pending = true;
+/** 同一节点的合成串行化，期间的请求合并成一次补绘（视频逐帧回调很密）。 */
+function scheduleDetailMediaLutPaint(itemId, options = {}){
+    const key = String(itemId || '');
+    if(!key) return;
+    if(detailMediaLutDraw.busy.has(key)){
+        detailMediaLutDraw.pending.add(key);
         return;
     }
-    detailMediaLutRuntime.busy = true;
-    Promise.resolve(paintDetailMediaLut()).finally(() => {
-        detailMediaLutRuntime.busy = false;
-        if(detailMediaLutRuntime.pending){
-            detailMediaLutRuntime.pending = false;
-            scheduleDetailMediaLutDraw();
+    detailMediaLutDraw.busy.add(key);
+    Promise.resolve(paintDetailMediaLutNode(key, options)).finally(() => {
+        detailMediaLutDraw.busy.delete(key);
+        if(detailMediaLutDraw.pending.delete(key)) scheduleDetailMediaLutPaint(key);
+    });
+}
+function paintAllDetailMediaLut(options = {}){
+    Object.keys(detailMediaLutMap()).forEach(itemId => scheduleDetailMediaLutPaint(itemId, options));
+}
+/** 视频按帧补画；暂停时 rVFC 不再回调，靠 pause/seeked 补一帧。 */
+function bindDetailMediaLutMedia(itemId, media){
+    const key = String(itemId || '');
+    if(!media || !key || media.dataset.mediaLutBound === key) return;
+    media.dataset.mediaLutBound = key;
+    if(media.tagName === 'VIDEO'){
+        const repaint = () => scheduleDetailMediaLutPaint(key);
+        media.addEventListener('seeked', repaint);
+        media.addEventListener('pause', repaint);
+        media.addEventListener('loadeddata', repaint);
+        if(typeof media.requestVideoFrameCallback === 'function'){
+            const pump = () => { repaint(); media.requestVideoFrameCallback(pump); };
+            media.requestVideoFrameCallback(pump);
+        } else {
+            media.addEventListener('timeupdate', repaint);
         }
+        return;
+    }
+    if(!media.complete){
+        media.addEventListener('load', () => scheduleDetailMediaLutPaint(key), {once:true});
+    }
+}
+/** 画布渲染后的接线入口：节点重建会丢掉 canvas 与角标，这里按需补挂并重画。 */
+function hydrateDetailMediaCanvasLut(){
+    const entries = detailMediaLutMap();
+    Object.keys(entries).forEach(itemId => {
+        const node = detailMediaLutNode(itemId);
+        const media = detailMediaLutNodeMedia(node);
+        if(!node || !media) return;
+        refreshDetailMediaNodeLutDom(itemId);
+        bindDetailMediaLutMedia(itemId, media);
+        scheduleDetailMediaLutPaint(itemId);
+        positionDetailMediaNodeLutPanel(itemId);
     });
 }
-function bindDetailMediaLutVideo(video){
-    if(!video || video.dataset.mediaLutBound === '1') return;
-    video.dataset.mediaLutBound = '1';
-    video.addEventListener('seeked', scheduleDetailMediaLutDraw);
-    // 暂停时 rVFC 不再回调，这里补一帧，保证暂停画面与当前帧一致。
-    video.addEventListener('pause', scheduleDetailMediaLutDraw);
-    video.addEventListener('loadeddata', scheduleDetailMediaLutDraw);
-    if(typeof video.requestVideoFrameCallback === 'function'){
-        const pump = () => {
-            scheduleDetailMediaLutDraw();
-            video.requestVideoFrameCallback(pump);
-        };
-        video.requestVideoFrameCallback(pump);
-    } else {
-        video.addEventListener('timeupdate', scheduleDetailMediaLutDraw);
-    }
+
+/* ---- 渲染：工具条入口 + 两级菜单 ---- */
+
+function renderDetailMediaLutButton(){
+    const open = Boolean(detailViewerState.mediaLutMenu?.open);
+    const targets = detailMediaLutCanvasTargets();
+    const disabled = !targets.length;
+    // 菜单本身挂 body（工具条 overflow:hidden 会裁掉），这里只出按钮。
+    return `<span class="asset-detail-media-lut-entry">
+        <button class="hw-btn ${open ? 'is-active' : ''}" type="button" data-detail-media-lut-menu aria-haspopup="menu" aria-expanded="${open}" ${disabled ? 'disabled' : ''} title="${disabled ? '画布上没有可套用 LUT 的素材' : '给画布素材套用 LUT'}"><i data-lucide="palette"></i><span>套用 LUT</span><i data-lucide="chevron-down"></i></button>
+    </span>`;
 }
-function bindDetailMediaLutImage(image){
-    if(!image || image.dataset.mediaLutBound === '1') return;
-    image.dataset.mediaLutBound = '1';
-    if(!image.complete){
-        image.addEventListener('load', () => { if(detailViewerState.mediaLutId) paintDetailMediaLut(); }, {once:true});
+function renderDetailMediaLutMenu(){
+    const menu = detailViewerState.mediaLutMenu || {};
+    if(menu.step === 'lut'){
+        const assetId = String(menu.assetId || '');
+        const asset = detailMediaLutTargetById(assetId);
+        const current = String(detailMediaLutEntry(assetId)?.lutId || '');
+        const items = detailMediaLutListCache.items || [];
+        const list = items.length
+            ? items.map(lut => {
+                const id = String(lut.id || '');
+                const active = id === current;
+                return `<button class="asset-detail-media-lut-menu-item ${active ? 'is-active' : ''}" type="button" role="menuitemradio" aria-checked="${active}" data-detail-media-lut-apply="${escapeAttr(id)}">
+                    <i data-lucide="palette"></i><span><strong>${escapeHtml(detailMediaLutLabel(lut))}</strong><small>${escapeHtml(detailMediaLutIsBuiltin(lut) ? '内置' : '用户导入')}</small></span>${active ? '<i data-lucide="check"></i>' : '<i data-lucide="chevron-right"></i>'}
+                </button>`;
+            }).join('')
+            : '<span class="asset-detail-media-lut-menu-hint"><i data-lucide="loader-2"></i>正在读取 LUT 库…</span>';
+        return `<div class="asset-detail-media-lut-menu" role="menu" aria-label="选择 LUT">
+            <header><button type="button" data-detail-media-lut-back aria-label="返回素材列表" title="返回素材列表"><i data-lucide="chevron-left"></i></button><span>${escapeHtml(asset?.name || '选择 LUT')}</span></header>
+            <div class="asset-detail-media-lut-menu-list">${list}</div>
+        </div>`;
     }
+    const targets = detailMediaLutCanvasTargets();
+    const body = targets.map(item => {
+        const entry = detailMediaLutEntry(item.id);
+        const type = detailViewerType(detailViewerState.source, item);
+        return `<button class="asset-detail-media-lut-menu-item" type="button" role="menuitem" data-detail-media-lut-target="${escapeAttr(item.id)}">
+            <i data-lucide="${type === 'video' ? 'film' : 'image'}"></i>
+            <span><strong>${escapeHtml(item.name || '未命名素材')}</strong><small>${entry ? '已套用 LUT' : '未套用 LUT'}</small></span>
+            <i data-lucide="chevron-right"></i>
+        </button>`;
+    }).join('') || '<span class="asset-detail-media-lut-menu-hint">画布上没有图片或视频素材</span>';
+    return `<div class="asset-detail-media-lut-menu" role="menu" aria-label="选择素材">
+        <header><span>选择素材</span></header>
+        <div class="asset-detail-media-lut-menu-list">${body}</div>
+    </div>`;
 }
-/** 详情渲染后的接线入口。 */
-function initializeDetailMediaLut(overlay, item, type){
-    if(type !== 'image' && type !== 'video') return;
-    const media = detailMediaLutMedia();
-    if(!media) return;
-    if(media.tagName === 'VIDEO') bindDetailMediaLutVideo(media);
-    else bindDetailMediaLutImage(media);
-    if(detailViewerState.mediaLutOpen) fillDetailMediaLutList();
-    if(detailViewerState.mediaLutId) paintDetailMediaLut();
+function refreshDetailMediaLutEntryDom(){
+    const host = document.querySelector('.asset-detail-viewer .asset-detail-media-lut-entry');
+    if(!host) return;
+    host.outerHTML = renderDetailMediaLutButton();
+    syncDetailMediaLutMenuDom();
+    refreshIcons();
 }
-function toggleDetailMediaLutPanel(){
-    const bar = document.querySelector('.asset-detail-viewer [data-detail-media-lut-bar]');
-    if(!bar) return;
-    const open = !detailViewerState.mediaLutOpen;
-    detailViewerState.mediaLutOpen = open;
-    bar.classList.toggle('is-open', open);
-    bar.querySelector('[data-detail-media-lut-open]')?.setAttribute('aria-expanded', open ? 'true' : 'false');
-    const panel = bar.querySelector('[data-detail-media-lut-panel]');
-    if(open && !panel){
-        const item = detailViewerState.items[detailViewerState.index] || detailViewerItem(detailViewerState.source, detailViewerState.id) || {};
-        bar.insertAdjacentHTML('beforeend', renderDetailMediaLutPanel(item, detailViewerType(detailViewerState.source, item)));
-        refreshIcons();
-        fillDetailMediaLutList();
-    } else if(!open && panel){
-        panel.remove();
-    }
-}
-async function setDetailMediaLutId(id){
-    detailViewerState.mediaLutId = String(id || '');
-    detailViewerState.mediaLutError = '';
-    detailMediaLutRuntime.sample = null;
-    if(detailMediaLutRuntime.lutId !== detailViewerState.mediaLutId){
-        detailMediaLutRuntime.lut = null;
-        detailMediaLutRuntime.lutId = '';
-    }
-    document.querySelectorAll('.asset-detail-viewer [data-detail-media-lut-item]').forEach(button => {
-        const active = String(button.dataset.detailMediaLutItem || '') === detailViewerState.mediaLutId;
-        button.classList.toggle('is-active', active);
-        button.setAttribute('aria-pressed', active ? 'true' : 'false');
+/** 菜单挂 body：`[data-detail-media-lut-layer]` 是唯一容器，关菜单就整块摘掉。 */
+function detailMediaLutLayer(){
+    let layer = document.querySelector('[data-detail-media-lut-layer]');
+    if(layer) return layer;
+    layer = document.createElement('div');
+    layer.dataset.detailMediaLutLayer = '';
+    // 必须走统一的浮层登记：详情遮罩是 kind:modal 的浮层，FloatingDismissal 在
+    // capture 阶段会把「落在遮罩外」的点击判成外部点击并 stopImmediatePropagation，
+    // 菜单里的按钮就永远收不到 click。登记成更高优先级的 popover 后才算「自己人」。
+    layer.dataset.floatingPriority = '6';
+    document.body.appendChild(layer);
+    markAssetFloatingSurface(layer,{
+        surface:'asset-detail-media-lut-menu',
+        kind:'popover',
+        content:'self',
+        close:closeDetailMediaLutMenu,
+        trigger:'[data-detail-media-lut-menu]',
     });
-    resetDetailMediaLutControls();
-    await paintDetailMediaLut();
+    layer.addEventListener('click', event => { handleDetailMediaLutMenuClick(event); });
+    return layer;
 }
-function setDetailMediaLutStrength(value){
+function closeDetailMediaLutMenu(){
+    document.querySelector('[data-detail-media-lut-layer]')?.remove();
+    if(detailViewerState.mediaLutMenu?.open){
+        detailViewerState.mediaLutMenu = {open:false, step:'asset', assetId:''};
+        refreshDetailMediaLutEntryDom();
+    }
+}
+function syncDetailMediaLutMenuDom(){
+    const trigger = document.querySelector('.asset-detail-viewer [data-detail-media-lut-menu]');
+    const open = Boolean(detailViewerState.mediaLutMenu?.open) && Boolean(trigger);
+    if(!open){
+        document.querySelector('[data-detail-media-lut-layer]')?.remove();
+        return;
+    }
+    const layer = detailMediaLutLayer();
+    layer.innerHTML = renderDetailMediaLutMenu();
+    bindDetailMediaLutMenuTracking();
+    positionDetailMediaLutMenu();
+    refreshIcons();
+}
+/** 菜单右下对齐入口按钮；下方放不下就翻到按钮上方，左右都 clamp 在窗口内。 */
+function positionDetailMediaLutMenu(){
+    const menu = document.querySelector('[data-detail-media-lut-layer] > .asset-detail-media-lut-menu');
+    const trigger = document.querySelector('.asset-detail-viewer [data-detail-media-lut-menu]');
+    if(!menu || !trigger) return;
+    const rect = trigger.getBoundingClientRect();
+    const width = menu.offsetWidth || 240;
+    const height = menu.offsetHeight || 280;
+    const margin = 8;
+    let left = Math.round(rect.right - width);
+    if(left + width > window.innerWidth - margin) left = window.innerWidth - margin - width;
+    if(left < margin) left = margin;
+    let top = Math.round(rect.bottom + 6);
+    if(top + height > window.innerHeight - margin) top = Math.round(rect.top - 6 - height);
+    if(top < margin) top = margin;
+    menu.style.left = `${left}px`;
+    menu.style.top = `${top}px`;
+}
+let detailMediaLutMenuTracking = false;
+/** 滚动 / 缩放会让按钮跑位，菜单跟着重算一次；只绑一次。 */
+function bindDetailMediaLutMenuTracking(){
+    if(detailMediaLutMenuTracking) return;
+    detailMediaLutMenuTracking = true;
+    const follow = () => {
+        if(!detailViewerState.mediaLutMenu?.open) return;
+        positionDetailMediaLutMenu();
+    };
+    window.addEventListener('resize', follow);
+    window.addEventListener('scroll', follow, true);
+}
+/**
+ * 「套用 LUT」下拉菜单的点击处理：入口按钮在工具条里（走 root 委托），
+ * 菜单项挂在 body 浮层里（走浮层自身的监听），两处共用这一份逻辑。
+ * 返回 true 表示这次点击已被处理。
+ */
+function handleDetailMediaLutMenuClick(event){
+    if(event.target.closest?.('[data-detail-media-lut-menu]')){ toggleDetailMediaLutMenu().catch(() => {}); return true; }
+    if(event.target.closest?.('[data-detail-media-lut-back]')){
+        detailViewerState.mediaLutMenu = {open:true, step:'asset', assetId:''};
+        refreshDetailMediaLutEntryDom();
+        return true;
+    }
+    const target = event.target.closest?.('[data-detail-media-lut-target]');
+    if(target){ pickDetailMediaLutTarget(target.dataset.detailMediaLutTarget || '').catch(() => {}); return true; }
+    const apply = event.target.closest?.('[data-detail-media-lut-apply]');
+    if(apply){ applyDetailMediaLutToTarget(apply.dataset.detailMediaLutApply || '').catch(() => {}); return true; }
+    return false;
+}
+
+/* ---- 渲染：节点角标 + 右侧浮窗 ---- */
+
+function renderDetailMediaNodeLut(item, type){
+    const entry = detailMediaLutEntry(item.id);
+    if(!entry) return '';
+    const open = String(detailViewerState.mediaCanvasLutPanel || '') === String(item.id);
+    const title = detailMediaLutCache.get(String(entry.lutId || ''))?.title || 'LUT';
+    return `<button class="asset-detail-media-node-lut" type="button" data-detail-media-node-lut="${escapeAttr(item.id)}" aria-expanded="${open}" aria-label="LUT ${escapeAttr(title)}" title="LUT · ${escapeAttr(title)}"><i data-lucide="palette"></i></button>
+        ${open ? renderDetailMediaNodeLutPanel(item, entry, title, type) : ''}`;
+}
+function renderDetailMediaNodeLutPanel(item, entry, title, type){
+    const strength = Math.round(detailMediaLutStrengthOf(entry) * 100);
+    const mode = detailMediaLutCompareOf(entry);
+    const current = String(entry.lutId || '');
+    const items = detailMediaLutListCache.items || [];
+    const list = items.length
+        ? items.map(lut => {
+            const id = String(lut.id || '');
+            const active = id === current;
+            return `<button class="asset-detail-media-node-lut-item ${active ? 'is-active' : ''}" type="button" aria-pressed="${active}" data-detail-media-node-lut-item="${escapeAttr(id)}">
+                <i data-lucide="palette"></i><span><strong>${escapeHtml(detailMediaLutLabel(lut))}</strong><small>${escapeHtml(detailMediaLutIsBuiltin(lut) ? '内置' : '用户导入')}</small></span>
+            </button>`;
+        }).join('')
+        : '<span class="asset-detail-media-lut-menu-hint">正在读取 LUT 库…</span>';
+    return `<div class="asset-detail-media-node-lut-panel" data-detail-media-node-lut-panel="${escapeAttr(item.id)}" role="dialog" aria-label="LUT 调节">
+        <header><strong><i data-lucide="palette"></i>${escapeHtml(title)}</strong><button type="button" data-detail-media-node-lut-close aria-label="关闭" title="关闭"><i data-lucide="x"></i></button></header>
+        <label class="asset-detail-media-node-lut-strength"><span>强度</span><input type="range" min="0" max="100" step="1" value="${strength}" data-detail-media-node-lut-strength aria-label="LUT 强度"><b data-detail-media-node-lut-strength-label>${strength}%</b></label>
+        <div class="asset-detail-lut-compare" role="group" aria-label="前后对比">
+            <button type="button" data-detail-media-node-lut-compare="applied" aria-pressed="${mode === 'applied'}" class="${mode === 'applied' ? 'is-active' : ''}">套用后</button>
+            <button type="button" data-detail-media-node-lut-compare="split" aria-pressed="${mode === 'split'}" class="${mode === 'split' ? 'is-active' : ''}">分屏</button>
+            <button type="button" data-detail-media-node-lut-compare="original" aria-pressed="${mode === 'original'}" class="${mode === 'original' ? 'is-active' : ''}">原图</button>
+        </div>
+        <div class="asset-detail-media-node-lut-list" data-detail-media-node-lut-list>${list}</div>
+        <button class="asset-detail-media-node-lut-clear" type="button" data-detail-media-node-lut-clear><i data-lucide="eraser"></i><span>清除 LUT</span></button>
+    </div>`;
+}
+function refreshDetailMediaNodeLutDom(itemId){
+    const key = String(itemId || '');
+    const node = detailMediaLutNode(key);
+    const item = detailMediaLutTargetById(key);
+    if(!node || !item) return;
+    node.querySelectorAll('[data-detail-media-node-lut], [data-detail-media-node-lut-panel]').forEach(el => el.remove());
+    node.insertAdjacentHTML('beforeend', renderDetailMediaNodeLut(item, detailViewerType(detailViewerState.source, item)));
+    refreshIcons();
+    // 画布缩放时角标要反向缩放回来，刚插入的节点同样适用。
+    syncDetailMediaNodeLutScale();
+}
+
+/**
+ * 浮窗默认贴节点右侧弹出；右侧放不下就整体左移，保证整块留在舞台内。
+ * 画布用 transform 缩放，节点的 rect 是视觉尺寸、offsetWidth 才是布局尺寸，
+ * 所以这里按 scale 换算，并给浮窗反向缩放，避免 65% 画布里浮窗只剩 145px 宽。
+ */
+function positionDetailMediaNodeLutPanel(itemId){
+    const node = detailMediaLutNode(itemId);
+    const panel = node?.querySelector('[data-detail-media-node-lut-panel]');
+    const stage = document.querySelector('.asset-detail-viewer .asset-detail-stage');
+    if(!node || !panel || !stage) return;
+    const nodeRect = node.getBoundingClientRect();
+    const stageRect = stage.getBoundingClientRect();
+    const layoutWidth = node.offsetWidth || nodeRect.width;
+    const scale = layoutWidth ? (nodeRect.width / layoutWidth) || 1 : 1;
+    panel.style.transform = scale === 1 ? '' : `scale(${1 / scale})`;
+    panel.style.transformOrigin = 'top left';
+    const panelWidth = 224;
+    const panelHeight = Math.min(panel.offsetHeight || 300, 340);
+    let leftCss = layoutWidth + 8 / scale;
+    const overflowRight = (nodeRect.left + leftCss * scale + panelWidth) - (stageRect.right - 8);
+    if(overflowRight > 0) leftCss -= overflowRight / scale;
+    if(leftCss < 8 / scale) leftCss = 8 / scale;
+    let topCss = 0;
+    const overflowBottom = (nodeRect.top + topCss * scale + panelHeight) - (stageRect.bottom - 8);
+    if(overflowBottom > 0) topCss -= overflowBottom / scale;
+    if(nodeRect.top + topCss * scale < stageRect.top + 8) topCss = (stageRect.top + 8 - nodeRect.top) / scale;
+    panel.style.left = `${Math.round(leftCss)}px`;
+    panel.style.top = `${Math.round(topCss)}px`;
+    panel.style.right = 'auto';
+}
+/** 角标同样反向缩放：22px 在 65% 画布里只剩 14px，点起来太费劲。 */
+function syncDetailMediaNodeLutScale(){
+    document.querySelectorAll('.asset-detail-viewer [data-detail-media-canvas-node]').forEach(node => {
+        const badge = node.querySelector('[data-detail-media-node-lut]');
+        if(!badge) return;
+        const rect = node.getBoundingClientRect();
+        const scale = node.offsetWidth ? (rect.width / node.offsetWidth) || 1 : 1;
+        badge.style.transform = scale === 1 ? '' : `scale(${1 / scale})`;
+    });
+    const openId = String(detailViewerState.mediaCanvasLutPanel || '');
+    if(openId) positionDetailMediaNodeLutPanel(openId);
+    // 画布缩放时工具条也会跟着位移，body 上的下拉菜单要重贴一次。
+    if(detailViewerState.mediaLutMenu?.open) positionDetailMediaLutMenu();
+}
+
+/* ---- 操作 ---- */
+
+async function toggleDetailMediaLutMenu(){
+    if(detailViewerState.mediaLutMenu?.open){
+        detailViewerState.mediaLutMenu = {open:false, step:'asset', assetId:''};
+        refreshDetailMediaLutEntryDom();
+        return;
+    }
+    // 先取清单再开菜单：打开就是可用状态，避免闪一次「读取中」。
+    await detailMediaLutItems();
+    detailViewerState.mediaLutMenu = {open:true, step:'asset', assetId:''};
+    refreshDetailMediaLutEntryDom();
+}
+async function pickDetailMediaLutTarget(itemId){
+    await detailMediaLutItems();
+    detailViewerState.mediaLutMenu = {open:true, step:'lut', assetId:String(itemId || '')};
+    refreshDetailMediaLutEntryDom();
+}
+/** 选中 LUT：应用到目标素材，收起菜单，顺手把该节点的调节浮窗打开。 */
+async function applyDetailMediaLutToTarget(lutId){
+    const assetId = String(detailViewerState.mediaLutMenu?.assetId || '');
+    if(!assetId) return;
+    const previous = detailMediaLutEntry(assetId);
+    writeDetailMediaLutEntry(assetId, {
+        lutId:String(lutId || ''),
+        strength:previous ? detailMediaLutStrengthOf(previous) : 1,
+        compare:previous ? detailMediaLutCompareOf(previous) : 'applied',
+    });
+    // 先把 LUT 读进缓存，浮窗标题和角标才不会先闪一个占位的「LUT」。
+    try { await loadDetailMediaLut(lutId); } catch(_) { /* 读取失败留给绘制阶段统一提示 */ }
+    detailViewerState.mediaLutMenu = {open:false, step:'asset', assetId:''};
+    detailViewerState.mediaCanvasLutPanel = assetId;
+    refreshDetailMediaLutEntryDom();
+    refreshDetailMediaNodeLutDom(assetId);
+    scheduleDetailMediaLutPaint(assetId, {notify:true});
+    positionDetailMediaNodeLutPanel(assetId);
+}
+async function toggleDetailMediaNodeLutPanel(itemId){
+    const key = String(itemId || '');
+    if(!key || !detailMediaLutEntry(key)) return;
+    if(String(detailViewerState.mediaCanvasLutPanel || '') === key){
+        detailViewerState.mediaCanvasLutPanel = '';
+        refreshDetailMediaNodeLutDom(key);
+        return;
+    }
+    await detailMediaLutItems();
+    detailViewerState.mediaCanvasLutPanel = key;
+    refreshDetailMediaNodeLutDom(key);
+    positionDetailMediaNodeLutPanel(key);
+}
+function closeDetailMediaNodeLutPanel(){
+    const key = String(detailViewerState.mediaCanvasLutPanel || '');
+    if(!key) return;
+    detailViewerState.mediaCanvasLutPanel = '';
+    refreshDetailMediaNodeLutDom(key);
+}
+async function setDetailMediaNodeLut(itemId, lutId){
+    const key = String(itemId || '');
+    const previous = detailMediaLutEntry(key);
+    if(!previous) return;
+    writeDetailMediaLutEntry(key, {...previous, lutId:String(lutId || '')});
+    // 先读进缓存，浮窗标题才不会退回占位的「LUT」。
+    try { await loadDetailMediaLut(lutId); } catch(_) { /* 失败留给绘制阶段提示 */ }
+    refreshDetailMediaNodeLutDom(key);
+    positionDetailMediaNodeLutPanel(key);
+    scheduleDetailMediaLutPaint(key, {notify:true});
+}
+function setDetailMediaNodeLutStrength(itemId, value){
+    const key = String(itemId || '');
+    const previous = detailMediaLutEntry(key);
+    if(!previous) return;
     const percent = Math.max(0, Math.min(100, Math.round(Number(value) || 0)));
-    detailViewerState.mediaLutStrength = percent / 100;
-    const label = document.querySelector('.asset-detail-viewer [data-detail-media-lut-strength-label]');
+    writeDetailMediaLutEntry(key, {...previous, strength:percent / 100});
+    const label = detailMediaLutNode(key)?.querySelector('[data-detail-media-node-lut-strength-label]');
     if(label) label.textContent = `${percent}%`;
-    paintDetailMediaLut();
+    scheduleDetailMediaLutPaint(key);
 }
-function setDetailMediaLutCompare(mode){
+function setDetailMediaNodeLutCompare(itemId, mode){
     if(!LUT_COMPARE_MODES.includes(mode)) return;
-    detailViewerState.mediaLutCompare = mode;
-    document.querySelectorAll('.asset-detail-viewer [data-detail-media-lut-compare]').forEach(button => {
-        const active = button.dataset.detailMediaLutCompare === mode;
+    const key = String(itemId || '');
+    const previous = detailMediaLutEntry(key);
+    if(!previous) return;
+    writeDetailMediaLutEntry(key, {...previous, compare:mode});
+    const panel = detailMediaLutNode(key)?.querySelector('[data-detail-media-node-lut-panel]');
+    panel?.querySelectorAll('[data-detail-media-node-lut-compare]').forEach(button => {
+        const active = button.dataset.detailMediaNodeLutCompare === mode;
         button.classList.toggle('is-active', active);
         button.setAttribute('aria-pressed', active ? 'true' : 'false');
     });
-    paintDetailMediaLut();
+    scheduleDetailMediaLutPaint(key);
 }
-function clearDetailMediaLut(){
-    detailViewerState.mediaLutId = '';
-    detailViewerState.mediaLutError = '';
-    detailMediaLutRuntime.lutId = '';
-    detailMediaLutRuntime.lut = null;
-    detailMediaLutRuntime.sample = null;
-    const stage = detailMediaLutStage();
-    const media = detailMediaLutMedia();
+function clearDetailMediaNodeLut(itemId){
+    const key = String(itemId || '');
+    if(!detailMediaLutEntry(key)) return;
+    writeDetailMediaLutEntry(key, null);
+    detailViewerState.mediaCanvasLutPanel = '';
+    const node = detailMediaLutNode(key);
+    const media = detailMediaLutNodeMedia(node);
     const canvas = media?.parentElement?.querySelector('[data-detail-media-lut-canvas]');
     if(canvas) canvas.hidden = true;
-    const badge = stage?.querySelector('[data-detail-media-lut-badge]');
-    if(badge) badge.hidden = true;
     if(media) media.style.visibility = '';
-    if(stage) stage.dataset.lutState = 'idle';
-    showDetailMediaLutError('');
-    document.querySelectorAll('.asset-detail-viewer [data-detail-media-lut-item]').forEach(button => {
-        button.classList.remove('is-active');
-        button.setAttribute('aria-pressed', 'false');
-    });
-    resetDetailMediaLutControls();
+    if(node) node.dataset.lutState = 'idle';
+    refreshDetailMediaNodeLutDom(key);
 }
 
 function renderDetailLutWorkspace(source, item){
@@ -18226,8 +18487,9 @@ function renderDetailMediaCanvasToolButtons(){
     </div>
     <div class="asset-detail-media-note-colors" aria-label="注释颜色">
         <label title="注释背景色"><span>背景</span><input type="color" data-detail-annotation-color="background" value="${escapeAttr(detailMediaCanvasSelectedAnnotationColor('background'))}"></label>
-        <label title="注释文字色"><span>文字</span><input type="color" data-detail-annotation-color="text" value="${escapeAttr(detailMediaCanvasSelectedAnnotationColor('text'))}"></label>
     </div>
+    <!-- 【QIN-580】原「文字」控件（注释文字色）位置改为 LUT 入口。 -->
+    ${renderDetailMediaLutButton()}
     <div class="asset-detail-media-tool-group asset-detail-media-export-tools" role="group" aria-label="输出">
         <label class="asset-detail-media-export-scope" title="PNG 输出范围"><span>范围</span><select data-detail-media-export-scope aria-label="PNG 输出范围"><option value="all" ${detailViewerState.mediaCanvasExportScope !== 'selection' ? 'selected' : ''}>全部画布</option><option value="selection" ${detailViewerState.mediaCanvasExportScope === 'selection' ? 'selected' : ''}>当前选中</option></select></label>
         <button class="hw-btn" type="button" data-detail-media-context-action="export"><i data-lucide="download"></i><span>导出</span></button>
@@ -18366,7 +18628,7 @@ function renderDetailViewerMedia(source, item, type){
             const alignedTime = alignTimeToFps(Number(startTime), fps);
             videoSrc = `${videoSrc}#t=${alignedTime}`;
         }
-        return renderDetailMediaLutStage(`<video class="asset-lightbox-video asset-detail-player" src="${escapeAttr(videoSrc)}" poster="${escapeAttr(assetPreviewUrl(url, 1280, item))}" controls playsinline preload="metadata" data-frame-rate="${fps || ''}"></video>`, item, 'video');
+        return `<video class="asset-lightbox-video asset-detail-player" src="${escapeAttr(videoSrc)}" poster="${escapeAttr(assetPreviewUrl(url, 1280, item))}" controls playsinline preload="metadata" data-frame-rate="${fps || ''}"></video>`;
     }
     if(type === 'audio'){
         const extensionLabel = assetFileExtension(item).toUpperCase() || 'AUDIO';
@@ -18444,7 +18706,7 @@ function renderDetailViewerMedia(source, item, type){
     if(type === 'model') return renderDetailModelMedia(source, item);
     if(type === 'image'){
         const rawPreview = ASSET_BROWSER_PREVIEW_EXTENSIONS.has(extension) ? url : assetPreviewUrl(url, 2048, item);
-        return renderDetailMediaLutStage(`<img class="asset-lightbox-image" src="${escapeAttr(rawPreview)}" alt="${escapeAttr(item.name || '素材预览')}" draggable="false">`, item, 'image');
+        return `<img class="asset-lightbox-image" src="${escapeAttr(rawPreview)}" alt="${escapeAttr(item.name || '素材预览')}" draggable="false">`;
     }
     const thumbnail = source === 'workflow' ? workflowThumb(item) : assetThumb(item);
     return `<div class="asset-detail-thumbnail-fallback" aria-label="${escapeAttr(item.name || '素材缩略图')}"><div class="asset-thumb">${thumbnail}</div></div>`;
@@ -19117,7 +19379,6 @@ function renderDetailViewer(){
                     <button class="asset-detail-page-nav next" type="button" data-detail-navigate="1" ${detailViewerState.index >= detailViewerState.items.length - 1 ? 'disabled' : ''} aria-label="下一个素材"><i data-lucide="chevron-right"></i></button>
                     ${canZoom ? `<div class="asset-detail-zoom-controls"><button type="button" data-detail-zoom="-1" aria-label="缩小"><i data-lucide="minus"></i></button><button type="button" data-detail-zoom="0">适应</button><button type="button" data-detail-zoom="1" aria-label="放大"><i data-lucide="plus"></i></button></div>` : ''}
                 `}
-                ${(type === 'image' || type === 'video') ? renderDetailMediaLutBar(item, type) : ''}
             </section>
             ${type === 'audio' ? renderDetailAudioPlaylist(item) : ''}
             ${inspector}
@@ -19140,8 +19401,8 @@ function renderDetailViewer(){
     if(type === 'font') initializeDetailFontPreview(overlay, url);
     else clearDetailViewerFontFace();
     if(type === 'lut') initializeDetailLutPreview(overlay, item);
-    // 【QIN-580】图片/视频详情接上「套用 LUT」实时预览（只读取像素，不落盘）。
-    if(type === 'image' || type === 'video') initializeDetailMediaLut(overlay, item, type);
+    // 【QIN-580】画布节点上的 LUT 预览：节点渲染完再补挂覆盖 canvas（节点重建后 canvas 会丢）。
+    if(mediaCanvasMode) hydrateDetailMediaCanvasLut();
     if(mediaCanvasMode && detailMediaCanvasCoverflowVisible){
         const refShell = overlay.querySelector('.asset-detail-media-canvas-shell');
         refShell?.classList.add('gw-coverflow-embedded-host');
@@ -20004,11 +20265,11 @@ function showDetailPreview(source, id, options={}){
             ? alignTimeToFps(Number(options.startTime), options.fps || Number(item?.frame_rate || item?.metadata?.frame_rate || 0))
             : null,
         imageVersions:[],imageVersionsAssetId:'',imageVersionsLoading:false,imageVersionSelectedId:'',imageVersionPanelCollapsed:true,
-        // QIN-580：每次打开详情都是新的对照会话，LUT 选择与强度归零；
+        // QIN-580：画布节点的 LUT 配置与菜单状态每次打开详情都清零；
         // 但字段必须显式写在字面量里——整体重新赋值会把没列出的字段抹成 undefined，
         // 强度取不到值就会退化成 0（等于没套），这里漏一个字段就是「预览看起来没生效」。
         lutStrength:1, lutCompare:'applied', lutListScrollTop:0,
-        mediaLutId:'', mediaLutStrength:1, mediaLutCompare:'applied', mediaLutOpen:false, mediaLutError:'',
+        mediaCanvasLut:{}, mediaCanvasLutPanel:'', mediaLutMenu:{open:false, step:'asset', assetId:''},
         referenceCanvasId:storedReferenceCanvas ? String(item.canvas_id || '') : '', referenceCanvasTitle:String(options.referenceCanvasTitle || (storedReferenceCanvas ? item.canvas_title || '参考画布' : '参考画布')), referenceCanvasMode, referenceCanvasStructureId:referenceCanvasMode ? String(options.referenceCanvasStructureId || '') : '', referenceCanvasSaving:false,
         originTab:options.originTab || activeTab, returnFocus:options.returnFocus || document.activeElement
     };
@@ -20069,6 +20330,8 @@ function closeDetailPreview(force=false){
         }
     }
     viewer?.remove();
+    // 【QIN-580】LUT 下拉菜单挂在 body 上，详情关了必须一起摘掉，否则会留一块孤儿浮层。
+    document.querySelector('[data-detail-media-lut-layer]')?.remove();
     detailViewerMediaPreloads.clear();
     document.body.classList.remove('asset-lightbox-open');
     lightboxPanState = null;
@@ -20094,7 +20357,7 @@ function closeDetailPreview(force=false){
         imageVersions:[],imageVersionsAssetId:'',imageVersionsLoading:false,imageVersionSelectedId:'',imageVersionPanelCollapsed:true,
         // 与打开处保持同一份字段表；少写一项，下次打开就拿到 undefined。
         lutStrength:1, lutCompare:'applied', lutListScrollTop:0,
-        mediaLutId:'', mediaLutStrength:1, mediaLutCompare:'applied', mediaLutOpen:false, mediaLutError:'',
+        mediaCanvasLut:{}, mediaCanvasLutPanel:'', mediaLutMenu:{open:false, step:'asset', assetId:''},
         referenceCanvasId:'', referenceCanvasTitle:'参考画布', referenceCanvasMode:false, referenceCanvasStructureId:'', referenceCanvasSaving:false, originTab:'registry'
     };
     returnFocus?.focus?.({preventScroll:true});
@@ -20881,6 +21144,8 @@ function syncDetailMediaCanvasGeometryDom(){
         node.style.width = `${box.width}px`;
         node.style.height = `${box.height}px`;
     });
+    // 【QIN-580】缩放/平移后角标与浮窗要跟着换回恒定视觉尺寸。
+    syncDetailMediaNodeLutScale();
     document.querySelectorAll('.asset-detail-viewer [data-detail-media-annotation-node]').forEach(node => {
         const note = detailMediaCanvasAnnotation(node.dataset.detailMediaAnnotationNode || '');
         if(!note) return;
@@ -23813,6 +24078,14 @@ root.addEventListener('dblclick', event => {
 });
 document.addEventListener('click', event => {
     if(!event.target.closest?.('.registry-toolbar-select')) closeRegistrySelectMenus();
+    // 【QIN-580】「套用 LUT」是下拉菜单，点别处就收起。菜单挂在 body 上的
+    // `[data-detail-media-lut-layer]` 里，点菜单自身不算「点别处」。
+    if(detailViewerState.mediaLutMenu?.open
+        && !event.target.closest?.('.asset-detail-media-lut-entry')
+        && !event.target.closest?.('[data-detail-media-lut-layer]')){
+        detailViewerState.mediaLutMenu = {open:false, step:'asset', assetId:''};
+        refreshDetailMediaLutEntryDom();
+    }
     const structureCreate = event.target.closest?.('[data-registry-structure-create]');
     if(structureCreate){
         const type = structureCreate.dataset.registryStructureCreate || '';
@@ -23948,6 +24221,23 @@ document.addEventListener('click', event => {
     if(mediaSidebarView){ setDetailMediaCanvasSidebarView(mediaSidebarView.dataset.detailMediaSidebarView || 'library'); return; }
     const mediaLibraryItem = event.target.closest?.('[data-detail-media-library-item]');
     if(mediaLibraryItem){ selectDetailMediaCanvasLibraryItem(mediaLibraryItem.dataset.detailMediaLibraryItem || ''); return; }
+    // 【QIN-580】画布 LUT：节点角标浮窗。
+    // 这几条必须排在 [data-detail-media-object] 之前——角标和浮窗都在节点内部，
+    // 否则点角标会被当成「点节点」而切回活动项，浮窗刚开就被关掉。
+    // 工具条下拉菜单挂在 body 上的浮层里，root 委托收不到，由浮层自身的监听处理。
+    if(handleDetailMediaLutMenuClick(event)) return;
+    const mediaNodeLut = event.target.closest?.('[data-detail-media-node-lut]');
+    if(mediaNodeLut){ toggleDetailMediaNodeLutPanel(mediaNodeLut.dataset.detailMediaNodeLut || '').catch(() => {}); return; }
+    const mediaNodeLutPanel = event.target.closest?.('[data-detail-media-node-lut-panel]');
+    if(mediaNodeLutPanel){
+        const targetId = mediaNodeLutPanel.dataset.detailMediaNodeLutPanel || '';
+        if(event.target.closest?.('[data-detail-media-node-lut-close]')){ closeDetailMediaNodeLutPanel(); return; }
+        const nodeLutItem = event.target.closest?.('[data-detail-media-node-lut-item]');
+        if(nodeLutItem){ setDetailMediaNodeLut(targetId, nodeLutItem.dataset.detailMediaNodeLutItem || '').catch(() => {}); return; }
+        const nodeLutCompare = event.target.closest?.('[data-detail-media-node-lut-compare]');
+        if(nodeLutCompare){ setDetailMediaNodeLutCompare(targetId, nodeLutCompare.dataset.detailMediaNodeLutCompare || ''); return; }
+        if(event.target.closest?.('[data-detail-media-node-lut-clear]')){ clearDetailMediaNodeLut(targetId); return; }
+    }
     const mediaCanvasNode = event.target.closest?.('[data-detail-media-canvas-node]');
     if(mediaCanvasNode?.closest?.('.asset-detail-media-minimap')){
         const id = mediaCanvasNode.dataset.detailMediaCanvasNode || '';
@@ -23994,13 +24284,6 @@ document.addEventListener('click', event => {
     if(lutItem){ navigateDetailLutToId(lutItem.dataset.detailLutItem || ''); return; }
     const lutCompare = event.target.closest?.('[data-detail-lut-compare]');
     if(lutCompare){ setDetailLutCompare(lutCompare.dataset.detailLutCompare || ''); return; }
-    // 【QIN-580】图片/视频详情的「套用 LUT」面板。
-    if(event.target.closest?.('[data-detail-media-lut-open]')){ toggleDetailMediaLutPanel(); return; }
-    const mediaLutItem = event.target.closest?.('[data-detail-media-lut-item]');
-    if(mediaLutItem){ setDetailMediaLutId(mediaLutItem.dataset.detailMediaLutItem || '').catch(() => {}); return; }
-    const mediaLutCompare = event.target.closest?.('[data-detail-media-lut-compare]');
-    if(mediaLutCompare){ setDetailMediaLutCompare(mediaLutCompare.dataset.detailMediaLutCompare || ''); return; }
-    if(event.target.closest?.('[data-detail-media-lut-clear]')){ clearDetailMediaLut(); return; }
     if(event.target.closest?.('[data-detail-viewer-close]')){ closeDetailPreview(); return; }
     if(event.target.closest?.('[data-detail-text-edit]')){ startDetailTextEdit(); return; }
     if(event.target.closest?.('[data-detail-text-cancel]')){ cancelDetailTextEdit(); return; }
@@ -24204,13 +24487,18 @@ document.addEventListener('keydown', event => {
         detailTextEditorBackquoteInput = null;
     }
     if(event.key === 'Escape'){
+        // 【QIN-580】「套用 LUT」下拉菜单是最外层浮层，ESC 先收它，不直接关详情。
+        if(detailViewerState.mediaLutMenu?.open){
+            event.preventDefault();
+            closeDetailMediaLutMenu();
+            return;
+        }
         // 缓存目录切换弹窗属于最上层确认框，先于目录设置页自身状态处理。
         if(thumbnailCacheSwitchState.open){
             event.preventDefault();
             cancelThumbnailCacheSwitch();
             return;
-        }
-        if(pendingPurgeRoot){
+        }        if(pendingPurgeRoot){
             event.preventDefault();
             pendingPurgeRoot = null;
             renderGlobalDirectorySettings();
@@ -24716,10 +25004,11 @@ document.addEventListener('input', event => {
         setDetailLutStrength(detailLutStrength.value);
         return;
     }
-    // 【QIN-580】素材套用 LUT 的强度滑杆。
-    const detailMediaLutStrength = event.target?.closest?.('[data-detail-media-lut-strength]');
-    if(detailMediaLutStrength){
-        setDetailMediaLutStrength(detailMediaLutStrength.value);
+    // 【QIN-580】节点 LUT 浮窗里的强度滑杆。
+    const mediaNodeLutStrength = event.target?.closest?.('[data-detail-media-node-lut-strength]');
+    if(mediaNodeLutStrength){
+        const targetId = mediaNodeLutStrength.closest('[data-detail-media-node-lut-panel]')?.dataset.detailMediaNodeLutPanel || '';
+        if(targetId) setDetailMediaNodeLutStrength(targetId, mediaNodeLutStrength.value);
         return;
     }
     if(event.target?.matches?.('[data-detail-reference-title]')) detailViewerState.referenceCanvasTitle = String(event.target.value || '').slice(0, 80);

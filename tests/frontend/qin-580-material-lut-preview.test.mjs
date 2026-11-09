@@ -18,7 +18,7 @@ const previewModule = read('web/js/modules/asset-manager/lut-preview.js');
 
 /** QIN-580 新增代码段：用于「只读」与接线断言，避免扫到无关历史代码。 */
 const mediaLutSection = (() => {
-    const start = manager.indexOf('QIN-580：给素材（图片 / 视频）实时套用 LUT 预览');
+    const start = manager.indexOf('QIN-580：参考画布素材套用 LUT 预览');
     assert.ok(start > 0, '找不到 QIN-580 新增代码段');
     const end = manager.indexOf('function renderDetailLutWorkspace(source, item){', start);
     assert.ok(end > start, '找不到 QIN-580 代码段结束位置');
@@ -172,31 +172,45 @@ test('QIN-580：同一帧重复合成结果一致，视频暂停重绘不会漂�
     assert.deepEqual([...first.data], [...second.data], '同一帧同一参数必须完全一致');
 });
 
-test('QIN-580：图片与视频详情都接了舞台、工具条与事件，且保持只读', () => {
-    // 两条媒体分支都要包舞台，否则只有一种素材能用。
-    assert.match(manager, /return renderDetailMediaLutStage\(`<video[^`]*`, item, 'video'\);/);
-    assert.match(manager, /return renderDetailMediaLutStage\(`<img[^`]*`, item, 'image'\);/);
-    assert.match(manager, /if\(type === 'image' \|\| type === 'video'\) initializeDetailMediaLut\(overlay, item, type\);/);
+test('QIN-580：工具条入口 + 节点角标浮窗都接齐事件，且保持只读', () => {
+    // 入口接在画布工具条，工具条里不能再有「注释文字色」控件（位置让给 LUT）。
+    assert.match(manager, /\$\{renderDetailMediaLutButton\(\)\}/);
+    assert.ok(!manager.includes('data-detail-annotation-color="text"'), '「文字」控件应被 LUT 入口取代');
+    assert.ok(manager.includes('data-detail-annotation-color="background"'), '注释背景色应保留');
 
-    // 面板：打开、选 LUT、强度、三态对比、清除。
+    // 两级菜单：选素材 → 选 LUT。
     for (const hook of [
-        'data-detail-media-lut-open',
-        'data-detail-media-lut-item',
-        'data-detail-media-lut-strength',
-        'data-detail-media-lut-compare',
-        'data-detail-media-lut-clear',
+        'data-detail-media-lut-menu',
+        'data-detail-media-lut-target',
+        'data-detail-media-lut-apply',
+        'data-detail-media-lut-back',
     ]) {
-        assert.ok(manager.includes(hook), `缺少交互挂点 ${hook}`);
+        assert.ok(mediaLutSection.includes(hook), `缺少菜单挂点 ${hook}`);
     }
-    assert.match(manager, /closest\?\.\('\[data-detail-media-lut-open\]'\)/);
-    assert.match(manager, /closest\?\.\('\[data-detail-media-lut-item\]'\)/);
-    assert.match(manager, /closest\?\.\('\[data-detail-media-lut-strength\]'\)/);
+    // 节点角标与右侧浮窗：强度、三态对比、竖列 LUT、清除。
+    for (const hook of [
+        'data-detail-media-node-lut=',
+        'data-detail-media-node-lut-panel=',
+        'data-detail-media-node-lut-strength',
+        'data-detail-media-node-lut-compare',
+        'data-detail-media-node-lut-item',
+        'data-detail-media-node-lut-clear',
+    ]) {
+        assert.ok(mediaLutSection.includes(hook), `缺少节点 LUT 挂点 ${hook}`);
+    }
+    // 角标/浮窗在节点内部，点击分支必须排在节点点击处理（mediaCanvasObject）之前，
+    // 否则点角标会被当成「点节点」，浮窗刚开就被关掉。
+    const lutBranch = manager.indexOf("closest?.('[data-detail-media-lut-menu]')");
+    const nodeClickBranch = manager.indexOf("const mediaCanvasObject = event.target.closest?.('[data-detail-media-object]')");
+    assert.ok(lutBranch > 0 && nodeClickBranch > 0, '找不到点击委托分支');
+    assert.ok(lutBranch < nodeClickBranch, 'LUT 点击分支必须排在节点点击处理之前');
 
     // 视频暂停与拖动后要补一帧，保证画面与该帧单独套用一致。
-    assert.match(manager, /video\.addEventListener\('seeked', scheduleDetailMediaLutDraw\)/);
-    assert.match(manager, /video\.addEventListener\('pause', scheduleDetailMediaLutDraw\)/);
-    // 不能每个回调都并发跑合成，必须合并补绘。
-    assert.match(manager, /detailMediaLutRuntime\.pending = true/);
+    assert.match(manager, /media\.addEventListener\('seeked', repaint\)/);
+    assert.match(manager, /media\.addEventListener\('pause', repaint\)/);
+    assert.ok(mediaLutSection.includes('requestVideoFrameCallback'), '视频应逐帧补画');
+    // 逐帧回调很密，同一节点必须串行并合并补绘。
+    assert.match(mediaLutSection, /detailMediaLutDraw\.pending\.add\(key\)/);
 
     // 只读预览：新增代码段不得出现写请求。
     for (const forbidden of ['POST', 'PUT', 'PATCH', 'DELETE', 'method:']) {
@@ -216,30 +230,32 @@ test('QIN-580：打开与关闭详情都整体重置状态，字面量不得丢�
         const end = manager.indexOf('\n    };', start);
         assert.ok(end > start, '找不到 detailViewerState 字面量结尾');
         const literal = manager.slice(start, end);
-        for (const key of ['mediaLutId', 'mediaLutStrength', 'mediaLutCompare', 'mediaLutOpen', 'mediaLutError']) {
+        for (const key of ['mediaCanvasLut', 'mediaCanvasLutPanel', 'mediaLutMenu']) {
             assert.ok(new RegExp(`\\b${key}:`).test(literal), `状态字面量缺少 ${key}，该字段会被重置成 undefined`);
         }
     }
     // 强度必须有有限性兜底：0% 是合法取值，不能和「没取到」共用同一个回落值。
-    assert.match(mediaLutSection, /const strength = detailMediaLutStrengthValue\(\);/);
-    assert.match(mediaLutSection, /\n\s+strength,\n/);
+    assert.match(mediaLutSection, /function detailMediaLutStrengthOf\(entry\)\{/);
     assert.ok(!/mediaLutStrength\) \|\| 0/.test(mediaLutSection), '不得用 `|| 0` 把缺失强度压成 0%');
+    assert.ok(!/Number\(entry\?\.strength\) \|\|/.test(mediaLutSection), '强度回落不能吞掉合法的 0');
 });
 
 test('QIN-580：样式挂点齐备，覆盖画布、徽标、面板与失败态', () => {
     for (const selector of [
-        '.asset-detail-media-lut-stage',
         '.asset-detail-media-lut-canvas',
-        '.asset-detail-media-lut-badge',
-        '.asset-detail-media-lut-panel',
-        '.asset-detail-media-lut-item',
-        '.asset-detail-media-lut-error',
+        '.asset-detail-media-lut-entry',
+        '.asset-detail-media-lut-menu',
+        '.asset-detail-media-lut-menu-item',
+        '.asset-detail-media-node-lut',
+        '.asset-detail-media-node-lut-panel',
+        '.asset-detail-media-node-lut-item',
+        '.asset-detail-media-node-lut-clear',
     ]) {
         assert.ok(styles.includes(selector), `缺少样式 ${selector}`);
     }
     // 字号必须走令牌，禁止裸 px（typography governance）。
     const styleBlock = styles.slice(
-        styles.indexOf('.asset-detail-media-lut-stage {'),
+        styles.indexOf('.asset-detail-media-lut-canvas {'),
         styles.indexOf('.asset-detail-thumbnail-fallback {'),
     );
     assert.ok(styleBlock.length > 0, '找不到 QIN-580 样式块');
@@ -248,4 +264,70 @@ test('QIN-580：样式挂点齐备，覆盖画布、徽标、面板与失败态'
 
     // 取样模块同样只用令牌，避免取样口径与渲染脱节。
     assert.ok(previewModule.includes('LUT_MEDIA_SAMPLE_MAX_WIDTH'));
+});
+
+test('QIN-580：工具条下拉菜单挂到 body，不被画布外壳的 overflow 裁掉', () => {
+    // 画布外壳与工具条都是 overflow:hidden，菜单渲染在工具条里会被整块裁掉，
+    // 表现是「点了按钮什么都没弹出」。菜单必须固定定位挂 body，按按钮 rect 摆放。
+    const buttonTemplate = manager.slice(
+        manager.indexOf('function renderDetailMediaLutButton(){'),
+        manager.indexOf('function renderDetailMediaLutMenu(){'),
+    );
+    assert.ok(buttonTemplate.length > 0, '找不到 LUT 入口渲染函数');
+    assert.ok(!buttonTemplate.includes('renderDetailMediaLutMenu()'), '入口模板不得内嵌菜单，否则会被工具条裁切');
+
+    assert.match(manager, /function detailMediaLutLayer\(\)\{/);
+    assert.match(manager, /layer\.dataset\.detailMediaLutLayer = ''/);
+    assert.match(manager, /document\.body\.appendChild\(layer\)/);
+    assert.match(manager, /function syncDetailMediaLutMenuDom\(\)\{/);
+    assert.match(manager, /function positionDetailMediaLutMenu\(\)\{/);
+    // 外点收起要放过菜单自身，否则点菜单项会先被当成「点别处」而清空选中素材。
+    assert.match(manager, /!event\.target\.closest\?\.\('\[data-detail-media-lut-layer\]'\)/);
+    // 详情关闭时摘掉孤儿浮层。
+    assert.match(manager, /document\.querySelector\('\[data-detail-media-lut-layer\]'\)\?\.remove\(\)/);
+
+    // 菜单块本身必须是固定定位，且层级高于 .asset-lightbox（z-index:140）。
+    const menuRule = styles.slice(
+        styles.indexOf('.asset-detail-media-lut-menu {'),
+        styles.indexOf('\n', styles.indexOf('.asset-detail-media-lut-menu {')),
+    );
+    assert.match(menuRule, /position:fixed/);
+    const zIndex = Number((menuRule.match(/z-index:(\d+)/) || [])[1] || 0);
+    const lightboxZ = Number((styles.match(/\.asset-lightbox \{[^}]*z-index:(\d+)/) || [])[1] || 0);
+    assert.ok(lightboxZ > 0, '找不到 .asset-lightbox 层级');
+    assert.ok(zIndex > lightboxZ, `菜单层级 ${zIndex} 必须高于详情遮罩 ${lightboxZ}`);
+});
+
+test('QIN-580：LUT 统计卡改为「提示词」式导航入口，点开是独立子页面', () => {
+    // 统计条：LUT 必须是 nav 型入口（只出图标 + 名称），且紧跟在「提示词」之后。
+    const statsBlock = manager.slice(
+        manager.indexOf('function renderRegistryOverviewStats(){'),
+        manager.indexOf('async function toggleRegistryFeature('),
+    );
+    assert.ok(statsBlock.length > 0, '找不到统计条渲染函数');
+    const lutEntry = (statsBlock.match(/\{id:'lut',[^}]*\}/) || [])[0] || '';
+    assert.match(lutEntry, /nav:true/, 'LUT 必须是导航入口卡');
+    assert.ok(!/value:/.test(lutEntry), 'LUT 导航卡不得带计数');
+    assert.ok(!/registryCategoryCount\('lut'\)/.test(statsBlock), 'LUT 不再作为统计项取数');
+    const promptsAt = statsBlock.indexOf("{id:'prompts'");
+    const lutAt = statsBlock.indexOf("{id:'lut'");
+    assert.ok(promptsAt > 0 && lutAt > promptsAt, 'LUT 入口必须排在「提示词」之后');
+    // nav 分支只由图标 + 名称构成，不带占比与进度条。
+    const navBranch = statsBlock.slice(statsBlock.indexOf('if(stat.nav){'), statsBlock.indexOf('// 双行结构'));
+    assert.ok(!/registry-stat-meter/.test(navBranch), '导航入口卡不得输出进度条');
+    assert.ok(!/<em>/.test(navBranch), '导航入口卡不得输出占比');
+
+    // 子页面：系统看板 + 机架页 + 渲染分派三处都要有 lut。
+    const boardsBlock = manager.slice(
+        manager.indexOf('const SYSTEM_ASSET_BOARDS = ['),
+        manager.indexOf('const SCRIPT_ASSET_STORAGE_KEY'),
+    );
+    assert.match(boardsBlock, /\{id:'lut', name:'LUT 库', icon:'palette', system:true\}/);
+    assert.match(boardsBlock, /const SYSTEM_BOARD_RACK_TABS = \[[^\]]*'lut'/);
+    assert.match(manager, /else if\(activeTab === 'lut'\) renderLutManager\(\);/);
+    assert.match(manager, /function renderLutManager\(\)\{/);
+    assert.match(manager, /function lutLibraryAssets\(\)\{/);
+    assert.match(manager, /registryAssetCategory\(item\) === 'lut'/);
+    // 进入子页面按 kind=lut 取数，不占统计分类。
+    assert.match(manager, /if\(id === 'lut'\)\{[\s\S]{0,400}applyRegistryFilterDefinition\(\{kind:'lut'\}\)/);
 });
