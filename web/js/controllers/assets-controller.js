@@ -433,69 +433,170 @@ window.WorkbenchAssets = (() => {
   }
 
   function openShellCreateDialog(parentKey) {
-    document.getElementById('assetOrganizeDialogOverlay')?.remove();
+    document.querySelectorAll('#assetOrganizeDialogOverlay, .asset-organize-dialog-overlay').forEach(el => el.remove());
     const overlay = document.createElement('div');
     overlay.id = 'assetOrganizeDialogOverlay';
     overlay.className = 'asset-organize-dialog-overlay';
     overlay.innerHTML = `
       <div class="asset-organize-dialog" id="assetOrganizeDialog" role="dialog" aria-modal="true" aria-label="新建子文件夹">
-        <header><strong>新建子文件夹</strong><button type="button" class="asset-organize-dialog-close" data-asset-organize-dialog-cancel aria-label="关闭"><i data-lucide="x"></i></button></header>
+        <header>
+          <strong>新建子文件夹</strong>
+          <button type="button" class="asset-organize-dialog-close" data-asset-organize-dialog-cancel aria-label="关闭">
+            <i data-lucide="x"></i>
+          </button>
+        </header>
         <input class="asset-organize-dialog-input" data-asset-organize-dialog-input placeholder="文件夹名称" maxlength="120" aria-label="新文件夹名称">
-        <p class="asset-organize-dialog-error" data-asset-organize-dialog-error style="color:#ef4444;font-size:var(--gw-type-body-sm);padding:4px 14px 0;margin:0;"></p>
-        <footer><button class="hw-btn" type="button" data-asset-organize-dialog-cancel>取消</button><button class="hw-btn hw-btn-gold" type="button" data-asset-organize-dialog-confirm>创建</button></footer>
+        <p class="asset-organize-dialog-error" data-asset-organize-dialog-error style="color:#ef4444;font-size:var(--gw-type-body-sm);padding:4px 14px 0;margin:0;min-height:20px;"></p>
+        <footer>
+          <button class="hw-btn" type="button" data-asset-organize-dialog-cancel>取消</button>
+          <button class="hw-btn hw-btn-gold" type="button" data-asset-organize-dialog-confirm>创建</button>
+        </footer>
       </div>
     `;
     document.body.appendChild(overlay);
     window.lucide?.createIcons();
+
     const input = overlay.querySelector('input');
     const errorEl = overlay.querySelector('[data-asset-organize-dialog-error]');
-    input.focus();
+    const confirmBtn = overlay.querySelector('[data-asset-organize-dialog-confirm]');
+    input?.focus();
+
+    let isSubmitting = false;
     const confirm = async () => {
-      const name = input.value.trim();
-      if (!name) { errorEl.textContent = '请输入文件夹名称'; return; }
+      if (isSubmitting) return;
+      const name = String(input?.value || '').trim();
+      if (!name) {
+        if (errorEl) errorEl.textContent = '请输入文件夹名称';
+        input?.focus();
+        return;
+      }
+      isSubmitting = true;
+      if (confirmBtn) {
+        confirmBtn.disabled = true;
+        confirmBtn.textContent = '创建中...';
+      }
+      if (errorEl) errorEl.textContent = '';
       try {
-        await organizeBridge()?.createFolder(parentKey, name);
+        const bridge = organizeBridge();
+        if (!bridge?.createFolder) throw new Error('资产库尚未就绪，请稍后重试');
+        await bridge.createFolder(parentKey, name);
         overlay.remove();
         showShellOrganizeToast(`已新建文件夹「${name}」`, true);
       } catch (err) {
-        errorEl.textContent = err.message || '创建文件夹失败';
+        if (errorEl) errorEl.textContent = err.message || '创建文件夹失败';
+        isSubmitting = false;
+        if (confirmBtn) {
+          confirmBtn.disabled = false;
+          confirmBtn.textContent = '创建';
+        }
       }
     };
-    overlay.querySelector('[data-asset-organize-dialog-confirm]').onclick = confirm;
-    overlay.querySelectorAll('[data-asset-organize-dialog-cancel]').forEach(b => b.onclick = () => overlay.remove());
-    input.onkeydown = (e) => {
-      if (e.key === 'Enter') confirm();
-      else if (e.key === 'Escape') overlay.remove();
-    };
-    overlay.onclick = (e) => { if (e.target === overlay) overlay.remove(); };
+
+    overlay.addEventListener('click', (e) => {
+      const cancelEl = e.target.closest('[data-asset-organize-dialog-cancel]');
+      if (cancelEl || e.target === overlay) {
+        e.preventDefault();
+        e.stopPropagation();
+        overlay.remove();
+        return;
+      }
+      const confirmEl = e.target.closest('[data-asset-organize-dialog-confirm]');
+      if (confirmEl) {
+        e.preventDefault();
+        e.stopPropagation();
+        void confirm();
+        return;
+      }
+    });
+
+    input?.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        e.stopPropagation();
+        void confirm();
+      } else if (e.key === 'Escape') {
+        e.preventDefault();
+        e.stopPropagation();
+        overlay.remove();
+      }
+    });
   }
 
   function openShellDeleteDialog(key, name) {
-    document.getElementById('assetOrganizeDialogOverlay')?.remove();
+    document.querySelectorAll('#assetOrganizeDialogOverlay, .asset-organize-dialog-overlay').forEach(el => el.remove());
     const overlay = document.createElement('div');
     overlay.id = 'assetOrganizeDialogOverlay';
     overlay.className = 'asset-organize-dialog-overlay';
     overlay.innerHTML = `
       <div class="asset-organize-dialog" id="assetOrganizeDialog" role="dialog" aria-modal="true" aria-label="删除文件夹">
-        <header><strong>删除文件夹</strong><button type="button" class="asset-organize-dialog-close" data-asset-organize-dialog-cancel aria-label="关闭"><i data-lucide="x"></i></button></header>
+        <header>
+          <strong>删除文件夹</strong>
+          <button type="button" class="asset-organize-dialog-close" data-asset-organize-dialog-cancel aria-label="关闭">
+            <i data-lucide="x"></i>
+          </button>
+        </header>
         <p class="asset-organize-dialog-hint">将文件夹「${name || '文件夹'}」移入应用回收站？（源文件与历史索引均保留，可用 Ctrl+Z 撤销）</p>
-        <footer><button class="hw-btn" type="button" data-asset-organize-dialog-cancel>取消</button><button class="hw-btn hw-btn-danger" type="button" data-asset-organize-dialog-confirm>删除</button></footer>
+        <p class="asset-organize-dialog-error" data-asset-organize-dialog-error style="color:#ef4444;font-size:var(--gw-type-body-sm);padding:4px 14px 0;margin:0;min-height:20px;"></p>
+        <footer>
+          <button class="hw-btn" type="button" data-asset-organize-dialog-cancel>取消</button>
+          <button class="hw-btn hw-btn-danger" type="button" data-asset-organize-dialog-confirm>删除</button>
+        </footer>
       </div>
     `;
     document.body.appendChild(overlay);
     window.lucide?.createIcons();
+
+    const errorEl = overlay.querySelector('[data-asset-organize-dialog-error]');
+    const confirmBtn = overlay.querySelector('[data-asset-organize-dialog-confirm]');
+
+    let isSubmitting = false;
     const confirm = async () => {
+      if (isSubmitting) return;
+      isSubmitting = true;
+      if (confirmBtn) {
+        confirmBtn.disabled = true;
+        confirmBtn.textContent = '删除中...';
+      }
       try {
-        await organizeBridge()?.deleteFolder(key);
+        const bridge = organizeBridge();
+        if (!bridge?.deleteFolder) throw new Error('资产库尚未就绪，请稍后重试');
+        await bridge.deleteFolder(key);
         overlay.remove();
         showShellOrganizeToast(`已移入回收站：${name}`, true);
       } catch (err) {
-        setVaultStatus(err.message || '删除文件夹失败');
+        if (errorEl) errorEl.textContent = err.message || '删除文件夹失败';
+        isSubmitting = false;
+        if (confirmBtn) {
+          confirmBtn.disabled = false;
+          confirmBtn.textContent = '删除';
+        }
       }
     };
-    overlay.querySelector('[data-asset-organize-dialog-confirm]').onclick = confirm;
-    overlay.querySelectorAll('[data-asset-organize-dialog-cancel]').forEach(b => b.onclick = () => overlay.remove());
-    overlay.onclick = (e) => { if (e.target === overlay) overlay.remove(); };
+
+    overlay.addEventListener('click', (e) => {
+      const cancelEl = e.target.closest('[data-asset-organize-dialog-cancel]');
+      if (cancelEl || e.target === overlay) {
+        e.preventDefault();
+        e.stopPropagation();
+        overlay.remove();
+        return;
+      }
+      const confirmEl = e.target.closest('[data-asset-organize-dialog-confirm]');
+      if (confirmEl) {
+        e.preventDefault();
+        e.stopPropagation();
+        void confirm();
+        return;
+      }
+    });
+
+    overlay.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        e.stopPropagation();
+        overlay.remove();
+      }
+    });
   }
 
   function beginShellRename(key) {
@@ -710,7 +811,12 @@ window.WorkbenchAssets = (() => {
     if (!categories || !snapshot || typeof snapshot !== 'object') return;
     const selected = String(snapshot.selected_key || '');
     const badge = Math.max(0, Number(snapshot.inbox_badge || 0));
-    const roots = Array.isArray(snapshot.roots) ? snapshot.roots : [];
+    const rawRoots = Array.isArray(snapshot.roots) ? snapshot.roots : [];
+    const roots = rawRoots.filter(root => {
+      const id = String(root?.id || '').toLowerCase();
+      const name = String(root?.name || '').trim();
+      return id !== 'video' && id !== 'image' && name !== '视频库素材' && name !== '图片库素材';
+    });
     const boards = Array.isArray(snapshot.boards) ? snapshot.boards : [];
     const rows = [
       {key:'mine:inbox', name:'收集箱', icon:'inbox', badge, count:'', hasChildren:false},

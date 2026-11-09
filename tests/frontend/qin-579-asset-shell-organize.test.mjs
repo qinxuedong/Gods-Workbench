@@ -8,7 +8,7 @@ const controller = readFileSync(new URL('../../web/js/controllers/assets-control
 const manager = readFileSync(new URL('../../web/js/modules/asset-manager.js', import.meta.url), 'utf8');
 const manifest = readFileSync(new URL('./node-files.txt', import.meta.url), 'utf8');
 
-test('AC1: 侧栏结构清晰分层（收集箱、资源入口、挂载文件夹）与子目录树结构', () => {
+test('AC1: 侧栏结构清晰分层（收集箱、资源入口、挂载文件夹）与子目录树结构，排除系统预置占位根', () => {
   // 分层语义：收集箱、资源入口、挂载文件夹
   assert.match(controller, /name:\s*'收集箱'/);
   assert.match(controller, /mine:inbox/);
@@ -18,6 +18,10 @@ test('AC1: 侧栏结构清晰分层（收集箱、资源入口、挂载文件夹
   assert.match(controller, /asset-shell-twisty/);
   assert.match(controller, /data-asset-tree-toggle/);
   assert.match(controller, /asset-shell-nav-subtree/);
+
+  // 排除视频库素材与图片库素材系统占位项
+  assert.match(manager, /id !== 'video' && id !== 'image' && name !== '视频库素材' && name !== '图片库素材'/);
+  assert.match(controller, /id !== 'video' && id !== 'image' && name !== '视频库素材' && name !== '图片库素材'/);
 
   // 快照中携带递归子目录树数据
   assert.match(manager, /function serializeAssetRackFolderNode/);
@@ -62,12 +66,17 @@ test('AC3: 拖拽移动——文件夹拖拽落点判定与跨窗口素材卡片
   assert.match(manager, /window\.parent\.GWAssetDragState = null/);
 });
 
-test('AC4: 整理弹窗、重名冲突与 Ctrl+Z 撤销 Toast', () => {
-  // 弹窗
+test('AC4: 整理弹窗事件委托、重名冲突与 Ctrl+Z 撤销 Toast', () => {
+  // 弹窗与事件委托：支持取消、关闭与创建可靠触发
   assert.match(controller, /['"]assetOrganizeDialogOverlay['"]/);
   assert.match(controller, /id="assetOrganizeDialog"/);
   assert.match(controller, /data-asset-organize-dialog-confirm/);
   assert.match(controller, /data-asset-organize-dialog-cancel/);
+  assert.match(controller, /closest\('\[data-asset-organize-dialog-cancel\]'\)/);
+  assert.match(controller, /closest\('\[data-asset-organize-dialog-confirm\]'\)/);
+
+  // 桥接方法预载物理路径
+  assert.match(manager, /await loadAssetAllowedRootPaths\?\.\(\);[\s\S]{0,100}assetOrganizeTargetFromKey/);
 
   // 撤销 Toast
   assert.match(controller, /['"]assetOrganizeToast['"]/);

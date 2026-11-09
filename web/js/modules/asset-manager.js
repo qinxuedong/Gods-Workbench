@@ -12695,8 +12695,12 @@ function renderAssetTreeMineTree(){
     return `<div class="asset-tree-scroll" role="tree" aria-label="我的资源目录树" tabindex="0" data-asset-tree-view="mine">${inboxNode}${boardSection}<div class="asset-tree-mount-section">${mountLabel}${rootNodes}${emptyGuide}</div></div>`;
 }
 function assetTreeRootsList(){
-    // 根目录清单沿用 facets 口径（含离线来源），保证与目录层级数据同源
-    return assetRackRoots();
+    // 根目录清单沿用 facets 口径（含离线来源），排除系统预置的历史占位根（视频库素材/图片库素材）
+    return assetRackRoots().filter(root => {
+        const id = String(root?.id || '').toLowerCase();
+        const name = String(root?.name || '').trim();
+        return id !== 'video' && id !== 'image' && name !== '视频库素材' && name !== '图片库素材';
+    });
 }
 function renderAssetTreeSystemTree(){
     // AC2：系统资源树（只读）：项目制片、剧本资产、画布资产（【QIN-563】挂画布分类子分支）、提示词库
@@ -13009,6 +13013,8 @@ function assetOrganizeTargetFromKey(key){
     const body = value.slice('mine:root:'.length);
     const separator = body.indexOf('::');
     const rootId = separator > 0 ? body.slice(0, separator) : body;
+    const lowerRoot = String(rootId || '').toLowerCase();
+    if(lowerRoot === 'video' || lowerRoot === 'image') return null;
     const rawPath = separator > 0 ? body.slice(separator + 2) : '';
     if(!assetOrganizeWritableRoot(rootId)) return null;
     const path = rawPath === '__root__' ? '' : rawPath;
@@ -24951,11 +24957,13 @@ window.GWAssetRegistrySnapshot = Object.freeze({save:saveRegistrySnapshot, apply
 window.GWAssetTreeBridge = Object.freeze({snapshot:gwAssetTreeSnapshot, activate:gwAssetTreeActivate});
 // 【QIN-579】外壳侧栏整理能力桥接：右键菜单/双击改名/拖拽移动/重名/撤销
 async function gwAssetTreeOpenInSystem(key){
+    await loadAssetAllowedRootPaths?.();
     const target = assetOrganizeTargetFromKey(key);
     if(!target) return {status:'failed', message:'目标不可整理'};
     return assetOrganizeOpenFolderInSystem(target);
 }
 async function gwAssetTreeCreateFolder(parentKey, folderName){
+    await loadAssetAllowedRootPaths?.();
     let target = parentKey ? assetOrganizeTargetFromKey(parentKey) : null;
     let rootId = target?.rootId || '';
     if(!target){
@@ -24979,6 +24987,7 @@ async function gwAssetTreeCreateFolder(parentKey, folderName){
     return data;
 }
 async function gwAssetTreeCommitRename(key, newName){
+    await loadAssetAllowedRootPaths?.();
     const target = assetOrganizeTargetFromKey(key);
     if(!target || target.isRoot) return false;
     const current = assetOrganizeLeafName(target.path);
@@ -25007,6 +25016,7 @@ async function gwAssetTreeCommitRename(key, newName){
     }
 }
 async function gwAssetTreeDeleteFolder(key){
+    await loadAssetAllowedRootPaths?.();
     const target = assetOrganizeTargetFromKey(key);
     if(!target || target.isRoot) return false;
     const label = assetOrganizeFolderLabel(target);
@@ -25029,6 +25039,7 @@ async function gwAssetTreeDeleteFolder(key){
     }
 }
 async function gwAssetTreeMoveFolder(dragKey, targetKey, zone='into'){
+    await loadAssetAllowedRootPaths?.();
     const drag = assetOrganizeTargetFromKey(dragKey);
     const target = assetOrganizeTargetFromKey(targetKey);
     if(!drag || !target || drag.isRoot) return false;
@@ -25049,6 +25060,7 @@ async function gwAssetTreeMoveFolder(dragKey, targetKey, zone='into'){
     return true;
 }
 async function gwAssetTreeMoveAssets(assetIds, targetKey){
+    await loadAssetAllowedRootPaths?.();
     const target = assetOrganizeTargetFromKey(targetKey);
     if(!target) return false;
     await assetOrganizeMoveAssets(assetIds, target.rootId, target.path);
