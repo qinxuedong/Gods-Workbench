@@ -1,0 +1,21 @@
+{
+  "schema": "gw.cleanroom-admission-shard/v1",
+  "issue": 662,
+  "authorization_basis": "GitHub Issue #662 (QIN-577), 2026-11-09",
+  "files": [
+    "gw/asset_registry/repository.py",
+    "tests/contracts/assets/test_qin_577_import_hash_fidelity.py",
+    "tests/hygiene/fixtures/admissions/issue-662.json",
+    "tests/hygiene/test_cleanroom_hygiene.py"
+  ],
+  "admitted_files": [],
+  "accepted_test_files": [
+    {
+      "path": "tests/contracts/assets/test_qin_577_import_hash_fidelity.py",
+      "classification": "curated_test_coverage",
+      "authorization_basis": "GitHub Issue #662 (QIN-577), 2026-11-09",
+      "admission": "accepted"
+    }
+  ],
+  "notes": "QIN-577 导入素材保真 sha256 与 hash_mode：repository.import_assets 新增 _import_content_hash 校验归一并随记录落盘（大写归一为小写、只给 sha256 按 full、sampled 必须与 sha256 同时出现），非法组合 400 INVALID_REQUEST；往返后 shot_source_key 与查重分组不变。"
+}

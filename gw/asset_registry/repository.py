@@ -617,6 +617,44 @@ def _unavailable(endpoint: str, code: str, message: str) -> None:
 # 资产 CRUD
 # ---------------------------------------------------------------------------
 
+# 导入侧允许的内容哈希模式（QIN-577）。取值与 index_jobs.HASH_MODE_* 一致，
+# 但不从该模块导入：index_jobs 反向依赖本模块，模块级互相导入会成环。
+# 契约测试 test_qin_577_import_hash_fidelity.py 钉住两处取值不得漂移。
+_IMPORT_HASH_MODES = frozenset({"full", "sampled"})
+_SHA256_HEX_PATTERN = re.compile(r"^[0-9a-f]{64}$")
+
+
+def _import_content_hash(entry: Dict[str, Any]) -> Tuple[Optional[str], Optional[str]]:
+    """校验并归一导入条目携带的 `sha256` / `hash_mode`（QIN-577）。
+
+    往返保真：导出记录回灌时哈希身份与降级标记必须原样落盘，否则素材会
+    静默退化成「无指纹」——查重建议消失、`shot_source_key` 回落到
+    `asset:<id>`，且无法区分「本来没有哈希」与「哈希被丢弃」。
+
+    字段缺失保持既有行为（不落哈希）。一旦出现就必须成对自洽：仅给合法
+    `sha256` 视为全量哈希（`full`）；`sampled` 不得脱离 `sha256` 单独出现。
+    """
+    raw_digest = entry.get("sha256")
+    digest = str(raw_digest).strip().lower() if raw_digest is not None else ""
+    if digest and not _SHA256_HEX_PATTERN.match(digest):
+        raise CleanroomException(
+            400, "INVALID_REQUEST", "素材 sha256 必须是 64 位十六进制字符串"
+        )
+    raw_mode = entry.get("hash_mode")
+    mode = str(raw_mode).strip().lower() if raw_mode is not None else ""
+    if mode and mode not in _IMPORT_HASH_MODES:
+        raise CleanroomException(
+            400, "INVALID_REQUEST", "hash_mode 仅支持 full 或 sampled"
+        )
+    if mode and not digest:
+        raise CleanroomException(
+            400, "INVALID_REQUEST", "hash_mode 必须与 sha256 同时提供"
+        )
+    if digest and not mode:
+        mode = "full"
+    return (digest or None), (mode or None)
+
+
 def import_assets(items: List[Dict[str, Any]], source_kind: str, expected_version: Optional[int]) -> Dict[str, Any]:
     """真实创建资产登记；稳定 asset_id 由确定性序号生成。"""
     def mutate(raw: Dict[str, Any]) -> Any:
@@ -626,6 +664,7 @@ def import_assets(items: List[Dict[str, Any]], source_kind: str, expected_versio
             name = str(entry.get("name") or "").strip()
             if not name:
                 raise CleanroomException(400, "INVALID_REQUEST", "资产名称不能为空")
+            sha256, hash_mode = _import_content_hash(entry)
             asset_id = _seq(raw, "ast_", raw["assets"].keys())
             metadata = dict(entry.get("metadata") or {})
             if "video_segments" in entry:
@@ -636,6 +675,9 @@ def import_assets(items: List[Dict[str, Any]], source_kind: str, expected_versio
                 "tags": tags,
                 "metadata": metadata,
             }
+            if sha256:
+                extra["sha256"] = sha256
+                extra["hash_mode"] = hash_mode
             if entry.get("modified_at"):
                 extra["modified_at"] = str(entry["modified_at"])
             if entry.get("frame_rate") is not None:
