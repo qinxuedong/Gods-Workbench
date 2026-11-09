@@ -31,7 +31,7 @@ test('AC1: 嵌入态下剧本标签隐藏 content-heading，实现 Coverflow 与
   );
 });
 
-test('AC2: 顶栏概览统计卡片顺序调整为 画布 → 其他 → 项目 → 剧本 → 提示词', () => {
+test('AC2: 顶栏概览统计卡片顺序调整为 画布 → 其他 → 项目 → 剧本 → 提示词 → LUT', () => {
   const statsSlice = managerJs.slice(
     managerJs.indexOf('function renderRegistryOverviewStats'),
     managerJs.indexOf('function toggleRegistryFeature')
@@ -41,18 +41,18 @@ test('AC2: 顶栏概览统计卡片顺序调整为 画布 → 其他 → 项目 
   const projects = statsSlice.indexOf("{id:'projects', name:'项目', nav:true");
   const scripts = statsSlice.indexOf("{id:'scripts', name:'剧本', nav:true");
   const prompts = statsSlice.indexOf("{id:'prompts', name:'提示词', nav:true");
+  const lut = statsSlice.indexOf("{id:'lut', name:'LUT', nav:true");
 
-  for (const pos of [canvas, other, projects, scripts, prompts]) {
+  for (const pos of [canvas, other, projects, scripts, prompts, lut]) {
     assert.ok(pos > 0, '所有关键统计卡片与导航入口必须存在于 stats 数组中');
   }
 
-  // 【QIN-580】LUT 已从统计条整体移出（不占统计口径，也不再出导航卡），
-  // 因此顺序为「画布 → 其他 → 项目 → 剧本 → 提示词」。
+  // 【QIN-580】LUT 保留导航卡但排在最后，顺序为「画布 → 其他 → 项目 → 剧本 → 提示词 → LUT」。
   assert.ok(
-    canvas < other && other < projects && projects < scripts && scripts < prompts,
-    '卡片顺序必须为 画布 → 其他 → 项目 → 剧本 → 提示词'
+    canvas < other && other < projects && projects < scripts && scripts < prompts && prompts < lut,
+    '卡片顺序必须为 画布 → 其他 → 项目 → 剧本 → 提示词 → LUT'
   );
-  assert.ok(!statsSlice.includes("{id:'lut'"), 'LUT 不得出现在统计条里');
+  assert.doesNotMatch(statsSlice, /id:'lut', name:'LUT',[^\n]*registryCategoryCount\('lut'\)/, 'LUT 不得出统计数值卡');
 });
 
 test('AC3: 顶栏导航卡片保留 is-nav 与 data-registry-nav，点击激活对应系统看板', () => {

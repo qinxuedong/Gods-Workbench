@@ -183,8 +183,11 @@ body.gw-signal.gw-page--asset-manager .registry-stat-icon svg { width: 13px; hei
 /* 深凹槽底轨 + 水平高光渐变填充（微光扩散阴影），高度 4px。 */
 body.gw-signal.gw-page--asset-manager .registry-stat-meter { grid-area: 2 / 3 / 3 / 4; align-self: center; height: 4px; border-radius: 999px; overflow: hidden; background: color-mix(in srgb,#000 52%,var(--vault-well)); box-shadow: inset 0 1px 2px rgb(0 0 0 / .68); }
 body.gw-signal.gw-page--asset-manager .registry-stat-meter > span { display: block; height: 100%; width: var(--vault-ratio,0%); border-radius: inherit; background: linear-gradient(90deg,color-mix(in srgb,var(--vault-meter) 52%,#000) 0%,var(--vault-meter) 62%,color-mix(in srgb,var(--vault-meter) 68%,#fff) 100%); box-shadow: 0 0 6px color-mix(in srgb,var(--vault-meter) 50%,transparent); }
-/* 【QIN-566】顶栏导航入口卡（项目/剧本/提示词）：单行「图标+名称」，无计数/占比/进度条，不伪造统计。 */
-body.gw-signal.gw-page--asset-manager .registry-stat-card.is-nav { grid-template-columns: 16px minmax(0,1fr); grid-template-rows: 1fr; align-content: center; }
+/* 【QIN-566】顶栏导航入口卡（项目/剧本/提示词）：单行「图标+名称」，无计数/占比/进度条，不伪造统计。
+   【QIN-580】统计条回到 13 张卡（含 LUT 入口）后，2/3 宽度公式会把「提示词」这类三字标签压成省略号；
+   名称列最小宽度钉在 max-content，网格轨道按内容自然向右借用留白区、最多铺满容器——
+   既不改 2/3 公式与列数（QIN-531/QIN-563 契约），也不靠缩小字号掩盖。 */
+body.gw-signal.gw-page--asset-manager .registry-stat-card.is-nav { grid-template-columns: 16px minmax(max-content,1fr); grid-template-rows: 1fr; align-content: center; }
 body.gw-signal.gw-page--asset-manager .registry-stat-card.is-nav .registry-stat-icon { grid-area: 1 / 1 / 2 / 2; }
 body.gw-signal.gw-page--asset-manager .registry-stat-card.is-nav .registry-stat-copy { display: block; min-width: 0; }
 body.gw-signal.gw-page--asset-manager .registry-stat-card.is-nav .registry-stat-copy small { grid-area: 1 / 2 / 2 / 3; align-self: center; }

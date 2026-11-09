@@ -298,15 +298,23 @@ test('QIN-580：工具条下拉菜单挂到 body，不被画布外壳的 overflo
     assert.ok(zIndex > lightboxZ, `菜单层级 ${zIndex} 必须高于详情遮罩 ${lightboxZ}`);
 });
 
-test('QIN-580：LUT 不进资产总量统计条，改由机架进入独立子页面', () => {
-    // 统计条：LUT 既不是统计卡也不是导航卡，整条里都不该出现。
+test('QIN-580：LUT 不计入资产总量，但保留顶栏导航卡（排在提示词之后）', () => {
     const statsBlock = manager.slice(
         manager.indexOf('function renderRegistryOverviewStats(){'),
         manager.indexOf('async function toggleRegistryFeature('),
     );
     assert.ok(statsBlock.length > 0, '找不到统计条渲染函数');
-    assert.ok(!statsBlock.includes("{id:'lut'"), 'LUT 不得出现在资产总量的统计条里');
-    assert.ok(!/registryCategoryCount\('lut'\)/.test(statsBlock), 'LUT 不作为统计项取数');
+    // 「资产总量」口径扣掉 LUT 素材：LUT 是调色预设而非素材，既不占总量也不占占比分母。
+    assert.match(statsBlock, /const lutTotal = Math\.max\(registryCategoryCount\('lut'\), registryFacetKindCount\('lut'\)\);/);
+    assert.match(statsBlock, /const globalTotal = Math\.max\(0, facetTotal - lutTotal\);/);
+    // LUT 只剩导航卡：不带 value（不输出计数/占比），且紧跟在「提示词」之后。
+    const lutCard = "{id:'lut', name:'LUT', nav:true, icon:'palette'}";
+    assert.ok(statsBlock.includes(lutCard), 'LUT 应作为导航卡出现在统计条');
+    assert.doesNotMatch(statsBlock, /\{id:'lut',[^}]*\bvalue:/, 'LUT 不得作为统计数值项');
+    assert.ok(
+        statsBlock.indexOf("{id:'prompts', name:'提示词', nav:true") < statsBlock.indexOf(lutCard),
+        'LUT 卡应排在「提示词」之后',
+    );
     // nav 分支只由图标 + 名称构成，不带占比与进度条。
     const navBranch = statsBlock.slice(statsBlock.indexOf('if(stat.nav){'), statsBlock.indexOf('// 双行结构'));
     assert.ok(!/registry-stat-meter/.test(navBranch), '导航入口卡不得输出进度条');
@@ -389,9 +397,9 @@ test('QIN-580：浮窗去掉「套用后」按钮，默认即套用后，分屏/
 });
 
 test('QIN-580：分屏模式在素材中间给出可拖动的对比分割线', () => {
-    // 分界位置进 entry，绘制时带给合成函数。
+    // 分界位置进 entry；左右切分靠 CSS 裁剪，拖动只改 clip-path，不重算像素。
     assert.match(manager, /function detailMediaLutSplitOf\(entry\)\{/);
-    assert.match(manager, /splitX:detailMediaLutSplitOf\(entry\)/);
+    assert.match(manager, /function applyDetailMediaLutSplitClip\(canvas, box, ratio\)\{/);
     // 分割线只在分屏且已画出帧时出现。
     const sync = manager.slice(
         manager.indexOf('function syncDetailMediaLutSplit(itemId){'),
@@ -400,6 +408,25 @@ test('QIN-580：分屏模式在素材中间给出可拖动的对比分割线', (
     assert.ok(sync.length > 0, '找不到分割线定位函数');
     assert.match(sync, /detailMediaLutCompareOf\(entry\) !== 'split' \|\| canvas\.hidden/);
     assert.match(sync, /detailMediaLutContentBox\(canvas\)/);
+    assert.match(sync, /applyDetailMediaLutSplitClip\(canvas, box, ratio\)/);
+    assert.match(sync, /canvas\.style\.clipPath/, '分屏裁剪必须落在 canvas 上');
+
+    // 拖动必须实时：move 只同步分割线与裁剪，重排队整幅重绘会让每次移动都重算查表。
+    const move = manager.slice(
+        manager.indexOf('function moveDetailMediaLutSplit(event){'),
+        manager.indexOf('function endDetailMediaLutSplitDrag(){'),
+    );
+    assert.ok(move.length > 0, '找不到拖动函数');
+    assert.ok(!move.includes('scheduleDetailMediaLutPaint('), '拖动分割线不得触发整幅重绘');
+    assert.match(move, /syncDetailMediaLutSplit\(drag\.itemId\)/);
+
+    // 分屏时 canvas 里是整幅「套用后」结果、原图媒体保留可见，右半边才是真原图。
+    const paint = manager.slice(
+        manager.indexOf('async function paintDetailMediaLutNode('),
+        manager.indexOf('function scheduleDetailMediaLutPaint('),
+    );
+    assert.match(paint, /mode:compareMode === 'original' \? 'original' : 'applied'/, '分屏不得把原图拼进合成结果');
+    assert.match(paint, /media\.style\.visibility = compareMode === 'split' \? '' : 'hidden'/);
 
     // 拖动不能触发画布平移：pointerdown 必须排在平移之前注册，且平移本身要放过分割线。
     const splitAt = manager.indexOf("document.addEventListener('pointerdown', beginDetailMediaLutSplitDrag, true);");
@@ -410,4 +437,52 @@ test('QIN-580：分屏模式在素材中间给出可拖动的对比分割线', (
     assert.match(manager, /function endDetailMediaLutSplitDrag\(\)\{/);
     assert.match(styles, /\.asset-detail-media-lut-split \{ position:absolute;/);
     assert.match(styles, /cursor:ew-resize/);
+});
+
+test('QIN-580：已选中素材时点「套用 LUT」直达预设列表，不再重复选素材', () => {
+    const helper = manager.slice(
+        manager.indexOf('function detailMediaLutSelectedTarget(){'),
+        manager.indexOf('async function toggleDetailMediaLutMenu(){'),
+    );
+    assert.ok(helper.length > 0, '缺少「已选素材」判定');
+    assert.match(helper, /mediaCanvasSelectedIds/, '必须读画布真实选中态');
+    assert.match(helper, /selected\.length === 1/, '只在单选时直达，多选仍让用户指定目标');
+
+    const toggle = manager.slice(
+        manager.indexOf('async function toggleDetailMediaLutMenu(){'),
+        manager.indexOf('async function pickDetailMediaLutTarget('),
+    );
+    assert.match(toggle, /const selected = detailMediaLutSelectedTarget\(\)/);
+    assert.match(toggle, /selected\s*\n?\s*\? \{open:true, step:'lut', assetId:String\(selected\.id \|\| ''\)\}/s);
+    assert.match(toggle, /: \{open:true, step:'asset', assetId:''\}/);
+});
+
+test('QIN-580：LUT 抽屉不给内置项贴「内置」，滚轮归列表而不是缩放画布', () => {
+    const panel = manager.slice(
+        manager.indexOf('function renderDetailMediaNodeLutPanel('),
+        manager.indexOf('function refreshDetailMediaNodeLutDom('),
+    );
+    assert.ok(panel.length > 0, '找不到抽屉渲染');
+    assert.ok(!panel.includes("'内置'"), '内置 LUT 不该再标「内置」');
+    assert.match(panel, /detailMediaLutIsBuiltin\(lut\) \? '' : '<small>用户导入<\/small>'/, '用户导入仍需与内置区分');
+
+    const menu = manager.slice(
+        manager.indexOf('function renderDetailMediaLutMenu(){'),
+        manager.indexOf('function refreshDetailMediaLutEntryDom('),
+    );
+    assert.ok(!menu.includes("'内置'"), '下拉菜单同样不标「内置」');
+
+    // 滚轮：LUT 抽屉分支必须排在画布缩放之前，且直接放行给原生滚动。
+    const wheel = manager.slice(
+        manager.indexOf('function navigateDetailPreviewWheel(event){'),
+        manager.indexOf('function beginLightboxPan('),
+    );
+    const lutBranch = wheel.indexOf("closest?.('.asset-detail-media-node-lut-panel')");
+    const zoomBranch = wheel.indexOf("closest?.('[data-detail-media-canvas-viewport]')");
+    assert.ok(lutBranch > 0, '缺少 LUT 抽屉的滚轮分支');
+    assert.ok(zoomBranch > 0, '找不到画布缩放分支');
+    assert.ok(lutBranch < zoomBranch, 'LUT 抽屉必须先于画布缩放命中');
+    const slice = wheel.slice(lutBranch, zoomBranch);
+    assert.ok(!slice.includes('preventDefault'), '必须放行给原生滚动，别把列表滚动也拦掉');
+    assert.ok(!slice.includes('adjustDetailMediaCanvasZoom'), '抽屉内滚轮不得缩放画布');
 });

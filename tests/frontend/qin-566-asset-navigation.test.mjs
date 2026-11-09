@@ -38,17 +38,18 @@ test('AC2: 左栏「用户资源」只含收集箱/用户资源库/挂载文件�
   assert.doesNotMatch(controller, /SYSTEM_NAVIGATION_GROUPS/);
 });
 
-test('AC3: 统计顶栏「其他」后依次排布「项目」「剧本」「提示词」导航入口', () => {
+test('AC3: 统计顶栏「其他」后依次排布「项目」「剧本」「提示词」「LUT」导航入口', () => {
   const stats = manager.slice(manager.indexOf('function renderRegistryOverviewStats'), manager.indexOf('function toggleRegistryFeature'));
-  // 【QIN-580】LUT 已从统计条整体移出（改从左侧机架的「LUT 库」进入），统计条只剩这三张导航卡。
+  // 【QIN-580】LUT 以导航卡形式排在「提示词」之后；它不计入「资产总量」，也不出统计数值卡。
   const projects = stats.indexOf("{id:'projects', name:'项目', nav:true");
   const scripts = stats.indexOf("{id:'scripts', name:'剧本', nav:true");
   const prompts = stats.indexOf("{id:'prompts', name:'提示词', nav:true");
+  const lut = stats.indexOf("{id:'lut', name:'LUT', nav:true");
   const canvas = stats.indexOf("{id:'reference-canvas'");
   const other = stats.indexOf("{id:'other'");
-  for (const pos of [projects, scripts, prompts]) assert.ok(pos > 0, '三个导航入口应存在');
-  assert.ok(canvas < other && other < projects && projects < scripts && scripts < prompts, '入口顺序应为 画布 → 其他 → 项目 → 剧本 → 提示词');
-  assert.ok(!stats.includes("{id:'lut'"), 'LUT 不得再出现在资产总量的统计条里');
+  for (const pos of [projects, scripts, prompts, lut]) assert.ok(pos > 0, '四个导航入口应存在');
+  assert.ok(canvas < other && other < projects && projects < scripts && scripts < prompts && prompts < lut, '入口顺序应为 画布 → 其他 → 项目 → 剧本 → 提示词 → LUT');
+  assert.doesNotMatch(stats, /id:'lut', name:'LUT',[^\n]*registryCategoryCount\('lut'\)/, 'LUT 不得出统计数值卡');
   assert.match(stats, /data-registry-nav=/);
   assert.match(stats, /is-nav/);
   const navTemplate = stats.slice(stats.indexOf('if(stat.nav)'), stats.indexOf('// 双行结构'));

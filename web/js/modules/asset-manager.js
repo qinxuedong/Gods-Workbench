@@ -8016,9 +8016,14 @@ async function loadRegistryBootstrap(requestId=beginRegistryBootstrapRequest()){
                 renderBoardNavigation();
                 renderAssetTreeBreadcrumb();
                 syncRegistryVaultFooter();
-                if(!document.documentElement.classList.contains('vault-shell-embedded')){
-                    const overview = root.querySelector('.registry-overview');
-                    if(overview) overview.outerHTML = renderRegistryOverview();
+                // 【QIN-580】嵌入态同样要在 facets 到达后刷新概览：首屏渲染时 facets 还没回来，
+                // 分类计数与「资产总量」扣除 LUT 的口径都要等这一轮才算得对（否则永远停在未扣 LUT 的旧值）。
+                // 只做概览的局部 outerHTML，不整树 render()，不影响 QIN-573 的缩略图直出与滚动位置。
+                // 注意容器类名是 .registry-overview-shell（renderRegistryOverview 的输出根），不是 .registry-overview。
+                const overview = root.querySelector('.registry-overview-shell');
+                if(overview){
+                    const overviewMarkup = renderRegistryOverview();
+                    if(overview.outerHTML !== overviewMarkup) overview.outerHTML = overviewMarkup;
                 }
             }
         }
@@ -10837,7 +10842,12 @@ function registryCategoryLabel(category=''){
     return {image:'图片',video:'视频',audio:'音频',document:'文档',model:'模型',font:'字体',lut:'LUT',other:'其他'}[category] || '全部资产';
 }
 function renderRegistryOverviewStats(){
-    const globalTotal = (registryFacets.categories || []).reduce((total, item) => total + Number(item.count || 0), 0) || (registryFacets.kinds || []).reduce((total, item) => total + Number(item.count || 0), 0) || registryTotal;
+    // 【QIN-580】「资产总量」口径排除 LUT 素材：LUT 是调色预设而非素材，只在统计条里保留导航入口，不参与总量与占比分母。
+    const lutTotal = Math.max(registryCategoryCount('lut'), registryFacetKindCount('lut'));
+    const facetTotal = (registryFacets.categories || []).reduce((total, item) => total + Number(item.count || 0), 0)
+        || (registryFacets.kinds || []).reduce((total, item) => total + Number(item.count || 0), 0)
+        || Number(registryTotal || 0);
+    const globalTotal = Math.max(0, facetTotal - lutTotal);
     // 【QIN-531】画布卡片改为全量统计：智能画布 + 参考画布 + 普通画布一并计入，与其它分类卡片同构。
     const canvasTotal = Array.isArray(canvasAssetsData.canvases) ? canvasAssetsData.canvases.length : 0;
     const stats = [
@@ -10855,8 +10865,8 @@ function renderRegistryOverviewStats(){
         {id:'projects', name:'项目', nav:true, icon:'clapperboard'},
         {id:'scripts', name:'剧本', nav:true, icon:'file-text'},
         {id:'prompts', name:'提示词', nav:true, icon:'text-cursor-input'},
-        // 【QIN-580】LUT 不再出现在资产总量的统计条里（既不占统计口径，也不再出导航卡）：
-        // LUT 库由左侧机架的「LUT 库」入口进入，统计条只留真正的资产分类与既有导航入口。
+        // 【QIN-580】LUT 库保留导航入口，排在「提示词」之后；但它不计入「资产总量」，也不出统计数值卡。
+        {id:'lut', name:'LUT', nav:true, icon:'palette'},
     ];
     return `<section class="registry-overview-stats" aria-label="资产统计">${stats.map(stat => {
         const ratio = globalTotal ? Math.round(Number(stat.value || 0) / globalTotal * 100) : 0;
@@ -17070,6 +17080,19 @@ function detailMediaLutSplit(media){
     }
     return split;
 }
+/**
+ * 【QIN-580】分屏的左右切分靠 CSS 裁剪完成：canvas 里始终是整幅「套用后」结果，
+ * 只把左半边露出来，右半边露出下面那张原图。
+ * 拖动时只改这一条 clip-path，不重算像素，所以分割线跟手走。
+ */
+function applyDetailMediaLutSplitClip(canvas, box, ratio){
+    if(!canvas) return;
+    const hostWidth = canvas.clientWidth || 0;
+    if(!hostWidth){ canvas.style.clipPath = ''; return; }
+    const cutX = box.left + box.width * ratio;
+    const rightCut = Math.max(0, Math.min(hostWidth, hostWidth - cutX));
+    canvas.style.clipPath = rightCut > 0 ? `inset(0 ${(rightCut / hostWidth) * 100}% 0 0)` : '';
+}
 /** 只有「分屏」且帧已画出时才显示分割线，位置随入口里的 splitX 走。 */
 function syncDetailMediaLutSplit(itemId){
     const key = String(itemId || '');
@@ -17082,11 +17105,14 @@ function syncDetailMediaLutSplit(itemId){
     const entry = detailMediaLutEntry(key);
     if(!entry || detailMediaLutCompareOf(entry) !== 'split' || canvas.hidden){
         split.hidden = true;
+        canvas.style.clipPath = '';
         return;
     }
     const box = detailMediaLutContentBox(canvas);
+    const ratio = detailMediaLutSplitOf(entry);
+    applyDetailMediaLutSplitClip(canvas, box, ratio);
     split.hidden = false;
-    split.style.left = `${Math.round(box.left + box.width * detailMediaLutSplitOf(entry))}px`;
+    split.style.left = `${Math.round(box.left + box.width * ratio)}px`;
     split.style.top = `${Math.round(box.top)}px`;
     split.style.height = `${Math.round(box.height)}px`;
 }
@@ -17122,8 +17148,8 @@ function moveDetailMediaLutSplit(event){
     const previous = detailMediaLutEntry(drag.itemId);
     if(!previous) return;
     writeDetailMediaLutEntry(drag.itemId, {...previous, splitX:fraction});
+    // 只挪分割线与裁剪边，不重算像素：重绘一次全图查表要几十毫秒，拖起来就会「慢半拍」。
     syncDetailMediaLutSplit(drag.itemId);
-    scheduleDetailMediaLutPaint(drag.itemId);
 }
 function endDetailMediaLutSplitDrag(){
     const drag = detailMediaLutSplitDrag;
@@ -17178,14 +17204,17 @@ async function paintDetailMediaLutNode(itemId, options = {}){
             sample = mediaToLutSample(media, {maxWidth:isVideo ? DETAIL_MEDIA_LUT_VIDEO_WIDTH : LUT_MEDIA_SAMPLE_MAX_WIDTH});
             if(!isVideo) detailMediaLutSamples.set(media, sample);
         }
+        const compareMode = detailMediaLutCompareOf(entry);
         const frame = composeLutPreview(sample, record.lut, {
-            mode:detailMediaLutCompareOf(entry),
+            // 【QIN-580】分屏不再把原图拼进右半边：整幅套一次 LUT，左右对比交给 CSS 裁剪实时切分。
+            // 否则拖分割线时每个 pointermove 都要重算全图查表，画面明显跟不上手。
+            mode:compareMode === 'original' ? 'original' : 'applied',
             strength:detailMediaLutStrengthOf(entry),
-            splitX:detailMediaLutSplitOf(entry),
         });
         if(!paintLutFrame(canvas, frame)) throw new LutPreviewError('LUT_SOURCE_UNAVAILABLE', '画布绘制失败');
         canvas.hidden = false;
-        media.style.visibility = 'hidden';
+        // 分屏时右半边要靠画布下面那张真实媒体露出来，这时不能把媒体藏掉。
+        media.style.visibility = compareMode === 'split' ? '' : 'hidden';
         node.dataset.lutState = 'ready';
         syncDetailMediaLutSplit(key);
         // 首次套用时 LUT 清单还没加载完，角标标题是占位的「LUT」，这里补成真实名字。
@@ -17281,7 +17310,7 @@ function renderDetailMediaLutMenu(){
                 const id = String(lut.id || '');
                 const active = id === current;
                 return `<button class="asset-detail-media-lut-menu-item ${active ? 'is-active' : ''}" type="button" role="menuitemradio" aria-checked="${active}" data-detail-media-lut-apply="${escapeAttr(id)}">
-                    <i data-lucide="palette"></i><span><strong>${escapeHtml(detailMediaLutLabel(lut))}</strong><small>${escapeHtml(detailMediaLutIsBuiltin(lut) ? '内置' : '用户导入')}</small></span>${active ? '<i data-lucide="check"></i>' : '<i data-lucide="chevron-right"></i>'}
+                    <i data-lucide="palette"></i><span><strong>${escapeHtml(detailMediaLutLabel(lut))}</strong>${detailMediaLutIsBuiltin(lut) ? '' : '<small>用户导入</small>'}</span>${active ? '<i data-lucide="check"></i>' : '<i data-lucide="chevron-right"></i>'}
                 </button>`;
             }).join('')
             : '<span class="asset-detail-media-lut-menu-hint"><i data-lucide="loader-2"></i>正在读取 LUT 库…</span>';
@@ -17422,7 +17451,7 @@ function renderDetailMediaNodeLutPanel(item, entry, title, type){
             const id = String(lut.id || '');
             const active = id === current;
             return `<button class="asset-detail-media-node-lut-item ${active ? 'is-active' : ''}" type="button" aria-pressed="${active}" data-detail-media-node-lut-item="${escapeAttr(id)}">
-                <i data-lucide="palette"></i><span><strong>${escapeHtml(detailMediaLutLabel(lut))}</strong><small>${escapeHtml(detailMediaLutIsBuiltin(lut) ? '内置' : '用户导入')}</small></span>
+                <i data-lucide="palette"></i><span><strong>${escapeHtml(detailMediaLutLabel(lut))}</strong>${detailMediaLutIsBuiltin(lut) ? '' : '<small>用户导入</small>'}</span>
             </button>`;
         }).join('')
         : '<span class="asset-detail-media-lut-menu-hint">正在读取 LUT 库…</span>';
@@ -17502,6 +17531,22 @@ function syncDetailMediaNodeLutScale(){
 
 /* ---- 操作 ---- */
 
+/**
+ * 【QIN-580】画布上已选中的素材：点「套用 LUT」时如果只选中了唯一一个可套 LUT 的素材，
+ * 就直接进 LUT 预设列表，不再让用户把「我刚选的素材」再选一遍；多选或无选中时仍列素材。
+ */
+function detailMediaLutSelectedTarget(){
+    const targets = detailMediaLutCanvasTargets();
+    const selected = [...(detailViewerState.mediaCanvasSelectedIds || [])].map(String);
+    if(selected.length === 1){
+        const hit = targets.find(item => String(item.id || '') === selected[0]);
+        if(hit) return hit;
+    }
+    if(selected.length) return null;
+    const activeId = String(detailViewerState.mediaCanvasActiveId || '');
+    if(!activeId) return null;
+    return targets.find(item => String(item.id || '') === activeId) || null;
+}
 async function toggleDetailMediaLutMenu(){
     if(detailViewerState.mediaLutMenu?.open){
         detailViewerState.mediaLutMenu = {open:false, step:'asset', assetId:''};
@@ -17510,7 +17555,10 @@ async function toggleDetailMediaLutMenu(){
     }
     // 先取清单再开菜单：打开就是可用状态，避免闪一次「读取中」。
     await detailMediaLutItems();
-    detailViewerState.mediaLutMenu = {open:true, step:'asset', assetId:''};
+    const selected = detailMediaLutSelectedTarget();
+    detailViewerState.mediaLutMenu = selected
+        ? {open:true, step:'lut', assetId:String(selected.id || '')}
+        : {open:true, step:'asset', assetId:''};
     refreshDetailMediaLutEntryDom();
 }
 async function pickDetailMediaLutTarget(itemId){
@@ -23329,6 +23377,8 @@ function navigateDetailPreviewWheel(event){
     if(!detailViewerState.open || !event.target.closest?.('.asset-detail-viewer')) return;
     if(event.target.closest?.('.asset-detail-media-sidebar,[data-detail-media-sidebar-detail],.asset-detail-inspector')) return;
     if(event.target.closest?.('[data-detail-video-controls]')) return;
+    // 【QIN-580】LUT 抽屉里的滚轮归 LUT 列表：放行给原生滚动，不能拿去缩放画布。
+    if(event.target.closest?.('.asset-detail-media-node-lut-panel')) return;
     if(event.target.closest?.('[data-detail-media-canvas-viewport]')){
         event.preventDefault();
         adjustDetailMediaCanvasZoom(event.deltaY < 0 ? 1 : -1, event.clientX, event.clientY);
