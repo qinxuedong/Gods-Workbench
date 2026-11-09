@@ -1333,13 +1333,17 @@ html.vault-shell-embedded body.gw-signal.gw-page--asset-manager #assetManagerRoo
     display: grid !important;
     grid-template-rows: auto auto minmax(0,1fr) !important;
 }
-html.vault-shell-embedded body.gw-signal.gw-page--asset-manager #assetManagerRoot:not(.asset-manager-root-registry):not(.asset-manager-root-library):not(.asset-manager-root-page-scripts) {
-    /* 【QIN-569 AC2】page-scripts 视图收为单列（见下方专条），不再吃本条三列轨道。 */
+html.vault-shell-embedded body.gw-signal.gw-page--asset-manager #assetManagerRoot:not(.asset-manager-root-registry):not(.asset-manager-root-library):not(.asset-manager-root-page-scripts):not(.asset-manager-root-page-projects) {
+    /* 【QIN-569 AC2 / QIN-572】page-scripts 与 page-projects 视图收为单列或首列零宽，不再吃本条三列轨道。 */
     grid-template-columns: 240px minmax(0,1fr) minmax(280px,320px) !important;
 }
 html.vault-shell-embedded body.gw-signal.gw-page--asset-manager #assetManagerRoot.asset-manager-root-registry {
     /* 【QIN-571】QIN-566 停用内嵌树后左列无内容，首列收为零宽（子项仍落第 2 列，gap:0 无额外间距），
        收回 QIN-489 为已停用左栏保留的空列；统计条/工具栏/网格左缘与 iframe 左缘对齐。 */
+    grid-template-columns: 0 minmax(0,1fr) !important;
+}
+html.vault-shell-embedded body.gw-signal.gw-page--asset-manager #assetManagerRoot.asset-manager-root-page-projects {
+    /* 【QIN-572】项目视图首列收为零宽，消除 240px 中间空栏，网格与工具栏左缘与 iframe 对齐。 */
     grid-template-columns: 0 minmax(0,1fr) !important;
 }
 html.vault-shell-embedded body.gw-signal.gw-page--asset-manager #assetManagerRoot.asset-manager-root-library {

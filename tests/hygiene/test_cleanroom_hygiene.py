@@ -1420,3 +1420,29 @@ def test_github_issue_651_file_scope_is_registered(repo_root: Path):
         "tests/hygiene/fixtures/admissions/issue-651.json",
         "tests/hygiene/test_cleanroom_hygiene.py",
     }
+
+
+def test_github_issue_654_file_scope_is_registered(repo_root: Path):
+    """#654（QIN-572）资产库项目标签清除中间空栏、重置筛选并支持项目下拉选择所涉文件按票面逐项登记。"""
+    metadata = _load_admission_metadata(repo_root)
+    registrations = [
+        item
+        for item in metadata.get("authorized_issue_file_sets", [])
+        if item.get("issue") == 654
+    ]
+    assert len(registrations) == 1
+    assert registrations[0].get("authorization_basis") == (
+        "GitHub Issue #654 (QIN-572), 2026-11-09"
+    )
+    assert set(registrations[0].get("files", [])) == {
+        "gw/api/routes_asset_registry.py",
+        "gw/asset_registry/repository.py",
+        "tests/api/test_asset_registry_api.py",
+        "tests/frontend/node-files.txt",
+        "tests/frontend/qin-572-project-asset-tab.test.mjs",
+        "tests/hygiene/fixtures/admissions/issue-654.json",
+        "tests/hygiene/test_cleanroom_hygiene.py",
+        "web/css/pages/asset-vault.css",
+        "web/js/modules/asset-manager.js",
+    }
+

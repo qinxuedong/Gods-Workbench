@@ -383,3 +383,45 @@ def test_stored_upload_path_ascii_naming(asset_api_runtime):
     target = stored_upload_path("ast_x", long_name)
     assert len(target.name) <= len("ast_x_") + 96
     assert target.name.endswith(".png")
+
+
+def test_list_assets_project_all_filter(asset_api_runtime):
+    """QIN-572 AC3：/api/assets 接口支持 project_id='__all__' 查询全部项目素材。"""
+    with TestClient(create_app()) as client:
+        # 创建两个真实项目
+        resp_p1 = client.post(f"{BASE}/projects", headers=AUTH, json={"name": "Project Alpha", "project_type": "film"})
+        assert resp_p1.status_code == 201, resp_p1.text
+        pid1 = resp_p1.json()["project"]["project_id"]
+
+        resp_p2 = client.post(f"{BASE}/projects", headers=AUTH, json={"name": "Project Beta", "project_type": "film"})
+        assert resp_p2.status_code == 201, resp_p2.text
+        pid2 = resp_p2.json()["project"]["project_id"]
+
+        imported = client.post(
+            f"{BASE}/assets/import",
+            headers=AUTH,
+            json={
+                "items": [
+                    {"name": "proj_a.png", "kind": "image"},
+                    {"name": "proj_b.png", "kind": "image"},
+                    {"name": "unassigned.png", "kind": "image"},
+                ]
+            },
+        )
+        assert imported.status_code == 200, imported.text
+        a_id, b_id, u_id = imported.json()["asset_ids"]
+
+        def mutate(raw):
+            raw["assets"][a_id]["project_id"] = pid1
+            raw["assets"][b_id]["project_ids"] = [pid2]
+
+        repo.state().mutate(mutate)
+
+        resp = client.get(f"{BASE}/assets?project_id=__all__", headers=AUTH)
+        assert resp.status_code == 200, resp.text
+        data = resp.json()
+        item_ids = {item["asset_id"] for item in data["items"]}
+        assert a_id in item_ids
+        assert b_id in item_ids
+        assert u_id not in item_ids
+

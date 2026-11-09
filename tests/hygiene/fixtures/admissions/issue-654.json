@@ -1,0 +1,26 @@
+{
+  "schema": "gw.cleanroom-admission-shard/v1",
+  "issue": 654,
+  "authorization_basis": "GitHub Issue #654 (QIN-572), 2026-11-09",
+  "files": [
+    "gw/api/routes_asset_registry.py",
+    "gw/asset_registry/repository.py",
+    "tests/api/test_asset_registry_api.py",
+    "tests/frontend/node-files.txt",
+    "tests/frontend/qin-572-project-asset-tab.test.mjs",
+    "tests/hygiene/fixtures/admissions/issue-654.json",
+    "tests/hygiene/test_cleanroom_hygiene.py",
+    "web/css/pages/asset-vault.css",
+    "web/js/modules/asset-manager.js"
+  ],
+  "admitted_files": [],
+  "accepted_test_files": [
+    {
+      "path": "tests/frontend/qin-572-project-asset-tab.test.mjs",
+      "classification": "curated_test_coverage",
+      "authorization_basis": "GitHub Issue #654 (QIN-572), 2026-11-09",
+      "admission": "accepted"
+    }
+  ],
+  "notes": "QIN-572 资产库项目标签清除中间空栏、重置筛选并支持项目下拉选择（vault 嵌入态项目视图首列收为 0 宽；切换项目看板重置前置分类/搜索/标签；/api/assets 接口与 repository 支持 project_id=\"__all__\" 查询全部项目素材；工具栏项目下拉胶囊联动过滤与标题副标题展示）。"
+}

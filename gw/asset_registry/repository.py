@@ -1198,7 +1198,10 @@ def list_assets(limit: int, offset: int, query: Optional[str], kind: Optional[st
     if category:
         items = [a for a in items if _asset_category(a) == category]
     if project_id:
-        items = [a for a in items if project_id in a.get("project_ids", []) or a.get("project_id") == project_id]
+        if project_id == "__all__":
+            items = [a for a in items if a.get("project_ids") or a.get("project_id")]
+        else:
+            items = [a for a in items if project_id in a.get("project_ids", []) or a.get("project_id") == project_id]
     def tagged(asset, selected):
         return selected in asset.get("tags", []) or any(
             str(raw["tags"].get(value, {}).get("name", "")).casefold() == selected.casefold()
@@ -1211,7 +1214,7 @@ def list_assets(limit: int, offset: int, query: Optional[str], kind: Optional[st
         items = [a for a in items if not any(tagged(a, selected) for selected in excludes)]
     if normalized_cinematography:
         active_cinematography = dict(normalized_cinematography)
-        if project_id and "project_id" not in active_cinematography:
+        if project_id and project_id != "__all__" and "project_id" not in active_cinematography:
             active_cinematography["project_id"] = [project_id]
         items = _apply_cinematography_filters(items, active_cinematography)
     # 先以稳定ID排序，再稳定按所选字段排序，保证同值分页不重复/丢项。
