@@ -349,24 +349,348 @@ window.WorkbenchAssets = (() => {
     });
   }
 
-  // 侧栏卡片渲染：复用旧版 asset-shell-nav-button + 分支线针脚视觉。
-  function shellNavButton(row) {
+  // 【QIN-579】整理能力桥接对象获取与侧栏交互支撑
+  function organizeBridge() {
+    try { return frame?.contentWindow?.GWAssetOrganizeBridge || null; } catch(_) { return null; }
+  }
+
+  let shellOrganizeDrag = null;
+  let shellDropHint = null;
+
+  function clearShellDropHint() {
+    if (shellDropHint?.button) {
+      shellDropHint.button.classList.remove('is-organize-drop-into', 'is-organize-drop-before', 'is-organize-drop-after');
+    }
+    shellDropHint = null;
+  }
+
+  function closeShellOrganizeMenu() {
+    document.getElementById('assetOrganizeMenu')?.remove();
+  }
+
+  function showShellOrganizeToast(text, undoable = false) {
+    document.getElementById('assetOrganizeToast')?.remove();
+    const toast = document.createElement('div');
+    toast.id = 'assetOrganizeToast';
+    toast.className = 'asset-organize-toast';
+    toast.setAttribute('role', 'status');
+    toast.innerHTML = `<i data-lucide="folder-cog"></i><span>${text}</span>${undoable ? '<button type="button" class="asset-organize-toast-undo" data-asset-organize-undo-now><i data-lucide="undo-2"></i><span>撤销</span></button>' : ''}`;
+    document.body.appendChild(toast);
+    window.lucide?.createIcons();
+    setTimeout(() => toast.remove(), 4200);
+  }
+
+  function openShellOrganizeMenu(target, clientX, clientY) {
+    closeShellOrganizeMenu();
+    const menu = document.createElement('div');
+    menu.id = 'assetOrganizeMenu';
+    menu.className = 'asset-organize-menu';
+    menu.setAttribute('role', 'menu');
+    menu.setAttribute('aria-label', '文件夹整理');
+    const title = document.createElement('div');
+    title.className = 'asset-organize-menu-title';
+    title.innerHTML = `<i data-lucide="folder-cog"></i><span>${target.name || '文件夹整理'}</span>`;
+    menu.appendChild(title);
+
+    const isRoot = Boolean(target.isRoot);
+    const items = [
+      { id: 'new', attr: 'data-asset-organize-new', label: '新建子文件夹', icon: 'folder-plus', disabled: false },
+      { id: 'rename', attr: 'data-asset-organize-rename', label: '重命名', icon: 'pencil', disabled: isRoot },
+      { id: 'open', attr: 'data-asset-organize-open', label: '在系统中打开', icon: 'folder-open', disabled: false },
+      { id: 'delete', attr: 'data-asset-organize-delete', label: '删除（进回收站）', icon: 'trash-2', disabled: isRoot, danger: true },
+    ];
+
+    items.forEach(item => {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.setAttribute('role', 'menuitem');
+      btn.setAttribute(item.attr, '');
+      if (item.disabled) btn.disabled = true;
+      if (item.danger) btn.className = 'is-danger';
+      btn.innerHTML = `<i data-lucide="${item.icon}"></i><span>${item.label}</span>`;
+      btn.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        closeShellOrganizeMenu();
+        const bridge = organizeBridge();
+        if (!bridge) return;
+        if (item.id === 'new') openShellCreateDialog(target.key);
+        else if (item.id === 'rename') beginShellRename(target.key);
+        else if (item.id === 'open') {
+          const res = await bridge.openInSystem(target.key);
+          if (res?.status === 'opened') showShellOrganizeToast('已在系统中打开文件夹');
+          else showShellOrganizeToast(res?.message || '无法在系统中打开该文件夹');
+        } else if (item.id === 'delete') {
+          openShellDeleteDialog(target.key, target.name);
+        }
+      });
+      menu.appendChild(btn);
+    });
+
+    menu.style.left = `${Math.min(clientX, window.innerWidth - 230)}px`;
+    menu.style.top = `${Math.min(clientY, window.innerHeight - 180)}px`;
+    document.body.appendChild(menu);
+    window.lucide?.createIcons();
+  }
+
+  function openShellCreateDialog(parentKey) {
+    document.getElementById('assetOrganizeDialogOverlay')?.remove();
+    const overlay = document.createElement('div');
+    overlay.id = 'assetOrganizeDialogOverlay';
+    overlay.className = 'asset-organize-dialog-overlay';
+    overlay.innerHTML = `
+      <div class="asset-organize-dialog" id="assetOrganizeDialog" role="dialog" aria-modal="true" aria-label="新建子文件夹">
+        <header><strong>新建子文件夹</strong><button type="button" class="asset-organize-dialog-close" data-asset-organize-dialog-cancel aria-label="关闭"><i data-lucide="x"></i></button></header>
+        <input class="asset-organize-dialog-input" data-asset-organize-dialog-input placeholder="文件夹名称" maxlength="120" aria-label="新文件夹名称">
+        <p class="asset-organize-dialog-error" data-asset-organize-dialog-error style="color:#ef4444;font-size:12px;padding:4px 14px 0;margin:0;"></p>
+        <footer><button class="hw-btn" type="button" data-asset-organize-dialog-cancel>取消</button><button class="hw-btn hw-btn-gold" type="button" data-asset-organize-dialog-confirm>创建</button></footer>
+      </div>
+    `;
+    document.body.appendChild(overlay);
+    window.lucide?.createIcons();
+    const input = overlay.querySelector('input');
+    const errorEl = overlay.querySelector('[data-asset-organize-dialog-error]');
+    input.focus();
+    const confirm = async () => {
+      const name = input.value.trim();
+      if (!name) { errorEl.textContent = '请输入文件夹名称'; return; }
+      try {
+        await organizeBridge()?.createFolder(parentKey, name);
+        overlay.remove();
+        showShellOrganizeToast(`已新建文件夹「${name}」`, true);
+      } catch (err) {
+        errorEl.textContent = err.message || '创建文件夹失败';
+      }
+    };
+    overlay.querySelector('[data-asset-organize-dialog-confirm]').onclick = confirm;
+    overlay.querySelectorAll('[data-asset-organize-dialog-cancel]').forEach(b => b.onclick = () => overlay.remove());
+    input.onkeydown = (e) => {
+      if (e.key === 'Enter') confirm();
+      else if (e.key === 'Escape') overlay.remove();
+    };
+    overlay.onclick = (e) => { if (e.target === overlay) overlay.remove(); };
+  }
+
+  function openShellDeleteDialog(key, name) {
+    document.getElementById('assetOrganizeDialogOverlay')?.remove();
+    const overlay = document.createElement('div');
+    overlay.id = 'assetOrganizeDialogOverlay';
+    overlay.className = 'asset-organize-dialog-overlay';
+    overlay.innerHTML = `
+      <div class="asset-organize-dialog" id="assetOrganizeDialog" role="dialog" aria-modal="true" aria-label="删除文件夹">
+        <header><strong>删除文件夹</strong><button type="button" class="asset-organize-dialog-close" data-asset-organize-dialog-cancel aria-label="关闭"><i data-lucide="x"></i></button></header>
+        <p class="asset-organize-dialog-hint">将文件夹「${name || '文件夹'}」移入应用回收站？（源文件与历史索引均保留，可用 Ctrl+Z 撤销）</p>
+        <footer><button class="hw-btn" type="button" data-asset-organize-dialog-cancel>取消</button><button class="hw-btn hw-btn-danger" type="button" data-asset-organize-dialog-confirm>删除</button></footer>
+      </div>
+    `;
+    document.body.appendChild(overlay);
+    window.lucide?.createIcons();
+    const confirm = async () => {
+      try {
+        await organizeBridge()?.deleteFolder(key);
+        overlay.remove();
+        showShellOrganizeToast(`已移入回收站：${name}`, true);
+      } catch (err) {
+        setVaultStatus(err.message || '删除文件夹失败');
+      }
+    };
+    overlay.querySelector('[data-asset-organize-dialog-confirm]').onclick = confirm;
+    overlay.querySelectorAll('[data-asset-organize-dialog-cancel]').forEach(b => b.onclick = () => overlay.remove());
+    overlay.onclick = (e) => { if (e.target === overlay) overlay.remove(); };
+  }
+
+  function beginShellRename(key) {
+    const button = categories.querySelector(`[data-asset-tree-entry="${CSS.escape(key)}"]`);
+    if (!button) return;
+    const labelSpan = button.querySelector('.asset-shell-nav-label');
+    if (!labelSpan || button.querySelector('input')) return;
+    const oldName = labelSpan.textContent;
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.className = 'asset-organize-rename-input';
+    input.value = oldName;
+    input.setAttribute('data-asset-organize-rename-input', key);
+    labelSpan.style.display = 'none';
+    labelSpan.after(input);
+    input.focus();
+    input.select();
+
+    let committed = false;
+    const commit = async (save) => {
+      if (committed) return;
+      committed = true;
+      const newName = input.value.trim();
+      input.remove();
+      labelSpan.style.display = '';
+      if (save && newName && newName !== oldName) {
+        labelSpan.textContent = newName;
+        await organizeBridge()?.commitRename(key, newName);
+      }
+    };
+
+    input.onkeydown = (e) => {
+      if (e.key === 'Enter') { e.stopPropagation(); commit(true); }
+      else if (e.key === 'Escape') { e.stopPropagation(); commit(false); }
+    };
+    input.onblur = () => commit(true);
+  }
+
+  function bindShellDragEvents(button, row) {
+    if (row.draggable) {
+      button.ondragstart = (e) => {
+        shellOrganizeDrag = { key: row.key };
+        e.dataTransfer?.setData('application/x-gw-organize', row.key);
+        if (e.dataTransfer) e.dataTransfer.effectAllowed = 'move';
+        button.classList.add('is-organize-dragging');
+      };
+      button.ondragend = () => {
+        shellOrganizeDrag = null;
+        clearShellDropHint();
+        button.classList.remove('is-organize-dragging');
+      };
+    }
+
+    button.ondragover = (e) => {
+      const bridge = organizeBridge();
+      const canOrganize = bridge?.canOrganize(row.key);
+      if (!canOrganize) return;
+      const isFolderDrag = Boolean(shellOrganizeDrag?.key);
+      const isAssetDrag = Boolean(window.GWAssetDragState?.assetIds?.length);
+      if (!isFolderDrag && !isAssetDrag) return;
+      if (isFolderDrag && shellOrganizeDrag.key === row.key) return;
+
+      e.preventDefault();
+      if (e.dataTransfer) e.dataTransfer.dropEffect = 'move';
+      const rect = button.getBoundingClientRect();
+      const relY = (e.clientY - rect.top) / rect.height;
+      const isRoot = Boolean(row.isRoot || (row.key.startsWith('mine:root:') && !row.key.includes('::')));
+      let zone = 'into';
+      if (!isRoot && isFolderDrag) {
+        if (relY < 0.25) zone = 'before';
+        else if (relY > 0.75) zone = 'after';
+      }
+      if (shellDropHint?.button !== button || shellDropHint?.zone !== zone) {
+        clearShellDropHint();
+        shellDropHint = { button, zone };
+        if (zone === 'into') button.classList.add('is-organize-drop-into');
+        else if (zone === 'before') button.classList.add('is-organize-drop-before');
+        else button.classList.add('is-organize-drop-after');
+      }
+    };
+
+    button.ondragleave = () => {
+      if (shellDropHint?.button === button) clearShellDropHint();
+    };
+
+    button.ondrop = async (e) => {
+      const bridge = organizeBridge();
+      if (!bridge?.canOrganize(row.key)) return;
+      e.preventDefault();
+      const zone = shellDropHint?.zone || 'into';
+      clearShellDropHint();
+
+      if (shellOrganizeDrag?.key) {
+        const dragKey = shellOrganizeDrag.key;
+        shellOrganizeDrag = null;
+        await bridge.moveFolder(dragKey, row.key, zone);
+      } else if (window.GWAssetDragState?.assetIds?.length) {
+        const assetIds = window.GWAssetDragState.assetIds;
+        window.GWAssetDragState = null;
+        await bridge.moveAssets(assetIds, row.key);
+      }
+    };
+  }
+
+  // 侧栏卡片渲染：支持折叠箭头、子目录树、拖拽与右键整理
+  function shellNavButton(row, isSub = false) {
     const button = document.createElement('button');
     button.type = 'button';
-    button.className = `asset-shell-nav-button tree-node-card${row.active ? ' is-active' : ''}`;
+    button.className = `asset-shell-nav-button tree-node-card${row.active ? ' is-active' : ''}${isSub ? ' asset-shell-nav-button-sub' : ''}`;
     if (row.active) button.setAttribute('aria-current', 'page');
     button.title = row.name;
     button.dataset.assetTreeEntry = row.key;
+    if (row.draggable) {
+      button.setAttribute('draggable', 'true');
+      button.setAttribute('data-asset-tree-drag', row.key);
+    }
+
     const pin = document.createElement('div');
     pin.className = 'card-connector-pin';
     pin.setAttribute('aria-hidden', 'true');
+
+    button.append(pin);
+
+    // 展开/折叠箭头
+    if (row.hasChildren) {
+      const twisty = document.createElement('span');
+      twisty.className = 'asset-shell-twisty';
+      twisty.setAttribute('data-asset-tree-toggle', row.key);
+      twisty.title = row.expanded ? '折叠' : '展开';
+      twisty.innerHTML = `<i data-lucide="${row.expanded ? 'chevron-down' : 'chevron-right'}"></i>`;
+      twisty.addEventListener('click', (e) => {
+        e.stopPropagation();
+        organizeBridge()?.toggleExpand(row.key);
+      });
+      button.append(twisty);
+    }
+
     const icon = document.createElement('i');
-    icon.setAttribute('data-lucide', row.icon);
+    icon.setAttribute('data-lucide', row.icon || 'folder');
+
     const label = document.createElement('span');
     label.className = 'asset-shell-nav-label';
     label.textContent = row.name;
-    button.append(pin, icon, label);
+
+    button.append(icon, label);
+
+    if (row.badge > 0) {
+      const badge = document.createElement('span');
+      badge.className = 'asset-shell-nav-badge';
+      badge.textContent = row.badge > 99 ? '99+' : row.badge;
+      button.append(badge);
+    } else if (row.count !== '' && row.count !== undefined && row.count !== null && Number(row.count) >= 0) {
+      const count = document.createElement('span');
+      count.className = 'asset-shell-nav-count';
+      count.textContent = Number(row.count).toLocaleString('zh-CN');
+      button.append(count);
+    }
+
     button.addEventListener('click', () => activateTreeEntry(row.key));
+
+    // 双击内联改名
+    button.addEventListener('click', (e) => {
+      if (Number(e.detail) >= 2 && !row.isRoot && organizeBridge()?.canOrganize(row.key)) {
+        e.stopPropagation();
+        beginShellRename(row.key);
+      }
+    });
+
+    // 右键整理菜单
+    button.addEventListener('contextmenu', (e) => {
+      if (organizeBridge()?.canOrganize(row.key)) {
+        e.preventDefault();
+        e.stopPropagation();
+        openShellOrganizeMenu(row, e.clientX, e.clientY);
+      }
+    });
+
+    // 拖拽移动交互
+    bindShellDragEvents(button, row);
+
+    // 展开子目录递归输出
+    if (row.expanded && Array.isArray(row.children) && row.children.length > 0) {
+      const wrapper = document.createElement('div');
+      wrapper.className = 'asset-shell-nav-node-wrapper';
+      wrapper.append(button);
+      const sublist = document.createElement('div');
+      sublist.className = 'asset-shell-nav-subtree';
+      sublist.setAttribute('role', 'group');
+      row.children.forEach(child => {
+        sublist.append(shellNavButton(child, true));
+      });
+      wrapper.append(sublist);
+      return wrapper;
+    }
+
     return button;
   }
 
@@ -381,7 +705,7 @@ window.WorkbenchAssets = (() => {
     overview?.closest('.asset-shell-overview-card')?.classList.toggle('is-active', registryActive);
   }
 
-  // 应用内嵌页推送的树快照：渲染收集箱 + 挂载根目录，并同步选中态与页头高亮。
+  // 应用内嵌页推送的树快照：渲染收集箱 + 用户资源看板 + 挂载根目录与子目录树。
   function applyTreeSnapshot(snapshot) {
     if (!categories || !snapshot || typeof snapshot !== 'object') return;
     const selected = String(snapshot.selected_key || '');
@@ -389,13 +713,12 @@ window.WorkbenchAssets = (() => {
     const roots = Array.isArray(snapshot.roots) ? snapshot.roots : [];
     const boards = Array.isArray(snapshot.boards) ? snapshot.boards : [];
     const rows = [
-      {key:'mine:inbox', name:'收集箱', icon:'inbox', badge, count:''},
-      ...boards.map(board => ({key:`mine:board:${board.id}`, name:String(board.name || '未命名资源库'), icon:String(board.icon || 'library'), count:''})),
-      ...roots.map(root => ({key:`mine:root:${root.id}`, name:String(root.name || '未命名来源'), icon:'hard-drive', count:Number(root.count || 0)})),
+      {key:'mine:inbox', name:'收集箱', icon:'inbox', badge, count:'', hasChildren:false},
+      ...boards.map(board => ({key:`mine:board:${board.id}`, name:String(board.name || '未命名资源库'), icon:String(board.icon || 'library'), count:'', hasChildren:false})),
+      ...roots.map(root => ({...root, key:`mine:root:${root.id}`, name:String(root.name || '未命名来源'), icon:'hard-drive', count:Number(root.count || 0), isRoot:true})),
     ].map(row => ({...row, active: row.key === selected}));
     const serialized = JSON.stringify(rows);
     updateSidebarSelection(selected);
-    // 【审核修复2】选中态/页头高亮同步必须先于行集早退：rows 不变而 selected_key 变化时（如顶栏入口与资产总览互切），高亮仍要刷新。
     syncOverviewSelection(selected);
     if (serialized === sidebarSnapshot) return;
     sidebarSnapshot = serialized;
@@ -403,24 +726,85 @@ window.WorkbenchAssets = (() => {
       ? document.activeElement.dataset.assetTreeEntry || null
       : null;
     const fragment = document.createDocumentFragment();
-    const group = document.createElement('div');
-    group.className = 'asset-shell-nav-group';
-    group.setAttribute('role', 'group');
-    group.setAttribute('aria-label', '用户资源');
-    const heading = document.createElement('h3');
-    heading.className = 'asset-shell-nav-group-heading';
-    heading.textContent = '用户资源';
-    const items = document.createElement('div');
-    items.className = 'asset-shell-nav-group-items';
-    for (const row of rows) items.append(shellNavButton(row));
+
+    // 主容器：保持「用户资源」属性兼容
+    const mainGroup = document.createElement('div');
+    mainGroup.className = 'asset-shell-nav-group';
+    mainGroup.setAttribute('role', 'group');
+    mainGroup.setAttribute('aria-label', '用户资源');
+
+    const mainHeading = document.createElement('h3');
+    mainHeading.className = 'asset-shell-nav-group-heading';
+    mainHeading.textContent = '用户资源';
+    const mainItems = document.createElement('div');
+    mainItems.className = 'asset-shell-nav-group-items';
+
+    // 1. 收集箱固定置顶
+    mainItems.append(shellNavButton({
+      key: 'mine:inbox',
+      name: '收集箱',
+      icon: 'inbox',
+      badge,
+      count: '',
+      active: selected === 'mine:inbox',
+      hasChildren: false,
+    }));
+
+    // 2. 资源入口（自定义看板）
+    if (boards.length > 0) {
+      const boardSection = document.createElement('div');
+      boardSection.className = 'asset-shell-board-section mt-2';
+      const boardLabel = document.createElement('div');
+      boardLabel.className = 'asset-tree-group-label text-xs text-slate-400 mb-1';
+      boardLabel.textContent = '资源入口';
+      boardSection.append(boardLabel);
+      boards.forEach(board => {
+        boardSection.append(shellNavButton({
+          key: `mine:board:${board.id}`,
+          name: String(board.name || '未命名资源库'),
+          icon: String(board.icon || 'library'),
+          count: '',
+          active: selected === `mine:board:${board.id}`,
+          hasChildren: false,
+        }));
+      });
+      mainItems.append(boardSection);
+    }
+
+    // 3. 挂载文件夹（真实磁盘根目录与子目录树）
+    const mountSection = document.createElement('div');
+    mountSection.className = 'asset-shell-mount-section mt-2';
+    const mountLabel = document.createElement('div');
+    mountLabel.className = 'asset-tree-group-label';
+    mountLabel.innerHTML = `<span>挂载文件夹</span><button class="asset-tree-group-add" type="button" data-asset-organize-group-new aria-label="新建文件夹" title="新建文件夹"><i data-lucide="plus"></i></button>`;
+    mountLabel.querySelector('[data-asset-organize-group-new]')?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      openShellCreateDialog('');
+    });
+    mountSection.append(mountLabel);
+
     if (!roots.length) {
       const empty = document.createElement('span');
       empty.className = 'asset-shell-nav-empty';
       empty.textContent = '尚未挂载文件夹';
-      items.append(empty);
+      mountSection.append(empty);
+    } else {
+      roots.forEach(root => {
+        mountSection.append(shellNavButton({
+          ...root,
+          key: `mine:root:${root.id}`,
+          name: String(root.name || '未命名来源'),
+          icon: 'hard-drive',
+          count: Number(root.count || 0),
+          isRoot: true,
+          active: selected === `mine:root:${root.id}`,
+        }));
+      });
     }
-    group.append(heading, items);
-    fragment.append(group);
+    mainItems.append(mountSection);
+
+    mainGroup.append(mainHeading, mainItems);
+    fragment.append(mainGroup);
     categories.replaceChildren(fragment);
     window.lucide?.createIcons();
     if (focused !== null) {
@@ -603,6 +987,33 @@ window.WorkbenchAssets = (() => {
     window.addEventListener('popstate', saveBrowseStateBeforeRoute, true);
     window.addEventListener('pagehide', saveBrowseStateBeforeRoute);
     window.__gwAssetBrowseRouteSaveBound = true;
+  }
+
+  // 【QIN-579】外壳全局整理交互：点击外部关闭右键菜单、Esc 退出浮层、Ctrl+Z 撤销
+  if (typeof document !== 'undefined' && typeof document.addEventListener === 'function') {
+    document.addEventListener('click', (e) => {
+      if (!e.target.closest?.('#assetOrganizeMenu')) closeShellOrganizeMenu();
+      if (e.target.closest?.('[data-asset-organize-undo-now]')) {
+        document.getElementById('assetOrganizeToast')?.remove();
+        organizeBridge()?.undoLast();
+      }
+    });
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') {
+        closeShellOrganizeMenu();
+        document.getElementById('assetOrganizeDialogOverlay')?.remove();
+      }
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
+        const tag = document.activeElement?.tagName;
+        if (tag !== 'INPUT' && tag !== 'TEXTAREA') {
+          const bridge = organizeBridge();
+          if (bridge?.hasUndo?.()) {
+            e.preventDefault();
+            bridge.undoLast();
+          }
+        }
+      }
+    });
   }
 
   function showIndexJobStatus(job) {

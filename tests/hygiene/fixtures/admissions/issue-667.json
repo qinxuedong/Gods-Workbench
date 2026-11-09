@@ -1,0 +1,24 @@
+{
+  "schema": "gw.cleanroom-admission-shard/v1",
+  "issue": 667,
+  "authorization_basis": "GitHub Issue #667 (QIN-579), 2026-11-09",
+  "files": [
+    "tests/frontend/node-files.txt",
+    "tests/frontend/qin-579-asset-shell-organize.test.mjs",
+    "tests/hygiene/fixtures/admissions/issue-667.json",
+    "tests/hygiene/test_cleanroom_hygiene.py",
+    "web/js/controllers/assets-controller.js",
+    "web/js/modules/asset-manager.js",
+    "web/pages/assets.html"
+  ],
+  "admitted_files": [],
+  "accepted_test_files": [
+    {
+      "path": "tests/frontend/qin-579-asset-shell-organize.test.mjs",
+      "classification": "curated_test_coverage",
+      "authorization_basis": "GitHub Issue #667 (QIN-579), 2026-11-09",
+      "admission": "accepted"
+    }
+  ],
+  "notes": "QIN-579 资产库左侧栏文件夹整理迁移：子目录树展开、右键菜单、拖拽移动与撤销（升级 GWAssetTreeBridge/GWAssetOrganizeBridge 快照与操作，侧栏分层支持收集箱/资源入口/挂载文件夹多级物理展开，完整支持右键菜单、双击内联改名、文件夹互拖及素材拖拽、重名冲突与 Ctrl+Z 撤销）。"
+}

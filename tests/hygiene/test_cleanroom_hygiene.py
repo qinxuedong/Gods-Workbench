@@ -1538,3 +1538,26 @@ def test_github_issue_665_file_scope_is_registered(repo_root: Path):
         "tests/hygiene/test_cleanroom_hygiene.py",
         "web/js/modules/asset-manager.js",
     }
+
+
+def test_github_issue_667_file_scope_is_registered(repo_root: Path):
+    """#667（QIN-579）资产库左侧栏文件夹整理迁移范围文件登记。"""
+    metadata = _load_admission_metadata(repo_root)
+    registrations = [
+        item
+        for item in metadata.get("authorized_issue_file_sets", [])
+        if item.get("issue") == 667
+    ]
+    assert len(registrations) == 1
+    assert registrations[0].get("authorization_basis") == (
+        "GitHub Issue #667 (QIN-579), 2026-11-09"
+    )
+    assert set(registrations[0].get("files", [])) == {
+        "tests/frontend/node-files.txt",
+        "tests/frontend/qin-579-asset-shell-organize.test.mjs",
+        "tests/hygiene/fixtures/admissions/issue-667.json",
+        "tests/hygiene/test_cleanroom_hygiene.py",
+        "web/js/controllers/assets-controller.js",
+        "web/js/modules/asset-manager.js",
+        "web/pages/assets.html",
+    }
