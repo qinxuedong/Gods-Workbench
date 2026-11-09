@@ -340,15 +340,16 @@ def list_registry_assets(
     if project_id:
         if "?" in project_id:
             project_id = project_id.split("?")[0]
-        owner_key = None
-        role = str(getattr(context, "role", "") or "")
-        try:
-            owner_key = owner_key_for_context(context)
-        except CleanroomException:
+        if project_id != "__all__":
             owner_key = None
-        from gw.projects_hub import service as projects_service_module
-        if not projects_service_module.default_projects_service.can_read_project(project_id, owner_key=owner_key, role=role):
-            raise CleanroomException(404, "PROJECT_NOT_FOUND", "项目不存在")
+            role = str(getattr(context, "role", "") or "")
+            try:
+                owner_key = owner_key_for_context(context)
+            except CleanroomException:
+                owner_key = None
+            from gw.projects_hub import service as projects_service_module
+            if not projects_service_module.default_projects_service.can_read_project(project_id, owner_key=owner_key, role=role):
+                raise CleanroomException(404, "PROJECT_NOT_FOUND", "项目不存在")
     return repo.list_assets(effective_limit, offset, query or search, kind, archived, cursor=cursor, sort=sort,
                             view=view, category=category, tag=tag, project_id=project_id,
                             include_tags=include_tags, exclude_tags=exclude_tags, root_id=root_id,

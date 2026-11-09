@@ -1124,6 +1124,30 @@ async function activateAssetBoard(id){
     registryPageLoading = false;
     resetBoardSelections();
     renderBoardNavigation();
+    if(id === 'projects'){
+        // 【QIN-572 AC2/AC4】进入项目视图：清空前置分类/标签筛选，初始化为全部项目素材
+        registryStatCategory = '';
+        registryKind = '';
+        registryQuery = '';
+        registryRecentDays = 0;
+        registryIncludeTags.clear();
+        registryExcludeTags.clear();
+        registryNavFolder = {rootId:'', path:''};
+        registryRootId = '';
+        registryProjectEntityFilter = null;
+        if(!registryProjectFilterId) registryProjectFilterId = '__all__';
+        const queryKey = registryQueryString();
+        const cached = registryAssetsQueryCache.get(queryKey);
+        if(cached) applyRegistryAssetResponse(cached);
+        else { registryAssets = []; registryTotal = null; registryTotalKnown = false; }
+        registryLoading = !cached;
+        render();
+        refreshRegistryAssets(false).then(() => { if(activeTab === id) render(); }).catch(err => setStatus(err.message || '项目素材加载失败'));
+        return;
+    }
+    if(id !== 'projects' && registryProjectFilterId === '__all__'){
+        registryProjectFilterId = '';
+    }
     if(!board.system){
         // 【QIN-553】进入 LUT 库（含 lut 预设看板）时幂等登记内置 LUT 包。
         if(board.preset === 'lut' || (board.kinds || []).includes('lut')){
@@ -7319,6 +7343,8 @@ function applyRegistryFilterDefinition(definition={}){
 function registryQueryString({offset=0, limit=REGISTRY_PAGE_SIZE, cursor=''}={}){
     const params = new URLSearchParams({limit:String(limit), offset:String(Math.max(0, Number(offset) || 0)), sort:registrySort || 'newest', view:'card'});
     // 默认呈现全局统一资产金库；仅当用户通过「项目素材」智能筛选选择项目时携带（解耦默认的 activeProjectId）
+    // 【QIN-572】项目视图下默认传 __all__ 或选中的具体 project_id
+    if(activeTab === 'projects' && !registryProjectFilterId) registryProjectFilterId = '__all__';
     if(registryProjectFilterId) params.set('project_id', registryProjectFilterId);
     params.set('dynamic_limit', String(registryDynamicPageSize()));
     if(cursor) params.set('cursor', cursor);
@@ -9731,11 +9757,21 @@ function render(){
     else renderAssetManager();
     if(document.documentElement.classList.contains('vault-shell-embedded')){
         const board = assetBoardById(activeTab);
-        const toolbarTitle = activeTab === 'registry' ? registryCategoryLabel(registryStatCategory) : (board?.name || '资源库');
-        const toolbarSubtitle = activeTab === 'registry' || board?.system === false
-            ? registryTotalSummary(registryVisibleAssets().length)
-            : '统一资产工具';
-        root.insertAdjacentHTML('afterbegin', `${renderRegistryOverview()}${renderRegistryToolbar(null, toolbarTitle, toolbarSubtitle, {allowUrl:true,hideHeading:activeTab === 'registry'})}`);
+        let toolbarTitle = board?.name || '资源库';
+        let toolbarSubtitle = '统一资产工具';
+        if(activeTab === 'registry'){
+            toolbarTitle = registryCategoryLabel(registryStatCategory);
+            toolbarSubtitle = registryTotalSummary(registryVisibleAssets().length);
+        } else if(activeTab === 'projects'){
+            toolbarTitle = '项目素材';
+            const selectedProj = (registryProjectFilterId && registryProjectFilterId !== '__all__')
+                ? projects.find(item => item.id === registryProjectFilterId)
+                : null;
+            toolbarSubtitle = `${selectedProj?.name || '全部项目'} · ${registryTotalSummary(registryVisibleAssets().length)}`;
+        } else if(board?.system === false){
+            toolbarSubtitle = registryTotalSummary(registryVisibleAssets().length);
+        }
+        root.insertAdjacentHTML('afterbegin', `${renderRegistryOverview()}${renderRegistryToolbar(null, toolbarTitle, toolbarSubtitle, {allowUrl:true,hideHeading:activeTab === 'registry' || activeTab === 'projects'})}`);
     }
     if(activeTab === 'registry' || customLibraryActive) renderRegistryFreshNotice();
     restoreRegistryPreviewImages(registryPreviewCache);
@@ -11036,7 +11072,7 @@ function customBoardTagEntries(items=[]){
 function renderRegistryFilterChips(){
     const tags = new Map((registryFacets.tags || []).map(tag => [tag.id, tag]));
     const chips = [];
-    if(registryProjectFilterId){
+    if(registryProjectFilterId && activeTab !== 'projects' && registryProjectFilterId !== '__all__'){
         const proj = projects.find(item => item.id === registryProjectFilterId);
         chips.push(`<button type="button" data-registry-clear="project">项目：${escapeHtml(proj?.name || registryProjectFilterId)} <i data-lucide="x"></i></button>`);
     }
@@ -11447,9 +11483,16 @@ const REGISTRY_SELECT_OPTIONS = {
     group:[{value:'none', label:'不分组'}, {value:'source', label:'素材来源'}, {value:'folder', label:'文件夹'}, {value:'custom', label:'自定义分组'}],
 };
 function registrySelectOptions(kind){
+    if(kind === 'project'){
+        return [
+            {value:'__all__', label:'全部项目'},
+            ...projects.map(p => ({value:String(p.id || ''), label:p.name || p.id}))
+        ];
+    }
     return REGISTRY_SELECT_OPTIONS[kind] || REGISTRY_SELECT_OPTIONS.sort;
 }
 function registrySelectCurrentValue(kind){
+    if(kind === 'project') return registryProjectFilterId || '__all__';
     return kind === 'sort' ? (registrySort || 'newest') : (registryGroupMode || 'none');
 }
 function registrySelectCurrentLabel(kind){
@@ -11458,6 +11501,9 @@ function registrySelectCurrentLabel(kind){
 }
 function renderRegistrySelectCapsule({kind, icon, label}){
     const current = registrySelectCurrentValue(kind);
+    if(kind === 'project'){
+        return `<label class="hw-btn registry-toolbar-select" data-registry-select-capsule="${kind}"><i data-lucide="${icon}"></i><span>${label}</span><button class="registry-select-trigger" id="registryProjectSelect" type="button" data-registry-select-trigger="${kind}" aria-haspopup="listbox" aria-expanded="false" aria-label="${escapeAttr(label)}：${escapeAttr(registrySelectCurrentLabel(kind))}">${escapeHtml(registrySelectCurrentLabel(kind))}</button><div class="registry-select-menu" role="listbox" aria-label="${escapeAttr(label)}" hidden>${registrySelectOptions(kind).map(option => `<button class="registry-select-option${option.value === current ? ' is-selected' : ''}" type="button" role="option" data-registry-select-kind="${kind}" data-registry-select-option="${escapeAttr(option.value)}" aria-selected="${option.value === current}">${escapeHtml(option.label)}</button>`).join('')}</div></label>`;
+    }
     return `<label class="hw-btn registry-toolbar-select" data-registry-select-capsule="${kind}"><i data-lucide="${icon}"></i><span>${label}</span><button class="registry-select-trigger" id="${kind === 'sort' ? 'registrySort' : 'registryGroupMode'}" type="button" data-registry-select-trigger="${kind}" aria-haspopup="listbox" aria-expanded="false" aria-label="${escapeAttr(label)}：${escapeAttr(registrySelectCurrentLabel(kind))}">${escapeHtml(registrySelectCurrentLabel(kind))}</button><div class="registry-select-menu" role="listbox" aria-label="${escapeAttr(label)}" hidden>${registrySelectOptions(kind).map(option => `<button class="registry-select-option${option.value === current ? ' is-selected' : ''}" type="button" role="option" data-registry-select-kind="${kind}" data-registry-select-option="${escapeAttr(option.value)}" aria-selected="${option.value === current}">${escapeHtml(option.label)}</button>`).join('')}</div></label>`;
 }
 function closeRegistrySelectMenus(){
@@ -11481,6 +11527,16 @@ function toggleRegistrySelectMenu(kind){
 }
 function applyRegistrySelectValue(kind, value){
     closeRegistrySelectMenus();
+    if(kind === 'project'){
+        const next = String(value || '__all__');
+        if(next === (registryProjectFilterId || '__all__')) return;
+        registryProjectFilterId = next;
+        if(next !== '__all__') activeProjectId = next;
+        registryProjectEntityFilter = null;
+        render();
+        refreshRegistryAssets(false).then(() => { if(activeTab === 'projects') render(); }).catch(err => setStatus(err.message || '项目素材加载失败'));
+        return;
+    }
     if(kind === 'sort'){
         const next = String(value || 'newest');
         if(next === (registrySort || 'newest')) return;
@@ -11528,6 +11584,7 @@ function renderRegistryToolbar(board, title, subtitle, options={}){
             <button class="hw-btn registry-refresh" type="button" data-refresh-assets title="刷新资产" aria-label="刷新资产"><i data-lucide="refresh-cw"></i><span>刷新</span></button>
             <label class="asset-search-wrap"><i data-lucide="search"></i><input id="registrySearch" class="asset-search" type="search" aria-label="搜索 ${escapeAttr(searchLabel)}" value="${escapeAttr(registryQuery)}" placeholder="搜索文件名 / 标签 / ID"></label>
             <div class="registry-layout-switch btn-segmented-deck" role="group" aria-label="显示方式"><button class="btn-segmented-item btn-size-sm hw-btn-icon ${registryLayout === 'grid' ? 'is-active' : ''}" type="button" data-registry-layout="grid" title="方格视图" aria-label="方格视图" aria-pressed="${registryLayout === 'grid'}"><i data-lucide="grid-2x2"></i></button><button class="btn-segmented-item btn-size-sm hw-btn-icon ${registryLayout === 'list' ? 'is-active' : ''}" type="button" data-registry-layout="list" title="列表视图" aria-label="列表视图" aria-pressed="${registryLayout === 'list'}"><i data-lucide="list"></i></button></div>
+            ${activeTab === 'projects' ? renderRegistrySelectCapsule({kind:'project', icon:'folder-kanban', label:'项目'}) : ''}
             ${renderRegistrySelectCapsule({kind:'sort', icon:'arrow-down-wide-narrow', label:'排序'})}
             ${renderRegistrySelectCapsule({kind:'group', icon:'layers', label:'分组'})}
             <button class="hw-btn" type="button" data-registry-aspect-toggle aria-pressed="${registryAspect === 'square'}" title="${registryAspect === 'square' ? '当前方格显示，点击恢复原始比例' : '当前原始比例，点击切换方格显示'}"><i data-lucide="square"></i><span>方格</span></button>
@@ -13464,23 +13521,27 @@ function projectStatusLabel(status='pending'){
     return {pending:'待处理',in_progress:'进行中',approved:'已通过',blocked:'已阻塞'}[status] || status;
 }
 function renderProjectManager(){
-    const project = projectBoard?.project || projects.find(item => item.id === activeProjectId) || null;
-    const entities = projectBoard?.entities || [];
+    const embeddedVault = document.documentElement.classList.contains('vault-shell-embedded');
+    const selectedProject = (registryProjectFilterId && registryProjectFilterId !== '__all__')
+        ? (projects.find(item => item.id === registryProjectFilterId) || projectBoard?.project || null)
+        : null;
+    const project = selectedProject || projectBoard?.project || projects.find(item => item.id === activeProjectId) || null;
+    const entities = selectedProject ? (projectBoard?.entities || []) : [];
     const visible = registryVisibleAssets();
-    // AC5：项目制片分类看板不再显示，改由左栏树（项目›分组›条目）+ 素材网格承载；
-    // 树点项目=全部素材、点分组/条目=对应素材（QIN-543 entities[].assets 收敛）
     root.innerHTML = `${renderAssetTreePanel()}
     <section class="asset-panel asset-content registry-content registry-layout-${registryLayout} registry-aspect-${registryAspect} ${registrySimple ? 'registry-simple' : ''} ${registrySelectedIds.size ? 'manage-on' : ''}" style="--registry-card-size:${registryCardSize}px">
-        <div class="content-toolbar"><div class="content-heading"><strong>${escapeHtml(project?.name || '项目制片')}</strong><span>${entities.length} 个条目 · ${Number(project?.asset_count || 0)} 个素材 · 当前显示 ${visible.length} 项</span></div><div class="asset-tools"><button class="hw-btn" type="button" data-project-proxy-settings ${project?'':'disabled'}><i data-lucide="film"></i><span>代理设置</span></button><button class="hw-btn" type="button" data-project-template ${project?'':'disabled'}><i data-lucide="settings-2"></i><span>模板设置</span></button><button class="hw-btn" type="button" data-project-add-entity ${project?'':'disabled'}><i data-lucide="plus"></i><span>新增条目</span></button></div></div>
+        ${embeddedVault ? '' : `<div class="content-toolbar"><div class="content-heading"><strong>${escapeHtml(selectedProject?.name || '全部项目素材')}</strong><span>${selectedProject ? `${entities.length} 个条目 · ${Number(selectedProject?.asset_count || 0)} 个素材 · ` : ''}当前显示 ${visible.length} 项</span></div><div class="asset-tools"><button class="hw-btn" type="button" data-project-proxy-settings ${selectedProject?'':'disabled'}><i data-lucide="film"></i><span>代理设置</span></button><button class="hw-btn" type="button" data-project-template ${selectedProject?'':'disabled'}><i data-lucide="settings-2"></i><span>模板设置</span></button><button class="hw-btn" type="button" data-project-add-entity ${selectedProject?'':'disabled'}><i data-lucide="plus"></i><span>新增条目</span></button></div></div>`}
         ${renderRegistryFilterChips()}
-        <div class="content-scroll registry-assets-scroll" data-registry-zoom-area title="Shift+滚轮调整预览大小">${renderRegistryAssetSections(visible, null, '没有符合条件的素材。从左栏树选择项目、分组或条目。')}${renderRegistryPagination()}</div>
+        <div class="content-scroll registry-assets-scroll" data-registry-zoom-area title="Shift+滚轮调整预览大小">${renderRegistryAssetSections(visible, null, selectedProject ? '该项目暂无素材。' : '全部项目暂无素材。')}${renderRegistryPagination()}</div>
         ${renderRegistrySelectionBar(null)}
     </section>`;
-    if(!assetTreeExpanded.has('system:projects')){
-        assetTreeExpanded.add('system:projects');
-        if(activeProjectId) assetTreeExpanded.add(`system:projects:${activeProjectId}`);
+    if(selectedProject?.id){
+        if(!assetTreeExpanded.has('system:projects')){
+            assetTreeExpanded.add('system:projects');
+            assetTreeExpanded.add(`system:projects:${selectedProject.id}`);
+        }
+        void ensureAssetTreeProjectData(selectedProject.id);
     }
-    if(activeProjectId) void ensureAssetTreeProjectData(activeProjectId);
 }
 
 const AssetRegistryDefaultEntityTypes = [
