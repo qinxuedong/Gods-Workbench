@@ -20,7 +20,7 @@ test('AC2: 激活项目看板时自动重置前置分类（如 LUT）与搜索/�
 });
 
 test('AC3: registryQueryString 在项目视图下携带 project_id=__all__ 或具体 project_id', () => {
-  assert.match(managerJs, /if\(activeTab === 'projects'\)\s*\{\s*params\.set\('project_id', registryProjectFilterId \|\| '__all__'\);\s*\}\s*else if\(registryProjectFilterId && registryProjectFilterId !== '__all__'\)/);
+  assert.match(managerJs, /if\(activeTab === 'projects' && !registryProjectFilterId\)\s*registryProjectFilterId = '__all__';\s*if\(registryProjectFilterId\)\s*params\.set\('project_id',\s*registryProjectFilterId\);/);
 });
 
 test('AC4: 工具栏包含项目选择下拉胶囊，支持全部项目与具体项目切换', () => {

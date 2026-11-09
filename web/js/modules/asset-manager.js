@@ -7342,12 +7342,10 @@ function applyRegistryFilterDefinition(definition={}){
 }
 function registryQueryString({offset=0, limit=REGISTRY_PAGE_SIZE, cursor=''}={}){
     const params = new URLSearchParams({limit:String(limit), offset:String(Math.max(0, Number(offset) || 0)), sort:registrySort || 'newest', view:'card'});
-    // 【QIN-572】项目视图下默认传 __all__ 或选中的具体 project_id；非项目视图下仅当明确按具体项目过滤时携带
-    if(activeTab === 'projects'){
-        params.set('project_id', registryProjectFilterId || '__all__');
-    } else if(registryProjectFilterId && registryProjectFilterId !== '__all__'){
-        params.set('project_id', registryProjectFilterId);
-    }
+    // 默认呈现全局统一资产金库；仅当用户通过「项目素材」智能筛选选择项目时携带（解耦默认的 activeProjectId）
+    // 【QIN-572】项目视图下默认传 __all__ 或选中的具体 project_id
+    if(activeTab === 'projects' && !registryProjectFilterId) registryProjectFilterId = '__all__';
+    if(registryProjectFilterId) params.set('project_id', registryProjectFilterId);
     params.set('dynamic_limit', String(registryDynamicPageSize()));
     if(cursor) params.set('cursor', cursor);
     if(registryQuery.trim()) params.set('search', registryQuery.trim());
@@ -11503,8 +11501,10 @@ function registrySelectCurrentLabel(kind){
 }
 function renderRegistrySelectCapsule({kind, icon, label}){
     const current = registrySelectCurrentValue(kind);
-    const triggerId = kind === 'sort' ? 'registrySort' : (kind === 'group' ? 'registryGroupMode' : 'registryProjectSelect');
-    return `<label class="hw-btn registry-toolbar-select" data-registry-select-capsule="${kind}"><i data-lucide="${icon}"></i><span>${label}</span><button class="registry-select-trigger" id="${triggerId}" type="button" data-registry-select-trigger="${kind}" aria-haspopup="listbox" aria-expanded="false" aria-label="${escapeAttr(label)}：${escapeAttr(registrySelectCurrentLabel(kind))}">${escapeHtml(registrySelectCurrentLabel(kind))}</button><div class="registry-select-menu" role="listbox" aria-label="${escapeAttr(label)}" hidden>${registrySelectOptions(kind).map(option => `<button class="registry-select-option${option.value === current ? ' is-selected' : ''}" type="button" role="option" data-registry-select-kind="${kind}" data-registry-select-option="${escapeAttr(option.value)}" aria-selected="${option.value === current}">${escapeHtml(option.label)}</button>`).join('')}</div></label>`;
+    if(kind === 'project'){
+        return `<label class="hw-btn registry-toolbar-select" data-registry-select-capsule="${kind}"><i data-lucide="${icon}"></i><span>${label}</span><button class="registry-select-trigger" id="registryProjectSelect" type="button" data-registry-select-trigger="${kind}" aria-haspopup="listbox" aria-expanded="false" aria-label="${escapeAttr(label)}：${escapeAttr(registrySelectCurrentLabel(kind))}">${escapeHtml(registrySelectCurrentLabel(kind))}</button><div class="registry-select-menu" role="listbox" aria-label="${escapeAttr(label)}" hidden>${registrySelectOptions(kind).map(option => `<button class="registry-select-option${option.value === current ? ' is-selected' : ''}" type="button" role="option" data-registry-select-kind="${kind}" data-registry-select-option="${escapeAttr(option.value)}" aria-selected="${option.value === current}">${escapeHtml(option.label)}</button>`).join('')}</div></label>`;
+    }
+    return `<label class="hw-btn registry-toolbar-select" data-registry-select-capsule="${kind}"><i data-lucide="${icon}"></i><span>${label}</span><button class="registry-select-trigger" id="${kind === 'sort' ? 'registrySort' : 'registryGroupMode'}" type="button" data-registry-select-trigger="${kind}" aria-haspopup="listbox" aria-expanded="false" aria-label="${escapeAttr(label)}：${escapeAttr(registrySelectCurrentLabel(kind))}">${escapeHtml(registrySelectCurrentLabel(kind))}</button><div class="registry-select-menu" role="listbox" aria-label="${escapeAttr(label)}" hidden>${registrySelectOptions(kind).map(option => `<button class="registry-select-option${option.value === current ? ' is-selected' : ''}" type="button" role="option" data-registry-select-kind="${kind}" data-registry-select-option="${escapeAttr(option.value)}" aria-selected="${option.value === current}">${escapeHtml(option.label)}</button>`).join('')}</div></label>`;
 }
 function closeRegistrySelectMenus(){
     root.querySelectorAll('.registry-toolbar-select.is-open').forEach(node => {
