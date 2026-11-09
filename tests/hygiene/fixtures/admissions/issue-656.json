@@ -1,0 +1,25 @@
+{
+  "schema": "gw.cleanroom-admission-shard/v1",
+  "issue": 656,
+  "authorization_basis": "GitHub Issue #656 (QIN-573), 2026-11-09",
+  "files": [
+    "tests/frontend/node-files.txt",
+    "tests/frontend/qin-573-asset-vault-fast-boot.test.mjs",
+    "tests/hygiene/fixtures/admissions/issue-656.json",
+    "tests/hygiene/test_cleanroom_hygiene.py",
+    "web/embeds/asset-manager.html",
+    "web/js/controllers/assets-controller.js",
+    "web/js/modules/asset-manager.js",
+    "web/pages/assets.html"
+  ],
+  "admitted_files": [],
+  "accepted_test_files": [
+    {
+      "path": "tests/frontend/qin-573-asset-vault-fast-boot.test.mjs",
+      "classification": "curated_test_coverage",
+      "authorization_basis": "GitHub Issue #656 (QIN-573), 2026-11-09",
+      "admission": "accepted"
+    }
+  ],
+  "notes": "QIN-573 资产库首屏秒开：父页直连子帧与 SWR 快照优先渲染（assets.html iframe 默认原生直连 src 并发加载；assets-controller 幂等同步；asset-manager.html 快照探针即时 hidden 全屏骨架屏；asset-manager.js 实现 SWR 快照优先渲染与后台静默刷新）。"
+}

@@ -266,7 +266,8 @@
 
     <!-- MAIN: 资产金库网格与详情 -->
     <main id="assetVaultStage">
-      <iframe id="assetVaultFrame" title="资产库" data-src="/static/asset-manager.html?embedded=1&amp;vault=1"></iframe>
+      <!-- 【QIN-573 AC1】子帧原生直连：携带初始 src 与父页并发加载，避免串行等待父页长脚本 -->
+      <iframe id="assetVaultFrame" title="资产库" src="/static/asset-manager.html?embedded=1&amp;vault=1" data-src="/static/asset-manager.html?embedded=1&amp;vault=1"></iframe>
     </main>
   </div>
 

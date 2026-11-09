@@ -549,7 +549,16 @@ window.WorkbenchAssets = (() => {
     source.hash = location.hash;
     if (frame.dataset.gwBoundSrc !== source.href) {
       frame.dataset.gwBoundSrc = source.href;
-      frame.src = source.href;
+      // 【QIN-573 AC1】幂等赋值：若已有相符的初始 src，不重复赋值避免子帧二次重载
+      try {
+        const currentHref = frame.getAttribute('src') || frame.src || '';
+        const currentUrl = new URL(currentHref, location.origin);
+        if (currentUrl.href !== source.href) {
+          frame.src = source.href;
+        }
+      } catch (_) {
+        frame.src = source.href;
+      }
     }
   }
 
