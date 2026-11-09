@@ -787,10 +787,11 @@ def test_admission_metadata_hashes_match_current_files(repo_root: Path):
     """当前准入文件哈希必须与机器登记一致；不复用旧 Phase-2 账本。"""
     metadata = _load_admission_metadata(repo_root)
     entries = metadata.get("admitted_files", [])
-    assert len(entries) == 111, (
+    assert len(entries) == 112, (
         "当前准入登记数量必须包含 H01、已批准规范、QIN-376 测试覆盖清单、QIN-382 方案"
         "、MVP1-T4a 嵌入基准冒烟测试、QIN-347 回归测试、QIN-440 产物来源链契约测试"
-        "、QIN-443 NLE 导出黄金夹具、QIN-521 快捷键使用指南与 QIN-514 P8-A1 治理报告"
+        "、QIN-443 NLE 导出黄金夹具、QIN-521 快捷键使用指南、QIN-514 P8-A1 治理报告"
+        "与 QIN-575 内容哈希契约"
     )
     for entry in entries:
         path = repo_root / entry["path"]
@@ -1583,4 +1584,31 @@ def test_github_issue_667_file_scope_is_registered(repo_root: Path):
         "web/js/controllers/assets-controller.js",
         "web/js/modules/asset-manager.js",
         "web/pages/assets.html",
+    }
+
+
+def test_qin_575_hash_contract_files_are_registered(repo_root: Path):
+    """#660（QIN-575）内容哈希契约文档与防漂移测试按本票分片登记。"""
+    metadata = _load_admission_metadata(repo_root)
+    registrations = [
+        item
+        for item in metadata.get("authorized_issue_file_sets", [])
+        if item.get("issue") == 660
+    ]
+    assert len(registrations) == 1
+    assert registrations[0].get("authorization_basis") == (
+        "GitHub Issue #660 (QIN-575), 2026-11-09"
+    )
+    assert set(registrations[0].get("files", [])) == {
+        "docs/contracts/ASSET-CONTENT-HASH-CONTRACT.md",
+        "tests/contracts/assets/test_qin_575_hash_contract.py",
+        "tests/hygiene/fixtures/admissions/issue-660.json",
+        "tests/hygiene/test_admission_sharding.py",
+        "tests/hygiene/test_cleanroom_hygiene.py",
+    }
+    assert "docs/contracts/ASSET-CONTENT-HASH-CONTRACT.md" in {
+        entry["path"] for entry in metadata.get("admitted_files", [])
+    }
+    assert "tests/contracts/assets/test_qin_575_hash_contract.py" in {
+        entry["path"] for entry in metadata.get("accepted_test_files", [])
     }

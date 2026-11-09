@@ -1,0 +1,30 @@
+{
+  "schema": "gw.cleanroom-admission-shard/v1",
+  "issue": 660,
+  "authorization_basis": "GitHub Issue #660 (QIN-575), 2026-11-09",
+  "files": [
+    "docs/contracts/ASSET-CONTENT-HASH-CONTRACT.md",
+    "tests/contracts/assets/test_qin_575_hash_contract.py",
+    "tests/hygiene/fixtures/admissions/issue-660.json",
+    "tests/hygiene/test_admission_sharding.py",
+    "tests/hygiene/test_cleanroom_hygiene.py"
+  ],
+  "admitted_files": [
+    {
+      "path": "docs/contracts/ASSET-CONTENT-HASH-CONTRACT.md",
+      "classification": "frozen_interface_contract",
+      "authorization_basis": "GitHub Issue #660 (QIN-575), 2026-11-09",
+      "sha256": "b53a11a554d619197bbfecbc9d1613936933647e71498c1eb194c2f6c2b63abf",
+      "admission": "accepted"
+    }
+  ],
+  "accepted_test_files": [
+    {
+      "path": "tests/contracts/assets/test_qin_575_hash_contract.py",
+      "classification": "contract_test",
+      "authorization_basis": "GitHub Issue #660 (QIN-575), 2026-11-09",
+      "admission": "accepted"
+    }
+  ],
+  "notes": "QIN-575 内容哈希 full/sampled 契约文档与防漂移测试：新增一份契约文档（按内容哈希登记）与一份资产契约测试；不修改 _sampled_hash 算法口径。"
+}
