@@ -1516,3 +1516,25 @@ def test_github_issue_658_file_scope_is_registered(repo_root: Path):
         "web/css/pages/asset-vault.css",
         "web/js/modules/asset-manager.js",
     }
+
+
+def test_github_issue_665_file_scope_is_registered(repo_root: Path):
+    """#665（QIN-578）资产库剧本标签隐藏工具栏标题并将项目/剧本/提示词移至其他后所涉文件按票面逐项登记。"""
+    metadata = _load_admission_metadata(repo_root)
+    registrations = [
+        item
+        for item in metadata.get("authorized_issue_file_sets", [])
+        if item.get("issue") == 665
+    ]
+    assert len(registrations) == 1
+    assert registrations[0].get("authorization_basis") == (
+        "GitHub Issue #665 (QIN-578), 2026-11-09"
+    )
+    assert set(registrations[0].get("files", [])) == {
+        "tests/frontend/node-files.txt",
+        "tests/frontend/qin-566-asset-navigation.test.mjs",
+        "tests/frontend/qin-578-scripts-heading-and-tab-order.test.mjs",
+        "tests/hygiene/fixtures/admissions/issue-665.json",
+        "tests/hygiene/test_cleanroom_hygiene.py",
+        "web/js/modules/asset-manager.js",
+    }
