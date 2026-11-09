@@ -540,6 +540,32 @@ async function refreshRegistryProjectCounts(renderNow = true){
     }
     if(renderNow) render();
 }
+// 【QIN-582 AC5】项目计数按项目逐个打 getRegistryAssets('project_id=…&limit=1')，
+// 启动期会并发放大后端的来源根探测链。这里改为首屏就绪后在空闲时段刷新一次：
+// 不阻塞 loadAll()，也不在首屏关键路径上 await；计数到达后仍会 render() 更新 UI。
+let registryFirstScreenReady = false;
+let registryProjectCountsDirty = false;
+let registryProjectCountsScheduled = false;
+function scheduleRegistryProjectCounts(){
+    registryProjectCountsDirty = true;
+    if(!registryFirstScreenReady || registryProjectCountsScheduled) return;
+    registryProjectCountsScheduled = true;
+    const run = () => {
+        registryProjectCountsScheduled = false;
+        if(!registryProjectCountsDirty) return;
+        registryProjectCountsDirty = false;
+        void refreshRegistryProjectCounts(true).catch(() => {});
+    };
+    if(typeof window.requestIdleCallback === 'function'){
+        window.requestIdleCallback(run, {timeout:2000});
+    } else {
+        window.setTimeout(run, 0);
+    }
+}
+function markRegistryFirstScreenReady(){
+    registryFirstScreenReady = true;
+    if(registryProjectCountsDirty) scheduleRegistryProjectCounts();
+}
 function registryProjectAssetCount(projOrId){
     const projId = typeof projOrId === 'object' && projOrId ? (projOrId.id || projOrId.project_id) : String(projOrId || '');
     const proj = typeof projOrId === 'object' && projOrId ? projOrId : projects.find(item => item.id === projId);
@@ -7651,7 +7677,7 @@ async function refreshRegistryAssets(renderNow=true){
             registryStatus = statusData;
             if(activeTab === 'registry') render();
         }).catch(() => {});
-        await refreshRegistryProjectCounts(false);
+        scheduleRegistryProjectCounts();
     } catch(err) {
         if(isRegistryAbortError(err)) return;
         throw err;
@@ -7998,7 +8024,7 @@ async function loadRegistryBootstrap(requestId=beginRegistryBootstrapRequest()){
                 registryProjectAssetCounts.set(proj.id, proj.asset_count);
             }
         }
-        await refreshRegistryProjectCounts(false);
+        scheduleRegistryProjectCounts();
         if(explicitRegistryProjectContext && !projects.some(item => item.id === activeProjectId)){
             const error = new Error('项目不存在或无权访问');
             error.status = 404;
@@ -26036,6 +26062,11 @@ document.addEventListener('DOMContentLoaded', () => {
         registrySessionReady = true;
         if(Number.isFinite(restoredScroll)) await applyRegistryBrowseSessionScroll(restoredScroll);
         saveRegistryBrowseSession();
+        // 【QIN-582 AC5】首屏就绪：项目计数延后到空闲时段，5s 索引轮询仍只在此之后启动。
+        markRegistryFirstScreenReady();
         startRegistryAutomaticIndexPolling();
-    }).catch(err => setStatus(err.message || '加载失败'));
+    }).catch(err => {
+        markRegistryFirstScreenReady();
+        setStatus(err.message || '加载失败');
+    });
 });

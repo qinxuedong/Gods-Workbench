@@ -512,12 +512,129 @@ def _roots():
     return canonical, aliases
 
 
+# QIN-582：来源根解析与逐别名挂载探测的进程内有界缓存。
+# _roots() 每次都会对允许根、登记目录与绑定别名做有界 probe_mount，单次首屏
+# 列表请求原本要跑 3 遍。这里只缓存「别名解析 + 逐别名可用性」，root_facets()
+# 的 count 仍每次基于实时注册表重算，避免资产增删后来源计数不刷新。
+ROOT_FACETS_CACHE_TTL_SECONDS = 2.0
+_ROOT_FACETS_CACHE_LOCK = threading.Lock()
+_ROOT_FACETS_CACHE = {"key": None, "value": None, "expires_at": 0.0}
+
+
+def _path_stat_signature(raw_path: str):
+    """目录出现/消失或内容变化时的轻量签名；只 stat，不做有界挂载探测。"""
+    try:
+        info = Path(raw_path).stat()
+    except OSError:
+        return None
+    return (info.st_mtime_ns, info.st_size)
+
+
+def _root_facets_cache_key():
+    """缓存失效键：配置 revision、运行时数据根与目录状态任一变化即失效。
+
+    目录被外部 rename / mkdir 不会改动任何配置 revision，但会改变来源可用性。
+    因此把所有相关路径的 stat 签名放进键；用一次有界调用收口，避免不可达网络盘
+    把 facet 请求卡死。超时或探测槽占满时退化为 ``unknown``，由短 TTL 兜底。
+    """
+    from gw.asset_registry import repository as repo
+    from gw.settings.service import default_storage_settings_service
+
+    roots_state = storage._allowed_roots_state()
+    settings_state = default_storage_settings_service._state.read()
+    bound_aliases = repo.readonly_registry_snapshot().get("root_aliases", {})
+
+    paths = [str(record.get("path") or "") for record in roots_state.get("roots", [])]
+    paths.extend(
+        str(entry.get("path") or "")
+        for entry in (settings_state.get("extra_local_entries") or [])
+    )
+    paths.extend(
+        str(value or "") for value in (settings_state.get("dirs") or {}).values()
+    )
+    if isinstance(bound_aliases, dict):
+        for bound in bound_aliases.values():
+            if isinstance(bound, dict):
+                paths.extend(str(item) for item in (bound.get("aliases") or []))
+    paths.extend(
+        item
+        for item in (os.environ.get("GW_ALLOWED_ROOTS") or "").split(os.pathsep)
+        if item
+    )
+    unique_paths = sorted({item for item in paths if item})
+    path_state = storage._run_bounded_mount_call(
+        lambda: tuple((item, _path_stat_signature(item)) for item in unique_paths),
+        storage.MOUNT_PROBE_TIMEOUT_SECONDS,
+    )
+    if path_state is None:
+        path_state = "unknown"
+
+    return (
+        str(storage.data_root()),
+        int(roots_state.get("revision", 1)),
+        json.dumps(
+            [
+                (str(item.get("id") or ""), str(item.get("path") or ""), bool(item.get("active")))
+                for item in roots_state.get("roots", [])
+            ],
+            ensure_ascii=False,
+        ),
+        int(settings_state.get("revision", 1)),
+        json.dumps(settings_state, sort_keys=True, ensure_ascii=False, default=str),
+        json.dumps(bound_aliases, sort_keys=True, ensure_ascii=False, default=str),
+        path_state,
+    )
+
+
+def _cached_root_snapshot():
+    """返回 ``(aliases, alias_status)``；命中缓存时不做任何磁盘探测。"""
+    with _ROOT_FACETS_CACHE_LOCK:
+        # 键计算也收在锁内：并发下只算一次，避免多条请求因探测槽争用得到
+        # 不一致的路径状态签名而同时 miss（惊群）。
+        key = _root_facets_cache_key()
+        now = time.monotonic()
+        cached = _ROOT_FACETS_CACHE
+        if (
+            cached["value"] is not None
+            and cached["key"] == key
+            and now < cached["expires_at"]
+        ):
+            return cached["value"]
+        # single-flight：miss 时只算一次，并发请求复用同一份结果，避免抢光探测槽。
+        _, aliases = _roots()
+        alias_status = {}
+        for source_id, alias in sorted(aliases.items()):
+            if (
+                str(alias.get("availability") or "available") == "invalid"
+                or alias.get("root") is None
+            ):
+                continue
+            path = (
+                Path(alias["scan_path"])
+                if alias.get("scan_path") is not None
+                else alias["root"].joinpath(*Path(alias.get("prefix") or ".").parts)
+            )
+            status = storage.probe_mount(str(path))
+            alias_status[source_id] = {
+                "availability": "available" if status["available"] else "offline",
+                "availability_reason": str(status["reason"] or ""),
+                "availability_message": str(status["message"] or ""),
+            }
+        value = (aliases, alias_status)
+        _ROOT_FACETS_CACHE.update(
+            key=key,
+            value=value,
+            expires_at=time.monotonic() + ROOT_FACETS_CACHE_TTL_SECONDS,
+        )
+        return value
+
+
 def root_facets():
     """返回可筛选来源及资产数，不暴露服务器绝对路径。"""
     from gw.asset_registry import repository as repo
 
     try:
-        _, aliases = _roots()
+        aliases, alias_status = _cached_root_snapshot()
     except CleanroomException:
         return []
     raw = repo.state().read()
@@ -533,16 +650,12 @@ def root_facets():
         availability = str(alias.get("availability") or "available")
         reason = str(alias.get("availability_reason") or "")
         message = str(alias.get("availability_message") or "")
-        if availability != "invalid" and alias.get("root") is not None:
-            path = (
-                Path(alias["scan_path"])
-                if alias.get("scan_path") is not None
-                else alias["root"].joinpath(*Path(alias.get("prefix") or ".").parts)
-            )
-            status = storage.probe_mount(str(path))
-            availability = "available" if status["available"] else "offline"
-            reason = str(status["reason"] or "")
-            message = str(status["message"] or "")
+        # 逐别名可用性来自有界缓存，不再每个请求重新做一次挂载探测。
+        if source_id in alias_status:
+            status = alias_status[source_id]
+            availability = status["availability"]
+            reason = status["availability_reason"]
+            message = status["availability_message"]
         facets[source_id] = {
             "id": source_id,
             "name": alias["name"],

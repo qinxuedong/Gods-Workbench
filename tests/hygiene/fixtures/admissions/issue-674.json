@@ -1,0 +1,30 @@
+{
+  "schema": "gw.cleanroom-admission-shard/v1",
+  "issue": 674,
+  "authorization_basis": "GitHub Issue #674 (QIN-582), 2026-11-09",
+  "files": [
+    "gw/asset_registry/index_jobs.py",
+    "gw/asset_registry/repository.py",
+    "web/js/modules/asset-manager.js",
+    "tests/contracts/assets/test_qin_582_registry_root_facets.py",
+    "tests/frontend/qin-582-registry-boot-requests.test.mjs",
+    "tests/frontend/node-files.txt",
+    "tests/hygiene/fixtures/admissions/issue-674.json"
+  ],
+  "admitted_files": [],
+  "accepted_test_files": [
+    {
+      "path": "tests/contracts/assets/test_qin_582_registry_root_facets.py",
+      "classification": "curated_test_coverage",
+      "authorization_basis": "GitHub Issue #674 (QIN-582), 2026-11-09",
+      "admission": "accepted"
+    },
+    {
+      "path": "tests/frontend/qin-582-registry-boot-requests.test.mjs",
+      "classification": "curated_test_coverage",
+      "authorization_basis": "GitHub Issue #674 (QIN-582), 2026-11-09",
+      "admission": "accepted"
+    }
+  ],
+  "notes": "QIN-582 资产库启动加载慢：index_jobs._roots() 的别名解析与逐别名挂载探测加进程内有界缓存（revision 即时失效 + TTL 2s + single-flight），root_facets 的 count 仍基于实时注册表重算；repository 去掉 _removed_root_ids/_source_display_names 的冗余探测链并在请求内复用同一份 facets；前端把项目计数 limit=1 请求延后到首屏就绪后的空闲时段。不改 API 契约、不改资产索引结构。"
+}
