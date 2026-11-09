@@ -38,7 +38,7 @@ test('AC2: 左栏「用户资源」只含收集箱/用户资源库/挂载文件�
   assert.doesNotMatch(controller, /SYSTEM_NAVIGATION_GROUPS/);
 });
 
-test('AC3: 统计顶栏 LUT 后、画布前依次新增「项目」「剧本」「提示词」导航入口', () => {
+test('AC3: 统计顶栏「其他」后依次排布「项目」「剧本」「提示词」导航入口', () => {
   const stats = manager.slice(manager.indexOf('function renderRegistryOverviewStats'), manager.indexOf('function toggleRegistryFeature'));
   const lut = stats.indexOf("{id:'lut'");
   const projects = stats.indexOf("{id:'projects', name:'项目', nav:true");
@@ -47,7 +47,7 @@ test('AC3: 统计顶栏 LUT 后、画布前依次新增「项目」「剧本」�
   const canvas = stats.indexOf("{id:'reference-canvas'");
   const other = stats.indexOf("{id:'other'");
   for (const pos of [projects, scripts, prompts]) assert.ok(pos > 0, '三个导航入口应存在');
-  assert.ok(lut < projects && projects < scripts && scripts < prompts && prompts < canvas && canvas < other, '入口顺序应为 LUT → 项目 → 剧本 → 提示词 → 画布 → 其他');
+  assert.ok(lut < canvas && canvas < other && other < projects && projects < scripts && scripts < prompts, '入口顺序应为 LUT → 画布 → 其他 → 项目 → 剧本 → 提示词');
   assert.match(stats, /data-registry-nav=/);
   assert.match(stats, /is-nav/);
   const navTemplate = stats.slice(stats.indexOf('if(stat.nav)'), stats.indexOf('// 双行结构'));

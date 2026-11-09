@@ -10826,13 +10826,13 @@ function renderRegistryOverviewStats(){
         {id:'model', name:'模型', value:registryCategoryCount('model'), icon:'box'},
         {id:'font', name:'字体', value:registryCategoryCount('font'), icon:'type'},
         {id:'lut', name:'LUT', value:registryCategoryCount('lut'), icon:'palette'},
-        // 【QIN-566】顶栏导航入口（AC3）：承接原左栏系统入口目的地，排在 LUT 之后、画布/其他之前。
-        {id:'projects', name:'项目', nav:true, icon:'clapperboard'},
-        {id:'scripts', name:'剧本', nav:true, icon:'file-text'},
-        {id:'prompts', name:'提示词', nav:true, icon:'text-cursor-input'},
         // 【QIN-531】卡片更名「画布」；data-registry-stat 仍沿用 reference-canvas，既有跳转不动。
         {id:'reference-canvas', name:'画布', value:canvasTotal, icon:'map'},
         {id:'other', name:'其他', value:registryCategoryCount('other'), icon:'package-open'},
+        // 【QIN-566 / QIN-578】顶栏导航入口：排在「其他」之后。
+        {id:'projects', name:'项目', nav:true, icon:'clapperboard'},
+        {id:'scripts', name:'剧本', nav:true, icon:'file-text'},
+        {id:'prompts', name:'提示词', nav:true, icon:'text-cursor-input'},
     ];
     return `<section class="registry-overview-stats" aria-label="资产统计">${stats.map(stat => {
         const ratio = globalTotal ? Math.round(Number(stat.value || 0) / globalTotal * 100) : 0;
@@ -11758,6 +11758,7 @@ function renderRegistryToolbar(board, title, subtitle, options={}){
     const governanceTotal = governanceSuggestionTotal();
     const governanceBadge = governanceSuggestionsError ? '!' : governanceSuggestionsLoading ? '…' : governanceSuggestionsData ? String(governanceTotal) : '—';
     const governanceTrigger = '<button class="hw-btn governance-topbar-entry' + (governanceSuggestionsError ? ' has-error' : '') + '" type="button" data-governance-open aria-haspopup="dialog" aria-expanded="' + String(governanceDrawerOpen) + '" aria-label="' + escapeAttr(governanceTriggerLabel()) + '" title="' + escapeAttr(governanceTriggerLabel()) + '"><i data-lucide="list-checks"></i><span>治理建议</span><span class="governance-topbar-count" data-governance-total>' + escapeHtml(governanceBadge) + '</span></button>';
+    if(embeddedVault && activeTab === 'scripts') options.hideHeading = true;
     const hideHeading = Boolean(options.hideHeading || (embeddedVault && ['prompts', 'canvas-assets', 'workflows'].includes(activeTab)));
     return `<div class="content-toolbar registry-toolbar">
         ${options.hideHeading ? '' : (hideHeading ? '' : `<div class="content-heading"><strong>${escapeHtml(title)}</strong><span>${escapeHtml(subtitle)}</span></div>`)}

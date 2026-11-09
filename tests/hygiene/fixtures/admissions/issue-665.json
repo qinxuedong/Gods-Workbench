@@ -1,0 +1,23 @@
+{
+  "schema": "gw.cleanroom-admission-shard/v1",
+  "issue": 665,
+  "authorization_basis": "GitHub Issue #665 (QIN-578), 2026-11-09",
+  "files": [
+    "tests/frontend/node-files.txt",
+    "tests/frontend/qin-566-asset-navigation.test.mjs",
+    "tests/frontend/qin-578-scripts-heading-and-tab-order.test.mjs",
+    "tests/hygiene/fixtures/admissions/issue-665.json",
+    "tests/hygiene/test_cleanroom_hygiene.py",
+    "web/js/modules/asset-manager.js"
+  ],
+  "admitted_files": [],
+  "accepted_test_files": [
+    {
+      "path": "tests/frontend/qin-578-scripts-heading-and-tab-order.test.mjs",
+      "classification": "curated_test_coverage",
+      "authorization_basis": "GitHub Issue #665 (QIN-578), 2026-11-09",
+      "admission": "accepted"
+    }
+  ],
+  "notes": "QIN-578 资产库剧本标签隐藏工具栏标题并将项目/剧本/提示词移至其他后（vault 嵌入态剧本视图工具栏隐藏 content-heading 文字实现 Coverflow 与工具栏控件左对齐；顶栏概览统计卡片顺序调整为其他之后依次排布项目、剧本、提示词）。"
+}
