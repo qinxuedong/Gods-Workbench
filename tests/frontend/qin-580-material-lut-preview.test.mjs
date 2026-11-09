@@ -298,20 +298,15 @@ test('QIN-580：工具条下拉菜单挂到 body，不被画布外壳的 overflo
     assert.ok(zIndex > lightboxZ, `菜单层级 ${zIndex} 必须高于详情遮罩 ${lightboxZ}`);
 });
 
-test('QIN-580：LUT 统计卡改为「提示词」式导航入口，点开是独立子页面', () => {
-    // 统计条：LUT 必须是 nav 型入口（只出图标 + 名称），且紧跟在「提示词」之后。
+test('QIN-580：LUT 不进资产总量统计条，改由机架进入独立子页面', () => {
+    // 统计条：LUT 既不是统计卡也不是导航卡，整条里都不该出现。
     const statsBlock = manager.slice(
         manager.indexOf('function renderRegistryOverviewStats(){'),
         manager.indexOf('async function toggleRegistryFeature('),
     );
     assert.ok(statsBlock.length > 0, '找不到统计条渲染函数');
-    const lutEntry = (statsBlock.match(/\{id:'lut',[^}]*\}/) || [])[0] || '';
-    assert.match(lutEntry, /nav:true/, 'LUT 必须是导航入口卡');
-    assert.ok(!/value:/.test(lutEntry), 'LUT 导航卡不得带计数');
-    assert.ok(!/registryCategoryCount\('lut'\)/.test(statsBlock), 'LUT 不再作为统计项取数');
-    const promptsAt = statsBlock.indexOf("{id:'prompts'");
-    const lutAt = statsBlock.indexOf("{id:'lut'");
-    assert.ok(promptsAt > 0 && lutAt > promptsAt, 'LUT 入口必须排在「提示词」之后');
+    assert.ok(!statsBlock.includes("{id:'lut'"), 'LUT 不得出现在资产总量的统计条里');
+    assert.ok(!/registryCategoryCount\('lut'\)/.test(statsBlock), 'LUT 不作为统计项取数');
     // nav 分支只由图标 + 名称构成，不带占比与进度条。
     const navBranch = statsBlock.slice(statsBlock.indexOf('if(stat.nav){'), statsBlock.indexOf('// 双行结构'));
     assert.ok(!/registry-stat-meter/.test(navBranch), '导航入口卡不得输出进度条');
@@ -330,4 +325,89 @@ test('QIN-580：LUT 统计卡改为「提示词」式导航入口，点开是独
     assert.match(manager, /registryAssetCategory\(item\) === 'lut'/);
     // 进入子页面按 kind=lut 取数，不占统计分类。
     assert.match(manager, /if\(id === 'lut'\)\{[\s\S]{0,400}applyRegistryFilterDefinition\(\{kind:'lut'\}\)/);
+});
+
+test('QIN-580：点空白处自动收起 LUT 浮窗，浮窗内点击不受影响', () => {
+    const clickBlock = manager.slice(
+        manager.indexOf("if(handleDetailMediaLutMenuClick(event)) return;"),
+        manager.indexOf("const mediaCanvasNode = event.target.closest?.('[data-detail-media-canvas-node]');"),
+    );
+    assert.ok(clickBlock.length > 0, '找不到 LUT 点击分支');
+    // 浮窗内部（含关闭/选项/对比/清除）先各自 return，落到最后的才是「点空白处」。
+    const closeAt = clickBlock.indexOf("if(String(detailViewerState.mediaCanvasLutPanel || '')){ closeDetailMediaNodeLutPanel(); }");
+    assert.ok(closeAt > 0, '点空白处必须收起浮窗');
+    assert.ok(
+        closeAt > clickBlock.indexOf('[data-detail-media-node-lut-panel]'),
+        '空白处收起必须排在浮窗内点击之后，否则点浮窗会先被关掉',
+    );
+});
+
+test('QIN-580：LUT 菜单与浮窗按项目设计语言改成圆角', () => {
+    const rule = selector => {
+        const start = styles.indexOf(`${selector} {`);
+        assert.ok(start > 0, `缺少样式 ${selector}`);
+        return styles.slice(start, styles.indexOf('}', start) + 1);
+    };
+    // 本页不引 signal-flow.css（--gw-radius-* 取不到值），沿用本页浮层口径：
+    // 菜单/浮窗 8px（同 .registry-structure-context-menu），条目与控件 6px，小图标件 4px。
+    assert.match(rule('.asset-detail-media-lut-menu'), /border-radius:8px/);
+    assert.match(rule('.asset-detail-media-lut-menu-item'), /border-radius:6px/);
+    assert.match(rule('.asset-detail-media-node-lut-panel'), /border-radius:8px/);
+    assert.match(rule('.asset-detail-media-node-lut-item'), /border-radius:6px/);
+    assert.match(rule('.asset-detail-media-node-lut'), /border-radius:4px/);
+    assert.match(rule('.asset-detail-media-node-lut-clear'), /border-radius:6px/);
+});
+
+test('QIN-580：浮窗里换 LUT 就地更新，不整块重建（否则列表滚动位置与浮窗高度都会跳）', () => {
+    const start = manager.indexOf('async function setDetailMediaNodeLut(itemId, lutId){');
+    assert.ok(start > 0, '找不到换 LUT 的处理函数');
+    const block = manager.slice(start, manager.indexOf('function setDetailMediaNodeLutStrength', start));
+    assert.ok(!block.includes('refreshDetailMediaNodeLutDom'), '换 LUT 不得整块重建浮窗');
+    assert.ok(!block.includes('positionDetailMediaNodeLutPanel'), '换 LUT 不得重新定位浮窗');
+    assert.match(block, /data-detail-media-node-lut-item/);
+    assert.match(block, /setDetailMediaNodeLutTitle\(key, title\)/);
+    assert.match(block, /scheduleDetailMediaLutPaint\(key, \{notify:true\}\)/);
+    assert.match(manager, /function setDetailMediaNodeLutTitle\(itemId, title\)\{/);
+});
+
+test('QIN-580：浮窗去掉「套用后」按钮，默认即套用后，分屏/原图再点一次回退', () => {
+    const panel = manager.slice(
+        manager.indexOf('function renderDetailMediaNodeLutPanel(item, entry, title, type){'),
+        manager.indexOf('function refreshDetailMediaNodeLutDom(itemId){'),
+    );
+    assert.ok(panel.length > 0, '找不到浮窗渲染函数');
+    assert.ok(!panel.includes('>套用后<'), '浮窗不再需要「套用后」按钮');
+    assert.match(panel, /data-detail-media-node-lut-compare="split"/);
+    assert.match(panel, /data-detail-media-node-lut-compare="original"/);
+
+    const setter = manager.slice(
+        manager.indexOf('function setDetailMediaNodeLutCompare(itemId, mode){'),
+        manager.indexOf('function clearDetailMediaNodeLut(itemId){'),
+    );
+    assert.match(setter, /const next = detailMediaLutCompareOf\(previous\) === mode \? 'applied' : mode;/, '再点一次当前的对比模式要回到套用后');
+    assert.match(setter, /syncDetailMediaLutSplit\(key\)/);
+});
+
+test('QIN-580：分屏模式在素材中间给出可拖动的对比分割线', () => {
+    // 分界位置进 entry，绘制时带给合成函数。
+    assert.match(manager, /function detailMediaLutSplitOf\(entry\)\{/);
+    assert.match(manager, /splitX:detailMediaLutSplitOf\(entry\)/);
+    // 分割线只在分屏且已画出帧时出现。
+    const sync = manager.slice(
+        manager.indexOf('function syncDetailMediaLutSplit(itemId){'),
+        manager.indexOf('/* 拖动分割线'),
+    );
+    assert.ok(sync.length > 0, '找不到分割线定位函数');
+    assert.match(sync, /detailMediaLutCompareOf\(entry\) !== 'split' \|\| canvas\.hidden/);
+    assert.match(sync, /detailMediaLutContentBox\(canvas\)/);
+
+    // 拖动不能触发画布平移：pointerdown 必须排在平移之前注册，且平移本身要放过分割线。
+    const splitAt = manager.indexOf("document.addEventListener('pointerdown', beginDetailMediaLutSplitDrag, true);");
+    const panAt = manager.indexOf("document.addEventListener('pointerdown', beginDetailMediaCanvasPan, true);");
+    assert.ok(splitAt > 0 && panAt > 0 && splitAt < panAt, '分割线的 pointerdown 必须先于画布平移注册');
+    assert.match(manager, /\[data-detail-media-lut-split\]'\)\) return;/);
+    assert.match(manager, /function moveDetailMediaLutSplit\(event\)\{/);
+    assert.match(manager, /function endDetailMediaLutSplitDrag\(\)\{/);
+    assert.match(styles, /\.asset-detail-media-lut-split \{ position:absolute;/);
+    assert.match(styles, /cursor:ew-resize/);
 });

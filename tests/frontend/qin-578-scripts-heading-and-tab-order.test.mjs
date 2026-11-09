@@ -31,28 +31,28 @@ test('AC1: 嵌入态下剧本标签隐藏 content-heading，实现 Coverflow 与
   );
 });
 
-test('AC2: 顶栏概览统计卡片顺序调整为 画布 → 其他 → 项目 → 剧本 → 提示词 → LUT', () => {
+test('AC2: 顶栏概览统计卡片顺序调整为 画布 → 其他 → 项目 → 剧本 → 提示词', () => {
   const statsSlice = managerJs.slice(
     managerJs.indexOf('function renderRegistryOverviewStats'),
     managerJs.indexOf('function toggleRegistryFeature')
   );
-  const lut = statsSlice.indexOf("{id:'lut'");
   const canvas = statsSlice.indexOf("{id:'reference-canvas'");
   const other = statsSlice.indexOf("{id:'other'");
   const projects = statsSlice.indexOf("{id:'projects', name:'项目', nav:true");
   const scripts = statsSlice.indexOf("{id:'scripts', name:'剧本', nav:true");
   const prompts = statsSlice.indexOf("{id:'prompts', name:'提示词', nav:true");
 
-  for (const pos of [lut, canvas, other, projects, scripts, prompts]) {
+  for (const pos of [canvas, other, projects, scripts, prompts]) {
     assert.ok(pos > 0, '所有关键统计卡片与导航入口必须存在于 stats 数组中');
   }
 
-  // 【QIN-580】LUT 由统计卡改为导航入口，按产品要求排在「提示词」之后，
-  // 因此本票原先「LUT 打头」的顺序调整为「画布 → 其他 → 项目 → 剧本 → 提示词 → LUT」。
+  // 【QIN-580】LUT 已从统计条整体移出（不占统计口径，也不再出导航卡），
+  // 因此顺序为「画布 → 其他 → 项目 → 剧本 → 提示词」。
   assert.ok(
-    canvas < other && other < projects && projects < scripts && scripts < prompts && prompts < lut,
-    '卡片顺序必须为 画布 → 其他 → 项目 → 剧本 → 提示词 → LUT'
+    canvas < other && other < projects && projects < scripts && scripts < prompts,
+    '卡片顺序必须为 画布 → 其他 → 项目 → 剧本 → 提示词'
   );
+  assert.ok(!statsSlice.includes("{id:'lut'"), 'LUT 不得出现在统计条里');
 });
 
 test('AC3: 顶栏导航卡片保留 is-nav 与 data-registry-nav，点击激活对应系统看板', () => {

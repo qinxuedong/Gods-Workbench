@@ -10855,9 +10855,8 @@ function renderRegistryOverviewStats(){
         {id:'projects', name:'项目', nav:true, icon:'clapperboard'},
         {id:'scripts', name:'剧本', nav:true, icon:'file-text'},
         {id:'prompts', name:'提示词', nav:true, icon:'text-cursor-input'},
-        // 【QIN-580】LUT 改为导航入口：紧跟在「提示词」之后，只出图标 + 名称，
-        // 不再输出计数、占比与进度条（不计入统计口径），点击进入独立 LUT 库子页面。
-        {id:'lut', name:'LUT', nav:true, icon:'palette'},
+        // 【QIN-580】LUT 不再出现在资产总量的统计条里（既不占统计口径，也不再出导航卡）：
+        // LUT 库由左侧机架的「LUT 库」入口进入，统计条只留真正的资产分类与既有导航入口。
     ];
     return `<section class="registry-overview-stats" aria-label="资产统计">${stats.map(stat => {
         const ratio = globalTotal ? Math.round(Number(stat.value || 0) / globalTotal * 100) : 0;
@@ -16985,6 +16984,11 @@ function detailMediaLutStrengthOf(entry){
 function detailMediaLutCompareOf(entry){
     return LUT_COMPARE_MODES.includes(entry?.compare) ? entry.compare : 'applied';
 }
+/** 分屏分界位置 0–1：没拖过就居中。 */
+function detailMediaLutSplitOf(entry){
+    const value = Number(entry?.splitX);
+    return Number.isFinite(value) ? Math.max(0, Math.min(1, value)) : 0.5;
+}
 /** 画布里能套 LUT 的素材（下拉一级菜单的数据源）。 */
 function detailMediaLutCanvasTargets(){
     return (detailViewerState.mediaCanvasItems || []).filter(item => {
@@ -17032,6 +17036,103 @@ function detailMediaLutCanvas(media){
     }
     return canvas;
 }
+/**
+ * 覆盖 canvas 的等比内容框：canvas 用 `object-fit:contain` 铺满素材框，
+ * 素材比例与节点比例不一致时会留黑边，分割线要贴内容边界而不是节点边界。
+ */
+function detailMediaLutContentBox(canvas){
+    const hostWidth = canvas?.clientWidth || canvas?.width || 0;
+    const hostHeight = canvas?.clientHeight || canvas?.height || 0;
+    const frameWidth = canvas?.width || hostWidth;
+    const frameHeight = canvas?.height || hostHeight;
+    if(!hostWidth || !hostHeight) return {left:0, top:0, width:hostWidth || 0, height:hostHeight || 0};
+    const scale = Math.min(hostWidth / frameWidth, hostHeight / frameHeight) || 1;
+    const width = frameWidth * scale;
+    const height = frameHeight * scale;
+    return {left:(hostWidth - width) / 2, top:(hostHeight - height) / 2, width, height};
+}
+/** 分屏分割线按需注入素材框（和 canvas 一样，节点重建后由同步逻辑补回）。 */
+function detailMediaLutSplit(media){
+    const host = media?.parentElement;
+    if(!host) return null;
+    let split = host.querySelector('[data-detail-media-lut-split]');
+    if(!split){
+        split = document.createElement('div');
+        split.className = 'asset-detail-media-lut-split';
+        split.dataset.detailMediaLutSplit = '';
+        split.setAttribute('role', 'separator');
+        split.setAttribute('aria-orientation', 'vertical');
+        split.setAttribute('aria-label', '左右拖动调整前后对比分界');
+        split.innerHTML = '<span class="asset-detail-media-lut-split-handle"><i data-lucide="chevrons-left-right"></i></span>';
+        split.hidden = true;
+        host.appendChild(split);
+        refreshIcons();
+    }
+    return split;
+}
+/** 只有「分屏」且帧已画出时才显示分割线，位置随入口里的 splitX 走。 */
+function syncDetailMediaLutSplit(itemId){
+    const key = String(itemId || '');
+    const node = detailMediaLutNode(key);
+    const media = detailMediaLutNodeMedia(node);
+    const canvas = media ? detailMediaLutCanvas(media) : null;
+    if(!node || !media || !canvas) return;
+    const split = detailMediaLutSplit(media);
+    if(!split) return;
+    const entry = detailMediaLutEntry(key);
+    if(!entry || detailMediaLutCompareOf(entry) !== 'split' || canvas.hidden){
+        split.hidden = true;
+        return;
+    }
+    const box = detailMediaLutContentBox(canvas);
+    split.hidden = false;
+    split.style.left = `${Math.round(box.left + box.width * detailMediaLutSplitOf(entry))}px`;
+    split.style.top = `${Math.round(box.top)}px`;
+    split.style.height = `${Math.round(box.height)}px`;
+}
+/* 拖动分割线：改 splitX 后重画，抬手即停。 */
+let detailMediaLutSplitDrag = null;
+let detailMediaLutSplitDragEndedAt = 0;
+function beginDetailMediaLutSplitDrag(event){
+    const split = event.target.closest?.('[data-detail-media-lut-split]');
+    if(!split || event.button !== 0) return;
+    const node = split.closest('[data-detail-media-canvas-node]');
+    const canvas = split.parentElement?.querySelector('[data-detail-media-lut-canvas]');
+    if(!node || !canvas) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const itemId = String(node.dataset.detailMediaCanvasNode || '');
+    if(!detailMediaLutEntry(itemId)) return;
+    detailMediaLutSplitDrag = {itemId, split, canvas, pointerId:event.pointerId};
+    split.classList.add('is-dragging');
+    split.setPointerCapture?.(event.pointerId);
+}
+function moveDetailMediaLutSplit(event){
+    const drag = detailMediaLutSplitDrag;
+    if(!drag) return;
+    const rect = drag.canvas.getBoundingClientRect();
+    const layoutWidth = drag.canvas.clientWidth || 0;
+    if(!rect.width || !layoutWidth) return;
+    // rect 是视觉尺寸（画布整体 transform 缩放过），换回布局像素再算比例。
+    const scale = rect.width / layoutWidth;
+    const box = detailMediaLutContentBox(drag.canvas);
+    if(!box.width) return;
+    const localX = (event.clientX - rect.left) / (scale || 1);
+    const fraction = Math.max(0, Math.min(1, (localX - box.left) / box.width));
+    const previous = detailMediaLutEntry(drag.itemId);
+    if(!previous) return;
+    writeDetailMediaLutEntry(drag.itemId, {...previous, splitX:fraction});
+    syncDetailMediaLutSplit(drag.itemId);
+    scheduleDetailMediaLutPaint(drag.itemId);
+}
+function endDetailMediaLutSplitDrag(){
+    const drag = detailMediaLutSplitDrag;
+    if(!drag) return;
+    detailMediaLutSplitDrag = null;
+    drag.split.classList.remove('is-dragging');
+    // 拖完抬手时浏览器还可能补一个 click，记下时间让点击分支跳过，别把节点再选一次（会整块重渲染）。
+    detailMediaLutSplitDragEndedAt = Date.now();
+}
 
 /* ---- 绘制 ---- */
 
@@ -17061,6 +17162,7 @@ async function paintDetailMediaLutNode(itemId, options = {}){
         canvas.hidden = true;
         media.style.visibility = '';
         node.dataset.lutState = 'idle';
+        syncDetailMediaLutSplit(key);
         return false;
     }
     if(!mediaLutSamplable(media)){
@@ -17079,11 +17181,13 @@ async function paintDetailMediaLutNode(itemId, options = {}){
         const frame = composeLutPreview(sample, record.lut, {
             mode:detailMediaLutCompareOf(entry),
             strength:detailMediaLutStrengthOf(entry),
+            splitX:detailMediaLutSplitOf(entry),
         });
         if(!paintLutFrame(canvas, frame)) throw new LutPreviewError('LUT_SOURCE_UNAVAILABLE', '画布绘制失败');
         canvas.hidden = false;
         media.style.visibility = 'hidden';
         node.dataset.lutState = 'ready';
+        syncDetailMediaLutSplit(key);
         // 首次套用时 LUT 清单还没加载完，角标标题是占位的「LUT」，这里补成真实名字。
         const badge = node.querySelector('[data-detail-media-node-lut]');
         if(badge){
@@ -17096,6 +17200,7 @@ async function paintDetailMediaLutNode(itemId, options = {}){
         node.dataset.lutState = 'error';
         canvas.hidden = true;
         media.style.visibility = '';
+        syncDetailMediaLutSplit(key);
         if(options.notify) setStatus(message);
         return false;
     }
@@ -17321,13 +17426,14 @@ function renderDetailMediaNodeLutPanel(item, entry, title, type){
             </button>`;
         }).join('')
         : '<span class="asset-detail-media-lut-menu-hint">正在读取 LUT 库…</span>';
+    // 不再给「套用后」按钮：套完 LUT 本来就是套用后状态，再摆一个默认态按钮只会让人以为要按一下才生效。
+    // 「分屏」「原图」都是再点一次回到套用后的开关。
     return `<div class="asset-detail-media-node-lut-panel" data-detail-media-node-lut-panel="${escapeAttr(item.id)}" role="dialog" aria-label="LUT 调节">
-        <header><strong><i data-lucide="palette"></i>${escapeHtml(title)}</strong><button type="button" data-detail-media-node-lut-close aria-label="关闭" title="关闭"><i data-lucide="x"></i></button></header>
+        <header><strong><i data-lucide="palette"></i><span data-detail-media-node-lut-title>${escapeHtml(title)}</span></strong><button type="button" data-detail-media-node-lut-close aria-label="关闭" title="关闭"><i data-lucide="x"></i></button></header>
         <label class="asset-detail-media-node-lut-strength"><span>强度</span><input type="range" min="0" max="100" step="1" value="${strength}" data-detail-media-node-lut-strength aria-label="LUT 强度"><b data-detail-media-node-lut-strength-label>${strength}%</b></label>
         <div class="asset-detail-lut-compare" role="group" aria-label="前后对比">
-            <button type="button" data-detail-media-node-lut-compare="applied" aria-pressed="${mode === 'applied'}" class="${mode === 'applied' ? 'is-active' : ''}">套用后</button>
-            <button type="button" data-detail-media-node-lut-compare="split" aria-pressed="${mode === 'split'}" class="${mode === 'split' ? 'is-active' : ''}">分屏</button>
-            <button type="button" data-detail-media-node-lut-compare="original" aria-pressed="${mode === 'original'}" class="${mode === 'original' ? 'is-active' : ''}">原图</button>
+            <button type="button" data-detail-media-node-lut-compare="split" aria-pressed="${mode === 'split'}" class="${mode === 'split' ? 'is-active' : ''}" title="左右分屏对比，可拖动素材中间的分割线">分屏</button>
+            <button type="button" data-detail-media-node-lut-compare="original" aria-pressed="${mode === 'original'}" class="${mode === 'original' ? 'is-active' : ''}" title="只看原图，再点一次回到套用后">原图</button>
         </div>
         <div class="asset-detail-media-node-lut-list" data-detail-media-node-lut-list>${list}</div>
         <button class="asset-detail-media-node-lut-clear" type="button" data-detail-media-node-lut-clear><i data-lucide="eraser"></i><span>清除 LUT</span></button>
@@ -17379,10 +17485,14 @@ function positionDetailMediaNodeLutPanel(itemId){
 function syncDetailMediaNodeLutScale(){
     document.querySelectorAll('.asset-detail-viewer [data-detail-media-canvas-node]').forEach(node => {
         const badge = node.querySelector('[data-detail-media-node-lut]');
-        if(!badge) return;
+        const knob = node.querySelector('[data-detail-media-lut-split-handle]');
+        if(!badge && !knob) return;
         const rect = node.getBoundingClientRect();
         const scale = node.offsetWidth ? (rect.width / node.offsetWidth) || 1 : 1;
-        badge.style.transform = scale === 1 ? '' : `scale(${1 / scale})`;
+        const inverse = scale === 1 ? '' : `scale(${1 / scale})`;
+        if(badge) badge.style.transform = inverse;
+        // 分屏分割线上的圆钮同样是视觉件，跟着反向缩放，缩到 65% 也还抓得住。
+        if(knob) knob.style.transform = inverse;
     });
     const openId = String(detailViewerState.mediaCanvasLutPanel || '');
     if(openId) positionDetailMediaNodeLutPanel(openId);
@@ -17446,15 +17556,38 @@ function closeDetailMediaNodeLutPanel(){
     detailViewerState.mediaCanvasLutPanel = '';
     refreshDetailMediaNodeLutDom(key);
 }
+/** 只改标题文本：浮窗不重建，列表滚动位置和浮窗高度都不动。 */
+function setDetailMediaNodeLutTitle(itemId, title){
+    const node = detailMediaLutNode(itemId);
+    if(!node || !title) return;
+    const label = node.querySelector('[data-detail-media-node-lut-title]');
+    if(label) label.textContent = title;
+    const badge = node.querySelector('[data-detail-media-node-lut]');
+    if(badge){
+        badge.title = `LUT · ${title}`;
+        badge.setAttribute('aria-label', `LUT ${title}`);
+    }
+}
+/**
+ * 切换浮窗里的 LUT：整块重建会让列表滚回顶部、浮窗高度一变还会上下位移（看着像「跳一下」），
+ * 所以这里只就地改选中态与标题，绘制照旧走补绘队列。
+ */
 async function setDetailMediaNodeLut(itemId, lutId){
     const key = String(itemId || '');
     const previous = detailMediaLutEntry(key);
     if(!previous) return;
-    writeDetailMediaLutEntry(key, {...previous, lutId:String(lutId || '')});
-    // 先读进缓存，浮窗标题才不会退回占位的「LUT」。
-    try { await loadDetailMediaLut(lutId); } catch(_) { /* 失败留给绘制阶段提示 */ }
-    refreshDetailMediaNodeLutDom(key);
-    positionDetailMediaNodeLutPanel(key);
+    const nextId = String(lutId || '');
+    writeDetailMediaLutEntry(key, {...previous, lutId:nextId});
+    detailMediaLutNode(key)?.querySelectorAll('[data-detail-media-node-lut-item]').forEach(button => {
+        const active = button.dataset.detailMediaNodeLutItem === nextId;
+        button.classList.toggle('is-active', active);
+        button.setAttribute('aria-pressed', active ? 'true' : 'false');
+    });
+    let title = detailMediaLutCache.get(nextId)?.title || '';
+    if(!title){
+        try { title = (await loadDetailMediaLut(nextId))?.title || ''; } catch(_) { /* 失败留给绘制阶段提示 */ }
+    }
+    setDetailMediaNodeLutTitle(key, title);
     scheduleDetailMediaLutPaint(key, {notify:true});
 }
 function setDetailMediaNodeLutStrength(itemId, value){
@@ -17468,17 +17601,20 @@ function setDetailMediaNodeLutStrength(itemId, value){
     scheduleDetailMediaLutPaint(key);
 }
 function setDetailMediaNodeLutCompare(itemId, mode){
-    if(!LUT_COMPARE_MODES.includes(mode)) return;
+    // 「套用后」没有按钮：默认就是套用后，分屏/原图再点一次即回到套用后。
+    if(!LUT_COMPARE_MODES.includes(mode) || mode === 'applied') return;
     const key = String(itemId || '');
     const previous = detailMediaLutEntry(key);
     if(!previous) return;
-    writeDetailMediaLutEntry(key, {...previous, compare:mode});
+    const next = detailMediaLutCompareOf(previous) === mode ? 'applied' : mode;
+    writeDetailMediaLutEntry(key, {...previous, compare:next});
     const panel = detailMediaLutNode(key)?.querySelector('[data-detail-media-node-lut-panel]');
     panel?.querySelectorAll('[data-detail-media-node-lut-compare]').forEach(button => {
-        const active = button.dataset.detailMediaNodeLutCompare === mode;
+        const active = button.dataset.detailMediaNodeLutCompare === next;
         button.classList.toggle('is-active', active);
         button.setAttribute('aria-pressed', active ? 'true' : 'false');
     });
+    syncDetailMediaLutSplit(key);
     scheduleDetailMediaLutPaint(key);
 }
 function clearDetailMediaNodeLut(itemId){
@@ -17492,6 +17628,7 @@ function clearDetailMediaNodeLut(itemId){
     if(canvas) canvas.hidden = true;
     if(media) media.style.visibility = '';
     if(node) node.dataset.lutState = 'idle';
+    syncDetailMediaLutSplit(key);
     refreshDetailMediaNodeLutDom(key);
 }
 
@@ -21319,7 +21456,7 @@ function finishDetailMediaCanvasAnnotationEdit(){
 }
 function beginDetailMediaCanvasPan(event){
     const viewport = event.target.closest?.('[data-detail-media-canvas-viewport]');
-    if(!viewport || event.target.closest?.('.asset-detail-media-minimap,.asset-detail-media-context-menu,.asset-detail-video-dock,.asset-detail-media-annotation-editor')) return;
+    if(!viewport || event.target.closest?.('.asset-detail-media-minimap,.asset-detail-media-context-menu,.asset-detail-video-dock,.asset-detail-media-annotation-editor,[data-detail-media-lut-split]')) return;
     if(event.button === 1 || (event.button === 0 && detailMediaCanvasSpacePressed)){
         event.preventDefault();
         closeDetailMediaCanvasContextMenu();
@@ -24238,6 +24375,10 @@ document.addEventListener('click', event => {
         if(nodeLutCompare){ setDetailMediaNodeLutCompare(targetId, nodeLutCompare.dataset.detailMediaNodeLutCompare || ''); return; }
         if(event.target.closest?.('[data-detail-media-node-lut-clear]')){ clearDetailMediaNodeLut(targetId); return; }
     }
+    // 分割线只管拖，别让它多选一次节点；刚拖完补上的那次 click 也一并跳过。
+    if(event.target.closest?.('[data-detail-media-lut-split]') || Date.now() - detailMediaLutSplitDragEndedAt < 400) return;
+    // 【QIN-580】点空白处（面板和角标之外的任何地方）自动收起调节浮窗。
+    if(String(detailViewerState.mediaCanvasLutPanel || '')){ closeDetailMediaNodeLutPanel(); }
     const mediaCanvasNode = event.target.closest?.('[data-detail-media-canvas-node]');
     if(mediaCanvasNode?.closest?.('.asset-detail-media-minimap')){
         const id = mediaCanvasNode.dataset.detailMediaCanvasNode || '';
@@ -25149,13 +25290,19 @@ document.addEventListener('pointermove', moveDetailImageEditorPointer);
 document.addEventListener('pointerup', endDetailImageEditorPointer);
 document.addEventListener('pointercancel', endDetailImageEditorPointer);
 document.addEventListener('pointerdown', handleDetailCinemaPointer, true);
+// 【QIN-580】分屏分割线要自己吃 pointerdown，必须排在画布平移之前注册（capture 按注册顺序走）。
+document.addEventListener('pointerdown', beginDetailMediaLutSplitDrag, true);
 document.addEventListener('pointerdown', beginDetailMediaCanvasPan, true);
 document.addEventListener('pointerdown', beginRegistryDetailPanelResize);
 document.addEventListener('pointerdown', beginDetailMediaCanvasLibraryResize);
 document.addEventListener('pointermove', updateDetailMediaCanvasPan);
+document.addEventListener('pointermove', moveDetailMediaLutSplit);
 document.addEventListener('pointermove', updateRegistryDetailPanelResize);
 document.addEventListener('pointermove', updateDetailMediaCanvasLibraryResize);
 document.addEventListener('pointerup', endDetailMediaCanvasPan);
+document.addEventListener('pointerup', endDetailMediaLutSplitDrag);
+document.addEventListener('pointercancel', endDetailMediaCanvasPan);
+document.addEventListener('pointercancel', endDetailMediaLutSplitDrag);
 document.addEventListener('pointerup', endRegistryDetailPanelResize);
 document.addEventListener('pointerup', endDetailMediaCanvasLibraryResize);
 document.addEventListener('pointercancel', endDetailMediaCanvasPan);

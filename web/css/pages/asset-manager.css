@@ -1668,6 +1668,12 @@ body.studio-theme-dark .asset-detail-video-dock .asset-detail-video-volume input
 /* 【QIN-580】参考画布素材套用 LUT：工具条入口、两级菜单、节点角标与右侧浮窗。 */
 .asset-detail-media-lut-canvas { position:absolute; inset:0; margin:auto; width:100%; height:100%; object-fit:contain; z-index:1; pointer-events:none; }
 .asset-detail-media-lut-canvas[hidden] { display:none; }
+/* 分屏分割线：贴在素材内容区里，可左右拖动改分界。线下面压着覆盖 canvas 的两半画面。 */
+.asset-detail-media-lut-split { position:absolute; z-index:2; width:2px; margin-left:-1px; background:var(--strong); cursor:ew-resize; pointer-events:auto; touch-action:none; }
+.asset-detail-media-lut-split[hidden] { display:none; }
+.asset-detail-media-lut-split.is-dragging { background:var(--text); }
+.asset-detail-media-lut-split-handle { position:absolute; top:50%; left:50%; width:22px; height:22px; margin:-11px 0 0 -11px; display:grid; place-items:center; border:1px solid var(--strong); border-radius:50%; background:var(--panel); color:var(--text); pointer-events:none; transform-origin:center; }
+.asset-detail-media-lut-split-handle svg { width:12px; height:12px; }
 /* 入口占住原「文字」控件的位置，视觉与工具条其它 hw-btn 保持一致。 */
 .asset-detail-media-lut-entry { display:inline-flex; flex:none; }
 .asset-detail-media-lut-entry > .hw-btn { gap:5px; }
@@ -1675,14 +1681,14 @@ body.studio-theme-dark .asset-detail-video-dock .asset-detail-video-volume input
 /* 两级菜单：先选素材，再选 LUT。
    工具条与画布外壳都带 overflow:hidden，菜单挂在工具条里会被直接裁掉，
    所以菜单固定定位挂到 body 上，由 JS 按入口按钮 rect 摆放。 */
-.asset-detail-media-lut-menu { position:fixed; top:0; left:0; z-index:150; width:240px; padding:6px; border:1px solid var(--line-2); background:var(--panel); color:var(--text); box-shadow:0 12px 28px rgba(0,0,0,.45); display:flex; flex-direction:column; gap:4px; }
+.asset-detail-media-lut-menu { position:fixed; top:0; left:0; z-index:150; width:240px; padding:6px; border:1px solid var(--line-2); border-radius:8px; background:var(--panel); color:var(--text); box-shadow:0 12px 28px rgba(0,0,0,.45); display:flex; flex-direction:column; gap:4px; overflow:hidden; }
 .asset-detail-media-lut-menu header { display:flex; align-items:center; gap:6px; padding:2px 4px 6px; border-bottom:1px solid var(--line); color:var(--muted); font-size: var(--gw-type-label-md); font-weight:900; }
-.asset-detail-media-lut-menu header button { width:20px; height:20px; display:grid; place-items:center; border:1px solid transparent; background:transparent; color:var(--text); cursor:pointer; }
+.asset-detail-media-lut-menu header button { width:20px; height:20px; display:grid; place-items:center; border:1px solid transparent; border-radius:4px; background:transparent; color:var(--text); cursor:pointer; }
 .asset-detail-media-lut-menu header button:hover { border-color:var(--strong); color:var(--strong); }
 .asset-detail-media-lut-menu header svg { width:12px; height:12px; }
 .asset-detail-media-lut-menu header > span { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .asset-detail-media-lut-menu-list { max-height:280px; overflow:auto; display:flex; flex-direction:column; gap:2px; }
-.asset-detail-media-lut-menu-item { display:flex; align-items:center; gap:8px; padding:6px 8px; border:1px solid transparent; background:transparent; color:var(--text); text-align:left; cursor:pointer; }
+.asset-detail-media-lut-menu-item { display:flex; align-items:center; gap:8px; padding:6px 8px; border:1px solid transparent; border-radius:6px; background:transparent; color:var(--text); text-align:left; cursor:pointer; }
 .asset-detail-media-lut-menu-item:hover { border-color:var(--strong); background:var(--soft); }
 .asset-detail-media-lut-menu-item:focus-visible { outline:2px solid var(--strong); outline-offset:-2px; }
 .asset-detail-media-lut-menu-item.is-active { border-color:var(--strong); background:var(--strong); color:var(--strong-text); }
@@ -1694,30 +1700,30 @@ body.studio-theme-dark .asset-detail-video-dock .asset-detail-video-volume input
 .asset-detail-media-lut-menu-hint { display:inline-flex; align-items:center; gap:6px; padding:8px 6px; color:var(--muted); font-size: var(--gw-type-label-md); font-weight:700; }
 .asset-detail-media-lut-menu-hint svg { width:13px; height:13px; }
 /* 节点右上角 LUT 角标：只有套了 LUT 的节点才出现。 */
-.asset-detail-media-node-lut { position:absolute; top:6px; right:6px; z-index:5; flex:none; width:22px; min-width:22px; height:22px; min-height:22px; padding:0; display:grid; place-items:center; border:1px solid var(--line-2); background:var(--panel); color:var(--text); cursor:pointer; transform-origin:top right; }
+.asset-detail-media-node-lut { position:absolute; top:6px; right:6px; z-index:5; flex:none; width:22px; min-width:22px; height:22px; min-height:22px; padding:0; display:grid; place-items:center; border:1px solid var(--line-2); border-radius:4px; background:var(--panel); color:var(--text); cursor:pointer; transform-origin:top right; }
 .asset-detail-media-node-lut:hover { border-color:var(--strong); background:var(--strong); color:var(--strong-text); }
 .asset-detail-media-node-lut[aria-expanded="true"] { border-color:var(--strong); background:var(--strong); color:var(--strong-text); }
 .asset-detail-media-node-lut:focus-visible { outline:2px solid var(--strong); outline-offset:2px; }
 .asset-detail-media-node-lut svg { width:12px; height:12px; }
 .asset-detail-media-node[data-lut-state="error"] .asset-detail-media-node-lut { border-color:var(--danger); color:var(--danger); }
 /* 向右弹出的调节浮窗：强度 → 对比模式 → 竖列 LUT 库 → 清除。 */
-.asset-detail-media-node-lut-panel { position:absolute; top:0; left:calc(100% + 8px); z-index:6; width:224px; min-width:224px; box-sizing:border-box; max-height:340px; padding:8px; border:1px solid var(--line-2); background:var(--panel); color:var(--text); display:flex; flex-direction:column; gap:6px; box-shadow:0 12px 28px rgba(0,0,0,.45); }
+.asset-detail-media-node-lut-panel { position:absolute; top:0; left:calc(100% + 8px); z-index:6; width:224px; min-width:224px; box-sizing:border-box; max-height:340px; padding:8px; border:1px solid var(--line-2); border-radius:8px; background:var(--panel); color:var(--text); display:flex; flex-direction:column; gap:6px; box-shadow:0 12px 28px rgba(0,0,0,.45); }
 .asset-detail-media-node-lut-panel header { display:flex; align-items:center; justify-content:space-between; gap:8px; font-size: var(--gw-type-label-md); font-weight:900; }
 .asset-detail-media-node-lut-panel header strong { min-width:0; display:flex; align-items:center; gap:5px; overflow:hidden; }
 .asset-detail-media-node-lut-panel header strong > svg { width:13px; height:13px; flex:none; }
-.asset-detail-media-node-lut-panel header button { width:20px; height:20px; display:grid; place-items:center; border:1px solid transparent; background:transparent; color:var(--text); cursor:pointer; }
+.asset-detail-media-node-lut-panel header button { width:20px; height:20px; display:grid; place-items:center; border:1px solid transparent; border-radius:4px; background:transparent; color:var(--text); cursor:pointer; }
 .asset-detail-media-node-lut-panel header button:hover { border-color:var(--danger); color:var(--danger); }
 .asset-detail-media-node-lut-panel header svg { width:12px; height:12px; }
 .asset-detail-media-node-lut-strength { display:flex; align-items:center; gap:6px; font-size: var(--gw-type-label-md); font-weight:800; }
 .asset-detail-media-node-lut-strength > span { flex:none; color:var(--muted); }
 .asset-detail-media-node-lut-strength input[type="range"] { flex:1; min-width:0; height:4px; accent-color:var(--strong); cursor:pointer; }
 .asset-detail-media-node-lut-strength b { flex:none; min-width:34px; text-align:right; font:900 var(--gw-type-label-md)/1 var(--gw-font-mono); }
-.asset-detail-media-node-lut-panel .asset-detail-lut-compare { border-color:var(--line-2); background:var(--soft); }
+.asset-detail-media-node-lut-panel .asset-detail-lut-compare { border-color:var(--line-2); border-radius:6px; background:var(--soft); overflow:hidden; }
 .asset-detail-media-node-lut-panel .asset-detail-lut-compare button { flex:1; height:22px; padding:0 6px; color:var(--text); }
 .asset-detail-media-node-lut-panel .asset-detail-lut-compare button + button { border-left-color:var(--line); }
 .asset-detail-media-node-lut-panel .asset-detail-lut-compare button.is-active { background:var(--strong); color:var(--strong-text); }
 .asset-detail-media-node-lut-list { min-height:0; max-height:186px; overflow:auto; display:flex; flex-direction:column; gap:3px; }
-.asset-detail-media-node-lut-item { display:flex; align-items:center; gap:7px; padding:5px 7px; border:1px solid transparent; background:var(--soft); color:var(--text); text-align:left; cursor:pointer; }
+.asset-detail-media-node-lut-item { display:flex; align-items:center; gap:7px; padding:5px 7px; border:1px solid transparent; border-radius:6px; background:var(--soft); color:var(--text); text-align:left; cursor:pointer; }
 .asset-detail-media-node-lut-item:hover { border-color:var(--strong); }
 .asset-detail-media-node-lut-item:focus-visible { outline:2px solid var(--strong); outline-offset:-2px; }
 .asset-detail-media-node-lut-item.is-active { border-color:var(--strong); background:var(--strong); color:var(--strong-text); }
@@ -1726,7 +1732,7 @@ body.studio-theme-dark .asset-detail-video-dock .asset-detail-video-volume input
 .asset-detail-media-node-lut-item strong { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size: var(--gw-type-label-md); font-weight:800; }
 .asset-detail-media-node-lut-item small { color:var(--muted); font-size: var(--gw-type-label-sm); font-weight:700; }
 .asset-detail-media-node-lut-item.is-active small { color:var(--strong-text); opacity:.78; }
-.asset-detail-media-node-lut-clear { display:inline-flex; align-items:center; justify-content:center; gap:5px; height:24px; border:1px solid var(--line-2); background:transparent; color:var(--text); font-size: var(--gw-type-label-md); font-weight:800; cursor:pointer; }
+.asset-detail-media-node-lut-clear { display:inline-flex; align-items:center; justify-content:center; gap:5px; height:24px; border:1px solid var(--line-2); border-radius:6px; background:transparent; color:var(--text); font-size: var(--gw-type-label-md); font-weight:800; cursor:pointer; }
 .asset-detail-media-node-lut-clear:hover { border-color:var(--danger); color:var(--danger); }
 .asset-detail-media-node-lut-clear svg { width:12px; height:12px; }
 .asset-detail-thumbnail-fallback { width:min(960px,100%); height:min(720px,100%); min-height:300px; border:1px solid rgba(255,255,255,.28); background:#eef2ea; overflow:hidden; }

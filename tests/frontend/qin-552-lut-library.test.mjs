@@ -7,10 +7,10 @@ const manager = readFileSync(new URL('../../web/js/modules/asset-manager.js', im
 test('QIN-552：LUT 库只匹配 .cube，并在资产分类与统计中单列', () => {
     assert.match(manager, /\{id:'lut', name:'LUT库',[^\n]*kinds:\['lut'\], extensions:\['cube'\]\}/);
     assert.match(manager, /lut:new Set\(\['cube'\]\)/);
-    // 【QIN-580】LUT 不再是带计数的统计卡：改为与「提示词」同构的导航入口，
-    // 只出图标 + 名称，点击进入独立 LUT 库子页面。分类口径（lut / .cube）本身不变。
+    // 【QIN-580】LUT 不进资产总量的统计条（不再占统计口径，也不再出导航卡），
+    // LUT 库统一从左侧机架的「LUT 库」入口进入；分类口径（lut / .cube）本身不变。
     assert.doesNotMatch(manager, /id:'lut', name:'LUT',[^\n]*registryCategoryCount\('lut'\)/);
-    assert.match(manager, /\{id:'lut', name:'LUT', nav:true, icon:'palette'\}/);
+    assert.doesNotMatch(manager, /\{id:'lut', name:'LUT', nav:true, icon:'palette'\}/);
     assert.match(manager, /lut:'LUT'/);
     assert.match(manager, /cube:'Cube LUT 色彩查找表（\.cube）'/);
     assert.match(manager, /const isLut = String\(item\.kind \|\| item\.media_type \|\| item\.type \|\| ''\)\.toLowerCase\(\) === 'lut'\s*\|\| registryAssetExtension\(item\)\.toLowerCase\(\) === 'cube';/);
