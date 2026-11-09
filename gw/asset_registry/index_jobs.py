@@ -521,15 +521,56 @@ _ROOT_FACETS_CACHE_LOCK = threading.Lock()
 _ROOT_FACETS_CACHE = {"key": None, "value": None, "expires_at": 0.0}
 
 
+def _path_stat_signature(raw_path: str):
+    """目录出现/消失或内容变化时的轻量签名；只 stat，不做有界挂载探测。"""
+    try:
+        info = Path(raw_path).stat()
+    except OSError:
+        return None
+    return (info.st_mtime_ns, info.st_size)
+
+
 def _root_facets_cache_key():
-    """缓存失效键：允许根 / 存储设置 / 绑定别名任一变化即失效，均不做磁盘探测。"""
+    """缓存失效键：配置 revision、运行时数据根与目录状态任一变化即失效。
+
+    目录被外部 rename / mkdir 不会改动任何配置 revision，但会改变来源可用性。
+    因此把所有相关路径的 stat 签名放进键；用一次有界调用收口，避免不可达网络盘
+    把 facet 请求卡死。超时或探测槽占满时退化为 ``unknown``，由短 TTL 兜底。
+    """
     from gw.asset_registry import repository as repo
     from gw.settings.service import default_storage_settings_service
 
     roots_state = storage._allowed_roots_state()
     settings_state = default_storage_settings_service._state.read()
     bound_aliases = repo.readonly_registry_snapshot().get("root_aliases", {})
+
+    paths = [str(record.get("path") or "") for record in roots_state.get("roots", [])]
+    paths.extend(
+        str(entry.get("path") or "")
+        for entry in (settings_state.get("extra_local_entries") or [])
+    )
+    paths.extend(
+        str(value or "") for value in (settings_state.get("dirs") or {}).values()
+    )
+    if isinstance(bound_aliases, dict):
+        for bound in bound_aliases.values():
+            if isinstance(bound, dict):
+                paths.extend(str(item) for item in (bound.get("aliases") or []))
+    paths.extend(
+        item
+        for item in (os.environ.get("GW_ALLOWED_ROOTS") or "").split(os.pathsep)
+        if item
+    )
+    unique_paths = sorted({item for item in paths if item})
+    path_state = storage._run_bounded_mount_call(
+        lambda: tuple((item, _path_stat_signature(item)) for item in unique_paths),
+        storage.MOUNT_PROBE_TIMEOUT_SECONDS,
+    )
+    if path_state is None:
+        path_state = "unknown"
+
     return (
+        str(storage.data_root()),
         int(roots_state.get("revision", 1)),
         json.dumps(
             [
@@ -541,14 +582,17 @@ def _root_facets_cache_key():
         int(settings_state.get("revision", 1)),
         json.dumps(settings_state, sort_keys=True, ensure_ascii=False, default=str),
         json.dumps(bound_aliases, sort_keys=True, ensure_ascii=False, default=str),
+        path_state,
     )
 
 
 def _cached_root_snapshot():
     """返回 ``(aliases, alias_status)``；命中缓存时不做任何磁盘探测。"""
-    key = _root_facets_cache_key()
-    now = time.monotonic()
     with _ROOT_FACETS_CACHE_LOCK:
+        # 键计算也收在锁内：并发下只算一次，避免多条请求因探测槽争用得到
+        # 不一致的路径状态签名而同时 miss（惊群）。
+        key = _root_facets_cache_key()
+        now = time.monotonic()
         cached = _ROOT_FACETS_CACHE
         if (
             cached["value"] is not None
