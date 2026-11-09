@@ -1494,3 +1494,25 @@ def test_github_issue_656_file_scope_is_registered(repo_root: Path):
         "web/js/modules/asset-manager.js",
         "web/pages/assets.html",
     }
+
+
+def test_github_issue_658_file_scope_is_registered(repo_root: Path):
+    """#658（QIN-574）资产库提示词与画布标签清除首列空栏并左对齐工具栏所涉文件按票面逐项登记。"""
+    metadata = _load_admission_metadata(repo_root)
+    registrations = [
+        item
+        for item in metadata.get("authorized_issue_file_sets", [])
+        if item.get("issue") == 658
+    ]
+    assert len(registrations) == 1
+    assert registrations[0].get("authorization_basis") == (
+        "GitHub Issue #658 (QIN-574), 2026-11-09"
+    )
+    assert set(registrations[0].get("files", [])) == {
+        "tests/frontend/node-files.txt",
+        "tests/frontend/qin-574-prompts-canvas-layout.test.mjs",
+        "tests/hygiene/fixtures/admissions/issue-658.json",
+        "tests/hygiene/test_cleanroom_hygiene.py",
+        "web/css/pages/asset-vault.css",
+        "web/js/modules/asset-manager.js",
+    }

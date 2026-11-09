@@ -1333,8 +1333,8 @@ html.vault-shell-embedded body.gw-signal.gw-page--asset-manager #assetManagerRoo
     display: grid !important;
     grid-template-rows: auto auto minmax(0,1fr) !important;
 }
-html.vault-shell-embedded body.gw-signal.gw-page--asset-manager #assetManagerRoot:not(.asset-manager-root-registry):not(.asset-manager-root-library):not(.asset-manager-root-page-scripts):not(.asset-manager-root-page-projects) {
-    /* 【QIN-569 AC2 / QIN-572】page-scripts 与 page-projects 视图收为单列或首列零宽，不再吃本条三列轨道。 */
+html.vault-shell-embedded body.gw-signal.gw-page--asset-manager #assetManagerRoot:not(.asset-manager-root-registry):not(.asset-manager-root-library):not(.asset-manager-root-page-scripts):not(.asset-manager-root-page-projects):not(.asset-manager-root-page-prompts):not(.asset-manager-root-page-canvas-assets):not(.asset-manager-root-page-workflows) {
+    /* 【QIN-569 AC2 / QIN-572 / QIN-574】内置提示词/画布/工作流等视图首列均收为零宽，不再吃本条三列轨道。 */
     grid-template-columns: 240px minmax(0,1fr) minmax(280px,320px) !important;
 }
 html.vault-shell-embedded body.gw-signal.gw-page--asset-manager #assetManagerRoot.asset-manager-root-registry {
@@ -1345,6 +1345,10 @@ html.vault-shell-embedded body.gw-signal.gw-page--asset-manager #assetManagerRoo
 html.vault-shell-embedded body.gw-signal.gw-page--asset-manager #assetManagerRoot.asset-manager-root-page-projects {
     /* 【QIN-572】项目视图首列收为零宽，消除 240px 中间空栏，网格与工具栏左缘与 iframe 对齐。 */
     grid-template-columns: 0 minmax(0,1fr) !important;
+}
+html.vault-shell-embedded body.gw-signal.gw-page--asset-manager #assetManagerRoot:is(.asset-manager-root-page-prompts,.asset-manager-root-page-canvas-assets,.asset-manager-root-page-workflows) {
+    /* 【QIN-574】提示词、画布与工作流视图首列收为零宽，消除 240px 中间空栏，右侧保留详情抽屉列。 */
+    grid-template-columns: 0 minmax(0,1fr) minmax(280px,320px) !important;
 }
 html.vault-shell-embedded body.gw-signal.gw-page--asset-manager #assetManagerRoot.asset-manager-root-library {
     grid-template-columns: 240px minmax(0,1fr) var(--registry-detail-width,340px) !important;
