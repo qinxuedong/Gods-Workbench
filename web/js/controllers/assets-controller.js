@@ -441,7 +441,7 @@ window.WorkbenchAssets = (() => {
       <div class="asset-organize-dialog" id="assetOrganizeDialog" role="dialog" aria-modal="true" aria-label="新建子文件夹">
         <header><strong>新建子文件夹</strong><button type="button" class="asset-organize-dialog-close" data-asset-organize-dialog-cancel aria-label="关闭"><i data-lucide="x"></i></button></header>
         <input class="asset-organize-dialog-input" data-asset-organize-dialog-input placeholder="文件夹名称" maxlength="120" aria-label="新文件夹名称">
-        <p class="asset-organize-dialog-error" data-asset-organize-dialog-error style="color:#ef4444;font-size:12px;padding:4px 14px 0;margin:0;"></p>
+        <p class="asset-organize-dialog-error" data-asset-organize-dialog-error style="color:#ef4444;font-size:var(--gw-type-body-sm);padding:4px 14px 0;margin:0;"></p>
         <footer><button class="hw-btn" type="button" data-asset-organize-dialog-cancel>取消</button><button class="hw-btn hw-btn-gold" type="button" data-asset-organize-dialog-confirm>创建</button></footer>
       </div>
     `;
@@ -755,7 +755,7 @@ window.WorkbenchAssets = (() => {
       const boardSection = document.createElement('div');
       boardSection.className = 'asset-shell-board-section mt-2';
       const boardLabel = document.createElement('div');
-      boardLabel.className = 'asset-tree-group-label text-xs text-slate-400 mb-1';
+      boardLabel.className = 'asset-tree-group-label mb-1';
       boardLabel.textContent = '资源入口';
       boardSection.append(boardLabel);
       boards.forEach(board => {
