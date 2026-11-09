@@ -31,3 +31,7 @@ test('AC4: 工具栏包含项目选择下拉胶囊，支持全部项目与具体
   // renderRegistryToolbar 在 activeTab === 'projects' 时渲染项目选择胶囊
   assert.match(managerJs, /\$\{activeTab === 'projects' \? renderRegistrySelectCapsule\(\{kind:'project', icon:'folder-kanban', label:'项目'\}\) : ''\}/);
 });
+
+test('AC5: 项目视图嵌入态工具栏隐藏 content-heading，使 Coverflow 等按钮顶左对齐', () => {
+  assert.match(managerJs, /renderRegistryToolbar\(null,\s*toolbarTitle,\s*toolbarSubtitle,\s*\{allowUrl:true,hideHeading:activeTab === 'registry' \|\| activeTab === 'projects'\}\)/);
+});

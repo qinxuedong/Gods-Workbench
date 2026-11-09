@@ -9771,7 +9771,7 @@ function render(){
         } else if(board?.system === false){
             toolbarSubtitle = registryTotalSummary(registryVisibleAssets().length);
         }
-        root.insertAdjacentHTML('afterbegin', `${renderRegistryOverview()}${renderRegistryToolbar(null, toolbarTitle, toolbarSubtitle, {allowUrl:true,hideHeading:activeTab === 'registry'})}`);
+        root.insertAdjacentHTML('afterbegin', `${renderRegistryOverview()}${renderRegistryToolbar(null, toolbarTitle, toolbarSubtitle, {allowUrl:true,hideHeading:activeTab === 'registry' || activeTab === 'projects'})}`);
     }
     if(activeTab === 'registry' || customLibraryActive) renderRegistryFreshNotice();
     restoreRegistryPreviewImages(registryPreviewCache);
