@@ -1,0 +1,32 @@
+{
+  "schema": "gw.cleanroom-admission-shard/v1",
+  "issue": 619,
+  "authorization_basis": "GitHub Issue #619 (QIN-554), 2026-11-09",
+  "files": [
+    "gw/api/routes_asset_registry.py",
+    "web/js/modules/asset-manager.js",
+    "web/js/modules/asset-manager/lut-preview.js",
+    "web/css/pages/asset-manager.css",
+    "tests/contracts/assets/test_qin_554_lut_preview_media.py",
+    "tests/frontend/qin-554-lut-preview.test.mjs",
+    "tests/frontend/node-files.txt",
+    "tests/hygiene/fixtures/admissions/issue-619.json",
+    "tests/hygiene/test_cleanroom_hygiene.py"
+  ],
+  "admitted_files": [],
+  "accepted_test_files": [
+    {
+      "path": "tests/contracts/assets/test_qin_554_lut_preview_media.py",
+      "classification": "curated_test_coverage",
+      "authorization_basis": "GitHub Issue #619 (QIN-554), 2026-11-09",
+      "admission": "accepted"
+    },
+    {
+      "path": "tests/frontend/qin-554-lut-preview.test.mjs",
+      "classification": "curated_test_coverage",
+      "authorization_basis": "GitHub Issue #619 (QIN-554), 2026-11-09",
+      "admission": "accepted"
+    }
+  ],
+  "notes": "QIN-554 LUT 卡片与详情预览：新增 web/js/modules/asset-manager/lut-preview.js（Cube 解析、统一样片、三线性查表、强度与分屏合成），资产库卡片改用 canvas 像素样片缩略，详情新增「同库 LUT」侧栏、0-100% 强度滑杆与 原图/分屏/套用后 三态对比；媒体端点把 .cube 声明为 text/plain 以便前端解析。不写回原文件、不接时间线、不改导出。"
+}

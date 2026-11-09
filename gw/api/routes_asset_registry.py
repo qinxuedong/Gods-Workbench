@@ -739,6 +739,8 @@ def _media_type(path) -> str:
         ".svg": "image/svg+xml", ".mp4": "video/mp4", ".webm": "video/webm",
         ".mov": "video/quicktime", ".mp3": "audio/mpeg", ".wav": "audio/wav",
         ".pdf": "application/pdf", ".txt": "text/plain; charset=utf-8",
+        # QIN-554：Cube LUT 是纯文本查找表，按文本下发便于预览直接解析。
+        ".cube": "text/plain; charset=utf-8",
     }.get(suffix, "application/octet-stream")
 
 
@@ -1011,6 +1013,9 @@ async def import_registry_assets(
 def _kind_from_name(name: str) -> str:
     """按扩展名判定素材种类；未命中即为 unknown，不猜测。"""
     suffix = "." + name.rsplit(".", 1)[-1].lower() if "." in name else ""
+    # QIN-554：上传的 .cube 与索引扫描同口径登记为 lut，用户 LUT 才能进 LUT 库与预览侧栏。
+    if suffix == ".cube":
+        return "lut"
     if suffix in {".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".svg", ".tif", ".tiff"}:
         return "image"
     if suffix in {".mp4", ".mov", ".mkv", ".avi", ".webm", ".m4v", ".flv", ".wmv"}:

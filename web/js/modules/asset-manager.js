@@ -26,6 +26,14 @@ import {openAssetCollectOverlay} from './asset-collect-panel.js';
 import {createHttpCollectAdapter} from './asset-collect-panel.js';
 import {renderProvenanceChain, handleProvenanceNodeClick} from './asset-manager/provenance.js';
 import {renderCollectProvenance, resolveCollectDeleteAssetId} from './asset-manager/collect-provenance.js';
+import {
+    composeLutPreview,
+    LUT_COMPARE_MODES,
+    LutPreviewError,
+    lutSampleImageData,
+    paintLutFrame,
+    parseCubeLut,
+} from './asset-manager/lut-preview.js';
 
 let mediaPreviewPlayerLoading = null;
 export async function ensureMediaPreviewPlayer() {
@@ -667,6 +675,7 @@ let detailViewerState = {
     selectedTextVersion:null, textVersionEditing:false, textVersionError:'',
     modelInfo:null, modelInfoLoading:false, modelInfoError:'', wheelAt:0, audioZoom:1,
     fontScale:1, fontFit:1, fontLineWidth:0, fontExpanded:'', fontListScrollTop:0,
+    lutStrength:1, lutCompare:'applied', lutListScrollTop:0,
     mediaCanvasItems:[], mediaCanvasActiveId:'', mediaCanvasSelectedIds:new Set(), mediaCanvasSelectionOrder:[], mediaCanvasLayout:{},
     mediaCanvasAnnotations:[], mediaCanvasDrawings:[], mediaCanvasGroups:[], mediaCanvasContextMenu:null,
     mediaCanvasEditingAnnotationId:'', mediaCanvasHistory:[], mediaCanvasSnap:true, mediaCanvasLibraryVisible:false,
@@ -723,6 +732,8 @@ let projectDirectoryTemplateManagerState = {open:false, loading:false, saving:fa
 const ASSET_DOCUMENT_PREVIEW_EXTENSIONS = ['txt','csv','tsv','json','xml','html','htm','md','rtf','doc','docx','odt','pdf'];
 const ASSET_3D_PREVIEW_EXTENSIONS = ['stl','3mf','obj','fbx','gltf','glb','usd','usdz','step','stp','iges','igs','dxf','ply','3ds','dae','ifc','wrl','vrml','blend','c4d','max','ma','mb'];
 const ASSET_FONT_PREVIEW_EXTENSIONS = ['ttf','otf','ttc','otc','woff','woff2'];
+// 【QIN-554】LUT 预览：Cube 查找表在详情里走 canvas 样片套用，不当作图片文件预览。
+const ASSET_LUT_PREVIEW_EXTENSIONS = ['cube'];
 const ASSET_AUDIO_PREVIEW_EXTENSIONS = ['mp3','wav','flac','ogg','m4a','aac'];
 const ASSET_PREVIEW_RENDER_VERSION = '2026.08.01.5';
 const ASSET_FONT_PREVIEW_ZH_LINE = '观自在菩萨，行深般若波罗蜜多时照见五蕴皆空，';
@@ -4790,6 +4801,8 @@ function assetVideoUrl(url, item={}){
 }
 function assetThumb(item){
     if(workflowSourceId(item)) return workflowThumb(item);
+    // 【QIN-554】LUT 卡片直接用「统一样片套该 LUT」的真实像素预览，不用文本图标凑合。
+    if(lutPreviewIsAsset(item)) return renderRegistryLutThumb(item);
     const kind = assetKind(item);
     // 首帧与视频分层显示，避免浏览器把 video poster 按元素尺寸拉伸。
     if(kind === 'video'){
@@ -6892,6 +6905,138 @@ async function toggleRegistryBuiltinHidden(assetId, hidden){
     } catch(err){
         setStatus(err.message || '内置 LUT 显示状态更新失败');
     }
+}
+// 【QIN-554】LUT 预览：浏览器内解析 .cube 并套用统一样片，只读、不落盘。
+// 预置 LUT 仅十余 KB（8³ 采样），因此按需 fetch 原文 + 前端三线性插值，
+// 换取强度滑杆与库内切换的零延迟反馈，也不新增任何后端渲染端点。
+const LUT_THUMB_SAMPLE_WIDTH = 320;
+const LUT_THUMB_SAMPLE_HEIGHT = 200;
+const LUT_THUMB_CONCURRENCY = 2;
+const lutPreviewSourceCache = new Map();
+const lutPreviewSampleCache = new Map();
+const registryLutThumbQueue = [];
+let registryLutThumbObserver = null;
+let registryLutThumbActive = 0;
+function lutPreviewIsAsset(item={}){
+    const kind = String(item?.kind || item?.media_type || item?.type || '').toLowerCase();
+    return kind === 'lut' || assetFileExtension(item).toLowerCase() === 'cube';
+}
+function lutPreviewSourceUrl(item={}, source='registry'){
+    const explicit = String(item?.url || item?.public_url || '').trim();
+    if(explicit) return explicit;
+    const assetId = String(item?.id || item?.asset_id || '').trim();
+    if(source === 'registry' && assetId) return `/api/asset-registry/assets/${encodeURIComponent(assetId)}/media`;
+    return '';
+}
+function lutPreviewSampleFrame(width, height){
+    const key = `${width}x${height}`;
+    if(!lutPreviewSampleCache.has(key)) lutPreviewSampleCache.set(key, lutSampleImageData(width, height));
+    return lutPreviewSampleCache.get(key);
+}
+async function fetchLutPreviewText(url){
+    let response;
+    try {
+        response = await fetch(url, {credentials:'same-origin'});
+    } catch(_) {
+        throw new LutPreviewError('LUT_SOURCE_UNAVAILABLE', 'LUT 文件读取失败，请检查素材来源是否可访问');
+    }
+    if(!response.ok) throw new LutPreviewError('LUT_SOURCE_UNAVAILABLE', `LUT 文件读取失败（HTTP ${response.status}）`);
+    return response.text();
+}
+function loadLutPreview(url){
+    const key = String(url || '');
+    if(!key) return Promise.reject(new LutPreviewError('LUT_SOURCE_UNAVAILABLE', '该 LUT 没有可读取的文件'));
+    const cached = lutPreviewSourceCache.get(key);
+    if(cached) return cached;
+    const task = fetchLutPreviewText(key).then(text => parseCubeLut(text));
+    lutPreviewSourceCache.set(key, task);
+    task.catch(() => {
+        // 失败不缓存：来源恢复或文件修正后重试应能成功。
+        if(lutPreviewSourceCache.get(key) === task) lutPreviewSourceCache.delete(key);
+    });
+    while(lutPreviewSourceCache.size > 64) lutPreviewSourceCache.delete(lutPreviewSourceCache.keys().next().value);
+    return task;
+}
+function lutPreviewGridLabel(lut){
+    if(!lut) return '—';
+    return lut.dimension === '3d' ? `${lut.size}³` : `${lut.size} 点`;
+}
+function renderRegistryLutThumb(item={}){
+    const url = lutPreviewSourceUrl(item, 'registry');
+    return `<span class="registry-lut-thumb" data-lut-thumb><canvas class="registry-lut-thumb-canvas" data-lut-thumb-url="${escapeAttr(url)}" width="${LUT_THUMB_SAMPLE_WIDTH}" height="${LUT_THUMB_SAMPLE_HEIGHT}" role="img" aria-label="${escapeAttr(item.name || 'LUT')} 样片预览"></canvas><span class="registry-lut-thumb-badge"><i data-lucide="palette"></i>LUT</span></span>`;
+}
+function failRegistryLutThumb(canvas, message='LUT 解析失败'){
+    const wrapper = canvas?.closest?.('[data-lut-thumb]');
+    if(!wrapper) return;
+    wrapper.classList.add('is-error');
+    wrapper.innerHTML = `<span class="registry-lut-thumb-error" title="${escapeAttr(message)}"><i data-lucide="triangle-alert"></i><span>${escapeHtml(message)}</span></span>`;
+    refreshIcons();
+}
+function paintRegistryLutThumb(canvas){
+    if(!canvas || !canvas.isConnected) return null;
+    if(canvas.dataset.lutThumbState === 'pending' || canvas.dataset.lutThumbState === 'done') return null;
+    canvas.dataset.lutThumbState = 'pending';
+    const url = String(canvas.dataset.lutThumbUrl || '');
+    return loadLutPreview(url).then(lut => {
+        if(!canvas.isConnected) return;
+        const frame = composeLutPreview(
+            lutPreviewSampleFrame(LUT_THUMB_SAMPLE_WIDTH, LUT_THUMB_SAMPLE_HEIGHT),
+            lut,
+            {strength:1, mode:'applied'},
+        );
+        if(!paintLutFrame(canvas, frame)){
+            canvas.dataset.lutThumbState = 'error';
+            failRegistryLutThumb(canvas, '浏览器不支持 LUT 预览');
+            return;
+        }
+        canvas.dataset.lutThumbState = 'done';
+        canvas.closest?.('[data-lut-thumb]')?.classList.add('is-ready');
+    }).catch(err => {
+        canvas.dataset.lutThumbState = 'error';
+        failRegistryLutThumb(canvas, err?.code === 'LUT_CUBE_INVALID' ? 'LUT 解析失败' : (err?.message || 'LUT 解析失败'));
+    });
+}
+function pumpRegistryLutThumbQueue(){
+    while(registryLutThumbActive < LUT_THUMB_CONCURRENCY && registryLutThumbQueue.length){
+        const canvas = registryLutThumbQueue.shift();
+        if(!canvas?.isConnected) continue;
+        registryLutThumbActive += 1;
+        Promise.resolve(paintRegistryLutThumb(canvas)).finally(() => {
+            registryLutThumbActive = Math.max(0, registryLutThumbActive - 1);
+            pumpRegistryLutThumbQueue();
+        });
+    }
+}
+function enqueueRegistryLutThumb(canvas){
+    if(!canvas || canvas.dataset.lutThumbState) return;
+    canvas.dataset.lutThumbState = 'queued';
+    registryLutThumbQueue.push(canvas);
+    pumpRegistryLutThumbQueue();
+}
+function clearRegistryLutThumbObserver(){
+    registryLutThumbObserver?.disconnect?.();
+    registryLutThumbObserver = null;
+}
+function scheduleRegistryLutThumbs(){
+    clearRegistryLutThumbObserver();
+    const canvases = [...root.querySelectorAll('canvas[data-lut-thumb-url]')]
+        .filter(canvas => !canvas.dataset.lutThumbState);
+    if(!canvases.length) return;
+    const scrollRoot = root.querySelector('.registry-assets-scroll');
+    if(typeof IntersectionObserver !== 'function' || !scrollRoot){
+        canvases.forEach(enqueueRegistryLutThumb);
+        return;
+    }
+    const observer = new IntersectionObserver(entries => {
+        if(registryLutThumbObserver !== observer) return;
+        entries.forEach(entry => {
+            if(!entry.isIntersecting) return;
+            observer.unobserve(entry.target);
+            enqueueRegistryLutThumb(entry.target);
+        });
+    }, {root:scrollRoot, rootMargin:'320px'});
+    registryLutThumbObserver = observer;
+    canvases.forEach(canvas => observer.observe(canvas));
 }
 function renderRegistryRecycleButton(item={}, className=''){
     if(item.is_remote){
@@ -9151,6 +9296,7 @@ function clearRegistryPreviewObservers(){
     registryPreviewObserver = null;
     registryPreviewFallbackCleanup?.();
     registryPreviewFallbackCleanup = null;
+    clearRegistryLutThumbObserver();
 }
 function updateRegistryMasonryCards(cards=[], grid){
     if(!grid || !cards.length) return;
@@ -9352,6 +9498,8 @@ function scheduleRegistryPreviewFallback(scrollRoot){
 }
 function scheduleRegistryPreviewImages(){
     clearRegistryPreviewObservers();
+    // 【QIN-554】LUT 卡片缩略与图片缩略共用同一渲染节奏：可见区优先、限并发绘制。
+    scheduleRegistryLutThumbs();
     const revision = registryPreviewScheduleRevision;
     requestAnimationFrame(() => {
         if(revision !== registryPreviewScheduleRevision) return;
@@ -11462,7 +11610,11 @@ function syncRegistrySelectionDom(){
         else content?.insertAdjacentHTML('beforeend', html);
     } else selectionDock?.remove();
     const detailPanel = root.querySelector('.registry-detail-panel');
-    if(detailPanel && !registryDetailPanelCollapsed) detailPanel.innerHTML = renderRegistryDetail();
+    if(detailPanel && !registryDetailPanelCollapsed){
+        detailPanel.innerHTML = renderRegistryDetail();
+        // 【QIN-554】右栏换选素材会新建 LUT 缩略 canvas，需单独调度绘制，避免留下空框。
+        if(detailPanel.querySelector('canvas[data-lut-thumb-url]')) scheduleRegistryLutThumbs();
+    }
     refreshIcons();
 }
 function clearRegistrySelectionDom(){
@@ -16361,6 +16513,7 @@ function detailViewerType(source, item={}){
     const kind = source === 'local' ? String(item.kind || localItemKind(item)).toLowerCase() : assetKind(item);
     if(source === 'prompt') return 'text';
     if(source === 'workflow') return extension === 'json' ? 'text' : 'other';
+    if(ASSET_LUT_PREVIEW_EXTENSIONS.includes(extension) || kind === 'lut') return 'lut';
     if(ASSET_3D_PREVIEW_EXTENSIONS.includes(extension)) return 'model';
     if(ASSET_FONT_PREVIEW_EXTENSIONS.includes(extension)) return 'font';
     if(ASSET_AUDIO_PREVIEW_EXTENSIONS.includes(extension) || kind === 'audio') return 'audio';
@@ -16371,7 +16524,7 @@ function detailViewerType(source, item={}){
     return 'other';
 }
 function detailViewerTypeLabel(type){
-    return {image:'图片',video:'视频',audio:'音频',text:'文本',workflow:'工作流',model:'3D 模型',font:'字体',other:'文件'}[type] || '文件';
+    return {image:'图片',video:'视频',audio:'音频',text:'文本',workflow:'工作流',model:'3D 模型',font:'字体',lut:'LUT',other:'文件'}[type] || '文件';
 }
 function detailViewerNameHtml(value=''){
     return escapeHtml(value || '未命名素材').replace(/([_.-])/g, '$1<wbr>');
@@ -16520,6 +16673,16 @@ function detailViewerMetaRows(source, item, type){
         if(info.companion?.name) rows.splice(3, 0, ['伴随文件', info.companion.name]);
         if(dimensions.length === 3 && dimensions.some(Boolean)) rows.splice(info.companion?.name ? 4 : 3, 0, ['模型尺寸', dimensions.map(value => Number(value).toLocaleString('zh-CN')).join(' × ')]);
     }
+    if(type === 'lut'){
+        // 【QIN-554】索引期已解析的头信息直接展示，预览帧自身的解析结果只用来兜底。
+        const lut = item.metadata?.lut || {};
+        const grid = Number(lut.lut_3d_size) > 0
+            ? `${Number(lut.lut_3d_size)}³`
+            : (Number(lut.lut_1d_size) > 0 ? `${Number(lut.lut_1d_size)} 点` : '');
+        if(lut.title) rows.splice(2, 0, ['LUT 标题', String(lut.title)]);
+        if(grid) rows.splice(3, 0, ['LUT 网格', grid]);
+        if(Number(lut.sample_count) > 0) rows.splice(4, 0, ['采样点', String(Number(lut.sample_count))]);
+    }
     if(item.canvas_title) rows.push(['所属画布', item.canvas_title]);
     if(path) rows.push(['存储位置', path, 'path']);
     return rows;
@@ -16566,6 +16729,180 @@ function renderDetailModelMedia(source, item){
         </div>
         ${renderDetailModelPipeline(info)}
     </div>`;
+}
+// 【QIN-554】LUT 详情工作区：左侧「同库 LUT」列表对标字体库侧栏，右侧样片舞台。
+// 强度与对比模式只改 canvas 像素（不重渲染整个查看器），因此滑杆拖动无闪烁。
+const DETAIL_LUT_SAMPLE_WIDTH = 640;
+const DETAIL_LUT_SAMPLE_HEIGHT = 360;
+let detailLutPreviewState = {lut:null, url:'', token:0};
+function detailViewerLutItems(){
+    let candidates = detailViewerState.items || [];
+    if(detailViewerState.source === 'registry'){
+        const board = assetBoardById(detailViewerState.originTab);
+        candidates = board?.system === false ? customAssetLibraryBaseItems(board) : registryAssets;
+    } else if(detailViewerState.source === 'asset'){
+        candidates = (activeAssetLibrary()?.categories || []).flatMap(category => category.items || []);
+    } else if(detailViewerState.source === 'localup'){
+        candidates = localAssets || [];
+    } else if(detailViewerState.source === 'local'){
+        candidates = [...localItemMap.values()];
+    } else if(detailViewerState.source === 'canvas-asset'){
+        candidates = canvasAssetsData.items || [];
+    }
+    const current = detailViewerState.items[detailViewerState.index] || detailViewerItem(detailViewerState.source, detailViewerState.id);
+    const unique = new Map();
+    [...candidates, current].filter(Boolean).forEach(value => {
+        if(detailViewerType(detailViewerState.source, value) === 'lut'){
+            unique.set(String(value.id || detailViewerUrl(detailViewerState.source, value)), value);
+        }
+    });
+    return [...unique.values()].sort((left,right) => String(left.name || '').localeCompare(String(right.name || ''), 'zh-Hans-CN', {numeric:true, sensitivity:'base'}));
+}
+function renderDetailLutLibrary(item){
+    const luts = detailViewerLutItems();
+    return `<aside class="asset-detail-lut-library" data-detail-lut-library>
+        <header><div><strong>同库 LUT</strong><span>点击切换套用</span></div><em>${luts.length}</em></header>
+        <div class="asset-detail-lut-list">${luts.map(lut => {
+            const active = String(lut.id || '') === String(item.id || '');
+            const builtin = lut.metadata?.builtin === true || lut.builtin === true;
+            const label = lut.metadata?.lut?.title || lut.name || '未命名 LUT';
+            return `<button class="asset-detail-lut-item ${active ? 'is-active' : ''}" type="button" data-detail-lut-item="${escapeAttr(lut.id || '')}" ${active ? 'aria-current="true"' : ''} title="${escapeAttr(lut.name || '未命名 LUT')}">
+                <i data-lucide="palette"></i>
+                <span><strong>${escapeHtml(label)}</strong><small>${escapeHtml(builtin ? '内置' : '用户导入')}</small></span>
+            </button>`;
+        }).join('') || '<div class="detail-empty"><span>同库没有其他 LUT</span></div>'}</div>
+    </aside>`;
+}
+function detailLutStrengthPercent(){
+    const value = Number(detailViewerState.lutStrength);
+    const strength = Number.isFinite(value) ? value : 1;
+    return Math.max(0, Math.min(100, Math.round(strength * 100)));
+}
+function detailLutCompareMode(){
+    return LUT_COMPARE_MODES.includes(detailViewerState.lutCompare) ? detailViewerState.lutCompare : 'applied';
+}
+function lutPreviewStage(){
+    return document.querySelector('.asset-detail-viewer [data-detail-lut-stage]');
+}
+function renderDetailLutWorkspace(source, item){
+    const strength = detailLutStrengthPercent();
+    const mode = detailLutCompareMode();
+    const meta = item.metadata?.lut || {};
+    const builtin = item.metadata?.builtin === true || item.builtin === true;
+    const grid = meta.lut_3d_size ? `${Number(meta.lut_3d_size)}³`
+        : (meta.lut_1d_size ? `${Number(meta.lut_1d_size)} 点` : '—');
+    const samples = Number(meta.sample_count) > 0 ? String(Number(meta.sample_count)) : '—';
+    return `<div class="asset-detail-lut-workspace" data-detail-lut-workspace>
+        ${renderDetailLutLibrary(item)}
+        <section class="asset-detail-lut-stage" data-detail-lut-stage data-lut-state="loading" data-compare="${escapeAttr(mode)}">
+            <header>
+                <div><i data-lucide="palette"></i><strong>LUT 效果预览</strong><span data-detail-lut-title title="${escapeAttr(item.name || 'LUT')}">${escapeHtml(meta.title || item.name || 'LUT')}</span></div>
+                <div class="asset-detail-lut-compare" role="group" aria-label="前后对比">
+                    <button type="button" data-detail-lut-compare="applied" aria-pressed="${mode === 'applied'}" class="${mode === 'applied' ? 'is-active' : ''}">套用后</button>
+                    <button type="button" data-detail-lut-compare="split" aria-pressed="${mode === 'split'}" class="${mode === 'split' ? 'is-active' : ''}">分屏对比</button>
+                    <button type="button" data-detail-lut-compare="original" aria-pressed="${mode === 'original'}" class="${mode === 'original' ? 'is-active' : ''}">原图</button>
+                </div>
+            </header>
+            <div class="asset-detail-lut-canvas-shell">
+                <div class="asset-detail-lut-frame" data-detail-lut-frame>
+                    <canvas class="asset-detail-lut-canvas" data-detail-lut-canvas width="${DETAIL_LUT_SAMPLE_WIDTH}" height="${DETAIL_LUT_SAMPLE_HEIGHT}" role="img" aria-label="标板样片套用当前 LUT 的预览"></canvas>
+                    <span class="asset-detail-lut-tag is-left" aria-hidden="true">原图</span>
+                    <span class="asset-detail-lut-tag is-right" aria-hidden="true">LUT</span>
+                    <span class="asset-detail-lut-status" data-detail-lut-status aria-live="polite">正在解析 LUT…</span>
+                    <span class="asset-detail-lut-error" data-detail-lut-error hidden></span>
+                </div>
+            </div>
+            <footer class="asset-detail-lut-controls">
+                <label class="asset-detail-lut-strength"><span>强度</span><input type="range" min="0" max="100" step="1" value="${strength}" data-detail-lut-strength aria-label="LUT 强度"><b data-detail-lut-strength-value>${strength}%</b></label>
+                <div class="asset-detail-lut-facts">
+                    <span>网格 <b data-detail-lut-fact="grid">${escapeHtml(grid)}</b></span>
+                    <span>采样点 <b data-detail-lut-fact="samples">${escapeHtml(samples)}</b></span>
+                    <span>来源 <b>${escapeHtml(builtin ? '内置预置' : '用户导入')}</b></span>
+                </div>
+            </footer>
+        </section>
+    </div>`;
+}
+function setDetailLutPreviewError(message){
+    const stage = lutPreviewStage();
+    if(!stage) return;
+    stage.dataset.lutState = 'error';
+    const status = stage.querySelector('[data-detail-lut-status]');
+    if(status) status.textContent = '';
+    const error = stage.querySelector('[data-detail-lut-error]');
+    if(!error) return;
+    error.hidden = false;
+    error.textContent = message || 'LUT 解析失败';
+}
+function paintDetailLutPreview(){
+    const stage = lutPreviewStage();
+    const canvas = stage?.querySelector?.('[data-detail-lut-canvas]');
+    if(!stage || !canvas) return;
+    const lut = detailLutPreviewState.lut;
+    if(!lut) return;
+    const mode = detailLutCompareMode();
+    const strength = detailLutStrengthPercent();
+    const frame = composeLutPreview(
+        lutPreviewSampleFrame(DETAIL_LUT_SAMPLE_WIDTH, DETAIL_LUT_SAMPLE_HEIGHT),
+        lut,
+        {mode, strength:strength / 100},
+    );
+    if(!paintLutFrame(canvas, frame)){
+        setDetailLutPreviewError('浏览器不支持 LUT 预览');
+        return;
+    }
+    stage.dataset.lutState = 'ready';
+    stage.dataset.compare = mode;
+    const error = stage.querySelector('[data-detail-lut-error]');
+    if(error){ error.hidden = true; error.textContent = ''; }
+    stage.querySelectorAll('[data-detail-lut-compare]').forEach(button => {
+        const active = button.dataset.detailLutCompare === mode;
+        button.classList.toggle('is-active', active);
+        button.setAttribute('aria-pressed', String(active));
+    });
+    const strengthLabel = stage.querySelector('[data-detail-lut-strength-value]');
+    if(strengthLabel) strengthLabel.textContent = `${strength}%`;
+    const slider = stage.querySelector('[data-detail-lut-strength]');
+    if(slider && Number(slider.value) !== strength) slider.value = String(strength);
+}
+function initializeDetailLutPreview(overlay, item){
+    const stage = overlay?.querySelector?.('[data-detail-lut-stage]');
+    if(!stage) return;
+    const token = detailLutPreviewState.token + 1;
+    detailLutPreviewState = {lut:null, url:'', token};
+    stage.dataset.lutState = 'loading';
+    const url = lutPreviewSourceUrl(item, detailViewerState.source);
+    const status = stage.querySelector('[data-detail-lut-status]');
+    loadLutPreview(url).then(lut => {
+        if(token !== detailLutPreviewState.token || !stage.isConnected) return;
+        detailLutPreviewState.lut = lut;
+        detailLutPreviewState.url = url;
+        const grid = stage.querySelector('[data-detail-lut-fact="grid"]');
+        if(grid) grid.textContent = lutPreviewGridLabel(lut);
+        const samples = stage.querySelector('[data-detail-lut-fact="samples"]');
+        if(samples) samples.textContent = String(lut.sampleCount);
+        const title = stage.querySelector('[data-detail-lut-title]');
+        if(title) title.textContent = lut.title || item.name || 'LUT';
+        paintDetailLutPreview();
+        if(status) status.textContent = `${lutPreviewGridLabel(lut)} · ${lut.sampleCount} 采样点`;
+    }).catch(err => {
+        if(token !== detailLutPreviewState.token || !stage.isConnected) return;
+        setDetailLutPreviewError(err?.message || 'LUT 解析失败');
+    });
+}
+function setDetailLutStrength(value){
+    const percent = Math.max(0, Math.min(100, Math.round(Number(value) || 0)));
+    detailViewerState.lutStrength = percent / 100;
+    paintDetailLutPreview();
+}
+function setDetailLutCompare(mode){
+    if(!LUT_COMPARE_MODES.includes(mode)) return;
+    detailViewerState.lutCompare = mode;
+    paintDetailLutPreview();
+}
+function restoreDetailLutListScroll(){
+    const list = document.querySelector('.asset-detail-viewer .asset-detail-lut-list');
+    if(list && detailViewerState.lutListScrollTop) list.scrollTop = Math.max(0, Number(detailViewerState.lutListScrollTop || 0));
 }
 function detailViewerFontItems(){
     let candidates = detailViewerState.items || [];
@@ -17653,6 +17990,7 @@ function renderDetailViewerMedia(source, item, type){
             </div>
         </div>`;
     }
+    if(type === 'lut') return renderDetailLutWorkspace(source, item);
     if(type === 'model') return renderDetailModelMedia(source, item);
     if(type === 'image'){
         const rawPreview = ASSET_BROWSER_PREVIEW_EXTENSIONS.has(extension) ? url : assetPreviewUrl(url, 2048, item);
@@ -18350,6 +18688,7 @@ function renderDetailViewer(){
     if(type === 'video') hydrateVideoStoryboardImages(overlay);
     if(type === 'font') initializeDetailFontPreview(overlay, url);
     else clearDetailViewerFontFace();
+    if(type === 'lut') initializeDetailLutPreview(overlay, item);
     if(mediaCanvasMode && detailMediaCanvasCoverflowVisible){
         const refShell = overlay.querySelector('.asset-detail-media-canvas-shell');
         refShell?.classList.add('gw-coverflow-embedded-host');
@@ -18363,6 +18702,7 @@ function renderDetailViewer(){
         positionDetailMediaVideoDock();
     });
     if(type === 'font') requestAnimationFrame(restoreDetailFontListScroll);
+    if(type === 'lut') requestAnimationFrame(restoreDetailLutListScroll);
     if(mediaCanvasMode && !detailViewerState.mediaCanvasFitted) requestAnimationFrame(fitDetailMediaCanvas);
 }
 function clearDetailViewerFontFace(){
@@ -19380,6 +19720,19 @@ function navigateDetailFontPreviewToId(id){
     const nextIndex = fonts.findIndex(item => item.id === id);
     if(currentIndex < 0 || nextIndex < 0 || currentIndex === nextIndex) return;
     detailViewerState.items = fonts;
+    detailViewerState.index = currentIndex;
+    detailViewerState.id = currentId;
+    navigateDetailPreview(nextIndex - currentIndex);
+}
+function navigateDetailLutToId(id){
+    if(!detailViewerState.open || !id) return;
+    detailViewerState.lutListScrollTop = document.querySelector('.asset-detail-viewer .asset-detail-lut-list')?.scrollTop || 0;
+    const currentId = detailViewerState.items[detailViewerState.index]?.id || detailViewerState.id;
+    const luts = detailViewerLutItems();
+    const currentIndex = luts.findIndex(item => item.id === currentId);
+    const nextIndex = luts.findIndex(item => item.id === id);
+    if(currentIndex < 0 || nextIndex < 0 || currentIndex === nextIndex) return;
+    detailViewerState.items = luts;
     detailViewerState.index = currentIndex;
     detailViewerState.id = currentId;
     navigateDetailPreview(nextIndex - currentIndex);
@@ -22121,7 +22474,7 @@ function navigateDetailPreviewWheel(event){
     const type = detailViewerType(detailViewerState.source, detailViewerState.items[detailViewerState.index] || {});
     if(type === 'audio' && adjustDetailAudioZoom(event)) return;
     if(type === 'font' && adjustDetailFontScale(event)) return;
-    if(type === 'text' || type === 'audio' || type === 'font') return;
+    if(type === 'text' || type === 'audio' || type === 'font' || type === 'lut') return;
     const direction = event.deltaY > 0 ? 1 : -1;
     const scrollable = event.target.closest?.('.asset-detail-copy,.asset-detail-inspector,.asset-detail-audio-list,.asset-detail-media-library-grid');
     if(scrollable?.matches?.('.asset-detail-media-library-grid')) return;
@@ -23176,6 +23529,10 @@ document.addEventListener('click', event => {
     if(fontExpand){ toggleDetailFontPanel(fontExpand.dataset.detailFontExpand || ''); return; }
     const fontItem = event.target.closest?.('[data-detail-font-item]');
     if(fontItem){ navigateDetailFontPreviewToId(fontItem.dataset.detailFontItem || ''); return; }
+    const lutItem = event.target.closest?.('[data-detail-lut-item]');
+    if(lutItem){ navigateDetailLutToId(lutItem.dataset.detailLutItem || ''); return; }
+    const lutCompare = event.target.closest?.('[data-detail-lut-compare]');
+    if(lutCompare){ setDetailLutCompare(lutCompare.dataset.detailLutCompare || ''); return; }
     if(event.target.closest?.('[data-detail-viewer-close]')){ closeDetailPreview(); return; }
     if(event.target.closest?.('[data-detail-text-edit]')){ startDetailTextEdit(); return; }
     if(event.target.closest?.('[data-detail-text-cancel]')){ cancelDetailTextEdit(); return; }
@@ -23884,6 +24241,11 @@ document.addEventListener('input', event => {
     if(detailVideoVolume){
         const video = detailViewerVideo(detailVideoVolume.closest('[data-detail-video-controls]')?.dataset.detailVideoFor || '');
         if(video){ video.volume = Math.max(0,Math.min(1,Number(detailVideoVolume.value || 0))); if(video.volume > 0) video.muted = false; syncDetailVideoControls(video); }
+        return;
+    }
+    const detailLutStrength = event.target?.closest?.('[data-detail-lut-strength]');
+    if(detailLutStrength){
+        setDetailLutStrength(detailLutStrength.value);
         return;
     }
     if(event.target?.matches?.('[data-detail-reference-title]')) detailViewerState.referenceCanvasTitle = String(event.target.value || '').slice(0, 80);
