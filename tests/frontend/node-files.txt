@@ -95,6 +95,7 @@ tests/frontend/qin-570-asset-fsviewer.test.mjs
 tests/frontend/qin-571-vault-blank-strip.test.mjs
 tests/frontend/qin-572-project-asset-tab.test.mjs
 tests/frontend/qin-573-asset-vault-fast-boot.test.mjs
+tests/frontend/qin-574-prompts-canvas-layout.test.mjs
 tests/frontend/settings-workbench-visual.test.mjs
 tests/frontend/test_c18_omnibar_hotkeys.mjs
 tests/frontend/test_c18_video_jump.mjs

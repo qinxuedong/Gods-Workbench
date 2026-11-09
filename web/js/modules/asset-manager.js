@@ -11606,8 +11606,9 @@ function renderRegistryToolbar(board, title, subtitle, options={}){
     const governanceTotal = governanceSuggestionTotal();
     const governanceBadge = governanceSuggestionsError ? '!' : governanceSuggestionsLoading ? '…' : governanceSuggestionsData ? String(governanceTotal) : '—';
     const governanceTrigger = '<button class="hw-btn governance-topbar-entry' + (governanceSuggestionsError ? ' has-error' : '') + '" type="button" data-governance-open aria-haspopup="dialog" aria-expanded="' + String(governanceDrawerOpen) + '" aria-label="' + escapeAttr(governanceTriggerLabel()) + '" title="' + escapeAttr(governanceTriggerLabel()) + '"><i data-lucide="list-checks"></i><span>治理建议</span><span class="governance-topbar-count" data-governance-total>' + escapeHtml(governanceBadge) + '</span></button>';
+    const hideHeading = Boolean(options.hideHeading || (embeddedVault && ['prompts', 'canvas-assets', 'workflows'].includes(activeTab)));
     return `<div class="content-toolbar registry-toolbar">
-        ${options.hideHeading ? '' : `<div class="content-heading"><strong>${escapeHtml(title)}</strong><span>${escapeHtml(subtitle)}</span></div>`}
+        ${options.hideHeading ? '' : (hideHeading ? '' : `<div class="content-heading"><strong>${escapeHtml(title)}</strong><span>${escapeHtml(subtitle)}</span></div>`)}
         <div class="registry-toolbar-controls">
             ${!board && document.documentElement.classList.contains('vault-shell-embedded') ? '<button class="hw-btn hw-btn-icon vault-filters-toggle" type="button" popovertarget="registryFacetPopover" title="目录层级" aria-label="目录层级"><i data-lucide="folder-tree"></i></button>' : ''}
             ${governanceTrigger}${coverflowControl}
