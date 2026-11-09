@@ -24962,14 +24962,13 @@ async function gwAssetTreeCreateFolder(parentKey, folderName){
         rootId = assetOrganizeDefaultRootId();
         if(!rootId) throw new Error('未找到可写挂载目录');
     }
-    const name = String(folderName || '').trim();
-    if(!name) throw new Error('文件夹名称不能为空');
+    const name = assetOrganizeValidateFolderName(folderName);
     const parentPath = target ? target.path : '';
     const newPath = parentPath ? `${parentPath}/${name}` : name;
-    const parentAbs = assetOrganizeAbsPath(rootId, parentPath);
-    const data = await assetOrganizeRequest('/api/local-assets/folders/create', {
-        parent_path: parentAbs,
-        folder_name: name,
+    const abs = assetOrganizeAbsPath(rootId, newPath);
+    if(!abs) throw new Error('挂载路径不可用，无法新建文件夹');
+    const data = await assetOrganizeRequest('/api/local-assets/folders', {
+        path: abs,
         root_id: rootId,
     });
     assetOrganizePushUndo(data, `新建文件夹「${name}」`, rootId);
@@ -24982,20 +24981,22 @@ async function gwAssetTreeCreateFolder(parentKey, folderName){
 async function gwAssetTreeCommitRename(key, newName){
     const target = assetOrganizeTargetFromKey(key);
     if(!target || target.isRoot) return false;
-    const name = String(newName || '').trim();
-    if(!name || name === assetOrganizeLeafName(target.path)) return true;
-    const parent = assetOrganizeParentPath(target.path);
-    const nextPath = parent ? `${parent}/${name}` : name;
-    const currentAbs = assetOrganizeAbsPath(target.rootId, target.path);
+    const current = assetOrganizeLeafName(target.path);
+    const next = String(newName || '').trim();
+    if(!next || next === current) return true;
     try {
-        const data = await assetOrganizeRequest('/api/local-assets/folders/rename', {
-            path: currentAbs,
-            new_name: name,
+        const name = assetOrganizeValidateFolderName(next);
+        const abs = assetOrganizeAbsPath(target.rootId, target.path);
+        const data = await assetOrganizeRequest('/api/local-assets/folders', {
+            path: abs,
+            name: name,
             root_id: target.rootId,
         }, {method:'PATCH'});
         assetOrganizePushUndo(data, `重命名为「${name}」`, target.rootId);
         showAssetOrganizeToast(`已重命名文件夹为「${name}」`, {undoable:true});
         setStatus(`已重命名文件夹为「${name}」`);
+        const parent = assetOrganizeParentPath(target.path);
+        const nextPath = parent ? `${parent}/${name}` : name;
         assetTreeSelectedKey = `mine:root:${target.rootId}::${nextPath}`;
         await assetOrganizeRefresh(target.rootId);
         return true;
