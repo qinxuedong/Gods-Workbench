@@ -16,7 +16,9 @@ import psutil
 import pytest
 
 import gw.core.sqlite_vec_engine as sqlite_vec_engine
+from gw.asset_registry import repository as _asset_repo
 from gw.asset_registry.hybrid_search import HybridAssetSearcher
+from gw.core import storage as _storage
 from gw.core.sqlite_vec_engine import SQLiteVecEngine
 
 
@@ -633,6 +635,268 @@ def test_c18_hybrid_search_latency_and_memory_report(tmp_path: Path) -> None:
         assert report["latency_ms"]["hybrid_p95"] < 50.0
     finally:
         engine.close()
+
+
+# --- QIN-565：规模放大后的 /search/shots 延迟与召回等价回归 --------------------
+#
+# 基线（master，5,258 文档 / 15,774 镜头）：单请求把整份注册表 JSON 反序列化
+# 十余次（每个候选资产详情各一次），p95≈1.5s（真机 A4 口径 3.0~3.6s）。
+# 修复后同一请求只读一次注册表快照，并复用预收敛的词面字段。
+
+QIN565_ASSET_COUNT = 5258
+QIN565_SHOTS_PER_ASSET = 3
+QIN565_QUERIES = (
+    "海边日出 海浪 沙滩",
+    "女主角 特写 回望",
+    "霓虹 街道 雨夜 人群",
+    "瀑布 森林 山峦 全景",
+    "船舱 码头 车流",
+    "红日破晓 海面 泛白",
+    "浪花 礁石 碎裂",
+    "对白 中景 室内",
+    "雪地 足迹 中景",
+    "实验室 特写 仪器",
+    "晨光 山峦 全景",
+    "夜景 车流 街道",
+    "特写 眼神 女主角",
+    "瀑布 水雾 慢门",
+    "码头 集装箱 晨光",
+    "人群 广场 全景",
+    "雨夜 伞 霓虹",
+    "船舱 仪表 特写",
+    "森林 逆光 树影",
+    "沙滩 脚印 潮汐",
+)
+QIN565_TAG_POOL = (
+    "日出", "晨光", "大海", "海浪", "沙滩", "足迹", "特写", "中景",
+    "全景", "夜景", "雨夜", "街道", "人群", "山峦", "森林", "瀑布",
+)
+QIN565_AUTH = {"Authorization": "Bearer cleanroom-test", "X-User-Role": "editor"}
+QIN565_SHOT_API = "/api/asset-registry/search/shots"
+
+
+def _qin565_registry(asset_count: int) -> dict:
+    """构造可复现的大规模注册表，混入停用来源根/隐藏内置/空 metadata 等边界。"""
+    rng = random.Random(565)  # noqa: S311 - 固定种子保证基准可复现
+    assets: dict[str, dict] = {}
+    for index in range(asset_count):
+        asset_id = "asset_%05d" % index
+        segments = []
+        cursor = 0.0
+        for shot in range(QIN565_SHOTS_PER_ASSET):
+            start = cursor
+            end = round(start + rng.uniform(2.0, 9.0), 3)
+            cursor = end
+            chosen = rng.sample(QIN565_TAG_POOL, 2)
+            segments.append(
+                {
+                    "start_sec": start,
+                    "end_sec": end,
+                    "tags": chosen,
+                    "summary": "%s与%s的镜头 %d" % (chosen[0], chosen[1], index),
+                }
+            )
+        root_id = "root_removed" if index in (37, 83, 151) else "root_library"
+        asset = {
+            "asset_id": asset_id,
+            "name": "ClipABC_%05d.mp4" % index if index % 7 == 0 else "素材_%05d.mp4" % index,
+            "kind": "video",
+            "display_path": "footage/%s/素材_%05d.mp4" % (root_id, index),
+            "canonical_relpath": "footage/clip_%05d.mp4" % index,
+            "storage_root_id": root_id,
+            "root_id": root_id,
+            "created_at": "2026-10-01T08:00:00Z",
+            "tags": ["LOOP", "AbcClip"] if index == 29 else rng.sample(QIN565_TAG_POOL, 2),
+            "metadata": (
+                {}
+                if index == 23
+                else {"frame_rate": 25.0, "duration": cursor, "video_segments": segments}
+            ),
+            "version": 1,
+        }
+        if index == 11:
+            asset["hidden"] = True
+            asset["metadata"] = {"builtin": True, "video_segments": segments}
+        assets[asset_id] = asset
+    raw = _asset_repo._blank()
+    raw["assets"] = assets
+    return raw
+
+
+def _qin565_persist_inactive_root(tmp_path: Path) -> None:
+    """登记一条已停用来源根，让 removed 过滤在等价性用例中真实生效。"""
+    _storage.save(
+        "allowed_roots",
+        {
+            "schema_version": 1,
+            "revision": 2,
+            "roots": [
+                {
+                    "id": "root_removed",
+                    "path": str(tmp_path / "offline_root"),
+                    "active": False,
+                    "aliases": [],
+                }
+            ],
+            "system_aliases": {},
+        },
+    )
+
+
+def _qin565_legacy_keyword_ids(query: str, limit: int) -> list[str]:
+    """修复前 ``_keyword_recalled_assets`` 的口径：list_assets 全表扫描取 id。"""
+    candidate_limit = min(max(limit * 3, limit), 100)
+    page = _asset_repo.list_assets(candidate_limit, 0, query, None, None)
+    items = page.get("items") if isinstance(page, dict) else None
+    asset_ids: list[str] = []
+    for item in items if isinstance(items, list) else []:
+        if not isinstance(item, dict):
+            continue
+        asset_id = str(item.get("asset_id") or item.get("id") or "").strip()
+        if asset_id and asset_id not in asset_ids:
+            asset_ids.append(asset_id)
+    return asset_ids
+
+
+def test_qin565_keyword_recall_matches_legacy_list_assets(tmp_path: Path) -> None:
+    """AC2：词面召回集合与顺序逐句等价，停用来源根过滤口径也一致。"""
+    raw = _qin565_registry(240)
+    _storage.save(_asset_repo.NS_REGISTRY, raw)
+    _qin565_persist_inactive_root(tmp_path)
+
+    assert _asset_repo._removed_root_ids() == {"root_removed"}
+    assert _asset_repo._removed_root_ids_for_search() == {"root_removed"}
+    assert _asset_repo.keyword_recalled_asset_ids(raw, "素材", 20) and not (
+        {"asset_00037", "asset_00083", "asset_00151"}
+        & set(_asset_repo.keyword_recalled_asset_ids(raw, "素材", 20))
+    )
+    for query in (
+        "素材", "ClipABC", "abc", "ABC", "影", "大海", "海浪", "日出 海浪",
+        "特写", "不存在XYZ", "海", "LOOP", "1", "",
+    ):
+        assert _asset_repo.keyword_recalled_asset_ids(raw, query, 20) == (
+            _qin565_legacy_keyword_ids(query, 20)
+        ), query
+
+
+def test_qin565_snapshot_and_root_cache_invalidate_on_write(tmp_path: Path) -> None:
+    """注册表 / 允许根写入后，只读快照与停用根缓存必须立即失效。"""
+    raw = _qin565_registry(10)
+    _storage.save(_asset_repo.NS_REGISTRY, raw)
+    assert len(_asset_repo.readonly_registry_snapshot()["assets"]) == 10
+    # 同名字节数改写：只靠文件大小无法区分，必须按 mtime_ns / inode 失效。
+    raw["assets"]["asset_00000"]["name"] = "ZZZZZZZ_00000.mp4"
+    _storage.save(_asset_repo.NS_REGISTRY, raw)
+    assert (
+        _asset_repo.readonly_registry_snapshot()["assets"]["asset_00000"]["name"]
+        == "ZZZZZZZ_00000.mp4"
+    )
+
+    _qin565_persist_inactive_root(tmp_path)
+    assert _asset_repo._removed_root_ids_for_search() == {"root_removed"}
+    _storage.save(
+        "allowed_roots",
+        {"schema_version": 1, "revision": 3, "roots": [], "system_aliases": {}},
+    )
+    assert _asset_repo._removed_root_ids_for_search() == set()
+
+
+def test_qin565_shot_search_reads_registry_at_most_once(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """AC3：单请求不得再逐候选资产反序列化整份注册表（确定性反回归闸门）。"""
+    from fastapi.testclient import TestClient
+
+    from gw.api.app import create_app
+
+    _storage.save(_asset_repo.NS_REGISTRY, _qin565_registry(QIN565_ASSET_COUNT))
+    _qin565_persist_inactive_root(tmp_path)
+    _asset_repo.rebuild_search_index()
+    client = TestClient(create_app())
+    # 预热快照缓存后再计数，模拟稳态连续查询。
+    warm = client.get(
+        QIN565_SHOT_API, params={"q": QIN565_QUERIES[0]}, headers=QIN565_AUTH
+    )
+    assert warm.status_code == 200, warm.text
+
+    original_load = _storage.load
+    registry_reads: list[str] = []
+
+    def counting_load(namespace: str, default: object = None) -> object:
+        if namespace == _asset_repo.NS_REGISTRY:
+            registry_reads.append(namespace)
+        return original_load(namespace, default)
+
+    monkeypatch.setattr(_storage, "load", counting_load)
+    for query in QIN565_QUERIES[:5]:
+        response = client.get(
+            QIN565_SHOT_API, params={"q": query, "limit": 20}, headers=QIN565_AUTH
+        )
+        assert response.status_code == 200, response.text
+    assert len(registry_reads) <= 1, registry_reads
+
+
+def test_qin565_shot_search_latency_at_scale(tmp_path: Path) -> None:
+    """AC1/AC3：20 句 × 3 轮同口径基准；默认设稳健回归阈值，严格模式钉 50ms。"""
+    from fastapi.testclient import TestClient
+
+    from gw.api.app import create_app
+
+    _storage.save(_asset_repo.NS_REGISTRY, _qin565_registry(QIN565_ASSET_COUNT))
+    _qin565_persist_inactive_root(tmp_path)
+    rebuilt = _asset_repo.rebuild_search_index()
+    assert rebuilt["documents"] >= 5000
+    assert rebuilt["shots"] >= 15000
+    client = TestClient(create_app())
+    for query in QIN565_QUERIES:
+        assert client.get(
+            QIN565_SHOT_API, params={"q": query, "limit": 20}, headers=QIN565_AUTH
+        ).status_code == 200
+
+    rounds: list[dict] = []
+    for round_index in range(3):
+        samples: list[float] = []
+        for query in QIN565_QUERIES:
+            started = time.perf_counter_ns()
+            response = client.get(
+                QIN565_SHOT_API,
+                params={"q": query, "limit": 20},
+                headers=QIN565_AUTH,
+            )
+            samples.append((time.perf_counter_ns() - started) / 1_000_000)
+            assert response.status_code == 200, response.text
+        rounds.append(
+            {
+                "round": round_index + 1,
+                "p50": _nearest_rank_percentile(samples, 0.50),
+                "p95": _nearest_rank_percentile(samples, 0.95),
+                "max": max(samples),
+            }
+        )
+    report = {
+        "measurement_scope": "GET /api/asset-registry/search/shots; 20 queries x 3 rounds; no embedding inference",
+        "documents": rebuilt["documents"],
+        "shots": rebuilt["shots"],
+        "rounds": rounds,
+        "strict_threshold_ms": 50.0,
+        "regression_threshold_ms": 250.0,
+        "host": {"os": platform.platform(), "python": platform.python_version()},
+    }
+    print("QIN565_BENCHMARK_JSON=" + json.dumps(report, ensure_ascii=False))
+    evidence_dir = os.getenv("GW_C18_EVIDENCE_DIR")
+    if evidence_dir:
+        destination = Path(evidence_dir)
+        destination.mkdir(parents=True, exist_ok=True)
+        (destination / "qin565-shot-search-latency.json").write_text(
+            json.dumps(report, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+        )
+
+    threshold = (
+        50.0
+        if os.getenv("GW_QIN565_STRICT_LATENCY") == "1"
+        else 250.0
+    )
+    assert max(round_data["p95"] for round_data in rounds) <= threshold
 
 
 def test_percentile_uses_nearest_rank() -> None:
