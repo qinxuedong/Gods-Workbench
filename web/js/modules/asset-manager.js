@@ -24512,8 +24512,8 @@ function tryApplyRegistrySnapshot(){
 }
 
 function saveRegistryBrowseSession(){
-    saveRegistrySnapshot();
     if(!registrySessionReady || !assetBoardById(activeTab)) return false;
+    saveRegistrySnapshot();
     try {
         sessionStorage.setItem(REGISTRY_SESSION_KEY, JSON.stringify({
             tab:activeTab, folder:registryNavFolder, sources:boardSourceSelection,
@@ -24526,12 +24526,9 @@ function saveRegistryBrowseSessionForRoute(){
     if(!saveRegistryBrowseSession()) return;
     try { sessionStorage.setItem(REGISTRY_ROUTE_PENDING_KEY, '1'); } catch(_) {}
 }
-window.GWAssetBrowseSession = Object.freeze({
-    save: saveRegistryBrowseSession,
-    saveForRoute: saveRegistryBrowseSessionForRoute,
-    saveSnapshot: saveRegistrySnapshot,
-    applySnapshot: tryApplyRegistrySnapshot,
-});
+window.GWAssetBrowseSession = Object.freeze({save:saveRegistryBrowseSession, saveForRoute:saveRegistryBrowseSessionForRoute});
+// 【QIN-573 AC2】快照控制对象暴露给测试与同源宿主
+window.GWAssetRegistrySnapshot = Object.freeze({save:saveRegistrySnapshot, apply:tryApplyRegistrySnapshot});
 // 【QIN-566】外壳侧栏树桥接：同源直调（外壳读快照/驱动入口，内嵌页渲染后主动推送）。
 window.GWAssetTreeBridge = Object.freeze({snapshot:gwAssetTreeSnapshot, activate:gwAssetTreeActivate});
 async function restoreRegistryBrowseSession(){

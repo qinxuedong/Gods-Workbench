@@ -42,10 +42,10 @@ test('AC2 & AC3: asset-manager.js 实现 SWR 快照存储、即时恢复与桥�
   // 1. 常量定义
   assert.match(assetManagerJs, /const REGISTRY_SNAPSHOT_KEY = 'gw_asset_registry_snapshot_v1';/);
 
-  // 2. 导出到 GWAssetBrowseSession
+  // 2. 导出到 GWAssetRegistrySnapshot
   assert.match(
     assetManagerJs,
-    /window\.GWAssetBrowseSession = Object\.freeze\(\{[\s\S]*?saveSnapshot:\s*saveRegistrySnapshot[\s\S]*?applySnapshot:\s*tryApplyRegistrySnapshot/
+    /window\.GWAssetRegistrySnapshot = Object\.freeze\(\{save:saveRegistrySnapshot, apply:tryApplyRegistrySnapshot\}\);/
   );
 
   // 3. 快照保存逻辑
@@ -70,7 +70,7 @@ test('AC2 & AC3: asset-manager.js 实现 SWR 快照存储、即时恢复与桥�
   );
   assert.match(
     assetManagerJs,
-    /function saveRegistryBrowseSession\(\)\s*\{\s*saveRegistrySnapshot\(\);/,
+    /function saveRegistryBrowseSession\(\)\s*\{[\s\S]*?saveRegistrySnapshot\(\);/,
     '保存浏览会话时必须同步沉淀快照'
   );
 });
