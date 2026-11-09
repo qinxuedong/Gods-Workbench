@@ -386,29 +386,21 @@ def _shot_search_limit(raw: Optional[str]) -> int:
     return value
 
 
-def _keyword_recalled_assets(query: str, limit: int) -> List[str]:
+def _keyword_recalled_assets(
+    query: str, limit: int, *, raw: Optional[Dict[str, Any]] = None
+) -> List[str]:
     """补齐「镜头文本命中、但资产检索文档未命中」的候选资产（MVP1-AC4）。
 
     检索文档只收录资产级标签与路径，镜头标签与摘要由 ``list_assets`` 既有的
     关键词匹配覆盖；这里只取候选 id，词面加权仍由镜头下钻完成，因此不改变
-    既有资产检索的召回口径与排序。
+    既有资产检索的召回口径与排序。QIN-565 改为复用同一份只读注册表快照与
+    预收敛词面字段，避免逐请求反序列化整表 + 逐条详情装饰 + 挂载探测。
     """
-    candidate_limit = min(max(limit * 3, limit), 100)
+    snapshot = raw if raw is not None else repo.readonly_registry_snapshot()
     try:
-        page = repo.list_assets(candidate_limit, 0, query, None, None)
+        return repo.keyword_recalled_asset_ids(snapshot, query, limit)
     except CleanroomException:
         return []
-    items = page.get("items") if isinstance(page, dict) else None
-    if not isinstance(items, list):
-        return []
-    asset_ids: List[str] = []
-    for item in items:
-        if not isinstance(item, dict):
-            continue
-        asset_id = str(item.get("asset_id") or item.get("id") or "").strip()
-        if asset_id and asset_id not in asset_ids:
-            asset_ids.append(asset_id)
-    return asset_ids
 
 
 @router.get("/search/shots", summary="镜头级素材检索", status_code=status.HTTP_200_OK)
@@ -450,14 +442,16 @@ def search_registry_shots(
             expose_extra_fields={"data_status"},
         )
 
+    # 同一请求只读一次注册表：候选补齐与逐资产下钻共用同一份只读快照，
+    # 避免每个候选资产都触发一次整表 JSON 反序列化（QIN-565）。
+    registry_snapshot = repo.readonly_registry_snapshot()
     located: Dict[str, Dict[str, Any]] = {}
     with SQLiteVecEngine(db_path) as engine:
 
         def _shot_provider(asset_id: str) -> List[Dict[str, Any]]:
             """返回该资产已登记镜头；顺带补齐索引中的内容哈希。"""
-            try:
-                record = repo.get_asset(asset_id)
-            except CleanroomException:
+            record = repo.visible_asset_from_snapshot(registry_snapshot, asset_id)
+            if record is None:
                 return []
             located[asset_id] = record
             metadata = record.get("metadata")
@@ -478,7 +472,9 @@ def search_registry_shots(
             query,
             limit=bounded_limit,
             shot_provider=_shot_provider,
-            extra_asset_ids=_keyword_recalled_assets(query, bounded_limit),
+            extra_asset_ids=_keyword_recalled_assets(
+                query, bounded_limit, raw=registry_snapshot
+            ),
         )
         # 本次请求未携带查询向量，引擎侧的降级标记恒为 false；此处按索引实况
         # 补正（MVP1-T7/F2）：没有登记嵌入模型或引擎未启用向量轨时如实报告降级，

@@ -95,6 +95,218 @@ def state() -> storage.JsonState:
     return storage.JsonState(NS_REGISTRY, _blank)
 
 
+#: 只读注册表快照缓存：键为注册表文件的 (规范路径, mtime_ns, 字节数) 签名。
+#: 写操作经 storage.save 原子替换文件，签名随之变化，缓存自然失效；外部进程
+#: 改写同样会被签名识别。缓存值只允许只读，调用方不得原地修改（QIN-565）。
+_REGISTRY_SNAPSHOT_CACHE: Optional[Tuple[Tuple[str, int, int, int], Dict[str, Any]]] = None
+_REGISTRY_SNAPSHOT_LOCK = threading.Lock()
+
+
+#: 快照文件路径缓存：``storage.file_for`` 每次都会重跑三态路径校验（含逐级
+#: lstat），在检索热路径上按运行时环境变量组合复用即可，环境切换自动失效。
+_SNAPSHOT_PATHS_CACHE: Optional[Tuple[Tuple[Any, ...], Path, Path]] = None
+_SNAPSHOT_PATHS_CACHE_LOCK = threading.Lock()
+
+
+def _snapshot_paths() -> Tuple[Path, Path]:
+    global _SNAPSHOT_PATHS_CACHE
+    from gw.core import runtime_paths
+
+    names = (
+        runtime_paths.RUNTIME_MODE_ENV,
+        runtime_paths.DATA_DIR_ENV,
+        runtime_paths.LOCAL_AUTH_DB_ENV,
+        runtime_paths.VIDEO_DATA_DIR_ENV,
+        "LOCALAPPDATA",
+    )
+    configuration = tuple((name, os.environ.get(name)) for name in names)
+    with _SNAPSHOT_PATHS_CACHE_LOCK:
+        cached = _SNAPSHOT_PATHS_CACHE
+    if cached is not None and cached[0] == configuration:
+        return cached[1], cached[2]
+    registry_path = storage.file_for(NS_REGISTRY)
+    allowed_roots_path = storage.file_for("allowed_roots")
+    with _SNAPSHOT_PATHS_CACHE_LOCK:
+        _SNAPSHOT_PATHS_CACHE = (configuration, registry_path, allowed_roots_path)
+    return registry_path, allowed_roots_path
+
+
+def _registry_snapshot_signature(path: Path) -> Tuple[str, int, int, int]:
+    try:
+        info = path.stat()
+    except OSError:
+        return ("", 0, 0, 0)
+    return (
+        os.path.normcase(os.path.abspath(path)),
+        info.st_mtime_ns,
+        info.st_size,
+        getattr(info, "st_ino", 0),
+    )
+
+
+def readonly_registry_snapshot() -> Dict[str, Any]:
+    """返回只读注册表快照，同一文件版本内复用已解析的 JSON 对象。
+
+    ``JsonState.read`` 每次都重新反序列化整份注册表；镜头检索单请求原本要
+    读取十几次（每个候选资产详情各一次），5,000+ 资产规模下成为主要延迟。
+    这里只缓存「同一文件版本」的解析结果，不改变读取内容的可见性与顺序；
+    文件签名在读前/读后不一致时不缓存，避免把并发写入的半新数据钉死。
+    """
+    global _REGISTRY_SNAPSHOT_CACHE
+    path, _ = _snapshot_paths()
+    before = _registry_snapshot_signature(path)
+    with _REGISTRY_SNAPSHOT_LOCK:
+        cached = _REGISTRY_SNAPSHOT_CACHE
+    if cached is not None and cached[0] == before:
+        return cached[1]
+    raw = state().read()
+    after = _registry_snapshot_signature(path)
+    if after == before:
+        with _REGISTRY_SNAPSHOT_LOCK:
+            _REGISTRY_SNAPSHOT_CACHE = (after, raw)
+    return raw
+
+
+def visible_asset_from_snapshot(raw: Dict[str, Any], asset_id: str) -> Optional[Dict[str, Any]]:
+    """从只读快照取单条可见登记；缺失或不可见返回 ``None``。
+
+    供镜头检索下钻使用：与 ``get_asset`` 相同的 ``_visible`` 判定，但跳过详情
+    装饰（来源名、文件 stat、关联摘要），这些字段都不参与镜头检索输出。
+    """
+    assets = raw.get("assets") if isinstance(raw, dict) else None
+    record = assets.get(asset_id) if isinstance(assets, dict) else None
+    if not isinstance(record, dict) or not _visible(record):
+        return None
+    return record
+
+
+#: 词面召回索引缓存：与某个只读注册表快照对象绑定，文件改写后快照对象随之更换，
+#: 缓存自动失效。只保留最近一份，不累积历史版本。
+_SHOT_LEXICAL_CACHE: Optional[
+    Tuple[Dict[str, Any], Tuple[Tuple[Any, str, Tuple[str, ...], bool, bool, str, str, bool], ...]]
+] = None
+_SHOT_LEXICAL_CACHE_LOCK = threading.Lock()
+
+
+def _shot_lexical_fields(asset: Dict[str, Any]) -> Tuple[str, ...]:
+    """按 ``list_assets`` 的 ``_matches_query`` 逐字段口径预收敛词面文本。
+
+    字段分别保留、不做拼接，避免跨字段边界拼出原本不存在的子串命中；每项提前
+    casefold，查询时只剩 C 层子串判断。
+    """
+    fields = [
+        str(asset.get("name", "")).casefold(),
+        str(asset.get("asset_id", "")).casefold(),
+    ]
+    for tag_value in asset.get("tags") or []:
+        fields.append(str(tag_value).casefold())
+    metadata = asset.get("metadata") or {}
+    segments = metadata.get("video_segments") or [] if isinstance(metadata, dict) else []
+    for segment in segments:
+        if not isinstance(segment, dict):
+            continue
+        for shot_tag in segment.get("tags") or []:
+            fields.append(str(shot_tag).casefold())
+        fields.append(str(segment.get("summary") or "").casefold())
+    return tuple(fields)
+
+
+def _shot_lexical_rows(raw: Dict[str, Any]) -> Tuple[
+    Tuple[Any, str, Tuple[str, ...], bool, bool, str, str, bool], ...
+]:
+    """构造（或复用）只读快照的词面召回行，保持与 ``list_assets`` 相同的过滤维度。"""
+    global _SHOT_LEXICAL_CACHE
+    with _SHOT_LEXICAL_CACHE_LOCK:
+        cached = _SHOT_LEXICAL_CACHE
+    if cached is not None and cached[0] is raw:
+        return cached[1]
+    from gw.core.asset_visibility import asset_visible
+
+    assets = raw.get("assets") if isinstance(raw, dict) else None
+    records = assets.values() if isinstance(assets, dict) else ()
+    rows = []
+    for asset in records:
+        if not isinstance(asset, dict):
+            continue
+        rows.append(
+            (
+                asset.get("asset_id", ""),
+                str(asset.get("asset_id") or asset.get("id") or ""),
+                _shot_lexical_fields(asset),
+                bool(asset_visible(asset)),
+                bool(_hidden_builtin(asset)),
+                str(asset.get("root_id") or ""),
+                str(asset.get("storage_root_id") or ""),
+                asset.get("root_availability") == "removed",
+            )
+        )
+    result = tuple(rows)
+    with _SHOT_LEXICAL_CACHE_LOCK:
+        _SHOT_LEXICAL_CACHE = (raw, result)
+    return result
+
+
+#: 已停用来源根集合的签名缓存：键为（允许根文件, 注册表文件）签名。
+_REMOVED_ROOTS_CACHE: Optional[Tuple[Tuple[Any, ...], set[str]]] = None
+_REMOVED_ROOTS_CACHE_LOCK = threading.Lock()
+
+
+def _removed_root_ids_for_search() -> set[str]:
+    """与 ``_removed_root_ids`` 完全同口径，但按文件签名复用结果。
+
+    原实现每次调用都会经 ``root_facets`` 做来源挂载探测并反序列化整份注册表；
+    镜头检索每请求都要判定停用根，逐次重算既慢又可能把离线盘的 0.75s 超时
+    带进检索路径。这里在允许根或注册表文件变化时才重算一次，结果本身仍由
+    ``_removed_root_ids`` 给出，不另造一套判定规则。
+    """
+    global _REMOVED_ROOTS_CACHE
+    registry_path, allowed_roots_path = _snapshot_paths()
+    signature = (
+        _registry_snapshot_signature(allowed_roots_path),
+        _registry_snapshot_signature(registry_path),
+    )
+    with _REMOVED_ROOTS_CACHE_LOCK:
+        cached = _REMOVED_ROOTS_CACHE
+    if cached is not None and cached[0] == signature:
+        return cached[1]
+    result = _removed_root_ids()
+    with _REMOVED_ROOTS_CACHE_LOCK:
+        _REMOVED_ROOTS_CACHE = (signature, result)
+    return result
+
+
+def keyword_recalled_asset_ids(
+    raw: Dict[str, Any], query: str, limit: int
+) -> List[str]:
+    """镜头检索的词面候选 id：与 ``list_assets`` 旧口径逐项等价，仅去掉无关开销。
+
+    等价口径：可见性 / 隐藏内置 / 已移除来源根过滤，名称、稳定 ID、资产标签、
+    镜头标签与摘要的子串匹配，按 ``asset_id`` 升序取前 ``min(limit*3, 100)`` 条
+    并去重。详情装饰（来源名、文件 stat、关联摘要）与挂载探测不参与候选 id 的
+    产生，故按文件签名缓存复用；召回集合与顺序不变（QIN-565 / AC2）。
+    """
+    candidate_limit = min(max(limit * 3, limit), 100)
+    needle = query.casefold()
+    removed_ids = _removed_root_ids_for_search()
+    matched: List[Tuple[Any, str]] = []
+    for (sort_key, asset_id, fields, visible, hidden, root_id,
+         storage_root_id, removed_marker) in _shot_lexical_rows(raw):
+        if not visible or hidden or removed_marker:
+            continue
+        if (root_id and root_id in removed_ids) or (
+            storage_root_id and storage_root_id in removed_ids
+        ):
+            continue
+        if any(needle in field for field in fields):
+            matched.append((sort_key, asset_id))
+    matched.sort(key=lambda row: str(row[0]))
+    asset_ids: List[str] = []
+    for _, asset_id in matched[:candidate_limit]:
+        if asset_id and asset_id not in asset_ids:
+            asset_ids.append(asset_id)
+    return asset_ids
+
+
 def _seq(raw: Dict[str, Any], prefix: str, taken: Any = None) -> str:
     """生成确定性序号 ID；同时参考 sequences 与目标集合已有键，避免跨集合冲突。
 
