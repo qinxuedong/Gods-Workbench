@@ -2602,8 +2602,10 @@ def _discard_rendered_file(path: Path) -> Optional[str]:
 def _delete_search_documents_with_retry(asset_ids: List[str], attempts: int = 2) -> Optional[str]:
     """撤销检索文档；允许有限重试，仍失败时返回错误描述。
 
-    删除接口幂等（按 asset_id 逐条删），重复调用即可补完，所以重试与人工重跑
-    都是安全的自愈路径。
+    只在 ``compensate_lut_render_outputs`` 内使用：那里的 ID 归属已经在同一把锁内
+    按注册表判定过，重试的对象确定是「没有记录引用的孤儿文档」。**不要**把本函数
+    当独立的重放入口——锁外拿一批裸 ID 再删，遇到被复用（同 ID 已被别的写入提交）
+    的情况会把复用方的文档删掉。事后恢复请走 ``compensate_lut_render_outputs``。
     """
     last: Optional[str] = None
     for _ in range(max(1, attempts)):
@@ -2641,15 +2643,25 @@ def _record_owns_output(record: Dict[str, Any], relative: str, path: Path) -> bo
         return False
 
 
-def _rollback_lut_render_outputs(
-    written: List[Tuple[str, str, Path]], created_ids: List[str]
+def compensate_lut_render_outputs(
+    written: Optional[List[Tuple[str, str, Path]]] = None,
+    created_ids: Optional[List[str]] = None,
 ) -> List[Dict[str, Any]]:
-    """撤销一次失败的 LUT 派生；返回未能完成的补偿项（空表示全部清干净）。
+    """LUT 派生补偿的**唯一入口**：事务失败回滚与事后重放都走这里。
 
-    判定必须在注册表命名空间锁内完成。两次显式同 revision 的请求都能通过
-    ``_cas``：先失败的一笔释放锁之后，另一笔可能已经用同一个派生 ID 提交成功。
+    事后恢复**不要**改成 ``delete_asset_search_documents(asset_ids)`` 直接按键删：
+    ``asset_id`` 会被别的写入复用（并发同 revision、或序列回绕），裸删会把复用方
+    的检索文档删掉，而它的注册表记录与媒体文件都还在，形成跨存储不一致。本函数在
+    注册表命名空间锁内先读当前状态，只有确认「没有记录引用这个 ID / 这个文件」才
+    动手，因此重放对复用方无害，可以反复调用（幂等）。
 
-    归属判定要分成两套，不能混用：
+    用法：
+
+    * 事务失败：``compensate_lut_render_outputs(written, created_ids)``；
+    * 事后恢复（按 ``LUT_RENDER_COMPENSATION_INCOMPLETE`` 日志里的 asset_id）：
+      ``compensate_lut_render_outputs([], asset_ids)``。
+
+    归属判定分两套，不能混用：
 
     * **文件按路径判**：注册表里有同 ID 记录、但该记录指向另一个文件时，本笔
       写下的这个文件仍是孤儿，必须删；记录正指向这个文件才是「已提交」，不能删。
@@ -2661,10 +2673,12 @@ def _rollback_lut_render_outputs(
     唯一来源，必须直接查注册表当前记录。
     """
     failures: List[Dict[str, Any]] = []
+    outputs = list(written or [])
+    ids = list(created_ids or [])
     with storage.namespace_lock(state().namespace):
         raw = state().read()
         assets = raw.get("assets") or {}
-        for asset_id, relative, path in written:
+        for asset_id, relative, path in outputs:
             record = assets.get(asset_id)
             if record is not None and _record_owns_output(record, relative, path):
                 continue
@@ -2675,7 +2689,7 @@ def _rollback_lut_render_outputs(
                 )
         # 检索索引是另一个存储：JSON 写失败时它可能已经落库，必须一并撤销，
         # 否则冷读仍能查到一条没有对应资产的孤儿文档。
-        orphan_ids = [aid for aid in created_ids if not assets.get(aid)]
+        orphan_ids = [aid for aid in ids if not assets.get(aid)]
         if orphan_ids:
             error = _delete_search_documents_with_retry(orphan_ids)
             if error:
@@ -2683,8 +2697,14 @@ def _rollback_lut_render_outputs(
                     {"stage": "search_index", "asset_ids": list(orphan_ids), "error": error}
                 )
     if failures:
-        # 可观测：留一条带稳定标记的错误日志，运维可按 asset_id 重跑清理。
-        _LOGGER.error("LUT_RENDER_COMPENSATION_INCOMPLETE %s", failures)
+        # 可观测：留一条带稳定标记的错误日志，运维按这里的 asset_id 重放
+        # ``compensate_lut_render_outputs([], [...])`` 即可补完（幂等，且会跳过已被
+        # 复用的 ID）。不要改成按 ID 直删检索文档。
+        _LOGGER.error(
+            "LUT_RENDER_COMPENSATION_INCOMPLETE %s（按 compensate_lut_render_outputs "
+            "重放补完，不要直接按 asset_id 删检索文档）",
+            failures,
+        )
     return failures
 
 
@@ -2725,6 +2745,8 @@ def create_lut_render(
         raise CleanroomException(400, "INVALID_LUT_STRENGTH", "LUT 强度必须在 0 到 1 之间")
 
     # 事务内已落盘的产物与已写过的派生 ID；任何后续失败都在锁内判定后统一清理。
+    # 产物在**调用渲染器之前**就登记（路径确定即可），否则「渲染器已写出文件、
+    # 但没返回」的退出（KeyboardInterrupt、进程被杀、渲染器自身清理失败）会绕过补偿。
     written: List[Tuple[str, str, Path]] = []
     created_ids: List[str] = []
 
@@ -2753,18 +2775,18 @@ def create_lut_render(
         directory.mkdir(parents=True, exist_ok=True)
         relative = f"{relative_dir}/{new_asset_id}_{LUT_RENDER_VERSION}{extension}"
         target = storage.resolve_output_path(relative, must_exist=False)
+        # 先登记再渲染：渲染器可能在写出文件之后才抛异常（超时、中断、自身清理失败），
+        # 那时它没有返回值、也不会有任何「已落盘」的记录。登记提前到调用之前，
+        # 渲染器内的所有退出都落进同一套补偿，半成品不会变成孤儿。
+        written.append((new_asset_id, relative, target))
         try:
             rendered = render(kind, source_path, lut_path, ratio, target)
         except CleanroomException:
-            _discard_rendered_file(target)
+            # 半成品统一交外层补偿（含清理失败的汇总），这里只保留渲染器的稳定错误码。
             raise
         except Exception as exc:
-            # 渲染器的内部异常不得漏成 500，也不留下半成品产物。
-            _discard_rendered_file(target)
+            # 渲染器的内部异常不得漏成 500。
             raise CleanroomException(503, "LUT_RENDER_FAILED", "LUT 渲染失败") from exc
-        # 产物已落盘：从这里往后的任何失败（索引写入、状态提交）都要靠外层补偿，
-        # 只包住渲染会在「记录没提交、文件还留着」时留下孤儿产物。
-        written.append((new_asset_id, relative, target))
 
         name = _lut_render_display_name(
             str(source.get("name") or ""), str(lut_asset.get("name") or ""), extension
@@ -2825,7 +2847,15 @@ def create_lut_render(
         # 没提交」要在锁内按注册表现状判定，不能无脑删。
         # 补偿自身的失败只记录、不替换原错误：原错误码（例如
         # 503 ASSET_SEARCH_INDEX_FAILED）是调用方与测试依赖的稳定契约。
-        failures = _rollback_lut_render_outputs(written, created_ids)
+        try:
+            failures = compensate_lut_render_outputs(written, created_ids)
+        except Exception as comp_exc:  # noqa: BLE001 - 补偿崩溃同样不得覆盖原错误
+            _LOGGER.error(
+                "LUT_RENDER_COMPENSATION_CRASHED %s: %s", type(comp_exc).__name__, comp_exc
+            )
+            failures = [
+                {"stage": "compensation", "error": f"{type(comp_exc).__name__}: {comp_exc}"}
+            ]
         if failures:
             _note_compensation_failure(exc, failures)
         raise
@@ -4375,9 +4405,13 @@ def register_asset_record(
 def delete_asset_search_documents(asset_ids: List[str], *, strict: bool = False) -> None:
     """批量删除 SQLite 全文与向量检索索引中的资产与分镜。
 
-    幂等：按 asset_id 逐条删除，重复调用可用于补完失败过的清理。
+    按 asset_id 逐条删除，重复调用无副作用。
     ``strict=True`` 时把底层故障抛给调用方（补偿路径需要知道有没有清干净）；
     默认只记警告，保持既有调用方「删不掉也不阻断主流程」的行为。
+
+    **不是**事后的安全恢复入口：删除只认 ID、不看注册表，而 ``asset_id`` 会被别的
+    写入复用，此时删掉的是复用方的文档（它的记录与媒体文件仍在）。清理失败的补完
+    请走 ``compensate_lut_render_outputs``，那里会先判定归属。
     """
     if not asset_ids:
         return

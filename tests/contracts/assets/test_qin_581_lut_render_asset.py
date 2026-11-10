@@ -540,7 +540,7 @@ def test_rollback_keeps_output_of_committed_record(client: TestClient):
     assert path.is_file()
 
     # 模拟「A 的补偿晚到，而 B 已经用同一个 ID 提交成功」。
-    asset_repo._rollback_lut_render_outputs(
+    asset_repo.compensate_lut_render_outputs(
         [(created["id"], created["display_path"], path)], [created["id"]]
     )
 
@@ -775,7 +775,7 @@ def test_json_failure_removes_own_file_but_keeps_committed_document(
 def test_search_cleanup_failure_is_observable_and_retryable(
     client: TestClient, monkeypatch, caplog
 ):
-    """重要回归：补偿删除索引失败不得静默；须留痕且可幂等重试补完。"""
+    """重要回归：补偿删除索引失败不得静默；须留痕，且按**统一入口**重放可补完。"""
     _ensure_luts(client)
     source = _upload(client, "qin581_cleanup_fault.png", _image_bytes(), "image/png")
     before_docs = _search_document_count()
@@ -805,9 +805,11 @@ def test_search_cleanup_failure_is_observable_and_retryable(
     messages = " ".join(record.getMessage() for record in caplog.records)
     assert "LUT_RENDER_COMPENSATION_INCOMPLETE" in messages, messages
     assert attempts[0] and attempts[0][0] in messages, messages
-    # 故障确实留下了孤儿文档（证明打到失败路径），且同一入口重试即可补完。
+    # 日志要指向可安全重放的入口，不能让人直接按 ID 删检索文档（ID 会被复用）。
+    assert "compensate_lut_render_outputs" in messages, messages
+    # 故障确实留下了孤儿文档（证明打到失败路径），且同一入口重放即可补完。
     assert _search_document_count() == before_docs + 1
-    asset_repo.delete_asset_search_documents(attempts[0], strict=True)
+    assert asset_repo.compensate_lut_render_outputs([], attempts[0]) == []
     assert _search_document_count() == before_docs
 
 
@@ -848,3 +850,160 @@ def test_unlink_failure_keeps_original_error_and_code(
         "LUT 派生产物清理失败" in record.getMessage() for record in caplog.records
     ), [record.getMessage() for record in caplog.records]
     assert _pending_render_files(source["id"]), "注入的 unlink 失败必须让文件留在盘上"
+
+
+def test_interrupt_inside_renderer_leaves_no_orphan_file(client: TestClient):
+    """阻断回归：渲染器写完文件、还没返回就中断，产物也必须被清掉。
+
+    旧实现等 ``render`` 返回之后才登记产物：真实 PNG 已经落盘、返回前抛
+    ``KeyboardInterrupt``（或进程被杀），登记这一步永远走不到，补偿清单是空的，
+    于是留下一个没有任何记录引用的孤儿 PNG。产物必须在调用渲染器**之前**登记。
+    """
+    _ensure_luts(client)
+    source = _upload(client, "qin581_render_interrupt.png", _image_bytes(), "image/png")
+    before_assets = _asset_count(client)
+    before_docs = _search_document_count()
+
+    def interrupting_render(_kind, _source, _lut, _strength, target: Path):
+        target.write_bytes(b"\x89PNG\r\n\x1a\n" + b"0" * 64)
+        assert target.is_file(), "前置条件：中断前产物必须真的写到盘上"
+        raise KeyboardInterrupt
+
+    with pytest.raises(KeyboardInterrupt):
+        asset_repo.create_lut_render(
+            source["id"], WARM, 1.0, None, render=interrupting_render
+        )
+
+    assert not _pending_render_files(source["id"]), "渲染器写出文件后被中断，必须由统一补偿清掉"
+    assert _asset_count(client) == before_assets, "中断不得写进资产记录"
+    assert _search_document_count() == before_docs, "检索索引里不得留下孤儿文档"
+
+
+def test_render_failure_cleanup_failure_is_aggregated(
+    client: TestClient, monkeypatch, caplog
+):
+    """阻断回归：普通渲染错误的早期清理失败，也要进同一份汇总。
+
+    旧实现在渲染异常分支里单独 ``unlink`` 且不看返回值：清理失败既没有日志也没有
+    note，运维看不到「盘上还留着半成品」。改走统一补偿后，失败项会带 stage/path
+    汇总进 ``LUT_RENDER_COMPENSATION_INCOMPLETE``，并挂到原异常上。
+    """
+    _ensure_luts(client)
+    source = _upload(client, "qin581_render_cleanup_fault.png", _image_bytes(), "image/png")
+
+    def failing_render(_kind, _source, _lut, _strength, target: Path):
+        target.write_bytes(b"\x89PNG\r\n\x1a\n" + b"0" * 64)
+        raise RuntimeError("injected renderer crash")
+
+    real_unlink = Path.unlink
+
+    def deny_lut_render_unlink(self, *args, **kwargs):
+        if "lut_render" in str(self).replace("\\", "/"):
+            raise PermissionError("injected unlink denial")
+        return real_unlink(self, *args, **kwargs)
+
+    with monkeypatch.context() as patched:
+        patched.setattr(Path, "unlink", deny_lut_render_unlink)
+        with caplog.at_level(logging.ERROR, logger=asset_repo.__name__):
+            with pytest.raises(CleanroomException) as excinfo:
+                asset_repo.create_lut_render(
+                    source["id"], WARM, 1.0, None, render=failing_render
+                )
+
+    assert excinfo.value.status_code == 503
+    assert excinfo.value.code == "LUT_RENDER_FAILED", "渲染错误码不得被补偿失败覆盖"
+    notes = "\n".join(getattr(excinfo.value, "__notes__", []))
+    assert "补偿未完成" in notes, notes
+    assert "PermissionError" in notes, notes
+    messages = " ".join(record.getMessage() for record in caplog.records)
+    assert "LUT_RENDER_COMPENSATION_INCOMPLETE" in messages, messages
+    assert "media" in messages and "lut_render" in messages, messages
+    assert _pending_render_files(source["id"]), "注入的清理失败必须让半成品留在盘上"
+
+
+def test_compensation_crash_keeps_original_error(client: TestClient, monkeypatch, caplog):
+    """重要回归：补偿自身崩溃也不得把原错误码换成补偿的异常。"""
+    _ensure_luts(client)
+    source = _upload(client, "qin581_comp_crash.png", _image_bytes(), "image/png")
+
+    def broken_upsert(_records):
+        raise CleanroomException(503, "ASSET_SEARCH_INDEX_FAILED", "检索索引写入失败")
+
+    def crashing_discard(_path):
+        raise RuntimeError("injected compensation crash")
+
+    from gw.api.routes_asset_registry import _render_lut_asset
+
+    with monkeypatch.context() as patched:
+        patched.setattr(asset_repo, "_upsert_asset_search_documents", broken_upsert)
+        patched.setattr(asset_repo, "_discard_rendered_file", crashing_discard)
+        with caplog.at_level(logging.ERROR, logger=asset_repo.__name__):
+            with pytest.raises(CleanroomException) as excinfo:
+                asset_repo.create_lut_render(
+                    source["id"], WARM, 1.0, None, render=_render_lut_asset
+                )
+
+    assert excinfo.value.status_code == 503
+    assert excinfo.value.code == "ASSET_SEARCH_INDEX_FAILED", "补偿崩溃不得覆盖原错误码"
+    notes = "\n".join(getattr(excinfo.value, "__notes__", []))
+    assert "compensation" in notes and "RuntimeError" in notes, notes
+    messages = " ".join(record.getMessage() for record in caplog.records)
+    assert "LUT_RENDER_COMPENSATION_CRASHED" in messages, messages
+
+
+def test_replay_after_id_reuse_keeps_concurrent_artifacts(
+    client: TestClient, monkeypatch
+):
+    """重要回归：失败 ID 被别的写入复用后，恢复必须走 guarded 入口。
+
+    补偿没清干净时日志里会留 asset_id，事后按它恢复。裸按 ID 删检索文档不安全：
+    同一个 ID 可能已经被另一笔 B 提交（并发同 revision / 序列复用），B 的记录与
+    媒体文件都还在，文档却被删掉。统一入口在锁内先查注册表，遇到已提交记录直接
+    跳过，因此重放对 B 无害。
+    """
+    _ensure_luts(client)
+    source = _upload(client, "qin581_replay.png", _image_bytes(), "image/png")
+    other_source = _upload(client, "qin581_replay_other.png", _image_bytes(), "image/png")
+    before_docs = _search_document_count()
+    real_save = storage.save
+    fired: list[bool] = []
+    attempts: list[list[str]] = []
+
+    def flaky_save(namespace: str, payload) -> None:
+        if namespace == asset_repo.NS_REGISTRY and not fired:
+            fired.append(True)
+            raise OSError("injected json commit failure")
+        return real_save(namespace, payload)
+
+    def broken_delete(asset_ids, *, strict=False):
+        attempts.append(list(asset_ids))
+        raise RuntimeError("injected search delete failure")
+
+    with monkeypatch.context() as patched:
+        patched.setattr(storage, "save", flaky_save)
+        patched.setattr(asset_repo, "delete_asset_search_documents", broken_delete)
+        with pytest.raises(OSError):
+            _render(client, source["id"], WARM, 1.0)
+
+    assert fired and attempts, "必须真的走到「JSON 失败 + 索引清理失败」的分支"
+    orphan_id = attempts[0][0]
+    assert _search_document_count() == before_docs + 1, "前置条件：此刻确有 1 条孤儿文档"
+
+    # B 用同一个派生 ID 在另一条源素材下真实提交（记录 + 文件 + 文档）。
+    other_dir = storage.data_root() / "media_output" / "lut_render" / other_source["id"]
+    other_dir.mkdir(parents=True, exist_ok=True)
+    other_path = other_dir / f"{orphan_id}_v001.png"
+    other_path.write_bytes(_image_bytes())
+    _commit_other_writer(
+        orphan_id,
+        f"media_output/lut_render/{other_source['id']}/{other_path.name}",
+        other_path.stat().st_size,
+    )
+
+    assert asset_repo.compensate_lut_render_outputs([], [orphan_id]) == []
+    assert _search_document_count() == before_docs + 1, "B 的检索文档不得被重放删掉"
+    assert other_path.is_file(), "B 的产物不得被重放删掉"
+    assert client.get(f"{BASE}/assets/{orphan_id}", headers=AUTH).status_code == 200
+    # 幂等：再放一次也不会动 B。
+    assert asset_repo.compensate_lut_render_outputs([], [orphan_id]) == []
+    assert _search_document_count() == before_docs + 1
