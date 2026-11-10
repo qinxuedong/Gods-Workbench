@@ -1,0 +1,20 @@
+{
+  "schema": "gw.cleanroom-admission-shard/v1",
+  "issue": 692,
+  "authorization_basis": "GitHub Issue #692 (QIN-592), 2026-11-10",
+  "files": [
+    "gw/asset_registry/repository.py",
+    "tests/contracts/assets/test_qin_592_version_visibility.py",
+    "tests/hygiene/fixtures/admissions/issue-692.json"
+  ],
+  "admitted_files": [],
+  "accepted_test_files": [
+    {
+      "path": "tests/contracts/assets/test_qin_592_version_visibility.py",
+      "classification": "curated_test_coverage",
+      "authorization_basis": "GitHub Issue #692 (QIN-592), 2026-11-10",
+      "admission": "accepted"
+    }
+  ],
+  "notes": "QIN-592 [安全] 图片版本子资源缺少归属校验：_media_file_in_state、update_image_version、delete_image_version、get_image_version_media 统一校验归属与可见性，跨主体统一返回 404 ASSET_NOT_FOUND。"
+}

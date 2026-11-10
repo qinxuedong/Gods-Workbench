@@ -2391,6 +2391,7 @@ def update_image_version(asset_id: str, version_id: str, label: Optional[str] = 
                          expected_version: Optional[int] = None,
                          hidden: Optional[bool] = None) -> Dict[str, Any]:
     def mutate(raw: Dict[str, Any]) -> Any:
+        _require(raw, asset_id)
         _cas(raw, expected_version)
         record = raw["image_versions"].get(asset_id, {}).get(version_id)
         if record is None:
@@ -2408,6 +2409,7 @@ def update_image_version(asset_id: str, version_id: str, label: Optional[str] = 
 
 def delete_image_version(asset_id: str, version_id: str) -> Dict[str, Any]:
     def mutate(raw: Dict[str, Any]) -> Any:
+        _require(raw, asset_id)
         versions = raw["image_versions"].get(asset_id, {})
         if version_id not in versions:
             raise CleanroomException(404, "VERSION_NOT_FOUND", "图片版本不存在")
@@ -2427,7 +2429,9 @@ def list_image_versions(asset_id: str) -> Dict[str, Any]:
 
 
 def get_image_version_media(asset_id: str, version_id: str) -> Dict[str, Any]:
-    record = state().read()["image_versions"].get(asset_id, {}).get(version_id)
+    raw = state().read()
+    _require(raw, asset_id)
+    record = raw["image_versions"].get(asset_id, {}).get(version_id)
     if record is None:
         raise CleanroomException(404, "VERSION_NOT_FOUND", "图片版本不存在")
     if not record.get("display_path") and not record.get("edit"):
@@ -3591,6 +3595,7 @@ def _media_file_in_state(raw: dict, asset_id: str, version_id: Optional[str] = N
     root_id = None
     asset_record = raw["assets"].get(asset_id, {})
     if version_id:
+        asset_record = _require(raw, asset_id)
         record = raw["image_versions"].get(asset_id, {}).get(version_id)
         if record is None:
             raise CleanroomException(404, "VERSION_NOT_FOUND", "图片版本不存在")
