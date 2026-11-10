@@ -2620,7 +2620,11 @@ def _delete_search_documents_with_retry(asset_ids: List[str], attempts: int = 2)
 def _note_compensation_failure(exc: BaseException, failures: List[Dict[str, Any]]) -> None:
     """把补偿失败挂到原异常上：原错误码与信息保留，另附可检索的失败明细。"""
     summary = "; ".join(f"{item['stage']}={item.get('error')}" for item in failures)
-    note = f"LUT 派生补偿未完成（原错误已保留，可重复清理补救）: {summary}"
+    note = (
+        "LUT 派生补偿未完成（原错误已保留）："
+        f"{summary}；补偿项可用 compensate_lut_render_outputs(written, asset_ids) 重放补完"
+        "（幂等，且会跳过已被复用的 ID）"
+    )
     add_note = getattr(exc, "add_note", None)
     if callable(add_note):
         add_note(note)
