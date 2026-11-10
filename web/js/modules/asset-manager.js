@@ -12918,27 +12918,94 @@ function activateAssetTreeTab(tab){
     assetTreeTab = next;
     render();
 }
-/* 【QIN-566】内嵌金库模式对外壳侧栏的树桥接：快照读取 + 入口激活，同源直调，无新增 API。
-   - snapshot()：外壳渲染「收集箱 + 挂载根目录」所需数据与当前选中入口 key；
-   - activate(key)：外壳点击入口时复用树上同一条点击分发逻辑（资产总览走看板激活）。 */
+/* 【QIN-566 / QIN-586】内嵌金库模式对外壳侧栏的树桥接：快照读取 + 入口激活，同源直调，无新增 API。
+   - snapshot()：外壳渲染「收集箱 + 挂载资源」所需数据与当前选中入口 key；
+   - 统一资源库树：同一物理来源只显示一次，显示后端聚合的递归素材计数（total_count）；
+   - activate(key)：外壳点击入口时复用树上同一条点击分发逻辑（资产总览走看板激活并清空筛选）。 */
+function assetTreeGlobalRootsList(){
+    const rawRoots = [];
+    const seenIds = new Set();
+    const addRoot = (id, name, count = null, availability = '') => {
+        const cleanId = String(id || '').trim();
+        const cleanName = String(name || '').trim();
+        const lowerId = cleanId.toLowerCase();
+        if(!cleanId || seenIds.has(cleanId) || lowerId === 'video' || lowerId === 'image' || cleanName === '视频库素材' || cleanName === '图片库素材') return;
+        seenIds.add(cleanId);
+        rawRoots.push({ id: cleanId, name: cleanName || cleanId, count, availability });
+    };
+
+    (registryFacets.roots || []).forEach(r => {
+        if(String(r.availability || '') !== 'removed'){
+            addRoot(r.id, r.name, r.count != null ? Number(r.count) : null, String(r.availability || ''));
+        }
+    });
+
+    (localLibraries || []).forEach(lib => {
+        addRoot(lib.id, lib.name, null, '');
+    });
+
+    allAssetBoards().forEach(board => {
+        (board.sources || []).forEach(s => {
+            addRoot(s.id, s.name, null, '');
+        });
+    });
+
+    return rawRoots;
+}
+function assetRackFolderTotalCount(rootId, relPath){
+    if(!registryRegisteredFoldersLoaded) return null;
+    const cleanPath = String(relPath || '').replace(/\\/g, '/').replace(/^\/+|\/+$/g, '');
+    const found = registryIndexedFolders.find(f => String(f.root_id || '') === String(rootId || '') && String(f.path || '').replace(/\\/g, '/').replace(/^\/+|\/+$/g, '') === cleanPath);
+    if(found && found.total_count != null) return Number(found.total_count);
+    if(found && found.count != null) return Number(found.count);
+    return 0;
+}
+function assetRackGlobalFolderTree(rootId){
+    const root = String(rootId || '');
+    const directories = [
+        ...registryIndexedFolders.filter(folder => String(folder.root_id || '') === root).map(folder => folder.path),
+        ...(assetRackRegisteredFoldersByRoot().get(root) || []),
+        ...assetRackDiskDirectories(root),
+    ];
+    const summary = registryIndexedFolders.filter(folder => String(folder.root_id || '') === root);
+    return customBoardFolderTree([], directories, summary);
+}
 function gwAssetTreeEntryKey(){
-    // 外壳侧栏选中口径：收集箱、用户资源库、按根目录筛选的资产总览，或未带筛选的资产总览。
-    const boardEntry = assetTreeUserBoards().find(board => board.id === activeTab);
-    if(boardEntry) return `mine:board:${boardEntry.id}`;
+    // 外壳侧栏选中口径：收集箱、用户资源库、按根目录/子目录筛选的资产总览，或未带筛选的资产总览。
     if(activeTab === 'inbox') return 'mine:inbox';
-    if(activeTab !== 'registry') return '';
-    if(String(registryNavFolder?.rootId || '') || String(registryNavFolder?.path || '')) return `mine:root:${registryNavFolder.rootId}`;
-    if(registryStatCategory) return '';
-    return assetTreeSelectedKey.startsWith('mine:') ? assetTreeSelectedKey : 'registry';
+    if(activeTab === 'registry'){
+        const rootId = String(registryNavFolder?.rootId || '');
+        const path = String(registryNavFolder?.path || '');
+        if(rootId){
+            return path && path !== '__root__' ? `mine:root:${rootId}::${path}` : `mine:root:${rootId}`;
+        }
+        if(registryStatCategory) return '';
+        return assetTreeSelectedKey.startsWith('mine:') ? assetTreeSelectedKey : 'registry';
+    }
+    const board = assetBoardById(activeTab);
+    if(board && !board.system){
+        const mappedRootId = String(board.rootId || (board.sources && board.sources.length === 1 ? board.sources[0].id : '') || '');
+        const currentFolder = String(boardFolderSelection[board.id] || '');
+        if(mappedRootId){
+            return currentFolder && currentFolder !== '__root__'
+                ? `mine:root:${mappedRootId}::${currentFolder}`
+                : `mine:root:${mappedRootId}`;
+        }
+        return `mine:board:${board.id}`;
+    }
+    return '';
 }
 function serializeAssetRackFolderNode(rootId, node, depth=1){
     const key = `mine:root:${rootId}::${node.path}`;
     const expanded = assetTreeExpanded.has(key);
+    const totalCount = assetRackFolderTotalCount(rootId, node.path);
+    const loading = totalCount === null;
     return {
         key,
         name: node.name,
         path: node.path,
-        count: Number(node.count || 0),
+        count: loading ? '' : totalCount,
+        loading,
         depth,
         hasChildren: Array.isArray(node.children) && node.children.length > 0,
         expanded,
@@ -12949,33 +13016,69 @@ function serializeAssetRackFolderNode(rootId, node, depth=1){
     };
 }
 function gwAssetTreeSnapshot(){
+    const userBoards = assetTreeUserBoards();
+    const globalRoots = assetTreeGlobalRootsList();
+
+    // 建立看板与物理根的映射：若看板绑定了单一物理根，则与该物理根合并为同一资源库节点，避免重复
+    const mappedBoardIds = new Set();
+    const rootBoardMap = new Map();
+    userBoards.forEach(board => {
+        const rootId = String(board.rootId || (board.sources && board.sources.length === 1 ? board.sources[0].id : '') || '');
+        if(rootId && globalRoots.some(r => r.id === rootId)){
+            mappedBoardIds.add(board.id);
+            if(!rootBoardMap.has(rootId)) rootBoardMap.set(rootId, board);
+        }
+    });
+
+    const independentBoards = userBoards.filter(b => !mappedBoardIds.has(b.id));
+
+    const roots = globalRoots.map(root => {
+        const key = `mine:root:${root.id}`;
+        const expanded = assetTreeExpanded.has(key);
+        const tree = expanded ? assetRackGlobalFolderTree(root.id) : [];
+        const matchingBoard = rootBoardMap.get(root.id);
+        const displayName = (matchingBoard && matchingBoard.name) ? matchingBoard.name : root.name;
+        const icon = (matchingBoard && matchingBoard.icon) ? matchingBoard.icon : 'hard-drive';
+
+        const facetRoot = (registryFacets.roots || []).find(r => String(r.id || '') === root.id);
+        const hasFacet = Boolean(facetRoot && facetRoot.count != null);
+        const count = hasFacet ? Number(facetRoot.count) : (root.count != null ? Number(root.count) : '');
+        const loading = !hasFacet && root.count == null;
+        const offline = String(root.availability || '').toLowerCase() === 'offline' || String(facetRoot?.availability || '').toLowerCase() === 'offline';
+
+        return {
+            id: String(root.id || ''),
+            name: displayName,
+            icon,
+            count,
+            loading,
+            offline,
+            key,
+            writable: assetOrganizeWritableRoot(root.id),
+            expanded,
+            hasChildren: true,
+            draggable: assetOrganizeWritableRoot(root.id),
+            children: expanded ? tree.map(node => serializeAssetRackFolderNode(root.id, node, 1)) : [],
+        };
+    });
+
     return {
         inbox_badge: assetInboxUnreadCount(),
-        boards: assetTreeUserBoards().map(board => ({id:board.id, name:board.name, icon:board.icon})),
-        roots: assetTreeRootsList().map(root => {
-            const key = `mine:root:${root.id}`;
-            const expanded = assetTreeExpanded.has(key);
-            const tree = expanded ? assetRackFolderTree(root.id) : [];
-            return {
-                id: String(root.id || ''),
-                name: root.name,
-                count: Number(root.count || 0),
-                key,
-                writable: assetOrganizeWritableRoot(root.id),
-                expanded,
-                hasChildren: true,
-                draggable: assetOrganizeWritableRoot(root.id),
-                children: expanded ? tree.map(node => serializeAssetRackFolderNode(root.id, node, 1)) : [],
-            };
-        }),
+        boards: independentBoards.map(board => ({id:board.id, name:board.name, icon:board.icon})),
+        roots,
         selected_key: gwAssetTreeEntryKey(), 
     };
 }
 function gwAssetTreeActivate(key){
-    // 外壳入口与树上节点同一条分发路径；「registry」= 资产总览（统计+全部资产）。
-    // 持久化在此单一收口：外壳驱动的每次切换（侧栏/页头/顶栏）都会落盘当前入口（AC5 刷新恢复）。
     const value = String(key || '');
-    if(value === 'registry'){ void activateAssetBoard('registry'); saveAssetTreeState(); return; }
+    if(!value || value === 'registry'){
+        clearAssetRackFolder();
+        registryNavFolder = {rootId:'', path:''};
+        registryRootId = '';
+        void activateAssetBoard('registry');
+        saveAssetTreeState();
+        return;
+    }
     selectAssetTreeNode(value);
     saveAssetTreeState();
 }
@@ -13049,6 +13152,11 @@ function selectAssetTreeNode(key){
         const separator = body.indexOf('::');
         const rootId = separator > 0 ? body.slice(0, separator) : body;
         const path = separator > 0 ? body.slice(separator + 2) : '';
+        const matchingBoard = assetTreeUserBoards().find(b => String(b.rootId || (b.sources && b.sources.length === 1 ? b.sources[0].id : '') || '') === rootId);
+        if(matchingBoard && !path){
+            void activateAssetBoard(matchingBoard.id);
+            return;
+        }
         selectAssetRackFolder(rootId, path === '__root__' ? '' : path);
         return;
     }

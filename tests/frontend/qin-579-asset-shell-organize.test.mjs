@@ -8,12 +8,11 @@ const controller = readFileSync(new URL('../../web/js/controllers/assets-control
 const manager = readFileSync(new URL('../../web/js/modules/asset-manager.js', import.meta.url), 'utf8');
 const manifest = readFileSync(new URL('./node-files.txt', import.meta.url), 'utf8');
 
-test('AC1: 侧栏结构清晰分层（收集箱、资源入口、挂载文件夹）与子目录树结构，排除系统预置占位根', () => {
-  // 分层语义：收集箱、资源入口、挂载文件夹
+test('AC1: 侧栏结构统一为资源库树（收集箱、挂载资源）与子目录树结构，排除系统预置占位根', () => {
+  // 分层语义：收集箱、挂载资源统一树（QIN-586 收口）
   assert.match(controller, /name:\s*'收集箱'/);
   assert.match(controller, /mine:inbox/);
-  assert.match(controller, /资源入口/);
-  assert.match(controller, /挂载文件夹/);
+  assert.match(controller, /挂载资源/);
   assert.match(controller, /data-asset-organize-group-new/);
   assert.match(controller, /asset-shell-twisty/);
   assert.match(controller, /data-asset-tree-toggle/);

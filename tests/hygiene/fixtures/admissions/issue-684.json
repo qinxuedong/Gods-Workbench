@@ -1,0 +1,24 @@
+{
+  "schema": "gw.cleanroom-admission-shard/v1",
+  "issue": 684,
+  "authorization_basis": "GitHub Issue #684 (QIN-586), 2026-11-10",
+  "files": [
+    "web/pages/assets.html",
+    "web/js/controllers/assets-controller.js",
+    "web/js/modules/asset-manager.js",
+    "tests/frontend/qin-579-asset-shell-organize.test.mjs",
+    "tests/frontend/qin-586-sidebar-unified-tree.test.mjs",
+    "tests/frontend/node-files.txt",
+    "tests/hygiene/fixtures/admissions/issue-684.json"
+  ],
+  "admitted_files": [],
+  "accepted_test_files": [
+    {
+      "path": "tests/frontend/qin-586-sidebar-unified-tree.test.mjs",
+      "classification": "curated_test_coverage",
+      "authorization_basis": "GitHub Issue #684 (QIN-586), 2026-11-10",
+      "admission": "accepted"
+    }
+  ],
+  "notes": "QIN-586 资产库侧栏统一为资源库树并显示递归素材计数：去掉「资源入口」「挂载文件夹」分段和子文件夹重复；统一为「资产总览 + 新建资源库 / 收集箱 / 挂载资源 → 多个资源库总文件夹 → 物理子文件夹」；同一物理来源只显示一次，无路径或多来源旧看板做显示兼容；素材总数采用后端聚合的 total_count 递归计数，空目录为 0，未返回为加载态，离线标记与历史数量分开；点击资产总览清除库/文件夹筛选回到首页；保持 #602/#667 整理能力；资源库行与子文件夹行视觉约为 0.8 倍且行距加大。"
+}
