@@ -1479,7 +1479,9 @@ def list_assets(limit: int, offset: int, query: Optional[str], kind: Optional[st
     elif ordering == "size_desc":
         items.sort(key=lambda a: a.get("size_bytes") if type(a.get("size_bytes")) in {int, float} else -1, reverse=True)
     total = len(items)
-    if dynamic_limit is not None and total > 1500:
+    # QIN-584：动态上限对所有库规模生效。旧逻辑只在 total > 1500 时收窄，
+    # 千级库配 limit=1500 等于一次下发全库，首屏被整库列表拖住。
+    if dynamic_limit is not None:
         limit = min(limit, dynamic_limit)
     page = items[offset:offset + limit]
     # 只装饰当前页：来源名与文件修改时间按页下发，避免为全库逐条 stat。

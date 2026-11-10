@@ -1,0 +1,29 @@
+{
+  "schema": "gw.cleanroom-admission-shard/v1",
+  "issue": 678,
+  "authorization_basis": "GitHub Issue #678 (QIN-584), 2026-11-10",
+  "files": [
+    "gw/asset_registry/repository.py",
+    "web/js/modules/asset-manager.js",
+    "tests/contracts/assets/test_qin_584_registry_viewport_paging.py",
+    "tests/frontend/qin-584-asset-first-page-viewport.test.mjs",
+    "tests/frontend/node-files.txt",
+    "tests/hygiene/fixtures/admissions/issue-678.json"
+  ],
+  "admitted_files": [],
+  "accepted_test_files": [
+    {
+      "path": "tests/contracts/assets/test_qin_584_registry_viewport_paging.py",
+      "classification": "curated_test_coverage",
+      "authorization_basis": "GitHub Issue #678 (QIN-584), 2026-11-10",
+      "admission": "accepted"
+    },
+    {
+      "path": "tests/frontend/qin-584-asset-first-page-viewport.test.mjs",
+      "classification": "curated_test_coverage",
+      "authorization_basis": "GitHub Issue #678 (QIN-584), 2026-11-10",
+      "admission": "accepted"
+    }
+  ],
+  "notes": "QIN-584 资产库首屏按视口分页：repository 的 dynamic_limit 收窄去掉 total > 1500 前置条件，任意规模库都按视口动态上限下发一页；前端 registryQueryString 让 limit 与 dynamic_limit 同源，loadRegistryBootstrap 改为列表页到手即画第一屏、结构补齐与分面/状态/预设/项目后置，结构查询仍只覆盖已加载页的素材 id。不改索引写入、不改挂载探测实现、不改 API 契约形状。"
+}
