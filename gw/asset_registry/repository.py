@@ -2024,35 +2024,6 @@ def _record_owner(record: Dict[str, Any]) -> Optional[str]:
     return str(owner) if owner else None
 
 
-def asset_hidden_from_request(record: Dict[str, Any]) -> bool:
-    """有主资产对当前请求主体是否不可见；无主资产不适用本判定。
-
-    读取类端点的收尾口径：不可见与不存在同码 404，避免通过状态码探测他人素材存在。
-    非请求上下文（后台预热、迁移、离线脚本）没有主体可比，此时不做归属裁决，
-    否则会把「没人问」误判成「谁都看不见」。
-    """
-    from gw.core.asset_visibility import current_asset_owner
-
-    if current_asset_owner.get() is None:
-        return False
-    return _record_owner(record) is not None and not _visible(record)
-
-
-def media_file_for_request(asset_id: str, version_id: Optional[str] = None) -> Optional[Path]:
-    """请求上下文的媒体解析：他人的有主素材按「没有文件」处理，与 404 同口径。
-
-    只多读一次注册表快照做归属裁决，路径解析仍走 ``media_file``——保持既有
-    打桩口径（多处测试以替换 ``media_file`` 注入媒体路径），不另起一套解析。
-    """
-    raw = state().read()
-    record = raw.get("assets", {}).get(str(asset_id or "").strip())
-    if record is not None and asset_hidden_from_request(record):
-        return None
-    # 保持与调用点原有的参数形状一致：无版本号时只传一个参数，
-    # 否则既有以单参 lambda 打桩 ``media_file`` 的测试会直接 TypeError。
-    return media_file(asset_id) if version_id is None else media_file(asset_id, version_id)
-
-
 def asset_is_unassigned(record: Dict[str, Any]) -> bool:
     """未归属 = 没有 project_id 投影，也没有任何 project_ids 关联。"""
     if record.get("project_id"):
