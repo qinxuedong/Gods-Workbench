@@ -1,0 +1,32 @@
+{
+  "tag": "after",
+  "steps": [
+    {
+      "step": "一次进页只发一条收集箱 GET",
+      "ok": true,
+      "count": 1
+    }
+  ],
+  "opened_ms": 1682,
+  "inbox_gets": [
+    {
+      "method": "GET",
+      "url": "/api/asset-inbox?limit=500",
+      "ms": 1679
+    }
+  ],
+  "inbox_posts": [],
+  "badge_samples": [
+    "收集箱",
+    "收集箱",
+    "收集箱",
+    "收集箱",
+    "收集箱",
+    "收集箱",
+    "收集箱",
+    "收集箱",
+    "收集箱",
+    "收集箱"
+  ],
+  "all_ok": true
+}

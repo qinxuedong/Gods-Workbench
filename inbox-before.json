@@ -1,0 +1,47 @@
+{
+  "tag": "before",
+  "steps": [
+    {
+      "step": "一次进页只发一条收集箱 GET",
+      "ok": false,
+      "count": 4
+    }
+  ],
+  "opened_ms": 1756,
+  "inbox_gets": [
+    {
+      "method": "GET",
+      "url": "/api/asset-inbox?limit=500",
+      "ms": 1753
+    },
+    {
+      "method": "GET",
+      "url": "/api/asset-inbox?limit=500",
+      "ms": 1754
+    },
+    {
+      "method": "GET",
+      "url": "/api/asset-inbox?limit=500",
+      "ms": 1765
+    },
+    {
+      "method": "GET",
+      "url": "/api/asset-inbox?limit=500",
+      "ms": 1769
+    }
+  ],
+  "inbox_posts": [],
+  "badge_samples": [
+    "收集箱",
+    "收集箱",
+    "收集箱 7",
+    "收集箱 7",
+    "收集箱 7",
+    "收集箱 7",
+    "收集箱 7",
+    "收集箱 7",
+    "收集箱 7",
+    "收集箱 7"
+  ],
+  "all_ok": false
+}

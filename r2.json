@@ -1,0 +1,1570 @@
+{
+  "tag": "r2",
+  "runs": [
+    {
+      "first_card_ms": 1387.6,
+      "js_at_first": 3011262,
+      "css_at_first": 840249,
+      "js_total": 3011262,
+      "css_total": 840249,
+      "req_total": 50,
+      "cards": 120,
+      "errors": [],
+      "entries": [
+        {
+          "url": "http://127.0.0.1:2097/static/css/base/hardware-tokens.css?ui=20261011-final",
+          "type": "css",
+          "transfer": 9862,
+          "decoded": 9562
+        },
+        {
+          "url": "http://127.0.0.1:2097/static/vendor/css/fonts.css?v=v0.0.1-alpha-2026",
+          "type": "css",
+          "transfer": 976,
+          "decoded": 676
+        },
+        {
+          "url": "http://127.0.0.1:2097/static/vendor/js/lucide.js?v=1.16.0",
+          "type": "js",
+          "transfer": 402194,
+          "decoded": 401894
+        },
+        {
+          "url": "http://127.0.0.1:2097/static/css/base/hardware-design-system.css?ui=20261011-final",
+          "type": "css",
+          "transfer": 48395,
+          "decoded": 48095
+        },
+        {
+          "url": "http://127.0.0.1:2097/static/css/base/tailwind-utilities.css?v=20261110-qin585",
+          "type": "css",
+          "transfer": 86085,
+          "decoded": 85785
+        },
+        {
+          "url": "http://127.0.0.1:2097/static/css/base/workspace-pages.css?v=20261029-qin478",
+          "type": "css",
+          "transfer": 75736,
+          "decoded": 75436
+        },
+        {
+          "url": "http://127.0.0.1:2097/static/js/core/degradation.js?v=v0.0.1-alpha-2026",
+          "type": "js",
+          "transfer": 9796,
+          "decoded": 9496
+        },
+        {
+          "url": "http://127.0.0.1:2097/static/js/core/hardware-telemetry.js?v=20261008-auth6",
+          "type": "js",
+          "transfer": 107698,
+          "decoded": 107398
+        },
+        {
+          "url": "http://127.0.0.1:2097/static/js/controllers/assets-controller.js",
+          "type": "js",
+          "transfer": 50132,
+          "decoded": 49832
+        },
+        {
+          "url": "http://127.0.0.1:2097/static/js/core/workbench-shell.js?v=20261103-qin526-recycler-qa",
+          "type": "js",
+          "transfer": 47516,
+          "decoded": 47216
+        },
+        {
+          "url": "http://127.0.0.1:2097/static/css/base/hardware-buttons.css?ui=20261012-button-correction",
+          "type": "css",
+          "transfer": 26082,
+          "decoded": 25782
+        },
+        {
+          "url": "http://127.0.0.1:2097/static/css/base/side-bus-unified.css",
+          "type": "css",
+          "transfer": 6045,
+          "decoded": 5745
+        },
+        {
+          "url": "http://127.0.0.1:2097/static/js/modules/shortcuts.js",
+          "type": "js",
+          "transfer": 12216,
+          "decoded": 11916
+        },
+        {
+          "url": "http://127.0.0.1:2097/static/css/components/omnibar.css",
+          "type": "css",
+          "transfer": 8975,
+          "decoded": 8675
+        },
+        {
+          "url": "http://127.0.0.1:2097/static/js/core/omnibar.js",
+          "type": "js",
+          "transfer": 28386,
+          "decoded": 28086
+        },
+        {
+          "url": "http://127.0.0.1:2097/static/vendor/css/fonts.css",
+          "type": "css",
+          "transfer": 976,
+          "decoded": 676
+        },
+        {
+          "url": "http://127.0.0.1:2097/static/css/pages/asset-hardware-theme.css",
+          "type": "css",
+          "transfer": 5195,
+          "decoded": 4895
+        },
+        {
+          "url": "http://127.0.0.1:2097/static/css/pages/asset-manager.css?v=v0.0.1-alpha-2026&m3=prompt-source-20260823&sf=20260828-registry-zoom&ui=20261011-final&sb=20261105",
+          "type": "css",
+          "transfer": 378903,
+          "decoded": 378603
+        },
+        {
+          "url": "http://127.0.0.1:2097/static/css/pages/asset-review.css?v=v0.0.1-alpha-2026&m3=modal-host-a&ui=20261011-final",
+          "type": "css",
+          "transfer": 23345,
+          "decoded": 23045
+        },
+        {
+          "url": "http://127.0.0.1:2097/static/css/pages/asset-manager-coverflow.css?v=v0.0.1-alpha-2026&m3=coverflow",
+          "type": "css",
+          "transfer": 10772,
+          "decoded": 10472
+        },
+        {
+          "url": "http://127.0.0.1:2097/static/js/core/floating-dismissal.js?v=v0.0.1-alpha-2026&m3=floating-dismissal",
+          "type": "js",
+          "transfer": 36611,
+          "decoded": 36311
+        },
+        {
+          "url": "http://127.0.0.1:2097/static/js/core/theme.js?v=v0.0.1-alpha-2026",
+          "type": "js",
+          "transfer": 13135,
+          "decoded": 12835
+        },
+        {
+          "url": "http://127.0.0.1:2097/static/vendor/js/lucide.js?v=v0.0.1-alpha-2026",
+          "type": "js",
+          "transfer": 402194,
+          "decoded": 401894
+        },
+        {
+          "url": "http://127.0.0.1:2097/static/css/pages/context-hotkey-feedback.css?v=v0.0.1-alpha-2026&pb=phase-b",
+          "type": "css",
+          "transfer": 1129,
+          "decoded": 829
+        },
+        {
+          "url": "http://127.0.0.1:2097/static/css/pages/context-tree-animations.css?v=v0.0.1-alpha-2026&pb=phase-b",
+          "type": "css",
+          "transfer": 6609,
+          "decoded": 6309
+        },
+        {
+          "url": "http://127.0.0.1:2097/static/css/pages/asset-vault.css?v=20260916&ui=20261011-final",
+          "type": "css",
+          "transfer": 125164,
+          "decoded": 124864
+        },
+        {
+          "url": "http://127.0.0.1:2097/static/css/pages/directory-settings.css?v=20261007&ui=20261011-final",
+          "type": "css",
+          "transfer": 21786,
+          "decoded": 21486
+        },
+        {
+          "url": "http://127.0.0.1:2097/static/js/core/context-prefetch.js?v=v0.0.1-alpha-2026&pc=phase-c",
+          "type": "js",
+          "transfer": 9769,
+          "decoded": 9469
+        },
+        {
+          "url": "http://127.0.0.1:2097/static/js/core/context-hotkeys.js?v=v0.0.1-alpha-2026&pb=phase-b",
+          "type": "js",
+          "transfer": 4048,
+          "decoded": 3748
+        },
+        {
+          "url": "http://127.0.0.1:2097/static/js/modules/asset-manager/coverflow.js?v=v0.0.1-alpha-2026&m3=coverflow",
+          "type": "js",
+          "transfer": 33251,
+          "decoded": 32951
+        },
+        {
+          "url": "http://127.0.0.1:2097/static/js/modules/asset-manager.js?v=v0.0.1-alpha-2026&m1=prompt-source-20260823&z=20260828-registry-zoom&ui=20261011-final&sb=20261105",
+          "type": "js",
+          "transfer": 1641288,
+          "decoded": 1640988
+        },
+        {
+          "url": "http://127.0.0.1:2097/static/js/modules/asset-auth/api.js?v=v0.0.1-alpha-2026&m3=team-delete-a",
+          "type": "js",
+          "transfer": 7453,
+          "decoded": 7153
+        },
+        {
+          "url": "http://127.0.0.1:2097/static/js/modules/asset-review/api.js?v=v0.0.1-alpha-2026&m3=f1b",
+          "type": "js",
+          "transfer": 4772,
+          "decoded": 4472
+        },
+        {
+          "url": "http://127.0.0.1:2097/static/js/modules/asset-review.js?v=v0.0.1-alpha-2026&m1=20260810f&m3=auth-sync-c&ui=20261011-final",
+          "type": "js",
+          "transfer": 70546,
+          "decoded": 70246
+        },
+        {
+          "url": "http://127.0.0.1:2097/static/css/pages/settings-workbench.css?v=20261026-qin411",
+          "type": "css",
+          "transfer": 4214,
+          "decoded": 3914
+        },
+        {
+          "url": "http://127.0.0.1:2097/static/js/modules/asset-review/http.js",
+          "type": "js",
+          "transfer": 1340,
+          "decoded": 1040
+        },
+        {
+          "url": "http://127.0.0.1:2097/static/js/modules/asset-auth/http.js",
+          "type": "js",
+          "transfer": 1419,
+          "decoded": 1119
+        },
+        {
+          "url": "http://127.0.0.1:2097/static/js/modules/asset-manager/http.js",
+          "type": "js",
+          "transfer": 1416,
+          "decoded": 1116
+        },
+        {
+          "url": "http://127.0.0.1:2097/static/js/modules/asset-manager/api.js",
+          "type": "js",
+          "transfer": 43676,
+          "decoded": 43376
+        },
+        {
+          "url": "http://127.0.0.1:2097/static/js/modules/asset-auth/api.js",
+          "type": "js",
+          "transfer": 7453,
+          "decoded": 7153
+        },
+        {
+          "url": "http://127.0.0.1:2097/static/js/modules/asset-manager/classification.js",
+          "type": "js",
+          "transfer": 6471,
+          "decoded": 6171
+        },
+        {
+          "url": "http://127.0.0.1:2097/static/js/modules/asset-manager/formatters.js",
+          "type": "js",
+          "transfer": 1443,
+          "decoded": 1143
+        },
+        {
+          "url": "http://127.0.0.1:2097/static/js/modules/asset-manager/storage.js",
+          "type": "js",
+          "transfer": 1418,
+          "decoded": 1118
+        },
+        {
+          "url": "http://127.0.0.1:2097/static/js/modules/asset-manager/workflow-assets.js",
+          "type": "js",
+          "transfer": 3380,
+          "decoded": 3080
+        },
+        {
+          "url": "http://127.0.0.1:2097/static/js/modules/asset-manager/path-utils.js",
+          "type": "js",
+          "transfer": 1045,
+          "decoded": 745
+        },
+        {
+          "url": "http://127.0.0.1:2097/static/js/modules/asset-collect-panel.js",
+          "type": "js",
+          "transfer": 21554,
+          "decoded": 21254
+        },
+        {
+          "url": "http://127.0.0.1:2097/static/js/modules/asset-manager/provenance.js",
+          "type": "js",
+          "transfer": 6583,
+          "decoded": 6283
+        },
+        {
+          "url": "http://127.0.0.1:2097/static/js/modules/asset-manager/lut-preview.js",
+          "type": "js",
+          "transfer": 18438,
+          "decoded": 18138
+        },
+        {
+          "url": "http://127.0.0.1:2097/static/js/modules/asset-manager/collect-provenance.js",
+          "type": "js",
+          "transfer": 6506,
+          "decoded": 6206
+        },
+        {
+          "url": "http://127.0.0.1:2097/static/js/core/http-transport.js",
+          "type": "js",
+          "transfer": 8115,
+          "decoded": 7815
+        }
+      ]
+    },
+    {
+      "first_card_ms": 1315.1,
+      "js_at_first": 3011262,
+      "css_at_first": 840249,
+      "js_total": 3011262,
+      "css_total": 840249,
+      "req_total": 50,
+      "cards": 120,
+      "errors": [],
+      "entries": [
+        {
+          "url": "http://127.0.0.1:2097/static/css/base/hardware-tokens.css?ui=20261011-final",
+          "type": "css",
+          "transfer": 9862,
+          "decoded": 9562
+        },
+        {
+          "url": "http://127.0.0.1:2097/static/vendor/css/fonts.css?v=v0.0.1-alpha-2026",
+          "type": "css",
+          "transfer": 976,
+          "decoded": 676
+        },
+        {
+          "url": "http://127.0.0.1:2097/static/css/base/hardware-design-system.css?ui=20261011-final",
+          "type": "css",
+          "transfer": 48395,
+          "decoded": 48095
+        },
+        {
+          "url": "http://127.0.0.1:2097/static/css/base/tailwind-utilities.css?v=20261110-qin585",
+          "type": "css",
+          "transfer": 86085,
+          "decoded": 85785
+        },
+        {
+          "url": "http://127.0.0.1:2097/static/vendor/js/lucide.js?v=1.16.0",
+          "type": "js",
+          "transfer": 402194,
+          "decoded": 401894
+        },
+        {
+          "url": "http://127.0.0.1:2097/static/css/base/workspace-pages.css?v=20261029-qin478",
+          "type": "css",
+          "transfer": 75736,
+          "decoded": 75436
+        },
+        {
+          "url": "http://127.0.0.1:2097/static/js/core/degradation.js?v=v0.0.1-alpha-2026",
+          "type": "js",
+          "transfer": 9796,
+          "decoded": 9496
+        },
+        {
+          "url": "http://127.0.0.1:2097/static/js/core/hardware-telemetry.js?v=20261008-auth6",
+          "type": "js",
+          "transfer": 107698,
+          "decoded": 107398
+        },
+        {
+          "url": "http://127.0.0.1:2097/static/js/controllers/assets-controller.js",
+          "type": "js",
+          "transfer": 50132,
+          "decoded": 49832
+        },
+        {
+          "url": "http://127.0.0.1:2097/static/js/core/workbench-shell.js?v=20261103-qin526-recycler-qa",
+          "type": "js",
+          "transfer": 47516,
+          "decoded": 47216
+        },
+        {
+          "url": "http://127.0.0.1:2097/static/css/base/hardware-buttons.css?ui=20261012-button-correction",
+          "type": "css",
+          "transfer": 26082,
+          "decoded": 25782
+        },
+        {
+          "url": "http://127.0.0.1:2097/static/css/base/side-bus-unified.css",
+          "type": "css",
+          "transfer": 6045,
+          "decoded": 5745
+        },
+        {
+          "url": "http://127.0.0.1:2097/static/js/modules/shortcuts.js",
+          "type": "js",
+          "transfer": 12216,
+          "decoded": 11916
+        },
+        {
+          "url": "http://127.0.0.1:2097/static/css/components/omnibar.css",
+          "type": "css",
+          "transfer": 8975,
+          "decoded": 8675
+        },
+        {
+          "url": "http://127.0.0.1:2097/static/js/core/omnibar.js",
+          "type": "js",
+          "transfer": 28386,
+          "decoded": 28086
+        },
+        {
+          "url": "http://127.0.0.1:2097/static/vendor/css/fonts.css",
+          "type": "css",
+          "transfer": 976,
+          "decoded": 676
+        },
+        {
+          "url": "http://127.0.0.1:2097/static/css/pages/asset-hardware-theme.css",
+          "type": "css",
+          "transfer": 5195,
+          "decoded": 4895
+        },
+        {
+          "url": "http://127.0.0.1:2097/static/css/pages/asset-manager.css?v=v0.0.1-alpha-2026&m3=prompt-source-20260823&sf=20260828-registry-zoom&ui=20261011-final&sb=20261105",
+          "type": "css",
+          "transfer": 378903,
+          "decoded": 378603
+        },
+        {
+          "url": "http://127.0.0.1:2097/static/js/core/theme.js?v=v0.0.1-alpha-2026",
+          "type": "js",
+          "transfer": 13135,
+          "decoded": 12835
+        },
+        {
+          "url": "http://127.0.0.1:2097/static/js/core/floating-dismissal.js?v=v0.0.1-alpha-2026&m3=floating-dismissal",
+          "type": "js",
+          "transfer": 36611,
+          "decoded": 36311
+        },
+        {
+          "url": "http://127.0.0.1:2097/static/vendor/js/lucide.js?v=v0.0.1-alpha-2026",
+          "type": "js",
+          "transfer": 402194,
+          "decoded": 401894
+        },
+        {
+          "url": "http://127.0.0.1:2097/static/css/pages/asset-review.css?v=v0.0.1-alpha-2026&m3=modal-host-a&ui=20261011-final",
+          "type": "css",
+          "transfer": 23345,
+          "decoded": 23045
+        },
+        {
+          "url": "http://127.0.0.1:2097/static/css/pages/asset-manager-coverflow.css?v=v0.0.1-alpha-2026&m3=coverflow",
+          "type": "css",
+          "transfer": 10772,
+          "decoded": 10472
+        },
+        {
+          "url": "http://127.0.0.1:2097/static/css/pages/context-hotkey-feedback.css?v=v0.0.1-alpha-2026&pb=phase-b",
+          "type": "css",
+          "transfer": 1129,
+          "decoded": 829
+        },
+        {
+          "url": "http://127.0.0.1:2097/static/css/pages/context-tree-animations.css?v=v0.0.1-alpha-2026&pb=phase-b",
+          "type": "css",
+          "transfer": 6609,
+          "decoded": 6309
+        },
+        {
+          "url": "http://127.0.0.1:2097/static/css/pages/asset-vault.css?v=20260916&ui=20261011-final",
+          "type": "css",
+          "transfer": 125164,
+          "decoded": 124864
+        },
+        {
+          "url": "http://127.0.0.1:2097/static/css/pages/directory-settings.css?v=20261007&ui=20261011-final",
+          "type": "css",
+          "transfer": 21786,
+          "decoded": 21486
+        },
+        {
+          "url": "http://127.0.0.1:2097/static/js/core/context-prefetch.js?v=v0.0.1-alpha-2026&pc=phase-c",
+          "type": "js",
+          "transfer": 9769,
+          "decoded": 9469
+        },
+        {
+          "url": "http://127.0.0.1:2097/static/js/core/context-hotkeys.js?v=v0.0.1-alpha-2026&pb=phase-b",
+          "type": "js",
+          "transfer": 4048,
+          "decoded": 3748
+        },
+        {
+          "url": "http://127.0.0.1:2097/static/js/modules/asset-manager/coverflow.js?v=v0.0.1-alpha-2026&m3=coverflow",
+          "type": "js",
+          "transfer": 33251,
+          "decoded": 32951
+        },
+        {
+          "url": "http://127.0.0.1:2097/static/js/modules/asset-manager.js?v=v0.0.1-alpha-2026&m1=prompt-source-20260823&z=20260828-registry-zoom&ui=20261011-final&sb=20261105",
+          "type": "js",
+          "transfer": 1641288,
+          "decoded": 1640988
+        },
+        {
+          "url": "http://127.0.0.1:2097/static/js/modules/asset-auth/api.js?v=v0.0.1-alpha-2026&m3=team-delete-a",
+          "type": "js",
+          "transfer": 7453,
+          "decoded": 7153
+        },
+        {
+          "url": "http://127.0.0.1:2097/static/js/modules/asset-review/api.js?v=v0.0.1-alpha-2026&m3=f1b",
+          "type": "js",
+          "transfer": 4772,
+          "decoded": 4472
+        },
+        {
+          "url": "http://127.0.0.1:2097/static/js/modules/asset-review.js?v=v0.0.1-alpha-2026&m1=20260810f&m3=auth-sync-c&ui=20261011-final",
+          "type": "js",
+          "transfer": 70546,
+          "decoded": 70246
+        },
+        {
+          "url": "http://127.0.0.1:2097/static/css/pages/settings-workbench.css?v=20261026-qin411",
+          "type": "css",
+          "transfer": 4214,
+          "decoded": 3914
+        },
+        {
+          "url": "http://127.0.0.1:2097/static/js/modules/asset-review/http.js",
+          "type": "js",
+          "transfer": 1340,
+          "decoded": 1040
+        },
+        {
+          "url": "http://127.0.0.1:2097/static/js/modules/asset-auth/http.js",
+          "type": "js",
+          "transfer": 1419,
+          "decoded": 1119
+        },
+        {
+          "url": "http://127.0.0.1:2097/static/js/modules/asset-manager/api.js",
+          "type": "js",
+          "transfer": 43676,
+          "decoded": 43376
+        },
+        {
+          "url": "http://127.0.0.1:2097/static/js/modules/asset-manager/http.js",
+          "type": "js",
+          "transfer": 1416,
+          "decoded": 1116
+        },
+        {
+          "url": "http://127.0.0.1:2097/static/js/modules/asset-auth/api.js",
+          "type": "js",
+          "transfer": 7453,
+          "decoded": 7153
+        },
+        {
+          "url": "http://127.0.0.1:2097/static/js/modules/asset-manager/classification.js",
+          "type": "js",
+          "transfer": 6471,
+          "decoded": 6171
+        },
+        {
+          "url": "http://127.0.0.1:2097/static/js/modules/asset-manager/storage.js",
+          "type": "js",
+          "transfer": 1418,
+          "decoded": 1118
+        },
+        {
+          "url": "http://127.0.0.1:2097/static/js/modules/asset-manager/path-utils.js",
+          "type": "js",
+          "transfer": 1045,
+          "decoded": 745
+        },
+        {
+          "url": "http://127.0.0.1:2097/static/js/modules/asset-manager/formatters.js",
+          "type": "js",
+          "transfer": 1443,
+          "decoded": 1143
+        },
+        {
+          "url": "http://127.0.0.1:2097/static/js/modules/asset-manager/workflow-assets.js",
+          "type": "js",
+          "transfer": 3380,
+          "decoded": 3080
+        },
+        {
+          "url": "http://127.0.0.1:2097/static/js/modules/asset-collect-panel.js",
+          "type": "js",
+          "transfer": 21554,
+          "decoded": 21254
+        },
+        {
+          "url": "http://127.0.0.1:2097/static/js/modules/asset-manager/collect-provenance.js",
+          "type": "js",
+          "transfer": 6506,
+          "decoded": 6206
+        },
+        {
+          "url": "http://127.0.0.1:2097/static/js/modules/asset-manager/provenance.js",
+          "type": "js",
+          "transfer": 6583,
+          "decoded": 6283
+        },
+        {
+          "url": "http://127.0.0.1:2097/static/js/modules/asset-manager/lut-preview.js",
+          "type": "js",
+          "transfer": 18438,
+          "decoded": 18138
+        },
+        {
+          "url": "http://127.0.0.1:2097/static/js/core/http-transport.js",
+          "type": "js",
+          "transfer": 8115,
+          "decoded": 7815
+        }
+      ]
+    },
+    {
+      "first_card_ms": 1480.6,
+      "js_at_first": 3011262,
+      "css_at_first": 840249,
+      "js_total": 3011262,
+      "css_total": 840249,
+      "req_total": 50,
+      "cards": 120,
+      "errors": [],
+      "entries": [
+        {
+          "url": "http://127.0.0.1:2097/static/css/base/hardware-tokens.css?ui=20261011-final",
+          "type": "css",
+          "transfer": 9862,
+          "decoded": 9562
+        },
+        {
+          "url": "http://127.0.0.1:2097/static/vendor/css/fonts.css?v=v0.0.1-alpha-2026",
+          "type": "css",
+          "transfer": 976,
+          "decoded": 676
+        },
+        {
+          "url": "http://127.0.0.1:2097/static/css/base/hardware-design-system.css?ui=20261011-final",
+          "type": "css",
+          "transfer": 48395,
+          "decoded": 48095
+        },
+        {
+          "url": "http://127.0.0.1:2097/static/css/base/tailwind-utilities.css?v=20261110-qin585",
+          "type": "css",
+          "transfer": 86085,
+          "decoded": 85785
+        },
+        {
+          "url": "http://127.0.0.1:2097/static/vendor/js/lucide.js?v=1.16.0",
+          "type": "js",
+          "transfer": 402194,
+          "decoded": 401894
+        },
+        {
+          "url": "http://127.0.0.1:2097/static/css/base/workspace-pages.css?v=20261029-qin478",
+          "type": "css",
+          "transfer": 75736,
+          "decoded": 75436
+        },
+        {
+          "url": "http://127.0.0.1:2097/static/js/core/degradation.js?v=v0.0.1-alpha-2026",
+          "type": "js",
+          "transfer": 9796,
+          "decoded": 9496
+        },
+        {
+          "url": "http://127.0.0.1:2097/static/js/core/hardware-telemetry.js?v=20261008-auth6",
+          "type": "js",
+          "transfer": 107698,
+          "decoded": 107398
+        },
+        {
+          "url": "http://127.0.0.1:2097/static/js/controllers/assets-controller.js",
+          "type": "js",
+          "transfer": 50132,
+          "decoded": 49832
+        },
+        {
+          "url": "http://127.0.0.1:2097/static/js/core/workbench-shell.js?v=20261103-qin526-recycler-qa",
+          "type": "js",
+          "transfer": 47516,
+          "decoded": 47216
+        },
+        {
+          "url": "http://127.0.0.1:2097/static/css/base/hardware-buttons.css?ui=20261012-button-correction",
+          "type": "css",
+          "transfer": 26082,
+          "decoded": 25782
+        },
+        {
+          "url": "http://127.0.0.1:2097/static/css/base/side-bus-unified.css",
+          "type": "css",
+          "transfer": 6045,
+          "decoded": 5745
+        },
+        {
+          "url": "http://127.0.0.1:2097/static/js/modules/shortcuts.js",
+          "type": "js",
+          "transfer": 12216,
+          "decoded": 11916
+        },
+        {
+          "url": "http://127.0.0.1:2097/static/css/components/omnibar.css",
+          "type": "css",
+          "transfer": 8975,
+          "decoded": 8675
+        },
+        {
+          "url": "http://127.0.0.1:2097/static/js/core/omnibar.js",
+          "type": "js",
+          "transfer": 28386,
+          "decoded": 28086
+        },
+        {
+          "url": "http://127.0.0.1:2097/static/vendor/css/fonts.css",
+          "type": "css",
+          "transfer": 976,
+          "decoded": 676
+        },
+        {
+          "url": "http://127.0.0.1:2097/static/css/pages/asset-manager.css?v=v0.0.1-alpha-2026&m3=prompt-source-20260823&sf=20260828-registry-zoom&ui=20261011-final&sb=20261105",
+          "type": "css",
+          "transfer": 378903,
+          "decoded": 378603
+        },
+        {
+          "url": "http://127.0.0.1:2097/static/css/pages/asset-hardware-theme.css",
+          "type": "css",
+          "transfer": 5195,
+          "decoded": 4895
+        },
+        {
+          "url": "http://127.0.0.1:2097/static/css/pages/asset-manager-coverflow.css?v=v0.0.1-alpha-2026&m3=coverflow",
+          "type": "css",
+          "transfer": 10772,
+          "decoded": 10472
+        },
+        {
+          "url": "http://127.0.0.1:2097/static/css/pages/asset-review.css?v=v0.0.1-alpha-2026&m3=modal-host-a&ui=20261011-final",
+          "type": "css",
+          "transfer": 23345,
+          "decoded": 23045
+        },
+        {
+          "url": "http://127.0.0.1:2097/static/js/core/theme.js?v=v0.0.1-alpha-2026",
+          "type": "js",
+          "transfer": 13135,
+          "decoded": 12835
+        },
+        {
+          "url": "http://127.0.0.1:2097/static/js/core/floating-dismissal.js?v=v0.0.1-alpha-2026&m3=floating-dismissal",
+          "type": "js",
+          "transfer": 36611,
+          "decoded": 36311
+        },
+        {
+          "url": "http://127.0.0.1:2097/static/vendor/js/lucide.js?v=v0.0.1-alpha-2026",
+          "type": "js",
+          "transfer": 402194,
+          "decoded": 401894
+        },
+        {
+          "url": "http://127.0.0.1:2097/static/css/pages/context-tree-animations.css?v=v0.0.1-alpha-2026&pb=phase-b",
+          "type": "css",
+          "transfer": 6609,
+          "decoded": 6309
+        },
+        {
+          "url": "http://127.0.0.1:2097/static/css/pages/context-hotkey-feedback.css?v=v0.0.1-alpha-2026&pb=phase-b",
+          "type": "css",
+          "transfer": 1129,
+          "decoded": 829
+        },
+        {
+          "url": "http://127.0.0.1:2097/static/css/pages/directory-settings.css?v=20261007&ui=20261011-final",
+          "type": "css",
+          "transfer": 21786,
+          "decoded": 21486
+        },
+        {
+          "url": "http://127.0.0.1:2097/static/css/pages/asset-vault.css?v=20260916&ui=20261011-final",
+          "type": "css",
+          "transfer": 125164,
+          "decoded": 124864
+        },
+        {
+          "url": "http://127.0.0.1:2097/static/js/core/context-hotkeys.js?v=v0.0.1-alpha-2026&pb=phase-b",
+          "type": "js",
+          "transfer": 4048,
+          "decoded": 3748
+        },
+        {
+          "url": "http://127.0.0.1:2097/static/js/modules/asset-manager/coverflow.js?v=v0.0.1-alpha-2026&m3=coverflow",
+          "type": "js",
+          "transfer": 33251,
+          "decoded": 32951
+        },
+        {
+          "url": "http://127.0.0.1:2097/static/js/core/context-prefetch.js?v=v0.0.1-alpha-2026&pc=phase-c",
+          "type": "js",
+          "transfer": 9769,
+          "decoded": 9469
+        },
+        {
+          "url": "http://127.0.0.1:2097/static/js/modules/asset-manager.js?v=v0.0.1-alpha-2026&m1=prompt-source-20260823&z=20260828-registry-zoom&ui=20261011-final&sb=20261105",
+          "type": "js",
+          "transfer": 1641288,
+          "decoded": 1640988
+        },
+        {
+          "url": "http://127.0.0.1:2097/static/js/modules/asset-auth/api.js?v=v0.0.1-alpha-2026&m3=team-delete-a",
+          "type": "js",
+          "transfer": 7453,
+          "decoded": 7153
+        },
+        {
+          "url": "http://127.0.0.1:2097/static/js/modules/asset-review/api.js?v=v0.0.1-alpha-2026&m3=f1b",
+          "type": "js",
+          "transfer": 4772,
+          "decoded": 4472
+        },
+        {
+          "url": "http://127.0.0.1:2097/static/js/modules/asset-review.js?v=v0.0.1-alpha-2026&m1=20260810f&m3=auth-sync-c&ui=20261011-final",
+          "type": "js",
+          "transfer": 70546,
+          "decoded": 70246
+        },
+        {
+          "url": "http://127.0.0.1:2097/static/css/pages/settings-workbench.css?v=20261026-qin411",
+          "type": "css",
+          "transfer": 4214,
+          "decoded": 3914
+        },
+        {
+          "url": "http://127.0.0.1:2097/static/js/modules/asset-review/http.js",
+          "type": "js",
+          "transfer": 1340,
+          "decoded": 1040
+        },
+        {
+          "url": "http://127.0.0.1:2097/static/js/modules/asset-auth/http.js",
+          "type": "js",
+          "transfer": 1419,
+          "decoded": 1119
+        },
+        {
+          "url": "http://127.0.0.1:2097/static/js/core/http-transport.js",
+          "type": "js",
+          "transfer": 8115,
+          "decoded": 7815
+        },
+        {
+          "url": "http://127.0.0.1:2097/static/js/modules/asset-manager/api.js",
+          "type": "js",
+          "transfer": 43676,
+          "decoded": 43376
+        },
+        {
+          "url": "http://127.0.0.1:2097/static/js/modules/asset-manager/http.js",
+          "type": "js",
+          "transfer": 1416,
+          "decoded": 1116
+        },
+        {
+          "url": "http://127.0.0.1:2097/static/js/modules/asset-auth/api.js",
+          "type": "js",
+          "transfer": 7453,
+          "decoded": 7153
+        },
+        {
+          "url": "http://127.0.0.1:2097/static/js/modules/asset-manager/classification.js",
+          "type": "js",
+          "transfer": 6471,
+          "decoded": 6171
+        },
+        {
+          "url": "http://127.0.0.1:2097/static/js/modules/asset-manager/storage.js",
+          "type": "js",
+          "transfer": 1418,
+          "decoded": 1118
+        },
+        {
+          "url": "http://127.0.0.1:2097/static/js/modules/asset-manager/formatters.js",
+          "type": "js",
+          "transfer": 1443,
+          "decoded": 1143
+        },
+        {
+          "url": "http://127.0.0.1:2097/static/js/modules/asset-manager/path-utils.js",
+          "type": "js",
+          "transfer": 1045,
+          "decoded": 745
+        },
+        {
+          "url": "http://127.0.0.1:2097/static/js/modules/asset-manager/workflow-assets.js",
+          "type": "js",
+          "transfer": 3380,
+          "decoded": 3080
+        },
+        {
+          "url": "http://127.0.0.1:2097/static/js/modules/asset-collect-panel.js",
+          "type": "js",
+          "transfer": 21554,
+          "decoded": 21254
+        },
+        {
+          "url": "http://127.0.0.1:2097/static/js/modules/asset-manager/provenance.js",
+          "type": "js",
+          "transfer": 6583,
+          "decoded": 6283
+        },
+        {
+          "url": "http://127.0.0.1:2097/static/js/modules/asset-manager/collect-provenance.js",
+          "type": "js",
+          "transfer": 6506,
+          "decoded": 6206
+        },
+        {
+          "url": "http://127.0.0.1:2097/static/js/modules/asset-manager/lut-preview.js",
+          "type": "js",
+          "transfer": 18438,
+          "decoded": 18138
+        }
+      ]
+    },
+    {
+      "first_card_ms": 1383.2,
+      "js_at_first": 3011262,
+      "css_at_first": 840249,
+      "js_total": 3011262,
+      "css_total": 840249,
+      "req_total": 50,
+      "cards": 120,
+      "errors": [],
+      "entries": [
+        {
+          "url": "http://127.0.0.1:2097/static/css/base/hardware-tokens.css?ui=20261011-final",
+          "type": "css",
+          "transfer": 9862,
+          "decoded": 9562
+        },
+        {
+          "url": "http://127.0.0.1:2097/static/vendor/css/fonts.css?v=v0.0.1-alpha-2026",
+          "type": "css",
+          "transfer": 976,
+          "decoded": 676
+        },
+        {
+          "url": "http://127.0.0.1:2097/static/css/base/hardware-design-system.css?ui=20261011-final",
+          "type": "css",
+          "transfer": 48395,
+          "decoded": 48095
+        },
+        {
+          "url": "http://127.0.0.1:2097/static/css/base/tailwind-utilities.css?v=20261110-qin585",
+          "type": "css",
+          "transfer": 86085,
+          "decoded": 85785
+        },
+        {
+          "url": "http://127.0.0.1:2097/static/css/base/workspace-pages.css?v=20261029-qin478",
+          "type": "css",
+          "transfer": 75736,
+          "decoded": 75436
+        },
+        {
+          "url": "http://127.0.0.1:2097/static/vendor/js/lucide.js?v=1.16.0",
+          "type": "js",
+          "transfer": 402194,
+          "decoded": 401894
+        },
+        {
+          "url": "http://127.0.0.1:2097/static/js/core/degradation.js?v=v0.0.1-alpha-2026",
+          "type": "js",
+          "transfer": 9796,
+          "decoded": 9496
+        },
+        {
+          "url": "http://127.0.0.1:2097/static/js/core/hardware-telemetry.js?v=20261008-auth6",
+          "type": "js",
+          "transfer": 107698,
+          "decoded": 107398
+        },
+        {
+          "url": "http://127.0.0.1:2097/static/js/controllers/assets-controller.js",
+          "type": "js",
+          "transfer": 50132,
+          "decoded": 49832
+        },
+        {
+          "url": "http://127.0.0.1:2097/static/js/core/workbench-shell.js?v=20261103-qin526-recycler-qa",
+          "type": "js",
+          "transfer": 47516,
+          "decoded": 47216
+        },
+        {
+          "url": "http://127.0.0.1:2097/static/css/base/hardware-buttons.css?ui=20261012-button-correction",
+          "type": "css",
+          "transfer": 26082,
+          "decoded": 25782
+        },
+        {
+          "url": "http://127.0.0.1:2097/static/css/base/side-bus-unified.css",
+          "type": "css",
+          "transfer": 6045,
+          "decoded": 5745
+        },
+        {
+          "url": "http://127.0.0.1:2097/static/js/modules/shortcuts.js",
+          "type": "js",
+          "transfer": 12216,
+          "decoded": 11916
+        },
+        {
+          "url": "http://127.0.0.1:2097/static/css/components/omnibar.css",
+          "type": "css",
+          "transfer": 8975,
+          "decoded": 8675
+        },
+        {
+          "url": "http://127.0.0.1:2097/static/js/core/omnibar.js",
+          "type": "js",
+          "transfer": 28386,
+          "decoded": 28086
+        },
+        {
+          "url": "http://127.0.0.1:2097/static/vendor/css/fonts.css",
+          "type": "css",
+          "transfer": 976,
+          "decoded": 676
+        },
+        {
+          "url": "http://127.0.0.1:2097/static/css/pages/asset-hardware-theme.css",
+          "type": "css",
+          "transfer": 5195,
+          "decoded": 4895
+        },
+        {
+          "url": "http://127.0.0.1:2097/static/css/pages/asset-manager.css?v=v0.0.1-alpha-2026&m3=prompt-source-20260823&sf=20260828-registry-zoom&ui=20261011-final&sb=20261105",
+          "type": "css",
+          "transfer": 378903,
+          "decoded": 378603
+        },
+        {
+          "url": "http://127.0.0.1:2097/static/js/core/floating-dismissal.js?v=v0.0.1-alpha-2026&m3=floating-dismissal",
+          "type": "js",
+          "transfer": 36611,
+          "decoded": 36311
+        },
+        {
+          "url": "http://127.0.0.1:2097/static/js/core/theme.js?v=v0.0.1-alpha-2026",
+          "type": "js",
+          "transfer": 13135,
+          "decoded": 12835
+        },
+        {
+          "url": "http://127.0.0.1:2097/static/vendor/js/lucide.js?v=v0.0.1-alpha-2026",
+          "type": "js",
+          "transfer": 402194,
+          "decoded": 401894
+        },
+        {
+          "url": "http://127.0.0.1:2097/static/css/pages/asset-review.css?v=v0.0.1-alpha-2026&m3=modal-host-a&ui=20261011-final",
+          "type": "css",
+          "transfer": 23345,
+          "decoded": 23045
+        },
+        {
+          "url": "http://127.0.0.1:2097/static/css/pages/context-tree-animations.css?v=v0.0.1-alpha-2026&pb=phase-b",
+          "type": "css",
+          "transfer": 6609,
+          "decoded": 6309
+        },
+        {
+          "url": "http://127.0.0.1:2097/static/css/pages/asset-manager-coverflow.css?v=v0.0.1-alpha-2026&m3=coverflow",
+          "type": "css",
+          "transfer": 10772,
+          "decoded": 10472
+        },
+        {
+          "url": "http://127.0.0.1:2097/static/css/pages/context-hotkey-feedback.css?v=v0.0.1-alpha-2026&pb=phase-b",
+          "type": "css",
+          "transfer": 1129,
+          "decoded": 829
+        },
+        {
+          "url": "http://127.0.0.1:2097/static/css/pages/asset-vault.css?v=20260916&ui=20261011-final",
+          "type": "css",
+          "transfer": 125164,
+          "decoded": 124864
+        },
+        {
+          "url": "http://127.0.0.1:2097/static/css/pages/directory-settings.css?v=20261007&ui=20261011-final",
+          "type": "css",
+          "transfer": 21786,
+          "decoded": 21486
+        },
+        {
+          "url": "http://127.0.0.1:2097/static/js/core/context-hotkeys.js?v=v0.0.1-alpha-2026&pb=phase-b",
+          "type": "js",
+          "transfer": 4048,
+          "decoded": 3748
+        },
+        {
+          "url": "http://127.0.0.1:2097/static/js/core/context-prefetch.js?v=v0.0.1-alpha-2026&pc=phase-c",
+          "type": "js",
+          "transfer": 9769,
+          "decoded": 9469
+        },
+        {
+          "url": "http://127.0.0.1:2097/static/js/modules/asset-manager/coverflow.js?v=v0.0.1-alpha-2026&m3=coverflow",
+          "type": "js",
+          "transfer": 33251,
+          "decoded": 32951
+        },
+        {
+          "url": "http://127.0.0.1:2097/static/js/modules/asset-auth/api.js?v=v0.0.1-alpha-2026&m3=team-delete-a",
+          "type": "js",
+          "transfer": 7453,
+          "decoded": 7153
+        },
+        {
+          "url": "http://127.0.0.1:2097/static/js/modules/asset-review/api.js?v=v0.0.1-alpha-2026&m3=f1b",
+          "type": "js",
+          "transfer": 4772,
+          "decoded": 4472
+        },
+        {
+          "url": "http://127.0.0.1:2097/static/js/modules/asset-manager.js?v=v0.0.1-alpha-2026&m1=prompt-source-20260823&z=20260828-registry-zoom&ui=20261011-final&sb=20261105",
+          "type": "js",
+          "transfer": 1641288,
+          "decoded": 1640988
+        },
+        {
+          "url": "http://127.0.0.1:2097/static/js/modules/asset-review.js?v=v0.0.1-alpha-2026&m1=20260810f&m3=auth-sync-c&ui=20261011-final",
+          "type": "js",
+          "transfer": 70546,
+          "decoded": 70246
+        },
+        {
+          "url": "http://127.0.0.1:2097/static/css/pages/settings-workbench.css?v=20261026-qin411",
+          "type": "css",
+          "transfer": 4214,
+          "decoded": 3914
+        },
+        {
+          "url": "http://127.0.0.1:2097/static/js/modules/asset-review/http.js",
+          "type": "js",
+          "transfer": 1340,
+          "decoded": 1040
+        },
+        {
+          "url": "http://127.0.0.1:2097/static/js/modules/asset-auth/http.js",
+          "type": "js",
+          "transfer": 1419,
+          "decoded": 1119
+        },
+        {
+          "url": "http://127.0.0.1:2097/static/js/modules/asset-manager/api.js",
+          "type": "js",
+          "transfer": 43676,
+          "decoded": 43376
+        },
+        {
+          "url": "http://127.0.0.1:2097/static/js/modules/asset-manager/http.js",
+          "type": "js",
+          "transfer": 1416,
+          "decoded": 1116
+        },
+        {
+          "url": "http://127.0.0.1:2097/static/js/modules/asset-auth/api.js",
+          "type": "js",
+          "transfer": 7453,
+          "decoded": 7153
+        },
+        {
+          "url": "http://127.0.0.1:2097/static/js/modules/asset-manager/classification.js",
+          "type": "js",
+          "transfer": 6471,
+          "decoded": 6171
+        },
+        {
+          "url": "http://127.0.0.1:2097/static/js/modules/asset-manager/formatters.js",
+          "type": "js",
+          "transfer": 1443,
+          "decoded": 1143
+        },
+        {
+          "url": "http://127.0.0.1:2097/static/js/modules/asset-manager/storage.js",
+          "type": "js",
+          "transfer": 1418,
+          "decoded": 1118
+        },
+        {
+          "url": "http://127.0.0.1:2097/static/js/modules/asset-manager/path-utils.js",
+          "type": "js",
+          "transfer": 1045,
+          "decoded": 745
+        },
+        {
+          "url": "http://127.0.0.1:2097/static/js/modules/asset-manager/workflow-assets.js",
+          "type": "js",
+          "transfer": 3380,
+          "decoded": 3080
+        },
+        {
+          "url": "http://127.0.0.1:2097/static/js/modules/asset-manager/provenance.js",
+          "type": "js",
+          "transfer": 6583,
+          "decoded": 6283
+        },
+        {
+          "url": "http://127.0.0.1:2097/static/js/modules/asset-collect-panel.js",
+          "type": "js",
+          "transfer": 21554,
+          "decoded": 21254
+        },
+        {
+          "url": "http://127.0.0.1:2097/static/js/modules/asset-manager/lut-preview.js",
+          "type": "js",
+          "transfer": 18438,
+          "decoded": 18138
+        },
+        {
+          "url": "http://127.0.0.1:2097/static/js/modules/asset-manager/collect-provenance.js",
+          "type": "js",
+          "transfer": 6506,
+          "decoded": 6206
+        },
+        {
+          "url": "http://127.0.0.1:2097/static/js/core/http-transport.js",
+          "type": "js",
+          "transfer": 8115,
+          "decoded": 7815
+        }
+      ]
+    },
+    {
+      "first_card_ms": 1392.2,
+      "js_at_first": 3011262,
+      "css_at_first": 840249,
+      "js_total": 3011262,
+      "css_total": 840249,
+      "req_total": 50,
+      "cards": 120,
+      "errors": [],
+      "entries": [
+        {
+          "url": "http://127.0.0.1:2097/static/css/base/hardware-tokens.css?ui=20261011-final",
+          "type": "css",
+          "transfer": 9862,
+          "decoded": 9562
+        },
+        {
+          "url": "http://127.0.0.1:2097/static/vendor/css/fonts.css?v=v0.0.1-alpha-2026",
+          "type": "css",
+          "transfer": 976,
+          "decoded": 676
+        },
+        {
+          "url": "http://127.0.0.1:2097/static/vendor/js/lucide.js?v=1.16.0",
+          "type": "js",
+          "transfer": 402194,
+          "decoded": 401894
+        },
+        {
+          "url": "http://127.0.0.1:2097/static/css/base/hardware-design-system.css?ui=20261011-final",
+          "type": "css",
+          "transfer": 48395,
+          "decoded": 48095
+        },
+        {
+          "url": "http://127.0.0.1:2097/static/css/base/workspace-pages.css?v=20261029-qin478",
+          "type": "css",
+          "transfer": 75736,
+          "decoded": 75436
+        },
+        {
+          "url": "http://127.0.0.1:2097/static/js/core/degradation.js?v=v0.0.1-alpha-2026",
+          "type": "js",
+          "transfer": 9796,
+          "decoded": 9496
+        },
+        {
+          "url": "http://127.0.0.1:2097/static/css/base/tailwind-utilities.css?v=20261110-qin585",
+          "type": "css",
+          "transfer": 86085,
+          "decoded": 85785
+        },
+        {
+          "url": "http://127.0.0.1:2097/static/js/core/hardware-telemetry.js?v=20261008-auth6",
+          "type": "js",
+          "transfer": 107698,
+          "decoded": 107398
+        },
+        {
+          "url": "http://127.0.0.1:2097/static/js/core/workbench-shell.js?v=20261103-qin526-recycler-qa",
+          "type": "js",
+          "transfer": 47516,
+          "decoded": 47216
+        },
+        {
+          "url": "http://127.0.0.1:2097/static/js/controllers/assets-controller.js",
+          "type": "js",
+          "transfer": 50132,
+          "decoded": 49832
+        },
+        {
+          "url": "http://127.0.0.1:2097/static/css/base/hardware-buttons.css?ui=20261012-button-correction",
+          "type": "css",
+          "transfer": 26082,
+          "decoded": 25782
+        },
+        {
+          "url": "http://127.0.0.1:2097/static/css/base/side-bus-unified.css",
+          "type": "css",
+          "transfer": 6045,
+          "decoded": 5745
+        },
+        {
+          "url": "http://127.0.0.1:2097/static/js/modules/shortcuts.js",
+          "type": "js",
+          "transfer": 12216,
+          "decoded": 11916
+        },
+        {
+          "url": "http://127.0.0.1:2097/static/css/components/omnibar.css",
+          "type": "css",
+          "transfer": 8975,
+          "decoded": 8675
+        },
+        {
+          "url": "http://127.0.0.1:2097/static/js/core/omnibar.js",
+          "type": "js",
+          "transfer": 28386,
+          "decoded": 28086
+        },
+        {
+          "url": "http://127.0.0.1:2097/static/vendor/css/fonts.css",
+          "type": "css",
+          "transfer": 976,
+          "decoded": 676
+        },
+        {
+          "url": "http://127.0.0.1:2097/static/vendor/js/lucide.js?v=v0.0.1-alpha-2026",
+          "type": "js",
+          "transfer": 402194,
+          "decoded": 401894
+        },
+        {
+          "url": "http://127.0.0.1:2097/static/css/pages/asset-manager.css?v=v0.0.1-alpha-2026&m3=prompt-source-20260823&sf=20260828-registry-zoom&ui=20261011-final&sb=20261105",
+          "type": "css",
+          "transfer": 378903,
+          "decoded": 378603
+        },
+        {
+          "url": "http://127.0.0.1:2097/static/css/pages/asset-hardware-theme.css",
+          "type": "css",
+          "transfer": 5195,
+          "decoded": 4895
+        },
+        {
+          "url": "http://127.0.0.1:2097/static/js/core/theme.js?v=v0.0.1-alpha-2026",
+          "type": "js",
+          "transfer": 13135,
+          "decoded": 12835
+        },
+        {
+          "url": "http://127.0.0.1:2097/static/js/core/floating-dismissal.js?v=v0.0.1-alpha-2026&m3=floating-dismissal",
+          "type": "js",
+          "transfer": 36611,
+          "decoded": 36311
+        },
+        {
+          "url": "http://127.0.0.1:2097/static/css/pages/asset-review.css?v=v0.0.1-alpha-2026&m3=modal-host-a&ui=20261011-final",
+          "type": "css",
+          "transfer": 23345,
+          "decoded": 23045
+        },
+        {
+          "url": "http://127.0.0.1:2097/static/css/pages/context-hotkey-feedback.css?v=v0.0.1-alpha-2026&pb=phase-b",
+          "type": "css",
+          "transfer": 1129,
+          "decoded": 829
+        },
+        {
+          "url": "http://127.0.0.1:2097/static/css/pages/context-tree-animations.css?v=v0.0.1-alpha-2026&pb=phase-b",
+          "type": "css",
+          "transfer": 6609,
+          "decoded": 6309
+        },
+        {
+          "url": "http://127.0.0.1:2097/static/css/pages/asset-manager-coverflow.css?v=v0.0.1-alpha-2026&m3=coverflow",
+          "type": "css",
+          "transfer": 10772,
+          "decoded": 10472
+        },
+        {
+          "url": "http://127.0.0.1:2097/static/css/pages/asset-vault.css?v=20260916&ui=20261011-final",
+          "type": "css",
+          "transfer": 125164,
+          "decoded": 124864
+        },
+        {
+          "url": "http://127.0.0.1:2097/static/css/pages/directory-settings.css?v=20261007&ui=20261011-final",
+          "type": "css",
+          "transfer": 21786,
+          "decoded": 21486
+        },
+        {
+          "url": "http://127.0.0.1:2097/static/js/core/context-hotkeys.js?v=v0.0.1-alpha-2026&pb=phase-b",
+          "type": "js",
+          "transfer": 4048,
+          "decoded": 3748
+        },
+        {
+          "url": "http://127.0.0.1:2097/static/js/core/context-prefetch.js?v=v0.0.1-alpha-2026&pc=phase-c",
+          "type": "js",
+          "transfer": 9769,
+          "decoded": 9469
+        },
+        {
+          "url": "http://127.0.0.1:2097/static/js/modules/asset-manager/coverflow.js?v=v0.0.1-alpha-2026&m3=coverflow",
+          "type": "js",
+          "transfer": 33251,
+          "decoded": 32951
+        },
+        {
+          "url": "http://127.0.0.1:2097/static/js/modules/asset-auth/api.js?v=v0.0.1-alpha-2026&m3=team-delete-a",
+          "type": "js",
+          "transfer": 7453,
+          "decoded": 7153
+        },
+        {
+          "url": "http://127.0.0.1:2097/static/js/modules/asset-review/api.js?v=v0.0.1-alpha-2026&m3=f1b",
+          "type": "js",
+          "transfer": 4772,
+          "decoded": 4472
+        },
+        {
+          "url": "http://127.0.0.1:2097/static/js/modules/asset-manager.js?v=v0.0.1-alpha-2026&m1=prompt-source-20260823&z=20260828-registry-zoom&ui=20261011-final&sb=20261105",
+          "type": "js",
+          "transfer": 1641288,
+          "decoded": 1640988
+        },
+        {
+          "url": "http://127.0.0.1:2097/static/js/modules/asset-review.js?v=v0.0.1-alpha-2026&m1=20260810f&m3=auth-sync-c&ui=20261011-final",
+          "type": "js",
+          "transfer": 70546,
+          "decoded": 70246
+        },
+        {
+          "url": "http://127.0.0.1:2097/static/css/pages/settings-workbench.css?v=20261026-qin411",
+          "type": "css",
+          "transfer": 4214,
+          "decoded": 3914
+        },
+        {
+          "url": "http://127.0.0.1:2097/static/js/modules/asset-review/http.js",
+          "type": "js",
+          "transfer": 1340,
+          "decoded": 1040
+        },
+        {
+          "url": "http://127.0.0.1:2097/static/js/modules/asset-auth/http.js",
+          "type": "js",
+          "transfer": 1419,
+          "decoded": 1119
+        },
+        {
+          "url": "http://127.0.0.1:2097/static/js/modules/asset-manager/api.js",
+          "type": "js",
+          "transfer": 43676,
+          "decoded": 43376
+        },
+        {
+          "url": "http://127.0.0.1:2097/static/js/modules/asset-auth/api.js",
+          "type": "js",
+          "transfer": 7453,
+          "decoded": 7153
+        },
+        {
+          "url": "http://127.0.0.1:2097/static/js/modules/asset-manager/http.js",
+          "type": "js",
+          "transfer": 1416,
+          "decoded": 1116
+        },
+        {
+          "url": "http://127.0.0.1:2097/static/js/modules/asset-manager/classification.js",
+          "type": "js",
+          "transfer": 6471,
+          "decoded": 6171
+        },
+        {
+          "url": "http://127.0.0.1:2097/static/js/modules/asset-manager/storage.js",
+          "type": "js",
+          "transfer": 1418,
+          "decoded": 1118
+        },
+        {
+          "url": "http://127.0.0.1:2097/static/js/modules/asset-manager/path-utils.js",
+          "type": "js",
+          "transfer": 1045,
+          "decoded": 745
+        },
+        {
+          "url": "http://127.0.0.1:2097/static/js/modules/asset-manager/formatters.js",
+          "type": "js",
+          "transfer": 1443,
+          "decoded": 1143
+        },
+        {
+          "url": "http://127.0.0.1:2097/static/js/modules/asset-manager/workflow-assets.js",
+          "type": "js",
+          "transfer": 3380,
+          "decoded": 3080
+        },
+        {
+          "url": "http://127.0.0.1:2097/static/js/modules/asset-collect-panel.js",
+          "type": "js",
+          "transfer": 21554,
+          "decoded": 21254
+        },
+        {
+          "url": "http://127.0.0.1:2097/static/js/modules/asset-manager/provenance.js",
+          "type": "js",
+          "transfer": 6583,
+          "decoded": 6283
+        },
+        {
+          "url": "http://127.0.0.1:2097/static/js/modules/asset-manager/collect-provenance.js",
+          "type": "js",
+          "transfer": 6506,
+          "decoded": 6206
+        },
+        {
+          "url": "http://127.0.0.1:2097/static/js/modules/asset-manager/lut-preview.js",
+          "type": "js",
+          "transfer": 18438,
+          "decoded": 18138
+        },
+        {
+          "url": "http://127.0.0.1:2097/static/js/core/http-transport.js",
+          "type": "js",
+          "transfer": 8115,
+          "decoded": 7815
+        }
+      ]
+    }
+  ],
+  "median_first_card_ms": 1387.6,
+  "median_js_total": 3011262,
+  "median_css_total": 840249,
+  "median_js_at_first": 3011262,
+  "errors": []
+}
