@@ -831,7 +831,28 @@ window.WorkbenchAssets = (() => {
       const name = String(root?.name || '').trim();
       return id !== 'video' && id !== 'image' && name !== '视频库素材' && name !== '图片库素材';
     });
-    const knownRootIds = new Set(roots.map(r => String(r.id || '')));
+    const seenRootPaths = new Map();
+    const dedupedRoots = [];
+    roots.forEach(root => {
+      const path = String(root?.path || '').replace(/\\/g, '/').toLowerCase().trim();
+      if(path){
+        if(seenRootPaths.has(path)){
+          const existing = dedupedRoots[seenRootPaths.get(path)];
+          const count = Number(root?.count || 0);
+          const existingCount = Number(existing?.count || 0);
+          if(!existingCount && count > 0){
+            existing.count = count;
+          }
+          if(root.name && (!existing.name || existing.name.endsWith('素材') || existing.name.startsWith('local_extra_'))){
+            existing.name = root.name;
+          }
+          return;
+        }
+        seenRootPaths.set(path, dedupedRoots.length);
+      }
+      dedupedRoots.push(root);
+    });
+    const knownRootIds = new Set(dedupedRoots.map(r => String(r.id || '')));
     const rawBoards = Array.isArray(snapshot.boards) ? snapshot.boards : [];
     const independentBoards = rawBoards.filter(board => {
       const boardRootId = String(board?.rootId || board?.sources?.[0]?.id || '');
@@ -840,7 +861,7 @@ window.WorkbenchAssets = (() => {
 
     const rows = [
       {key:'mine:inbox', name:'收集箱', icon:'inbox', badge, count:'', hasChildren:false},
-      ...roots.map(root => ({...root, key:`mine:root:${root.id}`, name:String(root.name || '未命名来源'), icon:root.icon || 'hard-drive', count:root.count, isRoot:true})),
+      ...dedupedRoots.map(root => ({...root, key:`mine:root:${root.id}`, name:String(root.name || '未命名来源'), icon:root.icon || 'hard-drive', count:root.count, isRoot:true})),
       ...independentBoards.map(board => ({key:`mine:board:${board.id}`, name:String(board.name || '未命名资源库'), icon:String(board.icon || 'library'), count:'', hasChildren:false})),
     ].map(row => ({...row, active: row.key === selected}));
     const serialized = JSON.stringify(rows);

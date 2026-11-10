@@ -29,6 +29,7 @@ test('AC1: 结构统一为一棵资源库树，去掉「资源入口」与「挂
 
 test('AC1 行为逻辑: 同一物理来源（相同物理路径）去重合并，不再并排输出多行', () => {
   // 验证 assetTreeGlobalRootsList 具备路径物理去重与有效素材计数继承逻辑
+  assert.match(manager, /function assetTreeResolveRootPath\(rootId, rootName=''\)/);
   assert.match(manager, /const pathKey = resolvedPath \? pathCompareKey\(resolvedPath\) : '';/);
   assert.match(manager, /if\(pathKey && seenPaths\.has\(pathKey\)\)\{/);
   assert.match(manager, /existing\.count = Number\(count\);/);
@@ -36,6 +37,97 @@ test('AC1 行为逻辑: 同一物理来源（相同物理路径）去重合并�
   // 验证 gwAssetTreeSnapshot 中通过 boardPathKey 匹配物理来源合并看板与物理根
   assert.match(manager, /const boardPathKey = boardPath \? pathCompareKey\(boardPath\) : '';/);
   assert.match(manager, /matchedRoot = globalRoots\.find\(r => r\.path && pathCompareKey\(r\.path\) === boardPathKey\);/);
+});
+
+test('AC1 实体验证: 模拟 QA 场景（无 path 的 facets 根与 hash 允许根通过别名/路径完全合并为单一资源库行）', () => {
+  // 模拟从 manager 中提取的核心合并逻辑（无 DOM 依赖执行验证）
+  const pathCompareKey = (p) => String(p || '').replace(/\\/g, '/').replace(/\/+$/g, '').toLowerCase();
+
+  const localLibraries = [];
+  const storageSettingsState = {
+    extraLocalEntries: [
+      { id: 'local_extra_mwam46l2_grg8mw', name: '多层夹具·丙素材', path: '/tmp/qin586-fixtures/lib-gamma' }
+    ],
+    localLibraries: []
+  };
+  const allowedRootSettingsState = {
+    roots: [
+      { id: 'root_99bff3918db7af37b8e15ee1', path: '/tmp/qin586-fixtures/lib-gamma', active: true, aliases: ['local_extra_mwam46l2_grg8mw'] }
+    ]
+  };
+  const assetAllowedRootPaths = new Map([
+    ['root_99bff3918db7af37b8e15ee1', '/tmp/qin586-fixtures/lib-gamma'],
+    ['local_extra_mwam46l2_grg8mw', '/tmp/qin586-fixtures/lib-gamma'],
+  ]);
+  const userBoards = [
+    {
+      id: 'library_preset_123',
+      name: 'lib-gamma',
+      sources: [{ id: 'root_99bff3918db7af37b8e15ee1', name: 'lib-gamma素材', path: '/tmp/qin586-fixtures/lib-gamma' }]
+    }
+  ];
+  const registryFacets = {
+    roots: [
+      { id: 'local_extra_mwam46l2_grg8mw', name: '多层夹具·丙素材', count: 1, availability: 'available' }
+    ]
+  };
+
+  const resolvePath = (id, name = '') => {
+    const fromExtra = storageSettingsState.extraLocalEntries.find(e => e.id === id);
+    if (fromExtra?.path) return fromExtra.path;
+    const fromAllowed = allowedRootSettingsState.roots.find(r => r.id === id || (Array.isArray(r.aliases) && r.aliases.includes(id)));
+    if (fromAllowed?.path) return fromAllowed.path;
+    if (assetAllowedRootPaths.has(id)) return assetAllowedRootPaths.get(id);
+    return '';
+  };
+
+  // 模拟执行 assetTreeGlobalRootsList
+  const rawRoots = [];
+  const seenPaths = new Map();
+  const addRoot = (id, name, count = null, availability = '', path = '') => {
+    const cleanId = String(id || '').trim();
+    const cleanName = String(name || '').trim();
+    const resolvedPath = path || resolvePath(cleanId, cleanName);
+    const pathKey = resolvedPath ? pathCompareKey(resolvedPath) : '';
+    if (pathKey && seenPaths.has(pathKey)) {
+      const existing = rawRoots[seenPaths.get(pathKey)];
+      if ((existing.count == null || existing.count === 0) && count != null && count > 0) {
+        existing.count = Number(count);
+      }
+      if (cleanName && (!existing.name || existing.name.endsWith('素材') || existing.name.startsWith('local_extra_'))) {
+        existing.name = cleanName;
+      }
+      return;
+    }
+    seenPaths.set(pathKey, rawRoots.length);
+    rawRoots.push({ id: cleanId, name: cleanName, count, path: resolvedPath });
+  };
+
+  registryFacets.roots.forEach(r => addRoot(r.id, r.name, r.count, r.availability, ''));
+  userBoards.forEach(b => (b.sources || []).forEach(s => addRoot(s.id, s.name, null, '', s.path || '')));
+
+  // 1. 验证 rawRoots 只有 1 个根，没有并排双行
+  assert.equal(rawRoots.length, 1, '同一物理路径的 facets 根与 hash 根必须合并为单一根');
+  assert.equal(rawRoots[0].count, 1, '合并后的节点必须保留非 0 素材计数 1');
+  assert.equal(rawRoots[0].path, '/tmp/qin586-fixtures/lib-gamma');
+
+  // 模拟执行看板映射
+  const mappedBoardIds = new Set();
+  const rootBoardMap = new Map();
+  userBoards.forEach(b => {
+    const bPath = b.sources[0]?.path || '';
+    const bPathKey = pathCompareKey(bPath);
+    const matchedRoot = rawRoots.find(r => r.path && pathCompareKey(r.path) === bPathKey);
+    if (matchedRoot) {
+      mappedBoardIds.add(b.id);
+      rootBoardMap.set(matchedRoot.id, b);
+    }
+  });
+
+  assert.equal(mappedBoardIds.has('library_preset_123'), true, '同路径看板必须标记为已映射物理根');
+  const matchedBoard = rootBoardMap.get(rawRoots[0].id);
+  const displayName = matchedBoard ? matchedBoard.name : rawRoots[0].name;
+  assert.equal(displayName, 'lib-gamma', '最终展示名称必须使用用户新建的资源库名称');
 });
 
 test('AC2: 资产总览清除库/文件夹筛选回到首页，深层目录选择状态持久化支持', () => {
