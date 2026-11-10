@@ -153,8 +153,8 @@ def test_ac2_media_proxy_visibility(client: TestClient, asset_fixture: dict[str,
     asset_id = asset_fixture["asset_id_a"]
     version_id = asset_fixture["version_id_a"]
 
-    # B 调 POST /api/media-proxy 代理 A 的私有版本 -> 404 ASSET_NOT_FOUND
-    res_b = client.post(
+    # 1. B 调 POST /api/media-proxy 与 GET /api/media-proxy 代理 A 的私有版本 -> 404 ASSET_NOT_FOUND
+    res_b_post = client.post(
         "/api/media-proxy",
         headers=AUTH_B,
         json={
@@ -164,37 +164,63 @@ def test_ac2_media_proxy_visibility(client: TestClient, asset_fixture: dict[str,
             "width": 320,
         },
     )
-    assert res_b.status_code == 404
-    assert res_b.json() == {
+    assert res_b_post.status_code == 404
+    assert res_b_post.json() == {
         "detail": {"code": "ASSET_NOT_FOUND", "message": f"素材 {asset_id} 不存在"}
     }
 
-    # A 调 POST /api/media-proxy 在自身主体上下文中 -> 200 ready 并可取回内容
-    token = current_asset_owner.set(asset_fixture["owner_a"])
-    try:
-        res_a = client.post(
-            "/api/media-proxy",
-            headers=AUTH_A,
-            json={
-                "asset_id": asset_id,
-                "version_id": version_id,
-                "profile": "preview",
-                "width": 320,
-            },
-        )
-        assert res_a.status_code == 200, res_a.text
-        body_a = res_a.json()
-        assert body_a["availability"] == "ready"
-        assert body_a["asset_id"] == asset_id
-        assert body_a["version_id"] == version_id
-        proxy_url = body_a["proxy_url"]
-        assert proxy_url.startswith("/api/media-proxy/content?")
+    res_b_get = client.get(
+        "/api/media-proxy",
+        headers=AUTH_B,
+        params={
+            "asset_id": asset_id,
+            "version_id": version_id,
+            "profile": "preview",
+            "width": 320,
+        },
+    )
+    assert res_b_get.status_code == 404
+    assert res_b_get.json() == {
+        "detail": {"code": "ASSET_NOT_FOUND", "message": f"素材 {asset_id} 不存在"}
+    }
 
-        res_content = client.get(proxy_url, headers=AUTH_A)
-        assert res_content.status_code == 200
-        assert res_content.content
-    finally:
-        current_asset_owner.reset(token)
+    # 2. A 调 POST /api/media-proxy 纯真实 HTTP 请求（无手动上下文注入） -> 200 ready 并可取回内容
+    res_a_post = client.post(
+        "/api/media-proxy",
+        headers=AUTH_A,
+        json={
+            "asset_id": asset_id,
+            "version_id": version_id,
+            "profile": "preview",
+            "width": 320,
+        },
+    )
+    assert res_a_post.status_code == 200, res_a_post.text
+    body_a_post = res_a_post.json()
+    assert body_a_post["availability"] == "ready"
+    assert body_a_post["asset_id"] == asset_id
+    assert body_a_post["version_id"] == version_id
+    proxy_url_post = body_a_post["proxy_url"]
+    assert proxy_url_post.startswith("/api/media-proxy/content?")
+
+    res_content = client.get(proxy_url_post, headers=AUTH_A)
+    assert res_content.status_code == 200
+    assert res_content.content
+
+    # 3. A 调 GET /api/media-proxy 纯真实 HTTP 请求 -> 200 ready
+    res_a_get = client.get(
+        "/api/media-proxy",
+        headers=AUTH_A,
+        params={
+            "asset_id": asset_id,
+            "version_id": version_id,
+            "profile": "preview",
+            "width": 320,
+        },
+    )
+    assert res_a_get.status_code == 200, res_a_get.text
+    assert res_a_get.json()["availability"] == "ready"
+    assert res_a_get.json()["version_id"] == version_id
 
 
 def test_ac3_patch_version_visibility(

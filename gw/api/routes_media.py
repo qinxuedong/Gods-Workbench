@@ -28,9 +28,10 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter, Header, Request, Response, status
+from fastapi import APIRouter, Depends, Header, Request, Response, status
 from fastapi.responses import JSONResponse
 
+from gw.core.asset_visibility import asset_request_scope
 from gw.core.auth import require_authenticated, require_edit_access
 from gw.core.errors import CleanroomException
 from gw.media import proxy as media_proxy
@@ -275,7 +276,11 @@ def media_preview(
 # ---------------------------------------------------------------------------
 
 
-@router.get("/api/media-proxy", status_code=status.HTTP_200_OK)
+@router.get(
+    "/api/media-proxy",
+    dependencies=[Depends(asset_request_scope)],
+    status_code=status.HTTP_200_OK,
+)
 def media_proxy_descriptor(
     request: Request,
     authorization: str | None = Header(None),
@@ -286,7 +291,11 @@ def media_proxy_descriptor(
     return media_proxy.descriptor(_query_dict(request))
 
 
-@router.post("/api/media-proxy", status_code=status.HTTP_200_OK)
+@router.post(
+    "/api/media-proxy",
+    dependencies=[Depends(asset_request_scope)],
+    status_code=status.HTTP_200_OK,
+)
 async def media_proxy_descriptor_post(
     request: Request,
     authorization: str | None = Header(None),
@@ -297,7 +306,11 @@ async def media_proxy_descriptor_post(
     return media_proxy.descriptor(await _json(request))
 
 
-@router.get("/api/media-proxy/content", status_code=status.HTTP_200_OK)
+@router.get(
+    "/api/media-proxy/content",
+    dependencies=[Depends(asset_request_scope)],
+    status_code=status.HTTP_200_OK,
+)
 def media_proxy_content(
     request: Request,
     authorization: str | None = Header(None),
