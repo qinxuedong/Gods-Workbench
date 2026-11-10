@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { readAssetManagerAggregate } from './asset-manager-aggregate.mjs';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -9,7 +10,7 @@ import { fileURLToPath } from 'node:url';
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const read = relativePath => readFileSync(path.join(root, relativePath), 'utf8');
 
-const js = read('web/js/modules/asset-manager.js');
+const js = readAssetManagerAggregate();
 const css = read('web/css/pages/asset-manager.css');
 
 // 1. 排序/分组：胶囊复用 .hw-btn 硬件材质并带图标；QIN-531 起改为自绘 listbox（无原生 select）。

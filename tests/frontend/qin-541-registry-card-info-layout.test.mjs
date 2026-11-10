@@ -12,10 +12,11 @@
  * - AC7 方形、简洁、列表模式保持不变，测试登记自证。
  */
 import assert from 'node:assert/strict';
+import { readAssetManagerAggregate } from './asset-manager-aggregate.mjs';
 import {existsSync, readFileSync} from 'node:fs';
 import test from 'node:test';
 
-const MANAGER = readFileSync(new URL('../../web/js/modules/asset-manager.js', import.meta.url), 'utf8');
+const MANAGER = readAssetManagerAggregate();
 const CARD_CSS = readFileSync(new URL('../../web/css/pages/asset-manager.css', import.meta.url), 'utf8');
 const NODE_FILES = readFileSync(new URL('./node-files.txt', import.meta.url), 'utf8');
 const SHARD = new URL('../hygiene/fixtures/admissions/issue-593.json', import.meta.url);

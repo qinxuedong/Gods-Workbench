@@ -9,13 +9,11 @@
  * - AC5 测试登记到 node-files.txt 并完成卫生准入分片。
  */
 import assert from 'node:assert/strict';
+import { readAssetManagerAggregate } from './asset-manager-aggregate.mjs';
 import {existsSync, readFileSync} from 'node:fs';
 import test from 'node:test';
 
-const MANAGER = readFileSync(
-    new URL('../../web/js/modules/asset-manager.js', import.meta.url),
-    'utf8'
-);
+const MANAGER = readAssetManagerAggregate();
 const CSS = readFileSync(
     new URL('../../web/css/pages/asset-manager.css', import.meta.url),
     'utf8'
@@ -184,8 +182,8 @@ test('AC4: 无根目录时给出可点的登记引导，直接唤起既有登记
     assert.match(roots, /登记素材根目录/, '引导按钮文案必须自解释');
     assert.match(
         MANAGER,
-        /data-asset-rack-register-root\]'\)\)\{[\s\S]{0,220}?openBoardSourceModal\(board \? board\.id : '', 'new'\);/,
-        '引导按钮必须直接唤起既有素材来源登记弹窗'
+        /data-asset-rack-register-root\]'\)\)\{[\s\S]{0,220}?gwCall\('organize', 'openBoardSourceModal', board \? board\.id : '', 'new'\);/,
+        '引导按钮必须经网关直接唤起既有素材来源登记弹窗'
     );
     assert.match(CSS, /\.asset-rack-empty-guide \{ display:flex; flex-direction:column;/, '引导卡片必须有独立布局样式');
 });

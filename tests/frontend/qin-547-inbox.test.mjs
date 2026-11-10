@@ -1,9 +1,10 @@
 // QIN-547: 收集箱——合并托管资产与上传资源为默认收集文件夹
 import assert from 'node:assert/strict';
+import { readAssetManagerAggregate } from './asset-manager-aggregate.mjs';
 import {readFileSync} from 'node:fs';
 import test from 'node:test';
 
-const source = readFileSync(new URL('../../web/js/modules/asset-manager.js', import.meta.url), 'utf8');
+const source = readAssetManagerAggregate();
 const styles = readFileSync(new URL('../../web/css/pages/asset-manager.css', import.meta.url), 'utf8');
 
 function functionSource(name){
@@ -53,13 +54,14 @@ test('AC1/AC5: 收集箱在「我的资源」第一位，带未读角标', () =>
 
 test('AC1/AC2: 收集箱视图读取真实接口并区分三类来源', () => {
     assert.match(functionSource('loadAssetInbox'), /'\/api\/asset-inbox\?limit=500'/, '列表走收集箱接口');
-    assert.match(functionSource('loadAssetInbox'), /inboxSettings = data\.settings/, '设置随列表一起读取');
+    // QIN-591：inbox 域内对主文件状态的写入改写为 setter 调用（登记在案），读取语义不变。
+    assert.match(functionSource('loadAssetInbox'), /setInboxSettings\(data\.settings/, '设置随列表一起读取');
     assert.match(functionSource('renderInboxSourceChips'), /collect_inbox/, '浏览器收集来源应可筛选');
     assert.match(functionSource('renderInboxSourceChips'), /asset_library/, '托管资产来源应可筛选');
     assert.match(functionSource('renderInboxManager'), /renderInboxCard/, '收集箱素材应渲染卡片');
-    assert.match(functionSource('openAssetInbox'), /activeTab = 'inbox'/, '进入收集箱切换视图');
-    assert.match(functionSource('selectAssetTreeNode'), /openAssetInbox\(\)/, '树节点点击应打开收集箱');
-    assert.match(source, /else if\(activeTab === 'inbox'\) renderInboxManager\(\);/, '主渲染分发应接入收集箱');
+    assert.match(functionSource('openAssetInbox'), /setActiveTab\('inbox'\)/, '进入收集箱切换视图');
+    assert.match(functionSource('selectAssetTreeNode'), /gwCall\('inbox', 'openAssetInbox'\)/, '树节点点击应打开收集箱');
+    assert.match(source, /else if\(activeTab === 'inbox'\) gwLoad\('inbox'\)\.then\(m => m\.renderInboxManager\(\)\);/, '主渲染分发应接入收集箱');
 });
 
 test('AC1: 设置里可改位置并提示是否迁移已有文件', () => {
@@ -95,7 +97,7 @@ test('AC5: 角标清零后立即重绘，不等下一次 render', () => {
 test('AC1: 改位置失败时留住面板并说明原因，不假装成功', () => {
     const save = functionSource('saveAssetInboxSettings');
     assert.match(save, /result\.applied === false/, '必须识别后端的 applied=false');
-    assert.match(save, /inboxSettingsOpen = true/, '失败时保留设置面板供用户改路径');
+    assert.match(save, /setInboxSettingsOpen\(true\)/, '失败时保留设置面板供用户改路径');
     assert.match(save, /收集箱位置未变更/, '失败时给出明确提示');
     assert.ok(
         save.indexOf('result.applied === false') < save.indexOf('收集箱位置已更新'),
@@ -190,7 +192,8 @@ test('QIN-588 AC5: 停留收集箱低频回读，签名变化才重绘且保持�
 test('QIN-588 AC4: 上传与角标清零的乱序保护保持完整', () => {
     // 写后必刷：上传后 refresh 不复用在途旧响应（QIN-585 既有口径，本票不得回退）。
     const upload = functionSource('uploadAssetInboxFiles');
-    assert.match(upload, /loadAssetInbox\(\{refresh:true\}\)/, '上传后必须写后必刷');
+    // QIN-591：上传后的写后必刷派发 gwCall 化（登记在案），刷新语义不变。
+    assert.match(upload, /gwCall\('inbox', 'loadAssetInbox', \{refresh:true\}\)/, '上传后必须写后必刷');
     const load = functionSource('loadAssetInbox');
     assert.match(load, /token\.seq !== inboxRequestSeq\)? return/, '过期响应必须按代次丢弃');
     assert.match(load, /inboxInFlight/, '普通读取必须单飞复用');

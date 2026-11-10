@@ -1,8 +1,9 @@
 import assert from 'node:assert/strict';
+import { readAssetManagerAggregate } from './asset-manager-aggregate.mjs';
 import {readFileSync} from 'node:fs';
 import test from 'node:test';
 
-const source = readFileSync(new URL('../../web/js/modules/asset-manager.js', import.meta.url), 'utf8');
+const source = readAssetManagerAggregate();
 const styles = readFileSync(new URL('../../web/css/pages/directory-settings.css', import.meta.url), 'utf8');
 
 test('directory settings expose persistent roots and mark environment roots read-only', () => {

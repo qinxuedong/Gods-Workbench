@@ -1,10 +1,11 @@
 // QIN-488 (GitHub #489): 资产库默认全局统一金库并在智能筛选增加项目素材展开与过滤
 import assert from 'node:assert/strict';
+import { readAssetManagerAggregate } from './asset-manager-aggregate.mjs';
 import {readFileSync} from 'node:fs';
 import test from 'node:test';
 import {createContext, runInContext} from 'node:vm';
 
-const js = readFileSync(new URL('../../web/js/modules/asset-manager.js', import.meta.url), 'utf8');
+const js = readAssetManagerAggregate();
 const css = readFileSync(new URL('../../web/css/pages/asset-manager.css', import.meta.url), 'utf8');
 
 const extractFn = (name) => {

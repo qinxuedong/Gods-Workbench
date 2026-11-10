@@ -1,10 +1,11 @@
 // QIN-574: 资产库提示词与画布标签清除首列空栏并左对齐工具栏
 import assert from 'node:assert/strict';
+import { readAssetManagerAggregate } from './asset-manager-aggregate.mjs';
 import {readFileSync} from 'node:fs';
 import test from 'node:test';
 
 const vaultCss = readFileSync(new URL('../../web/css/pages/asset-vault.css', import.meta.url), 'utf8');
-const managerJs = readFileSync(new URL('../../web/js/modules/asset-manager.js', import.meta.url), 'utf8');
+const managerJs = readAssetManagerAggregate();
 
 test('AC1: vault 嵌入态提示词与画布资产视图首列收为零宽，消除 240px 空白列', () => {
   // 必须存在针对 prompts、canvas-assets 的零宽规则，且右侧保留 minmax(280px,320px) 抽屉列

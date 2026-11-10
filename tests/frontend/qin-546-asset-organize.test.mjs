@@ -1,9 +1,10 @@
 // QIN-546: 我的资源整理交互——右键菜单、拖拽移动、重名处理与撤销
 import assert from 'node:assert/strict';
+import { readAssetManagerAggregate } from './asset-manager-aggregate.mjs';
 import {readFileSync} from 'node:fs';
 import test from 'node:test';
 
-const source = readFileSync(new URL('../../web/js/modules/asset-manager.js', import.meta.url), 'utf8');
+const source = readAssetManagerAggregate();
 const styles = readFileSync(new URL('../../web/css/pages/asset-manager.css', import.meta.url), 'utf8');
 const manifest = readFileSync(new URL('./node-files.txt', import.meta.url), 'utf8');
 
@@ -170,7 +171,8 @@ test('AC1/AC2 回归：浏览器验收暴露的三处实现缺陷已修复', asy
 
     // 2) 单击选中会异步重绘整棵树，原生 dblclick 的第二击可能落在新节点上；
     //    点击委托用 detail 计数兜底，保证双击改名稳定生效。
-    const clickDetail = /Number\(event\.detail\) >= 2[\s\S]{0,200}asset-tree-name[\s\S]{0,400}beginAssetOrganizeRename\(/;
+    // QIN-591：改名派发 gwCall 化（登记在案），detail 计数兜底保持不变
+    const clickDetail = /Number\(event\.detail\) >= 2[\s\S]{0,200}asset-tree-name[\s\S]{0,400}gwCall\('organize', 'beginAssetOrganizeRename'/;
     assert.match(source, clickDetail, '点击委托应兜底识别双击改名');
 
     // 3) /api/local-assets/folders/move 的 target 是「最终路径」，与素材移动语义不同：
@@ -178,7 +180,8 @@ test('AC1/AC2 回归：浏览器验收暴露的三处实现缺陷已修复', asy
     const moveFolder = functionSource('assetOrganizeMoveFolder');
     assert.match(moveFolder, /destPath === drag\.path/, '拖回原位置应判定为无变化');
     assert.doesNotMatch(moveFolder, /assetOrganizeParentPath\(drag\.path\) === destPath/, '不应再用父级比较');
-    assert.ok(moveFolder.includes('assetTreeSelectedKey = `mine:root:${destRootId}::${destPath}`'), '选中键直接用最终路径');
+    // QIN-591：assetTreeSelectedKey 为跨文件写状态，域内赋值改写为 setter 调用（登记在案）。
+    assert.ok(moveFolder.includes('setAssetTreeSelectedKey(`mine:root:${destRootId}::${destPath}`)'), '选中键直接用最终路径');
 
     const drop = functionSource('dropAssetOrganize');
     assert.match(drop, /const leaf = assetOrganizeLeafName\(drag\.path\);/, '落点计算需取本层名字');
@@ -189,7 +192,9 @@ test('AC1/AC2 回归：浏览器验收暴露的三处实现缺陷已修复', asy
     const factory = new Function(
         'assetOrganizeDrag','assetOrganizeDropTargetFor','assetOrganizeDropZoneFor','clearAssetOrganizeDropHint',
         'assetOrganizeParentPath','assetOrganizeLeafName','assetOrganizeMoveFolder','assetOrganizeMoveAssets','document',
-        `${'async ' + drop}; return {dropAssetOrganize, setDrag(value){ assetOrganizeDrag = value; }};`
+        // QIN-591：assetOrganizeDrag 为跨文件写状态，域内写入经主文件导出的 setter（登记在案）；桩写回夹具持有的拖拽态。
+        `function setAssetOrganizeDrag(value){ assetOrganizeDrag = value; }
+         ${'async ' + drop}; return {dropAssetOrganize, setDrag(value){ assetOrganizeDrag = value; }};`
     );
     function runDrop({zone, drag, target}){
         const calls = {folders: [], assets: []};

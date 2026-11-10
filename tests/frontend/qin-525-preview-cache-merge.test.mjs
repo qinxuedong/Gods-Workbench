@@ -8,13 +8,11 @@
  * - AC2 文案声明覆盖全库素材，类型占位图由后端渲染（前端不按类型过滤）。
  */
 import assert from 'node:assert/strict';
+import { readAssetManagerAggregate } from './asset-manager-aggregate.mjs';
 import {readFileSync} from 'node:fs';
 import test from 'node:test';
 
-const MANAGER = readFileSync(
-    new URL('../../web/js/modules/asset-manager.js', import.meta.url),
-    'utf8'
-);
+const MANAGER = readAssetManagerAggregate();
 
 function functionSource(name){
     const start = MANAGER.indexOf(`function ${name}(`);

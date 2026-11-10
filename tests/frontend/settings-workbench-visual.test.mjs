@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { readAssetManagerAggregate } from './asset-manager-aggregate.mjs';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -6,7 +7,7 @@ import { fileURLToPath } from 'node:url';
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const read = relativePath => readFileSync(path.join(root, relativePath), 'utf8');
 const settings = read('web/pages/settings.html');
-const directoryModule = read('web/js/modules/asset-manager.js');
+const directoryModule = readAssetManagerAggregate();
 const directoryCss = read('web/css/pages/directory-settings.css');
 const apiHtml = read('web/embeds/api-settings.html');
 const apiCss = read('web/css/pages/api-settings.css');

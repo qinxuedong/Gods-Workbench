@@ -15,13 +15,14 @@
  */
 
 import assert from 'node:assert/strict';
+import { readAssetManagerAggregate } from './asset-manager-aggregate.mjs';
 import { readFileSync } from 'node:fs';
 import { createContext, runInContext, runInNewContext } from 'node:vm';
 import test from 'node:test';
 
 // 真实加载源码，绝不在测试内重写待测函数
 const playerSource = readFileSync(new URL('../../web/js/modules/media-preview-player.js', import.meta.url), 'utf8');
-const assetManagerSource = readFileSync(new URL('../../web/js/modules/asset-manager.js', import.meta.url), 'utf8');
+const assetManagerSource = readAssetManagerAggregate();
 
 /** 按花括号配对从真实源码提取完整函数，保证测试运行的是生产代码 */
 function extractFunction(source, name) {

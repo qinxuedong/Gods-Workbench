@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { readAssetManagerAggregate } from './asset-manager-aggregate.mjs';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -9,7 +10,7 @@ const read = relativePath => readFileSync(path.join(root, relativePath), 'utf8')
 const directoryCss = read('web/css/pages/directory-settings.css');
 const apiCss = read('web/css/pages/api-settings.css');
 const apiModule = read('web/js/modules/api-settings.js');
-const assetManager = read('web/js/modules/asset-manager.js');
+const assetManager = readAssetManagerAggregate();
 
 // 1. 目录设置五卡分两列独立堆叠；每列卡间固定 12px，窄屏折为一列。
 assert.match(directoryCss, /\.directory-cards-grid\s*\{[\s\S]*?display:\s*grid[\s\S]*?grid-template-columns:\s*repeat\(2,\s*minmax\(0,\s*1fr\)\)/);

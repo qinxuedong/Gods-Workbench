@@ -21,7 +21,8 @@ function inventory(){
    const line=text.slice(0,m.index).split('\n').length;
    let category='semantic-token',reason='字号由语义token或继承值决定';
    if(m[1]==='font'&&!/\b(?:var\(--(?:gw-type|sf-fs|annotation-font-size)|\d+(?:px|rem|em|pt|%))/.test(value))continue; // JS对象键font、颜色/字体族自定义属性不是font简写。
-   if(file==='web/js/modules/asset-manager.js'&&(/^(?:Math\.max\((?:8|24),|`\$\{Math\.max\(12,layer\.fontSize\*scaleY\)\}px`)/.test(value)||m[0]==='font-size:${fontSize')){category='user-content-canvas';reason='用户标注/画布文本的尺寸与缩放，非UI字号';}
+   // QIN-591：画布标注代码拆分后分驻主文件与 media-canvas/preview 域文件，白名单随文件键同步覆盖。
+   if(['web/js/modules/asset-manager.js','web/js/modules/asset-manager/media-canvas.js','web/js/modules/asset-manager/preview.js'].includes(file)&&(/^(?:Math\.max\((?:8|24),|`\$\{Math\.max\(12,layer\.fontSize\*scaleY\)\}px`)/.test(value)||m[0]==='font-size:${fontSize')){category='user-content-canvas';reason='用户标注/画布文本的尺寸与缩放，非UI字号';}
    else if(file==='web/css/base/tailwind-utilities.css'){category='generated-snapshot';reason='本地Tailwind生成快照；页面与动态模板禁止使用字阶utility';}
    else if(file.endsWith('.css')&&m[0].startsWith('text-')){category='legacy-selector';reason='旧类兼容选择器，不是字号声明';}
    else if(file==='web/css/pages/asset-manager.css'&&preview.test(value)){category='user-content-preview';reason='用户标注或字体试样字号，独立于UI字号';}

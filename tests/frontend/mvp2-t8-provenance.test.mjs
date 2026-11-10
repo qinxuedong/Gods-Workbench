@@ -4,6 +4,7 @@
 // AC3 动态文本全部转义防 XSS、不产生可跳转 URL；
 // AC4 纯原生实现，无框架/CDN/外部 URL 依赖。
 import assert from 'node:assert/strict';
+import { readAssetManagerAggregate } from './asset-manager-aggregate.mjs';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import test from 'node:test';
@@ -160,7 +161,7 @@ test('AC4 模块与挂载均为纯原生：无框架/CDN/外部 URL', () => {
   const provenanceSource = stripLicenseHeader(read('web/js/modules/asset-manager/provenance.js'));
   assert.ok(!/https?:\/\//.test(provenanceSource), 'provenance 模块不得包含外部 URL');
   assert.ok(!/\brequire\s*\(/.test(provenanceSource), '不得使用 CommonJS');
-  const managerSource = read('web/js/modules/asset-manager.js');
+  const managerSource = readAssetManagerAggregate();
   // 静态 import 独立成行；动态 import 单独匹配，均须为仓库内相对模块。
   const imports = [
     ...[...managerSource.matchAll(/^\s*import\s[^'"]*['"]([^'"]+)['"];?\s*$/gm)].map(m => m[1]),
@@ -173,7 +174,7 @@ test('AC4 模块与挂载均为纯原生：无框架/CDN/外部 URL', () => {
 });
 
 test('挂载接线：统一资产详情渲染来源链，事件委托接入导航分发', () => {
-  const managerSource = read('web/js/modules/asset-manager.js');
+  const managerSource = readAssetManagerAggregate();
   assert.ok(managerSource.includes("from './asset-manager/provenance.js'"), '应导入 provenance 模块');
   const fnStart = managerSource.indexOf('function renderAssetDetail(item)');
   assert.ok(fnStart > 0, '应存在 renderAssetDetail');

@@ -1,8 +1,9 @@
 import assert from 'node:assert/strict';
+import { readAssetManagerAggregate } from './asset-manager-aggregate.mjs';
 import {readFileSync} from 'node:fs';
 import test from 'node:test';
 
-const manager = readFileSync(new URL('../../web/js/modules/asset-manager.js', import.meta.url), 'utf8');
+const manager = readAssetManagerAggregate();
 
 test('QIN-552：LUT 库只匹配 .cube，并在资产分类与统计中单列', () => {
     assert.match(manager, /\{id:'lut', name:'LUT库',[^\n]*kinds:\['lut'\], extensions:\['cube'\]\}/);

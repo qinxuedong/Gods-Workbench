@@ -9,13 +9,11 @@
  * - AC5 测试登记到 node-files.txt 并完成卫生准入分片。
  */
 import assert from 'node:assert/strict';
+import { readAssetManagerAggregate } from './asset-manager-aggregate.mjs';
 import {existsSync, readFileSync} from 'node:fs';
 import test from 'node:test';
 
-const MANAGER = readFileSync(
-    new URL('../../web/js/modules/asset-manager.js', import.meta.url),
-    'utf8'
-);
+const MANAGER = readAssetManagerAggregate();
 const CSS = readFileSync(
     new URL('../../web/css/pages/asset-manager.css', import.meta.url),
     'utf8'
@@ -112,10 +110,10 @@ test('AC2: 目录层级工具条保留展开 / 目录层级 / 清空筛选', () 
     assert.match(rail, /data-registry-clear="all"/, '图标条必须保留清空筛选');
     assert.ok(!rail.includes('智能筛选'), '图标条不得再有智能筛选入口');
 
-    // 「目录层级」图标等价展开：同一属性走既有展开分支
+    // 「目录层级」图标等价展开：同一属性走既有展开分支（QIN-591：派发点 gwCall 化）
     assert.match(
         MANAGER,
-        /if\(target\.closest\?\.\('\[data-asset-rack-expand\]'\)\)\{ setAssetRackCollapsed\(false\); return; \}/,
+        /if\(target\.closest\?\.\('\[data-asset-rack-expand\]'\)\)\{ gwCall\('settings', 'setAssetRackCollapsed', false\); return; \}/,
         '点击目录层级/展开必须落到展开分支'
     );
     assert.match(functionSource('setAssetRackCollapsed'), /saveAssetRackCollapsed\(assetRackCollapsed\)/);

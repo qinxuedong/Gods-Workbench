@@ -1,11 +1,12 @@
 import assert from 'node:assert/strict';
+import { readAssetManagerAggregate } from './asset-manager-aggregate.mjs';
 import {readFileSync} from 'node:fs';
 import test from 'node:test';
 import {createContext, runInContext} from 'node:vm';
 
 const shell = readFileSync(new URL('../../web/js/core/workbench-shell.js', import.meta.url), 'utf8');
 const projects = readFileSync(new URL('../../web/pages/projects.html', import.meta.url), 'utf8');
-const assetManager = readFileSync(new URL('../../web/js/modules/asset-manager.js', import.meta.url), 'utf8');
+const assetManager = readAssetManagerAggregate();
 const recycleRoute = readFileSync(new URL('../../gw/api/routes_asset_registry.py', import.meta.url), 'utf8');
 const controller = readFileSync(new URL('../../web/js/controllers/projects-controller.js', import.meta.url), 'utf8');
 const sharedShellPages = ['agents.html', 'assets.html', 'collab.html', 'index.html', 'production.html', 'projects.html', 'settings.html', 'storyboard.html', 'workflow.html', 'workshop.html'];

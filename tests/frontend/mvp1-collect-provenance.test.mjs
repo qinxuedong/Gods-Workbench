@@ -3,6 +3,7 @@
 // AC2 来源 URL 为纯文本（全部转义、不产生 href），防 XSS；
 // AC3 「删除本次收集」走既有回收站接口（复用 openRegistryRecycleDialog，不新建永久删除）。
 import assert from 'node:assert/strict';
+import { readAssetManagerAggregate } from './asset-manager-aggregate.mjs';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import test from 'node:test';
@@ -138,7 +139,7 @@ test('AC3 删除入口只分发 asset_id，不在渲染层发请求', () => {
 });
 
 test('AC3 接线：详情挂载收集来源，删除复用既有回收站链路', () => {
-  const managerSource = read('web/js/modules/asset-manager.js');
+  const managerSource = readAssetManagerAggregate();
   assert.ok(
     managerSource.includes("from './asset-manager/collect-provenance.js'"),
     '应导入 collect-provenance 模块',
@@ -154,8 +155,8 @@ test('AC3 接线：详情挂载收集来源，删除复用既有回收站链路'
     '点击委托应解析收集删除入口',
   );
   assert.ok(
-    managerSource.includes('if(collectDeleteAssetId){ await openRegistryRecycleDialog(collectDeleteAssetId); return; }'),
-    '收集删除应复用既有回收站确认流程',
+    managerSource.includes("if(collectDeleteAssetId){ await gwCall('recycle', 'openRegistryRecycleDialog', collectDeleteAssetId); return; }"),
+    '收集删除应经网关复用既有回收站确认流程',
   );
 
   // 既有回收站链路：openRegistryRecycleDialog → recycleRegistryAsset → deleteRegistryAsset。
@@ -180,7 +181,7 @@ test('AC4 纯原生实现：无框架、无 CDN、import 均为仓库内相对�
   assert.ok(!/https?:\/\//.test(moduleSource), '模块不得包含外部 URL');
   assert.ok(!/\brequire\s*\(/.test(moduleSource), '不得使用 CommonJS');
   assert.ok(!/\bdocument\.|\bwindow\./.test(moduleSource), '渲染模块不得直接操作 DOM 全局');
-  const managerSource = read('web/js/modules/asset-manager.js');
+  const managerSource = readAssetManagerAggregate();
   const imports = [
     ...[...managerSource.matchAll(/^\s*import\s[^'"]*['"]([^'"]+)['"];?\s*$/gm)].map(m => m[1]),
     ...[...managerSource.matchAll(/\bimport\s*\(\s*['"]([^'"]+)['"]/g)].map(m => m[1]),

@@ -9,13 +9,11 @@
  * - AC5 测试登记到 node-files.txt 并完成卫生准入分片。
  */
 import assert from 'node:assert/strict';
+import { readAssetManagerAggregate } from './asset-manager-aggregate.mjs';
 import {existsSync, readFileSync} from 'node:fs';
 import test from 'node:test';
 
-const MANAGER = readFileSync(
-    new URL('../../web/js/modules/asset-manager.js', import.meta.url),
-    'utf8'
-);
+const MANAGER = readAssetManagerAggregate();
 const NODE_FILES = readFileSync(
     new URL('./node-files.txt', import.meta.url),
     'utf8'

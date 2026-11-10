@@ -8,14 +8,12 @@
  * - 底部批量栏与右键菜单同口径切换，且用独立属性避免重复触发。
  */
 import assert from 'node:assert/strict';
+import { readAssetManagerAggregate } from './asset-manager-aggregate.mjs';
 import {readFileSync} from 'node:fs';
 import test from 'node:test';
 import {runInNewContext} from 'node:vm';
 
-const MANAGER = readFileSync(
-    new URL('../../web/js/modules/asset-manager.js', import.meta.url),
-    'utf8'
-);
+const MANAGER = readAssetManagerAggregate();
 
 function functionSource(name){
     // async 定义必须整体取走：只匹配 "function name(" 会丢掉 async 关键字，

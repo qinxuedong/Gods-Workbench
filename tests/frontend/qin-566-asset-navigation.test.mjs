@@ -1,11 +1,12 @@
 // QIN-566: 资产库导航收敛——恢复旧版外壳左栏为唯一导航，顶栏新增项目/剧本/提示词入口
 import assert from 'node:assert/strict';
+import { readAssetManagerAggregate } from './asset-manager-aggregate.mjs';
 import {readFileSync} from 'node:fs';
 import test from 'node:test';
 
 const html = readFileSync(new URL('../../web/pages/assets.html', import.meta.url), 'utf8');
 const controller = readFileSync(new URL('../../web/js/controllers/assets-controller.js', import.meta.url), 'utf8');
-const manager = readFileSync(new URL('../../web/js/modules/asset-manager.js', import.meta.url), 'utf8');
+const manager = readAssetManagerAggregate();
 const vaultCss = readFileSync(new URL('../../web/css/pages/asset-vault.css', import.meta.url), 'utf8');
 const managerCss = readFileSync(new URL('../../web/css/pages/asset-manager.css', import.meta.url), 'utf8');
 
@@ -58,7 +59,7 @@ test('AC3: 统计顶栏「其他」后依次排布「项目」「剧本」「提
 
 test('AC3: 顶栏导航入口点击激活对应系统看板并收口持久化', () => {
   const block = manager.slice(manager.indexOf("data-registry-nav]')){"), manager.indexOf('const registryStat ='));
-  assert.match(block, /activateAssetBoard\(navBoard\)/);
+  assert.match(block, /gwCall\('organize', 'activateAssetBoard', navBoard\)/);
   assert.match(block, /saveAssetTreeState\(\)/, '顶栏路径同样收口持久化（审核残留修复）');
 });
 

@@ -5,13 +5,11 @@
  * AC4 非 admin 403 显式提示；AC5 测试登记 node-files.txt 与卫生准入分片。
  */
 import assert from 'node:assert/strict';
+import { readAssetManagerAggregate } from './asset-manager-aggregate.mjs';
 import {existsSync, readFileSync} from 'node:fs';
 import test from 'node:test';
 
-const MANAGER = readFileSync(
-    new URL('../../web/js/modules/asset-manager.js', import.meta.url),
-    'utf8'
-);
+const MANAGER = readAssetManagerAggregate();
 const NODE_FILES = readFileSync(
     new URL('./node-files.txt', import.meta.url),
     'utf8'
@@ -165,7 +163,8 @@ test('AC4: 非 admin 403 显式提示，不再静默', () => {
     const disk = functionSource('loadAssetRackDiskFolders');
     assert.match(disk, /response\.status === 403/,
         '被拒（403）必须显式识别，不得与普通失败混同');
-    assert.match(disk, /registryDiskFolderPermissionDenied = true/,
+    // QIN-591：registryDiskFolderPermissionDenied 为跨文件写状态，域内赋值改写为 setter 调用（登记在案）。
+    assert.match(disk, /setRegistryDiskFolderPermissionDenied\(true\)/,
         '403 必须登记权限提示状态');
     assert.match(disk, /registryDiskFolderLoading\.has\(key\)\) return registryDiskFolderLoading\.get\(key\)/,
         '在途请求必须等待而非早返回，保证展开后重绘拿到结果');
@@ -175,11 +174,12 @@ test('AC4: 非 admin 403 显式提示，不再静默', () => {
         '目录层级页必须消费权限提示状态');
     assert.match(folders, /磁盘子目录浏览需要管理员权限/, '提示文案必须明确说明权限原因');
 
+    // QIN-591：registryDiskFolderPermissionNoticed 为跨文件写状态，域内赋值改写为 setter 调用（登记在案）。
     const registered = functionSource('loadAssetRackRegisteredFolders');
-    assert.match(registered, /registryDiskFolderPermissionNoticed = true/,
+    assert.match(registered, /setRegistryDiskFolderPermissionNoticed\(true\)/,
         '403 后必须强制重绘一次让提示条出现');
     const boardDirs = functionSource('loadCustomBoardFolderDirectories');
-    assert.match(boardDirs, /registryDiskFolderPermissionNoticed = true/,
+    assert.match(boardDirs, /setRegistryDiskFolderPermissionNoticed\(true\)/,
         '看板态同样必须在 403 后强制重绘一次');
 });
 

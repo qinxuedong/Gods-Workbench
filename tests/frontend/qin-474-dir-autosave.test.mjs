@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readAssetManagerAggregate } from './asset-manager-aggregate.mjs';
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import test from "node:test";
@@ -7,7 +8,7 @@ const repoRoot = process.cwd();
 const read = (relativePath) =>
   readFileSync(path.join(repoRoot, relativePath), "utf8");
 
-const assetManager = read("web/js/modules/asset-manager.js");
+const assetManager = readAssetManagerAggregate();
 const assetManagerCss = read("web/css/pages/asset-manager.css");
 
 const footerHtml = () => {
@@ -72,9 +73,10 @@ test("AC4 输入 Enter 与选文件夹两条路径都立即持久化", () => {
     assetManager,
     /const key = storageInput\.id === 'thumbnailDirectory'[\s\S]*?THUMBNAIL_DIRECTORY_FIELD_KEY[\s\S]*?storageInput\.id\.replace\('storageDir_', ''\)/,
   );
+  // QIN-591：保存派发 gwCall 化（登记在案），保存语义不变。
   assert.match(
     assetManager,
-    /saveDirectoryPath\(key, storageInput\.value\)\.catch\(error => setStatus\(error\.message \|\| '保存目录失败'\)\)/,
+    /gwCall\('settings', 'saveDirectoryPath', key, storageInput\.value\)\.catch\(error => setStatus\(error\.message \|\| '保存目录失败'\)\)/,
   );
   // 路径二：选完文件夹立即保存，不再提示手动点保存。
   assert.match(
@@ -85,7 +87,7 @@ test("AC4 输入 Enter 与选文件夹两条路径都立即持久化", () => {
   // 页面内服务器目录浏览器选择并挂载同样走保存入口。
   assert.match(
     assetManager,
-    /data-server-directory-mount[\s\S]*?saveDirectoryPath\(serverDirectoryBrowserState\.key \|\| 'projects', pathValue, true\)/,
+    /data-server-directory-mount[\s\S]*?gwCall\('settings', 'saveDirectoryPath', serverDirectoryBrowserState\.key \|\| 'projects', pathValue, true\)/,
   );
   // 缓存根目录有独立保存入口，保存后落到缩略图设置接口。
   assert.match(assetManager, /async function saveThumbnailCacheDirectory\(pathValue, closeBrowser=false\)/);
@@ -144,9 +146,10 @@ test("AC4 允许根路径字段回车即登记保存，且有选夹按钮", () =
   );
   // 「登记允许根」按钮是列表登记动作，保留不删，且与回车共用同一条登记路径。
   assert.match(assetManager, /data-storage-root-add[\s\S]*?登记允许根<\/button>/);
+  // QIN-591：登记派发 gwCall 化（登记在案），与回车共用同一条登记路径。
   assert.match(
     assetManager,
-    /target\.hasAttribute\('data-storage-root-add'\)\)\{[\s\S]*?void registerAllowedRootPath\(path\)/,
+    /target\.hasAttribute\('data-storage-root-add'\)\)\{[\s\S]*?void gwCall\('settings', 'registerAllowedRootPath', path\)/,
   );
 });
 

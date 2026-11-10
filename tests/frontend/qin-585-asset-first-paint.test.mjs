@@ -22,6 +22,7 @@
 // 会漏检：把同步请求插回调用点后，字符窗口照样成立、行为已经退化。
 
 import assert from 'node:assert/strict';
+import { readAssetManagerAggregate } from './asset-manager-aggregate.mjs';
 import {readFileSync} from 'node:fs';
 import test from 'node:test';
 import vm from 'node:vm';
@@ -31,7 +32,7 @@ const read = path => readFileSync(new URL(`../../${path}`, import.meta.url), 'ut
 const SHELL_PAGE = read('web/pages/assets.html');
 const EMBED_PAGE = read('web/embeds/asset-manager.html');
 const UTILITIES = read('web/css/base/tailwind-utilities.css');
-const MANAGER = read('web/js/modules/asset-manager.js');
+const MANAGER = readAssetManagerAggregate();
 
 // 外壳页自己的脚本同样依赖这份快照：去掉运行时后，脚本里动态加的工具类
 // （登录弹层禁用态、团队面板布局等）也必须能在快照里找到，否则只是「静态 HTML 好看」。
@@ -334,6 +335,32 @@ function createHarness(){
         // 真实实现还会 abort 旧请求；这里保留「新请求递增序号」这一关键语义，
         // 被 abort 的旧 loadAll 才会像生产那样在 catch 里按序号提前返回。
         'function beginRegistryBootstrapRequest(){ return ++registryRequestSeq; }',
+        // QIN-591 注入：跨文件写状态的 setter 桩。拆分后域内函数（loadAssetInbox /
+        // loadGovernanceSuggestions 等）对主文件状态的写入经主文件导出的 setter（登记在案的
+        // setter 改写），这里把 setter 落回 vm 内已切片的同名模块级状态，赋值语义与拆分前一致。
+        'function setInboxItems(v){ inboxItems = v; }',
+        'function setInboxLoaded(v){ inboxLoaded = v; }',
+        'function setInboxSettings(v){ inboxSettings = v; }',
+        'function setInboxSettingsOpen(v){ inboxSettingsOpen = v; }',
+        'function setGovernanceSuggestionsData(v){ governanceSuggestionsData = v; }',
+        'function setGovernanceSuggestionsLoading(v){ governanceSuggestionsLoading = v; }',
+        'function setGovernanceSuggestionsError(v){ governanceSuggestionsError = v; }',
+        // QIN-591 注入：gwCall/gwLoad 网关桩。真实网关优先命中 GW_DEFERRED 注册的域函数面；
+        // 桩把调用派发回 vm 内已切片的同名函数（inbox/governance 域本体），未切片的宿主依赖
+        // 沿用夹具同名桩。行为断言（请求何时发出）仍由真实源码函数驱动。
+        `function gwCall(domain, name, ...args){
+            if(name === 'loadAssetInbox') return loadAssetInbox(...args);
+            if(name === 'markAssetInboxViewed') return markAssetInboxViewed(...args);
+            if(name === 'loadGovernanceSuggestions') return loadGovernanceSuggestions(...args);
+            if(name === 'clearSearchSelection') return clearSearchSelection(...args);
+            if(name === 'renderGlobalDirectorySettings') return renderGlobalDirectorySettings(...args);
+            if(name === 'applyAllowedRootSettingsData') return applyAllowedRootSettingsData(...args);
+            throw new Error('gwCall 未注入域函数面: ' + domain + '/' + name);
+        }`,
+        `function gwLoad(domain){
+            if(domain === 'inbox') return Promise.resolve({ loadAssetInbox, markAssetInboxViewed, saveAssetInboxSettings });
+            return Promise.reject(new Error('gwLoad 未注入域: ' + domain));
+        }`,
         sliceBootEntry(MANAGER),
         `return {
             loadAll,
@@ -471,8 +498,10 @@ test('AC2: 执行真实启动段时，首屏列表落地前没有任何非首屏
 
     state.idle.shift()();
     await flush();
+    // QIN-591：延后块经网关补发（gwLoad 动态导入异步化），两条链路的到达顺序不再固定；
+    // 行为契约不变：两条都补齐、且各自只发一次。
     assert.deepEqual(
-        state.requests,
+        [...state.requests].sort(),
         ['/api/asset-inbox?limit=500', '/api/asset-registry/governance/suggestions'],
         '延后块落地后收集箱与治理建议都应补发'
     );
@@ -516,8 +545,10 @@ test('AC2: 真实 loadAll 的失败分支不得放行延后块（列表仍在途
 
     state.idle.shift()();
     await flush();
+    // QIN-591：延后块经网关补发（gwLoad 动态导入异步化），两条链路的到达顺序不再固定；
+    // 行为契约不变：两条都补齐、且各自只发一次。
     assert.deepEqual(
-        state.requests,
+        [...state.requests].sort(),
         ['/api/asset-inbox?limit=500', '/api/asset-registry/governance/suggestions'],
         '延后块落地后收集箱与治理建议都应补发'
     );
@@ -548,7 +579,8 @@ test('AC2: 首屏在途时刷新，正等 A 的延后调度不得被旧代际放
 
     state.idle.shift()();
     await flush();
-    assert.deepEqual(state.requests, [
+    // QIN-591：延后块经网关补发（gwLoad 动态导入异步化），到达顺序不再固定，契约仍是两条都补齐。
+    assert.deepEqual([...state.requests].sort(), [
         '/api/asset-inbox?limit=500',
         '/api/asset-registry/governance/suggestions',
     ]);
@@ -581,8 +613,10 @@ test('AC2: 收集箱已加载时，延后块不再重复读一遍', async () => 
     await flush();
     state.idle.shift()();
     await flush();
+    // QIN-591：延后块经网关补发（gwLoad 动态导入异步化），到达顺序不再固定；
+    // 行为契约不变：收集箱不重读（仅直读那一次）+ 延后块只补治理建议。
     assert.deepEqual(
-        state.requests,
+        [...state.requests].sort(),
         ['/api/asset-inbox?limit=500', '/api/asset-registry/governance/suggestions'],
         '收集箱已经加载过，延后块只该补治理建议'
     );
@@ -699,7 +733,8 @@ test('AC2: 首屏 A 在途时真实「添加公网 URL」入口启动 B，A 落�
 
     state.idle.shift()();
     await flush();
-    assert.deepEqual(state.requests, [
+    // QIN-591：延后块经网关补发（gwLoad 动态导入异步化），到达顺序不再固定，契约仍是两条都补齐。
+    assert.deepEqual([...state.requests].sort(), [
         '/api/asset-inbox?limit=500',
         '/api/asset-registry/governance/suggestions',
     ]);
@@ -728,7 +763,8 @@ test('AC2: 首屏 A 在途时真实「删除公网 URL」入口同样登记 B �
     assert.equal(state.idle.length, 1);
     state.idle.shift()();
     await flush();
-    assert.deepEqual(state.requests, [
+    // QIN-591：延后块经网关补发（gwLoad 动态导入异步化），到达顺序不再固定，契约仍是两条都补齐。
+    assert.deepEqual([...state.requests].sort(), [
         '/api/asset-inbox?limit=500',
         '/api/asset-registry/governance/suggestions',
     ]);
@@ -796,8 +832,10 @@ test('AC2: idle 已排队后刷新，收集箱不得提前发出且治理补取�
 
     await settle(second);
     await flush();
+    // QIN-591：延后块经网关补发（gwLoad 动态导入异步化），到达顺序不再固定；
+    // 行为契约不变：B 落地后两条链路都要补齐，治理不能被闸门挡下后丢失。
     assert.deepEqual(
-        state.requests,
+        [...state.requests].sort(),
         ['/api/asset-inbox?limit=500', '/api/asset-registry/governance/suggestions'],
         'B 落地后两条链路都要补齐，治理不能被闸门挡下后丢失'
     );
@@ -836,7 +874,8 @@ test('AC2: 首屏 A 在途时真实「搜索输入」启动 B，A 旧终态不�
     assert.equal(state.idle.length, 1, 'B 落地后才放行延后调度');
     state.idle.shift()();
     await flush();
-    assert.deepEqual(state.requests, [
+    // QIN-591：延后块经网关补发（gwLoad 动态导入异步化），到达顺序不再固定，契约仍是两条都补齐。
+    assert.deepEqual([...state.requests].sort(), [
         '/api/asset-inbox?limit=500',
         '/api/asset-registry/governance/suggestions',
     ]);
@@ -868,7 +907,8 @@ test('AC2: 首屏 A 在途时筛选/排序直接替换列表，共享入口同�
     assert.equal(state.idle.length, 1);
     state.idle.shift()();
     await flush();
-    assert.deepEqual(state.requests, [
+    // QIN-591：延后块经网关补发（gwLoad 动态导入异步化），到达顺序不再固定，契约仍是两条都补齐。
+    assert.deepEqual([...state.requests].sort(), [
         '/api/asset-inbox?limit=500',
         '/api/asset-registry/governance/suggestions',
     ]);
@@ -963,8 +1003,10 @@ test('AC2: idle 已排队后搜索，收集箱不得提前发出且治理补取�
 
     await settle(second);
     await flush();
+    // QIN-591：延后块经网关补发（gwLoad 动态导入异步化），到达顺序不再固定；
+    // 行为契约不变：B 落地后两条链路都要补齐，治理不能被闸门挡下后丢失。
     assert.deepEqual(
-        state.requests,
+        [...state.requests].sort(),
         ['/api/asset-inbox?limit=500', '/api/asset-registry/governance/suggestions'],
         'B 落地后两条链路都要补齐，治理不能被闸门挡下后丢失'
     );

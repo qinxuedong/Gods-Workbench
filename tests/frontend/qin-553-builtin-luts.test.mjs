@@ -1,8 +1,9 @@
 import assert from 'node:assert/strict';
+import { readAssetManagerAggregate } from './asset-manager-aggregate.mjs';
 import {readFileSync} from 'node:fs';
 import test from 'node:test';
 
-const manager = readFileSync(new URL('../../web/js/modules/asset-manager.js', import.meta.url), 'utf8');
+const manager = readAssetManagerAggregate();
 const api = readFileSync(new URL('../../web/js/modules/asset-manager/api.js', import.meta.url), 'utf8');
 
 test('QIN-553：内置 LUT 登记与显示切换走服务端幂等接口', () => {

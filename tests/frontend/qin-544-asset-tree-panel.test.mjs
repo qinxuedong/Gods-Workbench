@@ -1,9 +1,10 @@
 // QIN-544: 资产库左侧单栏树重构——系统/我的切换、去中间栏、项目层级、管线样式
 import assert from 'node:assert/strict';
+import { readAssetManagerAggregate } from './asset-manager-aggregate.mjs';
 import {readFileSync} from 'node:fs';
 import test from 'node:test';
 
-const source = readFileSync(new URL('../../web/js/modules/asset-manager.js', import.meta.url), 'utf8');
+const source = readAssetManagerAggregate();
 const styles = readFileSync(new URL('../../web/css/pages/asset-manager.css', import.meta.url), 'utf8');
 
 function functionSource(name){
@@ -235,7 +236,8 @@ test('AC8: 选中态分发：项目/分组/条目/目录各自收敛素材', () 
     assert.match(select, /registryProjectFilterId = pid/, '点项目应设置项目过滤');
     assert.match(select, /entityTypes:new Set\(\[typeId\]\)/, '点分组应设置类型过滤');
     assert.match(select, /entityId/, '点条目应设置条目过滤');
-    assert.match(select, /selectAssetRackFolder\(rootId/, '点目录应走目录过滤');
+    // QIN-591：目录点击派发 gwCall 化（登记在案），仍收敛到目录过滤
+    assert.match(select, /gwCall\('settings', 'selectAssetRackFolder', rootId/, '点目录应走目录过滤');
     assert.match(source, /filter\(registryProjectEntityMatches\)/, '素材可见链路接入条目过滤');
     assert.match(functionSource('renderProjectManager'), /registryVisibleAssets\(\)/, '项目制片视图素材来自统一可见链路');
 });

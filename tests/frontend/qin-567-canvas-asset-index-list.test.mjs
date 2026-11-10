@@ -5,12 +5,13 @@
 // 后端 /api/asset-registry/assets/{asset_id}/media 地址经 assetThumb 直通预览，
 // 空库仍保留既有空态文案，类型徽标与后端 kind 映射同口径。
 import assert from 'node:assert/strict';
+import { readAssetManagerAggregate } from './asset-manager-aggregate.mjs';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
-const js = readFileSync(path.join(root, 'web/js/modules/asset-manager.js'), 'utf8');
+const js = readAssetManagerAggregate();
 
 // 提取完整函数体，断言函数存在且内部消费点成立（与 qin-544 同一抽取口径）。
 function functionSource(name){

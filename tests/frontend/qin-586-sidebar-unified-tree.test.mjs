@@ -1,11 +1,12 @@
 // [QIN-586] 资产库侧栏统一为资源库树并显示递归素材计数自动化测试
 import assert from 'node:assert/strict';
+import { readAssetManagerAggregate } from './asset-manager-aggregate.mjs';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
 
 const html = readFileSync(new URL('../../web/pages/assets.html', import.meta.url), 'utf8');
 const controller = readFileSync(new URL('../../web/js/controllers/assets-controller.js', import.meta.url), 'utf8');
-const manager = readFileSync(new URL('../../web/js/modules/asset-manager.js', import.meta.url), 'utf8');
+const manager = readAssetManagerAggregate();
 
 test('AC1: 结构统一为一棵资源库树，去掉「资源入口」与「挂载文件夹」分段', () => {
   // 1. 顶部总览卡与新建资源库按钮
@@ -132,9 +133,9 @@ test('AC1 实体验证: 模拟 QA 场景（无 path 的 facets 根与 hash 允�
 
 test('AC2: 资产总览清除库/文件夹筛选回到首页，深层目录选择状态持久化支持', () => {
   // 激活 registry 时清除目录与来源筛选
-  assert.match(manager, /if\(board\.id === 'registry'\)\{\s*\n\s*clearAssetRackFolder\(\);\s*\n\s*registryNavFolder = \{rootId:'', path:''\};/);
-  assert.match(manager, /registryRootId = '';/);
-  assert.match(manager, /assetTreeSelectedKey = 'registry';/);
+  assert.match(manager, /if\(board\.id === 'registry'\)\{\s*\n\s*clearAssetRackFolder\(\);\s*\n\s*setRegistryNavFolder\(\{rootId:'', path:''\}\);/);
+  assert.match(manager, /setRegistryRootId\(''\);/);
+  assert.match(manager, /setAssetTreeSelectedKey\('registry'\);/);
 
   // gwAssetTreeEntryKey 支持精准返回子目录深层路径 key，且在无筛选的 registry 下稳定返回 'registry'
   assert.match(manager, /return path && path !== '__root__' \? `mine:root:\$\{rootId\}::\$\{path\}` : `mine:root:\$\{rootId\}`;/);

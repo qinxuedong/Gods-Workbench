@@ -1,9 +1,10 @@
 import assert from 'node:assert/strict';
+import { readAssetManagerAggregate } from './asset-manager-aggregate.mjs';
 import {readFileSync} from 'node:fs';
 import test from 'node:test';
 
 // QIN-550：上传素材（仅 stored_name 登记）预览与回读地址修复的静态契约。
-const source = readFileSync(new URL('../../web/js/modules/asset-manager.js', import.meta.url), 'utf8');
+const source = readAssetManagerAggregate();
 
 /** 截取具名函数的源码片段，用于断言分支内部行为。 */
 function functionBody(name) {

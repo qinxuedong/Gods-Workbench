@@ -3,6 +3,7 @@
  * 这些测试只读取前端源码，不连接后端或外部服务。
  */
 import assert from 'node:assert/strict';
+import { readAssetManagerAggregate } from './asset-manager-aggregate.mjs';
 import fs from 'node:fs';
 import test from 'node:test';
 
@@ -10,7 +11,7 @@ const read = path => fs.readFileSync(path, 'utf8');
 const canvasList = read('web/js/modules/canvas-list.js');
 const canvasWorkspace = read('web/js/modules/canvas-workspace.js');
 const workflow = read('web/js/controllers/workflow-controller.js');
-const assetManager = read('web/js/modules/asset-manager.js');
+const assetManager = readAssetManagerAggregate();
 
 test('C5 画布列表显式 project_id 失效时不得静默回落到默认项目', () => {
   assert.match(canvasList, /initialCanvasContext\.projectId/);

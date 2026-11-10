@@ -16,13 +16,11 @@
 // 无法整体 import，因此按既有 mvp1-t0 模式读取源码做结构断言。
 
 import assert from 'node:assert/strict';
+import { readAssetManagerAggregate } from './asset-manager-aggregate.mjs';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
 
-const source = readFileSync(
-    new URL('../../web/js/modules/asset-manager.js', import.meta.url),
-    'utf8',
-);
+const source = readAssetManagerAggregate();
 
 test('AC1: 治理建议入口位于顶栏并打开可访问抽屉，左栏不再保留入口', () => {
     assert.doesNotMatch(source, /\{id:'governance', name:'治理建议'/);
@@ -32,7 +30,7 @@ test('AC1: 治理建议入口位于顶栏并打开可访问抽屉，左栏不再
     assert.match(source, /function openGovernanceDrawer\(trigger\)/);
     assert.match(source, /role="dialog" aria-modal="true" aria-labelledby="governanceDrawerTitle"/);
     assert.match(source, /function renderRegistryToolbar\([\s\S]*?data-governance-open/);
-    assert.match(source, /loadGovernanceSuggestions\(\);\s*loadAll\(\)\.then/);
+    assert.match(source, /gwCall\('governance', 'loadGovernanceSuggestions'\);\s*loadAll\(\)\.then/);
 });
 
 test('suggestion view only calls the two implemented governance endpoints', () => {
@@ -100,10 +98,14 @@ test('degraded index state is surfaced instead of silently hiding duplicates', (
 
 test('governance drawer exposes no asset deletion endpoint', () => {
     // 关闭抽屉会移除界面节点；此处约束只针对资产删除 API。
+    // QIN-591：治理抽屉渲染迁入 governance.js 延后域，视图段 = 主文件入口段 + governance.js 函数段。
     const viewStart = source.indexOf('MVP1-T5 / QIN-549 治理建议：顶栏入口与分组抽屉');
     assert.ok(viewStart > 0, '缺少治理视图代码段');
     const viewEnd = source.indexOf('function render(){', viewStart);
-    const view = source.slice(viewStart, viewEnd);
+    const governanceStart = source.indexOf('function loadGovernanceSuggestions(');
+    const governanceEnd = source.indexOf("GW_DEFERRED['governance']", governanceStart);
+    assert.ok(governanceStart > 0 && governanceEnd > governanceStart, '缺少治理域函数段');
+    const view = `${source.slice(viewStart, viewEnd)}\n${source.slice(governanceStart, governanceEnd)}`;
     assert.doesNotMatch(view, /['"]\/api\/asset-registry\/[^'"]*(?:delete|remove|unlink)[^'"]*['"]/i);
     assert.match(view, /系统永不自动删除，也不改源文件/);
 });
