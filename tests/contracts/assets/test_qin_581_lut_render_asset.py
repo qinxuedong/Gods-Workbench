@@ -24,6 +24,7 @@ from gw.asset_registry import repository as asset_repo
 from gw.core import storage
 from gw.core.asset_visibility import asset_owner_key
 from gw.core.auth import require_authenticated
+from gw.core.errors import CleanroomException
 
 BASE = "/api/asset-registry"
 AUTH = {"Authorization": "Bearer cleanroom-test", "X-User-Role": "editor"}
@@ -432,3 +433,187 @@ def test_video_strength_curve_is_monotonic(client: TestClient, tmp_path: Path):
     assert low <= zero[2] - 0 or abs(zero[2] - original_pixel[2]) <= 3
     # 强度越大越接近满调色：0% → 50% → 100% 的蓝通道必须严格递减。
     assert zero[2] > half[2] > full[2], (zero, half, full)
+
+
+def _search_document_count() -> int:
+    """冷读检索索引：每次新开连接重新打开数据库，不复用进程内连接。"""
+    from gw.core.sqlite_vec_engine import SQLiteVecEngine
+
+    db_path = storage.data_root() / asset_repo.ASSET_SEARCH_INDEX_FILENAME
+    if not db_path.exists():
+        return 0
+    with SQLiteVecEngine(db_path) as engine:
+        return engine.document_count()
+
+
+def test_derived_asset_does_not_widen_private_lut_scope(client: TestClient):
+    """阻断回归：公共源素材 + 私有 LUT，派生件不得退化成公共资源。
+
+    只继承源素材归属时，B 读源素材 200（公共）、读 LUT 404（A 私有），
+    但读 A 派生出来的新资产详情/媒体 200、列表里也看得到，
+    ``derived_from`` 还把私有 LUT 的 asset_id 一起带出去。
+    """
+    _ensure_luts(client)
+    owner = _owner_key()
+    _claim(WARM, owner)
+    # 前置条件：源素材是公共资源，LUT 已私有化——否则本用例证不到「派生件扩权」。
+    source = _upload(client, "qin581_public.png", _image_bytes(), "image/png")
+    assert client.get(f"{BASE}/assets/{source['id']}", headers=OTHER_AUTH).status_code == 200
+    assert client.get(f"{BASE}/assets/{WARM}", headers=OTHER_AUTH).status_code == 404
+
+    response = _render(client, source["id"], WARM, 1.0)
+    assert response.status_code == 200, response.text
+    created = response.json()["asset"]
+    assert created.get("workflow_owner") == owner, "派生件必须继承 LUT 的私有归属"
+
+    assert client.get(f"{BASE}/assets/{created['id']}", headers=AUTH).status_code == 200
+    assert client.get(f"{BASE}/assets/{created['id']}/media", headers=AUTH).status_code == 200
+    other_detail = client.get(f"{BASE}/assets/{created['id']}", headers=OTHER_AUTH)
+    assert other_detail.status_code == 404, other_detail.text
+    assert other_detail.json()["detail"]["code"] == "ASSET_NOT_FOUND"
+    assert "derived_from" not in other_detail.text
+    assert client.get(f"{BASE}/assets/{created['id']}/media", headers=OTHER_AUTH).status_code == 404
+    listing = client.get(f"{BASE}/assets", headers=OTHER_AUTH, params={"limit": 500})
+    assert listing.status_code == 200, listing.text
+    assert created["id"] not in {item["id"] for item in listing.json()["assets"]}
+
+
+@pytest.mark.parametrize(
+    "source_extra,lut_extra,expected",
+    [
+        ({}, {}, {}),
+        ({"workflow_owner": "o1"}, {}, {"workflow_owner": "o1"}),
+        ({}, {"workflow_owner": "o1"}, {"workflow_owner": "o1"}),
+        ({"workflow_owner": "o1"}, {"workflow_owner": "o1"}, {"workflow_owner": "o1"}),
+        ({"project_id": "p1"}, {}, {"project_ids": ["p1"], "project_id": "p1"}),
+        ({}, {"project_ids": ["p2"]}, {"project_ids": ["p2"]}),
+        (
+            {"project_ids": ["p1", "p2"]},
+            {"project_ids": ["p2", "p3"]},
+            {"project_ids": ["p2"]},
+        ),
+    ],
+)
+def test_inherited_scope_is_the_intersection_of_both_inputs(
+    source_extra: dict, lut_extra: dict, expected: dict
+):
+    """可见范围只收窄不扩大：归属取唯一值，项目范围取交集。"""
+    scope = asset_repo._inherited_scope(
+        {"id": "ast_src", **source_extra}, {"id": "builtin_lut_warm", **lut_extra}
+    )
+    assert scope == expected
+
+
+@pytest.mark.parametrize(
+    "source_extra,lut_extra",
+    [
+        ({"workflow_owner": "o1"}, {"workflow_owner": "o2"}),
+        ({"project_ids": ["p1"]}, {"project_ids": ["p2"]}),
+    ],
+)
+def test_inherited_scope_fails_closed_when_scopes_diverge(
+    source_extra: dict, lut_extra: dict
+):
+    """两个输入的可见范围收敛不到一个不扩权的值时，拒绝生成而不是放任扩权。"""
+    with pytest.raises(CleanroomException) as excinfo:
+        asset_repo._inherited_scope(
+            {"id": "ast_src", **source_extra}, {"id": "builtin_lut_warm", **lut_extra}
+        )
+    assert excinfo.value.code == "LUT_SCOPE_MISMATCH"
+    assert excinfo.value.status_code == 403
+
+
+def test_rollback_keeps_output_of_committed_record(client: TestClient):
+    """阻断回归：补偿必须先判定「这条记录是否真的没提交」。
+
+    两次显式同 revision 的请求都能通过 ``_cas``。先失败的一笔释放锁后，
+    另一笔可能已经用同一个派生 ID 提交成功；此时盘上文件属于已提交的那一笔，
+    锁外无脑删会把别人刚提交的产物删掉。
+    """
+    _ensure_luts(client)
+    source = _upload(client, "qin581_commit.png", _image_bytes(), "image/png")
+    response = _render(client, source["id"], WARM, 1.0)
+    assert response.status_code == 200, response.text
+    created = response.json()["asset"]
+    path = storage.resolve_output_path(created["display_path"])
+    assert path.is_file()
+
+    # 模拟「A 的补偿晚到，而 B 已经用同一个 ID 提交成功」。
+    asset_repo._rollback_lut_render_outputs([(created["id"], path)], [created["id"]])
+
+    assert path.is_file(), "已提交的产物不能被后到的补偿删掉"
+    assert client.get(f"{BASE}/assets/{created['id']}", headers=AUTH).status_code == 200
+
+
+def test_interrupt_after_commit_keeps_committed_output(client: TestClient, monkeypatch):
+    """阻断回归：JSON 提交完成后才中断，不得按「没提交」清掉已提交产物。"""
+    _ensure_luts(client)
+    source = _upload(client, "qin581_interrupt.png", _image_bytes(), "image/png")
+    before = _asset_count(client)
+    inner_factory = asset_repo.state
+
+    class _InterruptingState:
+        """真实提交后抛中断，模拟提交点之后被打断。"""
+
+        def __init__(self, inner):
+            self._inner = inner
+
+        def mutate(self, mutator):
+            self._inner.mutate(mutator)
+            raise KeyboardInterrupt
+
+        def __getattr__(self, name):
+            return getattr(self._inner, name)
+
+    from gw.api.routes_asset_registry import _render_lut_asset
+
+    monkeypatch.setattr(
+        asset_repo, "state", lambda: _InterruptingState(inner_factory())
+    )
+    with pytest.raises(KeyboardInterrupt):
+        asset_repo.create_lut_render(source["id"], WARM, 1.0, None, render=_render_lut_asset)
+
+    assert _asset_count(client) == before + 1, "记录已提交才算「已提交」"
+    created = client.get(f"{BASE}/assets", headers=AUTH, params={"limit": 500}).json()["assets"]
+    derived = [item for item in created if item.get("derived_from")]
+    assert derived, "提交的记录必须还在"
+    path = storage.resolve_output_path(derived[-1]["display_path"])
+    assert path.is_file(), "已提交记录的产物必须保留"
+    assert client.get(f"{BASE}/assets/{derived[-1]['id']}/media", headers=AUTH).status_code == 200
+
+
+def test_json_commit_failure_leaves_no_orphan_file_or_search_document(
+    client: TestClient, monkeypatch
+):
+    """重要回归：最终 JSON 写失败时，磁盘产物与 SQLite 检索文档都要撤销。
+
+    检索索引是另一个存储：索引先写成功、JSON 提交随后失败时，文件清了但索引里
+    仍留一条没有对应资产的孤儿文档，冷读（新连接打开数据库）就能查到。
+    """
+    _ensure_luts(client)
+    source = _upload(client, "qin581_jsonfail.png", _image_bytes(), "image/png")
+    before_assets = _asset_count(client)
+    before_docs = _search_document_count()
+    output_root = storage.data_root() / "media_output" / "lut_render" / source["id"]
+
+    real_save = storage.save
+    fired: list[bool] = []
+
+    def flaky_save(namespace: str, payload) -> None:
+        if namespace == asset_repo.NS_REGISTRY and not fired:
+            fired.append(True)
+            raise OSError("injected json commit failure")
+        return real_save(namespace, payload)
+
+    # 局部补丁必须用 context：``undo()`` 会把 conftest 注入的环境补丁一起撤掉，
+    # 认证模式退回本地账户后后续请求全部 401（第 1 轮已踩过）。
+    with monkeypatch.context() as patch:
+        patch.setattr(storage, "save", flaky_save)
+        with pytest.raises(OSError):
+            _render(client, source["id"], WARM, 1.0)
+
+    assert fired, "必须真的命中注入的提交失败，否则本用例没有测到目标路径"
+    assert _asset_count(client) == before_assets, "失败不得写进资产记录"
+    leftovers = list(output_root.rglob("*")) if output_root.exists() else []
+    assert not [path for path in leftovers if path.is_file()], f"失败后仍残留产物：{leftovers}"
+    assert _search_document_count() == before_docs, "检索索引里不得留下孤儿文档"

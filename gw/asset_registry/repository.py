@@ -2527,6 +2527,87 @@ def _lut_render_display_name(source_name: str, lut_name: str, extension: str) ->
     return f"{stem(source_name)}_{stem(lut_name)}_{LUT_RENDER_VERSION}{extension}"
 
 
+def _project_scope(record: Dict[str, Any]) -> set:
+    """记录上声明的项目范围（``project_id`` 与 ``project_ids`` 并集）。"""
+    ids = {str(pid) for pid in (record.get("project_ids") or []) if pid}
+    if record.get("project_id"):
+        ids.add(str(record["project_id"]))
+    return ids
+
+
+def _inherited_scope(source: Dict[str, Any], lut_asset: Dict[str, Any]) -> Dict[str, Any]:
+    """派生资产的可视范围：取两个输入的交集，绝不扩大其中任一方。
+
+    ``asset_visible`` 的判定顺序是「有归属只看归属，否则看项目成员，都没有就是
+    公共资源」。因此只把源素材的归属抄给派生件还不够：公共素材 + 私有 LUT 的
+    产物会退化成公共资源，任何已认证主体都能读它的详情、媒体与列表项，
+    ``derived_from`` 还会把私有 LUT 的 asset_id 一并带出去。
+    """
+    owners = {
+        owner for owner in (_record_owner(source), _record_owner(lut_asset)) if owner
+    }
+    if len(owners) > 1:
+        # 请求方能同时读到两个输入，正常路径下两者归属必然相同；不同说明入参在
+        # 事务内被并发改写，此时没有「不扩大范围」的归属可继承，失败关闭。
+        raise CleanroomException(
+            403, "LUT_SCOPE_MISMATCH", "原素材与 LUT 的归属不一致，无法生成派生版本"
+        )
+
+    scope: Dict[str, Any] = {}
+    if owners:
+        scope["workflow_owner"] = next(iter(owners))
+
+    local = _project_scope(source)
+    foreign = _project_scope(lut_asset)
+    if local and foreign:
+        common = local & foreign
+        if not common:
+            # 两个项目范围不相交：交集为空意味着「谁都不可见」，但空列表在
+            # ``asset_visible`` 里的语义恰好相反（公共资源），所以只能拒绝。
+            raise CleanroomException(
+                403, "LUT_SCOPE_MISMATCH", "原素材与 LUT 的项目范围不相交，无法生成派生版本"
+            )
+    else:
+        # 一侧没有项目范围（对所有人开放），交集就是另一侧。
+        common = local | foreign
+    if common:
+        scope["project_ids"] = sorted(common)
+        if str(source.get("project_id") or "") in common:
+            scope["project_id"] = source["project_id"]
+    return scope
+
+
+def _rollback_lut_render_outputs(
+    written: List[Tuple[str, Path]], created_ids: List[str]
+) -> None:
+    """撤销一次失败的 LUT 派生：只清理确实没有被提交的那一份。
+
+    判定必须在注册表命名空间锁内完成。两次显式同 revision 的请求都能通过
+    ``_cas``：先失败的一笔释放锁之后，另一笔可能已经用同一个派生 ID 提交成功，
+    此时盘上文件与检索文档都属于**已提交**的那一笔；在锁外直接删会删掉别人的
+    有效产物（JSON 提交完成后才中断也会误删已提交产物）。因此这里重新取锁、
+    按「注册表里是否真有这条记录」判定归属，再决定是否删除，检索索引的清理也
+    放在同一把锁内，避免把并发成功那笔刚写好的文档删掉。
+    """
+    with storage.namespace_lock(state().namespace):
+        raw = state().read()
+        assets = raw.get("assets") or {}
+        committed = {aid for aid in created_ids if assets.get(aid)}
+        for asset_id, path in written:
+            if asset_id in committed:
+                continue
+            path.unlink(missing_ok=True)
+            try:
+                path.parent.rmdir()  # 只有目录空时才成功，不会误删同源的其他产物
+            except OSError:
+                pass
+        orphan_ids = [aid for aid in created_ids if aid not in committed]
+        if orphan_ids:
+            # 检索索引是另一个存储：JSON 写失败时它可能已经落库，必须一并撤销，
+            # 否则冷读仍能查到一条没有对应资产的孤儿文档。
+            delete_asset_search_documents(orphan_ids)
+
+
 def create_lut_render(
     asset_id: str,
     lut_asset_id: str,
@@ -2563,8 +2644,9 @@ def create_lut_render(
     if not math.isfinite(ratio) or ratio < 0 or ratio > 1:
         raise CleanroomException(400, "INVALID_LUT_STRENGTH", "LUT 强度必须在 0 到 1 之间")
 
-    # 事务内已落盘的产物；任何后续失败都在 ``state().mutate`` 外层统一清理。
-    written: List[Path] = []
+    # 事务内已落盘的产物与已写过的派生 ID；任何后续失败都在锁内判定后统一清理。
+    written: List[Tuple[str, Path]] = []
+    created_ids: List[str] = []
 
     def mutate(raw: Dict[str, Any]) -> Any:
         _cas(raw, expected_version)
@@ -2602,7 +2684,7 @@ def create_lut_render(
             raise CleanroomException(503, "LUT_RENDER_FAILED", "LUT 渲染失败") from exc
         # 产物已落盘：从这里往后的任何失败（索引写入、状态提交）都要靠外层补偿，
         # 只包住渲染会在「记录没提交、文件还留着」时留下孤儿产物。
-        written.append(target)
+        written.append((new_asset_id, target))
 
         name = _lut_render_display_name(
             str(source.get("name") or ""), str(lut_asset.get("name") or ""), extension
@@ -2636,18 +2718,13 @@ def create_lut_render(
             record["width"] = int(rendered["width"])
         if rendered.get("height"):
             record["height"] = int(rendered["height"])
-        # 归属随源素材走：派生件丢掉 workflow_owner 会退化成「公共资源」——任何已
-        # 认证主体都能读它的详情与媒体，derived_from 还会把源 asset_id 与所用 LUT
-        # 的 asset_id 一并带出去，等于绕过源素材的跨主体隔离。
-        owner_key = _record_owner(source)
-        if owner_key:
-            record["workflow_owner"] = owner_key
-        if source.get("project_id") is not None:
-            record["project_id"] = source["project_id"]
-        if source.get("project_ids") is not None:
-            record["project_ids"] = list(source["project_ids"])
+        # 可见范围取两个输入的交集：只抄源素材会漏掉「公共素材 + 私有 LUT」——
+        # 派生件退化成公共资源后，任何已认证主体都能读它的详情与媒体，
+        # derived_from 还会把私有 LUT 的 asset_id 一并带出去。
+        record.update(_inherited_scope(source, lut_asset))
         raw["assets"][new_asset_id] = record
         raw["sequences"][new_asset_id] = True
+        created_ids.append(new_asset_id)
         _upsert_asset_search_documents([record])
         revision = _bump(raw)
         return {
@@ -2663,14 +2740,10 @@ def create_lut_render(
     try:
         return state().mutate(mutate)
     except BaseException:
-        # ``mutate`` 抛异常即代表状态未提交（读-改-写整体回滚），此时盘上的产物
-        # 没有任何记录引用，必须一并清掉，否则「资产数不变但孤儿文件残留」。
-        for path in written:
-            path.unlink(missing_ok=True)
-            try:
-                path.parent.rmdir()  # 只有目录空时才成功，不会误删同源的其他产物
-            except OSError:
-                pass
+        # ``mutate`` 抛异常即代表状态没有提交（读-改-写整体回滚，提交后才中断除外），
+        # 此时盘上的产物与检索文档没有任何记录引用，必须一并清掉；但「哪一份真的
+        # 没提交」要在锁内按注册表现状判定，不能无脑删。
+        _rollback_lut_render_outputs(written, created_ids)
         raise
 
 
