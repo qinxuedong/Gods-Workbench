@@ -449,3 +449,44 @@ def test_bridge_command_bound_to_subject(client, monkeypatch):
         ).json()["command"]
         == "open_workflow"
     )
+
+
+def test_qin_583_comfy_control_status_is_async_nonblocking():
+    """QIN-583: 验证 GET /comfy-control 为 async 异步端点，不阻塞单进程事件循环。"""
+    import asyncio
+    from gw.god_workflow import routes
+
+    assert asyncio.iscoroutinefunction(routes.comfy_control_status), (
+        "comfy_control_status 必须为 async def 协程函数以避免阻塞事件循环"
+    )
+
+
+def test_qin_583_probe_fast_fail_timeout(monkeypatch):
+    """QIN-583: 验证 probe 使用紧凑超时 (<= 0.5s) 快速失败。"""
+    import httpx
+    from gw.god_workflow import comfy_control
+
+    observed_timeout = None
+
+    class CaptureClient:
+        def __init__(self, timeout=None, **kwargs):
+            nonlocal observed_timeout
+            observed_timeout = timeout
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            pass
+
+        def get(self, url):
+            raise httpx.ConnectError("Connection refused")
+
+    monkeypatch.setattr(comfy_control.httpx, "Client", CaptureClient)
+    res = comfy_control.probe("http://127.0.0.1:8188")
+    assert res is False
+    assert observed_timeout is not None
+    assert isinstance(observed_timeout, httpx.Timeout)
+    assert observed_timeout.connect == 0.25
+    assert observed_timeout.read == 0.5
+

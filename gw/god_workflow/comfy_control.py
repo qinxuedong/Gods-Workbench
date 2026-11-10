@@ -161,7 +161,11 @@ class ProcessBackend:
 
 def probe(url):
     try:
-        with httpx.Client(timeout=1, trust_env=False, follow_redirects=False) as client:
+        with httpx.Client(
+            timeout=httpx.Timeout(0.5, connect=0.25),
+            trust_env=False,
+            follow_redirects=False,
+        ) as client:
             response = client.get(url.rstrip("/") + "/system_stats")
             data = response.json()
             return (
