@@ -2511,6 +2511,146 @@ def register_derived_asset(asset_id: str, name: str, raw_path: str) -> Dict[str,
     return state().mutate(mutate)
 
 
+LUT_RENDER_VERSION = "v001"
+#: 只有图片与视频能套 LUT；其余类型明确拒绝，不猜测。
+_LUT_RENDER_FORMATS = {"image": ".png", "video": ".mp4"}
+
+
+def _lut_render_display_name(source_name: str, lut_name: str, extension: str) -> str:
+    """展示名 ``<源素材主名>_<LUT 主名>_v001.<ext>``，符合 GNS 主体描述_版本号模板。"""
+    def stem(value: str) -> str:
+        name = str(value or "").strip()
+        base = name.rsplit(".", 1)[0] if "." in name else name
+        cleaned = "".join(ch for ch in base if ch.isalnum() or ch in "-_ ").strip()
+        return cleaned[:80] or "asset"
+
+    return f"{stem(source_name)}_{stem(lut_name)}_{LUT_RENDER_VERSION}{extension}"
+
+
+def create_lut_render(
+    asset_id: str,
+    lut_asset_id: str,
+    strength: float,
+    expected_version: Optional[int] = None,
+    render: Optional[Any] = None,
+) -> Dict[str, Any]:
+    """把已登记 LUT 套到图片/视频素材上，产物作为新资产入库（原素材不变）。
+
+    来源链写在记录顶层 ``derived_from``：``ProducedAssetProvenance`` 只接受
+    ``agent_pipeline`` 且强制任务/版本链字段，而 LUT 渲染是本地确定性派生，
+    硬塞进该契约只能靠伪造不存在的任务链通过校验。
+
+    ``render`` 由调用方（API 层）注入：``gw.media`` 已依赖本包，若在这里反向
+    import 会形成领域环（结构守卫会直接判红）。回调契约：
+    ``render(kind, source_path, lut_path, strength, target) -> dict``，返回
+    ``{"size_bytes", "width"?, "height"?, "lut": {"title", "dimension", "size"}}``，
+    失败抛 ``CleanroomException``。
+
+    渲染在注册表事务内执行（与 ``media_probe.clip`` 同口径）：产物序号与记录
+    同生共死，失败时清理半成品文件、不写半条记录。
+    """
+    if render is None:
+        raise CleanroomException(503, "LUT_RENDER_UNAVAILABLE", "LUT 渲染能力未接入")
+    lut_key = str(lut_asset_id or "").strip()
+    if not lut_key:
+        raise CleanroomException(400, "INVALID_REQUEST", "缺少 LUT 资产 ID")
+    try:
+        ratio = float(strength)
+    except (TypeError, ValueError):
+        raise CleanroomException(
+            400, "INVALID_LUT_STRENGTH", "LUT 强度必须是 0 到 1 的数值"
+        ) from None
+    if not math.isfinite(ratio) or ratio < 0 or ratio > 1:
+        raise CleanroomException(400, "INVALID_LUT_STRENGTH", "LUT 强度必须在 0 到 1 之间")
+
+    def mutate(raw: Dict[str, Any]) -> Any:
+        _cas(raw, expected_version)
+        source = _require(raw, asset_id)
+        lut_asset = _require(raw, lut_key)
+        if str(lut_asset.get("kind") or "") != "lut":
+            raise CleanroomException(400, "LUT_ASSET_REQUIRED", "所选资产不是 LUT")
+        kind = str(source.get("kind") or "")
+        extension = _LUT_RENDER_FORMATS.get(kind)
+        if extension is None:
+            raise CleanroomException(
+                400, "LUT_SOURCE_UNSUPPORTED", "只有图片或视频素材可以套用 LUT"
+            )
+        source_path = _media_file_in_state(raw, asset_id)
+        if source_path is None or not source_path.is_file():
+            raise CleanroomException(404, "LUT_SOURCE_MISSING", "原素材文件不可读取")
+        lut_path = _media_file_in_state(raw, lut_key)
+        if lut_path is None or not lut_path.is_file():
+            raise CleanroomException(404, "LUT_SOURCE_MISSING", "LUT 文件不可读取")
+
+        new_asset_id = _seq(raw, "ast_", raw["assets"].keys())
+        relative_dir = f"media_output/lut_render/{asset_id}"
+        directory = storage.resolve_output_directory(relative_dir, must_exist=False)
+        directory.mkdir(parents=True, exist_ok=True)
+        relative = f"{relative_dir}/{new_asset_id}_{LUT_RENDER_VERSION}{extension}"
+        target = storage.resolve_output_path(relative, must_exist=False)
+        try:
+            rendered = render(kind, source_path, lut_path, ratio, target)
+        except CleanroomException:
+            target.unlink(missing_ok=True)
+            raise
+        except Exception as exc:
+            # 渲染器的内部异常不得漏成 500，也不留下半成品产物。
+            target.unlink(missing_ok=True)
+            raise CleanroomException(503, "LUT_RENDER_FAILED", "LUT 渲染失败") from exc
+
+        name = _lut_render_display_name(
+            str(source.get("name") or ""), str(lut_asset.get("name") or ""), extension
+        )
+        renderer = f"lut_render/{LUT_RENDER_VERSION}"
+        lut_meta = rendered.get("lut") or {}
+        record = _plain_asset(
+            new_asset_id,
+            name,
+            kind,
+            display_path=relative,
+            size_bytes=rendered.get("size_bytes"),
+            metadata={
+                "lut_render": {
+                    "lut_title": lut_meta.get("title") or "",
+                    "lut_dimension": lut_meta.get("dimension") or "",
+                    "lut_size": lut_meta.get("size") or 0,
+                    "strength": ratio,
+                    "renderer": renderer,
+                }
+            },
+            derived_from={
+                "kind": "lut_render",
+                "source_asset_id": asset_id,
+                "lut_asset_id": lut_key,
+                "strength": ratio,
+                "renderer": renderer,
+            },
+        )
+        if rendered.get("width"):
+            record["width"] = int(rendered["width"])
+        if rendered.get("height"):
+            record["height"] = int(rendered["height"])
+        if source.get("project_id") is not None:
+            record["project_id"] = source["project_id"]
+        if source.get("project_ids") is not None:
+            record["project_ids"] = list(source["project_ids"])
+        raw["assets"][new_asset_id] = record
+        raw["sequences"][new_asset_id] = True
+        _upsert_asset_search_documents([record])
+        revision = _bump(raw)
+        return {
+            "asset": dict(record),
+            "source_asset_id": asset_id,
+            "lut_asset_id": lut_key,
+            "strength": ratio,
+            "revision": revision,
+            "data_status": DATA_STATUS_OK,
+            "data_gaps": [],
+        }
+
+    return state().mutate(mutate)
+
+
 def record_jxl_lossless_transcodes(items: List[Dict[str, Any]]) -> Dict[str, Any]:
     """CAS 记账已通过 SHA256 往返校验的 JPEG XL 派生物。"""
     if not isinstance(items, list):
@@ -3503,7 +3643,8 @@ def export_pdf(asset_ids: List[str]) -> bytes:
 def _resolve_display(display: str, *, root_id: Optional[str] = None) -> Path:
     """把相对展示路径解析回允许根目录内的真实文件；越界或缺失一律失败关闭。"""
     normalized = str(display or "").replace("\\", "/")
-    if normalized.startswith("registry_uploads/"):
+    if normalized.startswith(("registry_uploads/", "media_output/")):
+        # 上传素材与受管产物（如 QIN-581 的 LUT 渲染结果）都落在产物命名空间。
         return storage.resolve_output_path(normalized)
     roots = storage.allowed_roots()
     if not roots:

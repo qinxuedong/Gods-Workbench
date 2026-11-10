@@ -1735,6 +1735,10 @@ body.studio-theme-dark .asset-detail-video-dock .asset-detail-video-volume input
 .asset-detail-media-node-lut-clear { display:inline-flex; align-items:center; justify-content:center; gap:5px; height:24px; border:1px solid var(--line-2); border-radius:6px; background:transparent; color:var(--text); font-size: var(--gw-type-label-md); font-weight:800; cursor:pointer; }
 .asset-detail-media-node-lut-clear:hover { border-color:var(--danger); color:var(--danger); }
 .asset-detail-media-node-lut-clear svg { width:12px; height:12px; }
+.asset-detail-media-node-lut-save { display:inline-flex; align-items:center; justify-content:center; gap:5px; height:24px; border:1px solid #dfc384; border-radius:6px; background:rgba(223,195,132,.12); color:#dfc384; font-size: var(--gw-type-label-md); font-weight:800; cursor:pointer; }
+.asset-detail-media-node-lut-save:hover { background:rgba(223,195,132,.2); }
+.asset-detail-media-node-lut-save[disabled] { opacity:.65; cursor:progress; }
+.asset-detail-media-node-lut-save svg { width:12px; height:12px; }
 .asset-detail-thumbnail-fallback { width:min(960px,100%); height:min(720px,100%); min-height:300px; border:1px solid rgba(255,255,255,.28); background:#eef2ea; overflow:hidden; }
 .asset-detail-thumbnail-fallback > .asset-thumb { width:100%; height:100%; aspect-ratio:auto; border-radius:0; background:#eef2ea; }
 .asset-detail-thumbnail-fallback .asset-thumb img,.asset-detail-thumbnail-fallback .asset-thumb video { width:100%; height:100%; object-fit:contain; }

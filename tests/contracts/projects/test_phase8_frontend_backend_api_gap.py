@@ -251,6 +251,9 @@ KNOWN_IMPLEMENTED = frozenset(
         "/api/asset-registry/assets/{p}/image-versions/{p}",
         "/api/asset-registry/assets/{p}/image-versions/{p}/media",
         "/api/asset-registry/assets/{p}/media",
+        # 2026-11-10 QIN-581（issue #670）：保存套用 LUT 后的资产版本；
+        # 详情节点浮窗「保存为版本」真实调用，后端 lut-renders 端点已实现。
+        "/api/asset-registry/assets/{p}/lut-renders",
         "/api/asset-registry/assets/{p}/open-local",
         "/api/asset-registry/assets/{p}/relations/{p}",
         "/api/asset-registry/assets/{p}/tags/{p}",
@@ -516,6 +519,9 @@ KNOWN_BACKEND_PATHS = frozenset(
         "/api/asset-registry/assets/{p}/image-versions/{p}",
         "/api/asset-registry/assets/{p}/image-versions/{p}/media",
         "/api/asset-registry/assets/{p}/media",
+        # 2026-11-10 QIN-581（issue #670）：保存套用 LUT 后的资产版本；
+        # 详情节点浮窗「保存为版本」真实调用，后端 lut-renders 端点已实现。
+        "/api/asset-registry/assets/{p}/lut-renders",
         "/api/asset-registry/assets/{p}/open-local",
         "/api/asset-registry/assets/{p}/relations/{p}",
         "/api/asset-registry/assets/{p}/tags/{p}",
