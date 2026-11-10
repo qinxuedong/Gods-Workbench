@@ -1,0 +1,35 @@
+{
+  "schema": "gw.cleanroom-admission-shard/v1",
+  "issue": 670,
+  "authorization_basis": "GitHub Issue #670 (QIN-581), 2026-11-10；phase8 防漂移基线文件的授权见票面「授权记录」节（issuecomment-6762038082）；相国本人 2026-11-10 16:19 在 PR #680 评论明确同意（issuecomment-6762524665），同日 16:26 会话再次确认",
+  "files": [
+    "gw/api/routes_asset_registry.py",
+    "gw/asset_registry/service.py",
+    "gw/asset_registry/repository.py",
+    "gw/media/lut_render.py",
+    "web/js/modules/asset-manager.js",
+    "web/css/pages/asset-manager.css",
+    "tests/contracts/assets/test_qin_581_lut_render_asset.py",
+    "tests/frontend/qin-581-lut-save-version.test.mjs",
+    "tests/frontend/node-files.txt",
+    "tests/hygiene/fixtures/admissions/issue-670.json",
+    "tests/hygiene/test_cleanroom_hygiene.py",
+    "tests/contracts/projects/test_phase8_frontend_backend_api_gap.py"
+  ],
+  "admitted_files": [],
+  "accepted_test_files": [
+    {
+      "path": "tests/contracts/assets/test_qin_581_lut_render_asset.py",
+      "classification": "curated_test_coverage",
+      "authorization_basis": "GitHub Issue #670 (QIN-581), 2026-11-10",
+      "admission": "accepted"
+    },
+    {
+      "path": "tests/frontend/qin-581-lut-save-version.test.mjs",
+      "classification": "curated_test_coverage",
+      "authorization_basis": "GitHub Issue #670 (QIN-581), 2026-11-10",
+      "admission": "accepted"
+    }
+  ],
+  "notes": "QIN-581 保存套用 LUT 后的资产版本：图片走服务端逐像素查表直出无损 PNG，视频走 ffmpeg lut3d（强度用原图/调色图混合近似），产物作为新资产入库并记录 derived_from 来源链（原素材 + LUT 资产 + 强度）。来源链不复用 ProducedAssetProvenance（该契约只接受 agent_pipeline 且强制任务链字段），改在资产记录顶层新增自描述字段并同步契约测试。不做时间线写入（#620）与母带导出（#621）。 另：新增后端端点触发 phase8 防漂移基线（KNOWN_IMPLEMENTED / KNOWN_BACKEND_PATHS），该文件经相国 2026-11-10 16:19 于 PR #680 评论明确同意（issuecomment-6762524665）后补登记，票面「授权记录」节与 16:26 会话确认为同轮佐证。"
+}

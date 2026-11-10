@@ -2517,6 +2517,433 @@ def register_derived_asset(asset_id: str, name: str, raw_path: str) -> Dict[str,
     return state().mutate(mutate)
 
 
+LUT_RENDER_VERSION = "v001"
+#: 只有图片与视频能套 LUT；其余类型明确拒绝，不猜测。
+_LUT_RENDER_FORMATS = {"image": ".png", "video": ".mp4"}
+
+
+def _lut_render_display_name(source_name: str, lut_name: str, extension: str) -> str:
+    """展示名 ``<源素材主名>_<LUT 主名>_v001.<ext>``，符合 GNS 主体描述_版本号模板。"""
+    def stem(value: str) -> str:
+        name = str(value or "").strip()
+        base = name.rsplit(".", 1)[0] if "." in name else name
+        cleaned = "".join(ch for ch in base if ch.isalnum() or ch in "-_ ").strip()
+        return cleaned[:80] or "asset"
+
+    return f"{stem(source_name)}_{stem(lut_name)}_{LUT_RENDER_VERSION}{extension}"
+
+
+def _project_scope(record: Dict[str, Any]) -> set:
+    """记录上声明的项目范围（``project_id`` 与 ``project_ids`` 并集）。"""
+    ids = {str(pid) for pid in (record.get("project_ids") or []) if pid}
+    if record.get("project_id"):
+        ids.add(str(record["project_id"]))
+    return ids
+
+
+def _inherited_scope(source: Dict[str, Any], lut_asset: Dict[str, Any]) -> Dict[str, Any]:
+    """派生资产的可视范围：取两个输入的交集，绝不扩大其中任一方。
+
+    ``asset_visible`` 的判定顺序是「有归属只看归属，否则看项目成员，都没有就是
+    公共资源」。因此只把源素材的归属抄给派生件还不够：公共素材 + 私有 LUT 的
+    产物会退化成公共资源，任何已认证主体都能读它的详情、媒体与列表项，
+    ``derived_from`` 还会把私有 LUT 的 asset_id 一并带出去。
+    """
+    owners = {
+        owner for owner in (_record_owner(source), _record_owner(lut_asset)) if owner
+    }
+    if len(owners) > 1:
+        # 请求方能同时读到两个输入，正常路径下两者归属必然相同；不同说明入参在
+        # 事务内被并发改写，此时没有「不扩大范围」的归属可继承，失败关闭。
+        raise CleanroomException(
+            403, "LUT_SCOPE_MISMATCH", "原素材与 LUT 的归属不一致，无法生成派生版本"
+        )
+
+    scope: Dict[str, Any] = {}
+    if owners:
+        scope["workflow_owner"] = next(iter(owners))
+
+    local = _project_scope(source)
+    foreign = _project_scope(lut_asset)
+    if local and foreign:
+        common = local & foreign
+        if not common:
+            # 两个项目范围不相交：交集为空意味着「谁都不可见」，但空列表在
+            # ``asset_visible`` 里的语义恰好相反（公共资源），所以只能拒绝。
+            raise CleanroomException(
+                403, "LUT_SCOPE_MISMATCH", "原素材与 LUT 的项目范围不相交，无法生成派生版本"
+            )
+    else:
+        # 一侧没有项目范围（对所有人开放），交集就是另一侧。
+        common = local | foreign
+    if common:
+        scope["project_ids"] = sorted(common)
+        if str(source.get("project_id") or "") in common:
+            scope["project_id"] = source["project_id"]
+    return scope
+
+
+def _normalized_display(value: Any) -> str:
+    return str(value or "").replace("\\", "/").strip()
+
+
+def _discard_rendered_file(path: Path) -> Optional[str]:
+    """删除单个半成品产物；失败返回错误描述而不抛出。
+
+    补偿阶段 ``unlink`` 失败（只读、被占用、权限）不能覆盖调用方原本的错误码，
+    所以这里把错误转成返回值，交给调用方汇总成可观测记录。
+    """
+    try:
+        path.unlink(missing_ok=True)
+    except OSError as exc:
+        _LOGGER.error("LUT 派生产物清理失败: %s (%s: %s)", path, type(exc).__name__, exc)
+        return f"{type(exc).__name__}: {exc}"
+    try:
+        path.parent.rmdir()  # 只有目录空时才成功，不会误删同源的其他产物
+    except OSError:
+        pass
+    return None
+
+
+def _delete_search_documents_with_retry(asset_ids: List[str], attempts: int = 2) -> Optional[str]:
+    """撤销检索文档；允许有限重试，仍失败时返回错误描述。
+
+    只在 ``compensate_lut_render_outputs`` 内使用：那里的 ID 归属已经在同一把锁内
+    按注册表判定过，重试的对象确定是「没有记录引用的孤儿文档」。**不要**把本函数
+    当独立的重放入口——锁外拿一批裸 ID 再删，遇到被复用（同 ID 已被别的写入提交）
+    的情况会把复用方的文档删掉。事后恢复请走 ``compensate_lut_render_outputs``。
+    """
+    last: Optional[str] = None
+    for _ in range(max(1, attempts)):
+        try:
+            delete_asset_search_documents(asset_ids, strict=True)
+            return None
+        except Exception as exc:  # noqa: BLE001 - 任何故障都要留痕，不能静默
+            last = f"{type(exc).__name__}: {exc}"
+    return last
+
+
+def _lut_render_recovery_payload(
+    written: List[Tuple[str, str, Path]], created_ids: List[str]
+) -> Dict[str, Any]:
+    """把失败派生的完整补偿清单序列化成可重建的恢复参数。
+
+    ``written`` 的每一项都是真实的 ``(asset_id, relative, absolute_path)`` 三元组：
+    没有 relative 与绝对路径，就无法判断「盘上这个文件是不是本笔的孤儿」，也就不能
+    安全地清媒体。只给 asset_id 的恢复参数**只能补检索文档**，媒体文件仍会留在盘上。
+    """
+    return {
+        "written": [
+            [str(asset_id), str(relative), str(path)]
+            for asset_id, relative, path in written
+        ],
+        "created_ids": [str(aid) for aid in created_ids],
+    }
+
+
+def _lut_render_recovery_call(payload: Dict[str, Any]) -> str:
+    """按真实清单生成可直接复制执行的重放调用（媒体三元组必须是真值）。"""
+    outputs = ", ".join(
+        f"({aid!r}, {relative!r}, Path({path!r}))"
+        for aid, relative, path in payload["written"]
+    )
+    return (
+        "compensate_lut_render_outputs("
+        f"written=[{outputs}], created_ids={payload['created_ids']!r})"
+    )
+
+
+def _note_compensation_failure(
+    exc: BaseException,
+    failures: List[Dict[str, Any]],
+    *,
+    written: List[Tuple[str, str, Path]],
+    created_ids: List[str],
+) -> None:
+    """把补偿失败挂到原异常上：原错误码保留，另附**可重建**的恢复清单与调用。
+
+    note 里必须有 ``LUT_RENDER_RECOVERY`` 那一行 JSON：运维（或重放脚本）据此重建
+    written 三元组与 created_ids，解除故障后原样重放即可补完，不必猜 asset_id。
+    """
+    payload = _lut_render_recovery_payload(written, created_ids)
+    summary = "; ".join(f"{item['stage']}={item.get('error')}" for item in failures)
+    note = "\n".join(
+        [
+            f"LUT 派生补偿未完成（原错误已保留）: {summary}",
+            "LUT_RENDER_RECOVERY " + json.dumps(payload, ensure_ascii=False),
+            "重放（必须用完整 written 三元组清媒体；created_ids 只补检索文档）: "
+            + _lut_render_recovery_call(payload),
+            "只传 compensate_lut_render_outputs([], [asset_id]) 不会清媒体文件："
+            "没有真实路径无法判定文件归属；也不要按裸 ID 直删检索文档。",
+        ]
+    )
+    add_note = getattr(exc, "add_note", None)
+    if callable(add_note):
+        add_note(note)
+
+
+def _record_owns_output(record: Dict[str, Any], relative: str, path: Path) -> bool:
+    """已提交记录是否正引用这一个产物文件（用于区分「已提交」与「同 ID 孤儿」）。"""
+    display = str(record.get("display_path") or "")
+    if not display:
+        return False
+    if _normalized_display(display) == _normalized_display(relative):
+        return True
+    # 展示串可能因运行根不同而形态不同（例如只剩文件名）；能解析回同一文件也算。
+    try:
+        resolved = _resolve_display(
+            display, root_id=str(record.get("root_id") or "") or None
+        )
+        return resolved.resolve() == path.resolve()
+    except (CleanroomException, OSError, RuntimeError):
+        return False
+
+
+def compensate_lut_render_outputs(
+    written: Optional[List[Tuple[str, str, Path]]] = None,
+    created_ids: Optional[List[str]] = None,
+) -> List[Dict[str, Any]]:
+    """LUT 派生补偿的**唯一入口**：事务失败回滚与事后重放都走这里。
+
+    事后恢复**不要**改成 ``delete_asset_search_documents(asset_ids)`` 直接按键删：
+    ``asset_id`` 会被别的写入复用（并发同 revision、或序列回绕），裸删会把复用方
+    的检索文档删掉，而它的注册表记录与媒体文件都还在，形成跨存储不一致。本函数在
+    注册表命名空间锁内先读当前状态，只有确认「没有记录引用这个 ID / 这个文件」才
+    动手，因此重放对复用方无害，可以反复调用（幂等）。
+
+    用法：
+
+    * 事务失败：``compensate_lut_render_outputs(written, created_ids)``；
+    * 事后恢复：把日志 / 异常 note 里 ``LUT_RENDER_RECOVERY`` 的**完整 written 三元组**
+      与 ``created_ids`` 原样传回，例如
+      ``compensate_lut_render_outputs([(aid, relative, Path(path))], [aid])``。
+
+    只传 ``compensate_lut_render_outputs([], [asset_id])`` **不会清媒体文件**：没有真实
+    相对/绝对路径，就无法判定盘上哪个文件属于这一笔，也不能排除它已被另一笔复用；
+    这个形状只补检索文档。同理不要按裸 ID 直删检索文档。
+
+    归属判定分两套，不能混用：
+
+    * **文件按路径判**：注册表里有同 ID 记录、但该记录指向另一个文件时，本笔
+      写下的这个文件仍是孤儿，必须删；记录正指向这个文件才是「已提交」，不能删。
+    * **检索文档按 ID 判**：文档以 asset_id 为键，同 ID 已被提交时文档属于那一笔，
+      即使本笔文件是孤儿也不能删文档。
+
+    ``created_ids`` 在「记录登记之前就失败」时为空（例如可见范围推导抛
+    ``LUT_SCOPE_MISMATCH``、或登记前被打断），所以不能拿它当「已提交集合」的
+    唯一来源，必须直接查注册表当前记录。
+    """
+    failures: List[Dict[str, Any]] = []
+    outputs = list(written or [])
+    ids = list(created_ids or [])
+    with storage.namespace_lock(state().namespace):
+        raw = state().read()
+        assets = raw.get("assets") or {}
+        for asset_id, relative, path in outputs:
+            record = assets.get(asset_id)
+            if record is not None and _record_owns_output(record, relative, path):
+                continue
+            error = _discard_rendered_file(path)
+            if error:
+                failures.append(
+                    {
+                        "stage": "media",
+                        "asset_id": asset_id,
+                        "relative": relative,
+                        "path": str(path),
+                        "error": error,
+                    }
+                )
+        # 检索索引是另一个存储：JSON 写失败时它可能已经落库，必须一并撤销，
+        # 否则冷读仍能查到一条没有对应资产的孤儿文档。
+        orphan_ids = [aid for aid in ids if not assets.get(aid)]
+        if orphan_ids:
+            error = _delete_search_documents_with_retry(orphan_ids)
+            if error:
+                failures.append(
+                    {"stage": "search_index", "asset_ids": list(orphan_ids), "error": error}
+                )
+    if failures:
+        # 可观测：稳定标记 + 失败明细 + **可重建的完整恢复清单**。运维解除故障后
+        # 按 LUT_RENDER_RECOVERY 那行 JSON 原样重放即可补完；只给 asset_id 清不掉
+        # 媒体文件（没有真实三元组就无法判归属），也不能按裸 ID 直删检索文档。
+        payload = _lut_render_recovery_payload(outputs, ids)
+        _LOGGER.error(
+            "LUT_RENDER_COMPENSATION_INCOMPLETE failures=%s\nLUT_RENDER_RECOVERY %s\n"
+            "重放=%s（必须带完整 written 三元组，幂等且会跳过已被复用的 ID/文件）",
+            failures,
+            json.dumps(payload, ensure_ascii=False),
+            _lut_render_recovery_call(payload),
+        )
+    return failures
+
+
+def create_lut_render(
+    asset_id: str,
+    lut_asset_id: str,
+    strength: float,
+    expected_version: Optional[int] = None,
+    render: Optional[Any] = None,
+) -> Dict[str, Any]:
+    """把已登记 LUT 套到图片/视频素材上，产物作为新资产入库（原素材不变）。
+
+    来源链写在记录顶层 ``derived_from``：``ProducedAssetProvenance`` 只接受
+    ``agent_pipeline`` 且强制任务/版本链字段，而 LUT 渲染是本地确定性派生，
+    硬塞进该契约只能靠伪造不存在的任务链通过校验。
+
+    ``render`` 由调用方（API 层）注入：``gw.media`` 已依赖本包，若在这里反向
+    import 会形成领域环（结构守卫会直接判红）。回调契约：
+    ``render(kind, source_path, lut_path, strength, target) -> dict``，返回
+    ``{"size_bytes", "width"?, "height"?, "lut": {"title", "dimension", "size"}}``，
+    失败抛 ``CleanroomException``。
+
+    渲染在注册表事务内执行（与 ``media_probe.clip`` 同口径）：产物序号与记录
+    同生共死，失败时清理半成品文件、不写半条记录。
+    """
+    if render is None:
+        raise CleanroomException(503, "LUT_RENDER_UNAVAILABLE", "LUT 渲染能力未接入")
+    lut_key = str(lut_asset_id or "").strip()
+    if not lut_key:
+        raise CleanroomException(400, "INVALID_REQUEST", "缺少 LUT 资产 ID")
+    try:
+        ratio = float(strength)
+    except (TypeError, ValueError):
+        raise CleanroomException(
+            400, "INVALID_LUT_STRENGTH", "LUT 强度必须是 0 到 1 的数值"
+        ) from None
+    if not math.isfinite(ratio) or ratio < 0 or ratio > 1:
+        raise CleanroomException(400, "INVALID_LUT_STRENGTH", "LUT 强度必须在 0 到 1 之间")
+
+    # 事务内已落盘的产物与已写过的派生 ID；任何后续失败都在锁内判定后统一清理。
+    # 产物在**调用渲染器之前**就登记（路径确定即可），否则「渲染器已写出文件、
+    # 但没返回」的退出（KeyboardInterrupt、进程被杀、渲染器自身清理失败）会绕过补偿。
+    written: List[Tuple[str, str, Path]] = []
+    created_ids: List[str] = []
+
+    def mutate(raw: Dict[str, Any]) -> Any:
+        _cas(raw, expected_version)
+        source = _require(raw, asset_id)
+        lut_asset = _require(raw, lut_key)
+        if str(lut_asset.get("kind") or "") != "lut":
+            raise CleanroomException(400, "LUT_ASSET_REQUIRED", "所选资产不是 LUT")
+        kind = str(source.get("kind") or "")
+        extension = _LUT_RENDER_FORMATS.get(kind)
+        if extension is None:
+            raise CleanroomException(
+                400, "LUT_SOURCE_UNSUPPORTED", "只有图片或视频素材可以套用 LUT"
+            )
+        source_path = _media_file_in_state(raw, asset_id)
+        if source_path is None or not source_path.is_file():
+            raise CleanroomException(404, "LUT_SOURCE_MISSING", "原素材文件不可读取")
+        lut_path = _media_file_in_state(raw, lut_key)
+        if lut_path is None or not lut_path.is_file():
+            raise CleanroomException(404, "LUT_SOURCE_MISSING", "LUT 文件不可读取")
+
+        new_asset_id = _seq(raw, "ast_", raw["assets"].keys())
+        relative_dir = f"media_output/lut_render/{asset_id}"
+        directory = storage.resolve_output_directory(relative_dir, must_exist=False)
+        directory.mkdir(parents=True, exist_ok=True)
+        relative = f"{relative_dir}/{new_asset_id}_{LUT_RENDER_VERSION}{extension}"
+        target = storage.resolve_output_path(relative, must_exist=False)
+        # 先登记再渲染：渲染器可能在写出文件之后才抛异常（超时、中断、自身清理失败），
+        # 那时它没有返回值、也不会有任何「已落盘」的记录。登记提前到调用之前，
+        # 渲染器内的所有退出都落进同一套补偿，半成品不会变成孤儿。
+        written.append((new_asset_id, relative, target))
+        try:
+            rendered = render(kind, source_path, lut_path, ratio, target)
+        except CleanroomException:
+            # 半成品统一交外层补偿（含清理失败的汇总），这里只保留渲染器的稳定错误码。
+            raise
+        except Exception as exc:
+            # 渲染器的内部异常不得漏成 500。
+            raise CleanroomException(503, "LUT_RENDER_FAILED", "LUT 渲染失败") from exc
+
+        name = _lut_render_display_name(
+            str(source.get("name") or ""), str(lut_asset.get("name") or ""), extension
+        )
+        renderer = f"lut_render/{LUT_RENDER_VERSION}"
+        lut_meta = rendered.get("lut") or {}
+        record = _plain_asset(
+            new_asset_id,
+            name,
+            kind,
+            display_path=relative,
+            size_bytes=rendered.get("size_bytes"),
+            metadata={
+                "lut_render": {
+                    "lut_title": lut_meta.get("title") or "",
+                    "lut_dimension": lut_meta.get("dimension") or "",
+                    "lut_size": lut_meta.get("size") or 0,
+                    "strength": ratio,
+                    "renderer": renderer,
+                }
+            },
+            derived_from={
+                "kind": "lut_render",
+                "source_asset_id": asset_id,
+                "lut_asset_id": lut_key,
+                "strength": ratio,
+                "renderer": renderer,
+            },
+        )
+        if rendered.get("width"):
+            record["width"] = int(rendered["width"])
+        if rendered.get("height"):
+            record["height"] = int(rendered["height"])
+        # 可见范围取两个输入的交集：只抄源素材会漏掉「公共素材 + 私有 LUT」——
+        # 派生件退化成公共资源后，任何已认证主体都能读它的详情与媒体，
+        # derived_from 还会把私有 LUT 的 asset_id 一并带出去。
+        record.update(_inherited_scope(source, lut_asset))
+        raw["assets"][new_asset_id] = record
+        raw["sequences"][new_asset_id] = True
+        created_ids.append(new_asset_id)
+        _upsert_asset_search_documents([record])
+        revision = _bump(raw)
+        return {
+            "asset": dict(record),
+            "source_asset_id": asset_id,
+            "lut_asset_id": lut_key,
+            "strength": ratio,
+            "revision": revision,
+            "data_status": DATA_STATUS_OK,
+            "data_gaps": [],
+        }
+
+    try:
+        return state().mutate(mutate)
+    except BaseException as exc:
+        # ``mutate`` 抛异常即代表状态没有提交（读-改-写整体回滚，提交后才中断除外），
+        # 此时盘上的产物与检索文档没有任何记录引用，必须一并清掉；但「哪一份真的
+        # 没提交」要在锁内按注册表现状判定，不能无脑删。
+        # 补偿自身的失败只记录、不替换原错误：原错误码（例如
+        # 503 ASSET_SEARCH_INDEX_FAILED）是调用方与测试依赖的稳定契约。
+        try:
+            failures = compensate_lut_render_outputs(written, created_ids)
+        except Exception as comp_exc:  # noqa: BLE001 - 补偿崩溃同样不得覆盖原错误
+            # 补偿读状态就崩了：失败明细可能一个都没产出，此时更要把原始 written /
+            # created_ids 留在日志与 note 里，否则解除故障后连重放参数都拿不到。
+            payload = _lut_render_recovery_payload(written, created_ids)
+            _LOGGER.error(
+                "LUT_RENDER_COMPENSATION_CRASHED %s: %s\nLUT_RENDER_RECOVERY %s\n重放=%s",
+                type(comp_exc).__name__,
+                comp_exc,
+                json.dumps(payload, ensure_ascii=False),
+                _lut_render_recovery_call(payload),
+            )
+            failures = [
+                {
+                    "stage": "compensation",
+                    "error": f"{type(comp_exc).__name__}: {comp_exc}",
+                    "recovery": payload,
+                }
+            ]
+        if failures:
+            _note_compensation_failure(
+                exc, failures, written=written, created_ids=created_ids
+            )
+        raise
+
+
 def record_jxl_lossless_transcodes(items: List[Dict[str, Any]]) -> Dict[str, Any]:
     """CAS 记账已通过 SHA256 往返校验的 JPEG XL 派生物。"""
     if not isinstance(items, list):
@@ -3509,7 +3936,8 @@ def export_pdf(asset_ids: List[str]) -> bytes:
 def _resolve_display(display: str, *, root_id: Optional[str] = None) -> Path:
     """把相对展示路径解析回允许根目录内的真实文件；越界或缺失一律失败关闭。"""
     normalized = str(display or "").replace("\\", "/")
-    if normalized.startswith("registry_uploads/"):
+    if normalized.startswith(("registry_uploads/", "media_output/")):
+        # 上传素材与受管产物（如 QIN-581 的 LUT 渲染结果）都落在产物命名空间。
         return storage.resolve_output_path(normalized)
     roots = storage.allowed_roots()
     if not roots:
@@ -4058,8 +4486,17 @@ def register_asset_record(
     return state().mutate(mutate)
 
 
-def delete_asset_search_documents(asset_ids: List[str]) -> None:
-    """批量删除 SQLite 全文与向量检索索引中的资产与分镜。"""
+def delete_asset_search_documents(asset_ids: List[str], *, strict: bool = False) -> None:
+    """批量删除 SQLite 全文与向量检索索引中的资产与分镜。
+
+    按 asset_id 逐条删除，重复调用无副作用。
+    ``strict=True`` 时把底层故障抛给调用方（补偿路径需要知道有没有清干净）；
+    默认只记警告，保持既有调用方「删不掉也不阻断主流程」的行为。
+
+    **不是**事后的安全恢复入口：删除只认 ID、不看注册表，而 ``asset_id`` 会被别的
+    写入复用，此时删掉的是复用方的文档（它的记录与媒体文件仍在）。清理失败的补完
+    请走 ``compensate_lut_render_outputs``，那里会先判定归属。
+    """
     if not asset_ids:
         return
     from gw.core.sqlite_vec_engine import SQLiteVecEngine
@@ -4072,7 +4509,11 @@ def delete_asset_search_documents(asset_ids: List[str]) -> None:
                 engine.delete_document(aid)
                 engine.delete_shots(aid)
     except Exception:
-        pass
+        if strict:
+            raise
+        _LOGGER.warning(
+            "检索索引删除失败，可按 asset_id 重试清理: %s", asset_ids, exc_info=True
+        )
 
 
 def purge_root_records(root_id: str) -> Dict[str, Any]:

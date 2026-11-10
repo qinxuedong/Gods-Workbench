@@ -100,6 +100,7 @@ tests/frontend/qin-574-prompts-canvas-layout.test.mjs
 tests/frontend/qin-578-scripts-heading-and-tab-order.test.mjs
 tests/frontend/qin-579-asset-shell-organize.test.mjs
 tests/frontend/qin-580-material-lut-preview.test.mjs
+tests/frontend/qin-581-lut-save-version.test.mjs
 tests/frontend/qin-582-registry-boot-requests.test.mjs
 tests/frontend/qin-583-cf-on-demand-probe.test.mjs
 tests/frontend/qin-584-asset-first-page-viewport.test.mjs

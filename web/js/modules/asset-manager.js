@@ -17574,6 +17574,7 @@ function renderDetailMediaNodeLutPanel(item, entry, title, type){
             <button type="button" data-detail-media-node-lut-compare="original" aria-pressed="${mode === 'original'}" class="${mode === 'original' ? 'is-active' : ''}" title="只看原图，再点一次回到套用后">原图</button>
         </div>
         <div class="asset-detail-media-node-lut-list" data-detail-media-node-lut-list>${list}</div>
+        <button class="asset-detail-media-node-lut-save" type="button" data-detail-media-node-lut-save><i data-lucide="save"></i><span>保存为版本</span></button>
         <button class="asset-detail-media-node-lut-clear" type="button" data-detail-media-node-lut-clear><i data-lucide="eraser"></i><span>清除 LUT</span></button>
     </div>`;
 }
@@ -17828,6 +17829,59 @@ function renderDetailLutWorkspace(source, item){
         </section>
     </div>`;
 }
+/* ---- QIN-581：把套用结果保存为新的资产版本 ---- */
+
+/**
+ * 保存当前节点套用后的画面：图片走服务端无损 PNG 直出，视频走 ffmpeg 转码，
+ * 产物作为**新资产**入库（原素材不变）。渲染在服务端完成，前端只提交 LUT 与强度，
+ * 保证保存结果与 QIN-580 预览使用同一套查表语义，而不是两套近似实现。
+ *
+ * 保存成功只把新资产并入当前列表数据，不整树重绘：不打断正在看的预览。
+ */
+async function saveDetailMediaNodeLutVersion(itemId){
+    const key = String(itemId || '');
+    const entry = detailMediaLutEntry(key);
+    const lutId = String(entry?.lutId || '');
+    if(!key || !lutId) return;
+    const node = detailMediaLutNode(key);
+    const button = node?.querySelector('[data-detail-media-node-lut-save]') || null;
+    if(button?.disabled) return;
+    const label = button?.querySelector('span');
+    const labelText = label?.textContent || '保存为版本';
+    if(button){ button.disabled = true; button.dataset.state = 'busy'; }
+    if(label) label.textContent = '保存中…';
+    try {
+        const result = await apiJsonResponse(assetManagerHttp.request(
+            `/api/asset-registry/assets/${encodeURIComponent(key)}/lut-renders`,
+            {
+                method:'POST',
+                credentials:'same-origin',
+                headers:{'Content-Type':'application/json'},
+                body:JSON.stringify({
+                    lut_asset_id:lutId,
+                    strength:detailMediaLutStrengthOf(entry),
+                }),
+            },
+        ));
+        const saved = result?.asset || {};
+        const normalized = saved.id ? normalizeRegistryAsset(saved) : null;
+        if(normalized?.id && !registryAssets.some(item => item.id === normalized.id)){
+            registryAssets = [normalized, ...registryAssets];
+            registryStatus = {
+                ...(registryStatus || {}),
+                assets_count:Number(registryStatus?.assets_count || 0) + 1,
+            };
+        }
+        showAssetNotice(`已保存为新资产${saved.name ? `：${saved.name}` : ''}（原素材未改动）`);
+    } catch(error){
+        const prefix = error?.code ? `${error.code}：` : '';
+        showAssetNotice(`${prefix}${error?.message || '保存 LUT 版本失败'}`, 'error', 8000);
+    } finally {
+        if(button){ button.disabled = false; delete button.dataset.state; }
+        if(label) label.textContent = labelText;
+    }
+}
+
 function setDetailLutPreviewError(message){
     const stage = lutPreviewStage();
     if(!stage) return;
@@ -24532,6 +24586,7 @@ document.addEventListener('click', event => {
         if(nodeLutItem){ setDetailMediaNodeLut(targetId, nodeLutItem.dataset.detailMediaNodeLutItem || '').catch(() => {}); return; }
         const nodeLutCompare = event.target.closest?.('[data-detail-media-node-lut-compare]');
         if(nodeLutCompare){ setDetailMediaNodeLutCompare(targetId, nodeLutCompare.dataset.detailMediaNodeLutCompare || ''); return; }
+        if(event.target.closest?.('[data-detail-media-node-lut-save]')){ saveDetailMediaNodeLutVersion(targetId).catch(() => {}); return; }
         if(event.target.closest?.('[data-detail-media-node-lut-clear]')){ clearDetailMediaNodeLut(targetId); return; }
     }
     // 分割线只管拖，别让它多选一次节点；刚拖完补上的那次 click 也一并跳过。

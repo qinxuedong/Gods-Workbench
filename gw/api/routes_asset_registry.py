@@ -45,6 +45,7 @@ from gw.asset_registry.service import (
     default_asset_registry_service,
 )
 from gw.core import jxl_tool, storage
+from gw.media import lut_render
 from gw.core.auth import require_authenticated, require_edit_access, require_governance_access
 from gw.core.errors import CleanroomException
 from gw.projects_hub.service import (
@@ -1257,6 +1258,65 @@ def register_derived_asset(
         asset_id,
         str(body.get("name") or ""),
         str(body.get("path") or ""),
+    )
+
+
+def _lut_render_http_status(code: str) -> int:
+    """渲染错误码到 HTTP 状态：损坏的 Cube 是输入错误，能力缺失才是 503。"""
+    if code == "LUT_SOURCE_TOO_LARGE":
+        return 413
+    if code in {"LUT_CUBE_INVALID", "LUT_CUBE_TOO_LARGE"}:
+        return 422
+    if code in {"PIL_NOT_AVAILABLE", "FFMPEG_NOT_AVAILABLE", "LUT_RENDER_FAILED"}:
+        return 503
+    return 400
+
+
+def _render_lut_asset(
+    kind: str, source_path: Path, lut_path: Path, strength: float, target: Path
+) -> Dict[str, Any]:
+    """QIN-581 渲染桥：把 media 层的稳定错误码翻成统一错误包。
+
+    放在 API 层是刻意的：``gw.media`` 已依赖 ``gw.asset_registry``，若在
+    repository 里反向 import 会形成领域环（结构守卫会直接判红）。
+    """
+    try:
+        table = lut_render.load_cube_bytes(lut_path.read_bytes())
+        if kind == "image":
+            info = lut_render.render_image_to_png(source_path, table, strength, target)
+        else:
+            info = lut_render.render_video_to_mp4(source_path, lut_path, strength, target)
+    except lut_render.LutRenderError as exc:
+        raise CleanroomException(
+            _lut_render_http_status(exc.code), exc.code, str(exc)
+        ) from exc
+    return {
+        **info,
+        "lut": {
+            "title": table.get("title") or "",
+            "dimension": table["dimension"],
+            "size": table["size"],
+        },
+    }
+
+
+@router.post("/assets/{asset_id}/lut-renders", summary="保存套用 LUT 后的资产版本", status_code=status.HTTP_200_OK)
+def create_lut_render_asset(
+    asset_id: str,
+    payload: Optional[Dict[str, Any]] = Body(None),
+    authorization: Optional[str] = Header(None),
+    x_user_role: str = Header("editor", alias="X-User-Role"),
+):
+    """把当前素材按指定 LUT 与强度渲染为新资产，原素材保持不变。"""
+    _edit_auth(authorization, x_user_role)
+    body = _payload(payload)
+    strength = body.get("strength", 1.0)
+    return repo.create_lut_render(
+        asset_id,
+        str(body.get("lut_asset_id") or ""),
+        1.0 if strength is None else strength,
+        _version(body),
+        render=_render_lut_asset,
     )
 
 

@@ -1289,6 +1289,41 @@ def test_qin_580_material_lut_preview_files_are_registered(repo_root: Path):
     }
 
 
+def test_qin_581_lut_render_asset_files_are_registered(repo_root: Path):
+    """QIN-581 保存套用 LUT 后的资产版本所涉文件按本票分片登记。
+
+    phase8 基线文件是新增端点的连带改动，授权出处必须指向可核验记录
+    （票面「授权记录」节 + issue 评论），不能只写日期。
+    """
+    metadata = _load_admission_metadata(repo_root)
+    registrations = [
+        item
+        for item in metadata.get("authorized_issue_file_sets", [])
+        if item.get("issue") == 670
+    ]
+    assert len(registrations) == 1
+    basis = registrations[0].get("authorization_basis") or ""
+    assert basis.startswith("GitHub Issue #670 (QIN-581), 2026-11-10")
+    assert "授权记录" in basis and "issuecomment-6762038082" in basis, basis
+    # 原始授权必须来自相国本人：指向 PR #680 上他本人 2026-11-10 16:19 的同意评论。
+    assert "issuecomment-6762524665" in basis, basis
+    assert "待相国" not in basis, basis
+    assert set(registrations[0].get("files", [])) == {
+        "gw/api/routes_asset_registry.py",
+        "gw/asset_registry/service.py",
+        "gw/asset_registry/repository.py",
+        "gw/media/lut_render.py",
+        "web/js/modules/asset-manager.js",
+        "web/css/pages/asset-manager.css",
+        "tests/contracts/assets/test_qin_581_lut_render_asset.py",
+        "tests/frontend/qin-581-lut-save-version.test.mjs",
+        "tests/frontend/node-files.txt",
+        "tests/contracts/projects/test_phase8_frontend_backend_api_gap.py",
+        "tests/hygiene/fixtures/admissions/issue-670.json",
+        "tests/hygiene/test_cleanroom_hygiene.py",
+    }
+
+
 def test_qin_541_registry_card_info_layout_files_are_registered(repo_root: Path):
     """QIN-541 标准卡信息层级重排所涉文件按本票登记。"""
     metadata = _load_admission_metadata(repo_root)
