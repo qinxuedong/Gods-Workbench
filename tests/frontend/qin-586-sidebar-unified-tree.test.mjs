@@ -21,18 +21,32 @@ test('AC1: 结构统一为一棵资源库树，去掉「资源入口」与「挂
   assert.doesNotMatch(controller, /boardSection\.className = 'asset-shell-board-section mt-2'/);
   assert.doesNotMatch(controller, /boardLabel\.textContent = '资源入口'/);
 
-  // 4. 同一物理来源看板与根去重：如果看板关联了物理根，不重复显示
+  // 4. 同一物理来源看板与根去重：如果看板关联了物理根或路径相同，不重复显示
   assert.match(controller, /const independentBoards = rawBoards\.filter/);
   assert.match(manager, /userBoards\.forEach\(board =>/);
-  assert.match(manager, /rootBoardMap\.set\(rootId, board\)/);
+  assert.match(manager, /rootBoardMap\.set\(matchedRoot\.id, board\)/);
+});
+
+test('AC1 行为逻辑: 同一物理来源（相同物理路径）去重合并，不再并排输出多行', () => {
+  // 验证 assetTreeGlobalRootsList 具备路径物理去重与有效素材计数继承逻辑
+  assert.match(manager, /const pathKey = resolvedPath \? pathCompareKey\(resolvedPath\) : '';/);
+  assert.match(manager, /if\(pathKey && seenPaths\.has\(pathKey\)\)\{/);
+  assert.match(manager, /existing\.count = Number\(count\);/);
+
+  // 验证 gwAssetTreeSnapshot 中通过 boardPathKey 匹配物理来源合并看板与物理根
+  assert.match(manager, /const boardPathKey = boardPath \? pathCompareKey\(boardPath\) : '';/);
+  assert.match(manager, /matchedRoot = globalRoots\.find\(r => r\.path && pathCompareKey\(r\.path\) === boardPathKey\);/);
 });
 
 test('AC2: 资产总览清除库/文件夹筛选回到首页，深层目录选择状态持久化支持', () => {
   // 激活 registry 时清除目录与来源筛选
-  assert.match(manager, /if\(!value \|\| value === 'registry'\)\{\s*\n\s*clearAssetRackFolder\(\);\s*\n\s*registryNavFolder = \{rootId:'', path:''\};/);
+  assert.match(manager, /if\(board\.id === 'registry'\)\{\s*\n\s*clearAssetRackFolder\(\);\s*\n\s*registryNavFolder = \{rootId:'', path:''\};/);
+  assert.match(manager, /registryRootId = '';/);
+  assert.match(manager, /assetTreeSelectedKey = 'registry';/);
 
-  // gwAssetTreeEntryKey 支持精准返回子目录深层路径 key
+  // gwAssetTreeEntryKey 支持精准返回子目录深层路径 key，且在无筛选的 registry 下稳定返回 'registry'
   assert.match(manager, /return path && path !== '__root__' \? `mine:root:\$\{rootId\}::\$\{path\}` : `mine:root:\$\{rootId\}`;/);
+  assert.match(manager, /return 'registry';/);
 
   // 新建资源库能力保持
   assert.match(controller, /openCreateAssetLibrary/);
@@ -61,14 +75,22 @@ test('AC3: 递归素材计数（含后代素材）取自 total_count，空目录
   assert.match(controller, /button\.insertBefore\(offline, countEl\)/);
 });
 
-test('AC4: 同名不同根不会混淆，无路径或多来源旧看板做显示兼容', () => {
-  // 根节点 key 始终以稳定 rootId 绑定
+test('AC4: 深层目录选择时父链逐级展开，刷新持久化与恢复可用', () => {
+  // 1. expandAssetTreeAncestors 实现父链展开
+  assert.match(manager, /function expandAssetTreeAncestors\(key\)\{/);
+  assert.match(manager, /assetTreeExpanded\.add\(`mine:root:\$\{rootId\}`\);/);
+  assert.match(manager, /assetTreeExpanded\.add\(`mine:root:\$\{rootId\}::\$\{sub\}`\);/);
+
+  // 2. 状态保存与恢复持久化包含 expanded 状态
+  assert.match(manager, /sessionStorage\.setItem\(ASSET_TREE_STATE_KEY, JSON\.stringify\(\{entry, expanded:Array\.from\(assetTreeExpanded\)\}\)\);/);
+  assert.match(manager, /savedExpanded\.forEach\(k => assetTreeExpanded\.add\(k\)\);/);
+  assert.match(manager, /expandAssetTreeAncestors\(entry\);/);
+
+  // 3. 根节点 key 始终以稳定 rootId 绑定
   assert.match(manager, /const key = `mine:root:\$\{root\.id\}`;/);
 
-  // 独立未映射看板以 independentBoards 保留并在树中渲染
+  // 4. 独立未映射看板以 independentBoards 保留并在树中渲染
   assert.match(manager, /const independentBoards = userBoards\.filter\(b => !mappedBoardIds\.has\(b\.id\)\);/);
-  assert.match(controller, /independentBoards\.forEach\(board =>/);
-  assert.match(controller, /key: `mine:board:\$\{board\.id\}`/);
 });
 
 test('AC5: 新建、改名、拖拽移动与整理保护机制完整保留（#602/#667）', () => {
@@ -82,14 +104,14 @@ test('AC5: 新建、改名、拖拽移动与整理保护机制完整保留（#60
   assert.match(controller, /bindShellDragEvents\(button, row\)/);
 });
 
-test('AC6: 资源库行与子文件夹行视觉约为 0.8 倍，子树行距加大，正文字号不变', () => {
-  // 顶层资源库行高度与内边距缩至约 0.8 倍（原 42px -> 34px）
-  assert.match(html, /\.asset-shell-nav-button \{[^}]*min-height:\s*34px;/);
-  assert.match(html, /\.asset-shell-nav-button \{[^}]*padding:\s*5px 10px;/);
+test('AC6: 资源库行与子文件夹行视觉约为 0.8 倍，特异性与 !important 覆盖全局设计系统，子树行距加大', () => {
+  // 顶层资源库行高度与内边距缩至约 0.8 倍（原 42px -> 34px），覆盖 hardware-design-system 的 padding: 8px 12px !important
+  assert.match(html, /\.asset-shell-nav-button \{[^}]*min-height:\s*34px !important;/);
+  assert.match(html, /\.asset-shell-nav-button \{[^}]*padding:\s*4px 10px !important;/);
 
-  // 子文件夹行高度与内边距缩至约 0.8 倍（原 35px -> 28px）
-  assert.match(html, /\.asset-shell-nav-button-sub \{[^}]*min-height:\s*28px;/);
-  assert.match(html, /\.asset-shell-nav-button-sub \{[^}]*padding:\s*4px 10px;/);
+  // 子文件夹行高度与内边距缩至约 0.8 倍（原 40px/35px -> 28px）
+  assert.match(html, /\.asset-shell-nav-button-sub \{[^}]*min-height:\s*28px !important;/);
+  assert.match(html, /\.asset-shell-nav-button-sub \{[^}]*padding:\s*3px 10px !important;/);
 
   // 行距加大：子树 gap 由 4px 提到 8px
   assert.match(html, /\.asset-shell-nav-subtree \{[^}]*gap:\s*8px;/);

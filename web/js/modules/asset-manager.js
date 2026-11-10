@@ -1288,15 +1288,32 @@ async function activateAssetBoard(id){
         }
         return;
     }
-    // 【QIN-580】LUT 库会把 registryKind 钉成 lut，回总览时必须清掉，否则总览只剩 LUT。
-    if(board.id === 'registry' && (previousBoard?.system === false || previousBoard?.id === 'lut')){
+    // 【QIN-586 AC2】点击「资产总览」彻底清除库/目录/分类/标签筛选，回到资产库首页
+    if(board.id === 'registry'){
+        clearAssetRackFolder();
+        registryNavFolder = {rootId:'', path:''};
+        registryRootId = '';
+        registryStatCategory = '';
+        registryProjectFilterId = '';
+        registryProjectEntityFilter = null;
+        activeProjectId = '';
+        assetTreeSelectedKey = 'registry';
         applyRegistryFilterDefinition({groupSimilar:registryGroupSimilar});
         const queryKey = registryQueryString();
         const cached = registryAssetsQueryCache.get(queryKey);
         if(cached) applyRegistryAssetResponse(cached);
-        registryLoading = false;
+        else { registryAssets = []; registryTotal = null; registryTotalKnown = false; }
+        registryLoading = !cached;
         render();
-        if(!cached) refreshRegistryAssets(false).then(() => { if(activeTab === id) render(); }).catch(err => setStatus(err.message || '绱犳潗搴撳姞杞藉け璐?'));
+        saveAssetTreeState();
+        notifyShellTreeSnapshot();
+        try {
+            await refreshRegistryAssets(false);
+            if(activeTab === id) render();
+        } catch(err){
+            setStatus(err.message || '资产库加载失败');
+        }
+        notifyShellTreeSnapshot();
         return;
     }
     if(board.id === 'local' && !localAssetsLoaded){
@@ -12924,29 +12941,53 @@ function activateAssetTreeTab(tab){
    - activate(key)：外壳点击入口时复用树上同一条点击分发逻辑（资产总览走看板激活并清空筛选）。 */
 function assetTreeGlobalRootsList(){
     const rawRoots = [];
+    const seenPaths = new Map();
     const seenIds = new Set();
-    const addRoot = (id, name, count = null, availability = '') => {
+    const findRootPath = (rootId) => {
+        const id = String(rootId || '').trim();
+        const fromLib = (localLibraries || []).find(l => String(l.id || '') === id);
+        if(fromLib?.path) return fromLib.path;
+        for(const b of allAssetBoards()){
+            const fromSource = (b.sources || []).find(s => String(s.id || '') === id);
+            if(fromSource?.path) return fromSource.path;
+        }
+        return '';
+    };
+
+    const addRoot = (id, name, count = null, availability = '', path = '') => {
         const cleanId = String(id || '').trim();
         const cleanName = String(name || '').trim();
         const lowerId = cleanId.toLowerCase();
-        if(!cleanId || seenIds.has(cleanId) || lowerId === 'video' || lowerId === 'image' || cleanName === '视频库素材' || cleanName === '图片库素材') return;
+        if(!cleanId || lowerId === 'video' || lowerId === 'image' || cleanName === '视频库素材' || cleanName === '图片库素材') return;
+        const resolvedPath = path || findRootPath(cleanId);
+        const pathKey = resolvedPath ? pathCompareKey(resolvedPath) : '';
+        if(pathKey && seenPaths.has(pathKey)){
+            const existing = rawRoots[seenPaths.get(pathKey)];
+            if((existing.count == null || existing.count === 0) && count != null && count > 0){
+                existing.count = Number(count);
+            }
+            if(availability) existing.availability = availability;
+            return;
+        }
+        if(seenIds.has(cleanId)) return;
         seenIds.add(cleanId);
-        rawRoots.push({ id: cleanId, name: cleanName || cleanId, count, availability });
+        if(pathKey) seenPaths.set(pathKey, rawRoots.length);
+        rawRoots.push({ id: cleanId, name: cleanName || cleanId, count, availability, path: resolvedPath });
     };
 
     (registryFacets.roots || []).forEach(r => {
         if(String(r.availability || '') !== 'removed'){
-            addRoot(r.id, r.name, r.count != null ? Number(r.count) : null, String(r.availability || ''));
+            addRoot(r.id, r.name, r.count != null ? Number(r.count) : null, String(r.availability || ''), r.path || '');
         }
     });
 
     (localLibraries || []).forEach(lib => {
-        addRoot(lib.id, lib.name, null, '');
+        addRoot(lib.id, lib.name, null, '', lib.path || '');
     });
 
     allAssetBoards().forEach(board => {
         (board.sources || []).forEach(s => {
-            addRoot(s.id, s.name, null, '');
+            addRoot(s.id, s.name, null, '', s.path || '');
         });
     });
 
@@ -12979,8 +13020,7 @@ function gwAssetTreeEntryKey(){
         if(rootId){
             return path && path !== '__root__' ? `mine:root:${rootId}::${path}` : `mine:root:${rootId}`;
         }
-        if(registryStatCategory) return '';
-        return assetTreeSelectedKey.startsWith('mine:') ? assetTreeSelectedKey : 'registry';
+        return 'registry';
     }
     const board = assetBoardById(activeTab);
     if(board && !board.system){
@@ -13019,14 +13059,32 @@ function gwAssetTreeSnapshot(){
     const userBoards = assetTreeUserBoards();
     const globalRoots = assetTreeGlobalRootsList();
 
-    // 建立看板与物理根的映射：若看板绑定了单一物理根，则与该物理根合并为同一资源库节点，避免重复
+    // 建立看板与物理根的映射：若看板绑定了单一物理根或物理路径相同，则合并为同一资源库节点，避免重复
     const mappedBoardIds = new Set();
     const rootBoardMap = new Map();
     userBoards.forEach(board => {
-        const rootId = String(board.rootId || (board.sources && board.sources.length === 1 ? board.sources[0].id : '') || '');
-        if(rootId && globalRoots.some(r => r.id === rootId)){
+        const boardRootId = String(board.rootId || (board.sources && board.sources.length === 1 ? board.sources[0].id : '') || '');
+        const boardPath = board.sources && board.sources.length === 1 ? String(board.sources[0].path || '') : '';
+        const boardPathKey = boardPath ? pathCompareKey(boardPath) : '';
+
+        let matchedRoot = null;
+        if(boardRootId){
+            matchedRoot = globalRoots.find(r => r.id === boardRootId);
+        }
+        if(!matchedRoot && boardPathKey){
+            matchedRoot = globalRoots.find(r => r.path && pathCompareKey(r.path) === boardPathKey);
+        }
+
+        if(matchedRoot){
             mappedBoardIds.add(board.id);
-            if(!rootBoardMap.has(rootId)) rootBoardMap.set(rootId, board);
+            if(!rootBoardMap.has(matchedRoot.id)){
+                rootBoardMap.set(matchedRoot.id, board);
+            } else {
+                const current = rootBoardMap.get(matchedRoot.id);
+                if(board.name && (!current.name || current.name.endsWith('素材'))){
+                    rootBoardMap.set(matchedRoot.id, board);
+                }
+            }
         }
     });
 
@@ -13069,12 +13127,26 @@ function gwAssetTreeSnapshot(){
         selected_key: gwAssetTreeEntryKey(), 
     };
 }
+function expandAssetTreeAncestors(key){
+    const value = String(key || '');
+    if(!value.startsWith('mine:root:')) return;
+    const body = value.slice('mine:root:'.length);
+    const separator = body.indexOf('::');
+    const rootId = separator > 0 ? body.slice(0, separator) : body;
+    const path = separator > 0 ? body.slice(separator + 2) : '';
+    assetTreeExpanded.add(`mine:root:${rootId}`);
+    if(path){
+        const segments = path.split('/').filter(Boolean);
+        for(let i = 1; i <= segments.length; i++){
+            const sub = segments.slice(0, i).join('/');
+            if(i < segments.length) assetTreeExpanded.add(`mine:root:${rootId}::${sub}`);
+            void loadAssetRackDiskFolders(rootId, sub);
+        }
+    }
+}
 function gwAssetTreeActivate(key){
     const value = String(key || '');
     if(!value || value === 'registry'){
-        clearAssetRackFolder();
-        registryNavFolder = {rootId:'', path:''};
-        registryRootId = '';
         void activateAssetBoard('registry');
         saveAssetTreeState();
         return;
@@ -13089,19 +13161,26 @@ function notifyShellTreeSnapshot(){
 }
 const ASSET_TREE_STATE_KEY = 'gw.asset.tree.state';
 function saveAssetTreeState(){
-    // 【审核修复1 终版】持久化只在用户点击分发时落盘（selectAssetTreeNode/面包屑），bootstrap 渲染不触碰该键，
-    // 从机制上消除「刷新后 bootstrap 首渲清掉持久化入口」的 AC5 死路径。
     const entry = gwAssetTreeEntryKey();
     try {
         if(!entry || entry === 'registry') sessionStorage.removeItem(ASSET_TREE_STATE_KEY);
-        else sessionStorage.setItem(ASSET_TREE_STATE_KEY, JSON.stringify({entry}));
+        else sessionStorage.setItem(ASSET_TREE_STATE_KEY, JSON.stringify({entry, expanded:Array.from(assetTreeExpanded)}));
     } catch(_) {}
 }
 function restoreAssetTreeState(){
     let entry = '';
-    try { entry = String(JSON.parse(sessionStorage.getItem(ASSET_TREE_STATE_KEY) || '{}').entry || ''); } catch(_) {}
-    try { sessionStorage.removeItem(ASSET_TREE_STATE_KEY); } catch(_) {}
+    let savedExpanded = [];
+    try {
+        const raw = sessionStorage.getItem(ASSET_TREE_STATE_KEY);
+        if(raw){
+            const parsed = JSON.parse(raw);
+            entry = String(parsed.entry || '');
+            if(Array.isArray(parsed.expanded)) savedExpanded = parsed.expanded;
+        }
+    } catch(_) {}
     if(!entry || entry === 'registry') return '';
+    savedExpanded.forEach(k => assetTreeExpanded.add(k));
+    expandAssetTreeAncestors(entry);
     gwAssetTreeActivate(entry);
     return entry;
 }
@@ -13148,6 +13227,7 @@ function selectAssetTreeNode(key){
         return;
     }
     if(value.startsWith('mine:root:')){
+        expandAssetTreeAncestors(value);
         const body = value.slice('mine:root:'.length);
         const separator = body.indexOf('::');
         const rootId = separator > 0 ? body.slice(0, separator) : body;

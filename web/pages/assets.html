@@ -33,8 +33,9 @@
     .asset-shell-nav-group-items { display: flex; flex-direction: column; gap: 16px; }
     .asset-shell-nav-node { position: relative; min-width: 0; }
     .asset-shell-nav-parent-row { position: relative; min-width: 0; }
-    .asset-shell-nav-button { width: 100%; min-height: 34px; display: flex; align-items: center; gap: 8px; padding: 5px 10px; border: 1px solid rgb(255 255 255 / .1); border-radius: 6px; background: linear-gradient(180deg,#131620 0%,#0d0f15 100%); color: #e5e7eb; font-family: var(--gw-font-body); font-size: var(--gw-type-body); font-weight: 400; line-height: var(--gw-leading-body-md); text-align: left; transition: background .15s ease,border-color .15s ease,color .15s ease; }
-    .asset-shell-nav-parent-row > .asset-shell-nav-button { padding-right: 40px; }
+    .topbar-master-deck ~ * > aside .asset-shell-nav-button,
+    #assetVaultSidebar .asset-shell-nav-button { width: 100%; min-height: 34px !important; display: flex; align-items: center; gap: 8px; padding: 4px 10px !important; box-sizing: border-box !important; border: 1px solid rgb(255 255 255 / .1); border-radius: 6px; background: linear-gradient(180deg,#131620 0%,#0d0f15 100%); color: #e5e7eb; font-family: var(--gw-font-body); font-size: var(--gw-type-body); font-weight: 400; line-height: var(--gw-leading-body-md); text-align: left; transition: background .15s ease,border-color .15s ease,color .15s ease; }
+    .asset-shell-nav-parent-row > .asset-shell-nav-button { padding-right: 40px !important; }
     .asset-shell-nav-collapse { position: absolute; top: 50%; right: 7px; z-index: 4; width: 22px; height: 22px; display: inline-flex; align-items: center; justify-content: center; padding: 0; border: 1px solid rgb(255 255 255 / .14); border-radius: 5px; background: rgb(8 10 15 / .72); color: #aeb6c2; cursor: pointer; transform: translateY(-50%); transition: border-color .15s ease,background .15s ease,color .15s ease; }
     .asset-shell-nav-collapse:hover { border-color: rgb(223 195 132 / .65); background: #191e2b; color: #dfc384; }
     .asset-shell-nav-collapse:focus-visible { outline: 2px solid #dfc384; outline-offset: 2px; }
@@ -49,7 +50,8 @@
     .asset-shell-nav-button.is-active svg { color: #dfc384; }
     .asset-shell-nav-sublist { display: flex; flex-direction: column; gap: 12px; margin: 12px 0 0 12px; padding: 2px 0 0 12px; border-left: 1px solid rgb(223 195 132 / .35); }
     .asset-shell-nav-sublist[hidden] { display: none !important; }
-    .asset-shell-nav-button-sub { min-height: 28px; padding: 4px 10px; border-color: rgb(255 255 255 / .1); background: linear-gradient(180deg,#131620 0%,#0d0f15 100%); color: #e5e7eb; }
+    .topbar-master-deck ~ * > aside .asset-shell-nav-button-sub,
+    #assetVaultSidebar .asset-shell-nav-button-sub { min-height: 28px !important; padding: 3px 10px !important; box-sizing: border-box !important; border-color: rgb(255 255 255 / .1); background: linear-gradient(180deg,#131620 0%,#0d0f15 100%); color: #e5e7eb; }
     .asset-shell-nav-button-sub::before { content: "" !important; left: -13px; width: 12px; height: 1px; background: rgb(223 195 132 / .4); }
     #assetVaultSidebar .asset-shell-nav-button { overflow: visible !important; }
     #assetVaultSidebar .asset-shell-nav-button::before { content: "" !important; position: absolute; left: -14px; top: 50%; width: 6px; height: 1.5px; background: rgb(223 195 132 / .6); z-index: 2; pointer-events: none; }
