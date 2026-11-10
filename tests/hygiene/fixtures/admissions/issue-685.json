@@ -1,0 +1,21 @@
+{
+  "schema": "gw.cleanroom-admission-shard/v1",
+  "issue": 685,
+  "authorization_basis": "GitHub Issue #685 (QIN-587), 2026-11-10",
+  "files": [
+    "web/css/pages/asset-vault.css",
+    "tests/frontend/qin-587-inbox-layout.test.mjs",
+    "tests/frontend/node-files.txt",
+    "tests/hygiene/fixtures/admissions/issue-685.json"
+  ],
+  "admitted_files": [],
+  "accepted_test_files": [
+    {
+      "path": "tests/frontend/qin-587-inbox-layout.test.mjs",
+      "classification": "curated_test_coverage",
+      "authorization_basis": "GitHub Issue #685 (QIN-587), 2026-11-10",
+      "admission": "accepted"
+    }
+  ],
+  "notes": "QIN-587 收集箱误套用三列网格，中间栏留下空白轨道：web/css/pages/asset-vault.css 三列兜底排除选择器增加 :not(.asset-manager-root-page-inbox)，新增收集箱嵌入态零宽首列 0 minmax(0,1fr)，并在 900px 窄屏下将模板行收敛为 3 行且将内容区提升至第 3 行，彻底消除左右空轨道与窄屏隐式空行。"
+}
