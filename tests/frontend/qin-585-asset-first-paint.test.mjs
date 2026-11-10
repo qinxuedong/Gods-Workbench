@@ -97,19 +97,46 @@ function repeatedSelectors(counts){
 // ---------------------------------------------------------------------------
 // 行为级夹具：把真实的顶层函数与它们读写的模块级状态一起抽出来执行。
 // 状态声明也从源码里取，避免测试里复制一份「默认值」而与实现悄悄分叉。
+//
+// 关键：`loadAll` 也是**真实源码**，不是桩。「登记首屏列表终态」这行接线就在 loadAll 里，
+// 把它打桩再手动 track，等于把被测接线搬进测试自己写，删掉源码那行仍然全绿。
+// 因此这里只打桩 loadAll 的外部依赖（列表请求、资产库接口、渲染等），loadAll 本体照跑。
 // ---------------------------------------------------------------------------
 
 const STATE_DECLARATIONS = [
+    'activeTab',
     'inboxItems',
     'inboxSettings',
     'inboxLoaded',
     'inboxLoading',
     'inboxError',
+    'inboxSettingsOpen',
+    'inboxMigrating',
     'inboxRequestSeq',
     'inboxInFlight',
     'inboxInFlightToken',
-    'registryBootstrapPending',
+    'registryBootstrapGeneration',
+    'registryBootstrapSettledGeneration',
     'registryBootstrapSettled',
+    'registryLoading',
+    'registryRequestSeq',
+    'registryFacets',
+    'registryBootstrapError',
+    'registryAssets',
+    'assetLibrary',
+    'promptLibrary',
+    'apiProviders',
+    'canvasAssetsData',
+    'activeAssetLibraryId',
+    'activeWorkflowLibraryId',
+    'activeAssetCategoryId',
+    'activeWorkflowCategoryId',
+    'selectedAssetId',
+    'selectedWorkflowId',
+    'selectedAssetIds',
+    'selectedWorkflowIds',
+    'selectedPromptIds',
+    'selectedCanvasAssetIds',
     'governanceSuggestionsData',
     'governanceSuggestionsLoading',
     'governanceSuggestionsError',
@@ -119,12 +146,16 @@ const STATE_DECLARATIONS = [
 
 const BOOT_FUNCTIONS = [
     'trackRegistryBootstrapSettled',
+    'isRegistryBootstrapPending',
     'waitRegistryBootstrapSettled',
     'loadAssetInbox',
     'markAssetInboxViewed',
     'assetInboxUnreadCount',
     'loadGovernanceSuggestions',
     'scheduleDeferredBootRequests',
+    'loadAll',
+    'uploadAssetInboxFiles',
+    'saveAssetInboxSettings',
 ];
 
 function sliceDeclaration(source, name){
@@ -153,66 +184,107 @@ function sliceBootEntry(source){
 }
 
 function createHarness(){
-    const state = {requests: [], pending: [], idle: [], timers: [], renders: 0, loadAllCalls: 0, bootHandler: null};
+    const state = {
+        requests: [],        // 只记非首屏链路（收集箱/治理）的请求 URL
+        pending: [],
+        idle: [],
+        timers: [],
+        renders: 0,
+        notices: [],
+        failures: [],
+        bootstraps: [],      // 每次真实 loadAll 发起的列表请求句柄
+        bootHandler: null,
+        libraryMode: 'ok',   // 'ok' | 'fail' | 'hang'
+        settingsPath: '',
+    };
+
+    const record = (kind, url) => {
+        const pending = {url, kind};
+        pending.promise = new Promise((resolve, reject) => {
+            pending.resolve = resolve;
+            pending.reject = reject;
+        });
+        state.pending.push(pending);
+        state.requests.push(url);
+        return pending.promise;
+    };
+    const newBootstrapRequest = () => {
+        const handle = {resolve: null, reject: null};
+        handle.promise = new Promise((resolve, reject) => {
+            handle.resolve = resolve;
+            handle.reject = reject;
+        });
+        state.bootstraps.push(handle);
+        return handle.promise;
+    };
+    const libraryRequest = () => {
+        if(state.libraryMode === 'fail') return Promise.reject(new Error('资产库读取失败'));
+        if(state.libraryMode === 'hang') return new Promise(() => {});
+        return Promise.resolve({library: {libraries: [], categories: []}});
+    };
+
+    // FormData 只用来构造上传体，测试不解析内容。
+    class FakeFormData { append(){} }
+
     const context = vm.createContext({
-        console,
-        Promise,
-        Math,
-        Number,
-        String,
-        Array,
-        Object,
-        Set,
-        Map,
-        activeTab: 'registry',
-        // 假 HTTP：请求挂起，由用例决定何时、以什么内容返回。
-        assetManagerHttp: {
-            request(url){
-                const pending = {url, kind: 'http'};
-                pending.promise = new Promise((resolve, reject) => {
-                    pending.resolve = resolve;
-                    pending.reject = reject;
-                });
-                state.pending.push(pending);
-                state.requests.push(url);
-                return pending.promise;
-            },
-        },
-        fetch(url){
-            const pending = {url, kind: 'fetch'};
-            pending.promise = new Promise((resolve, reject) => {
-                pending.resolve = resolve;
-                pending.reject = reject;
-            });
-            state.pending.push(pending);
-            state.requests.push(url);
-            return pending.promise;
-        },
-        apiJsonResponse: response => response,
-        render(){ state.renders += 1; },
-        setStatus(){},
-        showAssetNotice(){},
-        showAssetFailure(){},
-        updateGovernanceTrigger(){},
-        renderGovernanceDrawer(){},
-        setTimeout(fn){ state.timers.push(fn); return state.timers.length; },
-        window: {
-            requestIdleCallback(fn){ state.idle.push(fn); return state.idle.length; },
-        },
-        // 引导段的宿主依赖：除首屏链本身外全部打桩，只保留本票关心的调度行为。
-        directorySettingsPage: false,
+        console, Promise, Math, Number, String, Array, Object, Set, Map, Error, JSON, Boolean,
+        FormData: FakeFormData,
         document: {
+            hidden: false,
+            querySelector(selector){
+                if(selector !== '[data-inbox-settings-panel]') return null;
+                return {
+                    querySelector(inner){
+                        if(inner === '[data-inbox-path]') return {value: state.settingsPath};
+                        if(inner === '[data-inbox-migrate]') return {checked: false};
+                        return null;
+                    },
+                };
+            },
             addEventListener(type, handler){
                 if(type === 'DOMContentLoaded') state.bootHandler = handler;
             },
         },
+        window: {
+            requestIdleCallback(fn){ state.idle.push(fn); return state.idle.length; },
+        },
+        localStorage: {getItem(){ return null; }, setItem(){}, removeItem(){}},
+        setTimeout(fn){ state.timers.push(fn); return state.timers.length; },
+        clearTimeout(){},
+        setInterval(){ return 0; },
+        clearInterval(){},
+        confirm(){ return true; },
+        // 假 HTTP：请求挂起，由用例决定何时、以什么内容返回。
+        assetManagerHttp: {
+            request(url){ return record('http', url); },
+        },
+        fetch(url){ return record('fetch', url); },
+        apiJsonResponse: response => response,
+        assetManagerApi: {
+            getAssetLibrary: () => libraryRequest(),
+            getPromptLibraries: () => Promise.resolve({library: {libraries: []}}),
+            getProviders: () => Promise.resolve({providers: []}),
+            getCanvasAssets: () => Promise.resolve({categories: [], canvases: [], items: []}),
+        },
+        loadLocalStorageSettings: () => Promise.resolve(),
+        // 首屏列表请求本体：真实 loadAll 会把它登记成「当前代际的终态」，何时落地由用例控制。
+        loadRegistryBootstrap: () => newBootstrapRequest(),
+        // loadAll 的其余宿主依赖（渲染、状态栏、树/看板索引等），与本票断言无关。
         tryApplyRegistrySnapshot(){},
+        setStatus(){},
+        render(){ state.renders += 1; },
+        refreshScriptArchive(){},
+        assetLibraries: () => [],
+        workflowLibraryId: () => '',
+        assetBoardById: () => null,
+        showAssetNotice(message){ state.notices.push(message); },
+        showAssetFailure(title, error){ state.failures.push([title, String(error?.message || error || '')]); },
+        updateGovernanceTrigger(){},
+        renderGovernanceDrawer(){},
+        // 引导段的宿主依赖
+        directorySettingsPage: false,
         loadRegistryPrincipal(){},
         loadGlobalDirectorySettings(){},
-        loadAll(){
-            state.loadAllCalls += 1;
-            return new Promise(resolve => { state.finishLoadAll = resolve; });
-        },
         restoreRegistryBrowseSession: async () => 0,
         restoreAssetTreeState: async () => {},
         applyRegistryBrowseSessionScroll: async () => {},
@@ -224,53 +296,55 @@ function createHarness(){
     const body = [
         ...STATE_DECLARATIONS.map(name => sliceDeclaration(MANAGER, name)),
         ...BOOT_FUNCTIONS.map(name => sliceFunction(MANAGER, name)),
+        // beginRegistryBootstrapRequest 要写模块级 registryRequestSeq，只能放在 vm 内部。
+        // 真实实现还会 abort 旧请求；这里保留「新请求递增序号」这一关键语义，
+        // 被 abort 的旧 loadAll 才会像生产那样在 catch 里按序号提前返回。
+        'function beginRegistryBootstrapRequest(){ return ++registryRequestSeq; }',
         sliceBootEntry(MANAGER),
         `return {
-            trackRegistryBootstrapSettled,
-            waitRegistryBootstrapSettled,
+            loadAll,
             loadAssetInbox,
             markAssetInboxViewed,
             loadGovernanceSuggestions,
             scheduleDeferredBootRequests,
+            uploadAssetInboxFiles,
+            saveAssetInboxSettings,
+            isRegistryBootstrapPending,
+            waitRegistryBootstrapSettled,
             assetInboxUnreadCount,
             get inboxItems(){ return inboxItems; },
-            set inboxItems(value){ inboxItems = value; },
             get inboxSettings(){ return inboxSettings; },
-            set inboxSettings(value){ inboxSettings = value; },
             get inboxLoading(){ return inboxLoading; },
             get inboxInFlight(){ return inboxInFlight; },
-            get registryBootstrapPending(){ return registryBootstrapPending; },
+            get bootstrapPending(){ return isRegistryBootstrapPending(); },
             set governanceDrawerOpen(value){ governanceDrawerOpen = value; },
         };`,
     ].join('\n');
     const api = vm.runInNewContext(`(() => {\n${body}\n})()`, context, {filename: 'asset-manager.boot-harness.js'});
 
-    // 让首屏列表请求进入「在途」状态，并暴露手动落地（成功/失败）开关。
-    const beginBootstrap = () => {
-        const handle = {resolve: null, reject: null};
-        const request = new Promise((resolve, reject) => {
-            handle.resolve = resolve;
-            handle.reject = reject;
-        });
-        api.trackRegistryBootstrapSettled(request);
-        return handle;
+    const fireBoot = () => {
+        assert.ok(state.bootHandler, '引导入口没有注册 DOMContentLoaded 监听');
+        state.bootHandler();
+        return state.bootstraps[state.bootstraps.length - 1];
+    };
+    // 直接跑真实 loadAll（模拟用户刷新：首屏在途时又发起一次）。
+    const startLoadAll = () => {
+        const promise = api.loadAll();
+        promise.catch(() => {});   // 只关心列表终态的用例不该留下未处理拒绝
+        return state.bootstraps[state.bootstraps.length - 1];
     };
     const settle = async (bootstrap, ok = true) => {
         if(bootstrap){
-            if(ok) bootstrap.resolve();
+            if(ok) bootstrap.resolve({items: [], facets: {}});
             else bootstrap.reject(new Error('bootstrap failed'));
         }
         await flush();
     };
-    const fireBoot = () => {
-        assert.ok(state.bootHandler, '引导入口没有注册 DOMContentLoaded 监听');
-        state.bootHandler();
-    };
-    return {api, state, beginBootstrap, settle, fireBoot};
+    return {api, state, fireBoot, startLoadAll, settle};
 }
 
 const flush = async () => {
-    for(let i = 0; i < 6; i += 1) await new Promise(resolve => setImmediate(resolve));
+    for(let i = 0; i < 8; i += 1) await new Promise(resolve => setImmediate(resolve));
 };
 
 test('AC1: 资产库外壳页不再加载 Tailwind 运行时，改用仓库静态快照', () => {
@@ -340,14 +414,13 @@ test('AC1: 静态快照自带 preflight，不依赖运行时补齐基础样式',
 });
 
 test('AC2: 执行真实启动段时，首屏列表落地前没有任何非首屏请求', async () => {
-    // 这条用例真的把源码里的 DOMContentLoaded 整段跑一遍：往启动段里直接塞一条
-    // fetch/request 会立刻被「requests 非空」捕获，不依赖字符窗口是否覆盖到。
-    const {api, state, beginBootstrap, settle, fireBoot} = createHarness();
-    const bootstrap = beginBootstrap();
-    fireBoot();
+    // 这条用例真的把源码里的 DOMContentLoaded 整段跑一遍，并且跑的是**真实的 loadAll**：
+    // 往启动段里直接塞一条 fetch/request、或删掉 loadAll 里登记终态那行接线，都会立刻变红。
+    const {state, fireBoot, settle} = createHarness();
+    const bootstrap = fireBoot();
     await flush();
 
-    assert.equal(state.loadAllCalls, 1, '启动段应发起一次首屏加载');
+    assert.equal(state.bootstraps.length, 1, '启动段应发起一次首屏列表请求');
     assert.deepEqual(state.requests, [], '首屏列表在途时，启动段不得发出收集箱或治理建议请求');
     assert.equal(state.idle.length, 0, '首屏列表在途时不得把延后块排进空闲时段');
 
@@ -364,9 +437,9 @@ test('AC2: 执行真实启动段时，首屏列表落地前没有任何非首屏
 });
 
 test('AC2: 首屏列表落地前，启动期治理建议请求不发出去', async () => {
-    const {api, state, beginBootstrap, settle} = createHarness();
-    const bootstrap = beginBootstrap();
-    assert.equal(api.registryBootstrapPending, true);
+    const {api, state, startLoadAll, settle} = createHarness();
+    const bootstrap = startLoadAll();
+    assert.equal(api.bootstrapPending, true);
 
     await api.loadGovernanceSuggestions();
     assert.deepEqual(state.requests, [], '首屏列表未落地时不得发起治理建议请求');
@@ -383,17 +456,20 @@ test('AC2: 首屏列表落地前，启动期治理建议请求不发出去', asy
     assert.deepEqual(state.requests, ['/api/asset-registry/governance/suggestions']);
 });
 
-test('AC2: 延后调度等的是首屏列表终态，而不是 loadAll 的失败分支', async () => {
-    const {api, state, beginBootstrap, settle} = createHarness();
-    const bootstrap = beginBootstrap();
-
-    // 资产库/本地设置先失败会走 loadAll 的 catch，此时调度被调用但列表仍在途。
-    api.scheduleDeferredBootRequests();
+test('AC2: 真实 loadAll 的失败分支不得放行延后块（列表仍在途）', async () => {
+    // 资产库接口先失败 → loadAll 的 Promise.all 提前 reject，但列表请求还在途。
+    // 这条走的是真实 loadAll 的 catch，不是手动 track 出来的状态。
+    const {api, state, fireBoot, settle} = createHarness();
+    state.libraryMode = 'fail';
+    const bootstrap = fireBoot();
     await flush();
+
+    assert.equal(api.bootstrapPending, true, '资产库失败不等于首屏列表已结束');
     assert.equal(state.idle.length, 0, '列表还在途时不得把延后块排进空闲时段');
     assert.deepEqual(state.requests, []);
 
     await settle(bootstrap, false);   // 列表请求也失败，同样算终态
+    assert.equal(api.bootstrapPending, false);
     assert.equal(state.idle.length, 1, '列表终态后才允许调度延后块');
 
     state.idle.shift()();
@@ -405,9 +481,40 @@ test('AC2: 延后调度等的是首屏列表终态，而不是 loadAll 的失败
     );
 });
 
+test('AC2: 首屏在途时刷新，正等 A 的延后调度不得被旧代际放行', async () => {
+    // 审核复现：首屏 A 在途时用户刷新启动 B，B abort A。旧 A 的终态既不能清掉 B 的「在途」，
+    // 也不能把已经在等 A 的延后调度放行 —— 否则 B 还在跑，收集箱与治理又抢到前面。
+    const {api, state, startLoadAll, settle} = createHarness();
+    const first = startLoadAll();
+    await flush();
+    api.scheduleDeferredBootRequests();     // 延后链路此刻已排入，正在等 A
+    await flush();
+    assert.equal(state.idle.length, 0);
+
+    const second = startLoadAll();          // 用户刷新：新代际，旧 A 被 abort
+    await flush();
+    assert.equal(api.bootstrapPending, true);
+
+    await settle(first, false);             // 旧代际（被 abort）落地
+    assert.equal(api.bootstrapPending, true, '旧代际落地不得清掉新一代的在途标记');
+    assert.equal(state.idle.length, 0, '旧代际落地不得放行等新一代的延后调度');
+    assert.deepEqual(state.requests, [], '新一代未落地前，非首屏链路一条 POST/GET 都不许发');
+
+    await settle(second);
+    assert.equal(api.bootstrapPending, false);
+    assert.equal(state.idle.length, 1, '新一代落地后才放行延后调度');
+
+    state.idle.shift()();
+    await flush();
+    assert.deepEqual(state.requests, [
+        '/api/asset-inbox?limit=500',
+        '/api/asset-registry/governance/suggestions',
+    ]);
+});
+
 test('AC2: 收集箱并发读取只发一次 GET', async () => {
-    const {api, state, beginBootstrap, settle} = createHarness();
-    await settle(beginBootstrap());
+    const {api, state, startLoadAll, settle} = createHarness();
+    await settle(startLoadAll());
 
     const first = api.loadAssetInbox();
     const second = api.loadAssetInbox();
@@ -422,8 +529,8 @@ test('AC2: 收集箱并发读取只发一次 GET', async () => {
 });
 
 test('AC2: 收集箱已加载时，延后块不再重复读一遍', async () => {
-    const {api, state, beginBootstrap, settle} = createHarness();
-    await settle(beginBootstrap());
+    const {api, state, startLoadAll, settle} = createHarness();
+    await settle(startLoadAll());
     const first = api.loadAssetInbox();
     state.pending[0].resolve({items: [], settings: {unread_count: 0}});
     await first;
@@ -440,19 +547,81 @@ test('AC2: 收集箱已加载时，延后块不再重复读一遍', async () => 
 });
 
 test('AC2: 角标清零后，晚到的旧收集箱响应不得把未读数改回去', async () => {
-    const {api, state, beginBootstrap, settle} = createHarness();
-    api.inboxSettings = {unread_count: 7};
-    await settle(beginBootstrap());
+    const {api, state, startLoadAll, settle} = createHarness();
+    await settle(startLoadAll());
+    // 未读数需要非 0 才走清零分支：先落一份带未读的快照。
+    const seeded = api.loadAssetInbox();
+    state.pending[0].resolve({items: [{id: 'a'}], settings: {unread_count: 7}});
+    await seeded;
+    assert.equal(api.inboxSettings.unread_count, 7);
 
-    const reading = api.loadAssetInbox();
+    const reading = api.loadAssetInbox({refresh: true});
     const viewed = api.markAssetInboxViewed();
-    assert.equal(state.requests.length, 2, '读取与清零各自一条请求');
-    state.pending[1].resolve({ok: true});     // POST /viewed 先返回
+    assert.equal(state.requests.length, 3, '强制读取与清零各自一条请求');
+    state.pending[2].resolve({ok: true});     // POST /viewed 先返回
     await viewed;
     assert.equal(api.inboxSettings.unread_count, 0);
 
-    state.pending[0].resolve({items: [{id: 'a'}], settings: {unread_count: 7}});
+    state.pending[1].resolve({items: [{id: 'b'}], settings: {unread_count: 7}});
     await reading;
     assert.equal(api.inboxSettings.unread_count, 0, '过期响应必须被丢弃，不得把角标改回未读');
-    assert.equal(api.inboxItems.length, 0, '过期响应同样不得写入列表');
+    assert.equal(api.inboxItems.length, 1, '过期响应同样不得写入列表');
+    assert.equal(api.inboxItems[0].id, 'a');
+});
+
+test('AC2: 上传成功后必须重新读收集箱，不能复用写前的在途快照', async () => {
+    // 审核复现：POST /asset-inbox/upload 成功后总 GET 仍是写之前那一次，
+    // 旧快照返回 → 列表里没有新文件，但界面提示「已上传」。
+    const {api, state, startLoadAll, settle} = createHarness();
+    await settle(startLoadAll());
+
+    const staleRead = api.loadAssetInbox();          // 写前发出的普通读取，还在途
+    assert.equal(state.requests.length, 1);
+
+    const uploading = api.uploadAssetInboxFiles([{name: 'fresh.png'}]);
+    assert.equal(state.requests.length, 2, '上传请求应发出');
+
+    state.pending[1].resolve({count: 1});            // POST 成功
+    await flush();
+    assert.equal(
+        state.requests.length,
+        3,
+        '写后必刷：POST 成功后必须另发一条 GET，而不是复用写前那条在途请求'
+    );
+
+    // 写前那条晚到：它是旧快照，必须被丢弃。
+    state.pending[0].resolve({items: [{id: 'stale'}], settings: {unread_count: 3}});
+    await staleRead;
+    assert.equal(api.inboxItems.length, 0, '写前快照不得写回列表');
+    assert.equal(api.inboxSettings, null, '写前快照不得写回设置');
+
+    state.pending[2].resolve({items: [{id: 'fresh'}], settings: {unread_count: 1}});
+    await uploading;
+    assert.equal(api.inboxItems.length, 1);
+    assert.equal(api.inboxItems[0].id, 'fresh', '写后读取的结果才是当前真相');
+});
+
+test('AC2: 保存收集箱位置成功后同样重读，不能显示旧路径', async () => {
+    // 同一条单飞逻辑的第二个写入口：PUT /asset-inbox/settings 成功后复用写前快照，
+    // 会让界面「提示已更新、设置里还是旧路径」。
+    const {api, state, startLoadAll, settle} = createHarness();
+    await settle(startLoadAll());
+    state.settingsPath = '/new/inbox';
+
+    const staleRead = api.loadAssetInbox();
+    const saving = api.saveAssetInboxSettings();
+    assert.equal(state.requests.length, 2, '写前读取 + PUT 设置');
+
+    state.pending[1].resolve({applied: true, migrated: [], conflicts: [], skipped: []});
+    await flush();
+    assert.equal(state.requests.length, 3, 'PUT 成功后必须另发一条 GET');
+
+    state.pending[0].resolve({items: [], settings: {path: '/old/inbox'}});
+    await staleRead;
+    assert.equal(api.inboxSettings, null, '写前快照不得写回设置');
+
+    state.pending[2].resolve({items: [], settings: {path: '/new/inbox'}});
+    await saving;
+    assert.equal(api.inboxSettings.path, '/new/inbox', '写后读取才是生效的位置');
+    assert.deepEqual(state.failures, []);
 });

@@ -337,8 +337,11 @@ let registryBootstrapCompleted = false; // 首屏引导是否完成；未完成�
 // 【QIN-585 AC2】首屏列表（注册表引导）请求的**真实终态**。非首屏链路只认这个终态：
 // loadAll 里资产库/本地设置任一先失败都会提前 reject，而列表请求仍在途，
 // 此时若按「catch 即首屏结束」放行收集箱与治理，它们照样抢在列表前面占用单进程服务端。
-let registryBootstrapPending = true;
-let registryBootstrapSettled = null;
+// 按**代际**维护：首屏列表在途时用户刷新会 abort 旧请求并开启新一代，
+// 旧代际的终态既不能清掉新一代的「在途」，也不能把等新一代的调度放行。
+let registryBootstrapGeneration = 1;         // 已登记终态的首屏列表请求代际；初值 1 表示「首屏尚未开始」
+let registryBootstrapSettledGeneration = 0;  // 已落地的最大代际；小于当前代际即仍有列表在途
+let registryBootstrapSettled = null;         // 当前代际的终态 promise（尚未登记过为 null）
 let registrySyncBusy = false; // asset-sync 处理重入保护
 let registryPendingApplyScrollBound = null; // 滚回顶部时自动补插新素材的一次性滚动监听
 let registryPresets = [];
@@ -9414,17 +9417,31 @@ async function refreshCanvasAssets(){
 }
 // 【QIN-585 AC2】登记首屏列表请求的终态（成功/失败都算终态），并顺带挂上拒绝处理器：
 // loadAll 提前 reject 时没人 await 这条 promise，不挂处理器会留下未处理的拒绝。
+// 每次登记即开启**新一代**：刷新会 abort 旧一代，旧一代落地时不得把新一代的「在途」清掉。
 function trackRegistryBootstrapSettled(request){
-    registryBootstrapSettled = request.then(
-        () => { registryBootstrapPending = false; return true; },
-        () => { registryBootstrapPending = false; return true; }
-    );
+    registryBootstrapGeneration += 1;
+    const generation = registryBootstrapGeneration;
+    const settleGeneration = () => {
+        // 只推进落地代际，不回退：旧代际晚于新代际落地时不能把「新一代仍在途」抹掉。
+        if(generation > registryBootstrapSettledGeneration) registryBootstrapSettledGeneration = generation;
+        return true;
+    };
+    registryBootstrapSettled = request.then(settleGeneration, settleGeneration);
     return registryBootstrapSettled;
 }
-function waitRegistryBootstrapSettled(){
-    if(registryBootstrapSettled) return registryBootstrapSettled;
-    // 还没登记过请求 = 没有首屏列表在途，无需等待。
-    return Promise.resolve(!registryBootstrapPending);
+function isRegistryBootstrapPending(){
+    return registryBootstrapSettledGeneration < registryBootstrapGeneration;
+}
+async function waitRegistryBootstrapSettled(){
+    // 等的是**当前代际**的列表落地。等的过程里用户刷新开了新一代，就继续等新一代：
+    // 旧代际落地只代表它自己被 abort 了，此时放行等于让非首屏链路抢在新列表前面。
+    for(;;){
+        if(!isRegistryBootstrapPending()) return true;
+        const settled = registryBootstrapSettled;
+        // 当前代际还没登记过终态（首屏列表尚未开始）：没有在途请求，不阻塞。
+        if(!settled) return true;
+        await settled;
+    }
 }
 async function loadAll(){
     // 【QIN-573 AC2】快照优先秒开：若存在会话快照，在网络请求到达前先行挂载渲染
@@ -9812,7 +9829,8 @@ async function loadGovernanceSuggestions(force=false){
     // 千级素材库上单次要跑数秒，会把首屏列表排在单进程服务端之后。
     // 排队后由 scheduleDeferredBootRequests 在列表终态后的空闲时段补发；
     // force（用户显式刷新）不受此闸门限制。
-    if(!force && registryBootstrapPending) return;
+    // 按代际判定：首屏在途时用户刷新开了新一代，同样要等新一代落地才发。
+    if(!force && isRegistryBootstrapPending()) return;
     if(force){
         governanceSuggestionsData = null;
         governanceSuggestionsError = null;
@@ -10670,10 +10688,18 @@ function renderInboxManager(){
     </section>`;
     refreshIcons();
 }
-function loadAssetInbox(){
-    // 【QIN-585 AC2】单飞：并发的收集箱读取（首屏延后调度 + 用户点开 + 上传后回读）
-    // 复用同一次请求，避免一次进页打出多条 GET。
-    if(inboxInFlight) return inboxInFlight;
+// 【QIN-585 AC2】单飞与新鲜度：首屏延后调度、用户点开、上传后回读会并发触发同一份数据。
+// - 普通读取（缺省）复用同一份在途请求，一次进页只打一条 GET；
+// - 写后必刷（`{refresh:true}`）既不复用也不被复用：写之前发出的在途请求读到的是旧快照，
+//   复用它会出现「提示上传/保存成功、列表里却没有新文件、设置还显示旧路径」。
+//   这里只递增序号作废旧响应（它的结果与 loading 都不再回写），并另发一条新请求。
+function loadAssetInbox(options){
+    const refresh = Boolean(options && options.refresh);
+    if(!refresh && inboxInFlight) return inboxInFlight;
+    if(refresh){
+        inboxInFlight = null;
+        inboxInFlightToken = null;
+    }
     const token = {seq:++inboxRequestSeq};
     inboxLoading = true;
     inboxError = '';
@@ -10731,7 +10757,8 @@ async function uploadAssetInboxFiles(files){
     try{
         const result = await apiJsonResponse(assetManagerHttp.request('/api/asset-inbox/upload', {method:'POST', credentials:'same-origin', body:form}));
         showAssetNotice(`已上传 ${Number(result.count || list.length)} 个文件到收集箱`);
-        await loadAssetInbox();
+        // 【QIN-585 AC2】写后必刷：不复用写之前发出的在途读取（那是旧快照），否则新文件不出现。
+        await loadAssetInbox({refresh:true});
         // 用户此刻正在收集箱里看到新文件，角标不应再算作未读。
         if(activeTab === 'inbox' && assetInboxUnreadCount() > 0) await markAssetInboxViewed();
     }catch(error){
@@ -10748,7 +10775,7 @@ async function migrateAssetLibraryToInbox(){
         const failed = Array.isArray(result.failed) ? result.failed.length : 0;
         const movedCount = Number(result.moved_files || 0);
         showAssetNotice(`托管资产已并入收集箱：迁入 ${movedCount} 个文件${movedCount ? '（源文件保留）' : ''}，保留 ${Number(result.url_entries || 0)} 个链接条目${failed ? `，${failed} 个失败，可再次点击重试` : ''}`);
-        await loadAssetInbox();
+        await loadAssetInbox({refresh:true});
     }catch(error){
         showAssetFailure('迁移托管资产失败', error);
     }finally{
@@ -10778,12 +10805,12 @@ async function saveAssetInboxSettings(){
             inboxSettingsOpen = true;
             const failed = Array.isArray(result.failed) ? result.failed.length : 0;
             showAssetFailure('收集箱位置未变更', new Error(`${failed} 个文件搬不动，已回滚到原位置`));
-            await loadAssetInbox();
+            await loadAssetInbox({refresh:true});
             if(activeTab === 'inbox') render();
             return;
         }
         showAssetNotice(`收集箱位置已更新${moved ? `，迁移 ${moved} 个文件` : ''}${skipped ? `，${skipped} 个相同文件已存在` : ''}${conflicts ? `，${conflicts} 个同名文件未迁移` : ''}`);
-        await loadAssetInbox();
+        await loadAssetInbox({refresh:true});
     }catch(error){
         showAssetFailure('保存收集箱位置失败', error);
     }
