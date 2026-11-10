@@ -104,6 +104,7 @@ tests/frontend/qin-581-lut-save-version.test.mjs
 tests/frontend/qin-582-registry-boot-requests.test.mjs
 tests/frontend/qin-583-cf-on-demand-probe.test.mjs
 tests/frontend/qin-584-asset-first-page-viewport.test.mjs
+tests/frontend/qin-586-sidebar-unified-tree.test.mjs
 tests/frontend/qin-587-inbox-layout.test.mjs
 tests/frontend/settings-workbench-visual.test.mjs
 tests/frontend/test_c18_omnibar_hotkeys.mjs

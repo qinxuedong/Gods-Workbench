@@ -748,11 +748,25 @@ window.WorkbenchAssets = (() => {
       badge.className = 'asset-shell-nav-badge';
       badge.textContent = row.badge > 99 ? '99+' : row.badge;
       button.append(badge);
+    } else if (row.loading) {
+      const count = document.createElement('span');
+      count.className = 'asset-shell-nav-count is-loading';
+      count.textContent = '…';
+      button.append(count);
     } else if (row.count !== '' && row.count !== undefined && row.count !== null && Number(row.count) >= 0) {
       const count = document.createElement('span');
       count.className = 'asset-shell-nav-count';
       count.textContent = Number(row.count).toLocaleString('zh-CN');
       button.append(count);
+    }
+
+    if (row.offline) {
+      const offline = document.createElement('span');
+      offline.className = 'asset-shell-nav-offline';
+      offline.textContent = '离线';
+      const countEl = button.querySelector('.asset-shell-nav-count, .asset-shell-nav-badge');
+      if (countEl) button.insertBefore(offline, countEl);
+      else button.append(offline);
     }
 
     button.addEventListener('click', () => activateTreeEntry(row.key));
@@ -806,7 +820,7 @@ window.WorkbenchAssets = (() => {
     overview?.closest('.asset-shell-overview-card')?.classList.toggle('is-active', registryActive);
   }
 
-  // 应用内嵌页推送的树快照：渲染收集箱 + 用户资源看板 + 挂载根目录与子目录树。
+  // 应用内嵌页推送的树快照：渲染收集箱 + 挂载资源（统一资源库总文件夹与物理子目录树）。
   function applyTreeSnapshot(snapshot) {
     if (!categories || !snapshot || typeof snapshot !== 'object') return;
     const selected = String(snapshot.selected_key || '');
@@ -817,11 +831,38 @@ window.WorkbenchAssets = (() => {
       const name = String(root?.name || '').trim();
       return id !== 'video' && id !== 'image' && name !== '视频库素材' && name !== '图片库素材';
     });
-    const boards = Array.isArray(snapshot.boards) ? snapshot.boards : [];
+    const seenRootPaths = new Map();
+    const dedupedRoots = [];
+    roots.forEach(root => {
+      const path = String(root?.path || '').replace(/\\/g, '/').toLowerCase().trim();
+      if(path){
+        if(seenRootPaths.has(path)){
+          const existing = dedupedRoots[seenRootPaths.get(path)];
+          const count = Number(root?.count || 0);
+          const existingCount = Number(existing?.count || 0);
+          if(!existingCount && count > 0){
+            existing.count = count;
+          }
+          if(root.name && (!existing.name || existing.name.endsWith('素材') || existing.name.startsWith('local_extra_'))){
+            existing.name = root.name;
+          }
+          return;
+        }
+        seenRootPaths.set(path, dedupedRoots.length);
+      }
+      dedupedRoots.push(root);
+    });
+    const knownRootIds = new Set(dedupedRoots.map(r => String(r.id || '')));
+    const rawBoards = Array.isArray(snapshot.boards) ? snapshot.boards : [];
+    const independentBoards = rawBoards.filter(board => {
+      const boardRootId = String(board?.rootId || board?.sources?.[0]?.id || '');
+      return !knownRootIds.has(boardRootId);
+    });
+
     const rows = [
       {key:'mine:inbox', name:'收集箱', icon:'inbox', badge, count:'', hasChildren:false},
-      ...boards.map(board => ({key:`mine:board:${board.id}`, name:String(board.name || '未命名资源库'), icon:String(board.icon || 'library'), count:'', hasChildren:false})),
-      ...roots.map(root => ({...root, key:`mine:root:${root.id}`, name:String(root.name || '未命名来源'), icon:'hard-drive', count:Number(root.count || 0), isRoot:true})),
+      ...dedupedRoots.map(root => ({...root, key:`mine:root:${root.id}`, name:String(root.name || '未命名来源'), icon:root.icon || 'hard-drive', count:root.count, isRoot:true})),
+      ...independentBoards.map(board => ({key:`mine:board:${board.id}`, name:String(board.name || '未命名资源库'), icon:String(board.icon || 'library'), count:'', hasChildren:false})),
     ].map(row => ({...row, active: row.key === selected}));
     const serialized = JSON.stringify(rows);
     updateSidebarSelection(selected);
@@ -856,40 +897,19 @@ window.WorkbenchAssets = (() => {
       hasChildren: false,
     }));
 
-    // 2. 资源入口（自定义看板）
-    if (boards.length > 0) {
-      const boardSection = document.createElement('div');
-      boardSection.className = 'asset-shell-board-section mt-2';
-      const boardLabel = document.createElement('div');
-      boardLabel.className = 'asset-tree-group-label mb-1';
-      boardLabel.textContent = '资源入口';
-      boardSection.append(boardLabel);
-      boards.forEach(board => {
-        boardSection.append(shellNavButton({
-          key: `mine:board:${board.id}`,
-          name: String(board.name || '未命名资源库'),
-          icon: String(board.icon || 'library'),
-          count: '',
-          active: selected === `mine:board:${board.id}`,
-          hasChildren: false,
-        }));
-      });
-      mainItems.append(boardSection);
-    }
-
-    // 3. 挂载文件夹（真实磁盘根目录与子目录树）
+    // 2. 挂载资源（统一资源库树，去掉「资源入口」「挂载文件夹」分段与子文件夹重复）
     const mountSection = document.createElement('div');
     mountSection.className = 'asset-shell-mount-section mt-2';
     const mountLabel = document.createElement('div');
     mountLabel.className = 'asset-tree-group-label';
-    mountLabel.innerHTML = `<span>挂载文件夹</span><button class="asset-tree-group-add" type="button" data-asset-organize-group-new aria-label="新建文件夹" title="新建文件夹"><i data-lucide="plus"></i></button>`;
+    mountLabel.innerHTML = `<span>挂载资源</span><button class="asset-tree-group-add" type="button" data-asset-organize-group-new aria-label="新建文件夹" title="新建文件夹"><i data-lucide="plus"></i></button>`;
     mountLabel.querySelector('[data-asset-organize-group-new]')?.addEventListener('click', (e) => {
       e.stopPropagation();
       openShellCreateDialog('');
     });
     mountSection.append(mountLabel);
 
-    if (!roots.length) {
+    if (!roots.length && !independentBoards.length) {
       const empty = document.createElement('span');
       empty.className = 'asset-shell-nav-empty';
       empty.textContent = '尚未挂载文件夹';
@@ -900,10 +920,22 @@ window.WorkbenchAssets = (() => {
           ...root,
           key: `mine:root:${root.id}`,
           name: String(root.name || '未命名来源'),
-          icon: 'hard-drive',
-          count: Number(root.count || 0),
+          icon: root.icon || 'hard-drive',
+          count: root.count,
+          loading: Boolean(root.loading),
+          offline: Boolean(root.offline),
           isRoot: true,
           active: selected === `mine:root:${root.id}`,
+        }));
+      });
+      independentBoards.forEach(board => {
+        mountSection.append(shellNavButton({
+          key: `mine:board:${board.id}`,
+          name: String(board.name || '未命名资源库'),
+          icon: String(board.icon || 'library'),
+          count: '',
+          active: selected === `mine:board:${board.id}`,
+          hasChildren: false,
         }));
       });
     }
