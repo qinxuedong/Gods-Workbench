@@ -11,6 +11,7 @@
 from __future__ import annotations
 
 import io
+import json
 import logging
 import math
 from pathlib import Path
@@ -1007,3 +1008,141 @@ def test_replay_after_id_reuse_keeps_concurrent_artifacts(
     # 幂等：再放一次也不会动 B。
     assert asset_repo.compensate_lut_render_outputs([], [orphan_id]) == []
     assert _search_document_count() == before_docs + 1
+
+
+_RECOVERY_MARKER = "LUT_RENDER_RECOVERY "
+
+
+def _recovery_payload(text: str) -> dict:
+    """从 note / 日志里取机器可读的恢复清单（必须是真实值，不能靠猜 ID）。"""
+    lines = [
+        line for line in text.splitlines() if line.startswith(_RECOVERY_MARKER)
+    ]
+    assert len(lines) == 1, f"恢复清单必须恰好输出一次且独占一行: {text}"
+    return json.loads(lines[0][len(_RECOVERY_MARKER):])
+
+
+def test_compensation_note_carries_real_media_triplet_and_replay_cleans_file(
+    client: TestClient, monkeypatch, caplog
+):
+    """重要回归：note/日志必须给出真实媒体三元组，解除故障后照它重放能清掉文件。
+
+    旧 note 只写 ``compensate_lut_render_outputs([], [asset_id])``：这个形状只补检索
+    文档，媒体文件没有路径信息就无法判归属，返回 ``[]`` 而孤儿 PNG 仍在。修复后
+    note 带 ``LUT_RENDER_RECOVERY`` JSON（written 的真实 id/relative/绝对路径 +
+    created_ids）和一条可直接复制的重放调用。
+    """
+    _ensure_luts(client)
+    source = _upload(client, "qin581_recovery_triplet.png", _image_bytes(), "image/png")
+    other_source = _upload(client, "qin581_recovery_other.png", _image_bytes(), "image/png")
+    before_docs = _search_document_count()
+
+    def broken_upsert(_records):
+        raise CleanroomException(503, "ASSET_SEARCH_INDEX_FAILED", "检索索引写入失败")
+
+    real_unlink = Path.unlink
+
+    def deny_lut_render_unlink(self, *args, **kwargs):
+        if "lut_render" in str(self).replace("\\", "/"):
+            raise PermissionError("injected unlink denial")
+        return real_unlink(self, *args, **kwargs)
+
+    from gw.api.routes_asset_registry import _render_lut_asset
+
+    with monkeypatch.context() as patched:
+        patched.setattr(asset_repo, "_upsert_asset_search_documents", broken_upsert)
+        patched.setattr(Path, "unlink", deny_lut_render_unlink)
+        with caplog.at_level(logging.ERROR, logger=asset_repo.__name__):
+            with pytest.raises(CleanroomException) as excinfo:
+                asset_repo.create_lut_render(
+                    source["id"], WARM, 1.0, None, render=_render_lut_asset
+                )
+
+    notes = "\n".join(getattr(excinfo.value, "__notes__", []))
+    payload = _recovery_payload(notes)
+    logs = "\n".join(record.getMessage() for record in caplog.records)
+    assert "LUT_RENDER_COMPENSATION_INCOMPLETE" in logs
+    assert _recovery_payload(logs) == payload, "日志里的恢复清单必须与 note 一致"
+    assert "compensate_lut_render_outputs(written=[(" in notes, notes
+    assert "Path(" in notes, "重放调用必须带真实绝对路径"
+
+    assert len(payload["written"]) == 1, payload
+    asset_id, relative, absolute = payload["written"][0]
+    assert asset_id.startswith("ast_")
+    assert relative == f"media_output/lut_render/{source['id']}/{asset_id}_v001.png"
+    assert Path(absolute).is_file(), "三元组里的绝对路径必须指向真实残留文件"
+    assert payload["created_ids"] == [asset_id]
+    # 失败明细自身也要能重建三元组（不只是汇总里的 JSON）。
+    assert "'stage': 'media'" in logs and "'relative':" in logs
+    assert "'path':" in logs and relative in logs and "PermissionError" in logs
+
+    # 反证：按旧 note 的「只有 ID」重放，返回 [] 但文件仍在。
+    assert asset_repo.compensate_lut_render_outputs([], [asset_id]) == []
+    assert Path(absolute).is_file(), "只给 ID 不能清媒体（这是设计，必须给真实三元组）"
+
+    # B 复用同一个派生 ID，在另一条源素材下真实提交（记录 + 文件 + 文档）。
+    other_dir = storage.data_root() / "media_output" / "lut_render" / other_source["id"]
+    other_dir.mkdir(parents=True, exist_ok=True)
+    other_path = other_dir / f"{asset_id}_v001.png"
+    other_path.write_bytes(_image_bytes())
+    _commit_other_writer(
+        asset_id,
+        f"media_output/lut_render/{other_source['id']}/{other_path.name}",
+        other_path.stat().st_size,
+    )
+
+    # 解除故障后，按 note 里的真实三元组重放：本笔孤儿清掉，B 三样都不受损。
+    written = [(asset_id, relative, Path(absolute))]
+    assert asset_repo.compensate_lut_render_outputs(written, payload["created_ids"]) == []
+    assert not Path(absolute).exists(), "按真实三元组重放必须把孤儿 PNG 清掉"
+    assert not _pending_render_files(source["id"]), "源目录下不得再残留本笔产物"
+    assert other_path.is_file(), "复用方的媒体文件不得被重放删掉"
+    assert _search_document_count() == before_docs + 1, "复用方的检索文档必须保留（冷读）"
+    assert client.get(f"{BASE}/assets/{asset_id}", headers=AUTH).status_code == 200
+    # 幂等：再按同一份清单重放一次也不会动 B。
+    assert asset_repo.compensate_lut_render_outputs(written, payload["created_ids"]) == []
+    assert _search_document_count() == before_docs + 1
+
+
+def test_compensation_crash_keeps_recovery_payload_and_replay_cleans_file(
+    client: TestClient, monkeypatch, caplog
+):
+    """重要回归：补偿读状态就崩时，原 written/created_ids 也要留在日志与 note 里。"""
+    _ensure_luts(client)
+    source = _upload(client, "qin581_crash_recovery.png", _image_bytes(), "image/png")
+
+    def broken_upsert(_records):
+        raise CleanroomException(503, "ASSET_SEARCH_INDEX_FAILED", "检索索引写入失败")
+
+    def crashing_discard(_path):
+        raise RuntimeError("injected compensation crash")
+
+    from gw.api.routes_asset_registry import _render_lut_asset
+
+    with monkeypatch.context() as patched:
+        patched.setattr(asset_repo, "_upsert_asset_search_documents", broken_upsert)
+        patched.setattr(asset_repo, "_discard_rendered_file", crashing_discard)
+        with caplog.at_level(logging.ERROR, logger=asset_repo.__name__):
+            with pytest.raises(CleanroomException) as excinfo:
+                asset_repo.create_lut_render(
+                    source["id"], WARM, 1.0, None, render=_render_lut_asset
+                )
+
+    assert excinfo.value.code == "ASSET_SEARCH_INDEX_FAILED", "崩溃不得覆盖原错误码"
+    notes = "\n".join(getattr(excinfo.value, "__notes__", []))
+    logs = "\n".join(record.getMessage() for record in caplog.records)
+    assert "LUT_RENDER_COMPENSATION_CRASHED" in logs
+    assert "compensation" in notes and "RuntimeError" in notes
+    payload = _recovery_payload(notes)
+    assert _recovery_payload(logs) == payload, "崩溃日志与 note 必须给出同一份完整清单"
+    assert "compensate_lut_render_outputs(written=[(" in logs
+    assert len(payload["written"]) == 1 and payload["created_ids"], payload
+    asset_id, relative, absolute = payload["written"][0]
+    assert Path(absolute).is_file()
+    assert payload["created_ids"] == [asset_id]
+
+    # 故障解除后按日志/note 里的清单原样重放，文件确实清掉。
+    written = [(asset_id, relative, Path(absolute))]
+    assert asset_repo.compensate_lut_render_outputs(written, payload["created_ids"]) == []
+    assert not Path(absolute).exists()
+    assert not _pending_render_files(source["id"])

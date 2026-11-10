@@ -2617,13 +2617,59 @@ def _delete_search_documents_with_retry(asset_ids: List[str], attempts: int = 2)
     return last
 
 
-def _note_compensation_failure(exc: BaseException, failures: List[Dict[str, Any]]) -> None:
-    """把补偿失败挂到原异常上：原错误码与信息保留，另附可检索的失败明细。"""
+def _lut_render_recovery_payload(
+    written: List[Tuple[str, str, Path]], created_ids: List[str]
+) -> Dict[str, Any]:
+    """把失败派生的完整补偿清单序列化成可重建的恢复参数。
+
+    ``written`` 的每一项都是真实的 ``(asset_id, relative, absolute_path)`` 三元组：
+    没有 relative 与绝对路径，就无法判断「盘上这个文件是不是本笔的孤儿」，也就不能
+    安全地清媒体。只给 asset_id 的恢复参数**只能补检索文档**，媒体文件仍会留在盘上。
+    """
+    return {
+        "written": [
+            [str(asset_id), str(relative), str(path)]
+            for asset_id, relative, path in written
+        ],
+        "created_ids": [str(aid) for aid in created_ids],
+    }
+
+
+def _lut_render_recovery_call(payload: Dict[str, Any]) -> str:
+    """按真实清单生成可直接复制执行的重放调用（媒体三元组必须是真值）。"""
+    outputs = ", ".join(
+        f"({aid!r}, {relative!r}, Path({path!r}))"
+        for aid, relative, path in payload["written"]
+    )
+    return (
+        "compensate_lut_render_outputs("
+        f"written=[{outputs}], created_ids={payload['created_ids']!r})"
+    )
+
+
+def _note_compensation_failure(
+    exc: BaseException,
+    failures: List[Dict[str, Any]],
+    *,
+    written: List[Tuple[str, str, Path]],
+    created_ids: List[str],
+) -> None:
+    """把补偿失败挂到原异常上：原错误码保留，另附**可重建**的恢复清单与调用。
+
+    note 里必须有 ``LUT_RENDER_RECOVERY`` 那一行 JSON：运维（或重放脚本）据此重建
+    written 三元组与 created_ids，解除故障后原样重放即可补完，不必猜 asset_id。
+    """
+    payload = _lut_render_recovery_payload(written, created_ids)
     summary = "; ".join(f"{item['stage']}={item.get('error')}" for item in failures)
-    note = (
-        "LUT 派生补偿未完成（原错误已保留）："
-        f"{summary}；补偿项可用 compensate_lut_render_outputs([], [asset_id]) 重放补完"
-        "（幂等，且会跳过已被复用的 ID）"
+    note = "\n".join(
+        [
+            f"LUT 派生补偿未完成（原错误已保留）: {summary}",
+            "LUT_RENDER_RECOVERY " + json.dumps(payload, ensure_ascii=False),
+            "重放（必须用完整 written 三元组清媒体；created_ids 只补检索文档）: "
+            + _lut_render_recovery_call(payload),
+            "只传 compensate_lut_render_outputs([], [asset_id]) 不会清媒体文件："
+            "没有真实路径无法判定文件归属；也不要按裸 ID 直删检索文档。",
+        ]
     )
     add_note = getattr(exc, "add_note", None)
     if callable(add_note):
@@ -2662,8 +2708,13 @@ def compensate_lut_render_outputs(
     用法：
 
     * 事务失败：``compensate_lut_render_outputs(written, created_ids)``；
-    * 事后恢复（按 ``LUT_RENDER_COMPENSATION_INCOMPLETE`` 日志里的 asset_id）：
-      ``compensate_lut_render_outputs([], asset_ids)``。
+    * 事后恢复：把日志 / 异常 note 里 ``LUT_RENDER_RECOVERY`` 的**完整 written 三元组**
+      与 ``created_ids`` 原样传回，例如
+      ``compensate_lut_render_outputs([(aid, relative, Path(path))], [aid])``。
+
+    只传 ``compensate_lut_render_outputs([], [asset_id])`` **不会清媒体文件**：没有真实
+    相对/绝对路径，就无法判定盘上哪个文件属于这一笔，也不能排除它已被另一笔复用；
+    这个形状只补检索文档。同理不要按裸 ID 直删检索文档。
 
     归属判定分两套，不能混用：
 
@@ -2689,7 +2740,13 @@ def compensate_lut_render_outputs(
             error = _discard_rendered_file(path)
             if error:
                 failures.append(
-                    {"stage": "media", "asset_id": asset_id, "path": str(path), "error": error}
+                    {
+                        "stage": "media",
+                        "asset_id": asset_id,
+                        "relative": relative,
+                        "path": str(path),
+                        "error": error,
+                    }
                 )
         # 检索索引是另一个存储：JSON 写失败时它可能已经落库，必须一并撤销，
         # 否则冷读仍能查到一条没有对应资产的孤儿文档。
@@ -2701,13 +2758,16 @@ def compensate_lut_render_outputs(
                     {"stage": "search_index", "asset_ids": list(orphan_ids), "error": error}
                 )
     if failures:
-        # 可观测：留一条带稳定标记的错误日志，运维按这里的 asset_id 重放
-        # ``compensate_lut_render_outputs([], [...])`` 即可补完（幂等，且会跳过已被
-        # 复用的 ID）。不要改成按 ID 直删检索文档。
+        # 可观测：稳定标记 + 失败明细 + **可重建的完整恢复清单**。运维解除故障后
+        # 按 LUT_RENDER_RECOVERY 那行 JSON 原样重放即可补完；只给 asset_id 清不掉
+        # 媒体文件（没有真实三元组就无法判归属），也不能按裸 ID 直删检索文档。
+        payload = _lut_render_recovery_payload(outputs, ids)
         _LOGGER.error(
-            "LUT_RENDER_COMPENSATION_INCOMPLETE %s（按 compensate_lut_render_outputs "
-            "重放补完，不要直接按 asset_id 删检索文档）",
+            "LUT_RENDER_COMPENSATION_INCOMPLETE failures=%s\nLUT_RENDER_RECOVERY %s\n"
+            "重放=%s（必须带完整 written 三元组，幂等且会跳过已被复用的 ID/文件）",
             failures,
+            json.dumps(payload, ensure_ascii=False),
+            _lut_render_recovery_call(payload),
         )
     return failures
 
@@ -2854,14 +2914,27 @@ def create_lut_render(
         try:
             failures = compensate_lut_render_outputs(written, created_ids)
         except Exception as comp_exc:  # noqa: BLE001 - 补偿崩溃同样不得覆盖原错误
+            # 补偿读状态就崩了：失败明细可能一个都没产出，此时更要把原始 written /
+            # created_ids 留在日志与 note 里，否则解除故障后连重放参数都拿不到。
+            payload = _lut_render_recovery_payload(written, created_ids)
             _LOGGER.error(
-                "LUT_RENDER_COMPENSATION_CRASHED %s: %s", type(comp_exc).__name__, comp_exc
+                "LUT_RENDER_COMPENSATION_CRASHED %s: %s\nLUT_RENDER_RECOVERY %s\n重放=%s",
+                type(comp_exc).__name__,
+                comp_exc,
+                json.dumps(payload, ensure_ascii=False),
+                _lut_render_recovery_call(payload),
             )
             failures = [
-                {"stage": "compensation", "error": f"{type(comp_exc).__name__}: {comp_exc}"}
+                {
+                    "stage": "compensation",
+                    "error": f"{type(comp_exc).__name__}: {comp_exc}",
+                    "recovery": payload,
+                }
             ]
         if failures:
-            _note_compensation_failure(exc, failures)
+            _note_compensation_failure(
+                exc, failures, written=written, created_ids=created_ids
+            )
         raise
 
 
