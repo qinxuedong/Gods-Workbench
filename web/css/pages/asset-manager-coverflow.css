@@ -14,28 +14,7 @@
     isolation: isolate;
 }
 
-.gw-coverflow-backdrop,
-.gw-coverflow-veil {
-    position: absolute;
-    z-index: 0;
-    inset: -40px;
-    width: calc(100% + 80px);
-    height: calc(100% + 80px);
-    pointer-events: none;
-}
-
-.gw-coverflow-backdrop {
-    object-fit: cover;
-    filter: blur(30px) saturate(.92) brightness(.92);
-    transform: scale(1.06);
-}
-
-.gw-coverflow-veil {
-    z-index: 1;
-    background: color-mix(in srgb, var(--sf-bg) 52%, transparent);
-    opacity: .56;
-    mix-blend-mode: screen;
-}
+/* QIN-589：模糊大图与 screen 混合遮罩已移除，舞台改纯深色实底。 */
 
 .gw-coverflow {
     position: relative;
@@ -45,8 +24,7 @@
     display: grid;
     grid-template-rows: 48px minmax(0, 1fr) 44px;
     overflow: hidden;
-    background: color-mix(in srgb, var(--sf-content) 58%, transparent);
-    backdrop-filter: blur(8px);
+    background: var(--sf-content);
     border: 1px solid var(--sf-line);
     border-radius: var(--sf-radius-panel);
     font-family: var(--gw-font-body);
@@ -144,6 +122,17 @@
     outline-offset: 3px;
 }
 
+/* QIN-589：全屏舞台纯深色——头部/底部条实底；卡片背景透明、图片 contain，四周无深色填充。 */
+.gw-coverflow--fullscreen .gw-coverflow-header,
+.gw-coverflow--fullscreen .gw-coverflow-caption {
+    background: var(--sf-raised);
+}
+
+.gw-coverflow--fullscreen .gw-coverflow-slide img,
+.gw-coverflow--fullscreen .gw-coverflow-slide video {
+    background: transparent;
+}
+
 .gw-coverflow-stage {
     --gw-coverflow-drag: 0px;
     position: relative;
@@ -212,7 +201,6 @@
     height: 100%;
     display: block;
     object-fit: contain;
-    background: var(--sf-bg);
     filter: grayscale(var(--gw-coverflow-gray)) brightness(calc(1 - var(--gw-coverflow-gray) * .32));
     transition: filter 180ms ease-out;
 }
@@ -314,6 +302,11 @@
     gap: 4px;
     padding: 8px 12px;
     perspective: 850px;
+}
+
+.gw-coverflow--embedded .gw-coverflow-slide img,
+.gw-coverflow--embedded .gw-coverflow-slide video {
+    background: var(--sf-bg);
 }
 
 .gw-coverflow--embedded .gw-coverflow-slide {

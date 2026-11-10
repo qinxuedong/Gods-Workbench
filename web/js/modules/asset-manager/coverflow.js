@@ -116,7 +116,7 @@ function normalizeAssets(values) {
             asset.backdropSrc || asset.backdrop_src || asset.thumbnailSrc || asset.thumbnail_url || asset.thumbnailUrl
             || asset.previewUrl || asset.preview_url || asset.src,
         );
-        // A video needs an image poster for the blurred background. Do not
+        // A video needs an image poster for the slide preview. Do not
         // assign the video URL to an <img> when no preview is available.
         const backdropSrc = candidateBackdrop && (kind === 'image' || candidateBackdrop !== mediaSrc)
             ? candidateBackdrop
@@ -314,8 +314,59 @@ function offsetIndexes(view) {
     return offsets.sort((left, right) => left.offset - right.offset);
 }
 
-function applySlidePosition(slide, offset) {
+/**
+ * QIN-589：全屏 Coverflow 布局计算。以舞台/轨道实测几何与卡片基准宽度（CSS
+ * min(58vw, 880px, 高度约束)）为输入，输出中心缩放、两侧缩放序列与按实际宽度
+ * 累加（空间不足时等比压缩）的位移序列；只作用于全屏模式，嵌入式保持原样。
+ */
+function computeFullscreenLayout(view) {
+    const stage = view?.elements?.stage;
+    const track = view?.elements?.track;
+    if (!isElement(stage) || !isElement(track) || !viewItem(view)) return null;
+    const stageWidth = stage.clientWidth || 0;
+    const trackWidth = track.clientWidth || 0;
+    const trackHeight = track.clientHeight || 0;
+    const baseSlide = track.querySelector('.gw-coverflow-slide.is-current') || track.querySelector('.gw-coverflow-slide');
+    const baseWidth = baseSlide?.offsetWidth || 0;
+    if (!stageWidth || !trackWidth || !baseWidth) return null;
+    const centerWidth = Math.min(
+        baseWidth * 2,
+        stageWidth * FULLSCREEN_CENTER_WIDTH_SHARE,
+        trackHeight * 16 / 9,
+    );
+    const sideWidths = [];
+    for (let level = 1; level <= WINDOW_RADIUS; level += 1) {
+        sideWidths.push(FULLSCREEN_ADJACENT_SCALE * baseWidth / 2 ** (level - 1));
+    }
+    const available = Math.max(0, trackWidth / 2 - centerWidth / 2);
+    const needed = sideWidths.reduce((sum, width) => sum + width, 0);
+    const fit = needed > 0 && needed > available ? Math.max(0, available / needed) : 1;
+    const positions = [];
+    let outerEdge = centerWidth / 2;
+    for (let level = 1; level <= WINDOW_RADIUS; level += 1) {
+        outerEdge += fit * sideWidths[level - 1];
+        positions.push(outerEdge - sideWidths[level - 1] / 2);
+    }
+    return {centerScale: centerWidth / baseWidth, sideScales: sideWidths.map(width => width / baseWidth), positions};
+}
+
+function applySlidePosition(slide, offset, layout = null) {
     const distance = Math.min(Math.abs(offset), WINDOW_RADIUS);
+    if (layout) {
+        // QIN-589 全屏：中心按夹紧后的 2 倍目标宽度；两侧从改前紧邻缩放起每级减半；
+        // x 取按实际宽度累加（空间不足 fit<1 时外层收入内层之下）后的位置。
+        const level = distance;
+        const scale = level === 0 ? layout.centerScale : layout.sideScales[level - 1];
+        const x = level === 0 ? 0 : layout.positions[level - 1] * (offset < 0 ? -1 : 1);
+        slide.style.setProperty('--gw-coverflow-scale', String(scale));
+        slide.style.setProperty('--gw-coverflow-x', `${x}px`);
+        slide.style.setProperty('--gw-coverflow-z', `${-level * 94}px`);
+        slide.style.setProperty('--gw-coverflow-rotate', `${offset * -15}deg`);
+        slide.style.setProperty('--gw-coverflow-opacity', String(Math.max(0.2, 1 - level * 0.26)));
+        slide.style.setProperty('--gw-coverflow-gray', String(Math.min(0.88, level * 0.31)));
+        slide.style.zIndex = String(40 - level);
+        return;
+    }
     const scale = Math.max(0.58, 1 - distance * 0.14);
     const opacity = Math.max(0.2, 1 - distance * 0.26);
     slide.style.setProperty('--gw-coverflow-x', `${offset * 20}vw`);
@@ -328,10 +379,9 @@ function applySlidePosition(slide, offset) {
 }
 
 function renderSlides(view, {focusCurrent = false} = {}) {
-    const {track, background, count, title} = view.elements;
+    const {track, count, title} = view.elements;
     if (!track) return;
     const current = viewItem(view);
-    if (background) background.src = current?.backdropSrc || '';
     const total = Math.max(view.items.length, Number(view.total) || 0);
     if (count) count.textContent = current ? `${view.currentIndex + 1} / ${total}` : `0 / ${total}`;
     if (title) title.textContent = current?.name || '暂无可展示图片';
@@ -345,6 +395,7 @@ function renderSlides(view, {focusCurrent = false} = {}) {
         return;
     }
 
+    const positioned = [];
     offsetIndexes(view).forEach(({index, offset}) => {
         const item = view.items[index];
         const slide = createButton({
@@ -357,7 +408,6 @@ function renderSlides(view, {focusCurrent = false} = {}) {
         slide.dataset.gwCoverflowMediaKind = item.mediaKind;
         slide.setAttribute('aria-current', index === view.currentIndex ? 'true' : 'false');
         slide.tabIndex = index === view.currentIndex ? 0 : -1;
-        applySlidePosition(slide, offset);
         if (view.mode === 'editor') {
             slide.dataset.gwCoverflowDragAsset = item.id;
             slide.addEventListener('click', event => {
@@ -422,8 +472,17 @@ function renderSlides(view, {focusCurrent = false} = {}) {
         media.addEventListener('error', () => slide.classList.add('is-unavailable'), {once: true});
         slide.append(media);
         track.append(slide);
+        positioned.push({slide, offset});
     });
     refreshIcons(track);
+    // QIN-589：全屏先落 DOM 再按舞台实测几何定位——位移计算依赖卡片基准宽度
+    // （CSS 基准宽 min(58vw, 880px, 高度约束)）与轨道实测尺寸。
+    if (view.mode === 'fullscreen') {
+        const layout = computeFullscreenLayout(view);
+        positioned.forEach(({slide, offset}) => applySlidePosition(slide, offset, layout));
+    } else {
+        positioned.forEach(({slide, offset}) => applySlidePosition(slide, offset));
+    }
     if (focusCurrent) requestAnimationFrame(() => track.querySelector('.gw-coverflow-slide.is-current')?.focus({preventScroll: true}));
 }
 
@@ -536,17 +595,43 @@ function stageWheel(view, event) {
     view.wheelDistance = 0;
 }
 
+/**
+ * QIN-589 AC1：关闭 Coverflow 焦点归还触发控件时，脚本归还的焦点在 Esc / F 关闭
+ * 路径仍会命中金色 :focus-visible。归还瞬间在触发控件上打静默标记，下一次真实
+ * 键盘 / 指针交互时移除——焦点归还（AC2）与 Tab 可见焦点框都不受影响。
+ */
+function markTriggerFocusQuiet(trigger) {
+    if (!isElement(trigger)) return;
+    trigger.setAttribute(FOCUS_QUIET_ATTR, '');
+    let done = false;
+    const revert = () => {
+        if (done) return;
+        done = true;
+        if (trigger.isConnected) trigger.removeAttribute(FOCUS_QUIET_ATTR);
+        document.removeEventListener('keydown', revert, true);
+        document.removeEventListener('pointerdown', revert, true);
+    };
+    document.addEventListener('keydown', revert, true);
+    document.addEventListener('pointerdown', revert, true);
+}
+
 function closeFullscreen({restoreFocus = false, notify = true} = {}) {
     const view = fullscreenView;
     if (!view) return false;
     fullscreenView = null;
     view.closed = true;
+    view.stageResizeObserver?.disconnect();
+    view.stageResizeObserver = null;
     view.removeNestedBackdropDismiss?.();
     if (view.overlay?.isConnected) view.overlay.remove();
     document.body.style.overflow = view.previousBodyOverflow;
     if (notify) emit(CLOSED_EVENT, {mode: 'fullscreen', source: view.source});
     if (restoreFocus) {
-        requestAnimationFrame(() => resolveTrigger(view)?.focus?.({preventScroll: true}));
+        requestAnimationFrame(() => {
+            const trigger = resolveTrigger(view);
+            trigger?.focus?.({preventScroll: true});
+            if (trigger && document.activeElement === trigger) markTriggerFocusQuiet(trigger);
+        });
     }
     return true;
 }
@@ -732,16 +817,10 @@ function openFullscreen(view) {
     const overlay = document.createElement('div');
     overlay.className = 'gw-coverflow-overlay';
     overlay.dataset.gwCoverflowOverlay = '';
-    const background = document.createElement('img');
-    background.className = 'gw-coverflow-backdrop';
-    background.alt = '';
-    background.setAttribute('aria-hidden', 'true');
-    const veil = document.createElement('div');
-    veil.className = 'gw-coverflow-veil';
+    // QIN-589：舞台改纯深色实底，不再挂模糊大图与 screen 混合遮罩。
     const surface = createSurface(view);
-    overlay.append(background, veil, surface);
+    overlay.append(surface);
     view.overlay = overlay;
-    view.elements.background = background;
     view.previousBodyOverflow = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
     document.body.append(overlay);
@@ -778,6 +857,16 @@ function openFullscreen(view) {
     renderSlides(view);
     refreshIcons(overlay);
     requestAnimationFrame(() => surface.querySelector('[data-gw-coverflow-action="close"]')?.focus({preventScroll: true}));
+    // QIN-589：舞台尺寸变化（窗口缩放、断点切换基准宽）时重算布局。
+    const stage = view.elements.stage;
+    view.lastStageSize = `${stage.clientWidth}x${stage.clientHeight}`;
+    view.stageResizeObserver = new ResizeObserver(() => {
+        const size = `${stage.clientWidth}x${stage.clientHeight}`;
+        if (view.closed || fullscreenView !== view || size === view.lastStageSize) return;
+        view.lastStageSize = size;
+        renderSlides(view);
+    });
+    view.stageResizeObserver.observe(stage);
 }
 
 function mountEmbedded(view) {

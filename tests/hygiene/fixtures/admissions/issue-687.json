@@ -1,0 +1,23 @@
+{
+  "schema": "gw.cleanroom-admission-shard/v1",
+  "issue": 687,
+  "authorization_basis": "GitHub Issue #687 (QIN-589), 2026-11-10；票面「可改文件」授权 web/css/pages/asset-manager-coverflow.css、web/js/modules/asset-manager/coverflow.js（applySlidePosition 与位移计算）、web/css/pages/asset-vault.css（仅 Coverflow 打开按钮的焦点样式）、必要前端测试及 CI 门禁最小配套",
+  "files": [
+    "web/css/pages/asset-manager-coverflow.css",
+    "web/js/modules/asset-manager/coverflow.js",
+    "web/css/pages/asset-vault.css",
+    "tests/frontend/qin-589-coverflow-visual.test.mjs",
+    "tests/frontend/node-files.txt",
+    "tests/hygiene/fixtures/admissions/issue-687.json"
+  ],
+  "admitted_files": [],
+  "accepted_test_files": [
+    {
+      "path": "tests/frontend/qin-589-coverflow-visual.test.mjs",
+      "classification": "curated_test_coverage",
+      "authorization_basis": "GitHub Issue #687 (QIN-589), 2026-11-10",
+      "admission": "accepted"
+    }
+  ],
+  "notes": "QIN-589：Coverflow 视觉——去掉按钮常亮、改纯深色背景、中心加倍与透明卡片。coverflow.js 新增 computeFullscreenLayout（中心=min(2×基准宽, 舞台62%, 16:9 高度约束)、两侧从改前紧邻缩放 0.86 起每级减半、外缘按实际宽度累加、空间不足等比压缩）；asset-vault.css 为 Coverflow 打开按钮增加 data-gw-coverflow-focus-quiet 静默态；coverflow css 去掉模糊大图与 screen 遮罩、全屏卡片媒体改透明。本票未改后端契约语义、未改 lock/ci.yml/许可证，也未触碰基础账本与 ADMISSION_BASE_METADATA_SHA256。"
+}
