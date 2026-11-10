@@ -446,6 +446,9 @@ let registryPrefetchQueryKey = '';    // 进行中预取的 queryKey，供 loadM
 let registryPrefetchPromise = null;   // 进行中预取的 Promise，loadMore 命中时直接等待，避免重复请求
 let registryPrefetchTimer = 0;        // 空闲调度句柄（requestIdleCallback 回退 setTimeout）
 let registryPrefetchTimerIdle = false;// 句柄类型标记，取消时选择对应 API
+// 【QIN-584】首屏那一页的结构补齐在飞时的句柄。结构查询共用同一个序号，
+// 翻页请求若在它落地前发起会递增序号、把首屏页的结构结果作废，故翻页前需等待它。
+let registryStructureBootstrapPromise = null;
 let registryFocusIndex = -1;
 let registryFocusRestoreId = '';
 let registrySelectionAnchorId = '';
@@ -7539,13 +7542,17 @@ function applyRegistryFilterDefinition(definition={}){
     registryVirtualState = {key:'', start:0, end:0, cols:1, totalHeight:0, rowTops:[], rowHeights:[], itemLayouts:[]};
     resetRegistryAssetStructures();
 }
-function registryQueryString({offset=0, limit=REGISTRY_PAGE_SIZE, cursor=''}={}){
-    const params = new URLSearchParams({limit:String(limit), offset:String(Math.max(0, Number(offset) || 0)), sort:registrySort || 'newest', view:'card'});
+function registryQueryString({offset=0, limit=null, cursor=''}={}){
+    // 【QIN-584 AC1】一律按视口动态上限取一页（不少于 100、不多于 1500），
+    // 不再默认 limit=1500 让千级库一次下发全库。limit 与 dynamic_limit 同源，
+    // 前后端口径不会各说各话；后续页沿用同一页大小，保证分页不重不漏。
+    const pageLimit = Math.min(REGISTRY_PAGE_SIZE, Math.max(1, Number(limit) || registryDynamicPageSize()));
+    const params = new URLSearchParams({limit:String(pageLimit), offset:String(Math.max(0, Number(offset) || 0)), sort:registrySort || 'newest', view:'card'});
     // 默认呈现全局统一资产金库；仅当用户通过「项目素材」智能筛选选择项目时携带（解耦默认的 activeProjectId）
     // 【QIN-572】项目视图下默认传 __all__ 或选中的具体 project_id
     if(activeTab === 'projects' && !registryProjectFilterId) registryProjectFilterId = '__all__';
     if(registryProjectFilterId) params.set('project_id', registryProjectFilterId);
-    params.set('dynamic_limit', String(registryDynamicPageSize()));
+    params.set('dynamic_limit', String(pageLimit));
     if(cursor) params.set('cursor', cursor);
     if(registryQuery.trim()) params.set('search', registryQuery.trim());
     if(registryKind) params.set('kind', registryKind);
@@ -7821,6 +7828,12 @@ async function loadMoreRegistryAssets(){
         appendedIds = (Array.isArray(data.items) ? data.items : [])
             .map(item => String(item?.id || ''))
             .filter(id => id && !existingIds.has(id));
+        // 【QIN-584】首屏页的结构补齐若还在飞，先等它落地再发本页查询：
+        // 结构查询共用同一个请求序号，抢跑会递增序号、把首屏页的结果作废在 await 检查点。
+        if(registryStructureBootstrapPromise){
+            await registryStructureBootstrapPromise.catch(() => {});
+            if(requestId !== registryRequestSeq) return;
+        }
         const structuresChanged = await refreshRegistryAssetStructures({
             requestId,
             assetIds: appendedIds,
@@ -7981,8 +7994,8 @@ async function loadRegistryBootstrap(requestId=beginRegistryBootstrapRequest()){
         setRegistryAssetCache(queryKey, registryAssetPageCacheEntry(assetData));
         const prevAssetFingerprint = registryAssets.map(a => `${a.id}:${a.updated_at || a.modified_at || 0}`).join(',');
         applyRegistryAssetResponse(assetData);
-        await refreshRegistryAssetStructures({requestId});
-        if(requestId !== registryRequestSeq) return false;
+        // 【QIN-584 AC2】首屏那一页列表到手即画：不再等待结构、分面、状态、预设与项目列表。
+        // registryLoading 一并落下，翻页与回显才有「已加载」的准确口径。
         registryRequestAbortController = null;
         registryLoading = false;
         const newAssetFingerprint = registryAssets.map(a => `${a.id}:${a.updated_at || a.modified_at || 0}`).join(',');
@@ -7996,6 +8009,14 @@ async function loadRegistryBootstrap(requestId=beginRegistryBootstrapRequest()){
         saveRegistrySnapshot();
         // 【浏览预加载】首屏应用完成后的空闲时机预取下一页数据（只进缓存，不改游标）
         scheduleRegistryPrefetch();
+        // 【QIN-584 AC3】结构只查已加载页的素材 id，且放在首屏绘制之后补；
+        // 到达后若卡组构成变了再同步一次（render 自带滚动位置保存与还原）。
+        const structureRequest = refreshRegistryAssetStructures({requestId});
+        registryStructureBootstrapPromise = structureRequest;
+        const structuresChanged = await structureRequest;
+        if(registryStructureBootstrapPromise === structureRequest) registryStructureBootstrapPromise = null;
+        if(requestId !== registryRequestSeq) return false;
+        if(structuresChanged && (activeTab === 'registry' || assetBoardById(activeTab)?.system === false)) render();
         // 【优化】次要数据并行请求，无需 500ms 强制延时
         secondaryRequest = Promise.all([
             apiJsonResponse(assetManagerApi.getRegistryFacets()),
