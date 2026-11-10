@@ -161,17 +161,53 @@ test('AC1: 容器被已加载卡片撑高后，页大小不再膨胀到整库上
 
 test('AC1: 可见高度取自窗口视口，且页大小测量不再读容器 clientHeight', () => {
     const harness = dynamicPageSizeHarness({width: 1280, viewportHeight: 800, top: 200, containerHeight: 24});
-    // 尚未撑开时只露出容器自身高度
-    assert.deepEqual(harness.visible(), {height: 24, measured: true});
+    // 内容还没撑开：按「容器顶边到窗口底边」估，不读只有 24px 的容器自身高度
+    assert.equal(harness.visible(), 600);
     harness.grow(24000);
     // 撑高后可见高度被窗口截断：800 - 200，而不是 24000
-    assert.deepEqual(harness.visible(), {height: 600, measured: true});
+    assert.equal(harness.visible(), 600, '撑开前后必须得到同一个可见高度，页大小才不会跳变');
 
     const source = functionSource('registryVisibleViewportHeight') + functionSource('registryDynamicPageSize');
     assert.doesNotMatch(
         source,
         /clientHeight/,
         '页大小测量不得再读滚动容器的 clientHeight —— 它随已加载卡片增长'
+    );
+});
+
+test('AC1: 页面级滚动布局下续页判据不再恒为真', () => {
+    const boundary = (state) => new Function(
+        'window',
+        `${functionSource('registryReachedLoadMoreBoundary')}; return registryReachedLoadMoreBoundary;`
+    )({innerHeight: 800})({
+        scrollHeight: state.scrollHeight,
+        clientHeight: state.clientHeight,
+        scrollTop: state.scrollTop,
+        querySelector: () => ({getBoundingClientRect: () => ({top: state.sentinelTop})}),
+    }, state.lead);
+
+    // 容器被卡片撑高：scrollTop 0 且 scrollHeight === clientHeight，旧判据恒真
+    assert.equal(
+        boundary({scrollHeight: 3604, clientHeight: 3604, scrollTop: 0, sentinelTop: 3600, lead: 1000}),
+        false,
+        '容器没有自身滚动条时，scrollTop 判据会把任意一次 scroll 事件都当成到底，续页直到整库'
+    );
+    assert.equal(
+        boundary({scrollHeight: 3604, clientHeight: 3604, scrollTop: 0, sentinelTop: 1600, lead: 1000}),
+        true,
+        '哨兵进入提前量范围后必须继续续页'
+    );
+
+    // 自身可滚动的容器（虚拟列表 / 抽屉）仍按 scrollTop 口径
+    assert.equal(
+        boundary({scrollHeight: 4000, clientHeight: 600, scrollTop: 0, sentinelTop: 9999, lead: 1000}),
+        false,
+        '容器自身可滚动且离底部很远时不得续页'
+    );
+    assert.equal(
+        boundary({scrollHeight: 4000, clientHeight: 600, scrollTop: 3400, sentinelTop: 9999, lead: 1000}),
+        true,
+        '容器自身滚到接近底部时必须续页'
     );
 });
 
@@ -259,6 +295,55 @@ test('AC4: 翻页沿用同一分页口径，且不与首屏结构补齐抢请求
         MANAGER,
         /let registryStructureBootstrapPromise = null;/,
         '缺少首屏结构补齐句柄'
+    );
+});
+
+test('AC4: 页面级滚动也能驱动续页，且不会在别的页签误拉素材', () => {
+    const fakeDocument = {documentElement: {id: 'html'}, body: {id: 'body'}};
+    const build = (options) => {
+        const area = {getBoundingClientRect: () => options.rect};
+        return new Function(
+            'root', 'window', 'document', 'activeTab', 'assetBoardById', 'registryLoading',
+            `${functionSource('registryPageScrollTarget')}; return registryPageScrollTarget;`
+        )(
+            {querySelector: () => area},
+            {innerHeight: options.viewport || 800},
+            fakeDocument,
+            options.tab || 'registry',
+            () => (options.boardSystem === false ? {system: false} : {system: true}),
+            Boolean(options.loading)
+        );
+    };
+
+    const visibleRect = {top: 300, bottom: 900};
+    assert.ok(
+        build({rect: visibleRect})({target: fakeDocument}),
+        '资产库激活且容器在窗口内时，文档级滚动必须能折算回容器，否则「继续下滑自动加载」整段失效'
+    );
+    assert.equal(
+        build({rect: visibleRect, tab: 'projects'})({target: fakeDocument}),
+        null,
+        '非资产库页签的文档滚动不得触发拉取'
+    );
+    assert.equal(
+        build({rect: visibleRect, loading: true})({target: fakeDocument}),
+        null,
+        '引导请求在飞时不再叠加续页'
+    );
+    assert.equal(
+        build({rect: {top: -1200, bottom: -400}})({target: fakeDocument}),
+        null,
+        '容器完全滚出窗口后不再续页'
+    );
+    assert.equal(
+        build({rect: visibleRect})({target: {closest: () => null}}),
+        null,
+        '只有文档级滚动才走折算，容器内滚动由原分支处理'
+    );
+    assert.match(
+        MANAGER,
+        /const registryScroll = directScroll \|\| registryPageScrollTarget\(event\);/,
+        '滚动监听必须接上文档级折算'
     );
 });
 

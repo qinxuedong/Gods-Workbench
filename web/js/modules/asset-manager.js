@@ -468,14 +468,16 @@ const REGISTRY_PAGE_SIZE = 1500;
 let registryDynamicPageSizeMemo = {signature:'', size:0};
 function registryVisibleViewportHeight(area){
     const viewportHeight = Math.max(1, Number(window.innerHeight) || 768);
-    if(!area || typeof area.getBoundingClientRect !== 'function') return {height:viewportHeight, measured:false};
+    if(!area || typeof area.getBoundingClientRect !== 'function') return viewportHeight;
     const rect = area.getBoundingClientRect() || {};
     const top = Math.max(0, Math.min(Number(rect.top) || 0, viewportHeight));
     const bottom = Math.min(viewportHeight, Number(rect.bottom) || 0);
     const visible = bottom - top;
     // 页面滚动后容器顶边跑到窗口上方，可见高度自然退化成整屏高度，不会越过窗口。
-    if(visible > 0) return {height:visible, measured:true};
-    return {height:viewportHeight, measured:false};
+    if(visible >= registryCardSize) return visible;
+    // 内容还没撑开时容器只有内边距，此时按「容器顶边到窗口底边」估——与撑开后的可见高度同值，
+    // 首屏与后续页因此不会在 120/100 之间跳变。
+    return Math.max(1, viewportHeight - top);
 }
 function registryDynamicPageSize(memo = registryDynamicPageSizeMemo){
     const area = root.querySelector('.registry-assets-scroll');
@@ -483,17 +485,47 @@ function registryDynamicPageSize(memo = registryDynamicPageSizeMemo){
     const width = Math.max(1, Math.round(Number(area?.clientWidth) || Number(window.innerWidth) || 1024));
     const signature = `${width}x${viewportHeight}x${registryCardSize}`;
     if(memo.signature === signature && memo.size > 0) return memo.size;
-    const {height, measured} = registryVisibleViewportHeight(area);
+    const height = registryVisibleViewportHeight(area);
     const columns = Math.max(1, Math.floor(width / (registryCardSize + 12)));
     const rows = Math.max(1, Math.ceil(height / registryCardSize));
     const size = Math.min(REGISTRY_PAGE_SIZE, Math.max(100, columns * rows * 4));
-    // 只记忆「真的量到、且放得下一行卡片」的可见高度；尚未布局时按视口估一版但不固化，
-    // 保证同一布局下首屏、预取、翻页、重查询始终共用同一个页大小。
-    if(measured && height >= registryCardSize){
-        memo.signature = signature;
-        memo.size = size;
-    }
+    // 首屏那次就定稿：整场会话共用同一个页大小，预取 / 翻页 / 搜索重查询都不再重算。
+    // 只有窗口宽度、高度或卡片尺寸变化（签名不同）才重新测量。
+    memo.signature = signature;
+    memo.size = size;
     return size;
+}
+// 【QIN-584 AC1】续页判据必须区分两种滚动模型。页面级滚动布局下 `.registry-assets-scroll`
+// 没有自身滚动条：scrollTop 恒为 0、clientHeight 恒等于 scrollHeight，用
+// `scrollTop + clientHeight >= scrollHeight - lead` 判断「是否接近底部」会恒为真，
+// 任意一次 scroll 事件（哪怕容器根本没滚动）都会续一页，最终把整库拉完。
+// 容器自身可滚动时按 scrollTop 算；页面级滚动时只能按哨兵相对窗口的位置算。
+function registryReachedLoadMoreBoundary(scrollRoot, lead){
+    if(!scrollRoot) return false;
+    const viewportHeight = Math.max(1, Number(window.innerHeight) || 768);
+    const selfScrollable = Number(scrollRoot.scrollHeight) - Number(scrollRoot.clientHeight) > 8;
+    if(selfScrollable){
+        return scrollRoot.scrollTop + scrollRoot.clientHeight >= scrollRoot.scrollHeight - lead;
+    }
+    const sentinel = scrollRoot.querySelector?.('.registry-infinite-sentinel');
+    if(!sentinel || typeof sentinel.getBoundingClientRect !== 'function') return false;
+    return Number(sentinel.getBoundingClientRect().top) - lead <= viewportHeight;
+}
+// 【QIN-584 AC4】页面级滚动布局下滚动发生在文档上，`.registry-assets-scroll` 不派发 scroll 事件，
+// 「继续下滑自动加载」因此整段失效（只有点击 / 键盘能续页）。这里把文档级滚动折算回资产库容器：
+// 仅当资产库处于激活视图、且容器确实落在窗口内时才参与，避免在别的页签滚动时误拉素材。
+function registryPageScrollTarget(event){
+    const target = event?.target;
+    const isDocumentScroll = !target || target === document || target === document.documentElement || target === document.body;
+    if(!isDocumentScroll) return null;
+    if(activeTab !== 'registry' && assetBoardById(activeTab)?.system !== false) return null;
+    if(registryLoading) return null;
+    const area = root?.querySelector?.('.registry-assets-scroll');
+    if(!area || typeof area.getBoundingClientRect !== 'function') return null;
+    const rect = area.getBoundingClientRect();
+    const viewportHeight = Math.max(1, Number(window.innerHeight) || 768);
+    const visible = Math.min(viewportHeight, Number(rect.bottom) || 0) - Math.max(0, Number(rect.top) || 0);
+    return visible > 0 ? area : null;
 }
 // Asset-structure discovery must stay bounded as the user scrolls a large
 // library.  Appended pages query only their newly seen IDs, one API window at
@@ -25229,14 +25261,18 @@ function handleRegistryCardResizeWheel(event){
 document.addEventListener('wheel', handleRegistryCardResizeWheel, {passive:false});
 document.addEventListener('scroll', event => {
     if(event.target?.matches?.('[data-detail-media-library-grid]')) detailViewerState.mediaCanvasLibraryScrollTop = event.target.scrollTop;
-    const registryScroll = event.target?.closest?.('.registry-assets-scroll');
+    const directScroll = event.target?.closest?.('.registry-assets-scroll');
+    const registryScroll = directScroll || registryPageScrollTarget(event);
     if(registryScroll){
-        saveRegistryBrowseSession();
-        // 【浏览预加载】触发提前量从固定 520px 提升到约 1.3 倍视口高度（1.2~1.5 倍区间取中），
+        // 页面级滚动布局下容器的 scrollTop 恒为 0，保存它没有意义；且文档滚动事件密集，
+        // 每次都写 sessionStorage / 快照会拖慢滚动，故只对容器自身的滚动做位置沉淀。
+        if(directScroll) saveRegistryBrowseSession();
+        // 【浏览预加载】触发提前量从固定 520px 提升到约 1.3 倍可见视口高度（1.2~1.5 倍区间取中），
         // 下一页数据预取先于滚动到位，配合 prefetchRegistryNextPage 实现无感续读；
         // 键盘可达的 [data-registry-load-more] 按钮保留不动。
-        const lead = Math.max(520, Math.round(Math.max(registryScroll.clientHeight, window.innerHeight || 0) * 1.3));
-        if(registryScroll.scrollTop + registryScroll.clientHeight >= registryScroll.scrollHeight - lead){
+        // 【QIN-584 AC1】提前量按可见视口算，不能按被卡片撑高的 clientHeight 算。
+        const lead = Math.max(520, Math.round(registryVisibleViewportHeight(registryScroll) * 1.3));
+        if(registryReachedLoadMoreBoundary(registryScroll, lead)){
             loadMoreRegistryAssets().catch(err => setStatus(err.message || '加载更多资产失败'));
         }
     }
