@@ -142,10 +142,13 @@ const STATE_DECLARATIONS = [
     'governanceSuggestionsError',
     'governanceDrawerOpen',
     'registrySessionReady',
+    'selectedRegistryAssetId',
+    'registryDetail',
 ];
 
 const BOOT_FUNCTIONS = [
     'trackRegistryBootstrapSettled',
+    'refreshRegistryBootstrapTracked',
     'isRegistryBootstrapPending',
     'waitRegistryBootstrapSettled',
     'loadAssetInbox',
@@ -156,6 +159,8 @@ const BOOT_FUNCTIONS = [
     'loadAll',
     'uploadAssetInboxFiles',
     'saveAssetInboxSettings',
+    'createRegistryRemoteAsset',
+    'deleteRegistryRemoteAsset',
 ];
 
 function sliceDeclaration(source, name){
@@ -196,6 +201,7 @@ function createHarness(){
         bootHandler: null,
         libraryMode: 'ok',   // 'ok' | 'fail' | 'hang'
         settingsPath: '',
+        promptValue: 'https://example.test/new.png',
     };
 
     const record = (kind, url) => {
@@ -247,6 +253,7 @@ function createHarness(){
         },
         window: {
             requestIdleCallback(fn){ state.idle.push(fn); return state.idle.length; },
+            prompt(){ return state.promptValue; },
         },
         localStorage: {getItem(){ return null; }, setItem(){}, removeItem(){}},
         setTimeout(fn){ state.timers.push(fn); return state.timers.length; },
@@ -265,7 +272,11 @@ function createHarness(){
             getPromptLibraries: () => Promise.resolve({library: {libraries: []}}),
             getProviders: () => Promise.resolve({providers: []}),
             getCanvasAssets: () => Promise.resolve({categories: [], canvases: [], items: []}),
+            createRegistryRemoteAsset: () => Promise.resolve({asset: {id: 'new-url'}}),
+            deleteRegistryRemoteAsset: () => Promise.resolve({ok: true}),
         },
+        registryRemoteKind: () => 'image',
+        normalizeRegistryAsset: asset => asset,
         loadLocalStorageSettings: () => Promise.resolve(),
         // 首屏列表请求本体：真实 loadAll 会把它登记成「当前代际的终态」，何时落地由用例控制。
         loadRegistryBootstrap: () => newBootstrapRequest(),
@@ -309,6 +320,9 @@ function createHarness(){
             scheduleDeferredBootRequests,
             uploadAssetInboxFiles,
             saveAssetInboxSettings,
+            createRegistryRemoteAsset,
+            deleteRegistryRemoteAsset,
+            refreshRegistryBootstrapTracked,
             isRegistryBootstrapPending,
             waitRegistryBootstrapSettled,
             assetInboxUnreadCount,
@@ -624,4 +638,122 @@ test('AC2: 保存收集箱位置成功后同样重读，不能显示旧路径', 
     await saving;
     assert.equal(api.inboxSettings.path, '/new/inbox', '写后读取才是生效的位置');
     assert.deepEqual(state.failures, []);
+});
+
+
+test('AC2: 首屏 A 在途时真实「添加公网 URL」入口启动 B，A 落地不得放行延后块', async () => {
+    // 审核官第 3 轮复现：首屏列表 A 仍 pending 时，真实 loadAll 已经能渲染启用的
+    // 「添加 URL」按钮；添加成功后的无参 loadRegistryBootstrap() 会 abort A 并启动 B。
+    // B 若不登记代际，A 的旧终态就会放行延后链路，inbox/governance 抢在 B 前面。
+    const {api, state, startLoadAll, settle} = createHarness();
+    const first = startLoadAll();
+    await flush();
+    api.scheduleDeferredBootRequests();
+    await flush();
+    assert.equal(state.idle.length, 0);
+
+    const adding = api.createRegistryRemoteAsset();   // 真实入口，B 在途
+    adding.catch(() => {});
+    await flush();
+    assert.equal(state.bootstraps.length, 2, '添加 URL 必须发起新的列表请求 B');
+    const second = state.bootstraps[1];
+    assert.equal(api.bootstrapPending, true, 'B 已登记为当前代际且仍在途');
+
+    await settle(first, false);      // A 被 abort 后落地
+    assert.equal(api.bootstrapPending, true, 'A 的旧终态不得清掉 B 的在途标记');
+    assert.equal(state.idle.length, 0, 'A 落地不得放行延后调度');
+    assert.deepEqual(state.requests, [], 'B 未落地前非首屏链路一条都不许发');
+
+    await settle(second);
+    await adding;
+    assert.equal(api.bootstrapPending, false);
+    assert.equal(state.idle.length, 1, 'B 落地后才放行延后调度');
+
+    state.idle.shift()();
+    await flush();
+    assert.deepEqual(state.requests, [
+        '/api/asset-inbox?limit=500',
+        '/api/asset-registry/governance/suggestions',
+    ]);
+});
+
+test('AC2: 首屏 A 在途时真实「删除公网 URL」入口同样登记 B 代际', async () => {
+    const {api, state, startLoadAll, settle} = createHarness();
+    const first = startLoadAll();
+    await flush();
+    api.scheduleDeferredBootRequests();
+    await flush();
+
+    const deleting = api.deleteRegistryRemoteAsset('asset-1');   // 真实入口
+    deleting.catch(() => {});
+    await flush();
+    assert.equal(state.bootstraps.length, 2, '删除 URL 必须发起新的列表请求');
+    const second = state.bootstraps[1];
+
+    await settle(first, false);
+    assert.equal(api.bootstrapPending, true, '旧代际落地不得放行');
+    assert.equal(state.idle.length, 0);
+    assert.deepEqual(state.requests, []);
+
+    await settle(second);
+    await deleting;
+    assert.equal(state.idle.length, 1);
+    state.idle.shift()();
+    await flush();
+    assert.deepEqual(state.requests, [
+        '/api/asset-inbox?limit=500',
+        '/api/asset-registry/governance/suggestions',
+    ]);
+});
+
+test('AC2: 所有替换当前列表的入口都统一走代际登记协议', () => {
+    // 上面两条行为用例驱动真实入口；这条清单断言防的是「将来新增入口又漏登记」。
+    const helper = sliceFunction(MANAGER, 'refreshRegistryBootstrapTracked');
+    assert.match(
+        helper,
+        /trackRegistryBootstrapSettled\(loadRegistryBootstrap\(\)\)/,
+        '统一入口必须把无参引导请求登记到代际协议'
+    );
+    // 只统计真实代码：整行 // 注释里说明实现时写到的函数名不算调用点。
+    const codeOnly = MANAGER.replace(/^\s*\/\/.*$/gm, '');
+    const directCalls = [...codeOnly.matchAll(/(?<!function )loadRegistryBootstrap\(\s*\)/g)];
+    assert.equal(directCalls.length, 1, '无参直调只允许出现在 refreshRegistryBootstrapTracked 内');
+    for(const name of ['createRegistryRemoteAsset', 'deleteRegistryRemoteAsset']){
+        assert.match(
+            sliceFunction(MANAGER, name),
+            /await refreshRegistryBootstrapTracked\(\);/,
+            `${name} 必须走统一登记入口`
+        );
+    }
+    assert.match(MANAGER, /void refreshRegistryBootstrapTracked\(\);/, '允许根保存入口也必须走统一登记');
+    // loadAll 自己的接线仍是该路径的登记点，删掉它必须仍被行为用例抓住。
+    assert.match(MANAGER, /trackRegistryBootstrapSettled\(registryBootstrap\);/, 'loadAll 接线必须保留');
+});
+
+test('AC2: idle 已排队后刷新，收集箱不得提前发出且治理补取不得丢失', async () => {
+    // 审核官第 3 轮建议：dispatch 只按「排队时」的终态判断，idle 回调真正执行时
+    // 如果用户又刷新开了新一代，收集箱会提前发出，治理建议还会被 pending 闸门挡下后无人补取。
+    const {api, state, startLoadAll, settle} = createHarness();
+    const first = startLoadAll();
+    await flush();
+    api.scheduleDeferredBootRequests();
+    await settle(first);                 // A 落地：idle 已排队但尚未执行
+    assert.equal(state.idle.length, 1);
+    assert.deepEqual(state.requests, []);
+
+    const second = startLoadAll();       // 刷新开新一代
+    await flush();
+    assert.equal(api.bootstrapPending, true);
+
+    state.idle.shift()();                // 浏览器此刻才触发空闲回调
+    await flush();
+    assert.deepEqual(state.requests, [], 'B 仍在途，idle 触发也不许提前发请求');
+
+    await settle(second);
+    await flush();
+    assert.deepEqual(
+        state.requests,
+        ['/api/asset-inbox?limit=500', '/api/asset-registry/governance/suggestions'],
+        'B 落地后两条链路都要补齐，治理不能被闸门挡下后丢失'
+    );
 });

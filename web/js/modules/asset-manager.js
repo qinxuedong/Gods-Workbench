@@ -3761,7 +3761,7 @@ async function saveAllowedRootsRequest(url, method, payload){
         }
         setStatus(successMessage);
         if(typeof loadRegistryBootstrap === 'function'){
-            void loadRegistryBootstrap();
+            void refreshRegistryBootstrapTracked();
         }
     } catch(error){
         allowedRootSettingsState = {
@@ -9109,7 +9109,7 @@ async function createRegistryRemoteAsset(){
     const url = lines[urlIndex];
     const name = lines.find((line, index) => index !== urlIndex) || '';
     const data = await apiJsonResponse(assetManagerApi.createRegistryRemoteAsset({url,name,kind:registryRemoteKind(url)}));
-    await loadRegistryBootstrap();
+    await refreshRegistryBootstrapTracked();
     selectedRegistryAssetId = data.asset?.id || selectedRegistryAssetId;
     registryDetail = data.asset ? normalizeRegistryAsset(data.asset) : null;
     render();
@@ -9120,7 +9120,7 @@ async function deleteRegistryRemoteAsset(id){
     await apiJsonResponse(assetManagerApi.deleteRegistryRemoteAsset(id));
     selectedRegistryAssetId = '';
     registryDetail = null;
-    await loadRegistryBootstrap();
+    await refreshRegistryBootstrapTracked();
     render();
     setStatus('公网 URL 资产已删除');
 }
@@ -9428,6 +9428,13 @@ function trackRegistryBootstrapSettled(request){
     };
     registryBootstrapSettled = request.then(settleGeneration, settleGeneration);
     return registryBootstrapSettled;
+}
+// 【QIN-585 AC2】所有「替换当前列表」的**直调**入口统一走这里登记代际。
+// loadAll 有自己的接线，但添加/删除公网 URL、允许根保存会无参调用 loadRegistryBootstrap()，
+// 它们同样经 beginRegistryBootstrapRequest() abort 上一代列表：首屏 A 仍在途时若不登记 B，
+// A 被 abort 后的旧终态就会误放行延后链路，收集箱/治理抢在 B 前面发出。
+function refreshRegistryBootstrapTracked(){
+    return trackRegistryBootstrapSettled(loadRegistryBootstrap());
 }
 function isRegistryBootstrapPending(){
     return registryBootstrapSettledGeneration < registryBootstrapGeneration;
@@ -26629,7 +26636,11 @@ if(!directorySettingsPage){
 // 单进程服务端会把首屏列表请求排在它后面 —— 首屏因此被一个「用户还没打开的抽屉」拖住。
 // 改为首屏就绪后再发，用空闲时段调度；两条链路都自带失败兜底，延后不改变可用性。
 function scheduleDeferredBootRequests(){
-    const run = () => {
+    const run = async () => {
+        // 【QIN-585 AC2】idle 已经排队之后用户仍可能刷新开了新一代列表：此刻直接发请求
+        // 会抢在它前面；治理建议还会被 pending 闸门挡下，之后再无人补取。执行时按当前代际
+        // 再确认一次（wait 内部会循环等新一代落地），两条链路最终都仍会补齐。
+        await waitRegistryBootstrapSettled();
         // 用户可能已经在首屏期间点开收集箱：已加载过就不再补一次，避免同一份数据读两遍。
         if(!inboxLoaded){
             void loadAssetInbox().then(() => {
@@ -26639,11 +26650,12 @@ function scheduleDeferredBootRequests(){
         loadGovernanceSuggestions();
     };
     const dispatch = () => {
+        const launch = () => { void run(); };
         if(typeof window.requestIdleCallback === 'function'){
-            window.requestIdleCallback(run, {timeout:2000});
+            window.requestIdleCallback(launch, {timeout:2000});
             return;
         }
-        setTimeout(run, 200);
+        setTimeout(launch, 200);
     };
     // 调度时机绑定「首屏列表请求终态」而不是调用点：成功分支调用时列表也已落地，
     // 失败分支却可能只是资产库/本地设置先失败、列表仍在途 —— 必须等它落地再放行。
