@@ -11,6 +11,7 @@
 from __future__ import annotations
 
 import io
+import logging
 import math
 from pathlib import Path
 import shutil
@@ -539,7 +540,9 @@ def test_rollback_keeps_output_of_committed_record(client: TestClient):
     assert path.is_file()
 
     # 模拟「A 的补偿晚到，而 B 已经用同一个 ID 提交成功」。
-    asset_repo._rollback_lut_render_outputs([(created["id"], path)], [created["id"]])
+    asset_repo._rollback_lut_render_outputs(
+        [(created["id"], created["display_path"], path)], [created["id"]]
+    )
 
     assert path.is_file(), "已提交的产物不能被后到的补偿删掉"
     assert client.get(f"{BASE}/assets/{created['id']}", headers=AUTH).status_code == 200
@@ -617,3 +620,231 @@ def test_json_commit_failure_leaves_no_orphan_file_or_search_document(
     leftovers = list(output_root.rglob("*")) if output_root.exists() else []
     assert not [path for path in leftovers if path.is_file()], f"失败后仍残留产物：{leftovers}"
     assert _search_document_count() == before_docs, "检索索引里不得留下孤儿文档"
+
+
+def _pending_render_files(source_id: str) -> list[Path]:
+    """列出某个源素材目录下已落盘的派生产物。"""
+    root = storage.data_root() / "media_output" / "lut_render" / source_id
+    if not root.exists():
+        return []
+    return sorted(path for path in root.rglob("*") if path.is_file())
+
+
+def _commit_other_writer(asset_id: str, display_path: str, size_bytes: int) -> dict:
+    """模拟并发的另一笔用同一派生 ID 真实提交（注册表 + 检索文档）。"""
+    record = asset_repo._plain_asset(
+        asset_id,
+        "concurrent.png",
+        "image",
+        display_path=display_path,
+        size_bytes=size_bytes,
+    )
+
+    def mutate(raw):
+        raw["assets"][asset_id] = record
+        raw.setdefault("sequences", {})[asset_id] = True
+        asset_repo._bump(raw)
+
+    asset_repo.state().mutate(mutate)
+    asset_repo._upsert_asset_search_documents([record])
+    return record
+
+
+def test_scope_rejection_keeps_concurrently_committed_output(client: TestClient, monkeypatch):
+    """阻断回归：范围推导失败时 ``created_ids`` 还是空的，补偿不能据此删文件。
+
+    旧实现用 ``created_ids`` 当「已提交集合」：可见范围推导在记录登记**之前**
+    抛 ``LUT_SCOPE_MISMATCH``，集合为空，于是把并发另一笔用同一 ID、同一路径
+    提交成功的产物删掉——JSON 里有记录、媒体文件却没了，检索文档还留着。
+    """
+    _ensure_luts(client)
+    source = _upload(client, "qin581_scope_race.png", _image_bytes(), "image/png")
+    before_docs = _search_document_count()
+    captured: dict = {}
+
+    def reject_after_commit(source_record, lut_record):
+        pending = _pending_render_files(source["id"])
+        assert pending, "前置条件：范围拒绝之前产物必须已经落盘"
+        path = pending[-1]
+        asset_id = path.name.split("_v001")[0]
+        _commit_other_writer(
+            asset_id,
+            f"media_output/lut_render/{source['id']}/{path.name}",
+            path.stat().st_size,
+        )
+        captured.update({"path": path, "id": asset_id})
+        raise CleanroomException(
+            403, "LUT_SCOPE_MISMATCH", "注入：两个输入的可见范围不一致"
+        )
+
+    with monkeypatch.context() as patched:
+        patched.setattr(asset_repo, "_inherited_scope", reject_after_commit)
+        response = _render(client, source["id"], WARM, 1.0)
+
+    assert response.status_code == 403, response.text
+    assert response.json()["detail"]["code"] == "LUT_SCOPE_MISMATCH"
+    assert captured["path"].is_file(), "并发已提交那一笔的产物不能被补偿删掉"
+    detail = client.get(f"{BASE}/assets/{captured['id']}", headers=AUTH)
+    assert detail.status_code == 200, detail.text
+    assert _search_document_count() == before_docs + 1, "已提交记录的检索文档不得被补偿删除"
+
+
+def test_interrupt_before_registration_keeps_committed_output(client: TestClient, monkeypatch):
+    """阻断回归：登记前被打断，同样不能删掉并发已提交的产物。"""
+    _ensure_luts(client)
+    source = _upload(client, "qin581_precommit_race.png", _image_bytes(), "image/png")
+    captured: dict = {}
+
+    def interrupt_after_commit(source_record, lut_record):
+        pending = _pending_render_files(source["id"])
+        assert pending, "前置条件：打断之前产物必须已经落盘"
+        path = pending[-1]
+        asset_id = path.name.split("_v001")[0]
+        _commit_other_writer(
+            asset_id,
+            f"media_output/lut_render/{source['id']}/{path.name}",
+            path.stat().st_size,
+        )
+        captured.update({"path": path, "id": asset_id})
+        raise KeyboardInterrupt
+
+    from gw.api.routes_asset_registry import _render_lut_asset
+
+    with monkeypatch.context() as patched:
+        patched.setattr(asset_repo, "_inherited_scope", interrupt_after_commit)
+        with pytest.raises(KeyboardInterrupt):
+            asset_repo.create_lut_render(
+                source["id"], WARM, 1.0, None, render=_render_lut_asset
+            )
+
+    assert captured["path"].is_file(), "登记前中断也不得删掉已提交产物"
+    assert client.get(f"{BASE}/assets/{captured['id']}", headers=AUTH).status_code == 200
+
+
+def test_json_failure_removes_own_file_but_keeps_committed_document(
+    client: TestClient, monkeypatch
+):
+    """重要回归：同 ID 但另一条源路径时，文件按路径判、索引按 ID 判。
+
+    旧实现只看 ID：同 ID 已有记录就跳过删文件，本笔的 PNG 变成孤儿；
+    若反过来按文件归属去删索引，又会删掉并发那一笔的检索文档。
+    """
+    _ensure_luts(client)
+    source = _upload(client, "qin581_path_race.png", _image_bytes(), "image/png")
+    other_source = _upload(
+        client, "qin581_path_race_other.png", _image_bytes(), "image/png"
+    )
+    before_docs = _search_document_count()
+    real_save = storage.save
+    fired: list[bool] = []
+    captured: dict = {}
+
+    def flaky_save(namespace: str, payload) -> None:
+        if namespace == asset_repo.NS_REGISTRY and not fired:
+            fired.append(True)
+            pending = _pending_render_files(source["id"])
+            path = pending[-1]
+            asset_id = path.name.split("_v001")[0]
+            other_dir = (
+                storage.data_root() / "media_output" / "lut_render" / other_source["id"]
+            )
+            other_dir.mkdir(parents=True, exist_ok=True)
+            other_path = other_dir / f"{asset_id}_v001.png"
+            other_path.write_bytes(path.read_bytes())
+            _commit_other_writer(
+                asset_id,
+                f"media_output/lut_render/{other_source['id']}/{other_path.name}",
+                other_path.stat().st_size,
+            )
+            captured.update({"own": path, "other": other_path, "id": asset_id})
+            raise OSError("injected json commit failure")
+        return real_save(namespace, payload)
+
+    with monkeypatch.context() as patched:
+        patched.setattr(storage, "save", flaky_save)
+        with pytest.raises(OSError):
+            _render(client, source["id"], WARM, 1.0)
+
+    assert fired, "必须真的命中注入的提交失败"
+    assert not captured["own"].exists(), "本笔未提交的文件必须清掉，不能因为同 ID 有记录就留下"
+    assert captured["other"].is_file(), "并发那一笔的产物必须保留"
+    assert _search_document_count() == before_docs + 1, "并发那一笔的检索文档必须保留"
+    assert client.get(f"{BASE}/assets/{captured['id']}", headers=AUTH).status_code == 200
+
+
+def test_search_cleanup_failure_is_observable_and_retryable(
+    client: TestClient, monkeypatch, caplog
+):
+    """重要回归：补偿删除索引失败不得静默；须留痕且可幂等重试补完。"""
+    _ensure_luts(client)
+    source = _upload(client, "qin581_cleanup_fault.png", _image_bytes(), "image/png")
+    before_docs = _search_document_count()
+    real_save = storage.save
+    fired: list[bool] = []
+    attempts: list[list[str]] = []
+
+    def flaky_save(namespace: str, payload) -> None:
+        if namespace == asset_repo.NS_REGISTRY and not fired:
+            fired.append(True)
+            raise OSError("injected json commit failure")
+        return real_save(namespace, payload)
+
+    def broken_delete(asset_ids, *, strict=False):
+        attempts.append(list(asset_ids))
+        raise RuntimeError("injected search delete failure")
+
+    with monkeypatch.context() as patched:
+        patched.setattr(storage, "save", flaky_save)
+        patched.setattr(asset_repo, "delete_asset_search_documents", broken_delete)
+        with caplog.at_level(logging.ERROR, logger=asset_repo.__name__):
+            with pytest.raises(OSError):
+                _render(client, source["id"], WARM, 1.0)
+
+    assert fired
+    assert len(attempts) == 2, "补偿应有限重试，不能一次失败就放弃"
+    messages = " ".join(record.getMessage() for record in caplog.records)
+    assert "LUT_RENDER_COMPENSATION_INCOMPLETE" in messages, messages
+    assert attempts[0] and attempts[0][0] in messages, messages
+    # 故障确实留下了孤儿文档（证明打到失败路径），且同一入口重试即可补完。
+    assert _search_document_count() == before_docs + 1
+    asset_repo.delete_asset_search_documents(attempts[0], strict=True)
+    assert _search_document_count() == before_docs
+
+
+def test_unlink_failure_keeps_original_error_and_code(
+    client: TestClient, monkeypatch, caplog
+):
+    """重要回归：补偿里的 unlink 失败不得覆盖原始的 503 错误码。"""
+    _ensure_luts(client)
+    source = _upload(client, "qin581_unlink_fault.png", _image_bytes(), "image/png")
+
+    def broken_upsert(_records):
+        raise CleanroomException(503, "ASSET_SEARCH_INDEX_FAILED", "检索索引写入失败")
+
+    real_unlink = Path.unlink
+
+    def deny_lut_render_unlink(self, *args, **kwargs):
+        if "lut_render" in str(self).replace("\\", "/"):
+            raise PermissionError("injected unlink denial")
+        return real_unlink(self, *args, **kwargs)
+
+    from gw.api.routes_asset_registry import _render_lut_asset
+
+    with monkeypatch.context() as patched:
+        patched.setattr(asset_repo, "_upsert_asset_search_documents", broken_upsert)
+        patched.setattr(Path, "unlink", deny_lut_render_unlink)
+        with caplog.at_level(logging.ERROR, logger=asset_repo.__name__):
+            with pytest.raises(CleanroomException) as excinfo:
+                asset_repo.create_lut_render(
+                    source["id"], WARM, 1.0, None, render=_render_lut_asset
+                )
+
+    assert excinfo.value.status_code == 503
+    assert excinfo.value.code == "ASSET_SEARCH_INDEX_FAILED", "补偿失败不得覆盖原错误码"
+    notes = "\n".join(getattr(excinfo.value, "__notes__", []))
+    assert "补偿未完成" in notes, notes
+    assert "PermissionError" in notes, notes
+    assert any(
+        "LUT 派生产物清理失败" in record.getMessage() for record in caplog.records
+    ), [record.getMessage() for record in caplog.records]
+    assert _pending_render_files(source["id"]), "注入的 unlink 失败必须让文件留在盘上"

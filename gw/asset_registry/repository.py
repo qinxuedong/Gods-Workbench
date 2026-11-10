@@ -2577,35 +2577,115 @@ def _inherited_scope(source: Dict[str, Any], lut_asset: Dict[str, Any]) -> Dict[
     return scope
 
 
+def _normalized_display(value: Any) -> str:
+    return str(value or "").replace("\\", "/").strip()
+
+
+def _discard_rendered_file(path: Path) -> Optional[str]:
+    """删除单个半成品产物；失败返回错误描述而不抛出。
+
+    补偿阶段 ``unlink`` 失败（只读、被占用、权限）不能覆盖调用方原本的错误码，
+    所以这里把错误转成返回值，交给调用方汇总成可观测记录。
+    """
+    try:
+        path.unlink(missing_ok=True)
+    except OSError as exc:
+        _LOGGER.error("LUT 派生产物清理失败: %s (%s: %s)", path, type(exc).__name__, exc)
+        return f"{type(exc).__name__}: {exc}"
+    try:
+        path.parent.rmdir()  # 只有目录空时才成功，不会误删同源的其他产物
+    except OSError:
+        pass
+    return None
+
+
+def _delete_search_documents_with_retry(asset_ids: List[str], attempts: int = 2) -> Optional[str]:
+    """撤销检索文档；允许有限重试，仍失败时返回错误描述。
+
+    删除接口幂等（按 asset_id 逐条删），重复调用即可补完，所以重试与人工重跑
+    都是安全的自愈路径。
+    """
+    last: Optional[str] = None
+    for _ in range(max(1, attempts)):
+        try:
+            delete_asset_search_documents(asset_ids, strict=True)
+            return None
+        except Exception as exc:  # noqa: BLE001 - 任何故障都要留痕，不能静默
+            last = f"{type(exc).__name__}: {exc}"
+    return last
+
+
+def _note_compensation_failure(exc: BaseException, failures: List[Dict[str, Any]]) -> None:
+    """把补偿失败挂到原异常上：原错误码与信息保留，另附可检索的失败明细。"""
+    summary = "; ".join(f"{item['stage']}={item.get('error')}" for item in failures)
+    note = f"LUT 派生补偿未完成（原错误已保留，可重复清理补救）: {summary}"
+    add_note = getattr(exc, "add_note", None)
+    if callable(add_note):
+        add_note(note)
+
+
+def _record_owns_output(record: Dict[str, Any], relative: str, path: Path) -> bool:
+    """已提交记录是否正引用这一个产物文件（用于区分「已提交」与「同 ID 孤儿」）。"""
+    display = str(record.get("display_path") or "")
+    if not display:
+        return False
+    if _normalized_display(display) == _normalized_display(relative):
+        return True
+    # 展示串可能因运行根不同而形态不同（例如只剩文件名）；能解析回同一文件也算。
+    try:
+        resolved = _resolve_display(
+            display, root_id=str(record.get("root_id") or "") or None
+        )
+        return resolved.resolve() == path.resolve()
+    except (CleanroomException, OSError, RuntimeError):
+        return False
+
+
 def _rollback_lut_render_outputs(
-    written: List[Tuple[str, Path]], created_ids: List[str]
-) -> None:
-    """撤销一次失败的 LUT 派生：只清理确实没有被提交的那一份。
+    written: List[Tuple[str, str, Path]], created_ids: List[str]
+) -> List[Dict[str, Any]]:
+    """撤销一次失败的 LUT 派生；返回未能完成的补偿项（空表示全部清干净）。
 
     判定必须在注册表命名空间锁内完成。两次显式同 revision 的请求都能通过
-    ``_cas``：先失败的一笔释放锁之后，另一笔可能已经用同一个派生 ID 提交成功，
-    此时盘上文件与检索文档都属于**已提交**的那一笔；在锁外直接删会删掉别人的
-    有效产物（JSON 提交完成后才中断也会误删已提交产物）。因此这里重新取锁、
-    按「注册表里是否真有这条记录」判定归属，再决定是否删除，检索索引的清理也
-    放在同一把锁内，避免把并发成功那笔刚写好的文档删掉。
+    ``_cas``：先失败的一笔释放锁之后，另一笔可能已经用同一个派生 ID 提交成功。
+
+    归属判定要分成两套，不能混用：
+
+    * **文件按路径判**：注册表里有同 ID 记录、但该记录指向另一个文件时，本笔
+      写下的这个文件仍是孤儿，必须删；记录正指向这个文件才是「已提交」，不能删。
+    * **检索文档按 ID 判**：文档以 asset_id 为键，同 ID 已被提交时文档属于那一笔，
+      即使本笔文件是孤儿也不能删文档。
+
+    ``created_ids`` 在「记录登记之前就失败」时为空（例如可见范围推导抛
+    ``LUT_SCOPE_MISMATCH``、或登记前被打断），所以不能拿它当「已提交集合」的
+    唯一来源，必须直接查注册表当前记录。
     """
+    failures: List[Dict[str, Any]] = []
     with storage.namespace_lock(state().namespace):
         raw = state().read()
         assets = raw.get("assets") or {}
-        committed = {aid for aid in created_ids if assets.get(aid)}
-        for asset_id, path in written:
-            if asset_id in committed:
+        for asset_id, relative, path in written:
+            record = assets.get(asset_id)
+            if record is not None and _record_owns_output(record, relative, path):
                 continue
-            path.unlink(missing_ok=True)
-            try:
-                path.parent.rmdir()  # 只有目录空时才成功，不会误删同源的其他产物
-            except OSError:
-                pass
-        orphan_ids = [aid for aid in created_ids if aid not in committed]
+            error = _discard_rendered_file(path)
+            if error:
+                failures.append(
+                    {"stage": "media", "asset_id": asset_id, "path": str(path), "error": error}
+                )
+        # 检索索引是另一个存储：JSON 写失败时它可能已经落库，必须一并撤销，
+        # 否则冷读仍能查到一条没有对应资产的孤儿文档。
+        orphan_ids = [aid for aid in created_ids if not assets.get(aid)]
         if orphan_ids:
-            # 检索索引是另一个存储：JSON 写失败时它可能已经落库，必须一并撤销，
-            # 否则冷读仍能查到一条没有对应资产的孤儿文档。
-            delete_asset_search_documents(orphan_ids)
+            error = _delete_search_documents_with_retry(orphan_ids)
+            if error:
+                failures.append(
+                    {"stage": "search_index", "asset_ids": list(orphan_ids), "error": error}
+                )
+    if failures:
+        # 可观测：留一条带稳定标记的错误日志，运维可按 asset_id 重跑清理。
+        _LOGGER.error("LUT_RENDER_COMPENSATION_INCOMPLETE %s", failures)
+    return failures
 
 
 def create_lut_render(
@@ -2645,7 +2725,7 @@ def create_lut_render(
         raise CleanroomException(400, "INVALID_LUT_STRENGTH", "LUT 强度必须在 0 到 1 之间")
 
     # 事务内已落盘的产物与已写过的派生 ID；任何后续失败都在锁内判定后统一清理。
-    written: List[Tuple[str, Path]] = []
+    written: List[Tuple[str, str, Path]] = []
     created_ids: List[str] = []
 
     def mutate(raw: Dict[str, Any]) -> Any:
@@ -2676,15 +2756,15 @@ def create_lut_render(
         try:
             rendered = render(kind, source_path, lut_path, ratio, target)
         except CleanroomException:
-            target.unlink(missing_ok=True)
+            _discard_rendered_file(target)
             raise
         except Exception as exc:
             # 渲染器的内部异常不得漏成 500，也不留下半成品产物。
-            target.unlink(missing_ok=True)
+            _discard_rendered_file(target)
             raise CleanroomException(503, "LUT_RENDER_FAILED", "LUT 渲染失败") from exc
         # 产物已落盘：从这里往后的任何失败（索引写入、状态提交）都要靠外层补偿，
         # 只包住渲染会在「记录没提交、文件还留着」时留下孤儿产物。
-        written.append((new_asset_id, target))
+        written.append((new_asset_id, relative, target))
 
         name = _lut_render_display_name(
             str(source.get("name") or ""), str(lut_asset.get("name") or ""), extension
@@ -2739,11 +2819,15 @@ def create_lut_render(
 
     try:
         return state().mutate(mutate)
-    except BaseException:
+    except BaseException as exc:
         # ``mutate`` 抛异常即代表状态没有提交（读-改-写整体回滚，提交后才中断除外），
         # 此时盘上的产物与检索文档没有任何记录引用，必须一并清掉；但「哪一份真的
         # 没提交」要在锁内按注册表现状判定，不能无脑删。
-        _rollback_lut_render_outputs(written, created_ids)
+        # 补偿自身的失败只记录、不替换原错误：原错误码（例如
+        # 503 ASSET_SEARCH_INDEX_FAILED）是调用方与测试依赖的稳定契约。
+        failures = _rollback_lut_render_outputs(written, created_ids)
+        if failures:
+            _note_compensation_failure(exc, failures)
         raise
 
 
@@ -4288,8 +4372,13 @@ def register_asset_record(
     return state().mutate(mutate)
 
 
-def delete_asset_search_documents(asset_ids: List[str]) -> None:
-    """批量删除 SQLite 全文与向量检索索引中的资产与分镜。"""
+def delete_asset_search_documents(asset_ids: List[str], *, strict: bool = False) -> None:
+    """批量删除 SQLite 全文与向量检索索引中的资产与分镜。
+
+    幂等：按 asset_id 逐条删除，重复调用可用于补完失败过的清理。
+    ``strict=True`` 时把底层故障抛给调用方（补偿路径需要知道有没有清干净）；
+    默认只记警告，保持既有调用方「删不掉也不阻断主流程」的行为。
+    """
     if not asset_ids:
         return
     from gw.core.sqlite_vec_engine import SQLiteVecEngine
@@ -4302,7 +4391,11 @@ def delete_asset_search_documents(asset_ids: List[str]) -> None:
                 engine.delete_document(aid)
                 engine.delete_shots(aid)
     except Exception:
-        pass
+        if strict:
+            raise
+        _LOGGER.warning(
+            "检索索引删除失败，可按 asset_id 重试清理: %s", asset_ids, exc_info=True
+        )
 
 
 def purge_root_records(root_id: str) -> Dict[str, Any]:
