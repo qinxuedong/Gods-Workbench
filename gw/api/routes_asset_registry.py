@@ -68,6 +68,17 @@ def _read_auth(authorization: Optional[str], x_user_role: str):
     return require_authenticated(authorization, x_user_role)
 
 
+def _read_asset_or_404(asset_id: str) -> Dict[str, Any]:
+    """读单条资产记录；他人的有主素材与「不存在」同码 404。
+
+    隐藏而非报 403：状态码本身也会泄露「这个 asset_id 确实存在」。
+    """
+    record = repo.get_asset(asset_id)
+    if repo.asset_hidden_from_request(record):
+        raise CleanroomException(404, "ASSET_NOT_FOUND", f"素材 {asset_id} 不存在")
+    return record
+
+
 def _edit_auth(authorization: Optional[str], x_user_role: str):
     """统一编辑权限检查。"""
     return require_edit_access(authorization, x_user_role)
@@ -567,7 +578,7 @@ def get_registry_asset(
     x_user_role: str = Header("editor", alias="X-User-Role"),
 ):
     _read_auth(authorization, x_user_role)
-    return {"asset": repo.get_asset(asset_id), "data_status": DATA_STATUS_OK}
+    return {"asset": _read_asset_or_404(asset_id), "data_status": DATA_STATUS_OK}
 
 
 @router.get("/assets/{asset_id}/image-versions", summary="读取素材图片版本", status_code=status.HTTP_200_OK)
@@ -590,10 +601,10 @@ def get_image_version_media(
     x_user_role: str = Header("editor", alias="X-User-Role"),
 ):
     context = _read_auth(authorization, x_user_role)
-    path = repo.media_file(asset_id, version_id)
+    path = repo.media_file_for_request(asset_id, version_id)
     if path is None:
         record = repo.get_asset(asset_id)
-        if record.get("metadata", {}).get("workflow_owner"):
+        if record.get("metadata", {}).get("workflow_owner") and not repo.asset_hidden_from_request(record):
             from gw.god_workflow import registry as workflow_registry
             resolved = workflow_registry.resolve_asset_file(context, asset_id)
             if resolved:
@@ -620,10 +631,10 @@ def get_asset_media(
     x_user_role: str = Header("editor", alias="X-User-Role"),
 ):
     context = _read_auth(authorization, x_user_role)
-    path = repo.media_file(asset_id)
+    path = repo.media_file_for_request(asset_id)
     if path is None:
         record = repo.get_asset(asset_id)
-        if record.get("metadata", {}).get("workflow_owner"):
+        if record.get("metadata", {}).get("workflow_owner") and not repo.asset_hidden_from_request(record):
             from gw.god_workflow import registry as workflow_registry
             resolved = workflow_registry.resolve_asset_file(context, asset_id)
             if resolved:

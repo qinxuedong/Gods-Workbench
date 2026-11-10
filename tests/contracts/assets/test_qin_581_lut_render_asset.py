@@ -20,8 +20,15 @@ import pytest
 from fastapi.testclient import TestClient
 from PIL import Image
 
+from gw.asset_registry import repository as asset_repo
+from gw.core import storage
+from gw.core.asset_visibility import asset_owner_key
+from gw.core.auth import require_authenticated
+
 BASE = "/api/asset-registry"
 AUTH = {"Authorization": "Bearer cleanroom-test", "X-User-Role": "editor"}
+#: 另一个主体的凭据：本地模式用 Bearer 摘要作为主体，换 token 即换主体。
+OTHER_AUTH = {"Authorization": "Bearer cleanroom-other-subject", "X-User-Role": "editor"}
 WARM = "builtin_lut_warm"
 NEUTRAL = "builtin_lut_neutral"
 
@@ -303,3 +310,125 @@ def test_video_lut_render_transcodes_with_visible_grading(client: TestClient, tm
     assert graded_pixel[2] < original_pixel[2] - 2, (original_pixel, graded_pixel)
     assert abs(graded_pixel[0] - 136) <= 12, graded_pixel
     assert abs(graded_pixel[2] - 119) <= 12, graded_pixel
+
+
+def _owner_key() -> str:
+    """当前测试凭据对应的归属键（与 gw.core.asset_visibility 同口径）。"""
+    return asset_owner_key(require_authenticated(AUTH["Authorization"], "editor"))
+
+
+def _claim(asset_id: str, owner: str) -> None:
+    """把素材标成工作流私有归属。
+
+    真实桥接就是这么写的（``workflow_owner`` 标记该素材只对归属主体可见），
+    这里直接落库复现「源素材属于 A」的前置条件。
+    """
+
+    def mutate(raw):
+        raw["assets"][asset_id]["workflow_owner"] = owner
+
+    asset_repo.state().mutate(mutate)
+
+
+def test_derived_asset_keeps_source_ownership(client: TestClient):
+    """阻断回归：派生资产必须继承源素材归属，否则会变成跨主体可读的公共资源。
+
+    评审实测过的坏样本：B 读 A 的源图与 LUT 都是 404，但 A 派生出来的新资产
+    详情和媒体对 B 都是 200，且 ``derived_from`` 把源 asset_id 一起带出去。
+    """
+    _ensure_luts(client)
+    source = _upload(client, "qin581_owned.png", _image_bytes(), "image/png")
+    owner = _owner_key()
+    _claim(source["id"], owner)
+    # 前置条件：源素材对外主体不可见（否则本用例证不到「派生件丢了隔离」）。
+    assert client.get(f"{BASE}/assets/{source['id']}", headers=OTHER_AUTH).status_code == 404
+
+    response = _render(client, source["id"], WARM, 1.0)
+    assert response.status_code == 200, response.text
+    created = response.json()["asset"]
+    assert created.get("workflow_owner") == owner, "派生资产必须继承源素材归属"
+
+    # 归属者本人照旧可读。
+    assert client.get(f"{BASE}/assets/{created['id']}", headers=AUTH).status_code == 200
+    assert client.get(f"{BASE}/assets/{created['id']}/media", headers=AUTH).status_code == 200
+
+    # 其他主体：详情与媒体都必须与「不存在」同口径，来源链不得外泄。
+    other_detail = client.get(f"{BASE}/assets/{created['id']}", headers=OTHER_AUTH)
+    assert other_detail.status_code == 404, other_detail.text
+    assert other_detail.json()["detail"]["code"] == "ASSET_NOT_FOUND"
+    assert "derived_from" not in other_detail.text
+    other_media = client.get(f"{BASE}/assets/{created['id']}/media", headers=OTHER_AUTH)
+    assert other_media.status_code == 404, other_media.text
+
+    # 列表里也不得出现（否则等于用「能列出」泄露存在性）。
+    listing = client.get(f"{BASE}/assets", headers=OTHER_AUTH, params={"limit": 500})
+    assert listing.status_code == 200, listing.text
+    assert created["id"] not in {item["id"] for item in listing.json()["assets"]}
+
+
+def test_whole_transaction_failure_removes_rendered_file(client: TestClient, monkeypatch):
+    """重要回归：事务后半段失败（索引写入）不得留下孤儿产物。
+
+    旧实现只把渲染异常包在清理里；索引或状态提交失败时记录没写进去，
+    但盘上已经多了一个 PNG。
+    """
+    _ensure_luts(client)
+    source = _upload(client, "qin581_orphan.png", _image_bytes(), "image/png")
+    before = _asset_count(client)
+    output_root = storage.data_root() / "media_output" / "lut_render"
+    before_files = set(output_root.rglob("*")) if output_root.exists() else set()
+
+    def boom(_records):
+        raise RuntimeError("injected search index failure")
+
+    # 只撤这一个补丁：直接 undo() 会把 conftest 注入的测试环境变量一起还原，
+    # 认证模式退回本地账户后后续请求全 401。
+    with monkeypatch.context() as patched:
+        patched.setattr(asset_repo, "_upsert_asset_search_documents", boom)
+        with pytest.raises(RuntimeError):
+            _render(client, source["id"], WARM, 1.0)
+
+    assert _asset_count(client) == before, "失败不得写进资产记录"
+    after_files = set(output_root.rglob("*")) if output_root.exists() else set()
+    assert after_files == before_files, f"事务失败后仍残留产物：{after_files - before_files}"
+    assert not [path for path in after_files if path.is_file()], "渲染产物必须随事务失败一并清理"
+
+
+def test_video_strength_curve_is_monotonic(client: TestClient, tmp_path: Path):
+    """阻断回归：视频混合强度的方向必须是「0% = 原片、100% = 满调色」。
+
+    旧实现把 blend 的 top/bottom 写反（``all_opacity`` 控制的是 top 层权重），
+    于是 0% 出满调色、75% 只有 25% 调色，1.0 又跳回满调色。
+    """
+    binary = _ffmpeg()
+    _ensure_luts(client)
+    sample_path = tmp_path / "qin581_curve.mp4"
+    _make_gray_video(binary, sample_path)
+    source = _upload(client, "qin581_curve.mp4", sample_path.read_bytes(), "video/mp4")
+    original_pixel = _first_pixel(binary, sample_path, tmp_path)
+
+    def render_pixel(strength: float) -> tuple[int, int, int]:
+        response = _render(client, source["id"], WARM, strength)
+        assert response.status_code == 200, response.text
+        media = client.get(f"{BASE}/assets/{response.json()['asset']['id']}/media", headers=AUTH)
+        assert media.status_code == 200, media.text
+        path = tmp_path / f"qin581_curve_{int(strength * 100):03d}.mp4"
+        path.write_bytes(media.content)
+        return _first_pixel(binary, path, tmp_path)
+
+    zero = render_pixel(0.0)
+    half = render_pixel(0.5)
+    full = render_pixel(1.0)
+
+    # 0% 必须回到原片（允许编码噪声几个色阶）。
+    for channel in (0, 1, 2):
+        assert abs(zero[channel] - original_pixel[channel]) <= 3, (original_pixel, zero)
+    # 100% 是满调色：暖调抬红压蓝。
+    assert full[0] > original_pixel[0] + 2, (original_pixel, full)
+    assert full[2] < original_pixel[2] - 2, (original_pixel, full)
+    # 中间强度落在两者之间（方向错了会在这里翻车）。
+    low, high = sorted((original_pixel[2], full[2]))
+    assert low < half[2] < high, (original_pixel, half, full)
+    assert low <= zero[2] - 0 or abs(zero[2] - original_pixel[2]) <= 3
+    # 强度越大越接近满调色：0% → 50% → 100% 的蓝通道必须严格递减。
+    assert zero[2] > half[2] > full[2], (zero, half, full)

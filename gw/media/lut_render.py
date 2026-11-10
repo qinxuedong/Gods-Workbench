@@ -274,10 +274,13 @@ def render_video_to_mp4(
         if ratio >= 0.9999:
             graph = "[0:v]format=yuv420p,lut3d=look.cube[out]"
         else:
+            # blend 的第一个输入是 top 层，`all_opacity` 控制的是 **top** 的权重。
+            # 因此 top 必须是「调色后」，才能让 ratio=0 得到原片、ratio=1 得到满调色；
+            # 反过来写（top 放原片）会把强度整个拧反：0% 变满调色、75% 只剩 25% 调色。
             graph = (
                 "[0:v]format=yuv420p,split=2[base][graded];"
                 "[graded]lut3d=look.cube,format=yuv420p[graded];"
-                f"[base][graded]blend=all_mode=normal:all_opacity={ratio:.4f}[out]"
+                f"[graded][base]blend=all_mode=normal:all_opacity={ratio:.4f}[out]"
             )
         partial = output.with_name(output.stem + ".part" + output.suffix)
         command = [
