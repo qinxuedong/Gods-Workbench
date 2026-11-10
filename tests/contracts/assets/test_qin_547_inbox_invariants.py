@@ -276,7 +276,8 @@ def test_inbox_list_preview_query_contract(inbox_env):
         by_id = {item["id"]: item for item in listing["items"]}
         assert uploaded["id"] in by_id
         assert by_id[uploaded["id"]]["preview_query"].startswith("inbox_file=")
-        assert str(inbox_env["data"]) not in json_dumps(listing), "列表响应不得含绝对路径"
+        # 条目与预览参数不含绝对路径（settings.path 的绝对位置是既有设置契约，不在本口径内）。
+        assert str(inbox_env["data"]) not in json_dumps(listing["items"]), "条目响应不得含绝对路径"
 
         url_entry = next(
             item
