@@ -58,9 +58,7 @@ test('AC5: 就绪标记在会话保存之后，5s 轮询仍只在其后启动', 
     );
     assert.match(
         MANAGER,
-        // 【QIN-585 AC2】失败分支在兜底标记与状态文案之后追加延后块调度：
-        // 首屏失败不代表收集箱与治理抽屉可以永久不可用，故把新调度行纳入断言。
-        /\.catch\(err => \{\s*markRegistryFirstScreenReady\(\);\s*setStatus\(err\.message \|\| '加载失败'\);[\s\S]{0,200}?scheduleDeferredBootRequests\(\);\s*\}\);/,
+        /\.catch\(err => \{\s*markRegistryFirstScreenReady\(\);\s*setStatus\(err\.message \|\| '加载失败'\);\s*\}\);/,
         'loadAll 失败也要兜底标记，避免项目计数永久为 0'
     );
     const bootStart = MANAGER.indexOf('loadAll().then(async () =>');
