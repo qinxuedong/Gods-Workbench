@@ -1,7 +1,7 @@
 {
   "schema": "gw.cleanroom-admission-shard/v1",
   "issue": 670,
-  "authorization_basis": "GitHub Issue #670 (QIN-581), 2026-11-10；phase8 防漂移基线文件的授权见票面「授权记录」节，原始授权待相国在 issue #670 明示确认（见 issuecomment-6762038082）",
+  "authorization_basis": "GitHub Issue #670 (QIN-581), 2026-11-10；phase8 防漂移基线文件的授权见票面「授权记录」节（issuecomment-6762038082）；相国本人 2026-11-10 16:19 在 PR #680 评论明确同意（issuecomment-6762524665），同日 16:26 会话再次确认",
   "files": [
     "gw/api/routes_asset_registry.py",
     "gw/asset_registry/service.py",
@@ -31,5 +31,5 @@
       "admission": "accepted"
     }
   ],
-  "notes": "QIN-581 保存套用 LUT 后的资产版本：图片走服务端逐像素查表直出无损 PNG，视频走 ffmpeg lut3d（强度用原图/调色图混合近似），产物作为新资产入库并记录 derived_from 来源链（原素材 + LUT 资产 + 强度）。来源链不复用 ProducedAssetProvenance（该契约只接受 agent_pipeline 且强制任务链字段），改在资产记录顶层新增自描述字段并同步契约测试。不做时间线写入（#620）与母带导出（#621）。 另：新增后端端点触发 phase8 防漂移基线（KNOWN_IMPLEMENTED / KNOWN_BACKEND_PATHS），该文件经秦先生 2026-11-10 会话内授权后补登记；票面「授权记录」节与 issuecomment-6760596890 为可核验出处，首轮仅有转述属于证据缺口，现已补齐。"
+  "notes": "QIN-581 保存套用 LUT 后的资产版本：图片走服务端逐像素查表直出无损 PNG，视频走 ffmpeg lut3d（强度用原图/调色图混合近似），产物作为新资产入库并记录 derived_from 来源链（原素材 + LUT 资产 + 强度）。来源链不复用 ProducedAssetProvenance（该契约只接受 agent_pipeline 且强制任务链字段），改在资产记录顶层新增自描述字段并同步契约测试。不做时间线写入（#620）与母带导出（#621）。 另：新增后端端点触发 phase8 防漂移基线（KNOWN_IMPLEMENTED / KNOWN_BACKEND_PATHS），该文件经相国 2026-11-10 16:19 于 PR #680 评论明确同意（issuecomment-6762524665）后补登记，票面「授权记录」节与 16:26 会话确认为同轮佐证。"
 }

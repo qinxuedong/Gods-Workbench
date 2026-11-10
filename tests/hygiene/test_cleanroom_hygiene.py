@@ -1305,8 +1305,9 @@ def test_qin_581_lut_render_asset_files_are_registered(repo_root: Path):
     basis = registrations[0].get("authorization_basis") or ""
     assert basis.startswith("GitHub Issue #670 (QIN-581), 2026-11-10")
     assert "授权记录" in basis and "issuecomment-6762038082" in basis, basis
-    # 原始授权要由相国本人明示，实现方的会话转述不算；未闭环前如实标注。
-    assert "待相国" in basis, basis
+    # 原始授权必须来自相国本人：指向 PR #680 上他本人 2026-11-10 16:19 的同意评论。
+    assert "issuecomment-6762524665" in basis, basis
+    assert "待相国" not in basis, basis
     assert set(registrations[0].get("files", [])) == {
         "gw/api/routes_asset_registry.py",
         "gw/asset_registry/service.py",
