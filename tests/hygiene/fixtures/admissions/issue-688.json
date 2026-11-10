@@ -1,0 +1,24 @@
+{
+  "schema": "gw.cleanroom-admission-shard/v1",
+  "issue": 688,
+  "authorization_basis": "GitHub Issue #688 (QIN-590), 2026-11-10",
+  "files": [
+    "web/pages/assets.html",
+    "web/js/controllers/assets-controller.js",
+    "web/js/modules/asset-manager.js",
+    "tests/frontend/qin-566-asset-navigation.test.mjs",
+    "tests/frontend/qin-590-asset-sidebar-collapse.test.mjs",
+    "tests/frontend/node-files.txt",
+    "tests/hygiene/fixtures/admissions/issue-688.json"
+  ],
+  "admitted_files": [],
+  "accepted_test_files": [
+    {
+      "path": "tests/frontend/qin-590-asset-sidebar-collapse.test.mjs",
+      "classification": "curated_test_coverage",
+      "authorization_basis": "GitHub Issue #688 (QIN-590), 2026-11-10",
+      "admission": "accepted"
+    }
+  ],
+  "notes": "QIN-590 资产库左侧栏增加展开收起，Coverflow 打开时自动收起铺满：父页左侧栏头部增加展开/收起按钮，状态写入本地存储并在刷新后保持；打开全屏 Coverflow 时左侧栏自动收起，关闭后恢复；若用户在 Coverflow 打开期间手动切换过，以用户选择为准关闭时不强行恢复。"
+}

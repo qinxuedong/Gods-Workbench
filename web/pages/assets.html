@@ -27,6 +27,49 @@
     #assetSidebarOverview span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     #assetSidebarCreate { width: 32px; height: 32px; min-height: 32px; flex: 0 0 32px; display: inline-flex; align-items: center; justify-content: center; padding: 0; border-radius: 50%; }
     #assetSidebarCreate svg { width: 14px; height: 14px; }
+    /* QIN-590: 侧栏折叠按钮与收起态样式 */
+    #assetSidebarToggle { width: 32px; height: 32px; min-height: 32px; flex: 0 0 32px; display: inline-flex; align-items: center; justify-content: center; padding: 0; border-radius: 6px; }
+    #assetSidebarToggle svg { width: 15px; height: 15px; }
+    #assetVaultSidebar.is-collapsed {
+      width: 0 !important;
+      min-width: 0 !important;
+      flex: 0 0 0 !important;
+      border-right: none !important;
+      overflow: visible !important;
+    }
+    #assetVaultSidebar.is-collapsed .gw-side-bus-list,
+    #assetVaultSidebar.is-collapsed #assetSidebarOverview,
+    #assetVaultSidebar.is-collapsed #assetSidebarCreate {
+      display: none !important;
+    }
+    #assetVaultSidebar.is-collapsed .gw-side-bus-header {
+      width: 0 !important;
+      min-width: 0 !important;
+      padding: 0 !important;
+      border: none !important;
+      background: transparent !important;
+      overflow: visible !important;
+    }
+    #assetVaultSidebar.is-collapsed .asset-shell-overview-card {
+      width: 0 !important;
+      min-width: 0 !important;
+      padding: 0 !important;
+      border: none !important;
+      background: transparent !important;
+      box-shadow: none !important;
+      overflow: visible !important;
+      min-height: 0 !important;
+    }
+    #assetVaultSidebar.is-collapsed .asset-shell-overview-card::before {
+      display: none !important;
+    }
+    #assetVaultSidebar.is-collapsed #assetSidebarToggle {
+      position: absolute;
+      top: 124px;
+      left: 8px;
+      z-index: 50;
+      box-shadow: 0 4px 14px rgba(0, 0, 0, 0.7);
+    }
     .asset-shell-nav-group { position: relative; margin: 0 0 12px; padding: 0 0 0 20px; }
     .asset-shell-nav-group::before { content: none; }
     .asset-shell-nav-group-heading { display: block; padding: 0 7px 4px; color: #dfc384; font-family: var(--gw-font-body); font-size: var(--gw-type-body-sm); font-weight: var(--gw-weight-medium); line-height: var(--gw-leading-body-sm); letter-spacing: 0; }
@@ -108,8 +151,11 @@
     @media (max-width: 700px) {
       .asset-shell-workspace { flex-direction: column !important; }
       #assetVaultSidebar { width: 100% !important; max-height: 150px; height: auto !important; flex: 0 0 auto; flex-direction: row !important; border-right: 0 !important; border-bottom: 1px solid #191c24; }
+      #assetVaultSidebar.is-collapsed { height: 0 !important; max-height: 0 !important; border-bottom: none !important; }
+      #assetVaultSidebar.is-collapsed #assetSidebarToggle { top: 120px; left: 8px; }
       #assetVaultSidebar .gw-side-bus-header { width: auto; flex: 0 0 auto; display: flex !important; align-items: center; padding: 6px; border-right: 1px solid rgb(255 255 255 / .08); border-bottom: 0 !important; }
       #assetSidebarCreate { width: 28px !important; height: 28px; min-height: 28px; flex-basis: 28px; padding: 0; }
+      #assetSidebarToggle { width: 28px !important; height: 28px; min-height: 28px; flex-basis: 28px; padding: 0; }
       #assetCategories { min-width: 0; min-height: 0; flex: 1 1 auto !important; flex-direction: row !important; align-items: flex-start; overflow-x: auto !important; overflow-y: hidden !important; padding: 6px !important; }
       .asset-shell-nav-group { min-width: 180px; flex: 0 0 auto; margin: 0; padding-left: 15px; }
       .asset-shell-nav-group-items { min-height: 0; }
@@ -295,6 +341,9 @@
           </button>
           <button type="button" id="assetSidebarCreate" class="hw-btn hw-btn-icon" onclick="WorkbenchAssets.openCreateAssetLibrary()" title="新建资源库" aria-label="新建资源库" aria-haspopup="dialog">
             <i data-lucide="plus" aria-hidden="true"></i>
+          </button>
+          <button type="button" id="assetSidebarToggle" class="hw-btn hw-btn-icon" onclick="WorkbenchAssets.toggleSidebarCollapse()" title="收起侧栏" aria-label="收起侧栏" aria-expanded="true">
+            <i data-lucide="panel-left-close" aria-hidden="true"></i>
           </button>
         </div>
       </div>

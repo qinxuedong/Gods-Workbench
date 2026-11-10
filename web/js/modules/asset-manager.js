@@ -6645,13 +6645,21 @@ window.addEventListener('gw:asset-coverflow-add-to-reference-canvas', event => {
     // surfaced the same stable ID in its local candidate list.
     addDetailMediaCanvasLibraryItem(assetId,rect.left+rect.width/2,rect.top+rect.height/2,detail.asset || null);
 });
+window.addEventListener('gw:asset-coverflow-open', event => {
+    if(String(event.detail?.mode || '') === 'fullscreen'){
+        try { window.parent?.GWAssetTreeHost?.onCoverflowOpen?.(event.detail); } catch(_) {}
+    }
+});
 window.addEventListener('gw:asset-coverflow-status', event => {
     const message = String(event.detail?.message || '').trim();
     if(message) setStatus(message);
 });
 window.addEventListener('gw:asset-coverflow-closed', event => {
     if(event.detail?.mode === 'editor'){ setDetailMediaCanvasCoverflowVisible(false); }
-    if(String(event.detail?.mode || '') === 'fullscreen') registryCoverflowBoardId = '';
+    if(String(event.detail?.mode || '') === 'fullscreen'){
+        registryCoverflowBoardId = '';
+        try { window.parent?.GWAssetTreeHost?.onCoverflowClose?.(event.detail); } catch(_) {}
+    }
 });
 function registryGroupStructureMembers(structure){
     return (structure?.members || [])

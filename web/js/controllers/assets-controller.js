@@ -1096,6 +1096,7 @@ window.WorkbenchAssets = (() => {
 
   function rebind() {
     window.GWUnassignedInbox?.refreshEntry();
+    initSidebarCollapseState();
     if (!bindElements()) return;
     mirrorFrameDegradation();
     syncFrameSource();
@@ -1160,10 +1161,103 @@ window.WorkbenchAssets = (() => {
     return view;
   }
 
-  // 【QIN-566】内嵌页每次树状态变化都会调用宿主回调，外壳侧栏据此渲染与联动。
-  window.GWAssetTreeHost = Object.freeze({onTreeSnapshot: applyTreeSnapshot});
+  // 【QIN-590】资产库左侧栏展开/收起与 Coverflow 自动收起铺满
+  const SIDEBAR_COLLAPSED_KEY = 'gw:asset-sidebar-collapsed';
+  let sidebarCollapsed = false;
+  let previousStateBeforeCoverflow = false;
+  let userManuallyToggledDuringCoverflow = false;
+  let isCoverflowActive = false;
+
+  function isSidebarCollapsed() {
+    return Boolean(sidebarCollapsed);
+  }
+
+  function setSidebarCollapsed(collapsed, options = {}) {
+    const next = Boolean(collapsed);
+    sidebarCollapsed = next;
+    const sidebar = document.getElementById('assetVaultSidebar');
+    const toggleBtn = document.getElementById('assetSidebarToggle');
+
+    sidebar?.classList.toggle('is-collapsed', next);
+    if (toggleBtn) {
+      toggleBtn.setAttribute('aria-expanded', String(!next));
+      const title = next ? '展开侧栏' : '收起侧栏';
+      toggleBtn.title = title;
+      toggleBtn.setAttribute('aria-label', title);
+      const iconName = next ? 'panel-left-open' : 'panel-left-close';
+      const existingIcon = toggleBtn.querySelector('i, svg');
+      if (existingIcon) {
+        existingIcon.setAttribute('data-lucide', iconName);
+        if (typeof lucide !== 'undefined' && typeof lucide.createIcons === 'function') {
+          lucide.createIcons({root: toggleBtn});
+        }
+      }
+    }
+
+    if (isCoverflowActive && options.manual) {
+      userManuallyToggledDuringCoverflow = true;
+    }
+
+    if (!options.isCoverflowAuto) {
+      try {
+        localStorage.setItem(SIDEBAR_COLLAPSED_KEY, String(next));
+      } catch (_) {}
+    }
+  }
+
+  function toggleSidebarCollapse() {
+    setSidebarCollapsed(!sidebarCollapsed, { manual: true });
+  }
+
+  function initSidebarCollapseState() {
+    let saved = false;
+    try {
+      saved = localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === 'true';
+    } catch (_) {}
+    setSidebarCollapsed(saved, { isInitial: true });
+  }
+
+  function handleCoverflowOpen(detail) {
+    const mode = String(detail?.mode || 'fullscreen').toLowerCase();
+    if (mode !== 'fullscreen') return;
+    previousStateBeforeCoverflow = sidebarCollapsed;
+    userManuallyToggledDuringCoverflow = false;
+    isCoverflowActive = true;
+    if (!sidebarCollapsed) {
+      setSidebarCollapsed(true, { isCoverflowAuto: true });
+    }
+  }
+
+  function handleCoverflowClose(detail) {
+    const mode = String(detail?.mode || 'fullscreen').toLowerCase();
+    if (mode !== 'fullscreen') return;
+    isCoverflowActive = false;
+    if (userManuallyToggledDuringCoverflow) {
+      return;
+    }
+    setSidebarCollapsed(previousStateBeforeCoverflow, { isCoverflowAuto: true });
+  }
+
+  // 【QIN-566 / QIN-590】内嵌页每次树状态与 Coverflow 变化调用宿主回调，外壳侧栏据此渲染与联动。
+  window.GWAssetTreeHost = Object.freeze({
+    onTreeSnapshot: applyTreeSnapshot,
+    onCoverflowOpen: handleCoverflowOpen,
+    onCoverflowClose: handleCoverflowClose,
+  });
 
   // 首屏与壳层部分路由返回时都走同一个幂等绑定入口；不重复执行顶层脚本。
   rebind();
-  return {uploadAsset, openAssetSettings, openCreateAssetLibrary, activateAssetBoard: activateTreeEntry, toggleSmartFilter, rebind, showIndexJobStatus, indexJobStatusView: window.GWAssetJobStatus.view};
+  return {
+    uploadAsset,
+    openAssetSettings,
+    openCreateAssetLibrary,
+    activateAssetBoard: activateTreeEntry,
+    toggleSmartFilter,
+    rebind,
+    showIndexJobStatus,
+    indexJobStatusView: window.GWAssetJobStatus.view,
+    toggleSidebarCollapse,
+    setSidebarCollapsed,
+    isSidebarCollapsed,
+  };
 })();
