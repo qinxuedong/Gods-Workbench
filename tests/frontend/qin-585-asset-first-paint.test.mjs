@@ -89,8 +89,10 @@ function selectorCounts(css){
     return counts;
 }
 
-const UTILITY_COUNTS = selectorCounts(UTILITIES);
-const ruleCount = token => UTILITY_COUNTS.get(token) || 0;
+// 快照里同一条规则出现两次说明有人重复补齐；用于定位具体是哪一段重复。
+function repeatedSelectors(counts){
+    return [...counts].filter(([, count]) => count > 1).map(([token]) => token);
+}
 
 // ---------------------------------------------------------------------------
 // 行为级夹具：把真实的顶层函数与它们读写的模块级状态一起抽出来执行。
@@ -112,6 +114,7 @@ const STATE_DECLARATIONS = [
     'governanceSuggestionsLoading',
     'governanceSuggestionsError',
     'governanceDrawerOpen',
+    'registrySessionReady',
 ];
 
 const BOOT_FUNCTIONS = [
@@ -139,8 +142,18 @@ function sliceFunction(source, name){
     return source.slice(start, end + 2);
 }
 
+// 整段引导入口一起取出来执行：这样「把某个请求直接塞回启动段」这类改动会被行为捕获，
+// 而不是只改了一段字符、断言窗口恰好没覆盖到。
+function sliceBootEntry(source){
+    const start = source.indexOf("document.addEventListener('DOMContentLoaded'");
+    assert.ok(start > 0, '未找到 DOMContentLoaded 引导入口');
+    const end = source.indexOf('\n});', start);
+    assert.ok(end > start, '引导入口缺少行首闭合括号');
+    return source.slice(start, end + 4);
+}
+
 function createHarness(){
-    const state = {requests: [], pending: [], idle: [], timers: [], renders: 0};
+    const state = {requests: [], pending: [], idle: [], timers: [], renders: 0, loadAllCalls: 0, bootHandler: null};
     const context = vm.createContext({
         console,
         Promise,
@@ -186,11 +199,32 @@ function createHarness(){
         window: {
             requestIdleCallback(fn){ state.idle.push(fn); return state.idle.length; },
         },
+        // 引导段的宿主依赖：除首屏链本身外全部打桩，只保留本票关心的调度行为。
+        directorySettingsPage: false,
+        document: {
+            addEventListener(type, handler){
+                if(type === 'DOMContentLoaded') state.bootHandler = handler;
+            },
+        },
+        tryApplyRegistrySnapshot(){},
+        loadRegistryPrincipal(){},
+        loadGlobalDirectorySettings(){},
+        loadAll(){
+            state.loadAllCalls += 1;
+            return new Promise(resolve => { state.finishLoadAll = resolve; });
+        },
+        restoreRegistryBrowseSession: async () => 0,
+        restoreAssetTreeState: async () => {},
+        applyRegistryBrowseSessionScroll: async () => {},
+        saveRegistryBrowseSession(){},
+        markRegistryFirstScreenReady(){},
+        startRegistryAutomaticIndexPolling(){},
     });
 
     const body = [
         ...STATE_DECLARATIONS.map(name => sliceDeclaration(MANAGER, name)),
         ...BOOT_FUNCTIONS.map(name => sliceFunction(MANAGER, name)),
+        sliceBootEntry(MANAGER),
         `return {
             trackRegistryBootstrapSettled,
             waitRegistryBootstrapSettled,
@@ -228,7 +262,11 @@ function createHarness(){
         }
         await flush();
     };
-    return {api, state, beginBootstrap, settle};
+    const fireBoot = () => {
+        assert.ok(state.bootHandler, '引导入口没有注册 DOMContentLoaded 监听');
+        state.bootHandler();
+    };
+    return {api, state, beginBootstrap, settle, fireBoot};
 }
 
 const flush = async () => {
@@ -278,13 +316,20 @@ test('AC1: 静态快照覆盖外壳页与外壳脚本实际使用的全部工具
     );
 });
 
-test('AC1: 补齐段不为同一工具类重复声明规则', () => {
+test('AC1: 补齐段不得重复声明快照里已有的规则', () => {
     // 运行时删除后手工补类时最容易犯的错：往快照尾部再追加一条已存在的规则。
-    // 重复声明不报错，只是让快照里同一个类出现两遍，后续 diff 与体积都不再好核对。
-    const appended = ['bg-white/15', 'border-orange-500/30', 'cursor-not-allowed', 'opacity-50', 'text-orange-300'];
-    for(const token of appended){
-        assert.equal(ruleCount(token), 1, `${token} 的规则必须唯一（当前 ${ruleCount(token)} 条）`);
-    }
+    // 重复声明不报错，只是让同一个类在快照里出现两遍；这里按「补齐段 vs 既有段」比对。
+    const index = UTILITIES.indexOf('/* QIN-585');
+    assert.ok(index > 0, '缺少 QIN-585 补齐段标记');
+    const base = selectorCounts(UTILITIES.slice(0, index));
+    const appended = selectorCounts(UTILITIES.slice(index));
+    assert.ok(appended.size > 0, '补齐段没有解析出任何规则');
+
+    const duplicated = [...appended.keys()].filter(token => base.has(token));
+    assert.deepEqual(duplicated, [], `补齐段重复声明了快照里已有的规则：${duplicated.join(', ')}`);
+
+    const repeated = repeatedSelectors(appended);
+    assert.deepEqual(repeated, [], `补齐段内部重复声明：${repeated.join(', ')}`);
 });
 
 test('AC1: 静态快照自带 preflight，不依赖运行时补齐基础样式', () => {
@@ -292,6 +337,30 @@ test('AC1: 静态快照自带 preflight，不依赖运行时补齐基础样式',
     assert.match(UTILITIES, /box-sizing:border-box/);
     assert.match(UTILITIES, /margin:0/);
     assert.match(UTILITIES, /--tw-border-spacing-x:0/);
+});
+
+test('AC2: 执行真实启动段时，首屏列表落地前没有任何非首屏请求', async () => {
+    // 这条用例真的把源码里的 DOMContentLoaded 整段跑一遍：往启动段里直接塞一条
+    // fetch/request 会立刻被「requests 非空」捕获，不依赖字符窗口是否覆盖到。
+    const {api, state, beginBootstrap, settle, fireBoot} = createHarness();
+    const bootstrap = beginBootstrap();
+    fireBoot();
+    await flush();
+
+    assert.equal(state.loadAllCalls, 1, '启动段应发起一次首屏加载');
+    assert.deepEqual(state.requests, [], '首屏列表在途时，启动段不得发出收集箱或治理建议请求');
+    assert.equal(state.idle.length, 0, '首屏列表在途时不得把延后块排进空闲时段');
+
+    await settle(bootstrap);
+    assert.equal(state.idle.length, 1, '首屏列表落地后才排延后块');
+
+    state.idle.shift()();
+    await flush();
+    assert.deepEqual(
+        state.requests,
+        ['/api/asset-inbox?limit=500', '/api/asset-registry/governance/suggestions'],
+        '延后块落地后收集箱与治理建议都应补发'
+    );
 });
 
 test('AC2: 首屏列表落地前，启动期治理建议请求不发出去', async () => {
@@ -350,6 +419,24 @@ test('AC2: 收集箱并发读取只发一次 GET', async () => {
     assert.equal(api.inboxSettings.unread_count, 7);
     assert.equal(api.inboxLoading, false, '请求落地后必须复位 loading');
     assert.equal(api.inboxInFlight, null, '请求落地后必须释放单飞句柄');
+});
+
+test('AC2: 收集箱已加载时，延后块不再重复读一遍', async () => {
+    const {api, state, beginBootstrap, settle} = createHarness();
+    await settle(beginBootstrap());
+    const first = api.loadAssetInbox();
+    state.pending[0].resolve({items: [], settings: {unread_count: 0}});
+    await first;
+
+    api.scheduleDeferredBootRequests();
+    await flush();
+    state.idle.shift()();
+    await flush();
+    assert.deepEqual(
+        state.requests,
+        ['/api/asset-inbox?limit=500', '/api/asset-registry/governance/suggestions'],
+        '收集箱已经加载过，延后块只该补治理建议'
+    );
 });
 
 test('AC2: 角标清零后，晚到的旧收集箱响应不得把未读数改回去', async () => {

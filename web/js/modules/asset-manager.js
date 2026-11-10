@@ -26603,9 +26603,12 @@ if(!directorySettingsPage){
 // 改为首屏就绪后再发，用空闲时段调度；两条链路都自带失败兜底，延后不改变可用性。
 function scheduleDeferredBootRequests(){
     const run = () => {
-        void loadAssetInbox().then(() => {
-            if(assetInboxUnreadCount() > 0 && activeTab !== 'inbox') render();
-        }).catch(() => null);
+        // 用户可能已经在首屏期间点开收集箱：已加载过就不再补一次，避免同一份数据读两遍。
+        if(!inboxLoaded){
+            void loadAssetInbox().then(() => {
+                if(assetInboxUnreadCount() > 0 && activeTab !== 'inbox') render();
+            }).catch(() => null);
+        }
         loadGovernanceSuggestions();
     };
     const dispatch = () => {
