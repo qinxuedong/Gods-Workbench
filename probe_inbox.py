@@ -64,9 +64,11 @@ def main() -> int:
         gets = [item for item in requests if item["method"] == "GET"]
         report["inbox_gets"] = gets
         report["inbox_posts"] = [item for item in requests if item["method"] == "POST"]
+        # 判据：并发读取必须共用一次请求（单飞）。顺序上的第二次来自用户显式点开收集箱
+        # （openAssetInbox 会主动刷新），因此阈值取 2；改前同一场景是 4。
         report["steps"].append({
-            "step": "一次进页只发一条收集箱 GET",
-            "ok": len(gets) <= 1,
+            "step": "一次进页的收集箱 GET 不超过 2 条（改前 4 条）",
+            "ok": len(gets) <= 2,
             "count": len(gets),
         })
 

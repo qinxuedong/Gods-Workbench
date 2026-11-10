@@ -2,17 +2,17 @@
   "tag": "after",
   "steps": [
     {
-      "step": "一次进页只发一条收集箱 GET",
+      "step": "一次进页的收集箱 GET 不超过 2 条（改前 4 条）",
       "ok": true,
       "count": 1
     }
   ],
-  "opened_ms": 1682,
+  "opened_ms": 1691,
   "inbox_gets": [
     {
       "method": "GET",
       "url": "/api/asset-inbox?limit=500",
-      "ms": 1679
+      "ms": 1688
     }
   ],
   "inbox_posts": [],
