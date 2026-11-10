@@ -1336,9 +1336,13 @@ html.vault-shell-embedded body.gw-signal.gw-page--asset-manager #assetManagerRoo
     display: grid !important;
     grid-template-rows: auto auto minmax(0,1fr) !important;
 }
-html.vault-shell-embedded body.gw-signal.gw-page--asset-manager #assetManagerRoot:not(.asset-manager-root-registry):not(.asset-manager-root-library):not(.asset-manager-root-page-scripts):not(.asset-manager-root-page-projects):not(.asset-manager-root-page-prompts):not(.asset-manager-root-page-lut):not(.asset-manager-root-page-canvas-assets):not(.asset-manager-root-page-workflows) {
-    /* 【QIN-569 AC2 / QIN-572 / QIN-574】内置提示词/画布/工作流等视图首列均收为零宽，不再吃本条三列轨道。 */
+html.vault-shell-embedded body.gw-signal.gw-page--asset-manager #assetManagerRoot:not(.asset-manager-root-registry):not(.asset-manager-root-library):not(.asset-manager-root-page-scripts):not(.asset-manager-root-page-projects):not(.asset-manager-root-page-prompts):not(.asset-manager-root-page-lut):not(.asset-manager-root-page-canvas-assets):not(.asset-manager-root-page-workflows):not(.asset-manager-root-page-inbox) {
+    /* 【QIN-569 AC2 / QIN-572 / QIN-574 / QIN-587】内置提示词/画布/工作流/收集箱等视图首列均收为零宽，不再吃本条三列轨道。 */
     grid-template-columns: 240px minmax(0,1fr) minmax(280px,320px) !important;
+}
+html.vault-shell-embedded body.gw-signal.gw-page--asset-manager #assetManagerRoot.asset-manager-root-page-inbox {
+    /* 【QIN-587】收集箱无内嵌树与详情抽屉，首列收为零宽、无第三列，消除 240px 左空栏与 280-320px 右空轨道。 */
+    grid-template-columns: 0 minmax(0,1fr) !important;
 }
 html.vault-shell-embedded body.gw-signal.gw-page--asset-manager #assetManagerRoot.asset-manager-root-registry {
     /* 【QIN-571】QIN-566 停用内嵌树后左列无内容，首列收为零宽（子项仍落第 2 列，gap:0 无额外间距），
@@ -1439,6 +1443,13 @@ html.vault-shell-embedded body.gw-signal.gw-page--asset-manager #assetManagerRoo
     }
     html.vault-shell-embedded body.gw-signal.gw-page--asset-manager #assetManagerRoot > .registry-detail-resizer { display: none; }
     html.vault-shell-embedded body.gw-signal.gw-page--asset-manager #assetManagerRoot.asset-manager-root-registry > .registry-content { grid-row: 3; }
+    html.vault-shell-embedded body.gw-signal.gw-page--asset-manager #assetManagerRoot.asset-manager-root-page-inbox {
+        /* 【QIN-587】窄屏收集箱收为 3 行单列，消除左栏与详情抽屉空行。 */
+        grid-template-rows: auto auto minmax(360px,1fr) !important;
+    }
+    html.vault-shell-embedded body.gw-signal.gw-page--asset-manager #assetManagerRoot.asset-manager-root-page-inbox > :is(.asset-panel.asset-content,.inbox-content) {
+        grid-row: 3 !important;
+    }
     html.vault-shell-embedded body.gw-signal.gw-page--asset-manager #assetManagerRoot.asset-manager-root-page-scripts {
         grid-template-rows: auto auto auto minmax(390px,1fr) !important;
     }

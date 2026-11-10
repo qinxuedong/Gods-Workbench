@@ -103,6 +103,7 @@ tests/frontend/qin-580-material-lut-preview.test.mjs
 tests/frontend/qin-582-registry-boot-requests.test.mjs
 tests/frontend/qin-583-cf-on-demand-probe.test.mjs
 tests/frontend/qin-584-asset-first-page-viewport.test.mjs
+tests/frontend/qin-587-inbox-layout.test.mjs
 tests/frontend/settings-workbench-visual.test.mjs
 tests/frontend/test_c18_omnibar_hotkeys.mjs
 tests/frontend/test_c18_video_jump.mjs
