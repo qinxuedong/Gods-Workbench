@@ -66,6 +66,49 @@ function buildQuery(params) {
     )(URLSearchParams, 1500, () => params.dynamicPageSize);
 }
 
+/**
+ * 真正执行视口测量函数（不是源码断言）：用一个假的可变容器复现
+ * `.registry-assets-scroll` 的真实行为——clientHeight / scrollHeight 随卡片一起长，
+ * 但它在窗口里的可见区间不变。QA 复现的缺陷正是「读 clientHeight ⇒ 页大小随卡片数量膨胀」。
+ */
+function dynamicPageSizeHarness({width = 1280, viewportHeight = 800, top = 200, containerHeight = 24, cardSize = 176} = {}) {
+    const state = {width, viewportHeight, top, containerHeight};
+    const area = {
+        get clientWidth() { return state.width; },
+        get clientHeight() { return state.containerHeight; },
+        get scrollHeight() { return state.containerHeight; },
+        querySelector: () => null,
+        getBoundingClientRect() {
+            return {top: state.top, bottom: state.top + state.containerHeight, height: state.containerHeight};
+        },
+    };
+    const built = new Function(
+        'root',
+        'window',
+        'registryCardSize',
+        'REGISTRY_PAGE_SIZE',
+        `
+        ${functionSource('registryVisibleViewportHeight')}
+        ${functionSource('registryDynamicPageSize')}
+        return {registryDynamicPageSize, registryVisibleViewportHeight};
+        `
+    )(
+        {querySelector: () => area},
+        {innerWidth: state.width, innerHeight: state.viewportHeight},
+        cardSize,
+        1500
+    );
+    const memo = {signature: '', size: 0};
+    return {
+        state,
+        memo,
+        // 逐页加载把容器撑高：clientHeight 与 scrollHeight 同步增长，卡片数量与视口高度无关。
+        grow(height) { state.containerHeight = height; },
+        size: () => built.registryDynamicPageSize(memo),
+        visible: () => built.registryVisibleViewportHeight(area),
+    };
+}
+
 test('AC1: 首屏查询的 limit 与 dynamic_limit 同源于视口动态上限', () => {
     const query = buildQuery({dynamicPageSize: 120});
     const only = new URLSearchParams(query());
@@ -77,23 +120,72 @@ test('AC1: 首屏查询的 limit 与 dynamic_limit 同源于视口动态上限',
     assert.equal(paged.get('offset'), '240');
 });
 
-test('AC1: 视口动态上限夹在 100～1500 之间', () => {
-    const source = functionSource('registryDynamicPageSize');
-    const build = (width, height) => new Function(
-        'root',
-        'window',
-        'registryCardSize',
-        `${source}; return registryDynamicPageSize;`
-    )(
-        {querySelector: () => ({clientWidth: width, clientHeight: height})},
-        {innerWidth: width, innerHeight: height},
-        176
-    )();
+test('AC1: 显式 limit 也顶不大 dynamic_limit', () => {
+    const query = buildQuery({dynamicPageSize: 120});
+    const forced = new URLSearchParams(query({limit: 1500}));
+    assert.equal(forced.get('limit'), '1500', '显式 limit 仍按调用方声明下发');
+    assert.equal(forced.get('dynamic_limit'), '120', 'dynamic_limit 永远不超过视口页大小');
+});
 
-    assert.equal(build(400, 200), 100, '窄视口取下限 100，保证一屏有卡可看');
-    assert.equal(build(8000, 8000), 1500, '超宽视口不越过 1500 的既有上限');
-    const mid = build(1280, 800);
+test('AC1: 视口动态上限夹在 100～1500 之间', () => {
+    const narrow = dynamicPageSizeHarness({width: 400, viewportHeight: 200, top: 120, containerHeight: 80});
+    assert.equal(narrow.size(), 100, '窄视口取下限 100，保证一屏有卡可看');
+
+    const huge = dynamicPageSizeHarness({width: 8000, viewportHeight: 8000, top: 0, containerHeight: 8000});
+    assert.equal(huge.size(), 1500, '超宽视口不越过 1500 的既有上限');
+
+    const mid = dynamicPageSizeHarness().size();
     assert.ok(mid >= 100 && mid <= 1500, `常规视口必须落在 100～1500，实际 ${mid}`);
+});
+
+test('AC1: 容器被已加载卡片撑高后，页大小不再膨胀到整库上限', () => {
+    const coldStart = dynamicPageSizeHarness({width: 1144, viewportHeight: 784, top: 180, containerHeight: 24});
+    const first = coldStart.size();
+    assert.ok(first >= 100 && first < 1500, `首屏必须按视口收窄，实际 ${first}`);
+
+    // QA 复现：预取与后续页把容器撑到 504 → 1500 → 整库高度（clientHeight === scrollHeight），
+    // 此后用户搜索 / 排序 / 翻页发出的新查询都必须仍是同一个视口页大小。
+    for (const grown of [504, 1500, 24000]) {
+        const afterGrowth = dynamicPageSizeHarness({width: 1144, viewportHeight: 784, top: 180, containerHeight: grown});
+        assert.equal(
+            afterGrowth.size(),
+            first,
+            `容器已撑到 ${grown}px 时的新查询必须与首屏同一页大小（QA 实测此处曾抬到 1500）`
+        );
+    }
+    // 同一会话内继续加载也不漂移
+    coldStart.grow(24000);
+    assert.equal(coldStart.size(), first, '同一会话内页大小不得随已加载卡片数量漂移');
+    assert.ok(coldStart.size() < 1500, '预取 / 翻页 / 搜索重查询都不得回到整库上限');
+});
+
+test('AC1: 可见高度取自窗口视口，且页大小测量不再读容器 clientHeight', () => {
+    const harness = dynamicPageSizeHarness({width: 1280, viewportHeight: 800, top: 200, containerHeight: 24});
+    // 尚未撑开时只露出容器自身高度
+    assert.deepEqual(harness.visible(), {height: 24, measured: true});
+    harness.grow(24000);
+    // 撑高后可见高度被窗口截断：800 - 200，而不是 24000
+    assert.deepEqual(harness.visible(), {height: 600, measured: true});
+
+    const source = functionSource('registryVisibleViewportHeight') + functionSource('registryDynamicPageSize');
+    assert.doesNotMatch(
+        source,
+        /clientHeight/,
+        '页大小测量不得再读滚动容器的 clientHeight —— 它随已加载卡片增长'
+    );
+});
+
+test('AC1: 页大小按窗口尺寸重算，不随已加载卡片数量漂移', () => {
+    const session = dynamicPageSizeHarness({width: 1280, viewportHeight: 800, top: 200, containerHeight: 24});
+    const before = session.size();
+    session.grow(24000);
+    assert.equal(session.size(), before);
+
+    // 换一个窗口尺寸（同一 memo 会被签名变化作废）→ 重新按新视口计算
+    const resized = dynamicPageSizeHarness({width: 2560, viewportHeight: 1440, top: 160, containerHeight: 24000});
+    const after = resized.size();
+    assert.ok(after >= before, `更宽的视口应给出不小于原视口的页大小：${before} → ${after}`);
+    assert.ok(after < 1500, '重算结果仍受 1500 上限约束');
 });
 
 test('AC2: 首屏那一页返回后立即渲染，不等结构与次要数据', () => {

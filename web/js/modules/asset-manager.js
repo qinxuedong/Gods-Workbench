@@ -460,12 +460,40 @@ let registryRecyclerSetupAssetId = '';
 let registryRecycleBinState = {open:false, loading:false, restoringId:'', items:[], error:''};
 const registryAssetsQueryCache = new Map();
 const REGISTRY_PAGE_SIZE = 1500;
-function registryDynamicPageSize(){
+// 【QIN-584 AC1】页大小只能跟「可见视口」有关，绝不能跟「已经加载了多少卡片」有关。
+// `.registry-assets-scroll` 是随内容撑高的普通列容器（没有高度约束，clientHeight 恒等于
+// scrollHeight），读它的 clientHeight 等于把卡片数量当成视口高度：预取与后续页会把
+// dynamic_limit 从视口值一路抬到 1500，搜索命中几百条时就是一次下发整段结果。
+// 因此可见高度只取「容器在窗口内的可见区间」：窗口高度 ∩ 容器相对窗口的上下边界。
+let registryDynamicPageSizeMemo = {signature:'', size:0};
+function registryVisibleViewportHeight(area){
+    const viewportHeight = Math.max(1, Number(window.innerHeight) || 768);
+    if(!area || typeof area.getBoundingClientRect !== 'function') return {height:viewportHeight, measured:false};
+    const rect = area.getBoundingClientRect() || {};
+    const top = Math.max(0, Math.min(Number(rect.top) || 0, viewportHeight));
+    const bottom = Math.min(viewportHeight, Number(rect.bottom) || 0);
+    const visible = bottom - top;
+    // 页面滚动后容器顶边跑到窗口上方，可见高度自然退化成整屏高度，不会越过窗口。
+    if(visible > 0) return {height:visible, measured:true};
+    return {height:viewportHeight, measured:false};
+}
+function registryDynamicPageSize(memo = registryDynamicPageSizeMemo){
     const area = root.querySelector('.registry-assets-scroll');
-    const width = area?.clientWidth || window.innerWidth || 1024;
-    const height = area?.clientHeight || window.innerHeight || 768;
+    const viewportHeight = Math.max(1, Number(window.innerHeight) || 768);
+    const width = Math.max(1, Math.round(Number(area?.clientWidth) || Number(window.innerWidth) || 1024));
+    const signature = `${width}x${viewportHeight}x${registryCardSize}`;
+    if(memo.signature === signature && memo.size > 0) return memo.size;
+    const {height, measured} = registryVisibleViewportHeight(area);
     const columns = Math.max(1, Math.floor(width / (registryCardSize + 12)));
-    return Math.min(1500, Math.max(100, columns * Math.ceil(height / registryCardSize) * 4));
+    const rows = Math.max(1, Math.ceil(height / registryCardSize));
+    const size = Math.min(REGISTRY_PAGE_SIZE, Math.max(100, columns * rows * 4));
+    // 只记忆「真的量到、且放得下一行卡片」的可见高度；尚未布局时按视口估一版但不固化，
+    // 保证同一布局下首屏、预取、翻页、重查询始终共用同一个页大小。
+    if(measured && height >= registryCardSize){
+        memo.signature = signature;
+        memo.size = size;
+    }
+    return size;
 }
 // Asset-structure discovery must stay bounded as the user scrolls a large
 // library.  Appended pages query only their newly seen IDs, one API window at
@@ -7546,13 +7574,15 @@ function registryQueryString({offset=0, limit=null, cursor=''}={}){
     // 【QIN-584 AC1】一律按视口动态上限取一页（不少于 100、不多于 1500），
     // 不再默认 limit=1500 让千级库一次下发全库。limit 与 dynamic_limit 同源，
     // 前后端口径不会各说各话；后续页沿用同一页大小，保证分页不重不漏。
-    const pageLimit = Math.min(REGISTRY_PAGE_SIZE, Math.max(1, Number(limit) || registryDynamicPageSize()));
+    // 显式 limit 也不能把服务端上限顶大：dynamic_limit 永远不超过视口页大小。
+    const viewportLimit = registryDynamicPageSize();
+    const pageLimit = Math.min(REGISTRY_PAGE_SIZE, Math.max(1, Number(limit) || viewportLimit));
     const params = new URLSearchParams({limit:String(pageLimit), offset:String(Math.max(0, Number(offset) || 0)), sort:registrySort || 'newest', view:'card'});
     // 默认呈现全局统一资产金库；仅当用户通过「项目素材」智能筛选选择项目时携带（解耦默认的 activeProjectId）
     // 【QIN-572】项目视图下默认传 __all__ 或选中的具体 project_id
     if(activeTab === 'projects' && !registryProjectFilterId) registryProjectFilterId = '__all__';
     if(registryProjectFilterId) params.set('project_id', registryProjectFilterId);
-    params.set('dynamic_limit', String(pageLimit));
+    params.set('dynamic_limit', String(Math.min(pageLimit, viewportLimit)));
     if(cursor) params.set('cursor', cursor);
     if(registryQuery.trim()) params.set('search', registryQuery.trim());
     if(registryKind) params.set('kind', registryKind);
