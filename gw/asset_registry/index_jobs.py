@@ -1328,7 +1328,6 @@ class IndexJobs:
                 handle.close()
                 _error(409, "INDEX_FILE_CHANGED", "摘要源文件已改变")
         digest = hashlib.sha256()
-        read_bytes = 0
         try:
             while True:
                 with self.condition:
@@ -1336,7 +1335,6 @@ class IndexJobs:
                     chunk = handle.read(1024 * 1024)
                 if not chunk:
                     break
-                read_bytes += len(chunk)
                 digest.update(chunk)
             final = os.fstat(handle.fileno())
             if (final.st_size, final.st_mtime_ns) != (
