@@ -144,6 +144,8 @@ const STATE_DECLARATIONS = [
     'registrySessionReady',
     'selectedRegistryAssetId',
     'registryDetail',
+    'searchRenderTimer',
+    'allowedRootSettingsState',
 ];
 
 const BOOT_FUNCTIONS = [
@@ -161,6 +163,12 @@ const BOOT_FUNCTIONS = [
     'saveAssetInboxSettings',
     'createRegistryRemoteAsset',
     'deleteRegistryRemoteAsset',
+    // 第 4 轮：真实「搜索输入」入口与「替换当前列表」的共享入口都进 vm 照跑，
+    // 只把 refreshRegistryAssetsRequest（网络实现本身）与宿主依赖打桩。
+    'refreshRegistryAssets',
+    'scheduleSearchRender',
+    'reportRegistryWriteRefreshFailure',
+    'saveAllowedRootsRequest',
 ];
 
 function sliceDeclaration(source, name){
@@ -197,11 +205,14 @@ function createHarness(){
         renders: 0,
         notices: [],
         failures: [],
-        bootstraps: [],      // 每次真实 loadAll 发起的列表请求句柄
+        statuses: [],
+        searchCalls: [],     // 真实搜索/筛选入口调用 refreshRegistryAssets 的实参
+        bootstraps: [],      // 每次替换当前列表（loadAll / 搜索 / URL 写入）的请求句柄
         bootHandler: null,
         libraryMode: 'ok',   // 'ok' | 'fail' | 'hang'
         settingsPath: '',
         promptValue: 'https://example.test/new.png',
+        unhandled: [],
     };
 
     const record = (kind, url) => {
@@ -247,6 +258,7 @@ function createHarness(){
                     },
                 };
             },
+            getElementById(){ return null; },
             addEventListener(type, handler){
                 if(type === 'DOMContentLoaded') state.bootHandler = handler;
             },
@@ -280,9 +292,20 @@ function createHarness(){
         loadLocalStorageSettings: () => Promise.resolve(),
         // 首屏列表请求本体：真实 loadAll 会把它登记成「当前代际的终态」，何时落地由用例控制。
         loadRegistryBootstrap: () => newBootstrapRequest(),
+        // 共享入口 refreshRegistryAssets 的网络实现（40 行重逻辑）不进 vm；
+        // 用可控 promise 代表「一次替换当前列表的请求」，接线与代际判定仍是真实源码。
+        refreshRegistryAssetsRequest(renderNow){
+            state.searchCalls.push(renderNow);
+            return newBootstrapRequest();
+        },
+        clearSearchSelection(){},
+        requestAnimationFrame(){},
+        clearSearchRenderTimer(){},
+        renderGlobalDirectorySettings(){},
+        applyAllowedRootSettingsData(){},
         // loadAll 的其余宿主依赖（渲染、状态栏、树/看板索引等），与本票断言无关。
         tryApplyRegistrySnapshot(){},
-        setStatus(){},
+        setStatus(message){ state.statuses.push(String(message)); },
         render(){ state.renders += 1; },
         refreshScriptArchive(){},
         assetLibraries: () => [],
@@ -323,6 +346,11 @@ function createHarness(){
             createRegistryRemoteAsset,
             deleteRegistryRemoteAsset,
             refreshRegistryBootstrapTracked,
+            refreshRegistryAssets,
+            scheduleSearchRender,
+            saveAllowedRootsRequest,
+            reportRegistryWriteRefreshFailure,
+            trackRegistryBootstrapSettled,
             isRegistryBootstrapPending,
             waitRegistryBootstrapSettled,
             assetInboxUnreadCount,
@@ -725,7 +753,20 @@ test('AC2: 所有替换当前列表的入口都统一走代际登记协议', () 
             `${name} 必须走统一登记入口`
         );
     }
-    assert.match(MANAGER, /void refreshRegistryBootstrapTracked\(\);/, '允许根保存入口也必须走统一登记');
+    // 共享入口：搜索/筛选/翻页/排序/看板切换都经 refreshRegistryAssets，必须登记代际；
+    // 且它返回的是原始请求（业务错误可传播），不是吞掉拒绝的终态观察 promise。
+    const shared = sliceFunction(MANAGER, 'refreshRegistryAssets');
+    assert.match(
+        shared,
+        /trackRegistryBootstrapSettled\(refreshRegistryAssetsRequest\(renderNow\)\)/,
+        '所有替换当前列表的调用都必须经共享入口登记代际'
+    );
+    const tracked = sliceFunction(MANAGER, 'trackRegistryBootstrapSettled');
+    assert.match(tracked, /registryBootstrapSettled = request\.then\(settleGeneration, settleGeneration\);/);
+    assert.match(tracked, /\breturn request;/, '终态登记必须原样返回业务请求，不得吞掉回读拒绝');
+    // 允许根是 void 路径：既要登记代际，也必须接住回读拒绝。
+    const rootsSave = sliceFunction(MANAGER, 'saveAllowedRootsRequest');
+    assert.match(rootsSave, /void refreshRegistryBootstrapTracked\(\)\.catch\(/, '允许根 void 路径必须处理回读拒绝');
     // loadAll 自己的接线仍是该路径的登记点，删掉它必须仍被行为用例抓住。
     assert.match(MANAGER, /trackRegistryBootstrapSettled\(registryBootstrap\);/, 'loadAll 接线必须保留');
 });
@@ -744,6 +785,173 @@ test('AC2: idle 已排队后刷新，收集箱不得提前发出且治理补取�
     const second = startLoadAll();       // 刷新开新一代
     await flush();
     assert.equal(api.bootstrapPending, true);
+
+    state.idle.shift()();                // 浏览器此刻才触发空闲回调
+    await flush();
+    assert.deepEqual(state.requests, [], 'B 仍在途，idle 触发也不许提前发请求');
+
+    await settle(second);
+    await flush();
+    assert.deepEqual(
+        state.requests,
+        ['/api/asset-inbox?limit=500', '/api/asset-registry/governance/suggestions'],
+        'B 落地后两条链路都要补齐，治理不能被闸门挡下后丢失'
+    );
+});
+
+
+test('AC2: 首屏 A 在途时真实「搜索输入」启动 B，A 旧终态不得放行延后块', async () => {
+    // 审核官第 4 轮复现：首屏 A pending 时搜索框已可用；输入触发 scheduleSearchRender →
+    // refreshRegistryAssets(true) 会 ++registryRequestSeq 并 abort A，替换当前列表。
+    // 若共享入口不登记代际，A 落地即把 pending 清 false，B 还在途就发了 inbox/governance。
+    const {api, state, startLoadAll, settle} = createHarness();
+    const first = startLoadAll();
+    await flush();
+    api.scheduleDeferredBootRequests();
+    await flush();
+    assert.equal(state.idle.length, 0);
+
+    // 真实搜索输入：scheduleSearchRender 用 setTimeout 延迟，再走共享入口。
+    api.scheduleSearchRender('registrySearch');
+    assert.equal(state.timers.length, 1, '搜索输入应排入一次延迟渲染');
+    state.timers.shift()();
+    await flush();
+    assert.deepEqual(state.searchCalls, [true], '搜索必须经共享入口 refreshRegistryAssets');
+    assert.equal(state.bootstraps.length, 2, '搜索发起新的列表请求 B');
+    const second = state.bootstraps[1];
+    assert.equal(api.bootstrapPending, true, 'B 已登记为当前代际且仍在途');
+
+    await settle(first, false);      // A 被 abort 后落地
+    assert.equal(api.bootstrapPending, true, 'A 的旧终态不得清掉 B 的在途标记');
+    assert.equal(state.idle.length, 0, 'A 落地不得放行延后调度');
+    assert.deepEqual(state.requests, [], 'B 未落地前非首屏链路一条都不许发');
+
+    await settle(second);
+    await flush();
+    assert.equal(api.bootstrapPending, false);
+    assert.equal(state.idle.length, 1, 'B 落地后才放行延后调度');
+    state.idle.shift()();
+    await flush();
+    assert.deepEqual(state.requests, [
+        '/api/asset-inbox?limit=500',
+        '/api/asset-registry/governance/suggestions',
+    ]);
+});
+
+test('AC2: 首屏 A 在途时筛选/排序直接替换列表，共享入口同样登记 B 代际', async () => {
+    // 筛选、排序、翻页、看板切换都直接调 refreshRegistryAssets(...)，与搜索共用同一入口。
+    const {api, state, startLoadAll, settle} = createHarness();
+    const first = startLoadAll();
+    await flush();
+    api.scheduleDeferredBootRequests();
+    await flush();
+
+    const filtering = api.refreshRegistryAssets(false);   // 真实共享入口（非桩）
+    filtering.catch(() => {});
+    await flush();
+    assert.deepEqual(state.searchCalls, [false], '筛选经同一共享入口');
+    assert.equal(state.bootstraps.length, 2);
+    const second = state.bootstraps[1];
+    assert.equal(api.bootstrapPending, true, '筛选 B 登记为当前代际且仍在途');
+
+    await settle(first, false);
+    assert.equal(api.bootstrapPending, true, '旧代际落地不得放行');
+    assert.equal(state.idle.length, 0);
+    assert.deepEqual(state.requests, []);
+
+    await settle(second);
+    await filtering;
+    assert.equal(state.idle.length, 1);
+    state.idle.shift()();
+    await flush();
+    assert.deepEqual(state.requests, [
+        '/api/asset-inbox?limit=500',
+        '/api/asset-registry/governance/suggestions',
+    ]);
+});
+
+test('AC2: 公网 URL 写入成功但列表回读 500 时，明确提示「已写入但刷新失败」', async () => {
+    // 审核官第 4 轮：helper 旧版返回终态观察 promise，把回读 500 吞成「已加入」，
+    // 列表还是旧值且没有任何错误提示。终态登记与业务错误传播必须分离。
+    const {api, state} = createHarness();
+    const adding = api.createRegistryRemoteAsset();
+    await flush();
+    assert.equal(state.bootstraps.length, 1, '写入成功后应发起一次列表回读');
+
+    state.bootstraps[0].reject(new Error('registry list 500'));
+    await adding;                       // 入口内部接住，不向外抛
+    await flush();
+
+    assert.ok(
+        !state.statuses.some(text => text.includes('已加入')),
+        `回读失败时不得报「已加入」：${JSON.stringify(state.statuses)}`
+    );
+    assert.ok(
+        state.statuses.some(text => /已写入.*刷新失败/.test(text)),
+        `必须明确提示「已写入但刷新失败」：${JSON.stringify(state.statuses)}`
+    );
+    assert.ok(
+        state.failures.some(([title, detail]) => /已写入.*刷新失败/.test(title) && detail.includes('500')),
+        `错误详情必须带上真实的 500：${JSON.stringify(state.failures)}`
+    );
+    // 终态不受业务拒绝影响：延后链路仍能在该代际落地后放行。
+    assert.equal(api.bootstrapPending, false, '回读失败也算当前代际终态');
+});
+
+test('AC2: 删除公网 URL 成功但列表回读 500 时同样明确提示', async () => {
+    const {api, state} = createHarness();
+    const deleting = api.deleteRegistryRemoteAsset('asset-1');
+    await flush();
+    assert.equal(state.bootstraps.length, 1);
+
+    state.bootstraps[0].reject(new Error('registry list 500'));
+    await deleting;
+    await flush();
+
+    assert.ok(
+        !state.statuses.includes('公网 URL 资产已删除'),
+        `回读失败时不得报成功文案：${JSON.stringify(state.statuses)}`
+    );
+    assert.ok(state.statuses.some(text => /已删除.*刷新失败/.test(text)));
+    assert.ok(state.failures.some(([, detail]) => detail.includes('500')));
+});
+
+test('AC2: 允许根设置保存成功但列表 500 时，void 路径接住拒绝并明确提示', async () => {
+    const {api, state} = createHarness();
+    const saving = api.saveAllowedRootsRequest('/api/storage-settings/roots', 'POST', {path:'/tmp/x'});
+    await flush();
+    state.pending[0].resolve({roots: [], revision: 2});   // 写入 POST 成功
+    await flush();
+    assert.equal(state.bootstraps.length, 1, '设置成功后应发起一次列表回读');
+
+    state.bootstraps[0].reject(new Error('registry list 500'));
+    await saving;
+    await flush();
+
+    assert.ok(
+        state.statuses.some(text => /已保存.*刷新失败/.test(text)),
+        `void 路径必须接住拒绝并提示：${JSON.stringify(state.statuses)}`
+    );
+    assert.ok(state.failures.some(([, detail]) => detail.includes('500')));
+    assert.equal(api.bootstrapPending, false, '回读失败同样算终态');
+});
+
+test('AC2: idle 已排队后搜索，收集箱不得提前发出且治理补取不得丢失', async () => {
+    // 审核官建议项：idle 已排队时若发生「替换列表」的搜索，dispatch 早已按旧代际放行，
+    // 早期实现会提前发 inbox 并让治理被 pending 闸门挡下后无人补取。
+    const {api, state, startLoadAll, settle} = createHarness();
+    const first = startLoadAll();
+    await flush();
+    api.scheduleDeferredBootRequests();
+    await settle(first);                 // A 落地：idle 已排队但尚未执行
+    assert.equal(state.idle.length, 1);
+    assert.deepEqual(state.requests, []);
+
+    api.scheduleSearchRender('registrySearch');
+    state.timers.shift()();               // 搜索 B 启动，登记新一代
+    await flush();
+    assert.equal(api.bootstrapPending, true);
+    const second = state.bootstraps[1];
 
     state.idle.shift()();                // 浏览器此刻才触发空闲回调
     await flush();

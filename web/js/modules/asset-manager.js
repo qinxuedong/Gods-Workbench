@@ -3761,7 +3761,11 @@ async function saveAllowedRootsRequest(url, method, payload){
         }
         setStatus(successMessage);
         if(typeof loadRegistryBootstrap === 'function'){
-            void refreshRegistryBootstrapTracked();
+            // 【QIN-585 AC2】void 路径同样要接住回读拒绝：登记函数现在返回原始请求，
+            // 列表 500 若不 catch 会变成未处理拒绝，且用户只看到「已更新」。
+            void refreshRegistryBootstrapTracked().catch(error => {
+                reportRegistryWriteRefreshFailure('允许根已保存，但列表刷新失败', error);
+            });
         }
     } catch(error){
         allowedRootSettingsState = {
@@ -7755,7 +7759,16 @@ function beginRegistryAssetRequest(){
 function isRegistryAbortError(error){
     return error?.name === 'AbortError' || String(error?.message || '').toLowerCase().includes('aborted');
 }
-async function refreshRegistryAssets(renderNow=true){
+// 【QIN-585 AC2】所有「替换当前列表」的读取都汇聚到这个共享入口：搜索、筛选、排序、
+// 翻页、看板切换都经 refreshRegistryAssets，内部 ++registryRequestSeq 并 abort 上一代列表。
+// 因此它必须登记为新一代 —— 否则首屏 A 被它 abort 后的旧终态会把 pending 清成 false，
+// 延后链路抢在 B 前面发出（第 4 轮亲复现：A pending 时搜索，B 仍在途就发了 inbox/governance）。
+// 与 refreshRegistryBootstrapTracked 同口径：返回**原始 request**，业务调用方的
+// await / .then / .catch 仍能拿到列表 500 等真实失败，终态登记不吞错误。
+function refreshRegistryAssets(renderNow=true){
+    return trackRegistryBootstrapSettled(refreshRegistryAssetsRequest(renderNow));
+}
+async function refreshRegistryAssetsRequest(renderNow=true){
     const requestId = ++registryRequestSeq;
     abortRegistryAssetRequests();
     const signal = beginRegistryAssetRequest();
@@ -9109,7 +9122,15 @@ async function createRegistryRemoteAsset(){
     const url = lines[urlIndex];
     const name = lines.find((line, index) => index !== urlIndex) || '';
     const data = await apiJsonResponse(assetManagerApi.createRegistryRemoteAsset({url,name,kind:registryRemoteKind(url)}));
-    await refreshRegistryBootstrapTracked();
+    // 【QIN-585 AC2】写入已成功，列表回读是另一件事：回读失败不能报「已加入」，
+    // 也不能被终态观察 promise 吞掉。refreshRegistryBootstrapTracked 返回原始请求，
+    // 这里显式接住并提示「已写入但刷新失败」，避免旧列表 + 成功文案误导用户。
+    try {
+        await refreshRegistryBootstrapTracked();
+    } catch(error){
+        reportRegistryWriteRefreshFailure('公网 URL 已写入，但列表刷新失败', error);
+        return;
+    }
     selectedRegistryAssetId = data.asset?.id || selectedRegistryAssetId;
     registryDetail = data.asset ? normalizeRegistryAsset(data.asset) : null;
     render();
@@ -9120,9 +9141,24 @@ async function deleteRegistryRemoteAsset(id){
     await apiJsonResponse(assetManagerApi.deleteRegistryRemoteAsset(id));
     selectedRegistryAssetId = '';
     registryDetail = null;
-    await refreshRegistryBootstrapTracked();
+    // 【QIN-585 AC2】同上：删除已生效，回读失败必须明确提示，不能报「已删除」。
+    try {
+        await refreshRegistryBootstrapTracked();
+    } catch(error){
+        reportRegistryWriteRefreshFailure('公网 URL 已删除，但列表刷新失败', error);
+        return;
+    }
     render();
     setStatus('公网 URL 资产已删除');
+}
+// 【QIN-585 AC2】「写入成功 / 列表回读失败」的统一提示：写入已经生效，不能冒充整体成功，
+// 也不能让它退化成一条未被处理的拒绝。force 刷新是用户显式动作，不受首屏闸门影响。
+function reportRegistryWriteRefreshFailure(message, error){
+    const reason = error?.message || error || '列表读取失败';
+    const text = `${message}：${reason}`;
+    setStatus(text);
+    showAssetFailure(message, error);
+    return text;
 }
 function registryRecyclerPath(item={}){
     const configured = String(storageSettingsState.dirs?.trash || '').trim().replace(/[\\/]+$/, '');
@@ -9415,9 +9451,13 @@ async function refreshCanvasAssets(){
         setStatus(err.message || '刷新画布资产失败');
     }
 }
-// 【QIN-585 AC2】登记首屏列表请求的终态（成功/失败都算终态），并顺带挂上拒绝处理器：
-// loadAll 提前 reject 时没人 await 这条 promise，不挂处理器会留下未处理的拒绝。
-// 每次登记即开启**新一代**：刷新会 abort 旧一代，旧一代落地时不得把新一代的「在途」清掉。
+// 【QIN-585 AC2】登记一次「替换当前列表」请求的终态（成功/失败都算终态）。
+// 每次登记即开启**新一代**：新请求会 abort 旧一代，旧一代落地时不得把新一代的「在途」清掉。
+// 这里刻意**分离两件事**：
+//   ① 终态观察 `registryBootstrapSettled` 永不 reject，只给 waitRegistryBootstrapSettled()
+//      与延后链路等待，避免 loadAll 提前 reject、允许根 void 等路径留下未处理的拒绝；
+//   ② 返回值是**原始 request**，业务调用方 await 它时仍能拿到列表 500 等真实失败。
+// 早期版本把 ① 当返回值，导致「写入成功但列表回读 500」被吞成成功。
 function trackRegistryBootstrapSettled(request){
     registryBootstrapGeneration += 1;
     const generation = registryBootstrapGeneration;
@@ -9427,12 +9467,10 @@ function trackRegistryBootstrapSettled(request){
         return true;
     };
     registryBootstrapSettled = request.then(settleGeneration, settleGeneration);
-    return registryBootstrapSettled;
+    return request;
 }
-// 【QIN-585 AC2】所有「替换当前列表」的**直调**入口统一走这里登记代际。
-// loadAll 有自己的接线，但添加/删除公网 URL、允许根保存会无参调用 loadRegistryBootstrap()，
-// 它们同样经 beginRegistryBootstrapRequest() abort 上一代列表：首屏 A 仍在途时若不登记 B，
-// A 被 abort 后的旧终态就会误放行延后链路，收集箱/治理抢在 B 前面发出。
+// 【QIN-585 AC2】无参引导（添加/删除公网 URL、允许根保存）统一走这里登记代际，
+// 并把原始请求返回给业务方：写入已成功而列表回读失败时必须能明确提示，不能误报成功。
 function refreshRegistryBootstrapTracked(){
     return trackRegistryBootstrapSettled(loadRegistryBootstrap());
 }
