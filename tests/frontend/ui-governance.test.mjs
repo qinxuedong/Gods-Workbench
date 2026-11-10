@@ -296,8 +296,9 @@ test('首批复核修补覆盖顶栏微球、禁用材质、资产主题与审�
 // 字体预览、用户画布内容同级处理），供人工核对与后续 token 化排期使用。
 // QIN-589（GitHub #687，2026-11-11）：全屏 Coverflow 舞台按 AC3 固定暗房深色、
 // 不随明暗主题翻转，新增 9 处 SIGNAL-FLOW 暗色令牌字面快照（overlay/surface/
-// 头尾条/控件/文字/unavailable），基线 2802 → 2811。
-const HEX_BASELINE=2811;
+// 头尾条/控件/文字/unavailable）；QIN-588（#695）合入另带 2 处（asset-manager.css）。
+// 基线 2802 → 2813。
+const HEX_BASELINE=2813;
 // GW-ORB-01 虹彩微球许可例外色板：仅微球外观使用，登记后不再计入治理债务。
 const ORB_PERMIT_HEXES=new Set(['#22d3ee','#a855f7','#f59e0b','#ec4899']);
 test('非vendor CSS硬编码hex棘轮门禁（基线2026-10-10 UI治理后快照）',()=>{
