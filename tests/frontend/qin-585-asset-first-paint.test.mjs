@@ -761,6 +761,10 @@ test('AC2: 所有替换当前列表的入口都统一走代际登记协议', () 
         /trackRegistryBootstrapSettled\(refreshRegistryAssetsRequest\(renderNow\)\)/,
         '所有替换当前列表的调用都必须经共享入口登记代际'
     );
+    // 网络实现只允许被共享入口调用一次：37 个替换列表的调用点都必须经过登记，
+    // 将来有人直接调 refreshRegistryAssetsRequest 绕过代际协议时这条立即变红。
+    const implCalls = [...codeOnly.matchAll(/(?<!function )refreshRegistryAssetsRequest\(/g)];
+    assert.equal(implCalls.length, 1, '替换列表的网络实现不得被共享入口之外直接调用');
     const tracked = sliceFunction(MANAGER, 'trackRegistryBootstrapSettled');
     assert.match(tracked, /registryBootstrapSettled = request\.then\(settleGeneration, settleGeneration\);/);
     assert.match(tracked, /\breturn request;/, '终态登记必须原样返回业务请求，不得吞掉回读拒绝');
