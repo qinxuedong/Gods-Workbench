@@ -4140,7 +4140,7 @@ html.vault-shell-embedded .asset-manager-root.asset-tree-layout > :is(.registry-
 .inbox-media-preview { position:fixed; inset:0; z-index:4200; display:flex; align-items:center; justify-content:center; }
 .inbox-media-preview-backdrop { position:absolute; inset:0; background:rgba(4,4,4,.88); backdrop-filter:blur(4px); }
 .inbox-media-preview-body { position:relative; z-index:1; max-width:min(92vw,1600px); max-height:90vh; display:flex; flex-direction:column; gap:10px; margin:0; }
-.inbox-media-preview-image { max-width:100%; max-height:calc(90vh - 56px); object-fit:contain; border:1px solid rgba(223,195,132,.32); border-radius:10px; background:#0d0f14; box-shadow:0 18px 48px rgba(0,0,0,.6); }
+.inbox-media-preview-image { max-width:100%; max-height:calc(90vh - 56px); object-fit:contain; border:1px solid rgba(223,195,132,.32); border-radius:10px; background:rgba(13,15,20,1); box-shadow:0 18px 48px rgba(0,0,0,.6); }
 .inbox-media-preview-caption { display:flex; align-items:center; gap:8px; color:#e8dcc0; font-size:var(--gw-type-label-md,12px); font-weight:750; }
 .inbox-media-preview-close { position:absolute; top:8px; right:8px; }
 .inbox-media-preview-close:hover { color:var(--gold-primary,#dfc384); }
