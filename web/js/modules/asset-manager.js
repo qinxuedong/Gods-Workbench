@@ -8972,7 +8972,23 @@ function startRegistryAutomaticIndexPolling(){
     clearInterval(inboxBadgeTimer);
     // 【QIN-547】收集箱角标：不在收集箱视图时低频刷新未读数，新素材到达即更新角标。
     inboxBadgeTimer = window.setInterval(async () => {
-        if(activeTab === 'inbox' || document.hidden) return;
+        if(document.hidden) return;
+        // 【QIN-588 AC5】停留收集箱时同样低频回读：外部新落到收集箱的文件在下一个
+        // 30s 窗口内自动出现；签名无变化不重绘，重绘前记录滚动位置、重绘后恢复，
+        // 不重置滚动与选择。非收集箱视图保持 QIN-547 角标逻辑不变。
+        if(activeTab === 'inbox'){
+            const before = assetInboxItemsSignature();
+            await loadAssetInbox();
+            if(activeTab !== 'inbox') return;
+            if(assetInboxItemsSignature() !== before){
+                const scroller = root.querySelector('.inbox-content .content-scroll');
+                const scrollTop = scroller ? scroller.scrollTop : 0;
+                render();
+                const refreshed = root.querySelector('.inbox-content .content-scroll');
+                if(refreshed && scrollTop > 0) refreshed.scrollTop = scrollTop;
+            }
+            return;
+        }
         const before = assetInboxUnreadCount();
         await loadAssetInbox();
         if(assetInboxUnreadCount() !== before) render();
@@ -10666,6 +10682,11 @@ function assetInboxUnreadCount(){
 function assetInboxTotalCount(){
     return Math.max(0, Number(inboxSettings?.count || inboxItems.length || 0));
 }
+// 【QIN-588 AC5】列表内容签名：id/修改时间/大小任一变化即视为内容变化；
+// 停留刷新只在签名变化时重绘，避免无谓重置滚动。
+function assetInboxItemsSignature(){
+    return inboxItems.map(item => `${item.id}|${item.modified_at}|${item.size_bytes}`).join(',');
+}
 function assetInboxFilteredItems(){
     const query = String(inboxQuery || '').trim().toLowerCase();
     return inboxItems.filter(item => {
@@ -10674,13 +10695,27 @@ function assetInboxFilteredItems(){
         return String(item.name || '').toLowerCase().includes(query);
     });
 }
+function inboxPreviewUrl(item, w){
+    // 【QIN-588】收集箱卡片预览地址：只用服务端下发的受控查询串拼装，前端零路径知识。
+    const query = String(item?.preview_query || '');
+    const kind = String(item?.kind || '');
+    if(!query || (kind !== 'image' && kind !== 'video')) return '';
+    const width = Math.max(64, Math.min(2048, Math.round(Number(w) || 256)));
+    const params = new URLSearchParams(query);
+    params.set('w', String(width));
+    return `/api/media-preview?${params.toString()}`;
+}
 function renderInboxCard(item){
     const name = item.name || '未命名素材';
     const metaParts = [assetInboxSourceLabel(item.source), assetInboxKindLabel(item.kind)];
     if(Number(item.size_bytes || 0) > 0) metaParts.push(formatFileSize(item.size_bytes));
     const linkLike = String(item.url || '').startsWith('http') || item.kind === 'url';
+    const previewUrl = inboxPreviewUrl(item, 320);
+    const thumb = previewUrl
+        ? `<img class="inbox-preview-img" src="${escapeAttr(previewUrl)}" alt="${escapeAttr(name)}" loading="lazy" decoding="async" draggable="false" data-preview-fallback="${escapeAttr(name)}">`
+        : `<span class="asset-file-icon"><i data-lucide="${linkLike ? 'link' : 'file'}"></i><small>${escapeHtml(assetInboxKindLabel(item.kind))}</small></span>`;
     return `<article class="asset-card inbox-card" data-inbox-card="${escapeAttr(item.id)}" tabindex="0" role="article" aria-label="${escapeAttr(name)}">
-        <div class="asset-thumb"><span class="asset-file-icon"><i data-lucide="${linkLike ? 'link' : 'file'}"></i><small>${escapeHtml(assetInboxKindLabel(item.kind))}</small></span></div>
+        <div class="asset-thumb">${thumb}</div>
         <div class="asset-card-body">
             <div class="asset-card-name" title="${escapeAttr(name)}">${escapeHtml(name)}</div>
             <div class="asset-card-meta">${escapeHtml(metaParts.join(' · '))}</div>
@@ -10790,9 +10825,53 @@ async function markAssetInboxViewed(){
         // 被作废的那次请求不会自己复位 loading（它的 finally 已按新序号短路），这里一并复位。
         inboxRequestSeq += 1;
         inboxLoading = false;
-        // 【QIN-547】角标清零后立即重绘，否则左栏数字要等到下一次 render 才消失。
+        // 【QIN-547】角标清零后立即重绘，否则左栏数字「统计行 ${unread} 个新素材」要等到下一次 render 才消失。
         if(previous > 0) render();
     }catch(_){ /* 角标失败不阻断浏览 */ }
+}
+// 【QIN-588 AC2】点击收集箱卡片打开页内媒体预览浮层：图片显示大图，视频显示真实首帧。
+// 浮窗规范 GW-UI-FW-01：显式关闭按钮、Escape 关闭、点击遮罩关闭、焦点在打开时移入浮层、
+// 关闭后返还给触发卡片。
+function openInboxMediaPreview(itemId){
+    const item = inboxItems.find(entry => entry.id === itemId);
+    if(!item) return;
+    const previewUrl = inboxPreviewUrl(item, 2048);
+    if(!previewUrl) return;
+    const name = String(item.name || '');
+    const trigger = document.activeElement;
+    const overlay = document.createElement('div');
+    overlay.className = 'inbox-media-preview';
+    overlay.setAttribute('role', 'dialog');
+    overlay.setAttribute('aria-modal', 'true');
+    overlay.setAttribute('aria-label', `${name || '收集箱素材'} 媒体预览`);
+    overlay.innerHTML = `
+        <div class="inbox-media-preview-backdrop" data-inbox-preview-close></div>
+        <figure class="inbox-media-preview-body">
+            <img class="inbox-media-preview-image" src="${escapeAttr(previewUrl)}" alt="${escapeAttr(name || '收集箱素材')}" draggable="false" data-preview-fallback="${escapeAttr(name || '收集箱素材')}">
+            <figcaption class="inbox-media-preview-caption">${escapeHtml(name || '收集箱素材')}</figcaption>
+            <button type="button" class="hw-btn hw-btn-icon inbox-media-preview-close" data-inbox-preview-close aria-label="关闭预览"><i data-lucide="x"></i></button>
+        </figure>
+    `;
+    document.body.appendChild(overlay);
+    document.body.classList.add('asset-lightbox-open');
+    refreshIcons();
+    const close = () => {
+        overlay.remove();
+        document.body.classList.remove('asset-lightbox-open');
+        document.removeEventListener('keydown', onKeyDown, true);
+        if(trigger && typeof trigger.focus === 'function'){
+            try{ trigger.focus(); }catch(_){ /* 返还焦点失败不阻断 */ }
+        }
+    };
+    const onKeyDown = event => {
+        if(event.key === 'Escape'){ event.preventDefault(); close(); }
+    };
+    overlay.querySelectorAll('[data-inbox-preview-close]').forEach(node => {
+        node.addEventListener('click', close);
+    });
+    document.addEventListener('keydown', onKeyDown, true);
+    const closeBtn = overlay.querySelector('.inbox-media-preview-close');
+    if(closeBtn) closeBtn.focus();
 }
 async function uploadAssetInboxFiles(files){
     const list = Array.from(files || []).filter(Boolean);
@@ -16354,6 +16433,9 @@ async function handleClick(event){
     if(target.closest?.('[data-inbox-settings-save]')){ await saveAssetInboxSettings(); return; }
     const inboxSourceChip = target.closest?.('[data-inbox-source]');
     if(inboxSourceChip){ inboxSourceFilter = inboxSourceChip.dataset.inboxSource || ''; render(); return; }
+    // 【QIN-588 AC2】点击收集箱卡片打开媒体预览浮层。
+    const inboxCard = target.closest?.('[data-inbox-card]');
+    if(inboxCard){ openInboxMediaPreview(inboxCard.dataset.inboxCard || ''); return; }
     if(target.closest?.('[data-asset-rack-collapse]')){ setAssetRackCollapsed(true); return; }
     if(target.closest?.('[data-asset-rack-expand]')){ setAssetRackCollapsed(false); return; }
     const assetRackToggle = target.closest?.('[data-asset-rack-toggle]');
@@ -24908,6 +24990,9 @@ root.addEventListener('dblclick', event => {
     showDetailPreview(reference.source, reference.id);
 });
 document.addEventListener('click', event => {
+    // 【QIN-588】收集箱媒体预览浮层打开时，页面点击委托整体短路（GW-UI-FW-01：
+    // 禁止穿透误触发底层元素）；浮层自身的关闭由其内部监听处理。
+    if(document.querySelector('.inbox-media-preview')) return;
     if(!event.target.closest?.('.registry-toolbar-select')) closeRegistrySelectMenus();
     // 【QIN-580】「套用 LUT」是下拉菜单，点别处就收起。菜单挂在 body 上的
     // `[data-detail-media-lut-layer]` 里，点菜单自身不算「点别处」。
