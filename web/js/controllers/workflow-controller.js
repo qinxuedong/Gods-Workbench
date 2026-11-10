@@ -1341,7 +1341,7 @@ async function offerDefinitionResolution(wf) {
           pending.window = window.open('', 'RH_Auto_ComfyUI_Tab');
           try { pending.reservedBlank = pending.window?.location.href === 'about:blank'; } catch (_) {}
         }
-        if (window.WorkbenchComfy?.getStatus() === 'offline') window.WorkbenchComfy.start();
+        if (window.WorkbenchComfy?.getStatus() !== 'online') window.WorkbenchComfy.start();
         else resumeDefinitionResolution();
       });
       await resumeDefinitionResolution();
@@ -3724,6 +3724,19 @@ async function openWorkflowTasks() {
 
 function startTaskPolling(taskId, target) {
   clearInterval(state.pollTimer);
+  const isComfyTarget = Boolean(target && target !== "rh_cloud");
+  if (state.activeComfyPollingTaskId && state.activeComfyPollingTaskId !== taskId) {
+    if (typeof window !== "undefined") {
+      try { window.WorkbenchComfy?.endTask?.(state.activeComfyPollingTaskId); } catch (_) {}
+    }
+    state.activeComfyPollingTaskId = null;
+  }
+  if (isComfyTarget) {
+    state.activeComfyPollingTaskId = taskId;
+    if (typeof window !== "undefined") {
+      try { window.WorkbenchComfy?.beginTask?.(taskId); } catch (_) {}
+    }
+  }
   const generation = state.pollGeneration = (state.pollGeneration || 0) + 1;
   const bodyEl = wfGet("taskModalBody");
   const terminal = new Set(["completed", "failed", "cancelled", "outcome_unknown", "abandoned"]);
@@ -3747,6 +3760,12 @@ function startTaskPolling(taskId, target) {
       const outputs = Array.isArray(statusRes.outputs) ? statusRes.outputs : [];
       if (terminal.has(st)) {
         clearInterval(state.pollTimer);
+        if (isComfyTarget && state.activeComfyPollingTaskId === taskId) {
+          state.activeComfyPollingTaskId = null;
+          if (typeof window !== "undefined") {
+            try { window.WorkbenchComfy?.endTask?.(taskId); } catch (_) {}
+          }
+        }
         const sourceContext = statusRes.source_context || statusRes.metadata?.source_context || {};
         const search = (typeof window !== 'undefined' && window.location?.search) || (typeof location !== 'undefined' && location?.search) || '';
         const searchParams = typeof URLSearchParams !== 'undefined' ? new URLSearchParams(search) : { get: () => null, has: () => false };
@@ -4509,6 +4528,12 @@ function disposeWorkbench() {
   state.authLoading = false;
   clearInterval(state.comfySyncTimer);
   clearInterval(state.pollTimer);
+  if (state.activeComfyPollingTaskId) {
+    if (typeof window !== "undefined") {
+      try { window.WorkbenchComfy?.endTask?.(state.activeComfyPollingTaskId); } catch (_) {}
+    }
+    state.activeComfyPollingTaskId = null;
+  }
   clearTimeout(state.paramSaveTimer);
   ++state.pollGeneration;
   for (const entry of state.parameterSaves?.values() || []) clearTimeout(entry.timer);

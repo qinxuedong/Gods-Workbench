@@ -3169,11 +3169,14 @@ async def comfy_control(
 
 
 @router.get("/comfy-control")
-def comfy_control_status(
+async def comfy_control_status(
     authorization: str | None = Header(None),
     x_user_role: str = Header("editor", alias="X-User-Role"),
 ):
-    return _comfy_operation(_auth(authorization, x_user_role, False), "status")
+    from starlette.concurrency import run_in_threadpool
+
+    context = _auth(authorization, x_user_role, False)
+    return await run_in_threadpool(_comfy_operation, context, "status")
 
 
 @router.post("/open-in-comfy")

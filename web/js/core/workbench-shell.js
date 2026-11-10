@@ -443,7 +443,7 @@
     const right = deck.querySelector(':scope > .gw-shell-right') || document.createElement('div');
     const needsMarkup = !right.classList.contains('gw-shell-right');
     right.className = 'gw-shell-right';
-    right.innerHTML = '<div class="gw-shell-fader"><span>FLUX</span><div class="hw-fader-track-horizontal gw-shell-fader-track"><div class="hw-fader-glow-bar" data-gw-gpu-util-fill style="width:0%"></div><div class="hw-fader-thumb-3d" data-gw-gpu-util-thumb style="left:0%"></div></div><span class="text-amber-300" data-gw-gpu-util title="真实数据源：GET /api/observability/health 的 gpu_telemetry（读取中）">读取中…</span></div><div class="gw-shell-fader"><span>VRAM</span><div class="hw-fader-track-horizontal gw-shell-fader-track"><div class="hw-fader-glow-bar" data-gw-gpu-vram-fill style="width:0%;background:linear-gradient(90deg,#38bdf8,#2dd4bf)"></div><div class="hw-fader-thumb-3d" data-gw-gpu-vram-thumb style="left:0%"></div></div><span class="text-amber-300" data-gw-gpu-vram title="真实数据源：GET /api/observability/health 的 gpu_telemetry（读取中）">读取中…</span></div><span class="h-4 w-px bg-white/10"></span><span class="gw-type-body-md font-mono text-[#dfc384]">CF</span><button type="button" class="hw-slide-toggle" data-gw-comfy-toggle aria-pressed="false" aria-label="切换 CF 后台控制"><div class="hw-slide-peg"></div></button><span class="h-4 w-px bg-white/10"></span><button type="button" id="topbarUnifiedTrashBtn" class="gw-shell-trash btn-hw-round" title="统一回收站" aria-label="打开统一回收站"><span class="btn-hw-round-inner"><i data-lucide="trash-2" class="w-3.5 h-3.5"></i></span><span id="topbarTrashBadge" class="gw-shell-trash-badge" hidden>0</span></button><div class="h-4 w-px bg-white/10"></div><div class="hw-avatar-keycap btn-hw-round" title="认证状态未接入：点击打开认证中心查看真实登录状态" role="button" tabindex="0" aria-label="打开认证中心" data-gw-identity="unverified"><div class="hw-avatar-keycap-inner btn-hw-round-inner"><i data-lucide="shield-check" class="w-4 h-4 text-[#eddab3]"></i></div><span class="hw-avatar-keycap-status"></span></div>';
+    right.innerHTML = '<div class="gw-shell-fader"><span>FLUX</span><div class="hw-fader-track-horizontal gw-shell-fader-track"><div class="hw-fader-glow-bar" data-gw-gpu-util-fill style="width:0%"></div><div class="hw-fader-thumb-3d" data-gw-gpu-util-thumb style="left:0%"></div></div><span class="text-amber-300" data-gw-gpu-util title="真实数据源：GET /api/observability/health 的 gpu_telemetry（读取中）">读取中…</span></div><div class="gw-shell-fader"><span>VRAM</span><div class="hw-fader-track-horizontal gw-shell-fader-track"><div class="hw-fader-glow-bar" data-gw-gpu-vram-fill style="width:0%;background:linear-gradient(90deg,#38bdf8,#2dd4bf)"></div><div class="hw-fader-thumb-3d" data-gw-gpu-vram-thumb style="left:0%"></div></div><span class="text-amber-300" data-gw-gpu-vram title="真实数据源：GET /api/observability/health 的 gpu_telemetry（读取中）">读取中…</span></div><span class="h-4 w-px bg-white/10"></span><span class="gw-type-body-md font-mono text-[#dfc384]">CF</span><button type="button" class="hw-slide-toggle" data-gw-comfy-toggle data-gw-comfy-status="untested" aria-pressed="false" aria-label="切换 CF 后台控制（当前未检测）" title="CF 未检测；点击后台启动"><div class="hw-slide-peg"></div></button><span class="h-4 w-px bg-white/10"></span><button type="button" id="topbarUnifiedTrashBtn" class="gw-shell-trash btn-hw-round" title="统一回收站" aria-label="打开统一回收站"><span class="btn-hw-round-inner"><i data-lucide="trash-2" class="w-3.5 h-3.5"></i></span><span id="topbarTrashBadge" class="gw-shell-trash-badge" hidden>0</span></button><div class="h-4 w-px bg-white/10"></div><div class="hw-avatar-keycap btn-hw-round" title="认证状态未接入：点击打开认证中心查看真实登录状态" role="button" tabindex="0" aria-label="打开认证中心" data-gw-identity="unverified"><div class="hw-avatar-keycap-inner btn-hw-round-inner"><i data-lucide="shield-check" class="w-4 h-4 text-[#eddab3]"></i></div><span class="hw-avatar-keycap-status"></span></div>';
     if (needsMarkup) {
       [...deck.children].forEach(child => {
         if (child !== nav && child !== right) child.remove();
@@ -506,6 +506,32 @@
   let comfyLastState = null;
   let comfyLastFailure = null;
   let comfyPollTimer = null;
+  const activeComfyProbeReasons = new Set();
+
+  function ensureComfyPolling() {
+    if (activeComfyProbeReasons.size === 0) {
+      if (comfyPollTimer) {
+        clearInterval(comfyPollTimer);
+        comfyPollTimer = null;
+      }
+      return;
+    }
+    if (!comfyPollTimer) {
+      comfyPollTimer = setInterval(pollComfyState, 5000);
+    }
+  }
+
+  function startComfyPolling(reason) {
+    if (reason) activeComfyProbeReasons.add(reason);
+    ensureComfyPolling();
+  }
+
+  function stopComfyPolling(reason) {
+    if (reason) activeComfyProbeReasons.delete(reason);
+    else activeComfyProbeReasons.clear();
+    ensureComfyPolling();
+  }
+
   function notifyComfy(message, isError) {
     if (window.showWorkbenchToast) { window.showWorkbenchToast(message, isError); return; }
     if (window.showToast) { window.showToast(message, isError); return; }
@@ -526,10 +552,30 @@
       // 权限由点击反馈和服务端检查处理；不要用 disabled 吞掉交互。
       toggle.disabled = false;
       toggle.setAttribute('aria-busy', String(comfyBusy));
-      toggle.dataset.gwComfyStatus = data.status || 'unknown';
-      toggle.title = data.code === 'COMFY_START_FAILED' ? `${data.message || 'CF 启动失败'}；点击重试启动` : data.status === 'starting' ? 'CF 正在启动，点击取消启动' : data.status === 'unknown' ? 'CF 状态未知' : online ? 'CF 运行中，点击关闭' : 'CF 未运行，点击后台启动';
-      if (!authReady()) toggle.title = '请先登录后读取/控制 CF，点击头像打开认证中心';
-      else if (window.HardwareDeck?.authState?.principal?.role !== 'admin') toggle.title = 'CF 状态只读；启停仅限管理员';
+      toggle.dataset.gwComfyStatus = data.status || 'untested';
+      let title = data.code === 'COMFY_START_FAILED'
+        ? `${data.message || 'CF 启动失败'}；点击重试启动`
+        : data.status === 'starting'
+        ? 'CF 正在启动，点击取消启动'
+        : data.status === 'unconfigured'
+        ? 'CF 未配置服务地址，点击在设置中配置'
+        : data.status === 'untested'
+        ? 'CF 未检测；点击后台启动'
+        : data.status === 'unknown'
+        ? 'CF 状态未知'
+        : online
+        ? 'CF 运行中，点击关闭'
+        : 'CF 未运行，点击后台启动';
+      if (!authReady()) {
+        title = data.status === 'untested'
+          ? 'CF 未检测（请先登录后读取/控制 CF，点击头像打开认证中心）'
+          : '请先登录后读取/控制 CF，点击头像打开认证中心';
+      } else if (window.HardwareDeck?.authState?.principal?.role !== 'admin') {
+        title = data.status === 'untested'
+          ? 'CF 未检测（状态只读；启停仅限管理员）'
+          : 'CF 状态只读；启停仅限管理员';
+      }
+      toggle.title = title;
       const label = toggle.previousElementSibling;
       if (label && label.textContent.trim() === 'CF') label.classList.add('text-[#dfc384]');
     });
@@ -557,12 +603,23 @@
       const failure = data.code === 'COMFY_START_FAILED' ? `${data.code}:${data.exit_code}` : null;
       if (failure && failure !== comfyLastFailure) notifyComfy(data.message || 'CF 启动进程已退出，请检查本地启动环境', true);
       comfyLastFailure = failure;
+      if (activeComfyProbeReasons.has('starting')) {
+        if (data.status === 'online' || data.status === 'offline' || failure || data.status !== 'starting') {
+          stopComfyPolling('starting');
+        }
+      }
     }
     catch (error) {
       renderComfyState({status:'unknown', highlight:false});
       document.querySelectorAll('[data-gw-comfy-toggle]').forEach(t => { t.title = `CF 状态未知：${error.message || '读取失败'}；点击重试控制`; });
+      if (activeComfyProbeReasons.has('starting')) {
+        stopComfyPolling('starting');
+      }
     }
-    finally { comfyBusy = false; document.querySelectorAll('[data-gw-comfy-toggle]').forEach(t => { t.disabled = false; t.setAttribute('aria-busy', 'false'); }); }
+    finally {
+      comfyBusy = false;
+      document.querySelectorAll('[data-gw-comfy-toggle]').forEach(t => { t.disabled = false; t.setAttribute('aria-busy', 'false'); });
+    }
   }
   async function comfyControl(toggle, requestedAction = null) {
     if (!authReady()) {
@@ -596,8 +653,14 @@
       if (data.code === 'COMFY_START_FAILED') comfyLastFailure = `${data.code}:${data.exit_code}`;
       if (!response.ok || !data.ok) throw new Error(data.detail?.message || data.message || data.code || 'CF 控制失败');
       notifyComfy(data.status === 'starting' ? 'CF 正在启动，就绪后开关会亮起；再次点击可取消启动' : action === 'stop' ? 'CF 已确认关闭' : 'CF 已确认运行', false);
+      if (action === 'start' && data.status === 'starting') {
+        startComfyPolling('starting');
+      } else {
+        stopComfyPolling('starting');
+      }
     } catch (error) {
       notifyComfy(error.message || 'CF 控制失败', true);
+      stopComfyPolling('starting');
     } finally {
       comfyBusy = false;
       await pollComfyState();
@@ -608,17 +671,40 @@
       if (toggle.dataset.gwBound) return; toggle.dataset.gwBound = '1';
       toggle.addEventListener('click', () => comfyControl(toggle));
     });
-    if (!comfyPollTimer) comfyPollTimer = setInterval(pollComfyState, 5000);
-    pollComfyState();
+    // 进页与刷新不自动请求 /comfy-control，初始展示未检测
+    renderComfyState(comfyLastState || {status:'untested', highlight:false});
     if (!window.__gwComfyAuthBound) {
       window.__gwComfyAuthBound = true;
-      window.addEventListener('gw-auth-state', () => { bindComfyControl(); pollComfyState(); });
+      window.addEventListener('gw-auth-state', () => {
+        bindComfyControl();
+        renderComfyState(comfyLastState || {status:'untested', highlight:false});
+      });
     }
   }
-  // 工作流仅在用户明确点击“启动CF后继续”时请求启动，不操作顶栏DOM或误切到停止。
+  if (!window.__gwComfyTaskEventsBound && typeof window !== 'undefined') {
+    window.__gwComfyTaskEventsBound = true;
+    window.addEventListener('gw-comfy-task-start', event => {
+      const taskId = event?.detail?.taskId;
+      startComfyPolling(`task:${taskId || 'default'}`);
+      void pollComfyState();
+    });
+    window.addEventListener('gw-comfy-task-end', event => {
+      const taskId = event?.detail?.taskId;
+      stopComfyPolling(`task:${taskId || 'default'}`);
+    });
+  }
+  // 工作流仅在用户明确点击“启动CF后继续”或发起/监控任务时按需交互，不进页自动探测。
   window.WorkbenchComfy = Object.freeze({
-    getStatus: () => authReady() ? comfyLastState?.status || 'unknown' : 'unknown',
+    getStatus: () => authReady() ? comfyLastState?.status || 'untested' : 'untested',
     start: () => comfyControl(null, 'start'),
+    probe: () => pollComfyState(),
+    beginTask: (taskId) => {
+      startComfyPolling(`task:${taskId || 'default'}`);
+      return pollComfyState();
+    },
+    endTask: (taskId) => {
+      stopComfyPolling(`task:${taskId || 'default'}`);
+    },
   });
   function loadWorkbenchShortcuts() {
     if (window.WorkbenchShortcuts?.bind) {

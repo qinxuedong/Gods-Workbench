@@ -1,0 +1,26 @@
+{
+  "schema": "gw.cleanroom-admission-shard/v1",
+  "issue": 677,
+  "authorization_basis": "GitHub Issue #677 (QIN-583), 2026-11-10",
+  "files": [
+    "gw/god_workflow/routes.py",
+    "gw/god_workflow/comfy_control.py",
+    "web/js/core/workbench-shell.js",
+    "web/js/controllers/workflow-controller.js",
+    "tests/frontend/workflow-workbench.test.mjs",
+    "tests/frontend/qin-583-cf-on-demand-probe.test.mjs",
+    "tests/contracts/test_comfy_lifecycle.py",
+    "tests/frontend/node-files.txt",
+    "tests/hygiene/fixtures/admissions/issue-677.json"
+  ],
+  "admitted_files": [],
+  "accepted_test_files": [
+    {
+      "path": "tests/frontend/qin-583-cf-on-demand-probe.test.mjs",
+      "classification": "curated_test_coverage",
+      "authorization_basis": "GitHub Issue #677 (QIN-583), 2026-11-10",
+      "admission": "accepted"
+    }
+  ],
+  "notes": "QIN-583 CF 停止自动探测，改为按需探测：进入工作台外壳不请求 GET /api/god_workflow/comfy-control 且不启动自动轮询，开关初始呈现「未检测」；用户点击启动或进行本机生成任务时才按需探测与轮询，任务结束或启动完成后立即停止；后端 GET 端点异步非阻塞调度且探活收窄紧凑超时快速失败。"
+}
