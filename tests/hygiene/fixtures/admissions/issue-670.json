@@ -1,7 +1,7 @@
 {
   "schema": "gw.cleanroom-admission-shard/v1",
   "issue": 670,
-  "authorization_basis": "GitHub Issue #670 (QIN-581), 2026-11-10；phase8 防漂移基线文件与会话内授权补录见票面「授权记录」节与 issuecomment-6760596890",
+  "authorization_basis": "GitHub Issue #670 (QIN-581), 2026-11-10；phase8 防漂移基线文件的授权见票面「授权记录」节，原始授权待相国在 issue #670 明示确认（见 issuecomment-6762038082）",
   "files": [
     "gw/api/routes_asset_registry.py",
     "gw/asset_registry/service.py",
