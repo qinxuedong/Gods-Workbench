@@ -2622,7 +2622,7 @@ def _note_compensation_failure(exc: BaseException, failures: List[Dict[str, Any]
     summary = "; ".join(f"{item['stage']}={item.get('error')}" for item in failures)
     note = (
         "LUT 派生补偿未完成（原错误已保留）："
-        f"{summary}；补偿项可用 compensate_lut_render_outputs(written, asset_ids) 重放补完"
+        f"{summary}；补偿项可用 compensate_lut_render_outputs([], [asset_id]) 重放补完"
         "（幂等，且会跳过已被复用的 ID）"
     )
     add_note = getattr(exc, "add_note", None)
