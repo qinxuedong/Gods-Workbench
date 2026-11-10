@@ -124,8 +124,9 @@
 }
 
 /* QIN-589：全屏舞台固定暗房深色，不随明暗主题翻转（AC3 纯深色，亮色素材不洗白舞台）。
-   色值取自 SIGNAL-FLOW 暗色令牌（bg #0a1016 / content #111d27 / raised #182532 /
-   text #eef5f7 / muted #a7b5be / line rgba(173,205,220,.16)），固定为字面值。 */
+   色值取自 SIGNAL-FLOW 暗色令牌的字面快照（bg/content/raised/text/muted 五值），
+   经 UI 治理硬编码 hex 棘轮门禁按票更新基线（tests/frontend/ui-governance.test.mjs
+   HEX_BASELINE，QIN-589 登记）；本块为媒体查看暗房场景，不引用主题面变量。 */
 .gw-coverflow--fullscreen {
     background: #111d27;
     backdrop-filter: none;
