@@ -553,10 +553,12 @@
       toggle.disabled = false;
       toggle.setAttribute('aria-busy', String(comfyBusy));
       toggle.dataset.gwComfyStatus = data.status || 'untested';
-      toggle.title = data.code === 'COMFY_START_FAILED'
+      let title = data.code === 'COMFY_START_FAILED'
         ? `${data.message || 'CF 启动失败'}；点击重试启动`
         : data.status === 'starting'
         ? 'CF 正在启动，点击取消启动'
+        : data.status === 'unconfigured'
+        ? 'CF 未配置服务地址，点击在设置中配置'
         : data.status === 'untested'
         ? 'CF 未检测；点击后台启动'
         : data.status === 'unknown'
@@ -564,8 +566,16 @@
         : online
         ? 'CF 运行中，点击关闭'
         : 'CF 未运行，点击后台启动';
-      if (!authReady()) toggle.title = '请先登录后读取/控制 CF，点击头像打开认证中心';
-      else if (window.HardwareDeck?.authState?.principal?.role !== 'admin') toggle.title = 'CF 状态只读；启停仅限管理员';
+      if (!authReady()) {
+        title = data.status === 'untested'
+          ? 'CF 未检测（请先登录后读取/控制 CF，点击头像打开认证中心）'
+          : '请先登录后读取/控制 CF，点击头像打开认证中心';
+      } else if (window.HardwareDeck?.authState?.principal?.role !== 'admin') {
+        title = data.status === 'untested'
+          ? 'CF 未检测（状态只读；启停仅限管理员）'
+          : 'CF 状态只读；启停仅限管理员';
+      }
+      toggle.title = title;
       const label = toggle.previousElementSibling;
       if (label && label.textContent.trim() === 'CF') label.classList.add('text-[#dfc384]');
     });
@@ -662,12 +672,13 @@
       toggle.addEventListener('click', () => comfyControl(toggle));
     });
     // 进页与刷新不自动请求 /comfy-control，初始展示未检测
-    if (!comfyLastState) {
-      renderComfyState({status:'untested', highlight:false});
-    }
+    renderComfyState(comfyLastState || {status:'untested', highlight:false});
     if (!window.__gwComfyAuthBound) {
       window.__gwComfyAuthBound = true;
-      window.addEventListener('gw-auth-state', () => { bindComfyControl(); });
+      window.addEventListener('gw-auth-state', () => {
+        bindComfyControl();
+        renderComfyState(comfyLastState || {status:'untested', highlight:false});
+      });
     }
   }
   if (!window.__gwComfyTaskEventsBound && typeof window !== 'undefined') {

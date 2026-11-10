@@ -1341,7 +1341,7 @@ async function offerDefinitionResolution(wf) {
           pending.window = window.open('', 'RH_Auto_ComfyUI_Tab');
           try { pending.reservedBlank = pending.window?.location.href === 'about:blank'; } catch (_) {}
         }
-        if (window.WorkbenchComfy?.getStatus() === 'offline') window.WorkbenchComfy.start();
+        if (window.WorkbenchComfy?.getStatus() !== 'online') window.WorkbenchComfy.start();
         else resumeDefinitionResolution();
       });
       await resumeDefinitionResolution();

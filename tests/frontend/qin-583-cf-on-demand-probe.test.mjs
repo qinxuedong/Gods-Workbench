@@ -48,6 +48,7 @@ function createShellHarness(states = []) {
     title: ''
   };
 
+  const listeners = new Map();
   const context = {
     document: {
       querySelectorAll: selector => (selector.includes('data-gw-comfy-toggle') ? [toggle] : [])
@@ -57,14 +58,23 @@ function createShellHarness(states = []) {
       HardwareDeck: { authState: { principal: { role: 'admin' } } },
       confirm: () => true,
       showToast: () => {},
-      addEventListener: () => {},
-      dispatchEvent: () => {}
+      addEventListener: (type, fn) => {
+        if (!listeners.has(type)) listeners.set(type, []);
+        listeners.get(type).push(fn);
+      },
+      dispatchEvent: event => {
+        const type = event?.type || event;
+        for (const fn of listeners.get(type) || []) fn(event);
+      }
     },
     fetch: async (url, options) => {
       requests.push({ url, options });
       const next = states.shift() || { ok: true, status: 'offline', highlight: false };
+      const httpOk = typeof next.http_ok === 'boolean'
+        ? next.http_ok
+        : (next.status_code ? next.status_code >= 200 && next.status_code < 300 : true);
       return {
-        ok: next.ok !== false,
+        ok: httpOk,
         status: next.status_code || 200,
         json: async () => next
       };
@@ -92,7 +102,7 @@ function createShellHarness(states = []) {
   };
 
   runInNewContext(shellSource.slice(start, end), context);
-  return { ...context, toggle, requests, timers, classes, attributes };
+  return { ...context, toggle, requests, timers, classes, attributes, listeners };
 }
 
 test('AC1 & AC2: 进页外壳初始化不请求 /comfy-control，不启动轮询定时器，状态呈现「未检测」', () => {
@@ -109,6 +119,31 @@ test('AC1 & AC2: 进页外壳初始化不请求 /comfy-control，不启动轮询
   assert.match(h.toggle.title, /未检测/, '未探测前 title 应包含“未检测”');
   assert.equal(h.classes.has('active'), false, '未探测前开关不应为 active');
   assert.equal(h.attributes['aria-pressed'], 'false');
+});
+
+test('AC2: 冷加载匿名进入显示未检测登录提示，gw-auth-state 后管理员切换为「CF 未检测；点击后台启动」', () => {
+  let authenticated = false;
+  let userRole = 'anonymous';
+  const h = createShellHarness();
+  h.window.GWAuthGate.isAuthenticated = () => authenticated;
+  h.window.HardwareDeck.authState.principal = { role: userRole };
+  h.bindComfyControl();
+
+  // 冷加载未认证状态
+  assert.equal(h.toggle.dataset.gwComfyStatus, 'untested');
+  assert.match(h.toggle.title, /未检测（请先登录后读取\/控制 CF/);
+
+  // 认证就绪为管理员，触发 gw-auth-state
+  authenticated = true;
+  userRole = 'admin';
+  h.window.HardwareDeck.authState.principal = { role: 'admin' };
+  for (const handler of h.listeners.get('gw-auth-state') || []) {
+    handler();
+  }
+
+  // 认证更新后，title 必须被重渲染并切换为「CF 未检测；点击后台启动」
+  assert.equal(h.toggle.dataset.gwComfyStatus, 'untested');
+  assert.equal(h.toggle.title, 'CF 未检测；点击后台启动');
 });
 
 test('AC3: 用户点击启动开关才开始探测/启动，启动中轮询，启动成功且无任务后自动停止轮询', async () => {
@@ -204,6 +239,24 @@ test('AC4: 工作流控制器 startTaskPolling 联动 Comfy 生命周期', () =>
   assert.match(controllerSource, /window\.WorkbenchComfy\?\.beginTask\?\.?\(taskId\)/);
   assert.match(controllerSource, /window\.WorkbenchComfy\?\.endTask\?\.?\(taskId\)/);
   assert.match(controllerSource, /isComfyTarget = Boolean\(target && target !== "rh_cloud"\)/);
+  // 断言非 online 状态（含初始 untested）均能触发 start()
+  assert.match(controllerSource, /window\.WorkbenchComfy\?\.getStatus\(\)\s*!==\s*['"]online['"]/);
+});
+
+test('AC6: 未配置服务地址时 title 正确展示为未配置提示，不残留「未运行」', async () => {
+  const unconfigured = { ok: false, status: 'unconfigured', code: 'COMFY_HOST_NOT_CONFIGURED', message: '未配置服务地址' };
+  const h = createShellHarness([unconfigured, unconfigured, unconfigured]);
+  h.bindComfyControl();
+
+  // 初始为 untested
+  assert.equal(h.toggle.dataset.gwComfyStatus, 'untested');
+
+  // 点击触发按需探测，返回未配置
+  await h.toggle.click();
+
+  assert.equal(h.toggle.dataset.gwComfyStatus, 'unconfigured');
+  assert.equal(h.toggle.title, 'CF 未配置服务地址，点击在设置中配置');
+  assert.doesNotMatch(h.toggle.title, /未运行/);
 });
 
 test('AC6: node-files.txt 与洁净室准入分片已登记', () => {
