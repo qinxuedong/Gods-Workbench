@@ -334,6 +334,14 @@ let registryPendingVanishedIds = new Set(); // 【修复跳顶】对账发现的
 // 全量刷新（重拉数据/清空选择/分页与筛选重置）仍只属于用户显式触发的 asset-refresh 与 [data-refresh-assets]。
 const registryPendingNewItems = new Map(); // 待前插新素材的完整对象缓冲（id -> normalized item），由对账暂存、applyPendingRegistryAssets 消费
 let registryBootstrapCompleted = false; // 首屏引导是否完成；未完成且网格无数据时 asset-sync 兜底执行 loadAll()
+// 【QIN-585 AC2】首屏列表（注册表引导）请求的**真实终态**。非首屏链路只认这个终态：
+// loadAll 里资产库/本地设置任一先失败都会提前 reject，而列表请求仍在途，
+// 此时若按「catch 即首屏结束」放行收集箱与治理，它们照样抢在列表前面占用单进程服务端。
+// 按**代际**维护：首屏列表在途时用户刷新会 abort 旧请求并开启新一代，
+// 旧代际的终态既不能清掉新一代的「在途」，也不能把等新一代的调度放行。
+let registryBootstrapGeneration = 1;         // 已登记终态的首屏列表请求代际；初值 1 表示「首屏尚未开始」
+let registryBootstrapSettledGeneration = 0;  // 已落地的最大代际；小于当前代际即仍有列表在途
+let registryBootstrapSettled = null;         // 当前代际的终态 promise（尚未登记过为 null）
 let registrySyncBusy = false; // asset-sync 处理重入保护
 let registryPendingApplyScrollBound = null; // 滚回顶部时自动补插新素材的一次性滚动监听
 let registryPresets = [];
@@ -756,6 +764,11 @@ let inboxSettings = null;
 let inboxLoaded = false;
 let inboxLoading = false;
 let inboxError = '';
+// 【QIN-585 AC2】收集箱读取的单飞与新鲜度：首屏延后调度与用户点开会并发触发同一份数据，
+// 不共享的话一次进页会打出多条 GET，晚返回的旧响应还会把已清零的未读角标改回旧值。
+let inboxRequestSeq = 0;
+let inboxInFlight = null;
+let inboxInFlightToken = null;
 let inboxQuery = '';
 let inboxSourceFilter = '';
 let inboxSettingsOpen = false;
@@ -3748,7 +3761,11 @@ async function saveAllowedRootsRequest(url, method, payload){
         }
         setStatus(successMessage);
         if(typeof loadRegistryBootstrap === 'function'){
-            void loadRegistryBootstrap();
+            // 【QIN-585 AC2】void 路径同样要接住回读拒绝：登记函数现在返回原始请求，
+            // 列表 500 若不 catch 会变成未处理拒绝，且用户只看到「已更新」。
+            void refreshRegistryBootstrapTracked().catch(error => {
+                reportRegistryWriteRefreshFailure('允许根已保存，但列表刷新失败', error);
+            });
         }
     } catch(error){
         allowedRootSettingsState = {
@@ -7742,7 +7759,16 @@ function beginRegistryAssetRequest(){
 function isRegistryAbortError(error){
     return error?.name === 'AbortError' || String(error?.message || '').toLowerCase().includes('aborted');
 }
-async function refreshRegistryAssets(renderNow=true){
+// 【QIN-585 AC2】所有「替换当前列表」的读取都汇聚到这个共享入口：搜索、筛选、排序、
+// 翻页、看板切换都经 refreshRegistryAssets，内部 ++registryRequestSeq 并 abort 上一代列表。
+// 因此它必须登记为新一代 —— 否则首屏 A 被它 abort 后的旧终态会把 pending 清成 false，
+// 延后链路抢在 B 前面发出（第 4 轮亲复现：A pending 时搜索，B 仍在途就发了 inbox/governance）。
+// 与 refreshRegistryBootstrapTracked 同口径：返回**原始 request**，业务调用方的
+// await / .then / .catch 仍能拿到列表 500 等真实失败，终态登记不吞错误。
+function refreshRegistryAssets(renderNow=true){
+    return trackRegistryBootstrapSettled(refreshRegistryAssetsRequest(renderNow));
+}
+async function refreshRegistryAssetsRequest(renderNow=true){
     const requestId = ++registryRequestSeq;
     abortRegistryAssetRequests();
     const signal = beginRegistryAssetRequest();
@@ -9096,7 +9122,15 @@ async function createRegistryRemoteAsset(){
     const url = lines[urlIndex];
     const name = lines.find((line, index) => index !== urlIndex) || '';
     const data = await apiJsonResponse(assetManagerApi.createRegistryRemoteAsset({url,name,kind:registryRemoteKind(url)}));
-    await loadRegistryBootstrap();
+    // 【QIN-585 AC2】写入已成功，列表回读是另一件事：回读失败不能报「已加入」，
+    // 也不能被终态观察 promise 吞掉。refreshRegistryBootstrapTracked 返回原始请求，
+    // 这里显式接住并提示「已写入但刷新失败」，避免旧列表 + 成功文案误导用户。
+    try {
+        await refreshRegistryBootstrapTracked();
+    } catch(error){
+        reportRegistryWriteRefreshFailure('公网 URL 已写入，但列表刷新失败', error);
+        return;
+    }
     selectedRegistryAssetId = data.asset?.id || selectedRegistryAssetId;
     registryDetail = data.asset ? normalizeRegistryAsset(data.asset) : null;
     render();
@@ -9107,9 +9141,24 @@ async function deleteRegistryRemoteAsset(id){
     await apiJsonResponse(assetManagerApi.deleteRegistryRemoteAsset(id));
     selectedRegistryAssetId = '';
     registryDetail = null;
-    await loadRegistryBootstrap();
+    // 【QIN-585 AC2】同上：删除已生效，回读失败必须明确提示，不能报「已删除」。
+    try {
+        await refreshRegistryBootstrapTracked();
+    } catch(error){
+        reportRegistryWriteRefreshFailure('公网 URL 已删除，但列表刷新失败', error);
+        return;
+    }
     render();
     setStatus('公网 URL 资产已删除');
+}
+// 【QIN-585 AC2】「写入成功 / 列表回读失败」的统一提示：写入已经生效，不能冒充整体成功，
+// 也不能让它退化成一条未被处理的拒绝。force 刷新是用户显式动作，不受首屏闸门影响。
+function reportRegistryWriteRefreshFailure(message, error){
+    const reason = error?.message || error || '列表读取失败';
+    const text = `${message}：${reason}`;
+    setStatus(text);
+    showAssetFailure(message, error);
+    return text;
 }
 function registryRecyclerPath(item={}){
     const configured = String(storageSettingsState.dirs?.trash || '').trim().replace(/[\\/]+$/, '');
@@ -9402,6 +9451,43 @@ async function refreshCanvasAssets(){
         setStatus(err.message || '刷新画布资产失败');
     }
 }
+// 【QIN-585 AC2】登记一次「替换当前列表」请求的终态（成功/失败都算终态）。
+// 每次登记即开启**新一代**：新请求会 abort 旧一代，旧一代落地时不得把新一代的「在途」清掉。
+// 这里刻意**分离两件事**：
+//   ① 终态观察 `registryBootstrapSettled` 永不 reject，只给 waitRegistryBootstrapSettled()
+//      与延后链路等待，避免 loadAll 提前 reject、允许根 void 等路径留下未处理的拒绝；
+//   ② 返回值是**原始 request**，业务调用方 await 它时仍能拿到列表 500 等真实失败。
+// 早期版本把 ① 当返回值，导致「写入成功但列表回读 500」被吞成成功。
+function trackRegistryBootstrapSettled(request){
+    registryBootstrapGeneration += 1;
+    const generation = registryBootstrapGeneration;
+    const settleGeneration = () => {
+        // 只推进落地代际，不回退：旧代际晚于新代际落地时不能把「新一代仍在途」抹掉。
+        if(generation > registryBootstrapSettledGeneration) registryBootstrapSettledGeneration = generation;
+        return true;
+    };
+    registryBootstrapSettled = request.then(settleGeneration, settleGeneration);
+    return request;
+}
+// 【QIN-585 AC2】无参引导（添加/删除公网 URL、允许根保存）统一走这里登记代际，
+// 并把原始请求返回给业务方：写入已成功而列表回读失败时必须能明确提示，不能误报成功。
+function refreshRegistryBootstrapTracked(){
+    return trackRegistryBootstrapSettled(loadRegistryBootstrap());
+}
+function isRegistryBootstrapPending(){
+    return registryBootstrapSettledGeneration < registryBootstrapGeneration;
+}
+async function waitRegistryBootstrapSettled(){
+    // 等的是**当前代际**的列表落地。等的过程里用户刷新开了新一代，就继续等新一代：
+    // 旧代际落地只代表它自己被 abort 了，此时放行等于让非首屏链路抢在新列表前面。
+    for(;;){
+        if(!isRegistryBootstrapPending()) return true;
+        const settled = registryBootstrapSettled;
+        // 当前代际还没登记过终态（首屏列表尚未开始）：没有在途请求，不阻塞。
+        if(!settled) return true;
+        await settled;
+    }
+}
 async function loadAll(){
     // 【QIN-573 AC2】快照优先秒开：若存在会话快照，在网络请求到达前先行挂载渲染
     tryApplyRegistrySnapshot();
@@ -9419,6 +9505,9 @@ async function loadAll(){
         // 否则 catch 吞掉拒绝后 promise 恒 fulfill，失败标记会被同轮无条件清除。
         throw err;
     });
+    // 【QIN-585 AC2】登记首屏列表请求的真实终态；延后链路与治理建议都以此为准，
+    // 不再拿 loadAll 的 catch（可能只是资产库/本地设置先失败）当「首屏已结束」。
+    trackRegistryBootstrapSettled(registryBootstrap);
     const [assetData] = await Promise.all([
         apiJsonResponse(assetManagerApi.getAssetLibrary()),
         loadLocalStorageSettings(),
@@ -9781,6 +9870,12 @@ const GOVERNANCE_INFORMATIONAL_KINDS = new Set(['similar_names']);
 async function loadGovernanceSuggestions(force=false){
     if(governanceSuggestionsLoading) return;
     if(!force && (governanceSuggestionsData || governanceSuggestionsError)) return;
+    // 【QIN-585 AC2】首屏列表未落地前不发请求：治理建议不参与第一屏渲染，
+    // 千级素材库上单次要跑数秒，会把首屏列表排在单进程服务端之后。
+    // 排队后由 scheduleDeferredBootRequests 在列表终态后的空闲时段补发；
+    // force（用户显式刷新）不受此闸门限制。
+    // 按代际判定：首屏在途时用户刷新开了新一代，同样要等新一代落地才发。
+    if(!force && isRegistryBootstrapPending()) return;
     if(force){
         governanceSuggestionsData = null;
         governanceSuggestionsError = null;
@@ -10638,19 +10733,43 @@ function renderInboxManager(){
     </section>`;
     refreshIcons();
 }
-async function loadAssetInbox(){
+// 【QIN-585 AC2】单飞与新鲜度：首屏延后调度、用户点开、上传后回读会并发触发同一份数据。
+// - 普通读取（缺省）复用同一份在途请求，一次进页只打一条 GET；
+// - 写后必刷（`{refresh:true}`）既不复用也不被复用：写之前发出的在途请求读到的是旧快照，
+//   复用它会出现「提示上传/保存成功、列表里却没有新文件、设置还显示旧路径」。
+//   这里只递增序号作废旧响应（它的结果与 loading 都不再回写），并另发一条新请求。
+function loadAssetInbox(options){
+    const refresh = Boolean(options && options.refresh);
+    if(!refresh && inboxInFlight) return inboxInFlight;
+    if(refresh){
+        inboxInFlight = null;
+        inboxInFlightToken = null;
+    }
+    const token = {seq:++inboxRequestSeq};
     inboxLoading = true;
     inboxError = '';
-    try{
-        const data = await apiJsonResponse(assetManagerHttp.request('/api/asset-inbox?limit=500', {method:'GET', credentials:'same-origin'}));
-        inboxItems = Array.isArray(data.items) ? data.items : [];
-        inboxSettings = data.settings || null;
-        inboxLoaded = true;
-    }catch(error){
-        inboxError = String(error?.message || error || '收集箱读取失败');
-    }finally{
-        inboxLoading = false;
-    }
+    const request = (async () => {
+        try{
+            const data = await apiJsonResponse(assetManagerHttp.request('/api/asset-inbox?limit=500', {method:'GET', credentials:'same-origin'}));
+            // 过期响应直接丢弃：清零角标之后晚到的旧响应不得把未读数改回去。
+            if(token.seq !== inboxRequestSeq) return;
+            inboxItems = Array.isArray(data.items) ? data.items : [];
+            inboxSettings = data.settings || null;
+            inboxLoaded = true;
+        }catch(error){
+            if(token.seq !== inboxRequestSeq) return;
+            inboxError = String(error?.message || error || '收集箱读取失败');
+        }finally{
+            if(inboxInFlightToken === token){
+                inboxInFlight = null;
+                inboxInFlightToken = null;
+            }
+            if(token.seq === inboxRequestSeq) inboxLoading = false;
+        }
+    })();
+    inboxInFlight = request;
+    inboxInFlightToken = token;
+    return request;
 }
 async function openAssetInbox(){
     activeTab = 'inbox';
@@ -10667,6 +10786,10 @@ async function markAssetInboxViewed(){
         await apiJsonResponse(assetManagerHttp.request('/api/asset-inbox/viewed', {method:'POST', credentials:'same-origin'}));
         const previous = assetInboxUnreadCount();
         if(inboxSettings) inboxSettings = {...inboxSettings, unread_count:0};
+        // 【QIN-585 AC2】清零即作废所有更早发出的读取响应，否则它们晚到会把角标改回未读；
+        // 被作废的那次请求不会自己复位 loading（它的 finally 已按新序号短路），这里一并复位。
+        inboxRequestSeq += 1;
+        inboxLoading = false;
         // 【QIN-547】角标清零后立即重绘，否则左栏数字要等到下一次 render 才消失。
         if(previous > 0) render();
     }catch(_){ /* 角标失败不阻断浏览 */ }
@@ -10679,7 +10802,8 @@ async function uploadAssetInboxFiles(files){
     try{
         const result = await apiJsonResponse(assetManagerHttp.request('/api/asset-inbox/upload', {method:'POST', credentials:'same-origin', body:form}));
         showAssetNotice(`已上传 ${Number(result.count || list.length)} 个文件到收集箱`);
-        await loadAssetInbox();
+        // 【QIN-585 AC2】写后必刷：不复用写之前发出的在途读取（那是旧快照），否则新文件不出现。
+        await loadAssetInbox({refresh:true});
         // 用户此刻正在收集箱里看到新文件，角标不应再算作未读。
         if(activeTab === 'inbox' && assetInboxUnreadCount() > 0) await markAssetInboxViewed();
     }catch(error){
@@ -10696,7 +10820,7 @@ async function migrateAssetLibraryToInbox(){
         const failed = Array.isArray(result.failed) ? result.failed.length : 0;
         const movedCount = Number(result.moved_files || 0);
         showAssetNotice(`托管资产已并入收集箱：迁入 ${movedCount} 个文件${movedCount ? '（源文件保留）' : ''}，保留 ${Number(result.url_entries || 0)} 个链接条目${failed ? `，${failed} 个失败，可再次点击重试` : ''}`);
-        await loadAssetInbox();
+        await loadAssetInbox({refresh:true});
     }catch(error){
         showAssetFailure('迁移托管资产失败', error);
     }finally{
@@ -10726,12 +10850,12 @@ async function saveAssetInboxSettings(){
             inboxSettingsOpen = true;
             const failed = Array.isArray(result.failed) ? result.failed.length : 0;
             showAssetFailure('收集箱位置未变更', new Error(`${failed} 个文件搬不动，已回滚到原位置`));
-            await loadAssetInbox();
+            await loadAssetInbox({refresh:true});
             if(activeTab === 'inbox') render();
             return;
         }
         showAssetNotice(`收集箱位置已更新${moved ? `，迁移 ${moved} 个文件` : ''}${skipped ? `，${skipped} 个相同文件已存在` : ''}${conflicts ? `，${conflicts} 个同名文件未迁移` : ''}`);
-        await loadAssetInbox();
+        await loadAssetInbox({refresh:true});
     }catch(error){
         showAssetFailure('保存收集箱位置失败', error);
     }
@@ -26545,14 +26669,43 @@ if(!directorySettingsPage){
     renderBoardNavigation();
     if(document.readyState !== 'loading') tryApplyRegistrySnapshot();
 }
+// 【QIN-585 AC2】首屏延后块：收集箱与治理建议都不参与第一屏卡片渲染，
+// 却在 DOMContentLoaded 里与首屏列表并发请求。治理建议在千级素材库上单次要跑数秒，
+// 单进程服务端会把首屏列表请求排在它后面 —— 首屏因此被一个「用户还没打开的抽屉」拖住。
+// 改为首屏就绪后再发，用空闲时段调度；两条链路都自带失败兜底，延后不改变可用性。
+function scheduleDeferredBootRequests(){
+    const run = async () => {
+        // 【QIN-585 AC2】idle 已经排队之后用户仍可能刷新开了新一代列表：此刻直接发请求
+        // 会抢在它前面；治理建议还会被 pending 闸门挡下，之后再无人补取。执行时按当前代际
+        // 再确认一次（wait 内部会循环等新一代落地），两条链路最终都仍会补齐。
+        await waitRegistryBootstrapSettled();
+        // 用户可能已经在首屏期间点开收集箱：已加载过就不再补一次，避免同一份数据读两遍。
+        if(!inboxLoaded){
+            void loadAssetInbox().then(() => {
+                if(assetInboxUnreadCount() > 0 && activeTab !== 'inbox') render();
+            }).catch(() => null);
+        }
+        loadGovernanceSuggestions();
+    };
+    const dispatch = () => {
+        const launch = () => { void run(); };
+        if(typeof window.requestIdleCallback === 'function'){
+            window.requestIdleCallback(launch, {timeout:2000});
+            return;
+        }
+        setTimeout(launch, 200);
+    };
+    // 调度时机绑定「首屏列表请求终态」而不是调用点：成功分支调用时列表也已落地，
+    // 失败分支却可能只是资产库/本地设置先失败、列表仍在途 —— 必须等它落地再放行。
+    void waitRegistryBootstrapSettled().then(dispatch);
+}
 document.addEventListener('DOMContentLoaded', () => {
     if(directorySettingsPage){ loadGlobalDirectorySettings(); return; }
     // 【QIN-573 AC2】优先从会话快照恢复首屏渲染，隐藏骨架屏
     tryApplyRegistrySnapshot();
-    void loadAssetInbox().then(() => {
-        if(assetInboxUnreadCount() > 0 && activeTab !== 'inbox') render();
-    }).catch(() => null);
     loadRegistryPrincipal();
+    // 【QIN-585 AC2】治理建议的启动期意图仍在此声明；loadGovernanceSuggestions 会在
+    // 首屏列表落地前把自己排队（见该函数内的闸门），不再与列表争服务端资源。
     loadGovernanceSuggestions();
     loadAll().then(async () => {
         const restoredScroll = await restoreRegistryBrowseSession();
@@ -26568,4 +26721,7 @@ document.addEventListener('DOMContentLoaded', () => {
         markRegistryFirstScreenReady();
         setStatus(err.message || '加载失败');
     });
+    // 【QIN-585 AC2】无论首屏成败都排入延后链路（用户仍可能直接打开收集箱或治理抽屉），
+    // 调度内部只等首屏列表请求的真实终态，因此成功/失败两个分支共用这一处调用。
+    scheduleDeferredBootRequests();
 });
