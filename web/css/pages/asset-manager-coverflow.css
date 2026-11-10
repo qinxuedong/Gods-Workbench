@@ -9,8 +9,8 @@
     place-items: stretch;
     padding: 14px;
     overflow: hidden;
-    background: var(--sf-bg);
-    color: var(--sf-text);
+    background: #0a1016;
+    color: #eef5f7;
     isolation: isolate;
 }
 
@@ -24,7 +24,8 @@
     display: grid;
     grid-template-rows: 48px minmax(0, 1fr) 44px;
     overflow: hidden;
-    background: var(--sf-content);
+    background: color-mix(in srgb, var(--sf-content) 58%, transparent);
+    backdrop-filter: blur(8px);
     border: 1px solid var(--sf-line);
     border-radius: var(--sf-radius-panel);
     font-family: var(--gw-font-body);
@@ -122,15 +123,49 @@
     outline-offset: 3px;
 }
 
-/* QIN-589：全屏舞台纯深色——头部/底部条实底；卡片背景透明、图片 contain，四周无深色填充。 */
+/* QIN-589：全屏舞台固定暗房深色，不随明暗主题翻转（AC3 纯深色，亮色素材不洗白舞台）。
+   色值取自 SIGNAL-FLOW 暗色令牌（bg #0a1016 / content #111d27 / raised #182532 /
+   text #eef5f7 / muted #a7b5be / line rgba(173,205,220,.16)），固定为字面值。 */
+.gw-coverflow--fullscreen {
+    background: #111d27;
+    backdrop-filter: none;
+}
+
 .gw-coverflow--fullscreen .gw-coverflow-header,
 .gw-coverflow--fullscreen .gw-coverflow-caption {
-    background: var(--sf-raised);
+    background: #182532;
+}
+
+.gw-coverflow--fullscreen .gw-coverflow-heading strong,
+.gw-coverflow--fullscreen .gw-coverflow-caption strong {
+    color: #eef5f7;
+}
+
+.gw-coverflow--fullscreen .gw-coverflow-count,
+.gw-coverflow--fullscreen .gw-coverflow-empty {
+    color: #a7b5be;
+}
+
+.gw-coverflow--fullscreen .gw-coverflow-control {
+    background: #182532;
+    border-color: rgba(173, 205, 220, .32);
+    color: #eef5f7;
+}
+
+.gw-coverflow--fullscreen .gw-coverflow-control:hover {
+    border-color: var(--sf-cyan);
+    background: color-mix(in srgb, var(--sf-cyan) 12%, #182532);
+    color: var(--sf-cyan);
 }
 
 .gw-coverflow--fullscreen .gw-coverflow-slide img,
 .gw-coverflow--fullscreen .gw-coverflow-slide video {
     background: transparent;
+}
+
+.gw-coverflow--fullscreen .gw-coverflow-slide.is-unavailable::after {
+    background: #182532;
+    color: #a7b5be;
 }
 
 .gw-coverflow-stage {

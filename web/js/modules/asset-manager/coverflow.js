@@ -30,6 +30,14 @@ const VIDEO_EXTENSIONS = new Set([
     '3gp', 'avi', 'm4v', 'mkv', 'mov', 'mp4', 'mpeg', 'mpg', 'ogv', 'webm',
 ]);
 const WINDOW_RADIUS = 3;
+// QIN-589：全屏几何口径。中心卡目标为基准宽度的 2 倍，夹紧至舞台宽约 62%，
+// 并受 16:9 外框高度约束；两侧从改前紧邻缩放（0.86）起每级外推减半；位置按
+// 实际宽度累加，空间不足时等比压缩，保证每侧露出 2 张且不越过左右控件。
+const FULLSCREEN_CENTER_WIDTH_SHARE = 0.62;
+const FULLSCREEN_ADJACENT_SCALE = 0.86;
+// 关闭后焦点归还触发控件时打的静默标记：脚本归还的焦点在 Esc / F 关闭路径仍会
+// 命中 :focus-visible，下一次真实键盘 / 指针交互时移除。
+const FOCUS_QUIET_ATTR = 'data-gw-coverflow-focus-quiet';
 const DRAG_THRESHOLD = 42;
 const WHEEL_THRESHOLD = 36;
 
