@@ -41,7 +41,7 @@ import uuid
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
-from urllib.parse import unquote, urlsplit
+from urllib.parse import quote, unquote, urlsplit
 
 from gw.asset_library.repository import classify_name
 from gw.core import storage
@@ -73,12 +73,16 @@ def _default_raw() -> dict[str, Any]:
     }
 
 
-def _owner_digest() -> str | None:
+def owner_digest() -> str | None:
     """当前请求主体的稳定摘要；没有主体上下文时返回 None。"""
     owner = current_asset_owner.get()
     if not owner:
         return None
     return hashlib.sha256(str(owner).encode("utf-8")).hexdigest()
+
+
+#: 旧内部名保留为别名，既有调用点不需要一次全量改名。
+_owner_digest = owner_digest
 
 
 def _state() -> storage.JsonState:
@@ -323,6 +327,10 @@ def _all_items(raw: dict[str, Any] | None = None) -> list[dict[str, Any]]:
         legacy_prefix = Path(*LEGACY_COLLECT_PARTS, digest).as_posix()
         items.extend(_local_items(legacy_root, "collect_inbox", payload, legacy_prefix))
     items.extend(_url_items(payload))
+    # 【QIN-588】每个本地条目下发受控预览查询串（url 条目为 None）：前端零路径知识，
+    # 预览 URL 全部由服务端授权的参数拼装；无主体时遗留条目不下发（失败关闭）。
+    for item in items:
+        item["preview_query"] = inbox_preview_query(item)
     items.sort(key=lambda item: (-int(item["modified_at"]), str(item["name"]).casefold()))
     return items
 
@@ -814,7 +822,7 @@ def add_upload(filename: Any, content: bytes) -> dict[str, Any]:
 
         _state().mutate(mutate)
         stat = target.stat()
-        return {
+        created = {
             "id": f"inbox:{relative}",
             "source": "inbox",
             "name": display,
@@ -825,3 +833,98 @@ def add_upload(filename: Any, content: bytes) -> dict[str, Any]:
             "url": None,
             "asset_id": None,
         }
+        # 【QIN-588 AC1】上传响应同样携带受控预览查询串：上传后立即可出图。
+        created["preview_query"] = inbox_preview_query(created)
+        return created
+
+
+# ---------------------------------------------------------------------------
+# 受控预览解析（QIN-588）：给收集箱身份一条可出真实缩略图的媒体通道
+# ---------------------------------------------------------------------------
+
+
+def _preview_relative_parts(raw: Any) -> list[str] | None:
+    """把预览参数解析为安全的相对路径段；结构不合法返回 None（失败关闭）。
+
+    只接受 POSIX 相对路径：拒绝空段、``.``/``..`` 段、反斜杠、盘符与绝对路径；
+    符号链接与穿越逃逸由 resolve 后的包含校验兜底。
+    """
+    text = str(raw or "").strip()
+    if not text or "\\" in text or text.startswith("/") or text.endswith("/"):
+        return None
+    if len(text) > 2 and text[1] == ":":
+        return None
+    parts = text.split("/")
+    for part in parts:
+        if not part or part in {".", ".."}:
+            return None
+    return parts
+
+
+def _resolve_within_dir(base: Path, raw: Any) -> Path | None:
+    """把相对路径解析到 ``base`` 内的真实普通文件；越界/软链接/缺失一律 None。
+
+    ``resolve(strict=True)`` 会把符号链接解析到真实位置：根内软链接指向根外时，
+    解析结果落在外面，包含校验失败；即使根内子目录是软链接也一样。文件本身是
+    软链接（即使指向根内）也拒绝，与 ``_iter_files`` 跳过软链接的口径一致。
+    """
+    parts = _preview_relative_parts(raw)
+    if parts is None:
+        return None
+    try:
+        base_resolved = base.resolve(strict=False)
+        candidate = (base / Path(*parts)).resolve(strict=True)
+    except (OSError, RuntimeError, ValueError):
+        return None
+    if candidate.is_symlink() or not candidate.is_file():
+        return None
+    if not _is_within(candidate, base_resolved):
+        return None
+    return candidate
+
+
+def resolve_preview_request(payload: dict[str, Any] | None) -> Path | None:
+    """【QIN-588】收集箱身份的受控预览解析：只认服务端边界内的真实文件。
+
+    - ``inbox_file``：收集箱根内相对路径；resolve 后必须仍在根内，穿越与软链接
+      逃逸都解析不出根，失败关闭。
+    - ``collect_inbox_file``：遗留收集目录（``registry_uploads/collect_inbox/<sha256(owner)>/``）
+      内相对路径。目录按当前主体 digest 拼装，客户端无法指定 digest：无主体 → 403
+      失败关闭，跨主体 = 目标文件不存在 → 404。
+    - 未携带受控参数 → 返回 None，回落既有 asset_id/path 链路。
+    """
+    payload = payload or {}
+    if "inbox_file" in payload:
+        return _resolve_within_dir(inbox_root(), payload.get("inbox_file"))
+    if "collect_inbox_file" in payload:
+        digest = owner_digest()
+        if not digest:
+            raise CleanroomException(
+                403, "INBOX_OWNER_REQUIRED", "缺少请求主体，无法解析收集箱预览"
+            )
+        base = storage.data_root().joinpath(*LEGACY_COLLECT_PARTS, digest)
+        return _resolve_within_dir(base, payload.get("collect_inbox_file"))
+    return None
+
+
+def inbox_preview_query(item: dict[str, Any]) -> str | None:
+    """把收集箱条目映射为受控预览查询串；非本地文件返回 None。
+
+    前端零路径知识：预览 URL 由服务端下发的查询串拼装，不回显绝对路径。
+    """
+    source = str(item.get("source") or "")
+    relative = str(item.get("file") or "").strip()
+    if not relative:
+        return None
+    if source == "inbox":
+        return f"inbox_file={quote(relative, safe='')}"
+    if source == "collect_inbox":
+        prefix = Path(*LEGACY_COLLECT_PARTS).as_posix() + "/"
+        digest = owner_digest()
+        if not digest:
+            return None
+        digest_prefix = f"{prefix}{digest}/"
+        if not relative.startswith(digest_prefix):
+            return None
+        return "collect_inbox_file=" + quote(relative[len(digest_prefix):], safe="")
+    return None

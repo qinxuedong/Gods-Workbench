@@ -102,3 +102,98 @@ test('AC1: 改位置失败时留住面板并说明原因，不假装成功', () 
         '失败分支必须早于成功提示，不能先报成功再报失败',
     );
 });
+
+// 【QIN-588】以下用例用 node:vm 真实执行提取出的函数（非纯源码正则）。
+import vm from 'node:vm';
+
+function liveFunction(name, globals = {}){
+    const prepared = vm.createContext({
+        URLSearchParams,
+        Math,
+        Number,
+        String,
+        encodeURIComponent,
+        ...globals,
+    });
+    return vm.runInContext(`(${functionSource(name)})`, prepared);
+}
+
+test('QIN-588 AC1/AC2: 卡片预览地址只用受控查询串拼装，且按 kind 过滤', () => {
+    const inboxPreviewUrl = liveFunction('inboxPreviewUrl');
+    const imageItem = {preview_query: 'inbox_file=inbox_abc.png', kind: 'image'};
+    const url = inboxPreviewUrl(imageItem, 320);
+    assert.match(url, /^\/api\/media-preview\?/, '预览必须走约定的媒体预览端点');
+    assert.ok(url.includes('inbox_file=inbox_abc.png'), '受控参数应原样携带');
+    assert.ok(url.includes('w=320'), '宽度参数应生效');
+
+    const video = inboxPreviewUrl({preview_query: 'collect_inbox_file=old.png', kind: 'video'}, 320);
+    assert.ok(video.includes('collect_inbox_file=old.png'), '视频走同一端点显示真实首帧');
+
+    assert.equal(inboxPreviewUrl({preview_query: '', kind: 'image'}, 320), '', '无受控参数不出预览');
+    assert.equal(inboxPreviewUrl({preview_query: 'inbox_file=a.png', kind: 'document'}, 320), '', '非图像视频不出预览');
+    assert.equal(inboxPreviewUrl({kind: 'image'}, 320), '', '缺查询串不出预览');
+
+    const clamped = inboxPreviewUrl(imageItem, 99999);
+    assert.ok(clamped.includes('w=2048'), '超宽必须收敛到 2048 上限');
+});
+
+test('QIN-588 AC1/AC2: 卡片渲染输出真实预览图并保留失败降级', () => {
+    const card = functionSource('renderInboxCard');
+    assert.match(card, /inboxPreviewUrl\(item, 320\)/, '卡片应请求 320 宽预览');
+    assert.match(card, /data-preview-fallback=/, '预览加载失败必须保留占位降级标记');
+    assert.match(card, /asset-file-icon/, '非本地条目仍回落文件图标');
+    assert.match(styles, /\.inbox-preview-img\s*\{/, '卡片预览样式应存在');
+});
+
+test('QIN-588 AC2: 点击卡片打开媒体预览浮层，浮窗规范齐全', () => {
+    const opener = functionSource('openInboxMediaPreview');
+    assert.match(opener, /inboxPreviewUrl\(item, 2048\)/, '浮层用大图预览');
+    assert.match(opener, /setAttribute\('role', 'dialog'\)/, '浮层必须是 dialog 语义');
+    assert.match(opener, /setAttribute\('aria-modal', 'true'\)/, '浮层必须模态');
+    assert.match(opener, /data-inbox-preview-close/, '浮层必须带显式关闭控件');
+    assert.match(opener, /Escape/, 'Escape 必须关闭浮层');
+    assert.match(opener, /trigger\.focus\(\)/, '关闭后焦点返还触发卡片');
+    assert.match(source, /if\(document\.querySelector\('\.inbox-media-preview'\)\) return;/, '浮层打开时页面点击委托必须短路，不得穿透底层');
+    assert.match(styles, /\.inbox-media-preview\s*\{/, '浮层样式应存在');
+});
+
+test('QIN-588 AC5: 停留收集箱低频回读，签名变化才重绘且保持滚动', () => {
+    const signature = liveFunction('assetInboxItemsSignature', {inboxItems: [
+        {id: 'inbox:a', modified_at: 1, size_bytes: 10},
+        {id: 'inbox:b', modified_at: 2, size_bytes: 20},
+    ]});
+    const before = signature();
+    const afterSame = signature();
+    assert.equal(before, afterSame, '相同内容签名必须一致（不触发重绘）');
+
+    const changed = liveFunction('assetInboxItemsSignature', {inboxItems: [
+        {id: 'inbox:a', modified_at: 1, size_bytes: 10},
+        {id: 'inbox:b', modified_at: 2, size_bytes: 21},
+    ]});
+    assert.notEqual(changed(), before, '内容变化签名必须不同（触发重绘）');
+
+    const polling = source.slice(
+        source.indexOf('inboxBadgeTimer = window.setInterval'),
+        source.indexOf('},30000);'),
+    );
+    assert.ok(polling.length > 0, '停留刷新必须挂在 30s 低频定时器上');
+    assert.match(polling, /if\(document\.hidden\) return;/, '页面隐藏时不得轮询');
+    assert.match(polling, /activeTab === 'inbox'/, '停留收集箱时也要回读列表');
+    assert.match(polling, /assetInboxItemsSignature\(\)/, '回读后必须比较内容签名');
+    assert.match(polling, /scrollTop/, '重绘前记录滚动位置、重绘后恢复');
+    assert.ok(
+        polling.indexOf('assetInboxItemsSignature()') < polling.indexOf('scrollTop'),
+        '签名无变化不得走到重绘分支',
+    );
+});
+
+test('QIN-588 AC4: 上传与角标清零的乱序保护保持完整', () => {
+    // 写后必刷：上传后 refresh 不复用在途旧响应（QIN-585 既有口径，本票不得回退）。
+    const upload = functionSource('uploadAssetInboxFiles');
+    assert.match(upload, /loadAssetInbox\(\{refresh:true\}\)/, '上传后必须写后必刷');
+    const load = functionSource('loadAssetInbox');
+    assert.match(load, /token\.seq !== inboxRequestSeq\)? return/, '过期响应必须按代次丢弃');
+    assert.match(load, /inboxInFlight/, '普通读取必须单飞复用');
+    const viewed = functionSource('markAssetInboxViewed');
+    assert.match(viewed, /inboxRequestSeq \+= 1/, '角标清零必须作废更早的读取响应');
+});

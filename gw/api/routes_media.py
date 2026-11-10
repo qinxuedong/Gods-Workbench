@@ -256,13 +256,21 @@ async def delete_storyboards(
 # ---------------------------------------------------------------------------
 
 
-@router.get("/api/media-preview", status_code=status.HTTP_200_OK)
+@router.get(
+    "/api/media-preview",
+    status_code=status.HTTP_200_OK,
+    dependencies=[Depends(asset_request_scope)],
+)
 def media_preview(
     request: Request,
     authorization: str | None = Header(None),
     x_user_role: str = Header("editor", alias="X-User-Role"),
 ):
-    """对允许根目录内的真实文件返回真实缩略字节；越界 403，依赖缺失 503。"""
+    """对允许根目录内的真实文件返回真实缩略字节；越界 403，依赖缺失 503。
+
+    【QIN-588】加挂请求主体上下文：收集箱预览按主体分账解析（遗留收集目录按
+    sha256(owner) 隔离）；既有 asset_id/path 调用不受影响（require_authenticated 幂等）。
+    """
     _read(authorization, x_user_role)
     payload = _query_dict(request)
     if str(payload.get("metadata") or "").lower() in {"1", "true", "yes"}:
