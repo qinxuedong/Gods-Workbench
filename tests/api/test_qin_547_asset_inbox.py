@@ -11,11 +11,15 @@
 """
 
 import hashlib
+import io
 import re
 from pathlib import Path
+from urllib.parse import quote
 
 import pytest
 from fastapi.testclient import TestClient
+
+from PIL import Image
 
 from gw.api.app import create_app
 from gw.asset_library import inbox
@@ -388,3 +392,152 @@ def test_inbox_requires_authentication(inbox_runtime):
     with TestClient(create_app()) as client:
         assert client.get(BASE).status_code == 401
         assert client.post(f"{BASE}/migrate").status_code == 401
+
+
+def _png_bytes(color: tuple[int, int, int] = (255, 0, 0)) -> bytes:
+    """生成一张真实 PNG（PIL 编码），供预览链路真实解码。"""
+    buffer = io.BytesIO()
+    Image.new("RGB", (64, 64), color).save(buffer, format="PNG")
+    return buffer.getvalue()
+
+
+def test_inbox_upload_then_preview_roundtrip(inbox_runtime):
+    """【QIN-588 AC1/AC3】上传 → 列表带受控预览参数 → media-preview 返回真实图像；二次命中缓存。"""
+    with TestClient(create_app()) as client:
+        uploaded = _upload(client, "shot.png", _png_bytes((255, 0, 0)))
+        assert uploaded["kind"] == "image"
+        assert uploaded["preview_query"], "上传响应应携带受控预览查询串"
+        assert "inbox_file=" in uploaded["preview_query"]
+        assert str(inbox_runtime["data"]) not in uploaded["preview_query"], "查询串不含绝对路径"
+
+        listing = client.get(BASE, headers=AUTH).json()
+        entry = next(
+            item for item in listing["items"] if item["source"] == "inbox"
+        )
+        assert entry["preview_query"] == uploaded["preview_query"]
+
+        preview = client.get(
+            f"/api/media-preview?w=256&{entry['preview_query']}", headers=AUTH
+        )
+        assert preview.status_code == 200, preview.text
+        assert preview.headers["content-type"].startswith("image/")
+        assert len(preview.content) > 0
+
+        again = client.get(
+            f"/api/media-preview?w=256&{entry['preview_query']}", headers=AUTH
+        )
+        assert again.status_code == 200, again.text
+        assert again.content == preview.content, "缓存二次命中应返回同一字节"
+
+
+def test_inbox_preview_fails_closed(inbox_runtime):
+    """【QIN-588 AC6】穿越、绝对路径、软链接逃逸与匿名一律失败关闭。"""
+    with TestClient(create_app()) as client:
+        uploaded = _upload(client, "guard.png", _png_bytes())
+        stored = uploaded["file"]
+
+        # 穿越到 data_root 之外（auth.sqlite3 所在层级）→ 404，绝不返回字节。
+        traversal = client.get(
+            f"/api/media-preview?w=256&inbox_file={stored}/../../auth/auth.sqlite3",
+            headers=AUTH,
+        )
+        assert traversal.status_code == 404, traversal.text
+
+        absolute = client.get(
+            "/api/media-preview?w=256&inbox_file="
+            + quote(str(inbox_runtime["data"] / "inbox" / stored), safe=""),
+            headers=AUTH,
+        )
+        assert absolute.status_code == 404
+
+        empty = client.get("/api/media-preview?w=256&inbox_file=", headers=AUTH)
+        assert empty.status_code == 404
+
+        anonymous = client.get(
+            f"/api/media-preview?w=256&inbox_file={stored}"
+        )
+        assert anonymous.status_code == 401, "预览请求必须经鉴权"
+
+    # 软链接逃逸：根内软链接指向根外文件，resolve 后落在外面 → 失败关闭。
+    # Windows 无符号链接特权时无法构造，跳过由平台能力决定（Linux job 覆盖）。
+    inbox_dir = inbox_runtime["data"] / "inbox"
+    outside = inbox_runtime["tmp"] / "outside-secret.png"
+    outside.write_bytes(_png_bytes((0, 255, 0)))
+    try:
+        link = inbox_dir / "inbox_escape.png"
+        link.symlink_to(outside)
+    except (OSError, NotImplementedError):
+        pytest.skip("当前平台无法创建符号链接")
+    with TestClient(create_app()) as client:
+        escaped = client.get(
+            "/api/media-preview?w=256&inbox_file=inbox_escape.png", headers=AUTH
+        )
+        assert escaped.status_code == 404, escaped.text
+
+
+def test_inbox_preview_rejects_injection_params(inbox_runtime):
+    """【QIN-588 AC6】受控参数与 asset_id/path 不得组合绕过；未知参数组合失败关闭。"""
+    with TestClient(create_app()) as client:
+        uploaded = _upload(client, "combo.png", _png_bytes())
+        query = uploaded["preview_query"]
+        combo = client.get(
+            f"/api/media-preview?w=256&{query}&path=C:/Windows/win.ini", headers=AUTH
+        )
+        assert combo.status_code == 200, "受控参数存在时应忽略 path（同链路拒绝越权路径）"
+        asset_combo = client.get(
+            f"/api/media-preview?w=256&{query}&asset_id=some-asset", headers=AUTH
+        )
+        assert asset_combo.status_code == 200, "受控参数存在时应忽略 asset_id"
+
+
+def test_inbox_preview_refreshes_after_source_changes(inbox_runtime):
+    """【QIN-588 AC3】源文件被替换后不得继续显示旧图（源身份 mtime+size 失效缓存）。"""
+    with TestClient(create_app()) as client:
+        uploaded = _upload(client, "variant.png", _png_bytes((255, 0, 0)))
+        stored = uploaded["file"]
+        preview_before = client.get(
+            f"/api/media-preview?w=256&inbox_file={stored}", headers=AUTH
+        )
+        assert preview_before.status_code == 200
+
+        source = inbox_runtime["data"] / "inbox" / stored
+        source.write_bytes(_png_bytes((0, 0, 255)))
+        preview_after = client.get(
+            f"/api/media-preview?w=256&inbox_file={stored}", headers=AUTH
+        )
+        assert preview_after.status_code == 200, preview_after.text
+        assert preview_after.content != preview_before.content, "源变化后必须出真实新图"
+
+
+def test_collect_inbox_preview_is_scoped_to_current_owner(inbox_runtime):
+    """【QIN-588 AC6】遗留收集条目的预览按主体分账：自己的文件可预览，别人的不下发。"""
+    owner_directory = hashlib.sha256(_owner_key().encode("utf-8")).hexdigest()
+    legacy = inbox_runtime["data"] / "registry_uploads" / "collect_inbox" / owner_directory
+    legacy.mkdir(parents=True)
+    (legacy / "old.png").write_bytes(_png_bytes((0, 128, 255)))
+    stranger = inbox_runtime["data"] / "registry_uploads" / "collect_inbox" / ("e" * 64)
+    stranger.mkdir(parents=True)
+    (stranger / "secret.png").write_bytes(_png_bytes((255, 255, 0)))
+
+    with TestClient(create_app()) as client:
+        listing = client.get(BASE, headers=AUTH).json()
+        entries = [item for item in listing["items"] if item["source"] == "collect_inbox"]
+        assert [item["name"] for item in entries] == ["old.png"]
+        query = entries[0]["preview_query"]
+        assert query and query.startswith("collect_inbox_file="), entries[0]
+
+        preview = client.get(
+            f"/api/media-preview?w=256&{query}", headers=AUTH
+        )
+        assert preview.status_code == 200, preview.text
+        assert preview.headers["content-type"].startswith("image/")
+
+        # 无主体上下文请求 collect_inbox_file：失败关闭（403，绝不返回字节）。
+        from gw.asset_library import inbox as inbox_module
+
+        with pytest.raises(Exception) as excinfo:
+            inbox_module.resolve_preview_request(
+                {"collect_inbox_file": "old.png"}
+            )
+        assert excinfo.value.status_code == 403
+        assert excinfo.value.code == "INBOX_OWNER_REQUIRED"

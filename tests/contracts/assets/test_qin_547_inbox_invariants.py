@@ -27,10 +27,14 @@
 from __future__ import annotations
 
 import hashlib
+import io
 from pathlib import Path
+from urllib.parse import quote
 
 import pytest
 from fastapi.testclient import TestClient
+
+from PIL import Image
 
 from gw.api.app import create_app
 from gw.asset_library import inbox
@@ -191,3 +195,98 @@ def test_relocate_failure_keeps_path_and_rolls_back(inbox_env, monkeypatch):
         assert Path(payload["path"]) == (inbox_env["data"] / "inbox").resolve()
         assert (inbox_env["data"] / "inbox" / stored).is_file(), "文件必须仍在旧位置可访问"
         assert client.get(BASE, headers=AUTH).json()["count"] == 1
+
+
+def _png_bytes(color: tuple[int, int, int] = (255, 0, 0)) -> bytes:
+    buffer = io.BytesIO()
+    Image.new("RGB", (64, 64), color).save(buffer, format="PNG")
+    return buffer.getvalue()
+
+
+def test_inbox_preview_identity_fails_closed(inbox_env):
+    """【QIN-588】收集箱预览身份必须失败关闭：穿越/绝对路径/软链接逃逸/匿名全部拒绝。
+
+    媒体预览是允许根之外的唯一受控读图通道，边界破一处就是任意文件读。
+    """
+    (inbox_env["data"] / "inbox").mkdir(parents=True, exist_ok=True)
+    (inbox_env["data"] / "inbox" / "inbox_ok.png").write_bytes(_png_bytes())
+
+    # 路径穿越：即使指向 data_root 内的 auth 目录也必须拒绝（收集箱边界不是 data_root）。
+    assert inbox.resolve_preview_request({"inbox_file": "../auth/auth.sqlite3"}) is None
+    assert inbox.resolve_preview_request({"inbox_file": "a/../b.png"}) is None
+    # 绝对路径与反斜杠：结构性拒绝。
+    assert inbox.resolve_preview_request({"inbox_file": "C:/Windows/win.ini"}) is None
+    assert inbox.resolve_preview_request({"inbox_file": "a\\b.png"}) is None
+    # 空值与未知参数回落既有链路：不下发受控身份。
+    assert inbox.resolve_preview_request({"inbox_file": ""}) is None
+    assert inbox.resolve_preview_request({}) is None
+
+    with TestClient(create_app()) as client:
+        stored = client.post(
+            f"{BASE}/upload",
+            headers=AUTH,
+            files={"files": ("shot.png", _png_bytes(), "image/png")},
+        ).json()["items"][0]["file"]
+        traversal = client.get(
+            f"/api/media-preview?w=256&inbox_file={stored}/..%2F..%2Fauth%2Fauth.sqlite3",
+            headers=AUTH,
+        )
+        assert traversal.status_code == 404, traversal.text
+
+        absolute = client.get(
+            "/api/media-preview?w=256&inbox_file="
+            + quote(str(inbox_env["data"] / "inbox" / stored), safe=""),
+            headers=AUTH,
+        )
+        assert absolute.status_code == 404, absolute.text
+
+        anonymous = client.get(f"/api/media-preview?w=256&inbox_file={stored}")
+        assert anonymous.status_code == 401, "预览必须经鉴权"
+
+    # 软链接逃逸：平台支持时必须拒绝（Linux CI 覆盖；Windows 无特权时跳过）。
+    outside = inbox_env["tmp"] / "outside.png"
+    outside.write_bytes(_png_bytes((0, 255, 0)))
+    try:
+        link = inbox_env["data"] / "inbox" / "inbox_escape.png"
+        link.symlink_to(outside)
+    except (OSError, NotImplementedError):
+        pytest.skip("当前平台无法创建符号链接")
+    assert inbox.resolve_preview_request({"inbox_file": "inbox_escape.png"}) is None
+
+
+def test_inbox_list_preview_query_contract(inbox_env):
+    """【QIN-588】列表条目只下发受控预览查询串：本地条目有、URL 条目没有、遗留按主体。
+
+    前端零路径知识：预览 URL 全部由服务端授权的相对参数拼装，响应不得泄露绝对路径。
+    """
+    source = inbox_env["allowed"] / "migrated.png"
+    source.write_bytes(_png_bytes((0, 128, 255)))
+    _register("asset_contract_preview", "已迁移素材.png", source.as_uri())
+    _register("asset_contract_url", "外链素材.png", "https://example.com/external.png")
+
+    with TestClient(create_app()) as client:
+        client.post(f"{BASE}/migrate", headers=AUTH)
+        uploaded = client.post(
+            f"{BASE}/upload",
+            headers=AUTH,
+            files={"files": ("shot.png", _png_bytes(), "image/png")},
+        ).json()["items"][0]
+
+        listing = client.get(BASE, headers=AUTH).json()
+        by_id = {item["id"]: item for item in listing["items"]}
+        assert uploaded["id"] in by_id
+        assert by_id[uploaded["id"]]["preview_query"].startswith("inbox_file=")
+        assert str(inbox_env["data"]) not in json_dumps(listing), "列表响应不得含绝对路径"
+
+        url_entry = next(
+            item
+            for item in listing["items"]
+            if item["source"] == "asset_library" and item.get("asset_id") == "asset_contract_url"
+        )
+        assert url_entry["preview_query"] is None, "URL 条目不得下发受控预览参数"
+
+
+def json_dumps(payload) -> str:
+    from json import dumps
+
+    return dumps(payload, ensure_ascii=False, default=str)

@@ -283,7 +283,7 @@ def _registry_path(asset_id: str) -> Path:
 
 
 def _resolve_input(payload: dict[str, Any]) -> Path:
-    """解析输入：优先 asset_id（走注册表），其次显式 path（必须落在允许根目录内）。
+    """解析输入：优先收集箱受控身份，其次 asset_id（走注册表），再次显式 path（必须落在允许根目录内）。
 
     内部调用方可传 ``_resolved_path``（PATH 对象，HTTP JSON 无法构造）跳过注册表
     回查：全库预热每项都要出图，重复 load 整份 asset_registry.json 会成为主要
@@ -292,6 +292,16 @@ def _resolve_input(payload: dict[str, Any]) -> Path:
     prepared = (payload or {}).get("_resolved_path")
     if isinstance(prepared, Path) and prepared.is_file():
         return prepared
+    # 【QIN-588】收集箱身份的受控解析：客户端只能携带服务端下发的相对路径参数，
+    # 由收集箱模块按边界（根内、非软链接、主体分账）解析；显式携带受控参数时不
+    # 回落 asset_id/path，避免组合绕过。
+    if any(key in (payload or {}) for key in ("inbox_file", "collect_inbox_file")):
+        from gw.asset_library import inbox
+
+        resolved = inbox.resolve_preview_request(payload)
+        if resolved is not None:
+            return resolved
+        raise CleanroomException(404, "FILE_NOT_FOUND", "收集箱文件不存在或不可访问")
     asset_id = str((payload or {}).get("asset_id") or "").strip()
     if asset_id:
         return _registry_path(asset_id)
