@@ -6,8 +6,10 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>资产金库与素材池 · Gods' Workbench</title>
-  <script src="/static/vendor/js/tailwindcss-cdn.js?v=3.4.17&amp;build=d11003b2f6fb"></script>
   <script src="/static/vendor/js/lucide.js?v=1.16.0"></script>
+  <!-- QIN-585：外壳页不再加载 Tailwind 运行时（836KB，进页做 JIT 编译）。
+       改用仓库静态快照，工具类与 preflight 均已预生成，首屏只多一次 85KB 的样式请求。 -->
+  <link rel="stylesheet" href="/static/css/base/tailwind-utilities.css?v=20261110-qin585">
   <link rel="stylesheet" href="/static/css/base/hardware-design-system.css?ui=20261011-final">
   <link rel="stylesheet" href="/static/css/base/workspace-pages.css?v=20261029-qin478">
   <style>

@@ -26545,15 +26545,28 @@ if(!directorySettingsPage){
     renderBoardNavigation();
     if(document.readyState !== 'loading') tryApplyRegistrySnapshot();
 }
+// 【QIN-585 AC2】首屏延后块：收集箱与治理建议都不参与第一屏卡片渲染，
+// 却在 DOMContentLoaded 里与首屏列表并发请求。治理建议在千级素材库上单次要跑数秒，
+// 单进程服务端会把首屏列表请求排在它后面 —— 首屏因此被一个「用户还没打开的抽屉」拖住。
+// 改为首屏就绪后再发，用空闲时段调度；两条链路都自带失败兜底，延后不改变可用性。
+function scheduleDeferredBootRequests(){
+    const run = () => {
+        void loadAssetInbox().then(() => {
+            if(assetInboxUnreadCount() > 0 && activeTab !== 'inbox') render();
+        }).catch(() => null);
+        loadGovernanceSuggestions();
+    };
+    if(typeof window.requestIdleCallback === 'function'){
+        window.requestIdleCallback(run, {timeout:2000});
+        return;
+    }
+    setTimeout(run, 200);
+}
 document.addEventListener('DOMContentLoaded', () => {
     if(directorySettingsPage){ loadGlobalDirectorySettings(); return; }
     // 【QIN-573 AC2】优先从会话快照恢复首屏渲染，隐藏骨架屏
     tryApplyRegistrySnapshot();
-    void loadAssetInbox().then(() => {
-        if(assetInboxUnreadCount() > 0 && activeTab !== 'inbox') render();
-    }).catch(() => null);
     loadRegistryPrincipal();
-    loadGovernanceSuggestions();
     loadAll().then(async () => {
         const restoredScroll = await restoreRegistryBrowseSession();
         // 【QIN-566】恢复上次外壳侧栏入口（仅内嵌金库模式；刷新/往返不丢目标入口，AC5）。
@@ -26564,8 +26577,12 @@ document.addEventListener('DOMContentLoaded', () => {
         // 【QIN-582 AC5】首屏就绪：项目计数延后到空闲时段，5s 索引轮询仍只在此之后启动。
         markRegistryFirstScreenReady();
         startRegistryAutomaticIndexPolling();
+        // 【QIN-585 AC2】首屏已画出，再补收集箱与治理建议。
+        scheduleDeferredBootRequests();
     }).catch(err => {
         markRegistryFirstScreenReady();
         setStatus(err.message || '加载失败');
+        // 首屏失败不等于延后能力可以丢：用户仍可能直接打开收集箱或治理抽屉。
+        scheduleDeferredBootRequests();
     });
 });

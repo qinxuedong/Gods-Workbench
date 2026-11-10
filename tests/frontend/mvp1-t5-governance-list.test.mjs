@@ -32,7 +32,23 @@ test('AC1: 治理建议入口位于顶栏并打开可访问抽屉，左栏不再
     assert.match(source, /function openGovernanceDrawer\(trigger\)/);
     assert.match(source, /role="dialog" aria-modal="true" aria-labelledby="governanceDrawerTitle"/);
     assert.match(source, /function renderRegistryToolbar\([\s\S]*?data-governance-open/);
-    assert.match(source, /loadGovernanceSuggestions\(\);\s*loadAll\(\)\.then/);
+    // 【QIN-585 AC2】治理建议不再与首屏列表并发发起：延后到首屏就绪后的空闲时段调度。
+    // 治理建议在千级素材库上单次要跑数秒，与首屏列表争单进程服务端的锁会把首卡拖到 8s 以上。
+    assert.match(
+        source,
+        /function scheduleDeferredBootRequests\(\)\{[\s\S]*?loadGovernanceSuggestions\(\);[\s\S]*?\n\}/,
+        '治理建议必须在延后块里加载',
+    );
+    assert.match(
+        source,
+        /markRegistryFirstScreenReady\(\);\s*startRegistryAutomaticIndexPolling\(\);[\s\S]{0,200}?scheduleDeferredBootRequests\(\);/,
+        '延后块只在首屏就绪后才调度',
+    );
+    assert.doesNotMatch(
+        source,
+        /document\.addEventListener\('DOMContentLoaded', \(\) => \{[\s\S]{0,900}?loadGovernanceSuggestions\(\);/,
+        'DOMContentLoaded 首屏段不得再同步发起治理建议请求',
+    );
 });
 
 test('suggestion view only calls the two implemented governance endpoints', () => {
