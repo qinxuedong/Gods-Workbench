@@ -6,7 +6,7 @@ import test from 'node:test';
 const vaultCss = readFileSync(new URL('../../web/css/pages/asset-vault.css', import.meta.url), 'utf8');
 const managerJs = readFileSync(new URL('../../web/js/modules/asset-manager.js', import.meta.url), 'utf8');
 
-test('AC1: vault 嵌入态收集箱网格首列收为零宽且无详情轨道，消除 240px 左空列与 280-320px 右空轨道', () => {
+test('AC1: vault 嵌入态收集箱宽屏网格首列收为零宽且无详情轨道，消除 240px 左空列与 280-320px 右空轨道', () => {
   // 必须存在针对 .asset-manager-root-page-inbox 的零宽首列规则，且仅单内容列吃满余宽
   assert.match(
     vaultCss,
@@ -19,16 +19,75 @@ test('AC1: vault 嵌入态收集箱网格首列收为零宽且无详情轨道，
   );
 });
 
-test('AC2: 约 900px 宽度上下及更窄屏时，收集箱收为紧凑 3 行且内容区在第 3 行，消除隐式空列与空行', () => {
-  // 在 900px 媒体查询内收集箱模板行收为 3 行：auto auto minmax(360px,1fr)
+test('AC2: 约 900px 宽度上下及更窄屏时，收集箱收为单列紧凑 3 行，显式覆盖宽屏零宽首列以绝掉入 0 宽列', () => {
+  // 针对 ≤900px 窄屏，必须显式覆盖 grid-template-columns 为单列 minmax(0,1fr)，避免宽屏零宽规则因特异性滞留
+  assert.match(
+    vaultCss,
+    /@media\s*\(max-width:\s*900px\)[\s\S]*?#assetManagerRoot\.asset-manager-root-page-inbox\s*\{[\s\S]*?grid-template-columns:\s*minmax\(0,1fr\)\s*!important;/
+  );
+  // 窄屏模板行收为 3 行：auto auto minmax(360px,1fr)
   assert.match(
     vaultCss,
     /@media\s*\(max-width:\s*900px\)[\s\S]*?#assetManagerRoot\.asset-manager-root-page-inbox\s*\{[\s\S]*?grid-template-rows:\s*auto\s+auto\s+minmax\(360px,1fr\)\s*!important;/
   );
-  // 收集箱内容区在 900px 下提升至第 3 行，避免落入留给不存在左栏的第 4 行
+  // 窄屏下收集箱公共工具栏与统计条明确落入单列 column: 1
   assert.match(
     vaultCss,
-    /@media\s*\(max-width:\s*900px\)[\s\S]*?#assetManagerRoot\.asset-manager-root-page-inbox\s*>\s*:is\(\.asset-panel\.asset-content,\.inbox-content\)\s*\{\s*grid-row:\s*3\s*!important;\s*\}/
+    /@media\s*\(max-width:\s*900px\)[\s\S]*?#assetManagerRoot\.asset-manager-root-page-inbox\s*>\s*:is\(\.registry-overview-shell,\.registry-toolbar\)\s*\{\s*grid-column:\s*1\s*!important;\s*\}/
+  );
+  // 收集箱内容区在 900px 下明确落入 column: 1 且提升至第 3 行，避免落入留给不存在左栏的第 4 行
+  assert.match(
+    vaultCss,
+    /@media\s*\(max-width:\s*900px\)[\s\S]*?#assetManagerRoot\.asset-manager-root-page-inbox\s*>\s*:is\(\.asset-panel\.asset-content,\.inbox-content\)\s*\{\s*grid-column:\s*1\s*!important;\s*grid-row:\s*3\s*!important;\s*\}/
+  );
+});
+
+test('AC2-层叠仿真: 模拟 900px 媒体查询生效时的特异性与层叠顺序，断言单列绝对胜出', () => {
+  // 提取针对 #assetManagerRoot.asset-manager-root-page-inbox 的所有 grid-template-columns 规则
+  const regex = /([^{}]+)\{\s*([^}]+)\s*\}/g;
+  const colDeclarations = [];
+  let match;
+  while ((match = regex.exec(vaultCss)) !== null) {
+    const sel = match[1].trim();
+    const body = match[2];
+    if (sel.includes('#assetManagerRoot.asset-manager-root-page-inbox') && body.includes('grid-template-columns')) {
+      const colMatch = body.match(/grid-template-columns:\s*([^;!]+)(!important)?/);
+      if (colMatch) {
+        colDeclarations.push({
+          selector: sel,
+          value: colMatch[1].trim(),
+          important: Boolean(colMatch[2]),
+          index: match.index,
+        });
+      }
+    }
+  }
+
+  assert.ok(colDeclarations.length >= 2, '至少应存在宽屏默认与窄屏媒体查询两条列规则');
+  const wideRule = colDeclarations[0];
+  const narrowRule = colDeclarations[colDeclarations.length - 1];
+
+  // 宽屏规则声明零宽首列
+  assert.equal(wideRule.value, '0 minmax(0,1fr)');
+  assert.equal(wideRule.important, true);
+
+  // 窄屏规则在源码位置更靠后且声明单列
+  assert.equal(narrowRule.value, 'minmax(0,1fr)');
+  assert.equal(narrowRule.important, true);
+  assert.ok(narrowRule.index > wideRule.index, '窄屏覆盖规则必须在宽屏规则之后声明（源码顺序胜出）');
+
+  // 计算选择器特异性 (Specificity) 确保窄屏选择器权重不低于宽屏
+  const getSpecificity = (sel) => {
+    const ids = (sel.match(/#[a-zA-Z0-9_-]+/g) || []).length;
+    const classes = (sel.match(/\.[a-zA-Z0-9_-]+/g) || []).length;
+    const tags = (sel.match(/(^|\s)[a-zA-Z0-9_-]+/g) || []).length;
+    return ids * 100 + classes * 10 + tags;
+  };
+  const wideSpec = getSpecificity(wideRule.selector);
+  const narrowSpec = getSpecificity(narrowRule.selector);
+  assert.ok(
+    narrowSpec >= wideSpec,
+    `窄屏规则选择器特异性 (${narrowSpec}) 不得低于宽屏规则 (${wideSpec})，否则单列无法生效`
   );
 });
 

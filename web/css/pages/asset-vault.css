@@ -1444,10 +1444,15 @@ html.vault-shell-embedded body.gw-signal.gw-page--asset-manager #assetManagerRoo
     html.vault-shell-embedded body.gw-signal.gw-page--asset-manager #assetManagerRoot > .registry-detail-resizer { display: none; }
     html.vault-shell-embedded body.gw-signal.gw-page--asset-manager #assetManagerRoot.asset-manager-root-registry > .registry-content { grid-row: 3; }
     html.vault-shell-embedded body.gw-signal.gw-page--asset-manager #assetManagerRoot.asset-manager-root-page-inbox {
-        /* 【QIN-587】窄屏收集箱收为 3 行单列，消除左栏与详情抽屉空行。 */
+        /* 【QIN-587】窄屏收集箱收为单列 3 行，显式覆盖宽屏零宽首列规则，消除 0 宽首列掉入与左栏、详情抽屉空行。 */
+        grid-template-columns: minmax(0,1fr) !important;
         grid-template-rows: auto auto minmax(360px,1fr) !important;
     }
+    html.vault-shell-embedded body.gw-signal.gw-page--asset-manager #assetManagerRoot.asset-manager-root-page-inbox > :is(.registry-overview-shell,.registry-toolbar) {
+        grid-column: 1 !important;
+    }
     html.vault-shell-embedded body.gw-signal.gw-page--asset-manager #assetManagerRoot.asset-manager-root-page-inbox > :is(.asset-panel.asset-content,.inbox-content) {
+        grid-column: 1 !important;
         grid-row: 3 !important;
     }
     html.vault-shell-embedded body.gw-signal.gw-page--asset-manager #assetManagerRoot.asset-manager-root-page-scripts {
