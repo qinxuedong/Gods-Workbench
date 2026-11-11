@@ -2580,17 +2580,21 @@ function toggleAssetRackFoldersAll(){
     saveAssetRackExpandedFolders();
     render();
 }
-function selectAssetRackFolder(rootId, path){
+function selectAssetRackFolder(rootId, path, { force=false }={}){
     const root = String(rootId || '');
-    const folder = String(path || '').replace(/\\/g, '/').replace(/^\/+|\/+$/g, '');
+    const folder = path === '__root__' ? '__root__' : String(path || '').replace(/\\/g, '/').replace(/^\/+|\/+$/g, '');
     const board = assetRackBoard();
     if(board){
         if(!registryRackSnapshot) setRegistryRackSnapshot(registryAssets.slice());
         const currentRoot = String(boardSourceSelection[board.id] || '');
         const currentFolder = String(boardFolderSelection[board.id] || '');
         const same = currentRoot === root && currentFolder === folder;
-        boardSourceSelection[board.id] = same ? '' : root;
-        boardFolderSelection[board.id] = same ? '' : folder;
+        if(force && same){
+            // 幂等模式：保持选中，不 toggle 清空
+        } else {
+            boardSourceSelection[board.id] = same ? '' : root;
+            boardFolderSelection[board.id] = same ? '' : folder;
+        }
         if(!board.sourceBoard) setRegistryRootId('');
         if(!same && folder && folder !== '__root__'){
             const segments = folder.split('/').filter(Boolean);
@@ -2602,7 +2606,11 @@ function selectAssetRackFolder(rootId, path){
         return;
     }
     const same = registryNavFolder.rootId === root && registryNavFolder.path === folder;
-    setRegistryNavFolder(same ? {rootId:'', path:''} : {rootId:root, path:folder});
+    if(force && same){
+        // 幂等模式：保持选中，不 toggle 清空
+    } else {
+        setRegistryNavFolder(same ? {rootId:'', path:''} : {rootId:root, path:folder});
+    }
     if(!same && folder){
         // 选中子目录时逐级展开父链，避免节点被折叠隐藏
         const segments = folder.split('/').filter(Boolean);

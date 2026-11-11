@@ -3924,7 +3924,8 @@ function registryNavFolderMatches(item={}){
     // 看板态由 customAssetLibraryItems 完成来源/目录收敛，此处不再二次叠加
     if(assetRackBoard()) return true;
     if(!registryNavFolderActive()) return true;
-    if(registryNavFolder.rootId && String(item.storage_root_id || '') !== registryNavFolder.rootId) return false;
+    const itemRoot = String(item.storage_root_id || item.root_id || '');
+    if(registryNavFolder.rootId && itemRoot !== registryNavFolder.rootId) return false;
     return registryAssetMatchesFolder(item, registryNavFolder.path);
 }
 function registryNavFolderLabel(){
@@ -3937,7 +3938,7 @@ function registryNavFolderLabel(){
     }
     if(!registryNavFolderActive()) return '';
     const rootName = (registryFacets.roots || []).find(root => String(root.id || '') === registryNavFolder.rootId)?.name || '';
-    const folderName = registryNavFolder.path.split('/').filter(Boolean).pop() || '';
+    const folderName = registryNavFolder.path === '__root__' ? '根目录' : (registryNavFolder.path.split('/').filter(Boolean).pop() || '');
     return [rootName, folderName].filter(Boolean).join(' / ') || rootName;
 }
 function registryProjectEntityMatches(asset){
@@ -4019,7 +4020,7 @@ function handleAssetTreeCrumbClick(key){
         const separator = body.indexOf('::');
         const rootId = separator > 0 ? body.slice(0, separator) : body;
         const path = separator > 0 ? body.slice(separator + 2) : '';
-        gwCall('settings', 'selectAssetRackFolder', rootId, path);
+        gwCall('settings', 'selectAssetRackFolder', rootId, path, { force: true });
         return;
     }
     selectAssetTreeNode(value);
@@ -5452,7 +5453,7 @@ function customAssetLibraryIncludesAsset(board,item={}){
     const extensions = new Set(Array.isArray(board.extensions) ? board.extensions : []);
     const categoryMatch = board.preset === 'other' || kinds.has(String(item.kind || '')) || extensions.has(registryAssetExtension(item));
     if(!categoryMatch) return false;
-    const itemSourceId = String(item.storage_root_id || '');
+    const itemSourceId = String(item.storage_root_id || item.root_id || '');
     if(board.sourceBoard) return itemSourceId === String(board.rootId || '');
     const sources = Array.isArray(board.sources) ? board.sources : [];
     const sourceIds = new Set([...sources.map(source => source.id), ...(board.excludedSourceIds || [])].map(String));
@@ -5471,13 +5472,16 @@ function customAssetLibraryBaseItems(board, options={}){
     const sourceId = ignoreSourceSelection ? '' : (board?.sourceBoard ? String(board.rootId || '') : (boardSourceSelection[board?.id] || ''));
     const sources = Array.isArray(board?.sources) ? board.sources : [];
     const sourceIds = new Set([...sources.map(source => source.id), ...(board?.excludedSourceIds || [])]);
-    const visibleSourceIds = new Set(sources.filter(source => !source.hidden).map(source => source.id));
+    const visibleSourceIds = new Set(sources.filter(source => !source.hidden).map(source => String(source.id)));
     return (options.items || registryAssets).filter(item => {
         const categoryMatch = board?.preset === 'other' || kinds.has(String(item.kind || '')) || extensions.has(registryAssetExtension(item));
         if(!categoryMatch) return false;
-        const itemSourceId = String(item.storage_root_id || '');
+        const itemSourceId = String(item.storage_root_id || item.root_id || '');
         if(sourceId === '__automatic__') return !board?.automaticHidden && !sourceIds.has(itemSourceId) && Boolean(board?.sourceBoard || sources.some(source => !source.hidden));
-        if(sourceId) return visibleSourceIds.has(sourceId) && itemSourceId === sourceId;
+        if(sourceId){
+            if(board?.sourceBoard) return itemSourceId === sourceId || String(board.rootId || '') === itemSourceId;
+            return visibleSourceIds.has(sourceId) && itemSourceId === sourceId;
+        }
         return customAssetLibraryIncludesAsset(board,item);
     });
 }
@@ -7081,11 +7085,35 @@ function selectAssetTreeNode(key){
             }
             return false;
         });
-        if(matchingBoard && !path){
-            void gwCall('organize', 'activateAssetBoard', matchingBoard.id);
-            return;
+        if(matchingBoard){
+            if(activeTab !== matchingBoard.id){
+                activeTab = matchingBoard.id;
+                registryRackSnapshot = null;
+                resetBoardSelections();
+                renderBoardNavigation();
+                gwCall('settings', 'clearAssetRackFolder');
+                applyRegistryFilterDefinition({groupSimilar:registryGroupSimilar});
+            }
+            if(!path){
+                render();
+                return;
+            }
+        } else if(activeTab !== 'registry'){
+            // 【QIN-595 审核官反馈第 1 项】若当前在非目标看板（如 LUT），点挂载子目录需切回资产总览并彻底重置其过滤定义，避免残留原看板的 kind/category/query 导致滤空
+            activeTab = 'registry';
+            registryRackSnapshot = null;
+            resetBoardSelections();
+            renderBoardNavigation();
+            gwCall('settings', 'clearAssetRackFolder');
+            registryNavFolder = {rootId:'', path:''};
+            registryRootId = '';
+            registryStatCategory = '';
+            registryProjectFilterId = '';
+            registryProjectEntityFilter = null;
+            activeProjectId = '';
+            applyRegistryFilterDefinition({groupSimilar:registryGroupSimilar});
         }
-        gwCall('settings', 'selectAssetRackFolder', rootId, path === '__root__' ? '' : path);
+        gwCall('settings', 'selectAssetRackFolder', rootId, path === '__root__' ? '' : path, { force: true });
         return;
     }
     if(value === 'system:projects'){
@@ -7481,7 +7509,7 @@ function renderRegistryManager(){
         ${renderRegistryFilterChips()}
         ${registryBootstrapError ? `<div class="registry-bootstrap-error" role="alert" data-registry-bootstrap-error><i data-lucide="alert-triangle"></i><span>统一资产注册表加载失败：${escapeHtml(registryBootstrapError)}</span><button class="hw-btn btn-size-sm" type="button" data-registry-bootstrap-retry>重试</button></div>` : ''}
         <div class="registry-fresh-notice" data-registry-fresh-notice></div>
-        <div class="content-scroll registry-assets-scroll" data-registry-zoom-area title="Shift+滚轮调整预览大小">${renderRegistryAssetSections(visible, null, '没有符合条件的资产。可以清空排除条件。')}${renderRegistryPagination()}</div>
+        <div class="content-scroll registry-assets-scroll" data-registry-zoom-area title="Shift+滚轮调整预览大小">${renderRegistryAssetSections(visible, null, registryNavFolderActive() ? `“${registryNavFolderLabel() || '该目录'}”暂无已索引素材。素材进入统一索引后会自动显示在这里，可在设置中触发索引或等待后台扫描。` : '没有符合条件的资产。可以清空排除条件。')}${renderRegistryPagination()}</div>
         <div class="registry-vault-footer" aria-label="资产库状态"><span>资产索引 <strong>${registryTotalKnown ? Number(registryTotal).toLocaleString('zh-CN') : '统计中'}</strong></span><span>${registryLoading ? '正在读取' : `已加载${registryPageHasMore ? '' : '全部'} ${registryAssets.length} 项`}</span><span>${registryPageHasMore ? '下滑加载更多' : `当前显示 ${visible.length} 项`}</span></div>
         ${renderRegistrySelectionBar(null)}
     </section>`;
