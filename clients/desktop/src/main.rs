@@ -139,34 +139,68 @@ enum SingleInstanceDecision {
 }
 
 #[cfg(windows)]
-extern "system" {
-    fn OpenProcess(
-        dwDesiredAccess: u32,
-        bInheritHandle: i32,
-        dwProcessId: u32,
-    ) -> *mut std::ffi::c_void;
-    fn CloseHandle(hObject: *mut std::ffi::c_void) -> i32;
+fn is_process_alive(pid: u32) -> bool {
+    extern "system" {
+        fn OpenProcess(
+            dwDesiredAccess: u32,
+            bInheritHandle: i32,
+            dwProcessId: u32,
+        ) -> *mut std::ffi::c_void;
+        fn CloseHandle(hObject: *mut std::ffi::c_void) -> i32;
+    }
+    const PROCESS_QUERY_LIMITED_INFORMATION: u32 = 0x1000;
+    const SYNCHRONIZE: u32 = 0x00100000;
+    unsafe {
+        let handle = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION | SYNCHRONIZE, 0, pid);
+        if handle.is_null() {
+            return false;
+        }
+        CloseHandle(handle);
+        true
+    }
 }
 
+#[cfg(not(windows))]
 fn is_process_alive(pid: u32) -> bool {
-    #[cfg(windows)]
-    {
-        const PROCESS_QUERY_LIMITED_INFORMATION: u32 = 0x1000;
-        const SYNCHRONIZE: u32 = 0x00100000;
-        unsafe {
-            let handle = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION | SYNCHRONIZE, 0, pid);
-            if handle.is_null() {
-                return false;
-            }
-            CloseHandle(handle);
-            true
-        }
+    std::process::Command::new("kill")
+        .args(["-0", &pid.to_string()])
+        .status()
+        .map(|s| s.success())
+        .unwrap_or(false)
+}
+
+#[cfg(windows)]
+fn report_fatal_error(message: &str) {
+    extern "system" {
+        fn MessageBoxW(
+            hwnd: *mut std::ffi::c_void,
+            text: *const u16,
+            caption: *const u16,
+            utype: u32,
+        ) -> i32;
     }
-    #[cfg(not(windows))]
-    {
-        let res = unsafe { libc::kill(pid as i32, 0) };
-        res == 0
+    use std::os::windows::ffi::OsStrExt;
+    let wide_title: Vec<u16> = std::ffi::OsStr::new("神工坊桌面端启动错误")
+        .encode_wide()
+        .chain(std::iter::once(0))
+        .collect();
+    let wide_msg: Vec<u16> = std::ffi::OsStr::new(message)
+        .encode_wide()
+        .chain(std::iter::once(0))
+        .collect();
+    unsafe {
+        MessageBoxW(
+            std::ptr::null_mut(),
+            wide_msg.as_ptr(),
+            wide_title.as_ptr(),
+            0x10, // MB_ICONERROR
+        );
     }
+}
+
+#[cfg(not(windows))]
+fn report_fatal_error(message: &str) {
+    eprintln!("神工坊桌面端启动错误: {message}");
 }
 
 fn try_wake_existing_instance(port: u16, token: &str) -> bool {
@@ -190,11 +224,78 @@ fn try_wake_existing_instance(port: u16, token: &str) -> bool {
     false
 }
 
+fn initialize_primary_listener(
+    file: &mut std::fs::File,
+    lock_path: &Path,
+) -> Result<SingleInstanceDecision, String> {
+    use std::io::Write;
+    let listener = std::net::TcpListener::bind("127.0.0.1:0")
+        .map_err(|e| format!("Cannot bind ephemeral port for single instance: {e}"))?;
+    let port = listener
+        .local_addr()
+        .map_err(|e| format!("Cannot determine ephemeral listener port: {e}"))?
+        .port();
+    let token = format!(
+        "{:x}",
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or(1)
+    );
+    let lock_info = InstanceLock {
+        port,
+        token: token.clone(),
+        pid: std::process::id(),
+    };
+    let content = serde_json::to_vec_pretty(&lock_info)
+        .map_err(|e| format!("Cannot serialize instance lock: {e}"))?;
+    file.write_all(&content)
+        .and_then(|_| file.flush())
+        .map_err(|e| format!("Cannot write instance lock data: {e}"))?;
+
+    let listener_clone = listener
+        .try_clone()
+        .map_err(|e| format!("Cannot clone listener socket for wakeup thread: {e}"))?;
+
+    let wakeup_state = Arc::new(WakeupState::new());
+    let wakeup_clone = wakeup_state.clone();
+    let expected_token = token.clone();
+
+    std::thread::spawn(move || {
+        use std::io::{BufRead, BufReader, Write};
+        for stream in listener_clone.incoming() {
+            if let Ok(mut stream) = stream {
+                let _ = stream.set_read_timeout(Some(Duration::from_millis(1000)));
+                let _ = stream.set_write_timeout(Some(Duration::from_millis(1000)));
+                let mut reader = BufReader::new(&mut stream);
+                let mut line = String::new();
+                if reader.read_line(&mut line).is_ok() {
+                    let parts: Vec<&str> = line.trim().split_whitespace().collect();
+                    if parts.len() == 2 && parts[0] == "WAKEUP" && parts[1] == expected_token {
+                        wakeup_clone.trigger_wakeup();
+                        let _ = writeln!(stream, "WAKEN");
+                        let _ = stream.flush();
+                    }
+                }
+            }
+        }
+    });
+
+    Ok(SingleInstanceDecision::Primary {
+        listener,
+        token,
+        wakeup_state,
+        lock_path: lock_path.to_path_buf(),
+    })
+}
+
 fn arbitrate_single_instance(lock_path: &Path) -> SingleInstanceDecision {
     use std::fs::OpenOptions;
-    use std::io::Write;
 
-    for round in 0..2 {
+    let recovery_lock_path = lock_path.with_extension("recovering");
+
+    for _round in 0..2 {
+        // 第一阶段：原子排他独占创建主锁
         match OpenOptions::new()
             .read(true)
             .write(true)
@@ -202,104 +303,23 @@ fn arbitrate_single_instance(lock_path: &Path) -> SingleInstanceDecision {
             .open(lock_path)
         {
             Ok(mut file) => {
-                let listener = match std::net::TcpListener::bind("127.0.0.1:0") {
-                    Ok(l) => l,
+                return match initialize_primary_listener(&mut file, lock_path) {
+                    Ok(decision) => decision,
                     Err(e) => {
                         let _ = fs::remove_file(lock_path);
-                        return SingleInstanceDecision::Error(format!(
-                            "Cannot bind ephemeral port for single instance: {e}"
-                        ));
+                        SingleInstanceDecision::Error(e)
                     }
-                };
-                let port = match listener.local_addr() {
-                    Ok(a) => a.port(),
-                    Err(e) => {
-                        let _ = fs::remove_file(lock_path);
-                        return SingleInstanceDecision::Error(format!(
-                            "Cannot determine ephemeral listener port: {e}"
-                        ));
-                    }
-                };
-                let token = format!(
-                    "{:x}",
-                    std::time::SystemTime::now()
-                        .duration_since(std::time::UNIX_EPOCH)
-                        .map(|d| d.as_nanos())
-                        .unwrap_or(1)
-                );
-                let lock_info = InstanceLock {
-                    port,
-                    token: token.clone(),
-                    pid: std::process::id(),
-                };
-                let content = match serde_json::to_vec_pretty(&lock_info) {
-                    Ok(c) => c,
-                    Err(e) => {
-                        let _ = fs::remove_file(lock_path);
-                        return SingleInstanceDecision::Error(format!(
-                            "Cannot serialize instance lock: {e}"
-                        ));
-                    }
-                };
-                if let Err(e) = file.write_all(&content).and_then(|_| file.flush()) {
-                    let _ = fs::remove_file(lock_path);
-                    return SingleInstanceDecision::Error(format!(
-                        "Cannot write instance lock data: {e}"
-                    ));
-                }
-
-                let listener_clone = match listener.try_clone() {
-                    Ok(l) => l,
-                    Err(e) => {
-                        let _ = fs::remove_file(lock_path);
-                        return SingleInstanceDecision::Error(format!(
-                            "Cannot clone listener socket for wakeup thread: {e}"
-                        ));
-                    }
-                };
-
-                let wakeup_state = Arc::new(WakeupState::new());
-                let wakeup_clone = wakeup_state.clone();
-                let expected_token = token.clone();
-
-                std::thread::spawn(move || {
-                    use std::io::{BufRead, BufReader, Write};
-                    for stream in listener_clone.incoming() {
-                        if let Ok(mut stream) = stream {
-                            let _ = stream.set_read_timeout(Some(Duration::from_millis(1000)));
-                            let _ = stream.set_write_timeout(Some(Duration::from_millis(1000)));
-                            let mut reader = BufReader::new(&mut stream);
-                            let mut line = String::new();
-                            if reader.read_line(&mut line).is_ok() {
-                                let parts: Vec<&str> = line.trim().split_whitespace().collect();
-                                if parts.len() == 2
-                                    && parts[0] == "WAKEUP"
-                                    && parts[1] == expected_token
-                                {
-                                    wakeup_clone.trigger_wakeup();
-                                    let _ = writeln!(stream, "WAKEN");
-                                    let _ = stream.flush();
-                                }
-                            }
-                        }
-                    }
-                });
-
-                return SingleInstanceDecision::Primary {
-                    listener,
-                    token,
-                    wakeup_state,
-                    lock_path: lock_path.to_path_buf(),
                 };
             }
             Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
-                let mut last_recorded_pid = None;
+                // 主锁文件已存在：尝试连接并唤醒（重试最多 15 次，总计 1.5 秒）
+                let mut woken = false;
                 for attempt in 0..15 {
                     if let Ok(content) = fs::read(lock_path) {
                         if let Ok(lock) = serde_json::from_slice::<InstanceLock>(&content) {
-                            last_recorded_pid = Some(lock.pid);
                             if try_wake_existing_instance(lock.port, &lock.token) {
-                                return SingleInstanceDecision::SecondaryWoken;
+                                woken = true;
+                                break;
                             }
                         }
                     }
@@ -308,25 +328,84 @@ fn arbitrate_single_instance(lock_path: &Path) -> SingleInstanceDecision {
                     }
                 }
 
-                if let Some(pid) = last_recorded_pid {
-                    if is_process_alive(pid) {
-                        return SingleInstanceDecision::SecondaryWoken;
-                    }
+                if woken {
+                    return SingleInstanceDecision::SecondaryWoken;
                 }
 
-                if round == 0 {
-                    let _ = fs::remove_file(lock_path);
-                    continue;
-                } else {
-                    return SingleInstanceDecision::Error(
-                        "Unable to wake existing instance and failed to arbitrate clean lock."
-                            .into(),
-                    );
+                // 第二阶段：唤醒失败，确认为遗留死锁或损坏锁。
+                // 核心原子防护：绝不盲目删除主锁！所有并发进程转为原子竞争恢复排他锁
+                match OpenOptions::new()
+                    .write(true)
+                    .create_new(true)
+                    .open(&recovery_lock_path)
+                {
+                    Ok(mut rec_file) => {
+                        use std::io::Write;
+                        let _ = writeln!(rec_file, "{}", std::process::id());
+                        let _ = rec_file.flush();
+
+                        // 抢到恢复锁后，做最后一次连通性复核
+                        if let Ok(content) = fs::read(lock_path) {
+                            if let Ok(lock) = serde_json::from_slice::<InstanceLock>(&content) {
+                                if try_wake_existing_instance(lock.port, &lock.token) {
+                                    let _ = fs::remove_file(&recovery_lock_path);
+                                    return SingleInstanceDecision::SecondaryWoken;
+                                }
+                            }
+                        }
+
+                        // 确定旧主锁已死亡，清理旧主锁并重建
+                        let _ = fs::remove_file(lock_path);
+
+                        let decision = match OpenOptions::new()
+                            .read(true)
+                            .write(true)
+                            .create_new(true)
+                            .open(lock_path)
+                        {
+                            Ok(mut new_file) => {
+                                match initialize_primary_listener(&mut new_file, lock_path) {
+                                    Ok(d) => d,
+                                    Err(err) => {
+                                        let _ = fs::remove_file(lock_path);
+                                        SingleInstanceDecision::Error(err)
+                                    }
+                                }
+                            }
+                            Err(err) => SingleInstanceDecision::Error(format!(
+                                "Failed to recreate primary lock during recovery: {err}"
+                            )),
+                        };
+
+                        let _ = fs::remove_file(&recovery_lock_path);
+                        return decision;
+                    }
+                    Err(rec_err) if rec_err.kind() == std::io::ErrorKind::AlreadyExists => {
+                        // 其他并发进程已抢到恢复锁并在进行恢复！跟随等待恢复者写入新主锁（最多等待 2 秒）
+                        for _ in 0..20 {
+                            std::thread::sleep(Duration::from_millis(100));
+                            if let Ok(content) = fs::read(lock_path) {
+                                if let Ok(lock) = serde_json::from_slice::<InstanceLock>(&content) {
+                                    if try_wake_existing_instance(lock.port, &lock.token) {
+                                        return SingleInstanceDecision::SecondaryWoken;
+                                    }
+                                }
+                            }
+                        }
+                        // 若 2 秒后恢复者仍未就绪（如恢复者异常崩溃），尝试清理孤儿恢复锁并进入下一轮
+                        let _ = fs::remove_file(&recovery_lock_path);
+                        continue;
+                    }
+                    Err(err) => {
+                        return SingleInstanceDecision::Error(format!(
+                            "Failed to acquire recovery lock: {err}"
+                        ));
+                    }
                 }
             }
             Err(e) => {
                 return SingleInstanceDecision::Error(format!(
-                    "Failed to create instance lock file {:?}: {e}",
+                    "Failed to open instance lock file {:?}: {e}",
                     lock_path
                 ));
             }
@@ -1245,7 +1324,9 @@ fn main() {
     let lock_path = instance_lock_path();
     let (_listener, _token, wakeup_state, active_lock_path) =
         match arbitrate_single_instance(&lock_path) {
-            SingleInstanceDecision::SecondaryWoken => return,
+            SingleInstanceDecision::SecondaryWoken => {
+                std::process::exit(0);
+            }
             SingleInstanceDecision::Primary {
                 listener,
                 token,
@@ -1253,8 +1334,8 @@ fn main() {
                 lock_path,
             } => (listener, token, wakeup_state, lock_path),
             SingleInstanceDecision::Error(err) => {
-                eprintln!("桌面端单实例仲裁失败: {err}");
-                return;
+                report_fatal_error(&err);
+                std::process::exit(1);
             }
         };
 
@@ -1316,7 +1397,13 @@ fn main() {
                         }
                     }
                     "quit" => {
-                        let _ = fs::remove_file(&active_lock_path);
+                        if let Ok(content) = fs::read(&active_lock_path) {
+                            if let Ok(lock) = serde_json::from_slice::<InstanceLock>(&content) {
+                                if lock.pid == std::process::id() {
+                                    let _ = fs::remove_file(&active_lock_path);
+                                }
+                            }
+                        }
                         let state = app.state::<ManagedBackendState>();
                         stop_managed_backend(&state);
                         app.exit(0);
@@ -1582,6 +1669,149 @@ mod tests {
         assert_eq!(
             s, 11,
             "All 11 concurrent loser threads must be secondary woken"
+        );
+
+        let _ = fs::remove_file(&lock_path);
+        let _ = fs::remove_dir_all(&test_dir);
+    }
+
+    #[test]
+    fn test_concurrent_instance_arbitration_recovering_from_stale_dead_lock() {
+        let test_dir = std::env::temp_dir().join(format!(
+            "gw_arb_stale_{}_{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let _ = fs::create_dir_all(&test_dir);
+        let lock_path = test_dir.join("stale.lock");
+
+        // 预先写入一份遗留的陈旧死锁（端口不存在，PID 也是早已死去的虚拟 PID）
+        let stale_lock = InstanceLock {
+            port: 59999,
+            token: "dead_stale_token".into(),
+            pid: 99_999_999,
+        };
+        fs::write(&lock_path, serde_json::to_vec_pretty(&stale_lock).unwrap()).unwrap();
+
+        let num_threads = 12;
+        let barrier = Arc::new(std::sync::Barrier::new(num_threads));
+        let primary_count = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let secondary_count = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let error_count = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+
+        let mut handles = Vec::new();
+        for _ in 0..num_threads {
+            let b = barrier.clone();
+            let lp = lock_path.clone();
+            let p_cnt = primary_count.clone();
+            let s_cnt = secondary_count.clone();
+            let e_cnt = error_count.clone();
+
+            handles.push(std::thread::spawn(move || {
+                b.wait();
+                match arbitrate_single_instance(&lp) {
+                    SingleInstanceDecision::Primary { .. } => {
+                        p_cnt.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                    }
+                    SingleInstanceDecision::SecondaryWoken => {
+                        s_cnt.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                    }
+                    SingleInstanceDecision::Error(err) => {
+                        eprintln!("Arbitration error: {err}");
+                        e_cnt.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                    }
+                }
+            }));
+        }
+
+        for h in handles {
+            h.join().expect("join arbitration thread");
+        }
+
+        let p = primary_count.load(std::sync::atomic::Ordering::SeqCst);
+        let s = secondary_count.load(std::sync::atomic::Ordering::SeqCst);
+        let e = error_count.load(std::sync::atomic::Ordering::SeqCst);
+
+        assert_eq!(e, 0, "There should be 0 errors during stale lock recovery");
+        assert_eq!(
+            p, 1,
+            "There MUST be exactly 1 primary instance recovered from stale lock"
+        );
+        assert_eq!(
+            s, 11,
+            "All 11 concurrent threads must be secondary woken after recovery"
+        );
+
+        let _ = fs::remove_file(&lock_path);
+        let _ = fs::remove_dir_all(&test_dir);
+    }
+
+    #[test]
+    fn test_concurrent_instance_arbitration_recovering_from_empty_corrupted_lock() {
+        let test_dir = std::env::temp_dir().join(format!(
+            "gw_arb_empty_{}_{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let _ = fs::create_dir_all(&test_dir);
+        let lock_path = test_dir.join("empty.lock");
+
+        // 预先写入一个 0 字节的空文件，模拟崩溃残留的空锁文件
+        fs::write(&lock_path, b"").unwrap();
+
+        let num_threads = 12;
+        let barrier = Arc::new(std::sync::Barrier::new(num_threads));
+        let primary_count = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let secondary_count = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let error_count = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+
+        let mut handles = Vec::new();
+        for _ in 0..num_threads {
+            let b = barrier.clone();
+            let lp = lock_path.clone();
+            let p_cnt = primary_count.clone();
+            let s_cnt = secondary_count.clone();
+            let e_cnt = error_count.clone();
+
+            handles.push(std::thread::spawn(move || {
+                b.wait();
+                match arbitrate_single_instance(&lp) {
+                    SingleInstanceDecision::Primary { .. } => {
+                        p_cnt.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                    }
+                    SingleInstanceDecision::SecondaryWoken => {
+                        s_cnt.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                    }
+                    SingleInstanceDecision::Error(err) => {
+                        eprintln!("Arbitration error: {err}");
+                        e_cnt.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                    }
+                }
+            }));
+        }
+
+        for h in handles {
+            h.join().expect("join arbitration thread");
+        }
+
+        let p = primary_count.load(std::sync::atomic::Ordering::SeqCst);
+        let s = secondary_count.load(std::sync::atomic::Ordering::SeqCst);
+        let e = error_count.load(std::sync::atomic::Ordering::SeqCst);
+
+        assert_eq!(e, 0, "There should be 0 errors during empty lock recovery");
+        assert_eq!(
+            p, 1,
+            "There MUST be exactly 1 primary instance recovered from empty lock"
+        );
+        assert_eq!(
+            s, 11,
+            "All 11 concurrent threads must be secondary woken after recovery"
         );
 
         let _ = fs::remove_file(&lock_path);

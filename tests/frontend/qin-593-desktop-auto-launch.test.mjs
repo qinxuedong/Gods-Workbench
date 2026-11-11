@@ -40,6 +40,7 @@ test("AC5: 桌面端单实例机制：再次启动唤醒已有窗口（含托盘
   assert.match(desktopSource, /try_wake_existing_instance/);
   assert.match(desktopSource, /arbitrate_single_instance/);
   assert.match(desktopSource, /create_new\(true\)/);
+  assert.match(desktopSource, /recovering/);
   assert.match(desktopSource, /SingleInstanceDecision/);
   assert.match(desktopSource, /WakeupState/);
   assert.match(desktopSource, /WAKEUP/);
