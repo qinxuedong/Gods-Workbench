@@ -37,8 +37,9 @@ test("AC4: 本机 2077 已健康时直接连接，不重复拉起第二个后端
 });
 
 test("AC5: 桌面端单实例机制：再次启动唤醒已有窗口（含托盘隐藏态），不启动第二个客户端进程", () => {
-  assert.match(desktopSource, /check_and_wake_existing_instance/);
-  assert.match(desktopSource, /init_single_instance_listener/);
+  assert.match(desktopSource, /try_wake_existing_instance/);
+  assert.match(desktopSource, /ensure_single_instance_or_wake/);
+  assert.match(desktopSource, /WakeupState/);
   assert.match(desktopSource, /WAKEUP/);
   assert.match(desktopSource, /WAKEN/);
   assert.match(desktopSource, /window\.show\(\)/);
@@ -55,8 +56,11 @@ test("AC6: 拉起失败时在窗口内呈现明确错误与备用方式提示，
 });
 
 test("AC7: 生命周期：托盘退出时停止托管后端；关窗仅隐藏至托盘；非托管外部后端不停止", () => {
+  assert.match(desktopSource, /BackendLifecycle/);
   assert.match(desktopSource, /ManagedBackendState/);
+  assert.match(desktopSource, /drain_process_output/);
   assert.match(desktopSource, /stop_managed_backend/);
+  assert.match(desktopSource, /child\.kill\(\)/);
   assert.match(desktopSource, /WindowEvent::CloseRequested/);
   assert.match(desktopSource, /hide_window\.hide\(\)/);
   assert.match(desktopSource, /"quit"\s*=>\s*\{[\s\S]*?stop_managed_backend/);

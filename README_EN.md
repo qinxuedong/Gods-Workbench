@@ -122,7 +122,7 @@ python run.py
 
 #### Option D: Tauri Desktop Client Launch
 Located under `clients/desktop/`:
-On launch, the desktop client probes localhost and the local subnet for port 2077. If no running instance is discovered, it automatically launches the local backend in production mode bound strictly to `127.0.0.1:2077` (without opening an external browser) and connects within the desktop window once `/healthz` succeeds. Closing the window hides to the system tray while keeping the backend active; selecting "Quit" from the tray stops the backend launched by the client. Repeated launches focus the existing desktop window. See [Desktop Documentation](clients/desktop/README.md).
+On launch, the desktop client probes localhost and the local subnet for port 2077. If no running instance is discovered, it automatically launches the local backend in production mode bound strictly to `127.0.0.1:2077` (without opening an external browser) and connects within the desktop window once `/healthz` succeeds. Closing the window hides to the system tray while keeping the backend active; selecting "Quit" from the tray stops the backend launched by the client. Repeated launches focus the existing desktop window. The desktop resolves Python via `GW_PYTHON`, `.venv`/`venv`, or system `PATH`, and locates the backend repository root via `GW_BACKEND_ROOT` or directory search upwards from the executable. See [Desktop Documentation](clients/desktop/README.md).
 
 ### 3. CLI Arguments Reference
 
