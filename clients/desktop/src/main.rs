@@ -292,11 +292,46 @@ fn get_process_identity(pid: u32) -> Option<(u64, String)> {
 }
 
 #[cfg(not(windows))]
+fn get_unix_process_start_time(pid: u32) -> u64 {
+    // 1. Linux /proc/<pid>/stat 探测（第 22 个字段 starttime）
+    if let Ok(stat) = std::fs::read_to_string(format!("/proc/{pid}/stat")) {
+        if let Some(last_paren) = stat.rfind(')') {
+            let rest = &stat[last_paren + 1..];
+            let fields: Vec<&str> = rest.split_whitespace().collect();
+            // rest[0] 是 state(3)，所以 starttime(22) 位于 22 - 3 = 19
+            if fields.len() > 19 {
+                if let Ok(val) = fields[19].parse::<u64>() {
+                    if val > 0 {
+                        return val;
+                    }
+                }
+            }
+        }
+    }
+
+    // 2. macOS / BSD 等无 /proc 环境：使用 ps -p <pid> -o lstart=
+    if let Ok(output) = std::process::Command::new("ps")
+        .args(["-p", &pid.to_string(), "-o", "lstart="])
+        .output()
+    {
+        if output.status.success() {
+            let text = String::from_utf8_lossy(&output.stdout).trim().to_string();
+            if !text.is_empty() {
+                use std::hash::{Hash, Hasher};
+                let mut hasher = std::collections::hash_map::DefaultHasher::new();
+                text.hash(&mut hasher);
+                let h = hasher.finish();
+                return if h == 0 { 1 } else { h };
+            }
+        }
+    }
+
+    0
+}
+
+#[cfg(not(windows))]
 fn current_process_start_time() -> u64 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_secs())
-        .unwrap_or(0)
+    get_unix_process_start_time(std::process::id())
 }
 
 #[cfg(not(windows))]
@@ -304,6 +339,7 @@ fn get_process_identity(pid: u32) -> Option<(u64, String)> {
     if !is_process_alive(pid) {
         return None;
     }
+    let start_time = get_unix_process_start_time(pid);
     let exe_path = std::fs::read_link(format!("/proc/{pid}/exe"))
         .map(|p| p.to_string_lossy().to_string())
         .unwrap_or_else(|_| {
@@ -320,21 +356,41 @@ fn get_process_identity(pid: u32) -> Option<(u64, String)> {
                 })
                 .unwrap_or_default()
         });
-    Some((0, exe_path))
+    Some((start_time, exe_path))
 }
 
 fn is_lock_holder_alive_and_matched(lock: &InstanceLock) -> bool {
+    // 1. 若目标 PID 在操作系统中已不存在，明确判定持有者已死亡
     if !is_process_alive(lock.pid) {
         return false;
     }
-    let Some((start_time, exe_path)) = get_process_identity(lock.pid) else {
-        return false;
-    };
 
-    if lock.process_start_time > 0 && start_time > 0 && lock.process_start_time == start_time {
+    // 2. 旧格式锁兼容（缺少身份字段）：
+    // 若 lock 中没有记录 exe_path 且 process_start_time 为 0，而该进程确已证实仍在运行，
+    // 此时身份不可核验。根据单实例铁律，视为存在存活实例，返回 true（明确报错拒绝双开，不删锁）！
+    let is_legacy_lock = lock.exe_path.trim().is_empty() && lock.process_start_time == 0;
+    if is_legacy_lock {
         return true;
     }
 
+    // 3. 新格式锁：查询目标进程的真实运行时身份信息
+    let Some((start_time, exe_path)) = get_process_identity(lock.pid) else {
+        // PID 存活但无法获取身份信息（如受限系统进程），属于非本桌面端的 PID 复用
+        return false;
+    };
+
+    // 4. 关键：启动时间精确裁决（具有最高优先级）
+    if lock.process_start_time > 0 && start_time > 0 {
+        if lock.process_start_time == start_time {
+            return true; // 启动时间完全相同，绝对是同一进程实例
+        } else {
+            // 启动时间不一致：证明原持有者已退出，此 PID 无论是否被同名/同路径程序再次复用，
+            // 均绝对属于 PID 复用！必须返回 false，严禁落入文件名或路径比较！
+            return false;
+        }
+    }
+
+    // 5. 若某一方未提供有效启动时间（降级容灾），比对规范化可执行文件路径
     if !lock.exe_path.is_empty() && !exe_path.is_empty() {
         let lock_norm = lock.exe_path.trim().to_lowercase();
         let target_norm = exe_path.trim().to_lowercase();
@@ -352,10 +408,6 @@ fn is_lock_holder_alive_and_matched(lock: &InstanceLock) -> bool {
         if !lock_name.is_empty() && lock_name == target_name {
             return true;
         }
-    }
-
-    if lock.exe_path.is_empty() && lock.process_start_time == 0 && lock.pid == std::process::id() {
-        return true;
     }
 
     false
@@ -2203,6 +2255,26 @@ mod tests {
             process_start_time: 1_234_567_890,
         };
         assert!(!is_lock_holder_alive_and_matched(&reused_pid_lock));
+
+        // 同一二进制（exe_path 相同），但启动时间明确不同（模拟同名程序 PID 复用），必定不匹配
+        let same_exe_diff_time_lock = InstanceLock {
+            port: 2077,
+            token: "tok".into(),
+            pid: std::process::id(),
+            exe_path: current_process_exe_path(),
+            process_start_time: current_process_start_time().wrapping_add(888_888),
+        };
+        assert!(!is_lock_holder_alive_and_matched(&same_exe_diff_time_lock));
+
+        // 旧格式锁（缺少身份字段），但 PID 存活，必须保守判定为不可核验的存活实例（返回 true）
+        let legacy_live_lock = InstanceLock {
+            port: 2077,
+            token: "tok".into(),
+            pid: std::process::id(),
+            exe_path: String::new(),
+            process_start_time: 0,
+        };
+        assert!(is_lock_holder_alive_and_matched(&legacy_live_lock));
     }
 
     #[test]
@@ -2295,6 +2367,106 @@ mod tests {
             }
         }
 
+        let _ = fs::remove_file(&test_lock_path);
+    }
+
+    #[test]
+    fn test_stale_lock_with_same_binary_reused_pid_recovers_as_primary() {
+        let temp_dir = std::env::temp_dir();
+        let unique_id = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let test_lock_path = temp_dir.join(format!("test_same_bin_reused_{unique_id}.json"));
+
+        // 构造一份遗留锁：端口离线，PID 碰巧是当前存活进程，exe_path 也是当前进程（同一二进制），
+        // 但 process_start_time 明显陈旧（与当前真实启动时间不符，模拟原实例崩溃后 PID 被同名新进程复用）
+        let stale_same_bin_lock = InstanceLock {
+            port: 59996,
+            token: "same_bin_token".to_string(),
+            pid: std::process::id(),
+            exe_path: current_process_exe_path(),
+            process_start_time: current_process_start_time().wrapping_add(999_999),
+        };
+        let content = serde_json::to_vec_pretty(&stale_same_bin_lock).unwrap();
+        fs::write(&test_lock_path, content).unwrap();
+
+        // 执行入口仲裁：识别出陈旧启动时间判定为 PID 复用，安全恢复为主实例
+        let decision = arbitrate_single_instance(&test_lock_path);
+        match decision {
+            SingleInstanceDecision::Primary { lock_path, .. } => {
+                assert_eq!(lock_path, test_lock_path);
+            }
+            SingleInstanceDecision::SecondaryWoken => {
+                panic!("Stale lock with different start time must not return SecondaryWoken");
+            }
+            SingleInstanceDecision::Error(e) => {
+                panic!("Stale lock with different start time should recover as Primary, got Error: {e}");
+            }
+        }
+
+        let _ = fs::remove_file(&test_lock_path);
+    }
+
+    #[test]
+    fn test_legacy_lock_with_live_foreign_process_prevents_second_instance() {
+        let temp_dir = std::env::temp_dir();
+        let unique_id = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let test_lock_path = temp_dir.join(format!("test_legacy_foreign_{unique_id}.json"));
+
+        // 启动一个长期后台子进程（例如 python sleep 30），获取其存活 PID
+        let mut foreign_child = std::process::Command::new("python")
+            .arg("-c")
+            .arg("import time; time.sleep(30)")
+            .spawn()
+            .expect("spawn live foreign process");
+        let foreign_pid = foreign_child.id();
+
+        // 构造一份旧格式锁（缺少 exe_path 与 process_start_time），记录该存活的外部进程 PID，端口无法连通
+        let legacy_lock = InstanceLock {
+            port: 59995,
+            token: "legacy_unresponsive_token".to_string(),
+            pid: foreign_pid,
+            exe_path: String::new(),
+            process_start_time: 0,
+        };
+        let content = serde_json::to_vec_pretty(&legacy_lock).unwrap();
+        fs::write(&test_lock_path, content).unwrap();
+
+        // 第二次启动执行入口仲裁：
+        // 发现锁持有者仍存活且为旧格式不可核验，绝不能删锁，绝不起第二个主实例！
+        let decision = arbitrate_single_instance(&test_lock_path);
+        match decision {
+            SingleInstanceDecision::Error(msg) => {
+                assert!(
+                    msg.contains("未响应唤醒请求") || msg.contains("正在运行"),
+                    "Error message should mention existing unresponsive instance, got: {msg}"
+                );
+            }
+            SingleInstanceDecision::Primary { .. } => {
+                let _ = foreign_child.kill();
+                let _ = foreign_child.wait();
+                panic!("Legacy lock held by a live process must NOT be deleted or recovered as Primary!");
+            }
+            SingleInstanceDecision::SecondaryWoken => {
+                let _ = foreign_child.kill();
+                let _ = foreign_child.wait();
+                panic!("Unresponsive legacy instance should not return SecondaryWoken!");
+            }
+        }
+
+        // 验证旧格式锁文件依然完好保留，没有被粗暴删除
+        assert!(
+            test_lock_path.exists(),
+            "Legacy lock must be preserved when process is alive!"
+        );
+
+        // 清理子进程与测试文件
+        let _ = foreign_child.kill();
+        let _ = foreign_child.wait();
         let _ = fs::remove_file(&test_lock_path);
     }
 }
