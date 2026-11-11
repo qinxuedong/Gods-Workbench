@@ -251,10 +251,21 @@ test('QIN-594 AC4 & AC5: 二级文件夹行图标与文字缩小一档、统计�
   assert.match(activeRule, /background:\s*color-mix\(in srgb,\s*#dfc384 12%,\s*#151820\)\s*!important/, '底色必须为浅金底对标「资产总量」');
   assert.match(activeRule, /color:\s*#dfc384\s*!important/);
 
-  // 子元素染色规则验证：计数与图标必须一并染成金色
-  const childrenColorMatch = html.match(/#assetVaultSidebar\s+\.asset-shell-nav-button:is\(\.is-active,\s*\.active\)\s*\*\s*\{([^}]+)\}/);
-  assert.ok(childrenColorMatch, '必须包含针对选中项所有子元素的染色规则');
+  // 子元素定向染色规则验证：计数与图标必须一并染成金色
+  const childrenColorMatch = html.match(/#assetVaultSidebar\s+\.asset-shell-nav-button:is\(\.is-active,\s*\.active\)\s*:is\(svg,\s*\.asset-shell-nav-label,\s*\.asset-shell-nav-count\)\s*\{([^}]+)\}/);
+  assert.ok(childrenColorMatch, '必须包含针对图标、标签与计数的定向金化染色规则');
   assert.match(childrenColorMatch[1], /color:\s*#dfc384\s*!important/, '计数等子元素必须显式强制染成主金 #dfc384，不再继承浅白');
+
+  // 未读徽标与离线标签样式验证：保留各自语义色，禁止被通配染金
+  const badgeRuleMatch = html.match(/#assetVaultSidebar\s+\.asset-shell-nav-button:is\(\.is-active,\s*\.active\)\s+\.asset-shell-nav-badge\s*\{([^}]+)\}/);
+  assert.ok(badgeRuleMatch, '必须显式定义选中态未读徽标样式，防止被通配染色覆盖');
+  assert.match(badgeRuleMatch[1], /color:\s*#0d0f14\s*!important/, '未读徽标文字必须保留深色 #0d0f14 确保 99+ 清晰可见');
+  assert.match(badgeRuleMatch[1], /background:\s*#dfc384\s*!important/, '未读徽标背景保持金色');
+
+  const offlineRuleMatch = html.match(/#assetVaultSidebar\s+\.asset-shell-nav-button:is\(\.is-active,\s*\.active\)\s+\.asset-shell-nav-offline\s*\{([^}]+)\}/);
+  assert.ok(offlineRuleMatch, '必须显式定义选中态离线标签样式，防止丢失红色报警语义');
+  assert.match(offlineRuleMatch[1], /color:\s*#f87171\s*!important/, '离线标签必须保留警示红色 #f87171');
+  assert.match(offlineRuleMatch[1], /background:\s*rgba\(220,\s*38,\s*38,\s*\.12\)\s*!important/);
 
   // 4. Controller 逻辑：同时注入与切换 is-active 与 active，确保与全局/局部选择器完全对齐
   assert.match(controller, /button\.classList\.toggle\('is-active',\s*active\);[\s\S]*?button\.classList\.toggle\('active',\s*active\);/);
@@ -263,4 +274,70 @@ test('QIN-594 AC4 & AC5: 二级文件夹行图标与文字缩小一档、统计�
 
   // 5. 同一时刻只有一个选中项：activateTreeEntry 同步更新 updateSidebarSelection 与 syncOverviewSelection
   assert.match(controller, /function activateTreeEntry\(key\)\s*\{[\s\S]*?updateSidebarSelection\(selectedId\);[\s\S]*?syncOverviewSelection\(selectedId\);/);
+
+  // 6. CSS Cascade 计算层叠验证与同权重变灰覆盖拦截
+  const parseDecls = (str) => {
+    const res = {};
+    const rx = /([\w-]+)\s*:\s*([^;]+);?/g;
+    let m;
+    while ((m = rx.exec(str)) !== null) {
+      const prop = m[1].trim();
+      const val = m[2].trim();
+      res[prop] = { value: val.replace(/\s*!important\s*$/, '').trim(), important: /!important\s*$/.test(val) };
+    }
+    return res;
+  };
+
+  const resolveCascade = (ruleList, prop) => {
+    let winning = null;
+    for (const r of ruleList) {
+      if (!r.decls[prop]) continue;
+      const decl = r.decls[prop];
+      const cand = { value: decl.value, important: decl.important, spec: r.spec, order: r.order };
+      if (!winning) winning = cand;
+      else if (cand.important !== winning.important) {
+        if (cand.important) winning = cand;
+      } else {
+        const cmp = cand.spec[0] !== winning.spec[0] ? cand.spec[0] - winning.spec[0] :
+                    cand.spec[1] !== winning.spec[1] ? cand.spec[1] - winning.spec[1] :
+                    cand.spec[2] - winning.spec[2];
+        if (cmp > 0 || (cmp === 0 && cand.order >= winning.order)) winning = cand;
+      }
+    }
+    return winning;
+  };
+
+  const buttonRules = [
+    { name: 'global-sidebar-active', spec: [0, 2, 1], order: 1, decls: parseDecls('background: rgb(16,19,25) !important; border-color: rgba(255,255,255,0.1) !important; color: #f8fafc !important;') },
+    { name: 'local-sidebar-active', spec: [1, 2, 0], order: 2, decls: parseDecls(activeRule) },
+  ];
+
+  const resolvedColor = resolveCascade(buttonRules, 'color');
+  assert.equal(resolvedColor.value, '#dfc384', '二级行选中态文字颜色层叠计算后必须为金色 #dfc384');
+  const resolvedBorder = resolveCascade(buttonRules, 'border-color');
+  assert.equal(resolvedBorder.value, '#dfc384', '二级行选中态边框颜色层叠计算后必须为金色 #dfc384');
+  const resolvedBg = resolveCascade(buttonRules, 'background');
+  assert.equal(resolvedBg.value, 'color-mix(in srgb, #dfc384 12%, #151820)', '二级行选中态底色层叠计算后必须对齐「资产总量」底色');
+
+  // 若在样式末尾追加同权重覆盖使其变灰，层叠计算器必须判定变灰从而使测试变红（防末尾覆盖回归）
+  const mutatedButtonRules = [
+    ...buttonRules,
+    { name: 'mutated-gray-override', spec: [1, 2, 0], order: 3, decls: parseDecls('color: #888888 !important;') },
+  ];
+  const mutatedColor = resolveCascade(mutatedButtonRules, 'color');
+  assert.equal(mutatedColor.value, '#888888', '追加同权重变灰覆盖后层叠解析必须准确反映变灰');
+  assert.notEqual(mutatedColor.value, resolvedColor.value, '证明末尾追加同权重变灰覆盖能够被层叠验证拦截');
+
+  // 验证子元素 badge 与 offline 层叠解析值
+  const badgeRules = [
+    { name: 'badge-default', spec: [0, 1, 0], order: 1, decls: parseDecls('background: #dfc384; color: #0d0f14;') },
+    { name: 'badge-active-override', spec: [1, 3, 0], order: 2, decls: parseDecls(badgeRuleMatch[1]) },
+  ];
+  assert.equal(resolveCascade(badgeRules, 'color').value, '#0d0f14', '徽标文字层叠计算后必须保持深色 #0d0f14');
+
+  const offlineRules = [
+    { name: 'offline-default', spec: [0, 1, 0], order: 1, decls: parseDecls('color: #f87171; background: rgba(220,38,38,.12);') },
+    { name: 'offline-active-override', spec: [1, 3, 0], order: 2, decls: parseDecls(offlineRuleMatch[1]) },
+  ];
+  assert.equal(resolveCascade(offlineRules, 'color').value, '#f87171', '离线标签文字层叠计算后必须保持警示红 #f87171');
 });

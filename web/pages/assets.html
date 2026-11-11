@@ -136,11 +136,17 @@
       font-weight: 400;
       box-shadow: 0 0 8px rgb(223 195 132 / .2), inset 0 0 0 1px rgb(223 195 132 / .12) !important;
     }
-    #assetVaultSidebar .asset-shell-nav-button:is(.is-active, .active) * {
+    #assetVaultSidebar .asset-shell-nav-button:is(.is-active, .active) :is(svg, .asset-shell-nav-label, .asset-shell-nav-count) {
       color: #dfc384 !important;
     }
-    #assetVaultSidebar .asset-shell-nav-button:is(.is-active, .active) :is(svg, .asset-shell-nav-label, .asset-shell-nav-count, span) {
-      color: #dfc384 !important;
+    #assetVaultSidebar .asset-shell-nav-button:is(.is-active, .active) .asset-shell-nav-badge {
+      color: #0d0f14 !important;
+      background: #dfc384 !important;
+    }
+    #assetVaultSidebar .asset-shell-nav-button:is(.is-active, .active) .asset-shell-nav-offline {
+      color: #f87171 !important;
+      background: rgba(220, 38, 38, .12) !important;
+      border-color: rgba(220, 38, 38, .4) !important;
     }
     #assetVaultSidebar .asset-shell-nav-button:is(.is-active, .active):hover {
       border-color: #dfc384 !important;

@@ -66,10 +66,26 @@ function createMockEnvironment(initialStorage = {}) {
     querySelector() { return null; },
   };
 
+  let relayoutCalls = 0;
+  const dispatchedEvents = [];
+  const frameMock = {
+    contentWindow: {
+      GWAssetVirtualGridHost: {
+        relayout() {
+          relayoutCalls++;
+        },
+      },
+      dispatchEvent(evt) {
+        dispatchedEvents.push(evt);
+      },
+    },
+  };
+
   const documentMock = {
     getElementById(id) {
       if (id === 'assetVaultSidebar') return sidebarElement;
       if (id === 'assetSidebarToggle') return toggleBtnElement;
+      if (id === 'assetVaultFrame') return frameMock;
       return null;
     },
   };
@@ -77,6 +93,8 @@ function createMockEnvironment(initialStorage = {}) {
   const context = createContext({
     localStorage: localStorageMock,
     document: documentMock,
+    frame: frameMock,
+    CustomEvent: globalThis.CustomEvent,
     lucide: undefined,
     setTimeout: (fn) => typeof fn === 'function' && fn(),
     clearTimeout: () => {},
@@ -102,6 +120,8 @@ function createMockEnvironment(initialStorage = {}) {
     sidebar: sidebarElement,
     toggleBtn: toggleBtnElement,
     storage,
+    get relayoutCalls() { return relayoutCalls; },
+    dispatchedEvents,
   };
 }
 
@@ -113,6 +133,23 @@ test('AC1: 侧栏收起由「资产总览」左侧金色竖线触发，不再出
   assert.match(html, /aria-label="收起侧栏"/);
   // 【QIN-594 AC1】去掉侧栏顶部独立的显眼收起按钮（不再渲染独立 panel-left-close 大图标键）
   assert.doesNotMatch(html, /<i data-lucide="panel-left-close"/, '不再出现独立大图标收起键');
+
+  // 样式规则验证：收起态宽为 0，右边框隐藏，内部树隐藏，折叠按钮悬浮可见，舞台铺满
+  const collapsedSidebarRuleMatch = html.match(/#assetVaultSidebar\.is-collapsed\s*\{([^}]+)\}/);
+  assert.ok(collapsedSidebarRuleMatch, '必须包含 #assetVaultSidebar.is-collapsed 规则块');
+  const collapsedSidebarRule = collapsedSidebarRuleMatch[1];
+  assert.match(collapsedSidebarRule, /width:\s*0\s*!important/, '折叠态侧栏宽度必须强制归零');
+  assert.match(collapsedSidebarRule, /border-right:\s*none\s*!important/, '折叠态侧栏右边框必须隐藏以释放舞台空间');
+
+  // 真实折叠宽度数值断言（防止被改回 256px 或其他展开宽度）
+  const widthValMatch = collapsedSidebarRule.match(/width:\s*([^;!]+)/);
+  const parsedWidth = widthValMatch ? parseInt(widthValMatch[1].trim(), 10) : NaN;
+  assert.equal(parsedWidth, 0, '折叠态真实宽度必须严格等于 0px，不得保持 256px');
+
+  // 内部树列表与导航元素隐藏断言
+  const hiddenTreeRuleMatch = html.match(/#assetVaultSidebar\.is-collapsed\s+\.gw-side-bus-list[^\{]*\{([^}]+)\}/);
+  assert.ok(hiddenTreeRuleMatch, '必须包含折叠态隐藏树列表 .gw-side-bus-list 的规则');
+  assert.match(hiddenTreeRuleMatch[1], /display:\s*none\s*!important/, '折叠态内部树列表必须 display: none 隐藏');
 
   // 样式规则验证（限定在独立规则块内匹配，防止跨规则假绿）
   const toggleRuleMatch = html.match(/#assetVaultSidebar\.is-collapsed\s+#assetSidebarToggle\s*\{([^}]+)\}/);
@@ -154,12 +191,15 @@ test('AC1: 侧栏展开/收起状态切换及刷新状态保持（localStorage �
   assert.equal(env.api.isSidebarCollapsed(), false, '初始状态为展开');
 
   // 手动收起
+  const callsBefore = env.relayoutCalls;
   env.api.toggleSidebarCollapse();
   assert.equal(env.api.isSidebarCollapsed(), true, '调用后切换为收起');
   assert.equal(env.sidebar.classList.contains('is-collapsed'), true);
   assert.equal(env.toggleBtn.getAttribute('aria-expanded'), 'false');
   assert.equal(env.toggleBtn.title, '展开侧栏');
   assert.equal(env.storage['gw:asset-sidebar-collapsed'], 'true', '收起态持久化至 localStorage');
+  assert.ok(env.relayoutCalls > callsBefore, '切换收起状态必须实际调用 GWAssetVirtualGridHost.relayout 通知网格重排（防短路）');
+  assert.ok(env.dispatchedEvents.some(e => e.type === 'gw:asset-sidebar-collapsed' && e.detail?.collapsed === true), '必须向内嵌页派发侧栏折叠事件');
 
   // 模拟页面刷新重新初始化
   const refreshedEnv = createMockEnvironment({ 'gw:asset-sidebar-collapsed': 'true' });
@@ -279,4 +319,13 @@ test('QIN-594 AC3: 侧栏折叠/展开与容器宽度变化后通知重排，虚
   // 右侧留白断言：剩余宽度必须严格小于单列卡片占用宽度，证明网格自适应铺满无空列
   const remainingCollapsed = widthCollapsed - (colsCollapsed * cardPreferred + (colsCollapsed - 1) * colGap);
   assert.ok(remainingCollapsed < cardPreferred, '折叠后右侧空隙必须严格小于单卡宽度（绝无空列留白）');
+
+  // 5. 行为断言：调用 setSidebarCollapsed 时必须实际触发 GWAssetVirtualGridHost.relayout（防 false && 短路）
+  const env = createMockEnvironment();
+  assert.equal(env.relayoutCalls, 0);
+  env.api.setSidebarCollapsed(true);
+  assert.ok(env.relayoutCalls > 0, '折叠时必须实际调用 GWAssetVirtualGridHost.relayout 通知网格重排');
+  const callsAfterCollapse = env.relayoutCalls;
+  env.api.setSidebarCollapsed(false);
+  assert.ok(env.relayoutCalls > callsAfterCollapse, '展开时必须再次实际调用 GWAssetVirtualGridHost.relayout 通知网格重排');
 });

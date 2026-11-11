@@ -8,6 +8,10 @@ const walk=p=>readdirSync(p,{withFileTypes:true}).flatMap(x=>x.isDirectory()?(x.
 const files=walk(path.join(root,'web')).filter(p=>/\.(css|html|js)$/.test(p));
 // 例外只允许具体声明形态，不以整个业务文件豁免；生成快照另行检查未被页面使用。
 const preview=/^(?:var\(--asset-font-preview-(?:zh|en|glyph|glyph-small)-size,\d+px\)|700 var\(--annotation-font-size,15px\)\/1\.5 "Source Han Sans CN","Microsoft YaHei",sans-serif)$/;
+const tokensSource = read('web/css/base/hardware-tokens.css');
+const declaredTypeTokens = new Set(
+ [...tokensSource.matchAll(/--(gw-type-[\w-]+)\s*:/g)].map(m => `--${m[1]}`)
+);
 function inventory(){
  const rows=[];
  for(const p of files){
@@ -27,8 +31,26 @@ function inventory(){
    else if(file.endsWith('.css')&&m[0].startsWith('text-')){category='legacy-selector';reason='旧类兼容选择器，不是字号声明';}
    else if(file==='web/css/pages/asset-manager.css'&&preview.test(value)){category='user-content-preview';reason='用户标注或字体试样字号，独立于UI字号';}
    else if(m[4]==='fontFamily'){category='dynamic-font';reason='字体预览动态选择，非UI字号';}
-   else if(m[1]==='font'&&/var\(--(?:gw-type-|sf-fs-)/.test(value)){category='semantic-shorthand';reason='font简写字号已token化，行高不是字号';}
-   else if(m[1]&&(/^(?:inherit|initial|unset|revert|var\(--(?:gw-type-|gw-icon-size-|sf-fs-))/.test(value))){category=value.includes('gw-icon-size')?'icon-token':'semantic-token';}
+   else if(m[1]==='font'&&/var\(--(?:gw-type-|sf-fs-)/.test(value)){
+    const usedTypeTokens = [...value.matchAll(/var\((--gw-type-[\w-]+)/g)].map(x => x[1]);
+    const undeclared = usedTypeTokens.find(tok => !declaredTypeTokens.has(tok));
+    if (undeclared) {
+      category = 'violation';
+      reason = `引用的字阶 token ${undeclared} 未在 hardware-tokens.css 中登记`;
+    } else {
+      category='semantic-shorthand';reason='font简写字号已token化，行高不是字号';
+    }
+   }
+   else if(m[1]&&(/^(?:inherit|initial|unset|revert|var\(--(?:gw-type-|gw-icon-size-|sf-fs-))/.test(value))){
+    const usedTypeTokens = [...value.matchAll(/var\((--gw-type-[\w-]+)/g)].map(x => x[1]);
+    const undeclared = usedTypeTokens.find(tok => !declaredTypeTokens.has(tok));
+    if (undeclared) {
+      category = 'violation';
+      reason = `引用的字阶 token ${undeclared} 未在 hardware-tokens.css 中登记`;
+    } else {
+      category=value.includes('gw-icon-size')?'icon-token':'semantic-token';
+    }
+   }
    else {category='violation';reason='未登记的裸字号、字阶utility、SVG字号或动态字号赋值';}
    rows.push({file,line,declaration:m[0],category,reason});
   }
@@ -167,4 +189,15 @@ test('独立iframe辅助与动态辅助说明取消旧medium，英文遥测不�
  assert.match(read('web/css/base/hardware-tokens.css'),/small, \[data-type="meta"\], \[data-type="caption"\][^}]*font-weight:var\(--gw-weight-regular\)/);
  assert.match(read('web/css/base/hardware-tokens.css'),/\.gw-type-body-sm\.font-bold[^}]*font-weight:var\(--gw-weight-bold\)/);
  assert.doesNotMatch(read('web/js/modules/episode-pipeline.js'),/gw-type-body-sm text-primary\/90 font-medium/);
+});
+
+test('引用的 --gw-type-* 字阶 token 必须在 hardware-tokens.css 中正式登记', () => {
+ assert.ok(declaredTypeTokens.size >= 20, 'hardware-tokens.css 中声明的字阶 token 不得少于 20 个');
+ assert.ok(declaredTypeTokens.has('--gw-type-count-lg'), '--gw-type-count-lg 必须已在 tokens 中登记');
+
+ // 模拟未登记 token 能够被 inventory 准确识别为 violation
+ const fakeTokenDecl = 'var(--gw-type-unregistered-fake, 16px)';
+ const used = [...fakeTokenDecl.matchAll(/var\((--gw-type-[\w-]+)/g)].map(x => x[1]);
+ const undeclared = used.find(tok => !declaredTypeTokens.has(tok));
+ assert.equal(undeclared, '--gw-type-unregistered-fake', '未在 tokens 中登记的 token 必须被判定为 undeclared 并触发 violation');
 });
