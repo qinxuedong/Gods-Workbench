@@ -33,9 +33,7 @@ import {
     setRegistryTagEditorAssetId,
     setStatus,
 } from '../asset-manager.js';
-import {
-    assetManagerApi,
-} from './api.js';
+import assetManagerApi from './api.js';
 import {
     renderDetailViewer,
 } from './preview.js';

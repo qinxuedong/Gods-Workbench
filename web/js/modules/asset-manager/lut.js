@@ -75,9 +75,7 @@ import {
     setStatus,
     showAssetNotice,
 } from '../asset-manager.js';
-import {
-    assetManagerHttp,
-} from './http.js';
+import assetManagerHttp from './http.js';
 import {
     LUT_COMPARE_MODES,
     LUT_MEDIA_SAMPLE_MAX_WIDTH,

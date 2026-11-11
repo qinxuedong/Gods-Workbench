@@ -11100,13 +11100,10 @@ function scheduleDeferredBootRequests(){
     // 调度时机绑定「首屏列表请求终态」而不是调用点：成功分支调用时列表也已落地，
     // 失败分支却可能只是资产库/本地设置先失败、列表仍在途 —— 必须等它落地再放行。
     void waitRegistryBootstrapSettled().then(dispatch);
-    // 【QIN-591】首屏就绪后的空闲时段预热：把全部延后域模块拉起并完成 GW_DEFERRED 注册，
-    // 用户首次使用对应功能时 gwCall 命中已注册函数面，无需等待动态 import。
-    if (typeof requestIdleCallback === 'function') {
-        requestIdleCallback(() => {
-            for (const d of Object.keys(GW_DOMAIN_LOADERS)) { GW_DOMAIN_LOADERS[d]().catch(() => {}); }
-        }, { timeout: 2000 });
-    }
+    // 【QIN-591】不做全量预热：延后域只由 gwCall / gwLoad 在用户真正用到时动态加载。
+    // 预热（即便排在首屏终态之后）仍会把 14 个域全部下载回首屏，既违背「首屏只加载
+    // 列表与卡片模块」，也让首屏 JS 传输比 #679 基线多出近三成。网关本身带未注册回退，
+    // 首次使用时加载对应域即可，行为不变。
 }
 document.addEventListener('DOMContentLoaded', () => {
     if(directorySettingsPage){ loadGlobalDirectorySettings(); return; }
@@ -11309,13 +11306,27 @@ const GW_DOMAIN_LOADERS = {
 };
 function gwCall(domain, fn, ...args) {
     const api = GW_DEFERRED[domain];
-    if (api && typeof api[fn] === 'function') return api[fn](...args);
-    (GW_DOMAIN_LOADERS[domain] || Promise.reject(new Error(`gwCall: 未知域 ${domain}`)))().then(m => m[fn](...args)).catch(err => console.error(`gwCall 失败: ${domain}/${fn}`, err));
+    // 调用点大量使用 `await gwCall(...)` / `gwCall(...).catch(...)`，
+    // 因此两条分支都必须返回 Promise。已注册分支仍同步执行域函数（副作用时机不变），
+    // 只把返回值统一成 Promise；未注册分支先动态导入，再从注册面取函数。
+    const request = (api && typeof api[fn] === 'function')
+        ? Promise.resolve(api[fn](...args))
+        : (GW_DOMAIN_LOADERS[domain]
+            ? GW_DOMAIN_LOADERS[domain]().then(() => {
+                const loaded = GW_DEFERRED[domain];
+                if (!loaded || typeof loaded[fn] !== 'function') throw new Error(`gwCall: ${domain}/${fn} 未注册`);
+                return loaded[fn](...args);
+            })
+            : Promise.reject(new Error(`gwCall: 未知域 ${domain}`)));
+    // 只挂日志旁路：不消费 request，调用方的 .catch / await 仍能拿到真实错误。
+    request.catch(err => console.error(`gwCall 失败: ${domain}/${fn}`, err));
+    return request;
 }
 function gwLoad(domain) {
     const api = GW_DEFERRED[domain];
     if (api) return Promise.resolve(api);
-    return (GW_DOMAIN_LOADERS[domain] || Promise.reject(new Error(`gwLoad: 未知域 ${domain}`)))();
+    return (GW_DOMAIN_LOADERS[domain] || Promise.reject(new Error(`gwLoad: 未知域 ${domain}`)))()
+        .then(() => GW_DEFERRED[domain]);
 }
 
 // 【QIN-591】延后域模块所需主文件符号与跨文件状态写通道

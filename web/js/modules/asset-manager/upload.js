@@ -125,9 +125,7 @@ import {
     tauriInvokeFn,
     uploadInput,
 } from '../asset-manager.js';
-import {
-    assetManagerApi,
-} from './api.js';
+import assetManagerApi from './api.js';
 import {
     formatDate,
     formatFileSize,

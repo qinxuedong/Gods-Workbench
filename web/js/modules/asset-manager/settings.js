@@ -193,15 +193,11 @@ import {
     thumbnailCacheSwitchState,
     thumbnailGeneratorState,
 } from '../asset-manager.js';
-import {
-    assetManagerApi,
-} from './api.js';
+import assetManagerApi from './api.js';
 import {
     formatFileSize,
 } from './formatters.js';
-import {
-    assetManagerHttp,
-} from './http.js';
+import assetManagerHttp from './http.js';
 import {
     pathCompareKey,
 } from './path-utils.js';

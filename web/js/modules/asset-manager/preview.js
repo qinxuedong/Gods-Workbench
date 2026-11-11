@@ -186,9 +186,7 @@ import {
     workflowProvenanceLinks,
     workflowThumb,
 } from '../asset-manager.js';
-import {
-    assetManagerApi,
-} from './api.js';
+import assetManagerApi from './api.js';
 import {
     renderCollectProvenance,
 } from './collect-provenance.js';
@@ -196,9 +194,7 @@ import {
     formatDate,
     formatFileSize,
 } from './formatters.js';
-import {
-    assetManagerHttp,
-} from './http.js';
+import assetManagerHttp from './http.js';
 import {
     renderProvenanceChain,
 } from './provenance.js';

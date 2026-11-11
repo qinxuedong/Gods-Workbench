@@ -49,9 +49,7 @@ import {
 import {
     formatFileSize,
 } from './formatters.js';
-import {
-    assetManagerHttp,
-} from './http.js';
+import assetManagerHttp from './http.js';
 import { GW_DEFERRED } from './state.js';
 
 let inboxLoading = false;

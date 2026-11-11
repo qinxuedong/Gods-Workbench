@@ -114,9 +114,7 @@ import {
     syncRegistrySelectionDom,
     workflowThumb,
 } from '../asset-manager.js';
-import {
-    assetManagerApi,
-} from './api.js';
+import assetManagerApi from './api.js';
 import {
     formatDate,
 } from './formatters.js';
@@ -2488,6 +2486,10 @@ GW_DEFERRED['media-canvas'] = {
     cycleDetailMediaCanvasItem,
     deleteDetailMediaCanvasSelection,
     groupDetailMediaCanvasSelection,
+    // AC4：主文件首屏绑定的 gw:asset-coverflow-* 监听器经 gwCall 转发到这两个 handler，
+    // 必须注册进函数面，否则事件派发时只会报「未注册」。
+    handleCoverflowChange,
+    handleCoverflowAddToReferenceCanvas,
     selectDetailMediaCanvasLibraryItem,
     setDetailMediaCanvasLibraryWidth,
     setDetailMediaCanvasSelection,
