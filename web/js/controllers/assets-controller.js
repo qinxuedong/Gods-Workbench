@@ -954,6 +954,7 @@ window.WorkbenchAssets = (() => {
   async function activateTreeEntry(key) {
     const selectedId = String(key || '');
     updateSidebarSelection(selectedId);
+    syncOverviewSelection(selectedId);
     try {
       const bridge = frame?.contentWindow?.GWAssetTreeBridge;
       if (!bridge?.activate) throw new Error('资产库尚未就绪，请刷新页面。');
@@ -1202,6 +1203,25 @@ window.WorkbenchAssets = (() => {
       try {
         localStorage.setItem(SIDEBAR_COLLAPSED_KEY, String(next));
       } catch (_) {}
+    }
+
+    // 【QIN-594 AC3】侧栏折叠/展开通知内嵌页重排网格，折叠过渡动画结束后强制重测一次
+    const notifyGridRelayout = () => {
+      try {
+        const frameWin = frame?.contentWindow;
+        if (frameWin) {
+          if (typeof frameWin.GWAssetVirtualGridHost?.relayout === 'function') {
+            frameWin.GWAssetVirtualGridHost?.relayout();
+          }
+          if (typeof frameWin.dispatchEvent === 'function') {
+            frameWin.dispatchEvent(new CustomEvent('gw:asset-sidebar-collapsed', { detail: { collapsed: next } }));
+          }
+        }
+      } catch (_) {}
+    };
+    notifyGridRelayout();
+    if (typeof setTimeout === 'function') {
+      setTimeout(notifyGridRelayout, 200);
     }
   }
 

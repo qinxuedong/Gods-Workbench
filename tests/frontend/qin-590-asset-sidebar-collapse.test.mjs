@@ -78,6 +78,8 @@ function createMockEnvironment(initialStorage = {}) {
     localStorage: localStorageMock,
     document: documentMock,
     lucide: undefined,
+    setTimeout: (fn) => typeof fn === 'function' && fn(),
+    clearTimeout: () => {},
     Boolean,
     String,
   });
@@ -103,19 +105,22 @@ function createMockEnvironment(initialStorage = {}) {
   };
 }
 
-test('AC1: 父页左侧栏头部提供展开/收起按钮，初始属性与折叠样式正确', () => {
-  assert.match(html, /id="assetSidebarToggle"/, '左侧栏头部必须提供 #assetSidebarToggle 按钮');
+test('AC1: 侧栏收起由「资产总览」左侧金色竖线触发，不再出现独立大图标收起键且折叠定位在统计条左侧', () => {
+  assert.match(html, /id="assetSidebarToggle"/, '左侧栏总览卡必须提供 #assetSidebarToggle 金色竖线触发器');
   assert.match(html, /onclick="WorkbenchAssets\.toggleSidebarCollapse\(\)"/);
   assert.match(html, /aria-expanded="true"/, '初始展开态 aria-expanded 应为 true');
   assert.match(html, /title="收起侧栏"/);
   assert.match(html, /aria-label="收起侧栏"/);
-  assert.match(html, /<i data-lucide="panel-left-close"/);
+  // 【QIN-594 AC1】去掉侧栏顶部独立的显眼收起按钮（不再渲染独立 panel-left-close 大图标键）
+  assert.doesNotMatch(html, /<i data-lucide="panel-left-close"/, '不再出现独立大图标收起键');
 
-  // 样式规则验证：收起态宽为 0，内部树隐藏，折叠按钮悬浮可见，舞台铺满
+  // 样式规则验证：收起态宽为 0，内部树隐藏，金色竖线留在统计条左侧（top: 10px, left: 0），不侵入素材网格
   assert.match(html, /#assetVaultSidebar\.is-collapsed\s*\{[\s\S]*?width:\s*0\s*!important/);
   assert.match(html, /#assetVaultSidebar\.is-collapsed\s*\{[\s\S]*?border-right:\s*none\s*!important/);
   assert.match(html, /#assetVaultSidebar\.is-collapsed\s*\.gw-side-bus-list/);
   assert.match(html, /#assetVaultSidebar\.is-collapsed\s*#assetSidebarToggle\s*\{[\s\S]*?position:\s*absolute/);
+  assert.match(html, /#assetVaultSidebar\.is-collapsed\s*#assetSidebarToggle\s*\{[\s\S]*?top:\s*10px/);
+  assert.doesNotMatch(html, /#assetVaultSidebar\.is-collapsed\s*#assetSidebarToggle\s*\{[\s\S]*?top:\s*124px/, '折叠热区不得出现在 top: 124px 的素材网格或预览区内');
 });
 
 test('AC1: 侧栏展开/收起状态切换及刷新状态保持（localStorage 持久化）', () => {
@@ -212,4 +217,15 @@ test('AC6: GWAssetTreeHost 同源桥接与内嵌页 Coverflow 事件钩子已接
   // asset-manager.js 中的钩子派发
   assert.match(manager, /window\.addEventListener\('gw:asset-coverflow-open'[\s\S]*?window\.parent\?\.GWAssetTreeHost\?\.onCoverflowOpen\?\.\(event\.detail\)/);
   assert.match(manager, /window\.addEventListener\('gw:asset-coverflow-closed'[\s\S]*?window\.parent\?\.GWAssetTreeHost\?\.onCoverflowClose\?\.\(event\.detail\)/);
+});
+
+test('QIN-594 AC3: 侧栏折叠/展开与容器宽度变化后通知重排，内嵌页支持 ResizeObserver 与 relayout 钩子', () => {
+  // 1. controller 在折叠/展开时通知内嵌页重排
+  assert.match(controller, /GWAssetVirtualGridHost(?:\?\.|\.)relayout\(\)/);
+  assert.match(controller, /gw:asset-sidebar-collapsed/);
+
+  // 2. manager 中使用 ResizeObserver 监听滚动容器宽度变化，并提供 GWAssetVirtualGridHost
+  assert.match(manager, /new ResizeObserver\(\(entries\)\s*=>\s*\{[\s\S]*?updateRegistryVirtualWindow\(true\)/);
+  assert.match(manager, /window\.GWAssetVirtualGridHost\s*=\s*Object\.freeze\(\{\s*relayout:\s*gwAssetVirtualGridRelayout\s*\}\)/);
+  assert.match(manager, /window\.addEventListener\('gw:asset-sidebar-collapsed'/);
 });

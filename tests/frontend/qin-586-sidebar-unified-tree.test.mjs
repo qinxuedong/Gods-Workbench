@@ -214,3 +214,22 @@ test('AC6: 资源库行与子文件夹行视觉约为 0.8 倍，特异性与 !im
   assert.match(html, /\.asset-shell-nav-button \{[^}]*font-size:\s*var\(--gw-type-body\);/);
   assert.match(html, /\.asset-shell-nav-button \.asset-shell-nav-label \{[^}]*transform:\s*none !important;/);
 });
+
+test('QIN-594 AC4 & AC5: 二级文件夹行图标与文字缩小一档、统计数字增大50%、选中态对标「资产总量」', () => {
+  // 1. 二级文件夹行图标与文字缩小一档（16px->14px, 14px->12px）
+  assert.match(html, /#assetVaultSidebar\s*\.asset-shell-nav-button-sub\s*svg\s*\{[^}]*width:\s*14px\s*!important/);
+  assert.match(html, /#assetVaultSidebar\s*\.asset-shell-nav-button-sub\s*svg\s*\{[^}]*height:\s*14px\s*!important/);
+  assert.match(html, /#assetVaultSidebar\s*\.asset-shell-nav-button-sub\s*\{[^}]*font-size:\s*12px\s*!important/);
+  assert.match(html, /#assetVaultSidebar\s*\.asset-shell-nav-button-sub\s*\.asset-shell-nav-label\s*\{[^}]*font-size:\s*12px\s*!important/);
+
+  // 2. 右侧统计数字增大 50%（当前 11px -> 约 16.5px）
+  assert.match(html, /#assetVaultSidebar\s*\.asset-shell-nav-button-sub\s*\.asset-shell-nav-count\s*\{[^}]*font-size:\s*16\.5px\s*!important/);
+
+  // 3. 选中态：文字金色（#dfc384），边框与底色参照「资产总量」按钮选中态
+  assert.match(html, /\.asset-shell-nav-button\.is-active\s*\{[^}]*color:\s*#dfc384\s*!important/);
+  assert.match(html, /\.asset-shell-nav-button\.is-active\s*\{[^}]*border-color:\s*#dfc384\s*!important/);
+  assert.match(html, /\.asset-shell-nav-button\.is-active\s*\{[^}]*background:\s*color-mix\(in srgb,\s*#dfc384 12%,\s*#151820\)\s*!important/);
+
+  // 4. 同一时刻只有一个选中项：activateTreeEntry 同步更新 updateSidebarSelection 与 syncOverviewSelection
+  assert.match(controller, /function activateTreeEntry\(key\)\s*\{[\s\S]*?updateSidebarSelection\(selectedId\);[\s\S]*?syncOverviewSelection\(selectedId\);/);
+});
