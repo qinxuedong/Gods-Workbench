@@ -1,7 +1,7 @@
 {
   "schema": "gw.cleanroom-admission-shard/v1",
   "issue": 687,
-  "authorization_basis": "GitHub Issue #687 (QIN-589), 2026-11-10；票面「可改文件」授权 web/css/pages/asset-manager-coverflow.css、web/js/modules/asset-manager/coverflow.js（applySlidePosition 与位移计算）、web/css/pages/asset-vault.css（仅 Coverflow 打开按钮的焦点样式）、必要前端测试及 CI 门禁最小配套；tests/frontend/ui-governance.test.mjs 为 CI 门禁转绿最小配套（票面明示），HEX_BASELINE 2802→2811 并按门禁注释在测试内登记 QIN-589",
+  "authorization_basis": "GitHub Issue #687 (QIN-589), 2026-11-10；票面「可改文件」授权 web/css/pages/asset-manager-coverflow.css、web/js/modules/asset-manager/coverflow.js（applySlidePosition 与位移计算）、web/css/pages/asset-vault.css（仅 Coverflow 打开按钮的焦点样式）、必要前端测试及 CI 门禁最小配套；tests/frontend/ui-governance.test.mjs 为 CI 门禁转绿最小配套（票面明示），HEX_BASELINE 2802→2813（base 2802 已含 QIN-588 合入的 +2，本票新增 11）并按门禁注释在测试内登记 QIN-589",
   "files": [
     "web/css/pages/asset-manager-coverflow.css",
     "web/js/modules/asset-manager/coverflow.js",
@@ -20,5 +20,5 @@
       "admission": "accepted"
     }
   ],
-  "notes": "QIN-589：Coverflow 视觉——去掉按钮常亮、改纯深色背景、中心加倍与透明卡片。coverflow.js 新增 computeFullscreenLayout（中心=min(2×基准宽, 舞台62%, 16:9 高度约束)、两侧从改前紧邻缩放 0.86 起每级减半、外缘按实际宽度累加、空间不足等比压缩）；asset-vault.css 为 Coverflow 打开按钮增加 data-gw-coverflow-focus-quiet 静默态；coverflow css 去掉模糊大图与 screen 遮罩、全屏卡片媒体改透明。本票未改后端契约语义、未改 lock/ci.yml/许可证，也未触碰基础账本与 ADMISSION_BASE_METADATA_SHA256。 返工一按审核意见修复：三常量补声明、全屏舞台固定暗房深色（9 处 SIGNAL-FLOW 暗色字面，棘轮基线 2802→2811 已登记）、嵌入式还原半透明+blur、静默态删 color 覆写、测试改源码读常量并新增 vm 全模块真实打开/关闭用例。"
+  "notes": "QIN-589：Coverflow 视觉——去掉按钮常亮、改纯深色背景、中心加倍与透明卡片。coverflow.js 新增 computeFullscreenLayout（中心=min(2×基准宽, 舞台62%, 16:9 高度约束)、两侧从改前紧邻缩放 0.86 起每级减半）；asset-vault.css 为 Coverflow 打开按钮增加 data-gw-coverflow-focus-quiet 静默态；coverflow css 去掉模糊大图与 screen 遮罩、全屏卡片媒体改透明。本票未改后端契约语义、未改 lock/ci.yml/许可证，也未触碰基础账本与 ADMISSION_BASE_METADATA_SHA256。 返工一：三常量补声明、全屏舞台固定暗房深色、嵌入式还原半透明+blur、静默态删 color 覆写、测试改源码读常量并新增 vm 全模块真实打开/关闭用例。棘轮基线口径统一为 base 2802 已含 QIN-588 合入的 +2、本票新增 11、基线 2802→2813（旧注释 9+2 与 2802→2811 为陈旧中间值，已修正）。 返工二：按审核 FIX_REQUIRED 修正侧卡 3D 投影落位（按投影后屏幕外缘 4:2:1 分配可见条带并反解平面位移，取代仅按平面宽度累加），补基于实际渲染矩形的 1920×1080 / 1440×900 验收用例、带 trigger 的 Esc / 关闭键集成用例、中心像素下限、零尺寸重试与连续开关监听清理；真实浏览器复验中发现并修正 z-index 必须写在 style.zIndex 上的回归（元素普通属性在真实 DOM 不生效），并补回归护栏与变异反证；未新增文件，本分片 files 仍为 7 条路径。"
 }
