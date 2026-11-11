@@ -19,6 +19,9 @@ button.quiet { min-height: 34px; padding: 0 12px; color: var(--gold); background
 .server-list { display: grid; gap: 8px; }
 .server-item { width: 100%; display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 10px; color: #f2eddf; background: #17181b; text-align: left; }
 .server-item small { display: block; color: var(--muted); font-weight: 400; }
+.fallback-hint { padding: 14px 16px; border: 1px dashed var(--line); border-radius: 10px; background: rgba(223, 195, 132, .06); color: #f2eddf; }
+.fallback-hint p { margin: 0; font-size: 13px; line-height: 1.6; }
+.fallback-hint code { padding: 2px 6px; border-radius: 4px; background: #090a0d; color: var(--gold); font-size: 12px; font-family: Consolas, monospace; }
 .manual-form { margin-top: 22px; }
 .manual-form label { display: block; margin-bottom: 8px; color: var(--gold); font-weight: 650; }
 .form-row { display: flex; gap: 10px; }

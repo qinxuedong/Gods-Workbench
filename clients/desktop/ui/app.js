@@ -40,17 +40,38 @@
 
   async function scan() {
     list.replaceChildren();
-    status.textContent = "正在检查本机私有 IPv4 网段的 2077 端口……";
+    status.textContent = "正在检查本机与局域网内的 2077 端口……";
     rescan.disabled = true;
     try {
       const servers = await invoke("discover_lan");
-      for (const server of servers) list.append(makeServerButton(server));
-      status.textContent = servers.length
-        ? `发现 ${servers.length} 台工作台 NAS。选择服务器以连接。`
-        : "未发现 NAS。请确认端口 2077 已开放，或手动输入服务器地址。";
+      if (servers && servers.length > 0) {
+        const localServer = servers.find(s => s.url.includes("127.0.0.1") || s.url.includes("localhost"));
+        if (localServer) {
+          status.textContent = "发现已在运行的本机工作台服务，正在连接……";
+          await connect(localServer.url);
+          return;
+        }
+        for (const server of servers) list.append(makeServerButton(server));
+        status.textContent = `发现 ${servers.length} 台工作台服务。选择服务器以连接。`;
+        rescan.disabled = false;
+        return;
+      }
+
+      status.textContent = "未发现运行中的实例，正在以生产模式启动本机后端……";
+      try {
+        const destination = await invoke("launch_local_backend");
+        status.textContent = "本机后端已就绪，正在打开工作台……";
+        window.location.replace(destination);
+      } catch (launchError) {
+        status.textContent = `本机后端拉起失败：${errorMessage(launchError)}`;
+        const tip = document.createElement("div");
+        tip.className = "fallback-hint";
+        tip.innerHTML = "<p><strong>备用启动方式</strong>：您可在神工坊项目根目录下双击运行 <code>start.bat</code>，或在终端执行 <code>python run.py --prod</code> 启动后端，启动成功后点击「重新扫描」。</p>";
+        list.replaceChildren(tip);
+        rescan.disabled = false;
+      }
     } catch (error) {
       status.textContent = `搜索失败：${errorMessage(error)}`;
-    } finally {
       rescan.disabled = false;
     }
   }
