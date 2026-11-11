@@ -11148,8 +11148,21 @@ document.addEventListener('DOMContentLoaded', () => {
     void waitRegistryBootstrapSettled().then(() => {
         requestAnimationFrame(() => requestAnimationFrame(openDeferredDomainGate));
     });
-    // 兜底：首屏流程若被异常打断（例如嵌入外壳提前卸载、bootstrap 未登记终态），闸门不得永久关闭。
-    setTimeout(openDeferredDomainGate, 15000);
+    // 兜底：首屏流程若在登记终态之前就被打断（例如嵌入外壳提前卸载），闸门不得永久关闭。
+    // 但**列表仍在途时绝不按超时放行**：16s 慢列表下 15s 开闸会让 14/14 延后域抢在首卡前
+    // 加载（AC1 回归 —— 实测 15.51s 首卡仍未出现，延后域却已全部请求）。在途就改为等这一代
+    // 的真实终态再走同一条双 rAF 放行路径：首卡都还没画出来时，延后域本来也无界面可服务。
+    setTimeout(function armDeferredGateFallback(){
+        if(!isRegistryBootstrapPending()){ openDeferredDomainGate(); return; }
+        if(!registryBootstrapSettled){
+            // 首屏列表从未登记终态（引导段被提前打断）：没有在途请求，直接放行。
+            openDeferredDomainGate();
+            return;
+        }
+        void waitRegistryBootstrapSettled().then(() => {
+            requestAnimationFrame(() => requestAnimationFrame(openDeferredDomainGate));
+        });
+    }, 15000);
     // 【QIN-585 AC2】无论首屏成败都排入延后链路（用户仍可能直接打开收集箱或治理抽屉），
     // 调度内部只等首屏列表请求的真实终态，因此成功/失败两个分支共用这一处调用。
     scheduleDeferredBootRequests();
@@ -11371,16 +11384,19 @@ function queueWhileGateClosed(kind, domain, fn, args) {
 }
 function gwCallNow(domain, fn, ...args) {
     const api = GW_DEFERRED[domain];
-    const request = (api && typeof api[fn] === 'function')
-        ? Promise.resolve(api[fn](...args))
-        : (GW_DOMAIN_LOADERS[domain]
-            ? GW_DOMAIN_LOADERS[domain]().then(() => {
-                const loaded = GW_DEFERRED[domain];
-                if (!loaded || typeof loaded[fn] !== 'function') throw new Error(`gwCall: ${domain}/${fn} 未注册`);
-                return loaded[fn](...args);
-            })
-            : Promise.reject(new Error(`gwCall: 未知域 ${domain}`)));
-    return request;
+    if (api && typeof api[fn] === 'function') {
+        // 域函数同步抛错时也必须以 reject 形式返回：网关契约是「gwCall 一定返回 Promise」，
+        // 同步抛出会绕过调用点的所有 .catch 兜底，直接炸进点击委托/渲染流程。
+        try { return Promise.resolve(api[fn](...args)); }
+        catch (err) { return Promise.reject(err); }
+    }
+    if (!GW_DOMAIN_LOADERS[domain]) return Promise.reject(new Error(`gwCall: 未知域 ${domain}`));
+    // 用微任务包一层再取 loader：loader 自身同步抛错同样要变成 reject，而不是抛给调用方。
+    return Promise.resolve().then(() => GW_DOMAIN_LOADERS[domain]()).then(() => {
+        const loaded = GW_DEFERRED[domain];
+        if (!loaded || typeof loaded[fn] !== 'function') throw new Error(`gwCall: ${domain}/${fn} 未注册`);
+        return loaded[fn](...args);
+    });
 }
 function gwCall(domain, fn, ...args) {
     // 调用点大量使用 `await gwCall(...)` / `gwCall(...).catch(...)`，两条分支都必须返回 Promise。
