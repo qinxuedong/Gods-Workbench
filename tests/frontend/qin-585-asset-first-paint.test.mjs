@@ -361,6 +361,12 @@ function createHarness(){
             if(domain === 'inbox') return Promise.resolve({ loadAssetInbox, markAssetInboxViewed, saveAssetInboxSettings });
             return Promise.reject(new Error('gwLoad 未注入域: ' + domain));
         }`,
+        // QIN-591 返工：首卡闸门。真实网关在闸门关闭时把延后域调用排队，放行后才加载；
+        // 本夹具已把 gwCall/gwLoad 换成桩，所以闸门只需可调用、可查询，避免引导段 ReferenceError。
+        // 闸门的排队/顺序/返回值契约由 qin-591-domain-gate.test.mjs 用真实源码切片驱动验证。
+        'let __deferredDomainsOpen = false;',
+        'function openDeferredDomainGate(){ __deferredDomainsOpen = true; }',
+        'function deferredDomainsGateOpen(){ return __deferredDomainsOpen; }',
         sliceBootEntry(MANAGER),
         `return {
             loadAll,

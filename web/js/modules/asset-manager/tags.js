@@ -20,6 +20,7 @@
 import {
     ASSET_CLASS_GROUPS,
     apiJsonResponse,
+    assetClassificationEntryGroup,
     detailViewerState,
     escapeAttr,
     escapeHtml,

@@ -54,6 +54,7 @@ import {
     assetAiSettingsState,
     assetAllowedRootPaths,
     assetBoardById,
+    assetClassificationChips,
     assetClassifyBusy,
     assetFileExtension,
     assetKind,

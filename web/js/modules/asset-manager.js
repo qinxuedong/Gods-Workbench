@@ -1668,7 +1668,15 @@ function findLocalItem(id){
 async function loadLocalStorageSettings(){
     try {
         const settings = await apiJsonResponse(assetManagerApi.getStorageSettings());
-        if(settings) gwCall('settings', 'applyStorageSettingsData', settings);
+        if(settings){
+            // 【QIN-591 返工】首屏闸门期间设置回填被推迟到首卡之后（settings 域不许在首屏加载）。
+            // 回填会改本地库与挂载目录，放行后补一次渲染让左树/面包屑跟上，等价于拆分前
+            // 「回填完成再渲染」的可见结果；闸门已开时保持原行为，不额外渲染。
+            const appliedAfterGate = !deferredDomainsGateOpen();
+            gwCall('settings', 'applyStorageSettingsData', settings).then(() => {
+                if(appliedAfterGate) render();
+            }).catch(() => null);
+        }
     } catch(_) {}
 }
 async function loadLocalAssets({append=false}={}){
@@ -3824,7 +3832,12 @@ async function loadRegistryBootstrap(requestId=beginRegistryBootstrapRequest()){
             throw error;
         }
         if(!activeProjectId && projects.length) activeProjectId = projects[0].id;
-        if(activeProjectId) await gwCall('organize', 'loadProjectBoard', activeProjectId, false);
+        if(activeProjectId){
+            // 【QIN-591 返工】首屏闸门关闭时不能 await：organize 域要到首卡绘制后才加载，
+            // await 会把首卡一起拖住（死锁）。闸门已开（后续刷新/切换）时保持原有 await 语义。
+            const boardLoad = gwCall('organize', 'loadProjectBoard', activeProjectId, false);
+            if(deferredDomainsGateOpen()) await boardLoad;
+        }
         if(requestId !== registryRequestSeq) return false;
         if(activeTab === 'registry' || assetBoardById(activeTab)?.system === false){
             if(!root.querySelector('.registry-card')){
@@ -8570,7 +8583,8 @@ async function handleClick(event){
         render();
         return;
     }
-    if(target.closest?.('[data-localup-select-all]')){ gwCall('upload', 'localUploadItems').forEach(item => selectedLocalUploadIds.add(item.id)); render(); return; }
+    // 【QIN-591 返工】gwCall 返回 Promise，必须先 await 再取数组，否则 .forEach 不存在（全选静默失效）。
+    if(target.closest?.('[data-localup-select-all]')){ (await gwCall('upload', 'localUploadItems')).forEach(item => selectedLocalUploadIds.add(item.id)); render(); return; }
     if(target.closest?.('[data-localup-clear]')){ selectedLocalUploadIds.clear(); render(); return; }
     if(target.closest?.('[data-localup-download-selected]')){ await gwCall('upload', 'downloadSelectedLocalUploads'); return; }
     if(target.closest?.('[data-localup-canvas-selected]')){ gwCall('canvas', 'copySelectedLocalUploadsToCanvas'); return; }
@@ -8647,7 +8661,7 @@ async function handleClick(event){
         return;
     }
     if(target.closest?.('[data-canvas-asset-refresh]')){ await gwCall('canvas', 'refreshCanvasAssets'); return; }
-    if(target.closest?.('[data-canvas-asset-select-all]')){ gwCall('canvas', 'currentCanvasAssetItems').forEach(item => selectedCanvasAssetIds.add(item.id)); render(); return; }
+    if(target.closest?.('[data-canvas-asset-select-all]')){ (await gwCall('canvas', 'currentCanvasAssetItems')).forEach(item => selectedCanvasAssetIds.add(item.id)); render(); return; }
     if(target.closest?.('[data-canvas-asset-clear-selection]')){ selectedCanvasAssetIds.clear(); render(); return; }
     if(target.closest?.('[data-canvas-asset-download-selected]')){ await gwCall('canvas', 'downloadCanvasAssetItems', [...selectedCanvasAssetIds]); return; }
     const canvasAssetDownload = target.closest?.('[data-canvas-asset-download]');
@@ -8691,7 +8705,7 @@ async function handleClick(event){
         render();
         return;
     }
-    if(target.closest?.('[data-local-select-all]')){ gwCall('upload', 'localItemsForFolder').forEach(item => selectedLocalIds.add(item.id)); pendingBatchDelete = ''; render(); return; }
+    if(target.closest?.('[data-local-select-all]')){ (await gwCall('upload', 'localItemsForFolder')).forEach(item => selectedLocalIds.add(item.id)); pendingBatchDelete = ''; render(); return; }
     if(target.closest?.('[data-local-clear-selection]')){ selectedLocalIds.clear(); pendingBatchDelete = ''; render(); return; }
     if(target.closest?.('[data-local-copy-selected]')){ gwCall('upload', 'setLocalClipboard', 'copy'); return; }
     if(target.closest?.('[data-local-import-clipboard]')){ await gwCall('upload', 'pasteLocalClipboardToAssets'); return; }
@@ -8735,7 +8749,7 @@ async function handleClick(event){
         render();
         return;
     }
-    if(target.closest?.('[data-workflow-select-all]')){ gwCall('organize', 'currentWorkflowItems').forEach(item => selectedWorkflowIds.add(workflowAssetId(item))); render(); return; }
+    if(target.closest?.('[data-workflow-select-all]')){ (await gwCall('organize', 'currentWorkflowItems')).forEach(item => selectedWorkflowIds.add(workflowAssetId(item))); render(); return; }
     if(target.closest?.('[data-workflow-clear-selection]')){ selectedWorkflowIds.clear(); render(); return; }
     if(target.closest?.('[data-workflow-export-selected]')){ await gwCall('organize', 'exportWorkflowItems', [...selectedWorkflowIds]); return; }
     if(target.closest?.('[data-workflow-delete-selected]')){ await gwCall('organize', 'deleteSelectedWorkflows'); return; }
@@ -8802,7 +8816,7 @@ async function handleClick(event){
         render();
         return;
     }
-    if(target.closest?.('[data-asset-select-all]')){ gwCall('organize', 'currentAssetItems').forEach(item => selectedAssetIds.add(item.id)); pendingBatchDelete = ''; render(); return; }
+    if(target.closest?.('[data-asset-select-all]')){ (await gwCall('organize', 'currentAssetItems')).forEach(item => selectedAssetIds.add(item.id)); pendingBatchDelete = ''; render(); return; }
     if(target.closest?.('[data-asset-clear-selection]')){ selectedAssetIds.clear(); pendingBatchDelete = ''; render(); return; }
     if(target.closest?.('[data-asset-cut-selected]')){ gwCall('organize', 'setAssetClipboard', 'cut'); return; }
     if(target.closest?.('[data-asset-copy-selected]')){ gwCall('organize', 'setAssetClipboard', 'copy'); return; }
@@ -8950,7 +8964,7 @@ async function handleClick(event){
         render();
         return;
     }
-    if(target.closest?.('[data-prompt-select-all]')){ gwCall('organize', 'currentPromptItems').forEach(item => selectedPromptIds.add(item.id)); pendingBatchDelete = ''; render(); return; }
+    if(target.closest?.('[data-prompt-select-all]')){ (await gwCall('organize', 'currentPromptItems')).forEach(item => selectedPromptIds.add(item.id)); pendingBatchDelete = ''; render(); return; }
     if(target.closest?.('[data-prompt-clear-selection]')){ selectedPromptIds.clear(); pendingBatchDelete = ''; render(); return; }
     const promptEdit = target.closest?.('[data-prompt-edit]');
     if(promptEdit){ await gwCall('organize', 'editPromptItem', promptEdit.dataset.promptEdit || ''); return; }
@@ -11106,7 +11120,8 @@ function scheduleDeferredBootRequests(){
     // 首次使用时加载对应域即可，行为不变。
 }
 document.addEventListener('DOMContentLoaded', () => {
-    if(directorySettingsPage){ loadGlobalDirectorySettings(); return; }
+    // 目录设置页没有资产库首屏，直接放行延后域，避免闸门永久关闭。
+    if(directorySettingsPage){ openDeferredDomainGate(); loadGlobalDirectorySettings(); return; }
     // 【QIN-573 AC2】优先从会话快照恢复首屏渲染，隐藏骨架屏
     tryApplyRegistrySnapshot();
     loadRegistryPrincipal();
@@ -11127,6 +11142,14 @@ document.addEventListener('DOMContentLoaded', () => {
         markRegistryFirstScreenReady();
         setStatus(err.message || '加载失败');
     });
+    // 【QIN-591 返工】首卡闸门放行时机：等首屏列表请求的真实终态，再双 rAF 确保首卡已经绘制到
+    // 屏幕，之后才允许 14 个延后域动态加载（跨域静态 import 会把整张域图带进来，早放行就等于
+    // 首屏加载全部域）。空库 / 失败分支同样放行，避免延后链路永远不启动。
+    void waitRegistryBootstrapSettled().then(() => {
+        requestAnimationFrame(() => requestAnimationFrame(openDeferredDomainGate));
+    });
+    // 兜底：首屏流程若被异常打断（例如嵌入外壳提前卸载、bootstrap 未登记终态），闸门不得永久关闭。
+    setTimeout(openDeferredDomainGate, 15000);
     // 【QIN-585 AC2】无论首屏成败都排入延后链路（用户仍可能直接打开收集箱或治理抽屉），
     // 调度内部只等首屏列表请求的真实终态，因此成功/失败两个分支共用这一处调用。
     scheduleDeferredBootRequests();
@@ -11286,8 +11309,9 @@ function setDetailPreviewBackquoteCloseTimer(v){ detailPreviewBackquoteCloseTime
 function setDetailImageEditorBackquoteCloseTimer(v){ detailImageEditorBackquoteCloseTimer = v; }
 function setDetailTextEditorBackquoteInput(v){ detailTextEditorBackquoteInput = v; }
 
-// 【QIN-591】延后域网关：首屏只加载列表与卡片所需代码；以下域模块在首屏绘制后的空闲时段预热，
-// 或在首次使用时按需动态加载。域模块加载完成即在 GW_DEFERRED 注册函数面。
+// 【QIN-591】延后域网关：首屏只加载列表与卡片所需代码。14 个延后域只在
+// 「首卡绘制完成（闸门开启）」之后、且真正被用到时才动态 import；域模块加载完成即在
+// GW_DEFERRED 注册函数面。首屏期间的调用不丢弃，排队到闸门开启后按入队顺序执行。
 const GW_DOMAIN_LOADERS = {
     'settings': () => import('./asset-manager/settings.js'),
     'organize': () => import('./asset-manager/organize.js'),
@@ -11304,11 +11328,49 @@ const GW_DOMAIN_LOADERS = {
     'inbox': () => import('./asset-manager/inbox.js'),
     'governance': () => import('./asset-manager/governance.js'),
 };
-function gwCall(domain, fn, ...args) {
+// 【QIN-591 返工】首卡闸门：首卡绘制完成之前，14 个延后域一律不得动态 import。
+// 之前只删了 idle 预热，但首屏 render() / loadLocalStorageSettings() / 治理建议仍会 gwCall 到
+// preview / settings / governance，而域之间存在跨域静态 import —— 任一域被拉入就会把整张域图
+// 下载回首屏（实测首卡前 14/14 域、26 个子模块、3.17MB）。把「首屏期间不许加载」做成网关级
+// 不变量，才不依赖每个调用点自觉。首屏期的调用不会丢：它们排在闸门 Promise 上，按入队顺序放行。
+let deferredDomainsOpen = false;
+let deferredDomainsFlushing = false;
+const deferredDomainQueue = [];
+
+function openDeferredDomainGate() {
+    if (deferredDomainsOpen) return;
+    deferredDomainsOpen = true;
+    void flushDeferredDomainQueue();
+}
+function deferredDomainsGateOpen() { return deferredDomainsOpen; }
+// 严格 FIFO：同一域内「先 clear 再 schedule」这类有先后语义的调用不能并行放行，
+// 否则后一次调用会先命中已注册函数面，把顺序颠倒。
+async function flushDeferredDomainQueue() {
+    if (deferredDomainsFlushing) return;
+    deferredDomainsFlushing = true;
+    try {
+        while (deferredDomainQueue.length) {
+            const job = deferredDomainQueue.shift();
+            try {
+                job.resolve(job.kind === 'load'
+                    ? await gwLoadNow(job.domain)
+                    : await gwCallNow(job.domain, job.fn, ...job.args));
+            } catch (err) {
+                job.reject(err);
+            }
+        }
+    } finally {
+        deferredDomainsFlushing = false;
+    }
+}
+function queueWhileGateClosed(kind, domain, fn, args) {
+    const request = new Promise((resolve, reject) => {
+        deferredDomainQueue.push({kind, domain, fn, args, resolve, reject});
+    });
+    return request;
+}
+function gwCallNow(domain, fn, ...args) {
     const api = GW_DEFERRED[domain];
-    // 调用点大量使用 `await gwCall(...)` / `gwCall(...).catch(...)`，
-    // 因此两条分支都必须返回 Promise。已注册分支仍同步执行域函数（副作用时机不变），
-    // 只把返回值统一成 Promise；未注册分支先动态导入，再从注册面取函数。
     const request = (api && typeof api[fn] === 'function')
         ? Promise.resolve(api[fn](...args))
         : (GW_DOMAIN_LOADERS[domain]
@@ -11318,18 +11380,36 @@ function gwCall(domain, fn, ...args) {
                 return loaded[fn](...args);
             })
             : Promise.reject(new Error(`gwCall: 未知域 ${domain}`)));
+    return request;
+}
+function gwCall(domain, fn, ...args) {
+    // 调用点大量使用 `await gwCall(...)` / `gwCall(...).catch(...)`，两条分支都必须返回 Promise。
+    // 闸门未开（或正在顺序放行队列）时返回「轮到自己才执行」的 Promise，调用方的
+    // .catch / await 语义不变；返回值仍是域函数的真实返回值。
+    const request = (deferredDomainsOpen && !deferredDomainsFlushing)
+        ? gwCallNow(domain, fn, ...args)
+        : queueWhileGateClosed('call', domain, fn, args);
     // 只挂日志旁路：不消费 request，调用方的 .catch / await 仍能拿到真实错误。
     request.catch(err => console.error(`gwCall 失败: ${domain}/${fn}`, err));
     return request;
 }
-function gwLoad(domain) {
+function gwLoadNow(domain) {
     const api = GW_DEFERRED[domain];
     if (api) return Promise.resolve(api);
     return (GW_DOMAIN_LOADERS[domain] || Promise.reject(new Error(`gwLoad: 未知域 ${domain}`)))()
         .then(() => GW_DEFERRED[domain]);
 }
+function gwLoad(domain) {
+    return (deferredDomainsOpen && !deferredDomainsFlushing)
+        ? gwLoadNow(domain)
+        : queueWhileGateClosed('load', domain);
+}
 
 // 【QIN-591】延后域模块所需主文件符号与跨文件状态写通道
+// 【QIN-591 返工】分类 helper（assetClassificationChips / assetClassificationEntryGroup /
+// assetClassificationSearchText / groupedAssetClassificationEntries / parseAssetClassFilterKey）
+// 由主文件用 createAssetClassificationHelpers 实例化一次，延后域通过 import 复用同一实例；
+// 漏导出会让 organize/upload/tags/settings 里的真实调用直接 ReferenceError。
 export {
     ALLOWED_ROOT_FIELD_KEY,
     ASSET_BROWSER_PREVIEW_EXTENSIONS,
@@ -11440,6 +11520,9 @@ export {
     assetAllowedRootPaths,
     assetBoardById,
     assetCategories,
+    assetClassificationChips,
+    assetClassificationEntryGroup,
+    assetClassificationSearchText,
     assetClassifyBusy,
     assetClipboard,
     assetEditMode,
@@ -11607,6 +11690,7 @@ export {
     governanceSuggestionsError,
     governanceSuggestionsLoading,
     governanceTriggerLabel,
+    groupedAssetClassificationEntries,
     gwSetAssetClipboard,
     gwSetAssetRackCollapsed,
     gwSetDetailMediaCanvasCoverflowVisible,
@@ -11670,6 +11754,7 @@ export {
     openRegistryStructureCoverflow,
     openRegistryStructureReferenceCanvas,
     openRegistryStructureRemoveDialog,
+    parseAssetClassFilterKey,
     parseRegistryTagNames,
     pendingBatchDelete,
     pendingDeleteAssetId,
