@@ -1090,7 +1090,7 @@
     {
       "path": "tests/frontend/mvp1-t0-mount-errors.test.mjs",
       "authorization_basis": "MVP1-T0_Cut_2026-10-26",
-      "sha256": "9ef0180276f04a1baff9aa06ee581a60a9ee51075d24837cb26f23d4562faee9"
+      "sha256": "6ecc9f17ac92806e0c649b4e03fe1b99f4de1169f4fe4758700135ca05a6183e"
     },
     {
       "path": "tests/contracts/assets/test_mvp1_t2_ingest_resume.py",
@@ -1120,7 +1120,7 @@
     {
       "path": "tests/frontend/mvp1-t5-governance-list.test.mjs",
       "authorization_basis": "MVP1-T5_Cut_2026-10-26",
-      "sha256": "ff06ff4647868b9a56b0033ea69187e8fe5a75a14fbd54f948166986a47c54ef"
+      "sha256": "a2194765ddada12b557d786a93a5a18da453b4818cd942bbba5a62c9e44d8845"
     },
     {
       "path": "tests/contracts/agent/test_mvp2_t0_asset_search_tool.py",
