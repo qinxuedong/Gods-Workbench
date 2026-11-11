@@ -34,7 +34,7 @@ If no running instance is discovered on the network, the client automatically la
   2. Project virtual environment at `<backend_root>/.venv/Scripts/python.exe` (Windows) or `.venv/bin/python` (Unix), or `venv/`.
   3. System PATH `python` or `python3` command (verified via `--version`).
 - **Execution & Port**: Runs `python run.py --prod` bound to `127.0.0.1:2077` without `--open-browser` (no external browser is silently launched). If port `2077` is already bound by a foreign process, launch aborts with an actionable error and guidance.
-- **Single Instance**: Subsequent launches wake and focus the existing desktop window (even if hidden in the system tray) and immediately exit without spawning duplicate processes or backends.
+- **Single Instance**: Arbitrated via atomic exclusive lock file creation (`create_new`). Concurrent or subsequent launches wake and focus the existing desktop window (even if hidden in the system tray) and cleanly exit without spawning duplicate client processes or duplicate backends.
 - **Lifecycle**: Backends launched by the desktop client terminate when the user chooses "Quit" from the tray menu. Backends launched externally (such as via `start.bat`) are never stopped by the desktop client.
 
 ## Directory bridge commands (QIN-432)

@@ -41,25 +41,36 @@ struct ClientConfig {
 /// 会话级白名单：只允许读取本轮通过对话框明确选中的文件。
 struct ClientSessionState(Mutex<HashSet<PathBuf>>);
 
-/// 托管的本地后端子进程生命周期。
-#[derive(Debug)]
-enum BackendLifecycle {
+/// 托管的本地后端子进程生命周期阶段。
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+enum BackendPhase {
     Idle,
     Launching,
-    Running(std::process::Child),
+    Running,
+    Failed,
+}
+
+struct BackendStateInner {
+    phase: BackendPhase,
+    child: Option<std::process::Child>,
+    last_error: Option<String>,
 }
 
 /// 托管的本地后端子进程句柄状态机（仅当由本桌面端拉起时持有）。
 #[derive(Default)]
-struct ManagedBackendState(Mutex<BackendLifecycle>);
+struct ManagedBackendState(Mutex<BackendStateInner>);
 
-impl Default for BackendLifecycle {
+impl Default for BackendStateInner {
     fn default() -> Self {
-        Self::Idle
+        Self {
+            phase: BackendPhase::Idle,
+            child: None,
+            last_error: None,
+        }
     }
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 struct InstanceLock {
     port: u16,
     token: String,
@@ -116,8 +127,50 @@ impl WakeupState {
     }
 }
 
-fn try_wake_existing_instance(lock: &InstanceLock) -> bool {
-    let addr = std::net::SocketAddr::from(([127, 0, 0, 1], lock.port));
+enum SingleInstanceDecision {
+    Primary {
+        listener: std::net::TcpListener,
+        token: String,
+        wakeup_state: Arc<WakeupState>,
+        lock_path: PathBuf,
+    },
+    SecondaryWoken,
+    Error(String),
+}
+
+#[cfg(windows)]
+extern "system" {
+    fn OpenProcess(
+        dwDesiredAccess: u32,
+        bInheritHandle: i32,
+        dwProcessId: u32,
+    ) -> *mut std::ffi::c_void;
+    fn CloseHandle(hObject: *mut std::ffi::c_void) -> i32;
+}
+
+fn is_process_alive(pid: u32) -> bool {
+    #[cfg(windows)]
+    {
+        const PROCESS_QUERY_LIMITED_INFORMATION: u32 = 0x1000;
+        const SYNCHRONIZE: u32 = 0x00100000;
+        unsafe {
+            let handle = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION | SYNCHRONIZE, 0, pid);
+            if handle.is_null() {
+                return false;
+            }
+            CloseHandle(handle);
+            true
+        }
+    }
+    #[cfg(not(windows))]
+    {
+        let res = unsafe { libc::kill(pid as i32, 0) };
+        res == 0
+    }
+}
+
+fn try_wake_existing_instance(port: u16, token: &str) -> bool {
+    let addr = std::net::SocketAddr::from(([127, 0, 0, 1], port));
     let mut stream = match std::net::TcpStream::connect_timeout(&addr, Duration::from_millis(300)) {
         Ok(s) => s,
         Err(_) => return false,
@@ -125,7 +178,7 @@ fn try_wake_existing_instance(lock: &InstanceLock) -> bool {
     let _ = stream.set_read_timeout(Some(Duration::from_millis(800)));
     let _ = stream.set_write_timeout(Some(Duration::from_millis(800)));
     use std::io::{BufRead, BufReader, Write};
-    if writeln!(stream, "WAKEUP {}", lock.token).is_err() {
+    if writeln!(stream, "WAKEUP {}", token).is_err() {
         return false;
     }
     let _ = stream.flush();
@@ -137,87 +190,150 @@ fn try_wake_existing_instance(lock: &InstanceLock) -> bool {
     false
 }
 
-fn ensure_single_instance_or_wake() -> Option<(std::net::TcpListener, String, Arc<WakeupState>)> {
-    let path = instance_lock_path();
+fn arbitrate_single_instance(lock_path: &Path) -> SingleInstanceDecision {
+    use std::fs::OpenOptions;
+    use std::io::Write;
 
-    // 尝试探测唤醒已有实例（最多重试 5 次，总计最多约 1.25 秒）
-    for attempt in 0..5 {
-        if let Ok(content) = fs::read(&path) {
-            if let Ok(lock) = serde_json::from_slice::<InstanceLock>(&content) {
-                if try_wake_existing_instance(&lock) {
-                    // 已成功唤醒既有实例，当前进程退出
-                    return None;
+    for round in 0..2 {
+        match OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create_new(true)
+            .open(lock_path)
+        {
+            Ok(mut file) => {
+                let listener = match std::net::TcpListener::bind("127.0.0.1:0") {
+                    Ok(l) => l,
+                    Err(e) => {
+                        let _ = fs::remove_file(lock_path);
+                        return SingleInstanceDecision::Error(format!(
+                            "Cannot bind ephemeral port for single instance: {e}"
+                        ));
+                    }
+                };
+                let port = match listener.local_addr() {
+                    Ok(a) => a.port(),
+                    Err(e) => {
+                        let _ = fs::remove_file(lock_path);
+                        return SingleInstanceDecision::Error(format!(
+                            "Cannot determine ephemeral listener port: {e}"
+                        ));
+                    }
+                };
+                let token = format!(
+                    "{:x}",
+                    std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .map(|d| d.as_nanos())
+                        .unwrap_or(1)
+                );
+                let lock_info = InstanceLock {
+                    port,
+                    token: token.clone(),
+                    pid: std::process::id(),
+                };
+                let content = match serde_json::to_vec_pretty(&lock_info) {
+                    Ok(c) => c,
+                    Err(e) => {
+                        let _ = fs::remove_file(lock_path);
+                        return SingleInstanceDecision::Error(format!(
+                            "Cannot serialize instance lock: {e}"
+                        ));
+                    }
+                };
+                if let Err(e) = file.write_all(&content).and_then(|_| file.flush()) {
+                    let _ = fs::remove_file(lock_path);
+                    return SingleInstanceDecision::Error(format!(
+                        "Cannot write instance lock data: {e}"
+                    ));
                 }
-            }
-        } else {
-            // 锁文件不存在，跳出重试直接争抢
-            break;
-        }
-        if attempt < 4 {
-            std::thread::sleep(Duration::from_millis(250));
-        }
-    }
 
-    // 清理残留锁并绑定单实例监听端口
-    let _ = fs::remove_file(&path);
-    let listener = match std::net::TcpListener::bind("127.0.0.1:0") {
-        Ok(l) => l,
-        Err(e) => {
-            eprintln!("Failed to bind single instance port: {e}");
-            return None;
-        }
-    };
-    let port = match listener.local_addr() {
-        Ok(a) => a.port(),
-        Err(e) => {
-            eprintln!("Failed to get single instance local address: {e}");
-            return None;
-        }
-    };
-    let token = format!(
-        "{:x}",
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_nanos())
-            .unwrap_or(1)
-    );
-    let lock = InstanceLock {
-        port,
-        token: token.clone(),
-        pid: std::process::id(),
-    };
-    if let Ok(content) = serde_json::to_vec_pretty(&lock) {
-        let _ = fs::write(&path, content);
-    }
+                let listener_clone = match listener.try_clone() {
+                    Ok(l) => l,
+                    Err(e) => {
+                        let _ = fs::remove_file(lock_path);
+                        return SingleInstanceDecision::Error(format!(
+                            "Cannot clone listener socket for wakeup thread: {e}"
+                        ));
+                    }
+                };
 
-    let wakeup_state = Arc::new(WakeupState::new());
-    let wakeup_clone = wakeup_state.clone();
-    let expected_token = token.clone();
+                let wakeup_state = Arc::new(WakeupState::new());
+                let wakeup_clone = wakeup_state.clone();
+                let expected_token = token.clone();
 
-    // 立即启动后台监听线程，即使窗口尚未创建也能接收唤醒
-    if let Ok(listener_clone) = listener.try_clone() {
-        std::thread::spawn(move || {
-            use std::io::{BufRead, BufReader, Write};
-            for stream in listener_clone.incoming() {
-                if let Ok(mut stream) = stream {
-                    let _ = stream.set_read_timeout(Some(Duration::from_millis(1000)));
-                    let _ = stream.set_write_timeout(Some(Duration::from_millis(1000)));
-                    let mut reader = BufReader::new(&mut stream);
-                    let mut line = String::new();
-                    if reader.read_line(&mut line).is_ok() {
-                        let parts: Vec<&str> = line.trim().split_whitespace().collect();
-                        if parts.len() == 2 && parts[0] == "WAKEUP" && parts[1] == expected_token {
-                            wakeup_clone.trigger_wakeup();
-                            let _ = writeln!(stream, "WAKEN");
-                            let _ = stream.flush();
+                std::thread::spawn(move || {
+                    use std::io::{BufRead, BufReader, Write};
+                    for stream in listener_clone.incoming() {
+                        if let Ok(mut stream) = stream {
+                            let _ = stream.set_read_timeout(Some(Duration::from_millis(1000)));
+                            let _ = stream.set_write_timeout(Some(Duration::from_millis(1000)));
+                            let mut reader = BufReader::new(&mut stream);
+                            let mut line = String::new();
+                            if reader.read_line(&mut line).is_ok() {
+                                let parts: Vec<&str> = line.trim().split_whitespace().collect();
+                                if parts.len() == 2
+                                    && parts[0] == "WAKEUP"
+                                    && parts[1] == expected_token
+                                {
+                                    wakeup_clone.trigger_wakeup();
+                                    let _ = writeln!(stream, "WAKEN");
+                                    let _ = stream.flush();
+                                }
+                            }
                         }
                     }
+                });
+
+                return SingleInstanceDecision::Primary {
+                    listener,
+                    token,
+                    wakeup_state,
+                    lock_path: lock_path.to_path_buf(),
+                };
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
+                let mut last_recorded_pid = None;
+                for attempt in 0..15 {
+                    if let Ok(content) = fs::read(lock_path) {
+                        if let Ok(lock) = serde_json::from_slice::<InstanceLock>(&content) {
+                            last_recorded_pid = Some(lock.pid);
+                            if try_wake_existing_instance(lock.port, &lock.token) {
+                                return SingleInstanceDecision::SecondaryWoken;
+                            }
+                        }
+                    }
+                    if attempt < 14 {
+                        std::thread::sleep(Duration::from_millis(100));
+                    }
+                }
+
+                if let Some(pid) = last_recorded_pid {
+                    if is_process_alive(pid) {
+                        return SingleInstanceDecision::SecondaryWoken;
+                    }
+                }
+
+                if round == 0 {
+                    let _ = fs::remove_file(lock_path);
+                    continue;
+                } else {
+                    return SingleInstanceDecision::Error(
+                        "Unable to wake existing instance and failed to arbitrate clean lock."
+                            .into(),
+                    );
                 }
             }
-        });
+            Err(e) => {
+                return SingleInstanceDecision::Error(format!(
+                    "Failed to create instance lock file {:?}: {e}",
+                    lock_path
+                ));
+            }
+        }
     }
 
-    Some((listener, token, wakeup_state))
+    SingleInstanceDecision::Error("Failed to arbitrate single instance after recovery.".into())
 }
 
 fn find_python_executable(backend_root: &Path) -> Result<PathBuf, String> {
@@ -321,11 +437,18 @@ async fn check_local_port_2077(client: &Client) -> LocalPortStatus {
     if check_health(client, &local_base).await.is_ok() {
         return LocalPortStatus::HealthyInstance;
     }
-    let addr = std::net::SocketAddr::from(([127, 0, 0, 1], 2077));
-    if std::net::TcpStream::connect_timeout(&addr, Duration::from_millis(250)).is_ok() {
-        return LocalPortStatus::OccupiedForeign;
+    let is_occupied = tauri::async_runtime::spawn_blocking(|| {
+        let addr = std::net::SocketAddr::from(([127, 0, 0, 1], 2077));
+        std::net::TcpStream::connect_timeout(&addr, Duration::from_millis(250)).is_ok()
+    })
+    .await
+    .unwrap_or(false);
+
+    if is_occupied {
+        LocalPortStatus::OccupiedForeign
+    } else {
+        LocalPortStatus::Available
     }
-    LocalPortStatus::Available
 }
 
 fn spawn_backend_process(
@@ -446,10 +569,9 @@ async fn wait_for_backend_ready(
 }
 
 fn stop_managed_backend(state: &ManagedBackendState) {
-    if let Ok(mut lock) = state.0.lock() {
-        if let BackendLifecycle::Running(mut child) =
-            std::mem::replace(&mut *lock, BackendLifecycle::Idle)
-        {
+    if let Ok(mut guard) = state.0.lock() {
+        guard.phase = BackendPhase::Idle;
+        if let Some(mut child) = guard.child.take() {
             let _ = child.kill();
             let _ = child.wait();
         }
@@ -902,30 +1024,40 @@ async fn launch_local_backend(
     }
 
     let action = {
-        let mut lifecycle = backend_state
+        let mut guard = backend_state
             .0
             .lock()
             .map_err(|e| format!("Managed backend state unavailable: {e}"))?;
 
-        match &mut *lifecycle {
-            BackendLifecycle::Running(child) => {
-                match child.try_wait() {
-                    Ok(Some(_)) => {
-                        // 托管的子进程已意外退出，重置并重新拉起
-                        *lifecycle = BackendLifecycle::Launching;
-                        LaunchAction::PerformSpawn
-                    }
-                    Ok(None) => LaunchAction::WaitForExisting,
-                    Err(_) => {
-                        *lifecycle = BackendLifecycle::Launching;
-                        LaunchAction::PerformSpawn
-                    }
+        if let Some(ref mut child) = guard.child {
+            match child.try_wait() {
+                Ok(Some(_)) => {
+                    guard.child = None;
+                    guard.phase = BackendPhase::Idle;
+                }
+                Ok(None) => {}
+                Err(_) => {
+                    guard.child = None;
+                    guard.phase = BackendPhase::Idle;
                 }
             }
-            BackendLifecycle::Launching => LaunchAction::WaitForExisting,
-            BackendLifecycle::Idle => {
-                *lifecycle = BackendLifecycle::Launching;
+        }
+
+        match guard.phase {
+            BackendPhase::Idle | BackendPhase::Failed => {
+                guard.phase = BackendPhase::Launching;
+                guard.last_error = None;
                 LaunchAction::PerformSpawn
+            }
+            BackendPhase::Launching => LaunchAction::WaitForExisting,
+            BackendPhase::Running => {
+                if guard.child.is_some() {
+                    LaunchAction::WaitForExisting
+                } else {
+                    guard.phase = BackendPhase::Launching;
+                    guard.last_error = None;
+                    LaunchAction::PerformSpawn
+                }
             }
         }
     };
@@ -935,8 +1067,9 @@ async fn launch_local_backend(
             let backend_root = match find_backend_root() {
                 Ok(r) => r,
                 Err(e) => {
-                    if let Ok(mut lock) = backend_state.0.lock() {
-                        *lock = BackendLifecycle::Idle;
+                    if let Ok(mut g) = backend_state.0.lock() {
+                        g.phase = BackendPhase::Failed;
+                        g.last_error = Some(e.clone());
                     }
                     return Err(e);
                 }
@@ -944,8 +1077,9 @@ async fn launch_local_backend(
             let python = match find_python_executable(&backend_root) {
                 Ok(p) => p,
                 Err(e) => {
-                    if let Ok(mut lock) = backend_state.0.lock() {
-                        *lock = BackendLifecycle::Idle;
+                    if let Ok(mut g) = backend_state.0.lock() {
+                        g.phase = BackendPhase::Failed;
+                        g.last_error = Some(e.clone());
                     }
                     return Err(e);
                 }
@@ -954,8 +1088,9 @@ async fn launch_local_backend(
             let mut child = match spawn_backend_process(&python, &backend_root) {
                 Ok(c) => c,
                 Err(e) => {
-                    if let Ok(mut lock) = backend_state.0.lock() {
-                        *lock = BackendLifecycle::Idle;
+                    if let Ok(mut g) = backend_state.0.lock() {
+                        g.phase = BackendPhase::Failed;
+                        g.last_error = Some(e.clone());
                     }
                     return Err(e);
                 }
@@ -963,36 +1098,111 @@ async fn launch_local_backend(
 
             let tracker = drain_process_output(&mut child);
 
-            if let Err(e) =
-                wait_for_backend_ready(&client, &mut child, &tracker, Duration::from_secs(30)).await
+            // 关键：在 spawn 成功的一瞬间，立即将子进程句柄登记到托管列表，防止启动中退出导致漏杀
             {
-                let _ = child.kill();
-                let _ = child.wait();
-                if let Ok(mut lock) = backend_state.0.lock() {
-                    *lock = BackendLifecycle::Idle;
-                }
-                return Err(e);
+                let mut g = backend_state
+                    .0
+                    .lock()
+                    .map_err(|e| format!("Managed backend state unavailable: {e}"))?;
+                g.phase = BackendPhase::Launching;
+                g.child = Some(child);
             }
 
-            if let Ok(mut lock) = backend_state.0.lock() {
-                *lock = BackendLifecycle::Running(child);
-            }
-        }
-        LaunchAction::WaitForExisting => {
             let local_base = Url::parse("http://127.0.0.1:2077/").unwrap();
             let start = std::time::Instant::now();
-            let mut ready = false;
-            while start.elapsed() < Duration::from_secs(30) {
+            let timeout = Duration::from_secs(30);
+
+            loop {
+                if start.elapsed() >= timeout {
+                    let mut g = backend_state.0.lock().map_err(|e| e.to_string())?;
+                    g.phase = BackendPhase::Failed;
+                    if let Some(mut c) = g.child.take() {
+                        let _ = c.kill();
+                        let _ = c.wait();
+                    }
+                    let mut timeout_msg =
+                        "等待本机后端健康检查超时（30秒内未就绪）。建议备用方式：可双击 start.bat 尝试启动并查看控制台日志。".to_string();
+                    if let Ok(logs) = tracker.recent_stderr.lock() {
+                        if !logs.is_empty() {
+                            timeout_msg.push_str(&format!(" 错误日志摘要:\n{}", logs.join("\n")));
+                        }
+                    }
+                    g.last_error = Some(timeout_msg.clone());
+                    return Err(timeout_msg);
+                }
+
+                // 随时检测子进程存活（若被托盘退出取走则立即中止）
+                {
+                    let mut g = backend_state.0.lock().map_err(|e| e.to_string())?;
+                    match g.child.as_mut() {
+                        Some(c) => {
+                            if let Ok(Some(status)) = c.try_wait() {
+                                let mut err_msg = format!("后端进程提前退出（状态码: {status}）。");
+                                if let Ok(logs) = tracker.recent_stderr.lock() {
+                                    if !logs.is_empty() {
+                                        err_msg
+                                            .push_str(&format!(" 错误详情:\n{}", logs.join("\n")));
+                                    }
+                                }
+                                g.child = None;
+                                g.phase = BackendPhase::Failed;
+                                g.last_error = Some(err_msg.clone());
+                                return Err(err_msg);
+                            }
+                        }
+                        None => {
+                            return Err("桌面客户端已请求退出，后端启动已中止。".into());
+                        }
+                    }
+                }
+
                 if check_health(&client, &local_base).await.is_ok() {
-                    ready = true;
+                    if let Ok(mut g) = backend_state.0.lock() {
+                        g.phase = BackendPhase::Running;
+                    }
                     break;
                 }
+
                 tauri::async_runtime::spawn_blocking(|| {
                     std::thread::sleep(Duration::from_millis(250));
                 })
                 .await
                 .map_err(|e| e.to_string())?;
             }
+        }
+        LaunchAction::WaitForExisting => {
+            let local_base = Url::parse("http://127.0.0.1:2077/").unwrap();
+            let start = std::time::Instant::now();
+            let timeout = Duration::from_secs(30);
+            let mut ready = false;
+
+            while start.elapsed() < timeout {
+                // 若拉起方已失败或取消，立即中止等待返回错误，绝不空等 30 秒
+                if let Ok(g) = backend_state.0.lock() {
+                    if g.phase == BackendPhase::Failed {
+                        let err = g
+                            .last_error
+                            .clone()
+                            .unwrap_or_else(|| "本机后端启动失败。".into());
+                        return Err(err);
+                    }
+                    if g.phase == BackendPhase::Idle {
+                        return Err("本机后端启动已被取消。".into());
+                    }
+                }
+
+                if check_health(&client, &local_base).await.is_ok() {
+                    ready = true;
+                    break;
+                }
+
+                tauri::async_runtime::spawn_blocking(|| {
+                    std::thread::sleep(Duration::from_millis(250));
+                })
+                .await
+                .map_err(|e| e.to_string())?;
+            }
+
             if !ready {
                 return Err("等待本机后端就绪超时。请稍后重试。".into());
             }
@@ -1032,11 +1242,21 @@ fn make_tray_icon() -> Image<'static> {
 }
 
 fn main() {
-    let single_instance = match ensure_single_instance_or_wake() {
-        Some(si) => si,
-        None => return,
-    };
-    let (_listener, _token, wakeup_state) = single_instance;
+    let lock_path = instance_lock_path();
+    let (_listener, _token, wakeup_state, active_lock_path) =
+        match arbitrate_single_instance(&lock_path) {
+            SingleInstanceDecision::SecondaryWoken => return,
+            SingleInstanceDecision::Primary {
+                listener,
+                token,
+                wakeup_state,
+                lock_path,
+            } => (listener, token, wakeup_state, lock_path),
+            SingleInstanceDecision::Error(err) => {
+                eprintln!("桌面端单实例仲裁失败: {err}");
+                return;
+            }
+        };
 
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
@@ -1096,7 +1316,7 @@ fn main() {
                         }
                     }
                     "quit" => {
-                        let _ = fs::remove_file(instance_lock_path());
+                        let _ = fs::remove_file(&active_lock_path);
                         let state = app.state::<ManagedBackendState>();
                         stop_managed_backend(&state);
                         app.exit(0);
@@ -1237,7 +1457,37 @@ mod tests {
         let state = ManagedBackendState::default();
         stop_managed_backend(&state);
         let guard = state.0.lock().unwrap();
-        assert!(matches!(*guard, BackendLifecycle::Idle));
+        assert_eq!(guard.phase, BackendPhase::Idle);
+        assert!(guard.child.is_none());
+    }
+
+    #[test]
+    fn test_managed_backend_stopping_during_launching_kills_child() {
+        let state = ManagedBackendState::default();
+        let child = std::process::Command::new("python")
+            .arg("-c")
+            .arg("import time; time.sleep(30)")
+            .spawn()
+            .expect("spawn sleeping process");
+
+        {
+            let mut guard = state.0.lock().unwrap();
+            guard.phase = BackendPhase::Launching;
+            guard.child = Some(child);
+        }
+
+        // 模拟用户在拉起阶段点击托盘 Quit，验证处于 Launching 状态的子进程也会被彻底停止
+        stop_managed_backend(&state);
+
+        let guard = state.0.lock().unwrap();
+        assert_eq!(guard.phase, BackendPhase::Idle);
+        assert!(guard.child.is_none());
+    }
+
+    #[test]
+    fn test_process_liveness_detection() {
+        assert!(is_process_alive(std::process::id()));
+        assert!(!is_process_alive(99_999_999));
     }
 
     #[test]
@@ -1246,12 +1496,6 @@ mod tests {
         let port = listener.local_addr().expect("local addr").port();
         let token = "test_wakeup_token_456".to_string();
         let expected_token = token.clone();
-
-        let lock = InstanceLock {
-            port,
-            token,
-            pid: std::process::id(),
-        };
 
         // 启动后台线程模拟主实例接收唤醒请求
         let handle = std::thread::spawn(move || {
@@ -1272,10 +1516,76 @@ mod tests {
         });
 
         // 调用客户端唤醒函数
-        let woken = try_wake_existing_instance(&lock);
+        let woken = try_wake_existing_instance(port, &token);
         assert!(woken, "Instance should be successfully woken");
         let server_verified = handle.join().expect("join server thread");
         assert!(server_verified, "Server thread verified wakeup command");
+    }
+
+    #[test]
+    fn test_concurrent_instance_arbitration_guarantees_single_primary() {
+        let test_dir = std::env::temp_dir().join(format!(
+            "gw_arb_test_{}_{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let _ = fs::create_dir_all(&test_dir);
+        let lock_path = test_dir.join("concurrent.lock");
+
+        let num_threads = 12;
+        let barrier = Arc::new(std::sync::Barrier::new(num_threads));
+        let primary_count = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let secondary_count = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let error_count = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+
+        let mut handles = Vec::new();
+        for _ in 0..num_threads {
+            let b = barrier.clone();
+            let lp = lock_path.clone();
+            let p_cnt = primary_count.clone();
+            let s_cnt = secondary_count.clone();
+            let e_cnt = error_count.clone();
+
+            handles.push(std::thread::spawn(move || {
+                b.wait();
+                match arbitrate_single_instance(&lp) {
+                    SingleInstanceDecision::Primary { .. } => {
+                        p_cnt.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                    }
+                    SingleInstanceDecision::SecondaryWoken => {
+                        s_cnt.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                    }
+                    SingleInstanceDecision::Error(err) => {
+                        eprintln!("Arbitration error: {err}");
+                        e_cnt.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                    }
+                }
+            }));
+        }
+
+        for h in handles {
+            h.join().expect("join arbitration thread");
+        }
+
+        let p = primary_count.load(std::sync::atomic::Ordering::SeqCst);
+        let s = secondary_count.load(std::sync::atomic::Ordering::SeqCst);
+        let e = error_count.load(std::sync::atomic::Ordering::SeqCst);
+
+        assert_eq!(
+            e, 0,
+            "There should be 0 errors during concurrent arbitration"
+        );
+        assert_eq!(p, 1, "There MUST be exactly 1 primary instance created");
+        assert_eq!(
+            s, 11,
+            "All 11 concurrent loser threads must be secondary woken"
+        );
+
+        let _ = fs::remove_file(&lock_path);
+        let _ = fs::remove_dir_all(&test_dir);
     }
 
     #[test]
@@ -1285,13 +1595,14 @@ mod tests {
         // 1. 初始为 Idle
         {
             let lock = state.0.lock().unwrap();
-            assert!(matches!(*lock, BackendLifecycle::Idle));
+            assert_eq!(lock.phase, BackendPhase::Idle);
+            assert!(lock.child.is_none());
         }
 
         // 2. 转换到 Launching
         {
             let mut lock = state.0.lock().unwrap();
-            *lock = BackendLifecycle::Launching;
+            lock.phase = BackendPhase::Launching;
         }
 
         // 3. 模拟拉起一个已退出的进程测试回收
@@ -1303,24 +1614,27 @@ mod tests {
 
         {
             let mut lock = state.0.lock().unwrap();
-            *lock = BackendLifecycle::Running(dead_child);
+            lock.phase = BackendPhase::Running;
+            lock.child = Some(dead_child);
         }
 
         // 4. 检查退出状态并回收重置为 Launching
         {
             let mut lock = state.0.lock().unwrap();
-            if let BackendLifecycle::Running(ref mut child) = *lock {
+            if let Some(ref mut child) = lock.child {
                 let _ = child.wait(); // 确保已退出
                 assert!(child.try_wait().unwrap().is_some());
             }
-            *lock = BackendLifecycle::Launching;
+            lock.child = None;
+            lock.phase = BackendPhase::Launching;
         }
 
         // 5. 停止
         stop_managed_backend(&state);
         {
             let lock = state.0.lock().unwrap();
-            assert!(matches!(*lock, BackendLifecycle::Idle));
+            assert_eq!(lock.phase, BackendPhase::Idle);
+            assert!(lock.child.is_none());
         }
     }
 
