@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readAssetManagerAggregate } from './asset-manager-aggregate.mjs';
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import test from "node:test";
@@ -8,7 +9,7 @@ const read = (relativePath) =>
   readFileSync(path.join(repoRoot, relativePath), "utf8");
 
 const assetVault = read("web/css/pages/asset-vault.css");
-const assetManager = read("web/js/modules/asset-manager.js");
+const assetManager = readAssetManagerAggregate();
 const directorySettings = read("web/css/pages/directory-settings.css");
 const templateLayout = () => {
   const start = assetVault.indexOf("/* 项目目录模板管理浮窗");

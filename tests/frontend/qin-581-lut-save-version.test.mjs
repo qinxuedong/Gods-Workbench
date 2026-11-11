@@ -1,9 +1,10 @@
 import assert from 'node:assert/strict';
+import { readAssetManagerAggregate } from './asset-manager-aggregate.mjs';
 import {readFileSync} from 'node:fs';
 import test from 'node:test';
 
 const read = relative => readFileSync(new URL(`../../${relative}`, import.meta.url), 'utf8');
-const manager = read('web/js/modules/asset-manager.js');
+const manager = readAssetManagerAggregate();
 const styles = read('web/css/pages/asset-manager.css');
 const routes = read('gw/api/routes_asset_registry.py');
 
@@ -91,7 +92,8 @@ test('QIN-581：保存后不打断正在看的预览', () => {
     for (const forbidden of ['render();', 'refreshRegistryAssets(', 'loadRegistryBootstrap(']) {
         assert.ok(!saveSection.includes(forbidden), `保存路径不应触发 ${forbidden}`);
     }
-    assert.match(saveSection, /registryAssets = \[normalized, \.\.\.registryAssets\]/, '新资产应并入列表数据');
+    // QIN-591：registryAssets 为跨文件写状态，lut.js 内赋值改写为 setter 调用（登记在案），并入语义不变。
+    assert.match(saveSection, /setRegistryAssets\(\[normalized, \.\.\.registryAssets\]\)/, '新资产应并入列表数据');
 });
 
 test('QIN-581：点击分支挂在节点浮窗内，且排在「点空白收起」之前', () => {

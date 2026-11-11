@@ -1,9 +1,10 @@
 /** QIN-570：资产库 F 键真全屏查看当前素材（不再打开 Coverflow）。 */
 import assert from 'node:assert/strict';
+import { readAssetManagerAggregate } from './asset-manager-aggregate.mjs';
 import {readFileSync} from 'node:fs';
 import test from 'node:test';
 
-const MANAGER = readFileSync(new URL('../../web/js/modules/asset-manager.js', import.meta.url), 'utf8');
+const MANAGER = readAssetManagerAggregate();
 const GUIDE = readFileSync(new URL('../../docs/guides/KEYBOARD-SHORTCUTS.md', import.meta.url), 'utf8');
 const CSS = readFileSync(new URL('../../web/css/pages/asset-manager.css', import.meta.url), 'utf8');
 
@@ -84,8 +85,9 @@ function createShowState(items){
 
 test('F 路由真全屏查看器，Enter 保持 Coverflow，查看器内 F/Esc 关闭', () => {
     assert.match(MANAGER, /function openRegistryAssetFullscreenViewer\(trigger=null, options=\{\}\)\{/);
-    assert.match(MANAGER, /if\(event\.key === 'Enter'\)\{\s*openRegistryCoverflow\(document\.activeElement/);
-    assert.match(MANAGER, /openRegistryAssetFullscreenViewer\(document\.activeElement, \{currentAssetId:String\(current\.asset_id \|\| current\.id \|\| ''\)\}\)/);
+    // QIN-591：Enter/F 派发 gwCall 化（登记在案），快捷键语义不变。
+    assert.match(MANAGER, /if\(event\.key === 'Enter'\)\{\s*gwCall\('coverflow-bridge', 'openRegistryCoverflow', document\.activeElement/);
+    assert.match(MANAGER, /gwCall\('preview', 'openRegistryAssetFullscreenViewer', document\.activeElement, \{currentAssetId:String\(current\.asset_id \|\| current\.id \|\| ''\)\}\)/);
     assert.match(MANAGER, /toLowerCase\(\) === 'f' && registryFullscreenViewerState\)\{/);
     assert.match(MANAGER, /document\.addEventListener\('keydown', state\.onKeydown, true\)/);
     assert.match(MANAGER, /if\(registryFullscreenViewerState === state && !document\.fullscreenElement\)\{\s*closeRegistryAssetFullscreenViewer\(\);/);
@@ -131,6 +133,8 @@ test('查看器渲染原片地址并循环切换，底部状态行计数', () =>
 test('关闭真全屏查看器：移除监听与 overlay、退出全屏并返还焦点', () => {
     const closeHarness = new Function('document', `
         let registryFullscreenViewerState = null;
+        // QIN-591：拆分后写入经主文件导出的 setter，桩把 setter 落回本夹具的局部状态。
+        function setRegistryFullscreenViewerState(value){ registryFullscreenViewerState = value; }
         ${functionSource(MANAGER, 'closeRegistryAssetFullscreenViewer')}
         return {
             close:closeRegistryAssetFullscreenViewer,
@@ -142,6 +146,8 @@ test('关闭真全屏查看器：移除监听与 overlay、退出全屏并返还
     const events = createFakeCloseDocument();
     const closeHarness2 = new Function('document', `
         let registryFullscreenViewerState = null;
+        // QIN-591：拆分后写入经主文件导出的 setter，桩把 setter 落回本夹具的局部状态。
+        function setRegistryFullscreenViewerState(value){ registryFullscreenViewerState = value; }
         ${functionSource(MANAGER, 'closeRegistryAssetFullscreenViewer')}
         return {
             close:closeRegistryAssetFullscreenViewer,

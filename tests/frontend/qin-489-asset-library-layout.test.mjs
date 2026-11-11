@@ -1,11 +1,12 @@
 import assert from 'node:assert/strict';
+import { readAssetManagerAggregate } from './asset-manager-aggregate.mjs';
 import {readFileSync} from 'node:fs';
 import test from 'node:test';
 import {runInNewContext} from 'node:vm';
 
 const html = readFileSync(new URL('../../web/pages/assets.html', import.meta.url), 'utf8');
 const shell = readFileSync(new URL('../../web/js/controllers/assets-controller.js', import.meta.url), 'utf8');
-const manager = readFileSync(new URL('../../web/js/modules/asset-manager.js', import.meta.url), 'utf8');
+const manager = readAssetManagerAggregate();
 const vaultCss = readFileSync(new URL('../../web/css/pages/asset-vault.css', import.meta.url), 'utf8');
 const managerCss = readFileSync(new URL('../../web/css/pages/asset-manager.css', import.meta.url), 'utf8');
 
@@ -235,7 +236,9 @@ test('QIN-505 AC6: Shift+滚轮即时缩放卡片并保存设置', () => {
     };
     const handle = new Function(
         'root','REGISTRY_CARD_SIZE','clearTimeout','setTimeout','saveRegistryViewSettings','setStatus','requestAnimationFrame','scheduleRegistryMasonryLayout','updateRegistryVirtualWindow','remeasureRegistryMasonryGrid',
-        `let registryCardSize=176; let registryCardSizeSaveTimer=0; let registryCardSizeLayoutFrame=0; let registryCardSizeVirtualMeasureRevision=0; ${functionSource('handleRegistryCardResizeWheel')}\nreturn {handle:handleRegistryCardResizeWheel,size:()=>registryCardSize};`,
+        // QIN-591：保存派发 gwCall 化（登记在案）；gwCall 桩定义在函数体内，转回被注入的 saveRegistryViewSettings。
+        `function gwCall(domain, name){ if(name === 'saveRegistryViewSettings') saveRegistryViewSettings(); }
+         let registryCardSize=176; let registryCardSizeSaveTimer=0; let registryCardSizeLayoutFrame=0; let registryCardSizeVirtualMeasureRevision=0; ${functionSource('handleRegistryCardResizeWheel')}\nreturn {handle:handleRegistryCardResizeWheel,size:()=>registryCardSize};`,
     )(
         root,
         {min:120,max:360},
@@ -296,7 +299,9 @@ test('QIN-505 AC6: 虚拟瀑布流缩放后快速重算卡片列与位置', () =
     };
     const handle = new Function(
         'root','REGISTRY_CARD_SIZE','clearTimeout','setTimeout','saveRegistryViewSettings','setStatus','requestAnimationFrame','scheduleRegistryMasonryLayout','updateRegistryVirtualWindow','remeasureRegistryMasonryGrid',
-        `let registryCardSize=176; let registryCardSizeSaveTimer=0; let registryCardSizeLayoutFrame=0; let registryCardSizeVirtualMeasureRevision=0; ${functionSource('handleRegistryCardResizeWheel')}\nreturn handleRegistryCardResizeWheel;`,
+        // QIN-591：保存派发 gwCall 化（登记在案）；gwCall 桩定义在函数体内，转回被注入的 saveRegistryViewSettings。
+        `function gwCall(domain, name){ if(name === 'saveRegistryViewSettings') saveRegistryViewSettings(); }
+         let registryCardSize=176; let registryCardSizeSaveTimer=0; let registryCardSizeLayoutFrame=0; let registryCardSizeVirtualMeasureRevision=0; ${functionSource('handleRegistryCardResizeWheel')}\nreturn handleRegistryCardResizeWheel;`,
     )(
         root,
         {min:120,max:360},
@@ -727,7 +732,9 @@ test('QIN-532: Shift+滚轮可缩至 96px 并提示边界', () => {
     const root = {querySelectorAll:() => [content], querySelector:() => null};
     const handle = new Function(
         'root','REGISTRY_CARD_SIZE','clearTimeout','setTimeout','saveRegistryViewSettings','setStatus','requestAnimationFrame','scheduleRegistryMasonryLayout','updateRegistryVirtualWindow','remeasureRegistryMasonryGrid',
-        `let registryCardSize=108; let registryCardSizeSaveTimer=0; let registryCardSizeLayoutFrame=0; let registryCardSizeVirtualMeasureRevision=0; ${functionSource('handleRegistryCardResizeWheel')}\nreturn {handle:handleRegistryCardResizeWheel,size:()=>registryCardSize};`,
+        // QIN-591：保存派发 gwCall 化（登记在案）；gwCall 桩定义在函数体内，转回被注入的 saveRegistryViewSettings。
+        `function gwCall(domain, name){ if(name === 'saveRegistryViewSettings') saveRegistryViewSettings(); }
+         let registryCardSize=108; let registryCardSizeSaveTimer=0; let registryCardSizeLayoutFrame=0; let registryCardSizeVirtualMeasureRevision=0; ${functionSource('handleRegistryCardResizeWheel')}\nreturn {handle:handleRegistryCardResizeWheel,size:()=>registryCardSize};`,
     )(root, {min:96,max:360}, () => {}, callback => {save = callback;}, () => {}, value => {status = value;}, () => 1, () => {}, () => {}, () => {});
     handle.handle({shiftKey:true, deltaY:1, target:{closest:() => true}, preventDefault(){}});
     save();

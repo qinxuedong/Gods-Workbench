@@ -1,11 +1,12 @@
 import {readFileSync} from 'node:fs';
+import { readAssetManagerAggregate } from './asset-manager-aggregate.mjs';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {createContext, runInContext} from 'node:vm';
 
 const html = readFileSync(new URL('../../web/pages/assets.html', import.meta.url), 'utf8');
 const controller = readFileSync(new URL('../../web/js/controllers/assets-controller.js', import.meta.url), 'utf8');
-const manager = readFileSync(new URL('../../web/js/modules/asset-manager.js', import.meta.url), 'utf8');
+const manager = readAssetManagerAggregate();
 const managerCss = readFileSync(new URL('../../web/css/pages/asset-manager.css', import.meta.url), 'utf8');
 
 function functionSource(name, source = manager) {
@@ -49,6 +50,8 @@ test('QIN-560 AC3: 点击单栏树入口切换托管、上传与用户资源库�
     activatedBoardIds,
     assetBoardById: id => ({id}),
     activateAssetBoard: id => activatedBoardIds.push(id),
+    // QIN-591：看板激活派发已 gwCall 化，桩把网关调用转回被记录的激活入口。
+    gwCall: (domain, name, ...args) => { if(name === 'activateAssetBoard') activatedBoardIds.push(args[0]); },
   });
   runInContext([
     functionSource('handleAssetTreeNodeClick'),

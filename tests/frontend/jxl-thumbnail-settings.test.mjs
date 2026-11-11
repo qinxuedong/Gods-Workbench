@@ -2,13 +2,11 @@
  * QIN-513：缩略图格式设置控件、即时保存与 API 契约。
  */
 import assert from 'node:assert/strict';
+import { readAssetManagerAggregate } from './asset-manager-aggregate.mjs';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
 
-const ASSET_MANAGER = readFileSync(
-  new URL('../../web/js/modules/asset-manager.js', import.meta.url),
-  'utf8'
-);
+const ASSET_MANAGER = readAssetManagerAggregate();
 const ASSET_MANAGER_API = readFileSync(
   new URL('../../web/js/modules/asset-manager/api.js', import.meta.url),
   'utf8'
@@ -28,7 +26,7 @@ test('资产设置展示默认 JXL 与兼容 WebP 单选项', () => {
 
 test('格式切换即时保存并携带设置版本', () => {
   assert.match(ASSET_MANAGER, /data-thumbnail-format/);
-  assert.match(ASSET_MANAGER, /persistThumbnailStorageSettings\(\{format:nextFormat\}\)/);
+  assert.match(ASSET_MANAGER, /gwCall\('settings', 'persistThumbnailStorageSettings', \{format:nextFormat\}\)/);
   assert.match(ASSET_MANAGER, /expected_version:expectedVersion/);
   assert.match(ASSET_MANAGER, /revision:Number\(data\.revision \|\| expectedVersion \+ 1\)/);
 });

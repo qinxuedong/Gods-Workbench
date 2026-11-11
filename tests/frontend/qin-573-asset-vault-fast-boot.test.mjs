@@ -1,12 +1,13 @@
 // QIN-573: 资产库首屏秒开：父页直连子帧与 SWR 快照优先渲染
 import assert from 'node:assert/strict';
+import { readAssetManagerAggregate } from './asset-manager-aggregate.mjs';
 import {readFileSync} from 'node:fs';
 import test from 'node:test';
 
 const assetsHtml = readFileSync(new URL('../../web/pages/assets.html', import.meta.url), 'utf8');
 const assetsControllerJs = readFileSync(new URL('../../web/js/controllers/assets-controller.js', import.meta.url), 'utf8');
 const assetManagerHtml = readFileSync(new URL('../../web/embeds/asset-manager.html', import.meta.url), 'utf8');
-const assetManagerJs = readFileSync(new URL('../../web/js/modules/asset-manager.js', import.meta.url), 'utf8');
+const assetManagerJs = readAssetManagerAggregate();
 
 test('AC1: assets.html 的 iframe#assetVaultFrame 原生直出 src，并发加载避免串行阻塞', () => {
   // 必须原生包含 src 与 data-src，且 src 指向内嵌金库页

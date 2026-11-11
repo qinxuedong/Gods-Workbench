@@ -55,11 +55,15 @@ const requests=[];
 const context={projectDirectoryTemplateManagerState:{templates:[{id:'dtpl_1',version:4,default_revision:99}],saving:false,revision:100},
  renderProjectDirectoryTemplateManagerSheet(){},apiJsonResponse:async x=>x,
  assetManagerApi:{setDefaultProjectDirectoryTemplate:(id,body)=>{requests.push({id,body});return {}; }},
- loadProjectDirectoryTemplatesForManager:async()=>{},chooseProjectDirectoryTemplate(){},setStatus(){}};
+ loadProjectDirectoryTemplatesForManager:async()=>{},chooseProjectDirectoryTemplate(){},setStatus(){},
+ // QIN-591：函数体迁入 settings.js 延后域后，跨文件状态写入改用主文件 setter，
+ // 网关调用也需桩；被测函数本体与断言语义均不变。
+ setProjectDirectoryTemplateManagerState(){},gwCall(){}};
 vm.createContext(context);vm.runInContext(source.slice(a,b),context);
 context.setProjectDirectoryTemplateDefault('dtpl_1').then(()=>console.log(JSON.stringify(requests)));
 """
-    result = subprocess.run([node, "-e", script, str(ROOT / "web/js/modules/asset-manager.js")],
+    # QIN-591：setProjectDirectoryTemplateDefault 已随设置域拆到 settings.js。
+    result = subprocess.run([node, "-e", script, str(ROOT / "web/js/modules/asset-manager/settings.js")],
                             capture_output=True, text=True, encoding="utf-8", timeout=30)
     assert result.returncode == 0, result.stderr
     assert json.loads(result.stdout) == [{"id": "dtpl_1", "body": {"expected_version": 4}}]
@@ -85,7 +89,10 @@ const context={registryLoading:false,registryPageLoading:false,registryHasMoreAs
  getRegistryStatus:()=>({ok:true,json:async()=>({revision:1})})},
  refreshRegistryAssets:async()=>{reloads++;context.registryRequestSeq++;context.registryNextCursor='';context.registryNextOffset=0;context.registryPageLoading=false;},
  refreshRegistryFacetData:async()=>{},normalizeAssetState(){},render(){},
- setStatus(){},applyRegistryAssetResponse(){applied++;},setRegistryAssetCache(){},isRegistryAbortError:()=>false};
+ setStatus(){},applyRegistryAssetResponse(){applied++;},setRegistryAssetCache(){},isRegistryAbortError:()=>false,
+ // QIN-591：apiJsonResponse 的 409 分支经 gwCall 转发 CAS 读状态刷新，
+ // 该函数是切片外部依赖，按迁移口径注入空桩（不改变错误码与重载断言）。
+ gwCall(){}};
 vm.createContext(context);vm.runInContext('const VERSION_CONFLICT_MESSAGE = String.fromCharCode(20869,23481,24050,21464,21270,65292,35831,21047,26032); let casRefreshInFlight=false;\n'+source.slice(a,b)+'\n'+source.slice(c,d),context);
 (async()=>{
  try{await context.apiJsonResponse(context.assetManagerApi.getRegistryAssets())}catch(e){if(e.code!=='VERSION_CONFLICT'||e.status!==409||e.message!=='内容已变化，请刷新')throw e;}

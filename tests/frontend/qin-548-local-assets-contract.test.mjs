@@ -1,12 +1,10 @@
 /** QIN-548：上传、目录树与文件夹改名的前后端调用契约。 */
 import assert from 'node:assert/strict';
+import { readAssetManagerAggregate } from './asset-manager-aggregate.mjs';
 import {readFileSync} from 'node:fs';
 import test from 'node:test';
 
-const MANAGER = readFileSync(
-    new URL('../../web/js/modules/asset-manager.js', import.meta.url),
-    'utf8'
-);
+const MANAGER = readAssetManagerAggregate();
 
 function functionSource(name){
     let start = MANAGER.indexOf(`function ${name}(`);

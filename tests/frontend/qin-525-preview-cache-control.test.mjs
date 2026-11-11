@@ -8,13 +8,11 @@
  * - 取消终态给出「已取消」提示并刷新缓存统计。
  */
 import assert from 'node:assert/strict';
+import { readAssetManagerAggregate } from './asset-manager-aggregate.mjs';
 import {readFileSync} from 'node:fs';
 import test from 'node:test';
 
-const MANAGER = readFileSync(
-    new URL('../../web/js/modules/asset-manager.js', import.meta.url),
-    'utf8'
-);
+const MANAGER = readAssetManagerAggregate();
 
 function functionSource(name){
     const start = MANAGER.indexOf(`function ${name}(`);

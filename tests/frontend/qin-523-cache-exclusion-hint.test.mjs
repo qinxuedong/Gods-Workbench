@@ -1,9 +1,10 @@
 import assert from 'node:assert/strict';
+import { readAssetManagerAggregate } from './asset-manager-aggregate.mjs';
 import {readFileSync} from 'node:fs';
 import test from 'node:test';
 import {pathCompareKey} from '../../web/js/modules/asset-manager/path-utils.js';
 
-const source = readFileSync(new URL('../../web/js/modules/asset-manager.js', import.meta.url), 'utf8');
+const source = readAssetManagerAggregate();
 const hintText = '检测到缓存位于素材库内，系统已自动加入扫描排除名单，防止重复索引';
 
 function functionSource(name) {

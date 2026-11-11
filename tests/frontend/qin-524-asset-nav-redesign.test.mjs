@@ -9,13 +9,11 @@
  * - AC5 测试自身登记到 node-files.txt 并完成卫生准入分片。
  */
 import assert from 'node:assert/strict';
+import { readAssetManagerAggregate } from './asset-manager-aggregate.mjs';
 import {existsSync, readFileSync} from 'node:fs';
 import test from 'node:test';
 
-const MANAGER = readFileSync(
-    new URL('../../web/js/modules/asset-manager.js', import.meta.url),
-    'utf8'
-);
+const MANAGER = readAssetManagerAggregate();
 const CSS = readFileSync(
     new URL('../../web/css/pages/asset-manager.css', import.meta.url),
     'utf8'
@@ -70,15 +68,15 @@ test('AC1: 中栏只剩目录层级入口，双段拨片已由 QIN-533 下线', 
     assert.match(setCollapsed, /render\(\);/, '收起/展开只重渲染中栏所在视图，不做整页跳转');
     assert.doesNotMatch(setCollapsed, /location\.(reload|href)/, '禁止整页刷新');
 
-    // 点击派发登记
+    // 点击派发登记（QIN-591：派发点 gwCall 化，收口仍为统一委托）
     assert.match(
         MANAGER,
-        /if\(target\.closest\?\.\('\[data-asset-rack-collapse\]'\)\)\{ setAssetRackCollapsed\(true\); return; \}/,
+        /if\(target\.closest\?\.\('\[data-asset-rack-collapse\]'\)\)\{ gwCall\('settings', 'setAssetRackCollapsed', true\); return; \}/,
         '收起按钮必须走统一委托'
     );
     assert.match(
         MANAGER,
-        /if\(target\.closest\?\.\('\[data-asset-rack-expand\]'\)\)\{ setAssetRackCollapsed\(false\); return; \}/,
+        /if\(target\.closest\?\.\('\[data-asset-rack-expand\]'\)\)\{ gwCall\('settings', 'setAssetRackCollapsed', false\); return; \}/,
         '展开按钮必须走统一委托'
     );
 });
@@ -103,7 +101,8 @@ test('AC2: 目录层级只呈现登记根目录与真实物理子目录，点击
 
     // 点击节点：目录状态更新后按当前目录重新读取分页
     const select = functionSource('selectAssetRackFolder');
-    assert.match(select, /registryNavFolder = /, '点击必须写入目录过滤态');
+    // QIN-591：registryNavFolder 为跨文件写状态，域内赋值改写为 setter 调用（登记在案），写入语义不变。
+    assert.match(select, /setRegistryNavFolder\(/, '点击必须写入目录过滤态');
     assert.match(select, /refreshRegistryAssets\(\)/, '点击后必须按所选目录重新加载');
     assert.match(
         functionSource('registryVisibleAssets'),
@@ -123,7 +122,7 @@ test('AC2: 目录层级只呈现登记根目录与真实物理子目录，点击
     assert.doesNotMatch(folders, /点击包含，减号排除/, '目录层级必须去掉筛选说明长文');
 
     // 清除目录过滤与筛选胶囊
-    assert.match(functionSource('clearAssetRackFolder'), /registryNavFolder = \{rootId:'', path:''\}/);
+    assert.match(functionSource('clearAssetRackFolder'), /setRegistryNavFolder\(\{rootId:'', path:''\}\)/);
     assert.match(
         functionSource('renderRegistryFilterChips'),
         /data-asset-rack-clear-folder/,

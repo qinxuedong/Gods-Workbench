@@ -1,9 +1,10 @@
 /** QIN-559：全屏浏览、视频帧步进与 Backquote 编辑手势。 */
 import assert from 'node:assert/strict';
+import { readAssetManagerAggregate } from './asset-manager-aggregate.mjs';
 import {readFileSync} from 'node:fs';
 import test from 'node:test';
 
-const MANAGER = readFileSync(new URL('../../web/js/modules/asset-manager.js', import.meta.url), 'utf8');
+const MANAGER = readAssetManagerAggregate();
 const COVERFLOW = readFileSync(new URL('../../web/js/modules/asset-manager/coverflow.js', import.meta.url), 'utf8');
 const GUIDE = readFileSync(new URL('../../docs/guides/KEYBOARD-SHORTCUTS.md', import.meta.url), 'utf8');
 
@@ -105,9 +106,9 @@ test('画布 F 使用选择集，视频 A/D 逐帧且 F 切换全屏', () => {
     assert.match(openSelection, /assets,/);
     assert.match(openSelection, /currentAssetId,/);
     assert.doesNotMatch(MANAGER, /hasCanvasFullscreenSelection/);
-    assert.match(MANAGER, /stepDetailVideoFrame\(key === 'd' \? 1 : -1\)/);
-    assert.match(MANAGER, /detailMediaCanvasSelectedCoverflowAssets\(\)\.length <= 1\)\)\{\s*event\.preventDefault\(\);\s*toggleDetailVideoFullscreen\(\)/);
-    assert.match(MANAGER, /key === 'f'\)\{\s*event\.preventDefault\(\);\s*toggleDetailVideoFullscreen\(\)/);
+    assert.match(MANAGER, /gwCall\('preview', 'stepDetailVideoFrame', key === 'd' \? 1 : -1\)/);
+    assert.match(MANAGER, /detailMediaCanvasSelectedCoverflowAssets\(\)\.length <= 1\)\)\{\s*event\.preventDefault\(\);\s*gwCall\('preview', 'toggleDetailVideoFullscreen'\)/);
+    assert.match(MANAGER, /key === 'f'\)\{\s*event\.preventDefault\(\);\s*gwCall\('preview', 'toggleDetailVideoFullscreen'\)/);
     assert.match(toggleFullscreen, /document\.fullscreenElement === video/);
     assert.match(MANAGER, /title="上一帧（A）" aria-label="上一帧（A）"/);
     assert.match(MANAGER, /title="下一帧（D）" aria-label="下一帧（D）"/);
@@ -125,8 +126,8 @@ test('编辑双击退出回到进入前视图，快捷键指南同步', () => {
     assert.match(closeEditor, /restoreDetailImageEditorCoverflow\(state\)/);
     assert.match(restoreView, /gw:asset-coverflow-open/);
     assert.match(loadText, /detailViewerFileParams\(detailViewerState\.source, item\)/);
-    assert.match(MANAGER, /if\(detailBackquoteTappedTwice\(event,context\)\)\{[\s\S]*?enterCurrentDetailEditableContent\(\)/);
-    assert.match(MANAGER, /exitDetailTextEditFromBackquote\(editor,detailTextEditorBackquoteInput\)/);
+    assert.match(MANAGER, /if\(detailBackquoteTappedTwice\(event,context\)\)\{[\s\S]*?gwCall\('preview', 'enterCurrentDetailEditableContent'\)/);
+    assert.match(MANAGER, /gwCall\('preview', 'exitDetailTextEditFromBackquote', editor,detailTextEditorBackquoteInput\)/);
     assert.match(MANAGER, /const registryFullscreenShortcut = event\.key === 'Enter'[\s\S]*?!event\.ctrlKey && !event\.metaKey && !event\.altKey/);
     // QIN-570：F 改为真全屏查看，Enter 保持 Coverflow，指南拆行
     assert.match(GUIDE, /`F` \| 真全屏查看当前选中图片\/视频/);

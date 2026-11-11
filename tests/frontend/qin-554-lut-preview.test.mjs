@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { readAssetManagerAggregate } from './asset-manager-aggregate.mjs';
 import {readFileSync} from 'node:fs';
 import test from 'node:test';
 
@@ -12,7 +13,7 @@ import {
 
 const read = relative => readFileSync(new URL(`../../${relative}`, import.meta.url), 'utf8');
 const cube = name => read(`web/vendor/luts/${name}`);
-const manager = read('web/js/modules/asset-manager.js');
+const manager = readAssetManagerAggregate();
 const styles = read('web/css/pages/asset-manager.css');
 
 const pixelAt = (frame, x, y) => {
@@ -122,7 +123,7 @@ test('QIN-554：卡片与详情接线齐备（缩略 canvas / 侧栏切换 / 强
     // 卡片缩略：真实像素 canvas + 明确失败态
     assert.match(manager, /<canvas class="registry-lut-thumb-canvas" data-lut-thumb-url=/);
     assert.match(manager, /failRegistryLutThumb\(canvas, err\?\.code === 'LUT_CUBE_INVALID' \? 'LUT 解析失败'/);
-    assert.match(manager, /scheduleRegistryLutThumbs\(\);/);
+    assert.match(manager, /gwCall\('lut', 'scheduleRegistryLutThumbs'\);/);
     // 详情工作区：同库侧栏、强度滑杆、三态对比
     assert.match(manager, /if\(type === 'lut'\) return renderDetailLutWorkspace\(source, item\);/);
     assert.match(manager, /data-detail-lut-item="\$\{escapeAttr\(lut\.id \|\| ''\)\}"/);

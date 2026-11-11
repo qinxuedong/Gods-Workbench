@@ -14,6 +14,36 @@ from gw.api.app import app
 ROOT = Path(__file__).resolve().parents[3]
 STATIC = ROOT / "web"
 
+# QIN-591：asset-manager.js 已物理拆分，源文本断言须读「主文件 + 延后域」聚合源。
+# 序列与 tests/frontend/asset-manager-aggregate.mjs 的 ASSET_MANAGER_FILES 保持一致
+# （按各域内容在原单体文件中的最小行号保序，非目录字典序）。
+ASSET_MANAGER_AGGREGATE_FILES = (
+    "js/modules/asset-manager.js",
+    "js/modules/asset-manager/state.js",
+    "js/modules/asset-manager/settings.js",
+    "js/modules/asset-manager/organize.js",
+    "js/modules/asset-manager/preview.js",
+    "js/modules/asset-manager/legacy-pages.js",
+    "js/modules/asset-manager/recycle.js",
+    "js/modules/asset-manager/upload.js",
+    "js/modules/asset-manager/inbox.js",
+    "js/modules/asset-manager/media-canvas.js",
+    "js/modules/asset-manager/batch.js",
+    "js/modules/asset-manager/canvas-bridge.js",
+    "js/modules/asset-manager/coverflow-bridge.js",
+    "js/modules/asset-manager/lut.js",
+    "js/modules/asset-manager/tags.js",
+    "js/modules/asset-manager/governance.js",
+)
+
+
+def asset_manager_aggregate_text() -> str:
+    """按保序序列拼接拆分后的资产管理器源码，供源文本断言使用。"""
+    return "\n".join(
+        (STATIC / relative).read_text(encoding="utf-8")
+        for relative in ASSET_MANAGER_AGGREGATE_FILES
+    )
+
 
 LEGACY_REDIRECTS = {
     "/static/asset-manager.html": (
@@ -130,7 +160,8 @@ def test_workbench_user_surface_has_no_legacy_external_open_links():
 
 def test_legacy_asset_manager_fallback_merges_query_parameters_safely():
     """资产管理器回退 iframe 必须保留 embedded=1，且不能拼接出双问号。"""
-    text = (STATIC / "js" / "modules" / "asset-manager.js").read_text(encoding="utf-8")
+    # QIN-591：legacy iframe 回退逻辑已随预览域迁到 preview.js，改读聚合源。
+    text = asset_manager_aggregate_text()
     assert "new URL(source, window.location.origin)" in text
     assert "targetUrl.searchParams.set('project_id'" in text
     assert "targetUrl.searchParams.set('pipeline_id'" in text

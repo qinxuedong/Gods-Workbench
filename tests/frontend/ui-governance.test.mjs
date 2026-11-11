@@ -1,4 +1,5 @@
 import test from 'node:test';
+import { readAssetManagerAggregate } from './asset-manager-aggregate.mjs';
 import assert from 'node:assert/strict';
 import {readFileSync,readdirSync,writeFileSync} from 'node:fs';
 import path from 'node:path';
@@ -216,7 +217,7 @@ test('资产内嵌文档只加载硬件主题，所有弹层继承根级语义�
 });
 
 test('QIN-412 目录设置移除空框并由页内服务器目录树即选即存',()=>{
-  const manager=read('web/js/modules/asset-manager.js');
+  const manager=readAssetManagerAggregate();
   assert.doesNotMatch(manager,/managed_name|managed_path|directoryMountDialogOverlay|openDirectoryMountConfirmDialog/);
   assert.match(manager,/api\/storage-settings\/browse/);
   assert.match(manager,/data-server-directory-browser/);

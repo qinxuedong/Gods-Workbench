@@ -8,13 +8,11 @@
  * - AC3 新素材提示条为绝对定位胶囊，宿主 height:0，不撑开网格流。
  */
 import assert from 'node:assert/strict';
+import { readAssetManagerAggregate } from './asset-manager-aggregate.mjs';
 import {readFileSync} from 'node:fs';
 import test from 'node:test';
 
-const MANAGER = readFileSync(
-    new URL('../../web/js/modules/asset-manager.js', import.meta.url),
-    'utf8'
-);
+const MANAGER = readAssetManagerAggregate();
 const MANAGER_CSS = readFileSync(
     new URL('../../web/css/pages/asset-manager.css', import.meta.url),
     'utf8'

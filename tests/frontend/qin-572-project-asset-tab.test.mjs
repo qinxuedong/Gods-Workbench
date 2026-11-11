@@ -1,10 +1,11 @@
 // QIN-572: 资产库项目标签清除中间空栏、重置筛选并支持项目下拉选择
 import assert from 'node:assert/strict';
+import { readAssetManagerAggregate } from './asset-manager-aggregate.mjs';
 import {readFileSync} from 'node:fs';
 import test from 'node:test';
 
 const vaultCss = readFileSync(new URL('../../web/css/pages/asset-vault.css', import.meta.url), 'utf8');
-const managerJs = readFileSync(new URL('../../web/js/modules/asset-manager.js', import.meta.url), 'utf8');
+const managerJs = readAssetManagerAggregate();
 
 test('AC1: vault 嵌入态项目视图网格首列收为零宽，消除 240px 空白列', () => {
   // 必须存在针对 .asset-manager-root-page-projects 的零宽规则
@@ -14,9 +15,9 @@ test('AC1: vault 嵌入态项目视图网格首列收为零宽，消除 240px �
 });
 
 test('AC2: 激活项目看板时自动重置前置分类（如 LUT）与搜索/标签筛选', () => {
-  assert.match(managerJs, /if\(id === 'projects'\)\s*\{[^]*?registryStatCategory = '';[^]*?registryKind = '';[^]*?registryQuery = '';/);
+  assert.match(managerJs, /if\(id === 'projects'\)\s*\{[^]*?setRegistryStatCategory\(''\);[^]*?setRegistryKind\(''\);[^]*?setRegistryQuery\(''\);/);
   // 退出项目视图时若为 __all__ 自动清空 project_id 筛选，不污染其它看板
-  assert.match(managerJs, /if\(id !== 'projects' && registryProjectFilterId === '__all__'\)\s*\{\s*registryProjectFilterId = '';\s*\}/);
+  assert.match(managerJs, /if\(id !== 'projects' && registryProjectFilterId === '__all__'\)\s*\{\s*setRegistryProjectFilterId\(''\);\s*\}/);
 });
 
 test('AC3: registryQueryString 在项目视图下携带 project_id=__all__ 或具体 project_id', () => {

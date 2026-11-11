@@ -1,9 +1,10 @@
 // QIN-578: 资产库剧本标签隐藏工具栏标题并将项目/剧本/提示词移至其他后
 import assert from 'node:assert/strict';
+import { readAssetManagerAggregate } from './asset-manager-aggregate.mjs';
 import {readFileSync} from 'node:fs';
 import test from 'node:test';
 
-const managerJs = readFileSync(new URL('../../web/js/modules/asset-manager.js', import.meta.url), 'utf8');
+const managerJs = readAssetManagerAggregate();
 
 test('AC1: 嵌入态下剧本标签隐藏 content-heading，实现 Coverflow 与工具栏控件靠左对齐', () => {
   // 嵌入态 scripts 标签设置 options.hideHeading 并与 QIN-574 隐藏机制兼容
@@ -62,6 +63,6 @@ test('AC3: 顶栏导航卡片保留 is-nav 与 data-registry-nav，点击激活�
     managerJs.indexOf("data-registry-nav]')){"),
     managerJs.indexOf('const registryStat =')
   );
-  assert.match(navClickBlock, /activateAssetBoard\(navBoard\)/);
+  assert.match(navClickBlock, /gwCall\('organize', 'activateAssetBoard', navBoard\)/);
   assert.match(navClickBlock, /saveAssetTreeState\(\)/);
 });

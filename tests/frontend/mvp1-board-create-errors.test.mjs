@@ -1,10 +1,11 @@
 // QIN-485: 资产库新增资源库弹窗错误回显与交互状态契约测试
 import assert from 'node:assert/strict';
+import { readAssetManagerAggregate } from './asset-manager-aggregate.mjs';
 import {readFileSync} from 'node:fs';
 import {runInNewContext} from 'node:vm';
 import test from 'node:test';
 
-const source = readFileSync(new URL('../../web/js/modules/asset-manager.js', import.meta.url), 'utf8');
+const source = readAssetManagerAggregate();
 const styles = readFileSync(new URL('../../web/css/pages/asset-manager.css', import.meta.url), 'utf8');
 const controller = readFileSync(new URL('../../web/js/controllers/assets-controller.js', import.meta.url), 'utf8');
 const shell = readFileSync(new URL('../../web/pages/assets.html', import.meta.url), 'utf8');
@@ -40,11 +41,14 @@ test('资源路径支持手输及右侧目录选择，先选路径时默认补�
     assert.ok(source.includes("syncBoardCreateDraftFromDom(event.target.id);"));
     const pathFunctions = source.match(/function deriveBoardCreateNameFromPath\(pathValue\)\{[\s\S]*?\n\}\nfunction updateBoardCreatePath\(pathValue\)\{[\s\S]*?\n\}/)?.[0];
     assert.ok(pathFunctions, '路径命名辅助函数应存在');
+    // QIN-591：boardCreateState 为跨文件写状态，域内写入经主文件导出的 setter（登记在案）；
+    // 测试桩把 setter 落回夹具的本地状态，行为契约（手输不覆盖、先选路径补末级目录名）不变。
+    const setBoardCreateStateStub = 'function setBoardCreateState(value){ boardCreateState = value; }';
     const pathFirst = {boardCreateState:{name:'', nameManuallyEdited:false, path:''}, pathValue:['D:', 'Assets', 'Brand', ''].join(String.fromCharCode(92))};
-    runInNewContext([pathFunctions, 'updateBoardCreatePath(pathValue);'].join('\n'), pathFirst);
+    runInNewContext([pathFunctions, setBoardCreateStateStub, 'updateBoardCreatePath(pathValue);'].join('\n'), pathFirst);
     assert.equal(pathFirst.boardCreateState.name, 'Brand');
     const nameFirst = {boardCreateState:{name:'品牌素材', nameManuallyEdited:true, path:''}, pathValue:['D:', 'Assets', 'Brand'].join(String.fromCharCode(92))};
-    runInNewContext([pathFunctions, 'updateBoardCreatePath(pathValue);'].join('\n'), nameFirst);
+    runInNewContext([pathFunctions, setBoardCreateStateStub, 'updateBoardCreatePath(pathValue);'].join('\n'), nameFirst);
     assert.equal(nameFirst.boardCreateState.name, '品牌素材');
 });
 

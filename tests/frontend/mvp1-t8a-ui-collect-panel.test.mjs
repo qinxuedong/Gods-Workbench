@@ -2,6 +2,7 @@
 // 纯逻辑层直接 import 断言（mock adapter 状态机、URL 拦截、任务行渲染）；
 // 浮窗结构、挂载入口与 CSS token 约束按仓库既有静态断言风格校验。
 import assert from 'node:assert/strict';
+import { readAssetManagerAggregate } from './asset-manager-aggregate.mjs';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import test from 'node:test';
@@ -17,7 +18,7 @@ const repoRoot = process.cwd();
 const read = relativePath => readFileSync(path.join(repoRoot, relativePath), 'utf8');
 
 const panelSource = read('web/js/modules/asset-collect-panel.js');
-const managerSource = read('web/js/modules/asset-manager.js');
+const managerSource = readAssetManagerAggregate();
 const collectCss = read('web/css/pages/asset-collect.css');
 
 test('AC4 空 URL 与非 http(s) 链接被前端拦截', () => {

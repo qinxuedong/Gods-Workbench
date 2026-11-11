@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { readAssetManagerAggregate } from './asset-manager-aggregate.mjs';
 import {readFileSync} from 'node:fs';
 import test from 'node:test';
 
@@ -12,17 +13,22 @@ import {
 
 const read = relative => readFileSync(new URL(`../../${relative}`, import.meta.url), 'utf8');
 const cube = name => read(`web/vendor/luts/${name}`);
-const manager = read('web/js/modules/asset-manager.js');
+const manager = readAssetManagerAggregate();
 const styles = read('web/css/pages/asset-manager.css');
 const previewModule = read('web/js/modules/asset-manager/lut-preview.js');
 
-/** QIN-580 新增代码段：用于「只读」与接线断言，避免扫到无关历史代码。 */
+/** QIN-580 新增代码段：用于「只读」与接线断言，避免扫到无关历史代码。
+ *  QIN-591 拆分后：状态常量留主文件、函数体迁至 lut.js；段 = 主文件常量块 + lut.js 函数块保序拼接。 */
 const mediaLutSection = (() => {
-    const start = manager.indexOf('QIN-580：参考画布素材套用 LUT 预览');
-    assert.ok(start > 0, '找不到 QIN-580 新增代码段');
-    const end = manager.indexOf('function renderDetailLutWorkspace(source, item){', start);
-    assert.ok(end > start, '找不到 QIN-580 代码段结束位置');
-    return manager.slice(start, end);
+    const mainStart = manager.indexOf('QIN-580：参考画布素材套用 LUT 预览');
+    assert.ok(mainStart > 0, '找不到 QIN-580 新增代码段');
+    const mainEnd = manager.indexOf('function detailMediaCanvasItems(){', mainStart);
+    assert.ok(mainEnd > mainStart, '找不到 QIN-580 主文件常量段结束位置');
+    const lutStart = manager.indexOf('function detailMediaLutFallbackItems(){');
+    assert.ok(lutStart > 0, '找不到 QIN-580 lut.js 函数段');
+    const end = manager.indexOf('function renderDetailLutWorkspace(source, item){', lutStart);
+    assert.ok(end > lutStart, '找不到 QIN-580 代码段结束位置');
+    return `${manager.slice(mainStart, mainEnd)}\n${manager.slice(lutStart, end)}`;
 })();
 
 const pixelAt = (frame, x, y) => {
@@ -200,10 +206,13 @@ test('QIN-580：工具条入口 + 节点角标浮窗都接齐事件，且保持�
     }
     // 角标/浮窗在节点内部，点击分支必须排在节点点击处理（mediaCanvasObject）之前，
     // 否则点角标会被当成「点节点」，浮窗刚开就被关掉。
-    const lutBranch = manager.indexOf("closest?.('[data-detail-media-lut-menu]')");
-    const nodeClickBranch = manager.indexOf("const mediaCanvasObject = event.target.closest?.('[data-detail-media-object]')");
-    assert.ok(lutBranch > 0 && nodeClickBranch > 0, '找不到点击委托分支');
-    assert.ok(lutBranch < nodeClickBranch, 'LUT 点击分支必须排在节点点击处理之前');
+    // QIN-591 拆分后整段节点点击委托（含 LUT 分支）位于 preview.js，同一监听器内保序不变。
+    const delegation = manager.slice(
+        manager.indexOf("if(handleDetailMediaLutMenuClick(event)) return;"),
+        manager.indexOf("const mediaCanvasObject = event.target.closest?.('[data-detail-media-object]')"),
+    );
+    assert.ok(delegation.includes("if(handleDetailMediaLutMenuClick(event)) return;"), 'LUT 菜单分支必须先于节点处理拦截');
+    assert.ok(delegation.includes("[data-detail-media-node-lut]"), '节点角标分支必须先于节点处理拦截');
 
     // 视频暂停与拖动后要补一帧，保证画面与该帧单独套用一致。
     assert.match(manager, /media\.addEventListener\('seeked', repaint\)/);
@@ -222,12 +231,16 @@ test('QIN-580：工具条入口 + 节点角标浮窗都接齐事件，且保持�
 });
 
 test('QIN-580：打开与关闭详情都整体重置状态，字面量不得丢掉 LUT 字段', () => {
-    // openDetailPreview / closeDetailPreview 都用 `detailViewerState = {...}` 整体重建，
+    // showDetailPreview（打开）与 closeDetailPreview（关闭）都用整体重建 detailViewerState，
     // 没列进字面量的字段会被抹成 undefined；强度取不到值就画成 0%（看起来「选了 LUT 没反应」）。
-    const resets = [...manager.matchAll(/^ {4}detailViewerState = \{/gm)].map(match => match.index);
+    // QIN-591 拆分后 showDetailPreview 迁入 preview.js，写状态经 setDetailViewerState（登记在案的 setter 改写）。
+    const resets = [
+        ...[...manager.matchAll(/^ {4}detailViewerState = \{/gm)].map(match => ({start: match.index, closer: '\n    };'})),
+        ...[...manager.matchAll(/^ {4}setDetailViewerState\(\{/gm)].map(match => ({start: match.index, closer: '\n    });'})),
+    ];
     assert.ok(resets.length >= 2, '至少应有打开与关闭两处整体重置');
-    for (const start of resets) {
-        const end = manager.indexOf('\n    };', start);
+    for (const {start, closer} of resets) {
+        const end = manager.indexOf(closer, start);
         assert.ok(end > start, '找不到 detailViewerState 字面量结尾');
         const literal = manager.slice(start, end);
         for (const key of ['mediaCanvasLut', 'mediaCanvasLutPanel', 'mediaLutMenu']) {
@@ -327,7 +340,7 @@ test('QIN-580：LUT 不计入资产总量，但保留顶栏导航卡（排在提
     );
     assert.match(boardsBlock, /\{id:'lut', name:'LUT 库', icon:'palette', system:true\}/);
     assert.match(boardsBlock, /const SYSTEM_BOARD_RACK_TABS = \[[^\]]*'lut'/);
-    assert.match(manager, /else if\(activeTab === 'lut'\) renderLutManager\(\);/);
+    assert.match(manager, /else if\(activeTab === 'lut'\) gwLoad\('lut'\)\.then\(m => m\.renderLutManager\(\)\);/);
     assert.match(manager, /function renderLutManager\(\)\{/);
     assert.match(manager, /function lutLibraryAssets\(\)\{/);
     assert.match(manager, /registryAssetCategory\(item\) === 'lut'/);
@@ -428,10 +441,18 @@ test('QIN-580：分屏模式在素材中间给出可拖动的对比分割线', (
     assert.match(paint, /mode:compareMode === 'original' \? 'original' : 'applied'/, '分屏不得把原图拼进合成结果');
     assert.match(paint, /media\.style\.visibility = compareMode === 'split' \? '' : 'hidden'/);
 
-    // 拖动不能触发画布平移：pointerdown 必须排在平移之前注册，且平移本身要放过分割线。
+    // 拖动不能触发画布平移：两侧 pointerdown 捕获监听都必须保留；拆分后分割线监听在 lut.js、
+    // 平移监听在 media-canvas.js（各自延后域求值时注册，跨模块注册顺序不再是代码内不变量），
+    // 真正的护栏是平移处理器自身明确放过分割线拖拽（含拖拽刚结束的补发 click）。
     const splitAt = manager.indexOf("document.addEventListener('pointerdown', beginDetailMediaLutSplitDrag, true);");
     const panAt = manager.indexOf("document.addEventListener('pointerdown', beginDetailMediaCanvasPan, true);");
-    assert.ok(splitAt > 0 && panAt > 0 && splitAt < panAt, '分割线的 pointerdown 必须先于画布平移注册');
+    assert.ok(splitAt > 0 && panAt > 0, '分割线与画布平移的 pointerdown 捕获监听都必须保留');
+    const panStart = manager.indexOf('function beginDetailMediaCanvasPan(event){');
+    const panHandler = manager.slice(panStart, manager.indexOf('\nfunction ', panStart));
+    assert.ok(
+        panHandler.includes("[data-detail-media-lut-split]") && panHandler.includes('return;'),
+        '画布平移必须放过分割线拖拽',
+    );
     assert.match(manager, /\[data-detail-media-lut-split\]'\)\) return;/);
     assert.match(manager, /function moveDetailMediaLutSplit\(event\)\{/);
     assert.match(manager, /function endDetailMediaLutSplitDrag\(\)\{/);
@@ -475,7 +496,8 @@ test('QIN-580：LUT 抽屉不给内置项贴「内置」，滚轮归列表而不
     // 滚轮：LUT 抽屉分支必须排在画布缩放之前，且直接放行给原生滚动。
     const wheel = manager.slice(
         manager.indexOf('function navigateDetailPreviewWheel(event){'),
-        manager.indexOf('function beginLightboxPan('),
+        // QIN-591：beginLightboxPan 留在主文件（拆分后不在本函数之后），改用 preview.js 内的下一函数收口。
+        manager.indexOf('function detailTargetIsInteractive(target){'),
     );
     const lutBranch = wheel.indexOf("closest?.('.asset-detail-media-node-lut-panel')");
     const zoomBranch = wheel.indexOf("closest?.('[data-detail-media-canvas-viewport]')");

@@ -1,10 +1,11 @@
 // QIN-587: 收集箱嵌入金库网格收为零宽首列与单内容列，消除左右空轨道与窄屏空行
 import assert from 'node:assert/strict';
+import { readAssetManagerAggregate } from './asset-manager-aggregate.mjs';
 import {readFileSync} from 'node:fs';
 import test from 'node:test';
 
 const vaultCss = readFileSync(new URL('../../web/css/pages/asset-vault.css', import.meta.url), 'utf8');
-const managerJs = readFileSync(new URL('../../web/js/modules/asset-manager.js', import.meta.url), 'utf8');
+const managerJs = readAssetManagerAggregate();
 
 test('AC1: vault 嵌入态收集箱宽屏网格首列收为零宽且无详情轨道，消除 240px 左空列与 280-320px 右空轨道', () => {
   // 必须存在针对 .asset-manager-root-page-inbox 的零宽首列规则，且仅单内容列吃满余宽

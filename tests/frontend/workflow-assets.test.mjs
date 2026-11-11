@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { readAssetManagerAggregate } from './asset-manager-aggregate.mjs';
 import test from 'node:test';
 import {readFileSync} from 'node:fs';
 import {createContext, runInContext} from 'node:vm';
@@ -25,7 +26,7 @@ test('批量导出限制在取得完整包前拒绝空集合、过多文档和�
 });
 
 function deletionHarness(getDocument, deleteDocument) {
-    const source = readFileSync(new URL('../../web/js/modules/asset-manager.js', import.meta.url), 'utf8');
+    const source = readAssetManagerAggregate();
     const start = source.indexOf('async function deleteWorkflowItem(');
     const body = source.slice(start, source.indexOf('\nasync function deleteSelectedWorkflows(', start));
     const frames = [];
@@ -37,7 +38,14 @@ function deletionHarness(getDocument, deleteDocument) {
         apiJsonResponse:async value=>value, loadAll:async()=>{}, setStatus:()=>{},
         render:()=>frames.push(context.workflowDeleteBusy.has('asset-one')),
     });
-    runInContext(body, context);
+    // QIN-591：pendingDeleteAssetId/selectedWorkflowId 为跨文件写状态，域内写入经主文件导出的
+    // setter（登记在案）；测试桩把 setter 落回夹具状态，VERSION_CONFLICT_MESSAGE 取主文件真实常量。
+    runInContext([
+        'function setPendingDeleteAssetId(value){ pendingDeleteAssetId = value; }',
+        'function setSelectedWorkflowId(value){ selectedWorkflowId = value; }',
+        "const VERSION_CONFLICT_MESSAGE = '内容已变化，请刷新';",
+        body,
+    ].join('\n'), context);
     return {context, frames, remove:()=>runInContext('deleteWorkflowItem("asset-one")', context)};
 }
 
@@ -81,10 +89,11 @@ function sourceBetween(source, startMarker, endMarker) {
 }
 
 function registryTypeHarness() {
-    const source = readFileSync(new URL('../../web/js/modules/asset-manager.js', import.meta.url), 'utf8');
+    const source = readAssetManagerAggregate();
     const assetKindSource = sourceBetween(source, 'function assetKind(item){', '\nfunction assetClassificationEntriesForLibrary');
-    const viewerTypeSource = sourceBetween(source, 'function detailViewerType(source, item={}){', '\nfunction detailViewerTypeLabel');
-    const coverflowKindSource = sourceBetween(source, 'function registryCoverflowSourceMediaKind(source, item={}){', '\nfunction registryCoverflowSourceIsImage');
+    // QIN-591：拆分后相邻函数可能落入不同文件，收口改用同文件内紧随的下一函数（保序聚合）。
+    const viewerTypeSource = sourceBetween(source, 'function detailViewerType(source, item={}){', '\nfunction detailViewerSourceLabel');
+    const coverflowKindSource = sourceBetween(source, 'function registryCoverflowSourceMediaKind(source, item={}){', '\nfunction registryCoverflowSourceIsVisual');
     const extension = item => {
         const value = String(item.name || item.relative_path || item.relativePath || item.file || item.url || item.public_url || '')
             .split('?')[0].split('#')[0];
@@ -114,9 +123,10 @@ test('工作流深链即使名称带图片扩展名也不分类为媒体', () =>
 });
 
 function workflowCanvasHarness() {
-    const source = readFileSync(new URL('../../web/js/modules/asset-manager.js', import.meta.url), 'utf8');
+    const source = readAssetManagerAggregate();
     const itemsSource = sourceBetween(source, 'function detailMediaCanvasItems(){', '\nfunction detailMediaCanvasPersistId');
-    const nodeSource = sourceBetween(source, 'function renderDetailMediaCanvasNode(source, item){', '\nfunction preloadDetailViewerNeighbors');
+    // QIN-591：renderDetailMediaCanvasNode 迁入 media-canvas.js，收口改为同文件紧随的下一函数。
+    const nodeSource = sourceBetween(source, 'function renderDetailMediaCanvasNode(source, item){', '\nfunction renderDetailMediaCanvasGroup');
     const item = {id:'workflow-canvas-item', name:'workflow-preview.png', url:'/static/pages/workflow.html?id=wf-preview'};
     const context = createContext({
         detailViewerState:{source:'registry', mediaCanvasItems:[item], mediaCanvasLayout:{}},
@@ -144,7 +154,7 @@ test('工作流深链不会进入画布媒体列表或生成媒体元素', () =>
 });
 
 function marqueeHarness(zone) {
-    const source = readFileSync(new URL('../../web/js/modules/asset-manager.js', import.meta.url), 'utf8');
+    const source = readAssetManagerAggregate();
     const beginSource = sourceBetween(source, 'function beginMarqueeSelection(event){', '\nfunction updateMarqueeSelection');
     let created = 0, prevented = 0;
     const area = {appendChild(){}};
@@ -190,9 +200,10 @@ test('详情面板与预览播放器中的指针按下不启动框选', () => {
 });
 
 function endMarqueeHarness(hasSelection) {
-    const source = readFileSync(new URL('../../web/js/modules/asset-manager.js', import.meta.url), 'utf8');
+    const source = readAssetManagerAggregate();
     const clearSource = sourceBetween(source, 'function clearRegistrySelectionDom(){', '\nfunction renderRegistryToolbar');
-    const endSource = sourceBetween(source, 'function endMarqueeSelection(){', '\nasync function createAssetLibrary');
+    // QIN-591：createAssetLibrary 迁入 organize.js，收口改为主文件内紧随的下一函数。
+    const endSource = sourceBetween(source, 'function endMarqueeSelection(){', '\nasync function saveAssetTreeEdit');
     let renders = 0, syncs = 0;
     const context = createContext({
         marqueeState:{mode:'registry', moved:false, box:{remove(){}}},
