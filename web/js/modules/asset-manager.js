@@ -3224,8 +3224,25 @@ function scheduleRegistryVirtualWindow(){
         });
     };
     scrollRoot.addEventListener('scroll', onScroll, {passive:true});
+
+    // 【QIN-594 AC3】对滚动容器或网格加宽度观察，容器宽度变化时重排列数，右侧不留空列
+    let resizeObserver = null;
+    if(typeof ResizeObserver === 'function'){
+        let lastObservedWidth = scrollRoot.clientWidth || 0;
+        resizeObserver = new ResizeObserver((entries) => {
+            const entry = entries[0];
+            const currentWidth = entry?.contentRect?.width || scrollRoot.clientWidth || 0;
+            if(Math.abs(currentWidth - lastObservedWidth) >= 1){
+                lastObservedWidth = currentWidth;
+                updateRegistryVirtualWindow(true);
+            }
+        });
+        resizeObserver.observe(scrollRoot);
+    }
+
     registryVirtualScrollCleanup = () => {
         scrollRoot.removeEventListener('scroll', onScroll);
+        resizeObserver?.disconnect?.();
         if(frame) cancelAnimationFrame(frame);
     };
     observeRegistryVirtualCards(grid);
@@ -10908,6 +10925,14 @@ window.GWAssetBrowseSession = Object.freeze({save:saveRegistryBrowseSession, sav
 window.GWAssetRegistrySnapshot = Object.freeze({save:saveRegistrySnapshot, apply:tryApplyRegistrySnapshot});
 // 【QIN-566】外壳侧栏树桥接：同源直调（外壳读快照/驱动入口，内嵌页渲染后主动推送）。
 window.GWAssetTreeBridge = Object.freeze({snapshot:gwAssetTreeSnapshot, activate:gwAssetTreeActivate});
+// 【QIN-594 AC3】外壳通知内嵌页虚拟网格按新容器宽度重排，右侧不留空列
+function gwAssetVirtualGridRelayout(){
+    updateRegistryVirtualWindow(true);
+}
+window.GWAssetVirtualGridHost = Object.freeze({relayout: gwAssetVirtualGridRelayout});
+window.addEventListener('gw:asset-sidebar-collapsed', () => {
+    gwAssetVirtualGridRelayout();
+});
 // 【QIN-579】外壳侧栏整理能力桥接：右键菜单/双击改名/拖拽移动/重名/撤销
 async function gwAssetTreeOpenInSystem(key){
     await loadAssetAllowedRootPaths?.();

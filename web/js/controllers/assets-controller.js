@@ -344,6 +344,7 @@ window.WorkbenchAssets = (() => {
     categories?.querySelectorAll('[data-asset-tree-entry]').forEach(button => {
       const active = button.dataset.assetTreeEntry === selectedId;
       button.classList.toggle('is-active', active);
+      button.classList.toggle('active', active);
       if (active) button.setAttribute('aria-current', 'page');
       else button.removeAttribute('aria-current');
     });
@@ -705,7 +706,7 @@ window.WorkbenchAssets = (() => {
   function shellNavButton(row, isSub = false) {
     const button = document.createElement('button');
     button.type = 'button';
-    button.className = `asset-shell-nav-button tree-node-card${row.active ? ' is-active' : ''}${isSub ? ' asset-shell-nav-button-sub' : ''}`;
+    button.className = `asset-shell-nav-button tree-node-card${row.active ? ' is-active active' : ''}${isSub ? ' asset-shell-nav-button-sub' : ''}`;
     if (row.active) button.setAttribute('aria-current', 'page');
     button.title = row.name;
     button.dataset.assetTreeEntry = row.key;
@@ -814,10 +815,12 @@ window.WorkbenchAssets = (() => {
     const overview = document.getElementById('assetSidebarOverview');
     const registryActive = selected === 'registry';
     overview?.classList.toggle('is-active', registryActive);
+    overview?.classList.toggle('active', registryActive);
     overview?.setAttribute('aria-pressed', String(registryActive));
     if (registryActive) overview?.setAttribute('aria-current', 'page');
     else overview?.removeAttribute('aria-current');
     overview?.closest('.asset-shell-overview-card')?.classList.toggle('is-active', registryActive);
+    overview?.closest('.asset-shell-overview-card')?.classList.toggle('active', registryActive);
   }
 
   // 应用内嵌页推送的树快照：渲染收集箱 + 挂载资源（统一资源库总文件夹与物理子目录树）。
@@ -954,6 +957,7 @@ window.WorkbenchAssets = (() => {
   async function activateTreeEntry(key) {
     const selectedId = String(key || '');
     updateSidebarSelection(selectedId);
+    syncOverviewSelection(selectedId);
     try {
       const bridge = frame?.contentWindow?.GWAssetTreeBridge;
       if (!bridge?.activate) throw new Error('资产库尚未就绪，请刷新页面。');
@@ -1202,6 +1206,25 @@ window.WorkbenchAssets = (() => {
       try {
         localStorage.setItem(SIDEBAR_COLLAPSED_KEY, String(next));
       } catch (_) {}
+    }
+
+    // 【QIN-594 AC3】侧栏折叠/展开通知内嵌页重排网格，折叠过渡动画结束后强制重测一次
+    const notifyGridRelayout = () => {
+      try {
+        const frameWin = frame?.contentWindow;
+        if (frameWin) {
+          if (typeof frameWin.GWAssetVirtualGridHost?.relayout === 'function') {
+            frameWin.GWAssetVirtualGridHost?.relayout();
+          }
+          if (typeof frameWin.dispatchEvent === 'function') {
+            frameWin.dispatchEvent(new CustomEvent('gw:asset-sidebar-collapsed', { detail: { collapsed: next } }));
+          }
+        }
+      } catch (_) {}
+    };
+    notifyGridRelayout();
+    if (typeof setTimeout === 'function') {
+      setTimeout(notifyGridRelayout, 200);
     }
   }
 

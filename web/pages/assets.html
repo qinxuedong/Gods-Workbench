@@ -20,18 +20,50 @@
     /* QIN-566: restore shell sidebar CSS (from 11cc369c~1) */
     #assetCategories { position: relative; display: flex; flex-direction: column; gap: 0; }
     #assetCategories::before { content: ""; position: absolute; top: 8px; bottom: 16px; left: 14px; width: 1.5px; background: linear-gradient(to bottom,#dfc384,rgba(223,195,132,.4),transparent); pointer-events: none; }
-    .asset-shell-overview-card { position: relative; min-height: 48px; display: flex; align-items: center; gap: 8px; padding: 8px 12px; border: 1px solid rgb(223 195 132 / .35); border-radius: 12px; background: #141720; box-shadow: 0 0 12px rgb(223 195 132 / .12); }
+    .asset-shell-overview-card { position: relative; min-height: 48px; display: flex; align-items: center; gap: 8px; padding: 8px 12px 8px 16px; border: 1px solid rgb(223 195 132 / .35); border-radius: 12px; background: #141720; box-shadow: 0 0 12px rgb(223 195 132 / .12); }
     .asset-shell-overview-card.is-active { border-color: rgb(223 195 132 / .8); background: linear-gradient(180deg,#1a1f2b 0%,#11141c 100%); box-shadow: 0 0 12px rgb(223 195 132 / .22),inset 0 0 0 1px rgb(223 195 132 / .12); }
-    .asset-shell-overview-card::before { content: ""; position: absolute; left: 0; top: 8px; bottom: 8px; width: 4px; border-radius: 0 4px 4px 0; background: #dfc384; box-shadow: 0 0 8px #dfc384; pointer-events: none; }
+    /* QIN-594: 侧栏展开/收起触发器（金色竖线热区，取代原有::before装饰条与独立32x32图标按钮） */
+    #assetSidebarToggle {
+      position: absolute;
+      left: 0;
+      top: 8px;
+      bottom: 8px;
+      width: 12px;
+      padding: 0;
+      border: none;
+      background: transparent;
+      cursor: pointer;
+      z-index: 10;
+      display: flex;
+      align-items: stretch;
+      justify-content: flex-start;
+      transition: opacity .15s ease, filter .15s ease;
+    }
+    #assetSidebarToggle::before {
+      content: "";
+      width: 4px;
+      height: 100%;
+      border-radius: 0 4px 4px 0;
+      background: #dfc384;
+      box-shadow: 0 0 8px #dfc384;
+      pointer-events: none;
+      transition: background .15s ease, box-shadow .15s ease, width .15s ease;
+    }
+    #assetSidebarToggle:hover::before {
+      background: #f3dfb6;
+      box-shadow: 0 0 12px #dfc384, 0 0 4px #fff;
+    }
+    #assetSidebarToggle:focus-visible {
+      outline: 2px solid #dfc384;
+      outline-offset: 2px;
+      border-radius: 0 4px 4px 0;
+    }
     #assetSidebarOverview { min-width: 0; min-height: 32px; flex: 1 1 auto; display: flex; align-items: center; gap: 10px; padding: 0 8px 0 4px; border: 1px solid transparent; border-radius: 6px; background: transparent; color: #eddab3; text-align: left; font-family: var(--gw-font-body); font-size: var(--gw-type-body-sm); font-weight: 600; line-height: var(--gw-leading-body-sm); }
     #assetSidebarOverview svg { width: 16px; height: 16px; flex: 0 0 auto; color: #dfc384; }
     #assetSidebarOverview.is-active { border-color: transparent; background: transparent; color: #f3dfb6; box-shadow: none; }
     #assetSidebarOverview span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     #assetSidebarCreate { width: 32px; height: 32px; min-height: 32px; flex: 0 0 32px; display: inline-flex; align-items: center; justify-content: center; padding: 0; border-radius: 50%; }
     #assetSidebarCreate svg { width: 14px; height: 14px; }
-    /* QIN-590: 侧栏折叠按钮与收起态样式 */
-    #assetSidebarToggle { width: 32px; height: 32px; min-height: 32px; flex: 0 0 32px; display: inline-flex; align-items: center; justify-content: center; padding: 0; border-radius: 6px; }
-    #assetSidebarToggle svg { width: 15px; height: 15px; }
     #assetVaultSidebar.is-collapsed {
       width: 0 !important;
       min-width: 0 !important;
@@ -62,15 +94,18 @@
       overflow: visible !important;
       min-height: 0 !important;
     }
-    #assetVaultSidebar.is-collapsed .asset-shell-overview-card::before {
-      display: none !important;
-    }
+    /* QIN-594: 折叠后金色竖线停留在统计条「资产总量」按钮左侧（top: 10px, left: 0），不侵入素材网格与预览区；热区收进 8px 避免与统计卡左缘重叠 */
     #assetVaultSidebar.is-collapsed #assetSidebarToggle {
       position: absolute;
-      top: 124px;
-      left: 8px;
+      top: 10px;
+      left: 0;
+      height: 36px;
+      width: 8px;
       z-index: 50;
-      box-shadow: 0 4px 14px rgba(0, 0, 0, 0.7);
+    }
+    #assetVaultSidebar.is-collapsed #assetSidebarToggle::before {
+      border-radius: 0 4px 4px 0;
+      box-shadow: 0 0 10px #dfc384;
     }
     .asset-shell-nav-group { position: relative; margin: 0 0 12px; padding: 0 0 0 20px; }
     .asset-shell-nav-group::before { content: none; }
@@ -90,19 +125,65 @@
     .asset-shell-nav-button svg { width: 16px; height: 16px; flex: 0 0 auto; color: #aeb6c2; }
     .asset-shell-nav-button span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .asset-shell-nav-button .asset-shell-nav-label { flex: 1 1 auto; font-size: var(--gw-type-body) !important; font-weight: 400; line-height: var(--gw-leading-body-md); transform: none !important; }
-    .asset-shell-nav-button:hover,.asset-shell-nav-button.is-active { border-color: rgb(223 195 132 / .6) !important; background: linear-gradient(180deg,#191e2b 0%,#11131c 100%) !important; color: #eddab3 !important; }
-    .asset-shell-nav-button.is-active { font-weight: 400; box-shadow: 0 0 8px rgb(223 195 132 / .14),inset 0 0 0 1px rgb(223 195 132 / .08); }
-    .asset-shell-nav-button.is-active svg { color: #dfc384; }
+    .asset-shell-nav-button:hover { border-color: rgb(223 195 132 / .6) !important; background: linear-gradient(180deg,#191e2b 0%,#11131c 100%) !important; color: #eddab3 !important; }
+    /* QIN-594: 选中态文字为金色，边框与底色对齐「资产总量」primary active 态，ID选择器提权压制全局 tree-node-card */
+    #assetVaultSidebar .asset-shell-nav-button-sub:is(.is-active, .active),
+    #assetVaultSidebar .asset-shell-nav-button:is(.is-active, .active),
+    .topbar-master-deck ~ * > aside .asset-shell-nav-button:is(.is-active, .active) {
+      border-color: #dfc384 !important;
+      background: color-mix(in srgb, #dfc384 12%, #151820) !important;
+      color: #dfc384 !important;
+      font-weight: 400;
+      box-shadow: 0 0 8px rgb(223 195 132 / .2), inset 0 0 0 1px rgb(223 195 132 / .12) !important;
+    }
+    #assetVaultSidebar .asset-shell-nav-button:is(.is-active, .active) :is(svg, .asset-shell-nav-label, .asset-shell-nav-count) {
+      color: #dfc384 !important;
+    }
+    #assetVaultSidebar .asset-shell-nav-button:is(.is-active, .active) .asset-shell-nav-badge {
+      color: #0d0f14 !important;
+      background: #dfc384 !important;
+    }
+    #assetVaultSidebar .asset-shell-nav-button:is(.is-active, .active) .asset-shell-nav-offline {
+      color: #f87171 !important;
+      background: rgba(220, 38, 38, .12) !important;
+      border-color: rgba(220, 38, 38, .4) !important;
+    }
+    #assetVaultSidebar .asset-shell-nav-button:is(.is-active, .active):hover {
+      border-color: #dfc384 !important;
+      background: color-mix(in srgb, #dfc384 16%, #151820) !important;
+      color: #dfc384 !important;
+    }
     .asset-shell-nav-sublist { display: flex; flex-direction: column; gap: 12px; margin: 12px 0 0 12px; padding: 2px 0 0 12px; border-left: 1px solid rgb(223 195 132 / .35); }
     .asset-shell-nav-sublist[hidden] { display: none !important; }
+    /* QIN-594: 二级文件夹行图标与文字缩小一档（16px->14px, 14px->12px），右侧统计数字增大50%（11px->16.5px），行间距保持8px不变 */
     .topbar-master-deck ~ * > aside .asset-shell-nav-button-sub,
-    #assetVaultSidebar .asset-shell-nav-button-sub { min-height: 28px !important; padding: 3px 10px !important; box-sizing: border-box !important; border-color: rgb(255 255 255 / .1); background: linear-gradient(180deg,#131620 0%,#0d0f15 100%); color: #e5e7eb; }
+    #assetVaultSidebar .asset-shell-nav-button-sub {
+      min-height: 28px !important;
+      padding: 3px 10px !important;
+      box-sizing: border-box !important;
+      border-color: rgb(255 255 255 / .1);
+      background: linear-gradient(180deg,#131620 0%,#0d0f15 100%);
+      color: #e5e7eb;
+      font-size: var(--gw-type-body-sm) !important;
+    }
+    #assetVaultSidebar .asset-shell-nav-button-sub svg {
+      width: 14px !important;
+      height: 14px !important;
+    }
+    #assetVaultSidebar .asset-shell-nav-button-sub .asset-shell-nav-label {
+      font-size: var(--gw-type-body-sm) !important;
+      transform: none !important;
+    }
+    #assetVaultSidebar .asset-shell-nav-button-sub .asset-shell-nav-count {
+      font-size: var(--gw-type-count-lg) !important;
+      line-height: 1 !important;
+    }
     .asset-shell-nav-button-sub::before { content: "" !important; left: -13px; width: 12px; height: 1px; background: rgb(223 195 132 / .4); }
     #assetVaultSidebar .asset-shell-nav-button { overflow: visible !important; }
     #assetVaultSidebar .asset-shell-nav-button::before { content: "" !important; position: absolute; left: -14px; top: 50%; width: 6px; height: 1.5px; background: rgb(223 195 132 / .6); z-index: 2; pointer-events: none; }
     #assetVaultSidebar .asset-shell-nav-button-sub::before { left: -21px; width: 6px; }
     #assetVaultSidebar .asset-shell-nav-button .card-connector-pin { left: -3px; z-index: 3; background: #403a2f; border-color: rgb(223 195 132 / .3); box-shadow: none; opacity: .55; }
-    #assetVaultSidebar .asset-shell-nav-button.is-active .card-connector-pin { background: #dfc384; border-color: #f3dfb6; box-shadow: 0 0 4px 1px rgb(223 195 132 / .6); opacity: 1; }
+    #assetVaultSidebar .asset-shell-nav-button:is(.is-active, .active) .card-connector-pin { background: #dfc384; border-color: #f3dfb6; box-shadow: 0 0 4px 1px rgb(223 195 132 / .6); opacity: 1; }
     .asset-shell-nav-button-sub .card-connector-pin { width: 4px; height: 4px; left: -3px; }
     .asset-shell-nav-button .card-connector-pin { left: -3px; }
     .asset-shell-nav-empty { display: block; padding: 5px 7px; color: #727b88; font-size: var(--gw-type-body-sm); line-height: var(--gw-leading-body-sm); }
@@ -154,10 +235,8 @@
       .asset-shell-workspace { flex-direction: column !important; }
       #assetVaultSidebar { width: 100% !important; max-height: 150px; height: auto !important; flex: 0 0 auto; flex-direction: row !important; border-right: 0 !important; border-bottom: 1px solid #191c24; }
       #assetVaultSidebar.is-collapsed { height: 0 !important; max-height: 0 !important; border-bottom: none !important; }
-      #assetVaultSidebar.is-collapsed #assetSidebarToggle { top: 120px; left: 8px; }
-      #assetVaultSidebar .gw-side-bus-header { width: auto; flex: 0 0 auto; display: flex !important; align-items: center; padding: 6px; border-right: 1px solid rgb(255 255 255 / .08); border-bottom: 0 !important; }
+      #assetVaultSidebar.is-collapsed #assetSidebarToggle { top: 10px; left: 0; width: 8px; }
       #assetSidebarCreate { width: 28px !important; height: 28px; min-height: 28px; flex-basis: 28px; padding: 0; }
-      #assetSidebarToggle { width: 28px !important; height: 28px; min-height: 28px; flex-basis: 28px; padding: 0; }
       #assetCategories { min-width: 0; min-height: 0; flex: 1 1 auto !important; flex-direction: row !important; align-items: flex-start; overflow-x: auto !important; overflow-y: hidden !important; padding: 6px !important; }
       .asset-shell-nav-group { min-width: 180px; flex: 0 0 auto; margin: 0; padding-left: 15px; }
       .asset-shell-nav-group-items { min-height: 0; }
@@ -338,14 +417,12 @@
     <aside id="assetVaultSidebar" class="gw-side-bus-unified w-64 bg-[#08090d] border-r border-[#191c24] flex flex-col shrink-0 z-30 h-full min-h-0">
       <div class="gw-side-bus-header p-2 border-b border-white/5 shrink-0">
         <div class="asset-shell-overview-card" aria-label="资产总览与新建资源库">
+          <button type="button" id="assetSidebarToggle" class="asset-shell-sidebar-toggle-bar" onclick="WorkbenchAssets.toggleSidebarCollapse()" title="收起侧栏" aria-label="收起侧栏" aria-expanded="true"></button>
           <button type="button" id="assetSidebarOverview" aria-pressed="false" onclick="WorkbenchAssets.activateAssetBoard('registry')" title="资产总览">
             <i data-lucide="library-big" aria-hidden="true"></i><span>资产总览</span>
           </button>
           <button type="button" id="assetSidebarCreate" class="hw-btn hw-btn-icon" onclick="WorkbenchAssets.openCreateAssetLibrary()" title="新建资源库" aria-label="新建资源库" aria-haspopup="dialog">
             <i data-lucide="plus" aria-hidden="true"></i>
-          </button>
-          <button type="button" id="assetSidebarToggle" class="hw-btn hw-btn-icon" onclick="WorkbenchAssets.toggleSidebarCollapse()" title="收起侧栏" aria-label="收起侧栏" aria-expanded="true">
-            <i data-lucide="panel-left-close" aria-hidden="true"></i>
           </button>
         </div>
       </div>
