@@ -1,0 +1,24 @@
+{
+  "schema": "gw.cleanroom-admission-shard/v1",
+  "issue": 701,
+  "authorization_basis": "GitHub Issue #701 (QIN-595), 2026-11-11",
+  "files": [
+    "web/css/pages/asset-vault.css",
+    "web/js/modules/asset-manager.js",
+    "web/js/modules/asset-manager/settings.js",
+    "web/js/modules/asset-manager/organize.js",
+    "tests/frontend/node-files.txt",
+    "tests/frontend/qin-595-mounted-folder-empty-state.test.mjs",
+    "tests/hygiene/fixtures/admissions/issue-701.json"
+  ],
+  "admitted_files": [],
+  "accepted_test_files": [
+    {
+      "path": "tests/frontend/qin-595-mounted-folder-empty-state.test.mjs",
+      "classification": "curated_test_coverage",
+      "authorization_basis": "GitHub Issue #701 (QIN-595), 2026-11-11",
+      "admission": "accepted"
+    }
+  ],
+  "notes": "QIN-595 点挂载资源文件夹后显示「暂无可见资源」空状态：asset-vault.css 宽屏收零宽首列并在窄屏单列铺满；asset-manager 模块群修复选择挂载目录时切看板逻辑、__root__ 精准过滤保留、root_id 兼容回退与空态文案提示。"
+}

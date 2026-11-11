@@ -111,6 +111,7 @@ tests/frontend/qin-587-inbox-layout.test.mjs
 tests/frontend/qin-589-coverflow-visual.test.mjs
 tests/frontend/qin-590-asset-sidebar-collapse.test.mjs
 tests/frontend/qin-591-domain-gate.test.mjs
+tests/frontend/qin-595-mounted-folder-empty-state.test.mjs
 tests/frontend/settings-workbench-visual.test.mjs
 tests/frontend/test_c18_omnibar_hotkeys.mjs
 tests/frontend/test_c18_video_jump.mjs

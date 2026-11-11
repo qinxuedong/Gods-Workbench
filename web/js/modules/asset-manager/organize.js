@@ -2073,16 +2073,18 @@ function renderCustomAssetLibrary(board){
         setRegistryDetail(null);
     }
     const preset = ASSET_LIBRARY_PRESETS.find(item => item.id === board.preset) || ASSET_LIBRARY_PRESETS[3];
-    const emptyAssetMessage = board.sourceBoard
-        ? `“${board.name}”暂无已索引素材。`
-        : board.preset === 'other'
-            ? '暂无可见资源。素材进入统一索引后会自动显示在这里。'
-            : `暂无匹配的${preset.name.replace(/库$/, '')}资产。资产进入统一索引后会自动显示在这里。`;
+    const activeFolderPath = boardFolderSelection[board.id] || '';
+    const folderLabel = activeFolderPath === '__root__' ? '根目录' : activeFolderPath.split('/').filter(Boolean).pop() || '';
+    const emptyAssetMessage = activeFolderPath
+        ? `“${folderLabel || activeFolderPath}”暂无已索引素材。素材进入统一索引后会自动显示在这里，可在设置中触发索引或等待后台扫描。`
+        : board.sourceBoard
+            ? `“${board.name}”暂无已索引素材。素材进入统一索引后会自动显示在这里，可在设置中触发索引或等待后台扫描。`
+            : board.preset === 'other'
+                ? '暂无可见资源。素材进入统一索引后会自动显示在这里。'
+                : `暂无匹配的${preset.name.replace(/库$/, '')}资产。资产进入统一索引后会自动显示在这里。`;
     const activeSourceId = board.sourceBoard ? String(board.rootId || '') : (boardSourceSelection[board.id] || '');
     const activeSource = (board.sources || []).find(source => source.id === activeSourceId) || null;
     const sourceLabel = activeSource ? activeSource.name : activeSourceId === '__automatic__' ? '自动归档' : '全部素材';
-    const activeFolderPath = boardFolderSelection[board.id] || '';
-    const folderLabel = activeFolderPath === '__root__' ? '根目录' : activeFolderPath.split('/').filter(Boolean).pop() || '';
     const activeGroup = registryBoardCustomGroups(board).find(group => group.id === (boardGroupSelection[board.id] || '')) || null;
     const activeReferenceCanvas = (canvasAssetsData.canvases || []).find(canvas => canvas.id === (boardReferenceCanvasSelection[board.id] || '')) || null;
     root.innerHTML = `${renderAssetTreePanel()}

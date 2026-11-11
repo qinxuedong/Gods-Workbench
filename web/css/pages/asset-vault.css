@@ -1372,9 +1372,16 @@ html.vault-shell-embedded body.gw-signal.gw-page--asset-manager #assetManagerRoo
        【QIN-580】LUT 库同为首列无内容的子页面，一并收零，布局与提示词一致。 */
     grid-template-columns: 0 minmax(0,1fr) minmax(280px,320px) !important;
 }
-html.vault-shell-embedded body.gw-signal.gw-page--asset-manager #assetManagerRoot.asset-manager-root-library {
-    grid-template-columns: 240px minmax(0,1fr) var(--registry-detail-width,340px) !important;
-    grid-template-rows: auto auto minmax(0,1fr) !important;
+@media (min-width: 901px) {
+    html.vault-shell-embedded body.gw-signal.gw-page--asset-manager #assetManagerRoot.asset-manager-root-library {
+        /* 【QIN-595】嵌入态自定义资源库宽屏收为零宽首列，消除 240px 左侧空白死区；右侧保留详情抽屉列 */
+        grid-template-columns: 0 minmax(0,1fr) var(--registry-detail-width,340px) !important;
+        grid-template-rows: auto auto minmax(0,1fr) !important;
+    }
+    html.vault-shell-embedded body.gw-signal.gw-page--asset-manager #assetManagerRoot.asset-manager-root-library.registry-detail-collapsed {
+        /* 【QIN-595】宽屏详情抽屉收起时收到 41px（与 asset-manager.css 对齐） */
+        grid-template-columns: 0 minmax(0,1fr) 41px !important;
+    }
 }
 html.vault-shell-embedded body.gw-signal.gw-page--asset-manager #assetManagerRoot.asset-manager-root-page-scripts {
     /* 【QIN-569 AC2】外壳已承接导航，嵌入剧本页收为单列网格，内容区吃满可用宽度。 */
@@ -1467,6 +1474,18 @@ html.vault-shell-embedded body.gw-signal.gw-page--asset-manager #assetManagerRoo
     }
     html.vault-shell-embedded body.gw-signal.gw-page--asset-manager #assetManagerRoot.asset-manager-root-page-scripts {
         grid-template-rows: auto auto auto minmax(390px,1fr) !important;
+    }
+    html.vault-shell-embedded body.gw-signal.gw-page--asset-manager #assetManagerRoot.asset-manager-root-library {
+        /* 【QIN-595】窄屏自定义资源库收为单列自适应，显式覆盖宽屏三列规则，消除内容区落入 0 宽首列塌陷 */
+        grid-template-columns: minmax(0,1fr) !important;
+        grid-template-rows: auto auto auto minmax(360px,1fr) auto !important;
+    }
+    html.vault-shell-embedded body.gw-signal.gw-page--asset-manager #assetManagerRoot.asset-manager-root-library > :is(.registry-overview-shell,.registry-toolbar) {
+        grid-column: 1 !important;
+    }
+    html.vault-shell-embedded body.gw-signal.gw-page--asset-manager #assetManagerRoot.asset-manager-root-library > :is(.registry-content,.asset-panel.asset-content) {
+        grid-column: 1 !important;
+        grid-row: 4 !important;
     }
 }
 
