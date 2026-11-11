@@ -333,9 +333,12 @@ function measureViewport(viewport) {
     return {layout, slides, center, exposed, perspective};
 }
 
+// 尺寸取自 QIN-590 落地后本机无头 Chrome 实测（左栏收起后的舞台/轨道 clientWidth/Height）：
+// 1920x1080 → stage 1890x958、track 1718x918；1440x900 → stage 1410x778、track 1238x738。
+// baseWidth = CSS min(58vw, 880px, 高度约束) 在该视口的实测基准宽。
 const ACCEPTANCE_VIEWPORTS = {
     '1920x1080（左栏收起）': {stageW: 1890, stageH: 958, trackW: 1718, trackH: 918, baseWidth: 880},
-    '1440x900': {stageW: 1412, stageH: 872, trackW: 1240, trackH: 738, baseWidth: 835.2},
+    '1440x900': {stageW: 1410, stageH: 778, trackW: 1238, trackH: 738, baseWidth: 835.2},
 };
 
 test('全屏位移序列：中心 2 倍夹紧、两侧每级减半、投影外缘按权重分配', () => {
