@@ -75,6 +75,10 @@ struct InstanceLock {
     port: u16,
     token: String,
     pid: u32,
+    #[serde(default)]
+    exe_path: String,
+    #[serde(default)]
+    process_start_time: u64,
 }
 
 fn instance_lock_path() -> PathBuf {
@@ -170,6 +174,194 @@ fn is_process_alive(pid: u32) -> bool {
 }
 
 #[cfg(windows)]
+#[repr(C)]
+struct FileTime {
+    dw_low_date_time: u32,
+    dw_high_date_time: u32,
+}
+
+#[cfg(windows)]
+extern "system" {
+    fn GetCurrentProcess() -> *mut std::ffi::c_void;
+    fn GetProcessTimes(
+        hProcess: *mut std::ffi::c_void,
+        lpCreationTime: *mut FileTime,
+        lpExitTime: *mut FileTime,
+        lpKernelTime: *mut FileTime,
+        lpUserTime: *mut FileTime,
+    ) -> i32;
+    fn QueryFullProcessImageNameW(
+        hProcess: *mut std::ffi::c_void,
+        dwFlags: u32,
+        lpExeName: *mut u16,
+        lpdwSize: *mut u32,
+    ) -> i32;
+}
+
+fn current_process_exe_path() -> String {
+    std::env::current_exe()
+        .map(|p| p.to_string_lossy().to_string())
+        .unwrap_or_default()
+}
+
+#[cfg(windows)]
+fn current_process_start_time() -> u64 {
+    unsafe {
+        let mut creation = FileTime {
+            dw_low_date_time: 0,
+            dw_high_date_time: 0,
+        };
+        let mut exit = FileTime {
+            dw_low_date_time: 0,
+            dw_high_date_time: 0,
+        };
+        let mut kernel = FileTime {
+            dw_low_date_time: 0,
+            dw_high_date_time: 0,
+        };
+        let mut user = FileTime {
+            dw_low_date_time: 0,
+            dw_high_date_time: 0,
+        };
+        if GetProcessTimes(
+            GetCurrentProcess(),
+            &mut creation,
+            &mut exit,
+            &mut kernel,
+            &mut user,
+        ) != 0
+        {
+            ((creation.dw_high_date_time as u64) << 32) | (creation.dw_low_date_time as u64)
+        } else {
+            0
+        }
+    }
+}
+
+#[cfg(windows)]
+fn get_process_identity(pid: u32) -> Option<(u64, String)> {
+    extern "system" {
+        fn OpenProcess(
+            dwDesiredAccess: u32,
+            bInheritHandle: i32,
+            dwProcessId: u32,
+        ) -> *mut std::ffi::c_void;
+        fn CloseHandle(hObject: *mut std::ffi::c_void) -> i32;
+    }
+    const PROCESS_QUERY_LIMITED_INFORMATION: u32 = 0x1000;
+    unsafe {
+        let handle = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, pid);
+        if handle.is_null() {
+            return None;
+        }
+        let mut creation = FileTime {
+            dw_low_date_time: 0,
+            dw_high_date_time: 0,
+        };
+        let mut exit = FileTime {
+            dw_low_date_time: 0,
+            dw_high_date_time: 0,
+        };
+        let mut kernel = FileTime {
+            dw_low_date_time: 0,
+            dw_high_date_time: 0,
+        };
+        let mut user = FileTime {
+            dw_low_date_time: 0,
+            dw_high_date_time: 0,
+        };
+        let start_time =
+            if GetProcessTimes(handle, &mut creation, &mut exit, &mut kernel, &mut user) != 0 {
+                ((creation.dw_high_date_time as u64) << 32) | (creation.dw_low_date_time as u64)
+            } else {
+                0
+            };
+
+        let mut buffer = [0u16; 1024];
+        let mut size = buffer.len() as u32;
+        let exe_path = if QueryFullProcessImageNameW(handle, 0, buffer.as_mut_ptr(), &mut size) != 0
+        {
+            String::from_utf16_lossy(&buffer[..size as usize])
+        } else {
+            String::new()
+        };
+
+        CloseHandle(handle);
+        Some((start_time, exe_path))
+    }
+}
+
+#[cfg(not(windows))]
+fn current_process_start_time() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0)
+}
+
+#[cfg(not(windows))]
+fn get_process_identity(pid: u32) -> Option<(u64, String)> {
+    if !is_process_alive(pid) {
+        return None;
+    }
+    let exe_path = std::fs::read_link(format!("/proc/{pid}/exe"))
+        .map(|p| p.to_string_lossy().to_string())
+        .unwrap_or_else(|_| {
+            std::process::Command::new("ps")
+                .args(["-p", &pid.to_string(), "-o", "comm="])
+                .output()
+                .ok()
+                .and_then(|out| {
+                    if out.status.success() {
+                        Some(String::from_utf8_lossy(&out.stdout).trim().to_string())
+                    } else {
+                        None
+                    }
+                })
+                .unwrap_or_default()
+        });
+    Some((0, exe_path))
+}
+
+fn is_lock_holder_alive_and_matched(lock: &InstanceLock) -> bool {
+    if !is_process_alive(lock.pid) {
+        return false;
+    }
+    let Some((start_time, exe_path)) = get_process_identity(lock.pid) else {
+        return false;
+    };
+
+    if lock.process_start_time > 0 && start_time > 0 && lock.process_start_time == start_time {
+        return true;
+    }
+
+    if !lock.exe_path.is_empty() && !exe_path.is_empty() {
+        let lock_norm = lock.exe_path.trim().to_lowercase();
+        let target_norm = exe_path.trim().to_lowercase();
+        if lock_norm == target_norm {
+            return true;
+        }
+        let lock_name = Path::new(&lock_norm)
+            .file_name()
+            .and_then(|f| f.to_str())
+            .unwrap_or("");
+        let target_name = Path::new(&target_norm)
+            .file_name()
+            .and_then(|f| f.to_str())
+            .unwrap_or("");
+        if !lock_name.is_empty() && lock_name == target_name {
+            return true;
+        }
+    }
+
+    if lock.exe_path.is_empty() && lock.process_start_time == 0 && lock.pid == std::process::id() {
+        return true;
+    }
+
+    false
+}
+
+#[cfg(windows)]
 fn report_fatal_error(message: &str) {
     extern "system" {
         fn MessageBoxW(
@@ -246,6 +438,8 @@ fn initialize_primary_listener(
         port,
         token: token.clone(),
         pid: std::process::id(),
+        exe_path: current_process_exe_path(),
+        process_start_time: current_process_start_time(),
     };
     let content = serde_json::to_vec_pretty(&lock_info)
         .map_err(|e| format!("Cannot serialize instance lock: {e}"))?;
@@ -272,9 +466,10 @@ fn initialize_primary_listener(
                 if reader.read_line(&mut line).is_ok() {
                     let parts: Vec<&str> = line.trim().split_whitespace().collect();
                     if parts.len() == 2 && parts[0] == "WAKEUP" && parts[1] == expected_token {
-                        wakeup_clone.trigger_wakeup();
+                        // 优先写回 WAKEN 并 flush，让发起方立即收到应答完成唤醒退出，不依赖 UI 或主线程状态
                         let _ = writeln!(stream, "WAKEN");
                         let _ = stream.flush();
+                        wakeup_clone.trigger_wakeup();
                     }
                 }
             }
@@ -314,9 +509,11 @@ fn arbitrate_single_instance(lock_path: &Path) -> SingleInstanceDecision {
             Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
                 // 主锁文件已存在：尝试连接并唤醒（重试最多 15 次，总计 1.5 秒）
                 let mut woken = false;
+                let mut existing_lock: Option<InstanceLock> = None;
                 for attempt in 0..15 {
                     if let Ok(content) = fs::read(lock_path) {
                         if let Ok(lock) = serde_json::from_slice::<InstanceLock>(&content) {
+                            existing_lock = Some(lock.clone());
                             if try_wake_existing_instance(lock.port, &lock.token) {
                                 woken = true;
                                 break;
@@ -332,7 +529,20 @@ fn arbitrate_single_instance(lock_path: &Path) -> SingleInstanceDecision {
                     return SingleInstanceDecision::SecondaryWoken;
                 }
 
-                // 第二阶段：唤醒失败，确认为遗留死锁或损坏锁。
+                // 第二阶段：唤醒无响应。
+                // 必须严格核实锁持有者是否确已不存在（或已死/身份不匹配）：
+                // 若持有者存活且身份匹配，说明是真正的主实例正处于卡顿或未响应状态。
+                // 铁律：绝不删锁，绝不起第二个客户端实例！向用户提示已有实例但无响应并以非零码退出。
+                if let Some(ref lock) = existing_lock {
+                    if is_lock_holder_alive_and_matched(lock) {
+                        return SingleInstanceDecision::Error(format!(
+                            "检测到已有一个神工坊桌面端实例正在运行（PID: {}），但未响应唤醒请求。请检查任务管理器或稍后重试。",
+                            lock.pid
+                        ));
+                    }
+                }
+
+                // 锁持有者已死亡或为 PID 复用的无关进程，确认为遗留死锁或损坏锁。
                 // 核心原子防护：绝不盲目删除主锁！所有并发进程转为原子竞争恢复排他锁
                 match OpenOptions::new()
                     .write(true)
@@ -344,12 +554,19 @@ fn arbitrate_single_instance(lock_path: &Path) -> SingleInstanceDecision {
                         let _ = writeln!(rec_file, "{}", std::process::id());
                         let _ = rec_file.flush();
 
-                        // 抢到恢复锁后，做最后一次连通性复核
+                        // 抢到恢复锁后，做最后一次连通性与存活复核
                         if let Ok(content) = fs::read(lock_path) {
                             if let Ok(lock) = serde_json::from_slice::<InstanceLock>(&content) {
                                 if try_wake_existing_instance(lock.port, &lock.token) {
                                     let _ = fs::remove_file(&recovery_lock_path);
                                     return SingleInstanceDecision::SecondaryWoken;
+                                }
+                                if is_lock_holder_alive_and_matched(&lock) {
+                                    let _ = fs::remove_file(&recovery_lock_path);
+                                    return SingleInstanceDecision::Error(format!(
+                                        "检测到已有一个神工坊桌面端实例正在运行（PID: {}），但未响应唤醒请求。请检查任务管理器或稍后重试。",
+                                        lock.pid
+                                    ));
                                 }
                             }
                         }
@@ -1531,12 +1748,16 @@ mod tests {
             port: 2077,
             token: "test_token_123".to_string(),
             pid: 42,
+            exe_path: "C:\\app\\gw.exe".into(),
+            process_start_time: 123456,
         };
         let encoded = serde_json::to_vec(&lock).expect("serialize lock");
         let decoded: InstanceLock = serde_json::from_slice(&encoded).expect("deserialize lock");
         assert_eq!(decoded.port, 2077);
         assert_eq!(decoded.token, "test_token_123");
         assert_eq!(decoded.pid, 42);
+        assert_eq!(decoded.exe_path, "C:\\app\\gw.exe");
+        assert_eq!(decoded.process_start_time, 123456);
     }
 
     #[test]
@@ -1693,6 +1914,8 @@ mod tests {
             port: 59999,
             token: "dead_stale_token".into(),
             pid: 99_999_999,
+            exe_path: String::new(),
+            process_start_time: 0,
         };
         fs::write(&lock_path, serde_json::to_vec_pretty(&stale_lock).unwrap()).unwrap();
 
@@ -1947,5 +2170,131 @@ mod tests {
         assert_eq!(found, fake_python);
         std::env::remove_var("GW_PYTHON");
         let _ = fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
+    fn test_process_identity_and_matching() {
+        // 当前进程身份必定匹配
+        let live_lock = InstanceLock {
+            port: 2077,
+            token: "tok".into(),
+            pid: std::process::id(),
+            exe_path: current_process_exe_path(),
+            process_start_time: current_process_start_time(),
+        };
+        assert!(is_lock_holder_alive_and_matched(&live_lock));
+
+        // 不存在的 PID 必定不匹配
+        let dead_lock = InstanceLock {
+            port: 2077,
+            token: "tok".into(),
+            pid: 99_999_999,
+            exe_path: current_process_exe_path(),
+            process_start_time: current_process_start_time(),
+        };
+        assert!(!is_lock_holder_alive_and_matched(&dead_lock));
+
+        // PID 碰巧存活，但 exe_path 明确属于其他程序（模拟 PID 复用），必定不匹配
+        let reused_pid_lock = InstanceLock {
+            port: 2077,
+            token: "tok".into(),
+            pid: std::process::id(),
+            exe_path: "C:\\NonExistent\\definitely_foreign_app.exe".into(),
+            process_start_time: 1_234_567_890,
+        };
+        assert!(!is_lock_holder_alive_and_matched(&reused_pid_lock));
+    }
+
+    #[test]
+    fn test_unresponsive_live_instance_prevents_second_instance() {
+        let temp_dir = std::env::temp_dir();
+        let unique_id = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let test_lock_path = temp_dir.join(format!("test_unresponsive_live_{unique_id}.json"));
+
+        // 绑定一个随机端口但绝不 accept（模拟无响应的活实例）
+        let fake_listener = std::net::TcpListener::bind("127.0.0.1:0").expect("bind listener");
+        let port = fake_listener.local_addr().unwrap().port();
+
+        // 构造一个由“当前存活进程”持有的主锁文件
+        let lock_info = InstanceLock {
+            port,
+            token: "unresponsive_token".to_string(),
+            pid: std::process::id(),
+            exe_path: current_process_exe_path(),
+            process_start_time: current_process_start_time(),
+        };
+        let content = serde_json::to_vec_pretty(&lock_info).unwrap();
+        fs::write(&test_lock_path, content).unwrap();
+
+        // 第二次启动执行单实例仲裁
+        let decision = arbitrate_single_instance(&test_lock_path);
+
+        // 严格断言：活实例虽然无响应，但绝不能成为第二个 Primary，必须报错并保留原锁！
+        match decision {
+            SingleInstanceDecision::Error(msg) => {
+                assert!(
+                    msg.contains("未响应唤醒请求") || msg.contains("正在运行"),
+                    "Error message should mention existing unresponsive instance, got: {msg}"
+                );
+            }
+            SingleInstanceDecision::Primary { .. } => {
+                panic!(
+                    "Unresponsive live instance must NOT be replaced by a second Primary instance!"
+                );
+            }
+            SingleInstanceDecision::SecondaryWoken => {
+                panic!("Unresponsive socket should not return SecondaryWoken!");
+            }
+        }
+
+        // 验证主锁文件依然完好保留，没有被粗暴删除
+        assert!(
+            test_lock_path.exists(),
+            "Lock file must not be removed when holder is still alive!"
+        );
+
+        let _ = fs::remove_file(&test_lock_path);
+    }
+
+    #[test]
+    fn test_stale_lock_with_reused_pid_recovers_successfully() {
+        let temp_dir = std::env::temp_dir();
+        let unique_id = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let test_lock_path = temp_dir.join(format!("test_reused_pid_{unique_id}.json"));
+
+        // 构造一份遗留锁：端口不可通，PID 碰巧是当前进程 PID，但 exe_path 和启动时间明显不匹配（模拟操作系统 PID 复用）
+        let stale_reused_lock = InstanceLock {
+            port: 59998,
+            token: "foreign_token".to_string(),
+            pid: std::process::id(),
+            exe_path: "C:\\NonExistent\\reused_foreign_program.exe".to_string(),
+            process_start_time: 987_654_321,
+        };
+        let content = serde_json::to_vec_pretty(&stale_reused_lock).unwrap();
+        fs::write(&test_lock_path, content).unwrap();
+
+        // 第二次启动执行仲裁：识别出 PID 复用，安全清理并恢复为主实例
+        let decision = arbitrate_single_instance(&test_lock_path);
+        match decision {
+            SingleInstanceDecision::Primary { lock_path, .. } => {
+                assert_eq!(lock_path, test_lock_path);
+            }
+            SingleInstanceDecision::SecondaryWoken => {
+                panic!("Stale lock with foreign identity should not return SecondaryWoken");
+            }
+            SingleInstanceDecision::Error(e) => {
+                panic!(
+                    "Stale lock with foreign identity should recover as Primary, got Error: {e}"
+                );
+            }
+        }
+
+        let _ = fs::remove_file(&test_lock_path);
     }
 }
