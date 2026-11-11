@@ -25,12 +25,15 @@
  * 以及「gwCall 结果不得当同步值使用」的静态护栏。
  */
 
-import {test} from 'node:test';
+import {test, after} from 'node:test';
 import assert from 'node:assert/strict';
-import {readFileSync, existsSync} from 'node:fs';
+import {
+    readFileSync, existsSync, writeFileSync, cpSync, mkdtempSync, realpathSync, rmSync,
+} from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import vm from 'node:vm';
-import {fileURLToPath} from 'node:url';
+import {fileURLToPath, pathToFileURL} from 'node:url';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(HERE, '../..');
@@ -552,4 +555,300 @@ test('QIN-591：未知域与未注册函数必须 reject，不能静默返回 un
     await assert.rejects(() => gateway.gwCall('delta', 'anything'), /未知域|未注册/);
     await assert.rejects(() => gateway.gwCall('gamma', 'missing'), /未注册/);
     assert.equal(await gateway.gwCall('gamma', 'known'), 1);
+});
+
+/* ───────────── AC5：真实 ESM 加载（不是源码切片，也不是替代加载器） ─────────────
+ *
+ * 上一轮的用例全部基于「源码切片 + vm」或「文本正则」：删掉主文件 export 块里的一行
+ * 分类 helper，10 项仍全绿，而浏览器真实加载会立刻抛
+ *     SyntaxError: The requested module '../asset-manager.js'
+ *     does not provide an export named 'assetClassificationEntryGroup'
+ * 下面两条用例改用 Node 原生 ESM 加载器加载**逐字节复制**的产品模块树：
+ *   · 产品目录没有 package.json，浏览器靠 <script type="module"> 判定 ESM，
+ *     Node 需要显式声明 —— 复制树里补一份 {"type":"module"} 只影响模块类型判定，
+ *     不修改任何产品源码（复制后仍可逐字节比对）。
+ *   · 用例 11 证明「当前 head 真实加载正常」；用例 12 是自检：逐个删掉导出行，
+ *     真实加载必须失败，从而证明这条护栏确实能捕获 AC5 的回归。
+ */
+
+const CLASSIFICATION_HELPERS = [
+    'assetClassificationChips',
+    'assetClassificationEntryGroup',
+    'assetClassificationSearchText',
+    'groupedAssetClassificationEntries',
+    'parseAssetClassFilterKey',
+];
+
+/** 域模块从主文件真实 import 的符号集合（读 import 声明，不是猜调用）。 */
+function mainImportsOf(file) {
+    const name = file.endsWith('.js') ? file : `${file}.js`;
+    const text = readFileSync(path.join(PACKAGE_DIR, name), 'utf8');
+    const names = new Set();
+    for (const match of text.matchAll(/import\s*\{([\s\S]*?)\}\s*from\s*'\.\.\/asset-manager\.js'/g)) {
+        for (const raw of match[1].split(',')) {
+            const name = raw.replace(/\/\*[\s\S]*?\*\//g, '').trim();
+            if (/^[A-Za-z_$][\w$]*$/.test(name)) names.add(name);
+        }
+    }
+    return names;
+}
+
+/** 只为让模块顶层求值跑通的元素桩：不模拟任何交互。 */
+function stubElement() {
+    return {
+        nodeType: 1,
+        tagName: 'DIV',
+        style: {},
+        dataset: {},
+        children: [],
+        childNodes: [],
+        attributes: [],
+        innerHTML: '',
+        textContent: '',
+        value: '',
+        checked: false,
+        hidden: false,
+        disabled: false,
+        scrollTop: 0,
+        scrollLeft: 0,
+        scrollHeight: 800,
+        clientWidth: 1200,
+        clientHeight: 800,
+        offsetWidth: 1200,
+        offsetHeight: 800,
+        classList: {add() {}, remove() {}, toggle() {}, contains() { return false; }},
+        addEventListener() {},
+        removeEventListener() {},
+        appendChild(child) { this.children.push(child); return child; },
+        insertBefore(child) { this.children.push(child); return child; },
+        removeChild() {},
+        remove() {},
+        append() {},
+        prepend() {},
+        replaceWith() {},
+        querySelector() { return stubElement(); },
+        querySelectorAll() { return []; },
+        getAttribute() { return null; },
+        setAttribute() {},
+        removeAttribute() {},
+        hasAttribute() { return false; },
+        closest() { return null; },
+        contains() { return false; },
+        matches() { return false; },
+        focus() {},
+        blur() {},
+        click() {},
+        select() {},
+        setSelectionRange() {},
+        insertAdjacentHTML() {},
+        scrollIntoView() {},
+        getBoundingClientRect() {
+            return {top: 0, left: 0, right: 1200, bottom: 800, width: 1200, height: 800, x: 0, y: 0};
+        },
+        animate() { return {finished: Promise.resolve(), cancel() {}}; },
+        cloneNode() { return stubElement(); },
+        getContext() { return null; },
+        toDataURL() { return 'data:,'; },
+    };
+}
+
+/** 安装最小浏览器宿主；返回卸载函数（用例结束后恢复 globalThis）。 */
+function installDomStub() {
+    const saved = new Map();
+    const put = (key, value) => {
+        saved.set(key, Object.getOwnPropertyDescriptor(globalThis, key));
+        Object.defineProperty(globalThis, key, {configurable: true, writable: true, value});
+    };
+    const media = {matches: false, addEventListener() {}, removeEventListener() {}, addListener() {}, removeListener() {}};
+    const storage = {getItem() { return null; }, setItem() {}, removeItem() {}, clear() {}, key() { return null; }, length: 0};
+    const doc = {
+        readyState: 'complete',
+        documentElement: stubElement(),
+        head: stubElement(),
+        body: stubElement(),
+        getElementById() { return stubElement(); },
+        querySelector() { return stubElement(); },
+        querySelectorAll() { return []; },
+        createElement() { return stubElement(); },
+        createDocumentFragment() { return stubElement(); },
+        createTextNode() { return stubElement(); },
+        addEventListener() {},
+        removeEventListener() {},
+        dispatchEvent() { return true; },
+        contains() { return false; },
+        cookie: '',
+        visibilityState: 'visible',
+        hidden: false,
+        activeElement: null,
+        execCommand() { return true; },
+        fonts: {ready: Promise.resolve(), addEventListener() {}},
+        adoptedStyleSheets: [],
+    };
+
+    put('document', doc);
+    put('localStorage', storage);
+    put('sessionStorage', storage);
+    put('location', {
+        search: '',
+        href: 'http://127.0.0.1:2097/static/pages/assets.html',
+        pathname: '/static/pages/assets.html',
+        origin: 'http://127.0.0.1:2097',
+        hash: '',
+        host: '127.0.0.1:2097',
+        protocol: 'http:',
+        assign() {},
+        replace() {},
+        reload() {},
+    });
+    put('matchMedia', () => media);
+    put('requestAnimationFrame', callback => setTimeout(() => callback(Date.now()), 0));
+    put('cancelAnimationFrame', id => clearTimeout(id));
+    put('requestIdleCallback', callback => setTimeout(() => callback({didTimeout: false, timeRemaining: () => 0}), 0));
+    put('cancelIdleCallback', id => clearTimeout(id));
+    put('navigator', {userAgent: 'node', clipboard: {writeText: async () => {}, readText: async () => ''}});
+    put('window', globalThis);
+    put('parent', globalThis);
+    put('top', globalThis);
+    put('self', globalThis);
+    put('addEventListener', () => {});
+    put('removeEventListener', () => {});
+    put('dispatchEvent', () => true);
+    put('isSecureContext', false);
+    put('getComputedStyle', () => ({getPropertyValue() { return ''; }}));
+    put('IntersectionObserver', class { observe() {} unobserve() {} disconnect() {} });
+    put('ResizeObserver', class { observe() {} unobserve() {} disconnect() {} });
+    put('MutationObserver', class { observe() {} disconnect() {} takeRecords() { return []; } });
+    put('Event', class { constructor(type, init) { this.type = type; Object.assign(this, init); } });
+    put('CustomEvent', class { constructor(type, init) { this.type = type; Object.assign(this, init); } });
+    put('DOMParser', class { parseFromString() { return doc; } });
+
+    return () => {
+        for (const [key, descriptor] of saved) {
+            if (descriptor) Object.defineProperty(globalThis, key, descriptor);
+            else delete globalThis[key];
+        }
+    };
+}
+
+const ESM_TREES = [];
+let uninstallDomStub = null;
+
+function ensureDomStub() {
+    if (!uninstallDomStub) uninstallDomStub = installDomStub();
+}
+
+/** 复制产品模块树到临时目录（补 module 类型声明），返回临时根。 */
+function makeProductTree() {
+    const root = realpathSync(mkdtempSync(path.join(os.tmpdir(), 'gw-qin591-esm-')));
+    cpSync(path.join(ROOT, 'web', 'js'), path.join(root, 'web', 'js'), {recursive: true});
+    writeFileSync(path.join(root, 'package.json'), '{"type": "module"}\n', 'utf8');
+    ESM_TREES.push(root);
+    return root;
+}
+
+function dropTree(root) {
+    const index = ESM_TREES.indexOf(root);
+    if (index >= 0) ESM_TREES.splice(index, 1);
+    try {
+        rmSync(root, {recursive: true, force: true});
+    } catch (_) {
+        // Windows 上偶发句柄未释放；临时目录由系统回收，不影响断言。
+    }
+}
+
+after(() => {
+    for (const root of ESM_TREES.splice(0)) {
+        try {
+            rmSync(root, {recursive: true, force: true});
+        } catch (_) {}
+    }
+    if (uninstallDomStub) {
+        uninstallDomStub();
+        uninstallDomStub = null;
+    }
+});
+
+test('QIN-591：真实 ESM 加载 14 个延后域与主文件，导出面必须闭合（AC5）', async () => {
+    ensureDomStub();
+    const root = makeProductTree();
+    const domains = loaderDomains();
+    assert.equal(domains.size, 14, `延后域数量应为 14，实际 ${domains.size}`);
+
+    const loaded = [];
+    for (const [domain, file] of domains) {
+        const absolute = path.join(root, 'web', 'js', 'modules', 'asset-manager', `${file}.js`);
+        assert.ok(existsSync(absolute), `延后域 ${domain} 的模块文件不存在: ${file}.js`);
+        // 真实加载：解析 → 实例化（链接期即校验导出名）→ 求值。任何一环失败都会抛。
+        await import(pathToFileURL(absolute).href);
+        loaded.push(domain);
+    }
+    assert.equal(loaded.length, 14, `14 个延后域必须全部真实加载成功，实际 ${loaded.join(',')}`);
+
+    const mainUrl = pathToFileURL(path.join(root, 'web', 'js', 'modules', 'asset-manager.js')).href;
+    const main = await import(mainUrl);
+    for (const name of CLASSIFICATION_HELPERS) {
+        assert.equal(typeof main[name], 'function', `主文件没有导出分类 helper: ${name}`);
+    }
+
+    // 从页面真实入口加载：HTML 里那条不带查询串的 module script 就是主文件本身。
+    // 断言它与域内 `from '../asset-manager.js'` 解析到同一个模块实例（双实例是 QIN-591 的根因）。
+    const html = readFileSync(EMBED_HTML, 'utf8');
+    const moduleSrcs = [...html.matchAll(/<script[^>]*type="module"[^>]*src="([^"]+)"/g)].map(match => match[1]);
+    assert.ok(moduleSrcs.length > 0, '入口 HTML 里没有 type="module" 的脚本');
+    const entrySrc = moduleSrcs.find(src => /\/modules\/asset-manager\.js$/.test(src));
+    assert.ok(entrySrc, `入口 HTML 里找不到主模块脚本，实际: ${moduleSrcs.join(', ')}`);
+    assert.ok(entrySrc.startsWith('/static/'), `主入口不在 /static/ 下: ${entrySrc}`);
+    const entryFile = path.join(root, 'web', entrySrc.replace(/^\/static\//, ''));
+    assert.ok(existsSync(entryFile), `入口脚本在模块树里不存在: ${entrySrc}`);
+    const entryNamespace = await import(pathToFileURL(entryFile).href);
+    assert.equal(entryNamespace, main, '页面入口与域内相对 import 必须解析到同一个模块实例');
+
+    // 域模块真实 import 的每个主文件符号都必须存在。链接成功已隐含这一点，
+    // 这里显式列出来，失败时能直接看出是哪个域请求了哪个符号。
+    const missing = [];
+    for (const [, file] of domains) {
+        for (const name of mainImportsOf(file)) {
+            if (!(name in main)) missing.push(`${file}.js ← ${name}`);
+        }
+    }
+    assert.deepEqual(missing, [], `域模块请求了主文件没有的导出：\n${missing.join('\n')}`);
+});
+
+test('QIN-591：删掉主文件任一分类 helper 导出，真实模块加载必须立即失败（护栏自检）', async () => {
+    ensureDomStub();
+    const domains = [...loaderDomains().values()];
+
+    for (const name of CLASSIFICATION_HELPERS) {
+        const consumers = domains.filter(file => mainImportsOf(file).has(name));
+        assert.ok(consumers.length > 0, `${name} 没有任何延后域消费，这条护栏已失效`);
+
+        const root = makeProductTree();
+        try {
+            const mainFile = path.join(root, 'web', 'js', 'modules', 'asset-manager.js');
+            const source = readFileSync(mainFile, 'utf8');
+            const cut = source.indexOf('\nexport {');
+            assert.ok(cut > 0, '主文件里找不到 export 块');
+            const block = source.slice(cut);
+            const line = `\n    ${name},`;
+            assert.ok(block.includes(line), `export 块里没有「${name},」这一行，护栏需要同步更新`);
+            writeFileSync(mainFile, source.slice(0, cut) + block.replace(line, ''), 'utf8');
+
+            // 只加载一个消费域：ESM 在实例化阶段就会因缺导出抛错，不会执行任何模块体。
+            const target = pathToFileURL(
+                path.join(root, 'web', 'js', 'modules', 'asset-manager', `${consumers[0]}.js`),
+            ).href;
+            await assert.rejects(
+                () => import(target),
+                error => {
+                    assert.equal(error.name, 'SyntaxError', `${name}: 期望 SyntaxError，实际 ${error.name}`);
+                    assert.match(String(error.message), /does not provide an export named/);
+                    assert.ok(String(error.message).includes(`'${name}'`), `错误信息没有点名 ${name}`);
+                    return true;
+                },
+                `删掉 ${name} 的导出后，真实加载 ${consumers[0]}.js 仍然成功`,
+            );
+        } finally {
+            dropTree(root);
+        }
+    }
 });
