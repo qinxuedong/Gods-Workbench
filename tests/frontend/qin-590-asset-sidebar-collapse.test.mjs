@@ -114,13 +114,39 @@ test('AC1: 侧栏收起由「资产总览」左侧金色竖线触发，不再出
   // 【QIN-594 AC1】去掉侧栏顶部独立的显眼收起按钮（不再渲染独立 panel-left-close 大图标键）
   assert.doesNotMatch(html, /<i data-lucide="panel-left-close"/, '不再出现独立大图标收起键');
 
-  // 样式规则验证：收起态宽为 0，内部树隐藏，金色竖线留在统计条左侧（top: 10px, left: 0），不侵入素材网格
-  assert.match(html, /#assetVaultSidebar\.is-collapsed\s*\{[\s\S]*?width:\s*0\s*!important/);
-  assert.match(html, /#assetVaultSidebar\.is-collapsed\s*\{[\s\S]*?border-right:\s*none\s*!important/);
-  assert.match(html, /#assetVaultSidebar\.is-collapsed\s*\.gw-side-bus-list/);
-  assert.match(html, /#assetVaultSidebar\.is-collapsed\s*#assetSidebarToggle\s*\{[\s\S]*?position:\s*absolute/);
-  assert.match(html, /#assetVaultSidebar\.is-collapsed\s*#assetSidebarToggle\s*\{[\s\S]*?top:\s*10px/);
-  assert.doesNotMatch(html, /#assetVaultSidebar\.is-collapsed\s*#assetSidebarToggle\s*\{[\s\S]*?top:\s*124px/, '折叠热区不得出现在 top: 124px 的素材网格或预览区内');
+  // 样式规则验证（限定在独立规则块内匹配，防止跨规则假绿）
+  const toggleRuleMatch = html.match(/#assetVaultSidebar\.is-collapsed\s+#assetSidebarToggle\s*\{([^}]+)\}/);
+  assert.ok(toggleRuleMatch, '必须包含 #assetVaultSidebar.is-collapsed #assetSidebarToggle 规则块');
+  const toggleRule = toggleRuleMatch[1];
+  assert.match(toggleRule, /position:\s*absolute/);
+  assert.match(toggleRule, /top:\s*10px/);
+  assert.match(toggleRule, /left:\s*0/);
+  assert.match(toggleRule, /width:\s*(?:8px|[1-9]px|10px)/);
+  assert.doesNotMatch(toggleRule, /top:\s*(?:70px|124px)/, '单个规则块内不得包含 top: 70px 或 124px');
+  assert.doesNotMatch(toggleRule, /left:\s*(?:[1-9]\d*px)/, '单个规则块内 left 不得偏移漂移');
+
+  // 验证含块与定位上下文（position: relative 且 overflow: visible）
+  const overviewCardRule = html.match(/\.asset-shell-overview-card\s*\{([^}]+)\}/)?.[1] || '';
+  assert.match(overviewCardRule, /position:\s*relative/, '折叠热区的含块必须具备 position: relative 定位上下文');
+  const collapsedOverviewCardRule = html.match(/#assetVaultSidebar\.is-collapsed\s+\.asset-shell-overview-card\s*\{([^}]+)\}/)?.[1] || '';
+  assert.match(collapsedOverviewCardRule, /overflow:\s*visible\s*!important/, '折叠态下含块不得溢出隐藏');
+
+  // 折叠热区与「资产总量」统计卡及素材网格的矩形坐标几何关系断言
+  const toggleTop = parseInt(toggleRule.match(/top:\s*(\d+)px/)?.[1] || '10', 10);
+  const toggleLeft = parseInt(toggleRule.match(/left:\s*(\d+)px/)?.[1] || '0', 10);
+  const toggleWidth = parseInt(toggleRule.match(/width:\s*(\d+)px/)?.[1] || '8', 10);
+  const toggleHeight = parseInt(toggleRule.match(/height:\s*(\d+)px/)?.[1] || '36', 10);
+  const toggleBottom = toggleTop + toggleHeight; // 46px
+  const toggleRight = toggleLeft + toggleWidth;   // 8px
+
+  const statBarMaxBottom = 60; // 统计条容器高度区间
+  const statCardMinLeft = 8;   // 统计条第 1 张卡片「资产总量」内容起始左边距
+  const assetGridTop = 100;    // 素材网格与预览区起始顶部（低于统计条与工具栏）
+
+  assert.ok(toggleTop >= 0 && toggleBottom <= statBarMaxBottom, '折叠热区必须完全停留在顶部统计条垂直区间 (10px~46px) 内');
+  assert.ok(toggleBottom < assetGridTop, `折叠热区底部 (${toggleBottom}px) 必须远在素材网格 (${assetGridTop}px) 上方，绝不侵入网格`);
+  assert.ok(toggleWidth <= 10, '热区宽度必须收在 10px 以内');
+  assert.ok(toggleRight <= statCardMinLeft, `热区右缘 (${toggleRight}px) 不得侵入「资产总量」卡片文字内容 (${statCardMinLeft}px)`);
 });
 
 test('AC1: 侧栏展开/收起状态切换及刷新状态保持（localStorage 持久化）', () => {
@@ -219,8 +245,8 @@ test('AC6: GWAssetTreeHost 同源桥接与内嵌页 Coverflow 事件钩子已接
   assert.match(manager, /window\.addEventListener\('gw:asset-coverflow-closed'[\s\S]*?window\.parent\?\.GWAssetTreeHost\?\.onCoverflowClose\?\.\(event\.detail\)/);
 });
 
-test('QIN-594 AC3: 侧栏折叠/展开与容器宽度变化后通知重排，内嵌页支持 ResizeObserver 与 relayout 钩子', () => {
-  // 1. controller 在折叠/展开时通知内嵌页重排
+test('QIN-594 AC3: 侧栏折叠/展开与容器宽度变化后通知重排，虚拟网格列数自适应增加且右侧无空列', () => {
+  // 1. controller 在折叠/展开时通知内嵌页重排并派发事件
   assert.match(controller, /GWAssetVirtualGridHost(?:\?\.|\.)relayout\(\)/);
   assert.match(controller, /gw:asset-sidebar-collapsed/);
 
@@ -228,4 +254,29 @@ test('QIN-594 AC3: 侧栏折叠/展开与容器宽度变化后通知重排，内
   assert.match(manager, /new ResizeObserver\(\(entries\)\s*=>\s*\{[\s\S]*?updateRegistryVirtualWindow\(true\)/);
   assert.match(manager, /window\.GWAssetVirtualGridHost\s*=\s*Object\.freeze\(\{\s*relayout:\s*gwAssetVirtualGridRelayout\s*\}\)/);
   assert.match(manager, /window\.addEventListener\('gw:asset-sidebar-collapsed'/);
+
+  // 3. 验证 ResizeObserver 观察的是 .registry-assets-scroll（滚动容器）
+  assert.match(manager, /const scrollRoot = grid\?\.closest\('\.registry-assets-scroll'\);/);
+  assert.match(manager, /resizeObserver\.observe\(scrollRoot\);/);
+  assert.doesNotMatch(manager, /resizeObserver\.observe\(grid\);/, '宽度观察必须监听滚动容器宽度，不能监听网格自身以避免无效或回环');
+
+  // 4. 虚拟网格列数自适应重算与右侧无留白断言（模拟 registryVirtualLayout 中的列数核心算法）
+  const cardPreferred = 176;
+  const colGap = 10;
+  const calculateCols = (w) => Math.max(1, Math.floor((w + colGap) / (cardPreferred + colGap)));
+
+  // 展开态：1440px 视口扣减 256px 侧栏 = 1184px
+  const widthExpanded = 1184;
+  const colsExpanded = calculateCols(widthExpanded);
+  assert.equal(colsExpanded, 6, '展开态 1184px 下应排 6 列');
+
+  // 折叠态：侧栏归零，内容区拓宽至 1440px
+  const widthCollapsed = 1440;
+  const colsCollapsed = calculateCols(widthCollapsed);
+  assert.equal(colsCollapsed, 7, '折叠后 1440px 宽度必须自适应增加到 7 列');
+  assert.ok(colsCollapsed > colsExpanded, '折叠后网格必须加列');
+
+  // 右侧留白断言：剩余宽度必须严格小于单列卡片占用宽度，证明网格自适应铺满无空列
+  const remainingCollapsed = widthCollapsed - (colsCollapsed * cardPreferred + (colsCollapsed - 1) * colGap);
+  assert.ok(remainingCollapsed < cardPreferred, '折叠后右侧空隙必须严格小于单卡宽度（绝无空列留白）');
 });

@@ -35,6 +35,7 @@
   --gw-type-button-md: 12px;
   --gw-type-button-sm: 11px;
   --gw-type-button-xs: 9.5px;
+  --gw-type-count-lg: 16.5px; /* QIN-594: 树节点/列表放大计数字阶 (11px -> 16.5px) */
   --gw-danger-cap: #8c0000;
   --gw-danger-well: #500000;
   --gw-button-disabled-bg: #1a1d24;

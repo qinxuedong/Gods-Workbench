@@ -94,13 +94,13 @@
       overflow: visible !important;
       min-height: 0 !important;
     }
-    /* QIN-594: 折叠后金色竖线停留在统计条「资产总量」按钮左侧（top: 10px, left: 0），不侵入素材网格与预览区 */
+    /* QIN-594: 折叠后金色竖线停留在统计条「资产总量」按钮左侧（top: 10px, left: 0），不侵入素材网格与预览区；热区收进 8px 避免与统计卡左缘重叠 */
     #assetVaultSidebar.is-collapsed #assetSidebarToggle {
       position: absolute;
       top: 10px;
       left: 0;
       height: 36px;
-      width: 12px;
+      width: 8px;
       z-index: 50;
     }
     #assetVaultSidebar.is-collapsed #assetSidebarToggle::before {
@@ -126,16 +126,27 @@
     .asset-shell-nav-button span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .asset-shell-nav-button .asset-shell-nav-label { flex: 1 1 auto; font-size: var(--gw-type-body) !important; font-weight: 400; line-height: var(--gw-leading-body-md); transform: none !important; }
     .asset-shell-nav-button:hover { border-color: rgb(223 195 132 / .6) !important; background: linear-gradient(180deg,#191e2b 0%,#11131c 100%) !important; color: #eddab3 !important; }
-    /* QIN-594: 选中态文字为金色，边框与底色对齐「资产总量」primary active 态 */
-    .asset-shell-nav-button.is-active {
+    /* QIN-594: 选中态文字为金色，边框与底色对齐「资产总量」primary active 态，ID选择器提权压制全局 tree-node-card */
+    #assetVaultSidebar .asset-shell-nav-button-sub:is(.is-active, .active),
+    #assetVaultSidebar .asset-shell-nav-button:is(.is-active, .active),
+    .topbar-master-deck ~ * > aside .asset-shell-nav-button:is(.is-active, .active) {
       border-color: #dfc384 !important;
       background: color-mix(in srgb, #dfc384 12%, #151820) !important;
       color: #dfc384 !important;
       font-weight: 400;
-      box-shadow: 0 0 8px rgb(223 195 132 / .2), inset 0 0 0 1px rgb(223 195 132 / .12);
+      box-shadow: 0 0 8px rgb(223 195 132 / .2), inset 0 0 0 1px rgb(223 195 132 / .12) !important;
     }
-    .asset-shell-nav-button.is-active svg { color: #dfc384 !important; }
-    .asset-shell-nav-button.is-active .asset-shell-nav-label { color: #dfc384 !important; }
+    #assetVaultSidebar .asset-shell-nav-button:is(.is-active, .active) * {
+      color: #dfc384 !important;
+    }
+    #assetVaultSidebar .asset-shell-nav-button:is(.is-active, .active) :is(svg, .asset-shell-nav-label, .asset-shell-nav-count, span) {
+      color: #dfc384 !important;
+    }
+    #assetVaultSidebar .asset-shell-nav-button:is(.is-active, .active):hover {
+      border-color: #dfc384 !important;
+      background: color-mix(in srgb, #dfc384 16%, #151820) !important;
+      color: #dfc384 !important;
+    }
     .asset-shell-nav-sublist { display: flex; flex-direction: column; gap: 12px; margin: 12px 0 0 12px; padding: 2px 0 0 12px; border-left: 1px solid rgb(223 195 132 / .35); }
     .asset-shell-nav-sublist[hidden] { display: none !important; }
     /* QIN-594: 二级文件夹行图标与文字缩小一档（16px->14px, 14px->12px），右侧统计数字增大50%（11px->16.5px），行间距保持8px不变 */
@@ -158,7 +169,7 @@
       transform: none !important;
     }
     #assetVaultSidebar .asset-shell-nav-button-sub .asset-shell-nav-count {
-      font-size: var(--gw-type-count-lg, 16.5px) !important;
+      font-size: var(--gw-type-count-lg) !important;
       line-height: 1 !important;
     }
     .asset-shell-nav-button-sub::before { content: "" !important; left: -13px; width: 12px; height: 1px; background: rgb(223 195 132 / .4); }
@@ -166,7 +177,7 @@
     #assetVaultSidebar .asset-shell-nav-button::before { content: "" !important; position: absolute; left: -14px; top: 50%; width: 6px; height: 1.5px; background: rgb(223 195 132 / .6); z-index: 2; pointer-events: none; }
     #assetVaultSidebar .asset-shell-nav-button-sub::before { left: -21px; width: 6px; }
     #assetVaultSidebar .asset-shell-nav-button .card-connector-pin { left: -3px; z-index: 3; background: #403a2f; border-color: rgb(223 195 132 / .3); box-shadow: none; opacity: .55; }
-    #assetVaultSidebar .asset-shell-nav-button.is-active .card-connector-pin { background: #dfc384; border-color: #f3dfb6; box-shadow: 0 0 4px 1px rgb(223 195 132 / .6); opacity: 1; }
+    #assetVaultSidebar .asset-shell-nav-button:is(.is-active, .active) .card-connector-pin { background: #dfc384; border-color: #f3dfb6; box-shadow: 0 0 4px 1px rgb(223 195 132 / .6); opacity: 1; }
     .asset-shell-nav-button-sub .card-connector-pin { width: 4px; height: 4px; left: -3px; }
     .asset-shell-nav-button .card-connector-pin { left: -3px; }
     .asset-shell-nav-empty { display: block; padding: 5px 7px; color: #727b88; font-size: var(--gw-type-body-sm); line-height: var(--gw-leading-body-sm); }
@@ -218,7 +229,7 @@
       .asset-shell-workspace { flex-direction: column !important; }
       #assetVaultSidebar { width: 100% !important; max-height: 150px; height: auto !important; flex: 0 0 auto; flex-direction: row !important; border-right: 0 !important; border-bottom: 1px solid #191c24; }
       #assetVaultSidebar.is-collapsed { height: 0 !important; max-height: 0 !important; border-bottom: none !important; }
-      #assetVaultSidebar.is-collapsed #assetSidebarToggle { top: 10px; left: 0; }
+      #assetVaultSidebar.is-collapsed #assetSidebarToggle { top: 10px; left: 0; width: 8px; }
       #assetSidebarCreate { width: 28px !important; height: 28px; min-height: 28px; flex-basis: 28px; padding: 0; }
       #assetCategories { min-width: 0; min-height: 0; flex: 1 1 auto !important; flex-direction: row !important; align-items: flex-start; overflow-x: auto !important; overflow-y: hidden !important; padding: 6px !important; }
       .asset-shell-nav-group { min-width: 180px; flex: 0 0 auto; margin: 0; padding-left: 15px; }

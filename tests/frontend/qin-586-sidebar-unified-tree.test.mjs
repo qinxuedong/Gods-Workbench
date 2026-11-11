@@ -7,6 +7,8 @@ import test from 'node:test';
 const html = readFileSync(new URL('../../web/pages/assets.html', import.meta.url), 'utf8');
 const controller = readFileSync(new URL('../../web/js/controllers/assets-controller.js', import.meta.url), 'utf8');
 const manager = readAssetManagerAggregate();
+const tokens = readFileSync(new URL('../../web/css/base/hardware-tokens.css', import.meta.url), 'utf8');
+const designSystem = readFileSync(new URL('../../web/css/base/hardware-design-system.css', import.meta.url), 'utf8');
 
 test('AC1: 结构统一为一棵资源库树，去掉「资源入口」与「挂载文件夹」分段', () => {
   // 1. 顶部总览卡与新建资源库按钮
@@ -215,21 +217,50 @@ test('AC6: 资源库行与子文件夹行视觉约为 0.8 倍，特异性与 !im
   assert.match(html, /\.asset-shell-nav-button \.asset-shell-nav-label \{[^}]*transform:\s*none !important;/);
 });
 
-test('QIN-594 AC4 & AC5: 二级文件夹行图标与文字缩小一档、统计数字增大50%、选中态对标「资产总量」', () => {
-  // 1. 二级文件夹行图标与文字缩小一档（16px->14px, 14px->12px）
-  assert.match(html, /#assetVaultSidebar\s*\.asset-shell-nav-button-sub\s*svg\s*\{[^}]*width:\s*14px\s*!important/);
-  assert.match(html, /#assetVaultSidebar\s*\.asset-shell-nav-button-sub\s*svg\s*\{[^}]*height:\s*14px\s*!important/);
-  assert.match(html, /#assetVaultSidebar\s*\.asset-shell-nav-button-sub\s*\{[^}]*font-size:\s*var\(--gw-type-body-sm\)\s*!important/);
-  assert.match(html, /#assetVaultSidebar\s*\.asset-shell-nav-button-sub\s*\.asset-shell-nav-label\s*\{[^}]*font-size:\s*var\(--gw-type-body-sm\)\s*!important/);
+test('QIN-594 AC4 & AC5: 二级文件夹行图标与文字缩小一档、统计数字增大50%、选中态对标「资产总量」且特异性压制全局样式', () => {
+  // 1. 二级文件夹行图标与文字缩小一档（限定在独立规则块内匹配）
+  const svgRuleMatch = html.match(/#assetVaultSidebar\s+\.asset-shell-nav-button-sub\s+svg\s*\{([^}]+)\}/);
+  assert.ok(svgRuleMatch, '必须包含二级行 svg 独立规则块');
+  assert.match(svgRuleMatch[1], /width:\s*14px\s*!important/);
+  assert.match(svgRuleMatch[1], /height:\s*14px\s*!important/);
 
-  // 2. 右侧统计数字增大 50%（当前 11px -> 约 16.5px）
-  assert.match(html, /#assetVaultSidebar\s*\.asset-shell-nav-button-sub\s*\.asset-shell-nav-count\s*\{[^}]*font-size:\s*var\(--gw-type-count-lg,\s*16\.5px\)\s*!important/);
+  const subBtnRuleMatch = html.match(/#assetVaultSidebar\s+\.asset-shell-nav-button-sub\s*\{([^}]+)\}/);
+  assert.ok(subBtnRuleMatch, '必须包含二级行按钮自身独立规则块');
+  assert.match(subBtnRuleMatch[1], /font-size:\s*var\(--gw-type-body-sm\)\s*!important/);
 
-  // 3. 选中态：文字金色（#dfc384），边框与底色参照「资产总量」按钮选中态
-  assert.match(html, /\.asset-shell-nav-button\.is-active\s*\{[^}]*color:\s*#dfc384\s*!important/);
-  assert.match(html, /\.asset-shell-nav-button\.is-active\s*\{[^}]*border-color:\s*#dfc384\s*!important/);
-  assert.match(html, /\.asset-shell-nav-button\.is-active\s*\{[^}]*background:\s*color-mix\(in srgb,\s*#dfc384 12%,\s*#151820\)\s*!important/);
+  const labelRuleMatch = html.match(/#assetVaultSidebar\s+\.asset-shell-nav-button-sub\s+\.asset-shell-nav-label\s*\{([^}]+)\}/);
+  assert.ok(labelRuleMatch, '必须包含二级行标签独立规则块');
+  assert.match(labelRuleMatch[1], /font-size:\s*var\(--gw-type-body-sm\)\s*!important/);
 
-  // 4. 同一时刻只有一个选中项：activateTreeEntry 同步更新 updateSidebarSelection 与 syncOverviewSelection
+  // 2. 右侧统计数字增大 50%：必须通过 hardware-tokens.css 正式登记的 --gw-type-count-lg (16.5px)，不靠裸像素回退
+  assert.match(tokens, /--gw-type-count-lg:\s*16\.5px\s*;/, 'hardware-tokens.css 必须正式登记 --gw-type-count-lg 字阶');
+  const countRuleMatch = html.match(/#assetVaultSidebar\s+\.asset-shell-nav-button-sub\s+\.asset-shell-nav-count\s*\{([^}]+)\}/);
+  assert.ok(countRuleMatch, '必须包含二级行计数独立规则块');
+  assert.match(countRuleMatch[1], /font-size:\s*var\(--gw-type-count-lg\)\s*!important/);
+  assert.doesNotMatch(countRuleMatch[1], /var\(--gw-type-count-lg,\s*16\.5px\)/, '不得通过未登记 token 加裸像素回退蒙混排版门禁');
+
+  // 3. 选中态计算样式与特异性层叠验证（彻底防止全局 tree-node-card !important 覆盖）
+  // 全局规则：.topbar-master-deck ~ * > aside :is(.tree-node-card, ...) 权重为 (0, 2, 1)
+  assert.match(designSystem, /\.topbar-master-deck\s*~\s*\* > aside\s*:is\(\.tree-node-card/);
+
+  // 局部选中态规则必须带有 #assetVaultSidebar (ID 选择器，权重 1, 2, 0)
+  const activeRuleMatch = html.match(/#assetVaultSidebar\s+\.asset-shell-nav-button(?:-sub)?\s*:is\(\.is-active,\s*\.active\)[^{]*\{([^}]+)\}/);
+  assert.ok(activeRuleMatch, '选中态选择器必须通过 #assetVaultSidebar ID 提升特异性');
+  const activeRule = activeRuleMatch[1];
+  assert.match(activeRule, /border-color:\s*#dfc384\s*!important/, '边框必须为金色 #dfc384 对标「资产总量」');
+  assert.match(activeRule, /background:\s*color-mix\(in srgb,\s*#dfc384 12%,\s*#151820\)\s*!important/, '底色必须为浅金底对标「资产总量」');
+  assert.match(activeRule, /color:\s*#dfc384\s*!important/);
+
+  // 子元素染色规则验证：计数与图标必须一并染成金色
+  const childrenColorMatch = html.match(/#assetVaultSidebar\s+\.asset-shell-nav-button:is\(\.is-active,\s*\.active\)\s*\*\s*\{([^}]+)\}/);
+  assert.ok(childrenColorMatch, '必须包含针对选中项所有子元素的染色规则');
+  assert.match(childrenColorMatch[1], /color:\s*#dfc384\s*!important/, '计数等子元素必须显式强制染成主金 #dfc384，不再继承浅白');
+
+  // 4. Controller 逻辑：同时注入与切换 is-active 与 active，确保与全局/局部选择器完全对齐
+  assert.match(controller, /button\.classList\.toggle\('is-active',\s*active\);[\s\S]*?button\.classList\.toggle\('active',\s*active\);/);
+  assert.match(controller, /button\.className\s*=\s*`asset-shell-nav-button tree-node-card\$\{row\.active \? ' is-active active' : ''\}/);
+  assert.match(controller, /overview\?\.classList\.toggle\('is-active',\s*registryActive\);[\s\S]*?overview\?\.classList\.toggle\('active',\s*registryActive\);/);
+
+  // 5. 同一时刻只有一个选中项：activateTreeEntry 同步更新 updateSidebarSelection 与 syncOverviewSelection
   assert.match(controller, /function activateTreeEntry\(key\)\s*\{[\s\S]*?updateSidebarSelection\(selectedId\);[\s\S]*?syncOverviewSelection\(selectedId\);/);
 });
