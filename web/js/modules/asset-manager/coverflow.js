@@ -30,11 +30,30 @@ const VIDEO_EXTENSIONS = new Set([
     '3gp', 'avi', 'm4v', 'mkv', 'mov', 'mp4', 'mpeg', 'mpg', 'ogv', 'webm',
 ]);
 const WINDOW_RADIUS = 3;
+// QIN-589：全屏几何口径。中心卡目标为基准宽度的 2 倍，夹紧至舞台宽约 62%，
+// 并受 16:9 外框高度约束；两侧从改前紧邻缩放（0.86）起每级外推减半。
+// 返工二：位移不再按平面宽度直接累加——卡片还会经 rotateY / translateZ /
+// perspective 投影，透视收缩会把后两级拉回前卡之下（每侧只剩 1 张）。现按
+// 投影后的屏幕外缘分配可见条带，再反解出平面位移。
+const FULLSCREEN_CENTER_WIDTH_SHARE = 0.62;
+const FULLSCREEN_ADJACENT_SCALE = 0.86;
+// 全屏 3D 投影参数，与 asset-manager-coverflow.css 的 perspective / 卡片
+// rotateY / translateZ 一一对应；嵌入式不使用（保留其既有 3D 序列）。
+const FULLSCREEN_PERSPECTIVE_PX = 1150;
+const FULLSCREEN_ROTATE_DEG_PER_LEVEL = 15;
+const FULLSCREEN_DEPTH_PX_PER_LEVEL = 94;
+// 每级可见条带权重：前两级优先且逐级减半，最外级与轨道边缘相切。
+const FULLSCREEN_STRIP_WEIGHTS = [4, 2, 1];
+// 关闭后焦点归还触发控件时打的静默标记：脚本归还的焦点在 Esc / F 关闭路径仍会
+// 命中 :focus-visible，下一次真实键盘 / 指针交互时移除。
+const FOCUS_QUIET_ATTR = 'data-gw-coverflow-focus-quiet';
 const DRAG_THRESHOLD = 42;
 const WHEEL_THRESHOLD = 36;
 
 let fullscreenView = null;
 let embeddedView = null;
+// QIN-589 返工二：记录当前静默监听的清理函数，避免连续程序化开关累积监听。
+const quietFocusState = {revert: null};
 const EDIT_BACKQUOTE_WINDOW_MS = 500;
 let lastEditBackquoteTap = null;
 
@@ -116,7 +135,7 @@ function normalizeAssets(values) {
             asset.backdropSrc || asset.backdrop_src || asset.thumbnailSrc || asset.thumbnail_url || asset.thumbnailUrl
             || asset.previewUrl || asset.preview_url || asset.src,
         );
-        // A video needs an image poster for the blurred background. Do not
+        // A video needs an image poster for the slide preview. Do not
         // assign the video URL to an <img> when no preview is available.
         const backdropSrc = candidateBackdrop && (kind === 'image' || candidateBackdrop !== mediaSrc)
             ? candidateBackdrop
@@ -314,8 +333,80 @@ function offsetIndexes(view) {
     return offsets.sort((left, right) => left.offset - right.offset);
 }
 
-function applySlidePosition(slide, offset) {
+/**
+ * QIN-589 返工二：全屏 Coverflow 布局计算。
+ *
+ * 目标量是「投影后的屏幕外缘」而不是平面宽度：卡片除 scale 外还会经
+ * rotateY(-15°×level)、translateZ(-94px×level) 与 stage 的 perspective(1150px)
+ * 投影，透视收缩会把后两级拉回前卡之下（审核实测平面外缘 742/820/859 在屏幕上
+ * 只剩 731.6/734.9/700.3，每侧只能看到 1 张）。这里把轨道半宽内的可用空间按
+ * 4:2:1 分配给三级侧卡的可见条带，再按投影关系反解每级平面位移 x，使
+ * getBoundingClientRect 的外缘恰好落在目标位置。只作用于全屏，嵌入式保持原样。
+ */
+function computeFullscreenLayout(view) {
+    const stage = view?.elements?.stage;
+    const track = view?.elements?.track;
+    if (!isElement(stage) || !isElement(track) || !viewItem(view)) return null;
+    const stageWidth = stage.clientWidth || 0;
+    const trackWidth = track.clientWidth || 0;
+    const trackHeight = track.clientHeight || 0;
+    const baseSlide = track.querySelector('.gw-coverflow-slide.is-current') || track.querySelector('.gw-coverflow-slide');
+    const baseWidth = baseSlide?.offsetWidth || 0;
+    if (!stageWidth || !trackWidth || !baseWidth) return null;
+    const centerWidth = Math.min(
+        baseWidth * 2,
+        stageWidth * FULLSCREEN_CENTER_WIDTH_SHARE,
+        trackHeight * 16 / 9,
+    );
+    const sideWidths = [];
+    for (let level = 1; level <= WINDOW_RADIUS; level += 1) {
+        sideWidths.push(FULLSCREEN_ADJACENT_SCALE * baseWidth / 2 ** (level - 1));
+    }
+    const centerEdge = centerWidth / 2;
+    const available = Math.max(0, trackWidth / 2 - centerEdge);
+    const weightTotal = FULLSCREEN_STRIP_WEIGHTS.reduce((sum, weight) => sum + weight, 0);
+    const positions = [];
+    const edges = [];
+    let targetEdge = centerEdge;
+    for (let level = 1; level <= WINDOW_RADIUS; level += 1) {
+        targetEdge += available * FULLSCREEN_STRIP_WEIGHTS[level - 1] / weightTotal;
+        edges.push(targetEdge);
+        // 右侧卡片 rotateY(负角) 使外缘(右边缘)更靠近观众、内缘更远；
+        // 投影因子为 p/(p-Z)，作用于「平面位移 + 缩放后半宽×cosθ」。
+        // 反解 x：x = E·(p-Z)/p − (s·W0/2)·cosθ。左右镜像对称。
+        const theta = -FULLSCREEN_ROTATE_DEG_PER_LEVEL * level * Math.PI / 180;
+        const half = sideWidths[level - 1] / 2;
+        const outerDepth = -level * FULLSCREEN_DEPTH_PX_PER_LEVEL - half * Math.sin(theta);
+        const screenPerPlane = FULLSCREEN_PERSPECTIVE_PX / (FULLSCREEN_PERSPECTIVE_PX - outerDepth);
+        positions.push(targetEdge / screenPerPlane - half * Math.cos(theta));
+    }
+    return {
+        centerScale: centerWidth / baseWidth,
+        sideScales: sideWidths.map(width => width / baseWidth),
+        positions,
+        edges,
+        centerEdge,
+    };
+}
+
+function applySlidePosition(slide, offset, layout = null) {
     const distance = Math.min(Math.abs(offset), WINDOW_RADIUS);
+    if (layout) {
+        // QIN-589 全屏：中心按夹紧后的 2 倍目标宽度；两侧从改前紧邻缩放起每级减半；
+        // x 取按投影后外缘反解出的位移（见 computeFullscreenLayout）。
+        const level = distance;
+        const scale = level === 0 ? layout.centerScale : layout.sideScales[level - 1];
+        const x = level === 0 ? 0 : layout.positions[level - 1] * (offset < 0 ? -1 : 1);
+        slide.style.setProperty('--gw-coverflow-scale', String(scale));
+        slide.style.setProperty('--gw-coverflow-x', `${x}px`);
+        slide.style.setProperty('--gw-coverflow-z', `${-level * FULLSCREEN_DEPTH_PX_PER_LEVEL}px`);
+        slide.style.setProperty('--gw-coverflow-rotate', `${offset * -FULLSCREEN_ROTATE_DEG_PER_LEVEL}deg`);
+        slide.style.setProperty('--gw-coverflow-opacity', String(Math.max(0.2, 1 - level * 0.26)));
+        slide.style.setProperty('--gw-coverflow-gray', String(Math.min(0.88, level * 0.31)));
+        slide.style.zIndex = String(40 - level);
+        return;
+    }
+    // 嵌入式：保持改前的固定 20vw 步长与 3D 序列，票面明确不在改动范围。
     const scale = Math.max(0.58, 1 - distance * 0.14);
     const opacity = Math.max(0.2, 1 - distance * 0.26);
     slide.style.setProperty('--gw-coverflow-x', `${offset * 20}vw`);
@@ -327,11 +418,24 @@ function applySlidePosition(slide, offset) {
     slide.style.zIndex = String(40 - distance);
 }
 
+/** QIN-589 返工二：尺寸尚未量到时下一帧重试，避免回落到嵌入式 20vw 序列。 */
+function scheduleFullscreenLayoutRetry(view) {
+    if (view.closed || fullscreenView !== view || view.layoutRetryPending) return;
+    const attempts = view.layoutRetryCount || 0;
+    if (attempts >= 3) return;
+    view.layoutRetryPending = true;
+    view.layoutRetryCount = attempts + 1;
+    requestAnimationFrame(() => {
+        view.layoutRetryPending = false;
+        if (view.closed || fullscreenView !== view) return;
+        renderSlides(view);
+    });
+}
+
 function renderSlides(view, {focusCurrent = false} = {}) {
-    const {track, background, count, title} = view.elements;
+    const {track, count, title} = view.elements;
     if (!track) return;
     const current = viewItem(view);
-    if (background) background.src = current?.backdropSrc || '';
     const total = Math.max(view.items.length, Number(view.total) || 0);
     if (count) count.textContent = current ? `${view.currentIndex + 1} / ${total}` : `0 / ${total}`;
     if (title) title.textContent = current?.name || '暂无可展示图片';
@@ -345,6 +449,7 @@ function renderSlides(view, {focusCurrent = false} = {}) {
         return;
     }
 
+    const positioned = [];
     offsetIndexes(view).forEach(({index, offset}) => {
         const item = view.items[index];
         const slide = createButton({
@@ -357,7 +462,6 @@ function renderSlides(view, {focusCurrent = false} = {}) {
         slide.dataset.gwCoverflowMediaKind = item.mediaKind;
         slide.setAttribute('aria-current', index === view.currentIndex ? 'true' : 'false');
         slide.tabIndex = index === view.currentIndex ? 0 : -1;
-        applySlidePosition(slide, offset);
         if (view.mode === 'editor') {
             slide.dataset.gwCoverflowDragAsset = item.id;
             slide.addEventListener('click', event => {
@@ -422,8 +526,24 @@ function renderSlides(view, {focusCurrent = false} = {}) {
         media.addEventListener('error', () => slide.classList.add('is-unavailable'), {once: true});
         slide.append(media);
         track.append(slide);
+        positioned.push({slide, offset});
     });
     refreshIcons(track);
+    // QIN-589：全屏先落 DOM 再按舞台实测几何定位——位移计算依赖卡片基准宽度
+    // （CSS 基准宽 min(58vw, 880px, 高度约束)）与轨道实测尺寸。
+    if (view.mode === 'fullscreen') {
+        const layout = computeFullscreenLayout(view);
+        if (layout) {
+            positioned.forEach(({slide, offset}) => applySlidePosition(slide, offset, layout));
+        } else {
+            // 返工二：尺寸为 0（隐藏容器 / 首帧 / 断点切换）时不得回落到嵌入式
+            // 20vw 固定步长；卡片先隐藏，下一帧或 ResizeObserver 按实测几何重试。
+            positioned.forEach(({slide}) => slide.style.setProperty('visibility', 'hidden'));
+            scheduleFullscreenLayoutRetry(view);
+        }
+    } else {
+        positioned.forEach(({slide, offset}) => applySlidePosition(slide, offset));
+    }
     if (focusCurrent) requestAnimationFrame(() => track.querySelector('.gw-coverflow-slide.is-current')?.focus({preventScroll: true}));
 }
 
@@ -536,17 +656,53 @@ function stageWheel(view, event) {
     view.wheelDistance = 0;
 }
 
+/**
+ * QIN-589 AC1：关闭 Coverflow 焦点归还触发控件时，脚本归还的焦点在 Esc / F 关闭
+ * 路径仍会命中金色 :focus-visible。归还瞬间在触发控件上打静默标记，下一次真实
+ * 键盘 / 指针交互时移除——焦点归还（AC2）与 Tab 可见焦点框都不受影响。
+ */
+/** QIN-589 返工二：清理上一对静默监听，避免连续程序化开关时累积。 */
+function clearFocusQuiet() {
+    const previous = quietFocusState.revert;
+    quietFocusState.revert = null;
+    if (typeof previous === 'function') previous();
+}
+
+function markTriggerFocusQuiet(trigger) {
+    clearFocusQuiet();
+    if (!isElement(trigger)) return;
+    trigger.setAttribute(FOCUS_QUIET_ATTR, '');
+    let done = false;
+    const revert = () => {
+        if (done) return;
+        done = true;
+        if (quietFocusState.revert === revert) quietFocusState.revert = null;
+        if (trigger.isConnected) trigger.removeAttribute(FOCUS_QUIET_ATTR);
+        document.removeEventListener('keydown', revert, true);
+        document.removeEventListener('pointerdown', revert, true);
+    };
+    quietFocusState.revert = revert;
+    document.addEventListener('keydown', revert, true);
+    document.addEventListener('pointerdown', revert, true);
+}
+
 function closeFullscreen({restoreFocus = false, notify = true} = {}) {
     const view = fullscreenView;
     if (!view) return false;
     fullscreenView = null;
     view.closed = true;
+    view.stageResizeObserver?.disconnect();
+    view.stageResizeObserver = null;
     view.removeNestedBackdropDismiss?.();
     if (view.overlay?.isConnected) view.overlay.remove();
     document.body.style.overflow = view.previousBodyOverflow;
     if (notify) emit(CLOSED_EVENT, {mode: 'fullscreen', source: view.source});
     if (restoreFocus) {
-        requestAnimationFrame(() => resolveTrigger(view)?.focus?.({preventScroll: true}));
+        requestAnimationFrame(() => {
+            const trigger = resolveTrigger(view);
+            trigger?.focus?.({preventScroll: true});
+            if (trigger && document.activeElement === trigger) markTriggerFocusQuiet(trigger);
+        });
     }
     return true;
 }
@@ -729,19 +885,15 @@ function createSurface(view) {
 
 function openFullscreen(view) {
     closeFullscreen({notify: false});
+    // 重新打开即视为一次真实交互：撤掉上一次关闭留下的静默监听与标记。
+    clearFocusQuiet();
     const overlay = document.createElement('div');
     overlay.className = 'gw-coverflow-overlay';
     overlay.dataset.gwCoverflowOverlay = '';
-    const background = document.createElement('img');
-    background.className = 'gw-coverflow-backdrop';
-    background.alt = '';
-    background.setAttribute('aria-hidden', 'true');
-    const veil = document.createElement('div');
-    veil.className = 'gw-coverflow-veil';
+    // QIN-589：舞台改纯深色实底，不再挂模糊大图与 screen 混合遮罩。
     const surface = createSurface(view);
-    overlay.append(background, veil, surface);
+    overlay.append(surface);
     view.overlay = overlay;
-    view.elements.background = background;
     view.previousBodyOverflow = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
     document.body.append(overlay);
@@ -778,6 +930,16 @@ function openFullscreen(view) {
     renderSlides(view);
     refreshIcons(overlay);
     requestAnimationFrame(() => surface.querySelector('[data-gw-coverflow-action="close"]')?.focus({preventScroll: true}));
+    // QIN-589：舞台尺寸变化（窗口缩放、断点切换基准宽）时重算布局。
+    const stage = view.elements.stage;
+    view.lastStageSize = `${stage.clientWidth}x${stage.clientHeight}`;
+    view.stageResizeObserver = new ResizeObserver(() => {
+        const size = `${stage.clientWidth}x${stage.clientHeight}`;
+        if (view.closed || fullscreenView !== view || size === view.lastStageSize) return;
+        view.lastStageSize = size;
+        renderSlides(view);
+    });
+    view.stageResizeObserver.observe(stage);
 }
 
 function mountEmbedded(view) {

@@ -244,6 +244,16 @@ body.gw-signal.gw-page--asset-manager .registry-toolbar .hw-btn:not(.btn-segment
     border-color: var(--vault-accent) !important;
     color: var(--vault-gold) !important;
 }
+/* QIN-589：关闭 Coverflow 焦点归还本按钮时不得命中金色 :focus-visible 常亮——
+   Esc / F 关闭路径的脚本焦点归还仍会命中 :focus-visible，coverflow.js 在归还瞬间
+   打上 data-gw-coverflow-focus-quiet 抑制标记；下一次真实键盘 / 指针交互移除标记，
+   Tab 聚焦时标记已清，可见焦点框（金色描边）照常生效。 */
+body.gw-signal.gw-page--asset-manager :is(#assetBoardTabs,.registry-content) .registry-toolbar .registry-coverflow-open[data-gw-coverflow-focus-quiet] {
+    outline: none !important;
+    border-color: var(--vault-line) !important;
+    background: linear-gradient(180deg,var(--vault-top),var(--vault-bottom)) !important;
+    box-shadow: inset 0 1px rgb(255 255 255 / .045), 0 1px 2px rgb(0 0 0 / .38) !important;
+}
 body.gw-signal.gw-page--asset-manager .registry-toolbar svg { width: 13px; height: 13px; }
 body.gw-signal.gw-page--asset-manager .registry-toolbar-select > span { padding: 0 5px;   font-family:var(--gw-font-body); font-size:var(--gw-type-body-md); line-height:var(--gw-leading-body-md); font-weight:var(--gw-weight-regular); letter-spacing:0; min-height:40px; height:auto; max-height:none;}
 body.gw-signal.gw-page--asset-manager .registry-layout-switch { padding: 0; }
