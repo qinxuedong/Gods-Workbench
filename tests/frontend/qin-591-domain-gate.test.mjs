@@ -771,6 +771,12 @@ after(() => {
 test('QIN-591：真实 ESM 加载 14 个延后域与主文件，导出面必须闭合（AC5）', async () => {
     ensureDomStub();
     const root = makeProductTree();
+    // 临时树必须是产品源码的逐字节副本：补的 package.json 只落在临时根，不在 web/js 里。
+    assert.equal(
+        readFileSync(path.join(root, 'web', 'js', 'modules', 'asset-manager.js'), 'utf8'),
+        mainSource,
+        '临时模块树与仓库源码不一致，真实加载结论无效',
+    );
     const domains = loaderDomains();
     assert.equal(domains.size, 14, `延后域数量应为 14，实际 ${domains.size}`);
 
