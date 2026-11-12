@@ -1,0 +1,26 @@
+{
+  "schema": "gw.cleanroom-admission-shard/v1",
+  "issue": 698,
+  "authorization_basis": "GitHub Issue #698 (QIN-593), 2026-11-11",
+  "files": [
+    "clients/desktop/src/main.rs",
+    "clients/desktop/ui/app.js",
+    "clients/desktop/ui/style.css",
+    "clients/desktop/README.md",
+    "README.md",
+    "README_EN.md",
+    "tests/frontend/qin-593-desktop-auto-launch.test.mjs",
+    "tests/frontend/node-files.txt",
+    "tests/hygiene/fixtures/admissions/issue-698.json"
+  ],
+  "admitted_files": [],
+  "accepted_test_files": [
+    {
+      "path": "tests/frontend/qin-593-desktop-auto-launch.test.mjs",
+      "classification": "curated_test_coverage",
+      "authorization_basis": "GitHub Issue #698 (QIN-593), 2026-11-11",
+      "admission": "accepted"
+    }
+  ],
+  "notes": "QIN-593 / Issue #698: 桌面端启动时未发现实例则自动拉起本机后端；单实例唤醒；托管后端生命周期管理；start.bat 保持不变。"
+}

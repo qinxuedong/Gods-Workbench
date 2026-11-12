@@ -20,6 +20,23 @@ The initial screen checks the local host and each active private IPv4 subnet, ca
 
 Closing the window hides it in the system tray. The tray menu can reopen the Workbench, return to NAS discovery, or quit the client.
 
+## Local backend discovery and automatic launch (QIN-593)
+
+On startup, the desktop client first executes local and private IPv4 network discovery (probing port `2077` and `GET /healthz`). If an existing instance is found (on localhost or LAN), the client connects directly or presents the list of servers without starting a local backend.
+
+If no running instance is discovered on the network, the client automatically launches the local backend in production mode:
+- **Backend root resolution**: Checked in the following order:
+  1. `GW_BACKEND_ROOT` or `GW_ROOT_DIR` environment variables (must contain `run.py` and `gw/`).
+  2. Current working directory.
+  3. Parent directory hierarchy up to 6 levels above the running executable.
+- **Python executable resolution**: Checked in the following order:
+  1. `GW_PYTHON` environment variable pointing to a Python executable.
+  2. Project virtual environment at `<backend_root>/.venv/Scripts/python.exe` (Windows) or `.venv/bin/python` (Unix), or `venv/`.
+  3. System PATH `python` or `python3` command (verified via `--version`).
+- **Execution & Port**: Runs `python run.py --prod` bound to `127.0.0.1:2077` without `--open-browser` (no external browser is silently launched). If port `2077` is already bound by a foreign process, launch aborts with an actionable error and guidance.
+- **Single Instance**: Arbitrated via atomic exclusive lock file creation (`create_new`). Concurrent or subsequent launches wake and focus the existing desktop window (even if hidden in the system tray) and cleanly exit without spawning duplicate client processes or duplicate backends.
+- **Lifecycle**: Backends launched by the desktop client terminate when the user chooses "Quit" from the tray menu. Backends launched externally (such as via `start.bat`) are never stopped by the desktop client.
+
 ## Directory bridge commands (QIN-432)
 
 The client registers `tauri-plugin-dialog` and exposes five bridge commands: `pick_client_folder`, `pick_client_upload_files`, `read_client_file`, `get_client_setting`, and `set_client_setting`. They let the connected server page open the **client's own** native folder dialog and persist the client-side upload source directory next to the saved server URL in the OS application settings directory (`client.json`). Client settings never leave the device: they are not submitted to the server and are not validated against server allowed roots.
