@@ -1439,7 +1439,11 @@ html.vault-shell-embedded body.gw-signal.gw-page--asset-manager #assetManagerRoo
 }
 @media (max-width: 900px) {
     /* 窄屏将左栏放到第 3 行、内容放到第 4 行；需覆盖上方嵌入式左栏跨行 !important 与后置 registry-content 第 3 行规则。 */
-    html.vault-shell-embedded body.gw-signal.gw-page--asset-manager #assetManagerRoot {
+    html.vault-shell-embedded body.gw-signal.gw-page--asset-manager #assetManagerRoot,
+    /* 【QIN-602】窄屏单列必须同时压过 .asset-manager-root-registry / -library 上更具体的一行两列
+       !important 规则，否则根网格仍是「0 宽首列 + 内容列」，而子元素已被钉在首列 → 内容区宽 0。 */
+    html.vault-shell-embedded body.gw-signal.gw-page--asset-manager #assetManagerRoot.asset-manager-root-registry,
+    html.vault-shell-embedded body.gw-signal.gw-page--asset-manager #assetManagerRoot.asset-manager-root-library {
         grid-template-columns: minmax(0,1fr) !important;
         grid-template-rows: auto auto auto minmax(360px,1fr) auto !important;
     }

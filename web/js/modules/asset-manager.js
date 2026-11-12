@@ -5050,32 +5050,60 @@ let assetViewTopbarSnapshot = null;
 function embeddedAssetTopbarMarkup(snapshot){
     return `${renderRegistryOverview()}${renderRegistryToolbar(null, snapshot.title, snapshot.subtitle, {allowUrl:true,hideHeading:snapshot.hideHeading})}`;
 }
+function embeddedTopbarPresent(){
+    // 判重不只看 class 名：顶栏两个节点各打专属标记，避免与其它面板同名 class 混淆。
+    return Boolean(root.querySelector('[data-asset-view-topbar]'));
+}
+function markInsertedTopbar(){
+    // 顶栏固定由「总览 + 工具栏」两段组成，afterbegin 插入后即前两个子节点。
+    for(const node of [...root.children].slice(0, 2)) node.setAttribute('data-asset-view-topbar', '');
+}
 function restoreEmbeddedAssetTopbar(seq){
     const snapshot = assetViewTopbarSnapshot;
     if(!snapshot || snapshot.seq !== seq || seq !== assetViewRenderSeq || snapshot.tab !== activeTab) return;
     // 内容渲染未整块覆盖（或已补过）时不重复插入，避免两排顶栏。
-    if(root.querySelector('.registry-overview-shell') || root.querySelector('.registry-toolbar')) return;
+    if(embeddedTopbarPresent()) return;
     root.insertAdjacentHTML('afterbegin', embeddedAssetTopbarMarkup(snapshot));
-    refreshIcons();
+    markInsertedTopbar();
+    try{
+        refreshIcons();
+    }catch(error){
+        // 图标刷新失败不得连带把已经渲染成功的内容判成失败（调用方会 catch 后画错误面板）。
+        console.error('资产视图图标刷新失败', error);
+    }
 }
-function showEmbeddedAssetViewFailure(seq, error){
+function showEmbeddedAssetViewFailure(seq, domain, error){
+    // 【QIN-602】失败必须留痕：用户一切走，域模块的真实错误就再无痕迹，无法排查。
+    // 过期代际的失败只记日志、不写面板——面板属于最后选中的那个视图。
+    console.error(`资产视图渲染失败: ${domain || 'unknown'}`, error);
     if(seq !== assetViewRenderSeq) return;
     const message = String(error?.message || error || '视图加载失败');
-    root.innerHTML = `<section class="asset-panel asset-content asset-view-load-error" role="alert" data-asset-view-error><div class="content-toolbar"><div class="content-heading"><strong>视图加载失败</strong><span>${escapeHtml(message)}</span></div></div></section>`;
+    // 复用既有面板类：非嵌入态保留左栏树，嵌入态 renderAssetTreePanel 本就返回空串。
+    root.innerHTML = `${renderAssetTreePanel()}<section class="asset-panel asset-content asset-view-load-error" role="alert" data-asset-view-error><div class="content-toolbar"><div class="content-heading"><strong>视图加载失败</strong><span>${escapeHtml(message)}</span></div></div><div class="content-scroll"><div class="tree-empty">${escapeHtml(message)}</div></div></section>`;
     restoreEmbeddedAssetTopbar(seq);
 }
 function runAssetViewRenderer(seq, domain, request, invoke){
+    const fail = error => showEmbeddedAssetViewFailure(seq, domain, error);
     Promise.resolve(request).then(api => {
         // 切走后旧 Promise 回来不得写入当前视图（内容与顶栏都只属于最后选中的视图）。
         if(seq !== assetViewRenderSeq) return;
-        try{ invoke(api); }
-        catch(error){ showEmbeddedAssetViewFailure(seq, error); return; }
+        let outcome;
+        try{
+            outcome = invoke(api);
+        }catch(error){
+            fail(error);
+            return;
+        }
         restoreEmbeddedAssetTopbar(seq);
-    }).catch(error => showEmbeddedAssetViewFailure(seq, error));
+        // 接住返回值：域渲染器以后改成 async 时，内容落地后要再补一次顶栏，失败仍落到同一面板。
+        Promise.resolve(outcome).then(() => restoreEmbeddedAssetTopbar(seq)).catch(fail);
+    }).catch(fail);
 }
 function renderActiveAssetView(){
     const viewSeq = ++assetViewRenderSeq;
     assetViewTopbarSnapshot = null;
+    // 派发时先捕获看板：回调里再求值会读到用户已经切走的那个 tab。
+    const boardAtDispatch = assetBoardById(activeTab);
     // 新代际从干净容器开始：旧代际若因异步结果被丢弃而没写内容，旧顶栏会残留，
     // 直接再插就会累积多排且标题串台。各内容分支都会重写 root.innerHTML，
     // 仅嵌入态清空（非嵌入态没有顶栏，沿用原有渲染语义）。
@@ -5089,10 +5117,13 @@ function renderActiveAssetView(){
     else if(activeTab === 'inbox') runAssetViewRenderer(viewSeq, 'inbox', gwLoad('inbox'), m => m.renderInboxManager());
     else if(activeTab === 'local') runAssetViewRenderer(viewSeq, 'upload', gwLoad('upload'), m => m.renderLocalManager());
     else if(activeTab === 'canvas-assets') runAssetViewRenderer(viewSeq, 'canvas', gwLoad('canvas'), m => m.renderCanvasAssetsManager());
-    else if(assetBoardById(activeTab)?.system === false) runAssetViewRenderer(viewSeq, 'organize', gwLoad('organize'), m => m.renderCustomAssetLibrary(assetBoardById(activeTab)));
+    else if(boardAtDispatch?.system === false) runAssetViewRenderer(viewSeq, 'organize', gwLoad('organize'), m => m.renderCustomAssetLibrary(boardAtDispatch));
+    // 看板已被删除而 activeTab 还停在旧 id：必须经挂载文件夹渲染器的无效看板旁路回到总览，
+    // 不能落到兼容期的通用资源视图（那里没有顶栏快照语义）。
+    else if(!boardAtDispatch && activeTab !== 'assets') runAssetViewRenderer(viewSeq, 'organize', gwLoad('organize'), m => m.renderCustomAssetLibrary(null));
     else runAssetViewRenderer(viewSeq, 'organize', gwLoad('organize'), m => m.renderAssetManager());
     if(document.documentElement.classList.contains('vault-shell-embedded')){
-        const board = assetBoardById(activeTab);
+        const board = boardAtDispatch;
         let toolbarTitle = board?.name || '资源库';
         let toolbarSubtitle = '统一资产工具';
         if(activeTab === 'registry'){
@@ -5108,6 +5139,7 @@ function renderActiveAssetView(){
             toolbarSubtitle = registryTotalSummary(registryVisibleAssets().length);
         }
         root.insertAdjacentHTML('afterbegin', `${renderRegistryOverview()}${renderRegistryToolbar(null, toolbarTitle, toolbarSubtitle, {allowUrl:true,hideHeading:activeTab === 'registry' || activeTab === 'projects'})}`);
+        markInsertedTopbar();
         assetViewTopbarSnapshot = {
             seq:viewSeq,
             tab:activeTab,
@@ -7114,7 +7146,19 @@ function selectAssetTreeNode(key){
     }
     if(value === 'mine:inbox'){
         // AC3：收集箱是真实磁盘文件夹视图（QIN-547）
-        void gwCall('inbox', 'openAssetInbox');
+        // 【QIN-602 AC4】状态切换与顶栏必须先由主文件落地：切到 inbox 的 setActiveTab + render
+        // 写在收集箱模块内部，模块一旦加载失败那两行根本不会执行，界面就只剩「点了没反应」，
+        // 主文件的失败面板永远显示不出来。这里先切状态并经汇聚点开一代（失败由渲染器接住），
+        // 模块可用时再走它自己的载入流程（拉数据、清未读角标）。
+        setActiveTab('inbox');
+        setAssetTreeTab('mine');
+        setAssetTreeSelectedKey('mine:inbox');
+        render();
+        // 迟到的模块不得把用户已经切走的视图抢回收集箱：openAssetInbox 内部还会 setActiveTab。
+        void gwLoad('inbox').then(api => {
+            if(activeTab !== 'inbox') return;
+            return api.openAssetInbox();
+        }).catch(() => null);
         return;
     }
     if(value.startsWith('mine:root:')){

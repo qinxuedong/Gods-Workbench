@@ -4,7 +4,7 @@ import { readAssetManagerAggregate } from './asset-manager-aggregate.mjs';
 import {readFileSync} from 'node:fs';
 import test from 'node:test';
 // QIN-602：主渲染分发已统一收口到 renderActiveAssetView()，源码正则改为等价行为断言。
-import {createAssetViewHarness} from './qin-602-asset-view-harness.mjs';
+import {createAssetViewHost} from './qin-602-asset-view-harness.mjs';
 
 const source = readAssetManagerAggregate();
 const styles = readFileSync(new URL('../../web/css/pages/asset-manager.css', import.meta.url), 'utf8');
@@ -62,24 +62,20 @@ test('AC1/AC2: 收集箱视图读取真实接口并区分三类来源', async ()
     assert.match(functionSource('renderInboxSourceChips'), /asset_library/, '托管资产来源应可筛选');
     assert.match(functionSource('renderInboxManager'), /renderInboxCard/, '收集箱素材应渲染卡片');
     assert.match(functionSource('openAssetInbox'), /setActiveTab\('inbox'\)/, '进入收集箱切换视图');
-    assert.match(functionSource('selectAssetTreeNode'), /gwCall\('inbox', 'openAssetInbox'\)/, '树节点点击应打开收集箱');
+    // 【QIN-602 改前 → 改后】原：断言 selectAssetTreeNode 里出现 gwCall('inbox','openAssetInbox')。
+    // AC4 要求主文件侧先切状态与代际、再加载模块，字面量已变；改为真实点击入口验证落点。
     // 【QIN-602 改前 → 改后】原：assert.match(source, /else if\(activeTab === 'inbox'\) gwLoad\('inbox'\).../)。
     // 改后：真实执行汇聚点，断言切到收集箱时确实执行收集箱渲染、切到总览不误调；
     // 意图（主渲染分发接入收集箱）不变，且不再依赖源码字面量。
-    const inbox = createAssetViewHarness({tab: 'inbox'});
-    inbox.api.renderActiveAssetView();
-    await inbox.flush();
-    assert.equal(
-        inbox.calls.viewRenders.filter(call => call.name === 'renderInboxManager').length, 1,
-        '主渲染分发应接入收集箱',
-    );
-    const registry = createAssetViewHarness({tab: 'registry'});
-    registry.api.renderActiveAssetView();
-    await registry.flush();
-    assert.equal(
-        registry.calls.viewRenders.filter(call => call.name === 'renderInboxManager').length, 0,
-        '总览不得误调收集箱渲染',
-    );
+    const inboxHost = await createAssetViewHost({tab: 'inbox'});
+    assert.ok(inboxHost.root.innerHTML.includes('inbox-content'), '主渲染分发应接入收集箱');
+    inboxHost.dispose();
+    const registryHost = await createAssetViewHost({tab: 'registry'});
+    assert.ok(!registryHost.root.innerHTML.includes('inbox-content'), '总览不得误调收集箱渲染');
+    globalThis.GWAssetTreeBridge.activate('mine:inbox');
+    await new Promise(resolve => setTimeout(resolve, 100));
+    assert.equal(registryHost.main.activeTab, 'inbox', '树节点点击应打开收集箱');
+    registryHost.dispose();
 });
 
 test('AC1: 设置里可改位置并提示是否迁移已有文件', () => {

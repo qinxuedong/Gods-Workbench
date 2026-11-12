@@ -3,7 +3,7 @@ import { readAssetManagerAggregate } from './asset-manager-aggregate.mjs';
 import {readFileSync} from 'node:fs';
 import test from 'node:test';
 // QIN-602：主渲染分发统一收口后，LUT 分派源码正则改为等价行为断言。
-import {createAssetViewHarness} from './qin-602-asset-view-harness.mjs';
+import {createAssetViewHost} from './qin-602-asset-view-harness.mjs';
 
 import {
     composeLutPreview,
@@ -345,13 +345,13 @@ test('QIN-580：LUT 不计入资产总量，但保留顶栏导航卡（排在提
     // 【QIN-602 改前 → 改后】原：assert.match(manager, /else if\(activeTab === 'lut'\) gwLoad\('lut'\).../)。
     // 主渲染分发统一收口到 renderActiveAssetView() 后，按 qin-547 / qin-578 同口径改为
     // 等价行为断言：真实执行汇聚点，断言 LUT 看板确实调用 renderLutManager；不删除、不 skip、不削弱。
-    const lutHarness = createAssetViewHarness({tab: 'lut'});
-    lutHarness.api.renderActiveAssetView();
-    await lutHarness.flush();
-    assert.equal(
-        lutHarness.calls.viewRenders.filter(call => call.name === 'renderLutManager').length, 1,
+    const lutHost = await createAssetViewHost({tab: 'lut'});
+    // LUT 页独有的空态文案只由 renderLutManager 输出：出现即证明该看板走的是 LUT 渲染器。
+    assert.ok(
+        lutHost.root.innerHTML.includes('暂无 LUT'),
         'LUT 看板应由主渲染分发执行 renderLutManager',
     );
+    lutHost.dispose();
     assert.match(manager, /function renderLutManager\(\)\{/);
     assert.match(manager, /function lutLibraryAssets\(\)\{/);
     assert.match(manager, /registryAssetCategory\(item\) === 'lut'/);

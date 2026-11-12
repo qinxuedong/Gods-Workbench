@@ -4,7 +4,7 @@ import { readAssetManagerAggregate } from './asset-manager-aggregate.mjs';
 import {readFileSync} from 'node:fs';
 import test from 'node:test';
 // QIN-602：工具栏 hideHeading 契约由源码正则改为等价行为断言（真实执行渲染函数）。
-import {createAssetViewHarness} from './qin-602-asset-view-harness.mjs';
+import {createAssetViewHost} from './qin-602-asset-view-harness.mjs';
 
 const managerJs = readAssetManagerAggregate();
 
@@ -12,11 +12,8 @@ test('AC1: 嵌入态下剧本标签隐藏 content-heading，实现 Coverflow 与
   // 【QIN-602 改前 → 改后】原 4 条源码正则（scripts 显式 hideHeading / QIN-574 隐藏名单 /
   // options.hideHeading ? '' : ... 模板分支 / renderRegistryToolbar 调用签名字面量）
   // 统一改为真实执行 renderRegistryToolbar() 与汇聚点后断言输出 DOM；意图与覆盖面不缩窄。
-  const harness = createAssetViewHarness({embedded: true, tab: 'inbox'});
-  const toolbar = (tab, options = {}) => {
-    harness.setTab(tab);
-    return harness.api.renderRegistryToolbar(null, `标题-${tab}`, `副标题-${tab}`, {allowUrl: true, ...options});
-  };
+  const host = await createAssetViewHost({embedded: true, tab: 'inbox'});
+  const toolbar = (tab, options = {}) => host.toolbar(tab, options);
 
   // ① 嵌入态 scripts 显式 hideHeading；② QIN-574 prompts/canvas-assets/workflows 契约
   for(const tab of ['scripts', 'prompts', 'canvas-assets', 'workflows']){
@@ -35,22 +32,19 @@ test('AC1: 嵌入态下剧本标签隐藏 content-heading，实现 Coverflow 与
 
   // ④ 汇聚点调用签名契约：registry / projects 隐藏标题，收集箱 / 挂载文件夹显示；
   //    并顺带锁定 QIN-602 顶栏标题按当前看板冻结（替代原字面量断言）。
-  const boards = {
-    inbox: {id: 'inbox', name: '收集箱', system: true},
-    folderA: {id: 'folderA', name: '挂载文件夹A', system: false},
-  };
-  for(const [tab, hidden] of [['registry', true], ['projects', true], ['inbox', false], ['folderA', false]]){
-    const view = createAssetViewHarness({embedded: true, tab, boards});
-    view.api.renderActiveAssetView();
-    await view.flush();
+  // 挂载文件夹用真实看板状态（asset_board_navigation_v1），不伪造收集箱看板：
+  // 产品里 assetBoardById('inbox') 为 null，收集箱顶栏标题实际是兜底的「资源库」。
+  for(const [tab, hidden] of [['registry', true], ['projects', true], ['inbox', false], ['library_demo', false]]){
+    await host.setTab(tab);
     assert.equal(
-      view.root.innerHTML.includes('class="content-heading"'),
+      host.root.innerHTML.includes('class="content-heading"'),
       !hidden,
       `${tab} 工具栏 hideHeading 行为须与 QIN-572 / QIN-574 契约一致`,
     );
-    assert.ok(view.root.innerHTML.includes('data-registry-add-url'), `${tab} 应保留 allowUrl:true`);
-    assert.equal(view.root.countClass('registry-toolbar'), 1, `${tab} 工具栏应恰好 1 份`);
+    assert.ok(host.root.innerHTML.includes('data-registry-add-url'), `${tab} 应保留 allowUrl:true`);
+    assert.equal(host.root.querySelectorAll('.content-toolbar.registry-toolbar').length, 1, `${tab} 工具栏应恰好 1 份`);
   }
+  host.dispose();
 });
 
 test('AC2: 顶栏概览统计卡片顺序调整为 画布 → 其他 → 项目 → 剧本 → 提示词 → LUT', () => {

@@ -190,7 +190,6 @@ import {
     renderBoardNavigation,
     renderRegistryAssetSections,
     renderRegistryFilterChips,
-    renderRegistryManager,
     renderRegistryPagination,
     renderRegistrySelectionBar,
     renderRegistryToolbar,

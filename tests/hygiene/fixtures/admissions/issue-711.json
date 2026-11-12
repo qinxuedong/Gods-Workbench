@@ -4,12 +4,12 @@
   "authorization_basis": "GitHub Issue #711 (QIN-602), 2026-11-12",
   "files": [
     "web/js/modules/asset-manager.js",
+    "web/css/pages/asset-vault.css",
     "web/js/modules/asset-manager/organize.js",
     "tests/frontend/qin-547-inbox.test.mjs",
     "tests/frontend/qin-578-scripts-heading-and-tab-order.test.mjs",
     "tests/frontend/qin-580-material-lut-preview.test.mjs",
     "tests/frontend/qin-602-asset-topbar-retention.test.mjs",
-    "tests/frontend/qin-602-asset-view-harness.mjs",
     "tests/frontend/node-files.txt",
     "tests/hygiene/fixtures/admissions/issue-711.json"
   ],
@@ -20,13 +20,7 @@
       "classification": "curated_test_coverage",
       "authorization_basis": "GitHub Issue #711 (QIN-602), 2026-11-12",
       "admission": "accepted"
-    },
-    {
-      "path": "tests/frontend/qin-602-asset-view-harness.mjs",
-      "classification": "curated_test_coverage",
-      "authorization_basis": "GitHub Issue #711 (QIN-602), 2026-11-12",
-      "admission": "accepted"
     }
   ],
-  "notes": "QIN-602 资产页嵌入态切换收集箱 / 挂载文件夹后顶部总览与工具栏被异步 root.innerHTML 覆盖：renderActiveAssetView() 统一收口 10 个异步分支，渲染代际作废过期结果，内容落地后同代际补顶栏并防重复，加载失败保留顶栏与可见错误；organize.js 的 board 无效旁路改为经 render() 汇聚点。新增行为测试以 vm 真实代码块 + DOM 断言覆盖 AC1/AC2/AC4、旁路、其余分支不回退与两条变异自检；qin-547 / qin-578 两处源码正则按 Issue 预授权改为等价行为断言。基础账本 cleanroom_admission_metadata.json 不改。"
+  "notes": "QIN-602 资产页嵌入态切换收集箱 / 挂载文件夹后顶部总览与工具栏被异步 root.innerHTML 覆盖：renderActiveAssetView() 统一收口 10 个异步分支，渲染代际作废过期结果，内容落地后同代际补顶栏（专属 data-asset-view-topbar 标记判重），加载失败保留顶栏、写 role=alert 面板并 console.error 留痕；收集箱入口改为主文件侧先切状态与代际再加载模块（AC4：模块加载失败也能显示错误）；organize.js 的 board 无效旁路改为经 render() 汇聚点。测试按 GW-DoD-v1 §4.2 改为整树 import() 真实模块加载，经 GWAssetTreeBridge.activate / 真实 render() 驱动，延迟与失败只注入模块加载边界；qin-547 / qin-578 / qin-580 三处源码正则按 Issue 预授权改为等价行为断言。基础账本 cleanroom_admission_metadata.json 不改。 2026-11-12 相国授权追加 web/css/pages/asset-vault.css：≤900px 嵌入态单列网格被更具体的 #assetManagerRoot.asset-manager-root-registry 两列 !important 规则压回，内容区宽 0（AC3 阻断项）。 2026-11-12 相国授权追加 web/css/pages/asset-vault.css：≤900px 嵌入态单列网格被更具体的 #assetManagerRoot.asset-manager-root-registry 两列 !important 规则压回，内容区宽 0（AC3 阻断项）。"
 }
