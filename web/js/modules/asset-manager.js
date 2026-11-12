@@ -5040,6 +5040,83 @@ function governanceTriggerLabel(){
     if(!governanceSuggestionsData) return '打开治理建议';
     return '治理建议，待处理 ' + governanceSuggestionTotal() + ' 条';
 }
+// 【QIN-602】嵌入态顶栏保留：收集箱 / 挂载文件夹等分支经 gwLoad().then() 异步写入
+// root.innerHTML，会把同步插入的「总览卡片 + 工具栏」整块冲掉（模块已缓存时亦然，
+// gwLoadNow 命中缓存仍返回 Promise.resolve(api)，内容落在微任务里）。每次视图渲染开一个
+// 代际：过期的异步结果一律丢弃；内容渲染完成后按同一代际补顶栏；加载失败保留顶栏并显示
+// 可见错误。代际 + 防重复检查让快速来回切换不闪没、不出现两排、不串标题。
+let assetViewRenderSeq = 0;
+let assetViewTopbarSnapshot = null;
+function embeddedAssetTopbarMarkup(snapshot){
+    return `${renderRegistryOverview()}${renderRegistryToolbar(null, snapshot.title, snapshot.subtitle, {allowUrl:true,hideHeading:snapshot.hideHeading})}`;
+}
+function restoreEmbeddedAssetTopbar(seq){
+    const snapshot = assetViewTopbarSnapshot;
+    if(!snapshot || snapshot.seq !== seq || seq !== assetViewRenderSeq || snapshot.tab !== activeTab) return;
+    // 内容渲染未整块覆盖（或已补过）时不重复插入，避免两排顶栏。
+    if(root.querySelector('.registry-overview-shell') || root.querySelector('.registry-toolbar')) return;
+    root.insertAdjacentHTML('afterbegin', embeddedAssetTopbarMarkup(snapshot));
+    refreshIcons();
+}
+function showEmbeddedAssetViewFailure(seq, error){
+    if(seq !== assetViewRenderSeq) return;
+    const message = String(error?.message || error || '视图加载失败');
+    root.innerHTML = `<section class="asset-panel asset-content asset-view-load-error" role="alert" data-asset-view-error><div class="content-toolbar"><div class="content-heading"><strong>视图加载失败</strong><span>${escapeHtml(message)}</span></div></div></section>`;
+    restoreEmbeddedAssetTopbar(seq);
+}
+function runAssetViewRenderer(seq, domain, request, invoke){
+    Promise.resolve(request).then(api => {
+        // 切走后旧 Promise 回来不得写入当前视图（内容与顶栏都只属于最后选中的视图）。
+        if(seq !== assetViewRenderSeq) return;
+        try{ invoke(api); }
+        catch(error){ showEmbeddedAssetViewFailure(seq, error); return; }
+        restoreEmbeddedAssetTopbar(seq);
+    }).catch(error => showEmbeddedAssetViewFailure(seq, error));
+}
+function renderActiveAssetView(){
+    const viewSeq = ++assetViewRenderSeq;
+    assetViewTopbarSnapshot = null;
+    // 新代际从干净容器开始：旧代际若因异步结果被丢弃而没写内容，旧顶栏会残留，
+    // 直接再插就会累积多排且标题串台。各内容分支都会重写 root.innerHTML，
+    // 仅嵌入态清空（非嵌入态没有顶栏，沿用原有渲染语义）。
+    if(document.documentElement.classList.contains('vault-shell-embedded')) root.innerHTML = '';
+    if(activeTab === 'registry') renderRegistryManager();
+    else if(activeTab === 'scripts') runAssetViewRenderer(viewSeq, 'organize', gwLoad('organize'), m => m.renderScriptAssetsManager());
+    else if(activeTab === 'projects') runAssetViewRenderer(viewSeq, 'organize', gwLoad('organize'), m => m.renderProjectManager());
+    else if(activeTab === 'prompts') runAssetViewRenderer(viewSeq, 'organize', gwLoad('organize'), m => m.renderPromptManager());
+    else if(activeTab === 'lut') runAssetViewRenderer(viewSeq, 'lut', gwLoad('lut'), m => m.renderLutManager());
+    else if(activeTab === 'workflows') runAssetViewRenderer(viewSeq, 'organize', gwLoad('organize'), m => m.renderWorkflowManager());
+    else if(activeTab === 'inbox') runAssetViewRenderer(viewSeq, 'inbox', gwLoad('inbox'), m => m.renderInboxManager());
+    else if(activeTab === 'local') runAssetViewRenderer(viewSeq, 'upload', gwLoad('upload'), m => m.renderLocalManager());
+    else if(activeTab === 'canvas-assets') runAssetViewRenderer(viewSeq, 'canvas', gwLoad('canvas'), m => m.renderCanvasAssetsManager());
+    else if(assetBoardById(activeTab)?.system === false) runAssetViewRenderer(viewSeq, 'organize', gwLoad('organize'), m => m.renderCustomAssetLibrary(assetBoardById(activeTab)));
+    else runAssetViewRenderer(viewSeq, 'organize', gwLoad('organize'), m => m.renderAssetManager());
+    if(document.documentElement.classList.contains('vault-shell-embedded')){
+        const board = assetBoardById(activeTab);
+        let toolbarTitle = board?.name || '资源库';
+        let toolbarSubtitle = '统一资产工具';
+        if(activeTab === 'registry'){
+            toolbarTitle = registryCategoryLabel(registryStatCategory);
+            toolbarSubtitle = registryTotalSummary(registryVisibleAssets().length);
+        } else if(activeTab === 'projects'){
+            toolbarTitle = '项目素材';
+            const selectedProj = (registryProjectFilterId && registryProjectFilterId !== '__all__')
+                ? projects.find(item => item.id === registryProjectFilterId)
+                : null;
+            toolbarSubtitle = `${selectedProj?.name || '全部项目'} · ${registryTotalSummary(registryVisibleAssets().length)}`;
+        } else if(board?.system === false){
+            toolbarSubtitle = registryTotalSummary(registryVisibleAssets().length);
+        }
+        root.insertAdjacentHTML('afterbegin', `${renderRegistryOverview()}${renderRegistryToolbar(null, toolbarTitle, toolbarSubtitle, {allowUrl:true,hideHeading:activeTab === 'registry' || activeTab === 'projects'})}`);
+        assetViewTopbarSnapshot = {
+            seq:viewSeq,
+            tab:activeTab,
+            title:toolbarTitle,
+            subtitle:toolbarSubtitle,
+            hideHeading:activeTab === 'registry' || activeTab === 'projects',
+        };
+    }
+}
 function render(){
     const registryPreviewCache = captureRegistryPreviewImages();
     disconnectRegistryPreviewScheduling();
@@ -5084,35 +5161,7 @@ function render(){
     const pageClass = String(activeTab || 'assets').replace(/[^a-z0-9_-]/gi, '-');
     root.className = `asset-manager-root asset-tree-layout asset-manager-root-page-${pageClass}${activeTab === 'local' ? ' asset-manager-root-local' : ''}${activeTab === 'registry' ? ' asset-manager-root-registry' : ''}${customLibraryActive ? ' asset-manager-root-library' : ''}${customLibraryActive && registryDetailPanelCollapsed ? ' registry-detail-collapsed' : ''}${activeTab === 'lut' && registryDetailPanelCollapsed ? ' registry-detail-collapsed' : ''}${systemRackActive ? ' asset-manager-root-rack' : ''}`;
     gwCall('preview', 'syncRegistryDetailGridWidth');
-    if(activeTab === 'registry') renderRegistryManager();
-    else if(activeTab === 'scripts') gwLoad('organize').then(m => m.renderScriptAssetsManager());
-    else if(activeTab === 'projects') gwLoad('organize').then(m => m.renderProjectManager());
-    else if(activeTab === 'prompts') gwLoad('organize').then(m => m.renderPromptManager());
-    else if(activeTab === 'lut') gwLoad('lut').then(m => m.renderLutManager());
-    else if(activeTab === 'workflows') gwLoad('organize').then(m => m.renderWorkflowManager());
-    else if(activeTab === 'inbox') gwLoad('inbox').then(m => m.renderInboxManager());
-    else if(activeTab === 'local') gwLoad('upload').then(m => m.renderLocalManager());
-    else if(activeTab === 'canvas-assets') gwLoad('canvas').then(m => m.renderCanvasAssetsManager());
-    else if(assetBoardById(activeTab)?.system === false) gwLoad('organize').then(m => m.renderCustomAssetLibrary(assetBoardById(activeTab)));
-    else gwLoad('organize').then(m => m.renderAssetManager());
-    if(document.documentElement.classList.contains('vault-shell-embedded')){
-        const board = assetBoardById(activeTab);
-        let toolbarTitle = board?.name || '资源库';
-        let toolbarSubtitle = '统一资产工具';
-        if(activeTab === 'registry'){
-            toolbarTitle = registryCategoryLabel(registryStatCategory);
-            toolbarSubtitle = registryTotalSummary(registryVisibleAssets().length);
-        } else if(activeTab === 'projects'){
-            toolbarTitle = '项目素材';
-            const selectedProj = (registryProjectFilterId && registryProjectFilterId !== '__all__')
-                ? projects.find(item => item.id === registryProjectFilterId)
-                : null;
-            toolbarSubtitle = `${selectedProj?.name || '全部项目'} · ${registryTotalSummary(registryVisibleAssets().length)}`;
-        } else if(board?.system === false){
-            toolbarSubtitle = registryTotalSummary(registryVisibleAssets().length);
-        }
-        root.insertAdjacentHTML('afterbegin', `${renderRegistryOverview()}${renderRegistryToolbar(null, toolbarTitle, toolbarSubtitle, {allowUrl:true,hideHeading:activeTab === 'registry' || activeTab === 'projects'})}`);
-    }
+    renderActiveAssetView();
     if(activeTab === 'registry' || customLibraryActive) renderRegistryFreshNotice();
     restoreRegistryPreviewImages(registryPreviewCache);
     if(activeTab === 'registry' || customLibraryActive){

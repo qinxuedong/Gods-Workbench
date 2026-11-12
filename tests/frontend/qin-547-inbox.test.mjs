@@ -3,6 +3,8 @@ import assert from 'node:assert/strict';
 import { readAssetManagerAggregate } from './asset-manager-aggregate.mjs';
 import {readFileSync} from 'node:fs';
 import test from 'node:test';
+// QIN-602：主渲染分发已统一收口到 renderActiveAssetView()，源码正则改为等价行为断言。
+import {createAssetViewHarness} from './qin-602-asset-view-harness.mjs';
 
 const source = readAssetManagerAggregate();
 const styles = readFileSync(new URL('../../web/css/pages/asset-manager.css', import.meta.url), 'utf8');
@@ -52,7 +54,7 @@ test('AC1/AC5: 收集箱在「我的资源」第一位，带未读角标', () =>
     assert.match(styles, /\.asset-tree-badge\s*\{/, '角标样式应存在');
 });
 
-test('AC1/AC2: 收集箱视图读取真实接口并区分三类来源', () => {
+test('AC1/AC2: 收集箱视图读取真实接口并区分三类来源', async () => {
     assert.match(functionSource('loadAssetInbox'), /'\/api\/asset-inbox\?limit=500'/, '列表走收集箱接口');
     // QIN-591：inbox 域内对主文件状态的写入改写为 setter 调用（登记在案），读取语义不变。
     assert.match(functionSource('loadAssetInbox'), /setInboxSettings\(data\.settings/, '设置随列表一起读取');
@@ -61,7 +63,23 @@ test('AC1/AC2: 收集箱视图读取真实接口并区分三类来源', () => {
     assert.match(functionSource('renderInboxManager'), /renderInboxCard/, '收集箱素材应渲染卡片');
     assert.match(functionSource('openAssetInbox'), /setActiveTab\('inbox'\)/, '进入收集箱切换视图');
     assert.match(functionSource('selectAssetTreeNode'), /gwCall\('inbox', 'openAssetInbox'\)/, '树节点点击应打开收集箱');
-    assert.match(source, /else if\(activeTab === 'inbox'\) gwLoad\('inbox'\)\.then\(m => m\.renderInboxManager\(\)\);/, '主渲染分发应接入收集箱');
+    // 【QIN-602 改前 → 改后】原：assert.match(source, /else if\(activeTab === 'inbox'\) gwLoad\('inbox'\).../)。
+    // 改后：真实执行汇聚点，断言切到收集箱时确实执行收集箱渲染、切到总览不误调；
+    // 意图（主渲染分发接入收集箱）不变，且不再依赖源码字面量。
+    const inbox = createAssetViewHarness({tab: 'inbox'});
+    inbox.api.renderActiveAssetView();
+    await inbox.flush();
+    assert.equal(
+        inbox.calls.viewRenders.filter(call => call.name === 'renderInboxManager').length, 1,
+        '主渲染分发应接入收集箱',
+    );
+    const registry = createAssetViewHarness({tab: 'registry'});
+    registry.api.renderActiveAssetView();
+    await registry.flush();
+    assert.equal(
+        registry.calls.viewRenders.filter(call => call.name === 'renderInboxManager').length, 0,
+        '总览不得误调收集箱渲染',
+    );
 });
 
 test('AC1: 设置里可改位置并提示是否迁移已有文件', () => {
