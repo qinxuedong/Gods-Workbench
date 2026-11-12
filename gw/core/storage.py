@@ -1007,6 +1007,30 @@ def load(namespace: str, default: Any = None) -> Any:
             return default
 
 
+def load_with_status(namespace: str, default: Any = None) -> tuple[Any, bool]:
+    """只读辅助：返回 ``(数据, 是否成功)``，供只读快照区分「空态」与「读失败」。
+
+    ``load`` 在文件不存在或文件损坏时都返回同一个 ``default``，调用方无法区分；
+    若把损坏时的空默认按稳定文件签名钉进缓存，注册表修复前会一直返回空库
+    （QIN-604 风险项「读失败不缓存」）。本函数只委托 ``load`` 一次，额外用
+    「读之前文件是否存在」判定：
+
+    - 文件不存在 → ``(default, True)``：合法空态；
+    - 文件存在且解析出非 ``None`` → ``(数据, True)``；
+    - 文件存在但返回 ``None``（解析失败 / 内容就是 null）→ ``(default, False)``。
+
+    ``load`` / ``save`` 的语义与签名均不变；``save`` 仍是唯一落盘入口，
+    ``load`` 仍是唯一读盘点，便于 AC1 用 monkeypatch 精确统计解析次数。
+    """
+    path = _file_for(namespace)
+    existed = path.exists()
+    with namespace_lock(namespace):
+        value = load(namespace, None)
+    if value is None:
+        return default, not existed
+    return value, True
+
+
 def save(namespace: str, payload: Any) -> None:
     """原子写入命名空间快照：先写临时文件再替换，避免半截文件。"""
     path = _file_for(namespace)

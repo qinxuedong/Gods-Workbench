@@ -30,6 +30,7 @@ from __future__ import annotations
 
 import io
 import base64
+import copy
 import hashlib
 import json
 import logging
@@ -95,6 +96,102 @@ def state() -> storage.JsonState:
     return storage.JsonState(NS_REGISTRY, _blank)
 
 
+# ---------------------------------------------------------------------------
+# QIN-604：类型兼容的只读快照视图
+# ---------------------------------------------------------------------------
+# 不用 MappingProxyType 深冻结：镜头检索与来源根 facet 有 isinstance(x, dict)
+# 判定（routes_asset_registry.py 的 metadata、index_jobs.py 的 bound_aliases），
+# 代理类型会被判 False 而静默丢业务数据。dict / list 子类保持类型与所有读口径
+# （dict(item) / {**item} / json.dumps / sorted / .values()）完全不变。
+_FROZEN_MESSAGE = "只读注册表快照禁止原地修改（QIN-604）"
+
+
+def _deny_mutation(*_args, **_kwargs):
+    raise TypeError(_FROZEN_MESSAGE)
+
+
+class _FrozenDict(dict):
+    """dict 子类：只开放构造与读取，任何原地写一律 TypeError。"""
+
+    __slots__ = ()
+    __setitem__ = _deny_mutation
+    __delitem__ = _deny_mutation
+    __ior__ = _deny_mutation
+    clear = _deny_mutation
+    pop = _deny_mutation
+    popitem = _deny_mutation
+    setdefault = _deny_mutation
+    update = _deny_mutation
+
+    def __copy__(self):
+        return _plain_snapshot_container(self)
+
+    def __deepcopy__(self, memo):
+        result: Dict[str, Any] = {}
+        memo[id(self)] = result
+        for key, value in self.items():
+            result[copy.deepcopy(key, memo)] = copy.deepcopy(value, memo)
+        return result
+
+    def __reduce__(self):
+        # copy.copy / pickle 重建时必须落到普通 dict，不能走被禁用的 __setitem__。
+        return (dict, (list(self.items()),))
+
+
+class _FrozenList(list):
+    """list 子类：只开放构造与读取，任何原地写一律 TypeError。"""
+
+    __slots__ = ()
+    __setitem__ = _deny_mutation
+    __delitem__ = _deny_mutation
+    __iadd__ = _deny_mutation
+    __imul__ = _deny_mutation
+    append = _deny_mutation
+    extend = _deny_mutation
+    insert = _deny_mutation
+    remove = _deny_mutation
+    pop = _deny_mutation
+    clear = _deny_mutation
+    sort = _deny_mutation
+    reverse = _deny_mutation
+
+    def __copy__(self):
+        return _plain_snapshot_container(self)
+
+    def __deepcopy__(self, memo):
+        result: List[Any] = []
+        memo[id(self)] = result
+        for value in self:
+            result.append(copy.deepcopy(value, memo))
+        return result
+
+    def __reduce__(self):
+        return (list, (list(self),))
+
+
+def _plain_snapshot_container(value: Any) -> Any:
+    """递归剥离冻结类型：copy.copy 等浅拷贝也返回完全普通的容器。"""
+    if isinstance(value, dict):
+        return {key: _plain_snapshot_container(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_plain_snapshot_container(item) for item in value]
+    if isinstance(value, tuple):
+        return tuple(_plain_snapshot_container(item) for item in value)
+    return value
+
+
+def _freeze_snapshot(value: Any) -> Any:
+    """把一次 json.load 的结果递归构造成只读视图（与解析同量级，只做一次）。"""
+    if isinstance(value, dict):
+        frozen = _FrozenDict()
+        # 显式用基类方法填充：绕过子类被禁用的 __setitem__。
+        dict.update(frozen, {key: _freeze_snapshot(item) for key, item in value.items()})
+        return frozen
+    if isinstance(value, list):
+        return _FrozenList(_freeze_snapshot(item) for item in value)
+    return value
+
+
 #: 只读注册表快照缓存：键为注册表文件的 (规范路径, mtime_ns, 字节数) 签名。
 #: 写操作经 storage.save 原子替换文件，签名随之变化，缓存自然失效；外部进程
 #: 改写同样会被签名识别。缓存值只允许只读，调用方不得原地修改（QIN-565）。
@@ -151,6 +248,12 @@ def readonly_registry_snapshot() -> Dict[str, Any]:
     读取十几次（每个候选资产详情各一次），5,000+ 资产规模下成为主要延迟。
     这里只缓存「同一文件版本」的解析结果，不改变读取内容的可见性与顺序；
     文件签名在读前/读后不一致时不缓存，避免把并发写入的半新数据钉死。
+
+    QIN-604：缓存值改为类型兼容的冻结视图，调用方原地改写会抛 TypeError 而
+    不是污染缓存；读失败/文件损坏（ok=False）与文件不存在（合法空态）都返回
+    与 ``JsonState.read`` 相同的空表且**不写缓存**，下一次请求继续读盘。
+    读盘仍只经 ``storage.load`` 一次（``load_with_status`` 委托），因此
+    ``storage.load`` 的调用次数即可精确代表注册表解析次数。
     """
     global _REGISTRY_SNAPSHOT_CACHE
     path, _ = _snapshot_paths()
@@ -159,12 +262,15 @@ def readonly_registry_snapshot() -> Dict[str, Any]:
         cached = _REGISTRY_SNAPSHOT_CACHE
     if cached is not None and cached[0] == before:
         return cached[1]
-    raw = state().read()
+    raw, ok = storage.load_with_status(NS_REGISTRY, None)
     after = _registry_snapshot_signature(path)
+    if raw is None or not ok:
+        return _blank()
+    frozen = _freeze_snapshot(raw)
     if after == before:
         with _REGISTRY_SNAPSHOT_LOCK:
-            _REGISTRY_SNAPSHOT_CACHE = (after, raw)
-    return raw
+            _REGISTRY_SNAPSHOT_CACHE = (after, frozen)
+    return frozen
 
 
 def visible_asset_from_snapshot(raw: Dict[str, Any], asset_id: str) -> Optional[Dict[str, Any]]:
@@ -479,6 +585,9 @@ def annotate_asset_provenance(
     snapshot = raw if raw is not None else state().read()
     names = _source_display_names(root_facets)
     decorated: List[Dict[str, Any]] = []
+    # QIN-604：同一展示路径在当前页出现多次时（重复登记、批量造数），只解析
+    # 一次真实文件与 stat；键含版本标记，带图片版本的条目仍逐条按原口径解析。
+    modified_cache: Dict[str, str] = {}
     for item in items:
         entry = dict(item)
         source_names = _asset_source_names(entry, names)
@@ -488,7 +597,27 @@ def annotate_asset_provenance(
         else:
             entry.pop("source_names", None)
         if not str(entry.get("modified_at") or "") and resolve_modified:
-            modified_at = _asset_modified_at(entry, snapshot)
+            asset_id = str(entry.get("asset_id") or entry.get("id") or "")
+            versioned = bool((snapshot.get("image_versions") or {}).get(asset_id))
+            display = str(entry.get("display_path") or "")
+            cache_key = (
+                "|".join(
+                    (
+                        display,
+                        str(entry.get("root_id") or ""),
+                        str(entry.get("storage_root_id") or ""),
+                        str(entry.get("canonical_relpath") or ""),
+                    )
+                )
+                if display and not versioned
+                else ""
+            )
+            if cache_key and cache_key in modified_cache:
+                modified_at = modified_cache[cache_key]
+            else:
+                modified_at = _asset_modified_at(entry, snapshot)
+                if cache_key:
+                    modified_cache[cache_key] = modified_at
             if modified_at:
                 entry["modified_at"] = modified_at
         decorated.append(entry)
@@ -1249,7 +1378,7 @@ def list_assets(limit: int, offset: int, query: Optional[str], kind: Optional[st
             raise CleanroomException(400, "INVALID_REQUEST", "recent_days必须是1到36500的整数")
         cutoff = (datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
                   - timedelta(days=recent_days)).strftime("%Y-%m-%dT%H:%M:%SZ")
-    raw = state().read()
+    raw = readonly_registry_snapshot()
     ordering = sort or "asset_id"
     if ordering not in {"asset_id", "newest", "oldest", "name", "size_desc"}:
         raise CleanroomException(400, "UNSUPPORTED_OPTION", "不支持的资产排序")
@@ -1485,8 +1614,10 @@ def list_assets(limit: int, offset: int, query: Optional[str], kind: Optional[st
         limit = min(limit, dynamic_limit)
     page = items[offset:offset + limit]
     # 只装饰当前页：来源名与文件修改时间按页下发，避免为全库逐条 stat。
-    # QIN-582：复用本请求已算好的 root_facets，不再为显示名重复跑探测链。
-    page = annotate_asset_provenance(page, raw=raw, root_facets=root_facets or None)
+    # QIN-582：复用本请求已算好的 root_facets；QIN-604：空列表也原样传入（表示
+    # 本请求已判定无需来源探测），否则 root_facets or None 会让显示名装饰再跑
+    # 一遍挂载探测链，24 并发下成为 /assets 的主要串行开销。
+    page = annotate_asset_provenance(page, raw=raw, root_facets=root_facets)
     # 分页副本上补关联素材摘要：只读路径不回写状态，副本避免污染后续 mutate 的原始记录。
     relation_index = _relation_target_index(raw)
     page = [
@@ -1804,7 +1935,7 @@ def _list_structured_assets(
         include=include,
     )
     normalized["filters"].update(cinematography_filters)
-    raw = state().read()
+    raw = readonly_registry_snapshot()
     filter_values = normalized["filters"]
     has_entity_filter = bool(
         filter_values.get("entity_id") or filter_values.get("entity_type")
@@ -2203,7 +2334,7 @@ def preview_asset_ids() -> List[str]:
 
 
 def folders(root_id: Optional[str]) -> Dict[str, Any]:
-    raw = state().read()
+    raw = readonly_registry_snapshot()
     items = [dict(f) for f in sorted(raw["folders"].values(), key=lambda x: x["folder_id"])]
     if root_id:
         items = [f for f in items if f.get("parent_id") == root_id]
@@ -3807,7 +3938,7 @@ def update_index_automation(enabled: Optional[bool], interval_minutes: Optional[
 
 
 def features_snapshot() -> Dict[str, Any]:
-    raw = state().read()
+    raw = readonly_registry_snapshot()
     return {"features": dict(raw["features"]), "index_automation": dict(raw["index_automation"]),
             "revision": raw["revision"], "data_status": DATA_STATUS_OK, "data_gaps": []}
 
@@ -4072,7 +4203,7 @@ def _media_file_in_state(raw: dict, asset_id: str, version_id: Optional[str] = N
 
 def media_file(asset_id: str, version_id: Optional[str] = None) -> Optional[Path]:
     """返回素材/版本对应的真实本地文件；没有登记或文件缺失时返回 None。"""
-    return _media_file_in_state(state().read(), asset_id, version_id)
+    return _media_file_in_state(readonly_registry_snapshot(), asset_id, version_id)
 
 
 def media_files(asset_ids: Iterable[str]) -> Dict[str, Path]:
@@ -4080,9 +4211,9 @@ def media_files(asset_ids: Iterable[str]) -> Dict[str, Path]:
 
     全库预览预热是「几百上千项、每项都要源文件路径」的场景，逐项调
     ``media_file`` 会把 800KB 的 asset_registry.json 反复解析，成为并发出图的
-    唯一串行瓶颈。解析口径完全复用 ``_media_file_in_state``，不另写一套。
+    唯一    串行瓶颈。解析口径完全复用 ``_media_file_in_state``，不另写一套。
     """
-    raw = state().read()
+    raw = readonly_registry_snapshot()
     resolved: Dict[str, Path] = {}
     for asset_id in asset_ids:
         key = str(asset_id or "").strip()
@@ -4104,7 +4235,7 @@ def preview_asset_paths() -> Dict[str, Path]:
     再批量解析 ``media_files``），合并后省掉一次完整解析；口径与 ``preview_asset_ids``
     完全一致（可见、未归档、非 removed），不另设一套过滤。
     """
-    raw = state().read()
+    raw = readonly_registry_snapshot()
     from gw.core.asset_visibility import asset_visible
 
     removed_ids = _removed_root_ids()

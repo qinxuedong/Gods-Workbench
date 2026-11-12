@@ -427,7 +427,8 @@ def _roots():
     # 已确认的路径别名仅作为同一登记来源的离线恢复通道；未确认候选不参与索引。
     from gw.asset_registry import repository as repo
 
-    bound_aliases = repo.state().read().get("root_aliases", {})
+    # QIN-604：只读来源别名走同一份注册表快照，避免 /assets 的 facet 链每次全表解析。
+    bound_aliases = repo.readonly_registry_snapshot().get("root_aliases", {})
     for item in local_libraries:
         source_id = str(item.get("id") or "")
         if not source_id:
@@ -637,7 +638,8 @@ def root_facets():
         aliases, alias_status = _cached_root_snapshot()
     except CleanroomException:
         return []
-    raw = repo.state().read()
+    # QIN-604：root_facets 是 /assets 每次请求的下游读点，改走快照后整段只读一次。
+    raw = repo.readonly_registry_snapshot()
     counts = {}
     for asset in raw["assets"].values():
         if not repo._visible(asset):
@@ -756,7 +758,8 @@ class IndexJobs:
     def _recover(self):
         from gw.asset_registry import repository as repo
 
-        receipts = repo.state().read().get("index_job_receipts", {})
+        # QIN-604：索引服务初始化只读收据，走快照避免 /status 首次请求额外全表解析。
+        receipts = repo.readonly_registry_snapshot().get("index_job_receipts", {})
 
         def restore(raw):
             for job in raw["jobs"].values():

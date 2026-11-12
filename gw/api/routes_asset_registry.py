@@ -229,7 +229,7 @@ def get_registry_status(
     x_user_role: str = Header("editor", alias="X-User-Role"),
 ):
     actor = _read_auth(authorization, x_user_role)
-    raw = repo.state().read()
+    raw = repo.readonly_registry_snapshot()
     from gw.core.asset_visibility import asset_visible
     visible_count = sum(asset_visible(asset) for asset in raw['assets'].values())
     snapshot = repo.features_snapshot()

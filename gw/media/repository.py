@@ -1234,15 +1234,19 @@ def generate_thumbnail(payload: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _preview_source_identity_from_stat(stat: os.stat_result) -> str:
+    """从已取的 stat 结果算源身份摘要，保证 ETag 键与缓存键看到同一份源状态。"""
+    raw = "%d:%d" % (stat.st_size, stat.st_mtime_ns)
+    return hashlib.sha256(raw.encode("utf-8")).hexdigest()[:12]
+
+
 def _preview_source_identity(path: Path) -> str:
     """预览缓存键的源身份摘要：源文件 size + mtime_ns。
 
     源文件被替换（哪怕时间戳回拨）都会产生不同摘要，旧缓存不再命中，
     避免把过期图当成本次结果返回。
     """
-    stat = path.stat()
-    raw = "%d:%d" % (stat.st_size, stat.st_mtime_ns)
-    return hashlib.sha256(raw.encode("utf-8")).hexdigest()[:12]
+    return _preview_source_identity_from_stat(path.stat())
 
 
 def _preview_cache_stem(key: str, width: int) -> str:
@@ -1381,6 +1385,103 @@ def _live_preview_bytes(
     )
 
 
+#: 预览读路径只记忆「缓存目录解析结果」，不缓存缩略图字节，也不新增第二套
+#: 缩略图缓存键口径。键含运行态配置、设置的 mode / directory / cache_folder
+#: 与源目录；任一变化都重新走唯一解析入口，不绕过任何准入校验。
+_PREVIEW_CACHE_DIR_MEMO: dict[tuple[Any, ...], tuple[str, Path]] = {}
+_PREVIEW_CACHE_DIR_MEMO_LOCK = threading.Lock()
+_PREVIEW_ENV_KEYS = (
+    "GW_RUNTIME_MODE",
+    "GW_DATA_DIR",
+    "GW_LOCAL_AUTH_DB",
+    "GW_VIDEO_DATA_DIR",
+    "GW_ALLOWED_ROOTS",
+    "LOCALAPPDATA",
+)
+
+
+def _preview_runtime_configuration() -> tuple[Any, ...]:
+    """缓存目录记忆化键里的运行态三根 / 允许根配置。"""
+    return tuple((name, os.environ.get(name)) for name in _PREVIEW_ENV_KEYS)
+
+
+def _preview_cache_dir(settings: dict[str, Any], path: Path) -> tuple[str, Path]:
+    """复用同源同设置下的缓存目录解析结果，避免每次预览都抢全局目录锁。
+
+    ``resolve_cache_directory`` 持进程内全局锁、重跑三态路径校验并再读一次
+    ``media_settings``；24 并发预览时该锁把请求压成串行（QIN-604 AC5）。这里
+    只记忆**目录解析结果**：键含运行态三根 / 允许根配置、设置的 mode /
+    directory / cache_folder 与源目录，任一变化都重新走唯一解析入口；命中时
+    仍校验目录存在，目录被删或配置变化都会重算，不绕过任何准入校验。
+    """
+    key = (
+        _preview_runtime_configuration(),
+        str(settings.get("mode") or "source"),
+        str(settings.get("directory") or ""),
+        _cache_folder_name(settings),
+        str(path.parent),
+    )
+    with _PREVIEW_CACHE_DIR_MEMO_LOCK:
+        cached = _PREVIEW_CACHE_DIR_MEMO.get(key)
+    if cached is not None and cached[1].is_dir():
+        return cached
+    resolved = resolve_cache_directory(settings, path)
+    with _PREVIEW_CACHE_DIR_MEMO_LOCK:
+        _PREVIEW_CACHE_DIR_MEMO[key] = resolved
+    return resolved
+
+
+def preview_etag(payload: dict[str, Any]) -> dict[str, Any] | None:
+    """算 ``/api/media-preview`` 的强 ETag 及本次解析出的只读派生参数。
+
+    QIN-604 AC6：键含素材身份、版本、源文件相对展示路径、源文件 size / mtime_ns、
+    宽度、输出格式、MIME 与视频标记。源文件被替换、缩略图格式切换、宽度变化、
+    切换素材版本都会得到不同 ETag，不会用 304 把旧图返回给调用方。
+
+    该函数在 ``preview_bytes`` 之前调用：命中 If-None-Match 时直接 304，不触发
+    PIL / ffmpeg，也不写缩略图磁盘缓存。输入无法解析时返回 ``None``，由
+    ``preview_bytes`` 原样抛出既有的 403 / 404 / 503，不改变错误语义。
+    """
+    try:
+        path = _resolve_input(payload)
+        width = int((payload or {}).get("w") or 256)
+        width = max(64, min(2048, width))
+        video = path.suffix.lower() in _VIDEO_SUFFIXES
+        settings = get_thumbnail_settings()
+        image_format = _thumbnail_format(settings)
+        media_type = "image/jpeg" if video else MIME_BY_SUFFIX["." + image_format]
+        _, cache_dir = _preview_cache_dir(settings, path)
+        # 一次 stat 同时喂给 ETag 键与缩略图缓存键：两次 stat 之间源文件若被替换，
+        # ETag 与缓存名会来自不同状态；同请求内复用也省掉一次 Windows 文件状态查询。
+        stat = path.stat()
+        identity = _preview_source_identity_from_stat(stat)
+        source = storage.relative_display(path)
+        key = "|".join(
+            (
+                str((payload or {}).get("asset_id") or "").strip(),
+                str((payload or {}).get("version_id") or "").strip(),
+                source,
+                str(width),
+                str(stat.st_size),
+                str(stat.st_mtime_ns),
+                identity,
+                media_type,
+                image_format,
+                "video" if video else "image",
+            )
+        )
+        return {
+            "etag": '"%s"' % hashlib.sha256(key.encode("utf-8")).hexdigest()[:32],
+            "path": path,
+            "settings": settings,
+            "cache_dir": cache_dir,
+            "source": source,
+            "identity": identity,
+        }
+    except (CleanroomException, OSError, ValueError, TypeError, KeyError):
+        return None
+
+
 def preview_bytes(payload: dict[str, Any]) -> dict[str, Any]:
     """给图片/BMP 等返回真实重采样缩略字节；视频走 ffmpeg 抽帧。
 
@@ -1396,10 +1497,23 @@ def preview_bytes(payload: dict[str, Any]) -> dict[str, Any]:
     media_type = "image/jpeg" if video else MIME_BY_SUFFIX[".jxl"]
     asset_id = str((payload or {}).get("asset_id") or "").strip()
     key = _thumbnail_key(asset_id, path)
-    source = storage.relative_display(path)
+    # 路由在同一次请求里先算 ETag，已解析出源文件路径 / 展示路径 / 源身份。
+    # 复用这些派生值，避免 Windows 上再跑一遍允许根 realpath 链；非 HTTP 调用
+    # 没带这些内部键时仍走原路径，逐项重新解析，语义不变。
+    prepared_source = (payload or {}).get("_source")
+    source = (
+        prepared_source
+        if isinstance(prepared_source, str)
+        else storage.relative_display(path)
+    )
 
     try:
-        identity = _preview_source_identity(path)
+        prepared_identity = (payload or {}).get("_identity")
+        identity = (
+            prepared_identity
+            if isinstance(prepared_identity, str)
+            else _preview_source_identity(path)
+        )
         # 预热线程已取过快照时直接复用，避免每项都重读 media_settings.json。
         prepared_settings = (payload or {}).get("_settings")
         settings = (
