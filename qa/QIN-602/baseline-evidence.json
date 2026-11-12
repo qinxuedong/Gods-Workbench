@@ -1,0 +1,83 @@
+{
+  "ticket": "QIN-602",
+  "ac": "AC3",
+  "mode": "baseline",
+  "widths": [
+    724
+  ],
+  "themes": [
+    "dark"
+  ],
+  "cases": [
+    {
+      "width": 724,
+      "theme": "dark",
+      "pageErrors": [],
+      "views": [
+        {
+          "view": "registry",
+          "measure": {
+            "frameWidth": 724,
+            "dataTheme": "dark",
+            "overviewCount": 1,
+            "toolbarCount": 1,
+            "overview": {
+              "x": 0,
+              "y": 0,
+              "w": 20,
+              "h": 222,
+              "right": 20,
+              "bottom": 222
+            },
+            "toolbar": {
+              "x": 0,
+              "y": 222,
+              "w": 24,
+              "h": 617,
+              "right": 24,
+              "bottom": 839
+            },
+            "content": {
+              "x": 0,
+              "y": 839,
+              "w": 0,
+              "h": 387,
+              "right": 0,
+              "bottom": 1226
+            },
+            "inboxSelected": false,
+            "inboxAria": null,
+            "selectedKey": "registry",
+            "toolbarTitle": null,
+            "viewMark": "asset-panel asset-content registry-content registry-layout-grid registry-aspect-original registry-simple "
+          }
+        },
+        {
+          "view": "inbox",
+          "measure": {
+            "frameWidth": 724,
+            "dataTheme": "dark",
+            "overviewCount": 0,
+            "toolbarCount": 0,
+            "overview": null,
+            "toolbar": null,
+            "content": {
+              "x": 0,
+              "y": 0,
+              "w": 724,
+              "h": 899,
+              "right": 724,
+              "bottom": 899
+            },
+            "inboxSelected": false,
+            "inboxAria": null,
+            "selectedKey": "mine:inbox",
+            "toolbarTitle": null,
+            "viewMark": "asset-panel asset-content inbox-content"
+          }
+        }
+      ]
+    }
+  ],
+  "passed": true
+}

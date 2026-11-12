@@ -1,0 +1,681 @@
+{
+  "ticket": "QIN-602",
+  "ac": "AC3",
+  "widths": [
+    724,
+    900,
+    1440,
+    1920
+  ],
+  "themes": [
+    "dark",
+    "light"
+  ],
+  "cases": [
+    {
+      "width": 724,
+      "theme": "dark",
+      "pageErrors": [],
+      "views": [
+        {
+          "view": "registry",
+          "measure": {
+            "frameWidth": 724,
+            "dataTheme": "dark",
+            "overviewCount": 1,
+            "toolbarCount": 1,
+            "overview": {
+              "x": 0,
+              "y": 0,
+              "w": 20,
+              "h": 222,
+              "right": 20,
+              "bottom": 222
+            },
+            "toolbar": {
+              "x": 0,
+              "y": 222,
+              "w": 24,
+              "h": 617,
+              "right": 24,
+              "bottom": 839
+            },
+            "content": {
+              "x": 0,
+              "y": 839,
+              "w": 0,
+              "h": 387,
+              "right": 0,
+              "bottom": 1226
+            },
+            "inboxSelected": false,
+            "inboxAria": null,
+            "selectedKey": "registry",
+            "toolbarTitle": null,
+            "viewMark": "asset-panel asset-content registry-content registry-layout-grid registry-aspect-original registry-simple "
+          }
+        },
+        {
+          "view": "inbox",
+          "measure": {
+            "frameWidth": 724,
+            "dataTheme": "dark",
+            "overviewCount": 1,
+            "toolbarCount": 1,
+            "overview": {
+              "x": 0,
+              "y": 0,
+              "w": 724,
+              "h": 222,
+              "right": 724,
+              "bottom": 222
+            },
+            "toolbar": {
+              "x": 0,
+              "y": 222,
+              "w": 724,
+              "h": 648,
+              "right": 724,
+              "bottom": 870
+            },
+            "content": {
+              "x": 0,
+              "y": 870,
+              "w": 724,
+              "h": 360,
+              "right": 724,
+              "bottom": 1230
+            },
+            "inboxSelected": false,
+            "inboxAria": null,
+            "selectedKey": "mine:inbox",
+            "toolbarTitle": "资源库",
+            "viewMark": "asset-panel asset-content inbox-content"
+          }
+        }
+      ]
+    },
+    {
+      "width": 724,
+      "theme": "light",
+      "pageErrors": [],
+      "views": [
+        {
+          "view": "registry",
+          "measure": {
+            "frameWidth": 724,
+            "dataTheme": "light",
+            "overviewCount": 1,
+            "toolbarCount": 1,
+            "overview": {
+              "x": 0,
+              "y": 0,
+              "w": 20,
+              "h": 222,
+              "right": 20,
+              "bottom": 222
+            },
+            "toolbar": {
+              "x": 0,
+              "y": 222,
+              "w": 24,
+              "h": 617,
+              "right": 24,
+              "bottom": 839
+            },
+            "content": {
+              "x": 0,
+              "y": 839,
+              "w": 0,
+              "h": 387,
+              "right": 0,
+              "bottom": 1226
+            },
+            "inboxSelected": false,
+            "inboxAria": null,
+            "selectedKey": "registry",
+            "toolbarTitle": null,
+            "viewMark": "asset-panel asset-content registry-content registry-layout-grid registry-aspect-original registry-simple "
+          }
+        },
+        {
+          "view": "inbox",
+          "measure": {
+            "frameWidth": 724,
+            "dataTheme": "light",
+            "overviewCount": 1,
+            "toolbarCount": 1,
+            "overview": {
+              "x": 0,
+              "y": 0,
+              "w": 724,
+              "h": 222,
+              "right": 724,
+              "bottom": 222
+            },
+            "toolbar": {
+              "x": 0,
+              "y": 222,
+              "w": 724,
+              "h": 648,
+              "right": 724,
+              "bottom": 870
+            },
+            "content": {
+              "x": 0,
+              "y": 870,
+              "w": 724,
+              "h": 360,
+              "right": 724,
+              "bottom": 1230
+            },
+            "inboxSelected": false,
+            "inboxAria": null,
+            "selectedKey": "mine:inbox",
+            "toolbarTitle": "资源库",
+            "viewMark": "asset-panel asset-content inbox-content"
+          }
+        }
+      ]
+    },
+    {
+      "width": 900,
+      "theme": "dark",
+      "pageErrors": [],
+      "views": [
+        {
+          "view": "registry",
+          "measure": {
+            "frameWidth": 900,
+            "dataTheme": "dark",
+            "overviewCount": 1,
+            "toolbarCount": 1,
+            "overview": {
+              "x": 0,
+              "y": 0,
+              "w": 20,
+              "h": 222,
+              "right": 20,
+              "bottom": 222
+            },
+            "toolbar": {
+              "x": 0,
+              "y": 222,
+              "w": 24,
+              "h": 500,
+              "right": 24,
+              "bottom": 722
+            },
+            "content": {
+              "x": 0,
+              "y": 722,
+              "w": 0,
+              "h": 387,
+              "right": 0,
+              "bottom": 1109
+            },
+            "inboxSelected": false,
+            "inboxAria": null,
+            "selectedKey": "registry",
+            "toolbarTitle": null,
+            "viewMark": "asset-panel asset-content registry-content registry-layout-grid registry-aspect-original registry-simple "
+          }
+        },
+        {
+          "view": "inbox",
+          "measure": {
+            "frameWidth": 900,
+            "dataTheme": "dark",
+            "overviewCount": 1,
+            "toolbarCount": 1,
+            "overview": {
+              "x": 0,
+              "y": 0,
+              "w": 900,
+              "h": 222,
+              "right": 900,
+              "bottom": 222
+            },
+            "toolbar": {
+              "x": 0,
+              "y": 222,
+              "w": 900,
+              "h": 130,
+              "right": 900,
+              "bottom": 352
+            },
+            "content": {
+              "x": 0,
+              "y": 352,
+              "w": 900,
+              "h": 547,
+              "right": 900,
+              "bottom": 899
+            },
+            "inboxSelected": false,
+            "inboxAria": null,
+            "selectedKey": "mine:inbox",
+            "toolbarTitle": "资源库",
+            "viewMark": "asset-panel asset-content inbox-content"
+          }
+        }
+      ]
+    },
+    {
+      "width": 900,
+      "theme": "light",
+      "pageErrors": [],
+      "views": [
+        {
+          "view": "registry",
+          "measure": {
+            "frameWidth": 900,
+            "dataTheme": "light",
+            "overviewCount": 1,
+            "toolbarCount": 1,
+            "overview": {
+              "x": 0,
+              "y": 0,
+              "w": 20,
+              "h": 222,
+              "right": 20,
+              "bottom": 222
+            },
+            "toolbar": {
+              "x": 0,
+              "y": 222,
+              "w": 24,
+              "h": 500,
+              "right": 24,
+              "bottom": 722
+            },
+            "content": {
+              "x": 0,
+              "y": 722,
+              "w": 0,
+              "h": 387,
+              "right": 0,
+              "bottom": 1109
+            },
+            "inboxSelected": false,
+            "inboxAria": null,
+            "selectedKey": "registry",
+            "toolbarTitle": null,
+            "viewMark": "asset-panel asset-content registry-content registry-layout-grid registry-aspect-original registry-simple "
+          }
+        },
+        {
+          "view": "inbox",
+          "measure": {
+            "frameWidth": 900,
+            "dataTheme": "light",
+            "overviewCount": 1,
+            "toolbarCount": 1,
+            "overview": {
+              "x": 0,
+              "y": 0,
+              "w": 900,
+              "h": 222,
+              "right": 900,
+              "bottom": 222
+            },
+            "toolbar": {
+              "x": 0,
+              "y": 222,
+              "w": 900,
+              "h": 130,
+              "right": 900,
+              "bottom": 352
+            },
+            "content": {
+              "x": 0,
+              "y": 352,
+              "w": 900,
+              "h": 547,
+              "right": 900,
+              "bottom": 899
+            },
+            "inboxSelected": false,
+            "inboxAria": null,
+            "selectedKey": "mine:inbox",
+            "toolbarTitle": "资源库",
+            "viewMark": "asset-panel asset-content inbox-content"
+          }
+        }
+      ]
+    },
+    {
+      "width": 1440,
+      "theme": "dark",
+      "pageErrors": [],
+      "views": [
+        {
+          "view": "registry",
+          "measure": {
+            "frameWidth": 1440,
+            "dataTheme": "dark",
+            "overviewCount": 1,
+            "toolbarCount": 1,
+            "overview": {
+              "x": 0,
+              "y": 0,
+              "w": 1440,
+              "h": 64,
+              "right": 1440,
+              "bottom": 64
+            },
+            "toolbar": {
+              "x": 0,
+              "y": 64,
+              "w": 1440,
+              "h": 89,
+              "right": 1440,
+              "bottom": 153
+            },
+            "content": {
+              "x": 0,
+              "y": 153,
+              "w": 1440,
+              "h": 747,
+              "right": 1440,
+              "bottom": 900
+            },
+            "inboxSelected": false,
+            "inboxAria": null,
+            "selectedKey": "registry",
+            "toolbarTitle": null,
+            "viewMark": "asset-panel asset-content registry-content registry-layout-grid registry-aspect-original registry-simple "
+          }
+        },
+        {
+          "view": "inbox",
+          "measure": {
+            "frameWidth": 1440,
+            "dataTheme": "dark",
+            "overviewCount": 1,
+            "toolbarCount": 1,
+            "overview": {
+              "x": 0,
+              "y": 0,
+              "w": 1440,
+              "h": 64,
+              "right": 1440,
+              "bottom": 64
+            },
+            "toolbar": {
+              "x": 0,
+              "y": 64,
+              "w": 1440,
+              "h": 90,
+              "right": 1440,
+              "bottom": 154
+            },
+            "content": {
+              "x": 0,
+              "y": 154,
+              "w": 1440,
+              "h": 745,
+              "right": 1440,
+              "bottom": 899
+            },
+            "inboxSelected": false,
+            "inboxAria": null,
+            "selectedKey": "mine:inbox",
+            "toolbarTitle": "资源库",
+            "viewMark": "asset-panel asset-content inbox-content"
+          }
+        }
+      ]
+    },
+    {
+      "width": 1440,
+      "theme": "light",
+      "pageErrors": [],
+      "views": [
+        {
+          "view": "registry",
+          "measure": {
+            "frameWidth": 1440,
+            "dataTheme": "light",
+            "overviewCount": 1,
+            "toolbarCount": 1,
+            "overview": {
+              "x": 0,
+              "y": 0,
+              "w": 1440,
+              "h": 64,
+              "right": 1440,
+              "bottom": 64
+            },
+            "toolbar": {
+              "x": 0,
+              "y": 64,
+              "w": 1440,
+              "h": 89,
+              "right": 1440,
+              "bottom": 153
+            },
+            "content": {
+              "x": 0,
+              "y": 153,
+              "w": 1440,
+              "h": 747,
+              "right": 1440,
+              "bottom": 900
+            },
+            "inboxSelected": false,
+            "inboxAria": null,
+            "selectedKey": "registry",
+            "toolbarTitle": null,
+            "viewMark": "asset-panel asset-content registry-content registry-layout-grid registry-aspect-original registry-simple "
+          }
+        },
+        {
+          "view": "inbox",
+          "measure": {
+            "frameWidth": 1440,
+            "dataTheme": "light",
+            "overviewCount": 1,
+            "toolbarCount": 1,
+            "overview": {
+              "x": 0,
+              "y": 0,
+              "w": 1440,
+              "h": 64,
+              "right": 1440,
+              "bottom": 64
+            },
+            "toolbar": {
+              "x": 0,
+              "y": 64,
+              "w": 1440,
+              "h": 90,
+              "right": 1440,
+              "bottom": 154
+            },
+            "content": {
+              "x": 0,
+              "y": 154,
+              "w": 1440,
+              "h": 745,
+              "right": 1440,
+              "bottom": 899
+            },
+            "inboxSelected": false,
+            "inboxAria": null,
+            "selectedKey": "mine:inbox",
+            "toolbarTitle": "资源库",
+            "viewMark": "asset-panel asset-content inbox-content"
+          }
+        }
+      ]
+    },
+    {
+      "width": 1920,
+      "theme": "dark",
+      "pageErrors": [],
+      "views": [
+        {
+          "view": "registry",
+          "measure": {
+            "frameWidth": 1920,
+            "dataTheme": "dark",
+            "overviewCount": 1,
+            "toolbarCount": 1,
+            "overview": {
+              "x": 0,
+              "y": 0,
+              "w": 1920,
+              "h": 64,
+              "right": 1920,
+              "bottom": 64
+            },
+            "toolbar": {
+              "x": 0,
+              "y": 64,
+              "w": 1920,
+              "h": 49,
+              "right": 1920,
+              "bottom": 113
+            },
+            "content": {
+              "x": 0,
+              "y": 113,
+              "w": 1920,
+              "h": 787,
+              "right": 1920,
+              "bottom": 900
+            },
+            "inboxSelected": false,
+            "inboxAria": null,
+            "selectedKey": "registry",
+            "toolbarTitle": null,
+            "viewMark": "asset-panel asset-content registry-content registry-layout-grid registry-aspect-original registry-simple "
+          }
+        },
+        {
+          "view": "inbox",
+          "measure": {
+            "frameWidth": 1920,
+            "dataTheme": "dark",
+            "overviewCount": 1,
+            "toolbarCount": 1,
+            "overview": {
+              "x": 0,
+              "y": 0,
+              "w": 1920,
+              "h": 64,
+              "right": 1920,
+              "bottom": 64
+            },
+            "toolbar": {
+              "x": 0,
+              "y": 64,
+              "w": 1920,
+              "h": 90,
+              "right": 1920,
+              "bottom": 154
+            },
+            "content": {
+              "x": 0,
+              "y": 154,
+              "w": 1920,
+              "h": 745,
+              "right": 1920,
+              "bottom": 899
+            },
+            "inboxSelected": false,
+            "inboxAria": null,
+            "selectedKey": "mine:inbox",
+            "toolbarTitle": "资源库",
+            "viewMark": "asset-panel asset-content inbox-content"
+          }
+        }
+      ]
+    },
+    {
+      "width": 1920,
+      "theme": "light",
+      "pageErrors": [],
+      "views": [
+        {
+          "view": "registry",
+          "measure": {
+            "frameWidth": 1920,
+            "dataTheme": "light",
+            "overviewCount": 1,
+            "toolbarCount": 1,
+            "overview": {
+              "x": 0,
+              "y": 0,
+              "w": 1920,
+              "h": 64,
+              "right": 1920,
+              "bottom": 64
+            },
+            "toolbar": {
+              "x": 0,
+              "y": 64,
+              "w": 1920,
+              "h": 49,
+              "right": 1920,
+              "bottom": 113
+            },
+            "content": {
+              "x": 0,
+              "y": 113,
+              "w": 1920,
+              "h": 787,
+              "right": 1920,
+              "bottom": 900
+            },
+            "inboxSelected": false,
+            "inboxAria": null,
+            "selectedKey": "registry",
+            "toolbarTitle": null,
+            "viewMark": "asset-panel asset-content registry-content registry-layout-grid registry-aspect-original registry-simple "
+          }
+        },
+        {
+          "view": "inbox",
+          "measure": {
+            "frameWidth": 1920,
+            "dataTheme": "light",
+            "overviewCount": 1,
+            "toolbarCount": 1,
+            "overview": {
+              "x": 0,
+              "y": 0,
+              "w": 1920,
+              "h": 64,
+              "right": 1920,
+              "bottom": 64
+            },
+            "toolbar": {
+              "x": 0,
+              "y": 64,
+              "w": 1920,
+              "h": 90,
+              "right": 1920,
+              "bottom": 154
+            },
+            "content": {
+              "x": 0,
+              "y": 154,
+              "w": 1920,
+              "h": 745,
+              "right": 1920,
+              "bottom": 899
+            },
+            "inboxSelected": false,
+            "inboxAria": null,
+            "selectedKey": "mine:inbox",
+            "toolbarTitle": "资源库",
+            "viewMark": "asset-panel asset-content inbox-content"
+          }
+        }
+      ]
+    }
+  ],
+  "passed": true
+}
