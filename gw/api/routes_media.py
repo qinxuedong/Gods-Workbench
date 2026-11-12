@@ -60,6 +60,15 @@ def _query_dict(request: Request) -> dict[str, Any]:
     return {key: request.query_params.get(key) for key in request.query_params}
 
 
+def _if_none_match_hits(header: str | None, etag: str) -> bool:
+    """RFC 7232 弱比较：支持逗号列表、``*`` 与 ``W/`` 前缀。"""
+    for candidate in (header or "").split(","):
+        token = candidate.strip()
+        if token == "*" or token == etag or token == "W/" + etag:
+            return True
+    return False
+
+
 # ---------------------------------------------------------------------------
 # 代理 / 缩略图设置（JsonState 落盘，写后可读回）
 # ---------------------------------------------------------------------------
@@ -265,18 +274,45 @@ def media_preview(
     request: Request,
     authorization: str | None = Header(None),
     x_user_role: str = Header("editor", alias="X-User-Role"),
+    if_none_match: str | None = Header(None, alias="If-None-Match"),
 ):
     """对允许根目录内的真实文件返回真实缩略字节；越界 403，依赖缺失 503。
 
     【QIN-588】加挂请求主体上下文：收集箱预览按主体分账解析（遗留收集目录按
     sha256(owner) 隔离）；既有 asset_id/path 调用不受影响（require_authenticated 幂等）。
+    【QIN-604】响应带 Cache-Control + ETag；If-None-Match 命中直接 304，不出图。
     """
     _read(authorization, x_user_role)
     payload = _query_dict(request)
     if str(payload.get("metadata") or "").lower() in {"1", "true", "yes"}:
         return media_proxy.descriptor(payload)
-    result = repo.preview_bytes(payload)
-    return Response(content=result["bytes"], media_type=result["media_type"])
+
+    # 主体隔离：private 禁止共享缓存；no-cache 强制每次 revalidate；must-revalidate
+    # 禁止断网时拿陈旧副本。ETag 由源身份 + 格式 + 宽度算出，不用带版本参数的 URL。
+    headers = {"Cache-Control": "private, no-cache, must-revalidate"}
+    descriptor = repo.preview_etag(payload)
+    if descriptor is not None:
+        etag = str(descriptor["etag"])
+        headers["ETag"] = etag
+        if _if_none_match_hits(if_none_match, etag):
+            return Response(status_code=status.HTTP_304_NOT_MODIFIED, headers=headers)
+        # 复用本次请求里 preview_etag 已经完成的输入解析与允许根准入校验。
+        # 两次调用是同一个同步请求内的相邻语句，中间不存在用户可控的状态变更；
+        # _resolve_input 的 _resolved_path 快路径仍校验文件真实存在（与 QIN-588
+        # 全库预热同一口径）。重复解析会在 Windows 上再跑一遍 realpath / 允许根
+        # 校验链，把 24 并发预览压在串行文件状态查询上。descriptor 为 None 时
+        # 走下方原样调用，由 preview_bytes 重跑完整解析并抛既有 403/404/503。
+        enriched = dict(payload)
+        enriched["_resolved_path"] = descriptor["path"]
+        enriched["_settings"] = descriptor["settings"]
+        enriched["_cache_dir"] = descriptor["cache_dir"]
+        enriched["_source"] = descriptor["source"]
+        enriched["_identity"] = descriptor["identity"]
+        result = repo.preview_bytes(enriched)
+    else:
+        # 解析失败不能吞：交给 preview_bytes 原样抛既有 403/404/503。
+        result = repo.preview_bytes(payload)
+    return Response(content=result["bytes"], media_type=result["media_type"], headers=headers)
 
 
 # ---------------------------------------------------------------------------

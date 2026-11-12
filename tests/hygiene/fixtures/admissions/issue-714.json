@@ -1,0 +1,32 @@
+{
+  "schema": "gw.cleanroom-admission-shard/v1",
+  "issue": 714,
+  "authorization_basis": "GitHub Issue #714 (QIN-604), 2026-11-12",
+  "files": [
+    "gw/asset_registry/repository.py",
+    "gw/asset_registry/index_jobs.py",
+    "gw/api/routes_asset_registry.py",
+    "gw/api/routes_media.py",
+    "gw/core/storage.py",
+    "gw/media/repository.py",
+    "tests/contracts/assets/test_qin604_registry_snapshot_reads.py",
+    "tests/benchmarks/test_qin604_registry_read_latency.py",
+    "tests/hygiene/fixtures/admissions/issue-714.json"
+  ],
+  "admitted_files": [],
+  "accepted_test_files": [
+    {
+      "path": "tests/contracts/assets/test_qin604_registry_snapshot_reads.py",
+      "classification": "curated_test_coverage",
+      "authorization_basis": "GitHub Issue #714 (QIN-604), 2026-11-12",
+      "admission": "accepted"
+    },
+    {
+      "path": "tests/benchmarks/test_qin604_registry_read_latency.py",
+      "classification": "curated_test_coverage",
+      "authorization_basis": "GitHub Issue #714 (QIN-604), 2026-11-12",
+      "admission": "accepted"
+    }
+  ],
+  "notes": "QIN-604 资产注册表只读热路径改用按文件签名缓存的快照：storage.load_with_status 区分空态与读失败；_FrozenDict/_FrozenList 为 dict/list 子类并支持 copy/deepcopy/pickle 重建普通容器；§1 #1-#8 读函数与 /status 改走快照。index_jobs.py 的 _roots/root_facets/_recover 三处只读点是 /assets 与 /status 请求链的下游读点，为满足 AC5「同一 32 请求序列解析次数 42→≤1」必须一并收敛，属最小配套改动。/api/media-preview 加 private, no-cache, must-revalidate + ETag/304，键含源身份、格式与宽度。基础账本与计数断言未改。"
+}
