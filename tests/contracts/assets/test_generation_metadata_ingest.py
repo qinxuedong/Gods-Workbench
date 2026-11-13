@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import struct
+import threading
 import time
 import zlib
 from pathlib import Path
@@ -711,26 +712,70 @@ def test_cold_read_after_restart_keeps_generation(ingest_runtime):
         assert entry["metadata"]["generation"]["prompt"] == "a misty harbour at dawn, cinematic"
 
 
-def test_stale_attempt_cannot_commit(ingest_runtime):
-    """风险项-乱序：attempt 递增或已终态后，旧 attempt 不得再进入提交。
+def test_stale_attempt_cannot_commit(ingest_runtime, monkeypatch):
+    """风险项-乱序：任务仍在 running 时新尝试接管，旧 attempt 不得提交。
 
-    `_run` 在扫描前后与提交前都过 `_checkpoint`；这里直接对该闸门取证：
-    旧 attempt 必须抛 `_Stopped`，且不得产生任何写入（revision 不变）。
+    先把任务停在**非终态**的 `running`（扫描线程被闸门挡住），再把持久 attempt
+    加一。此时终态闸门不成立（任务既没取消也没失败），唯一能拦住旧线程的就是
+    `_checkpoint` 的 attempt 代际比较——因此删掉该比较必红（反证见 PR 说明）。
     """
     write_file(ingest_runtime, "stale.png", png_bytes([(b"tEXt", b"parameters", A1111_TEXT)]))
-    with TestClient(create_app()) as client:
-        job = wait_job(client, submit(client, key="stale-1").json()["job_id"])
-        assert job["status"] == "succeeded", job
-        instance = jobs.service()
-        revision = repo.state().read()["revision"]
+    entered = threading.Event()
+    release = threading.Event()
+    real_extract = gm.extract_generation
 
-        # 新尝试已接管（attempt+1）：旧 attempt 在提交前被拦。
-        with pytest.raises(jobs._Stopped):
-            instance._checkpoint(job["job_id"], job["attempt"] + 1)
-        # 任务已终态：同一 attempt 也不能再提交一次。
-        with pytest.raises(jobs._Stopped):
-            instance._checkpoint(job["job_id"], job["attempt"])
-        assert repo.state().read()["revision"] == revision
+    def gated(path):
+        entered.set()
+        release.wait(30)
+        return real_extract(path)
+
+    committed = []
+    monkeypatch.setattr(gm, "extract_generation", gated)
+    try:
+        with TestClient(create_app()) as client:
+            job_id = submit(client, key="stale-1").json()["job_id"]
+            assert entered.wait(20), "扫描线程未进入闸门"
+            instance = jobs.service()
+            real_commit = instance._commit
+
+            def spy_commit(job, files, generation_stats=None):
+                committed.append((job["job_id"], job["attempt"]))
+                return real_commit(job, files, generation_stats)
+
+            monkeypatch.setattr(instance, "_commit", spy_commit)
+            revision = repo.state().read()["revision"]
+
+            def takeover(raw):
+                raw["jobs"][job_id]["attempt"] += 1
+                raw["jobs"][job_id]["version"] += 1
+
+            instance.store.mutate(takeover)
+            live = instance.store.read()["jobs"][job_id]
+            assert live["status"] == "running", live
+            assert live["attempt"] == 2, live
+
+            # 旧 attempt：任务非终态，只有代际判断能拦住它。
+            stale_blocked = False
+            try:
+                instance._checkpoint(job_id, 1)
+            except jobs._Stopped:
+                stale_blocked = True
+            finally:
+                release.set()
+            assert stale_blocked, "旧 attempt 在任务仍 running 时未被拦下（可提交）"
+            # 新 attempt 可继续：同一状态直接返回任务本身。
+            assert instance._checkpoint(job_id, 2)["attempt"] == 2
+    finally:
+        release.set()
+
+    # TestClient 退出时 `shutdown(wait=True)` 已等旧线程结束，以下为终局取证。
+    assert committed == [], committed
+    raw = repo.state().read()
+    assert raw["revision"] == revision
+    assert not raw.get("assets"), "旧 attempt 不得提交任何资产"
+    settled = instance.store.read()["jobs"][job_id]
+    assert settled["status"] == "running", settled
+    assert settled["attempt"] == 2, settled
 
 
 def test_generation_written_during_scan_is_not_cleared(ingest_runtime, monkeypatch):
