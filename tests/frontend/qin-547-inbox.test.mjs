@@ -4,7 +4,7 @@ import { readAssetManagerAggregate } from './asset-manager-aggregate.mjs';
 import {readFileSync} from 'node:fs';
 import test from 'node:test';
 // QIN-602：主渲染分发已统一收口到 renderActiveAssetView()，源码正则改为等价行为断言。
-import {createAssetViewHost} from './qin-602-asset-view-harness.mjs';
+import {createAssetViewHost, inboxSideEffectFetch} from './qin-602-asset-view-harness.mjs';
 
 const source = readAssetManagerAggregate();
 const styles = readFileSync(new URL('../../web/css/pages/asset-manager.css', import.meta.url), 'utf8');
@@ -62,20 +62,38 @@ test('AC1/AC2: 收集箱视图读取真实接口并区分三类来源', async ()
     assert.match(functionSource('renderInboxSourceChips'), /asset_library/, '托管资产来源应可筛选');
     assert.match(functionSource('renderInboxManager'), /renderInboxCard/, '收集箱素材应渲染卡片');
     assert.match(functionSource('openAssetInbox'), /setActiveTab\('inbox'\)/, '进入收集箱切换视图');
-    // 【QIN-602 改前 → 改后】原：断言 selectAssetTreeNode 里出现 gwCall('inbox','openAssetInbox')。
-    // AC4 要求主文件侧先切状态与代际、再加载模块，字面量已变；改为真实点击入口验证落点。
-    // 【QIN-602 改前 → 改后】原：assert.match(source, /else if\(activeTab === 'inbox'\) gwLoad\('inbox'\).../)。
-    // 改后：真实执行汇聚点，断言切到收集箱时确实执行收集箱渲染、切到总览不误调；
-    // 意图（主渲染分发接入收集箱）不变，且不再依赖源码字面量。
+    // 【QIN-602 改前 → 改后 · 第 4 处】原：断言 selectAssetTreeNode 里出现
+    // gwCall('inbox','openAssetInbox')。AC4 要求主文件侧先切状态与代际、再加载模块，
+    // 字面量已变；改后不能只断言 activeTab === 'inbox'（那样删掉调用链仍全绿），
+    // 必须验真实产品副作用：拉列表 + 有未读时清角标。此处同时保留主渲染分发的等价断言。
     const inboxHost = await createAssetViewHost({tab: 'inbox'});
     assert.ok(inboxHost.root.innerHTML.includes('inbox-content'), '主渲染分发应接入收集箱');
     inboxHost.dispose();
-    const registryHost = await createAssetViewHost({tab: 'registry'});
+    const registryHost = await createAssetViewHost({tab: 'registry', fetchImpl: inboxSideEffectFetch});
     assert.ok(!registryHost.root.innerHTML.includes('inbox-content'), '总览不得误调收集箱渲染');
     globalThis.GWAssetTreeBridge.activate('mine:inbox');
-    await new Promise(resolve => setTimeout(resolve, 100));
+    await new Promise(resolve => setTimeout(resolve, 150));
     assert.equal(registryHost.main.activeTab, 'inbox', '树节点点击应打开收集箱');
+    assert.ok(
+        registryHost.requests.some(r => r.method === 'GET' && r.url.includes('/api/asset-inbox?limit=500')),
+        '树节点点击必须真的拉收集箱列表（不是只改了个状态字段）',
+    );
+    assert.ok(
+        registryHost.requests.some(r => r.method === 'POST' && r.url.includes('/api/asset-inbox/viewed')),
+        '列表返回未读时必须真的清角标；openAssetInbox 调用链被删掉这条必须变红',
+    );
     registryHost.dispose();
+
+    // 护栏自检：删掉 openAssetInbox 调用后清角标请求消失，证明上面的副作用断言不是空断言。
+    const noChain = await createAssetViewHost({
+        tab: 'registry',
+        fetchImpl: inboxSideEffectFetch,
+        sourceEdits: [{from: '            return api.openAssetInbox();', to: '            return undefined;'}],
+    });
+    globalThis.GWAssetTreeBridge.activate('mine:inbox');
+    await new Promise(resolve => setTimeout(resolve, 150));
+    assert.ok(!noChain.requests.some(r => r.url.includes('/api/asset-inbox/viewed')), '删掉调用链后不得再清角标');
+    noChain.dispose();
 });
 
 test('AC1: 设置里可改位置并提示是否迁移已有文件', () => {

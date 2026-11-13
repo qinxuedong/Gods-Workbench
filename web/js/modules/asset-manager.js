@@ -3869,7 +3869,9 @@ async function loadRegistryBootstrap(requestId=beginRegistryBootstrapRequest()){
                 // 注意容器类名是 .registry-overview-shell（renderRegistryOverview 的输出根），不是 .registry-overview。
                 const overview = root.querySelector('.registry-overview-shell');
                 if(overview){
-                    const overviewMarkup = renderRegistryOverview();
+                    // 【QIN-602 r3】DOM 里的概览根带 data-asset-view-topbar，比较串必须同口径：
+                    // 否则判等永远不成立，facets 每到达一次都会整节点替换并丢掉顶栏标记。
+                    const overviewMarkup = markedOverviewMarkup();
                     if(overview.outerHTML !== overviewMarkup) overview.outerHTML = overviewMarkup;
                 }
             }
@@ -5047,6 +5049,14 @@ function governanceTriggerLabel(){
 // 可见错误。代际 + 防重复检查让快速来回切换不闪没、不出现两排、不串标题。
 let assetViewRenderSeq = 0;
 let assetViewTopbarSnapshot = null;
+function markedOverviewMarkup(){
+    // 【QIN-602 r3】facets 到达时做概览节点局部 outerHTML 替换；DOM 里的概览根带
+    // data-asset-view-topbar，比较串必须同口径，否则判等永远不成立、每次都整节点替换并丢标记。
+    // 非嵌入态本来就不打标记（顶栏由独立页自己生成），这里同步省略。
+    const markup = renderRegistryOverview();
+    if(!document.documentElement.classList.contains('vault-shell-embedded')) return markup;
+    return markup.replace(/^<([a-zA-Z][\w:-]*)\b/, '<$1 data-asset-view-topbar');
+}
 function embeddedAssetTopbarMarkup(snapshot){
     return `${renderRegistryOverview()}${renderRegistryToolbar(null, snapshot.title, snapshot.subtitle, {allowUrl:true,hideHeading:snapshot.hideHeading})}`;
 }
@@ -5056,6 +5066,8 @@ function embeddedTopbarPresent(){
 }
 function markInsertedTopbar(){
     // 顶栏固定由「总览 + 工具栏」两段组成，afterbegin 插入后即前两个子节点。
+    // 【QIN-602 r3】保留该写法：qin-489 / qin-572 的既存源文本契约钉住了
+    // insertAdjacentHTML 的原模板串，改成「生成时带属性」会无谓扩大本票范围。
     for(const node of [...root.children].slice(0, 2)) node.setAttribute('data-asset-view-topbar', '');
 }
 function restoreEmbeddedAssetTopbar(seq){
@@ -5077,9 +5089,12 @@ function showEmbeddedAssetViewFailure(seq, domain, error){
     // 过期代际的失败只记日志、不写面板——面板属于最后选中的那个视图。
     console.error(`资产视图渲染失败: ${domain || 'unknown'}`, error);
     if(seq !== assetViewRenderSeq) return;
-    const message = String(error?.message || error || '视图加载失败');
+    // 【QIN-602 r3】原因只出现一次，且不把动态 import 的模块 URL 摊给用户（完整错误在 console）。
+    // 给出可操作的下一步：回总览或刷新重试，而不是重复两遍技术细节。
+    const raw = String(error?.message || error || '视图加载失败').replace(/https?:\/\/\S+/g, '').trim();
+    const message = escapeHtml(raw || '视图加载失败');
     // 复用既有面板类：非嵌入态保留左栏树，嵌入态 renderAssetTreePanel 本就返回空串。
-    root.innerHTML = `${renderAssetTreePanel()}<section class="asset-panel asset-content asset-view-load-error" role="alert" data-asset-view-error><div class="content-toolbar"><div class="content-heading"><strong>视图加载失败</strong><span>${escapeHtml(message)}</span></div></div><div class="content-scroll"><div class="tree-empty">${escapeHtml(message)}</div></div></section>`;
+    root.innerHTML = `${renderAssetTreePanel()}<section class="asset-panel asset-content asset-view-load-error" role="alert" data-asset-view-error><div class="content-toolbar"><div class="content-heading"><strong>视图加载失败</strong></div></div><div class="content-scroll"><div class="tree-empty">当前视图暂时无法加载：${message}<br>可点击左侧「资产总览」返回，或刷新页面后重试。</div></div></section>`;
     restoreEmbeddedAssetTopbar(seq);
 }
 function runAssetViewRenderer(seq, domain, request, invoke){
@@ -7067,9 +7082,19 @@ function expandAssetTreeAncestors(key){
         }
     }
 }
+// 【QIN-602 r3】总览是同步分支（renderRegistryManager），本来就不依赖 organize 域。但
+// inbox.js 加载失败会顺静态依赖链 organize.js → media-canvas.js → canvas-bridge.js → inbox.js
+// 把 organize 一起带崩，只靠 gwCall 会让用户卡在失败面板里回不到总览。主文件先同步落状态
+// 并真实渲染一帧，再让 organize 补做清筛选 / 拉数据等既有副作用。
+function syncActivateRegistryOverview(){
+    setActiveTab('registry');
+    setAssetTreeSelectedKey('registry');
+    render();
+}
 function gwAssetTreeActivate(key){
     const value = String(key || '');
     if(!value || value === 'registry'){
+        if(value === 'registry') syncActivateRegistryOverview();
         void gwCall('organize', 'activateAssetBoard', 'registry');
         saveAssetTreeState();
         return;
@@ -7158,7 +7183,11 @@ function selectAssetTreeNode(key){
         void gwLoad('inbox').then(api => {
             if(activeTab !== 'inbox') return;
             return api.openAssetInbox();
-        }).catch(() => null);
+        }).catch(error => {
+            // 【QIN-602 r3】入口副作用链路的失败也要留痕：渲染器的面板由 render() 开代接住，
+            // 这里补记「拉列表 / 清角标」这一步，不能静默吞掉。
+            console.error('收集箱载入失败', error);
+        });
         return;
     }
     if(value.startsWith('mine:root:')){

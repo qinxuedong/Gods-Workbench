@@ -158,6 +158,17 @@ class StubNode {
         }
     }
     get outerHTML() { return serializeNode(this); }
+    set outerHTML(html) {
+        // 【QIN-602 r3】facets 到达后会做概览节点的局部 outerHTML 替换；宿主必须真替换，
+        // 不能静默吞掉赋值（否则「标记是否随替换保留」这类断言会假绿）。
+        assert.ok(this.parentNode, 'outerHTML 赋值需要父节点');
+        const parent = this.parentNode;
+        const index = parent.childNodes.indexOf(this);
+        const nodes = parseHTML(String(html ?? ''), this.ownerDocument, parent);
+        nodes.forEach(node => { node.parentNode = parent; });
+        parent.childNodes.splice(index, 1, ...nodes);
+        this.parentNode = null;
+    }
 
     appendChild(node) {
         node.parentNode = this;
@@ -564,10 +575,13 @@ const MOUNTED_BOARD = {
     hidden: [],
 };
 
-function installHost({embedded = true, theme = 'dark', boards = MOUNTED_BOARD} = {}) {
+function installHost({embedded = true, theme = 'dark', boards = MOUNTED_BOARD, fetchImpl = null} = {}) {
     if (uninstallHost) { uninstallHost(); uninstallHost = null; }
     NODE_ID = 0;
     const saved = new Map();
+    // 【QIN-602 r3】受控网络：用例可注入真实 fetch 响应并读取请求台账，用来断言
+    // 「点收集箱」这类入口确实发出产品副作用请求（而不是只切了个 activeTab）。
+    const requests = [];
     const put = (key, value) => {
         saved.set(key, Object.getOwnPropertyDescriptor(globalThis, key));
         Object.defineProperty(globalThis, key, {configurable: true, writable: true, value});
@@ -631,9 +645,15 @@ function installHost({embedded = true, theme = 'dark', boards = MOUNTED_BOARD} =
     // 收集箱接口给「一直没回」的响应：其余接口一律失败（首屏走失败兜底、闸门照常放行）。
     // 不能用立即 reject —— 收集箱在失败后会「请求→重绘→再请求」，本票不验收该既有缺陷，
     // 立即失败会让它在本宿主里以微任务速度空转。
-    put('fetch', url => (String(url).includes('/api/asset-inbox')
+    // 注入 fetchImpl 时由用例完全接管响应，但请求台账始终记录（观测不替代行为）。
+    const defaultFetch = url => (String(url).includes('/api/asset-inbox')
         ? new Promise(() => {})
-        : Promise.reject(new Error('QIN-602 测试宿主不提供网络'))));
+        : Promise.reject(new Error('QIN-602 测试宿主不提供网络')));
+    put('fetch', (url, init) => {
+        const entry = {url: String(url), method: String(init?.method || 'GET').toUpperCase()};
+        requests.push(entry);
+        return fetchImpl ? fetchImpl(url, init, entry) : defaultFetch(url, init);
+    });
 
     uninstallHost = () => {
         for (const [key, descriptor] of saved) {
@@ -641,7 +661,7 @@ function installHost({embedded = true, theme = 'dark', boards = MOUNTED_BOARD} =
             else delete globalThis[key];
         }
     };
-    return {document, root: document.getElementById('assetManagerRoot'), storage: storageApi};
+    return {document, root: document.getElementById('assetManagerRoot'), storage: storageApi, requests};
 }
 
 async function loadProduct(treeRoot) {
@@ -656,6 +676,37 @@ async function bootProduct(document) {
 }
 
 const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
+
+/**
+ * 【QIN-602 r3】捕获整段窗口内的 console.error：域模块失败可能发生在 bootProduct、
+ * 延后域队列或几百毫秒后的迟到代际里，只包住「点击那一下」会漏掉真正的失败日志。
+ * 用例应按具体前缀筛选，避免被依赖链的 `gwCall 失败: …` 噪声误命中。
+ */
+export function captureConsoleErrors() {
+    const logs = [];
+    const original = console.error;
+    console.error = (...args) => { logs.push(args.map(String).join(' ')); };
+    return {
+        logs,
+        withPrefix(prefix) { return logs.filter(line => line.startsWith(prefix)); },
+        stop() { console.error = original; },
+    };
+}
+
+/**
+ * 【QIN-602 r3】收集箱真实副作用链路所需的受控响应：列表返回未读数 3，
+ * openAssetInbox() 才会走 markAssetInboxViewed() 发 POST /api/asset-inbox/viewed。
+ * 其余端点一律拒绝，避免真实出网。
+ */
+export function inboxSideEffectFetch(url) {
+    const target = String(url);
+    const response = data => ({status: 200, ok: true, json: async () => data});
+    if (target.includes('/api/asset-inbox/viewed')) return Promise.resolve(response({ok: true}));
+    if (target.includes('/api/asset-inbox?limit=500')) {
+        return Promise.resolve(response({items: [], settings: {unread_count: 3, is_default: true}}));
+    }
+    return Promise.reject(new Error('QIN-602 测试宿主不提供网络'));
+}
 
 function topbar(root) {
     return {
@@ -683,9 +734,9 @@ function toolbarTitle(root) {
  */
 export async function createAssetViewHost({
     embedded = true, theme = 'dark', tab = 'registry', boards = MOUNTED_BOARD,
-    loaderPatches = {}, sourceEdits = [], fileEdits = [],
+    loaderPatches = {}, sourceEdits = [], fileEdits = [], fetchImpl = null,
 } = {}) {
-    const host = installHost({embedded, theme, boards});
+    const host = installHost({embedded, theme, boards, fetchImpl});
     const tree = makeProductTree(loaderPatches, sourceEdits, fileEdits);
     const main = await loadProduct(tree);
     await bootProduct(host.document);
@@ -700,6 +751,8 @@ export async function createAssetViewHost({
         document: host.document,
         root: host.root,
         storage: host.storage,
+        /** 真实网络请求台账：{url, method}[]，用于断言入口的产品副作用 */
+        requests: host.requests,
         /** 切到某个 tab 并真实渲染一帧 */
         async setTab(next) {
             main.setActiveTab(next);

@@ -1496,14 +1496,15 @@ html.vault-shell-embedded body.gw-signal.gw-page--asset-manager #assetManagerRoo
     /* 【QIN-602】≤820px 时 .content-toolbar 被 asset-manager.css 转成列方向（flex-direction:column），
        而本文件 .registry-toolbar-controls 的 flex: 1 1 600px 里的 600px 在主轴上才是宽度、在列方向
        会变成长度 → 工具栏被撑到 600px 以上，内容区被推到视口外（724 收集箱实测 y=870）。 */
-    body.gw-signal.gw-page--asset-manager .registry-toolbar .registry-toolbar-controls {
+    /* 【QIN-602 r3】限定嵌入态：独立资产页没有本票的顶栏组合，不跟着改控件伸缩。 */
+    html.vault-shell-embedded body.gw-signal.gw-page--asset-manager .registry-toolbar .registry-toolbar-controls {
         flex: 0 0 auto;
         align-self: stretch;
     }
     /* 【QIN-602】724 下 4 列把主卡压到 113px，「资产总量」被裁到 20px 与右侧「统一资产索引」
        发生 21px 重叠（读起来是「资产资产索引」）。主卡跨两列给两个标签各自的空间，
        不改 13 张卡的列数与 QIN-531 的 2/3 宽度公式。 */
-    body.gw-signal.gw-page--asset-manager .registry-overview-stats > .registry-stat-card.primary {
+    html.vault-shell-embedded body.gw-signal.gw-page--asset-manager .registry-overview-stats > .registry-stat-card.primary {
         grid-column: span 2;
     }
 }
