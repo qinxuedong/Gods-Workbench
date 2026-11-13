@@ -1,7 +1,8 @@
 # QIN-602 AC3 浏览器证据（只读分支）
 
 - 对象：GitHub #711 / QIN-602，草稿 PR #712
-- 绑定 head：`915c75dea9b4e1837f25a0b25fb9edb9f85a589f`（与 `ac3-evidence.json` 的 `head` 字段一致）
+- 绑定 head：`e45d64e308d6641b4ec6c8d5231709996f0c6878`（与 `ac3-evidence.json` 的 `head` 字段一致；第 3 轮返工后按新 head 全量重取 24 组）
+- 第 3 轮返工只改渲染编排、失败面板文案、测试与 ≤820 嵌入态 CSS 限定；四宽 × 两主题 × 三视图的 24 组量测逐项复跑，数值与上一轮一致，无布局回归
 - 口径：隔离测试实例 + 无头 Chrome，直接打开资产库嵌入页 `?embedded=1&vault=1`，四宽按嵌入页视口量测
 - 组合：724 / 900 / 1440 / 1920 × dark / light，共 8 组；每组验证资产总览 / 收集箱 / 挂载文件夹三个视图 → 24 张截图
 - 切换方式：`window.GWAssetTreeBridge.activate('mine:inbox' / 'mine:board:library_demo')`；选中态取 `snapshot().selected_key`（嵌入态下外壳侧栏的唯一状态来源）
