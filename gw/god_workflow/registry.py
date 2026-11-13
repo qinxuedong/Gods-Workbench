@@ -496,10 +496,14 @@ def store_bytes(
     media_type: str,
     *,
     task_id: str | None = None,
+    generation: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """把执行输出字节登记为素材（与上传共用同一清单与命名规则）。
 
     接受图像、视频及 PSD 原件；PSD 保留字节并提供下载，不伪造图层预览。
+
+    `generation`（QIN-600）：任务提交提示词快照解析出的生成元数据，随凭单一起
+    落盘，使 `reconcile_pending` 重放时仍能补写同一份提示词。
     """
     if not payload:
         raise CleanroomException(400, "INVALID_ASSET_UPLOAD", "输出文件为空")
@@ -551,6 +555,9 @@ def store_bytes(
         "task_id": task_id,
         "preview_available": kind != "document",
     }
+    # QIN-600：生成元数据随资产凭单落盘，重放登记时可直接复用同一份提示词。
+    if isinstance(generation, dict) and generation:
+        asset["generation"] = generation
     if task_id:
         try:
             task = load_task(context, task_id)

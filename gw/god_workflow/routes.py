@@ -26,6 +26,7 @@ import httpx
 from fastapi import APIRouter, Header, Request, status
 from fastapi.responses import FileResponse
 
+from gw.asset_registry import generation_metadata
 from gw.core import audit
 from gw.core.auth import (
     EDIT_ROLES,
@@ -1542,7 +1543,11 @@ async def task_status(
         st = query_res.get("status")
         if st == "SUCCESS":
             assets = await _collect_rh_task_outputs(
-                context, task_id, query_res.get("outputs", []), platform=target
+                context,
+                task_id,
+                query_res.get("outputs", []),
+                platform=target,
+                task=task,
             )
             complete = bool(assets) and all(item.get("registered") for item in assets)
             task = registry.update_task(
@@ -1691,6 +1696,7 @@ async def retry_task_collection(
             task_id,
             result.get("outputs", []),
             platform=str(task.get("target") or "rh_cloud"),
+            task=task,
         )
     else:
         history = await _comfy_call(
@@ -1886,6 +1892,16 @@ def _execution_error_lines(summary_messages: list[Any]) -> list[str]:
     return lines
 
 
+def _task_generation(task: dict[str, Any] | None) -> dict[str, Any] | None:
+    """从任务账本的执行图快照取 GW 产物生成元数据（QIN-600）。
+
+    任务里没有快照或快照里取不到正向提示词时返回 `None`，登记侧据此不写该键。
+    """
+    if not isinstance(task, dict):
+        return None
+    return generation_metadata.gw_task_generation(task.get("prompt_snapshot"))
+
+
 async def _collect_task_outputs(
     context: AuthContext, task_id: str, outputs: list[dict[str, Any]], *, task=None
 ) -> list[dict[str, Any]]:
@@ -1896,6 +1912,8 @@ async def _collect_task_outputs(
     collected: list[dict[str, Any]] = []
     if len(outputs) > 32:
         return [{"registered": False, "code": "OUTPUT_COUNT_EXCEEDED"}]
+    # QIN-600：本轮产物的提示词来自任务提交时的执行图快照，逐产物复用同一份。
+    generation = _task_generation(task)
     for item in outputs:
         filename = str(item.get("filename") or "")
         if not filename:
@@ -1916,10 +1934,15 @@ async def _collect_task_outputs(
             continue
         try:
             asset = registry.store_bytes(
-                context, payload, filename, media_type, task_id=task_id
+                context,
+                payload,
+                filename,
+                media_type,
+                task_id=task_id,
+                generation=generation,
             )
             registered = asset_hub_bridge.register_output_to_asset_hub(
-                asset, context=context
+                asset, context=context, generation=generation
             )
             if registered.get("error"):
                 collected.append(
@@ -2118,11 +2141,14 @@ async def _collect_rh_task_outputs(
     outputs: list[dict[str, Any]],
     *,
     platform: str = "rh_cloud",
+    task: dict[str, Any] | None = None,
 ) -> list[dict[str, Any]]:
     """把 RunningHub 云端输出文件下载落到运行时数据根并登记为素材。"""
     collected: list[dict[str, Any]] = []
     if len(outputs) > 32:
         return [{"registered": False, "code": "OUTPUT_COUNT_EXCEEDED"}]
+    # QIN-600：与本地回收同一口径，提示词取自任务提交时的执行图快照。
+    generation = _task_generation(task)
     # 同一份白名单同时用于 URL 校验与解析钉定（fake-ip 借道只认它）。
     allowed_hosts = _output_allowed_hosts(platform)
     for item in outputs:
@@ -2169,10 +2195,15 @@ async def _collect_rh_task_outputs(
             continue
         try:
             asset = registry.store_bytes(
-                context, content, filename, media_type, task_id=task_id
+                context,
+                content,
+                filename,
+                media_type,
+                task_id=task_id,
+                generation=generation,
             )
             registered = asset_hub_bridge.register_output_to_asset_hub(
-                asset, context=context
+                asset, context=context, generation=generation
             )
             if registered.get("error"):
                 collected.append(

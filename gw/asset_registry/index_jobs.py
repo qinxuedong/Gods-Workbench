@@ -28,6 +28,7 @@ from concurrent.futures import ThreadPoolExecutor
 from contextlib import suppress
 from pathlib import Path
 
+from gw.asset_registry import generation_metadata
 from gw.core import storage
 from gw.core.auth import EDIT_ROLES
 from gw.core.config import load_runtime_auth_config
@@ -1204,6 +1205,7 @@ class IndexJobs:
             job = self._checkpoint(job_id, attempt)
             roots = self._check(job)
             files = self._scan(job_id, attempt, roots, job["_request"])
+            generation_stats = getattr(files, "generation_stats", None)
             with self.condition:
                 job = self._checkpoint(job_id, attempt)
                 job.update(phase="indexing", scanned=len(files))
@@ -1217,7 +1219,7 @@ class IndexJobs:
                 # 提交必须与取消/暂停在同一线程锁内线性化：
                 # test_commit_wins_cancel_never_reports_cancelled 覆盖该不变量，
                 # 不能在提交期间放开任务锁。
-                result = self._commit(job, files)
+                result = self._commit(job, files, generation_stats)
                 job.update(
                     status="succeeded",
                     phase="completed",
@@ -1402,6 +1404,14 @@ class IndexJobs:
 
         files = []
         entries = 0
+        # QIN-600：只在重建索引时读生成元数据；sync 只做差集统计，不碰文件内容。
+        want_generation = request.get("kind") == "reindex"
+        generation_stats = {
+            "scanned_images": 0,
+            "with_metadata": 0,
+            "warnings": 0,
+            "truncated": 0,
+        }
         progress_saved_at = time.monotonic()
         configured_exclusion_roots, custom_cache_base = (
             repo._index_scan_exclusion_configuration()
@@ -1546,6 +1556,24 @@ class IndexJobs:
                             item["metadata"] = video_metadata
                             if duration is not None:
                                 item["duration"] = duration
+                        if want_generation and generation_metadata.is_supported_image(
+                            path
+                        ):
+                            # QIN-600：只读元数据段（不解码像素）。失败只计 warning，
+                            # 不影响该文件入库；文件不可读的 OSError 仍走下方既有
+                            # error_count 路径。无元数据时不写该键（AC4）。
+                            generation, warnings = (
+                                generation_metadata.extract_generation(path)
+                            )
+                            generation_stats["scanned_images"] += 1
+                            generation_stats["warnings"] += warnings
+                            if generation is not None:
+                                item.setdefault("metadata", {})[
+                                    "generation"
+                                ] = generation
+                                generation_stats["with_metadata"] += 1
+                                if generation.get("truncated"):
+                                    generation_stats["truncated"] += 1
                         if request["hash_files"]:
                             # QIN-564：超限文件不再 413 fail-fast 整单失败，
                             # 改走首尾 4MiB + 长度的采样哈希并诚实标记 hash_mode。
@@ -1579,12 +1607,14 @@ class IndexJobs:
                             job["error_count"] += 1
                             self._save(job)
                             if job["error_count"] >= 100:
-                                _error(
-                                    503, "INDEX_FILE_ERRORS", "不可读取文件数量超过上限"
-                                )
-        return files
+                                    _error(
+                                        503, "INDEX_FILE_ERRORS", "不可读取文件数量超过上限"
+                                    )
+        scanned = _ScanFiles(files)
+        scanned.generation_stats = generation_stats
+        return scanned
 
-    def _commit(self, job, files):
+    def _commit(self, job, files, generation_stats=None):
         from gw.asset_registry import repository as repo
 
         self._check(job)
@@ -1683,6 +1713,15 @@ class IndexJobs:
                             elif was_lut and "lut" in current_metadata:
                                 current_metadata.pop("lut")
                                 changed = True
+                            # QIN-600：只替换 generation 这一个键；扫描不到时不删旧值
+                            # （GW 产物登记写入的提示词不会被无元数据的重扫清掉）。
+                            if "generation" in scanned_metadata and current_metadata.get(
+                                "generation"
+                            ) != scanned_metadata["generation"]:
+                                current_metadata["generation"] = scanned_metadata[
+                                    "generation"
+                                ]
+                                changed = True
                         elif was_lut:
                             current_metadata = existing.get("metadata")
                             if isinstance(current_metadata, dict) and "lut" in current_metadata:
@@ -1726,6 +1765,9 @@ class IndexJobs:
                     "scanned": len(files),
                     "revision": raw["revision"],
                 }
+                # QIN-600：生成元数据提取的可复核统计（终态后不变）。
+                if generation_stats is not None:
+                    result["generation"] = dict(generation_stats)
                 # QIN-564 AC1/AC4：哈希模式任务结果如实区分「完整哈希 N /
                 # 超限转采样 M」；非哈希任务不附加哈希计数（诚实口径）。
                 if job["_request"].get("hash_files"):
@@ -1752,6 +1794,16 @@ class IndexJobs:
             return result
 
         return repo.state().mutate(commit)
+
+
+class _ScanFiles(list):
+    """扫描结果：保持 list 语义，附带生成元数据统计（QIN-600）。
+
+    既有调用方与契约测试都把 `_scan` 的返回值当列表使用（遍历、`len`），
+    因此统计挂在列表子类的属性上，而不是把返回值改成元组。
+    """
+
+    __slots__ = ("generation_stats",)
 
 
 class _Stopped(Exception):
