@@ -1,0 +1,20 @@
+{
+  "schema": "gw.cleanroom-admission-shard/v1",
+  "issue": 717,
+  "authorization_basis": "GitHub Issue #717 (QIN-605), 2026-11-13",
+  "files": [
+    "gw/asset_registry/index_jobs.py",
+    "tests/contracts/assets/test_qin_605_state_io_race.py",
+    "tests/hygiene/fixtures/admissions/issue-717.json"
+  ],
+  "admitted_files": [],
+  "accepted_test_files": [
+    {
+      "path": "tests/contracts/assets/test_qin_605_state_io_race.py",
+      "classification": "curated_test_coverage",
+      "authorization_basis": "GitHub Issue #717 (QIN-605), 2026-11-13",
+      "admission": "accepted"
+    }
+  ],
+  "notes": "QIN-605 Windows 索引任务状态文件读写竞争：_JobState 的 read/write 收敛到 storage.namespace_lock('registry_index_jobs') 并对瞬时 PermissionError 做有界重试（5 次尝试、退避 20/40/60/80ms，合计 ≤200ms）。重试只包住单次读写，不重跑 mutate 的 mutator，避免 _recover 的 restore 反复自增 version。仅动 index_jobs.py 状态存储，未改 gw/core/storage.py 通用原子写、索引扫描语义、端口与启动行为；基础卫生账本未改。"
+}
