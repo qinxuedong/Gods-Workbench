@@ -7180,9 +7180,11 @@ function selectAssetTreeNode(key){
         setAssetTreeSelectedKey('mine:inbox');
         render();
         // 迟到的模块不得把用户已经切走的视图抢回收集箱：openAssetInbox 内部还会 setActiveTab。
-        void gwLoad('inbox').then(api => {
+        // gwLoad 负责「等域模块落地并留出守卫窗口」，副作用本身仍走 QIN-591 之后的统一域网关，
+        // 不在主文件里直调模块返回的函数——与其余树节点分支的派发口径保持一致。
+        void gwLoad('inbox').then(() => {
             if(activeTab !== 'inbox') return;
-            return api.openAssetInbox();
+            return gwCall('inbox', 'openAssetInbox');
         }).catch(error => {
             // 【QIN-602 r3】入口副作用链路的失败也要留痕：渲染器的面板由 render() 开代接住，
             // 这里补记「拉列表 / 清角标」这一步，不能静默吞掉。

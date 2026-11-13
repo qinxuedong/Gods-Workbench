@@ -32,7 +32,8 @@ import {readFileSync} from 'node:fs';
 import path from 'node:path';
 import {
     MAIN_SOURCE, MAIN_REL, bootProduct, captureConsoleErrors, createAssetViewHost,
-    dropTree, installHost, loadProduct, makeProductTree, topbar, toolbarTitle, wait,
+    dropTree, inboxSideEffectFetch, installHost, loadProduct, makeProductTree,
+    topbar, toolbarTitle, wait,
 } from './qin-602-asset-view-harness.mjs';
 
 /** 具体域名前缀：不能用 includes('inbox')，依赖链的 gwCall 失败日志会误命中。 */
@@ -46,6 +47,8 @@ const LOG_LINE = "    console.error(`资产视图渲染失败: ${domain || 'unkn
 const RESET_LINE = "    if(document.documentElement.classList.contains('vault-shell-embedded')) root.innerHTML = '';";
 const BACK_SYNC = "        if(value === 'registry') syncActivateRegistryOverview();";
 const TAB_GUARD = '    if(!snapshot || snapshot.seq !== seq || seq !== assetViewRenderSeq || snapshot.tab !== activeTab) return;';
+/** 树节点入口的副作用派发：删掉它后「清未读角标」请求必须消失。 */
+const INBOX_CHAIN = "            return gwCall('inbox', 'openAssetInbox');";
 const PENDING_LOADER = '() => new Promise(() => {})';
 /** 真实加载边界注入：域模块仍真实 import，只是 loader 永远不落地（模拟慢网络/挂起）。 */
 const SLOW_DOMAINS = {inbox: PENDING_LOADER, organize: PENDING_LOADER, lut: PENDING_LOADER};
@@ -107,6 +110,47 @@ test('QIN-602 AC1/AC4：真实入口切收集箱 → 挂载文件夹 → 总览�
     assert.equal(main.activeTab, 'registry', '状态已回到总览');
 
     dropTree(tree);
+});
+
+/**
+ * 【QIN-602 r4】树节点点击的真实副作用护栏。
+ * 第 3 轮把这条等价性护栏放在 qin-547 里改写了旧断言，超出 PM 预授权范围；本轮把 qin-547
+ * 恢复为 master 原文，护栏迁到本票自有测试文件（不涉及任何旧断言改写）。
+ */
+test('QIN-602 AC4 等价护栏：真实入口点收集箱必须拉列表并清未读角标', async () => {
+    const host = await createAssetViewHost({tab: 'registry', fetchImpl: inboxSideEffectFetch});
+    try {
+        globalThis.GWAssetTreeBridge.activate('mine:inbox');
+        await wait(150);
+        assert.equal(host.main.activeTab, 'inbox', '真实入口必须切到收集箱');
+        assert.ok(
+            host.requests.some(r => r.method === 'GET' && r.url.includes('/api/asset-inbox?limit=500')),
+            '树节点点击必须真的拉收集箱列表（不是只改了个状态字段）',
+        );
+        assert.ok(
+            host.requests.some(r => r.method === 'POST' && r.url.includes('/api/asset-inbox/viewed')),
+            '列表返回未读时必须真的清角标；副作用派发被删掉这条必须变红',
+        );
+        assert.deepEqual(topbar(host.root), {overview: 1, toolbar: 1, marked: 2}, '副作用落地后顶栏仍各 1 份');
+    } finally {
+        host.dispose();
+    }
+});
+
+test('QIN-602 AC4 护栏：删掉树节点副作用派发后清角标请求必须消失', async () => {
+    const host = await createAssetViewHost({
+        tab: 'registry',
+        fetchImpl: inboxSideEffectFetch,
+        sourceEdits: [{from: INBOX_CHAIN, to: '            return undefined;'}],
+    });
+    try {
+        globalThis.GWAssetTreeBridge.activate('mine:inbox');
+        await wait(150);
+        assert.equal(host.main.activeTab, 'inbox', '删掉副作用不影响主文件侧同步落状态（AC4 仍成立）');
+        assert.ok(!host.requests.some(r => r.url.includes('/api/asset-inbox/viewed')), '删掉派发后不得再清角标');
+    } finally {
+        host.dispose();
+    }
 });
 
 test('QIN-602 AC4：模块加载失败时仍切视图、保留顶栏、显示可操作提示并留下精确域名日志', async () => {
