@@ -468,6 +468,45 @@ def test_reindex_is_replayable(ingest_runtime):
         assert second["result"]["revision"] == revision
 
 
+def test_reindex_backfills_generation_for_existing_record(ingest_runtime):
+    """AC6 存量补齐：已入库但缺 generation 的记录，必须经 `_commit` 合并分支补齐。
+
+    这条守卫专指「升级前没有该键的存量记录」：新建资产走 `_plain_asset` 整体建记录，
+    即使 `_commit` 的 generation 合并分支被整个删掉，新建路径的用例也照样全绿。
+    因此这里显式构造存量记录（保留其他 metadata 键、删掉 generation），
+    断言 `updated == 1`（证明确实走了合并分支）、落盘字段与写后回读一致。
+    """
+    write_file(ingest_runtime, "legacy.png", png_bytes([(b"tEXt", b"parameters", A1111_TEXT)]))
+    with TestClient(create_app()) as client:
+        wait_job(client, submit(client, key="legacy-1").json()["job_id"])
+        asset = indexed_asset_by_name("legacy.png")
+
+        # 模拟升级前的存量记录：字段齐全、其他 metadata 键在，但没有 generation。
+        def strip_generation(raw):
+            record = raw["assets"][asset["asset_id"]]
+            record["metadata"].pop("generation", None)
+            record["metadata"]["workflow_id"] = "wf-legacy"
+
+        repo.state().mutate(strip_generation)
+        assert "generation" not in indexed_asset_by_name("legacy.png")["metadata"]
+
+        job = wait_job(client, submit(client, key="legacy-2").json()["job_id"])
+        assert job["status"] == "succeeded", job
+        assert job["result"]["indexed"] == 0
+        # 只有本文件的元数据变化 → updated 必须为 1（合并分支未生效时为 0）。
+        assert job["result"]["updated"] == 1
+
+        stored = indexed_asset_by_name("legacy.png")["metadata"]
+        assert stored["generation"]["tool"] == "a1111"
+        assert stored["generation"]["prompt"] == "a misty harbour at dawn, cinematic"
+        assert stored["workflow_id"] == "wf-legacy"
+
+        # 写后回读：列表接口原样返回补写后的字段（Q3 裁定不裁剪）。
+        listed = client.get(BASE + "/assets", headers=AUTH, params={"limit": "20"}).json()
+        entry = next(item for item in listed["items"] if item["name"] == "legacy.png")
+        assert entry["metadata"]["generation"]["tool"] == "a1111"
+
+
 def test_sync_kind_does_not_read_metadata(ingest_runtime, monkeypatch):
     """副作用边界：sync 只做差集统计，不读文件元数据。"""
     write_file(ingest_runtime, "a1111.png", png_bytes([(b"tEXt", b"parameters", A1111_TEXT)]))
@@ -670,3 +709,76 @@ def test_cold_read_after_restart_keeps_generation(ingest_runtime):
         assets = client.get(BASE + "/assets", headers=AUTH, params={"limit": "20"}).json()
         entry = next(item for item in assets["items"] if item["name"] == "persist.png")
         assert entry["metadata"]["generation"]["prompt"] == "a misty harbour at dawn, cinematic"
+
+
+def test_stale_attempt_cannot_commit(ingest_runtime):
+    """风险项-乱序：attempt 递增或已终态后，旧 attempt 不得再进入提交。
+
+    `_run` 在扫描前后与提交前都过 `_checkpoint`；这里直接对该闸门取证：
+    旧 attempt 必须抛 `_Stopped`，且不得产生任何写入（revision 不变）。
+    """
+    write_file(ingest_runtime, "stale.png", png_bytes([(b"tEXt", b"parameters", A1111_TEXT)]))
+    with TestClient(create_app()) as client:
+        job = wait_job(client, submit(client, key="stale-1").json()["job_id"])
+        assert job["status"] == "succeeded", job
+        instance = jobs.service()
+        revision = repo.state().read()["revision"]
+
+        # 新尝试已接管（attempt+1）：旧 attempt 在提交前被拦。
+        with pytest.raises(jobs._Stopped):
+            instance._checkpoint(job["job_id"], job["attempt"] + 1)
+        # 任务已终态：同一 attempt 也不能再提交一次。
+        with pytest.raises(jobs._Stopped):
+            instance._checkpoint(job["job_id"], job["attempt"])
+        assert repo.state().read()["revision"] == revision
+
+
+def test_generation_written_during_scan_is_not_cleared(ingest_runtime, monkeypatch):
+    """风险项-并发：扫描期间另一处写同一 asset 的 metadata，提交只替换 generation。
+
+    等价于「reindex 与 GW 产物登记交错写同一 asset」：写入点放在真实扫描线程内触发，
+    保证先后顺序固定（并发写 → 提交）。断言两半语义同时成立：
+    文件自带元数据时该键被扫描值替换，而并发写入的其他 metadata 键不被清掉。
+    """
+    write_file(
+        ingest_runtime, "race.png", png_bytes([(b"tEXt", b"parameters", A1111_TEXT)])
+    )
+    with TestClient(create_app()) as client:
+        wait_job(client, submit(client, key="race-1").json()["job_id"])
+        asset = indexed_asset_by_name("race.png")
+        assert asset["metadata"]["generation"]["tool"] == "a1111"
+
+        concurrent = {
+            "prompt": "concurrent writer",
+            "tool": "gw",
+            "source": "gw-task",
+            "raw_keys": ["prompt_snapshot"],
+            "truncated": False,
+        }
+        real_extract = gm.extract_generation
+        written = []
+
+        def write_while_scanning(path):
+            if not written:
+
+                def inject(raw):
+                    record = raw["assets"][asset["asset_id"]]
+                    record["metadata"]["generation"] = dict(concurrent)
+                    record["metadata"]["workflow_id"] = "wf-concurrent"
+
+                repo.state().mutate(inject)
+                written.append(path.name)
+            return real_extract(path)
+
+        monkeypatch.setattr(gm, "extract_generation", write_while_scanning)
+        job = wait_job(client, submit(client, key="race-2").json()["job_id"])
+        assert written == ["race.png"], written
+        assert job["status"] == "succeeded", job
+        assert job["result"]["updated"] == 1
+
+        metadata = indexed_asset_by_name("race.png")["metadata"]
+        # 有内嵌元数据 → `generation` 这一个键被扫描值替换。
+        assert metadata["generation"]["tool"] == "a1111"
+        assert metadata["generation"]["prompt"] == "a misty harbour at dawn, cinematic"
+        # 并发写入的其他键不得被清掉（合并不覆盖）。
+        assert metadata["workflow_id"] == "wf-concurrent"
