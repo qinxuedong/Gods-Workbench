@@ -1,7 +1,9 @@
 {
+  "head": "f128e84d42eb13ee29d7d720f3968298c5afd74a",
+  "headShort": "f128e84d",
+  "pr": 712,
   "ticket": "QIN-602",
   "ac": "AC3",
-  "head": "e45d64e308d6641b4ec6c8d5231709996f0c6878",
   "mode": "fixed",
   "widths": [
     724,
@@ -18,6 +20,8 @@
     "inbox",
     "library_demo"
   ],
+  "caseCount": 8,
+  "viewCount": 24,
   "cases": [
     {
       "width": 724,
@@ -27,6 +31,8 @@
         {
           "view": "registry",
           "selectedKey": "registry",
+          "expectedSelectedKey": "registry",
+          "expectedToolbarTitle": null,
           "measure": {
             "frameWidth": 724,
             "frameHeight": 900,
@@ -95,11 +101,44 @@
                 "bottom": 29
               }
             }
-          }
+          },
+          "criteria": {
+            "minBlockWidth": 651.6,
+            "maxToolbarHeight": 360.0,
+            "maxContentY": 630.0,
+            "viewportWidth": 724,
+            "viewportHeight": 900,
+            "primaryLabelOverlapPx": -100.66,
+            "primaryLabelsCheckApplies": true
+          },
+          "checks": {
+            "themeMatches": true,
+            "topbarOverviewExactlyOne": true,
+            "topbarToolbarExactlyOne": true,
+            "overviewVisible": true,
+            "toolbarVisible": true,
+            "contentPresent": true,
+            "contentFullWidth": true,
+            "overviewFullWidth": true,
+            "toolbarFullWidth": true,
+            "noHorizontalOverflow": true,
+            "toolbarNotOverContent": true,
+            "toolbarHeightWithin40pct": true,
+            "contentStartsWithin70pct": true,
+            "contentInViewport": true,
+            "selectedStateMatches": true,
+            "toolbarTitleMatches": true,
+            "primaryStatPresent": true,
+            "primaryLabelsNoOverlap": true,
+            "pageErrorsEmpty": true
+          },
+          "passed": true
         },
         {
           "view": "inbox",
           "selectedKey": "mine:inbox",
+          "expectedSelectedKey": "mine:inbox",
+          "expectedToolbarTitle": "资源库",
           "measure": {
             "frameWidth": 724,
             "frameHeight": 900,
@@ -168,11 +207,44 @@
                 "bottom": 29
               }
             }
-          }
+          },
+          "criteria": {
+            "minBlockWidth": 651.6,
+            "maxToolbarHeight": 360.0,
+            "maxContentY": 630.0,
+            "viewportWidth": 724,
+            "viewportHeight": 900,
+            "primaryLabelOverlapPx": -100.66,
+            "primaryLabelsCheckApplies": true
+          },
+          "checks": {
+            "themeMatches": true,
+            "topbarOverviewExactlyOne": true,
+            "topbarToolbarExactlyOne": true,
+            "overviewVisible": true,
+            "toolbarVisible": true,
+            "contentPresent": true,
+            "contentFullWidth": true,
+            "overviewFullWidth": true,
+            "toolbarFullWidth": true,
+            "noHorizontalOverflow": true,
+            "toolbarNotOverContent": true,
+            "toolbarHeightWithin40pct": true,
+            "contentStartsWithin70pct": true,
+            "contentInViewport": true,
+            "selectedStateMatches": true,
+            "toolbarTitleMatches": true,
+            "primaryStatPresent": true,
+            "primaryLabelsNoOverlap": true,
+            "pageErrorsEmpty": true
+          },
+          "passed": true
         },
         {
           "view": "library_demo",
           "selectedKey": "mine:board:library_demo",
+          "expectedSelectedKey": "mine:board:library_demo",
+          "expectedToolbarTitle": "挂载文件夹A",
           "measure": {
             "frameWidth": 724,
             "frameHeight": 900,
@@ -241,9 +313,41 @@
                 "bottom": 29
               }
             }
-          }
+          },
+          "criteria": {
+            "minBlockWidth": 651.6,
+            "maxToolbarHeight": 360.0,
+            "maxContentY": 630.0,
+            "viewportWidth": 724,
+            "viewportHeight": 900,
+            "primaryLabelOverlapPx": -100.66,
+            "primaryLabelsCheckApplies": true
+          },
+          "checks": {
+            "themeMatches": true,
+            "topbarOverviewExactlyOne": true,
+            "topbarToolbarExactlyOne": true,
+            "overviewVisible": true,
+            "toolbarVisible": true,
+            "contentPresent": true,
+            "contentFullWidth": true,
+            "overviewFullWidth": true,
+            "toolbarFullWidth": true,
+            "noHorizontalOverflow": true,
+            "toolbarNotOverContent": true,
+            "toolbarHeightWithin40pct": true,
+            "contentStartsWithin70pct": true,
+            "contentInViewport": true,
+            "selectedStateMatches": true,
+            "toolbarTitleMatches": true,
+            "primaryStatPresent": true,
+            "primaryLabelsNoOverlap": true,
+            "pageErrorsEmpty": true
+          },
+          "passed": true
         }
-      ]
+      ],
+      "passed": true
     },
     {
       "width": 724,
@@ -253,6 +357,8 @@
         {
           "view": "registry",
           "selectedKey": "registry",
+          "expectedSelectedKey": "registry",
+          "expectedToolbarTitle": null,
           "measure": {
             "frameWidth": 724,
             "frameHeight": 900,
@@ -321,11 +427,44 @@
                 "bottom": 29
               }
             }
-          }
+          },
+          "criteria": {
+            "minBlockWidth": 651.6,
+            "maxToolbarHeight": 360.0,
+            "maxContentY": 630.0,
+            "viewportWidth": 724,
+            "viewportHeight": 900,
+            "primaryLabelOverlapPx": -100.66,
+            "primaryLabelsCheckApplies": true
+          },
+          "checks": {
+            "themeMatches": true,
+            "topbarOverviewExactlyOne": true,
+            "topbarToolbarExactlyOne": true,
+            "overviewVisible": true,
+            "toolbarVisible": true,
+            "contentPresent": true,
+            "contentFullWidth": true,
+            "overviewFullWidth": true,
+            "toolbarFullWidth": true,
+            "noHorizontalOverflow": true,
+            "toolbarNotOverContent": true,
+            "toolbarHeightWithin40pct": true,
+            "contentStartsWithin70pct": true,
+            "contentInViewport": true,
+            "selectedStateMatches": true,
+            "toolbarTitleMatches": true,
+            "primaryStatPresent": true,
+            "primaryLabelsNoOverlap": true,
+            "pageErrorsEmpty": true
+          },
+          "passed": true
         },
         {
           "view": "inbox",
           "selectedKey": "mine:inbox",
+          "expectedSelectedKey": "mine:inbox",
+          "expectedToolbarTitle": "资源库",
           "measure": {
             "frameWidth": 724,
             "frameHeight": 900,
@@ -394,11 +533,44 @@
                 "bottom": 29
               }
             }
-          }
+          },
+          "criteria": {
+            "minBlockWidth": 651.6,
+            "maxToolbarHeight": 360.0,
+            "maxContentY": 630.0,
+            "viewportWidth": 724,
+            "viewportHeight": 900,
+            "primaryLabelOverlapPx": -100.66,
+            "primaryLabelsCheckApplies": true
+          },
+          "checks": {
+            "themeMatches": true,
+            "topbarOverviewExactlyOne": true,
+            "topbarToolbarExactlyOne": true,
+            "overviewVisible": true,
+            "toolbarVisible": true,
+            "contentPresent": true,
+            "contentFullWidth": true,
+            "overviewFullWidth": true,
+            "toolbarFullWidth": true,
+            "noHorizontalOverflow": true,
+            "toolbarNotOverContent": true,
+            "toolbarHeightWithin40pct": true,
+            "contentStartsWithin70pct": true,
+            "contentInViewport": true,
+            "selectedStateMatches": true,
+            "toolbarTitleMatches": true,
+            "primaryStatPresent": true,
+            "primaryLabelsNoOverlap": true,
+            "pageErrorsEmpty": true
+          },
+          "passed": true
         },
         {
           "view": "library_demo",
           "selectedKey": "mine:board:library_demo",
+          "expectedSelectedKey": "mine:board:library_demo",
+          "expectedToolbarTitle": "挂载文件夹A",
           "measure": {
             "frameWidth": 724,
             "frameHeight": 900,
@@ -467,9 +639,41 @@
                 "bottom": 29
               }
             }
-          }
+          },
+          "criteria": {
+            "minBlockWidth": 651.6,
+            "maxToolbarHeight": 360.0,
+            "maxContentY": 630.0,
+            "viewportWidth": 724,
+            "viewportHeight": 900,
+            "primaryLabelOverlapPx": -100.66,
+            "primaryLabelsCheckApplies": true
+          },
+          "checks": {
+            "themeMatches": true,
+            "topbarOverviewExactlyOne": true,
+            "topbarToolbarExactlyOne": true,
+            "overviewVisible": true,
+            "toolbarVisible": true,
+            "contentPresent": true,
+            "contentFullWidth": true,
+            "overviewFullWidth": true,
+            "toolbarFullWidth": true,
+            "noHorizontalOverflow": true,
+            "toolbarNotOverContent": true,
+            "toolbarHeightWithin40pct": true,
+            "contentStartsWithin70pct": true,
+            "contentInViewport": true,
+            "selectedStateMatches": true,
+            "toolbarTitleMatches": true,
+            "primaryStatPresent": true,
+            "primaryLabelsNoOverlap": true,
+            "pageErrorsEmpty": true
+          },
+          "passed": true
         }
-      ]
+      ],
+      "passed": true
     },
     {
       "width": 900,
@@ -479,6 +683,8 @@
         {
           "view": "registry",
           "selectedKey": "registry",
+          "expectedSelectedKey": "registry",
+          "expectedToolbarTitle": null,
           "measure": {
             "frameWidth": 900,
             "frameHeight": 900,
@@ -547,11 +753,44 @@
                 "bottom": 29
               }
             }
-          }
+          },
+          "criteria": {
+            "minBlockWidth": 810.0,
+            "maxToolbarHeight": 360.0,
+            "maxContentY": 630.0,
+            "viewportWidth": 900,
+            "viewportHeight": 900,
+            "primaryLabelOverlapPx": -8.66,
+            "primaryLabelsCheckApplies": true
+          },
+          "checks": {
+            "themeMatches": true,
+            "topbarOverviewExactlyOne": true,
+            "topbarToolbarExactlyOne": true,
+            "overviewVisible": true,
+            "toolbarVisible": true,
+            "contentPresent": true,
+            "contentFullWidth": true,
+            "overviewFullWidth": true,
+            "toolbarFullWidth": true,
+            "noHorizontalOverflow": true,
+            "toolbarNotOverContent": true,
+            "toolbarHeightWithin40pct": true,
+            "contentStartsWithin70pct": true,
+            "contentInViewport": true,
+            "selectedStateMatches": true,
+            "toolbarTitleMatches": true,
+            "primaryStatPresent": true,
+            "primaryLabelsNoOverlap": true,
+            "pageErrorsEmpty": true
+          },
+          "passed": true
         },
         {
           "view": "inbox",
           "selectedKey": "mine:inbox",
+          "expectedSelectedKey": "mine:inbox",
+          "expectedToolbarTitle": "资源库",
           "measure": {
             "frameWidth": 900,
             "frameHeight": 900,
@@ -620,11 +859,44 @@
                 "bottom": 29
               }
             }
-          }
+          },
+          "criteria": {
+            "minBlockWidth": 810.0,
+            "maxToolbarHeight": 360.0,
+            "maxContentY": 630.0,
+            "viewportWidth": 900,
+            "viewportHeight": 900,
+            "primaryLabelOverlapPx": -8.66,
+            "primaryLabelsCheckApplies": true
+          },
+          "checks": {
+            "themeMatches": true,
+            "topbarOverviewExactlyOne": true,
+            "topbarToolbarExactlyOne": true,
+            "overviewVisible": true,
+            "toolbarVisible": true,
+            "contentPresent": true,
+            "contentFullWidth": true,
+            "overviewFullWidth": true,
+            "toolbarFullWidth": true,
+            "noHorizontalOverflow": true,
+            "toolbarNotOverContent": true,
+            "toolbarHeightWithin40pct": true,
+            "contentStartsWithin70pct": true,
+            "contentInViewport": true,
+            "selectedStateMatches": true,
+            "toolbarTitleMatches": true,
+            "primaryStatPresent": true,
+            "primaryLabelsNoOverlap": true,
+            "pageErrorsEmpty": true
+          },
+          "passed": true
         },
         {
           "view": "library_demo",
           "selectedKey": "mine:board:library_demo",
+          "expectedSelectedKey": "mine:board:library_demo",
+          "expectedToolbarTitle": "挂载文件夹A",
           "measure": {
             "frameWidth": 900,
             "frameHeight": 900,
@@ -693,9 +965,41 @@
                 "bottom": 29
               }
             }
-          }
+          },
+          "criteria": {
+            "minBlockWidth": 810.0,
+            "maxToolbarHeight": 360.0,
+            "maxContentY": 630.0,
+            "viewportWidth": 900,
+            "viewportHeight": 900,
+            "primaryLabelOverlapPx": -8.66,
+            "primaryLabelsCheckApplies": true
+          },
+          "checks": {
+            "themeMatches": true,
+            "topbarOverviewExactlyOne": true,
+            "topbarToolbarExactlyOne": true,
+            "overviewVisible": true,
+            "toolbarVisible": true,
+            "contentPresent": true,
+            "contentFullWidth": true,
+            "overviewFullWidth": true,
+            "toolbarFullWidth": true,
+            "noHorizontalOverflow": true,
+            "toolbarNotOverContent": true,
+            "toolbarHeightWithin40pct": true,
+            "contentStartsWithin70pct": true,
+            "contentInViewport": true,
+            "selectedStateMatches": true,
+            "toolbarTitleMatches": true,
+            "primaryStatPresent": true,
+            "primaryLabelsNoOverlap": true,
+            "pageErrorsEmpty": true
+          },
+          "passed": true
         }
-      ]
+      ],
+      "passed": true
     },
     {
       "width": 900,
@@ -705,6 +1009,8 @@
         {
           "view": "registry",
           "selectedKey": "registry",
+          "expectedSelectedKey": "registry",
+          "expectedToolbarTitle": null,
           "measure": {
             "frameWidth": 900,
             "frameHeight": 900,
@@ -773,11 +1079,44 @@
                 "bottom": 29
               }
             }
-          }
+          },
+          "criteria": {
+            "minBlockWidth": 810.0,
+            "maxToolbarHeight": 360.0,
+            "maxContentY": 630.0,
+            "viewportWidth": 900,
+            "viewportHeight": 900,
+            "primaryLabelOverlapPx": -8.66,
+            "primaryLabelsCheckApplies": true
+          },
+          "checks": {
+            "themeMatches": true,
+            "topbarOverviewExactlyOne": true,
+            "topbarToolbarExactlyOne": true,
+            "overviewVisible": true,
+            "toolbarVisible": true,
+            "contentPresent": true,
+            "contentFullWidth": true,
+            "overviewFullWidth": true,
+            "toolbarFullWidth": true,
+            "noHorizontalOverflow": true,
+            "toolbarNotOverContent": true,
+            "toolbarHeightWithin40pct": true,
+            "contentStartsWithin70pct": true,
+            "contentInViewport": true,
+            "selectedStateMatches": true,
+            "toolbarTitleMatches": true,
+            "primaryStatPresent": true,
+            "primaryLabelsNoOverlap": true,
+            "pageErrorsEmpty": true
+          },
+          "passed": true
         },
         {
           "view": "inbox",
           "selectedKey": "mine:inbox",
+          "expectedSelectedKey": "mine:inbox",
+          "expectedToolbarTitle": "资源库",
           "measure": {
             "frameWidth": 900,
             "frameHeight": 900,
@@ -846,11 +1185,44 @@
                 "bottom": 29
               }
             }
-          }
+          },
+          "criteria": {
+            "minBlockWidth": 810.0,
+            "maxToolbarHeight": 360.0,
+            "maxContentY": 630.0,
+            "viewportWidth": 900,
+            "viewportHeight": 900,
+            "primaryLabelOverlapPx": -8.66,
+            "primaryLabelsCheckApplies": true
+          },
+          "checks": {
+            "themeMatches": true,
+            "topbarOverviewExactlyOne": true,
+            "topbarToolbarExactlyOne": true,
+            "overviewVisible": true,
+            "toolbarVisible": true,
+            "contentPresent": true,
+            "contentFullWidth": true,
+            "overviewFullWidth": true,
+            "toolbarFullWidth": true,
+            "noHorizontalOverflow": true,
+            "toolbarNotOverContent": true,
+            "toolbarHeightWithin40pct": true,
+            "contentStartsWithin70pct": true,
+            "contentInViewport": true,
+            "selectedStateMatches": true,
+            "toolbarTitleMatches": true,
+            "primaryStatPresent": true,
+            "primaryLabelsNoOverlap": true,
+            "pageErrorsEmpty": true
+          },
+          "passed": true
         },
         {
           "view": "library_demo",
           "selectedKey": "mine:board:library_demo",
+          "expectedSelectedKey": "mine:board:library_demo",
+          "expectedToolbarTitle": "挂载文件夹A",
           "measure": {
             "frameWidth": 900,
             "frameHeight": 900,
@@ -919,9 +1291,41 @@
                 "bottom": 29
               }
             }
-          }
+          },
+          "criteria": {
+            "minBlockWidth": 810.0,
+            "maxToolbarHeight": 360.0,
+            "maxContentY": 630.0,
+            "viewportWidth": 900,
+            "viewportHeight": 900,
+            "primaryLabelOverlapPx": -8.66,
+            "primaryLabelsCheckApplies": true
+          },
+          "checks": {
+            "themeMatches": true,
+            "topbarOverviewExactlyOne": true,
+            "topbarToolbarExactlyOne": true,
+            "overviewVisible": true,
+            "toolbarVisible": true,
+            "contentPresent": true,
+            "contentFullWidth": true,
+            "overviewFullWidth": true,
+            "toolbarFullWidth": true,
+            "noHorizontalOverflow": true,
+            "toolbarNotOverContent": true,
+            "toolbarHeightWithin40pct": true,
+            "contentStartsWithin70pct": true,
+            "contentInViewport": true,
+            "selectedStateMatches": true,
+            "toolbarTitleMatches": true,
+            "primaryStatPresent": true,
+            "primaryLabelsNoOverlap": true,
+            "pageErrorsEmpty": true
+          },
+          "passed": true
         }
-      ]
+      ],
+      "passed": true
     },
     {
       "width": 1440,
@@ -931,6 +1335,8 @@
         {
           "view": "registry",
           "selectedKey": "registry",
+          "expectedSelectedKey": "registry",
+          "expectedToolbarTitle": null,
           "measure": {
             "frameWidth": 1440,
             "frameHeight": 900,
@@ -999,11 +1405,44 @@
                 "bottom": 29
               }
             }
-          }
+          },
+          "criteria": {
+            "minBlockWidth": 1296.0,
+            "maxToolbarHeight": 360.0,
+            "maxContentY": 630.0,
+            "viewportWidth": 1440,
+            "viewportHeight": 900,
+            "primaryLabelOverlapPx": 2.27,
+            "primaryLabelsCheckApplies": false
+          },
+          "checks": {
+            "themeMatches": true,
+            "topbarOverviewExactlyOne": true,
+            "topbarToolbarExactlyOne": true,
+            "overviewVisible": true,
+            "toolbarVisible": true,
+            "contentPresent": true,
+            "contentFullWidth": true,
+            "overviewFullWidth": true,
+            "toolbarFullWidth": true,
+            "noHorizontalOverflow": true,
+            "toolbarNotOverContent": true,
+            "toolbarHeightWithin40pct": true,
+            "contentStartsWithin70pct": true,
+            "contentInViewport": true,
+            "selectedStateMatches": true,
+            "toolbarTitleMatches": true,
+            "primaryStatPresent": true,
+            "primaryLabelsNoOverlap": null,
+            "pageErrorsEmpty": true
+          },
+          "passed": true
         },
         {
           "view": "inbox",
           "selectedKey": "mine:inbox",
+          "expectedSelectedKey": "mine:inbox",
+          "expectedToolbarTitle": "资源库",
           "measure": {
             "frameWidth": 1440,
             "frameHeight": 900,
@@ -1072,11 +1511,44 @@
                 "bottom": 29
               }
             }
-          }
+          },
+          "criteria": {
+            "minBlockWidth": 1296.0,
+            "maxToolbarHeight": 360.0,
+            "maxContentY": 630.0,
+            "viewportWidth": 1440,
+            "viewportHeight": 900,
+            "primaryLabelOverlapPx": 2.27,
+            "primaryLabelsCheckApplies": false
+          },
+          "checks": {
+            "themeMatches": true,
+            "topbarOverviewExactlyOne": true,
+            "topbarToolbarExactlyOne": true,
+            "overviewVisible": true,
+            "toolbarVisible": true,
+            "contentPresent": true,
+            "contentFullWidth": true,
+            "overviewFullWidth": true,
+            "toolbarFullWidth": true,
+            "noHorizontalOverflow": true,
+            "toolbarNotOverContent": true,
+            "toolbarHeightWithin40pct": true,
+            "contentStartsWithin70pct": true,
+            "contentInViewport": true,
+            "selectedStateMatches": true,
+            "toolbarTitleMatches": true,
+            "primaryStatPresent": true,
+            "primaryLabelsNoOverlap": null,
+            "pageErrorsEmpty": true
+          },
+          "passed": true
         },
         {
           "view": "library_demo",
           "selectedKey": "mine:board:library_demo",
+          "expectedSelectedKey": "mine:board:library_demo",
+          "expectedToolbarTitle": "挂载文件夹A",
           "measure": {
             "frameWidth": 1440,
             "frameHeight": 900,
@@ -1145,9 +1617,41 @@
                 "bottom": 29
               }
             }
-          }
+          },
+          "criteria": {
+            "minBlockWidth": 1296.0,
+            "maxToolbarHeight": 360.0,
+            "maxContentY": 630.0,
+            "viewportWidth": 1440,
+            "viewportHeight": 900,
+            "primaryLabelOverlapPx": 2.27,
+            "primaryLabelsCheckApplies": false
+          },
+          "checks": {
+            "themeMatches": true,
+            "topbarOverviewExactlyOne": true,
+            "topbarToolbarExactlyOne": true,
+            "overviewVisible": true,
+            "toolbarVisible": true,
+            "contentPresent": true,
+            "contentFullWidth": true,
+            "overviewFullWidth": true,
+            "toolbarFullWidth": true,
+            "noHorizontalOverflow": true,
+            "toolbarNotOverContent": true,
+            "toolbarHeightWithin40pct": true,
+            "contentStartsWithin70pct": true,
+            "contentInViewport": true,
+            "selectedStateMatches": true,
+            "toolbarTitleMatches": true,
+            "primaryStatPresent": true,
+            "primaryLabelsNoOverlap": null,
+            "pageErrorsEmpty": true
+          },
+          "passed": true
         }
-      ]
+      ],
+      "passed": true
     },
     {
       "width": 1440,
@@ -1157,6 +1661,8 @@
         {
           "view": "registry",
           "selectedKey": "registry",
+          "expectedSelectedKey": "registry",
+          "expectedToolbarTitle": null,
           "measure": {
             "frameWidth": 1440,
             "frameHeight": 900,
@@ -1225,11 +1731,44 @@
                 "bottom": 29
               }
             }
-          }
+          },
+          "criteria": {
+            "minBlockWidth": 1296.0,
+            "maxToolbarHeight": 360.0,
+            "maxContentY": 630.0,
+            "viewportWidth": 1440,
+            "viewportHeight": 900,
+            "primaryLabelOverlapPx": 2.27,
+            "primaryLabelsCheckApplies": false
+          },
+          "checks": {
+            "themeMatches": true,
+            "topbarOverviewExactlyOne": true,
+            "topbarToolbarExactlyOne": true,
+            "overviewVisible": true,
+            "toolbarVisible": true,
+            "contentPresent": true,
+            "contentFullWidth": true,
+            "overviewFullWidth": true,
+            "toolbarFullWidth": true,
+            "noHorizontalOverflow": true,
+            "toolbarNotOverContent": true,
+            "toolbarHeightWithin40pct": true,
+            "contentStartsWithin70pct": true,
+            "contentInViewport": true,
+            "selectedStateMatches": true,
+            "toolbarTitleMatches": true,
+            "primaryStatPresent": true,
+            "primaryLabelsNoOverlap": null,
+            "pageErrorsEmpty": true
+          },
+          "passed": true
         },
         {
           "view": "inbox",
           "selectedKey": "mine:inbox",
+          "expectedSelectedKey": "mine:inbox",
+          "expectedToolbarTitle": "资源库",
           "measure": {
             "frameWidth": 1440,
             "frameHeight": 900,
@@ -1298,11 +1837,44 @@
                 "bottom": 29
               }
             }
-          }
+          },
+          "criteria": {
+            "minBlockWidth": 1296.0,
+            "maxToolbarHeight": 360.0,
+            "maxContentY": 630.0,
+            "viewportWidth": 1440,
+            "viewportHeight": 900,
+            "primaryLabelOverlapPx": 2.27,
+            "primaryLabelsCheckApplies": false
+          },
+          "checks": {
+            "themeMatches": true,
+            "topbarOverviewExactlyOne": true,
+            "topbarToolbarExactlyOne": true,
+            "overviewVisible": true,
+            "toolbarVisible": true,
+            "contentPresent": true,
+            "contentFullWidth": true,
+            "overviewFullWidth": true,
+            "toolbarFullWidth": true,
+            "noHorizontalOverflow": true,
+            "toolbarNotOverContent": true,
+            "toolbarHeightWithin40pct": true,
+            "contentStartsWithin70pct": true,
+            "contentInViewport": true,
+            "selectedStateMatches": true,
+            "toolbarTitleMatches": true,
+            "primaryStatPresent": true,
+            "primaryLabelsNoOverlap": null,
+            "pageErrorsEmpty": true
+          },
+          "passed": true
         },
         {
           "view": "library_demo",
           "selectedKey": "mine:board:library_demo",
+          "expectedSelectedKey": "mine:board:library_demo",
+          "expectedToolbarTitle": "挂载文件夹A",
           "measure": {
             "frameWidth": 1440,
             "frameHeight": 900,
@@ -1371,9 +1943,41 @@
                 "bottom": 29
               }
             }
-          }
+          },
+          "criteria": {
+            "minBlockWidth": 1296.0,
+            "maxToolbarHeight": 360.0,
+            "maxContentY": 630.0,
+            "viewportWidth": 1440,
+            "viewportHeight": 900,
+            "primaryLabelOverlapPx": 2.27,
+            "primaryLabelsCheckApplies": false
+          },
+          "checks": {
+            "themeMatches": true,
+            "topbarOverviewExactlyOne": true,
+            "topbarToolbarExactlyOne": true,
+            "overviewVisible": true,
+            "toolbarVisible": true,
+            "contentPresent": true,
+            "contentFullWidth": true,
+            "overviewFullWidth": true,
+            "toolbarFullWidth": true,
+            "noHorizontalOverflow": true,
+            "toolbarNotOverContent": true,
+            "toolbarHeightWithin40pct": true,
+            "contentStartsWithin70pct": true,
+            "contentInViewport": true,
+            "selectedStateMatches": true,
+            "toolbarTitleMatches": true,
+            "primaryStatPresent": true,
+            "primaryLabelsNoOverlap": null,
+            "pageErrorsEmpty": true
+          },
+          "passed": true
         }
-      ]
+      ],
+      "passed": true
     },
     {
       "width": 1920,
@@ -1383,6 +1987,8 @@
         {
           "view": "registry",
           "selectedKey": "registry",
+          "expectedSelectedKey": "registry",
+          "expectedToolbarTitle": null,
           "measure": {
             "frameWidth": 1920,
             "frameHeight": 900,
@@ -1451,11 +2057,44 @@
                 "bottom": 29
               }
             }
-          }
+          },
+          "criteria": {
+            "minBlockWidth": 1728.0,
+            "maxToolbarHeight": 360.0,
+            "maxContentY": 630.0,
+            "viewportWidth": 1920,
+            "viewportHeight": 900,
+            "primaryLabelOverlapPx": -45.5,
+            "primaryLabelsCheckApplies": false
+          },
+          "checks": {
+            "themeMatches": true,
+            "topbarOverviewExactlyOne": true,
+            "topbarToolbarExactlyOne": true,
+            "overviewVisible": true,
+            "toolbarVisible": true,
+            "contentPresent": true,
+            "contentFullWidth": true,
+            "overviewFullWidth": true,
+            "toolbarFullWidth": true,
+            "noHorizontalOverflow": true,
+            "toolbarNotOverContent": true,
+            "toolbarHeightWithin40pct": true,
+            "contentStartsWithin70pct": true,
+            "contentInViewport": true,
+            "selectedStateMatches": true,
+            "toolbarTitleMatches": true,
+            "primaryStatPresent": true,
+            "primaryLabelsNoOverlap": null,
+            "pageErrorsEmpty": true
+          },
+          "passed": true
         },
         {
           "view": "inbox",
           "selectedKey": "mine:inbox",
+          "expectedSelectedKey": "mine:inbox",
+          "expectedToolbarTitle": "资源库",
           "measure": {
             "frameWidth": 1920,
             "frameHeight": 900,
@@ -1524,11 +2163,44 @@
                 "bottom": 29
               }
             }
-          }
+          },
+          "criteria": {
+            "minBlockWidth": 1728.0,
+            "maxToolbarHeight": 360.0,
+            "maxContentY": 630.0,
+            "viewportWidth": 1920,
+            "viewportHeight": 900,
+            "primaryLabelOverlapPx": -45.5,
+            "primaryLabelsCheckApplies": false
+          },
+          "checks": {
+            "themeMatches": true,
+            "topbarOverviewExactlyOne": true,
+            "topbarToolbarExactlyOne": true,
+            "overviewVisible": true,
+            "toolbarVisible": true,
+            "contentPresent": true,
+            "contentFullWidth": true,
+            "overviewFullWidth": true,
+            "toolbarFullWidth": true,
+            "noHorizontalOverflow": true,
+            "toolbarNotOverContent": true,
+            "toolbarHeightWithin40pct": true,
+            "contentStartsWithin70pct": true,
+            "contentInViewport": true,
+            "selectedStateMatches": true,
+            "toolbarTitleMatches": true,
+            "primaryStatPresent": true,
+            "primaryLabelsNoOverlap": null,
+            "pageErrorsEmpty": true
+          },
+          "passed": true
         },
         {
           "view": "library_demo",
           "selectedKey": "mine:board:library_demo",
+          "expectedSelectedKey": "mine:board:library_demo",
+          "expectedToolbarTitle": "挂载文件夹A",
           "measure": {
             "frameWidth": 1920,
             "frameHeight": 900,
@@ -1597,9 +2269,41 @@
                 "bottom": 29
               }
             }
-          }
+          },
+          "criteria": {
+            "minBlockWidth": 1728.0,
+            "maxToolbarHeight": 360.0,
+            "maxContentY": 630.0,
+            "viewportWidth": 1920,
+            "viewportHeight": 900,
+            "primaryLabelOverlapPx": -45.5,
+            "primaryLabelsCheckApplies": false
+          },
+          "checks": {
+            "themeMatches": true,
+            "topbarOverviewExactlyOne": true,
+            "topbarToolbarExactlyOne": true,
+            "overviewVisible": true,
+            "toolbarVisible": true,
+            "contentPresent": true,
+            "contentFullWidth": true,
+            "overviewFullWidth": true,
+            "toolbarFullWidth": true,
+            "noHorizontalOverflow": true,
+            "toolbarNotOverContent": true,
+            "toolbarHeightWithin40pct": true,
+            "contentStartsWithin70pct": true,
+            "contentInViewport": true,
+            "selectedStateMatches": true,
+            "toolbarTitleMatches": true,
+            "primaryStatPresent": true,
+            "primaryLabelsNoOverlap": null,
+            "pageErrorsEmpty": true
+          },
+          "passed": true
         }
-      ]
+      ],
+      "passed": true
     },
     {
       "width": 1920,
@@ -1609,6 +2313,8 @@
         {
           "view": "registry",
           "selectedKey": "registry",
+          "expectedSelectedKey": "registry",
+          "expectedToolbarTitle": null,
           "measure": {
             "frameWidth": 1920,
             "frameHeight": 900,
@@ -1677,11 +2383,44 @@
                 "bottom": 29
               }
             }
-          }
+          },
+          "criteria": {
+            "minBlockWidth": 1728.0,
+            "maxToolbarHeight": 360.0,
+            "maxContentY": 630.0,
+            "viewportWidth": 1920,
+            "viewportHeight": 900,
+            "primaryLabelOverlapPx": -45.5,
+            "primaryLabelsCheckApplies": false
+          },
+          "checks": {
+            "themeMatches": true,
+            "topbarOverviewExactlyOne": true,
+            "topbarToolbarExactlyOne": true,
+            "overviewVisible": true,
+            "toolbarVisible": true,
+            "contentPresent": true,
+            "contentFullWidth": true,
+            "overviewFullWidth": true,
+            "toolbarFullWidth": true,
+            "noHorizontalOverflow": true,
+            "toolbarNotOverContent": true,
+            "toolbarHeightWithin40pct": true,
+            "contentStartsWithin70pct": true,
+            "contentInViewport": true,
+            "selectedStateMatches": true,
+            "toolbarTitleMatches": true,
+            "primaryStatPresent": true,
+            "primaryLabelsNoOverlap": null,
+            "pageErrorsEmpty": true
+          },
+          "passed": true
         },
         {
           "view": "inbox",
           "selectedKey": "mine:inbox",
+          "expectedSelectedKey": "mine:inbox",
+          "expectedToolbarTitle": "资源库",
           "measure": {
             "frameWidth": 1920,
             "frameHeight": 900,
@@ -1750,11 +2489,44 @@
                 "bottom": 29
               }
             }
-          }
+          },
+          "criteria": {
+            "minBlockWidth": 1728.0,
+            "maxToolbarHeight": 360.0,
+            "maxContentY": 630.0,
+            "viewportWidth": 1920,
+            "viewportHeight": 900,
+            "primaryLabelOverlapPx": -45.5,
+            "primaryLabelsCheckApplies": false
+          },
+          "checks": {
+            "themeMatches": true,
+            "topbarOverviewExactlyOne": true,
+            "topbarToolbarExactlyOne": true,
+            "overviewVisible": true,
+            "toolbarVisible": true,
+            "contentPresent": true,
+            "contentFullWidth": true,
+            "overviewFullWidth": true,
+            "toolbarFullWidth": true,
+            "noHorizontalOverflow": true,
+            "toolbarNotOverContent": true,
+            "toolbarHeightWithin40pct": true,
+            "contentStartsWithin70pct": true,
+            "contentInViewport": true,
+            "selectedStateMatches": true,
+            "toolbarTitleMatches": true,
+            "primaryStatPresent": true,
+            "primaryLabelsNoOverlap": null,
+            "pageErrorsEmpty": true
+          },
+          "passed": true
         },
         {
           "view": "library_demo",
           "selectedKey": "mine:board:library_demo",
+          "expectedSelectedKey": "mine:board:library_demo",
+          "expectedToolbarTitle": "挂载文件夹A",
           "measure": {
             "frameWidth": 1920,
             "frameHeight": 900,
@@ -1823,9 +2595,41 @@
                 "bottom": 29
               }
             }
-          }
+          },
+          "criteria": {
+            "minBlockWidth": 1728.0,
+            "maxToolbarHeight": 360.0,
+            "maxContentY": 630.0,
+            "viewportWidth": 1920,
+            "viewportHeight": 900,
+            "primaryLabelOverlapPx": -45.5,
+            "primaryLabelsCheckApplies": false
+          },
+          "checks": {
+            "themeMatches": true,
+            "topbarOverviewExactlyOne": true,
+            "topbarToolbarExactlyOne": true,
+            "overviewVisible": true,
+            "toolbarVisible": true,
+            "contentPresent": true,
+            "contentFullWidth": true,
+            "overviewFullWidth": true,
+            "toolbarFullWidth": true,
+            "noHorizontalOverflow": true,
+            "toolbarNotOverContent": true,
+            "toolbarHeightWithin40pct": true,
+            "contentStartsWithin70pct": true,
+            "contentInViewport": true,
+            "selectedStateMatches": true,
+            "toolbarTitleMatches": true,
+            "primaryStatPresent": true,
+            "primaryLabelsNoOverlap": null,
+            "pageErrorsEmpty": true
+          },
+          "passed": true
         }
-      ]
+      ],
+      "passed": true
     }
   ],
   "passed": true
