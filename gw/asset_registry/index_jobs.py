@@ -719,24 +719,66 @@ def _admission(actor):
         _error(403, "INDEX_AUTH_REVOKED", "发起主体无写权限")
 
 
+# 状态文件瞬时共享冲突的有界重试窗口。Windows 上 Python 的读句柄默认不带
+# FILE_SHARE_DELETE，轮询读取与 storage.save 的 os.replace 交错时两侧都会抛
+# PermissionError（读 errno=13 / 写 winerror=5），同一个冲突窗口既能造成
+# INDEX_STORE_INVALID(503)，也能让阶段落盘失败把任务误标 INDEX_EXECUTION_FAILED。
+# 与 gw/media/repository.py 的 _PREVIEW_ALL_WRITE_ATTEMPTS 同口径：5 次尝试、
+# 退避 20/40/60/80ms（合计 ≤200ms），退避在命名空间锁外进行。
+STATE_IO_ATTEMPTS = 5
+STATE_IO_BACKOFF_SECONDS = 0.02
+
+
 class _JobState(storage.JsonState):
     """任务真源损坏时失败关闭，不能回退空表复用稳定ID。"""
 
+    def _retry_io(self, operation):
+        """在状态命名空间锁内执行一次 I/O，仅对瞬时共享冲突做有界重试。
+
+        重试只包住单次读写，不重跑 mutate 的 mutator：_recover 的 restore 每次
+        执行都会自增 version，在 mutate 外层重试会造成版本双增。非共享冲突类
+        错误（含非法 JSON、结构非法、永久权限问题）一次即抛，保持失败关闭。
+        """
+        for attempt in range(STATE_IO_ATTEMPTS):
+            try:
+                with storage.namespace_lock(self.namespace):
+                    return operation()
+            except PermissionError:
+                if attempt + 1 >= STATE_IO_ATTEMPTS:
+                    raise
+                time.sleep(STATE_IO_BACKOFF_SECONDS * (attempt + 1))
+        raise AssertionError("unreachable")  # pragma: no cover
+
     def read(self):
-        path = storage.data_root() / "registry_index_jobs.json"
-        if not path.exists():
-            return {"sequence": 0, "jobs": {}, "keys": {}}
+        path = storage.file_for(self.namespace)
+
+        def load_state():
+            if not path.exists():
+                return {"sequence": 0, "jobs": {}, "keys": {}}
+            try:
+                raw = json.loads(path.read_text(encoding="utf-8"))
+                if (
+                    type(raw["sequence"]) is not int
+                    or not isinstance(raw["jobs"], dict)
+                    or not isinstance(raw["keys"], dict)
+                ):
+                    raise ValueError()
+                return raw
+            except PermissionError:
+                # 瞬时共享冲突交给 _retry_io 有界重试，不在此降级成存储损坏。
+                raise
+            except (OSError, ValueError, KeyError, TypeError):
+                _error(503, "INDEX_STORE_INVALID", "索引任务持久状态不可读取")
+
         try:
-            raw = json.loads(path.read_text(encoding="utf-8"))
-            if (
-                type(raw["sequence"]) is not int
-                or not isinstance(raw["jobs"], dict)
-                or not isinstance(raw["keys"], dict)
-            ):
-                raise ValueError()
-            return raw
-        except (OSError, ValueError, KeyError, TypeError):
+            return self._retry_io(load_state)
+        except PermissionError:
+            # 重试预算内仍被占用：明确报存储不可读，不回落空状态复用稳定 ID。
             _error(503, "INDEX_STORE_INVALID", "索引任务持久状态不可读取")
+
+    def write(self, payload) -> None:
+        """状态落盘同样串行化到命名空间锁，并对瞬时替换冲突有界重试。"""
+        self._retry_io(lambda: storage.save(self.namespace, payload))
 
 
 class IndexJobs:
