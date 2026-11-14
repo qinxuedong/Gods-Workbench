@@ -1,0 +1,381 @@
+{
+  "head": "e31d16914449d793d5f1dae294a74b71c760cbe6",
+  "pr": 722,
+  "ticket": "QIN-606",
+  "ac": "AC1-AC4",
+  "mode": "isolated-test-instance(--test, temp dirs) + chrome via ego-browser",
+  "url": "http://127.0.0.1:2079/static/asset-manager.html?embedded=1&vault=1",
+  "widths": [
+    724,
+    900,
+    1440,
+    1920
+  ],
+  "themes": [
+    "dark",
+    "light"
+  ],
+  "cases": [
+    {
+      "width": 724,
+      "theme": "dark",
+      "dataTheme": "dark",
+      "viewport": {
+        "w": 724,
+        "h": 900
+      },
+      "card": {
+        "x": 10,
+        "y": 9,
+        "w": 234.66,
+        "h": 45,
+        "right": 244.66,
+        "bottom": 54
+      },
+      "small": {
+        "x": 20,
+        "y": 15,
+        "w": 48,
+        "h": 14,
+        "right": 68,
+        "bottom": 29
+      },
+      "em": {
+        "x": 168.66,
+        "y": 15,
+        "w": 66,
+        "h": 14,
+        "right": 234.66,
+        "bottom": 29
+      },
+      "gap": 100.66,
+      "overlap": -100.66,
+      "emTruncated": false,
+      "emText": "统一资产索引",
+      "emScrollW": 66,
+      "emClientW": 66,
+      "emMaxWidth": "100%",
+      "emOverflow": "hidden",
+      "emEllipsis": "ellipsis",
+      "statCardCount": 13,
+      "scrollOverflow": false,
+      "pageErrors": 0
+    },
+    {
+      "width": 724,
+      "theme": "light",
+      "dataTheme": "light",
+      "viewport": {
+        "w": 724,
+        "h": 900
+      },
+      "card": {
+        "x": 10,
+        "y": 9,
+        "w": 234.66,
+        "h": 45,
+        "right": 244.66,
+        "bottom": 54
+      },
+      "small": {
+        "x": 20,
+        "y": 15,
+        "w": 48,
+        "h": 14,
+        "right": 68,
+        "bottom": 29
+      },
+      "em": {
+        "x": 168.66,
+        "y": 15,
+        "w": 66,
+        "h": 14,
+        "right": 234.66,
+        "bottom": 29
+      },
+      "gap": 100.66,
+      "overlap": -100.66,
+      "emTruncated": false,
+      "emText": "统一资产索引",
+      "emScrollW": 66,
+      "emClientW": 66,
+      "emMaxWidth": "100%",
+      "emOverflow": "hidden",
+      "emEllipsis": "ellipsis",
+      "statCardCount": 13,
+      "scrollOverflow": false,
+      "pageErrors": 0
+    },
+    {
+      "width": 900,
+      "theme": "dark",
+      "dataTheme": "dark",
+      "viewport": {
+        "w": 900,
+        "h": 900
+      },
+      "card": {
+        "x": 10,
+        "y": 9,
+        "w": 142.66,
+        "h": 45,
+        "right": 152.66,
+        "bottom": 54
+      },
+      "small": {
+        "x": 20,
+        "y": 15,
+        "w": 48,
+        "h": 14,
+        "right": 68,
+        "bottom": 29
+      },
+      "em": {
+        "x": 76.66,
+        "y": 15,
+        "w": 66,
+        "h": 14,
+        "right": 142.66,
+        "bottom": 29
+      },
+      "gap": 8.66,
+      "overlap": -8.66,
+      "emTruncated": false,
+      "emText": "统一资产索引",
+      "emScrollW": 66,
+      "emClientW": 66,
+      "emMaxWidth": "100%",
+      "emOverflow": "hidden",
+      "emEllipsis": "ellipsis",
+      "statCardCount": 13,
+      "scrollOverflow": false,
+      "pageErrors": 0
+    },
+    {
+      "width": 900,
+      "theme": "light",
+      "dataTheme": "light",
+      "viewport": {
+        "w": 900,
+        "h": 900
+      },
+      "card": {
+        "x": 10,
+        "y": 9,
+        "w": 142.66,
+        "h": 45,
+        "right": 152.66,
+        "bottom": 54
+      },
+      "small": {
+        "x": 20,
+        "y": 15,
+        "w": 48,
+        "h": 14,
+        "right": 68,
+        "bottom": 29
+      },
+      "em": {
+        "x": 76.66,
+        "y": 15,
+        "w": 66,
+        "h": 14,
+        "right": 142.66,
+        "bottom": 29
+      },
+      "gap": 8.66,
+      "overlap": -8.66,
+      "emTruncated": false,
+      "emText": "统一资产索引",
+      "emScrollW": 66,
+      "emClientW": 66,
+      "emMaxWidth": "100%",
+      "emOverflow": "hidden",
+      "emEllipsis": "ellipsis",
+      "statCardCount": 13,
+      "scrollOverflow": false,
+      "pageErrors": 0
+    },
+    {
+      "width": 1440,
+      "theme": "dark",
+      "dataTheme": "dark",
+      "viewport": {
+        "w": 1440,
+        "h": 900
+      },
+      "card": {
+        "x": 10,
+        "y": 9,
+        "w": 131.73,
+        "h": 45,
+        "right": 141.73,
+        "bottom": 54
+      },
+      "small": {
+        "x": 20,
+        "y": 15,
+        "w": 48,
+        "h": 14,
+        "right": 68,
+        "bottom": 29
+      },
+      "em": {
+        "x": 73,
+        "y": 15,
+        "w": 58.73,
+        "h": 14,
+        "right": 131.73,
+        "bottom": 29
+      },
+      "gap": 5,
+      "overlap": -5,
+      "emTruncated": true,
+      "emText": "统一资产索引",
+      "emScrollW": 66,
+      "emClientW": 59,
+      "emMaxWidth": "100%",
+      "emOverflow": "hidden",
+      "emEllipsis": "ellipsis",
+      "statCardCount": 13,
+      "scrollOverflow": false,
+      "pageErrors": 0
+    },
+    {
+      "width": 1440,
+      "theme": "light",
+      "dataTheme": "light",
+      "viewport": {
+        "w": 1440,
+        "h": 900
+      },
+      "card": {
+        "x": 10,
+        "y": 9,
+        "w": 131.73,
+        "h": 45,
+        "right": 141.73,
+        "bottom": 54
+      },
+      "small": {
+        "x": 20,
+        "y": 15,
+        "w": 48,
+        "h": 14,
+        "right": 68,
+        "bottom": 29
+      },
+      "em": {
+        "x": 73,
+        "y": 15,
+        "w": 58.73,
+        "h": 14,
+        "right": 131.73,
+        "bottom": 29
+      },
+      "gap": 5,
+      "overlap": -5,
+      "emTruncated": true,
+      "emText": "统一资产索引",
+      "emScrollW": 66,
+      "emClientW": 59,
+      "emMaxWidth": "100%",
+      "emOverflow": "hidden",
+      "emEllipsis": "ellipsis",
+      "statCardCount": 13,
+      "scrollOverflow": false,
+      "pageErrors": 0
+    },
+    {
+      "width": 1920,
+      "theme": "dark",
+      "dataTheme": "dark",
+      "viewport": {
+        "w": 1920,
+        "h": 900
+      },
+      "card": {
+        "x": 10,
+        "y": 9,
+        "w": 179.5,
+        "h": 45,
+        "right": 189.5,
+        "bottom": 54
+      },
+      "small": {
+        "x": 20,
+        "y": 15,
+        "w": 48,
+        "h": 14,
+        "right": 68,
+        "bottom": 29
+      },
+      "em": {
+        "x": 113.5,
+        "y": 15,
+        "w": 66,
+        "h": 14,
+        "right": 179.5,
+        "bottom": 29
+      },
+      "gap": 45.5,
+      "overlap": -45.5,
+      "emTruncated": false,
+      "emText": "统一资产索引",
+      "emScrollW": 66,
+      "emClientW": 66,
+      "emMaxWidth": "100%",
+      "emOverflow": "hidden",
+      "emEllipsis": "ellipsis",
+      "statCardCount": 13,
+      "scrollOverflow": false,
+      "pageErrors": 0
+    },
+    {
+      "width": 1920,
+      "theme": "light",
+      "dataTheme": "light",
+      "viewport": {
+        "w": 1920,
+        "h": 900
+      },
+      "card": {
+        "x": 10,
+        "y": 9,
+        "w": 179.5,
+        "h": 45,
+        "right": 189.5,
+        "bottom": 54
+      },
+      "small": {
+        "x": 20,
+        "y": 15,
+        "w": 48,
+        "h": 14,
+        "right": 68,
+        "bottom": 29
+      },
+      "em": {
+        "x": 113.5,
+        "y": 15,
+        "w": 66,
+        "h": 14,
+        "right": 179.5,
+        "bottom": 29
+      },
+      "gap": 45.5,
+      "overlap": -45.5,
+      "emTruncated": false,
+      "emText": "统一资产索引",
+      "emScrollW": 66,
+      "emClientW": 66,
+      "emMaxWidth": "100%",
+      "emOverflow": "hidden",
+      "emEllipsis": "ellipsis",
+      "statCardCount": 13,
+      "scrollOverflow": false,
+      "pageErrors": 0
+    }
+  ],
+  "passed": true
+}

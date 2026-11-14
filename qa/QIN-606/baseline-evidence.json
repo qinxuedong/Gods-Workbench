@@ -1,0 +1,151 @@
+{
+  "head": "cbff29ad3979b95db5723fc7c3662b66b86bc6fb",
+  "ticket": "QIN-606",
+  "role": "baseline (master, pre-fix)",
+  "widths": [
+    1440,
+    1920
+  ],
+  "themes": [
+    "dark",
+    "light"
+  ],
+  "cases": [
+    {
+      "width": 1440,
+      "theme": "dark",
+      "dataTheme": "dark",
+      "card": {
+        "x": 10,
+        "y": 9,
+        "w": 131.73,
+        "h": 45,
+        "right": 141.73,
+        "bottom": 54
+      },
+      "small": {
+        "x": 20,
+        "y": 15,
+        "w": 48,
+        "h": 14,
+        "right": 68,
+        "bottom": 29
+      },
+      "em": {
+        "x": 65.73,
+        "y": 15,
+        "w": 66,
+        "h": 14,
+        "right": 131.73,
+        "bottom": 29
+      },
+      "gap": -2.27,
+      "overlap": 2.27,
+      "emTruncated": false,
+      "statCardCount": 13,
+      "scrollOverflow": false
+    },
+    {
+      "width": 1440,
+      "theme": "light",
+      "dataTheme": "light",
+      "card": {
+        "x": 10,
+        "y": 9,
+        "w": 131.73,
+        "h": 45,
+        "right": 141.73,
+        "bottom": 54
+      },
+      "small": {
+        "x": 20,
+        "y": 15,
+        "w": 48,
+        "h": 14,
+        "right": 68,
+        "bottom": 29
+      },
+      "em": {
+        "x": 65.73,
+        "y": 15,
+        "w": 66,
+        "h": 14,
+        "right": 131.73,
+        "bottom": 29
+      },
+      "gap": -2.27,
+      "overlap": 2.27,
+      "emTruncated": false,
+      "statCardCount": 13,
+      "scrollOverflow": false
+    },
+    {
+      "width": 1920,
+      "theme": "dark",
+      "dataTheme": "dark",
+      "card": {
+        "x": 10,
+        "y": 9,
+        "w": 179.5,
+        "h": 45,
+        "right": 189.5,
+        "bottom": 54
+      },
+      "small": {
+        "x": 20,
+        "y": 15,
+        "w": 48,
+        "h": 14,
+        "right": 68,
+        "bottom": 29
+      },
+      "em": {
+        "x": 113.5,
+        "y": 15,
+        "w": 66,
+        "h": 14,
+        "right": 179.5,
+        "bottom": 29
+      },
+      "gap": 45.5,
+      "overlap": -45.5,
+      "emTruncated": false,
+      "statCardCount": 13,
+      "scrollOverflow": false
+    },
+    {
+      "width": 1920,
+      "theme": "light",
+      "dataTheme": "light",
+      "card": {
+        "x": 10,
+        "y": 9,
+        "w": 179.5,
+        "h": 45,
+        "right": 189.5,
+        "bottom": 54
+      },
+      "small": {
+        "x": 20,
+        "y": 15,
+        "w": 48,
+        "h": 14,
+        "right": 68,
+        "bottom": 29
+      },
+      "em": {
+        "x": 113.5,
+        "y": 15,
+        "w": 66,
+        "h": 14,
+        "right": 179.5,
+        "bottom": 29
+      },
+      "gap": 45.5,
+      "overlap": -45.5,
+      "emTruncated": false,
+      "statCardCount": 13,
+      "scrollOverflow": false
+    }
+  ]
+}
