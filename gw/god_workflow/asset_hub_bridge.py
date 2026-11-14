@@ -166,8 +166,14 @@ def register_output_to_asset_hub(
     asset_dict: dict[str, Any],
     *,
     context=None,
+    generation: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """把工作流执行产物登记至统一资产中枢，存入资产库图片/输出分类，保证全局稳定 ID 绑定。"""
+    """把工作流执行产物登记至统一资产中枢，存入资产库图片/输出分类，保证全局稳定 ID 绑定。
+
+    `generation`（QIN-600）：任务提交提示词快照解析出的生成元数据。未显式传入时
+    回退到资产凭单上的同名键，使 `reconcile_pending` 重放也能补写；两者都没有时
+    不写该键（不伪造空对象）。
+    """
     asset_id = str(asset_dict.get("asset_id") or "")
     if not asset_id or context is None:
         return {}
@@ -176,6 +182,9 @@ def register_output_to_asset_hub(
     media_type = str(asset_dict.get("media_type") or "image")
     url = str(asset_dict.get("url") or f"/api/god_workflow/assets/{asset_id}/content")
     task_id = asset_dict.get("task_id")
+    resolved_generation = (
+        generation if generation is not None else asset_dict.get("generation")
+    )
 
     try:
         receipt = _receipt(context, asset_id, {"kind": "output", "asset_id": asset_id})
@@ -194,24 +203,27 @@ def register_output_to_asset_hub(
         )
 
         # 2. 登记至底层资产注册表 (AssetRegistry)
+        output_metadata = {
+            "task_id": task_id,
+            "workflow_owner": asset_owner_key(context),
+            "size_bytes": asset_dict.get("size_bytes"),
+            "width": asset_dict.get("width"),
+            "height": asset_dict.get("height"),
+            "extension": asset_dict.get("extension"),
+            "job_id": asset_dict.get("job_id"),
+            "workflow_id": asset_dict.get("workflow_id"),
+            "workflow_version": asset_dict.get("workflow_version"),
+            "source_context": asset_dict.get("source_context", {}),
+        }
+        if isinstance(resolved_generation, dict) and resolved_generation:
+            output_metadata["generation"] = resolved_generation
         asset_repo.register_asset_record(
             asset_id=asset_id,
             name=filename,
             kind=media_type,
             url=url,
             task_id=str(task_id) if task_id else None,
-            metadata={
-                "task_id": task_id,
-                "workflow_owner": asset_owner_key(context),
-                "size_bytes": asset_dict.get("size_bytes"),
-                "width": asset_dict.get("width"),
-                "height": asset_dict.get("height"),
-                "extension": asset_dict.get("extension"),
-                "job_id": asset_dict.get("job_id"),
-                "workflow_id": asset_dict.get("workflow_id"),
-                "workflow_version": asset_dict.get("workflow_version"),
-                "source_context": asset_dict.get("source_context", {}),
-            },
+            metadata=output_metadata,
         )
 
         receipt.unlink(missing_ok=True)

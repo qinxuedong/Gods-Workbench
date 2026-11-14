@@ -1,0 +1,32 @@
+{
+  "schema": "gw.cleanroom-admission-shard/v1",
+  "issue": 709,
+  "authorization_basis": "GitHub Issue #709 (QIN-600), 2026-11-13",
+  "files": [
+    "gw/asset_registry/generation_metadata.py",
+    "gw/asset_registry/index_jobs.py",
+    "gw/god_workflow/registry.py",
+    "gw/god_workflow/routes.py",
+    "gw/god_workflow/asset_hub_bridge.py",
+    "docs/contracts/ASSET-REGISTRY-INTERFACE-CATALOG.yaml",
+    "tests/contracts/assets/test_generation_metadata_ingest.py",
+    "tests/benchmarks/test_generation_metadata_ingest_perf.py",
+    "tests/hygiene/fixtures/admissions/issue-709.json"
+  ],
+  "admitted_files": [],
+  "accepted_test_files": [
+    {
+      "path": "tests/contracts/assets/test_generation_metadata_ingest.py",
+      "classification": "curated_test_coverage",
+      "authorization_basis": "GitHub Issue #709 (QIN-600), 2026-11-13",
+      "admission": "accepted"
+    },
+    {
+      "path": "tests/benchmarks/test_generation_metadata_ingest_perf.py",
+      "classification": "curated_test_coverage",
+      "authorization_basis": "GitHub Issue #709 (QIN-600), 2026-11-13",
+      "admission": "accepted"
+    }
+  ],
+  "notes": "QIN-600 入库期生成元数据：新增 generation_metadata.py 纯标准库读取 PNG/JPEG/WebP 元数据段（不解码像素、不依赖 Pillow），单文本块读取上限 1 MiB、prompt/negative_prompt 落盘各 8 KiB，失败只计 warning。index_jobs._scan 在 reindex 时提取并写入 metadata.generation，_commit 白名单只替换该键；job.result 增补 generation 统计。gw/god_workflow 的 registry.py 与 routes.py 由 PM Q1 裁决（方案 A）纳入范围：store_bytes 随资产凭单落盘 generation，本地与 RunningHub 两条产物回收链路从任务 prompt_snapshot 透传，asset_hub_bridge.register_output_to_asset_hub 增可选 generation 入参（缺省回退资产凭单同名键，重放不伪造）。AC8 契约 YAML 增补 generation_metadata 决策条目，按 PM Q4 授权同步基础账本中该文件的 sha256 与 ADMISSION_BASE_METADATA_SHA256 常量，未改动其他账本条目。"
+}

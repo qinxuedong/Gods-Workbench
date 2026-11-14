@@ -393,7 +393,7 @@
       "path": "docs/contracts/ASSET-REGISTRY-INTERFACE-CATALOG.yaml",
       "classification": "frozen_interface_contract",
       "authorization_basis": "cleanroom_frozen_input; GitHub_Issue_366_2026-10-28",
-      "sha256": "1c11ab769f0945a47892e9485521ade19c07827a383b20bcdf22afc310aeaf08",
+      "sha256": "f0761e136480f65f152f5f077467637e63f079689982657a81156a3d6af41834",
       "admission": "accepted"
     },
     {
