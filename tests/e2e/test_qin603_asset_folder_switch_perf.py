@@ -378,6 +378,8 @@ def test_qin603_slow_assets_keeps_loading_then_settles_once(tmp_path, monkeypatc
 
     _seed_workspace(tmp_path, monkeypatch)
     _, base, stop = _start_server()
+    # 被 page.route 拦下来的列表请求时间戳：失败时用来判断「多出来的那一帧」是不是第二次请求
+    requested: list[float] = []
 
     async def scenario() -> dict:
         async with async_playwright() as pw:
@@ -420,7 +422,7 @@ def test_qin603_slow_assets_keeps_loading_then_settles_once(tmp_path, monkeypatc
                     await asyncio.sleep(delay_ms / 1000)
                     await route.continue_()
 
-                requested: list[float] = []
+                requested.clear()
                 before = await frame.evaluate(SNAPSHOT)
                 await page.route("**/api/asset-registry/assets?**", slow_list)
                 await page.click('[data-asset-tree-entry="mine:root:root_a"]')
@@ -455,7 +457,7 @@ def test_qin603_slow_assets_keeps_loading_then_settles_once(tmp_path, monkeypatc
     finally:
         stop()
     assert final["renders"] <= MAX_RENDERS, (
-        f"慢响应下仍必须 ≤{MAX_RENDERS} 次重绘：{final}；/"
+        f"慢响应下仍必须 ≤{MAX_RENDERS} 次重绘：{final}；"
         f"assets 请求 {len(requested)} 次：{requested}"
     )
     assert final["cards"] > 0, f"终态必须有卡片：{final}"
