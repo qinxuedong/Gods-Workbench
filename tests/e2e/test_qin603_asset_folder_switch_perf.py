@@ -222,6 +222,16 @@ def _count_requests(requests: list[dict], since: float) -> dict[str, int]:
     return counts
 
 
+def _grid_stable(dom_quiet: bool, preview_inflight: int) -> bool:
+    """票面「网格稳定」判据：DOM 连续静默，且没有在途 /api/media-preview。
+
+    【审核 R2】原实现把 ``inflight == 0`` 内联在 _settle 的 break 里，专项用例只观察
+    返回值（last_finish / preview_ms）；删掉该条件后用例仍绿，判据没有测试保护。
+    抽成模块级纯函数后，专项用例同时钉住判据契约与真实浏览器时序。
+    """
+    return dom_quiet and preview_inflight == 0
+
+
 def _settle(snapshot: Any, preview_state: dict, marker: float | None = None) -> dict:
     """票面口径的「网格稳定」：DOM 连续 600ms 不再变化，且缩略图请求已清空。
 
@@ -235,6 +245,7 @@ def _settle(snapshot: Any, preview_state: dict, marker: float | None = None) -> 
     preview_state["events"] = 0
     previous = snapshot()
     last_change = time.monotonic()
+    inflight_deferred = 0
     while time.monotonic() - last_change < 60:
         time.sleep(0.05)
         current = snapshot()
@@ -242,7 +253,10 @@ def _settle(snapshot: Any, preview_state: dict, marker: float | None = None) -> 
             previous = current
             last_change = time.monotonic()
             continue
-        if time.monotonic() - last_change >= 0.6 and preview_state["inflight"] == 0:
+        dom_quiet = time.monotonic() - last_change >= 0.6
+        if dom_quiet and preview_state["inflight"] > 0:
+            inflight_deferred += 1
+        if _grid_stable(dom_quiet, preview_state["inflight"]):
             break
     dom_ms = max(0.0, previous["lastMutation"] - previous["started"])
     preview_ms = max(0.0, (preview_state["last_finish"] - click_at) * 1000)
@@ -253,6 +267,10 @@ def _settle(snapshot: Any, preview_state: dict, marker: float | None = None) -> 
         "preview_ms": round(preview_ms, 1),
         "preview_inflight_at_start": inflight_at_start,
         "preview_events": preview_state.get("events", 0),
+        # 【审核 R2】判据是否真的拦过：DOM 静默已满足但预览仍在途的轮询次数，
+        # 以及判定稳定那一刻的在途数（必须为 0）。删掉判据后这两项立刻失真。
+        "inflight_deferred": inflight_deferred,
+        "inflight_at_settle": preview_state["inflight"],
     }
 
 
@@ -368,6 +386,8 @@ def test_qin603_folder_switch_render_and_requests(tmp_path, monkeypatch):
                         "preview_ms": state["preview_ms"],
                         "preview_inflight_at_start": state["preview_inflight_at_start"],
                         "preview_events": state["preview_events"],
+                        "inflight_deferred": state["inflight_deferred"],
+                        "inflight_at_settle": state["inflight_at_settle"],
                         "long_tasks": state["longTasks"],
                         "long_task_ms": round(state["longTaskMs"], 1),
                         "cards": state["cards"],
@@ -491,13 +511,39 @@ def test_qin603_settle_waits_for_inflight_preview(tmp_path, monkeypatch):
                 _settle(snapshot, preview_state)
                 time.sleep(1.0)
                 cdp = context.new_cdp_session(page)
+                cdp.send("Network.enable")
                 cdp.send("Network.clearBrowserCache")
-                cdp.detach()
+                # 【审核 R2】给每个请求加固定 RTT，制造「DOM 已静默但预览仍在飞」的窗口。
+                # 没有这个窗口，600ms DOM 静默会先于预览尾巴结束，判据永远不会被触发。
+                cdp.send(
+                    "Network.emulateNetworkConditions",
+                    {
+                        "offline": False,
+                        "latency": 1000,
+                        "downloadThroughput": -1,
+                        "uploadThroughput": -1,
+                    },
+                )
 
                 frame.evaluate(RESET)
                 marker = time.monotonic()
                 page.click('[data-asset-tree-entry="mine:root:root_b"]')
+                # CDP 的 RTT 对 /assets 同样生效：列表没落地时 DOM 一直不变，
+                # _settle 会把「尚未开始渲染」误判成「已静默」。先等终态卡片出现，
+                # 再开始判定稳定；预览是在卡片渲染后才发出的，仍会落在静默窗口之后。
+                cards_deadline = time.monotonic() + 40
+                while time.monotonic() < cards_deadline:
+                    if snapshot()["cards"] > 0:
+                        break
+                    time.sleep(0.05)
+                assert snapshot()["cards"] > 0, "列表终态必须先落地，再测稳定口径"
                 state = _settle(snapshot, preview_state, marker)
+
+                # 判据契约：删掉 ``preview_inflight == 0`` 这三条立刻变红，
+                # 不再依赖「返回值里恰好有预览尾巴」这种间接观察。
+                assert _grid_stable(True, 1) is False, "DOM 静默但预览在途时不得判定稳定"
+                assert _grid_stable(True, 0) is True, "DOM 静默且预览排空时必须判定稳定"
+                assert _grid_stable(False, 0) is False, "DOM 未静默时不得判定稳定"
 
                 assert state["cards"] > 0, f"终态必须有卡片：{state}"
                 assert state["preview_events"] > 0, f"清缓存后切目录必须重新拉缩略图：{state}"
@@ -511,6 +557,12 @@ def test_qin603_settle_waits_for_inflight_preview(tmp_path, monkeypatch):
                 assert state["settle_ms"] >= state["preview_ms"], (
                     f"稳定时刻必须覆盖预览尾巴：settle={state['settle_ms']} "
                     f"preview={state['preview_ms']}"
+                )
+                assert state["inflight_deferred"] > 0, (
+                    f"必须真的出现过「DOM 静默已满足但预览仍在飞」并被判据拦住：{state}"
+                )
+                assert state["inflight_at_settle"] == 0, (
+                    f"判定稳定那一刻在途预览必须为 0：{state}"
                 )
             finally:
                 browser.close()
