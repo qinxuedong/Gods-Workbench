@@ -24,3 +24,10 @@
 - `baseline-evidence.json`：修复前基线 4 组（master cbff29ad）
 - `qin606-<宽>-<主题>.png`：修复后截图 8 张；`baseline-<宽>-<主题>.png`：修复前截图 4 张
 - 二进制证据只放本只读分支，不进入主干；验收脚本与运行时数据留在本地私有目录，不入库
+
+## 返工重取记录（第 1 轮独立审查 FIX_REQUIRED 闭环）
+
+- 首轮 `ac-evidence.json` 的 head 字段误记为 start commit `e31d1691…`（量测时实现改动仍在工作区、未提交），README 却写 `0a282a68…`，JSON 与 README 不一致——审查指出后**在干净提交 head `0a282a6816d734ea55902d15b42accb69611679d` 上全量重取 8 组**（`git status --porcelain` 为空，JSON 新增 `headDirtyWorktree:false` 字段证明测量由该提交运行）。
+- 重取数值与首轮逐位一致：gap 724=+100.66 / 900=+8.66 / **1440=+5**（截断生效「统一资产…」）/ **1920=+45.5**（零回归），`scrollOverflow=false`、13 卡、dark/light 逐位一致，`passed:true`。
+- 修复前基线 `baseline-evidence.json`（head `cbff29ad…`）本就在干净 master 上量得，无需重取。
+- 8 张修复后截图同步替换为本轮重取版本；baseline 4 张不变。
