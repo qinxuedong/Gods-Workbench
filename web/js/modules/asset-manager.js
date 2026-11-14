@@ -418,6 +418,34 @@ let registryPdfBusy = false;
 let registryRecycleBinState = {open:false, loading:false, restoringId:'', items:[], error:''};
 const registryAssetsQueryCache = new Map();
 const REGISTRY_PAGE_SIZE = 1500;
+// 【QIN-603 AC4】热切换缓存必须能失效：条目带写入时的注册表 revision，
+// revision 一变即视为未命中并丢弃；写后刷新走默认 invalidateCache 整表清空。
+const REGISTRY_CACHE_REVISION_FIELD = '__revision';
+// 【QIN-603 AC2】目录索引只受「可见根作用域」影响：/api/asset-registry/folders 一次返回
+// 所有根的目录计数，与 folder_path / search / kind / category / project_id 全都无关。
+// 因此切文件夹不该重置索引、也不该重拉该接口。签名不变即复用已加载的索引。
+function registryDirectoryScopeSignature(){
+    const roots = typeof assetRackRoots === 'function' ? assetRackRoots() : [];
+    return roots.map(root => String(root?.id || '')).filter(Boolean).sort().join('|');
+}
+let registryDirectoryScopeSettled = null;
+// 【QIN-603 AC1】/status 只驱动特性开关与任务态；可见内容没变就不该再整页重绘一次。
+function registryStatusViewSignatureOf(status){
+    const job = status?.overview?.active_job || status?.overview?.last_job || {};
+    const features = (status?.overview?.features || [])
+        .map(feature => `${feature?.id || ''}:${feature?.enabled ? 1 : 0}`).join(',');
+    return [job.id || '', job.status || '', job.finished_at || '', features, Number(status?.revision || 0)].join('|');
+}
+// null 表示「首屏已按 loadAll 拿到的状态绘制过」，首次并入只登记签名、不补一次重绘。
+let registryStatusRenderSignature = null;
+// 【QIN-603 AC2】项目计数按 project_id 逐个取数（/assets?project_id=&limit=1），
+// 稳定态下每次点击都重来是纯浪费；只在计数未知或写后失效时才重新拉。
+let registryProjectCountsStale = true;
+// 终态渲染前并入 /status 的等待上限：拿到就省一次整页重绘，拿不到也不让网格干等。
+const REGISTRY_STATUS_MERGE_BUDGET_MS = 250;
+function registryStatusMergeBudget(){
+    return new Promise(resolve => setTimeout(resolve, REGISTRY_STATUS_MERGE_BUDGET_MS));
+}
 // 【QIN-584 AC1】页大小只能跟「可见视口」有关，绝不能跟「已经加载了多少卡片」有关。
 // `.registry-assets-scroll` 是随内容撑高的普通列容器（没有高度约束，clientHeight 恒等于
 // scrollHeight），读它的 clientHeight 等于把卡片数量当成视口高度：预取与后续页会把
@@ -558,6 +586,10 @@ async function refreshRegistryProjectCounts(renderNow = true){
     } finally {
         registryProjectCountsLoading = false;
     }
+    registryProjectCountsStale = false;
+    // 【QIN-603 AC1/AC2】「要不要拉」由 scheduleRegistryProjectCounts 门控：稳定态切文件夹
+    // 不再排这个任务，于是这里也不会多画一帧。本函数保持「被调用即读权威计数并重绘」的语义，
+    // 写后 / 索引任务后刷新仍会看到回落后的准确计数。
     if(renderNow) render();
 }
 // 【QIN-582 AC5】项目计数按项目逐个打 getRegistryAssets('project_id=…&limit=1')，
@@ -567,6 +599,12 @@ let registryFirstScreenReady = false;
 let registryProjectCountsDirty = false;
 let registryProjectCountsScheduled = false;
 function scheduleRegistryProjectCounts(){
+    // 【QIN-603 AC2】计数已知且未失效时不再排队：稳定态下切文件夹不该产生
+    // /assets?project_id= 请求（基线测量里每次点击 2 条）。
+    if(!registryProjectCountsNeeded()){
+        registryProjectCountsDirty = false;
+        return;
+    }
     registryProjectCountsDirty = true;
     if(!registryFirstScreenReady || registryProjectCountsScheduled) return;
     registryProjectCountsScheduled = true;
@@ -581,6 +619,18 @@ function scheduleRegistryProjectCounts(){
     } else {
         window.setTimeout(run, 0);
     }
+}
+// 【QIN-603 AC2】计数只在「未知」或「写后失效」时才值得重新拉：
+// 已知且未失效时刷新一次库结构不变的项目计数属于纯浪费。
+function registryProjectCountsNeeded(){
+    const recent = registryRecentProjects();
+    if(!recent.length) return false;
+    if(registryProjectCountsStale) return true;
+    return recent.some(proj => {
+        const id = String(proj?.id || '');
+        if(registryProjectAssetCounts.has(id)) return false;
+        return !(typeof proj?.asset_count === 'number' && Number.isFinite(proj.asset_count));
+    });
 }
 function markRegistryFirstScreenReady(){
     registryFirstScreenReady = true;
@@ -3387,6 +3437,8 @@ function registryAssetPageCacheEntry(data={}){
         has_more:data.has_more === true,
         next_offset:nextOffset === null || nextOffset === undefined ? null : Number(nextOffset),
         next_cursor:typeof data.next_cursor === 'string' ? data.next_cursor : '',
+        // 【QIN-603 AC4】写入时的注册表 revision，热切换命中前先比对
+        [REGISTRY_CACHE_REVISION_FIELD]:registryCacheRevision(),
     };
 }
 // 【优化问题1】LRU 缓存管理，当缓存超过限制时清理最旧的条目
@@ -3397,6 +3449,28 @@ function setRegistryAssetCache(key, value){
     }
     registryAssetsQueryCache.set(key, value);
 }
+// 【QIN-603 AC4】热切换读缓存：只有「同 revision」的条目才算命中。
+// 写入 / 索引任务完成会推进 revision（或直接整表清空），旧条目因此不会再被复用。
+function registryCacheRevision(){
+    return Number(registryStatus?.revision || 0);
+}
+function readRegistryAssetCache(queryKey){
+    const entry = registryAssetsQueryCache.get(queryKey);
+    if(!entry) return null;
+    if(Number(entry[REGISTRY_CACHE_REVISION_FIELD] || 0) !== registryCacheRevision()){
+        registryAssetsQueryCache.delete(queryKey);
+        return null;
+    }
+    return entry;
+}
+function invalidateRegistryAssetCache(reason=''){
+    registryAssetsQueryCache.clear();
+    registryProjectCountsStale = true;
+    // 目录索引的计数同样会因写入/索引任务而变，交回重算
+    registryDirectoryScopeSettled = null;
+    if(reason) registryCacheInvalidatedBy = reason;
+}
+let registryCacheInvalidatedBy = '';
 function applyRegistryAssetResponse(data={}, {append=false}={}){
     const incoming = (data.items || []).map(normalizeRegistryAsset);
     if(append){
@@ -3441,10 +3515,17 @@ function isRegistryAbortError(error){
 // 延后链路抢在 B 前面发出（第 4 轮亲复现：A pending 时搜索，B 仍在途就发了 inbox/governance）。
 // 与 refreshRegistryBootstrapTracked 同口径：返回**原始 request**，业务调用方的
 // await / .then / .catch 仍能拿到列表 500 等真实失败，终态登记不吞错误。
-function refreshRegistryAssets(renderNow=true){
-    return trackRegistryBootstrapSettled(refreshRegistryAssetsRequest(renderNow));
+function refreshRegistryAssets(renderNow=true, options={}){
+    return trackRegistryBootstrapSettled(refreshRegistryAssetsRequest(renderNow, options));
 }
-async function refreshRegistryAssetsRequest(renderNow=true){
+// 【QIN-603】一次点击只出「一次加载态 + 一次终态」：
+// - 目录索引按根作用域签名门控（AC2：筛选不变不重拉 /api/asset-registry/folders）；
+// - /status 与列表同批发起，并在终态渲染前并入（AC1：不再各自整页 render）；
+// - reuseCache 命中缓存不请求列表（AC4）；默认 invalidateCache 保持「写后必刷」语义，
+//   只有目录导航（回到看过的文件夹）才传 reuseCache。
+async function refreshRegistryAssetsRequest(renderNow=true, options={}){
+    const reuseCache = Boolean(options?.reuseCache);
+    const invalidateCache = options?.invalidateCache === undefined ? !reuseCache : Boolean(options.invalidateCache);
     const requestId = ++registryRequestSeq;
     abortRegistryAssetRequests();
     const signal = beginRegistryAssetRequest();
@@ -3453,32 +3534,41 @@ async function refreshRegistryAssetsRequest(renderNow=true){
     registryNextOffset = 0;
     registryNextCursor = '';
     registryPageHasMore = false;
-    registryAssetsQueryCache.clear();
+    if(invalidateCache) invalidateRegistryAssetCache('refresh');
     resetRegistryAssetStructures();
-    // 筛选/排序变化后目录索引需要按新结果重算，否则会沿用旧查询的补拉结论
-    gwCall('settings', 'resetAssetRackDirectoryIndex');
+    // 筛选/排序变化后目录索引需要按新结果重算；但根作用域没变时（切文件夹、改搜索词、
+    // 换分类）目录计数不会变，重置只会白白重拉一次 /folders 并多触发一次整页渲染。
+    const directorySignature = registryDirectoryScopeSignature();
+    if(directorySignature !== registryDirectoryScopeSettled){
+        registryDirectoryScopeSettled = directorySignature;
+        gwCall('settings', 'resetAssetRackDirectoryIndex');
+    }
     // 【审核 N1 加固】筛选/查询变化后旧对账跟踪页失效，避免跨筛选误删增量对账条目
     registryReconcilePageIds = new Set();
     registryPendingNewIds = new Set();
     registryPendingVanishedIds = new Set();
     registryPendingNewItems.clear();
     if(renderNow) render();
+    // 与列表同批发起：终态渲染前并入，避免 /status 迟到又单独触发一次整页重绘
+    const statusRequest = apiJsonResponse(assetManagerApi.getRegistryStatus())
+        .then(statusData => { if(requestId === registryRequestSeq) applyRegistryStatusSnapshot(statusData); })
+        .catch(() => {});
     try {
         const queryKey = registryQueryString();
-        const data = await apiJsonResponse(assetManagerApi.getRegistryAssets(queryKey, signal ? {signal} : {}));
-        if(requestId !== registryRequestSeq) return;
-        setRegistryAssetCache(queryKey, registryAssetPageCacheEntry(data));
+        let data = reuseCache ? readRegistryAssetCache(queryKey) : null;
+        if(!data){
+            data = await apiJsonResponse(assetManagerApi.getRegistryAssets(queryKey, signal ? {signal} : {}));
+            if(requestId !== registryRequestSeq) return;
+            setRegistryAssetCache(queryKey, registryAssetPageCacheEntry(data));
+        }
         applyRegistryAssetResponse(data);
         await refreshRegistryAssetStructures({requestId});
         if(requestId !== registryRequestSeq) return;
         // Establish the first visible-page baseline so the next incremental
         // poll can report assets that disappeared after initial load.
         registryReconcilePageIds = new Set(registryAssets.map(item => item.id));
-        apiJsonResponse(assetManagerApi.getRegistryStatus()).then(statusData => {
-            if(requestId !== registryRequestSeq || !statusData || typeof statusData !== 'object') return;
-            registryStatus = statusData;
-            if(activeTab === 'registry') render();
-        }).catch(() => {});
+        await Promise.race([statusRequest, registryStatusMergeBudget()]);
+        if(requestId !== registryRequestSeq) return;
         scheduleRegistryProjectCounts();
     } catch(err) {
         if(isRegistryAbortError(err)) return;
@@ -3489,6 +3579,21 @@ async function refreshRegistryAssetsRequest(renderNow=true){
         if(renderNow && requestId === registryRequestSeq) render();
         if(requestId === registryRequestSeq && !registryLoading) scheduleRegistryPrefetch();
     }
+}
+// 【QIN-603 AC1】并入 /status：只有「会改变可见内容」的部分（任务态、特性开关、revision）
+// 变了才补一次整页重绘；稳定态下切文件夹不再因为 /status 回来而多画一帧。
+function applyRegistryStatusSnapshot(statusData){
+    if(!statusData || typeof statusData !== 'object') return;
+    const signature = registryStatusViewSignatureOf(statusData);
+    registryStatus = statusData;
+    if(registryStatusRenderSignature === null){
+        // 首屏状态在首次绘制前已由 loadAll 落地，这里只登记签名，不额外补帧
+        registryStatusRenderSignature = signature;
+        return;
+    }
+    if(signature === registryStatusRenderSignature) return;
+    registryStatusRenderSignature = signature;
+    if(activeTab === 'registry' || assetBoardById(activeTab)?.system === false) render();
 }
 function registryAppendDomContext(){
     // 【修复滚动跳顶】快路径仅限网格布局且未启用分组：追加在网格末尾不会移动视口，
@@ -4137,6 +4242,9 @@ async function pollRegistryAutomaticIndex(){
         const assetChanged = Number(job.indexed_count || 0) > 0 || registryStatusRootTotal(status) !== registryStatusRootTotal(previousStatus);
         // 【修复问题2→跳顶终修】任务完成即静默对账：已显示素材原地合并、新素材进待看提示，
         // 网格顺序与滚动位置永不被自动重排（对账本身对预览/浏览无干扰，无需交互期延迟）。
+        // 【QIN-603 AC4】索引任务完成 = 后端内容变了：热切换缓存必须失效，
+        // 否则再进同一个文件夹会命中旧列表，看不到刚索引进来的新素材。
+        if(completedChange) invalidateRegistryAssetCache('index-job');
         if(completedChange && assetChanged){
             await applyRegistryIndexReconcile(job);
         }
@@ -7213,7 +7321,10 @@ function selectAssetTreeNode(key){
             if(activeTab !== matchingBoard.id){
                 activeTab = matchingBoard.id;
                 registryRackSnapshot = null;
-                resetBoardSelections();
+                // 【QIN-603 缺陷A】resetBoardSelections 只定义在 organize 域、且此前未登记到
+                // GW_DEFERRED：裸调必 ReferenceError（从剧本/LUT 等看板点挂载目录即触发）。
+                // 按统一域网关派发，与相邻 gwCall('settings', …) 口径一致。
+                gwCall('organize', 'resetBoardSelections');
                 renderBoardNavigation();
                 gwCall('settings', 'clearAssetRackFolder');
                 applyRegistryFilterDefinition({groupSimilar:registryGroupSimilar});
@@ -7226,7 +7337,8 @@ function selectAssetTreeNode(key){
             // 【QIN-595 审核官反馈第 1 项】若当前在非目标看板（如 LUT），点挂载子目录需切回资产总览并彻底重置其过滤定义，避免残留原看板的 kind/category/query 导致滤空
             activeTab = 'registry';
             registryRackSnapshot = null;
-            resetBoardSelections();
+            // 【QIN-603 缺陷A】同上：经 organize 域网关派发，不再裸调域内私有函数。
+            gwCall('organize', 'resetBoardSelections');
             renderBoardNavigation();
             gwCall('settings', 'clearAssetRackFolder');
             registryNavFolder = {rootId:'', path:''};
@@ -11535,16 +11647,32 @@ function openDeferredDomainGate() {
 function deferredDomainsGateOpen() { return deferredDomainsOpen; }
 // 严格 FIFO：同一域内「先 clear 再 schedule」这类有先后语义的调用不能并行放行，
 // 否则后一次调用会先命中已注册函数面，把顺序颠倒。
+// 【QIN-603 缺陷B】「严格 FIFO」不等于「一个悬挂任务卡死整条队列」：单个任务必须有界等待。
+// 实测 5k+ 资产下 /api/asset-registry/governance/suggestions 60s 不返回，队首一卡，
+// 后面 14 个延后域全部不动——表现为点挂载文件夹毫无反应（无报错、无请求、无渲染）。
+// 这里保持逐任务顺序 await（顺序语义不变），只给每个任务加超时：超时即 reject 该任务并继续下一个。
+const DEFERRED_DOMAIN_JOB_TIMEOUT_MS = 15000;
+function withDeferredJobTimeout(task, label){
+    let timer = 0;
+    const timeout = new Promise((_, reject) => {
+        timer = setTimeout(() => reject(new Error(
+            `延后域任务超时（${DEFERRED_DOMAIN_JOB_TIMEOUT_MS}ms），已跳过以不阻塞后续：${label}`
+        )), DEFERRED_DOMAIN_JOB_TIMEOUT_MS);
+    });
+    return Promise.race([task, timeout]).finally(() => clearTimeout(timer));
+}
 async function flushDeferredDomainQueue() {
     if (deferredDomainsFlushing) return;
     deferredDomainsFlushing = true;
     try {
         while (deferredDomainQueue.length) {
             const job = deferredDomainQueue.shift();
+            const label = job.kind === 'load' ? job.domain : `${job.domain}/${job.fn}`;
             try {
-                job.resolve(job.kind === 'load'
-                    ? await gwLoadNow(job.domain)
-                    : await gwCallNow(job.domain, job.fn, ...job.args));
+                const task = job.kind === 'load'
+                    ? gwLoadNow(job.domain)
+                    : gwCallNow(job.domain, job.fn, ...job.args);
+                job.resolve(await withDeferredJobTimeout(task, label));
             } catch (err) {
                 job.reject(err);
             }
@@ -11553,7 +11681,20 @@ async function flushDeferredDomainQueue() {
         deferredDomainsFlushing = false;
     }
 }
+// 【QIN-603 AC6】目录导航是「最后一次点击赢」的语义：闸门关闭期间连点不同文件夹时，
+// 排队中的旧导航请求已被后来者取代。若照单全收，放行后会按队列顺序把每一次历史点击都
+// 执行一遍——实测 5k 库首屏期连点会攒出十几条 /assets。因此对这类调用只保留最新一条，
+// 被取代者按「已完成但无操作」结账。
+const DEFERRED_LAST_WINS_CALLS = new Set(['settings/selectAssetRackFolder']);
 function queueWhileGateClosed(kind, domain, fn, args) {
+    if(kind === 'call' && DEFERRED_LAST_WINS_CALLS.has(`${domain}/${fn}`)){
+        for(let index = deferredDomainQueue.length - 1; index >= 0; index -= 1){
+            const queued = deferredDomainQueue[index];
+            if(queued.kind !== 'call' || queued.domain !== domain || queued.fn !== fn) continue;
+            deferredDomainQueue.splice(index, 1);
+            queued.resolve(undefined);
+        }
+    }
     const request = new Promise((resolve, reject) => {
         deferredDomainQueue.push({kind, domain, fn, args, resolve, reject});
     });

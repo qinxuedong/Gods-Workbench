@@ -798,9 +798,11 @@ test('AC2: 所有替换当前列表的入口都统一走代际登记协议', () 
     // 共享入口：搜索/筛选/翻页/排序/看板切换都经 refreshRegistryAssets，必须登记代际；
     // 且它返回的是原始请求（业务错误可传播），不是吞掉拒绝的终态观察 promise。
     const shared = sliceFunction(MANAGER, 'refreshRegistryAssets');
+    // 【QIN-603】共享入口新增 options（reuseCache / invalidateCache）：不变量仍是
+    // 「网络实现只经这个入口被调用且登记代际」，因此允许第二参数存在但必须是透传。
     assert.match(
         shared,
-        /trackRegistryBootstrapSettled\(refreshRegistryAssetsRequest\(renderNow\)\)/,
+        /trackRegistryBootstrapSettled\(refreshRegistryAssetsRequest\(renderNow(?:,\s*options)?\)\)/,
         '所有替换当前列表的调用都必须经共享入口登记代际'
     );
     // 网络实现只允许被共享入口调用一次：37 个替换列表的调用点都必须经过登记，

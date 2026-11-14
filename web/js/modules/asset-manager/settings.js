@@ -2602,7 +2602,7 @@ function selectAssetRackFolder(rootId, path, { force=false }={}){
             saveAssetRackExpandedFolders();
         }
         savedScrollPositions.registry = 0;
-        refreshRegistryAssets().catch(err => setStatus(err.message || '加载目录失败'));
+        refreshRegistryAssets(true, {reuseCache:true}).catch(err => setStatus(err.message || '加载目录失败'));
         return;
     }
     const same = registryNavFolder.rootId === root && registryNavFolder.path === folder;
@@ -2618,7 +2618,7 @@ function selectAssetRackFolder(rootId, path, { force=false }={}){
         saveAssetRackExpandedFolders();
     }
     savedScrollPositions.registry = 0;
-    refreshRegistryAssets().catch(err => setStatus(err.message || '加载目录失败'));
+    refreshRegistryAssets(true, {reuseCache:true}).catch(err => setStatus(err.message || '加载目录失败'));
 }
 function clearAssetRackFolder(){
     const board = assetRackBoard();
@@ -2629,13 +2629,13 @@ function clearAssetRackFolder(){
         if(!board.sourceBoard) setRegistryRootId('');
         setRegistryRackSnapshot(null);
         savedScrollPositions.registry = 0;
-        refreshRegistryAssets().catch(err => setStatus(err.message || '加载目录失败'));
+        refreshRegistryAssets(true, {reuseCache:true}).catch(err => setStatus(err.message || '加载目录失败'));
         return;
     }
     if(!registryNavFolderActive()) return;
     setRegistryNavFolder({rootId:'', path:''});
     savedScrollPositions.registry = 0;
-    refreshRegistryAssets().catch(err => setStatus(err.message || '加载目录失败'));
+    refreshRegistryAssets(true, {reuseCache:true}).catch(err => setStatus(err.message || '加载目录失败'));
 }
 async function createAssetRackFolder(rootId){
     const root = String(rootId || '').trim();

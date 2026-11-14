@@ -346,6 +346,10 @@ function loadGatewaySandbox() {
         GW_DEFERRED: {},
         GW_DOMAIN_LOADERS: {},
         console: {error() {}},
+        // 【QIN-603】网关给每个延后域任务加了有界等待（单任务超时不阻塞后续，保持 FIFO）。
+        // 沙箱补齐计时器环境：这里返回的句柄不会真正触发，用于验证顺序与返回值语义不变。
+        setTimeout() { return 0; },
+        clearTimeout() {},
     };
     vm.createContext(sandbox);
     vm.runInContext(
