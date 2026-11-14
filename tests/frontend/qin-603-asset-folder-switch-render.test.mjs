@@ -211,12 +211,15 @@ test('QIN-603 AC4：回到看过的文件夹命中缓存不再请求列表；rev
 test('QIN-603 AC6：快速连点不同文件夹只采用最后一次点击的结果', async () => {
     let releaseSlow = () => {};
     const slow = new Promise(resolve => { releaseSlow = resolve; });
-    // 让 root_a 的列表响应挂起：A 的旧响应晚于 B 落地，用来看它会不会覆盖新视图
-    let assetsCalls = 0;
+    // 让「第一次点 root_a」的列表响应挂起：A 的旧响应晚于 B 落地，用来看它会不会覆盖新视图
+    let slowed = false;
     const {host} = await bootHost({
         beforeAssets(url) {
-            assetsCalls += 1;
-            return url.includes('root_id=root_a') && assetsCalls === 1 ? slow : Promise.resolve();
+            if (!slowed && url.includes('root_id=root_a')) {
+                slowed = true;
+                return slow;
+            }
+            return Promise.resolve();
         },
     });
     try {
