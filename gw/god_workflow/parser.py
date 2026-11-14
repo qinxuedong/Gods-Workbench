@@ -528,3 +528,34 @@ def build_topology_from_public_detail(detail: dict[str, Any]) -> dict[str, Any]:
             "公开详情只有节点类型/模型清单，缺少原始拓扑；请配置 RH 登录 Token/API Key 或上传原始工作流 JSON"
         )
     return graph
+
+
+def detect_comfyui_graph(payload: Any) -> dict[str, bool] | None:
+    """判定 payload 是否为 ComfyUI 图（QIN-601 设计表 §5）。
+
+    只做结构判定，不构建 ``WorkflowDocument``、不读写文件、不抛异常；判定权威
+    仍是 :func:`extract_source_graph`，本函数只把它的返回值翻译成两个布尔：
+
+    - ``has_workflow``：UI 工作流图（``nodes`` 为 list 且至少一个节点带非空 ``type``）；
+    - ``has_prompt_graph``：API 执行图（至少一个节点带非空 ``class_type``）。
+
+    非图（伪造同名键、错误信封、非 JSON 字符串）返回 ``None``。
+    """
+    try:
+        graph = extract_source_graph(payload)
+    except Exception:  # noqa: BLE001 - 判定失败不得中断入库，一律按「非图」处理
+        return None
+    if not isinstance(graph, dict) or not graph:
+        return None
+    nodes = graph.get("nodes")
+    has_workflow = isinstance(nodes, list) and any(
+        isinstance(node, Mapping) and str(node.get("type") or "").strip()
+        for node in nodes
+    )
+    has_prompt_graph = any(
+        isinstance(value, Mapping) and str(value.get("class_type") or "").strip()
+        for value in graph.values()
+    )
+    if not (has_workflow or has_prompt_graph):
+        return None
+    return {"has_workflow": has_workflow, "has_prompt_graph": has_prompt_graph}

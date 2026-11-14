@@ -1,0 +1,31 @@
+{
+  "schema": "gw.cleanroom-admission-shard/v1",
+  "issue": 710,
+  "authorization_basis": "GitHub Issue #710 (QIN-601), 2026-11-14",
+  "files": [
+    "gw/asset_registry/generation_metadata.py",
+    "gw/asset_registry/index_jobs.py",
+    "gw/god_workflow/parser.py",
+    "gw/god_workflow/asset_hub_bridge.py",
+    "docs/contracts/ASSET-REGISTRY-INTERFACE-CATALOG.yaml",
+    "tests/contracts/assets/test_comfyui_native_detection.py",
+    "tests/benchmarks/test_comfyui_marker_perf.py",
+    "tests/hygiene/fixtures/admissions/issue-710.json"
+  ],
+  "admitted_files": [],
+  "accepted_test_files": [
+    {
+      "path": "tests/contracts/assets/test_comfyui_native_detection.py",
+      "classification": "curated_test_coverage",
+      "authorization_basis": "GitHub Issue #710 (QIN-601), 2026-11-14",
+      "admission": "accepted"
+    },
+    {
+      "path": "tests/benchmarks/test_comfyui_marker_perf.py",
+      "classification": "curated_test_coverage",
+      "authorization_basis": "GitHub Issue #710 (QIN-601), 2026-11-14",
+      "admission": "accepted"
+    }
+  ],
+  "notes": "QIN-601 ComfyUI 通用识别：在既有 metadata.generation 下增补 comfyui 子对象（has_workflow / has_prompt_graph / source），只作来源判定、不含文本。判定权威复用 gw/god_workflow/parser.py 新增纯函数 detect_comfyui_graph（不改 parse_upload 语义与错误码），generation_metadata 只对 PNG 内嵌文本块与 WebP EXIF 判定（JPEG 不读 EXIF/XMP、不测试、不预留分支，按 PM 第 2 轮复核收回范围）。index_jobs 增补 comfyui_tagged 统计，_commit 增加来源优先级合并（现值 source=gw-workflow 时不被翻回 embedded、has_* 取或、其余字段扫描有值则替换）。asset_hub_bridge 的产物登记（含 RunningHub）与工作流资产登记写同一标记。AC7 契约 YAML 增补标记说明，按设计表 §8 同步基础账本中该文件 sha256 与 ADMISSION_BASE_METADATA_SHA256 常量，未改动其他账本条目。"
+}

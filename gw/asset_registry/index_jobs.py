@@ -720,6 +720,37 @@ def _admission(actor):
         _error(403, "INDEX_AUTH_REVOKED", "发起主体无写权限")
 
 
+def _merge_generation_metadata(current: object, scanned: object) -> object:
+    """按 QIN-601 设计表 §2.6 合并 reindex 扫描到的 `generation`。
+
+    - 现值 `comfyui.source != "gw-workflow"`：按 QIN-600 原规则整体替换。
+    - 现值 `comfyui.source == "gw-workflow"`：来源不被文件内嵌元数据翻回
+      `embedded`，`has_*` 与扫描结果取或；其余字段「扫描有值则替换」，
+      扫描没给出 `prompt` 时保留 GW 写入的提示词（Q4）。
+    """
+    if not isinstance(scanned, dict):
+        return current
+    if not isinstance(current, dict):
+        return scanned
+    current_marker = current.get("comfyui")
+    if not isinstance(current_marker, dict) or current_marker.get("source") != "gw-workflow":
+        return scanned
+    merged = dict(current)
+    merged.update({key: value for key, value in scanned.items() if key != "comfyui"})
+    scanned_marker = scanned.get("comfyui")
+    marker = dict(current_marker)
+    if isinstance(scanned_marker, dict):
+        marker["has_workflow"] = bool(current_marker.get("has_workflow")) or bool(
+            scanned_marker.get("has_workflow")
+        )
+        marker["has_prompt_graph"] = bool(
+            current_marker.get("has_prompt_graph")
+        ) or bool(scanned_marker.get("has_prompt_graph"))
+    marker["source"] = "gw-workflow"
+    merged["comfyui"] = marker
+    return merged
+
+
 class _JobState(storage.JsonState):
     """任务真源损坏时失败关闭，不能回退空表复用稳定ID。"""
 
@@ -1411,6 +1442,8 @@ class IndexJobs:
             "with_metadata": 0,
             "warnings": 0,
             "truncated": 0,
+            # QIN-601：带 `generation.comfyui` 标记的图片数（可复核）。
+            "comfyui_tagged": 0,
         }
         progress_saved_at = time.monotonic()
         configured_exclusion_roots, custom_cache_base = (
@@ -1572,6 +1605,8 @@ class IndexJobs:
                                     "generation"
                                 ] = generation
                                 generation_stats["with_metadata"] += 1
+                                if generation.get("comfyui"):
+                                    generation_stats["comfyui_tagged"] += 1
                                 if generation.get("truncated"):
                                     generation_stats["truncated"] += 1
                         if request["hash_files"]:
@@ -1715,13 +1750,19 @@ class IndexJobs:
                                 changed = True
                             # QIN-600：只替换 generation 这一个键；扫描不到时不删旧值
                             # （GW 产物登记写入的提示词不会被无元数据的重扫清掉）。
-                            if "generation" in scanned_metadata and current_metadata.get(
-                                "generation"
-                            ) != scanned_metadata["generation"]:
-                                current_metadata["generation"] = scanned_metadata[
-                                    "generation"
-                                ]
-                                changed = True
+                            # QIN-601：现值来源是 gw-workflow 时按 §2.6 合并，不翻回
+                            # embedded，has_* 取或。
+                            if "generation" in scanned_metadata:
+                                merged_generation = _merge_generation_metadata(
+                                    current_metadata.get("generation"),
+                                    scanned_metadata["generation"],
+                                )
+                                if (
+                                    current_metadata.get("generation")
+                                    != merged_generation
+                                ):
+                                    current_metadata["generation"] = merged_generation
+                                    changed = True
                         elif was_lut:
                             current_metadata = existing.get("metadata")
                             if isinstance(current_metadata, dict) and "lut" in current_metadata:
