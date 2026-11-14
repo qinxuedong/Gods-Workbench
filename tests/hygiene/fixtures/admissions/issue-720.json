@@ -1,0 +1,21 @@
+{
+  "schema": "gw.cleanroom-admission-shard/v1",
+  "issue": 720,
+  "authorization_basis": "GitHub Issue #720 (QIN-606), 2026-11-14",
+  "files": [
+    "web/css/pages/asset-vault.css",
+    "tests/frontend/qin-606-asset-stat-label-no-overlap.test.mjs",
+    "tests/frontend/node-files.txt",
+    "tests/hygiene/fixtures/admissions/issue-720.json"
+  ],
+  "admitted_files": [],
+  "accepted_test_files": [
+    {
+      "path": "tests/frontend/qin-606-asset-stat-label-no-overlap.test.mjs",
+      "classification": "curated_test_coverage",
+      "authorization_basis": "GitHub Issue #720 (QIN-606), 2026-11-14",
+      "admission": "accepted"
+    }
+  ],
+  "notes": "QIN-606 资产总览主卡「资产总量」与「统一资产索引」在 1440px 视口几何重叠 2.27px（QIN-602 证据分支 qin-602-qa 的 ac3-evidence.json 矩形数据逐位对上票面）：徽标 em 无截断机制，justify-self:end 在列 3 轨道 58.73px 小于固有宽 66px 时左溢压字。修复 = em 规则追加与 small 同款截断三件套（max-width:100% / overflow:hidden / text-overflow:ellipsis），徽标就地截断不再左溢；1920 区域 141.5px 大于等于固有 66px，徽标完整显示不回归。不改 13 卡列数、QIN-531 的 2/3 宽度公式、渲染模板、文案与统计口径；asset-manager.css 与 asset-manager.js 经核实零改动。设计表 v1（评论 6872747149）与打回后增量 v2（评论 6872900499）已交，PM 设计表确认（评论 6873625144）。基础账本 cleanroom_admission_metadata.json 不改。"
+}
