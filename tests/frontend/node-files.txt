@@ -115,6 +115,7 @@ tests/frontend/qin-593-desktop-auto-launch.test.mjs
 tests/frontend/qin-595-mounted-folder-empty-state.test.mjs
 tests/frontend/qin-602-asset-topbar-retention.test.mjs
 tests/frontend/qin-602-asset-view-harness.mjs
+tests/frontend/qin-603-asset-folder-switch-render.test.mjs
 tests/frontend/settings-workbench-visual.test.mjs
 tests/frontend/test_c18_omnibar_hotkeys.mjs
 tests/frontend/test_c18_video_jump.mjs
