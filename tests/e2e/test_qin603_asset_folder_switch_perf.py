@@ -52,12 +52,22 @@ INSTRUMENT = """
     const state = window.__qin603 = window.__qin603 || {};
     state.renders = 0; state.lastMutation = performance.now();
     state.longTasks = 0; state.longTaskMs = 0; state.started = performance.now();
+    state.timeline = [];
     let lastContent = root.querySelector('.asset-content');
     if (!state.observer) {
         state.observer = new MutationObserver(() => {
             state.lastMutation = performance.now();
             const current = root.querySelector('.asset-content');
-            if (current !== lastContent) { lastContent = current; state.renders += 1; }
+            if (current !== lastContent) {
+                lastContent = current;
+                state.renders += 1;
+                // 每一帧记下「画的是加载态还是终态」，失败时能看出多出来的那一帧是谁画的。
+                state.timeline.push({
+                    t: Math.round(performance.now()),
+                    loading: root.innerHTML.includes('正在读取'),
+                    cards: root.querySelectorAll('[data-registry-card]').length,
+                });
+            }
         });
         state.observer.observe(root, {childList: true, subtree: true});
     }
@@ -74,13 +84,14 @@ INSTRUMENT = """
 RESET = """
 () => { const s = window.__qin603;
     s.renders = 0; s.lastMutation = performance.now();
+    s.timeline = [];
     s.longTasks = 0; s.longTaskMs = 0; s.started = performance.now(); }
 """
 
 SNAPSHOT = """
 () => { const s = window.__qin603;
     return {renders: s.renders, lastMutation: s.lastMutation, started: s.started,
-            longTasks: s.longTasks, longTaskMs: s.longTaskMs,
+            longTasks: s.longTasks, longTaskMs: s.longTaskMs, timeline: s.timeline,
             cards: document.querySelectorAll('[data-registry-card]').length}; }
 """
 
@@ -405,9 +416,11 @@ def test_qin603_slow_assets_keeps_loading_then_settles_once(tmp_path, monkeypatc
                 await frame.evaluate(RESET)
 
                 async def slow_list(route):
+                    requested.append(round(time.monotonic(), 3))
                     await asyncio.sleep(delay_ms / 1000)
                     await route.continue_()
 
+                requested: list[float] = []
                 before = await frame.evaluate(SNAPSHOT)
                 await page.route("**/api/asset-registry/assets?**", slow_list)
                 await page.click('[data-asset-tree-entry="mine:root:root_a"]')
@@ -441,5 +454,8 @@ def test_qin603_slow_assets_keeps_loading_then_settles_once(tmp_path, monkeypatc
         final = asyncio.run(scenario())
     finally:
         stop()
-    assert final["renders"] <= MAX_RENDERS, f"慢响应下仍必须 ≤{MAX_RENDERS} 次重绘：{final}"
+    assert final["renders"] <= MAX_RENDERS, (
+        f"慢响应下仍必须 ≤{MAX_RENDERS} 次重绘：{final}；/"
+        f"assets 请求 {len(requested)} 次：{requested}"
+    )
     assert final["cards"] > 0, f"终态必须有卡片：{final}"
