@@ -103,7 +103,9 @@ test('AC2: 目录层级只呈现登记根目录与真实物理子目录，点击
     const select = functionSource('selectAssetRackFolder');
     // QIN-591：registryNavFolder 为跨文件写状态，域内赋值改写为 setter 调用（登记在案），写入语义不变。
     assert.match(select, /setRegistryNavFolder\(/, '点击必须写入目录过滤态');
-    assert.match(select, /refreshRegistryAssets\(\)/, '点击后必须按所选目录重新加载');
+    // 【QIN-603 AC4】点击仍必须按所选目录重新读取；目录导航改为 reuseCache：
+    // 命中「同 revision」的缓存时不再重发列表请求，未命中照常请求。
+    assert.match(select, /refreshRegistryAssets\(true, \{reuseCache:true\}\)/, '点击后必须按所选目录重新加载');
     assert.match(
         functionSource('registryVisibleAssets'),
         /\.filter\(registryNavFolderMatches\)/,

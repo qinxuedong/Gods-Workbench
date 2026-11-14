@@ -346,6 +346,12 @@ function loadGatewaySandbox() {
         GW_DEFERRED: {},
         GW_DOMAIN_LOADERS: {},
         console: {error() {}},
+        // 【QIN-603】网关给每个延后域任务加了有界等待（内部用到 setTimeout/clearTimeout），
+        // 本切片夹具只验证「顺序与返回值语义不变」，因此给最小计时器环境即可，不在这里推进时间。
+        // 超时 / 单任务 reject / 后续任务继续 / 计时器清理由真实模块 import 的用例覆盖，见
+        // tests/frontend/qin-603-domain-gate-runtime.test.mjs。
+        setTimeout() { return 0; },
+        clearTimeout() {},
     };
     vm.createContext(sandbox);
     vm.runInContext(

@@ -128,7 +128,8 @@ test('AC2: 看板目录以素材来源与真实物理子目录为准，点击后
     const select = functionSource('selectAssetRackFolder');
     assert.match(select, /boardSourceSelection\[board\.id\]/, '点击来源必须写回看板既有来源选择');
     assert.match(select, /boardFolderSelection\[board\.id\]/, '点击目录必须写回看板既有目录选择');
-    assert.match(select, /refreshRegistryAssets\(\)/, '点击后按所选目录重新读取素材');
+    // 【QIN-603 AC4】点击仍按所选目录重新读取；目录导航走 reuseCache（同 revision 命中即免请求）。
+    assert.match(select, /refreshRegistryAssets\(true, \{reuseCache:true\}\)/, '点击后按所选目录重新读取素材');
     assert.match(
         functionSource('registryNavFolderMatches'),
         /if\(assetRackBoard\(\)\) return true;/,
