@@ -222,6 +222,72 @@ def _count_requests(requests: list[dict], since: float) -> dict[str, int]:
     return counts
 
 
+def _settle(snapshot: Any, preview_state: dict, marker: float | None = None) -> dict:
+    """票面口径的「网格稳定」：DOM 连续 600ms 不再变化，且缩略图请求已清空。
+
+    ``settle_ms`` 取「稳定时刻」而不是「判定稳定的时刻」：
+    稳定时刻 = max(最后一次 DOM 变化, 最后一个 /api/media-preview 完成) - 点击时刻，
+    因此不会因为多等 600ms 静默而虚高，同时把预览尾巴真正算进去。
+    """
+    click_at = marker if marker is not None else time.monotonic()
+    preview_state["last_finish"] = 0.0
+    inflight_at_start = preview_state["inflight"]
+    preview_state["events"] = 0
+    previous = snapshot()
+    last_change = time.monotonic()
+    while time.monotonic() - last_change < 60:
+        time.sleep(0.05)
+        current = snapshot()
+        if (current["renders"], current["cards"]) != (previous["renders"], previous["cards"]):
+            previous = current
+            last_change = time.monotonic()
+            continue
+        if time.monotonic() - last_change >= 0.6 and preview_state["inflight"] == 0:
+            break
+    dom_ms = max(0.0, previous["lastMutation"] - previous["started"])
+    preview_ms = max(0.0, (preview_state["last_finish"] - click_at) * 1000)
+    return {
+        **previous,
+        "settle_ms": round(max(dom_ms, preview_ms), 1),
+        "dom_settle_ms": round(dom_ms, 1),
+        "preview_ms": round(preview_ms, 1),
+        "preview_inflight_at_start": inflight_at_start,
+        "preview_events": preview_state.get("events", 0),
+    }
+
+
+def _attach_preview_tracker(page: Any, requests: list[dict]) -> dict:
+    """在 page 上记录 /api/media-preview 的在途数与完成时刻（跨 iframe 同样生效）。"""
+    state: dict = {"inflight": 0, "last_finish": 0.0, "events": 0}
+
+    def _started(request: Any) -> None:
+        requests.append({"url": request.url, "ts": time.time() * 1000})
+        if "/api/media-preview" in request.url:
+            state["inflight"] += 1
+
+    def _done(request: Any) -> None:
+        if "/api/media-preview" in request.url:
+            state["inflight"] = max(0, state["inflight"] - 1)
+            state["last_finish"] = time.monotonic()
+            state["events"] += 1
+
+    page.on("request", _started)
+    page.on("requestfinished", _done)
+    page.on("requestfailed", _done)
+    return state
+
+
+def _path_histogram(requests: list[dict]) -> dict[str, int]:
+    """请求路径直方图（只保留 path，不带 host）：用来核对「到底哪些接口真被打了」。"""
+    from urllib.parse import urlsplit
+
+    counts: dict[str, int] = {}
+    for entry in requests:
+        path = urlsplit(entry["url"]).path
+        counts[path] = counts.get(path, 0) + 1
+    return dict(sorted(counts.items(), key=lambda item: -item[1]))
+
+
 @pytest.mark.skipif(not _real_run_enabled(), reason="需要 GW_C10_REAL_E2E=1 显式开启真实浏览器验收")
 def test_qin603_folder_switch_render_and_requests(tmp_path, monkeypatch):
     browser_api = pytest.importorskip("playwright.sync_api")
@@ -255,6 +321,7 @@ def test_qin603_folder_switch_render_and_requests(tmp_path, monkeypatch):
                     "request",
                     lambda r: requests.append({"url": r.url, "ts": time.time() * 1000}),
                 )
+                preview_state = _attach_preview_tracker(page, requests)
                 page.goto(base + "/static/pages/assets.html", wait_until="domcontentloaded", timeout=120000)
                 deadline = time.monotonic() + 180
                 entries = 0
@@ -274,19 +341,8 @@ def test_qin603_folder_switch_render_and_requests(tmp_path, monkeypatch):
                 def snapshot() -> dict:
                     return frame.evaluate(SNAPSHOT)
 
-                def settle() -> dict:
-                    previous = snapshot()
-                    last_change = time.monotonic()
-                    while time.monotonic() - last_change < 60:
-                        time.sleep(0.05)
-                        current = snapshot()
-                        if (current["renders"], current["cards"]) != (previous["renders"], previous["cards"]):
-                            previous = current
-                            last_change = time.monotonic()
-                            continue
-                        if time.monotonic() - last_change >= 0.6:
-                            break
-                    return previous
+                def settle(marker: float | None = None) -> dict:
+                    return _settle(snapshot, preview_state, marker)
 
                 # 首屏链路静默后再开测，避免把引导成本算进一次点击
                 frame.evaluate(RESET)
@@ -300,13 +356,18 @@ def test_qin603_folder_switch_render_and_requests(tmp_path, monkeypatch):
                     root_id = "root_b" if current == "root_a" else "root_a"
                     frame.evaluate(RESET)
                     marker = time.time() * 1000
+                    mono_marker = time.monotonic()
                     page.click(f'[data-asset-tree-entry="mine:root:{root_id}"]')
-                    state = settle()
+                    state = settle(mono_marker)
                     samples.append({
                         "index": index,
                         "root": root_id,
                         "renders": state["renders"],
-                        "settle_ms": round(max(0.0, state["lastMutation"] - state["started"]), 1),
+                        "settle_ms": state["settle_ms"],
+                        "dom_settle_ms": state["dom_settle_ms"],
+                        "preview_ms": state["preview_ms"],
+                        "preview_inflight_at_start": state["preview_inflight_at_start"],
+                        "preview_events": state["preview_events"],
                         "long_tasks": state["longTasks"],
                         "long_task_ms": round(state["longTaskMs"], 1),
                         "cards": state["cards"],
@@ -320,12 +381,15 @@ def test_qin603_folder_switch_render_and_requests(tmp_path, monkeypatch):
 
     renders = [float(s["renders"]) for s in samples]
     settles = [s["settle_ms"] for s in samples]
+    dom_settles = [s["dom_settle_ms"] for s in samples]
+    previews = [s["preview_ms"] for s in samples]
     long_tasks = [s["long_task_ms"] for s in samples]
     folders = sum(s["requests"].get("folders", 0) for s in samples)
     project_counts = sum(s["requests"].get("assets_project_count", 0) for s in samples)
     # 6 次样本里第 2 次起都是「回到看过的文件夹」，列表请求必须是 0
     # 第 0 次样本是 root_b 的首次进入（未缓存，允许一次列表请求）；第 1 次起都是回访
     asset_refetch = sum(s["requests"].get("assets", 0) for s in samples[1:])
+    preview_requests = sum(1 for entry in requests if "/api/media-preview" in entry["url"])
 
     evidence = {
         "ticket": "QIN-603",
@@ -340,12 +404,21 @@ def test_qin603_folder_switch_render_and_requests(tmp_path, monkeypatch):
         "summary": {
             "renders_median": _median(renders),
             "renders_max": max(renders) if renders else 0,
+            # settle = max(最后一次 DOM 变化, 最后一个 /api/media-preview 完成) - 点击时刻，
+            # 即票面口径的「无 DOM 变化且无在途预览」；dom_settle 为仅看 DOM 的旧口径，留作对照。
             "settle_median_ms": round(_median(settles), 1),
             "settle_p95_ms": round(_percentile(settles, 0.95), 1),
+            "dom_settle_median_ms": round(_median(dom_settles), 1),
+            "dom_settle_p95_ms": round(_percentile(dom_settles, 0.95), 1),
+            "preview_median_ms": round(_median(previews), 1),
+            "preview_p95_ms": round(_percentile(previews, 0.95), 1),
             "longtask_p95_ms": round(_percentile(long_tasks, 0.95), 1),
             "folders_requests": folders,
             "project_count_requests": project_counts,
             "assets_requests_on_hot_switch": asset_refetch,
+            # 缩略图在途数已纳入 settle 判据；这个计数用来说明本次数据集里是否真的出现过预览请求
+            "preview_requests": preview_requests,
+            "request_paths": _path_histogram(requests),
         },
         "page_errors": page_errors,
     }
@@ -361,6 +434,88 @@ def test_qin603_folder_switch_render_and_requests(tmp_path, monkeypatch):
     assert folders == 0, f"筛选未变时切文件夹不得重拉 /folders（实际 {folders}）"
     assert project_counts == 0, f"筛选未变时不得重拉 /assets?project_id=（实际 {project_counts}）"
     assert asset_refetch == 0, f"热切换回到看过的文件夹不得重拉列表（实际 {asset_refetch}）"
+
+
+@pytest.mark.skipif(not _real_run_enabled(), reason="需要 GW_C10_REAL_E2E=1 显式开启真实浏览器验收")
+def test_qin603_settle_waits_for_inflight_preview(tmp_path, monkeypatch):
+    """票面「网格稳定 = 无 DOM 变化且无在途预览」的口径本身要被验证。
+
+    默认工作负载下缩略图已被浏览器缓存，切目录时 /api/media-preview 恒为 0，
+    settle 是否会等预览排空就观察不到。这里先清一次 HTTP 缓存，让一次切目录真的重新拉
+    缩略图，再断言：预览确实重拉、且 settle 的稳定时刻被预览尾巴推后（不只是 DOM 静默）。
+    """
+    browser_api = pytest.importorskip("playwright.sync_api")
+    from playwright_support import open_playwright
+
+    _seed_workspace(tmp_path, monkeypatch)
+    _, base, stop = _start_server()
+    requests: list[dict] = []
+    try:
+        with open_playwright(browser_api) as pw:
+            browser = pw.chromium.launch(channel="chrome", headless=True)
+            try:
+                context = browser.new_context(viewport={"width": 1440, "height": 900})
+                login = context.request.post(
+                    base + "/api/asset-auth/local/login",
+                    data={"username": "qin603_preview", "password": "Test2026"},
+                    headers={"Origin": base},
+                )
+                if login.status != 200:
+                    setup = context.request.post(
+                        base + "/api/asset-auth/local/setup",
+                        data={"username": "qin603_preview", "password": "Test2026"},
+                        headers={"Origin": base},
+                    )
+                    assert setup.status in (201, 409), setup.text()[:300]
+                page = context.new_page()
+                preview_state = _attach_preview_tracker(page, requests)
+                page.goto(base + "/static/pages/assets.html", wait_until="domcontentloaded", timeout=120000)
+                deadline = time.monotonic() + 180
+                entries = 0
+                while time.monotonic() < deadline:
+                    entries = len(page.query_selector_all('[data-asset-tree-entry^="mine:root:"]'))
+                    if entries >= len(ROOTS):
+                        break
+                    page.evaluate(
+                        "() => { const o = document.getElementById('assetSidebarOverview'); if (o) o.click(); }"
+                    )
+                    time.sleep(1)
+                assert entries >= len(ROOTS), f"侧栏未出现挂载根（{entries}）"
+
+                frame = next((f for f in page.frames if "asset-manager.html" in f.url), None)
+                assert frame is not None, "未找到内嵌资产页"
+                frame.evaluate(INSTRUMENT)
+                snapshot = lambda: frame.evaluate(SNAPSHOT)  # noqa: E731 - 与主用例同一观测口径
+
+                # 先让首屏链路自己静下来，再把 HTTP 缓存清掉，制造「下次切目录必须重拉缩略图」
+                _settle(snapshot, preview_state)
+                time.sleep(1.0)
+                cdp = context.new_cdp_session(page)
+                cdp.send("Network.clearBrowserCache")
+                cdp.detach()
+
+                frame.evaluate(RESET)
+                marker = time.monotonic()
+                page.click('[data-asset-tree-entry="mine:root:root_b"]')
+                state = _settle(snapshot, preview_state, marker)
+
+                assert state["cards"] > 0, f"终态必须有卡片：{state}"
+                assert state["preview_events"] > 0, f"清缓存后切目录必须重新拉缩略图：{state}"
+                assert state["preview_ms"] >= 100, (
+                    f"缩略图应延续到 DOM 稳定之后（preview_ms={state['preview_ms']}）"
+                )
+                assert state["settle_ms"] > state["dom_settle_ms"], (
+                    f"预览在飞时 settle 必须晚于 DOM 静默：settle={state['settle_ms']} "
+                    f"dom={state['dom_settle_ms']}"
+                )
+                assert state["settle_ms"] >= state["preview_ms"], (
+                    f"稳定时刻必须覆盖预览尾巴：settle={state['settle_ms']} "
+                    f"preview={state['preview_ms']}"
+                )
+            finally:
+                browser.close()
+    finally:
+        stop()
 
 
 @pytest.mark.skipif(not _real_run_enabled(), reason="需要 GW_C10_REAL_E2E=1 显式开启真实浏览器验收")
