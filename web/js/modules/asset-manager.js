@@ -393,6 +393,8 @@ let registryCanvasTargets = [];
 let registryCanvasLoading = false;
 let registryTagEditorAssetId = '';
 let registryLoading = false;
+// 【QIN-603 AC5】当前这帧加载态画的是哪个查询：重复进入同一查询时不再重画一模一样的加载帧。
+let registryLoadingScopeKey = '';
 let registryPageLoading = false;
 let registryNextOffset = 0;
 let registryNextCursor = '';
@@ -612,7 +614,10 @@ function scheduleRegistryProjectCounts(){
         registryProjectCountsScheduled = false;
         if(!registryProjectCountsDirty) return;
         registryProjectCountsDirty = false;
-        void refreshRegistryProjectCounts(true).catch(() => {});
+        // 【QIN-603 AC5】列表刷新在途时只取数不补帧：那一刻页面就是加载态，
+        // 计数写进 Map 后会由这次刷新的终态渲染带出去。否则慢响应（/assets 被拖到
+        // 1.5~5s）会多画一帧「加载态 + 新计数」，终态变成第 3 次重绘。
+        void refreshRegistryProjectCounts(!registryLoading).catch(() => {});
     };
     if(typeof window.requestIdleCallback === 'function'){
         window.requestIdleCallback(run, {timeout:2000});
@@ -3526,6 +3531,8 @@ function refreshRegistryAssets(renderNow=true, options={}){
 async function refreshRegistryAssetsRequest(renderNow=true, options={}){
     const reuseCache = Boolean(options?.reuseCache);
     const invalidateCache = options?.invalidateCache === undefined ? !reuseCache : Boolean(options.invalidateCache);
+    // 记下「进来时是不是已经在为同一个查询画加载态」：可能是重复激活 / 连点同一目录。
+    const loadingSameScope = registryLoading && registryLoadingScopeKey === registryQueryString();
     const requestId = ++registryRequestSeq;
     abortRegistryAssetRequests();
     const signal = beginRegistryAssetRequest();
@@ -3548,13 +3555,16 @@ async function refreshRegistryAssetsRequest(renderNow=true, options={}){
     registryPendingNewIds = new Set();
     registryPendingVanishedIds = new Set();
     registryPendingNewItems.clear();
-    if(renderNow) render();
+    const queryKey = registryQueryString();
+    registryLoadingScopeKey = queryKey;
+    // 同一个查询已经在画加载态了就不再重画一帧：可见内容完全一样，重画只是多一帧
+    // （慢响应场景下这一帧会被算成「一次点击两次重绘」）。
+    if(renderNow && !loadingSameScope) render();
     // 与列表同批发起：终态渲染前并入，避免 /status 迟到又单独触发一次整页重绘
     const statusRequest = apiJsonResponse(assetManagerApi.getRegistryStatus())
         .then(statusData => { if(requestId === registryRequestSeq) applyRegistryStatusSnapshot(statusData); })
         .catch(() => {});
     try {
-        const queryKey = registryQueryString();
         let data = reuseCache ? readRegistryAssetCache(queryKey) : null;
         if(!data){
             data = await apiJsonResponse(assetManagerApi.getRegistryAssets(queryKey, signal ? {signal} : {}));
@@ -3575,7 +3585,10 @@ async function refreshRegistryAssetsRequest(renderNow=true, options={}){
         throw err;
     } finally {
         if(requestId === registryRequestSeq) registryRequestAbortController = null;
-        if(requestId === registryRequestSeq) registryLoading = false;
+        if(requestId === registryRequestSeq){
+            registryLoading = false;
+            registryLoadingScopeKey = '';
+        }
         if(renderNow && requestId === registryRequestSeq) render();
         if(requestId === registryRequestSeq && !registryLoading) scheduleRegistryPrefetch();
     }
@@ -3593,6 +3606,9 @@ function applyRegistryStatusSnapshot(statusData){
     }
     if(signature === registryStatusRenderSignature) return;
     registryStatusRenderSignature = signature;
+    // 列表刷新在途时不单独补帧：这一刻页面就是加载态，状态变化会并进这次刷新的终态渲染。
+    // 否则慢响应场景（/assets 被拖到 1.5~5s）会多画一帧「加载态 + 新状态」的中间帧。
+    if(registryLoading) return;
     if(activeTab === 'registry' || assetBoardById(activeTab)?.system === false) render();
 }
 function registryAppendDomContext(){

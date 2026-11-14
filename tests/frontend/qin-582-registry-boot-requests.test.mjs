@@ -36,7 +36,14 @@ test('AC5: 未就绪只标脏；就绪后在空闲时段刷新一次', () => {
     );
     assert.match(schedule[1], /window\.requestIdleCallback\(run, \{timeout:2000\}\)/);
     assert.match(schedule[1], /window\.setTimeout\(run, 0\)/, '无 requestIdleCallback 时要有兜底');
-    assert.match(schedule[1], /refreshRegistryProjectCounts\(true\)/, '计数到达后必须 render');
+    // 【QIN-603 AC5】计数到达后必须 render；唯一的例外是「列表刷新在途」——那一刻页面就是
+    // 加载态，计数写进 Map 后由这次刷新的终态渲染带出去（否则慢响应下会多画一帧）。
+    // 「被调用时要 render」这一条仍由下一个用例（函数体里的 if(renderNow) render();）钉住。
+    assert.match(
+        schedule[1],
+        /refreshRegistryProjectCounts\(!registryLoading\)/,
+        '计数到达后必须 render（列表刷新在途时只取数，由终态渲染带出）'
+    );
     assert.match(
         MANAGER,
         /function markRegistryFirstScreenReady\(\)\s*\{\s*registryFirstScreenReady = true;\s*if\(registryProjectCountsDirty\) scheduleRegistryProjectCounts\(\);\s*\}/,

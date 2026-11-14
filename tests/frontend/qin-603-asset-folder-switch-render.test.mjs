@@ -184,6 +184,43 @@ test('QIN-603 AC1/AC2：一次目录切换只重绘 2 次，且不重拉 /folder
     }
 });
 
+test('QIN-603 AC5：同一目录在加载态未落地时被重复激活，只画一帧加载态', async () => {
+    let releaseSlow = () => {};
+    const slow = new Promise(resolve => { releaseSlow = resolve; });
+    let slowed = false;
+    const {host, renders} = await bootHost({
+        beforeAssets(url) {
+            if (!slowed && url.includes('root_id=root_b')) {
+                slowed = true;
+                return slow;
+            }
+            return Promise.resolve();
+        },
+    });
+    try {
+        // 先暖掉建树成本，再把计数窗口对准「重复激活同一目录」这一段
+        await switchFolder(host, 'root_a');
+        renders.renders = 0;
+
+        globalThis.GWAssetTreeBridge.activate('mine:root:root_b');
+        await wait(40);                       // 第一次点击的加载态已画出来，它的列表仍挂起
+        assert.equal(renders.renders, 1, '第一次点击必须画出加载态');
+
+        // 同一目录再点一次：可见内容与当前加载态完全一样，不得再整树重画一帧。
+        globalThis.GWAssetTreeBridge.activate('mine:root:root_b');
+        await wait(160);
+        assert.equal(renders.renders, 2, '重复激活同一目录只允许「一帧加载态 + 一帧终态」');
+
+        // 被取代的那次响应迟到也不能改写视图、更不能再多画一帧。
+        releaseSlow();
+        await wait(200);
+        assert.equal(renders.renders, 2, '迟到的旧响应不得再触发重绘');
+        assert.equal(host.main.registryTotal, TOTALS.root_b, '终态必须是最后一次点击的那个目录');
+    } finally {
+        host.dispose();
+    }
+});
+
 test('QIN-603 AC4：回到看过的文件夹命中缓存不再请求列表；revision 变化后必须重新取数', async () => {
     const {host, requests} = await bootHost();
     try {
