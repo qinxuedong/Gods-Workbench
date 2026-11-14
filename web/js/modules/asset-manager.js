@@ -395,6 +395,10 @@ let registryTagEditorAssetId = '';
 let registryLoading = false;
 // 【QIN-603 AC5】当前这帧加载态画的是哪个查询：重复进入同一查询时不再重画一模一样的加载帧。
 let registryLoadingScopeKey = '';
+// 【QIN-603 R3】该查询的加载态已经画过：列表在途期间其它异步入口再整页 render
+// 只会重画一模一样的第二帧加载态（慢响应 1500/5000ms 实测第 3 次 render）。
+// 终态 render 前清空；首屏 bootstrap 时它为空，两者都不受影响。
+let registryLoadingFrameRendered = '';
 let registryPageLoading = false;
 let registryNextOffset = 0;
 let registryNextCursor = '';
@@ -3560,6 +3564,7 @@ async function refreshRegistryAssetsRequest(renderNow=true, options={}){
     // 同一个查询已经在画加载态了就不再重画一帧：可见内容完全一样，重画只是多一帧
     // （慢响应场景下这一帧会被算成「一次点击两次重绘」）。
     if(renderNow && !loadingSameScope) render();
+    registryLoadingFrameRendered = queryKey;
     // 与列表同批发起：终态渲染前并入，避免 /status 迟到又单独触发一次整页重绘
     const statusRequest = apiJsonResponse(assetManagerApi.getRegistryStatus())
         .then(statusData => { if(requestId === registryRequestSeq) applyRegistryStatusSnapshot(statusData); })
@@ -3588,6 +3593,7 @@ async function refreshRegistryAssetsRequest(renderNow=true, options={}){
         if(requestId === registryRequestSeq){
             registryLoading = false;
             registryLoadingScopeKey = '';
+            registryLoadingFrameRendered = '';
         }
         if(renderNow && requestId === registryRequestSeq) render();
         if(requestId === registryRequestSeq && !registryLoading) scheduleRegistryPrefetch();
@@ -5289,6 +5295,11 @@ function renderActiveAssetView(){
     }
 }
 function render(){
+    // 【QIN-603 R3】列表刷新在途且同一查询的加载态已经画过时，/status、项目计数、
+    // 结构查询、外壳快照等异步入口再整页重绘只会画出一模一样的第二帧加载态。
+    // 折叠它以保证一次点击 ≤2 帧；终态 render 时 registryLoading 已置 false，
+    // 首屏 bootstrap 时 registryLoadingFrameRendered 为空，两者都不受影响。
+    if(registryLoading && registryLoadingFrameRendered && registryLoadingFrameRendered === registryQueryString()) return;
     const registryPreviewCache = captureRegistryPreviewImages();
     disconnectRegistryPreviewScheduling();
     const previewScheduleRevision = registryPreviewScheduleRevision;

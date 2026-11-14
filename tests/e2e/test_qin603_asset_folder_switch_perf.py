@@ -448,8 +448,16 @@ def test_qin603_folder_switch_render_and_requests(tmp_path, monkeypatch):
     assert page_errors == [], f"页面不得报错：{page_errors}"
     assert samples, "必须采到样本"
     assert max(renders) <= MAX_RENDERS, f"一次点击整页重绘必须 ≤{MAX_RENDERS}：{evidence['summary']}"
-    assert evidence["summary"]["settle_median_ms"] <= MAX_SETTLE_MEDIAN_MS, evidence["summary"]
-    assert evidence["summary"]["settle_p95_ms"] <= MAX_SETTLE_P95_MS, evidence["summary"]
+    # 【产品裁决 · #713 评论 6879354144】AC0/AC5 的 210/1250ms 阈值以 dom_settle
+    # （DOM 连续静默）为主指标判定；含 /api/media-preview 排空的 settle_with_preview
+    # 仍必须单列出数（缩略图尾巴属 P4 / QIN-604 范围外），但不参与本票阈值判定。
+    # 这里同时断言附加指标存在，防止「只报达标分量」把 preview 尾巴藏起来。
+    summary = evidence["summary"]
+    assert summary["dom_settle_median_ms"] <= MAX_SETTLE_MEDIAN_MS, summary
+    assert summary["dom_settle_p95_ms"] <= MAX_SETTLE_P95_MS, summary
+    assert "settle_median_ms" in summary and "settle_p95_ms" in summary, (
+        f"含预览排空的附加指标必须单列出数、不得隐藏：{summary}"
+    )
     assert evidence["summary"]["longtask_p95_ms"] <= MAX_LONGTASK_P95_MS, evidence["summary"]
     assert folders == 0, f"筛选未变时切文件夹不得重拉 /folders（实际 {folders}）"
     assert project_counts == 0, f"筛选未变时不得重拉 /assets?project_id=（实际 {project_counts}）"
@@ -633,6 +641,25 @@ def test_qin603_slow_assets_keeps_loading_then_settles_once(tmp_path, monkeypatc
                 before = await frame.evaluate(SNAPSHOT)
                 await page.route("**/api/asset-registry/assets?**", slow_list)
                 await page.click('[data-asset-tree-entry="mine:root:root_a"]')
+                # 【QIN-603 R3】列表在途期间制造一次真实的整页重绘请求：点工具栏里已选中的
+                # 「方格视图」按钮（处理器必调 render()，且不改筛选/query）。折叠守卫必须
+                # 把它挡住，否则就是「加载态 + 加载态 + 终态」共 3 次 render（AC1 超限）。
+                # 用同步 DOM click，不用动态 import，避免模块第二个实例把启动段重跑挂住。
+                # 直接观察 .asset-content 是否被替换：MutationObserver 是微任务，只看 renders
+                # 计数会被异步性掩盖；守卫在位必须 replaced=false，删掉守卫必 replaced=true。
+                trigger = await frame.evaluate(
+                    """() => {
+                        const btn = document.querySelector('[data-registry-layout="grid"]');
+                        if (!btn) return {hasBtn: false, replaced: false};
+                        const before = document.querySelector('.asset-content');
+                        btn.click();
+                        return {hasBtn: true, replaced: before !== document.querySelector('.asset-content')};
+                    }"""
+                )
+                assert trigger["hasBtn"], f"工具栏视图切换按钮不存在：{trigger}"
+                assert trigger["replaced"] is False, (
+                    f"列表在途期间重复加载态整页重绘未被折叠：{trigger}"
+                )
                 await asyncio.sleep(min(0.4, delay_ms / 4000))
                 mid = await frame.evaluate(
                     """() => { const root = document.getElementById('assetManagerRoot');
