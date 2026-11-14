@@ -342,22 +342,16 @@ function sliceBootEntry() {
 }
 
 function loadGatewaySandbox() {
-    const timers = [];
     const sandbox = {
         GW_DEFERRED: {},
         GW_DOMAIN_LOADERS: {},
         console: {error() {}},
-        // 【QIN-603】网关给每个延后域任务加了有界等待（单任务超时不阻塞后续，保持 FIFO）。
-        // 沙箱补齐计时器环境：默认只登记、不自动触发，用于验证「顺序与返回值语义不变」；
-        // 需要验证超时行为时，用返回的 timers 手动 fire（等价于时间推进，不是打桩被测函数）。
-        setTimeout(callback, delay) {
-            timers.push({callback, delay, cancelled: false});
-            return timers.length;
-        },
-        clearTimeout(handle) {
-            const timer = timers[handle - 1];
-            if (timer) timer.cancelled = true;
-        },
+        // 【QIN-603】网关给每个延后域任务加了有界等待（内部用到 setTimeout/clearTimeout），
+        // 本切片夹具只验证「顺序与返回值语义不变」，因此给最小计时器环境即可，不在这里推进时间。
+        // 超时 / 单任务 reject / 后续任务继续 / 计时器清理由真实模块 import 的用例覆盖，见
+        // tests/frontend/qin-603-domain-gate-runtime.test.mjs。
+        setTimeout() { return 0; },
+        clearTimeout() {},
     };
     vm.createContext(sandbox);
     vm.runInContext(
@@ -365,7 +359,7 @@ function loadGatewaySandbox() {
         sandbox,
         {filename: 'qin-591-gateway.js'},
     );
-    return {sandbox, gateway: sandbox.__gateway, timers};
+    return {sandbox, gateway: sandbox.__gateway};
 }
 
 /**
@@ -541,75 +535,6 @@ test('QIN-591：闸门关闭时 gwCall 不加载延后域，放行后严格按�
     assert.equal(await second, 'pong:b');
     assert.deepEqual(order, ['load:alpha', 'ping:a', 'ping:b'],
         '同一域的排队调用必须按入队顺序执行（先 clear 后 schedule 不能被倒序）');
-});
-
-test('QIN-603：闸门关闭期间连点目录入口只保留最后一次，其他域任务次序不受影响', async () => {
-    const {sandbox, gateway} = loadGatewaySandbox();
-    const calls = [];
-    sandbox.GW_DEFERRED.settings = {
-        selectAssetRackFolder(rootId) {
-            calls.push(`folder:${rootId}`);
-            return rootId;
-        },
-    };
-    sandbox.GW_DEFERRED.organize = {
-        activateAssetBoard(boardId) {
-            calls.push(`board:${boardId}`);
-            return boardId;
-        },
-    };
-
-    // 闸门关闭期间：用户连点三个挂载根，另外排两个看板任务（不应被去重逻辑波及）。
-    const clicks = ['root_a', 'root_b', 'root_c'].map(rootId =>
-        gateway.gwCall('settings', 'selectAssetRackFolder', rootId));
-    const boards = ['prj_1', 'prj_2'].map(boardId =>
-        gateway.gwCall('organize', 'activateAssetBoard', boardId));
-    assert.deepEqual(calls, [], '闸门关闭时不得执行任何域函数');
-
-    gateway.openDeferredDomainGate();
-    const results = await Promise.all([...clicks, ...boards]);
-
-    assert.deepEqual(calls, ['folder:root_c', 'board:prj_1', 'board:prj_2'],
-        '同一目录入口只应执行最后一次点击；其他域任务必须保持入队顺序、不被丢弃');
-    assert.deepEqual(results, [undefined, undefined, 'root_c', 'prj_1', 'prj_2'],
-        '被后续点击取代的排队请求必须以 undefined 收尾，不能悬挂或 reject');
-});
-
-test('QIN-603：单个延后域任务卡死时按 15s 有界等待跳过，后续任务照常执行', {timeout: 5000}, async () => {
-    const {sandbox, gateway, timers} = loadGatewaySandbox();
-    const order = [];
-    // 卡死域：loader 永不 resolve（5,100 规模下 governance/suggestions 停在网关队首的真实形态）。
-    sandbox.GW_DOMAIN_LOADERS.stuck = () => new Promise(() => {});
-    sandbox.GW_DEFERRED.after = {
-        ping() {
-            order.push('ping');
-            return 'pong';
-        },
-    };
-
-    const stuck = gateway.gwLoad('stuck');
-    const next = gateway.gwCall('after', 'ping');
-    assert.equal(timers.length, 0, '闸门关闭时不得起任何计时器');
-
-    gateway.openDeferredDomainGate();
-    // 让 flushDeferredDomainQueue 真正进入第一个任务的 await。
-    for (let tick = 0; tick < 5; tick += 1) await Promise.resolve();
-
-    const pendingTimers = timers.filter(timer => !timer.cancelled);
-    assert.equal(pendingTimers.length, 1, `应为在途任务安排一个超时计时器，实际 ${timers.length}`);
-    assert.equal(pendingTimers[0].delay, 15000, '有界等待时长必须是 15s');
-    assert.deepEqual(order, [], '卡死任务未到超时点前，后续任务不得插队执行');
-
-    // 推进计时器（等价于 15s 过去）：只 reject 该任务，队首必须继续往下走。
-    pendingTimers[0].cancelled = true;
-    pendingTimers[0].callback();
-    await assert.rejects(() => stuck, /延后域任务超时（15000ms）[\s\S]*stuck/,
-        '卡死任务必须因超时被拒，而不是永久挂起');
-    assert.equal(await next, 'pong', '跳过一个卡死任务后，后续排队任务必须照常执行');
-    assert.deepEqual(order, ['ping']);
-
-    const leftovers = timers.filter(timer => !timer.cancelled);
-    assert.deepEqual(leftovers, [], '任务结束后必须清掉超时计时器，不能泄漏');
 });
 
 test('QIN-591：gwLoad 闸门关闭时排队，放行后返回注册面（而不是 module namespace）', async () => {

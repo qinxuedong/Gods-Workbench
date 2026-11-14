@@ -12041,6 +12041,15 @@ export {
     governanceSuggestionsLoading,
     governanceTriggerLabel,
     groupedAssetClassificationEntries,
+    // 【QIN-603 返工】延后域网关导出的是「模块本体」，供真实 import 的用例直接驱动：
+    // 之前只能从源码切片后在 vm 里重建，测到的是复制品而不是产品代码（违反 §4.2）。
+    // 这些都是既有内部函数，导出不改变任何运行时行为。
+    gwCall,
+    gwCallNow,
+    gwLoad,
+    gwLoadNow,
+    openDeferredDomainGate,
+    deferredDomainsGateOpen,
     gwSetAssetClipboard,
     gwSetAssetRackCollapsed,
     gwSetDetailMediaCanvasCoverflowVisible,
