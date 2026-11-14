@@ -3,33 +3,48 @@ import assert from 'node:assert/strict';
 import { readAssetManagerAggregate } from './asset-manager-aggregate.mjs';
 import {readFileSync} from 'node:fs';
 import test from 'node:test';
+// QIN-602：工具栏 hideHeading 契约由源码正则改为等价行为断言（真实执行渲染函数）。
+import {createAssetViewHost} from './qin-602-asset-view-harness.mjs';
 
 const managerJs = readAssetManagerAggregate();
 
-test('AC1: 嵌入态下剧本标签隐藏 content-heading，实现 Coverflow 与工具栏控件靠左对齐', () => {
-  // 嵌入态 scripts 标签设置 options.hideHeading 并与 QIN-574 隐藏机制兼容
-  assert.match(
-    managerJs,
-    /if\(embeddedVault && activeTab === 'scripts'\)\s*options\.hideHeading = true;/,
-    '嵌入态剧本标签必须显式设置 options.hideHeading 消除 content-heading'
+test('AC1: 嵌入态下剧本标签隐藏 content-heading，实现 Coverflow 与工具栏控件靠左对齐', async () => {
+  // 【QIN-602 改前 → 改后】原 4 条源码正则（scripts 显式 hideHeading / QIN-574 隐藏名单 /
+  // options.hideHeading ? '' : ... 模板分支 / renderRegistryToolbar 调用签名字面量）
+  // 统一改为真实执行 renderRegistryToolbar() 与汇聚点后断言输出 DOM；意图与覆盖面不缩窄。
+  const host = await createAssetViewHost({embedded: true, tab: 'inbox'});
+  const toolbar = (tab, options = {}) => host.toolbar(tab, options);
+
+  // ① 嵌入态 scripts 显式 hideHeading；② QIN-574 prompts/canvas-assets/workflows 契约
+  for(const tab of ['scripts', 'prompts', 'canvas-assets', 'workflows']){
+    assert.ok(
+      !toolbar(tab).includes('class="content-heading"'),
+      `嵌入态 ${tab} 必须隐藏 content-heading`,
+    );
+  }
+  // ③ options.hideHeading ? '' : (hideHeading ? '' : ...) 两条分支都真跑
+  assert.ok(toolbar('inbox').includes('class="content-heading"'), '默认工具栏应输出 content-heading');
+  assert.ok(
+    !toolbar('inbox', {hideHeading: true}).includes('class="content-heading"'),
+    '显式 hideHeading 时工具栏必须输出空字符串',
   );
-  assert.match(
-    managerJs,
-    /const hideHeading = Boolean\(options\.hideHeading \|\| \(embeddedVault && \['prompts', 'canvas-assets', 'workflows'\]\.includes\(activeTab\)\)\);/,
-    '保持与 QIN-574 prompts/canvas/workflows 契约一致'
-  );
-  // 工具栏必须同时满足 options.hideHeading 与内置 hideHeading 隐藏分支，并保留 options.hideHeading ? '' : 结构
-  assert.match(
-    managerJs,
-    /\$\{options\.hideHeading \? '' : \(hideHeading \? '' : `<div class="content-heading">/,
-    '工具栏渲染必须在 hideHeading 生效时输出空字符串'
-  );
-  // 保留历史 renderRegistryToolbar 调用签名与字面量契约
-  assert.match(
-    managerJs,
-    /renderRegistryToolbar\(null,\s*toolbarTitle,\s*toolbarSubtitle,\s*\{allowUrl:true,hideHeading:activeTab === 'registry' \|\| activeTab === 'projects'\}\)/,
-    'render() 中的旧字面量必须保持，以兼容历史 QIN-572 测试断言'
-  );
+  assert.ok(toolbar('inbox').includes('data-registry-add-url'), 'allowUrl:true 应输出添加 URL 控件');
+
+  // ④ 汇聚点调用签名契约：registry / projects 隐藏标题，收集箱 / 挂载文件夹显示；
+  //    并顺带锁定 QIN-602 顶栏标题按当前看板冻结（替代原字面量断言）。
+  // 挂载文件夹用真实看板状态（asset_board_navigation_v1），不伪造收集箱看板：
+  // 产品里 assetBoardById('inbox') 为 null，收集箱顶栏标题实际是兜底的「资源库」。
+  for(const [tab, hidden] of [['registry', true], ['projects', true], ['inbox', false], ['library_demo', false]]){
+    await host.setTab(tab);
+    assert.equal(
+      host.root.innerHTML.includes('class="content-heading"'),
+      !hidden,
+      `${tab} 工具栏 hideHeading 行为须与 QIN-572 / QIN-574 契约一致`,
+    );
+    assert.ok(host.root.innerHTML.includes('data-registry-add-url'), `${tab} 应保留 allowUrl:true`);
+    assert.equal(host.root.querySelectorAll('.content-toolbar.registry-toolbar').length, 1, `${tab} 工具栏应恰好 1 份`);
+  }
+  host.dispose();
 });
 
 test('AC2: 顶栏概览统计卡片顺序调整为 画布 → 其他 → 项目 → 剧本 → 提示词 → LUT', () => {

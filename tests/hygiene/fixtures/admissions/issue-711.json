@@ -1,0 +1,27 @@
+{
+  "schema": "gw.cleanroom-admission-shard/v1",
+  "issue": 711,
+  "authorization_basis": "GitHub Issue #711 (QIN-602), 2026-11-12",
+  "files": [
+    "web/js/modules/asset-manager.js",
+    "web/css/pages/asset-vault.css",
+    "web/js/modules/asset-manager/organize.js",
+    "tests/frontend/qin-547-inbox.test.mjs",
+    "tests/frontend/qin-578-scripts-heading-and-tab-order.test.mjs",
+    "tests/frontend/qin-580-material-lut-preview.test.mjs",
+    "tests/frontend/qin-602-asset-topbar-retention.test.mjs",
+    "tests/frontend/qin-602-asset-view-harness.mjs",
+    "tests/frontend/node-files.txt",
+    "tests/hygiene/fixtures/admissions/issue-711.json"
+  ],
+  "admitted_files": [],
+  "accepted_test_files": [
+    {
+      "path": "tests/frontend/qin-602-asset-topbar-retention.test.mjs",
+      "classification": "curated_test_coverage",
+      "authorization_basis": "GitHub Issue #711 (QIN-602), 2026-11-12",
+      "admission": "accepted"
+    }
+  ],
+  "notes": "QIN-602 资产页嵌入态切换收集箱 / 挂载文件夹后顶部总览与工具栏被异步 root.innerHTML 覆盖：renderActiveAssetView() 统一收口 10 个异步分支，渲染代际作废过期结果，内容落地后同代际补顶栏（专属 data-asset-view-topbar 标记判重），加载失败保留顶栏、写 role=alert 面板并 console.error 留痕；收集箱入口改为主文件侧先切状态与代际再加载模块（AC4：模块加载失败也能显示错误）；organize.js 的 board 无效旁路改为经 render() 汇聚点。测试按 GW-DoD-v1 §4.2 改为整树 import() 真实模块加载，经 GWAssetTreeBridge.activate / 真实 render() 驱动，延迟与失败只注入模块加载边界；qin-547 / qin-578 / qin-580 三处源码正则按 Issue 预授权改为等价行为断言。基础账本 cleanroom_admission_metadata.json 不改。 2026-11-12 相国授权追加 web/css/pages/asset-vault.css：≤900px 嵌入态单列网格被更具体的 #assetManagerRoot.asset-manager-root-registry 两列 !important 规则压回，内容区宽 0（AC3 阻断项）。 qin-602-asset-view-harness.mjs 是 tests/frontend 下的跟踪 .mjs，按 QIN-314 防漏门禁必须登记 node-files.txt。 2026-11-13 第 3 轮返工（独立复审 4 项重要）：总览入口 GWAssetTreeBridge.activate('registry') 改为主文件侧先同步 setActiveTab/setAssetTreeSelectedKey/render() 再 gwCall organize（inbox 失败会顺静态依赖链带崩 organize，用户原本回不到总览）；收集箱入口副作用链 .catch 改为 console.error 留痕；失败面板原因只出现一次、剥离动态 import 模块 URL、补可操作提示；修 facets 局部 outerHTML 判等口径（markedOverviewMarkup），避免概览节点每次被替换时丢掉 data-asset-view-topbar 标记；≤820 CSS 规则限定 html.vault-shell-embedded。「生成顶栏 HTML 时直接带标记」这条建议未采纳：会打断 qin-489 / qin-572 两条既存源文本契约，改测试反而无谓扩大本票范围，改为补 facets 判等修复。总览同步落状态抽成 syncActivateRegistryOverview() 以保住 qin-566 的 gwAssetTreeActivate 函数体长度契约。测试补 qin-547 真实副作用断言（GET /api/asset-inbox?limit=500 + POST /api/asset-inbox/viewed）、多域挂起 + 连续快速切换（删清容器必红）、精确日志前缀 + 过期代际失败不写 DOM、inbox 失败后真实入口回总览、7 分支冒烟、snapshot.tab 防串台；harness 新增受控 fetch 台账、全程 console.error 捕获与 outerHTML 真替换。 qin-547 第 4 处断言改写与 asset-vault.css 范围追加已在 #711 请 PM/相国书面追认；其中 asset-vault.css 已获书面追认闭环。 2026-11-13 第 4 轮返工（独立复审 2 项重要）：按审核官给出的第 2 条建议，撤回 qin-547 第 4 处未获预授权的旧断言改写并把该断言恢复为 master 原文；实现把收集箱副作用派发从 api.openAssetInbox() 改回 QIN-591 之后的统一域网关 gwCall('inbox','openAssetInbox')，字面量与原文一致，因此不再需要任何范围追认。原「真实请求台账 + 删调用链必红」等价性护栏整段迁到本票自有测试 qin-602-asset-topbar-retention.test.mjs（PM 预授权的本票新增测试文件，不涉及旧断言改写）；qin-547 只保留 PM 预授权的主渲染分发行文断言改写。AC3 证据按新 head 全量重取 24 组，JSON 改为逐组落判据布尔值（selected state / 横向溢出 / 页面错误 / 内容区域 / 工具栏高 / 主卡标签），并新增 ui/measure.json 与 commit-pinned 证据链接，消除 raw CDN 缓存导致的旧 head 归属歧义。"
+}

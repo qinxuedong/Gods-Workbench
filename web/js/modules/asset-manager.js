@@ -3869,7 +3869,9 @@ async function loadRegistryBootstrap(requestId=beginRegistryBootstrapRequest()){
                 // 注意容器类名是 .registry-overview-shell（renderRegistryOverview 的输出根），不是 .registry-overview。
                 const overview = root.querySelector('.registry-overview-shell');
                 if(overview){
-                    const overviewMarkup = renderRegistryOverview();
+                    // 【QIN-602 r3】DOM 里的概览根带 data-asset-view-topbar，比较串必须同口径：
+                    // 否则判等永远不成立，facets 每到达一次都会整节点替换并丢掉顶栏标记。
+                    const overviewMarkup = markedOverviewMarkup();
                     if(overview.outerHTML !== overviewMarkup) overview.outerHTML = overviewMarkup;
                 }
             }
@@ -5040,6 +5042,128 @@ function governanceTriggerLabel(){
     if(!governanceSuggestionsData) return '打开治理建议';
     return '治理建议，待处理 ' + governanceSuggestionTotal() + ' 条';
 }
+// 【QIN-602】嵌入态顶栏保留：收集箱 / 挂载文件夹等分支经 gwLoad().then() 异步写入
+// root.innerHTML，会把同步插入的「总览卡片 + 工具栏」整块冲掉（模块已缓存时亦然，
+// gwLoadNow 命中缓存仍返回 Promise.resolve(api)，内容落在微任务里）。每次视图渲染开一个
+// 代际：过期的异步结果一律丢弃；内容渲染完成后按同一代际补顶栏；加载失败保留顶栏并显示
+// 可见错误。代际 + 防重复检查让快速来回切换不闪没、不出现两排、不串标题。
+let assetViewRenderSeq = 0;
+let assetViewTopbarSnapshot = null;
+function markedOverviewMarkup(){
+    // 【QIN-602 r3】facets 到达时做概览节点局部 outerHTML 替换；DOM 里的概览根带
+    // data-asset-view-topbar，比较串必须同口径，否则判等永远不成立、每次都整节点替换并丢标记。
+    // 非嵌入态本来就不打标记（顶栏由独立页自己生成），这里同步省略。
+    const markup = renderRegistryOverview();
+    if(!document.documentElement.classList.contains('vault-shell-embedded')) return markup;
+    return markup.replace(/^<([a-zA-Z][\w:-]*)\b/, '<$1 data-asset-view-topbar');
+}
+function embeddedAssetTopbarMarkup(snapshot){
+    return `${renderRegistryOverview()}${renderRegistryToolbar(null, snapshot.title, snapshot.subtitle, {allowUrl:true,hideHeading:snapshot.hideHeading})}`;
+}
+function embeddedTopbarPresent(){
+    // 判重不只看 class 名：顶栏两个节点各打专属标记，避免与其它面板同名 class 混淆。
+    return Boolean(root.querySelector('[data-asset-view-topbar]'));
+}
+function markInsertedTopbar(){
+    // 顶栏固定由「总览 + 工具栏」两段组成，afterbegin 插入后即前两个子节点。
+    // 【QIN-602 r3】保留该写法：qin-489 / qin-572 的既存源文本契约钉住了
+    // insertAdjacentHTML 的原模板串，改成「生成时带属性」会无谓扩大本票范围。
+    for(const node of [...root.children].slice(0, 2)) node.setAttribute('data-asset-view-topbar', '');
+}
+function restoreEmbeddedAssetTopbar(seq){
+    const snapshot = assetViewTopbarSnapshot;
+    if(!snapshot || snapshot.seq !== seq || seq !== assetViewRenderSeq || snapshot.tab !== activeTab) return;
+    // 内容渲染未整块覆盖（或已补过）时不重复插入，避免两排顶栏。
+    if(embeddedTopbarPresent()) return;
+    root.insertAdjacentHTML('afterbegin', embeddedAssetTopbarMarkup(snapshot));
+    markInsertedTopbar();
+    try{
+        refreshIcons();
+    }catch(error){
+        // 图标刷新失败不得连带把已经渲染成功的内容判成失败（调用方会 catch 后画错误面板）。
+        console.error('资产视图图标刷新失败', error);
+    }
+}
+function showEmbeddedAssetViewFailure(seq, domain, error){
+    // 【QIN-602】失败必须留痕：用户一切走，域模块的真实错误就再无痕迹，无法排查。
+    // 过期代际的失败只记日志、不写面板——面板属于最后选中的那个视图。
+    console.error(`资产视图渲染失败: ${domain || 'unknown'}`, error);
+    if(seq !== assetViewRenderSeq) return;
+    // 【QIN-602 r3】原因只出现一次，且不把动态 import 的模块 URL 摊给用户（完整错误在 console）。
+    // 给出可操作的下一步：回总览或刷新重试，而不是重复两遍技术细节。
+    const raw = String(error?.message || error || '视图加载失败').replace(/https?:\/\/\S+/g, '').trim();
+    const message = escapeHtml(raw || '视图加载失败');
+    // 复用既有面板类：非嵌入态保留左栏树，嵌入态 renderAssetTreePanel 本就返回空串。
+    root.innerHTML = `${renderAssetTreePanel()}<section class="asset-panel asset-content asset-view-load-error" role="alert" data-asset-view-error><div class="content-toolbar"><div class="content-heading"><strong>视图加载失败</strong></div></div><div class="content-scroll"><div class="tree-empty">当前视图暂时无法加载：${message}<br>可点击左侧「资产总览」返回，或刷新页面后重试。</div></div></section>`;
+    restoreEmbeddedAssetTopbar(seq);
+}
+function runAssetViewRenderer(seq, domain, request, invoke){
+    const fail = error => showEmbeddedAssetViewFailure(seq, domain, error);
+    Promise.resolve(request).then(api => {
+        // 切走后旧 Promise 回来不得写入当前视图（内容与顶栏都只属于最后选中的视图）。
+        if(seq !== assetViewRenderSeq) return;
+        let outcome;
+        try{
+            outcome = invoke(api);
+        }catch(error){
+            fail(error);
+            return;
+        }
+        restoreEmbeddedAssetTopbar(seq);
+        // 接住返回值：域渲染器以后改成 async 时，内容落地后要再补一次顶栏，失败仍落到同一面板。
+        Promise.resolve(outcome).then(() => restoreEmbeddedAssetTopbar(seq)).catch(fail);
+    }).catch(fail);
+}
+function renderActiveAssetView(){
+    const viewSeq = ++assetViewRenderSeq;
+    assetViewTopbarSnapshot = null;
+    // 派发时先捕获看板：回调里再求值会读到用户已经切走的那个 tab。
+    const boardAtDispatch = assetBoardById(activeTab);
+    // 新代际从干净容器开始：旧代际若因异步结果被丢弃而没写内容，旧顶栏会残留，
+    // 直接再插就会累积多排且标题串台。各内容分支都会重写 root.innerHTML，
+    // 仅嵌入态清空（非嵌入态没有顶栏，沿用原有渲染语义）。
+    if(document.documentElement.classList.contains('vault-shell-embedded')) root.innerHTML = '';
+    if(activeTab === 'registry') renderRegistryManager();
+    else if(activeTab === 'scripts') runAssetViewRenderer(viewSeq, 'organize', gwLoad('organize'), m => m.renderScriptAssetsManager());
+    else if(activeTab === 'projects') runAssetViewRenderer(viewSeq, 'organize', gwLoad('organize'), m => m.renderProjectManager());
+    else if(activeTab === 'prompts') runAssetViewRenderer(viewSeq, 'organize', gwLoad('organize'), m => m.renderPromptManager());
+    else if(activeTab === 'lut') runAssetViewRenderer(viewSeq, 'lut', gwLoad('lut'), m => m.renderLutManager());
+    else if(activeTab === 'workflows') runAssetViewRenderer(viewSeq, 'organize', gwLoad('organize'), m => m.renderWorkflowManager());
+    else if(activeTab === 'inbox') runAssetViewRenderer(viewSeq, 'inbox', gwLoad('inbox'), m => m.renderInboxManager());
+    else if(activeTab === 'local') runAssetViewRenderer(viewSeq, 'upload', gwLoad('upload'), m => m.renderLocalManager());
+    else if(activeTab === 'canvas-assets') runAssetViewRenderer(viewSeq, 'canvas', gwLoad('canvas'), m => m.renderCanvasAssetsManager());
+    else if(boardAtDispatch?.system === false) runAssetViewRenderer(viewSeq, 'organize', gwLoad('organize'), m => m.renderCustomAssetLibrary(boardAtDispatch));
+    // 看板已被删除而 activeTab 还停在旧 id：必须经挂载文件夹渲染器的无效看板旁路回到总览，
+    // 不能落到兼容期的通用资源视图（那里没有顶栏快照语义）。
+    else if(!boardAtDispatch && activeTab !== 'assets') runAssetViewRenderer(viewSeq, 'organize', gwLoad('organize'), m => m.renderCustomAssetLibrary(null));
+    else runAssetViewRenderer(viewSeq, 'organize', gwLoad('organize'), m => m.renderAssetManager());
+    if(document.documentElement.classList.contains('vault-shell-embedded')){
+        const board = boardAtDispatch;
+        let toolbarTitle = board?.name || '资源库';
+        let toolbarSubtitle = '统一资产工具';
+        if(activeTab === 'registry'){
+            toolbarTitle = registryCategoryLabel(registryStatCategory);
+            toolbarSubtitle = registryTotalSummary(registryVisibleAssets().length);
+        } else if(activeTab === 'projects'){
+            toolbarTitle = '项目素材';
+            const selectedProj = (registryProjectFilterId && registryProjectFilterId !== '__all__')
+                ? projects.find(item => item.id === registryProjectFilterId)
+                : null;
+            toolbarSubtitle = `${selectedProj?.name || '全部项目'} · ${registryTotalSummary(registryVisibleAssets().length)}`;
+        } else if(board?.system === false){
+            toolbarSubtitle = registryTotalSummary(registryVisibleAssets().length);
+        }
+        root.insertAdjacentHTML('afterbegin', `${renderRegistryOverview()}${renderRegistryToolbar(null, toolbarTitle, toolbarSubtitle, {allowUrl:true,hideHeading:activeTab === 'registry' || activeTab === 'projects'})}`);
+        markInsertedTopbar();
+        assetViewTopbarSnapshot = {
+            seq:viewSeq,
+            tab:activeTab,
+            title:toolbarTitle,
+            subtitle:toolbarSubtitle,
+            hideHeading:activeTab === 'registry' || activeTab === 'projects',
+        };
+    }
+}
 function render(){
     const registryPreviewCache = captureRegistryPreviewImages();
     disconnectRegistryPreviewScheduling();
@@ -5084,35 +5208,7 @@ function render(){
     const pageClass = String(activeTab || 'assets').replace(/[^a-z0-9_-]/gi, '-');
     root.className = `asset-manager-root asset-tree-layout asset-manager-root-page-${pageClass}${activeTab === 'local' ? ' asset-manager-root-local' : ''}${activeTab === 'registry' ? ' asset-manager-root-registry' : ''}${customLibraryActive ? ' asset-manager-root-library' : ''}${customLibraryActive && registryDetailPanelCollapsed ? ' registry-detail-collapsed' : ''}${activeTab === 'lut' && registryDetailPanelCollapsed ? ' registry-detail-collapsed' : ''}${systemRackActive ? ' asset-manager-root-rack' : ''}`;
     gwCall('preview', 'syncRegistryDetailGridWidth');
-    if(activeTab === 'registry') renderRegistryManager();
-    else if(activeTab === 'scripts') gwLoad('organize').then(m => m.renderScriptAssetsManager());
-    else if(activeTab === 'projects') gwLoad('organize').then(m => m.renderProjectManager());
-    else if(activeTab === 'prompts') gwLoad('organize').then(m => m.renderPromptManager());
-    else if(activeTab === 'lut') gwLoad('lut').then(m => m.renderLutManager());
-    else if(activeTab === 'workflows') gwLoad('organize').then(m => m.renderWorkflowManager());
-    else if(activeTab === 'inbox') gwLoad('inbox').then(m => m.renderInboxManager());
-    else if(activeTab === 'local') gwLoad('upload').then(m => m.renderLocalManager());
-    else if(activeTab === 'canvas-assets') gwLoad('canvas').then(m => m.renderCanvasAssetsManager());
-    else if(assetBoardById(activeTab)?.system === false) gwLoad('organize').then(m => m.renderCustomAssetLibrary(assetBoardById(activeTab)));
-    else gwLoad('organize').then(m => m.renderAssetManager());
-    if(document.documentElement.classList.contains('vault-shell-embedded')){
-        const board = assetBoardById(activeTab);
-        let toolbarTitle = board?.name || '资源库';
-        let toolbarSubtitle = '统一资产工具';
-        if(activeTab === 'registry'){
-            toolbarTitle = registryCategoryLabel(registryStatCategory);
-            toolbarSubtitle = registryTotalSummary(registryVisibleAssets().length);
-        } else if(activeTab === 'projects'){
-            toolbarTitle = '项目素材';
-            const selectedProj = (registryProjectFilterId && registryProjectFilterId !== '__all__')
-                ? projects.find(item => item.id === registryProjectFilterId)
-                : null;
-            toolbarSubtitle = `${selectedProj?.name || '全部项目'} · ${registryTotalSummary(registryVisibleAssets().length)}`;
-        } else if(board?.system === false){
-            toolbarSubtitle = registryTotalSummary(registryVisibleAssets().length);
-        }
-        root.insertAdjacentHTML('afterbegin', `${renderRegistryOverview()}${renderRegistryToolbar(null, toolbarTitle, toolbarSubtitle, {allowUrl:true,hideHeading:activeTab === 'registry' || activeTab === 'projects'})}`);
-    }
+    renderActiveAssetView();
     if(activeTab === 'registry' || customLibraryActive) renderRegistryFreshNotice();
     restoreRegistryPreviewImages(registryPreviewCache);
     if(activeTab === 'registry' || customLibraryActive){
@@ -6986,9 +7082,19 @@ function expandAssetTreeAncestors(key){
         }
     }
 }
+// 【QIN-602 r3】总览是同步分支（renderRegistryManager），本来就不依赖 organize 域。但
+// inbox.js 加载失败会顺静态依赖链 organize.js → media-canvas.js → canvas-bridge.js → inbox.js
+// 把 organize 一起带崩，只靠 gwCall 会让用户卡在失败面板里回不到总览。主文件先同步落状态
+// 并真实渲染一帧，再让 organize 补做清筛选 / 拉数据等既有副作用。
+function syncActivateRegistryOverview(){
+    setActiveTab('registry');
+    setAssetTreeSelectedKey('registry');
+    render();
+}
 function gwAssetTreeActivate(key){
     const value = String(key || '');
     if(!value || value === 'registry'){
+        if(value === 'registry') syncActivateRegistryOverview();
         void gwCall('organize', 'activateAssetBoard', 'registry');
         saveAssetTreeState();
         return;
@@ -7065,7 +7171,25 @@ function selectAssetTreeNode(key){
     }
     if(value === 'mine:inbox'){
         // AC3：收集箱是真实磁盘文件夹视图（QIN-547）
-        void gwCall('inbox', 'openAssetInbox');
+        // 【QIN-602 AC4】状态切换与顶栏必须先由主文件落地：切到 inbox 的 setActiveTab + render
+        // 写在收集箱模块内部，模块一旦加载失败那两行根本不会执行，界面就只剩「点了没反应」，
+        // 主文件的失败面板永远显示不出来。这里先切状态并经汇聚点开一代（失败由渲染器接住），
+        // 模块可用时再走它自己的载入流程（拉数据、清未读角标）。
+        setActiveTab('inbox');
+        setAssetTreeTab('mine');
+        setAssetTreeSelectedKey('mine:inbox');
+        render();
+        // 迟到的模块不得把用户已经切走的视图抢回收集箱：openAssetInbox 内部还会 setActiveTab。
+        // gwLoad 负责「等域模块落地并留出守卫窗口」，副作用本身仍走 QIN-591 之后的统一域网关，
+        // 不在主文件里直调模块返回的函数——与其余树节点分支的派发口径保持一致。
+        void gwLoad('inbox').then(() => {
+            if(activeTab !== 'inbox') return;
+            return gwCall('inbox', 'openAssetInbox');
+        }).catch(error => {
+            // 【QIN-602 r3】入口副作用链路的失败也要留痕：渲染器的面板由 render() 开代接住，
+            // 这里补记「拉列表 / 清角标」这一步，不能静默吞掉。
+            console.error('收集箱载入失败', error);
+        });
         return;
     }
     if(value.startsWith('mine:root:')){

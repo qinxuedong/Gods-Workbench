@@ -3,6 +3,10 @@ import assert from 'node:assert/strict';
 import { readAssetManagerAggregate } from './asset-manager-aggregate.mjs';
 import {readFileSync} from 'node:fs';
 import test from 'node:test';
+// QIN-602：主渲染分发已统一收口到 renderActiveAssetView()（PM 预授权），源码正则改为等价行为断言。
+// 树节点点击那条断言未获改写授权，本轮按独立复审意见恢复为 master 原文；实现改用统一域网关
+// gwCall('inbox','openAssetInbox') 派发副作用，字面量与原文一致，因此无需任何范围追认。
+import {createAssetViewHost} from './qin-602-asset-view-harness.mjs';
 
 const source = readAssetManagerAggregate();
 const styles = readFileSync(new URL('../../web/css/pages/asset-manager.css', import.meta.url), 'utf8');
@@ -52,7 +56,7 @@ test('AC1/AC5: 收集箱在「我的资源」第一位，带未读角标', () =>
     assert.match(styles, /\.asset-tree-badge\s*\{/, '角标样式应存在');
 });
 
-test('AC1/AC2: 收集箱视图读取真实接口并区分三类来源', () => {
+test('AC1/AC2: 收集箱视图读取真实接口并区分三类来源', async () => {
     assert.match(functionSource('loadAssetInbox'), /'\/api\/asset-inbox\?limit=500'/, '列表走收集箱接口');
     // QIN-591：inbox 域内对主文件状态的写入改写为 setter 调用（登记在案），读取语义不变。
     assert.match(functionSource('loadAssetInbox'), /setInboxSettings\(data\.settings/, '设置随列表一起读取');
@@ -60,8 +64,19 @@ test('AC1/AC2: 收集箱视图读取真实接口并区分三类来源', () => {
     assert.match(functionSource('renderInboxSourceChips'), /asset_library/, '托管资产来源应可筛选');
     assert.match(functionSource('renderInboxManager'), /renderInboxCard/, '收集箱素材应渲染卡片');
     assert.match(functionSource('openAssetInbox'), /setActiveTab\('inbox'\)/, '进入收集箱切换视图');
+    // 【QIN-602 · 原文恢复】树节点点击派发仍走统一域网关，断言与 master 完全一致。
+    // 「拉列表 / 清未读角标」的真实副作用等价性护栏已迁至本票自有测试
+    // qin-602-asset-topbar-retention.test.mjs，不在此处改写旧断言。
     assert.match(functionSource('selectAssetTreeNode'), /gwCall\('inbox', 'openAssetInbox'\)/, '树节点点击应打开收集箱');
-    assert.match(source, /else if\(activeTab === 'inbox'\) gwLoad\('inbox'\)\.then\(m => m\.renderInboxManager\(\)\);/, '主渲染分发应接入收集箱');
+    // 【QIN-602 改前 → 改后 · PM 预授权】原：assert.match(source, /else if\(activeTab === 'inbox'\) gwLoad.../)。
+    // 主渲染分发统一收口到 renderActiveAssetView()，改为真实执行汇聚点并断言落点，
+    // 意图（主渲染分发接入收集箱）不变，且不再依赖源码字面量。
+    const inboxHost = await createAssetViewHost({tab: 'inbox'});
+    assert.ok(inboxHost.root.innerHTML.includes('inbox-content'), '主渲染分发应接入收集箱');
+    inboxHost.dispose();
+    const registryHost = await createAssetViewHost({tab: 'registry'});
+    assert.ok(!registryHost.root.innerHTML.includes('inbox-content'), '总览不得误调收集箱渲染');
+    registryHost.dispose();
 });
 
 test('AC1: 设置里可改位置并提示是否迁移已有文件', () => {

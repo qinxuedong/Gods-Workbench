@@ -1439,7 +1439,11 @@ html.vault-shell-embedded body.gw-signal.gw-page--asset-manager #assetManagerRoo
 }
 @media (max-width: 900px) {
     /* 窄屏将左栏放到第 3 行、内容放到第 4 行；需覆盖上方嵌入式左栏跨行 !important 与后置 registry-content 第 3 行规则。 */
-    html.vault-shell-embedded body.gw-signal.gw-page--asset-manager #assetManagerRoot {
+    html.vault-shell-embedded body.gw-signal.gw-page--asset-manager #assetManagerRoot,
+    /* 【QIN-602】窄屏单列必须同时压过 .asset-manager-root-registry / -library 上更具体的一行两列
+       !important 规则，否则根网格仍是「0 宽首列 + 内容列」，而子元素已被钉在首列 → 内容区宽 0。 */
+    html.vault-shell-embedded body.gw-signal.gw-page--asset-manager #assetManagerRoot.asset-manager-root-registry,
+    html.vault-shell-embedded body.gw-signal.gw-page--asset-manager #assetManagerRoot.asset-manager-root-library {
         grid-template-columns: minmax(0,1fr) !important;
         grid-template-rows: auto auto auto minmax(360px,1fr) auto !important;
     }
@@ -1486,6 +1490,22 @@ html.vault-shell-embedded body.gw-signal.gw-page--asset-manager #assetManagerRoo
     html.vault-shell-embedded body.gw-signal.gw-page--asset-manager #assetManagerRoot.asset-manager-root-library > :is(.registry-content,.asset-panel.asset-content) {
         grid-column: 1 !important;
         grid-row: 4 !important;
+    }
+}
+@media (max-width: 820px) {
+    /* 【QIN-602】≤820px 时 .content-toolbar 被 asset-manager.css 转成列方向（flex-direction:column），
+       而本文件 .registry-toolbar-controls 的 flex: 1 1 600px 里的 600px 在主轴上才是宽度、在列方向
+       会变成长度 → 工具栏被撑到 600px 以上，内容区被推到视口外（724 收集箱实测 y=870）。 */
+    /* 【QIN-602 r3】限定嵌入态：独立资产页没有本票的顶栏组合，不跟着改控件伸缩。 */
+    html.vault-shell-embedded body.gw-signal.gw-page--asset-manager .registry-toolbar .registry-toolbar-controls {
+        flex: 0 0 auto;
+        align-self: stretch;
+    }
+    /* 【QIN-602】724 下 4 列把主卡压到 113px，「资产总量」被裁到 20px 与右侧「统一资产索引」
+       发生 21px 重叠（读起来是「资产资产索引」）。主卡跨两列给两个标签各自的空间，
+       不改 13 张卡的列数与 QIN-531 的 2/3 宽度公式。 */
+    html.vault-shell-embedded body.gw-signal.gw-page--asset-manager .registry-overview-stats > .registry-stat-card.primary {
+        grid-column: span 2;
     }
 }
 

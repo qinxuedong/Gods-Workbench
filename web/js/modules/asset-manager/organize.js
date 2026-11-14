@@ -190,7 +190,6 @@ import {
     renderBoardNavigation,
     renderRegistryAssetSections,
     renderRegistryFilterChips,
-    renderRegistryManager,
     renderRegistryPagination,
     renderRegistrySelectionBar,
     renderRegistryToolbar,
@@ -2064,7 +2063,9 @@ async function handleAssetOrganizeOverlayClick(event){
     return true;
 }
 function renderCustomAssetLibrary(board){
-    if(!board){ setActiveTab('registry'); renderRegistryManager(); return; }
+    // 【QIN-602】board 无效时回到汇聚点 render()，由 renderActiveAssetView() 开新代际
+    // 按 registry 冻结顶栏快照；直接调 renderRegistryManager() 会绕过顶栏生成导致嵌入态顶栏丢失。
+    if(!board){ setActiveTab('registry'); render(); return; }
     const embeddedVault = document.documentElement.classList.contains('vault-shell-embedded');
     const matching = customAssetLibraryItems(board);
     const visible = registryVisibleAssetList(matching);
