@@ -1,0 +1,35 @@
+{
+  "schema": "gw.cleanroom-admission-shard/v1",
+  "issue": 713,
+  "authorization_basis": "GitHub Issue #713 (QIN-603), 2026-11-14",
+  "files": [
+    "web/js/modules/asset-manager.js",
+    "web/js/modules/asset-manager/settings.js",
+    "web/js/modules/asset-manager/organize.js",
+    "web/js/controllers/assets-controller.js",
+    "tests/frontend/qin-603-asset-folder-switch-render.test.mjs",
+    "tests/frontend/qin-524-asset-nav-redesign.test.mjs",
+    "tests/frontend/qin-527-custom-library-rack.test.mjs",
+    "tests/frontend/qin-585-asset-first-paint.test.mjs",
+    "tests/frontend/qin-591-domain-gate.test.mjs",
+    "tests/frontend/node-files.txt",
+    "tests/e2e/test_qin603_asset_folder_switch_perf.py",
+    "tests/hygiene/fixtures/admissions/issue-713.json"
+  ],
+  "admitted_files": [],
+  "accepted_test_files": [
+    {
+      "path": "tests/frontend/qin-603-asset-folder-switch-render.test.mjs",
+      "classification": "curated_test_coverage",
+      "authorization_basis": "GitHub Issue #713 (QIN-603), 2026-11-14",
+      "admission": "accepted"
+    },
+    {
+      "path": "tests/e2e/test_qin603_asset_folder_switch_perf.py",
+      "classification": "curated_test_coverage",
+      "authorization_basis": "GitHub Issue #713 (QIN-603), 2026-11-14",
+      "admission": "accepted"
+    }
+  ],
+  "notes": "QIN-603 资产页点击文件夹：重绘合批 + 刷新不作废目录缓存 + 侧栏轻量更新。实现：(1) refreshRegistryAssetsRequest 一次点击只出「加载态 + 终态」两次整树重绘，/status 与列表同批发起并在终态前并入，可见内容没变不补帧；(2) 目录索引按「可见根作用域签名」门控，/api/asset-registry/folders 一次返回所有根计数、与 folder_path/search/kind/category/project_id 无关，故切文件夹不再重拉；(3) 项目计数在 scheduleRegistryProjectCounts 调度点门控，稳定态不再产生 /assets?project_id= 请求；(4) 热切换命中 registryAssetsQueryCache，条目带注册表 revision，写入或索引任务完成即失效（invalidateRegistryAssetCache），默认刷新仍保持「写后必刷」语义，只有目录导航传 reuseCache；(5) 外壳 applyTreeSnapshot 增量更新：结构签名不含选中态，只改选中项时 0 次 replaceChildren，只变计数时就地改文本，createIcons 限定到侧栏容器。缺陷 A（#713 已确认纳入）：selectAssetTreeNode 原先裸调只存在于 organize 域且未登记的 resetBoardSelections，从剧本/LUT 等看板点挂载目录必 ReferenceError，改为经 GW_DEFERRED['organize'] 派发并登记该函数。缺陷 B（#713 已确认纳入前端部分）：延后域网关给单个任务加有界等待（保持 FIFO 顺序，单任务超时只 reject 该任务不阻塞后续），目录导航入队时只保留最后一次点击；后端 /api/asset-registry/governance/suggestions 在 5k+ 资产下 60s 不返回属 QIN-604 只读热路径范畴，不在本票。测试按 GW-DoD-v1 §4.2 全部为真实模块 import() 加载（qin-603 前端用例复用 qin-602 夹具的整树复制 + 原生 import，不打桩被测函数、不切片），重绘次数由「管理根里 .asset-content 元素身份变化」观测；e2e 退出脚本走真实外壳入口 + 真实 reindex 造数，GW_C10_REAL_E2E=1 门控。四处既有源码清单断言按 Issue 预授权做最小等价更新：qin-585（共享入口新增 options 参数，不变量仍是「只经该入口且登记代际」）、qin-524 / qin-527（点击仍必须按所选目录重新读取，改为 reuseCache 形式）、qin-591 网关沙箱补齐 setTimeout/clearTimeout（网关新增有界等待所需的环境能力，不涉及断言）。基础账本 cleanroom_admission_metadata.json 不改。"
+}
