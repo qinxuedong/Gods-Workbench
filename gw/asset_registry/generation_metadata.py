@@ -15,6 +15,7 @@ JPEG 按段长 seek 到 `SOS`，WebP 只取 `EXIF` / `XMP ` chunk。实现只用
 
 from __future__ import annotations
 
+import importlib
 import json
 import os
 import re
@@ -68,6 +69,14 @@ _CANDIDATES: Tuple[str, ...] = (
     "xmp:dc:description",
 )
 
+#: QIN-601 设计表 §2.3：只有这四个块参与 ComfyUI 图判定（PNG 文本块 / WebP EXIF）。
+_COMFYUI_BLOCK_KEYS: Tuple[str, ...] = (
+    "prompt",
+    "exif:prompt",
+    "workflow",
+    "exif:workflow",
+)
+
 _RDF_NS = "{http://www.w3.org/1999/02/22-rdf-syntax-ns#}"
 _DC_NS = "{http://purl.org/dc/elements/1.1/}"
 
@@ -84,6 +93,10 @@ def extract_generation(path: Path) -> Tuple[Optional[Dict[str, Any]], int]:
     - `generation` 为 `None` 时不写 `metadata.generation`（无元数据 / 解析失败）；
     - `warnings` 为 0 或 1，供索引任务累加统计。
 
+    QIN-601：返回值内附带 `comfyui` 标记（只含判定结果，不含文本）。有合法
+    ComfyUI 图但取不到正向提示词时，写「仅标记」的 `generation` 且不计 warning
+    （PM Q2 裁决，设计表 §2.5）。
+
     `OSError`（不可读、被独占）不在此吞掉，交由既有扫描错误路径计数。
     """
     if not is_supported_image(path):
@@ -91,9 +104,9 @@ def extract_generation(path: Path) -> Tuple[Optional[Dict[str, Any]], int]:
 
     blocks: Dict[str, str] = {}
     block_truncated = False
+    suffix = path.suffix.lower()
     try:
         with path.open("rb") as handle:
-            suffix = path.suffix.lower()
             if suffix == ".png":
                 blocks, block_truncated = _read_png_blocks(handle)
             elif suffix == ".webp":
@@ -108,10 +121,18 @@ def extract_generation(path: Path) -> Tuple[Optional[Dict[str, Any]], int]:
     if not blocks:
         return None, 0
 
+    # 本票只判 PNG 内嵌文本块与 WebP EXIF；JPEG 等其它格式行为与 QIN-600 一致。
+    marker = (
+        _comfyui_marker(blocks) if suffix in (".png", ".webp") else None
+    )
+
     resolved = _resolve(blocks)
     if resolved is None:
-        # 有候选文本块但都取不出正向文本：设计表 §2.5 记为 warning。
-        return None, 1
+        if marker is None:
+            # 有候选文本块但都取不出正向文本：设计表 §2.5 记为 warning。
+            return None, 1
+        # 有合法 ComfyUI 图但无提示词：只写标记，不写 prompt、不计 warning。
+        return {"comfyui": marker}, 0
 
     prompt, prompt_cut = _store_text(resolved["prompt"])
     negative, negative_cut = _store_text(resolved.get("negative_prompt") or "")
@@ -124,7 +145,46 @@ def extract_generation(path: Path) -> Tuple[Optional[Dict[str, Any]], int]:
     }
     if negative:
         payload["negative_prompt"] = negative
+    if marker is not None:
+        payload["comfyui"] = marker
     return payload, 0
+
+
+def _comfyui_marker(blocks: Dict[str, str]) -> Optional[Dict[str, Any]]:
+    """按设计表 §2.3 判定内嵌块是否为 ComfyUI 图，返回标记字典或 `None`。
+
+    判定权威复用 `gw.god_workflow.parser.detect_comfyui_graph`（不新写第二套图
+    判定）；函数级延迟导入，避免把 `god_workflow` 拉进 `asset_registry` 的启动链。
+    多个块逐块独立判定、结果取或（设计表 §2.3：不因一个块失败而否掉另一个）。
+    """
+    # 与 index_jobs 读视频模块同样的做法：用 importlib 延迟取模块，避免
+    # `asset_registry → god_workflow` 在领域导入图里成环（god_workflow 已依赖
+    # asset_registry），也避免把 god_workflow 拉进启动链。
+    parser = importlib.import_module("gw.god_workflow.parser")
+    detect_comfyui_graph = parser.detect_comfyui_graph
+
+    has_workflow = False
+    has_prompt_graph = False
+    for key in _COMFYUI_BLOCK_KEYS:
+        text = blocks.get(key)
+        if not text:
+            continue
+        try:
+            payload = json.loads(text)
+        except (ValueError, TypeError):
+            continue
+        found = detect_comfyui_graph(payload)
+        if not found:
+            continue
+        has_workflow = has_workflow or bool(found.get("has_workflow"))
+        has_prompt_graph = has_prompt_graph or bool(found.get("has_prompt_graph"))
+    if not (has_workflow or has_prompt_graph):
+        return None
+    return {
+        "has_workflow": has_workflow,
+        "has_prompt_graph": has_prompt_graph,
+        "source": "embedded",
+    }
 
 
 def gw_task_generation(graph: Any) -> Optional[Dict[str, Any]]:

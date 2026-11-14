@@ -31,8 +31,29 @@ from gw.asset_library.service import default_asset_library_service
 from gw.asset_registry import repository as asset_repo
 from gw.core.asset_visibility import asset_owner_key
 from gw.god_workflow import registry
+from gw.god_workflow.parser import detect_comfyui_graph
 
 logger = logging.getLogger(__name__)
+
+
+def _gw_comfyui_marker(
+    generation: Any, *, has_workflow: bool, has_prompt_graph: bool
+) -> dict[str, Any]:
+    """在既有 `generation` 上补 GW 来源标记（QIN-601 设计表 §2.6）。
+
+    只动 `generation.comfyui`：`source` 恒为 `gw-workflow`（Q4 优先级），
+    `has_*` 与已有值取或，其余键原样保留。
+    """
+    merged = dict(generation) if isinstance(generation, dict) else {}
+    marker = merged.get("comfyui")
+    marker = dict(marker) if isinstance(marker, dict) else {}
+    marker["has_workflow"] = bool(marker.get("has_workflow")) or has_workflow
+    marker["has_prompt_graph"] = (
+        bool(marker.get("has_prompt_graph")) or has_prompt_graph
+    )
+    marker["source"] = "gw-workflow"
+    merged["comfyui"] = marker
+    return merged
 
 
 def _serialized(function):
@@ -133,6 +154,18 @@ def register_workflow_to_asset_hub(
 
         # 2. 登记至底层资产注册表 (AssetRegistry)
         node_count = len(document.get("nodes", [])) if isinstance(document, dict) else 0
+        # QIN-601：工作流资产登记即写来源标记；文档本身就是工作流图，
+        # 若其节点为 API 格式（含 class_type）则同时具备可执行图。
+        graph_marker = (
+            detect_comfyui_graph(document) if isinstance(document, dict) else None
+        )
+        comfyui_marker = {
+            "has_workflow": True,
+            "has_prompt_graph": bool(
+                graph_marker and graph_marker.get("has_prompt_graph")
+            ),
+            "source": "gw-workflow",
+        }
         asset_repo.register_asset_record(
             asset_id=asset_id,
             name=wf_name,
@@ -151,6 +184,7 @@ def register_workflow_to_asset_hub(
                 "source_context": document.get("metadata", {}).get("source_context", {})
                 if isinstance(document, dict)
                 else {},
+                "generation": {"comfyui": comfyui_marker},
             },
         )
 
@@ -217,6 +251,16 @@ def register_output_to_asset_hub(
         }
         if isinstance(resolved_generation, dict) and resolved_generation:
             output_metadata["generation"] = resolved_generation
+        # QIN-601（AC4 / Q3）：凡由 GW 工作流登记且满足 workflow_id 条件的产物都标
+        # gw-workflow（含 RunningHub 产物）；无 workflow_id 的普通上传不写标记。
+        if asset_dict.get("workflow_id"):
+            output_metadata["generation"] = _gw_comfyui_marker(
+                output_metadata.get("generation"),
+                has_workflow=False,
+                has_prompt_graph=bool(
+                    isinstance(resolved_generation, dict) and resolved_generation
+                ),
+            )
         asset_repo.register_asset_record(
             asset_id=asset_id,
             name=filename,

@@ -438,6 +438,8 @@ def test_reindex_writes_generation_and_keeps_other_metadata(ingest_runtime):
             "with_metadata": 1,
             "warnings": 0,
             "truncated": 0,
+            # QIN-601：任务结果增补 ComfyUI 标记计数；A1111 图不计入。
+            "comfyui_tagged": 0,
         }
         asset = indexed_asset_by_name("a1111.png")
         assert asset["metadata"]["generation"]["tool"] == "a1111"
