@@ -36,6 +36,8 @@ const ROOTS = [
 ];
 /** 各根的权威总数不同，用来判定「当前视图读的是哪个根的列表」。 */
 const TOTALS = {root_a: 3, root_b: 7};
+/** AC4 失效回读场景下受控网络给出的「写入 / 索引后」新总数。 */
+const NEW_TOTAL = 11;
 
 function assetOf(rootId, index) {
     return {
@@ -55,7 +57,8 @@ function assetOf(rootId, index) {
 /**
  * 受控注册表网络：只实现这条链路上产品真正会调的接口，其余一律 reject，
  * 让「漏了某个接口」立刻暴露，而不是静默拿到空数据。
- * `hooks.beforeAssets(url)` 可返回 Promise 实现「慢响应 / 乱序响应」。
+ * `hooks.beforeAssets(url)` 可返回 Promise 实现「慢响应 / 乱序响应」；
+ * `hooks.assetsTotal(rootId, url)` 可定制该次响应的权威总数（AC4 回读新数据）。
  */
 function registryFetch(hooks = {}) {
     const requests = [];
@@ -74,15 +77,16 @@ function registryFetch(hooks = {}) {
         if (text.includes('/api/asset-registry/status')) {
             return Promise.resolve(json({
                 ready: true,
-                revision: 7,
+                revision: hooks.statusRevision ? hooks.statusRevision() : 7,
                 overview: {roots: ROOTS, features: [], active_job: null, last_job: null},
             }));
         }
-        if (text.includes('/api/asset-registry/assets')) {
+        if (text.includes('/api/asset-registry/assets') && !text.includes('project_id=')) {
             const rootMatch = /root_id=([^&]+)/.exec(text);
             const rootId = rootMatch ? decodeURIComponent(rootMatch[1]) : 'root_a';
+            const total = hooks.assetsTotal ? hooks.assetsTotal(rootId, text) : (TOTALS[rootId] ?? 0);
             const respond = () => json({
-                total: TOTALS[rootId] ?? 0,
+                total,
                 items: [],
                 limit: 120,
                 offset: 0,
@@ -91,6 +95,11 @@ function registryFetch(hooks = {}) {
                 total_known: true,
             });
             return hooks.beforeAssets ? hooks.beforeAssets(text).then(respond) : respond();
+        }
+        if (text.includes('/api/asset-registry/assets') && text.includes('project_id=')) {
+            // AC2 的项目计数通道（/assets?project_id=…&limit=1）：单独成支，只回 total，
+            // 与列表通道分开，避免「误把计数响应当列表」的假绿。
+            return Promise.resolve(json({total: 2, items: [], limit: 1, offset: 0, total_known: true}));
         }
         if (text.includes('/api/asset-registry/asset-structures')) return Promise.resolve(json({structures: []}));
         if (text.includes('/api/asset-registry/folders')) {
@@ -221,8 +230,9 @@ test('QIN-603 AC5：同一目录在加载态未落地时被重复激活，只画
     }
 });
 
-test('QIN-603 AC4：回到看过的文件夹命中缓存不再请求列表；revision 变化后必须重新取数', async () => {
-    const {host, requests} = await bootHost();
+test('QIN-603 AC4：回到看过的文件夹命中缓存不再请求列表；revision 变化后必须重新取数并回读新数据', async () => {
+    const hooks = {};
+    const {host, requests} = await bootHost(hooks);
     try {
         await switchFolder(host, 'root_a');
         await switchFolder(host, 'root_b');
@@ -231,15 +241,52 @@ test('QIN-603 AC4：回到看过的文件夹命中缓存不再请求列表；rev
         await switchFolder(host, 'root_a');
         const assets = registryRequests(requests).filter(entry => entry.url.includes('/api/asset-registry/assets'));
         assert.equal(assets.length, 0, '热切换回到看过的文件夹不得再请求 /api/asset-registry/assets');
-        assert.equal(host.main.registryTotal, TOTALS.root_a, '命中缓存后仍必须呈现该文件夹的权威总数（不是空白）');
+        assert.equal(host.main.registryTotal, TOTALS.root_a, '命中缓存回读必须呈现该文件夹的权威总数（不是空白）');
 
-        // 写后失效：revision 推进后同一条缓存必须作废（不能拿旧列表当新数据）
+        // 写后失效：revision 推进后同一条缓存必须作废（不能拿旧列表当新数据），
+        // 回读必须看到失效后受控网络给出的新总数（不只是「重新请求了」）。
+        // 受控 /status 同步返回推进后的权威 revision（真实链路：写入/索引完成 → 服务端
+        // revision 推进 → /status 轮询带回新值），否则真实 /status 响应会把推进覆盖回去。
+        hooks.statusRevision = () => 8;
         host.main.setRegistryStatus({ready: true, revision: 8, overview: {roots: ROOTS, features: []}});
+        hooks.assetsTotal = rootId => rootId === 'root_a' ? NEW_TOTAL : TOTALS[rootId];
         requests.length = 0;
         await switchFolder(host, 'root_b');
         await switchFolder(host, 'root_a');
         const after = registryRequests(requests).filter(entry => entry.url.includes('/api/asset-registry/assets'));
-        assert.equal(after.length, 1, 'revision 变化后重新进入必须重新取数（旧缓存条目作废）');
+        assert.equal(after.length, 2, 'revision 变化后两个看过的文件夹都必须重新取数（旧缓存条目作废）');
+        assert.equal(host.main.registryTotal, NEW_TOTAL, '失效回读必须看到新数据（不是旧总数）');
+    } finally {
+        host.dispose();
+    }
+});
+
+test('QIN-603 AC4：真实写后刷新入口使缓存失效并回读新数据', async () => {
+    const hooks = {};
+    const {host, requests} = await bootHost(hooks);
+    try {
+        await switchFolder(host, 'root_a');
+        await switchFolder(host, 'root_b');
+        requests.length = 0;
+        await switchFolder(host, 'root_a');
+        const hot = registryRequests(requests).filter(entry => entry.url.includes('/api/asset-registry/assets'));
+        assert.equal(hot.length, 0, '写后刷新前热切换必须命中缓存（0 请求）');
+
+        // 真实产品入口：所有「替换当前列表」的读取都汇聚到 refreshRegistryAssets，
+        // 默认 invalidateCache=true（写后必刷语义）——上传/移动/删除/改元数据后就是走这里。
+        await host.main.refreshRegistryAssets();
+        await wait(120);
+        // 受控 /status 同步返回推进后的权威 revision（与 setRegistryStatus 一致），
+        // 模拟真实链路「写入/索引完成 → 服务端 revision 推进 → /status 轮询带回新值」。
+        hooks.statusRevision = () => 9;
+        host.main.setRegistryStatus({ready: true, revision: 9, overview: {roots: ROOTS, features: []}});
+        hooks.assetsTotal = rootId => rootId === 'root_a' ? NEW_TOTAL : TOTALS[rootId];
+        requests.length = 0;
+        await switchFolder(host, 'root_b');
+        await switchFolder(host, 'root_a');
+        const after = registryRequests(requests).filter(entry => entry.url.includes('/api/asset-registry/assets'));
+        assert.equal(after.length, 2, '写后刷新使全表缓存失效：root_b 与 root_a 都必须重新取数');
+        assert.equal(host.main.registryTotal, NEW_TOTAL, '失效回读必须看到新数据');
     } finally {
         host.dispose();
     }
@@ -271,6 +318,43 @@ test('QIN-603 AC6：快速连点不同文件夹只采用最后一次点击的结
         await wait(200);
         assert.equal(host.main.registryNavFolder.rootId, 'root_b', '视图目录必须停在最后一次点击');
         assert.equal(host.main.registryTotal, TOTALS.root_b, '迟到的旧响应不得把旧文件夹的列表写进当前视图');
+    } finally {
+        host.dispose();
+    }
+});
+
+test('QIN-603 AC6：快速连点 A→B→A，最后一次点击的结果胜出且两个旧响应都不覆盖', async () => {
+    let releaseFirst = () => {};
+    const firstSlow = new Promise(resolve => { releaseFirst = resolve; });
+    let slowedCount = 0;
+    // 只挂起第一次点 root_a 的响应：之后 B 与第二次 A 都快速落地。
+    // 票面 AC6 的另一种连点模式 A→B→A：最终视图必须是第二次 A 的结果，
+    // 且第一次 A 的迟到响应（晚于 B 与 A2 落地）不得覆盖。
+    const {host} = await bootHost({
+        beforeAssets(url) {
+            if (slowedCount === 0 && url.includes('root_id=root_a')) {
+                slowedCount += 1;
+                return firstSlow;
+            }
+            return Promise.resolve();
+        },
+    });
+    try {
+        globalThis.GWAssetTreeBridge.activate('mine:root:root_a');   // A1 挂起
+        await wait(20);
+        globalThis.GWAssetTreeBridge.activate('mine:root:root_b');   // B 落地
+        await wait(160);
+        assert.equal(host.main.registryNavFolder.rootId, 'root_b', 'B 落地后视图必须停在 root_b');
+        assert.equal(host.main.registryTotal, TOTALS.root_b, 'B 的列表必须已落地');
+        globalThis.GWAssetTreeBridge.activate('mine:root:root_a');   // A2：A1 未落地无缓存 → 新请求
+        await wait(160);
+        assert.equal(host.main.registryNavFolder.rootId, 'root_a', '最后一次点击必须已生效');
+        assert.equal(host.main.registryTotal, TOTALS.root_a, '最后一次点击的列表必须已落地');
+
+        releaseFirst();  // A1 旧响应迟到：晚于 B 与 A2 落地
+        await wait(200);
+        assert.equal(host.main.registryNavFolder.rootId, 'root_a', 'A1 迟到响应不得改写视图目录');
+        assert.equal(host.main.registryTotal, TOTALS.root_a, 'A1 迟到响应不得把旧列表写进当前视图');
     } finally {
         host.dispose();
     }

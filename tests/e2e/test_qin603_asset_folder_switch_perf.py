@@ -185,6 +185,19 @@ def _start_server() -> tuple[Any, str, Any]:
     return server, f"http://127.0.0.1:{port}", stop
 
 
+def _head_sha() -> str:
+    """【审核 R5】量测证据按 head 固定：运行时读取当前 worktree 的 head SHA。"""
+    import subprocess
+
+    try:
+        result = subprocess.run(
+            ["git", "rev-parse", "HEAD"], capture_output=True, text=True, timeout=10,
+        )
+        return result.stdout.strip() if result.returncode == 0 else ""
+    except Exception:  # pragma: no cover - 环境缺失时留空，不让取证失败阻塞验收
+        return ""
+
+
 def _percentile(values: list[float], ratio: float) -> float:
     if not values:
         return 0.0
@@ -394,6 +407,71 @@ def test_qin603_folder_switch_render_and_requests(tmp_path, monkeypatch):
                         "requests": _count_requests(requests, marker),
                     })
                     current = root_id
+
+                # 【审核 R5】真实在途预览样本（第 7 样本，单列不并入 6 样本阈值判定）：
+                # 清 HTTP 缓存 + 1s 网络延迟，让一次切换真的出现「DOM 已静默但 /api/media-preview
+                # 在飞」的窗口，断言 settle 等待预览完成、preview-tail 单列、最终 render ≤2。
+                # 清缓存不影响 registryAssetsQueryCache（内存缓存命中 → /assets 0 请求，AC4 同时被证明）。
+                cdp = context.new_cdp_session(page)
+                cdp.send("Network.enable")
+                cdp.send("Network.clearBrowserCache")
+                cdp.send("Network.emulateNetworkConditions", {
+                    "offline": False, "latency": 1000, "downloadThroughput": -1, "uploadThroughput": -1,
+                })
+                frame.evaluate(RESET)
+                marker = time.time() * 1000
+                mono_marker = time.monotonic()
+                page.click('[data-asset-tree-entry="mine:root:root_a"]')
+                # latency 同样拖慢 structures：终态帧推迟，先等卡片落地再判稳（与专项用例同口径）
+                cards_deadline = time.monotonic() + 40
+                while time.monotonic() < cards_deadline:
+                    if snapshot()["cards"] > 0:
+                        break
+                    time.sleep(0.05)
+                assert snapshot()["cards"] > 0, "在途样本：列表终态必须先落地，再测稳定口径"
+                preview_sample = settle(mono_marker)
+                preview_sample["root"] = "root_a"
+                preview_sample["assets_requests"] = _count_requests(requests, marker).get("assets", 0)
+                preview_sample["timeline_last"] = (
+                    preview_sample["timeline"][-1] if preview_sample["timeline"] else None
+                )
+                assert preview_sample["preview_events"] > 0, (
+                    f"清缓存后在途样本必须重新拉真实预览：{preview_sample}"
+                )
+                assert preview_sample["inflight_deferred"] > 0, (
+                    f"在途样本必须真的出现过「DOM 静默但预览在飞」并被判据拦住：{preview_sample}"
+                )
+                assert preview_sample["inflight_at_settle"] == 0, (
+                    f"判定稳定那一刻在途预览必须为 0：{preview_sample}"
+                )
+                assert preview_sample["settle_ms"] >= preview_sample["preview_ms"] > 0, (
+                    f"稳定时刻必须覆盖预览尾巴：{preview_sample}"
+                )
+                assert preview_sample["settle_ms"] > preview_sample["dom_settle_ms"], (
+                    f"预览在飞时 settle 必须晚于 DOM 静默：{preview_sample}"
+                )
+                assert preview_sample["renders"] <= MAX_RENDERS, (
+                    f"在途样本最终 render 必须 ≤{MAX_RENDERS}：{preview_sample}"
+                )
+                assert preview_sample["cards"] > 0, (
+                    f"在途样本终态必须有卡片：{preview_sample}"
+                )
+                assert preview_sample["timeline_last"], (
+                    f"在途样本必须有帧时间线：{preview_sample}"
+                )
+                assert preview_sample["timeline_last"]["loading"] is False, (
+                    f"在途样本最后一帧必须是终态：{preview_sample['timeline_last']}"
+                )
+                assert preview_sample["timeline_last"]["cards"] > 0, (
+                    f"在途样本最后一帧必须带卡片：{preview_sample['timeline_last']}"
+                )
+                assert preview_sample["assets_requests"] == 0, (
+                    f"清缓存不影响内存缓存：在途样本 /assets 必须 0 请求（AC4）：{preview_sample}"
+                )
+                # 恢复无延迟网络，避免影响后续观测（本用例在此结束，恢复只为留证一致性）
+                cdp.send("Network.emulateNetworkConditions", {
+                    "offline": False, "latency": 0, "downloadThroughput": -1, "uploadThroughput": -1,
+                })
             finally:
                 browser.close()
     finally:
@@ -413,6 +491,8 @@ def test_qin603_folder_switch_render_and_requests(tmp_path, monkeypatch):
 
     evidence = {
         "ticket": "QIN-603",
+        # 【审核 R5】量测证据按 head 固定：evidence JSON 里直接钉上运行时的 head SHA
+        "head_sha": _head_sha(),
         "datasets": {"roots": list(ROOTS), "per_folder": PER_FOLDER},
         "thresholds": {
             "max_renders": MAX_RENDERS,
@@ -421,6 +501,9 @@ def test_qin603_folder_switch_render_and_requests(tmp_path, monkeypatch):
             "max_longtask_p95_ms": MAX_LONGTASK_P95_MS,
         },
         "samples": samples,
+        # 【审核 R5】真实在途预览样本单列（口径与缓存命中样本不同：预览重拉），
+        # 不并入 6 样本阈值判定；settle 等待预览完成、preview-tail、最终 render 都在这一份里。
+        "preview_sample": preview_sample,
         "summary": {
             "renders_median": _median(renders),
             "renders_max": max(renders) if renders else 0,
@@ -554,6 +637,18 @@ def test_qin603_settle_waits_for_inflight_preview(tmp_path, monkeypatch):
                 assert _grid_stable(False, 0) is False, "DOM 未静默时不得判定稳定"
 
                 assert state["cards"] > 0, f"终态必须有卡片：{state}"
+                # 【审核 R5】「最终 render」也要被钉住：在途预览下整页重绘必须 ≤2，
+                # 且帧时间线的最后一帧是带卡片的终态（不是悬在加载态）。
+                assert state["renders"] <= MAX_RENDERS, (
+                    f"在途预览下最终 render 必须 ≤{MAX_RENDERS}：{state}"
+                )
+                assert state["timeline"], f"必须有帧时间线：{state}"
+                assert state["timeline"][-1]["loading"] is False, (
+                    f"最后一帧必须是终态：{state['timeline'][-1]}"
+                )
+                assert state["timeline"][-1]["cards"] > 0, (
+                    f"最后一帧必须带卡片：{state['timeline'][-1]}"
+                )
                 assert state["preview_events"] > 0, f"清缓存后切目录必须重新拉缩略图：{state}"
                 assert state["preview_ms"] >= 100, (
                     f"缩略图应延续到 DOM 稳定之后（preview_ms={state['preview_ms']}）"
