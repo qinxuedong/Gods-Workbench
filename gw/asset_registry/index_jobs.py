@@ -751,24 +751,114 @@ def _merge_generation_metadata(current: object, scanned: object) -> object:
     return merged
 
 
+# 状态文件瞬时共享冲突的有界重试窗口。Windows 上 Python 的读句柄默认不带
+# FILE_SHARE_DELETE，轮询读取与 storage.save 的 os.replace 交错时两侧都会抛
+# PermissionError（读 errno=13 / 写 winerror=5），同一个冲突窗口既能造成
+# INDEX_STORE_INVALID(503)，也能让阶段落盘失败把任务误标 INDEX_EXECUTION_FAILED。
+# 与 gw/media/repository.py 的 _PREVIEW_ALL_WRITE_ATTEMPTS 同口径：5 次尝试、
+# 退避 20/40/60/80ms（合计 ≤200ms）。退避期间不持有文件锁，见 _retry_io。
+STATE_IO_ATTEMPTS = 5
+STATE_IO_BACKOFF_SECONDS = 0.02
+
+# 退避的间接调用点：退避发生在「本次 I/O 已抛错、文件锁已释放、下一次尝试未发起」
+# 的边界上，测试可在此同步等待，不必靠时间窗口猜测。
+_STATE_IO_SLEEP = time.sleep
+
+# 事务锁按状态文件绝对路径键控，覆盖「读-改-写 + 退避」的整个事务。
+# 与 storage.namespace_lock 分层的理由：JsonState.mutate() 原本在整个事务期间持
+# 命名空间锁，退避 sleep 会连带阻塞同命名空间的读者（实测 60-90ms）。这里把
+# 「事务串行」与「单次 I/O 互斥」拆开：事务锁只在写事务之间串行，文件锁只包
+# 单次 I/O，退避期间两把锁都不需要文件锁。锁序固定 事务锁 → 文件锁。
+_STATE_TX_LOCKS: dict[str, threading.RLock] = {}
+_STATE_TX_GUARD = threading.Lock()
+
+
+def _transaction_lock(path) -> threading.RLock:
+    """按状态文件绝对路径取事务锁；调用时解析，便于测试包装后仍生效。"""
+    key = os.path.abspath(str(path))
+    with _STATE_TX_GUARD:
+        lock = _STATE_TX_LOCKS.get(key)
+        if lock is None:
+            lock = threading.RLock()
+            _STATE_TX_LOCKS[key] = lock
+        return lock
+
+
 class _JobState(storage.JsonState):
     """任务真源损坏时失败关闭，不能回退空表复用稳定ID。"""
 
+    def _retry_io(self, operation):
+        """执行一次 I/O，仅对瞬时共享冲突做有界重试。
+
+        每次尝试单独持有文件锁，退避在锁外进行：等待期间同命名空间的读者不会
+        被阻塞。重试只包住单次读写，不重跑 mutator：_recover 的 restore 每次
+        执行都会自增 version，在事务外层重试会造成版本双增。非共享冲突类错误
+        （含非法 JSON、结构非法、永久权限问题）一次即抛，保持失败关闭。
+        """
+        for attempt in range(STATE_IO_ATTEMPTS):
+            try:
+                with storage.namespace_lock(self.namespace):
+                    return operation()
+            except PermissionError:
+                if attempt + 1 >= STATE_IO_ATTEMPTS:
+                    raise
+                _STATE_IO_SLEEP(STATE_IO_BACKOFF_SECONDS * (attempt + 1))
+        raise AssertionError("unreachable")  # pragma: no cover
+
     def read(self):
-        path = storage.data_root() / "registry_index_jobs.json"
-        if not path.exists():
-            return {"sequence": 0, "jobs": {}, "keys": {}}
+        path = storage.file_for(self.namespace)
+
+        def load_state():
+            if not path.exists():
+                return {"sequence": 0, "jobs": {}, "keys": {}}
+            try:
+                raw = json.loads(path.read_text(encoding="utf-8"))
+                if (
+                    type(raw["sequence"]) is not int
+                    or not isinstance(raw["jobs"], dict)
+                    or not isinstance(raw["keys"], dict)
+                ):
+                    raise ValueError()
+                return raw
+            except PermissionError:
+                # 瞬时共享冲突交给 _retry_io 有界重试，不在此降级成存储损坏。
+                raise
+            except (OSError, ValueError, KeyError, TypeError):
+                _error(503, "INDEX_STORE_INVALID", "索引任务持久状态不可读取")
+
         try:
-            raw = json.loads(path.read_text(encoding="utf-8"))
-            if (
-                type(raw["sequence"]) is not int
-                or not isinstance(raw["jobs"], dict)
-                or not isinstance(raw["keys"], dict)
-            ):
-                raise ValueError()
-            return raw
-        except (OSError, ValueError, KeyError, TypeError):
+            return self._retry_io(load_state)
+        except PermissionError:
+            # 重试预算内仍被占用：明确报存储不可读，不回落空状态复用稳定 ID。
             _error(503, "INDEX_STORE_INVALID", "索引任务持久状态不可读取")
+
+    def _write_locked(self, payload) -> None:
+        """调用方已持事务锁时的落盘体；含单次 I/O 及其有界重试预算。"""
+        self._retry_io(lambda: storage.save(self.namespace, payload))
+
+    def write(self, payload) -> None:
+        """整份快照替换：事务锁包住单次落盘及其重试预算。
+
+        这是整体替换语义，不合并、不基于盘上状态重算；若它与 mutate 并发，
+        后提交者按先到先得整体覆盖，不属于 lost update（那是读-改-写事务之间
+        的概念）。现有调用点均在 IndexJobs 的任务锁内构造 payload。
+        """
+        with _transaction_lock(storage.file_for(self.namespace)):
+            self._write_locked(payload)
+
+    def mutate(self, mutator):
+        """事务锁内完成读-改-写，退避期间不持文件锁。
+
+        不能直接复用 JsonState.mutate()：它把命名空间锁跨在整个事务上，
+        重试退避的 sleep 会连带阻塞同命名空间的读者。这里事务锁只串行写事务，
+        文件锁逐次获取。每个事务恰好获取一次事务锁（写入体不再重复获取），
+        mutator 恰好执行一次，锁内不重读，不会覆盖并发提交。
+        """
+        with _transaction_lock(storage.file_for(self.namespace)):
+            state = self.read()
+            result = mutator(state)
+            self._write_locked(state)
+            return result
 
 
 class IndexJobs:
