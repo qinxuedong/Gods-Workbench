@@ -3215,6 +3215,10 @@ GW_DEFERRED['organize'] = {
     renderScriptAssetsManager,
     renderWorkflowManager,
     revealRegistryAssetFile,
+    // 【QIN-603 缺陷A】主文件 selectAssetTreeNode 在切看板 / 切回资产总览时要清空选中集。
+    // 这个函数只在本域定义、此前既未导出也未登记域函数面，主文件裸调必 ReferenceError
+    // （从剧本/LUT 等看板点挂载目录即触发）。登记后主文件按统一域网关派发。
+    resetBoardSelections,
     saveBoardEdit,
     saveCollapsedLibraryFolders,
     saveHiddenLibraryFolders,

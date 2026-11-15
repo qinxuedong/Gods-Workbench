@@ -286,6 +286,8 @@ window.WorkbenchAssets = (() => {
   let createButton = null;
   let createButtonClickHandler = null;
   let sidebarSnapshot = '';
+  // 【QIN-603 AC3】结构签名（不含选中态与计数）：用来区分「只换选中项 / 只变计数 / 真的换树」。
+  let sidebarStructure = '';
 
   function manager() {
     try { return frame.contentDocument; } catch (_) { return null; }
@@ -823,6 +825,34 @@ window.WorkbenchAssets = (() => {
     overview?.closest('.asset-shell-overview-card')?.classList.toggle('active', registryActive);
   }
 
+  // 【QIN-603 AC3】结构没变、只有计数/徽标变了：就地改文本节点。
+  // 返回 false 表示某一行与现有 DOM 不匹配（例如多了子目录节点），交回整树重建，不硬改。
+  function patchSidebarCounts(rows) {
+    for (const row of rows) {
+      if (Array.isArray(row.children) && row.children.length) return false;
+      const button = categories.querySelector(`[data-asset-tree-entry="${CSS.escape(String(row.key || ''))}"]`);
+      if (!button) return false;
+      const badgeEl = button.querySelector('.asset-shell-nav-badge');
+      const countEl = button.querySelector('.asset-shell-nav-count');
+      const wantBadge = Number(row.badge) > 0 ? (Number(row.badge) > 99 ? '99+' : String(Number(row.badge))) : '';
+      if (wantBadge) {
+        if (!badgeEl || countEl) return false;
+        if (badgeEl.textContent !== wantBadge) badgeEl.textContent = wantBadge;
+        continue;
+      }
+      const hasCount = row.count !== '' && row.count !== undefined && row.count !== null && Number(row.count) >= 0;
+      if (hasCount) {
+        if (badgeEl) return false;
+        if (!countEl) return false;
+        const want = Number(row.count).toLocaleString('zh-CN');
+        if (countEl.textContent !== want) countEl.textContent = want;
+        continue;
+      }
+      if (badgeEl || countEl) return false;
+    }
+    return true;
+  }
+
   // 应用内嵌页推送的树快照：渲染收集箱 + 挂载资源（统一资源库总文件夹与物理子目录树）。
   function applyTreeSnapshot(snapshot) {
     if (!categories || !snapshot || typeof snapshot !== 'object') return;
@@ -866,11 +896,29 @@ window.WorkbenchAssets = (() => {
       {key:'mine:inbox', name:'收集箱', icon:'inbox', badge, count:'', hasChildren:false},
       ...dedupedRoots.map(root => ({...root, key:`mine:root:${root.id}`, name:String(root.name || '未命名来源'), icon:root.icon || 'hard-drive', count:root.count, isRoot:true})),
       ...independentBoards.map(board => ({key:`mine:board:${board.id}`, name:String(board.name || '未命名资源库'), icon:String(board.icon || 'library'), count:'', hasChildren:false})),
-    ].map(row => ({...row, active: row.key === selected}));
+    ];
+    // 【QIN-603 AC3】selected 不再掺进快照字符串：只改选中项时结构完全没变，
+    // 不该整树 replaceChildren + 全文档重扫图标。选中态由 updateSidebarSelection 就地改 class。
+    const rowShape = row => ({
+      key: row.key,
+      name: row.name,
+      icon: row.icon || '',
+      offline: Boolean(row.offline),
+      loading: Boolean(row.loading),
+      hasChildren: Boolean(row.hasChildren),
+      childKeys: (Array.isArray(row.children) ? row.children : []).map(child => child?.key || ''),
+    });
+    const structureKey = JSON.stringify(rows.map(rowShape));
     const serialized = JSON.stringify(rows);
     updateSidebarSelection(selected);
     syncOverviewSelection(selected);
     if (serialized === sidebarSnapshot) return;
+    // 结构没变、只有计数/徽标变了：就地改文本，不重建 DOM（选中态与焦点都不动）
+    if (structureKey === sidebarStructure && patchSidebarCounts(rows)) {
+      sidebarSnapshot = serialized;
+      return;
+    }
+    sidebarStructure = structureKey;
     sidebarSnapshot = serialized;
     const focused = categories.contains(document.activeElement)
       ? document.activeElement.dataset.assetTreeEntry || null
@@ -947,7 +995,9 @@ window.WorkbenchAssets = (() => {
     mainGroup.append(mainHeading, mainItems);
     fragment.append(mainGroup);
     categories.replaceChildren(fragment);
-    window.lucide?.createIcons();
+    // 【QIN-603 AC3】图标替换只扫刚重建的侧栏容器：createIcons() 不带 root 会遍历整个文档，
+    // 外壳上每一行表格/按钮的 [data-lucide] 都被重扫一遍，是这次点击里最贵的一段。
+    window.lucide?.createIcons({root: categories});
     if (focused !== null) {
       categories.querySelector(`[data-asset-tree-entry="${CSS.escape(focused)}"]`)?.focus();
     }
