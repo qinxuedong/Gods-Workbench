@@ -538,6 +538,9 @@ const REGISTRY_VIRTUAL_GAP = 10;
 const REGISTRY_PREVIEW_PLACEHOLDER = 'data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%221%22 height=%221%22/%3E';
 let registryPreviewQueue = [];
 let registryPreviewActive = 0;
+// 【QIN-609】在途预览登记：切目录 DOM 重建会取消在途请求且 load/error 不再触发，
+// pump 每轮先清扫断连项释放槽位，防止并发上限被泄漏占满导致队列永久卡死。
+const registryPreviewInFlight = new Set();
 let registryPreviewQueueRevision = 0;
 let registryPreviewObserver = null;
 let registryPreviewFallbackCleanup = null;
@@ -4979,6 +4982,11 @@ function scheduleRegistryVirtualRemeasure(){
     });
 }
 function pumpRegistryPreviewQueue(){
+    // 【QIN-609】清扫在途登记里的断连项：切目录 DOM 重建取消请求后 load/error 不再触发，
+    // 不清扫会让泄漏的槽位占满并发上限、队列永久卡死（改前即存在的缺陷，本票修复）。
+    for(const entry of registryPreviewInFlight){
+        if(!entry.image.isConnected) entry.finish(undefined);
+    }
     while(registryPreviewActive < REGISTRY_PREVIEW_CONCURRENCY && registryPreviewQueue.length){
         const image = registryPreviewQueue.shift();
         if(!image?.isConnected) continue;
@@ -4989,12 +4997,13 @@ function pumpRegistryPreviewQueue(){
         image.dataset.registryPreviewLoaded = 'true';
         if(!source) continue;
         registryPreviewActive += 1;
-        let settled = false;
-        const finish = (success) => {
-            if(settled) return;
-            settled = true;
+        const entry = {image, settled: false};
+        entry.finish = (success) => {
+            if(entry.settled) return;
+            entry.settled = true;
+            registryPreviewInFlight.delete(entry);
             registryPreviewActive = Math.max(0, registryPreviewActive - 1);
-            // 【QIN-609】失败不误标成功：error 置 failed 标记（不重试、不进虚拟化缓存），
+            // 【QIN-609】失败不误标成功：error 置 failed 标记（不重试、不进虚拟化缓存）；
             // 断连节点跳过 aspect/remeasure 副作用（槽位照常释放）。
             if(image.isConnected){
                 if(success === false) image.dataset.registryPreviewFailed = 'true';
@@ -5004,10 +5013,11 @@ function pumpRegistryPreviewQueue(){
             }
             pumpRegistryPreviewQueue();
         };
-        image.addEventListener('load', () => finish(true), {once:true});
-        image.addEventListener('error', () => finish(false), {once:true});
+        registryPreviewInFlight.add(entry);
+        image.addEventListener('load', () => entry.finish(true), {once:true});
+        image.addEventListener('error', () => entry.finish(false), {once:true});
         image.src = source;
-        if(image.complete) queueMicrotask(() => finish(true));
+        if(image.complete) queueMicrotask(() => entry.finish(true));
     }
 }
 function activateRegistryPreviewImage(image, priority=false){

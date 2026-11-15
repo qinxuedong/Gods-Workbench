@@ -51,8 +51,8 @@ test('QIN-609 AC2：视口内激活插队首，视口外 wheel 预载保持队�
 test('QIN-609 DoD 异步失败：失败不误标成功、不阻塞后续队列', () => {
     const pump = functionBody('pumpRegistryPreviewQueue');
     // load/error 分别释放槽位并区分成败标记；失败置 failed（不重试，避免风暴）。
-    assert.match(pump, /addEventListener\('load', \(\) => finish\(true\)/);
-    assert.match(pump, /addEventListener\('error', \(\) => finish\(false\)/);
+    assert.match(pump, /addEventListener\('load', \(\) => entry\.finish\(true\)/);
+    assert.match(pump, /addEventListener\('error', \(\) => entry\.finish\(false\)/);
     assert.match(pump, /if\(success === false\) image\.dataset\.registryPreviewFailed = 'true';/);
     // 槽位释放先于副作用守卫：失败/断连都要继续消化队列。
     assert.match(pump, /registryPreviewActive = Math\.max\(0, registryPreviewActive - 1\);/);
@@ -61,6 +61,9 @@ test('QIN-609 DoD 异步失败：失败不误标成功、不阻塞后续队列',
 
 test('QIN-609 DoD 代际：断连节点跳过 aspect/remeasure 副作用，槽位照常释放', () => {
     const pump = functionBody('pumpRegistryPreviewQueue');
+    // 在途登记：切目录 DOM 重建取消请求后 load/error 不触发，pump 每轮清扫断连项防槽位泄漏卡死。
+    assert.match(pump, /registryPreviewInFlight/);
+    assert.match(pump, /if\(!entry\.image\.isConnected\) entry\.finish\(undefined\);/);
     assert.match(pump, /if\(image\.isConnected\)\{/);
     // 切目录清队列的既有代际机制保留（revision + 队列清空）。
     const disconnect = functionBody('disconnectRegistryPreviewScheduling');
