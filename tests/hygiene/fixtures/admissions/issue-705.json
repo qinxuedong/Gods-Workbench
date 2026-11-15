@@ -1,0 +1,23 @@
+{
+  "schema": "gw.cleanroom-admission-shard/v1",
+  "issue": 705,
+  "authorization_basis": "GitHub Issue #705, 2026-11-16",
+  "files": [
+    "gw/asset_registry/index_jobs.py",
+    "gw/asset_registry/repository.py",
+    "gw/core/storage.py",
+    "gw/settings/service.py",
+    "web/js/modules/asset-manager.js",
+    "web/js/modules/asset-manager/organize.js",
+    "web/js/modules/asset-manager/settings.js",
+    "tests/contracts/assets/test_qin596_root_facets_dedupe.py",
+    "tests/contracts/settings/test_qin596_resource_folder_gate.py",
+    "tests/frontend/qin-596-resource-folder-add.test.mjs",
+    "tests/frontend/node-files.txt",
+    "tests/hygiene/fixtures/admissions/issue-705.json",
+    "tests/hygiene/test_cleanroom_hygiene.py"
+  ],
+  "admitted_files": [],
+  "accepted_test_files": [],
+  "notes": "QIN-596：侧栏与 facets 按物理路径去重 + 「+ 添加资源文件夹」一步完成；三文件扩权（storage.py/service.py/repository.py）经相国批准。"
+}

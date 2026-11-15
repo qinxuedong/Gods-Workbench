@@ -829,14 +829,8 @@ async function createPresetAssetBoard(){
         markIndexState('pending');
         setStatus('正在校验路径并登记素材来源…');
         try {
-            const allowed = await ensureCreateLibraryPathAllowedRoot(path);
-            if(!allowed){
-                boardCreateState.saving = false;
-                renderCreateLibraryModal();
-                markIndexState('skipped');
-                setStatus('已取消恢复，资源库未创建');
-                return;
-            }
+            // QIN-596 AC3：允许根管道已下沉进 attachPathToAssetBoard，两条入口
+            // 字面共用同一调用链（此处不再单独调用 ensure，避免双重恢复确认弹窗）。
             source = await attachPathToAssetBoard('', `${name}素材`, path);
         } catch(err) {
             boardCreateState.saving = false;
@@ -847,11 +841,13 @@ async function createPresetAssetBoard(){
             return;
         }
         if(!source){
+            // QIN-596：attach 返回 null = 用户取消（恢复确认/别名建议取消），
+            // 无写盘；不显示「已添加」。
             boardCreateState.saving = false;
-            boardCreateState.error = '素材来源添加失败，未建立索引';
+            boardCreateState.error = '已取消添加，资源库未创建';
             renderCreateLibraryModal();
-            markIndexState('failed');
-            setStatus('素材来源添加失败，未建立索引');
+            markIndexState('skipped');
+            setStatus('已取消添加，资源库未创建');
             return;
         }
     }
@@ -897,6 +893,11 @@ function attachSourceRecordToBoard(boardId, source){
 async function attachPathToAssetBoard(boardId, sourceName, path){
     const cleanPath = String(path || '').trim();
     if(!cleanPath) throw new Error('未填写素材路径，已跳过索引');
+    // QIN-596 AC3：添加管道先经允许根保障（QIN-522 管道）：命中已移除允许根先弹
+    // 确认恢复；取消 → 返回 null，不写任何数据。系统目录拒绝清单在 ensure 入口
+    // 拒绝并提示原因。非管理员不尝试写允许根，登记 403 统一提示联系管理员。
+    const allowed = await ensureCreateLibraryPathAllowedRoot(cleanPath);
+    if(!allowed) return null;
     const settings = await apiJsonResponse(assetManagerApi.getStorageSettings());
     applyStorageSettingsData(settings || {});
     const known = localLibraries.find(lib => pathCompareKey(lib.path) === pathCompareKey(cleanPath));
@@ -924,20 +925,62 @@ async function attachPathToAssetBoard(boardId, sourceName, path){
         } else {
             const id = storageNewExtraId();
             const cleanName = storageCleanName(sourceName, '用户素材');
+            // QIN-596 §6.1：attemptKey 挂确认会话——同会话自动重试复用同一键，
+            // 服务端 job 提交幂等命中；新确认（重新点击）生成新键。
             const nonce = globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2)}`;
-            setStatus(`正在校验并登记素材库“${cleanName}”…`);
-            accepted = await apiJsonResponse(assetManagerApi.registerAssetRoot({
+            const attemptKey = `asset-register:${id}:${nonce}`;
+            const payload = {
                 background:true,
                 hash_files:true,
                 max_files:250000,
                 roots:[id],
                 register_root:{id, name:cleanName, path:cleanPath, expected_version:Number(storageSettingsState.revision || 1)},
-            }, {headers:{'Idempotency-Key':`asset-register:${id}:${nonce}`}}));
-            const saved = await apiJsonResponse(assetManagerApi.getStorageSettings());
-            applyStorageSettingsData(saved || {});
-            const created = localLibraries.find(lib => lib.id === id) || localLibraries.find(lib => pathCompareKey(lib.path) === pathCompareKey(cleanPath));
-            source = {id:created?.id || id, name:created?.name || cleanName, path:created?.path || cleanPath};
+            };
+            setStatus(`正在校验并登记素材库“${cleanName}”…`);
+            let lastError = null;
+            for(let attempt = 0; attempt < 2; attempt++){
+                try {
+                    accepted = await apiJsonResponse(assetManagerApi.registerAssetRoot(payload, {headers:{'Idempotency-Key':attemptKey}}));
+                    lastError = null;
+                    break;
+                } catch(err){
+                    lastError = err;
+                    // §6.1：仅网络错误/5xx 自动重试一次并复用同一 attemptKey；
+                    // 4xx（含 VERSION_CONFLICT）不自动重试。
+                    const retriable = !Number(err?.status) || Number(err.status) >= 500;
+                    if(attempt === 0 && retriable) continue;
+                    break;
+                }
+            }
+            if(lastError){
+                if(lastError?.code === 'ASSET_ROOT_ALREADY_REGISTERED'){
+                    // §6.4 RESOLVING：刷新 settings 并按 pathCompareKey 解析现存身份，
+                    // 以已登记身份完成流程（不重复登记）。
+                    const saved = await apiJsonResponse(assetManagerApi.getStorageSettings());
+                    applyStorageSettingsData(saved || {});
+                    const existing = localLibraries.find(lib => pathCompareKey(lib.path) === pathCompareKey(cleanPath));
+                    if(!existing) throw lastError;
+                    source = {id:existing.id, name:storageCleanName(sourceName || existing.name, existing.name || '用户素材'), path:existing.path};
+                } else if(lastError?.code === 'PATH_OUTSIDE_ALLOWED_ROOTS'){
+                    // AC4：非管理员路径未授权 → 明确提示，不显示成功。
+                    throw new Error('该文件夹尚未授权，请联系管理员');
+                } else {
+                    throw lastError;
+                }
+            } else {
+                const saved = await apiJsonResponse(assetManagerApi.getStorageSettings());
+                applyStorageSettingsData(saved || {});
+                const created = localLibraries.find(lib => lib.id === id) || localLibraries.find(lib => pathCompareKey(lib.path) === pathCompareKey(cleanPath));
+                source = {id:created?.id || id, name:created?.name || cleanName, path:created?.path || cleanPath};
+            }
         }
+    } else {
+        // QIN-596 §6.2：known 命中必提交纯 reindex（与 existingId 分支同口径）——
+        // 重复添加与「登记成功但索引提交失败」的恢复统一，不重复登记、不重复写允许根。
+        setStatus(`正在重建“${source.name}”索引…`);
+        const reindexed = await reindexAssetSource(source.id);
+        if(reindexed?.ok && reindexed.data?.job_id) source.job_id = reindexed.data.job_id;
+        else if(reindexed && reindexed.ok === false) setStatus(reindexed.error || '索引任务提交失败');
     }
     if(boardId) attachSourceRecordToBoard(boardId, source);
     if(accepted?.job_id){
@@ -959,7 +1002,7 @@ function renderBoardSourceModal(){
         document.body.appendChild(overlay);
     }
     overlay.innerHTML = `<div class="board-source-modal" data-floating-content role="dialog" aria-modal="true" aria-labelledby="boardSourceTitle">
-        <div class="storage-settings-head"><div><strong id="boardSourceTitle">${board ? '素材来源设置' : '添加上传来源'}</strong><span>${board ? `设置“${escapeHtml(board.name)}”的素材路径与显示范围。` : '添加一个可上传和分类的素材目录。'}</span></div><button type="button" data-board-source-close aria-label="关闭"><i data-lucide="x"></i></button></div>
+        <div class="storage-settings-head"><div><strong id="boardSourceTitle">${board ? '素材来源设置' : '添加资源文件夹'}</strong><span>${board ? `设置“${escapeHtml(board.name)}”的素材路径与显示范围。` : '添加一个可上传和分类的素材目录。'}</span></div><button type="button" data-board-source-close aria-label="关闭"><i data-lucide="x"></i></button></div>
         ${board ? `<div class="board-source-settings-list">
             <div class="board-source-settings-row">
                 <span class="board-source-settings-icon"><i data-lucide="sparkles"></i></span>
@@ -981,7 +1024,7 @@ function renderBoardSourceModal(){
             <label><span>素材路径</span><input id="boardSourcePath" value="${escapeAttr(boardSourceState.path || editingSource?.path || '')}" placeholder="D:\\Assets 或 NAS 共享目录"></label>
             ${editing ? `<label><span>来源只读</span><input id="boardSourceReadOnly" type="checkbox" ${storageSettingsState.localLibraryReadOnly?.[editingSource?.id] ? 'checked' : ''}><small>禁止将该来源素材移入回收站</small></label>` : ''}
         </div></div>` : ''}
-        <div class="board-create-actions"><button class="hw-btn" type="button" ${showForm ? 'data-board-source-editor-cancel' : 'data-board-source-close'}>${showForm && board ? '取消编辑' : '关闭'}</button>${showForm ? `<button class="hw-btn hw-btn-gold" type="button" data-board-source-confirm><i data-lucide="${editing ? 'save' : 'folder-plus'}"></i><span>${editing ? '保存更改' : '添加来源'}</span></button>` : ''}</div>
+        <div class="board-create-actions"><button class="hw-btn" type="button" ${showForm ? 'data-board-source-editor-cancel' : 'data-board-source-close'}>${showForm && board ? '取消编辑' : '关闭'}</button>${showForm ? `<button class="hw-btn hw-btn-gold" type="button" data-board-source-confirm ${boardSourceState.saving ? 'disabled' : ''}><i data-lucide="${boardSourceState.saving ? 'loader-2' : (editing ? 'save' : 'folder-plus')}"></i><span>${boardSourceState.saving ? '正在添加…' : (editing ? '保存更改' : '添加来源')}</span></button>` : ''}</div>
     </div>`;
     markAssetFloatingSurface(overlay, {surface:'asset-board-source', content:'.board-source-modal', close:closeBoardSourceModal});
     refreshIcons();
@@ -990,7 +1033,15 @@ function openBoardSourceModal(boardId='', editor=''){
     setBoardSourceState({open:true, boardId, editor:editor || (boardId ? '' : 'new'), existingId:'', name:boardId ? `${assetBoardById(boardId)?.name || ''}素材` : '上传素材', path:''});
     renderBoardSourceModal();
 }
-function closeBoardSourceModal(){ boardSourceState.open = false; renderBoardSourceModal(); }
+function closeBoardSourceModal(){
+    // QIN-596 §7：关闭弹窗递增 generation 并复位 saving——迟到的返回不再触发
+    // 成功文案 / 刷新 / 侧栏重绘；已在途的请求允许服务端完成（阶段B），真实
+    // 状态由下次 facets/settings 刷新恢复。
+    boardSourceState.generation = Number(boardSourceState.generation || 0) + 1;
+    boardSourceState.saving = false;
+    boardSourceState.open = false;
+    renderBoardSourceModal();
+}
 function editBoardSource(sourceId){
     const board = assetBoardById(boardSourceState.boardId);
     const source = board?.sources?.find(item => item.id === sourceId);
@@ -1084,6 +1135,13 @@ async function deleteBoardSource(boardId, sourceId){
     }
 }
 async function confirmBoardSource(){
+    // QIN-596 §1/§7：确认忙碌守卫（忙碌中忽略重复确认）；capture 当前代际，
+    // 关闭弹窗后迟到的返回不得触发成功文案/刷新/侧栏重绘（阶段B：服务端完成，UI 静默）。
+    if(boardSourceState.saving) return;
+    const generation = Number(boardSourceState.generation || 0);
+    boardSourceState.saving = true;
+    renderBoardSourceModal();
+    try {
     const existingId = String(document.getElementById('boardSourceExisting')?.value || '');
     const name = String(document.getElementById('boardSourceName')?.value || '用户素材').trim();
     const path = String(document.getElementById('boardSourcePath')?.value || '').trim();
@@ -1094,6 +1152,7 @@ async function confirmBoardSource(){
         if(!path){ setStatus('请输入素材路径'); return; }
         source = await updateBoardSourcePath(editingSource.id, name, path, Boolean(document.getElementById('boardSourceReadOnly')?.checked));
         if(!source) return;
+        if(Number(boardSourceState.generation || 0) !== generation) return;
         Object.assign(editingSource, {name:source.name, path:source.path});
         boardFolderSelection[board.id] = '';
         saveBoardNavigationState();
@@ -1108,9 +1167,11 @@ async function confirmBoardSource(){
         if(lib) source = {id:lib.id, name:storageCleanName(name || lib.name, lib.name), path:lib.path};
         if(boardSourceState.boardId && source) attachSourceRecordToBoard(boardSourceState.boardId, source);
         if(source) await reindexAssetSource(source.id);
+        if(Number(boardSourceState.generation || 0) !== generation) return;
     } else {
         if(!path){ setStatus('请输入素材路径'); return; }
         source = await attachPathToAssetBoard(boardSourceState.boardId, name, path);
+        if(Number(boardSourceState.generation || 0) !== generation) return;
     }
     if(!source) return;
     const boardId = boardSourceState.boardId;
@@ -1128,6 +1189,10 @@ async function confirmBoardSource(){
     setStatus(`已添加素材来源“${source.name}”，正在建立索引`);
     if(source?.job_id){
         waitForAssetIndexJob(source.job_id, source.name).catch(() => {});
+    }
+    } finally {
+        boardSourceState.saving = false;
+        if(boardSourceState.open) renderBoardSourceModal();
     }
 }
 async function refreshCASReadState(){

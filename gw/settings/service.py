@@ -589,6 +589,11 @@ class StorageAllowedRootsService:
         return StorageAllowedRootsSnapshot(revision=int(state.get("revision", 1)), roots=roots)
 
     def add_root(self, payload: StorageAllowedRootRequest) -> StorageAllowedRootsSnapshot:
+        # QIN-596：允许根写入口先做系统目录词法拒绝（先于 normalize——`C:`、
+        # `\\NAS` 这类输入会被 normalize 先抛 400 INVALID_PATH，到不了清单）。
+        rejection = storage.describe_resource_folder_rejection(payload.path)
+        if rejection:
+            raise CleanroomException(403, "RESOURCE_FOLDER_NOT_PERMITTED", rejection)
         normalized = storage.normalize_directory_path(payload.path)
         status = storage.probe_mount(normalized)
         if not status["available"]:
@@ -686,6 +691,11 @@ class StorageAllowedRootsService:
                 raise CleanroomException(409, "ALLOWED_ROOT_ALREADY_ACTIVE", "该允许根已处于活跃状态")
 
             restored_path = str(record.get("path") or "")
+            # QIN-596：恢复入口同样执行拒绝清单，防止本功能上线前移除的
+            # 盘符根 / 系统目录经「恢复已移除允许根」静默回归。
+            rejection = storage.describe_resource_folder_rejection(restored_path)
+            if rejection:
+                raise CleanroomException(403, "RESOURCE_FOLDER_NOT_PERMITTED", rejection)
             status = storage.probe_mount(restored_path)
             if not status["available"]:
                 code = str(status["reason"] or "MOUNT_OFFLINE")

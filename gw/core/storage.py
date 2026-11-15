@@ -31,6 +31,7 @@ import hashlib
 import json
 import ntpath
 import os
+import re
 import shutil
 import stat
 import tempfile
@@ -404,6 +405,114 @@ def directory_path_key(raw_path: str) -> str:
     if ntpath.splitdrive(normalized)[0]:
         return ntpath.normcase(normalized).casefold()
     return os.path.normcase(normalized).casefold()
+
+
+def physical_path_key(raw_path: str) -> str:
+    """生成跨命名空间一致的物理路径比较键（QIN-596）。
+
+    Windows 盘符与 UNC 路径在大小写不敏感文件系统上比较，使用 normcase
+    与 casefold；POSIX 路径在大小写敏感文件系统上保留大小写（仅 NFC
+    归一与 normpath），避免把 `/Volumes/Assets` 与 `/Volumes/assets`
+    这类大小写不同的不同目录误判为同一物理位置。
+    """
+    normalized = normalize_directory_path(raw_path)
+    if ntpath.splitdrive(normalized)[0]:
+        return ntpath.normcase(normalized).casefold()
+    return normalized
+
+
+# QIN-596 系统目录拒绝清单：不允许自动授权为资源文件夹的路径类别。
+# 词法判定在 normalize 之前对原始输入生效，命中即 403
+# RESOURCE_FOLDER_NOT_PERMITTED（见 describe_resource_folder_rejection）。
+_RESOURCE_FOLDER_DRIVE_ROOT_RE = re.compile(r"^[a-zA-Z]:[\\/]{0,1}$")
+_RESOURCE_FOLDER_UNC_MACHINE_ROOT_RE = re.compile(r"^\\\\[^\\/]+\\{0,1}$")
+_RESOURCE_FOLDER_POSIX_ROOT_RE = re.compile(r"^[\\/]+$")
+
+# 首段命中即整目录及后代拒绝的系统目录段名（Windows，任意盘符）。
+RESOURCE_FOLDER_BLOCKED_WIN_SEGMENTS = frozenset(
+    {"windows", "program files", "program files (x86)", "programdata"}
+)
+# POSIX 系统目录段名（首段命中即目录本身与后代拒绝）。
+RESOURCE_FOLDER_BLOCKED_POSIX_SEGMENTS = frozenset(
+    {"system", "library", "applications", "usr", "bin", "sbin", "etc", "var", "private"}
+)
+# 用户配置目录：Users 首段本身与深度 2（/Users/<name>）拒绝，深度 3+ 后代不拒。
+_RESOURCE_FOLDER_USERS_SEGMENT = "users"
+
+
+def _resource_folder_lexical_parts(raw_path: str) -> list[str] | None:
+    """把原始输入切成词法段供拒绝清单匹配；非绝对路径形态返回 None。
+
+    对未规范化输入宽容：strip、统一正反斜杠、去尾部分隔符；不调用
+    normalize_directory_path（拒绝判定必须先于其 400 INVALID_PATH）。
+    """
+    if not isinstance(raw_path, str):
+        return None
+    value = unicodedata.normalize("NFC", raw_path.strip())
+    if not value or any(ord(char) < 32 for char in value):
+        return None
+    unified = value.replace("/", "\\")
+    if ntpath.splitdrive(unified)[0]:
+        drive, tail = ntpath.splitdrive(unified)
+        if drive.startswith("\\\\"):
+            # UNC：\\host\share\... → 机器与共享名之后才是内容段。
+            body = drive.lstrip("\\")
+            segments = [seg for seg in body.split("\\") if seg]
+            share_tail = [seg for seg in tail.split("\\") if seg]
+            segments.extend(share_tail)
+            return segments
+        # 盘符路径：段为盘符后的内容段。
+        segments = [seg for seg in tail.split("\\") if seg]
+        return segments
+    if unified.startswith("\\\\"):
+        segments = [seg for seg in unified.lstrip("\\").split("\\") if seg]
+        return segments
+    if value.startswith("/"):
+        segments = [seg for seg in value.split("/") if seg]
+        return segments
+    return None
+
+
+def describe_resource_folder_rejection(raw_path: str) -> str:
+    """按 QIN-596 拒绝清单对原始输入做纯词法判定。
+
+    命中返回拒绝原因（供 403 RESOURCE_FOLDER_NOT_PERMITTED 的 message），
+    未命中返回空串。无 IO、不调用 normalize_directory_path；对
+    `C:`、`\\NAS` 这类会被 normalize 先拒的输入同样可判定。
+    """
+    if not isinstance(raw_path, str):
+        return "路径不合法"
+    value = unicodedata.normalize("NFC", raw_path.strip())
+    if not value:
+        return "路径为空"
+    unified = value.replace("/", "\\")
+    # 形态拒绝一：盘符根（C: / C:\ / D:/）。
+    if _RESOURCE_FOLDER_DRIVE_ROOT_RE.match(value) or _RESOURCE_FOLDER_DRIVE_ROOT_RE.match(unified):
+        return "盘符根目录不可添加为资源文件夹"
+    # 形态拒绝二：UNC 机器根（\\host，无共享名）。
+    if _RESOURCE_FOLDER_UNC_MACHINE_ROOT_RE.match(unified):
+        return "UNC 机器根不可添加为资源文件夹，请指定具体共享目录"
+    # 形态拒绝三：POSIX 文件系统根（/ 或 //）。
+    if _RESOURCE_FOLDER_POSIX_ROOT_RE.match(value):
+        return "文件系统根目录不可添加为资源文件夹"
+    segments = _resource_folder_lexical_parts(raw_path)
+    if segments is None:
+        # 非绝对路径形态交给后续 normalize 语义处理，此处不拒。
+        return ""
+    lowered = [seg.casefold() for seg in segments]
+    # 形态拒绝四：Windows 系统目录（首段命中即目录本身与后代拒绝）。
+    if lowered and lowered[0] in RESOURCE_FOLDER_BLOCKED_WIN_SEGMENTS:
+        return f"系统目录不可添加为资源文件夹：{value}"
+    # 形态拒绝五：POSIX 系统目录。
+    if lowered and lowered[0] in RESOURCE_FOLDER_BLOCKED_POSIX_SEGMENTS:
+        return f"系统目录不可添加为资源文件夹：{value}"
+    # 形态拒绝六：用户配置目录根（Users 本身与 Users/<name>）。
+    if lowered and lowered[0] == _RESOURCE_FOLDER_USERS_SEGMENT:
+        if len(lowered) == 1:
+            return f"用户配置目录根不可添加为资源文件夹：{value}"
+        if len(lowered) == 2:
+            return f"用户配置目录根不可添加为资源文件夹：{value}"
+    return ""
 
 
 def validate_directory_path(raw_path: str) -> str:
@@ -845,6 +954,11 @@ def resolve_asset_registration_root(raw_path: str) -> tuple[Path, str]:
     拼接到任何一个允许根。路径通过 DIR-T2 的存在性与访问权限校验后，
     必须落在某个 ``GW_ALLOWED_ROOTS`` 根目录内。
     """
+    # QIN-596：登记入口同样执行系统目录拒绝清单，词法判定先于 normalize，
+    # 防止存量允许根（如 GW_ALLOWED_ROOTS 环境根）下静默登记盘符根/系统目录。
+    rejection = describe_resource_folder_rejection(raw_path)
+    if rejection:
+        raise CleanroomException(403, "RESOURCE_FOLDER_NOT_PERMITTED", rejection)
     roots = allowed_roots()
     if not roots:
         raise CleanroomException(

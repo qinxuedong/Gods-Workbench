@@ -1507,10 +1507,17 @@ def list_assets(limit: int, offset: int, query: Optional[str], kind: Optional[st
                 availability_id, "MOUNT_ROOT_REMOVED"
             )
     if root_id:
-        known_roots = {item["id"] for item in root_facets}
-        if root_id not in known_roots:
+        # QIN-596：facets 合并后主 ID 与任一 alias 身份均可作 root_id 输入；
+        # 请求身份先展开为其所属身份组再过滤，旧身份请求与主 ID 请求同结果。
+        identity_groups = _root_identity_groups(root_facets)
+        group = identity_groups.get(str(root_id))
+        if group is None:
             raise CleanroomException(404, "ROOT_NOT_FOUND", "素材来源根不存在")
-        items = [a for a in items if str(a.get("storage_root_id") or a.get("root_id") or "") == root_id]
+        members = group["members"]
+        items = [
+            a for a in items
+            if str(a.get("storage_root_id") or a.get("root_id") or "") in members
+        ]
     elif not include_removed:
         items = [a for a in items if a.get("root_availability") != "removed"]
     if board_scope is not None:
@@ -2333,23 +2340,57 @@ def preview_asset_ids() -> List[str]:
     return asset_ids
 
 
+def _root_identity_groups(facets: Iterable[Dict[str, Any]]) -> Dict[str, Dict[str, Any]]:
+    """QIN-596：从 root_facets 结果构建 身份 → {primary, members} 映射。
+
+    合并 facet 携带 aliases；主 ID 与任一 alias 身份请求都展开为同一组，
+    使旧身份（root_xxx）与主 ID（登记来源 local_extra_*）请求同结果。
+    """
+    groups: Dict[str, Dict[str, Any]] = {}
+    for facet in facets:
+        facet_id = str(facet.get("id") or "")
+        if not facet_id:
+            continue
+        members = {facet_id}
+        for alias in facet.get("aliases") or []:
+            alias_id = str(alias or "")
+            if alias_id:
+                members.add(alias_id)
+        entry = {"primary": facet_id, "members": members}
+        for member in members:
+            groups[member] = entry
+    return groups
+
+
 def folders(root_id: Optional[str]) -> Dict[str, Any]:
     raw = readonly_registry_snapshot()
+    # QIN-596：请求身份展开为身份组并把返回身份归一到主 ID；未知身份保持
+    # 现状（无 404，返回空），静态目录与索引目录混布旧 alias 时树不重复不断链。
+    group_entry = None
+    if root_id:
+        from gw.asset_registry import index_jobs
+
+        group_entry = _root_identity_groups(index_jobs.root_facets()).get(str(root_id))
+    members = group_entry["members"] if group_entry else {str(root_id)} if root_id else set()
+    primary = group_entry["primary"] if group_entry else (str(root_id) if root_id else "")
     items = [dict(f) for f in sorted(raw["folders"].values(), key=lambda x: x["folder_id"])]
     if root_id:
-        items = [f for f in items if f.get("parent_id") == root_id]
+        items = [f for f in items if f.get("parent_id") in members]
+        for f in items:
+            f["parent_id"] = primary
     indexed: dict[tuple[str, str], dict[str, Any]] = {}
     removed_ids = _removed_root_ids()
     for asset in raw["assets"].values():
         if not _visible(asset) or _is_removed_asset(asset, removed_ids):
             continue
         source_id = str(asset.get("storage_root_id") or asset.get("root_id") or "")
-        if not source_id or (root_id and source_id != root_id):
+        if not source_id or (root_id and source_id not in members):
             continue
         relative = str(asset.get("relative_path") or asset.get("canonical_relpath") or "").replace("\\", "/").strip("/")
         folder = relative.rpartition("/")[0]
         if folder:
-            summary = indexed.setdefault((source_id, folder), {"count": 0, "categories": {}})
+            key_source = primary if root_id else source_id
+            summary = indexed.setdefault((key_source, folder), {"count": 0, "categories": {}})
             summary["count"] += 1
             category = _asset_category(asset)
             summary["categories"][category] = summary["categories"].get(category, 0) + 1
