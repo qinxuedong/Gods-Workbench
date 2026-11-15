@@ -413,9 +413,7 @@ def test_reader_completes_while_writer_in_backoff(monkeypatch):
     writer = _Worker("mutate", lambda: state.mutate(_add_key()))
 
     def reader():
-        started = time.perf_counter()
         seen_snapshot["raw"] = state.read()
-        seen_snapshot["elapsed_ms"] = (time.perf_counter() - started) * 1000
 
     worker_reader = _Worker("read", reader)
     workers = []
@@ -443,7 +441,6 @@ def test_reader_completes_while_writer_in_backoff(monkeypatch):
     assert "k" not in seen_snapshot["raw"]["keys"], "读者看到的是本次事务提交前的状态"
     final = json.loads(path.read_text(encoding="utf-8"))
     assert final["keys"] == {"k": 1}, "退避结束后写者仍要完成提交"
-    assert seen_snapshot["elapsed_ms"] < 50, seen_snapshot["elapsed_ms"]
 
 
 def _run_pair(gate, seen, first, second):

@@ -16,5 +16,5 @@
       "admission": "accepted"
     }
   ],
-  "notes": "QIN-605 Windows 索引任务状态文件读写竞争：_JobState 的 read/write 收敛到 storage.namespace_lock('registry_index_jobs') 并对瞬时 PermissionError 做有界重试（5 次尝试、退避 20/40/60/80ms，合计 ≤200ms）。重试只包住单次读写，不重跑 mutate 的 mutator，避免 _recover 的 restore 反复自增 version。仅动 index_jobs.py 状态存储，未改 gw/core/storage.py 通用原子写、索引扫描语义、端口与启动行为；基础卫生账本未改。"
+  "notes": "QIN-605 Windows 索引任务状态文件读写竞争：_JobState 采用两级锁。路径级事务锁（_transaction_lock，按状态文件绝对路径键控）串行 write(payload) 与 mutate() 的整个读-改-写事务（含重试退避），read() 不取事务锁；storage.namespace_lock 只包住单次 I/O 尝试，每次尝试后立即释放，因此退避 sleep 发生在 namespace 锁外，同命名空间读者不被阻塞。仅对瞬时 PermissionError 做有界重试（5 次尝试、退避 20/40/60/80ms，合计 ≤200ms）；重试只包单次 I/O，绝不重跑 mutate 的 mutator，避免 _recover 的 restore 反复自增 version。mutate 覆盖 JsonState.mutate 且每个事务只取一次事务锁，mutator 恰好执行一次、锁内不重读；write 是整份快照替换，不合并。副作用：读者可能读到完整提交前的快照（原子替换保证不撕裂），同状态文件写者串行等待 ≤200ms。仅动 index_jobs.py 状态存储，未改 gw/core/storage.py 通用原子写、索引扫描语义、端口与启动行为；基础卫生账本未改。"
 }
