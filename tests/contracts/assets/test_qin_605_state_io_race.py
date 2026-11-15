@@ -66,6 +66,24 @@ def _seed(payload):
     return path
 
 
+def _persisted_job(job_id):
+    """直接读状态文件，绕过服务内存投影：这是轮询竞争真正落盘的结果。"""
+    raw = json.loads(storage.file_for(STATE_NAMESPACE).read_text(encoding="utf-8"))
+    return raw["jobs"][job_id]
+
+
+def _committed_receipt(job_id, attempt):
+    """读注册表里的提交收据（独立状态文件、与任务状态分属两个命名空间）。"""
+    from gw.asset_registry import repository as repo
+
+    return (
+        repo.state()
+        .read()
+        .get("index_job_receipts", {})
+        .get(f"{job_id}:{attempt}")
+    )
+
+
 def _flaky_replace(monkeypatch, *, target, failures):
     """把 storage 模块看到的 os.replace 换成「前 failures 次对 target 抛共享冲突」。
 
@@ -217,7 +235,14 @@ def race_runtime(tmp_path, monkeypatch):
 
 
 def test_index_job_survives_transient_state_replace_conflict(race_runtime, monkeypatch):
-    """AC4：轮询期间的瞬时状态盘冲突不得让任务误报 failed 或误增 error_count。"""
+    """AC4：同一注入场景下，收据、持久终态与冷读三处必须互相一致。
+
+    前面的轮询断言只覆盖「接口报出的终态」。收据与冷读在别处单独测过，但那里
+    没有注入竞争，不能替代同场景证据。这里在**同一次注入**里补三步：
+    1. 读注册表提交收据（与任务状态分属两个命名空间，不受本次冲突影响）；
+    2. 直接读状态文件，确认落盘的就是 succeeded + 零错误 + 与收据相同的 result；
+    3. 关掉应用后新建 service 冷读，对照终态字段与接口观测值。
+    """
     seen_conflicts = _flaky_replace(
         monkeypatch, target=storage.file_for(STATE_NAMESPACE), failures=2
     )
@@ -244,6 +269,33 @@ def test_index_job_survives_transient_state_replace_conflict(race_runtime, monke
     assert job["status"] == "succeeded", job
     assert job["progress"]["error_count"] == 0, observed
     assert all(status != "failed" for status, _ in observed), observed
+
+    # 1) 注册表提交收据没有在冲突窗口里丢失，且就是任务终态的结果。
+    persisted = _persisted_job(job_id)
+    receipt = _committed_receipt(job_id, persisted["attempt"])
+    assert receipt is not None, "成功任务必须在注册表留下提交收据"
+    assert isinstance(receipt, dict) and "revision" in receipt, receipt
+    assert job["result"] == receipt, "接口投影的结果必须就是注册表收据"
+
+    # 2) 落盘终态：succeeded、零错误、结果与收据逐字段相同。
+    assert persisted["status"] == "succeeded", persisted
+    assert persisted["phase"] == "completed", persisted
+    assert persisted["error_code"] is None, persisted
+    assert persisted["error_count"] == 0, persisted
+    assert persisted["result"] == receipt, "任务终态结果必须与收据一致"
+
+    # 3) 冷读：应用已关闭，新建 service/store 从盘上重建，终态不得漂移。
+    cold = jobs.service()
+    cold_raw = cold.store.read()["jobs"][job_id]
+    cold_view = cold.public(cold._committed_truth(cold_raw))
+    for field in ("status", "phase", "attempt", "error_count", "result", "error_code"):
+        assert cold_raw[field] == persisted[field], f"冷读 {field} 与落盘终态不一致"
+    assert cold_view["result"] == receipt
+    assert (
+        cold_view["status"],
+        cold_view["attempt"],
+        cold_view["progress"]["error_count"],
+    ) == (job["status"], job["attempt"], job["progress"]["error_count"])
 
 
 # ---------------------------------------------------------------------------
