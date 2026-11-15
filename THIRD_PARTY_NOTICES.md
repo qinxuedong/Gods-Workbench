@@ -26,6 +26,21 @@ The following open-source Python packages are used by the backend runtime (`gw/`
 | **langgraph** | 1.2.12 | MIT | LangChain ([release metadata](https://pypi.org/project/langgraph/1.2.12/)) |
 | **jsonschema** | 4.26.0 | MIT | Julian Berman and contributors ([release metadata](https://pypi.org/project/jsonschema/4.26.0/)) |
 
+### 1.1 External Runtime-probed Dependencies（运行时探测的外部依赖）
+
+The following external tools are **not bundled, not distributed, and not installed** by
+this project. They are located at runtime (PATH or the `GW_FFMPEG` environment variable)
+and the dependent capabilities fail closed (HTTP 503 with a stable error code) when absent.
+
+| Tool | License options | Upstream |
+| :--- | :--- | :--- |
+| **FFmpeg** / **FFprobe** | LGPL-2.1-or-later, or GPL-2.0-or-later (with configure options enabling GPL components, e.g. libx264 which is GPL-2.0-or-later) | [ffmpeg.org](https://ffmpeg.org) |
+
+> Note: FFmpeg is an optional external dependency located at runtime via `shutil.which`
+> (PATH) or the `GW_FFMPEG` directory override; it is invoked as a separate subprocess
+> and is never redistributed, vendored, or shipped with Gods-Workbench. Users install
+> their own build, whose effective license follows their chosen build configuration.
+
 ---
 
 ## 2. Frontend Vendor Assets (`web/vendor/`)

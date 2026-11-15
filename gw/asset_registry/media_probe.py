@@ -25,7 +25,6 @@ import hashlib
 import json
 import math
 import re
-import shutil
 import subprocess
 from pathlib import Path
 from typing import Any
@@ -33,6 +32,7 @@ from typing import Any
 from gw.asset_registry import repository as repo
 from gw.core import storage
 from gw.core.errors import CleanroomException
+from gw.core.ffmpeg_resolver import resolve_ffmpeg_tool
 
 VIDEO_SUFFIXES = frozenset(".mp4 .mov .mkv .avi .webm .m4v .flv .wmv".split())
 FFPROBE_TIMEOUT = 20
@@ -60,7 +60,7 @@ STORYBOARD_TAIL_WINDOW_MAX_SEC = 1.0
 
 def _ffmpeg(name: str) -> str:
     """定位 ffmpeg/ffprobe；缺失即失败关闭（不静默降级）。"""
-    path = shutil.which(name)
+    path = resolve_ffmpeg_tool(name).path
     if not path:
         repo._unavailable(
             "/api/asset-registry",
@@ -321,8 +321,10 @@ def _parse_jxl_header(data: bytes) -> dict[str, Any] | None:
 
 
 def _probe_jxl_ffprobe(path: Path) -> dict[str, Any] | None:
-    """头部格式超出轻量解析范围时，尝试复用已安装的 ffprobe。"""
-    ffprobe = shutil.which("ffprobe")
+    """头部格式超出轻量解析范围时，尝试复用已安装的 ffprobe（软探测点）。"""
+    # 软探测点（QIN-607）：ffprobe 不可用（含 GW_FFMPEG 无效）时走既有保守回退
+    # （轻量头解析），不回退 PATH；硬失败点已失败关闭。
+    ffprobe = resolve_ffmpeg_tool("ffprobe").path
     if not ffprobe:
         return None
     try:

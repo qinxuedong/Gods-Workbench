@@ -18,13 +18,13 @@ from __future__ import annotations
 
 import json
 import math
-import shutil
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 from gw.core.errors import CleanroomException
+from gw.core.ffmpeg_resolver import resolve_ffmpeg_tool
 from gw.media.keyframe_extractor import decode_keyframe_to_memory
 from gw.media.scene_detector import detect_scenes
 
@@ -70,7 +70,7 @@ def _parse_frame_rate(raw: Any) -> float:
 
 
 def _probe_metadata(path: Path) -> dict[str, Any]:
-    ffprobe = shutil.which("ffprobe")
+    ffprobe = resolve_ffmpeg_tool("ffprobe").path
     if not ffprobe:
         _fail(503, "FFMPEG_NOT_AVAILABLE", "本地媒体处理依赖不可用")
     try:

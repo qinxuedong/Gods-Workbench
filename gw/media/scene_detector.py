@@ -19,12 +19,12 @@ from __future__ import annotations
 import json
 import math
 import re
-import shutil
 import subprocess
 from pathlib import Path
 from typing import Any
 
 from gw.core.errors import CleanroomException
+from gw.core.ffmpeg_resolver import resolve_ffmpeg_tool
 
 _VIDEO_SUFFIXES = frozenset(
     {".mp4", ".mov", ".mkv", ".avi", ".webm", ".m4v", ".flv", ".wmv"}
@@ -48,7 +48,7 @@ def _video_path(video_path: str | Path) -> Path:
 
 
 def _tool(name: str) -> str:
-    path = shutil.which(name)
+    path = resolve_ffmpeg_tool(name).path
     if not path:
         _fail(503, "FFMPEG_NOT_AVAILABLE", "本地媒体处理依赖不可用")
     return path

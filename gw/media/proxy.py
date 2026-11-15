@@ -24,7 +24,6 @@ import hashlib
 import json
 import os
 import re
-import shutil
 import subprocess
 from datetime import UTC, datetime
 from pathlib import Path
@@ -35,6 +34,7 @@ from gw.asset_registry import repository as asset_registry_repo
 from gw.core import storage
 from gw.core.errors import CleanroomException
 from gw.media import repository as media_repo
+from gw.core.ffmpeg_resolver import resolve_ffmpeg_tool
 
 VIDEO_SUFFIXES = frozenset(
     {".mp4", ".mov", ".mkv", ".avi", ".webm", ".m4v", ".flv", ".wmv"}
@@ -308,7 +308,9 @@ def _image_proxy(path: Path, width: int, target_base: Path) -> dict[str, Any]:
 
 def _probe_video_metadata(path: Path) -> dict[str, Any]:
     """读取代理判定需要的轻量视频元数据；探测不可用时回退原代理规格。"""
-    ffprobe = shutil.which("ffprobe")
+    # 软探测点（QIN-607）：ffprobe 不可用（含 GW_FFMPEG 无效）时走既有保守回退，
+    # 不回退 PATH；最终转码执行点 _ffmpeg_proxy 会失败关闭。
+    ffprobe = resolve_ffmpeg_tool("ffprobe").path
     if not ffprobe:
         return {}
     try:
@@ -367,7 +369,7 @@ def _720p_proxy_dimensions(video_metadata: dict[str, Any]) -> tuple[int, int]:
 def _ffmpeg_proxy(
     path: Path, width: int, target: Path, *, target_height: int | None = None
 ) -> dict[str, Any]:
-    ffmpeg = shutil.which("ffmpeg")
+    ffmpeg = resolve_ffmpeg_tool("ffmpeg").path
     if not ffmpeg:
         raise CleanroomException(
             503,

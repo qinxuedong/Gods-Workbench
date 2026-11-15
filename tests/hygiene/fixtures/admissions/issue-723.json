@@ -1,0 +1,50 @@
+{
+  "schema": "gw.cleanroom-admission-shard/v1",
+  "issue": 723,
+  "authorization_basis": "GitHub Issue #723, 2026-11-15 (QIN-607 设计表确认评论)",
+  "files": [
+    "gw/core/ffmpeg_resolver.py",
+    "gw/media/proxy.py",
+    "gw/media/lut_render.py",
+    "gw/media/ffmpeg_master.py",
+    "gw/media/keyframe_extractor.py",
+    "gw/media/scene_detector.py",
+    "gw/media/asset_extract.py",
+    "gw/media/repository.py",
+    "gw/asset_registry/media_probe.py",
+    "gw/video_tasks/service.py",
+    "gw/api/routes_media.py",
+    "gw/api/app.py",
+    "docs/contracts/MEDIA-INTERFACE-CATALOG.yaml",
+    "docs/fixtures/phase11-b5-media-boundary.json",
+    "THIRD_PARTY_NOTICES.md",
+    "README.md",
+    "tests/media/test_ffmpeg_resolver.py",
+    "tests/media/test_ffmpeg_env_callpoints.py",
+    "tests/contracts/media/test_ffmpeg_doctor.py",
+    "tests/contracts/assets/test_phase11_b5_media.py",
+    "tests/hygiene/fixtures/admissions/issue-723.json"
+  ],
+  "admitted_files": [],
+  "accepted_test_files": [
+    {
+      "path": "tests/media/test_ffmpeg_resolver.py",
+      "classification": "curated_test_coverage",
+      "authorization_basis": "GitHub Issue #723, 2026-11-15",
+      "admission": "accepted"
+    },
+    {
+      "path": "tests/media/test_ffmpeg_env_callpoints.py",
+      "classification": "curated_test_coverage",
+      "authorization_basis": "GitHub Issue #723, 2026-11-15",
+      "admission": "accepted"
+    },
+    {
+  "path": "tests/contracts/media/test_ffmpeg_doctor.py",
+      "classification": "curated_test_coverage",
+      "authorization_basis": "GitHub Issue #723, 2026-11-15",
+      "admission": "accepted"
+    }
+  ],
+  "notes": "QIN-607：FFmpeg 路径解析统一（GW_FFMPEG 覆盖 + doctor 自检 + 第三方许可证登记）。共享解析模块 + 12 处调用点切换 + doctor 端点契约登记 + 启动摘要 + NOTICES/README 登记。"
+}

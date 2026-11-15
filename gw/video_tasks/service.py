@@ -21,7 +21,6 @@ import http.client
 import ipaddress
 import json
 import math
-import shutil
 import socket
 import subprocess
 import threading
@@ -34,6 +33,7 @@ from gw.asset_registry import repository as asset_repo
 from gw.core import storage as core_storage
 from gw.core.errors import CleanroomException
 from gw.god_canvas.service import default_god_canvas_service
+from gw.core.ffmpeg_resolver import resolve_ffmpeg_tool
 from gw.projects_hub.service import default_projects_service
 from gw.settings import execution_config
 
@@ -822,7 +822,8 @@ class VideoTaskService:
             for asset_id in request["asset_ids"]
         ]
         width, height, fps = EXPORT_PRESETS[request["preset"]]
-        ffmpeg, ffprobe = shutil.which("ffmpeg"), shutil.which("ffprobe")
+        ffmpeg = resolve_ffmpeg_tool("ffmpeg").path
+        ffprobe = resolve_ffmpeg_tool("ffprobe").path
         if not ffmpeg or not ffprobe:
             raise _err("VIDEO_FFMPEG_UNAVAILABLE", "本机 ffmpeg/ffprobe 不可用")
         for path in paths:
@@ -917,7 +918,7 @@ class VideoTaskService:
 
     @staticmethod
     def _probe(path: Path) -> dict[str, Any]:
-        ffprobe = shutil.which("ffprobe")
+        ffprobe = resolve_ffmpeg_tool("ffprobe").path
         if not ffprobe:
             raise _err("VIDEO_FFPROBE_UNAVAILABLE", "本机 ffprobe 不可用")
         try:

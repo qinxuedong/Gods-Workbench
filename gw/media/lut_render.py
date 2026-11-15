@@ -29,11 +29,11 @@ from __future__ import annotations
 import array
 import math
 from pathlib import Path
-import shutil
 import subprocess
 import tempfile
 
 from gw.asset_registry.lut_cube import LutCubeError, parse_lut_cube_bytes
+from gw.core.ffmpeg_resolver import resolve_ffmpeg_tool
 
 #: 图片直出的像素数上限（约 8K 单帧）。超过即明确失败，绝不静默降采样。
 MAX_IMAGE_PIXELS = 40_000_000
@@ -261,7 +261,7 @@ def render_video_to_mp4(
     source: Path, cube_path: Path, strength: float, output: Path
 ) -> dict:
     """用 ffmpeg ``lut3d`` 转码视频，强度以原图/调色图混合近似。"""
-    ffmpeg = shutil.which("ffmpeg")
+    ffmpeg = resolve_ffmpeg_tool("ffmpeg").path
     if not ffmpeg:
         raise LutRenderError("FFMPEG_NOT_AVAILABLE", "未找到 ffmpeg，视频转码不可用")
     ratio = _clamp01(float(strength))

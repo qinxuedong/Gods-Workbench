@@ -127,6 +127,26 @@ async def _app_lifespan(app: FastAPI):
         # 只释放本 lifespan 自己拿到的锁；run.py 预先持有的锁由进程退出时释放。
         owned_data_lock = None if preheld else app.state.data_dir_lock
         default_god_canvas_service.recover_interrupted_jobs()
+        # FFmpeg/FFprobe 部署自检一行摘要（QIN-607）：无路径回显，异常不阻断启动。
+        try:
+            import logging
+
+            from gw.core.ffmpeg_resolver import probe_tool_version, resolve_ffmpeg_tool
+
+            _parts = []
+            for _tool_name in ("ffmpeg", "ffprobe"):
+                _r = resolve_ffmpeg_tool(_tool_name)
+                if _r.path:
+                    _version = probe_tool_version(_r.path)
+                    _parts.append(
+                        "%s=有 来源=%s 版本=%s"
+                        % (_tool_name, _r.source, _version or "未知")
+                    )
+                else:
+                    _parts.append("%s=无 来源=%s" % (_tool_name, _r.source))
+            logging.getLogger("gw.api.app").info("FFmpeg 自检：%s", "；".join(_parts))
+        except Exception:  # pragma: no cover - 自检失败绝不阻断启动
+            logging.getLogger("gw.api.app").warning("FFmpeg 自检执行异常（不阻断启动）")
         # 确保资产整理版本文件在启动时已存在（新部署冷启动初始化，已有文件不覆盖）
         try:
             from gw.asset_library.organize import init_organize_version_file

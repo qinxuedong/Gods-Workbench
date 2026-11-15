@@ -450,3 +450,32 @@ async def online_image(
     """真实抓取远端图片；SSRF 受限地址 403，网络失败 503。"""
     _write(authorization, x_user_role)
     return repo.fetch_remote_image(await _json(request))
+
+
+# ---------------------------------------------------------------------------
+# FFmpeg 自检（doctor；QIN-607）
+# ---------------------------------------------------------------------------
+
+
+@router.get("/api/media/ffmpeg-doctor", status_code=status.HTTP_200_OK)
+def get_media_ffmpeg_doctor(
+    authorization: str | None = Header(None),
+    x_user_role: str = Header("editor", alias="X-User-Role"),
+):
+    """FFmpeg/FFprobe 部署自检：found/source/version 三态，无绝对路径回显。"""
+    _read(authorization, x_user_role)
+    from gw.core.ffmpeg_resolver import probe_tool_version, resolve_ffmpeg_tool
+
+    result: dict[str, Any] = {}
+    for name in ("ffmpeg", "ffprobe"):
+        resolution = resolve_ffmpeg_tool(name)
+        entry: dict[str, Any] = {
+            "found": resolution.path is not None,
+            "source": resolution.source,
+        }
+        if resolution.path:
+            entry["version"] = probe_tool_version(resolution.path)
+        else:
+            entry["version"] = None
+        result[name] = entry
+    return result

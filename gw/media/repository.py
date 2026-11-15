@@ -47,6 +47,7 @@ from urllib.parse import urlparse
 
 from gw.core import storage
 from gw.core.errors import CleanroomException
+from gw.core.ffmpeg_resolver import resolve_ffmpeg_tool
 
 NS_SETTINGS = "media_settings"
 NS_JOBS = "media_jobs"
@@ -146,7 +147,7 @@ def _unavailable(endpoint: str, code: str, message: str) -> None:
 
 
 def _tool(name: str) -> str:
-    path = shutil.which(name)
+    path = resolve_ffmpeg_tool(name).path
     if not path:
         _unavailable(
             "/api/media", "FFMPEG_NOT_AVAILABLE", "未找到 %s，媒体处理能力不可用" % name

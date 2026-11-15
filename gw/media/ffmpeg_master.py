@@ -20,13 +20,13 @@ import hashlib
 import json
 import math
 import os
-import shutil
 import subprocess
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
 from gw.core.errors import CleanroomException
+from gw.core.ffmpeg_resolver import resolve_ffmpeg_tool
 
 WIDTH = 1920
 HEIGHT = 1080
@@ -385,8 +385,9 @@ def render_master_mp4(
     timeout: int = 900,
 ) -> dict[str, Any]:
     """运行本地 FFmpeg，硬件编码失败时回退 CPU，并原子发布已核验 MP4。"""
-    ffmpeg = ffmpeg_path or shutil.which("ffmpeg")
-    ffprobe = ffprobe_path or shutil.which("ffprobe")
+    # 显式参数优先（测试注入用）；否则走统一解析（GW_FFMPEG 优先，无效不回退 PATH）。
+    ffmpeg = ffmpeg_path or resolve_ffmpeg_tool("ffmpeg").path
+    ffprobe = ffprobe_path or resolve_ffmpeg_tool("ffprobe").path
     if not ffmpeg or not ffprobe:
         _fail(503, "FFMPEG_UNAVAILABLE", "本机未安装 FFmpeg/FFprobe")
     raw_video, _raw_audio = _tracks(manifest)

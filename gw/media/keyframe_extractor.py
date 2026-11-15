@@ -20,7 +20,6 @@ import io
 import json
 import math
 import os
-import shutil
 import subprocess
 from collections.abc import Iterable, Mapping
 from pathlib import Path
@@ -29,6 +28,7 @@ from typing import Any
 from PIL import Image
 
 from gw.core.errors import CleanroomException
+from gw.core.ffmpeg_resolver import resolve_ffmpeg_tool
 
 _PROCESS_TIMEOUT_SECONDS = 120
 _THUMBNAIL_WIDTH = 320
@@ -40,7 +40,7 @@ def _fail(status: int, code: str, message: str) -> None:
 
 
 def _tool(name: str) -> str:
-    path = shutil.which(name)
+    path = resolve_ffmpeg_tool(name).path
     if not path:
         _fail(503, "FFMPEG_NOT_AVAILABLE", "本地媒体处理依赖不可用")
     return path
