@@ -139,6 +139,7 @@ test('QIN-566 AC7: 创建与挂载操作使用共享硬件按钮类', () => {
   assert.match(createButton, /WorkbenchAssets\.openCreateAssetLibrary\(\)/);
   assert.match(controller, /async function openCreateAssetLibrary\(\)/);
   assert.match(manager, /parent\?\.document\?\.getElementById\('assetSidebarCreate'\)/);
-  assert.match(functionSource('renderAssetTreePanel'), /class="hw-btn hw-btn-gold" type="button" data-asset-tree-mount aria-label="挂载文件夹"/);
+  // QIN-596：侧栏按钮文案更新为「+ 添加资源文件夹」（QIN-596 AC2），按钮类与分发不变。
+  assert.match(functionSource('renderAssetTreePanel'), /class="hw-btn hw-btn-gold" type="button" data-asset-tree-mount aria-label="\+ 添加资源文件夹"/);
   assert.match(managerCss, /\.asset-tree-footer \.hw-btn \{ width:100%; \}/);
 });
