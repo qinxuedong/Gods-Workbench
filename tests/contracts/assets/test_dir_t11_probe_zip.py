@@ -174,7 +174,7 @@ def test_video_proxy_timeout_has_its_own_degraded_code(tmp_path, monkeypatch):
     output.mkdir()
     monkeypatch.setenv("GW_ALLOWED_ROOTS", str(roots))
     monkeypatch.setattr(media_proxy, "_output_dir", lambda: output)
-    monkeypatch.setattr(media_proxy.shutil, "which", lambda _name: "ffmpeg")
+    monkeypatch.setattr("shutil.which", lambda _name: "ffmpeg")
 
     def timeout(cmd, **kwargs):
         partial = Path(cmd[-1])

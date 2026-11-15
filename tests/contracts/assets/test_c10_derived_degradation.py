@@ -7,7 +7,6 @@ from fastapi.testclient import TestClient
 
 from gw.api.app import create_app
 from gw.asset_registry import index_jobs as jobs
-from gw.asset_registry import media_probe
 
 BASE = "/api/asset-registry"
 AUTH = {"Authorization": "Bearer index-owner", "X-User-Role": "editor"}
@@ -128,7 +127,7 @@ def test_missing_media_dependency_is_fail_closed(index_runtime, monkeypatch):
             item["asset_id"] for item in assets if item["name"] == video.name
         )
 
-        monkeypatch.setattr(media_probe.shutil, "which", lambda name: None)
+        monkeypatch.setattr("shutil.which", lambda name: None)
         response = client.get(
             f"{BASE}/assets/{asset_id}/video/frame?at=0", headers=AUTH
         )

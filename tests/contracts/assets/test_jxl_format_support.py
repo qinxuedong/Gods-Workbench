@@ -121,7 +121,7 @@ def test_jxl_collector_registration_and_direct_media_response(tmp_path, monkeypa
 def test_jxl_metadata_falls_back_to_ffprobe(tmp_path, monkeypatch):
     image = tmp_path / "unsupported.jxl"
     image.write_bytes(b"unsupported-header")
-    monkeypatch.setattr(media_probe.shutil, "which", lambda name: "ffprobe")
+    monkeypatch.setattr("shutil.which", lambda name: "ffprobe")
 
     def fake_run(args, **kwargs):
         return subprocess.CompletedProcess(

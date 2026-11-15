@@ -68,7 +68,7 @@ def test_probe_video_metadata_ffprobe_encoding_args(tmp_path, monkeypatch):
             stderr="",
         )
 
-    monkeypatch.setattr("gw.media.proxy.shutil.which", lambda name: "ffprobe")
+    monkeypatch.setattr("shutil.which", lambda name: "ffprobe")
     monkeypatch.setattr("gw.media.proxy.subprocess.run", fake_run)
 
     meta = _probe_video_metadata(chinese_video)
