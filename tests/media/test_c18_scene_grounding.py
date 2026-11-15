@@ -39,7 +39,7 @@ def test_detect_scenes_builds_millisecond_segment_metadata(tmp_path, monkeypatch
             ),
         )
 
-    monkeypatch.setattr("gw.media.scene_detector.shutil.which", lambda name: name)
+    monkeypatch.setattr("shutil.which", lambda name: name)
     monkeypatch.setattr("gw.media.scene_detector.subprocess.run", fake_run)
 
     scenes = detect_scenes(video)
