@@ -73,7 +73,9 @@ test('AC1: 虚拟化阈值 120 条语义未被改动（100 普通网格、200 �
 });
 
 test('AC2: 预览预取带入视口提前量', () => {
-    assert.match(MANAGER, /const REGISTRY_PREVIEW_ROOT_MARGIN = '200px 0px';/);
+    // 【QIN-609】提前量 200px→96px：点击-settle 协议内的预览请求收敛到视口必需集，
+    // 滚动缓冲由 8 并发队列 + scroll rAF 激活兜底（票面预授权的旧断言按新行为更新）。
+    assert.match(MANAGER, /const REGISTRY_PREVIEW_ROOT_MARGIN = '96px 0px';/);
     assert.doesNotMatch(MANAGER, /REGISTRY_PREVIEW_ROOT_MARGIN = '0px 0px'/);
     assert.match(MANAGER, /\{root:scrollRoot, rootMargin:REGISTRY_PREVIEW_ROOT_MARGIN\}/);
 });
