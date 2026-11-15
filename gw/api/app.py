@@ -15,6 +15,7 @@
 """FastAPI 洁净室应用工厂与核心中间件。"""
 
 import contextlib
+import logging
 import os
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -102,6 +103,30 @@ CSRF_ORIGIN_EXEMPT_PATHS = frozenset({
 })
 
 
+def _ensure_app_logger_handler() -> None:
+    """给 ``gw.api.app`` logger 幂等挂 stderr handler（QIN-607 QA 阻断项修复）。
+
+    全仓不配置 root logging，默认启动（run.py → uvicorn.run 无 log_config）下
+    无 handler 的 logger 由 ``lastResort``（WARNING 级）过滤；且本 logger 有效
+    级别继承 root 的 WARNING，info 记录在 logger 入口即被丢弃。本修复同时
+    1) 幂等挂 stderr StreamHandler（INFO 起）与 2) 把 logger 级别设为 INFO，
+    使 info 级启动摘要默认可见；只影响本 logger，不动 run.py、不碰全仓日志
+    配置；propagate 保持 True，pytest caplog 等既有捕获通道不受影响。
+    """
+    logger = logging.getLogger("gw.api.app")
+    if not any(isinstance(item, logging.StreamHandler) for item in logger.handlers):
+        handler = logging.StreamHandler()
+        handler.setFormatter(
+            logging.Formatter("%(levelname)s:%(name)s:%(message)s")
+        )
+        handler.setLevel(logging.INFO)
+        logger.addHandler(handler)
+    logger.setLevel(logging.INFO)
+
+
+_ensure_app_logger_handler()
+
+
 @asynccontextmanager
 async def _app_lifespan(app: FastAPI):
     """启动同进程Agent工作器，并在关闭时停止全部托管后台执行。
@@ -129,8 +154,6 @@ async def _app_lifespan(app: FastAPI):
         default_god_canvas_service.recover_interrupted_jobs()
         # FFmpeg/FFprobe 部署自检一行摘要（QIN-607）：无路径回显，异常不阻断启动。
         try:
-            import logging
-
             from gw.core.ffmpeg_resolver import probe_tool_version, resolve_ffmpeg_tool
 
             _parts = []
@@ -152,7 +175,6 @@ async def _app_lifespan(app: FastAPI):
             from gw.asset_library.organize import init_organize_version_file
             init_organize_version_file(1)
         except Exception as _vf_err:
-            import logging
             logging.getLogger("gw.api.app").warning(
                 "资产整理版本文件初始化失败，整理接口在修复前将不可用: %s", _vf_err
             )
@@ -165,7 +187,6 @@ async def _app_lifespan(app: FastAPI):
                 stop_integration = stop_agent_integration
                 await start_agent_integration(app)
             except (ImportError, ModuleNotFoundError) as dep_err:
-                import logging
                 logging.getLogger("gw.api.app").warning(
                     "Agent 集成因缺少可选运行期依赖未启动 (%s)，应用在兼容模式下正常运行", dep_err
                 )
