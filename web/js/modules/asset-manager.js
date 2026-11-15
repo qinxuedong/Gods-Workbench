@@ -5036,6 +5036,13 @@ function scheduleRegistryPreviewFallback(scrollRoot){
     let lastScrollPreloadAt = Number.NEGATIVE_INFINITY;
     const activateVisible = (preloadOutsideViewport=false) => {
         const rootRect = scrollRoot.getBoundingClientRect();
+        // 【QIN-609】页面级滚动布局下容器 rect 是内容全高，「视口」必须取容器与
+        // window 视口的交集并用 rootMargin 同款 96px 提前量扩展；否则全部 defer
+        // 都被当成「视口内」瞬间激活，视口优先与预载分支双双失效。
+        const viewportTop = Math.max(rootRect.top, 0);
+        const viewportBottom = Math.min(rootRect.bottom, window.innerHeight || 0);
+        const viewTop = viewportTop - 96;
+        const viewBottom = viewportBottom + 96;
         const previews = [...root.querySelectorAll('img[data-registry-preview-src]')]
             .filter(image => image.dataset.registryPreviewQueued !== 'true')
             .map(image => ({
@@ -5044,12 +5051,13 @@ function scheduleRegistryPreviewFallback(scrollRoot){
             }))
             .filter(({rect}) => rect.right >= rootRect.left && rect.left <= rootRect.right);
         previews.forEach(({image,rect}) => {
-            const visible = rect.bottom >= rootRect.top && rect.top <= rootRect.bottom;
-            // 【QIN-609】视口内激活插队首（AC2 视口优先）；视口外 wheel 预载走队尾。
-            if(visible) activateRegistryPreviewImage(image, true);
+            const inVisualViewport = rect.bottom >= viewportTop && rect.top <= viewportBottom;
+            const visible = rect.bottom >= viewTop && rect.top <= viewBottom;
+            // 可视察口内插队首（AC2 视口优先）；96px 提前量内的视口外卡片同帧激活但不插队。
+            if(visible) activateRegistryPreviewImage(image, inVisualViewport);
         });
         if(!preloadOutsideViewport) return;
-        previews.filter(({rect}) => rect.top >= rootRect.bottom)
+        previews.filter(({rect}) => rect.top >= viewBottom)
             .sort((a,b) => a.rect.top - b.rect.top || a.rect.left - b.rect.left)
             .slice(0, REGISTRY_PREVIEW_SCROLL_AHEAD_COUNT)
             .forEach(({image}) => activateRegistryPreviewImage(image));

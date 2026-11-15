@@ -678,7 +678,7 @@ test('QIN-504 AC7: 只在向下滚动时预加载视口外下一批20张预览',
         return true;
     };
     const buildScheduler = new Function(
-        'root','REGISTRY_PREVIEW_SCROLL_AHEAD_COUNT','requestAnimationFrame','activateRegistryPreviewImage','performance','REGISTRY_PREVIEW_SCROLL_PRELOAD_INTERVAL_MS',
+        'root','REGISTRY_PREVIEW_SCROLL_AHEAD_COUNT','requestAnimationFrame','activateRegistryPreviewImage','performance','REGISTRY_PREVIEW_SCROLL_PRELOAD_INTERVAL_MS','window',
         `let registryPreviewFallbackCleanup = null;\n${functionSource('scheduleRegistryPreviewFallback')}\nreturn scheduleRegistryPreviewFallback;`,
     );
     const schedule = buildScheduler(
@@ -688,6 +688,7 @@ test('QIN-504 AC7: 只在向下滚动时预加载视口外下一批20张预览',
         activate,
         {now:() => currentTime},
         120,
+        {innerHeight: 600, scrollY: 0},  // 【QIN-609】可视视口交集判定需要 window.innerHeight
     );
     schedule(scrollRoot);
     assert.deepEqual(activated, visibleImages.map(image => image.id));

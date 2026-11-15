@@ -32,6 +32,103 @@ test('QIN-609 AC1/AC3：IO 视口提前量收窄到 96px，settle 协议内请�
     assert.doesNotMatch(source, /REGISTRY_PREVIEW_ROOT_MARGIN = '200px/);
 });
 
+test('QIN-609 mutation 防线：滚轮预载提前量常量与预载语义不被静默移除', () => {
+    // 把 REGISTRY_PREVIEW_SCROLL_AHEAD_COUNT 改成 0 的变异必须让本测试变红：
+    // 预载 20 张是滚动体验的兜底，也是 AC2 请求级对比里「视口外请求」的来源。
+    assert.match(source, /const REGISTRY_PREVIEW_SCROLL_AHEAD_COUNT = 20;/);
+    // 预载激活不带 priority（走队尾 push）：与视口内插队（unshift）构成优先级对照面。
+    const preloadLine = source.match(/\.slice\(0, REGISTRY_PREVIEW_SCROLL_AHEAD_COUNT\)[\s\S]{0,120}activateRegistryPreviewImage/);
+    assert.ok(preloadLine, '未找到 wheel 预载激活调用');
+    assert.doesNotMatch(preloadLine[0], /,\s*true\)/, 'wheel 预载不得插队');
+});
+
+test('QIN-609 运行时：视口内激活插队首，先于先入队的 wheel 预载项出队赋 src', () => {
+    const buildQueue = new Function(
+        'document',
+        `const registryPreviewQueue = [];
+        let registryPreviewActive = 0;
+        const registryPreviewInFlight = new Set();
+        const REGISTRY_PREVIEW_CONCURRENCY = 8;
+        const applyRegistryVirtualPreviewAspect = () => {};
+        const scheduleRegistryVirtualRemeasure = () => {};
+        ${functionBody('pumpRegistryPreviewQueue')}
+        ${functionBody('activateRegistryPreviewImage')}
+        return {activate: activateRegistryPreviewImage};`,
+    );
+    const {activate} = buildQueue({});
+
+    const makeImg = (id) => ({
+        id,
+        isConnected: true,
+        dataset: {registryPreviewSrc: `/thumb/${id}.png`},
+        listeners: {},
+        _src: null,
+        set src(v){ this._src = v; },
+        get src(){ return this._src; },
+        addEventListener(name, fn){ this.listeners[name] = fn; },
+        removeAttribute(){},
+        closest(){ return null; },
+    });
+    // 并发上限 8：先用 8 个占位项占满槽位（load 挂起不触发），再对比两类激活的出队顺序。
+    const slots = Array.from({length: 8}, (_, i) => makeImg(`slot-${i}`));
+    slots.forEach(img => assert.ok(activate(img, false), '占位项出队'));
+    // wheel 预载项（队尾 push）
+    const pre1 = makeImg('pre1');
+    const pre2 = makeImg('pre2');
+    assert.ok(activate(pre1, false), '预载项队尾入队');
+    assert.ok(activate(pre2, false), '预载项队尾入队');
+    // 视口内项（插队首）
+    const viewport = makeImg('viewport');
+    assert.ok(activate(viewport, true), '视口内项插队首');
+    assert.equal(viewport._src, null, '并发满时新项排队');
+    // 释放一个槽位（占位项 load 完成）：队首（视口内项）先出队
+    slots[0].listeners.load();
+    assert.equal(viewport._src, '/thumb/viewport.png', '视口内项先于预载项出队赋 src');
+    assert.equal(pre1._src, null, 'wheel 预载项仍排队');
+    assert.equal(pre2._src, null, 'wheel 预载项仍排队');
+});
+
+test('QIN-609 运行时：断连项由 pump 清扫释放槽位，切目录后队列继续消化', () => {
+    const buildQueue = new Function(
+        'document',
+        `const registryPreviewQueue = [];
+        let registryPreviewActive = 0;
+        const registryPreviewInFlight = new Set();
+        const REGISTRY_PREVIEW_CONCURRENCY = 8;
+        const applyRegistryVirtualPreviewAspect = () => {};
+        const scheduleRegistryVirtualRemeasure = () => {};
+        ${functionBody('pumpRegistryPreviewQueue')}
+        ${functionBody('activateRegistryPreviewImage')}
+        return {activate: activateRegistryPreviewImage};`,
+    );
+    const {activate} = buildQueue({});
+    const makeImg = (id) => ({
+        id,
+        isConnected: true,
+        dataset: {registryPreviewSrc: `/thumb/${id}.png`},
+        listeners: {},
+        _src: null,
+        set src(v){ this._src = v; },
+        get src(){ return this._src; },
+        addEventListener(name, fn){ this.listeners[name] = fn; },
+        removeAttribute(){},
+        closest(){ return null; },
+    });
+    // 填满 8 个槽位
+    const zombies = Array.from({length: 8}, (_, i) => makeImg(`zombie-${i}`));
+    zombies.forEach(img => { assert.ok(activate(img, true)); });
+    zombies.forEach(img => { img.isConnected = false; });  // 模拟切目录 DOM 重建
+    // 新目录的新卡激活：pump 清扫 8 个断连项后立刻消化新项
+    const fresh = makeImg('fresh');
+    assert.equal(activate(fresh, true), true, '新卡激活');
+    assert.equal(fresh._src, '/thumb/fresh.png', '断连槽位被清扫释放，新卡立即赋 src');
+    const failed = makeImg('failed');
+    assert.equal(activate(failed, true), true);
+    failed.listeners.error();
+    assert.equal(failed.dataset.registryPreviewFailed, 'true', '失败不误标成功');
+    assert.notEqual(failed.dataset.registryPreviewLoaded, 'false', '失败项不回队重试');
+});
+
 test('QIN-609 AC2：视口内激活插队首，视口外 wheel 预载保持队尾', () => {
     const activate = functionBody('activateRegistryPreviewImage');
     assert.match(activate, /function activateRegistryPreviewImage\(image, priority=false\)/);
@@ -39,7 +136,9 @@ test('QIN-609 AC2：视口内激活插队首，视口外 wheel 预载保持队�
     assert.match(activate, /else registryPreviewQueue\.push\(image\);/);
     // 两个视口内激活点（fallback 可见激活 + IO 回调）必须插队。
     const fallback = functionBody('scheduleRegistryPreviewFallback');
-    assert.match(fallback, /if\(visible\) activateRegistryPreviewImage\(image, true\);/);
+    assert.match(fallback, /const viewportTop = Math\.max\(rootRect\.top, 0\);/);
+    assert.match(fallback, /const viewportBottom = Math\.min\(rootRect\.bottom, window\.innerHeight \|\| 0\);/);
+    assert.match(fallback, /if\(visible\) activateRegistryPreviewImage\(image, inVisualViewport\);/);
     const schedule = functionBody('scheduleRegistryPreviewImages');
     assert.match(schedule, /activateRegistryPreviewImage\(image, true\);/);
     // wheel 预载（视口下方提前量）不插队：保持默认 push。
