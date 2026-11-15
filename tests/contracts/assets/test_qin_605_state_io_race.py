@@ -264,6 +264,7 @@ def test_index_job_survives_transient_state_replace_conflict(race_runtime, monke
             if job["status"] in jobs.TERMINAL:
                 break
             time.sleep(0.01)
+        live = jobs._default
 
     assert seen_conflicts["raised"] == 2, "注入的两次瞬时冲突应确实发生"
     assert job["status"] == "succeeded", job
@@ -286,6 +287,8 @@ def test_index_job_survives_transient_state_replace_conflict(race_runtime, monke
 
     # 3) 冷读：应用已关闭，新建 service/store 从盘上重建，终态不得漂移。
     cold = jobs.service()
+    assert live is not None and live.closed, "应用关闭后旧 service 必须已停止"
+    assert cold is not live and cold.store is not live.store, "冷读必须换新实例"
     cold_raw = cold.store.read()["jobs"][job_id]
     cold_view = cold.public(cold._committed_truth(cold_raw))
     for field in ("status", "phase", "attempt", "error_count", "result", "error_code"):
