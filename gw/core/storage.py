@@ -458,18 +458,14 @@ def _resource_folder_lexical_parts(raw_path: str) -> list[str] | None:
             # UNC：\\host\share\... → 机器与共享名之后才是内容段。
             body = drive.lstrip("\\")
             segments = [seg for seg in body.split("\\") if seg]
-            share_tail = [seg for seg in tail.split("\\") if seg]
-            segments.extend(share_tail)
+            segments.extend(seg for seg in tail.split("\\") if seg)
             return segments
         # 盘符路径：段为盘符后的内容段。
-        segments = [seg for seg in tail.split("\\") if seg]
-        return segments
+        return [seg for seg in tail.split("\\") if seg]
     if unified.startswith("\\\\"):
-        segments = [seg for seg in unified.lstrip("\\").split("\\") if seg]
-        return segments
+        return [seg for seg in unified.lstrip("\\").split("\\") if seg]
     if value.startswith("/"):
-        segments = [seg for seg in value.split("/") if seg]
-        return segments
+        return [seg for seg in value.split("/") if seg]
     return None
 
 

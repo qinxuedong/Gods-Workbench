@@ -695,16 +695,16 @@ def root_facets():
             continue
         relpath = str(asset.get("canonical_relpath") or "")
         asset_root = root_map.get(str(asset.get("root_id") or ""))
-        if asset_root is not None:
-            physical = (
-                asset_root.joinpath(*Path(relpath).parts) if relpath else asset_root
-            )
+        if asset_root is not None and relpath:
+            physical = asset_root.joinpath(*Path(relpath).parts)
             try:
                 dedup_key = ("p", storage.physical_path_key(str(physical)))
             except CleanroomException:
-                dedup_key = ("f", str(asset.get("root_id") or ""), relpath)
+                dedup_key = ("f", str(asset.get("asset_id") or ""),)
         else:
-            dedup_key = ("f", str(asset.get("root_id") or ""), relpath)
+            # 无物理位置信息（无 relpath 或根已移除）的记录按记录级键回退：
+            # 逐条计数，不与物理键混用（避免同根无 relpath 记录被误合并）。
+            dedup_key = ("f", str(asset.get("asset_id") or ""),)
         seen = seen_by_group.setdefault(group_key, set())
         if dedup_key in seen:
             continue
