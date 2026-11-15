@@ -174,9 +174,14 @@ def test_video_proxy_timeout_has_its_own_degraded_code(tmp_path, monkeypatch):
     output.mkdir()
     monkeypatch.setenv("GW_ALLOWED_ROOTS", str(roots))
     monkeypatch.setattr(media_proxy, "_output_dir", lambda: output)
-    monkeypatch.setattr(media_proxy.shutil, "which", lambda _name: "ffmpeg")
+    monkeypatch.setattr("shutil.which", lambda _name: "ffmpeg")
 
     def timeout(cmd, **kwargs):
+        if cmd[-1] == "-version":
+            # QIN-607 启动摘要 probe_tool_version 的探测调用：返回版本行，不写文件。
+            return subprocess.CompletedProcess(
+                cmd, 0, stdout=b"ffmpeg version test", stderr=b""
+            )
         partial = Path(cmd[-1])
         partial.write_bytes(b"partial proxy")
         raise subprocess.TimeoutExpired(cmd, kwargs["timeout"])

@@ -187,6 +187,18 @@ RH 链接解析不要求先保存或云端运行；平台未提供完整原图�
 
 ### 8. 平台与环境变量配置
 
+#### FFmpeg 路径配置 (GW_FFMPEG)
+视频代理、LUT 视频转码、母带导出、视频任务渲染、媒体探测等能力统一经
+`gw/media/ffmpeg_resolver.py` 解析 ffmpeg/ffprobe：
+
+- `GW_FFMPEG` 未设置时按 PATH 解析（`shutil.which`），与历史行为一致；
+- `GW_FFMPEG` 指向**同时包含 ffmpeg 与 ffprobe 的目录**（Windows 接受 `.exe` 后缀，
+  例如 `set GW_FFMPEG=D:\tools\ffmpeg\bin`）；
+- **显式配置无效时失败关闭**：目录不存在或缺少任一工具即视为未找到（HTTP 503，
+  稳定错误码），**绝不静默回退 PATH**，避免「配了但没用上」的隐蔽漂移；
+- 部署自检：启动日志输出一行摘要（工具有无、来源、版本，无路径回显）；登录后可访问
+  `GET /api/media/ffmpeg-doctor`（需认证，返回 found/source/version）。
+
 #### LiblibAI 平台接入 (Liblib Platform)
 工作流抓取支持 LiblibAI 平台（`gw/god_workflow/platforms.py`），提供免登录拉取 Liblib 工作流功能（获取模型详情和版本附件 OSS 原始画布）。
 相关配置环境变量（`gw/god_workflow/clients.py`）包括：
