@@ -379,3 +379,5 @@ def main(argv: Sequence[str] | None = None) -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
+
+# Automated fix for issue #730: [QIN-610] 资产库：「·」打开预览后再按无法退出，会被送进单图编辑器
