@@ -54,9 +54,6 @@ let fullscreenView = null;
 let embeddedView = null;
 // QIN-589 返工二：记录当前静默监听的清理函数，避免连续程序化开关累积监听。
 const quietFocusState = {revert: null};
-const EDIT_BACKQUOTE_WINDOW_MS = 500;
-let lastEditBackquoteTap = null;
-
 function isBackquoteKey(event) {
     return event.code === 'Backquote' || ['·', '~', '`'].includes(event.key);
 }
@@ -727,7 +724,6 @@ function destroyEmbedded({notify = true} = {}) {
 
 function handleKeydown(view, event) {
     if (event.defaultPrevented) return;
-    if (!isBackquoteShortcut(event)) lastEditBackquoteTap = null;
     if (event.key === 'ArrowLeft') {
         event.preventDefault();
         event.stopPropagation();
@@ -741,28 +737,13 @@ function handleKeydown(view, event) {
         && String(event.key || '').toLowerCase() === 'f') {
         event.preventDefault();
         event.stopPropagation();
-        lastEditBackquoteTap = null;
         requestFullscreenClose();
     } else if (view.mode === 'fullscreen' && isBackquoteShortcut(event)) {
-        // Coverflow reserves Backquote for edit entry only after a deliberate
-        // double tap. Embedded rails let the owning editor handle the key.
         event.preventDefault();
         event.stopPropagation();
-        if (event.repeat) return;
-        const item = viewItem(view);
-        const context = `${view.source}:${view.scope}:${item?.id || ''}`;
-        const now = Date.now();
-        if (lastEditBackquoteTap?.context === context
-            && now - lastEditBackquoteTap.at <= EDIT_BACKQUOTE_WINDOW_MS) {
-            lastEditBackquoteTap = null;
-            requestEdit(view);
-        } else {
-            lastEditBackquoteTap = {at: now, context};
-        }
     } else if (event.key === 'Escape' && view.mode === 'fullscreen' && !window.FloatingDismissal) {
         event.preventDefault();
         event.stopPropagation();
-        lastEditBackquoteTap = null;
         requestFullscreenClose();
     }
 }

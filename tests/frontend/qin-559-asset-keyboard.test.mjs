@@ -24,32 +24,12 @@ function functionSource(source, name){
     assert.fail(`函数未闭合：${name}`);
 }
 
-function createDetailBackquoteRecognizer(){
-    return new Function(`
-        let now = 0;
-        let lastDetailBackquoteTap = null;
-        const DETAIL_BACKQUOTE_DOUBLE_TAP_MS = 500;
-        const Date = {now:() => now};
-        ${functionSource(MANAGER, 'isBackquoteKey')}
-        ${functionSource(MANAGER, 'isBackquoteShortcut')}
-        ${functionSource(MANAGER, 'detailBackquoteTappedTwice')}
-        return {recognize:detailBackquoteTappedTwice, setTime:value => { now = value; }};
-    `)();
-}
-
 function createCoverflowKeyHandler(callbacks){
     return new Function('viewItem', 'move', 'requestFullscreenClose', 'requestEdit', 'window', `
-        let now = 0;
-        let lastEditBackquoteTap = null;
-        const EDIT_BACKQUOTE_WINDOW_MS = 500;
-        const Date = {now:() => now};
         ${functionSource(COVERFLOW, 'isBackquoteKey')}
         ${functionSource(COVERFLOW, 'isBackquoteShortcut')}
         ${functionSource(COVERFLOW, 'handleKeydown')}
-        return {
-            handle:handleKeydown,
-            setTime:value => { now = value; },
-        };
+        return {handle:handleKeydown};
     `)(() => ({id:'asset-1'}), () => {}, callbacks.close, callbacks.edit, {FloatingDismissal:null});
 }
 
@@ -62,20 +42,12 @@ function keyEvent(key, code='Backquote'){
     };
 }
 
-test('双击识别限定同一详情与 500ms 窗口', () => {
-    const recognizer = createDetailBackquoteRecognizer();
-    const tap = keyEvent('·');
-    assert.equal(recognizer.recognize(tap, 'registry:image-1'), false);
-    recognizer.setTime(500);
-    assert.equal(recognizer.recognize(tap, 'registry:image-1'), true);
-
-    assert.equal(recognizer.recognize(tap, 'registry:image-1'), false);
-    recognizer.setTime(1001);
-    assert.equal(recognizer.recognize(tap, 'registry:image-1'), false);
-    assert.equal(recognizer.recognize(tap, 'registry:image-2'), false);
+test('资产库 Backquote 不再使用双击识别窗口', () => {
+    assert.doesNotMatch(MANAGER, /detailBackquoteTappedTwice|DETAIL_BACKQUOTE_DOUBLE_TAP_MS/);
+    assert.match(MANAGER, /if\(detailToggleShortcut && !keyboardEditing\)[\s\S]*?if\(event\.repeat\) return;[\s\S]*?if\(detailViewerState\.open\)\{\s*closeDetailPreview\(\)/);
 });
 
-test('全屏 Coverflow 双击 Backquote 进编辑，F 与 Escape 退出', () => {
+test('全屏 Coverflow 的 Backquote 不进入编辑，F 与 Escape 退出', () => {
     const requests = {edit:0, close:0};
     const handler = createCoverflowKeyHandler({
         close:() => { requests.close += 1; },
@@ -86,9 +58,8 @@ test('全屏 Coverflow 双击 Backquote 进编辑，F 与 Escape 退出', () => 
     handler.handle(view, tap);
     assert.equal(requests.edit, 0);
     assert.equal(tap.prevented, true);
-    handler.setTime(500);
     handler.handle(view, keyEvent('`'));
-    assert.equal(requests.edit, 1);
+    assert.equal(requests.edit, 0);
 
     handler.handle(view, keyEvent('f', 'KeyF'));
     assert.equal(requests.close, 1);
@@ -119,19 +90,20 @@ test('画布 F 使用选择集，视频 A/D 逐帧且 F 切换全屏', () => {
     assert.match(MANAGER, /title="加速 0\.1 倍（C）"/);
 });
 
-test('编辑双击退出回到进入前视图，快捷键指南同步', () => {
+test('图像编辑器单次 Backquote 返回预览，指南同步', () => {
     const closeEditor = functionSource(MANAGER, 'closeDetailImageEditor');
     const restoreView = functionSource(MANAGER, 'restoreDetailImageEditorCoverflow');
     const loadText = functionSource(MANAGER, 'loadDetailViewerText');
     assert.match(closeEditor, /restoreDetailImageEditorCoverflow\(state\)/);
     assert.match(restoreView, /gw:asset-coverflow-open/);
     assert.match(loadText, /detailViewerFileParams\(detailViewerState\.source, item\)/);
-    assert.match(MANAGER, /if\(detailBackquoteTappedTwice\(event,context\)\)\{[\s\S]*?gwCall\('preview', 'enterCurrentDetailEditableContent'\)/);
-    assert.match(MANAGER, /gwCall\('preview', 'exitDetailTextEditFromBackquote', editor,detailTextEditorBackquoteInput\)/);
+    assert.match(MANAGER, /gwCall\('preview', 'requestCloseDetailImageEditor', '返回素材预览'\)/);
+    assert.doesNotMatch(MANAGER, /exitDetailTextEditFromBackquote|detailTextEditorBackquoteInput/);
+    assert.doesNotMatch(GUIDE, /500ms 内双击/);
     assert.match(MANAGER, /const registryFullscreenShortcut = event\.key === 'Enter'[\s\S]*?!event\.ctrlKey && !event\.metaKey && !event\.altKey/);
     // QIN-570：F 改为真全屏查看，Enter 保持 Coverflow，指南拆行
     assert.match(GUIDE, /`F` \| 真全屏查看当前选中图片\/视频/);
     assert.match(GUIDE, /`Enter` \| 打开当前选中图片\/视频的 Coverflow 轮播/);
-    assert.match(GUIDE, /500ms 内双击/);
+    assert.match(GUIDE, /即时打开或关闭当前素材预览/);
     assert.match(GUIDE, /`A` \/ `D`/);
 });

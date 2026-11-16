@@ -120,6 +120,7 @@ tests/frontend/qin-603-asset-folder-switch-render.test.mjs
 tests/frontend/qin-603-domain-gate-runtime.test.mjs
 tests/frontend/qin-606-asset-stat-label-no-overlap.test.mjs
 tests/frontend/qin-609-preview-scheduling.test.mjs
+tests/frontend/qin-610-backquote-preview-toggle.test.mjs
 tests/frontend/qin-611-collab-center.test.mjs
 tests/frontend/qin-613-theme-preference-fix.test.mjs
 tests/frontend/qin-615-asset-sidebar-light-contrast.test.mjs

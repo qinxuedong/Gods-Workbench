@@ -32,7 +32,6 @@ import {
     ASSET_FONT_PREVIEW_ZH_LINE,
     ASSET_REGISTRY_DETAIL_COLLAPSED_KEY,
     ASSET_REGISTRY_DETAIL_WIDTH_KEY,
-    DETAIL_BACKQUOTE_DOUBLE_TAP_MS,
     VIDEO_STORYBOARD_IMAGE_STYLE,
     VIDEO_STORYBOARD_LARGE_STYLE,
     activeAssetCategory,
@@ -63,7 +62,6 @@ import {
     confirmRegistryVersionStructureRemoval,
     customAssetLibraryBaseItems,
     detailActiveImageItem,
-    detailImageEditorBackquoteCloseTimer,
     detailImageEditorState,
     detailImageVersionAssetId,
     detailMediaCanvasColorSnapshot,
@@ -78,7 +76,6 @@ import {
     detailMediaCanvasSelectionObjectId,
     detailMediaCanvasSpacePressed,
     detailMediaLutSplitDragEndedAt,
-    detailPreviewBackquoteCloseTimer,
     detailReferenceFromTarget,
     detailVideoStoryboardEnabled,
     detailViewerAudioFrame,
@@ -151,12 +148,9 @@ import {
     selectedRegistryAssetId,
     setAssetHoverPreviewMedia,
     setAssetPreviewAllState,
-    setDetailImageEditorBackquoteCloseTimer,
     setDetailImageEditorState,
     setDetailMediaCanvasColorSnapshot,
     setDetailMediaCanvasLibraryThumbSize,
-    setDetailPreviewBackquoteCloseTimer,
-    setDetailTextEditorBackquoteInput,
     setDetailViewerAudioFrame,
     setDetailViewerFontExpandedPreference,
     setDetailViewerState,
@@ -4184,40 +4178,6 @@ function enterCurrentDetailEditableContent(){
     }
     return false;
 }
-function deferDetailPreviewCloseForBackquote(state){
-    clearTimeout(detailPreviewBackquoteCloseTimer);
-    setDetailPreviewBackquoteCloseTimer(setTimeout(() => {
-        detailPreviewBackquoteCloseTimer = 0;
-        if(detailViewerState === state && state.open) closeDetailPreview();
-    },DETAIL_BACKQUOTE_DOUBLE_TAP_MS));
-}
-function deferDetailImageEditorCloseForBackquote(state){
-    clearTimeout(detailImageEditorBackquoteCloseTimer);
-    setDetailImageEditorBackquoteCloseTimer(setTimeout(() => {
-        detailImageEditorBackquoteCloseTimer = 0;
-        if(detailImageEditorState === state){
-            requestCloseDetailImageEditor('关闭编辑器')
-                .catch(err => setStatus(err.message || '单图编辑关闭失败'));
-        }
-    },DETAIL_BACKQUOTE_DOUBLE_TAP_MS));
-}
-function restoreSingleBackquoteInput(editor, pending){
-    if(!editor || !pending || pending.editor !== editor) return;
-    const inserted = ['·','~','`'].includes(pending.key) ? pending.key : '';
-    const expected = pending.before.slice(0,pending.start) + inserted + pending.before.slice(pending.end);
-    if(editor.value !== expected) return;
-    editor.value = pending.before;
-    editor.setSelectionRange?.(pending.start,pending.end);
-}
-function exitDetailTextEditFromBackquote(editor, pending){
-    restoreSingleBackquoteInput(editor,pending);
-    setDetailTextEditorBackquoteInput(null);
-    if(String(editor?.value || '') === String(detailViewerState.text || '')){
-        cancelDetailTextEdit();
-        return;
-    }
-    saveDetailTextEdit().catch(err => setStatus(err.message || '正文保存失败'));
-}
 document.addEventListener('wheel', navigateDetailPreviewWheel, {passive:false});
 document.addEventListener('input', event => {
     if(event.target?.id === 'thumbnailDirectory'){
@@ -4358,13 +4318,10 @@ GW_DEFERRED['preview'] = {
     closeRegistryAssetFullscreenViewer,
     confirmPreviewCacheDelete,
     controlPreviewAllJob,
-    deferDetailImageEditorCloseForBackquote,
-    deferDetailPreviewCloseForBackquote,
     deleteBoardVideoStoryboards,
     deleteDetailImageEditorLayers,
     enterCurrentDetailEditableContent,
     enterDetailVideoFullscreen,
-    exitDetailTextEditFromBackquote,
     exportDetailVideoFrame,
     generateBoardVideoStoryboards,
     groupDetailImageEditorLayers,

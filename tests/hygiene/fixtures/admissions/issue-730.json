@@ -1,0 +1,31 @@
+{
+  "schema": "gw.cleanroom-admission-shard/v1",
+  "issue": 730,
+  "authorization_basis": "GitHub Issue #730 QIN-610, 2026-11-16",
+  "files": [
+    "web/js/modules/asset-manager.js",
+    "web/js/modules/asset-manager/preview.js",
+    "web/js/modules/asset-manager/coverflow.js",
+    "docs/guides/KEYBOARD-SHORTCUTS.md",
+    "tests/frontend/qin-559-asset-keyboard.test.mjs",
+    "tests/frontend/qin-610-backquote-preview-toggle.test.mjs",
+    "tests/frontend/node-files.txt",
+    "tests/hygiene/fixtures/admissions/issue-730.json"
+  ],
+  "admitted_files": [],
+  "accepted_test_files": [
+    {
+      "path": "tests/frontend/qin-559-asset-keyboard.test.mjs",
+      "classification": "curated_test_coverage",
+      "authorization_basis": "GitHub Issue #730 QIN-610, 2026-11-16",
+      "admission": "accepted"
+    },
+    {
+      "path": "tests/frontend/qin-610-backquote-preview-toggle.test.mjs",
+      "classification": "curated_test_coverage",
+      "authorization_basis": "GitHub Issue #730 QIN-610, 2026-11-16",
+      "admission": "accepted"
+    }
+  ],
+  "notes": "QIN-610 immediate Backquote preview toggle behavior and focused DOM-event regression coverage."
+}
