@@ -632,7 +632,13 @@ def _cached_root_snapshot():
 
 
 def root_facets():
-    """返回可筛选来源及资产数，不暴露服务器绝对路径。"""
+    """返回可筛选来源及资产数，不暴露服务器绝对路径。
+
+    QIN-596：同一路径的允许根身份（root_xxx）与登记来源身份（local_extra_*）
+    按 ``storage.physical_path_key(词法根/前缀)`` 合并为一条 facet：主 ID 取
+    登记来源身份优先；aliases 携带组内全部身份；计数按组内物理位置键去重，
+    不重复相加。root=None 的离线/移除别名不参与合并，保持单身份 facet。
+    """
     from gw.asset_registry import repository as repo
 
     try:
@@ -641,38 +647,125 @@ def root_facets():
         return []
     # QIN-604：root_facets 是 /assets 每次请求的下游读点，改走快照后整段只读一次。
     raw = repo.readonly_registry_snapshot()
-    counts = {}
+
+    # ── 分组：物理路径可解析的别名按词法物理键合并；其余保持单身份。
+    groups: dict[tuple, dict] = {}
+    identity_group: dict[str, tuple] = {}
+    for source_id, alias in sorted(aliases.items()):
+        physical_root = alias.get("root")
+        group_key = None
+        if physical_root is not None:
+            prefix = str(alias.get("prefix") or "")
+            physical = (
+                physical_root.joinpath(*Path(prefix).parts)
+                if prefix
+                else physical_root
+            )
+            try:
+                group_key = ("p", storage.physical_path_key(str(physical)))
+            except CleanroomException:
+                group_key = None
+        if group_key is None:
+            group_key = ("i", source_id)
+        group = groups.get(group_key)
+        if group is None:
+            group = groups[group_key] = {"ids": []}
+        group["ids"].append(source_id)
+        identity_group[source_id] = group_key
+
+    # ── 计数：身份→组归属；组内以规范化物理位置键去重（词法根/relpath）。
+    # 身份无组时保留身份级计数，供 removed 兜底环使用（口径与旧实现一致）。
+    root_map = {
+        rid: entry["root"]
+        for rid, entry in aliases.items()
+        if entry.get("root") is not None and str(entry.get("root_id") or "") == rid
+    }
+    counts_by_identity = {}
+    counts_by_group = {}
+    seen_by_group = {}
     for asset in raw["assets"].values():
         if not repo._visible(asset):
             continue
         source_id = str(asset.get("storage_root_id") or asset.get("root_id") or "")
-        if source_id:
-            counts[source_id] = counts.get(source_id, 0) + 1
+        if not source_id:
+            continue
+        counts_by_identity[source_id] = counts_by_identity.get(source_id, 0) + 1
+        group_key = identity_group.get(source_id)
+        if group_key is None:
+            continue
+        relpath = str(asset.get("canonical_relpath") or "")
+        asset_root = root_map.get(str(asset.get("root_id") or ""))
+        if asset_root is not None and relpath:
+            physical = asset_root.joinpath(*Path(relpath).parts)
+            try:
+                dedup_key = ("p", storage.physical_path_key(str(physical)))
+            except CleanroomException:
+                dedup_key = ("f", str(asset.get("asset_id") or ""),)
+        else:
+            # 无物理位置信息（无 relpath 或根已移除）的记录按记录级键回退：
+            # 逐条计数，不与物理键混用（避免同根无 relpath 记录被误合并）。
+            dedup_key = ("f", str(asset.get("asset_id") or ""),)
+        seen = seen_by_group.setdefault(group_key, set())
+        if dedup_key in seen:
+            continue
+        seen.add(dedup_key)
+        counts_by_group[group_key] = counts_by_group.get(group_key, 0) + 1
+
+    # ── facet 组装：主 ID=登记来源身份优先；可用性取组内最受限；名称优先
+    # 登记来源的用户命名。
+    availability_rank = {"removed": 0, "invalid": 1, "offline": 2, "available": 3}
     facets = {}
-    for source_id, alias in sorted(aliases.items()):
-        availability = str(alias.get("availability") or "available")
-        reason = str(alias.get("availability_reason") or "")
-        message = str(alias.get("availability_message") or "")
-        # 逐别名可用性来自有界缓存，不再每个请求重新做一次挂载探测。
-        if source_id in alias_status:
-            status = alias_status[source_id]
-            availability = status["availability"]
-            reason = status["availability_reason"]
-            message = status["availability_message"]
-        facets[source_id] = {
-            "id": source_id,
-            "name": alias["name"],
-            "count": counts.get(source_id, 0),
-            "availability": availability,
-            "availability_reason": reason,
-            "availability_message": message,
+    for group_key, group in groups.items():
+        ids = group["ids"]
+        registered = [
+            sid
+            for sid in ids
+            if str(aliases[sid].get("storage_root_id") or "") == sid
+            and str(aliases[sid].get("root_id") or "") != sid
+        ]
+        primary = registered[0] if registered else ids[0]
+        best_rank = None
+        best = ("available", "", "")
+        for sid in ids:
+            alias = aliases[sid]
+            status = alias_status.get(sid)
+            availability = (
+                str(status["availability"])
+                if status
+                else str(alias.get("availability") or "available")
+            )
+            reason = str(alias.get("availability_reason") or "")
+            message = str(alias.get("availability_message") or "")
+            rank = availability_rank.get(availability, 1)
+            if best_rank is None or rank < best_rank:
+                best_rank = rank
+                best = (availability, reason, message)
+        name = ""
+        for sid in ids:
+            alias = aliases[sid]
+            if (
+                str(alias.get("storage_root_id") or "") == sid
+                and str(alias.get("root_id") or "") != sid
+            ):
+                name = str(alias.get("name") or "")
+                break
+        if not name:
+            name = str(aliases[ids[0]].get("name") or "")
+        facets[primary] = {
+            "id": primary,
+            "name": name,
+            "count": counts_by_group.get(group_key, 0),
+            "availability": best[0],
+            "availability_reason": best[1],
+            "availability_message": best[2],
+            "aliases": list(ids),
         }
     removed_root_ids = {
         str(record.get("id") or "")
         for record in storage._allowed_roots_state().get("roots", [])
         if not record.get("active")
     }
-    for source_id, count in counts.items():
+    for source_id, count in counts_by_identity.items():
         if source_id in removed_root_ids and source_id not in facets:
             facets[source_id] = {
                 "id": source_id,

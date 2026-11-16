@@ -252,7 +252,7 @@ let boardDragId = '';
 let boardCreateState = {open:false, preset:'other', name:'', nameManuallyEdited:false, path:'', saving:false, error:''};
 let boardCreateFocusTarget = '';
 let boardEditState = {open:false, boardId:'', name:'', path:'', saving:false};
-let boardSourceState = {open:false, boardId:'', editor:'', existingId:'', name:'用户素材', path:''};
+let boardSourceState = {open:false, boardId:'', editor:'', existingId:'', name:'用户素材', path:'', saving:false, generation:0};
 let boardFolderCreateState = {open:false, boardId:'', rootId:'', parent:'', name:'新文件夹', saving:false, error:''};
 let boardSourceSelection = {};
 let boardFolderSelection = {};
@@ -4230,9 +4230,14 @@ function mergeRegistryAssetUpdate(updated={}){
         if(index >= 0) detailViewerState.items[index] = {...detailViewerState.items[index], ...normalized};
     }
 }
+let registryFacetRefreshGeneration = 0;
 async function refreshRegistryFacetData(){
+    // QIN-596 §2 乱序防护：连续两次刷新只采用最新代际——迟到的旧响应不得
+    // 覆盖新 facets（登记后连续刷新场景）。
+    const generation = ++registryFacetRefreshGeneration;
     const facets = await apiJsonResponse(assetManagerApi.getRegistryFacets()).catch(() => null);
     if(!facets) return;
+    if(generation !== registryFacetRefreshGeneration) return;
     registryFacets = {
         kinds:Array.isArray(facets.kinds) ? facets.kinds : registryFacets.kinds,
         categories:Array.isArray(facets.categories) ? facets.categories : registryFacets.categories,
@@ -6786,8 +6791,8 @@ function renderAssetTreeMineTree(){
         });
     }).join('');
     // 【QIN-546 AC1】分组标题悬停出现「+」：直接在该分组下新建子文件夹
-    const mountLabel = `<div class="asset-tree-group-label"><span>挂载文件夹</span><button class="asset-tree-group-add" type="button" data-asset-organize-group-new aria-label="新建文件夹" title="新建文件夹"><i data-lucide="plus"></i></button></div>`;
-    const emptyGuide = roots.length ? '' : `<div class="asset-tree-empty-guide"><p>尚未挂载文件夹</p><small>挂载后按真实磁盘子目录浏览</small></div>`;
+    const mountLabel = `<div class="asset-tree-group-label"><span>资源文件夹</span><button class="asset-tree-group-add" type="button" data-asset-organize-group-new aria-label="新建文件夹" title="新建文件夹"><i data-lucide="plus"></i></button></div>`;
+    const emptyGuide = roots.length ? '' : `<div class="asset-tree-empty-guide"><p>尚未添加资源文件夹</p><small>添加后按真实磁盘子目录浏览</small></div>`;
     return `<div class="asset-tree-scroll" role="tree" aria-label="我的资源目录树" tabindex="0" data-asset-tree-view="mine">${inboxNode}${boardSection}<div class="asset-tree-mount-section">${mountLabel}${rootNodes}${emptyGuide}</div></div>`;
 }
 function assetTreeRootsList(){
@@ -6859,7 +6864,7 @@ function renderAssetTreePanel(extraClass=''){
         </div>
         ${treeBody}
         <div class="asset-tree-footer">
-            ${mine ? `<button class="hw-btn hw-btn-gold" type="button" data-asset-tree-mount aria-label="挂载文件夹"><i data-lucide="folder-plus"></i><span>挂载文件夹</span></button>` : ''}
+            ${mine ? `<button class="hw-btn hw-btn-gold" type="button" data-asset-tree-mount aria-label="+ 添加资源文件夹"><i data-lucide="folder-plus"></i><span>+ 添加资源文件夹</span></button>` : ''}
         </div>
     </aside>`;
 }

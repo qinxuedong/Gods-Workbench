@@ -59,9 +59,12 @@ test('新建资源库折叠右侧详情栏后释放网格宽度，不保留空�
 });
 
 test('管理员创建时将未登记路径加入允许根，非管理员沿用现有权限校验', () => {
-    assert.match(source, /async function ensureCreateLibraryPathAllowedRoot\(path\)\{\s*await loadRegistryPrincipal\(\);\s*if\(!canManageAllowedRoots\(\)\) return true;/);
+    // QIN-596：ensure 入口新增拒绝清单检查（先于 loadRegistryPrincipal）；共享管道
+    // 下沉进 attachPathToAssetBoard（创建资源库与添加资源文件夹共用同一调用链）。
+    assert.match(source, /async function ensureCreateLibraryPathAllowedRoot\(path\)\{[\s\S]{0,600}?await loadRegistryPrincipal\(\);\s*if\(!canManageAllowedRoots\(\)\) return true;/);
     assert.match(source, /body:JSON\.stringify\(\{path, expected_version:Number\(snapshot\.revision \|\| 1\)\}\)/);
-    assert.match(source, /const allowed = await ensureCreateLibraryPathAllowedRoot\(path\);[\s\S]*?source = await attachPathToAssetBoard\('', `\$\{name\}素材`, path\)/);
+    assert.match(source, /const allowed = await ensureCreateLibraryPathAllowedRoot\(cleanPath\);\s*if\(!allowed\) return null;/);
+    assert.match(source, /source = await attachPathToAssetBoard\('', `\$\{name\}素材`, path\)/);
 });
 
 test('新建资源库命中已移除旧根时确认恢复并继续创建', () => {
@@ -71,16 +74,22 @@ test('新建资源库命中已移除旧根时确认恢复并继续创建', () =>
     assert.match(source, /filter\(root => root\.active === false && assetPathWithinAllowedRoot\(path, root\.path\)\)[\s\S]*?sort\(\(left, right\) => pathCompareKey\(right\.path\)\.length - pathCompareKey\(left\.path\)\.length\)/);
     assert.match(source, /`\/api\/storage-settings\/roots\/\$\{encodeURIComponent\(removedRoot\.id\)\}\/restore`[\s\S]*?body:JSON\.stringify\(\{expected_version:Number\(snapshot\.revision \|\| 1\)\}\)/);
     assert.match(source, /if\(!await confirmRestoreRemovedAllowedRoot\(removedRoot\)\) return false;/);
-    assert.match(source, /const allowed = await ensureCreateLibraryPathAllowedRoot\(path\);\s*if\(!allowed\)\{[\s\S]*?资源库未创建[\s\S]*?return;\s*\}\s*source = await attachPathToAssetBoard/);
+    // QIN-596：恢复确认在 ensure 内完成；取消 → attach 返回 null（无写盘），
+    // 创建资源库入口以「已取消添加，资源库未创建」收口。
+    assert.match(source, /if\(!allowed\) return null;/);
+    assert.match(source, /已取消添加，资源库未创建/);
 });
 
 test('旧根确认后只恢复最具体祖先，取消不写入允许根', async () => {
     const pathHelperStart = source.indexOf('function assetPathWithinAllowedRoot(');
     const pathHelperEnd = source.indexOf('\nfunction confirmRestoreRemovedAllowedRoot(', pathHelperStart);
+    // QIN-596：ensure 入口新增拒绝清单——抽测注入需包含清单常量与纯函数。
+    const listStart = source.indexOf('const RESOURCE_FOLDER_BLOCKED_WIN_SEGMENTS');
     const ensureStart = source.indexOf('async function ensureCreateLibraryPathAllowedRoot(');
     const ensureEnd = source.indexOf('\n// 用户显式指定缓存目录', ensureStart);
-    assert.ok(pathHelperStart >= 0 && pathHelperEnd > pathHelperStart && ensureStart >= 0 && ensureEnd > ensureStart);
+    assert.ok(pathHelperStart >= 0 && pathHelperEnd > pathHelperStart && listStart >= 0 && ensureStart > listStart && ensureEnd > ensureStart);
     const pathHelper = source.slice(pathHelperStart, pathHelperEnd);
+    const listHelper = source.slice(listStart, ensureStart);
     const ensureHelper = source.slice(ensureStart, ensureEnd);
     const simulate = async confirmed => {
         const calls = [];
@@ -105,7 +114,7 @@ test('旧根确认后只恢复最具体祖先，取消不写入允许根', async
                 throw new Error(`unexpected request ${request.method} ${request.url}`);
             },
         };
-        const result = await runInNewContext(`${pathHelper}\n${ensureHelper}\nensureCreateLibraryPathAllowedRoot('D:/Vault/assets/new')`, context);
+        const result = await runInNewContext(`${pathHelper}\n${listHelper}\n${ensureHelper}\nensureCreateLibraryPathAllowedRoot('D:/Vault/assets/new')`, context);
         return {result, calls};
     };
 

@@ -599,7 +599,69 @@ function confirmRestoreRemovedAllowedRoot(root){
         refreshIcons();
     });
 }
+// QIN-596 AC5：系统目录拒绝清单（前端体验层；服务端为最终门禁，与
+// gw/core/storage.py 的 describe_resource_folder_rejection 双端常量逐条一致）。
+const RESOURCE_FOLDER_BLOCKED_WIN_SEGMENTS = ['windows', 'program files', 'program files (x86)', 'programdata'];
+const RESOURCE_FOLDER_BLOCKED_POSIX_SEGMENTS = ['system', 'library', 'applications', 'usr', 'bin', 'sbin', 'etc', 'var', 'private'];
+const RESOURCE_FOLDER_USERS_SEGMENT = 'users';
+const RESOURCE_FOLDER_DRIVE_ROOT_RE = /^[a-zA-Z]:[\\/]{0,1}$/;
+const RESOURCE_FOLDER_UNC_MACHINE_ROOT_RE = /^\\\\[^\\/]+\\{0,1}$/;
+const RESOURCE_FOLDER_POSIX_ROOT_RE = /^[\\/]+$/;
+
+function describeResourceFolderPathRejection(path){
+    // 词法判定作用于原始输入（先于后端 normalize 语义）：命中返回拒绝原因，
+    // 未命中返回空串。双端同清单，测试逐条对齐。
+    const value = String(path == null ? '' : path).trim();
+    if(!value) return '路径为空';
+    const unified = value.replace(/\//g, '\\');
+    if(RESOURCE_FOLDER_DRIVE_ROOT_RE.test(value) || RESOURCE_FOLDER_DRIVE_ROOT_RE.test(unified)){
+        return '盘符根目录不可添加为资源文件夹';
+    }
+    if(RESOURCE_FOLDER_UNC_MACHINE_ROOT_RE.test(unified)){
+        return 'UNC 机器根不可添加为资源文件夹，请指定具体共享目录';
+    }
+    if(RESOURCE_FOLDER_POSIX_ROOT_RE.test(value)){
+        return '文件系统根目录不可添加为资源文件夹';
+    }
+    let segments = null;
+    if(/^\\\\/.test(unified)){
+        segments = unified.slice(2).split('\\').filter(Boolean);
+    } else if(/^[a-zA-Z]:/.test(unified)){
+        segments = unified.slice(2).split('\\').filter(Boolean);
+    } else if(/^\//.test(value)){
+        segments = value.split('/').filter(Boolean);
+    }
+    if(segments === null) return '';
+    // QIN-596（审核 FIX_REQUIRED）：清单匹配前消解 `.`/`..` 点段；越界点段
+    // 最终位置歧义，按拒绝处理（与 gw/core/storage.py 同规则）。
+    const resolved = [];
+    for(const seg of segments){
+      if(seg === '.') continue;
+      if(seg === '..'){
+        if(!resolved.length) return `路径含越界点段，最终位置歧义，不可添加为资源文件夹：${value}`;
+        resolved.pop();
+        continue;
+      }
+      resolved.push(seg);
+    }
+    const lowered = resolved.map(seg => seg.toLowerCase());
+    if(lowered.length && RESOURCE_FOLDER_BLOCKED_WIN_SEGMENTS.includes(lowered[0])){
+        return `系统目录不可添加为资源文件夹：${value}`;
+    }
+    if(lowered.length && RESOURCE_FOLDER_BLOCKED_POSIX_SEGMENTS.includes(lowered[0])){
+        return `系统目录不可添加为资源文件夹：${value}`;
+    }
+    if(lowered.length && lowered[0] === RESOURCE_FOLDER_USERS_SEGMENT && lowered.length <= 2){
+        return `用户配置目录根不可添加为资源文件夹：${value}`;
+    }
+    return '';
+}
+
 async function ensureCreateLibraryPathAllowedRoot(path){
+    // QIN-596 AC5：清单命中即本地拒绝（不发任何请求），对管理员与非管理员
+    // 统一生效；服务端三入口为最终门禁。
+    const rejection = describeResourceFolderPathRejection(path);
+    if(rejection){ throw new Error(rejection); }
     await loadRegistryPrincipal();
     if(!canManageAllowedRoots()) return true;
     let restorationApprovedRootId = '';
