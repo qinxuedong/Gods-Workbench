@@ -1,0 +1,20 @@
+{
+  "schema": "gw.cleanroom-admission-shard/v1",
+  "issue": 733,
+  "authorization_basis": "GitHub Issue #733, 2026-11-16",
+  "files": [
+    "tests/frontend/qin-612-topbar-message-bar.test.mjs",
+    "tests/frontend/node-files.txt",
+    "tests/hygiene/fixtures/admissions/issue-733.json"
+  ],
+  "admitted_files": [],
+  "accepted_test_files": [
+    {
+      "path": "tests/frontend/qin-612-topbar-message-bar.test.mjs",
+      "classification": "curated_test_coverage",
+      "authorization_basis": "GitHub Issue #733, 2026-11-16",
+      "admission": "accepted"
+    }
+  ],
+  "notes": "QIN-612：全站顶栏操作/提示信息栏（统一入口、去空箭头、自适应宽度与超长滚动、代际与配色）；仅登记本票测试与分片，基础账本不动。"
+}

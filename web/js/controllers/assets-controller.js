@@ -294,19 +294,28 @@ window.WorkbenchAssets = (() => {
   }
 
   // 父页状态条必须明说「未接入」并带结构化标记（用户 2026-09-21 裁决第 3 项）。
+  // QIN-612：文案统一经外壳中条入口发布（runner/配色/TTL/代际由入口负责），
+  // 降级标记与 nextAction 仍写在本节点属性上，供契约测试与父页读取。
   function setVaultStatus(text) {
     const projected = text && typeof text === 'object' ? text : null;
     const value = projected?.message || text || '准备就绪';
     const kind = projected?.kind || (/未纳入当前切片/.test(value) ? 'not_integrated'
       : (/暂时不可用/.test(value) ? 'service_unavailable' : ''));
     if (!status) return;
-    status.textContent = value;
     status.title = value;
     if (kind) status.setAttribute('data-gw-degradation', kind);
     else status.removeAttribute('data-gw-degradation');
     if (status.dataset) {
       if (projected?.nextAction) status.dataset.nextAction = projected.nextAction;
       else delete status.dataset.nextAction;
+    }
+    if (window.GWTopbarStatus?.announce) {
+      window.GWTopbarStatus.announce(value, {tone: kind === 'service_unavailable' ? 'danger' : 'info'});
+    } else {
+      // 外壳入口尚未加载时的兜底（保留旧行为，不破坏独立运行）。
+      const runner = status.querySelector?.('[data-gw-topbar-runner]');
+      if (runner) runner.textContent = value;
+      else status.textContent = value;
     }
   }
 

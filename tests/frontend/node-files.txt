@@ -121,6 +121,7 @@ tests/frontend/qin-603-domain-gate-runtime.test.mjs
 tests/frontend/qin-606-asset-stat-label-no-overlap.test.mjs
 tests/frontend/qin-609-preview-scheduling.test.mjs
 tests/frontend/qin-611-collab-center.test.mjs
+tests/frontend/qin-612-topbar-message-bar.test.mjs
 tests/frontend/settings-workbench-visual.test.mjs
 tests/frontend/test_c18_omnibar_hotkeys.mjs
 tests/frontend/test_c18_video_jump.mjs

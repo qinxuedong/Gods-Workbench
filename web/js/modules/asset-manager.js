@@ -889,11 +889,33 @@ function markIndexState(state=''){
     if(currentIndexState) el.setAttribute('data-gw-index-state', currentIndexState);
     else el.removeAttribute('data-gw-index-state');
 }
+// QIN-612 AC8：破坏性操作（删除/移出/清除索引/回收站/解除等）用红字；
+// 进行中/普通完成/一般提示用金色。仅按文案语义判定，不改各业务调用点。
+function topbarToneForStatus(value){
+    return /删除|移出|回收站|清除索引|清空|解除|已删|失败|错误|冲突|无权|权限不足|只读|暂不可用/.test(value) ? 'danger' : 'info';
+}
+function announceTopbarStatus(value){
+    // 内嵌 iframe 内经 parent 访问外壳统一入口；跨域或无入口时静默回退（由调用方写 DOM）。
+    try {
+        const win = window.parent !== window ? window.parent : window;
+        const bus = win.GWTopbarStatus;
+        if (bus && typeof bus.announce === 'function') {
+            bus.announce(value, {tone: topbarToneForStatus(value)});
+            return true;
+        }
+    } catch(_) {}
+    return false;
+}
 function setStatus(text='准备就绪'){
     currentStatusText = text || '准备就绪';
     const el = currentStatusElement();
     if(el){
-        el.textContent = currentStatusText;
+        const handled = announceTopbarStatus(currentStatusText);
+        if(!handled){
+            const runner = el.querySelector?.('[data-gw-topbar-runner]');
+            if(runner) runner.textContent = currentStatusText;
+            else el.textContent = currentStatusText;
+        }
         if(currentIndexState) el.setAttribute('data-gw-index-state', currentIndexState);
         else el.removeAttribute('data-gw-index-state');
         // 显式降级标记（用户 2026-09-21 裁决第 3 项）：未接入 / 暂不可用必须可被核验，
