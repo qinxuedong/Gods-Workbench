@@ -284,7 +284,7 @@ def test_workbench_task_center_is_driven_by_real_endpoint():
 
     本用例由旧「整体未接入」守卫改写而来（Phase 12 门禁第 6 条：原 *_NOT_INTEGRATED
     断言必须改为断言新真实语义）。要求：
-    1. 三页存在由共享模块驱动的真实容器，且不再保留静态示例任务；
+    1. 三页接入共享模块，首页存在由共享模块驱动的真实容器，且不再保留静态示例任务；
     2. 共享模块只消费 /api/observability/tasks，且不含任何随机数或伪造百分比；
     3. 后端不可达时仍必须走显式降级（不得静默伪造队列）。
     """
@@ -292,9 +292,6 @@ def test_workbench_task_center_is_driven_by_real_endpoint():
         html = _read(path)
         assert "/static/js/core/task-queue.js" in html, (
             f"{path.name} 必须引入任务队列共享模块"
-        )
-        assert "workbenchTaskCenterDrawerList" in html, (
-            f"{path.name} 必须有真实队列容器"
         )
     index = _read(INDEX_HTML)
     assert 'id="activeTasksCountBadge"' in index, "首页必须有活跃任务计数位"

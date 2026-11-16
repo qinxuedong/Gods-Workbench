@@ -21,7 +21,9 @@
   const q = (selector, root = document) => root.querySelector(selector);
   const initial = new URLSearchParams(location.search);
   const initialHash = location.hash.slice(1);
+  const EMBEDDED = initial.get('embedded') === '1' || window.self !== window.top;
   const ENDPOINTS = {
+    index: '/api/observability',
     overview: '/api/observability/overview',
     series: '/api/observability/series',
     events: '/api/observability/events',
@@ -76,7 +78,7 @@
   const hasTaskContext = ['job_id', 'project_id', 'entity_id', 'asset_id', 'canvas_id']
     .some(key => Boolean(initial.get(key)));
   const state = {
-    view: initial.get('view') || (hasTaskContext || deepLink ? 'tasks' : 'overview'), range: initial.get('range') || '15m', source: initial.get('source') || 'all',
+    view: EMBEDDED ? (initial.get('view') === 'logs' ? 'logs' : 'tasks') : (initial.get('view') || (hasTaskContext || deepLink ? 'tasks' : 'overview')), range: initial.get('range') || '15m', source: initial.get('source') || 'all',
     level: initial.get('level') === 'warning' ? 'warn' : (initial.get('level') || 'all'), status: initial.get('status') || 'all', logStatus: initial.get('status') || 'all', stableId: initial.get('stable_id') || initial.get('asset_id') || (deepLink?.type === 'asset' ? deepLink.id : ''),
     projectId: initial.get('project_id') || '', entityId: initial.get('entity_id') || '', assetId: initial.get('asset_id') || '', canvasId: initial.get('canvas_id') || '', jobId: initial.get('job_id') || (deepLink?.type === 'task' ? deepLink.id : ''),
     eventId: initial.get('event_id') || (deepLink?.type === 'event' ? deepLink.id : ''), overview: {}, tasks: [], stalledTasks: [], events: [], series: {}, health: [], sources: [], assetVolumes: [], longTasks: [], eventWindow: null, taskWindow: null,
@@ -589,6 +591,16 @@
     else if (state.eventId) hash = `#event-${state.eventId}`;
     else if (state.stableId && state.stableId.startsWith('asset-')) hash = `#asset-${state.stableId}`;
     history.replaceState({}, '', `${url.pathname}${url.search}${hash}`);
+    if (EMBEDDED && window.parent !== window) {
+      window.parent.postMessage({
+        type: 'gw-task-center-url',
+        version: 1,
+        view: state.view,
+        job_id: state.jobId || '',
+        event_id: state.eventId || '',
+        hash,
+      }, location.origin);
+    }
   }
 
   function setText(selector, value) { const node = q(selector); if (node) node.textContent = String(value ?? '—'); }
@@ -1011,6 +1023,7 @@
   }
 
   function renderActions() {
+    if (EMBEDDED) return '';
     const actions = state.detailActions || {}; const reasons = Object.entries(state.detailActionReasons || {}).filter(([action, reason]) => !actions[action] && String(reason || '').trim()).map(([, reason]) => `<p class="action-capability-note">${esc(String(reason))}</p>`).join('');
     if (!canEdit()) return '';
     const disabled = state.actionBusy ? ' disabled aria-disabled="true"' : '';
@@ -1071,6 +1084,7 @@
   }
 
   async function runTaskAction(action) {
+    if (EMBEDDED) return;
     const job = state.detail; if (!job || !state.detailActions?.[action] || state.actionBusy) return; state.actionBusy = action; renderDetail();
     try { const options = {method: 'POST', headers: {'Content-Type': 'application/json'}}; options.body = JSON.stringify({expected_version: Number(job.version || 0)}); const data = await api(`/api/asset-registry/workspace-jobs/${encodeURIComponent(job.job_id)}/${action}`, options); state.pendingAction = ''; showToast(tr('taskCenter.actionAccepted')); await load(); await openTaskDetail(String(data.job?.job_id || job.job_id)); }
     catch (error) { showToast(error.message || tr('taskCenter.actionFailed'), 'error'); }
@@ -1103,7 +1117,9 @@
     const id = cleanId(eventId); if (!id) return;
     if (!state.events.some(item => eventRecord(item).event_id === id)) {
       try {
-        const data = await api(`${ENDPOINTS.events}?${observationQuery({limit: 1, event_id: id}, 'event-deep-link')}`);
+        const query = observationQuery({limit: 1, event_id: id}, 'event-deep-link');
+        if (EMBEDDED) query.set('source', 'agent_runtime');
+        const data = await api(`${ENDPOINTS.events}?${query}`);
         state.events = state.events.concat(firstArray(data, ['items', 'events', 'data']).map(eventRecord));
       } catch (error) {
         if (isPermissionError(error)) state.permissionDenied = true;
@@ -1120,9 +1136,44 @@
   async function load() {
     if (state.loading || !acquireDataRequest('refresh')) return;
     state.loading = true; state.assetVolumeLoading = true; state.longTaskLoading = true; state.loadError = ''; state.loadErrorKind = ''; state.assetVolumeError = ''; state.longTasksError = ''; state.stalledTasksError = ''; state.stalledTasksDataStatus = 'ok'; state.stalledTasks = []; state.assetVolumes = []; state.assetVolumeNextCursor = ''; state.assetVolumeHasMore = false; state.eventWindow = null; state.taskWindow = null; state.degraded = []; state.degradedKinds = []; state.permissionDenied = false; state.summaryOnly = state.role === 'reviewer'; render();
-    const eventQuery = observationQuery(state.eventId ? {limit: 1, event_id: state.eventId} : {limit: 50}, 'events'); const taskQuery = observationQuery(state.jobId ? {limit: 1, job_id: state.jobId} : {limit: 50}, 'tasks'); const assetVolumeQueryString = assetVolumeQuery(); const longRunningQuery = observationQuery({range: 'all', limit: '50', status: 'running', job_type: LONG_TASK_JOB_TYPES}, 'tasks'); const longQueuedQuery = observationQuery({range: 'all', limit: '50', status: 'queued', job_type: LONG_TASK_JOB_TYPES}, 'tasks'); const longSucceededQuery = observationQuery({range: 'all', limit: '50', status: 'succeeded', job_type: LONG_TASK_JOB_TYPES}, 'tasks'); const longFailedQuery = observationQuery({range: 'all', limit: '50', status: 'failed', job_type: LONG_TASK_JOB_TYPES}, 'tasks'); const longCanceledQuery = observationQuery({range: 'all', limit: '50', status: 'canceled', job_type: LONG_TASK_JOB_TYPES}, 'tasks'); const stalledQueuedQuery = observationQuery({range: 'all', limit: '100', stall_classification: ['queued', 'historical']}, 'tasks'); const stalledRecoveringQuery = observationQuery({range: 'all', limit: '100', stall_classification: ['recovering', 'historical']}, 'tasks');
-    [longRunningQuery, longQueuedQuery, longSucceededQuery, longFailedQuery, longCanceledQuery].forEach(query => ['stable_id', 'project_id', 'entity_id', 'asset_id', 'canvas_id', 'job_id'].forEach(key => query.delete(key)));
+    const eventQuery = observationQuery(state.eventId ? {limit: 1, event_id: state.eventId} : {limit: 50}, 'events'); if (EMBEDDED) eventQuery.set('source', 'agent_runtime'); const taskQuery = observationQuery(state.jobId ? {limit: 1, job_id: state.jobId} : {limit: 50}, 'tasks'); const assetVolumeQueryString = assetVolumeQuery(); const longRunningQuery = observationQuery({range: 'all', limit: '50', status: 'running', job_type: LONG_TASK_JOB_TYPES}, 'tasks'); const longQueuedQuery = observationQuery({range: 'all', limit: '50', status: 'queued', job_type: LONG_TASK_JOB_TYPES}, 'tasks'); const longSucceededQuery = observationQuery({range: 'all', limit: '50', status: 'succeeded', job_type: LONG_TASK_JOB_TYPES}, 'tasks'); const longFailedQuery = observationQuery({range: 'all', limit: '50', status: 'failed', job_type: LONG_TASK_JOB_TYPES}, 'tasks'); const longCanceledQuery = observationQuery({range: 'all', limit: '50', status: 'canceled', job_type: LONG_TASK_JOB_TYPES}, 'tasks'); const stalledQueuedQuery = observationQuery({range: 'all', limit: '100', stall_classification: ['queued', 'historical']}, 'tasks'); const stalledRecoveringQuery = observationQuery({range: 'all', limit: '100', stall_classification: ['recovering', 'historical']}, 'tasks');
     const failed = (result, label) => { if (result.status === 'rejected') { const itemKind = degradeKind(result.reason); if (itemKind) { pushDegraded(degradeLabel(result.reason, label), itemKind); } else if (isPermissionError(result.reason)) { if (['reviewer', 'editor'].includes(String(state.role || ''))) { if (state.role === 'reviewer') state.summaryOnly = true; const notice = state.role === 'reviewer' ? tr('taskCenter.summaryOnly') : tr('taskCenter.degradedData'); pushDegraded(`${label} · ${notice}`, ''); } else state.permissionDenied = true; } else pushDegraded(degradeLabel(result.reason, label), ''); } };
+    if (EMBEDDED) {
+      try {
+        const [events, tasks] = await Promise.allSettled([
+          api(`${ENDPOINTS.events}?${eventQuery}`),
+          api(`${ENDPOINTS.tasks}?${taskQuery}`),
+        ]);
+        if (events.status === 'fulfilled') {
+          state.events = firstArray(events.value, ['events', 'items', 'data']).map(eventRecord);
+          state.eventWindow = responseWindow(events.value);
+          state.nextCursor = cleanId(events.value.next_cursor || events.value.cursor?.next || events.value.meta?.next_cursor);
+          state.hasMore = Boolean(events.value.has_more || state.nextCursor);
+          noteDataStatus(events.value, tr('taskCenter.eventsUnavailable'));
+        } else failed(events, tr('taskCenter.eventsUnavailable'));
+        if (tasks.status === 'fulfilled') {
+          state.tasks = firstArray(tasks.value, ['items', 'tasks']).map(persistentTask).filter(item => item.id);
+          state.taskWindow = responseWindow(tasks.value);
+          state.taskNextCursor = cleanId(tasks.value.next_cursor || tasks.value.cursor?.next || tasks.value.meta?.next_cursor);
+          state.taskHasMore = Boolean(tasks.value.has_more || state.taskNextCursor);
+          noteDataStatus(tasks.value, tr('taskCenter.tasksUnavailable'));
+        } else failed(tasks, tr('taskCenter.tasksUnavailable'));
+      } catch (error) {
+        state.loadError = taskCenterDegradationNotice(error);
+      } finally {
+        const shouldReload = finishDataRequest('refresh');
+        state.loading = false;
+        render();
+        runQueuedReload(shouldReload);
+        if (state.deepLinkPending) {
+          state.deepLinkPending = false;
+          if (state.jobId) await openTaskDetail(state.jobId);
+          else if (state.eventId) await focusEventDeepLink(state.eventId);
+        }
+      }
+      return;
+    }
+    [longRunningQuery, longQueuedQuery, longSucceededQuery, longFailedQuery, longCanceledQuery].forEach(query => ['stable_id', 'project_id', 'entity_id', 'asset_id', 'canvas_id', 'job_id'].forEach(key => query.delete(key)));
     try {
       const results = await Promise.allSettled([api(`${ENDPOINTS.overview}?${observationQuery()}`), api(`${ENDPOINTS.series}?${observationQuery({metrics: 'asset_response_bytes,asset_search_duration_ms'})}`), api(`${ENDPOINTS.events}?${eventQuery}`), api(`${ENDPOINTS.tasks}?${taskQuery}`), api(`${ENDPOINTS.health}?${observationQuery()}`), api(`${ENDPOINTS.sources}?${observationQuery()}`), api(`${ENDPOINTS.assetVolumes}?${assetVolumeQueryString}`), api(`${ENDPOINTS.tasks}?${longRunningQuery}`), api(`${ENDPOINTS.tasks}?${longQueuedQuery}`), api(`${ENDPOINTS.tasks}?${longSucceededQuery}`), api(`${ENDPOINTS.tasks}?${longFailedQuery}`), api(`${ENDPOINTS.tasks}?${longCanceledQuery}`), api(`${ENDPOINTS.tasks}?${stalledQueuedQuery}`), api(`${ENDPOINTS.tasks}?${stalledRecoveringQuery}`)]);
       const [overview, series, events, tasks, health, sources, assetVolumes, longRunning, longQueued, longSucceeded, longFailed, longCanceled, stalledQueued, stalledRecovering] = results;
@@ -1250,7 +1301,7 @@
     finally { indexRequestBusy = false; button.disabled = false; }
   }
 
-  function setView(view) { if (!['overview', 'tasks', 'logs', 'metrics'].includes(view)) return; state.view = view; syncUrl(); render(); }
+  function setView(view) { if (EMBEDDED && !['tasks', 'logs'].includes(view)) return; if (!['overview', 'tasks', 'logs', 'metrics'].includes(view)) return; state.view = view; syncUrl(); render(); }
   function resetAndLoad() { if (dataRequestOwner) { queuedReload = true; return; } queuedReload = false; resetPaginationState(); void load(); }
 
   async function handleClick(event) {
@@ -1356,5 +1407,18 @@
       }
     }, { passive: true });
   }
-  (async function initialize(){ syncAutoRefresh(); await loadPrincipal(); q('[data-start-index]').hidden = !canEdit(); setView(state.view); await load(); })().catch(error => { state.loadError = taskCenterDegradationNotice(error); state.loading = false; render(); });
+  (async function initialize(){
+    syncAutoRefresh();
+    if (EMBEDDED) {
+      document.documentElement.classList.add('task-center-embedded');
+      document.querySelectorAll('[data-view="overview"], [data-view="metrics"]').forEach(node => node.remove());
+      document.querySelectorAll('[data-view-panel="overview"], [data-view-panel="metrics"]').forEach(node => node.remove());
+      q('[data-start-index]')?.remove();
+    } else {
+      await loadPrincipal();
+      q('[data-start-index]').hidden = !canEdit();
+    }
+    setView(state.view);
+    await load();
+  })().catch(error => { state.loadError = taskCenterDegradationNotice(error); state.loading = false; render(); });
 })();

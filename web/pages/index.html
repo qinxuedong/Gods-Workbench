@@ -860,17 +860,15 @@
             <div class="flex items-center space-x-1.5">
               <span class="gw-type-body-sm font-mono text-slate-400 font-bold" id="activeTasksCountBadge" title="读取真实作业队列 /api/observability/tasks">读取中…</span>
               <span class="w-px h-2.5 bg-white/10"></span>
-              <button type="button" class="hw-btn gw-type-body-md transition cursor-pointer" onclick="HardwareDeck.openDrawer('taskCenterDrawer')" title="查看完整渲染与作业队列">
+              <a class="hw-btn gw-type-body-md transition cursor-pointer" href="/static/pages/collab.html?view=tasks" title="查看完整渲染与作业队列">
                 队列 &rarr;
-              </button>
+              </a>
             </div>
           </div>
 
           <!-- 真实作业队列容器：内容完全由 /api/observability/tasks 驱动，不含任何静态示例任务。 -->
-          <div class="flex-1 overflow-y-auto space-y-1.5 pr-0.5 min-h-0" id="workbenchActiveTasksContainer">
-            <div class="bay-inset p-3 rounded-xl border border-white/10 text-center gw-type-body-sm font-mono text-slate-400" role="status">
-              <span class="block">读取真实作业队列…</span>
-            </div>
+          <div id="workbenchActiveTasksContainer" class="flex-1 min-h-0 flex items-center justify-center p-3 text-center gw-type-body-sm text-slate-400">
+            <a class="hw-btn" href="/static/pages/collab.html?view=tasks">进入协作中心查看任务与日志</a>
           </div>
         </section>
 
@@ -957,7 +955,7 @@
               <span class="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" id="renderBusLed"></span>
               <span class="gw-type-body-sm font-bold text-slate-300" id="renderBusStatus" data-gw-degradation="not_integrated">渲染总线 · 读取中…</span>
             </div>
-            <button type="button" class="hw-btn gw-type-body-md cursor-pointer" onclick="HardwareDeck.openDrawer('taskCenterDrawer')">查看队列 &rarr;</button>
+            <a class="hw-btn gw-type-body-md cursor-pointer" href="/static/pages/collab.html?view=tasks">查看队列 &rarr;</a>
           </div>
         </section>
 
@@ -1451,25 +1449,6 @@
       </form>
     </div>
   </div>
-
-  <!-- 3.3 任务中心滑出抽屉 (#taskCenterDrawer) -->
-  <div class="hw-drawer-backdrop" id="taskCenterDrawer-backdrop"></div>
-  <aside class="hw-drawer-panel" id="taskCenterDrawer">
-    <div class="p-3.5 border-b border-white/10 flex items-center justify-between shrink-0 bg-[#0d0f14]">
-      <div class="flex items-center space-x-2">
-        <i data-lucide="bell" class="w-4 h-4 text-[#dfc384]"></i>
-        <h3 class="text-slate-100 gw-type-title">任务中心与渲染队列</h3>
-      </div>
-      <button type="button" class="btn-hw-round" onclick="HardwareDeck.closeDrawer('taskCenterDrawer')" aria-label="关闭任务中心"><span class="btn-hw-round-inner"><i data-lucide="x" class="w-4 h-4" aria-hidden="true"></i></span></button>
-    </div>
-
-    <div class="p-3 overflow-y-auto space-y-2 flex-1 gw-type-body-sm">
-      <!-- 任务中心抽屉内容：由 /api/observability/tasks 真实驱动。 -->
-      <div class="space-y-2" id="workbenchTaskCenterDrawerList">
-        <div class="bay-inset p-2.5 rounded-xl border border-white/10 text-center gw-type-body-sm font-mono text-slate-400" role="status">读取真实作业队列…</div>
-      </div>
-    </div>
-  </aside>
 
   <!-- 3.4 团队席位模态框 (#teamModal) -->
   <div class="hw-modal-backdrop" id="teamModal">

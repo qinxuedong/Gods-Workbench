@@ -55,7 +55,7 @@ window.WorkbenchCollab = (() => {
     } catch (_) {}
   }
   const pageState = () => ({items: [], status: 'loading', cursor: '', window: null, busy: false});
-  const state = {members: pageState(), teams: pageState(), tasks: pageState(), logs: pageState(), audit: pageState(), approvals: pageState(), view: 'tasks'};
+  const state = {members: pageState(), teams: pageState(), audit: pageState(), approvals: pageState()};
   const messageState = {
     bound: false, canSend: false, identityStatus: 'loading', teamId: new URLSearchParams(location.search).get('team_id') || '',
     items: [], status: 'loading', nextAfterSequence: 0, historyCursor: '', hasMore: false,
@@ -108,30 +108,17 @@ window.WorkbenchCollab = (() => {
     el('collabApprovalList').innerHTML = page.items.length ? page.items.map(a => '<article class="collab-approval-item"><div class="flex justify-between gap-2"><strong>' + esc(a.action || '操作申请') + '</strong><span class="gw-type-body-sm">' + esc(({pending:'待审批', approved:'已通过', rejected:'已拒绝'})[a.status] || a.status) + '</span></div><p>' + esc(a.requester_name || a.requester_username || a.requested_by || '未知账户') + ' · ' + esc(dateText(a.operation_created_at || a.created_at)) + '</p></article>').join('') : empty(page, '暂无审批记录。');
   }
 
-  function renderTaskFeed() {
-    const page = state[state.view];
-    const tasks = state.view === 'tasks';
-    el('collabTaskFeed').innerHTML = page.items.length ? page.items.map(item => {
-      const title = tasks ? (item.summary || item.title || item.job_type || item.job_id) : (item.message_safe || item.event_name || '运行事件');
-      const meta = tasks ? (item.status || 'unknown') + ' · ' + (item.job_id || '') : (item.level || 'INFO') + ' · ' + (item.source || '');
-      return '<article class="collab-task-item"><div class="flex justify-between gap-2"><strong>' + esc(title) + '</strong><time>' + esc(dateText(item.updated_at || item.timestamp || item.created_at)) + '</time></div><p>' + esc(meta) + '</p></article>';
-    }).join('') : empty(page, tasks ? '暂无可见任务。' : '最近 24 小时暂无可见日志。');
-    el('collabTaskState').textContent = (tasks ? '全部时间任务' : '全部来源日志 · 最近 24 小时') + ' · ' + (page.status === 'ready' ? '已加载 ' + page.items.length + ' 条' : statusText(page.status));
-    updateMore('collabTaskMore', page);
-  }
-
   function render(key) {
     if (key === 'members' || key === 'teams') renderMembers();
     else if (key === 'audit') renderTimeline();
     else if (key === 'approvals') renderApprovals();
-    else renderTaskFeed();
   }
 
   function requestUrl(key, page) {
     if (key === 'members') return '/api/asset-auth/users';
     if (key === 'teams') return '/api/asset-auth/teams';
     if (key === 'approvals') return '/api/asset-auth/operation-approvals?status=all&limit=100';
-    const params = new URLSearchParams({range:key === 'tasks' ? 'all' : '24h', limit:'100'});
+    const params = new URLSearchParams({range:'24h', limit:'100'});
     if (key === 'audit') {
       params.set('source', 'audit_logs');
       if (projectId) params.set('project_id', projectId);
@@ -142,7 +129,7 @@ window.WorkbenchCollab = (() => {
       params.set('start_ms', String(page.window.start));
       params.set('end_ms', String(page.window.end));
     }
-    return '/api/observability/' + (key === 'tasks' ? 'tasks' : 'events') + '?' + params;
+    return '/api/observability/events?' + params;
   }
 
   async function loadPage(key, more = false) {
@@ -185,7 +172,7 @@ window.WorkbenchCollab = (() => {
   function updateDeckStatus() {
     const node = el('collabDeckStatus');
     if (!node) return;
-    const keys = ['members', 'teams', 'tasks', 'logs', 'audit', 'approvals'];
+    const keys = ['members', 'teams', 'audit', 'approvals'];
     const statuses = keys.map(k => state[k].status);
     const readyCount = statuses.filter(s => s === 'ready' || s === 'degraded').length;
     const bad = statuses.filter(s => s !== 'ready' && s !== 'degraded');
@@ -205,7 +192,7 @@ window.WorkbenchCollab = (() => {
     const button = el('collabRefresh');
     button.disabled = true;
     try {
-      await Promise.all(['members', 'teams', 'tasks', 'logs', 'audit', 'approvals'].map(key => loadPage(key)));
+      await Promise.all(['members', 'teams', 'audit', 'approvals'].map(key => loadPage(key)));
       if (lifecycle !== ownerLifecycle || ownerLifecycle.signal.aborted) return;
       await loadMessageContext(ownerLifecycle);
     } finally {
@@ -216,29 +203,18 @@ window.WorkbenchCollab = (() => {
     }
   }
 
-  function bindTabs(signal) {
-    const tabs = [...document.querySelectorAll('[data-collab-view]')];
-    tabs.forEach((button, index) => {
-      button.tabIndex = index ? -1 : 0;
-      button.addEventListener('click', () => {
-        state.view = button.dataset.collabView === 'logs' ? 'logs' : 'tasks';
-        tabs.forEach(item => {
-          const active = item === button;
-          item.classList.toggle('active', active);
-          item.setAttribute('aria-selected', String(active));
-          item.tabIndex = active ? 0 : -1;
-        });
-        document.querySelector('[data-collab-route-link]').href = '/static/pages/collab.html?view=' + encodeURIComponent(state.view);
-        renderTaskFeed();
-      }, {signal});
-      button.addEventListener('keydown', event => {
-        if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
-        event.preventDefault();
-        const target = tabs[event.key === 'Home' ? 0 : event.key === 'End' ? tabs.length - 1 : (index + (event.key === 'ArrowRight' ? 1 : -1) + tabs.length) % tabs.length];
-        target.focus();
-        target.click();
-      }, {signal});
+  function syncCenterFrame() {
+    const frame = el('collabCenterFrame');
+    if (!frame) return;
+    const current = new URLSearchParams(location.search);
+    const view = current.get('view') === 'logs' || current.get('event_id') ? 'logs' : 'tasks';
+    const params = new URLSearchParams({embedded: '1', view});
+    ['project_id', 'entity_id', 'asset_id', 'canvas_id', 'job_id', 'event_id'].forEach(key => {
+      const value = current.get(key);
+      if (value) params.set(key, value);
     });
+    const hash = /^#(?:task|event)-[A-Za-z0-9_.:@-]+$/.test(location.hash) ? location.hash : '';
+    frame.src = '/static/embeds/task-center.html?' + params.toString() + hash;
   }
 
   async function openTeamManagement(tab = '') {
@@ -627,9 +603,7 @@ window.WorkbenchCollab = (() => {
     await settleProjectContext();
     lifecycle = new AbortController();
     const signal = lifecycle.signal;
-    bindTabs(signal);
     el('collabRefresh').addEventListener('click', refresh, {signal});
-    el('collabTaskMore').addEventListener('click', () => loadPage(state.view, true), {signal});
     el('collabAuditMore').addEventListener('click', () => loadPage('audit', true), {signal});
     el('collabTeamSelect').addEventListener('change', event => selectMessageTeam(event.target.value), {signal});
     el('collabIdentityBind').addEventListener('click', bindIdentity, {signal});
@@ -637,6 +611,21 @@ window.WorkbenchCollab = (() => {
     el('collabMessageHistoryMore').addEventListener('click', () => loadMessages('history'), {signal});
     el('collabMessageSend').addEventListener('click', sendMessage, {signal});
     el('collabMessageInput').addEventListener('input', updateMessageControls, {signal});
+    window.addEventListener('message', event => {
+      if (event.origin !== location.origin || event.source !== el('collabCenterFrame')?.contentWindow) return;
+      if (event.data?.type !== 'gw-task-center-url' || event.data.version !== 1) return;
+      const url = new URL(location.href);
+      const allowed = ['view', 'job_id', 'event_id'];
+      allowed.forEach(key => {
+        const value = String(event.data[key] || '');
+        if (value) url.searchParams.set(key, value);
+        else url.searchParams.delete(key);
+      });
+      if (typeof event.data.hash === 'string' && /^#(?:task|event)-[A-Za-z0-9_.:@-]+$/.test(event.data.hash)) url.hash = event.data.hash;
+      else url.hash = '';
+      history.replaceState({}, '', url.pathname + url.search + url.hash);
+    }, {signal});
+    syncCenterFrame();
     document.addEventListener('visibilitychange', () => {
       if (document.hidden) clearMessageTimer();
       else if (messageState.teamId && messageState.bound) {
