@@ -213,7 +213,8 @@ window.WorkbenchCollab = (() => {
       const value = current.get(key);
       if (value) params.set(key, value);
     });
-    frame.src = '/static/embeds/task-center.html?' + params.toString();
+    const hash = /^#(?:task|event)-[A-Za-z0-9_.:@-]+$/.test(location.hash) ? location.hash : '';
+    frame.src = '/static/embeds/task-center.html?' + params.toString() + hash;
   }
 
   async function openTeamManagement(tab = '') {
@@ -610,6 +611,20 @@ window.WorkbenchCollab = (() => {
     el('collabMessageHistoryMore').addEventListener('click', () => loadMessages('history'), {signal});
     el('collabMessageSend').addEventListener('click', sendMessage, {signal});
     el('collabMessageInput').addEventListener('input', updateMessageControls, {signal});
+    window.addEventListener('message', event => {
+      if (event.origin !== location.origin || event.source !== el('collabCenterFrame')?.contentWindow) return;
+      if (event.data?.type !== 'gw-task-center-url' || event.data.version !== 1) return;
+      const url = new URL(location.href);
+      const allowed = ['view', 'job_id', 'event_id'];
+      allowed.forEach(key => {
+        const value = String(event.data[key] || '');
+        if (value) url.searchParams.set(key, value);
+        else url.searchParams.delete(key);
+      });
+      if (typeof event.data.hash === 'string' && /^#(?:task|event)-[A-Za-z0-9_.:@-]+$/.test(event.data.hash)) url.hash = event.data.hash;
+      else url.hash = '';
+      history.replaceState({}, '', url.pathname + url.search + url.hash);
+    }, {signal});
     syncCenterFrame();
     document.addEventListener('visibilitychange', () => {
       if (document.hidden) clearMessageTimer();

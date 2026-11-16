@@ -221,7 +221,7 @@ def get_observability_events(
     ),
 ):
     """只返回真实脱敏审计事件；无事件返回空数组，无法求值的过滤条件返回空 + degraded。"""
-    require_authenticated(authorization, x_user_role)
+    auth = require_authenticated(authorization, x_user_role)
     return default_observability_service.events(
         _filters(
             request,
@@ -240,7 +240,8 @@ def get_observability_events(
             cursor=cursor,
             start_ms=start_ms,
             end_ms=end_ms,
-        )
+        ),
+        auth_context=auth,
     )
 
 

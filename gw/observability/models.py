@@ -229,10 +229,12 @@ class ObservabilityEvent(BaseModel):
     subject: str | None = None
     role: str | None = None
     auth_mode: str | None = None
+    job_id: str | None = None
+    run_id: str | None = None
 
 
 class ObservabilityTask(BaseModel):
-    """真实内存任务投影；未记录字段一律不出现。"""
+    """任务中心安全投影；字段只来自已授权的持久或内存源。"""
 
     model_config = ConfigDict(extra="ignore")
 
@@ -241,6 +243,16 @@ class ObservabilityTask(BaseModel):
     poll_hint: str | None = None
     has_result: bool = False
     error_safe: str | None = None
+    source: str = "god_canvas"
+    job_type: str | None = None
+    created_at: str | None = None
+    updated_at: str | None = None
+    project_id: str | None = None
+    entity_id: str | None = None
+    asset_id: str | None = None
+    canvas_id: str | None = None
+    data_status: DataStatus = DataStatus.OK
+    data_gaps: list[str] = Field(default_factory=list)
 
 
 class ObservabilityListResponse(BaseModel):
@@ -257,6 +269,10 @@ class ObservabilityListResponse(BaseModel):
     start_ms: int | None = None
     end_ms: int | None = None
     data_gaps: list[str] = Field(default_factory=list)
+    degraded_sources: list[str] = Field(default_factory=list)
+    source_limits: dict[str, int] = Field(default_factory=dict)
+    source_counts: dict[str, int] = Field(default_factory=dict)
+    truncated_sources: list[str] = Field(default_factory=list)
     applied_filters: AppliedFilters
 
 
