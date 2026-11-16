@@ -23,6 +23,7 @@
   const initialHash = location.hash.slice(1);
   const EMBEDDED = initial.get('embedded') === '1' || window.self !== window.top;
   const ENDPOINTS = {
+    index: '/api/observability',
     overview: '/api/observability/overview',
     series: '/api/observability/series',
     events: '/api/observability/events',

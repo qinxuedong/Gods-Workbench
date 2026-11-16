@@ -14,7 +14,12 @@
   ],
   "admitted_files": [],
   "accepted_test_files": [
-    "tests/frontend/qin-611-collab-center.test.mjs"
+    {
+      "path": "tests/frontend/qin-611-collab-center.test.mjs",
+      "classification": "curated_test_coverage",
+      "authorization_basis": "GitHub Issue #731, 2026-11-16",
+      "admission": "accepted"
+    }
   ],
   "notes": "QIN-611：协作页中心复用现有任务中心，删除排他锁看板与三页任务抽屉入口；只登记本票分片，不改基础账本。"
 }
