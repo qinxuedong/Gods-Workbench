@@ -758,6 +758,7 @@
    * - 不落盘、不跨页、不改任何业务写协议。
    * ========================================================================================== */
   const GW_TOPBAR_MIN_WIDTH = 258; // QIN-612 AC4：改前 assets 中条（含左右箭头）实测 257.578125px，向上取整，不得改窄
+  const GW_TOPBAR_MIN_STATUS_WIDTH = 96; // 状态文案最小可视宽：低于此值先收起页名，禁止把文案挤成 0 宽
   const GW_TOPBAR_TTL = 4000;      // 完成/普通提示约 4s 回空闲
 
   function createTopbarStatusEngine(host) {
@@ -909,14 +910,27 @@
       const slot = node.closest?.('.gw-topbar-msg-slot') || node.parentElement?.parentElement;
       const bar = node.closest?.('.gw-topbar-msg-bar') || node.parentElement;
       if (!slot || !bar) continue;
-      const {available, wide} = topbarMeasureWidths(bar);
+      // 极窄屏下左簇若把空隙吃光（agents 页多一枚状态徽章时只剩 11px），
+      // 先让非仪表徽章退位再量一次，确保状态文案始终有可视宽；CPU/RAM 仪表不动。
+      const header = bar.closest?.('.topbar-master-deck');
+      header?.classList.remove('is-topbar-starved');
+      let measure = topbarMeasureWidths(bar);
+      if (measure.available < GW_TOPBAR_MIN_STATUS_WIDTH && header) {
+        header.classList.add('is-topbar-starved');
+        measure = topbarMeasureWidths(bar);
+      }
+      const {available, wide} = measure;
+      // slot 是 flex item：父链 min-width:max-content + 兄弟 shrink-0 会把它压到几个像素，
+      // 而 bar 的最小宽又让它溢出 slot（复核实测 900/assets slot 7px / bar 258px）。
+      // 因此无论宽窄都显式定宽，bar 用 fit-content 在 slot 内随文伸缩。
       slot.style.maxWidth = `${available}px`;
-      // 窄屏时父链 min-width:max-content + flex 收缩会把 auto 宽压到内容最小宽（几个像素），
-      // 必须显式给 slot 宽度，状态文案才有可视区可滚动。
-      if (wide) slot.style.removeProperty('width');
-      else slot.style.width = `${available}px`;
+      slot.style.width = `${available}px`;
       slot.classList.toggle('is-narrow', !wide);
       bar.classList.toggle('is-narrow', !wide);
+      // 页名 shrink-0 曾把状态节点挤到 0 宽，长文案既不可见也不滚动；
+      // 空间不足时先收起页名与分隔线，把余量全部留给状态文案。
+      bar.classList.remove('is-compact');
+      if (node.clientWidth < GW_TOPBAR_MIN_STATUS_WIDTH) bar.classList.add('is-compact');
     }
   }
   function topbarRender(state) {
@@ -937,6 +951,12 @@
         runner = node;
       }
       if (runner.textContent !== state.text) runner.textContent = state.text;
+      // 文案变长后重新判定页名是否该收起，避免状态节点被挤到 0 宽而失去滚动视口。
+      const bar = node.closest?.('.gw-topbar-msg-bar');
+      if (bar) {
+        bar.classList.remove('is-compact');
+        if (node.clientWidth < GW_TOPBAR_MIN_STATUS_WIDTH) bar.classList.add('is-compact');
+      }
       node.classList.toggle('is-danger', state.tone === 'danger');
       node.setAttribute('aria-busy', state.phase === 'progress' ? 'true' : 'false');
       node.dataset.gwTopbarPhase = state.phase;

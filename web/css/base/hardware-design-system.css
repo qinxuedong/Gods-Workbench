@@ -65,6 +65,16 @@
   min-width: var(--gw-topbar-min-width, 258px) !important; /* AC4：实测改前 assets 中条含箭头 257.578125px，向上取整不得改窄 */
   max-width: 100%;
   box-sizing: border-box;
+  width: fit-content;
+}
+/* 页名允许收缩：原 markup 的 shrink-0 会在空间不足时把状态节点挤到 0 宽，
+   长文案既看不见也滚不动（审核复核 18 个样例）。状态节点自身不用省略号。 */
+.topbar-master-deck [data-gw-topbar-title] {
+  min-width: 0 !important;
+  flex: 0 1 auto !important;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .topbar-master-deck [data-gw-topbar-status] {
   position: relative;
@@ -89,6 +99,20 @@
 @keyframes gw-topbar-marquee {
   0%, 8% { transform: translateX(0); }
   92%, 100% { transform: translateX(calc(-1 * var(--gw-topbar-scroll-distance, 0px))); }
+}
+/* 极窄屏且左簇吃满空隙时，让非仪表的状态徽章退位给中条（不遮挡 CPU/RAM 仪表）。 */
+.topbar-master-deck.is-topbar-starved [data-gw-topbar-yield="narrow"] {
+  display: none !important;
+}
+/* 空间不足以容纳最小可视状态时收起页名与分隔线，保留脉冲点 + 可滚动文案。 */
+.topbar-master-deck .gw-topbar-msg-bar.is-compact [data-gw-topbar-title],
+.topbar-master-deck .gw-topbar-msg-bar.is-compact [data-gw-topbar-divider] {
+  display: none !important;
+}
+.topbar-master-deck .gw-topbar-msg-bar.is-compact [data-gw-topbar-status] {
+  margin-left: 0 !important;
+  flex: 1 1 auto !important;
+  min-width: 0;
 }
 @media (prefers-reduced-motion: reduce) {
   .topbar-master-deck [data-gw-topbar-status][data-gw-topbar-scrolling="1"] [data-gw-topbar-runner] { animation-duration: 30s; }

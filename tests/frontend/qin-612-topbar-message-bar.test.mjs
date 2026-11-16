@@ -114,6 +114,25 @@ test('AC4 中条最短宽度常量=实测 257.578125px 向上取整，CSS 以该
     assert.doesNotMatch(assets, /\.asset-shell-deck-status\s*\{[^}]*150px/, '资产页 150px 省略号上限必须移除');
 });
 
+test('AC5 状态节点保底可视宽：页名先收缩/收起，slot 不被 flex 压成几像素', () => {
+    const shell = read('web/js/core/workbench-shell.js');
+    const css = read('web/css/base/hardware-design-system.css');
+    assert.match(shell, /GW_TOPBAR_MIN_STATUS_WIDTH\s*=\s*96/, '须声明状态文案最小可视宽');
+    assert.match(shell, /node\.clientWidth\s*<\s*GW_TOPBAR_MIN_STATUS_WIDTH/,
+        '运行时须在状态节点过窄时启用页名收起');
+    assert.match(shell, /bar\.classList\.add\('is-compact'\)/, '须切换到 compact 态保住文案视口');
+    assert.match(shell, /slot\.style\.width\s*=\s*`\$\{available\}px`/,
+        'slot 必须显式定宽，避免 flex 收缩后 bar 溢出到相邻簇');
+    assert.match(css, /\[data-gw-topbar-title\][\s\S]{0,200}?flex:\s*0 1 auto\s*!important/,
+        '页名须允许收缩，禁止把状态文本挤成 0 宽');
+    assert.match(css, /\.gw-topbar-msg-bar\.is-compact\s*\[data-gw-topbar-title\][\s\S]{0,160}?display:\s*none/,
+        'compact 态须收起页名与分隔线');
+    assert.match(css, /\.is-topbar-starved\s*\[data-gw-topbar-yield="narrow"\]/,
+        '极窄屏须让非仪表徽章退位给中条');
+    const agents = read('web/pages/agents.html');
+    assert.match(agents, /data-gw-topbar-yield="narrow"/, 'agents 页徽章须声明可退位');
+});
+
 test('AC5 超长文字从右向左滚动、无省略号，滚动时长按位移计算', async () => {
     const css = read('web/css/base/hardware-design-system.css');
     assert.match(css, /@keyframes gw-topbar-marquee/, '必须有从右向左滚动动画');
