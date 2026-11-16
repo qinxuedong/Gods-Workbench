@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy
 import threading
 from pathlib import Path
 
@@ -10,7 +11,9 @@ from fastapi.testclient import TestClient
 
 from gw.api import routes_asset_registry
 from gw.api.app import create_app
+from gw.core import storage
 from gw.core.errors import CleanroomException
+from gw.settings.models import StorageAllowedRootDeleteRequest, StorageAllowedRootRequest
 from gw.settings.service import (
     StorageAllowedRootsService,
     StorageSettingsService,
@@ -48,6 +51,35 @@ BLOCKED_SAMPLES = [
     "/Users", "/Users/某用户",
     "/System", "/Library", "/usr/bin",
 ]
+
+# 审核 R2 护栏：词法层对「点段消解后段列表为空」放行，只有 normalize 后的
+# 二次检查能兜住（C:/Users/x/../.. 规范化为 C:\ 盘符根）。删除任一入口的
+# normalize 后二次检查，对应的真实 service 行为断言必须失败。
+NORMALIZE_GAP_SAMPLES = [
+    "C:/Users/x/../..",
+    "C:/Windows/x/../..",
+    "C:/foo/bar/../..",
+]
+
+# 词法层与二次检查双保险都能拒的点段系统目录形态（normalize 后命中清单）。
+SYSTEM_DIR_DOT_SEGMENT_SAMPLES = [
+    "C:/foo/../Windows",
+    "C:/Users/x/../../Windows",
+]
+
+ALL_DOT_SEGMENT_SAMPLES = NORMALIZE_GAP_SAMPLES + SYSTEM_DIR_DOT_SEGMENT_SAMPLES
+
+
+def _assert_normalized_rejection_is_second_check_only(sample: str) -> str:
+    """证明该样例只由 normalize 后二次检查兜住，并返回规范化后的最终路径。"""
+    normalized = storage.normalize_directory_path(sample)
+    assert storage.describe_resource_folder_rejection(sample) == "", (
+        sample, "词法层应放行该点段形态，否则无法证明二次检查不可替代"
+    )
+    assert storage.describe_resource_folder_rejection(normalized), (
+        sample, normalized, "normalize 后的最终路径必须命中拒绝清单"
+    )
+    return normalized
 
 
 def test_rejection_list_blocks_register_entry(gate_runtime):
@@ -216,6 +248,86 @@ def test_rejection_list_blocks_dot_segment_traversals_on_all_entries(gate_runtim
         assert ok.status_code == 200, ok.text
 
 
+@pytest.mark.parametrize("sample", NORMALIZE_GAP_SAMPLES)
+def test_normalize_gap_is_only_caught_by_second_check(sample):
+    """纯函数层证据：词法层放行、normalize 后命中——二次检查不可替代。
+
+    没有这条断言，就无法区分「二次检查拦住」与「词法层拦住」；R2 反证
+    正是利用现有点段样例全部被词法层拦住，令删除二次检查仍全绿。
+    """
+    _assert_normalized_rejection_is_second_check_only(sample)
+
+
+@pytest.mark.parametrize("sample", ALL_DOT_SEGMENT_SAMPLES)
+def test_add_root_service_rejects_normalized_dot_segment(gate_runtime, sample):
+    """真实 service 行为：允许根写入口拒绝点段规范化后的最终路径且不写盘。
+
+    直接调用 StorageAllowedRootsService.add_root（非源码文本断言）：删除
+    add_root 的 normalize 后二次检查后，NORMALIZE_GAP_SAMPLES 会走到
+    probe_mount 或写盘，本用例必红。
+    """
+    service = StorageAllowedRootsService()
+    before = copy.deepcopy(service._state.read())
+    normalized = storage.normalize_directory_path(sample)
+    assert storage.describe_resource_folder_rejection(normalized), (sample, normalized)
+    if sample in NORMALIZE_GAP_SAMPLES:
+        _assert_normalized_rejection_is_second_check_only(sample)
+    with pytest.raises(CleanroomException) as caught:
+        service.add_root(
+            StorageAllowedRootRequest(path=sample, expected_version=int(before["revision"]))
+        )
+    error = caught.value
+    assert error.status_code == 403, (sample, error.code)
+    assert error.code == "RESOURCE_FOLDER_NOT_PERMITTED", (sample, error.code)
+    assert service._state.read() == before, (sample, "被拒绝的请求不得写入允许根状态")
+
+
+@pytest.mark.parametrize("sample", ALL_DOT_SEGMENT_SAMPLES)
+def test_restore_root_service_rejects_normalized_dot_segment(gate_runtime, sample):
+    """真实 service 行为：恢复入口拒绝点段规范化后的最终路径且不写盘。
+
+    防止本功能上线前移除的整盘/系统目录经「恢复已移除允许根」静默回归。
+    """
+    service = StorageAllowedRootsService()
+    record_id = "root_qin596_dotseg"
+    service._state.mutate(
+        lambda state: state["roots"].append(
+            {"id": record_id, "path": sample, "aliases": [], "active": False}
+        )
+    )
+    before = copy.deepcopy(service._state.read())
+    if sample in NORMALIZE_GAP_SAMPLES:
+        _assert_normalized_rejection_is_second_check_only(sample)
+    with pytest.raises(CleanroomException) as caught:
+        service.restore_root(
+            record_id,
+            StorageAllowedRootDeleteRequest(expected_version=int(before["revision"])),
+        )
+    error = caught.value
+    assert error.status_code == 403, (sample, error.code)
+    assert error.code == "RESOURCE_FOLDER_NOT_PERMITTED", (sample, error.code)
+    assert service._state.read() == before, (sample, "被拒绝的恢复不得激活已移除允许根")
+
+
+@pytest.mark.parametrize("sample", ALL_DOT_SEGMENT_SAMPLES)
+def test_register_entry_service_rejects_normalized_dot_segment(gate_runtime, sample):
+    """真实 service 行为：登记入口拒绝点段规范化后的最终路径且不写 settings。
+
+    resolve_asset_registration_root 的二次检查已前移到 normalize 之后、
+    validate_directory_path（目录 IO）之前，POSIX 主机上门禁同样可达。
+    """
+    settings = StorageSettingsService()
+    before = copy.deepcopy(settings._state.read())
+    if sample in NORMALIZE_GAP_SAMPLES:
+        _assert_normalized_rejection_is_second_check_only(sample)
+    with pytest.raises(CleanroomException) as caught:
+        storage.resolve_asset_registration_root(sample)
+    error = caught.value
+    assert error.status_code == 403, (sample, error.code)
+    assert error.code == "RESOURCE_FOLDER_NOT_PERMITTED", (sample, error.code)
+    assert settings._state.read() == before, (sample, "登记校验失败不得写 storage_settings")
+
+
 def test_version_conflict_orchestration(gate_runtime, monkeypatch: pytest.MonkeyPatch):
     """v9 §6.5 确定性编排：B 过 duplicate 检查后暂停在 patch 前；A 的 patch
     透传成功推进 revision；释放 B 得 VERSION_CONFLICT；失败可见；known 重试收敛。
@@ -261,29 +373,34 @@ def test_version_conflict_orchestration(gate_runtime, monkeypatch: pytest.Monkey
             b_outcome.append(error.code)
 
     b_outcome: list = []
-    worker = threading.Thread(target=call_b)
+    worker = threading.Thread(target=call_b, name="qin596-version-conflict-b", daemon=True)
     worker.start()
-    assert arrived.wait(timeout=10), "B 未在期限内到达 patch 屏障"
-    with TestClient(create_app()) as client:
-        a_response = client.post(
-            BASE + "/reindex",
-            headers={**EDITOR, "Idempotency-Key": "qin596-version-a"},
-            json={
-                "background": True,
-                "hash_files": False,
-                "max_files": 10,
-                "roots": ["local_extra_a"],
-                "register_root": {
-                    "id": "local_extra_a",
-                    "name": "入口A",
-                    "path": str(allowed),
-                    "expected_version": 1,
+    try:
+        assert arrived.wait(timeout=10), "B 未在期限内到达 patch 屏障"
+        with TestClient(create_app()) as client:
+            a_response = client.post(
+                BASE + "/reindex",
+                headers={**EDITOR, "Idempotency-Key": "qin596-version-a"},
+                json={
+                    "background": True,
+                    "hash_files": False,
+                    "max_files": 10,
+                    "roots": ["local_extra_a"],
+                    "register_root": {
+                        "id": "local_extra_a",
+                        "name": "入口A",
+                        "path": str(allowed),
+                        "expected_version": 1,
+                    },
                 },
-            },
-        )
-        assert a_response.status_code == 202, a_response.text
-    release.set()
-    worker.join(timeout=10)
+            )
+            assert a_response.status_code == 202, a_response.text
+    finally:
+        # 审核 R2：任何断言失败都必须释放 gate 并有界回收 worker，
+        # 避免悬挂线程污染后续用例。
+        release.set()
+        worker.join(timeout=10)
+    assert not worker.is_alive(), "B worker 未在期限内结束"
     assert b_outcome == ["VERSION_CONFLICT"], b_outcome
     # S4/S5：A 的登记保留；settings 恰一条登记（local_extra_a），无 local_extra_b。
     snapshot = StorageSettingsService().get_snapshot()

@@ -986,12 +986,16 @@ def resolve_asset_registration_root(raw_path: str) -> tuple[Path, str]:
             "LOCAL_FILE_ACCESS_NOT_ADMITTED",
             "请由管理员在服务端配置 GW_ALLOWED_ROOTS 后再登记素材库",
         )
-    normalized = validate_directory_path(normalize_directory_path(raw_path))
-    # QIN-596（审核 FIX_REQUIRED）：normalize 消解点段后再执行一次清单策略，
-    # 与词法层构成双保险（`C:/foo/../Windows` 规范化为 `C:\Windows` 必须被拒）。
+    # QIN-596（审核 R2）：normalize 消解点段后立刻再执行一次清单策略，与
+    # add_root/restore_root 口径一致。拒绝必须先于目录存在性与权限 IO：
+    # 原位置在 validate_directory_path 之后，POSIX 主机上盘符路径会先抛
+    # INVALID_PATH，令这道门禁不可达。词法层对消解后段为空的点段形态放行
+    # （如 C:/Users/x/../..），此处兜住 normalize 后落回盘符根/文件系统根。
+    normalized = normalize_directory_path(raw_path)
     normalized_rejection = describe_resource_folder_rejection(normalized)
     if normalized_rejection:
         raise CleanroomException(403, "RESOURCE_FOLDER_NOT_PERMITTED", normalized_rejection)
+    normalized = validate_directory_path(normalized)
     try:
         candidate = Path(normalized).resolve(strict=True)
     except (OSError, RuntimeError, ValueError):
