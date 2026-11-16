@@ -469,12 +469,33 @@ def _resource_folder_lexical_parts(raw_path: str) -> list[str] | None:
     return None
 
 
+def _resolve_resource_folder_dot_segments(segments: list[str]) -> list[str] | None:
+    """消解词法段中的 ``.``/``..`` 点段（审核 FIX_REQUIRED：防点段绕过）。
+
+    返回消解后的段；``..`` 越界（无法确定最终物理位置）时返回 None——
+    调用方按歧义拒绝，不得静默放行。
+    """
+    resolved: list[str] = []
+    for segment in segments:
+        if segment == ".":
+            continue
+        if segment == "..":
+            if not resolved:
+                return None
+            resolved.pop()
+            continue
+        resolved.append(segment)
+    return resolved
+
+
 def describe_resource_folder_rejection(raw_path: str) -> str:
     """按 QIN-596 拒绝清单对原始输入做纯词法判定。
 
     命中返回拒绝原因（供 403 RESOURCE_FOLDER_NOT_PERMITTED 的 message），
     未命中返回空串。无 IO、不调用 normalize_directory_path；对
-    `C:`、`\\NAS` 这类会被 normalize 先拒的输入同样可判定。
+    `C:`、`\\NAS` 这类会被 normalize 先拒的输入同样可判定。清单匹配前
+    先消解 ``.``/``..`` 点段；越界点段按歧义拒绝——``C:/foo/../Windows``
+    不得因词法首段绕过而写入允许根。
     """
     if not isinstance(raw_path, str):
         return "路径不合法"
@@ -495,7 +516,10 @@ def describe_resource_folder_rejection(raw_path: str) -> str:
     if segments is None:
         # 非绝对路径形态交给后续 normalize 语义处理，此处不拒。
         return ""
-    lowered = [seg.casefold() for seg in segments]
+    resolved = _resolve_resource_folder_dot_segments(segments)
+    if resolved is None:
+        return f"路径含越界点段，最终位置歧义，不可添加为资源文件夹：{value}"
+    lowered = [seg.casefold() for seg in resolved]
     # 形态拒绝四：Windows 系统目录（首段命中即目录本身与后代拒绝）。
     if lowered and lowered[0] in RESOURCE_FOLDER_BLOCKED_WIN_SEGMENTS:
         return f"系统目录不可添加为资源文件夹：{value}"
@@ -963,6 +987,11 @@ def resolve_asset_registration_root(raw_path: str) -> tuple[Path, str]:
             "请由管理员在服务端配置 GW_ALLOWED_ROOTS 后再登记素材库",
         )
     normalized = validate_directory_path(normalize_directory_path(raw_path))
+    # QIN-596（审核 FIX_REQUIRED）：normalize 消解点段后再执行一次清单策略，
+    # 与词法层构成双保险（`C:/foo/../Windows` 规范化为 `C:\Windows` 必须被拒）。
+    normalized_rejection = describe_resource_folder_rejection(normalized)
+    if normalized_rejection:
+        raise CleanroomException(403, "RESOURCE_FOLDER_NOT_PERMITTED", normalized_rejection)
     try:
         candidate = Path(normalized).resolve(strict=True)
     except (OSError, RuntimeError, ValueError):

@@ -157,6 +157,64 @@ def test_register_root_reuse_same_id_is_idempotent(gate_runtime):
         assert len(entries) == 1
 
 
+def test_rejection_list_blocks_dot_segment_traversals_on_all_entries(gate_runtime):
+    """审核 FIX_REQUIRED：点段路径不得绕过系统目录清单（三入口 + 越界 + 合法点段）。"""
+    tmp_path, allowed = gate_runtime
+    normal = tmp_path / "普通素材目录"
+    normal.mkdir()
+    with TestClient(create_app()) as client:
+        traversals = ["C:/foo/../Windows", "C:\\foo\\..\\Windows", "C:/../Windows", "/foo/../System"]
+        for sample in traversals:
+            add = client.post(
+                "/api/storage-settings/roots",
+                headers=ADMIN,
+                json={"path": sample, "expected_version": 1},
+            )
+            assert add.status_code == 403, (sample, add.text)
+            assert add.json()["detail"]["code"] == "RESOURCE_FOLDER_NOT_PERMITTED", sample
+            register = client.post(
+                BASE + "/reindex",
+                headers=EDITOR,
+                json={
+                    "background": True,
+                    "hash_files": False,
+                    "max_files": 10,
+                    "roots": ["local_extra_dotseg"],
+                    "register_root": {
+                        "id": "local_extra_dotseg",
+                        "name": "点段探针",
+                        "path": sample,
+                        "expected_version": 1,
+                    },
+                },
+            )
+            assert register.status_code == 403, (sample, register.text)
+            assert register.json()["detail"]["code"] == "RESOURCE_FOLDER_NOT_PERMITTED", sample
+        # restore 入口：inactive 记录 path 为点段形态，恢复被拒。
+        roots_service = StorageAllowedRootsService()
+        roots_service._state.mutate(
+            lambda state: state["roots"].append(
+                {"id": "root_removed_dotseg", "path": "C:/foo/../Windows", "aliases": [], "active": False}
+            )
+        )
+        restore = client.request(
+            "POST",
+            "/api/storage-settings/roots/root_removed_dotseg/restore",
+            headers=ADMIN,
+            json={"expected_version": 1},
+        )
+        assert restore.status_code == 403, restore.text
+        assert restore.json()["detail"]["code"] == "RESOURCE_FOLDER_NOT_PERMITTED"
+        # 合法点段（消解后非系统目录）不扩大拒绝面：`<normal>\sub\..` 消解回 normal。
+        benign = f"{normal}\\sub\\..\\."
+        ok = client.post(
+            "/api/storage-settings/roots",
+            headers=ADMIN,
+            json={"path": benign, "expected_version": 1},
+        )
+        assert ok.status_code == 200, ok.text
+
+
 def test_version_conflict_orchestration(gate_runtime, monkeypatch: pytest.MonkeyPatch):
     """v9 §6.5 确定性编排：B 过 duplicate 检查后暂停在 patch 前；A 的 patch
     透传成功推进 revision；释放 B 得 VERSION_CONFLICT；失败可见；known 重试收敛。

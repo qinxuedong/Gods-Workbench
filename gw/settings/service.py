@@ -595,6 +595,11 @@ class StorageAllowedRootsService:
         if rejection:
             raise CleanroomException(403, "RESOURCE_FOLDER_NOT_PERMITTED", rejection)
         normalized = storage.normalize_directory_path(payload.path)
+        # QIN-596（审核 FIX_REQUIRED）：normalize 消解点段后对最终路径再执行
+        # 一次清单策略——`C:/foo/../Windows` 规范化为 `C:\Windows` 必须被拒。
+        normalized_rejection = storage.describe_resource_folder_rejection(normalized)
+        if normalized_rejection:
+            raise CleanroomException(403, "RESOURCE_FOLDER_NOT_PERMITTED", normalized_rejection)
         status = storage.probe_mount(normalized)
         if not status["available"]:
             code = str(status["reason"] or "MOUNT_OFFLINE")
@@ -696,6 +701,16 @@ class StorageAllowedRootsService:
             rejection = storage.describe_resource_folder_rejection(restored_path)
             if rejection:
                 raise CleanroomException(403, "RESOURCE_FOLDER_NOT_PERMITTED", rejection)
+            # QIN-596（审核 FIX_REQUIRED）：恢复前对 normalize 后的最终路径再执行
+            # 一次清单策略（点段消解后命中清单的记录不得静默回归）。
+            try:
+                normalized_restored = storage.normalize_directory_path(restored_path)
+            except CleanroomException:
+                normalized_restored = ""
+            if normalized_restored:
+                normalized_rejection = storage.describe_resource_folder_rejection(normalized_restored)
+                if normalized_rejection:
+                    raise CleanroomException(403, "RESOURCE_FOLDER_NOT_PERMITTED", normalized_rejection)
             status = storage.probe_mount(restored_path)
             if not status["available"]:
                 code = str(status["reason"] or "MOUNT_OFFLINE")

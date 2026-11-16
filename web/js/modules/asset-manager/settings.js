@@ -632,7 +632,19 @@ function describeResourceFolderPathRejection(path){
         segments = value.split('/').filter(Boolean);
     }
     if(segments === null) return '';
-    const lowered = segments.map(seg => seg.toLowerCase());
+    // QIN-596（审核 FIX_REQUIRED）：清单匹配前消解 `.`/`..` 点段；越界点段
+    // 最终位置歧义，按拒绝处理（与 gw/core/storage.py 同规则）。
+    const resolved = [];
+    for(const seg of segments){
+      if(seg === '.') continue;
+      if(seg === '..'){
+        if(!resolved.length) return `路径含越界点段，最终位置歧义，不可添加为资源文件夹：${value}`;
+        resolved.pop();
+        continue;
+      }
+      resolved.push(seg);
+    }
+    const lowered = resolved.map(seg => seg.toLowerCase());
     if(lowered.length && RESOURCE_FOLDER_BLOCKED_WIN_SEGMENTS.includes(lowered[0])){
         return `系统目录不可添加为资源文件夹：${value}`;
     }
