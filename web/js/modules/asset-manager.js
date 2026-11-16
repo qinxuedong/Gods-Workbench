@@ -1332,9 +1332,8 @@ async function loadGlobalDirectorySettings(){
     } catch(error){ directorySettingsError = error.message || '目录设置读取失败'; }
     gwCall('settings', 'renderGlobalDirectorySettings');
 }
-let allowedRootsRemovedModalOpen = false;
 let pendingPurgeRoot = null;
-async function saveAllowedRootsRequest(url, method, payload){
+async function saveAllowedRootsRequest(url, method, payload, {throwOnError=false}={}){
     allowedRootSettingsState = {...allowedRootSettingsState, saving:true, error:''};
     gwCall('settings', 'renderGlobalDirectorySettings');
     try {
@@ -1370,25 +1369,29 @@ async function saveAllowedRootsRequest(url, method, payload){
             error:`${error.code ? `${error.code}：` : ''}${error.message || '允许根设置失败'}`
         };
         setStatus(error.message || '允许根设置失败');
+        if(throwOnError) throw error;
+        return null;
     } finally {
         allowedRootSettingsState = {...allowedRootSettingsState, saving:false};
         gwCall('settings', 'renderGlobalDirectorySettings');
     }
 }
+async function saveAllowedRootRemoval(rootId, options={}){
+    const expectedVersion = Number(allowedRootSettingsState.revision || 1);
+    return saveAllowedRootsRequest(`/api/storage-settings/roots/${encodeURIComponent(rootId)}`, 'DELETE', {expected_version:expectedVersion}, options);
+}
+async function saveAllowedRootPurge(rootId, options={}){
+    const expectedVersion = Number(allowedRootSettingsState.revision || 1);
+    return saveAllowedRootsRequest(`/api/storage-settings/roots/${encodeURIComponent(rootId)}/purge`, 'DELETE', {expected_version:expectedVersion}, options);
+}
 document.addEventListener('click', event => {
     const target = event.target?.closest?.(
         '[data-storage-root-add],[data-storage-root-delete],[data-storage-root-alias-confirm],' +
-        '[data-storage-root-removed-toggle],[data-modal-close="removed-roots"],' +
-        '[data-storage-root-restore],[data-storage-root-purge-prompt],[data-purge-cancel],[data-purge-confirm]'
+        '[data-storage-root-restore],[data-storage-root-purge-prompt],[data-purge-cancel],[data-purge-confirm],[data-resource-folder-remove]'
     );
     if(!target){
         if(event.target?.getAttribute?.('data-modal-backdrop') === 'purge-confirm'){
             pendingPurgeRoot = null;
-            gwCall('settings', 'renderGlobalDirectorySettings');
-            return;
-        }
-        if(event.target?.getAttribute?.('data-modal-backdrop') === 'removed-roots'){
-            allowedRootsRemovedModalOpen = false;
             gwCall('settings', 'renderGlobalDirectorySettings');
             return;
         }
@@ -1397,16 +1400,6 @@ document.addEventListener('click', event => {
     event.preventDefault();
     if(target.hasAttribute('data-purge-cancel')){
         pendingPurgeRoot = null;
-        gwCall('settings', 'renderGlobalDirectorySettings');
-        return;
-    }
-    if(target.getAttribute('data-modal-close') === 'removed-roots'){
-        allowedRootsRemovedModalOpen = false;
-        gwCall('settings', 'renderGlobalDirectorySettings');
-        return;
-    }
-    if(target.hasAttribute('data-storage-root-removed-toggle')){
-        allowedRootsRemovedModalOpen = !allowedRootsRemovedModalOpen;
         gwCall('settings', 'renderGlobalDirectorySettings');
         return;
     }
@@ -1421,8 +1414,16 @@ document.addEventListener('click', event => {
     const expectedVersion = Number(allowedRootSettingsState.revision || 1);
     const purgeConfirmId = target.getAttribute('data-purge-confirm');
     if(purgeConfirmId){
+        const root = allowedRootSettingsState.roots?.find(item => String(item.id) === purgeConfirmId);
         pendingPurgeRoot = null;
-        void saveAllowedRootsRequest(`/api/storage-settings/roots/${encodeURIComponent(purgeConfirmId)}/purge`, 'DELETE', {expected_version: expectedVersion});
+        gwCall('settings', 'renderGlobalDirectorySettings');
+        if(root) void gwCall('organize', 'executeResourceFolderAction', root, 'purge', {firstConfirmationSatisfied:true});
+        return;
+    }
+    const resourceFolderRemoveId = target.getAttribute('data-resource-folder-remove');
+    if(resourceFolderRemoveId){
+        const root = allowedRootSettingsState.roots?.find(item => String(item.id) === resourceFolderRemoveId);
+        if(root) void gwCall('organize', 'executeResourceFolderAction', root, 'remove');
         return;
     }
     const restoreRootId = target.getAttribute('data-storage-root-restore');
@@ -6469,6 +6470,7 @@ function assetRackRoots(){
             name:String(root.name || '未命名来源'),
             count:Number(root.count || 0),
             availability:String(root.availability || ''),
+            aliases:Array.isArray(root.aliases) ? root.aliases.map(String) : [],
         }));
     }
     // 来源面尚未返回时，从已加载素材推导，避免目录层级空窗
@@ -7489,12 +7491,13 @@ function assetOrganizeTargetFromKey(key){
     const body = value.slice('mine:root:'.length);
     const separator = body.indexOf('::');
     const rootId = separator > 0 ? body.slice(0, separator) : body;
+    const rootFacet = registryFacets.roots?.find(root => [root.id, ...(root.aliases || [])].map(String).includes(rootId));
     const lowerRoot = String(rootId || '').toLowerCase();
     if(lowerRoot === 'video' || lowerRoot === 'image') return null;
     const rawPath = separator > 0 ? body.slice(separator + 2) : '';
     if(!assetOrganizeWritableRoot(rootId)) return null;
     const path = rawPath === '__root__' ? '' : rawPath;
-    return {key:value, rootId, path, isRoot:!path};
+    return {key:value, rootId, path, isRoot:!path, id:String(rootFacet?.id || rootId), aliases:Array.isArray(rootFacet?.aliases) ? rootFacet.aliases : []};
 }
 function assetOrganizeAbsPath(rootId, relPath=''){
     const base = String(assetRackRootDiskPath(rootId) || '').replace(/\\/g, '/').replace(/\/+$/g, '');
@@ -7577,12 +7580,15 @@ async function assetOrganizeUndoLast(){
 /* ----- 右键菜单 ----- */
 function renderAssetOrganizeMenu(target){
     const label = assetOrganizeFolderLabel(target);
+    const rootActions = target.isRoot ? `<button type="button" role="menuitem" data-asset-organize-remove-root><i data-lucide="folder-minus"></i><span>移出资源库</span></button>
+        <button type="button" role="menuitem" class="is-danger" data-asset-organize-purge-root><i data-lucide="trash-2"></i><span>清除索引</span></button>` : '';
     return `<div class="asset-organize-menu" id="assetOrganizeMenu" role="menu" aria-label="文件夹整理">
         <div class="asset-organize-menu-title"><i data-lucide="folder"></i><span title="${escapeAttr(label)}">${escapeHtml(label)}</span></div>
         <button type="button" role="menuitem" data-asset-organize-new><i data-lucide="folder-plus"></i><span>新建子文件夹</span></button>
         <button type="button" role="menuitem" data-asset-organize-rename ${target.isRoot ? 'disabled' : ''}><i data-lucide="pencil"></i><span>重命名</span></button>
         <button type="button" role="menuitem" data-asset-organize-open><i data-lucide="folder-open"></i><span>在系统中打开</span></button>
         <button type="button" role="menuitem" class="is-danger" data-asset-organize-delete ${target.isRoot ? 'disabled' : ''}><i data-lucide="trash-2"></i><span>删除（进回收站）</span></button>
+        ${rootActions}
     </div>`;
 }
 function closeAssetOrganizeMenu(){
@@ -10226,15 +10232,10 @@ document.addEventListener('keydown', event => {
             event.preventDefault();
             gwCall('settings', 'cancelThumbnailCacheSwitch');
             return;
-        }        if(pendingPurgeRoot){
+        }
+        if(pendingPurgeRoot){
             event.preventDefault();
             pendingPurgeRoot = null;
-            gwCall('settings', 'renderGlobalDirectorySettings');
-            return;
-        }
-        if(allowedRootsRemovedModalOpen){
-            event.preventDefault();
-            allowedRootsRemovedModalOpen = false;
             gwCall('settings', 'renderGlobalDirectorySettings');
             return;
         }
@@ -11493,7 +11494,10 @@ document.addEventListener('DOMContentLoaded', () => {
 function setDirectorySettingsSaving(v){ directorySettingsSaving = v; }
 function setClientUploadSourceDir(v){ clientUploadSourceDir = v; }
 function setClientSettingBusy(v){ clientSettingBusy = v; }
-function setActiveTab(v){ activeTab = v; }
+function setActiveTab(v){
+    if(activeTab !== v) GW_DEFERRED.organize?.invalidateResourceFolderAction?.();
+    activeTab = v;
+}
 function gwSetAssetRackCollapsed(v){ assetRackCollapsed = v; }
 function setAssetTreeTab(v){ assetTreeTab = v; }
 function setAssetTreeSelectedKey(v){ assetTreeSelectedKey = v; }
@@ -11877,7 +11881,6 @@ export {
     alignTimeToFps,
     allAssetBoards,
     allowedRootSettingsState,
-    allowedRootsRemovedModalOpen,
     apiJsonResponse,
     apiProviders,
     applyRegistryAssetResponse,
@@ -12252,6 +12255,8 @@ export {
     resetRegistryScroll,
     root,
     runRegistryStructureAction,
+    saveAllowedRootRemoval,
+    saveAllowedRootPurge,
     saveAllowedRootsRequest,
     saveAssetTreeState,
     saveBoardNavigationState,

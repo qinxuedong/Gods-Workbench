@@ -48,7 +48,6 @@ import {
     activeTab,
     allAssetBoards,
     allowedRootSettingsState,
-    allowedRootsRemovedModalOpen,
     apiJsonResponse,
     apiProviders,
     assetAiSettingsState,
@@ -1471,6 +1470,7 @@ function handleStorageFileGridScroll(event){
     }
 }
 function applyAllowedRootSettingsData(data={}){
+    assetAllowedRootPaths.clear();
     setAllowedRootSettingsState({
         ...allowedRootSettingsState,
         revision:Number.isFinite(Number(data.revision)) ? Number(data.revision) : allowedRootSettingsState.revision,
@@ -1498,50 +1498,20 @@ function applyAllowedRootSettingsData(data={}){
     });
 }
 
-function renderRemovedRootsModal(removedRoots){
-    const listHtml = removedRoots.length ? removedRoots.map(root => `<article class="removed-root-row" data-allowed-root="${escapeAttr(root.id)}">
-        <div class="removed-root-info">
-            <code title="${escapeAttr(root.path)}">${escapeHtml(root.path)}</code>
-            <small class="allowed-root-status allowed-root-status--removed">已移除 · MOUNT_ROOT_REMOVED</small>
-        </div>
-        <div class="removed-root-actions">
-            <button type="button" class="hw-btn hw-btn-sm hw-btn-gold" data-storage-root-restore="${escapeAttr(root.id)}" title="恢复授权并重新比对同步" ${allowedRootSettingsState.saving ? 'disabled' : ''}>
-                <i data-lucide="rotate-ccw"></i><span>恢复</span>
-            </button>
-            <button type="button" class="hw-btn hw-btn-sm hw-btn-danger" data-storage-root-purge-prompt="${escapeAttr(root.id)}" data-root-path="${escapeAttr(root.path)}" title="彻底删除索引与缓存（不碰源文件）" ${allowedRootSettingsState.saving ? 'disabled' : ''}>
-                <i data-lucide="trash-2"></i><span>删除</span>
-            </button>
-        </div>
-    </article>`).join('') : '<p class="directory-status">暂无已移除的登记目录</p>';
-
-    return `<div class="removed-roots-modal-backdrop" data-floating-surface="removed-roots-modal" data-modal-backdrop="removed-roots">
-        <div class="removed-roots-modal" data-floating-content role="dialog" aria-modal="true" aria-labelledby="removedRootsTitle">
-            <header class="removed-roots-modal-header">
-                <h2 id="removedRootsTitle"><i data-lucide="archive"></i><span>已移除登记目录</span><em class="badge">${removedRoots.length}</em></h2>
-                <button type="button" class="hw-btn hw-btn-icon hw-modal-close" data-floating-close data-modal-close="removed-roots" aria-label="关闭"><i data-lucide="x"></i></button>
-            </header>
-            <div class="removed-roots-modal-body">
-                <p class="board-settings-hint">以下为已撤销扫描授权的允许根。可选择恢复授权并重新比对素材，或彻底从系统中删除（保留本地源文件）。</p>
-                <div class="removed-roots-list">${listHtml}</div>
-            </div>
-        </div>
-    </div>`;
-}
-
 function renderPurgeConfirmModal(){
     if(!pendingPurgeRoot) return '';
     return `<div class="removed-roots-modal-backdrop" data-floating-surface="purge-confirm-modal" data-modal-backdrop="purge-confirm">
         <div class="removed-roots-modal" style="max-width:480px" data-floating-content role="alertdialog" aria-modal="true" aria-labelledby="purgeTitle">
             <header class="removed-roots-modal-header">
-                <h2 id="purgeTitle" style="color:var(--gw-error)"><i data-lucide="alert-triangle"></i><span>确认彻底移除允许根？</span></h2>
+                <h2 id="purgeTitle" style="color:var(--gw-error)"><i data-lucide="alert-triangle"></i><span>确认清除资源文件夹索引？</span></h2>
                 <button type="button" class="hw-btn hw-btn-icon hw-modal-close" data-floating-close data-purge-cancel aria-label="取消"><i data-lucide="x"></i></button>
             </header>
             <div class="removed-roots-modal-body">
-                <p style="margin:0;line-height:1.6">确定彻底删除允许根 <code style="overflow-wrap:anywhere">${escapeHtml(pendingPurgeRoot.path)}</code> 吗？</p>
+                <p style="margin:0;line-height:1.6">确定清除资源文件夹 <code style="overflow-wrap:anywhere">${escapeHtml(pendingPurgeRoot.path)}</code> 吗？</p>
                 <p class="board-settings-hint" style="color:var(--gw-warning, #f59e0b);margin:4px 0 0">此操作将清空本系统生成的关于该素材库的所有元数据记录、搜索索引及缩略图缓存，但<b>绝不会删除您的磁盘原始素材文件</b>。</p>
                 <div style="display:flex;justify-content:flex-end;gap:10px;margin-top:12px">
                     <button type="button" class="hw-btn" data-floating-close data-purge-cancel>取消</button>
-                    <button type="button" class="hw-btn hw-btn-danger" data-purge-confirm="${escapeAttr(pendingPurgeRoot.id)}">彻底删除</button>
+                    <button type="button" class="hw-btn hw-btn-danger" data-purge-confirm="${escapeAttr(pendingPurgeRoot.id)}">清除索引</button>
                 </div>
             </div>
         </div>
@@ -1549,52 +1519,31 @@ function renderPurgeConfirmModal(){
 }
 
 function renderAllowedRootsSettings(){
-    if(!canManageAllowedRoots()) return '';
     const statusLabel = root => root.availability === 'available' ? '在线'
         : root.availability === 'removed' ? '已移除' : root.availability === 'invalid' ? '无效' : '离线';
     const seenPaths = new Set();
     const uniqueRoots = [];
-    for(const r of (allowedRootSettingsState.roots || [])){
-        const norm = (r.path || '').toLowerCase().replace(/\\/g, '/').replace(/\/+$/, '');
-        if(seenPaths.has(norm)) continue;
-        seenPaths.add(norm);
-        uniqueRoots.push(r);
+    for(const root of (allowedRootSettingsState.roots || [])){
+        const key = root.path.toLowerCase().replace(/\\/g, '/').replace(/\/+$/, '');
+        if(seenPaths.has(key)) continue;
+        seenPaths.add(key);
+        uniqueRoots.push(root);
     }
-    const activeRoots = uniqueRoots.filter(r => r.active);
-    const removedRoots = uniqueRoots.filter(r => !r.active);
-
-    const roots = activeRoots.map(root => `<article class="allowed-root-row" data-allowed-root="${escapeAttr(root.id)}">
-        <div class="allowed-root-info"><strong>${escapeHtml(root.readOnly ? '系统根（只读）' : '持久允许根')}</strong><code title="${escapeAttr(root.path)}">${escapeHtml(root.path)}</code>
-            <small class="allowed-root-status allowed-root-status--${escapeAttr(root.availability)}">${escapeHtml(statusLabel(root))}${root.availabilityReason ? ` · ${escapeHtml(root.availabilityReason)}` : ''}</small>
-            ${root.availabilityMessage ? `<small>${escapeHtml(root.availabilityMessage)}</small>` : ''}
-            ${root.aliases.map(alias => `<small>已确认别名：<code>${escapeHtml(alias)}</code></small>`).join('')}
-        </div>
-        <div class="allowed-root-actions">${(root.active ? root.aliasCandidates.map(candidate => `<button type="button" class="hw-btn" data-storage-root-alias-confirm="${escapeAttr(root.id)}" data-storage-root-alias-path="${escapeAttr(candidate.path || '')}" ${allowedRootSettingsState.saving ? 'disabled' : ''}>确认别名：${escapeHtml(candidate.path || '')}</button>`) : []).join('')}
-            ${!root.readOnly ? `<button type="button" class="hw-btn allowed-root-remove" data-storage-root-delete="${escapeAttr(root.id)}" ${allowedRootSettingsState.saving ? 'disabled' : ''}>移除</button>` : ''}
-        </div>
-    </article>`).join('');
-
+    const entries = uniqueRoots.map(root => {
+        const removable = canManageAllowedRoots() && !root.readOnly;
+        const status = root.active ? statusLabel(root) : '已移除';
+        const actions = root.active
+            ? `${root.aliasCandidates.map(candidate => `<button type="button" class="hw-btn" data-storage-root-alias-confirm="${escapeAttr(root.id)}" data-storage-root-alias-path="${escapeAttr(candidate.path || '')}" ${!canManageAllowedRoots() || allowedRootSettingsState.saving ? 'disabled' : ''}>确认别名：${escapeHtml(candidate.path || '')}</button>`).join('')}${removable ? `<button type="button" class="hw-btn" data-resource-folder-remove="${escapeAttr(root.id)}" ${allowedRootSettingsState.saving ? 'disabled' : ''}>移出资源库</button><button type="button" class="hw-btn hw-btn-danger" data-storage-root-purge-prompt="${escapeAttr(root.id)}" data-root-path="${escapeAttr(root.path)}" ${allowedRootSettingsState.saving ? 'disabled' : ''}>清除索引</button>` : ''}`
+            : `${removable ? `<button type="button" class="hw-btn hw-btn-gold" data-storage-root-restore="${escapeAttr(root.id)}" ${allowedRootSettingsState.saving ? 'disabled' : ''}>恢复</button><button type="button" class="hw-btn hw-btn-danger" data-storage-root-purge-prompt="${escapeAttr(root.id)}" data-root-path="${escapeAttr(root.path)}" ${allowedRootSettingsState.saving ? 'disabled' : ''}>清除索引</button>` : ''}`;
+        return `<article class="allowed-root-row" data-allowed-root="${escapeAttr(root.id)}"><div class="allowed-root-info"><strong>${escapeHtml(root.name || (root.readOnly ? '系统资源文件夹（只读）' : '资源文件夹'))}</strong><code title="${escapeAttr(root.path)}">${escapeHtml(root.path)}</code><small class="allowed-root-status allowed-root-status--${escapeAttr(root.availability)}">${escapeHtml(status)}${root.availabilityReason ? ` · ${escapeHtml(root.availabilityReason)}` : ''}</small>${root.availabilityMessage ? `<small>${escapeHtml(root.availabilityMessage)}</small>` : ''}${root.aliases.map(alias => `<small>已确认路径别名：<code>${escapeHtml(alias)}</code></small>`).join('')}</div><div class="allowed-root-actions">${actions}</div></article>`;
+    }).join('');
     const allowedRootPicker = canBrowseServerDirectories()
-        ? '<button type="button" class="hw-btn hw-btn-icon directory-picker-btn" data-directory-picker="' + ALLOWED_ROOT_FIELD_KEY + '" title="浏览服务器目录" aria-label="浏览服务器允许根目录"><i data-lucide="folder-open"></i></button>'
+        ? '<button type="button" class="hw-btn hw-btn-icon directory-picker-btn" data-directory-picker="' + ALLOWED_ROOT_FIELD_KEY + '" title="浏览服务器目录" aria-label="浏览服务器资源文件夹"><i data-lucide="folder-open"></i></button>'
         : '';
-    return `<section class="asset-pref-section allowed-roots-settings" data-allowed-roots-settings>
-        <div class="asset-pref-title allowed-roots-title-row">
-            <div class="allowed-roots-title-left">
-                <i data-lucide="shield-check"></i><span>允许根</span><small>管理员管理；环境变量根只读</small>
-            </div>
-            <button type="button" class="hw-btn hw-btn-sm allowed-roots-removed-toggle" data-storage-root-removed-toggle title="管理已移除的允许根">
-                <i data-lucide="archive"></i><span>已移除登记目录</span><em class="badge">${removedRoots.length}</em>
-            </button>
-        </div>
-        <p class="board-settings-hint">登记后立即生效并保存到 data/allowed_roots.json。移除只撤销扫描授权，已索引记录和源文件保留。</p>
-        ${allowedRootSettingsState.error ? `<p class="allowed-root-error" role="alert">${escapeHtml(allowedRootSettingsState.error)}</p>` : ''}
-        <div class="allowed-root-add"><label class="storage-dir-row"><span>服务器绝对路径</span><div class="directory-input-row"><input id="allowedRootPath" value="" autocomplete="off" placeholder="例如 Z:\\测试素材库">${allowedRootPicker}</div></label>
-            <button type="button" class="hw-btn hw-btn-gold" data-storage-root-add ${allowedRootSettingsState.saving ? 'disabled' : ''}>登记允许根</button>
-        </div>
-        <div class="allowed-root-list">${roots || '<p class="directory-status">尚无生效的允许根；可先登记持久根，或配置 GW_ALLOWED_ROOTS。</p>'}</div>
-        ${allowedRootsRemovedModalOpen ? renderRemovedRootsModal(removedRoots) : ''}
-        ${pendingPurgeRoot ? renderPurgeConfirmModal() : ''}
-    </section>`;
+    const addForm = canManageAllowedRoots()
+        ? `<div class="allowed-root-add"><label class="storage-dir-row"><span>服务器绝对路径</span><div class="directory-input-row"><input id="allowedRootPath" value="" autocomplete="off" placeholder="输入资源文件夹路径">${allowedRootPicker}</div></label><button type="button" class="hw-btn hw-btn-gold" data-storage-root-add ${allowedRootSettingsState.saving ? 'disabled' : ''}>添加资源文件夹</button></div>`
+        : '<p class="board-settings-hint">只读账户可以查看资源文件夹及其状态。</p>';
+    return `<section class="asset-pref-section allowed-roots-settings" data-allowed-roots-settings><div class="asset-pref-title allowed-roots-title-row"><div class="allowed-roots-title-left"><i data-lucide="folder-check"></i><span>资源文件夹</span><small>${canManageAllowedRoots() ? '管理员管理' : '只读'}</small></div></div><p class="board-settings-hint">移出资源库只撤销扫描授权并保留索引；清除索引不可恢复，但不会删除源文件。</p>${allowedRootSettingsState.error ? `<p class="allowed-root-error" role="alert">${escapeHtml(allowedRootSettingsState.error)}</p>` : ''}${addForm}<div class="allowed-root-list">${entries || '<p class="directory-status">暂无资源文件夹</p>'}</div>${pendingPurgeRoot ? renderPurgeConfirmModal() : ''}</section>`;
 }
 function renderGlobalDirectorySettings(){
     let host = document.getElementById('storageSettingsOverlay');
@@ -1612,7 +1561,7 @@ function renderGlobalDirectorySettings(){
         ${directorySettingsError ? `<div class="directory-error" role="alert">${escapeHtml(directorySettingsError)}</div>` : ''}
         ${!directorySettingsReady ? `<p class="directory-status" role="status">${directorySettingsError ? '请检查权限或连接后重新读取。' : '正在读取目录设置…'}</p>` : `<fieldset class="directory-cards-grid" ${directorySettingsSaving ? 'disabled' : ''}>
         <div class="directory-cards-column directory-cards-column--left">
-        <section class="asset-pref-section bay-inset p-4 rounded-xl gw-settings-card" data-board-directories-settings><div class="asset-pref-title"><i data-lucide="folder-check"></i><span>登记目录</span></div><div class="storage-dir-grid">${input('local','本地素材目录',dirs.local)}${isTauriClientMode() ? clientSourceInput() : ''}</div><div class="directory-registered">${storageExtraLocalEntries().map(item=>`<div><span>${escapeHtml(item.name)}</span><code>${escapeHtml(item.path)}</code></div>`).join('')}</div></section>
+        <section class="asset-pref-section bay-inset p-4 rounded-xl gw-settings-card" data-board-directories-settings><div class="asset-pref-title"><i data-lucide="hard-drive"></i><span>客户端与默认目录</span></div><div class="storage-dir-grid">${input('local','本地素材目录',dirs.local)}${isTauriClientMode() ? clientSourceInput() : ''}</div></section>
         <section class="asset-pref-section bay-inset p-4 rounded-xl gw-settings-card"><div class="asset-pref-title"><i data-lucide="hard-drive"></i><span>上传与生成</span></div><div class="storage-dir-grid">${input('upload','上传素材',dirs.upload)}${input('generated','生成素材',dirs.generated)}</div></section>
         <section class="asset-pref-section bay-inset p-4 rounded-xl gw-settings-card">${renderAssetThumbnailCacheDirectoryBody()}</section>
         </div>

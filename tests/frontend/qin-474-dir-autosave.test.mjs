@@ -144,8 +144,8 @@ test("AC4 允许根路径字段回车即登记保存，且有选夹按钮", () =
     assetManager,
     /<input id="allowedRootPath"[\s\S]*?>\$\{allowedRootPicker\}<\/div><\/label>/,
   );
-  // 「登记允许根」按钮是列表登记动作，保留不删，且与回车共用同一条登记路径。
-  assert.match(assetManager, /data-storage-root-add[\s\S]*?登记允许根<\/button>/);
+  // 资源文件夹按钮保留，且与回车共用同一条登记路径。
+  assert.match(assetManager, /data-storage-root-add[\s\S]*?添加资源文件夹<\/button>/);
   // QIN-591：登记派发 gwCall 化（登记在案），与回车共用同一条登记路径。
   assert.match(
     assetManager,

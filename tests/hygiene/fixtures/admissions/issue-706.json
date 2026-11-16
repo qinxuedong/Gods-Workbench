@@ -1,0 +1,17 @@
+{
+  "schema": "gw.cleanroom-admission-shard/v1",
+  "issue": 706,
+  "authorization_basis": "GitHub Issue #706, 2026-11-16",
+  "files": [
+    "web/js/modules/asset-manager.js",
+    "web/js/modules/asset-manager/organize.js",
+    "web/js/modules/asset-manager/settings.js",
+    "tests/frontend/qin-474-dir-autosave.test.mjs",
+    "tests/frontend/qin-597-resource-folder-list.test.mjs",
+    "tests/frontend/node-files.txt",
+    "tests/hygiene/fixtures/admissions/issue-706.json"
+  ],
+  "admitted_files": [],
+  "accepted_test_files": [],
+  "notes": "QIN-597：统一资源文件夹清单，并让设置页和侧栏根级动作共享移出/清除索引流程。"
+}
