@@ -205,8 +205,9 @@ def test_rejection_list_blocks_dot_segment_traversals_on_all_entries(gate_runtim
         )
         assert restore.status_code == 403, restore.text
         assert restore.json()["detail"]["code"] == "RESOURCE_FOLDER_NOT_PERMITTED"
-        # 合法点段（消解后非系统目录）不扩大拒绝面：`<normal>\sub\..` 消解回 normal。
-        benign = f"{normal}\\sub\\..\\."
+        # 合法点段（消解后非系统目录）不扩大拒绝面：`<normal>/sub/..` 消解回
+        # normal 本身（正斜杠形态在 Windows/POSIX 的 normalize 语义一致）。
+        benign = f"{normal}/sub/.."
         ok = client.post(
             "/api/storage-settings/roots",
             headers=ADMIN,
