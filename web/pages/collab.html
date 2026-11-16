@@ -61,7 +61,7 @@
     @media (max-width: 1056px) {
       #collabMain > div > .grid { grid-template-columns: minmax(0, 1fr); }
       #collabMain > div > .grid > section { grid-column: auto; min-height: 320px; }
-      #collabTimeline, #collabReviewFeed, #collabTaskFeed { min-height: 120px; max-height: 360px; flex: auto; }
+      #collabTimeline, #collabReviewFeed { min-height: 120px; max-height: 360px; flex: auto; }
     }
   </style>
 </head>
@@ -312,32 +312,19 @@
         </div>
       </div>
 
-      <!-- COL 2: 任务与日志路由 (Span 4) -->
-      <div class="col-span-4 flex flex-col h-full min-h-0 space-y-2">
-        <div class="champagne-card p-2.5 flex-[0_0_32%] flex flex-col min-h-0 justify-between">
+      <!-- COL 2: 中心 (Span 4) -->
+      <div class="col-span-4 flex flex-col h-full min-h-0">
+        <div class="champagne-card p-2.5 flex-1 flex flex-col min-h-0">
           <div class="flex items-center justify-between pb-1.5 border-b border-white/5 shrink-0">
-            <h3 class="text-slate-100 gw-type-section">工作台入口</h3>
+            <h3 class="text-slate-100 gw-type-section">中心</h3>
             <button type="button" id="collabRefresh" class="btn-hw-round" title="刷新协作数据" aria-label="刷新协作数据"><span class="btn-hw-round-inner"><i data-lucide="refresh-cw" class="w-3.5 h-3.5" aria-hidden="true"></i></span></button>
           </div>
-
-          <div class="flex items-center justify-between py-2 gw-type-body-sm">
-            <div class="hw-segmented-group" role="tablist" aria-label="任务和日志">
-              <button type="button" class="hw-segmented-btn btn-size-sm active" data-collab-view="tasks" role="tab" aria-selected="true"><i data-lucide="list-checks" class="w-3.5 h-3.5"></i><span>任务</span></button>
-              <button type="button" class="hw-segmented-btn btn-size-sm" data-collab-view="logs" role="tab" aria-selected="false"><i data-lucide="scroll-text" class="w-3.5 h-3.5"></i><span>日志</span></button>
-            </div>
-            <a class="gw-type-body-sm font-mono text-slate-500 hover:text-[#dfc384]" data-collab-route-link href="/static/pages/collab.html?view=tasks">查看任务面板</a>
-          </div>
-          <div id="collabTaskFeed" class="flex-1 min-h-0 overflow-y-auto space-y-1.5 gw-type-body-sm"><div class="gw-type-body-sm text-slate-500 p-2">正在读取任务…</div></div>
-
-          <div class="pt-2 border-t border-white/5 shrink-0">
-            <span class="gw-type-body-sm font-mono text-slate-500" id="collabTaskState">来源：统一观测任务路由</span>
-            <button type="button" id="collabTaskMore" class="hw-btn" hidden>加载更多</button>
-          </div>
-        </div>
-        <section class="champagne-card p-2.5 flex-1 flex flex-col min-h-0">
-          <div class="flex items-center justify-between pb-1.5 border-b border-white/5 shrink-0"><div class="flex items-center space-x-2"><i data-lucide="lock-keyhole" class="w-4 h-4 text-[#dfc384]"></i><h3 class="text-slate-100 gw-type-section">工程资源排他锁看板</h3></div><span class="gw-type-body-sm font-mono text-slate-500">AUTO-LEASE</span></div>
-          <div id="collabLockBoard" class="flex-1 min-h-0 overflow-y-auto space-y-2 py-2"><div class="bay-inset p-3 gw-type-body-sm text-slate-500">当前没有匹配的排他锁只读路由，未展示示例锁数据。</div></div>
-          <div class="gw-type-body-sm font-mono text-slate-500 pt-1 border-t border-white/5">锁状态需后端提供 lease / exclusive-lock 查询后接入</div>
+          <iframe
+            id="collabCenterFrame"
+            class="flex-1 min-h-0 w-full border-0 rounded-xl mt-2"
+            title="中心：任务与运行日志"
+            src="/static/embeds/task-center.html?embedded=1&amp;view=tasks">
+          </iframe>
         </section>
       </div>
 

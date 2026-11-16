@@ -695,12 +695,12 @@
                 <i data-lucide="layers" class="w-3.5 h-3.5 text-[#dfc384]"></i>
                 <h3 class="text-slate-100 gw-type-section">渲染批处理流水线</h3>
               </div>
-              <button class="hw-btn cursor-pointer" id="activeTasksCountBadge" onclick="HardwareDeck.openDrawer('taskCenterDrawer')" title="真实作业队列 /api/observability/tasks">读取中…</button>
+              <a class="hw-btn cursor-pointer" id="activeTasksCountBadge" href="/static/pages/collab.html?view=tasks" title="真实作业队列 /api/observability/tasks">读取中…</a>
             </div>
 
             <!-- 真实作业队列容器：内容由 /api/observability/tasks 驱动，不含静态示例任务。 -->
-            <div class="space-y-1" id="workbenchActiveTasksContainer">
-              <div class="bay-inset p-3 rounded-xl border border-white/10 text-center gw-type-body-sm font-mono text-slate-400" role="status">读取真实作业队列…</div>
+            <div class="flex-1 flex items-center justify-center p-3 text-center gw-type-body-sm text-slate-400">
+              <a class="hw-btn" href="/static/pages/collab.html?view=tasks">进入协作中心查看任务与日志</a>
             </div>
           </section>
         </div>
@@ -790,25 +790,6 @@
       </form>
     </div>
   </div>
-
-  <!-- 任务中心滑出抽屉 (#taskCenterDrawer) -->
-  <div class="hw-drawer-backdrop" id="taskCenterDrawer-backdrop"></div>
-  <aside class="hw-drawer-panel" id="taskCenterDrawer">
-    <div class="p-3.5 border-b border-white/10 flex items-center justify-between shrink-0 bg-[#0d0f14]">
-      <div class="flex items-center space-x-2">
-        <i data-lucide="layers" class="w-4 h-4 text-[#dfc384]"></i>
-        <h3 class="text-slate-100 gw-type-title">渲染队列与后台任务流水线</h3>
-      </div>
-      <button type="button" class="btn-hw-round" onclick="HardwareDeck.closeDrawer('taskCenterDrawer')" aria-label="关闭任务中心"><span class="btn-hw-round-inner"><i data-lucide="x" class="w-4 h-4" aria-hidden="true"></i></span></button>
-    </div>
-
-    <div class="p-3 overflow-y-auto space-y-2 flex-1 gw-type-body-sm">
-      <!-- 任务中心抽屉内容：由 /api/observability/tasks 真实驱动。 -->
-      <div class="space-y-2" id="workbenchTaskCenterDrawerList">
-        <div class="bay-inset p-2.5 rounded-xl border border-white/10 text-center gw-type-body-sm font-mono text-slate-400" role="status">读取真实作业队列…</div>
-      </div>
-    </div>
-  </aside>
 
   <!-- 团队席位模态框 (#teamModal) -->
   <div class="hw-modal-backdrop" id="teamModal">
