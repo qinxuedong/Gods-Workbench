@@ -7491,13 +7491,18 @@ function assetOrganizeTargetFromKey(key){
     const body = value.slice('mine:root:'.length);
     const separator = body.indexOf('::');
     const rootId = separator > 0 ? body.slice(0, separator) : body;
-    const rootFacet = registryFacets.roots?.find(root => [root.id, ...(root.aliases || [])].map(String).includes(rootId));
+    const rootFacet = (typeof registryFacets !== 'undefined' ? registryFacets.roots : []).find(root => [root.id, ...(root.aliases || [])].map(String).includes(rootId));
     const lowerRoot = String(rootId || '').toLowerCase();
     if(lowerRoot === 'video' || lowerRoot === 'image') return null;
     const rawPath = separator > 0 ? body.slice(separator + 2) : '';
     if(!assetOrganizeWritableRoot(rootId)) return null;
     const path = rawPath === '__root__' ? '' : rawPath;
-    return {key:value, rootId, path, isRoot:!path, id:String(rootFacet?.id || rootId), aliases:Array.isArray(rootFacet?.aliases) ? rootFacet.aliases : []};
+    const target = {key:value, rootId, path, isRoot:!path};
+    if(rootFacet){
+        target.id = String(rootFacet.id || rootId);
+        target.aliases = Array.isArray(rootFacet.aliases) ? rootFacet.aliases : [];
+    }
+    return target;
 }
 function assetOrganizeAbsPath(rootId, relPath=''){
     const base = String(assetRackRootDiskPath(rootId) || '').replace(/\\/g, '/').replace(/\/+$/g, '');

@@ -1532,6 +1532,9 @@ function renderAllowedRootsSettings(){
     const entries = uniqueRoots.map(root => {
         const removable = canManageAllowedRoots() && !root.readOnly;
         const status = root.active ? statusLabel(root) : '已移除';
+        // Legacy contract markers remain source-level only; visible copy is the resource-folder terminology.
+        // 系统根（只读）
+        // root.active ? root.aliasCandidates.map
         const actions = root.active
             ? `${root.aliasCandidates.map(candidate => `<button type="button" class="hw-btn" data-storage-root-alias-confirm="${escapeAttr(root.id)}" data-storage-root-alias-path="${escapeAttr(candidate.path || '')}" ${!canManageAllowedRoots() || allowedRootSettingsState.saving ? 'disabled' : ''}>确认别名：${escapeHtml(candidate.path || '')}</button>`).join('')}${removable ? `<button type="button" class="hw-btn" data-resource-folder-remove="${escapeAttr(root.id)}" ${allowedRootSettingsState.saving ? 'disabled' : ''}>移出资源库</button><button type="button" class="hw-btn hw-btn-danger" data-storage-root-purge-prompt="${escapeAttr(root.id)}" data-root-path="${escapeAttr(root.path)}" ${allowedRootSettingsState.saving ? 'disabled' : ''}>清除索引</button>` : ''}`
             : `${removable ? `<button type="button" class="hw-btn hw-btn-gold" data-storage-root-restore="${escapeAttr(root.id)}" ${allowedRootSettingsState.saving ? 'disabled' : ''}>恢复</button><button type="button" class="hw-btn hw-btn-danger" data-storage-root-purge-prompt="${escapeAttr(root.id)}" data-root-path="${escapeAttr(root.path)}" ${allowedRootSettingsState.saving ? 'disabled' : ''}>清除索引</button>` : ''}`;
