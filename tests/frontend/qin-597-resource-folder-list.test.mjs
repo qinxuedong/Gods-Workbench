@@ -72,3 +72,68 @@ test('AC7: purge requires two confirmations, is irreversible, and preserves sour
   assert.match(request, /expected_version/);
   assert.match(settings, /绝不会删除您的磁盘原始素材文件/);
 });
+
+function loadResourceFolderActions({removeRoot = async () => ({}), purgeRoot = async () => ({}), confirms = [true]} = {}) {
+  const start = organize.indexOf('let resourceFolderActionSeq = 0;');
+  const end = organize.indexOf('async function removeGeneratedSourceBoard', start);
+  assert.ok(start >= 0 && end > start, 'resource-folder action block exists');
+  const source = organize.slice(start, end);
+  const state = {
+    registryFacets: {roots:[{id:'local_extra_abc_123', aliases:['root_0123456789abcdef01234567'], path:'C:/Media'}]},
+    registryAssetsQueryCache: {clear(){ this.cleared = true; }},
+    registryAssets: [], registryStatus: {overview:{roots:[]}}, assetTreeExpanded: new Set(),
+    assetTreeSelectedKey:'', activeTab:'registry', statuses:[], toasts:[], removals:[], purges:[],
+    confirmQueue:[...confirms]
+  };
+  const factory = new Function(
+    'registryFacets','registryAssetsQueryCache','registryAssets','registryStatus','assetTreeExpanded',
+    'assetTreeSelectedKey','activeTab','window','canManageAllowedRoots','setStatus','showAssetOrganizeToast',
+    'removeAssetSourceRegistrations','saveAllowedRootRemoval','saveAllowedRootPurge','setRegistryAssets',
+    'setAssetTreeSelectedKey','setActiveTab','refreshRegistryFacetData','refreshRegistryAssets','render',
+    `${source}; return {executeResourceFolderAction, invalidateResourceFolderAction, state:()=>({registryFacets, assetTreeSelectedKey, activeTab})};`
+  );
+  const actions = factory(
+    state.registryFacets, state.registryAssetsQueryCache, state.registryAssets, state.registryStatus,
+    state.assetTreeExpanded, state.assetTreeSelectedKey, state.activeTab,
+    {confirm: message => { state.confirmMessages = [...(state.confirmMessages || []), message]; return state.confirmQueue.shift() ?? true; }},
+    () => true,
+    message => state.statuses.push(message),
+    message => state.toasts.push(message),
+    async ids => { state.removals.push(ids); return new Set(ids); },
+    async id => { state.allowedRootRemovals = [...(state.allowedRootRemovals || []), id]; return removeRoot(id); },
+    async id => { state.purges.push(id); return purgeRoot(id); },
+    assets => { state.registryAssets = assets; },
+    key => { state.assetTreeSelectedKey = key; },
+    tab => { state.activeTab = tab; },
+    async () => {}, async () => {}, () => {}
+  );
+  return {actions, state};
+}
+
+test('runtime: move out, refresh, then purge removed root by allowed-root ID alone', async () => {
+  const {actions, state} = loadResourceFolderActions({confirms:[true, true]});
+  const active = {id:'root_0123456789abcdef01234567', path:'C:/Media', name:'Media'};
+  assert.equal((await actions.executeResourceFolderAction(active, 'remove')).status, 'removed');
+  assert.deepEqual(state.removals, [['local_extra_abc_123']]);
+  assert.deepEqual(state.allowedRootRemovals, ['root_0123456789abcdef01234567']);
+
+  state.registryFacets.roots = [];
+  const refreshedRemoved = {id:'root_0123456789abcdef01234567', path:'C:/Media', active:false};
+  assert.equal((await actions.executeResourceFolderAction(refreshedRemoved, 'purge', {firstConfirmationSatisfied:true})).status, 'purged');
+  assert.deepEqual(state.purges, ['root_0123456789abcdef01234567']);
+  assert.equal(state.confirmMessages.length, 2, 'move and final purge confirmations were shown');
+});
+
+test('runtime: partial move failure retains source-unregister progress for retry', async () => {
+  let revokeAttempts = 0;
+  const {actions, state} = loadResourceFolderActions({removeRoot: async () => {
+    revokeAttempts += 1;
+    if(revokeAttempts === 1) throw new Error('revision conflict');
+    return {};
+  }, confirms:[true, true]});
+  const root = {id:'root_0123456789abcdef01234567', path:'C:/Media'};
+  assert.equal((await actions.executeResourceFolderAction(root, 'remove')).status, 'failed');
+  assert.equal((await actions.executeResourceFolderAction(root, 'remove')).status, 'removed');
+  assert.equal(state.removals.length, 1, 'retry must not unregister the source twice');
+  assert.equal(revokeAttempts, 2);
+});

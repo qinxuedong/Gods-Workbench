@@ -620,13 +620,13 @@ const resourceFolderUnregisteredSources = new Set();
 function invalidateResourceFolderAction(){
     if(!resourceFolderInternalViewSwitch) resourceFolderActionSeq += 1;
 }
-function resolveResourceFolderIdentity(rootTarget={}){
+function resolveResourceFolderIdentity(rootTarget={}, requireSource=true){
     const candidates = [rootTarget.id, rootTarget.rootId, ...(Array.isArray(rootTarget.aliases) ? rootTarget.aliases : [])]
         .map(value => String(value || '').trim()).filter(Boolean);
     const allowedRootId = candidates.find(value => /^root_[a-f0-9]{24}$/i.test(value)) || '';
     let sourceId = candidates.find(value => /^local_extra_[a-z0-9]+(?:_[a-z0-9]+)?$/i.test(value)) || '';
     const normalizePath = value => String(value || '').split(String.fromCharCode(92)).join('/').replace(/\/+$/, '').toLocaleLowerCase();
-    if(allowedRootId && !sourceId){
+    if(allowedRootId && !sourceId && requireSource){
         const targetPath = normalizePath(rootTarget.path);
         const facet = (registryFacets.roots || []).find(item =>
             [item.id, ...(item.aliases || [])].map(String).includes(allowedRootId) ||
@@ -634,7 +634,7 @@ function resolveResourceFolderIdentity(rootTarget={}){
         sourceId = [facet?.id, ...(facet?.aliases || [])].map(String)
             .find(value => /^local_extra_[a-z0-9]+(?:_[a-z0-9]+)?$/i.test(value)) || '';
     }
-    return allowedRootId && sourceId ? {allowedRootId, sourceId} : null;
+    return allowedRootId && (!requireSource || sourceId) ? {allowedRootId, sourceId} : null;
 }
 function confirmResourceFolderPurge(rootTarget, firstConfirmationSatisfied=false){
     const label = rootTarget.name || rootTarget.path || '资源文件夹';
@@ -642,9 +642,14 @@ function confirmResourceFolderPurge(rootTarget, firstConfirmationSatisfied=false
     return first && window.confirm(`最后确认：清除“${label}”的索引与缓存，不会删除其中的任何源文件。`);
 }
 async function executeResourceFolderAction(rootTarget, action, options = {}){
-    const identity = resolveResourceFolderIdentity(rootTarget);
-    if(!identity) return {status:'invalid-target'};
     if(!['remove', 'purge'].includes(action)) return {status:'invalid-action'};
+    const identity = resolveResourceFolderIdentity(rootTarget, action === 'remove');
+    if(!identity){
+        const error = new Error('无法识别资源文件夹身份，请刷新清单后重试');
+        setStatus(error.message);
+        showAssetOrganizeToast(error.message);
+        return {status:'invalid-target', error};
+    }
     if(!canManageAllowedRoots()) return {status:'forbidden'};
     if(resourceFolderActionBusy) return {status:'busy'};
     const token = ++resourceFolderActionSeq;
