@@ -92,17 +92,19 @@ test('AC5: 首屏缩略图即时加载，避免二次无谓重绘与清空队列
     '并发度提升至 8 以加速滚动批次下载'
   );
 
-  // 2. deferRegistryPreviewThumb 支持首屏 immediate 标记
+  // 2.【QIN-609】immediate 直加载路径已删除：全部缩略图统一走 defer 占位 + 8 并发队列
+  //   （票面 AC1 并发上限要求首屏卡片也受队列管控，不再绕过并发上限直出真实 src）。
   assert.match(
     assetManagerJs,
-    /function deferRegistryPreviewThumb\(markup,\s*immediate\s*=\s*false\)\s*\{[\s\S]*?if\(immediate\)\s*\{[\s\S]*?image\.setAttribute\('data-registry-preview-loaded',\s*'true'\);[\s\S]*?image\.removeAttribute\('data-registry-preview-src'\);[\s\S]*?image\.removeAttribute\('aria-busy'\);[\s\S]*?return;\s*\}/,
-    '首屏可见卡片图片必须支持 immediate 直出真实 src，避免全部落入透明占位与异步观察者排队'
+    /function deferRegistryPreviewThumb\(markup\)\s*\{/,
+    'deferRegistryPreviewThumb 单参签名：全部缩略图统一走延迟队列'
   );
+  assert.doesNotMatch(assetManagerJs, /if\(immediate\)/, 'immediate 直加载分支已删除');
 
-  // 3. renderRegistryCard 首屏卡片默认直出
+  // 3. renderRegistryCard 首屏卡片同样 defer（无 index 直出参数）
   assert.match(
     assetManagerJs,
-    /deferRegistryPreviewThumb\(assetThumb\(item\),\s*Number\(index\)\s*<\s*24\)/,
+    /deferRegistryPreviewThumb\(assetThumb\(item\)\)/,
     'renderRegistryCard 前 24 张卡片必须开启即时直出'
   );
 

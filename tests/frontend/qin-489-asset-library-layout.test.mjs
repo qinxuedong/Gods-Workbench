@@ -678,7 +678,7 @@ test('QIN-504 AC7: 只在向下滚动时预加载视口外下一批20张预览',
         return true;
     };
     const buildScheduler = new Function(
-        'root','REGISTRY_PREVIEW_SCROLL_AHEAD_COUNT','requestAnimationFrame','activateRegistryPreviewImage','performance','REGISTRY_PREVIEW_SCROLL_PRELOAD_INTERVAL_MS',
+        'root','REGISTRY_PREVIEW_SCROLL_AHEAD_COUNT','requestAnimationFrame','activateRegistryPreviewImage','performance','REGISTRY_PREVIEW_SCROLL_PRELOAD_INTERVAL_MS','window',
         `let registryPreviewFallbackCleanup = null;\n${functionSource('scheduleRegistryPreviewFallback')}\nreturn scheduleRegistryPreviewFallback;`,
     );
     const schedule = buildScheduler(
@@ -688,6 +688,7 @@ test('QIN-504 AC7: 只在向下滚动时预加载视口外下一批20张预览',
         activate,
         {now:() => currentTime},
         120,
+        {innerHeight: 600, scrollY: 0},  // 【QIN-609】可视视口交集判定需要 window.innerHeight
     );
     schedule(scrollRoot);
     assert.deepEqual(activated, visibleImages.map(image => image.id));
@@ -717,8 +718,8 @@ test('QIN-504 AC7: 只在向下滚动时预加载视口外下一批20张预览',
     listeners.wheel({deltaY:50});
     callbacks.shift()();
     assert.equal(activated.length, 43, '继续下滑时才加载下一批20张');
-    // QIN-518 AC2：预览预取改为带 200px 视口提前量，消除快速滚动白块。
-    assert.equal(manager.match(/const REGISTRY_PREVIEW_ROOT_MARGIN = '([^']+)'/)?.[1], '200px 0px');
+    // QIN-518 AC2：预览预取带视口提前量；【QIN-609】200px→96px 收敛视口必需集。
+    assert.equal(manager.match(/const REGISTRY_PREVIEW_ROOT_MARGIN = '([^']+)'/)?.[1], '96px 0px'); // 【QIN-609】200px→96px
 
     assert.match(manager, /const REGISTRY_PAGE_SIZE = 1500/);
     assert.match(functionSource('loadMoreRegistryAssets'), /registryQueryString\(\{offset,cursor\}\)/);

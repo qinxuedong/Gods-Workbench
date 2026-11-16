@@ -524,9 +524,10 @@ function registryPageScrollTarget(event){
 // a time, instead of re-requesting every previously loaded card in parallel.
 const REGISTRY_STRUCTURE_QUERY_CHUNK_SIZE = 500;
 const REGISTRY_CACHE_MAX_SIZE = 20; // 【优化问题1】限制缓存大小，避免内存膨胀
-// 【QIN-518】视口提前量：卡片在进入视口前 200px 就发起预览解码，
-// 消除快速滚动时的大面积白块与渐现延迟。
-const REGISTRY_PREVIEW_ROOT_MARGIN = '200px 0px';
+// 【QIN-518】视口提前量：卡片在进入视口前发起预览解码，消除滚动时的白块与渐现延迟。
+// 【QIN-609】提前量从 200px 收窄到 96px：点击-settle 协议内进入队列的预览请求
+// 收敛到视口必需集（AC3 preview 尾巴），滚动缓冲改由 8 并发队列 + scroll rAF 激活兜底。
+const REGISTRY_PREVIEW_ROOT_MARGIN = '96px 0px';
 const REGISTRY_PREVIEW_SCROLL_AHEAD_COUNT = 20;
 const REGISTRY_PREVIEW_SCROLL_PRELOAD_INTERVAL_MS = 120;
 const REGISTRY_PREVIEW_CONCURRENCY = 8;
@@ -537,6 +538,9 @@ const REGISTRY_VIRTUAL_GAP = 10;
 const REGISTRY_PREVIEW_PLACEHOLDER = 'data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%221%22 height=%221%22/%3E';
 let registryPreviewQueue = [];
 let registryPreviewActive = 0;
+// 【QIN-609】在途预览登记：切目录 DOM 重建会取消在途请求且 load/error 不再触发，
+// pump 每轮先清扫断连项释放槽位，防止并发上限被泄漏占满导致队列永久卡死。
+const registryPreviewInFlight = new Set();
 let registryPreviewQueueRevision = 0;
 let registryPreviewObserver = null;
 let registryPreviewFallbackCleanup = null;
@@ -2929,18 +2933,15 @@ function renderRegistryRecycleButton(item={}, className=''){
     const title = disabled ? '当前素材来源为只读，不能移入回收站' : '移入 god-recycler';
     return `<button class="${escapeAttr(className)} registry-card-recycle" type="button" data-registry-recycle="${escapeAttr(item.id || '')}" title="${escapeAttr(title)}" aria-label="删除 ${escapeAttr(item.name || '素材')}" ${disabled ? 'disabled' : ''}><i data-lucide="trash-2"></i></button>`;
 }
-function deferRegistryPreviewThumb(markup, immediate=false){
+// 【QIN-609】全部缩略图统一走延迟队列：删除旧 immediate 直加载路径（前 24/30 张
+// 保留真实 src 会在 8 并发队列之外同时发起请求，破坏并发上限与视口优先）。
+// 首屏由 scheduleRegistryPreviewImages 的 fallback activateVisible 首帧激活，经队列消化。
+function deferRegistryPreviewThumb(markup){
     const template = document.createElement('template');
     template.innerHTML = String(markup || '');
     template.content.querySelectorAll('img[src]').forEach(image => {
         const source = image.getAttribute('src') || '';
         if(!source || source === REGISTRY_PREVIEW_PLACEHOLDER) return;
-        if(immediate){
-            image.setAttribute('data-registry-preview-loaded', 'true');
-            image.removeAttribute('data-registry-preview-src');
-            image.removeAttribute('aria-busy');
-            return;
-        }
         image.setAttribute('src', REGISTRY_PREVIEW_PLACEHOLDER);
         image.setAttribute('data-registry-preview-src', source);
         image.setAttribute('data-registry-preview-loaded', 'false');
@@ -2959,7 +2960,7 @@ function renderRegistryListRow(item, index=0){
     const tags = Array.isArray(item.tags) ? item.tags.slice(0, 4) : [];
     return `<article class="registry-list-row asset-type-${registryVisualType(item)} ${item.id === selectedRegistryAssetId ? 'active' : ''} ${selected ? 'selected' : ''}" data-registry-card="${escapeAttr(item.id)}" draggable="true" data-registry-drag="${escapeAttr(item.id)}" tabindex="0" role="row" aria-label="查看资产 ${escapeAttr(name)}">
         <span class="registry-list-check" role="cell"><input type="checkbox" aria-label="选择 ${escapeAttr(name)}" data-registry-check="${escapeAttr(item.id)}" ${selected ? 'checked' : ''}></span>
-        <span class="registry-list-name" role="cell"><span class="registry-list-thumb">${deferRegistryPreviewThumb(assetThumb(item), Number(index) < 30)}</span><strong data-registry-card-name title="${escapeAttr(name)}">${escapeHtml(name)}</strong></span>
+        <span class="registry-list-name" role="cell"><span class="registry-list-thumb">${deferRegistryPreviewThumb(assetThumb(item))}</span><strong data-registry-card-name title="${escapeAttr(name)}">${escapeHtml(name)}</strong></span>
         <span class="registry-list-type" role="cell"><i data-lucide="${escapeAttr(registryAssetTypeIcon(item))}"></i>${escapeHtml(registryAssetTypeLabel(item))}</span>
         <span role="cell">${escapeHtml(formatFileSize(item.size || 0))}</span>
         <span role="cell">${escapeHtml(registryModifiedLabel(item))}</span>
@@ -4986,6 +4987,11 @@ function scheduleRegistryVirtualRemeasure(){
     });
 }
 function pumpRegistryPreviewQueue(){
+    // 【QIN-609】清扫在途登记里的断连项：切目录 DOM 重建取消请求后 load/error 不再触发，
+    // 不清扫会让泄漏的槽位占满并发上限、队列永久卡死（改前即存在的缺陷，本票修复）。
+    for(const entry of registryPreviewInFlight){
+        if(!entry.image.isConnected) entry.finish(undefined);
+    }
     while(registryPreviewActive < REGISTRY_PREVIEW_CONCURRENCY && registryPreviewQueue.length){
         const image = registryPreviewQueue.shift();
         if(!image?.isConnected) continue;
@@ -4996,26 +5002,36 @@ function pumpRegistryPreviewQueue(){
         image.dataset.registryPreviewLoaded = 'true';
         if(!source) continue;
         registryPreviewActive += 1;
-        let settled = false;
-        const finish = () => {
-            if(settled) return;
-            settled = true;
+        const entry = {image, settled: false};
+        entry.finish = (success) => {
+            if(entry.settled) return;
+            entry.settled = true;
+            registryPreviewInFlight.delete(entry);
             registryPreviewActive = Math.max(0, registryPreviewActive - 1);
-            if(image.closest?.('[data-registry-virtual-grid]')) applyRegistryVirtualPreviewAspect(image);
-            scheduleRegistryVirtualRemeasure();
+            // 【QIN-609】失败不误标成功：error 置 failed 标记（不重试、不进虚拟化缓存）；
+            // 断连节点跳过 aspect/remeasure 副作用（槽位照常释放）。
+            if(image.isConnected){
+                if(success === false) image.dataset.registryPreviewFailed = 'true';
+                else image.removeAttribute('data-registry-preview-failed');
+                if(image.closest?.('[data-registry-virtual-grid]')) applyRegistryVirtualPreviewAspect(image);
+                scheduleRegistryVirtualRemeasure();
+            }
             pumpRegistryPreviewQueue();
         };
-        image.addEventListener('load', finish, {once:true});
-        image.addEventListener('error', finish, {once:true});
+        registryPreviewInFlight.add(entry);
+        image.addEventListener('load', () => entry.finish(true), {once:true});
+        image.addEventListener('error', () => entry.finish(false), {once:true});
         image.src = source;
-        if(image.complete) queueMicrotask(finish);
+        if(image.complete) queueMicrotask(() => entry.finish(true));
     }
 }
-function activateRegistryPreviewImage(image){
+function activateRegistryPreviewImage(image, priority=false){
     const source = String(image?.dataset?.registryPreviewSrc || '');
     if(!source || image.dataset.registryPreviewLoaded === 'true' || image.dataset.registryPreviewQueued === 'true') return false;
     image.dataset.registryPreviewQueued = 'true';
-    registryPreviewQueue.push(image);
+    // 【QIN-609】视口内激活（IO 回调 / fallback 可见激活）插队首，wheel 预载（视口外）保持队尾。
+    if(priority) registryPreviewQueue.unshift(image);
+    else registryPreviewQueue.push(image);
     pumpRegistryPreviewQueue();
     return true;
 }
@@ -5025,6 +5041,13 @@ function scheduleRegistryPreviewFallback(scrollRoot){
     let lastScrollPreloadAt = Number.NEGATIVE_INFINITY;
     const activateVisible = (preloadOutsideViewport=false) => {
         const rootRect = scrollRoot.getBoundingClientRect();
+        // 【QIN-609】页面级滚动布局下容器 rect 是内容全高，「视口」必须取容器与
+        // window 视口的交集并用 rootMargin 同款 96px 提前量扩展；否则全部 defer
+        // 都被当成「视口内」瞬间激活，视口优先与预载分支双双失效。
+        const viewportTop = Math.max(rootRect.top, 0);
+        const viewportBottom = Math.min(rootRect.bottom, window.innerHeight || 0);
+        const viewTop = viewportTop - 96;
+        const viewBottom = viewportBottom + 96;
         const previews = [...root.querySelectorAll('img[data-registry-preview-src]')]
             .filter(image => image.dataset.registryPreviewQueued !== 'true')
             .map(image => ({
@@ -5033,11 +5056,13 @@ function scheduleRegistryPreviewFallback(scrollRoot){
             }))
             .filter(({rect}) => rect.right >= rootRect.left && rect.left <= rootRect.right);
         previews.forEach(({image,rect}) => {
-            const visible = rect.bottom >= rootRect.top && rect.top <= rootRect.bottom;
-            if(visible) activateRegistryPreviewImage(image);
+            const inVisualViewport = rect.bottom >= viewportTop && rect.top <= viewportBottom;
+            const visible = rect.bottom >= viewTop && rect.top <= viewBottom;
+            // 可视察口内插队首（AC2 视口优先）；96px 提前量内的视口外卡片同帧激活但不插队。
+            if(visible) activateRegistryPreviewImage(image, inVisualViewport);
         });
         if(!preloadOutsideViewport) return;
-        previews.filter(({rect}) => rect.top >= rootRect.bottom)
+        previews.filter(({rect}) => rect.top >= viewBottom)
             .sort((a,b) => a.rect.top - b.rect.top || a.rect.left - b.rect.left)
             .slice(0, REGISTRY_PREVIEW_SCROLL_AHEAD_COUNT)
             .forEach(({image}) => activateRegistryPreviewImage(image));
@@ -5099,7 +5124,7 @@ function scheduleRegistryPreviewImages(){
             entries.forEach(entry => {
                 if(!entry.isIntersecting) return;
                 const image = entry.target;
-                activateRegistryPreviewImage(image);
+                activateRegistryPreviewImage(image, true);
                 observer.unobserve(image);
             });
         }, {root:scrollRoot, rootMargin:REGISTRY_PREVIEW_ROOT_MARGIN});
@@ -5116,6 +5141,8 @@ function registryPreviewCacheKey(image){
 function captureRegistryPreviewImages(){
     const cache = registryPreviewImageCache;
     root?.querySelectorAll('img[data-registry-preview-loaded="true"]').forEach(image => {
+        // 【QIN-609】失败节点不进虚拟化缓存，避免复用坏图。
+        if(image.dataset.registryPreviewFailed === 'true') return;
         const key = registryPreviewCacheKey(image);
         if(!key) return;
         cache.set(key, {image, source:image.currentSrc || image.src});
@@ -5931,7 +5958,7 @@ function renderRegistryVersionStructureCard(item, index=0){
     return `<section class="asset-card registry-card registry-structure-card registry-structure-version asset-type-image ${selected ? 'active' : ''}" data-registry-structure-card="${escapeAttr(structure.id)}" data-registry-structure-type="version" data-registry-card="structure:${escapeAttr(structure.id)}" tabindex="0" role="group" aria-label="版本结构：${escapeAttr(current.name || '未命名图片')}">
         <div class="registry-structure-main" data-registry-structure-open="${escapeAttr(structure.id)}" role="button" tabindex="0" aria-label="查看当前版本：${escapeAttr(current.name || '未命名图片')}">
             <div class="asset-thumb"${mediaAspectStyle ? ` style="${mediaAspectStyle}"` : ''}>
-                ${deferRegistryPreviewThumb(assetThumb(current), Number(index) < 24)}
+                ${deferRegistryPreviewThumb(assetThumb(current))}
                 ${memberStrip}
             </div>
         </div>
@@ -6038,7 +6065,7 @@ function renderRegistryCard(item, index=0){
         <input class="asset-card-check" type="checkbox" aria-label="选择 ${escapeAttr(name)}" data-registry-check="${escapeAttr(item.id)}" ${selected ? 'checked' : ''}>
         <span class="registry-card-format" aria-label="文件格式 ${escapeAttr(format)}">${escapeHtml(format)}</span>
         ${renderRegistryRecycleButton(item)}
-        <div class="asset-thumb"${mediaAspectStyle ? ` style="${mediaAspectStyle}"` : ''}>${deferRegistryPreviewThumb(assetThumb(item), Number(index) < 24)}${segmentBadge}<span class="registry-card-selection-overlay" aria-hidden="true"></span></div>
+        <div class="asset-thumb"${mediaAspectStyle ? ` style="${mediaAspectStyle}"` : ''}>${deferRegistryPreviewThumb(assetThumb(item))}${segmentBadge}<span class="registry-card-selection-overlay" aria-hidden="true"></span></div>
         ${cardBody}
     </article>`;
 }
