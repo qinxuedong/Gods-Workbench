@@ -134,8 +134,22 @@
     }
   };
   const syncTheme = theme => {
-    document.documentElement.setAttribute('data-theme', theme === 'dark' ? 'dark' : 'light');
-    document.body?.setAttribute('data-theme', theme === 'dark' ? 'dark' : 'light');
+    if (window.StudioTheme?.apply) {
+      window.StudioTheme.apply(theme);
+      return;
+    }
+    const next = theme === 'dark' ? 'dark' : 'light';
+    const dark = next === 'dark';
+    document.documentElement.setAttribute('data-theme', next);
+    document.documentElement.classList.toggle('studio-theme-dark', dark);
+    document.documentElement.classList.toggle('theme-dark', dark);
+    document.documentElement.classList.toggle('theme-light', !dark);
+    if(document.body){
+      document.body.setAttribute('data-theme', next);
+      document.body.classList.toggle('studio-theme-dark', dark);
+      document.body.classList.toggle('theme-dark', dark);
+      document.body.classList.toggle('theme-light', !dark);
+    }
   };
   let touchbarRevision = 0;
   const touchbarStableId = value => {
@@ -213,7 +227,13 @@
       return false;
     }
   };
-  const storedTheme = () => localStorage.getItem('studio_theme') || localStorage.getItem('canvas_theme') || localStorage.getItem('theme') || 'dark';
+  const storedTheme = () => {
+    try {
+      return localStorage.getItem('studio_theme') || localStorage.getItem('canvas_theme') || localStorage.getItem('theme') || 'dark';
+    } catch (_) {
+      return 'dark';
+    }
+  };
   window.addEventListener('message', event => {
     if(event.origin && event.origin !== location.origin) return;
     if(['theme-change','studio-theme'].includes(event.data?.type)) syncTheme(event.data.theme);
