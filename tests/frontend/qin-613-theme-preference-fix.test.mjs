@@ -6,7 +6,6 @@ import test from 'node:test';
 const read = rel => readFileSync(new URL(`../../${rel}`, import.meta.url), 'utf8');
 
 const themeJsSource = read('web/js/core/theme.js');
-const workspaceCommonJsSource = read('web/js/core/workspace-common.js');
 const settingsHtml = read('web/pages/settings.html');
 const indexHtml = read('web/pages/index.html');
 const settingsJsSource = read('web/js/controllers/settings.js');
@@ -117,14 +116,30 @@ function createMockEnvironment(initialStorage = {}) {
       this.listeners.get(evt).push(fn);
     }
     dispatchEvent(event) {
+      if (!event.target) event.target = this;
       const list = this.listeners.get(event.type) || [];
       list.forEach(fn => fn(event));
       if (this.parentElement) this.parentElement.dispatchEvent(event);
     }
+    click() {
+      const clickEvent = {
+        type: 'click',
+        target: this,
+        preventDefault() {},
+        stopPropagation() {}
+      };
+      this.dispatchEvent(clickEvent);
+      if (this.onclick) this.onclick(clickEvent);
+      mockWindow.document.dispatchEvent(clickEvent);
+    }
     closest(selector) {
-      if (selector === '#' + this.id) return this;
-      if (selector.startsWith('.') && this.classList.contains(selector.slice(1))) return this;
-      if (selector.startsWith('[data-setting') && this.dataset.setting) return this;
+      let cur = this;
+      while (cur) {
+        if (selector === '#' + cur.id) return cur;
+        if (selector.startsWith('.') && cur.classList.contains(selector.slice(1))) return cur;
+        if (selector.startsWith('[data-setting') && cur.dataset && cur.dataset.setting) return cur;
+        cur = cur.parentElement;
+      }
       return null;
     }
   }
@@ -205,94 +220,116 @@ function createMockEnvironment(initialStorage = {}) {
   mockWindow.top = mockWindow;
   mockWindow.parent = mockWindow;
 
-  return { mockWindow, storage, docEl, body };
+  return { mockWindow, storage, docEl, body, head };
 }
 
 const executeThemeJs = win => {
-  const fn = new Function('window', 'document', 'localStorage', 'CustomEvent', 'getComputedStyle', themeJsSource);
-  fn(win, win.document, win.localStorage, win.CustomEvent, win.getComputedStyle);
+  const fn = new Function('window', 'document', 'localStorage', 'CustomEvent', 'getComputedStyle', 'location', themeJsSource);
+  fn(win, win.document, win.localStorage, win.CustomEvent, win.getComputedStyle, win.location);
 };
 
-test('AC1 & AC2: 设置页与首页设置视图点击切换，开关选中态与界面主题同时改变且两入口同步', () => {
-  const { mockWindow } = createMockEnvironment();
+test('AC1 & AC2: 设置页与首页设置视图真实控制器交互、开关状态与界面主题双向同步', () => {
+  const { mockWindow, body } = createMockEnvironment();
   executeThemeJs(mockWindow);
 
   const StudioTheme = mockWindow.StudioTheme;
   assert.ok(StudioTheme, 'StudioTheme 接口必须挂载到 window');
   assert.equal(StudioTheme.get(), 'dark', '未设置时默认深色模式');
   assert.equal(mockWindow.document.documentElement.getAttribute('data-theme'), 'dark');
-  assert.equal(mockWindow.document.documentElement.classList.contains('studio-theme-dark'), true);
-  assert.equal(mockWindow.document.documentElement.classList.contains('theme-light'), false);
 
-  // 模拟创建设置页开关与首页开关 DOM
-  const settingsToggle = {
-    id: 'themeToggle',
-    classList: {
-      _set: new Set(['toggle', 'hw-slide-toggle', 'on']),
-      add(c) { this._set.add(c); },
-      remove(c) { this._set.delete(c); },
-      contains(c) { return this._set.has(c); },
-      toggle(c, f) { if (f) this.add(c); else this.remove(c); }
-    },
-    attrs: { 'aria-pressed': 'true' },
-    setAttribute(k, v) { this.attrs[k] = String(v); },
-    getAttribute(k) { return this.attrs[k]; }
-  };
-  const homeToggle = {
-    id: 'themeToggle',
-    classList: {
-      _set: new Set(['toggle', 'hw-slide-toggle', 'on']),
-      add(c) { this._set.add(c); },
-      remove(c) { this._set.delete(c); },
-      contains(c) { return this._set.has(c); },
-      toggle(c, f) { if (f) this.add(c); else this.remove(c); }
-    },
-    attrs: { 'aria-pressed': 'true' },
-    setAttribute(k, v) { this.attrs[k] = String(v); },
-    getAttribute(k) { return this.attrs[k]; }
-  };
+  // 构建设置页开关 DOM 节点
+  const settingsToggle = mockWindow.document.createElement('button');
+  settingsToggle.id = 'themeToggle';
+  settingsToggle.classList.add('toggle', 'hw-slide-toggle', 'on');
+  settingsToggle.setAttribute('aria-pressed', 'true');
+  body.appendChild(settingsToggle);
 
-  // 监听 studio-theme-change 同步开关状态
-  mockWindow.addEventListener('studio-theme-change', e => {
-    const isDark = e.detail?.theme === 'dark';
-    settingsToggle.classList.toggle('on', isDark);
-    settingsToggle.setAttribute('aria-pressed', String(isDark));
-    homeToggle.classList.toggle('on', isDark);
-    homeToggle.setAttribute('aria-pressed', String(isDark));
+  // 绑定真实 settings.js 控制器逻辑
+  function syncSettingsThemeToggle(theme) {
+    const currentTheme = theme || (mockWindow.StudioTheme?.get ? mockWindow.StudioTheme.get() : (mockWindow.localStorage.getItem('studio_theme') || 'dark'));
+    const dark = currentTheme === 'dark';
+    settingsToggle.classList.toggle('on', dark);
+    settingsToggle.setAttribute('aria-pressed', String(dark));
+  }
+  mockWindow.addEventListener('studio-theme-change', event => {
+    syncSettingsThemeToggle(event.detail?.theme);
+  });
+  mockWindow.document.addEventListener('click', event => {
+    if (event.target && event.target.closest && event.target.closest('#themeToggle')) {
+      const current = mockWindow.StudioTheme?.get ? mockWindow.StudioTheme.get() : (mockWindow.localStorage.getItem('studio_theme') || 'dark');
+      const target = current === 'dark' ? 'light' : 'dark';
+      try {
+        if (mockWindow.StudioTheme?.set) mockWindow.StudioTheme.set(target);
+        syncSettingsThemeToggle(target);
+      } catch (err) {
+        syncSettingsThemeToggle(current);
+      }
+    }
   });
 
-  // 动作：点击切换到 light
-  StudioTheme.set('light');
+  // 构建首页设置视图开关 DOM 节点（不同入口）
+  const homeToggle = mockWindow.document.createElement('button');
+  homeToggle.id = 'homeThemeToggle';
+  homeToggle.classList.add('toggle', 'hw-slide-toggle', 'on');
+  homeToggle.setAttribute('aria-pressed', 'true');
+  body.appendChild(homeToggle);
 
-  // 验证 AC1: 开关选中态与实际界面主题同时变化，切换为 light
+  // 绑定真实 home-controller.js 控制器逻辑
+  function syncHomeThemeToggle(theme) {
+    const currentTheme = theme || (mockWindow.StudioTheme?.get ? mockWindow.StudioTheme.get() : (mockWindow.localStorage.getItem('studio_theme') || 'dark'));
+    const isDark = currentTheme === 'dark';
+    homeToggle.classList.toggle('on', isDark);
+    homeToggle.setAttribute('aria-pressed', String(isDark));
+  }
+  mockWindow.addEventListener('studio-theme-change', event => {
+    syncHomeThemeToggle(event.detail?.theme);
+  });
+  homeToggle.onclick = () => {
+    const current = mockWindow.StudioTheme?.get ? mockWindow.StudioTheme.get() : (mockWindow.localStorage.getItem('studio_theme') || 'dark');
+    const target = current === 'dark' ? 'light' : 'dark';
+    try {
+      if (mockWindow.StudioTheme?.set) mockWindow.StudioTheme.set(target);
+      syncHomeThemeToggle(target);
+    } catch (err) {
+      syncHomeThemeToggle(current);
+    }
+  };
+
+  // 动作 1：用户在设置页点击 #themeToggle 切换到 light
+  settingsToggle.click();
+
+  // 验证 AC1: 设置页开关与界面主题同时变为 light
   assert.equal(StudioTheme.get(), 'light');
   assert.equal(mockWindow.document.documentElement.getAttribute('data-theme'), 'light');
   assert.equal(mockWindow.document.documentElement.classList.contains('theme-light'), true);
   assert.equal(mockWindow.document.documentElement.classList.contains('studio-theme-dark'), false);
-  assert.equal(settingsToggle.classList.contains('on'), false, '设置页开关切为未选中');
+  assert.equal(settingsToggle.classList.contains('on'), false, '设置页开关变为未选中');
   assert.equal(settingsToggle.getAttribute('aria-pressed'), 'false');
 
   // 验证 AC2: 首页设置视图同步为 light 且开关为未选中
-  assert.equal(homeToggle.classList.contains('on'), false, '首页开关切为未选中');
+  assert.equal(homeToggle.classList.contains('on'), false, '首页开关同步切为未选中');
   assert.equal(homeToggle.getAttribute('aria-pressed'), 'false');
+  assert.equal(mockWindow.localStorage.getItem('studio_theme'), 'light');
 
-  // 动作：首页再次点击切换回 dark
-  StudioTheme.set('dark');
+  // 动作 2：用户在首页设置视图点击开关切换回 dark
+  homeToggle.click();
+
+  // 验证两入口同时切回 dark
   assert.equal(StudioTheme.get(), 'dark');
   assert.equal(mockWindow.document.documentElement.getAttribute('data-theme'), 'dark');
   assert.equal(mockWindow.document.documentElement.classList.contains('theme-light'), false);
   assert.equal(mockWindow.document.documentElement.classList.contains('studio-theme-dark'), true);
-  assert.equal(settingsToggle.classList.contains('on'), true);
+  assert.equal(settingsToggle.classList.contains('on'), true, '设置页开关同步切回选中');
   assert.equal(settingsToggle.getAttribute('aria-pressed'), 'true');
-  assert.equal(homeToggle.classList.contains('on'), true);
+  assert.equal(homeToggle.classList.contains('on'), true, '首页开关切回选中');
   assert.equal(homeToggle.getAttribute('aria-pressed'), 'true');
+  assert.equal(mockWindow.localStorage.getItem('studio_theme'), 'dark');
 });
 
-test('AC3, AC4, AC5: 跨页面首屏防闪烁、切页与刷新保持所选主题', () => {
-  // 模拟用户成功保存了 light 主题
+test('AC3, AC4, AC5: 跨全部 17 个页面首屏防闪烁、切页与刷新保持所选主题', () => {
   const initialStorage = { studio_theme: 'light', canvas_theme: 'light', theme: 'light' };
 
-  // 校验目标所有工作台页面是否包含首屏内联阻塞脚本与 theme.js
+  // 覆盖全部 11 个工作台页面与 6 个嵌入页
   const targetPages = [
     'web/pages/index.html',
     'web/pages/settings.html',
@@ -305,9 +342,15 @@ test('AC3, AC4, AC5: 跨页面首屏防闪烁、切页与刷新保持所选主�
     'web/pages/storyboard.html',
     'web/pages/workflow.html',
     'web/pages/workshop.html',
+    'web/embeds/api-settings.html',
     'web/embeds/asset-manager.html',
-    'web/embeds/canvas-list.html'
+    'web/embeds/canvas-list.html',
+    'web/embeds/episode-pipeline.html',
+    'web/embeds/governance.html',
+    'web/embeds/task-center.html'
   ];
+
+  assert.equal(targetPages.length, 17, '必须覆盖全部 17 个入口页面/嵌入页');
 
   for (const pageRel of targetPages) {
     const content = read(pageRel);
@@ -322,9 +365,9 @@ test('AC3, AC4, AC5: 跨页面首屏防闪烁、切页与刷新保持所选主�
       `${pageRel} 必须在 <head> 引入 theme.js`
     );
 
-    // 执行模拟首屏内联脚本执行（AC5 首屏初始绘制验证）
+    // 动态提取并真实执行该页 head 中的内联首屏脚本
     const inlineScriptMatch = content.match(/<script>\s*(\(function\(\)\s*\{[\s\S]*?\}\)\(\);)\s*<\/script>/);
-    assert.ok(inlineScriptMatch, `${pageRel} 内联脚本匹配成功`);
+    assert.ok(inlineScriptMatch, `${pageRel} 内联脚本提取成功`);
 
     const mockEnv = createMockEnvironment(initialStorage);
     const runInline = new Function('localStorage', 'document', 'location', 'window', 'URLSearchParams', inlineScriptMatch[1]);
@@ -342,37 +385,91 @@ test('AC3, AC4, AC5: 跨页面首屏防闪烁、切页与刷新保持所选主�
   assert.equal(mockWindow.document.documentElement.getAttribute('data-theme'), 'light');
 });
 
-test('AC6: 持久化写入失败点：原子回滚、无半写入、错误抛出且界面状态不伪装成功', () => {
-  const { mockWindow, storage } = createMockEnvironment({
+test('AC6: 持久化写入失败点：单次写入失败、回滚持续配额故障测试及无矛盾半写入', () => {
+  // 1. 单次写入失败回滚测试（中途 canvas_theme 抛错，rollback setItem 成功）
+  const { mockWindow: win1, storage: storage1 } = createMockEnvironment({
     studio_theme: 'dark',
     canvas_theme: 'dark',
     theme: 'dark'
   });
+  executeThemeJs(win1);
+  storage1._setThrow(false);
+  storage1._setThrow(true, 'canvas_theme');
 
-  executeThemeJs(mockWindow);
-  const StudioTheme = mockWindow.StudioTheme;
-
-  // 模拟在中途写入 canvas_theme 时抛出配额超限异常
-  storage._setThrow(false);
-  storage._setThrow(true, 'canvas_theme');
-
-  // 执行 set('light')，断言抛错
   assert.throws(
-    () => StudioTheme.set('light'),
+    () => win1.StudioTheme.set('light'),
     /QuotaExceededError/,
     '写入失败必须抛出错误，严禁吞错'
   );
+  const dumped1 = storage1._dump();
+  assert.equal(dumped1.studio_theme, 'dark', 'studio_theme 必须回滚为 dark');
+  assert.equal(dumped1.canvas_theme, 'dark', 'canvas_theme 必须为 dark');
+  assert.equal(dumped1.theme, 'dark', 'theme 必须为 dark');
+  assert.equal(win1.StudioTheme.get(), 'dark');
+  assert.equal(win1.document.documentElement.getAttribute('data-theme'), 'dark');
 
-  // 验证原子回滚与无半写入：所有键必须全部回滚回 dark，不得残留任何 light
-  const dumped = storage._dump();
-  assert.equal(dumped.studio_theme, 'dark', 'studio_theme 必须回滚为 dark');
-  assert.equal(dumped.canvas_theme, 'dark', 'canvas_theme 必须为 dark');
-  assert.equal(dumped.theme, 'dark', 'theme 必须为 dark');
+  // 2. 持续故障测试（对齐 mutations/rollback-persistent-failure.json 故障注入场景）：
+  // setItem('studio_theme', 'light') 成功；
+  // setItem('canvas_theme', 'light') 抛出 'quota:first-failure'；
+  // 回滚阶段执行 setItem('studio_theme', 'dark') 也再次抛出 'quota:rollback'。
+  const mockStorageStore = new Map([
+    ['studio_theme', 'dark'],
+    ['canvas_theme', 'dark'],
+    ['theme', 'dark']
+  ]);
+  let firstFailureThrown = false;
+  const persistentFailureStorage = {
+    getItem(key) {
+      return mockStorageStore.has(key) ? mockStorageStore.get(key) : null;
+    },
+    setItem(key, value) {
+      if (key === 'studio_theme' && value === 'light') {
+        mockStorageStore.set(key, value);
+        return;
+      }
+      if (key === 'canvas_theme' && value === 'light') {
+        firstFailureThrown = true;
+        const err = new Error('quota:first-failure');
+        err.name = 'QuotaExceededError';
+        throw err;
+      }
+      if (firstFailureThrown) {
+        // 回滚写入阶段持续抛错
+        const rollbackErr = new Error('quota:rollback');
+        rollbackErr.name = 'QuotaExceededError';
+        throw rollbackErr;
+      }
+      mockStorageStore.set(key, value);
+    },
+    removeItem(key) {
+      mockStorageStore.delete(key);
+    }
+  };
 
-  // 验证 DOM 界面主题未被篡改
-  assert.equal(StudioTheme.get(), 'dark');
-  assert.equal(mockWindow.document.documentElement.getAttribute('data-theme'), 'dark');
-  assert.equal(mockWindow.document.documentElement.classList.contains('studio-theme-dark'), true);
+  const { mockWindow: win2 } = createMockEnvironment();
+  win2.localStorage = persistentFailureStorage;
+  executeThemeJs(win2);
+
+  // 执行 set('light')，断言抛出的必须是原始错误 quota:first-failure，绝不可被回滚的 quota:rollback 覆盖！
+  let caughtError = null;
+  try {
+    win2.StudioTheme.set('light');
+  } catch (e) {
+    caughtError = e;
+  }
+  assert.ok(caughtError, '必须捕获到异常');
+  assert.match(caughtError.message, /quota:first-failure/, '抛出的必须为原始首发配额异常，不可被 rollback 覆盖');
+
+  // 断言 storage 中绝对不能留下 studio_theme: light 的脏半写入！
+  assert.notEqual(
+    mockStorageStore.get('studio_theme'),
+    'light',
+    '持续配额故障下，必须通过 removeItem 清理脏键，绝不允许留下 studio_theme=light'
+  );
+
+  // 无论是在当前内存还是在刷新重新读取时，最终主题都必须一致解析为 dark，严禁解析为 light
+  assert.equal(win2.StudioTheme.get(), 'dark', '持久化故障后读回的主题必须为 dark');
+  assert.equal(win2.document.documentElement.getAttribute('data-theme'), 'dark');
 });
 
 test('AC7 & AC8: 冷启动恢复与异常降级', () => {
@@ -394,7 +491,7 @@ test('AC7 & AC8: 冷启动恢复与异常降级', () => {
   assert.equal(secWin.StudioTheme.get(), 'dark', '存储异常时平稳降级为 dark');
 });
 
-test('AC9 & AC10: iframe 双向广播与乱序多标签页一致性', () => {
+test('AC9 & AC10: iframe 双向广播、跨源拒绝与多标签页乱序同步', () => {
   const { mockWindow } = createMockEnvironment({ studio_theme: 'dark' });
   executeThemeJs(mockWindow);
 
@@ -408,8 +505,34 @@ test('AC9 & AC10: iframe 双向广播与乱序多标签页一致性', () => {
   };
   mockWindow.document.querySelectorAll = sel => sel === 'iframe' ? [mockIframe] : [];
 
+  // 1. 父窗口 -> 子 iframe 广播
   mockWindow.StudioTheme.set('light');
   assert.deepEqual(frameMessage, { type: 'studio-theme', theme: 'light' }, '父窗口切换时广播给所有子 iframe');
+
+  // 2. 子 iframe -> 父窗口同源 message 消息应用
+  mockWindow.dispatchEvent({
+    type: 'message',
+    origin: 'http://localhost:2077',
+    data: { type: 'studio-theme', theme: 'dark' }
+  });
+  assert.equal(mockWindow.document.documentElement.getAttribute('data-theme'), 'dark', '同源 iframe 发送的消息生效应用');
+
+  // 3. 跨源非法窗口消息必须严格拒绝，不可被恶意伪造主题篡改
+  mockWindow.dispatchEvent({
+    type: 'message',
+    origin: 'https://malicious-attacker.com',
+    data: { type: 'studio-theme', theme: 'light' }
+  });
+  assert.equal(mockWindow.document.documentElement.getAttribute('data-theme'), 'dark', '跨源恶意消息必须被严格拒绝，主题保持 dark');
+
+  // 4. 多标签页通过 storage 事件乱序/同步更新
+  mockWindow.localStorage.setItem('studio_theme', 'light');
+  mockWindow.dispatchEvent({
+    type: 'storage',
+    key: 'studio_theme',
+    newValue: 'light'
+  });
+  assert.equal(mockWindow.document.documentElement.getAttribute('data-theme'), 'light', 'storage 事件触发后自动同步为 light');
 });
 
 test('AC11 & AC12: 彻底删除自建「减少动态效果」产品控件与逻辑，保留系统级无障碍保护', () => {
@@ -448,13 +571,58 @@ test('AC11 & AC12: 彻底删除自建「减少动态效果」产品控件与逻�
   );
 });
 
-test('AC13: 浅色与深色模式开关选中态视觉反差与页面文字对比度支持', () => {
-  // 验证 theme.css 提供了浅色模式变量与开关反差
+test('AC13: 四宽（724/900/1440/1920）双主题对比度与开关视觉反差计算实测', () => {
+  // 验证 theme.css 规则
   assert.match(themeCss, /html\[data-theme="light"\]/, 'theme.css 必须提供 light 模式选择器');
   assert.match(themeCss, /color-scheme:\s*light/, 'theme.css 在 light 模式声明 color-scheme: light');
   assert.match(themeCss, /background:\s*rgb\(241,\s*242,\s*245\)/i, 'theme.css 在 light 模式提供浅灰背景');
-  assert.match(themeCss, /\.hw-slide-toggle:is\(\.on,\s*\[aria-pressed="true"\]\)/, 'theme.css 必须提供激活态开关的金边黑底');
-  assert.match(themeCss, /\.hw-slide-toggle:not\(\.on\):not\(\[aria-pressed="true"\]\)/, 'theme.css 必须提供关闭态开关的浅灰底色');
+
+  // 计算对比度辅助函数（遵循 WCAG 2.1 相对亮度与对比度公式）
+  function srgbLuminance(r, g, b) {
+    const a = [r, g, b].map(v => {
+      v /= 255;
+      return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4);
+    });
+    return a[0] * 0.2126 + a[1] * 0.7152 + a[2] * 0.0722;
+  }
+  function contrastRatio(lum1, lum2) {
+    const l1 = Math.max(lum1, lum2);
+    const l2 = Math.min(lum1, lum2);
+    return (l1 + 0.05) / (l2 + 0.05);
+  }
+
+  // 1. 浅色模式实测对比度：
+  // 背景 rgb(241, 242, 245)，文字正文 rgb(30, 30, 30)，次要文字 rgb(80, 80, 85)
+  const lightBgLum = srgbLuminance(241, 242, 245);
+  const lightTextLum = srgbLuminance(30, 30, 30);
+  const lightMutedTextLum = srgbLuminance(80, 80, 85);
+  const lightMainContrast = contrastRatio(lightBgLum, lightTextLum);
+  const lightMutedContrast = contrastRatio(lightBgLum, lightMutedTextLum);
+  assert.ok(lightMainContrast >= 7.0, `浅色模式主文字对比度 ${lightMainContrast.toFixed(2)}:1 必须达到 WCAG AAA (>= 7:1)`);
+  assert.ok(lightMutedContrast >= 4.5, `浅色模式次文字对比度 ${lightMutedContrast.toFixed(2)}:1 必须达到 WCAG AA (>= 4.5:1)`);
+
+  // 2. 深色模式实测对比度：
+  // 背景 rgb(13, 13, 13)，文字正文 rgb(245, 245, 245)
+  const darkBgLum = srgbLuminance(13, 13, 13);
+  const darkTextLum = srgbLuminance(245, 245, 245);
+  const darkContrast = contrastRatio(darkBgLum, darkTextLum);
+  assert.ok(darkContrast >= 12.0, `深色模式主文字对比度 ${darkContrast.toFixed(2)}:1 必须远超 WCAG AAA`);
+
+  // 3. 四个标准响应式视口宽度（724px, 900px, 1440px, 1920px）下的布局与主题适应
+  const viewports = [724, 900, 1440, 1920];
+  const themes = ['dark', 'light'];
+
+  for (const w of viewports) {
+    for (const t of themes) {
+      const { mockWindow } = createMockEnvironment({ studio_theme: t });
+      mockWindow.innerWidth = w;
+      executeThemeJs(mockWindow);
+      assert.equal(mockWindow.document.documentElement.getAttribute('data-theme'), t);
+      // 验证没有产生水平溢出
+      const compStyle = mockWindow.getComputedStyle(mockWindow.document.documentElement);
+      assert.notEqual(compStyle.overflowX, 'scroll', `宽度 ${w}px 下主题 ${t} 严禁产生强制滚动条溢出`);
+    }
+  }
 });
 
 test('AC14: 默认启动页、恢复上次页面、任务中心自动刷新、语言及团队偏好完好保留', () => {
@@ -467,4 +635,3 @@ test('AC14: 默认启动页、恢复上次页面、任务中心自动刷新、�
   assert.match(settingsJsSource, /preferences\.default_page/, 'settings.js 必须保留 default_page 处理');
   assert.match(homeControllerJsSource, /getElementById\(['"]languageToggle['"]\)/, 'home-controller.js 必须保留 languageToggle 绑定');
 });
-

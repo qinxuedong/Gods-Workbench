@@ -23,7 +23,14 @@
 
     function currentTheme(){
         try {
-            return localStorage.getItem(KEY) || localStorage.getItem(LEGACY_KEY) || localStorage.getItem(OLD_THEME_KEY) || 'dark';
+            const primary = localStorage.getItem(KEY);
+            const legacy = localStorage.getItem(LEGACY_KEY);
+            const oldTheme = localStorage.getItem(OLD_THEME_KEY);
+            if(primary && legacy && oldTheme && primary !== legacy && legacy === oldTheme) {
+                return legacy === 'light' ? 'light' : 'dark';
+            }
+            const cand = primary || legacy || oldTheme;
+            return cand === 'light' ? 'light' : 'dark';
         } catch(e) {
             return 'dark';
         }
@@ -277,35 +284,45 @@
 
     function setTheme(theme, shouldBroadcast = true){
         const next = theme === 'dark' ? 'dark' : 'light';
-        let prevKey = null;
-        let prevLegacy = null;
-        let prevOld = null;
-        try {
-            prevKey = localStorage.getItem(KEY);
-            prevLegacy = localStorage.getItem(LEGACY_KEY);
-            prevOld = localStorage.getItem(OLD_THEME_KEY);
-        } catch(e) {}
+        const keys = [KEY, LEGACY_KEY, OLD_THEME_KEY];
+        const prevValues = {};
+        for(const k of keys){
+            try {
+                prevValues[k] = localStorage.getItem(k);
+            } catch(e) {
+                prevValues[k] = null;
+            }
+        }
+
+        const modifiedKeys = [];
+        let originalError = null;
 
         try {
-            localStorage.setItem(KEY, next);
-            try {
-                localStorage.setItem(LEGACY_KEY, next);
-            } catch(errLegacy) {
-                if (prevKey !== null) localStorage.setItem(KEY, prevKey);
-                else localStorage.removeItem(KEY);
-                throw errLegacy;
-            }
-            try {
-                localStorage.setItem(OLD_THEME_KEY, next);
-            } catch(errOld) {
-                if (prevKey !== null) localStorage.setItem(KEY, prevKey);
-                else localStorage.removeItem(KEY);
-                if (prevLegacy !== null) localStorage.setItem(LEGACY_KEY, prevLegacy);
-                else localStorage.removeItem(LEGACY_KEY);
-                throw errOld;
+            for(const k of keys){
+                localStorage.setItem(k, next);
+                modifiedKeys.push(k);
             }
         } catch(err) {
-            throw err;
+            originalError = err;
+        }
+
+        if(originalError){
+            for(const k of modifiedKeys.reverse()){
+                const prev = prevValues[k];
+                let rollbackOk = false;
+                if(prev !== null){
+                    try {
+                        localStorage.setItem(k, prev);
+                        rollbackOk = true;
+                    } catch(rollbackErr) {}
+                }
+                if(!rollbackOk){
+                    try {
+                        localStorage.removeItem(k);
+                    } catch(removeErr) {}
+                }
+            }
+            throw originalError;
         }
 
         applyTheme(next);
@@ -337,6 +354,9 @@
         applyScale(currentScaleMode());
     });
     window.addEventListener('message', event => {
+        if(event.origin && location.origin && location.origin !== 'null' && event.origin !== location.origin) {
+            return;
+        }
         if(['studio-theme', 'theme-change'].includes(event.data?.type)) {
             const incomingTheme = event.data?.theme ?? event.data?.['data-theme'] ?? event.data?.dataTheme;
             if(incomingTheme !== undefined) {
