@@ -14,11 +14,11 @@
         (function(){
             try {
                 var theme = localStorage.getItem('studio_theme') || localStorage.getItem('canvas_theme') || localStorage.getItem('theme') || 'dark';
-                document.documentElement.setAttribute('data-theme', theme === 'dark' ? 'dark' : 'light');
-                if(theme === 'dark') {
-                    document.documentElement.classList.add('studio-theme-dark');
-                    document.documentElement.classList.add('theme-dark');
-                }
+                var dark = theme === 'dark';
+                document.documentElement.setAttribute('data-theme', dark ? 'dark' : 'light');
+                document.documentElement.classList.toggle('studio-theme-dark', dark);
+                document.documentElement.classList.toggle('theme-dark', dark);
+                document.documentElement.classList.toggle('theme-light', !dark);
             } catch(e) {}
         })();
     </script>

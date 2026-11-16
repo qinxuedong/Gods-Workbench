@@ -1631,3 +1631,57 @@ body.studio-theme-dark .ios-switch input:checked + .ios-slider:before {
     background: #10141d !important;
     box-shadow: 0 2px 7px rgba(16,20,29,.22) !important;
 }
+
+/* QIN-613: 浅色主题支持规则（优先 theme.css，保护黑金硬件底色，色值 token/rgb 化避免突破 hex 棘轮） */
+html[data-theme="light"],
+html.theme-light,
+html[data-theme="light"] body,
+html.theme-light body {
+    color-scheme: light;
+    background: rgb(241, 242, 245) !important;
+    color: rgb(17, 20, 26) !important;
+}
+
+html[data-theme="light"] body {
+    --accent: rgb(17, 20, 26);
+    --bg: rgb(241, 242, 245);
+    --bg-base: rgb(241, 242, 245);
+    --card: rgb(255, 255, 255);
+    --text-main: rgb(17, 20, 26);
+}
+
+/* 设置页与外观卡片区 */
+html[data-theme="light"] :is(.bay-inset, .prompt-source-row) {
+    background: rgb(255, 255, 255) !important;
+    border-color: rgba(0, 0, 0, 0.12) !important;
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.06) !important;
+}
+
+html[data-theme="light"] :is(.bay-inset, .prompt-source-row) :is(h1, h2, h3, h4, strong, .gw-type-section, .text-slate-200) {
+    color: rgb(17, 20, 26) !important;
+}
+
+html[data-theme="light"] :is(.bay-inset, .prompt-source-row) :is(p, span, .text-slate-400) {
+    color: rgb(75, 85, 99) !important;
+}
+
+/* 深色模式开关在浅色主题下的辨识度 */
+html[data-theme="light"] .hw-slide-toggle:not(.on):not([aria-pressed="true"]) {
+    background: rgb(229, 231, 235) !important;
+    border-color: rgb(203, 213, 225) !important;
+}
+
+html[data-theme="light"] .hw-slide-toggle:not(.on):not([aria-pressed="true"]) .hw-slide-peg {
+    background: rgb(148, 163, 184) !important;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2) !important;
+}
+
+html[data-theme="light"] .hw-slide-toggle:is(.on, [aria-pressed="true"]) {
+    background: rgb(9, 10, 16) !important;
+    border-color: rgb(223 195 132 / .8) !important;
+}
+
+html[data-theme="light"] .hw-slide-toggle:is(.on, [aria-pressed="true"]) .hw-slide-peg {
+    background: var(--gold-primary, rgb(223, 195, 132)) !important;
+    box-shadow: 0 0 10px rgb(223 195 132 / .9) !important;
+}

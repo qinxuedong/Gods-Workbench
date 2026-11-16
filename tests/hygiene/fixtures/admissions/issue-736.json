@@ -1,0 +1,42 @@
+{
+  "schema": "gw.cleanroom-admission-shard/v1",
+  "issue": 736,
+  "authorization_basis": "GitHub Issue #736, 2026-11-16",
+  "files": [
+    "tests/frontend/node-files.txt",
+    "tests/frontend/qin-613-theme-preference-fix.test.mjs",
+    "tests/hygiene/fixtures/admissions/issue-736.json",
+    "web/css/base/theme.css",
+    "web/embeds/api-settings.html",
+    "web/embeds/asset-manager.html",
+    "web/embeds/canvas-list.html",
+    "web/embeds/episode-pipeline.html",
+    "web/embeds/governance.html",
+    "web/embeds/task-center.html",
+    "web/js/controllers/home-controller.js",
+    "web/js/controllers/settings.js",
+    "web/js/core/theme.js",
+    "web/js/core/workspace-common.js",
+    "web/pages/agents.html",
+    "web/pages/assets.html",
+    "web/pages/canvas.html",
+    "web/pages/collab.html",
+    "web/pages/index.html",
+    "web/pages/production.html",
+    "web/pages/projects.html",
+    "web/pages/settings.html",
+    "web/pages/storyboard.html",
+    "web/pages/workflow.html",
+    "web/pages/workshop.html"
+  ],
+  "admitted_files": [],
+  "accepted_test_files": [
+    {
+      "path": "tests/frontend/qin-613-theme-preference-fix.test.mjs",
+      "classification": "curated_test_coverage",
+      "authorization_basis": "GitHub Issue #736, 2026-11-16",
+      "admission": "accepted"
+    }
+  ],
+  "notes": "QIN-613：深色模式切换无效果、切页与刷新保留所选主题；删除减少动态效果开关与自建逻辑；只登记本票分片，不改基础账本。"
+}

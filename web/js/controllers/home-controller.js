@@ -1119,15 +1119,44 @@ window.WorkbenchHome = (function () {
       };
     });
 
-    // 主题切换
+    // 主题切换与同步
     const themeToggle = document.getElementById('themeToggle');
+    const syncHomeThemeToggle = theme => {
+      if (!themeToggle) return;
+      const currentTheme = theme || (window.StudioTheme?.get ? window.StudioTheme.get() : (localStorage.getItem('studio_theme') || 'dark'));
+      const isDark = currentTheme === 'dark';
+      themeToggle.classList.toggle('on', isDark);
+      themeToggle.setAttribute('aria-pressed', String(isDark));
+    };
+
     if (themeToggle) {
+      syncHomeThemeToggle();
       themeToggle.onclick = () => {
-        themeToggle.classList.toggle('on');
-        const isDark = themeToggle.classList.contains('on');
-        themeToggle.setAttribute('aria-pressed', String(isDark));
-        localStorage.setItem('theme', isDark ? 'dark' : 'light');
+        const current = window.StudioTheme?.get ? window.StudioTheme.get() : (localStorage.getItem('studio_theme') || 'dark');
+        const target = current === 'dark' ? 'light' : 'dark';
+        try {
+          if (window.StudioTheme?.set) {
+            window.StudioTheme.set(target);
+          } else {
+            localStorage.setItem('studio_theme', target);
+            localStorage.setItem('canvas_theme', target);
+            localStorage.setItem('theme', target);
+            document.documentElement.setAttribute('data-theme', target);
+          }
+          syncHomeThemeToggle(target);
+        } catch (err) {
+          syncHomeThemeToggle(current);
+          alert('保存主题偏好失败，请检查存储设置。');
+        }
       };
+      window.addEventListener('studio-theme-change', event => {
+        syncHomeThemeToggle(event.detail?.theme);
+      });
+      window.addEventListener('storage', event => {
+        if (['studio_theme', 'canvas_theme', 'theme'].includes(event.key)) {
+          syncHomeThemeToggle();
+        }
+      });
     }
 
     // 语言切换
