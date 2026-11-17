@@ -157,7 +157,7 @@ test("AC1/AC2 自动保存失败不静默且 cache 与 storage 共用保存外�
   assert.match(assetManager, /async function withDirectorySaving\(closeBrowser, task\)/);
   assert.match(assetManager, /setStatus\(error\.message \|\| '保存目录失败'\)/);
   assert.match(assetManager, /缓存目录已保存：/);
-  assert.match(assetManager, /已挂载并保存缓存目录：/);
+  assert.match(assetManager, /已保存缓存目录：/);
   // 空路径要有明确提示，不能静默丢弃；允许留空的回收根目录仍照常保存。
   assert.match(assetManager, /setStatus\('缓存根目录不能为空'\)/);
   assert.match(

@@ -1979,20 +1979,20 @@ function setAssetOrganizeDialogError(text=''){
 function openAssetOrganizeCreateDialog(target, presetRootId=''){
     const rootId = String(presetRootId || target?.rootId || assetOrganizeDefaultRootId() || '');
     if(!assetOrganizeWritableRoot(rootId)){
-        showAssetOrganizeToast('没有可写入的挂载文件夹');
+        showAssetOrganizeToast('没有可写入的资源文件夹');
         return;
     }
     const parentPath = target ? String(target.path || '') : '';
     const locationLabel = parentPath
-        ? `${assetRackRoots().find(root => String(root.id || '') === rootId)?.name || '挂载文件夹'} / ${parentPath}`
-        : `${assetRackRoots().find(root => String(root.id || '') === rootId)?.name || '挂载文件夹'} / 根目录`;
+        ? `${assetRackRoots().find(root => String(root.id || '') === rootId)?.name || '资源文件夹'} / ${parentPath}`
+        : `${assetRackRoots().find(root => String(root.id || '') === rootId)?.name || '资源文件夹'} / 根目录`;
     openAssetOrganizeDialog({kind:'create', rootId, parentPath, locationLabel, value:'新文件夹'});
 }
 async function assetOrganizeCreateFolder(state, rawName){
     const name = assetOrganizeValidateFolderName(rawName);
     const relPath = state.parentPath ? `${state.parentPath}/${name}` : name;
     const abs = assetOrganizeAbsPath(state.rootId, relPath);
-    if(!abs) throw new Error('挂载路径不可用，无法新建文件夹');
+    if(!abs) throw new Error('资源文件夹路径不可用，无法新建文件夹');
     const data = await assetOrganizeRequest('/api/local-assets/folders', {path:abs, root_id:state.rootId});
     assetOrganizePushUndo(data, `新建 ${name}`, state.rootId);
     setAssetTreeSelectedKey(`mine:root:${state.rootId}::${relPath}`);
@@ -2110,8 +2110,8 @@ async function dropAssetOrganize(event){
 async function assetOrganizeMoveFolder(drag, destRootId, destPath){
     // destPath 是本层移动后的最终路径（含自身名字），与 folders/move 的 target 语义一致
     if(drag.rootId !== destRootId){
-        showAssetOrganizeToast('仅支持在同一挂载文件夹内移动');
-        setStatus('仅支持在同一挂载文件夹内移动');
+        showAssetOrganizeToast('仅支持在同一资源文件夹内移动');
+        setStatus('仅支持在同一资源文件夹内移动');
         return;
     }
     if(destPath === drag.path){
@@ -2144,11 +2144,11 @@ async function assetOrganizeMoveOne(assetId, item, destRootId, destPath){
     const sourceRoot = String(item?.storage_root_id || '');
     const rel = String(item?.canonical_relpath || item?.relative_path || '').replace(/\\/g, '/').replace(/^\/+|\/+$/g, '');
     if(!sourceRoot || !rel) return {status:'failed', reason:'素材缺少真实磁盘路径'};
-    if(sourceRoot !== destRootId) return {status:'failed', reason:'仅支持在同一挂载文件夹内移动'};
+    if(sourceRoot !== destRootId) return {status:'failed', reason:'仅支持在同一资源文件夹内移动'};
     if(assetOrganizeParentPath(rel) === destPath) return {status:'unchanged'};
     const sourceAbs = assetOrganizeAbsPath(sourceRoot, rel);
     const targetAbs = assetOrganizeAbsPath(destRootId, destPath);
-    if(!sourceAbs || !targetAbs) return {status:'failed', reason:'挂载路径不可用'};
+    if(!sourceAbs || !targetAbs) return {status:'failed', reason:'资源文件夹路径不可用'};
     const move = async extra => assetOrganizeRequest('/api/local-assets/move', {
         source:sourceAbs,
         target:targetAbs,

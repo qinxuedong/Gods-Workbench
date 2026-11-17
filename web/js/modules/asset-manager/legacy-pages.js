@@ -299,7 +299,7 @@ function renderAssetRackFolders(){
     const board = assetRackBoard();
     // QIN-542 AC4：非 admin 浏览磁盘子目录被拒（403）时显式提示，不再静默
     const permissionHint = registryDiskFolderPermissionDenied
-        ? '<div class="asset-rack-root-offline" role="note" title="磁盘子目录浏览接口仅管理员会话可读；目录树以已索引素材与登记目录为准">磁盘子目录浏览需要管理员权限，部分层级以已索引素材与登记目录为准</div>'
+        ? '<div class="asset-rack-root-offline" role="note" title="磁盘子目录浏览接口仅管理员会话可读；目录树以已索引素材与资源文件夹为准">磁盘子目录浏览需要管理员权限，部分层级以已索引素材与资源文件夹为准</div>'
         : '';
     return `<div class="asset-rack-pane" role="tabpanel" aria-label="目录层级">
         ${renderAssetRackFolderToolbar()}

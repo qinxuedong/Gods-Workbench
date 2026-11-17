@@ -14,6 +14,64 @@ function sliceBetween(source, startMarker, endMarker) {
   return source.slice(start, end);
 }
 
+function loadResourceFolderDisplayName() {
+  const source = sliceBetween(settings, 'function resourceFolderDisplayName(root)', 'function renderPurgeConfirmModal()');
+  return new Function(`${source}; return resourceFolderDisplayName;`)();
+}
+
+function loadSettingsRenderer(roots) {
+  const source = sliceBetween(settings, 'function renderAllowedRootsSettings()', 'function renderGlobalDirectorySettings()');
+  const factory = new Function(
+    'allowedRootSettingsState','canManageAllowedRoots','escapeAttr','escapeHtml','pendingPurgeRoot',
+    'renderPurgeConfirmModal','canBrowseServerDirectories','ALLOWED_ROOT_FIELD_KEY','resourceFolderDisplayName',
+    `${source}; return renderAllowedRootsSettings;`
+  );
+  return factory(
+    {roots, saving:false, error:''}, () => true, value => String(value), value => String(value),
+    null, () => '', () => false, 'allowed-root-path', loadResourceFolderDisplayName()
+  )();
+}
+
+function createClickTarget(attributes) {
+  return {
+    attributes,
+    closest() { return this; },
+    getAttribute(name) { return Object.hasOwn(this.attributes, name) ? this.attributes[name] : null; },
+    hasAttribute(name) { return Object.hasOwn(this.attributes, name); },
+  };
+}
+
+function loadSettingsClickHandler({roots, calls=[]}={}) {
+  const start = manager.indexOf("document.addEventListener('click', event => {", manager.indexOf('async function saveAllowedRootPurge'));
+  const end = manager.indexOf("document.addEventListener('change', event => {", start);
+  assert.ok(start >= 0 && end > start, 'settings click listener exists');
+  const source = manager.slice(start, end);
+  const bodyStart = source.indexOf('=> {') + 4;
+  const bodyEnd = source.lastIndexOf('});');
+  assert.ok(bodyStart > 0 && bodyEnd > bodyStart, 'click listener body is bounded');
+  const handlerSource = `const handler = async event => {${source.slice(bodyStart, bodyEnd)}};`;
+  const factory = new Function(
+    'allowedRootSettingsState','gwCall','saveAllowedRootsRequest','window','document',
+    `let pendingPurgeRoot = null; ${handlerSource}; return event => handler(event);`
+  );
+  const dispatch = factory(
+    {roots:roots || [{id:'root_0123456789abcdef01234567',path:'D:/Media/Film'}],revision:3,saving:false},
+    (...args)=>{ calls.push(args); }, async (...args)=>{ calls.push(['request',...args]); },
+    {confirm:()=>true}, {getElementById:()=>null}
+  );
+  return {calls, dispatch};
+}
+
+function loadFacetRefresh() {
+  const source = sliceBetween(manager, 'let registryFacetRefreshGeneration = 0;', 'function registryStatusJobKey');
+  const factory = new Function('apiJsonResponse','assetManagerApi','registryFacets',
+    `${source}; return {refreshRegistryFacetData, get:()=>registryFacets};`);
+  let requestQueue = [];
+  const state = {roots:[]};
+  const runtime = factory(() => new Promise(resolve => requestQueue.push(resolve)), {getRegistryFacets:()=>({})}, state);
+  return {runtime, requestQueue};
+}
+
 test('AC1/AC2: one settings list shows active and removed roots with status and role-gated actions', () => {
   const list = sliceBetween(settings, 'function renderAllowedRootsSettings()', 'function renderGlobalDirectorySettings()');
   assert.match(list, /资源文件夹/);
@@ -136,4 +194,77 @@ test('runtime: partial move failure retains source-unregister progress for retry
   assert.equal((await actions.executeResourceFolderAction(root, 'remove')).status, 'removed');
   assert.equal(state.removals.length, 1, 'retry must not unregister the source twice');
   assert.equal(revokeAttempts, 2);
+});
+
+test('runtime: actual settings renderer derives folder title and retains full path and status', () => {
+  const roots = [
+    {id:'root_1',path:'D:\\\\Media\\\\Film',name:'',active:true,availability:'available',readOnly:false,aliases:[],aliasCandidates:[]},
+    {id:'root_2',path:'C:\\\\',name:'',active:true,availability:'offline',readOnly:false,aliases:[],aliasCandidates:[]},
+    {id:'root_3',path:'/',name:'',active:true,availability:'removed',readOnly:false,aliases:[],aliasCandidates:[]},
+    {id:'root_4',path:'',name:'',active:false,availability:'removed',readOnly:true,aliases:[],aliasCandidates:[]},
+  ];
+  const markup = loadSettingsRenderer(roots);
+  assert.ok(markup.includes('allowed-root-row'), markup.slice(0, 1600));
+  assert.ok(markup.includes('<strong>Film</strong>'));
+  assert.ok(markup.includes('title="D:\\\\Media\\\\Film">D:\\\\Media\\\\Film</code>'));
+  assert.ok(markup.includes('<strong>C: 盘</strong>'));
+  assert.ok(markup.includes('<strong>根目录 (/)</strong>'));
+  assert.equal(loadResourceFolderDisplayName()({path:'',readOnly:true}), '资源文件夹');
+  assert.match(markup, /在线/);
+  assert.match(markup, /离线/);
+  assert.match(markup, /已移除/);
+  assert.doesNotMatch(markup, /rename|data-resource-folder-name-edit/i);
+});
+
+test('runtime: actual settings click listener routes purge prompt confirmation to shared action', async () => {
+  const calls = [];
+  const {dispatch} = loadSettingsClickHandler({calls});
+  const prompt = {target:createClickTarget({'data-storage-root-purge-prompt':'root_0123456789abcdef01234567','data-root-path':'D:/Media/Film'}), preventDefault(){ this.defaultPrevented = true; }};
+  await dispatch(prompt);
+  assert.equal(prompt.defaultPrevented, true);
+
+  const confirm = {target:createClickTarget({'data-purge-confirm':'root_0123456789abcdef01234567'}), preventDefault(){}};
+  await dispatch(confirm);
+  const actionCall = calls.find(call => call[1] === 'executeResourceFolderAction');
+  assert.ok(actionCall, 'confirmed purge routes to the shared action');
+  assert.equal(actionCall[2].id, 'root_0123456789abcdef01234567');
+  assert.equal(actionCall[3], 'purge');
+  assert.deepEqual(actionCall[4], {firstConfirmationSatisfied:true});
+});
+
+test('runtime: cancelled purge prompt does not dispatch a destructive action', () => {
+  const calls = [];
+  const {dispatch} = loadSettingsClickHandler({calls});
+  const cancel = {target:createClickTarget({'data-purge-cancel':''}), preventDefault(){ this.defaultPrevented = true; }};
+  dispatch(cancel);
+  assert.equal(cancel.defaultPrevented, true);
+  assert.deepEqual(calls, [['settings','renderGlobalDirectorySettings']]);
+});
+
+test('runtime: delayed purge after view switch cannot publish stale success or clear current state', async () => {
+  let resolvePurge;
+  const {actions, state} = loadResourceFolderActions({
+    purgeRoot:() => new Promise(resolve => { resolvePurge = resolve; }),
+    confirms:[true, true],
+  });
+  const pending = actions.executeResourceFolderAction({id:'root_0123456789abcdef01234567',path:'D:/Media/Film'}, 'purge');
+  await Promise.resolve();
+  assert.equal(typeof resolvePurge, 'function');
+  actions.invalidateResourceFolderAction();
+  resolvePurge({});
+  assert.equal((await pending).status, 'stale');
+  assert.deepEqual(state.statuses, []);
+  assert.equal(state.cacheCleared, undefined);
+});
+
+test('runtime: concurrent facet refreshes only apply the newest response', async () => {
+  const {runtime, requestQueue} = loadFacetRefresh();
+  const older = runtime.refreshRegistryFacetData();
+  const newer = runtime.refreshRegistryFacetData();
+  assert.equal(requestQueue.length, 2);
+  requestQueue[1]({roots:[{id:'new-root'}]});
+  await newer;
+  requestQueue[0]({roots:[{id:'old-root'}]});
+  await older;
+  assert.deepEqual(runtime.get().roots, [{id:'new-root'}]);
 });
