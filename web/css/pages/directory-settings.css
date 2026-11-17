@@ -671,3 +671,12 @@ html[data-theme="light"] .removed-roots-modal {
 html[data-theme="light"] .removed-roots-modal-header h2 {
   color: #9a6b16;
 }
+.allowed-roots-settings .hw-btn-danger {
+  color: #f87171 !important;
+  border-color: rgba(248, 113, 113, 0.45) !important;
+}
+html[data-theme="light"] .allowed-roots-settings .hw-btn-danger {
+  background: #fef2f2 !important;
+  color: #b91c1c !important;
+  border-color: rgba(185, 28, 28, 0.45) !important;
+}

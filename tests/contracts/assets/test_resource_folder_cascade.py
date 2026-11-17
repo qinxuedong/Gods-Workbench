@@ -5,6 +5,8 @@ from __future__ import annotations
 
 import hashlib
 import json
+import threading
+import time
 from pathlib import Path
 
 import pytest
@@ -15,6 +17,7 @@ from gw.api.app import create_app
 from gw.asset_registry import index_jobs, repository as asset_repo
 from gw.core import storage
 from gw.core.errors import CleanroomException
+from gw.core.sqlite_vec_engine import SQLiteVecEngine
 from gw.media import repository as media_repo
 from gw.settings import service as settings_service
 from gw.settings.service import (
@@ -82,15 +85,22 @@ def _register_folder_and_assets(
 
     storage_resp = client.get("/api/storage-settings", headers=ADMIN)
     assert storage_resp.status_code == 200
-    rev = storage_resp.json()["revision"]
+    storage_json = storage_resp.json()
+    rev = storage_json["revision"]
+    entries = [e for e in storage_json.get("extra_local_entries") or [] if e.get("id") != source_id]
+    entries.append({"id": source_id, "path": str(folder), "name": "Alpha"})
+    names = dict(storage_json.get("local_library_names") or {})
+    names[source_id] = "Alpha"
+    order = [i for i in storage_json.get("local_library_order") or [] if i != source_id]
+    order.append(source_id)
     put_resp = client.patch(
         "/api/storage-settings",
         headers=ADMIN,
         json={
-            "dirs": storage_resp.json()["dirs"],
-            "extra_local_entries": [{"id": source_id, "path": str(folder), "name": "Alpha"}],
-            "local_library_names": {source_id: "Alpha"},
-            "local_library_order": [source_id],
+            "dirs": storage_json["dirs"],
+            "extra_local_entries": entries,
+            "local_library_names": names,
+            "local_library_order": order,
             "expected_version": rev,
         },
     )
@@ -485,3 +495,401 @@ def test_ac5_system_root_readonly_on_remove_restore_purge(
         )
         assert resp.status_code == 403, f"{method} {suffix} -> {resp.text}"
         assert resp.json()["detail"]["code"] == "SYSTEM_ROOT_READ_ONLY"
+
+
+def _seed_job(
+    mgr: index_jobs.IndexJobs,
+    job_id: str,
+    status: str,
+    request_payload: dict,
+    fingerprint: str = "fp_test",
+) -> None:
+    def _write(raw: dict) -> None:
+        raw.setdefault("jobs", {})[job_id] = {
+            "job_id": job_id,
+            "job_type": "asset.index",
+            "name": f"测试任务-{job_id}",
+            "status": status,
+            "phase": status,
+            "version": 1,
+            "attempt": 1,
+            "max_attempts": 5,
+            "created_at": storage.now_iso(),
+            "updated_at": storage.now_iso(),
+            "scanned": 0,
+            "error_count": 0,
+            "result": None,
+            "error_code": None,
+            "_actor": {"mode": index_jobs.load_runtime_auth_config().mode, "role": "admin"},
+            "_owner": "admin:test",
+            "_fingerprint": fingerprint,
+            "_request": request_payload,
+        }
+
+    with mgr.condition:
+        mgr.store.mutate(_write)
+
+
+def test_ac3_cancel_roots_cancels_live_jobs_and_preserves_unrelated_and_terminal(
+    client: TestClient, tmp_path: Path, monkeypatch
+):
+    """AC3：验证 cancel_roots 真实取消队列/运行/暂停中的目标任务并写盘 INDEX_ROOT_REMOVED，不波及无关或终态任务。"""
+    folder_a = tmp_path / "vault_cancel_a"
+    root_a, _ = _register_folder_and_assets(client, folder_a, source_id="local_extra_cancel_a")
+    folder_b = tmp_path / "vault_cancel_b"
+    root_b, _ = _register_folder_and_assets(client, folder_b, source_id="local_extra_cancel_b")
+    folder_c = tmp_path / "vault_cancel_c"
+    root_c, _ = _register_folder_and_assets(client, folder_c, source_id="local_extra_cancel_c")
+    folder_other = tmp_path / "vault_other_keep"
+    root_other, _ = _register_folder_and_assets(client, folder_other, source_id="local_extra_other")
+
+    hashes_a = _sha256_tree(folder_a)
+    hashes_b = _sha256_tree(folder_b)
+    hashes_c = _sha256_tree(folder_c)
+    mgr = index_jobs.service()
+
+    # 覆盖全部非终态与匹配分支 + 无关根对照 + 已完成终态对照
+    _seed_job(mgr, "job_a_queued_roots", "queued", {"kind": "reindex", "roots": [root_a], "scopes": []})
+    _seed_job(
+        mgr,
+        "job_b_running_scope_id",
+        "running",
+        {"kind": "reindex", "roots": [], "scopes": [{"root_id": "alias_x", "storage_root_id": "local_extra_cancel_b"}]},
+    )
+    _seed_job(
+        mgr,
+        "job_c_paused_scan_path",
+        "paused",
+        {"kind": "reindex", "roots": [], "scopes": [{"root_id": "alias_y", "scan_path": str(folder_c / "sub")}]},
+    )
+    _seed_job(
+        mgr,
+        "job_legacy_full_scan",
+        "queued",
+        {"kind": "reindex", "roots": [root_other], "scopes": [], "legacy_identity_scan_complete": True},
+    )
+    _seed_job(
+        mgr,
+        "job_unrelated_running",
+        "running",
+        {"kind": "reindex", "roots": [root_other], "scopes": [{"root_id": root_other, "storage_root_id": "local_extra_other"}]},
+    )
+    _seed_job(
+        mgr,
+        "job_a_done_terminal",
+        "succeeded",
+        {"kind": "reindex", "roots": [root_a], "scopes": []},
+    )
+
+    # 1. 注销来源（PATCH /api/storage-settings 移除 local_extra_cancel_b）真实取消目标任务
+    sdata = client.get("/api/storage-settings", headers=ADMIN).json()
+    kept_entries = [e for e in sdata["extra_local_entries"] if e["id"] != "local_extra_cancel_b"]
+    patch_resp = client.patch(
+        "/api/storage-settings",
+        headers=ADMIN,
+        json={
+            "dirs": sdata["dirs"],
+            "extra_local_entries": kept_entries,
+            "local_library_names": {k: v for k, v in sdata["local_library_names"].items() if k != "local_extra_cancel_b"},
+            "local_library_order": [i for i in sdata["local_library_order"] if i != "local_extra_cancel_b"],
+            "expected_version": sdata["revision"],
+        },
+    )
+    assert patch_resp.status_code == 200, patch_resp.text
+
+    # 2. 移出资源库（DELETE /roots/{root_a}）真实取消 queued 与 legacy 全量任务
+    roots_rev = client.get("/api/storage-settings/roots", headers=ADMIN).json()["revision"]
+    del_resp = client.request(
+        "DELETE",
+        f"/api/storage-settings/roots/{root_a}",
+        headers=ADMIN,
+        json={"expected_version": roots_rev},
+    )
+    assert del_resp.status_code == 200, del_resp.text
+
+    # 3. 清除索引（DELETE /roots/{root_c}/purge）按 scan_path 子路径前缀真实取消 paused 任务
+    monkeypatch.setattr(
+        "gw.media.repository.delete_outputs",
+        lambda kind, payload: {"deleted": payload.get("asset_ids", []), "failed": []},
+    )
+    purge_resp = client.request(
+        "DELETE",
+        f"/api/storage-settings/roots/{root_c}/purge",
+        headers=ADMIN,
+        json={"expected_version": del_resp.json()["revision"]},
+    )
+    assert purge_resp.status_code == 200, purge_resp.text
+
+    # 落盘校验全部目标任务状态与对照任务隔离
+    persisted = mgr.store.read()["jobs"]
+    for jid in ("job_a_queued_roots", "job_b_running_scope_id", "job_c_paused_scan_path", "job_legacy_full_scan"):
+        assert persisted[jid]["status"] == "cancelled", f"{jid} -> {persisted[jid]}"
+        assert persisted[jid]["phase"] == "cancelled"
+        assert persisted[jid]["error_code"] == "INDEX_ROOT_REMOVED"
+        assert persisted[jid]["version"] == 2
+
+    assert persisted["job_unrelated_running"]["status"] == "running"
+    assert persisted["job_unrelated_running"]["error_code"] is None
+    assert persisted["job_unrelated_running"]["version"] == 1
+    assert persisted["job_a_done_terminal"]["status"] == "succeeded"
+    assert persisted["job_a_done_terminal"]["version"] == 1
+
+    assert _sha256_tree(folder_a) == hashes_a
+    assert _sha256_tree(folder_b) == hashes_b
+    assert _sha256_tree(folder_c) == hashes_c
+
+
+def test_ac3_purge_and_background_index_concurrent_interleaving_no_resurrection(
+    client: TestClient, tmp_path: Path, monkeypatch
+):
+    """AC3/并发：后台索引与 purge_root 并发交错时，迟到扫描结果被阻止写回，零复活且源文件无损。"""
+    folder = tmp_path / "vault_concurrent"
+    root_id, _ = _register_folder_and_assets(client, folder, source_id="local_extra_conc")
+    (folder / "new_concurrent.png").write_bytes(b"PNG-CONC-NEW")
+    before_hashes = _sha256_tree(folder)
+    monkeypatch.setattr(
+        "gw.media.repository.delete_outputs",
+        lambda kind, payload: {"deleted": payload.get("asset_ids", []), "failed": []},
+    )
+
+    mgr = index_jobs.service()
+    canonical, aliases = index_jobs._roots()
+    fingerprint = index_jobs._root_configuration_fingerprint(aliases)
+    job_id = "job_conc_1"
+    _seed_job(
+        mgr,
+        job_id,
+        "queued",
+        {
+            "kind": "reindex",
+            "roots": [root_id],
+            "scopes": [{"root_id": root_id, "prefix": "", "storage_root_id": root_id}],
+            "legacy_identity_scan_complete": False,
+            "max_files": 1000,
+            "hash_files": False,
+        },
+        fingerprint=fingerprint,
+    )
+
+    entered_commit = threading.Event()
+    release_commit = threading.Event()
+    orig_commit = mgr._commit
+    worker_errors: list[BaseException] = []
+
+    def gated_commit(job, files, generation_stats=None):
+        entered_commit.set()
+        release_commit.wait(timeout=5.0)
+        return orig_commit(job, files, generation_stats)
+
+    monkeypatch.setattr(mgr, "_commit", gated_commit)
+
+    def run_index_worker() -> None:
+        try:
+            mgr._run(job_id, 1)
+        except BaseException as exc:  # pragma: no cover
+            worker_errors.append(exc)
+
+    thread = threading.Thread(target=run_index_worker, daemon=True)
+    thread.start()
+    try:
+        assert entered_commit.wait(timeout=5.0), "后台索引未进入 _commit 前屏障"
+        snap_rev = client.get("/api/storage-settings/roots", headers=ADMIN).json()["revision"]
+        purge_resp = client.request(
+            "DELETE",
+            f"/api/storage-settings/roots/{root_id}/purge",
+            headers=ADMIN,
+            json={"expected_version": snap_rev},
+        )
+        assert purge_resp.status_code == 200, purge_resp.text
+    finally:
+        release_commit.set()
+        thread.join(timeout=5.0)
+
+    assert not thread.is_alive()
+    assert not worker_errors
+    final_job = mgr.store.read()["jobs"][job_id]
+    assert final_job["status"] in {"cancelled", "failed"}
+    raw = asset_repo.state().read()
+    assert not any(
+        item.get("root_id") == root_id or item.get("name") == "new_concurrent.png"
+        for item in raw.get("assets", {}).values()
+    )
+    assert _sha256_tree(folder) == before_hashes
+
+
+def test_ac3_sync_reindex_rechecks_under_lock_and_blocks_removed_or_purging_roots(
+    client: TestClient, tmp_path: Path
+):
+    """AC3：同步 asset_repo.reindex 在锁内二次校验已移出/清除的允许根，拒绝全部失效并跳过部分失效。"""
+    folder_a = tmp_path / "vault_sync_a"
+    root_a, _ = _register_folder_and_assets(client, folder_a, source_id="local_extra_sync_a")
+    folder_b = tmp_path / "vault_sync_b"
+    root_b, _ = _register_folder_and_assets(client, folder_b, source_id="local_extra_sync_b")
+    (folder_a / "late_sync_a.png").write_bytes(b"SYNC-A")
+    (folder_b / "keep_sync_b.png").write_bytes(b"SYNC-B")
+    hashes_a = _sha256_tree(folder_a)
+    hashes_b = _sha256_tree(folder_b)
+
+    orig_scan = asset_repo._scan_allowed_roots
+
+    # 1. 扫描结束后、落锁前移除 folder_a，但 folder_b 仍活跃 -> 跳过 folder_a 只写 folder_b
+    def scan_then_remove_a():
+        files, gaps = orig_scan()
+        rev = client.get("/api/storage-settings/roots", headers=ADMIN).json()["revision"]
+        resp = client.request(
+            "DELETE",
+            f"/api/storage-settings/roots/{root_a}",
+            headers=ADMIN,
+            json={"expected_version": rev},
+        )
+        assert resp.status_code == 200, resp.text
+        return files, gaps
+
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr(asset_repo, "_scan_allowed_roots", scan_then_remove_a)
+        res = asset_repo.reindex(None)
+    assert res["scanned"] >= 1
+    assets_after = asset_repo.state().read()["assets"]
+    assert not any(a.get("name") == "late_sync_a.png" for a in assets_after.values())
+    assert any(a.get("name") == "keep_sync_b.png" for a in assets_after.values())
+
+    # 2. 唯一活跃根 folder_b 在扫描后、落锁前被移出 -> 锁内拦截抛 403 INDEX_ROOTS_CHANGED
+    (folder_b / "late_sync_b2.png").write_bytes(b"SYNC-B2")
+    hashes_b2 = _sha256_tree(folder_b)
+
+    def scan_then_remove_b():
+        files, gaps = orig_scan()
+        rev = client.get("/api/storage-settings/roots", headers=ADMIN).json()["revision"]
+        resp = client.request(
+            "DELETE",
+            f"/api/storage-settings/roots/{root_b}",
+            headers=ADMIN,
+            json={"expected_version": rev},
+        )
+        assert resp.status_code == 200, resp.text
+        return files, gaps
+
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr(asset_repo, "_scan_allowed_roots", scan_then_remove_b)
+        with pytest.raises(CleanroomException) as exc_info:
+            asset_repo.reindex(None)
+    assert exc_info.value.code == "INDEX_ROOTS_CHANGED"
+    assert not any(
+        a.get("name") == "late_sync_b2.png" for a in asset_repo.state().read()["assets"].values()
+    )
+    assert _sha256_tree(folder_a) == hashes_a
+    assert _sha256_tree(folder_b) == hashes_b2
+    assert set(hashes_b).issubset(set(hashes_b2))
+
+
+def test_ac1_purge_step3_search_failure_replay_and_step4_crash_cold_read(
+    client: TestClient, tmp_path: Path, monkeypatch
+):
+    """AC1/持久化：墓碑阻止 remove_root、Step 3 搜索失败保留 pending_search_deletes 重放、Step 4 崩溃冷读与收尾。"""
+    folder = tmp_path / "vault_step34"
+    root_id, asset_ids = _register_folder_and_assets(client, folder, source_id="local_extra_step34")
+    before_hashes = _sha256_tree(folder)
+    asset_repo.rebuild_search_index()
+    assert asset_repo.search_index_status()["documents"] == len(asset_ids)
+
+    monkeypatch.setattr(
+        "gw.media.repository.delete_outputs",
+        lambda kind, payload: {"deleted": payload.get("asset_ids", []), "failed": []},
+    )
+
+    # 1. Step 3 SQLite 删除失败：不吞错、保留 pending_search_deletes 与墓碑
+    orig_delete_doc = SQLiteVecEngine.delete_document
+    monkeypatch.setattr(
+        SQLiteVecEngine,
+        "delete_document",
+        lambda self, aid: (_ for _ in ()).throw(RuntimeError("sqlite locked")),
+    )
+    rev1 = client.get("/api/storage-settings/roots", headers=ADMIN).json()["revision"]
+    with pytest.raises(RuntimeError, match="sqlite locked"):
+        client.request(
+            "DELETE",
+            f"/api/storage-settings/roots/{root_id}/purge",
+            headers=ADMIN,
+            json={"expected_version": rev1},
+        )
+    raw_mid = asset_repo.state().read()
+    assert root_id in (raw_mid.get("purging_roots") or {})
+    assert set(asset_ids).issubset(set(raw_mid.get("pending_search_deletes") or []))
+
+    # 2. 存在清除墓碑时，remove_root 必须被 409 PURGE_IN_PROGRESS 拒绝，不能退化成普通已移除
+    rem_blocked = client.request(
+        "DELETE",
+        f"/api/storage-settings/roots/{root_id}",
+        headers=ADMIN,
+        json={"expected_version": rev1},
+    )
+    assert rem_blocked.status_code == 409
+    assert rem_blocked.json()["detail"]["code"] == "PURGE_IN_PROGRESS"
+
+    # 3. 修复 SQLite 故障后重放：清空 pending_search_deletes 与检索文档
+    monkeypatch.setattr(SQLiteVecEngine, "delete_document", orig_delete_doc)
+    replay_ok = client.request(
+        "DELETE",
+        f"/api/storage-settings/roots/{root_id}/purge",
+        headers=ADMIN,
+        json={"expected_version": rev1},
+    )
+    assert replay_ok.status_code == 200, replay_ok.text
+    raw_after_step3 = asset_repo.state().read()
+    assert not raw_after_step3.get("pending_search_deletes")
+    assert asset_repo.search_index_status()["documents"] == 0
+    assert root_id not in (raw_after_step3.get("purging_roots") or {})
+
+    # 4. 模拟 Step 4 崩溃后状态：allowed_roots.json 已不含 root_id，但 purging_roots 墓碑与来源条目仍在
+    folder_step4 = tmp_path / "vault_step4_crash"
+    root_s4, _ = _register_folder_and_assets(client, folder_step4, source_id="local_extra_s4")
+    before_hashes_s4 = _sha256_tree(folder_step4)
+    asset_repo.mark_root_purging(
+        root_s4, {root_s4, "local_extra_s4"}, [str(folder_step4)], primary_path=str(folder_step4)
+    )
+    asset_repo.purge_root_records(root_s4, alias_ids={root_s4, "local_extra_s4"}, strict_search=True)
+    roots_file = tmp_path / "data" / "allowed_roots.json"
+    saved_roots = json.loads(roots_file.read_text(encoding="utf-8"))
+    saved_roots["roots"] = [r for r in saved_roots["roots"] if r["id"] != root_s4]
+    saved_roots["revision"] += 1
+    roots_file.write_text(json.dumps(saved_roots), encoding="utf-8")
+
+    # 新建冷读服务实例与新 TestClient 验证重启冷读投影、拒绝激活与重放收尾
+    cold_roots_svc = StorageAllowedRootsService()
+    cold_settings_svc = StorageSettingsService()
+    monkeypatch.setattr(settings_service, "default_storage_allowed_roots_service", cold_roots_svc)
+    monkeypatch.setattr(settings_service, "default_storage_settings_service", cold_settings_svc)
+    monkeypatch.setattr(routes, "default_storage_allowed_roots_service", cold_roots_svc)
+    monkeypatch.setattr(routes, "default_storage_settings_service", cold_settings_svc)
+    cold_snap = cold_roots_svc.get_snapshot()
+    proj_row = next(r for r in cold_snap.roots if r.id == root_s4)
+    assert proj_row.active is False
+    assert proj_row.availability_reason == "PURGE_INCOMPLETE"
+
+    with TestClient(create_app()) as cold_client:
+        readd_resp = cold_client.post(
+            "/api/storage-settings/roots",
+            headers=ADMIN,
+            json={"path": str(folder_step4), "expected_version": cold_snap.revision},
+        )
+        assert readd_resp.status_code == 409
+        assert readd_resp.json()["detail"]["code"] == "PURGE_IN_PROGRESS"
+
+        finish_resp = cold_client.request(
+            "DELETE",
+            f"/api/storage-settings/roots/{root_s4}/purge",
+            headers=ADMIN,
+            json={"expected_version": cold_snap.revision},
+        )
+        assert finish_resp.status_code == 200, finish_resp.text
+
+    # 再次冷读：允许根、来源设置、注册表与 facets 全部无残留，源文件 SHA-256 零改动
+    final_roots = StorageAllowedRootsService().get_snapshot()
+    assert all(r.id != root_s4 for r in final_roots.roots)
+    final_storage = StorageSettingsService().get_snapshot()
+    assert not any(e["id"] == "local_extra_s4" for e in final_storage.extra_local_entries)
+    assert root_s4 not in asset_repo.purging_root_markers()
+    facet_ids = {f.get("id") for f in index_jobs.root_facets()}
+    assert root_s4 not in facet_ids and "local_extra_s4" not in facet_ids
+    assert _sha256_tree(folder) == before_hashes
+    assert _sha256_tree(folder_step4) == before_hashes_s4

@@ -1086,6 +1086,10 @@ class StorageAllowedRootsService:
         system_ids = {storage.root_identity_id(path) for path in storage.environment_allowed_roots()}
         if root_id in system_ids:
             raise CleanroomException(403, "SYSTEM_ROOT_READ_ONLY", "环境变量系统根为只读，不能移除")
+        if root_id in _DEFAULT_CASCADE_HOOKS["purging_root_markers"]():
+            raise CleanroomException(
+                409, "PURGE_IN_PROGRESS", "该资源文件夹上次清除索引未完成，请先完成清除索引"
+            )
 
         initial_state = self._state.read()
         target_ids, target_paths, _ = self._collect_root_cascade_targets(root_id, initial_state)
