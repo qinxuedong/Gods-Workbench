@@ -11358,6 +11358,8 @@ window.GWAssetOrganizeBridge = Object.freeze({
     toggleExpand: toggleAssetTreeNode,
     canOrganize: key => Boolean(assetOrganizeTargetFromKey(key)),
     getTarget: key => assetOrganizeTargetFromKey(key),
+    canManageResourceFolders: canManageAllowedRoots,
+    executeResourceFolderAction: (rootTarget, action) => gwCall('organize', 'executeResourceFolderAction', rootTarget, action, {source:'sidebar'}),
     openInSystem: gwAssetTreeOpenInSystem,
     createFolder: gwAssetTreeCreateFolder,
     commitRename: gwAssetTreeCommitRename,

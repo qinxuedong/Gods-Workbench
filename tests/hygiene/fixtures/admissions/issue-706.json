@@ -3,16 +3,18 @@
   "issue": 706,
   "authorization_basis": "GitHub Issue #706, 2026-11-16",
   "files": [
+    "web/js/controllers/assets-controller.js",
     "web/js/modules/asset-manager.js",
     "web/js/modules/asset-manager/organize.js",
     "web/js/modules/asset-manager/settings.js",
     "tests/frontend/asset-manager-thumbnail-root-prompt.mjs",
     "tests/frontend/qin-474-dir-autosave.test.mjs",
+    "tests/frontend/qin-579-asset-shell-organize.test.mjs",
     "tests/frontend/qin-597-resource-folder-list.test.mjs",
     "tests/frontend/node-files.txt",
     "tests/hygiene/fixtures/admissions/issue-706.json"
   ],
   "admitted_files": [],
   "accepted_test_files": [],
-  "notes": "QIN-597：统一资源文件夹清单，并让设置页和侧栏根级动作共享移出/清除索引流程。"
+  "notes": "QIN-597：统一资源文件夹清单，并让设置页和侧栏根级动作共享移出/清除索引流程；经用户在 Issue #706 明确批准，扩展至资产页 shell 根菜单与现有 bridge（issuecomment-6943057796）。"
 }
