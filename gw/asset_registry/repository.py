@@ -352,9 +352,16 @@ def _shot_lexical_rows(raw: Dict[str, Any]) -> Tuple[
     return result
 
 
-#: 已停用来源根集合的签名缓存：键为（允许根文件, 注册表文件）签名。
+#: 已停用来源根集合的签名缓存：键为（允许根文件, 注册表文件, 存储设置文件）签名。
 _REMOVED_ROOTS_CACHE: Optional[Tuple[Tuple[Any, ...], set[str]]] = None
 _REMOVED_ROOTS_CACHE_LOCK = threading.Lock()
+
+
+def invalidate_removed_roots_cache() -> None:
+    """在允许根、已移出登记来源或清除墓碑变化后主动失效停用根缓存。"""
+    global _REMOVED_ROOTS_CACHE
+    with _REMOVED_ROOTS_CACHE_LOCK:
+        _REMOVED_ROOTS_CACHE = None
 
 
 def _removed_root_ids_for_search() -> set[str]:
@@ -362,14 +369,16 @@ def _removed_root_ids_for_search() -> set[str]:
 
     原实现每次调用都会经 ``root_facets`` 做来源挂载探测并反序列化整份注册表；
     镜头检索每请求都要判定停用根，逐次重算既慢又可能把离线盘的 0.75s 超时
-    带进检索路径。这里在允许根或注册表文件变化时才重算一次，结果本身仍由
+    带进检索路径。这里在允许根、注册表或存储设置文件变化时重算一次，结果仍由
     ``_removed_root_ids`` 给出，不另造一套判定规则。
     """
     global _REMOVED_ROOTS_CACHE
     registry_path, allowed_roots_path = _snapshot_paths()
+    storage_settings_path = registry_path.parent / "storage_settings.json"
     signature = (
         _registry_snapshot_signature(allowed_roots_path),
         _registry_snapshot_signature(registry_path),
+        _registry_snapshot_signature(storage_settings_path),
     )
     with _REMOVED_ROOTS_CACHE_LOCK:
         cached = _REMOVED_ROOTS_CACHE
@@ -473,12 +482,12 @@ def _hidden_builtin(record: Dict[str, Any]) -> bool:
 
 
 def _removed_root_ids() -> set[str]:
-    """停用来源根 ID；只读允许根状态，不触发来源挂载探测链（QIN-582）。
+    """停用/正在清除的来源根 ID；覆盖允许根、已移出登记来源与清除墓碑。
 
-    旧实现先遍历 ``root_facets()`` 找 ``availability == "removed"`` 的 facet，再叠加
-    allowed_roots 快照。但 removed facet 的 id 本就取自同一份允许根状态里的停用根
-    id（``root_facets`` 用它判定），快照又会对每个活跃根做有界 probe_mount，两处
-    都是重复且昂贵的磁盘探测。这里直接读状态，ID 集合等价。
+    QIN-598：除 `allowed_roots.json` 中 `active=False` 的允许根 ID 外，同步读取
+    `storage_settings.json` 中的 `removed_extra_local_entries`（覆盖仅挂
+    `local_extra_*` 的资产）及 `asset_registry.json` 中的 `purging_roots` 墓碑，
+    避免只挂来源 ID 的资产在移出或中断清除后漏隐。
     """
     removed: set[str] = set()
     try:
@@ -487,6 +496,32 @@ def _removed_root_ids() -> set[str]:
                 root_id = str(record.get("id") or "")
                 if root_id:
                     removed.add(root_id)
+    except Exception:
+        pass
+    try:
+        registry_path, _ = _snapshot_paths()
+        settings_state = _index_scan_read_state(
+            registry_path.parent, "storage_settings", {}
+        )
+        for entry in settings_state.get("removed_extra_local_entries") or []:
+            if not isinstance(entry, dict):
+                continue
+            for key in ("id", "kind"):
+                sid = str(entry.get(key) or "").strip()
+                if sid:
+                    removed.add(sid)
+    except Exception:
+        pass
+    try:
+        purging = readonly_registry_snapshot().get("purging_roots") or {}
+        if isinstance(purging, dict):
+            for pid, meta in purging.items():
+                if pid:
+                    removed.add(str(pid))
+                if isinstance(meta, dict):
+                    for tid in meta.get("target_ids") or []:
+                        if tid:
+                            removed.add(str(tid))
     except Exception:
         pass
     return removed
@@ -3722,9 +3757,61 @@ def _index_scan_scope_is_excluded(
     )
 
 
+def _purging_root_ids_and_keys(
+    raw: Optional[Dict[str, Any]] = None,
+) -> Tuple[set[str], set[str]]:
+    """收集当前所有处于清除墓碑 `purging_roots` 中的根 ID 与目录路径键。"""
+    snapshot = raw if raw is not None else readonly_registry_snapshot()
+    purging = snapshot.get("purging_roots") or {}
+    ids: set[str] = set()
+    keys: set[str] = set()
+    if not isinstance(purging, dict):
+        return ids, keys
+    for pid, meta in purging.items():
+        if pid:
+            ids.add(str(pid))
+        if not isinstance(meta, dict):
+            continue
+        for tid in meta.get("target_ids") or []:
+            if tid:
+                ids.add(str(tid))
+        for raw_path in meta.get("target_paths") or []:
+            if not raw_path:
+                continue
+            try:
+                keys.add(_index_scan_path_key(Path(str(raw_path))))
+            except Exception:
+                pass
+    return ids, keys
+
+
+def _path_within_any_key(path: Path, parent_keys: set[str]) -> bool:
+    if not parent_keys:
+        return False
+    path_key = _index_scan_path_key(path)
+    for parent_key in parent_keys:
+        if path_key == parent_key:
+            return True
+        separator = os.sep
+        prefix = parent_key.rstrip("\\/")
+        prefix = (prefix + separator) if prefix else separator
+        if path_key.startswith(prefix):
+            return True
+    return False
+
+
 def _scan_allowed_roots() -> Tuple[List[Dict[str, Any]], List[str]]:
     roots = storage.allowed_roots()
     if not roots:
+        return [], ["allowed_roots_not_configured"]
+    purging_ids, purging_keys = _purging_root_ids_and_keys()
+    active_roots: List[Path] = []
+    for root in roots:
+        rid = storage.root_identity_id(root)
+        if rid in purging_ids or _path_within_any_key(root, purging_keys):
+            continue
+        active_roots.append(root)
+    if not active_roots:
         return [], ["allowed_roots_not_configured"]
     found: List[Dict[str, Any]] = []
     configured_exclusion_roots, custom_cache_base = (
@@ -3733,7 +3820,7 @@ def _scan_allowed_roots() -> Tuple[List[Dict[str, Any]], List[str]]:
 
     def display_path(path: Path) -> str:
         matches = []
-        for allowed_root in roots:
+        for allowed_root in active_roots:
             try:
                 matches.append((allowed_root, path.relative_to(allowed_root)))
             except ValueError:
@@ -3743,7 +3830,8 @@ def _scan_allowed_roots() -> Tuple[List[Dict[str, Any]], List[str]]:
         _, relative = max(matches, key=lambda item: len(item[0].parts))
         return relative.as_posix()
 
-    for root in roots:
+    for root in active_roots:
+        root_id = storage.root_identity_id(root)
         exclusion_roots = _index_scan_exclusions_for_scope(
             root, configured_exclusion_roots, custom_cache_base
         )
@@ -3760,7 +3848,7 @@ def _scan_allowed_roots() -> Tuple[List[Dict[str, Any]], List[str]]:
                                 child_path = Path(entry.path)
                                 if _index_scan_directory_is_excluded(
                                     child_path, exclusion_roots
-                                ):
+                                ) or _path_within_any_key(child_path, purging_keys):
                                     continue
                                 if os.name == "nt" and storage._is_reparse_point_info(
                                     entry.stat(follow_symlinks=False)
@@ -3778,6 +3866,8 @@ def _scan_allowed_roots() -> Tuple[List[Dict[str, Any]], List[str]]:
                             info = entry.stat()
                             path = Path(entry.path)
                             found.append({
+                                "_root_id": root_id,
+                                "_root_path": str(root),
                                 "display_path": (
                                     storage.relative_display(path)
                                     if entry.is_symlink()
@@ -3799,8 +3889,28 @@ def reindex(expected_version: Optional[int]) -> Dict[str, Any]:
     if gaps:
         _unavailable("/api/asset-registry/reindex", "INDEX_SOURCE_NOT_AVAILABLE",
                      "未配置允许根目录，无法建立索引")
+    scanned_root_ids = {item.get("_root_id") for item in files if item.get("_root_id")}
+
     def mutate(raw: Dict[str, Any]) -> Any:
         _cas(raw, expected_version)
+        # QIN-598：事务锁内二次校验允许根与清除墓碑，防止同步扫描期间发生
+        # remove/purge 后迟到写回把已清除或已移出根的记录复活。
+        live_root_ids = {storage.root_identity_id(root) for root in storage.allowed_roots()}
+        removed_ids = _removed_root_ids()
+        purging_ids, purging_keys = _purging_root_ids_and_keys(raw)
+        blocked_ids = removed_ids | purging_ids
+        if scanned_root_ids and all(
+            (rid not in live_root_ids) or (rid in blocked_ids)
+            for rid in scanned_root_ids
+        ):
+            raise CleanroomException(
+                403, "INDEX_ROOTS_CHANGED", "允许根或来源配置已移除或正在清除"
+            )
+        valid_files = [
+            item for item in files
+            if (not item.get("_root_id") or (item["_root_id"] in live_root_ids and item["_root_id"] not in blocked_ids))
+            and (not item.get("_root_path") or not _path_within_any_key(Path(item["_root_path"]), purging_keys))
+        ]
         known = {
             a.get("display_path"): a
             for a in raw["assets"].values()
@@ -3809,7 +3919,7 @@ def reindex(expected_version: Optional[int]) -> Dict[str, Any]:
         added = []
         search_documents: Dict[str, Dict[str, Any]] = {}
         next_asset_number = _asset_sequence_start(raw)
-        for item in files:
+        for item in valid_files:
             existing = known.get(item["display_path"])
             if existing is not None:
                 asset_id = str(existing.get("asset_id") or existing.get("id") or "")
@@ -3826,7 +3936,7 @@ def reindex(expected_version: Optional[int]) -> Dict[str, Any]:
             added.append(dict(record))
         _upsert_asset_search_documents(search_documents.values())
         revision = _bump(raw)
-        return {"indexed": len(added), "assets": added, "scanned": len(files),
+        return {"indexed": len(added), "assets": added, "scanned": len(valid_files),
                 "revision": revision, "data_status": DATA_STATUS_OK}
     return state().mutate(mutate)
 
@@ -4688,23 +4798,200 @@ def delete_asset_search_documents(asset_ids: List[str], *, strict: bool = False)
         )
 
 
-def purge_root_records(root_id: str) -> Dict[str, Any]:
-    """彻底清除属于指定允许根的所有注册表资产与检索索引。绝对不触碰用户源文件。"""
-    removed_ids: List[str] = []
+def purging_root_markers() -> Dict[str, Dict[str, Any]]:
+    """只读返回当前所有未完成清除的根墓碑。"""
+    raw = state().read()
+    purging = raw.get("purging_roots")
+    return dict(purging) if isinstance(purging, dict) else {}
+
+
+def mark_root_purging(
+    root_id: str,
+    target_ids: Iterable[str],
+    target_paths: Iterable[str],
+    *,
+    primary_path: str = "",
+) -> None:
+    """Step 1：在清除缓存/资产前持久化清除墓碑，阻断并发索引写入并支持崩溃重放。"""
+    clean_ids = sorted({str(item).strip() for item in target_ids if str(item).strip()} | {str(root_id)})
+    clean_paths = sorted({str(item).strip() for item in target_paths if str(item).strip()})
 
     def mutate(raw: Dict[str, Any]) -> None:
-        nonlocal removed_ids
+        purging = raw.setdefault("purging_roots", {})
+        if not isinstance(purging, dict):
+            purging = raw["purging_roots"] = {}
+        existing = purging.get(root_id) if isinstance(purging.get(root_id), dict) else {}
+        merged_ids = sorted(set(existing.get("target_ids") or []) | set(clean_ids))
+        merged_paths = sorted(set(existing.get("target_paths") or []) | set(clean_paths))
+        purging[root_id] = {
+            "root_id": root_id,
+            "primary_path": primary_path or str(existing.get("primary_path") or ""),
+            "target_ids": merged_ids,
+            "target_paths": merged_paths,
+            "started_at": str(existing.get("started_at") or storage.now_iso()),
+        }
+        _bump(raw)
+
+    state().mutate(mutate)
+    invalidate_removed_roots_cache()
+
+
+def clear_root_purging(root_id: str) -> None:
+    """Step 4 全部完成且无待删搜索文档后清理清除墓碑。"""
+    def mutate(raw: Dict[str, Any]) -> None:
+        purging = raw.get("purging_roots")
+        if isinstance(purging, dict) and root_id in purging:
+            del purging[root_id]
+            _bump(raw)
+
+    state().mutate(mutate)
+    invalidate_removed_roots_cache()
+
+
+def find_purge_candidate_asset_ids(
+    root_id: str, alias_ids: Iterable[str] | None = None
+) -> List[str]:
+    """双键匹配待清除的资产 ID 列表，供清理缩略图与分镜缓存前置使用。"""
+    target_ids = {str(root_id).strip()}
+    if alias_ids:
+        target_ids.update(str(item).strip() for item in alias_ids if str(item).strip())
+    raw = state().read()
+    purging_meta = (raw.get("purging_roots") or {}).get(root_id)
+    if isinstance(purging_meta, dict):
+        target_ids.update(
+            str(item).strip()
+            for item in (purging_meta.get("target_ids") or [])
+            if str(item).strip()
+        )
+    for source_id, bound in (raw.get("root_aliases") or {}).items():
+        if isinstance(bound, dict) and str(bound.get("root_id") or "") in target_ids:
+            target_ids.add(str(source_id))
+    matched: List[str] = []
+    for asset_id, asset in (raw.get("assets") or {}).items():
+        if not isinstance(asset, dict):
+            continue
+        rid = str(asset.get("root_id") or "")
+        sid = str(asset.get("storage_root_id") or "")
+        if (rid and rid in target_ids) or (sid and sid in target_ids):
+            matched.append(str(asset_id))
+    return matched
+
+
+def purge_root_records(
+    root_id: str,
+    *,
+    alias_ids: Iterable[str] | None = None,
+    strict_search: bool = False,
+) -> Dict[str, Any]:
+    """彻底清除属于指定允许根/来源的所有注册表资产与检索索引。绝对不触碰用户源文件。
+
+    QIN-598：按 `root_id` 与 `storage_root_id` 双键匹配 `target_ids`（含全部
+    `local_extra_*` 与 facets aliases），同时清理 `root_aliases`、`folders`、
+    `identity_repair_queue` 与悬空 `relations`；SQLite 删除前持久化
+    `pending_search_deletes` 以支撑失败重放。
+    """
+    target_ids = {str(root_id).strip()}
+    if alias_ids:
+        target_ids.update(str(item).strip() for item in alias_ids if str(item).strip())
+
+    removed_ids: List[str] = []
+    to_delete_search: List[str] = []
+
+    def mutate(raw: Dict[str, Any]) -> None:
+        nonlocal removed_ids, to_delete_search
+        purging_meta = (raw.get("purging_roots") or {}).get(root_id)
+        if isinstance(purging_meta, dict):
+            target_ids.update(
+                str(item).strip()
+                for item in (purging_meta.get("target_ids") or [])
+                if str(item).strip()
+            )
+        root_aliases = raw.get("root_aliases")
+        if isinstance(root_aliases, dict):
+            for source_id, bound in list(root_aliases.items()):
+                bound_root_id = (
+                    str(bound.get("root_id") or "") if isinstance(bound, dict) else ""
+                )
+                if str(source_id) in target_ids or (
+                    bound_root_id and bound_root_id in target_ids
+                ):
+                    target_ids.add(str(source_id))
+                    del root_aliases[source_id]
+
+        mutated = False
         for asset_id, asset in list(raw.get("assets", {}).items()):
-            aid = str(asset.get("storage_root_id") or asset.get("root_id") or "")
-            if aid == root_id:
+            if not isinstance(asset, dict):
+                continue
+            rid = str(asset.get("root_id") or "")
+            sid = str(asset.get("storage_root_id") or "")
+            if (rid and rid in target_ids) or (sid and sid in target_ids):
                 removed_ids.append(asset_id)
                 del raw["assets"][asset_id]
-        if removed_ids:
+                mutated = True
+
+        folders_map = raw.get("folders")
+        if isinstance(folders_map, dict):
+            for fid, folder in list(folders_map.items()):
+                if isinstance(folder, dict) and str(folder.get("parent_id") or "") in target_ids:
+                    del folders_map[fid]
+                    mutated = True
+
+        removed_set = set(removed_ids)
+        if removed_set:
+            repair_queue = raw.get("identity_repair_queue")
+            if isinstance(repair_queue, list):
+                filtered_queue = [aid for aid in repair_queue if str(aid) not in removed_set]
+                if len(filtered_queue) != len(repair_queue):
+                    raw["identity_repair_queue"] = filtered_queue
+                    mutated = True
+            relations = raw.get("relations")
+            if isinstance(relations, list):
+                filtered_relations = [
+                    rel for rel in relations
+                    if not (
+                        isinstance(rel, dict)
+                        and (
+                            str(rel.get("from_asset_id") or "") in removed_set
+                            or str(rel.get("to_asset_id") or "") in removed_set
+                        )
+                    )
+                ]
+                if len(filtered_relations) != len(relations):
+                    raw["relations"] = filtered_relations
+                    mutated = True
+
+        pending = raw.setdefault("pending_search_deletes", [])
+        if not isinstance(pending, list):
+            pending = raw["pending_search_deletes"] = []
+        pending_set = list(dict.fromkeys([*(str(x) for x in pending if x), *removed_ids]))
+        if pending_set != pending:
+            raw["pending_search_deletes"] = pending_set
+            mutated = True
+        to_delete_search = list(pending_set)
+
+        if mutated:
             _bump(raw)
 
     state().mutate(mutate)
 
-    if removed_ids:
-        delete_asset_search_documents(removed_ids)
+    if to_delete_search:
+        delete_asset_search_documents(to_delete_search, strict=strict_search)
+        deleted_set = set(to_delete_search)
 
-    return {"purged_root_id": root_id, "purged_asset_ids": removed_ids, "purged_asset_count": len(removed_ids)}
+        def ack_search_deleted(raw: Dict[str, Any]) -> None:
+            pending = raw.get("pending_search_deletes")
+            if isinstance(pending, list):
+                remaining = [aid for aid in pending if str(aid) not in deleted_set]
+                if len(remaining) != len(pending):
+                    raw["pending_search_deletes"] = remaining
+                    _bump(raw)
+
+        state().mutate(ack_search_deleted)
+
+    invalidate_removed_roots_cache()
+    return {
+        "purged_root_id": root_id,
+        "purged_asset_ids": removed_ids,
+        "purged_asset_count": len(removed_ids),
+        "target_ids": sorted(target_ids),
+    }

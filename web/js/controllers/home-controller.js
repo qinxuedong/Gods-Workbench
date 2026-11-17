@@ -1180,8 +1180,13 @@ window.WorkbenchHome = (function () {
         btn.setAttribute('aria-pressed', String(active));
       });
       document.querySelectorAll('#workbenchMainSettings [data-panel]').forEach(p => p.classList.toggle('active', p.dataset.panel === sec));
-        if (sec === 'permissions' && window.HardwareDeck && window.HardwareDeck.loadTeamModalData) {
-          window.HardwareDeck.loadTeamModalData('panelTeamList');
+        const rootsMount = document.getElementById('permissionsAllowedRootsMount');
+        if (sec === 'permissions') {
+          if (window.HardwareDeck?.loadTeamModalData) window.HardwareDeck.loadTeamModalData('panelTeamList');
+          window.HardwareDeck?.syncSeatPanel?.();
+        } else if (rootsMount) {
+          const frame = rootsMount.querySelector('iframe');
+          frame?.contentWindow?.postMessage({ type: 'gw-permissions-section-leave' }, window.location.origin);
         }
         if (window.lucide) window.lucide.createIcons();
     };

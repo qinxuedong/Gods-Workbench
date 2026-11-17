@@ -1,0 +1,41 @@
+{
+  "schema": "gw.cleanroom-admission-shard/v1",
+  "issue": 707,
+  "authorization_basis": "GitHub Issue #707 QIN-598 (PM Design Table Approval #6948975317), 2026-11-17",
+  "files": [
+    "gw/settings/service.py",
+    "gw/api/routes_settings.py",
+    "gw/asset_registry/repository.py",
+    "gw/asset_registry/index_jobs.py",
+    "web/js/modules/asset-manager/settings.js",
+    "web/js/modules/asset-manager/organize.js",
+    "web/js/modules/asset-manager.js",
+    "web/js/core/hardware-telemetry.js",
+    "web/pages/index.html",
+    "web/pages/settings.html",
+    "web/js/controllers/home-controller.js",
+    "web/css/pages/directory-settings.css",
+    "tests/contracts/assets/test_resource_folder_cascade.py",
+    "tests/frontend/qin-598-allowed-roots-permissions.test.mjs",
+    "tests/frontend/qin-475-settings-ui-polish.test.mjs",
+    "tests/frontend/qin-597-resource-folder-list.test.mjs",
+    "tests/frontend/node-files.txt",
+    "tests/hygiene/fixtures/admissions/issue-707.json"
+  ],
+  "admitted_files": [],
+  "accepted_test_files": [
+    {
+      "path": "tests/contracts/assets/test_resource_folder_cascade.py",
+      "classification": "curated_test_coverage",
+      "authorization_basis": "GitHub Issue #707 QIN-598, 2026-11-17",
+      "admission": "accepted"
+    },
+    {
+      "path": "tests/frontend/qin-598-allowed-roots-permissions.test.mjs",
+      "classification": "curated_test_coverage",
+      "authorization_basis": "GitHub Issue #707 QIN-598, 2026-11-17",
+      "admission": "accepted"
+    }
+  ],
+  "notes": "QIN-598：移出/清除索引/注销来源统一级联补齐（双键清理、停止索引、缓存与搜索索引同步清理）与允许根管理迁入「权限」面板（仅管理员可见）。"
+}

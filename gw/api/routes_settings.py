@@ -68,7 +68,44 @@ from gw.settings.service import (
     default_provider_service,
     default_storage_allowed_roots_service,
     default_storage_settings_service,
+    register_root_cascade_hooks,
 )
+
+
+def _wire_root_cascade_hooks() -> None:
+    """将资产注册表与媒体缓存的级联实现注入设置服务，保持领域包单向依赖。"""
+    from gw.asset_registry import index_jobs, repository as asset_repo
+    from gw.media import repository as media_repo
+
+    def _cancel_roots(target_ids: set[str], target_paths: list[str] | None = None) -> None:
+        svc = index_jobs.service()
+        cancel_fn = getattr(svc, "cancel_roots", None)
+        if callable(cancel_fn):
+            cancel_fn(target_ids, target_paths)
+
+    def _invalidate_caches() -> None:
+        asset_repo.invalidate_removed_roots_cache()
+        index_jobs.invalidate_root_facets_cache()
+
+    register_root_cascade_hooks(
+        cancel_roots=_cancel_roots,
+        invalidate_caches=_invalidate_caches,
+        readonly_registry_snapshot=lambda: asset_repo.readonly_registry_snapshot(),
+        purging_root_markers=lambda: asset_repo.purging_root_markers(),
+        root_facets=lambda: index_jobs.root_facets(),
+        mark_root_purging=lambda *args, **kwargs: asset_repo.mark_root_purging(*args, **kwargs),
+        clear_root_purging=lambda root_id: asset_repo.clear_root_purging(root_id),
+        find_purge_candidate_asset_ids=lambda root_id, alias_ids=None: asset_repo.find_purge_candidate_asset_ids(
+            root_id, alias_ids
+        ),
+        purge_root_records=lambda root_id, alias_ids=None, strict_search=True: asset_repo.purge_root_records(
+            root_id, alias_ids=alias_ids, strict_search=strict_search
+        ),
+        delete_media_outputs=lambda kind, payload: media_repo.delete_outputs(kind, payload),
+    )
+
+
+_wire_root_cascade_hooks()
 
 router = APIRouter(tags=["settings"])
 
@@ -274,9 +311,10 @@ def restore_storage_allowed_root(
         from gw.asset_registry import index_jobs
         root_record = next((r for r in snapshot.roots if r.id == root_id), None)
         if root_record:
+            identities = default_storage_allowed_roots_service.active_identities_for_root(root_id)
             index_jobs.service().submit(
                 "reindex",
-                {"roots": [root_id], "background": True},
+                {"roots": identities, "background": True},
                 context,
                 key=f"rescan_{root_id}_{int(time.time())}",
             )
@@ -298,21 +336,7 @@ def purge_storage_allowed_root(
     x_user_role: str = Header("editor", alias="X-User-Role", description="用户角色权限"),
 ):
     _require_storage_admin(authorization, x_user_role)
-    snapshot = default_storage_allowed_roots_service.purge_root(root_id, payload)
-    try:
-        from gw.asset_registry import repository as asset_repo
-        purged = asset_repo.purge_root_records(root_id)
-        removed_ids = purged.get("purged_asset_ids") or []
-        if removed_ids:
-            try:
-                from gw.media import repository as media_repo
-                media_repo.delete_outputs("thumbnails", {"asset_ids": removed_ids})
-                media_repo.delete_outputs("storyboards", {"asset_ids": removed_ids})
-            except Exception:
-                pass
-    except Exception:
-        pass
-    return snapshot
+    return default_storage_allowed_roots_service.purge_root(root_id, payload)
 
 
 @router.post(

@@ -17,7 +17,8 @@ assert.match(directoryCss, /\.directory-cards-grid\s*\{[\s\S]*?display:\s*grid[\
 assert.match(directoryCss, /\.directory-cards-column\s*\{[^}]*display:\s*flex[^}]*flex-direction:\s*column[^}]*gap:\s*12px/s);
 assert.match(directoryCss, /\.directory-cards-column\s*>\s*\.asset-pref-section\s*\{[^}]*margin:\s*0[^}]*min-width:\s*0/s);
 assert.match(directoryCss, /@media\s*\(max-width:\s*700px\)[\s\S]*?\.directory-cards-grid\s*\{[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\)/);
-assert.match(assetManager, /class="directory-cards-column directory-cards-column--left"[\s\S]*data-board-directories-settings[\s\S]*<span>上传与生成<\/span>[\s\S]*renderAssetThumbnailCacheDirectoryBody\(\)[\s\S]*class="directory-cards-column directory-cards-column--right"[\s\S]*renderAllowedRootsSettings\(\)[\s\S]*renderProjectWorkspaceSettingsBody\(\)/);
+assert.match(assetManager, /class="directory-cards-column directory-cards-column--left"[\s\S]*data-board-directories-settings[\s\S]*<span>上传与生成<\/span>[\s\S]*renderAssetThumbnailCacheDirectoryBody\(\)[\s\S]*class="directory-cards-column directory-cards-column--right"[\s\S]*renderProjectWorkspaceSettingsBody\(\)/);
+assert.doesNotMatch(assetManager, /class="directory-cards-column directory-cards-column--right"[\s\S]*?renderAllowedRootsSettings\(\)/);
 assert.doesNotMatch(assetManager, /<span>回收站目录<\/span>/);
 
 // 2. 仅设置页嵌入态改用设置卡片黑底，并隐藏重复的 iframe 详情头。
