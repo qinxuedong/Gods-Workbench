@@ -1053,9 +1053,6 @@ class IndexJobs:
         _admission(job["_actor"])
         from gw.asset_registry import repository as repo
 
-        purging_ids, _ = repo._purging_root_ids_and_keys()
-        removed_ids = repo._removed_root_ids()
-        blocked_ids = purging_ids | removed_ids
         request_meta = job.get("_request") or {}
         job_ids = {str(rid) for rid in request_meta.get("roots") or [] if rid}
         for scope in request_meta.get("scopes") or []:
@@ -1063,12 +1060,16 @@ class IndexJobs:
                 job_ids.add(str(scope["root_id"]))
             if scope.get("storage_root_id"):
                 job_ids.add(str(scope["storage_root_id"]))
-        if job_ids & blocked_ids:
-            _error(403, "INDEX_ROOTS_CHANGED", "允许根或来源配置已移除或正在清除")
 
         cache_key = self._root_snapshot_key()
         cached = self._root_snapshot_cache.get(cache_key) if cache_key else None
         if cached is None:
+            data_root = getattr(self, "root", None)
+            purging_ids, _ = repo._purging_root_ids_and_keys(data_root=data_root)
+            removed_ids = repo._removed_root_ids(data_root=data_root)
+            blocked_ids = purging_ids | removed_ids
+            if job_ids & blocked_ids:
+                _error(403, "INDEX_ROOTS_CHANGED", "允许根或来源配置已移除或正在清除")
             canonical, aliases = _roots()
             fingerprint = _root_configuration_fingerprint(aliases)
             legacy_fingerprint = _legacy_root_configuration_fingerprint(aliases)
@@ -1077,11 +1078,18 @@ class IndexJobs:
                     fingerprint,
                     legacy_fingerprint,
                     canonical,
+                    blocked_ids,
                 )
                 if len(self._root_snapshot_cache) > MAX_ACTIVE:
                     self._root_snapshot_cache.pop(next(iter(self._root_snapshot_cache)))
         else:
-            fingerprint, legacy_fingerprint, canonical = cached
+            if len(cached) == 4:
+                fingerprint, legacy_fingerprint, canonical, blocked_ids = cached
+            else:
+                fingerprint, legacy_fingerprint, canonical = cached
+                blocked_ids = set()
+            if job_ids & blocked_ids:
+                _error(403, "INDEX_ROOTS_CHANGED", "允许根或来源配置已移除或正在清除")
         if job["_fingerprint"] not in {fingerprint, legacy_fingerprint}:
             _error(403, "INDEX_ROOTS_CHANGED", "允许根或来源配置已改变")
         return canonical
@@ -1791,8 +1799,9 @@ class IndexJobs:
                         data_status="not_integrated",
                         unavailable=True,
                     )
-            purging_ids, purging_keys = repo._purging_root_ids_and_keys()
-            removed_ids = repo._removed_root_ids()
+            scan_data_root = getattr(self, "root", None)
+            purging_ids, purging_keys = repo._purging_root_ids_and_keys(data_root=scan_data_root)
+            removed_ids = repo._removed_root_ids(data_root=scan_data_root)
             if (
                 root_id in purging_ids
                 or root_id in removed_ids
@@ -1956,10 +1965,10 @@ class IndexJobs:
         def commit(raw):
             self._check(job)
             # QIN-598：事务锁内二次校验允许根、已移出来源与清除墓碑，丢弃迟到扫描结果。
-            purging_ids, _ = repo._purging_root_ids_and_keys(raw)
-            removed_ids = repo._removed_root_ids()
+            commit_data_root = getattr(self, "root", None)
+            purging_ids, _ = repo._purging_root_ids_and_keys(raw, data_root=commit_data_root)
+            removed_ids = repo._removed_root_ids(data_root=commit_data_root)
             blocked_ids = purging_ids | removed_ids
-            live_root_ids = {storage.root_identity_id(r) for r in storage.allowed_roots()}
             scoped_root_ids = {
                 str(s.get("root_id") or "")
                 for s in (job.get("_request", {}).get("scopes") or [])
@@ -1970,8 +1979,13 @@ class IndexJobs:
                 for s in (job.get("_request", {}).get("scopes") or [])
                 if s.get("storage_root_id")
             }
-            if (scoped_root_ids | scoped_source_ids) & blocked_ids or any(
-                rid not in live_root_ids for rid in scoped_root_ids
+            live_root_ids = (
+                {storage.root_identity_id(r) for r in storage.allowed_roots()}
+                if scoped_root_ids
+                else set()
+            )
+            if (scoped_root_ids | scoped_source_ids) & blocked_ids or (
+                scoped_root_ids and any(rid not in live_root_ids for rid in scoped_root_ids)
             ):
                 _error(403, "INDEX_ROOTS_CHANGED", "允许根或来源配置已移除或正在清除")
             valid_files = [
@@ -1979,7 +1993,7 @@ class IndexJobs:
                 for item in files
                 if str(item.get("root_id") or "") not in blocked_ids
                 and str(item.get("storage_root_id") or "") not in blocked_ids
-                and str(item.get("root_id") or "") in live_root_ids
+                and (not scoped_root_ids or str(item.get("root_id") or "") in live_root_ids)
             ]
             receipts = raw.setdefault("index_job_receipts", {})
             if receipt_id in receipts:

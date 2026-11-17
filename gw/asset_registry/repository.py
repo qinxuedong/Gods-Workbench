@@ -481,27 +481,33 @@ def _hidden_builtin(record: Dict[str, Any]) -> bool:
     return _is_builtin_record(record) and bool(record.get("hidden"))
 
 
-def _removed_root_ids() -> set[str]:
+def _removed_root_ids(data_root: Optional[Path] = None) -> set[str]:
     """停用/正在清除的来源根 ID；覆盖允许根、已移出登记来源与清除墓碑。
 
     QIN-598：除 `allowed_roots.json` 中 `active=False` 的允许根 ID 外，同步读取
     `storage_settings.json` 中的 `removed_extra_local_entries`（覆盖仅挂
     `local_extra_*` 的资产）及 `asset_registry.json` 中的 `purging_roots` 墓碑，
-    避免只挂来源 ID 的资产在移出或中断清除后漏隐。
+    避免只挂来源 ID 的资产在移出或中断清除后漏隐。使用 `_index_scan_runtime_data_root`
+    直读快照，避免扫描热路径触发 `storage.data_root()` 的全量路径 resolve。
     """
     removed: set[str] = set()
+    resolved_data_root = (
+        data_root if data_root is not None else _index_scan_runtime_data_root()
+    )
+    if resolved_data_root is None:
+        return removed
     try:
-        for record in storage._allowed_roots_state().get("roots", []):
-            if not record.get("active"):
+        allowed_state = _index_scan_read_state(resolved_data_root, "allowed_roots", {})
+        for record in allowed_state.get("roots") or []:
+            if isinstance(record, dict) and not record.get("active"):
                 root_id = str(record.get("id") or "")
                 if root_id:
                     removed.add(root_id)
     except Exception:
         pass
     try:
-        registry_path, _ = _snapshot_paths()
         settings_state = _index_scan_read_state(
-            registry_path.parent, "storage_settings", {}
+            resolved_data_root, "storage_settings", {}
         )
         for entry in settings_state.get("removed_extra_local_entries") or []:
             if not isinstance(entry, dict):
@@ -513,7 +519,8 @@ def _removed_root_ids() -> set[str]:
     except Exception:
         pass
     try:
-        purging = readonly_registry_snapshot().get("purging_roots") or {}
+        reg_state = _index_scan_read_state(resolved_data_root, "asset_registry", {})
+        purging = reg_state.get("purging_roots") or {}
         if isinstance(purging, dict):
             for pid, meta in purging.items():
                 if pid:
@@ -3759,9 +3766,21 @@ def _index_scan_scope_is_excluded(
 
 def _purging_root_ids_and_keys(
     raw: Optional[Dict[str, Any]] = None,
+    *,
+    data_root: Optional[Path] = None,
 ) -> Tuple[set[str], set[str]]:
     """收集当前所有处于清除墓碑 `purging_roots` 中的根 ID 与目录路径键。"""
-    snapshot = raw if raw is not None else readonly_registry_snapshot()
+    if raw is not None:
+        snapshot = raw
+    else:
+        resolved_data_root = (
+            data_root if data_root is not None else _index_scan_runtime_data_root()
+        )
+        snapshot = (
+            _index_scan_read_state(resolved_data_root, "asset_registry", {})
+            if resolved_data_root is not None
+            else {}
+        )
     purging = snapshot.get("purging_roots") or {}
     ids: set[str] = set()
     keys: set[str] = set()
@@ -3805,12 +3824,16 @@ def _scan_allowed_roots() -> Tuple[List[Dict[str, Any]], List[str]]:
     if not roots:
         return [], ["allowed_roots_not_configured"]
     purging_ids, purging_keys = _purging_root_ids_and_keys()
-    active_roots: List[Path] = []
-    for root in roots:
-        rid = storage.root_identity_id(root)
-        if rid in purging_ids or _path_within_any_key(root, purging_keys):
-            continue
-        active_roots.append(root)
+    if purging_ids or purging_keys:
+        active_roots: List[Path] = []
+        for root in roots:
+            if _path_within_any_key(root, purging_keys):
+                continue
+            if purging_ids and storage.root_identity_id(root) in purging_ids:
+                continue
+            active_roots.append(root)
+    else:
+        active_roots = roots
     if not active_roots:
         return [], ["allowed_roots_not_configured"]
     found: List[Dict[str, Any]] = []
@@ -3831,7 +3854,6 @@ def _scan_allowed_roots() -> Tuple[List[Dict[str, Any]], List[str]]:
         return relative.as_posix()
 
     for root in active_roots:
-        root_id = storage.root_identity_id(root)
         exclusion_roots = _index_scan_exclusions_for_scope(
             root, configured_exclusion_roots, custom_cache_base
         )
@@ -3866,7 +3888,6 @@ def _scan_allowed_roots() -> Tuple[List[Dict[str, Any]], List[str]]:
                             info = entry.stat()
                             path = Path(entry.path)
                             found.append({
-                                "_root_id": root_id,
                                 "_root_path": str(root),
                                 "display_path": (
                                     storage.relative_display(path)
@@ -3889,7 +3910,11 @@ def reindex(expected_version: Optional[int]) -> Dict[str, Any]:
     if gaps:
         _unavailable("/api/asset-registry/reindex", "INDEX_SOURCE_NOT_AVAILABLE",
                      "未配置允许根目录，无法建立索引")
-    scanned_root_ids = {item.get("_root_id") for item in files if item.get("_root_id")}
+    root_path_to_id = {
+        path_str: storage.root_identity_id(Path(path_str))
+        for path_str in {item.get("_root_path") for item in files if item.get("_root_path")}
+    }
+    scanned_root_ids = set(root_path_to_id.values())
 
     def mutate(raw: Dict[str, Any]) -> Any:
         _cas(raw, expected_version)
@@ -3906,11 +3931,15 @@ def reindex(expected_version: Optional[int]) -> Dict[str, Any]:
             raise CleanroomException(
                 403, "INDEX_ROOTS_CHANGED", "允许根或来源配置已移除或正在清除"
             )
-        valid_files = [
-            item for item in files
-            if (not item.get("_root_id") or (item["_root_id"] in live_root_ids and item["_root_id"] not in blocked_ids))
-            and (not item.get("_root_path") or not _path_within_any_key(Path(item["_root_path"]), purging_keys))
-        ]
+        valid_files = []
+        for item in files:
+            item_root_path = item.get("_root_path")
+            item_root_id = root_path_to_id.get(item_root_path) if item_root_path else None
+            if item_root_id and (item_root_id not in live_root_ids or item_root_id in blocked_ids):
+                continue
+            if item_root_path and _path_within_any_key(Path(item_root_path), purging_keys):
+                continue
+            valid_files.append(item)
         known = {
             a.get("display_path"): a
             for a in raw["assets"].values()
