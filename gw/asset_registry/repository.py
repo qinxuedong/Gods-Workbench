@@ -481,57 +481,75 @@ def _hidden_builtin(record: Dict[str, Any]) -> bool:
     return _is_builtin_record(record) and bool(record.get("hidden"))
 
 
+def _read_json_snapshot_no_lock(path: Path) -> Dict[str, Any]:
+    """无锁读取由 os.replace 原子落盘的 JSON 快照，避免与并发写锁相互阻塞。"""
+    try:
+        with path.open(encoding="utf-8") as handle:
+            value = json.load(handle)
+    except (OSError, json.JSONDecodeError):
+        return {}
+    return value if isinstance(value, dict) else {}
+
+
+def _extract_removed_root_ids(
+    allowed_state: Dict[str, Any],
+    settings_state: Dict[str, Any],
+    reg_state: Dict[str, Any],
+) -> set[str]:
+    removed: set[str] = set()
+    for record in allowed_state.get("roots") or []:
+        if isinstance(record, dict) and not record.get("active"):
+            root_id = str(record.get("id") or "")
+            if root_id:
+                removed.add(root_id)
+    for entry in settings_state.get("removed_extra_local_entries") or []:
+        if not isinstance(entry, dict):
+            continue
+        for key in ("id", "kind"):
+            sid = str(entry.get(key) or "").strip()
+            if sid:
+                removed.add(sid)
+    purging = reg_state.get("purging_roots") or {}
+    if isinstance(purging, dict):
+        for pid, meta in purging.items():
+            if pid:
+                removed.add(str(pid))
+            if isinstance(meta, dict):
+                for tid in meta.get("target_ids") or []:
+                    if tid:
+                        removed.add(str(tid))
+    return removed
+
+
 def _removed_root_ids(data_root: Optional[Path] = None) -> set[str]:
     """停用/正在清除的来源根 ID；覆盖允许根、已移出登记来源与清除墓碑。
 
     QIN-598：除 `allowed_roots.json` 中 `active=False` 的允许根 ID 外，同步读取
     `storage_settings.json` 中的 `removed_extra_local_entries`（覆盖仅挂
-    `local_extra_*` 的资产）及 `asset_registry.json` 中的 `purging_roots` 墓碑，
-    避免只挂来源 ID 的资产在移出或中断清除后漏隐。使用 `_index_scan_runtime_data_root`
-    直读快照，避免扫描热路径触发 `storage.data_root()` 的全量路径 resolve。
+    `local_extra_*` 的资产）及 `asset_registry.json` 中的 `purging_roots` 墓碑。
     """
-    removed: set[str] = set()
-    resolved_data_root = (
-        data_root if data_root is not None else _index_scan_runtime_data_root()
-    )
-    if resolved_data_root is None:
-        return removed
-    try:
-        allowed_state = _index_scan_read_state(resolved_data_root, "allowed_roots", {})
-        for record in allowed_state.get("roots") or []:
-            if isinstance(record, dict) and not record.get("active"):
-                root_id = str(record.get("id") or "")
-                if root_id:
-                    removed.add(root_id)
-    except Exception:
-        pass
-    try:
-        settings_state = _index_scan_read_state(
-            resolved_data_root, "storage_settings", {}
+    if data_root is not None:
+        return _extract_removed_root_ids(
+            _read_json_snapshot_no_lock(data_root / "allowed_roots.json"),
+            _read_json_snapshot_no_lock(data_root / "storage_settings.json"),
+            _read_json_snapshot_no_lock(data_root / "asset_registry.json"),
         )
-        for entry in settings_state.get("removed_extra_local_entries") or []:
-            if not isinstance(entry, dict):
-                continue
-            for key in ("id", "kind"):
-                sid = str(entry.get(key) or "").strip()
-                if sid:
-                    removed.add(sid)
-    except Exception:
-        pass
     try:
-        reg_state = _index_scan_read_state(resolved_data_root, "asset_registry", {})
-        purging = reg_state.get("purging_roots") or {}
-        if isinstance(purging, dict):
-            for pid, meta in purging.items():
-                if pid:
-                    removed.add(str(pid))
-                if isinstance(meta, dict):
-                    for tid in meta.get("target_ids") or []:
-                        if tid:
-                            removed.add(str(tid))
+        allowed_state = storage._allowed_roots_state()
     except Exception:
-        pass
-    return removed
+        allowed_state = {}
+    try:
+        registry_path, _ = _snapshot_paths()
+        settings_state = _read_json_snapshot_no_lock(
+            registry_path.parent / "storage_settings.json"
+        )
+    except Exception:
+        settings_state = {}
+    try:
+        reg_state = readonly_registry_snapshot()
+    except Exception:
+        reg_state = {}
+    return _extract_removed_root_ids(allowed_state, settings_state, reg_state)
 
 
 def _is_removed_asset(asset: Dict[str, Any], removed_root_ids: set[str]) -> bool:
@@ -3777,7 +3795,7 @@ def _purging_root_ids_and_keys(
             data_root if data_root is not None else _index_scan_runtime_data_root()
         )
         snapshot = (
-            _index_scan_read_state(resolved_data_root, "asset_registry", {})
+            _read_json_snapshot_no_lock(resolved_data_root / "asset_registry.json")
             if resolved_data_root is not None
             else {}
         )

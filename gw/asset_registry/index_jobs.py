@@ -1064,9 +1064,9 @@ class IndexJobs:
         cache_key = self._root_snapshot_key()
         cached = self._root_snapshot_cache.get(cache_key) if cache_key else None
         if cached is None:
-            data_root = getattr(self, "root", None)
+            data_root = getattr(self, "root", None) or repo._index_scan_runtime_data_root()
             purging_ids, _ = repo._purging_root_ids_and_keys(data_root=data_root)
-            removed_ids = repo._removed_root_ids(data_root=data_root)
+            removed_ids = repo._removed_root_ids(data_root=data_root) if data_root is not None else set()
             blocked_ids = purging_ids | removed_ids
             if job_ids & blocked_ids:
                 _error(403, "INDEX_ROOTS_CHANGED", "允许根或来源配置已移除或正在清除")
@@ -1799,9 +1799,9 @@ class IndexJobs:
                         data_status="not_integrated",
                         unavailable=True,
                     )
-            scan_data_root = getattr(self, "root", None)
+            scan_data_root = getattr(self, "root", None) or repo._index_scan_runtime_data_root()
             purging_ids, purging_keys = repo._purging_root_ids_and_keys(data_root=scan_data_root)
-            removed_ids = repo._removed_root_ids(data_root=scan_data_root)
+            removed_ids = repo._removed_root_ids(data_root=scan_data_root) if scan_data_root is not None else set()
             if (
                 root_id in purging_ids
                 or root_id in removed_ids
@@ -1965,9 +1965,9 @@ class IndexJobs:
         def commit(raw):
             self._check(job)
             # QIN-598：事务锁内二次校验允许根、已移出来源与清除墓碑，丢弃迟到扫描结果。
-            commit_data_root = getattr(self, "root", None)
+            commit_data_root = getattr(self, "root", None) or repo._index_scan_runtime_data_root()
             purging_ids, _ = repo._purging_root_ids_and_keys(raw, data_root=commit_data_root)
-            removed_ids = repo._removed_root_ids(data_root=commit_data_root)
+            removed_ids = repo._removed_root_ids(data_root=commit_data_root) if commit_data_root is not None else set()
             blocked_ids = purging_ids | removed_ids
             scoped_root_ids = {
                 str(s.get("root_id") or "")
