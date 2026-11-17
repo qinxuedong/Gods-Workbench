@@ -3816,68 +3816,68 @@ body.gw-signal.gw-page--asset-manager #assetManagerRoot .registry-toolbar .regis
     font-size: var(--gw-type-label-sm);
 }
 
-/* 3. Right side inspector panel black-gold alignment */
+/* 3. Right side inspector panel follows the hardware theme tokens. */
 .asset-detail-inspector {
-    border-left: 1px solid rgba(223, 195, 132, 0.18) !important;
-    background: #0d1016 !important;
-    color: #edf1eb;
+    border-left: 1px solid var(--line);
+    background: var(--panel);
+    color: var(--text);
 }
 .asset-detail-inspector-toggle {
-    background: #11141c !important;
-    border-right: 1px solid rgba(223, 195, 132, 0.15) !important;
-    border-bottom: 1px solid rgba(223, 195, 132, 0.15) !important;
-    color: #8c95a6 !important;
+    background: var(--soft);
+    border-right: 1px solid var(--line-2);
+    border-bottom: 1px solid var(--line-2);
+    color: var(--muted);
 }
 .asset-detail-inspector-toggle:hover {
-    background: #181d26 !important;
-    color: #dfc384 !important;
+    background: var(--soft);
+    color: var(--strong);
 }
 .asset-detail-title {
-    border-bottom: 1px solid rgba(223, 195, 132, 0.15) !important;
+    border-bottom: 1px solid var(--line-2);
 }
 .asset-detail-title h2 {
-    color: #f0f3fa !important;
+    color: var(--text);
 }
 .asset-detail-title p {
-    color: #8a94a6 !important;
+    color: var(--muted);
 }
 .asset-detail-facts > div {
-    border-bottom: 1px solid rgba(223, 195, 132, 0.1) !important;
+    border-bottom: 1px solid var(--line);
 }
 .asset-detail-facts dt {
-    color: #8892a4 !important;
+    color: var(--muted);
 }
 .asset-detail-facts dd {
-    color: #e0e4f0 !important;
+    color: var(--text);
 }
 .asset-detail-tags span {
-    border: 1px solid rgba(223, 195, 132, 0.2) !important;
-    background: #11141c !important;
-    color: #dfc384 !important;
+    border: 1px solid var(--line-2);
+    background: var(--soft);
+    color: var(--strong);
     border-radius: 4px;
 }
 .asset-detail-versions {
-    border-bottom: 1px solid rgba(223, 195, 132, 0.15) !important;
+    border-bottom: 1px solid var(--line-2);
 }
 .asset-detail-version-row {
-    border-bottom: 1px solid rgba(223, 195, 132, 0.1) !important;
+    border-bottom: 1px solid var(--line);
 }
 .asset-detail-version-row.is-active {
-    background: rgba(223, 195, 132, 0.08) !important;
-    box-shadow: inset 3px 0 0 #dfc384 !important;
+    background: var(--soft);
+    box-shadow: inset 3px 0 0 var(--strong);
 }
 .asset-detail-actions a,
 .asset-detail-actions button {
-    border: 1px solid rgba(223, 195, 132, 0.25) !important;
-    background: #12151e !important;
-    color: #e0e4f0 !important;
-    border-radius: 6px !important;
+    border: 1px solid var(--line-2);
+    background: var(--soft);
+    color: var(--text);
+    border-radius: 6px;
 }
 .asset-detail-actions a:hover,
 .asset-detail-actions button:hover {
-    border-color: rgba(223, 195, 132, 0.5) !important;
-    background: #1a1f2b !important;
-    color: #dfc384 !important;
+    border-color: var(--strong);
+    background: var(--strong);
+    color: var(--strong-text);
 }
 
 /* 4. Canvas help bar floating black-gold status pill */

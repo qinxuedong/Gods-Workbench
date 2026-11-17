@@ -1,6 +1,21 @@
 <!DOCTYPE html>
 <html lang="zh-CN" class="h-full overflow-hidden">
 <head>
+  <script>
+    (function(){
+      try {
+        var t = localStorage.getItem('studio_theme') || localStorage.getItem('canvas_theme') || localStorage.getItem('theme') || 'dark';
+        var d = t === 'dark';
+        var r = document.documentElement;
+        r.setAttribute('data-theme', d ? 'dark' : 'light');
+        r.classList.toggle('studio-theme-dark', d);
+        r.classList.toggle('theme-dark', d);
+        r.classList.toggle('theme-light', !d);
+      } catch(e) {}
+    })();
+  </script>
+  <script src="/static/js/core/theme.js?v=v0.0.1-alpha-2026"></script>
+  <link rel="stylesheet" href="/static/css/base/theme.css?v=v0.0.1-alpha-2026">
   <link rel="stylesheet" href="/static/css/base/hardware-tokens.css?ui=20261011-final">
   <link rel="stylesheet" href="/static/vendor/css/fonts.css?v=v0.0.1-alpha-2026">
   <meta charset="UTF-8">
@@ -1110,16 +1125,7 @@
                 </button>
               </div>
 
-              <!-- 减少动态效果 -->
-              <div class="flex items-center justify-between pt-1">
-                <div>
-                  <strong class="gw-type-body-sm text-slate-200 block">减少动态效果</strong>
-                  <p class="gw-type-body-md text-slate-400">降低复杂过渡动效与高光呼吸强度</p>
-                </div>
-                <button type="button" class="toggle hw-slide-toggle" data-setting="reduce_motion" aria-label="减少动态效果" aria-pressed="false">
-                  <span class="hw-slide-peg" aria-hidden="true"></span>
-                </button>
-              </div>
+
             </div>
 
             <!-- 槽 3: 团队偏好 -->

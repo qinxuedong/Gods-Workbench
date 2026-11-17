@@ -22,7 +22,18 @@
     const SCALE_OPTIONS = ['auto', '60', '65', '70', '75', '80', '85', '90', '95', '100', '115', '125', '140'];
 
     function currentTheme(){
-        return localStorage.getItem(KEY) || localStorage.getItem(LEGACY_KEY) || localStorage.getItem(OLD_THEME_KEY) || 'dark';
+        try {
+            const primary = localStorage.getItem(KEY);
+            const legacy = localStorage.getItem(LEGACY_KEY);
+            const oldTheme = localStorage.getItem(OLD_THEME_KEY);
+            if(primary && legacy && oldTheme && primary !== legacy && legacy === oldTheme) {
+                return legacy === 'light' ? 'light' : 'dark';
+            }
+            const cand = primary || legacy || oldTheme;
+            return cand === 'light' ? 'light' : 'dark';
+        } catch(e) {
+            return 'dark';
+        }
     }
 
     function applyTheme(theme){
@@ -257,17 +268,73 @@
         }, 160);
     }
 
+    function broadcastTheme(theme){
+        const next = theme === 'dark' ? 'dark' : 'light';
+        document.querySelectorAll('iframe').forEach(frame => {
+            try {
+                frame.contentWindow?.postMessage({ type: 'studio-theme', theme: next }, '*');
+            } catch(e) {}
+        });
+        if(window.parent && window.parent !== window){
+            try {
+                window.parent.postMessage({ type: 'studio-theme', theme: next }, '*');
+            } catch(e) {}
+        }
+    }
+
+    function setTheme(theme, shouldBroadcast = true){
+        const next = theme === 'dark' ? 'dark' : 'light';
+        const keys = [KEY, LEGACY_KEY, OLD_THEME_KEY];
+        const prevValues = {};
+        for(const k of keys){
+            try {
+                prevValues[k] = localStorage.getItem(k);
+            } catch(e) {
+                prevValues[k] = null;
+            }
+        }
+
+        const modifiedKeys = [];
+        let originalError = null;
+
+        try {
+            for(const k of keys){
+                localStorage.setItem(k, next);
+                modifiedKeys.push(k);
+            }
+        } catch(err) {
+            originalError = err;
+        }
+
+        if(originalError){
+            for(const k of modifiedKeys.reverse()){
+                const prev = prevValues[k];
+                let rollbackOk = false;
+                if(prev !== null){
+                    try {
+                        localStorage.setItem(k, prev);
+                        rollbackOk = true;
+                    } catch(rollbackErr) {}
+                }
+                if(!rollbackOk){
+                    try {
+                        localStorage.removeItem(k);
+                    } catch(removeErr) {}
+                }
+            }
+            throw originalError;
+        }
+
+        applyTheme(next);
+        if(shouldBroadcast) broadcastTheme(next);
+    }
+
     window.StudioTheme = {
         key: KEY,
         get: currentTheme,
         apply: applyTheme,
-        set(theme){
-            const next = theme === 'dark' ? 'dark' : 'light';
-            localStorage.setItem(KEY, next);
-            localStorage.setItem(LEGACY_KEY, next);
-            localStorage.setItem(OLD_THEME_KEY, next);
-            applyTheme(next);
-        }
+        broadcast: broadcastTheme,
+        set: setTheme
     };
 
     window.StudioScale = {
@@ -287,9 +354,21 @@
         applyScale(currentScaleMode());
     });
     window.addEventListener('message', event => {
+        if(event.origin && location.origin && location.origin !== 'null' && event.origin !== location.origin) {
+            return;
+        }
         if(['studio-theme', 'theme-change'].includes(event.data?.type)) {
             const incomingTheme = event.data?.theme ?? event.data?.['data-theme'] ?? event.data?.dataTheme;
-            if(incomingTheme !== undefined) applyTheme(incomingTheme);
+            if(incomingTheme !== undefined) {
+                applyTheme(incomingTheme);
+                document.querySelectorAll('iframe').forEach(frame => {
+                    try {
+                        if(frame.contentWindow && frame.contentWindow !== event.source){
+                            frame.contentWindow.postMessage({ type: 'studio-theme', theme: incomingTheme }, '*');
+                        }
+                    } catch(e) {}
+                });
+            }
         }
         if(event.data?.type === 'studio-ui-scale') {
             const incomingScale = normalizeExternalScale(event.data.scale);

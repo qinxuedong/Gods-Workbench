@@ -1,6 +1,20 @@
 <!doctype html>
 <html lang="zh-CN">
 <head>
+  <script>
+    (function(){
+      try {
+        var t = localStorage.getItem('studio_theme') || localStorage.getItem('canvas_theme') || localStorage.getItem('theme') || 'dark';
+        var d = t === 'dark';
+        var r = document.documentElement;
+        r.setAttribute('data-theme', d ? 'dark' : 'light');
+        r.classList.toggle('studio-theme-dark', d);
+        r.classList.toggle('theme-dark', d);
+        r.classList.toggle('theme-light', !d);
+      } catch(e) {}
+    })();
+  </script>
+  <script src="/static/js/core/theme.js?v=v0.0.1-alpha-2026"></script>
   <link rel="stylesheet" href="/static/vendor/css/fonts.css">
   <link rel="stylesheet" href="/static/css/base/hardware-tokens.css">
   <meta charset="utf-8">
