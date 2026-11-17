@@ -6,6 +6,7 @@
     "web/js/modules/asset-manager.js",
     "web/js/modules/asset-manager/organize.js",
     "web/js/modules/asset-manager/settings.js",
+    "tests/frontend/asset-manager-thumbnail-root-prompt.mjs",
     "tests/frontend/qin-474-dir-autosave.test.mjs",
     "tests/frontend/qin-597-resource-folder-list.test.mjs",
     "tests/frontend/node-files.txt",
