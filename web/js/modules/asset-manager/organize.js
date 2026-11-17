@@ -620,13 +620,13 @@ const resourceFolderUnregisteredSources = new Set();
 function invalidateResourceFolderAction(){
     if(!resourceFolderInternalViewSwitch) resourceFolderActionSeq += 1;
 }
-function resolveResourceFolderIdentity(rootTarget={}, requireSource=true){
+function resolveResourceFolderIdentity(rootTarget={}){
     const candidates = [rootTarget.id, rootTarget.rootId, ...(Array.isArray(rootTarget.aliases) ? rootTarget.aliases : [])]
         .map(value => String(value || '').trim()).filter(Boolean);
     const allowedRootId = candidates.find(value => /^root_[a-f0-9]{24}$/i.test(value)) || '';
     let sourceId = candidates.find(value => /^local_extra_[a-z0-9]+(?:_[a-z0-9]+)?$/i.test(value)) || '';
     const normalizePath = value => String(value || '').split(String.fromCharCode(92)).join('/').replace(/\/+$/, '').toLocaleLowerCase();
-    if(allowedRootId && !sourceId && requireSource){
+    if(allowedRootId && !sourceId){
         const targetPath = normalizePath(rootTarget.path);
         const facet = (registryFacets.roots || []).find(item =>
             [item.id, ...(item.aliases || [])].map(String).includes(allowedRootId) ||
@@ -634,7 +634,7 @@ function resolveResourceFolderIdentity(rootTarget={}, requireSource=true){
         sourceId = [facet?.id, ...(facet?.aliases || [])].map(String)
             .find(value => /^local_extra_[a-z0-9]+(?:_[a-z0-9]+)?$/i.test(value)) || '';
     }
-    return allowedRootId && (!requireSource || sourceId) ? {allowedRootId, sourceId} : null;
+    return allowedRootId ? {allowedRootId, sourceId} : null;
 }
 function confirmResourceFolderPurge(rootTarget, firstConfirmationSatisfied=false){
     const label = rootTarget.name || rootTarget.path || '资源文件夹';
@@ -643,7 +643,7 @@ function confirmResourceFolderPurge(rootTarget, firstConfirmationSatisfied=false
 }
 async function executeResourceFolderAction(rootTarget, action, options = {}){
     if(!['remove', 'purge'].includes(action)) return {status:'invalid-action'};
-    const identity = resolveResourceFolderIdentity(rootTarget, action === 'remove');
+    const identity = resolveResourceFolderIdentity(rootTarget);
     if(!identity){
         const error = new Error('无法识别资源文件夹身份，请刷新清单后重试');
         setStatus(error.message);
@@ -665,7 +665,7 @@ async function executeResourceFolderAction(rootTarget, action, options = {}){
         }
         if(!current()) return {status:'stale'};
         if(action === 'remove'){
-            if(!resourceFolderUnregisteredSources.has(identity.sourceId)){
+            if(identity.sourceId && !resourceFolderUnregisteredSources.has(identity.sourceId)){
                 const removed = await removeAssetSourceRegistrations([identity.sourceId], {deferViewCleanup:true});
                 if(!removed?.has(identity.sourceId)) throw new Error('素材来源未移除，请刷新后重试');
                 resourceFolderUnregisteredSources.add(identity.sourceId);
@@ -673,7 +673,7 @@ async function executeResourceFolderAction(rootTarget, action, options = {}){
             if(!current()) return {status:'stale'};
             const result = await saveAllowedRootRemoval(identity.allowedRootId, {throwOnError:true});
             if(!current()) return {status:'stale'};
-            resourceFolderUnregisteredSources.delete(identity.sourceId);
+            if(identity.sourceId) resourceFolderUnregisteredSources.delete(identity.sourceId);
             removeResourceFolderViewState(rootTarget, identity);
             setStatus('资源文件夹已移出资源库');
             return {status:'removed', result};
@@ -695,7 +695,7 @@ async function executeResourceFolderAction(rootTarget, action, options = {}){
 }
 function removeResourceFolderViewState(rootTarget, identity){
     registryAssetsQueryCache.clear();
-    const ids = new Set([identity.allowedRootId, identity.sourceId]);
+    const ids = new Set([identity.allowedRootId, identity.sourceId].filter(Boolean));
     registryFacets.roots = (registryFacets.roots || []).filter(root =>
         ![root.id, ...(root.aliases || [])].some(id => ids.has(String(id || ''))));
     setRegistryAssets(registryAssets.filter(item => !ids.has(String(item.storage_root_id || ''))));

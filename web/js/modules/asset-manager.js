@@ -1314,16 +1314,24 @@ async function loadGlobalDirectorySettings(){
     try {
         await loadRegistryPrincipal();
         if(!canManageProjectWorkspaceSettings()) throw new Error('仅管理员可查看和修改目录设置');
-        const [storage, thumbnail, status, roots] = await Promise.all([
+        const [storage, thumbnail, status, roots, facets] = await Promise.all([
             apiJsonResponse(assetManagerApi.getStorageSettings()),
             apiJsonResponse(assetManagerApi.getThumbnailSettings()),
             apiJsonResponse(assetManagerApi.getRegistryStatus()),
             canManageAllowedRoots()
                 ? apiJsonResponse(assetManagerHttp.request('/api/storage-settings/roots', {method:'GET', credentials:'same-origin'}))
                 : Promise.resolve(null),
+            apiJsonResponse(assetManagerApi.getRegistryFacets()).catch(() => null),
         ]);
         gwCall('settings', 'applyStorageSettingsData', storage);
         if(roots) gwCall('settings', 'applyAllowedRootSettingsData', roots);
+        if(facets) registryFacets = {
+            kinds:Array.isArray(facets.kinds) ? facets.kinds : registryFacets.kinds,
+            categories:Array.isArray(facets.categories) ? facets.categories : registryFacets.categories,
+            tags:Array.isArray(facets.tags) ? facets.tags : registryFacets.tags,
+            collections:Array.isArray(facets.collections) ? facets.collections : registryFacets.collections,
+            roots:Array.isArray(facets.roots) ? facets.roots : registryFacets.roots,
+        };
         registryStatus = status;
         gwCall('settings', 'applyThumbnailSettingsSnapshot', thumbnail, {loading:false});
         if(isTauriClientMode()) await gwCall('upload', 'loadClientUploadSourceDir');

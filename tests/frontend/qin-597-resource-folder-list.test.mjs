@@ -41,7 +41,7 @@ function createClickTarget(attributes) {
   };
 }
 
-function loadSettingsClickHandler({roots, calls=[]}={}) {
+function loadSettingsClickHandler({roots, calls=[], onCall=async () => {}}={}) {
   const start = manager.indexOf("document.addEventListener('click', event => {", manager.indexOf('async function saveAllowedRootPurge'));
   const end = manager.indexOf("document.addEventListener('change', event => {", start);
   assert.ok(start >= 0 && end > start, 'settings click listener exists');
@@ -56,10 +56,51 @@ function loadSettingsClickHandler({roots, calls=[]}={}) {
   );
   const dispatch = factory(
     {roots:roots || [{id:'root_0123456789abcdef01234567',path:'D:/Media/Film'}],revision:3,saving:false},
-    (...args)=>{ calls.push(args); }, async (...args)=>{ calls.push(['request',...args]); },
+    (...args)=>{ calls.push(args); return onCall(...args); }, async (...args)=>{ calls.push(['request',...args]); },
     {confirm:()=>true}, {getElementById:()=>null}
   );
   return {calls, dispatch};
+}
+
+function loadDirectorySettingsBoot({loadSettings, facets={roots:[{id:'local_extra_abc_123',aliases:['root_0123456789abcdef01234567'],path:'D:/Media/Film'}]}}={}) {
+  const bootStart = manager.indexOf("document.addEventListener('DOMContentLoaded', () => {");
+  const bootEnd = manager.indexOf('    // 【QIN-573 AC2】', bootStart);
+  assert.ok(bootStart >= 0 && bootEnd > bootStart, 'directory settings boot branch exists');
+  const bootBody = manager.slice(manager.indexOf('=> {', bootStart) + 4, bootEnd);
+  const loaderSource = sliceBetween(manager, 'async function loadGlobalDirectorySettings()', 'let pendingPurgeRoot = null;');
+  const loaderFactory = new Function(
+    'storageSettingsState','directorySettingsError','directorySettingsReady','gwCall','loadRegistryPrincipal',
+    'canManageProjectWorkspaceSettings','apiJsonResponse','assetManagerApi','canManageAllowedRoots',
+    'assetManagerHttp','applyStorageSettingsData','registryStatus','applyThumbnailSettingsSnapshot',
+    'isTauriClientMode','loadClientUploadSourceDir','currentStatusText','setStatus','registryFacets',
+    `${loaderSource}; return {load:loadGlobalDirectorySettings, getFacets:()=>registryFacets};`
+  );
+  const state = {facets:{roots:[]}, calls:[], settings:{roots:[]}};
+  const loaderRuntime = loaderFactory(
+    {open:false}, '', false, (domain, method, ...args) => {
+      state.calls.push([domain,method,...args]);
+      if(domain === 'settings' && method === 'applyAllowedRootSettingsData') state.settings = args[0];
+    }, async () => {}, () => true,
+    async request => request?.url?.includes('/api/storage-settings/roots')
+      ? {roots:[{id:'root_0123456789abcdef01234567',path:'D:/Media/Film'}],revision:4}
+      : request?.url?.includes('/api/asset-registry/facets')
+        ? facets
+        : request,
+    {getStorageSettings:()=>({kind:'storage'}),getThumbnailSettings:()=>({kind:'thumbnail'}),getRegistryStatus:()=>({kind:'status'}),getRegistryFacets:()=>({url:'/api/asset-registry/facets'})},
+    () => true,
+    {request: async url => ({url,roots:[{id:'root_0123456789abcdef01234567',path:'D:/Media/Film'}],revision:4})},
+    () => {}, {overview:{roots:[]}}, () => {}, () => false, async () => {}, '', () => {}, state.facets
+  );
+  const loader = loaderRuntime.load;
+  Object.defineProperty(state, 'loadedFacets', {get:()=>loaderRuntime.getFacets()});
+  const bootFactory = new Function('directorySettingsPage','openDeferredDomainGate','loadGlobalDirectorySettings',
+    `const callback = () => {${bootBody}}; return callback;`);
+  const boot = bootFactory(true, () => state.calls.push(['gate']), () => {
+    state.calls.push(['load-settings']);
+    state.loaderPromise = loadSettings ? loadSettings(loader) : loader();
+    return state.loaderPromise;
+  });
+  return {state, loader, boot};
 }
 
 function loadFacetRefresh() {
@@ -131,13 +172,13 @@ test('AC7: purge requires two confirmations, is irreversible, and preserves sour
   assert.match(settings, /绝不会删除您的磁盘原始素材文件/);
 });
 
-function loadResourceFolderActions({removeRoot = async () => ({}), purgeRoot = async () => ({}), confirms = [true]} = {}) {
+function loadResourceFolderActions({removeRoot = async () => ({}), purgeRoot = async () => ({}), confirms = [true], roots = [{id:'local_extra_abc_123', aliases:['root_0123456789abcdef01234567'], path:'C:/Media'}]} = {}) {
   const start = organize.indexOf('let resourceFolderActionSeq = 0;');
   const end = organize.indexOf('async function removeGeneratedSourceBoard', start);
   assert.ok(start >= 0 && end > start, 'resource-folder action block exists');
   const source = organize.slice(start, end);
   const state = {
-    registryFacets: {roots:[{id:'local_extra_abc_123', aliases:['root_0123456789abcdef01234567'], path:'C:/Media'}]},
+    registryFacets: {roots:[...roots]},
     registryAssetsQueryCache: {clear(){ this.cleared = true; }},
     registryAssets: [], registryStatus: {overview:{roots:[]}}, assetTreeExpanded: new Set(),
     assetTreeSelectedKey:'', activeTab:'registry', statuses:[], toasts:[], removals:[], purges:[],
@@ -167,6 +208,32 @@ function loadResourceFolderActions({removeRoot = async () => ({}), purgeRoot = a
   );
   return {actions, state};
 }
+
+test('runtime: settings boot fetches facets and root-only access can be revoked without a source', async () => {
+  async function run({facets, expectedSourceId}) {
+    const {state, boot} = loadDirectorySettingsBoot({facets});
+    boot();
+    await state.loaderPromise;
+    assert.equal(state.loadedFacets.roots.length, facets.roots.length);
+    assert.deepEqual(state.calls.slice(0, 2), [['gate'], ['load-settings']]);
+    assert.deepEqual(state.settings.roots, [{id:'root_0123456789abcdef01234567',path:'D:/Media/Film'}]);
+    const {actions, state:actionState} = loadResourceFolderActions({roots:state.loadedFacets.roots, confirms:[true]});
+    const actionCalls = [];
+    const {dispatch} = loadSettingsClickHandler({
+      roots:state.settings.roots,
+      calls:actionCalls,
+      onCall:(domain, method, root, action) => method === 'executeResourceFolderAction' && actions.executeResourceFolderAction(root, action),
+    });
+    const remove = {target:createClickTarget({'data-resource-folder-remove':'root_0123456789abcdef01234567'}),preventDefault(){ this.defaultPrevented = true; }};
+    await dispatch(remove);
+    assert.equal(remove.defaultPrevented, true);
+    assert.equal(actionCalls.find(call => call[1] === 'executeResourceFolderAction')?.[3], 'remove');
+    assert.deepEqual(actionState.removals, expectedSourceId ? [[expectedSourceId]] : []);
+    assert.deepEqual(actionState.allowedRootRemovals, ['root_0123456789abcdef01234567']);
+  }
+  await run({facets:{roots:[]}});
+  await run({facets:{roots:[{id:'local_extra_abc_123',aliases:['root_0123456789abcdef01234567'],path:'D:/Media/Film'}]},expectedSourceId:'local_extra_abc_123'});
+});
 
 test('runtime: move out, refresh, then purge removed root by allowed-root ID alone', async () => {
   const {actions, state} = loadResourceFolderActions({confirms:[true, true]});
