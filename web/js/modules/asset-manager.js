@@ -890,27 +890,41 @@ function markIndexState(state=''){
     else el.removeAttribute('data-gw-index-state');
 }
 // QIN-612 AC8：破坏性操作（删除/移出/清除索引/回收站/解除等）用红字；
-// 进行中/普通完成/一般提示用金色。仅按文案语义判定，不改各业务调用点。
+// 进行中/普通完成/一般提示用金色。优先委托给外壳统一分类入口，无外壳时本地兜底。
 function topbarToneForStatus(value){
-    return /删除|移出|回收站|清除索引|清空|解除|已删|失败|错误|冲突|无权|权限不足|只读|暂不可用/.test(value) ? 'danger' : 'info';
+    return /删除|移出|回收站|清除索引|清空|解除|已删|失败|错误|冲突|无权|权限不足|只读|暂不可用|未通过/.test(String(value ?? '')) ? 'danger' : 'info';
 }
-function announceTopbarStatus(value){
+function announceTopbarStatus(value, options = {}){
     // 内嵌 iframe 内经 parent 访问外壳统一入口；跨域或无入口时静默回退（由调用方写 DOM）。
     try {
         const win = window.parent !== window ? window.parent : window;
         const bus = win.GWTopbarStatus;
-        if (bus && typeof bus.announce === 'function') {
-            bus.announce(value, {tone: topbarToneForStatus(value)});
-            return true;
+        if (!bus) return false;
+        const idleText = bus.snapshot?.()?.idleText || '准备就绪';
+        const classified = typeof bus.classify === 'function'
+            ? bus.classify(value, {...options, idleText})
+            : {
+                phase: options?.phase || (!value || value === idleText ? 'idle' : 'done'),
+                tone: options?.tone || topbarToneForStatus(value),
+            };
+        if (classified.phase === 'idle' && typeof bus.clear === 'function') {
+            bus.clear();
+            return Boolean(bus.snapshot?.());
+        }
+        if (typeof bus.announce === 'function') {
+            return Boolean(bus.announce(value, {
+                tone: classified.tone,
+                phase: classified.phase === 'idle' ? 'done' : classified.phase,
+            }));
         }
     } catch(_) {}
     return false;
 }
-function setStatus(text='准备就绪'){
+function setStatus(text='准备就绪', options={}){
     currentStatusText = text || '准备就绪';
     const el = currentStatusElement();
     if(el){
-        const handled = announceTopbarStatus(currentStatusText);
+        const handled = announceTopbarStatus(currentStatusText, options);
         if(!handled){
             const runner = el.querySelector?.('[data-gw-topbar-runner]');
             if(runner) runner.textContent = currentStatusText;

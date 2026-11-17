@@ -760,6 +760,36 @@
   const GW_TOPBAR_MIN_WIDTH = 258; // QIN-612 AC4：改前 assets 中条（含左右箭头）实测 257.578125px，向上取整，不得改窄
   const GW_TOPBAR_MIN_STATUS_WIDTH = 96; // 状态文案最小可视宽：低于此值先收起页名，禁止把文案挤成 0 宽
   const GW_TOPBAR_TTL = 4000;      // 完成/普通提示约 4s 回空闲
+  // QIN-612 AC6/AC8：全站统一的状态文案分类规则，供各业务调用方复用。
+  // 转后台且不再由前台轮询收尾的提示维持 done（4s 后回空闲），避免永驻顶栏。
+  const GW_TOPBAR_DETACHED_NOTICE_RE = /^(?:已转入后台|已开始缓存|AI 智能分类已启动)|可稍后刷新查看|可前往任务中心查看|请稍后再切换/;
+  const GW_TOPBAR_PROGRESS_RE = /^(?:加载中|读取中|初始化中|准备中)(?:\.{3}|…)?$|正在|等待扫描|等待.+通过|正在写入索引|排队中|执行中|后台生成中|仍在审核中/;
+  const GW_TOPBAR_DANGER_RE = /删除|移出|回收站|清除索引|清空|解除|已删|失败|错误|冲突|无权|权限不足|只读|暂不可用|未通过/;
+
+  function classifyTopbarStatus(message, options = {}) {
+    const text = String(message == null ? '' : message).trim();
+    const idleText = (typeof options.idleText === 'string' && options.idleText)
+      ? options.idleText
+      : (topbarEngine ? topbarEngine.snapshot().idleText : '准备就绪');
+    let phase = (options.phase === 'progress' || options.phase === 'done' || options.phase === 'idle')
+      ? options.phase
+      : '';
+    if (!phase) {
+      if (!text || text === idleText || text === '准备就绪') {
+        phase = 'idle';
+      } else if (GW_TOPBAR_DETACHED_NOTICE_RE.test(text)) {
+        phase = 'done';
+      } else if (GW_TOPBAR_PROGRESS_RE.test(text)) {
+        phase = 'progress';
+      } else {
+        phase = 'done';
+      }
+    }
+    const tone = (options.tone === 'danger' || options.tone === 'info')
+      ? options.tone
+      : (phase === 'progress' ? 'info' : (GW_TOPBAR_DANGER_RE.test(text) ? 'danger' : 'info'));
+    return {phase, tone};
+  }
 
   function createTopbarStatusEngine(host) {
     const timers = host.timers || {
@@ -1002,6 +1032,7 @@
   window.GWTopbarStatus = Object.freeze({
     createEngine: createTopbarStatusEngine,
     bind: bindTopbarStatus,
+    classify: classifyTopbarStatus,
     measureWidths: topbarMeasureWidths,
     announce(message, options) { return topbarEngine ? topbarEngine.announce(message, options) : null; },
     settle(token, message, options) { return topbarEngine ? topbarEngine.settle(token, message, options) : false; },
