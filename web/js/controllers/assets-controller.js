@@ -433,11 +433,16 @@ window.WorkbenchAssets = (() => {
     menu.appendChild(title);
 
     const isRoot = Boolean(target.isRoot);
+    const canManageResourceFolders = Boolean(organizeBridge()?.canManageResourceFolders?.());
     const items = [
       { id: 'new', attr: 'data-asset-organize-new', label: '新建子文件夹', icon: 'folder-plus', disabled: false },
       { id: 'rename', attr: 'data-asset-organize-rename', label: '重命名', icon: 'pencil', disabled: isRoot },
       { id: 'open', attr: 'data-asset-organize-open', label: '在系统中打开', icon: 'folder-open', disabled: false },
       { id: 'delete', attr: 'data-asset-organize-delete', label: '删除（进回收站）', icon: 'trash-2', disabled: isRoot, danger: true },
+      ...(isRoot ? [
+        { id: 'remove-root', attr: 'data-asset-organize-remove-root', label: '移出资源库', icon: 'folder-minus', disabled: !canManageResourceFolders },
+        { id: 'purge-root', attr: 'data-asset-organize-purge-root', label: '清除索引', icon: 'trash-2', disabled: !canManageResourceFolders, danger: true },
+      ] : []),
     ];
 
     items.forEach(item => {
@@ -461,6 +466,10 @@ window.WorkbenchAssets = (() => {
           else showShellOrganizeToast(res?.message || '无法在系统中打开该文件夹');
         } else if (item.id === 'delete') {
           openShellDeleteDialog(target.key, target.name);
+        } else if (item.id === 'remove-root') {
+          await bridge.executeResourceFolderAction(target, 'remove');
+        } else if (item.id === 'purge-root') {
+          await bridge.executeResourceFolderAction(target, 'purge');
         }
       });
       menu.appendChild(btn);

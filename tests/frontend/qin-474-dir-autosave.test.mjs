@@ -144,8 +144,8 @@ test("AC4 允许根路径字段回车即登记保存，且有选夹按钮", () =
     assetManager,
     /<input id="allowedRootPath"[\s\S]*?>\$\{allowedRootPicker\}<\/div><\/label>/,
   );
-  // 「登记允许根」按钮是列表登记动作，保留不删，且与回车共用同一条登记路径。
-  assert.match(assetManager, /data-storage-root-add[\s\S]*?登记允许根<\/button>/);
+  // 资源文件夹按钮保留，且与回车共用同一条登记路径。
+  assert.match(assetManager, /data-storage-root-add[\s\S]*?添加资源文件夹<\/button>/);
   // QIN-591：登记派发 gwCall 化（登记在案），与回车共用同一条登记路径。
   assert.match(
     assetManager,
@@ -157,7 +157,7 @@ test("AC1/AC2 自动保存失败不静默且 cache 与 storage 共用保存外�
   assert.match(assetManager, /async function withDirectorySaving\(closeBrowser, task\)/);
   assert.match(assetManager, /setStatus\(error\.message \|\| '保存目录失败'\)/);
   assert.match(assetManager, /缓存目录已保存：/);
-  assert.match(assetManager, /已挂载并保存缓存目录：/);
+  assert.match(assetManager, /已保存缓存目录：/);
   // 空路径要有明确提示，不能静默丢弃；允许留空的回收根目录仍照常保存。
   assert.match(assetManager, /setStatus\('缓存根目录不能为空'\)/);
   assert.match(

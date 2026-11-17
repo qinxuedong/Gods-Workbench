@@ -96,6 +96,7 @@ import {
     boardSourceSelection,
     boardSourceState,
     canBrowseServerDirectories,
+    canManageAllowedRoots,
     canvasAssetsData,
     closeAssetOrganizeMenu,
     customAssetLibraryBaseItems,
@@ -166,6 +167,8 @@ import {
     registryExcludeTags,
     registryFacets,
     registryGroupSimilar,
+    saveAllowedRootPurge,
+    saveAllowedRootRemoval,
     registryIncludeTags,
     registryLayout,
     registryLoading,
@@ -566,7 +569,7 @@ function setAssetBoardHidden(id, hidden){
     renderBoardNavigation();
     render();
 }
-async function removeAssetSourceRegistrations(sourceIds=[]){
+async function removeAssetSourceRegistrations(sourceIds=[], {deferViewCleanup=false}={}){
     const ids = new Set((Array.isArray(sourceIds) ? sourceIds : [...sourceIds]).map(String).filter(Boolean));
     if(!ids.size) return null;
     const state = ensureBoardNavigationState();
@@ -584,12 +587,14 @@ async function removeAssetSourceRegistrations(sourceIds=[]){
         expected_version:Number(storageSettingsState.revision || 1),
     }));
     applyStorageSettingsData(data || {});
-    setRegistryAssets(registryAssets.filter(item => !removableIds.has(String(item.storage_root_id || ''))));
-    registryFacets.roots = (registryFacets.roots || []).filter(root => !removableIds.has(String(root.id || '')));
-    if(registryStatus?.overview?.roots){
-        registryStatus.overview.roots = registryStatus.overview.roots.filter(root => !removableIds.has(String(root.id || '')));
+    if(!deferViewCleanup){
+        setRegistryAssets(registryAssets.filter(item => !removableIds.has(String(item.storage_root_id || ''))));
+        registryFacets.roots = (registryFacets.roots || []).filter(root => !removableIds.has(String(root.id || '')));
+        if(registryStatus?.overview?.roots){
+            registryStatus.overview.roots = registryStatus.overview.roots.filter(root => !removableIds.has(String(root.id || '')));
+        }
+        registryAssetsQueryCache.clear();
     }
-    registryAssetsQueryCache.clear();
     return removableIds;
 }
 async function deleteCustomAssetBoard(id){
@@ -607,6 +612,109 @@ async function deleteCustomAssetBoard(id){
     renderStorageSettingsModal();
     render();
     setStatus(`已删除资源库“${board.name}”，素材来源路径已保留，可在来源设置中单独注销`);
+}
+let resourceFolderActionSeq = 0;
+let resourceFolderActionBusy = '';
+let resourceFolderInternalViewSwitch = false;
+const resourceFolderUnregisteredSources = new Set();
+function invalidateResourceFolderAction(){
+    if(!resourceFolderInternalViewSwitch) resourceFolderActionSeq += 1;
+}
+function resolveResourceFolderIdentity(rootTarget={}){
+    const candidates = [rootTarget.id, rootTarget.rootId, ...(Array.isArray(rootTarget.aliases) ? rootTarget.aliases : [])]
+        .map(value => String(value || '').trim()).filter(Boolean);
+    const allowedRootId = candidates.find(value => /^root_[a-f0-9]{24}$/i.test(value)) || '';
+    let sourceId = candidates.find(value => /^local_extra_[a-z0-9]+(?:_[a-z0-9]+)?$/i.test(value)) || '';
+    const normalizePath = value => String(value || '').split(String.fromCharCode(92)).join('/').replace(/\/+$/, '').toLocaleLowerCase();
+    if(allowedRootId && !sourceId){
+        const targetPath = normalizePath(rootTarget.path);
+        const facet = (registryFacets.roots || []).find(item =>
+            [item.id, ...(item.aliases || [])].map(String).includes(allowedRootId) ||
+            (targetPath && normalizePath(item.path) === targetPath));
+        sourceId = [facet?.id, ...(facet?.aliases || [])].map(String)
+            .find(value => /^local_extra_[a-z0-9]+(?:_[a-z0-9]+)?$/i.test(value)) || '';
+    }
+    return allowedRootId ? {allowedRootId, sourceId} : null;
+}
+function confirmResourceFolderPurge(rootTarget, firstConfirmationSatisfied=false){
+    const label = rootTarget.name || rootTarget.path || '资源文件夹';
+    const first = firstConfirmationSatisfied || window.confirm(`清除“${label}”的索引与缓存？此操作不可恢复，且不会删除源文件。`);
+    return first && window.confirm(`最后确认：清除“${label}”的索引与缓存，不会删除其中的任何源文件。`);
+}
+async function executeResourceFolderAction(rootTarget, action, options = {}){
+    if(!['remove', 'purge'].includes(action)) return {status:'invalid-action'};
+    const identity = resolveResourceFolderIdentity(rootTarget);
+    if(!identity){
+        const error = new Error('无法识别资源文件夹身份，请刷新清单后重试');
+        setStatus(error.message);
+        showAssetOrganizeToast(error.message);
+        return {status:'invalid-target', error};
+    }
+    if(!canManageAllowedRoots()) return {status:'forbidden'};
+    if(resourceFolderActionBusy) return {status:'busy'};
+    const token = ++resourceFolderActionSeq;
+    resourceFolderActionBusy = token;
+    const current = () => resourceFolderActionBusy === token && resourceFolderActionSeq === token;
+    try {
+        const confirmed = action === 'remove'
+            ? window.confirm(`将“${rootTarget.name || rootTarget.path || '资源文件夹'}”移出资源库？此操作不会删除源文件。`)
+            : confirmResourceFolderPurge(rootTarget, Boolean(options.firstConfirmationSatisfied));
+        if(!confirmed){
+            if(resourceFolderActionBusy === token) resourceFolderActionBusy = '';
+            return {status:'cancelled'};
+        }
+        if(!current()) return {status:'stale'};
+        if(action === 'remove'){
+            if(identity.sourceId && !resourceFolderUnregisteredSources.has(identity.sourceId)){
+                const removed = await removeAssetSourceRegistrations([identity.sourceId], {deferViewCleanup:true});
+                if(!removed?.has(identity.sourceId)) throw new Error('素材来源未移除，请刷新后重试');
+                resourceFolderUnregisteredSources.add(identity.sourceId);
+            }
+            if(!current()) return {status:'stale'};
+            const result = await saveAllowedRootRemoval(identity.allowedRootId, {throwOnError:true});
+            if(!current()) return {status:'stale'};
+            if(identity.sourceId) resourceFolderUnregisteredSources.delete(identity.sourceId);
+            removeResourceFolderViewState(rootTarget, identity);
+            setStatus('资源文件夹已移出资源库');
+            return {status:'removed', result};
+        }
+        const result = await saveAllowedRootPurge(identity.allowedRootId, {throwOnError:true});
+        if(!current()) return {status:'stale'};
+        removeResourceFolderViewState(rootTarget, identity);
+        setStatus('资源文件夹索引已清除');
+        return {status:'purged', result};
+    } catch(error){
+        if(current()){
+            setStatus(error?.message || '资源文件夹操作失败');
+            showAssetOrganizeToast(error?.message || '资源文件夹操作失败');
+        }
+        return {status:current() ? 'failed' : 'stale', error};
+    } finally {
+        if(resourceFolderActionBusy === token) resourceFolderActionBusy = '';
+    }
+}
+function removeResourceFolderViewState(rootTarget, identity){
+    registryAssetsQueryCache.clear();
+    const ids = new Set([identity.allowedRootId, identity.sourceId].filter(Boolean));
+    registryFacets.roots = (registryFacets.roots || []).filter(root =>
+        ![root.id, ...(root.aliases || [])].some(id => ids.has(String(id || ''))));
+    setRegistryAssets(registryAssets.filter(item => !ids.has(String(item.storage_root_id || ''))));
+    if(registryStatus?.overview?.roots){
+        registryStatus.overview.roots = registryStatus.overview.roots.filter(root => !ids.has(String(root.id || '')));
+    }
+    const rootKeys = [identity.allowedRootId, identity.sourceId, rootTarget.rootId].filter(Boolean).map(String);
+    if(rootTarget.key) assetTreeExpanded.delete(rootTarget.key);
+    rootKeys.forEach(rootId => assetTreeExpanded.delete(`mine:root:${rootId}::__root__`));
+    const selectedWithinRoot = rootKeys.some(rootId => String(assetTreeSelectedKey || '').startsWith(`mine:root:${rootId}`));
+    if(activeTab === `source_library_${identity.sourceId}` || selectedWithinRoot){
+        resourceFolderInternalViewSwitch = true;
+        try { setActiveTab('registry'); }
+        finally { resourceFolderInternalViewSwitch = false; }
+        setAssetTreeSelectedKey('');
+    }
+    void refreshRegistryFacetData();
+    void refreshRegistryAssets();
+    render();
 }
 async function removeGeneratedSourceBoard(rootId, name='素材库'){
     const sourceId = String(rootId || '').trim();
@@ -1871,20 +1979,20 @@ function setAssetOrganizeDialogError(text=''){
 function openAssetOrganizeCreateDialog(target, presetRootId=''){
     const rootId = String(presetRootId || target?.rootId || assetOrganizeDefaultRootId() || '');
     if(!assetOrganizeWritableRoot(rootId)){
-        showAssetOrganizeToast('没有可写入的挂载文件夹');
+        showAssetOrganizeToast('没有可写入的资源文件夹');
         return;
     }
     const parentPath = target ? String(target.path || '') : '';
     const locationLabel = parentPath
-        ? `${assetRackRoots().find(root => String(root.id || '') === rootId)?.name || '挂载文件夹'} / ${parentPath}`
-        : `${assetRackRoots().find(root => String(root.id || '') === rootId)?.name || '挂载文件夹'} / 根目录`;
+        ? `${assetRackRoots().find(root => String(root.id || '') === rootId)?.name || '资源文件夹'} / ${parentPath}`
+        : `${assetRackRoots().find(root => String(root.id || '') === rootId)?.name || '资源文件夹'} / 根目录`;
     openAssetOrganizeDialog({kind:'create', rootId, parentPath, locationLabel, value:'新文件夹'});
 }
 async function assetOrganizeCreateFolder(state, rawName){
     const name = assetOrganizeValidateFolderName(rawName);
     const relPath = state.parentPath ? `${state.parentPath}/${name}` : name;
     const abs = assetOrganizeAbsPath(state.rootId, relPath);
-    if(!abs) throw new Error('挂载路径不可用，无法新建文件夹');
+    if(!abs) throw new Error('资源文件夹路径不可用，无法新建文件夹');
     const data = await assetOrganizeRequest('/api/local-assets/folders', {path:abs, root_id:state.rootId});
     assetOrganizePushUndo(data, `新建 ${name}`, state.rootId);
     setAssetTreeSelectedKey(`mine:root:${state.rootId}::${relPath}`);
@@ -2002,8 +2110,8 @@ async function dropAssetOrganize(event){
 async function assetOrganizeMoveFolder(drag, destRootId, destPath){
     // destPath 是本层移动后的最终路径（含自身名字），与 folders/move 的 target 语义一致
     if(drag.rootId !== destRootId){
-        showAssetOrganizeToast('仅支持在同一挂载文件夹内移动');
-        setStatus('仅支持在同一挂载文件夹内移动');
+        showAssetOrganizeToast('仅支持在同一资源文件夹内移动');
+        setStatus('仅支持在同一资源文件夹内移动');
         return;
     }
     if(destPath === drag.path){
@@ -2036,11 +2144,11 @@ async function assetOrganizeMoveOne(assetId, item, destRootId, destPath){
     const sourceRoot = String(item?.storage_root_id || '');
     const rel = String(item?.canonical_relpath || item?.relative_path || '').replace(/\\/g, '/').replace(/^\/+|\/+$/g, '');
     if(!sourceRoot || !rel) return {status:'failed', reason:'素材缺少真实磁盘路径'};
-    if(sourceRoot !== destRootId) return {status:'failed', reason:'仅支持在同一挂载文件夹内移动'};
+    if(sourceRoot !== destRootId) return {status:'failed', reason:'仅支持在同一资源文件夹内移动'};
     if(assetOrganizeParentPath(rel) === destPath) return {status:'unchanged'};
     const sourceAbs = assetOrganizeAbsPath(sourceRoot, rel);
     const targetAbs = assetOrganizeAbsPath(destRootId, destPath);
-    if(!sourceAbs || !targetAbs) return {status:'failed', reason:'挂载路径不可用'};
+    if(!sourceAbs || !targetAbs) return {status:'failed', reason:'资源文件夹路径不可用'};
     const move = async extra => assetOrganizeRequest('/api/local-assets/move', {
         source:sourceAbs,
         target:targetAbs,
@@ -2098,6 +2206,13 @@ async function assetOrganizeMoveAssets(assetIds=[], destRootId='', destPath=''){
 async function handleAssetOrganizeOverlayClick(event){
     const target = event.target;
     if(!target?.closest?.('#assetOrganizeMenu, #assetOrganizeDialog, #assetOrganizeToast')) return false;
+    if(target.closest('[data-asset-organize-remove-root]') || target.closest('[data-asset-organize-purge-root]')){
+        const current = assetOrganizeMenu;
+        const action = target.closest('[data-asset-organize-remove-root]') ? 'remove' : 'purge';
+        closeAssetOrganizeMenu();
+        if(current?.isRoot) await executeResourceFolderAction(current, action);
+        return true;
+    }
     if(target.closest('[data-asset-organize-undo-now]')){ document.getElementById('assetOrganizeToast')?.remove(); await assetOrganizeUndoLast(); return true; }
     if(target.closest('[data-asset-organize-new]')){ const current = assetOrganizeMenu; closeAssetOrganizeMenu(); openAssetOrganizeCreateDialog(current); return true; }
     if(target.closest('[data-asset-organize-rename]')){ const current = assetOrganizeMenu; closeAssetOrganizeMenu(); if(current && !current.isRoot) beginAssetOrganizeRename(current); return true; }
@@ -3216,6 +3331,8 @@ GW_DEFERRED['organize'] = {
     assetOrganizeMoveAssets,
     assetOrganizeMoveFolder,
     assetOrganizePushUndo,
+    executeResourceFolderAction,
+    invalidateResourceFolderAction,
     assetOrganizeRefresh,
     beginAssetOrganizeRename,
     cancelAssetOrganizeRename,

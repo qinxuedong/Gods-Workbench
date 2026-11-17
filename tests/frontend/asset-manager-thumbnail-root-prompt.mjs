@@ -34,9 +34,9 @@ test('管理员确认后登记允许根并用原请求参数重试一次（AC4�
     assert.match(source, /'\/api\/storage-settings\/roots'/);
 });
 
-test('非管理员不展示添加按钮，只给允许根引导文案（AC6）', () => {
+test('非管理员不展示添加按钮，只给资源文件夹授权引导文案（AC6）', () => {
     assert.match(source, /canGrant:canManageAllowedRoots\(\)/);
-    assert.match(source, /请管理员在 设置 › 允许根 中登记该目录后重试。/);
+    assert.match(source, /请联系管理员授权该资源文件夹后重试。/);
 });
 
 test('取消分支不发起登记请求、不重试、不改写设置项（AC5）', () => {

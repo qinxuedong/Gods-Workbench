@@ -73,6 +73,7 @@ tests/frontend/qin-525-preview-cache-control.test.mjs
 tests/frontend/qin-525-preview-cache-merge.test.mjs
 tests/frontend/qin-526-recycle-bin-governance.test.mjs
 tests/frontend/qin-527-custom-library-rack.test.mjs
+
 tests/frontend/qin-530-asset-sidebar-redesign.test.mjs
 tests/frontend/qin-531-asset-topbar-cards.test.mjs
 tests/frontend/qin-533-asset-rack-folders-only.test.mjs
@@ -114,6 +115,7 @@ tests/frontend/qin-591-domain-gate.test.mjs
 tests/frontend/qin-593-desktop-auto-launch.test.mjs
 tests/frontend/qin-595-mounted-folder-empty-state.test.mjs
 tests/frontend/qin-596-resource-folder-add.test.mjs
+tests/frontend/qin-597-resource-folder-list.test.mjs
 tests/frontend/qin-602-asset-topbar-retention.test.mjs
 tests/frontend/qin-602-asset-view-harness.mjs
 tests/frontend/qin-603-asset-folder-switch-render.test.mjs

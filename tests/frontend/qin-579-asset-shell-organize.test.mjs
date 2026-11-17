@@ -51,6 +51,52 @@ test('AC2: 右键菜单提供新建/重命名/在系统中打开/删除，双击
   assert.match(manager, /assetOrganizeOpenFolderInSystem/);
 });
 
+test('QIN-597: shell 根菜单显示根动作并转发到共享资源文件夹入口', async () => {
+  const start = controller.indexOf('  function openShellOrganizeMenu(target, clientX, clientY) {');
+  const end = controller.indexOf('  function openShellCreateDialog(parentKey) {', start);
+  assert.ok(start >= 0 && end > start, 'shell organize menu function exists');
+  const source = controller.slice(start, end);
+  const calls = [];
+  const makeElement = () => ({
+    children: [], attributes: {}, listeners: {}, style: {},
+    setAttribute(name, value) { this.attributes[name] = value; },
+    addEventListener(name, listener) { this.listeners[name] = listener; },
+    appendChild(child) { this.children.push(child); },
+    remove() {},
+  });
+  const body = makeElement();
+  const document = {createElement:makeElement, getElementById:()=>null, body};
+  const window = {innerWidth:1200, innerHeight:800, lucide:{createIcons(){}}};
+  const bridge = {canManageResourceFolders:()=>true,executeResourceFolderAction:async (...args)=>{ calls.push(args); }};
+  const factory = new Function('document','window','closeShellOrganizeMenu','organizeBridge','openShellCreateDialog','beginShellRename','openShellDeleteDialog','showShellOrganizeToast', `${source}; return openShellOrganizeMenu;`);
+  const openMenu = factory(document, window, ()=>{}, ()=>bridge, ()=>{}, ()=>{}, ()=>{}, ()=>{});
+
+  const root = {isRoot:true,key:'mine:root:root_0123456789abcdef01234567',rootId:'root_0123456789abcdef01234567',id:'local_extra_test',aliases:['root_0123456789abcdef01234567'],name:'Film'};
+  openMenu(root, 20, 30);
+  const rootMenu = body.children.at(-1);
+  const remove = rootMenu.children.find(button=>Object.hasOwn(button.attributes,'data-asset-organize-remove-root'));
+  const purge = rootMenu.children.find(button=>Object.hasOwn(button.attributes,'data-asset-organize-purge-root'));
+  assert.ok(remove && purge, 'root actions are present only in the root menu');
+  assert.ok(!remove.disabled && !purge.disabled, 'admin can use root actions');
+  await remove.listeners.click({stopPropagation(){}});
+  await purge.listeners.click({stopPropagation(){}});
+  assert.deepEqual(calls, [[root,'remove'],[root,'purge']]);
+
+  openMenu({...root,isRoot:false}, 20, 30);
+  const childMenu = body.children.at(-1);
+  assert.equal(childMenu.children.some(button=>Object.hasOwn(button.attributes,'data-asset-organize-remove-root')), false);
+  assert.equal(childMenu.children.some(button=>Object.hasOwn(button.attributes,'data-asset-organize-purge-root')), false);
+  assert.ok(!childMenu.children.find(button=>Object.hasOwn(button.attributes,'data-asset-organize-delete')).disabled);
+
+  openMenu(root, 20, 30);
+  const readOnlyBridge = {canManageResourceFolders:()=>false,executeResourceFolderAction:async (...args)=>{ calls.push(args); }};
+  const readOnlyMenu = factory(document, window, ()=>{}, ()=>readOnlyBridge, ()=>{}, ()=>{}, ()=>{}, ()=>{});
+  readOnlyMenu(root, 20, 30);
+  const readOnlyButtons = body.children.at(-1).children.filter(button=>Object.hasOwn(button.attributes,'data-asset-organize-remove-root') || Object.hasOwn(button.attributes,'data-asset-organize-purge-root'));
+  assert.equal(readOnlyButtons.length, 2);
+  assert.ok(readOnlyButtons.every(button=>button.disabled), 'read-only users cannot invoke root actions');
+});
+
 test('AC3: 拖拽移动——文件夹拖拽落点判定与跨窗口素材卡片拖拽移动', () => {
   // 文件夹拖拽属性与落点样式
   assert.match(controller, /data-asset-tree-drag/);
@@ -97,8 +143,9 @@ test('AC5: 收集箱与自建看板不响应整理菜单', () => {
 
 test('AC6: 桥接对象 GWAssetOrganizeBridge 接口完整导出与清单登记', () => {
   assert.match(manager, /window\.GWAssetOrganizeBridge = Object\.freeze\(\{/);
-  for (const method of ['toggleExpand', 'canOrganize', 'getTarget', 'openInSystem', 'createFolder', 'commitRename', 'deleteFolder', 'moveFolder', 'moveAssets', 'undoLast']) {
+  for (const method of ['toggleExpand', 'canOrganize', 'getTarget', 'executeResourceFolderAction', 'openInSystem', 'createFolder', 'commitRename', 'deleteFolder', 'moveFolder', 'moveAssets', 'undoLast']) {
     assert.match(manager, new RegExp(`${method}:`));
   }
+  assert.match(manager, /executeResourceFolderAction: \(rootTarget, action\) => gwCall\('organize', 'executeResourceFolderAction', rootTarget, action, \{source:'sidebar'\}\)/);
   assert.ok(manifest.includes('tests/frontend/qin-579-asset-shell-organize.test.mjs'), '测试需登记在 node-files.txt');
 });
