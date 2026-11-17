@@ -751,6 +751,296 @@
       stylesheet.addEventListener('error', appendOmnibarScript, {once: true});
     }
   }
+  /* ============================ QIN-612 全站顶栏操作/提示信息栏 ============================ *
+   * 单一写入入口 GWTopbarStatus：各页不再各自维护中条文案。
+   * - 状态机（代际 / TTL / 进行中保持 / 回空闲 / danger 配色）为纯逻辑，注入宿主即可测；
+   * - DOM 绑定（宽度计算、超长滚动、role=status 节点写入）集中在 bindTopbarStatus；
+   * - 不落盘、不跨页、不改任何业务写协议。
+   * ========================================================================================== */
+  const GW_TOPBAR_MIN_WIDTH = 258; // QIN-612 AC4：改前 assets 中条（含左右箭头）实测 257.578125px，向上取整，不得改窄
+  const GW_TOPBAR_MIN_STATUS_WIDTH = 96; // 状态文案最小可视宽：低于此值先收起页名，禁止把文案挤成 0 宽
+  const GW_TOPBAR_TTL = 4000;      // 完成/普通提示约 4s 回空闲
+  // QIN-612 AC6/AC8：全站统一的状态文案分类规则，供各业务调用方复用。
+  // 转后台且不再由前台轮询收尾的提示维持 done（4s 后回空闲），避免永驻顶栏。
+  const GW_TOPBAR_DETACHED_NOTICE_RE = /^(?:已转入后台|已开始缓存|AI 智能分类已启动)|可稍后刷新查看|可前往任务中心查看|请稍后再切换/;
+  const GW_TOPBAR_PROGRESS_RE = /^(?:加载中|读取中|初始化中|准备中)(?:\.{3}|…)?$|正在|等待扫描|等待.+通过|正在写入索引|排队中|执行中|后台生成中|仍在审核中/;
+  const GW_TOPBAR_DANGER_RE = /删除|移出|回收站|清除索引|清空|解除|已删|失败|错误|冲突|无权|权限不足|只读|暂不可用|未通过/;
+
+  function classifyTopbarStatus(message, options = {}) {
+    const text = String(message == null ? '' : message).trim();
+    const idleText = (typeof options.idleText === 'string' && options.idleText)
+      ? options.idleText
+      : (topbarEngine ? topbarEngine.snapshot().idleText : '准备就绪');
+    let phase = (options.phase === 'progress' || options.phase === 'done' || options.phase === 'idle')
+      ? options.phase
+      : '';
+    if (!phase) {
+      if (!text || text === idleText || text === '准备就绪') {
+        phase = 'idle';
+      } else if (GW_TOPBAR_DETACHED_NOTICE_RE.test(text)) {
+        phase = 'done';
+      } else if (GW_TOPBAR_PROGRESS_RE.test(text)) {
+        phase = 'progress';
+      } else {
+        phase = 'done';
+      }
+    }
+    const tone = (options.tone === 'danger' || options.tone === 'info')
+      ? options.tone
+      : (phase === 'progress' ? 'info' : (GW_TOPBAR_DANGER_RE.test(text) ? 'danger' : 'info'));
+    return {phase, tone};
+  }
+
+  function createTopbarStatusEngine(host) {
+    const timers = host.timers || {
+      setTimeout: (fn, ms) => setTimeout(fn, ms),
+      clearTimeout: id => clearTimeout(id)
+    };
+    let generation = 0;          // 单调代际，新消息 +1
+    let phase = 'idle';          // idle | progress | done
+    let tone = 'info';           // info | danger
+    let idleText = '准备就绪';
+    let text = idleText;         // 空闲态默认即为 idleText，未 configure 也不空白（AC1）
+    let idleTimer = null;
+    let scrolling = false;
+    let scrollEndAt = 0;
+
+    function cancelIdleTimer() {
+      if (idleTimer !== null) { timers.clearTimeout(idleTimer); idleTimer = null; }
+    }
+    function scheduleBackToIdle(token) {
+      cancelIdleTimer();
+      idleTimer = timers.setTimeout(() => {
+        idleTimer = null;
+        if (token !== generation) return; // 乱序：只采用最新代际
+        const delay = scrolling ? Math.max(0, scrollEndAt - (host.now ? host.now() : Date.now())) : 0;
+        if (delay > 0) {
+          idleTimer = timers.setTimeout(() => {
+            idleTimer = null;
+            if (token !== generation) return;
+            toIdle();
+          }, delay);
+        } else {
+          toIdle();
+        }
+      }, GW_TOPBAR_TTL);
+    }
+    function toIdle() {
+      cancelIdleTimer();
+      generation += 1;
+      phase = 'idle';
+      tone = 'info';
+      text = idleText;
+      scrolling = false;
+      scrollEndAt = 0;
+      host.render && host.render(snapshot());
+    }
+    function snapshot() {
+      return {
+        generation, phase, tone, text, idleText, scrolling,
+        scrollEndAt, ttl: GW_TOPBAR_TTL, minWidth: GW_TOPBAR_MIN_WIDTH
+      };
+    }
+    function configure(options = {}) {
+      if (typeof options.idleText === 'string' && options.idleText.length) idleText = options.idleText;
+      if (phase === 'idle') text = idleText;
+      host.render && host.render(snapshot());
+      return snapshot();
+    }
+    function announce(message, options = {}) {
+      cancelIdleTimer();
+      generation += 1;
+      const nextTone = options.tone === 'danger' ? 'danger' : 'info';
+      const nextPhase = options.phase === 'progress' ? 'progress' : 'done';
+      phase = nextPhase;
+      tone = nextTone;
+      text = String(message == null ? '' : message);
+      scrolling = Boolean(options.scrolling);
+      scrollEndAt = scrolling ? Number(options.scrollEndAt || 0) : 0;
+      const token = generation;
+      host.render && host.render(snapshot());
+      // 进行中提示挂到结束，不自动回空闲；完成/普通提示 ~4s 后回空闲（滚动则等滚完）。
+      if (phase === 'done') scheduleBackToIdle(token);
+      return token;
+    }
+    function settle(token, message, options = {}) {
+      if (token !== generation) return false; // 被替换的进行中操作，结束文案丢弃
+      return announce(message, options);
+    }
+    function notifyScrolling(isScrolling, durationMs) {
+      // 渲染层测得超长后回调：只是更新滚动标记与结束时刻，
+      // 真正的「等滚完再回空闲」由 scheduleBackToIdle 在 TTL 到点时读取这两个值完成。
+      scrolling = Boolean(isScrolling);
+      scrollEndAt = scrolling ? (host.now ? host.now() : Date.now()) + Math.max(0, Number(durationMs) || 0) : 0;
+    }
+    function clear() {
+      cancelIdleTimer();
+      generation += 1;
+      phase = 'idle';
+      tone = 'info';
+      text = idleText;
+      scrolling = false;
+      scrollEndAt = 0;
+      host.render && host.render(snapshot());
+    }
+    return Object.freeze({configure, announce, settle, clear, notifyScrolling, snapshot});
+  }
+
+  let topbarEngine = null;
+  let topbarBarNodes = [];
+
+  function topbarStatusNodes(doc = document) {
+    const nodes = [...doc.querySelectorAll('[data-gw-topbar-status]')];
+    return nodes;
+  }
+  function topbarClusters(doc = document) {
+    // 以中条 slot 的父 flex 为基准取左右簇，兼容各页上层容器类不同的情况。
+    const slot = doc.querySelector('.gw-topbar-msg-slot');
+    const upper = slot?.parentElement || doc.querySelector('.topbar-master-deck .master-deck-upper');
+    if (!upper || !upper.children) return {left: null, right: null};
+    const cols = [...upper.children].filter(node => node.nodeType === 1);
+    const slotIdx = cols.indexOf(slot);
+    return {
+      left: slotIdx > 0 ? cols[slotIdx - 1] : cols[0] || null,
+      right: slotIdx >= 0 && slotIdx < cols.length - 1 ? cols[slotIdx + 1] : null
+    };
+  }
+  function topbarMeasureWidths(bar, doc = document) {
+    if (!bar || !bar.getBoundingClientRect) return {available: 0, wide: false};
+    const rect = bar.getBoundingClientRect();
+    const {left: leftCluster, right: rightCluster} = topbarClusters(doc);
+    const left = leftCluster?.getBoundingClientRect?.();
+    const right = rightCluster?.getBoundingClientRect?.();
+    const header = bar.closest?.('.topbar-master-deck') || doc.querySelector('.topbar-master-deck');
+    const slot = bar.closest?.('.gw-topbar-msg-slot');
+    const headerRect = header?.getBoundingClientRect?.();
+    const slotRect = slot?.getBoundingClientRect?.();
+    // 左右簇之间、且落在 header 可视区内的真实空隙；右簇在窄屏被挤出视口时，
+    // 不能拿不可见的右簇左缘当上限，否则中条跟着跑出 header（AC11）。
+    const safeLeft = headerRect ? headerRect.left + 1 : 0;
+    const safeRight = headerRect ? headerRect.right - 1 : (window.innerWidth || 0);
+    const gapLeft = Math.max(left ? left.right : safeLeft, safeLeft);
+    // slot 与左簇之间还有 flex gap/margin；不扣掉它，写回 max-width 后仍会越界几个像素。
+    const leftInset = slotRect ? Math.max(0, Math.floor(slotRect.left - gapLeft)) : 0;
+    const slotLeft = gapLeft + leftInset;
+    // 右簇若已放不下「最短中条 + 两侧间隙」，就让它沿 header 滚动区退到视口外，
+    // 中条改用 header 可视右缘为上限；否则仍以右簇左缘为上限，不压右侧仪表。
+    const rightWidth = right ? right.width : 0;
+    const rightFits = rightWidth > 0 && rightWidth <= safeRight - slotLeft - 4 - GW_TOPBAR_MIN_WIDTH - 4;
+    const rightGap = rightFits ? leftInset : 4;
+    const gapRight = rightFits ? Math.min(right.left, safeRight) : safeRight;
+    const available = Math.max(0, Math.floor(gapRight - slotLeft - rightGap));
+    return {available, wide: available >= GW_TOPBAR_MIN_WIDTH, rect, gapLeft, gapRight, headerRect, leftInset, rightFits};
+  }
+  // 把可用空隙写成 slot 的 max-width：父链 min-width:max-content 会让 100% 失效，
+  // 必须有基于左右簇实测间隙的硬上限，超长时状态节点才会 overflow 并触发滚动。
+  // 空隙小于实测最短宽时走窄屏退让：中条不压仪表、不越 header，文案滚动（AC5 窄屏例外）。
+  function topbarApplyWidths() {
+    for (const node of topbarBarNodes) {
+      const slot = node.closest?.('.gw-topbar-msg-slot') || node.parentElement?.parentElement;
+      const bar = node.closest?.('.gw-topbar-msg-bar') || node.parentElement;
+      if (!slot || !bar) continue;
+      // 极窄屏下左簇若把空隙吃光（agents 页多一枚状态徽章时只剩 11px），
+      // 先让非仪表徽章退位再量一次，确保状态文案始终有可视宽；CPU/RAM 仪表不动。
+      const header = bar.closest?.('.topbar-master-deck');
+      header?.classList.remove('is-topbar-starved');
+      let measure = topbarMeasureWidths(bar);
+      if (measure.available < GW_TOPBAR_MIN_STATUS_WIDTH && header) {
+        header.classList.add('is-topbar-starved');
+        measure = topbarMeasureWidths(bar);
+      }
+      const {available, wide} = measure;
+      // slot 是 flex item：父链 min-width:max-content + 兄弟 shrink-0 会把它压到几个像素，
+      // 而 bar 的最小宽又让它溢出 slot（复核实测 900/assets slot 7px / bar 258px）。
+      // 因此无论宽窄都显式定宽，bar 用 fit-content 在 slot 内随文伸缩。
+      slot.style.maxWidth = `${available}px`;
+      slot.style.width = `${available}px`;
+      slot.classList.toggle('is-narrow', !wide);
+      bar.classList.toggle('is-narrow', !wide);
+      // 页名 shrink-0 曾把状态节点挤到 0 宽，长文案既不可见也不滚动；
+      // 空间不足时先收起页名与分隔线，把余量全部留给状态文案。
+      bar.classList.remove('is-compact');
+      if (node.clientWidth < GW_TOPBAR_MIN_STATUS_WIDTH) bar.classList.add('is-compact');
+    }
+  }
+  function topbarRender(state) {
+    let overflowSeen = false;
+    let scrollEndAt = 0;
+    let scrollDuration = 0;
+    for (const node of topbarBarNodes) {
+      if (!node || !node.nodeType) continue;
+      // 某些页（index/settings）的同一节点被硬件遥测写 textContent，会清掉 runner。
+      // render 时确保 runner 存在且只由统一入口持有文案，避免两套写入互相覆盖。
+      let runner = node.querySelector?.('[data-gw-topbar-runner]');
+      if (!runner && node.ownerDocument?.createElement) {
+        runner = node.ownerDocument.createElement('span');
+        runner.setAttribute('data-gw-topbar-runner', '');
+        node.textContent = '';
+        node.appendChild(runner);
+      } else if (!runner) {
+        runner = node;
+      }
+      if (runner.textContent !== state.text) runner.textContent = state.text;
+      // 文案变长后重新判定页名是否该收起，避免状态节点被挤到 0 宽而失去滚动视口。
+      const bar = node.closest?.('.gw-topbar-msg-bar');
+      if (bar) {
+        bar.classList.remove('is-compact');
+        if (node.clientWidth < GW_TOPBAR_MIN_STATUS_WIDTH) bar.classList.add('is-compact');
+      }
+      node.classList.toggle('is-danger', state.tone === 'danger');
+      node.setAttribute('aria-busy', state.phase === 'progress' ? 'true' : 'false');
+      node.dataset.gwTopbarPhase = state.phase;
+      // AC5：超长文字从右向左滚动，滚动周期不用省略号代替。
+      // viewport（节点本身）定宽，runner 承载完整文案，位移 = 文本宽 - 可视宽。
+      const viewportWidth = node.clientWidth || 0;
+      const contentWidth = runner.scrollWidth || 0;
+      const overflow = viewportWidth > 0 && contentWidth > viewportWidth + 1;
+      if (overflow && !node.dataset.gwTopbarNoScroll) {
+        const distance = contentWidth - viewportWidth;
+        // 速度约 60px/s，留 0.6s 首尾停顿；duration 单位秒。
+        const duration = Math.max(4, Math.round((distance / 60 + 1.2) * 10) / 10);
+        node.dataset.gwTopbarScrolling = '1';
+        node.style.setProperty('--gw-topbar-scroll-distance', `${distance}px`);
+        node.style.setProperty('--gw-topbar-scroll-duration', `${duration}s`);
+        overflowSeen = true;
+        scrollEndAt = Math.max(scrollEndAt, Date.now() + duration * 1000);
+        scrollDuration = Math.max(scrollDuration, duration * 1000);
+      } else {
+        delete node.dataset.gwTopbarScrolling;
+        node.style.removeProperty('--gw-topbar-scroll-distance');
+        node.style.removeProperty('--gw-topbar-scroll-duration');
+      }
+    }
+    if (topbarEngine) topbarEngine.notifyScrolling(overflowSeen, overflowSeen ? scrollDuration : 0);
+  }
+  function bindTopbarStatus(doc = document) {
+    const nodes = topbarStatusNodes(doc);
+    if (!nodes.length) return null;
+    topbarBarNodes = nodes;
+    const previous = topbarEngine ? topbarEngine.snapshot() : null;
+    topbarEngine = topbarEngine || createTopbarStatusEngine({
+      render: topbarRender,
+      now: () => Date.now()
+    });
+    const idle = nodes[0].getAttribute('data-gw-idle-text');
+    if (idle) topbarEngine.configure({idleText: idle});
+    else if (previous) topbarEngine.configure({idleText: previous.idleText});
+    topbarApplyWidths();
+    topbarRender(topbarEngine.snapshot());
+    return topbarEngine;
+  }
+  window.GWTopbarStatus = Object.freeze({
+    createEngine: createTopbarStatusEngine,
+    bind: bindTopbarStatus,
+    classify: classifyTopbarStatus,
+    measureWidths: topbarMeasureWidths,
+    announce(message, options) { return topbarEngine ? topbarEngine.announce(message, options) : null; },
+    settle(token, message, options) { return topbarEngine ? topbarEngine.settle(token, message, options) : false; },
+    clear() { return topbarEngine ? topbarEngine.clear() : undefined; },
+    snapshot() { return topbarEngine ? topbarEngine.snapshot() : null; },
+    CONSTANTS: Object.freeze({MIN_WIDTH: GW_TOPBAR_MIN_WIDTH, TTL: GW_TOPBAR_TTL})
+  });
+
   function init() {
     seedInitialRouteScripts();
     loadWorkbenchShortcuts();
@@ -758,6 +1048,14 @@
     standardRightDeck();
     bindComfyControl();
     injectTrash();
+    bindTopbarStatus(document);
+    if (!window.__gwTopbarResizeBound) {
+      window.__gwTopbarResizeBound = true;
+      window.addEventListener('resize', () => {
+        topbarApplyWidths();
+        if (topbarEngine) topbarRender(topbarEngine.snapshot());
+      });
+    }
     syncNavPills(location.href);
   }
   function shellWorkspace() { return targetWorkspace(document); }
@@ -922,6 +1220,9 @@
       await runRouteScripts(doc);
       refreshRouteController(url.href);
       syncNavPills(url.href);
+      // QIN-612：切页后重新绑定中条并回到目标页空闲文案，提示不跨页持久化。
+      if (topbarEngine) topbarEngine.clear();
+      bindTopbarStatus(document);
       window.dispatchEvent(new CustomEvent('gw:route-loaded', { detail: { href: url.href } }));
       if (window.lucide?.createIcons) window.lucide.createIcons();
       rememberLastVisitedPage(url.href);

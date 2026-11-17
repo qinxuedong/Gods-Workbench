@@ -54,6 +54,105 @@
 /* ========================================================================= */
 /* GW-UI-SHELL-01: Workbench shell geometry. Keep nav controls stable while
    route content changes; page-specific markup may only change active state. */
+/* ===== QIN-612 全站顶栏操作/提示信息栏 =====
+   黑底圆角 + 金色脉冲点 + 页名 + 分隔线 + 状态文案；超长文字从右向左滚动，不用省略号。 */
+.topbar-master-deck .gw-topbar-msg-slot {
+  min-width: 0;
+  flex: 0 1 auto;
+  max-width: 100%;
+}
+.topbar-master-deck .gw-topbar-msg-bar {
+  min-width: var(--gw-topbar-min-width, 258px) !important; /* AC4：实测改前 assets 中条含箭头 257.578125px，向上取整不得改窄 */
+  max-width: 100%;
+  box-sizing: border-box;
+  width: fit-content;
+}
+/* 页名允许收缩：原 markup 的 shrink-0 会在空间不足时把状态节点挤到 0 宽，
+   长文案既看不见也滚不动（审核复核 18 个样例）。状态节点自身不用省略号。 */
+.topbar-master-deck [data-gw-topbar-title] {
+  min-width: 0 !important;
+  flex: 0 1 auto !important;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.topbar-master-deck [data-gw-topbar-status] {
+  position: relative;
+  flex: 1 1 auto;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: clip !important; /* AC5：超长用滚动，不用省略号代替 */
+  white-space: nowrap;
+  color: var(--gold-light);
+  line-height: 1.4;
+}
+.topbar-master-deck [data-gw-topbar-status] [data-gw-topbar-runner] {
+  display: inline-block;
+  white-space: nowrap;
+  will-change: transform;
+}
+.topbar-master-deck [data-gw-topbar-status].is-danger { color: var(--gw-error) !important; }
+.topbar-master-deck [data-gw-topbar-status][data-gw-topbar-scrolling="1"] [data-gw-topbar-runner] {
+  animation: gw-topbar-marquee var(--gw-topbar-scroll-duration, 8s) linear infinite;
+}
+@keyframes gw-topbar-marquee {
+  0%, 8% { transform: translateX(0); }
+  92%, 100% { transform: translateX(calc(-1 * var(--gw-topbar-scroll-distance, 0px))); }
+}
+/* 极窄屏且左簇吃满空隙时，让非仪表的状态徽章退位给中条（不遮挡 CPU/RAM 仪表）。 */
+.topbar-master-deck.is-topbar-starved [data-gw-topbar-yield="narrow"] {
+  display: none !important;
+}
+/* 空间不足以容纳最小可视状态时收起页名与分隔线，保留脉冲点 + 可滚动文案。 */
+.topbar-master-deck .gw-topbar-msg-bar.is-compact [data-gw-topbar-title],
+.topbar-master-deck .gw-topbar-msg-bar.is-compact [data-gw-topbar-divider] {
+  display: none !important;
+}
+.topbar-master-deck .gw-topbar-msg-bar.is-compact [data-gw-topbar-status] {
+  margin-left: 0 !important;
+  flex: 1 1 auto !important;
+  min-width: 0;
+}
+@media (prefers-reduced-motion: reduce) {
+  .topbar-master-deck [data-gw-topbar-status][data-gw-topbar-scrolling="1"] [data-gw-topbar-runner] { animation-duration: 30s; }
+}
+/* AC5/AC11：窄屏空隙不足 258px 时，中条退让到实测空隙内；页名与分隔线收起，
+   保留脉冲点 + 状态文案滚动，避免挤压左右仪表或溢出 header 可视区。 */
+@media (max-width: 1320px) {
+  .topbar-master-deck > .master-deck-upper.flex { gap: 4px !important; }
+  .topbar-master-deck > .master-deck-upper.flex > .gw-topbar-msg-slot.is-narrow {
+    flex: 0 0 auto !important;
+  }
+  .topbar-master-deck .gw-topbar-msg-bar.is-narrow {
+    min-width: 0 !important;
+    padding-left: 2px !important;
+    padding-right: 2px !important;
+    overflow: hidden;
+  }
+  .topbar-master-deck .gw-topbar-msg-bar.is-narrow > div {
+    padding-left: 0 !important;
+    padding-right: 0 !important;
+    gap: 2px !important;
+    min-width: 0;
+  }
+  .topbar-master-deck .gw-topbar-msg-bar.is-narrow [data-gw-topbar-title],
+  .topbar-master-deck .gw-topbar-msg-bar.is-narrow [data-gw-topbar-divider] {
+    display: none !important;
+  }
+  .topbar-master-deck .gw-topbar-msg-bar.is-narrow [data-gw-topbar-status] {
+    margin-left: 0 !important;
+    min-width: 0;
+    flex: 1 1 auto;
+  }
+  .topbar-master-deck .gw-topbar-msg-bar.is-narrow > div > span:first-child {
+    width: 4px !important;
+    height: 4px !important;
+    flex: 0 0 4px !important;
+    margin-left: 0 !important;
+  }
+}
+
 .topbar-master-deck { min-height:116px !important; height:116px !important; }
 .topbar-master-deck .recessed-deck-slot { min-height:44px !important; height:44px !important; }
 .topbar-master-deck #navPillsGroup { gap:8px !important; align-items:center !important; }

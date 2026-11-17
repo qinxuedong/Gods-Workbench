@@ -29,8 +29,8 @@
   <style>
     #assetVaultStage { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
     #assetVaultFrame { flex: 1; width: 100%; min-height: 0; border: 0; background: #0a0b10; }
-    #assetVaultStatus { min-width: 0; margin: 0; padding: 0; overflow: hidden; color: #eddab3; font-size: var(--gw-type-body-sm); text-overflow: ellipsis; white-space: nowrap; }
-    .asset-shell-deck-status { flex: 0 0 auto; max-width: 150px; }
+    #assetVaultStatus { min-width: 0; margin: 0; padding: 0; overflow: hidden; color: #eddab3; font-size: var(--gw-type-body-sm); white-space: nowrap; }
+    .asset-shell-deck-status { flex: 1 1 auto; max-width: 100%; }
     /* QIN-566: restore shell sidebar CSS (from 11cc369c~1) */
     #assetCategories { position: relative; display: flex; flex-direction: column; gap: 0; }
     #assetCategories::before { content: ""; position: absolute; top: 8px; bottom: 16px; left: 14px; width: 1.5px; background: linear-gradient(to bottom,#dfc384,rgba(223,195,132,.4),transparent); pointer-events: none; }
@@ -334,16 +334,14 @@
         </div>
       </div>
 
-      <div class="flex items-center space-x-2 shrink-0">
-        <div class="flex items-center space-x-1.5 bg-[#07080b] px-3 py-1 rounded-lg border border-white/10 shadow-inner">
-          <button class="hw-btn hw-btn-icon transition"><i data-lucide="chevron-left" class="w-3.5 h-3.5"></i></button>
-          <div class="flex items-center space-x-2 px-1.5 min-w-0">
-            <span class="w-1.5 h-1.5 rounded-full bg-[#dfc384] shadow-[0_0_6px_#dfc384] animate-pulse"></span>
-            <span class="gw-type-body-sm font-mono font-bold text-[#eddab3]">ASSET VAULT</span>
-            <span class="h-4 w-px bg-white/15" aria-hidden="true"></span>
-            <p id="assetVaultStatus" role="status" aria-live="polite" class="asset-shell-deck-status">准备就绪</p>
+      <div class="flex items-center space-x-2 gw-topbar-msg-slot min-w-0">
+        <div class="flex items-center space-x-2 bg-[#07080b] px-3 py-1 rounded-lg border border-white/10 shadow-inner gw-topbar-msg-bar">
+          <div class="flex items-center space-x-2 px-1.5 min-w-0 w-full">
+            <span class="w-1.5 h-1.5 rounded-full bg-[#dfc384] shadow-[0_0_6px_#dfc384] animate-pulse shrink-0"></span>
+            <span class="gw-type-body-sm font-mono font-bold text-[#eddab3] shrink-0" data-gw-topbar-title>ASSET VAULT</span>
+            <span class="h-4 w-px bg-white/15 shrink-0" data-gw-topbar-divider aria-hidden="true"></span>
+            <p id="assetVaultStatus" role="status" aria-live="polite" class="asset-shell-deck-status" data-gw-topbar-status data-gw-idle-text="准备就绪"><span data-gw-topbar-runner>准备就绪</span></p>
           </div>
-          <button class="hw-btn hw-btn-icon transition"><i data-lucide="chevron-right" class="w-3.5 h-3.5"></i></button>
         </div>
       </div>
 
