@@ -1,0 +1,43 @@
+{
+  "schema": "gw.cleanroom-admission-shard/v1",
+  "issue": 748,
+  "authorization_basis": "GitHub Issue #748, 2026-11-18",
+  "files": [
+    "docs/contracts/ASSET-CONTENT-HASH-CONTRACT.md",
+    "gw/asset_registry/dedup_confirm.py",
+    "gw/asset_registry/governance.py",
+    "gw/asset_registry/index_jobs.py",
+    "gw/asset_registry/repository.py",
+    "gw/api/routes_asset_registry.py",
+    "gw/observability/service.py",
+    "web/js/modules/asset-manager/api.js",
+    "web/js/modules/asset-manager.js",
+    "web/js/modules/asset-manager/governance.js",
+    "web/js/modules/i18n/task-center.js",
+    "web/js/modules/task-center.js",
+    "web/css/pages/asset-manager.css",
+    "web/css/base/workspace-pages.css",
+    "web/css/base/signal-flow.css",
+    "tests/contracts/assets/test_qin_619_dedup_full_sha.py",
+    "tests/contracts/assets/test_mvp1_t5_governance.py",
+    "tests/contracts/projects/test_phase8_frontend_backend_api_gap.py",
+    "tests/frontend/qin-619-dedup-full-sha.test.mjs",
+    "tests/frontend/node-files.txt"
+  ],
+  "admitted_files": [],
+  "accepted_test_files": [
+    {
+      "path": "tests/contracts/assets/test_qin_619_dedup_full_sha.py",
+      "classification": "curated_test_coverage",
+      "authorization_basis": "GitHub Issue #748, 2026-11-18",
+      "admission": "accepted"
+    },
+    {
+      "path": "tests/frontend/qin-619-dedup-full-sha.test.mjs",
+      "classification": "curated_test_coverage",
+      "authorization_basis": "GitHub Issue #748, 2026-11-18",
+      "admission": "accepted"
+    }
+  ],
+  "notes": "QIN-619 (#748)：疑似重复素材按 size_bytes 筛候选后计算完整 SHA-256、限速并发控制、暂停/恢复断点与前后端协同验收。"
+}

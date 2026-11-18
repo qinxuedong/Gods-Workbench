@@ -159,13 +159,13 @@
     other: 'var(--asset-type-other, #7654b8)',
   });
   const canEdit = () => ['editor', 'admin', 'governor'].includes(String(window.__taskCenterPrincipal?.role || ''));
-  const LONG_TASK_KEYS = { import: 'taskCenter.longTaskImport', thumbnail: 'taskCenter.longTaskThumbnail', transcode: 'taskCenter.longTaskTranscode' };
-  const LONG_TASK_JOB_TYPES = Object.freeze(['asset.index', 'asset.ingest.legacy', 'asset.import', 'asset.thumbnail', 'asset.proxy', 'asset.transcode', 'video.transcode']);
-  const LONG_TASK_PATTERNS = [['thumbnail', /thumbnail|storyboard/i], ['transcode', /transcode|convert|proxy|ffmpeg/i], ['import', /import|ingest|index|scan|register/i]];
+  const LONG_TASK_KEYS = { import: 'taskCenter.longTaskImport', thumbnail: 'taskCenter.longTaskThumbnail', transcode: 'taskCenter.longTaskTranscode', dedup: 'taskCenter.longTaskDedup' };
+  const LONG_TASK_JOB_TYPES = Object.freeze(['asset.index', 'asset.dedup.confirm', 'asset.ingest.legacy', 'asset.import', 'asset.thumbnail', 'asset.proxy', 'asset.transcode', 'video.transcode']);
+  const LONG_TASK_PATTERNS = [['dedup', /dedup|full.?sha/i], ['thumbnail', /thumbnail|storyboard/i], ['transcode', /transcode|convert|proxy|ffmpeg/i], ['import', /import|ingest|index|scan|register/i]];
   const TASK_STALL_THRESHOLDS_MS = Object.freeze({queued: 30 * 60 * 1000, recovering: 15 * 60 * 1000});
   const TASK_HISTORY_THRESHOLD_MS = 24 * 60 * 60 * 1000;
   const LONG_TASK_STATUS_ORDER = Object.freeze({
-    running: 0, recovering: 0, cancel_requested: 0, queued: 1, pending: 1,
+    running: 0, recovering: 0, cancel_requested: 0, paused: 1, queued: 1, pending: 1,
     succeeded: 2, completed: 2, failed: 3, interrupted: 3, canceled: 4, cancelled: 4,
   });
   function longTaskKind(jobType) { const value = String(jobType || '').toLowerCase(); return (LONG_TASK_PATTERNS.find(([, pattern]) => pattern.test(value)) || [null])[0]; }
@@ -256,6 +256,7 @@
     [/generation\.workflow|workflow/i, ['执行工作流', 'Run workflow']],
     [/transcode|convert/i, ['转码视频', 'Transcode video']],
     [/thumbnail/i, ['生成缩略图', 'Generate thumbnail']],
+    [/asset\.dedup\.confirm/i, ['查重完整 SHA 确认', 'Confirm duplicate full SHA']],
     [/asset\.(?:index|ingest)|index|ingest/i, ['索引素材', 'Index assets']],
     [/asset\.(?:move|transfer)|file\.(?:move|transfer)/i, ['移动文件', 'Move file']],
     [/asset\.(?:archive)|file\.(?:archive)|archive/i, ['归档文件', 'Archive file']],
@@ -921,7 +922,8 @@
 
   function taskRow(item) {
     const task = persistentTask(item);
-    return `<tr><td class="task-title"><button class="task-detail-trigger" type="button" data-open-task="${esc(task.id)}" title="${esc(tr('taskCenter.openDetails'))}"><strong>${esc(task.summary || task.title)}</strong><span>${esc(task.source || tr('taskCenter.observabilitySource'))} · ${esc(task.id)}</span></button></td><td>${esc(tr(TYPE_KEYS[task.type] || 'taskCenter.system'))}</td><td>${renderTaskStatus(task)}</td><td>${renderTaskProgress(task)}</td><td>${esc(taskActivityText(task))}</td><td><button class="hw-btn hw-btn-sm" type="button" data-open-task="${esc(task.id)}">${esc(tr('taskCenter.openDetails'))}</button></td></tr>`;
+    const selected = Boolean(state.selectedJobId && state.selectedJobId === task.id);
+    return `<tr${selected ? ' class="is-selected"' : ''} data-job-row="${esc(task.id)}" aria-selected="${String(selected)}"><td class="task-title"><button class="task-detail-trigger" type="button" data-open-task="${esc(task.id)}" title="${esc(tr('taskCenter.openDetails'))}"><strong>${esc(task.summary || task.title)}</strong><span>${esc(task.source || tr('taskCenter.observabilitySource'))} · ${esc(task.id)}</span></button></td><td>${esc(tr(TYPE_KEYS[task.type] || 'taskCenter.system'))}</td><td>${renderTaskStatus(task)}</td><td>${renderTaskProgress(task)}</td><td>${esc(taskActivityText(task))}</td><td><button class="hw-btn hw-btn-sm" type="button" data-open-task="${esc(task.id)}">${esc(tr('taskCenter.openDetails'))}</button></td></tr>`;
   }
 
   function renderTasks() {
@@ -945,7 +947,7 @@
     const rows = tasks.slice(0, 12);
     if (!rows.length) { node.innerHTML = dataGap(state.longTasksError ? tr('taskCenter.longTasksUnavailable') : tr('taskCenter.noLongTasks')); return; }
     const hidden = Math.max(0, tasks.length - rows.length);
-    node.innerHTML = `<ol class="longtask-list">${rows.map(task => { const kind = longTaskKind(task.jobType); return `<li><div class="longtask-row"><button class="longtask-trigger" type="button" data-open-task="${esc(task.id)}"><span class="longtask-kind ${esc(kind)}">${esc(tr(LONG_TASK_KEYS[kind]))}</span><span class="longtask-status">${renderTaskStatus(task)}</span><span class="longtask-main"><strong>${esc(task.summary || task.title)}</strong><small>${esc(task.id)} · ${esc(taskActivityText(task))}</small></span></button>${renderTaskProgress(task)}</div></li>`; }).join('')}</ol>${hidden ? `<p class="longtask-more">${esc(trf('taskCenter.longTasksMore', {count: hidden}))}</p>` : ''}`;
+    node.innerHTML = `<ol class="longtask-list">${rows.map(task => { const kind = longTaskKind(task.jobType); const selected = Boolean(state.selectedJobId && state.selectedJobId === task.id); return `<li><div class="longtask-row${selected ? ' is-selected' : ''}" data-job-row="${esc(task.id)}" aria-selected="${String(selected)}"><button class="longtask-trigger" type="button" data-open-task="${esc(task.id)}"><span class="longtask-kind ${esc(kind)}">${esc(tr(LONG_TASK_KEYS[kind]))}</span><span class="longtask-status">${renderTaskStatus(task)}</span><span class="longtask-main"><strong>${esc(task.summary || task.title)}</strong><small>${esc(task.id)} · ${esc(taskActivityText(task))}</small></span></button>${renderTaskProgress(task)}</div></li>`; }).join('')}</ol>${hidden ? `<p class="longtask-more">${esc(trf('taskCenter.longTasksMore', {count: hidden}))}</p>` : ''}`;
   }
 
   function renderTaskStallAlerts() {
@@ -1060,6 +1062,7 @@
     const fallbackTrigger = [...document.querySelectorAll('[data-open-task]')].find(element => element.dataset.openTask === id);
     state.detailTrigger = trigger instanceof HTMLElement ? trigger : (fallbackTrigger || null);
     state.selectedJobId = id; state.jobId = id; state.detail = null; state.detailActions = {}; state.detailActionReasons = {}; state.detailError = ''; state.pendingAction = '';
+    renderLongTaskProgress(); renderTasks();
     syncUrl(); const dialog = q('#taskDetail'); if (!dialog.open) { dialog.showModal(); q('[data-close-task-detail]', dialog)?.focus(); }
     state.detailLoading = true; renderDetail();
     if (state.summaryOnly || ['reviewer'].includes(String(state.role || window.__taskCenterPrincipal?.role || ''))) {
@@ -1077,6 +1080,7 @@
     const trigger = state.detailTrigger;
     const fallback = selectedJobId ? [...document.querySelectorAll('[data-open-task]')].find(element => element.dataset.openTask === selectedJobId) : null;
     state.selectedJobId = ''; state.jobId = ''; state.detail = null; state.detailActions = {}; state.detailActionReasons = {}; state.pendingAction = ''; state.detailTrigger = null;
+    renderLongTaskProgress(); renderTasks();
     const dialog = q('#taskDetail'); if (dialog.open) dialog.close(); syncUrl();
     const restore = trigger?.isConnected ? trigger : fallback;
     if (restore && !restore.disabled && restore.getClientRects().length) restore.focus();
@@ -1136,7 +1140,7 @@
   async function load() {
     if (state.loading || !acquireDataRequest('refresh')) return;
     state.loading = true; state.assetVolumeLoading = true; state.longTaskLoading = true; state.loadError = ''; state.loadErrorKind = ''; state.assetVolumeError = ''; state.longTasksError = ''; state.stalledTasksError = ''; state.stalledTasksDataStatus = 'ok'; state.stalledTasks = []; state.assetVolumes = []; state.assetVolumeNextCursor = ''; state.assetVolumeHasMore = false; state.eventWindow = null; state.taskWindow = null; state.degraded = []; state.degradedKinds = []; state.permissionDenied = false; state.summaryOnly = state.role === 'reviewer'; render();
-    const eventQuery = observationQuery(state.eventId ? {limit: 1, event_id: state.eventId} : {limit: 50}, 'events'); if (EMBEDDED) eventQuery.set('source', 'agent_runtime'); const taskQuery = observationQuery(state.jobId ? {limit: 1, job_id: state.jobId} : {limit: 50}, 'tasks'); const assetVolumeQueryString = assetVolumeQuery(); const longRunningQuery = observationQuery({range: 'all', limit: '50', status: 'running', job_type: LONG_TASK_JOB_TYPES}, 'tasks'); const longQueuedQuery = observationQuery({range: 'all', limit: '50', status: 'queued', job_type: LONG_TASK_JOB_TYPES}, 'tasks'); const longSucceededQuery = observationQuery({range: 'all', limit: '50', status: 'succeeded', job_type: LONG_TASK_JOB_TYPES}, 'tasks'); const longFailedQuery = observationQuery({range: 'all', limit: '50', status: 'failed', job_type: LONG_TASK_JOB_TYPES}, 'tasks'); const longCanceledQuery = observationQuery({range: 'all', limit: '50', status: 'canceled', job_type: LONG_TASK_JOB_TYPES}, 'tasks'); const stalledQueuedQuery = observationQuery({range: 'all', limit: '100', stall_classification: ['queued', 'historical']}, 'tasks'); const stalledRecoveringQuery = observationQuery({range: 'all', limit: '100', stall_classification: ['recovering', 'historical']}, 'tasks');
+    const eventQuery = observationQuery(state.eventId ? {limit: 1, event_id: state.eventId} : {limit: 50}, 'events'); if (EMBEDDED) eventQuery.set('source', 'agent_runtime'); const taskQuery = observationQuery(state.jobId ? {limit: 1, job_id: state.jobId} : {limit: 50}, 'tasks'); const assetVolumeQueryString = assetVolumeQuery(); const longRunningQuery = observationQuery({range: 'all', limit: '50', status: 'running', job_type: LONG_TASK_JOB_TYPES}, 'tasks'); const longQueuedQuery = observationQuery({range: 'all', limit: '50', status: 'queued', job_type: LONG_TASK_JOB_TYPES}, 'tasks'); const longPausedQuery = observationQuery({range: 'all', limit: '50', status: 'paused', job_type: LONG_TASK_JOB_TYPES}, 'tasks'); const longSucceededQuery = observationQuery({range: 'all', limit: '50', status: 'succeeded', job_type: LONG_TASK_JOB_TYPES}, 'tasks'); const longFailedQuery = observationQuery({range: 'all', limit: '50', status: 'failed', job_type: LONG_TASK_JOB_TYPES}, 'tasks'); const longCanceledQuery = observationQuery({range: 'all', limit: '50', status: 'canceled', job_type: LONG_TASK_JOB_TYPES}, 'tasks'); const stalledQueuedQuery = observationQuery({range: 'all', limit: '100', stall_classification: ['queued', 'historical']}, 'tasks'); const stalledRecoveringQuery = observationQuery({range: 'all', limit: '100', stall_classification: ['recovering', 'historical']}, 'tasks');
     const failed = (result, label) => { if (result.status === 'rejected') { const itemKind = degradeKind(result.reason); if (itemKind) { pushDegraded(degradeLabel(result.reason, label), itemKind); } else if (isPermissionError(result.reason)) { if (['reviewer', 'editor'].includes(String(state.role || ''))) { if (state.role === 'reviewer') state.summaryOnly = true; const notice = state.role === 'reviewer' ? tr('taskCenter.summaryOnly') : tr('taskCenter.degradedData'); pushDegraded(`${label} · ${notice}`, ''); } else state.permissionDenied = true; } else pushDegraded(degradeLabel(result.reason, label), ''); } };
     if (EMBEDDED) {
       try {
@@ -1173,10 +1177,10 @@
       }
       return;
     }
-    [longRunningQuery, longQueuedQuery, longSucceededQuery, longFailedQuery, longCanceledQuery].forEach(query => ['stable_id', 'project_id', 'entity_id', 'asset_id', 'canvas_id', 'job_id'].forEach(key => query.delete(key)));
+    [longRunningQuery, longQueuedQuery, longPausedQuery, longSucceededQuery, longFailedQuery, longCanceledQuery].forEach(query => ['stable_id', 'project_id', 'entity_id', 'asset_id', 'canvas_id', 'job_id'].forEach(key => query.delete(key)));
     try {
-      const results = await Promise.allSettled([api(`${ENDPOINTS.overview}?${observationQuery()}`), api(`${ENDPOINTS.series}?${observationQuery({metrics: 'asset_response_bytes,asset_search_duration_ms'})}`), api(`${ENDPOINTS.events}?${eventQuery}`), api(`${ENDPOINTS.tasks}?${taskQuery}`), api(`${ENDPOINTS.health}?${observationQuery()}`), api(`${ENDPOINTS.sources}?${observationQuery()}`), api(`${ENDPOINTS.assetVolumes}?${assetVolumeQueryString}`), api(`${ENDPOINTS.tasks}?${longRunningQuery}`), api(`${ENDPOINTS.tasks}?${longQueuedQuery}`), api(`${ENDPOINTS.tasks}?${longSucceededQuery}`), api(`${ENDPOINTS.tasks}?${longFailedQuery}`), api(`${ENDPOINTS.tasks}?${longCanceledQuery}`), api(`${ENDPOINTS.tasks}?${stalledQueuedQuery}`), api(`${ENDPOINTS.tasks}?${stalledRecoveringQuery}`)]);
-      const [overview, series, events, tasks, health, sources, assetVolumes, longRunning, longQueued, longSucceeded, longFailed, longCanceled, stalledQueued, stalledRecovering] = results;
+      const results = await Promise.allSettled([api(`${ENDPOINTS.overview}?${observationQuery()}`), api(`${ENDPOINTS.series}?${observationQuery({metrics: 'asset_response_bytes,asset_search_duration_ms'})}`), api(`${ENDPOINTS.events}?${eventQuery}`), api(`${ENDPOINTS.tasks}?${taskQuery}`), api(`${ENDPOINTS.health}?${observationQuery()}`), api(`${ENDPOINTS.sources}?${observationQuery()}`), api(`${ENDPOINTS.assetVolumes}?${assetVolumeQueryString}`), api(`${ENDPOINTS.tasks}?${longRunningQuery}`), api(`${ENDPOINTS.tasks}?${longQueuedQuery}`), api(`${ENDPOINTS.tasks}?${longPausedQuery}`), api(`${ENDPOINTS.tasks}?${longSucceededQuery}`), api(`${ENDPOINTS.tasks}?${longFailedQuery}`), api(`${ENDPOINTS.tasks}?${longCanceledQuery}`), api(`${ENDPOINTS.tasks}?${stalledQueuedQuery}`), api(`${ENDPOINTS.tasks}?${stalledRecoveringQuery}`)]);
+      const [overview, series, events, tasks, health, sources, assetVolumes, longRunning, longQueued, longPaused, longSucceeded, longFailed, longCanceled, stalledQueued, stalledRecovering] = results;
       if (overview.status === 'fulfilled') { state.overview = overview.value; noteDataStatus(overview.value, tr('taskCenter.overviewUnavailable')); state.lastUpdated = overview.value.updated_at_ms || overview.value.generated_at_ms || overview.value.updated_at || overview.value.generated_at || overview.value.timestamp || new Date().toISOString(); } else failed(overview, tr('taskCenter.overviewUnavailable'));
       if (series.status === 'fulfilled') { state.series = series.value; noteDataStatus(series.value, tr('taskCenter.seriesUnavailable')); } else failed(series, tr('taskCenter.seriesUnavailable'));
       if (events.status === 'fulfilled') { state.events = firstArray(events.value, ['events', 'items', 'data']).map(eventRecord); state.eventWindow = responseWindow(events.value); noteDataStatus(events.value, tr('taskCenter.eventsUnavailable')); state.nextCursor = cleanId(events.value.next_cursor || events.value.cursor?.next || events.value.meta?.next_cursor); state.hasMore = Boolean(events.value.has_more || state.nextCursor); } else failed(events, tr('taskCenter.eventsUnavailable'));
@@ -1189,7 +1193,7 @@
         indexTasks.forEach(item => { if (!state.jobId || item.job_id === state.jobId) byId.set(item.job_id, item); });
         state.tasks = [...byId.values()];
       } catch (error) { pushDegraded('索引任务暂不可读取', error.message || ''); }
-      const longTaskResults = [longRunning, longQueued, longSucceeded, longFailed, longCanceled];
+      const longTaskResults = [longRunning, longQueued, longPaused, longSucceeded, longFailed, longCanceled];
       longTaskResults.forEach(result => failed(result, tr('taskCenter.longTasksUnavailable')));
       const longTaskDegraded = longTaskResults.some(result => result.status === 'fulfilled' && result.value?.data_status === 'degraded');
       const longTaskFailed = longTaskResults.some(result => result.status === 'rejected');

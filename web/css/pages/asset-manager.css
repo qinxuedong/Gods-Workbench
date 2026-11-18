@@ -4104,6 +4104,17 @@ html.vault-shell-embedded .asset-manager-root.asset-tree-layout > :is(.registry-
 .governance-suggestion-card-meta { margin-top:9px; display:grid; gap:4px; color:var(--vault-muted,#9ba2ad); font-size:var(--gw-type-label-md); line-height:1.45; }
 .governance-suggestion-card-actions { margin-top:10px; display:flex; flex-wrap:wrap; justify-content:flex-end; align-items:center; gap:7px; }
 .governance-suggestion-readonly { color:var(--vault-muted,#9ba2ad); font-size:var(--gw-type-label-md); }
+.governance-suggestion-card-head { flex-wrap:wrap; }
+.governance-suggestion-card.is-selected { border-color:var(--vault-accent); box-shadow:inset 0 0 0 1px var(--vault-accent); background:color-mix(in srgb,var(--vault-accent) 9%,var(--vault-bottom)); }
+.governance-dedup-bar { margin:0 10px 10px 56px; padding:10px 12px; border:1px solid var(--vault-edge); border-radius:7px; background:color-mix(in srgb,var(--vault-raised) 88%,transparent); display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:8px 12px; }
+.governance-dedup-bar-copy { min-width:0; flex:1 1 240px; display:grid; gap:4px; }
+.governance-dedup-counts { display:flex; flex-wrap:wrap; align-items:center; gap:6px; }
+.governance-dedup-status { margin:0; color:var(--vault-muted); font-size:var(--gw-type-label-md); line-height:1.45; overflow-wrap:anywhere; }
+.governance-dedup-bar-actions { display:flex; flex-wrap:wrap; align-items:center; gap:6px; }
+.governance-dedup-badge { display:inline-flex; align-items:center; padding:2px 8px; border-radius:999px; border:1px solid var(--vault-edge); font-size:var(--gw-type-label-sm); font-weight:600; white-space:nowrap; }
+.governance-dedup-badge.is-confirmed { border-color:color-mix(in srgb,var(--asset-type-image) 55%,transparent); background:color-mix(in srgb,var(--asset-type-image) 14%,transparent); color:var(--asset-type-image); }
+.governance-dedup-badge.is-suspected { border-color:color-mix(in srgb,var(--asset-type-audio) 55%,transparent); background:color-mix(in srgb,var(--asset-type-audio) 14%,transparent); color:var(--asset-type-audio); }
+.governance-refresh-notice { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:8px; }
 .governance-drawer-empty,.governance-drawer-warning { margin:0 0 10px; padding:10px 12px; border:1px solid var(--vault-edge,#393c43); border-radius:6px; color:var(--vault-muted,#9ba2ad); font-size:var(--gw-type-body-sm); }
 .governance-drawer-warning { border-color:color-mix(in srgb,var(--asset-type-model) 48%,transparent); color:var(--asset-type-model); }
 .governance-drawer-state { min-height:120px; padding:20px; border:1px solid var(--vault-edge,#393c43); border-radius:8px; background:var(--vault-raised,#14171d); display:flex; align-items:center; gap:12px; color:var(--vault-text,#edf2ed); }
@@ -4123,6 +4134,7 @@ html.vault-shell-embedded .asset-manager-root.asset-tree-layout > :is(.registry-
     .governance-suggestion-group-assets { grid-column:3; grid-row:2; }
     .governance-suggestion-no-issue { grid-column:3; grid-row:1; }
     .governance-suggestion-group-items { padding-left:10px; }
+    .governance-dedup-bar { margin-left:10px; }
     .governance-drawer-state { align-items:flex-start; flex-wrap:wrap; }
     .governance-drawer-state > .hw-btn { margin-left:auto; }
 }

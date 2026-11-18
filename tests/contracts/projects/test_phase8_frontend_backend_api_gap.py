@@ -271,6 +271,7 @@ KNOWN_IMPLEMENTED = frozenset(
         "/api/asset-registry/governance/canvases/purge-expired",
         "/api/asset-registry/governance/canvases/{p}/restore",
         "/api/asset-registry/governance/cascade-preview",
+        "/api/asset-registry/governance/dedup-confirm-jobs",
         "/api/asset-registry/governance/operations",
         "/api/asset-registry/governance/overview",
         # 2026-10-27 MVP1-T5（issue #335）：治理建议清单与逐条确认接口已前后端接线；
@@ -538,6 +539,7 @@ KNOWN_BACKEND_PATHS = frozenset(
         "/api/asset-registry/governance/canvases/purge-expired",
         "/api/asset-registry/governance/canvases/{p}/restore",
         "/api/asset-registry/governance/cascade-preview",
+        "/api/asset-registry/governance/dedup-confirm-jobs",
         "/api/asset-registry/governance/operations",
         "/api/asset-registry/governance/overview",
         "/api/asset-registry/index/sync",

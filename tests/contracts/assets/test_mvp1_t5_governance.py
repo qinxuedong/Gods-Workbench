@@ -188,17 +188,66 @@ def test_confirm_tagging_writes_controlled_tag_with_audit(client):
     assert remaining == [], "确认后的打标建议不得重复生成"
 
 
-def test_confirm_duplicate_creates_relation_and_suppresses_suggestion(client):
+def test_confirm_duplicate_creates_relation_and_suppresses_suggestion(client, tmp_path, monkeypatch):
     """AC6：确认查重生成候选关系；系统不删除数据，已确认组不再重复建议。"""
+    import hashlib
+    from gw.asset_registry import dedup_confirm
+
+    root = tmp_path / "data"
+    monkeypatch.setenv("GW_ALLOWED_ROOTS", str(root))
+    payload = b"qin-619 confirmed duplicate content"
+    digest = hashlib.sha256(payload).hexdigest()
+    file_a = root / "clip_a.mp4"
+    file_b = root / "clip_b.mp4"
+    file_a.write_bytes(payload)
+    file_b.write_bytes(payload)
+
+    # 先验证仅写入 sha256 但未经完整 SHA 验真的疑似组会被方案 A 门禁拒绝
+    suspected_left = _seed_asset(
+        "suspect_a", display_path="roots/local/suspect_a.mp4", sha256="f" * 64, size_bytes=8
+    )
+    suspected_right = _seed_asset(
+        "suspect_b", display_path="roots/local/suspect_b.mp4", sha256="f" * 64, size_bytes=8
+    )
+    suspected_listing = client.get(SUGGESTIONS_URL, headers=ADMIN).json()
+    suspected_dup = _suggestion(suspected_listing, "duplicate_files", content_hash="f" * 64)
+    assert suspected_dup["dedup_status"] == "suspected"
+    rejected = client.post(
+        CONFIRM_URL,
+        headers=ADMIN,
+        json={
+            "suggestion_id": suspected_dup["suggestion_id"],
+            "expected_version": suspected_listing["revision"],
+        },
+    )
+    assert rejected.status_code == 409, rejected.text
+    assert rejected.json()["detail"]["code"] == "DEDUP_NOT_CONFIRMED"
+    assert suspected_left != suspected_right
+
     left = _seed_asset(
-        "clip_a", display_path="roots/local/clip_a.mp4", sha256="b" * 64, size_bytes=8
+        "clip_a", display_path="clip_a.mp4", sha256=digest, size_bytes=len(payload)
     )
     right = _seed_asset(
-        "clip_b", display_path="roots/local/clip_b.mp4", sha256="b" * 64, size_bytes=8
+        "clip_b", display_path="clip_b.mp4", sha256=digest, size_bytes=len(payload)
     )
 
+    def attach_verified_cache(raw):
+        for aid, fpath in ((left, file_a), (right, file_b)):
+            item = raw["assets"][aid]
+            item["root_id"] = storage.root_identity_id(root)
+            item["storage_root_id"] = item["root_id"]
+            item["canonical_relpath"] = fpath.name
+            item["hash_mode"] = "full"
+            item["full_sha256_cache"] = dedup_confirm.build_full_sha256_cache(
+                digest, fpath.lstat(), source="dedup_confirm"
+            )
+        return raw
+
+    repo.state().mutate(attach_verified_cache)
+
     listing = client.get(SUGGESTIONS_URL, headers=ADMIN).json()
-    duplicate = _suggestion(listing, "duplicate_files", content_hash="b" * 64)
+    duplicate = _suggestion(listing, "duplicate_files", content_hash=digest)
+    assert duplicate["dedup_status"] == "confirmed"
 
     response = client.post(
         CONFIRM_URL,
@@ -222,7 +271,7 @@ def test_confirm_duplicate_creates_relation_and_suppresses_suggestion(client):
 
     regenerated = client.get(SUGGESTIONS_URL, headers=ADMIN).json()
     assert all(
-        entry["content_hash"] != "b" * 64
+        entry.get("content_hash") != digest
         for entry in regenerated["suggestions"]["duplicate_files"]
     ), "已确认的查重组不得重复建议"
 

@@ -31,11 +31,13 @@ from __future__ import annotations
 import hashlib
 import json
 import math
+from pathlib import Path
 import sqlite3
 import struct
+import unicodedata
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
-from gw.asset_registry import repository as repo
+from gw.asset_registry import dedup_confirm, repository as repo
 from gw.asset_registry.governance_rules import (
     NamingRules,
     find_duplicate_groups,
@@ -360,6 +362,229 @@ def _duplicate_related_pairs(raw: Dict[str, Any]) -> set:
     return pairs
 
 
+def _duplicate_file_suggestions(
+    raw: Dict[str, Any],
+    assets: Sequence[Dict[str, Any]],
+    related_pairs: set,
+) -> List[Dict[str, Any]]:
+    """构造文件查重建议：严格区分完整 SHA 已确认(confirmed)与疑似(suspected)。
+
+    规则（QIN-619 AC1~AC5）：
+    - 只有全部成员拥有「已验真且文件版本匹配」的完整 SHA-256 且摘要相等时标为 ``confirmed``；
+    - ``sampled``、未知/缺失 ``hash_mode``、缓存失效或仅同 ``size_bytes`` 最多标为 ``suspected``；
+    - 若两个文件都已算出完整 SHA 且不相等，绝不因相同 ``sampled`` 或相同 ``size_bytes`` 共组。
+    """
+    removed_ids = repo._removed_root_ids()
+    records: List[Dict[str, Any]] = []
+    for asset in assets:
+        if asset.get("archived") or repo._hidden_builtin(asset) or repo._is_removed_asset(asset, removed_ids):
+            continue
+        asset_id = str(asset.get("asset_id") or asset.get("id") or "").strip()
+        path_label = str(asset.get("display_path") or asset.get("name") or "").strip()
+        if not asset_id or not path_label:
+            continue
+        raw_size = asset.get("size_bytes")
+        size = (
+            None
+            if isinstance(raw_size, bool) or not isinstance(raw_size, int) or raw_size < 0
+            else int(raw_size)
+        )
+        local_path: Optional[Path] = None
+        local_stat = None
+        try:
+            local_path = dedup_confirm.resolve_asset_media_path(raw, asset_id, asset)
+            if local_path is not None and local_path.is_file():
+                local_stat = local_path.lstat()
+        except CleanroomException:
+            local_path = None
+        except OSError:
+            local_stat = None
+
+        full_sha = dedup_confirm.trusted_full_sha256(
+            asset, path=local_path, stat_result=local_stat
+        )
+        # 如果资产绑定本地文件但文件不存在或大小已变，不承认过期内存 size/缓存
+        effective_size = int(local_stat.st_size) if local_stat is not None else size
+        legacy_sha = dedup_confirm.normalize_sha256_hex(asset.get("sha256"))
+        hash_mode = str(asset.get("hash_mode") or "").strip().lower()
+        records.append(
+            {
+                "asset_id": asset_id,
+                "path": path_label,
+                "path_key": unicodedata.normalize("NFKC", path_label.replace("\\", "/")).casefold(),
+                "size_bytes": effective_size if effective_size is not None else 0,
+                "has_valid_size": effective_size is not None,
+                "full_sha": full_sha,
+                "legacy_sha": legacy_sha,
+                "hash_mode": hash_mode,
+            }
+        )
+
+    suggestions: List[Dict[str, Any]] = []
+    covered_pair_sets: set[frozenset[str]] = set()
+
+    def _pair_already_related(ids: Sequence[str]) -> bool:
+        located = [item for item in ids if item]
+        return len(located) >= 2 and frozenset(located[:2]) in related_pairs
+
+    def _sort_members(items: Sequence[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        return sorted(
+            items,
+            key=lambda item: (
+                unicodedata.normalize("NFKC", item["path"]).casefold(),
+                item["path"],
+                item["size_bytes"],
+                item["asset_id"],
+            ),
+        )
+
+    # 1) 已确认组：按已验真完整 SHA-256 聚合
+    by_full: Dict[str, List[Dict[str, Any]]] = {}
+    for rec in records:
+        if rec["full_sha"]:
+            by_full.setdefault(rec["full_sha"], []).append(rec)
+    for digest in sorted(by_full):
+        members = _sort_members(by_full[digest])
+        if len({m["path_key"] for m in members}) < 2:
+            continue
+        asset_ids = [m["asset_id"] for m in members]
+        if _pair_already_related(asset_ids):
+            covered_pair_sets.add(frozenset(asset_ids))
+            continue
+        covered_pair_sets.add(frozenset(asset_ids))
+        suggestions.append(
+            {
+                "suggestion_id": _suggestion_id("duplicate_files", digest),
+                "kind": "duplicate_files",
+                "content_hash": digest,
+                "dedup_status": "confirmed",
+                "match_basis": "full_sha256",
+                "size_bytes": members[0]["size_bytes"],
+                "verified_count": len(members),
+                "member_count": len(members),
+                "members": [
+                    {
+                        "asset_id": m["asset_id"],
+                        "path": m["path"],
+                        "size_bytes": m["size_bytes"],
+                        "verified": True,
+                    }
+                    for m in members
+                ],
+                "asset_ids": asset_ids,
+            }
+        )
+
+    # 2) 疑似组 A：采样哈希 / 未本地验真历史 sha256（绝不允许完整 SHA 不等的成员共组）
+    by_legacy: Dict[str, List[Dict[str, Any]]] = {}
+    for rec in records:
+        if rec["legacy_sha"]:
+            by_legacy.setdefault(rec["legacy_sha"], []).append(rec)
+    for digest in sorted(by_legacy):
+        bucket = _sort_members(by_legacy[digest])
+        if len({m["path_key"] for m in bucket}) < 2:
+            continue
+        pending_members = [m for m in bucket if not m["full_sha"]]
+        full_hashes_in_bucket = {m["full_sha"] for m in bucket if m["full_sha"]}
+        # 若桶内全部成员都有完整 SHA（无论相等与否）：
+        # 相等的已在第 1 步输出为 confirmed；不等的证明内容不同，不再保留为疑似。
+        if not pending_members:
+            continue
+        # 若桶内存在多种不同的完整 SHA 且还有未算完整 SHA 的成员，只把未算完者单独或与单一代表聚合，
+        # 避免把已知内容不同的两个已验证文件混在同一条建议里。
+        if len(full_hashes_in_bucket) > 1:
+            candidate_groups = [pending_members]
+        else:
+            candidate_groups = [bucket]
+        for group_members in candidate_groups:
+            if len({m["path_key"] for m in group_members}) < 2:
+                continue
+            asset_ids = [m["asset_id"] for m in group_members]
+            pair_key = frozenset(asset_ids)
+            if pair_key in covered_pair_sets or _pair_already_related(asset_ids):
+                continue
+            covered_pair_sets.add(pair_key)
+            has_sampled = any(m["hash_mode"] == "sampled" for m in group_members)
+            basis = "sampled_sha256" if has_sampled else "unverified_legacy"
+            suggestions.append(
+                {
+                    "suggestion_id": _suggestion_id("duplicate_files", "suspected", basis, digest),
+                    "kind": "duplicate_files",
+                    "content_hash": digest,
+                    "dedup_status": "suspected",
+                    "match_basis": basis,
+                    "size_bytes": group_members[0]["size_bytes"],
+                    "verified_count": sum(1 for m in group_members if m["full_sha"]),
+                    "member_count": len(group_members),
+                    "members": [
+                        {
+                            "asset_id": m["asset_id"],
+                            "path": m["path"],
+                            "size_bytes": m["size_bytes"],
+                            "verified": bool(m["full_sha"]),
+                        }
+                        for m in group_members
+                    ],
+                    "asset_ids": asset_ids,
+                }
+            )
+
+    # 3) 疑似组 B：同 size_bytes 候选（尚缺完整 SHA 确认者，避免漏掉新加入的同 size 文件）
+    by_size: Dict[int, List[Dict[str, Any]]] = {}
+    for rec in records:
+        if rec["has_valid_size"]:
+            by_size.setdefault(rec["size_bytes"], []).append(rec)
+    for size in sorted(by_size):
+        bucket = _sort_members(by_size[size])
+        if len({m["path_key"] for m in bucket}) < 2:
+            continue
+        pending_members = [m for m in bucket if not m["full_sha"]]
+        if not pending_members:
+            # 桶内全部成员均已完成完整 SHA 计算：相等者已 confirmed，不等者已确认不重复
+            continue
+        # 仅当桶内尚有成员未算完完整 SHA 时提出 size 候选；
+        # 若已有不同已知 full_sha，与待算成员拆组，避免把已知内容不同的两个文件共组。
+        distinct_full = sorted({m["full_sha"] for m in bucket if m["full_sha"]})
+        if len(distinct_full) > 1:
+            subgroups = [pending_members] if len({m["path_key"] for m in pending_members}) >= 2 else []
+            if not subgroups and len(pending_members) == 1:
+                subgroups = [bucket]
+        else:
+            subgroups = [bucket]
+        for group_members in subgroups:
+            if len({m["path_key"] for m in group_members}) < 2:
+                continue
+            asset_ids = [m["asset_id"] for m in group_members]
+            pair_key = frozenset(asset_ids)
+            if pair_key in covered_pair_sets or _pair_already_related(asset_ids):
+                continue
+            covered_pair_sets.add(pair_key)
+            suggestions.append(
+                {
+                    "suggestion_id": _suggestion_id("duplicate_files", "size", size, *asset_ids),
+                    "kind": "duplicate_files",
+                    "content_hash": "",
+                    "dedup_status": "suspected",
+                    "match_basis": "size_candidate",
+                    "size_bytes": size,
+                    "verified_count": sum(1 for m in group_members if m["full_sha"]),
+                    "member_count": len(group_members),
+                    "members": [
+                        {
+                            "asset_id": m["asset_id"],
+                            "path": m["path"],
+                            "size_bytes": m["size_bytes"],
+                            "verified": bool(m["full_sha"]),
+                        }
+                        for m in group_members
+                    ],
+                    "asset_ids": asset_ids,
+                }
+            )
+
+    return suggestions
+
+
 def build_suggestions() -> Dict[str, Any]:
     """生成完整建议清单；只读，不修改注册表或源文件。"""
     raw = repo.state().read()
@@ -411,30 +636,7 @@ def build_suggestions() -> Dict[str, Any]:
         for group in group_similar_names(paths)
     ]
 
-    file_records = _asset_file_records(assets)
-    duplicate_files = []
-    for group in find_duplicate_groups(file_records):
-        asset_ids = [
-            str(_find_by_display_path(assets, member.path).get("asset_id") or "")
-            if _find_by_display_path(assets, member.path) is not None
-            else ""
-            for member in group.members
-        ]
-        located = [item for item in asset_ids if item]
-        if len(located) >= 2 and frozenset(located[:2]) in related_pairs:
-            continue
-        duplicate_files.append(
-            {
-                "suggestion_id": _suggestion_id("duplicate_files", group.content_hash),
-                "kind": "duplicate_files",
-                "content_hash": group.content_hash,
-                "members": [
-                    {"path": member.path, "size_bytes": member.size}
-                    for member in group.members
-                ],
-                "asset_ids": asset_ids,
-            }
-        )
+    duplicate_files = _duplicate_file_suggestions(raw, assets, related_pairs)
 
     index_snapshot = _load_index_snapshot()
     duplicate_shots = []
@@ -491,6 +693,14 @@ def build_suggestions() -> Dict[str, Any]:
     return {
         "suggestions": suggestions,
         "counts": counts,
+        "dedup_summary": {
+            "confirmed_groups": sum(
+                1 for item in duplicate_files if item.get("dedup_status") == "confirmed"
+            ),
+            "suspected_groups": sum(
+                1 for item in duplicate_files if item.get("dedup_status") != "confirmed"
+            ),
+        },
         "revision": int(raw.get("revision", 1)),
         "data_status": repo.DATA_STATUS_OK if not data_gaps else DATA_STATUS_NOT_INTEGRATED,
         "data_gaps": data_gaps,
@@ -528,8 +738,33 @@ def _apply_confirmation(entry: Dict[str, Any], expected_version: int) -> Dict[st
             raise CleanroomException(400, "INVALID_REQUEST", "打标建议缺少资产")
         return repo.add_tags([asset_id], tags, expected_version)
     if kind == "duplicate_files":
+        if entry.get("dedup_status") != "confirmed":
+            raise CleanroomException(
+                409,
+                "DEDUP_NOT_CONFIRMED",
+                "疑似重复素材尚未完成完整 SHA 核验，请先完成完整 SHA 确认后再建立重复关联",
+            )
         left, right = _require_asset_ids(entry)[:2]
         _reject_self_relation(left, right)
+        raw = repo.state().read()
+        left_rec = raw.get("assets", {}).get(left)
+        right_rec = raw.get("assets", {}).get(right)
+        if not isinstance(left_rec, dict) or not isinstance(right_rec, dict):
+            raise CleanroomException(
+                409,
+                "DEDUP_NOT_CONFIRMED",
+                "待确认重复关系的资产已不存在或已失效",
+            )
+        left_path = dedup_confirm.resolve_asset_media_path(raw, left, left_rec)
+        right_path = dedup_confirm.resolve_asset_media_path(raw, right, right_rec)
+        left_sha = dedup_confirm.trusted_full_sha256(left_rec, path=left_path)
+        right_sha = dedup_confirm.trusted_full_sha256(right_rec, path=right_path)
+        if not left_sha or not right_sha or left_sha != right_sha:
+            raise CleanroomException(
+                409,
+                "DEDUP_NOT_CONFIRMED",
+                "完整 SHA 确认缓存已失效或不一致，请重新核验完整 SHA",
+            )
         return repo.create_relation(left, right, "duplicate", expected_version)
     if kind == "duplicate_shots":
         members = entry.get("members") or []

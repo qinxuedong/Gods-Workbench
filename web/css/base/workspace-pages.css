@@ -709,6 +709,8 @@ body:has(.observability-content) { background: var(--paper); }
 .longtask-kind.import { color: var(--accent); border-color: var(--accent); }
 .longtask-kind.thumbnail { color: var(--ok); border-color: var(--ok); }
 .longtask-kind.transcode { color: var(--warn); border-color: var(--warn); }
+.longtask-kind.dedup { color: var(--accent); border-color: var(--accent); }
+.longtask-row.is-selected, tr[data-job-row].is-selected { box-shadow: inset 0 0 0 1px var(--accent); background: color-mix(in srgb, var(--accent) 8%, var(--paper-2)); }
 .longtask-status { min-width: 0; white-space: nowrap; }
 .longtask-main { min-width: 0; display: grid; gap: 2px; }
 .longtask-main strong { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--gw-type-body-sm); }
