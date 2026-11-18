@@ -100,6 +100,7 @@ import {
     boardSourceState,
     bumpBoardMigrationSeq,
     canBrowseServerDirectories,
+    cancelActiveBoardMigration,
     canManageAllowedRoots,
     canvasAssetsData,
     closeAssetOrganizeMenu,
@@ -373,12 +374,26 @@ import { GW_DEFERRED } from './state.js';
 // {kind:'create'|'delete'|'conflict', ...}
 let assetOrganizeInline = null;
 let assetOrganizeToastTimer = 0;
-let activeBoardMigrationPromise = null;
+let activeBoardMigration = null;
 const boardMigrationCancelListeners = new Set();
 function notifyBoardMigrationSeqChanged(){
     for(const fn of [...boardMigrationCancelListeners]){
         try { fn(); } catch(_) {}
     }
+}
+function raceMigrationCancel(seq, promise){
+    if(seq !== boardMigrationSeq) return Promise.resolve({__cancelled:true});
+    let handler = null;
+    const cancelPromise = new Promise(resolve => {
+        handler = () => { if(seq !== boardMigrationSeq) resolve({__cancelled:true}); };
+        boardMigrationCancelListeners.add(handler);
+    });
+    return Promise.race([
+        Promise.resolve(promise).then(value => ({__cancelled:false, value})),
+        cancelPromise,
+    ]).finally(() => {
+        if(handler) boardMigrationCancelListeners.delete(handler);
+    });
 }
 let promptItemSnapshot = {revision:0, items:[]};
 let casRefreshInFlight = false;
@@ -606,17 +621,14 @@ function writePersistedBoardNavigation(customBoards, migrationMeta){
     return nextState;
 }
 function cancelAssetBoardMigration(){
-    bumpBoardMigrationSeq();
-    notifyBoardMigrationSeqChanged();
-    if(boardMigrationState.running){
-        setBoardMigrationState({...boardMigrationState, running:false});
-    }
-    releaseBoardMigrationLock();
+    cancelActiveBoardMigration();
 }
 async function runAssetBoardOneTimeMigration(options={}){
-    if(activeBoardMigrationPromise) return activeBoardMigrationPromise;
+    if(activeBoardMigration && activeBoardMigration.seq === boardMigrationSeq){
+        return activeBoardMigration.promise;
+    }
+    const seq = bumpBoardMigrationSeq();
     const task = (async () => {
-        const seq = bumpBoardMigrationSeq();
         const tabId = String(options.tabId || ASSET_BOARD_MIGRATION_TAB_ID);
         let stored = readBoardNavigationState();
         if(!stored.customBoards.length){
@@ -627,6 +639,7 @@ async function runAssetBoardOneTimeMigration(options={}){
         const lockResult = await acquireBoardMigrationLock(seq, {tabId, waitTimeoutMs:options.lockWaitMs});
         if(lockResult.cancelled || seq !== boardMigrationSeq) return {status:'cancelled', migrated:0};
         if(!lockResult.acquired) return {status:'busy', migrated:0};
+        let convertedCount = 0;
         try {
             stored = readBoardNavigationState();
             if(!stored.customBoards.length){
@@ -638,18 +651,18 @@ async function runAssetBoardOneTimeMigration(options={}){
             setStatus('正在将旧版资源库来源迁移为资源文件夹…');
             render();
 
-            await loadRegistryPrincipal();
-            if(seq !== boardMigrationSeq) return {status:'cancelled', migrated:0};
-            const settings = await apiJsonResponse(assetManagerApi.getStorageSettings());
-            if(seq !== boardMigrationSeq) return {status:'cancelled', migrated:0};
-            applyStorageSettingsData(settings || {});
+            const principalStep = await raceMigrationCancel(seq, loadRegistryPrincipal());
+            if(principalStep.__cancelled || seq !== boardMigrationSeq) return {status:'cancelled', migrated:0};
+            const settingsStep = await raceMigrationCancel(seq, apiJsonResponse(assetManagerApi.getStorageSettings()));
+            if(settingsStep.__cancelled || seq !== boardMigrationSeq) return {status:'cancelled', migrated:0};
+            applyStorageSettingsData(settingsStep.value || {});
 
             let allowedRoots = Array.isArray(allowedRootSettingsState?.roots) ? allowedRootSettingsState.roots : [];
             if(canManageAllowedRoots()){
                 try {
-                    const rootsSnapshot = await apiJsonResponse(assetManagerHttp.request('/api/storage-settings/roots', {method:'GET', credentials:'same-origin'}));
-                    if(seq !== boardMigrationSeq) return {status:'cancelled', migrated:0};
-                    allowedRoots = Array.isArray(rootsSnapshot?.roots) ? rootsSnapshot.roots : allowedRoots;
+                    const rootsStep = await raceMigrationCancel(seq, apiJsonResponse(assetManagerHttp.request('/api/storage-settings/roots', {method:'GET', credentials:'same-origin'})));
+                    if(rootsStep.__cancelled || seq !== boardMigrationSeq) return {status:'cancelled', migrated:0};
+                    allowedRoots = Array.isArray(rootsStep.value?.roots) ? rootsStep.value.roots : allowedRoots;
                 } catch(_) {}
             }
 
@@ -675,7 +688,6 @@ async function runAssetBoardOneTimeMigration(options={}){
             });
 
             const outcomes = new Map();
-            let convertedCount = 0;
             const pathJobs = [...uniqueTasks.values()].map(async taskInfo => {
                 if(existingByKey.has(taskInfo.pathKey)){
                     outcomes.set(taskInfo.pathKey, {ok:true, alreadyExisted:true});
@@ -713,17 +725,8 @@ async function runAssetBoardOneTimeMigration(options={}){
                 }
             });
 
-            const jobsDone = Promise.allSettled(pathJobs);
-            let cancelHandler = null;
-            await Promise.race([
-                jobsDone,
-                new Promise(resolve => {
-                    cancelHandler = () => { if(seq !== boardMigrationSeq) resolve(); };
-                    boardMigrationCancelListeners.add(cancelHandler);
-                }),
-            ]);
-            if(cancelHandler) boardMigrationCancelListeners.delete(cancelHandler);
-            if(seq !== boardMigrationSeq) return {status:'cancelled', migrated:convertedCount};
+            const jobsStep = await raceMigrationCancel(seq, Promise.allSettled(pathJobs));
+            if(jobsStep.__cancelled || seq !== boardMigrationSeq) return {status:'cancelled', migrated:convertedCount};
 
             // 仅在全部在途请求结束后再读取最新 localStorage 扣减成功看板，保证慢请求完成前绝不删看板定义。
             const latest = readBoardNavigationState();
@@ -735,11 +738,15 @@ async function runAssetBoardOneTimeMigration(options={}){
                     const resolvedPath = resolveMigrationSourcePath(source);
                     const pathKey = pathCompareKey(resolvedPath);
                     if(!resolvedPath || !pathKey){
-                        // 仅按旧 id 匹配已知库也视作已迁移；无法解析路径且无登记则不阻断删除空壳定义
-                        const matchedById = localLibraries.some(lib => String(lib.id || '') === String(source.id || ''));
-                        if(!matchedById && source.id && !/^local_extra_|^root_/.test(source.id)){
+                        const sid = String(source.id || '').trim();
+                        const matchedById = sid ? localLibraries.some(lib => String(lib.id || '') === sid) : false;
+                        // 仅当按 id 确切命中已知库、或属于无 id 的历史空壳占位条目时扣减；
+                        // 未能解析物理路径的 local_extra_* / root_* 来源必须保留原看板与提示，严禁静默丢弃。
+                        if(matchedById || !sid || !/^local_extra_|^root_/.test(sid)){
                             return;
                         }
+                        pendingSources.push({...source});
+                        blockedBoards.push({boardId:board.id, boardName:board.name, path:sid, reason:'未能解析该来源的物理路径，请检查设置后重试'});
                         return;
                     }
                     const outcome = outcomes.get(pathKey);
@@ -786,18 +793,49 @@ async function runAssetBoardOneTimeMigration(options={}){
                 setStatus('部分资源库来源待管理员授权或迁移失败，已保留原看板定义');
             }
             return {status:remainingBoards.length ? 'partial' : 'done', migrated:convertedCount, blockedBoards};
+        } catch(err) {
+            if(seq !== boardMigrationSeq) return {status:'cancelled', migrated:convertedCount};
+            const reason = err?.message || '读取资源设置或迁移旧版资源库来源失败，请点击重试。';
+            const latest = readBoardNavigationState();
+            const failedBlocked = [];
+            latest.customBoards.forEach(board => {
+                (board.sources || []).forEach(source => {
+                    failedBlocked.push({
+                        boardId:board.id,
+                        boardName:board.name,
+                        path:resolveMigrationSourcePath(source) || String(source.id || ''),
+                        reason,
+                    });
+                });
+            });
+            writePersistedBoardNavigation(latest.customBoards, {
+                status:'partial',
+                blockedBoards:failedBlocked,
+                updatedAt:new Date().toISOString(),
+            });
+            setBoardMigrationState({
+                running:false,
+                blockedBoards:failedBlocked,
+                failedMessage:reason,
+                completed:false,
+                dismissed:false,
+            });
+            setStatus('旧版资源库来源迁移失败，已保留原看板定义');
+            renderBoardNavigation();
+            render();
+            return {status:'failed', error:reason, migrated:convertedCount, blockedBoards:failedBlocked};
         } finally {
-            if(boardMigrationState.running && seq !== boardMigrationSeq){
+            if(boardMigrationState.running && seq === boardMigrationSeq){
                 setBoardMigrationState({...boardMigrationState, running:false});
             }
             releaseBoardMigrationLock(tabId);
         }
     })();
-    activeBoardMigrationPromise = task;
+    activeBoardMigration = {seq, promise:task};
     try {
         return await task;
     } finally {
-        if(activeBoardMigrationPromise === task) activeBoardMigrationPromise = null;
+        if(activeBoardMigration?.promise === task) activeBoardMigration = null;
     }
 }
 let resourceFolderActionSeq = 0;

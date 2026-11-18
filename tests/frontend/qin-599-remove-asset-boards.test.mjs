@@ -52,6 +52,7 @@ function createMigrationFetch({
     initialRoots = [],
     onPostRoot = null,
     onPostExtra = null,
+    onGetStorage = null,
     onGetStorageAfterPost = null,
 } = {}) {
     const requests = [];
@@ -107,6 +108,10 @@ function createMigrationFetch({
             return jsonResponse({roots, revision: rootsRevision});
         }
         if (url.endsWith('/api/storage-settings') && method === 'GET') {
+            if (onGetStorage) {
+                const override = await onGetStorage({wroteExtras, extras});
+                if (override) return override;
+            }
             if (wroteExtras > 0 && onGetStorageAfterPost) {
                 const override = await onGetStorageAfterPost({wroteExtras, extras});
                 if (override) return override;
@@ -427,7 +432,11 @@ test('异步慢延迟（20s）与取消 + 乱序部分失败 + 写后刷新恢�
         assert.equal(hostA.storage.getItem(ASSET_BOARD_LOCK_KEY) ?? null, null, '取消必须释放迁移互斥锁');
         if (slow20sTimer) clearTimeout(slow20sTimer);
         if (resolveSlow20s) resolveSlow20s(null);
-        await wait(20);
+        await wait(40);
+        // 建议 1：20s 迟到请求真实结算后，不得误删看板或置为 completed
+        assert.equal(JSON.parse(hostA.storage.getItem(ASSET_BOARD_KEY)).customBoards.length, 1, '迟到 20s 返回落地后不得删看板定义');
+        assert.equal(mainA.boardMigrationState.completed, false, '迟到 20s 返回落地后不得置为 completed');
+        assert.equal(mainA.boardMigrationState.running, false, '迟到 20s 返回落地后 running 保持 false');
     } finally {
         cleanupA();
         dropTree(treeA);
@@ -523,6 +532,181 @@ test('并发迁移互斥锁：两个标签页同时打开资产页，只有一�
         assert.equal(result.status, 'delegated', '后拿到锁的标签页检测到已完成迁移后应直接委托退出');
         assert.equal(net.requests.filter(r => r.method === 'POST').length, 0, '并发标签页绝不重复提交登记请求');
     } finally {
+        cleanupHost();
+        dropTree(tree);
+    }
+});
+
+test('必改1 + 建议2：前置 getStorageSettings 返回 500 时退出 running、保留看板并支持真实 DOM 点击重试/收起', async () => {
+    let failStorage = true;
+    let storageCalls = 0;
+    const net = createMigrationFetch({
+        role: 'admin',
+        onGetStorage: async () => {
+            storageCalls += 1;
+            // boot 阶段 loadAll 先成功一次；进入 runAssetBoardOneTimeMigration 的前置读取返回 500
+            if (failStorage && storageCalls >= 2) {
+                return jsonResponse({detail: {code: 'SETTINGS_READ_ERROR', message: '读取存储设置失败(500)'}}, 500);
+            }
+            return null;
+        },
+    });
+    const host = installHost({
+        embedded: false,
+        boards: {
+            order: ['registry', 'library_err'],
+            hidden: [],
+            customBoards: [{
+                id: 'library_err',
+                name: '前置失败库',
+                preset: 'all',
+                sources: [{id: 'src_err', name: '待恢复目录', path: 'D:\\Assets\\RetryStorage'}],
+            }],
+        },
+        fetchImpl: net.fetchImpl,
+    });
+    const cleanupHost = patchDocId(host.document);
+    const tree = makeProductTree();
+    try {
+        const main = await loadProduct(tree);
+        await bootProduct(host.document);
+        await waitFor(() => main.boardMigrationState.running === false && Boolean(main.boardMigrationState.failedMessage), 2500);
+
+        assert.equal(main.boardMigrationState.running, false, '前置 getStorageSettings 500 后 running 必须置回 false，不得永久卡死');
+        assert.equal(main.boardMigrationState.completed, false);
+        assert.match(main.boardMigrationState.failedMessage, /读取存储设置失败/);
+        const afterFailPersisted = JSON.parse(host.storage.getItem(ASSET_BOARD_KEY) || '{}');
+        assert.equal(afterFailPersisted.customBoards.length, 1, '前置失败时不得删除看板定义');
+
+        // 真实 DOM 存在重试与收起按钮；先用真实 DOM 点击 [data-board-migration-dismiss] 收起横幅，
+        // 再用真实 DOM 点击 [data-board-migration-retry] 触发重跑。
+        const retryBtn = host.document.querySelector('[data-board-migration-retry]');
+        const dismissBtn = host.document.querySelector('[data-board-migration-dismiss]');
+        assert.ok(retryBtn && dismissBtn, '错误横幅必须渲染真实可点击的重试与收起按钮');
+        host.root.dispatchEvent({type: 'click', target: dismissBtn, preventDefault() {}});
+        assert.equal(main.boardMigrationState.dismissed, true, '点击收起按钮应置 dismissed=true');
+        assert.equal(host.document.querySelector('[data-board-migration-notice]'), null, '收起后提示横幅不再渲染');
+
+        // 恢复接口成功并用真实 DOM 点击 [data-board-migration-retry] 触发重跑
+        failStorage = false;
+        host.root.dispatchEvent({type: 'click', target: retryBtn, preventDefault() {}});
+        await waitFor(() => {
+            const p = JSON.parse(host.storage.getItem(ASSET_BOARD_KEY) || '{}');
+            return p.migration?.status === 'done';
+        }, 2500);
+
+        const afterRetryPersisted = JSON.parse(host.storage.getItem(ASSET_BOARD_KEY) || '{}');
+        assert.deepEqual(afterRetryPersisted.customBoards, [], 'DOM 点击重试成功后删除看板定义');
+        assert.equal(main.boardMigrationState.running, false);
+        assert.equal(main.boardMigrationState.completed, true);
+    } finally {
+        cleanupHost();
+        dropTree(tree);
+    }
+});
+
+test('必改2：无法解析物理路径的 local_extra_* / root_* 未命中已知库时必须保留原看板，命中则扣减', async () => {
+    const net = createMigrationFetch({
+        role: 'admin',
+        existingExtras: [{id: 'local_extra_known_by_id', name: '已知按ID匹配目录', path: 'D:\\Assets\\KnownById'}],
+        initialRoots: [{id: 'root_known', path: 'D:/Assets/KnownById', source: 'persistent', active: true}],
+    });
+    const host = installHost({
+        embedded: false,
+        boards: {
+            order: ['registry', 'library_unresolved', 'library_matched_id'],
+            hidden: [],
+            customBoards: [
+                {
+                    id: 'library_unresolved',
+                    name: '无路径不可解析库',
+                    preset: 'all',
+                    sources: [{id: 'local_extra_unresolvable_99', name: '孤立条目', path: ''}],
+                },
+                {
+                    id: 'library_matched_id',
+                    name: '仅存已知ID库',
+                    preset: 'all',
+                    sources: [{id: 'local_extra_known_by_id', name: '已知ID条目', path: ''}],
+                },
+            ],
+        },
+        fetchImpl: net.fetchImpl,
+    });
+    const cleanupHost = patchDocId(host.document);
+    const tree = makeProductTree();
+    try {
+        const main = await loadProduct(tree);
+        await bootProduct(host.document);
+        await waitFor(() => {
+            const p = JSON.parse(host.storage.getItem(ASSET_BOARD_KEY) || '{}');
+            return p.migration?.status === 'partial';
+        }, 2500);
+
+        const persisted = JSON.parse(host.storage.getItem(ASSET_BOARD_KEY) || '{}');
+        assert.deepEqual(persisted.customBoards.map(b => b.id), ['library_unresolved'], '无法解析路径且未命中 known 库的 local_extra_* 必须保留，按 ID 命中已知库的应扣减');
+        assert.equal(persisted.migration?.blockedBoards?.[0]?.path, 'local_extra_unresolvable_99');
+        assert.match(host.root.innerHTML || '', /local_extra_unresolvable_99/);
+        assert.match(host.root.innerHTML || '', /未能解析该来源的物理路径/);
+    } finally {
+        cleanupHost();
+        dropTree(tree);
+    }
+});
+
+test('必改3：20s 慢迁移期间 setActiveTab 切走立即取消解锁，切回后立即重跑不被旧 Promise 吞并', async () => {
+    let attempt = 0;
+    let firstSlowTimer = null;
+    const net = createMigrationFetch({
+        role: 'admin',
+        onPostRoot: () => {
+            attempt += 1;
+            if (attempt === 1) {
+                return new Promise(resolve => {
+                    firstSlowTimer = setTimeout(() => resolve(null), 20050);
+                    if (typeof firstSlowTimer?.unref === 'function') firstSlowTimer.unref();
+                });
+            }
+            return Promise.resolve(null);
+        },
+    });
+    const host = installHost({
+        embedded: false,
+        boards: {
+            order: ['registry', 'library_tab_cancel'],
+            hidden: [],
+            customBoards: [{
+                id: 'library_tab_cancel',
+                name: '切页取消测试库',
+                preset: 'all',
+                sources: [{id: 's_tc', name: '慢切页目录', path: 'D:\\Assets\\SlowTabCancel'}],
+            }],
+        },
+        fetchImpl: net.fetchImpl,
+    });
+    const cleanupHost = patchDocId(host.document);
+    const tree = makeProductTree();
+    try {
+        const main = await loadProduct(tree);
+        main.openDeferredDomainGate();
+        const firstPromise = main.gwCall('organize', 'runAssetBoardOneTimeMigration', {trigger: 'boot'});
+        await waitFor(() => attempt === 1 && main.boardMigrationState.running === true, 1500);
+
+        // 20s 慢请求仍在途时，调用真实 setActiveTab('scripts') 切走标签页：必须立即取消并释放锁
+        const tCancel = Date.now();
+        main.setActiveTab('scripts');
+        const firstRes = await firstPromise;
+        assert.equal(firstRes.status, 'cancelled', 'setActiveTab 切走必须立即唤醒 Promise.race 并返回 cancelled');
+        assert.ok(Date.now() - tCancel < 2000, '切页取消不得被 20s 慢请求阻塞');
+        assert.equal(main.boardMigrationState.running, false);
+        assert.equal(host.storage.getItem(ASSET_BOARD_LOCK_KEY) ?? null, null, '切页取消必须立即释放互斥锁');
+
+        // 旧 20s 请求仍在后台悬停时，立即重新触发迁移：绝不能返回旧取消 Promise 而被吞掉
+        const secondRes = await main.gwCall('organize', 'runAssetBoardOneTimeMigration', {trigger: 'retry'});
+        assert.equal(secondRes.status, 'done', '立即重跑必须进入新一轮并成功迁移');
+        assert.deepEqual(JSON.parse(host.storage.getItem(ASSET_BOARD_KEY) || '{}').customBoards, []);
+    } finally {
+        if (firstSlowTimer) clearTimeout(firstSlowTimer);
         cleanupHost();
         dropTree(tree);
     }

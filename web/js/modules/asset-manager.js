@@ -8313,7 +8313,17 @@ async function handleClick(event){
     }
     if(target.closest?.('[data-board-migration-retry]')){
         boardMigrationState = {...boardMigrationState, dismissed:false};
-        void gwCall('organize', 'runAssetBoardOneTimeMigration', {trigger:'retry'});
+        void gwCall('organize', 'runAssetBoardOneTimeMigration', {trigger:'retry'}).catch(err => {
+            boardMigrationState = {
+                ...boardMigrationState,
+                running:false,
+                completed:false,
+                dismissed:false,
+                failedMessage:err?.message || '迁移任务启动失败，请点击重试。',
+            };
+            setStatus('旧版资源库来源迁移失败，已保留原看板定义');
+            render();
+        });
         return;
     }
     if(target.closest?.('[data-board-migration-dismiss]')){
@@ -11323,11 +11333,7 @@ window.addEventListener('pagehide', () => {
     saveRegistryBrowseSession();
     invalidateAllowedRootMutation();
     GW_DEFERRED.organize?.invalidateResourceFolderAction?.();
-    bumpBoardMigrationSeq();
-    if(boardMigrationState.running){
-        boardMigrationState = {...boardMigrationState, running:false};
-    }
-    releaseBoardMigrationLock();
+    cancelActiveBoardMigration();
 });
 window.addEventListener('message', event => {
     if(event.origin !== window.location.origin) return;
@@ -11400,7 +11406,17 @@ document.addEventListener('DOMContentLoaded', () => {
         // QIN-599 AC1：仅当本地存在待迁移的旧版自定义/来源看板时，在首屏就绪后执行一次性迁移；
         // 冷启动空看板不拉起 organize 延后域，保持 QIN-591 首屏门禁隔离。
         if(readBoardNavigationState().customBoards.length){
-            void gwCall('organize', 'runAssetBoardOneTimeMigration', {trigger:'boot'}).catch(() => null);
+            void gwCall('organize', 'runAssetBoardOneTimeMigration', {trigger:'boot'}).catch(err => {
+                boardMigrationState = {
+                    ...boardMigrationState,
+                    running:false,
+                    completed:false,
+                    dismissed:false,
+                    failedMessage:err?.message || '旧版资源库来源迁移启动失败，已保留原看板定义，请点击重试。',
+                };
+                setStatus('旧版资源库来源迁移失败，已保留原看板定义');
+                render();
+            });
         }
     }).catch(err => {
         markRegistryFirstScreenReady();
@@ -11440,9 +11456,7 @@ function setActiveTab(v){
     if(activeTab !== v){
         GW_DEFERRED.organize?.invalidateResourceFolderAction?.();
         if(boardMigrationState.running){
-            boardMigrationSeq += 1;
-            boardMigrationState = {...boardMigrationState, running:false};
-            releaseBoardMigrationLock();
+            cancelActiveBoardMigration();
         }
     }
     activeTab = v;
@@ -11463,6 +11477,13 @@ function bumpBoardMigrationSeq(){
     boardMigrationSeq += 1;
     GW_DEFERRED.organize?.notifyBoardMigrationSeqChanged?.();
     return boardMigrationSeq;
+}
+function cancelActiveBoardMigration(){
+    bumpBoardMigrationSeq();
+    if(boardMigrationState.running){
+        boardMigrationState = {...boardMigrationState, running:false};
+    }
+    releaseBoardMigrationLock();
 }
 function setBoardNavigationState(v){ boardNavigationState = v; }
 function setBoardSourceState(v){ boardSourceState = v; }
@@ -11905,6 +11926,7 @@ export {
     boardSourceState,
     bumpBoardMigrationSeq,
     canBrowseServerDirectories,
+    cancelActiveBoardMigration,
     canManageAllowedRoots,
     canManageProjectWorkspaceSettings,
     canvasAssetCategories,
