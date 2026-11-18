@@ -7,3 +7,105 @@ body.gw-page--task-center h3 { font-size:var(--gw-type-headline-sm) !important; 
 
 body.gw-page--task-center :is(button,a,select,input,textarea):focus-visible { outline:2px solid var(--gold-primary,#dfc384); outline-offset:2px; }
 @media (max-width:720px) { body.gw-page--task-center .task-table-wrap { overflow-x:auto; } body.gw-page--task-center .view-heading, body.gw-page--task-center .panel-heading { align-items:flex-start; flex-wrap:wrap; } }
+
+/* QIN-620: 协作「中心」嵌入态主按钮、筛选卡片与统一下拉样式 */
+html.task-center-embedded body.gw-signal.gw-page--task-center .center-page {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+html.task-center-embedded body.gw-signal.gw-page--task-center #observationViews {
+  order: 1;
+  width: 100% !important;
+  max-width: 100%;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+  margin-top: 0;
+  padding: 4px;
+  border-radius: var(--sf-radius-panel, 8px) !important;
+}
+html.task-center-embedded body.gw-signal.gw-page--task-center #observationViews .btn-segmented-item {
+  width: 100%;
+  min-height: 44px;
+  height: 44px;
+  padding: 8px 14px;
+  color: #cbd5e1 !important;
+  font-size: var(--gw-type-button-md, 14px);
+  border-radius: var(--sf-radius-control, 6px) !important;
+}
+html.task-center-embedded body.gw-signal.gw-page--task-center #observationViews .btn-segmented-item.active,
+html.task-center-embedded body.gw-signal.gw-page--task-center #observationViews .btn-segmented-item[aria-selected="true"] {
+  color: #eddab3 !important;
+}
+html.task-center-embedded body.gw-signal.gw-page--task-center #observationViews .tab-count-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 6px;
+  border-radius: 999px;
+  font-family: var(--gw-font-mono);
+  font-size: var(--gw-type-label-md, 12px);
+  font-weight: var(--gw-weight-bold, 700);
+  background: rgba(255, 255, 255, 0.08);
+  color: inherit;
+}
+html.task-center-embedded body.gw-signal.gw-page--task-center #observationViews .btn-segmented-item.active .tab-count-badge {
+  background: rgba(223, 195, 132, 0.22);
+  color: #eddab3;
+}
+html.task-center-embedded body.gw-signal.gw-page--task-center .observability-toolbar {
+  order: 2;
+  border-radius: var(--sf-radius-panel, 8px) !important;
+  border: 1px solid var(--sf-line) !important;
+  padding: 10px 12px;
+}
+html.task-center-embedded body.gw-signal.gw-page--task-center .observability-filter-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  width: 100%;
+}
+html.task-center-embedded body.gw-signal.gw-page--task-center .observability-field {
+  flex: 1 1 130px;
+  min-width: 120px;
+}
+html.task-center-embedded body.gw-signal.gw-page--task-center .observability-field select,
+html.task-center-embedded body.gw-signal.gw-page--task-center .observability-field input {
+  border-radius: var(--sf-radius-control, 6px) !important;
+  border: 1px solid var(--sf-line-strong) !important;
+  background-color: var(--sf-surface) !important;
+  color: var(--sf-text) !important;
+  height: 36px;
+  min-height: 36px;
+}
+html.task-center-embedded body.gw-signal.gw-page--task-center .observability-field select {
+  appearance: none;
+  -webkit-appearance: none;
+  padding-right: 30px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23dfc384' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+  background-size: 12px 12px;
+  cursor: pointer;
+}
+html.task-center-embedded[data-theme="light"] body.gw-signal.gw-page--task-center .observability-field select {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23475569' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+}
+html.task-center-embedded body.gw-signal.gw-page--task-center #observabilityNotice {
+  order: 3;
+}
+html.task-center-embedded body.gw-signal.gw-page--task-center #observabilityContent {
+  order: 4;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+body.gw-page--task-center .data-gap.is-error {
+  color: var(--sf-coral, #ff7f78) !important;
+  border: 1px solid rgba(255, 127, 120, 0.4);
+  background: rgba(255, 127, 120, 0.08);
+  border-radius: var(--sf-radius-control, 6px);
+  padding: 12px;
+}

@@ -82,7 +82,7 @@
     level: initial.get('level') === 'warning' ? 'warn' : (initial.get('level') || 'all'), status: initial.get('status') || 'all', logStatus: initial.get('status') || 'all', stableId: initial.get('stable_id') || initial.get('asset_id') || (deepLink?.type === 'asset' ? deepLink.id : ''),
     projectId: initial.get('project_id') || '', entityId: initial.get('entity_id') || '', assetId: initial.get('asset_id') || '', canvasId: initial.get('canvas_id') || '', jobId: initial.get('job_id') || (deepLink?.type === 'task' ? deepLink.id : ''),
     eventId: initial.get('event_id') || (deepLink?.type === 'event' ? deepLink.id : ''), overview: {}, tasks: [], stalledTasks: [], events: [], series: {}, health: [], sources: [], assetVolumes: [], longTasks: [], eventWindow: null, taskWindow: null,
-    nextCursor: '', hasMore: false, taskNextCursor: '', taskHasMore: false, assetVolumeNextCursor: '', assetVolumeHasMore: false, assetVolumeLoading: false, assetVolumeError: '', longTaskLoading: false, longTasksError: '', stalledTasksError: '', stalledTasksDataStatus: 'ok', loading: false, loadError: '', loadErrorKind: '', degraded: [], degradedKinds: [], permissionDenied: false, summaryOnly: false, role: '', lastUpdated: '', detail: null,
+    nextCursor: '', hasMore: false, taskNextCursor: '', taskHasMore: false, assetVolumeNextCursor: '', assetVolumeHasMore: false, assetVolumeLoading: false, assetVolumeError: '', longTaskLoading: false, longTasksError: '', stalledTasksError: '', stalledTasksDataStatus: 'ok', loading: false, loadError: '', loadErrorKind: '', tasksError: '', eventsError: '', renderError: '', degraded: [], degradedKinds: [], permissionDenied: false, summaryOnly: false, role: '', lastUpdated: '', detail: null,
     detailActions: {}, detailActionReasons: {}, selectedJobId: '', detailTrigger: null, detailLoading: false, detailError: '', pendingAction: '', actionBusy: '',
     deepLinkPending: Boolean(initial.get('job_id') || initial.get('event_id') || deepLink), toastTimer: 0,
   };
@@ -117,6 +117,8 @@
   let autoRefreshEnabled = true;
   let dataRequestOwner = '';
   let queuedReload = false;
+  let requestGeneration = 0;
+  let activeAbortController = null;
 
   const tr = key => window.StudioI18n?.t?.(key) || key;
   const trf = (key, values = {}) => Object.entries(values).reduce((text, [name, value]) => text.replaceAll(`{${name}}`, String(value)), tr(key));
@@ -613,7 +615,7 @@
   }
   function matchesContext(item) { return (!state.projectId || cleanId(item.project_id) === state.projectId) && (!state.entityId || cleanId(item.entity_id) === state.entityId) && (!state.assetId || cleanId(item.asset_id) === state.assetId) && (!state.canvasId || cleanId(item.canvas_id) === state.canvasId); }
 
-  function dataGap(message = tr('taskCenter.noData')) { return `<div class="data-gap">${esc(message)}</div>`; }
+  function dataGap(message = tr('taskCenter.noData'), {isError = false} = {}) { return `<div class="data-gap${isError ? ' is-error' : ''}"${isError ? ' role="alert"' : ''}>${esc(message)}</div>`; }
   function assetVolumeStateRow(message) { return `<div class="asset-volume-state-row" role="row"><div class="data-gap" role="cell" aria-colspan="3">${esc(message)}</div></div>`; }
   function isPermissionError(error) { return /401|403|权限|登录|forbidden|unauthor/i.test(String(error?.message || error || '')); }
   function noteDataStatus(data, label) {
@@ -664,6 +666,9 @@
     if (state.permissionDenied) parts.push(`<strong>${esc(tr('taskCenter.permissionDenied'))}</strong>`);
     if (state.summaryOnly) parts.push(`<span class="notice-degraded"><i data-lucide="eye" aria-hidden="true"></i>${esc(tr('taskCenter.summaryOnly'))}</span>`);
     if (state.loadError) parts.push(`<strong data-gw-degradation="${esc(state.loadErrorKind || 'error')}">${esc(state.loadError)}</strong>`);
+    if (state.renderError) parts.push(`<strong data-gw-degradation="error">${esc(state.renderError)}</strong>`);
+    if (state.tasksError) parts.push(`<strong data-gw-degradation="error">${esc(state.tasksError)}</strong>`);
+    if (state.eventsError) parts.push(`<strong data-gw-degradation="error">${esc(state.eventsError)}</strong>`);
     // 页面级兜底标记（仅用于未携带自身 kind 的历史条目，如 data_status=degraded 的后端自报降级）。
     const fallbackKind = state.degradedKinds.includes('not_integrated') ? 'not_integrated'
       : (state.degradedKinds.includes('service_unavailable') ? 'service_unavailable' : 'degraded');
@@ -691,9 +696,11 @@
   }
 
   function renderSummary() {
+    const node = q('#overviewSummary');
+    if (!node) return;
     const summary = firstObject(state.overview, ['summary', 'overview', 'counts']); const jobs = firstObject(summary, ['jobs', 'tasks']); const byStatus = firstObject(jobs, ['by_status', 'statuses']);
     const items = [[tr('taskCenter.summaryAll'), summary.total ?? summary.tasks ?? summary.task_count ?? jobs.total], [tr('taskCenter.summaryFailed'), summary.failed ?? summary.failures ?? summary.failed_count ?? byStatus.failed], [tr('taskCenter.queueDepth'), summary.queue_depth ?? summary.queued ?? summary.queue ?? jobs.queue_depth], [tr('taskCenter.p95Latency'), summary.p95_latency_ms ?? summary.p95 ?? summary.latency_p95_ms]];
-    q('#overviewSummary').innerHTML = items.map(([label, value]) => `<div class="summary-item"><span>${esc(label)}</span><strong>${esc(formatNumber(value, label === tr('taskCenter.p95Latency') && typeof value === 'number' ? ' ms' : ''))}</strong><small>${esc(value === undefined || value === null ? tr('taskCenter.noData') : tr('taskCenter.fromObservability'))}</small></div>`).join('');
+    node.innerHTML = items.map(([label, value]) => `<div class="summary-item"><span>${esc(label)}</span><strong>${esc(formatNumber(value, label === tr('taskCenter.p95Latency') && typeof value === 'number' ? ' ms' : ''))}</strong><small>${esc(value === undefined || value === null ? tr('taskCenter.noData') : tr('taskCenter.fromObservability'))}</small></div>`).join('');
   }
 
   function seriesPoints(data, metric) {
@@ -879,25 +886,40 @@
     return `<button class="event-row ${statusClass(event.level)}" type="button" data-open-event="${esc(event.event_id)}"${event.job_id ? ` data-open-task="${esc(event.job_id)}"` : ''}><span class="event-level">${esc(event.level)}</span><span class="event-main"><strong>${esc(eventDisplayName(event))}</strong><small>${esc(event.message_safe)} · ${esc(event.source)}${related ? ` · ${esc(related)}` : ''}</small></span><time>${esc(dateTime(event.timestamp))}</time><i class="status-dot ${statusClass(event.level)}" aria-hidden="true"></i></button>`;
   }
 
-  function renderEvents() {
-    const events = state.events.map(eventRecord).filter(event => {
+  function filteredEvents() {
+    return state.events.map(eventRecord).filter(event => {
       const deepLinkMatch = Boolean(state.eventId && event.event_id === state.eventId);
       const stableMatch = !state.stableId || [event.event_id, event.job_id, event.project_id, event.entity_id, event.canvas_id, event.asset_id].map(cleanId).includes(state.stableId) || (event.links || []).some(link => cleanId(link.stable_id) === state.stableId);
       const entry = event; const statusMatch = statusMatches(state.logStatus, entry.status);
       return deepLinkMatch || (stableMatch && matchesContext(event) && (state.source === 'all' || event.source === state.source) && (state.level === 'all' || event.level === state.level.toLowerCase()) && statusMatch);
     });
-    const html = events.length ? events.map(item => eventRow(item)).join('') : dataGap(state.loadError ? tr('taskCenter.eventsUnavailable') : tr('taskCenter.emptyLogs'));
-    q('#logRows').innerHTML = html; q('#overviewEvents').innerHTML = events.length ? events.slice(0, 8).map(item => eventRow(item, true)).join('') : dataGap(tr('taskCenter.noData'));
+  }
+
+  function renderEvents() {
+    const events = filteredEvents();
+    const hasErr = Boolean(state.eventsError || state.loadError || state.renderError);
+    const emptyHtml = state.loading && !events.length
+      ? dataGap(tr('taskCenter.loading'))
+      : hasErr
+        ? dataGap(state.eventsError || state.loadError || state.renderError || tr('taskCenter.eventsUnavailable'), {isError: true})
+        : dataGap(tr('taskCenter.emptyLogs'));
+    const html = events.length ? events.map(item => eventRow(item)).join('') : emptyHtml;
+    const logRows = q('#logRows');
+    if (logRows) logRows.innerHTML = html;
+    const overviewEvents = q('#overviewEvents');
+    if (overviewEvents) overviewEvents.innerHTML = events.length ? events.slice(0, 8).map(item => eventRow(item, true)).join('') : dataGap(tr('taskCenter.noData'));
     setText('#logCount', events.length ? `${events.length}${state.hasMore ? '+' : ''}` : '—');
     setText('#cursorState', state.nextCursor ? tr('taskCenter.moreAvailable') : '');
     const loadMore = q('#loadMoreEvents'); if (loadMore) loadMore.disabled = !state.hasMore || state.loading;
   }
 
   function renderHealth() {
+    const node = q('#healthList');
+    if (!node) return;
     const items = state.health.length ? state.health : state.sources;
     const healthy = items.filter(item => ['ok', 'healthy', 'connected', 'available'].includes(String(item.status || item.health || '').toLowerCase())).length;
     setText('#sourceHealthCount', items.length ? `${healthy}/${items.length}` : '—');
-    q('#healthList').innerHTML = items.length ? items.map(item => {
+    node.innerHTML = items.length ? items.map(item => {
       const name = String(item.name || item.source || item.provider || tr('taskCenter.source'));
       const status = String(item.status || item.health || 'unknown').toLowerCase();
       const message = item.message_safe || item.message || item.reason || (status === 'unknown' ? tr('taskCenter.noHealthData') : status);
@@ -906,9 +928,11 @@
   }
 
   function renderFailures() {
+    const node = q('#failureList');
+    if (!node) return;
     const summary = firstObject(state.overview, ['summary', 'overview']);
     const failures = firstArray(state.overview, ['failures', 'active_failures', 'failed_tasks']).concat(state.tasks.filter(item => statusMatches('failed', item.status))).slice(0, 8);
-    q('#failureList').innerHTML = failures.length ? failures.map(item => { const task = persistentTask(item); return `<button class="failure-row" type="button" data-open-task="${esc(task.id)}"><span>${renderStatus(task.status)}</span><span><strong>${esc(task.title)}</strong><small>${esc(task.id)}</small></span><i data-lucide="arrow-up-right" aria-hidden="true"></i></button>`; }).join('') : dataGap(summary.failed ? tr('taskCenter.failuresUnavailable') : tr('taskCenter.noFailures'));
+    node.innerHTML = failures.length ? failures.map(item => { const task = persistentTask(item); return `<button class="failure-row" type="button" data-open-task="${esc(task.id)}"><span>${renderStatus(task.status)}</span><span><strong>${esc(task.title)}</strong><small>${esc(task.id)}</small></span><i data-lucide="arrow-up-right" aria-hidden="true"></i></button>`; }).join('') : dataGap(summary.failed ? tr('taskCenter.failuresUnavailable') : tr('taskCenter.noFailures'));
   }
 
   function knownTasks() {
@@ -926,11 +950,27 @@
     return `<tr${selected ? ' class="is-selected"' : ''} data-job-row="${esc(task.id)}" aria-selected="${String(selected)}"><td class="task-title"><button class="task-detail-trigger" type="button" data-open-task="${esc(task.id)}" title="${esc(tr('taskCenter.openDetails'))}"><strong>${esc(task.summary || task.title)}</strong><span>${esc(task.source || tr('taskCenter.observabilitySource'))} · ${esc(task.id)}</span></button></td><td>${esc(tr(TYPE_KEYS[task.type] || 'taskCenter.system'))}</td><td>${renderTaskStatus(task)}</td><td>${renderTaskProgress(task)}</td><td>${esc(taskActivityText(task))}</td><td><button class="hw-btn hw-btn-sm" type="button" data-open-task="${esc(task.id)}">${esc(tr('taskCenter.openDetails'))}</button></td></tr>`;
   }
 
-  function renderTasks() {
+  function filteredTasks() {
     const pool = knownTasks();
-    const filtered = pool.filter(item => { const task = persistentTask(item); const deepLinkMatch = Boolean(state.jobId && task.id === state.jobId); const statusMatch = statusMatches(state.status, task.status); const idMatch = !state.stableId || [task.id, task.project_id, task.entity_id, task.asset_id, task.canvas_id].map(cleanId).includes(state.stableId); return deepLinkMatch || (matchesContext(task) && statusMatch && idMatch && (!state.source || state.source === 'all' || task.source === state.source)); });
+    return {
+      pool,
+      filtered: pool.filter(item => { const task = persistentTask(item); const deepLinkMatch = Boolean(state.jobId && task.id === state.jobId); const statusMatch = statusMatches(state.status, task.status); const idMatch = !state.stableId || [task.id, task.project_id, task.entity_id, task.asset_id, task.canvas_id].map(cleanId).includes(state.stableId); return deepLinkMatch || (matchesContext(task) && statusMatch && idMatch && (!state.source || state.source === 'all' || task.source === state.source)); }),
+    };
+  }
+
+  function renderTasks() {
+    const {pool, filtered} = filteredTasks();
     setText('#taskCount', filtered.length ? `${filtered.length}${filtered.length !== pool.length ? ` / ${pool.length}` : ''}` : '—');
-    q('#taskRows').innerHTML = filtered.length ? filtered.map(taskRow).join('') : dataGap(state.loadError ? tr('taskCenter.tasksUnavailable') : tr('taskCenter.emptyTasks'));
+    const taskRows = q('#taskRows');
+    if (taskRows) {
+      const hasErr = Boolean(state.tasksError || state.loadError || state.renderError);
+      const emptyCell = state.loading && !filtered.length
+        ? `<tr><td colspan="6">${dataGap(tr('taskCenter.loading'))}</td></tr>`
+        : hasErr
+          ? `<tr><td colspan="6">${dataGap(state.tasksError || state.loadError || state.renderError || tr('taskCenter.tasksUnavailable'), {isError: true})}</td></tr>`
+          : `<tr><td colspan="6">${dataGap(tr('taskCenter.emptyTasks'))}</td></tr>`;
+      taskRows.innerHTML = filtered.length ? filtered.map(taskRow).join('') : emptyCell;
+    }
     const loadMore = q('#loadMoreTasks'); if (loadMore) loadMore.disabled = !state.taskHasMore || state.loading;
     setText('#taskCursorState', state.taskNextCursor ? tr('taskCenter.moreAvailable') : '');
   }
@@ -980,18 +1020,46 @@
     if (window.lucide?.createIcons) window.lucide.createIcons({attrs: {'aria-hidden': 'true'}});
   }
 
+  function updateTabCounts() {
+    const tasksBadge = q('[data-tab-count="tasks"]');
+    if (tasksBadge) {
+      const count = filteredTasks().filtered.length;
+      tasksBadge.hidden = count <= 0 && !state.tasks.length;
+      tasksBadge.textContent = String(count);
+    }
+    const logsBadge = q('[data-tab-count="logs"]');
+    if (logsBadge) {
+      const count = filteredEvents().length;
+      logsBadge.hidden = count <= 0 && !state.events.length;
+      logsBadge.textContent = String(count);
+    }
+  }
+
   function render() {
-    renderContext(); renderNotice(); renderSummary(); renderSeries(); renderLongTaskProgress(); renderTaskStallAlerts(); renderAssetVolumes(); renderEvents(); renderHealth(); renderFailures(); renderTasks();
-    const stamp = state.lastUpdated ? dateTime(state.lastUpdated) : tr('taskCenter.waitingForData');
-    setText('#refreshState', state.loading ? tr('taskCenter.refreshing') : `${tr('taskCenter.updatedAt')} ${stamp}`);
-    setText('#overviewUpdated', stamp); setText('#metricsUpdated', stamp);
-    document.querySelectorAll('[data-view-panel]').forEach(panel => { const active = panel.dataset.viewPanel === state.view; panel.hidden = !active; panel.classList.toggle('active', active); panel.setAttribute('aria-hidden', String(!active)); });
-    document.querySelectorAll('[data-view]').forEach(tab => { const active = tab.dataset.view === state.view; tab.classList.toggle('active', active); tab.setAttribute('role', 'tab'); tab.setAttribute('aria-selected', String(active)); tab.setAttribute('tabindex', active ? '0' : '-1'); });
-    const viewNav = q('#observationViews'); if (viewNav) viewNav.setAttribute('aria-label', tr('taskCenter.viewNavigation'));
-    [['#throughputChart', 'taskCenter.responseBytes'], ['#metricThroughputChart', 'taskCenter.responseBytes'], ['#latencyChart', 'taskCenter.latencySample'], ['#metricLatencyChart', 'taskCenter.latencySample'], ['#longTaskProgress', 'taskCenter.longTasks']].forEach(([selector, key]) => { const chart = q(selector); if (chart) chart.setAttribute('aria-label', tr(key)); });
-    const assetVolumeTable = q('#assetVolumeTable'); if (assetVolumeTable) assetVolumeTable.setAttribute('aria-label', tr('taskCenter.assetVolumes'));
-    if (window.lucide?.createIcons) window.lucide.createIcons({attrs: {'aria-hidden': 'true'}});
-    scheduleTaskTouchbarReport();
+    try {
+      state.renderError = '';
+      renderContext();
+      if (!EMBEDDED) {
+        renderSummary(); renderSeries(); renderLongTaskProgress(); renderTaskStallAlerts(); renderAssetVolumes(); renderHealth(); renderFailures();
+      }
+      renderEvents(); renderTasks(); renderNotice(); updateTabCounts();
+      const stamp = state.lastUpdated ? dateTime(state.lastUpdated) : tr('taskCenter.waitingForData');
+      const hasAnyErr = Boolean(state.loadError || state.tasksError || state.eventsError || state.renderError);
+      setText('#refreshState', state.loading ? tr('taskCenter.refreshing') : hasAnyErr ? tr('taskCenter.queryUnavailable') : `${tr('taskCenter.updatedAt')} ${stamp}`);
+      setText('#overviewUpdated', stamp); setText('#metricsUpdated', stamp);
+      document.querySelectorAll('[data-view-panel]').forEach(panel => { const active = panel.dataset.viewPanel === state.view; panel.hidden = !active; panel.classList.toggle('active', active); panel.setAttribute('aria-hidden', String(!active)); });
+      document.querySelectorAll('[data-view]').forEach(tab => { const active = tab.dataset.view === state.view; tab.classList.toggle('active', active); tab.setAttribute('role', 'tab'); tab.setAttribute('aria-selected', String(active)); tab.setAttribute('tabindex', active ? '0' : '-1'); });
+      const viewNav = q('#observationViews'); if (viewNav) viewNav.setAttribute('aria-label', tr('taskCenter.viewNavigation'));
+      [['#throughputChart', 'taskCenter.responseBytes'], ['#metricThroughputChart', 'taskCenter.responseBytes'], ['#latencyChart', 'taskCenter.latencySample'], ['#metricLatencyChart', 'taskCenter.latencySample'], ['#longTaskProgress', 'taskCenter.longTasks']].forEach(([selector, key]) => { const chart = q(selector); if (chart) chart.setAttribute('aria-label', tr(key)); });
+      const assetVolumeTable = q('#assetVolumeTable'); if (assetVolumeTable) assetVolumeTable.setAttribute('aria-label', tr('taskCenter.assetVolumes'));
+      if (window.lucide?.createIcons) window.lucide.createIcons({attrs: {'aria-hidden': 'true'}});
+      scheduleTaskTouchbarReport();
+    } catch (error) {
+      state.renderError = error?.message || tr('taskCenter.queryUnavailable');
+      renderNotice();
+      showToast(state.renderError, 'error');
+      setText('#refreshState', tr('taskCenter.queryUnavailable'));
+    }
   }
 
   function showToast(message, kind = 'success') {
@@ -1138,41 +1206,63 @@
   }
 
   async function load() {
-    if (state.loading || !acquireDataRequest('refresh')) return;
-    state.loading = true; state.assetVolumeLoading = true; state.longTaskLoading = true; state.loadError = ''; state.loadErrorKind = ''; state.assetVolumeError = ''; state.longTasksError = ''; state.stalledTasksError = ''; state.stalledTasksDataStatus = 'ok'; state.stalledTasks = []; state.assetVolumes = []; state.assetVolumeNextCursor = ''; state.assetVolumeHasMore = false; state.eventWindow = null; state.taskWindow = null; state.degraded = []; state.degradedKinds = []; state.permissionDenied = false; state.summaryOnly = state.role === 'reviewer'; render();
-    const eventQuery = observationQuery(state.eventId ? {limit: 1, event_id: state.eventId} : {limit: 50}, 'events'); if (EMBEDDED) eventQuery.set('source', 'agent_runtime'); const taskQuery = observationQuery(state.jobId ? {limit: 1, job_id: state.jobId} : {limit: 50}, 'tasks'); const assetVolumeQueryString = assetVolumeQuery(); const longRunningQuery = observationQuery({range: 'all', limit: '50', status: 'running', job_type: LONG_TASK_JOB_TYPES}, 'tasks'); const longQueuedQuery = observationQuery({range: 'all', limit: '50', status: 'queued', job_type: LONG_TASK_JOB_TYPES}, 'tasks'); const longPausedQuery = observationQuery({range: 'all', limit: '50', status: 'paused', job_type: LONG_TASK_JOB_TYPES}, 'tasks'); const longSucceededQuery = observationQuery({range: 'all', limit: '50', status: 'succeeded', job_type: LONG_TASK_JOB_TYPES}, 'tasks'); const longFailedQuery = observationQuery({range: 'all', limit: '50', status: 'failed', job_type: LONG_TASK_JOB_TYPES}, 'tasks'); const longCanceledQuery = observationQuery({range: 'all', limit: '50', status: 'canceled', job_type: LONG_TASK_JOB_TYPES}, 'tasks'); const stalledQueuedQuery = observationQuery({range: 'all', limit: '100', stall_classification: ['queued', 'historical']}, 'tasks'); const stalledRecoveringQuery = observationQuery({range: 'all', limit: '100', stall_classification: ['recovering', 'historical']}, 'tasks');
+    const gen = ++requestGeneration;
+    if (activeAbortController) activeAbortController.abort();
+    const controller = new AbortController();
+    activeAbortController = controller;
+    if (!EMBEDDED && !acquireDataRequest('refresh')) return;
+    state.loading = true; state.assetVolumeLoading = !EMBEDDED; state.longTaskLoading = !EMBEDDED; state.loadError = ''; state.loadErrorKind = ''; state.tasksError = ''; state.eventsError = ''; state.renderError = ''; state.assetVolumeError = ''; state.longTasksError = ''; state.stalledTasksError = ''; state.stalledTasksDataStatus = 'ok'; if (!EMBEDDED) { state.stalledTasks = []; state.assetVolumes = []; } state.assetVolumeNextCursor = ''; state.assetVolumeHasMore = false; state.eventWindow = null; state.taskWindow = null; state.degraded = []; state.degradedKinds = []; state.permissionDenied = false; state.summaryOnly = state.role === 'reviewer'; render();
+    const eventQuery = observationQuery(state.eventId ? {limit: 1, event_id: state.eventId} : {limit: 50}, 'events'); if (EMBEDDED && !eventQuery.get('source')) eventQuery.set('source', 'agent_runtime'); const taskQuery = observationQuery(state.jobId ? {limit: 1, job_id: state.jobId} : {limit: 50}, 'tasks'); const assetVolumeQueryString = assetVolumeQuery(); const longRunningQuery = observationQuery({range: 'all', limit: '50', status: 'running', job_type: LONG_TASK_JOB_TYPES}, 'tasks'); const longQueuedQuery = observationQuery({range: 'all', limit: '50', status: 'queued', job_type: LONG_TASK_JOB_TYPES}, 'tasks'); const longPausedQuery = observationQuery({range: 'all', limit: '50', status: 'paused', job_type: LONG_TASK_JOB_TYPES}, 'tasks'); const longSucceededQuery = observationQuery({range: 'all', limit: '50', status: 'succeeded', job_type: LONG_TASK_JOB_TYPES}, 'tasks'); const longFailedQuery = observationQuery({range: 'all', limit: '50', status: 'failed', job_type: LONG_TASK_JOB_TYPES}, 'tasks'); const longCanceledQuery = observationQuery({range: 'all', limit: '50', status: 'canceled', job_type: LONG_TASK_JOB_TYPES}, 'tasks'); const stalledQueuedQuery = observationQuery({range: 'all', limit: '100', stall_classification: ['queued', 'historical']}, 'tasks'); const stalledRecoveringQuery = observationQuery({range: 'all', limit: '100', stall_classification: ['recovering', 'historical']}, 'tasks');
     const failed = (result, label) => { if (result.status === 'rejected') { const itemKind = degradeKind(result.reason); if (itemKind) { pushDegraded(degradeLabel(result.reason, label), itemKind); } else if (isPermissionError(result.reason)) { if (['reviewer', 'editor'].includes(String(state.role || ''))) { if (state.role === 'reviewer') state.summaryOnly = true; const notice = state.role === 'reviewer' ? tr('taskCenter.summaryOnly') : tr('taskCenter.degradedData'); pushDegraded(`${label} · ${notice}`, ''); } else state.permissionDenied = true; } else pushDegraded(degradeLabel(result.reason, label), ''); } };
     if (EMBEDDED) {
       try {
         const [events, tasks] = await Promise.allSettled([
-          api(`${ENDPOINTS.events}?${eventQuery}`),
-          api(`${ENDPOINTS.tasks}?${taskQuery}`),
+          api(`${ENDPOINTS.events}?${eventQuery}`, {signal: controller.signal}),
+          api(`${ENDPOINTS.tasks}?${taskQuery}`, {signal: controller.signal}),
         ]);
+        if (gen !== requestGeneration || controller.signal.aborted) return;
+        let hasFailure = false;
         if (events.status === 'fulfilled') {
           state.events = firstArray(events.value, ['events', 'items', 'data']).map(eventRecord);
           state.eventWindow = responseWindow(events.value);
           state.nextCursor = cleanId(events.value.next_cursor || events.value.cursor?.next || events.value.meta?.next_cursor);
           state.hasMore = Boolean(events.value.has_more || state.nextCursor);
+          state.eventsError = '';
           noteDataStatus(events.value, tr('taskCenter.eventsUnavailable'));
-        } else failed(events, tr('taskCenter.eventsUnavailable'));
+        } else {
+          hasFailure = true;
+          state.eventsError = degradeLabel(events.reason, tr('taskCenter.eventsUnavailable'));
+        }
         if (tasks.status === 'fulfilled') {
           state.tasks = firstArray(tasks.value, ['items', 'tasks']).map(persistentTask).filter(item => item.id);
           state.taskWindow = responseWindow(tasks.value);
           state.taskNextCursor = cleanId(tasks.value.next_cursor || tasks.value.cursor?.next || tasks.value.meta?.next_cursor);
           state.taskHasMore = Boolean(tasks.value.has_more || state.taskNextCursor);
+          state.tasksError = '';
+          state.lastUpdated = new Date().toISOString();
           noteDataStatus(tasks.value, tr('taskCenter.tasksUnavailable'));
-        } else failed(tasks, tr('taskCenter.tasksUnavailable'));
+        } else {
+          hasFailure = true;
+          state.tasksError = degradeLabel(tasks.reason, tr('taskCenter.tasksUnavailable'));
+        }
+        if (hasFailure) {
+          showToast(state.tasksError || state.eventsError || tr('taskCenter.queryUnavailable'), 'error');
+        } else {
+          state.lastUpdated = state.lastUpdated || new Date().toISOString();
+        }
       } catch (error) {
+        if (gen !== requestGeneration || controller.signal.aborted || error?.name === 'AbortError') return;
         state.loadError = taskCenterDegradationNotice(error);
+        showToast(state.loadError, 'error');
       } finally {
-        const shouldReload = finishDataRequest('refresh');
-        state.loading = false;
-        render();
-        runQueuedReload(shouldReload);
-        if (state.deepLinkPending) {
-          state.deepLinkPending = false;
-          if (state.jobId) await openTaskDetail(state.jobId);
-          else if (state.eventId) await focusEventDeepLink(state.eventId);
+        if (gen === requestGeneration) {
+          state.loading = false;
+          render();
+          if (state.deepLinkPending) {
+            state.deepLinkPending = false;
+            if (state.jobId) await openTaskDetail(state.jobId);
+            else if (state.eventId) await focusEventDeepLink(state.eventId);
+          }
         }
       }
       return;
@@ -1306,7 +1396,10 @@
   }
 
   function setView(view) { if (EMBEDDED && !['tasks', 'logs'].includes(view)) return; if (!['overview', 'tasks', 'logs', 'metrics'].includes(view)) return; state.view = view; syncUrl(); render(); }
-  function resetAndLoad() { if (dataRequestOwner) { queuedReload = true; return; } queuedReload = false; resetPaginationState(); void load(); }
+  function resetAndLoad() {
+    if (EMBEDDED) { resetPaginationState(); void load(); return; }
+    if (dataRequestOwner) { queuedReload = true; return; } queuedReload = false; resetPaginationState(); void load();
+  }
 
   async function handleClick(event) {
     const viewTab = event.target.closest('[data-view]'); if (viewTab) return setView(viewTab.dataset.view);
@@ -1361,6 +1454,11 @@
       }
       return;
     }
+    if (event.data?.type === 'gw-collab-center-refresh' && event.data.version === 1) {
+      if (event.origin !== location.origin || event.source !== window.parent) return;
+      void load();
+      return;
+    }
     if (event.data?.type === 'studio-lang' && window.StudioI18n) window.StudioI18n.set(event.data.lang || 'zh');
   });
   window.addEventListener('studio-lang-change', () => { render(); if (q('#taskDetail')?.open) renderDetail(); });
@@ -1375,7 +1473,11 @@
     if (autoRefreshEnabled) void requestRefresh();
   });
   window.addEventListener('pageshow', event => { syncAutoRefresh(); if (event.persisted) void requestRefresh(); });
-  window.addEventListener('pagehide', stopAutoRefresh);
+  window.addEventListener('pagehide', () => {
+    stopAutoRefresh();
+    ++requestGeneration;
+    if (activeAbortController) { activeAbortController.abort(); activeAbortController = null; }
+  });
   window.addEventListener('hashchange', () => {
     const hash = location.hash.slice(1);
     const link = parseDeepLinkHash(hash);
@@ -1415,6 +1517,9 @@
     syncAutoRefresh();
     if (EMBEDDED) {
       document.documentElement.classList.add('task-center-embedded');
+      const viewNav = q('#observationViews');
+      const toolbar = q('.observability-toolbar');
+      if (viewNav && toolbar && toolbar.parentNode) toolbar.parentNode.insertBefore(viewNav, toolbar);
       document.querySelectorAll('[data-view="overview"], [data-view="metrics"]').forEach(node => node.remove());
       document.querySelectorAll('[data-view-panel="overview"], [data-view-panel="metrics"]').forEach(node => node.remove());
       q('[data-start-index]')?.remove();

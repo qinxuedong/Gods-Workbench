@@ -1,0 +1,27 @@
+{
+  "schema": "gw.cleanroom-admission-shard/v1",
+  "issue": 751,
+  "authorization_basis": "GitHub Issue #751, 2026-11-18",
+  "files": [
+    "web/pages/collab.html",
+    "web/js/controllers/collab-controller.js",
+    "web/embeds/task-center.html",
+    "web/js/modules/task-center.js",
+    "web/css/pages/task-center.css",
+    "gw/observability/service.py",
+    "tests/contracts/observability/test_phase10b_observability.py",
+    "tests/frontend/qin-620-collab-center-data-ui-fix.test.mjs",
+    "tests/frontend/node-files.txt",
+    "tests/hygiene/fixtures/admissions/issue-751.json"
+  ],
+  "admitted_files": [],
+  "accepted_test_files": [
+    {
+      "path": "tests/frontend/qin-620-collab-center-data-ui-fix.test.mjs",
+      "classification": "curated_test_coverage",
+      "authorization_basis": "GitHub Issue #751, 2026-11-18",
+      "admission": "accepted"
+    }
+  ],
+  "notes": "QIN-620：协作「中心」接入落盘工作区作业与运行事件、修复嵌入态 innerHTML 报错与失败可见性、主按钮上移加宽与筛选统一样式；只登记本票分片，不改基础账本。"
+}
