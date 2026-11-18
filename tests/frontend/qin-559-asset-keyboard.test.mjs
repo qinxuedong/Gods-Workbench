@@ -48,7 +48,7 @@ test('全屏 Coverflow 的 Backquote 不进入编辑，F 与 Escape 退出', asy
     const intervals = new Set();
     const timeouts = new Set();
     globalThis.setInterval = (...args) => { const id = prevSetInterval(...args); id?.unref?.(); intervals.add(id); return id; };
-    globalThis.setTimeout = (...args) => { const id = prevSetTimeout(...args); id?.unref?.(); timeouts.add(id); return id; };
+    globalThis.setTimeout = (...args) => { const id = prevSetTimeout(...args); timeouts.add(id); return id; };
     const host = await createAssetViewHost({tab:'local'});
     const StubProto = Object.getPrototypeOf(host.document.body);
     const origAppend = StubProto.append;
