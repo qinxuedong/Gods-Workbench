@@ -480,7 +480,7 @@
 
   function requestRefresh() {
     if (document.hidden) return Promise.resolve();
-    return load().catch(error => {
+    return load({background: true}).catch(error => {
       state.loading = false;
       state.loadError = taskCenterDegradationNotice(error);
       render();
@@ -1035,6 +1035,11 @@
     }
   }
 
+  function applyActiveViewState() {
+    document.querySelectorAll('[data-view-panel]').forEach(panel => { const active = panel.dataset.viewPanel === state.view; panel.hidden = !active; panel.classList.toggle('active', active); panel.setAttribute('aria-hidden', String(!active)); });
+    document.querySelectorAll('[data-view]').forEach(tab => { const active = tab.dataset.view === state.view; tab.classList.toggle('active', active); tab.setAttribute('role', 'tab'); tab.setAttribute('aria-selected', String(active)); tab.setAttribute('tabindex', active ? '0' : '-1'); });
+  }
+
   function render() {
     try {
       state.renderError = '';
@@ -1047,8 +1052,7 @@
       const hasAnyErr = Boolean(state.loadError || state.tasksError || state.eventsError || state.renderError);
       setText('#refreshState', state.loading ? tr('taskCenter.refreshing') : hasAnyErr ? tr('taskCenter.queryUnavailable') : `${tr('taskCenter.updatedAt')} ${stamp}`);
       setText('#overviewUpdated', stamp); setText('#metricsUpdated', stamp);
-      document.querySelectorAll('[data-view-panel]').forEach(panel => { const active = panel.dataset.viewPanel === state.view; panel.hidden = !active; panel.classList.toggle('active', active); panel.setAttribute('aria-hidden', String(!active)); });
-      document.querySelectorAll('[data-view]').forEach(tab => { const active = tab.dataset.view === state.view; tab.classList.toggle('active', active); tab.setAttribute('role', 'tab'); tab.setAttribute('aria-selected', String(active)); tab.setAttribute('tabindex', active ? '0' : '-1'); });
+      applyActiveViewState();
       const viewNav = q('#observationViews'); if (viewNav) viewNav.setAttribute('aria-label', tr('taskCenter.viewNavigation'));
       [['#throughputChart', 'taskCenter.responseBytes'], ['#metricThroughputChart', 'taskCenter.responseBytes'], ['#latencyChart', 'taskCenter.latencySample'], ['#metricLatencyChart', 'taskCenter.latencySample'], ['#longTaskProgress', 'taskCenter.longTasks']].forEach(([selector, key]) => { const chart = q(selector); if (chart) chart.setAttribute('aria-label', tr(key)); });
       const assetVolumeTable = q('#assetVolumeTable'); if (assetVolumeTable) assetVolumeTable.setAttribute('aria-label', tr('taskCenter.assetVolumes'));
@@ -1056,6 +1060,15 @@
       scheduleTaskTouchbarReport();
     } catch (error) {
       state.renderError = error?.message || tr('taskCenter.queryUnavailable');
+      if (!state.tasks.length) {
+        const taskRows = q('#taskRows');
+        if (taskRows) taskRows.innerHTML = `<tr><td colspan="6">${dataGap(state.renderError, {isError: true})}</td></tr>`;
+      }
+      if (!state.events.length) {
+        const logRows = q('#logRows');
+        if (logRows) logRows.innerHTML = dataGap(state.renderError, {isError: true});
+      }
+      applyActiveViewState();
       renderNotice();
       showToast(state.renderError, 'error');
       setText('#refreshState', tr('taskCenter.queryUnavailable'));
@@ -1205,12 +1218,22 @@
     focusEvent(id);
   }
 
-  async function load() {
+  function hasSourceUnavailableEmpty(payload) {
+    if (!payload || payload.data_status !== 'degraded') return false;
+    const items = firstArray(payload, ['events', 'items', 'tasks', 'data']);
+    if (items.length > 0) return false;
+    const gaps = Array.isArray(payload.data_gaps) ? payload.data_gaps : [];
+    const degradedSources = Array.isArray(payload.degraded_sources) ? payload.degraded_sources : [];
+    return degradedSources.length > 0 || gaps.some(g => String(g).includes('SOURCE_UNAVAILABLE'));
+  }
+
+  async function load({background = false} = {}) {
+    if (background && state.loading) return;
+    if (!EMBEDDED && !acquireDataRequest('refresh')) return;
     const gen = ++requestGeneration;
     if (activeAbortController) activeAbortController.abort();
     const controller = new AbortController();
     activeAbortController = controller;
-    if (!EMBEDDED && !acquireDataRequest('refresh')) return;
     state.loading = true; state.assetVolumeLoading = !EMBEDDED; state.longTaskLoading = !EMBEDDED; state.loadError = ''; state.loadErrorKind = ''; state.tasksError = ''; state.eventsError = ''; state.renderError = ''; state.assetVolumeError = ''; state.longTasksError = ''; state.stalledTasksError = ''; state.stalledTasksDataStatus = 'ok'; if (!EMBEDDED) { state.stalledTasks = []; state.assetVolumes = []; } state.assetVolumeNextCursor = ''; state.assetVolumeHasMore = false; state.eventWindow = null; state.taskWindow = null; state.degraded = []; state.degradedKinds = []; state.permissionDenied = false; state.summaryOnly = state.role === 'reviewer'; render();
     const eventQuery = observationQuery(state.eventId ? {limit: 1, event_id: state.eventId} : {limit: 50}, 'events'); if (EMBEDDED && !eventQuery.get('source')) eventQuery.set('source', 'agent_runtime'); const taskQuery = observationQuery(state.jobId ? {limit: 1, job_id: state.jobId} : {limit: 50}, 'tasks'); const assetVolumeQueryString = assetVolumeQuery(); const longRunningQuery = observationQuery({range: 'all', limit: '50', status: 'running', job_type: LONG_TASK_JOB_TYPES}, 'tasks'); const longQueuedQuery = observationQuery({range: 'all', limit: '50', status: 'queued', job_type: LONG_TASK_JOB_TYPES}, 'tasks'); const longPausedQuery = observationQuery({range: 'all', limit: '50', status: 'paused', job_type: LONG_TASK_JOB_TYPES}, 'tasks'); const longSucceededQuery = observationQuery({range: 'all', limit: '50', status: 'succeeded', job_type: LONG_TASK_JOB_TYPES}, 'tasks'); const longFailedQuery = observationQuery({range: 'all', limit: '50', status: 'failed', job_type: LONG_TASK_JOB_TYPES}, 'tasks'); const longCanceledQuery = observationQuery({range: 'all', limit: '50', status: 'canceled', job_type: LONG_TASK_JOB_TYPES}, 'tasks'); const stalledQueuedQuery = observationQuery({range: 'all', limit: '100', stall_classification: ['queued', 'historical']}, 'tasks'); const stalledRecoveringQuery = observationQuery({range: 'all', limit: '100', stall_classification: ['recovering', 'historical']}, 'tasks');
     const failed = (result, label) => { if (result.status === 'rejected') { const itemKind = degradeKind(result.reason); if (itemKind) { pushDegraded(degradeLabel(result.reason, label), itemKind); } else if (isPermissionError(result.reason)) { if (['reviewer', 'editor'].includes(String(state.role || ''))) { if (state.role === 'reviewer') state.summaryOnly = true; const notice = state.role === 'reviewer' ? tr('taskCenter.summaryOnly') : tr('taskCenter.degradedData'); pushDegraded(`${label} · ${notice}`, ''); } else state.permissionDenied = true; } else pushDegraded(degradeLabel(result.reason, label), ''); } };
@@ -1223,24 +1246,34 @@
         if (gen !== requestGeneration || controller.signal.aborted) return;
         let hasFailure = false;
         if (events.status === 'fulfilled') {
-          state.events = firstArray(events.value, ['events', 'items', 'data']).map(eventRecord);
-          state.eventWindow = responseWindow(events.value);
-          state.nextCursor = cleanId(events.value.next_cursor || events.value.cursor?.next || events.value.meta?.next_cursor);
-          state.hasMore = Boolean(events.value.has_more || state.nextCursor);
-          state.eventsError = '';
-          noteDataStatus(events.value, tr('taskCenter.eventsUnavailable'));
+          if (hasSourceUnavailableEmpty(events.value)) {
+            hasFailure = true;
+            state.eventsError = tr('taskCenter.eventsUnavailable');
+          } else {
+            state.events = firstArray(events.value, ['events', 'items', 'data']).map(eventRecord);
+            state.eventWindow = responseWindow(events.value);
+            state.nextCursor = cleanId(events.value.next_cursor || events.value.cursor?.next || events.value.meta?.next_cursor);
+            state.hasMore = Boolean(events.value.has_more || state.nextCursor);
+            state.eventsError = '';
+            noteDataStatus(events.value, tr('taskCenter.eventsUnavailable'));
+          }
         } else {
           hasFailure = true;
           state.eventsError = degradeLabel(events.reason, tr('taskCenter.eventsUnavailable'));
         }
         if (tasks.status === 'fulfilled') {
-          state.tasks = firstArray(tasks.value, ['items', 'tasks']).map(persistentTask).filter(item => item.id);
-          state.taskWindow = responseWindow(tasks.value);
-          state.taskNextCursor = cleanId(tasks.value.next_cursor || tasks.value.cursor?.next || tasks.value.meta?.next_cursor);
-          state.taskHasMore = Boolean(tasks.value.has_more || state.taskNextCursor);
-          state.tasksError = '';
-          state.lastUpdated = new Date().toISOString();
-          noteDataStatus(tasks.value, tr('taskCenter.tasksUnavailable'));
+          if (hasSourceUnavailableEmpty(tasks.value)) {
+            hasFailure = true;
+            state.tasksError = tr('taskCenter.tasksUnavailable');
+          } else {
+            state.tasks = firstArray(tasks.value, ['items', 'tasks']).map(persistentTask).filter(item => item.id);
+            state.taskWindow = responseWindow(tasks.value);
+            state.taskNextCursor = cleanId(tasks.value.next_cursor || tasks.value.cursor?.next || tasks.value.meta?.next_cursor);
+            state.taskHasMore = Boolean(tasks.value.has_more || state.taskNextCursor);
+            state.tasksError = '';
+            state.lastUpdated = new Date().toISOString();
+            noteDataStatus(tasks.value, tr('taskCenter.tasksUnavailable'));
+          }
         } else {
           hasFailure = true;
           state.tasksError = degradeLabel(tasks.reason, tr('taskCenter.tasksUnavailable'));

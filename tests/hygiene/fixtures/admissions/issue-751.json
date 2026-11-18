@@ -12,7 +12,10 @@
     "tests/contracts/observability/test_phase10b_observability.py",
     "tests/frontend/qin-620-collab-center-data-ui-fix.test.mjs",
     "tests/frontend/node-files.txt",
-    "tests/hygiene/fixtures/admissions/issue-751.json"
+    "tests/hygiene/fixtures/admissions/issue-751.json",
+    "docs/contracts/OBSERVABILITY-INTERFACE-CATALOG.yaml",
+    "tests/hygiene/fixtures/cleanroom_admission_metadata.json",
+    "tests/hygiene/test_cleanroom_hygiene.py"
   ],
   "admitted_files": [],
   "accepted_test_files": [

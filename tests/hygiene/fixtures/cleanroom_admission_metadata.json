@@ -484,7 +484,7 @@
       "path": "docs/contracts/OBSERVABILITY-INTERFACE-CATALOG.yaml",
       "classification": "frozen_interface_contract",
       "authorization_basis": "cleanroom_frozen_input",
-      "sha256": "b1d6d7ba2bb6d6c5d900927c3bbd3509469321febda5184189a43f226c9dc534",
+      "sha256": "8c2a3c5bb1da7278d5a2d76ec200d1e0ae67e793ebd17f2413980e0cae37f6dc",
       "admission": "accepted"
     },
     {

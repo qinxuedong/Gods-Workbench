@@ -976,46 +976,75 @@ def test_gpu_metric_whitelist_and_no_fabricated_names():
 def test_runtime_events_aggregates_workspace_jobs_without_audit_fallback(
     seeded_client: TestClient, monkeypatch
 ):
-    """QIN-620: source=agent_runtime 在无 runtime.sqlite3 时应聚合落盘工作区作业事件，绝不回退 core.audit。"""
+    """QIN-620: 真实磁盘写入工作区作业并冷启动重建实例后，tasks 与 source=agent_runtime 均可冷读且脱敏，不回退 core.audit。"""
     from gw.asset_registry import index_jobs
+    from gw.observability.service import ObservabilityService
 
-    class _FakeIndexService:
-        def listing(self, auth):
-            return [
+    auth = obs_routes.require_authenticated(AUTH["Authorization"], AUTH["X-User-Role"])
+    owner = index_jobs._owner(index_jobs._actor(auth))
+    svc = index_jobs.service()
+
+    def _seed_job(state):
+        state["jobs"]["job-idx-qin620-cold"] = {
+            "job_id": "job-idx-qin620-cold",
+            "status": "paused",
+            "phase": "paused",
+            "kind": "index",
+            "project_id": "prj-qin620",
+            "_owner": owner,
+            "attempt": 1,
+            "max_attempts": 1,
+            "version": 1,
+            "roots": [],
+            "scanned": 0,
+            "error_count": 0,
+            "progress": {},
+            "result": None,
+            "error_code": None,
+            "result_unknown": False,
+            "created_at": "2026-11-18T12:00:00Z",
+            "updated_at": "2026-11-18T12:00:05Z",
+            "events": [
                 {
-                    "job_id": "job-idx-qin620",
-                    "status": "running",
-                    "kind": "index",
-                    "project_id": "prj-qin620",
-                    "updated_at": "2026-11-18T12:00:00Z",
-                    "events": [
-                        {
-                            "event_id": "ev-qin620-1",
-                            "type": "job.progress",
-                            "status": "running",
-                            "message": "索引工作区素材",
-                            "at": "2026-11-18T12:00:00Z",
-                        }
-                    ],
+                    "event_id": "ev-qin620-cold-1",
+                    "type": "job.progress",
+                    "status": "paused",
+                    "message": "扫描 /Users/secret/assets 与 Bearer tok_secret_123",
+                    "at": "2026-11-18T12:00:05Z",
                 }
-            ]
+            ],
+        }
+        return state
 
-    monkeypatch.setattr(index_jobs, "service", lambda: _FakeIndexService())
+    svc.store.mutate(_seed_job)
+    # 模拟进程重启：关闭并清空单例，重建全新 ObservabilityService 从磁盘冷读
+    index_jobs.shutdown()
+    index_jobs._default = None
+    assert index_jobs.service().listing(auth)
+    monkeypatch.setattr(
+        "gw.api.routes_observability.default_observability_service",
+        ObservabilityService(),
+    )
+
     res = seeded_client.get(
         "/api/observability/events?source=agent_runtime", headers=AUTH
     )
     assert res.status_code == 200
     body = res.json()
-    assert body["data_status"] == "ok"
-    assert any(item["event_id"] == "ev-qin620-1" for item in body["items"])
+    assert body["data_status"] == "ok", body
+    matched = [i for i in body["items"] if i["event_id"] == "ev-qin620-cold-1"]
+    assert matched, "冷读后应从磁盘读出已落盘工作区作业事件"
+    assert "/Users/secret" not in matched[0]["message_safe"]
+    assert "tok_secret_123" not in matched[0]["message_safe"]
+    assert "[REDACTED]" in matched[0]["message_safe"]
     assert all(item["source"] != "core.audit" for item in body["items"])
 
-    # 按 project_id 过滤 tasks 时应返回匹配的落盘作业并披露内存任务不支持作用域
+    # 按 project_id 过滤 tasks 时应冷读出匹配的落盘作业并披露内存任务不支持作用域
     res_tasks = seeded_client.get(
         "/api/observability/tasks?project_id=prj-qin620", headers=AUTH
     )
     assert res_tasks.status_code == 200
     tasks_body = res_tasks.json()
-    assert any(item["job_id"] == "job-idx-qin620" for item in tasks_body["items"])
+    assert any(item["job_id"] == "job-idx-qin620-cold" for item in tasks_body["items"])
     assert tasks_body["data_status"] == "degraded"
     assert tasks_body["data_gaps"]

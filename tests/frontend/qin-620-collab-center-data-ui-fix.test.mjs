@@ -264,9 +264,10 @@ function buildEmbeddedDom() {
   return { document, main, viewNav, toolbar, tabTasks, tabLogs, tasksBadge, logsBadge, nodes };
 }
 
-function bootTaskCenter(apiImpl) {
+function bootTaskCenter(apiImpl, workspaceOverrides = {}) {
   const dom = buildEmbeddedDom();
   const winListeners = new Map();
+  const intervalCallbacks = [];
   const windowObj = {
     self: {},
     top: {},
@@ -286,8 +287,14 @@ function bootTaskCenter(apiImpl) {
     },
     setTimeout,
     clearTimeout,
-    setInterval: () => 1,
-    clearInterval: () => {},
+    setInterval(fn, ms) {
+      intervalCallbacks.push({ fn, ms });
+      return intervalCallbacks.length;
+    },
+    clearInterval() {},
+    triggerAutoRefresh() {
+      intervalCallbacks.forEach((entry) => entry.fn());
+    },
   };
 
   const sandbox = {
@@ -315,6 +322,7 @@ function bootTaskCenter(apiImpl) {
       timeValue: (v) => String(v || "—"),
       navigate() {},
       reportTouchbarCapabilities() {},
+      ...workspaceOverrides,
     },
   };
   vm.runInNewContext(taskCenterJs, sandbox);
@@ -470,4 +478,69 @@ test("AC6: 慢请求（1500ms / 5000ms）不提前标就绪，新请求取消旧
   assert.equal(thirdSignal.aborted, false);
   windowObj.dispatchWindowEvent("pagehide");
   assert.equal(thirdSignal.aborted, true);
+});
+
+test("AC6 必改1: 5000ms 自动刷新定时器在慢请求在途时跳过而不中止慢请求", async () => {
+  const calls = [];
+  const { nodes, windowObj } = bootTaskCenter((url, options = {}) => {
+    return new Promise((resolve, reject) => {
+      calls.push({ url, signal: options.signal, resolve, reject });
+    });
+  });
+
+  await new Promise((r) => setTimeout(r, 5));
+  assert.equal(calls.length, 2);
+  const initialEventsSignal = calls[0].signal;
+  const initialTasksSignal = calls[1].signal;
+
+  // 模拟 5000ms 到期触发自动刷新定时器：在途慢请求绝不能被 abort()
+  windowObj.triggerAutoRefresh();
+  await new Promise((r) => setTimeout(r, 5));
+  assert.equal(calls.length, 2, "慢请求在途时后台自动刷新不得重发");
+  assert.equal(initialEventsSignal.aborted, false);
+  assert.equal(initialTasksSignal.aborted, false);
+
+  // 5000ms 慢请求最终返回，正常落地渲染
+  calls[0].resolve({ data_status: "ok", items: [] });
+  calls[1].resolve({
+    data_status: "ok",
+    items: [{ job_id: "job-slow-5000ms", status: "running", source: "asset_registry" }],
+  });
+  await new Promise((r) => setTimeout(r, 15));
+  assert.match(nodes["#taskRows"].innerHTML, /job-slow-5000ms/);
+});
+
+test("AC2 必改3: HTTP 200 + SOURCE_UNAVAILABLE 降级空结果不得画成暂无日志，render 异常须置列表错态", async () => {
+  const { nodes, viewNav, tabLogs } = bootTaskCenter(async (url) => {
+    if (url.startsWith("/api/observability/events")) {
+      return {
+        data_status: "degraded",
+        items: [],
+        data_gaps: ["SOURCE_UNAVAILABLE:agent_runtime"],
+        degraded_sources: ["agent_runtime"],
+      };
+    }
+    return { data_status: "ok", items: [] };
+  });
+
+  await new Promise((r) => setTimeout(r, 20));
+  assert.match(nodes["#logRows"].innerHTML, /is-error/);
+  assert.doesNotMatch(nodes["#logRows"].innerHTML, /暂无日志|emptyLogs/);
+  assert.match(nodes["#observabilityNotice"].innerHTML, /data-gw-degradation="error"/);
+
+  // 模拟 render 期间异常：在 dateTime 抛出异常，验证 #taskRows 与 #logRows 均切为错误态且视图切换不中断
+  const broken = bootTaskCenter(
+    async () => ({ data_status: "ok", items: [] }),
+    {
+      dateTime() {
+        throw new Error("模拟渲染异常");
+      },
+    },
+  );
+  await new Promise((r) => setTimeout(r, 20));
+  assert.match(broken.nodes["#taskRows"].innerHTML, /is-error/);
+  assert.doesNotMatch(broken.nodes["#taskRows"].innerHTML, /等待真实数据|暂无任务/);
+  assert.match(broken.nodes["#logRows"].innerHTML, /is-error/);
+  broken.viewNav.dispatchEvent({ type: "keydown", key: "ArrowRight" });
+  assert.equal(broken.tabLogs.getAttribute("aria-selected"), "true");
 });
