@@ -10335,6 +10335,26 @@ document.addEventListener('keydown', event => {
         );
         return;
     }
+    if(detailToggleShortcut && detailViewerState.open){
+        if(detailViewerState.textEditing
+            && (event.target?.closest?.('[data-detail-text-editor]') || !keyboardEditing)){
+            event.preventDefault();
+            event.stopPropagation();
+            if(!event.repeat){
+                gwCall('preview', 'exitDetailTextEditFromBackquote', document.querySelector('[data-detail-text-editor]'));
+            }
+            return;
+        }
+        if(detailViewerState.textVersionEditing
+            && (event.target?.closest?.('[data-detail-version-editor]') || !keyboardEditing)){
+            event.preventDefault();
+            event.stopPropagation();
+            if(!event.repeat){
+                gwCall('preview', 'cancelDetailTextVersionEdit');
+            }
+            return;
+        }
+    }
     if(detailToggleShortcut && !keyboardEditing){
         event.preventDefault();
         event.stopPropagation();

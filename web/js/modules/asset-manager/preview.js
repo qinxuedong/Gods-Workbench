@@ -4178,6 +4178,14 @@ function enterCurrentDetailEditableContent(){
     }
     return false;
 }
+function exitDetailTextEditFromBackquote(editor){
+    if(!detailViewerState.textEditing) return;
+    if(!editor || String(editor.value || '') === String(detailViewerState.text || '')){
+        cancelDetailTextEdit();
+        return;
+    }
+    saveDetailTextEdit().catch(err => setStatus(err.message || '正文保存失败'));
+}
 document.addEventListener('wheel', navigateDetailPreviewWheel, {passive:false});
 document.addEventListener('input', event => {
     if(event.target?.id === 'thumbnailDirectory'){
@@ -4322,6 +4330,7 @@ GW_DEFERRED['preview'] = {
     deleteDetailImageEditorLayers,
     enterCurrentDetailEditableContent,
     enterDetailVideoFullscreen,
+    exitDetailTextEditFromBackquote,
     exportDetailVideoFrame,
     generateBoardVideoStoryboards,
     groupDetailImageEditorLayers,
