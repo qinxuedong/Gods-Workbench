@@ -234,6 +234,19 @@ def cache_matches_asset_and_stat(
     return True
 
 
+def asset_has_local_binding(asset: Mapping[str, Any]) -> bool:
+    """判断资产记录是否绑定了本地物理路径或托管文件。"""
+    if any(
+        str(asset.get(key) or "").strip()
+        for key in ("root_id", "storage_root_id", "canonical_relpath", "stored_name")
+    ):
+        return True
+    display = str(asset.get("display_path") or "").strip().lower()
+    if display and not display.startswith(("http://", "https://")):
+        return True
+    return False
+
+
 def trusted_full_sha256(
     asset: Mapping[str, Any],
     *,
@@ -242,7 +255,8 @@ def trusted_full_sha256(
 ) -> Optional[str]:
     """仅返回可信、已验真且文件版本匹配的完整 SHA-256；否则返回 None。
 
-    绝不把 ``hash_mode="sampled"`` 或未知/缺失 ``hash_mode`` 升级为可信完整 SHA。
+    绝不把 ``hash_mode="sampled"`` 或未知/缺失 ``hash_mode`` 升级为可信完整 SHA；
+    若资产绑定了本地路径但磁盘文件已缺失（无法获取 ``stat_result``），同样视为失效并返回 None。
     """
     current_stat = stat_result
     if current_stat is None and path is not None:
@@ -250,6 +264,9 @@ def trusted_full_sha256(
             current_stat = path.lstat()
         except OSError:
             return None
+
+    if current_stat is None and asset_has_local_binding(asset):
+        return None
 
     cache = asset.get("full_sha256_cache")
     if cache_matches_asset_and_stat(cache, asset, current_stat):
@@ -746,6 +763,8 @@ class DedupConfirmJobs:
         self._runtime_path_configuration = _runtime_path_configuration()
         self.closed = False
         self._active_worker_threads: set[threading.Thread] = set()
+        self._running_jobs: dict[str, threading.Thread] = {}
+        self._active_worker_slot: Optional[str] = None
         # 可测试注入点
         self._test_rate_config: dict[str, Any] = {}
         self._test_read_chunk_hook: Optional[Callable[[Path, int], None]] = None
@@ -1040,56 +1059,70 @@ class DedupConfirmJobs:
         key_digest = _digest([_owner(actor), idempotency_key])
 
         with self.condition:
-            raw = self.store.read()
-            previous = raw["keys"].get(key_digest)
-            if previous and previous in raw["jobs"]:
-                prev_job = raw["jobs"][previous]
+            pre_raw = self.store.read()
+            previous = pre_raw["keys"].get(key_digest)
+            if previous and previous in pre_raw["jobs"]:
+                prev_job = pre_raw["jobs"][previous]
                 if prev_job.get("_request_digest") != request_digest:
                     _error(409, "DEDUP_IDEMPOTENCY_CONFLICT", "幂等键已用于不同的确认请求")
                 return self._accepted(prev_job)
-            active_count = sum(1 for item in raw["jobs"].values() if item.get("status") not in TERMINAL)
-            if len(raw["jobs"]) >= MAX_JOBS or active_count >= MAX_ACTIVE:
+            active_count = sum(1 for item in pre_raw["jobs"].values() if item.get("status") not in TERMINAL)
+            if len(pre_raw["jobs"]) >= MAX_JOBS or active_count >= MAX_ACTIVE:
                 _error(429, "DEDUP_QUEUE_FULL", "查重确认任务队列已满")
 
             candidates, unique_skipped = self._build_candidates(asset_ids=asset_ids)
-            raw["sequence"] += 1
-            raw["generation"] += 1
-            job_id = f"{JOB_ID_PREFIX}{raw['sequence']:08d}"
-            generation = int(raw["generation"])
             reused_count = sum(1 for item in candidates if item["file_state"] == "reused")
             owner_scope = current_asset_owner.get()
             if owner_scope is None and hasattr(auth, "subject"):
                 owner_scope = asset_owner_key(auth)
-            job = {
-                "job_id": job_id,
-                "job_type": JOB_TYPE_DEDUP_CONFIRM,
-                "name": "查重完整 SHA 确认",
-                "status": "queued",
-                "phase": "queued",
-                "version": 1,
-                "attempt": 1,
-                "max_attempts": 5,
-                "generation": generation,
-                "created_at": storage.now_iso(),
-                "updated_at": storage.now_iso(),
-                "total_candidates": len(candidates),
-                "processed_candidates": reused_count,
-                "unique_size_skipped": unique_skipped,
-                "error_count": 0,
-                "failed_assets": [],
-                "result": None,
-                "error_code": None,
-                "_actor": actor,
-                "_owner": _owner(actor),
-                "_asset_owner_key": owner_scope,
-                "_request": request,
-                "_request_digest": request_digest,
-                "_candidates": candidates,
-            }
-            raw["jobs"][job_id] = job
-            raw["keys"][key_digest] = job_id
-            self.store.write(raw)
-            self._dispatch(job)
+
+            def create_job(raw: dict[str, Any]) -> tuple[dict[str, Any], bool]:
+                existing_id = raw["keys"].get(key_digest)
+                if existing_id and existing_id in raw["jobs"]:
+                    prev_job = raw["jobs"][existing_id]
+                    if prev_job.get("_request_digest") != request_digest:
+                        _error(409, "DEDUP_IDEMPOTENCY_CONFLICT", "幂等键已用于不同的确认请求")
+                    return dict(prev_job), False
+                cur_active = sum(1 for item in raw["jobs"].values() if item.get("status") not in TERMINAL)
+                if len(raw["jobs"]) >= MAX_JOBS or cur_active >= MAX_ACTIVE:
+                    _error(429, "DEDUP_QUEUE_FULL", "查重确认任务队列已满")
+                raw["sequence"] += 1
+                raw["generation"] += 1
+                new_job_id = f"{JOB_ID_PREFIX}{raw['sequence']:08d}"
+                new_gen = int(raw["generation"])
+                new_job = {
+                    "job_id": new_job_id,
+                    "job_type": JOB_TYPE_DEDUP_CONFIRM,
+                    "name": "查重完整 SHA 确认",
+                    "status": "queued",
+                    "phase": "queued",
+                    "version": 1,
+                    "attempt": 1,
+                    "max_attempts": 5,
+                    "generation": new_gen,
+                    "created_at": storage.now_iso(),
+                    "updated_at": storage.now_iso(),
+                    "total_candidates": len(candidates),
+                    "processed_candidates": reused_count,
+                    "unique_size_skipped": unique_skipped,
+                    "error_count": 0,
+                    "failed_assets": [],
+                    "result": None,
+                    "error_code": None,
+                    "_actor": actor,
+                    "_owner": _owner(actor),
+                    "_asset_owner_key": owner_scope,
+                    "_request": request,
+                    "_request_digest": request_digest,
+                    "_candidates": candidates,
+                }
+                raw["jobs"][new_job_id] = new_job
+                raw["keys"][key_digest] = new_job_id
+                return dict(new_job), True
+
+            job, created = self.store.mutate(create_job)
+            if created:
+                self._dispatch(job)
             return self._accepted(job)
 
     def _accepted(self, job: Mapping[str, Any]) -> dict[str, Any]:
@@ -1108,120 +1141,142 @@ class DedupConfirmJobs:
         }
 
     def _dispatch(self, job: dict[str, Any]) -> None:
+        job_id = str(job["job_id"])
         thread = threading.Thread(
             target=self._run,
-            args=(job["job_id"], int(job["attempt"]), int(job["generation"])),
-            name=f"gw-dedup-{job['job_id']}",
+            args=(job_id, int(job["attempt"]), int(job["generation"])),
+            name=f"gw-dedup-{job_id}",
             daemon=True,
         )
         with self.condition:
+            existing = self._running_jobs.get(job_id)
+            if existing is not None and existing.is_alive():
+                return
             self._active_worker_threads.add(thread)
+            self._running_jobs[job_id] = thread
         thread.start()
 
     def operate(self, job_id: str, action: str, payload: Mapping[str, Any], auth: Any) -> dict[str, Any]:
         if action not in ACTIONS:
             _error(400, "INVALID_ACTION", "不支持的任务操作")
+        expected = payload.get("expected_version")
+        if type(expected) is not int or expected < 1:
+            _error(400, "EXPECTED_VERSION_REQUIRED", "任务操作必须携带 expected_version")
+
         with self.condition:
-            job = self._job(job_id, auth)
-            expected = payload.get("expected_version")
-            if type(expected) is not int or expected < 1:
-                _error(400, "EXPECTED_VERSION_REQUIRED", "任务操作必须携带 expected_version")
-            if expected != job["version"]:
+            pre_job = self._job(job_id, auth)
+            if expected != pre_job["version"]:
                 _error(409, "VERSION_CONFLICT", "任务版本已改变，请重新读取")
-            self._check(job)
-            if job["status"] not in ACTIONS[action] or (
-                action == "retry" and int(job.get("attempt", 1)) >= int(job.get("max_attempts", 5))
+            self._check(pre_job)
+            if pre_job["status"] not in ACTIONS[action] or (
+                action == "retry" and int(pre_job.get("attempt", 1)) >= int(pre_job.get("max_attempts", 5))
             ):
                 _error(409, "DEDUP_ACTION_CONFLICT", "当前任务状态不允许此操作")
 
             if action == "retry":
-                raw = self.store.read()
-                if sum(1 for item in raw["jobs"].values() if item.get("status") not in TERMINAL) >= MAX_ACTIVE:
-                    _error(429, "DEDUP_QUEUE_FULL", "查重确认任务队列已满")
-                raw["generation"] += 1
-                new_gen = int(raw["generation"])
-                req = job.get("_request") or {}
+                req = pre_job.get("_request") or {}
                 refreshed, unique_skipped = self._build_candidates(
                     asset_ids=req.get("asset_ids")
                 )
-                prior_map = {
-                    str(item.get("asset_id")): item
-                    for item in (job.get("_candidates") or [])
-                    if item.get("asset_id")
-                }
-                for cand in refreshed:
-                    prev = prior_map.get(cand["asset_id"])
-                    if (
-                        prev
-                        and prev.get("file_state") in {"verified", "reused"}
-                        and prev.get("expected_size_bytes") == cand.get("expected_size_bytes")
-                        and prev.get("expected_mtime_ns") == cand.get("expected_mtime_ns")
-                        and prev.get("expected_ino") == cand.get("expected_ino")
-                        and prev.get("expected_dev") == cand.get("expected_dev")
-                        and cand.get("sha256")
-                    ):
-                        cand["file_state"] = prev["file_state"]
-                job["_candidates"] = refreshed
-                job["total_candidates"] = len(refreshed)
-                job["processed_candidates"] = sum(
-                    1 for item in refreshed if item.get("file_state") in {"verified", "reused"}
-                )
-                job["unique_size_skipped"] = unique_skipped
-                job["status"] = "queued"
-                job["phase"] = "queued"
-                job["attempt"] = int(job["attempt"]) + 1
-                job["generation"] = new_gen
-                job["error_code"] = None
-                job["error_count"] = 0
-                job["failed_assets"] = []
-                job["result"] = None
-                job["version"] += 1
-                job["updated_at"] = storage.now_iso()
-                raw["jobs"][job_id] = job
-                self.store.write(raw)
-                self.condition.notify_all()
-                self._dispatch(job)
-            else:
-                if action == "pause":
-                    job["status"] = "paused"
-                    job["phase"] = "paused"
-                elif action == "resume":
-                    job["status"] = "running"
-                    job["phase"] = "hashing"
-                elif action == "cancel":
-                    # 递增 generation 防止在途旧计算结果写回（AC12）
-                    raw = self.store.read()
+
+                def mutate_retry(raw: dict[str, Any]) -> dict[str, Any]:
+                    cur = raw["jobs"].get(job_id)
+                    if not cur:
+                        _error(404, "DEDUP_JOB_NOT_FOUND", "查重确认任务不存在")
+                    if expected != cur["version"]:
+                        _error(409, "VERSION_CONFLICT", "任务版本已改变，请重新读取")
+                    if cur["status"] not in ACTIONS["retry"] or int(cur.get("attempt", 1)) >= int(cur.get("max_attempts", 5)):
+                        _error(409, "DEDUP_ACTION_CONFLICT", "当前任务状态不允许此操作")
+                    if sum(1 for item in raw["jobs"].values() if item.get("status") not in TERMINAL) >= MAX_ACTIVE:
+                        _error(429, "DEDUP_QUEUE_FULL", "查重确认任务队列已满")
                     raw["generation"] += 1
-                    job = raw["jobs"][job_id]
-                    job["generation"] = int(raw["generation"])
-                    job["status"] = "cancelled"
-                    job["phase"] = "cancelled"
-                    job["version"] += 1
-                    job["updated_at"] = storage.now_iso()
-                    self.store.write(raw)
-                    self.condition.notify_all()
-                    return self.detail(job_id, auth)
-                job["version"] += 1
-                self._save(job)
+                    new_gen = int(raw["generation"])
+                    prior_map = {
+                        str(item.get("asset_id")): item
+                        for item in (cur.get("_candidates") or [])
+                        if item.get("asset_id")
+                    }
+                    for cand in refreshed:
+                        prev = prior_map.get(cand["asset_id"])
+                        if (
+                            prev
+                            and prev.get("file_state") in {"verified", "reused"}
+                            and prev.get("expected_size_bytes") == cand.get("expected_size_bytes")
+                            and prev.get("expected_mtime_ns") == cand.get("expected_mtime_ns")
+                            and prev.get("expected_ino") == cand.get("expected_ino")
+                            and prev.get("expected_dev") == cand.get("expected_dev")
+                            and cand.get("sha256")
+                        ):
+                            cand["file_state"] = prev["file_state"]
+                    cur["_candidates"] = refreshed
+                    cur["total_candidates"] = len(refreshed)
+                    cur["processed_candidates"] = sum(
+                        1 for item in refreshed if item.get("file_state") in {"verified", "reused"}
+                    )
+                    cur["unique_size_skipped"] = unique_skipped
+                    cur["status"] = "queued"
+                    cur["phase"] = "queued"
+                    cur["attempt"] = int(cur["attempt"]) + 1
+                    cur["generation"] = new_gen
+                    cur["error_code"] = None
+                    cur["error_count"] = 0
+                    cur["failed_assets"] = []
+                    cur["result"] = None
+                    cur["version"] += 1
+                    cur["updated_at"] = storage.now_iso()
+                    return dict(cur)
+
+                updated_job = self.store.mutate(mutate_retry)
                 self.condition.notify_all()
+                self._dispatch(updated_job)
+            else:
+                # 仅以原子 mutate 修改状态控制字段，禁止整对象覆盖写坏工作线程刚提交的 _candidates / processed_candidates
+                def mutate_state(raw: dict[str, Any]) -> dict[str, Any]:
+                    cur = raw["jobs"].get(job_id)
+                    if not cur:
+                        _error(404, "DEDUP_JOB_NOT_FOUND", "查重确认任务不存在")
+                    if expected != cur["version"]:
+                        _error(409, "VERSION_CONFLICT", "任务版本已改变，请重新读取")
+                    if cur["status"] not in ACTIONS[action]:
+                        _error(409, "DEDUP_ACTION_CONFLICT", "当前任务状态不允许此操作")
+                    if action == "pause":
+                        cur["status"] = "paused"
+                        cur["phase"] = "paused"
+                    elif action == "resume":
+                        cur["status"] = "running"
+                        cur["phase"] = "hashing"
+                    elif action == "cancel":
+                        # 递增 generation 防止在途旧计算结果写回（AC12）
+                        raw["generation"] += 1
+                        cur["generation"] = int(raw["generation"])
+                        cur["status"] = "cancelled"
+                        cur["phase"] = "cancelled"
+                    cur["version"] += 1
+                    cur["updated_at"] = storage.now_iso()
+                    return dict(cur)
+
+                updated_job = self.store.mutate(mutate_state)
+                self.condition.notify_all()
+                if action == "resume":
+                    live = self._running_jobs.get(job_id)
+                    if live is None or not live.is_alive():
+                        self._dispatch(updated_job)
             return self.detail(job_id, auth)
 
     def _checkpoint(self, job_id: str, attempt: int, generation: int) -> dict[str, Any]:
         with self.condition:
-            while True:
-                if self.closed or _runtime_path_configuration() != self._runtime_path_configuration:
-                    raise _PausedOrCancelled()
-                job = self.store.read()["jobs"].get(job_id)
-                if (
-                    not job
-                    or int(job.get("attempt", 0)) != attempt
-                    or int(job.get("generation", 0)) != generation
-                    or job.get("status") in TERMINAL
-                ):
-                    raise _PausedOrCancelled()
-                if job.get("status") != "paused":
-                    return job
-                self.condition.wait(0.05)
+            if self.closed or _runtime_path_configuration() != self._runtime_path_configuration:
+                raise _PausedOrCancelled()
+            job = self.store.read()["jobs"].get(job_id)
+            if (
+                not job
+                or int(job.get("attempt", 0)) != attempt
+                or int(job.get("generation", 0)) != generation
+                or job.get("status") in TERMINAL
+                or job.get("status") == "paused"
+            ):
+                raise _PausedOrCancelled()
+            return job
 
     def _check_not_paused_or_cancelled_for_read(self, job_id: str, attempt: int, generation: int) -> None:
         with self.condition:
@@ -1404,24 +1459,62 @@ class DedupConfirmJobs:
             process_inspector=self._test_process_inspector,
         )
         owner_token = None
+        acquired_slot = False
+        acquired_lock = False
         try:
-            worker_lock.acquire(job_id, attempt)
             with self.condition:
-                job = self.store.read()["jobs"].get(job_id)
+                while self._active_worker_slot not in (None, job_id):
+                    if self.closed or _runtime_path_configuration() != self._runtime_path_configuration:
+                        return
+                    queued_job = self.store.read()["jobs"].get(job_id)
+                    if (
+                        not queued_job
+                        or int(queued_job.get("attempt", 0)) != attempt
+                        or int(queued_job.get("generation", 0)) != generation
+                        or queued_job.get("status") in TERMINAL
+                        or queued_job.get("status") == "paused"
+                    ):
+                        return
+                    self.condition.wait(0.05)
+                if self.closed or _runtime_path_configuration() != self._runtime_path_configuration:
+                    return
+                pre_job = self.store.read()["jobs"].get(job_id)
                 if (
-                    not job
-                    or int(job.get("attempt", 0)) != attempt
-                    or int(job.get("generation", 0)) != generation
-                    or job.get("status") in TERMINAL
+                    not pre_job
+                    or int(pre_job.get("attempt", 0)) != attempt
+                    or int(pre_job.get("generation", 0)) != generation
+                    or pre_job.get("status") in TERMINAL
+                    or pre_job.get("status") == "paused"
                 ):
                     return
-                if job.get("_asset_owner_key") is not None:
-                    owner_token = current_asset_owner.set(job.get("_asset_owner_key"))
-                if job.get("status") == "queued":
-                    job["status"] = "running"
-                    job["phase"] = "hashing"
-                    job["version"] += 1
-                    self._save(job)
+                self._active_worker_slot = job_id
+                acquired_slot = True
+
+            worker_lock.acquire(job_id, attempt)
+            acquired_lock = True
+
+            def mark_started(raw: dict[str, Any]) -> Optional[dict[str, Any]]:
+                cur = raw["jobs"].get(job_id)
+                if (
+                    not cur
+                    or int(cur.get("attempt", 0)) != attempt
+                    or int(cur.get("generation", 0)) != generation
+                    or cur.get("status") in TERMINAL
+                    or cur.get("status") == "paused"
+                ):
+                    return None
+                if cur.get("status") == "queued":
+                    cur["status"] = "running"
+                    cur["phase"] = "hashing"
+                    cur["version"] += 1
+                    cur["updated_at"] = storage.now_iso()
+                return dict(cur)
+
+            job = self.store.mutate(mark_started)
+            if not job:
+                return
+            if job.get("_asset_owner_key") is not None:
+                owner_token = current_asset_owner.set(job.get("_asset_owner_key"))
             worker_lock.mark_running()
 
             job = self._checkpoint(job_id, attempt, generation)
@@ -1448,6 +1541,8 @@ class DedupConfirmJobs:
 
                 raw_assets = repo.readonly_registry_snapshot()
                 pending_batch: list[tuple[str, Path]] = []
+                invalidated_ids: set[str] = set()
+                missing_pending_ids: set[str] = set()
                 for item in job.get("_candidates", []):
                     aid = str(item.get("asset_id") or "")
                     if not aid:
@@ -1456,20 +1551,74 @@ class DedupConfirmJobs:
                     if not isinstance(record, dict) or record.get("archived") or not asset_visible(record):
                         continue
                     path = resolve_asset_media_path(raw_assets, aid, record)
+                    state_now = item.get("file_state")
                     if path is None or not path.is_file():
+                        if state_now in {"verified", "reused"}:
+                            invalidated_ids.add(aid)
+                            self._invalidate_asset_cache(aid)
+                            missing_pending_ids.add(aid)
+                        elif state_now == "pending":
+                            self._invalidate_asset_cache(aid)
+                            missing_pending_ids.add(aid)
                         continue
-                    if item.get("file_state") in {"verified", "reused"}:
-                        # 断点不混用不同文件版本：若盘上文件已变化，重算
+                    if state_now in {"verified", "reused"}:
+                        # 断点不混用不同文件版本：若盘上文件已变化，重算并同步回写磁盘任务状态
                         try:
                             st = path.lstat()
                         except OSError:
                             st = None
-                        if st is not None and trusted_full_sha256(record, path=path, stat_result=st):
+                        trusted = (
+                            trusted_full_sha256(record, path=path, stat_result=st)
+                            if st is not None
+                            else None
+                        )
+                        version_matches = (
+                            st is not None
+                            and trusted is not None
+                            and int(st.st_size) == int(item.get("expected_size_bytes") or -1)
+                            and int(st.st_mtime_ns) == int(item.get("expected_mtime_ns") or -1)
+                            and int(getattr(st, "st_ino", 0) or 0) == int(item.get("expected_ino") or 0)
+                            and int(getattr(st, "st_dev", 0) or 0) == int(item.get("expected_dev") or 0)
+                        )
+                        if version_matches:
                             continue
-                        item["file_state"] = "pending"
-                        item["sha256"] = None
-                    if item.get("file_state") == "pending":
+                        invalidated_ids.add(aid)
                         pending_batch.append((aid, path))
+                    elif state_now == "pending":
+                        pending_batch.append((aid, path))
+
+                if invalidated_ids or missing_pending_ids:
+                    def persist_invalidations(raw: dict[str, Any]) -> None:
+                        cur = raw["jobs"].get(job_id)
+                        if (
+                            not cur
+                            or int(cur.get("attempt", 0)) != attempt
+                            or int(cur.get("generation", 0)) != generation
+                            or cur.get("status") in TERMINAL
+                        ):
+                            return
+                        for c_item in cur.get("_candidates", []):
+                            cid = str(c_item.get("asset_id") or "")
+                            if cid in missing_pending_ids:
+                                if c_item.get("file_state") != "failed":
+                                    c_item["file_state"] = "failed"
+                                    c_item["sha256"] = None
+                                    c_item["error_code"] = "DEDUP_FILE_READ_FAILED"
+                                    cur["error_count"] = int(cur.get("error_count") or 0) + 1
+                                    failed_list = cur.setdefault("failed_assets", [])
+                                    if cid not in failed_list:
+                                        failed_list.append(cid)
+                            elif cid in invalidated_ids and c_item.get("file_state") in {"verified", "reused"}:
+                                c_item["file_state"] = "pending"
+                                c_item["sha256"] = None
+                        cur["processed_candidates"] = sum(
+                            1
+                            for c_item in cur.get("_candidates", [])
+                            if c_item.get("file_state") in {"verified", "reused"}
+                        )
+                        cur["updated_at"] = storage.now_iso()
+
+                    self.store.mutate(persist_invalidations)
 
                 if not pending_batch:
                     break
@@ -1515,7 +1664,8 @@ class DedupConfirmJobs:
 
                         self.store.mutate(mark_fail)
 
-                # 按小批次调度并在每批之间走 _checkpoint，保证 pause 时迅速停止新增文件读取
+                # 按小批次调度并在每批之间走 _checkpoint，保证 pause 时迅速停止新增文件读取；
+                # 批后回到循环顶部重新盘检所有候选版本，绝不因内存未落盘或尾部文件变化提前退出。
                 with ThreadPoolExecutor(max_workers=max_conc, thread_name_prefix="gw-dedup-hash") as pool:
                     futures = [
                         pool.submit(contextvars.copy_context().run, process_one, pair)
@@ -1523,83 +1673,92 @@ class DedupConfirmJobs:
                     ]
                     wait(futures)
 
-                # 检查若已经没有 pending，结束；否则若处于 paused，_checkpoint 会阻塞等待 resume
-                latest_job = self._checkpoint(job_id, attempt, generation)
-                still_pending = any(
-                    item.get("file_state") == "pending" for item in latest_job.get("_candidates", [])
-                )
-                if not still_pending:
-                    break
+                self._checkpoint(job_id, attempt, generation)
 
-            # 完成汇总（再次线性化检查代际与未取消）
-            with self.condition:
-                final_job = self.store.read()["jobs"].get(job_id)
+            # 完成汇总（以 store.mutate 原子校验代际/非终态/非 paused）
+            from gw.asset_registry import governance
+
+            suggestions = governance.build_suggestions()
+            dup_entries = suggestions["suggestions"].get("duplicate_files", [])
+            confirmed_groups = sum(1 for entry in dup_entries if entry.get("dedup_status") == "confirmed")
+            suspected_groups = sum(1 for entry in dup_entries if entry.get("dedup_status") != "confirmed")
+
+            def finalize_job(raw: dict[str, Any]) -> None:
+                cur = raw["jobs"].get(job_id)
                 if (
-                    not final_job
-                    or int(final_job.get("attempt", 0)) != attempt
-                    or int(final_job.get("generation", 0)) != generation
-                    or final_job.get("status") in TERMINAL
+                    not cur
+                    or int(cur.get("attempt", 0)) != attempt
+                    or int(cur.get("generation", 0)) != generation
+                    or cur.get("status") in TERMINAL
+                    or cur.get("status") == "paused"
                 ):
                     return
-                candidates = final_job.get("_candidates", [])
+                candidates = cur.get("_candidates", [])
                 verified_count = sum(1 for item in candidates if item.get("file_state") == "verified")
                 reused_count = sum(1 for item in candidates if item.get("file_state") == "reused")
                 failed_count = sum(1 for item in candidates if item.get("file_state") == "failed")
-                # 若存在文件错误但没有成功或全部失败，按失败上报可见错误；部分成功时明确报告 error_count
-                from gw.asset_registry import governance
-
-                suggestions = governance.build_suggestions()
-                dup_entries = suggestions["suggestions"].get("duplicate_files", [])
-                confirmed_groups = sum(1 for entry in dup_entries if entry.get("dedup_status") == "confirmed")
-                suspected_groups = sum(1 for entry in dup_entries if entry.get("dedup_status") != "confirmed")
                 result_summary = {
                     "candidates_total": len(candidates),
                     "verified_full_sha": verified_count,
                     "reused_cached_sha": reused_count,
                     "failed_count": failed_count,
-                    "unique_size_skipped": int(final_job.get("unique_size_skipped") or 0),
+                    "unique_size_skipped": int(cur.get("unique_size_skipped") or 0),
                     "confirmed_groups": confirmed_groups,
                     "suspected_groups": suspected_groups,
                 }
                 if failed_count > 0:
-                    final_job["status"] = "failed"
-                    final_job["phase"] = "failed"
-                    final_job["error_code"] = "DEDUP_FILE_ERRORS"
-                    final_job["result"] = result_summary
+                    cur["status"] = "failed"
+                    cur["phase"] = "failed"
+                    cur["error_code"] = "DEDUP_FILE_ERRORS"
+                    cur["result"] = result_summary
                 else:
-                    final_job["status"] = "succeeded"
-                    final_job["phase"] = "completed"
-                    final_job["error_code"] = None
-                    final_job["result"] = result_summary
-                final_job["processed_candidates"] = verified_count + reused_count
-                final_job["version"] += 1
-                self._save(final_job)
+                    cur["status"] = "succeeded"
+                    cur["phase"] = "completed"
+                    cur["error_code"] = None
+                    cur["result"] = result_summary
+                cur["processed_candidates"] = verified_count + reused_count
+                cur["version"] += 1
+                cur["updated_at"] = storage.now_iso()
+
+            self.store.mutate(finalize_job)
         except _PausedOrCancelled:
             return
         except Exception as exc:
-            with self.condition:
-                if storage.data_root().resolve() != self.root:
-                    return
-                job = self.store.read()["jobs"].get(job_id)
+            if storage.data_root().resolve() != self.root:
+                return
+            err_code = exc.code if isinstance(exc, CleanroomException) else "DEDUP_EXECUTION_FAILED"
+            target_status = "interrupted" if self.closed else "failed"
+
+            def fail_job(raw: dict[str, Any]) -> None:
+                cur = raw["jobs"].get(job_id)
                 if (
-                    not job
-                    or int(job.get("attempt", 0)) != attempt
-                    or int(job.get("generation", 0)) != generation
-                    or job.get("status") in TERMINAL
+                    not cur
+                    or int(cur.get("attempt", 0)) != attempt
+                    or int(cur.get("generation", 0)) != generation
+                    or cur.get("status") in TERMINAL
+                    or cur.get("status") == "paused"
                 ):
                     return
-                job["status"] = "interrupted" if self.closed else "failed"
-                job["phase"] = "interrupted" if self.closed else "failed"
-                job["error_code"] = exc.code if isinstance(exc, CleanroomException) else "DEDUP_EXECUTION_FAILED"
-                job["version"] += 1
-                with suppress(Exception):
-                    self._save(job)
+                cur["status"] = target_status
+                cur["phase"] = target_status
+                cur["error_code"] = err_code
+                cur["version"] += 1
+                cur["updated_at"] = storage.now_iso()
+
+            with suppress(Exception):
+                self.store.mutate(fail_job)
         finally:
             if owner_token is not None:
                 current_asset_owner.reset(owner_token)
-            worker_lock.release()
+            if acquired_lock:
+                worker_lock.release()
             with self.condition:
+                if acquired_slot and self._active_worker_slot == job_id:
+                    self._active_worker_slot = None
+                if self._running_jobs.get(job_id) is current_thread:
+                    self._running_jobs.pop(job_id, None)
                 self._active_worker_threads.discard(current_thread)
+                self.condition.notify_all()
 
 
 _default: Optional[DedupConfirmJobs] = None

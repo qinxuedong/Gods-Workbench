@@ -62,6 +62,7 @@ import { GW_DEFERRED } from './state.js';
 let governanceDrawerReturnFocus = null;
 let dedupConfirmSeq = 0;
 let dedupPollTimer = 0;
+let dedupPollIntervalMs = 500;
 
 function isAbortError(error){
     return Boolean(error && (error.name === 'AbortError' || error.code === 20));
@@ -407,7 +408,8 @@ async function startDedupConfirm(options={}){
         if(governanceDrawerOpen) renderGovernanceDrawer();
         if(jobId){
             const intervalMs = Number(accepted?.poll_hint?.interval_ms || options.pollIntervalMs || 500);
-            await pollDedupConfirmJob(jobId, seq, intervalMs);
+            dedupPollIntervalMs = Number.isFinite(intervalMs) && intervalMs > 0 ? intervalMs : 500;
+            await pollDedupConfirmJob(jobId, seq, dedupPollIntervalMs);
         } else {
             setDedupConfirmLoading(false);
             if(governanceDrawerOpen) renderGovernanceDrawer();
@@ -493,6 +495,14 @@ function openGovernanceDrawer(trigger){
     renderGovernanceDrawer();
     if(!governanceSuggestionsData && !governanceSuggestionsError && !governanceSuggestionsLoading){
         loadGovernanceSuggestions();
+    }
+    const activeJobId = String(dedupConfirmJob?.job_id || '');
+    const activeStatus = String(dedupConfirmJob?.status || '').toLowerCase();
+    if(activeJobId && ['queued', 'running'].includes(activeStatus) && !dedupPollTimer && !dedupConfirmLoading){
+        const resumeSeq = ++dedupConfirmSeq;
+        setDedupConfirmLoading(true);
+        renderGovernanceDrawer();
+        void pollDedupConfirmJob(activeJobId, resumeSeq, dedupPollIntervalMs);
     }
 }
 async function confirmGovernanceSuggestion(suggestionId){

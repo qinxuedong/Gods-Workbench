@@ -758,3 +758,354 @@ def test_collector_collect_sha256_is_read_only_reused_without_mutation(dedup_run
         assert len(dups) == 1 and dups[0]["dedup_status"] == "confirmed"
         assert set(dups[0]["asset_ids"]) == {aid_collect, id_disk}
         assert repo.state().read()["assets"][aid_collect]["metadata"]["collect_sha256"] == collect_digest
+
+
+def test_r1_fix1_paused_job_survives_restart_and_resumes_to_succeeded(dedup_runtime):
+    """R1 必改 1：pause → 进程重启保留 paused 且不自动跑 → 调用 resume 重新派发线程续算成功。"""
+    sources, _ = dedup_runtime
+    p1 = b"R1P1-" * 2048
+    p2 = b"R1P2-" * 2048
+    id_a, _ = _register_disk_asset(sources, "rp_a.bin", p1)
+    id_b, _ = _register_disk_asset(sources, "rp_b.bin", p1)
+    id_c, _ = _register_disk_asset(sources, "rp_c.bin", p2)
+    id_d, _ = _register_disk_asset(sources, "rp_d.bin", p2)
+
+    svc = dedup_confirm.service()
+    hit_c = threading.Event()
+    release_c = threading.Event()
+
+    def pause_on_c(path: Path, offset: int) -> None:
+        if Path(path).name == "rp_c.bin" and offset == 0 and not hit_c.is_set():
+            hit_c.set()
+            release_c.wait(timeout=5.0)
+
+    svc.configure_test_hooks(read_chunk_hook=pause_on_c)
+
+    with TestClient(create_app()) as client:
+        sub = client.post(
+            f"{BASE}/governance/dedup-confirm-jobs",
+            headers={**ADMIN, "Idempotency-Key": "r1-fix1"},
+            json={"max_concurrency": 1, "chunk_size_bytes": 4096, "max_read_bytes_per_sec": 0},
+        )
+        assert sub.status_code == 202
+        job_id = sub.json()["job_id"]
+        assert hit_c.wait(timeout=5.0)
+        cur = client.get(f"{BASE}/workspace-jobs/{job_id}", headers=ADMIN).json()["job"]
+        paused = client.post(
+            f"{BASE}/workspace-jobs/{job_id}/pause",
+            headers=ADMIN,
+            json={"expected_version": cur["version"]},
+        )
+        assert paused.status_code == 200
+        assert paused.json()["job"]["status"] == "paused"
+        release_c.set()
+
+    # 模拟进程重启：销毁内存服务并冷启动新实例
+    svc.shutdown()
+    dedup_confirm._default = None
+    cold = dedup_confirm.service()
+    cold_reads: list[str] = []
+    cold.configure_test_hooks(read_chunk_hook=lambda p, _o: cold_reads.append(Path(p).name))
+    time.sleep(0.15)
+    assert cold_reads == [], "重启恢复后 paused 任务不得自动抢跑"
+
+    with TestClient(create_app()) as client:
+        detail = client.get(f"{BASE}/workspace-jobs/{job_id}", headers=ADMIN).json()["job"]
+        assert detail["status"] == "paused"
+        assert detail["progress"]["processed"] >= 2
+
+        resumed = client.post(
+            f"{BASE}/workspace-jobs/{job_id}/resume",
+            headers=ADMIN,
+            json={"expected_version": detail["version"]},
+        )
+        assert resumed.status_code == 200
+        assert resumed.json()["job"]["status"] == "running"
+
+        done = _wait_dedup_job(client, job_id)
+        assert done["status"] == "succeeded", done
+        # rp_a / rp_b 已在重启前完成，重启 resume 后不得重复读盘
+        assert "rp_a.bin" not in cold_reads
+        assert "rp_b.bin" not in cold_reads
+        assert "rp_c.bin" in cold_reads and "rp_d.bin" in cold_reads
+        for aid, raw_bytes in ((id_a, p1), (id_b, p1), (id_c, p2), (id_d, p2)):
+            assert repo.state().read()["assets"][aid]["full_sha256_cache"]["sha256"] == hashlib.sha256(raw_bytes).hexdigest()
+
+
+def test_r1_fix2_operate_pause_preserves_concurrent_worker_checkpoint(dedup_runtime):
+    """R1 必改 2：operate(pause) 与工作线程 _commit_verified_file 交错时不得覆写丢失单文件 checkpoint。"""
+    sources, _ = dedup_runtime
+    payload = b"R1F2-" * 2048
+    id_a, path_a = _register_disk_asset(sources, "race_a.bin", payload)
+    id_b, path_b = _register_disk_asset(sources, "race_b.bin", payload)
+
+    svc = dedup_confirm.service()
+    before_pause_mutate = threading.Event()
+    allow_pause_mutate = threading.Event()
+
+    with TestClient(create_app()) as client:
+        # 构造受控窗口：在 operate(pause) 读出 pre_job 之后、mutate_state 之前，插入工作线程提交 race_a
+        first_hook_done = threading.Event()
+        release_worker = threading.Event()
+
+        def hold_first(path: Path, _offset: int) -> None:
+            if not first_hook_done.is_set():
+                first_hook_done.set()
+                release_worker.wait(timeout=5.0)
+
+        svc.configure_test_hooks(read_chunk_hook=hold_first)
+        sub = client.post(
+            f"{BASE}/governance/dedup-confirm-jobs",
+            headers={**ADMIN, "Idempotency-Key": "r1-fix2"},
+            json={"max_concurrency": 1, "chunk_size_bytes": 16 * 1024, "max_read_bytes_per_sec": 0},
+        )
+        assert sub.status_code == 202
+        job_id = sub.json()["job_id"]
+        assert first_hook_done.wait(timeout=5.0)
+
+        orig_mutate = svc.store.mutate
+
+        def racing_mutate(fn):
+            # 当 operate(pause) 准备调用 mutate_state 时，先让 _commit_verified_file 提交 race_a
+            if getattr(fn, "__name__", "") == "mutate_state" and not before_pause_mutate.is_set():
+                before_pause_mutate.set()
+                allow_pause_mutate.wait(timeout=5.0)
+            return orig_mutate(fn)
+
+        svc.store.mutate = racing_mutate
+
+        pause_res: list[int] = []
+
+        def call_pause() -> None:
+            cur = client.get(f"{BASE}/workspace-jobs/{job_id}", headers=ADMIN).json()["job"]
+            resp = client.post(
+                f"{BASE}/workspace-jobs/{job_id}/pause",
+                headers=ADMIN,
+                json={"expected_version": cur["version"]},
+            )
+            pause_res.append(resp.status_code)
+
+        t_pause = threading.Thread(target=call_pause)
+        t_pause.start()
+        assert before_pause_mutate.wait(timeout=5.0)
+
+        # 在 pause 的 pre_job 读取后、mutate_state 前，模拟已通过行 1327 的工作线程原子写入 race_a 的 verified checkpoint（直接走 store.mutate，与真实线程序号一致）
+        digest_a = hashlib.sha256(payload).hexdigest()
+        st_a = path_a.lstat()
+
+        def commit_worker_checkpoint(raw):
+            cur = raw["jobs"][job_id]
+            for item in cur.get("_candidates", []):
+                if item.get("asset_id") == id_a:
+                    item["file_state"] = "verified"
+                    item["sha256"] = digest_a
+                    item["expected_size_bytes"] = int(st_a.st_size)
+                    item["expected_mtime_ns"] = int(st_a.st_mtime_ns)
+            cur["processed_candidates"] = 1
+            cur["updated_at"] = storage.now_iso()
+
+        orig_mutate(commit_worker_checkpoint)
+        allow_pause_mutate.set()
+        t_pause.join(timeout=5.0)
+        release_worker.set()
+
+        assert pause_res == [200]
+        persisted = svc.store.read()["jobs"][job_id]
+        assert persisted["status"] == "paused"
+        assert persisted["processed_candidates"] == 1
+        cand_map = {c["asset_id"]: c for c in persisted["_candidates"]}
+        assert cand_map[id_a]["file_state"] == "verified", "operate(pause) 绝不能抹掉并发提交的 verified checkpoint"
+        assert cand_map[id_b]["asset_id"] == id_b
+
+
+def test_r1_fix3_multi_batch_tail_file_changed_is_persisted_and_recomputed(dedup_runtime):
+    """R1 必改 3：> max_concurrency*2 候选时，尾部原已 cached 文件中途被磁盘篡改，必须落盘重算而不提前成功。"""
+    sources, _ = dedup_runtime
+    # 设为同一大小 8192 字节，5 个候选、max_concurrency=1（批大小 2）
+    old_tail = b"T" * 8192
+    new_tail = b"N" * 8192
+    common = b"M" * 8192
+    ids = []
+    paths = []
+    for idx in range(4):
+        aid, p = _register_disk_asset(sources, f"batch_{idx}.bin", common)
+        ids.append(aid)
+        paths.append(p)
+    tail_id, tail_path = _register_disk_asset(sources, "batch_4_tail.bin", old_tail)
+
+    # 给尾部第 5 个预先绑定有效的旧 full_sha256_cache，使初始进入候选时 file_state="reused"
+    old_tail_digest = hashlib.sha256(old_tail).hexdigest()
+    repo.state().mutate(
+        lambda raw: raw["assets"][tail_id].update(
+            {
+                "sha256": old_tail_digest,
+                "hash_mode": "full",
+                "full_sha256_cache": dedup_confirm.build_full_sha256_cache(
+                    old_tail_digest, tail_path.lstat(), source="dedup_confirm"
+                ),
+            }
+        )
+        or raw
+    )
+
+    svc = dedup_confirm.service()
+    tail_mutated = threading.Event()
+    read_names: list[str] = []
+
+    def tamper_tail_during_first_batch(path: Path, offset: int) -> None:
+        name = Path(path).name
+        read_names.append(name)
+        if name == "batch_0.bin" and offset == 0 and not tail_mutated.is_set():
+            tail_mutated.set()
+            time.sleep(0.02)
+            tail_path.write_bytes(new_tail)
+
+    svc.configure_test_hooks(read_chunk_hook=tamper_tail_during_first_batch)
+
+    with TestClient(create_app()) as client:
+        sub = client.post(
+            f"{BASE}/governance/dedup-confirm-jobs",
+            headers={**ADMIN, "Idempotency-Key": "r1-fix3"},
+            json={"max_concurrency": 1, "chunk_size_bytes": 16 * 1024, "max_read_bytes_per_sec": 0},
+        )
+        assert sub.status_code == 202
+        done = _wait_dedup_job(client, sub.json()["job_id"])
+        assert done["status"] == "succeeded"
+        assert "batch_4_tail.bin" in read_names, "尾部文件变更后必须落盘回退 pending 并在后续批次重算"
+        assert repo.state().read()["assets"][tail_id]["full_sha256_cache"]["sha256"] == hashlib.sha256(new_tail).hexdigest()
+
+
+def test_r1_fix4_deleted_disk_file_invalidates_confirmed_cache_and_blocks_confirm(dedup_runtime):
+    """R1 必改 4：曾 confirmed 的查重组在其中一文件被删盘后，立即退出 confirmed 并拒绝 confirm_suggestion（409）。"""
+    sources, _ = dedup_runtime
+    payload = b"delete-after-confirm-" * 64
+    id_a, path_a = _register_disk_asset(sources, "del_a.mp4", payload)
+    id_b, path_b = _register_disk_asset(sources, "del_b.mp4", payload)
+
+    with TestClient(create_app()) as client:
+        sub = client.post(
+            f"{BASE}/governance/dedup-confirm-jobs",
+            headers={**ADMIN, "Idempotency-Key": "r1-fix4"},
+            json={},
+        )
+        assert sub.status_code == 202
+        done = _wait_dedup_job(client, sub.json()["job_id"])
+        assert done["status"] == "succeeded"
+
+        before = client.get(f"{BASE}/governance/suggestions", headers=ADMIN).json()
+        confirmed_entry = before["suggestions"]["duplicate_files"][0]
+        assert confirmed_entry["dedup_status"] == "confirmed"
+
+        # 从磁盘删除其中一个文件（保留注册表旧 full_sha256_cache）
+        path_b.unlink()
+        assert id_a != id_b
+
+        # 再次拉取建议，绝不能再返回 confirmed：旧 confirmed ID 已失效（404），降级后的疑似条目确认必须返回 409 DEDUP_NOT_CONFIRMED
+        after = client.get(f"{BASE}/governance/suggestions", headers=ADMIN).json()
+        dups_after = after["suggestions"]["duplicate_files"]
+        assert dups_after and all(item.get("dedup_status") != "confirmed" for item in dups_after), (
+            "源文件删盘后不得继续保留 confirmed 状态"
+        )
+
+        old_rejected = client.post(
+            f"{BASE}/governance/suggestions/confirm",
+            headers=ADMIN,
+            json={
+                "suggestion_id": confirmed_entry["suggestion_id"],
+                "expected_version": after["revision"],
+            },
+        )
+        assert old_rejected.status_code == 404
+
+        suspected_rejected = client.post(
+            f"{BASE}/governance/suggestions/confirm",
+            headers=ADMIN,
+            json={
+                "suggestion_id": dups_after[0]["suggestion_id"],
+                "expected_version": after["revision"],
+            },
+        )
+        assert suspected_rejected.status_code == 409
+        assert suspected_rejected.json()["detail"]["code"] == "DEDUP_NOT_CONFIRMED"
+
+
+def test_r1_fix5_concurrent_jobs_serialize_and_pause_over_ttl_survives(dedup_runtime):
+    """R1 必改 5：并发多个 202 任务有序排队不撞锁失败；pause 超过 30s TTL 释放锁且恢复仍成功。"""
+    sources, _ = dedup_runtime
+    p1 = b"S1-" * 2048
+    p2 = b"S2-" * 2048
+    a1, _ = _register_disk_asset(sources, "ser_1a.bin", p1)
+    a2, _ = _register_disk_asset(sources, "ser_1b.bin", p1)
+    b1, _ = _register_disk_asset(sources, "ser_2a.bin", p2)
+    b2, _ = _register_disk_asset(sources, "ser_2b.bin", p2)
+
+    svc = dedup_confirm.service()
+    svc.configure_test_hooks(read_chunk_hook=lambda _p, _o: time.sleep(0.02))
+
+    with TestClient(create_app()) as client:
+        # 1. 同进程连发两个合法 202 请求：不撞锁失败，先后全部完成
+        r1 = client.post(
+            f"{BASE}/governance/dedup-confirm-jobs",
+            headers={**ADMIN, "Idempotency-Key": "r1-fix5-q1"},
+            json={"asset_ids": [a1, a2]},
+        )
+        r2 = client.post(
+            f"{BASE}/governance/dedup-confirm-jobs",
+            headers={**ADMIN, "Idempotency-Key": "r1-fix5-q2"},
+            json={"asset_ids": [b1, b2]},
+        )
+        assert r1.status_code == 202 and r2.status_code == 202
+        j1 = _wait_dedup_job(client, r1.json()["job_id"])
+        j2 = _wait_dedup_job(client, r2.json()["job_id"])
+        assert j1["status"] == "succeeded", j1
+        assert j2["status"] == "succeeded", j2
+
+        # 2. pause 释放锁后即使期间执行了其他任务，原任务 resume 仍成功且绝不撞锁/无响应
+        c1_p = b"PT-" * 2048
+        ca, _ = _register_disk_asset(sources, "pt_a.bin", c1_p)
+        cb, _ = _register_disk_asset(sources, "pt_b.bin", c1_p)
+        hit_pt = threading.Event()
+        release_pt = threading.Event()
+
+        def hook_pt(path: Path, offset: int) -> None:
+            if Path(path).name == "pt_a.bin" and offset == 0 and not hit_pt.is_set():
+                hit_pt.set()
+                release_pt.wait(timeout=5.0)
+
+        svc = dedup_confirm.service()
+        svc.configure_test_hooks(read_chunk_hook=hook_pt)
+        sub_p = client.post(
+            f"{BASE}/governance/dedup-confirm-jobs",
+            headers={**ADMIN, "Idempotency-Key": "r1-fix5-ttl"},
+            json={"asset_ids": [ca, cb], "max_concurrency": 1, "chunk_size_bytes": 4096, "max_read_bytes_per_sec": 0},
+        )
+        assert sub_p.status_code == 202
+        jid_p = sub_p.json()["job_id"]
+        assert hit_pt.wait(timeout=5.0)
+        cur = client.get(f"{BASE}/workspace-jobs/{jid_p}", headers=ADMIN).json()["job"]
+        assert client.post(
+            f"{BASE}/workspace-jobs/{jid_p}/pause",
+            headers=ADMIN,
+            json={"expected_version": cur["version"]},
+        ).status_code == 200
+        release_pt.set()
+        time.sleep(0.15)
+        # paused 后主动释放跨进程锁与槽位，同进程新任务仍可执行；随后原任务 resume 照常完成
+        assert not (svc.root / dedup_confirm.LOCK_FILENAME).exists()
+
+        svc.configure_test_hooks(read_chunk_hook=lambda _p, _o: None)
+        other = client.post(
+            f"{BASE}/governance/dedup-confirm-jobs",
+            headers={**ADMIN, "Idempotency-Key": "r1-fix5-other"},
+            json={"asset_ids": [a1, a2]},
+        )
+        assert other.status_code == 202
+        assert _wait_dedup_job(client, other.json()["job_id"])["status"] == "succeeded"
+
+        cur2 = client.get(f"{BASE}/workspace-jobs/{jid_p}", headers=ADMIN).json()["job"]
+        assert client.post(
+            f"{BASE}/workspace-jobs/{jid_p}/resume",
+            headers=ADMIN,
+            json={"expected_version": cur2["version"]},
+        ).status_code == 200
+        assert _wait_dedup_job(client, jid_p)["status"] == "succeeded"

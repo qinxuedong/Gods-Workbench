@@ -260,9 +260,18 @@ test('QIN-619 慢请求与并发锁：提交在途期间锁定按钮、防重复
             pathToFileURL(path.join(host.tree, 'web/js/modules/asset-manager/state.js')).href
         );
 
-        // 发起慢请求（模拟 1500ms 延迟挂起），直接触发域函数面以真实模拟按钮连击并发场景
+        // 发起慢请求（真实 1500ms 延迟），直接触发域函数面以真实模拟按钮连击并发场景
+        const t0 = Date.now();
+        setTimeout(() => {
+            currentPayload = makeSuggestionsPayload({ suspected: false, confirmed: true, revision: 11 });
+            postGate.resolve(jsonRes({
+                job_id: 'job_dedup_slow',
+                job: { job_id: 'job_dedup_slow', status: 'queued', progress: { processed: 0, total: 2, percent: 0 } },
+                poll_hint: { url: '/api/asset-registry/workspace-jobs/job_dedup_slow', interval_ms: 10 },
+            }, 202));
+        }, 1500);
         const firstRun = GW_DEFERRED.governance.startDedupConfirm({ pollIntervalMs: 10 });
-        await wait(20);
+        await wait(80);
 
         // 并发第二次点击必须被 dedupConfirmLoading 锁拦截，不能发第二次 POST
         await GW_DEFERRED.governance.startDedupConfirm({ pollIntervalMs: 10 });
@@ -272,16 +281,10 @@ test('QIN-619 慢请求与并发锁：提交在途期间锁定按钮、防重复
         const startBtn = host.document.querySelector('[data-dedup-start]');
         assert.ok(startBtn?.hasAttribute('disabled'), '慢响应在途期间必须禁用核验触发按钮');
         const suspectedBadge = host.document.querySelector('[data-governance-suggestion="dup_suspected_01"] [data-dedup-status]');
-        assert.equal(suspectedBadge?.getAttribute('data-dedup-status'), 'suspected', '任务完成前绝不得提前标为 confirmed');
+        assert.equal(suspectedBadge?.getAttribute('data-dedup-status'), 'suspected', '1500ms 慢响应完成前绝不得提前标为 confirmed');
 
-        // 放行并切换到 confirmed 清单
-        currentPayload = makeSuggestionsPayload({ suspected: false, confirmed: true, revision: 11 });
-        postGate.resolve(jsonRes({
-            job_id: 'job_dedup_slow',
-            job: { job_id: 'job_dedup_slow', status: 'queued', progress: { processed: 0, total: 2, percent: 0 } },
-            poll_hint: { url: '/api/asset-registry/workspace-jobs/job_dedup_slow', interval_ms: 10 },
-        }, 202));
         await firstRun;
+        assert.ok(Date.now() - t0 >= 1400, '必须完整经历真实 ~1500ms 延迟后再放行终态');
         await wait(40);
 
         assert.equal(pollCalls >= 1, true, '必须轮询查重任务直到终态');
@@ -593,5 +596,84 @@ test('QIN-619 task-center.js 与 i18n/task-center.js：支持 asset.dedup.confir
         assert.equal(updatedRow.getAttribute('aria-selected'), 'true');
     } finally {
         // restore installHost cleanup happens on next installHost or after() hook
+    }
+});
+
+test('QIN-619 必改5：running 态关闭抽屉后重开必须自动恢复轮询并推进到 succeeded', async () => {
+    let pollCount = 0;
+    let currentPayload = makeSuggestionsPayload({ suspected: true, confirmed: false, revision: 20 });
+
+    const fetchImpl = makeBaseFetch((target, init) => {
+        if (target.endsWith('/api/asset-registry/governance/dedup-confirm-jobs') && init?.method === 'POST') {
+            return Promise.resolve(jsonRes({
+                job_id: 'job_dedup_reopen',
+                job: { job_id: 'job_dedup_reopen', status: 'queued', progress: { processed: 0, total: 2, percent: 0 } },
+                poll_hint: { url: '/api/asset-registry/workspace-jobs/job_dedup_reopen', interval_ms: 15 },
+            }, 202));
+        }
+        if (target.includes('/api/asset-registry/workspace-jobs/job_dedup_reopen')) {
+            pollCount += 1;
+            if (pollCount < 3) {
+                return Promise.resolve(jsonRes({
+                    job: {
+                        job_id: 'job_dedup_reopen',
+                        job_type: 'asset.dedup.confirm',
+                        status: 'running',
+                        progress: { processed: 1, total: 2, percent: 50 },
+                    },
+                }));
+            }
+            currentPayload = makeSuggestionsPayload({ suspected: false, confirmed: true, revision: 21 });
+            return Promise.resolve(jsonRes({
+                job: {
+                    job_id: 'job_dedup_reopen',
+                    job_type: 'asset.dedup.confirm',
+                    status: 'succeeded',
+                    progress: { processed: 2, total: 2, percent: 100 },
+                },
+            }));
+        }
+        if (target.includes('/api/asset-registry/governance/suggestions')) {
+            return Promise.resolve(jsonRes(currentPayload));
+        }
+        return null;
+    });
+
+    const host = await createAssetViewHost({ embedded: true, tab: 'registry', fetchImpl });
+    try {
+        await host.main.gwCall('governance', 'openGovernanceDrawer', null);
+        await wait(50);
+        const { GW_DEFERRED } = await import(
+            pathToFileURL(path.join(host.tree, 'web/js/modules/asset-manager/state.js')).href
+        );
+
+        void GW_DEFERRED.governance.startDedupConfirm({ pollIntervalMs: 15 });
+        await wait(25);
+        assert.equal(host.main.dedupConfirmJob?.status, 'running');
+
+        // 抽屉在 running 期关闭，应当停止轮询并清理 loading 状态
+        const drawerHost = host.document.querySelector('[data-governance-drawer-host]');
+        assert.ok(drawerHost);
+        const listeners = drawerHost._listeners?.get('click') || [];
+        for (const fn of listeners) {
+            await fn.call(drawerHost, { target: drawerHost });
+        }
+        assert.equal(host.main.governanceDrawerOpen, false);
+        assert.equal(host.main.dedupConfirmLoading, false);
+        const pollsAtClose = pollCount;
+        await wait(45);
+        assert.equal(pollCount, pollsAtClose, '抽屉关闭期间不得继续后台轮询');
+
+        // 重开抽屉：必须自动恢复轮询直至 succeeded 并解锁确认按钮（绝不卡死在核验中）
+        await GW_DEFERRED.governance.openGovernanceDrawer(null);
+        await wait(80);
+        assert.equal(host.main.dedupConfirmJob?.status, 'succeeded');
+        assert.equal(host.main.dedupConfirmLoading, false);
+        assert.ok(
+            host.document.querySelector('[data-governance-confirm="dup_confirmed_01"]'),
+            '重开恢复轮询完结后必须刷新出 confirmed 卡片并解锁确认按钮'
+        );
+    } finally {
+        host.dispose();
     }
 });
