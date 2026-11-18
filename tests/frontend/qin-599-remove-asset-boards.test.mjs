@@ -163,7 +163,9 @@ function patchDocId(document) {
         };
     }
     const origSetInterval = globalThis.setInterval;
+    const origClearInterval = globalThis.clearInterval;
     const origSetTimeout = globalThis.setTimeout;
+    const origClearTimeout = globalThis.clearTimeout;
     const intervals = new Set();
     const timeouts = new Set();
     globalThis.setInterval = (...args) => {
@@ -172,19 +174,29 @@ function patchDocId(document) {
         intervals.add(handle);
         return handle;
     };
+    globalThis.clearInterval = handle => {
+        intervals.delete(handle);
+        return origClearInterval(handle);
+    };
+    // 仅追踪并回收未结束的延时器；禁止对所有 setTimeout 调用 unref()，否则 Node 20 会判定事件循环提前结束
     globalThis.setTimeout = (...args) => {
         const handle = origSetTimeout(...args);
-        if (handle && typeof handle.unref === 'function') handle.unref();
         timeouts.add(handle);
         return handle;
     };
+    globalThis.clearTimeout = handle => {
+        timeouts.delete(handle);
+        return origClearTimeout(handle);
+    };
     return () => {
-        for (const handle of intervals) clearInterval(handle);
-        for (const handle of timeouts) clearTimeout(handle);
+        for (const handle of intervals) origClearInterval(handle);
+        for (const handle of timeouts) origClearTimeout(handle);
         intervals.clear();
         timeouts.clear();
         globalThis.setInterval = origSetInterval;
+        globalThis.clearInterval = origClearInterval;
         globalThis.setTimeout = origSetTimeout;
+        globalThis.clearTimeout = origClearTimeout;
     };
 }
 
